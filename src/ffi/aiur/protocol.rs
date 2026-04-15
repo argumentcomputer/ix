@@ -7,8 +7,8 @@ use rustc_hash::{FxBuildHasher, FxHashMap};
 use std::sync::LazyLock;
 
 use lean_ffi::object::{
-  ExternalClass, LeanArray, LeanBorrowed, LeanByteArray, LeanCtor, LeanExcept,
-  LeanExternal, LeanNat, LeanOwned, LeanRef,
+  ExternalClass, LeanArray, LeanBorrowed, LeanByteArray, LeanExcept,
+  LeanExternal, LeanNat, LeanOwned, LeanProd, LeanRef,
 };
 
 use crate::{
@@ -128,12 +128,8 @@ extern "C" fn rs_aiur_toplevel_execute(
 
   let lean_io = build_lean_io_buffer(&io_buffer);
   // (Array G, (Array G × Array (Array G × IOKeyInfo), Array Nat))
-  let io_counts = LeanCtor::alloc(0, 2, 0);
-  io_counts.set(0, lean_io);
-  io_counts.set(1, lean_query_counts);
-  let result = LeanCtor::alloc(0, 2, 0);
-  result.set(0, build_g_array(&output));
-  result.set(1, io_counts);
+  let io_counts = LeanProd::new(lean_io, lean_query_counts);
+  let result = LeanProd::new(build_g_array(&output), io_counts);
   result.into()
 }
 
@@ -160,13 +156,9 @@ extern "C" fn rs_aiur_system_prove(
     LeanExternal::alloc(&AIUR_PROOF_CLASS, proof).into();
   let lean_io = build_lean_io_buffer(&io_buffer);
   // Proof × Array G × Array (Array G × IOKeyInfo)
-  let proof_io_tuple = LeanCtor::alloc(0, 2, 0);
-  proof_io_tuple.set(0, lean_proof);
-  proof_io_tuple.set(1, lean_io);
+  let proof_io_tuple = LeanProd::new(lean_proof, lean_io);
   // Array G × Proof × Array G × Array (Array G × IOKeyInfo)
-  let result = LeanCtor::alloc(0, 2, 0);
-  result.set(0, build_g_array(&claim));
-  result.set(1, proof_io_tuple);
+  let result = LeanProd::new(build_g_array(&claim), proof_io_tuple);
   result.into()
 }
 
@@ -199,19 +191,16 @@ fn build_lean_io_buffer(io_buffer: &IOBuffer) -> LeanOwned {
     let arr = LeanArray::alloc(io_buffer.map.len());
     for (i, (key, info)) in io_buffer.map.iter().enumerate() {
       let key_arr = build_g_array(key);
-      let key_info = LeanCtor::alloc(0, 2, 0);
-      key_info.set(0, LeanOwned::box_usize(info.idx));
-      key_info.set(1, LeanOwned::box_usize(info.len));
-      let map_elt = LeanCtor::alloc(0, 2, 0);
-      map_elt.set(0, key_arr);
-      map_elt.set(1, key_info);
+      let key_info = LeanProd::new(
+        LeanOwned::box_usize(info.idx),
+        LeanOwned::box_usize(info.len),
+      );
+      let map_elt = LeanProd::new(key_arr, key_info);
       arr.set(i, map_elt);
     }
     arr
   };
-  let io_tuple = LeanCtor::alloc(0, 2, 0);
-  io_tuple.set(0, lean_io_data);
-  io_tuple.set(1, lean_io_map);
+  let io_tuple = LeanProd::new(lean_io_data, lean_io_map);
   io_tuple.into()
 }
 

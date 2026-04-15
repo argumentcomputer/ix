@@ -1,329 +1,426 @@
 //! Ix-specific Lean domain type definitions.
 //!
-//! Generic Lean FFI wrappers live in the `lean_ffi` crate. This module defines
-//! typed newtypes for ix-specific Lean types using `lean_ffi::lean_domain_type!`.
+//! Ctor-backed types use `lean_inductive!` which declares the domain type,
+//! variant wrappers, layout metadata, and typed accessors in one shot.
+//! Types without a ctor layout (simple enums, opaque objects, arenas) use
+//! bare `lean_domain_type!`.
 
 use lean_ffi::object::{LeanBorrowed, LeanByteArray, LeanOwned, LeanRef};
 
+// =============================================================================
+// Types without ctor layouts (simple enums, opaque objects, arenas)
+// =============================================================================
+
 lean_ffi::lean_domain_type! {
-  // Ix core types
-  /// Lean `Ix.Name` object.
-  LeanIxName;
-  /// Lean `Ix.Level` object.
-  LeanIxLevel;
-  /// Lean `Ix.Expr` object.
-  LeanIxExpr;
-  /// Lean `Ix.ConstantInfo` object.
-  LeanIxConstantInfo;
-  /// Lean `Ix.ConstantVal` object.
-  LeanIxConstantVal;
-  /// Lean `Ix.ReducibilityHints` object.
-  LeanIxReducibilityHints;
-  /// Lean `Ix.Literal` object.
-  LeanIxLiteral;
-  /// Lean `Ix.BinderInfo` object.
+  // Simple enums (passed as raw unboxed tag values)
   LeanIxBinderInfo;
-  /// Lean `Ix.RecursorRule` object.
-  LeanIxRecursorRule;
-  /// Lean `Ix.RawEnvironment` object.
-  LeanIxRawEnvironment;
-  /// Lean `Ix.Environment` object.
-  LeanIxEnvironment;
-  /// Lean `Ix.RustCondensedBlocks` object.
-  LeanIxCondensedBlocks;
-  /// Lean `Ix.CompileM.RustCompilePhases` object.
-  LeanIxCompilePhases;
-
-  // Ix data types
-  /// Lean `Ix.Int` object.
-  LeanIxInt;
-  /// Lean `Ix.Substring` object.
-  LeanIxSubstring;
-  /// Lean `Ix.SourceInfo` object.
-  LeanIxSourceInfo;
-  /// Lean `Ix.SyntaxPreresolved` object.
-  LeanIxSyntaxPreresolved;
-  /// Lean `Ix.Syntax` object.
-  LeanIxSyntax;
-  /// Lean `Ix.DataValue` object.
-  LeanIxDataValue;
-
-  // Ixon types
-  /// Lean `Ixon.DefKind` object.
   LeanIxonDefKind;
-  /// Lean `Ixon.DefinitionSafety` object.
   LeanIxonDefinitionSafety;
-  /// Lean `Ixon.QuotKind` object.
   LeanIxonQuotKind;
-  /// Lean `Ixon.Univ` object.
-  LeanIxonUniv;
-  /// Lean `Ixon.Expr` object.
-  LeanIxonExpr;
-  /// Lean `Ixon.Definition` object.
-  LeanIxonDefinition;
-  /// Lean `Ixon.RecursorRule` object.
-  LeanIxonRecursorRule;
-  /// Lean `Ixon.Recursor` object.
-  LeanIxonRecursor;
-  /// Lean `Ixon.Axiom` object.
-  LeanIxonAxiom;
-  /// Lean `Ixon.Quotient` object.
-  LeanIxonQuotient;
-  /// Lean `Ixon.Constructor` object.
-  LeanIxonConstructor;
-  /// Lean `Ixon.Inductive` object.
-  LeanIxonInductive;
-  /// Lean `Ixon.InductiveProj` object.
-  LeanIxonInductiveProj;
-  /// Lean `Ixon.ConstructorProj` object.
-  LeanIxonConstructorProj;
-  /// Lean `Ixon.RecursorProj` object.
-  LeanIxonRecursorProj;
-  /// Lean `Ixon.DefinitionProj` object.
-  LeanIxonDefinitionProj;
-  /// Lean `Ixon.MutConst` object.
-  LeanIxonMutConst;
-  /// Lean `Ixon.ConstantInfo` object.
-  LeanIxonConstantInfo;
-  /// Lean `Ixon.Constant` object.
-  LeanIxonConstant;
-  /// Lean `Ixon.DataValue` object.
-  LeanIxonDataValue;
-  /// Lean `Ixon.ExprMetaData` object.
-  LeanIxonExprMetaData;
-  /// Lean `Ixon.ExprMetaArena` object.
+
+  // Opaque / arena types
+  LeanIxRawEnvironment;
+  LeanIxEnvironment;
   LeanIxonExprMetaArena;
-  /// Lean `Ixon.ConstantMeta` object.
-  LeanIxonConstantMeta;
-  /// Lean `Ixon.Named` object.
-  LeanIxonNamed;
-  /// Lean `Ixon.Comm` object.
-  LeanIxonComm;
-  /// Lean `Ixon.RawEnv` object.
-  LeanIxonRawEnv;
-  /// Lean `Ixon.RawConst` object.
-  LeanIxonRawConst;
-  /// Lean `Ixon.RawNamed` object.
-  LeanIxonRawNamed;
-  /// Lean `Ixon.RawBlob` object.
-  LeanIxonRawBlob;
-  /// Lean `Ixon.RawComm` object.
-  LeanIxonRawComm;
-  /// Lean `Ixon.RawNameEntry` object.
-  LeanIxonRawNameEntry;
 
-  // Aiur types
-  /// Lean `Aiur.Bytecode.Toplevel` object.
-  LeanAiurToplevel;
-  /// Lean `Aiur.CommitmentParameters` object.
+  // Aiur parameter types (no scalar fields, used opaquely)
   LeanAiurCommitmentParameters;
-  /// Lean `Aiur.FriParameters` object.
   LeanAiurFriParameters;
-
-  // Lean kernel inner structures and variants
-  /// Lean `Ix.AxiomVal` object.
-  LeanIxAxiomVal;
-  /// Lean `Ix.DefinitionVal` object.
-  LeanIxDefinitionVal;
-  /// Lean `Ix.OpaqueVal` object.
-  LeanIxOpaqueVal;
-  /// Lean `Ix.QuotVal` object.
-  LeanIxQuotVal;
-  /// Lean `Ix.InductiveVal` object.
-  LeanIxInductiveVal;
-  /// Lean `Ix.ConstructorVal` object.
-  LeanIxConstructorVal;
-  /// Lean `Ix.RecursorVal` object.
-  LeanIxRecursorVal;
-  /// Lean `Ix.ReducibilityHints.Regular` object.
-  LeanIxReducibilityHintsRegular;
-
-  // Aiur inner types
-  /// Lean `Aiur.Bytecode.Function` object.
-  LeanAiurFunction;
-
-  // Ixon multi-scalar variant types
-  /// Lean `Ixon.ExprMetaData.App` (tag 1) object.
-  LeanIxonExprMetaApp;
-  /// Lean `Ixon.ExprMetaData.Binder` (tag 2) object.
-  LeanIxonExprMetaBinder;
-  /// Lean `Ixon.ExprMetaData.LetBinder` (tag 3) object.
-  LeanIxonExprMetaLetBinder;
-  /// Lean `Ixon.ConstantMeta.Def` (tag 1) object.
-  LeanIxonConstantMetaDef;
-  /// Lean `Ixon.Expr.Prj` (tag 4) object.
-  LeanIxonExprPrj;
-
-  // Ixon/Ix inductive variant types
-  /// Lean `Ixon.ConstantMeta.Axio` (tag 2) object.
-  LeanIxonConstantMetaAxio;
-  /// Lean `Ixon.ConstantMeta.Quot` (tag 3) object.
-  LeanIxonConstantMetaQuot;
-  /// Lean `Ixon.ConstantMeta.Indc` (tag 4) object.
-  LeanIxonConstantMetaIndc;
-  /// Lean `Ixon.ConstantMeta.Ctor` (tag 5) object.
-  LeanIxonConstantMetaCtor;
-  /// Lean `Ixon.ConstantMeta.Rec` (tag 6) object.
-  LeanIxonConstantMetaRec;
-  /// Lean `Ixon.ExprMetaData.Prj` (tag 5) object.
-  LeanIxonExprMetaPrj;
-  /// Lean `Ixon.ExprMetaData.Mdata` (tag 6) object.
-  LeanIxonExprMetaMdata;
-  /// Lean `Ixon.DataValue.OfBool` (tag 1) object.
-  LeanIxonDataValueBool;
-  /// Lean `Ixon.Expr.Sort` (tag 0) object.
-  LeanIxonExprSort;
-  /// Lean `Ixon.Expr.Var` (tag 1) object.
-  LeanIxonExprVar;
-  /// Lean `Ixon.Expr.Ref` (tag 2) object.
-  LeanIxonExprRef;
-  /// Lean `Ixon.Expr.Rec` (tag 3) object.
-  LeanIxonExprRec;
-  /// Lean `Ixon.Expr.Str` (tag 5) object.
-  LeanIxonExprStr;
-  /// Lean `Ixon.Expr.Nat` (tag 6) object.
-  LeanIxonExprNat;
-  /// Lean `Ixon.Expr.Let` (tag 10) object.
-  LeanIxonExprLet;
-  /// Lean `Ixon.Expr.Share` (tag 11) object.
-  LeanIxonExprShare;
-  /// Lean `Ixon.Univ.Var` (tag 4) object.
-  LeanIxonUnivVar;
-  /// Lean `Ix.Expr.Lam` (tag 6) object.
-  LeanIxExprLam;
-  /// Lean `Ix.Expr.ForallE` (tag 7) object.
-  LeanIxExprForallE;
-  /// Lean `Ix.Expr.LetE` (tag 8) object.
-  LeanIxExprLetE;
-  /// Lean `Ix.SourceInfo.Synthetic` (tag 1) object.
-  LeanIxSourceInfoSynthetic;
-  /// Lean `Ix.DataValue.OfBool` (tag 1) object.
-  LeanIxDataValueBool;
-
-  // Block types
-  /// Lean `BlockCompareResult.Mismatch` (tag 1) object.
-  LeanIxBlockCompareResultMismatch;
-  /// Lean `Ix.Block` object.
-  LeanIxBlock;
-
-  // SerializeError variant types
-  /// Lean `Ixon.SerializeError.InvalidTag` (tag 1) object.
-  LeanIxSerializeErrorInvalidTag;
-  /// Lean `Ixon.SerializeError.InvalidFlag` (tag 2) object.
-  LeanIxSerializeErrorInvalidFlag;
-  /// Lean `Ixon.SerializeError.InvalidVariant` (tag 3) object.
-  LeanIxSerializeErrorInvalidVariant;
-  /// Lean `Ixon.SerializeError.InvalidBool` (tag 4) object.
-  LeanIxSerializeErrorInvalidBool;
-  /// Lean `Ixon.SerializeError.InvalidShareIndex` (tag 6) object.
-  LeanIxSerializeErrorInvalidShareIndex;
-
-  // DecompileError variant types (tags 0-4 share layout: 2 obj + 1 u64)
-  /// Lean `Ix.DecompileError.InvalidRefIndex` (tag 0) object.
-  LeanIxDecompileErrorRefIndex;
-  /// Lean `Ix.DecompileError.InvalidUnivIndex` (tag 1) object.
-  LeanIxDecompileErrorUnivIndex;
-  /// Lean `Ix.DecompileError.InvalidShareIndex` (tag 2) object.
-  LeanIxDecompileErrorShareIndex;
-  /// Lean `Ix.DecompileError.InvalidRecIndex` (tag 3) object.
-  LeanIxDecompileErrorRecIndex;
-  /// Lean `Ix.DecompileError.InvalidUnivVarIndex` (tag 4) object.
-  LeanIxDecompileErrorUnivVarIndex;
-
-  // Error types
-  /// Lean `Ixon.SerializeError` object.
-  LeanIxSerializeError;
-  /// Lean `Ix.DecompileM.DecompileError` object.
-  LeanIxDecompileError;
-  /// Lean `Ix.CompileM.CompileError` object.
-  LeanIxCompileError;
-  /// Lean `BlockCompareResult` object.
-  LeanIxBlockCompareResult;
-  /// Lean `BlockCompareDetail` object.
-  LeanIxBlockCompareDetail;
 }
 
 // =============================================================================
-// LeanCtorScalar impls — structures, inner vals, and inductive variants
+// Ixon structures (single-constructor, tag 0)
 // =============================================================================
 
-// Ixon structures (ixon/constant.rs)
-lean_ffi::impl_ctor_scalar!(LeanIxonDefinition     { NUM_OBJ = 2, NUM_64 = 1, NUM_8 = 2 });
-lean_ffi::impl_ctor_scalar!(LeanIxonRecursorRule   { NUM_OBJ = 1, NUM_64 = 1 });
-lean_ffi::impl_ctor_scalar!(LeanIxonRecursor       { NUM_OBJ = 2, NUM_64 = 5, NUM_8 = 2 });
-lean_ffi::impl_ctor_scalar!(LeanIxonAxiom          { NUM_OBJ = 1, NUM_64 = 1, NUM_8 = 1 });
-lean_ffi::impl_ctor_scalar!(LeanIxonQuotient       { NUM_OBJ = 1, NUM_64 = 1, NUM_8 = 1 });
-lean_ffi::impl_ctor_scalar!(LeanIxonConstructor    { NUM_OBJ = 1, NUM_64 = 4, NUM_8 = 1 });
-lean_ffi::impl_ctor_scalar!(LeanIxonInductive      { NUM_OBJ = 2, NUM_64 = 4, NUM_8 = 3 });
-lean_ffi::impl_ctor_scalar!(LeanIxonInductiveProj  { NUM_OBJ = 1, NUM_64 = 1 });
-lean_ffi::impl_ctor_scalar!(LeanIxonConstructorProj { NUM_OBJ = 1, NUM_64 = 2 });
-lean_ffi::impl_ctor_scalar!(LeanIxonRecursorProj   { NUM_OBJ = 1, NUM_64 = 1 });
-lean_ffi::impl_ctor_scalar!(LeanIxonDefinitionProj { NUM_OBJ = 1, NUM_64 = 1 });
+lean_ffi::lean_inductive! {
+  LeanIxonDefinition { num_obj: 2, num_64: 1, num_8: 2 }
+}
+lean_ffi::lean_inductive! {
+  LeanIxonRecursorRule { num_obj: 1, num_64: 1 }
+}
+lean_ffi::lean_inductive! {
+  LeanIxonRecursor { num_obj: 2, num_64: 5, num_8: 2 }
+}
+lean_ffi::lean_inductive! {
+  LeanIxonAxiom { num_obj: 1, num_64: 1, num_8: 1 }
+}
+lean_ffi::lean_inductive! {
+  LeanIxonQuotient { num_obj: 1, num_64: 1, num_8: 1 }
+}
+lean_ffi::lean_inductive! {
+  LeanIxonConstructor { num_obj: 1, num_64: 4, num_8: 1 }
+}
+lean_ffi::lean_inductive! {
+  LeanIxonInductive { num_obj: 2, num_64: 4, num_8: 3 }
+}
+lean_ffi::lean_inductive! {
+  LeanIxonInductiveProj { num_obj: 1, num_64: 1 }
+}
+lean_ffi::lean_inductive! {
+  LeanIxonConstructorProj { num_obj: 1, num_64: 2 }
+}
+lean_ffi::lean_inductive! {
+  LeanIxonRecursorProj { num_obj: 1, num_64: 1 }
+}
+lean_ffi::lean_inductive! {
+  LeanIxonDefinitionProj { num_obj: 1, num_64: 1 }
+}
+lean_ffi::lean_inductive! {
+  LeanIxonNamed { num_obj: 2 }
+}
+lean_ffi::lean_inductive! {
+  LeanIxonComm { num_obj: 2 }
+}
+lean_ffi::lean_inductive! {
+  LeanIxonConstant { num_obj: 4 }
+}
+lean_ffi::lean_inductive! {
+  LeanIxonRawConst { num_obj: 2 }
+}
+lean_ffi::lean_inductive! {
+  LeanIxonRawNamed { num_obj: 3 }
+}
+lean_ffi::lean_inductive! {
+  LeanIxonRawBlob { num_obj: 2 }
+}
+lean_ffi::lean_inductive! {
+  LeanIxonRawComm { num_obj: 2 }
+}
+lean_ffi::lean_inductive! {
+  LeanIxonRawNameEntry { num_obj: 2 }
+}
+lean_ffi::lean_inductive! {
+  LeanIxonRawEnv { num_obj: 5 }
+}
 
-// Structures (ixon/compare.rs + compile.rs)
-lean_ffi::impl_ctor_scalar!(LeanIxBlockCompareDetail { NUM_OBJ = 1, NUM_64 = 2 });
+// =============================================================================
+// Ixon multi-variant inductives
+// =============================================================================
 
-// Lean kernel inner val structures (ix/constant.rs + lean_env.rs)
-lean_ffi::impl_ctor_scalar!(LeanIxAxiomVal          { NUM_OBJ = 1, NUM_8 = 1 });
-lean_ffi::impl_ctor_scalar!(LeanIxDefinitionVal     { NUM_OBJ = 4, NUM_8 = 1 });
-lean_ffi::impl_ctor_scalar!(LeanIxOpaqueVal         { NUM_OBJ = 3, NUM_8 = 1 });
-lean_ffi::impl_ctor_scalar!(LeanIxQuotVal           { NUM_OBJ = 1, NUM_8 = 1 });
-lean_ffi::impl_ctor_scalar!(LeanIxInductiveVal      { NUM_OBJ = 6, NUM_8 = 3 });
-lean_ffi::impl_ctor_scalar!(LeanIxConstructorVal    { NUM_OBJ = 5, NUM_8 = 1 });
-lean_ffi::impl_ctor_scalar!(LeanIxRecursorVal       { NUM_OBJ = 7, NUM_8 = 2 });
-lean_ffi::impl_ctor_scalar!(LeanIxReducibilityHintsRegular { TAG = 2, NUM_32 = 1 });
+lean_ffi::lean_inductive! {
+  LeanIxonUniv {
+    LeanIxonUnivVar  { tag: 4, num_64: 1 },
+    LeanIxonUnivSucc { tag: 1, num_obj: 1 },
+    LeanIxonUnivMax  { tag: 2, num_obj: 2 },
+    LeanIxonUnivIMax { tag: 3, num_obj: 2 },
+  }
+}
 
-// Aiur structures
-lean_ffi::impl_ctor_scalar!(LeanAiurFunction        { NUM_OBJ = 2, NUM_8 = 2 });
+lean_ffi::lean_inductive! {
+  LeanIxonExpr {
+    LeanIxonExprSort  { num_64: 1 },
+    LeanIxonExprVar   { tag: 1, num_64: 1 },
+    LeanIxonExprRef   { tag: 2, num_obj: 1, num_64: 1 },
+    LeanIxonExprRec   { tag: 3, num_obj: 1, num_64: 1 },
+    LeanIxonExprPrj   { tag: 4, num_obj: 1, num_64: 2 },
+    LeanIxonExprStr   { tag: 5, num_64: 1 },
+    LeanIxonExprNat   { tag: 6, num_64: 1 },
+    LeanIxonExprApp   { tag: 7, num_obj: 2 },
+    LeanIxonExprLam   { tag: 8, num_obj: 2 },
+    LeanIxonExprAll   { tag: 9, num_obj: 2 },
+    LeanIxonExprLet   { tag: 10, num_obj: 3, num_8: 1 },
+    LeanIxonExprShare { tag: 11, num_64: 1 },
+  }
+}
 
-// Ixon inductive variants (multi-scalar)
-lean_ffi::impl_ctor_scalar!(LeanIxonExprMetaApp        { TAG = 1, NUM_64 = 2 });
-lean_ffi::impl_ctor_scalar!(LeanIxonExprMetaBinder     { TAG = 2, NUM_OBJ = 1, NUM_64 = 2, NUM_8 = 1 });
-lean_ffi::impl_ctor_scalar!(LeanIxonExprMetaLetBinder  { TAG = 3, NUM_OBJ = 1, NUM_64 = 3 });
-lean_ffi::impl_ctor_scalar!(LeanIxonConstantMetaDef    { TAG = 1, NUM_OBJ = 6, NUM_64 = 2 });
-lean_ffi::impl_ctor_scalar!(LeanIxonExprPrj            { TAG = 4, NUM_OBJ = 1, NUM_64 = 2 });
+lean_ffi::lean_inductive! {
+  LeanIxonExprMetaData {
+    LeanIxonExprMetaApp       { tag: 1, num_64: 2 },
+    LeanIxonExprMetaBinder    { tag: 2, num_obj: 1, num_64: 2, num_8: 1 },
+    LeanIxonExprMetaLetBinder { tag: 3, num_obj: 1, num_64: 3 },
+    LeanIxonExprMetaRef       { tag: 4, num_obj: 1 },
+    LeanIxonExprMetaPrj       { tag: 5, num_obj: 1, num_64: 1 },
+    LeanIxonExprMetaMdata     { tag: 6, num_obj: 1, num_64: 1 },
+  }
+}
 
-// Ixon/Ix inductive variants (single-scalar)
-lean_ffi::impl_ctor_scalar!(LeanIxonConstantMetaAxio   { TAG = 2, NUM_OBJ = 3, NUM_64 = 1 });
-lean_ffi::impl_ctor_scalar!(LeanIxonConstantMetaQuot   { TAG = 3, NUM_OBJ = 3, NUM_64 = 1 });
-lean_ffi::impl_ctor_scalar!(LeanIxonConstantMetaIndc   { TAG = 4, NUM_OBJ = 6, NUM_64 = 1 });
-lean_ffi::impl_ctor_scalar!(LeanIxonConstantMetaCtor   { TAG = 5, NUM_OBJ = 4, NUM_64 = 1 });
-lean_ffi::impl_ctor_scalar!(LeanIxonConstantMetaRec    { TAG = 6, NUM_OBJ = 7, NUM_64 = 1 });
-lean_ffi::impl_ctor_scalar!(LeanIxonExprMetaPrj        { TAG = 5, NUM_OBJ = 1, NUM_64 = 1 });
-lean_ffi::impl_ctor_scalar!(LeanIxonExprMetaMdata      { TAG = 6, NUM_OBJ = 1, NUM_64 = 1 });
-lean_ffi::impl_ctor_scalar!(LeanIxonDataValueBool      { TAG = 1, NUM_8 = 1 });
-lean_ffi::impl_ctor_scalar!(LeanIxonExprSort           { TAG = 0, NUM_64 = 1 });
-lean_ffi::impl_ctor_scalar!(LeanIxonExprVar            { TAG = 1, NUM_64 = 1 });
-lean_ffi::impl_ctor_scalar!(LeanIxonExprRef            { TAG = 2, NUM_OBJ = 1, NUM_64 = 1 });
-lean_ffi::impl_ctor_scalar!(LeanIxonExprRec            { TAG = 3, NUM_OBJ = 1, NUM_64 = 1 });
-lean_ffi::impl_ctor_scalar!(LeanIxonExprStr            { TAG = 5, NUM_64 = 1 });
-lean_ffi::impl_ctor_scalar!(LeanIxonExprNat            { TAG = 6, NUM_64 = 1 });
-lean_ffi::impl_ctor_scalar!(LeanIxonExprLet            { TAG = 10, NUM_OBJ = 3, NUM_8 = 1 });
-lean_ffi::impl_ctor_scalar!(LeanIxonExprShare          { TAG = 11, NUM_64 = 1 });
-lean_ffi::impl_ctor_scalar!(LeanIxonUnivVar            { TAG = 4, NUM_64 = 1 });
-lean_ffi::impl_ctor_scalar!(LeanIxExprLam              { TAG = 6, NUM_OBJ = 4, NUM_8 = 1 });
-lean_ffi::impl_ctor_scalar!(LeanIxExprForallE          { TAG = 7, NUM_OBJ = 4, NUM_8 = 1 });
-lean_ffi::impl_ctor_scalar!(LeanIxExprLetE             { TAG = 8, NUM_OBJ = 5, NUM_8 = 1 });
-lean_ffi::impl_ctor_scalar!(LeanIxSourceInfoSynthetic  { TAG = 1, NUM_OBJ = 2, NUM_8 = 1 });
-lean_ffi::impl_ctor_scalar!(LeanIxDataValueBool        { TAG = 1, NUM_8 = 1 });
+lean_ffi::lean_inductive! {
+  LeanIxonConstantMeta {
+    LeanIxonConstantMetaDef  { tag: 1, num_obj: 6, num_64: 2 },
+    LeanIxonConstantMetaAxio { tag: 2, num_obj: 3, num_64: 1 },
+    LeanIxonConstantMetaQuot { tag: 3, num_obj: 3, num_64: 1 },
+    LeanIxonConstantMetaIndc { tag: 4, num_obj: 6, num_64: 1 },
+    LeanIxonConstantMetaCtor { tag: 5, num_obj: 4, num_64: 1 },
+    LeanIxonConstantMetaRec  { tag: 6, num_obj: 7, num_64: 1 },
+  }
+}
 
-// SerializeError variant types
-lean_ffi::impl_ctor_scalar!(LeanIxSerializeErrorInvalidTag        { TAG = 1, NUM_OBJ = 1, NUM_8 = 1 });
-lean_ffi::impl_ctor_scalar!(LeanIxSerializeErrorInvalidFlag       { TAG = 2, NUM_OBJ = 1, NUM_8 = 1 });
-lean_ffi::impl_ctor_scalar!(LeanIxSerializeErrorInvalidVariant    { TAG = 3, NUM_OBJ = 1, NUM_64 = 1 });
-lean_ffi::impl_ctor_scalar!(LeanIxSerializeErrorInvalidBool       { TAG = 4, NUM_8 = 1 });
-lean_ffi::impl_ctor_scalar!(LeanIxSerializeErrorInvalidShareIndex { TAG = 6, NUM_OBJ = 1, NUM_64 = 1 });
+lean_ffi::lean_inductive! {
+  LeanIxonDataValue {
+    LeanIxonDataValueString { num_obj: 1 },
+    LeanIxonDataValueBool   { tag: 1, num_8: 1 },
+    LeanIxonDataValueName   { tag: 2, num_obj: 1 },
+    LeanIxonDataValueNat    { tag: 3, num_obj: 1 },
+    LeanIxonDataValueInt    { tag: 4, num_obj: 1 },
+    LeanIxonDataValueSyntax { tag: 5, num_obj: 1 },
+  }
+}
 
-// DecompileError variant types (tags 0-4: 2 obj + 1 u64)
-lean_ffi::impl_ctor_scalar!(LeanIxDecompileErrorRefIndex      { NUM_OBJ = 2, NUM_64 = 1 });
-lean_ffi::impl_ctor_scalar!(LeanIxDecompileErrorUnivIndex     { TAG = 1, NUM_OBJ = 2, NUM_64 = 1 });
-lean_ffi::impl_ctor_scalar!(LeanIxDecompileErrorShareIndex    { TAG = 2, NUM_OBJ = 2, NUM_64 = 1 });
-lean_ffi::impl_ctor_scalar!(LeanIxDecompileErrorRecIndex      { TAG = 3, NUM_OBJ = 2, NUM_64 = 1 });
-lean_ffi::impl_ctor_scalar!(LeanIxDecompileErrorUnivVarIndex  { TAG = 4, NUM_OBJ = 2, NUM_64 = 1 });
+lean_ffi::lean_inductive! {
+  LeanIxonMutConst {
+    LeanIxonMutConstDefn { num_obj: 1 },
+    LeanIxonMutConstIndc { tag: 1, num_obj: 1 },
+    LeanIxonMutConstRecr { tag: 2, num_obj: 1 },
+  }
+}
 
-// Block types
-lean_ffi::impl_ctor_scalar!(LeanIxBlockCompareResultMismatch { TAG = 1, NUM_64 = 3 });
-lean_ffi::impl_ctor_scalar!(LeanIxBlock             { NUM_OBJ = 2, NUM_64 = 1 });
+lean_ffi::lean_inductive! {
+  LeanIxonConstantInfo {
+    LeanIxonConstantInfoDefn { num_obj: 1 },
+    LeanIxonConstantInfoRecr { tag: 1, num_obj: 1 },
+    LeanIxonConstantInfoAxio { tag: 2, num_obj: 1 },
+    LeanIxonConstantInfoQuot { tag: 3, num_obj: 1 },
+    LeanIxonConstantInfoCPrj { tag: 4, num_obj: 1 },
+    LeanIxonConstantInfoRPrj { tag: 5, num_obj: 1 },
+    LeanIxonConstantInfoIPrj { tag: 6, num_obj: 1 },
+    LeanIxonConstantInfoDPrj { tag: 7, num_obj: 1 },
+    LeanIxonConstantInfoMuts { tag: 8, num_obj: 1 },
+  }
+}
+
+// =============================================================================
+// Ix structures (single-constructor, tag 0)
+// =============================================================================
+
+lean_ffi::lean_inductive! {
+  LeanIxConstantVal { num_obj: 3 }
+}
+lean_ffi::lean_inductive! {
+  LeanIxRecursorRule { num_obj: 3 }
+}
+lean_ffi::lean_inductive! {
+  LeanIxTheoremVal { num_obj: 3 }
+}
+lean_ffi::lean_inductive! {
+  LeanIxCondensedBlocks { num_obj: 3 }
+}
+lean_ffi::lean_inductive! {
+  LeanIxCompilePhases { num_obj: 3 }
+}
+lean_ffi::lean_inductive! {
+  LeanIxSubstring { num_obj: 3 }
+}
+
+// =============================================================================
+// Ix multi-variant inductives
+// =============================================================================
+
+lean_ffi::lean_inductive! {
+  LeanIxName {
+    LeanIxNameAnonymous { num_obj: 1 },
+    LeanIxNameStr       { tag: 1, num_obj: 3 },
+    LeanIxNameNum       { tag: 2, num_obj: 3 },
+  }
+}
+
+lean_ffi::lean_inductive! {
+  LeanIxLevel {
+    LeanIxLevelZero  { num_obj: 1 },
+    LeanIxLevelSucc  { tag: 1, num_obj: 2 },
+    LeanIxLevelMax   { tag: 2, num_obj: 3 },
+    LeanIxLevelImax  { tag: 3, num_obj: 3 },
+    LeanIxLevelParam { tag: 4, num_obj: 2 },
+    LeanIxLevelMvar  { tag: 5, num_obj: 2 },
+  }
+}
+
+lean_ffi::lean_inductive! {
+  LeanIxExpr {
+    LeanIxExprBvar    { num_obj: 2 },
+    LeanIxExprFvar    { tag: 1, num_obj: 2 },
+    LeanIxExprMvar    { tag: 2, num_obj: 2 },
+    LeanIxExprSort    { tag: 3, num_obj: 2 },
+    LeanIxExprConst   { tag: 4, num_obj: 3 },
+    LeanIxExprApp     { tag: 5, num_obj: 3 },
+    LeanIxExprLam     { tag: 6, num_obj: 4, num_8: 1 },
+    LeanIxExprForallE { tag: 7, num_obj: 4, num_8: 1 },
+    LeanIxExprLetE    { tag: 8, num_obj: 5, num_8: 1 },
+    LeanIxExprLit     { tag: 9, num_obj: 2 },
+    LeanIxExprMdata   { tag: 10, num_obj: 3 },
+    LeanIxExprProj    { tag: 11, num_obj: 4 },
+  }
+}
+
+lean_ffi::lean_inductive! {
+  LeanIxConstantInfo {
+    LeanIxConstantInfoAxiom  { num_obj: 1 },
+    LeanIxConstantInfoDefn   { tag: 1, num_obj: 1 },
+    LeanIxConstantInfoThm    { tag: 2, num_obj: 1 },
+    LeanIxConstantInfoOpaque { tag: 3, num_obj: 1 },
+    LeanIxConstantInfoQuot   { tag: 4, num_obj: 1 },
+    LeanIxConstantInfoInduct { tag: 5, num_obj: 1 },
+    LeanIxConstantInfoCtor   { tag: 6, num_obj: 1 },
+    LeanIxConstantInfoRec    { tag: 7, num_obj: 1 },
+  }
+}
+
+lean_ffi::lean_inductive! {
+  LeanIxReducibilityHints {
+    LeanIxReducibilityHintsRegular { tag: 2, num_32: 1 },
+  }
+}
+
+lean_ffi::lean_inductive! {
+  LeanIxLiteral {
+    LeanIxLiteralNat { num_obj: 1 },
+    LeanIxLiteralStr { tag: 1, num_obj: 1 },
+  }
+}
+
+lean_ffi::lean_inductive! {
+  LeanIxInt {
+    LeanIxIntOfNat   { num_obj: 1 },
+    LeanIxIntNegSucc { tag: 1, num_obj: 1 },
+  }
+}
+
+lean_ffi::lean_inductive! {
+  LeanIxSourceInfo {
+    LeanIxSourceInfoOriginal  { num_obj: 4 },
+    LeanIxSourceInfoSynthetic { tag: 1, num_obj: 2, num_8: 1 },
+    LeanIxSourceInfoNone      { tag: 2 },
+  }
+}
+
+lean_ffi::lean_inductive! {
+  LeanIxSyntax {
+    LeanIxSyntaxMissing {},
+    LeanIxSyntaxNode  { tag: 1, num_obj: 3 },
+    LeanIxSyntaxAtom  { tag: 2, num_obj: 2 },
+    LeanIxSyntaxIdent { tag: 3, num_obj: 4 },
+  }
+}
+
+lean_ffi::lean_inductive! {
+  LeanIxSyntaxPreresolved {
+    LeanIxSyntaxPreresolvedA { num_obj: 1 },
+    LeanIxSyntaxPreresolvedB { tag: 1, num_obj: 2 },
+  }
+}
+
+lean_ffi::lean_inductive! {
+  LeanIxDataValue {
+    LeanIxDataValueString  { num_obj: 1 },
+    LeanIxDataValueBool    { tag: 1, num_8: 1 },
+    LeanIxDataValueName    { tag: 2, num_obj: 1 },
+    LeanIxDataValueNat     { tag: 3, num_obj: 1 },
+    LeanIxDataValueInt     { tag: 4, num_obj: 1 },
+    LeanIxDataValueSyntax  { tag: 5, num_obj: 1 },
+  }
+}
+
+// =============================================================================
+// Lean kernel inner val types (used in Ix.ConstantInfo decode)
+// =============================================================================
+
+lean_ffi::lean_inductive! {
+  LeanIxAxiomVal { num_obj: 1, num_8: 1 }
+}
+lean_ffi::lean_inductive! {
+  LeanIxDefinitionVal { num_obj: 4, num_8: 1 }
+}
+lean_ffi::lean_inductive! {
+  LeanIxOpaqueVal { num_obj: 3, num_8: 1 }
+}
+lean_ffi::lean_inductive! {
+  LeanIxQuotVal { num_obj: 1, num_8: 1 }
+}
+lean_ffi::lean_inductive! {
+  LeanIxInductiveVal { num_obj: 6, num_8: 3 }
+}
+lean_ffi::lean_inductive! {
+  LeanIxConstructorVal { num_obj: 5, num_8: 1 }
+}
+lean_ffi::lean_inductive! {
+  LeanIxRecursorVal { num_obj: 7, num_8: 2 }
+}
+
+// =============================================================================
+// Aiur types
+// =============================================================================
+
+lean_ffi::lean_inductive! {
+  LeanAiurToplevel { num_obj: 2 }
+}
+lean_ffi::lean_inductive! {
+  LeanAiurFunction { num_obj: 2, num_8: 2 }
+}
+
+// =============================================================================
+// Block / comparison types
+// =============================================================================
+
+lean_ffi::lean_inductive! {
+  LeanIxBlockCompareResult {
+    LeanIxBlockCompareResultMatch    {},
+    LeanIxBlockCompareResultMismatch { tag: 1, num_64: 3 },
+    LeanIxBlockCompareResultNotFound { tag: 2 },
+  }
+}
+
+lean_ffi::lean_inductive! {
+  LeanIxBlockCompareDetail { num_obj: 1, num_64: 2 }
+}
+lean_ffi::lean_inductive! {
+  LeanIxBlock { num_obj: 2, num_64: 1 }
+}
+
+// =============================================================================
+// Error types
+// =============================================================================
+
+lean_ffi::lean_inductive! {
+  LeanIxSerializeError {
+    LeanIxSerializeErrorUnexpectedEof    { num_obj: 1 },
+    LeanIxSerializeErrorInvalidTag       { tag: 1, num_obj: 1, num_8: 1 },
+    LeanIxSerializeErrorInvalidFlag      { tag: 2, num_obj: 1, num_8: 1 },
+    LeanIxSerializeErrorInvalidVariant   { tag: 3, num_obj: 1, num_64: 1 },
+    LeanIxSerializeErrorInvalidBool      { tag: 4, num_8: 1 },
+    LeanIxSerializeErrorInvalidShareIndex { tag: 6, num_obj: 1, num_64: 1 },
+  }
+}
+
+lean_ffi::lean_inductive! {
+  LeanIxDecompileError {
+    LeanIxDecompileErrorRefIndex           { num_obj: 2, num_64: 1 },
+    LeanIxDecompileErrorUnivIndex          { tag: 1, num_obj: 2, num_64: 1 },
+    LeanIxDecompileErrorShareIndex         { tag: 2, num_obj: 2, num_64: 1 },
+    LeanIxDecompileErrorRecIndex           { tag: 3, num_obj: 2, num_64: 1 },
+    LeanIxDecompileErrorUnivVarIndex       { tag: 4, num_obj: 2, num_64: 1 },
+    LeanIxDecompileErrorMissingAddress     { tag: 5, num_obj: 1 },
+    LeanIxDecompileErrorMissingMetadata    { tag: 6, num_obj: 1 },
+    LeanIxDecompileErrorBlobNotFound       { tag: 7, num_obj: 1 },
+    LeanIxDecompileErrorBadBlobFormat      { tag: 8, num_obj: 2 },
+    LeanIxDecompileErrorBadConstantFormat  { tag: 9, num_obj: 1 },
+    LeanIxDecompileErrorSerialize          { tag: 10, num_obj: 1 },
+  }
+}
+
+lean_ffi::lean_inductive! {
+  LeanIxCompileError {
+    LeanIxCompileErrorMissingConstant    { num_obj: 1 },
+    LeanIxCompileErrorMissingAddress     { tag: 1, num_obj: 1 },
+    LeanIxCompileErrorInvalidMutualBlock { tag: 2, num_obj: 1 },
+    LeanIxCompileErrorUnsupportedExpr    { tag: 3, num_obj: 1 },
+    LeanIxCompileErrorUnknownUnivParam   { tag: 4, num_obj: 2 },
+    LeanIxCompileErrorSerialize          { tag: 5, num_obj: 1 },
+  }
+}
+
+// =============================================================================
+// Iroh types
+// =============================================================================
+
+lean_ffi::lean_inductive! {
+  LeanPutResponse { num_obj: 2 }
+}
+lean_ffi::lean_inductive! {
+  LeanGetResponse { num_obj: 3 }
+}
+
+// =============================================================================
+// LeanIxAddress — manual newtype over LeanByteArray
+// =============================================================================
 
 /// Lean `Address` object — newtype over `LeanByteArray`.
 ///

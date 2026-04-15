@@ -28,7 +28,6 @@ use lean_ffi::nat::Nat;
 use lean_ffi::object::{LeanBorrowed, LeanList, LeanRef, LeanShared};
 
 use crate::lean::{LeanIxInductiveVal, LeanIxRecursorVal};
-use lean_ffi::object::LeanCtorScalar;
 
 use crate::ix::env::{
   AxiomVal, BinderInfo, ConstantInfo, ConstantVal, ConstructorVal, DataValue,
@@ -511,8 +510,9 @@ pub fn decode_constant_info(
       ConstantInfo::QuotInfo(QuotVal { cnst: constant_val, kind })
     },
     5 => {
+      let inner_ctor = inner;
       let [constant_val, num_params, num_indices, all, ctors, num_nested] =
-        inner.objs::<6>();
+        inner_ctor.objs::<6>();
       let constant_val = decode_constant_val(constant_val, cache);
       let num_params = Nat::from_obj(&num_params);
       let num_indices = Nat::from_obj(&num_indices);
@@ -525,10 +525,10 @@ pub fn decode_constant_info(
         .map(|o| decode_name(o, cache.global))
         .collect();
       let num_nested = Nat::from_obj(&num_nested);
-      let induct_wrapper = LeanIxInductiveVal::from_ctor(inner);
-      let is_rec = induct_wrapper.get_num_8(0) != 0;
-      let is_unsafe = induct_wrapper.get_num_8(1) != 0;
-      let is_reflexive = induct_wrapper.get_num_8(2) != 0;
+      let inner = LeanIxInductiveVal::from_ctor(inner_ctor);
+      let is_rec = inner.get_num_8(0) != 0;
+      let is_unsafe = inner.get_num_8(1) != 0;
+      let is_reflexive = inner.get_num_8(2) != 0;
       ConstantInfo::InductInfo(InductiveVal {
         cnst: constant_val,
         num_params,
@@ -560,6 +560,7 @@ pub fn decode_constant_info(
       })
     },
     7 => {
+      let inner_ctor = inner;
       let [
         constant_val,
         all,
@@ -568,7 +569,7 @@ pub fn decode_constant_info(
         num_motives,
         num_minors,
         rules,
-      ] = inner.objs::<7>();
+      ] = inner_ctor.objs::<7>();
       let constant_val = decode_constant_val(constant_val, cache);
       let all: Vec<_> = collect_list_borrowed(all.as_list())
         .into_iter()
@@ -582,9 +583,9 @@ pub fn decode_constant_info(
         .into_iter()
         .map(|o| decode_recursor_rule(o, cache))
         .collect();
-      let rec_wrapper = LeanIxRecursorVal::from_ctor(inner);
-      let k = rec_wrapper.get_num_8(0) != 0;
-      let is_unsafe = rec_wrapper.get_num_8(1) != 0;
+      let inner = LeanIxRecursorVal::from_ctor(inner_ctor);
+      let k = inner.get_num_8(0) != 0;
+      let is_unsafe = inner.get_num_8(1) != 0;
       ConstantInfo::RecInfo(RecursorVal {
         cnst: constant_val,
         all,

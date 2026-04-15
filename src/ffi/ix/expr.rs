@@ -20,17 +20,16 @@ use crate::ix::env::{
 };
 use crate::lean::LeanIxAddress;
 use crate::lean::{
-  LeanIxBinderInfo, LeanIxDataValue, LeanIxExpr, LeanIxLevel, LeanIxLiteral,
-  LeanIxName,
+  LeanIxBinderInfo, LeanIxDataValue, LeanIxExpr, LeanIxExprApp, LeanIxExprBvar,
+  LeanIxExprConst, LeanIxExprForallE, LeanIxExprFvar, LeanIxExprLam,
+  LeanIxExprLetE, LeanIxExprLit, LeanIxExprMdata, LeanIxExprMvar,
+  LeanIxExprProj, LeanIxExprSort, LeanIxLevel, LeanIxLiteral, LeanIxLiteralNat,
+  LeanIxLiteralStr, LeanIxName,
 };
 use lean_ffi::nat::Nat;
 #[cfg(feature = "test-ffi")]
 use lean_ffi::object::LeanBorrowed;
-use lean_ffi::object::{
-  LeanCtor, LeanCtorScalar, LeanOwned, LeanRef, LeanString,
-};
-
-use crate::lean::{LeanIxExprForallE, LeanIxExprLam, LeanIxExprLetE};
+use lean_ffi::object::{LeanOwned, LeanRef, LeanString};
 
 impl LeanIxExpr<LeanOwned> {
   /// Build a Lean Ix.Expr with embedded hash.
@@ -43,45 +42,45 @@ impl LeanIxExpr<LeanOwned> {
 
     let result = match expr.as_data() {
       ExprData::Bvar(idx, h) => {
-        let ctor = LeanCtor::alloc(0, 2, 0);
-        ctor.set(0, Nat::to_lean(idx));
-        ctor.set(1, LeanIxAddress::build_from_hash(h));
+        let ctor = LeanIxExprBvar::alloc();
+        ctor.set_obj(0, Nat::to_lean(idx));
+        ctor.set_obj(1, LeanIxAddress::build_from_hash(h));
         Self::new(ctor.into())
       },
       ExprData::Fvar(name, h) => {
-        let ctor = LeanCtor::alloc(1, 2, 0);
-        ctor.set(0, LeanIxName::build(cache, name));
-        ctor.set(1, LeanIxAddress::build_from_hash(h));
+        let ctor = LeanIxExprFvar::alloc();
+        ctor.set_obj(0, LeanIxName::build(cache, name));
+        ctor.set_obj(1, LeanIxAddress::build_from_hash(h));
         Self::new(ctor.into())
       },
       ExprData::Mvar(name, h) => {
-        let ctor = LeanCtor::alloc(2, 2, 0);
-        ctor.set(0, LeanIxName::build(cache, name));
-        ctor.set(1, LeanIxAddress::build_from_hash(h));
+        let ctor = LeanIxExprMvar::alloc();
+        ctor.set_obj(0, LeanIxName::build(cache, name));
+        ctor.set_obj(1, LeanIxAddress::build_from_hash(h));
         Self::new(ctor.into())
       },
       ExprData::Sort(level, h) => {
-        let ctor = LeanCtor::alloc(3, 2, 0);
-        ctor.set(0, LeanIxLevel::build(cache, level));
-        ctor.set(1, LeanIxAddress::build_from_hash(h));
+        let ctor = LeanIxExprSort::alloc();
+        ctor.set_obj(0, LeanIxLevel::build(cache, level));
+        ctor.set_obj(1, LeanIxAddress::build_from_hash(h));
         Self::new(ctor.into())
       },
       ExprData::Const(name, levels, h) => {
         let name_obj = LeanIxName::build(cache, name);
         let levels_obj = LeanIxLevel::build_array(cache, levels);
-        let ctor = LeanCtor::alloc(4, 3, 0);
-        ctor.set(0, name_obj);
-        ctor.set(1, levels_obj);
-        ctor.set(2, LeanIxAddress::build_from_hash(h));
+        let ctor = LeanIxExprConst::alloc();
+        ctor.set_obj(0, name_obj);
+        ctor.set_obj(1, levels_obj);
+        ctor.set_obj(2, LeanIxAddress::build_from_hash(h));
         Self::new(ctor.into())
       },
       ExprData::App(fn_expr, arg_expr, h) => {
         let fn_obj = Self::build(cache, fn_expr);
         let arg_obj = Self::build(cache, arg_expr);
-        let ctor = LeanCtor::alloc(5, 3, 0);
-        ctor.set(0, fn_obj);
-        ctor.set(1, arg_obj);
-        ctor.set(2, LeanIxAddress::build_from_hash(h));
+        let ctor = LeanIxExprApp::alloc();
+        ctor.set_obj(0, fn_obj);
+        ctor.set_obj(1, arg_obj);
+        ctor.set_obj(2, LeanIxAddress::build_from_hash(h));
         Self::new(ctor.into())
       },
       ExprData::Lam(name, ty, body, bi, h) => {
@@ -127,29 +126,29 @@ impl LeanIxExpr<LeanOwned> {
       },
       ExprData::Lit(lit, h) => {
         let lit_obj = LeanIxLiteral::build(lit);
-        let ctor = LeanCtor::alloc(9, 2, 0);
-        ctor.set(0, lit_obj);
-        ctor.set(1, LeanIxAddress::build_from_hash(h));
+        let ctor = LeanIxExprLit::alloc();
+        ctor.set_obj(0, lit_obj);
+        ctor.set_obj(1, LeanIxAddress::build_from_hash(h));
         Self::new(ctor.into())
       },
       ExprData::Mdata(md, inner, h) => {
         let md_obj = LeanIxDataValue::build_kvmap(cache, md);
         let inner_obj = Self::build(cache, inner);
-        let ctor = LeanCtor::alloc(10, 3, 0);
-        ctor.set(0, md_obj);
-        ctor.set(1, inner_obj);
-        ctor.set(2, LeanIxAddress::build_from_hash(h));
+        let ctor = LeanIxExprMdata::alloc();
+        ctor.set_obj(0, md_obj);
+        ctor.set_obj(1, inner_obj);
+        ctor.set_obj(2, LeanIxAddress::build_from_hash(h));
         Self::new(ctor.into())
       },
       ExprData::Proj(type_name, idx, struct_expr, h) => {
         let name_obj = LeanIxName::build(cache, type_name);
         let idx_obj = Nat::to_lean(idx);
         let struct_obj = Self::build(cache, struct_expr);
-        let ctor = LeanCtor::alloc(11, 4, 0);
-        ctor.set(0, name_obj);
-        ctor.set(1, idx_obj);
-        ctor.set(2, struct_obj);
-        ctor.set(3, LeanIxAddress::build_from_hash(h));
+        let ctor = LeanIxExprProj::alloc();
+        ctor.set_obj(0, name_obj);
+        ctor.set_obj(1, idx_obj);
+        ctor.set_obj(2, struct_obj);
+        ctor.set_obj(3, LeanIxAddress::build_from_hash(h));
         Self::new(ctor.into())
       },
     };
@@ -200,34 +199,36 @@ impl<R: LeanRef> LeanIxExpr<R> {
       },
       6 => {
         // lam: name, ty, body, hash, bi (scalar)
-        let name = LeanIxName(ctor.get(0)).decode();
-        let ty = LeanIxExpr(ctor.get(1)).decode();
-        let body = LeanIxExpr(ctor.get(2)).decode();
-
         let ctor = LeanIxExprLam::from_ctor(ctor);
-        let bi = LeanIxBinderInfo::<LeanOwned>::from_u8(ctor.get_num_8(0));
+        let name = LeanIxName(ctor.get_obj(0)).decode();
+        let ty = LeanIxExpr(ctor.get_obj(1)).decode();
+        let body = LeanIxExpr(ctor.get_obj(2)).decode();
+
+        let bi_byte = ctor.get_num_8(0);
+        let bi = LeanIxBinderInfo::<LeanOwned>::from_u8(bi_byte);
 
         Expr::lam(name, ty, body, bi)
       },
       7 => {
         // forallE: same layout as lam
-        let name = LeanIxName(ctor.get(0)).decode();
-        let ty = LeanIxExpr(ctor.get(1)).decode();
-        let body = LeanIxExpr(ctor.get(2)).decode();
-
         let ctor = LeanIxExprForallE::from_ctor(ctor);
-        let bi = LeanIxBinderInfo::<LeanOwned>::from_u8(ctor.get_num_8(0));
+        let name = LeanIxName(ctor.get_obj(0)).decode();
+        let ty = LeanIxExpr(ctor.get_obj(1)).decode();
+        let body = LeanIxExpr(ctor.get_obj(2)).decode();
+
+        let bi_byte = ctor.get_num_8(0);
+        let bi = LeanIxBinderInfo::<LeanOwned>::from_u8(bi_byte);
 
         Expr::all(name, ty, body, bi)
       },
       8 => {
         // letE: name, ty, val, body, hash, nonDep (scalar)
-        let name = LeanIxName(ctor.get(0)).decode();
-        let ty = LeanIxExpr(ctor.get(1)).decode();
-        let val = LeanIxExpr(ctor.get(2)).decode();
-        let body = LeanIxExpr(ctor.get(3)).decode();
-
         let ctor = LeanIxExprLetE::from_ctor(ctor);
+        let name = LeanIxName(ctor.get_obj(0)).decode();
+        let ty = LeanIxExpr(ctor.get_obj(1)).decode();
+        let val = LeanIxExpr(ctor.get_obj(2)).decode();
+        let body = LeanIxExpr(ctor.get_obj(3)).decode();
+
         let non_dep = ctor.get_num_8(0) != 0;
 
         Expr::letE(name, ty, val, body, non_dep)
@@ -267,13 +268,13 @@ impl LeanIxLiteral<LeanOwned> {
   pub fn build(lit: &Literal) -> Self {
     match lit {
       Literal::NatVal(n) => {
-        let ctor = LeanCtor::alloc(0, 1, 0);
-        ctor.set(0, Nat::to_lean(n));
+        let ctor = LeanIxLiteralNat::alloc();
+        ctor.set_obj(0, Nat::to_lean(n));
         Self::new(ctor.into())
       },
       Literal::StrVal(s) => {
-        let ctor = LeanCtor::alloc(1, 1, 0);
-        ctor.set(0, LeanString::new(s.as_str()));
+        let ctor = LeanIxLiteralStr::alloc();
+        ctor.set_obj(0, LeanString::new(s.as_str()));
         Self::new(ctor.into())
       },
     }

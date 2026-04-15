@@ -16,16 +16,18 @@ use crate::ix::ixon::constant::{
 };
 use crate::lean::{
   LeanIxAddress, LeanIxonAxiom, LeanIxonConstant, LeanIxonConstantInfo,
+  LeanIxonConstantInfoAxio, LeanIxonConstantInfoCPrj, LeanIxonConstantInfoDPrj,
+  LeanIxonConstantInfoDefn, LeanIxonConstantInfoIPrj, LeanIxonConstantInfoMuts,
+  LeanIxonConstantInfoQuot, LeanIxonConstantInfoRPrj, LeanIxonConstantInfoRecr,
   LeanIxonConstructor, LeanIxonConstructorProj, LeanIxonDefinition,
   LeanIxonDefinitionProj, LeanIxonExpr, LeanIxonInductive,
-  LeanIxonInductiveProj, LeanIxonMutConst, LeanIxonQuotient, LeanIxonRecursor,
-  LeanIxonRecursorProj, LeanIxonRecursorRule, LeanIxonUniv,
+  LeanIxonInductiveProj, LeanIxonMutConst, LeanIxonMutConstDefn,
+  LeanIxonMutConstIndc, LeanIxonMutConstRecr, LeanIxonQuotient,
+  LeanIxonRecursor, LeanIxonRecursorProj, LeanIxonRecursorRule, LeanIxonUniv,
 };
 #[cfg(feature = "test-ffi")]
 use lean_ffi::object::LeanBorrowed;
-use lean_ffi::object::{
-  LeanArray, LeanCtor, LeanCtorScalar, LeanOwned, LeanRef,
-};
+use lean_ffi::object::{LeanArray, LeanOwned, LeanRef};
 
 // =============================================================================
 // Definition
@@ -38,7 +40,6 @@ impl LeanIxonDefinition<LeanOwned> {
   pub fn build(def: &IxonDefinition) -> Self {
     let typ_obj = LeanIxonExpr::build(&def.typ);
     let value_obj = LeanIxonExpr::build(&def.value);
-    // 2 obj fields, 16 scalar bytes (lvls(8) + kind(1) + safety(1) + padding(6))
     let ctor = Self::alloc();
     ctor.set_obj(0, typ_obj);
     ctor.set_obj(1, value_obj);
@@ -95,7 +96,6 @@ impl LeanIxonRecursorRule<LeanOwned> {
   /// Build Ixon.RecursorRule
   pub fn build(rule: &IxonRecursorRule) -> Self {
     let rhs_obj = LeanIxonExpr::build(&rule.rhs);
-    // 1 obj field, 8 scalar bytes
     let ctor = Self::alloc();
     ctor.set_obj(0, rhs_obj);
     ctor.set_num_64(0, rule.fields);
@@ -127,7 +127,6 @@ impl LeanIxonRecursor<LeanOwned> {
     for (i, rule) in rec.rules.iter().enumerate() {
       rules_arr.set(i, LeanIxonRecursorRule::build(rule));
     }
-    // 2 obj fields (typ, rules), 48 scalar bytes (5×8 + 1 + 1 + 6 padding)
     let ctor = Self::alloc();
     ctor.set_obj(0, typ_obj);
     ctor.set_obj(1, rules_arr);
@@ -181,7 +180,6 @@ impl LeanIxonAxiom<LeanOwned> {
   /// Scalars ordered by size: lvls(8) + isUnsafe(1) + padding(7)
   pub fn build(ax: &IxonAxiom) -> Self {
     let typ_obj = LeanIxonExpr::build(&ax.typ);
-    // 1 obj field, 16 scalar bytes (lvls(8) + isUnsafe(1) + padding(7))
     let ctor = Self::alloc();
     ctor.set_obj(0, typ_obj);
     ctor.set_num_64(0, ax.lvls);
@@ -212,7 +210,6 @@ impl LeanIxonQuotient<LeanOwned> {
   /// Scalars ordered by size: lvls(8) + kind(1) + padding(7)
   pub fn build(quot: &IxonQuotient) -> Self {
     let typ_obj = LeanIxonExpr::build(&quot.typ);
-    // 1 obj field (typ), 16 scalar bytes (lvls(8) + kind(1) + padding(7))
     let ctor = Self::alloc();
     ctor.set_obj(0, typ_obj);
     ctor.set_num_64(0, quot.lvls);
@@ -255,7 +252,6 @@ impl LeanIxonConstructor<LeanOwned> {
   /// Scalars ordered by size: lvls(8) + cidx(8) + params(8) + fields(8) + isUnsafe(1) + padding(7)
   pub fn build(c: &IxonConstructor) -> Self {
     let typ_obj = LeanIxonExpr::build(&c.typ);
-    // 1 obj field, 40 scalar bytes (4×8 + 1 + 7 padding)
     let ctor = Self::alloc();
     ctor.set_obj(0, typ_obj);
     ctor.set_num_64(0, c.lvls);
@@ -296,7 +292,6 @@ impl LeanIxonInductive<LeanOwned> {
     for (i, c) in ind.ctors.iter().enumerate() {
       ctors_arr.set(i, LeanIxonConstructor::build(c));
     }
-    // 2 obj fields, 40 scalar bytes (4×8 + 3 + 5 padding)
     let ctor = Self::alloc();
     ctor.set_obj(0, typ_obj);
     ctor.set_obj(1, ctors_arr);
@@ -435,21 +430,18 @@ impl LeanIxonMutConst<LeanOwned> {
   pub fn build(mc: &MutConst) -> Self {
     let obj = match mc {
       MutConst::Defn(def) => {
-        let def_obj = LeanIxonDefinition::build(def);
-        let ctor = LeanCtor::alloc(0, 1, 0);
-        ctor.set(0, def_obj);
+        let ctor = LeanIxonMutConstDefn::alloc();
+        ctor.set_obj(0, LeanIxonDefinition::build(def));
         ctor.into()
       },
       MutConst::Indc(ind) => {
-        let ind_obj = LeanIxonInductive::build(ind);
-        let ctor = LeanCtor::alloc(1, 1, 0);
-        ctor.set(0, ind_obj);
+        let ctor = LeanIxonMutConstIndc::alloc();
+        ctor.set_obj(0, LeanIxonInductive::build(ind));
         ctor.into()
       },
       MutConst::Recr(rec) => {
-        let rec_obj = LeanIxonRecursor::build(rec);
-        let ctor = LeanCtor::alloc(2, 1, 0);
-        ctor.set(0, rec_obj);
+        let ctor = LeanIxonMutConstRecr::alloc();
+        ctor.set_obj(0, LeanIxonRecursor::build(rec));
         ctor.into()
       },
     };
@@ -483,51 +475,43 @@ impl LeanIxonConstantInfo<LeanOwned> {
   pub fn build(info: &IxonConstantInfo) -> Self {
     let obj = match info {
       IxonConstantInfo::Defn(def) => {
-        let def_obj = LeanIxonDefinition::build(def);
-        let ctor = LeanCtor::alloc(0, 1, 0);
-        ctor.set(0, def_obj);
+        let ctor = LeanIxonConstantInfoDefn::alloc();
+        ctor.set_obj(0, LeanIxonDefinition::build(def));
         ctor.into()
       },
       IxonConstantInfo::Recr(rec) => {
-        let rec_obj = LeanIxonRecursor::build(rec);
-        let ctor = LeanCtor::alloc(1, 1, 0);
-        ctor.set(0, rec_obj);
+        let ctor = LeanIxonConstantInfoRecr::alloc();
+        ctor.set_obj(0, LeanIxonRecursor::build(rec));
         ctor.into()
       },
       IxonConstantInfo::Axio(ax) => {
-        let ax_obj = LeanIxonAxiom::build(ax);
-        let ctor = LeanCtor::alloc(2, 1, 0);
-        ctor.set(0, ax_obj);
+        let ctor = LeanIxonConstantInfoAxio::alloc();
+        ctor.set_obj(0, LeanIxonAxiom::build(ax));
         ctor.into()
       },
       IxonConstantInfo::Quot(quot) => {
-        let quot_obj = LeanIxonQuotient::build(quot);
-        let ctor = LeanCtor::alloc(3, 1, 0);
-        ctor.set(0, quot_obj);
+        let ctor = LeanIxonConstantInfoQuot::alloc();
+        ctor.set_obj(0, LeanIxonQuotient::build(quot));
         ctor.into()
       },
       IxonConstantInfo::CPrj(proj) => {
-        let proj_obj = LeanIxonConstructorProj::build(proj);
-        let ctor = LeanCtor::alloc(4, 1, 0);
-        ctor.set(0, proj_obj);
+        let ctor = LeanIxonConstantInfoCPrj::alloc();
+        ctor.set_obj(0, LeanIxonConstructorProj::build(proj));
         ctor.into()
       },
       IxonConstantInfo::RPrj(proj) => {
-        let proj_obj = LeanIxonRecursorProj::build(proj);
-        let ctor = LeanCtor::alloc(5, 1, 0);
-        ctor.set(0, proj_obj);
+        let ctor = LeanIxonConstantInfoRPrj::alloc();
+        ctor.set_obj(0, LeanIxonRecursorProj::build(proj));
         ctor.into()
       },
       IxonConstantInfo::IPrj(proj) => {
-        let proj_obj = LeanIxonInductiveProj::build(proj);
-        let ctor = LeanCtor::alloc(6, 1, 0);
-        ctor.set(0, proj_obj);
+        let ctor = LeanIxonConstantInfoIPrj::alloc();
+        ctor.set_obj(0, LeanIxonInductiveProj::build(proj));
         ctor.into()
       },
       IxonConstantInfo::DPrj(proj) => {
-        let proj_obj = LeanIxonDefinitionProj::build(proj);
-        let ctor = LeanCtor::alloc(7, 1, 0);
-        ctor.set(0, proj_obj);
+        let ctor = LeanIxonConstantInfoDPrj::alloc();
+        ctor.set_obj(0, LeanIxonDefinitionProj::build(proj));
         ctor.into()
       },
       IxonConstantInfo::Muts(muts) => {
@@ -535,8 +519,8 @@ impl LeanIxonConstantInfo<LeanOwned> {
         for (i, mc) in muts.iter().enumerate() {
           arr.set(i, LeanIxonMutConst::build(mc));
         }
-        let ctor = LeanCtor::alloc(8, 1, 0);
-        ctor.set(0, arr);
+        let ctor = LeanIxonConstantInfoMuts::alloc();
+        ctor.set_obj(0, arr);
         ctor.into()
       },
     };
@@ -596,11 +580,11 @@ impl LeanIxonConstant<LeanOwned> {
     let sharing_obj = LeanIxonExpr::build_array(&constant.sharing);
     let refs_obj = LeanIxAddress::build_array(&constant.refs);
     let univs_obj = LeanIxonUniv::build_array(&constant.univs);
-    let ctor = LeanCtor::alloc(0, 4, 0);
-    ctor.set(0, info_obj);
-    ctor.set(1, sharing_obj);
-    ctor.set(2, refs_obj);
-    ctor.set(3, univs_obj);
+    let ctor = LeanIxonConstant::alloc();
+    ctor.set_obj(0, info_obj);
+    ctor.set_obj(1, sharing_obj);
+    ctor.set_obj(2, refs_obj);
+    ctor.set_obj(3, univs_obj);
     Self::new(ctor.into())
   }
 }

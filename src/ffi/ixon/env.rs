@@ -15,8 +15,7 @@ use crate::lean::{
   LeanIxonRawNameEntry, LeanIxonRawNamed,
 };
 use lean_ffi::object::{
-  LeanArray, LeanBorrowed, LeanByteArray, LeanCtor, LeanExcept, LeanOwned,
-  LeanRef,
+  LeanArray, LeanBorrowed, LeanByteArray, LeanExcept, LeanOwned, LeanRef,
 };
 
 use crate::ffi::builder::LeanBuildCache;
@@ -35,17 +34,17 @@ pub struct DecodedRawConst {
 impl LeanIxonRawConst<LeanOwned> {
   /// Build Ixon.RawConst Lean object.
   pub fn build(rc: &DecodedRawConst) -> Self {
-    let ctor = LeanCtor::alloc(0, 2, 0);
-    ctor.set(0, LeanIxAddress::build(&rc.addr));
-    ctor.set(1, LeanIxonConstant::build(&rc.constant));
+    let ctor = LeanIxonRawConst::alloc();
+    ctor.set_obj(0, LeanIxAddress::build(&rc.addr));
+    ctor.set_obj(1, LeanIxonConstant::build(&rc.constant));
     Self::new(ctor.into())
   }
 
   /// Build from individual parts (used by compile.rs).
   pub fn build_from_parts(addr: &Address, constant: &IxonConstant) -> Self {
-    let ctor = LeanCtor::alloc(0, 2, 0);
-    ctor.set(0, LeanIxAddress::build(addr));
-    ctor.set(1, LeanIxonConstant::build(constant));
+    let ctor = LeanIxonRawConst::alloc();
+    ctor.set_obj(0, LeanIxAddress::build(addr));
+    ctor.set_obj(1, LeanIxonConstant::build(constant));
     Self::new(ctor.into())
   }
 }
@@ -75,10 +74,10 @@ pub struct DecodedRawNamed {
 impl LeanIxonRawNamed<LeanOwned> {
   /// Build Ixon.RawNamed Lean object.
   pub fn build(cache: &mut LeanBuildCache, rn: &DecodedRawNamed) -> Self {
-    let ctor = LeanCtor::alloc(0, 3, 0);
-    ctor.set(0, LeanIxName::build(cache, &rn.name));
-    ctor.set(1, LeanIxAddress::build(&rn.addr));
-    ctor.set(2, LeanIxonConstantMeta::build(&rn.const_meta));
+    let ctor = LeanIxonRawNamed::alloc();
+    ctor.set_obj(0, LeanIxName::build(cache, &rn.name));
+    ctor.set_obj(1, LeanIxAddress::build(&rn.addr));
+    ctor.set_obj(2, LeanIxonConstantMeta::build(&rn.const_meta));
     Self::new(ctor.into())
   }
 
@@ -89,10 +88,10 @@ impl LeanIxonRawNamed<LeanOwned> {
     addr: &Address,
     meta: &ConstantMeta,
   ) -> Self {
-    let ctor = LeanCtor::alloc(0, 3, 0);
-    ctor.set(0, LeanIxName::build(cache, name));
-    ctor.set(1, LeanIxAddress::build(addr));
-    ctor.set(2, LeanIxonConstantMeta::build(meta));
+    let ctor = LeanIxonRawNamed::alloc();
+    ctor.set_obj(0, LeanIxName::build(cache, name));
+    ctor.set_obj(1, LeanIxAddress::build(addr));
+    ctor.set_obj(2, LeanIxonConstantMeta::build(meta));
     Self::new(ctor.into())
   }
 }
@@ -123,17 +122,17 @@ pub struct DecodedRawBlob {
 impl LeanIxonRawBlob<LeanOwned> {
   /// Build Ixon.RawBlob Lean object.
   pub fn build(rb: &DecodedRawBlob) -> Self {
-    let ctor = LeanCtor::alloc(0, 2, 0);
-    ctor.set(0, LeanIxAddress::build(&rb.addr));
-    ctor.set(1, LeanByteArray::from_bytes(&rb.bytes));
+    let ctor = LeanIxonRawBlob::alloc();
+    ctor.set_obj(0, LeanIxAddress::build(&rb.addr));
+    ctor.set_obj(1, LeanByteArray::from_bytes(&rb.bytes));
     Self::new(ctor.into())
   }
 
   /// Build from individual parts (used by compile.rs).
   pub fn build_from_parts(addr: &Address, bytes: &[u8]) -> Self {
-    let ctor = LeanCtor::alloc(0, 2, 0);
-    ctor.set(0, LeanIxAddress::build(addr));
-    ctor.set(1, LeanByteArray::from_bytes(bytes));
+    let ctor = LeanIxonRawBlob::alloc();
+    ctor.set_obj(0, LeanIxAddress::build(addr));
+    ctor.set_obj(1, LeanByteArray::from_bytes(bytes));
     Self::new(ctor.into())
   }
 }
@@ -163,17 +162,17 @@ pub struct DecodedRawComm {
 impl LeanIxonRawComm<LeanOwned> {
   /// Build Ixon.RawComm Lean object.
   pub fn build(rc: &DecodedRawComm) -> Self {
-    let ctor = LeanCtor::alloc(0, 2, 0);
-    ctor.set(0, LeanIxAddress::build(&rc.addr));
-    ctor.set(1, LeanIxonComm::build(&rc.comm));
+    let ctor = LeanIxonRawComm::alloc();
+    ctor.set_obj(0, LeanIxAddress::build(&rc.addr));
+    ctor.set_obj(1, LeanIxonComm::build(&rc.comm));
     Self::new(ctor.into())
   }
 
   /// Build from individual parts (used by compile.rs).
   pub fn build_from_parts(addr: &Address, comm: &Comm) -> Self {
-    let ctor = LeanCtor::alloc(0, 2, 0);
-    ctor.set(0, LeanIxAddress::build(addr));
-    ctor.set(1, LeanIxonComm::build(comm));
+    let ctor = LeanIxonRawComm::alloc();
+    ctor.set_obj(0, LeanIxAddress::build(addr));
+    ctor.set_obj(1, LeanIxonComm::build(comm));
     Self::new(ctor.into())
   }
 }
@@ -206,9 +205,9 @@ impl LeanIxonRawNameEntry<LeanOwned> {
     addr: &Address,
     name: &Name,
   ) -> Self {
-    let ctor = LeanCtor::alloc(0, 2, 0);
-    ctor.set(0, LeanIxAddress::build(addr));
-    ctor.set(1, LeanIxName::build(cache, name));
+    let ctor = LeanIxonRawNameEntry::alloc();
+    ctor.set_obj(0, LeanIxAddress::build(addr));
+    ctor.set_obj(1, LeanIxName::build(cache, name));
     Self::new(ctor.into())
   }
 }
@@ -274,12 +273,12 @@ impl LeanIxonRawEnv<LeanOwned> {
     }
 
     // Build RawEnv structure
-    let ctor = LeanCtor::alloc(0, 5, 0);
-    ctor.set(0, consts_arr);
-    ctor.set(1, named_arr);
-    ctor.set(2, blobs_arr);
-    ctor.set(3, comms_arr);
-    ctor.set(4, names_arr);
+    let ctor = LeanIxonRawEnv::alloc();
+    ctor.set_obj(0, consts_arr);
+    ctor.set_obj(1, named_arr);
+    ctor.set_obj(2, blobs_arr);
+    ctor.set_obj(3, comms_arr);
+    ctor.set_obj(4, names_arr);
     Self::new(ctor.into())
   }
 }

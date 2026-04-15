@@ -3,12 +3,11 @@
 use std::sync::Arc;
 
 use crate::ix::ixon::univ::Univ;
-use crate::lean::LeanIxonUniv;
-use lean_ffi::object::{
-  LeanArray, LeanBorrowed, LeanCtor, LeanCtorScalar, LeanOwned, LeanRef,
+use crate::lean::{
+  LeanIxonUniv, LeanIxonUnivIMax, LeanIxonUnivMax, LeanIxonUnivSucc,
+  LeanIxonUnivVar,
 };
-
-use crate::lean::LeanIxonUnivVar;
+use lean_ffi::object::{LeanArray, LeanBorrowed, LeanOwned, LeanRef};
 
 impl LeanIxonUniv<LeanOwned> {
   /// Build Ixon.Univ
@@ -16,26 +15,26 @@ impl LeanIxonUniv<LeanOwned> {
     let obj = match univ {
       Univ::Zero => LeanOwned::box_usize(0),
       Univ::Succ(inner) => {
-        let ctor = LeanCtor::alloc(1, 1, 0);
-        ctor.set(0, Self::build(inner));
+        let ctor = LeanIxonUnivSucc::alloc();
+        ctor.set_obj(0, Self::build(inner));
         ctor.into()
       },
       Univ::Max(a, b) => {
-        let ctor = LeanCtor::alloc(2, 2, 0);
-        ctor.set(0, Self::build(a));
-        ctor.set(1, Self::build(b));
+        let ctor = LeanIxonUnivMax::alloc();
+        ctor.set_obj(0, Self::build(a));
+        ctor.set_obj(1, Self::build(b));
         ctor.into()
       },
       Univ::IMax(a, b) => {
-        let ctor = LeanCtor::alloc(3, 2, 0);
-        ctor.set(0, Self::build(a));
-        ctor.set(1, Self::build(b));
+        let ctor = LeanIxonUnivIMax::alloc();
+        ctor.set_obj(0, Self::build(a));
+        ctor.set_obj(1, Self::build(b));
         ctor.into()
       },
       Univ::Var(idx) => {
         let ctor = LeanIxonUnivVar::alloc();
         ctor.set_num_64(0, *idx);
-        ctor.into()
+        ctor.0
       },
     };
     Self::new(obj)

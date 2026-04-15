@@ -6,7 +6,9 @@ use crate::ix::env::{ConstantInfo, Name};
 use crate::lean::{
   LeanIxConstantInfo, LeanIxEnvironment, LeanIxName, LeanIxRawEnvironment,
 };
-use lean_ffi::object::{LeanArray, LeanBorrowed, LeanCtor, LeanOwned, LeanRef};
+use lean_ffi::object::{
+  LeanArray, LeanBorrowed, LeanCtor, LeanOwned, LeanProd, LeanRef,
+};
 
 use crate::ffi::builder::LeanBuildCache;
 
@@ -146,9 +148,7 @@ impl LeanIxRawEnvironment<LeanOwned> {
       let key_obj = LeanIxName::build(cache, name);
       let val_obj = LeanIxConstantInfo::build(cache, info);
       // Build pair (Name × ConstantInfo)
-      let pair = LeanCtor::alloc(0, 2, 0);
-      pair.set(0, key_obj);
-      pair.set(1, val_obj);
+      let pair = LeanProd::new(key_obj, val_obj);
       consts_arr.set(i, pair);
     }
 
@@ -164,9 +164,7 @@ impl LeanIxRawEnvironment<LeanOwned> {
     for (i, (name, info)) in consts.iter().enumerate() {
       let key_obj = LeanIxName::build(cache, name);
       let val_obj = LeanIxConstantInfo::build(cache, info);
-      let pair = LeanCtor::alloc(0, 2, 0);
-      pair.set(0, key_obj);
-      pair.set(1, val_obj);
+      let pair = LeanProd::new(key_obj, val_obj);
       consts_arr.set(i, pair);
     }
     Self::new(consts_arr.into())

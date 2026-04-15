@@ -1,17 +1,11 @@
 use lean_ffi::object::{
-  LeanArray, LeanBorrowed, LeanByteArray, LeanCtor, LeanExcept, LeanOwned,
-  LeanRef, LeanString,
+  LeanArray, LeanBorrowed, LeanByteArray, LeanExcept, LeanOwned, LeanString,
 };
 
 use crate::iroh::common::{GetRequest, PutRequest, Request, Response};
 use crate::iroh::{client, server};
 
-lean_ffi::lean_domain_type! {
-  /// Lean `Iroh.Connect.PutResponse` object.
-  LeanPutResponse;
-  /// Lean `Iroh.Connect.GetResponse` object.
-  LeanGetResponse;
-}
+use crate::lean::{LeanGetResponse, LeanPutResponse};
 
 impl LeanPutResponse<LeanOwned> {
   /// Build from `message` and `hash` strings.
@@ -22,9 +16,9 @@ impl LeanPutResponse<LeanOwned> {
   ///   hash : String
   /// ```
   pub fn mk(message: &str, hash: &str) -> Self {
-    let ctor = LeanCtor::alloc(0, 2, 0);
-    ctor.set(0, LeanString::new(message));
-    ctor.set(1, LeanString::new(hash));
+    let ctor = LeanPutResponse::alloc();
+    ctor.set_obj(0, LeanString::new(message));
+    ctor.set_obj(1, LeanString::new(hash));
     Self::new(ctor.into())
   }
 }
@@ -39,10 +33,10 @@ impl LeanGetResponse<LeanOwned> {
   ///   bytes : ByteArray
   /// ```
   pub fn mk(message: &str, hash: &str, bytes: &[u8]) -> Self {
-    let ctor = LeanCtor::alloc(0, 3, 0);
-    ctor.set(0, LeanString::new(message));
-    ctor.set(1, LeanString::new(hash));
-    ctor.set(2, LeanByteArray::from_bytes(bytes));
+    let ctor = LeanGetResponse::alloc();
+    ctor.set_obj(0, LeanString::new(message));
+    ctor.set_obj(1, LeanString::new(hash));
+    ctor.set_obj(2, LeanByteArray::from_bytes(bytes));
     Self::new(ctor.into())
   }
 }

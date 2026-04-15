@@ -6,10 +6,12 @@
 //! - Tag 2: num (parent : Name) (i : Nat) (hash : Address)
 
 use crate::ix::env::{Name, NameData};
-use crate::lean::LeanIxName;
+use crate::lean::{
+  LeanIxName, LeanIxNameAnonymous, LeanIxNameNum, LeanIxNameStr,
+};
 use lean_ffi::nat::Nat;
 use lean_ffi::object::{
-  LeanArray, LeanBorrowed, LeanCtor, LeanOwned, LeanRef, LeanString,
+  LeanArray, LeanBorrowed, LeanOwned, LeanRef, LeanString,
 };
 
 use crate::ffi::builder::LeanBuildCache;
@@ -26,26 +28,26 @@ impl LeanIxName<LeanOwned> {
 
     let result = match name.as_data() {
       NameData::Anonymous(h) => {
-        let ctor = LeanCtor::alloc(0, 1, 0);
-        ctor.set(0, LeanIxAddress::build_from_hash(h));
+        let ctor = LeanIxNameAnonymous::alloc();
+        ctor.set_obj(0, LeanIxAddress::build_from_hash(h));
         Self::new(ctor.into())
       },
       NameData::Str(parent, s, h) => {
         let parent_obj = Self::build(cache, parent);
         let s_obj = LeanString::new(s.as_str());
-        let ctor = LeanCtor::alloc(1, 3, 0);
-        ctor.set(0, parent_obj);
-        ctor.set(1, s_obj);
-        ctor.set(2, LeanIxAddress::build_from_hash(h));
+        let ctor = LeanIxNameStr::alloc();
+        ctor.set_obj(0, parent_obj);
+        ctor.set_obj(1, s_obj);
+        ctor.set_obj(2, LeanIxAddress::build_from_hash(h));
         Self::new(ctor.into())
       },
       NameData::Num(parent, n, h) => {
         let parent_obj = Self::build(cache, parent);
         let n_obj = Nat::to_lean(n);
-        let ctor = LeanCtor::alloc(2, 3, 0);
-        ctor.set(0, parent_obj);
-        ctor.set(1, n_obj);
-        ctor.set(2, LeanIxAddress::build_from_hash(h));
+        let ctor = LeanIxNameNum::alloc();
+        ctor.set_obj(0, parent_obj);
+        ctor.set_obj(1, n_obj);
+        ctor.set_obj(2, LeanIxAddress::build_from_hash(h));
         Self::new(ctor.into())
       },
     };

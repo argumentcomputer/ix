@@ -8,11 +8,10 @@ use crate::ix::ixon::serialize::put_expr;
 use crate::ix::mutual::MutCtx;
 use crate::lean::{
   LeanIxBlockCompareDetail, LeanIxBlockCompareResult,
-  LeanIxBlockCompareResultMismatch,
+  LeanIxBlockCompareResultMatch, LeanIxBlockCompareResultMismatch,
+  LeanIxBlockCompareResultNotFound,
 };
-use lean_ffi::object::{
-  LeanBorrowed, LeanByteArray, LeanCtorScalar, LeanList, LeanOwned,
-};
+use lean_ffi::object::{LeanBorrowed, LeanByteArray, LeanList, LeanOwned};
 
 use crate::ffi::lean_env::{
   Cache as LeanCache, GlobalCache, decode_expr, decode_name,
@@ -76,16 +75,16 @@ impl LeanIxBlockCompareResult<LeanOwned> {
     first_diff_offset: u64,
   ) -> Self {
     let obj = if matched {
-      LeanOwned::box_usize(0) // match (tag 0, no fields)
+      LeanIxBlockCompareResultMatch::alloc().into() // match
     } else if not_found {
-      LeanOwned::box_usize(2) // notFound (tag 2, no fields)
+      LeanIxBlockCompareResultNotFound::alloc().into() // notFound
     } else {
       // mismatch
       let ctor = LeanIxBlockCompareResultMismatch::alloc();
       ctor.set_num_64(0, lean_size);
       ctor.set_num_64(1, rust_size);
       ctor.set_num_64(2, first_diff_offset);
-      ctor.into()
+      ctor.0
     };
     Self::new(obj)
   }
