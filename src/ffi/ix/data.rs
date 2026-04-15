@@ -10,9 +10,11 @@ use crate::lean::{
 use lean_ffi::nat::Nat;
 #[cfg(feature = "test-ffi")]
 use lean_ffi::object::LeanBorrowed;
-use lean_ffi::object::{LeanArray, LeanCtor, LeanOwned, LeanRef, LeanString};
+use lean_ffi::object::{
+  LeanArray, LeanCtor, LeanCtorScalar, LeanOwned, LeanRef, LeanString,
+};
 
-use lean_ffi::object::scalar_base;
+use crate::lean::{LeanIxDataValueBool, LeanIxSourceInfoSynthetic};
 
 use crate::ffi::builder::LeanBuildCache;
 
@@ -86,11 +88,11 @@ impl LeanIxSourceInfo<LeanOwned> {
       },
       // | synthetic (pos : Nat) (endPos : Nat) (canonical : Bool) -- tag 1
       SourceInfo::Synthetic(pos, end_pos, canonical) => {
-        let obj = LeanCtor::alloc(1, 2, 1);
-        obj.set(0, Nat::to_lean(pos));
-        obj.set(1, Nat::to_lean(end_pos));
-        obj.set_bool(scalar_base(&obj, 0), *canonical);
-        Self::new(obj.into())
+        let ctor = LeanIxSourceInfoSynthetic::alloc();
+        ctor.set_obj(0, Nat::to_lean(pos));
+        ctor.set_obj(1, Nat::to_lean(end_pos));
+        ctor.set_num_8(0, *canonical as u8);
+        Self::new(ctor.into())
       },
       // | none -- tag 2
       SourceInfo::None => Self::new(LeanCtor::alloc(2, 0, 0).into()),
@@ -117,11 +119,12 @@ impl<R: LeanRef> LeanIxSourceInfo<R> {
       },
       1 => {
         // synthetic: 2 obj fields (pos, end_pos), 1 scalar byte (canonical)
-        let canonical = ctor.get_bool(scalar_base(&ctor, 0));
+        let ctor = LeanIxSourceInfoSynthetic::from_ctor(ctor);
+        let canonical = ctor.get_num_8(0) != 0;
 
         SourceInfo::Synthetic(
-          Nat::from_obj(&ctor.get(0)),
-          Nat::from_obj(&ctor.get(1)),
+          Nat::from_obj(&ctor.as_ctor().get(0)),
+          Nat::from_obj(&ctor.as_ctor().get(1)),
           canonical,
         )
       },
@@ -299,10 +302,9 @@ impl LeanIxDataValue<LeanOwned> {
         Self::new(obj.into())
       },
       DataValue::OfBool(b) => {
-        // 0 object fields, 1 scalar byte
-        let obj = LeanCtor::alloc(1, 0, 1);
-        obj.set_bool(scalar_base(&obj, 0), *b);
-        Self::new(obj.into())
+        let ctor = LeanIxDataValueBool::alloc();
+        ctor.set_num_8(0, *b as u8);
+        Self::new(ctor.into())
       },
       DataValue::OfName(n) => {
         let obj = LeanCtor::alloc(2, 1, 0);
@@ -357,8 +359,8 @@ impl<R: LeanRef> LeanIxDataValue<R> {
       },
       1 => {
         // ofBool: 0 object fields, 1 scalar byte
-        let b = ctor.get_bool(scalar_base(&ctor, 0));
-        DataValue::OfBool(b)
+        let ctor = LeanIxDataValueBool::from_ctor(ctor);
+        DataValue::OfBool(ctor.get_num_8(0) != 0)
       },
       2 => {
         // ofName: 1 object field

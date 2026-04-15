@@ -1,8 +1,8 @@
 use multi_stark::p3_field::PrimeCharacteristicRing;
 
-use lean_ffi::object::{LeanBorrowed, LeanCtor, LeanRef};
+use lean_ffi::object::{LeanBorrowed, LeanCtor, LeanCtorScalar, LeanRef};
 
-use lean_ffi::object::scalar_base;
+use crate::lean::LeanAiurFunction;
 
 use crate::{
   FxIndexMap,
@@ -236,9 +236,9 @@ fn decode_function(ctor: LeanCtor<LeanBorrowed<'_>>) -> Function {
   let [body_obj, layout_obj] = ctor.objs::<2>();
   let body = decode_block(body_obj.as_ctor());
   let layout = decode_function_layout(layout_obj.as_ctor());
-  let s = scalar_base(&ctor, 0);
-  let entry = ctor.get_bool(s);
-  let constrained = ctor.get_bool(s + 1);
+  let func = LeanAiurFunction::from_ctor(ctor);
+  let entry = func.get_num_8(0) != 0;
+  let constrained = func.get_num_8(1) != 0;
   Function { body, layout, entry, constrained }
 }
 

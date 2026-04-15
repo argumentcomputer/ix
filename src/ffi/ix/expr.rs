@@ -26,9 +26,11 @@ use crate::lean::{
 use lean_ffi::nat::Nat;
 #[cfg(feature = "test-ffi")]
 use lean_ffi::object::LeanBorrowed;
-use lean_ffi::object::{LeanCtor, LeanOwned, LeanRef, LeanString};
+use lean_ffi::object::{
+  LeanCtor, LeanCtorScalar, LeanOwned, LeanRef, LeanString,
+};
 
-use lean_ffi::object::scalar_base;
+use crate::lean::{LeanIxExprForallE, LeanIxExprLam, LeanIxExprLetE};
 
 impl LeanIxExpr<LeanOwned> {
   /// Build a Lean Ix.Expr with embedded hash.
@@ -87,16 +89,12 @@ impl LeanIxExpr<LeanOwned> {
         let ty_obj = Self::build(cache, ty);
         let body_obj = Self::build(cache, body);
         let hash_obj = LeanIxAddress::build_from_hash(h);
-        // 4 object fields, 1 scalar byte for BinderInfo
-        let ctor = LeanCtor::alloc(6, 4, 1);
-        ctor.set(0, name_obj);
-        ctor.set(1, ty_obj);
-        ctor.set(2, body_obj);
-        ctor.set(3, hash_obj);
-        ctor.set_u8(
-          scalar_base(&ctor, 0),
-          LeanIxBinderInfo::<LeanOwned>::to_u8(bi),
-        );
+        let ctor = LeanIxExprLam::alloc();
+        ctor.set_obj(0, name_obj);
+        ctor.set_obj(1, ty_obj);
+        ctor.set_obj(2, body_obj);
+        ctor.set_obj(3, hash_obj);
+        ctor.set_num_8(0, LeanIxBinderInfo::<LeanOwned>::to_u8(bi));
         Self::new(ctor.into())
       },
       ExprData::ForallE(name, ty, body, bi, h) => {
@@ -104,15 +102,12 @@ impl LeanIxExpr<LeanOwned> {
         let ty_obj = Self::build(cache, ty);
         let body_obj = Self::build(cache, body);
         let hash_obj = LeanIxAddress::build_from_hash(h);
-        let ctor = LeanCtor::alloc(7, 4, 1);
-        ctor.set(0, name_obj);
-        ctor.set(1, ty_obj);
-        ctor.set(2, body_obj);
-        ctor.set(3, hash_obj);
-        ctor.set_u8(
-          scalar_base(&ctor, 0),
-          LeanIxBinderInfo::<LeanOwned>::to_u8(bi),
-        );
+        let ctor = LeanIxExprForallE::alloc();
+        ctor.set_obj(0, name_obj);
+        ctor.set_obj(1, ty_obj);
+        ctor.set_obj(2, body_obj);
+        ctor.set_obj(3, hash_obj);
+        ctor.set_num_8(0, LeanIxBinderInfo::<LeanOwned>::to_u8(bi));
         Self::new(ctor.into())
       },
       ExprData::LetE(name, ty, val, body, non_dep, h) => {
@@ -121,14 +116,13 @@ impl LeanIxExpr<LeanOwned> {
         let val_obj = Self::build(cache, val);
         let body_obj = Self::build(cache, body);
         let hash_obj = LeanIxAddress::build_from_hash(h);
-        // 5 object fields, 1 scalar byte for Bool
-        let ctor = LeanCtor::alloc(8, 5, 1);
-        ctor.set(0, name_obj);
-        ctor.set(1, ty_obj);
-        ctor.set(2, val_obj);
-        ctor.set(3, body_obj);
-        ctor.set(4, hash_obj);
-        ctor.set_bool(scalar_base(&ctor, 0), *non_dep);
+        let ctor = LeanIxExprLetE::alloc();
+        ctor.set_obj(0, name_obj);
+        ctor.set_obj(1, ty_obj);
+        ctor.set_obj(2, val_obj);
+        ctor.set_obj(3, body_obj);
+        ctor.set_obj(4, hash_obj);
+        ctor.set_num_8(0, *non_dep as u8);
         Self::new(ctor.into())
       },
       ExprData::Lit(lit, h) => {
@@ -210,9 +204,8 @@ impl<R: LeanRef> LeanIxExpr<R> {
         let ty = LeanIxExpr(ctor.get(1)).decode();
         let body = LeanIxExpr(ctor.get(2)).decode();
 
-        // Read BinderInfo scalar (4 obj fields: name, ty, body, hash)
-        let bi_byte = ctor.get_u8(scalar_base(&ctor, 0));
-        let bi = LeanIxBinderInfo::<LeanOwned>::from_u8(bi_byte);
+        let ctor = LeanIxExprLam::from_ctor(ctor);
+        let bi = LeanIxBinderInfo::<LeanOwned>::from_u8(ctor.get_num_8(0));
 
         Expr::lam(name, ty, body, bi)
       },
@@ -222,9 +215,8 @@ impl<R: LeanRef> LeanIxExpr<R> {
         let ty = LeanIxExpr(ctor.get(1)).decode();
         let body = LeanIxExpr(ctor.get(2)).decode();
 
-        // 4 obj fields: name, ty, body, hash
-        let bi_byte = ctor.get_u8(scalar_base(&ctor, 0));
-        let bi = LeanIxBinderInfo::<LeanOwned>::from_u8(bi_byte);
+        let ctor = LeanIxExprForallE::from_ctor(ctor);
+        let bi = LeanIxBinderInfo::<LeanOwned>::from_u8(ctor.get_num_8(0));
 
         Expr::all(name, ty, body, bi)
       },
@@ -235,8 +227,8 @@ impl<R: LeanRef> LeanIxExpr<R> {
         let val = LeanIxExpr(ctor.get(2)).decode();
         let body = LeanIxExpr(ctor.get(3)).decode();
 
-        // 5 obj fields: name, ty, val, body, hash
-        let non_dep = ctor.get_bool(scalar_base(&ctor, 0));
+        let ctor = LeanIxExprLetE::from_ctor(ctor);
+        let non_dep = ctor.get_num_8(0) != 0;
 
         Expr::letE(name, ty, val, body, non_dep)
       },

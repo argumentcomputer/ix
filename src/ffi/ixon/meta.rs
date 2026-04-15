@@ -14,9 +14,15 @@ use crate::lean::{
   LeanIxonDataValue, LeanIxonExprMetaArena, LeanIxonExprMetaData,
   LeanIxonNamed,
 };
-use lean_ffi::object::{LeanArray, LeanBorrowed, LeanCtor, LeanOwned, LeanRef};
-
-use lean_ffi::object::scalar_base;
+use crate::lean::{
+  LeanIxonConstantMetaAxio, LeanIxonConstantMetaCtor, LeanIxonConstantMetaDef,
+  LeanIxonConstantMetaIndc, LeanIxonConstantMetaQuot, LeanIxonConstantMetaRec,
+  LeanIxonDataValueBool, LeanIxonExprMetaApp, LeanIxonExprMetaBinder,
+  LeanIxonExprMetaLetBinder, LeanIxonExprMetaMdata, LeanIxonExprMetaPrj,
+};
+use lean_ffi::object::{
+  LeanArray, LeanBorrowed, LeanCtor, LeanCtorScalar, LeanOwned, LeanRef,
+};
 
 use crate::lean::LeanIxAddress;
 use crate::lean::LeanIxBinderInfo;
@@ -102,8 +108,8 @@ impl LeanIxonDataValue<LeanOwned> {
         ctor.into()
       },
       IxonDataValue::OfBool(b) => {
-        let ctor = LeanCtor::alloc(1, 0, 1);
-        ctor.set_bool(scalar_base(&ctor, 0), *b);
+        let ctor = LeanIxonDataValueBool::alloc();
+        ctor.set_num_8(0, *b as u8);
         ctor.into()
       },
       IxonDataValue::OfName(addr) => {
@@ -140,8 +146,8 @@ impl<R: LeanRef> LeanIxonDataValue<R> {
         LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array()).decode(),
       ),
       1 => {
-        let b = ctor.get_bool(scalar_base(&ctor, 0));
-        IxonDataValue::OfBool(b)
+        let ctor = LeanIxonDataValueBool::from_ctor(ctor);
+        IxonDataValue::OfBool(ctor.get_num_8(0) != 0)
       },
       2 => IxonDataValue::OfName(
         LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array()).decode(),
@@ -182,34 +188,29 @@ impl LeanIxonExprMetaData<LeanOwned> {
 
       ExprMetaData::App { children } => {
         // Tag 1, 0 obj fields, 16 scalar bytes (2× u64)
-        let ctor = LeanCtor::alloc(1, 0, 16);
-        let s = scalar_base(&ctor, 0);
-        ctor.set_u64(s, children[0]);
-        ctor.set_u64(s + 8, children[1]);
+        let ctor = LeanIxonExprMetaApp::alloc();
+        ctor.set_num_64(0, children[0]);
+        ctor.set_num_64(1, children[1]);
         ctor.into()
       },
 
       ExprMetaData::Binder { name, info, children } => {
         // Tag 2, 1 obj field (name), scalar: 2× u64 + u8 (info)
-        // Lean ABI sorts scalars by size descending: [tyChild: u64 @ 8] [bodyChild: u64 @ 16] [info: u8 @ 24]
-        // Offsets from obj_cptr: 1*8=8 base for scalar area
-        let ctor = LeanCtor::alloc(2, 1, 17);
-        ctor.set(0, LeanIxAddress::build(name));
-        let s = scalar_base(&ctor, 0);
-        ctor.set_u64(s, children[0]);
-        ctor.set_u64(s + 8, children[1]);
-        ctor.set_u8(s + 16, LeanIxBinderInfo::to_u8(info));
+        let ctor = LeanIxonExprMetaBinder::alloc();
+        ctor.set_obj(0, LeanIxAddress::build(name));
+        ctor.set_num_64(0, children[0]);
+        ctor.set_num_64(1, children[1]);
+        ctor.set_num_8(0, LeanIxBinderInfo::to_u8(info));
         ctor.into()
       },
 
       ExprMetaData::LetBinder { name, children } => {
         // Tag 3, 1 obj field (name), 24 scalar bytes (3× u64)
-        let ctor = LeanCtor::alloc(3, 1, 24);
-        ctor.set(0, LeanIxAddress::build(name));
-        let s = scalar_base(&ctor, 0);
-        ctor.set_u64(s, children[0]);
-        ctor.set_u64(s + 8, children[1]);
-        ctor.set_u64(s + 16, children[2]);
+        let ctor = LeanIxonExprMetaLetBinder::alloc();
+        ctor.set_obj(0, LeanIxAddress::build(name));
+        ctor.set_num_64(0, children[0]);
+        ctor.set_num_64(1, children[1]);
+        ctor.set_num_64(2, children[2]);
         ctor.into()
       },
 
@@ -222,18 +223,18 @@ impl LeanIxonExprMetaData<LeanOwned> {
 
       ExprMetaData::Prj { struct_name, child } => {
         // Tag 5, 1 obj field (structName), 8 scalar bytes (1× u64)
-        let ctor = LeanCtor::alloc(5, 1, 8);
-        ctor.set(0, LeanIxAddress::build(struct_name));
-        ctor.set_u64(scalar_base(&ctor, 0), *child);
+        let ctor = LeanIxonExprMetaPrj::alloc();
+        ctor.set_obj(0, LeanIxAddress::build(struct_name));
+        ctor.set_num_64(0, *child);
         ctor.into()
       },
 
       ExprMetaData::Mdata { mdata, child } => {
         // Tag 6, 1 obj field (mdata: Array KVMap), 8 scalar bytes (1× u64)
         let mdata_arr = build_kvmap_array(mdata);
-        let ctor = LeanCtor::alloc(6, 1, 8);
-        ctor.set(0, mdata_arr);
-        ctor.set_u64(scalar_base(&ctor, 0), *child);
+        let ctor = LeanIxonExprMetaMdata::alloc();
+        ctor.set_obj(0, mdata_arr);
+        ctor.set_num_64(0, *child);
         ctor.into()
       },
     };
@@ -254,20 +255,19 @@ impl<R: LeanRef> LeanIxonExprMetaData<R> {
     match ctor.tag() {
       1 => {
         // app: 0 obj fields, 2× u64 scalar
-        let s = scalar_base(&ctor, 0);
-        let children = [ctor.get_u64(s), ctor.get_u64(s + 8)];
+        let ctor = LeanIxonExprMetaApp::from_ctor(ctor);
+        let children = [ctor.get_num_64(0), ctor.get_num_64(1)];
         ExprMetaData::App { children }
       },
 
       2 => {
-        // binder: 1 obj field (name), scalar (Lean ABI: u64s first, then u8):
-        // [tyChild: u64 @ 0] [bodyChild: u64 @ 8] [info: u8 @ 16]
+        // binder: 1 obj field (name), scalar: 2× u64 + u8 (info)
         let name =
           LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array()).decode();
-        let s = scalar_base(&ctor, 0);
-        let ty_child = ctor.get_u64(s);
-        let body_child = ctor.get_u64(s + 8);
-        let info_byte = ctor.get_u8(s + 16);
+        let ctor = LeanIxonExprMetaBinder::from_ctor(ctor);
+        let ty_child = ctor.get_num_64(0);
+        let body_child = ctor.get_num_64(1);
+        let info_byte = ctor.get_num_8(0);
         let info = match info_byte {
           0 => BinderInfo::Default,
           1 => BinderInfo::Implicit,
@@ -282,9 +282,9 @@ impl<R: LeanRef> LeanIxonExprMetaData<R> {
         // letBinder: 1 obj field (name), 3× u64 scalar
         let name =
           LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array()).decode();
-        let s = scalar_base(&ctor, 0);
+        let ctor = LeanIxonExprMetaLetBinder::from_ctor(ctor);
         let children =
-          [ctor.get_u64(s), ctor.get_u64(s + 8), ctor.get_u64(s + 16)];
+          [ctor.get_num_64(0), ctor.get_num_64(1), ctor.get_num_64(2)];
         ExprMetaData::LetBinder { name, children }
       },
 
@@ -300,14 +300,16 @@ impl<R: LeanRef> LeanIxonExprMetaData<R> {
         // prj: 1 obj field (structName), 1× u64 scalar
         let struct_name =
           LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array()).decode();
-        let child = ctor.get_u64(scalar_base(&ctor, 0));
+        let ctor = LeanIxonExprMetaPrj::from_ctor(ctor);
+        let child = ctor.get_num_64(0);
         ExprMetaData::Prj { struct_name, child }
       },
 
       6 => {
         // mdata: 1 obj field (mdata: Array KVMap), 1× u64 scalar
         let mdata = decode_kvmap_array(ctor.get(0).as_array());
-        let child = ctor.get_u64(scalar_base(&ctor, 0));
+        let ctor = LeanIxonExprMetaMdata::from_ctor(ctor);
+        let child = ctor.get_num_64(0);
         ExprMetaData::Mdata { mdata, child }
       },
 
@@ -374,56 +376,55 @@ impl LeanIxonConstantMeta<LeanOwned> {
         type_root,
         value_root,
       } => {
-        let ctor = LeanCtor::alloc(1, 6, 16);
-        ctor.set(0, LeanIxAddress::build(name));
-        ctor.set(1, LeanIxAddress::build_array(lvls));
-        ctor.set(2, LeanIxReducibilityHints::build(hints));
-        ctor.set(3, LeanIxAddress::build_array(all));
-        ctor.set(4, LeanIxAddress::build_array(ctx));
-        ctor.set(5, LeanIxonExprMetaArena::build(arena));
-        let s = scalar_base(&ctor, 0);
-        ctor.set_u64(s, *type_root);
-        ctor.set_u64(s + 8, *value_root);
+        let ctor = LeanIxonConstantMetaDef::alloc();
+        ctor.set_obj(0, LeanIxAddress::build(name));
+        ctor.set_obj(1, LeanIxAddress::build_array(lvls));
+        ctor.set_obj(2, LeanIxReducibilityHints::build(hints));
+        ctor.set_obj(3, LeanIxAddress::build_array(all));
+        ctor.set_obj(4, LeanIxAddress::build_array(ctx));
+        ctor.set_obj(5, LeanIxonExprMetaArena::build(arena));
+        ctor.set_num_64(0, *type_root);
+        ctor.set_num_64(1, *value_root);
         ctor.into()
       },
 
       ConstantMeta::Axio { name, lvls, arena, type_root } => {
-        let ctor = LeanCtor::alloc(2, 3, 8);
-        ctor.set(0, LeanIxAddress::build(name));
-        ctor.set(1, LeanIxAddress::build_array(lvls));
-        ctor.set(2, LeanIxonExprMetaArena::build(arena));
-        ctor.set_u64(scalar_base(&ctor, 0), *type_root);
+        let ctor = LeanIxonConstantMetaAxio::alloc();
+        ctor.set_obj(0, LeanIxAddress::build(name));
+        ctor.set_obj(1, LeanIxAddress::build_array(lvls));
+        ctor.set_obj(2, LeanIxonExprMetaArena::build(arena));
+        ctor.set_num_64(0, *type_root);
         ctor.into()
       },
 
       ConstantMeta::Quot { name, lvls, arena, type_root } => {
-        let ctor = LeanCtor::alloc(3, 3, 8);
-        ctor.set(0, LeanIxAddress::build(name));
-        ctor.set(1, LeanIxAddress::build_array(lvls));
-        ctor.set(2, LeanIxonExprMetaArena::build(arena));
-        ctor.set_u64(scalar_base(&ctor, 0), *type_root);
+        let ctor = LeanIxonConstantMetaQuot::alloc();
+        ctor.set_obj(0, LeanIxAddress::build(name));
+        ctor.set_obj(1, LeanIxAddress::build_array(lvls));
+        ctor.set_obj(2, LeanIxonExprMetaArena::build(arena));
+        ctor.set_num_64(0, *type_root);
         ctor.into()
       },
 
       ConstantMeta::Indc { name, lvls, ctors, all, ctx, arena, type_root } => {
-        let ctor = LeanCtor::alloc(4, 6, 8);
-        ctor.set(0, LeanIxAddress::build(name));
-        ctor.set(1, LeanIxAddress::build_array(lvls));
-        ctor.set(2, LeanIxAddress::build_array(ctors));
-        ctor.set(3, LeanIxAddress::build_array(all));
-        ctor.set(4, LeanIxAddress::build_array(ctx));
-        ctor.set(5, LeanIxonExprMetaArena::build(arena));
-        ctor.set_u64(scalar_base(&ctor, 0), *type_root);
+        let ctor = LeanIxonConstantMetaIndc::alloc();
+        ctor.set_obj(0, LeanIxAddress::build(name));
+        ctor.set_obj(1, LeanIxAddress::build_array(lvls));
+        ctor.set_obj(2, LeanIxAddress::build_array(ctors));
+        ctor.set_obj(3, LeanIxAddress::build_array(all));
+        ctor.set_obj(4, LeanIxAddress::build_array(ctx));
+        ctor.set_obj(5, LeanIxonExprMetaArena::build(arena));
+        ctor.set_num_64(0, *type_root);
         ctor.into()
       },
 
       ConstantMeta::Ctor { name, lvls, induct, arena, type_root } => {
-        let ctor = LeanCtor::alloc(5, 4, 8);
-        ctor.set(0, LeanIxAddress::build(name));
-        ctor.set(1, LeanIxAddress::build_array(lvls));
-        ctor.set(2, LeanIxAddress::build(induct));
-        ctor.set(3, LeanIxonExprMetaArena::build(arena));
-        ctor.set_u64(scalar_base(&ctor, 0), *type_root);
+        let ctor = LeanIxonConstantMetaCtor::alloc();
+        ctor.set_obj(0, LeanIxAddress::build(name));
+        ctor.set_obj(1, LeanIxAddress::build_array(lvls));
+        ctor.set_obj(2, LeanIxAddress::build(induct));
+        ctor.set_obj(3, LeanIxonExprMetaArena::build(arena));
+        ctor.set_num_64(0, *type_root);
         ctor.into()
       },
 
@@ -437,15 +438,15 @@ impl LeanIxonConstantMeta<LeanOwned> {
         type_root,
         rule_roots,
       } => {
-        let ctor = LeanCtor::alloc(6, 7, 8);
-        ctor.set(0, LeanIxAddress::build(name));
-        ctor.set(1, LeanIxAddress::build_array(lvls));
-        ctor.set(2, LeanIxAddress::build_array(rules));
-        ctor.set(3, LeanIxAddress::build_array(all));
-        ctor.set(4, LeanIxAddress::build_array(ctx));
-        ctor.set(5, LeanIxonExprMetaArena::build(arena));
-        ctor.set(6, build_u64_array(rule_roots));
-        ctor.set_u64(scalar_base(&ctor, 0), *type_root);
+        let ctor = LeanIxonConstantMetaRec::alloc();
+        ctor.set_obj(0, LeanIxAddress::build(name));
+        ctor.set_obj(1, LeanIxAddress::build_array(lvls));
+        ctor.set_obj(2, LeanIxAddress::build_array(rules));
+        ctor.set_obj(3, LeanIxAddress::build_array(all));
+        ctor.set_obj(4, LeanIxAddress::build_array(ctx));
+        ctor.set_obj(5, LeanIxonExprMetaArena::build(arena));
+        ctor.set_obj(6, build_u64_array(rule_roots));
+        ctor.set_num_64(0, *type_root);
         ctor.into()
       },
     };
@@ -475,9 +476,9 @@ impl<R: LeanRef> LeanIxonConstantMeta<R> {
         let ctx = decode_address_array(ctor.get(4).as_array());
         let arena =
           LeanIxonExprMetaArena::new(ctor.get(5).to_owned_ref()).decode();
-        let s = scalar_base(&ctor, 0);
-        let type_root = ctor.get_u64(s);
-        let value_root = ctor.get_u64(s + 8);
+        let ctor = LeanIxonConstantMetaDef::from_ctor(ctor);
+        let type_root = ctor.get_num_64(0);
+        let value_root = ctor.get_num_64(1);
         ConstantMeta::Def {
           name,
           lvls,
@@ -497,7 +498,8 @@ impl<R: LeanRef> LeanIxonConstantMeta<R> {
         let lvls = decode_address_array(ctor.get(1).as_array());
         let arena =
           LeanIxonExprMetaArena::new(ctor.get(2).to_owned_ref()).decode();
-        let type_root = ctor.get_u64(scalar_base(&ctor, 0));
+        let ctor = LeanIxonConstantMetaAxio::from_ctor(ctor);
+        let type_root = ctor.get_num_64(0);
         ConstantMeta::Axio { name, lvls, arena, type_root }
       },
 
@@ -508,7 +510,8 @@ impl<R: LeanRef> LeanIxonConstantMeta<R> {
         let lvls = decode_address_array(ctor.get(1).as_array());
         let arena =
           LeanIxonExprMetaArena::new(ctor.get(2).to_owned_ref()).decode();
-        let type_root = ctor.get_u64(scalar_base(&ctor, 0));
+        let ctor = LeanIxonConstantMetaQuot::from_ctor(ctor);
+        let type_root = ctor.get_num_64(0);
         ConstantMeta::Quot { name, lvls, arena, type_root }
       },
 
@@ -522,7 +525,8 @@ impl<R: LeanRef> LeanIxonConstantMeta<R> {
         let ctx = decode_address_array(ctor.get(4).as_array());
         let arena =
           LeanIxonExprMetaArena::new(ctor.get(5).to_owned_ref()).decode();
-        let type_root = ctor.get_u64(scalar_base(&ctor, 0));
+        let ctor = LeanIxonConstantMetaIndc::from_ctor(ctor);
+        let type_root = ctor.get_num_64(0);
         ConstantMeta::Indc { name, lvls, ctors, all, ctx, arena, type_root }
       },
 
@@ -535,7 +539,8 @@ impl<R: LeanRef> LeanIxonConstantMeta<R> {
           LeanIxAddress::from_borrowed(ctor.get(2).as_byte_array()).decode();
         let arena =
           LeanIxonExprMetaArena::new(ctor.get(3).to_owned_ref()).decode();
-        let type_root = ctor.get_u64(scalar_base(&ctor, 0));
+        let ctor = LeanIxonConstantMetaCtor::from_ctor(ctor);
+        let type_root = ctor.get_num_64(0);
         ConstantMeta::Ctor { name, lvls, induct, arena, type_root }
       },
 
@@ -550,7 +555,8 @@ impl<R: LeanRef> LeanIxonConstantMeta<R> {
         let arena =
           LeanIxonExprMetaArena::new(ctor.get(5).to_owned_ref()).decode();
         let rule_roots = decode_u64_array(ctor.get(6).as_array());
-        let type_root = ctor.get_u64(scalar_base(&ctor, 0));
+        let ctor = LeanIxonConstantMetaRec::from_ctor(ctor);
+        let type_root = ctor.get_num_64(0);
         ConstantMeta::Rec {
           name,
           lvls,

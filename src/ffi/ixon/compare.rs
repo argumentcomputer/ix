@@ -6,12 +6,13 @@ use crate::ix::compile::{BlockCache, CompileState, compile_env, compile_expr};
 use crate::ix::env::Name;
 use crate::ix::ixon::serialize::put_expr;
 use crate::ix::mutual::MutCtx;
-use crate::lean::{LeanIxBlockCompareDetail, LeanIxBlockCompareResult};
-use lean_ffi::object::{
-  LeanBorrowed, LeanByteArray, LeanCtor, LeanCtorScalar, LeanList, LeanOwned,
+use crate::lean::{
+  LeanIxBlockCompareDetail, LeanIxBlockCompareResult,
+  LeanIxBlockCompareResultMismatch,
 };
-
-use lean_ffi::object::scalar_base;
+use lean_ffi::object::{
+  LeanBorrowed, LeanByteArray, LeanCtorScalar, LeanList, LeanOwned,
+};
 
 use crate::ffi::lean_env::{
   Cache as LeanCache, GlobalCache, decode_expr, decode_name,
@@ -75,16 +76,15 @@ impl LeanIxBlockCompareResult<LeanOwned> {
     first_diff_offset: u64,
   ) -> Self {
     let obj = if matched {
-      LeanCtor::alloc(0, 0, 0).into() // match
+      LeanOwned::box_usize(0) // match (tag 0, no fields)
     } else if not_found {
-      LeanCtor::alloc(2, 0, 0).into() // notFound
+      LeanOwned::box_usize(2) // notFound (tag 2, no fields)
     } else {
       // mismatch
-      let ctor = LeanCtor::alloc(1, 0, 24);
-      let s = scalar_base(&ctor, 0);
-      ctor.set_u64(s, lean_size);
-      ctor.set_u64(s + 8, rust_size);
-      ctor.set_u64(s + 16, first_diff_offset);
+      let ctor = LeanIxBlockCompareResultMismatch::alloc();
+      ctor.set_num_64(0, lean_size);
+      ctor.set_num_64(1, rust_size);
+      ctor.set_num_64(2, first_diff_offset);
       ctor.into()
     };
     Self::new(obj)
@@ -98,12 +98,11 @@ impl LeanIxBlockCompareDetail<LeanOwned> {
     lean_sharing_len: u64,
     rust_sharing_len: u64,
   ) -> Self {
-    let ctor = LeanCtor::alloc(0, 1, 16);
-    ctor.set(0, result);
-    let out = Self::new(ctor.into());
-    out.set_64(0, lean_sharing_len);
-    out.set_64(1, rust_sharing_len);
-    out
+    let ctor = Self::alloc();
+    ctor.set_obj(0, result);
+    ctor.set_num_64(0, lean_sharing_len);
+    ctor.set_num_64(1, rust_sharing_len);
+    ctor
   }
 }
 
