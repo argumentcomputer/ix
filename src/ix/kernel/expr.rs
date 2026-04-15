@@ -101,8 +101,10 @@ impl<M: KernelMode> KExpr<M> {
     &self.info().mdata
   }
 
-  pub fn ptr_key(&self) -> usize {
-    Arc::as_ptr(&self.0) as usize
+  /// Content-addressed key for cache lookups. Returns a clone of the
+  /// blake3 hash Arc — cheap (refcount bump) and immune to pointer reuse.
+  pub fn hash_key(&self) -> Addr {
+    self.addr().clone()
   }
 
   pub fn ptr_eq(&self, other: &KExpr<M>) -> bool {

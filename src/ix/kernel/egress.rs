@@ -50,8 +50,8 @@ fn egress_levels(
   levels.iter().map(|l| egress_level(l, level_params)).collect()
 }
 
-/// Expression egress cache, keyed by pointer identity.
-type Cache = FxHashMap<usize, env::Expr>;
+/// Expression egress cache, keyed by content hash.
+type Cache = FxHashMap<super::env::Addr, env::Expr>;
 
 /// Convert a zero kernel expression to a Lean expression.
 fn egress_expr(
@@ -59,8 +59,8 @@ fn egress_expr(
   level_params: &[Name],
   cache: &mut Cache,
 ) -> env::Expr {
-  let ptr = expr.ptr_key();
-  if let Some(cached) = cache.get(&ptr) {
+  let hk = expr.hash_key();
+  if let Some(cached) = cache.get(&hk) {
     return cached.clone();
   }
 
@@ -108,7 +108,7 @@ fn egress_expr(
     .rev()
     .fold(inner, |acc, kvs| env::Expr::mdata(kvs.clone(), acc));
 
-  cache.insert(ptr, result.clone());
+  cache.insert(hk, result.clone());
   result
 }
 

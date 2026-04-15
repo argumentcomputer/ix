@@ -2,6 +2,8 @@
 
 #[cfg(test)]
 mod tests {
+  use std::sync::Arc;
+
   use crate::ix::env::ReducibilityHints;
   use crate::ix::kernel::env::KEnv;
   use crate::ix::kernel::mode::Meta;
@@ -14,7 +16,7 @@ mod tests {
   /// good_def basicDef : Type := Prop
   #[test]
   fn good_basic_def() {
-    let env = KEnv::<Meta>::new();
+    let env = Arc::new(KEnv::<Meta>::new());
     let (id, c) = mk_defn(
       "basicDef",
       0,
@@ -31,7 +33,7 @@ mod tests {
   /// Value `Type` has type `Type 1`, not `Prop`.
   #[test]
   fn bad_def_type_mismatch() {
-    let env = KEnv::<Meta>::new();
+    let env = Arc::new(KEnv::<Meta>::new());
     let (id, c) =
       mk_defn("badDef", 0, vec![], sort0(), sort1(), ReducibilityHints::Abbrev);
     env.insert(id.clone(), c);
@@ -41,7 +43,7 @@ mod tests {
   /// good_def arrowType : Type := Prop → Prop
   #[test]
   fn good_arrow_type() {
-    let env = KEnv::<Meta>::new();
+    let env = Arc::new(KEnv::<Meta>::new());
     let (id, c) = mk_defn(
       "arrowType",
       0,
@@ -57,7 +59,7 @@ mod tests {
   /// good_def dependentType : Prop := ∀ (p : Prop), p
   #[test]
   fn good_dependent_type() {
-    let env = KEnv::<Meta>::new();
+    let env = Arc::new(KEnv::<Meta>::new());
     let (id, c) = mk_defn(
       "dependentType",
       0,
@@ -73,7 +75,7 @@ mod tests {
   /// good_def constType : Type → Type → Type := fun x y => x
   #[test]
   fn good_const_type() {
-    let env = KEnv::<Meta>::new();
+    let env = Arc::new(KEnv::<Meta>::new());
     let (id, c) = mk_defn(
       "constType",
       0,
@@ -90,7 +92,7 @@ mod tests {
   /// Requires `constType` in env. `constType Prop (Prop → Prop)` reduces to `Prop`.
   #[test]
   fn good_beta_reduction() {
-    let env = KEnv::<Meta>::new();
+    let env = Arc::new(KEnv::<Meta>::new());
     // constType : Type → Type → Type := fun x y => x
     let (ct_id, ct_c) = mk_defn(
       "constType",
@@ -120,7 +122,7 @@ mod tests {
   /// good_def betaReduction2 : ∀ (p : Prop), constType Prop (Prop → Prop) := fun p => p
   #[test]
   fn good_beta_reduction2() {
-    let env = KEnv::<Meta>::new();
+    let env = Arc::new(KEnv::<Meta>::new());
     let (ct_id, ct_c) = mk_defn(
       "constType",
       0,
@@ -146,7 +148,7 @@ mod tests {
   /// `id Prop` must WHNF to `Prop` (a Sort) for the forall to typecheck.
   #[test]
   fn good_forall_sort_whnf() {
-    let env = KEnv::<Meta>::new();
+    let env = Arc::new(KEnv::<Meta>::new());
     // id : Type → Type := fun x => x
     let (id_id, id_c) = mk_defn(
       "id",
@@ -177,7 +179,7 @@ mod tests {
   /// `constType` is `Type → Type → Type`, not a Sort — can't be a type annotation.
   #[test]
   fn bad_non_type_type() {
-    let env = KEnv::<Meta>::new();
+    let env = Arc::new(KEnv::<Meta>::new());
     let (ct_id, ct_c) = mk_defn(
       "constType",
       0,
@@ -211,7 +213,7 @@ mod tests {
   /// But type is Sort 1 = Type, so Prop : Type is correct.
   #[test]
   fn good_level_comp1() {
-    let env = KEnv::<Meta>::new();
+    let env = Arc::new(KEnv::<Meta>::new());
     let ty = sort(usucc(uzero())); // Sort 1
     let val = sort(uimax(usucc(uzero()), uzero())); // Sort (imax 1 0)
     let (id, c) =
@@ -225,7 +227,7 @@ mod tests {
   /// Type : Sort 2 is correct.
   #[test]
   fn good_level_comp2() {
-    let env = KEnv::<Meta>::new();
+    let env = Arc::new(KEnv::<Meta>::new());
     let ty = sort(usucc(usucc(uzero()))); // Sort 2
     let val = sort(uimax(uzero(), usucc(uzero()))); // Sort (imax 0 1)
     let (id, c) =
@@ -238,7 +240,7 @@ mod tests {
   /// imax 2 1 = max 2 1 = 2, so Sort(imax 2 1) = Sort 2. Sort 2 : Sort 3.
   #[test]
   fn good_level_comp3() {
-    let env = KEnv::<Meta>::new();
+    let env = Arc::new(KEnv::<Meta>::new());
     let ty = sort(usucc(usucc(usucc(uzero())))); // Sort 3
     let val = sort(uimax(usucc(usucc(uzero())), usucc(uzero()))); // Sort (imax 2 1)
     let (id, c) =
@@ -252,7 +254,7 @@ mod tests {
   /// Prop : Type 0 is correct.
   #[test]
   fn good_level_comp4() {
-    let env = KEnv::<Meta>::new();
+    let env = Arc::new(KEnv::<Meta>::new());
     let ty = sort(usucc(uzero())); // Type 0 = Sort 1
     let val = sort(uimax(param(0), uzero())); // Sort (imax u 0)
     let (id, c) = mk_defn(
@@ -272,7 +274,7 @@ mod tests {
   /// Sort u : Type u = Sort (u+1).
   #[test]
   fn good_level_comp5() {
-    let env = KEnv::<Meta>::new();
+    let env = Arc::new(KEnv::<Meta>::new());
     let ty = sort(usucc(param(0))); // Type u = Sort (u+1)
     let val = sort(uimax(param(0), param(0))); // Sort (imax u u)
     let (id, c) = mk_defn(
@@ -297,7 +299,7 @@ mod tests {
   /// And (p : Prop) → Prop : Prop.
   #[test]
   fn good_imax1() {
-    let env = KEnv::<Meta>::new();
+    let env = Arc::new(KEnv::<Meta>::new());
     // (p : Prop) → Prop
     let ty = npi("p", sort0(), sort0());
     // fun p => Type → p
@@ -316,7 +318,7 @@ mod tests {
   /// fun α => (Type → α) : (α : Type) → Type 1.
   #[test]
   fn good_imax2() {
-    let env = KEnv::<Meta>::new();
+    let env = Arc::new(KEnv::<Meta>::new());
     // (α : Type) → Type 1
     let ty = npi("α", sort1(), sort(usucc(usucc(uzero()))));
     // fun α => Type → α
@@ -334,7 +336,7 @@ mod tests {
   /// inferVar : ∀ (f : Prop) (g : f), f := fun f g => g
   #[test]
   fn good_infer_var() {
-    let env = KEnv::<Meta>::new();
+    let env = Arc::new(KEnv::<Meta>::new());
     // ∀ (f : Prop) (g : f), f
     let ty = npi("f", sort0(), npi("g", var(0), var(1)));
     // fun f g => g
@@ -349,7 +351,7 @@ mod tests {
   ///   f (fun p => p → p) := fun f g => g (fun p => p → p)
   #[test]
   fn good_def_eq_lambda() {
-    let env = KEnv::<Meta>::new();
+    let env = Arc::new(KEnv::<Meta>::new());
     // f : (Prop → Prop) → Prop
     let f_ty = pi(pi(sort0(), sort0()), sort0());
     // g : (a : Prop → Prop) → f a
@@ -384,7 +386,7 @@ mod tests {
   /// The let reduces: x = Sort 0, so the value is Sort 0 : Sort 1.
   #[test]
   fn good_let_type() {
-    let env = KEnv::<Meta>::new();
+    let env = Arc::new(KEnv::<Meta>::new());
     let ty = sort1();
     // let x : Sort 1 := Sort 0; x (= bvar 0)
     let val = let_(sort1(), sort0(), var(0));
@@ -398,7 +400,7 @@ mod tests {
   /// Requires aDepProp and mkADepProp axioms.
   #[test]
   fn good_let_type_dep() {
-    let env = KEnv::<Meta>::new();
+    let env = Arc::new(KEnv::<Meta>::new());
     // axiom aDepProp : Type → Prop
     let (adp_id, adp_c) = mk_axiom("aDepProp", 0, vec![], pi(sort1(), sort0()));
     env.insert(adp_id, adp_c);
@@ -424,7 +426,7 @@ mod tests {
   /// The type has a let that reduces to Sort 0 = Prop. aProp : Prop.
   #[test]
   fn good_let_red() {
-    let env = KEnv::<Meta>::new();
+    let env = Arc::new(KEnv::<Meta>::new());
     let (ap_id, ap_c) = mk_axiom("aProp", 0, vec![], sort0());
     env.insert(ap_id, ap_c);
 
@@ -444,7 +446,7 @@ mod tests {
   /// tut06_bad01: definition with duplicate level params [u, u]
   #[test]
   fn bad_duplicate_level_params() {
-    let env = KEnv::<Meta>::new();
+    let env = Arc::new(KEnv::<Meta>::new());
     let (id, c) = mk_defn(
       "tut06_bad01",
       2,                                // claims 2 level params
@@ -473,7 +475,7 @@ mod tests {
   /// The innermost domain `bvar0` refers to a variable of type Prop, not a Sort.
   #[test]
   fn bad_forall_sort_bad() {
-    let env = KEnv::<Meta>::new();
+    let env = Arc::new(KEnv::<Meta>::new());
     // id : {α : Sort u} → α → α, simplified as Type → Type → Type... no.
     // id.{2} : Sort 2 → Sort 2 := fun x => x
     // id.{2} (Sort 1) (Sort 0) = Sort 0 = Prop
@@ -553,7 +555,7 @@ mod tests {
   /// where levelParamF.{u} : Sort u → Sort u → Sort u := fun α β => α
   #[test]
   fn good_level_params() {
-    let env = KEnv::<Meta>::new();
+    let env = Arc::new(KEnv::<Meta>::new());
     // levelParamF.{u} : Sort u → Sort u → Sort u := fun α β => α
     let lpf_ty = pi(sort(param(0)), pi(sort(param(0)), sort(param(0))));
     // Inside the pi's: at depth 2, α=var(1), β=var(0). Return α = var(1).
@@ -592,7 +594,7 @@ mod tests {
   /// which has type Sort 1 (a function type), not Sort 0.
   #[test]
   fn bad_non_prop_thm() {
-    let env = KEnv::<Meta>::new();
+    let env = Arc::new(KEnv::<Meta>::new());
     // type = Sort 0 = Prop
     // value = Prop → bvar0 = ∀ (_ : Prop), bvar0
     // But inside the pi body bvar0 refers to the pi's variable (of type Prop).

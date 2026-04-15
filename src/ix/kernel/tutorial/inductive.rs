@@ -2,6 +2,8 @@
 
 #[cfg(test)]
 mod tests {
+  use std::sync::Arc;
+
   use crate::ix::env::{Name, ReducibilityHints};
   use crate::ix::kernel::constant::{KConst, RecRule};
   use crate::ix::kernel::env::KEnv;
@@ -14,7 +16,7 @@ mod tests {
 
   /// Helper: build an inductive with no ctors, no recursor, just checking the type
   fn mk_simple_indc(
-    env: &mut KEnv<Meta>,
+    env: &KEnv<Meta>,
     name: &str,
     lvls: u64,
     level_params: &[Name],
@@ -77,7 +79,7 @@ mod tests {
   /// inductBadNonSort: inductive with type = constType (not a Sort)
   #[test]
   fn bad_induct_non_sort_type() {
-    let mut env = KEnv::<Meta>::new();
+    let env = Arc::new(KEnv::<Meta>::new());
     let (ct_id, ct_c) = mk_defn(
       "constType",
       0,
@@ -89,7 +91,7 @@ mod tests {
     env.insert(ct_id, ct_c);
 
     let id = mk_simple_indc(
-      &mut env,
+      &env,
       "inductBadNonSort",
       0,
       &[],
@@ -101,12 +103,12 @@ mod tests {
   /// inductBadNonSort2: inductive with type = aType (axiom, not a Sort)
   #[test]
   fn bad_induct_non_sort_type2() {
-    let mut env = KEnv::<Meta>::new();
+    let env = Arc::new(KEnv::<Meta>::new());
     let (at_id, at_c) = mk_axiom("aType", 0, vec![], sort1());
     env.insert(at_id, at_c);
 
     let id = mk_simple_indc(
-      &mut env,
+      &env,
       "inductBadNonSort2",
       0,
       &[],
@@ -118,7 +120,7 @@ mod tests {
   /// inductTooFewParams: claims numParams=2 but type only has 1 arrow
   #[test]
   fn bad_induct_too_few_params() {
-    let env = KEnv::<Meta>::new();
+    let env = Arc::new(KEnv::<Meta>::new());
     let block_id = mk_id("inductTooFewParams");
     let rec_id = mk_id("inductTooFewParams.rec");
     env.insert(
@@ -172,7 +174,7 @@ mod tests {
   /// indNeg: classic negative recursive occurrence: (I → I) → I
   #[test]
   fn bad_induct_negative_occurrence() {
-    let env = KEnv::<Meta>::new();
+    let env = Arc::new(KEnv::<Meta>::new());
     let n = "indNeg";
     let block_id = mk_id(n);
     let ctor_id = mk_id("indNeg.mk");
@@ -256,7 +258,7 @@ mod tests {
   /// typeWithTooHighTypeField: inductive Type 1 with a field of Type 1 (too high)
   #[test]
   fn bad_induct_too_high_field() {
-    let env = KEnv::<Meta>::new();
+    let env = Arc::new(KEnv::<Meta>::new());
     let n = "typeWithTooHighTypeField";
     let block_id = mk_id(n);
     let ctor_id = mk_id(&format!("{n}.mk"));
@@ -346,7 +348,7 @@ mod tests {
   /// inductWrongCtorParams: constructor's result has wrong parameter application
   #[test]
   fn bad_induct_wrong_ctor_params() {
-    let env = KEnv::<Meta>::new();
+    let env = Arc::new(KEnv::<Meta>::new());
     // axiom aProp : Prop
     let (ap_id, ap_c) = mk_axiom("aProp", 0, vec![], sort0());
     env.insert(ap_id, ap_c);
@@ -434,7 +436,7 @@ mod tests {
   /// Constructor: (Nat → (I → Nat)) → I — I appears in negative position
   #[test]
   fn bad_induct_refl_occ_left() {
-    let env = KEnv::<Meta>::new();
+    let env = Arc::new(KEnv::<Meta>::new());
     // Need Nat as an axiom
     let (nat_id, nat_c) = mk_axiom("Nat", 0, vec![], sort1());
     env.insert(nat_id, nat_c);
@@ -525,7 +527,7 @@ mod tests {
   /// I : Type → Type, ctor mk : (α : Type) → (Nat → I (I α)) → I α
   #[test]
   fn bad_induct_refl_occ_in_index() {
-    let env = KEnv::<Meta>::new();
+    let env = Arc::new(KEnv::<Meta>::new());
     let (nat_id, nat_c) = mk_axiom("Nat", 0, vec![], sort1());
     env.insert(nat_id, nat_c);
 
@@ -626,7 +628,7 @@ mod tests {
   /// I : Prop → Prop → Type, mk : (x : Prop) → (y : Prop) → I y x  (swapped!)
   #[test]
   fn bad_induct_wrong_ctor_res_params() {
-    let env = KEnv::<Meta>::new();
+    let env = Arc::new(KEnv::<Meta>::new());
     let n = "inductWrongCtorResParams";
     let block_id = mk_id(n);
     let ctor_id = mk_id(&format!("{n}.mk"));
@@ -716,7 +718,7 @@ mod tests {
   /// The kernel should NOT reduce the constructor's overall type.
   #[test]
   fn bad_reduce_ctor_type() {
-    let env = KEnv::<Meta>::new();
+    let env = Arc::new(KEnv::<Meta>::new());
     // id1 : Sort 1 → Sort 1 := fun x => x
     let (id1_id, id1_c) = mk_defn(
       "id1",
@@ -809,7 +811,7 @@ mod tests {
   /// But the kernel should catch the negative occurrence before reducing.
   #[test]
   fn bad_induct_neg_reducible() {
-    let env = KEnv::<Meta>::new();
+    let env = Arc::new(KEnv::<Meta>::new());
     // constType : Type → Type → Type := fun x y => x
     let (ct_id, ct_c) = mk_defn(
       "constType",
@@ -924,7 +926,7 @@ mod tests {
   /// predWithTypeField : Prop — inductive Prop with a Type field (allowed for Props)
   #[test]
   fn good_pred_with_type_field() {
-    let env = KEnv::<Meta>::new();
+    let env = Arc::new(KEnv::<Meta>::new());
     let n = "PredWithTypeField";
     let block_id = mk_id(n);
     let ctor_id = mk_id(&format!("{n}.mk"));
@@ -1010,7 +1012,7 @@ mod tests {
   /// typeWithTypeField : Type 1 — inductive Type 1 with a Type field (allowed)
   #[test]
   fn good_type_with_type_field() {
-    let env = KEnv::<Meta>::new();
+    let env = Arc::new(KEnv::<Meta>::new());
     let n = "TypeWithTypeField";
     let block_id = mk_id(n);
     let ctor_id = mk_id(&format!("{n}.mk"));
@@ -1101,7 +1103,7 @@ mod tests {
   /// swapped level params [u2, u1] instead of [u1, u2]
   #[test]
   fn bad_induct_wrong_ctor_res_level() {
-    let env = KEnv::<Meta>::new();
+    let env = Arc::new(KEnv::<Meta>::new());
     let n = "inductWrongCtorResLevel";
     let block_id = mk_id(n);
     let ctor_id = mk_id(&format!("{n}.mk"));
@@ -1205,7 +1207,7 @@ mod tests {
   /// I : Prop → Prop, mk : I (I aProp)  — recursive occurrence in index
   #[test]
   fn bad_induct_in_index() {
-    let env = KEnv::<Meta>::new();
+    let env = Arc::new(KEnv::<Meta>::new());
     let (ap_id, ap_c) = mk_axiom("aProp", 0, vec![], sort0());
     env.insert(ap_id, ap_c);
 
@@ -1294,9 +1296,9 @@ mod tests {
   /// inductLevelParam: inductive with duplicate level params [u, u]
   #[test]
   fn bad_induct_dup_level_params() {
-    let mut env = KEnv::<Meta>::new();
+    let env = Arc::new(KEnv::<Meta>::new());
     let id = mk_simple_indc(
-      &mut env,
+      &env,
       "inductLevelParam",
       2,                             // 2 level params
       &[mk_name("u"), mk_name("u")], // duplicate!
@@ -1313,7 +1315,7 @@ mod tests {
   /// BoolProp : Prop with 2 constructors — recursor can only eliminate into Prop
   #[test]
   fn good_bool_prop_rec() {
-    let env = KEnv::<Meta>::new();
+    let env = Arc::new(KEnv::<Meta>::new());
 
     let n = "BoolProp";
     let block_id = mk_id(n);
@@ -1444,7 +1446,7 @@ mod tests {
   /// in ctor parameter positions.
   #[test]
   fn good_reduce_ctor_param() {
-    let env = KEnv::<Meta>::new();
+    let env = Arc::new(KEnv::<Meta>::new());
 
     // id1 : Sort 1 → Sort 1 := fun x => x
     let (id1_id, id1_c) = mk_defn(
@@ -1588,7 +1590,7 @@ mod tests {
   /// Kernel should reduce ctor param types and accept this reflexive inductive.
   #[test]
   fn good_reduce_ctor_param_refl() {
-    let env = KEnv::<Meta>::new();
+    let env = Arc::new(KEnv::<Meta>::new());
 
     // id1 : Sort 1 → Sort 1 := fun x => x
     let (id1_id, id1_c) = mk_defn(
@@ -1706,7 +1708,7 @@ mod tests {
   /// Field: α → constType (I α) α reduces to α → I α (reflexive)
   #[test]
   fn good_reduce_ctor_param_refl2() {
-    let env = KEnv::<Meta>::new();
+    let env = Arc::new(KEnv::<Meta>::new());
 
     let (id1_id, id1_c) = mk_defn(
       "id1",

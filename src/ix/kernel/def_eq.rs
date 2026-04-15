@@ -10,6 +10,7 @@
 use crate::ix::ixon::constant::DefKind;
 
 use super::constant::KConst;
+use super::env::Addr;
 use super::error::{TcError, u64_to_usize};
 use super::expr::{ExprData, KExpr};
 use super::id::KId;
@@ -18,9 +19,10 @@ use super::mode::KernelMode;
 use super::subst::lift;
 use super::tc::{
   MAX_DEF_EQ_DEPTH, MAX_WHNF_FUEL, TypeChecker, collect_app_spine,
+  empty_ctx_addr,
 };
 
-impl<'env, M: KernelMode> TypeChecker<'env, M> {
+impl<M: KernelMode> TypeChecker<M> {
   /// Check definitional equality of two expressions.
   pub fn is_def_eq(
     &mut self,
@@ -35,40 +37,40 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
     // Context-aware EquivManager: closed exprs (lbr==0) share across contexts,
     // open exprs under let-bindings are isolated by ctx_id.
     let eq_ctx = if self.num_let_bindings > 0 && (a.lbr() > 0 || b.lbr() > 0) {
-      self.ctx_id
+      self.ctx_id.clone()
     } else {
-      0
+      empty_ctx_addr()
     };
-    if self.equiv_manager.is_equiv((a.ptr_key(), eq_ctx), (b.ptr_key(), eq_ctx))
+    if self
+      .equiv_manager
+      .is_equiv((a.hash_key(), eq_ctx.clone()), (b.hash_key(), eq_ctx.clone()))
     {
       return Ok(true);
     }
 
-    let (lo, hi) = canonical_pair(a.ptr_key(), b.ptr_key());
-    let cache_key = (lo, hi, self.ctx_id);
-    if let Some(&cached) = self.def_eq_cache.get(&cache_key) {
-      return Ok(cached);
+    let (lo, hi) = canonical_pair(a.hash_key(), b.hash_key());
+    let cache_key = (lo, hi, self.ctx_id.clone());
+    if let Some(cached) = self.env.def_eq_cache.get(&cache_key) {
+      return Ok(*cached);
     }
 
     // Equiv-root second-chance: if (a,b) not cached, try (root(a), root(b)).
-    // If a ≡ a' and b ≡ b' (in equiv_manager) and (a',b') was cached,
-    // then (a,b) has the same result without recomputation.
     {
-      let a_key = (a.ptr_key(), eq_ctx);
-      let b_key = (b.ptr_key(), eq_ctx);
+      let a_key = (a.hash_key(), eq_ctx.clone());
+      let b_key = (b.hash_key(), eq_ctx.clone());
       if let (Some(a_root), Some(b_root)) = (
-        self.equiv_manager.find_root_key(a_key),
-        self.equiv_manager.find_root_key(b_key),
+        self.equiv_manager.find_root_key(a_key.clone()),
+        self.equiv_manager.find_root_key(b_key.clone()),
       ) && (a_root != a_key || b_root != b_key)
       {
         let (rlo, rhi) = canonical_pair(a_root.0, b_root.0);
-        let root_cache_key = (rlo, rhi, self.ctx_id);
-        if let Some(&cached) = self.def_eq_cache.get(&root_cache_key) {
-          if cached {
+        let root_cache_key = (rlo, rhi, self.ctx_id.clone());
+        if let Some(cached) = self.env.def_eq_cache.get(&root_cache_key) {
+          if *cached {
             self.equiv_manager.add_equiv(a_key, b_key);
           }
-          self.def_eq_cache.insert(cache_key, cached);
-          return Ok(cached);
+          self.env.def_eq_cache.insert(cache_key, *cached);
+          return Ok(*cached);
         }
       }
     }
@@ -89,9 +91,9 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
     if ok {
       self
         .equiv_manager
-        .add_equiv((a.ptr_key(), eq_ctx), (b.ptr_key(), eq_ctx));
+        .add_equiv((a.hash_key(), eq_ctx.clone()), (b.hash_key(), eq_ctx));
     }
-    self.def_eq_cache.insert(cache_key, ok);
+    self.env.def_eq_cache.insert(cache_key, ok);
     Ok(ok)
   }
 
@@ -215,14 +217,14 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
             && ah.addr == bh.addr
             && self.is_regular(ah)
           {
-            let (lo, hi) = canonical_pair(wa.ptr_key(), wb.ptr_key());
-            let failure_key = (lo, hi, self.ctx_id);
-            if !self.def_eq_failure.contains(&failure_key) {
+            let (lo, hi) = canonical_pair(wa.hash_key(), wb.hash_key());
+            let failure_key = (lo, hi, self.ctx_id.clone());
+            if !self.env.def_eq_failure.contains(&failure_key) {
               if let Some(result) = self.try_same_head_spine(&wa, &wb)? {
                 return Ok(result);
               }
               // Spine comparison was attempted and failed — cache it
-              self.def_eq_failure.insert(failure_key);
+              self.env.def_eq_failure.insert(failure_key);
             }
           }
           // H1: Equal height — unfold BOTH sides (lean4lean:596)
@@ -598,7 +600,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
         }
         let pred = lean_ffi::nat::Nat(&v.0 - num_bigint::BigUint::from(1u64));
         let pred_addr = crate::ix::address::Address::hash(&pred.to_le_bytes());
-        Some(self.ienv.intern_expr(KExpr::nat(pred, pred_addr)))
+        Some(self.env.intern.intern_expr(KExpr::nat(pred, pred_addr)))
       },
       ExprData::App(f, arg, _) => match f.data() {
         ExprData::Const(id, _, _) if id.addr == self.prims.nat_succ.addr => {
@@ -754,7 +756,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
       _ => return Ok(false),
     };
     // Wrap s as λ(ty). s #0
-    let s_lifted = lift(&self.ienv, s, 1, 0);
+    let s_lifted = lift(&self.env.intern, s, 1, 0);
     let v0 =
       self.intern(KExpr::var(0, M::meta_field(crate::ix::env::Name::anon())));
     let body = self.intern(KExpr::app(s_lifted, v0));
@@ -943,9 +945,9 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
   }
 }
 
-/// Canonical ordering for failure cache key: (min, max).
-fn canonical_pair(a: usize, b: usize) -> (usize, usize) {
-  if a <= b { (a, b) } else { (b, a) }
+/// Canonical ordering for cache keys: (min, max) by hash bytes.
+fn canonical_pair(a: Addr, b: Addr) -> (Addr, Addr) {
+  if a.as_bytes() <= b.as_bytes() { (a, b) } else { (b, a) }
 }
 
 /// Extract head constant KId from expression or app spine.
@@ -965,8 +967,10 @@ fn head_const_id<M: KernelMode>(e: &KExpr<M>) -> Option<KId<M>> {
 
 #[cfg(test)]
 mod tests {
+  use std::sync::Arc;
+
   use super::super::constant::KConst;
-  use super::super::env::{InternTable, KEnv};
+  use super::super::env::KEnv;
   use super::super::expr::KExpr;
   use super::super::id::KId;
   use super::super::level::KUniv;
@@ -989,8 +993,8 @@ mod tests {
     AE::sort(AU::zero())
   }
 
-  fn env_with_id() -> KEnv<Anon> {
-    let env = KEnv::new();
+  fn env_with_id() -> Arc<KEnv<Anon>> {
+    let env = Arc::new(KEnv::new());
     let id_ty = AE::all((), (), sort0(), sort0());
     let id_val = AE::lam((), (), sort0(), AE::var(0, ()));
     env.insert(
@@ -1014,7 +1018,7 @@ mod tests {
   #[test]
   fn def_eq_ptr_eq() {
     let env = env_with_id();
-    let mut tc = TypeChecker::new(&env, InternTable::new());
+    let mut tc = TypeChecker::new(Arc::clone(&env));
     let e = sort0();
     assert!(tc.is_def_eq(&e, &e).unwrap());
   }
@@ -1022,7 +1026,7 @@ mod tests {
   #[test]
   fn def_eq_sort_same() {
     let env = env_with_id();
-    let mut tc = TypeChecker::new(&env, InternTable::new());
+    let mut tc = TypeChecker::new(Arc::clone(&env));
     let s1 = AE::sort(AU::zero());
     let s2 = AE::sort(AU::zero());
     assert!(tc.is_def_eq(&s1, &s2).unwrap());
@@ -1031,7 +1035,7 @@ mod tests {
   #[test]
   fn def_eq_sort_diff() {
     let env = env_with_id();
-    let mut tc = TypeChecker::new(&env, InternTable::new());
+    let mut tc = TypeChecker::new(Arc::clone(&env));
     let s0 = AE::sort(AU::zero());
     let s1 = AE::sort(AU::succ(AU::zero()));
     assert!(!tc.is_def_eq(&s0, &s1).unwrap());
@@ -1040,7 +1044,7 @@ mod tests {
   #[test]
   fn def_eq_const_same() {
     let env = env_with_id();
-    let mut tc = TypeChecker::new(&env, InternTable::new());
+    let mut tc = TypeChecker::new(Arc::clone(&env));
     let c1 = AE::cnst(mk_id("id"), Box::new([]));
     let c2 = AE::cnst(mk_id("id"), Box::new([]));
     assert!(tc.is_def_eq(&c1, &c2).unwrap());
@@ -1049,7 +1053,7 @@ mod tests {
   #[test]
   fn def_eq_const_diff_addr() {
     let env = env_with_id();
-    let mut tc = TypeChecker::new(&env, InternTable::new());
+    let mut tc = TypeChecker::new(Arc::clone(&env));
     let c1 = AE::cnst(mk_id("a"), Box::new([]));
     let c2 = AE::cnst(mk_id("b"), Box::new([]));
     assert!(!tc.is_def_eq(&c1, &c2).unwrap());
@@ -1058,7 +1062,7 @@ mod tests {
   #[test]
   fn def_eq_lam_structural() {
     let env = env_with_id();
-    let mut tc = TypeChecker::new(&env, InternTable::new());
+    let mut tc = TypeChecker::new(Arc::clone(&env));
     let l1 = AE::lam((), (), sort0(), AE::var(0, ()));
     let l2 = AE::lam((), (), sort0(), AE::var(0, ()));
     assert!(tc.is_def_eq(&l1, &l2).unwrap());
@@ -1067,7 +1071,7 @@ mod tests {
   #[test]
   fn def_eq_all_structural() {
     let env = env_with_id();
-    let mut tc = TypeChecker::new(&env, InternTable::new());
+    let mut tc = TypeChecker::new(Arc::clone(&env));
     let a1 = AE::all((), (), sort0(), sort0());
     let a2 = AE::all((), (), sort0(), sort0());
     assert!(tc.is_def_eq(&a1, &a2).unwrap());
@@ -1076,7 +1080,7 @@ mod tests {
   #[test]
   fn def_eq_beta() {
     let env = env_with_id();
-    let mut tc = TypeChecker::new(&env, InternTable::new());
+    let mut tc = TypeChecker::new(Arc::clone(&env));
     // (λ x. x)(Sort 0) ≡ Sort 0
     let lam = AE::lam((), (), sort0(), AE::var(0, ()));
     let app = AE::app(lam, sort0());
@@ -1086,7 +1090,7 @@ mod tests {
   #[test]
   fn def_eq_delta_unfold() {
     let env = env_with_id();
-    let mut tc = TypeChecker::new(&env, InternTable::new());
+    let mut tc = TypeChecker::new(Arc::clone(&env));
     // id(Sort 0) ≡ Sort 0 (via delta + beta)
     let id_app = AE::app(AE::cnst(mk_id("id"), Box::new([])), sort0());
     assert!(tc.is_def_eq(&id_app, &sort0()).unwrap());
@@ -1095,7 +1099,7 @@ mod tests {
   #[test]
   fn def_eq_cache_hit() {
     let env = env_with_id();
-    let mut tc = TypeChecker::new(&env, InternTable::new());
+    let mut tc = TypeChecker::new(Arc::clone(&env));
     let a = sort0();
     let b = AE::sort(AU::zero());
     assert!(tc.is_def_eq(&a, &b).unwrap());

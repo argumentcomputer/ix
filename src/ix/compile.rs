@@ -66,6 +66,29 @@ pub struct BlockSizeStats {
   pub const_count: usize,
 }
 
+/// Bundled kernel context for aux_gen sort-level inference.
+///
+/// Holds the shared kernel environment (constants, caches, intern table).
+/// `TypeChecker` instances are created per-use-site — they are cheap
+/// thread-local handles that share the `KEnv` via `Arc`.
+pub struct KernelCtx {
+  /// Shared kernel environment (constants, caches, intern table).
+  pub kenv: Arc<crate::ix::kernel::env::KEnv<crate::ix::kernel::mode::Meta>>,
+}
+
+impl Default for KernelCtx {
+  fn default() -> Self {
+    Self::new()
+  }
+}
+
+impl KernelCtx {
+  /// Create a new empty kernel context.
+  pub fn new() -> Self {
+    KernelCtx { kenv: Arc::new(crate::ix::kernel::env::KEnv::new()) }
+  }
+}
+
 /// Compile state for building the Ixon environment.
 pub struct CompileState {
   /// Ixon environment being built
@@ -78,18 +101,21 @@ pub struct CompileState {
   pub blocks: DashMap<Name, Vec<Vec<Name>>>,
   /// Per-block size statistics (keyed by low-link name)
   pub block_stats: DashMap<Name, BlockSizeStats>,
-  /// Kernel environment, incrementally populated as blocks compile.
-  /// Used for type inference during aux_gen (e.g., is_large_eliminator).
-  pub kenv: crate::ix::kernel::env::KEnv<crate::ix::kernel::mode::Anon>,
-  /// Shared intern table for the kernel environment.
-  pub kintern:
-    Arc<crate::ix::kernel::env::InternTable<crate::ix::kernel::mode::Anon>>,
+  /// Kernel context for **canonical** constants, populated incrementally
+  /// by the scheduler as blocks compile. Used by aux_gen for sort-level
+  /// inference during `.rec`, `.below`, `.brecOn` generation.
+  pub kctx: KernelCtx,
   /// Constants filtered out during grounding (name -> error description).
   pub ungrounded: FxHashMap<Name, String>,
-  /// Names compiled by aux_gen during a parent block's compilation.
-  /// The scheduler drains this after each block to decrement dep counts
-  /// for dependents of these "bonus" names.
+  /// Persistent set of names compiled by aux_gen. Used for membership
+  /// checks (e.g., "is this name aux_gen-rewritten?") throughout compilation.
+  /// Never drained — callers rely on `.contains()` long after insertion.
   pub aux_gen_extra_names: DashSet<Name>,
+  /// Pending aux_gen names awaiting scheduler dependency resolution.
+  /// Drained after each block completion. Separated from the persistent
+  /// `aux_gen_extra_names` to avoid O(N×M) re-iteration of the full set
+  /// on every block completion.
+  pub aux_gen_pending: std::sync::Mutex<Vec<Name>>,
   /// Fallback name->addr map for constants compiled by aux_gen or pre-compiled
   /// during a parent inductive's compilation. Visible to later compilations
   /// so expressions referencing them resolve.
@@ -145,10 +171,10 @@ impl Default for CompileState {
       name_to_addr: Default::default(),
       blocks: Default::default(),
       block_stats: Default::default(),
-      kenv: crate::ix::kernel::env::KEnv::new(),
-      kintern: Arc::new(crate::ix::kernel::env::InternTable::new()),
+      kctx: KernelCtx::new(),
       ungrounded: Default::default(),
       aux_gen_extra_names: Default::default(),
+      aux_gen_pending: std::sync::Mutex::new(Vec::new()),
       aux_name_to_addr: Default::default(),
       lean_env: None,
     }
@@ -1791,23 +1817,31 @@ pub fn compare_ctor(
   cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<SOrd, CompileError> {
-  let key = if x.cnst.name <= y.cnst.name {
-    (x.cnst.name.clone(), y.cnst.name.clone())
+  let (key, reversed) = if x.cnst.name <= y.cnst.name {
+    ((x.cnst.name.clone(), y.cnst.name.clone()), false)
   } else {
-    (y.cnst.name.clone(), x.cnst.name.clone())
+    ((y.cnst.name.clone(), x.cnst.name.clone()), true)
   };
   if let Some(o) = cache.cmps.get(&key) {
-    Ok(SOrd { strong: true, ordering: *o })
+    let ordering = if reversed { o.reverse() } else { *o };
+    Ok(SOrd { strong: true, ordering })
   } else {
     let so = compare_ctor_inner(x, y, mut_ctx, stt)?;
+    let stored = if reversed { so.ordering.reverse() } else { so.ordering };
     if so.strong {
-      cache.cmps.insert(key, so.ordering);
+      cache.cmps.insert(key, stored);
     }
     Ok(so)
   }
 }
 
-/// Compare two inductives by params, indices, constructor count, type, then constructors.
+/// Compare two inductives by derived flags, params, indices, constructor count,
+/// type, then constructors.
+///
+/// Includes `is_rec` and `is_unsafe` to prevent alpha-collapse from merging
+/// inductives whose derived properties differ — a mismatch in `is_rec` would
+/// cause the collapsed representative to silently omit `.brecOn` for aliases
+/// that need it (or generate it for aliases that shouldn't have it).
 pub fn compare_indc(
   x: &Ind,
   y: &Ind,
@@ -1815,40 +1849,50 @@ pub fn compare_indc(
   cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<SOrd, CompileError> {
-  SOrd::try_compare(
-    SOrd::cmp(&x.ind.cnst.level_params.len(), &y.ind.cnst.level_params.len()),
-    || {
-      SOrd::try_compare(SOrd::cmp(&x.ind.num_params, &y.ind.num_params), || {
-        SOrd::try_compare(
-          SOrd::cmp(&x.ind.num_indices, &y.ind.num_indices),
-          || {
-            SOrd::try_compare(
-              SOrd::cmp(&x.ind.ctors.len(), &y.ind.ctors.len()),
-              || {
-                SOrd::try_compare(
-                  compare_expr(
-                    &x.ind.cnst.typ,
-                    &y.ind.cnst.typ,
-                    mut_ctx,
-                    &x.ind.cnst.level_params,
-                    &y.ind.cnst.level_params,
-                    stt,
-                  )?,
-                  || {
-                    SOrd::try_zip(
-                      |a, b| compare_ctor(a, b, mut_ctx, cache, stt),
-                      &x.ctors,
-                      &y.ctors,
-                    )
-                  },
-                )
-              },
-            )
-          },
-        )
-      })
-    },
-  )
+  SOrd::try_compare(SOrd::cmp(&x.ind.is_rec, &y.ind.is_rec), || {
+    SOrd::try_compare(SOrd::cmp(&x.ind.is_unsafe, &y.ind.is_unsafe), || {
+      SOrd::try_compare(
+        SOrd::cmp(
+          &x.ind.cnst.level_params.len(),
+          &y.ind.cnst.level_params.len(),
+        ),
+        || {
+          SOrd::try_compare(
+            SOrd::cmp(&x.ind.num_params, &y.ind.num_params),
+            || {
+              SOrd::try_compare(
+                SOrd::cmp(&x.ind.num_indices, &y.ind.num_indices),
+                || {
+                  SOrd::try_compare(
+                    SOrd::cmp(&x.ind.ctors.len(), &y.ind.ctors.len()),
+                    || {
+                      SOrd::try_compare(
+                        compare_expr(
+                          &x.ind.cnst.typ,
+                          &y.ind.cnst.typ,
+                          mut_ctx,
+                          &x.ind.cnst.level_params,
+                          &y.ind.cnst.level_params,
+                          stt,
+                        )?,
+                        || {
+                          SOrd::try_zip(
+                            |a, b| compare_ctor(a, b, mut_ctx, cache, stt),
+                            &x.ctors,
+                            &y.ctors,
+                          )
+                        },
+                      )
+                    },
+                  )
+                },
+              )
+            },
+          )
+        },
+      )
+    })
+  })
 }
 
 /// Compare two recursor rules by field count, then RHS expression.
@@ -2191,16 +2235,15 @@ pub fn compile_const_no_aux(
   let mut filtered = NameSet::default();
   match phase {
     Phase::Rec => {
-      // All .rec from the mutual block (filter: RecInfo only).
-      for ind_name in &lean_all {
-        let rec_name = Name::str(ind_name.clone(), "rec".to_string());
-        if stt.aux_gen_extra_names.contains(&rec_name)
-          && matches!(
-            lean_env.get(&rec_name),
-            Some(LeanConstantInfo::RecInfo(_))
-          )
+      // All .rec and .rec_N from the mutual block that are in the current SCC.
+      // lean_all only contains inductive names (from RecursorVal.all), not the
+      // mutually-referencing recursor names. The scheduler's `all` has the full
+      // SCC including rec_N names.
+      for n in all {
+        if stt.aux_gen_extra_names.contains(n)
+          && matches!(lean_env.get(n), Some(LeanConstantInfo::RecInfo(_)))
         {
-          filtered.insert(rec_name);
+          filtered.insert(n.clone());
         }
       }
     },
@@ -2269,6 +2312,8 @@ pub fn compile_const_no_aux(
           }
         }
       }
+      // Note: _N auxiliary brecOn (brecOn_1, brecOn_1.go, etc.) are NOT
+      // included here. They're separate Lean constants with their own SCCs.
     },
   }
 
@@ -2287,6 +2332,7 @@ fn compile_const_inner(
   stt: &CompileState,
   aux: bool,
 ) -> Result<Address, CompileError> {
+  let _cci_start = std::time::Instant::now();
   if let Some(cached) = stt.resolve_addr_aux(name, aux) {
     return Ok(cached);
   }
@@ -2296,6 +2342,16 @@ fn compile_const_inner(
       name: name.pretty(),
       caller: "compile_const".into(),
     })?;
+  let _cnst_kind = match cnst {
+    LeanConstantInfo::DefnInfo(_) => "defn",
+    LeanConstantInfo::ThmInfo(_) => "thm",
+    LeanConstantInfo::InductInfo(_) => "indc",
+    LeanConstantInfo::RecInfo(_) => "rec",
+    LeanConstantInfo::CtorInfo(_) => "ctor",
+    LeanConstantInfo::AxiomInfo(_) => "axio",
+    LeanConstantInfo::OpaqueInfo(_) => "opaq",
+    LeanConstantInfo::QuotInfo(_) => "quot",
+  };
 
   // Helper: compile a single definition/theorem/opaque (non-mutual case).
   // When `aux` is false (ephemeral compilation for metadata capture),
@@ -2307,21 +2363,41 @@ fn compile_const_inner(
     stt: &CompileState,
     aux: bool,
   ) -> Result<(Address, ConstantMeta), CompileError> {
+    let _t0 = std::time::Instant::now();
+    let _name_str_entry = name.pretty();
     let mut_ctx = MutConst::single_ctx(def.name.clone());
     let (data, meta) = compile_definition(def, &mut_ctx, cache, stt)?;
+    let _t_compile = _t0.elapsed();
+    let n_unique_exprs = cache.exprs.len();
     let refs: Vec<Address> = cache.refs.iter().cloned().collect();
     let univs: Vec<Arc<Univ>> = cache.univs.iter().cloned().collect();
     let name_str = name.pretty();
+    let _t1 = std::time::Instant::now();
     let result = apply_sharing_to_definition_with_stats(
       data,
       refs,
       univs,
       Some(&name_str),
     );
+    let _t_sharing = _t1.elapsed();
+    let _t2 = std::time::Instant::now();
     let mut bytes = Vec::new();
     result.constant.put(&mut bytes);
     let serialized_size = bytes.len();
     let addr = Address::hash(&bytes);
+    let _t_serial = _t2.elapsed();
+    if _t0.elapsed().as_secs_f32() > 1.0 {
+      eprintln!(
+        "[slow_single] {:?} compile={:.2}s sharing={:.2}s serial={:.2}s unique_exprs={} refs={} bytes={}",
+        name_str,
+        _t_compile.as_secs_f32(),
+        _t_sharing.as_secs_f32(),
+        _t_serial.as_secs_f32(),
+        n_unique_exprs,
+        cache.refs.len(),
+        serialized_size,
+      );
+    }
     if aux {
       stt.env.store_const(addr.clone(), result.constant);
       stt
@@ -2480,6 +2556,13 @@ fn compile_const_inner(
 
   if aux {
     stt.name_to_addr.insert(name.clone(), addr.clone());
+
+    // Ingress the Lean constant into the kernel environment so the
+    // type checker can resolve it during sort inference (get_level).
+    if let Some(ref le) = stt.lean_env {
+      // For inductives, ensure_in_kenv also ingresses constructors.
+      aux_gen::expr_utils::ensure_in_kenv(name, le.as_ref(), stt);
+    }
   }
   Ok(addr)
 }

@@ -63,6 +63,15 @@ impl<M: KernelMode> KUniv<M> {
     matches!(self.data(), UnivData::Zero(_))
   }
 
+  /// True if this level is an explicit numeral: `Succ^n(Zero)` for some n ≥ 0.
+  pub fn is_explicit(&self) -> bool {
+    match self.data() {
+      UnivData::Zero(_) => true,
+      UnivData::Succ(inner, _) => inner.is_explicit(),
+      _ => false,
+    }
+  }
+
   /// True if this level is `Succ^n(base)` with n > 0. Such a level is never
   /// zero under any parameter assignment.
   pub fn is_never_zero(&self) -> bool {
@@ -103,7 +112,59 @@ impl<M: KernelMode> KUniv<M> {
     KUniv::new(UnivData::Succ(inner, Arc::new(hasher.finalize())))
   }
 
+  /// Construct `max(a, b)` with Lean-style simplifications:
+  ///
+  /// - `max(k₁, k₂) = max(k₁, k₂)` when both are explicit numerals
+  /// - `max(a, a) = a`
+  /// - `max(0, a) = a`, `max(a, 0) = a`
+  /// - `max(a, max(a, b)) = max(a, b)` (absorption)
+  /// - `max(max(a, b), b) = max(a, b)` (absorption)
+  /// - `max(succ^n(base), succ^m(base)) = succ^max(n,m)(base)` (same-base offset)
+  ///
+  /// Matches Lean's `mk_max` in `kernel/level.cpp:81-103`.
   pub fn max(a: KUniv<M>, b: KUniv<M>) -> Self {
+    // Both explicit numerals (Succ^n(Zero)): take the larger.
+    if a.is_explicit() && b.is_explicit() {
+      let (_, na) = a.offset();
+      let (_, nb) = b.offset();
+      return if na >= nb { a } else { b };
+    }
+    // Structural equality.
+    if a == b {
+      return a;
+    }
+    // Zero absorption.
+    if a.is_zero() {
+      return b;
+    }
+    if b.is_zero() {
+      return a;
+    }
+    // max(a, max(a, b')) = max(a, b'), max(a, max(b', a)) = max(b', a)
+    if let UnivData::Max(bl, br, _) = b.data() {
+      if *bl == a || *br == a {
+        return b;
+      }
+    }
+    // max(max(a', b), b) = max(a', b), max(max(b, a'), b) = max(b, a')
+    if let UnivData::Max(al, ar, _) = a.data() {
+      if *al == b || *ar == b {
+        return a;
+      }
+    }
+    // Same base, different offsets: succ^n(x) vs succ^m(x) → take the larger.
+    let (base_a, off_a) = a.offset();
+    let (base_b, off_b) = b.offset();
+    if base_a == base_b {
+      return if off_a >= off_b { a } else { b };
+    }
+    // No simplification — construct the raw Max node.
+    Self::max_raw(a, b)
+  }
+
+  /// Raw `Max` constructor without simplification. Used by `max()` after
+  /// all simplification opportunities are exhausted.
+  fn max_raw(a: KUniv<M>, b: KUniv<M>) -> Self {
     let mut hasher = blake3::Hasher::new();
     hasher.update(&[UMAX]);
     hasher.update(a.addr().as_bytes());
@@ -111,7 +172,34 @@ impl<M: KernelMode> KUniv<M> {
     KUniv::new(UnivData::Max(a, b, Arc::new(hasher.finalize())))
   }
 
+  /// Construct `imax(a, b)` with Lean-style simplifications:
+  ///
+  /// - `imax(a, b) = max(a, b)` when `b` is never zero
+  /// - `imax(a, 0) = 0`
+  /// - `imax(0, b) = b`, `imax(1, b) = b`
+  /// - `imax(a, a) = a`
+  ///
+  /// Matches Lean's `mk_imax` in `kernel/level.cpp:112-120`.
   pub fn imax(a: KUniv<M>, b: KUniv<M>) -> Self {
+    if b.is_never_zero() {
+      return Self::max(a, b);
+    }
+    if b.is_zero() {
+      return b; // imax(a, 0) = 0
+    }
+    if a.is_zero() {
+      return b; // imax(0, b) = b
+    }
+    // imax(1, b) = b  (Lean: is_one check)
+    if let UnivData::Succ(inner, _) = a.data() {
+      if inner.is_zero() {
+        return b;
+      }
+    }
+    if a == b {
+      return a; // imax(a, a) = a
+    }
+    // No simplification — construct raw IMax node.
     let mut hasher = blake3::Hasher::new();
     hasher.update(&[UIMAX]);
     hasher.update(a.addr().as_bytes());
@@ -731,8 +819,12 @@ mod tests {
 
   #[test]
   fn display_imax() {
+    // imax(u0, 1) simplifies to max(u0, 1) since 1 is never zero.
     let im = AU::imax(AU::param(0, ()), AU::succ(AU::zero()));
-    assert_eq!(format!("{im}"), "imax(u0, 1)");
+    assert_eq!(format!("{im}"), "max(u0, 1)");
+    // imax with a potentially-zero rhs stays as imax.
+    let im2 = AU::imax(AU::param(0, ()), AU::param(1, ()));
+    assert_eq!(format!("{im2}"), "imax(u0, u1)");
   }
 
   #[test]

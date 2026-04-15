@@ -354,6 +354,74 @@ impl Level {
   }
 }
 
+impl Level {
+  /// Human-readable representation of a universe level.
+  ///
+  /// Collapses chains of `Succ` into numeric literals and uses Lean-style
+  /// syntax: `0`, `1`, `u`, `max u v`, `imax u v`, `?m`.
+  pub fn pretty(&self) -> String {
+    // Peel Succ chains into a base + offset.
+    let (base, offset) = {
+      let mut cur = self;
+      let mut n: u64 = 0;
+      loop {
+        match cur.as_data() {
+          LevelData::Succ(inner, _) => {
+            n += 1;
+            cur = inner;
+          },
+          _ => break (cur, n),
+        }
+      }
+    };
+
+    match base.as_data() {
+      LevelData::Zero(_) => format!("{offset}"),
+      LevelData::Param(name, _) if offset == 0 => name.pretty(),
+      LevelData::Param(name, _) => {
+        let n = name.pretty();
+        // u+1 → just show the additions
+        (0..offset).fold(n, |acc, _| format!("{acc}+1"))
+      },
+      LevelData::Mvar(name, _) if offset == 0 => format!("?{}", name.pretty()),
+      LevelData::Mvar(name, _) => {
+        let n = format!("?{}", name.pretty());
+        (0..offset).fold(n, |acc, _| format!("{acc}+1"))
+      },
+      LevelData::Max(a, b, _) if offset == 0 => {
+        format!("max {} {}", a.pretty_atom(), b.pretty_atom())
+      },
+      LevelData::Imax(a, b, _) if offset == 0 => {
+        format!("imax {} {}", a.pretty_atom(), b.pretty_atom())
+      },
+      // Succ(Max/Imax): wrap in parens
+      LevelData::Max(..) | LevelData::Imax(..) => {
+        let inner = base.pretty();
+        (0..offset).fold(inner, |acc, _| format!("({acc})+1"))
+      },
+      // Succ was already peeled; this arm is unreachable.
+      LevelData::Succ(..) => unreachable!(),
+    }
+  }
+
+  /// Pretty-print as an atom: parenthesise compound levels (max, imax)
+  /// so they can appear as arguments without ambiguity.
+  fn pretty_atom(&self) -> String {
+    match self.as_data() {
+      LevelData::Max(..) | LevelData::Imax(..) => {
+        format!("({})", self.pretty())
+      },
+      _ => self.pretty(),
+    }
+  }
+}
+
+impl std::fmt::Display for Level {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.write_str(&self.pretty())
+  }
+}
+
 impl StdHash for Level {
   fn hash<H: Hasher>(&self, state: &mut H) {
     self.get_hash().as_bytes().hash(state);
@@ -809,7 +877,14 @@ impl Expr {
           if name.is_empty() { format!("V{i}") } else { format!("{name}@{i}") }
         },
         ExprData::App(f, a, _) => format!("({} {})", go(f, ctx), go(a, ctx)),
-        ExprData::Const(n, _, _) => short_name(n),
+        ExprData::Const(n, us, _) => {
+          if us.is_empty() {
+            short_name(n)
+          } else {
+            let us_s: Vec<String> = us.iter().map(|u| u.pretty()).collect();
+            format!("{}.{{{}}}", short_name(n), us_s.join(", "))
+          }
+        },
         ExprData::ForallE(n, d, b, bi, _) => {
           let nm = short_name(n);
           let d_s = go(d, ctx);
@@ -852,7 +927,8 @@ impl Expr {
           format!("{}.{}{}", go(e, ctx), short_name(n), i.to_u64().unwrap_or(0))
         },
         ExprData::Lit(_, _) => "lit".to_string(),
-        _ => "?".to_string(),
+        ExprData::Fvar(n, _) => format!("fvar({})", short_name(n)),
+        ExprData::Mvar(n, _) => format!("?{}", short_name(n)),
       }
     }
     let mut ctx = Vec::new();
@@ -1251,6 +1327,16 @@ impl ConstantInfo {
       ConstantInfo::InductInfo(v) => &v.cnst.typ,
       ConstantInfo::CtorInfo(v) => &v.cnst.typ,
       ConstantInfo::RecInfo(v) => &v.cnst.typ,
+    }
+  }
+
+  /// Returns the value of this constant, if it has one (definitions, theorems, opaques).
+  pub fn get_value(&self) -> Option<&Expr> {
+    match self {
+      ConstantInfo::DefnInfo(v) => Some(&v.value),
+      ConstantInfo::ThmInfo(v) => Some(&v.value),
+      ConstantInfo::OpaqueInfo(v) => Some(&v.value),
+      _ => None,
     }
   }
 

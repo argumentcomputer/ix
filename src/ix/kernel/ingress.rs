@@ -11,6 +11,8 @@ use std::sync::Arc;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use rustc_hash::FxHashMap;
 
+use dashmap::DashMap;
+
 use crate::ix::address::Address;
 use crate::ix::env::{BinderInfo, Name};
 use crate::ix::ixon::constant::{
@@ -22,6 +24,7 @@ use crate::ix::ixon::metadata::{
   ConstantMeta, ConstantMetaInfo, ExprMeta, ExprMetaData, resolve_kvmap,
 };
 use crate::ix::ixon::univ::Univ as IxonUniv;
+use crate::ix::kernel::env::Addr;
 use lean_ffi::nat::Nat;
 
 use super::constant::{KConst, RecRule};
@@ -184,12 +187,18 @@ fn ingress_univ_args<M: KernelMode>(
   univ_idxs: &[u64],
   ctx: &Ctx<'_, M>,
   intern: &InternTable<M>,
-) -> Box<[KUniv<M>]> {
+) -> Result<Box<[KUniv<M>]>, String> {
   univ_idxs
     .iter()
-    .filter_map(|&idx| ctx.univs.get(usize::try_from(idx).ok()?))
-    .map(|u| ingress_univ(u, ctx, intern))
-    .collect()
+    .map(|&idx| {
+      let i = usize::try_from(idx)
+        .map_err(|_| format!("universe index {idx} exceeds usize"))?;
+      let u = ctx.univs.get(i).ok_or_else(|| {
+        format!("universe index {i} out of bounds (len {})", ctx.univs.len())
+      })?;
+      Ok(ingress_univ(u, ctx, intern))
+    })
+    .collect::<Result<Box<[_]>, _>>()
 }
 
 // ============================================================================
@@ -398,7 +407,7 @@ fn ingress_expr<M: KernelMode>(
                 ));
               },
             };
-            let univs = ingress_univ_args(univ_idxs, ctx, ctx.intern);
+            let univs = ingress_univ_args(univ_idxs, ctx, ctx.intern)?;
             values.push(ctx.intern.intern_expr(KExpr::cnst_mdata(
               KId::new(addr, M::meta_field(name)),
               univs,
@@ -415,7 +424,7 @@ fn ingress_expr<M: KernelMode>(
               )
               .ok_or_else(|| format!("invalid Rec index {rec_idx}"))?
               .clone();
-            let univs = ingress_univ_args(univ_idxs, ctx, ctx.intern);
+            let univs = ingress_univ_args(univ_idxs, ctx, ctx.intern)?;
             values.push(
               ctx.intern.intern_expr(KExpr::cnst_mdata(mid, univs, mdata)),
             );
@@ -559,10 +568,12 @@ fn ingress_expr<M: KernelMode>(
                 format!("Str ref index {ref_idx} exceeds usize")
               })?)
               .ok_or_else(|| format!("invalid Str ref index {ref_idx}"))?;
-            let s = ixon_env
-              .get_blob(addr)
-              .and_then(|b| String::from_utf8(b).ok())
-              .unwrap_or_default();
+            let blob = ixon_env.get_blob(addr).ok_or_else(|| {
+              format!("missing Str blob at addr {}", addr.hex())
+            })?;
+            let s = String::from_utf8(blob).map_err(|e| {
+              format!("invalid UTF-8 in Str blob at addr {}: {e}", addr.hex())
+            })?;
             values.push(ctx.intern.intern_expr(KExpr::str_mdata(
               s,
               addr.clone(),
@@ -577,9 +588,10 @@ fn ingress_expr<M: KernelMode>(
                 format!("Nat ref index {ref_idx} exceeds usize")
               })?)
               .ok_or_else(|| format!("invalid Nat ref index {ref_idx}"))?;
-            let n = ixon_env
-              .get_blob(addr)
-              .map_or_else(|| Nat::from(0u64), |b| Nat::from_le_bytes(&b));
+            let blob = ixon_env.get_blob(addr).ok_or_else(|| {
+              format!("missing Nat blob at addr {}", addr.hex())
+            })?;
+            let n = Nat::from_le_bytes(&blob);
             values.push(ctx.intern.intern_expr(KExpr::nat_mdata(
               n,
               addr.clone(),
@@ -1198,13 +1210,13 @@ fn ingress_muts_block<M: KernelMode>(
 // Lightweight LeanExpr → KExpr ingress (compile-side)
 // ============================================================================
 
-use super::mode::Anon;
+use super::mode::Meta;
 use crate::ix::env::{
   Expr as LeanExpr, ExprData as LeanExprData, Level, LevelData,
 };
 
-/// Convert a Lean Level to KUniv<Anon>, mapping named params to positional indices.
-pub fn lean_level_to_kuniv(lvl: &Level, param_names: &[Name]) -> KUniv<Anon> {
+/// Convert a Lean Level to KUniv<Meta>, mapping named params to positional indices.
+pub fn lean_level_to_kuniv(lvl: &Level, param_names: &[Name]) -> KUniv<Meta> {
   match lvl.as_data() {
     LevelData::Succ(l, _) => KUniv::succ(lean_level_to_kuniv(l, param_names)),
     LevelData::Max(a, b, _) => KUniv::max(
@@ -1216,10 +1228,23 @@ pub fn lean_level_to_kuniv(lvl: &Level, param_names: &[Name]) -> KUniv<Anon> {
       lean_level_to_kuniv(b, param_names),
     ),
     LevelData::Param(name, _) => {
-      let idx = param_names.iter().position(|n| n == name).unwrap_or(0) as u64;
-      KUniv::param(idx, ())
+      let idx =
+        param_names.iter().position(|n| n == name).unwrap_or_else(|| {
+          panic!(
+            "unknown level param `{}` not found in param_names {:?}",
+            name.pretty(),
+            param_names.iter().map(|n| n.pretty()).collect::<Vec<_>>()
+          )
+        }) as u64;
+      KUniv::param(idx, name.clone())
     },
-    LevelData::Zero(_) | LevelData::Mvar(_, _) => KUniv::zero(),
+    LevelData::Zero(_) => KUniv::zero(),
+    LevelData::Mvar(name, _) => {
+      panic!(
+        "unexpected level metavariable `{}` in elaborated kernel term",
+        name.pretty()
+      );
+    },
   }
 }
 
@@ -1245,71 +1270,145 @@ pub fn resolve_lean_name_addr(
   Address::from_blake3_hash(*name.get_hash())
 }
 
-/// Convert a LeanExpr to KExpr<Anon>.
+/// Convert a LeanExpr to KExpr<Meta>.
 ///
 /// `param_names` provides the positional mapping for universe level params.
 /// `name_to_ixon_addr` maps Lean names to real Ixon addresses for already-compiled
 /// constants. Falls back to name hash for constants not yet compiled.
+/// Compute a stable hash for a `param_names` slice, used as part of the
+/// ingress cache key. Two calls with the same param names (in the same
+/// order) produce the same hash.
+pub fn param_names_hash(param_names: &[Name]) -> Addr {
+  let mut hasher = blake3::Hasher::new();
+  hasher.update(&(param_names.len() as u64).to_le_bytes());
+  for n in param_names {
+    hasher.update(n.get_hash().as_bytes());
+  }
+  Arc::new(hasher.finalize())
+}
+
 pub fn lean_expr_to_zexpr(
   expr: &LeanExpr,
   param_names: &[Name],
-  intern: &InternTable<Anon>,
+  intern: &InternTable<Meta>,
   name_to_ixon_addr: Option<&dashmap::DashMap<Name, Address>>,
   aux_n2a: Option<&dashmap::DashMap<Name, Address>>,
-) -> KExpr<Anon> {
+) -> KExpr<Meta> {
+  // Uncached path — only for callers without KEnv access.
   let e = lean_expr_to_zexpr_raw(
     expr,
     param_names,
     intern,
     name_to_ixon_addr,
     aux_n2a,
+    None,
+    None,
   );
   intern.intern_expr(e)
+}
+
+/// Cached variant that takes a full `KEnv` reference instead of just `InternTable`.
+/// Uses the KEnv's `ingress_cache` to avoid re-converting shared LeanExpr subtrees.
+pub fn lean_expr_to_zexpr_with_kenv(
+  expr: &LeanExpr,
+  param_names: &[Name],
+  kenv: &crate::ix::kernel::env::KEnv<Meta>,
+  n2a: Option<&dashmap::DashMap<Name, Address>>,
+  aux_n2a: Option<&dashmap::DashMap<Name, Address>>,
+) -> KExpr<Meta> {
+  let pn_h = param_names_hash(param_names);
+  lean_expr_to_zexpr_cached(
+    expr,
+    param_names,
+    &kenv.intern,
+    n2a,
+    aux_n2a,
+    Some(&kenv.ingress_cache),
+    Some(&pn_h),
+  )
+}
+
+/// Cached variant: uses `ingress_cache` (if provided) to avoid re-converting
+/// shared LeanExpr subtrees. The cache is keyed by `(expr_hash, pn_hash)` to
+/// account for different level param bindings producing different KExprs.
+pub fn lean_expr_to_zexpr_cached(
+  expr: &LeanExpr,
+  param_names: &[Name],
+  intern: &InternTable<Meta>,
+  n2a: Option<&dashmap::DashMap<Name, Address>>,
+  aux_n2a: Option<&dashmap::DashMap<Name, Address>>,
+  cache: Option<&DashMap<(Addr, Addr), KExpr<Meta>>>,
+  pn_hash: Option<&Addr>,
+) -> KExpr<Meta> {
+  // Check cache
+  if let (Some(cache), Some(pn_hash)) = (cache, pn_hash) {
+    let expr_key = Arc::new(*expr.get_hash());
+    let key = (expr_key, pn_hash.clone());
+    if let Some(hit) = cache.get(&key) {
+      return hit.value().clone();
+    }
+  }
+
+  let e = lean_expr_to_zexpr_raw(
+    expr,
+    param_names,
+    intern,
+    n2a,
+    aux_n2a,
+    cache,
+    pn_hash,
+  );
+  let result = intern.intern_expr(e);
+
+  // Store in cache
+  if let (Some(cache), Some(pn_hash)) = (cache, pn_hash) {
+    let expr_key = Arc::new(*expr.get_hash());
+    cache.insert((expr_key, pn_hash.clone()), result.clone());
+  }
+
+  result
 }
 
 fn lean_expr_to_zexpr_raw(
   expr: &LeanExpr,
   pn: &[Name],
-  intern: &InternTable<Anon>,
+  intern: &InternTable<Meta>,
   n2a: Option<&dashmap::DashMap<Name, Address>>,
   aux_n2a: Option<&dashmap::DashMap<Name, Address>>,
-) -> KExpr<Anon> {
+  cache: Option<&DashMap<(Addr, Addr), KExpr<Meta>>>,
+  pn_hash: Option<&Addr>,
+) -> KExpr<Meta> {
+  // Recursive calls go through the cached entry point.
+  let go = |e: &LeanExpr| -> KExpr<Meta> {
+    lean_expr_to_zexpr_cached(e, pn, intern, n2a, aux_n2a, cache, pn_hash)
+  };
+
   match expr.as_data() {
-    LeanExprData::Bvar(idx, _) => KExpr::var(idx.to_u64().unwrap_or(0), ()),
+    LeanExprData::Bvar(idx, _) => {
+      KExpr::var(idx.to_u64().unwrap_or(0), Name::anon())
+    },
     LeanExprData::Sort(lvl, _) => KExpr::sort(lean_level_to_kuniv(lvl, pn)),
     LeanExprData::Const(name, us, _) => {
       let addr = resolve_lean_name_addr(name, n2a, aux_n2a);
-      let zid = KId::new(addr, ());
-      let zus: Box<[KUniv<Anon>]> =
+      let zid = KId::new(addr, name.clone());
+      let zus: Box<[KUniv<Meta>]> =
         us.iter().map(|u| lean_level_to_kuniv(u, pn)).collect();
       KExpr::cnst(zid, zus)
     },
-    LeanExprData::App(f, a, _) => {
-      let zf = lean_expr_to_zexpr(f, pn, intern, n2a, aux_n2a);
-      let za = lean_expr_to_zexpr(a, pn, intern, n2a, aux_n2a);
-      KExpr::app(zf, za)
+    LeanExprData::App(f, a, _) => KExpr::app(go(f), go(a)),
+    LeanExprData::ForallE(binder_name, dom, body, bi, _) => {
+      KExpr::all(binder_name.clone(), bi.clone(), go(dom), go(body))
     },
-    LeanExprData::ForallE(_, dom, body, _, _) => {
-      let zd = lean_expr_to_zexpr(dom, pn, intern, n2a, aux_n2a);
-      let zb = lean_expr_to_zexpr(body, pn, intern, n2a, aux_n2a);
-      KExpr::all((), (), zd, zb)
+    LeanExprData::Lam(binder_name, dom, body, bi, _) => {
+      KExpr::lam(binder_name.clone(), bi.clone(), go(dom), go(body))
     },
-    LeanExprData::Lam(_, dom, body, _, _) => {
-      let zd = lean_expr_to_zexpr(dom, pn, intern, n2a, aux_n2a);
-      let zb = lean_expr_to_zexpr(body, pn, intern, n2a, aux_n2a);
-      KExpr::lam((), (), zd, zb)
-    },
-    LeanExprData::LetE(_, ty, val, body, nd, _) => {
-      let zt = lean_expr_to_zexpr(ty, pn, intern, n2a, aux_n2a);
-      let zv = lean_expr_to_zexpr(val, pn, intern, n2a, aux_n2a);
-      let zb = lean_expr_to_zexpr(body, pn, intern, n2a, aux_n2a);
-      KExpr::let_((), zt, zv, zb, *nd)
+    LeanExprData::LetE(binder_name, ty, val, body, nd, _) => {
+      KExpr::let_(binder_name.clone(), go(ty), go(val), go(body), *nd)
     },
     LeanExprData::Proj(name, idx, e, _) => {
       let addr = resolve_lean_name_addr(name, n2a, aux_n2a);
-      let zid = KId::new(addr, ());
-      let ze = lean_expr_to_zexpr(e, pn, intern, n2a, aux_n2a);
-      KExpr::prj(zid, idx.to_u64().unwrap_or(0), ze)
+      let zid = KId::new(addr, name.clone());
+      KExpr::prj(zid, idx.to_u64().unwrap_or(0), go(e))
     },
     LeanExprData::Lit(lit, _) => {
       use crate::ix::env::Literal;
@@ -1324,8 +1423,22 @@ fn lean_expr_to_zexpr_raw(
         },
       }
     },
-    // FVar, MVar, Mdata — shouldn't appear in elaborated kernel terms
-    _ => KExpr::sort(KUniv::zero()),
+    LeanExprData::Mdata(_, inner, _) => {
+      // Mdata wraps a real expression — recurse through the annotation layer.
+      lean_expr_to_zexpr_raw(inner, pn, intern, n2a, aux_n2a, cache, pn_hash)
+    },
+    LeanExprData::Fvar(name, _) => {
+      panic!(
+        "unexpected FVar({}) in elaborated kernel term during ingress",
+        name.pretty()
+      );
+    },
+    LeanExprData::Mvar(name, _) => {
+      panic!(
+        "unexpected MVar({}) in elaborated kernel term during ingress",
+        name.pretty()
+      );
+    },
   }
 }
 
@@ -1358,8 +1471,8 @@ pub fn build_ingress_lookups(
 pub fn ingress_compiled_names(
   names: &[Name],
   ixon_env: &IxonEnv,
-  zenv: &KEnv<Anon>,
-  intern: &InternTable<Anon>,
+  zenv: &KEnv<Meta>,
+  intern: &InternTable<Meta>,
   name_map: &FxHashMap<Address, Name>,
   addr_map: &FxHashMap<Name, Address>,
 ) {
@@ -1392,7 +1505,7 @@ pub fn ingress_compiled_names(
           | KConst::Indc { block, .. } => Some(block.clone()),
           _ => None,
         });
-        let member_ids: Vec<KId<Anon>> =
+        let member_ids: Vec<KId<Meta>> =
           entries.iter().map(|(id, _)| id.clone()).collect();
         if let Some(bid) = block_id {
           zenv.blocks.insert(bid, member_ids);

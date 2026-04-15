@@ -20,9 +20,8 @@ use crate::ix::ixon::CompileError;
 use lean_ffi::nat::Nat;
 
 use super::expr_utils::{
-  LocalDecl, abstract_fvar, decompose_apps, fresh_fvar,
-  instantiate_spec_with_fvars, instantiate1, mk_const, mk_forall, mk_lambda,
-  shift_vars, subst_levels,
+  LocalDecl, decompose_apps, fresh_fvar, instantiate_spec_with_fvars,
+  instantiate1, mk_const, mk_forall, mk_lambda, shift_vars, subst_levels,
 };
 
 // =========================================================================
@@ -64,17 +63,42 @@ struct FlatInfo<'a> {
 /// inductive block is in Prop. Downstream phases (`.below`, `.brecOn`)
 /// use `is_prop` to choose between definition (Type-level) and inductive
 /// (Prop-level) generation — matching Lean's `isPropFormerType` guard.
+/// Generate canonical recursors using the **canonical** kenv/TC.
 pub(crate) fn generate_canonical_recursors(
   sorted_classes: &[Vec<Name>],
   lean_env: &LeanEnv,
   stt: &crate::ix::compile::CompileState,
-  aux_n2a: Option<&dashmap::DashMap<Name, crate::ix::address::Address>>,
 ) -> Result<(Vec<(Name, RecursorVal)>, bool), CompileError> {
+  generate_canonical_recursors_with_overlay(
+    sorted_classes,
+    lean_env,
+    None,
+    stt,
+    &stt.kctx,
+  )
+}
+
+/// Like `generate_canonical_recursors`, but accepts an optional overlay
+/// environment for looking up class representatives. Used by
+/// `compile_below_recursors` to avoid cloning the full 197k-entry LeanEnv
+/// just to add a few `.below` inductive entries.
+pub(crate) fn generate_canonical_recursors_with_overlay(
+  sorted_classes: &[Vec<Name>],
+  lean_env: &LeanEnv,
+  overlay: Option<&LeanEnv>,
+  stt: &crate::ix::compile::CompileState,
+  kctx: &crate::ix::compile::KernelCtx,
+) -> Result<(Vec<(Name, RecursorVal)>, bool), CompileError> {
+  // Lookup helper: check overlay first, then base env.
+  let env_get = |name: &Name| -> Option<&ConstantInfo> {
+    overlay.and_then(|o| o.get(name)).or_else(|| lean_env.get(name))
+  };
+
   let mut classes: Vec<FlatInfo<'_>> = sorted_classes
     .iter()
     .map(|class| {
       let rep = &class[0];
-      let ind = match lean_env.get(rep) {
+      let ind = match env_get(rep) {
         Some(ConstantInfo::InductInfo(v)) => v,
         _ => {
           return Err(CompileError::InvalidMutualBlock {
@@ -85,7 +109,7 @@ pub(crate) fn generate_canonical_recursors(
       let ctors: Vec<&ConstructorVal> = ind
         .ctors
         .iter()
-        .filter_map(|cn| match lean_env.get(cn) {
+        .filter_map(|cn| match env_get(cn) {
           Some(ConstantInfo::CtorInfo(c)) => Some(c),
           _ => None,
         })
@@ -143,9 +167,8 @@ pub(crate) fn generate_canonical_recursors(
   let n_minors: usize = classes.iter().map(|fi| fi.ctors.len()).sum();
 
   // Compute is_large, k, and is_prop using the zero kernel's TypeChecker.
-  let (is_large, k, is_prop) = compute_is_large_and_k(
-    &classes, n_classes, n_params, lean_env, stt, aux_n2a,
-  );
+  let (is_large, k, is_prop) =
+    compute_is_large_and_k(&classes, n_classes, n_params, lean_env, stt, kctx);
 
   // Build canonical level params: [u_1, u1, ..., un] for large, [u1, ..., un] for small.
   // Use the inductive's own level param names for consistency.
@@ -203,13 +226,20 @@ pub(crate) fn generate_canonical_recursors(
     let di_member = &classes[di];
     let n_indices = di_member.n_indices;
 
-    // Name: original → <ind>.rec, auxiliary → <main>.rec_N
+    // Name: original → <ind>.rec, auxiliary → <all[0]>.rec_N
+    // Lean always hangs _N names under all[0] (first inductive in source order),
+    // not under the class representative. Use the InductiveVal.all field.
     let rec_name = if di < n_classes {
       Name::str(di_member.ind.cnst.name.clone(), "rec".to_string())
     } else {
-      let main_name = classes[0].ind.cnst.name.clone();
+      let all0 = classes[0]
+        .ind
+        .all
+        .first()
+        .cloned()
+        .unwrap_or_else(|| classes[0].ind.cnst.name.clone());
       let aux_idx = di - n_classes + 1;
-      Name::str(main_name, format!("rec_{}", aux_idx))
+      Name::str(all0, format!("rec_{}", aux_idx))
     };
 
     // `all` should list only the original inductives, matching Lean's convention.
@@ -273,9 +303,14 @@ pub(crate) fn generate_canonical_recursors(
 // =========================================================================
 
 /// A binder extracted from a forall chain.
+///
+/// `name` and `domain` are used by `collect_binders` and retained for
+/// dead-code reference implementations (`_extract_field_binders_from_rec_type`).
 #[derive(Clone)]
 struct Binder {
+  #[allow(dead_code)]
   name: Name,
+  #[allow(dead_code)]
   domain: LeanExpr,
   info: BinderInfo,
 }
@@ -287,9 +322,13 @@ fn collect_binders(expr: &LeanExpr, n: usize) -> Vec<Binder> {
   for _ in 0..n {
     match cur.as_data() {
       ExprData::ForallE(name, dom, body, bi, _) => {
+        // Strip outParam/semiOutParam/optParam/autoParam wrappers,
+        // matching Lean's consume_type_annotations in mk_local_decl
+        // (inductive.cpp:179).
+        let clean_dom = super::expr_utils::consume_type_annotations(dom);
         binders.push(Binder {
           name: name.clone(),
-          domain: dom.clone(),
+          domain: clean_dom,
           info: bi.clone(),
         });
         cur = body.clone();
@@ -306,6 +345,10 @@ fn collect_binders(expr: &LeanExpr, n: usize) -> Vec<Binder> {
 
 /// Build the full recursor type for class `di`.
 ///
+/// All domains and the return type are kept in FVar form throughout.
+/// A single `mk_forall` call at the end batch-abstracts all FVars into
+/// the correct de Bruijn indices.
+///
 /// Follows `declare_recursors` in inductive.cpp:752-774.
 fn build_rec_type(
   di: usize,
@@ -321,60 +364,60 @@ fn build_rec_type(
 ) -> LeanExpr {
   let n_flat = flat.len();
   let n_indices = classes[di].n_indices;
-  let mut depth: usize = 0;
-  let mut domains: Vec<Binder> = Vec::new();
 
-  // --- Params: create FVars ---
-  let mut param_fvars: Vec<LeanExpr> = Vec::new();
-  let mut param_decls: Vec<LocalDecl> = Vec::new();
-  for (p, pb) in param_binders.iter().enumerate() {
-    let (fv_name, fv) = fresh_fvar("param", p);
-    param_fvars.push(fv);
-    param_decls.push(LocalDecl {
-      fvar_name: fv_name,
-      binder_name: pb.name.clone(),
-      domain: pb.domain.clone(),
-      info: pb.info.clone(),
-    });
-    domains.push(pb.clone());
-    depth += 1;
-  }
+  // Collect ALL binders in a single Vec<LocalDecl> with FVar-based domains.
+  // mk_forall at the end handles all BVar abstraction in one batch.
+  let mut all_decls: Vec<LocalDecl> = Vec::new();
 
-  // --- Motives (Cs): one per flat member, create FVars ---
+  // --- Params: create FVars via forall_telescope ---
+  // Use the pre-computed param_binders for domain info (with type annotation
+  // stripping already applied by collect_binders), but create fresh FVars
+  // so cross-references between dependent param domains use FVars.
+  let first_ty = subst_levels(
+    &classes[0].ind.cnst.typ,
+    &classes[0].ind.cnst.level_params,
+    ind_univs,
+  );
+  let (param_fvars, param_decls, _) =
+    super::expr_utils::forall_telescope(&first_ty, n_params, "param", 0);
+  // Apply consume_type_annotations to param domains, matching Lean C++
+  // mk_local_decl behavior (inductive.cpp:179).
+  let param_decls: Vec<LocalDecl> = param_decls
+    .into_iter()
+    .zip(param_binders.iter())
+    .map(|(mut d, pb)| {
+      d.domain = consume_type_annotations(&d.domain);
+      d.info = pb.info.clone();
+      d
+    })
+    .collect();
+  all_decls.extend(param_decls.iter().cloned());
+
+  // --- Motives (Cs): one per flat member, FVar domains ---
   let mut motive_fvars: Vec<LeanExpr> = Vec::new();
-  let mut motive_decls: Vec<LocalDecl> = Vec::new();
   for j in 0..n_flat {
-    let mut motive_ty = if j < n_classes {
-      // Original member: use class info (FVar-based, contains param FVars)
+    let motive_ty = if j < n_classes {
       build_motive_type(
         j,
         classes,
         n_params,
-        depth,
+        0, // depth unused — no manual abstraction
         elim_level,
         ind_univs,
         &param_fvars,
       )
     } else {
-      // Auxiliary member (nested): build motive type from flat member.
       build_motive_type_aux(
         &classes[j],
         n_params,
         elim_level,
         ind_univs,
         lean_env,
+        &param_fvars,
       )
     };
-    // Abstract param FVars from the motive type and shift for depth
-    for pd in &param_decls {
-      motive_ty = abstract_fvar(&motive_ty, &pd.fvar_name, 0);
-    }
-    let n_motives_before = depth - n_params; // motives already pushed
-    if n_motives_before > 0 {
-      motive_ty = shift_vars(&motive_ty, n_motives_before, 0);
-    }
-    // Lean C++ uses appendIndexAfter which produces "motive_N" as a
-    // single string (not Name::str(Name::str(anon, "motive"), "N")).
+    // Domain stays in FVar form — contains param FVars which mk_forall
+    // will abstract when processing this binder's domain.
     let motive_name = if n_flat > 1 {
       Name::str(Name::anon(), format!("motive_{}", j + 1))
     } else {
@@ -382,27 +425,19 @@ fn build_rec_type(
     };
     let (fv_name, fv) = fresh_fvar("motive", j);
     motive_fvars.push(fv);
-    motive_decls.push(LocalDecl {
+    all_decls.push(LocalDecl {
       fvar_name: fv_name,
-      binder_name: motive_name.clone(),
-      domain: motive_ty.clone(),
-      info: BinderInfo::Default,
-    });
-    domains.push(Binder {
-      name: motive_name,
+      binder_name: motive_name,
       domain: motive_ty,
       info: BinderInfo::Default,
     });
-    depth += 1;
   }
 
-  // --- Minors: build for each flat member's constructors ---
+  // --- Minors: build for each flat member's constructors, FVar domains ---
   for j in 0..n_flat {
-    // Get constructors for this flat member
     let member_ctors: Vec<&ConstructorVal> = if j < n_classes {
       classes[j].ctors.clone()
     } else {
-      // Auxiliary member: look up ctors from the external inductive
       match lean_env.get(&flat[j].name) {
         Some(ConstantInfo::InductInfo(ind)) => ind
           .ctors
@@ -417,7 +452,7 @@ fn build_rec_type(
     };
     let ind_name = &flat[j].name;
     for ctor in &member_ctors {
-      let mut minor_ty = build_minor_type(
+      let minor_ty = build_minor_type(
         j,
         ctor,
         classes,
@@ -426,28 +461,18 @@ fn build_rec_type(
         &motive_fvars,
         ind_univs,
       );
-      // Abstract FVars in rec type binder order (outermost first).
-      for pd in &param_decls {
-        minor_ty = abstract_fvar(&minor_ty, &pd.fvar_name, 0);
-      }
-      for md in &motive_decls {
-        minor_ty = abstract_fvar(&minor_ty, &md.fvar_name, 0);
-      }
-      let n_earlier_minors = depth - n_params - n_flat;
-      if n_earlier_minors > 0 {
-        minor_ty = shift_vars(&minor_ty, n_earlier_minors, 0);
-      }
-      // Extract the ctor suffix as a Name (e.g. `A.mk` → `mk`)
+      // Domain stays in FVar form — contains param + motive FVars.
       let minor_name = ctor.cnst.name.strip_prefix(ind_name).map_or_else(
         || ctor.cnst.name.clone(),
         |suffix| Name::anon().append_components(&suffix),
       );
-      domains.push(Binder {
-        name: minor_name,
+      let (fv_name, _fv) = fresh_fvar("minor", all_decls.len());
+      all_decls.push(LocalDecl {
+        fvar_name: fv_name,
+        binder_name: minor_name,
         domain: minor_ty,
         info: BinderInfo::Default,
       });
-      depth += 1;
     }
   }
 
@@ -468,7 +493,6 @@ fn build_rec_type(
     )
   };
   let mut ity = di_ty;
-  // Peel params: for originals use param FVars, for aux use FVar-converted spec_params.
   let di_n_ext_params = di_member.own_params;
   let di_sp_fvars = if di_is_aux {
     instantiate_spec_with_fvars(&di_member.spec_params, &param_fvars)
@@ -486,9 +510,7 @@ fn build_rec_type(
       }
     }
   }
-  // Peel index binders using FVars so that later index domains correctly
-  // reference earlier indices as FVars (not corrupt BVars).
-  // Follows lean4lean's approach: `withLocalDecl` + `instantiate1` per index.
+  // Peel index binders using FVars — domains stay in FVar form.
   let mut index_fvars: Vec<LeanExpr> = Vec::new();
   let mut index_decls: Vec<LocalDecl> = Vec::new();
   for fi in 0..n_indices {
@@ -507,55 +529,28 @@ fn build_rec_type(
       _ => break,
     }
   }
-  // Convert each index domain from FVar form to BVar form for the final
-  // forall chain. Abstract param FVars, then shift for motives+minors,
-  // then abstract earlier index FVars.
-  let n_non_param_before_indices = depth - n_params; // motives + minors
-  for (fi, decl) in index_decls.iter().enumerate() {
-    let mut abs_dom = decl.domain.clone();
-    // Abstract param FVars (outermost binders in the rec type)
-    for pd in &param_decls {
-      abs_dom = abstract_fvar(&abs_dom, &pd.fvar_name, 0);
-    }
-    // Shift up past motives + minors (between params and indices)
-    if n_non_param_before_indices > 0 {
-      abs_dom = shift_vars(&abs_dom, n_non_param_before_indices, 0);
-    }
-    // Abstract earlier index FVars (they're inner binders in the chain)
-    for id in &index_decls[..fi] {
-      abs_dom = abstract_fvar(&abs_dom, &id.fvar_name, 0);
-    }
-    domains.push(Binder {
-      name: decl.binder_name.clone(),
-      domain: abs_dom,
-      info: decl.info.clone(),
-    });
-    depth += 1;
-  }
+  // Index domains are in FVar form (param + earlier index FVars).
+  // No manual abstraction needed — mk_forall handles it.
+  all_decls.extend(index_decls);
 
-  // --- Major ---
+  // --- Major: domain in FVar form ---
   let major_dom = if di_is_aux {
-    // Auxiliary member: J.{occurrence_us} spec_params indices
     let major_univs = if !di_member.occurrence_level_args.is_empty() {
       &di_member.occurrence_level_args
     } else {
       ind_univs
     };
     let mut app = mk_const(&di_member.ind.cnst.name, major_univs);
-    // Apply FVar-converted spec_params
     let sp_fvars =
       instantiate_spec_with_fvars(&di_member.spec_params, &param_fvars);
     for sp in &sp_fvars {
       app = LeanExpr::app(app, sp.clone());
     }
-    // Indices: use FVars (will be abstracted below)
     for idx_fv in &index_fvars {
       app = LeanExpr::app(app, idx_fv.clone());
     }
     app
   } else {
-    // Original member: I params indices
-    // Build using FVars for params and indices, then abstract later.
     let mut app = mk_const(&di_member.ind.cnst.name, ind_univs);
     for pf in &param_fvars {
       app = LeanExpr::app(app, pf.clone());
@@ -565,43 +560,28 @@ fn build_rec_type(
     }
     app
   };
-  // Abstract param FVars from major domain
-  let mut abs_major = major_dom;
-  for pd in &param_decls {
-    abs_major = abstract_fvar(&abs_major, &pd.fvar_name, 0);
-  }
-  // Shift past motives + minors
-  if n_non_param_before_indices > 0 {
-    abs_major = shift_vars(&abs_major, n_non_param_before_indices, 0);
-  }
-  // Abstract index FVars
-  for id in &index_decls {
-    abs_major = abstract_fvar(&abs_major, &id.fvar_name, 0);
-  }
-  domains.push(Binder {
-    name: Name::str(Name::anon(), "t".to_string()),
-    domain: abs_major,
+  let (major_fv_name, major_fv) = fresh_fvar("major", 0);
+  all_decls.push(LocalDecl {
+    fvar_name: major_fv_name,
+    binder_name: Name::str(Name::anon(), "t".to_string()),
+    domain: major_dom,
     info: BinderInfo::Default,
   });
-  depth += 1;
 
-  // --- Return: motive_di indices major ---
-  let motive_idx = (depth - 1 - n_params - di) as u64;
-  let mut ret = LeanExpr::bvar(Nat::from(motive_idx));
-  for i in 0..n_indices {
-    ret = LeanExpr::app(ret, LeanExpr::bvar(Nat::from((n_indices - i) as u64)));
+  // --- Return: motive_di(index_fvars, major_fv) ---
+  let mut ret = motive_fvars[di].clone();
+  for idx_fv in &index_fvars {
+    ret = LeanExpr::app(ret, idx_fv.clone());
   }
-  ret = LeanExpr::app(ret, LeanExpr::bvar(Nat::from(0u64)));
+  ret = LeanExpr::app(ret, major_fv);
 
-  // Fold into forall chain
-  for b in domains.iter().rev() {
-    ret = LeanExpr::all(b.name.clone(), b.domain.clone(), ret, b.info.clone());
-  }
+  // Single batch abstraction: all FVars → BVars in one pass.
+  let rec_type = mk_forall(ret, &all_decls);
 
   // Apply infer_implicit: Lean calls inferImplicit(ty, 1000, false)
   // which processes ALL binders, marking them implicit if their BVar
   // appears in an explicit domain downstream.
-  infer_implicit(&ret, 1000)
+  infer_implicit(&rec_type, 1000)
 }
 
 /// Build motive type for class `j`:
@@ -687,13 +667,16 @@ fn build_motive_type(
 /// with indices, the motive type is `∀ (indices...) (t : J Ds indices), Sort u`.
 /// `Ds` are the spec_params from the flat member.
 ///
-/// Follows the zero kernel's `build_motive_type_flat` for auxiliaries.
+/// Uses FVar-based index peeling via `forall_telescope` so that dependent
+/// index domains are correctly instantiated (earlier indices as FVars).
+/// The returned expression contains param FVars as free variables.
 fn build_motive_type_aux(
   member: &FlatInfo<'_>,
   _n_params: usize,
   elim_level: &Level,
   _ind_univs: &[Level],
   lean_env: &LeanEnv,
+  param_fvars: &[LeanExpr],
 ) -> LeanExpr {
   // Look up the external inductive
   let ind = match lean_env.get(&member.name) {
@@ -704,9 +687,7 @@ fn build_motive_type_aux(
   let n_ext_indices = member.n_indices;
 
   // Substitute levels with occurrence_level_args (concrete levels from
-  // the nested occurrence). This is the key fix: previously we left
-  // levels unsubstituted, but the motive type must use the concrete
-  // universe args.
+  // the nested occurrence).
   let ty = if !member.occurrence_level_args.is_empty() {
     subst_levels(
       &ind.cnst.typ,
@@ -717,91 +698,64 @@ fn build_motive_type_aux(
     ind.cnst.typ.clone()
   };
 
-  // Skip params (substituting with spec_params).
-  // Spec_params are in BVar form (relative to param context), but here
-  // we're building the raw motive type (no FVars), so BVars referencing
-  // outer params will end up as free vars. They get shifted when the
-  // motive is placed in the rec type's forall chain.
+  // Skip params, substituting with spec_params in FVar form.
+  // Convert BVar-form spec_params to FVar form using param_fvars, so the
+  // resulting motive type uses the same FVars as original member motives.
+  let spec_fvars =
+    instantiate_spec_with_fvars(&member.spec_params, param_fvars);
   let mut cur = ty;
   for p in 0..n_ext_params {
     if let ExprData::ForallE(_, _, body, _, _) = cur.as_data() {
-      if p < member.spec_params.len() {
-        cur = instantiate1(body, &member.spec_params[p]);
+      if p < spec_fvars.len() {
+        cur = instantiate1(body, &spec_fvars[p]);
       } else {
         cur = instantiate1(body, &LeanExpr::sort(Level::zero())); // placeholder
       }
     }
   }
 
-  // Collect index binders
-  let mut index_binders: Vec<Binder> = Vec::new();
-  for _ in 0..n_ext_indices {
-    match cur.as_data() {
-      ExprData::ForallE(name, dom, body, bi, _) => {
-        index_binders.push(Binder {
-          name: name.clone(),
-          domain: dom.clone(),
-          info: bi.clone(),
-        });
-        cur = body.clone();
-      },
-      _ => break,
-    }
-  }
+  // Peel index binders using FVars so that dependent index domains are
+  // correctly instantiated. This fixes the structural-peeling bug where
+  // body.clone() left dangling BVars in dependent index types.
+  let (index_fvars, index_decls, _) =
+    super::expr_utils::forall_telescope(&cur, n_ext_indices, "ma_idx", 0);
 
-  // Build major type: J.{occurrence_us} spec_params indices
+  // Build major type: J.{occurrence_us} spec_params index_fvars
+  let fallback_univs;
   let major_univs = if !member.occurrence_level_args.is_empty() {
     &member.occurrence_level_args
   } else {
     // Fallback: identity-mapped level params (shouldn't reach here for
     // proper aux members)
-    &ind
+    fallback_univs = ind
       .cnst
       .level_params
       .iter()
       .map(|n| Level::param(n.clone()))
-      .collect::<Vec<_>>()
+      .collect::<Vec<_>>();
+    &fallback_univs
   };
   let mut major_ty = mk_const(&member.name, major_univs);
-  for sp in &member.spec_params {
-    // Lift spec_params by n_ext_indices to account for the index binders
-    // above the major type in the motive. The major binder itself doesn't
-    // need shifting because it's the innermost — matching how the
-    // original motive builder places param BVars at BVar(n_indices + p).
-    let lifted = if n_ext_indices > 0 {
-      shift_vars(sp, n_ext_indices, 0)
-    } else {
-      sp.clone()
-    };
-    major_ty = LeanExpr::app(major_ty, lifted);
+  for sp in &spec_fvars {
+    major_ty = LeanExpr::app(major_ty, sp.clone());
   }
-  for i in 0..n_ext_indices {
-    major_ty = LeanExpr::app(
-      major_ty,
-      LeanExpr::bvar(Nat::from((n_ext_indices - 1 - i) as u64)),
-    );
+  for idx_fv in &index_fvars {
+    major_ty = LeanExpr::app(major_ty, idx_fv.clone());
   }
 
-  // Build: ∀ (major : major_ty), Sort elim_level
+  // Build: ∀ (indices...) (major : major_ty), Sort elim_level
   let sort = LeanExpr::sort(elim_level.clone());
-  let mut result = LeanExpr::all(
-    Name::str(Name::anon(), "t".to_string()),
-    major_ty,
-    sort,
-    BinderInfo::Default,
-  );
+  let major_decl = LocalDecl {
+    fvar_name: Name::str(Name::anon(), "_ma_major_0".to_string()),
+    binder_name: Name::str(Name::anon(), "t".to_string()),
+    domain: major_ty,
+    info: BinderInfo::Default,
+  };
 
-  // Wrap index binders
-  for b in index_binders.iter().rev() {
-    result = LeanExpr::all(
-      b.name.clone(),
-      b.domain.clone(),
-      result,
-      BinderInfo::Default,
-    );
-  }
-
-  result
+  let mut all_decls: Vec<LocalDecl> = Vec::new();
+  all_decls.extend(index_decls);
+  all_decls.push(major_decl);
+  mk_forall(sort, &all_decls)
 }
 
 /// Build minor premise type for a constructor using FVars.
@@ -1013,58 +967,6 @@ fn build_ih_type_fvar(
   mk_forall(ih_body, &xs_decls)
 }
 
-/// Build IH type for a recursive field in a minor premise (old BVar version).
-///
-/// `field_idx`: index of this field in the constructor's field list.
-/// `dom_lifted`: field domain shifted by (n_fields + k - field_idx).
-fn _build_ih_type(
-  field_idx: usize,
-  dom_lifted: &LeanExpr,
-  target_ci: usize,
-  n_params: usize,
-  n_fields: usize,
-  k: usize,
-  minor_saved: usize,
-  motive_base: usize,
-  classes: &[FlatInfo<'_>],
-) -> LeanExpr {
-  let (forall_doms, inner, n_xs) = _peel_foralls_to_ind(dom_lifted, classes);
-  let (_, inner_args) = decompose_apps(&inner);
-  let idx_args: Vec<LeanExpr> = inner_args.into_iter().skip(n_params).collect();
-
-  let depth = minor_saved + n_fields + k + n_xs;
-  let motive_var = (depth - 1 - (motive_base + target_ci)) as u64;
-  let mut ih_body = LeanExpr::bvar(Nat::from(motive_var));
-  for idx in &idx_args {
-    ih_body = LeanExpr::app(ih_body, idx.clone());
-  }
-
-  // Field is at context position (minor_saved + field_idx).
-  // BVar index = depth - 1 - (minor_saved + field_idx)
-  //            = n_fields + k + n_xs - 1 - field_idx
-  let field_bvar = (n_fields + k + n_xs - 1 - field_idx) as u64;
-  let mut field_app = LeanExpr::bvar(Nat::from(field_bvar));
-  for xi in 0..n_xs {
-    field_app = LeanExpr::app(
-      field_app,
-      LeanExpr::bvar(Nat::from((n_xs - 1 - xi) as u64)),
-    );
-  }
-  ih_body = LeanExpr::app(ih_body, field_app);
-
-  // Wrap in forall binders for xs
-  for i in (0..n_xs).rev() {
-    ih_body = LeanExpr::all(
-      Name::anon(),
-      forall_doms[i].clone(),
-      ih_body,
-      BinderInfo::Default,
-    );
-  }
-
-  ih_body
-}
-
 // =========================================================================
 // Rule RHS construction
 // =========================================================================
@@ -1236,16 +1138,21 @@ fn build_rec_rules(
       for (field_fv, target_ci) in &rec_field_data {
         // Determine the correct recursor name for the target.
         // For original targets: <target_ind>.rec
-        // For auxiliary targets: <main_ind>.rec_N
+        // For auxiliary targets: <all[0]>.rec_N (Lean hangs _N under all[0])
         let rec_name = if *target_ci < n_classes {
           Name::str(
             classes[*target_ci].ind.cnst.name.clone(),
             "rec".to_string(),
           )
         } else {
-          let main_name = classes[0].ind.cnst.name.clone();
+          let all0 = classes[0]
+            .ind
+            .all
+            .first()
+            .cloned()
+            .unwrap_or_else(|| classes[0].ind.cnst.name.clone());
           let aux_idx = *target_ci - n_classes + 1;
-          Name::str(main_name, format!("rec_{}", aux_idx))
+          Name::str(all0, format!("rec_{}", aux_idx))
         };
 
         // Get the field's type to extract index args.
@@ -1366,138 +1273,9 @@ fn build_rule_ih_fvar(
   mk_lambda(ih, &xs_decls)
 }
 
-/// Build IH value for a recursive field in a rule RHS (old BVar version).
-fn _build_rule_ih(
-  field_idx: usize,
-  n_fields: usize,
-  total_lams: usize,
-  target_ci: usize,
-  classes: &[FlatInfo<'_>],
-  n_params: usize,
-  n_motives: usize,
-  n_minors: usize,
-  dom: &LeanExpr,
-  rec_level_params: &[Name],
-) -> LeanExpr {
-  let target_ind = classes[target_ci].ind;
-  let target_n_params = target_ind.num_params.to_u64().unwrap_or(0) as usize;
-  let rec_name = Name::str(target_ind.cnst.name.clone(), "rec".to_string());
-  let rec_univs: Vec<Level> =
-    rec_level_params.iter().map(|n| Level::param(n.clone())).collect();
-
-  let (forall_doms, inner, n_xs) = _peel_foralls_to_ind(dom, classes);
-  let (_, inner_args) = decompose_apps(&inner);
-  let idx_args: Vec<LeanExpr> =
-    inner_args.into_iter().skip(target_n_params).collect();
-
-  let depth = total_lams + n_xs;
-
-  let mut ih = mk_const(&rec_name, &rec_univs);
-  for pi in 0..n_params {
-    ih = LeanExpr::app(ih, LeanExpr::bvar(Nat::from((depth - 1 - pi) as u64)));
-  }
-  for mi in 0..n_motives {
-    ih = LeanExpr::app(
-      ih,
-      LeanExpr::bvar(Nat::from((depth - 1 - n_params - mi) as u64)),
-    );
-  }
-  for mi in 0..n_minors {
-    ih = LeanExpr::app(
-      ih,
-      LeanExpr::bvar(Nat::from((depth - 1 - n_params - n_motives - mi) as u64)),
-    );
-  }
-  for idx in &idx_args {
-    ih = LeanExpr::app(ih, idx.clone());
-  }
-  let field_base = (n_fields - 1 - field_idx + n_xs) as u64;
-  let mut field_app = LeanExpr::bvar(Nat::from(field_base));
-  for xi in 0..n_xs {
-    field_app = LeanExpr::app(
-      field_app,
-      LeanExpr::bvar(Nat::from((n_xs - 1 - xi) as u64)),
-    );
-  }
-  ih = LeanExpr::app(ih, field_app);
-
-  // Wrap in lambdas for xs
-  for i in (0..n_xs).rev() {
-    let fd = &forall_doms[i];
-    let fd_name = match dom.as_data() {
-      ExprData::ForallE(n, _, _, _, _) => n.clone(),
-      _ => Name::anon(),
-    };
-    ih = LeanExpr::lam(fd_name, fd.clone(), ih, BinderInfo::Default);
-  }
-
-  ih
-}
-
 // =========================================================================
 // Helpers
 // =========================================================================
-
-/// Extract field binders from the recursor type's minor premise.
-///
-/// The minor premise is at depth `n_params + n_motives + global_minor_idx`
-/// in the rec type. Its field domains have BVars relative to that depth.
-/// In the rule RHS, fields are at depth `n_params + n_motives + n_minors`.
-/// We shift each domain by `(n_minors - 1 - global_minor_idx)` and apply
-/// a per-field cutoff to avoid shifting bound vars within nested foralls.
-fn _extract_field_binders_from_rec_type(
-  rec_type: &LeanExpr,
-  n_params: usize,
-  n_motives: usize,
-  n_minors: usize,
-  global_minor_idx: usize,
-  n_fields: usize,
-) -> Vec<Binder> {
-  let skip = n_params + n_motives + global_minor_idx;
-  let mut cur = rec_type.clone();
-  for _ in 0..skip {
-    if let ExprData::ForallE(_, _, body, _, _) = cur.as_data() {
-      cur = body.clone();
-    }
-  }
-  // cur is ∀ (minor : T), ...; extract T
-  let minor_dom = match cur.as_data() {
-    ExprData::ForallE(_, dom, _, _, _) => dom.clone(),
-    _ => return vec![],
-  };
-
-  // Shift amount: difference between minor's position and the rule's
-  // field region start. In the rec type, the minor is at position
-  // (n_params + n_motives + global_minor_idx). The fields in the rule
-  // RHS are after all minors: (n_params + n_motives + n_minors).
-  // So free vars in the minor's field domains need to be shifted up by
-  // (n_minors - 1 - global_minor_idx) to reach the right binders.
-  let field_dom_lift = n_minors - 1 - global_minor_idx;
-
-  let mut fields = Vec::with_capacity(n_fields);
-  let mut mcur = minor_dom;
-  for fi in 0..n_fields {
-    match mcur.as_data() {
-      ExprData::ForallE(name, dom, body, bi, _) => {
-        // Shift with cutoff = fi (the first fi BVars are bound to
-        // earlier fields within the minor, not free).
-        let shifted = if field_dom_lift > 0 {
-          shift_vars(dom, field_dom_lift, fi)
-        } else {
-          dom.clone()
-        };
-        fields.push(Binder {
-          name: name.clone(),
-          domain: shifted,
-          info: bi.clone(),
-        });
-        mcur = body.clone();
-      },
-      _ => break,
-    }
-  }
-  fields
-}
 
 /// Check if elimination is restricted to Prop (Sort 0).
 /// Returns true if the recursor can ONLY eliminate into Prop.
@@ -1511,7 +1289,28 @@ fn elim_only_at_universe_zero(
   n_params: usize,
   lean_env: &LeanEnv,
 ) -> bool {
-  // Only relevant for Prop inductives. Non-Prop always has large elim.
+  // Structural short-circuits matching Lean C++ `init_elim_level`
+  // (refs/lean4/src/kernel/inductive.cpp:478-533).
+
+  // Mutual inductives (> 1 type) always get small elimination.
+  if classes.len() > 1 {
+    return true;
+  }
+
+  // Count total constructors across all classes.
+  let total_ctors: usize = classes.iter().map(|c| c.ctors.len()).sum();
+
+  // Multi-constructor types always get small elimination.
+  if total_ctors > 1 {
+    return true;
+  }
+
+  // Empty types (0 constructors, like False) always get large elimination.
+  if total_ctors == 0 {
+    return false;
+  }
+
+  // Single constructor, single type: check field sorts.
   // Walk each ctor's fields (past params). For each field:
   // - Check if the field's type is in Prop (Sort 0).
   // - If not, check if it appears in the return type's indices.
@@ -1580,9 +1379,11 @@ fn elim_only_at_universe_zero(
 }
 
 /// Check if a field domain type is in Prop (Sort 0).
-/// Heuristic: checks if the domain itself is Sort 0, or if it's a BVar
-/// pointing to a param known to be in Prop, or if it's an application
-/// of a type constructor that returns Prop.
+///
+/// Handles: `Sort 0`, BVars pointing to Prop params, forall chains,
+/// applied constants (inductives, definitions, axioms, theorems, opaques),
+/// and mdata wrappers. For universe-polymorphic constants applied at
+/// concrete levels, substitutes the level args before checking the sort.
 fn is_sort_zero_domain(
   dom: &LeanExpr,
   param_sorts: &[bool],
@@ -1599,17 +1400,32 @@ fn is_sort_zero_domain(
       // ∀ x : A, B — the sort is the sort of B (under the binder)
       is_sort_zero_domain(body, param_sorts, lean_env)
     },
+    ExprData::Mdata(_, inner, _) => {
+      is_sort_zero_domain(inner, param_sorts, lean_env)
+    },
     ExprData::Const(..) | ExprData::App(..) => {
-      // Look up the head constant's return type
+      // Look up the head constant's return type.
+      // Handles inductives, definitions (e.g. `And`), axioms, theorems,
+      // and opaques — any constant whose return sort might be Prop.
       let (head, _) = decompose_apps(dom);
-      if let ExprData::Const(name, _, _) = head.as_data()
+      if let ExprData::Const(name, levels, _) = head.as_data()
         && let Some(ci) = lean_env.get(name)
       {
-        let typ = match ci {
-          ConstantInfo::InductInfo(v) => &v.cnst.typ,
-          ConstantInfo::AxiomInfo(v) => &v.cnst.typ,
+        let (typ, lvl_params) = match ci {
+          ConstantInfo::InductInfo(v) => (&v.cnst.typ, &v.cnst.level_params),
+          ConstantInfo::AxiomInfo(v) => (&v.cnst.typ, &v.cnst.level_params),
+          ConstantInfo::DefnInfo(v) => (&v.cnst.typ, &v.cnst.level_params),
+          ConstantInfo::ThmInfo(v) => (&v.cnst.typ, &v.cnst.level_params),
+          ConstantInfo::OpaqueInfo(v) => (&v.cnst.typ, &v.cnst.level_params),
           _ => return false,
         };
+        // Substitute concrete level args if available. This handles
+        // universe-polymorphic constants applied at level 0, e.g.,
+        // PUnit.{0} whose type is Sort(Param(u)) → Sort(0) after subst.
+        if !levels.is_empty() && levels.len() == lvl_params.len() {
+          let subst_typ = subst_levels(typ, lvl_params, levels);
+          return is_prop_sort(&subst_typ);
+        }
         return is_prop_sort(typ);
       }
       false
@@ -1662,27 +1478,6 @@ fn consume_type_annotations(expr: &LeanExpr) -> LeanExpr {
     return consume_type_annotations(inner);
   }
   expr.clone()
-}
-
-fn _build_ind_app(
-  name: &Name,
-  univs: &[Level],
-  n_params: usize,
-  n_indices: usize,
-  depth: usize,
-) -> LeanExpr {
-  let mut result = mk_const(name, univs);
-  for p in 0..n_params {
-    result =
-      LeanExpr::app(result, LeanExpr::bvar(Nat::from((depth - 1 - p) as u64)));
-  }
-  for i in 0..n_indices {
-    result = LeanExpr::app(
-      result,
-      LeanExpr::bvar(Nat::from((n_indices - 1 - i) as u64)),
-    );
-  }
-  result
 }
 
 /// Strip prefix `pfx` from `name`, returning the suffix.
@@ -1780,76 +1575,6 @@ fn find_rec_target(
   }
 }
 
-/// Check if any field domain of a constructor references a class member.
-fn _find_rec_target_in_ctor(
-  ctor: &ConstructorVal,
-  _level_params: &[Name],
-  n_params: usize,
-  classes: &[FlatInfo<'_>],
-) -> Option<usize> {
-  let mut cur = ctor.cnst.typ.clone();
-  for _ in 0..n_params {
-    if let ExprData::ForallE(_, _, body, _, _) = cur.as_data() {
-      cur = body.clone();
-    } else {
-      return None;
-    }
-  }
-  loop {
-    match cur.as_data() {
-      ExprData::ForallE(_, dom, body, _, _) => {
-        if let Some(ci) = find_rec_target(dom, classes, &[]) {
-          return Some(ci);
-        }
-        cur = body.clone();
-      },
-      _ => return None,
-    }
-  }
-}
-
-fn _peel_foralls_to_ind(
-  dom: &LeanExpr,
-  classes: &[FlatInfo<'_>],
-) -> (Vec<LeanExpr>, LeanExpr, usize) {
-  let mut forall_doms = Vec::new();
-  let mut inner = dom.clone();
-  while let ExprData::ForallE(_, fd, fb, _, _) = inner.as_data() {
-    let (h, _) = decompose_apps(&inner);
-    if let ExprData::Const(name, _, _) = h.as_data()
-      && classes.iter().any(|c| c.all_names.iter().any(|n| n == name))
-    {
-      break;
-    }
-    forall_doms.push(fd.clone());
-    inner = fb.clone();
-  }
-  let n = forall_doms.len();
-  (forall_doms, inner, n)
-}
-
-fn _extract_return_indices(
-  ctor_typ: &LeanExpr,
-  level_params: &[Name],
-  ind_univs: &[Level],
-  n_params: usize,
-  depth: usize,
-) -> Vec<LeanExpr> {
-  let ty = subst_levels(ctor_typ, level_params, ind_univs);
-  let mut cur = ty;
-  for p in 0..n_params {
-    if let ExprData::ForallE(_, _, body, _, _) = cur.as_data() {
-      cur =
-        instantiate1(body, &LeanExpr::bvar(Nat::from((depth - 1 - p) as u64)));
-    }
-  }
-  while let ExprData::ForallE(_, _, body, _, _) = cur.as_data() {
-    cur = body.clone();
-  }
-  let (_, args) = decompose_apps(&cur);
-  args.into_iter().skip(n_params).collect()
-}
-
 /// Port of Lean's `inferImplicit(ty, numParams, strict)`.
 ///
 /// Marks explicit binders as implicit when BVar(0) (the binder's
@@ -1883,7 +1608,12 @@ fn infer_implicit(ty: &LeanExpr, num_params: usize) -> LeanExpr {
 /// `strict=false`, also checks the range (non-domain positions).
 ///
 /// When entering a binder, `target` is incremented (since BVar indices
-/// shift under binders). Only counts occurrences in EXPLICIT domains.
+/// shift under binders).
+///
+/// Includes the C++ kernel's **transitivity rule**: if `target` appears
+/// in an *implicit* binder's domain, we recursively check whether that
+/// binder's own variable (BVar 0 in the body) appears in an explicit
+/// domain downstream. This handles chains like `{x : F target} → (y : G x)`.
 ///
 /// Reference: `refs/lean4/src/kernel/expr.cpp:480-500`
 fn has_loose_bvar_in_explicit_domain(
@@ -1901,13 +1631,21 @@ fn has_loose_bvar_in_explicit_domain(
       }
     },
     ExprData::ForallE(_, dom, body, bi, _) => {
-      // Check domain — only count if this binder is explicit
-      let dom_has = if *bi == BinderInfo::Default {
-        expr_has_loose_bvar(dom, target)
-      } else {
-        false
-      };
-      dom_has || has_loose_bvar_in_explicit_domain(body, target + 1, strict)
+      // Check if target appears in this binder's domain (any binder info).
+      if expr_has_loose_bvar(dom, target) {
+        if *bi == BinderInfo::Default {
+          // Explicit domain contains target — mark as implicit.
+          return true;
+        } else if has_loose_bvar_in_explicit_domain(body, 0, strict) {
+          // Transitivity: target appears in an implicit binder's domain.
+          // Check whether this binder's own variable (BVar 0 in body)
+          // appears in an explicit domain downstream. If so, target is
+          // transitively needed by an explicit domain.
+          return true;
+        }
+      }
+      // Continue searching in the body with shifted target.
+      has_loose_bvar_in_explicit_domain(body, target + 1, strict)
     },
     ExprData::App(f, a, _) => {
       if strict {
@@ -1951,46 +1689,6 @@ fn expr_has_loose_bvar(e: &LeanExpr, target: u64) -> bool {
 // =========================================================================
 // is_large / k computation — direct LeanExpr approach
 // =========================================================================
-
-/// Compute `is_large` and `k` directly from LeanExpr-level types.
-///
-/// Follows the Lean C++ kernel's `elim_only_at_universe_zero` and
-/// `isKTarget` logic without requiring a KEnv TypeChecker.
-///
-/// `is_large`: true if the recursor can eliminate into any Sort.
-/// `k`: true for K-target (single Prop inductive, single ctor, 0 fields).
-/// `is_prop`: true if the inductive is in Prop (Sort 0).
-fn _compute_is_large_and_k_direct(
-  classes: &[FlatInfo<'_>],
-  n_classes: usize,
-  n_params: usize,
-  lean_env: &LeanEnv,
-) -> (bool, bool, bool) {
-  // Get result sort level from the first class's type
-  let result_level = get_lean_result_sort_level(
-    &classes[0].ind.cnst.typ,
-    n_params + classes[0].n_indices,
-  );
-
-  let is_prop = result_level_is_zero(&result_level);
-
-  // Non-Prop → always large
-  let is_large = if !is_prop {
-    true
-  } else {
-    // Prop inductive → check elim_only_at_universe_zero
-    // Returns false when large elim IS allowed (so is_large = !elim_only)
-    !elim_only_at_universe_zero(classes, n_params, lean_env)
-  };
-
-  // K-target: single Prop inductive, single ctor, 0 non-param fields
-  let k = n_classes == 1
-    && is_prop
-    && classes[0].ctors.len() == 1
-    && classes[0].ctors[0].num_fields.to_u64().unwrap_or(0) == 0;
-
-  (is_large, k, is_prop)
-}
 
 /// Extract the result sort level from a LeanExpr inductive type by
 /// peeling `n` forall binders.
@@ -2045,35 +1743,38 @@ fn compute_is_large_and_k(
   n_params: usize,
   lean_env: &LeanEnv,
   stt: &crate::ix::compile::CompileState,
-  aux_n2a: Option<&dashmap::DashMap<Name, crate::ix::address::Address>>,
+  kctx: &crate::ix::compile::KernelCtx,
 ) -> (bool, bool, bool) {
   use crate::ix::kernel::constant::KConst;
   use crate::ix::kernel::id::KId;
   use crate::ix::kernel::ingress::{
-    lean_expr_to_zexpr, resolve_lean_name_addr,
+    lean_expr_to_zexpr_with_kenv, resolve_lean_name_addr,
   };
-  use crate::ix::kernel::mode::Anon;
-  use crate::ix::kernel::tc::TypeChecker;
+  use crate::ix::kernel::mode::Meta;
 
   let n2a = Some(&stt.name_to_addr);
+  let aux_n2a = Some(&stt.aux_name_to_addr);
 
   // Build ephemeral KConst entries for ALL original classes and insert
   // into stt.kenv. This ensures is_large_eliminator sees the full mutual
   // block and can apply the "mutual Prop → small" rule.
   let mut ind_infos: Vec<(
-    KId<Anon>,
+    KId<Meta>,
     u64,
     u64,
-    Vec<KId<Anon>>,
-    crate::ix::kernel::expr::KExpr<Anon>,
+    Vec<KId<Meta>>,
+    crate::ix::kernel::expr::KExpr<Meta>,
     bool,
   )> = Vec::new();
 
   // Use the first class's block KId as the shared block reference.
   let block_addr =
     resolve_lean_name_addr(&classes[0].ind.cnst.name, n2a, aux_n2a);
-  let block_zid: KId<Anon> = KId::new(block_addr, ());
+  let block_zid: KId<Meta> =
+    KId::new(block_addr, classes[0].ind.cnst.name.clone());
 
+  let _cilk_start = std::time::Instant::now();
+  let mut _ingress_total = std::time::Duration::ZERO;
   for (ci, cls) in classes[..n_classes].iter().enumerate() {
     let cls_ind = cls.ind;
     let cls_lvl_params = &cls_ind.cnst.level_params;
@@ -2081,35 +1782,35 @@ fn compute_is_large_and_k(
     let cls_n_indices = cls_ind.num_indices.to_u64().unwrap_or(0);
 
     let cls_addr = resolve_lean_name_addr(&cls_ind.cnst.name, n2a, aux_n2a);
-    let cls_zid: KId<Anon> = KId::new(cls_addr, ());
-    let cls_ty_z = lean_expr_to_zexpr(
+    let cls_zid: KId<Meta> = KId::new(cls_addr, cls_ind.cnst.name.clone());
+    let cls_ty_z = lean_expr_to_zexpr_with_kenv(
       &cls_ind.cnst.typ,
       cls_lvl_params,
-      &stt.kintern,
+      &kctx.kenv,
       n2a,
       aux_n2a,
     );
 
     // Convert constructors
-    let mut cls_ctor_zids: Vec<KId<Anon>> = Vec::new();
+    let mut cls_ctor_zids: Vec<KId<Meta>> = Vec::new();
     for ctor in &cls.ctors {
       let ctor_addr = resolve_lean_name_addr(&ctor.cnst.name, n2a, aux_n2a);
-      let ctor_zid = KId::new(ctor_addr, ());
-      let ctor_ty_z = lean_expr_to_zexpr(
+      let ctor_zid = KId::new(ctor_addr, ctor.cnst.name.clone());
+      let ctor_ty_z = lean_expr_to_zexpr_with_kenv(
         &ctor.cnst.typ,
         cls_lvl_params,
-        &stt.kintern,
+        &kctx.kenv,
         n2a,
         aux_n2a,
       );
       let ctor_fields = ctor.num_fields.to_u64().unwrap_or(0);
       let ctor_params = ctor.num_params.to_u64().unwrap_or(0);
 
-      stt.kenv.insert(
+      kctx.kenv.insert(
         ctor_zid.clone(),
         KConst::Ctor {
-          name: (),
-          level_params: (),
+          name: ctor.cnst.name.clone(),
+          level_params: cls_lvl_params.clone(),
           is_unsafe: false,
           lvls: cls_n_lvls,
           induct: cls_zid.clone(),
@@ -2123,11 +1824,11 @@ fn compute_is_large_and_k(
     }
 
     // Insert inductive
-    stt.kenv.insert(
+    kctx.kenv.insert(
       cls_zid.clone(),
       KConst::Indc {
-        name: (),
-        level_params: (),
+        name: cls_ind.cnst.name.clone(),
+        level_params: cls_lvl_params.clone(),
         lvls: cls_n_lvls,
         params: n_params as u64,
         indices: cls_n_indices,
@@ -2139,12 +1840,14 @@ fn compute_is_large_and_k(
         member_idx: ci as u64,
         ty: cls_ty_z.clone(),
         ctors: cls_ctor_zids.clone(),
-        lean_all: (),
+        lean_all: vec![],
       },
     );
 
     // Ingress field deps for this class
-    ingress_field_deps(cls, cls_lvl_params, lean_env, stt, aux_n2a);
+    let _ig_start = std::time::Instant::now();
+    ingress_field_deps(cls, cls_lvl_params, lean_env, stt, kctx);
+    _ingress_total += _ig_start.elapsed();
 
     ind_infos.push((
       cls_zid,
@@ -2160,10 +1863,8 @@ fn compute_is_large_and_k(
   let first_ty_z = &ind_infos[0].4;
   let first_n_indices = ind_infos[0].2;
 
-  // Create a fresh InternTable for the ephemeral TC.
-  let tc_intern: crate::ix::kernel::env::InternTable<Anon> =
-    crate::ix::kernel::env::InternTable::new();
-  let mut tc: TypeChecker<'_, Anon> = TypeChecker::new(&stt.kenv, tc_intern);
+  // Use the TC for the appropriate context.
+  let mut tc = crate::ix::kernel::tc::TypeChecker::new(kctx.kenv.clone());
 
   let is_large = match tc
     .get_result_sort_level(first_ty_z, n_params + (first_n_indices as usize))
@@ -2227,6 +1928,18 @@ fn compute_is_large_and_k(
   );
   let is_prop = result_level_is_zero(&result_lvl);
 
+  // C1 fix: if the block has nested auxiliary flat members that weren't
+  // inserted into the KEnv, the is_large_eliminator result may be wrong.
+  // In Lean's kernel, nested auxiliaries are full mutual block members
+  // (via elim_nested_inductive_fn), and any mutual Prop block (>1 type)
+  // gets small elimination. The KEnv path only saw n_classes types, so
+  // it may have incorrectly allowed large elimination.
+  let is_large = if is_large && is_prop && classes.len() > n_classes {
+    false
+  } else {
+    is_large
+  };
+
   // K-target: single inductive, Prop, single ctor, 0 non-param fields.
   let k = n_classes == 1
     && classes[0].ctors.len() == 1
@@ -2236,6 +1949,17 @@ fn compute_is_large_and_k(
       Some(u) if u.is_zero()
     );
 
+  let _cilk_elapsed = _cilk_start.elapsed();
+  if _cilk_elapsed.as_secs_f32() > 0.1 {
+    eprintln!(
+      "[compute_is_large_and_k] {:?} total={:.3}s ingress={:.3}s n_classes={} kenv_size={}",
+      classes[0].ind.cnst.name.pretty(),
+      _cilk_elapsed.as_secs_f32(),
+      _ingress_total.as_secs_f32(),
+      n_classes,
+      kctx.kenv.consts.len(),
+    );
+  }
   (is_large, k, is_prop)
 }
 
@@ -2246,16 +1970,17 @@ fn ingress_field_deps(
   _lvl_params: &[Name],
   lean_env: &LeanEnv,
   stt: &crate::ix::compile::CompileState,
-  aux_n2a: Option<&dashmap::DashMap<Name, crate::ix::address::Address>>,
+  kctx: &crate::ix::compile::KernelCtx,
 ) {
   use crate::ix::kernel::constant::KConst;
   use crate::ix::kernel::id::KId;
   use crate::ix::kernel::ingress::{
-    lean_expr_to_zexpr, resolve_lean_name_addr,
+    lean_expr_to_zexpr_with_kenv, resolve_lean_name_addr,
   };
-  use crate::ix::kernel::mode::Anon;
+  use crate::ix::kernel::mode::Meta;
 
   let n2a = Some(&stt.name_to_addr);
+  let aux_n2a = Some(&stt.aux_name_to_addr);
   let mut seen = rustc_hash::FxHashSet::default();
   let mut queue: Vec<Name> = Vec::new();
 
@@ -2271,8 +1996,8 @@ fn ingress_field_deps(
     seen.insert(name.clone());
 
     let addr = resolve_lean_name_addr(&name, n2a, aux_n2a);
-    let zid: KId<Anon> = KId::new(addr, ());
-    if stt.kenv.contains_key(&zid) {
+    let zid: KId<Meta> = KId::new(addr, name.clone());
+    if kctx.kenv.contains_key(&zid) {
       continue;
     }
 
@@ -2288,14 +2013,19 @@ fn ingress_field_deps(
         ConstantInfo::RecInfo(v) => (&v.cnst.typ, &v.cnst.level_params),
         ConstantInfo::QuotInfo(v) => (&v.cnst.typ, &v.cnst.level_params),
       };
-      let ty_z =
-        lean_expr_to_zexpr(typ, dep_lvl_params, &stt.kintern, n2a, aux_n2a);
+      let ty_z = lean_expr_to_zexpr_with_kenv(
+        typ,
+        dep_lvl_params,
+        &kctx.kenv,
+        n2a,
+        aux_n2a,
+      );
       let n_lvls = dep_lvl_params.len() as u64;
-      stt.kenv.insert(
+      kctx.kenv.insert(
         zid,
         KConst::Axio {
-          name: (),
-          level_params: (),
+          name: name.clone(),
+          level_params: dep_lvl_params.clone(),
           is_unsafe: false,
           lvls: n_lvls,
           ty: ty_z,
@@ -2333,8 +2063,8 @@ fn collect_const_refs(expr: &LeanExpr, out: &mut Vec<Name>) {
 
 /// Peek at the result sort of a KExpr type (peel foralls, check for Sort).
 fn peek_result_sort(
-  ty: &crate::ix::kernel::expr::KExpr<crate::ix::kernel::mode::Anon>,
-) -> Option<crate::ix::kernel::level::KUniv<crate::ix::kernel::mode::Anon>> {
+  ty: &crate::ix::kernel::expr::KExpr<crate::ix::kernel::mode::Meta>,
+) -> Option<crate::ix::kernel::level::KUniv<crate::ix::kernel::mode::Meta>> {
   use crate::ix::kernel::expr::ExprData as ZED;
   let mut cur = ty.clone();
   loop {
@@ -2360,11 +2090,6 @@ mod tests {
   /// Helper: `∀ (name : domain), body` with default binder info.
   fn epi(name: Name, domain: LeanExpr, body: LeanExpr) -> LeanExpr {
     LeanExpr::all(name, domain, body, BinderInfo::Default)
-  }
-
-  /// Helper: BVar shorthand.
-  fn _var(idx: u64) -> LeanExpr {
-    LeanExpr::bvar(Nat::from(idx))
   }
 
   /// Build a minimal Prop mutual block: A | a : B → A, B | b : A → B.
@@ -2815,7 +2540,139 @@ mod tests {
         is_unsafe: false,
       }),
     );
+    // Add PUnit and PProd so brecOn's get_level can resolve them.
+    add_punit_pprod(&mut env);
     (env, t)
+  }
+
+  /// Add minimal PUnit.{u} and PProd.{u,v} definitions to a test environment.
+  fn add_punit_pprod(env: &mut LeanEnv) {
+    let u_name = n("u");
+    let v_name = n("v");
+    let sort_u = LeanExpr::sort(Level::param(u_name.clone()));
+    let sort_v = LeanExpr::sort(Level::param(v_name.clone()));
+
+    // PUnit.{u} : Sort u, with one constructor PUnit.unit.{u} : PUnit.{u}
+    let punit = n("PUnit");
+    let punit_unit = Name::str(punit.clone(), "unit".into());
+    let punit_ty = sort_u.clone(); // PUnit : Sort u
+    let punit_c =
+      LeanExpr::cnst(punit.clone(), vec![Level::param(u_name.clone())]);
+    env.insert(
+      punit.clone(),
+      ConstantInfo::InductInfo(InductiveVal {
+        cnst: ConstantVal {
+          name: punit.clone(),
+          level_params: vec![u_name.clone()],
+          typ: punit_ty,
+        },
+        num_params: Nat::from(0u64),
+        num_indices: Nat::from(0u64),
+        all: vec![punit.clone()],
+        ctors: vec![punit_unit.clone()],
+        num_nested: Nat::from(0u64),
+        is_rec: false,
+        is_unsafe: false,
+        is_reflexive: false,
+      }),
+    );
+    env.insert(
+      punit_unit.clone(),
+      ConstantInfo::CtorInfo(ConstructorVal {
+        cnst: ConstantVal {
+          name: punit_unit,
+          level_params: vec![u_name.clone()],
+          typ: punit_c,
+        },
+        induct: punit.clone(),
+        cidx: Nat::from(0u64),
+        num_params: Nat::from(0u64),
+        num_fields: Nat::from(0u64),
+        is_unsafe: false,
+      }),
+    );
+
+    // PProd.{u, v} : Sort u → Sort v → Sort (max 1 u v)
+    let pprod = n("PProd");
+    let pprod_mk = Name::str(pprod.clone(), "mk".into());
+    let max_1_u_v = Level::max(
+      Level::succ(Level::zero()),
+      Level::max(Level::param(u_name.clone()), Level::param(v_name.clone())),
+    );
+    // Type: ∀ (α : Sort u) (β : Sort v), Sort (max 1 u v)
+    let pprod_ty = LeanExpr::all(
+      Name::str(Name::anon(), "α".into()),
+      sort_u.clone(),
+      LeanExpr::all(
+        Name::str(Name::anon(), "β".into()),
+        sort_v.clone(),
+        LeanExpr::sort(max_1_u_v),
+        crate::ix::env::BinderInfo::Default,
+      ),
+      crate::ix::env::BinderInfo::Default,
+    );
+    // mk : ∀ {α : Sort u} {β : Sort v}, α → β → PProd α β
+    let pprod_c = LeanExpr::cnst(
+      pprod.clone(),
+      vec![Level::param(u_name.clone()), Level::param(v_name.clone())],
+    );
+    let mk_ty = LeanExpr::all(
+      Name::str(Name::anon(), "α".into()),
+      sort_u,
+      LeanExpr::all(
+        Name::str(Name::anon(), "β".into()),
+        sort_v,
+        LeanExpr::all(
+          Name::str(Name::anon(), "fst".into()),
+          LeanExpr::bvar(Nat::from(1u64)),
+          LeanExpr::all(
+            Name::str(Name::anon(), "snd".into()),
+            LeanExpr::bvar(Nat::from(1u64)),
+            LeanExpr::app(
+              LeanExpr::app(pprod_c, LeanExpr::bvar(Nat::from(3u64))),
+              LeanExpr::bvar(Nat::from(2u64)),
+            ),
+            crate::ix::env::BinderInfo::Default,
+          ),
+          crate::ix::env::BinderInfo::Default,
+        ),
+        crate::ix::env::BinderInfo::Implicit,
+      ),
+      crate::ix::env::BinderInfo::Implicit,
+    );
+    env.insert(
+      pprod.clone(),
+      ConstantInfo::InductInfo(InductiveVal {
+        cnst: ConstantVal {
+          name: pprod.clone(),
+          level_params: vec![u_name.clone(), v_name.clone()],
+          typ: pprod_ty,
+        },
+        num_params: Nat::from(2u64),
+        num_indices: Nat::from(0u64),
+        all: vec![pprod.clone()],
+        ctors: vec![pprod_mk.clone()],
+        num_nested: Nat::from(0u64),
+        is_rec: false,
+        is_unsafe: false,
+        is_reflexive: false,
+      }),
+    );
+    env.insert(
+      pprod_mk.clone(),
+      ConstantInfo::CtorInfo(ConstructorVal {
+        cnst: ConstantVal {
+          name: pprod_mk,
+          level_params: vec![u_name, v_name],
+          typ: mk_ty,
+        },
+        induct: pprod,
+        cidx: Nat::from(0u64),
+        num_params: Nat::from(2u64),
+        num_fields: Nat::from(2u64),
+        is_unsafe: false,
+      }),
+    );
   }
 
   /// Build a Prop mutual with drec eligibility (single ctor, all-Prop fields).
@@ -2908,7 +2765,7 @@ mod tests {
     let classes = vec![vec![ind_name]];
     let tmp_stt = crate::ix::compile::CompileState::default();
     let (result, _is_prop) =
-      generate_canonical_recursors(&classes, &env, &tmp_stt, None).unwrap();
+      generate_canonical_recursors(&classes, &env, &tmp_stt).unwrap();
     assert_eq!(result.len(), 1);
     let (_, rec) = &result[0];
     assert_eq!(rec.num_motives.to_u64().unwrap_or(0), 1);
@@ -2935,7 +2792,7 @@ mod tests {
     // After sort_consts collapse, A≅B → 1 class.
     let classes = vec![vec![a.clone(), b.clone()]];
     let (recs, is_prop) =
-      generate_canonical_recursors(&classes, &env, &stt, None).unwrap();
+      generate_canonical_recursors(&classes, &env, &stt).unwrap();
 
     // Should produce 1 recursor (1 class).
     assert_eq!(recs.len(), 1, "alpha-collapse → 1 class → 1 recursor");
@@ -2995,7 +2852,7 @@ mod tests {
     // All 3 collapse into 1 class.
     let classes = vec![vec![a.clone(), b.clone(), c.clone()]];
     let (recs, is_prop) =
-      generate_canonical_recursors(&classes, &env, &stt, None).unwrap();
+      generate_canonical_recursors(&classes, &env, &stt).unwrap();
 
     assert_eq!(recs.len(), 1, "3-way alpha-collapse → 1 class → 1 recursor");
     let (rec_name, rec) = &recs[0];
@@ -3028,7 +2885,7 @@ mod tests {
     // A≅B collapse into 1 class, C is a separate class → 2 classes.
     let classes = vec![vec![a.clone(), b.clone()], vec![c.clone()]];
     let (recs, is_prop) =
-      generate_canonical_recursors(&classes, &env, &stt, None).unwrap();
+      generate_canonical_recursors(&classes, &env, &stt).unwrap();
 
     assert_eq!(
       recs.len(),
@@ -3083,7 +2940,7 @@ mod tests {
     // No alpha-collapse: A≠B (B has 2 fields), A≠C, B≠C → 3 classes.
     let classes = vec![vec![a.clone()], vec![b.clone()], vec![c.clone()]];
     let (recs, is_prop) =
-      generate_canonical_recursors(&classes, &env, &stt, None).unwrap();
+      generate_canonical_recursors(&classes, &env, &stt).unwrap();
 
     assert_eq!(recs.len(), 3, "no collapse → 3 classes → 3 recursors");
 
@@ -3123,7 +2980,7 @@ mod tests {
 
     let classes = vec![vec![a.clone(), b.clone()]];
     let (recs, is_prop) =
-      generate_canonical_recursors(&classes, &env, &stt, None).unwrap();
+      generate_canonical_recursors(&classes, &env, &stt).unwrap();
     assert!(is_prop, "should be Prop");
 
     let below =
@@ -3157,7 +3014,7 @@ mod tests {
 
     let classes = vec![vec![t.clone()]];
     let (recs, is_prop) =
-      generate_canonical_recursors(&classes, &env, &stt, None).unwrap();
+      generate_canonical_recursors(&classes, &env, &stt).unwrap();
     assert!(!is_prop, "Type-level should not be is_prop");
 
     // Large eliminator: level_params should have "u" prefix.
@@ -3197,7 +3054,7 @@ mod tests {
 
     let classes = vec![vec![p.clone()]];
     let (recs, is_prop) =
-      generate_canonical_recursors(&classes, &env, &stt, None).unwrap();
+      generate_canonical_recursors(&classes, &env, &stt).unwrap();
 
     // is_prop = true (it's in Prop).
     assert!(is_prop, "P : Prop should have is_prop = true");
@@ -3282,19 +3139,37 @@ mod tests {
 
     let (env, t) = build_type_nat_env();
     let stt = crate::ix::compile::CompileState::default();
+    // Ingress prelude (PUnit, PProd) and the inductive into the kenv
+    // so TcScope can resolve them during brecOn sort-level inference.
+    crate::ix::compile::aux_gen::expr_utils::ensure_prelude_in_kenv_of(
+      &stt, &stt.kctx,
+    );
+    crate::ix::compile::aux_gen::expr_utils::ensure_in_kenv_of(
+      &t, &env, &stt, &stt.kctx,
+    );
 
     let classes = vec![vec![t.clone()]];
     let (recs, is_prop) =
-      generate_canonical_recursors(&classes, &env, &stt, None).unwrap();
+      generate_canonical_recursors(&classes, &env, &stt).unwrap();
     assert!(!is_prop);
 
     let below =
       generate_below_constants(&classes, &recs, &env, is_prop, None).unwrap();
     assert_eq!(below.len(), 1);
 
-    let brecon =
-      generate_brecon_constants(&classes, &recs, &below, &env, is_prop)
-        .unwrap();
+    // Populate kenv with .below types for brecOn generation.
+    crate::ix::compile::aux_gen::populate_canon_kenv_with_below(
+      &below,
+      &classes,
+      &std::sync::Arc::new(env.clone()),
+      &stt,
+      &stt.kctx,
+    );
+
+    let brecon = generate_brecon_constants(
+      &classes, &recs, &below, &env, is_prop, &stt, &stt.kctx,
+    )
+    .unwrap();
     // .brecOn.go + .brecOn + .brecOn.eq
     assert_eq!(
       brecon.len(),
@@ -3325,16 +3200,17 @@ mod tests {
 
     let classes = vec![vec![a.clone(), b.clone()]];
     let (recs, is_prop) =
-      generate_canonical_recursors(&classes, &env, &stt, None).unwrap();
+      generate_canonical_recursors(&classes, &env, &stt).unwrap();
     assert!(is_prop);
 
     let below =
       generate_below_constants(&classes, &recs, &env, is_prop, None).unwrap();
     assert_eq!(below.len(), 1);
 
-    let brecon =
-      generate_brecon_constants(&classes, &recs, &below, &env, is_prop)
-        .unwrap();
+    let brecon = generate_brecon_constants(
+      &classes, &recs, &below, &env, is_prop, &stt, &stt.kctx,
+    )
+    .unwrap();
     // Prop-level: 1 .brecOn per class (no .go, no .eq)
     assert_eq!(brecon.len(), 1, "Prop-level brecOn should produce 1 .brecOn");
     assert_eq!(brecon[0].name.pretty(), "A.brecOn");
@@ -3393,12 +3269,13 @@ mod tests {
     let stt = crate::ix::compile::CompileState::default();
     let classes = vec![vec![unit]];
     let (recs, is_prop) =
-      generate_canonical_recursors(&classes, &env, &stt, None).unwrap();
+      generate_canonical_recursors(&classes, &env, &stt).unwrap();
     let below =
       generate_below_constants(&classes, &recs, &env, is_prop, None).unwrap();
-    let brecon =
-      generate_brecon_constants(&classes, &recs, &below, &env, is_prop)
-        .unwrap();
+    let brecon = generate_brecon_constants(
+      &classes, &recs, &below, &env, is_prop, &stt, &stt.kctx,
+    )
+    .unwrap();
 
     assert!(
       brecon.is_empty(),

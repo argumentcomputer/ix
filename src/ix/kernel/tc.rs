@@ -1,25 +1,34 @@
 //! TypeChecker struct and core helpers.
 //!
-//! The TypeChecker manages local context, caches, and environment access.
+//! The TypeChecker is a lightweight thread-local handle for type-checking.
+//! All shared state (caches, intern table, constants) lives in `KEnv` and
+//! is accessed through `self.env`. Multiple TypeChecker instances can run
+//! in parallel, all sharing one `Arc<KEnv>`.
+//!
 //! WHNF, type inference, def-eq, and constant checking are in separate modules
 //! that add `impl TypeChecker` blocks.
 
 use std::sync::Arc;
 
-use rustc_hash::FxHashMap;
-
 use crate::ix::address::Address;
 
 use super::constant::RecRule;
-use super::env::{InternTable, KEnv};
+use super::env::{Addr, KEnv};
 use super::equiv::EquivManager;
 use super::error::{TcError, u64_to_usize};
 use super::expr::{ExprData, KExpr};
-use super::id::KId;
 use super::level::{KUniv, UnivData};
 use super::mode::KernelMode;
 use super::primitive::Primitives;
 use super::subst::lift;
+
+/// Content-addressed context identity for the empty context (no bindings).
+pub fn empty_ctx_addr() -> Addr {
+  use std::sync::LazyLock;
+  static ADDR: LazyLock<Addr> =
+    LazyLock::new(|| Arc::new(blake3::hash(b"ix.kernel.ctx.empty")));
+  ADDR.clone()
+}
 
 /// Maximum iterations in the WHNF delta loop (local per-call).
 pub const MAX_WHNF_FUEL: u32 = 10_000;
@@ -46,115 +55,68 @@ pub struct IotaInfo<M: KernelMode> {
   pub lvls: u64,
 }
 
-/// Generated recursor, cached after inductive validation.
-#[derive(Clone, Debug)]
-pub struct GeneratedRecursor<M: KernelMode> {
-  pub ind_addr: Address,
-  pub ty: KExpr<M>,
-  pub rules: Vec<RecRule<M>>,
-}
-
-pub struct TypeChecker<'env, M: KernelMode> {
-  /// The global constant environment.
-  pub env: &'env KEnv<M>,
-  /// Canonical intern table (hash-consing for pointer dedup).
-  pub ienv: InternTable<M>,
-  /// Primitive constant KIds (resolved from env).
+/// Thread-local type-checking handle. Cheap to create — only allocates empty
+/// vectors and counters. All shared state lives in `Arc<KEnv>`.
+pub struct TypeChecker<M: KernelMode> {
+  /// Shared kernel environment (constants, caches, intern table).
+  pub env: Arc<KEnv<M>>,
+  /// Primitive constant KIds. Copied from `env.prims()` at construction;
+  /// overridable for tests via `tc.prims = custom`.
   pub prims: Primitives<M>,
 
-  // -- Local context --
+  // -- Thread-local context --
   /// Local variable types, indexed by de Bruijn level.
   pub ctx: Vec<KExpr<M>>,
   /// Let-bound values, parallel to `ctx`. `Some(val)` for let-bindings, `None`
   /// for lambda/forall bindings. Used for let-variable zeta-reduction in whnf_core.
   pub let_vals: Vec<Option<KExpr<M>>>,
-  /// Number of active let-bindings in `ctx`. When > 0, WHNF caches are skipped
-  /// because cached results may not account for let-bound variable substitution.
+  /// Number of active let-bindings in `ctx`. When > 0, WHNF cache keys include
+  /// ctx_id to avoid cross-context contamination.
   pub num_let_bindings: usize,
-  /// Hash-consed context identity.
-  pub ctx_id: usize,
+  /// Content-addressed context identity: a blake3 hash derived from the
+  /// binding-type chain. Immune to the ABA pointer-reuse problem.
+  pub ctx_id: Addr,
   /// Stack of previous ctx_ids for O(1) pop.
-  ctx_id_stack: Vec<usize>,
-  /// Intern table for context cons cells.
-  /// Key: (ty_ptr_key, val_ptr_key_or_0, parent_ctx_id).
-  /// For push_local (no value), val_ptr_key = 0.
-  /// For push_let, val_ptr_key = val.ptr_key().
-  ctx_intern: FxHashMap<(usize, usize, usize), Arc<()>>,
+  ctx_id_stack: Vec<Addr>,
 
-  // -- Caches --
-  // Interning guarantees pointer uniqueness by hash, so ptr_key suffices
-  // as a cache key. WHNF is context-independent; infer and def-eq are
-  // context-dependent (ctx_id needed).
-  /// WHNF cache (full, with delta): (ptr_key, ctx_component)-keyed.
-  /// Context-aware: open expressions under let-bindings use ctx_id.
-  pub whnf_cache: FxHashMap<(usize, usize), KExpr<M>>,
-  /// WHNF cache (no delta): (ptr_key, ctx_component)-keyed.
-  pub whnf_no_delta_cache: FxHashMap<(usize, usize), KExpr<M>>,
-  /// Infer cache: keyed by (ptr_key, ctx_id). Context-dependent.
-  pub infer_cache: FxHashMap<(usize, usize), KExpr<M>>,
-  /// Def-eq cache: keyed by (ptr_key, ptr_key, ctx_id). Context-dependent.
-  pub def_eq_cache: FxHashMap<(usize, usize, usize), bool>,
-  /// Failed def-eq pairs in lazy delta: canonical (min_ptr, max_ptr, ctx_id) ordering.
-  /// Prevents re-attempting expensive spine comparisons on same-head constants.
-  /// Context-aware to avoid suppressing retries across different binding contexts.
-  pub def_eq_failure: rustc_hash::FxHashSet<(usize, usize, usize)>,
-  /// Infer-only cache: results from infer_only mode (no def-eq checks).
-  /// Separate from infer_cache because full-check results are stricter.
-  pub infer_only_cache: FxHashMap<(usize, usize), KExpr<M>>,
+  // -- Thread-local optimization --
+  /// Union-find for transitive def-eq caching (lean4lean EquivManager).
+  /// Thread-local: path halving mutates on reads, not safe to share.
+  pub equiv_manager: EquivManager,
+
+  // -- Thread-local control --
   /// When true, `infer` skips def-eq checks (arg-type and let-value validation).
   pub infer_only: bool,
   /// Re-entrancy guard for native reduction (prevents whnf → native → whnf loops).
   pub in_native_reduce: bool,
   /// When true, the Bool.true fast-path in is_def_eq fires even on open terms.
-  /// Set when an `eagerReduce` argument is encountered during App inference.
   pub eager_reduce: bool,
-  /// Union-find for transitive def-eq caching (lean4lean EquivManager).
-  pub equiv_manager: EquivManager,
   /// Current def-eq recursion depth.
   pub def_eq_depth: u32,
   /// Peak def-eq depth (diagnostics).
   pub def_eq_peak: u32,
   /// Shared recursive fuel remaining for this constant check.
   pub rec_fuel: u64,
-
-  // -- Recursor generation cache --
-  /// Generated recursors, keyed by inductive Muts block id.
-  pub recursor_cache: FxHashMap<KId<M>, Vec<GeneratedRecursor<M>>>,
-  /// Maps the set of major inductive KIds (across all recursors in a block)
-  /// to (inductive_block_id, generated_recursors). Used to look up auxiliary
-  /// recursors whose major is an external inductive.
-  pub rec_majors_cache:
-    std::collections::BTreeMap<std::collections::BTreeSet<KId<M>>, KId<M>>,
 }
 
-impl<'env, M: KernelMode> TypeChecker<'env, M> {
-  pub fn new(env: &'env KEnv<M>, ienv: InternTable<M>) -> Self {
-    let prims = Primitives::from_env(env);
+impl<M: KernelMode> TypeChecker<M> {
+  pub fn new(env: Arc<KEnv<M>>) -> Self {
+    let prims = env.prims().clone();
     TypeChecker {
       env,
-      ienv,
       prims,
       ctx: Vec::new(),
       let_vals: Vec::new(),
       num_let_bindings: 0,
-      ctx_id: 0,
+      ctx_id: empty_ctx_addr(),
       ctx_id_stack: Vec::new(),
-      ctx_intern: FxHashMap::default(),
-      whnf_cache: FxHashMap::default(),
-      whnf_no_delta_cache: FxHashMap::default(),
-      infer_cache: FxHashMap::default(),
-      infer_only_cache: FxHashMap::default(),
+      equiv_manager: EquivManager::new(),
       infer_only: false,
       in_native_reduce: false,
       eager_reduce: false,
-      def_eq_cache: FxHashMap::default(),
-      def_eq_failure: rustc_hash::FxHashSet::default(),
-      equiv_manager: EquivManager::new(),
       def_eq_depth: 0,
       def_eq_peak: 0,
       rec_fuel: MAX_REC_FUEL,
-      recursor_cache: FxHashMap::default(),
-      rec_majors_cache: std::collections::BTreeMap::new(),
     }
   }
 
@@ -167,25 +129,27 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
     self.ctx.len() as u64
   }
 
-  /// WHNF cache key: (ptr_key, context_component).
-  /// Closed expressions (lbr == 0) use ctx=0 since they can't reference bindings.
-  /// Open expressions under let-bindings use ctx_id to distinguish contexts.
+  /// WHNF cache key: (expr_hash, ctx_hash).
+  /// Closed expressions (lbr == 0) use the empty context hash since they
+  /// can't reference bindings. Open expressions under let-bindings use
+  /// ctx_id to distinguish contexts.
   #[inline]
-  pub fn whnf_key(&self, e: &KExpr<M>) -> (usize, usize) {
+  pub fn whnf_key(&self, e: &KExpr<M>) -> (Addr, Addr) {
     if self.num_let_bindings > 0 && e.lbr() > 0 {
-      (e.ptr_key(), self.ctx_id)
+      (e.hash_key(), self.ctx_id.clone())
     } else {
-      (e.ptr_key(), 0)
+      (e.hash_key(), empty_ctx_addr())
     }
   }
 
   /// Push a local variable type (lambda/forall binding, no let-value).
   pub fn push_local(&mut self, ty: KExpr<M>) {
-    let key = (ty.ptr_key(), 0, self.ctx_id);
-    let token =
-      self.ctx_intern.entry(key).or_insert_with(|| Arc::new(())).clone();
-    self.ctx_id_stack.push(self.ctx_id);
-    self.ctx_id = Arc::as_ptr(&token) as usize;
+    let mut h = blake3::Hasher::new();
+    h.update(b"ctx.local");
+    h.update(ty.addr().as_bytes());
+    h.update(self.ctx_id.as_bytes());
+    self.ctx_id_stack.push(self.ctx_id.clone());
+    self.ctx_id = Arc::new(h.finalize());
     self.ctx.push(ty);
     self.let_vals.push(None);
   }
@@ -193,11 +157,13 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
   /// Push a let-bound variable (type + value). WHNF will zeta-reduce references
   /// to this variable by substituting the value (lean4lean withExtendedLetCtx).
   pub fn push_let(&mut self, ty: KExpr<M>, val: KExpr<M>) {
-    let key = (ty.ptr_key(), val.ptr_key(), self.ctx_id);
-    let token =
-      self.ctx_intern.entry(key).or_insert_with(|| Arc::new(())).clone();
-    self.ctx_id_stack.push(self.ctx_id);
-    self.ctx_id = Arc::as_ptr(&token) as usize;
+    let mut h = blake3::Hasher::new();
+    h.update(b"ctx.let");
+    h.update(ty.addr().as_bytes());
+    h.update(val.addr().as_bytes());
+    h.update(self.ctx_id.as_bytes());
+    self.ctx_id_stack.push(self.ctx_id.clone());
+    self.ctx_id = Arc::new(h.finalize());
     self.ctx.push(ty);
     self.let_vals.push(Some(val));
     self.num_let_bindings += 1;
@@ -209,7 +175,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
       self.num_let_bindings -= 1;
     }
     self.ctx.pop();
-    self.ctx_id = self.ctx_id_stack.pop().unwrap_or(0);
+    self.ctx_id = self.ctx_id_stack.pop().unwrap_or_else(empty_ctx_addr);
   }
 
   /// Look up a let-bound variable's value, lifted to the current depth.
@@ -222,7 +188,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
     }
     let level = n - 1 - idx_us;
     let val = self.let_vals[level].as_ref()?.clone();
-    Some(lift(&self.ienv, &val, idx + 1, 0))
+    Some(lift(&self.env.intern, &val, idx + 1, 0))
   }
 
   /// Save current depth for later restore.
@@ -246,7 +212,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
     }
     let level = n - 1 - idx_us;
     let ty = self.ctx[level].clone();
-    Ok(lift(&self.ienv, &ty, idx + 1, 0))
+    Ok(lift(&self.env.intern, &ty, idx + 1, 0))
   }
 
   // -----------------------------------------------------------------------
@@ -341,7 +307,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
         KExpr::prj(id.clone(), *field, val2)
       },
     };
-    self.ienv.intern_expr(result)
+    self.env.intern.intern_expr(result)
   }
 
   /// Substitute universe params in a universe level.
@@ -372,30 +338,24 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
   }
 
   // -----------------------------------------------------------------------
-  // Cache clearing (between constants)
+  // Per-constant reset (thread-local state only)
   // -----------------------------------------------------------------------
 
-  /// Clear per-constant caches, keeping persistent intern tables.
-  pub fn clear_caches(&mut self) {
+  /// Reset thread-local state between constants. Global caches in `KEnv` are
+  /// NOT cleared — they grow monotonically and are shared across all TCs.
+  pub fn reset(&mut self) {
     self.ctx.clear();
     self.let_vals.clear();
     self.num_let_bindings = 0;
-    self.ctx_id = 0;
+    self.ctx_id = empty_ctx_addr();
     self.ctx_id_stack.clear();
-    self.whnf_cache.clear();
-    self.whnf_no_delta_cache.clear();
-    self.infer_cache.clear();
-    self.infer_only_cache.clear();
+    self.equiv_manager.clear();
     self.infer_only = false;
     self.in_native_reduce = false;
     self.eager_reduce = false;
-    self.def_eq_cache.clear();
-    self.def_eq_failure.clear();
-    self.equiv_manager.clear();
     self.def_eq_depth = 0;
     self.def_eq_peak = 0;
     self.rec_fuel = MAX_REC_FUEL;
-    // Keep: ctx_intern, whnf_hash_cache, recursor_cache, ienv
   }
 
   /// Consume one unit of shared recursive fuel. Returns Err if exhausted.
@@ -441,12 +401,12 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
 
   /// Intern an expression through the mutable intern environment.
   pub fn intern(&mut self, e: KExpr<M>) -> KExpr<M> {
-    self.ienv.intern_expr(e)
+    self.env.intern.intern_expr(e)
   }
 
   /// Intern a universe through the mutable intern environment.
   pub fn intern_univ(&mut self, u: KUniv<M>) -> KUniv<M> {
-    self.ienv.intern_univ(u)
+    self.env.intern.intern_univ(u)
   }
 }
 

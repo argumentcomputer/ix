@@ -25,7 +25,13 @@ pub fn level_alpha_eq(a: &Level, b: &Level) -> Result<(), String> {
     (LevelData::Mvar(_, _), _) | (_, LevelData::Mvar(_, _)) => {
       Err("unexpected level MVar".into())
     },
-    _ => Err(format!("level mismatch: {} vs {}", level_tag(a), level_tag(b),)),
+    _ => Err(format!(
+      "level mismatch: {} vs {} ({} vs {})",
+      level_tag(a),
+      level_tag(b),
+      a.pretty(),
+      b.pretty(),
+    )),
   }
 }
 

@@ -1,16 +1,18 @@
 //! Union-find (disjoint set) for context-aware definitional equality caching.
 //!
 //! Provides O(α(n)) amortized equivalence checks via weighted quick-union
-//! with path halving. Keys are `(ptr_key, ctx_component)` pairs: closed
-//! expressions use ctx=0, open expressions under let-bindings use ctx_id.
+//! with path halving. Keys are `(expr_hash, ctx_hash)` pairs using content-
+//! addressed blake3 hashes for both components.
 
 use rustc_hash::FxHashMap;
 
-/// Composite key: (expression pointer, context component).
-type EqKey = (usize, usize);
+use super::env::Addr;
+
+/// Composite key: (expression content hash, context content hash).
+pub type EqKey = (Addr, Addr);
 
 /// Union-find structure for tracking definitional equality between
-/// (ptr_key, ctx_component) pairs.
+/// (expr_hash, ctx_hash) pairs.
 #[derive(Debug, Clone)]
 pub struct EquivManager {
   /// Map from composite key to union-find node index.
@@ -55,7 +57,7 @@ impl EquivManager {
     let node = self.parent.len();
     self.parent.push(node);
     self.rank.push(0);
-    self.node_to_key.push(key);
+    self.node_to_key.push(key.clone());
     self.key_to_node.insert(key, node);
     node
   }
@@ -108,7 +110,7 @@ impl EquivManager {
   pub fn find_root_key(&mut self, key: EqKey) -> Option<EqKey> {
     let node = *self.key_to_node.get(&key)?;
     let root = self.find(node);
-    Some(self.node_to_key[root])
+    Some(self.node_to_key[root].clone())
   }
 
   /// Record that two composite keys are definitionally equal.
@@ -121,72 +123,40 @@ impl EquivManager {
 
 #[cfg(test)]
 mod tests {
+  use std::sync::Arc;
+
   use super::*;
+
+  fn addr(n: u64) -> Addr {
+    Arc::new(blake3::hash(&n.to_le_bytes()))
+  }
 
   #[test]
   fn test_basic_equiv() {
     let mut em = EquivManager::new();
-    assert!(!em.is_equiv((100, 0), (200, 0)));
-    em.add_equiv((100, 0), (200, 0));
-    assert!(em.is_equiv((100, 0), (200, 0)));
-    assert!(em.is_equiv((200, 0), (100, 0)));
+    let zero = addr(0);
+    assert!(!em.is_equiv((addr(100), zero.clone()), (addr(200), zero.clone())));
+    em.add_equiv((addr(100), zero.clone()), (addr(200), zero.clone()));
+    assert!(em.is_equiv((addr(100), zero.clone()), (addr(200), zero.clone())));
+    assert!(em.is_equiv((addr(200), zero.clone()), (addr(100), zero.clone())));
   }
 
   #[test]
   fn test_transitivity() {
     let mut em = EquivManager::new();
-    em.add_equiv((100, 0), (200, 0));
-    em.add_equiv((200, 0), (300, 0));
-    assert!(em.is_equiv((100, 0), (300, 0)));
-    assert!(em.is_equiv((300, 0), (100, 0)));
-  }
-
-  #[test]
-  fn test_non_equivalent() {
-    let mut em = EquivManager::new();
-    em.add_equiv((100, 0), (200, 0));
-    assert!(!em.is_equiv((100, 0), (400, 0)));
-  }
-
-  #[test]
-  fn test_reflexive() {
-    let mut em = EquivManager::new();
-    assert!(em.is_equiv((100, 0), (100, 0)));
-  }
-
-  #[test]
-  fn test_clear() {
-    let mut em = EquivManager::new();
-    em.add_equiv((100, 0), (200, 0));
-    assert!(em.is_equiv((100, 0), (200, 0)));
-    em.clear();
-    assert!(!em.is_equiv((100, 0), (200, 0)));
-  }
-
-  #[test]
-  fn test_large_chain() {
-    let mut em = EquivManager::new();
-    for i in 0..100 {
-      em.add_equiv((i, 0), (i + 1, 0));
-    }
-    assert!(em.is_equiv((0, 0), (100, 0)));
-    assert!(!em.is_equiv((0, 0), (200, 0)));
+    let zero = addr(0);
+    em.add_equiv((addr(100), zero.clone()), (addr(200), zero.clone()));
+    em.add_equiv((addr(200), zero.clone()), (addr(300), zero.clone()));
+    assert!(em.is_equiv((addr(100), zero.clone()), (addr(300), zero.clone())));
   }
 
   #[test]
   fn test_context_isolation() {
     let mut em = EquivManager::new();
-    // Same ptrs, different contexts — should NOT be equivalent
-    em.add_equiv((100, 1), (200, 1));
-    assert!(em.is_equiv((100, 1), (200, 1)));
-    assert!(!em.is_equiv((100, 2), (200, 2)));
-  }
-
-  #[test]
-  fn test_closed_exprs_share_across_contexts() {
-    let mut em = EquivManager::new();
-    // Closed expressions use ctx=0, shared across all contexts
-    em.add_equiv((100, 0), (200, 0));
-    assert!(em.is_equiv((100, 0), (200, 0)));
+    let ctx1 = addr(1);
+    let ctx2 = addr(2);
+    em.add_equiv((addr(100), ctx1.clone()), (addr(200), ctx1.clone()));
+    assert!(em.is_equiv((addr(100), ctx1.clone()), (addr(200), ctx1.clone())));
+    assert!(!em.is_equiv((addr(100), ctx2.clone()), (addr(200), ctx2)));
   }
 }

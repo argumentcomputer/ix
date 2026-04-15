@@ -26,3 +26,33 @@ pub enum TcError<M: KernelMode> {
   MaxRecDepth,
   Other(String),
 }
+
+impl<M: KernelMode> std::fmt::Display for TcError<M> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      TcError::TypeExpected => write!(f, "type expected"),
+      TcError::FunExpected { e, whnf } => {
+        write!(f, "function expected, got {e} (whnf: {whnf})")
+      },
+      TcError::AppTypeMismatch { a_ty, dom, depth } => {
+        write!(
+          f,
+          "app type mismatch at depth {depth}: arg has type {a_ty}, domain is {dom}"
+        )
+      },
+      TcError::DeclTypeMismatch => write!(f, "declaration type mismatch"),
+      TcError::UnknownConst(addr) => {
+        write!(f, "unknown constant {:.12}", addr.hex())
+      },
+      TcError::UnivParamMismatch { expected, got } => {
+        write!(f, "universe param count: expected {expected}, got {got}")
+      },
+      TcError::VarOutOfRange { idx, ctx_len } => {
+        write!(f, "variable #{idx} out of range (context depth {ctx_len})")
+      },
+      TcError::DefEqFailed => write!(f, "definitional equality check failed"),
+      TcError::MaxRecDepth => write!(f, "max recursion depth exceeded"),
+      TcError::Other(s) => write!(f, "{s}"),
+    }
+  }
+}

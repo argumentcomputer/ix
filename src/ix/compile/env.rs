@@ -46,6 +46,9 @@ pub fn compile_env(
   let stt =
     CompileState { lean_env: Some(lean_env.clone()), ..Default::default() };
 
+  // The kenv is populated on-demand via ensure_in_kenv as constants are
+  // compiled. Precompiles (PUnit, PProd, Eq, True) are added below.
+
   // Pre-compile PUnit, PProd, Eq, and True so aux_gen can reference them.
   // .below uses PUnit/PProd (for Type-level), .brecOn.eq uses Eq and True.
   // True is used as a dummy motive for non-target classes in the .brecOn.eq
@@ -197,10 +200,57 @@ pub fn compile_env(
 
               // Check if this block was pre-compiled into aux_name_to_addr.
               // Promote to name_to_addr without re-compiling.
-              if stt_ref.resolve_addr(&lo).is_some() {
+              let _cc_start = std::time::Instant::now();
+              let _is_precompiled = stt_ref.resolve_addr(&lo).is_some();
+              if _is_precompiled {
                 // Check if any names in this block are aux_gen-rewritten.
                 let any_aux_gen =
                   all.iter().any(|n| stt_ref.aux_gen_extra_names.contains(n));
+
+                // Compile cross-SCC unresolved names FIRST so they're in
+                // name_to_addr before compile_const_no_aux runs.
+                // Only compile — don't promote other names yet (promote_aux
+                // inside compile_const_no_aux needs names to still be in
+                // aux_name_to_addr, not yet in name_to_addr).
+                {
+                  let mut unresolved_names = Vec::new();
+                  for name in &all {
+                    if stt_ref.name_to_addr.contains_key(name) {
+                      continue;
+                    }
+                    if stt_ref.resolve_addr(name).is_some() {
+                      // In aux_name_to_addr — will be promoted later.
+                      continue;
+                    }
+                    unresolved_names.push(name.clone());
+                  }
+                  if !unresolved_names.is_empty() {
+                    let unresolved_set: NameSet =
+                      unresolved_names.iter().cloned().collect();
+                    let mut cache = BlockCache::default();
+                    if let Err(e) = compile_const(
+                      &unresolved_names[0],
+                      &unresolved_set,
+                      lean_env,
+                      &mut cache,
+                      stt_ref,
+                    ) {
+                      eprintln!(
+                        "[compile_env] cross-SCC compile failed for {}: {}",
+                        unresolved_names[0].pretty(),
+                        e,
+                      );
+                    }
+                    for name in &unresolved_names {
+                      stt_ref.aux_gen_extra_names.insert(name.clone());
+                    }
+                    stt_ref
+                      .aux_gen_pending
+                      .lock()
+                      .unwrap()
+                      .extend(unresolved_names);
+                  }
+                }
 
                 if any_aux_gen {
                   // Compile the original Lean form (without aux_gen).
@@ -215,11 +265,16 @@ pub fn compile_env(
                     &mut orig_cache,
                     stt_ref,
                   ) {
-                    eprintln!(
-                      "[compile_env] compile_const_no_aux failed for {}: {}",
-                      lo.pretty(),
-                      e,
-                    );
+                    let mut err_guard = error_ref.lock().unwrap();
+                    if err_guard.is_none() {
+                      eprintln!(
+                        "[compile_env] compile_const_no_aux failed for {}: {}",
+                        lo.pretty(),
+                        e,
+                      );
+                      *err_guard = Some(e);
+                    }
+                    return;
                   }
                 }
 
@@ -240,6 +295,15 @@ pub fn compile_env(
                 {
                   let mut err_guard = error_ref.lock().unwrap();
                   if err_guard.is_none() {
+                    eprintln!(
+                      "[compile_env] ERROR in block {} ({} members): {}",
+                      lo.pretty(),
+                      all.len(),
+                      e,
+                    );
+                    for member in &all {
+                      eprintln!("    member: {}", member.pretty());
+                    }
                     // Print dep status for MissingConstant errors
                     if let CompileError::MissingConstant {
                       ref name,
@@ -301,11 +365,14 @@ pub fn compile_env(
               // Check for slow blocks
               let elapsed = block_start.elapsed();
               if elapsed.as_secs_f32() > 1.0 {
+                let cc_time = _cc_start.elapsed().as_secs_f32();
                 eprintln!(
-                  "Slow block {:?} ({} consts): {:.2}s",
+                  "Slow block {:?} ({} consts): {:.2}s path={} cc={:.2}s",
                   lo.pretty(),
                   all.len(),
-                  elapsed.as_secs_f32()
+                  elapsed.as_secs_f32(),
+                  if _is_precompiled { "precompiled" } else { "compile" },
+                  cc_time,
                 );
               }
 
@@ -335,15 +402,13 @@ pub fn compile_env(
                 resolve_name(name, &mut newly_ready);
               }
 
-              // Resolve deps for aux_gen "bonus" names compiled during this
-              // block (e.g., .below, .below.mk). Don't drain the set — it's
-              // used as a persistent marker.
+              // Drain pending aux_gen names and resolve their deps.
+              // Only processes names added since the last drain, not the
+              // full accumulated set (which is kept in aux_gen_extra_names
+              // for persistent membership checks).
               {
-                let extra: Vec<Name> = stt_ref
-                  .aux_gen_extra_names
-                  .iter()
-                  .map(|r| r.clone())
-                  .collect();
+                let extra: Vec<Name> =
+                  std::mem::take(&mut *stt_ref.aux_gen_pending.lock().unwrap());
                 for name in &extra {
                   resolve_name(name, &mut newly_ready);
                 }

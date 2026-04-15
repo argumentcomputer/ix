@@ -11,13 +11,13 @@ use super::level::{KUniv, univ_eq};
 use super::mode::{CheckDupLevelParams, KernelMode};
 use super::tc::TypeChecker;
 
-impl<'env, M: KernelMode> TypeChecker<'env, M> {
+impl<M: KernelMode> TypeChecker<M> {
   /// Type-check a single constant. Clears per-constant caches first.
   pub fn check_const(&mut self, id: &KId<M>) -> Result<(), TcError<M>>
   where
     M::MField<Vec<crate::ix::env::Name>>: CheckDupLevelParams,
   {
-    self.clear_caches();
+    self.reset();
 
     let c = self
       .env
@@ -317,8 +317,10 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
 
 #[cfg(test)]
 mod tests {
+  use std::sync::Arc;
+
   use super::super::constant::KConst;
-  use super::super::env::{InternTable, KEnv};
+  use super::super::env::KEnv;
   use super::super::expr::KExpr;
   use super::super::id::KId;
   use super::super::level::KUniv;
@@ -344,8 +346,8 @@ mod tests {
     AE::sort(AU::succ(AU::zero()))
   }
 
-  fn test_env() -> KEnv<Anon> {
-    let env = KEnv::new();
+  fn test_env() -> Arc<KEnv<Anon>> {
+    let env = Arc::new(KEnv::new());
     // Axiom: Nat : Sort 1
     env.insert(
       mk_id("Nat"),
@@ -399,35 +401,35 @@ mod tests {
   #[test]
   fn check_axiom() {
     let env = test_env();
-    let mut tc = TypeChecker::new(&env, InternTable::new());
+    let mut tc = TypeChecker::new(Arc::clone(&env));
     assert!(tc.check_const(&mk_id("Nat")).is_ok());
   }
 
   #[test]
   fn check_defn_ok() {
     let env = test_env();
-    let mut tc = TypeChecker::new(&env, InternTable::new());
+    let mut tc = TypeChecker::new(Arc::clone(&env));
     assert!(tc.check_const(&mk_id("id")).is_ok());
   }
 
   #[test]
   fn check_defn_mismatch() {
     let env = test_env();
-    let mut tc = TypeChecker::new(&env, InternTable::new());
+    let mut tc = TypeChecker::new(Arc::clone(&env));
     assert!(tc.check_const(&mk_id("wrong")).is_err());
   }
 
   #[test]
   fn check_unknown_const() {
     let env = test_env();
-    let mut tc = TypeChecker::new(&env, InternTable::new());
+    let mut tc = TypeChecker::new(Arc::clone(&env));
     assert!(tc.check_const(&mk_id("nonexistent")).is_err());
   }
 
   #[test]
   fn check_clears_caches() {
     let env = test_env();
-    let mut tc = TypeChecker::new(&env, InternTable::new());
+    let mut tc = TypeChecker::new(Arc::clone(&env));
     tc.check_const(&mk_id("Nat")).unwrap();
     // def_eq_depth should be reset
     assert_eq!(tc.def_eq_depth, 0);

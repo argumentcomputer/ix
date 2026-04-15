@@ -3,12 +3,14 @@
 //! Provides convenience constructors for `KExpr<Meta>`, `KUniv<Meta>`, `KId<Meta>`,
 //! and `KConst<Meta>` to reduce boilerplate in hand-built test environments.
 
+use std::sync::Arc;
+
 use crate::ix::address::Address;
 use crate::ix::env::{BinderInfo, DefinitionSafety, Name, ReducibilityHints};
 use crate::ix::ixon::constant::DefKind;
 
 use super::constant::KConst;
-use super::env::{InternTable, KEnv};
+use super::env::KEnv;
 use super::expr::KExpr;
 use super::id::KId;
 use super::level::KUniv;
@@ -226,16 +228,16 @@ pub fn eq_refl_expr(u: MU, alpha: ME, a: ME) -> ME {
 
 // ---- Test runner helpers ----
 
-pub fn check_accepts(env: &KEnv<Meta>, id: &MId) {
-  let mut tc = TypeChecker::new(env, InternTable::new());
+pub fn check_accepts(env: &Arc<KEnv<Meta>>, id: &MId) {
+  let mut tc = TypeChecker::new(Arc::clone(env));
   match tc.check_const(id) {
     Ok(()) => {},
     Err(e) => panic!("expected {id} to be accepted, got error: {e:?}"),
   }
 }
 
-pub fn check_rejects(env: &KEnv<Meta>, id: &MId) {
-  let mut tc = TypeChecker::new(env, InternTable::new());
+pub fn check_rejects(env: &Arc<KEnv<Meta>>, id: &MId) {
+  let mut tc = TypeChecker::new(Arc::clone(env));
   match tc.check_const(id) {
     Err(_) => {},
     Ok(()) => panic!("expected {id} to be rejected, but it was accepted"),
@@ -244,11 +246,11 @@ pub fn check_rejects(env: &KEnv<Meta>, id: &MId) {
 
 /// Check with custom primitives (needed for Nat literal tests etc.)
 pub fn check_accepts_with_prims(
-  env: &KEnv<Meta>,
+  env: &Arc<KEnv<Meta>>,
   id: &MId,
   prims: super::primitive::Primitives<Meta>,
 ) {
-  let mut tc = TypeChecker::new(env, InternTable::new());
+  let mut tc = TypeChecker::new(Arc::clone(env));
   tc.prims = prims;
   match tc.check_const(id) {
     Ok(()) => {},

@@ -30,6 +30,8 @@ mutual
   public inductive A' | a' : A' → A'
   --public inductive B' | a' : B' → B'
 end
+
+
 end AlphaCollapse
 
 
@@ -183,6 +185,7 @@ mutual
     | ineq : IneqC → UnsatP
 end
 end OverMergedStructs
+
 namespace OverMergedStructs2
 mutual
   public structure EqC where
@@ -204,5 +207,148 @@ mutual
     | ineq : IneqC → UnsatP
 end
 end OverMergedStructs2
+
+
+-- Nested inductive: single type nesting through List.
+-- No alpha-collapse (single inductive), so aux_gen doesn't run.
+-- Serves as a baseline: Lean's original nested auxiliaries (.rec_1, .below_1,
+-- .brecOn_1) compile without interference from our pipeline.
+namespace NestedSimple
+public inductive Tree where
+  | leaf : Nat → Tree
+  | node : List Tree → Tree
+
+end NestedSimple
+
+-- Nested + alpha-collapse: TreeA ≅ TreeB (identical structure under renaming),
+-- both nesting through List. Mutual references (fromB/fromA) ensure they form
+-- a single SCC so sort_consts can collapse them.
+-- Exercises:
+--   1. Alpha-collapse merges {TreeA, TreeB} into one equivalence class
+--   2. build_compile_flat_block detects List as a nested auxiliary
+--   3. generate_canonical_recursors builds a recursor with auxiliary rules for List
+--   4. TreeB's auxiliaries are aliased to TreeA's
+namespace NestedAlphaCollapse
+mutual
+  public inductive TreeA where
+    | leaf : TreeA
+    | fromB : TreeB → TreeA
+    | node : List TreeA → TreeA
+  public inductive TreeB where
+    | leaf : TreeB
+    | fromA : TreeA → TreeB
+    | node : List TreeB → TreeB
+end
+end NestedAlphaCollapse
+
+-- Nested + alpha-collapse with a parameter: Rose α nests through List.
+-- Mutual references ensure SCC formation. Tests that spec_params (containing
+-- the block parameter α) are correctly detected, hashed for dedup, and
+-- abstracted back to BVars.
+namespace NestedParam
+mutual
+  public inductive RoseA (α : Type) where
+    | leaf : α → RoseA α
+    | fromB : RoseB α → RoseA α
+    | node : List (RoseA α) → RoseA α
+  public inductive RoseB (α : Type) where
+    | leaf : α → RoseB α
+    | fromA : RoseA α → RoseB α
+    | node : List (RoseB α) → RoseB α
+end
+end NestedParam
+
+-- Nested + over-merge: A/B form one SCC (not alpha-equivalent: B has extra
+-- field), C references both but not vice versa (external SCC). All three
+-- nest through List.
+-- Exercises nested detection in a multi-SCC block where the inner SCC {A,B}
+-- has a non-trivial flat block (List appears as auxiliary for both A and B).
+namespace NestedOverMerge
+mutual
+  public inductive A where
+    | a : B → List A → A
+  public inductive B where
+    | b : A → A → List B → B
+  public inductive C where
+    | c : A → B → List C → C
+end
+end NestedOverMerge
+
+-- Nested + over-merge + alpha-collapse: A ≅ B (identical structure under
+-- renaming), C is in a separate SCC referencing both. All nest through List.
+-- Exercises the combination of alpha-collapse AND nested detection in the
+-- same block — the canonical recursor for {A,B} needs auxiliary List rules.
+namespace NestedOverMergeAlphaCollapse
+mutual
+  public inductive A where
+    | a : B → List A → A
+  public inductive B where
+    | b : A → List B → B
+  public inductive C where
+    | c : A → B → List C → C
+end
+--
+--#eval show Lean.MetaM Unit from do
+--  let ci ← Lean.getConstInfo ``A.rec_3
+--  let .recInfo cv := ci | return
+--  IO.println s!"{repr cv.all}"
+--
+mutual
+  public inductive A2 where
+    | a : B2 → List A2 → A2
+  public inductive B2 where
+    | b : A2 → List B2 → B2
+end
+mutual
+  public inductive C2 where
+    | c : A2 → B2 → List C2 → C2
+end
+--#print C2.rec_1
+
+end NestedOverMergeAlphaCollapse
+
+-- Higher-order recursive fields: constructors with `(A → I) → I` pattern.
+-- Exercises the `build_below_minor` path for IH fields whose domain has
+-- inner foralls. The `.below` minor must distribute PProd inside the forall:
+--   `∀ (a : A), PProd(motive (f a), ih a)`
+-- NOT flatten it outside:
+--   `PProd(∀ (a : A), motive (f a), ih)`
+namespace HigherOrderRec
+
+-- Single inductive with a higher-order recursive field.
+-- `.below` minor for `sup` should be:
+--   `λ (f : Nat → WTree) (ih : ∀ (a : Nat), Sort rlvl),
+--      ∀ (a : Nat), PProd (motive (f a)) (ih a)`
+public inductive WTree where
+  | leaf : Nat → WTree
+  | sup : (Nat → WTree) → WTree
+
+-- Multiple higher-order fields: both simple and function-typed recursion.
+-- `.below` minor for `branch` should handle `t` as simple IH and `f` as
+-- higher-order IH in the same PProd chain.
+public inductive MTree where
+  | leaf : Nat → MTree
+  | branch : MTree → (Nat → MTree) → MTree
+
+-- Alpha-collapse with higher-order recursive fields: FA ≅ FB under renaming.
+-- Tests that collapsed aliases inherit the correct `.below` structure.
+mutual
+  public inductive FA where
+    | leaf : FA
+    | sup : (Nat → FB) → FA
+  public inductive FB where
+    | leaf : FB
+    | sup : (Nat → FA) → FB
+end
+
+-- Multi-argument higher-order field: `(Nat → Bool → I) → I`.
+-- `.below` minor should produce:
+--   `λ (f : Nat → Bool → HOTree2) (ih : ∀ (a : Nat) (b : Bool), Sort rlvl),
+--      ∀ (a : Nat) (b : Bool), PProd (motive (f a b)) (ih a b)`
+public inductive HOTree2 where
+  | leaf : HOTree2
+  | sup : (Nat → Bool → HOTree2) → HOTree2
+
+end HigherOrderRec
 
 end Tests.Ix.Compile.Mutual

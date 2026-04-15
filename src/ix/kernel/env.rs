@@ -1,18 +1,24 @@
 //! Zero kernel environment.
 //!
-//! `KEnv<M>` maps `KId<M>` to `KConst<M>`. In Anon mode, KId compares by
-//! address only (name is `()`). In Meta mode, both address and name participate,
-//! enabling smooth transitions between modes.
+//! `KEnv<M>` maps `KId<M>` to `KConst<M>`, and owns all shared kernel state:
+//! the intern table, type-checking caches, and resolved primitives.
+//!
+//! All mutable state uses `DashMap`/`DashSet` for lock-free concurrent access.
+//! Multiple `TypeChecker` instances can share one `Arc<KEnv>` and run in parallel.
 
-use std::sync::Arc;
+use std::collections::BTreeSet;
+use std::sync::{Arc, OnceLock};
 
-use dashmap::DashMap;
+use dashmap::{DashMap, DashSet};
 
-use super::constant::KConst;
+use crate::ix::address::Address;
+
+use super::constant::{KConst, RecRule};
 use super::expr::KExpr;
 use super::id::KId;
 use super::level::KUniv;
 use super::mode::KernelMode;
+use super::primitive::Primitives;
 
 /// Shared Merkle hash. Cheap to clone (Arc refcount bump).
 pub type Addr = Arc<blake3::Hash>;
@@ -53,17 +59,59 @@ impl<M: KernelMode> InternTable<M> {
   }
 }
 
+/// Generated recursor, cached after inductive validation.
+#[derive(Clone, Debug)]
+pub struct GeneratedRecursor<M: KernelMode> {
+  pub ind_addr: Address,
+  pub ty: KExpr<M>,
+  pub rules: Vec<RecRule<M>>,
+}
+
 /// The global zero kernel environment.
 ///
-/// Thread-safe via `DashMap`: supports concurrent reads and writes during
-/// parallel compilation (ingress) and sequential type checking alike.
+/// Thread-safe via `DashMap`/`DashSet`: supports concurrent reads and writes
+/// from multiple `TypeChecker` instances running in parallel. Contains all
+/// shared kernel state: constants, intern table, and type-checking caches.
+///
 /// `get()` returns owned `KConst`/`Vec` (cheap Arc clones) to avoid
 /// holding DashMap guards across call boundaries.
 pub struct KEnv<M: KernelMode> {
+  // -- Constants --
   /// Loaded constants keyed by `KId`.
   pub consts: DashMap<KId<M>, KConst<M>>,
   /// Block membership: block id → ordered member ids.
   pub blocks: DashMap<KId<M>, Vec<KId<M>>>,
+
+  // -- Intern table (hash-consing for pointer dedup) --
+  pub intern: InternTable<M>,
+
+  // -- Primitives (resolved lazily from consts) --
+  prims: OnceLock<Primitives<M>>,
+
+  // -- Global caches (grow monotonically, keyed by content hash) --
+  // All cache keys use `Addr` (= `Arc<blake3::Hash>`, content-addressed) rather
+  // than `Arc::as_ptr` pointers, avoiding the ABA problem where deallocated
+  // pointers are reused by the allocator for semantically different expressions.
+  /// WHNF cache (full, with delta): (expr_hash, ctx_hash)-keyed.
+  pub whnf_cache: DashMap<(Addr, Addr), KExpr<M>>,
+  /// WHNF cache (no delta): (expr_hash, ctx_hash)-keyed.
+  pub whnf_no_delta_cache: DashMap<(Addr, Addr), KExpr<M>>,
+  /// Infer cache: keyed by (expr_hash, ctx_hash). Context-dependent.
+  pub infer_cache: DashMap<(Addr, Addr), KExpr<M>>,
+  /// Infer-only cache: results from infer_only mode (no def-eq checks).
+  pub infer_only_cache: DashMap<(Addr, Addr), KExpr<M>>,
+  /// Def-eq cache: keyed by (expr_hash, expr_hash, ctx_hash). Context-dependent.
+  pub def_eq_cache: DashMap<(Addr, Addr, Addr), bool>,
+  /// Failed def-eq pairs in lazy delta: canonical ordering by hash.
+  pub def_eq_failure: DashSet<(Addr, Addr, Addr)>,
+  /// Ingress cache: LeanExpr → KExpr conversion results.
+  /// Keyed by (expr_hash, param_names_hash) to account for different
+  /// level param bindings producing different KExprs from the same LeanExpr.
+  pub ingress_cache: DashMap<(Addr, Addr), KExpr<M>>,
+  /// Generated recursors, keyed by inductive Muts block id.
+  pub recursor_cache: DashMap<KId<M>, Vec<GeneratedRecursor<M>>>,
+  /// Maps the set of major inductive KIds to the inductive block id.
+  pub rec_majors_cache: DashMap<BTreeSet<KId<M>>, KId<M>>,
 }
 
 impl<M: KernelMode> Default for KEnv<M> {
@@ -74,7 +122,26 @@ impl<M: KernelMode> Default for KEnv<M> {
 
 impl<M: KernelMode> KEnv<M> {
   pub fn new() -> Self {
-    KEnv { consts: DashMap::default(), blocks: DashMap::default() }
+    KEnv {
+      consts: DashMap::default(),
+      blocks: DashMap::default(),
+      intern: InternTable::new(),
+      prims: OnceLock::new(),
+      whnf_cache: DashMap::default(),
+      whnf_no_delta_cache: DashMap::default(),
+      infer_cache: DashMap::default(),
+      infer_only_cache: DashMap::default(),
+      def_eq_cache: DashMap::default(),
+      def_eq_failure: DashSet::default(),
+      ingress_cache: DashMap::default(),
+      recursor_cache: DashMap::default(),
+      rec_majors_cache: DashMap::default(),
+    }
+  }
+
+  /// Resolve primitives from the environment (cached via OnceLock).
+  pub fn prims(&self) -> &Primitives<M> {
+    self.prims.get_or_init(|| Primitives::from_env(self))
   }
 
   pub fn get(&self, id: &KId<M>) -> Option<KConst<M>> {

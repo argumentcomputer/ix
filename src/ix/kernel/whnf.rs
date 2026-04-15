@@ -16,7 +16,7 @@ use super::tc::{IotaInfo, MAX_WHNF_FUEL, TypeChecker, collect_app_spine};
 
 use lean_ffi::nat::Nat;
 
-impl<'env, M: KernelMode> TypeChecker<'env, M> {
+impl<M: KernelMode> TypeChecker<M> {
   /// Full WHNF: loop of whnf_no_delta → delta (one step).
   pub fn whnf(&mut self, e: &KExpr<M>) -> Result<KExpr<M>, TcError<M>> {
     let has_lets = self.num_let_bindings > 0;
@@ -34,17 +34,17 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
     // Context-aware cache: closed exprs use ptr only, open exprs under
     // let-bindings include ctx_id to avoid cross-context contamination.
     let key = self.whnf_key(e);
-    if let Some(cached) = self.whnf_cache.get(&key) {
+    if let Some(cached) = self.env.whnf_cache.get(&key) {
       return Ok(cached.clone());
     }
     // Equiv-root second-chance: WHNF is deterministic, so all members of
     // an equivalence class share the same normal form.
     if let Some(root_key) =
-      self.equiv_manager.find_root_key((e.ptr_key(), key.1))
-      && root_key.0 != e.ptr_key()
+      self.equiv_manager.find_root_key((e.hash_key(), key.1.clone()))
+      && root_key.0 != e.hash_key()
     {
-      let root_whnf_key = (root_key.0, key.1);
-      if let Some(cached) = self.whnf_cache.get(&root_whnf_key) {
+      let root_whnf_key = (root_key.0, key.1.clone());
+      if let Some(cached) = self.env.whnf_cache.get(&root_whnf_key) {
         return Ok(cached.clone());
       }
     }
@@ -94,14 +94,15 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
     }
 
     if !self.in_native_reduce {
-      self.whnf_cache.insert(key, cur.clone());
+      let key_ctx = key.1.clone();
+      self.env.whnf_cache.insert(key, cur.clone());
       // Also cache under equiv root so all equiv-class members benefit.
       if let Some(root_key) =
-        self.equiv_manager.find_root_key((e.ptr_key(), key.1))
-        && root_key.0 != e.ptr_key()
+        self.equiv_manager.find_root_key((e.hash_key(), key_ctx.clone()))
+        && root_key.0 != e.hash_key()
       {
-        let root_whnf_key = (root_key.0, key.1);
-        self.whnf_cache.entry(root_whnf_key).or_insert(cur.clone());
+        let root_whnf_key = (root_key.0, key_ctx);
+        self.env.whnf_cache.entry(root_whnf_key).or_insert(cur.clone());
       }
     }
     Ok(cur)
@@ -154,7 +155,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
         ExprData::Let(_, _, val, body, _, _) => {
           let val = val.clone();
           let body = body.clone();
-          cur = subst(&self.ienv, &body, &val, 0);
+          cur = subst(&self.env.intern, &body, &val, 0);
           continue;
         },
 
@@ -172,7 +173,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
         while i < args.len() {
           if let ExprData::Lam(_, _, _, inner, _) = body.data() {
             let inner = inner.clone();
-            body = subst(&self.ienv, &inner, &args[i], 0);
+            body = subst(&self.env.intern, &inner, &args[i], 0);
             i += 1;
           } else {
             break;
@@ -225,16 +226,16 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
     }
 
     let key = self.whnf_key(e);
-    if let Some(cached) = self.whnf_no_delta_cache.get(&key) {
+    if let Some(cached) = self.env.whnf_no_delta_cache.get(&key) {
       return Ok(cached.clone());
     }
     // Equiv-root second-chance for whnf_no_delta.
     if let Some(root_key) =
-      self.equiv_manager.find_root_key((e.ptr_key(), key.1))
-      && root_key.0 != e.ptr_key()
+      self.equiv_manager.find_root_key((e.hash_key(), key.1.clone()))
+      && root_key.0 != e.hash_key()
     {
-      let root_whnf_key = (root_key.0, key.1);
-      if let Some(cached) = self.whnf_no_delta_cache.get(&root_whnf_key) {
+      let root_whnf_key = (root_key.0, key.1.clone());
+      if let Some(cached) = self.env.whnf_no_delta_cache.get(&root_whnf_key) {
         return Ok(cached.clone());
       }
     }
@@ -286,13 +287,18 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
     }
 
     if !self.in_native_reduce {
-      self.whnf_no_delta_cache.insert(key, cur.clone());
+      let key_ctx = key.1.clone();
+      self.env.whnf_no_delta_cache.insert(key, cur.clone());
       if let Some(root_key) =
-        self.equiv_manager.find_root_key((e.ptr_key(), key.1))
-        && root_key.0 != e.ptr_key()
+        self.equiv_manager.find_root_key((e.hash_key(), key_ctx.clone()))
+        && root_key.0 != e.hash_key()
       {
-        let root_whnf_key = (root_key.0, key.1);
-        self.whnf_no_delta_cache.entry(root_whnf_key).or_insert(cur.clone());
+        let root_whnf_key = (root_key.0, key_ctx);
+        self
+          .env
+          .whnf_no_delta_cache
+          .entry(root_whnf_key)
+          .or_insert(cur.clone());
       }
     }
     Ok(cur)
@@ -768,7 +774,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
     // Nat.succ n → n + 1
     if addr == self.prims.nat_succ.addr && args.len() == 1 {
       let a = self.whnf(&args[0])?;
-      if let Some(n) = extract_nat_lit(&a) {
+      if let Some(n) = extract_nat_lit(&a, &self.prims) {
         let result = Nat(&n.0 + 1u64);
         let blob_addr = Address::hash(&result.to_le_bytes());
         return Ok(Some(self.intern(KExpr::nat(result, blob_addr))));
@@ -779,7 +785,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
     // Nat.pred n → n - 1 (or 0 if n = 0)
     if addr == self.prims.nat_pred.addr && args.len() == 1 {
       let a = self.whnf(&args[0])?;
-      if let Some(n) = extract_nat_lit(&a) {
+      if let Some(n) = extract_nat_lit(&a, &self.prims) {
         let result = if n.0 == num_bigint::BigUint::ZERO {
           Nat(num_bigint::BigUint::ZERO)
         } else {
@@ -816,11 +822,11 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
 
     let wa = self.whnf(&args[0])?;
     let wb = self.whnf(&args[1])?;
-    let a_val = match extract_nat_lit(&wa) {
+    let a_val = match extract_nat_lit(&wa, &self.prims) {
       Some(v) => v,
       None => return Ok(None),
     };
-    let b_val = match extract_nat_lit(&wb) {
+    let b_val = match extract_nat_lit(&wb, &self.prims) {
       Some(v) => v,
       None => return Ok(None),
     };
@@ -857,13 +863,19 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
   ///
   /// Intercepts `Nat.decLe n m`, `Nat.decEq n m`, `Nat.decLt n m` when both
   /// arguments are Nat literals. Computes the boolean result natively and
-  /// constructs the appropriate `Decidable.isTrue proof` or `Decidable.isFalse proof`.
+  /// constructs the appropriate `Decidable.isTrue prop proof` or
+  /// `Decidable.isFalse prop proof`.
+  ///
+  /// Constructors in the kernel are fully explicit:
+  ///   `Decidable.isTrue  : (p : Prop) → p → Decidable p`
+  ///   `Decidable.isFalse : (p : Prop) → (p → False) → Decidable p`
+  /// so the proposition `p` must be supplied as the first argument.
   ///
   /// Proof terms:
-  /// - decLe true:  `Decidable.isTrue  (Nat.le_of_ble_eq_true  n m (Eq.refl Bool.true))`
-  /// - decLe false: `Decidable.isFalse (Nat.not_le_of_not_ble_eq_true n m (Bool.noConfusion (Eq.refl Bool.false)))`
-  /// - decEq true:  `Decidable.isTrue  (Nat.eq_of_beq_eq_true  n m (Eq.refl Bool.true))`
-  /// - decEq false: `Decidable.isFalse (Nat.ne_of_beq_eq_false n m (Eq.refl Bool.false))`
+  /// - decLe true:  `Decidable.isTrue  prop (Nat.le_of_ble_eq_true  n m (Eq.refl.{1} Bool Bool.true))`
+  /// - decEq true:  `Decidable.isTrue  prop (Nat.eq_of_beq_eq_true  n m (Eq.refl.{1} Bool Bool.true))`
+  /// - decEq false: `Decidable.isFalse prop (Nat.ne_of_beq_eq_false n m (Eq.refl.{1} Bool Bool.false))`
+  /// - decLe false: falls through to delta (proof requires `False` primitive not yet available)
   /// - decLt n m:   delegates to decLe (n+1) m
   pub(super) fn try_reduce_decidable(
     &mut self,
@@ -891,11 +903,11 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
 
     let wa = self.whnf(&args[0])?;
     let wb = self.whnf(&args[1])?;
-    let a_val = match extract_nat_lit(&wa) {
+    let a_val = match extract_nat_lit(&wa, &self.prims) {
       Some(v) => v.clone(),
       None => return Ok(None),
     };
-    let b_val = match extract_nat_lit(&wb) {
+    let b_val = match extract_nat_lit(&wb, &self.prims) {
       Some(v) => v.clone(),
       None => return Ok(None),
     };
@@ -921,6 +933,21 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
       return Ok(Some(result));
     }
 
+    // Extract the proposition from the type of `e`.
+    // `e : Decidable prop` → we need `prop` as the first constructor argument.
+    // Use infer_only to avoid def-eq checks (safe within WHNF).
+    let prop = match self.with_infer_only(|tc| tc.infer(e)) {
+      Ok(e_ty) => {
+        let e_ty_whnf = self.whnf(&e_ty)?;
+        let (_, type_args) = collect_app_spine(&e_ty_whnf);
+        match type_args.into_iter().next() {
+          Some(p) => p,
+          None => return Ok(None), // not `Decidable prop` — bail
+        }
+      },
+      Err(_) => return Ok(None), // inference failed — bail to delta
+    };
+
     let (b_result, proof_true_fn, proof_false_fn) = if is_dec_le {
       (
         a_val <= b_val,
@@ -939,7 +966,7 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
     let proof_false_fn = proof_false_fn.clone();
 
     let result_expr = if b_result {
-      // Decidable.isTrue (proof_fn n m (Eq.refl.{1} Bool Bool.true))
+      // Decidable.isTrue prop (proof_fn n m (Eq.refl.{1} Bool Bool.true))
       let eq_refl = self.intern(KExpr::cnst(
         self.prims.eq_refl.clone(),
         Box::new([u1.clone()]),
@@ -958,14 +985,15 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
       let proof = self.intern(KExpr::app(proof, args[1].clone()));
       let proof = self.intern(KExpr::app(proof, refl_proof));
 
-      // Build: Decidable.isTrue proof
+      // Build: Decidable.isTrue prop proof
       let is_true = self.intern(KExpr::cnst(
         self.prims.decidable_is_true.clone(),
         Box::new([]),
       ));
-      self.intern(KExpr::app(is_true, proof))
+      let r = self.intern(KExpr::app(is_true, prop));
+      self.intern(KExpr::app(r, proof))
     } else if is_dec_eq {
-      // Decidable.isFalse (Nat.ne_of_beq_eq_false n m (Eq.refl.{1} Bool Bool.false))
+      // Decidable.isFalse prop (Nat.ne_of_beq_eq_false n m (Eq.refl.{1} Bool Bool.false))
       let eq_refl = self.intern(KExpr::cnst(
         self.prims.eq_refl.clone(),
         Box::new([u1.clone()]),
@@ -983,44 +1011,18 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
       let proof = self.intern(KExpr::app(proof, args[1].clone()));
       let proof = self.intern(KExpr::app(proof, refl_proof));
 
+      // Build: Decidable.isFalse prop proof
       let is_false = self.intern(KExpr::cnst(
         self.prims.decidable_is_false.clone(),
         Box::new([]),
       ));
-      self.intern(KExpr::app(is_false, proof))
+      let r = self.intern(KExpr::app(is_false, prop));
+      self.intern(KExpr::app(r, proof))
     } else {
-      // Decidable.isFalse (Nat.not_le_of_not_ble_eq_true n m (Bool.noConfusion (Eq.refl Bool.false)))
-      // The proof of ¬(Nat.ble n m = true) when Nat.ble n m = false:
-      // Bool.noConfusion applied to Eq.refl.{1} Bool Bool.false gives us the contradiction
-      let eq_refl = self.intern(KExpr::cnst(
-        self.prims.eq_refl.clone(),
-        Box::new([u1.clone()]),
-      ));
-      let bool_ty =
-        self.intern(KExpr::cnst(self.prims.bool_type.clone(), Box::new([])));
-      let bool_false =
-        self.intern(KExpr::cnst(self.prims.bool_false.clone(), Box::new([])));
-      let refl_proof = self.intern(KExpr::app(eq_refl, bool_ty));
-      let refl_proof = self.intern(KExpr::app(refl_proof, bool_false));
-
-      let no_confusion = self.intern(KExpr::cnst(
-        self.prims.bool_no_confusion.clone(),
-        Box::new([]),
-      ));
-      let no_confusion_proof =
-        self.intern(KExpr::app(no_confusion, refl_proof));
-
-      let proof_const =
-        self.intern(KExpr::cnst(proof_false_fn.clone(), Box::new([])));
-      let proof = self.intern(KExpr::app(proof_const, args[0].clone()));
-      let proof = self.intern(KExpr::app(proof, args[1].clone()));
-      let proof = self.intern(KExpr::app(proof, no_confusion_proof));
-
-      let is_false = self.intern(KExpr::cnst(
-        self.prims.decidable_is_false.clone(),
-        Box::new([]),
-      ));
-      self.intern(KExpr::app(is_false, proof))
+      // decLe false: the proof requires `Bool.noConfusion.{0} False Bool.false Bool.true`
+      // which needs a `False` primitive not yet registered. Fall through to
+      // delta reduction which correctly unfolds Nat.decLe to its definition body.
+      return Ok(None);
     };
 
     let mut result = result_expr;
@@ -1170,10 +1172,25 @@ impl<'env, M: KernelMode> TypeChecker<'env, M> {
 
 use super::primitive::Primitives;
 
-/// Extract a nat value from a literal expression only (no WHNF).
-fn extract_nat_lit<M: KernelMode>(e: &KExpr<M>) -> Option<&Nat> {
+/// Zero constant shared across `extract_nat_lit` calls.
+static NAT_ZERO_LITERAL: std::sync::LazyLock<Nat> =
+  std::sync::LazyLock::new(|| Nat(num_bigint::BigUint::ZERO));
+
+/// Extract a nat value from a literal or `Nat.zero` constructor.
+///
+/// Matches both `Nat(n)` literals and the `Nat.zero` constructor constant,
+/// mirroring C++ `is_nat_lit_ext` and lean4lean `rawNatLitExt?`. After iota
+/// reduction, `Nat.zero` can appear as `Const(Nat.zero, [])` which must be
+/// recognized for native Nat operations to fire.
+fn extract_nat_lit<'a, M: KernelMode>(
+  e: &'a KExpr<M>,
+  prims: &Primitives<M>,
+) -> Option<&'a Nat> {
   match e.data() {
     ExprData::Nat(val, _, _) => Some(val),
+    ExprData::Const(id, _, _) if id.addr == prims.nat_zero.addr => {
+      Some(&NAT_ZERO_LITERAL)
+    },
     _ => None,
   }
 }
@@ -1213,9 +1230,11 @@ fn compute_nat_bin<M: KernelMode>(
   } else if *addr == p.nat_mod.addr {
     if b.0 == zero { a.0.clone() } else { &a.0 % &b.0 }
   } else if *addr == p.nat_pow.addr {
+    // Limit matches C++ kernel `ReducePowMaxExp` and lean4lean `reducePowMaxExp`.
+    const REDUCE_POW_MAX_EXP: u64 = 1 << 24; // 16_777_216
     match b.to_u64() {
-      #[allow(clippy::cast_possible_truncation)] // guarded: exp <= 1_000_000
-      Some(exp) if exp <= 1_000_000 => a.0.pow(exp as u32),
+      #[allow(clippy::cast_possible_truncation)] // guarded: exp <= 2^24
+      Some(exp) if exp <= REDUCE_POW_MAX_EXP => a.0.pow(exp as u32),
       _ => return None, // too large to compute
     }
   } else if *addr == p.nat_gcd.addr {
@@ -1227,15 +1246,19 @@ fn compute_nat_bin<M: KernelMode>(
   } else if *addr == p.nat_xor.addr {
     &a.0 ^ &b.0
   } else if *addr == p.nat_shift_left.addr {
+    // Match C++ kernel: no explicit limit beyond what GMP handles, but we
+    // cap at 2^24 to avoid unbounded memory allocation.
+    const REDUCE_SHIFT_MAX: u64 = 1 << 24;
     match b.to_u64() {
-      #[allow(clippy::cast_possible_truncation)] // guarded: shift <= 1_000_000
-      Some(shift) if shift <= 1_000_000 => &a.0 << shift as usize,
+      #[allow(clippy::cast_possible_truncation)] // guarded: shift <= 2^24
+      Some(shift) if shift <= REDUCE_SHIFT_MAX => &a.0 << shift as usize,
       _ => return None, // too large to compute
     }
   } else if *addr == p.nat_shift_right.addr {
+    const REDUCE_SHIFT_MAX: u64 = 1 << 24;
     match b.to_u64() {
-      #[allow(clippy::cast_possible_truncation)] // guarded: shift <= 1_000_000
-      Some(shift) if shift <= 1_000_000 => &a.0 >> shift as usize,
+      #[allow(clippy::cast_possible_truncation)] // guarded: shift <= 2^24
+      Some(shift) if shift <= REDUCE_SHIFT_MAX => &a.0 >> shift as usize,
       _ => zero, // right-shift by huge amount gives 0 (correct)
     }
   } else {
@@ -1246,8 +1269,10 @@ fn compute_nat_bin<M: KernelMode>(
 
 #[cfg(test)]
 mod tests {
+  use std::sync::Arc;
+
   use super::super::constant::KConst;
-  use super::super::env::{InternTable, KEnv};
+  use super::super::env::KEnv;
   use super::super::expr::{ExprData, KExpr};
   use super::super::id::KId;
   use super::super::level::KUniv;
@@ -1276,8 +1301,8 @@ mod tests {
   }
 
   /// Build a minimal env with a single definition: `id := λ x. x : Sort 0 → Sort 0`
-  fn env_with_id() -> KEnv<Anon> {
-    let env = KEnv::new();
+  fn env_with_id() -> Arc<KEnv<Anon>> {
+    let env = Arc::new(KEnv::new());
     let id_ty = AE::all((), (), sort0(), sort0()); // Sort 0 → Sort 0
     let id_val = AE::lam((), (), sort0(), AE::var(0, ())); // λ x. x
     env.insert(
@@ -1319,7 +1344,7 @@ mod tests {
   #[test]
   fn whnf_var_identity() {
     let env = env_with_id();
-    let mut tc = TypeChecker::new(&env, InternTable::new());
+    let mut tc = TypeChecker::new(Arc::clone(&env));
     let v = AE::var(0, ());
     assert_eq!(tc.whnf(&v).unwrap(), v);
   }
@@ -1327,14 +1352,14 @@ mod tests {
   #[test]
   fn whnf_sort_identity() {
     let env = env_with_id();
-    let mut tc = TypeChecker::new(&env, InternTable::new());
+    let mut tc = TypeChecker::new(Arc::clone(&env));
     assert_eq!(tc.whnf(&sort0()).unwrap(), sort0());
   }
 
   #[test]
   fn whnf_lam_identity() {
     let env = env_with_id();
-    let mut tc = TypeChecker::new(&env, InternTable::new());
+    let mut tc = TypeChecker::new(Arc::clone(&env));
     let lam = AE::lam((), (), sort0(), AE::var(0, ()));
     assert_eq!(tc.whnf(&lam).unwrap(), lam);
   }
@@ -1342,7 +1367,7 @@ mod tests {
   #[test]
   fn whnf_beta_simple() {
     let env = env_with_id();
-    let mut tc = TypeChecker::new(&env, InternTable::new());
+    let mut tc = TypeChecker::new(Arc::clone(&env));
     // (λ x. x) a → a
     let lam = AE::lam((), (), sort0(), AE::var(0, ()));
     let a = AE::sort(AU::succ(AU::zero()));
@@ -1353,7 +1378,7 @@ mod tests {
   #[test]
   fn whnf_beta_multi() {
     let env = env_with_id();
-    let mut tc = TypeChecker::new(&env, InternTable::new());
+    let mut tc = TypeChecker::new(Arc::clone(&env));
     // (λ x y. x) a b → a
     let body = AE::var(1, ()); // x (de Bruijn 1, the outer binder)
     let inner_lam = AE::lam((), (), sort0(), body);
@@ -1367,7 +1392,7 @@ mod tests {
   #[test]
   fn whnf_zeta() {
     let env = env_with_id();
-    let mut tc = TypeChecker::new(&env, InternTable::new());
+    let mut tc = TypeChecker::new(Arc::clone(&env));
     // let x := Sort 0 in x → Sort 0
     let let_e = AE::let_((), sort1(), sort0(), AE::var(0, ()), true);
     assert_eq!(tc.whnf(&let_e).unwrap(), sort0());
@@ -1376,7 +1401,7 @@ mod tests {
   #[test]
   fn whnf_delta() {
     let env = env_with_id();
-    let mut tc = TypeChecker::new(&env, InternTable::new());
+    let mut tc = TypeChecker::new(Arc::clone(&env));
     // id(Sort 0) should delta-unfold id then beta-reduce
     let id_const = AE::cnst(mk_id("id"), Box::new([]));
     let app = AE::app(id_const, sort0());
@@ -1386,7 +1411,7 @@ mod tests {
   #[test]
   fn whnf_delta_opaque_blocked() {
     let env = env_with_id();
-    let mut tc = TypeChecker::new(&env, InternTable::new());
+    let mut tc = TypeChecker::new(Arc::clone(&env));
     let opaque = AE::cnst(mk_id("opaque"), Box::new([]));
     // Opaque should NOT be unfolded
     let result = tc.whnf(&opaque).unwrap();
@@ -1396,7 +1421,7 @@ mod tests {
   #[test]
   fn whnf_cache_hit() {
     let env = env_with_id();
-    let mut tc = TypeChecker::new(&env, InternTable::new());
+    let mut tc = TypeChecker::new(Arc::clone(&env));
     let id_const = AE::cnst(mk_id("id"), Box::new([]));
     let app = AE::app(id_const, sort0());
     let r1 = tc.whnf(&app).unwrap();
@@ -1435,10 +1460,10 @@ mod tests {
   /// Build a Nat env with Nat, Nat.zero, Nat.succ, Nat.rec, and Nat.sub.
   /// Nat.sub is defined as a primitive that the kernel's try_reduce_nat handles,
   /// but also has a delta-unfoldable body using Nat.rec (to test reduction order).
-  fn nat_env() -> KEnv<Anon> {
+  fn nat_env() -> Arc<KEnv<Anon>> {
     use super::super::constant::RecRule;
 
-    let env = KEnv::new();
+    let env = Arc::new(KEnv::new());
     let block = mk_id("Nat");
 
     // Nat : Sort 1
@@ -1597,7 +1622,7 @@ mod tests {
         block: sub_id.clone(),
       },
     );
-    let mut tc = TypeChecker::new(&env, InternTable::new());
+    let mut tc = TypeChecker::new(Arc::clone(&env));
     let sub_const = AE::cnst(sub_id, Box::new([]));
     let expr = app(app(sub_const, mk_nat(1000)), mk_nat(500));
     let result = tc.whnf(&expr).unwrap();
@@ -1615,7 +1640,7 @@ mod tests {
   fn whnf_nat_ble_large() {
     // Nat.ble 2^32 2^32 should reduce to Bool.true via try_reduce_nat
     let env = nat_env();
-    let mut tc = TypeChecker::new(&env, InternTable::new());
+    let mut tc = TypeChecker::new(Arc::clone(&env));
     let ble = AE::cnst(tc.prims.nat_ble.clone(), Box::new([]));
     let big = mk_nat(1u64 << 32);
     let expr = app(app(ble, big.clone()), big);
@@ -1658,7 +1683,7 @@ mod tests {
         block: sub_id.clone(),
       },
     );
-    let mut tc = TypeChecker::new(&env, InternTable::new());
+    let mut tc = TypeChecker::new(Arc::clone(&env));
     let sub_const = AE::cnst(sub_id, Box::new([]));
     let big = mk_nat(65536); // 2^16
     let expr = app(app(sub_const, big), mk_nat(0));
@@ -1676,7 +1701,7 @@ mod tests {
     // Two identical large Nat literals should be equal via the fast-path
     // (direct value comparison, not O(n) succ peeling).
     let env = nat_env();
-    let mut tc = TypeChecker::new(&env, InternTable::new());
+    let mut tc = TypeChecker::new(Arc::clone(&env));
     let a = mk_nat(1 << 20); // ~1 million
     let b = mk_nat(1 << 20);
     assert!(
@@ -1690,7 +1715,7 @@ mod tests {
     // Nat.rec (motive) zero_case succ_case (Nat(3)) should reduce via iota
     // to succ_case 2 (succ_case 1 (succ_case 0 zero_case))
     let env = nat_env();
-    let mut tc = TypeChecker::new(&env, InternTable::new());
+    let mut tc = TypeChecker::new(Arc::clone(&env));
     let rec = cnst("Nat.rec", &[AU::succ(AU::zero())]); // Nat.rec.{1}
     // motive := λ _, Nat
     let motive = lam(nat(), nat());
@@ -1722,7 +1747,7 @@ mod tests {
   ///   System.Platform.numBits (handled by try_reduce_native → 64)
   ///   Nat.pow at the correct primitive address
   ///   USize.size := Nat.pow 2 numBits (reducible def)
-  fn usize_env() -> KEnv<Anon> {
+  fn usize_env() -> Arc<KEnv<Anon>> {
     let env = nat_env();
     let empty = KEnv::new();
     let prims = Primitives::from_env(&empty);
@@ -1831,7 +1856,7 @@ mod tests {
   fn whnf_system_platform_num_bits() {
     // System.Platform.numBits should reduce to 64 via try_reduce_native
     let env = usize_env();
-    let mut tc = TypeChecker::new(&env, InternTable::new());
+    let mut tc = TypeChecker::new(Arc::clone(&env));
     let num_bits =
       AE::cnst(tc.prims.system_platform_num_bits.clone(), Box::new([]));
     let result = tc.whnf(&num_bits).unwrap();
@@ -1847,7 +1872,7 @@ mod tests {
   fn whnf_nat_pow_2_64() {
     // Nat.pow 2 64 should reduce to 2^64
     let env = usize_env();
-    let mut tc = TypeChecker::new(&env, InternTable::new());
+    let mut tc = TypeChecker::new(Arc::clone(&env));
     let pow_const = AE::cnst(tc.prims.nat_pow.clone(), Box::new([]));
     let expr = app(app(pow_const, mk_nat(2)), mk_nat(64));
     let result = tc.whnf(&expr).unwrap();
@@ -1865,7 +1890,7 @@ mod tests {
   fn whnf_usize_size() {
     // USize.size := Nat.pow 2 numBits should reduce to 2^64
     let env = usize_env();
-    let mut tc = TypeChecker::new(&env, InternTable::new());
+    let mut tc = TypeChecker::new(Arc::clone(&env));
     let usize_size = AE::cnst(mk_id("USize.size"), Box::new([]));
     let result = tc.whnf(&usize_size).unwrap();
     let expected = num_bigint::BigUint::from(1u64 << 63) * 2u64;
@@ -1881,7 +1906,7 @@ mod tests {
   fn whnf_nat_sub_usize_size_0() {
     // Nat.sub USize.size 0 should reduce to 2^64
     let env = usize_env();
-    let mut tc = TypeChecker::new(&env, InternTable::new());
+    let mut tc = TypeChecker::new(Arc::clone(&env));
     let sub_const = AE::cnst(tc.prims.nat_sub.clone(), Box::new([]));
     let usize_size = AE::cnst(mk_id("USize.size"), Box::new([]));
     let expr = app(app(sub_const, usize_size), mk_nat(0));
@@ -1899,7 +1924,7 @@ mod tests {
   fn whnf_nat_pred_usize_size() {
     // Nat.pred USize.size should reduce to 2^64 - 1
     let env = usize_env();
-    let mut tc = TypeChecker::new(&env, InternTable::new());
+    let mut tc = TypeChecker::new(Arc::clone(&env));
     let pred_const = AE::cnst(tc.prims.nat_pred.clone(), Box::new([]));
     let usize_size = AE::cnst(mk_id("USize.size"), Box::new([]));
     let expr = app(pred_const, usize_size);
@@ -1918,7 +1943,7 @@ mod tests {
     // Nat.pred (Nat.sub USize.size 0) =?= Nat.sub USize.size 1
     // This is the actual failing pattern from USize.toUInt16_ofNatTruncate_of_lt
     let env = usize_env();
-    let mut tc = TypeChecker::new(&env, InternTable::new());
+    let mut tc = TypeChecker::new(Arc::clone(&env));
 
     let sub_const = AE::cnst(tc.prims.nat_sub.clone(), Box::new([]));
     let pred_const = AE::cnst(tc.prims.nat_pred.clone(), Box::new([]));

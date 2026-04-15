@@ -695,6 +695,156 @@ extern "C" fn rs_tmp_decode_const_map(
     stt.env.blob_count(),
   );
 
+  // Phase 1b: Aux_gen congruence (full env)
+  eprintln!("[rust-compile] Phase 1b: Checking aux_gen congruence...");
+  {
+    use crate::ix::compile::aux_gen::{self, PatchedConstant};
+    use crate::ix::compile::mk_indc;
+    use crate::ix::congruence::const_alpha_eq;
+    use crate::ix::env::{
+      ConstantInfo as LeanCI, ConstantVal as LeanCV, DefinitionSafety,
+      DefinitionVal, InductiveVal, ReducibilityHints,
+    };
+    use crate::ix::mutual::MutConst;
+    use rustc_hash::FxHashSet;
+
+    let t_cong = std::time::Instant::now();
+    let mut n_pass = 0usize;
+    let mut n_fail = 0usize;
+    let mut seen_blocks: FxHashSet<Vec<Name>> = FxHashSet::default();
+
+    for (name, ci) in env.iter() {
+      let all = match ci {
+        LeanCI::InductInfo(v) => &v.all,
+        _ => continue,
+      };
+      if all.first() != Some(name) {
+        continue;
+      }
+      let mut key: Vec<Name> = all.clone();
+      key.sort();
+      if !seen_blocks.insert(key) {
+        continue;
+      }
+
+      let original_classes: Vec<Vec<Name>> =
+        all.iter().map(|n| vec![n.clone()]).collect();
+      let original_cs: Vec<MutConst> = all
+        .iter()
+        .filter_map(|n| match env.get(n) {
+          Some(LeanCI::InductInfo(v)) => {
+            Some(MutConst::Indc(mk_indc(v, &env).ok()?))
+          },
+          _ => None,
+        })
+        .collect();
+
+      if original_cs.is_empty() {
+        continue;
+      }
+
+      let orig_patches = match aux_gen::generate_aux_patches(
+        &original_classes,
+        &original_cs,
+        &env,
+        &stt,
+        &stt.kctx,
+      ) {
+        Ok(p) => p,
+        Err(e) => {
+          eprintln!(
+            "[rust-compile] aux_gen congruence: {}: generate failed: {e}",
+            name.pretty()
+          );
+          n_fail += 1;
+          continue;
+        },
+      };
+
+      for (patch_name, patch) in &orig_patches {
+        let gen_ci = match patch {
+          PatchedConstant::Rec(r) => LeanCI::RecInfo(r.clone()),
+          PatchedConstant::CasesOn(d) | PatchedConstant::RecOn(d) => {
+            LeanCI::DefnInfo(DefinitionVal {
+              cnst: LeanCV {
+                name: d.name.clone(),
+                level_params: d.level_params.clone(),
+                typ: d.typ.clone(),
+              },
+              value: d.value.clone(),
+              hints: ReducibilityHints::Abbrev,
+              safety: DefinitionSafety::Safe,
+              all: vec![],
+            })
+          },
+          PatchedConstant::BelowDef(d) => LeanCI::DefnInfo(DefinitionVal {
+            cnst: LeanCV {
+              name: d.name.clone(),
+              level_params: d.level_params.clone(),
+              typ: d.typ.clone(),
+            },
+            value: d.value.clone(),
+            hints: ReducibilityHints::Abbrev,
+            safety: DefinitionSafety::Safe,
+            all: vec![],
+          }),
+          PatchedConstant::BRecOn(d) => LeanCI::DefnInfo(DefinitionVal {
+            cnst: LeanCV {
+              name: d.name.clone(),
+              level_params: d.level_params.clone(),
+              typ: d.typ.clone(),
+            },
+            value: d.value.clone(),
+            hints: ReducibilityHints::Abbrev,
+            safety: DefinitionSafety::Safe,
+            all: vec![],
+          }),
+          PatchedConstant::BelowIndc(bi) => LeanCI::InductInfo(InductiveVal {
+            cnst: LeanCV {
+              name: bi.name.clone(),
+              level_params: bi.level_params.clone(),
+              typ: bi.typ.clone(),
+            },
+            num_params: Nat::from(bi.n_params as u64),
+            num_indices: Nat::from(1u64),
+            all: vec![bi.name.clone()],
+            ctors: bi.ctors.iter().map(|c| c.name.clone()).collect(),
+            num_nested: Nat::from(0u64),
+            is_rec: false,
+            is_unsafe: false,
+            is_reflexive: false,
+          }),
+          _ => continue,
+        };
+        let Some(orig_ci) = env.get(patch_name) else {
+          continue;
+        };
+        match const_alpha_eq(&gen_ci, orig_ci) {
+          Ok(()) => n_pass += 1,
+          Err(e) => {
+            eprintln!(
+              "[rust-compile] aux_gen congruence: {}: {e}",
+              patch_name.pretty()
+            );
+            n_fail += 1;
+          },
+        }
+      }
+    }
+    eprintln!(
+      "[rust-compile] Phase 1b done in {:.2}s: {} pass, {} fail",
+      t_cong.elapsed().as_secs_f32(),
+      n_pass,
+      n_fail,
+    );
+    if n_fail > 0 {
+      eprintln!(
+        "[rust-compile] Phase 1b FAILED: {n_fail} aux_gen congruence failures"
+      );
+      return n;
+    }
+  }
+
   // Phase 2: Decompile
   eprintln!("[rust-compile] Phase 2: Decompiling...");
   let t1 = std::time::Instant::now();
@@ -827,7 +977,7 @@ impl PhaseResult {
   }
 }
 
-/// Comprehensive 6-phase validation of the aux_gen compile pipeline.
+/// Comprehensive 7-phase validation of the aux_gen compile pipeline.
 ///
 /// Returns total failure count across all phases.
 #[cfg(feature = "test-ffi")]
@@ -850,8 +1000,8 @@ extern "C" fn rs_compile_validate_aux(
   // ══════════════════════════════════════════════════════════════════════
   // Phase 1: Compilation succeeds
   // ══════════════════════════════════════════════════════════════════════
-  let mut p1 = PhaseResult::new("Compilation");
-  println!("{VALIDATE_PREFIX} compiling...");
+  let mut p1 = PhaseResult::new("1. Compilation");
+  println!("{VALIDATE_PREFIX} phase 1: compiling...");
   let t0 = std::time::Instant::now();
   let stt = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
     compile_env(&env)
@@ -896,38 +1046,222 @@ extern "C" fn rs_compile_validate_aux(
   p1.report();
 
   // ══════════════════════════════════════════════════════════════════════
-  // Phase 2: No ephemeral constant leaks
+  // Phase 2: Aux_gen congruence (post-compilation, uses real CompileState)
   // ══════════════════════════════════════════════════════════════════════
-  let mut p2 = PhaseResult::new("No ephemeral leaks");
+  let mut p2 = PhaseResult::new("2. Aux_gen congruence");
+  println!("{VALIDATE_PREFIX} phase 2: checking aux_gen congruence...");
+  {
+    use crate::ix::compile::aux_gen::{self, PatchedConstant, expr_utils};
+    use crate::ix::compile::{KernelCtx, mk_indc};
+    use crate::ix::env::{
+      ConstantInfo as LeanCI, ConstantVal as LeanCV, DefinitionSafety,
+      DefinitionVal, InductiveVal, ReducibilityHints,
+    };
+    use crate::ix::mutual::MutConst;
 
-  for entry in stt.env.named.iter() {
-    let named = entry.value();
-    if let Some((orig_addr, _)) = &named.original {
-      if *orig_addr != named.addr && stt.env.consts.contains_key(orig_addr) {
-        p2.record_fail(format!(
-          "{}: ephemeral original addr {:?} leaked into consts",
-          entry.key().pretty(),
-          orig_addr,
-        ));
-      } else {
-        p2.record_pass();
+    // Ephemeral kernel context for original-structure congruence testing.
+    // Shared across all blocks (accumulates inductives incrementally).
+    let p2_kctx = KernelCtx::new();
+    expr_utils::ensure_prelude_in_kenv_of(&stt, &p2_kctx);
+
+    // Collect unique .all blocks (deduplicate by sorted names).
+    let mut seen_blocks: FxHashSet<Vec<Name>> = FxHashSet::default();
+    for (name, ci) in env.iter() {
+      let all = match ci {
+        LeanCI::InductInfo(v) => &v.all,
+        _ => continue,
+      };
+      // Only process once per .all block, and only if this is all[0].
+      if all.first() != Some(name) {
+        continue;
+      }
+      let mut key: Vec<Name> = all.clone();
+      key.sort();
+      if !seen_blocks.insert(key) {
+        continue;
+      }
+
+      // Build original classes: each inductive is its own class (no collapse).
+      let original_classes: Vec<Vec<Name>> =
+        all.iter().map(|n| vec![n.clone()]).collect();
+      let original_cs: Vec<MutConst> = all
+        .iter()
+        .filter_map(|n| match env.get(n) {
+          Some(LeanCI::InductInfo(v)) => {
+            Some(MutConst::Indc(mk_indc(v, &env).ok()?))
+          },
+          _ => None,
+        })
+        .collect();
+
+      if original_cs.is_empty() {
+        continue;
+      }
+
+      // Ingress this block's inductives into the ephemeral kenv.
+      for ind_name in all {
+        expr_utils::ensure_in_kenv_of(ind_name, &env, &stt, &p2_kctx);
+      }
+
+      // Run aux_gen on the original block with ephemeral kernel context.
+      let orig_patches = match aux_gen::generate_aux_patches(
+        &original_classes,
+        &original_cs,
+        &env,
+        &stt,
+        &p2_kctx,
+      ) {
+        Ok(p) => p,
+        Err(e) => {
+          p2.record_fail(format!(
+            "{}: generate_aux_patches failed: {e}",
+            name.pretty()
+          ));
+          continue;
+        },
+      };
+
+      // Compare each generated patch against Lean's original.
+      for (patch_name, patch) in &orig_patches {
+        let gen_ci = match patch {
+          PatchedConstant::Rec(r) => LeanCI::RecInfo(r.clone()),
+          PatchedConstant::CasesOn(d) | PatchedConstant::RecOn(d) => {
+            LeanCI::DefnInfo(DefinitionVal {
+              cnst: crate::ix::env::ConstantVal {
+                name: d.name.clone(),
+                level_params: d.level_params.clone(),
+                typ: d.typ.clone(),
+              },
+              value: d.value.clone(),
+              hints: ReducibilityHints::Abbrev,
+              safety: DefinitionSafety::Safe,
+              all: vec![],
+            })
+          },
+          PatchedConstant::BelowDef(d) => LeanCI::DefnInfo(DefinitionVal {
+            cnst: crate::ix::env::ConstantVal {
+              name: d.name.clone(),
+              level_params: d.level_params.clone(),
+              typ: d.typ.clone(),
+            },
+            value: d.value.clone(),
+            hints: ReducibilityHints::Abbrev,
+            safety: DefinitionSafety::Safe,
+            all: vec![],
+          }),
+          PatchedConstant::BRecOn(d) => LeanCI::DefnInfo(DefinitionVal {
+            cnst: crate::ix::env::ConstantVal {
+              name: d.name.clone(),
+              level_params: d.level_params.clone(),
+              typ: d.typ.clone(),
+            },
+            value: d.value.clone(),
+            hints: ReducibilityHints::Abbrev,
+            safety: DefinitionSafety::Safe,
+            all: vec![],
+          }),
+          PatchedConstant::BelowIndc(bi) => LeanCI::InductInfo(InductiveVal {
+            cnst: LeanCV {
+              name: bi.name.clone(),
+              level_params: bi.level_params.clone(),
+              typ: bi.typ.clone(),
+            },
+            num_params: Nat::from(bi.n_params as u64),
+            num_indices: Nat::from(bi.n_indices as u64),
+            all: vec![bi.name.clone()],
+            ctors: bi.ctors.iter().map(|c| c.name.clone()).collect(),
+            num_nested: Nat::from(0u64),
+            is_rec: false,
+            is_unsafe: false,
+            is_reflexive: false,
+          }),
+          _ => continue, // NoConfusion — skip
+        };
+        let Some(orig_ci) = env.get(patch_name) else {
+          continue; // Synthetic name — no Lean original.
+        };
+        match const_alpha_eq(&gen_ci, orig_ci) {
+          Ok(()) => p2.record_pass(),
+          Err(e) => {
+            if p2.fail < 3 {
+              eprintln!(
+                "[aux_gen congruence DETAIL] {}:\n  error: {e}",
+                patch_name.pretty(),
+              );
+              // Dump PProd.mk levels in both values
+              if patch_name.pretty().contains("brecOn.go") {
+                fn dump_pprod(e: &crate::ix::env::Expr, d: usize, s: &str) {
+                  use crate::ix::env::ExprData as ED;
+                  match e.as_data() {
+                    ED::Const(n, l, _) if n.pretty() == "PProd.mk" => {
+                      let ls: Vec<_> = l.iter().map(|x| x.pretty()).collect();
+                      eprintln!("  [{s}] d={d} PProd.mk [{}]", ls.join(", "));
+                    },
+                    ED::App(f, a, _) => {
+                      dump_pprod(f, d, s);
+                      dump_pprod(a, d, s);
+                    },
+                    ED::Lam(_, t, b, _, _) | ED::ForallE(_, t, b, _, _) => {
+                      dump_pprod(t, d + 1, s);
+                      dump_pprod(b, d + 1, s);
+                    },
+                    _ => {},
+                  }
+                }
+                if let Some(v) = gen_ci.get_value() {
+                  dump_pprod(v, 0, "gen");
+                }
+                if let Some(v) = orig_ci.get_value() {
+                  dump_pprod(v, 0, "org");
+                }
+              }
+            }
+            p2.record_fail(format!("{}: {e}", patch_name.pretty()));
+          },
+        }
       }
     }
   }
   p2.report();
 
   // ══════════════════════════════════════════════════════════════════════
-  // Phase 3: Alpha-equivalence group canonicity
+  // Phase 3: No ephemeral constant leaks
   // ══════════════════════════════════════════════════════════════════════
-  let mut p3 = PhaseResult::new("Alpha-equivalence canonicity");
+  let mut p3 = PhaseResult::new("3. No ephemeral leaks");
+
+  // Precompute canonical addresses: any orig_addr that matches another Named
+  // entry's canonical addr is in consts legitimately (not an ephemeral leak).
+  let canonical_addrs: FxHashSet<crate::ix::address::Address> =
+    stt.env.named.iter().map(|e| e.value().addr.clone()).collect();
+
+  for entry in stt.env.named.iter() {
+    let named = entry.value();
+    if let Some((orig_addr, _)) = &named.original {
+      if *orig_addr != named.addr
+        && stt.env.consts.contains_key(orig_addr)
+        && !canonical_addrs.contains(orig_addr)
+      {
+        p3.record_fail(format!(
+          "{}: ephemeral original addr {:?} leaked into consts",
+          entry.key().pretty(),
+          orig_addr,
+        ));
+      } else {
+        p3.record_pass();
+      }
+    }
+  }
+  p3.report();
+
+  // ══════════════════════════════════════════════════════════════════════
+  // Phase 4: Alpha-equivalence group canonicity
+  // ══════════════════════════════════════════════════════════════════════
+  let mut p4 = PhaseResult::new("4. Alpha-equivalence canonicity");
   {
-    // Deduplicate blocks: every name in a mutual block stores the same
-    // Vec<Vec<Name>>, so we only need to check each block once.
     let mut seen_blocks: FxHashSet<Name> = FxHashSet::default();
 
     for entry in stt.blocks.iter() {
       let classes = entry.value();
-      // Use the first name of the first class as a dedup key.
       if let Some(first_class) = classes.first()
         && let Some(first_name) = first_class.first()
         && !seen_blocks.insert(first_name.clone())
@@ -937,18 +1271,16 @@ extern "C" fn rs_compile_validate_aux(
 
       for class in classes.iter() {
         if class.len() <= 1 {
-          // Singleton class: trivially canonical.
-          p3.record_pass();
+          p4.record_pass();
           continue;
         }
 
-        // All names in the class must resolve to the same address.
         let addrs: Vec<_> =
           class.iter().map(|name| (name, stt.resolve_addr(name))).collect();
 
         let first_addr = &addrs[0].1;
         if addrs.iter().all(|(_, a)| a == first_addr) {
-          p3.record_pass();
+          p4.record_pass();
         } else {
           let detail: Vec<_> = addrs
             .iter()
@@ -960,18 +1292,18 @@ extern "C" fn rs_compile_validate_aux(
               )
             })
             .collect();
-          p3.record_fail(format!("class addrs differ: {}", detail.join(", ")));
+          p4.record_fail(format!("class addrs differ: {}", detail.join(", ")));
         }
       }
     }
   }
-  p3.report();
+  p4.report();
 
   // ══════════════════════════════════════════════════════════════════════
-  // Phase 4: Decompile with debug info
+  // Phase 5: Decompile with debug info
   // ══════════════════════════════════════════════════════════════════════
-  let mut p4 = PhaseResult::new("Decompile (with debug)");
-  println!("{VALIDATE_PREFIX} decompiling (with debug)...");
+  let mut p5 = PhaseResult::new("5. Decompile (with debug)");
+  println!("{VALIDATE_PREFIX} phase 5: decompiling (with debug)...");
   let t1 = std::time::Instant::now();
 
   let dstt = match decompile_env(&stt) {
@@ -984,7 +1316,7 @@ extern "C" fn rs_compile_validate_aux(
       Some(d)
     },
     Err(e) => {
-      p4.record_fail(format!("decompile_env FAILED: {e:?}"));
+      p5.record_fail(format!("decompile_env FAILED: {e:?}"));
       println!(
         "{VALIDATE_PREFIX} decompile FAILED in {:.2}s: {e:?}",
         t1.elapsed().as_secs_f32()
@@ -997,25 +1329,28 @@ extern "C" fn rs_compile_validate_aux(
     let check = check_decompile(env.as_ref(), &stt, dstt);
     match check {
       Ok(r) => {
-        p4.pass = r.matches;
+        p5.pass = r.matches;
         if r.mismatches > 0 {
-          p4.record_fail(format!("{} hash mismatches", r.mismatches));
+          p5.record_fail(format!("{} hash mismatches", r.mismatches));
         }
         if r.missing > 0 {
-          p4.record_fail(format!("{} missing from original", r.missing));
+          p5.record_fail(format!("{} not in original", r.missing));
+          for name in &r.extra_names {
+            p5.record_fail(format!("  extra: {name}"));
+          }
         }
       },
       Err(e) => {
-        p4.record_fail(format!("check_decompile FAILED: {e:?}"));
+        p5.record_fail(format!("check_decompile FAILED: {e:?}"));
       },
     }
   }
-  p4.report();
+  p5.report();
 
   // ══════════════════════════════════════════════════════════════════════
-  // Phase 5: Aux congruence
+  // Phase 6: Aux congruence (post-compilation roundtrip)
   // ══════════════════════════════════════════════════════════════════════
-  let mut p5 = PhaseResult::new("Aux congruence");
+  let mut p6 = PhaseResult::new("6. Aux congruence (roundtrip)");
 
   if let (Some(dstt), Some(lean_env)) = (&dstt, &stt.lean_env) {
     for name in stt.aux_gen_extra_names.iter() {
@@ -1023,7 +1358,7 @@ extern "C" fn rs_compile_validate_aux(
       let orig_ci = match lean_env.get(name) {
         Some(ci) => ci,
         None => {
-          p5.record_fail(format!(
+          p6.record_fail(format!(
             "{}: not in original Lean env",
             name.pretty()
           ));
@@ -1033,30 +1368,30 @@ extern "C" fn rs_compile_validate_aux(
       let dec_ci = match dstt.env.get(name) {
         Some(ci) => ci,
         None => {
-          p5.record_fail(format!("{}: not in decompiled env", name.pretty()));
+          p6.record_fail(format!("{}: not in decompiled env", name.pretty()));
           continue;
         },
       };
       match const_alpha_eq(dec_ci.value(), orig_ci) {
-        Ok(()) => p5.record_pass(),
-        Err(e) => p5.record_fail(format!("{}: {e}", name.pretty())),
+        Ok(()) => p6.record_pass(),
+        Err(e) => p6.record_fail(format!("{}: {e}", name.pretty())),
       }
     }
   } else {
     if dstt.is_none() {
-      p5.record_fail("skipped: decompilation failed in Phase 4".into());
+      p6.record_fail("skipped: decompilation failed in Phase 5".into());
     }
     if stt.lean_env.is_none() {
-      p5.record_fail("skipped: lean_env not available".into());
+      p6.record_fail("skipped: lean_env not available".into());
     }
   }
-  p5.report();
+  p6.report();
 
   // ══════════════════════════════════════════════════════════════════════
-  // Phase 6: Decompile without debug info (serialize → deserialize)
+  // Phase 7: Decompile without debug info (serialize → deserialize)
   // ══════════════════════════════════════════════════════════════════════
-  let mut p6 = PhaseResult::new("Decompile (without debug)");
-  println!("{VALIDATE_PREFIX} serializing...");
+  let mut p7 = PhaseResult::new("7. Decompile (without debug)");
+  println!("{VALIDATE_PREFIX} phase 7: serializing...");
   let t2 = std::time::Instant::now();
 
   let mut serialized = Vec::new();
@@ -1069,9 +1404,10 @@ extern "C" fn rs_compile_validate_aux(
       );
     },
     Err(e) => {
-      p6.record_fail(format!("serialize FAILED: {e}"));
-      p6.report();
-      let total = p1.fail + p2.fail + p3.fail + p4.fail + p5.fail + p6.fail;
+      p7.record_fail(format!("serialize FAILED: {e}"));
+      p7.report();
+      let total =
+        p1.fail + p2.fail + p3.fail + p4.fail + p5.fail + p6.fail + p7.fail;
       println!("{VALIDATE_PREFIX} RESULT: {total} total failures");
       return total;
     },
@@ -1080,7 +1416,7 @@ extern "C" fn rs_compile_validate_aux(
   println!("{VALIDATE_PREFIX} deserializing and re-decompiling...");
   let t3 = std::time::Instant::now();
   let mut buf: &[u8] = &serialized;
-  match crate::ix::ixon::env::Env::get(&mut buf) {
+  let dstt2 = match crate::ix::ixon::env::Env::get(&mut buf) {
     Ok(fresh_env) => {
       let fresh_stt = crate::ix::compile::CompileState {
         env: fresh_env,
@@ -1109,34 +1445,190 @@ extern "C" fn rs_compile_validate_aux(
           );
           match check_decompile(env.as_ref(), &fresh_stt, &dstt2) {
             Ok(r) => {
-              p6.pass = r.matches;
+              p7.pass = r.matches;
               if r.mismatches > 0 {
-                p6.record_fail(format!("{} hash mismatches", r.mismatches));
+                p7.record_fail(format!("{} hash mismatches", r.mismatches));
               }
               if r.missing > 0 {
-                p6.record_fail(format!("{} missing from original", r.missing));
+                p7.record_fail(format!("{} not in original", r.missing));
+                for name in &r.extra_names {
+                  p7.record_fail(format!("  extra: {name}"));
+                }
               }
             },
             Err(e) => {
-              p6.record_fail(format!("check_decompile FAILED: {e:?}"));
+              p7.record_fail(format!("check_decompile FAILED: {e:?}"));
             },
           }
+          Some(dstt2)
         },
         Err(e) => {
-          p6.record_fail(format!("re-decompile FAILED: {e:?}"));
+          p7.record_fail(format!("re-decompile FAILED: {e:?}"));
+          None
         },
       }
     },
     Err(e) => {
-      p6.record_fail(format!("deserialize FAILED: {e}"));
+      p7.record_fail(format!("deserialize FAILED: {e}"));
+      None
     },
+  };
+  p7.report();
+
+  // ══════════════════════════════════════════════════════════════════════
+  // Phase 7b: Per-constant roundtrip fidelity (out-of-band)
+  // ══════════════════════════════════════════════════════════════════════
+  // Post-hoc comparison of each no-debug decompiled constant against the
+  // original Lean env. This is independent of the decompiler's internal
+  // checks — it catches any corruption that `check_decompile` might miss
+  // and gives per-constant pass/fail granularity.
+  let mut p7b = PhaseResult::new("7b. Roundtrip fidelity (per-constant)");
+  if let Some(ref dstt2) = dstt2 {
+    let orig = env.as_ref();
+    // Check every original constant appears in the roundtripped env
+    // with matching type hash and (if present) value hash.
+    for (name, orig_ci) in orig.iter() {
+      match dstt2.env.get(name) {
+        Some(entry) => {
+          let dec_ci = entry.value();
+          let type_ok =
+            dec_ci.get_type().get_hash() == orig_ci.get_type().get_hash();
+          let val_ok = match (dec_ci.get_value(), orig_ci.get_value()) {
+            (Some(d), Some(o)) => d.get_hash() == o.get_hash(),
+            (None, None) => true,
+            _ => false,
+          };
+          if type_ok && val_ok {
+            p7b.record_pass();
+          } else {
+            let mut parts = Vec::new();
+            if !type_ok {
+              parts.push(format!(
+                "type: dec={} orig={}",
+                dec_ci.get_type().pretty(),
+                orig_ci.get_type().pretty(),
+              ));
+            }
+            if !val_ok {
+              parts.push("value hash mismatch".to_string());
+            }
+            p7b
+              .record_fail(format!("{}: {}", name.pretty(), parts.join("; "),));
+          }
+        },
+        None => {
+          p7b.record_fail(format!(
+            "{}: missing from roundtripped env",
+            name.pretty(),
+          ));
+        },
+      }
+    }
+  } else {
+    p7b.record_fail("skipped: phase 7 decompilation failed".into());
   }
-  p6.report();
+  p7b.report();
+
+  // ══════════════════════════════════════════════════════════════════════
+  // Phase 8: Nested detection verification
+  // ══════════════════════════════════════════════════════════════════════
+  let mut p8 = PhaseResult::new("8. Nested detection");
+  {
+    use crate::ix::compile::aux_gen::nested::build_compile_flat_block;
+    use crate::ix::env::ConstantInfo;
+
+    /// Build a dotted Lean name from a dot-separated string.
+    fn mk_name(s: &str) -> Name {
+      let mut name = Name::anon();
+      for part in s.split('.') {
+        name = Name::str(name, part.to_string());
+      }
+      name
+    }
+
+    // Expected nested auxiliary detections for known test fixtures.
+    // Each entry: (list of original dotted names, expected auxiliary names).
+    let test_cases: Vec<(Vec<&str>, Vec<&str>)> = vec![
+      // NestedSimple.Tree: single inductive nesting List.
+      // Flat block should detect List as an auxiliary.
+      (vec!["Tests.Ix.Compile.Mutual.NestedSimple.Tree"], vec!["List"]),
+      // NestedAlphaCollapse: TreeA ≅ TreeB, both nest List.
+      // Detection runs on the class representative (TreeA); one List auxiliary.
+      (vec!["Tests.Ix.Compile.Mutual.NestedAlphaCollapse.TreeA"], vec!["List"]),
+      // NestedParam: RoseA α ≅ RoseB α, both nest List.
+      // Parameterized nesting: spec_params should include the block parameter.
+      (vec!["Tests.Ix.Compile.Mutual.NestedParam.RoseA"], vec!["List"]),
+      // NestedOverMerge: A/B form SCC (not alpha-equiv), C separate.
+      // A nests List(A), B nests List(B) — distinct spec_params, so two
+      // List auxiliaries. Lean's rec confirms: motive_4 : List A, motive_5 : List B.
+      (
+        vec![
+          "Tests.Ix.Compile.Mutual.NestedOverMerge.A",
+          "Tests.Ix.Compile.Mutual.NestedOverMerge.B",
+        ],
+        vec!["List", "List"],
+      ),
+      // NestedOverMergeAlphaCollapse: A ≅ B, C separate.
+      // Detection on {A} (representative) should find one List auxiliary.
+      (
+        vec!["Tests.Ix.Compile.Mutual.NestedOverMergeAlphaCollapse.A"],
+        vec!["List"],
+      ),
+      // Non-nested controls: these should produce NO auxiliaries.
+      (vec!["Tests.Ix.Compile.Mutual.AlphaCollapse.A"], vec![]),
+      (
+        vec![
+          "Tests.Ix.Compile.Mutual.OverMerge.A",
+          "Tests.Ix.Compile.Mutual.OverMerge.B",
+        ],
+        vec![],
+      ),
+    ];
+
+    for (original_strs, expected_aux_strs) in &test_cases {
+      let originals: Vec<Name> =
+        original_strs.iter().map(|s| mk_name(s)).collect();
+
+      // Skip if any name is missing from the env (fixture not compiled).
+      let all_present = originals
+        .iter()
+        .all(|n| matches!(env.get(n), Some(ConstantInfo::InductInfo(_))));
+      if !all_present {
+        continue;
+      }
+
+      let flat = build_compile_flat_block(&originals, &env);
+      let n_originals = originals.len();
+      let aux_names: Vec<String> =
+        flat.iter().skip(n_originals).map(|m| m.name.pretty()).collect();
+
+      let expected_aux: Vec<String> =
+        expected_aux_strs.iter().map(|s| s.to_string()).collect();
+
+      if aux_names == expected_aux {
+        p8.record_pass();
+      } else {
+        let label = original_strs.join(", ");
+        p8.record_fail(format!(
+          "{{{label}}}: expected auxiliaries {expected_aux:?}, got {aux_names:?}"
+        ));
+      }
+    }
+  }
+  p8.report();
 
   // ══════════════════════════════════════════════════════════════════════
   // Summary
   // ══════════════════════════════════════════════════════════════════════
-  let total = p1.fail + p2.fail + p3.fail + p4.fail + p5.fail + p6.fail;
+  let total = p1.fail
+    + p2.fail
+    + p3.fail
+    + p4.fail
+    + p5.fail
+    + p6.fail
+    + p7.fail
+    + p7b.fail
+    + p8.fail;
   println!(
     "{VALIDATE_PREFIX} done ({:.2}s total)",
     t_total.elapsed().as_secs_f32()

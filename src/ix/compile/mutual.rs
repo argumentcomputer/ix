@@ -58,13 +58,12 @@ use crate::ix::mutual::{Def, Ind, MutConst};
 /// them to `name_to_addr` when the block is processed.
 pub(crate) fn compile_aux_block(
   aux_consts: &[MutConst],
-  _lean_env: &Arc<LeanEnv>,
+  lean_env: &Arc<LeanEnv>,
   stt: &CompileState,
 ) -> Result<(), CompileError> {
   if aux_consts.is_empty() {
     return Ok(());
   }
-
   let mut cache = BlockCache::default();
 
   // Sort into equivalence classes (same algorithm as compile_mutual).
@@ -127,6 +126,9 @@ pub(crate) fn compile_aux_block(
   stt.env.store_const(block_addr.clone(), compiled.constant);
 
   // Register projections for each constant, same pattern as compile_mutual.
+  // Collect names for batched pending-queue push (one lock acquisition).
+  let mut pending_names: Vec<Name> = Vec::new();
+
   let singleton = sorted_classes.len() == 1
     && !aux_consts.iter().any(|c| matches!(c, MutConst::Indc(_)));
 
@@ -138,6 +140,7 @@ pub(crate) fn compile_aux_block(
       stt.env.register_name(n.clone(), Named::new(block_addr.clone(), meta));
       stt.aux_name_to_addr.insert(n.clone(), block_addr.clone());
       stt.aux_gen_extra_names.insert(n.clone());
+      pending_names.push(n);
     }
   } else {
     // Multi-class or inductive: create projections per member.
@@ -161,6 +164,7 @@ pub(crate) fn compile_aux_block(
               .register_name(n.clone(), Named::new(proj_addr.clone(), meta));
             stt.aux_name_to_addr.insert(n.clone(), proj_addr.clone());
             stt.aux_gen_extra_names.insert(n.clone());
+            pending_names.push(n);
 
             // Constructor projections
             for (cidx, ctor) in ind.ctors.iter().enumerate() {
@@ -182,6 +186,7 @@ pub(crate) fn compile_aux_block(
                 .aux_name_to_addr
                 .insert(ctor.cnst.name.clone(), ctor_addr.clone());
               stt.aux_gen_extra_names.insert(ctor.cnst.name.clone());
+              pending_names.push(ctor.cnst.name.clone());
             }
           },
           MutConst::Recr(_) => {
@@ -196,6 +201,7 @@ pub(crate) fn compile_aux_block(
               .register_name(n.clone(), Named::new(proj_addr.clone(), meta));
             stt.aux_name_to_addr.insert(n.clone(), proj_addr);
             stt.aux_gen_extra_names.insert(n.clone());
+            pending_names.push(n);
           },
           MutConst::Defn(_) => {
             let proj = Constant::new(ConstantInfo::DPrj(DefinitionProj {
@@ -209,10 +215,25 @@ pub(crate) fn compile_aux_block(
               .register_name(n.clone(), Named::new(proj_addr.clone(), meta));
             stt.aux_name_to_addr.insert(n.clone(), proj_addr);
             stt.aux_gen_extra_names.insert(n.clone());
+            pending_names.push(n);
           },
         }
       }
     }
+  }
+
+  // Batch-push to pending queue (single lock acquisition).
+  if !pending_names.is_empty() {
+    stt.aux_gen_pending.lock().unwrap().extend(pending_names);
+  }
+
+  // Ingress all registered aux constants into the kernel environment.
+  for cnst in aux_consts {
+    crate::ix::compile::aux_gen::expr_utils::ensure_in_kenv(
+      &cnst.name(),
+      lean_env.as_ref(),
+      stt,
+    );
   }
 
   Ok(())
@@ -255,15 +276,25 @@ pub(crate) fn generate_and_compile_aux_recursors(
     return Ok(());
   }
 
+  let aux_total_start = std::time::Instant::now();
+  let block_label = class_names
+    .first()
+    .and_then(|c| c.first())
+    .map(|n| n.pretty())
+    .unwrap_or_default();
+
   // Phase 1: Generate patches. Errors here indicate a bug in aux_gen
   // (the input has already been validated by sort_consts and the compile
   // loop), so we propagate rather than swallow.
-  let patches = aux_gen::generate_aux_patches(class_names, cs, lean_env, stt)?;
+  let t0 = std::time::Instant::now();
+  let patches =
+    aux_gen::generate_aux_patches(class_names, cs, lean_env, stt, &stt.kctx)?;
+  let gen_elapsed = t0.elapsed();
   if patches.is_empty() {
     return Ok(());
   }
-
   // Phase 2: Compile canonical recursors.
+  let t1 = std::time::Instant::now();
   let rec_consts: Vec<MutConst> = patches
     .iter()
     .filter_map(|(_, p)| match p {
@@ -274,10 +305,11 @@ pub(crate) fn generate_and_compile_aux_recursors(
   if !rec_consts.is_empty() {
     compile_aux_block(&rec_consts, lean_env, stt)?;
   }
-
+  let rec_elapsed = t1.elapsed();
   // Phase 2b: Compile .casesOn definitions.
   // casesOn wraps .rec and must be compiled after .rec but before .brecOn
   // (because .brecOn.eq references casesOn).
+  let t2 = std::time::Instant::now();
   let cases_on_defs: Vec<MutConst> = patches
     .iter()
     .filter_map(|(_, p)| match p {
@@ -297,9 +329,34 @@ pub(crate) fn generate_and_compile_aux_recursors(
   if !cases_on_defs.is_empty() {
     compile_aux_block(&cases_on_defs, lean_env, stt)?;
   }
+  let cases_elapsed = t2.elapsed();
 
+  // Phase 2c: Compile .recOn definitions (arg-reordered .rec wrapper).
+  // recOn wraps .rec and must be compiled after .rec.
+  let t3 = std::time::Instant::now();
+  let rec_on_defs: Vec<MutConst> = patches
+    .iter()
+    .filter_map(|(_, p)| match p {
+      PatchedConstant::RecOn(d) => Some(MutConst::Defn(Def {
+        name: d.name.clone(),
+        level_params: d.level_params.clone(),
+        typ: d.typ.clone(),
+        kind: DefKind::Definition,
+        value: d.value.clone(),
+        hints: crate::ix::env::ReducibilityHints::Abbrev,
+        safety: DefinitionSafety::Safe,
+        all: vec![],
+      })),
+      _ => None,
+    })
+    .collect();
+  if !rec_on_defs.is_empty() {
+    compile_aux_block(&rec_on_defs, lean_env, stt)?;
+  }
+  let rec_on_elapsed = t3.elapsed();
   // Phase 3: Compile .below inductives (Prop-level).
   // Collect all .below names first for the mutual `all` field.
+  let t4 = std::time::Instant::now();
   let all_below_names: Vec<Name> = patches
     .iter()
     .filter_map(|(_, p)| match p {
@@ -344,13 +401,17 @@ pub(crate) fn generate_and_compile_aux_recursors(
   if !below_defs.is_empty() {
     compile_aux_block(&below_defs, lean_env, stt)?;
   }
+  let below_elapsed = t4.elapsed();
 
   // Phase 5: Compile .below.rec (for Prop-level .below inductives).
+  let t5 = std::time::Instant::now();
   if !below_indcs.is_empty() {
     compile_below_recursors(&below_indcs, lean_env, stt)?;
   }
+  let below_rec_elapsed = t5.elapsed();
 
   // Phase 6: Compile .brecOn in 3 batches (.go first, main second, .eq last).
+  let t6 = std::time::Instant::now();
   for batch in 0..3u8 {
     let defs: Vec<MutConst> = patches
       .iter()
@@ -365,7 +426,36 @@ pub(crate) fn generate_and_compile_aux_recursors(
       compile_aux_block(&defs, lean_env, stt)?;
     }
   }
+  let brecon_elapsed = t6.elapsed();
 
+  // Phase 7: noConfusion for alpha-collapsed blocks.
+  //
+  // noConfusion's value calls casesOn, but the original Lean noConfusion
+  // was built for the non-collapsed casesOn (which has more motives/minors).
+  // Compiling the original as-is produces structurally incorrect Ixon.
+  //
+  // Full noConfusion regeneration is deferred (see no_confusion.rs).
+  // TODO: suppress broken noConfusion for collapsed blocks once we have
+  // a mechanism to filter them from the scheduler without breaking deps
+  // (adding to aux_gen_extra_names decrements dep counters but doesn't
+  // provide addresses, causing MissingConstant errors downstream).
+
+  let total = aux_total_start.elapsed();
+  if total.as_secs_f32() > 0.5 {
+    eprintln!(
+      "[aux_gen] {:?} total={:.2}s gen={:.2}s rec={:.2}s cases={:.2}s recOn={:.2}s below={:.2}s belowRec={:.2}s brecon={:.2}s patches={}",
+      block_label,
+      total.as_secs_f32(),
+      gen_elapsed.as_secs_f32(),
+      rec_elapsed.as_secs_f32(),
+      cases_elapsed.as_secs_f32(),
+      rec_on_elapsed.as_secs_f32(),
+      below_elapsed.as_secs_f32(),
+      below_rec_elapsed.as_secs_f32(),
+      brecon_elapsed.as_secs_f32(),
+      patches.len(),
+    );
+  }
   Ok(())
 }
 
@@ -406,8 +496,8 @@ fn below_indc_to_mut_const(
         typ: bi.typ.clone(),
       },
       num_params: Nat::from(bi.n_params as u64),
-      // .below always has 1 index (the major premise)
-      num_indices: Nat::from(1u64),
+      // .below has original indices + 1 (the major premise)
+      num_indices: Nat::from(bi.n_indices as u64),
       all: all_below_names.to_vec(),
       ctors: bi.ctors.iter().map(|c| c.name.clone()).collect(),
       is_rec: true,
@@ -456,16 +546,19 @@ fn compile_below_recursors(
   lean_env: &Arc<LeanEnv>,
   stt: &CompileState,
 ) -> Result<(), CompileError> {
-  // Build an augmented environment containing the .below inductives + ctors.
-  let mut aug_env = lean_env.as_ref().clone();
+  // Build a small overlay with just the .below inductives + ctors.
+  // These don't exist in the original lean_env, but generate_canonical_recursors
+  // needs to look them up as class representatives. Using an overlay avoids
+  // cloning the full ~197k-entry environment.
+  let mut overlay: LeanEnv = LeanEnv::default();
   for c in below_indcs {
     if let MutConst::Indc(ind) = c {
-      aug_env.insert(
+      overlay.insert(
         ind.ind.cnst.name.clone(),
         LeanConstantInfo::InductInfo(ind.ind.clone()),
       );
       for ctor in &ind.ctors {
-        aug_env.insert(
+        overlay.insert(
           ctor.cnst.name.clone(),
           LeanConstantInfo::CtorInfo(ctor.clone()),
         );
@@ -489,25 +582,19 @@ fn compile_below_recursors(
   }
 
   let mut below_recs: Vec<MutConst> = Vec::new();
-  match recursor::generate_canonical_recursors(
+  let (recs, _) = recursor::generate_canonical_recursors_with_overlay(
     &classes,
-    &aug_env,
+    lean_env,
+    Some(&overlay),
     stt,
-    Some(&stt.aux_name_to_addr),
-  ) {
-    Ok((recs, _)) => {
-      for (_, rec) in recs {
-        below_recs.push(MutConst::Recr(rec));
-      }
-    },
-    Err(e) => {
-      eprintln!("[aux_gen] .below.rec generation failed: {:?}", e);
-    },
+    &stt.kctx,
+  )?;
+  for (_, rec) in recs {
+    below_recs.push(MutConst::Recr(rec));
   }
 
   if !below_recs.is_empty() {
-    let aug_arc = Arc::new(aug_env);
-    compile_aux_block(&below_recs, &aug_arc, stt)?;
+    compile_aux_block(&below_recs, lean_env, stt)?;
   }
   Ok(())
 }

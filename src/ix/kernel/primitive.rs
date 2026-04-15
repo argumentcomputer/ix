@@ -14,6 +14,7 @@ use super::id::KId;
 use super::mode::KernelMode;
 
 /// Well-known primitive KIds.
+#[derive(Clone)]
 pub struct Primitives<M: KernelMode> {
   // -- Nat --
   pub nat: KId<M>,

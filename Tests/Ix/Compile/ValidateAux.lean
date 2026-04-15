@@ -1,13 +1,15 @@
 /-
   Comprehensive validation of the aux_gen compile pipeline.
 
-  Six phases:
-    1. Compilation succeeds (every input constant gets an address)
-    2. No ephemeral leaks (original constants don't pollute the Ixon env)
-    3. Alpha-equivalence group canonicity (same-class names share addresses)
-    4. Decompilation with debug info succeeds
-    5. Aux congruence (aux_gen constants match originals)
-    6. Decompilation without debug info succeeds
+  Eight phases:
+    1. Aux_gen congruence (pre-compilation: original aux_gen matches Lean)
+    2. Compilation succeeds (every input constant gets an address)
+    3. No ephemeral leaks (original constants don't pollute the Ixon env)
+    4. Alpha-equivalence group canonicity (same-class names share addresses)
+    5. Decompilation with debug info succeeds
+    6. Aux congruence roundtrip (post-compilation: decompiled aux_gen matches Lean)
+    7. Decompilation without debug info succeeds
+    8. Nested detection (build_compile_flat_block finds expected auxiliaries)
 
   Invoked via `lake test -- --ignored validate-aux`.
 -/
@@ -59,15 +61,28 @@ partial def collectDeps (env : Lean.Environment) (seeds : List Lean.Name)
 @[extern "rs_compile_validate_aux"]
 opaque compileValidateAux : @& List (Lean.Name × Lean.ConstantInfo) → USize
 
+
 def runCompileValidateAux (env : Lean.Environment) : IO UInt32 := do
   IO.println "[validate-aux] finding seeds..."
   let prefixes := [
     `Tests.Ix.Compile.Mutual,
+    `Init,
+    `_private.Init
   ]
   let mut seeds := env.constants.toList.filterMap fun (n, _) =>
     if prefixes.any (·.isPrefixOf n) then some n else none
   -- Add prereqs that aux_gen references but test fixtures don't directly use.
-  seeds := seeds ++ [`True]
+  -- .below uses PUnit/PProd (Type-level), .brecOn uses Eq/True.
+  -- We need the full inductive family: type, constructors, and recursor.
+  seeds := seeds ++ [
+    `PUnit, `PUnit.unit, `PUnit.rec,
+    `PProd, `PProd.mk, `PProd.rec,
+    `Eq, `Eq.refl, `Eq.rec,
+    `True, `True.intro, `True.rec,
+    `OfNat, `OfNat.rec, `SizeOf, `SizeOf.rec, 
+    `Iff, `Iff.rec, `Add, `Add.rec, `HAdd, `HAdd.rec, `Nat, `Nat.rec,
+    `Nat.brecOn.eq, `PULift, `PULift.rec
+  ]
   IO.println s!"[validate-aux] {seeds.length} seeds"
 
   IO.println "[validate-aux] collecting transitive deps..."

@@ -2,6 +2,8 @@
 
 #[cfg(test)]
 mod tests {
+  use std::sync::Arc;
+
   use crate::ix::env::ReducibilityHints;
   use crate::ix::kernel::constant::KConst;
   use crate::ix::kernel::constant::RecRule;
@@ -17,8 +19,8 @@ mod tests {
   /// PN := ∀ α, (α → α) → α → α
   /// PN.zero : PN := fun α s z => z
   /// PN.succ : PN → PN := fun n α s z => s (n α s z)
-  fn peano_env() -> KEnv<Meta> {
-    let env = KEnv::<Meta>::new();
+  fn peano_env() -> Arc<KEnv<Meta>> {
+    let env = Arc::new(KEnv::<Meta>::new());
     // PN := ∀ α, (α → α) → α → α
     // = ∀ (α : Type), (α → α) → α → α
     // depth 0: α=var(0). (α → α) = pi(var(0), var(1)). α → α at depth 1.
@@ -264,8 +266,8 @@ mod tests {
   // ==========================================================================
 
   /// Build Bool environment with working recursor rules.
-  fn bool_env() -> KEnv<Meta> {
-    let env = KEnv::<Meta>::new();
+  fn bool_env() -> Arc<KEnv<Meta>> {
+    let env = Arc::new(KEnv::<Meta>::new());
     let n = "Bool";
     let block_id = mk_id(n);
     let false_id = mk_id("Bool.false");
@@ -456,8 +458,8 @@ mod tests {
   // ==========================================================================
 
   /// Build N (Nat-like) environment with working recursor rules.
-  fn nat_env() -> KEnv<Meta> {
-    let env = KEnv::<Meta>::new();
+  fn nat_env() -> Arc<KEnv<Meta>> {
+    let env = Arc::new(KEnv::<Meta>::new());
     let n = "N";
     let block_id = mk_id(n);
     let zero_id = mk_id("N.zero");
@@ -734,7 +736,7 @@ mod tests {
 
   /// Build an environment with Bool + RTree (reflexive inductive).
   /// RTree : Type, RTree.leaf : RTree, RTree.node : (Bool → RTree) → RTree
-  fn rtree_env() -> KEnv<Meta> {
+  fn rtree_env() -> Arc<KEnv<Meta>> {
     let env = bool_env();
 
     let n = "RTree";
@@ -1032,8 +1034,8 @@ mod tests {
   // ==========================================================================
 
   /// Build Prod.{u,v} : Type u → Type v → Type (max u v) environment.
-  fn prod_env() -> KEnv<Meta> {
-    let env = KEnv::<Meta>::new();
+  fn prod_env() -> Arc<KEnv<Meta>> {
+    let env = Arc::new(KEnv::<Meta>::new());
     add_eq_axioms(&env);
 
     // Also need Bool for projection tests
@@ -1363,7 +1365,7 @@ mod tests {
   // ==========================================================================
 
   /// Add Eq as a full inductive (not just axioms) — needed for Quot.lift validation.
-  fn add_eq_inductive(env: &mut KEnv<Meta>) {
+  fn add_eq_inductive(env: &KEnv<Meta>) {
     let eq_id = mk_id("Eq");
     let refl_id = mk_id("Eq.refl");
     let eq_rec_id = mk_id("Eq.rec");
@@ -1463,9 +1465,9 @@ mod tests {
 
   /// Build Quot environment: Quot, Quot.mk, Quot.lift, Quot.ind as KConst::Quot.
   /// Also includes Eq as full inductive (needed for Quot.lift validation).
-  fn quot_env() -> KEnv<Meta> {
-    let mut env = KEnv::<Meta>::new();
-    add_eq_inductive(&mut env);
+  fn quot_env() -> Arc<KEnv<Meta>> {
+    let env = Arc::new(KEnv::<Meta>::new());
+    add_eq_inductive(&env);
 
     use crate::ix::env::QuotKind;
 
