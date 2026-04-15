@@ -23,7 +23,7 @@ def friParameters : Aiur.FriParameters := {
   queryProofOfWorkBits := 0
 }
 
-def mergedToplevel : Except Aiur.Global Aiur.Toplevel := do
+def mergedToplevel : Except Aiur.Global Aiur.Source.Toplevel := do
   let tl ← IxVM.core.merge IxVM.byteStream
   tl.merge IxVM.blake3
 

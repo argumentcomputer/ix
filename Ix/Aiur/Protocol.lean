@@ -1,6 +1,13 @@
 module
-public import Ix.Aiur.Bytecode
-public import Std.Data.HashMap
+public import Ix.Aiur.Semantics.BytecodeFfi
+
+/-!
+AiurSystem, Proof, FRI params, and `buildClaim` — the "prove & verify" FFI surface.
+
+The bytecode-execution FFI that used to live here has moved to
+`Ix/Aiur/Bytecode/ExecuteFfi.lean` so that `Bytecode/Eval.lean` can be built
+without pulling in the proving backend.
+-/
 
 public section
 
@@ -35,52 +42,6 @@ private opaque AiurSystemNonempty : NonemptyType
 def AiurSystem : Type := AiurSystemNonempty.type
 instance : Nonempty AiurSystem := AiurSystemNonempty.property
 
-structure IOKeyInfo where
-  idx : Nat
-  len : Nat
-  deriving BEq
-
-structure IOBuffer where
-  data : Array G
-  map : Std.HashMap (Array G) IOKeyInfo
-  deriving Inhabited
-
-def IOBuffer.extend (ioBuffer : IOBuffer) (key data : Array G) : IOBuffer :=
-  let idx := ioBuffer.data.size
-  let len := data.size
-  { ioBuffer with
-    data := ioBuffer.data ++ data
-    map := ioBuffer.map.insert key { idx, len } }
-
-instance : BEq IOBuffer where
-  beq x y :=
-    x.data == y.data &&
-    x.map.size == y.map.size &&
-    x.map.all fun k v => y.map.get? k == some v
-
-namespace Bytecode.Toplevel
-
-@[extern "rs_aiur_toplevel_execute"]
-private opaque execute' : @& Bytecode.Toplevel →
-  @& Bytecode.FunIdx → @& Array G → (ioData : @& Array G) →
-  (ioMap : @& Array (Array G × IOKeyInfo)) →
-    Array G × (Array G × Array (Array G × IOKeyInfo)) × Array Nat
-
-/-- Executes the bytecode function `funIdx` with the given `args` and `ioBuffer`,
-returning the raw output of the function, the updated `IOBuffer`, and an array
-of query counts (one per function circuit, then one per memory size). -/
-def execute (toplevel : @& Bytecode.Toplevel)
-  (funIdx : @& Bytecode.FunIdx) (args : @& Array G) (ioBuffer : IOBuffer) :
-    Array G × IOBuffer × Array Nat :=
-  let ioData := ioBuffer.data
-  let ioMap := ioBuffer.map
-  let (output, (ioData, ioMap), queryCounts) := execute' toplevel funIdx args
-    ioData ioMap.toArray
-  let ioMap := ioMap.foldl (fun acc (k, v) => acc.insert k v) ∅
-  (output, ⟨ioData, ioMap⟩, queryCounts)
-
-end Bytecode.Toplevel
-
 namespace AiurSystem
 
 @[extern "rs_aiur_system_build"]
@@ -94,7 +55,7 @@ private opaque prove' : @& AiurSystem → @& FriParameters →
 
 /-- Executes the bytecode function `funIdx` with the given `args` and `ioBuffer`,
 then generates a proof of the computation. Returns the claim
-(i.e. `#[functionChannel, funIdx] ++ args ++ output`), the `Proof`, and the
+(`#[functionChannel, funIdx] ++ args ++ output`), the `Proof`, and the
 updated `IOBuffer`. -/
 def prove (system : @& AiurSystem) (friParameters : @& FriParameters)
   (funIdx : @& Bytecode.FunIdx) (args : @& Array G) (ioBuffer : IOBuffer) :

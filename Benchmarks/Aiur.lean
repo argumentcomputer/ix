@@ -75,12 +75,16 @@ def main : IO Unit := do
   let decls ← match toplevel.checkAndSimplify with
     | .error e => throw (IO.userError s!"{repr e}")
     | .ok decls => pure decls
+  let concDecls ← match decls.concretize with
+    | .error e => throw (IO.userError s!"{repr e}")
+    | .ok cd => pure cd
   let _ ← bgroup "nat_fib" { e2e := true } do
     skipE2E
-    bench "simplify toplevel" Aiur.Toplevel.checkAndSimplify toplevel
-    bench "compile decls" Aiur.TypedDecls.toBytecode decls
+    bench "simplify toplevel" Aiur.Source.Toplevel.checkAndSimplify toplevel
+    bench "concretize decls" Aiur.Typed.Decls.concretize decls
+    bench "compile decls" Aiur.Concrete.Decls.toBytecode concDecls
     countInE2E
-    let compiled ← benchStepE "compile" Aiur.Toplevel.compile toplevel
+    let compiled ← benchStepE "compile" Aiur.Source.Toplevel.compile toplevel
     let system ← benchStep "build AiurSystem"
         (Aiur.AiurSystem.build compiled.bytecode) commitmentParameters
     let funIdx := compiled.getFuncIdx `main |>.get!

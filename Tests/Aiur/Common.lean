@@ -45,10 +45,10 @@ def friParameters : Aiur.FriParameters := {
 
 structure AiurTestEnv where
   compiled : Aiur.CompiledToplevel
-  decls : Aiur.Decls
+  decls : Aiur.Source.Decls
   aiurSystem : Aiur.AiurSystem
 
-def AiurTestEnv.build (toplevelFn : Except Aiur.Global Aiur.Toplevel) :
+def AiurTestEnv.build (toplevelFn : Except Aiur.Global Aiur.Source.Toplevel) :
     Except String AiurTestEnv := do
   let toplevel ← toplevelFn.mapError toString
   let compiled ← toplevel.compile
@@ -102,7 +102,7 @@ def AiurTestEnv.runTestCase (env : AiurTestEnv) (testCase : AiurTestCase) : Test
       (env.aiurSystem.verify friParameters claim proof) fun _ => .done
     execTest ++ interpTest ++ claimTest ++ ioTest ++ pvTest
 
-def mkAiurTests (toplevelFn : Except Aiur.Global Aiur.Toplevel)
+def mkAiurTests (toplevelFn : Except Aiur.Global Aiur.Source.Toplevel)
     (cases : List AiurTestCase) : TestSeq :=
   withExceptOk "Toplevel merging succeeds" toplevelFn fun toplevel =>
     withExceptOk "Compilation succeeds" toplevel.compile fun compiled =>

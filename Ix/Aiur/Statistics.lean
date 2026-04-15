@@ -41,7 +41,6 @@ def computeStats (compiled : CompiledToplevel) (queryCounts : Array Nat) :
   let reverseMap := compiled.nameMap.fold (init := (∅ : Std.HashMap Bytecode.FunIdx String))
     fun acc global idx => if !acc.contains idx then acc.insert idx (toString global) else acc
   let nAllFuns := t.functions.size
-  -- One CircuitStats per constrained function
   let functionCircuits := Id.run do
     let mut acc := #[]
     for i in [:nAllFuns] do
@@ -51,11 +50,7 @@ def computeStats (compiled : CompiledToplevel) (queryCounts : Array Nat) :
         let name := reverseMap[i]?.getD s!"<fn {i}>"
         acc := acc.push { name, width := w, height := h, fftCost := fftCost w h : CircuitStats }
     acc
-  -- One CircuitStats per memory size
   let memoryCircuits := t.memorySizes.mapIdx fun i size =>
-    -- Apart from the values, accounted by `size`, there are also the multiplicity, selector and pointer
-    -- in the first stage, and in the second stage there is the running accumulator and the inverse of the message,
-    -- which are 4 Goldilock elements each
     let w := size + 11
     let h := queryCounts[nAllFuns + i]!
     { name := s!"memory[{size}]",
