@@ -5,16 +5,16 @@ package ix where
   version := v!"0.1.0"
 
 require LSpec from git
-  "https://github.com/argumentcomputer/LSpec" @ "928f27c7de8318455ba0be7461dbdf7096f4075a"
+  "https://github.com/argumentcomputer/LSpec" @ "d3c15b93a1dd4e7c8d5c0c3825c9555737e55c3e"
 
 require Blake3 from git
-  "https://github.com/argumentcomputer/Blake3.lean" @ "40dc7036b09531cf084f3554a8873eaa4d92a9bc"
+  "https://github.com/argumentcomputer/Blake3.lean" @ "aaf530784082a2c00b0a93648741429d274102ca"
 
 require Cli from git
-  "https://github.com/leanprover/lean4-cli" @ "v4.28.0"
+  "https://github.com/leanprover/lean4-cli" @ "v4.29.0"
 
 require batteries from git
-  "https://github.com/leanprover-community/batteries" @ "v4.28.0"
+  "https://github.com/leanprover-community/batteries" @ "v4.29.0"
 
 /-! ## FFI
 
