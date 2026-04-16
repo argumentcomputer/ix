@@ -16,10 +16,10 @@ impl LeanPutResponse<LeanOwned> {
   ///   hash : String
   /// ```
   pub fn mk(message: &str, hash: &str) -> Self {
-    let ctor = LeanPutResponse::alloc();
+    let ctor = LeanPutResponse::alloc(0);
     ctor.set_obj(0, LeanString::new(message));
     ctor.set_obj(1, LeanString::new(hash));
-    Self::new(ctor.into())
+    ctor
   }
 }
 
@@ -33,11 +33,11 @@ impl LeanGetResponse<LeanOwned> {
   ///   bytes : ByteArray
   /// ```
   pub fn mk(message: &str, hash: &str, bytes: &[u8]) -> Self {
-    let ctor = LeanGetResponse::alloc();
+    let ctor = LeanGetResponse::alloc(0);
     ctor.set_obj(0, LeanString::new(message));
     ctor.set_obj(1, LeanString::new(hash));
     ctor.set_obj(2, LeanByteArray::from_bytes(bytes));
-    Self::new(ctor.into())
+    ctor
   }
 }
 

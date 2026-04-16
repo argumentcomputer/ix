@@ -76,11 +76,11 @@ impl LeanIxCondensedBlocks<LeanOwned> {
     }
 
     // Build RustCondensedBlocks structure (3 fields)
-    let result = LeanIxCondensedBlocks::alloc();
+    let result = LeanIxCondensedBlocks::alloc(0);
     result.set_obj(0, low_links_arr);
     result.set_obj(1, blocks_arr);
     result.set_obj(2, block_refs_arr);
-    Self::new(result.into())
+    result
   }
 }
 

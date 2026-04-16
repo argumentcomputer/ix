@@ -3,12 +3,7 @@
 use std::sync::Arc;
 
 use crate::ix::ixon::expr::Expr as IxonExpr;
-use crate::lean::{
-  LeanIxonExpr, LeanIxonExprAll, LeanIxonExprApp, LeanIxonExprLam,
-  LeanIxonExprLet, LeanIxonExprNat, LeanIxonExprPrj, LeanIxonExprRec,
-  LeanIxonExprRef, LeanIxonExprShare, LeanIxonExprSort, LeanIxonExprStr,
-  LeanIxonExprVar,
-};
+use crate::lean::LeanIxonExpr;
 use lean_ffi::object::{LeanArray, LeanBorrowed, LeanOwned, LeanRef};
 
 /// Decode Array UInt64 from Lean.
@@ -28,97 +23,96 @@ fn decode_u64_array(obj: LeanArray<LeanBorrowed<'_>>) -> Vec<u64> {
 impl LeanIxonExpr<LeanOwned> {
   /// Build Ixon.Expr (12 constructors).
   pub fn build(expr: &IxonExpr) -> Self {
-    let obj = match expr {
+    match expr {
       IxonExpr::Sort(idx) => {
-        let ctor = LeanIxonExprSort::alloc();
+        let ctor = LeanIxonExpr::alloc(0);
         ctor.set_num_64(0, *idx);
-        ctor.0
+        ctor
       },
       IxonExpr::Var(idx) => {
-        let ctor = LeanIxonExprVar::alloc();
+        let ctor = LeanIxonExpr::alloc(1);
         ctor.set_num_64(0, *idx);
-        ctor.0
+        ctor
       },
       IxonExpr::Ref(ref_idx, univ_idxs) => {
         let arr = LeanArray::alloc(univ_idxs.len());
         for (i, idx) in univ_idxs.iter().enumerate() {
           arr.set(i, LeanOwned::box_u64(*idx));
         }
-        let ctor = LeanIxonExprRef::alloc();
+        let ctor = LeanIxonExpr::alloc(2);
         ctor.set_obj(0, arr);
         ctor.set_num_64(0, *ref_idx);
-        ctor.0
+        ctor
       },
       IxonExpr::Rec(rec_idx, univ_idxs) => {
         let arr = LeanArray::alloc(univ_idxs.len());
         for (i, idx) in univ_idxs.iter().enumerate() {
           arr.set(i, LeanOwned::box_u64(*idx));
         }
-        let ctor = LeanIxonExprRec::alloc();
+        let ctor = LeanIxonExpr::alloc(3);
         ctor.set_obj(0, arr);
         ctor.set_num_64(0, *rec_idx);
-        ctor.0
+        ctor
       },
       IxonExpr::Prj(type_ref_idx, field_idx, val) => {
         let val_obj = Self::build(val);
-        let ctor = LeanIxonExprPrj::alloc();
+        let ctor = LeanIxonExpr::alloc(4);
         ctor.set_obj(0, val_obj);
         ctor.set_num_64(0, *type_ref_idx);
         ctor.set_num_64(1, *field_idx);
-        ctor.0
+        ctor
       },
       IxonExpr::Str(ref_idx) => {
-        let ctor = LeanIxonExprStr::alloc();
+        let ctor = LeanIxonExpr::alloc(5);
         ctor.set_num_64(0, *ref_idx);
-        ctor.0
+        ctor
       },
       IxonExpr::Nat(ref_idx) => {
-        let ctor = LeanIxonExprNat::alloc();
+        let ctor = LeanIxonExpr::alloc(6);
         ctor.set_num_64(0, *ref_idx);
-        ctor.0
+        ctor
       },
       IxonExpr::App(fun, arg) => {
         let fun_obj = Self::build(fun);
         let arg_obj = Self::build(arg);
-        let ctor = LeanIxonExprApp::alloc();
+        let ctor = LeanIxonExpr::alloc(7);
         ctor.set_obj(0, fun_obj);
         ctor.set_obj(1, arg_obj);
-        ctor.into()
+        ctor
       },
       IxonExpr::Lam(ty, body) => {
         let ty_obj = Self::build(ty);
         let body_obj = Self::build(body);
-        let ctor = LeanIxonExprLam::alloc();
+        let ctor = LeanIxonExpr::alloc(8);
         ctor.set_obj(0, ty_obj);
         ctor.set_obj(1, body_obj);
-        ctor.into()
+        ctor
       },
       IxonExpr::All(ty, body) => {
         let ty_obj = Self::build(ty);
         let body_obj = Self::build(body);
-        let ctor = LeanIxonExprAll::alloc();
+        let ctor = LeanIxonExpr::alloc(9);
         ctor.set_obj(0, ty_obj);
         ctor.set_obj(1, body_obj);
-        ctor.into()
+        ctor
       },
       IxonExpr::Let(non_dep, ty, val, body) => {
         let ty_obj = Self::build(ty);
         let val_obj = Self::build(val);
         let body_obj = Self::build(body);
-        let ctor = LeanIxonExprLet::alloc();
+        let ctor = LeanIxonExpr::alloc(10);
         ctor.set_obj(0, ty_obj);
         ctor.set_obj(1, val_obj);
         ctor.set_obj(2, body_obj);
         ctor.set_num_8(0, *non_dep as u8);
-        ctor.0
+        ctor
       },
       IxonExpr::Share(idx) => {
-        let ctor = LeanIxonExprShare::alloc();
+        let ctor = LeanIxonExpr::alloc(11);
         ctor.set_num_64(0, *idx);
-        ctor.0
+        ctor
       },
-    };
-    Self::new(obj)
+    }
   }
 
   /// Build an Array of Ixon.Expr.
@@ -138,45 +132,38 @@ impl<R: LeanRef> LeanIxonExpr<R> {
     let tag = ctor.tag();
     match tag {
       0 => {
-        let ctor = LeanIxonExprSort::from_ctor(ctor);
-        let idx = ctor.get_num_64(0);
+        let idx = self.get_num_64(0);
         IxonExpr::Sort(idx)
       },
       1 => {
-        let ctor = LeanIxonExprVar::from_ctor(ctor);
-        let idx = ctor.get_num_64(0);
+        let idx = self.get_num_64(0);
         IxonExpr::Var(idx)
       },
       2 => {
-        let ctor = LeanIxonExprRef::from_ctor(ctor);
-        let ref_idx = ctor.get_num_64(0);
-        let univ_idxs = decode_u64_array(ctor.get_obj(0).as_array());
+        let ref_idx = self.get_num_64(0);
+        let univ_idxs = decode_u64_array(self.get_obj(0).as_array());
         IxonExpr::Ref(ref_idx, univ_idxs)
       },
       3 => {
-        let ctor = LeanIxonExprRec::from_ctor(ctor);
-        let rec_idx = ctor.get_num_64(0);
-        let univ_idxs = decode_u64_array(ctor.get_obj(0).as_array());
+        let rec_idx = self.get_num_64(0);
+        let univ_idxs = decode_u64_array(self.get_obj(0).as_array());
         IxonExpr::Rec(rec_idx, univ_idxs)
       },
       4 => {
-        let ctor = LeanIxonExprPrj::from_ctor(ctor);
-        let type_ref_idx = ctor.get_num_64(0);
-        let field_idx = ctor.get_num_64(1);
+        let type_ref_idx = self.get_num_64(0);
+        let field_idx = self.get_num_64(1);
         IxonExpr::Prj(
           type_ref_idx,
           field_idx,
-          Arc::new(LeanIxonExpr(ctor.get_obj(0)).decode()),
+          Arc::new(LeanIxonExpr(self.get_obj(0)).decode()),
         )
       },
       5 => {
-        let ctor = LeanIxonExprStr::from_ctor(ctor);
-        let ref_idx = ctor.get_num_64(0);
+        let ref_idx = self.get_num_64(0);
         IxonExpr::Str(ref_idx)
       },
       6 => {
-        let ctor = LeanIxonExprNat::from_ctor(ctor);
-        let ref_idx = ctor.get_num_64(0);
+        let ref_idx = self.get_num_64(0);
         IxonExpr::Nat(ref_idx)
       },
       7 => IxonExpr::App(
@@ -192,18 +179,16 @@ impl<R: LeanRef> LeanIxonExpr<R> {
         Arc::new(LeanIxonExpr(ctor.get(1)).decode()),
       ),
       10 => {
-        let ctor = LeanIxonExprLet::from_ctor(ctor);
-        let non_dep = ctor.get_num_8(0) != 0;
+        let non_dep = self.get_num_8(0) != 0;
         IxonExpr::Let(
           non_dep,
-          Arc::new(LeanIxonExpr(ctor.get_obj(0)).decode()),
-          Arc::new(LeanIxonExpr(ctor.get_obj(1)).decode()),
-          Arc::new(LeanIxonExpr(ctor.get_obj(2)).decode()),
+          Arc::new(LeanIxonExpr(self.get_obj(0)).decode()),
+          Arc::new(LeanIxonExpr(self.get_obj(1)).decode()),
+          Arc::new(LeanIxonExpr(self.get_obj(2)).decode()),
         )
       },
       11 => {
-        let ctor = LeanIxonExprShare::from_ctor(ctor);
-        let idx = ctor.get_num_64(0);
+        let idx = self.get_num_64(0);
         IxonExpr::Share(idx)
       },
       _ => panic!("Invalid Ixon.Expr tag: {}", tag),

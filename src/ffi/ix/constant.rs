@@ -16,13 +16,10 @@ use crate::ix::env::{
   RecursorRule, RecursorVal, ReducibilityHints, TheoremVal,
 };
 use crate::lean::{
-  LeanIxAxiomVal, LeanIxConstantInfo, LeanIxConstantInfoAxiom,
-  LeanIxConstantInfoCtor, LeanIxConstantInfoDefn, LeanIxConstantInfoInduct,
-  LeanIxConstantInfoOpaque, LeanIxConstantInfoQuot, LeanIxConstantInfoRec,
-  LeanIxConstantInfoThm, LeanIxConstantVal, LeanIxConstructorVal,
+  LeanIxAxiomVal, LeanIxConstantInfo, LeanIxConstantVal, LeanIxConstructorVal,
   LeanIxDefinitionVal, LeanIxExpr, LeanIxInductiveVal, LeanIxName,
   LeanIxOpaqueVal, LeanIxQuotVal, LeanIxRecursorRule, LeanIxRecursorVal,
-  LeanIxReducibilityHints, LeanIxReducibilityHintsRegular, LeanIxTheoremVal,
+  LeanIxReducibilityHints, LeanIxTheoremVal,
 };
 use lean_ffi::nat::Nat;
 #[cfg(feature = "test-ffi")]
@@ -43,11 +40,11 @@ impl LeanIxConstantVal<LeanOwned> {
     let level_params_obj = LeanIxName::build_array(cache, &cv.level_params);
     let type_obj = LeanIxExpr::build(cache, &cv.typ);
 
-    let ctor = LeanIxConstantVal::alloc();
+    let ctor = LeanIxConstantVal::alloc(0);
     ctor.set_obj(0, name_obj);
     ctor.set_obj(1, level_params_obj);
     ctor.set_obj(2, type_obj);
-    Self::new(ctor.into())
+    ctor
   }
 }
 
@@ -74,19 +71,18 @@ impl LeanIxReducibilityHints<LeanOwned> {
   /// NOTE: In Lean 4, 0-field constructors are boxed scalars when the inductive has
   /// other constructors with fields. So opaque and abbrev use box_usize.
   pub fn build(hints: &ReducibilityHints) -> Self {
-    let obj = match hints {
+    match hints {
       // | opaque -- tag 0, boxed as scalar
-      ReducibilityHints::Opaque => LeanOwned::box_usize(0),
+      ReducibilityHints::Opaque => Self::new(LeanOwned::box_usize(0)),
       // | abbrev -- tag 1, boxed as scalar
-      ReducibilityHints::Abbrev => LeanOwned::box_usize(1),
+      ReducibilityHints::Abbrev => Self::new(LeanOwned::box_usize(1)),
       // | regular (h : UInt32) -- tag 2, object constructor
       ReducibilityHints::Regular(h) => {
-        let ctor = LeanIxReducibilityHintsRegular::alloc();
+        let ctor = LeanIxReducibilityHints::alloc(2);
         ctor.set_num_32(0, *h);
-        ctor.into()
+        ctor
       },
-    };
-    Self::new(obj)
+    }
   }
 }
 
@@ -108,8 +104,7 @@ impl<R: LeanRef> LeanIxReducibilityHints<R> {
       1 => ReducibilityHints::Abbrev,
       2 => {
         // regular: 0 obj fields, 4 scalar bytes (UInt32)
-        let ctor = LeanIxReducibilityHintsRegular::from_ctor(ctor);
-        ReducibilityHints::Regular(ctor.get_num_32(0))
+        ReducibilityHints::Regular(self.get_num_32(0))
       },
       _ => panic!("Invalid ReducibilityHints tag: {}", ctor.tag()),
     }
@@ -149,7 +144,7 @@ impl LeanIxRecursorRule<LeanOwned> {
       let n_fields_obj = Nat::to_lean(&rule.n_fields);
       let rhs_obj = LeanIxExpr::build(cache, &rule.rhs);
 
-      let rule_obj = LeanIxRecursorRule::alloc();
+      let rule_obj = LeanIxRecursorRule::alloc(0);
       rule_obj.set_obj(0, ctor_obj);
       rule_obj.set_obj(1, n_fields_obj);
       rule_obj.set_obj(2, rhs_obj);
@@ -163,18 +158,18 @@ impl LeanIxRecursorRule<LeanOwned> {
 impl LeanIxConstantInfo<LeanOwned> {
   /// Build a Ix.ConstantInfo from a Rust ConstantInfo.
   pub fn build(cache: &mut LeanBuildCache, info: &ConstantInfo) -> Self {
-    let result: LeanOwned = match info {
+    match info {
       // | axiomInfo (v : AxiomVal) -- tag 0
       ConstantInfo::AxiomInfo(v) => {
         // AxiomVal = { cnst : ConstantVal, isUnsafe : Bool }
         let cnst_obj = LeanIxConstantVal::build(cache, &v.cnst);
-        let axiom_val = LeanIxAxiomVal::alloc();
+        let axiom_val = LeanIxAxiomVal::alloc(0);
         axiom_val.set_obj(0, cnst_obj);
         axiom_val.set_num_8(0, v.is_unsafe as u8);
 
-        let obj = LeanIxConstantInfoAxiom::alloc();
+        let obj = LeanIxConstantInfo::alloc(0);
         obj.set_obj(0, axiom_val);
-        obj.into()
+        obj
       },
       // | defnInfo (v : DefinitionVal) -- tag 1
       ConstantInfo::DefnInfo(v) => {
@@ -190,16 +185,16 @@ impl LeanIxConstantInfo<LeanOwned> {
           DefinitionSafety::Partial => 2u8,
         };
 
-        let defn_val = LeanIxDefinitionVal::alloc();
+        let defn_val = LeanIxDefinitionVal::alloc(0);
         defn_val.set_obj(0, cnst_obj);
         defn_val.set_obj(1, value_obj);
         defn_val.set_obj(2, hints_obj);
         defn_val.set_obj(3, all_obj);
         defn_val.set_num_8(0, safety_byte);
 
-        let obj = LeanIxConstantInfoDefn::alloc();
+        let obj = LeanIxConstantInfo::alloc(1);
         obj.set_obj(0, defn_val);
-        obj.into()
+        obj
       },
       // | thmInfo (v : TheoremVal) -- tag 2
       ConstantInfo::ThmInfo(v) => {
@@ -208,14 +203,14 @@ impl LeanIxConstantInfo<LeanOwned> {
         let value_obj = LeanIxExpr::build(cache, &v.value);
         let all_obj = LeanIxName::build_array(cache, &v.all);
 
-        let thm_val = LeanIxTheoremVal::alloc();
+        let thm_val = LeanIxTheoremVal::alloc(0);
         thm_val.set_obj(0, cnst_obj);
         thm_val.set_obj(1, value_obj);
         thm_val.set_obj(2, all_obj);
 
-        let obj = LeanIxConstantInfoThm::alloc();
+        let obj = LeanIxConstantInfo::alloc(2);
         obj.set_obj(0, thm_val);
-        obj.into()
+        obj
       },
       // | opaqueInfo (v : OpaqueVal) -- tag 3
       ConstantInfo::OpaqueInfo(v) => {
@@ -224,15 +219,15 @@ impl LeanIxConstantInfo<LeanOwned> {
         let value_obj = LeanIxExpr::build(cache, &v.value);
         let all_obj = LeanIxName::build_array(cache, &v.all);
 
-        let opaque_val = LeanIxOpaqueVal::alloc();
+        let opaque_val = LeanIxOpaqueVal::alloc(0);
         opaque_val.set_obj(0, cnst_obj);
         opaque_val.set_obj(1, value_obj);
         opaque_val.set_obj(2, all_obj);
         opaque_val.set_num_8(0, v.is_unsafe as u8);
 
-        let obj = LeanIxConstantInfoOpaque::alloc();
+        let obj = LeanIxConstantInfo::alloc(3);
         obj.set_obj(0, opaque_val);
-        obj.into()
+        obj
       },
       // | quotInfo (v : QuotVal) -- tag 4
       ConstantInfo::QuotInfo(v) => {
@@ -246,13 +241,13 @@ impl LeanIxConstantInfo<LeanOwned> {
           QuotKind::Ind => 3u8,
         };
 
-        let quot_val = LeanIxQuotVal::alloc();
+        let quot_val = LeanIxQuotVal::alloc(0);
         quot_val.set_obj(0, cnst_obj);
         quot_val.set_num_8(0, kind_byte);
 
-        let obj = LeanIxConstantInfoQuot::alloc();
+        let obj = LeanIxConstantInfo::alloc(4);
         obj.set_obj(0, quot_val);
-        obj.into()
+        obj
       },
       // | inductInfo (v : InductiveVal) -- tag 5
       ConstantInfo::InductInfo(v) => {
@@ -265,7 +260,7 @@ impl LeanIxConstantInfo<LeanOwned> {
         let num_nested_obj = Nat::to_lean(&v.num_nested);
 
         // 6 object fields, 3 scalar bytes for bools
-        let induct_val = LeanIxInductiveVal::alloc();
+        let induct_val = LeanIxInductiveVal::alloc(0);
         induct_val.set_obj(0, cnst_obj);
         induct_val.set_obj(1, num_params_obj);
         induct_val.set_obj(2, num_indices_obj);
@@ -276,9 +271,9 @@ impl LeanIxConstantInfo<LeanOwned> {
         induct_val.set_num_8(1, v.is_unsafe as u8);
         induct_val.set_num_8(2, v.is_reflexive as u8);
 
-        let obj = LeanIxConstantInfoInduct::alloc();
+        let obj = LeanIxConstantInfo::alloc(5);
         obj.set_obj(0, induct_val);
-        obj.into()
+        obj
       },
       // | ctorInfo (v : ConstructorVal) -- tag 6
       ConstantInfo::CtorInfo(v) => {
@@ -290,7 +285,7 @@ impl LeanIxConstantInfo<LeanOwned> {
         let num_fields_obj = Nat::to_lean(&v.num_fields);
 
         // 5 object fields, 1 scalar byte for bool
-        let ctor_val = LeanIxConstructorVal::alloc();
+        let ctor_val = LeanIxConstructorVal::alloc(0);
         ctor_val.set_obj(0, cnst_obj);
         ctor_val.set_obj(1, induct_obj);
         ctor_val.set_obj(2, cidx_obj);
@@ -298,9 +293,9 @@ impl LeanIxConstantInfo<LeanOwned> {
         ctor_val.set_obj(4, num_fields_obj);
         ctor_val.set_num_8(0, v.is_unsafe as u8);
 
-        let obj = LeanIxConstantInfoCtor::alloc();
+        let obj = LeanIxConstantInfo::alloc(6);
         obj.set_obj(0, ctor_val);
-        obj.into()
+        obj
       },
       // | recInfo (v : RecursorVal) -- tag 7
       ConstantInfo::RecInfo(v) => {
@@ -314,7 +309,7 @@ impl LeanIxConstantInfo<LeanOwned> {
         let rules_obj = LeanIxRecursorRule::build_array(cache, &v.rules);
 
         // 7 object fields, 2 scalar bytes for bools
-        let rec_val = LeanIxRecursorVal::alloc();
+        let rec_val = LeanIxRecursorVal::alloc(0);
         rec_val.set_obj(0, cnst_obj);
         rec_val.set_obj(1, all_obj);
         rec_val.set_obj(2, num_params_obj);
@@ -325,13 +320,11 @@ impl LeanIxConstantInfo<LeanOwned> {
         rec_val.set_num_8(0, v.k as u8);
         rec_val.set_num_8(1, v.is_unsafe as u8);
 
-        let obj = LeanIxConstantInfoRec::alloc();
+        let obj = LeanIxConstantInfo::alloc(7);
         obj.set_obj(0, rec_val);
-        obj.into()
+        obj
       },
-    };
-
-    Self::new(result)
+    }
   }
 }
 
@@ -344,17 +337,18 @@ impl<R: LeanRef> LeanIxConstantInfo<R> {
 
     match outer.tag() {
       0 => {
-        let inner = LeanIxAxiomVal::from_ctor(inner);
-        let is_unsafe = inner.get_num_8(0) != 0;
+        // AxiomVal inner
+        let inner_val = LeanIxAxiomVal(inner_obj);
+        let is_unsafe = inner_val.get_num_8(0) != 0;
 
         ConstantInfo::AxiomInfo(AxiomVal {
-          cnst: LeanIxConstantVal(inner.get_obj(0)).decode(),
+          cnst: LeanIxConstantVal(inner_val.get_obj(0)).decode(),
           is_unsafe,
         })
       },
       1 => {
-        let inner = LeanIxDefinitionVal::from_ctor(inner);
-        let safety_byte = inner.get_num_8(0);
+        let inner_val = LeanIxDefinitionVal(inner_obj);
+        let safety_byte = inner_val.get_num_8(0);
         let safety = match safety_byte {
           0 => DefinitionSafety::Unsafe,
           1 => DefinitionSafety::Safe,
@@ -363,11 +357,11 @@ impl<R: LeanRef> LeanIxConstantInfo<R> {
         };
 
         ConstantInfo::DefnInfo(DefinitionVal {
-          cnst: LeanIxConstantVal(inner.get_obj(0)).decode(),
-          value: LeanIxExpr(inner.get_obj(1)).decode(),
-          hints: LeanIxReducibilityHints(inner.get_obj(2)).decode(),
+          cnst: LeanIxConstantVal(inner_val.get_obj(0)).decode(),
+          value: LeanIxExpr(inner_val.get_obj(1)).decode(),
+          hints: LeanIxReducibilityHints(inner_val.get_obj(2)).decode(),
           safety,
-          all: LeanIxName::decode_array(inner.get_obj(3).as_array()),
+          all: LeanIxName::decode_array(inner_val.get_obj(3).as_array()),
         })
       },
       2 => ConstantInfo::ThmInfo(TheoremVal {
@@ -376,19 +370,19 @@ impl<R: LeanRef> LeanIxConstantInfo<R> {
         all: LeanIxName::decode_array(inner.get(2).as_array()),
       }),
       3 => {
-        let inner = LeanIxOpaqueVal::from_ctor(inner);
-        let is_unsafe = inner.get_num_8(0) != 0;
+        let inner_val = LeanIxOpaqueVal(inner_obj);
+        let is_unsafe = inner_val.get_num_8(0) != 0;
 
         ConstantInfo::OpaqueInfo(OpaqueVal {
-          cnst: LeanIxConstantVal(inner.get_obj(0)).decode(),
-          value: LeanIxExpr(inner.get_obj(1)).decode(),
+          cnst: LeanIxConstantVal(inner_val.get_obj(0)).decode(),
+          value: LeanIxExpr(inner_val.get_obj(1)).decode(),
           is_unsafe,
-          all: LeanIxName::decode_array(inner.get_obj(2).as_array()),
+          all: LeanIxName::decode_array(inner_val.get_obj(2).as_array()),
         })
       },
       4 => {
-        let inner = LeanIxQuotVal::from_ctor(inner);
-        let kind_byte = inner.get_num_8(0);
+        let inner_val = LeanIxQuotVal(inner_obj);
+        let kind_byte = inner_val.get_num_8(0);
         let kind = match kind_byte {
           0 => QuotKind::Type,
           1 => QuotKind::Ctor,
@@ -398,56 +392,58 @@ impl<R: LeanRef> LeanIxConstantInfo<R> {
         };
 
         ConstantInfo::QuotInfo(QuotVal {
-          cnst: LeanIxConstantVal(inner.get_obj(0)).decode(),
+          cnst: LeanIxConstantVal(inner_val.get_obj(0)).decode(),
           kind,
         })
       },
       5 => {
-        let inner = LeanIxInductiveVal::from_ctor(inner);
-        let is_rec = inner.get_num_8(0) != 0;
-        let is_unsafe = inner.get_num_8(1) != 0;
-        let is_reflexive = inner.get_num_8(2) != 0;
+        let inner_val = LeanIxInductiveVal(inner_obj);
+        let is_rec = inner_val.get_num_8(0) != 0;
+        let is_unsafe = inner_val.get_num_8(1) != 0;
+        let is_reflexive = inner_val.get_num_8(2) != 0;
 
         ConstantInfo::InductInfo(InductiveVal {
-          cnst: LeanIxConstantVal(inner.get_obj(0)).decode(),
-          num_params: Nat::from_obj(&inner.get_obj(1)),
-          num_indices: Nat::from_obj(&inner.get_obj(2)),
-          all: LeanIxName::decode_array(inner.get_obj(3).as_array()),
-          ctors: LeanIxName::decode_array(inner.get_obj(4).as_array()),
-          num_nested: Nat::from_obj(&inner.get_obj(5)),
+          cnst: LeanIxConstantVal(inner_val.get_obj(0)).decode(),
+          num_params: Nat::from_obj(&inner_val.get_obj(1)),
+          num_indices: Nat::from_obj(&inner_val.get_obj(2)),
+          all: LeanIxName::decode_array(inner_val.get_obj(3).as_array()),
+          ctors: LeanIxName::decode_array(inner_val.get_obj(4).as_array()),
+          num_nested: Nat::from_obj(&inner_val.get_obj(5)),
           is_rec,
           is_unsafe,
           is_reflexive,
         })
       },
       6 => {
-        let inner = LeanIxConstructorVal::from_ctor(inner);
-        let is_unsafe = inner.get_num_8(0) != 0;
+        let inner_val = LeanIxConstructorVal(inner_obj);
+        let is_unsafe = inner_val.get_num_8(0) != 0;
 
         ConstantInfo::CtorInfo(ConstructorVal {
-          cnst: LeanIxConstantVal(inner.get_obj(0)).decode(),
-          induct: LeanIxName(inner.get_obj(1)).decode(),
-          cidx: Nat::from_obj(&inner.get_obj(2)),
-          num_params: Nat::from_obj(&inner.get_obj(3)),
-          num_fields: Nat::from_obj(&inner.get_obj(4)),
+          cnst: LeanIxConstantVal(inner_val.get_obj(0)).decode(),
+          induct: LeanIxName(inner_val.get_obj(1)).decode(),
+          cidx: Nat::from_obj(&inner_val.get_obj(2)),
+          num_params: Nat::from_obj(&inner_val.get_obj(3)),
+          num_fields: Nat::from_obj(&inner_val.get_obj(4)),
           is_unsafe,
         })
       },
       7 => {
-        let inner = LeanIxRecursorVal::from_ctor(inner);
-        let k = inner.get_num_8(0) != 0;
-        let is_unsafe = inner.get_num_8(1) != 0;
+        let inner_val = LeanIxRecursorVal(inner_obj);
+        let k = inner_val.get_num_8(0) != 0;
+        let is_unsafe = inner_val.get_num_8(1) != 0;
 
-        let rules: Vec<RecursorRule> =
-          inner.get_obj(6).as_array().map(|x| LeanIxRecursorRule(x).decode());
+        let rules: Vec<RecursorRule> = inner_val
+          .get_obj(6)
+          .as_array()
+          .map(|x| LeanIxRecursorRule(x).decode());
 
         ConstantInfo::RecInfo(RecursorVal {
-          cnst: LeanIxConstantVal(inner.get_obj(0)).decode(),
-          all: LeanIxName::decode_array(inner.get_obj(1).as_array()),
-          num_params: Nat::from_obj(&inner.get_obj(2)),
-          num_indices: Nat::from_obj(&inner.get_obj(3)),
-          num_motives: Nat::from_obj(&inner.get_obj(4)),
-          num_minors: Nat::from_obj(&inner.get_obj(5)),
+          cnst: LeanIxConstantVal(inner_val.get_obj(0)).decode(),
+          all: LeanIxName::decode_array(inner_val.get_obj(1).as_array()),
+          num_params: Nat::from_obj(&inner_val.get_obj(2)),
+          num_indices: Nat::from_obj(&inner_val.get_obj(3)),
+          num_motives: Nat::from_obj(&inner_val.get_obj(4)),
+          num_minors: Nat::from_obj(&inner_val.get_obj(5)),
           rules,
           k,
           is_unsafe,
