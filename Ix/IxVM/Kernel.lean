@@ -1317,16 +1317,20 @@ def kernel := ⟦
   -- Check definitional equality of two values: first try a quick syntactic check,
   -- then reduce to WHNF and compare structurally
   fn k_is_def_eq(a: KVal, b: KVal, depth: G, top: List‹&KConstantInfo›, nat_idx: G, str_idx: G) -> G {
-    let quick = k_quick_def_eq(a, b);
-    match quick {
-      1 => 1,
-      0 =>
+    let not_eq_ptr = ptr_val(a) - ptr_val(b);
+    match (not_eq_ptr, a, b) {
+      (0, _, _) => 1,
+      (_, &KValNode.Srt(&la), &KValNode.Srt(&lb)) => level_equal(la, lb),
+      (_, &KValNode.Lit(la), &KValNode.Lit(lb)) => literal_eq(la, lb),
+      _ =>
         let a_whnf = k_whnf(a, top);
         let b_whnf = k_whnf(b, top);
-        let quick2 = k_quick_def_eq(a_whnf, b_whnf);
-        match quick2 {
-          1 => 1,
-          0 =>
+        let not_eq_ptr = ptr_val(a_whnf) - ptr_val(b_whnf);
+        match (not_eq_ptr, a_whnf, b_whnf) {
+          (0, _, _) => 1,
+          (_, &KValNode.Srt(&la), &KValNode.Srt(&lb)) => level_equal(la, lb),
+          (_, &KValNode.Lit(la), &KValNode.Lit(lb)) => literal_eq(la, lb),
+          _ =>
             -- Proof irrelevance: a and b share the same type, so if that type is
             -- Prop then both are proofs of the same proposition and are equal.
             let a_type = k_infer_val_type(a_whnf, top, nat_idx, str_idx);
@@ -1345,27 +1349,6 @@ def kernel := ⟦
                   1 => 1,
                 },
             },
-        },
-    }
-  }
-
-  -- Quick syntactic check for definitional equality (sorts and literals only)
-  fn k_quick_def_eq(a: KVal, b: KVal) -> G {
-    match ptr_val(a) - ptr_val(b) {
-      0 => 1,
-      _ =>
-        match load(a) {
-          KValNode.Srt(&la) =>
-            match load(b) {
-              KValNode.Srt(&lb) => level_equal(la, lb),
-              _ => 0,
-            },
-          KValNode.Lit(la) =>
-            match load(b) {
-              KValNode.Lit(lb) => literal_eq(la, lb),
-              _ => 0,
-            },
-          _ => 0,
         },
     }
   }
