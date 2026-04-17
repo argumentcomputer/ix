@@ -111,6 +111,27 @@ def compareToThreshold (estimate : Estimate) (noiseThreshold : Float) : Comparis
 /-- Criterion.rs uses a fixed 24-char column for the time/thrpt labels. -/
 def indent24 : String := String.ofList (List.replicate 24 ' ')
 
+/-- Prints a benchmark summary line in criterion.rs's 24-char column layout:
+    the green `name` occupies the first column, `body` the second.
+
+    Short names (≤23 chars) fit alongside `body` on one line:
+    ```
+    group/bench           time: [lo mid hi] ...
+    ```
+    Longer names take their own line with `body` indented underneath:
+    ```
+    group/very-long-bench-name
+                          time: [lo mid hi] ...
+    ``` -/
+def printBenchLine (name : String) (body : String) : IO Unit := do
+  let green := Ansi.green name
+  if name.length > 23 then
+    IO.println green
+    IO.println s!"{indent24}{body}"
+  else
+    let pad := String.ofList (List.replicate (24 - name.length) ' ')
+    IO.println s!"{green}{pad}{body}"
+
 def printRunning (config : Config) (style : CliStyle) (benchId : String) (expectedTime : Float) (numIters : Nat) (warningFactor : Nat) : IO Unit := do
   if warningFactor == 1 then
     -- Clear the ephemeral line before printing the permanent warning
@@ -136,16 +157,11 @@ def printResults (groupName : String) (config : Config) (benchName : String)
   -- Name line + time, matching criterion.rs's 24-char column layout:
   -- Short name (≤ 23 chars): name + pad + time on one line
   -- Long name (> 23 chars): name on its own line, time on the next
-  let r2Suffix := match m.rSquared with
-    | some r2 => s!" R²={r2.floatPretty 3}"
-    | none => ""
-  let timeLine := s!"time:   [{Ansi.faint ciLb.formatNanos} {Ansi.bold typicalEstimate.pointEstimate.formatNanos} {Ansi.faint ciUb.formatNanos}]{r2Suffix}"
-  if fullName.length > 23 then
-    IO.println (Ansi.green fullName)
-    IO.println s!"{indent24}{timeLine}"
-  else
-    let pad := String.ofList (List.replicate (24 - fullName.length) ' ')
-    IO.println s!"{Ansi.green fullName}{pad}{timeLine}"
+  let modeSuffix := match m.rSquared with
+    | some r2 => s!" [linear R²={r2.floatPretty 3}]"
+    | none => " [flat]"
+  let timeLine := s!"time:   [{Ansi.faint ciLb.formatNanos} {Ansi.bold typicalEstimate.pointEstimate.formatNanos} {Ansi.faint ciUb.formatNanos}]{modeSuffix}"
+  printBenchLine fullName timeLine
 
   -- Throughput line (if present)
   if let some t := m.throughput then
@@ -200,30 +216,32 @@ def printResults (groupName : String) (config : Config) (benchName : String)
         | .NonSignificant => "Change within noise threshold."
       IO.println s!"{indent24}{explanation}"
 
-  -- Outlier-variance warning + Tukey breakdown. Verbosity gating matches
-  -- Haskell criterion's `Internal.hs:89-92`:
-  --   • verbose             → always print the variance line AND breakdown
-  --   • normal + > slight   → print the variance line AND breakdown
-  --   • normal + ≤ slight   → silent
-  --   • quiet               → silent regardless
+  -- Tukey breakdown and Boyer model-based variance line are independent:
+  --   • Tukey (count > 0): print in non-quiet. Concrete per-sample spikes.
+  --   • Boyer variance:   print in verbose always; in normal only when the
+  --                       effect is at least moderate. It's a shape-derived
+  --                       metric that can fire with no Tukey outliers.
   if verbosity != .quiet then
+    if let some outs := m.outliers then
+      Outliers.note outs m.avgTimes.d.size
     if let some ov := m.outlierVariance then
       let effectAboveSlight := match ov.effect with
         | .moderate | .severe => true
         | _ => false
-      let showVariance := verbosity == .verbose || (effectAboveSlight && verbosity != .quiet)
-      if showVariance then
-        if let some outs := m.outliers then
-          Outliers.note outs m.avgTimes.d.size
+      if verbosity == .verbose || effectAboveSlight then
         let pct := (ov.fraction * 100).floatPretty 0
-        IO.println s!"variance introduced by outliers: {pct}% ({ov.desc})"
+        IO.println s!"variance attributable to outliers: {pct}% ({ov.desc})"
 
 /-! ## Markdown table -/
 
-def percentChangeToString (pc : Float) : String :=
+def percentChangeToString (pc : Float) (markdown : Bool := false) : String :=
   let rounded := (100 * pc).floatPretty 2
-  if pc < 0 then s!"{rounded.drop 1}% faster"
-  else if pc > 0 then s!"{rounded}% slower"
+  if pc < 0 then
+    if markdown then s!"**🟢 {rounded.drop 1}% faster**"
+    else s!"{rounded.drop 1}% faster"
+  else if pc > 0 then
+    if markdown then s!"**🔴 {rounded}% slower**"
+    else s!"{rounded}% slower"
   else "No change"
 
 structure ColumnWidths where
@@ -234,7 +252,7 @@ structure ColumnWidths where
   /-- `none` ⇒ the Throughput column is not rendered for this group. -/
   throughput : Option Nat
 
-def getColumnWidths' (maxWidths : ColumnWidths) (row: BenchReport) : ColumnWidths :=
+def getColumnWidths' (markdown : Bool) (maxWidths : ColumnWidths) (row: BenchReport) : ColumnWidths :=
   let fnLen := row.function.length
   let function := if fnLen > maxWidths.function then fnLen else maxWidths.function
   let newBenchLen := row.newBench.getTime.formatNanos.length
@@ -245,7 +263,7 @@ def getColumnWidths' (maxWidths : ColumnWidths) (row: BenchReport) : ColumnWidth
     else maxWidths.baseBench
   else maxWidths.baseBench
   let percentChange := if let some percentChange := row.percentChange then
-    let percentChangeStr := percentChangeToString percentChange
+    let percentChangeStr := percentChangeToString percentChange (markdown := markdown)
     let percentLen := percentChangeStr.length
     if percentLen > maxWidths.percentChange then percentLen
     else maxWidths.percentChange
@@ -258,7 +276,7 @@ def getColumnWidths' (maxWidths : ColumnWidths) (row: BenchReport) : ColumnWidth
       some (if tLen > w then tLen else w)
   { function, newBench, baseBench, percentChange, throughput }
 
-def getColumnWidths (report : Array BenchReport) : ColumnWidths :=
+def getColumnWidths (markdown : Bool) (report : Array BenchReport) : ColumnWidths :=
   let hasThroughput := report.any (·.throughput.isSome)
   let maxWidths : ColumnWidths := {
     function := "Function".length
@@ -267,7 +285,7 @@ def getColumnWidths (report : Array BenchReport) : ColumnWidths :=
     percentChange := "% change".length
     throughput := if hasThroughput then some "Throughput".length else none
   }
-  report.foldl getColumnWidths' maxWidths
+  report.foldl (getColumnWidths' markdown) maxWidths
 
 def padWhitespace (input : String) (width : Nat) : String :=
   let padWidth := width - input.length
@@ -278,33 +296,36 @@ def padWhitespace (input : String) (width : Nat) : String :=
 def padDashes (width : Nat) : String :=
   String.ofList (List.replicate width '-')
 
-def mkReportPretty' (columnWidths : ColumnWidths) (reportPretty : String) (row : BenchReport) : String :=
+/-- Formats a single `BenchReport` as one pipe-delimited table row
+    (terminated with `\n`), padded to the given column widths. `markdown`
+    controls whether the `% change` cell is decorated with bold/emoji for
+    GitHub rendering or rendered as plain text for CLI stdout. -/
+def renderRow (markdown : Bool) (columnWidths : ColumnWidths) (row : BenchReport) : String :=
   let functionStr := padWhitespace row.function columnWidths.function
-  let newBenchStr := row.newBench.getTime.formatNanos
-  let newBenchStr := padWhitespace newBenchStr columnWidths.newBench
+  let newBenchStr := padWhitespace row.newBench.getTime.formatNanos columnWidths.newBench
   let baseBenchStr := if let some baseBench := row.baseBench then
     baseBench.getTime.formatNanos
   else "None"
   let baseBenchStr := padWhitespace baseBenchStr columnWidths.baseBench
   let percentChangeStr := if let some percentChange := row.percentChange then
-    percentChangeToString percentChange
+    percentChangeToString percentChange (markdown := markdown)
   else "N/A"
   let percentChangeStr := padWhitespace percentChangeStr columnWidths.percentChange
+  -- Pad first, then style: ANSI escapes are zero-width visually but add
+  -- bytes to the string, so wrapping after padding keeps column alignment.
+  -- Markdown mode emphasizes via `**...**` inside `percentChangeToString`.
+  let percentChangeStr := if markdown || row.percentChange.isNone then percentChangeStr
+    else Ansi.bold percentChangeStr
   let throughputCell := match columnWidths.throughput with
     | none => ""
     | some w => s!" {padWhitespace row.throughputStr w} |"
-  let rowPretty :=
-    s!"| {functionStr} | {newBenchStr} | {baseBenchStr} | {percentChangeStr} |{throughputCell}\n"
-  reportPretty ++ rowPretty
+  s!"| {functionStr} | {newBenchStr} | {baseBenchStr} | {percentChangeStr} |{throughputCell}\n"
 
-/--
-Generates a Markdown table with comparative benchmark timings.
-Each table row contains the benchmark function name, the new timing, the base
-timing, the percent change between the two, and (optionally) a throughput rate.
--/
-def mkReportPretty (groupName : String) (report : Array BenchReport) : String :=
-  let columnWidths := getColumnWidths report
-  let title := s!"## {groupName}\n\n"
+/-- Builds the comparison table (header + rows). `markdown := true` enables
+    GitHub-Markdown decorations in the `% change` column (bold, color emoji);
+    `markdown := false` yields plain text suitable for CLI stdout. -/
+def mkReportTable (markdown : Bool) (report : Array BenchReport) : String :=
+  let columnWidths := getColumnWidths markdown report
   let (fn, new, base, percent) := (
     padWhitespace "Function" columnWidths.function,
     padWhitespace "New Benchmark" columnWidths.newBench,
@@ -322,7 +343,18 @@ def mkReportPretty (groupName : String) (report : Array BenchReport) : String :=
     | some w => (s!" {padWhitespace "Throughput" w} |", s!"-{padDashes w}-|")
   let header := s!"| {fn} | {new} | {base} | {percent} |{throughputHeader}\n"
   let dashes := s!"|-{d1}-|-{d2}-|-{d3}-|-{d4}-|{throughputDashes}\n"
-  let reportPretty := title ++ header ++ dashes
-  report.foldl (mkReportPretty' columnWidths) reportPretty
+  report.foldl (fun acc row => acc ++ renderRow markdown columnWidths row) (header ++ dashes)
+
+/-- GitHub-flavored Markdown report: table wrapped in a collapsible `<details>`
+    block. Used for the on-disk `report.md` that the PR workflow pastes into
+    the benchmark comment. -/
+def mkReportMarkdown (groupName : String) (report : Array BenchReport) : String :=
+  s!"<details>\n<summary><b>{groupName}</b></summary>\n\n{mkReportTable true report}\n</details>\n"
+
+/-- Plain-text report: table under a `## {groupName}` heading, no Markdown
+    decorations in the cells. Used for CLI stdout where `<details>` tags
+    would render as literal HTML and emoji/bold would just be noise. -/
+def mkReportPlain (groupName : String) (report : Array BenchReport) : String :=
+  s!"## {groupName}\n\n{mkReportTable false report}"
 
 end

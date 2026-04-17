@@ -64,67 +64,27 @@ def friParameters : Aiur.FriParameters := {
   queryProofOfWorkBits := 0
 }
 
-def proveE2E (name: Lean.Name) : IO UInt32 := do
-  let compiled ← match toplevel.compile with
-    | .error e => IO.eprintln e; return 1
-    | .ok compiled => pure compiled
-  let system := Aiur.AiurSystem.build compiled.bytecode commitmentParameters
-  let funIdx := compiled.getFuncIdx name |>.get!
-  let (claim, proof, _) := system.prove friParameters funIdx #[10] default
-  match system.verify friParameters claim proof with
-  | .ok _ => return 0
-  | .error e => IO.eprintln e; return 1
-
-/-- Compile `toplevel` once so the per-stage benchmarks can reuse the result. -/
-def compileToplevel : IO Aiur.CompiledToplevel := do
-  match toplevel.compile with
-  | .error e => throw (IO.userError e)
-  | .ok compiled => pure compiled
-
--- End-to-end proof generation and verification benchmark. `samplingMode`
--- defaults to `.auto`, which will fall back to flat for this slow bench.
-def proveE2EBench : IO $ Array BenchReport :=
-  bgroup "prove E2E" {} do
-    benchIO "fib 10" proveE2E `main
-
--- Individual benchmarks of each step from `proveE2E`. Each stage has different
--- `α`/`β` types, so they live in their own `bgroup` even though they share
--- the `nat_fib` group name on disk.
-
-def toplevelBench : IO $ Array BenchReport :=
-  bgroup "nat_fib" {} do
-    bench "simplify toplevel" Aiur.Toplevel.checkAndSimplify toplevel
-
-def compileBench : IO $ Array BenchReport := do
-  match toplevel.checkAndSimplify with
-  | .error e => throw (IO.userError s!"{repr e}")
-  | .ok decls =>
-    bgroup "nat_fib" {} do
-      bench "compile decls" Aiur.TypedDecls.toBytecode decls
-
-def buildAiurSystemBench : IO $ Array BenchReport := do
-  let compiled ← compileToplevel
-  bgroup "nat_fib" {} do
-    bench "build AiurSystem" (Aiur.AiurSystem.build compiled.bytecode) commitmentParameters
-
-def proveBench : IO $ Array BenchReport := do
-  let compiled ← compileToplevel
-  let system := Aiur.AiurSystem.build compiled.bytecode commitmentParameters
-  let funIdx := compiled.getFuncIdx `main |>.get!
-  bgroup "nat_fib" {} do
-    bench "prove fib 10" (Aiur.AiurSystem.prove system friParameters funIdx #[10]) default
-
-def verifyBench : IO $ Array BenchReport := do
-  let compiled ← compileToplevel
-  let system := Aiur.AiurSystem.build compiled.bytecode commitmentParameters
-  let funIdx := compiled.getFuncIdx `main |>.get!
-  let (claim, proof, _) := system.prove friParameters funIdx #[10] default
-  bgroup "nat_fib" {} do
-    bench "verify fib 10" (Aiur.AiurSystem.verify system friParameters claim) proof
-
+-- Stages the e2e proving pipeline through `benchStep`: each call times a stage
+-- and threads its output into the next. `prove fib 10` is one-shot because a
+-- single iteration already runs in the hundreds of milliseconds.
+--
+-- `simplify toplevel` and `compile decls` are side-benches that measure
+-- sub-steps of `Toplevel.compile`. They sit inside a `skipE2E` block so they
+-- show up in the report without double-counting against `compile`.
 def main : IO Unit := do
-  let _ ← toplevelBench
-  let _ ← compileBench
-  let _ ← buildAiurSystemBench
-  let _ ← proveBench
-  let _ ← verifyBench
+  let decls ← match toplevel.checkAndSimplify with
+    | .error e => throw (IO.userError s!"{repr e}")
+    | .ok decls => pure decls
+  let _ ← bgroup "nat_fib" { e2e := true } do
+    skipE2E
+    bench "simplify toplevel" Aiur.Toplevel.checkAndSimplify toplevel
+    bench "compile decls" Aiur.TypedDecls.toBytecode decls
+    countInE2E
+    let compiled ← benchStepE "compile" Aiur.Toplevel.compile toplevel
+    let system ← benchStep "build AiurSystem"
+        (Aiur.AiurSystem.build compiled.bytecode) commitmentParameters
+    let funIdx := compiled.getFuncIdx `main |>.get!
+    let (claim, proof, _) ← benchStep "prove fib 10"
+        (Aiur.AiurSystem.prove system friParameters funIdx #[10]) default (oneShot := true)
+    let _ ← benchStepE "verify fib 10"
+        (Aiur.AiurSystem.verify system friParameters claim) proof

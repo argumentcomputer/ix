@@ -116,6 +116,9 @@ structure Config where
   oneShot : Bool := false
   /-- Whether to generate a Markdown report of all timings including comparison to disk if possible-/
   report : Bool := false
+  /-- Root directory for all benchmark output (measurements, comparisons,
+      reports). Defaults to `.lake/benches`. Override via `BENCH_OUTPUT_DIR`. -/
+  outputDir : System.FilePath := ".lake" / "benches"
   /--
   Throughput for the next benchmark registered in a `bgroup` do-block. Each
   `bench`/`benchIO` call inside a `bgroup` captures a snapshot of this field
@@ -130,6 +133,21 @@ structure Config where
   `Throughput` variant; otherwise the average is skipped with a warning.
   -/
   avgThroughput : Bool := false
+  /--
+  If `true`, `bgroup` sums each bench's mean/one-shot time at the end of the
+  group and emits an "end-to-end" total. The total is serialized to
+  `<outputDir>/<groupName>/e2e.<fmt>` so the next run can report a percent
+  change against it, and (if `report` is also on) included as a row in the
+  aggregated Markdown table. Overridable via `BENCH_E2E=1`.
+  -/
+  e2e : Bool := false
+  /--
+  Whether the next bench in this group counts toward the end-to-end total.
+  Defaults to `true`; flip with `BgroupM.skipE2E` / `BgroupM.countInE2E`.
+  A bench reads this flag when it runs, so benches registered before the
+  toggle keep their earlier setting.
+  -/
+  countInE2E : Bool := true
   /-- Diagnostic output level. Overridable via `BENCH_VERBOSITY` env var
       (see `getConfigEnv`). -/
   verbosity : Verbosity := .normal
@@ -141,6 +159,8 @@ Overrides config values with the corresponding `BENCH_*` env vars.
 
 - `BENCH_SERDE`: `"ixon"` to use Ixon format, otherwise JSON (default)
 - `BENCH_REPORT`: `"1"` to generate a Markdown report
+- `BENCH_OUTPUT_DIR`: root directory for all benchmark output (default `.lake/benches`)
+- `BENCH_E2E`: `"1"` to emit an end-to-end total (sum of per-stage times) at the end of each group
 - `BENCH_VERBOSITY`: `q` (quiet) | `v` (verbose); omit for normal
 
 Example: `BENCH_VERBOSITY=v lake exe bench-shardmap`
@@ -148,12 +168,14 @@ Example: `BENCH_VERBOSITY=v lake exe bench-shardmap`
 def getConfigEnv (config : Config) : IO Config := do
   let serde : SerdeFormat := if (← IO.getEnv "BENCH_SERDE") == some "ixon" then .ixon else config.serde
   let report := if let some val := (← IO.getEnv "BENCH_REPORT") then val == "1" else config.report
+  let outputDir := if let some dir := (← IO.getEnv "BENCH_OUTPUT_DIR") then dir else config.outputDir
+  let e2e := if let some val := (← IO.getEnv "BENCH_E2E") then val == "1" else config.e2e
   let verbosity : Verbosity ← do
     match (← IO.getEnv "BENCH_VERBOSITY") with
     | some "q" => pure .quiet
     | some "v" => pure .verbose
     | _ => pure config.verbosity
-  return { config with serde, report, verbosity }
+  return { config with serde, report, outputDir, e2e, verbosity }
 
 @[inline] def Float.toNanos (f : Float) : Float := f * 10 ^ 9
 

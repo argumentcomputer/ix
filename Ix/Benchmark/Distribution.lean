@@ -148,9 +148,9 @@ inductive OutlierEffect where
 /-- Summary of the outlier-variance analysis for a sample. -/
 structure OutlierVariance where
   effect : OutlierEffect
-  /-- English description slotted into criterion's `variance introduced by
-      outliers: N% ({desc} inflated)` message — one of `"unaffected"`,
-      `"slightly"`, `"moderately"`, or `"severely"`. -/
+  /-- English description slotted into the `variance attributable to outliers:
+      N% ({desc})` message — one of `"unaffected"`, `"slightly inflated"`,
+      `"moderately inflated"`, or `"severely inflated"`. -/
   desc : String
   /-- Quantitative fraction in `[0, 1]`. -/
   fraction : Float

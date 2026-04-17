@@ -274,6 +274,14 @@ instance : Serialize OneShot where
   put := putOneShot
   get := getOneShot
 
+def putE2ETotal (t : E2ETotal) : PutM Unit := putFloat t.totalNs
+
+def getE2ETotal : GetM E2ETotal := return { totalNs := ← getFloat }
+
+instance : Serialize E2ETotal where
+  put := putE2ETotal
+  get := getE2ETotal
+
 /-- Writes JSON to disk at `benchPath/fileName` -/
 def storeJson [Lean.ToJson α] (data : α) (benchPath : System.FilePath) : IO Unit := do
   let json := Lean.toJson data
