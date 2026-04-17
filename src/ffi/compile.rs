@@ -298,6 +298,7 @@ pub extern "C" fn rs_compile_env(
   env_consts_ptr: LeanList<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
   {
+    let quiet = std::env::var("IX_QUIET").is_ok();
     let rust_env = decode_env(env_consts_ptr);
     let rust_env = Arc::new(rust_env);
 
@@ -310,14 +311,87 @@ pub extern "C" fn rs_compile_env(
     };
 
     // Serialize the compiled Env to bytes
+    if !quiet {
+      eprintln!("[rs_compile_env] starting serialization");
+    }
+    let ser_start = std::time::Instant::now();
     let mut buf = Vec::new();
     if let Err(e) = compile_stt.env.put(&mut buf) {
       let msg = format!("rs_compile_env: Env serialization failed: {}", e);
       return LeanIOResult::error_string(&msg);
     }
+    if !quiet {
+      eprintln!(
+        "[rs_compile_env] serialization done in {:.1}s: {} bytes",
+        ser_start.elapsed().as_secs_f64(),
+        buf.len(),
+      );
+    }
 
     // Build Lean ByteArray
+    if !quiet {
+      eprintln!("[rs_compile_env] building Lean ByteArray ({} bytes)", buf.len());
+    }
+    let ba_start = std::time::Instant::now();
     let ba = LeanByteArray::from_bytes(&buf);
+    if !quiet {
+      eprintln!(
+        "[rs_compile_env] ByteArray built in {:.1}s",
+        ba_start.elapsed().as_secs_f64(),
+      );
+    }
+
+    // Explicit drops with timing so we can see which destructor stalls.
+    // Scope-exit would drop these anyway, but without timing we'd see only
+    // an opaque hang between "ByteArray built" and the function returning.
+    // Order: buf (just bytes, fast) → compile_stt (huge: DashMaps of Consts,
+    // Nameds, Names, Blobs, plus the KEnv cache) → rust_env Arc (decrements
+    // to 0 once compile_stt's internal clone also drops, freeing LeanEnv).
+    if !quiet {
+      eprintln!("[rs_compile_env] dropping buf ({} bytes)", buf.len());
+    }
+    let drop_start = std::time::Instant::now();
+    drop(buf);
+    if !quiet {
+      eprintln!(
+        "[rs_compile_env] buf dropped in {:.2}s",
+        drop_start.elapsed().as_secs_f64(),
+      );
+    }
+
+    if !quiet {
+      eprintln!(
+        "[rs_compile_env] dropping compile_stt (consts={}, named={}, names={}, blobs={})",
+        compile_stt.env.const_count(),
+        compile_stt.env.named_count(),
+        compile_stt.env.name_count(),
+        compile_stt.env.blob_count(),
+      );
+    }
+    let drop_start = std::time::Instant::now();
+    drop(compile_stt);
+    if !quiet {
+      eprintln!(
+        "[rs_compile_env] compile_stt dropped in {:.2}s",
+        drop_start.elapsed().as_secs_f64(),
+      );
+    }
+
+    if !quiet {
+      eprintln!(
+        "[rs_compile_env] dropping rust_env Arc (strong_count={})",
+        Arc::strong_count(&rust_env),
+      );
+    }
+    let drop_start = std::time::Instant::now();
+    drop(rust_env);
+    if !quiet {
+      eprintln!(
+        "[rs_compile_env] rust_env dropped in {:.2}s",
+        drop_start.elapsed().as_secs_f64(),
+      );
+      eprintln!("[rs_compile_env] returning ByteArray to Lean");
+    }
     LeanIOResult::ok(ba)
   }
 }

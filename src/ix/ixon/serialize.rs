@@ -1096,11 +1096,21 @@ impl Env {
 
   /// Serialize an Env to bytes.
   pub fn put(&self, buf: &mut Vec<u8>) -> Result<(), String> {
+    // Chatty per-section logging gated on IX_QUIET=1 (disables) so we can
+    // diagnose serialization stalls on huge envs (Mathlib: ~1M consts). The
+    // cost is a few eprintlns per put() call — negligible.
+    let quiet = std::env::var("IX_QUIET").is_ok();
+    let overall_start = std::time::Instant::now();
+
     // Header: Tag4 with flag=0xE, size=0 (Env variant)
     Tag4::new(Self::FLAG, 0).put(buf);
 
     // Section 1: Blobs (Address -> bytes)
     // Sort by address for deterministic serialization (matches Lean)
+    let sec_start = std::time::Instant::now();
+    if !quiet {
+      eprintln!("[Env::put] section 1/5 blobs: collecting {} entries", self.blobs.len());
+    }
     let mut blobs: Vec<_> =
       self.blobs.iter().map(|e| (e.key().clone(), e.value().clone())).collect();
     blobs.sort_by(|a, b| a.0.cmp(&b.0));
@@ -1110,25 +1120,69 @@ impl Env {
       put_u64(bytes.len() as u64, buf);
       buf.extend_from_slice(bytes);
     }
+    if !quiet {
+      eprintln!(
+        "[Env::put] section 1/5 blobs done in {:.1}s ({} bytes so far)",
+        sec_start.elapsed().as_secs_f64(),
+        buf.len(),
+      );
+    }
 
     // Section 2: Consts (Address -> Constant)
     // Sort by address for deterministic serialization (matches Lean)
+    let sec_start = std::time::Instant::now();
+    if !quiet {
+      eprintln!("[Env::put] section 2/5 consts: collecting {} entries", self.consts.len());
+    }
     let mut consts: Vec<_> = self
       .consts
       .iter()
       .map(|e| (e.key().clone(), e.value().clone()))
       .collect();
+    if !quiet {
+      eprintln!(
+        "[Env::put] section 2/5 consts: collected in {:.1}s, sorting...",
+        sec_start.elapsed().as_secs_f64(),
+      );
+    }
+    let sort_start = std::time::Instant::now();
     consts.sort_by(|a, b| a.0.cmp(&b.0));
+    if !quiet {
+      eprintln!(
+        "[Env::put] section 2/5 consts: sorted in {:.1}s, serializing...",
+        sort_start.elapsed().as_secs_f64(),
+      );
+    }
+    let put_start = std::time::Instant::now();
     put_u64(consts.len() as u64, buf);
     for (addr, constant) in &consts {
       put_address(addr, buf);
       constant.put(buf);
     }
+    if !quiet {
+      eprintln!(
+        "[Env::put] section 2/5 consts done: put in {:.1}s, total {:.1}s ({} bytes so far)",
+        put_start.elapsed().as_secs_f64(),
+        sec_start.elapsed().as_secs_f64(),
+        buf.len(),
+      );
+    }
 
     // Section 3: Names (Address -> Name component)
     // Topologically sorted so parents come before children
     // Also build name index for metadata serialization
+    let sec_start = std::time::Instant::now();
+    if !quiet {
+      eprintln!("[Env::put] section 3/5 names: topo-sorting {} entries", self.names.len());
+    }
     let sorted_names = topological_sort_names(&self.names);
+    if !quiet {
+      eprintln!(
+        "[Env::put] section 3/5 names: topo-sorted in {:.1}s, serializing...",
+        sec_start.elapsed().as_secs_f64(),
+      );
+    }
+    let put_start = std::time::Instant::now();
     let mut name_index: NameIndex = NameIndex::new();
     put_u64(sorted_names.len() as u64, buf);
     for (i, (addr, name)) in sorted_names.iter().enumerate() {
@@ -1136,22 +1190,60 @@ impl Env {
       put_address(addr, buf);
       put_name_component(name, buf);
     }
+    if !quiet {
+      eprintln!(
+        "[Env::put] section 3/5 names done: put in {:.1}s, total {:.1}s ({} bytes so far)",
+        put_start.elapsed().as_secs_f64(),
+        sec_start.elapsed().as_secs_f64(),
+        buf.len(),
+      );
+    }
 
     // Section 4: Named (name Address -> Named)
     // Sort by name hash for deterministic serialization (matches Lean)
     // Use indexed serialization for metadata (saves ~24 bytes per address)
+    let sec_start = std::time::Instant::now();
+    if !quiet {
+      eprintln!("[Env::put] section 4/5 named: collecting {} entries", self.named.len());
+    }
     let mut named: Vec<_> =
       self.named.iter().map(|e| (e.key().clone(), e.value().clone())).collect();
+    if !quiet {
+      eprintln!(
+        "[Env::put] section 4/5 named: collected in {:.1}s, sorting...",
+        sec_start.elapsed().as_secs_f64(),
+      );
+    }
+    let sort_start = std::time::Instant::now();
     named
       .sort_by(|a, b| a.0.get_hash().as_bytes().cmp(b.0.get_hash().as_bytes()));
+    if !quiet {
+      eprintln!(
+        "[Env::put] section 4/5 named: sorted in {:.1}s, serializing...",
+        sort_start.elapsed().as_secs_f64(),
+      );
+    }
+    let put_start = std::time::Instant::now();
     put_u64(named.len() as u64, buf);
     for (name, named_entry) in &named {
       put_bytes(name.get_hash().as_bytes(), buf);
       put_named_indexed(named_entry, &name_index, buf)?;
     }
+    if !quiet {
+      eprintln!(
+        "[Env::put] section 4/5 named done: put in {:.1}s, total {:.1}s ({} bytes so far)",
+        put_start.elapsed().as_secs_f64(),
+        sec_start.elapsed().as_secs_f64(),
+        buf.len(),
+      );
+    }
 
     // Section 5: Comms (Address -> Comm)
     // Sort by address for deterministic serialization (matches Lean)
+    let sec_start = std::time::Instant::now();
+    if !quiet {
+      eprintln!("[Env::put] section 5/5 comms: collecting {} entries", self.comms.len());
+    }
     let mut comms: Vec<_> =
       self.comms.iter().map(|e| (e.key().clone(), e.value().clone())).collect();
     comms.sort_by(|a, b| a.0.cmp(&b.0));
@@ -1159,6 +1251,18 @@ impl Env {
     for (addr, comm) in &comms {
       put_address(addr, buf);
       comm.put(buf);
+    }
+    if !quiet {
+      eprintln!(
+        "[Env::put] section 5/5 comms done in {:.1}s ({} bytes so far)",
+        sec_start.elapsed().as_secs_f64(),
+        buf.len(),
+      );
+      eprintln!(
+        "[Env::put] ALL DONE: {} bytes in {:.1}s",
+        buf.len(),
+        overall_start.elapsed().as_secs_f64(),
+      );
     }
     Ok(())
   }

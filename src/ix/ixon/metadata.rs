@@ -314,15 +314,164 @@ pub fn resolve_kvmap(
         },
         DataValue::OfInt(a) => {
           let bytes = ixon_env.get_blob(a)?;
-          env::DataValue::OfInt(env::Int::OfNat(
-            lean_ffi::nat::Nat::from_le_bytes(&bytes),
-          ))
+          let int = deser_int(&bytes)?;
+          env::DataValue::OfInt(int)
         },
-        DataValue::OfSyntax(_) => return None, // Syntax not round-tripped through kernel
+        DataValue::OfSyntax(a) => {
+          // Deserialize the Syntax tree from its blob. Mirrors
+          // `compile.rs::serialize_syntax_inner`; the deserializer only
+          // needs `Env::get_blob` + `Env::get_name`, so it lives here
+          // rather than in `decompile.rs` (which depends on CompileState).
+          let bytes = ixon_env.get_blob(a)?;
+          let mut buf = bytes.as_slice();
+          let syn = deser_syntax(&mut buf, ixon_env)?;
+          env::DataValue::OfSyntax(Box::new(syn))
+        },
       };
       Some((name, resolved))
     })
     .collect()
+}
+
+// ===========================================================================
+// Syntax deserialization from blobs
+// ===========================================================================
+//
+// These mirror the compile-side `serialize_syntax_inner` /
+// `serialize_source_info` / `serialize_substring` / `serialize_preresolved`
+// in `src/ix/compile.rs`. They live here (not `decompile.rs`) so that
+// `resolve_kvmap` can materialize `DataValue::OfSyntax` entries during
+// kernel ingress — the decompile-side helpers depend on `CompileState`,
+// which isn't available in the ingress path. All we need is the `Env`
+// (for blob + name lookups).
+
+fn deser_u8(buf: &mut &[u8]) -> Option<u8> {
+  let (&x, rest) = buf.split_first()?;
+  *buf = rest;
+  Some(x)
+}
+
+fn deser_tag0(buf: &mut &[u8]) -> Option<u64> {
+  Tag0::get(buf).ok().map(|t| t.size)
+}
+
+fn deser_addr(buf: &mut &[u8]) -> Option<Address> {
+  if buf.len() < 32 {
+    return None;
+  }
+  let (bytes, rest) = buf.split_at(32);
+  *buf = rest;
+  Address::from_slice(bytes).ok()
+}
+
+/// Deserialize a signed `Int` from bytes (mirrors compile-side encoding in
+/// `compile_data_value` / `DataValue::OfInt`).
+fn deser_int(bytes: &[u8]) -> Option<env::Int> {
+  let (&tag, rest) = bytes.split_first()?;
+  match tag {
+    0 => Some(env::Int::OfNat(lean_ffi::nat::Nat::from_le_bytes(rest))),
+    1 => Some(env::Int::NegSucc(lean_ffi::nat::Nat::from_le_bytes(rest))),
+    _ => None,
+  }
+}
+
+fn deser_substring(
+  buf: &mut &[u8],
+  ixon_env: &super::env::Env,
+) -> Option<env::Substring> {
+  let str_addr = deser_addr(buf)?;
+  let s = String::from_utf8(ixon_env.get_blob(&str_addr)?).ok()?;
+  let start_pos = lean_ffi::nat::Nat::from(deser_tag0(buf)?);
+  let stop_pos = lean_ffi::nat::Nat::from(deser_tag0(buf)?);
+  Some(env::Substring { str: s, start_pos, stop_pos })
+}
+
+fn deser_source_info(
+  buf: &mut &[u8],
+  ixon_env: &super::env::Env,
+) -> Option<env::SourceInfo> {
+  match deser_u8(buf)? {
+    0 => {
+      let leading = deser_substring(buf, ixon_env)?;
+      let leading_pos = lean_ffi::nat::Nat::from(deser_tag0(buf)?);
+      let trailing = deser_substring(buf, ixon_env)?;
+      let trailing_pos = lean_ffi::nat::Nat::from(deser_tag0(buf)?);
+      Some(env::SourceInfo::Original(
+        leading,
+        leading_pos,
+        trailing,
+        trailing_pos,
+      ))
+    },
+    1 => {
+      let start = lean_ffi::nat::Nat::from(deser_tag0(buf)?);
+      let end = lean_ffi::nat::Nat::from(deser_tag0(buf)?);
+      let canonical = deser_u8(buf)? != 0;
+      Some(env::SourceInfo::Synthetic(start, end, canonical))
+    },
+    2 => Some(env::SourceInfo::None),
+    _ => None,
+  }
+}
+
+fn deser_preresolved(
+  buf: &mut &[u8],
+  ixon_env: &super::env::Env,
+) -> Option<env::SyntaxPreresolved> {
+  match deser_u8(buf)? {
+    0 => {
+      let name = ixon_env.get_name(&deser_addr(buf)?)?;
+      Some(env::SyntaxPreresolved::Namespace(name))
+    },
+    1 => {
+      let name = ixon_env.get_name(&deser_addr(buf)?)?;
+      let count = deser_tag0(buf)? as usize;
+      let mut fields = Vec::with_capacity(count);
+      for _ in 0..count {
+        let addr = deser_addr(buf)?;
+        fields.push(String::from_utf8(ixon_env.get_blob(&addr)?).ok()?);
+      }
+      Some(env::SyntaxPreresolved::Decl(name, fields))
+    },
+    _ => None,
+  }
+}
+
+fn deser_syntax(
+  buf: &mut &[u8],
+  ixon_env: &super::env::Env,
+) -> Option<env::Syntax> {
+  match deser_u8(buf)? {
+    0 => Some(env::Syntax::Missing),
+    1 => {
+      let info = deser_source_info(buf, ixon_env)?;
+      let kind = ixon_env.get_name(&deser_addr(buf)?)?;
+      let arg_count = deser_tag0(buf)? as usize;
+      let mut args = Vec::with_capacity(arg_count);
+      for _ in 0..arg_count {
+        args.push(deser_syntax(buf, ixon_env)?);
+      }
+      Some(env::Syntax::Node(info, kind, args))
+    },
+    2 => {
+      let info = deser_source_info(buf, ixon_env)?;
+      let val_addr = deser_addr(buf)?;
+      let val = String::from_utf8(ixon_env.get_blob(&val_addr)?).ok()?;
+      Some(env::Syntax::Atom(info, val))
+    },
+    3 => {
+      let info = deser_source_info(buf, ixon_env)?;
+      let raw_val = deser_substring(buf, ixon_env)?;
+      let val = ixon_env.get_name(&deser_addr(buf)?)?;
+      let pr_count = deser_tag0(buf)? as usize;
+      let mut preresolved = Vec::with_capacity(pr_count);
+      for _ in 0..pr_count {
+        preresolved.push(deser_preresolved(buf, ixon_env)?);
+      }
+      Some(env::Syntax::Ident(info, raw_val, val, preresolved))
+    },
+    _ => None,
+  }
 }
 
 // ===========================================================================

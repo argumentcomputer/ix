@@ -42,6 +42,195 @@ pub(super) fn fresh_fvar(prefix: &str, idx: usize) -> (Name, LeanExpr) {
   (name, fvar)
 }
 
+// =========================================================================
+// Inductive recursor-structural decomposition
+// =========================================================================
+
+/// Per-inductive recursor-structural info, derived from the stored type by
+/// WHNF-peeling params and indices.
+///
+/// Mirrors `rec_info` in `refs/lean4/src/kernel/inductive.cpp:150-158` — the
+/// C++ kernel's bookkeeping for `m_indices` / `m_major` / `m_C`. We don't
+/// bind the motive here (that's created at a caller-specific position in
+/// the rec type's binder chain), but everything needed to build it in one
+/// line is on this struct.
+///
+/// Binders use FVars (via [`LocalDecl`]) so the result can be embedded in
+/// any outer binder chain without de-Bruijn shifting — matching Lean's
+/// MetaM-style where `forallTelescopeReducing` introduces fresh fvars
+/// into an ambient local context.
+#[derive(Clone)]
+pub(super) struct IndRecInfo {
+  /// Index binders after WHNF-peeling. For inductives whose target is a
+  /// reducible alias (e.g. `Set σ := σ → Prop`), `indices.len()` may equal
+  /// `InductiveVal.num_indices` even when the stored type has no
+  /// syntactic `Pi` at the index position — WHNF exposes the hidden
+  /// arrow. Source of truth for "how many indices does this inductive
+  /// actually have in its recursor binder chain."
+  pub indices: Vec<LocalDecl>,
+
+  /// Major premise `(t : I params indices)` — domain is the inductive
+  /// head applied to all params (supplied via `param_fvars`) and indices
+  /// as FVars.
+  pub major: LocalDecl,
+
+  /// Target sort level (the level of `I params indices`). `Level::zero()`
+  /// for Prop-valued inductives.
+  pub target_level: Level,
+}
+
+/// Decompose an inductive's stored type into its recursor-structural
+/// pieces, peeling params (using the caller-supplied `param_fvars`) then
+/// all remaining leading `Pi`s as indices, with kernel WHNF between
+/// every step.
+///
+/// Mirrors `mk_rec_infos` in `refs/lean4/src/kernel/inductive.cpp:588-618`:
+///
+/// ```cpp
+/// t = whnf(t);
+/// while (is_pi(t)) {
+///     if (i < m_nparams) { t = instantiate(binding_body(t), m_params[i]); }
+///     else {
+///         expr idx = mk_local_decl_for(t);
+///         info.m_indices.push_back(idx);
+///         t = instantiate(binding_body(t), idx);
+///     }
+///     i++;
+///     t = whnf(t);
+/// }
+/// ```
+///
+/// `ind_univs` are the universe levels to substitute for the inductive's
+/// stored `level_params` — typically the canonical rec's level params
+/// (for the main case) or concrete occurrence levels (for nested aux).
+///
+/// `param_fvars` are the caller-supplied parameter `LocalDecl`s; this
+/// helper instantiates them into the type rather than creating fresh
+/// ones, so that downstream consumers (`build_motive_type`,
+/// `build_rec_type`) can reference the same FVars throughout the
+/// recursor's binder chain.
+///
+/// # Errors
+///
+/// - `InvalidMutualBlock` if the type has fewer Pi binders than
+///   `param_fvars.len()` (even after WHNF).
+/// - `InvalidMutualBlock` if the final body isn't a `Sort` after peeling
+///   every leading Pi.
+///
+/// Per-step WHNF failures from the kernel fall through to
+/// `TcScope::whnf_lean`'s graceful degradation (returns the original
+/// expression); a stuck type at that point surfaces as a non-`Pi` in the
+/// loop body and terminates peeling, potentially yielding a shorter
+/// `indices` vec than Lean's stored `num_indices`.
+pub(super) fn decompose_inductive_type(
+  ind: &crate::ix::env::InductiveVal,
+  ind_univs: &[Level],
+  param_fvars: &[LocalDecl],
+  stt: &crate::ix::compile::CompileState,
+  kctx: &crate::ix::compile::KernelCtx,
+) -> Result<IndRecInfo, crate::ix::ixon::CompileError> {
+  use crate::ix::ixon::CompileError;
+
+  let n_params = param_fvars.len();
+  let ty = subst_levels(&ind.cnst.typ, &ind.cnst.level_params, ind_univs);
+
+  // TcScope pre-populated with the caller's param FVars. As we peel
+  // indices, we push each into the scope so subsequent `whnf_lean` calls
+  // see them as locals (required for correctness when index domains
+  // reference earlier indices, or when WHNF needs to look through a
+  // `Var` bound to a `let` binding — rare but possible in principle).
+  let mut scope = TcScope::new(param_fvars, &ind.cnst.level_params, stt, kctx);
+
+  // Initial WHNF — the stored type may start with a reducible head
+  // (unusual for Lean-generated types, but cheap insurance matching the
+  // `whnf(t);` before the main loop in `mk_rec_infos`).
+  let mut cur = scope.whnf_lean(&ty);
+
+  // Instantiate `n_params` leading Pi's with the caller's param FVars.
+  // WHNF after each substitution to expose any alias introduced by the
+  // substitution (e.g., a param whose domain mentions a reducible def).
+  for p in 0..n_params {
+    match cur.as_data() {
+      ExprData::ForallE(_, _, body, _, _) => {
+        let param_fv = LeanExpr::fvar(param_fvars[p].fvar_name.clone());
+        cur = instantiate1(body, &param_fv);
+        cur = scope.whnf_lean(&cur);
+      },
+      _ => {
+        return Err(CompileError::InvalidMutualBlock {
+          reason: format!(
+            "decompose_inductive_type({}): fewer than {n_params} param \
+             foralls in stored type (peeled {p} before hitting non-Pi)",
+            ind.cnst.name.pretty(),
+          ),
+        });
+      },
+    }
+  }
+
+  // Peel all remaining leading Pi's as indices. Matches Lean's
+  // `while (is_pi(t)) { ... }` — we don't impose a count; the stored
+  // `num_indices` is informational, but authoritative count comes from
+  // actual post-WHNF binders. This is what handles the `Set σ`-style
+  // reducible-alias target case.
+  let mut indices: Vec<LocalDecl> = Vec::new();
+  let mut idx_i = 0usize;
+  loop {
+    match cur.as_data() {
+      ExprData::ForallE(name, dom, body, bi, _) => {
+        let (fv_name, fv) = fresh_fvar("idx", idx_i);
+        let decl = LocalDecl {
+          fvar_name: fv_name,
+          binder_name: name.clone(),
+          domain: dom.clone(),
+          info: bi.clone(),
+        };
+        scope.push_locals(std::slice::from_ref(&decl));
+        indices.push(decl);
+        cur = instantiate1(body, &fv);
+        cur = scope.whnf_lean(&cur);
+        idx_i += 1;
+      },
+      _ => break,
+    }
+  }
+
+  // Target sort.
+  let target_level = match cur.as_data() {
+    ExprData::Sort(lvl, _) => lvl.clone(),
+    _ => {
+      return Err(CompileError::InvalidMutualBlock {
+        reason: format!(
+          "decompose_inductive_type({}): peeled {n_params} params + {} \
+           indices; expected remaining body to be a Sort, got something \
+           else",
+          ind.cnst.name.pretty(),
+          indices.len(),
+        ),
+      });
+    },
+  };
+
+  // Major domain: `I params indices`, all FVars.
+  let mut major_dom = mk_const(&ind.cnst.name, ind_univs);
+  for p in param_fvars {
+    major_dom = LeanExpr::app(major_dom, LeanExpr::fvar(p.fvar_name.clone()));
+  }
+  for ix in &indices {
+    major_dom = LeanExpr::app(major_dom, LeanExpr::fvar(ix.fvar_name.clone()));
+  }
+
+  let (major_fv_name, _) = fresh_fvar("major", n_params + indices.len());
+  let major = LocalDecl {
+    fvar_name: major_fv_name,
+    binder_name: Name::str(Name::anon(), "t".to_string()),
+    domain: major_dom,
+    info: BinderInfo::Default,
+  };
+
+  Ok(IndRecInfo { indices, major, target_level })
+}
+
 /// Open N leading foralls of `expr`, replacing each BVar(0) with a fresh
 /// FVar. Returns the FVars, their declarations, and the remaining body.
 ///
@@ -51,6 +240,20 @@ pub(super) fn fresh_fvar(prefix: &str, idx: usize) -> (Name, LeanExpr) {
 ///
 /// The declarations are returned in outermost-first order, suitable for
 /// passing directly to `mk_forall` or `mk_lambda`.
+///
+/// `Mdata` wrappers on the forall spine are transparently peeled — Lean
+/// stores annotations (reducibility hints, pretty-printing info, etc.) as
+/// `Mdata` around otherwise-forall expressions, and Lean's own
+/// `forallTelescope` looks through them via WHNF. Every other transformer
+/// in this file already treats `Mdata` as a structural no-op; doing the
+/// same here avoids spurious short telescopes on recursors whose types
+/// happen to carry metadata (observed in Mathlib).
+///
+/// If the expression has fewer than `n` leading foralls (even after
+/// peeling `Mdata`), the returned `decls` is short. Callers indexing by
+/// position MUST verify `decls.len() == n` before indexing — otherwise
+/// a surprising input shape becomes a panic. Prefer
+/// [`forall_telescope_exact`] when a precise arity is required.
 pub(super) fn forall_telescope(
   expr: &LeanExpr,
   n: usize,
@@ -61,6 +264,13 @@ pub(super) fn forall_telescope(
   let mut decls = Vec::with_capacity(n);
   let mut cur = expr.clone();
   for i in 0..n {
+    // Peel any Mdata wrappers before matching — they're structural no-ops.
+    loop {
+      match cur.as_data() {
+        ExprData::Mdata(_, inner, _) => cur = inner.clone(),
+        _ => break,
+      }
+    }
     match cur.as_data() {
       ExprData::ForallE(name, dom, body, bi, _) => {
         let (fv_name, fv) = fresh_fvar(prefix, start_idx + i);
@@ -77,6 +287,73 @@ pub(super) fn forall_telescope(
     }
   }
   (fvars, decls, cur)
+}
+
+/// Like [`forall_telescope`], but errors if fewer than `n` foralls are
+/// peeled. Use this when the caller is about to index into the returned
+/// `decls` or `fvars` at position `n - 1` (or by explicit offset) — a
+/// short telescope otherwise becomes an `index out of bounds` panic deep
+/// in aux_gen with no context about which constant triggered it.
+///
+/// `context` is a short human-readable tag (e.g., `"build_below_def"`)
+/// included in the error message. `what` describes what arity `n` was
+/// expected to count (e.g., `"params + motives + minors + indices + 1"`).
+pub(super) fn forall_telescope_exact(
+  expr: &LeanExpr,
+  n: usize,
+  prefix: &str,
+  start_idx: usize,
+  context: &str,
+  what: &str,
+) -> Result<
+  (Vec<LeanExpr>, Vec<LocalDecl>, LeanExpr),
+  crate::ix::ixon::CompileError,
+> {
+  let (fvars, decls, body) = forall_telescope(expr, n, prefix, start_idx);
+  if decls.len() != n {
+    // Include enough context to pinpoint the shape problem: every peeled
+    // binder name plus the kind of node that blocked further peeling. The
+    // caller already prefixed this with the recursor name via `context`.
+    let binder_list: Vec<String> = decls
+      .iter()
+      .map(|d| format!("{}:{}", d.binder_name.pretty(), describe_expr_head(&d.domain)))
+      .collect();
+    return Err(crate::ix::ixon::CompileError::UnsupportedExpr {
+      desc: format!(
+        "{context}: expected {n} leading foralls ({what}), got {actual}. \
+         Peeled binders (name:domain_kind): [{binders}]. \
+         Stopped at body kind: {body_kind}. \
+         This is either a mismatch between the recursor's structural \
+         metadata and its actual type, or an unexpected binder shape \
+         (let/mdata/etc.) that forall_telescope doesn't peel through.",
+        actual = decls.len(),
+        binders = binder_list.join(", "),
+        body_kind = describe_expr_head(&body),
+      ),
+    });
+  }
+  Ok((fvars, decls, body))
+}
+
+/// Short tag describing the head of an expression, for use in diagnostic
+/// messages. Includes enough detail to distinguish forall/lambda/app from
+/// let/mdata/const/literal — the distinctions that matter for diagnosing
+/// a short telescope.
+fn describe_expr_head(e: &LeanExpr) -> String {
+  match e.as_data() {
+    ExprData::Bvar(i, _) => format!("Bvar({})", nat_to_u64(i)),
+    ExprData::Fvar(n, _) => format!("Fvar({})", n.pretty()),
+    ExprData::Mvar(n, _) => format!("Mvar({})", n.pretty()),
+    ExprData::Sort(l, _) => format!("Sort({})", l.pretty()),
+    ExprData::Const(n, _, _) => format!("Const({})", n.pretty()),
+    ExprData::App(..) => "App".into(),
+    ExprData::Lam(..) => "Lam".into(),
+    ExprData::ForallE(..) => "ForallE".into(),
+    ExprData::LetE(..) => "LetE".into(),
+    ExprData::Proj(..) => "Proj".into(),
+    ExprData::Mdata(..) => "Mdata".into(),
+    ExprData::Lit(..) => "Lit".into(),
+  }
 }
 
 // =========================================================================
@@ -1965,8 +2242,153 @@ impl<'a> TcScope<'a> {
   }
 }
 
+impl<'a> TcScope<'a> {
+  /// Weak-head-normalize a `LeanExpr` in the current FVar context, using
+  /// our Rust kernel's `whnf`. Matches Lean's `Meta.whnf` behavior:
+  /// unfolds reducible definitions, beta-reduces, applies iota/zeta.
+  ///
+  /// Crucial for decomposing types whose target is a reducible alias.
+  /// E.g. when the inductive `εClosure (S : Set α) : Set α` is declared,
+  /// Lean's kernel `mk_rec_infos` WHNFs the target type to expose the
+  /// `Pi (a : α), Prop` hiding inside `Set α := α → Prop`. Without this
+  /// step, a syntactic match on `Set α` (an `App(Const, FVar)`) fails
+  /// to find the index binder.
+  pub(super) fn whnf_lean(&mut self, ty: &LeanExpr) -> LeanExpr {
+    let depth = self.base_depth + self.extra_locals;
+    let kexpr =
+      to_kexpr_static(ty, &self.fvar_levels, depth, self.param_names, self.stt);
+    let whnfed = match self.tc.whnf(&kexpr) {
+      Ok(k) => k,
+      Err(_) => return ty.clone(),
+    };
+    kexpr_to_lean(&whnfed, depth, &self.fvar_levels, 0, self.param_names)
+  }
+}
+
 // No Drop impl needed — the TC is owned and discarded with the scope.
 // Context cleanup (pop_local) is unnecessary since the TC dies here.
+
+/// Convert a `KExpr<Meta>` back to `LeanExpr`, reconstructing FVar
+/// references from de-Bruijn `Var` indices.
+///
+/// Parallels `egress_expr` in `src/ix/kernel/egress.rs`, which handles
+/// the closed-expression case (Var → Bvar unconditionally). This version
+/// is for expressions that live inside an ambient FVar context — the
+/// shape we produce mid-pipeline when working in LeanExpr+FVar with a
+/// kernel `TypeChecker` tracking the FVar types as locals.
+///
+/// `outer_depth` is the FVar context depth that was used to convert the
+/// source `LeanExpr` to `KExpr` (via [`to_kexpr_static`]). Kernel `Var`
+/// indices below `local_depth` are bound by the KExpr itself (become
+/// `Bvar`s); indices at or above `local_depth` refer to the outer FVar
+/// context, and get mapped back to their corresponding `Fvar` name via
+/// `fvar_levels`. The encoding and its inverse are symmetric: an FVar at
+/// level L is encoded as `Var(outer_depth - L - 1)` from the top, so the
+/// inverse at descent depth `d` is `L = outer_depth - (i - d) - 1`.
+///
+/// `local_depth` is incremented by `All`, `Lam`, `Let` arms.
+///
+/// `Mdata` layers carried by the kernel expression are re-wrapped around
+/// the result in original order — matching `egress_expr`.
+pub(super) fn kexpr_to_lean(
+  expr: &crate::ix::kernel::expr::KExpr<Meta>,
+  outer_depth: usize,
+  fvar_levels: &FxHashMap<Name, usize>,
+  local_depth: usize,
+  param_names: &[Name],
+) -> LeanExpr {
+  use crate::ix::kernel::expr::ExprData as KED;
+
+  // Reverse `fvar_levels` lazily via linear search — the FVar context is
+  // small in practice (a handful of param/motive/minor/index binders),
+  // so an O(n) scan per Var hit is cheaper than maintaining an inverse
+  // map alongside `TcScope`.
+  let lookup_fvar = |level: usize| -> Option<Name> {
+    fvar_levels.iter().find_map(|(name, &lvl)| {
+      if lvl == level { Some(name.clone()) } else { None }
+    })
+  };
+
+  let inner = match expr.data() {
+    KED::Var(i, _, _) => {
+      let i = *i as usize;
+      if i < local_depth {
+        LeanExpr::bvar(Nat::from(i as u64))
+      } else {
+        let fvar_idx_from_top = i - local_depth;
+        let level = outer_depth
+          .checked_sub(fvar_idx_from_top + 1)
+          .expect("kexpr_to_lean: Var index out of range of outer context");
+        let name = lookup_fvar(level).unwrap_or_else(|| {
+          // Unregistered FVar — indicates mismatched `fvar_levels` vs.
+          // the expression's Var indices. Use a synthetic placeholder
+          // rather than panic so diagnostics can surface the issue.
+          Name::str(Name::anon(), format!("_dangling_fvar_{level}"))
+        });
+        LeanExpr::fvar(name)
+      }
+    },
+    KED::Sort(u, _) => {
+      LeanExpr::sort(super::below::kuniv_to_level(u, param_names))
+    },
+    KED::Const(kid, us, _) => {
+      let levels: Vec<Level> = us
+        .iter()
+        .map(|u| super::below::kuniv_to_level(u, param_names))
+        .collect();
+      LeanExpr::cnst(kid.name.clone(), levels)
+    },
+    KED::App(f, a, _) => LeanExpr::app(
+      kexpr_to_lean(f, outer_depth, fvar_levels, local_depth, param_names),
+      kexpr_to_lean(a, outer_depth, fvar_levels, local_depth, param_names),
+    ),
+    KED::All(name, bi, d, b, _) => LeanExpr::all(
+      name.clone(),
+      kexpr_to_lean(d, outer_depth, fvar_levels, local_depth, param_names),
+      kexpr_to_lean(b, outer_depth, fvar_levels, local_depth + 1, param_names),
+      bi.clone(),
+    ),
+    KED::Lam(name, bi, d, b, _) => LeanExpr::lam(
+      name.clone(),
+      kexpr_to_lean(d, outer_depth, fvar_levels, local_depth, param_names),
+      kexpr_to_lean(b, outer_depth, fvar_levels, local_depth + 1, param_names),
+      bi.clone(),
+    ),
+    KED::Let(name, ty, val, body, nd, _) => LeanExpr::letE(
+      name.clone(),
+      kexpr_to_lean(ty, outer_depth, fvar_levels, local_depth, param_names),
+      kexpr_to_lean(val, outer_depth, fvar_levels, local_depth, param_names),
+      kexpr_to_lean(
+        body,
+        outer_depth,
+        fvar_levels,
+        local_depth + 1,
+        param_names,
+      ),
+      *nd,
+    ),
+    KED::Prj(kid, field, val, _) => LeanExpr::proj(
+      kid.name.clone(),
+      Nat::from(*field),
+      kexpr_to_lean(val, outer_depth, fvar_levels, local_depth, param_names),
+    ),
+    KED::Nat(n, _, _) => {
+      use crate::ix::env::Literal;
+      LeanExpr::lit(Literal::NatVal(n.clone()))
+    },
+    KED::Str(s, _, _) => {
+      use crate::ix::env::Literal;
+      LeanExpr::lit(Literal::StrVal(s.clone()))
+    },
+  };
+
+  // Re-wrap mdata layers, outermost first (matching egress_expr's order).
+  expr
+    .mdata()
+    .iter()
+    .rev()
+    .fold(inner, |acc, kvs| LeanExpr::mdata(kvs.clone(), acc))
+}
 
 /// Static version of `to_kexpr` that takes borrowed references.
 ///

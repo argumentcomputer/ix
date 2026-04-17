@@ -2,11 +2,13 @@
 //!
 //! Extracted from `compile.rs` to keep the scheduler independently readable.
 
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{
-  Arc, Mutex,
-  atomic::{AtomicUsize, Ordering as AtomicOrdering},
+  Arc, LazyLock, Mutex,
+  atomic::{AtomicBool, AtomicUsize, Ordering as AtomicOrdering},
 };
 use std::thread;
+use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
 use rustc_hash::FxHashSet;
@@ -20,6 +22,74 @@ use crate::ix::env::{Env as LeanEnv, Name};
 use crate::ix::graph::{NameSet, build_ref_graph};
 use crate::ix::ground::ground_consts;
 use crate::ix::ixon::CompileError;
+
+// ===========================================================================
+// Progress + diagnostic logging
+// ===========================================================================
+
+/// Disable all progress output. Set `IX_QUIET=1` for silent compilation.
+static IX_QUIET: LazyLock<bool> =
+  LazyLock::new(|| std::env::var("IX_QUIET").is_ok());
+
+/// Log every block start + finish. Set `IX_LOG_BLOCKS=1` for deep debugging.
+/// Very verbose — only useful when you need to pin a panic to a specific block.
+static IX_LOG_BLOCKS: LazyLock<bool> =
+  LazyLock::new(|| std::env::var("IX_LOG_BLOCKS").is_ok());
+
+/// Periodic progress update interval in milliseconds (default 2000ms).
+/// Set `IX_PROGRESS_MS=0` to disable periodic updates.
+static IX_PROGRESS_MS: LazyLock<u64> = LazyLock::new(|| {
+  std::env::var("IX_PROGRESS_MS")
+    .ok()
+    .and_then(|s| s.parse().ok())
+    .unwrap_or(2000)
+});
+
+/// Recover a short string description from a panic payload.
+fn panic_message(panic: &(dyn std::any::Any + Send)) -> String {
+  panic
+    .downcast_ref::<String>()
+    .cloned()
+    .or_else(|| panic.downcast_ref::<&'static str>().map(|s| (*s).to_string()))
+    .unwrap_or_else(|| "<non-string panic payload>".to_string())
+}
+
+/// Run `f` catching any panic and converting it to a `CompileError` tagged
+/// with `block_name` (and `caller` to distinguish which compile function
+/// panicked). This keeps a single bad block from aborting the whole
+/// compilation and preserves enough context to find the culprit — a raw
+/// panic from deep inside aux_gen has no indication of which SCC it was
+/// working on.
+///
+/// When `IX_LOG_BLOCKS` is set, panics also emit an immediate eprintln so
+/// they appear in log order alongside block BEGIN/END markers.
+fn run_compile_catching_panic<F>(
+  block_name: &Name,
+  caller: &'static str,
+  f: F,
+) -> Result<Address, CompileError>
+where
+  F: FnOnce() -> Result<Address, CompileError>,
+{
+  match catch_unwind(AssertUnwindSafe(f)) {
+    Ok(res) => res,
+    Err(panic) => {
+      let msg = panic_message(&*panic);
+      if *IX_LOG_BLOCKS {
+        eprintln!(
+          "[compile_env] PANIC in {caller} for {}: {msg}",
+          block_name.pretty()
+        );
+      }
+      Err(CompileError::UnsupportedExpr {
+        desc: format!(
+          "{caller} panicked while compiling block {}: {msg}",
+          block_name.pretty()
+        ),
+      })
+    },
+  }
+}
 
 /// Compile an entire Lean environment to Ixon format.
 /// Work-stealing compilation using crossbeam channels.
@@ -128,7 +198,7 @@ pub fn compile_env(
   }
 
   // Track completed count for termination
-  let completed = AtomicUsize::new(0);
+  let completed = Arc::new(AtomicUsize::new(0));
 
   // Guard against duplicate processing: a block leader that's already been
   // handled is skipped. This prevents infinite loops from double-enqueuing.
@@ -144,6 +214,21 @@ pub fn compile_env(
   let num_threads =
     thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
 
+  // Progress tracking. `active` holds currently-compiling blocks per worker
+  // so the reporter thread can show blocks that are still in-flight (useful
+  // when a slow block is stuck or about to crash — those are the ones you
+  // can't see otherwise). `stop_progress` signals the reporter to terminate.
+  let compile_start = Instant::now();
+  let active: Arc<Mutex<Vec<(Name, Instant)>>> =
+    Arc::new(Mutex::new(Vec::new()));
+  let stop_progress = Arc::new(AtomicBool::new(false));
+
+  if !*IX_QUIET {
+    eprintln!(
+      "[compile_env] starting: {total_blocks} blocks, {num_threads} workers"
+    );
+  }
+
   // Take references to shared data outside the loop
   let error_ref = &error;
   let stt_ref = &stt;
@@ -153,8 +238,97 @@ pub fn compile_env(
   let processed_ref = &processed;
   let ready_queue_ref = &ready_queue;
   let condvar_ref = &work_available;
+  let active_ref = &active;
+  let stop_progress_ref = &stop_progress;
 
   thread::scope(|s| {
+    // Periodic progress reporter. Wakes every IX_PROGRESS_MS to print
+    // completed/total and the oldest in-flight blocks. Exits when
+    // stop_progress is set (after all workers have finished).
+    //
+    // Skipped entirely when IX_QUIET is set or IX_PROGRESS_MS=0 — both
+    // imply "don't print periodic updates" (one-shot errors still print).
+    if !*IX_QUIET && *IX_PROGRESS_MS > 0 {
+      let interval = Duration::from_millis(*IX_PROGRESS_MS);
+      // Shorter internal check so shutdown latency is bounded (otherwise the
+      // scheduler waits up to `interval` for the reporter to wake and see
+      // stop_progress). Cap at 250ms — shorter is wasted cycles, longer is
+      // noticeable lag on fast compilations.
+      let check_interval = interval.min(Duration::from_millis(250));
+      let total = total_blocks;
+      let completed_p = Arc::clone(completed_ref);
+      let active_p = Arc::clone(active_ref);
+      let stop_p = Arc::clone(stop_progress_ref);
+      let start = compile_start;
+      s.spawn(move || {
+        let mut last_completed = 0usize;
+        let mut last_print = Instant::now();
+        while !stop_p.load(AtomicOrdering::Relaxed) {
+          thread::sleep(check_interval);
+          if stop_p.load(AtomicOrdering::Relaxed) {
+            break;
+          }
+          // Only emit a progress line every `interval` — the sub-interval
+          // poll exists purely for fast shutdown.
+          if last_print.elapsed() < interval {
+            continue;
+          }
+          last_print = Instant::now();
+          let done = completed_p.load(AtomicOrdering::SeqCst);
+          // Skip if no change and we're not in the first tick — reduces
+          // noise when the scheduler is blocked on a single slow block.
+          let changed = done != last_completed;
+          last_completed = done;
+          let pct = if total == 0 {
+            100.0
+          } else {
+            (done as f64 / total as f64) * 100.0
+          };
+          let elapsed = start.elapsed().as_secs_f64();
+          let rate =
+            if elapsed > 0.0 { done as f64 / elapsed } else { 0.0 };
+          let eta = if rate > 0.0 && done < total {
+            let remaining = (total - done) as f64 / rate;
+            format!(" eta {:.0}s", remaining)
+          } else {
+            String::new()
+          };
+
+          // Oldest in-flight blocks (up to 3) for visibility into
+          // slow/stuck compilations. Sort by start time ascending.
+          let in_flight: Vec<String> = {
+            let mut entries: Vec<(Name, Instant)> =
+              active_p.lock().unwrap().clone();
+            entries.sort_by_key(|(_, t)| *t);
+            entries
+              .iter()
+              .take(3)
+              .map(|(n, t)| {
+                format!("{} ({:.0}s)", n.pretty(), t.elapsed().as_secs_f64())
+              })
+              .collect()
+          };
+          let suffix = if in_flight.is_empty() {
+            String::new()
+          } else {
+            format!(" · in-flight: {}", in_flight.join(", "))
+          };
+
+          // Always print the first tick and any tick with progress;
+          // print "stalled" ticks less often so the log doesn't churn.
+          if changed || done == 0 {
+            eprintln!(
+              "[compile_env] {done}/{total} ({pct:.1}%) · {elapsed:.0}s{eta}{suffix}"
+            );
+          } else {
+            eprintln!(
+              "[compile_env] {done}/{total} ({pct:.1}%) · STALLED{suffix}"
+            );
+          }
+        }
+      });
+    }
+
     // Spawn worker threads
     for _ in 0..num_threads {
       s.spawn(move || {
@@ -180,6 +354,19 @@ pub fn compile_env(
 
               // Track time for slow block detection
               let block_start = std::time::Instant::now();
+
+              // Register as in-flight for the progress reporter. Remove on
+              // every exit path (panic converted to error, graceful error,
+              // success).
+              active_ref.lock().unwrap().push((lo.clone(), block_start));
+
+              if *IX_LOG_BLOCKS {
+                eprintln!(
+                  "[compile_env] BEGIN {} ({} members)",
+                  lo.pretty(),
+                  all.len()
+                );
+              }
 
               // Check if this block was pre-compiled into aux_name_to_addr.
               // Promote to name_to_addr without re-compiling.
@@ -211,13 +398,21 @@ pub fn compile_env(
                     let unresolved_set: NameSet =
                       unresolved_names.iter().cloned().collect();
                     let mut cache = BlockCache::default();
-                    if let Err(e) = compile_const(
-                      &unresolved_names[0],
-                      &unresolved_set,
-                      lean_env,
-                      &mut cache,
-                      stt_ref,
-                    ) {
+                    let cross_name = unresolved_names[0].clone();
+                    let res = run_compile_catching_panic(
+                      &cross_name,
+                      "compile_const(cross-SCC)",
+                      || {
+                        compile_const(
+                          &cross_name,
+                          &unresolved_set,
+                          lean_env,
+                          &mut cache,
+                          stt_ref,
+                        )
+                      },
+                    );
+                    if let Err(e) = res {
                       eprintln!(
                         "[compile_env] cross-SCC compile failed for {}: {}",
                         unresolved_names[0].pretty(),
@@ -245,13 +440,25 @@ pub fn compile_env(
                   // each constant, setting Named.original with the
                   // original (addr, meta) for decompilation roundtrip.
                   let mut orig_cache = BlockCache::default();
-                  if let Err(e) = compile_const_no_aux(
+                  let res = run_compile_catching_panic(
                     &lo,
-                    &all,
-                    lean_env,
-                    &mut orig_cache,
-                    stt_ref,
-                  ) {
+                    "compile_const_no_aux",
+                    || {
+                      compile_const_no_aux(
+                        &lo,
+                        &all,
+                        lean_env,
+                        &mut orig_cache,
+                        stt_ref,
+                      )
+                    },
+                  );
+                  if let Err(e) = res {
+                    // Drop in-flight entry before surfacing the error.
+                    active_ref
+                      .lock()
+                      .unwrap()
+                      .retain(|(n, _)| n != &lo);
                     let mut err_guard = error_ref.lock().unwrap();
                     if err_guard.is_none() {
                       eprintln!(
@@ -277,9 +484,14 @@ pub fn compile_env(
               } else {
                 // Compile this block
                 let mut cache = BlockCache::default();
-                if let Err(e) =
-                  compile_const(&lo, &all, lean_env, &mut cache, stt_ref)
-                {
+                let res = run_compile_catching_panic(
+                  &lo,
+                  "compile_const",
+                  || compile_const(&lo, &all, lean_env, &mut cache, stt_ref),
+                );
+                if let Err(e) = res {
+                  // Drop in-flight entry before surfacing the error.
+                  active_ref.lock().unwrap().retain(|(n, _)| n != &lo);
                   let mut err_guard = error_ref.lock().unwrap();
                   if err_guard.is_none() {
                     eprintln!(
@@ -349,6 +561,14 @@ pub fn compile_env(
                 }
               }
 
+              // Block completed successfully: drop in-flight entry and
+              // log to BEGIN/END if requested. Don't touch active_ref
+              // after completed counter bump — if the reporter happens
+              // to wake right after bump and before this cleanup, it
+              // might show a completed block as in-flight, but the
+              // numbers still reconcile on the next tick.
+              active_ref.lock().unwrap().retain(|(n, _)| n != &lo);
+
               // Check for slow blocks
               let elapsed = block_start.elapsed();
               if *crate::ix::compile::IX_TIMING && elapsed.as_secs_f32() > 1.0 {
@@ -360,6 +580,13 @@ pub fn compile_env(
                   elapsed.as_secs_f32(),
                   if _is_precompiled { "precompiled" } else { "compile" },
                   cc_time,
+                );
+              }
+              if *IX_LOG_BLOCKS {
+                eprintln!(
+                  "[compile_env] END   {} ({:.2}s)",
+                  lo.pretty(),
+                  elapsed.as_secs_f32(),
                 );
               }
 
@@ -436,7 +663,36 @@ pub fn compile_env(
         }
       });
     }
+
+    // Wait for workers to drain, then stop the progress reporter. Scoped
+    // threads join implicitly at the end of the scope, so we signal stop
+    // before exiting — the reporter's sleep may keep it alive past worker
+    // exit otherwise.
+    //
+    // Workers only exit via `None => ...` which requires either
+    // all-completed or an error flag set, so by the time we reach here
+    // (after the explicit join below), the scheduler is truly done.
+    //
+    // We can't `join()` scoped worker handles from outside their creation,
+    // so instead we poll completion/error and only then stop progress.
+    // The poll is cheap (one atomic + one mutex lock per iteration) and
+    // bounded by the slowest worker.
+    while completed_ref.load(AtomicOrdering::SeqCst) < total_blocks
+      && error_ref.lock().unwrap().is_none()
+    {
+      thread::sleep(Duration::from_millis(25));
+    }
+    stop_progress_ref.store(true, AtomicOrdering::Relaxed);
   });
+
+  if !*IX_QUIET {
+    let scheduler_elapsed = compile_start.elapsed().as_secs_f64();
+    eprintln!(
+      "[compile_env] scheduler drained: {}/{} blocks in {scheduler_elapsed:.1}s",
+      completed.load(AtomicOrdering::SeqCst),
+      total_blocks,
+    );
+  }
 
   // Check for errors
   if let Some(e) = error.into_inner().unwrap() {
@@ -466,6 +722,19 @@ pub fn compile_env(
     return Err(CompileError::InvalidMutualBlock {
       reason: "circular dependency or missing constant".into(),
     });
+  }
+
+  if !*IX_QUIET {
+    let total_elapsed = compile_start.elapsed().as_secs_f64();
+    eprintln!(
+      "[compile_env] complete in {total_elapsed:.1}s · \
+       env: {} consts, {} named, {} names, {} blobs, {} comms",
+      stt.env.const_count(),
+      stt.env.named_count(),
+      stt.env.name_count(),
+      stt.env.blob_count(),
+      stt.env.comm_count(),
+    );
   }
 
   Ok(stt)

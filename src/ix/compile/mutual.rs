@@ -24,7 +24,7 @@ use crate::ix::compile::aux_gen::recursor;
 use crate::ix::compile::aux_gen::{self, PatchedConstant};
 use crate::ix::compile::{
   BlockCache, CompileState, compile_definition, compile_inductive,
-  compile_mutual_block, compile_recursor, sort_consts,
+  compile_mutual_block, compile_name, compile_recursor, sort_consts,
 };
 use crate::ix::env::{
   ConstantInfo as LeanConstantInfo, ConstantVal, ConstructorVal,
@@ -37,7 +37,7 @@ use crate::ix::ixon::{
     InductiveProj, MutConst as IxonMutConst, RecursorProj,
   },
   env::Named,
-  metadata::ConstantMeta,
+  metadata::{ConstantMeta, ConstantMetaInfo},
   univ::Univ,
 };
 use crate::ix::mutual::{Def, Ind, MutConst};
@@ -232,6 +232,41 @@ pub(crate) fn compile_aux_block(
       }
     }
   }
+
+  // Register the synthetic Muts named entry for this block. `block_addr`
+  // stores an `IxonCI::Muts(...)` constant, but kernel ingress only
+  // discovers mutual blocks by finding a named entry tagged
+  // `ConstantMetaInfo::Muts { all }` and calling `ingress_muts_block` on
+  // it. Without this entry, ingress never routes the block's members into
+  // the kernel env, and downstream checks fail with `UnknownConst`.
+  //
+  // The key is a synthetic `Ix.<block_addr_hex>.<first_member>` name
+  // produced by `Address::muts_name`, so alpha-equivalent blocks with
+  // different member names get distinct entries. `all` is a 2-D array of
+  // name-hash addresses, one class per mutual component.
+  let first_name = sorted_classes
+    .first()
+    .and_then(|c| c.first())
+    .map(|c| c.name())
+    .expect("compile_aux_block invariant: at least one class with one member");
+  let muts_all: Vec<Vec<Address>> = sorted_classes
+    .iter()
+    .map(|class| {
+      class
+        .iter()
+        .map(|c| Address::from_blake3_hash(*c.name().get_hash()))
+        .collect()
+    })
+    .collect();
+  let muts_name = block_addr.muts_name(&first_name);
+  compile_name(&muts_name, stt);
+  stt.env.register_name(
+    muts_name,
+    Named::new(
+      block_addr.clone(),
+      ConstantMeta::new(ConstantMetaInfo::Muts { all: muts_all }),
+    ),
+  );
 
   // Batch-push to pending queue (single lock acquisition).
   if !pending_names.is_empty() {

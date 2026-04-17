@@ -365,13 +365,42 @@ fn build_below_def(
   // inferType rather than manually decomposing level trees.
   let ilvl = {
     let total = n_params + n_motives + n_minors + n_indices + 1;
-    let (_fvars, decls, _) =
-      forall_telescope(&rec_val.cnst.typ, total, "blv", 0);
+    let ctx = format!(
+      "build_below_def({})",
+      rec_val.cnst.name.pretty()
+    );
+    let what = format!(
+      "n_params({n_params}) + n_motives({n_motives}) + \
+       n_minors({n_minors}) + n_indices({n_indices}) + 1 major"
+    );
+    let result = super::expr_utils::forall_telescope_exact(
+      &rec_val.cnst.typ,
+      total,
+      "blv",
+      0,
+      &ctx,
+      &what,
+    );
+    // On error, dump the full recursor type once before propagating.
+    // Printing the raw LeanExpr is usually huge; we only do this at the
+    // error site so normal runs stay quiet.
+    let (_fvars, decls, _) = match result {
+      Ok(t) => t,
+      Err(e) => {
+        eprintln!(
+          "[build_below_def] FULL TYPE of {}:\n{}",
+          rec_val.cnst.name.pretty(),
+          rec_val.cnst.typ.pretty(),
+        );
+        return Err(e);
+      },
+    };
     let major_domain = &decls[total - 1].domain;
 
-    let ctx: Vec<super::expr_utils::LocalDecl> = decls[..total - 1].to_vec();
+    let ctx_decls: Vec<super::expr_utils::LocalDecl> =
+      decls[..total - 1].to_vec();
     let mut tc =
-      super::expr_utils::TcScope::new(&ctx, rec_level_params, stt, kctx);
+      super::expr_utils::TcScope::new(&ctx_decls, rec_level_params, stt, kctx);
     tc.get_level(major_domain)?
   };
 

@@ -24,6 +24,8 @@ pub mod ix; // Ix types: Name, Level, Expr, ConstantInfo, Environment
 pub mod ixon; // Ixon types: Univ, Expr, Constant, metadata
 pub mod primitives; // Primitives: rs_roundtrip_nat, rs_roundtrip_string, etc.
 #[cfg(feature = "test-ffi")]
+pub mod kernel; // Kernel type-checker FFI: rs_kernel_check_consts (test-only)
+#[cfg(feature = "test-ffi")]
 pub mod refcount; // Reference counting / ownership tests (test-only)
 
 #[cfg(feature = "test-ffi")]

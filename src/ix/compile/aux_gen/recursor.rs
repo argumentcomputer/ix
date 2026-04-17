@@ -16,7 +16,7 @@ use crate::ix::compile::nat_conv::{
 };
 use crate::ix::env::{
   BinderInfo, ConstantInfo, ConstantVal, ConstructorVal, Env as LeanEnv,
-  Expr as LeanExpr, ExprData, InductiveVal, Level, LevelData, Name, NameData,
+  Expr as LeanExpr, ExprData, InductiveVal, Level, Name, NameData,
   RecursorRule, RecursorVal,
 };
 use crate::ix::ixon::CompileError;
@@ -375,8 +375,50 @@ pub(crate) fn generate_canonical_recursors_with_overlay(
   );
   let param_binders = collect_binders(&first_ty, n_params);
 
-  // Per-class: index binders, motive name, minor names + types
-  // We precompute motive types and minor types here.
+  // Hoist param FVar/decl creation out of `build_rec_type`. All recursors in
+  // this block share one set of param FVars — matching the C++ kernel's
+  // `m_params` array which is shared across the whole `mk_rec_infos` pass.
+  // Creating them once lets `decompose_inductive_type` populate
+  // `IndRecInfo::indices` / `major` with domains that reference the same
+  // FVars the rec types will use, so the results embed without substitution.
+  let (shared_param_fvars, raw_param_decls, _) =
+    super::expr_utils::forall_telescope(&first_ty, n_params, "param", 0);
+  let shared_param_decls: Vec<super::expr_utils::LocalDecl> = raw_param_decls
+    .into_iter()
+    .zip(param_binders.iter())
+    .map(|(mut d, pb)| {
+      d.domain = super::expr_utils::consume_type_annotations(&d.domain);
+      d.info = pb.info.clone();
+      d
+    })
+    .collect();
+
+  // Decompose each ORIGINAL class's stored type via kernel WHNF. This is
+  // the Rust analog of `mk_rec_infos` — it peels the type's param Pi's
+  // using our shared `param_fvars`, then all remaining leading Pi's as
+  // indices, calling `TcScope::whnf_lean` between every step.
+  //
+  // The key payoff: for inductives targeting a reducible alias
+  // (`εClosure : Set α = α → Prop`, `finiteInterClosure : Set (Set α)`),
+  // WHNF exposes the Pi hidden inside the alias so the index binder
+  // materializes. Pure syntactic peeling (the old code) couldn't see it.
+  //
+  // Aux (nested) members at index `>= n_classes` are handled separately
+  // inside `build_rec_type`'s aux path — they have different structure
+  // (spec_params, occurrence_level_args) that doesn't fit this helper.
+  let class_infos: Vec<super::expr_utils::IndRecInfo> = classes
+    [..n_classes]
+    .iter()
+    .map(|c| {
+      super::expr_utils::decompose_inductive_type(
+        &c.ind,
+        &ind_univs,
+        &shared_param_decls,
+        stt,
+        kctx,
+      )
+    })
+    .collect::<Result<_, _>>()?;
 
   // Generate one recursor per flat member (originals + auxiliaries).
   let mut results = Vec::new();
@@ -412,6 +454,9 @@ pub(crate) fn generate_canonical_recursors_with_overlay(
       n_params,
       n_classes,
       &param_binders,
+      &shared_param_fvars,
+      &shared_param_decls,
+      &class_infos,
       &elim_level,
       &ind_univs,
       lean_env,
@@ -512,13 +557,23 @@ fn collect_binders(expr: &LeanExpr, n: usize) -> Vec<Binder> {
 /// the correct de Bruijn indices.
 ///
 /// Follows `declare_recursors` in inductive.cpp:752-774.
+///
+/// `param_fvars` and `param_decls` are shared across every recursor in
+/// the block (they come from the enclosing `generate_canonical_recursors_*`).
+/// `class_infos` are the WHNF-decomposed `IndRecInfo`s for each original
+/// class (indexed `0..n_classes`), used to source indices + major for
+/// non-aux recursors. Auxiliary (nested) recursors at `di >= n_classes`
+/// still peel the type themselves using `spec_params` substitution.
 fn build_rec_type(
   di: usize,
   classes: &[FlatInfo],
   flat: &[super::nested::CompileFlatMember],
   n_params: usize,
   n_classes: usize,
-  param_binders: &[Binder],
+  _param_binders: &[Binder],
+  param_fvars: &[LeanExpr],
+  param_decls: &[LocalDecl],
+  class_infos: &[super::expr_utils::IndRecInfo],
   elim_level: &Level,
   ind_univs: &[Level],
   lean_env: &LeanEnv,
@@ -530,49 +585,19 @@ fn build_rec_type(
       .or_else(|| lean_env.get(name).cloned())
   };
   let n_flat = flat.len();
-  let n_indices = classes[di].n_indices;
 
   // Collect ALL binders in a single Vec<LocalDecl> with FVar-based domains.
   // mk_forall at the end handles all BVar abstraction in one batch.
   let mut all_decls: Vec<LocalDecl> = Vec::new();
 
-  // --- Params: create FVars via forall_telescope ---
-  // Use the pre-computed param_binders for domain info (with type annotation
-  // stripping already applied by collect_binders), but create fresh FVars
-  // so cross-references between dependent param domains use FVars.
-  let first_ty = subst_levels(
-    &classes[0].ind.cnst.typ,
-    &classes[0].ind.cnst.level_params,
-    ind_univs,
-  );
-  let (param_fvars, param_decls, _) =
-    super::expr_utils::forall_telescope(&first_ty, n_params, "param", 0);
-  // Apply consume_type_annotations to param domains, matching Lean C++
-  // mk_local_decl behavior (inductive.cpp:179).
-  let param_decls: Vec<LocalDecl> = param_decls
-    .into_iter()
-    .zip(param_binders.iter())
-    .map(|(mut d, pb)| {
-      d.domain = super::expr_utils::consume_type_annotations(&d.domain);
-      d.info = pb.info.clone();
-      d
-    })
-    .collect();
+  // --- Params: shared across recursors in this block ---
   all_decls.extend(param_decls.iter().cloned());
 
   // --- Motives (Cs): one per flat member, FVar domains ---
   let mut motive_fvars: Vec<LeanExpr> = Vec::new();
   for j in 0..n_flat {
     let motive_ty = if j < n_classes {
-      build_motive_type(
-        j,
-        classes,
-        n_params,
-        0, // depth unused — no manual abstraction
-        elim_level,
-        ind_univs,
-        &param_fvars,
-      )
+      build_motive_type(&class_infos[j], elim_level)
     } else {
       build_motive_type_aux(
         &classes[j],
@@ -581,7 +606,7 @@ fn build_rec_type(
         ind_univs,
         lean_env,
         overlay,
-        &param_fvars,
+        param_fvars,
       )
     };
     // Domain stays in FVar form — contains param FVars which mk_forall
@@ -645,102 +670,126 @@ fn build_rec_type(
     }
   }
 
-  // --- Indices for member di ---
+  // --- Indices + major for member di ---
+  //
+  // Two paths:
+  //
+  // * Non-aux (di < n_classes): use the pre-computed `IndRecInfo` from
+  //   `class_infos[di]`. Its `indices` and `major` are already WHNF-derived,
+  //   and their domains reference our shared `param_fvars` — so we can drop
+  //   them directly into `all_decls` and use their FVars for the return
+  //   expression.
+  //
+  // * Aux (di >= n_classes): the stored inductive type needs `spec_params`
+  //   substituted (nested occurrence parameters) before peeling, which
+  //   doesn't match `decompose_inductive_type`'s interface. Keep the in-place
+  //   peel here, but it's still subject to the same WHNF-on-reducible-target
+  //   issue if a nested aux inductive has a reducible-alias target. Not
+  //   observed in the wild yet; if it comes up, factor `decompose_*` to
+  //   accept pre-substituted spec_params.
   let di_member = &classes[di];
   let di_is_aux = di_member.is_aux;
-  let di_ty = if di_is_aux && !di_member.occurrence_level_args.is_empty() {
-    subst_levels(
-      &di_member.ind.cnst.typ,
-      &di_member.ind.cnst.level_params,
-      &di_member.occurrence_level_args,
-    )
+
+  let mut index_fvars: Vec<LeanExpr> = Vec::new();
+  let major_dom;
+  let major_fv_name;
+  let major_fv;
+
+  if !di_is_aux {
+    let info = &class_infos[di];
+    all_decls.extend(info.indices.iter().cloned());
+    index_fvars.extend(
+      info.indices.iter().map(|d| LeanExpr::fvar(d.fvar_name.clone())),
+    );
+    major_dom = info.major.domain.clone();
+    major_fv_name = info.major.fvar_name.clone();
+    major_fv = LeanExpr::fvar(major_fv_name.clone());
+    all_decls.push(info.major.clone());
   } else {
-    subst_levels(
-      &di_member.ind.cnst.typ,
-      &di_member.ind.cnst.level_params,
-      ind_univs,
-    )
-  };
-  let mut ity = di_ty;
-  let di_n_ext_params = di_member.own_params;
-  let di_sp_fvars = if di_is_aux {
-    instantiate_spec_with_fvars(&di_member.spec_params, &param_fvars)
-  } else {
-    vec![]
-  };
-  for p in 0..di_n_ext_params {
-    if let ExprData::ForallE(_, _, body, _, _) = ity.as_data() {
-      if di_is_aux && p < di_sp_fvars.len() {
-        ity = instantiate1(body, &di_sp_fvars[p]);
-      } else if p < param_fvars.len() {
-        ity = instantiate1(body, &param_fvars[p]);
-      } else {
-        ity = body.clone();
+    // Legacy aux path: substitute spec_params, peel syntactically.
+    let di_ty = if !di_member.occurrence_level_args.is_empty() {
+      subst_levels(
+        &di_member.ind.cnst.typ,
+        &di_member.ind.cnst.level_params,
+        &di_member.occurrence_level_args,
+      )
+    } else {
+      subst_levels(
+        &di_member.ind.cnst.typ,
+        &di_member.ind.cnst.level_params,
+        ind_univs,
+      )
+    };
+    let mut ity = di_ty;
+    let di_n_ext_params = di_member.own_params;
+    let di_sp_fvars =
+      instantiate_spec_with_fvars(&di_member.spec_params, param_fvars);
+    for p in 0..di_n_ext_params {
+      if let ExprData::ForallE(_, _, body, _, _) = ity.as_data() {
+        if p < di_sp_fvars.len() {
+          ity = instantiate1(body, &di_sp_fvars[p]);
+        } else if p < param_fvars.len() {
+          ity = instantiate1(body, &param_fvars[p]);
+        } else {
+          ity = body.clone();
+        }
       }
     }
-  }
-  // Beta-reduce for auxiliary index types (lambda-valued spec_params may
-  // create redexes that need reduction before forall_telescope peeling).
-  if di_is_aux {
+    // Beta-reduce: lambda-valued spec_params create redexes that need
+    // reduction before forall_telescope peeling.
     ity = super::expr_utils::beta_reduce(&ity);
-  }
-  // Peel index binders using FVars — domains stay in FVar form.
-  let mut index_fvars: Vec<LeanExpr> = Vec::new();
-  let mut index_decls: Vec<LocalDecl> = Vec::new();
-  for fi in 0..n_indices {
-    match ity.as_data() {
-      ExprData::ForallE(name, dom, body, bi, _) => {
-        let (fv_name, fv) = fresh_fvar("idx", fi);
-        index_decls.push(LocalDecl {
-          fvar_name: fv_name,
-          binder_name: name.clone(),
-          domain: dom.clone(),
-          info: bi.clone(),
-        });
-        index_fvars.push(fv.clone());
-        ity = instantiate1(body, &fv);
-      },
-      _ => break,
-    }
-  }
-  // Index domains are in FVar form (param + earlier index FVars).
-  // No manual abstraction needed — mk_forall handles it.
-  all_decls.extend(index_decls);
 
-  // --- Major: domain in FVar form ---
-  let major_dom = if di_is_aux {
+    // Peel `n_indices` leading Pi's. For aux nested members this is still
+    // syntactic — see note above.
+    let n_indices = di_member.n_indices;
+    let mut index_decls: Vec<LocalDecl> = Vec::new();
+    for fi in 0..n_indices {
+      match ity.as_data() {
+        ExprData::ForallE(name, dom, body, bi, _) => {
+          let (fv_name, fv) = fresh_fvar("idx", fi);
+          index_decls.push(LocalDecl {
+            fvar_name: fv_name,
+            binder_name: name.clone(),
+            domain: dom.clone(),
+            info: bi.clone(),
+          });
+          index_fvars.push(fv.clone());
+          ity = instantiate1(body, &fv);
+        },
+        _ => break,
+      }
+    }
+    all_decls.extend(index_decls);
+
+    // Build major domain: I spec_params indices.
     let major_univs = if !di_member.occurrence_level_args.is_empty() {
       &di_member.occurrence_level_args
     } else {
       ind_univs
     };
     let mut app = mk_const(&di_member.ind.cnst.name, major_univs);
-    let sp_fvars =
-      instantiate_spec_with_fvars(&di_member.spec_params, &param_fvars);
-    for sp in &sp_fvars {
+    for sp in &di_sp_fvars {
       app = LeanExpr::app(app, sp.clone());
     }
     for idx_fv in &index_fvars {
       app = LeanExpr::app(app, idx_fv.clone());
     }
-    app
-  } else {
-    let mut app = mk_const(&di_member.ind.cnst.name, ind_univs);
-    for pf in &param_fvars {
-      app = LeanExpr::app(app, pf.clone());
-    }
-    for idx_fv in &index_fvars {
-      app = LeanExpr::app(app, idx_fv.clone());
-    }
-    app
-  };
-  let (major_fv_name, major_fv) = fresh_fvar("major", 0);
-  all_decls.push(LocalDecl {
-    fvar_name: major_fv_name,
-    binder_name: Name::str(Name::anon(), "t".to_string()),
-    domain: major_dom,
-    info: BinderInfo::Default,
-  });
+    major_dom = app;
+    let (name, fv) = fresh_fvar("major", 0);
+    major_fv_name = name;
+    major_fv = fv;
+    all_decls.push(LocalDecl {
+      fvar_name: major_fv_name.clone(),
+      binder_name: Name::str(Name::anon(), "t".to_string()),
+      domain: major_dom.clone(),
+      info: BinderInfo::Default,
+    });
+  }
+
+  // Silence unused-variable warnings for the non-aux path, which doesn't
+  // need the extracted name back. Both branches still return via the outer
+  // flow via `ret`/`mk_forall`.
+  let _ = (&major_dom, &major_fv_name);
 
   // --- Return: motive_di(index_fvars, major_fv) ---
   let mut ret = motive_fvars[di].clone();
@@ -758,81 +807,27 @@ fn build_rec_type(
   infer_implicit(&rec_type, 1000)
 }
 
-/// Build motive type for class `j`:
-/// `∀ (indices...) (t : I params indices), Sort elim_level`
+/// Build motive type for a class from its pre-computed [`IndRecInfo`]:
+/// `∀ (indices...) (t : I params indices), Sort elim_level`.
 ///
-/// Uses FVars for params (from the rec type context) and fresh FVars for
-/// indices, matching lean4lean's forallTelescope approach. The caller
-/// must abstract param FVars from the result.
+/// This is a trivial wrapper — all the real work (WHNF-aware peeling of
+/// index binders, construction of the major's domain from the inductive
+/// head applied to params+indices) happens in
+/// [`decompose_inductive_type`]. Keeping the assembly here preserves the
+/// symmetry with `mk_C` in `inductive.cpp:609-615` (the C++ kernel builds
+/// `C_ty` the same way from `m_major` and `m_indices`).
+///
+/// The returned expression contains param FVars free; the caller abstracts
+/// them via the outer rec type's `mk_forall` pass. Index + major FVars
+/// are already abstracted into BVars inside the motive's binder chain.
 fn build_motive_type(
-  j: usize,
-  classes: &[FlatInfo],
-  n_params: usize,
-  _param_depth: usize,
+  ind_info: &super::expr_utils::IndRecInfo,
   elim_level: &Level,
-  ind_univs: &[Level],
-  param_fvars: &[LeanExpr],
 ) -> LeanExpr {
-  let ind = &classes[j].ind;
-  let n_indices = nat_to_usize(&ind.num_indices);
-  let ty = subst_levels(&ind.cnst.typ, &ind.cnst.level_params, ind_univs);
-
-  // Skip params — substitute with param FVars from the rec type context.
-  let mut cur = ty;
-  for p in 0..n_params {
-    if let ExprData::ForallE(_, _, body, _, _) = cur.as_data() {
-      if p < param_fvars.len() {
-        cur = instantiate1(body, &param_fvars[p]);
-      } else {
-        cur = instantiate1(body, &LeanExpr::sort(Level::zero()));
-      }
-    }
-  }
-
-  // Collect index binders using fresh FVars (forallTelescope-style).
-  let mut index_fvars: Vec<LeanExpr> = Vec::new();
-  let mut index_decls: Vec<LocalDecl> = Vec::new();
-  for fi in 0..n_indices {
-    match cur.as_data() {
-      ExprData::ForallE(name, dom, body, bi, _) => {
-        let (fv_name, fv) = fresh_fvar("m_idx", fi);
-        index_decls.push(LocalDecl {
-          fvar_name: fv_name,
-          binder_name: name.clone(),
-          domain: dom.clone(),
-          info: bi.clone(),
-        });
-        index_fvars.push(fv.clone());
-        cur = instantiate1(body, &fv);
-      },
-      _ => break,
-    }
-  }
-
-  // Major: I params indices (all FVars)
-  let mut major_ty = mk_const(&ind.cnst.name, ind_univs);
-  for pf in param_fvars {
-    major_ty = LeanExpr::app(major_ty, pf.clone());
-  }
-  for idx_fv in &index_fvars {
-    major_ty = LeanExpr::app(major_ty, idx_fv.clone());
-  }
-
-  // ∀ (t : major_ty), Sort elim_level
   let sort = LeanExpr::sort(elim_level.clone());
-  let major_decl = LocalDecl {
-    fvar_name: Name::str(Name::anon(), "_motive_major".to_string()),
-    binder_name: Name::str(Name::anon(), "t".to_string()),
-    domain: major_ty,
-    info: BinderInfo::Default,
-  };
-
-  // Abstract all FVars: index FVars first (innermost), then the caller
-  // will abstract param FVars from the returned expression.
-  let mut all_decls: Vec<LocalDecl> = Vec::new();
-  all_decls.extend(index_decls);
-  all_decls.push(major_decl);
-  mk_forall(sort, &all_decls)
+  let mut decls: Vec<LocalDecl> = ind_info.indices.clone();
+  decls.push(ind_info.major.clone());
+  mk_forall(sort, &decls)
 }
 
 /// Build motive type for an auxiliary (nested) flat member.
@@ -1775,53 +1770,8 @@ fn expr_has_loose_bvar(e: &LeanExpr, target: u64) -> bool {
 }
 
 // =========================================================================
-// is_large / k computation — direct LeanExpr approach
+// is_large / k / is_prop computation
 // =========================================================================
-
-/// Extract the result sort level from a LeanExpr inductive type by
-/// peeling `n` forall binders.
-fn get_lean_result_sort_level(typ: &LeanExpr, n: usize) -> Option<Level> {
-  let mut cur = typ.clone();
-  for _ in 0..n {
-    if let ExprData::ForallE(_, _, body, _, _) = cur.as_data() {
-      cur = body.clone();
-    } else {
-      return None;
-    }
-  }
-  match cur.as_data() {
-    ExprData::Sort(lvl, _) => Some(lvl.clone()),
-    _ => None,
-  }
-}
-
-/// Check if a result level is definitionally zero (Prop).
-/// Handles `Level::zero`, but also `Level::imax(_, zero)` etc.
-/// Conservative: returns false for Level::param (could be zero or non-zero).
-fn result_level_is_zero(lvl: &Option<Level>) -> bool {
-  match lvl {
-    None => false,
-    Some(l) => level_is_zero(l),
-  }
-}
-
-/// Check if a level expression normalizes to zero.
-///
-/// Handles the key level reduction rules:
-/// - `zero = 0`
-/// - `max(a, b) = 0` iff `a = 0` and `b = 0`
-/// - `imax(a, b) = 0` iff `b = 0` (by definition of imax)
-/// - `succ(_)` is never zero
-/// - `param(_)` is conservatively treated as non-zero
-fn level_is_zero(l: &Level) -> bool {
-  match l.as_data() {
-    LevelData::Zero(_) => true,
-    LevelData::Succ(..) => false,
-    LevelData::Max(a, b, _) => level_is_zero(a) && level_is_zero(b),
-    LevelData::Imax(_, b, _) => level_is_zero(b),
-    LevelData::Param(..) | LevelData::Mvar(..) => false,
-  }
-}
 
 /// Compute `is_large`, `k`, and `is_prop` for the canonical recursor using
 /// the zero kernel's `is_large_eliminator`.
@@ -1965,18 +1915,24 @@ fn compute_is_large_and_k(
   // Use the TC for the appropriate context.
   let mut tc = crate::ix::kernel::tc::TypeChecker::new(kctx.kenv.clone());
 
-  // Compute `is_large` purely via the zero kernel's TC. A TC failure here
-  // is a genuine aux_gen bug (our ephemeral `KConst::Indc`/`KConst::Ctor`
-  // entries are malformed, or we failed to ingress a referenced const), not
-  // a case we can silently paper over — downstream kernel checks and
-  // content-addressing would still trip on whatever we built. Surface the
-  // error and let the caller abort this block.
-  let is_large = tc
+  // Compute the WHNF-reduced result sort level via the kernel. This peels
+  // params+indices with whnf at each step — crucial for inductives whose
+  // target is a reducible alias (e.g. `Set σ := σ → Prop`), where syntactic
+  // peeling would stop early at an unreduced `App(Const(Set), _)`.
+  let result_kuniv = tc
     .get_result_sort_level(first_ty_z, n_params + (first_n_indices as usize))
-    .and_then(|result_level| tc.is_large_eliminator(&result_level, &ind_infos))
     .map_err(|e| CompileError::InvalidMutualBlock {
       reason: format!(
         "compute_is_large_and_k: TC failed for {}: {e}",
+        classes[0].ind.cnst.name.pretty()
+      ),
+    })?;
+
+  let is_large = tc
+    .is_large_eliminator(&result_kuniv, &ind_infos)
+    .map_err(|e| CompileError::InvalidMutualBlock {
+      reason: format!(
+        "compute_is_large_and_k: is_large_eliminator failed for {}: {e}",
         classes[0].ind.cnst.name.pretty()
       ),
     })?;
@@ -1986,23 +1942,21 @@ fn compute_is_large_and_k(
   // only early-returns when the result level is *provably* non-zero; a
   // Param universe that happens to be non-zero syntactically (e.g., u+1)
   // falls through to the single-ctor check and can come back "small".
-  // Correct that here using the Lean-expr's syntactic result level.
-  let is_large = if !is_large
-    && !result_level_is_zero(&get_lean_result_sort_level(
-      &classes[0].ind.cnst.typ,
-      n_params + classes[0].n_indices,
-    )) {
+  // Correct that here using the WHNF-reduced result level.
+  let is_large = if !is_large && !result_kuniv.is_zero() {
     true
   } else {
     is_large
   };
 
-  // Compute is_prop from the LeanExpr result sort level.
-  let result_lvl = get_lean_result_sort_level(
-    &classes[0].ind.cnst.typ,
-    n_params + classes[0].n_indices,
-  );
-  let is_prop = result_level_is_zero(&result_lvl);
+  // Prop determination: use the WHNF-reduced kernel-derived level, not the
+  // raw LeanExpr-syntactic path. For reducible-alias targets the syntactic
+  // peel short-circuits (can't find enough Pi's) and returns None, which
+  // would wrongly classify the inductive as non-Prop and produce a
+  // Type-level `.brecOn` (with `.brecOn.go` / `.brecOn.eq` sub-constants)
+  // for what is actually a `Prop`-valued inductive. `KUniv::is_zero()`
+  // here handles `Zero`, `IMax(_, Zero)`, and the like.
+  let is_prop = result_kuniv.is_zero();
 
   // C1 fix: if the block has nested auxiliary flat members that weren't
   // inserted into the KEnv, the is_large_eliminator result may be wrong.

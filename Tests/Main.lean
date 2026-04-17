@@ -7,6 +7,8 @@ import Tests.Ix.Commit
 import Tests.Ix.Compile
 import Tests.Ix.Compile.ValidateAux
 import Tests.Ix.Decompile
+import Tests.Ix.Kernel.Roundtrip
+import Tests.Ix.Kernel.Tutorial
 import Tests.Ix.RustSerialize
 import Tests.Ix.RustDecompile
 import Tests.Ix.Sharing
@@ -51,6 +53,8 @@ def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("rust-serialize", Tests.RustSerialize.rustSerializeSuiteIO),
   ("rust-decompile", Tests.RustDecompile.rustDecompileSuiteIO),
   ("commit-io", Tests.Commit.suiteIO),
+  ("kernel-roundtrip", Tests.Ix.Kernel.Roundtrip.suite),
+  ("kernel-tutorial", Tests.Ix.Kernel.Tutorial.suite),
 ]
 
 /-- Ignored test runners - expensive, deferred IO actions run only when explicitly requested -/

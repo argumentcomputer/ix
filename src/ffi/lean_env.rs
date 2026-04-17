@@ -1993,7 +1993,7 @@ fn serialized_meta_size(
 
 /// Parse a dotted name string into a Name.
 #[cfg(feature = "test-ffi")]
-fn parse_name(s: &str) -> Name {
+pub fn parse_name(s: &str) -> Name {
   let parts: Vec<&str> = s.split('.').collect();
   let mut name = Name::anon();
   for part in parts {

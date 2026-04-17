@@ -352,4 +352,57 @@ public inductive HOTree2 where
 
 end HigherOrderRec
 
+-- Inductives whose target type is a reducible alias. Minimal reproducers
+-- (no Mathlib dependency) for the `build_below_def` mismatch on Mathlib's
+-- `FiniteInter.finiteInterClosure` and `εNFA.εClosure`.
+--
+-- Context: Lean computes `num_indices` by walking the target type with
+-- `whnf` — unfolding reducible aliases like `MySet α = α → Prop`. So the
+-- target `MySet α` exposes one Pi after unfolding, and Lean stores
+-- `num_indices = 1`. The recursor type is then built from `info.m_indices`
+-- via the kernel's `mk_pi`, which should produce a matching physical
+-- forall. But in practice the physical forall count sometimes disagrees
+-- with `num_indices` — either because of how the motive is elaborated in
+-- the presence of the reducible alias, or because the motive's argument
+-- count vs binder count itself depends on how Lean resolves `motive t`
+-- where `t`'s type reduces to a Pi.
+--
+-- These fixtures exist so validate-aux can reproduce the failure in
+-- isolation while we work out the right fix. The aux_gen pipeline must
+-- generate `.rec` / `.below` / `.brecOn` that typecheck against Lean's
+-- originals — no shortcuts.
+-- Inductives whose target type is a reducible alias. Minimal reproducers
+-- (no Mathlib dependency) for the `build_below_def` mismatch on Mathlib's
+-- `εNFA.εClosure` and `FiniteInter.finiteInterClosure`.
+--
+-- Context: Lean computes `num_indices` by walking the target type with
+-- `whnf` — unfolding reducible aliases like `MySet α = α → Prop`. The
+-- recursor type is then built from `info.m_indices` via the kernel's
+-- `mk_pi`. In practice the physical forall count of the stored recursor
+-- type can disagree with the stored `num_indices` by the number of
+-- arrows hidden inside reducible aliases, because the motive's binder
+-- arity is determined syntactically (the motive binds `t : MySet α S`)
+-- while `num_indices` counts post-reduction arrows. Our arity-based
+-- binder-chain peeling in `build_below_def` trips on this mismatch.
+--
+-- These fixtures exist so validate-aux can reproduce the failure in
+-- isolation. The aux_gen pipeline must generate `.rec` / `.below` /
+-- `.brecOn` that typecheck against Lean's originals — no shortcuts.
+namespace ReducibleAliasTarget
+
+public abbrev MySet (α : Type) := α → Prop
+
+-- Single-level reducible target (εClosure shape).
+-- Target `MySet α` ≡ `α → Prop` — one index `a : α` after WHNF.
+public inductive SClosure (α : Type) (S : MySet α) : MySet α
+  | base (a : α) : S a → SClosure α S a
+
+-- Two-level reducible target (finiteInterClosure shape).
+-- Target `MySet (MySet α)` ≡ `MySet α → Prop` — one "index" `s : MySet α`
+-- after WHNF, but the index is itself a predicate (function type).
+public inductive DClosure (α : Type) (S : MySet (MySet α)) : MySet (MySet α)
+  | base (s : MySet α) : S s → DClosure α S s
+
+end ReducibleAliasTarget
+
 end Tests.Ix.Compile.Mutual

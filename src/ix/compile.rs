@@ -3145,6 +3145,44 @@ fn compile_mutual(
     idx += 1;
   }
 
+  // Register the synthetic Muts named entry for this block. `block_addr`
+  // stores an `IxonCI::Muts(...)` constant, but kernel ingress only
+  // discovers mutual blocks by scanning `ixon_env.named` for entries tagged
+  // `ConstantMetaInfo::Muts { all }` and routing them to
+  // `ingress_muts_block`. Without this entry, each member's projection-typed
+  // named entry falls through ingress silently and none of its content
+  // reaches the kernel env.
+  //
+  // Only register on `aux=true` since that's the path that actually stores
+  // the block constant (`stt.env.store_const(block_addr, ...)` above is
+  // guarded by `if aux`). The `aux=false` promotion path reuses entries
+  // that were already registered in a prior `aux=true` call.
+  if aux {
+    let first_name = sorted_classes
+      .first()
+      .and_then(|c| c.first())
+      .map(|c| c.name())
+      .expect("compile_mutual invariant: at least one class with one member");
+    let muts_all: Vec<Vec<Address>> = sorted_classes
+      .iter()
+      .map(|class| {
+        class
+          .iter()
+          .map(|c| Address::from_blake3_hash(*c.name().get_hash()))
+          .collect()
+      })
+      .collect();
+    let muts_name = block_addr.muts_name(&first_name);
+    compile_name(&muts_name, stt);
+    stt.env.register_name(
+      muts_name,
+      Named::new(
+        block_addr.clone(),
+        ConstantMeta::new(ConstantMetaInfo::Muts { all: muts_all }),
+      ),
+    );
+  }
+
   // Regenerate auxiliary constants for alpha-collapsed inductive blocks.
   // Only runs when `aux` is true (i.e., not from compile_const_no_aux which
   // compiles original Lean forms for metadata).
