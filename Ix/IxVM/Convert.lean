@@ -33,7 +33,7 @@ def convert := ⟦
 
   -- What to convert, with kind-specific auxiliary data
   enum ConvertKind {
-    CKDefn(Definition, KHints),
+    CKDefn(Definition),
     CKAxio(Axiom),
     CKQuot(Quotient),
     CKRecr(Recursor, &List‹G›),
@@ -241,14 +241,14 @@ def convert := ⟦
   -- Per-kind conversion
   -- ============================================================================
 
-  fn convert_definition(d: Definition, ctx: ConvertCtx, hints: KHints) -> KConstantInfo {
+  fn convert_definition(d: Definition, ctx: ConvertCtx) -> KConstantInfo {
     match d {
       Definition.Mk(kind, safety, lvls, &typ, &value) =>
         let ktyp = ctx_convert_expr(typ, ctx);
         let kval = ctx_convert_expr(value, ctx);
         match kind {
           DefKind.Definition =>
-            KConstantInfo.Defn(flatten_u64(lvls), store(ktyp), store(kval), hints, safety),
+            KConstantInfo.Defn(flatten_u64(lvls), store(ktyp), store(kval), safety),
           DefKind.Opaque =>
             match safety {
               DefinitionSafety.Unsafe =>
@@ -319,7 +319,7 @@ def convert := ⟦
     match input {
       ConvertInput.Mk(ctx, kind) =>
         match kind {
-          ConvertKind.CKDefn(d, hints) => convert_definition(d, ctx, hints),
+          ConvertKind.CKDefn(d) => convert_definition(d, ctx),
           ConvertKind.CKAxio(a) => convert_axiom(a, ctx),
           ConvertKind.CKQuot(q) => convert_quotient(q, ctx),
           ConvertKind.CKRecr(r, &rule_ctor_idxs) => convert_recursor(r, ctx, rule_ctor_idxs),

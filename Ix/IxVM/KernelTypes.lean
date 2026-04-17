@@ -72,16 +72,6 @@ def kernelTypes := ⟦
   type KValEnv = List‹KVal›
 
   -- ============================================================================
-  -- Reducibility Hints
-  -- ============================================================================
-
-  enum KHints {
-    Opaque,
-    Abbrev,
-    Regular(G)
-  }
-
-  -- ============================================================================
   -- Recursor Rule: (ctor_const_idx, num_fields, rhs)
   -- ============================================================================
 
@@ -107,7 +97,7 @@ def kernelTypes := ⟦
 
   enum KConstantInfo {
     Axiom(G, &KExpr, G),
-    Defn(G, &KExpr, &KExpr, KHints, DefinitionSafety),
+    Defn(G, &KExpr, &KExpr, DefinitionSafety),
     Thm(G, &KExpr, &KExpr),
     Opaque(G, &KExpr, &KExpr, G),
     Quot(G, &KExpr, QuotKind),

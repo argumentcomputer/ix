@@ -118,7 +118,7 @@ def kernel := ⟦
   fn const_type(ci: KConstantInfo) -> KExpr {
     match ci {
       KConstantInfo.Axiom(_, &ty, _) => ty,
-      KConstantInfo.Defn(_, &ty, _, _, _) => ty,
+      KConstantInfo.Defn(_, &ty, _, _) => ty,
       KConstantInfo.Thm(_, &ty, _) => ty,
       KConstantInfo.Opaque(_, &ty, _, _) => ty,
       KConstantInfo.Quot(_, &ty, _) => ty,
@@ -132,7 +132,7 @@ def kernel := ⟦
   fn const_num_levels(ci: KConstantInfo) -> G {
     match ci {
       KConstantInfo.Axiom(n, _, _) => n,
-      KConstantInfo.Defn(n, _, _, _, _) => n,
+      KConstantInfo.Defn(n, _, _, _) => n,
       KConstantInfo.Thm(n, _, _) => n,
       KConstantInfo.Opaque(n, _, _, _) => n,
       KConstantInfo.Quot(n, _, _) => n,
@@ -828,15 +828,11 @@ def kernel := ⟦
                 -- Iota didn't fire; try quotient, then delta
                 let ci = load(list_lookup(top, idx2));
                 match ci {
-                  KConstantInfo.Defn(_, _, &value, hints, _) =>
-                    match hints {
-                      KHints.Opaque => result,
-                      _ =>
-                        let body = expr_inst_levels(value, lvls2);
-                        let val = k_eval(body, List.Nil, top);
-                        let val2 = k_apply_spine(val, spine2, top);
-                        k_whnf(val2, top),
-                    },
+                  KConstantInfo.Defn(_, _, &value, _) =>
+                    let body = expr_inst_levels(value, lvls2);
+                    let val = k_eval(body, List.Nil, top);
+                    let val2 = k_apply_spine(val, spine2, top);
+                    k_whnf(val2, top),
                   KConstantInfo.Thm(_, _, &value) =>
                     let body = expr_inst_levels(value, lvls2);
                     let val = k_eval(body, List.Nil, top);
@@ -1709,18 +1705,10 @@ def kernel := ⟦
       KValNode.Const(idx, &lvls, &spine) =>
         let ci = load(list_lookup(top, idx));
         match ci {
-          KConstantInfo.Defn(_, _, &value, hints, _) =>
-            match hints {
-              KHints.Opaque => v,
-              KHints.Abbrev =>
-                let body = expr_inst_levels(value, lvls);
-                let val = k_eval(body, List.Nil, top);
-                k_apply_spine(val, spine, top),
-              KHints.Regular(_) =>
-                let body = expr_inst_levels(value, lvls);
-                let val = k_eval(body, List.Nil, top);
-                k_apply_spine(val, spine, top),
-            },
+          KConstantInfo.Defn(_, _, &value, _) =>
+            let body = expr_inst_levels(value, lvls);
+            let val = k_eval(body, List.Nil, top);
+            k_apply_spine(val, spine, top),
           KConstantInfo.Thm(_, _, &value) =>
             let body = expr_inst_levels(value, lvls);
             let val = k_eval(body, List.Nil, top);
@@ -1758,7 +1746,7 @@ def kernel := ⟦
       KConstantInfo.Axiom(_, &ty, _) =>
         let _ = k_ensure_sort(ty, List.Nil, List.Nil, 0, top, nat_idx, str_idx),
 
-      KConstantInfo.Defn(_, &ty, &value, _, _) =>
+      KConstantInfo.Defn(_, &ty, &value, _) =>
         let _ = k_ensure_sort(ty, List.Nil, List.Nil, 0, top, nat_idx, str_idx);
         let ty_val = k_eval(ty, List.Nil, top);
         k_check(value, ty_val, List.Nil, List.Nil, 0, top, nat_idx, str_idx),

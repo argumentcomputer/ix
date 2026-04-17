@@ -530,7 +530,7 @@ def ingress := ⟦
         let input = ConvertInput.Mk(ctx, ConvertKind.CKRecr(recr, store(rule_ctor_idxs)));
         List.Cons(store(input), store(List.Nil)),
       MutConst.Defn(defn) =>
-        let input = ConvertInput.Mk(ctx, ConvertKind.CKDefn(defn, KHints.Abbrev));
+        let input = ConvertInput.Mk(ctx, ConvertKind.CKDefn(defn));
         List.Cons(store(input), store(List.Nil)),
     }
   }
@@ -600,7 +600,7 @@ def ingress := ⟦
                 let lit_blobs = build_lit_blobs(refs, all_addrs);
                 let recur_idxs = List.Cons(pos, store(List.Nil));
                 let ctx = ConvertCtx.Mk(store(sharing), store(ref_idxs), store(recur_idxs), store(lit_blobs), store(univs));
-                let input = ConvertInput.Mk(ctx, ConvertKind.CKDefn(defn, KHints.Abbrev));
+                let input = ConvertInput.Mk(ctx, ConvertKind.CKDefn(defn));
                 List.Cons(store(input),
                   store(build_convert_inputs(rest, all_addrs, pos_map, block_addrs, block_starts, pos + 1))),
               ConstantInfo.Axio(axio) =>
