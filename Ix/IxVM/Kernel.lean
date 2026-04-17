@@ -516,7 +516,20 @@ def kernel := ⟦
         match ci {
           KConstantInfo.Ctor(_, _, _, _, nparams, _, _) =>
             store(KValNode.Ctor(idx, store(lvls), nparams, store(List.Nil))),
-          _ => store(KValNode.Const(idx, store(lvls), store(List.Nil))),
+          KConstantInfo.Axiom(_, _, _) =>
+            store(KValNode.Axiom(idx, store(lvls), store(List.Nil))),
+          KConstantInfo.Defn(_, _, _, _) =>
+            store(KValNode.Defn(idx, store(lvls), store(List.Nil))),
+          KConstantInfo.Thm(_, _, _) =>
+            store(KValNode.Thm(idx, store(lvls), store(List.Nil))),
+          KConstantInfo.Opaque(_, _, _, _) =>
+            store(KValNode.Opaque(idx, store(lvls), store(List.Nil))),
+          KConstantInfo.Quot(_, _, _) =>
+            store(KValNode.Quot(idx, store(lvls), store(List.Nil))),
+          KConstantInfo.Induct(_, _, _, _, _, _, _, _) =>
+            store(KValNode.Induct(idx, store(lvls), store(List.Nil))),
+          KConstantInfo.Rec(_, _, _, _, _, _, _, _, _) =>
+            store(KValNode.Rec(idx, store(lvls), store(List.Nil))),
         },
 
       KExprNode.App(f, a) =>
@@ -589,9 +602,33 @@ def kernel := ⟦
         let spine2 = list_snoc(spine, arg);
         store(KValNode.FVar(lvl, fvar_ty, store(spine2))),
 
-      KValNode.Const(idx, &lvls, &spine) =>
+      KValNode.Axiom(idx, &lvls, &spine) =>
         let spine2 = list_snoc(spine, arg);
-        store(KValNode.Const(idx, store(lvls), store(spine2))),
+        store(KValNode.Axiom(idx, store(lvls), store(spine2))),
+
+      KValNode.Defn(idx, &lvls, &spine) =>
+        let spine2 = list_snoc(spine, arg);
+        store(KValNode.Defn(idx, store(lvls), store(spine2))),
+
+      KValNode.Thm(idx, &lvls, &spine) =>
+        let spine2 = list_snoc(spine, arg);
+        store(KValNode.Thm(idx, store(lvls), store(spine2))),
+
+      KValNode.Opaque(idx, &lvls, &spine) =>
+        let spine2 = list_snoc(spine, arg);
+        store(KValNode.Opaque(idx, store(lvls), store(spine2))),
+
+      KValNode.Quot(idx, &lvls, &spine) =>
+        let spine2 = list_snoc(spine, arg);
+        store(KValNode.Quot(idx, store(lvls), store(spine2))),
+
+      KValNode.Induct(idx, &lvls, &spine) =>
+        let spine2 = list_snoc(spine, arg);
+        store(KValNode.Induct(idx, store(lvls), store(spine2))),
+
+      KValNode.Rec(idx, &lvls, &spine) =>
+        let spine2 = list_snoc(spine, arg);
+        store(KValNode.Rec(idx, store(lvls), store(spine2))),
 
       KValNode.Proj(tidx, fidx, sv, &spine) =>
         let spine2 = list_snoc(spine, arg);
@@ -641,7 +678,7 @@ def kernel := ⟦
         let spine_len = list_length(spine);
         let not_have_major = eq_zero(spine_len - maj_idx);
         match not_have_major {
-          1 => store(KValNode.Const(idx, store(lvls), store(spine))),
+          1 => store(KValNode.Rec(idx, store(lvls), store(spine))),
           0 =>
             let major_raw = list_lookup(spine, maj_idx);
             let major = k_whnf(major_raw, top);
@@ -650,7 +687,7 @@ def kernel := ⟦
                 let rule_found = rec_rule_try_find(rules, ctor_idx);
                 match rule_found {
                   Option.None =>
-                    store(KValNode.Const(idx, store(lvls), store(spine))),
+                    store(KValNode.Rec(idx, store(lvls), store(spine))),
                   Option.Some(&rule) =>
                     match rule {
                       KRecRule.Mk(_, nfields, &rhs) =>
@@ -709,7 +746,7 @@ def kernel := ⟦
                         },
                     },
                   KLiteral.Str(_) =>
-                    store(KValNode.Const(idx, store(lvls), store(spine))),
+                    store(KValNode.Rec(idx, store(lvls), store(spine))),
                 },
               _ =>
                 -- K-reduction: for proof-irrelevant (Prop) inductives with k_flag set,
@@ -717,7 +754,7 @@ def kernel := ⟦
                 match k_flag {
                   0 =>
                     -- Not a K-recursor, return stuck
-                    store(KValNode.Const(idx, store(lvls), store(spine))),
+                    store(KValNode.Rec(idx, store(lvls), store(spine))),
                   _ =>
                     -- K-reduction fires: minor is at nparams + nmotives
                     let minor_idx = nparams + nmotives;
@@ -728,7 +765,7 @@ def kernel := ⟦
             },
         },
 
-      _ => store(KValNode.Const(idx, store(lvls), store(spine))),
+      _ => store(KValNode.Rec(idx, store(lvls), store(spine))),
     }
   }
 
@@ -746,7 +783,7 @@ def kernel := ⟦
     let spine_len = list_length(spine);
     let not_enough = eq_zero(spine_len - reduce_size);
     match not_enough {
-      1 => store(KValNode.Const(idx, store(lvls), store(spine))),
+      1 => store(KValNode.Quot(idx, store(lvls), store(spine))),
       0 =>
         -- Force and WHNF the major arg (last of the reduce_size args)
         let major_idx = reduce_size - 1;
@@ -754,7 +791,7 @@ def kernel := ⟦
         let major = k_whnf(major_raw, top);
         -- Check if major is a Quot.mk application (a Const with QuotKind.Ctor)
         match load(major) {
-          KValNode.Const(mk_idx, _, &mk_spine) =>
+          KValNode.Quot(mk_idx, _, &mk_spine) =>
             let mk_ci = load(list_lookup(top, mk_idx));
             match mk_ci {
               KConstantInfo.Quot(_, _, mk_kind) =>
@@ -765,7 +802,7 @@ def kernel := ⟦
                     let mk_len = list_length(mk_spine);
                     let no_args = eq_zero(mk_len - 3);
                     match no_args {
-                      1 => store(KValNode.Const(idx, store(lvls), store(spine))),
+                      1 => store(KValNode.Quot(idx, store(lvls), store(spine))),
                       0 =>
                         let quot_val_idx = mk_len - 1;
                         let quot_val = list_lookup(mk_spine, quot_val_idx);
@@ -777,11 +814,11 @@ def kernel := ⟦
                         let result2 = k_apply_spine(result, remaining, top);
                         k_whnf(result2, top),
                     },
-                  _ => store(KValNode.Const(idx, store(lvls), store(spine))),
+                  _ => store(KValNode.Quot(idx, store(lvls), store(spine))),
                 },
-              _ => store(KValNode.Const(idx, store(lvls), store(spine))),
+              _ => store(KValNode.Quot(idx, store(lvls), store(spine))),
             },
-          _ => store(KValNode.Const(idx, store(lvls), store(spine))),
+          _ => store(KValNode.Quot(idx, store(lvls), store(spine))),
         },
     }
   }
@@ -816,43 +853,47 @@ def kernel := ⟦
             store(KValNode.Proj(tidx, fidx, sv2, store(spine))),
         },
 
-      KValNode.Const(idx, &lvls, &spine) =>
-        -- First try iota reduction (recursor on constructor)
+      KValNode.Rec(idx, &lvls, &spine) =>
         let result = try_iota(idx, lvls, spine, top);
         match load(result) {
-          KValNode.Const(idx2, &lvls2, &spine2) =>
-            let same = eq_zero(idx - idx2);
-            match same {
-              0 => k_whnf(result, top),
-              1 =>
-                -- Iota didn't fire; try quotient, then delta
-                let ci = load(list_lookup(top, idx2));
-                match ci {
-                  KConstantInfo.Defn(_, _, &value, _) =>
-                    let body = expr_inst_levels(value, lvls2);
-                    let val = k_eval(body, List.Nil, top);
-                    let val2 = k_apply_spine(val, spine2, top);
-                    k_whnf(val2, top),
-                  KConstantInfo.Thm(_, _, &value) =>
-                    let body = expr_inst_levels(value, lvls2);
-                    let val = k_eval(body, List.Nil, top);
-                    let val2 = k_apply_spine(val, spine2, top);
-                    k_whnf(val2, top),
-                  -- Quot.lift: spine has [α, r, β, f, h, ⟨Quot.mk r a⟩, extra...]
-                  -- Quot.ind: spine has [α, r, motive, f, ⟨Quot.mk r a⟩, extra...]
-                  -- Reduces to: f a extra...
-                  KConstantInfo.Quot(_, _, kind) =>
-                    match kind {
-                      QuotKind.Lift =>
-                        k_try_quot_reduction(idx2, lvls2, spine2, 6, 3, top),
-                      QuotKind.Ind =>
-                        k_try_quot_reduction(idx2, lvls2, spine2, 5, 3, top),
-                      _ => result,
-                    },
-                  _ => result,
-                },
-            },
+          KValNode.Rec(_, _, _) => result,
           _ => k_whnf(result, top),
+        },
+
+      KValNode.Defn(idx, &lvls, &spine) =>
+        let ci = load(list_lookup(top, idx));
+        match ci {
+          KConstantInfo.Defn(_, _, &value, _) =>
+            let body = expr_inst_levels(value, lvls);
+            let val = k_eval(body, List.Nil, top);
+            let val2 = k_apply_spine(val, spine, top);
+            k_whnf(val2, top),
+        },
+
+      KValNode.Thm(idx, &lvls, &spine) =>
+        let ci = load(list_lookup(top, idx));
+        match ci {
+          KConstantInfo.Thm(_, _, &value) =>
+            let body = expr_inst_levels(value, lvls);
+            let val = k_eval(body, List.Nil, top);
+            let val2 = k_apply_spine(val, spine, top);
+            k_whnf(val2, top),
+        },
+
+      -- Quot.lift: spine has [α, r, β, f, h, ⟨Quot.mk r a⟩, extra...]
+      -- Quot.ind: spine has [α, r, motive, f, ⟨Quot.mk r a⟩, extra...]
+      -- Reduces to: f a extra...
+      KValNode.Quot(idx, &lvls, &spine) =>
+        let ci = load(list_lookup(top, idx));
+        match ci {
+          KConstantInfo.Quot(_, _, kind) =>
+            match kind {
+              QuotKind.Lift =>
+                k_try_quot_reduction(idx, lvls, spine, 6, 3, top),
+              QuotKind.Ind =>
+                k_try_quot_reduction(idx, lvls, spine, 5, 3, top),
+              _ => v,
+            },
         },
 
       _ => v,
@@ -904,7 +945,31 @@ def kernel := ⟦
         let base = store(KExprNode.BVar(idx));
         quote_spine(base, spine, depth, top),
 
-      KValNode.Const(idx, &lvls, &spine) =>
+      KValNode.Axiom(idx, &lvls, &spine) =>
+        let base = store(KExprNode.Const(idx, store(lvls)));
+        quote_spine(base, spine, depth, top),
+
+      KValNode.Defn(idx, &lvls, &spine) =>
+        let base = store(KExprNode.Const(idx, store(lvls)));
+        quote_spine(base, spine, depth, top),
+
+      KValNode.Thm(idx, &lvls, &spine) =>
+        let base = store(KExprNode.Const(idx, store(lvls)));
+        quote_spine(base, spine, depth, top),
+
+      KValNode.Opaque(idx, &lvls, &spine) =>
+        let base = store(KExprNode.Const(idx, store(lvls)));
+        quote_spine(base, spine, depth, top),
+
+      KValNode.Quot(idx, &lvls, &spine) =>
+        let base = store(KExprNode.Const(idx, store(lvls)));
+        quote_spine(base, spine, depth, top),
+
+      KValNode.Induct(idx, &lvls, &spine) =>
+        let base = store(KExprNode.Const(idx, store(lvls)));
+        quote_spine(base, spine, depth, top),
+
+      KValNode.Rec(idx, &lvls, &spine) =>
         let base = store(KExprNode.Const(idx, store(lvls)));
         quote_spine(base, spine, depth, top),
 
@@ -948,9 +1013,9 @@ def kernel := ⟦
       KExprNode.Lit(lit) =>
         match lit {
           KLiteral.Nat(_) =>
-            store(KValNode.Const(nat_idx, store(List.Nil), store(List.Nil))),
+            store(KValNode.Induct(nat_idx, store(List.Nil), store(List.Nil))),
           KLiteral.Str(_) =>
-            store(KValNode.Const(str_idx, store(List.Nil), store(List.Nil))),
+            store(KValNode.Induct(str_idx, store(List.Nil), store(List.Nil))),
         },
 
       KExprNode.Const(idx, &lvls) =>
@@ -1009,7 +1074,7 @@ def kernel := ⟦
         let struct_type = k_infer(e1, types, env, depth, top, nat_idx, str_idx);
         let struct_type_whnf = k_whnf(struct_type, top);
         match load(struct_type_whnf) {
-          KValNode.Const(induct_idx, &levels, &params_spine) =>
+          KValNode.Induct(induct_idx, &levels, &params_spine) =>
             -- Look up inductive to get its single constructor index
             let ind_ci = load(list_lookup(top, induct_idx));
             match ind_ci {
@@ -1137,10 +1202,46 @@ def kernel := ⟦
       KValNode.Srt(&l) => store(KValNode.Srt(store(KLevel.Succ(store(l))))),
       KValNode.Lit(lit) =>
         match lit {
-          KLiteral.Nat(_) => store(KValNode.Const(nat_idx, store(List.Nil), store(List.Nil))),
-          KLiteral.Str(_) => store(KValNode.Const(str_idx, store(List.Nil), store(List.Nil))),
+          KLiteral.Nat(_) => store(KValNode.Induct(nat_idx, store(List.Nil), store(List.Nil))),
+          KLiteral.Str(_) => store(KValNode.Induct(str_idx, store(List.Nil), store(List.Nil))),
         },
-      KValNode.Const(idx, &lvls, &spine) =>
+      KValNode.Axiom(idx, &lvls, &spine) =>
+        let ci = load(list_lookup(top, idx));
+        let ty = const_type(ci);
+        let ty_inst = expr_inst_levels(ty, lvls);
+        let ty_val = k_eval(ty_inst, List.Nil, top);
+        apply_spine_to_type(ty_val, spine, top),
+      KValNode.Defn(idx, &lvls, &spine) =>
+        let ci = load(list_lookup(top, idx));
+        let ty = const_type(ci);
+        let ty_inst = expr_inst_levels(ty, lvls);
+        let ty_val = k_eval(ty_inst, List.Nil, top);
+        apply_spine_to_type(ty_val, spine, top),
+      KValNode.Thm(idx, &lvls, &spine) =>
+        let ci = load(list_lookup(top, idx));
+        let ty = const_type(ci);
+        let ty_inst = expr_inst_levels(ty, lvls);
+        let ty_val = k_eval(ty_inst, List.Nil, top);
+        apply_spine_to_type(ty_val, spine, top),
+      KValNode.Opaque(idx, &lvls, &spine) =>
+        let ci = load(list_lookup(top, idx));
+        let ty = const_type(ci);
+        let ty_inst = expr_inst_levels(ty, lvls);
+        let ty_val = k_eval(ty_inst, List.Nil, top);
+        apply_spine_to_type(ty_val, spine, top),
+      KValNode.Quot(idx, &lvls, &spine) =>
+        let ci = load(list_lookup(top, idx));
+        let ty = const_type(ci);
+        let ty_inst = expr_inst_levels(ty, lvls);
+        let ty_val = k_eval(ty_inst, List.Nil, top);
+        apply_spine_to_type(ty_val, spine, top),
+      KValNode.Induct(idx, &lvls, &spine) =>
+        let ci = load(list_lookup(top, idx));
+        let ty = const_type(ci);
+        let ty_inst = expr_inst_levels(ty, lvls);
+        let ty_val = k_eval(ty_inst, List.Nil, top);
+        apply_spine_to_type(ty_val, spine, top),
+      KValNode.Rec(idx, &lvls, &spine) =>
         let ci = load(list_lookup(top, idx));
         let ty = const_type(ci);
         let ty_inst = expr_inst_levels(ty, lvls);
@@ -1156,7 +1257,7 @@ def kernel := ⟦
         let struct_type = k_infer_val_type(sv, top, nat_idx, str_idx);
         let struct_type_whnf = k_whnf(struct_type, top);
         match load(struct_type_whnf) {
-          KValNode.Const(induct_idx, &levels, &params_spine) =>
+          KValNode.Induct(induct_idx, &levels, &params_spine) =>
             let ind_ci = load(list_lookup(top, induct_idx));
             match ind_ci {
               KConstantInfo.Induct(_, _, _, _, &ctor_indices, _, _, _) =>
@@ -1273,7 +1374,7 @@ def kernel := ⟦
   fn is_unit_like_type(ty: KVal, top: List‹&KConstantInfo›) -> G {
     let ty_whnf = k_whnf(ty, top);
     match load(ty_whnf) {
-      KValNode.Const(induct_idx, _, _) =>
+      KValNode.Induct(induct_idx, _, _) =>
         let ci = load(list_lookup(top, induct_idx));
         match ci {
           KConstantInfo.Induct(_, _, _, nindices, &ctor_indices, _, _, _) =>
@@ -1518,20 +1619,114 @@ def kernel := ⟦
               _ => 0,
             },
 
-          KValNode.Const(idx_a, &lvls_a, &sp_a) =>
+          KValNode.Axiom(idx_a, &lvls_a, &sp_a) =>
             match load(b) {
-              KValNode.Const(idx_b, &lvls_b, &sp_b) =>
+              KValNode.Axiom(idx_b, &lvls_b, &sp_b) =>
                 let same_idx = eq_zero(idx_a - idx_b);
                 match same_idx {
                   1 =>
                     let lvls_eq = k_is_def_eq_levels(lvls_a, lvls_b);
                     match lvls_eq {
-                      1 =>
-                        k_is_def_eq_spine(sp_a, sp_b, depth, top, nat_idx, str_idx),
+                      1 => k_is_def_eq_spine(sp_a, sp_b, depth, top, nat_idx, str_idx),
                       0 => 0,
                     },
-                  0 =>
-                    k_lazy_delta(a, b, depth, top, nat_idx, str_idx),
+                  0 => 0,
+                },
+              _ => k_lazy_delta(a, b, depth, top, nat_idx, str_idx),
+            },
+
+          KValNode.Defn(idx_a, &lvls_a, &sp_a) =>
+            match load(b) {
+              KValNode.Defn(idx_b, &lvls_b, &sp_b) =>
+                let same_idx = eq_zero(idx_a - idx_b);
+                match same_idx {
+                  1 =>
+                    let lvls_eq = k_is_def_eq_levels(lvls_a, lvls_b);
+                    match lvls_eq {
+                      1 => k_is_def_eq_spine(sp_a, sp_b, depth, top, nat_idx, str_idx),
+                      0 => 0,
+                    },
+                  0 => k_lazy_delta(a, b, depth, top, nat_idx, str_idx),
+                },
+              _ => k_lazy_delta(a, b, depth, top, nat_idx, str_idx),
+            },
+
+          KValNode.Thm(idx_a, &lvls_a, &sp_a) =>
+            match load(b) {
+              KValNode.Thm(idx_b, &lvls_b, &sp_b) =>
+                let same_idx = eq_zero(idx_a - idx_b);
+                match same_idx {
+                  1 =>
+                    let lvls_eq = k_is_def_eq_levels(lvls_a, lvls_b);
+                    match lvls_eq {
+                      1 => k_is_def_eq_spine(sp_a, sp_b, depth, top, nat_idx, str_idx),
+                      0 => 0,
+                    },
+                  0 => k_lazy_delta(a, b, depth, top, nat_idx, str_idx),
+                },
+              _ => k_lazy_delta(a, b, depth, top, nat_idx, str_idx),
+            },
+
+          KValNode.Opaque(idx_a, &lvls_a, &sp_a) =>
+            match load(b) {
+              KValNode.Opaque(idx_b, &lvls_b, &sp_b) =>
+                let same_idx = eq_zero(idx_a - idx_b);
+                match same_idx {
+                  1 =>
+                    let lvls_eq = k_is_def_eq_levels(lvls_a, lvls_b);
+                    match lvls_eq {
+                      1 => k_is_def_eq_spine(sp_a, sp_b, depth, top, nat_idx, str_idx),
+                      0 => 0,
+                    },
+                  0 => 0,
+                },
+              _ => k_lazy_delta(a, b, depth, top, nat_idx, str_idx),
+            },
+
+          KValNode.Quot(idx_a, &lvls_a, &sp_a) =>
+            match load(b) {
+              KValNode.Quot(idx_b, &lvls_b, &sp_b) =>
+                let same_idx = eq_zero(idx_a - idx_b);
+                match same_idx {
+                  1 =>
+                    let lvls_eq = k_is_def_eq_levels(lvls_a, lvls_b);
+                    match lvls_eq {
+                      1 => k_is_def_eq_spine(sp_a, sp_b, depth, top, nat_idx, str_idx),
+                      0 => 0,
+                    },
+                  0 => 0,
+                },
+              _ => k_lazy_delta(a, b, depth, top, nat_idx, str_idx),
+            },
+
+          KValNode.Induct(idx_a, &lvls_a, &sp_a) =>
+            match load(b) {
+              KValNode.Induct(idx_b, &lvls_b, &sp_b) =>
+                let same_idx = eq_zero(idx_a - idx_b);
+                match same_idx {
+                  1 =>
+                    let lvls_eq = k_is_def_eq_levels(lvls_a, lvls_b);
+                    match lvls_eq {
+                      1 => k_is_def_eq_spine(sp_a, sp_b, depth, top, nat_idx, str_idx),
+                      0 => 0,
+                    },
+                  0 => 0,
+                },
+              _ => k_lazy_delta(a, b, depth, top, nat_idx, str_idx),
+            },
+
+          KValNode.Rec(idx_a, &lvls_a, &sp_a) =>
+            match load(b) {
+              KValNode.Rec(idx_b, &lvls_b, &sp_b) =>
+                let same_idx = eq_zero(idx_a - idx_b);
+                match same_idx {
+                  1 =>
+                    let lvls_eq = k_is_def_eq_levels(lvls_a, lvls_b);
+                    match lvls_eq {
+                      1 => k_is_def_eq_spine(sp_a, sp_b, depth, top, nat_idx, str_idx),
+                      0 => 0,
+                    },
+                  0 => 0,
                 },
               _ => k_lazy_delta(a, b, depth, top, nat_idx, str_idx),
             },
@@ -1619,7 +1814,19 @@ def kernel := ⟦
                 let env_b2 = List.Cons(fvar, store(env_b));
                 let vb = k_eval(body_b, env_b2, top);
                 k_is_def_eq(va, vb, depth + 1, top, nat_idx, str_idx),
-              KValNode.Const(_, _, _) =>
+              KValNode.Axiom(_, _, _) =>
+                k_lazy_delta(a, b, depth, top, nat_idx, str_idx),
+              KValNode.Defn(_, _, _) =>
+                k_lazy_delta(a, b, depth, top, nat_idx, str_idx),
+              KValNode.Thm(_, _, _) =>
+                k_lazy_delta(a, b, depth, top, nat_idx, str_idx),
+              KValNode.Opaque(_, _, _) =>
+                k_lazy_delta(a, b, depth, top, nat_idx, str_idx),
+              KValNode.Quot(_, _, _) =>
+                k_lazy_delta(a, b, depth, top, nat_idx, str_idx),
+              KValNode.Induct(_, _, _) =>
+                k_lazy_delta(a, b, depth, top, nat_idx, str_idx),
+              KValNode.Rec(_, _, _) =>
                 k_lazy_delta(a, b, depth, top, nat_idx, str_idx),
               _ => 0,
             },
@@ -1685,18 +1892,21 @@ def kernel := ⟦
   -- returns the original value if it is opaque or not a definition
   fn try_delta_unfold(v: KVal, top: List‹&KConstantInfo›) -> KVal {
     match load(v) {
-      KValNode.Const(idx, &lvls, &spine) =>
+      KValNode.Defn(idx, &lvls, &spine) =>
         let ci = load(list_lookup(top, idx));
         match ci {
           KConstantInfo.Defn(_, _, &value, _) =>
             let body = expr_inst_levels(value, lvls);
             let val = k_eval(body, List.Nil, top);
             k_apply_spine(val, spine, top),
+        },
+      KValNode.Thm(idx, &lvls, &spine) =>
+        let ci = load(list_lookup(top, idx));
+        match ci {
           KConstantInfo.Thm(_, _, &value) =>
             let body = expr_inst_levels(value, lvls);
             let val = k_eval(body, List.Nil, top);
             k_apply_spine(val, spine, top),
-          _ => v,
         },
       _ => v,
     }
@@ -1705,9 +1915,14 @@ def kernel := ⟦
   -- Check whether delta unfolding made progress (i.e., the head constant changed)
   fn delta_changed(before: KVal, after: KVal) -> G {
     match load(before) {
-      KValNode.Const(idx_a, _, _) =>
+      KValNode.Defn(idx_a, _, _) =>
         match load(after) {
-          KValNode.Const(idx_b, _, _) => 1 - eq_zero(idx_a - idx_b),
+          KValNode.Defn(idx_b, _, _) => 1 - eq_zero(idx_a - idx_b),
+          _ => 1,
+        },
+      KValNode.Thm(idx_a, _, _) =>
+        match load(after) {
+          KValNode.Thm(idx_b, _, _) => 1 - eq_zero(idx_a - idx_b),
           _ => 1,
         },
       _ => 0,

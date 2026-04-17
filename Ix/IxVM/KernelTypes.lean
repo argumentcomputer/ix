@@ -61,7 +61,13 @@ def kernelTypes := ⟦
     Pi(KVal, KExpr, &KValEnv),
     Ctor(G, &List‹&KLevel›, G, &List‹KVal›),
     FVar(G, KVal, &List‹KVal›),
-    Const(G, &List‹&KLevel›, &List‹KVal›),
+    Axiom(G, &List‹&KLevel›, &List‹KVal›),
+    Defn(G, &List‹&KLevel›, &List‹KVal›),
+    Thm(G, &List‹&KLevel›, &List‹KVal›),
+    Opaque(G, &List‹&KLevel›, &List‹KVal›),
+    Quot(G, &List‹&KLevel›, &List‹KVal›),
+    Induct(G, &List‹&KLevel›, &List‹KVal›),
+    Rec(G, &List‹&KLevel›, &List‹KVal›),
     Proj(G, G, KVal, &List‹KVal›),
     Thunk(KExpr, &KValEnv)
   }
