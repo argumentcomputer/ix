@@ -213,10 +213,9 @@ def ingress := ⟦
                             match bi {
                               ConstantInfo.Muts(&members) =>
                                 let nctors = count_block_ctors(members);
-                                let is_match = eq_zero(nctors - nrules);
-                                match is_match {
-                                  1 => block_addr,
-                                  0 => find_matching_block_addr(rest, all_addrs, nrules),
+                                match nctors - nrules {
+                                  0 => block_addr,
+                                  _ => find_matching_block_addr(rest, all_addrs, nrules),
                                 },
                               _ => find_matching_block_addr(rest, all_addrs, nrules),
                             },

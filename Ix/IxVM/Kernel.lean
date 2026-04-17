@@ -77,10 +77,9 @@ def kernel := ⟦
       List.Cons(&rule, &rest) =>
         match rule {
           KRecRule.Mk(idx, nf, &rhs) =>
-            let found = eq_zero(idx - ctor_idx);
-            match found {
-              1 => Option.Some(store(KRecRule.Mk(idx, nf, store(rhs)))),
-              0 => rec_rule_try_find(rest, ctor_idx),
+            match idx - ctor_idx {
+              0 => Option.Some(store(KRecRule.Mk(idx, nf, store(rhs)))),
+              _ => rec_rule_try_find(rest, ctor_idx),
             },
         },
     }
@@ -91,10 +90,9 @@ def kernel := ⟦
       List.Cons(&rule, &rest) =>
         match rule {
           KRecRule.Mk(idx, nf, &rhs) =>
-            let found = eq_zero(idx - ctor_idx);
-            match found {
-              1 => KRecRule.Mk(idx, nf, store(rhs)),
-              0 => rec_rule_find(rest, ctor_idx),
+            match idx - ctor_idx {
+              0 => KRecRule.Mk(idx, nf, store(rhs)),
+              _ => rec_rule_find(rest, ctor_idx),
             },
         },
     }
@@ -247,10 +245,9 @@ def kernel := ⟦
     match l {
       KLevel.Zero => KLevel.Zero,
       KLevel.Param(i) =>
-        let eq = eq_zero(i - p);
-        match eq {
-          1 => repl,
-          0 => KLevel.Param(i),
+        match i - p {
+          0 => repl,
+          _ => KLevel.Param(i),
         },
       KLevel.Succ(&a) =>
         KLevel.Succ(store(level_subst_reduce(a, p, repl))),
@@ -676,10 +673,9 @@ def kernel := ⟦
       KConstantInfo.Rec(_, _, nparams, nindices, nmotives, nminors, &rules, k_flag, _) =>
         let maj_idx = nparams + nmotives + nminors + nindices;
         let spine_len = list_length(spine);
-        let not_have_major = eq_zero(spine_len - maj_idx);
-        match not_have_major {
-          1 => store(KValNode.Rec(idx, store(lvls), store(spine))),
-          0 =>
+        match spine_len - maj_idx {
+          0 => store(KValNode.Rec(idx, store(lvls), store(spine))),
+          _ =>
             let major_raw = list_lookup(spine, maj_idx);
             let major = k_whnf(major_raw, top);
             match load(major) {
@@ -781,10 +777,9 @@ def kernel := ⟦
   fn k_try_quot_reduction(idx: G, lvls: List‹&KLevel›, spine: List‹KVal›,
       reduce_size: G, f_pos: G, top: List‹&KConstantInfo›) -> KVal {
     let spine_len = list_length(spine);
-    let not_enough = eq_zero(spine_len - reduce_size);
-    match not_enough {
-      1 => store(KValNode.Quot(idx, store(lvls), store(spine))),
-      0 =>
+    match spine_len - reduce_size {
+      0 => store(KValNode.Quot(idx, store(lvls), store(spine))),
+      _ =>
         -- Force and WHNF the major arg (last of the reduce_size args)
         let major_idx = reduce_size - 1;
         let major_raw = list_lookup(spine, major_idx);
@@ -800,10 +795,9 @@ def kernel := ⟦
                     -- mk_spine should have >= 3 args: [α, r, a]
                     -- The quotient value is the last element
                     let mk_len = list_length(mk_spine);
-                    let no_args = eq_zero(mk_len - 3);
-                    match no_args {
-                      1 => store(KValNode.Quot(idx, store(lvls), store(spine))),
-                      0 =>
+                    match mk_len - 3 {
+                      0 => store(KValNode.Quot(idx, store(lvls), store(spine))),
+                      _ =>
                         let quot_val_idx = mk_len - 1;
                         let quot_val = list_lookup(mk_spine, quot_val_idx);
                         -- Apply f (at f_pos) to the quotient value
@@ -1345,11 +1339,10 @@ def kernel := ⟦
             match ind_ci {
               KConstantInfo.Induct(_, _, _, _, &ctor_indices, _, _, _) =>
                 let num_ctors = list_length(ctor_indices);
-                let is_single = eq_zero(num_ctors - 1);
-                match is_single {
-                  0 => 0,
-                  1 =>
+                match num_ctors - 1 {
+                  0 =>
                     eta_struct_fields(t, spine, nparams, induct_idx, 0, num_fields, depth, top, nat_idx, str_idx),
+                  _ => 0,
                 },
               _ => 0,
             },
@@ -1562,10 +1555,8 @@ def kernel := ⟦
     match lit {
       KLiteral.Nat(&n) =>
         let induct_idx = ctor_induct_idx(ctor_idx, top);
-        let is_nat = eq_zero(induct_idx - nat_idx);
-        match is_nat {
-          0 => 0,
-          1 =>
+        match induct_idx - nat_idx {
+          0 =>
             let nfields = ctor_num_fields(ctor_idx, top);
             let is_zero = klimbs_is_zero(n);
             match is_zero {
@@ -1574,15 +1565,15 @@ def kernel := ⟦
                 eq_zero(nfields),
               0 =>
                 -- Lit(n+1) == Ctor if ctor has 1 field and that field == Lit(n)
-                let has_one = eq_zero(nfields - 1);
-                match has_one {
-                  0 => 0,
-                  1 =>
+                match nfields - 1 {
+                  0 =>
                     let pred_val = list_lookup(ctor_spine, nparams);
                     let pred_lit = store(KValNode.Lit(KLiteral.Nat(store(klimbs_pred(n)))));
                     k_is_def_eq(pred_lit, pred_val, depth, top, nat_idx, str_idx),
+                  _ => 0,
                 },
             },
+          _ => 0,
         },
       KLiteral.Str(_) => 0,
     }
@@ -1611,10 +1602,9 @@ def kernel := ⟦
           KValNode.FVar(lvl_a, _, &sp_a) =>
             match load(b) {
               KValNode.FVar(lvl_b, _, &sp_b) =>
-                let same_lvl = eq_zero(lvl_a - lvl_b);
-                match same_lvl {
-                  1 => k_is_def_eq_spine(sp_a, sp_b, depth, top, nat_idx, str_idx),
-                  0 => 0,
+                match lvl_a - lvl_b {
+                  0 => k_is_def_eq_spine(sp_a, sp_b, depth, top, nat_idx, str_idx),
+                  _ => 0,
                 },
               _ => 0,
             },
@@ -1622,15 +1612,14 @@ def kernel := ⟦
           KValNode.Axiom(idx_a, &lvls_a, &sp_a) =>
             match load(b) {
               KValNode.Axiom(idx_b, &lvls_b, &sp_b) =>
-                let same_idx = eq_zero(idx_a - idx_b);
-                match same_idx {
-                  1 =>
+                match idx_a - idx_b {
+                  0 =>
                     let lvls_eq = k_is_def_eq_levels(lvls_a, lvls_b);
                     match lvls_eq {
                       1 => k_is_def_eq_spine(sp_a, sp_b, depth, top, nat_idx, str_idx),
                       0 => 0,
                     },
-                  0 => 0,
+                  _ => 0,
                 },
               _ => k_lazy_delta(a, b, depth, top, nat_idx, str_idx),
             },
@@ -1638,15 +1627,14 @@ def kernel := ⟦
           KValNode.Defn(idx_a, &lvls_a, &sp_a) =>
             match load(b) {
               KValNode.Defn(idx_b, &lvls_b, &sp_b) =>
-                let same_idx = eq_zero(idx_a - idx_b);
-                match same_idx {
-                  1 =>
+                match idx_a - idx_b {
+                  0 =>
                     let lvls_eq = k_is_def_eq_levels(lvls_a, lvls_b);
                     match lvls_eq {
                       1 => k_is_def_eq_spine(sp_a, sp_b, depth, top, nat_idx, str_idx),
                       0 => 0,
                     },
-                  0 => k_lazy_delta(a, b, depth, top, nat_idx, str_idx),
+                  _ => k_lazy_delta(a, b, depth, top, nat_idx, str_idx),
                 },
               _ => k_lazy_delta(a, b, depth, top, nat_idx, str_idx),
             },
@@ -1654,15 +1642,14 @@ def kernel := ⟦
           KValNode.Thm(idx_a, &lvls_a, &sp_a) =>
             match load(b) {
               KValNode.Thm(idx_b, &lvls_b, &sp_b) =>
-                let same_idx = eq_zero(idx_a - idx_b);
-                match same_idx {
-                  1 =>
+                match idx_a - idx_b {
+                  0 =>
                     let lvls_eq = k_is_def_eq_levels(lvls_a, lvls_b);
                     match lvls_eq {
                       1 => k_is_def_eq_spine(sp_a, sp_b, depth, top, nat_idx, str_idx),
                       0 => 0,
                     },
-                  0 => k_lazy_delta(a, b, depth, top, nat_idx, str_idx),
+                  _ => k_lazy_delta(a, b, depth, top, nat_idx, str_idx),
                 },
               _ => k_lazy_delta(a, b, depth, top, nat_idx, str_idx),
             },
@@ -1670,15 +1657,14 @@ def kernel := ⟦
           KValNode.Opaque(idx_a, &lvls_a, &sp_a) =>
             match load(b) {
               KValNode.Opaque(idx_b, &lvls_b, &sp_b) =>
-                let same_idx = eq_zero(idx_a - idx_b);
-                match same_idx {
-                  1 =>
+                match idx_a - idx_b {
+                  0 =>
                     let lvls_eq = k_is_def_eq_levels(lvls_a, lvls_b);
                     match lvls_eq {
                       1 => k_is_def_eq_spine(sp_a, sp_b, depth, top, nat_idx, str_idx),
                       0 => 0,
                     },
-                  0 => 0,
+                  _ => 0,
                 },
               _ => k_lazy_delta(a, b, depth, top, nat_idx, str_idx),
             },
@@ -1686,15 +1672,14 @@ def kernel := ⟦
           KValNode.Quot(idx_a, &lvls_a, &sp_a) =>
             match load(b) {
               KValNode.Quot(idx_b, &lvls_b, &sp_b) =>
-                let same_idx = eq_zero(idx_a - idx_b);
-                match same_idx {
-                  1 =>
+                match idx_a - idx_b {
+                  0 =>
                     let lvls_eq = k_is_def_eq_levels(lvls_a, lvls_b);
                     match lvls_eq {
                       1 => k_is_def_eq_spine(sp_a, sp_b, depth, top, nat_idx, str_idx),
                       0 => 0,
                     },
-                  0 => 0,
+                  _ => 0,
                 },
               _ => k_lazy_delta(a, b, depth, top, nat_idx, str_idx),
             },
@@ -1702,15 +1687,14 @@ def kernel := ⟦
           KValNode.Induct(idx_a, &lvls_a, &sp_a) =>
             match load(b) {
               KValNode.Induct(idx_b, &lvls_b, &sp_b) =>
-                let same_idx = eq_zero(idx_a - idx_b);
-                match same_idx {
-                  1 =>
+                match idx_a - idx_b {
+                  0 =>
                     let lvls_eq = k_is_def_eq_levels(lvls_a, lvls_b);
                     match lvls_eq {
                       1 => k_is_def_eq_spine(sp_a, sp_b, depth, top, nat_idx, str_idx),
                       0 => 0,
                     },
-                  0 => 0,
+                  _ => 0,
                 },
               _ => k_lazy_delta(a, b, depth, top, nat_idx, str_idx),
             },
@@ -1718,15 +1702,14 @@ def kernel := ⟦
           KValNode.Rec(idx_a, &lvls_a, &sp_a) =>
             match load(b) {
               KValNode.Rec(idx_b, &lvls_b, &sp_b) =>
-                let same_idx = eq_zero(idx_a - idx_b);
-                match same_idx {
-                  1 =>
+                match idx_a - idx_b {
+                  0 =>
                     let lvls_eq = k_is_def_eq_levels(lvls_a, lvls_b);
                     match lvls_eq {
                       1 => k_is_def_eq_spine(sp_a, sp_b, depth, top, nat_idx, str_idx),
                       0 => 0,
                     },
-                  0 => 0,
+                  _ => 0,
                 },
               _ => k_lazy_delta(a, b, depth, top, nat_idx, str_idx),
             },
@@ -1734,15 +1717,14 @@ def kernel := ⟦
           KValNode.Ctor(idx_a, &lvls_a, nparams_a, &sp_a) =>
             match load(b) {
               KValNode.Ctor(idx_b, &lvls_b, _, &sp_b) =>
-                let same_idx = eq_zero(idx_a - idx_b);
-                match same_idx {
-                  1 =>
+                match idx_a - idx_b {
+                  0 =>
                     let lvls_eq = k_is_def_eq_levels(lvls_a, lvls_b);
                     match lvls_eq {
                       1 => k_is_def_eq_spine(sp_a, sp_b, depth, top, nat_idx, str_idx),
                       0 => 0,
                     },
-                  0 => 0,
+                  _ => 0,
                 },
               KValNode.Lit(lb) =>
                 nat_lit_eq_ctor(lb, idx_a, nparams_a, sp_a, depth, top, nat_idx, str_idx),
