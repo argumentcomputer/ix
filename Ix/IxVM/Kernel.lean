@@ -759,7 +759,7 @@ def kernel := ⟦
             match mk_ci {
               KConstantInfo.Quot(_, _, mk_kind) =>
                 match mk_kind {
-                  KQuotKind.Ctor =>
+                  QuotKind.Ctor =>
                     -- mk_spine should have >= 3 args: [α, r, a]
                     -- The quotient value is the last element
                     let mk_len = list_length(mk_spine);
@@ -847,9 +847,9 @@ def kernel := ⟦
                   -- Reduces to: f a extra...
                   KConstantInfo.Quot(_, _, kind) =>
                     match kind {
-                      KQuotKind.Lift =>
+                      QuotKind.Lift =>
                         k_try_quot_reduction(idx2, lvls2, spine2, 6, 3, top),
-                      KQuotKind.Ind =>
+                      QuotKind.Ind =>
                         k_try_quot_reduction(idx2, lvls2, spine2, 5, 3, top),
                       _ => result,
                     },

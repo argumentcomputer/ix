@@ -82,27 +82,6 @@ def kernelTypes := ⟦
   }
 
   -- ============================================================================
-  -- Definition Safety
-  -- ============================================================================
-
-  enum KSafety {
-    Unsafe,
-    Safe,
-    Partial
-  }
-
-  -- ============================================================================
-  -- Quotient Kind
-  -- ============================================================================
-
-  enum KQuotKind {
-    Typ,
-    Ctor,
-    Lift,
-    Ind
-  }
-
-  -- ============================================================================
   -- Recursor Rule: (ctor_const_idx, num_fields, rhs)
   -- ============================================================================
 
@@ -128,10 +107,10 @@ def kernelTypes := ⟦
 
   enum KConstantInfo {
     Axiom(G, &KExpr, G),
-    Defn(G, &KExpr, &KExpr, KHints, KSafety),
+    Defn(G, &KExpr, &KExpr, KHints, DefinitionSafety),
     Thm(G, &KExpr, &KExpr),
     Opaque(G, &KExpr, &KExpr, G),
-    Quot(G, &KExpr, KQuotKind),
+    Quot(G, &KExpr, QuotKind),
     Induct(G, &KExpr, G, G, &List‹G›, G, G, G),
     Ctor(G, &KExpr, G, G, G, G, G),
     Rec(G, &KExpr, G, G, G, G, &List‹&KRecRule›, G, G)

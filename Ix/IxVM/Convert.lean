@@ -210,27 +210,6 @@ def convert := ⟦
   }
 
   -- ============================================================================
-  -- Enum conversions
-  -- ============================================================================
-
-  fn convert_safety(s: DefinitionSafety) -> KSafety {
-    match s {
-      DefinitionSafety.Unsafe => KSafety.Unsafe,
-      DefinitionSafety.Safe => KSafety.Safe,
-      DefinitionSafety.Partial => KSafety.Partial,
-    }
-  }
-
-  fn convert_quot_kind(k: QuotKind) -> KQuotKind {
-    match k {
-      QuotKind.Typ => KQuotKind.Typ,
-      QuotKind.Ctor => KQuotKind.Ctor,
-      QuotKind.Lift => KQuotKind.Lift,
-      QuotKind.Ind => KQuotKind.Ind,
-    }
-  }
-
-  -- ============================================================================
   -- Recursor rule conversion
   -- ============================================================================
 
@@ -269,7 +248,7 @@ def convert := ⟦
         let kval = ctx_convert_expr(value, ctx);
         match kind {
           DefKind.Definition =>
-            KConstantInfo.Defn(flatten_u64(lvls), store(ktyp), store(kval), hints, convert_safety(safety)),
+            KConstantInfo.Defn(flatten_u64(lvls), store(ktyp), store(kval), hints, safety),
           DefKind.Opaque =>
             match safety {
               DefinitionSafety.Unsafe =>
@@ -295,7 +274,7 @@ def convert := ⟦
     match q {
       Quotient.Mk(kind, lvls, &typ) =>
         let ktyp = ctx_convert_expr(typ, ctx);
-        KConstantInfo.Quot(flatten_u64(lvls), store(ktyp), convert_quot_kind(kind)),
+        KConstantInfo.Quot(flatten_u64(lvls), store(ktyp), kind),
     }
   }
 
