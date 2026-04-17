@@ -186,3 +186,4 @@ script "build-all" (args) := do
   return 0
 
 end Scripts
+-- Test
