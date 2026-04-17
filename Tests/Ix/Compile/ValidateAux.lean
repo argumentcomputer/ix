@@ -16,6 +16,7 @@
 import Ix.Common
 import Ix.Meta
 import Tests.Ix.Compile.Mutual
+import Lean
 
 /-- Collect the transitive closure of constants referenced by a set of seed names. -/
 partial def collectDeps (env : Lean.Environment) (seeds : List Lean.Name)
@@ -67,7 +68,9 @@ def runCompileValidateAux (env : Lean.Environment) : IO UInt32 := do
   let prefixes := [
     `Tests.Ix.Compile.Mutual,
     `Init,
-    `_private.Init
+    `_private.Init,
+    `State,
+    `Lean
   ]
   let mut seeds := env.constants.toList.filterMap fun (n, _) =>
     if prefixes.any (·.isPrefixOf n) then some n else none

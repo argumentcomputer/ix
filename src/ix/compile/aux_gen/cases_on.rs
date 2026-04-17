@@ -10,8 +10,6 @@
 //!
 //! Follows `refs/lean4/src/library/constructions/cases_on.cpp`.
 
-use std::sync::Arc;
-
 use crate::ix::compile::aux_gen::AuxDef;
 use crate::ix::env::{
   BinderInfo, ConstantInfo, Env as LeanEnv, Expr as LeanExpr, ExprData, Level,
@@ -40,37 +38,13 @@ fn mk_pi_unit(e: &LeanExpr, unit: &LeanExpr) -> LeanExpr {
   }
 }
 
-/// Build the unit TYPE at the given elimination level.
-///
-/// Matches Lean's `mk_unit(elim_lvl)` in `cases_on.cpp`:
-/// - `elim_to_prop = true` (elim_lvl = 0): returns `True` (Prop unit)
-/// - `elim_to_prop = false`: returns `PUnit.{elim_lvl}` (Type unit)
-fn _mk_unit_type(elim_lvl: &Level, elim_to_prop: bool) -> LeanExpr {
-  if elim_to_prop {
-    mk_const(&Name::str(Name::anon(), "True".to_string()), &[])
-  } else {
-    punit_const(elim_lvl)
-  }
-}
-
-/// Build the unit VALUE at the given elimination level.
-///
-/// Matches Lean's `mk_unit_mk(elim_lvl)` / `star` in `cases_on.cpp`:
-/// - `elim_to_prop = true` (elim_lvl = 0): returns `True.intro`
-/// - `elim_to_prop = false`: returns `PUnit.unit.{elim_lvl}`
-fn _mk_unit_val(elim_lvl: &Level, elim_to_prop: bool) -> LeanExpr {
-  if elim_to_prop {
-    mk_const(
-      &Name::str(
-        Name::str(Name::anon(), "True".to_string()),
-        "intro".to_string(),
-      ),
-      &[],
-    )
-  } else {
-    mk_punit_unit(elim_lvl)
-  }
-}
+// NOTE: `_mk_unit_type` / `_mk_unit_val` (Prop-case helpers that would
+// use `True` / `True.intro` when `elim_to_prop` holds) were removed in
+// Round 4 of the adversarial review cleanup. They were documentation of
+// how a branching `mk_unit` *could* be written, but the live pipeline
+// always uses `PUnit.{l}` and `PUnit.unit.{l}` via `punit_const` /
+// `mk_punit_unit` — matching Lean's actual `cases_on.cpp:378`. If a Prop
+// branching helper is ever needed, resurrect from git history.
 
 /// Generate a `.casesOn` definition from a canonical `.rec`.
 ///
@@ -82,7 +56,7 @@ fn _mk_unit_val(elim_lvl: &Level, elim_to_prop: bool) -> LeanExpr {
 pub(crate) fn generate_cases_on(
   name: &Name,
   rec_val: &RecursorVal,
-  lean_env: &Arc<LeanEnv>,
+  lean_env: &LeanEnv,
 ) -> Option<AuxDef> {
   let n_params = rec_val.num_params.to_u64()? as usize;
   let n_motives = rec_val.num_motives.to_u64()? as usize;
@@ -101,10 +75,10 @@ pub(crate) fn generate_cases_on(
   let target_idx = rec_val.all.iter().position(|n| *n == target_ind)?;
 
   // Determine elimination level
-  let ind_n_lparams = lean_env.get(&target_ind).map_or(0, |ci| match ci {
-    ConstantInfo::InductInfo(v) => v.cnst.level_params.len(),
-    _ => 0,
-  });
+  let ind_n_lparams = match lean_env.get(&target_ind).as_deref() {
+    Some(ConstantInfo::InductInfo(v)) => v.cnst.level_params.len(),
+    _ => return None,
+  };
   let elim_to_prop = rec_val.cnst.level_params.len() == ind_n_lparams;
   let elim_lvl = if elim_to_prop {
     Level::zero()
@@ -116,7 +90,7 @@ pub(crate) fn generate_cases_on(
   let ctor_counts: Vec<usize> = rec_val
     .all
     .iter()
-    .map(|ind_name| match lean_env.get(ind_name) {
+    .map(|ind_name| match lean_env.get(ind_name).as_deref() {
       Some(ConstantInfo::InductInfo(v)) => v.ctors.len(),
       _ => 0,
     })
@@ -199,8 +173,6 @@ pub(crate) fn generate_cases_on(
   // - If non-target: rec arg = λ (all_fields), PUnit.unit
   struct MinorInfo {
     rec_arg: LeanExpr,
-    /// If target: the casesOn minor FVar (for building wrapper)
-    _co_minor_fvar: Option<LeanExpr>,
   }
 
   let mut minor_infos: Vec<MinorInfo> = Vec::new();
@@ -259,7 +231,7 @@ pub(crate) fn generate_cases_on(
       let wrapper_body = mk_app_n(co_fv.clone(), &non_ih_fvars);
       let rec_arg = mk_lambda(wrapper_body, &wrapper_decls);
 
-      minor_infos.push(MinorInfo { rec_arg, _co_minor_fvar: Some(co_fv) });
+      minor_infos.push(MinorInfo { rec_arg });
     } else {
       // Non-target minor: rec arg = λ (all_fields), PUnit.unit
       // IH fields targeting non-target motives need mk_pi_unit wrapping
@@ -284,7 +256,7 @@ pub(crate) fn generate_cases_on(
         })
         .collect();
       let rec_arg = mk_lambda(mk_punit_unit(&elim_lvl), &wrapped_decls);
-      minor_infos.push(MinorInfo { rec_arg, _co_minor_fvar: None });
+      minor_infos.push(MinorInfo { rec_arg });
     }
   }
 
@@ -379,7 +351,7 @@ fn get_minor_name(
   lean_env: &LeanEnv,
 ) -> Name {
   let ctor_idx = minor_idx - target_range.start;
-  if let Some(ConstantInfo::InductInfo(v)) = lean_env.get(target_ind)
+  if let Some(ConstantInfo::InductInfo(v)) = lean_env.get(target_ind).as_deref()
     && let Some(ctor_name) = v.ctors.get(ctor_idx)
   {
     // Strip prefix to get suffix (e.g., "A.mk" → "mk")

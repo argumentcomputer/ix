@@ -10,6 +10,7 @@
 use rustc_hash::FxHashMap;
 
 use crate::ix::address::Address;
+use crate::ix::compile::nat_conv::{nat_to_u64, nat_to_usize};
 use crate::ix::env::{
   BinderInfo, Expr as LeanExpr, ExprData, Level, LevelData, Name,
 };
@@ -98,7 +99,7 @@ pub(super) fn abstract_fvar(
   match expr.as_data() {
     ExprData::Fvar(n, _) if n == fvar_name => LeanExpr::bvar(Nat::from(depth)),
     ExprData::Bvar(idx, _) => {
-      let i = idx.to_u64().unwrap_or(0);
+      let i = nat_to_u64(idx);
       if i >= depth { LeanExpr::bvar(Nat::from(i + 1)) } else { expr.clone() }
     },
     ExprData::App(f, a, _) => LeanExpr::app(
@@ -247,7 +248,7 @@ pub(super) fn batch_abstract(
       }
     },
     ExprData::Bvar(idx, _) => {
-      let i = idx.to_u64().unwrap_or(0);
+      let i = nat_to_u64(idx);
       if i >= internal_depth {
         // Free BVar: shift up by scope_depth to make room for our binders.
         LeanExpr::bvar(Nat::from(i + scope_depth as u64))
@@ -301,9 +302,8 @@ pub(super) fn batch_abstract(
 /// BVar(i>0) by 1 (removing a binder level). The replacement is NOT
 /// shifted — it's inserted as-is at the substitution depth.
 ///
-/// This differs from `subst_bvar0` which shifts the replacement by the
-/// current depth. `instantiate1` is used when peeling forall binders
-/// during recursor construction (matching Lean C++ and lean4lean).
+/// `instantiate1` is used when peeling forall binders during recursor
+/// construction (matching Lean C++ and lean4lean).
 pub(super) fn instantiate1(
   body: &LeanExpr,
   replacement: &LeanExpr,
@@ -318,7 +318,7 @@ pub(super) fn instantiate1_at(
 ) -> LeanExpr {
   match body.as_data() {
     ExprData::Bvar(idx, _) => {
-      let i = idx.to_u64().unwrap_or(0);
+      let i = nat_to_u64(idx);
       if i == depth {
         replacement.clone()
       } else if i > depth {
@@ -362,83 +362,144 @@ pub(super) fn instantiate1_at(
   }
 }
 
-/// Substitute BVar(depth) with `replacement`, shifting the replacement
-/// by the current depth. Decrements BVar(i > depth) by 1.
-#[allow(dead_code)]
-pub(super) fn subst_at(
+/// Multi-argument reverse instantiation: replace BVar(0)..BVar(n-1) with
+/// `args[0]..args[n-1]` simultaneously, and decrement BVar(i >= n) by n.
+///
+/// Matches Lean C++ `instantiate_rev(e, n, subst)`. At binder depth `d`,
+/// BVar(d + i) for i < n becomes `shift_vars(args[i], d, 0)`, and
+/// BVar(d + i) for i >= n becomes BVar(d + i - n).
+pub(super) fn instantiate_rev(body: &LeanExpr, args: &[LeanExpr]) -> LeanExpr {
+  if args.is_empty() {
+    return body.clone();
+  }
+  instantiate_rev_at(body, args, 0)
+}
+
+fn instantiate_rev_at(
   body: &LeanExpr,
-  replacement: &LeanExpr,
+  args: &[LeanExpr],
   depth: u64,
 ) -> LeanExpr {
+  let n = args.len() as u64;
   match body.as_data() {
     ExprData::Bvar(idx, _) => {
-      let i = idx.to_u64().unwrap_or(0);
-      if i == depth {
-        shift_vars(replacement, depth as usize, 0)
-      } else if i > depth {
-        LeanExpr::bvar(Nat::from(i - 1))
+      let i = nat_to_u64(idx);
+      if i >= depth {
+        let ridx = i - depth;
+        if ridx < n {
+          // Replace with args[ridx], shifted up by depth for the binders we're under.
+          shift_vars(&args[ridx as usize], depth as usize, 0)
+        } else {
+          // Free BVar past our substitution range: decrement by n.
+          LeanExpr::bvar(Nat::from(i - n))
+        }
       } else {
+        // Bound by an expression-internal binder — unchanged.
         body.clone()
       }
     },
     ExprData::App(f, a, _) => LeanExpr::app(
-      subst_at(f, replacement, depth),
-      subst_at(a, replacement, depth),
+      instantiate_rev_at(f, args, depth),
+      instantiate_rev_at(a, args, depth),
     ),
-    ExprData::Lam(n, t, b, bi, _) => LeanExpr::lam(
-      n.clone(),
-      subst_at(t, replacement, depth),
-      subst_at(b, replacement, depth + 1),
+    ExprData::Lam(name, t, b, bi, _) => LeanExpr::lam(
+      name.clone(),
+      instantiate_rev_at(t, args, depth),
+      instantiate_rev_at(b, args, depth + 1),
       bi.clone(),
     ),
-    ExprData::ForallE(n, t, b, bi, _) => LeanExpr::all(
-      n.clone(),
-      subst_at(t, replacement, depth),
-      subst_at(b, replacement, depth + 1),
+    ExprData::ForallE(name, t, b, bi, _) => LeanExpr::all(
+      name.clone(),
+      instantiate_rev_at(t, args, depth),
+      instantiate_rev_at(b, args, depth + 1),
       bi.clone(),
     ),
-    ExprData::LetE(n, t, v, b, nd, _) => LeanExpr::letE(
-      n.clone(),
-      subst_at(t, replacement, depth),
-      subst_at(v, replacement, depth),
-      subst_at(b, replacement, depth + 1),
+    ExprData::LetE(name, t, v, b, nd, _) => LeanExpr::letE(
+      name.clone(),
+      instantiate_rev_at(t, args, depth),
+      instantiate_rev_at(v, args, depth),
+      instantiate_rev_at(b, args, depth + 1),
       *nd,
     ),
-    ExprData::Proj(n, i, e, _) => {
-      LeanExpr::proj(n.clone(), i.clone(), subst_at(e, replacement, depth))
-    },
+    ExprData::Proj(name, i, e, _) => LeanExpr::proj(
+      name.clone(),
+      i.clone(),
+      instantiate_rev_at(e, args, depth),
+    ),
     ExprData::Mdata(kvs, e, _) => {
-      LeanExpr::mdata(kvs.clone(), subst_at(e, replacement, depth))
+      LeanExpr::mdata(kvs.clone(), instantiate_rev_at(e, args, depth))
     },
+    // Sort, Const, Lit, FVar, MVar — no BVars to substitute.
     _ => body.clone(),
   }
 }
 
-#[allow(dead_code)]
-pub(super) fn subst_bvar0(body: &LeanExpr, replacement: &LeanExpr) -> LeanExpr {
-  subst_at(body, replacement, 0)
+/// Peel `n` forall binders and substitute their variables with `args`.
+///
+/// Matches Lean C++ `instantiate_pi_params` (`inductive.cpp:954-960`):
+/// peel n foralls (taking just the body), then substitute all at once.
+///
+/// Equivalent to calling `instantiate1(body, args[i])` iteratively
+/// for each peeled forall, which is what our recursor builder does
+/// inline. This function packages that pattern for the expand phase.
+pub(super) fn instantiate_pi_params(
+  typ: &LeanExpr,
+  n: usize,
+  args: &[LeanExpr],
+) -> LeanExpr {
+  debug_assert!(
+    args.len() >= n,
+    "instantiate_pi_params: args.len()={} < n={}",
+    args.len(),
+    n
+  );
+  let mut cur = typ.clone();
+  for i in 0..n {
+    match cur.as_data() {
+      ExprData::ForallE(_, _, body, _, _) => {
+        cur = instantiate1(body, &args[i]);
+      },
+      _ => break,
+    }
+  }
+  cur
 }
+
+// NOTE: `subst_at` / `subst_bvar0` (shift-and-substitute-BVar-0 helpers)
+// were removed in Round 4 cleanup. They were marked `#[allow(dead_code)]`
+// and have zero callers. `instantiate1` and `instantiate_rev` cover the
+// substitution shapes the live pipeline actually uses — if a
+// shift-preserving substitution is ever needed, resurrect from git.
 
 /// Convert spec_params from BVar form to FVar form.
 ///
 /// Spec_params use BVars relative to the param context: BVar(0) is the
-/// last (innermost) param, BVar(n_params-1) is the first. We convert
-/// each BVar(i) to the corresponding param FVar by iterating
-/// `instantiate1` from innermost to outermost.
+/// last (innermost) param, BVar(n_params-1) is the first. We want
+/// `BVar(i) → param_fvars[n_params - 1 - i]` for i < n_params, and
+/// `BVar(i) → BVar(i - n_params)` for i >= n_params (a free BVar past
+/// the param context, e.g., an outer binder that's still in scope).
+///
+/// Implemented as a single `instantiate_rev` call with a reversed
+/// param vector. Earlier versions iterated `instantiate1` n times,
+/// which produced the same result for this call site's inputs (because
+/// `param_fvars` are fresh closed FVars, so the repeated decrement
+/// cascade is benign) but at `O(n · |body|)` per spec_param. The
+/// single-pass `instantiate_rev` is `O(|body|)` and clearer — it's
+/// the exact Lean idiom for this substitution shape
+/// (matches `instantiate_rev(e, n, subst)` in the C++ kernel).
+///
+/// Safety note: this relies on `param_fvars` being closed (no BVars
+/// inside). If that invariant is ever violated, per-step substitution
+/// and single-pass substitution would diverge — but `forall_telescope`
+/// guarantees fresh FVars, and FVars are by construction closed.
 pub(super) fn instantiate_spec_with_fvars(
   spec_params: &[LeanExpr],
   param_fvars: &[LeanExpr],
 ) -> Vec<LeanExpr> {
-  spec_params
-    .iter()
-    .map(|sp| {
-      let mut result = sp.clone();
-      for j in (0..param_fvars.len()).rev() {
-        result = instantiate1(&result, &param_fvars[j]);
-      }
-      result
-    })
-    .collect()
+  // Reverse once; `instantiate_rev` expects `args[i]` to replace `BVar(i)`,
+  // but our convention is `BVar(0) = innermost = param_fvars[n-1]`.
+  let reversed: Vec<LeanExpr> = param_fvars.iter().rev().cloned().collect();
+  spec_params.iter().map(|sp| instantiate_rev(sp, &reversed)).collect()
 }
 
 // =========================================================================
@@ -447,9 +508,8 @@ pub(super) fn instantiate_spec_with_fvars(
 
 /// Shift BVars UP by `amount` for BVars >= cutoff.
 ///
-/// Used in substitution helpers and during manual BVar adjustments.
-/// After full FVar conversion, this is primarily used internally by
-/// `subst_at`.
+/// Used internally by `instantiate_rev_at` when substituting args under
+/// inner binders (each args element is re-shifted by the current depth).
 pub(super) fn shift_vars(
   expr: &LeanExpr,
   amount: usize,
@@ -460,7 +520,7 @@ pub(super) fn shift_vars(
   }
   match expr.as_data() {
     ExprData::Bvar(idx, _) => {
-      let i = idx.to_u64().unwrap_or(0) as usize;
+      let i = nat_to_usize(idx);
       if i >= cutoff {
         LeanExpr::bvar(Nat::from((i + amount) as u64))
       } else {
@@ -561,7 +621,10 @@ pub(super) fn subst_level(
   match lvl.as_data() {
     LevelData::Zero(_) | LevelData::Mvar(_, _) => lvl.clone(),
     LevelData::Succ(l, _) => {
-      super::below::mk_level_succ(&subst_level(l, params, univs))
+      // Use raw Level::succ, matching Lean's Level.instantiateParams.
+      // mk_level_succ distributes Succ over Max (Succ(Max(a,b)) →
+      // Max(Succ(a),Succ(b))), but Lean preserves the factored form.
+      Level::succ(subst_level(l, params, univs))
     },
     LevelData::Max(a, b, _) => {
       Level::max(subst_level(a, params, univs), subst_level(b, params, univs))
@@ -577,6 +640,396 @@ pub(super) fn subst_level(
       }
       lvl.clone()
     },
+  }
+}
+
+// =========================================================================
+// Restore: replace auxiliary const refs with original nested expressions
+// =========================================================================
+
+/// Context for restoring auxiliary const references back to original nested
+/// inductive applications.
+///
+/// Produced by `expand_nested_block` and consumed after all auxiliary constants
+/// (rec, casesOn, below, brecOn, etc.) have been generated.
+pub(super) struct RestoreCtx {
+  /// `aux_name → nested_expr`: the original nested application with block
+  /// param FVars. Example: `"_nested.Array_1" → Array.{max u v}(Part.{u,v} fvar_α fvar_β)`
+  pub aux_to_nested: rustc_hash::FxHashMap<Name, LeanExpr>,
+  /// `aux_ctor_name → (original_ctor_name, original_ind_name)`: maps auxiliary
+  /// constructor names back to originals for prefix replacement.
+  pub aux_ctor_map: rustc_hash::FxHashMap<Name, (Name, Name)>,
+  /// `aux_rec_name → canonical_rec_name`: maps auxiliary recursor names
+  /// (e.g., `_nested.Array_1.rec`) to their canonical names (e.g., `Part.rec_1`).
+  pub aux_rec_map: rustc_hash::FxHashMap<Name, Name>,
+  /// Block-param FVars used during expansion. These are the free variables
+  /// in the `aux_to_nested` expressions.
+  pub block_param_fvars: Vec<LeanExpr>,
+  /// Number of block parameters.
+  pub n_params: usize,
+}
+
+impl RestoreCtx {
+  /// Restore a complete expression (type or value) by peeling params,
+  /// walking the body to replace aux references, and re-wrapping.
+  ///
+  /// Matches C++ `restore_nested` (`inductive.cpp:828-872`).
+  pub fn restore(&self, expr: &LeanExpr) -> LeanExpr {
+    if self.aux_to_nested.is_empty()
+      && self.aux_ctor_map.is_empty()
+      && self.aux_rec_map.is_empty()
+    {
+      return expr.clone();
+    }
+
+    // Peel n_params Pi or Lambda binders, creating fresh locals.
+    let is_pi = matches!(expr.as_data(), ExprData::ForallE(..));
+    let (as_fvars, as_decls, body) = if is_pi {
+      forall_telescope(expr, self.n_params, "rp", 0)
+    } else {
+      lambda_telescope(expr, self.n_params, "rp", 0)
+    };
+
+    // Build FVar map for block_param_fvars → BVar abstraction.
+    let bp_fvar_map: rustc_hash::FxHashMap<Name, usize> = self
+      .block_param_fvars
+      .iter()
+      .enumerate()
+      .filter_map(|(i, fv)| match fv.as_data() {
+        ExprData::Fvar(n, _) => Some((n.clone(), i)),
+        _ => None,
+      })
+      .collect();
+
+    // Walk the body, replacing aux references.
+    let restored_body = self.replace_walk(&body, &as_fvars, &bp_fvar_map);
+
+    // Re-wrap with the same binder structure.
+    if is_pi {
+      mk_forall(restored_body, &as_decls)
+    } else {
+      mk_lambda(restored_body, &as_decls)
+    }
+  }
+
+  /// Walk an expression and replace auxiliary const references.
+  fn replace_walk(
+    &self,
+    e: &LeanExpr,
+    as_fvars: &[LeanExpr],
+    bp_fvar_map: &rustc_hash::FxHashMap<Name, usize>,
+  ) -> LeanExpr {
+    // Check for bare Const matching aux_rec_map (recursor rename).
+    if let ExprData::Const(name, levels, _) = e.as_data() {
+      if let Some(new_name) = self.aux_rec_map.get(name) {
+        return LeanExpr::cnst(new_name.clone(), levels.clone());
+      }
+    }
+
+    // Check for application whose head is an aux type or aux constructor.
+    let (head, args) = decompose_apps(e);
+    if let ExprData::Const(name, levels, _) = head.as_data() {
+      // Case 1: aux type reference → replace with original nested app.
+      if let Some(nested) = self.aux_to_nested.get(name) {
+        let n = self.n_params;
+        debug_assert!(
+          args.len() >= n,
+          "restore: aux {} has {} args but n_params={}",
+          name.pretty(),
+          args.len(),
+          n,
+        );
+        // abstract(nested, block_param_fvars) → instantiate_rev(_, As)
+        let abstracted = batch_abstract(nested, bp_fvar_map, n, 0);
+        let new_t = instantiate_rev(&abstracted, as_fvars);
+        // Apply remaining args (indices past params).
+        let mut result = new_t;
+        for idx_arg in args.iter().skip(n) {
+          result = LeanExpr::app(
+            result,
+            self.replace_walk(idx_arg, as_fvars, bp_fvar_map),
+          );
+        }
+        return result;
+      }
+
+      // Case 2: aux constructor reference → rename and restore.
+      // Matches C++ restore_nested lines 852-866: look up the nested
+      // expression for the constructor's aux inductive, decompose it to
+      // get the original ind's Const (with levels), then rename the
+      // constructor and apply the original ind's params + remaining args.
+      //
+      // `aux_ctor_map` stores `(orig_ctor, aux_ind)`, so we can look up the
+      // aux inductive's nested expression in `aux_to_nested` directly — no
+      // prefix scan needed.
+      if let Some((orig_ctor, aux_ind)) = self.aux_ctor_map.get(name) {
+        if let Some(nested) = self.aux_to_nested.get(aux_ind) {
+          // nested = "OrigInd.{I_lvls} spec_params" with block_param_fvars
+          let abstracted =
+            batch_abstract(nested, bp_fvar_map, self.n_params, 0);
+          let new_nested = instantiate_rev(&abstracted, as_fvars);
+          // Decompose: head = OrigInd.{I_lvls}, args = spec_params
+          let (orig_head, orig_ind_args) = decompose_apps(&new_nested);
+          if let ExprData::Const(_, orig_levels, _) = orig_head.as_data() {
+            // Build: orig_ctor.{I_lvls} spec_params remaining_args
+            let new_fn = LeanExpr::cnst(orig_ctor.clone(), orig_levels.clone());
+            let mut result = new_fn;
+            for a in &orig_ind_args {
+              result = LeanExpr::app(result, a.clone());
+            }
+            for idx_arg in args.iter().skip(self.n_params) {
+              result = LeanExpr::app(
+                result,
+                self.replace_walk(idx_arg, as_fvars, bp_fvar_map),
+              );
+            }
+            return result;
+          }
+        }
+
+        // Fallback: just rename the const and recurse args.
+        let new_head = LeanExpr::cnst(orig_ctor.clone(), levels.clone());
+        let mut result = new_head;
+        for a in &args {
+          result =
+            LeanExpr::app(result, self.replace_walk(a, as_fvars, bp_fvar_map));
+        }
+        return result;
+      }
+
+      // Case 3: aux rec name in application position.
+      if let Some(new_name) = self.aux_rec_map.get(name) {
+        let new_head = LeanExpr::cnst(new_name.clone(), levels.clone());
+        let mut result = new_head;
+        for a in &args {
+          result =
+            LeanExpr::app(result, self.replace_walk(a, as_fvars, bp_fvar_map));
+        }
+        return result;
+      }
+    }
+
+    // No match — recurse into sub-expressions.
+    match e.as_data() {
+      ExprData::App(f, a, _) => LeanExpr::app(
+        self.replace_walk(f, as_fvars, bp_fvar_map),
+        self.replace_walk(a, as_fvars, bp_fvar_map),
+      ),
+      ExprData::Lam(n, t, b, bi, _) => LeanExpr::lam(
+        n.clone(),
+        self.replace_walk(t, as_fvars, bp_fvar_map),
+        self.replace_walk(b, as_fvars, bp_fvar_map),
+        bi.clone(),
+      ),
+      ExprData::ForallE(n, t, b, bi, _) => LeanExpr::all(
+        n.clone(),
+        self.replace_walk(t, as_fvars, bp_fvar_map),
+        self.replace_walk(b, as_fvars, bp_fvar_map),
+        bi.clone(),
+      ),
+      ExprData::LetE(n, t, v, b, nd, _) => LeanExpr::letE(
+        n.clone(),
+        self.replace_walk(t, as_fvars, bp_fvar_map),
+        self.replace_walk(v, as_fvars, bp_fvar_map),
+        self.replace_walk(b, as_fvars, bp_fvar_map),
+        *nd,
+      ),
+      ExprData::Proj(n, i, val, _) => LeanExpr::proj(
+        n.clone(),
+        i.clone(),
+        self.replace_walk(val, as_fvars, bp_fvar_map),
+      ),
+      ExprData::Mdata(md, inner, _) => LeanExpr::mdata(
+        md.clone(),
+        self.replace_walk(inner, as_fvars, bp_fvar_map),
+      ),
+      _ => e.clone(),
+    }
+  }
+}
+
+/// Open lambda binders into FVars (matching forall_telescope but for lambdas).
+pub(super) fn lambda_telescope(
+  expr: &LeanExpr,
+  n: usize,
+  prefix: &str,
+  offset: usize,
+) -> (Vec<LeanExpr>, Vec<LocalDecl>, LeanExpr) {
+  let mut fvars = Vec::new();
+  let mut decls = Vec::new();
+  let mut cur = expr.clone();
+  for i in 0..n {
+    match cur.as_data() {
+      ExprData::Lam(name, dom, body, bi, _) => {
+        let (fv_name, fv) = fresh_fvar(prefix, offset + i);
+        let clean_dom = instantiate_fvars_in_domain(dom, &fvars, &decls);
+        decls.push(LocalDecl {
+          fvar_name: fv_name,
+          binder_name: name.clone(),
+          domain: clean_dom,
+          info: bi.clone(),
+        });
+        fvars.push(fv.clone());
+        cur = instantiate1(body, &fv);
+      },
+      _ => break,
+    }
+  }
+  (fvars, decls, cur)
+}
+
+/// Instantiate FVars in a domain expression (for dependent binder domains).
+fn instantiate_fvars_in_domain(
+  dom: &LeanExpr,
+  _fvars: &[LeanExpr],
+  _decls: &[LocalDecl],
+) -> LeanExpr {
+  // Domain is already in FVar form from instantiate1 calls.
+  dom.clone()
+}
+
+// =========================================================================
+// Beta-reduction
+// =========================================================================
+
+/// Reduce all beta-redexes in an expression.
+///
+/// `App(Lam(_, _, body, _), arg)` → `instantiate1(body, arg)` (then recurse).
+///
+/// Lean's elaborator auto-reduces beta-redexes during `inferType`/`whnf`.
+/// Our FVar-based construction can leave unreduced redexes when lambda-valued
+/// spec_params (e.g., `λ _ => String` for function-typed inductive parameters)
+/// are substituted into forall bodies and later applied.
+pub(super) fn beta_reduce(expr: &LeanExpr) -> LeanExpr {
+  // Head-only beta reduction.
+  //
+  // Reduces redexes on the outer application spine only; does NOT recurse
+  // into lambda/forall/let bodies, projections, or non-head subexpressions.
+  //
+  // Lean's kernel follows the same policy when constructing recursor types
+  // for nested inductives (see `elim_nested_inductive_fn::replace_if_nested`
+  // and `restore_nested` in `refs/lean4/src/kernel/inductive.cpp`): it calls
+  // `instantiate_rev` / `mk_app` to substitute lambda-valued parameters but
+  // never beta-reduces the substituted term. The result can contain
+  // `(λ_. T) arg` in field-type positions (e.g. the `v : β k` field of
+  // `Internal.Impl.inner` when `β := λ_. PrefixTreeNode α β cmp`), and Lean
+  // preserves that shape in the stored recursor.
+  //
+  // Our earlier implementation was a full recursive walk, which eliminated
+  // those redexes and broke alpha-congruence with Lean's original recursor.
+  // Head-only reduction is sufficient for the call sites in recursor.rs —
+  // they only need to expose a top-level `ForallE` after param substitution.
+  match expr.as_data() {
+    ExprData::App(..) => {
+      // Collect the application spine, reducing redexes as they surface.
+      let mut head = expr.clone();
+      let mut args: Vec<LeanExpr> = Vec::new();
+      while let ExprData::App(f, a, _) = head.as_data() {
+        args.push(a.clone());
+        head = f.clone();
+      }
+      args.reverse();
+      // Now `head` is a non-App; try to reduce `head args[0]` into head.
+      let mut i = 0;
+      while i < args.len()
+        && let ExprData::Lam(_, _, body, _, _) = head.as_data()
+      {
+        head = instantiate1(body, &args[i]);
+        i += 1;
+      }
+      // Re-apply remaining args.
+      let mut result = head;
+      for a in &args[i..] {
+        result = LeanExpr::app(result, a.clone());
+      }
+      result
+    },
+    // Non-App: no top-level redex to reduce.
+    _ => expr.clone(),
+  }
+}
+
+// =========================================================================
+// Nested universe rewriting
+// =========================================================================
+
+/// Targeted rewrite of nested type universe levels in constructor fields.
+///
+/// Lean's kernel recomputes nested type universes from the element's sort
+/// (via `elim_nested_inductive_fn`), but the elaborator stores the original
+/// universe. For example, a constructor field `Array (Part α β)` stores
+/// `Array.{u}`, but the recursor needs `Array.{max u v}` since Part lives
+/// in `Sort (max u v)`.
+///
+/// This function walks the expression and for each application
+/// `Const(aux_name, levels) args...` where `aux_name` is an auxiliary flat
+/// member AND at least one of the first `n_params` args references a block
+/// member, rewrites the Const's levels to `occurrence_level_args`.
+///
+/// Non-nested occurrences (like `Array Nat`) are left unchanged.
+pub(super) fn rewrite_nested_const_levels(
+  expr: &LeanExpr,
+  aux_info: &std::collections::HashMap<Name, (usize, Vec<Level>)>,
+  block_names: &[Name],
+) -> LeanExpr {
+  // Try to decompose as an application of an auxiliary Const.
+  let (head, args) = decompose_apps(expr);
+  if let ExprData::Const(name, levels, _) = head.as_data() {
+    if let Some((n_params, new_levels)) = aux_info.get(name) {
+      let has_nested_ref = args
+        .iter()
+        .take(*n_params)
+        .any(|a| super::nested::expr_mentions_any_name(a, block_names));
+      if has_nested_ref && new_levels.len() == levels.len() {
+        // Rewrite head levels and recurse into args.
+        let new_head = LeanExpr::cnst(name.clone(), new_levels.clone());
+        let mut result = new_head;
+        for a in &args {
+          result = LeanExpr::app(
+            result,
+            rewrite_nested_const_levels(a, aux_info, block_names),
+          );
+        }
+        return result;
+      }
+    }
+  }
+
+  // Not a rewritable app — recurse into sub-expressions.
+  match expr.as_data() {
+    ExprData::App(f, a, _) => LeanExpr::app(
+      rewrite_nested_const_levels(f, aux_info, block_names),
+      rewrite_nested_const_levels(a, aux_info, block_names),
+    ),
+    ExprData::Lam(n, t, b, bi, _) => LeanExpr::lam(
+      n.clone(),
+      rewrite_nested_const_levels(t, aux_info, block_names),
+      rewrite_nested_const_levels(b, aux_info, block_names),
+      bi.clone(),
+    ),
+    ExprData::ForallE(n, t, b, bi, _) => LeanExpr::all(
+      n.clone(),
+      rewrite_nested_const_levels(t, aux_info, block_names),
+      rewrite_nested_const_levels(b, aux_info, block_names),
+      bi.clone(),
+    ),
+    ExprData::LetE(n, t, v, b, nd, _) => LeanExpr::letE(
+      n.clone(),
+      rewrite_nested_const_levels(t, aux_info, block_names),
+      rewrite_nested_const_levels(v, aux_info, block_names),
+      rewrite_nested_const_levels(b, aux_info, block_names),
+      *nd,
+    ),
+    ExprData::Proj(n, i, e, _) => LeanExpr::proj(
+      n.clone(),
+      i.clone(),
+      rewrite_nested_const_levels(e, aux_info, block_names),
+    ),
+    ExprData::Mdata(md, e, _) => LeanExpr::mdata(
+      md.clone(),
+      rewrite_nested_const_levels(e, aux_info, block_names),
+    ),
+    _ => expr.clone(),
   }
 }
 
@@ -821,6 +1274,15 @@ pub(crate) fn ensure_prelude_in_kenv_of(
   let punit_name = Name::str(Name::anon(), "PUnit".to_string());
   let punit_addr = resolve_lean_name_addr(&punit_name, n2a, aux_n2a);
   let punit_id = KId::new(punit_addr, punit_name.clone());
+
+  // Fast path: if PUnit is already registered as an Indc (not an Axio stub),
+  // assume PProd is too and skip redundant construction.
+  if let Some(kconst) = kctx.kenv.get(&punit_id) {
+    if matches!(kconst, KConst::Indc { .. }) {
+      return;
+    }
+  }
+
   let u_name = Name::str(Name::anon(), "u".to_string());
   {
     // PUnit.{u} : Sort u
@@ -883,9 +1345,14 @@ pub(crate) fn ensure_prelude_in_kenv_of(
     let u1 = KUniv::param(1, v_name.clone());
     let sort_u = KExpr::sort(u0.clone());
     let sort_v = KExpr::sort(u1.clone());
+    // Lean stores `max 1 u v` left-associated: max(max(1, u), v).
+    // Matching this structure is essential: after level substitution and
+    // the normalizing `Level::max` constructor (which collapses
+    // `max(a, max(b, a))` to `max(b, a)`), a right-associated
+    // `max(1, max(u, v))` produces a different tree than Lean's form.
     let max_1_u_v = KUniv::max(
-      KUniv::succ(KUniv::zero()),
-      KUniv::max(u0.clone(), u1.clone()),
+      KUniv::max(KUniv::succ(KUniv::zero()), u0.clone()),
+      u1.clone(),
     );
 
     // PProd.{u,v} : Sort u → Sort v → Sort (max 1 u v)
@@ -974,12 +1441,44 @@ pub(crate) fn ensure_prelude_in_kenv_of(
   }
 }
 
-/// Ingress a Lean constant into the given kenv so the kernel type checker
-/// can resolve it during inference. Handles all constant types: inductives
-/// (with constructors), definitions, theorems, axioms, quotients, and
-/// recursors.
+/// Ingress a **single** Lean constant into the given kenv so the kernel
+/// type checker can resolve it during inference. Handles all constant
+/// types: inductives (with their constructors, via the parent→ctor
+/// redirect), definitions, theorems, axioms, quotients, and recursors.
 ///
-/// Idempotent: skips if the constant is already loaded in `kctx.kenv`.
+/// # Contract — IMPORTANT
+///
+/// **This function does not walk the constant's dependencies.** It
+/// converts the constant's type/value expressions to `KExpr` via
+/// `to_z` and inserts the resulting `KConst` entry into `kctx.kenv`,
+/// but does not ingress constants referenced *inside* those expressions.
+///
+/// If `A` depends on `B` and you call `ensure_in_kenv_of(&"A", ...)`,
+/// then `A`'s KConst is registered but `B`'s is not — a subsequent
+/// `TypeChecker::infer` on a KExpr that references `B` will fail with
+/// "kenv\[B\]: NOT FOUND". Callers are responsible for loading the
+/// full dependency closure before invoking the type checker.
+///
+/// A transitive variant (BFS over the KExpr to ingress all referenced
+/// `Const` names) was considered in CR5 of the adversarial review but
+/// not adopted — most callers either (a) use a separately-loaded full
+/// env (compile.rs, mutual.rs) or (b) are limited to aux_gen contexts
+/// where the closure is small and explicit (below.rs, brecon.rs). If
+/// you find yourself calling this on a constant whose deps aren't
+/// already loaded, consider wiring in a real transitive walk rather
+/// than papering over the missing deps with another helper call.
+///
+/// # Behavior
+///
+/// - **Idempotent**: skips if `zid` is already present in `kctx.kenv`.
+/// - **Silent on missing source**: if `lean_env` has no entry for
+///   `name`, this function returns without doing anything. Combined
+///   with the non-transitive semantics above, missing deps manifest
+///   as TC failures at use sites — not as errors here.
+/// - **Ctor → parent redirect**: for `CtorInfo`, we also insert the
+///   parent inductive and its sibling constructors, which is the one
+///   place we *do* walk downstream (because kernel TC for a ctor use
+///   requires the parent).
 pub(crate) fn ensure_in_kenv_of(
   name: &Name,
   lean_env: &crate::ix::env::Env,
@@ -1003,7 +1502,7 @@ pub(crate) fn ensure_in_kenv_of(
     return; // Already loaded.
   }
 
-  let Some(ci) = lean_env.get(name) else { return };
+  let Some(ci) = lean_env.get(name).cloned() else { return };
   let cache = Some(&kctx.kenv.ingress_cache);
 
   // Helper: convert a LeanExpr to KExpr with the given level param names,
@@ -1023,14 +1522,14 @@ pub(crate) fn ensure_in_kenv_of(
     )
   };
 
-  match ci {
+  match &ci {
     LCI::InductInfo(ind) => {
       let lp = &ind.cnst.level_params;
       let n_lvls = lp.len() as u64;
       let ty_z = to_z(&ind.cnst.typ, lp);
       let mut ctor_zids = Vec::new();
       for ctor_name in &ind.ctors {
-        if let Some(LCI::CtorInfo(ctor)) = lean_env.get(ctor_name) {
+        if let Some(LCI::CtorInfo(ctor)) = lean_env.get(ctor_name).as_deref() {
           let ctor_zid = KId::new(
             resolve_lean_name_addr(ctor_name, n2a, aux_n2a),
             ctor_name.clone(),
@@ -1044,8 +1543,8 @@ pub(crate) fn ensure_in_kenv_of(
               lvls: n_lvls,
               induct: zid.clone(),
               cidx: ctor_zids.len() as u64,
-              params: ctor.num_params.to_u64().unwrap_or(0),
-              fields: ctor.num_fields.to_u64().unwrap_or(0),
+              params: nat_to_u64(&ctor.num_params),
+              fields: nat_to_u64(&ctor.num_fields),
               ty: to_z(&ctor.cnst.typ, lp),
             },
           );
@@ -1058,15 +1557,15 @@ pub(crate) fn ensure_in_kenv_of(
           name: name.clone(),
           level_params: lp.clone(),
           lvls: n_lvls,
-          params: ind.num_params.to_u64().unwrap_or(0),
-          indices: ind.num_indices.to_u64().unwrap_or(0),
+          params: nat_to_u64(&ind.num_params),
+          indices: nat_to_u64(&ind.num_indices),
           is_rec: ind.is_rec,
           is_refl: ind.is_reflexive,
           is_unsafe: ind.is_unsafe,
           ctors: ctor_zids,
           ty: ty_z,
           block: zid,
-          nested: ind.num_nested.to_u64().unwrap_or(0),
+          nested: nat_to_u64(&ind.num_nested),
           member_idx: 0,
           lean_all: vec![],
         },
@@ -1253,10 +1752,27 @@ impl<'a> TcScope<'a> {
   }
 
   /// Infer the sort level of a type expression in the current context.
+  ///
+  /// Uses a fast path matching Lean's `inferAppType` (InferType.lean:79-91):
+  /// for fully-applied constants whose stored type telescopes to a `Sort`,
+  /// reads the level directly from the type after level-param instantiation.
+  /// This avoids kernel-level normalization artifacts that can produce
+  /// structurally different level trees.
+  ///
+  /// Falls back to the kernel TC for non-constant expressions, partially-
+  /// applied constants, or types that don't end in Sort.
   pub(super) fn get_level(
     &mut self,
     ty: &LeanExpr,
   ) -> Result<Level, crate::ix::ixon::CompileError> {
+    // Fast path: read Sort level from stored type (matching Lean's
+    // inferAppType which peels foralls without substituting term args).
+    // Sort levels use level params, not BVars, so the level is correct
+    // without term substitution.
+    if let Some(lvl) = self.try_infer_app_sort_level(ty) {
+      return Ok(lvl);
+    }
+
     let depth = self.base_depth + self.extra_locals;
     let kexpr =
       to_kexpr_static(ty, &self.fvar_levels, depth, self.param_names, self.stt);
@@ -1320,6 +1836,133 @@ impl<'a> TcScope<'a> {
     })?;
     Ok(super::below::kuniv_to_level(&ku, self.param_names))
   }
+  /// Check if a Level is guaranteed non-zero. Matches Lean's `is_not_zero`:
+  /// true for Succ(_), Param, Max(a,b) where either is not-zero.
+  fn is_not_zero_level(l: &Level) -> bool {
+    use crate::ix::env::LevelData;
+    match l.as_data() {
+      LevelData::Succ(_, _) => true,
+      LevelData::Param(_, _) => false, // could be zero
+      LevelData::Max(a, b, _) => {
+        Self::is_not_zero_level(a) || Self::is_not_zero_level(b)
+      },
+      LevelData::Imax(_, b, _) => Self::is_not_zero_level(b),
+      _ => false,
+    }
+  }
+
+  /// Fast path for `get_level`: if `ty` is a fully-applied constant whose
+  /// stored type telescopes to `Sort l`, return `l` with level params
+  /// substituted. Matches Lean's `inferAppType` optimization.
+  ///
+  /// Returns `None` if the fast path doesn't apply (not a constant
+  /// application, not enough foralls, result isn't Sort, or the constant
+  /// isn't found in the kernel env).
+  fn try_infer_app_sort_level(&self, ty: &LeanExpr) -> Option<Level> {
+    use crate::ix::env::ExprData;
+    use crate::ix::kernel::expr::ExprData as ZED;
+
+    // Decompose into head constant + args.
+    let (head, args) = decompose_apps(ty);
+    let (name, levels) = match head.as_data() {
+      ExprData::Const(name, levels, _) => (name, levels),
+      _ => return None,
+    };
+
+    // Look up the constant in the kernel env to get its stored type.
+    let n2a = Some(&self.stt.name_to_addr);
+    let aux_n2a = Some(&self.stt.aux_name_to_addr);
+    let addr =
+      crate::ix::kernel::ingress::resolve_lean_name_addr(name, n2a, aux_n2a);
+    let kid = crate::ix::kernel::id::KId::new(addr, name.clone());
+    let kconst = self.tc.env.get(&kid)?;
+    let kty = kconst.ty();
+
+    // Peel foralls from the stored type — one per applied arg.
+    // Don't substitute term args (Sort levels have no BVars).
+    let mut cur = kty.clone();
+    for _ in 0..args.len() {
+      match cur.data() {
+        ZED::All(_, _, _, body, _) => cur = body.clone(),
+        _ => return None,
+      }
+    }
+
+    // Check if the result is Sort and extract the level.
+    let ku = match cur.data() {
+      ZED::Sort(u, _) => u,
+      _ => {
+        // Not a Sort — the type might have dependent binders where
+        // term args matter. Fall through to kernel TC.
+        return None;
+      },
+    };
+
+    // The level uses de Bruijn indices for level params (Param(i)).
+    // The constant's level args give the concrete levels for each param.
+    // Substitute: Param(i) → levels[i] (converted from LeanExpr Level).
+    //
+    // Convert the KUniv to a Level, substituting level params with the
+    // concrete level args from the Const node.
+    Some(self.kuniv_to_level_with_const_levels(ku, levels))
+  }
+
+  /// Convert a `KUniv` to `Level`, substituting level param indices with
+  /// the concrete levels from a Const's level args.
+  fn kuniv_to_level_with_const_levels(
+    &self,
+    u: &crate::ix::kernel::level::KUniv<Meta>,
+    const_levels: &[Level],
+  ) -> Level {
+    use crate::ix::kernel::level::UnivData;
+    match u.data() {
+      UnivData::Zero(_) => Level::zero(),
+      UnivData::Succ(inner, _) => {
+        Level::succ(self.kuniv_to_level_with_const_levels(inner, const_levels))
+      },
+      UnivData::Max(a, b, _) => {
+        // Use level_max (matching Lean's mk_max: zero/equality/subsumption
+        // checks) to simplify after substitution.
+        super::below::level_max(
+          &self.kuniv_to_level_with_const_levels(a, const_levels),
+          &self.kuniv_to_level_with_const_levels(b, const_levels),
+        )
+      },
+      UnivData::IMax(a, b, _) => {
+        let la = self.kuniv_to_level_with_const_levels(a, const_levels);
+        let lb = self.kuniv_to_level_with_const_levels(b, const_levels);
+        // Match Lean's mk_imax: simplify when the second argument's
+        // zero/nonzero status is known.
+        if Self::is_not_zero_level(&lb) {
+          super::below::level_max(&la, &lb)
+        } else if matches!(lb.as_data(), LevelData::Zero(_)) {
+          lb
+        } else if matches!(la.as_data(), LevelData::Zero(_))
+          || matches!(la.as_data(), LevelData::Succ(inner, _) if matches!(inner.as_data(), LevelData::Zero(_)))
+        {
+          lb
+        } else if la == lb {
+          la
+        } else {
+          Level::imax(la, lb)
+        }
+      },
+      UnivData::Param(idx, _, _) => {
+        // Substitute with the concrete level from the Const's level args.
+        const_levels.get(*idx as usize).cloned().unwrap_or_else(|| {
+          // Fallback: use the TcScope's param names.
+          let name =
+            self.param_names.get(*idx as usize).cloned().unwrap_or_else(|| {
+              crate::ix::env::Name::str(
+                crate::ix::env::Name::anon(),
+                format!("u_{idx}"),
+              )
+            });
+          Level::param(name)
+        })
+      },
+    }
+  }
 }
 
 // No Drop impl needed — the TC is owned and discarded with the scope.
@@ -1351,9 +1994,7 @@ fn to_kexpr_static(
         KExpr::sort(KUniv::zero())
       }
     },
-    ExprData::Bvar(idx, _) => {
-      KExpr::var(idx.to_u64().unwrap_or(0), Name::anon())
-    },
+    ExprData::Bvar(idx, _) => KExpr::var(nat_to_u64(idx), Name::anon()),
     ExprData::Sort(lvl, _) => {
       KExpr::sort(lean_level_to_kuniv(lvl, param_names))
     },
@@ -1392,13 +2033,13 @@ fn to_kexpr_static(
       let addr = resolve_lean_name_addr(pname, n2a, aux_n2a);
       let zid = KId::new(addr, pname.clone());
       let ke = to_kexpr_static(e, fvar_levels, ctx_depth, param_names, stt);
-      KExpr::prj(zid, idx.to_u64().unwrap_or(0), ke)
+      KExpr::prj(zid, nat_to_u64(idx), ke)
     },
     ExprData::Lit(lit, _) => {
       use crate::ix::env::Literal;
       match lit {
         Literal::NatVal(n) => {
-          let addr = Address::hash(&n.to_u64().unwrap_or(0).to_le_bytes());
+          let addr = Address::hash(&nat_to_u64(n).to_le_bytes());
           KExpr::nat(n.clone(), addr)
         },
         Literal::StrVal(s) => {

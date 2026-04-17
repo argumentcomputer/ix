@@ -10,11 +10,15 @@
 #![allow(clippy::cast_possible_truncation)]
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::ix::address::Address;
 use crate::ix::env::{self, BinderInfo, Name, ReducibilityHints};
 
+use super::expr::Expr;
+use super::serialize::{get_expr, put_expr};
 use super::tag::Tag0;
+use super::univ::{Univ, get_univ, put_univ};
 
 // ===========================================================================
 // Types (use Address internally)
@@ -22,6 +26,18 @@ use super::tag::Tag0;
 
 /// Key-value map for Lean.Expr.mdata
 pub type KVMap = Vec<(Address, DataValue)>;
+
+/// Entry in a `CallSite` metadata node, representing one source-order argument.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum CallSiteEntry {
+  /// Argument exists in canonical form at App-spine position `canon_idx`.
+  /// `meta` is the arena index for this argument's metadata subtree.
+  Kept { canon_idx: u64, meta: u64 },
+  /// Argument was collapsed. Expression stored in `ConstantMeta.meta_sharing[sharing_idx]`.
+  /// `meta` is the arena index for this argument's metadata subtree
+  /// (may differ from the representative's metadata — different names, refs, etc.).
+  Collapsed { sharing_idx: u64, meta: u64 },
+}
 
 /// Arena node for per-expression metadata.
 ///
@@ -43,6 +59,19 @@ pub enum ExprMetaData {
   Prj { struct_name: Address, child: u64 },
   /// Mdata wrapper: always a separate node, never absorbed into Binder/Ref/Prj
   Mdata { mdata: Vec<KVMap>, child: u64 },
+  /// Surgered call-site. Replaces the entire App-spine metadata chain
+  /// (outermost App down to the Ref head) with a single node. Entries are
+  /// in SOURCE order. The corresponding Ixon expression is a normal App
+  /// telescope — only the metadata changes shape.
+  ///
+  /// Sits at the outermost position so both compiler and decompiler see it
+  /// first, avoiding the need to recurse through App nodes to discover surgery.
+  CallSite {
+    /// Name address of the referenced auxiliary (doubles as Ref name metadata).
+    name: Address,
+    /// Source-order entries for the argument telescope.
+    entries: Vec<CallSiteEntry>,
+  },
 }
 
 /// Arena for expression metadata within a single constant.
@@ -144,39 +173,105 @@ impl ConstantMetaInfo {
   }
 }
 
-/// Per-constant metadata wrapper: variant payload.
+/// Per-constant metadata wrapper: variant payload + extension tables.
+///
+/// Extension tables (`meta_sharing`, `meta_refs`, `meta_univs`) form a
+/// virtual address space extending the primary `Constant` tables. They are
+/// used by `CallSite` nodes in the metadata arena for call-site surgery
+/// roundtrip: collapsed argument expressions reference these tables via
+/// `Share(idx)`, `Ref(idx)`, and universe indices.
+///
+/// At decompile time, extension tables are appended to the block cache,
+/// creating a contiguous address space.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ConstantMeta {
   pub info: ConstantMetaInfo,
+  /// Compiled Ixon expressions for collapsed call-site arguments.
+  /// May contain `Share(idx)` references into the extended sharing table.
+  pub meta_sharing: Vec<Arc<Expr>>,
+  /// Extension refs table (addresses referenced by collapsed arg expressions).
+  pub meta_refs: Vec<Address>,
+  /// Extension univs table (universe terms in collapsed arg expressions).
+  pub meta_univs: Vec<Arc<Univ>>,
 }
 
 impl Default for ConstantMeta {
   fn default() -> Self {
-    Self { info: ConstantMetaInfo::Empty }
+    Self {
+      info: ConstantMetaInfo::Empty,
+      meta_sharing: Vec::new(),
+      meta_refs: Vec::new(),
+      meta_univs: Vec::new(),
+    }
   }
 }
 
 impl ConstantMeta {
-  /// Wrap a `ConstantMetaInfo` payload.
+  /// Wrap a `ConstantMetaInfo` payload (no extension tables).
   pub fn new(info: ConstantMetaInfo) -> Self {
-    Self { info }
+    Self {
+      info,
+      meta_sharing: Vec::new(),
+      meta_refs: Vec::new(),
+      meta_univs: Vec::new(),
+    }
   }
 
-  /// Delegate indexed serialization to the inner enum.
+  /// Whether this metadata has any surgery extension tables.
+  pub fn has_extensions(&self) -> bool {
+    !self.meta_sharing.is_empty()
+      || !self.meta_refs.is_empty()
+      || !self.meta_univs.is_empty()
+  }
+
+  /// Delegate indexed serialization to the inner enum, then serialize
+  /// extension tables.
   pub fn put_indexed(
     &self,
     idx: &NameIndex,
     buf: &mut Vec<u8>,
   ) -> Result<(), String> {
-    self.info.put_indexed(idx, buf)
+    self.info.put_indexed(idx, buf)?;
+    // Extension tables (backward-compatible: 0-length for old constants)
+    put_vec_len(self.meta_sharing.len(), buf);
+    for expr in &self.meta_sharing {
+      put_expr(expr, buf);
+    }
+    put_vec_len(self.meta_refs.len(), buf);
+    for addr in &self.meta_refs {
+      put_address_raw(addr, buf);
+    }
+    put_vec_len(self.meta_univs.len(), buf);
+    for univ in &self.meta_univs {
+      put_univ(univ, buf);
+    }
+    Ok(())
   }
 
-  /// Delegate indexed deserialization to the inner enum.
+  /// Delegate indexed deserialization, then deserialize extension tables.
   pub fn get_indexed(
     buf: &mut &[u8],
     rev: &NameReverseIndex,
   ) -> Result<Self, String> {
-    Ok(Self { info: ConstantMetaInfo::get_indexed(buf, rev)? })
+    let info = ConstantMetaInfo::get_indexed(buf, rev)?;
+    // Extension tables: always present (put_indexed always writes them,
+    // even when empty — three zero-length vectors).
+    let sharing_len = get_vec_len(buf)?;
+    let mut meta_sharing = Vec::with_capacity(sharing_len);
+    for _ in 0..sharing_len {
+      meta_sharing.push(get_expr(buf)?);
+    }
+    let refs_len = get_vec_len(buf)?;
+    let mut meta_refs = Vec::with_capacity(refs_len);
+    for _ in 0..refs_len {
+      meta_refs.push(get_address_raw(buf)?);
+    }
+    let univs_len = get_vec_len(buf)?;
+    let mut meta_univs = Vec::with_capacity(univs_len);
+    for _ in 0..univs_len {
+      meta_univs.push(get_univ(buf)?);
+    }
+    Ok(Self { info, meta_sharing, meta_refs, meta_univs })
   }
 }
 
@@ -284,11 +379,11 @@ fn get_u64(buf: &mut &[u8]) -> Result<u64, String> {
   Ok(Tag0::get(buf)?.size)
 }
 
-fn put_vec_len(len: usize, buf: &mut Vec<u8>) {
+pub(super) fn put_vec_len(len: usize, buf: &mut Vec<u8>) {
   Tag0::new(len as u64).put(buf);
 }
 
-fn get_vec_len(buf: &mut &[u8]) -> Result<usize, String> {
+pub(super) fn get_vec_len(buf: &mut &[u8]) -> Result<usize, String> {
   Ok(Tag0::get(buf)?.size as usize)
 }
 
@@ -352,7 +447,7 @@ pub type NameIndex = HashMap<Address, u64>;
 /// Reverse name index for deserialization: position -> Address
 pub type NameReverseIndex = Vec<Address>;
 
-fn put_idx(
+pub(super) fn put_idx(
   addr: &Address,
   idx: &NameIndex,
   buf: &mut Vec<u8>,
@@ -368,7 +463,10 @@ fn put_idx(
   Ok(())
 }
 
-fn get_idx(buf: &mut &[u8], rev: &NameReverseIndex) -> Result<Address, String> {
+pub(super) fn get_idx(
+  buf: &mut &[u8],
+  rev: &NameReverseIndex,
+) -> Result<Address, String> {
   let i = get_u64(buf)? as usize;
   rev
     .get(i)
@@ -569,6 +667,25 @@ impl ExprMetaData {
         put_mdata_stack_indexed(mdata, idx, buf)?;
         put_u64(*child, buf);
       },
+      Self::CallSite { name, entries } => {
+        put_u8(10, buf);
+        put_idx(name, idx, buf)?;
+        put_vec_len(entries.len(), buf);
+        for entry in entries {
+          match entry {
+            CallSiteEntry::Kept { canon_idx, meta } => {
+              put_u8(0, buf);
+              put_u64(*canon_idx, buf);
+              put_u64(*meta, buf);
+            },
+            CallSiteEntry::Collapsed { sharing_idx, meta } => {
+              put_u8(1, buf);
+              put_u64(*sharing_idx, buf);
+              put_u64(*meta, buf);
+            },
+          }
+        }
+      },
     }
     Ok(())
   }
@@ -617,6 +734,28 @@ impl ExprMetaData {
         let mdata = get_mdata_stack_indexed(buf, rev)?;
         let child = get_u64(buf)?;
         Ok(Self::Mdata { mdata, child })
+      },
+      10 => {
+        let name = get_idx(buf, rev)?;
+        let n_entries = get_vec_len(buf)?;
+        let mut entries = Vec::with_capacity(n_entries);
+        for _ in 0..n_entries {
+          let entry = match get_u8(buf)? {
+            0 => {
+              let canon_idx = get_u64(buf)?;
+              let meta = get_u64(buf)?;
+              CallSiteEntry::Kept { canon_idx, meta }
+            },
+            1 => {
+              let sharing_idx = get_u64(buf)?;
+              let meta = get_u64(buf)?;
+              CallSiteEntry::Collapsed { sharing_idx, meta }
+            },
+            x => return Err(format!("CallSiteEntry::get: invalid tag {x}")),
+          };
+          entries.push(entry);
+        }
+        Ok(Self::CallSite { name, entries })
       },
       x => Err(format!("ExprMetaData::get: invalid tag {x}")),
     }

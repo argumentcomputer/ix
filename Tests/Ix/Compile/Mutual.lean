@@ -137,6 +137,7 @@ mutual
   public inductive B | b : C → B
   public inductive C | c : A → C
 end
+
 -- Reordered: C2,A2,B2
 mutual
   public inductive C2 | c : A2 → C2

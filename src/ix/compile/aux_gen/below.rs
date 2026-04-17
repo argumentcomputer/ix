@@ -8,6 +8,7 @@
 //!
 //! Follows `refs/lean4/src/Lean/Meta/Constructions/BRecOn.lean:59-108`.
 
+use crate::ix::compile::nat_conv::{nat_to_usize, try_nat_to_usize};
 use crate::ix::env::{
   BinderInfo, ConstantInfo, ConstructorVal, Env as LeanEnv, Expr as LeanExpr,
   ExprData, InductiveVal, Level, LevelData, Name, RecursorVal,
@@ -46,6 +47,13 @@ pub(crate) struct BelowIndc {
   pub n_params: usize,
   /// Number of indices: original inductive's indices + 1 (major premise).
   pub n_indices: usize,
+  /// Reflexive iff the parent inductive is reflexive — i.e., the parent has
+  /// at least one higher-order recursive IH field (`∀ ys, I args`). Such a
+  /// field translates to a higher-order `.below` IH (`∀ ys, I.below ... (h ys)`),
+  /// which makes `.below` itself reflexive. Lean's kernel uses this flag for
+  /// occurs-check / positivity; propagating it keeps the content hash aligned
+  /// with Lean's auto-generated `.below` via `IndPredBelow`.
+  pub is_reflexive: bool,
   pub typ: LeanExpr,
   pub ctors: Vec<BelowCtor>,
 }
@@ -67,6 +75,20 @@ pub(crate) struct BelowCtor {
 ///
 /// `canonical_parent`: the representative inductive name (e.g., `BLE`)
 /// `lean_env`: to look up constructor names for both parent inductives
+/// **Note on level params**:
+/// we clone `canonical.level_params` verbatim without renaming, and only
+/// rewrite `Const` *names* via `name_map`. This is correct by construction
+/// because level params are formal bound variables scoped to the
+/// `BelowIndc`: the aliased struct declares `level_params = [u₁..uₙ]`
+/// and its body's `Level::param(u_i)` refs are consistent with those same
+/// formal names. When an external caller invokes `<new_parent>.below.{v_i}`,
+/// the kernel's `instantiate_level_params` binds each formal `u_i` to the
+/// concrete `v_i` — identical to how the canonical `.below` works.
+///
+/// This means alias blocks whose Lean-source level-param *names* differ
+/// (`A.{u}` vs `B.{v}` collapsed to one class) roundtrip correctly: the
+/// Ixon form uses formals `[u]` for both, and decompile re-emits those
+/// formals. Lean-side naming is purely cosmetic metadata.
 pub(crate) fn rename_below_indc(
   canonical: &BelowIndc,
   new_parent: &Name,
@@ -77,13 +99,13 @@ pub(crate) fn rename_below_indc(
 
   // Build a positional map from canonical parent ctor suffix → target parent ctor suffix.
   // e.g., BLE.ble → BLI.bli (both at position 0)
-  let canon_ctors = match lean_env.get(canonical_parent) {
-    Some(ConstantInfo::InductInfo(v)) => &v.ctors,
-    _ => &vec![],
+  let canon_ctors: Vec<Name> = match lean_env.get(canonical_parent).as_deref() {
+    Some(ConstantInfo::InductInfo(v)) => v.ctors.clone(),
+    _ => vec![],
   };
-  let target_ctors = match lean_env.get(new_parent) {
-    Some(ConstantInfo::InductInfo(v)) => &v.ctors,
-    _ => &vec![],
+  let target_ctors: Vec<Name> = match lean_env.get(new_parent).as_deref() {
+    Some(ConstantInfo::InductInfo(v)) => v.ctors.clone(),
+    _ => vec![],
   };
 
   // Build a complete name replacement map for expressions.
@@ -146,6 +168,7 @@ pub(crate) fn rename_below_indc(
     level_params: canonical.level_params.clone(),
     n_params: canonical.n_params,
     n_indices: canonical.n_indices,
+    is_reflexive: canonical.is_reflexive,
     typ: replace_const_names(&canonical.typ, &name_map),
     ctors: renamed_ctors,
   }
@@ -169,7 +192,8 @@ pub(crate) fn generate_below_constants(
   canonical_recs: &[(Name, RecursorVal)],
   lean_env: &LeanEnv,
   is_prop: bool,
-  stt: Option<&crate::ix::compile::CompileState>,
+  stt: &crate::ix::compile::CompileState,
+  kctx: &crate::ix::compile::KernelCtx,
 ) -> Result<Vec<BelowConstant>, CompileError> {
   let n_classes = sorted_classes.len();
   if n_classes == 0 || canonical_recs.is_empty() {
@@ -182,9 +206,15 @@ pub(crate) fn generate_below_constants(
     let (_, rec_val) = &canonical_recs[ci];
     let class_rep = &sorted_classes[ci][0];
 
-    let ind = match lean_env.get(class_rep) {
+    let ind_ref = lean_env.get(class_rep);
+    let ind = match ind_ref.as_deref() {
       Some(ConstantInfo::InductInfo(v)) => v,
-      _ => continue,
+      _ => {
+        return Err(CompileError::MissingConstant {
+          name: class_rep.pretty(),
+          caller: "generate_below_constants: class rep not an inductive".into(),
+        });
+      },
     };
 
     let below_name = Name::str(ind.cnst.name.clone(), "below".to_string());
@@ -199,6 +229,7 @@ pub(crate) fn generate_below_constants(
         n_classes,
         canonical_recs,
         stt,
+        kctx,
       )?;
       results.push(BelowConstant::Def(def));
     } else {
@@ -229,9 +260,17 @@ pub(crate) fn generate_below_constants(
     let n_aux = canonical_recs.len().saturating_sub(n_classes);
     if n_aux > 0 {
       let first_class_name = &sorted_classes[0][0];
-      let first_ind = match lean_env.get(first_class_name) {
+      let first_ind_ref = lean_env.get(first_class_name);
+      let first_ind = match first_ind_ref.as_deref() {
         Some(ConstantInfo::InductInfo(v)) => v,
-        _ => return Ok(results),
+        _ => {
+          return Err(CompileError::MissingConstant {
+            name: first_class_name.pretty(),
+            caller:
+              "generate_below_constants: first class rep not an inductive"
+                .into(),
+          });
+        },
       };
       // Lean hangs _N suffixed names off all[0] (first in source order),
       // not the canonical class representative.
@@ -247,7 +286,7 @@ pub(crate) fn generate_below_constants(
         // decompilation where lean_env is the incrementally-built work_env
         // and won't contain the constant we're about to generate).
         let exists = lean_env.contains_key(&below_name)
-          || stt.is_some_and(|s| s.env.named.contains_key(&below_name));
+          || stt.env.named.contains_key(&below_name);
         if !exists {
           continue;
         }
@@ -258,16 +297,23 @@ pub(crate) fn generate_below_constants(
         // We need the external ind for the ilvl fallback path in
         // build_below_def, which uses ind.cnst.typ to extract the sort.
         let ext_ind =
-          extract_major_head_ind(aux_rec_val, lean_env).unwrap_or(first_ind);
+          extract_major_head_ind(aux_rec_val, lean_env).ok_or_else(|| {
+            CompileError::UnsupportedExpr {
+              desc: format!(
+                "below_{idx}: cannot extract head inductive from auxiliary recursor major premise",
+              ),
+            }
+          })?;
 
         let def = build_below_def(
           &below_name,
           aux_rec_val,
-          ext_ind,
+          &ext_ind,
           lean_env,
           n_classes,
           canonical_recs,
           stt,
+          kctx,
         )?;
         results.push(BelowConstant::Def(def));
       }
@@ -294,12 +340,13 @@ fn build_below_def(
   lean_env: &LeanEnv,
   n_classes: usize,
   canonical_recs: &[(Name, RecursorVal)],
-  _stt: Option<&crate::ix::compile::CompileState>,
+  stt: &crate::ix::compile::CompileState,
+  kctx: &crate::ix::compile::KernelCtx,
 ) -> Result<BelowDef, CompileError> {
-  let n_params = rec_val.num_params.to_u64().unwrap_or(0) as usize;
-  let n_motives = rec_val.num_motives.to_u64().unwrap_or(0) as usize;
-  let n_minors = rec_val.num_minors.to_u64().unwrap_or(0) as usize;
-  let n_indices = rec_val.num_indices.to_u64().unwrap_or(0) as usize;
+  let n_params = try_nat_to_usize(&rec_val.num_params)?;
+  let n_motives = try_nat_to_usize(&rec_val.num_motives)?;
+  let n_minors = try_nat_to_usize(&rec_val.num_minors)?;
+  let n_indices = try_nat_to_usize(&rec_val.num_indices)?;
   let rec_level_params = &rec_val.cnst.level_params;
   let _ind_level_params = &ind.cnst.level_params;
 
@@ -312,46 +359,32 @@ fn build_below_def(
   //   let majorTypeType ← inferType (← inferType major)
   //   let ilvl ← typeFormerTypeLevel majorTypeType
   //
-  // We replicate this by opening the recursor type into FVars, getting the
-  // major's type (an applied inductive), decomposing to get the head
-  // inductive, looking up its sort, and substituting the occurrence levels.
-  // This preserves Lean's level tree structure (no kernel normalization).
+  // We use TcScope::get_level(major_domain) which does exactly this:
+  // infers the type of the major's domain expression (getting Sort ilvl),
+  // then extracts ilvl. This matches Lean's approach of delegating to
+  // inferType rather than manually decomposing level trees.
   let ilvl = {
     let total = n_params + n_motives + n_minors + n_indices + 1;
     let (_fvars, decls, _) =
       forall_telescope(&rec_val.cnst.typ, total, "blv", 0);
+    let major_domain = &decls[total - 1].domain;
 
-    // major's type in FVar form: e.g. `List(Doc.Part FVar_α FVar_β FVar_γ)`
-    // or `Doc.Part FVar_α FVar_β FVar_γ` for original below.
-    let major_type_fvar = &decls[total - 1].domain;
-
-    // Decompose to get the head inductive and its level args.
-    let (head, _args) = super::expr_utils::decompose_apps(major_type_fvar);
-
-    if let ExprData::Const(head_name, head_levels, _) = head.as_data()
-      && let Some(ConstantInfo::InductInfo(head_ind)) = lean_env.get(head_name)
-    {
-      // Get the inductive's sort: peel params + indices from the type.
-      let head_n_params = head_ind.num_params.to_u64().unwrap_or(0) as usize;
-      let head_n_indices = head_ind.num_indices.to_u64().unwrap_or(0) as usize;
-      let raw_sort =
-        get_ind_sort_level(&head_ind.cnst.typ, head_n_params + head_n_indices);
-      // Substitute the inductive's level params with the occurrence levels,
-      // then normalize to right-associated form to match Lean's inferType.
-      let result = normalize_level(&super::expr_utils::subst_level(
-        &raw_sort,
-        &head_ind.cnst.level_params,
-        head_levels,
-      ));
-      result
-    } else {
-      // Fallback: use parent inductive's sort level directly.
-      get_ind_sort_level(&ind.cnst.typ, n_params + n_indices)
-    }
+    let ctx: Vec<super::expr_utils::LocalDecl> = decls[..total - 1].to_vec();
+    let mut tc =
+      super::expr_utils::TcScope::new(&ctx, rec_level_params, stt, kctx);
+    tc.get_level(major_domain)?
   };
 
-  // rlvl = max(ilvl, elim_level), normalized to match Lean's canonical form.
-  let rlvl = normalize_level(&level_max(&ilvl, &elim_level));
+  // rlvl = mkLevelMax(ilvl, elim_level), matching Lean's BRecOn.lean:83:
+  //   `let rlvl : Level := mkLevelMax ilvl lvl`
+  // mkLevelMax only eliminates zeros — no subsumption, no right-association.
+  let rlvl = if matches!(ilvl.as_data(), LevelData::Zero(_)) {
+    elim_level.clone()
+  } else if matches!(elim_level.as_data(), LevelData::Zero(_)) {
+    ilvl.clone()
+  } else {
+    Level::max(ilvl.clone(), elim_level.clone())
+  };
 
   // .below level params = same as .rec level params
   let below_level_params = rec_level_params.clone();
@@ -367,10 +400,11 @@ fn build_below_def(
     ind,
     lean_env,
     &rlvl,
-    &elim_level,
     n_classes,
     canonical_recs,
-  );
+    stt,
+    kctx,
+  )?;
 
   Ok(BelowDef {
     name: below_name.clone(),
@@ -385,14 +419,14 @@ fn build_below_def(
 /// The major premise is the last binder in the recursor type:
 /// `∀ params motives minors indices (t : ExtInd ...), motive ...`
 /// Returns the `InductiveVal` for the head constant of the major's domain.
-fn extract_major_head_ind<'a>(
+fn extract_major_head_ind(
   rec_val: &RecursorVal,
-  lean_env: &'a LeanEnv,
-) -> Option<&'a InductiveVal> {
-  let n_params = rec_val.num_params.to_u64().unwrap_or(0) as usize;
-  let n_motives = rec_val.num_motives.to_u64().unwrap_or(0) as usize;
-  let n_minors = rec_val.num_minors.to_u64().unwrap_or(0) as usize;
-  let n_indices = rec_val.num_indices.to_u64().unwrap_or(0) as usize;
+  lean_env: &LeanEnv,
+) -> Option<InductiveVal> {
+  let n_params = nat_to_usize(&rec_val.num_params);
+  let n_motives = nat_to_usize(&rec_val.num_motives);
+  let n_minors = nat_to_usize(&rec_val.num_minors);
+  let n_indices = nat_to_usize(&rec_val.num_indices);
   let total = n_params + n_motives + n_minors + n_indices + 1;
 
   // Peel all binders to get the major premise's domain.
@@ -409,25 +443,11 @@ fn extract_major_head_ind<'a>(
   };
   let (head, _) = decompose_apps(major_dom);
   match head.as_data() {
-    ExprData::Const(name, _, _) => match lean_env.get(name) {
-      Some(ConstantInfo::InductInfo(v)) => Some(v),
+    ExprData::Const(name, _, _) => match lean_env.get(name).as_deref() {
+      Some(ConstantInfo::InductInfo(v)) => Some(v.clone()),
       _ => None,
     },
     _ => None,
-  }
-}
-
-/// Extract the sort level from an inductive's type by peeling n foralls.
-pub(super) fn get_ind_sort_level(typ: &LeanExpr, n: usize) -> Level {
-  let mut cur = typ.clone();
-  for _ in 0..n {
-    if let ExprData::ForallE(_, _, body, _, _) = cur.as_data() {
-      cur = body.clone();
-    }
-  }
-  match cur.as_data() {
-    ExprData::Sort(lvl, _) => lvl.clone(),
-    _ => Level::zero(),
   }
 }
 
@@ -441,10 +461,10 @@ pub(super) fn get_ind_sort_level(typ: &LeanExpr, n: usize) -> Level {
 /// discards minor FVars, and re-closes with `mk_forall` which handles
 /// all BVar computation automatically.
 fn build_below_type(rec_val: &RecursorVal, rlvl: &Level) -> LeanExpr {
-  let n_params = rec_val.num_params.to_u64().unwrap_or(0) as usize;
-  let n_motives = rec_val.num_motives.to_u64().unwrap_or(0) as usize;
-  let n_minors = rec_val.num_minors.to_u64().unwrap_or(0) as usize;
-  let n_indices = rec_val.num_indices.to_u64().unwrap_or(0) as usize;
+  let n_params = nat_to_usize(&rec_val.num_params);
+  let n_motives = nat_to_usize(&rec_val.num_motives);
+  let n_minors = nat_to_usize(&rec_val.num_minors);
+  let n_indices = nat_to_usize(&rec_val.num_indices);
 
   // Open all rec type binders into FVars.
   let (_, param_decls, after_params) =
@@ -483,14 +503,15 @@ fn build_below_value(
   _ind: &InductiveVal,
   _lean_env: &LeanEnv,
   rlvl: &Level,
-  elim_level: &Level,
   _n_classes: usize,
   _canonical_recs: &[(Name, RecursorVal)],
-) -> LeanExpr {
-  let n_params = rec_val.num_params.to_u64().unwrap_or(0) as usize;
-  let n_motives = rec_val.num_motives.to_u64().unwrap_or(0) as usize;
-  let n_minors = rec_val.num_minors.to_u64().unwrap_or(0) as usize;
-  let n_indices = rec_val.num_indices.to_u64().unwrap_or(0) as usize;
+  stt: &crate::ix::compile::CompileState,
+  kctx: &crate::ix::compile::KernelCtx,
+) -> Result<LeanExpr, CompileError> {
+  let n_params = try_nat_to_usize(&rec_val.num_params)?;
+  let n_motives = try_nat_to_usize(&rec_val.num_motives)?;
+  let n_minors = try_nat_to_usize(&rec_val.num_minors)?;
+  let n_indices = try_nat_to_usize(&rec_val.num_indices)?;
 
   // Open all rec type binders into FVars.
   let (param_fvars, param_decls, after_params) =
@@ -552,9 +573,19 @@ fn build_below_value(
   // Apply modified minors: for each minor, build the PProd chain.
   // The minor domains are in FVar form (params + motives substituted),
   // so field IH detection uses find_motive_fvar instead of BVar range checks.
+  //
+  // Create a TcScope for PProd level inference (matching Lean's mkPProd
+  // which calls getLevel on each operand). The outer context is
+  // param_decls + motive_decls; per-minor field decls are pushed inside.
+  let rec_level_params = &rec_val.cnst.level_params;
+  let outer_ctx: Vec<LocalDecl> =
+    param_decls.iter().chain(motive_decls.iter()).cloned().collect();
+  let mut tc_scope =
+    super::expr_utils::TcScope::new(&outer_ctx, rec_level_params, stt, kctx);
+
   for minor_dom in &minor_doms {
     let minor_arg =
-      build_below_minor(minor_dom, rlvl, elim_level, &motive_fvars);
+      build_below_minor(minor_dom, rlvl, &motive_fvars, &mut tc_scope)?;
     app = LeanExpr::app(app, minor_arg);
   }
 
@@ -570,7 +601,7 @@ fn build_below_value(
     .chain(major_decls)
     .collect();
 
-  mk_lambda(app, &all_decls)
+  Ok(mk_lambda(app, &all_decls))
 }
 
 /// Count leading foralls (local helper to avoid name collision with
@@ -608,10 +639,10 @@ fn build_below_indc(
   sorted_classes: &[Vec<Name>],
   _canonical_recs: &[(Name, RecursorVal)],
 ) -> Result<BelowIndc, CompileError> {
-  let n_params = rec_val.num_params.to_u64().unwrap_or(0) as usize;
-  let n_motives = rec_val.num_motives.to_u64().unwrap_or(0) as usize;
-  let _n_minors = rec_val.num_minors.to_u64().unwrap_or(0) as usize;
-  let n_indices = ind.num_indices.to_u64().unwrap_or(0) as usize;
+  let n_params = try_nat_to_usize(&rec_val.num_params)?;
+  let n_motives = try_nat_to_usize(&rec_val.num_motives)?;
+  let _n_minors = try_nat_to_usize(&rec_val.num_minors)?;
+  let n_indices = try_nat_to_usize(&ind.num_indices)?;
   let below_n_params = n_params + n_motives;
   let ind_level_params = &ind.cnst.level_params;
 
@@ -637,22 +668,31 @@ fn build_below_indc(
   let mut _global_minor_idx = 0usize;
   for class_idx in 0..n_classes {
     let class_rep = &sorted_classes[class_idx][0];
-    let class_ind = match lean_env.get(class_rep) {
+    let class_ind_ref = lean_env.get(class_rep);
+    let class_ind = match class_ind_ref.as_deref() {
       Some(ConstantInfo::InductInfo(v)) => v,
       _ => {
-        _global_minor_idx += 1;
-        continue;
+        return Err(CompileError::MissingConstant {
+          name: class_rep.pretty(),
+          caller: format!(
+            "build_below_indc: class {} rep not an inductive",
+            class_idx
+          ),
+        });
       },
     };
 
     for ctor_name in &class_ind.ctors {
       if class_idx == ci {
         // This ctor belongs to our class — build a .below ctor for it
-        let ctor = match lean_env.get(ctor_name) {
+        let ctor_ref = lean_env.get(ctor_name);
+        let ctor = match ctor_ref.as_deref() {
           Some(ConstantInfo::CtorInfo(c)) => c,
           _ => {
-            _global_minor_idx += 1;
-            continue;
+            return Err(CompileError::MissingConstant {
+              name: ctor_name.pretty(),
+              caller: "build_below_indc: constructor not found".into(),
+            });
           },
         };
 
@@ -681,6 +721,10 @@ fn build_below_indc(
     level_params: ind_level_params.clone(), // .below has same level params as parent (no elim level for Prop)
     n_params: below_n_params,
     n_indices: n_indices + 1, // original indices + major premise
+    // `.below` inherits reflexivity from the parent: any higher-order
+    // recursive field in the parent (the defining trait of a reflexive
+    // inductive) produces a higher-order `.below` IH field.
+    is_reflexive: ind.is_reflexive,
     typ: below_type,
     ctors,
   })
@@ -696,10 +740,10 @@ fn build_below_indc_type(
   rec_val: &RecursorVal,
   ind: &InductiveVal,
 ) -> LeanExpr {
-  let n_params = rec_val.num_params.to_u64().unwrap_or(0) as usize;
-  let n_motives = rec_val.num_motives.to_u64().unwrap_or(0) as usize;
-  let n_minors = rec_val.num_minors.to_u64().unwrap_or(0) as usize;
-  let n_indices = ind.num_indices.to_u64().unwrap_or(0) as usize;
+  let n_params = nat_to_usize(&rec_val.num_params);
+  let n_motives = nat_to_usize(&rec_val.num_motives);
+  let n_minors = nat_to_usize(&rec_val.num_minors);
+  let n_indices = nat_to_usize(&ind.num_indices);
 
   // Open all rec type binders into FVars.
   let (_, param_decls, after_params) =
@@ -776,8 +820,8 @@ fn build_below_indc_ctor(
     .unwrap_or_else(|| ctor_name.components());
   let below_ctor_name = below_name.append_components(&ctor_suffix);
 
-  let n_ctor_params = ctor.num_params.to_u64().unwrap_or(0) as usize;
-  let n_ctor_fields = ctor.num_fields.to_u64().unwrap_or(0) as usize;
+  let n_ctor_params = nat_to_usize(&ctor.num_params);
+  let n_ctor_fields = nat_to_usize(&ctor.num_fields);
   let ind_level_params = &ind.cnst.level_params;
 
   // Extract original field binder names from the Lean-generated `.below` ctor
@@ -785,11 +829,12 @@ fn build_below_indc_ctor(
   let orig_below_ctor_name = below_name.append_components(&ctor_suffix);
   let orig_field_names: Vec<Name> = lean_env
     .get(&orig_below_ctor_name)
+    .as_deref()
     .and_then(|ci| match ci {
       ConstantInfo::CtorInfo(cv) => {
         let mut names = Vec::new();
         let mut ty = cv.cnst.typ.clone();
-        let skip = cv.num_params.to_u64().unwrap_or(0) as usize;
+        let skip = nat_to_usize(&cv.num_params);
         for _ in 0..skip {
           if let ExprData::ForallE(_, _, body, _, _) = ty.as_data() {
             ty = body.clone();
@@ -853,7 +898,7 @@ fn build_below_indc_ctor(
   let all_ind_names: Vec<(Name, usize)> = (0..n_classes)
     .flat_map(|j| {
       sorted_classes[j].iter().filter_map(move |name| {
-        lean_env.get(name).map(|ci| match ci {
+        lean_env.get(name).as_deref().map(|ci| match ci {
           ConstantInfo::InductInfo(v) => (v.cnst.name.clone(), j),
           _ => (name.clone(), j),
         })
@@ -989,10 +1034,21 @@ fn build_below_indc_ctor(
   }
 }
 
-/// Transform `I_j args` (FVar-based) to `I_j.below params motives args major`.
+/// Transform a recursive field type `∀ ys, I_j args` (FVar-based) to the
+/// corresponding `.below` IH type `∀ ys, I_j.below params motives args (h ys)`.
 ///
-/// Handles forall wrapping: opens inner foralls, replaces head, adds
-/// params + motives, re-closes.
+/// For a first-order recursive field `h : I_j args`, `inner_fvars` is empty
+/// and the result is `I_j.below params motives args h`.
+///
+/// For a higher-order recursive field `h : ∀ y₁ .. yₙ, I_j args`, the result
+/// is `∀ y₁ .. yₙ, I_j.below params motives args (h y₁ .. yₙ)`. The inner
+/// binders are re-closed with `mk_forall`.
+///
+/// Matches `ihTypeToBelowType` at
+/// `refs/lean4/src/Lean/Meta/IndPredBelow.lean:71-75`: the motive fvar in the
+/// minor-premise IH type is replaced by the `.below` constant applied to
+/// params+motives, while the rest of the application spine (indices plus the
+/// applied field) is preserved.
 fn transform_to_below_fvar(
   field_dom: &LeanExpr,
   target_j: usize,
@@ -1010,7 +1066,7 @@ fn transform_to_below_fvar(
   // Decompose leaf: should be `I_j args...` (Const or FVar head)
   let (_head, args) = decompose_apps(&leaf);
 
-  // Build: I_j.below params motives args major_applied
+  // Build: I_j.below params motives indices (major_fvar inner_fvars)
   let below_const = mk_const(
     &below_names[target_j],
     &level_params.iter().map(|lp| Level::param(lp.clone())).collect::<Vec<_>>(),
@@ -1018,19 +1074,22 @@ fn transform_to_below_fvar(
   let mut result = below_const;
   result = mk_app_n(result, param_fvars);
   result = mk_app_n(result, motive_fvars);
-  // Apply original args (skip first n_params, those are already in param_fvars)
+  // Apply original index args (skip the leading params)
   let n_params = param_fvars.len();
   for a in args.iter().skip(n_params) {
     result = LeanExpr::app(result, a.clone());
   }
-  // Apply inner forall args if present
+  // The `.below` major premise is the FIELD value, applied to the inner
+  // binders if the field is higher-order. Previously, the inner binders
+  // were spliced directly onto the spine of `.below` (overrunning its
+  // arity) and `major_fvar` was only applied in the first-order case —
+  // which produced `I_j.below params motives indices ys` instead of
+  // `I_j.below params motives indices (h ys)`.
+  let mut major_applied = major_fvar.clone();
   if !inner_fvars.is_empty() {
-    result = mk_app_n(result, &inner_fvars);
+    major_applied = mk_app_n(major_applied, &inner_fvars);
   }
-  // Apply the major (the field value itself)
-  if n_inner == 0 {
-    result = LeanExpr::app(result, major_fvar.clone());
-  }
+  result = LeanExpr::app(result, major_applied);
 
   // Re-close inner foralls if present
   if !inner_decls.is_empty() {
@@ -1039,15 +1098,19 @@ fn transform_to_below_fvar(
   result
 }
 
-/// Replace the head constant in a field domain with a motive FVar.
+/// Replace the head constant in a recursive field domain with a motive FVar.
 ///
-/// Given a field domain `I_j params... indices...`, build
-/// `motive_fvar indices... major_fvar`. The motive does not take
-/// parameters (they are global to the block), so the first
-/// `num_params` arguments from the domain's application spine are
-/// skipped.
+/// For a first-order field `h : I_j params indices`, builds
+/// `motive_fvar indices h`.
 ///
-/// Handles forall wrapping for higher-order fields.
+/// For a higher-order field `h : ∀ y₁ .. yₙ, I_j params indices`, builds
+/// `∀ y₁ .. yₙ, motive_fvar indices (h y₁ .. yₙ)`. The major is the FIELD
+/// value applied to the inner binders, not the inner binders spliced onto
+/// the motive's spine.
+///
+/// `num_params` is the parent inductive's parameter count — the leaf's
+/// application spine is `[params..., indices...]`, so we skip the first
+/// `num_params` to retain only the indices.
 fn replace_head_with_fvar(
   field_dom: &LeanExpr,
   motive_fvar: &LeanExpr,
@@ -1060,19 +1123,21 @@ fn replace_head_with_fvar(
 
   let (_head, args) = decompose_apps(&leaf);
 
-  // Build: motive_fvar indices... inner_fvars major_fvar
-  // The args from the field domain are: [params..., indices...].
-  // The motive takes only (indices, major), so skip the first num_params.
+  // Build: motive_fvar indices... (major_fvar inner_fvars)
   let mut result = motive_fvar.clone();
   for a in args.iter().skip(num_params) {
     result = LeanExpr::app(result, a.clone());
   }
+  // The motive's major premise is `h` applied to the inner binders
+  // (or just `h` itself if the field is first-order). Previously the
+  // inner binders were applied directly to the motive spine and the
+  // `major_fvar` application was gated to `n_inner == 0`, which produced
+  // `motive indices ys` instead of `motive indices (h ys)`.
+  let mut major_applied = major_fvar.clone();
   if !inner_fvars.is_empty() {
-    result = mk_app_n(result, &inner_fvars);
+    major_applied = mk_app_n(major_applied, &inner_fvars);
   }
-  if n_inner == 0 {
-    result = LeanExpr::app(result, major_fvar.clone());
-  }
+  result = LeanExpr::app(result, major_applied);
 
   if !inner_decls.is_empty() {
     result = mk_forall(result, &inner_decls);
@@ -1130,14 +1195,25 @@ fn detect_rec_target_class(
 fn build_below_minor(
   minor_dom: &LeanExpr,
   rlvl: &Level,
-  elim_level: &Level,
   motive_fvars: &[LeanExpr],
-) -> LeanExpr {
+  tc_scope: &mut super::expr_utils::TcScope<'_>,
+) -> Result<LeanExpr, CompileError> {
   // Open all field binders with forall_telescope. After this, field
   // domains reference motive FVars directly (no BVar arithmetic needed).
+  //
+  // Head-reduce each field's domain to match the shape Lean stores. When
+  // the parent inductive uses lambda-valued parameters (e.g.
+  // `β := λ_:α. Json` for `Internal.Impl α β`), a field like
+  // `v : (λ_:α. Json) k` is stored in Lean's .below value as `v : Json`.
+  // This is an empirical difference: the recursor's stored TYPE preserves
+  // the lambda redex, but the downstream `mkBelowFromRec` path reduces
+  // field binder types. Reducing here matches Lean's stored form exactly.
   let n_fields = count_foralls_expr(minor_dom);
-  let (field_fvars, field_decls, _return_type) =
+  let (field_fvars, mut field_decls, _return_type) =
     forall_telescope(minor_dom, n_fields, "bwf", 0);
+  for decl in &mut field_decls {
+    decl.domain = super::expr_utils::beta_reduce(&decl.domain);
+  }
 
   // Classify fields: IH (head is motive FVar) vs non-IH.
   // For IH fields, also open inner foralls to detect higher-order pattern.
@@ -1161,9 +1237,6 @@ fn build_below_minor(
     .map(|(decl, fvar)| {
       let is_ih = find_motive_fvar(&decl.domain, motive_fvars).is_some();
       if is_ih {
-        // Open inner foralls in the domain to distinguish simple vs
-        // higher-order IH. For `motive x` → n_inner=0, leaf=motive x.
-        // For `∀ (a : Nat), motive (f a)` → n_inner=1, leaf=motive (f a).
         let n_inner = count_foralls_expr(&decl.domain);
         let (inner_fvars, inner_decls, leaf) =
           forall_telescope(&decl.domain, n_inner, "bwi", 0);
@@ -1188,50 +1261,11 @@ fn build_below_minor(
     })
     .collect();
 
-  // Build PProd entries from IH fields.
-  // Simple IH: PProd(motive_app, ih_fvar)
-  // Higher-order IH: ∀ (a₁..aₙ), PProd(motive_app_leaf, ih_fvar a₁..aₙ)
-  let mut ih_entries: Vec<LeanExpr> = Vec::new();
-  for field in &fields {
-    if field.is_ih
-      && let Some(leaf) = &field.leaf_motive_app
-    {
-      if field.inner_decls.is_empty() {
-        // Simple IH: no inner foralls.
-        let pprod = mk_pprod(elim_level, rlvl, leaf, &field.fvar);
-        ih_entries.push(pprod);
-      } else {
-        // Higher-order IH: distribute PProd inside the foralls.
-        // Entry: ∀ (a₁..aₙ), PProd(leaf, ih_fvar a₁..aₙ)
-        let ih_applied = mk_app_n(field.fvar.clone(), &field.inner_fvars);
-        let pprod = mk_pprod(elim_level, rlvl, leaf, &ih_applied);
-        let entry = mk_forall(pprod, &field.inner_decls);
-        ih_entries.push(entry);
-      }
-    }
-  }
-
-  // Pack IH entries following Lean's PProdN.pack convention:
-  //   []       -> PUnit.{rlvl}
-  //   [a]      -> a
-  //   [a,b]    -> PProd a b
-  //   [a,b,c]  -> PProd a (PProd b c)
-  let body = if ih_entries.is_empty() {
-    punit_const(rlvl)
-  } else {
-    let last = ih_entries.pop().unwrap();
-    ih_entries
-      .iter()
-      .rev()
-      .fold(last, |acc, entry| mk_pprod(rlvl, rlvl, entry, &acc))
-  };
-
-  // Build lambda binders: for IH fields, replace domain with the
-  // appropriate below-data type.
-  // Simple IH: Sort rlvl
-  // Higher-order IH: ∀ (a₁..aₙ), Sort rlvl
+  // Build lambda binders FIRST (before PProd construction): for IH fields,
+  // replace domain with `Sort rlvl`. We need these pushed into TcScope
+  // before inferring PProd levels.
   let lam_decls: Vec<LocalDecl> = fields
-    .into_iter()
+    .iter()
     .map(|f| {
       if f.is_ih {
         let new_domain = if f.inner_decls.is_empty() {
@@ -1239,14 +1273,66 @@ fn build_below_minor(
         } else {
           mk_forall(LeanExpr::sort(rlvl.clone()), &f.inner_decls)
         };
-        LocalDecl { domain: new_domain, ..f.decl }
+        LocalDecl { domain: new_domain, ..f.decl.clone() }
       } else {
-        f.decl
+        f.decl.clone()
       }
     })
     .collect();
 
-  mk_lambda(body, &lam_decls)
+  // Push field decls (with replaced IH domains) into TcScope so that
+  // get_level can resolve the FVars in PProd operands.
+  tc_scope.push_locals(&lam_decls);
+
+  // Build PProd entries from IH fields. Infer each PProd operand's
+  // level via TC — matches Lean's `mkPProd` (PProdN.lean:37-38), which
+  // calls `getLevel` on each operand. An earlier version accepted a
+  // `tc_scope: Option<&mut TcScope>` and silently fell back to the
+  // hardcoded `(elim_level, rlvl)` pair when the scope was `None`; that
+  // path was never live (no caller passed `None`) and has been removed
+  // to avoid masking genuine TC failures.
+  let mut ih_entries: Vec<LeanExpr> = Vec::new();
+  for field in &fields {
+    if field.is_ih
+      && let Some(leaf) = &field.leaf_motive_app
+    {
+      if field.inner_decls.is_empty() {
+        // Simple IH: PProd(motive_app, ih_fvar).
+        let lvl1 = tc_scope.get_level(leaf)?;
+        let lvl2 = tc_scope.get_level(&field.fvar)?;
+        ih_entries.push(mk_pprod(&lvl1, &lvl2, leaf, &field.fvar));
+      } else {
+        // Higher-order IH: ∀ (a₁..aₙ), PProd(leaf, ih_fvar a₁..aₙ).
+        tc_scope.push_locals(&field.inner_decls);
+        let ih_applied = mk_app_n(field.fvar.clone(), &field.inner_fvars);
+        let lvl1 = tc_scope.get_level(leaf)?;
+        let lvl2 = tc_scope.get_level(&ih_applied)?;
+        tc_scope.pop_locals(&field.inner_decls);
+        let pprod = mk_pprod(&lvl1, &lvl2, leaf, &ih_applied);
+        ih_entries.push(mk_forall(pprod, &field.inner_decls));
+      }
+    }
+  }
+
+  // Pack IH entries following Lean's PProdN.pack convention.
+  // Lean's genMk calls mkPProd per-pair, which infers levels from each operand.
+  let body = if ih_entries.is_empty() {
+    punit_const(rlvl)
+  } else {
+    let last = ih_entries.pop().unwrap();
+    let mut acc = last;
+    for entry in ih_entries.iter().rev() {
+      let lvl1 = tc_scope.get_level(entry)?;
+      let lvl2 = tc_scope.get_level(&acc)?;
+      acc = mk_pprod(&lvl1, &lvl2, entry, &acc);
+    }
+    acc
+  };
+
+  // Pop field decls from TcScope.
+  tc_scope.pop_locals(&lam_decls);
+
+  Ok(mk_lambda(body, &lam_decls))
 }
 
 /// Compute the sort level of `PProd.{u, v}`, which is `Sort (max 1 u v)`.
@@ -1351,34 +1437,16 @@ pub(super) fn level_max(a: &Level, b: &Level) -> Level {
   Level::max(a.clone(), b.clone())
 }
 
-/// Normalize a level to Lean's canonical right-associated form.
-/// - `max(max(a, b), c)` → `max(a, max(b, c))`
-/// - Applied recursively to fully flatten and right-associate.
-pub(super) fn normalize_level(lvl: &Level) -> Level {
-  match lvl.as_data() {
-    LevelData::Zero(_) | LevelData::Param(_, _) | LevelData::Mvar(_, _) => {
-      lvl.clone()
-    },
-    LevelData::Succ(inner, _) => mk_level_succ(&normalize_level(inner)),
-    LevelData::Max(a, b, _) => {
-      let a = normalize_level(a);
-      let b = normalize_level(b);
-      // Right-associate: if a = max(a1, a2), flatten to max(a1, max(a2, b))
-      if let LevelData::Max(a1, a2, _) = a.as_data() {
-        let inner = level_max(&normalize_level(a2), &b);
-        level_max(&normalize_level(a1), &normalize_level(&inner))
-      } else {
-        level_max(&a, &b)
-      }
-    },
-    LevelData::Imax(a, b, _) => {
-      Level::imax(normalize_level(a), normalize_level(b))
-    },
-  }
-}
+// NOTE: a right-associating `normalize_level` used to live here but was
+// never called — it was flagged as display/debugging-only and Lean's
+// actual stored levels preserve left-association from occurrence-level
+// trees. Removed in Round 4 cleanup.
 
 /// Convert a `KUniv<Meta>` back to a `Level`, using `param_names` to recover
 /// `Param` names from de Bruijn indices.
+///
+/// Uses raw `Level::succ` / `Level::max` to faithfully preserve the kernel's
+/// level structure — no distribution of Succ over Max, no subsumption.
 pub(super) fn kuniv_to_level(
   u: &crate::ix::kernel::level::KUniv<crate::ix::kernel::mode::Meta>,
   param_names: &[Name],
@@ -1386,13 +1454,9 @@ pub(super) fn kuniv_to_level(
   use crate::ix::kernel::level::UnivData;
   match u.data() {
     UnivData::Zero(_) => Level::zero(),
-    UnivData::Succ(inner, _) => {
-      mk_level_succ(&kuniv_to_level(inner, param_names))
-    },
+    UnivData::Succ(inner, _) => Level::succ(kuniv_to_level(inner, param_names)),
     UnivData::Max(a, b, _) => {
-      let la = kuniv_to_level(a, param_names);
-      let lb = kuniv_to_level(b, param_names);
-      level_max(&la, &lb)
+      Level::max(kuniv_to_level(a, param_names), kuniv_to_level(b, param_names))
     },
     UnivData::IMax(a, b, _) => Level::imax(
       kuniv_to_level(a, param_names),

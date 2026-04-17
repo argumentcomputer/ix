@@ -113,6 +113,7 @@ pub(crate) fn compile_aux_block(
   }
 
   // Compile the mutual block.
+  let name_refs = cache.build_name_refs();
   let block_refs: Vec<Address> = cache.refs.iter().cloned().collect();
   let block_univs: Vec<Arc<Univ>> = cache.univs.iter().cloned().collect();
   let name_str = aux_consts[0].name().pretty();
@@ -137,7 +138,10 @@ pub(crate) fn compile_aux_block(
     for cnst in &sorted_classes[0] {
       let n = cnst.name();
       let meta = all_metas.remove(&n).unwrap_or_default();
-      stt.env.register_name(n.clone(), Named::new(block_addr.clone(), meta));
+      stt.env.register_name(
+        n.clone(),
+        Named::new(block_addr.clone(), meta).with_name_refs(name_refs.clone()),
+      );
       stt.aux_name_to_addr.insert(n.clone(), block_addr.clone());
       stt.aux_gen_extra_names.insert(n.clone());
       pending_names.push(n);
@@ -159,9 +163,11 @@ pub(crate) fn compile_aux_block(
             }));
             let proj_addr = content_address(&indc_proj);
             stt.env.store_const(proj_addr.clone(), indc_proj);
-            stt
-              .env
-              .register_name(n.clone(), Named::new(proj_addr.clone(), meta));
+            stt.env.register_name(
+              n.clone(),
+              Named::new(proj_addr.clone(), meta)
+                .with_name_refs(name_refs.clone()),
+            );
             stt.aux_name_to_addr.insert(n.clone(), proj_addr.clone());
             stt.aux_gen_extra_names.insert(n.clone());
             pending_names.push(n);
@@ -180,7 +186,8 @@ pub(crate) fn compile_aux_block(
               stt.env.store_const(ctor_addr.clone(), ctor_proj);
               stt.env.register_name(
                 ctor.cnst.name.clone(),
-                Named::new(ctor_addr.clone(), ctor_meta),
+                Named::new(ctor_addr.clone(), ctor_meta)
+                  .with_name_refs(name_refs.clone()),
               );
               stt
                 .aux_name_to_addr
@@ -196,9 +203,11 @@ pub(crate) fn compile_aux_block(
             }));
             let proj_addr = content_address(&proj);
             stt.env.store_const(proj_addr.clone(), proj);
-            stt
-              .env
-              .register_name(n.clone(), Named::new(proj_addr.clone(), meta));
+            stt.env.register_name(
+              n.clone(),
+              Named::new(proj_addr.clone(), meta)
+                .with_name_refs(name_refs.clone()),
+            );
             stt.aux_name_to_addr.insert(n.clone(), proj_addr);
             stt.aux_gen_extra_names.insert(n.clone());
             pending_names.push(n);
@@ -210,9 +219,11 @@ pub(crate) fn compile_aux_block(
             }));
             let proj_addr = content_address(&proj);
             stt.env.store_const(proj_addr.clone(), proj);
-            stt
-              .env
-              .register_name(n.clone(), Named::new(proj_addr.clone(), meta));
+            stt.env.register_name(
+              n.clone(),
+              Named::new(proj_addr.clone(), meta)
+                .with_name_refs(name_refs.clone()),
+            );
             stt.aux_name_to_addr.insert(n.clone(), proj_addr);
             stt.aux_gen_extra_names.insert(n.clone());
             pending_names.push(n);
@@ -428,20 +439,18 @@ pub(crate) fn generate_and_compile_aux_recursors(
   }
   let brecon_elapsed = t6.elapsed();
 
-  // Phase 7: noConfusion for alpha-collapsed blocks.
-  //
-  // noConfusion's value calls casesOn, but the original Lean noConfusion
-  // was built for the non-collapsed casesOn (which has more motives/minors).
-  // Compiling the original as-is produces structurally incorrect Ixon.
-  //
-  // Full noConfusion regeneration is deferred (see no_confusion.rs).
-  // TODO: suppress broken noConfusion for collapsed blocks once we have
-  // a mechanism to filter them from the scheduler without breaking deps
-  // (adding to aux_gen_extra_names decrements dep counters but doesn't
-  // provide addresses, causing MissingConstant errors downstream).
+  // Note: `.noConfusion`, `.noConfusionType`, `.ctor.noConfusion`, `.ctorIdx`,
+  // `.ctorElim*`, `.ctor.inj*`, `._sizeOf_*`, etc. are **not** regenerated.
+  // Their bodies only invoke `.casesOn` (never `.rec`), and `.casesOn`'s
+  // public binder arity is invariant under alpha collapse. Compiling the
+  // original Lean values as-is produces correct Ixon — they resolve to our
+  // regenerated `.casesOn` at address-resolution time. The validate-aux
+  // roundtrip test confirms this empirically (0 mismatches across 25k+
+  // constants, including these auxiliaries for alpha-collapsed multi-ctor
+  // blocks). See the aux_gen.rs module docs for the full rationale.
 
   let total = aux_total_start.elapsed();
-  if total.as_secs_f32() > 0.5 {
+  if *crate::ix::compile::IX_TIMING && total.as_secs_f32() > 0.5 {
     eprintln!(
       "[aux_gen] {:?} total={:.2}s gen={:.2}s rec={:.2}s cases={:.2}s recOn={:.2}s below={:.2}s belowRec={:.2}s brecon={:.2}s patches={}",
       block_label,
@@ -502,7 +511,12 @@ fn below_indc_to_mut_const(
       ctors: bi.ctors.iter().map(|c| c.name.clone()).collect(),
       is_rec: true,
       is_unsafe: false,
-      is_reflexive: false,
+      // Propagate reflexivity from the parent: a `.below` built from a
+      // reflexive parent has higher-order recursive IH fields of its own
+      // (`∀ ys, I.below ... (h ys)`). Hardcoding `false` here silently
+      // diverges from Lean's auto-generated `.below` content hash for
+      // inductives like `Acc` and `Lean.Order.iterates`.
+      is_reflexive: bi.is_reflexive,
       num_nested: Nat::from(0u64),
     },
     ctors: ctor_vals,
@@ -586,6 +600,7 @@ fn compile_below_recursors(
     &classes,
     lean_env,
     Some(&overlay),
+    None,
     stt,
     &stt.kctx,
   )?;

@@ -138,11 +138,12 @@ impl LeanIxRawEnvironment<LeanOwned> {
   /// so we return just the array, not a structure containing it.
   pub fn build(
     cache: &mut LeanBuildCache,
-    consts: &FxHashMap<Name, ConstantInfo>,
+    consts: &crate::ix::env::Env,
   ) -> Self {
     // Build consts array: Array (Name × ConstantInfo)
     let consts_arr = LeanArray::alloc(consts.len());
-    for (i, (name, info)) in consts.iter().enumerate() {
+    for (i, entry) in consts.iter().enumerate() {
+      let (name, info) = entry;
       let key_obj = LeanIxName::build(cache, name);
       let val_obj = LeanIxConstantInfo::build(cache, info);
       // Build pair (Name × ConstantInfo)
@@ -242,7 +243,8 @@ impl<R: LeanRef> LeanIxEnvironment<R> {
 pub extern "C" fn rs_roundtrip_ix_environment(
   env_ptr: LeanIxEnvironment<LeanBorrowed<'_>>,
 ) -> LeanIxRawEnvironment<LeanOwned> {
-  let env = env_ptr.decode();
+  let decoded = env_ptr.decode();
+  let env: crate::ix::env::Env = decoded.into_iter().collect();
   let mut cache = LeanBuildCache::with_capacity(env.len());
   LeanIxRawEnvironment::build(&mut cache, &env)
 }

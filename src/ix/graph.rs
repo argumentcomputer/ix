@@ -80,7 +80,8 @@ pub fn build_ref_graph(env: &Env) -> RefGraph {
 
   let (out_refs, in_refs) = env
     .par_iter()
-    .map(|(name, constant)| {
+    .map(|entry| {
+      let (name, constant) = entry;
       let deps = get_constant_info_references(constant);
       let in_refs = mk_in_refs(name, &deps);
       let out_refs = RefMap::from_iter([(name.clone(), deps)]);
@@ -96,7 +97,9 @@ pub fn build_ref_graph(env: &Env) -> RefGraph {
   RefGraph { out_refs, in_refs }
 }
 
-fn get_constant_info_references(constant_info: &ConstantInfo) -> NameSet {
+pub(crate) fn get_constant_info_references(
+  constant_info: &ConstantInfo,
+) -> NameSet {
   let cache = &mut FxHashMap::default();
   match constant_info {
     ConstantInfo::AxiomInfo(val) => get_expr_references(&val.cnst.typ, cache),

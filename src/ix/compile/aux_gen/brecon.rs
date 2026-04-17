@@ -8,6 +8,7 @@
 //!   `.brecOn.go` uses PProd-wrapped motives; `.brecOn` projects first component.
 //!   Reference: `refs/lean4/src/Lean/Meta/Constructions/BRecOn.lean:191-308`
 
+use crate::ix::compile::nat_conv::try_nat_to_usize;
 use crate::ix::env::{
   BinderInfo, ConstantInfo, Env as LeanEnv, Expr as LeanExpr, ExprData,
   InductiveVal, Level, LevelData, Name, RecursorVal,
@@ -16,13 +17,13 @@ use crate::ix::ixon::CompileError;
 use lean_ffi::nat::Nat;
 
 use super::below::{
-  BelowConstant, get_ind_sort_level, level_max, mk_level_succ, mk_pprod,
-  mk_pprod_mk, mk_punit_unit, normalize_level,
+  BelowConstant, mk_level_succ, mk_pprod, mk_pprod_mk, mk_punit_unit,
 };
 
 use super::expr_utils::{
-  LocalDecl, decompose_apps, find_motive_fvar, forall_telescope, fresh_fvar,
-  instantiate1, mk_app_n, mk_const, mk_forall, mk_lambda,
+  LocalDecl, abstract_fvar, decompose_apps, find_motive_fvar, forall_telescope,
+  fresh_fvar, instantiate1, mk_app_n, mk_const, mk_forall, mk_lambda,
+  subst_fvar,
 };
 
 /// A generated `.brecOn` definition (or `.brecOn.go`).
@@ -59,9 +60,16 @@ pub(crate) fn generate_brecon_constants(
   for ci in 0..n_classes.min(canonical_recs.len()).min(below_consts.len()) {
     let (_, rec_val) = &canonical_recs[ci];
     let class_rep = &sorted_classes[ci][0];
-    let ind = match lean_env.get(class_rep) {
+    let ind_ref = lean_env.get(class_rep);
+    let ind = match ind_ref.as_deref() {
       Some(ConstantInfo::InductInfo(v)) => v,
-      _ => continue,
+      _ => {
+        return Err(CompileError::MissingConstant {
+          name: class_rep.pretty(),
+          caller: "generate_brecon_constants: class rep not an inductive"
+            .into(),
+        });
+      },
     };
 
     // Only generate brecOn for recursive inductives (matching Lean's guard:
@@ -111,7 +119,7 @@ pub(crate) fn generate_brecon_constants(
     if n_aux > 0 {
       // all[0] from the first class's inductive — Lean hangs _N names here.
       let first_class_name = &sorted_classes[0][0];
-      let all0 = match lean_env.get(first_class_name) {
+      let all0 = match lean_env.get(first_class_name).as_deref() {
         Some(ConstantInfo::InductInfo(v)) => v.all[0].clone(),
         _ => first_class_name.clone(),
       };
@@ -176,16 +184,23 @@ fn build_prop_brecon(
   sorted_classes: &[Vec<Name>],
   below_consts: &[BelowConstant],
 ) -> Result<BRecOnDef, CompileError> {
-  let n_params = rec_val.num_params.to_u64().unwrap_or(0) as usize;
-  let n_motives = rec_val.num_motives.to_u64().unwrap_or(0) as usize;
-  let n_minors = rec_val.num_minors.to_u64().unwrap_or(0) as usize;
-  let n_indices = ind.num_indices.to_u64().unwrap_or(0) as usize;
+  let n_params = try_nat_to_usize(&rec_val.num_params)?;
+  let n_motives = try_nat_to_usize(&rec_val.num_motives)?;
+  let n_minors = try_nat_to_usize(&rec_val.num_minors)?;
+  let n_indices = try_nat_to_usize(&ind.num_indices)?;
   let ind_level_params = &ind.cnst.level_params;
 
-  // For Prop brecOn with large elimination (drec), substitute u -> Level::zero()
+  // For Prop brecOn with large elimination (drec), substitute u -> Level::zero().
+  // Invariant: generate_canonical_recursors always prepends the elimination level
+  // as level_params[0] for large recursors (recursor.rs:192-194), so [0] is correct.
   let large_elim = rec_val.cnst.level_params.len() > ind_level_params.len();
   let rec_val = if large_elim && !rec_val.cnst.level_params.is_empty() {
     let u_param = &rec_val.cnst.level_params[0];
+    debug_assert!(
+      !ind_level_params.contains(u_param),
+      "elimination level param {:?} should not be in the inductive's own level params",
+      u_param.pretty(),
+    );
     let mut rv = rec_val.clone();
     rv.cnst.typ = subst_level_in_expr(&rv.cnst.typ, u_param, &Level::zero());
     for rule in &mut rv.rules {
@@ -205,17 +220,18 @@ fn build_prop_brecon(
 
   let below_ctor_names: Vec<Vec<Name>> = (0..n_classes)
     .map(|j| {
-      below_consts
-        .get(j)
-        .map(|bc| match bc {
-          BelowConstant::Indc(bi) => {
-            bi.ctors.iter().map(|c| c.name.clone()).collect()
-          },
-          _ => vec![],
-        })
-        .unwrap_or_default()
+      let bc =
+        below_consts.get(j).ok_or_else(|| CompileError::UnsupportedExpr {
+          desc: format!("prop brecOn: missing below constant for class {j}"),
+        })?;
+      Ok(match bc {
+        BelowConstant::Indc(bi) => {
+          bi.ctors.iter().map(|c| c.name.clone()).collect()
+        },
+        _ => vec![],
+      })
     })
-    .collect();
+    .collect::<Result<Vec<_>, CompileError>>()?;
 
   // --- Phase 1: Open rec type into FVars ---
   let (param_fvars, param_decls, after_params) =
@@ -347,8 +363,12 @@ fn build_prop_brecon(
   // Apply below_minors: for each ctor, build λ (fields) => below_ctor params motives args
   let mut global_ctor_idx = 0usize;
   for j in 0..n_classes {
-    let class_ctor_names: &[Name] =
-      below_ctor_names.get(j).map_or(&[], |v| v.as_slice());
+    let class_ctor_names: &[Name] = below_ctor_names
+      .get(j)
+      .ok_or_else(|| CompileError::UnsupportedExpr {
+        desc: format!("prop brecOn: missing below ctor names for class {j}"),
+      })?
+      .as_slice();
 
     for (cidx, below_ctor_name) in class_ctor_names.iter().enumerate() {
       if global_ctor_idx + cidx >= minor_doms.len() {
@@ -435,16 +455,31 @@ fn build_prop_below_minor_fvar(
     field_decls.into_iter().zip(field_fvars.into_iter()).enumerate()
   {
     if let Some(j_prime) = find_motive_fvar(&decl.domain, motive_fvars) {
-      // IH field: replace domain with I_{j'}.below params motives args
-      let (_, dom_args) = decompose_apps(&decl.domain);
+      // IH field. For a non-reflexive IH `motive args`, the new binder is
+      // just `I_{j'}.below params motives args`. For a reflexive IH
+      // `∀(inner), motive args`, the new binder preserves the forall
+      // structure: `∀(inner), I_{j'}.below params motives args`.
+      //
+      // This matches Lean's `ihTypeToBelowType` (IndPredBelow.lean:71-75),
+      // which walks the expression and replaces only the motive head.
+      let n_inner_foralls = super::expr_utils::count_foralls(&decl.domain);
+      let (inner_fvars, inner_decls, leaf) = forall_telescope(
+        &decl.domain,
+        n_inner_foralls,
+        &format!("pbmp{fi}"),
+        0,
+      );
+      let (_, leaf_args) = decompose_apps(&leaf);
 
-      // Build below domain: I_{j'}.below params motives dom_args
-      let mut below_dom = mk_const(&below_names[j_prime], ind_univs);
-      below_dom = mk_app_n(below_dom, param_fvars);
-      below_dom = mk_app_n(below_dom, motive_fvars);
-      for a in &dom_args {
-        below_dom = LeanExpr::app(below_dom, a.clone());
+      // Build the leaf below application: I_{j'}.below params motives leaf_args
+      let mut below_leaf = mk_const(&below_names[j_prime], ind_univs);
+      below_leaf = mk_app_n(below_leaf, param_fvars);
+      below_leaf = mk_app_n(below_leaf, motive_fvars);
+      for a in &leaf_args {
+        below_leaf = LeanExpr::app(below_leaf, a.clone());
       }
+      // Re-wrap with the original foralls (empty for non-reflexive).
+      let below_dom = mk_forall(below_leaf, &inner_decls);
 
       // Create ih FVar with below domain
       let (ih_fv_name, ih_fv) = fresh_fvar("pbmi", fi);
@@ -459,35 +494,22 @@ fn build_prop_below_minor_fvar(
       // ih arg for below ctor
       ctor_args.push(ih_fv.clone());
 
-      // proof arg: build F_{j'+1} applied to dom_args and ih
-      // For simple case: F_{j'} dom_args ih_fv
-      // For forall case: λ (forall_args) => F_{j'} dom_args_applied (ih_fv forall_args)
-      let n_inner_foralls = super::expr_utils::count_foralls(&decl.domain);
+      // proof arg: `F_{j'}` applied to leaf_args and `ih_fv applied to inner`.
+      //   non-reflexive: F_{j'} leaf_args ih_fv
+      //   reflexive:     λ inner, F_{j'} leaf_args (ih_fv inner)
       let proof = if n_inner_foralls == 0 {
-        // Simple: F_{j'} dom_args ih_fv
-        let mut p = f_fvars[j_prime].clone();
-        for a in &dom_args {
-          p = LeanExpr::app(p, a.clone());
-        }
-        LeanExpr::app(p, ih_fv)
-      } else {
-        // Forall: λ (inner_args) => F_{j'} leaf_args (ih_fv inner_args)
-        let (inner_fvars, inner_decls, leaf) = forall_telescope(
-          &decl.domain,
-          n_inner_foralls,
-          &format!("pbmp{fi}"),
-          0,
-        );
-        let (_, leaf_args) = decompose_apps(&leaf);
-
         let mut p = f_fvars[j_prime].clone();
         for a in &leaf_args {
           p = LeanExpr::app(p, a.clone());
         }
-        // Apply (ih_fv inner_args)
+        LeanExpr::app(p, ih_fv)
+      } else {
+        let mut p = f_fvars[j_prime].clone();
+        for a in &leaf_args {
+          p = LeanExpr::app(p, a.clone());
+        }
         let ih_app = mk_app_n(ih_fv, &inner_fvars);
         p = LeanExpr::app(p, ih_app);
-
         mk_lambda(p, &inner_decls)
       };
       ctor_args.push(proof);
@@ -518,53 +540,11 @@ fn build_prop_below_minor_fvar(
 /// finds the head constant of the major's type, looks it up in the
 /// environment, and peels foralls to get the resulting Sort level.
 ///
-/// The raw sort level uses the external inductive's own level param names
-/// (e.g., `w` for `List.{w}`), so we substitute with the actual universe
-/// args from the Const node (e.g., `w → u` when the domain is `List.{u}`).
-///
-/// Falls back to `Level::zero()` if the head constant cannot be resolved.
-fn infer_ilvl_from_major(major_domain: &LeanExpr, lean_env: &LeanEnv) -> Level {
-  let (head, _) = decompose_apps(major_domain);
-  if let ExprData::Const(name, univs, _) = head.as_data() {
-    if let Some(ConstantInfo::InductInfo(iv)) = lean_env.get(name) {
-      let n_params = iv.num_params.to_u64().unwrap_or(0) as usize;
-      let n_indices = iv.num_indices.to_u64().unwrap_or(0) as usize;
-      let raw_level = get_ind_sort_level(&iv.cnst.typ, n_params + n_indices);
-      // Substitute the inductive's level params with the concrete universe args,
-      // then normalize to match the canonical form Lean's inferType produces.
-      return normalize_level(&super::expr_utils::subst_level(
-        &raw_level,
-        &iv.cnst.level_params,
-        univs,
-      ));
-    }
-  }
-  Level::zero()
-}
-
-/// Infer the inductive sort level from a motive's type.
-///
-/// A motive has type `∀ (indices...) (major : I_j args), Sort u`.
-/// We peel foralls to the last domain (the major's type), then call
-/// `infer_ilvl_from_major` to extract the sort level.
-fn infer_ilvl_from_motive_domain(
-  motive_type: &LeanExpr,
-  lean_env: &LeanEnv,
-) -> Level {
-  // Peel foralls to find the last domain (the major premise type).
-  let mut cur = motive_type.clone();
-  let mut last_dom = cur.clone();
-  loop {
-    match cur.as_data() {
-      ExprData::ForallE(_, dom, body, _, _) => {
-        last_dom = dom.clone();
-        cur = body.clone();
-      },
-      _ => break,
-    }
-  }
-  infer_ilvl_from_major(&last_dom, lean_env)
-}
+// NOTE: the previous fallback helpers `infer_ilvl_from_motive_domain`,
+// `infer_ilvl_from_major`, and `get_ind_sort_level` (formerly in below.rs)
+// were removed when we switched to propagating TcScope::get_level errors
+// unconditionally — see the comment above `rlvls` in `build_type_brecon_fvar`
+// for the rationale.
 
 /// Build Type-level `.brecOn.go`, `.brecOn`, and `.brecOn.eq` (FVar-based).
 ///
@@ -591,10 +571,10 @@ fn build_type_brecon_fvar(
   // aux_gen.rs between Phase 2 and Phase 3. It contains PUnit, PProd,
   // parent inductives, and canonical .below types.
 
-  let n_params = rec_val.num_params.to_u64().unwrap_or(0) as usize;
-  let n_motives = rec_val.num_motives.to_u64().unwrap_or(0) as usize;
-  let n_minors = rec_val.num_minors.to_u64().unwrap_or(0) as usize;
-  let n_indices = rec_val.num_indices.to_u64().unwrap_or(0) as usize;
+  let n_params = try_nat_to_usize(&rec_val.num_params)?;
+  let n_motives = try_nat_to_usize(&rec_val.num_motives)?;
+  let n_minors = try_nat_to_usize(&rec_val.num_minors)?;
+  let n_indices = try_nat_to_usize(&rec_val.num_indices)?;
   let rec_level_params = &rec_val.cnst.level_params;
   // Inductive-only level params (rec has [elim_level, ind_levels...]).
   let ind_level_params = &rec_level_params[1..];
@@ -658,16 +638,67 @@ fn build_type_brecon_fvar(
   let major_fvar = &major_fvars[0];
 
   // Compute per-motive rlvl: each member of the flat block may live in a
-  // different universe. Lean's mkPProd calls getLevel per-argument, which
-  // returns the below_j definition's stored sort level. We replicate this
-  // by computing ilvl_j from each motive's target inductive.
-  let rlvls: Vec<Level> = motive_decls
-    .iter()
-    .map(|md| {
-      let ilvl_j = infer_ilvl_from_motive_domain(&md.domain, lean_env);
-      normalize_level(&level_max(&ilvl_j, &elim_level))
-    })
-    .collect();
+  // different universe. Lean (BRecOn.lean:215-220) computes ilvl via
+  // `inferType (← inferType major)` then `rlvl = mkLevelMax ilvl lvl`.
+  // We use TcScope::get_level on the major domain from each motive's type,
+  // which performs the same inferType + ensure_sort sequence.
+  //
+  // If `get_level` fails, we propagate the error rather than silently
+  // falling back to `infer_ilvl_from_motive_domain`. The fallback uses a
+  // different universe-construction path than Lean and can produce
+  // structurally-different Level trees; silently masking a TC failure
+  // here leads to `PProd` universe mismatches later that are
+  // hard-to-diagnose. A TC failure here is almost always a sign that
+  // `canon_kenv` is missing a dependency — fix the root cause, don't
+  // paper over it.
+  let rlvls: Vec<Level> = {
+    // Create a temporary TcScope with params + motives context for ilvl inference.
+    let ilvl_ctx: Vec<LocalDecl> =
+      param_decls.iter().chain(motive_decls.iter()).cloned().collect();
+    let mut ilvl_tc =
+      super::expr_utils::TcScope::new(&ilvl_ctx, rec_level_params, stt, kctx);
+
+    motive_decls
+      .iter()
+      .map(|md| -> Result<Level, CompileError> {
+        // Peel foralls from the motive type to find the major domain,
+        // then infer its sort level via TC.
+        let n_motive_args = super::expr_utils::count_foralls(&md.domain);
+        let (_ifvs, idcls, _) =
+          forall_telescope(&md.domain, n_motive_args, "ilvl_m", 0);
+        // The major domain is the last binder's domain.
+        let major_dom = if let Some(last) = idcls.last() {
+          &last.domain
+        } else {
+          &md.domain
+        };
+
+        ilvl_tc.push_locals(&idcls);
+        let ilvl_j = ilvl_tc.get_level(major_dom).map_err(|e| {
+          CompileError::UnsupportedExpr {
+            desc: format!(
+              "brecOn ilvl inference failed for motive at class {ci}: \
+               TcScope::get_level on major domain returned {e:?}. \
+               This typically means `canon_kenv` is missing a \
+               required inductive — check that Phase 2 (populate_canon_kenv_with_below) \
+               ran before brecOn generation",
+            ),
+          }
+        })?;
+        ilvl_tc.pop_locals(&idcls);
+
+        // Match Lean's BRecOn.lean:220: `mkLevelMax ilvl lvl` — raw Level.max
+        // with only zero elimination.
+        Ok(if matches!(ilvl_j.as_data(), LevelData::Zero(_)) {
+          elim_level.clone()
+        } else if matches!(elim_level.as_data(), LevelData::Zero(_)) {
+          ilvl_j
+        } else {
+          Level::max(ilvl_j, elim_level.clone())
+        })
+      })
+      .collect::<Result<Vec<_>, _>>()?
+  };
   // The target's rlvl is used for the rec universe arg and go return type.
   let rlvl = &rlvls[ci];
 
@@ -737,7 +768,19 @@ fn build_type_brecon_fvar(
 
   // --- Phase 3: Build .brecOn.go ---
 
+  // Create ONE TcScope for the entire .go construction. Start with
+  // params + motives; push/pop indices/major/F-binders as needed.
+  // This matches Lean's mkPProd/mkPProdMk which infer levels via getLevel.
+  let base_ctx: Vec<LocalDecl> =
+    param_decls.iter().chain(motive_decls.iter()).cloned().collect();
+  let mut rtc =
+    super::expr_utils::TcScope::new(&base_ctx, rec_level_params, stt, kctx);
+
   // go return type: PProd (motive_ci indices major) (below_ci params motives indices major)
+  // Infer levels via TC with indices + major in scope.
+  rtc.push_locals(&index_decls);
+  rtc.push_locals(&major_decls);
+
   let motive_ci_app = mk_app_n(
     mk_app_n(motive_fvars[ci].clone(), &index_fvars),
     std::slice::from_ref(major_fvar),
@@ -752,7 +795,13 @@ fn build_type_brecon_fvar(
     ),
     std::slice::from_ref(major_fvar),
   );
-  let go_ret_type = mk_pprod(&elim_level, &rlvl, &motive_ci_app, &below_ci_app);
+  let go_ret_lvl1 = rtc.get_level(&motive_ci_app)?;
+  let go_ret_lvl2 = rtc.get_level(&below_ci_app)?;
+  let go_ret_type =
+    mk_pprod(&go_ret_lvl1, &go_ret_lvl2, &motive_ci_app, &below_ci_app);
+
+  rtc.pop_locals(&major_decls);
+  rtc.pop_locals(&index_decls);
 
   // go value: I.rec.{rlvl, lvls...} params [modified_motives] [modified_minors] indices major
   let mut go_val = mk_const(&rec_val.cnst.name, &{
@@ -770,6 +819,8 @@ fn build_type_brecon_fvar(
     let nma = super::expr_utils::count_foralls(mt);
     let (ifvs, idcls, _) = forall_telescope(mt, nma, &format!("tbgm{j}"), 0);
 
+    rtc.push_locals(&idcls);
+
     let m_app = mk_app_n(motive_fvars[j].clone(), &ifvs);
     let b_app = mk_app_n(
       mk_app_n(
@@ -778,30 +829,29 @@ fn build_type_brecon_fvar(
       ),
       &ifvs,
     );
-    let pprod_body = mk_pprod(&elim_level, &rlvls[j], &m_app, &b_app);
+    let mm_lvl1 = rtc.get_level(&m_app)?;
+    let mm_lvl2 = rtc.get_level(&b_app)?;
+    let pprod_body = mk_pprod(&mm_lvl1, &mm_lvl2, &m_app, &b_app);
+
+    rtc.pop_locals(&idcls);
+
     go_val = LeanExpr::app(go_val, mk_lambda(pprod_body, &idcls));
   }
 
-  // Create ONE TypeChecker for all minor premises. The outer FVar context
-  // (params, motives, indices, major, F-binders) is pushed once; per-minor
-  // lambda binders are pushed/popped via the ReusableTC API. The TC's
-  // inference cache compounds across all minors.
-  let outer_fvar_ctx: Vec<LocalDecl> = param_decls
-    .iter()
-    .chain(motive_decls.iter())
-    .chain(index_decls.iter())
-    .chain(major_decls.iter())
-    .chain(f_decls.iter())
-    .cloned()
-    .collect();
-  let mut rtc = super::expr_utils::TcScope::new(
-    &outer_fvar_ctx,
-    rec_level_params,
-    stt,
-    kctx,
-  );
+  // Push remaining context (indices, major, F-binders) for minor premises.
+  rtc.push_locals(&index_decls);
+  rtc.push_locals(&major_decls);
+  rtc.push_locals(&f_decls);
 
-  // Apply modified minors: for each ctor, build PProd-packed minor
+  // Apply modified minors: for each ctor, build PProd-packed minor.
+  //
+  // All minors share a single `rlvl` — the one derived from the recursor's
+  // single major premise. This matches Lean's BRecOn.lean where `rlvl` is
+  // computed once outside the per-minor loop and threaded through
+  // `buildBRecOnMinorPremise`. Using per-motive rlvls here (via
+  // `rlvls[ret_motive_idx]`) would produce syntactically different (but
+  // semantically equal) universe levels for `PUnit.unit` in nil-type
+  // minors, breaking alpha-congruence with Lean's original.
   for minor_dom in &minor_doms {
     let minor = build_type_minor_premise_fvar(
       minor_dom,
@@ -810,8 +860,7 @@ fn build_type_brecon_fvar(
       &f_fvars,
       &below_names,
       &rec_univs,
-      &elim_level,
-      &rlvls,
+      rlvl,
       &mut rtc,
     )?;
     go_val = LeanExpr::app(go_val, minor);
@@ -853,10 +902,8 @@ fn build_type_brecon_fvar(
   // NestedParam.RoseA α: List.casesOn needs (α := RoseA α).
   let cases_on_spec: Vec<LeanExpr> = if ci >= n_classes {
     let (_, major_args) = decompose_apps(&major_decls[0].domain);
-    let ext_n_params = match lean_env.get(&target_ind_name) {
-      Some(ConstantInfo::InductInfo(v)) => {
-        v.num_params.to_u64().unwrap_or(0) as usize
-      },
+    let ext_n_params = match lean_env.get(&target_ind_name).as_deref() {
+      Some(ConstantInfo::InductInfo(v)) => try_nat_to_usize(&v.num_params)?,
       _ => 0,
     };
     major_args.into_iter().take(ext_n_params).collect()
@@ -931,17 +978,32 @@ fn build_type_minor_premise_fvar(
   f_fvars: &[LeanExpr],
   below_names: &[Name],
   rec_univs: &[Level],
-  elim_level: &Level,
-  rlvls: &[Level],
+  // The single `rlvl` derived from the recursor's single major premise.
+  // Lean's `buildBRecOnMinorPremise` threads this one value through all
+  // minors — it is NOT specialised per motive.
+  rlvl: &Level,
   rtc: &mut super::expr_utils::TcScope<'_>,
 ) -> Result<LeanExpr, CompileError> {
   let n_fields = super::expr_utils::count_foralls(minor_dom);
-  let (field_fvars, field_decls, return_type) =
+  let (field_fvars, mut field_decls, return_type) =
     forall_telescope(minor_dom, n_fields, "tmf", 0);
 
+  // Head-reduce field domains to match Lean's stored .brecOn.go shape.
+  // Same rationale as `build_below_minor`: Lean's `mkBRecOnFromRec` goes
+  // through `mkLambdaFVars` which effectively normalises lambda-application
+  // redexes in field binder types, even though the underlying recursor
+  // stores them unreduced. Without this reduction, a field like
+  // `v : (λ_:α. Json) k` would be rendered `λ v:(λ_.Json) k. …` in our
+  // generated .brecOn.go, while Lean stores `λ v:Json. …`.
+  for decl in &mut field_decls {
+    decl.domain = super::expr_utils::beta_reduce(&decl.domain);
+  }
+
   // Determine which class the return type targets
-  let ret_motive_idx =
-    find_motive_fvar(&return_type, motive_fvars).unwrap_or(0);
+  let ret_motive_idx = find_motive_fvar(&return_type, motive_fvars)
+    .ok_or_else(|| CompileError::UnsupportedExpr {
+      desc: "brecOn minor: return type has no motive fvar head".into(),
+    })?;
 
   // Classify fields and build modified binders
   let mut lambda_decls: Vec<LocalDecl> = Vec::new();
@@ -959,9 +1021,8 @@ fn build_type_minor_premise_fvar(
         motive_fvars,
         below_names,
         rec_univs,
-        elim_level,
-        rlvls,
-      );
+        rtc,
+      )?;
       let (ih_fv_name, ih_fv) = fresh_fvar("tmih", fi);
       lambda_decls.push(LocalDecl {
         fvar_name: ih_fv_name,
@@ -979,57 +1040,39 @@ fn build_type_minor_premise_fvar(
 
   // Build PProdN.mk of prod entries (right-fold of VALUES, not types).
   //
-  // Sort levels are computed structurally (not via TC) to match Lean's
-  // un-normalized forms. PProd.{u,v} lives in Sort(max 1 u v), PUnit.{u}
-  // lives in Sort(u). We track (value, type, sort_level) through the fold.
-  let rlvl = &rlvls[ret_motive_idx];
+  // Lean's mkPProdMk (PProdN.lean:44-53) infers universe levels from the
+  // types via getLevel. We use the TcScope to do the same. Push the lambda
+  // decls (with replaced IH domains) into the TC so FVars resolve correctly.
 
-  // Compute the sort level of an IH field's PProd domain.
-  // The domain is PProd.{elim, rlvls[j']}(motive args, below args).
-  // PProd.{u,v} : Sort (max 1 u v), left-associated as max(max(1,u),v).
-  // This structural form must match Lean's getLevel output exactly.
-  let pprod_sort = |u: &Level, v: &Level| -> Level {
-    level_max(&level_max(&mk_level_succ(&Level::zero()), u), v)
-  };
-  let ih_sort = |decl_idx: usize| -> Level {
-    let orig_dom = &lambda_decls[decl_idx].domain;
-    let j_prime =
-      find_motive_fvar(orig_dom, motive_fvars).unwrap_or(ret_motive_idx);
-    pprod_sort(elim_level, &rlvls[j_prime])
-  };
+  rtc.push_locals(&lambda_decls);
 
-  let (b, b_type, b_sort) = if prod_entries.is_empty() {
+  let (b, b_type) = if prod_entries.is_empty() {
     // PUnit.{rlvl} : Sort rlvl
     let punit_ty = super::below::punit_const(rlvl);
-    (mk_punit_unit(rlvl), punit_ty, rlvl.clone())
+    (mk_punit_unit(rlvl), punit_ty)
   } else if prod_entries.len() == 1 {
     let fv = prod_entries[0].0.clone();
     let ty = lambda_decls[prod_entries[0].1].domain.clone();
-    let sort = ih_sort(prod_entries[0].1);
-    (fv, ty, sort)
+    (fv, ty)
   } else {
     // Right-fold with mk_pprod_mk (value-level PProd packing).
-    // Track sort level structurally: PProd.{u,v} has sort max 1 u v.
+    // Infer levels per-pair via TC, matching Lean's mkPProdMk.
     let last_idx = prod_entries.len() - 1;
     let last_fv = prod_entries[last_idx].0.clone();
     let last_ty = lambda_decls[prod_entries[last_idx].1].domain.clone();
-    let last_sort = ih_sort(prod_entries[last_idx].1);
     let mut fold_val = last_fv;
     let mut fold_ty = last_ty;
-    let mut fold_sort = last_sort;
     for (fv, decl_idx) in prod_entries[..last_idx].iter().rev() {
       let fv_ty = lambda_decls[*decl_idx].domain.clone();
-      let fv_sort = ih_sort(*decl_idx);
+      let fv_sort = rtc.get_level(&fv_ty)?;
+      let fold_sort = rtc.get_level(&fold_ty)?;
       let packed =
         mk_pprod_mk(&fv_sort, &fold_sort, &fv_ty, &fold_ty, fv, &fold_val);
       let packed_ty = mk_pprod(&fv_sort, &fold_sort, &fv_ty, &fold_ty);
-      // Sort of PProd.{fv_sort, fold_sort} = max(max(1, fv_sort), fold_sort)
-      let packed_sort = pprod_sort(&fv_sort, &fold_sort);
       fold_val = packed;
       fold_ty = packed_ty;
-      fold_sort = packed_sort;
     }
-    (fold_val, fold_ty, fold_sort)
+    (fold_val, fold_ty)
   };
 
   // Build the conclusion: PProd.mk (F_{ret_idx} ret_args b) b
@@ -1045,10 +1088,13 @@ fn build_type_minor_premise_fvar(
   // motive_ci ret_args — this is the type of (F ret_args b)
   let motive_app = mk_app_n(motive_fvars[ret_motive_idx].clone(), &ret_args);
 
-  // The outer PProd.mk wraps (F result, b) where:
-  //   type_a = motive_app (: Sort elim_level)
-  //   type_b = b_type (the PProdN-packed type : Sort b_sort)
-  let body = mk_pprod_mk(elim_level, &b_sort, &motive_app, &b_type, &f_app, &b);
+  // The outer PProd.mk wraps (F result, b).
+  // Infer levels via TC, matching Lean's mkPProdMk (PProdN.lean:44-53).
+  let lvl_a = rtc.get_level(&motive_app)?;
+  let lvl_b = rtc.get_level(&b_type)?;
+  let body = mk_pprod_mk(&lvl_a, &lvl_b, &motive_app, &b_type, &f_app, &b);
+
+  rtc.pop_locals(&lambda_decls);
 
   Ok(mk_lambda(body, &lambda_decls))
 }
@@ -1065,17 +1111,17 @@ fn replace_motive_with_pprod_fvar(
   motive_fvars: &[LeanExpr],
   below_names: &[Name],
   rec_univs: &[Level],
-  elim_level: &Level,
-  rlvls: &[Level],
-) -> LeanExpr {
+  rtc: &mut super::expr_utils::TcScope<'_>,
+) -> Result<LeanExpr, CompileError> {
   let n_inner = super::expr_utils::count_foralls(dom);
   let (_inner_fvars, inner_decls, leaf) =
     forall_telescope(dom, n_inner, "tpp", 0);
 
-  let j_prime = find_motive_fvar(&leaf, motive_fvars).unwrap_or(0);
-  // `leaf` is e.g. `motive_j idx1 idx2 major` — decompose_apps gives us
-  // the head (motive_j) and all args including inner FVars (indices + major).
-  // Do NOT also apply inner_fvars separately — that double-applies them.
+  let j_prime = find_motive_fvar(&leaf, motive_fvars).ok_or_else(|| {
+    CompileError::UnsupportedExpr {
+      desc: "brecOn pprod: leaf expression has no motive fvar head".into(),
+    }
+  })?;
   let (_, args) = decompose_apps(&leaf);
 
   // motive_app: motive_fvars[j'] args
@@ -1092,9 +1138,135 @@ fn replace_motive_with_pprod_fvar(
     below_app = LeanExpr::app(below_app, a.clone());
   }
 
-  let pprod = mk_pprod(elim_level, &rlvls[j_prime], &motive_app, &below_app);
+  // Infer PProd levels via TC, matching Lean's mkPProd (PProdN.lean:37-38).
+  if !inner_decls.is_empty() {
+    rtc.push_locals(&inner_decls);
+  }
+  let lvl1 = rtc.get_level(&motive_app)?;
+  let lvl2 = rtc.get_level(&below_app)?;
+  if !inner_decls.is_empty() {
+    rtc.pop_locals(&inner_decls);
+  }
 
-  if inner_decls.is_empty() { pprod } else { mk_forall(pprod, &inner_decls) }
+  let pprod = mk_pprod(&lvl1, &lvl2, &motive_app, &below_app);
+
+  Ok(if inner_decls.is_empty() {
+    pprod
+  } else {
+    mk_forall(pprod, &inner_decls)
+  })
+}
+
+/// Build `@Eq.{u} α a b`.
+fn mk_eq(u: &Level, alpha: &LeanExpr, a: &LeanExpr, b: &LeanExpr) -> LeanExpr {
+  let eq = mk_const(
+    &Name::str(Name::anon(), "Eq".to_string()),
+    std::slice::from_ref(u),
+  );
+  LeanExpr::app(
+    LeanExpr::app(LeanExpr::app(eq, alpha.clone()), a.clone()),
+    b.clone(),
+  )
+}
+
+/// Build `@Eq.refl.{u} α a : Eq.{u} α a a`.
+fn mk_eq_refl(u: &Level, alpha: &LeanExpr, a: &LeanExpr) -> LeanExpr {
+  let eq_refl = mk_const(
+    &Name::str(Name::str(Name::anon(), "Eq".to_string()), "refl".to_string()),
+    std::slice::from_ref(u),
+  );
+  LeanExpr::app(LeanExpr::app(eq_refl, alpha.clone()), a.clone())
+}
+
+/// Build `@Eq.symm.{u} α a b h : Eq b a` given `h : Eq a b`.
+fn mk_eq_symm(
+  u: &Level,
+  alpha: &LeanExpr,
+  a: &LeanExpr,
+  b: &LeanExpr,
+  h: &LeanExpr,
+) -> LeanExpr {
+  let eq_symm = mk_const(
+    &Name::str(Name::str(Name::anon(), "Eq".to_string()), "symm".to_string()),
+    std::slice::from_ref(u),
+  );
+  LeanExpr::app(
+    LeanExpr::app(
+      LeanExpr::app(LeanExpr::app(eq_symm, alpha.clone()), a.clone()),
+      b.clone(),
+    ),
+    h.clone(),
+  )
+}
+
+/// Build `@Eq.ndrec.{u_1, u_2} α a motive prf b h : motive b`.
+///
+/// `u_1` is the motive's result universe, `u_2` is the type `α`'s universe.
+#[allow(clippy::too_many_arguments)]
+fn mk_eq_ndrec(
+  u1: &Level,
+  u2: &Level,
+  alpha: &LeanExpr,
+  a: &LeanExpr,
+  motive: &LeanExpr,
+  prf: &LeanExpr,
+  b: &LeanExpr,
+  h: &LeanExpr,
+) -> LeanExpr {
+  let ndrec = mk_const(
+    &Name::str(Name::str(Name::anon(), "Eq".to_string()), "ndrec".to_string()),
+    &[u1.clone(), u2.clone()],
+  );
+  mk_app_n(
+    ndrec,
+    &[
+      alpha.clone(),
+      a.clone(),
+      motive.clone(),
+      prf.clone(),
+      b.clone(),
+      h.clone(),
+    ],
+  )
+}
+
+/// Build `@HEq.{u} α a β b`.
+fn mk_heq(
+  u: &Level,
+  alpha: &LeanExpr,
+  a: &LeanExpr,
+  beta: &LeanExpr,
+  b: &LeanExpr,
+) -> LeanExpr {
+  let heq = mk_const(
+    &Name::str(Name::anon(), "HEq".to_string()),
+    std::slice::from_ref(u),
+  );
+  mk_app_n(heq, &[alpha.clone(), a.clone(), beta.clone(), b.clone()])
+}
+
+/// Build `@HEq.refl.{u} α a : HEq a a`.
+fn mk_heq_refl(u: &Level, alpha: &LeanExpr, a: &LeanExpr) -> LeanExpr {
+  let heq_refl = mk_const(
+    &Name::str(Name::str(Name::anon(), "HEq".to_string()), "refl".to_string()),
+    std::slice::from_ref(u),
+  );
+  LeanExpr::app(LeanExpr::app(heq_refl, alpha.clone()), a.clone())
+}
+
+/// Build `@eq_of_heq.{u} α a b h : Eq a b` given `h : HEq a b`.
+fn mk_eq_of_heq(
+  u: &Level,
+  alpha: &LeanExpr,
+  a: &LeanExpr,
+  b: &LeanExpr,
+  h: &LeanExpr,
+) -> LeanExpr {
+  let eq_of_heq = mk_const(
+    &Name::str(Name::anon(), "eq_of_heq".to_string()),
+    std::slice::from_ref(u),
+  );
+  mk_app_n(eq_of_heq, &[alpha.clone(), a.clone(), b.clone(), h.clone()])
 }
 
 /// Build `.brecOn.eq` type and value (FVar-based).
@@ -1178,17 +1350,41 @@ fn build_type_brecon_eq_fvar(
 
   let eq_type = mk_forall(eq_type_body, all_decls);
 
-  // --- Value ---
-  // Build via casesOn (matching Lean's `cases` tactic + `refl`).
-  // casesOn has binder order: params, motive, indices, major, minors
-  // (different from rec's: params, motives, minors, indices, major)
-  // Only the target motive (ci) and target minors are present.
-  let cases_on_name = Name::str(target_ind_name.clone(), "casesOn".to_string());
+  // Target constructor list and counts, needed by both the simple and
+  // generalized value paths.
+  let ctor_counts: Vec<usize> = motive_decls
+    .iter()
+    .map(|md| {
+      let mut ty = md.domain.clone();
+      let mut last_dom = ty.clone();
+      loop {
+        match ty.as_data() {
+          ExprData::ForallE(_, dom, body, _, _) => {
+            last_dom = dom.clone();
+            ty = body.clone();
+          },
+          _ => break,
+        }
+      }
+      let (head, _) = decompose_apps(&last_dom);
+      match head.as_data() {
+        ExprData::Const(name, _, _) | ExprData::Fvar(name, _) => {
+          match lean_env.get(name).as_deref() {
+            Some(ConstantInfo::InductInfo(v)) => v.ctors.len(),
+            _ => 0,
+          }
+        },
+        _ => 0,
+      }
+    })
+    .collect();
+  let target_ctors: Vec<Name> = match lean_env.get(target_ind_name).as_deref() {
+    Some(ConstantInfo::InductInfo(v)) => v.ctors.clone(),
+    _ => vec![],
+  };
+  let minor_offset: usize = ctor_counts[..ci].iter().sum();
 
-  // casesOn universe: [Level::zero(), target_ind_lvls...] for Prop elimination.
-  // Extract the target inductive's levels from the major type's head const.
-  // For originals this gives the block's ind_univs; for nested auxiliaries
-  // it gives the occurrence levels (e.g., List.{0}).
+  // casesOn universe args (shared between simple and indexed paths).
   let eq_cases_univs: Vec<Level> = {
     let (head, _) = decompose_apps(&_major_decls[0].domain);
     if let ExprData::Const(_, lvls, _) = head.as_data() {
@@ -1199,6 +1395,59 @@ fn build_type_brecon_eq_fvar(
         .collect()
     }
   };
+  let cases_on_name = Name::str(target_ind_name.clone(), "casesOn".to_string());
+
+  // --- Indexed path ---
+  //
+  // When the target inductive has indices, Lean's `cases` tactic
+  // generalizes them with `Eq` proofs and the major with an `HEq` proof
+  // before applying `casesOn`. Each minor then proves the original goal
+  // via a chain of `Eq.ndrec` applications that rewrite the outer indices
+  // into the constructor's return indices, and one final `Eq.ndrec` that
+  // rewrites the outer major into the constructor-applied value via
+  // `Eq.symm ∘ eq_of_heq`.
+  //
+  // See `refs/lean4/src/Lean/Meta/Tactic/Cases.lean::generalizeIndices'`
+  // and `refs/lean4/src/Lean/Meta/Tactic/Induction.lean` for Lean's
+  // construction.
+  let n_indices = _index_decls.len();
+  if n_indices > 0 {
+    let eq_value_opt = build_indexed_eq_value(
+      ci,
+      &target_ctors,
+      brecon_name,
+      go_name,
+      rec_univs,
+      param_fvars,
+      motive_fvars,
+      motive_decls,
+      index_fvars,
+      _index_decls,
+      major_fvars,
+      _major_decls,
+      f_fvars,
+      all_decls,
+      minor_doms,
+      &ctor_counts,
+      minor_offset,
+      elim_level,
+      &cases_on_name,
+      &eq_cases_univs,
+      cases_on_spec_params,
+    );
+    if let Some(eq_value) = eq_value_opt {
+      return Some((eq_type, eq_value));
+    }
+    // Fall through to the simple path if the indexed construction
+    // couldn't be completed (e.g., missing ctor info).
+  }
+
+  // --- Simple value path (non-indexed) ---
+  // Build via casesOn (matching Lean's `cases` tactic + `refl`).
+  // casesOn has binder order: params, motive, indices, major, minors
+  // (different from rec's: params, motives, minors, indices, major)
+  // Only the target motive (ci) and target minors are present.
+
   let mut eq_val = mk_const(&cases_on_name, &eq_cases_univs);
 
   if !cases_on_spec_params.is_empty() {
@@ -1264,45 +1513,8 @@ fn build_type_brecon_eq_fvar(
   // For casesOn, minor fields have IH stripped — only non-recursive fields remain.
   // Each minor body is Eq.refl.
   //
-  // Derive constructor counts per flat block member from motive types.
-  // This works for both original classes and nested auxiliary members.
-  let ctor_counts: Vec<usize> = motive_decls
-    .iter()
-    .map(|md| {
-      // The motive type is ∀ indices (major : I_j ...), Sort u.
-      // Peel foralls to find the major domain, then extract head constant.
-      let mut ty = md.domain.clone();
-      let mut last_dom = ty.clone();
-      loop {
-        match ty.as_data() {
-          ExprData::ForallE(_, dom, body, _, _) => {
-            last_dom = dom.clone();
-            ty = body.clone();
-          },
-          _ => break,
-        }
-      }
-      let (head, _) = decompose_apps(&last_dom);
-      match head.as_data() {
-        ExprData::Const(name, _, _) | ExprData::Fvar(name, _) => {
-          match lean_env.get(name) {
-            Some(ConstantInfo::InductInfo(v)) => v.ctors.len(),
-            _ => 0,
-          }
-        },
-        _ => 0,
-      }
-    })
-    .collect();
-
-  let target_ctors: Vec<Name> = match lean_env.get(target_ind_name) {
-    Some(ConstantInfo::InductInfo(v)) => v.ctors.clone(),
-    _ => vec![],
-  };
-
-  // Find which minor_doms belong to target class ci.
-  // minor_doms are ordered by flat block member: member_0 ctors, member_1 ctors, etc.
-  let minor_offset: usize = ctor_counts[..ci].iter().sum();
+  // `ctor_counts`, `target_ctors`, and `minor_offset` were computed before
+  // branching into the indexed path.
 
   for (ctor_idx, _ctor_name) in target_ctors.iter().enumerate() {
     let mi = minor_offset + ctor_idx;
@@ -1314,8 +1526,17 @@ fn build_type_brecon_eq_fvar(
     // Open minor fields. In FVar form, IH fields have motive FVars as heads.
     // casesOn strips IH fields, so we only open non-IH fields.
     let n_minor_fields = super::expr_utils::count_foralls(minor_dom);
-    let (_mfield_fvars, mfield_decls, minor_ret) =
+    let (_mfield_fvars, mut mfield_decls, minor_ret) =
       forall_telescope(minor_dom, n_minor_fields, &format!("tbeqf{mi}"), 0);
+
+    // Head-reduce field domains — same rationale as `build_below_minor` and
+    // `build_type_minor_premise_fvar`. Lean's stored .brecOn.eq value reduces
+    // lambda-application redexes in field binder types (e.g. `v : (λ_:α. Json) k`
+    // becomes `v : Json`). Without this we end up with a structural mismatch
+    // on the binder types of minors for nested auxiliaries.
+    for decl in &mut mfield_decls {
+      decl.domain = super::expr_utils::beta_reduce(&decl.domain);
+    }
 
     // Filter to non-IH fields only (casesOn strips IH)
     let non_ih_decls: Vec<LocalDecl> = mfield_decls
@@ -1356,6 +1577,819 @@ fn build_type_brecon_eq_fvar(
   let eq_value = mk_lambda(eq_val, all_decls);
 
   Some((eq_type, eq_value))
+}
+
+// =========================================================================
+// Indexed-inductive `.brecOn.eq` value construction
+// =========================================================================
+
+/// Build the value of `.brecOn.eq` for an indexed inductive.
+///
+/// Replicates the output of Lean's `cases` tactic applied to an indexed
+/// inductive: `generalizeIndices` followed by `casesOn` with one `refl`
+/// per case. See `refs/lean4/src/Lean/Meta/Tactic/Cases.lean`.
+///
+/// ```text
+/// casesOn.{0} (spec_params | params)
+///   (λ new_idxs new_major.
+///      ∀h_0:Eq _ outer_idx_0 new_idx_0. …
+///      ∀h_major:HEq (I outer_idxs) outer_major (I new_idxs) new_major.
+///      Eq (motive outer_idxs outer_major)
+///         (brecOn motive outer_idxs outer_major F_1)
+///         (F_1 outer_idxs outer_major (go … F_1).2))
+///   outer_idxs… outer_major
+///   minor_1 … minor_N
+///   (Eq.refl outer_idx_0) … (HEq.refl outer_major)
+/// ```
+///
+/// Each minor's body chains `Eq.ndrec` over each index, then one final
+/// `Eq.ndrec` for the major discharged via `Eq.symm ∘ eq_of_heq`. When
+/// `ret_args[i]` is an expression (not a bound fvar), the intermediate
+/// motive adds an extra major binder that is consumed by applying the
+/// `Eq.ndrec` result to the outer major.
+#[allow(clippy::too_many_arguments)]
+fn build_indexed_eq_value(
+  ci: usize,
+  target_ctors: &[Name],
+  brecon_name: &Name,
+  go_name: &Name,
+  rec_univs: &[Level],
+  param_fvars: &[LeanExpr],
+  motive_fvars: &[LeanExpr],
+  _motive_decls: &[LocalDecl],
+  index_fvars: &[LeanExpr],
+  index_decls: &[LocalDecl],
+  major_fvars: &[LeanExpr],
+  major_decls: &[LocalDecl],
+  f_fvars: &[LeanExpr],
+  all_decls: &[LocalDecl],
+  minor_doms: &[LeanExpr],
+  _ctor_counts: &[usize],
+  minor_offset: usize,
+  elim_level: &Level,
+  cases_on_name: &Name,
+  cases_on_univs: &[Level],
+  cases_on_spec_params: &[LeanExpr],
+) -> Option<LeanExpr> {
+  let n_indices = index_decls.len();
+  let outer_major = &major_fvars[0];
+  let major_type = &major_decls[0].domain;
+
+  // Use level 1 for generalization Eq/HEq types. All inductives with
+  // indices generating `.brecOn.eq` live in `Type` (Sort 1); if we ever
+  // encounter `Sort 0` indices we will need per-index precomputed levels.
+  let one = Level::succ(Level::zero());
+
+  // Extract the FVar names for outer indices and major so we can abstract
+  // them into new-index / new-major binders.
+  let index_fvar_names: Vec<Name> = index_fvars
+    .iter()
+    .filter_map(|e| match e.as_data() {
+      ExprData::Fvar(n, _) => Some(n.clone()),
+      _ => None,
+    })
+    .collect();
+  if index_fvar_names.len() != n_indices {
+    return None;
+  }
+  let major_fvar_name = match outer_major.as_data() {
+    ExprData::Fvar(n, _) => n.clone(),
+    _ => return None,
+  };
+
+  // OUTER_Eq_body: `Eq (motive outer_idxs outer_major) (brecOn …) (F_1 …)`
+  let outer_eq_body = {
+    let all_fvars_outer: Vec<LeanExpr> = param_fvars
+      .iter()
+      .chain(motive_fvars.iter())
+      .chain(index_fvars.iter())
+      .chain(std::iter::once(outer_major))
+      .chain(f_fvars.iter())
+      .cloned()
+      .collect();
+    let brecon_app =
+      mk_app_n(mk_const(brecon_name, rec_univs), &all_fvars_outer);
+    let go_app = mk_app_n(mk_const(go_name, rec_univs), &all_fvars_outer);
+    let go_snd = LeanExpr::proj(
+      Name::str(Name::anon(), "PProd".to_string()),
+      Nat::from(1u64),
+      go_app,
+    );
+    let motive_ci_app = mk_app_n(
+      mk_app_n(motive_fvars[ci].clone(), index_fvars),
+      std::slice::from_ref(outer_major),
+    );
+    let mut f_ci_app = f_fvars[ci].clone();
+    f_ci_app = mk_app_n(f_ci_app, index_fvars);
+    f_ci_app = LeanExpr::app(f_ci_app, outer_major.clone());
+    f_ci_app = LeanExpr::app(f_ci_app, go_snd);
+    mk_eq(elim_level, &motive_ci_app, &brecon_app, &f_ci_app)
+  };
+
+  // --- Build motive_wrapped: λ new_idxs new_major. ∀h_i. ∀h_major. OUTER_Eq_body ---
+  let mut new_idx_decls: Vec<LocalDecl> = Vec::with_capacity(n_indices);
+  let mut new_idx_fvars: Vec<LeanExpr> = Vec::with_capacity(n_indices);
+  for (i, idx_decl) in index_decls.iter().enumerate() {
+    let (fv_name, fv) = fresh_fvar("ieq_ni", i);
+    new_idx_decls.push(LocalDecl {
+      fvar_name: fv_name,
+      binder_name: idx_decl.binder_name.clone(),
+      domain: idx_decl.domain.clone(),
+      info: idx_decl.info.clone(),
+    });
+    new_idx_fvars.push(fv);
+  }
+  let new_major_type =
+    build_specialized_major_type(major_type, index_fvars, &new_idx_fvars);
+  let (new_major_name, new_major_fvar) = fresh_fvar("ieq_nm", 0);
+  let new_major_decl = LocalDecl {
+    fvar_name: new_major_name,
+    binder_name: Name::str(Name::anon(), "x".to_string()),
+    domain: new_major_type.clone(),
+    info: BinderInfo::Default,
+  };
+  let mut mw_decls: Vec<LocalDecl> = Vec::new();
+  for (i, idx_decl) in index_decls.iter().enumerate() {
+    let eq_ty =
+      mk_eq(&one, &idx_decl.domain, &index_fvars[i], &new_idx_fvars[i]);
+    let (h_name, _) = fresh_fvar("ieq_h", i);
+    mw_decls.push(LocalDecl {
+      fvar_name: h_name,
+      binder_name: Name::str(Name::anon(), "h".to_string()),
+      domain: eq_ty,
+      info: BinderInfo::Default,
+    });
+  }
+  let heq_ty =
+    mk_heq(&one, major_type, outer_major, &new_major_type, &new_major_fvar);
+  let (hm_name, _) = fresh_fvar("ieq_hm", 0);
+  mw_decls.push(LocalDecl {
+    fvar_name: hm_name,
+    binder_name: Name::str(Name::anon(), "h".to_string()),
+    domain: heq_ty,
+    info: BinderInfo::Default,
+  });
+  let mw_body = mk_forall(outer_eq_body.clone(), &mw_decls);
+  let mut motive_binders: Vec<LocalDecl> = new_idx_decls.clone();
+  motive_binders.push(new_major_decl.clone());
+  let motive_wrapped = mk_lambda(mw_body, &motive_binders);
+
+  // --- casesOn head with params + motive + outer indices + outer major ---
+  let mut eq_val = mk_const(cases_on_name, cases_on_univs);
+  if !cases_on_spec_params.is_empty() {
+    eq_val = mk_app_n(eq_val, cases_on_spec_params);
+  } else {
+    eq_val = mk_app_n(eq_val, param_fvars);
+  }
+  eq_val = LeanExpr::app(eq_val, motive_wrapped);
+  eq_val = mk_app_n(eq_val, index_fvars);
+  eq_val = LeanExpr::app(eq_val, outer_major.clone());
+
+  // --- Build each minor ---
+  for (ctor_idx, _ctor_name) in target_ctors.iter().enumerate() {
+    let mi = minor_offset + ctor_idx;
+    if mi >= minor_doms.len() {
+      break;
+    }
+    let minor_dom = &minor_doms[mi];
+
+    let n_minor_fields = super::expr_utils::count_foralls(minor_dom);
+    let (_mfield_fvars, mut mfield_decls, minor_ret) =
+      forall_telescope(minor_dom, n_minor_fields, &format!("ieqf{mi}"), 0);
+    for decl in &mut mfield_decls {
+      decl.domain = super::expr_utils::beta_reduce(&decl.domain);
+    }
+    let non_ih_decls: Vec<LocalDecl> = mfield_decls
+      .into_iter()
+      .filter(|d| find_motive_fvar(&d.domain, motive_fvars).is_none())
+      .collect();
+
+    // minor_ret has shape `motive_ci <ret_idxs> <major>`, so the first
+    // `n_indices` arguments after the motive head are the ret_idxs. The
+    // last argument (the major) is a full ctor-applied term, constructed
+    // by us separately as `ctor_applied` — we don't read it here.
+    let (_, minor_ret_args) = decompose_apps(&minor_ret);
+    if minor_ret_args.len() < n_indices {
+      return None;
+    }
+    let ret_args: Vec<LeanExpr> = minor_ret_args[..n_indices].to_vec();
+
+    // Build `C (spec_params|params) non_ih_fields`.
+    let ctor_name = &target_ctors[ctor_idx];
+    let ctor_univs: Vec<Level> = if !cases_on_spec_params.is_empty() {
+      cases_on_univs.iter().skip(1).cloned().collect()
+    } else {
+      rec_univs.iter().skip(1).cloned().collect()
+    };
+    let mut ctor_applied = mk_const(ctor_name, &ctor_univs);
+    if !cases_on_spec_params.is_empty() {
+      ctor_applied = mk_app_n(ctor_applied, cases_on_spec_params);
+    } else {
+      ctor_applied = mk_app_n(ctor_applied, param_fvars);
+    }
+    for decl in &non_ih_decls {
+      ctor_applied =
+        LeanExpr::app(ctor_applied, LeanExpr::fvar(decl.fvar_name.clone()));
+    }
+
+    // Base (major) continuation: `λ h_major. Eq.ndrec … (Eq.refl …) outer_major (Eq.symm (eq_of_heq h_major))`.
+    let (t_name, t_fvar) = fresh_fvar("ieq_mt", ctor_idx);
+    let major_motive_body =
+      subst_fvar(&outer_eq_body, &major_fvar_name, &t_fvar);
+    let major_motive = LeanExpr::lam(
+      Name::str(Name::anon(), "t".to_string()),
+      major_type.clone(),
+      abstract_fvar(&major_motive_body, &t_name, 0),
+      BinderInfo::Default,
+    );
+    let inner_eq_refl = {
+      let motive_ci_ctor = mk_app_n(
+        mk_app_n(motive_fvars[ci].clone(), index_fvars),
+        std::slice::from_ref(&ctor_applied),
+      );
+      let inner_brecon_all: Vec<LeanExpr> = param_fvars
+        .iter()
+        .chain(motive_fvars.iter())
+        .chain(index_fvars.iter())
+        .chain(std::iter::once(&ctor_applied))
+        .chain(f_fvars.iter())
+        .cloned()
+        .collect();
+      let inner_brecon =
+        mk_app_n(mk_const(brecon_name, rec_univs), &inner_brecon_all);
+      mk_app_n(
+        mk_const(
+          &Name::str(
+            Name::str(Name::anon(), "Eq".to_string()),
+            "refl".to_string(),
+          ),
+          std::slice::from_ref(elim_level),
+        ),
+        &[motive_ci_ctor, inner_brecon],
+      )
+    };
+    let specialized_major_type =
+      build_specialized_major_type(major_type, index_fvars, &ret_args);
+    let heq_for_minor = mk_heq(
+      &one,
+      major_type,
+      outer_major,
+      &specialized_major_type,
+      &ctor_applied,
+    );
+    let (hm_name, hm_fvar) = fresh_fvar("ieq_hm_min", ctor_idx);
+    let hm_decl = LocalDecl {
+      fvar_name: hm_name.clone(),
+      binder_name: Name::str(Name::anon(), "h".to_string()),
+      domain: heq_for_minor,
+      info: BinderInfo::Default,
+    };
+    let eq_of_heq_val =
+      mk_eq_of_heq(&one, major_type, outer_major, &ctor_applied, &hm_fvar);
+    let eq_symm_val =
+      mk_eq_symm(&one, major_type, outer_major, &ctor_applied, &eq_of_heq_val);
+    // Inner Eq.ndrec's motive returns `Eq.{elim_level} …` which is in
+    // `Prop` (Sort 0). Hence its u_1 is 0, not `elim_level`.
+    let ndrec_major = mk_eq_ndrec(
+      &Level::zero(),
+      &one,
+      major_type,
+      &ctor_applied,
+      &major_motive,
+      &inner_eq_refl,
+      outer_major,
+      &eq_symm_val,
+    );
+    let mut proof = mk_lambda(ndrec_major, std::slice::from_ref(&hm_decl));
+
+    // Chain Eq.ndrec for each index, inside-out (i = n-1 .. 0).
+    for i in (0..n_indices).rev() {
+      let ret_arg = &ret_args[i];
+      let outer_idx = &index_fvars[i];
+      let idx_type = &index_decls[i].domain;
+
+      let simple_fvar_opt = match ret_arg.as_data() {
+        ExprData::Fvar(name, _) => {
+          if non_ih_decls.iter().any(|d| &d.fvar_name == name) {
+            Some(name.clone())
+          } else {
+            None
+          }
+        },
+        _ => None,
+      };
+
+      if let Some(ret_fvar_name) = simple_fvar_opt {
+        let (x_name, x_fvar) = fresh_fvar("ieq_x", i);
+
+        // Collect dependent fields — those declared AFTER `ret_fvar_name`
+        // whose types reference it. Lean rebinds these in the motive
+        // lambda and the `Eq.ndrec` is applied to the original fvars
+        // after the transport. E.g. `BVExpr.const {n} (v:BitVec n)`
+        // rebinds `v` when generalizing `n`.
+        let ret_field_pos =
+          non_ih_decls.iter().position(|d| &d.fvar_name == &ret_fvar_name);
+        let dep_fields: Vec<LocalDecl> = match ret_field_pos {
+          Some(idx) => non_ih_decls
+            .iter()
+            .enumerate()
+            .skip(idx + 1)
+            .filter(|(_, d)| expr_contains_fvar(&d.domain, &ret_fvar_name))
+            .map(|(_, d)| d.clone())
+            .collect(),
+          None => Vec::new(),
+        };
+
+        // Fresh renamed fvars for dep fields in the motive-lambda's body
+        // (the view at generalized x_i).
+        let dep_renamed: Vec<(Name, LeanExpr)> = (0..dep_fields.len())
+          .map(|k| fresh_fvar(&format!("ieq_df{i}"), k))
+          .collect();
+
+        let motive_lam = build_index_motive_simple(
+          i,
+          &ret_args,
+          &ret_fvar_name,
+          &dep_fields,
+          &dep_renamed,
+          index_fvars,
+          index_decls,
+          major_type,
+          outer_major,
+          &ctor_applied,
+          &outer_eq_body,
+          &one,
+          &x_name,
+          &x_fvar,
+          idx_type,
+        );
+
+        // Lift the inner proof:
+        //   1. Substitute ret_fvar → outer_idx_i  (outer-side view).
+        //   2. Substitute each dep_field's fvar → its renamed fvar (new
+        //      binders at the outer_idx_i view have the outer-side type).
+        //   3. Wrap with `λ renamed_dep_fields`.
+        let mut lifted_proof = subst_fvar(&proof, &ret_fvar_name, outer_idx);
+        for (orig, (_, renamed)) in dep_fields.iter().zip(dep_renamed.iter()) {
+          lifted_proof = subst_fvar(&lifted_proof, &orig.fvar_name, renamed);
+        }
+        // Build λ-decls for the renamed dep fields. Their types come
+        // from the original dep_fields' domains with ret_fvar_name
+        // replaced by outer_idx_i (the outer-side view).
+        let renamed_decls: Vec<LocalDecl> = dep_fields
+          .iter()
+          .zip(dep_renamed.iter())
+          .map(|(orig, (rn_name, _))| LocalDecl {
+            fvar_name: rn_name.clone(),
+            binder_name: orig.binder_name.clone(),
+            domain: subst_fvar(&orig.domain, &ret_fvar_name, outer_idx),
+            info: orig.info.clone(),
+          })
+          .collect();
+        if !renamed_decls.is_empty() {
+          lifted_proof = mk_lambda(lifted_proof, &renamed_decls);
+        }
+
+        let (h_name, h_fvar) = fresh_fvar("ieq_hs", i);
+        let h_decl = LocalDecl {
+          fvar_name: h_name.clone(),
+          binder_name: Name::str(Name::anon(), "h".to_string()),
+          domain: mk_eq(&one, idx_type, outer_idx, ret_arg),
+          info: BinderInfo::Default,
+        };
+        let mut ndrec_i = mk_eq_ndrec(
+          &Level::zero(),
+          &one,
+          idx_type,
+          outer_idx,
+          &motive_lam,
+          &lifted_proof,
+          ret_arg,
+          &h_fvar,
+        );
+        // Apply the Eq.ndrec result to each dep-field's original fvar
+        // to consume the ∀-binders added to motive_lambda_i.
+        for orig in &dep_fields {
+          ndrec_i =
+            LeanExpr::app(ndrec_i, LeanExpr::fvar(orig.fvar_name.clone()));
+        }
+        proof = mk_lambda(ndrec_i, std::slice::from_ref(&h_decl));
+      } else {
+        let (x_name, x_fvar) = fresh_fvar("ieq_x", i);
+        let (t_inner_name, t_inner_fvar) = fresh_fvar("ieq_ti", i);
+        let motive_lam = build_index_motive_complex(
+          i,
+          &ret_args,
+          &index_fvar_names,
+          &major_fvar_name,
+          index_fvars,
+          index_decls,
+          major_type,
+          &ctor_applied,
+          &outer_eq_body,
+          &one,
+          &x_name,
+          &x_fvar,
+          &t_inner_name,
+          &t_inner_fvar,
+          idx_type,
+        );
+
+        // For the complex case, `motive_lambda_i ret_arg_i` has shape
+        //   ∀t:(I ret_args[0..=i] outer_later_idxs). … body …
+        // so the `proof_at_a` must bind `t` and substitute
+        // `outer_major → t` in the inner proof.
+        //
+        // Outer indices j < i have already been rewritten to `ret_args[j]`
+        // by outer Eq.ndrecs, so we use `ret_args[j]` for positions j ≤ i
+        // and the outer `index_fvars[j]` for positions j > i. This matches
+        // what Lean's `cases` tactic produces.
+        let partial_major_ty_at_ret =
+          build_major_type_with_partial_specialization(
+            major_type,
+            index_fvars,
+            &ret_args,
+            i,
+          );
+        // Substitute outer indices j ≤ i to their constructor-specialized
+        // values `ret_args[j]` in the inner proof before wrapping. This
+        // bakes in the rewrites that the outer Eq.ndrecs (for j < i) and
+        // the current Eq.ndrec (for j == i) perform conceptually, matching
+        // the shape Lean's `cases` tactic produces for complex-index cases.
+        // Without this, the `h_m` binder's HEq type (inside the stored
+        // `proof` from the major Eq.ndrec construction) still references
+        // outer index fvars, producing a term that is definitionally but
+        // not alpha-equal to Lean's.
+        let proof_specialized =
+          subst_outer_indices_upto(&proof, &index_fvar_names, &ret_args, i + 1);
+        let proof_with_t =
+          subst_fvar(&proof_specialized, &major_fvar_name, &t_inner_fvar);
+        let t_decl = LocalDecl {
+          fvar_name: t_inner_name.clone(),
+          binder_name: Name::str(Name::anon(), "t".to_string()),
+          domain: partial_major_ty_at_ret,
+          info: BinderInfo::Default,
+        };
+        let proof_t = mk_lambda(proof_with_t, std::slice::from_ref(&t_decl));
+
+        let (h_name, h_fvar) = fresh_fvar("ieq_hc", i);
+        let h_decl = LocalDecl {
+          fvar_name: h_name.clone(),
+          binder_name: Name::str(Name::anon(), "h".to_string()),
+          domain: mk_eq(&one, idx_type, outer_idx, ret_arg),
+          info: BinderInfo::Default,
+        };
+        let symm_h = mk_eq_symm(&one, idx_type, outer_idx, ret_arg, &h_fvar);
+        let ndrec_i = mk_eq_ndrec(
+          &Level::zero(),
+          &one,
+          idx_type,
+          ret_arg,
+          &motive_lam,
+          &proof_t,
+          outer_idx,
+          &symm_h,
+        );
+        // Consume the extra ∀t by applying the Eq.ndrec result to the
+        // outer major.
+        let ndrec_applied = LeanExpr::app(ndrec_i, outer_major.clone());
+        proof = mk_lambda(ndrec_applied, std::slice::from_ref(&h_decl));
+      }
+    }
+
+    let minor_value = mk_lambda(proof, &non_ih_decls);
+    eq_val = LeanExpr::app(eq_val, minor_value);
+  }
+
+  // --- Discharge Eq/HEq generalizations with refl ---
+  for (idx_decl, idx_fv) in index_decls.iter().zip(index_fvars.iter()) {
+    eq_val = LeanExpr::app(eq_val, mk_eq_refl(&one, &idx_decl.domain, idx_fv));
+  }
+  eq_val = LeanExpr::app(eq_val, mk_heq_refl(&one, major_type, outer_major));
+
+  Some(mk_lambda(eq_val, all_decls))
+}
+
+/// Build the motive-lambda for `Eq.ndrec` at index `i` in the simple case
+/// (where `ret_args[i]` is a field FVar). The motive has shape
+///
+///     λ x_i. ∀(dep_fields). ∀h_{i+1}…h_major. OUTER_Eq_body
+///
+/// where `dep_fields` are any fields declared after `ret_fvar_name` in
+/// the constructor whose type references it. Lean rebinds them with the
+/// index generalized to `x_i`. The ret-arg FVar is substituted by `x_i`
+/// throughout the body.
+#[allow(clippy::too_many_arguments)]
+fn build_index_motive_simple(
+  i: usize,
+  ret_args: &[LeanExpr],
+  ret_fvar_name: &Name,
+  dep_fields: &[LocalDecl],
+  dep_renamed: &[(Name, LeanExpr)],
+  index_fvars: &[LeanExpr],
+  index_decls: &[LocalDecl],
+  major_type: &LeanExpr,
+  outer_major: &LeanExpr,
+  ctor_applied: &LeanExpr,
+  outer_eq_body: &LeanExpr,
+  one: &Level,
+  x_name: &Name,
+  x_fvar: &LeanExpr,
+  idx_type: &LeanExpr,
+) -> LeanExpr {
+  let n_indices = index_decls.len();
+  // Substitution to apply to every expression inside the motive body:
+  //   - `ret_fvar_name → x_fvar`  (generalize the index)
+  //   - `orig_dep.fvar_name → renamed_dep_fvar`  (point at the new binders)
+  let apply_subst = |e: &LeanExpr| -> LeanExpr {
+    let mut out = subst_fvar(e, ret_fvar_name, x_fvar);
+    for (orig, (_, renamed)) in dep_fields.iter().zip(dep_renamed.iter()) {
+      out = subst_fvar(&out, &orig.fvar_name, renamed);
+    }
+    out
+  };
+
+  let mut decls: Vec<LocalDecl> = Vec::new();
+
+  // Dep-field ∀ binders first, with substituted domains.
+  for (orig, (rn_name, _)) in dep_fields.iter().zip(dep_renamed.iter()) {
+    decls.push(LocalDecl {
+      fvar_name: rn_name.clone(),
+      binder_name: orig.binder_name.clone(),
+      domain: apply_subst(&orig.domain),
+      info: orig.info.clone(),
+    });
+  }
+
+  // Eq binders for later indices.
+  for j in (i + 1)..n_indices {
+    let eq_ty =
+      mk_eq(one, &index_decls[j].domain, &index_fvars[j], &ret_args[j]);
+    let (h_name, _) = fresh_fvar("ieq_h_lam", j);
+    decls.push(LocalDecl {
+      fvar_name: h_name,
+      binder_name: Name::str(Name::anon(), "h".to_string()),
+      domain: apply_subst(&eq_ty),
+      info: BinderInfo::Default,
+    });
+  }
+
+  // HEq major binder, with the specialized major type and ctor_applied
+  // substituted so `ret_fvar_name` points at `x_fvar` and the dep fields
+  // point at the renamed binders.
+  let spec_major_ty =
+    build_specialized_major_type(major_type, index_fvars, ret_args);
+  let heq_ty = mk_heq(
+    one,
+    major_type,
+    outer_major,
+    &apply_subst(&spec_major_ty),
+    &apply_subst(ctor_applied),
+  );
+  let (hm_name, _) = fresh_fvar("ieq_hm_lam", i);
+  decls.push(LocalDecl {
+    fvar_name: hm_name,
+    binder_name: Name::str(Name::anon(), "h".to_string()),
+    domain: heq_ty,
+    info: BinderInfo::Default,
+  });
+
+  // `outer_eq_body` doesn't reference field fvars, but `apply_subst` is
+  // a no-op on such expressions, so applying it uniformly is safe.
+  let body_inner = apply_subst(outer_eq_body);
+  let body = mk_forall(body_inner, &decls);
+
+  LeanExpr::lam(
+    Name::str(Name::anon(), "x".to_string()),
+    idx_type.clone(),
+    abstract_fvar(&body, x_name, 0),
+    BinderInfo::Implicit,
+  )
+}
+
+/// Substitute outer index FVars in `expr`, replacing
+/// `outer_idx_fvar_names[j]` with `replacements[j]` for `j in 0..up_to`.
+///
+/// This is used by the indexed `.brecOn.eq` construction: at each Eq.ndrec
+/// level in the chain, outer indices j below the current level have already
+/// been rewritten to their constructor-specialized values, and Lean's
+/// `cases` tactic bakes these rewrites into inner motive bodies. Keeping
+/// the outer fvars unsubstituted produces terms that are definitionally
+/// equal to Lean's but not alpha-equal, which the aux_gen congruence check
+/// rejects.
+fn subst_outer_indices_upto(
+  expr: &LeanExpr,
+  outer_idx_fvar_names: &[Name],
+  replacements: &[LeanExpr],
+  up_to: usize,
+) -> LeanExpr {
+  let limit = up_to.min(outer_idx_fvar_names.len()).min(replacements.len());
+  let mut out = expr.clone();
+  for j in 0..limit {
+    out = subst_fvar(&out, &outer_idx_fvar_names[j], &replacements[j]);
+  }
+  out
+}
+
+/// Whether an expression contains a free variable with the given name.
+fn expr_contains_fvar(expr: &LeanExpr, fvar_name: &Name) -> bool {
+  match expr.as_data() {
+    ExprData::Fvar(n, _) => n == fvar_name,
+    ExprData::App(f, a, _) => {
+      expr_contains_fvar(f, fvar_name) || expr_contains_fvar(a, fvar_name)
+    },
+    ExprData::Lam(_, t, b, _, _) | ExprData::ForallE(_, t, b, _, _) => {
+      expr_contains_fvar(t, fvar_name) || expr_contains_fvar(b, fvar_name)
+    },
+    ExprData::LetE(_, t, v, b, _, _) => {
+      expr_contains_fvar(t, fvar_name)
+        || expr_contains_fvar(v, fvar_name)
+        || expr_contains_fvar(b, fvar_name)
+    },
+    ExprData::Proj(_, _, e, _) | ExprData::Mdata(_, e, _) => {
+      expr_contains_fvar(e, fvar_name)
+    },
+    _ => false,
+  }
+}
+
+/// Build the motive-lambda for `Eq.ndrec` at index `i` in the complex case
+/// (where `ret_args[i]` is an expression). The motive has shape
+///
+///     λ x_i. ∀t:I <ret_args[<i]…, x_i, outer_{i+1..n-1}>.
+///            ∀h_{i+1}…h_major. OUTER_Eq_body[outer_j → ret_args[j] for j<i,
+///                                             outer_i → x_i, major → t]
+///
+/// with the extra `t` binder rebinding the major along the generalized
+/// index. The `t` binder is consumed by applying the `Eq.ndrec` result to
+/// `outer_major` at the call site.
+///
+/// Note on the `j < i` substitution: this matches what Lean's `cases`
+/// tactic produces for the complex (non-fvar ret_args) path. Each outer
+/// Eq.ndrec at level `j < i` has already rewritten `outer_j → ret_args[j]`
+/// by the time this inner motive is evaluated, and Lean bakes those
+/// rewrites into the motive body rather than leaving them as free
+/// references to the outer index fvars. Without this substitution, the
+/// motive's `∀t` type and body use `outer_j` where Lean uses the
+/// constructor-specialized expression (see `Omega.Justification.brecOn.eq`:
+/// the `tidy` branch generalizes both `s` and `c` to computed expressions,
+/// and the inner motive at i=1 needs `tidyConstraint field_s field_c` as
+/// the first index of the major type rather than the outer `s`).
+#[allow(clippy::too_many_arguments)]
+fn build_index_motive_complex(
+  i: usize,
+  ret_args: &[LeanExpr],
+  outer_idx_fvar_names: &[Name],
+  major_fvar_name: &Name,
+  index_fvars: &[LeanExpr],
+  index_decls: &[LocalDecl],
+  major_type: &LeanExpr,
+  ctor_applied: &LeanExpr,
+  outer_eq_body: &LeanExpr,
+  one: &Level,
+  x_name: &Name,
+  x_fvar: &LeanExpr,
+  t_name: &Name,
+  t_fvar: &LeanExpr,
+  idx_type: &LeanExpr,
+) -> LeanExpr {
+  let n_indices = index_decls.len();
+  // Partial major type: I params (ret_args[0..i]) x_i (outer_{i+1}..outer_{n-1}).
+  // Outer indices `j < i` have already been rewritten to `ret_args[j]` by
+  // the outer Eq.ndrec chain at this point.
+  let partial_major_type = {
+    let (head, args) = decompose_apps(major_type);
+    let n_param_args = args.len().saturating_sub(n_indices);
+    let mut spec = head;
+    for p in &args[..n_param_args] {
+      spec = LeanExpr::app(spec, p.clone());
+    }
+    for j in 0..n_indices {
+      if j < i {
+        spec = LeanExpr::app(spec, ret_args[j].clone());
+      } else if j == i {
+        spec = LeanExpr::app(spec, x_fvar.clone());
+      } else {
+        spec = LeanExpr::app(spec, index_fvars[j].clone());
+      }
+    }
+    spec
+  };
+
+  // The motive body in the complex case substitutes outer indices j < i
+  // to `ret_args[j]` (already rewritten by outer Eq.ndrecs), the outer
+  // index at position `i` to `x_fvar`, and the outer major to `t_fvar`
+  // inside `outer_eq_body`. Lean's `cases` tactic produces this shape for
+  // indexed inductives with non-fvar return args: the inner `∀t` binder
+  // rebinds the major at the partially-generalized type, and the Eq body
+  // uses the new `t` in place of the outer major, with earlier indices
+  // baked in at their constructor-specialized values.
+  let apply_subst = |e: &LeanExpr| -> LeanExpr {
+    let mut out =
+      subst_outer_indices_upto(e, outer_idx_fvar_names, ret_args, i);
+    if i < outer_idx_fvar_names.len() {
+      out = subst_fvar(&out, &outer_idx_fvar_names[i], x_fvar);
+    }
+    out = subst_fvar(&out, major_fvar_name, t_fvar);
+    out
+  };
+
+  let mut decls: Vec<LocalDecl> = Vec::new();
+  for j in (i + 1)..n_indices {
+    let eq_ty =
+      mk_eq(one, &index_decls[j].domain, &index_fvars[j], &ret_args[j]);
+    let (h_name, _) = fresh_fvar("ieq_h_lam_c", j);
+    decls.push(LocalDecl {
+      fvar_name: h_name,
+      binder_name: Name::str(Name::anon(), "h".to_string()),
+      domain: apply_subst(&eq_ty),
+      info: BinderInfo::Default,
+    });
+  }
+  let spec_major_ty =
+    build_specialized_major_type(major_type, index_fvars, ret_args);
+  let heq_ty = mk_heq(
+    one,
+    &partial_major_type,
+    t_fvar,
+    &apply_subst(&spec_major_ty),
+    &apply_subst(ctor_applied),
+  );
+  let (hm_name, _) = fresh_fvar("ieq_hm_lam_c", i);
+  decls.push(LocalDecl {
+    fvar_name: hm_name,
+    binder_name: Name::str(Name::anon(), "h".to_string()),
+    domain: heq_ty,
+    info: BinderInfo::Default,
+  });
+
+  let body_inner = apply_subst(outer_eq_body);
+  let body = mk_forall(body_inner, &decls);
+  let t_decl = LocalDecl {
+    fvar_name: t_name.clone(),
+    binder_name: Name::str(Name::anon(), "t".to_string()),
+    domain: partial_major_type.clone(),
+    info: BinderInfo::Default,
+  };
+  let body_with_t = mk_forall(body, std::slice::from_ref(&t_decl));
+  LeanExpr::lam(
+    Name::str(Name::anon(), "x".to_string()),
+    idx_type.clone(),
+    abstract_fvar(&body_with_t, x_name, 0),
+    BinderInfo::Implicit,
+  )
+}
+
+/// Build `I <params> <args>` — the major type with the given index args.
+fn build_specialized_major_type(
+  major_type: &LeanExpr,
+  index_fvars: &[LeanExpr],
+  ret_args: &[LeanExpr],
+) -> LeanExpr {
+  let (head, args) = decompose_apps(major_type);
+  let n_indices = index_fvars.len();
+  let n_param_args = args.len().saturating_sub(n_indices);
+  let mut spec = head;
+  for p in &args[..n_param_args] {
+    spec = LeanExpr::app(spec, p.clone());
+  }
+  for r in ret_args {
+    spec = LeanExpr::app(spec, r.clone());
+  }
+  spec
+}
+
+/// Build `I <params> <ret_args[0..=pos]> <index_fvars[pos+1..]>` — the
+/// major type with indices 0..=pos specialized to their constructor-view
+/// values (`ret_args[j]`) and indices j > pos left as outer FVars.
+///
+/// This is the "partially specialized" major type used at level `pos` of
+/// the Eq.ndrec chain for complex indexed `.brecOn.eq`: at this level,
+/// outer indices j < pos have been rewritten by outer Eq.ndrecs (hence
+/// `ret_args[j]`), index `pos` is being rewritten by the current Eq.ndrec
+/// (also at the base case value `ret_args[pos]`), and indices j > pos are
+/// still outer fvars.
+fn build_major_type_with_partial_specialization(
+  major_type: &LeanExpr,
+  index_fvars: &[LeanExpr],
+  ret_args: &[LeanExpr],
+  pos: usize,
+) -> LeanExpr {
+  let (head, args) = decompose_apps(major_type);
+  let n_indices = index_fvars.len();
+  let n_param_args = args.len().saturating_sub(n_indices);
+  let mut spec = head;
+  for p in &args[..n_param_args] {
+    spec = LeanExpr::app(spec, p.clone());
+  }
+  for j in 0..n_indices {
+    if j <= pos {
+      spec = LeanExpr::app(spec, ret_args[j].clone());
+    } else {
+      spec = LeanExpr::app(spec, index_fvars[j].clone());
+    }
+  }
+  spec
 }
 
 // =========================================================================

@@ -1011,7 +1011,10 @@ fn get_name_component(
 // ============================================================================
 
 use super::env::Named;
-use super::metadata::{ConstantMeta, NameIndex, NameReverseIndex};
+use super::metadata::{
+  ConstantMeta, NameIndex, NameReverseIndex, get_idx, get_vec_len, put_idx,
+  put_vec_len,
+};
 
 /// Serialize a Named entry with indexed metadata.
 pub fn put_named_indexed(
@@ -1030,13 +1033,27 @@ pub fn put_named_indexed(
       meta.put_indexed(idx, buf)?;
     },
   }
+  // Serialize name_refs: Vec<Vec<Name>> as Vec<Vec<idx>>
+  put_vec_len(named.name_refs.len(), buf);
+  for names in &named.name_refs {
+    put_vec_len(names.len(), buf);
+    for name in names {
+      let name_addr = Address::from_blake3_hash(*name.get_hash());
+      put_idx(&name_addr, idx, buf)?;
+    }
+  }
   Ok(())
 }
 
 /// Deserialize a Named entry with indexed metadata.
+///
+/// `names_lookup` maps name-hash Addresses to Names, used to resolve
+/// `name_refs` entries. Pass an empty map for backward compatibility
+/// with old formats (name_refs will be empty).
 pub fn get_named_indexed(
   buf: &mut &[u8],
   rev: &NameReverseIndex,
+  names_lookup: &rustc_hash::FxHashMap<Address, crate::ix::env::Name>,
 ) -> Result<Named, String> {
   let addr = get_address(buf)?;
   let meta = ConstantMeta::get_indexed(buf, rev)?;
@@ -1049,7 +1066,21 @@ pub fn get_named_indexed(
     },
     x => return Err(format!("Named.original: invalid tag {x}")),
   };
-  Ok(Named { addr, meta, original })
+  // Deserialize name_refs: Vec<Vec<Name>> from Vec<Vec<idx>>.
+  let n_outer = get_vec_len(buf)?;
+  let mut name_refs = Vec::with_capacity(n_outer);
+  for _ in 0..n_outer {
+    let n_inner = get_vec_len(buf)?;
+    let mut inner = Vec::with_capacity(n_inner);
+    for _ in 0..n_inner {
+      let name_addr = get_idx(buf, rev)?;
+      if let Some(name) = names_lookup.get(&name_addr) {
+        inner.push(name.clone());
+      }
+    }
+    name_refs.push(inner);
+  }
+  Ok(Named { addr, meta, original, name_refs })
 }
 
 // ============================================================================
@@ -1200,7 +1231,7 @@ impl Env {
     let num_named = get_u64(buf)?;
     for _ in 0..num_named {
       let name_addr = get_address(buf)?;
-      let named = get_named_indexed(buf, &name_reverse_index)?;
+      let named = get_named_indexed(buf, &name_reverse_index, &names_lookup)?;
       let name = names_lookup.get(&name_addr).cloned().ok_or_else(|| {
         format!("Env::get: missing name for addr {:?}", name_addr)
       })?;
@@ -1481,7 +1512,8 @@ mod tests {
         } else {
           None
         };
-        let named = Named { addr: addr.clone(), meta, original };
+        let named =
+          Named { addr: addr.clone(), meta, original, name_refs: Vec::new() };
         env.named.insert(name, named);
       }
     }

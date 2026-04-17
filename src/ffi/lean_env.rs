@@ -629,7 +629,6 @@ pub fn decode_env(list: LeanList<LeanBorrowed<'_>>) -> Env {
     // but objects are already marked. Just borrow directly.
     let global = GlobalCache::new();
     let mut env = Env::default();
-    env.reserve(objs.len());
     for o in &objs {
       let (name, constant_info) =
         decode_name_constant_info(o.borrow(), &global);
@@ -649,7 +648,6 @@ pub fn decode_env(list: LeanList<LeanBorrowed<'_>>) -> Env {
 
   // Phase 3: Build final map
   let mut env = Env::default();
-  env.reserve(pairs.len());
   for (name, constant_info) in pairs {
     env.insert(name, constant_info);
   }
@@ -731,7 +729,7 @@ extern "C" fn rs_tmp_decode_const_map(
         all.iter().map(|n| vec![n.clone()]).collect();
       let original_cs: Vec<MutConst> = all
         .iter()
-        .filter_map(|n| match env.get(n) {
+        .filter_map(|n| match env.get(n).as_deref() {
           Some(LeanCI::InductInfo(v)) => {
             Some(MutConst::Indc(mk_indc(v, &env).ok()?))
           },
@@ -806,19 +804,20 @@ extern "C" fn rs_tmp_decode_const_map(
               typ: bi.typ.clone(),
             },
             num_params: Nat::from(bi.n_params as u64),
-            num_indices: Nat::from(1u64),
+            num_indices: Nat::from(bi.n_indices as u64),
             all: vec![bi.name.clone()],
             ctors: bi.ctors.iter().map(|c| c.name.clone()).collect(),
             num_nested: Nat::from(0u64),
             is_rec: false,
             is_unsafe: false,
-            is_reflexive: false,
+            is_reflexive: bi.is_reflexive,
           }),
           _ => continue,
         };
-        let Some(orig_ci) = env.get(patch_name) else {
+        let Some(orig_ci_ref) = env.get(patch_name) else {
           continue;
         };
+        let orig_ci: &LeanCI = &*orig_ci_ref;
         match const_alpha_eq(&gen_ci, orig_ci) {
           Ok(()) => n_pass += 1,
           Err(e) => {
@@ -826,6 +825,46 @@ extern "C" fn rs_tmp_decode_const_map(
               "[rust-compile] aux_gen congruence: {}: {e}",
               patch_name.pretty()
             );
+            // On first failure for a given inductive block, dump the
+            // full generated + original value for manual inspection.
+            if std::env::var("IX_CONGRUENCE_DUMP").is_ok() {
+              let name_match =
+                std::env::var("IX_CONGRUENCE_DUMP").ok().filter(|s| s != "1");
+              let should_dump = match &name_match {
+                Some(target) => patch_name.pretty().contains(target.as_str()),
+                None => true,
+              };
+              if should_dump {
+                eprintln!(
+                  "  === generated type ===\n  {}\n  === original type ===\n  {}",
+                  gen_ci.get_type().pretty(),
+                  orig_ci.get_type().pretty(),
+                );
+                let gen_val_str = match &gen_ci {
+                  LeanCI::DefnInfo(d) => d.value.pretty(),
+                  LeanCI::ThmInfo(t) => t.value.pretty(),
+                  LeanCI::RecInfo(r) => format!(
+                    "<rec with {} rules>\n  rule[0].rhs: {}",
+                    r.rules.len(),
+                    r.rules.first().map(|x| x.rhs.pretty()).unwrap_or_default()
+                  ),
+                  _ => "<no value>".into(),
+                };
+                let orig_val_str = match orig_ci {
+                  LeanCI::DefnInfo(d) => d.value.pretty(),
+                  LeanCI::ThmInfo(t) => t.value.pretty(),
+                  LeanCI::RecInfo(r) => format!(
+                    "<rec with {} rules>\n  rule[0].rhs: {}",
+                    r.rules.len(),
+                    r.rules.first().map(|x| x.rhs.pretty()).unwrap_or_default()
+                  ),
+                  _ => "<no value>".into(),
+                };
+                eprintln!(
+                  "  === generated value ===\n  {gen_val_str}\n  === original value ===\n  {orig_val_str}"
+                );
+              }
+            }
             n_fail += 1;
           },
         }
@@ -1064,6 +1103,26 @@ extern "C" fn rs_compile_validate_aux(
     let p2_kctx = KernelCtx::new();
     expr_utils::ensure_prelude_in_kenv_of(&stt, &p2_kctx);
 
+    // Transitive-ingress bookkeeping shared across all blocks.
+    //
+    // `.below` / `.brecOn` generation calls `TcScope::get_level` on RESTORED
+    // field domains — i.e., field types that contain the original external
+    // inductive heads (`StrictOrLazy`, `WithRpcRef`, `Do.Alt`, ...) rather
+    // than the `_nested.X_N` auxiliaries used inside the recursor overlay.
+    // Sort inference therefore needs those externals in kenv, but nothing
+    // in `generate_aux_patches` adds them (the in-recursor `ingress_field_deps`
+    // walks the overlay — it only sees the synthetic aux names). Without
+    // this ingress, blocks whose ctors mention externals that don't appear
+    // in any simpler block's dep graph (e.g., `Lean.Widget.MsgEmbed`,
+    // `Lean.Elab.Term.Do.Code`) fail Phase 2 with "unknown constant".
+    //
+    // We walk the transitive dep closure (inductive → ctor names → ctor
+    // types) per block, but the `visited` set persists across blocks so
+    // each name is processed at most once across the whole phase. The
+    // `ensure_in_kenv_of` call is itself idempotent via `kctx.kenv`, so
+    // the only amortized cost is the constant-info lookup per name.
+    let mut p2_ingressed: FxHashSet<Name> = FxHashSet::default();
+
     // Collect unique .all blocks (deduplicate by sorted names).
     let mut seen_blocks: FxHashSet<Vec<Name>> = FxHashSet::default();
     for (name, ci) in env.iter() {
@@ -1086,7 +1145,7 @@ extern "C" fn rs_compile_validate_aux(
         all.iter().map(|n| vec![n.clone()]).collect();
       let original_cs: Vec<MutConst> = all
         .iter()
-        .filter_map(|n| match env.get(n) {
+        .filter_map(|n| match env.get(n).as_deref() {
           Some(LeanCI::InductInfo(v)) => {
             Some(MutConst::Indc(mk_indc(v, &env).ok()?))
           },
@@ -1098,9 +1157,27 @@ extern "C" fn rs_compile_validate_aux(
         continue;
       }
 
-      // Ingress this block's inductives into the ephemeral kenv.
-      for ind_name in all {
-        expr_utils::ensure_in_kenv_of(ind_name, &env, &stt, &p2_kctx);
+      // Ingress the block's parent inductives AND their transitive ctor-field
+      // dependencies. `p2_ingressed` is shared across blocks so each name is
+      // walked at most once; see its declaration above for why this closure
+      // is needed despite `ingress_field_deps` running inside the recursor
+      // generator.
+      {
+        use crate::ix::graph::get_constant_info_references;
+        let mut stack: Vec<Name> = all.clone();
+        while let Some(name) = stack.pop() {
+          if !p2_ingressed.insert(name.clone()) {
+            continue;
+          }
+          expr_utils::ensure_in_kenv_of(&name, &env, &stt, &p2_kctx);
+          if let Some(ci) = env.get(&name) {
+            for ref_name in get_constant_info_references(&*ci) {
+              if !p2_ingressed.contains(&ref_name) {
+                stack.push(ref_name);
+              }
+            }
+          }
+        }
       }
 
       // Run aux_gen on the original block with ephemeral kernel context.
@@ -1173,21 +1250,71 @@ extern "C" fn rs_compile_validate_aux(
             num_nested: Nat::from(0u64),
             is_rec: false,
             is_unsafe: false,
-            is_reflexive: false,
+            is_reflexive: bi.is_reflexive,
           }),
           _ => continue, // NoConfusion — skip
         };
-        let Some(orig_ci) = env.get(patch_name) else {
+        let Some(orig_ci_ref) = env.get(patch_name) else {
           continue; // Synthetic name — no Lean original.
         };
+        let orig_ci: &LeanCI = &*orig_ci_ref;
         match const_alpha_eq(&gen_ci, orig_ci) {
           Ok(()) => p2.record_pass(),
           Err(e) => {
+            // Dump sort levels for ALL type mismatches in below/brecOn
+            if patch_name.pretty().contains("below_")
+              || patch_name.pretty().contains("brecOn")
+            {
+              fn extract_sort2(
+                e: &crate::ix::env::Expr,
+                depth: usize,
+              ) -> String {
+                use crate::ix::env::ExprData as ED;
+                match e.as_data() {
+                  ED::ForallE(_, _, body, _, _) => {
+                    extract_sort2(body, depth + 1)
+                  },
+                  ED::Sort(lvl, _) => {
+                    format!("depth={depth} sort={}", lvl.pretty())
+                  },
+                  _ => format!("depth={depth} NOT_SORT"),
+                }
+              }
+              eprintln!(
+                "[p1b sort] {}: gen={} org={}",
+                patch_name.pretty(),
+                extract_sort2(gen_ci.get_type(), 0),
+                extract_sort2(orig_ci.get_type(), 0),
+              );
+            }
             if p2.fail < 3 {
               eprintln!(
                 "[aux_gen congruence DETAIL] {}:\n  error: {e}",
                 patch_name.pretty(),
               );
+              // Dump sort level for below_N type mismatches
+              if patch_name.pretty().contains("below_") || true {
+                fn extract_sort(
+                  e: &crate::ix::env::Expr,
+                  depth: usize,
+                ) -> String {
+                  use crate::ix::env::ExprData as ED;
+                  match e.as_data() {
+                    ED::ForallE(_, _, body, _, _) => {
+                      extract_sort(body, depth + 1)
+                    },
+                    ED::Sort(lvl, _) => {
+                      format!("depth={depth} sort={}", lvl.pretty())
+                    },
+                    _ => format!("depth={depth} NOT_SORT"),
+                  }
+                }
+                eprintln!("  gen_type: {}", extract_sort(gen_ci.get_type(), 0));
+                eprintln!(
+                  "  org_type: {}",
+                  extract_sort(orig_ci.get_type(), 0)
+                );
+              }
               // Dump PProd.mk levels in both values
               if patch_name.pretty().contains("brecOn.go") {
                 fn dump_pprod(e: &crate::ix::env::Expr, d: usize, s: &str) {
@@ -1372,7 +1499,7 @@ extern "C" fn rs_compile_validate_aux(
           continue;
         },
       };
-      match const_alpha_eq(dec_ci.value(), orig_ci) {
+      match const_alpha_eq(dec_ci.value(), &*orig_ci) {
         Ok(()) => p6.record_pass(),
         Err(e) => p6.record_fail(format!("{}: {e}", name.pretty())),
       }
@@ -1489,8 +1616,8 @@ extern "C" fn rs_compile_validate_aux(
     // with matching type hash and (if present) value hash.
     for (name, orig_ci) in orig.iter() {
       match dstt2.env.get(name) {
-        Some(entry) => {
-          let dec_ci = entry.value();
+        Some(dec_entry) => {
+          let dec_ci = dec_entry.value();
           let type_ok =
             dec_ci.get_type().get_hash() == orig_ci.get_type().get_hash();
           let val_ok = match (dec_ci.get_value(), orig_ci.get_value()) {
@@ -1590,14 +1717,14 @@ extern "C" fn rs_compile_validate_aux(
         original_strs.iter().map(|s| mk_name(s)).collect();
 
       // Skip if any name is missing from the env (fixture not compiled).
-      let all_present = originals
-        .iter()
-        .all(|n| matches!(env.get(n), Some(ConstantInfo::InductInfo(_))));
+      let all_present = originals.iter().all(|n| {
+        matches!(env.get(n).as_deref(), Some(ConstantInfo::InductInfo(_)))
+      });
       if !all_present {
         continue;
       }
 
-      let flat = build_compile_flat_block(&originals, &env);
+      let flat = build_compile_flat_block(&originals, &env).unwrap_or_default();
       let n_originals = originals.len();
       let aux_names: Vec<String> =
         flat.iter().skip(n_originals).map(|m| m.name.pretty()).collect();

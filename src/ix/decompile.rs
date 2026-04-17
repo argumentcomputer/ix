@@ -32,7 +32,8 @@ use crate::{
     env::Named,
     expr::Expr,
     metadata::{
-      ConstantMeta, ConstantMetaInfo, DataValue, ExprMeta, ExprMetaData, KVMap,
+      CallSiteEntry, ConstantMeta, ConstantMetaInfo, DataValue, ExprMeta,
+      ExprMetaData, KVMap,
     },
     univ::Univ,
   },
@@ -40,7 +41,7 @@ use crate::{
 };
 use dashmap::DashMap;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use std::sync::Arc;
 
 #[derive(Default, Debug)]
@@ -79,6 +80,21 @@ pub struct BlockCache {
   pub expr_cache: FxHashMap<(*const Expr, u64), LeanExpr>,
   /// Current constant being decompiled (for error messages)
   pub current_const: String,
+}
+
+impl BlockCache {
+  /// Extend the block cache with surgery extension tables from a ConstantMeta.
+  ///
+  /// Appends `meta_sharing`, `meta_refs`, and `meta_univs` to the block cache,
+  /// forming a contiguous virtual address space. `Share(idx)`, `Ref(idx)`, and
+  /// universe indices in collapsed arg expressions resolve transparently.
+  pub fn load_meta_extensions(&mut self, meta: &ConstantMeta) {
+    if meta.has_extensions() {
+      self.sharing.extend(meta.meta_sharing.iter().cloned());
+      self.refs.extend(meta.meta_refs.iter().cloned());
+      self.univ_table.extend(meta.meta_univs.iter().cloned());
+    }
+  }
 }
 
 // ===========================================================================
@@ -439,6 +455,18 @@ pub fn decompile_univ(
 // Expression decompilation
 // ===========================================================================
 
+/// Pop a result from the decompilation stack, returning a structured error
+/// instead of panicking if the stack is empty (malformed Ixon data).
+fn pop_result(
+  results: &mut Vec<LeanExpr>,
+  msg: &str,
+  constant: &str,
+) -> Result<LeanExpr, DecompileError> {
+  results.pop().ok_or_else(|| DecompileError::BadConstantFormat {
+    msg: format!("{msg} in '{constant}'"),
+  })
+}
+
 /// Decompile an Ixon Expr to a Lean Expr with arena-based metadata restoration.
 ///
 /// Traverses the arena tree following child pointers. Share references are
@@ -457,8 +485,41 @@ pub fn decompile_expr(
   // Lean mdata layers: Vec of KVMaps (outermost-first)
   type LeanMdata = Vec<Vec<(Name, LeanDataValue)>>;
 
-  /// Default node for out-of-bounds arena access (empty arena or invalid index).
+  /// Default node for "no metadata" sentinel. Semantically equivalent
+  /// to a Leaf — no names, no binder info, no metadata to reattach.
   const DEFAULT_NODE: ExprMetaData = ExprMetaData::Leaf;
+
+  /// Look up an arena node by index.
+  ///
+  /// `u64::MAX` is the legitimate "no metadata" sentinel used by
+  /// fallback paths when the caller has no metadata to attach (see
+  /// e.g. the `(_, Expr::App(..))` arm below that has no matching
+  /// `ExprMetaData::App`). In that case we return a `Leaf`.
+  ///
+  /// Any other out-of-bounds index indicates arena corruption — either
+  /// a malformed `ExprMeta` produced during compile, or an
+  /// `ExprMetaData` child pointer that overshoots the arena. We reject
+  /// these loudly rather than silently degrading to `Leaf`, which would
+  /// strip metadata from the subtree.
+  fn arena_lookup<'a>(
+    arena: &'a ExprMeta,
+    idx: u64,
+    constant: &str,
+  ) -> Result<&'a ExprMetaData, DecompileError> {
+    if idx == u64::MAX {
+      return Ok(&DEFAULT_NODE);
+    }
+    arena.nodes.get(idx as usize).ok_or_else(|| {
+      DecompileError::BadConstantFormat {
+        msg: format!(
+          "arena index {idx} out of bounds (arena has {} nodes) in '{constant}'",
+          arena.nodes.len(),
+        ),
+      }
+    })
+  }
+
+  use crate::ix::compile::surgery;
 
   enum Frame {
     Decompile(Arc<Expr>, u64),
@@ -468,6 +529,11 @@ pub fn decompile_expr(
     BuildLet(Name, bool, LeanMdata),
     BuildProj(Name, Nat, LeanMdata),
     CacheResult(*const Expr, u64),
+    /// Assemble a source-order App spine from head + N decompiled args.
+    BuildTelescope {
+      n_args: usize,
+      mdata: LeanMdata,
+    },
   }
 
   let mut stack: Vec<Frame> = vec![Frame::Decompile(expr.clone(), arena_idx)];
@@ -502,7 +568,7 @@ pub fn decompile_expr(
         let mut current_idx = idx;
         let mut mdata_layers: LeanMdata = Vec::new();
         while let ExprMetaData::Mdata { mdata, child } =
-          arena.nodes.get(current_idx as usize).unwrap_or(&DEFAULT_NODE)
+          arena_lookup(arena, current_idx, &cache.current_const)?
         {
           for kvm in mdata {
             mdata_layers.push(decompile_kvmap(kvm, stt)?);
@@ -510,8 +576,7 @@ pub fn decompile_expr(
           current_idx = *child;
         }
 
-        let node =
-          arena.nodes.get(current_idx as usize).unwrap_or(&DEFAULT_NODE);
+        let node = arena_lookup(arena, current_idx, &cache.current_const)?;
 
         // Push CacheResult frame
         stack.push(Frame::CacheResult(Arc::as_ptr(&e), idx));
@@ -603,13 +668,36 @@ pub fn decompile_expr(
             ExprMetaData::Ref { name: name_addr },
             Expr::Rec(rec_idx, univ_indices),
           ) => {
-            let name = decompile_name(name_addr, stt).unwrap_or_else(|_| {
-              cache
-                .ctx
-                .iter()
-                .find(|(_, i)| i.to_u64() == Some(*rec_idx))
-                .map_or_else(Name::anon, |(n, _)| n.clone())
-            });
+            // Fallback to cache.ctx is a legitimate recovery path when
+            // the global name index does not yet know this address —
+            // typically mid-block compilation where the rec's own name
+            // isn't registered globally but IS in the local mutual
+            // context. If neither source yields a name, we return an
+            // explicit `InvalidRecIndex` error rather than falling back
+            // to `Name::anon()` (which would round-trip to an unknown
+            // constant reference and fail much later in kernel
+            // type-check with a hard-to-attribute error).
+            let name = match decompile_name(name_addr, stt) {
+              Ok(n) => n,
+              Err(_) => {
+                #[cfg(debug_assertions)]
+                eprintln!(
+                  "[decompile] Rec name address {:?} not in global index; \
+                   falling back to cache.ctx (rec_idx={}, constant={})",
+                  name_addr, rec_idx, cache.current_const
+                );
+                cache
+                  .ctx
+                  .iter()
+                  .find(|(_, i)| i.to_u64() == Some(*rec_idx))
+                  .map(|(n, _)| n.clone())
+                  .ok_or_else(|| DecompileError::InvalidRecIndex {
+                    idx: *rec_idx,
+                    ctx_size: cache.ctx.len(),
+                    constant: cache.current_const.clone(),
+                  })?
+              },
+            };
             let levels =
               decompile_univ_indices(univ_indices, lvl_names, cache)?;
             let expr = apply_mdata(LeanExpr::cnst(name, levels), mdata_layers);
@@ -633,6 +721,115 @@ pub fn decompile_expr(
             results.push(expr);
           },
 
+          // CallSite: surgered call-site — reconstruct source-order telescope
+          (ExprMetaData::CallSite { name, entries }, _) => {
+            // Collect the canonical Ixon App telescope
+            let (head_ixon, canonical_args) =
+              surgery::collect_ixon_telescope(&e);
+
+            // Invariant: every canonical arg must correspond to exactly one
+            // Kept entry. BuildTelescope below will pop `entries.len()`
+            // results off the stack; if a Kept entry silently dropped its
+            // decompile, the spine would be malformed.
+            let kept_count = entries
+              .iter()
+              .filter(|e| matches!(e, CallSiteEntry::Kept { .. }))
+              .count();
+            if kept_count != canonical_args.len() {
+              return Err(DecompileError::BadConstantFormat {
+                msg: format!(
+                  "CallSite in '{}': {} Kept entries but canonical telescope has {} args",
+                  cache.current_const,
+                  kept_count,
+                  canonical_args.len()
+                ),
+              });
+            }
+
+            // Decompile head: resolve name from CallSite. This must succeed —
+            // a CallSite metadata node without a resolvable head indicates
+            // compiler/decompiler corruption, not malformed user input.
+            let head_name = decompile_name(name, stt).map_err(|_| {
+              DecompileError::BadConstantFormat {
+                msg: format!(
+                  "CallSite in '{}': head name address does not resolve",
+                  cache.current_const
+                ),
+              }
+            })?;
+            // Extract univ args from head
+            let levels = match head_ixon.as_ref() {
+              Expr::Ref(_, univ_indices) | Expr::Rec(_, univ_indices) => {
+                decompile_univ_indices(univ_indices, lvl_names, cache)?
+              },
+              _ => vec![],
+            };
+            // Push the bare head (Mdata is applied by BuildTelescope to
+            // the entire spine, not just the head — wrapping here would
+            // produce `App(App(mdata(head), a), b)` instead of the
+            // correct `mdata(App(App(head, a), b))` and break roundtrip
+            // hash equality).
+            results.push(LeanExpr::cnst(head_name, levels));
+
+            // Push BuildTelescope to assemble source-order App spine.
+            // `mdata_layers` travels with the telescope so the final
+            // spine is wrapped as a whole — matches how the compiler
+            // produced this CallSite node.
+            //
+            // NOTE: the outer `Frame::CacheResult(Arc::as_ptr(&e), idx)`
+            // was already pushed at the top of `Frame::Decompile` (see
+            // ~30 lines above). Do NOT push another here — a duplicate
+            // would fire against a partial result (the last arg, since
+            // BuildTelescope hasn't built the spine yet) before being
+            // overwritten by the outer CacheResult. Last-write-wins
+            // hides the issue today, but intermediate cache reads would
+            // return the wrong value.
+            stack.push(Frame::BuildTelescope {
+              n_args: entries.len(),
+              mdata: mdata_layers,
+            });
+
+            // Push Decompile for each entry in REVERSE source order.
+            // Every entry must resolve to an Ixon expression: Kept indices
+            // into the canonical telescope, Collapsed into the sharing
+            // vector. Silent skips would desync `BuildTelescope`.
+            for entry in entries.iter().rev() {
+              match entry {
+                CallSiteEntry::Kept { canon_idx, meta } => {
+                  let arg_ixon = canonical_args
+                    .get(*canon_idx as usize)
+                    .ok_or_else(|| DecompileError::BadConstantFormat {
+                      msg: format!(
+                        "CallSite in '{}': Kept canon_idx {} out of bounds \
+                         (canonical telescope has {} args)",
+                        cache.current_const,
+                        canon_idx,
+                        canonical_args.len()
+                      ),
+                    })?;
+                  stack.push(Frame::Decompile(arg_ixon.clone(), *meta));
+                },
+                CallSiteEntry::Collapsed { sharing_idx, meta } => {
+                  let arg_ixon = cache
+                    .sharing
+                    .get(*sharing_idx as usize)
+                    .ok_or_else(|| DecompileError::InvalidShareIndex {
+                      idx: *sharing_idx,
+                      max: cache.sharing.len(),
+                      constant: cache.current_const.clone(),
+                    })?
+                    .clone();
+                  stack.push(Frame::Decompile(arg_ixon, *meta));
+                },
+              }
+            }
+            // The outer `Frame::CacheResult` pushed at the top of
+            // `Frame::Decompile` will fire after BuildTelescope finishes,
+            // caching the fully-assembled spine. `continue` here just exits
+            // the match cleanly (no trailing code in this arm).
+            continue;
+          },
+
           // App: follow arena children
           (ExprMetaData::App { children }, Expr::App(f, a)) => {
             stack.push(Frame::BuildApp(mdata_layers));
@@ -652,8 +849,12 @@ pub fn decompile_expr(
             ExprMetaData::Binder { name: name_addr, info, children },
             Expr::Lam(ty, body),
           ) => {
-            let binder_name =
-              decompile_name(name_addr, stt).unwrap_or_else(|_| Name::anon());
+            // Binder name address must resolve. The compiler registers
+            // every binder name it emits; a missing entry here means
+            // the name index was built inconsistently with the arena.
+            // Silently defaulting to anon would lose user-level names
+            // cosmetically and mask the real corruption.
+            let binder_name = decompile_name(name_addr, stt)?;
             stack.push(Frame::BuildLam(
               binder_name,
               info.clone(),
@@ -678,8 +879,8 @@ pub fn decompile_expr(
             ExprMetaData::Binder { name: name_addr, info, children },
             Expr::All(ty, body),
           ) => {
-            let binder_name =
-              decompile_name(name_addr, stt).unwrap_or_else(|_| Name::anon());
+            // See Lam arm above: binder address must resolve.
+            let binder_name = decompile_name(name_addr, stt)?;
             stack.push(Frame::BuildAll(
               binder_name,
               info.clone(),
@@ -704,8 +905,8 @@ pub fn decompile_expr(
             ExprMetaData::LetBinder { name: name_addr, children },
             Expr::Let(non_dep, ty, val, body),
           ) => {
-            let let_name =
-              decompile_name(name_addr, stt).unwrap_or_else(|_| Name::anon());
+            // See Lam arm above: binder address must resolve.
+            let let_name = decompile_name(name_addr, stt)?;
             stack.push(Frame::BuildLet(let_name, *non_dep, mdata_layers));
             stack.push(Frame::Decompile(body.clone(), children[2]));
             stack.push(Frame::Decompile(val.clone(), children[1]));
@@ -759,27 +960,63 @@ pub fn decompile_expr(
       },
 
       Frame::BuildApp(mdata) => {
-        let a = results.pop().expect("BuildApp missing arg");
-        let f = results.pop().expect("BuildApp missing fun");
+        let a = pop_result(
+          &mut results,
+          "BuildApp missing arg",
+          &cache.current_const,
+        )?;
+        let f = pop_result(
+          &mut results,
+          "BuildApp missing fun",
+          &cache.current_const,
+        )?;
         results.push(apply_mdata(LeanExpr::app(f, a), mdata));
       },
 
       Frame::BuildLam(name, info, mdata) => {
-        let body = results.pop().expect("BuildLam missing body");
-        let ty = results.pop().expect("BuildLam missing ty");
+        let body = pop_result(
+          &mut results,
+          "BuildLam missing body",
+          &cache.current_const,
+        )?;
+        let ty = pop_result(
+          &mut results,
+          "BuildLam missing ty",
+          &cache.current_const,
+        )?;
         results.push(apply_mdata(LeanExpr::lam(name, ty, body, info), mdata));
       },
 
       Frame::BuildAll(name, info, mdata) => {
-        let body = results.pop().expect("BuildAll missing body");
-        let ty = results.pop().expect("BuildAll missing ty");
+        let body = pop_result(
+          &mut results,
+          "BuildAll missing body",
+          &cache.current_const,
+        )?;
+        let ty = pop_result(
+          &mut results,
+          "BuildAll missing ty",
+          &cache.current_const,
+        )?;
         results.push(apply_mdata(LeanExpr::all(name, ty, body, info), mdata));
       },
 
       Frame::BuildLet(name, non_dep, mdata) => {
-        let body = results.pop().expect("BuildLet missing body");
-        let val = results.pop().expect("BuildLet missing val");
-        let ty = results.pop().expect("BuildLet missing ty");
+        let body = pop_result(
+          &mut results,
+          "BuildLet missing body",
+          &cache.current_const,
+        )?;
+        let val = pop_result(
+          &mut results,
+          "BuildLet missing val",
+          &cache.current_const,
+        )?;
+        let ty = pop_result(
+          &mut results,
+          "BuildLet missing ty",
+          &cache.current_const,
+        )?;
         results.push(apply_mdata(
           LeanExpr::letE(name, ty, val, body, non_dep),
           mdata,
@@ -787,8 +1024,36 @@ pub fn decompile_expr(
       },
 
       Frame::BuildProj(name, idx, mdata) => {
-        let s = results.pop().expect("BuildProj missing struct");
+        let s = pop_result(
+          &mut results,
+          "BuildProj missing struct",
+          &cache.current_const,
+        )?;
         results.push(apply_mdata(LeanExpr::proj(name, idx, s), mdata));
+      },
+
+      Frame::BuildTelescope { n_args, mdata } => {
+        // Pop n_args results (in source order — pushed in reverse, so pop order is correct)
+        let mut args = Vec::with_capacity(n_args);
+        for _ in 0..n_args {
+          args.push(pop_result(
+            &mut results,
+            "BuildTelescope missing arg",
+            &cache.current_const,
+          )?);
+        }
+        // Pop head (pushed before the args)
+        let head = pop_result(
+          &mut results,
+          "BuildTelescope missing head",
+          &cache.current_const,
+        )?;
+        // Build App spine: foldl
+        let mut expr = head;
+        for arg in args {
+          expr = LeanExpr::app(expr, arg);
+        }
+        results.push(apply_mdata(expr, mdata));
       },
 
       Frame::CacheResult(e_ptr, arena_idx) => {
@@ -1017,14 +1282,45 @@ fn decompile_recursor(
   let (arena, type_root, rule_roots, rule_addrs, all_addrs) = match &meta.info {
     ConstantMetaInfo::Rec {
       arena, type_root, rule_roots, rules, all, ..
-    } => (
-      arena,
-      *type_root,
-      rule_roots.as_slice(),
-      rules.as_slice(),
-      all.as_slice(),
-    ),
+    } => {
+      // Rec metadata must have one rule_root per recursor rule.
+      // A mismatch means the arena was produced inconsistently with
+      // the recursor value; subsequent rule RHS decompilation would
+      // silently use a Leaf default (losing rule-level metadata) if
+      // we didn't validate here.
+      if rule_roots.len() != rec.rules.len() {
+        return Err(DecompileError::BadConstantFormat {
+          msg: format!(
+            "recursor metadata for '{}': rule_roots has {} entries but \
+             recursor has {} rules",
+            name.pretty(),
+            rule_roots.len(),
+            rec.rules.len(),
+          ),
+        });
+      }
+      (
+        arena,
+        *type_root,
+        rule_roots.as_slice(),
+        rules.as_slice(),
+        all.as_slice(),
+      )
+    },
     _ => {
+      // No Rec metadata: graceful degradation. Arena is empty and
+      // rule_roots is empty, so rule RHS decompilation proceeds with
+      // the u64::MAX sentinel via `rule_roots.get(i).unwrap_or(&...)`
+      // below falling through to Leaf. Only allowed when the recursor
+      // has no rules; otherwise data loss would be silent.
+      if !rec.rules.is_empty() {
+        return Err(DecompileError::BadConstantFormat {
+          msg: format!(
+            "recursor has {} rules but no Rec metadata was supplied",
+            rec.rules.len()
+          ),
+        });
+      }
       static EMPTY: ExprMeta = ExprMeta { nodes: Vec::new() };
       (&EMPTY, 0u64, &[] as &[u64], &[] as &[Address], &[] as &[Address])
     },
@@ -1044,17 +1340,23 @@ fn decompile_recursor(
     .iter()
     .map(|a| decompile_name(a, stt))
     .collect::<Result<Vec<_>, _>>()?;
+  // Propagate resolution failures rather than silently degrading to
+  // `vec![name.clone()]`. If a name in `.all` can't be resolved, the
+  // recursor's mutual-block structure is incorrect — masking that with
+  // a singleton fallback produces a plausible-looking but wrong
+  // recursor that may pass later checks by coincidence.
   let all = all_addrs
     .iter()
     .map(|a| decompile_name(a, stt))
-    .collect::<Result<Vec<_>, _>>()
-    .unwrap_or_else(|_| vec![name.clone()]);
+    .collect::<Result<Vec<_>, _>>()?;
 
   let mut rules = Vec::with_capacity(rec.rules.len());
   for (i, (rule, ctor_name)) in
     rec.rules.iter().zip(rule_names.iter()).enumerate()
   {
-    let rhs_root = rule_roots.get(i).copied().unwrap_or(0);
+    // Safe: lengths validated against rec.rules above. If rule_roots
+    // is empty, rec.rules is also empty and this loop doesn't run.
+    let rhs_root = rule_roots[i];
     let rhs = decompile_expr(
       &rule.rhs,
       arena,
@@ -1145,7 +1447,11 @@ fn decompile_inductive(
     dstt,
   )?;
 
-  // Extract constructor name addresses and all from metadata
+  // Extract constructor name addresses and all from metadata. The
+  // non-Indc arm should be unreachable — `decompile_inductive` is only
+  // called when the meta is an Indc variant. If we ever get here with
+  // a different variant shape, that's structural corruption, not a
+  // silently recoverable condition.
   let (ctor_name_addrs, all) = match &meta.info {
     ConstantMetaInfo::Indc { ctors, all: all_addrs, .. } => {
       let all = all_addrs
@@ -1154,7 +1460,16 @@ fn decompile_inductive(
         .collect::<Result<Vec<_>, _>>()?;
       (ctors.as_slice(), all)
     },
-    _ => (&[] as &[Address], vec![name.clone()]),
+    other => {
+      return Err(DecompileError::BadConstantFormat {
+        msg: format!(
+          "decompile_inductive for '{}': expected ConstantMetaInfo::Indc, \
+           got variant with discriminant {:?}",
+          name.pretty(),
+          std::mem::discriminant(other),
+        ),
+      });
+    },
   };
 
   let mut ctors = Vec::with_capacity(ind.ctors.len());
@@ -1258,8 +1573,10 @@ fn decompile_projection(
 ) -> Result<(), DecompileError> {
   // Build ctx from metadata's ctx field
   let ctx_addrs = get_ctx_from_meta(&named.meta);
-  let ctx_names: Vec<Name> =
-    ctx_addrs.iter().filter_map(|a| decompile_name(a, stt).ok()).collect();
+  let ctx_names: Vec<Name> = ctx_addrs
+    .iter()
+    .map(|a| decompile_name(a, stt))
+    .collect::<Result<Vec<_>, _>>()?;
 
   // Set up cache with sharing, refs, univs, and ctx
   let mut cache = BlockCache {
@@ -1271,6 +1588,10 @@ fn decompile_projection(
     ..Default::default()
   };
 
+  // Each projection variant must land on the matching `MutConst` kind
+  // at its block index. A silent fall-through would leave `name`
+  // unregistered in `dstt.env`, and downstream references would fail
+  // far from the real point of corruption.
   match &cnst.info {
     ConstantInfo::DPrj(proj) => match mutuals.get(proj.idx as usize) {
       Some(MutConst::Defn(def)) => {
@@ -1279,20 +1600,14 @@ fn decompile_projection(
         dstt.env.insert(name.clone(), info);
       },
       other => {
-        let has_addr = stt.name_to_addr.contains_key(name);
-        let has_aux = stt.aux_name_to_addr.contains_key(name);
-        let has_original =
-          stt.env.named.get(name).map(|n| n.original.is_some());
-        eprintln!(
-          "[decompile] DPrj {} idx={} failed: got {:?} (mutuals.len={}, addr={}, aux={}, orig={:?})",
-          name.pretty(),
+        return Err(projection_mismatch_error(
+          "DPrj",
+          name,
           proj.idx,
-          other.map(std::mem::discriminant),
+          other,
           mutuals.len(),
-          has_addr,
-          has_aux,
-          has_original,
-        );
+          stt,
+        ));
       },
     },
 
@@ -1308,20 +1623,14 @@ fn decompile_projection(
         }
       },
       other => {
-        let has_addr = stt.name_to_addr.contains_key(name);
-        let has_aux = stt.aux_name_to_addr.contains_key(name);
-        let has_original =
-          stt.env.named.get(name).map(|n| n.original.is_some());
-        eprintln!(
-          "[decompile] IPrj {} idx={} failed: got {:?} (mutuals.len={}, addr={}, aux={}, orig={:?})",
-          name.pretty(),
+        return Err(projection_mismatch_error(
+          "IPrj",
+          name,
           proj.idx,
-          other.map(std::mem::discriminant),
+          other,
           mutuals.len(),
-          has_addr,
-          has_aux,
-          has_original,
-        );
+          stt,
+        ));
       },
     },
 
@@ -1331,27 +1640,47 @@ fn decompile_projection(
         dstt.env.insert(name.clone(), info);
       },
       other => {
-        let has_addr = stt.name_to_addr.contains_key(name);
-        let has_aux = stt.aux_name_to_addr.contains_key(name);
-        let has_original =
-          stt.env.named.get(name).map(|n| n.original.is_some());
-        eprintln!(
-          "[decompile] RPrj {} idx={} failed: got {:?} (mutuals.len={}, addr={}, aux={}, orig={:?})",
-          name.pretty(),
+        return Err(projection_mismatch_error(
+          "RPrj",
+          name,
           proj.idx,
-          other.map(std::mem::discriminant),
+          other,
           mutuals.len(),
-          has_addr,
-          has_aux,
-          has_original,
-        );
+          stt,
+        ));
       },
     },
 
+    // Non-projection constants are ignored here; they're handled by
+    // the generic decompile paths.
     _ => {},
   }
 
   Ok(())
+}
+
+/// Format a projection kind/index mismatch as a `BadConstantFormat`
+/// error. Extracted to avoid triplicate bodies in `decompile_projection`.
+fn projection_mismatch_error(
+  kind: &str,
+  name: &Name,
+  idx: u64,
+  other: Option<&MutConst>,
+  mutuals_len: usize,
+  stt: &CompileState,
+) -> DecompileError {
+  let has_addr = stt.name_to_addr.contains_key(name);
+  let has_aux = stt.aux_name_to_addr.contains_key(name);
+  let has_original =
+    stt.env.named.get(name).map(|n| n.original.is_some()).unwrap_or(false);
+  DecompileError::BadConstantFormat {
+    msg: format!(
+      "{kind} '{}' idx={idx} landed on {:?} (mutuals.len={mutuals_len}, \
+       addr={has_addr}, aux={has_aux}, has_original={has_original})",
+      name.pretty(),
+      other.map(std::mem::discriminant),
+    ),
+  }
 }
 
 /// Decompile a single constant (non-mutual).
@@ -1365,8 +1694,10 @@ fn decompile_const(
 
   // Build ctx from metadata's all field
   let all_addrs = get_all_from_meta(&named.meta);
-  let all_names: Vec<Name> =
-    all_addrs.iter().filter_map(|a| decompile_name(a, stt).ok()).collect();
+  let all_names: Vec<Name> = all_addrs
+    .iter()
+    .map(|a| decompile_name(a, stt))
+    .collect::<Result<Vec<_>, _>>()?;
   let ctx = all_to_ctx(&all_names);
   let current_const = name.pretty();
 
@@ -1385,6 +1716,7 @@ fn decompile_const(
         current_const: current_const.clone(),
         ..Default::default()
       };
+      cache.load_meta_extensions(&named.meta);
       let info =
         decompile_definition(&def, &named.meta, &mut cache, stt, dstt)?;
       dstt.env.insert(name.clone(), info);
@@ -1554,7 +1886,7 @@ fn build_block_env(all_names: &[Name], lean_env: &LeanEnv) -> LeanEnv {
   for ind_name in all_names {
     if let Some(ci) = lean_env.get(ind_name) {
       env.insert(ind_name.clone(), ci.clone());
-      if let LeanConstantInfo::InductInfo(v) = ci {
+      if let LeanConstantInfo::InductInfo(v) = &*ci {
         for ctor_name in &v.ctors {
           if let Some(ctor_ci) = lean_env.get(ctor_name) {
             env.insert(ctor_name.clone(), ctor_ci.clone());
@@ -1602,7 +1934,10 @@ fn below_indc_to_lean(
     ctors: ctor_names,
     num_nested: Nat::from(0u64),
     is_rec: true,
-    is_reflexive: false,
+    // Reflexivity is inherited from the parent (see `build_below_indc`).
+    // The `ConstantInfo::InductInfo` hash includes `is_reflexive`, so the
+    // regenerated `.below` must carry the same flag as Lean's original.
+    is_reflexive: indc.is_reflexive,
     is_unsafe: false,
   };
   let ctors: Vec<ConstructorVal> = indc
@@ -1681,7 +2016,8 @@ fn print_const_comparison(
   orig_env: Option<&LeanEnv>,
 ) {
   let Some(orig_env) = orig_env else { return };
-  let Some(lean_ci) = orig_env.get(name) else { return };
+  let Some(lean_ci_ref) = orig_env.get(name) else { return };
+  let lean_ci = &*lean_ci_ref;
   if std::mem::discriminant(decompiled) != std::mem::discriminant(lean_ci) {
     eprintln!(
       "[aux_gen diff] {}: kind decompiled={} original={}",
@@ -1759,53 +2095,6 @@ fn ixon_content_address(constant: &Constant) -> Address {
   let mut bytes = Vec::new();
   constant.put(&mut bytes);
   Address::hash(&bytes)
-}
-
-/// Validate both the Ixon-level and Lean-level hashes after a roundtrip.
-///
-/// - **Ixon check**: the recompiled projection hash should match `named.original.0`
-/// - **Lean check**: the decompiled constant's hash should match the original Lean constant
-///
-/// On mismatch, prints detailed structural comparison.
-///
-/// `orig_env` is the immutable original Lean environment from the compiler.
-/// When `None` (production/no-debug path), only the Ixon check runs.
-fn _validate_roundtrip(
-  name: &Name,
-  decompiled: &LeanConstantInfo,
-  orig_addr: Option<&Address>,
-  recompiled_proj_addr: Option<&Address>,
-  orig_env: Option<&LeanEnv>,
-) {
-  // Ixon projection hash check.
-  if let (Some(orig), Some(recomp)) = (orig_addr, recompiled_proj_addr)
-    && orig != recomp
-  {
-    eprintln!(
-      "[roundtrip ixon] {} proj mismatch: orig={:.12} recomp={:.12}",
-      name.pretty(),
-      orig.hex(),
-      recomp.hex(),
-    );
-  }
-
-  // Decompiled Lean hash check (only with original environment).
-  if let Some(orig_env) = orig_env
-    && let Some(lean_ci) = orig_env.get(name)
-  {
-    let dec_hash = decompiled.get_hash();
-    let lean_hash = lean_ci.get_hash();
-    if dec_hash != lean_hash {
-      eprintln!(
-        "[roundtrip lean] {} hash mismatch: dec={:.12} lean={:.12}",
-        name.pretty(),
-        format!("{:?}", dec_hash),
-        format!("{:?}", lean_hash),
-      );
-      // Print detailed diff.
-      print_const_comparison(name, decompiled, None, Some(orig_env));
-    }
-  }
 }
 
 /// Compile a batch of regenerated `MutConst`s as a mutual block (mirroring
@@ -2038,7 +2327,6 @@ fn roundtrip_block(
           named.original.as_ref().unwrap().1.clone()
         },
         _ => {
-          // No original metadata — try Phase A (all_metas) as fallback.
           if let Some(meta) = all_metas.get(&name) {
             meta.clone()
           } else {
@@ -2047,7 +2335,6 @@ fn roundtrip_block(
         },
       };
 
-      // Build decompile cache with block tables.
       let mut dec_cache = BlockCache {
         ctx: dec_ctx.clone(),
         sharing: block_constant.sharing.clone(),
@@ -2056,6 +2343,10 @@ fn roundtrip_block(
         current_const: name.pretty(),
         ..Default::default()
       };
+      // Note: do NOT load_meta_extensions here. The roundtrip_block path
+      // decompiles canonical Ixon with original metadata. Extension tables
+      // are only relevant for user definitions with CallSite surgery nodes,
+      // which aux_gen constants never have.
 
       // Find the Ixon data for this constant.
       let class_idx = name_to_class.get(&name).copied().unwrap_or(0);
@@ -2105,9 +2396,10 @@ fn roundtrip_block(
             // Validate Lean-level hash against the original environment.
             // Only possible when the original is available (debug path).
             if let Some(orig) = orig_env
-              && let Some(lean_ci) = orig.get(&n)
-              && ci.get_hash() != lean_ci.get_hash()
+              && let Some(lean_ci_ref) = orig.get(&n)
+              && ci.get_hash() != lean_ci_ref.get_hash()
             {
+              let lean_ci = &*lean_ci_ref;
               print_const_comparison(
                 &n,
                 &ci,
@@ -2172,7 +2464,11 @@ fn roundtrip_block(
                     )
                   }); // not found → singleton (not stored)
                 if !orig_is_singleton {
-                  // Show block + idx details
+                  // Both addresses reference projections but disagree on
+                  // the target — this is a genuine roundtrip failure, not
+                  // a wrapping-vs-not discrepancy. Previously logged via
+                  // `eprintln!` and swallowed; now propagated so callers
+                  // don't silently commit a mismatched constant.
                   let orig_detail =
                     stt.env.get_const(orig_addr).map(|c| match &c.info {
                       ConstantInfo::RPrj(p) => format!(
@@ -2194,15 +2490,18 @@ fn roundtrip_block(
                         format!("{:?}", std::mem::discriminant(other))
                       },
                     });
-                  eprintln!(
-                    "[roundtrip ixon] {} proj mismatch: orig={:.12} [{:?}] recomp={:.12} [idx={}, block={:.12}]",
-                    n.pretty(),
-                    orig_addr.hex(),
-                    orig_detail,
-                    proj_addr.hex(),
-                    class_idx,
-                    block_addr.hex(),
-                  );
+                  return Err(DecompileError::BadConstantFormat {
+                    msg: format!(
+                      "[roundtrip ixon] {} proj mismatch: orig={:.12} [{:?}] \
+                       recomp={:.12} [idx={}, block={:.12}]",
+                      n.pretty(),
+                      orig_addr.hex(),
+                      orig_detail,
+                      proj_addr.hex(),
+                      class_idx,
+                      block_addr.hex(),
+                    ),
+                  });
                 }
               }
             }
@@ -2232,7 +2531,8 @@ fn print_rec_comparison(
   orig_env: Option<&LeanEnv>,
 ) {
   let Some(orig_env) = orig_env else { return };
-  let Some(LeanConstantInfo::RecInfo(lean_rv)) = orig_env.get(rec_name) else {
+  let orig_ci = orig_env.get(rec_name);
+  let Some(LeanConstantInfo::RecInfo(lean_rv)) = orig_ci.as_deref() else {
     return;
   };
 
@@ -2357,23 +2657,110 @@ fn print_rec_comparison(
   }
 }
 
-/// Regenerate aux_gen constants from parent inductives.
+// ===========================================================================
+// Per-constant and per-block helpers
+// ===========================================================================
+
+/// Decompile a single named constant (non-aux_gen) into the decompile state.
 ///
-/// Instead of decompiling aux_gen constants (`.rec`, `.below`, `.brecOn`) from
-/// their canonical (alpha-collapsed) Ixon — which has incompatible structure —
-/// we regenerate them using the original mutual block structure. The parent
-/// inductives' `all` field (from metadata) gives us the un-collapsed class list.
-///
-/// Phases (dependency-ordered):
-///   1. `.rec` — from parent inductives
-///   2. `.below` — from parent inductives
-///   3. `.below.rec` — from regenerated `.below` inductives (Prop only)
-///   4. `.brecOn.go` / `.brecOn` / `.brecOn.eq` — from `.below` + `.rec`
-fn decompile_aux_gen_constants(
+/// Dispatches on the constant kind (definition, recursor, axiom, quotient,
+/// projection). Constants with `named.original.is_some()` and a recognized
+/// aux_gen suffix are skipped — they'll be regenerated by `decompile_block_aux_gen`.
+fn decompile_named_const(
+  name: &Name,
+  named: &Named,
   stt: &CompileState,
   dstt: &DecompileState,
 ) -> Result<(), DecompileError> {
-  use crate::ix::compile::KernelCtx;
+  // Skip aux_gen constants (regenerated separately)
+  if named.original.is_some() && is_aux_gen_suffix(name) {
+    return Ok(());
+  }
+
+  if let Some(cnst) = stt.env.get_const(&named.addr) {
+    match &cnst.info {
+      // Direct constants - decompile immediately
+      ConstantInfo::Defn(_)
+      | ConstantInfo::Recr(_)
+      | ConstantInfo::Axio(_)
+      | ConstantInfo::Quot(_) => decompile_const(name, named, stt, dstt),
+
+      // Projections - get the block and decompile
+      ConstantInfo::DPrj(proj) => {
+        if let Some(Constant {
+          info: ConstantInfo::Muts(mutuals),
+          ref sharing,
+          ref refs,
+          ref univs,
+        }) = stt.env.get_const(&proj.block)
+        {
+          decompile_projection(
+            name, named, &cnst, &mutuals, sharing, refs, univs, stt, dstt,
+          )
+        } else {
+          Err(DecompileError::MissingAddress(proj.block.clone()))
+        }
+      },
+
+      ConstantInfo::IPrj(proj) => {
+        if let Some(Constant {
+          info: ConstantInfo::Muts(mutuals),
+          ref sharing,
+          ref refs,
+          ref univs,
+        }) = stt.env.get_const(&proj.block)
+        {
+          decompile_projection(
+            name, named, &cnst, &mutuals, sharing, refs, univs, stt, dstt,
+          )
+        } else {
+          Err(DecompileError::MissingAddress(proj.block.clone()))
+        }
+      },
+
+      ConstantInfo::RPrj(proj) => {
+        if let Some(Constant {
+          info: ConstantInfo::Muts(mutuals),
+          ref sharing,
+          ref refs,
+          ref univs,
+        }) = stt.env.get_const(&proj.block)
+        {
+          decompile_projection(
+            name, named, &cnst, &mutuals, sharing, refs, univs, stt, dstt,
+          )
+        } else {
+          Err(DecompileError::MissingAddress(proj.block.clone()))
+        }
+      },
+
+      // Constructor projections are handled when their parent inductive is decompiled
+      ConstantInfo::CPrj(_) => Ok(()),
+
+      // Mutual blocks themselves don't need separate handling
+      ConstantInfo::Muts(_) => Ok(()),
+    }
+  } else {
+    Ok(())
+  }
+}
+
+/// Regenerate aux_gen constants for a single mutual inductive block.
+///
+/// Runs the dependency-ordered phases (.rec -> .casesOn -> .recOn -> .below ->
+/// .below.rec -> .brecOn) for one mutual inductive block. Reads parent
+/// inductives from `env` (the shared DashMap) and writes generated constants
+/// back to `dstt.env`.
+///
+/// Returns a list of (name, error) pairs for any failures within the block.
+fn decompile_block_aux_gen(
+  all_names: &[Name],
+  aux_members: &[(AuxKind, Name)],
+  env: &mut LeanEnv,
+  kctx: &crate::ix::compile::KernelCtx,
+  stt: &CompileState,
+  dstt: &DecompileState,
+) -> Vec<(Name, DecompileError)> {
   use crate::ix::compile::aux_gen::{
     below::{BelowConstant, generate_below_constants},
     brecon::generate_brecon_constants,
@@ -2382,61 +2769,700 @@ fn decompile_aux_gen_constants(
     recursor::generate_canonical_recursors_with_overlay,
   };
 
-  // Two distinct environments:
-  //
-  // 1. `orig_env` — immutable reference to the original Lean environment
-  //    inherited from the compiler. Used ONLY for diagnostic comparisons
-  //    (verifying regenerated constants match Lean's originals). `None` in
-  //    production (the no-debug/serialize-roundtrip path).
-  //
-  // 2. `work_env` — mutable working environment for generation lookups.
-  //    Starts from dstt.env (constants decompiled in Pass 1) and grows
-  //    incrementally as each phase generates new constants. Later phases
-  //    see earlier phases' output (e.g., casesOn needs .rec, brecOn
-  //    needs .below).
   let orig_env: Option<&LeanEnv> =
     stt.lean_env.as_ref().map(|arc| arc.as_ref());
 
-  let mut work_env: LeanEnv = {
-    let mut env = LeanEnv::default();
-    for entry in dstt.env.iter() {
-      env.insert(entry.key().clone(), entry.value().clone());
+  let mut aux_gen_errors: Vec<(Name, DecompileError)> = Vec::new();
+
+  // Map from name -> raw generated LeanConstantInfo (before roundtrip).
+  // Used for three-way diagnostic: generated vs decompiled vs original.
+  let mut generated_consts: FxHashMap<Name, LeanConstantInfo> =
+    FxHashMap::default();
+
+  // Build un-collapsed classes: each inductive in its own singleton class.
+  let classes: Vec<Vec<Name>> =
+    all_names.iter().map(|n| vec![n.clone()]).collect();
+
+  // Ingress parent inductives into the ephemeral kenv.
+  for ind_name in all_names {
+    expr_utils::ensure_in_kenv_of(ind_name, env, stt, kctx);
+  }
+
+  // Ingress transitive dependencies from constructor field types.
+  {
+    use crate::ix::graph::get_constant_info_references;
+    for ind_name in all_names {
+      if let Some(ci) = env.get(ind_name) {
+        for ref_name in get_constant_info_references(&*ci) {
+          expr_utils::ensure_in_kenv_of(&ref_name, env, stt, kctx);
+        }
+      }
     }
-    env
+  }
+
+  // Determine what kinds of aux constants this block needs.
+  let needs_rec = aux_members.iter().any(|(k, _)| *k == AuxKind::Rec);
+  let needs_below = aux_members.iter().any(|(k, _)| *k == AuxKind::Below);
+  let needs_below_rec =
+    aux_members.iter().any(|(k, _)| *k == AuxKind::BelowRec);
+  let needs_cases_on = aux_members.iter().any(|(k, _)| *k == AuxKind::CasesOn);
+  let needs_brecon = aux_members.iter().any(|(k, _)| {
+    matches!(k, AuxKind::BRecOn | AuxKind::BRecOnGo | AuxKind::BRecOnEq)
+  });
+  let needs_rec_on = aux_members.iter().any(|(k, _)| *k == AuxKind::RecOn);
+
+  // Phase 1: Generate canonical recursors.
+  let (canonical_recs, is_prop) = if needs_rec
+    || needs_rec_on
+    || needs_cases_on
+    || needs_below
+    || needs_below_rec
+    || needs_brecon
+  {
+    match generate_canonical_recursors_with_overlay(
+      &classes, env, None, None, stt, kctx,
+    ) {
+      Ok(result) => result,
+      Err(e) => {
+        aux_gen_errors.push((
+          all_names[0].clone(),
+          DecompileError::BadConstantFormat {
+            msg: format!(
+              "aux_gen rec failed for {}: {}",
+              all_names[0].pretty(),
+              e
+            ),
+          },
+        ));
+        return aux_gen_errors;
+      },
+    }
+  } else {
+    (vec![], false)
   };
 
-  // Ephemeral kernel context for original-structure auxiliary regeneration.
-  // Shared across all blocks so that accumulated constants (PUnit, PProd,
-  // parent inductives, .below types) are visible to subsequent blocks.
-  let kctx = KernelCtx::new();
-  expr_utils::ensure_prelude_in_kenv_of(stt, &kctx);
+  // Record generated .rec constants for diagnostics.
+  for (n, rv) in &canonical_recs {
+    generated_consts.insert(n.clone(), LeanConstantInfo::RecInfo(rv.clone()));
+  }
+
+  // Insert .rec constants via roundtrip_block.
+  if needs_rec {
+    let rec_members: Vec<&Name> = aux_members
+      .iter()
+      .filter(|(k, _)| *k == AuxKind::Rec)
+      .map(|(_, n)| n)
+      .collect();
+    let rec_mut_consts: Vec<LeanMutConst> = canonical_recs
+      .iter()
+      .map(|(_, rv)| LeanMutConst::Recr(rv.clone()))
+      .collect();
+    match roundtrip_block(
+      &rec_mut_consts,
+      &generated_consts,
+      orig_env,
+      stt,
+      dstt,
+    ) {
+      Ok(roundtripped) => {
+        for (n, ci) in &roundtripped {
+          if let LeanConstantInfo::RecInfo(rv) = ci {
+            print_rec_comparison(n, rv, orig_env);
+          }
+        }
+        for (n, ci) in roundtripped {
+          if rec_members.contains(&&n) || env.contains_key(&n) {
+            dstt.env.insert(n, ci);
+          }
+        }
+      },
+      Err(e) => {
+        eprintln!("[decompile] roundtrip_block .rec failed: {e}");
+        for (n, rv) in &canonical_recs {
+          if rec_members.contains(&n) {
+            dstt.env.insert(n.clone(), LeanConstantInfo::RecInfo(rv.clone()));
+          }
+        }
+      },
+    }
+  }
+
+  // Sync generated .rec constants into env and dstt.env so later phases can find them.
+  for (n, rv) in &canonical_recs {
+    env
+      .entry(n.clone())
+      .or_insert_with(|| LeanConstantInfo::RecInfo(rv.clone()));
+    dstt
+      .env
+      .entry(n.clone())
+      .or_insert_with(|| LeanConstantInfo::RecInfo(rv.clone()));
+  }
+  for (n, ci) in &generated_consts {
+    env.entry(n.clone()).or_insert_with(|| ci.clone());
+    dstt.env.entry(n.clone()).or_insert_with(|| ci.clone());
+  }
+
+  // Phase 1b: Generate .casesOn definitions.
+  if needs_cases_on {
+    let cases_on_members: Vec<&Name> = aux_members
+      .iter()
+      .filter(|(k, _)| *k == AuxKind::CasesOn)
+      .map(|(_, n)| n)
+      .collect();
+
+    for co_name in &cases_on_members {
+      let ind_name = match co_name.as_data() {
+        crate::ix::env::NameData::Str(parent, _, _) => parent.clone(),
+        _ => continue,
+      };
+      let rec_name = Name::str(ind_name.clone(), "rec".to_string());
+      let rec_val = match env.get(&rec_name).as_deref() {
+        Some(LeanConstantInfo::RecInfo(rv)) => rv.clone(),
+        _ => {
+          // Try dstt.env (may have been inserted above)
+          match dstt.env.get(&rec_name).as_deref() {
+            Some(LeanConstantInfo::RecInfo(rv)) => rv.clone(),
+            _ => continue,
+          }
+        },
+      };
+      if let Some(aux_def) = generate_cases_on(co_name, &rec_val, env) {
+        // Lean marks `.casesOn` unsafe iff the parent `.rec` is unsafe
+        // (an unsafe recursor transitively forces every wrapper around it).
+        let safety = if rec_val.is_unsafe {
+          DefinitionSafety::Unsafe
+        } else {
+          DefinitionSafety::Safe
+        };
+        let as_defn = LeanConstantInfo::DefnInfo(DefinitionVal {
+          cnst: ConstantVal {
+            name: aux_def.name.clone(),
+            level_params: aux_def.level_params.clone(),
+            typ: aux_def.typ.clone(),
+          },
+          value: aux_def.value.clone(),
+          hints: ReducibilityHints::Abbrev,
+          safety,
+          all: vec![aux_def.name.clone()],
+        });
+        generated_consts.insert(aux_def.name.clone(), as_defn);
+
+        let mc = LeanMutConst::Defn(Def {
+          name: aux_def.name.clone(),
+          level_params: aux_def.level_params.clone(),
+          typ: aux_def.typ.clone(),
+          kind: DefKind::Definition,
+          value: aux_def.value.clone(),
+          hints: ReducibilityHints::Abbrev,
+          safety,
+          all: vec![],
+        });
+        match roundtrip_block(&[mc], &generated_consts, orig_env, stt, dstt) {
+          Ok(roundtripped) if !roundtripped.is_empty() => {
+            for (n, ci) in roundtripped {
+              dstt.env.insert(n, ci);
+            }
+          },
+          Ok(_) | Err(_) => {
+            if let Some(ci) = generated_consts.get(&aux_def.name) {
+              dstt.env.insert(aux_def.name.clone(), ci.clone());
+            }
+          },
+        }
+      }
+    }
+  }
+
+  // Phase 1c: Generate .recOn definitions (arg-reordered .rec wrapper).
+  if needs_rec_on {
+    use crate::ix::compile::aux_gen::rec_on::generate_rec_on;
+
+    let rec_on_members: Vec<&Name> = aux_members
+      .iter()
+      .filter(|(k, _)| *k == AuxKind::RecOn)
+      .map(|(_, n)| n)
+      .collect();
+
+    for ro_name in &rec_on_members {
+      let ind_name = match ro_name.as_data() {
+        crate::ix::env::NameData::Str(parent, _, _) => parent.clone(),
+        _ => continue,
+      };
+      let rec_name = Name::str(ind_name, "rec".to_string());
+      let rec_val = match env.get(&rec_name).as_deref() {
+        Some(LeanConstantInfo::RecInfo(rv)) => rv.clone(),
+        _ => match dstt.env.get(&rec_name).as_deref() {
+          Some(LeanConstantInfo::RecInfo(rv)) => rv.clone(),
+          _ => continue,
+        },
+      };
+      if let Some(aux_def) = generate_rec_on(ro_name, &rec_val) {
+        // Same safety propagation rule as `.casesOn`: if `.rec` is unsafe,
+        // `.recOn` (which just reorders the rec's arguments) must be too.
+        let safety = if rec_val.is_unsafe {
+          DefinitionSafety::Unsafe
+        } else {
+          DefinitionSafety::Safe
+        };
+        let as_defn = LeanConstantInfo::DefnInfo(DefinitionVal {
+          cnst: ConstantVal {
+            name: aux_def.name.clone(),
+            level_params: aux_def.level_params.clone(),
+            typ: aux_def.typ.clone(),
+          },
+          value: aux_def.value.clone(),
+          hints: ReducibilityHints::Abbrev,
+          safety,
+          all: vec![aux_def.name.clone()],
+        });
+        generated_consts.insert(aux_def.name.clone(), as_defn);
+
+        let mc = LeanMutConst::Defn(Def {
+          name: aux_def.name.clone(),
+          level_params: aux_def.level_params.clone(),
+          typ: aux_def.typ.clone(),
+          kind: DefKind::Definition,
+          value: aux_def.value.clone(),
+          hints: ReducibilityHints::Abbrev,
+          safety,
+          all: vec![],
+        });
+        match roundtrip_block(&[mc], &generated_consts, orig_env, stt, dstt) {
+          Ok(roundtripped) if !roundtripped.is_empty() => {
+            for (n, ci) in roundtripped {
+              dstt.env.insert(n, ci);
+            }
+          },
+          Ok(_) | Err(_) => {
+            if let Some(ci) = generated_consts.get(&aux_def.name) {
+              dstt.env.insert(aux_def.name.clone(), ci.clone());
+            }
+          },
+        }
+      }
+    }
+  }
+
+  // Phase 2: Generate .below constants.
+  let below_consts = if needs_below || needs_below_rec || needs_brecon {
+    match generate_below_constants(
+      &classes,
+      &canonical_recs,
+      env,
+      is_prop,
+      stt,
+      kctx,
+    ) {
+      Ok(consts) => consts,
+      Err(e) => {
+        aux_gen_errors.push((
+          all_names[0].clone(),
+          DecompileError::BadConstantFormat {
+            msg: format!(
+              "aux_gen below failed for {}: {}",
+              all_names[0].pretty(),
+              e
+            ),
+          },
+        ));
+        vec![]
+      },
+    }
+  } else {
+    vec![]
+  };
+
+  // Record generated .below constants for diagnostics.
+  {
+    let all_below_names: Vec<Name> = below_consts
+      .iter()
+      .map(|bc| match bc {
+        BelowConstant::Indc(i) => i.name.clone(),
+        BelowConstant::Def(d) => d.name.clone(),
+      })
+      .collect();
+    for bc in &below_consts {
+      match bc {
+        BelowConstant::Def(d) => {
+          generated_consts.insert(d.name.clone(), below_def_to_lean(d));
+        },
+        BelowConstant::Indc(i) => {
+          let (ind_val, ctors) = below_indc_to_lean(i, &all_below_names);
+          generated_consts
+            .insert(i.name.clone(), LeanConstantInfo::InductInfo(ind_val));
+          for ctor in ctors {
+            generated_consts
+              .insert(ctor.cnst.name.clone(), LeanConstantInfo::CtorInfo(ctor));
+          }
+        },
+      }
+    }
+  }
+
+  // Sync generated constants into env and dstt.env for subsequent phases.
+  for (n, ci) in &generated_consts {
+    env.entry(n.clone()).or_insert_with(|| ci.clone());
+    dstt.env.entry(n.clone()).or_insert_with(|| ci.clone());
+  }
+
+  // Insert .below constants via roundtrip_block.
+  if needs_below {
+    let below_members: Vec<&Name> = aux_members
+      .iter()
+      .filter(|(k, _)| *k == AuxKind::Below)
+      .map(|(_, n)| n)
+      .collect();
+
+    let all_below_names: Vec<Name> = below_consts
+      .iter()
+      .map(|bc| match bc {
+        BelowConstant::Indc(i) => i.name.clone(),
+        BelowConstant::Def(d) => d.name.clone(),
+      })
+      .collect();
+
+    // BelowIndc: bundle ALL generated below inductives into one roundtrip_block.
+    let below_indc_consts: Vec<LeanMutConst> = below_consts
+      .iter()
+      .filter_map(|bc| match bc {
+        BelowConstant::Indc(i) => {
+          let (ind_val, ctors) = below_indc_to_lean(i, &all_below_names);
+          Some(LeanMutConst::Indc(Ind { ind: ind_val, ctors }))
+        },
+        _ => None,
+      })
+      .collect();
+
+    if !below_indc_consts.is_empty() {
+      match roundtrip_block(
+        &below_indc_consts,
+        &generated_consts,
+        orig_env,
+        stt,
+        dstt,
+      ) {
+        Ok(roundtripped) => {
+          for (n, ci) in roundtripped {
+            dstt.env.insert(n, ci);
+          }
+        },
+        Err(e) => {
+          for bc in &below_consts {
+            if let BelowConstant::Indc(i) = bc
+              && below_members.contains(&&i.name)
+            {
+              aux_gen_errors.push((i.name.clone(), e.clone()));
+            }
+          }
+        },
+      }
+    }
+
+    // BelowDef: roundtrip through compile(regen, orig_metadata) -> decompile.
+    let below_def_consts: Vec<LeanMutConst> = below_consts
+      .iter()
+      .filter_map(|bc| match bc {
+        BelowConstant::Def(d) => Some(LeanMutConst::Defn(Def {
+          name: d.name.clone(),
+          level_params: d.level_params.clone(),
+          typ: d.typ.clone(),
+          kind: DefKind::Definition,
+          value: d.value.clone(),
+          hints: ReducibilityHints::Abbrev,
+          safety: DefinitionSafety::Safe,
+          all: vec![],
+        })),
+        _ => None,
+      })
+      .collect();
+
+    if !below_def_consts.is_empty() {
+      match roundtrip_block(
+        &below_def_consts,
+        &generated_consts,
+        orig_env,
+        stt,
+        dstt,
+      ) {
+        Ok(roundtripped) => {
+          for (n, ci) in roundtripped {
+            dstt.env.insert(n, ci);
+          }
+        },
+        Err(e) => {
+          for mc in &below_def_consts {
+            aux_gen_errors.push((mc.name(), e.clone()));
+          }
+        },
+      }
+    }
+  }
+
+  // Phase 3: Generate .below.rec (Prop-level .below inductives only).
+  if needs_below_rec && is_prop {
+    let mut below_env = build_block_env(all_names, env);
+    let mut below_classes: Vec<Vec<Name>> = Vec::new();
+
+    let all_below_names: Vec<Name> = below_consts
+      .iter()
+      .filter_map(|bc| match bc {
+        BelowConstant::Indc(i) => Some(i.name.clone()),
+        _ => None,
+      })
+      .collect();
+
+    for bc in &below_consts {
+      if let BelowConstant::Indc(i) = bc {
+        let (ind_val, ctors) = below_indc_to_lean(i, &all_below_names);
+        below_env.insert(i.name.clone(), LeanConstantInfo::InductInfo(ind_val));
+        for ctor in &ctors {
+          below_env.insert(
+            ctor.cnst.name.clone(),
+            LeanConstantInfo::CtorInfo(ctor.clone()),
+          );
+        }
+        below_classes.push(vec![i.name.clone()]);
+      }
+    }
+
+    if !below_classes.is_empty() {
+      match generate_canonical_recursors_with_overlay(
+        &below_classes,
+        &below_env,
+        None,
+        None,
+        stt,
+        kctx,
+      ) {
+        Ok((below_recs, _)) => {
+          let below_rec_members: Vec<&Name> = aux_members
+            .iter()
+            .filter(|(k, _)| *k == AuxKind::BelowRec)
+            .map(|(_, n)| n)
+            .collect();
+          let below_rec_mut_consts: Vec<LeanMutConst> = below_recs
+            .iter()
+            .filter(|(n, _)| below_rec_members.contains(&n))
+            .map(|(_, rv)| LeanMutConst::Recr(rv.clone()))
+            .collect();
+          match roundtrip_block(
+            &below_rec_mut_consts,
+            &generated_consts,
+            orig_env,
+            stt,
+            dstt,
+          ) {
+            Ok(roundtripped) => {
+              for (n, ci) in roundtripped {
+                dstt.env.insert(n, ci);
+              }
+            },
+            Err(_) => {
+              for (n, rv) in &below_recs {
+                if below_rec_members.contains(&n) {
+                  dstt
+                    .env
+                    .insert(n.clone(), LeanConstantInfo::RecInfo(rv.clone()));
+                }
+              }
+            },
+          }
+        },
+        Err(e) => {
+          aux_gen_errors.push((
+            all_names[0].clone(),
+            DecompileError::BadConstantFormat {
+              msg: format!(
+                "aux_gen below.rec failed for {}: {}",
+                all_names[0].pretty(),
+                e
+              ),
+            },
+          ));
+        },
+      }
+    }
+  }
+
+  // Sync generated constants (below, below.rec) into env and dstt.env for brecOn.
+  for (n, ci) in &generated_consts {
+    env.entry(n.clone()).or_insert_with(|| ci.clone());
+    dstt.env.entry(n.clone()).or_insert_with(|| ci.clone());
+  }
+
+  // Populate the ephemeral kenv with .below types so brecOn's TcScope
+  // can infer PProd(motive, I.below ...) during sort level inference.
+  if !below_consts.is_empty() {
+    populate_canon_kenv_with_below(&below_consts, &classes, env, stt, kctx);
+  }
+
+  // Phase 4: Generate .brecOn / .brecOn.go / .brecOn.eq.
+  if needs_brecon {
+    match generate_brecon_constants(
+      &classes,
+      &canonical_recs,
+      &below_consts,
+      env,
+      is_prop,
+      stt,
+      kctx,
+    ) {
+      Ok(brecon_defs) => {
+        for d in &brecon_defs {
+          let is_eq =
+            matches!(classify_aux_gen(&d.name), Some((AuxKind::BRecOnEq, _)));
+          let as_thm = is_prop || is_eq;
+          generated_consts
+            .insert(d.name.clone(), brecon_def_to_lean(d, as_thm));
+        }
+
+        let brecon_members: Vec<&Name> = aux_members
+          .iter()
+          .filter(|(k, _)| {
+            matches!(k, AuxKind::BRecOn | AuxKind::BRecOnGo | AuxKind::BRecOnEq)
+          })
+          .map(|(_, n)| n)
+          .collect();
+
+        for d in
+          brecon_defs.iter().filter(|d| brecon_members.contains(&&d.name))
+        {
+          let is_eq =
+            matches!(classify_aux_gen(&d.name), Some((AuxKind::BRecOnEq, _)));
+          let kind = if is_prop || is_eq {
+            DefKind::Theorem
+          } else {
+            DefKind::Definition
+          };
+          let mc = LeanMutConst::Defn(Def {
+            name: d.name.clone(),
+            level_params: d.level_params.clone(),
+            typ: d.typ.clone(),
+            kind,
+            value: d.value.clone(),
+            hints: ReducibilityHints::Abbrev,
+            safety: DefinitionSafety::Safe,
+            all: vec![],
+          });
+          match roundtrip_block(&[mc], &generated_consts, orig_env, stt, dstt) {
+            Ok(roundtripped) if !roundtripped.is_empty() => {
+              for (n, ci) in roundtripped {
+                dstt.env.insert(n, ci);
+              }
+            },
+            Ok(_) | Err(_) => {
+              let is_eq_fb = matches!(
+                classify_aux_gen(&d.name),
+                Some((AuxKind::BRecOnEq, _))
+              );
+              dstt.env.insert(
+                d.name.clone(),
+                brecon_def_to_lean(d, is_prop || is_eq_fb),
+              );
+            },
+          }
+        }
+      },
+      Err(e) => {
+        aux_gen_errors.push((
+          all_names[0].clone(),
+          DecompileError::BadConstantFormat {
+            msg: format!(
+              "aux_gen brecOn failed for {}: {}",
+              all_names[0].pretty(),
+              e
+            ),
+          },
+        ));
+      },
+    }
+  }
+
+  // Congruence check: verify generated constants are alpha-equivalent to originals.
+  if let Some(orig) = orig_env {
+    for (name, generated_ci) in &generated_consts {
+      if let Some(orig_ci) = orig.get(name)
+        && let Err(e) =
+          crate::ix::congruence::const_alpha_eq(generated_ci, &*orig_ci)
+      {
+        aux_gen_errors.push((
+          name.clone(),
+          DecompileError::BadConstantFormat { msg: format!("congruence: {e}") },
+        ));
+      }
+    }
+  }
+
+  aux_gen_errors
+}
+
+// ===========================================================================
+// Main entry point
+// ===========================================================================
+
+/// Decompile an Ixon environment back to Lean format.
+///
+/// Single-pass parallel work-stealing scheduler. Computes SCCs over the
+/// name-level reference graph, then processes SCC blocks in topological order.
+/// For each block:
+///   - Phase A: decompile all non-aux_gen constants (`decompile_named_const`)
+///   - Phase B: regenerate aux_gen constants if the block has any (`decompile_block_aux_gen`)
+///   - Phase C: resolve deps to unlock downstream blocks
+pub fn decompile_env(
+  stt: &CompileState,
+) -> Result<DecompileState, DecompileError> {
+  use crate::ix::compile::KernelCtx;
+  use crate::ix::compile::aux_gen::expr_utils;
+  use crate::ix::condense::compute_sccs;
+  use crate::ix::graph::{NameSet, RefMap, get_constant_info_references};
+
+  let dstt = DecompileState::default();
+
+  // Pass 1: Decompile all non-aux_gen constants (parallel).
+  // Aux_gen constants (named.original.is_some() && is_aux_gen_suffix) are
+  // skipped — they'll be regenerated in Pass 2 from parent inductives.
+  let t_p1 = std::time::Instant::now();
+  eprintln!(
+    "[decompile] Pass 1: decompiling {} non-aux_gen constants in parallel...",
+    stt.env.named.len(),
+  );
+  stt.env.named.par_iter().try_for_each(|entry| {
+    let (name, named) = (entry.key(), entry.value());
+    decompile_named_const(name, named, stt, &dstt)
+  })?;
+  eprintln!(
+    "[decompile] Pass 1 done in {:.2}s ({} constants in dstt.env)",
+    t_p1.elapsed().as_secs_f32(),
+    dstt.env.len(),
+  );
+
+  // Pass 2: Regenerate aux_gen constants for mutual inductive blocks.
+  // Process blocks in topological order so that when block B's constructor
+  // fields reference inductives from block A, A's generated auxiliaries
+  // (.rec, .below, .brecOn) are already in dstt.env.
 
   // Collect aux_gen constants grouped by mutual block.
   // Key: first name in the `all` field (canonical block identifier).
   // Value: (all_names, list of (AuxKind, constant_name)).
-  let mut blocks: FxHashMap<Name, (Vec<Name>, Vec<(AuxKind, Name)>)> =
-    FxHashMap::default();
+  type AuxBlockMap = FxHashMap<Name, (Vec<Name>, Vec<(AuxKind, Name)>)>;
+  let mut blocks: AuxBlockMap = FxHashMap::default();
+  let t_p2_prep = std::time::Instant::now();
 
   for entry in stt.env.named.iter() {
     let (name, named) = (entry.key(), entry.value());
     if named.original.is_none() {
       continue;
     }
-
     let Some((kind, root)) = classify_aux_gen(name) else {
       continue;
     };
-
-    // Look up the root inductive's `all` field from the working env.
-    let all_names = match work_env.get(&root) {
+    let all_names = match dstt.env.get(&root).as_deref() {
       Some(LeanConstantInfo::InductInfo(ind)) => ind.all.clone(),
       _ => continue,
     };
-
     if all_names.is_empty() {
       continue;
     }
-
     let block_key = all_names[0].clone();
     blocks
       .entry(block_key)
@@ -2445,655 +3471,170 @@ fn decompile_aux_gen_constants(
       .push((kind, name.clone()));
   }
 
-  // Process each mutual block. Collect errors per-block so one failure
-  // doesn't abort the entire decompilation — all errors are reported at the end.
+  // Topologically sort blocks by cross-block dependencies derived from
+  // the parent inductives' constructor types.
+  let sorted_block_keys = {
+    let mut name_to_block: FxHashMap<Name, Name> = FxHashMap::default();
+    for (block_key, (all_names, _)) in &blocks {
+      for ind_name in all_names {
+        name_to_block.insert(ind_name.clone(), block_key.clone());
+        if let Some(LeanConstantInfo::InductInfo(v)) =
+          dstt.env.get(ind_name).as_deref()
+        {
+          for ctor in &v.ctors {
+            name_to_block.insert(ctor.clone(), block_key.clone());
+          }
+        }
+      }
+    }
+
+    let mut block_deps: RefMap = RefMap::default();
+    for (block_key, (all_names, _)) in &blocks {
+      let mut deps = NameSet::default();
+      for ind_name in all_names {
+        if let Some(ci) = dstt.env.get(ind_name) {
+          for ref_name in get_constant_info_references(&*ci) {
+            if let Some(dep_block) = name_to_block.get(&ref_name) {
+              if dep_block != block_key {
+                deps.insert(dep_block.clone());
+              }
+            }
+          }
+        }
+      }
+      block_deps.insert(block_key.clone(), deps);
+    }
+
+    let condensed = compute_sccs(&block_deps);
+    let mut sorted: Vec<Name> = condensed.blocks.keys().cloned().collect();
+    sorted.reverse(); // Tarjan produces reverse topo order
+    sorted.retain(|k| blocks.contains_key(k));
+    sorted
+  };
+  eprintln!(
+    "[decompile] Pass 2 prep done in {:.2}s: {} aux_gen blocks to regenerate",
+    t_p2_prep.elapsed().as_secs_f32(),
+    sorted_block_keys.len(),
+  );
+
+  // Shared kernel context for aux_gen (accumulates across blocks).
+  // Decompile must start from a cold kernel env (the whole point of Phase 2
+  // is to verify we can regenerate auxiliaries from the Ixon env alone,
+  // independent of the compile phase's state).
+  let kctx = KernelCtx::new();
+  expr_utils::ensure_prelude_in_kenv_of(stt, &kctx);
+
+  // Snapshot dstt.env (DashMap) into work_env (FxHashMap) for aux_gen lookups.
+  // This grows incrementally as each block's aux_gen generates new constants.
+  let mut work_env: LeanEnv =
+    dstt.env.iter().map(|e| (e.key().clone(), e.value().clone())).collect();
+
   let mut aux_gen_errors: Vec<(Name, DecompileError)> = Vec::new();
 
-  for (all_names, aux_members) in blocks.values() {
-    // Map from name → raw generated LeanConstantInfo (before roundtrip).
-    // Used for three-way diagnostic: generated vs decompiled vs original.
-    let mut generated_consts: FxHashMap<Name, LeanConstantInfo> =
-      FxHashMap::default();
+  // Tracks constants already ingressed into `kctx.kenv` across all blocks,
+  // so the BFS below doesn't redundantly walk the same dependency subgraph
+  // for every block (still O(n) across all blocks combined).
+  let mut ingressed: FxHashSet<Name> = FxHashSet::default();
 
-    // Build un-collapsed classes: each inductive in its own singleton class.
-    // This produces auxiliaries with the original Lean structure (N motives
-    // for N inductives, not fewer from alpha-collapse).
-    let classes: Vec<Vec<Name>> =
-      all_names.iter().map(|n| vec![n.clone()]).collect();
+  // Progress tracking. Per-block progress logs (every `log_stride` blocks or
+  // every 5 s) are opt-in via `IX_DECOMPILE_PROGRESS`; slow-block warnings
+  // (any single block exceeding `slow_threshold`) are always emitted.
+  let progress_enabled = std::env::var_os("IX_DECOMPILE_PROGRESS").is_some();
+  let total_blocks = sorted_block_keys.len();
+  let log_stride = (total_blocks / 50).max(1);
+  let slow_threshold = std::time::Duration::from_secs(10);
+  let t_p2 = std::time::Instant::now();
+  let mut t_last_log = t_p2;
 
-    // Build env with all inductives + constructors from the working block.
-    let _block_env = build_block_env(all_names, &work_env);
-
-    // Ingress parent inductives into the ephemeral kenv so the TC can
-    // resolve them during sort-level inference in recursor/brecOn generation.
-    for ind_name in all_names {
-      expr_utils::ensure_in_kenv_of(ind_name, &work_env, stt, &kctx);
-    }
-
-    // Determine what kinds of aux constants this block needs.
-    let needs_rec = aux_members.iter().any(|(k, _)| *k == AuxKind::Rec);
-    let needs_below = aux_members.iter().any(|(k, _)| *k == AuxKind::Below);
-    let needs_below_rec =
-      aux_members.iter().any(|(k, _)| *k == AuxKind::BelowRec);
-    let needs_cases_on =
-      aux_members.iter().any(|(k, _)| *k == AuxKind::CasesOn);
-    let needs_brecon = aux_members.iter().any(|(k, _)| {
-      matches!(k, AuxKind::BRecOn | AuxKind::BRecOnGo | AuxKind::BRecOnEq)
-    });
-
-    // Phase 1: Generate canonical recursors.
-    let needs_rec_on = aux_members.iter().any(|(k, _)| *k == AuxKind::RecOn);
-    let (canonical_recs, is_prop) = if needs_rec
-      || needs_rec_on
-      || needs_cases_on
-      || needs_below
-      || needs_below_rec
-      || needs_brecon
-    {
-      // Use the full work_env (not block_env) so nested inductive detection
-      // can look up external inductives like List. work_env contains
-      // previously decompiled constants and earlier phases' output.
-      match generate_canonical_recursors_with_overlay(
-        &classes, &work_env, None, stt, &kctx,
-      ) {
-        Ok(result) => result,
-        Err(e) => {
-          aux_gen_errors.push((
-            all_names[0].clone(),
-            DecompileError::BadConstantFormat {
-              msg: format!(
-                "aux_gen rec failed for {}: {}",
-                all_names[0].pretty(),
-                e
-              ),
-            },
-          ));
-          continue;
-        },
-      }
-    } else {
-      (vec![], false)
+  for (block_idx, block_key) in sorted_block_keys.iter().enumerate() {
+    let Some((all_names, aux_members)) = blocks.get(block_key) else {
+      continue;
     };
 
-    // Record generated .rec constants for diagnostics.
-    for (n, rv) in &canonical_recs {
-      generated_consts.insert(n.clone(), LeanConstantInfo::RecInfo(rv.clone()));
-    }
+    let t_block = std::time::Instant::now();
 
-    // Insert .rec constants via roundtrip_block.
-    if needs_rec {
-      let rec_members: Vec<&Name> = aux_members
-        .iter()
-        .filter(|(k, _)| *k == AuxKind::Rec)
-        .map(|(_, n)| n)
-        .collect();
-      // Include ALL generated recursors (not just seeded rec_members) so the
-      // mutual context matches the original compilation. For nested inductives,
-      // canonical_recs includes both Tree.rec AND Tree.rec_1; they must be
-      // compiled together to produce the same MutCtx as compile_aux_block.
-      let rec_mut_consts: Vec<LeanMutConst> = canonical_recs
-        .iter()
-        .map(|(_, rv)| LeanMutConst::Recr(rv.clone()))
-        .collect();
-      match roundtrip_block(
-        &rec_mut_consts,
-        &generated_consts,
-        orig_env,
-        stt,
-        dstt,
-      ) {
-        Ok(roundtripped) => {
-          for (n, ci) in &roundtripped {
-            if let LeanConstantInfo::RecInfo(rv) = ci {
-              print_rec_comparison(n, rv, orig_env);
-            }
-          }
-          for (n, ci) in roundtripped {
-            // Only insert constants that exist in the working env or are
-            // seeded members. Nested auxiliaries like TreeB.rec_1 are only
-            // generated under all[0] (TreeA.rec_1) in Lean.
-            if rec_members.contains(&&n) || work_env.contains_key(&n) {
-              dstt.env.insert(n, ci);
-            }
-          }
-        },
-        Err(e) => {
-          eprintln!("[decompile] roundtrip_block .rec failed: {e}");
-          // Fallback: insert regenerated constants directly.
-          for (n, rv) in &canonical_recs {
-            if rec_members.contains(&n) {
-              dstt.env.insert(n.clone(), LeanConstantInfo::RecInfo(rv.clone()));
-            }
-          }
-        },
+    // Ingress the transitive closure of the parent inductives' dependencies
+    // into KEnv. A simple one- or two-level walk is not enough:
+    // `get_constant_info_references` for an `InductInfo` returns refs from
+    // the inductive's type signature plus the constructor *names*, but not
+    // the references inside each *constructor's type*. So a field of type
+    // `PersistentArrayNode InfoTree` inside some `State.mk` is only
+    // discovered when we process the ctor and recurse into *its* type refs.
+    // Without the transitive walk, TypeChecker::infer during brecOn's
+    // universe-level inference fails with "unknown constant" on names that
+    // are two or more edges away from the block's parent inductives.
+    let mut stack: Vec<Name> = all_names.clone();
+    while let Some(name) = stack.pop() {
+      if !ingressed.insert(name.clone()) {
+        continue;
       }
-    }
-
-    // Insert ALL generated constants into work_env so later phases can find
-    // them. Each phase's output must be visible to subsequent phases:
-    //   .rec → needed by casesOn, below, brecOn
-    //   .casesOn → needed by brecOn.eq
-    //   .below → needed by below.rec, brecOn
-    //   .brecOn → needed by brecOn.eq
-    for (n, rv) in &canonical_recs {
-      work_env.insert(n.clone(), LeanConstantInfo::RecInfo(rv.clone()));
-    }
-    for (n, ci) in &generated_consts {
-      work_env.entry(n.clone()).or_insert_with(|| ci.clone());
-    }
-
-    // Phase 1b: Generate .casesOn definitions.
-    if needs_cases_on {
-      let cases_on_members: Vec<&Name> = aux_members
-        .iter()
-        .filter(|(k, _)| *k == AuxKind::CasesOn)
-        .map(|(_, n)| n)
-        .collect();
-
-      // Use the full work_env so each casesOn gets the correct recursor
-      // for its specific inductive (including those generated in Phase 1).
-      let work_env_arc = Arc::new(work_env.clone());
-      for co_name in &cases_on_members {
-        // Look up the recursor for this specific inductive.
-        let ind_name = match co_name.as_data() {
-          crate::ix::env::NameData::Str(parent, _, _) => parent.clone(),
-          _ => continue,
-        };
-        let rec_name = Name::str(ind_name.clone(), "rec".to_string());
-        let rec_val = match work_env.get(&rec_name) {
-          Some(LeanConstantInfo::RecInfo(rv)) => rv,
-          _ => continue,
-        };
-        if let Some(aux_def) =
-          generate_cases_on(co_name, rec_val, &work_env_arc)
-        {
-          // Record for congruence check.
-          let as_defn = LeanConstantInfo::DefnInfo(DefinitionVal {
-            cnst: ConstantVal {
-              name: aux_def.name.clone(),
-              level_params: aux_def.level_params.clone(),
-              typ: aux_def.typ.clone(),
-            },
-            value: aux_def.value.clone(),
-            hints: ReducibilityHints::Abbrev,
-            safety: DefinitionSafety::Safe,
-            all: vec![aux_def.name.clone()],
-          });
-          generated_consts.insert(aux_def.name.clone(), as_defn);
-
-          // Roundtrip as singleton.
-          let mc = LeanMutConst::Defn(Def {
-            name: aux_def.name.clone(),
-            level_params: aux_def.level_params.clone(),
-            typ: aux_def.typ.clone(),
-            kind: DefKind::Definition,
-            value: aux_def.value.clone(),
-            hints: ReducibilityHints::Abbrev,
-            safety: DefinitionSafety::Safe,
-            all: vec![],
-          });
-          match roundtrip_block(&[mc], &generated_consts, orig_env, stt, dstt) {
-            Ok(roundtripped) if !roundtripped.is_empty() => {
-              for (n, ci) in roundtripped {
-                dstt.env.insert(n, ci);
-              }
-            },
-            Ok(_) | Err(_) => {
-              // Fallback: insert generated constant directly.
-              if let Some(ci) = generated_consts.get(&aux_def.name) {
-                dstt.env.insert(aux_def.name.clone(), ci.clone());
-              }
-            },
+      expr_utils::ensure_in_kenv_of(&name, &work_env, stt, &kctx);
+      if let Some(ci) = work_env.get(&name) {
+        for ref_name in get_constant_info_references(ci) {
+          if !ingressed.contains(&ref_name) {
+            stack.push(ref_name);
           }
         }
       }
     }
+    let t_after_ingress = std::time::Instant::now();
 
-    // Phase 1c: Generate .recOn definitions (arg-reordered .rec wrapper).
-    if needs_rec_on {
-      use crate::ix::compile::aux_gen::rec_on::generate_rec_on;
+    let errors = decompile_block_aux_gen(
+      all_names,
+      aux_members,
+      &mut work_env,
+      &kctx,
+      stt,
+      &dstt,
+    );
+    aux_gen_errors.extend(errors);
 
-      let rec_on_members: Vec<&Name> = aux_members
-        .iter()
-        .filter(|(k, _)| *k == AuxKind::RecOn)
-        .map(|(_, n)| n)
-        .collect();
-
-      for ro_name in &rec_on_members {
-        let ind_name = match ro_name.as_data() {
-          crate::ix::env::NameData::Str(parent, _, _) => parent.clone(),
-          _ => continue,
-        };
-        let rec_name = Name::str(ind_name, "rec".to_string());
-        let rec_val = match work_env.get(&rec_name) {
-          Some(LeanConstantInfo::RecInfo(rv)) => rv,
-          _ => continue,
-        };
-        if let Some(aux_def) = generate_rec_on(ro_name, rec_val) {
-          let as_defn = LeanConstantInfo::DefnInfo(DefinitionVal {
-            cnst: ConstantVal {
-              name: aux_def.name.clone(),
-              level_params: aux_def.level_params.clone(),
-              typ: aux_def.typ.clone(),
-            },
-            value: aux_def.value.clone(),
-            hints: ReducibilityHints::Abbrev,
-            safety: DefinitionSafety::Safe,
-            all: vec![aux_def.name.clone()],
-          });
-          generated_consts.insert(aux_def.name.clone(), as_defn);
-
-          let mc = LeanMutConst::Defn(Def {
-            name: aux_def.name.clone(),
-            level_params: aux_def.level_params.clone(),
-            typ: aux_def.typ.clone(),
-            kind: DefKind::Definition,
-            value: aux_def.value.clone(),
-            hints: ReducibilityHints::Abbrev,
-            safety: DefinitionSafety::Safe,
-            all: vec![],
-          });
-          match roundtrip_block(&[mc], &generated_consts, orig_env, stt, dstt) {
-            Ok(roundtripped) if !roundtripped.is_empty() => {
-              for (n, ci) in roundtripped {
-                dstt.env.insert(n, ci);
-              }
-            },
-            Ok(_) | Err(_) => {
-              if let Some(ci) = generated_consts.get(&aux_def.name) {
-                dstt.env.insert(aux_def.name.clone(), ci.clone());
-              }
-            },
-          }
-        }
-      }
-    }
-
-    // Phase 2: Generate .below constants.
-    let below_consts = if needs_below || needs_below_rec || needs_brecon {
-      match generate_below_constants(
-        &classes,
-        &canonical_recs,
-        &work_env,
-        is_prop,
-        Some(stt),
-      ) {
-        Ok(consts) => consts,
-        Err(e) => {
-          aux_gen_errors.push((
-            all_names[0].clone(),
-            DecompileError::BadConstantFormat {
-              msg: format!(
-                "aux_gen below failed for {}: {}",
-                all_names[0].pretty(),
-                e
-              ),
-            },
-          ));
-          vec![]
-        },
-      }
-    } else {
-      vec![]
-    };
-
-    // Record generated .below constants for diagnostics.
-    {
-      let all_below_names: Vec<Name> = below_consts
-        .iter()
-        .map(|bc| match bc {
-          BelowConstant::Indc(i) => i.name.clone(),
-          BelowConstant::Def(d) => d.name.clone(),
-        })
-        .collect();
-      for bc in &below_consts {
-        match bc {
-          BelowConstant::Def(d) => {
-            generated_consts.insert(d.name.clone(), below_def_to_lean(d));
-          },
-          BelowConstant::Indc(i) => {
-            let (ind_val, ctors) = below_indc_to_lean(i, &all_below_names);
-            generated_consts
-              .insert(i.name.clone(), LeanConstantInfo::InductInfo(ind_val));
-            for ctor in ctors {
-              generated_consts.insert(
-                ctor.cnst.name.clone(),
-                LeanConstantInfo::CtorInfo(ctor),
-              );
-            }
-          },
-        }
-      }
-    }
-
-    // Sync generated constants into work_env for subsequent phases.
-    for (n, ci) in &generated_consts {
-      work_env.entry(n.clone()).or_insert_with(|| ci.clone());
-    }
-
-    // Insert .below constants via roundtrip_block.
-    if needs_below {
-      let below_members: Vec<&Name> = aux_members
-        .iter()
-        .filter(|(k, _)| *k == AuxKind::Below)
-        .map(|(_, n)| n)
-        .collect();
-
-      let all_below_names: Vec<Name> = below_consts
-        .iter()
-        .map(|bc| match bc {
-          BelowConstant::Indc(i) => i.name.clone(),
-          BelowConstant::Def(d) => d.name.clone(),
-        })
-        .collect();
-
-      // Split roundtrip by constant type:
-      // - BelowIndc (Prop-level): mutual inductive block, roundtrip together
-      // - BelowDef (Type-level): Lean generates as standalone singletons, roundtrip individually
-
-      // BelowIndc: bundle ALL generated below inductives into one
-      // roundtrip_block (mutual block). Include nested auxiliaries (e.g.,
-      // below_1) so the mutual context matches the original compilation.
-      let below_indc_consts: Vec<LeanMutConst> = below_consts
-        .iter()
-        .filter_map(|bc| match bc {
-          BelowConstant::Indc(i) => {
-            let (ind_val, ctors) = below_indc_to_lean(i, &all_below_names);
-            Some(LeanMutConst::Indc(Ind { ind: ind_val, ctors }))
-          },
-          _ => None,
-        })
-        .collect();
-
-      if !below_indc_consts.is_empty() {
-        match roundtrip_block(
-          &below_indc_consts,
-          &generated_consts,
-          orig_env,
-          stt,
-          dstt,
-        ) {
-          Ok(roundtripped) => {
-            for (n, ci) in roundtripped {
-              dstt.env.insert(n, ci);
-            }
-          },
-          Err(e) => {
-            for bc in &below_consts {
-              if let BelowConstant::Indc(i) = bc
-                && below_members.contains(&&i.name)
-              {
-                aux_gen_errors.push((i.name.clone(), e.clone()));
-              }
-            }
-          },
-        }
-      }
-
-      // BelowDef: roundtrip through compile(regen, orig_metadata) → decompile.
-      // Batch ALL BelowDefs together so sort_consts can detect alpha-equivalence
-      // and collapse them, matching compile_aux_block's behavior.
-      let below_def_consts: Vec<LeanMutConst> = below_consts
-        .iter()
-        .filter_map(|bc| match bc {
-          BelowConstant::Def(d) => Some(LeanMutConst::Defn(Def {
-            name: d.name.clone(),
-            level_params: d.level_params.clone(),
-            typ: d.typ.clone(),
-            kind: DefKind::Definition,
-            value: d.value.clone(),
-            hints: ReducibilityHints::Abbrev,
-            safety: DefinitionSafety::Safe,
-            all: vec![],
-          })),
-          _ => None,
-        })
-        .collect();
-
-      if !below_def_consts.is_empty() {
-        match roundtrip_block(
-          &below_def_consts,
-          &generated_consts,
-          orig_env,
-          stt,
-          dstt,
-        ) {
-          Ok(roundtripped) => {
-            for (n, ci) in roundtripped {
-              dstt.env.insert(n, ci);
-            }
-          },
-          Err(e) => {
-            for mc in &below_def_consts {
-              aux_gen_errors.push((mc.name(), e.clone()));
-            }
-          },
-        }
-      }
-    }
-
-    // Phase 3: Generate .below.rec (Prop-level .below inductives only).
-    if needs_below_rec && is_prop {
-      let mut below_env = build_block_env(all_names, &work_env);
-      let mut below_classes: Vec<Vec<Name>> = Vec::new();
-
-      let all_below_names: Vec<Name> = below_consts
-        .iter()
-        .filter_map(|bc| match bc {
-          BelowConstant::Indc(i) => Some(i.name.clone()),
-          _ => None,
-        })
-        .collect();
-
-      for bc in &below_consts {
-        if let BelowConstant::Indc(i) = bc {
-          let (ind_val, ctors) = below_indc_to_lean(i, &all_below_names);
-          below_env
-            .insert(i.name.clone(), LeanConstantInfo::InductInfo(ind_val));
-          for ctor in &ctors {
-            below_env.insert(
-              ctor.cnst.name.clone(),
-              LeanConstantInfo::CtorInfo(ctor.clone()),
-            );
-          }
-          below_classes.push(vec![i.name.clone()]);
-        }
-      }
-
-      if !below_classes.is_empty() {
-        match generate_canonical_recursors_with_overlay(
-          &below_classes,
-          &below_env,
-          None,
-          stt,
-          &kctx,
-        ) {
-          Ok((below_recs, _)) => {
-            let below_rec_members: Vec<&Name> = aux_members
-              .iter()
-              .filter(|(k, _)| *k == AuxKind::BelowRec)
-              .map(|(_, n)| n)
-              .collect();
-            let below_rec_mut_consts: Vec<LeanMutConst> = below_recs
-              .iter()
-              .filter(|(n, _)| below_rec_members.contains(&n))
-              .map(|(_, rv)| LeanMutConst::Recr(rv.clone()))
-              .collect();
-            match roundtrip_block(
-              &below_rec_mut_consts,
-              &generated_consts,
-              orig_env,
-              stt,
-              dstt,
-            ) {
-              Ok(roundtripped) => {
-                for (n, ci) in roundtripped {
-                  dstt.env.insert(n, ci);
-                }
-              },
-              Err(_) => {
-                for (n, rv) in &below_recs {
-                  if below_rec_members.contains(&n) {
-                    dstt
-                      .env
-                      .insert(n.clone(), LeanConstantInfo::RecInfo(rv.clone()));
-                  }
-                }
-              },
-            }
-          },
-          Err(e) => {
-            aux_gen_errors.push((
-              all_names[0].clone(),
-              DecompileError::BadConstantFormat {
-                msg: format!(
-                  "aux_gen below.rec failed for {}: {}",
-                  all_names[0].pretty(),
-                  e
-                ),
-              },
-            ));
-          },
-        }
-      }
-    }
-
-    // Sync generated constants (below, below.rec) into work_env for brecOn.
-    for (n, ci) in &generated_consts {
-      work_env.entry(n.clone()).or_insert_with(|| ci.clone());
-    }
-
-    // Populate the ephemeral kenv with .below types so brecOn's TcScope
-    // can infer PProd(motive, I.below ...) during sort level inference.
-    if !below_consts.is_empty() {
-      let work_env_arc = std::sync::Arc::new(work_env.clone());
-      populate_canon_kenv_with_below(
-        &below_consts,
-        &classes,
-        &work_env_arc,
-        stt,
-        &kctx,
+    // Per-block slow-block warning.
+    let block_elapsed = t_block.elapsed();
+    if block_elapsed > slow_threshold {
+      let ingress_ms = (t_after_ingress - t_block).as_millis();
+      let gen_ms =
+        (t_block.elapsed() - (t_after_ingress - t_block)).as_millis();
+      eprintln!(
+        "[decompile] slow block [{block_idx}/{total_blocks}] {} \
+         took {:.2}s (ingress={ingress_ms}ms, gen={gen_ms}ms, \
+         {} members, kenv={})",
+        block_key.pretty(),
+        block_elapsed.as_secs_f32(),
+        aux_members.len(),
+        ingressed.len(),
       );
     }
 
-    // Phase 4: Generate .brecOn / .brecOn.go / .brecOn.eq.
-    if needs_brecon {
-      match generate_brecon_constants(
-        &classes,
-        &canonical_recs,
-        &below_consts,
-        &work_env,
-        is_prop,
-        stt,
-        &kctx,
-      ) {
-        Ok(brecon_defs) => {
-          // Record generated brecOn constants for congruence check.
-          // .brecOn.eq is ALWAYS a theorem (proof of equality).
-          // .brecOn and .brecOn.go are theorems for Prop, definitions for Type.
-          for d in &brecon_defs {
-            let is_eq =
-              matches!(classify_aux_gen(&d.name), Some((AuxKind::BRecOnEq, _)));
-            let as_thm = is_prop || is_eq;
-            generated_consts
-              .insert(d.name.clone(), brecon_def_to_lean(d, as_thm));
-          }
-
-          let brecon_members: Vec<&Name> = aux_members
-            .iter()
-            .filter(|(k, _)| {
-              matches!(
-                k,
-                AuxKind::BRecOn | AuxKind::BRecOnGo | AuxKind::BRecOnEq
-              )
-            })
-            .map(|(_, n)| n)
-            .collect();
-
-          // Roundtrip each brecOn INDIVIDUALLY as a singleton.
-          // The original compilation (`compile_const_no_aux`) compiles each
-          // brecOn as a singleton definition. If we batch alpha-equivalent
-          // brecOn constants together, `sort_consts` collapses them into
-          // fewer classes, producing a different block structure than the
-          // singleton original. Individual roundtrip ensures the arena
-          // structure matches the original metadata.
-          // Only roundtrip constants that were seeded (present in compiled env).
-          for d in
-            brecon_defs.iter().filter(|d| brecon_members.contains(&&d.name))
-          {
-            let is_eq =
-              matches!(classify_aux_gen(&d.name), Some((AuxKind::BRecOnEq, _)));
-            let kind = if is_prop || is_eq {
-              DefKind::Theorem
-            } else {
-              DefKind::Definition
-            };
-            let mc = LeanMutConst::Defn(Def {
-              name: d.name.clone(),
-              level_params: d.level_params.clone(),
-              typ: d.typ.clone(),
-              kind,
-              value: d.value.clone(),
-              hints: ReducibilityHints::Abbrev,
-              safety: DefinitionSafety::Safe,
-              all: vec![],
-            });
-            match roundtrip_block(&[mc], &generated_consts, orig_env, stt, dstt)
-            {
-              Ok(roundtripped) if !roundtripped.is_empty() => {
-                for (n, ci) in roundtripped {
-                  dstt.env.insert(n, ci);
-                }
-              },
-              Ok(_) | Err(_) => {
-                // Fallback: insert the generated constant directly.
-                let is_eq_fb = matches!(
-                  classify_aux_gen(&d.name),
-                  Some((AuxKind::BRecOnEq, _))
-                );
-                dstt.env.insert(
-                  d.name.clone(),
-                  brecon_def_to_lean(d, is_prop || is_eq_fb),
-                );
-              },
-            }
-          }
-        },
-        Err(e) => {
-          aux_gen_errors.push((
-            all_names[0].clone(),
-            DecompileError::BadConstantFormat {
-              msg: format!(
-                "aux_gen brecOn failed for {}: {}",
-                all_names[0].pretty(),
-                e
-              ),
-            },
-          ));
-        },
-      }
-    }
-
-    // Congruence check: verify generated constants are alpha-equivalent to originals.
-    // Only possible when the original environment is available (debug path).
-    if let Some(orig) = orig_env {
-      for (name, generated_ci) in &generated_consts {
-        if let Some(orig_ci) = orig.get(name)
-          && let Err(e) =
-            crate::ix::congruence::const_alpha_eq(generated_ci, orig_ci)
-        {
-          aux_gen_errors.push((
-            name.clone(),
-            DecompileError::BadConstantFormat {
-              msg: format!("congruence: {e}"),
-            },
-          ));
-        }
+    // Periodic progress log (opt-in via IX_DECOMPILE_PROGRESS).
+    if progress_enabled {
+      let now = std::time::Instant::now();
+      let done = block_idx + 1;
+      let should_log = done == total_blocks
+        || done % log_stride == 0
+        || now.duration_since(t_last_log) > std::time::Duration::from_secs(5);
+      if should_log {
+        let elapsed = t_p2.elapsed().as_secs_f32();
+        let rate = done as f32 / elapsed.max(0.001);
+        let remaining = ((total_blocks - done) as f32 / rate.max(0.001)) as u64;
+        eprintln!(
+          "[decompile] Pass 2 progress: {done}/{total_blocks} blocks \
+           ({:.1}%), elapsed {elapsed:.1}s, eta {}s, kenv={}",
+          100.0 * done as f32 / total_blocks as f32,
+          remaining,
+          ingressed.len(),
+        );
+        t_last_log = now;
       }
     }
   }
+  eprintln!(
+    "[decompile] Pass 2 done in {:.2}s ({} aux_gen errors, kenv={})",
+    t_p2.elapsed().as_secs_f32(),
+    aux_gen_errors.len(),
+    ingressed.len(),
+  );
 
-  // Report all collected errors (but don't abort — caller gets the partial decompile).
   if !aux_gen_errors.is_empty() {
     eprintln!(
       "[decompile] aux_gen roundtrip errors ({}):",
@@ -3103,108 +3644,6 @@ fn decompile_aux_gen_constants(
       eprintln!("  {}: {e}", name.pretty());
     }
   }
-
-  Ok(())
-}
-
-// ===========================================================================
-// Main entry point
-// ===========================================================================
-
-/// Decompile an Ixon environment back to Lean format.
-pub fn decompile_env(
-  stt: &CompileState,
-) -> Result<DecompileState, DecompileError> {
-  let dstt = DecompileState::default();
-
-  // Constructor metadata is now embedded directly in ConstantMetaInfo::Indc,
-  // so no pre-indexing is needed.
-
-  // Pass 1: Decompile non-aux_gen constants (parallel).
-  // Constants with `named.original.is_some()` are aux_gen-rewritten. We only
-  // skip those with a recognized aux_gen suffix (.rec, .below, .brecOn, etc.)
-  // — they'll be regenerated in pass 2. Parent inductives/constructors with
-  // `original` are still decompiled here (they have correct `all` in metadata).
-  stt.env.named.par_iter().try_for_each(|entry| {
-    let (name, named) = (entry.key(), entry.value());
-
-    if named.original.is_some() && is_aux_gen_suffix(name) {
-      return Ok(());
-    }
-
-    if let Some(cnst) = stt.env.get_const(&named.addr) {
-      match &cnst.info {
-        // Direct constants - decompile immediately
-        ConstantInfo::Defn(_)
-        | ConstantInfo::Recr(_)
-        | ConstantInfo::Axio(_)
-        | ConstantInfo::Quot(_) => decompile_const(name, named, stt, &dstt),
-
-        // Projections - get the block and decompile
-        ConstantInfo::DPrj(proj) => {
-          if let Some(Constant {
-            info: ConstantInfo::Muts(mutuals),
-            ref sharing,
-            ref refs,
-            ref univs,
-          }) = stt.env.get_const(&proj.block)
-          {
-            decompile_projection(
-              name, named, &cnst, &mutuals, sharing, refs, univs, stt, &dstt,
-            )
-          } else {
-            Err(DecompileError::MissingAddress(proj.block.clone()))
-          }
-        },
-
-        ConstantInfo::IPrj(proj) => {
-          if let Some(Constant {
-            info: ConstantInfo::Muts(mutuals),
-            ref sharing,
-            ref refs,
-            ref univs,
-          }) = stt.env.get_const(&proj.block)
-          {
-            decompile_projection(
-              name, named, &cnst, &mutuals, sharing, refs, univs, stt, &dstt,
-            )
-          } else {
-            Err(DecompileError::MissingAddress(proj.block.clone()))
-          }
-        },
-
-        ConstantInfo::RPrj(proj) => {
-          if let Some(Constant {
-            info: ConstantInfo::Muts(mutuals),
-            ref sharing,
-            ref refs,
-            ref univs,
-          }) = stt.env.get_const(&proj.block)
-          {
-            decompile_projection(
-              name, named, &cnst, &mutuals, sharing, refs, univs, stt, &dstt,
-            )
-          } else {
-            Err(DecompileError::MissingAddress(proj.block.clone()))
-          }
-        },
-
-        // Constructor projections are handled when their parent inductive is decompiled
-        ConstantInfo::CPrj(_) => Ok(()),
-
-        // Mutual blocks themselves don't need separate handling
-        ConstantInfo::Muts(_) => Ok(()),
-      }
-    } else {
-      Ok(())
-    }
-  })?;
-
-  // Pass 2: Regenerate aux_gen constants from parent inductives.
-  // TODO: parallelize — blocks are independent (each only needs its own
-  // inductives + external deps from the complete dstt.env). Only the
-  // phases within a block (.rec → .below → .brecOn) are sequential.
-  decompile_aux_gen_constants(stt, &dstt)?;
 
   Ok(dstt)
 }
@@ -3260,7 +3699,7 @@ pub fn check_decompile(
               info.get_type().get_hash(),
               orig_info.get_value().map(|v| *v.get_hash()),
               info.get_value().map(|v| *v.get_hash()),
-              ci_kind(orig_info),
+              ci_kind(&*orig_info),
               ci_kind(info),
             );
           }
@@ -3284,7 +3723,7 @@ pub fn check_decompile(
   {
     let mut missing_names: Vec<String> = original
       .iter()
-      .filter(|(name, _)| !dstt.env.contains_key(name))
+      .filter(|(name, _)| !dstt.env.contains_key(*name))
       .map(|(name, _)| name.pretty())
       .collect();
     missing_names.sort();

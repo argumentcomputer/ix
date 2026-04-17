@@ -232,6 +232,12 @@ impl LeanIxonExprMetaData<LeanOwned> {
         ctor.set_u64(1, 0, *child);
         ctor.into()
       },
+
+      ExprMetaData::CallSite { .. } => {
+        // CallSite is internal to the Rust surgery pipeline and is not
+        // exposed to the Lean FFI. Represent as a Leaf for now.
+        LeanOwned::box_usize(0)
+      },
     };
     Self::new(obj)
   }
@@ -640,7 +646,8 @@ impl<R: LeanRef> LeanIxonNamed<R> {
     Named {
       addr: LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array()).decode(),
       meta: LeanIxonConstantMeta::new(ctor.get(1).to_owned_ref()).decode(),
-      original: None, // aux_gen not yet on FFI boundary
+      original: None,        // aux_gen not yet on FFI boundary
+      name_refs: Vec::new(), // populated during Rust compilation, not FFI
     }
   }
 }

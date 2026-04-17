@@ -49,52 +49,35 @@ pub fn compile_env(
   // The kenv is populated on-demand via ensure_in_kenv as constants are
   // compiled. Precompiles (PUnit, PProd, Eq, True) are added below.
 
-  // Pre-compile PUnit, PProd, Eq, and True so aux_gen can reference them.
-  // .below uses PUnit/PProd (for Type-level), .brecOn.eq uses Eq and True.
-  // True is used as a dummy motive for non-target classes in the .brecOn.eq
-  // recursor-based proof (any Prop type suffices; True has no dependencies).
-  // These get compiled into aux_name_to_addr; the scheduler's promotion
-  // path in the work loop moves them to name_to_addr when encountered.
-  {
-    let prereqs = [
-      Name::str(Name::anon(), "PUnit".to_string()),
-      Name::str(Name::anon(), "PProd".to_string()),
-      Name::str(Name::anon(), "Eq".to_string()),
-      Name::str(Name::anon(), "True".to_string()),
-    ];
-    for prereq in &prereqs {
-      if let Some((lo, all)) =
-        condensed.blocks.iter().find(|(_, all)| all.contains(prereq))
-      {
-        let lo = lo.clone();
-        let all = all.clone();
-        let mut cache = BlockCache::default();
-        if compile_const(&lo, &all, lean_env, &mut cache, &stt).is_ok() {
-          // Move compiled names from name_to_addr → aux_name_to_addr.
-          // This prevents the scheduler from treating them as "already done"
-          // while still making them available for aux_gen reference resolution.
-          let just_compiled: Vec<(Name, Address)> = stt
-            .name_to_addr
-            .iter()
-            .map(|e| (e.key().clone(), e.value().clone()))
-            .collect();
-          for (n, addr) in just_compiled {
-            stt.name_to_addr.remove(&n);
-            stt.aux_name_to_addr.insert(n, addr);
-          }
-          // Also move any aux_gen extras that were generated during
-          // pre-compilation (unlikely but defensive).
-          let extras: Vec<Name> =
-            stt.aux_gen_extra_names.iter().map(|r| r.clone()).collect();
-          for name in extras {
-            if let Some((n, addr)) = stt.name_to_addr.remove(&name) {
-              stt.aux_name_to_addr.insert(n, addr);
-            }
-          }
-        }
-      }
-    }
-  }
+  // Pre-compile the builtins that aux_gen is known to reference, so the
+  // scheduler has their addresses in `aux_name_to_addr` before any block
+  // with `.below` / `.brecOn` / `.brecOn.eq` regeneration fires.
+  //
+  // Rationale: `build_ref_graph` scans only the *original* Lean env, so
+  // refs that aux_gen introduces (e.g., `.brecOn.eq` using `Eq.symm`)
+  // aren't visible to the scheduler's topological ordering. Without
+  // these pre-compiles, a block's aux_gen could run before the
+  // dep's own SCC does, producing a nondeterministic `MissingConstant`
+  // error (race depends on work-stealing order).
+  //
+  // Seed names (exact Const refs aux_gen emits — grep `mk_const` in
+  // `src/ix/compile/aux_gen/**`):
+  //   - `.below` (Type-level): PUnit, PProd (+ ctors via SCC)
+  //   - `.brecOn.eq`: Eq, Eq.refl, Eq.symm, Eq.ndrec, HEq, HEq.refl, True
+  //
+  // From these seeds we compute the **transitive SCC closure** using
+  // `condensed.block_refs` (each SCC's out-edges) and compile the closure
+  // in reverse topological order — so every SCC's deps are already in
+  // `aux_name_to_addr` by the time its own compilation runs.
+  //
+  // Any pre-compile failure is a hard error: silent fallback would leave
+  // the name unresolved and race with the main scheduler, reintroducing
+  // the bug this exists to prevent.
+  //
+  // Names absent from `lean_env` (e.g., unit-test fixtures) are silently
+  // skipped at seeding time — the initial `condensed.low_links.get` is
+  // optional. Transitive deps of surviving seeds are assumed present.
+  precompile_aux_gen_prereqs(&condensed, lean_env, &stt)?;
 
   // Build work-stealing data structures
   let total_blocks = condensed.blocks.len();
@@ -240,15 +223,19 @@ pub fn compile_env(
                         unresolved_names[0].pretty(),
                         e,
                       );
+                      // Don't register failed names — downstream blocks
+                      // will get MissingConstant rather than silently
+                      // referencing broken data.
+                    } else {
+                      for name in &unresolved_names {
+                        stt_ref.aux_gen_extra_names.insert(name.clone());
+                      }
+                      stt_ref
+                        .aux_gen_pending
+                        .lock()
+                        .unwrap()
+                        .extend(unresolved_names);
                     }
-                    for name in &unresolved_names {
-                      stt_ref.aux_gen_extra_names.insert(name.clone());
-                    }
-                    stt_ref
-                      .aux_gen_pending
-                      .lock()
-                      .unwrap()
-                      .extend(unresolved_names);
                   }
                 }
 
@@ -364,7 +351,7 @@ pub fn compile_env(
 
               // Check for slow blocks
               let elapsed = block_start.elapsed();
-              if elapsed.as_secs_f32() > 1.0 {
+              if *crate::ix::compile::IX_TIMING && elapsed.as_secs_f32() > 1.0 {
                 let cc_time = _cc_start.elapsed().as_secs_f32();
                 eprintln!(
                   "Slow block {:?} ({} consts): {:.2}s path={} cc={:.2}s",
@@ -421,9 +408,14 @@ pub fn compile_env(
                 condvar_ref.notify_all();
               }
 
-              completed_ref.fetch_add(1, AtomicOrdering::SeqCst);
-              // Wake all workers so they can check for completion
-              condvar_ref.notify_all();
+              let done = completed_ref.fetch_add(1, AtomicOrdering::SeqCst) + 1;
+              // Wake all workers only when all blocks are done (so they
+              // can exit), otherwise just wake one to avoid thundering herd.
+              if done == total_blocks {
+                condvar_ref.notify_all();
+              } else {
+                condvar_ref.notify_one();
+              }
             },
             None => {
               // No work available - check if we're done
@@ -477,4 +469,153 @@ pub fn compile_env(
   }
 
   Ok(stt)
+}
+
+/// Seed names for the aux_gen prereq closure.
+///
+/// These are the exact `Const` refs that `aux_gen` emits in generated
+/// `.below` / `.brecOn` / `.brecOn.eq` bodies — grep for `mk_const` in
+/// `src/ix/compile/aux_gen/**` to verify. They must all be compiled and
+/// registered in `aux_name_to_addr` before any block's aux_gen runs, or
+/// else `compile_expr` raises `MissingConstant`.
+fn aux_gen_seed_names() -> Vec<Name> {
+  let root = Name::anon();
+  let eq = Name::str(root.clone(), "Eq".into());
+  let heq = Name::str(root.clone(), "HEq".into());
+  vec![
+    // .below (Type-level): PUnit, PProd — ctors in same SCC
+    Name::str(root.clone(), "PUnit".into()),
+    Name::str(root.clone(), "PProd".into()),
+    // .brecOn.eq — Eq family
+    eq.clone(),
+    Name::str(eq.clone(), "refl".into()),
+    Name::str(eq.clone(), "symm".into()),
+    Name::str(eq.clone(), "ndrec".into()),
+    // `rfl` is a separate constant (`def rfl : a = a := Eq.refl a` in
+    // Init.Prelude), used by `Eq.symm`'s body. The transitive-closure
+    // walker should find it via Eq.symm's block_refs, but listing it
+    // explicitly guards against ref-graph regressions.
+    Name::str(root.clone(), "rfl".into()),
+    // .brecOn.eq — HEq family
+    heq.clone(),
+    Name::str(heq, "refl".into()),
+    // .brecOn.eq — heterogeneous-to-homogeneous coercion
+    // (used in the indexed-eq path's major-continuation discharge)
+    Name::str(root.clone(), "eq_of_heq".into()),
+    // .brecOn.eq dummy motive
+    Name::str(root, "True".into()),
+  ]
+}
+
+/// Build the transitive SCC closure of `seeds` using `condensed.block_refs`,
+/// then compile each SCC in **reverse topological order** (deps first) into
+/// `aux_name_to_addr`. Fails immediately if any SCC fails to compile.
+///
+/// The reverse-topo order is computed via iterative DFS post-order on the
+/// condensed graph. `block_refs` maps each SCC-rep to the names it
+/// references; we resolve each referenced name back to its own SCC-rep via
+/// `condensed.low_links`.
+fn precompile_aux_gen_prereqs(
+  condensed: &crate::ix::condense::CondensedBlocks,
+  lean_env: &Arc<LeanEnv>,
+  stt: &CompileState,
+) -> Result<(), CompileError> {
+  // Resolve seeds to their SCC reps. Silently skip seeds not in the env
+  // (unit-test fixtures, minimal test envs).
+  let seed_reps: Vec<Name> = aux_gen_seed_names()
+    .into_iter()
+    .filter_map(|n| condensed.low_links.get(&n).cloned())
+    .collect();
+
+  if seed_reps.is_empty() {
+    return Ok(());
+  }
+
+  // Iterative DFS post-order: visit each SCC exactly once, emitting after
+  // all its dependencies have been emitted. Result is a reverse-topo
+  // (dep-first) order.
+  let mut order: Vec<Name> = Vec::new();
+  let mut visited: FxHashSet<Name> = FxHashSet::default();
+
+  enum Frame {
+    Enter(Name),
+    Exit(Name),
+  }
+  let mut stack: Vec<Frame> = seed_reps.into_iter().map(Frame::Enter).collect();
+
+  while let Some(frame) = stack.pop() {
+    match frame {
+      Frame::Enter(rep) => {
+        if !visited.insert(rep.clone()) {
+          continue;
+        }
+        // Push Exit *before* neighbor Enters so Exit fires after them.
+        stack.push(Frame::Exit(rep.clone()));
+        // Enqueue SCC deps (the external refs of this SCC, resolved to
+        // their SCC reps).
+        if let Some(out_refs) = condensed.block_refs.get(&rep) {
+          for referenced in out_refs {
+            if let Some(dep_rep) = condensed.low_links.get(referenced) {
+              if !visited.contains(dep_rep) {
+                stack.push(Frame::Enter(dep_rep.clone()));
+              }
+            }
+          }
+        }
+      },
+      Frame::Exit(rep) => {
+        order.push(rep);
+      },
+    }
+  }
+
+  // Compile each SCC in dep-first order, moving compiled names to
+  // `aux_name_to_addr` so later SCCs can resolve their Const refs.
+  for rep in order {
+    if stt.aux_name_to_addr.contains_key(&rep) {
+      continue; // Already compiled (e.g., via a prior prereq run).
+    }
+    let all = match condensed.blocks.get(&rep) {
+      Some(a) => a.clone(),
+      None => continue,
+    };
+    let mut cache = BlockCache::default();
+    compile_const(&rep, &all, lean_env, &mut cache, stt).map_err(|e| {
+      CompileError::InvalidMutualBlock {
+        reason: format!(
+          "aux_gen prereq pre-compile failed for SCC '{}' ({} members): \
+           {:?}. The SCC closure is traversed in reverse-topological \
+           order starting from the aux_gen seed names (see \
+           `aux_gen_seed_names`), so all transitive deps *should* be \
+           compiled before this — if you're hitting this, a dep \
+           relationship isn't captured in the ref graph, or the source \
+           env is inconsistent.",
+          rep.pretty(),
+          all.len(),
+          e,
+        ),
+      }
+    })?;
+    // Move compiled names → aux_name_to_addr. The scheduler can still
+    // re-encounter this SCC later; the entries will just be no-ops.
+    let just_compiled: Vec<(Name, Address)> = stt
+      .name_to_addr
+      .iter()
+      .map(|e| (e.key().clone(), e.value().clone()))
+      .collect();
+    for (n, addr) in just_compiled {
+      stt.name_to_addr.remove(&n);
+      stt.aux_name_to_addr.insert(n, addr);
+    }
+    // Defensive: move any aux_gen extras generated during pre-compile.
+    let extras: Vec<Name> =
+      stt.aux_gen_extra_names.iter().map(|r| r.clone()).collect();
+    for name in extras {
+      if let Some((n, addr)) = stt.name_to_addr.remove(&name) {
+        stt.aux_name_to_addr.insert(n, addr);
+      }
+    }
+  }
+
+  Ok(())
 }

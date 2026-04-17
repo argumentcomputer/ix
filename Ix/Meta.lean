@@ -9,9 +9,17 @@ open Lean
 
 open System (FilePath)
 
-/-- Uses `LEAN_PATH` if set, otherwise falls back to `lake env printenv LEAN_PATH`. -/
+/-- Initialize Lean's module search path.
+
+When `cwd` is provided, query `lake env printenv LEAN_PATH` from that directory
+unconditionally — the caller is loading a file from a specific lake project, and
+the inherited `LEAN_PATH` (e.g., set by an outer `lake exe ix` invocation) would
+point at the wrong project's packages. When `cwd` is `none`, honor the inherited
+`LEAN_PATH` if set, falling back to querying lake in the current directory. -/
 def initLeanSearchPath (cwd : Option FilePath := none) : IO Unit := do
-  if (← IO.getEnv "LEAN_PATH").isNone then
+  -- If a target cwd is supplied, always query that cwd's LEAN_PATH.
+  -- Otherwise, trust the inherited LEAN_PATH when present.
+  if cwd.isSome || (← IO.getEnv "LEAN_PATH").isNone then
     let out ← IO.Process.output { cmd := "lake", args := #["env", "printenv", "LEAN_PATH"], cwd }
     let paths := out.stdout.trimAscii.toString.splitOn ":" |>.map FilePath.mk
     initSearchPath (← findSysroot) paths

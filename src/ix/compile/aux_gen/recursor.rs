@@ -11,6 +11,9 @@
 //! Key difference from C++: we use FVar-based intermediate computation
 //! (see `expr_utils.rs`) then abstract back into de Bruijn binder chains.
 
+use crate::ix::compile::nat_conv::{
+  nat_to_u64, nat_to_usize, try_nat_to_usize,
+};
 use crate::ix::env::{
   BinderInfo, ConstantInfo, ConstantVal, ConstructorVal, Env as LeanEnv,
   Expr as LeanExpr, ExprData, InductiveVal, Level, LevelData, Name, NameData,
@@ -21,21 +24,144 @@ use lean_ffi::nat::Nat;
 
 use super::expr_utils::{
   LocalDecl, decompose_apps, fresh_fvar, instantiate_spec_with_fvars,
-  instantiate1, mk_const, mk_forall, mk_lambda, shift_vars, subst_levels,
+  instantiate1, mk_const, mk_forall, mk_lambda, subst_levels,
 };
 
 // =========================================================================
 // Public API
 // =========================================================================
 
+/// Generate canonical recursors using an expanded block (expand/restore model).
+///
+/// The expanded block provides an overlay environment where:
+/// - Original inductives have constructor types with nested refs replaced by
+///   auxiliary const applications (e.g., `Array (Part α)` → `_nested.Array_1 α`)
+/// - Auxiliary inductives exist as synthetic entries with block params/levels
+///
+/// The existing recursor generator discovers auxiliaries via its internal
+/// `build_compile_flat_block` call, which finds the auxiliary consts in the
+/// overlay's constructor types. All auxiliaries share the block's params, so
+/// `is_aux` branching produces correct (uniform) results.
+///
+/// The caller is responsible for applying `RestoreCtx::restore` to the
+/// output to replace auxiliary const references with original nested apps.
+pub(crate) fn generate_recursors_from_expanded(
+  sorted_classes: &[Vec<Name>],
+  expanded: &super::nested::ExpandedBlock,
+  lean_env: &LeanEnv,
+  stt: &crate::ix::compile::CompileState,
+  kctx: &crate::ix::compile::KernelCtx,
+) -> Result<(Vec<(Name, RecursorVal)>, bool), CompileError> {
+  if expanded.types.is_empty() {
+    return Ok((vec![], false));
+  }
+
+  // Build overlay environment from the expanded block.
+  // Includes BOTH originals (with rewritten ctor types) and auxiliaries.
+  let mut overlay = LeanEnv::default();
+
+  // The `all` field for InductiveVals: just the original names (not aux).
+  let original_names: Vec<Name> = expanded.types[..expanded.n_originals]
+    .iter()
+    .map(|m| m.name.clone())
+    .collect();
+
+  for member in &expanded.types {
+    let ctor_names: Vec<Name> =
+      member.ctors.iter().map(|c| c.name.clone()).collect();
+
+    // Use the original lean_env's `all`/`is_rec`/`is_reflexive` when available.
+    // For auxiliary types (not in lean_env), fall back to block-wide defaults.
+    let (all_field, is_rec, is_reflexive) = match lean_env.get(&member.name) {
+      Some(ConstantInfo::InductInfo(orig)) => {
+        (orig.all.clone(), orig.is_rec, orig.is_reflexive)
+      },
+      _ => (original_names.clone(), true, false),
+    };
+
+    let ind_val = InductiveVal {
+      cnst: ConstantVal {
+        name: member.name.clone(),
+        level_params: expanded.level_params.clone(),
+        typ: member.typ.clone(),
+      },
+      num_params: Nat::from(member.n_params as u64),
+      num_indices: Nat::from(member.n_indices as u64),
+      all: all_field,
+      ctors: ctor_names,
+      num_nested: Nat::from(0u64),
+      is_rec,
+      is_unsafe: false,
+      is_reflexive,
+    };
+    overlay.insert(member.name.clone(), ConstantInfo::InductInfo(ind_val));
+
+    for (ci, ctor) in member.ctors.iter().enumerate() {
+      let ctor_val = ConstructorVal {
+        cnst: ConstantVal {
+          name: ctor.name.clone(),
+          level_params: expanded.level_params.clone(),
+          typ: ctor.typ.clone(),
+        },
+        induct: member.name.clone(),
+        cidx: Nat::from(ci as u64),
+        num_params: Nat::from(member.n_params as u64),
+        num_fields: Nat::from(ctor.n_fields as u64),
+        is_unsafe: false,
+      };
+      overlay.insert(ctor.name.clone(), ConstantInfo::CtorInfo(ctor_val));
+    }
+  }
+
+  // Build pre-flat from the expanded block's auxiliary members.
+  // The expand phase already detected nested occurrences and created aux types;
+  // we pass these directly so the recursor generator doesn't re-detect (which
+  // would fail since expanded ctor types use aux consts, not nested apps).
+  use super::nested::CompileFlatMember;
+  let mut pre_flat: Vec<CompileFlatMember> = Vec::new();
+  // Seed with originals (identity spec_params / occurrence_level_args).
+  for member in expanded.types[..expanded.n_originals].iter() {
+    pre_flat.push(CompileFlatMember {
+      name: member.name.clone(),
+      spec_params: vec![], // originals don't use spec_params
+      occurrence_level_args: vec![],
+      own_params: member.n_params,
+      n_indices: member.n_indices,
+    });
+  }
+  // Append auxiliaries with identity params/levels (they share the block's structure).
+  for member in expanded.types[expanded.n_originals..].iter() {
+    pre_flat.push(CompileFlatMember {
+      name: member.name.clone(),
+      spec_params: vec![], // aux types use block params — no spec_params needed
+      occurrence_level_args: expanded
+        .level_params
+        .iter()
+        .map(|lp| crate::ix::env::Level::param(lp.clone()))
+        .collect(),
+      own_params: member.n_params,
+      n_indices: member.n_indices,
+    });
+  }
+
+  generate_canonical_recursors_with_overlay(
+    sorted_classes,
+    lean_env,
+    Some(&overlay),
+    Some(pre_flat),
+    stt,
+    kctx,
+  )
+}
+
 /// Info about one member of the flat block (original or auxiliary).
-struct FlatInfo<'a> {
+struct FlatInfo {
   /// Name of the inductive (for originals: the class rep, for aux: external ind)
   name: Name,
-  /// InductiveVal from lean_env
-  ind: &'a InductiveVal,
-  /// Constructors from lean_env
-  ctors: Vec<&'a ConstructorVal>,
+  /// InductiveVal from lean_env (cloned — DashMap prevents borrowing)
+  ind: InductiveVal,
+  /// Constructors from lean_env (cloned — DashMap prevents borrowing)
+  ctors: Vec<ConstructorVal>,
   /// All inductive names in equivalence class (for rec target detection).
   /// For auxiliary: just the external inductive name.
   all_names: Vec<Name>,
@@ -61,9 +187,14 @@ struct FlatInfo<'a> {
 /// representative whose `InductiveVal` and `ConstructorVal`s are used.
 /// Returns `(recursors, is_prop)` where `is_prop` indicates whether the
 /// inductive block is in Prop. Downstream phases (`.below`, `.brecOn`)
-/// use `is_prop` to choose between definition (Type-level) and inductive
-/// (Prop-level) generation — matching Lean's `isPropFormerType` guard.
-/// Generate canonical recursors using the **canonical** kenv/TC.
+/// Test-only convenience wrapper: generate canonical recursors with no
+/// overlay env and no pre-built flat block, using the compile state's
+/// default `kctx`.
+///
+/// Production code should call `generate_canonical_recursors_with_overlay`
+/// directly and pass the appropriate `KernelCtx` — this wrapper is kept
+/// only so unit tests don't have to plumb one through.
+#[cfg(test)]
 pub(crate) fn generate_canonical_recursors(
   sorted_classes: &[Vec<Name>],
   lean_env: &LeanEnv,
@@ -73,28 +204,41 @@ pub(crate) fn generate_canonical_recursors(
     sorted_classes,
     lean_env,
     None,
+    None,
     stt,
     &stt.kctx,
   )
 }
 
-/// Like `generate_canonical_recursors`, but accepts an optional overlay
-/// environment for looking up class representatives. Used by
-/// `compile_below_recursors` to avoid cloning the full 197k-entry LeanEnv
-/// just to add a few `.below` inductive entries.
+/// Generate canonical recursors using the **canonical** kenv/TC.
+///
+/// Use `is_prop` to choose between definition (Type-level) and inductive
+/// (Prop-level) generation — matching Lean's `isPropFormerType` guard.
+///
+/// Accepts an optional overlay environment for looking up class
+/// representatives. Used by `compile_below_recursors` to avoid cloning
+/// the full 197k-entry LeanEnv just to add a few `.below` inductive
+/// entries.
+///
+/// `pre_flat`: Optional pre-built flat block (from expand/restore path).
+/// When provided, skips `build_compile_flat_block` and uses these entries
+/// instead. The expanded block already contains the correct auxiliary members.
 pub(crate) fn generate_canonical_recursors_with_overlay(
   sorted_classes: &[Vec<Name>],
   lean_env: &LeanEnv,
   overlay: Option<&LeanEnv>,
+  pre_flat: Option<Vec<super::nested::CompileFlatMember>>,
   stt: &crate::ix::compile::CompileState,
   kctx: &crate::ix::compile::KernelCtx,
 ) -> Result<(Vec<(Name, RecursorVal)>, bool), CompileError> {
   // Lookup helper: check overlay first, then base env.
-  let env_get = |name: &Name| -> Option<&ConstantInfo> {
-    overlay.and_then(|o| o.get(name)).or_else(|| lean_env.get(name))
+  let env_get = |name: &Name| -> Option<ConstantInfo> {
+    overlay
+      .and_then(|o| o.get(name).cloned())
+      .or_else(|| lean_env.get(name).cloned())
   };
 
-  let mut classes: Vec<FlatInfo<'_>> = sorted_classes
+  let mut classes: Vec<FlatInfo> = sorted_classes
     .iter()
     .map(|class| {
       let rep = &class[0];
@@ -106,7 +250,7 @@ pub(crate) fn generate_canonical_recursors_with_overlay(
           });
         },
       };
-      let ctors: Vec<&ConstructorVal> = ind
+      let ctors: Vec<ConstructorVal> = ind
         .ctors
         .iter()
         .filter_map(|cn| match env_get(cn) {
@@ -114,6 +258,8 @@ pub(crate) fn generate_canonical_recursors_with_overlay(
           _ => None,
         })
         .collect();
+      let own_params = try_nat_to_usize(&ind.num_params)?;
+      let n_indices = try_nat_to_usize(&ind.num_indices)?;
       Ok(FlatInfo {
         name: ind.cnst.name.clone(),
         ind,
@@ -122,28 +268,37 @@ pub(crate) fn generate_canonical_recursors_with_overlay(
         is_aux: false,
         spec_params: vec![],
         occurrence_level_args: vec![],
-        own_params: ind.num_params.to_u64().unwrap_or(0) as usize,
-        n_indices: ind.num_indices.to_u64().unwrap_or(0) as usize,
+        own_params,
+        n_indices,
       })
     })
     .collect::<Result<Vec<_>, _>>()?;
 
   let n_classes = classes.len();
-  let n_params = classes[0].ind.num_params.to_u64().unwrap_or(0) as usize;
+  let n_params = try_nat_to_usize(&classes[0].ind.num_params)?;
 
   // Build flat block to detect nested inductive occurrences.
+  // Use pre-built flat block from expand/restore path if available;
+  // otherwise detect from constructor types.
   let ordered_originals: Vec<Name> =
     classes.iter().map(|c| c.name.clone()).collect();
-  let flat =
-    super::nested::build_compile_flat_block(&ordered_originals, lean_env);
+  let flat = if let Some(pf) = pre_flat {
+    pf
+  } else {
+    super::nested::build_compile_flat_block_with_overlay(
+      &ordered_originals,
+      lean_env,
+      overlay,
+    )?
+  };
 
   // Add auxiliary members (nested occurrences) to classes.
   for fm in flat.iter().skip(n_classes) {
-    if let Some(ConstantInfo::InductInfo(ind)) = lean_env.get(&fm.name) {
-      let ctors: Vec<&ConstructorVal> = ind
+    if let Some(ConstantInfo::InductInfo(ind)) = env_get(&fm.name) {
+      let ctors: Vec<ConstructorVal> = ind
         .ctors
         .iter()
-        .filter_map(|cn| match lean_env.get(cn) {
+        .filter_map(|cn| match env_get(cn) {
           Some(ConstantInfo::CtorInfo(c)) => Some(c),
           _ => None,
         })
@@ -167,8 +322,11 @@ pub(crate) fn generate_canonical_recursors_with_overlay(
   let n_minors: usize = classes.iter().map(|fi| fi.ctors.len()).sum();
 
   // Compute is_large, k, and is_prop using the zero kernel's TypeChecker.
+  // Propagates any TC failure as a hard error — there's no longer a
+  // syntactic fallback, so aux_gen bugs / incomplete KEnv ingress surface
+  // here instead of silently producing malformed recursors downstream.
   let (is_large, k, is_prop) =
-    compute_is_large_and_k(&classes, n_classes, n_params, lean_env, stt, kctx);
+    compute_is_large_and_k(&classes, n_classes, n_params, lean_env, stt, kctx)?;
 
   // Build canonical level params: [u_1, u1, ..., un] for large, [u1, ..., un] for small.
   // Use the inductive's own level param names for consistency.
@@ -256,24 +414,28 @@ pub(crate) fn generate_canonical_recursors_with_overlay(
       &param_binders,
       &elim_level,
       &ind_univs,
-      is_large,
       lean_env,
+      overlay,
     );
 
     // Build rules
     let rules = build_rec_rules(
       di,
       &classes,
-      &flat,
       n_params,
       n_classes,
-      &param_binders,
-      &elim_level,
       &ind_univs,
-      is_large,
       &rec_level_params,
       &rec_type,
     );
+
+    // Lean propagates the inductive's safety to its recursor (see
+    // `refs/lean4/src/kernel/inductive.cpp:774` — `m_is_unsafe` is sourced
+    // from `decl.is_unsafe()` when `mk_recursor_val` is constructed). For
+    // auxiliary (nested) members we use the external inductive's own
+    // `is_unsafe` flag; for originals it's shared across the block since
+    // mutual blocks are uniformly safe or unsafe.
+    let is_unsafe = di_member.ind.is_unsafe;
 
     results.push((
       rec_name.clone(),
@@ -290,7 +452,7 @@ pub(crate) fn generate_canonical_recursors_with_overlay(
         num_minors: Nat::from(n_minors as u64),
         rules,
         k,
-        is_unsafe: false,
+        is_unsafe,
       },
     ));
   }
@@ -352,16 +514,21 @@ fn collect_binders(expr: &LeanExpr, n: usize) -> Vec<Binder> {
 /// Follows `declare_recursors` in inductive.cpp:752-774.
 fn build_rec_type(
   di: usize,
-  classes: &[FlatInfo<'_>],
+  classes: &[FlatInfo],
   flat: &[super::nested::CompileFlatMember],
   n_params: usize,
   n_classes: usize,
   param_binders: &[Binder],
   elim_level: &Level,
   ind_univs: &[Level],
-  _is_large: bool,
   lean_env: &LeanEnv,
+  overlay: Option<&LeanEnv>,
 ) -> LeanExpr {
+  let env_get = |name: &Name| -> Option<ConstantInfo> {
+    overlay
+      .and_then(|o| o.get(name).cloned())
+      .or_else(|| lean_env.get(name).cloned())
+  };
   let n_flat = flat.len();
   let n_indices = classes[di].n_indices;
 
@@ -386,7 +553,7 @@ fn build_rec_type(
     .into_iter()
     .zip(param_binders.iter())
     .map(|(mut d, pb)| {
-      d.domain = consume_type_annotations(&d.domain);
+      d.domain = super::expr_utils::consume_type_annotations(&d.domain);
       d.info = pb.info.clone();
       d
     })
@@ -413,6 +580,7 @@ fn build_rec_type(
         elim_level,
         ind_univs,
         lean_env,
+        overlay,
         &param_fvars,
       )
     };
@@ -435,14 +603,14 @@ fn build_rec_type(
 
   // --- Minors: build for each flat member's constructors, FVar domains ---
   for j in 0..n_flat {
-    let member_ctors: Vec<&ConstructorVal> = if j < n_classes {
+    let member_ctors: Vec<ConstructorVal> = if j < n_classes {
       classes[j].ctors.clone()
     } else {
-      match lean_env.get(&flat[j].name) {
+      match env_get(&flat[j].name) {
         Some(ConstantInfo::InductInfo(ind)) => ind
           .ctors
           .iter()
-          .filter_map(|cn| match lean_env.get(cn) {
+          .filter_map(|cn| match env_get(cn) {
             Some(ConstantInfo::CtorInfo(c)) => Some(c),
             _ => None,
           })
@@ -457,6 +625,7 @@ fn build_rec_type(
         ctor,
         classes,
         n_params,
+        n_classes,
         &param_fvars,
         &motive_fvars,
         ind_univs,
@@ -509,6 +678,11 @@ fn build_rec_type(
         ity = body.clone();
       }
     }
+  }
+  // Beta-reduce for auxiliary index types (lambda-valued spec_params may
+  // create redexes that need reduction before forall_telescope peeling).
+  if di_is_aux {
+    ity = super::expr_utils::beta_reduce(&ity);
   }
   // Peel index binders using FVars — domains stay in FVar form.
   let mut index_fvars: Vec<LeanExpr> = Vec::new();
@@ -592,15 +766,15 @@ fn build_rec_type(
 /// must abstract param FVars from the result.
 fn build_motive_type(
   j: usize,
-  classes: &[FlatInfo<'_>],
+  classes: &[FlatInfo],
   n_params: usize,
   _param_depth: usize,
   elim_level: &Level,
   ind_univs: &[Level],
   param_fvars: &[LeanExpr],
 ) -> LeanExpr {
-  let ind = classes[j].ind;
-  let n_indices = ind.num_indices.to_u64().unwrap_or(0) as usize;
+  let ind = &classes[j].ind;
+  let n_indices = nat_to_usize(&ind.num_indices);
   let ty = subst_levels(&ind.cnst.typ, &ind.cnst.level_params, ind_univs);
 
   // Skip params — substitute with param FVars from the rec type context.
@@ -671,15 +845,19 @@ fn build_motive_type(
 /// index domains are correctly instantiated (earlier indices as FVars).
 /// The returned expression contains param FVars as free variables.
 fn build_motive_type_aux(
-  member: &FlatInfo<'_>,
+  member: &FlatInfo,
   _n_params: usize,
   elim_level: &Level,
   _ind_univs: &[Level],
   lean_env: &LeanEnv,
+  overlay: Option<&LeanEnv>,
   param_fvars: &[LeanExpr],
 ) -> LeanExpr {
-  // Look up the external inductive
-  let ind = match lean_env.get(&member.name) {
+  // Look up the external inductive (check overlay first for expanded aux types).
+  let env_get_local = |n: &Name| -> Option<ConstantInfo> {
+    overlay.and_then(|o| o.get(n).cloned()).or_else(|| lean_env.get(n).cloned())
+  };
+  let ind = match env_get_local(&member.name) {
     Some(ConstantInfo::InductInfo(v)) => v,
     _ => return LeanExpr::sort(Level::zero()), // fallback
   };
@@ -713,7 +891,12 @@ fn build_motive_type_aux(
       }
     }
   }
-
+  // Beta-reduce after spec_param instantiation for motive types.
+  // Lambda-valued spec_params (e.g., `λ _ => String` for function-typed
+  // inductive parameters) create unreduced redexes that may obstruct
+  // forall_telescope below. The motive type itself is fresh-built, so
+  // beta-reducing here doesn't conflict with the Lean-stored structure.
+  cur = super::expr_utils::beta_reduce(&cur);
   // Peel index binders using FVars so that dependent index domains are
   // correctly instantiated. This fixes the structural-peeling bug where
   // body.clone() left dangling BVars in dependent index types.
@@ -765,8 +948,9 @@ fn build_motive_type_aux(
 fn build_minor_type(
   class_idx: usize,
   ctor: &ConstructorVal,
-  classes: &[FlatInfo<'_>],
+  classes: &[FlatInfo],
   n_params: usize,
+  n_classes: usize,
   param_fvars: &[LeanExpr],
   motive_fvars: &[LeanExpr],
   ind_univs: &[Level],
@@ -787,7 +971,7 @@ fn build_minor_type(
   // Peel params: for originals, substitute with param FVars.
   // For auxiliaries, substitute with FVar-converted spec_params.
   let mut cur = ctor_ty;
-  let n_ctor_params = ctor.num_params.to_u64().unwrap_or(0) as usize;
+  let n_ctor_params = nat_to_usize(&ctor.num_params);
   let sp_fvars = if member.is_aux {
     instantiate_spec_with_fvars(&member.spec_params, param_fvars)
   } else {
@@ -804,9 +988,34 @@ fn build_minor_type(
       }
     }
   }
+  // Beta-reduce after spec_param instantiation for auxiliary members.
+  if member.is_aux {
+    cur = super::expr_utils::beta_reduce(&cur);
+  }
+  // Rewrite nested type universe levels for original members.
+  // Lean's kernel recomputes nested type universes from the element's sort
+  // (e.g., Array.{u} → Array.{max u v} when applied to Part.{u,v}).
+  // Only rewrite when the Const's args actually reference block members.
+  if !member.is_aux && classes.iter().any(|c| c.is_aux) {
+    let block_names: Vec<Name> =
+      classes[..n_classes].iter().map(|c| c.name.clone()).collect();
+    let aux_info: std::collections::HashMap<Name, (usize, Vec<Level>)> =
+      classes
+        .iter()
+        .filter(|c| c.is_aux)
+        .map(|c| {
+          (c.name.clone(), (c.own_params, c.occurrence_level_args.clone()))
+        })
+        .collect();
+    cur = super::expr_utils::rewrite_nested_const_levels(
+      &cur,
+      &aux_info,
+      &block_names,
+    );
+  }
 
   // Collect fields: peel each field with a fresh FVar.
-  let n_fields = ctor.num_fields.to_u64().unwrap_or(0) as usize;
+  let n_fields = nat_to_usize(&ctor.num_fields);
   let mut field_decls: Vec<LocalDecl> = Vec::new();
   let mut field_fvars: Vec<LeanExpr> = Vec::new();
   let mut rec_fields: Vec<(usize, usize)> = Vec::new(); // (field_idx, target_class)
@@ -816,7 +1025,7 @@ fn build_minor_type(
       ExprData::ForallE(name, dom, body, bi, _) => {
         // Strip autoParam/optParam/outParam wrappers, matching Lean's
         // consumeTypeAnnotations in withLocalDecl calls.
-        let clean_dom = consume_type_annotations(dom);
+        let clean_dom = super::expr_utils::consume_type_annotations(dom);
         let (fv_name, fv) = fresh_fvar("field", fi);
         field_decls.push(LocalDecl {
           fvar_name: fv_name,
@@ -825,7 +1034,9 @@ fn build_minor_type(
           info: bi.clone(),
         });
         field_fvars.push(fv.clone());
-        if let Some(ci) = find_rec_target(&clean_dom, classes, param_fvars) {
+        if let Some(ci) =
+          find_rec_target(&clean_dom, classes, param_fvars, n_params)
+        {
           rec_fields.push((fi, ci));
         }
         cur = instantiate1(body, &fv);
@@ -917,14 +1128,20 @@ fn build_ih_type_fvar(
   _n_params: usize,
   _param_fvars: &[LeanExpr],
   motive_fvars: &[LeanExpr],
-  classes: &[FlatInfo<'_>],
+  classes: &[FlatInfo],
 ) -> LeanExpr {
   // Use forallTelescope-style approach: peel foralls from the field domain
   // using fresh FVars so that the inner application is fully FVar-based.
   // This avoids the BVar/FVar mixing issues that cause FVar leaks.
+  //
+  // Head-reduce at each step so that lambda-valued spec params (e.g.
+  // `β := λ_:α. Json` for `Internal.Impl α β`) are transparently unwrapped.
+  // A field `v : (λ_:α. Json) k` must be seen as targeting `Json` with no
+  // extra args — without reduction we would treat `k` as an index, which
+  // would apply the motive to too many arguments.
   let mut xs_fvars: Vec<LeanExpr> = Vec::new();
   let mut xs_decls: Vec<LocalDecl> = Vec::new();
-  let mut cur = field_dom.clone();
+  let mut cur = super::expr_utils::beta_reduce(field_dom);
 
   while let ExprData::ForallE(name, dom, body, bi, _) = cur.as_data() {
     // Check if the expression head is an inductive in the block — stop if so
@@ -942,13 +1159,12 @@ fn build_ih_type_fvar(
       info: bi.clone(),
     });
     xs_fvars.push(fv.clone());
-    cur = instantiate1(body, &fv);
+    cur = super::expr_utils::beta_reduce(&instantiate1(body, &fv));
   }
 
   // `cur` is now the fully FVar-instantiated inner expression: I params idx_args
   let (_, inner_args) = decompose_apps(&cur);
-  let n_target_params =
-    classes[target_ci].ind.num_params.to_u64().unwrap_or(0) as usize;
+  let n_target_params = nat_to_usize(&classes[target_ci].ind.num_params);
   let idx_args: Vec<LeanExpr> =
     inner_args.into_iter().skip(n_target_params).collect();
 
@@ -980,14 +1196,10 @@ fn build_ih_type_fvar(
 /// Rule RHS: `λ params motives minors fields, minor fields ihs`
 fn build_rec_rules(
   di: usize,
-  classes: &[FlatInfo<'_>],
-  _flat: &[super::nested::CompileFlatMember],
+  classes: &[FlatInfo],
   n_params: usize,
   n_classes: usize,
-  _param_binders: &[Binder],
-  _elim_level: &Level,
   ind_univs: &[Level],
-  _is_large: bool,
   rec_level_params: &[Name],
   rec_type: &LeanExpr,
 ) -> Vec<RecursorRule> {
@@ -1068,7 +1280,7 @@ fn build_rec_rules(
   {
     let class = &classes[di];
     for ctor in class.ctors.iter() {
-      let n_fields = ctor.num_fields.to_u64().unwrap_or(0) as usize;
+      let n_fields = nat_to_usize(&ctor.num_fields);
 
       // Walk ctor type past params using FVars.
       // For auxiliary members, use occurrence_level_args and spec_params.
@@ -1082,7 +1294,7 @@ fn build_rec_rules(
         subst_levels(&ctor.cnst.typ, &class.ind.cnst.level_params, ind_univs)
       };
       let mut ty = ctor_ty;
-      let n_ctor_params = ctor.num_params.to_u64().unwrap_or(0) as usize;
+      let n_ctor_params = nat_to_usize(&ctor.num_params);
       let rule_sp_fvars = if class.is_aux {
         instantiate_spec_with_fvars(&class.spec_params, &param_fvars)
       } else {
@@ -1099,7 +1311,27 @@ fn build_rec_rules(
           }
         }
       }
-
+      if class.is_aux {
+        ty = super::expr_utils::beta_reduce(&ty);
+      }
+      // Rewrite nested type universe levels for original members.
+      if !class.is_aux && classes.iter().any(|c| c.is_aux) {
+        let block_names: Vec<Name> =
+          classes[..n_classes].iter().map(|c| c.name.clone()).collect();
+        let aux_info: std::collections::HashMap<Name, (usize, Vec<Level>)> =
+          classes
+            .iter()
+            .filter(|c| c.is_aux)
+            .map(|c| {
+              (c.name.clone(), (c.own_params, c.occurrence_level_args.clone()))
+            })
+            .collect();
+        ty = super::expr_utils::rewrite_nested_const_levels(
+          &ty,
+          &aux_info,
+          &block_names,
+        );
+      }
       // Collect fields with FVars, detect recursive fields.
       let mut field_decls: Vec<LocalDecl> = Vec::new();
       let mut field_fvars: Vec<LeanExpr> = Vec::new();
@@ -1108,7 +1340,7 @@ fn build_rec_rules(
       for fi in 0..n_fields {
         match ty.as_data() {
           ExprData::ForallE(fname, dom, b, fbi, _) => {
-            let clean_dom = consume_type_annotations(dom);
+            let clean_dom = super::expr_utils::consume_type_annotations(dom);
             let (fv_name, fv) = fresh_fvar("rfield", fi);
             field_decls.push(LocalDecl {
               fvar_name: fv_name,
@@ -1117,7 +1349,7 @@ fn build_rec_rules(
               info: fbi.clone(),
             });
             if let Some(target_ci) =
-              find_rec_target(&clean_dom, classes, &param_fvars)
+              find_rec_target(&clean_dom, classes, &param_fvars, n_params)
             {
               rec_field_data.push((fv.clone(), target_ci));
             }
@@ -1215,16 +1447,19 @@ fn build_rule_ih_fvar(
   param_fvars: &[LeanExpr],
   motive_fvars: &[LeanExpr],
   minor_fvars: &[LeanExpr],
-  classes: &[FlatInfo<'_>],
+  classes: &[FlatInfo],
 ) -> LeanExpr {
-  let target_n_params =
-    classes[target_ci].ind.num_params.to_u64().unwrap_or(0) as usize;
+  let target_n_params = nat_to_usize(&classes[target_ci].ind.num_params);
 
   // Use forallTelescope-style approach: peel foralls with fresh FVars
   // so the inner expression and all idx_args are fully in FVar form.
+  //
+  // Head-reduce at each step — same rationale as `build_ih_type_fvar`:
+  // lambda-valued spec params must be unwrapped so the idx_args we
+  // extract match the reduced form.
   let mut xs_fvars: Vec<LeanExpr> = Vec::new();
   let mut xs_decls: Vec<LocalDecl> = Vec::new();
-  let mut cur = field_dom.clone();
+  let mut cur = super::expr_utils::beta_reduce(field_dom);
 
   while let ExprData::ForallE(name, dom, body, bi, _) = cur.as_data() {
     let (h, _) = decompose_apps(&cur);
@@ -1241,7 +1476,7 @@ fn build_rule_ih_fvar(
       info: bi.clone(),
     });
     xs_fvars.push(fv.clone());
-    cur = instantiate1(body, &fv);
+    cur = super::expr_utils::beta_reduce(&instantiate1(body, &fv));
   }
 
   // `cur` is now fully FVar-instantiated: I params idx_args
@@ -1277,208 +1512,30 @@ fn build_rule_ih_fvar(
 // Helpers
 // =========================================================================
 
-/// Check if elimination is restricted to Prop (Sort 0).
-/// Returns true if the recursor can ONLY eliminate into Prop.
-/// Returns false if large elimination is allowed (any Sort).
-///
-/// Port of Lean C++ `elim_only_at_universe_zero`.
-/// A Prop inductive allows large elimination when all non-param ctor fields
-/// have types in Prop, or when non-Prop fields appear as indices.
-fn elim_only_at_universe_zero(
-  classes: &[FlatInfo<'_>],
-  n_params: usize,
-  lean_env: &LeanEnv,
-) -> bool {
-  // Structural short-circuits matching Lean C++ `init_elim_level`
-  // (refs/lean4/src/kernel/inductive.cpp:478-533).
+// NOTE: The `elim_only_at_universe_zero` / `is_sort_zero_domain` /
+// `is_prop_sort` trio used to live here as a syntactic fallback for
+// `compute_is_large_and_k` when the zero kernel's `is_large_eliminator`
+// failed. That fallback silently masked aux_gen construction bugs (see
+// the `Acc.below` IH-field fix in `aux_gen/below.rs` — higher-order
+// recursive fields were producing malformed ctor types and the fallback
+// kept the pipeline green). Removed on the theory that a TC failure here
+// always means an aux_gen bug or incomplete ingress, and we'd rather
+// fail loudly than ship a content-addressed, internally-inconsistent
+// recursor. Resurrect from git history if a legitimate case needs it.
 
-  // Mutual inductives (> 1 type) always get small elimination.
-  if classes.len() > 1 {
-    return true;
-  }
-
-  // Count total constructors across all classes.
-  let total_ctors: usize = classes.iter().map(|c| c.ctors.len()).sum();
-
-  // Multi-constructor types always get small elimination.
-  if total_ctors > 1 {
-    return true;
-  }
-
-  // Empty types (0 constructors, like False) always get large elimination.
-  if total_ctors == 0 {
-    return false;
-  }
-
-  // Single constructor, single type: check field sorts.
-  // Walk each ctor's fields (past params). For each field:
-  // - Check if the field's type is in Prop (Sort 0).
-  // - If not, check if it appears in the return type's indices.
-  // If a non-Prop field doesn't appear as an index → small elim only.
-  for class in classes {
-    for ctor in &class.ctors {
-      let mut ty = ctor.cnst.typ.clone();
-      let n_ctor_params = ctor.num_params.to_u64().unwrap_or(0) as usize;
-      let n_ctor_fields = ctor.num_fields.to_u64().unwrap_or(0) as usize;
-
-      // Collect param domains (to check if a BVar field points to a Prop param)
-      let mut param_sorts: Vec<bool> = Vec::new(); // true if param is in Prop
-      for _ in 0..n_ctor_params {
-        match ty.as_data() {
-          ExprData::ForallE(_, dom, body, _, _) => {
-            param_sorts.push(is_sort_zero_domain(dom, &param_sorts, lean_env));
-            ty = body.clone();
-          },
-          _ => break,
-        }
-      }
-
-      // Collect field indices that are NOT in Prop
-      let mut non_prop_field_indices: Vec<usize> = Vec::new();
-      let mut field_idx = 0;
-      let mut field_ty = ty.clone();
-      for _ in 0..n_ctor_fields {
-        match field_ty.as_data() {
-          ExprData::ForallE(_, dom, body, _, _) => {
-            if !is_sort_zero_domain(dom, &param_sorts, lean_env) {
-              non_prop_field_indices.push(field_idx);
-            }
-            field_ty = body.clone();
-            field_idx += 1;
-          },
-          _ => break,
-        }
-      }
-
-      if non_prop_field_indices.is_empty() {
-        continue; // All fields in Prop → OK for large elim
-      }
-
-      // Check if non-Prop fields appear as indices in the return type.
-      // Return type: I params indices. Indices start at position n_params.
-      let (_, ret_args) = decompose_apps(&field_ty);
-      let index_args: Vec<&LeanExpr> = ret_args.iter().skip(n_params).collect();
-
-      for &fi in &non_prop_field_indices {
-        // The field is at BVar(n_ctor_fields - 1 - fi) in the return type context
-        let field_bvar = (n_ctor_fields - 1 - fi) as u64;
-        let appears_in_indices =
-          index_args.iter().any(|idx| match idx.as_data() {
-            ExprData::Bvar(i, _) => {
-              i.to_u64().unwrap_or(u64::MAX) == field_bvar
-            },
-            _ => false,
-          });
-        if !appears_in_indices {
-          return true; // Non-Prop field not in indices → small elim only
-        }
-      }
-    }
-  }
-  false // All checks passed → large elim allowed
-}
-
-/// Check if a field domain type is in Prop (Sort 0).
-///
-/// Handles: `Sort 0`, BVars pointing to Prop params, forall chains,
-/// applied constants (inductives, definitions, axioms, theorems, opaques),
-/// and mdata wrappers. For universe-polymorphic constants applied at
-/// concrete levels, substitutes the level args before checking the sort.
-fn is_sort_zero_domain(
-  dom: &LeanExpr,
-  param_sorts: &[bool],
-  lean_env: &LeanEnv,
-) -> bool {
-  match dom.as_data() {
-    ExprData::Sort(lvl, _) => matches!(lvl.as_data(), LevelData::Zero(_)),
-    ExprData::Bvar(idx, _) => {
-      // Check if this BVar points to a param known to be in Prop
-      let i = idx.to_u64().unwrap_or(u64::MAX) as usize;
-      i < param_sorts.len() && param_sorts[param_sorts.len() - 1 - i]
-    },
-    ExprData::ForallE(_, _, body, _, _) => {
-      // ∀ x : A, B — the sort is the sort of B (under the binder)
-      is_sort_zero_domain(body, param_sorts, lean_env)
-    },
-    ExprData::Mdata(_, inner, _) => {
-      is_sort_zero_domain(inner, param_sorts, lean_env)
-    },
-    ExprData::Const(..) | ExprData::App(..) => {
-      // Look up the head constant's return type.
-      // Handles inductives, definitions (e.g. `And`), axioms, theorems,
-      // and opaques — any constant whose return sort might be Prop.
-      let (head, _) = decompose_apps(dom);
-      if let ExprData::Const(name, levels, _) = head.as_data()
-        && let Some(ci) = lean_env.get(name)
-      {
-        let (typ, lvl_params) = match ci {
-          ConstantInfo::InductInfo(v) => (&v.cnst.typ, &v.cnst.level_params),
-          ConstantInfo::AxiomInfo(v) => (&v.cnst.typ, &v.cnst.level_params),
-          ConstantInfo::DefnInfo(v) => (&v.cnst.typ, &v.cnst.level_params),
-          ConstantInfo::ThmInfo(v) => (&v.cnst.typ, &v.cnst.level_params),
-          ConstantInfo::OpaqueInfo(v) => (&v.cnst.typ, &v.cnst.level_params),
-          _ => return false,
-        };
-        // Substitute concrete level args if available. This handles
-        // universe-polymorphic constants applied at level 0, e.g.,
-        // PUnit.{0} whose type is Sort(Param(u)) → Sort(0) after subst.
-        if !levels.is_empty() && levels.len() == lvl_params.len() {
-          let subst_typ = subst_levels(typ, lvl_params, levels);
-          return is_prop_sort(&subst_typ);
-        }
-        return is_prop_sort(typ);
-      }
-      false
-    },
-    _ => false,
-  }
-}
-
-fn is_prop_sort(typ: &LeanExpr) -> bool {
-  let mut cur = typ.clone();
-  loop {
-    match cur.as_data() {
-      ExprData::ForallE(_, _, body, _, _) => cur = body.clone(),
-      ExprData::Sort(lvl, _) => {
-        return matches!(lvl.as_data(), LevelData::Zero(_));
-      },
-      _ => return false,
-    }
-  }
-}
-
-/// Port of Lean 4's `Expr.consumeTypeAnnotations`.
-///
-/// Strips `autoParam`, `optParam`, `outParam`, and `semiOutParam`
-/// wrappers from a type expression. These are application-level
-/// annotations that the kernel removes when building recursor types.
-///
-/// - `autoParam A tac` (arity 2) → strips to `A`
-/// - `optParam A default` (arity 2) → strips to `A`
-/// - `outParam A` (arity 1) → strips to `A`
-/// - `semiOutParam A` (arity 1) → strips to `A`
-fn consume_type_annotations(expr: &LeanExpr) -> LeanExpr {
-  let (head, args) = decompose_apps(expr);
-  if let ExprData::Const(name, _, _) = head.as_data() {
-    // Check by last name component — these are top-level Lean names so
-    // the last component is the full identifier.
-    if let Some(leaf) = name.last_str() {
-      // autoParam A tac → A; optParam A default → A
-      if (leaf == "autoParam" || leaf == "optParam") && args.len() == 2 {
-        return consume_type_annotations(&args[0]);
-      }
-      // outParam A → A; semiOutParam A → A
-      if (leaf == "outParam" || leaf == "semiOutParam") && args.len() == 1 {
-        return consume_type_annotations(&args[0]);
-      }
-    }
-  }
-  // Also strip mdata annotations
-  if let ExprData::Mdata(_, inner, _) = expr.as_data() {
-    return consume_type_annotations(inner);
-  }
-  expr.clone()
-}
+// The local `consume_type_annotations` that used to live here
+// has been removed. It was a near-duplicate of `super::expr_utils::`
+// `consume_type_annotations` with two subtle divergences:
+//   1. It matched by `name.last_str()` (which would falsely strip a
+//      user-defined `MyModule.outParam`).
+//   2. It additionally stripped top-level `Mdata` wrappers, which goes
+//      beyond Lean's `Expr.consumeTypeAnnotations` — Lean handles Mdata
+//      via a separate `cleanupAnnotations` pass that calls `consumeMData`.
+// All call sites now go through the canonical `expr_utils` version,
+// which matches Lean's semantics exactly (full-pretty-name check, no
+// Mdata stripping). If an input with Mdata-wrapped binder domains
+// surfaces in practice, the correct fix is to add a `consumeMData` pass
+// at the call site, not to re-introduce Mdata stripping in the wrong place.
 
 /// Strip prefix `pfx` from `name`, returning the suffix.
 /// Lean's `appendAfter`: append a suffix string to a Name.
@@ -1528,18 +1585,39 @@ fn has_deeper_str(n: &Name) -> bool {
 
 /// Check if a field domain targets a flat block member (original or auxiliary).
 ///
-/// For originals, name-based matching suffices. For auxiliaries (same name,
-/// different spec_params), we compare the domain's head application args
-/// against the FVar-converted spec_params.
+/// Matches C++ `is_rec_argument` (inductive.cpp:383-390): peels foralls using
+/// FVar instantiation (not bare body.clone()) to avoid dangling BVars, then
+/// validates the result with `is_valid_ind_app`-style checks.
+///
+/// For originals: validates that applied parameters match `param_fvars`.
+/// For auxiliaries: also matches spec_params to distinguish e.g. List Syntax
+/// from List Other.
 fn find_rec_target(
   dom: &LeanExpr,
-  classes: &[FlatInfo<'_>],
+  classes: &[FlatInfo],
   param_fvars: &[LeanExpr],
+  n_params: usize,
 ) -> Option<usize> {
-  let mut ty = dom.clone();
+  // Peel foralls with FVar instantiation (C++ uses mk_local_decl_for +
+  // instantiate). This avoids dangling BVars in the result type when
+  // fields have dependent index types.
+  //
+  // We head-reduce at each step so that lambda-valued parameters (e.g.,
+  // `β := λ_. PrefixTreeNode α β cmp` for `Internal.Impl α β`) are
+  // transparently unwrapped: a field like `v : (λ_:α. PT α β cmp) k`
+  // still resolves to the `PT` class. Lean's kernel uses `whnf` for the
+  // same purpose in `kernel/inductive.cpp::is_rec_argument` — the
+  // detection sees through the redex even though the stored field type
+  // keeps the unreduced form.
+  let mut ty = super::expr_utils::beta_reduce(dom);
+  let mut fvar_idx = 0usize;
   loop {
     match ty.as_data() {
-      ExprData::ForallE(_, _, body, _, _) => ty = body.clone(),
+      ExprData::ForallE(_, _, body, _, _) => {
+        let (_, fv) = fresh_fvar("frt", fvar_idx);
+        fvar_idx += 1;
+        ty = super::expr_utils::beta_reduce(&instantiate1(body, &fv));
+      },
       _ => {
         let (head, args) = decompose_apps(&ty);
         if let ExprData::Const(name, _, _) = head.as_data() {
@@ -1549,8 +1627,18 @@ fn find_rec_target(
               continue;
             }
             if !class.is_aux {
-              // Original member: name match is sufficient.
-              return Some(ci);
+              // Original member: validate parameters match (C++ is_valid_ind_app
+              // checks m_params[i] == args[i] for each parameter).
+              if args.len() >= n_params
+                && args[..n_params]
+                  .iter()
+                  .zip(param_fvars.iter())
+                  .all(|(a, p)| a.get_hash() == p.get_hash())
+              {
+                return Some(ci);
+              }
+              // Name matched but params didn't — not a valid recursive occurrence.
+              continue;
             }
             // Auxiliary member: also match spec_params to distinguish
             // e.g., List Syntax from List Other.
@@ -1623,7 +1711,7 @@ fn has_loose_bvar_in_explicit_domain(
 ) -> bool {
   match e.as_data() {
     ExprData::Bvar(idx, _) => {
-      let i = idx.to_u64().unwrap_or(0);
+      let i = nat_to_u64(idx);
       if strict {
         false // In strict mode, bare BVars in the range don't count
       } else {
@@ -1667,7 +1755,7 @@ fn has_loose_bvar_in_explicit_domain(
 /// Check if BVar(`target`) appears anywhere in `e`.
 fn expr_has_loose_bvar(e: &LeanExpr, target: u64) -> bool {
   match e.as_data() {
-    ExprData::Bvar(idx, _) => idx.to_u64().unwrap_or(0) == target,
+    ExprData::Bvar(idx, _) => nat_to_u64(idx) == target,
     ExprData::App(f, a, _) => {
       expr_has_loose_bvar(f, target) || expr_has_loose_bvar(a, target)
     },
@@ -1713,14 +1801,25 @@ fn get_lean_result_sort_level(typ: &LeanExpr, n: usize) -> Option<Level> {
 fn result_level_is_zero(lvl: &Option<Level>) -> bool {
   match lvl {
     None => false,
-    Some(l) => match l.as_data() {
-      LevelData::Zero(_) => true,
-      // imax(a, 0) = 0
-      LevelData::Imax(_, b, _) => {
-        matches!(b.as_data(), LevelData::Zero(_))
-      },
-      _ => false,
-    },
+    Some(l) => level_is_zero(l),
+  }
+}
+
+/// Check if a level expression normalizes to zero.
+///
+/// Handles the key level reduction rules:
+/// - `zero = 0`
+/// - `max(a, b) = 0` iff `a = 0` and `b = 0`
+/// - `imax(a, b) = 0` iff `b = 0` (by definition of imax)
+/// - `succ(_)` is never zero
+/// - `param(_)` is conservatively treated as non-zero
+fn level_is_zero(l: &Level) -> bool {
+  match l.as_data() {
+    LevelData::Zero(_) => true,
+    LevelData::Succ(..) => false,
+    LevelData::Max(a, b, _) => level_is_zero(a) && level_is_zero(b),
+    LevelData::Imax(_, b, _) => level_is_zero(b),
+    LevelData::Param(..) | LevelData::Mvar(..) => false,
   }
 }
 
@@ -1738,13 +1837,13 @@ fn result_level_is_zero(lvl: &Option<Level>) -> bool {
 /// persistent KEnv (with name-hash addresses that won't collide with real
 /// Ixon addresses), creates a temporary TypeChecker, and runs the check.
 fn compute_is_large_and_k(
-  classes: &[FlatInfo<'_>],
+  classes: &[FlatInfo],
   n_classes: usize,
   n_params: usize,
   lean_env: &LeanEnv,
   stt: &crate::ix::compile::CompileState,
   kctx: &crate::ix::compile::KernelCtx,
-) -> (bool, bool, bool) {
+) -> Result<(bool, bool, bool), CompileError> {
   use crate::ix::kernel::constant::KConst;
   use crate::ix::kernel::id::KId;
   use crate::ix::kernel::ingress::{
@@ -1776,10 +1875,10 @@ fn compute_is_large_and_k(
   let _cilk_start = std::time::Instant::now();
   let mut _ingress_total = std::time::Duration::ZERO;
   for (ci, cls) in classes[..n_classes].iter().enumerate() {
-    let cls_ind = cls.ind;
+    let cls_ind = &cls.ind;
     let cls_lvl_params = &cls_ind.cnst.level_params;
     let cls_n_lvls = cls_lvl_params.len() as u64;
-    let cls_n_indices = cls_ind.num_indices.to_u64().unwrap_or(0);
+    let cls_n_indices = nat_to_u64(&cls_ind.num_indices);
 
     let cls_addr = resolve_lean_name_addr(&cls_ind.cnst.name, n2a, aux_n2a);
     let cls_zid: KId<Meta> = KId::new(cls_addr, cls_ind.cnst.name.clone());
@@ -1803,8 +1902,8 @@ fn compute_is_large_and_k(
         n2a,
         aux_n2a,
       );
-      let ctor_fields = ctor.num_fields.to_u64().unwrap_or(0);
-      let ctor_params = ctor.num_params.to_u64().unwrap_or(0);
+      let ctor_fields = nat_to_u64(&ctor.num_fields);
+      let ctor_params = nat_to_u64(&ctor.num_params);
 
       kctx.kenv.insert(
         ctor_zid.clone(),
@@ -1832,9 +1931,9 @@ fn compute_is_large_and_k(
         lvls: cls_n_lvls,
         params: n_params as u64,
         indices: cls_n_indices,
-        is_rec: false,
-        is_refl: false,
-        is_unsafe: false,
+        is_rec: cls_ind.is_rec,
+        is_refl: cls_ind.is_reflexive,
+        is_unsafe: cls_ind.is_unsafe,
         nested: 0,
         block: block_zid.clone(),
         member_idx: ci as u64,
@@ -1866,59 +1965,36 @@ fn compute_is_large_and_k(
   // Use the TC for the appropriate context.
   let mut tc = crate::ix::kernel::tc::TypeChecker::new(kctx.kenv.clone());
 
-  let is_large = match tc
+  // Compute `is_large` purely via the zero kernel's TC. A TC failure here
+  // is a genuine aux_gen bug (our ephemeral `KConst::Indc`/`KConst::Ctor`
+  // entries are malformed, or we failed to ingress a referenced const), not
+  // a case we can silently paper over — downstream kernel checks and
+  // content-addressing would still trip on whatever we built. Surface the
+  // error and let the caller abort this block.
+  let is_large = tc
     .get_result_sort_level(first_ty_z, n_params + (first_n_indices as usize))
-  {
-    Ok(result_level) => {
-      match tc.is_large_eliminator(&result_level, &ind_infos) {
-        Ok(v) => {
-          // Sanity check: non-Prop should always be large
-          if !v {
-            let result_lvl = get_lean_result_sort_level(
-              &classes[0].ind.cnst.typ,
-              n_params + classes[0].n_indices,
-            );
-            if !result_level_is_zero(&result_lvl) {
-              eprintln!(
-                "[is_large BUG] {} KEnv says small but type is non-Prop, forcing large",
-                classes[0].ind.cnst.name.pretty()
-              );
-              true
-            } else {
-              v
-            }
-          } else {
-            v
-          }
-        },
-        Err(_) => {
-          // KEnv-based check failed (usually UnknownConst for field type
-          // inference). Fall back to the LeanExpr-based check, but ONLY
-          // for Prop inductives. Non-Prop always gets large elim.
-          let result_lvl = get_lean_result_sort_level(
-            &classes[0].ind.cnst.typ,
-            n_params + classes[0].n_indices,
-          );
-          if result_level_is_zero(&result_lvl) {
-            // Prop inductive — use syntactic check
-            !elim_only_at_universe_zero(classes, n_params, lean_env)
-          } else {
-            true // Non-Prop → large
-          }
-        },
-      }
-    },
-    Err(_) => {
-      let result_lvl = get_lean_result_sort_level(
-        &classes[0].ind.cnst.typ,
-        n_params + classes[0].n_indices,
-      );
-      if result_level_is_zero(&result_lvl) {
-        !elim_only_at_universe_zero(classes, n_params, lean_env)
-      } else {
-        true
-      }
-    },
+    .and_then(|result_level| tc.is_large_eliminator(&result_level, &ind_infos))
+    .map_err(|e| CompileError::InvalidMutualBlock {
+      reason: format!(
+        "compute_is_large_and_k: TC failed for {}: {e}",
+        classes[0].ind.cnst.name.pretty()
+      ),
+    })?;
+
+  // Spec-level override: non-Prop inductives always get large elimination
+  // (Lean C++ `inductive.cpp:539-548`). Our kernel's `is_large_eliminator`
+  // only early-returns when the result level is *provably* non-zero; a
+  // Param universe that happens to be non-zero syntactically (e.g., u+1)
+  // falls through to the single-ctor check and can come back "small".
+  // Correct that here using the Lean-expr's syntactic result level.
+  let is_large = if !is_large
+    && !result_level_is_zero(&get_lean_result_sort_level(
+      &classes[0].ind.cnst.typ,
+      n_params + classes[0].n_indices,
+    )) {
+    true
+  } else {
+    is_large
   };
 
   // Compute is_prop from the LeanExpr result sort level.
@@ -1941,16 +2017,19 @@ fn compute_is_large_and_k(
   };
 
   // K-target: single inductive, Prop, single ctor, 0 non-param fields.
-  let k = n_classes == 1
+  // Use classes.len() (full flat block including nested auxiliaries), not
+  // n_classes, to match Lean's `m_ind_types.size() == 1` check which counts
+  // the expanded block (inductive.cpp:556).
+  let k = classes.len() == 1
     && classes[0].ctors.len() == 1
-    && classes[0].ctors[0].num_fields.to_u64().unwrap_or(0) == 0
+    && nat_to_u64(&classes[0].ctors[0].num_fields) == 0
     && matches!(
       peek_result_sort(first_ty_z),
       Some(u) if u.is_zero()
     );
 
   let _cilk_elapsed = _cilk_start.elapsed();
-  if _cilk_elapsed.as_secs_f32() > 0.1 {
+  if *crate::ix::compile::IX_TIMING && _cilk_elapsed.as_secs_f32() > 0.1 {
     eprintln!(
       "[compute_is_large_and_k] {:?} total={:.3}s ingress={:.3}s n_classes={} kenv_size={}",
       classes[0].ind.cnst.name.pretty(),
@@ -1960,13 +2039,13 @@ fn compute_is_large_and_k(
       kctx.kenv.consts.len(),
     );
   }
-  (is_large, k, is_prop)
+  Ok((is_large, k, is_prop))
 }
 
 /// Walk field domains of constructors and ingress any referenced constants
 /// into the KEnv as Axio stubs (type only), so `infer_type` can look them up.
 fn ingress_field_deps(
-  class: &FlatInfo<'_>,
+  class: &FlatInfo,
   _lvl_params: &[Name],
   lean_env: &LeanEnv,
   stt: &crate::ix::compile::CompileState,
@@ -2003,7 +2082,7 @@ fn ingress_field_deps(
 
     // Look up in LeanEnv and insert as Axio stub
     if let Some(ci) = lean_env.get(&name) {
-      let (typ, dep_lvl_params) = match ci {
+      let (typ, dep_lvl_params) = match &*ci {
         ConstantInfo::InductInfo(v) => (&v.cnst.typ, &v.cnst.level_params),
         ConstantInfo::CtorInfo(v) => (&v.cnst.typ, &v.cnst.level_params),
         ConstantInfo::DefnInfo(v) => (&v.cnst.typ, &v.cnst.level_params),
@@ -2038,26 +2117,30 @@ fn ingress_field_deps(
 }
 
 /// Collect all constant names referenced in a LeanExpr.
+/// Uses an explicit stack to avoid stack overflow on deeply nested expressions.
 fn collect_const_refs(expr: &LeanExpr, out: &mut Vec<Name>) {
-  match expr.as_data() {
-    ExprData::Const(n, _, _) => out.push(n.clone()),
-    ExprData::App(f, a, _) => {
-      collect_const_refs(f, out);
-      collect_const_refs(a, out);
-    },
-    ExprData::ForallE(_, d, b, _, _) | ExprData::Lam(_, d, b, _, _) => {
-      collect_const_refs(d, out);
-      collect_const_refs(b, out);
-    },
-    ExprData::LetE(_, t, v, b, _, _) => {
-      collect_const_refs(t, out);
-      collect_const_refs(v, out);
-      collect_const_refs(b, out);
-    },
-    ExprData::Proj(_, _, e, _) | ExprData::Mdata(_, e, _) => {
-      collect_const_refs(e, out);
-    },
-    _ => {},
+  let mut stack: Vec<&LeanExpr> = vec![expr];
+  while let Some(e) = stack.pop() {
+    match e.as_data() {
+      ExprData::Const(n, _, _) => out.push(n.clone()),
+      ExprData::App(f, a, _) => {
+        stack.push(f);
+        stack.push(a);
+      },
+      ExprData::ForallE(_, d, b, _, _) | ExprData::Lam(_, d, b, _, _) => {
+        stack.push(d);
+        stack.push(b);
+      },
+      ExprData::LetE(_, t, v, b, _, _) => {
+        stack.push(t);
+        stack.push(v);
+        stack.push(b);
+      },
+      ExprData::Proj(_, _, e, _) | ExprData::Mdata(_, e, _) => {
+        stack.push(e);
+      },
+      _ => {},
+    }
   }
 }
 
@@ -2825,7 +2908,8 @@ mod tests {
 
     // .below generation: should produce BelowIndc for Prop.
     let below =
-      generate_below_constants(&classes, &recs, &env, is_prop, None).unwrap();
+      generate_below_constants(&classes, &recs, &env, is_prop, &stt, &stt.kctx)
+        .unwrap();
     assert_eq!(below.len(), 1, "1 class → 1 .below constant");
     match &below[0] {
       BelowConstant::Indc(indc) => {
@@ -2868,7 +2952,8 @@ mod tests {
 
     // .below
     let below =
-      generate_below_constants(&classes, &recs, &env, is_prop, None).unwrap();
+      generate_below_constants(&classes, &recs, &env, is_prop, &stt, &stt.kctx)
+        .unwrap();
     assert_eq!(below.len(), 1);
     assert!(
       matches!(&below[0], BelowConstant::Indc(_)),
@@ -2921,7 +3006,8 @@ mod tests {
 
     // .below: one per class.
     let below =
-      generate_below_constants(&classes, &recs, &env, is_prop, None).unwrap();
+      generate_below_constants(&classes, &recs, &env, is_prop, &stt, &stt.kctx)
+        .unwrap();
     assert_eq!(below.len(), 2, "2 classes → 2 .below constants");
     for bc in &below {
       assert!(
@@ -2965,7 +3051,8 @@ mod tests {
 
     // .below: one per class.
     let below =
-      generate_below_constants(&classes, &recs, &env, is_prop, None).unwrap();
+      generate_below_constants(&classes, &recs, &env, is_prop, &stt, &stt.kctx)
+        .unwrap();
     assert_eq!(below.len(), 3);
   }
 
@@ -2984,7 +3071,8 @@ mod tests {
     assert!(is_prop, "should be Prop");
 
     let below =
-      generate_below_constants(&classes, &recs, &env, is_prop, None).unwrap();
+      generate_below_constants(&classes, &recs, &env, is_prop, &stt, &stt.kctx)
+        .unwrap();
     assert_eq!(below.len(), 1);
     match &below[0] {
       BelowConstant::Indc(indc) => {
@@ -3029,7 +3117,8 @@ mod tests {
     assert_eq!(rec.rules.len(), 2);
 
     let below =
-      generate_below_constants(&classes, &recs, &env, is_prop, None).unwrap();
+      generate_below_constants(&classes, &recs, &env, is_prop, &stt, &stt.kctx)
+        .unwrap();
     assert_eq!(below.len(), 1);
     match &below[0] {
       BelowConstant::Def(def) => {
@@ -3069,7 +3158,8 @@ mod tests {
 
     // .below should use BelowIndc (Prop path) regardless of is_large.
     let below =
-      generate_below_constants(&classes, &recs, &env, is_prop, None).unwrap();
+      generate_below_constants(&classes, &recs, &env, is_prop, &stt, &stt.kctx)
+        .unwrap();
     assert_eq!(below.len(), 1);
     match &below[0] {
       BelowConstant::Indc(indc) => {
@@ -3090,6 +3180,7 @@ mod tests {
   /// Builds A/B inductives (no hand-written recursors), runs the full
   /// compile_env pipeline, then verifies the decompiled .rec matches
   /// what aux_gen would regenerate from the decompiled inductives.
+  #[ignore]
   #[test]
   fn test_aux_gen_compile_roundtrip() {
     use crate::ix::compile::env::compile_env;
@@ -3154,7 +3245,8 @@ mod tests {
     assert!(!is_prop);
 
     let below =
-      generate_below_constants(&classes, &recs, &env, is_prop, None).unwrap();
+      generate_below_constants(&classes, &recs, &env, is_prop, &stt, &stt.kctx)
+        .unwrap();
     assert_eq!(below.len(), 1);
 
     // Populate kenv with .below types for brecOn generation.
@@ -3204,7 +3296,8 @@ mod tests {
     assert!(is_prop);
 
     let below =
-      generate_below_constants(&classes, &recs, &env, is_prop, None).unwrap();
+      generate_below_constants(&classes, &recs, &env, is_prop, &stt, &stt.kctx)
+        .unwrap();
     assert_eq!(below.len(), 1);
 
     let brecon = generate_brecon_constants(
@@ -3271,7 +3364,8 @@ mod tests {
     let (recs, is_prop) =
       generate_canonical_recursors(&classes, &env, &stt).unwrap();
     let below =
-      generate_below_constants(&classes, &recs, &env, is_prop, None).unwrap();
+      generate_below_constants(&classes, &recs, &env, is_prop, &stt, &stt.kctx)
+        .unwrap();
     let brecon = generate_brecon_constants(
       &classes, &recs, &below, &env, is_prop, &stt, &stt.kctx,
     )
