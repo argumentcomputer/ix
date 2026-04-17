@@ -53,7 +53,7 @@ jobs:
 
   benchmark:
     needs: [ setup ]
-    runs-on: warp-ubuntu-latest-x64-16x
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         # Runs a job for each benchmark specified in the `issue_comment` input

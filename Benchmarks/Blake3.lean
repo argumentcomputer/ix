@@ -7,8 +7,8 @@ import Ix.Benchmark.Bench
 
 open BgroupM
 
-abbrev dataSizes := #[64, 128, 256, 512, 1024, 2048]
-abbrev numHashesPerProof := #[1, 2, 4, 8, 16, 32]
+abbrev dataSizes := #[64]
+abbrev numHashesPerProof := #[1, 2]
 
 def commitmentParameters : Aiur.CommitmentParameters := {
   logBlowup := 1
