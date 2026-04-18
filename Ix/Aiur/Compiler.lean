@@ -35,6 +35,7 @@ private partial def Bytecode.Block.collectConstrainedCallees
   let acc := b.ops.foldl (init := acc) fun acc op =>
     match op with
     | .call idx _ _ false => acc.push idx
+    | .assertApp idx _ _ => acc.push idx
     | _ => acc
   -- Recurse into sub-blocks of match control flow
   match b.ctrl with

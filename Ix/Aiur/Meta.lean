@@ -144,6 +144,8 @@ syntax "store" "(" trm ")"                                    : trm
 syntax "load" "(" trm ")"                                     : trm
 syntax "ptr_val" "(" trm ")"                                  : trm
 syntax "assert_eq!" "(" trm ", " trm ")" ";" (trm)?           : trm
+syntax "assert!" ("." noWs)? ident "(" ")" "=" trm ";" (trm)? : trm
+syntax "assert!" ("." noWs)? ident "(" trm (", " trm)* ")" "=" trm ";" (trm)? : trm
 syntax trm ": " typ                                           : trm
 syntax "io_get_info" "(" trm ")"                              : trm
 syntax "io_set_info" "(" trm ", " trm ", " trm ")" ";" (trm)? : trm
@@ -254,6 +256,12 @@ partial def elabTrm : ElabStxCat `trm
     mkAppM ``Term.ptrVal #[← elabTrm a]
   | `(trm| assert_eq!($a:trm, $b:trm); $[$ret:trm]?) => do
     mkAppM ``Term.assertEq #[← elabTrm a, ← elabTrm b, ← elabRet ret]
+  | `(trm| assert! $[.]?$f:ident () = $expected:trm; $[$ret:trm]?) => do
+    let g ← mkAppM ``Global.mk #[toExpr f.getId]
+    mkAppM ``Term.assertApp #[g, ← elabEmptyList ``Term, ← elabTrm expected, ← elabRet ret]
+  | `(trm| assert! $[.]?$f:ident ($a:trm $[, $as:trm]*) = $expected:trm; $[$ret:trm]?) => do
+    let g ← mkAppM ``Global.mk #[toExpr f.getId]
+    mkAppM ``Term.assertApp #[g, ← elabList a as elabTrm ``Term, ← elabTrm expected, ← elabRet ret]
   | `(trm| $v:trm : $t:typ) => do
     mkAppM ``Term.ann #[← elabTyp t, ← elabTrm v]
   | `(trm| io_get_info($key:trm)) => do
@@ -425,6 +433,18 @@ where
       let b ← replaceToken old new b
       let ret' ← ret.mapM $ replaceToken old new
       `(trm| assert_eq!($a, $b); $[$ret']?)
+    | `(trm| assert! $[.%$dot]?$f:ident() = $expected:trm; $[$ret:trm]?) => do
+      let expected ← replaceToken old new expected
+      let ret' ← ret.mapM $ replaceToken old new
+      if dot.isSome then `(trm| assert! .$f() = $expected; $[$ret']?)
+      else `(trm| assert! $f() = $expected; $[$ret']?)
+    | `(trm| assert! $[.%$dot]?$f:ident($a:trm $[, $as:trm]*) = $expected:trm; $[$ret:trm]?) => do
+      let a ← replaceToken old new a
+      let as ← as.mapM $ replaceToken old new
+      let expected ← replaceToken old new expected
+      let ret' ← ret.mapM $ replaceToken old new
+      if dot.isSome then `(trm| assert! .$f($a $[, $as]*) = $expected; $[$ret']?)
+      else `(trm| assert! $f($a $[, $as]*) = $expected; $[$ret']?)
     | `(trm| $v:trm : $t:typ) => do
       let v ← replaceToken old new v
       `(trm| $v : $t)

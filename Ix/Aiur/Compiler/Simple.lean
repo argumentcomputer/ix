@@ -29,6 +29,7 @@ partial def simplifyTerm (decls : Decls) : Term → Term
   | .u32LessThan a b => .u32LessThan (recr a) (recr b)
   | .debug label term ret => .debug label (term.map recr) (recr ret)
   | .assertEq a b ret => .assertEq (recr a) (recr b) (recr ret)
+  | .assertApp f args expected ret => .assertApp f (args.map recr) (recr expected) (recr ret)
   | .ioSetInfo key idx len ret => .ioSetInfo (recr key) (recr idx) (recr len) (recr ret)
   | .ioWrite data ret => .ioWrite (recr data) (recr ret)
   | t => t

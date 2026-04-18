@@ -267,6 +267,14 @@ partial def toIndex
     let b ← toIndex layoutMap bindings b
     modify fun stt => { stt with ops := stt.ops.push (.assertEq a b) }
     toIndex layoutMap bindings ret
+  | .assertApp name _ args expected ret => do
+    let layout ← match layoutMap[name]? with
+      | some (.function l) => pure l
+      | _ => throw s!"assertApp: `{name}` is not a function"
+    let inputIdxs ← buildArgs args
+    let expectedIdxs ← toIndex layoutMap bindings expected
+    modify fun stt => { stt with ops := stt.ops.push (.assertApp layout.index inputIdxs expectedIdxs) }
+    toIndex layoutMap bindings ret
   | .ioGetInfo key => do
     let key ← toIndex layoutMap bindings key
     pushOp (.ioGetInfo key) 2
@@ -454,6 +462,15 @@ partial def TypedTerm.compile
     let a ← toIndex layoutMap bindings a
     let b ← toIndex layoutMap bindings b
     modify fun stt => { stt with ops := stt.ops.push (.assertEq a b) }
+    ret.compile returnTyp layoutMap bindings yieldCtrl
+  | .assertApp name _ args expected ret => do
+    let layout ← match layoutMap[name]? with
+      | some (.function l) => pure l
+      | _ => throw s!"assertApp: `{name}` is not a function"
+    let inputIdxs ← args.foldlM (init := #[]) fun acc arg => do
+      pure $ acc ++ (← toIndex layoutMap bindings arg)
+    let expectedIdxs ← toIndex layoutMap bindings expected
+    modify fun stt => { stt with ops := stt.ops.push (.assertApp layout.index inputIdxs expectedIdxs) }
     ret.compile returnTyp layoutMap bindings yieldCtrl
   | .ioSetInfo key idx len ret => do
     let key ← toIndex layoutMap bindings key

@@ -89,6 +89,7 @@ inductive Term
   | ptrVal : Term → Term
   | ann : Typ → Term → Term
   | assertEq : Term → Term → (ret : Term) → Term
+  | assertApp : Global → List Term → Term → (ret : Term) → Term
   | ioGetInfo : (key : Term) → Term
   | ioSetInfo : (key : Term) → (idx : Term) → (len : Term) → (ret : Term) → Term
   | ioRead : (idx : Term) → (len : Nat) → Term

@@ -28,6 +28,7 @@ inductive TypedTermInner
   | load : TypedTerm → TypedTermInner
   | ptrVal : TypedTerm → TypedTermInner
   | assertEq : TypedTerm → TypedTerm → TypedTerm → TypedTermInner
+  | assertApp : Global → Array Typ → List TypedTerm → TypedTerm → TypedTerm → TypedTermInner
   | ioGetInfo : TypedTerm → TypedTermInner
   | ioSetInfo : TypedTerm → TypedTerm → TypedTerm → TypedTerm → TypedTermInner
   | ioRead : TypedTerm → Nat → TypedTermInner

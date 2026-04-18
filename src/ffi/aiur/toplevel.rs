@@ -136,6 +136,13 @@ fn decode_op(ctor: LeanCtor<LeanBorrowed<'_>>) -> Op {
       };
       Op::Debug(label, idxs)
     },
+    24 => {
+      let [fun_idx, input_idxs, output_idxs] = ctor.objs::<3>();
+      let fun_idx = lean_unbox_nat_as_usize(&fun_idx);
+      let input_idxs = decode_vec_val_idx(input_idxs);
+      let output_idxs = decode_vec_val_idx(output_idxs);
+      Op::AssertApp(fun_idx, input_idxs, output_idxs)
+    },
     _ => unreachable!(),
   }
 }

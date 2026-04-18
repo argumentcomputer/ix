@@ -422,6 +422,13 @@ partial def interp (decls : Decls) (bindings : Bindings) : Term → InterpM Valu
       if v1 != v2 then throwErr s!"assertEq: {v1} ≠ {v2}"
       interp decls bindings ret
 
+  | .assertApp func args expected ret => do
+      let argVals ← args.mapM (interp decls bindings)
+      let actual ← applyGlobal decls func argVals
+      let expectedVal ← interp decls bindings expected
+      if actual != expectedVal then throwErr s!"assertApp: {actual} ≠ {expectedVal}"
+      interp decls bindings ret
+
   -- U8 operations (inputs are field elements encoding bytes 0–255)
 
   | .u8BitDecomposition t => do

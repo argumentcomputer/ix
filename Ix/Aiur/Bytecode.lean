@@ -21,6 +21,7 @@ inductive Op
   | store : Array ValIdx → Op
   | load : (size : Nat) → ValIdx → Op
   | assertEq : Array ValIdx → Array ValIdx → Op
+  | assertApp : FunIdx → Array ValIdx → Array ValIdx → Op
   | ioGetInfo : Array ValIdx → Op
   | ioSetInfo : Array ValIdx → ValIdx → ValIdx → Op
   | ioRead : ValIdx → Nat → Op

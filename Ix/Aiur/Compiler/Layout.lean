@@ -159,6 +159,7 @@ def opLayout : Bytecode.Op → LayoutM Unit
     bumpLookups
     addMemSize size
   | .assertEq .. => pure ()
+  | .assertApp .. => bumpLookups
   | .ioGetInfo _ => do
     pushDegrees #[1, 1]
     bumpAuxiliaries 2

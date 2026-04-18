@@ -99,6 +99,7 @@ struct CallerState {
   map: Vec<G>,
   unconstrained: bool,
   continuation_depth: usize,
+  assert_outputs: Option<Vec<G>>,
 }
 
 struct ContinuationState<'a> {
@@ -164,6 +165,7 @@ impl Function {
               map: saved_map,
               unconstrained,
               continuation_depth: continuation_stack.len(),
+              assert_outputs: None,
             });
             fun_idx = *callee_idx;
             unconstrained = unconstrained || *op_unconstrained;
@@ -207,6 +209,30 @@ impl Function {
           assert_eq!(xs.len(), ys.len());
           for (x, y) in xs.iter().zip(ys) {
             assert_eq!(map[*x], map[*y]);
+          }
+        },
+        ExecEntry::Op(Op::AssertApp(callee_idx, inputs, expected_outputs)) => {
+          let args: Vec<G> = inputs.iter().map(|i| map[*i]).collect();
+          let expected: Vec<G> =
+            expected_outputs.iter().map(|i| map[*i]).collect();
+          if let Some(result) =
+            record.function_queries[*callee_idx].get_mut(&args)
+          {
+            assert_eq!(result.output, expected, "assertApp: output mismatch");
+            if !unconstrained {
+              result.multiplicity += G::ONE;
+            }
+          } else {
+            let saved_map = std::mem::replace(&mut map, args);
+            callers_states_stack.push(CallerState {
+              fun_idx,
+              map: saved_map,
+              unconstrained,
+              continuation_depth: continuation_stack.len(),
+              assert_outputs: Some(expected),
+            });
+            fun_idx = *callee_idx;
+            push_block_exec_entries!(&toplevel.functions[fun_idx].body);
           }
         },
         ExecEntry::Op(Op::IOGetInfo(key)) => {
@@ -396,12 +422,17 @@ impl Function {
             map: caller_map,
             unconstrained: caller_unconstrained,
             continuation_depth,
+            assert_outputs,
           }) = callers_states_stack.pop()
           {
             continuation_stack.truncate(continuation_depth);
             fun_idx = caller_idx;
             map = caller_map;
-            map.extend(output);
+            if let Some(ref expected) = assert_outputs {
+              assert_eq!(&output, expected, "assertApp: output mismatch");
+            } else {
+              map.extend(output);
+            }
             unconstrained = caller_unconstrained;
           } else {
             continuation_stack.clear();

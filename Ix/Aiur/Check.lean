@@ -318,6 +318,7 @@ partial def inferTerm (t : Term) : CheckM TypedTerm := match t with
   | .ioRead idx len => inferIoRead idx len
   | .ioWrite data ret => inferIoWrite data ret
   | .assertEq a b ret => inferAssertEq a b ret
+  | .assertApp func args expected ret => inferAssertApp func args expected ret
   | .debug label term ret => inferDebug label term ret
 
 partial def checkNoEscape (term : Term) (typ : Typ) : CheckM TypedTermInner := do
@@ -505,6 +506,34 @@ partial def inferApplication (func : Global) (args : List Term) (u : Bool) : Che
   | .str .anonymous unqualifiedFunc => inferLocalApplication func unqualifiedFunc args u
   | _ => inferGlobalApplication func args u
 
+partial def inferAssertApp (func : Global) (args : List Term) (expected : Term) (ret : Term) : CheckM TypedTerm := do
+  let (inputs, output, tArgs) ← lookupFuncType func
+  let checkedArgs ← checkArgsAndInputs func args inputs
+  let expectedInner ← checkNoEscape expected output
+  let ret ← inferTerm ret
+  pure ⟨ret.typ, .assertApp func tArgs checkedArgs ⟨output, expectedInner, false⟩ ret, ret.escapes⟩
+where
+  lookupFuncType (f : Global) : CheckM (List Typ × Typ × Array Typ) := do
+    let ctx ← read
+    match f.toName with
+    | .str .anonymous unqualifiedFunc =>
+      match ctx.varTypes[Local.str unqualifiedFunc]? with
+      | some (.function inputs output) => pure (inputs, output, #[])
+      | some _ => throw $ .notAFunction f
+      | none => lookupGlobal f ctx
+    | _ => lookupGlobal f ctx
+  lookupGlobal (f : Global) (ctx : CheckContext) : CheckM (List Typ × Typ × Array Typ) :=
+    match ctx.decls.getByKey f with
+    | some (.function function) =>
+      if function.params.isEmpty then
+        pure (function.inputs.map Prod.snd, function.output, #[])
+      else do
+        let (mvars, subst) ← instantiateParams function.params
+        let inputs := function.inputs.map (Typ.instantiate subst ∘ Prod.snd)
+        let output := Typ.instantiate subst function.output
+        pure (inputs, output, mvars)
+    | _ => throw $ .cannotApply f
+
 partial def inferAssertEq (a b ret : Term) : CheckM TypedTerm := do
   let (typ, a) ← inferNoEscape a
   let b ← checkNoEscape b typ
@@ -660,6 +689,9 @@ partial def zonkInner : TypedTermInner → CheckM TypedTermInner
   | .ptrVal a => do pure $ .ptrVal (← zonkTypedTerm a)
   | .assertEq a b r => do
     pure $ .assertEq (← zonkTypedTerm a) (← zonkTypedTerm b) (← zonkTypedTerm r)
+  | .assertApp g tArgs args expected r => do
+    pure $ .assertApp g (← tArgs.mapM zonkTyp) (← args.mapM zonkTypedTerm)
+      (← zonkTypedTerm expected) (← zonkTypedTerm r)
   | .ioGetInfo k => do pure $ .ioGetInfo (← zonkTypedTerm k)
   | .ioSetInfo k i l r => do
     pure $ .ioSetInfo (← zonkTypedTerm k) (← zonkTypedTerm i)

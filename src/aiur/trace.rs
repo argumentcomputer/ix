@@ -502,6 +502,18 @@ impl Op {
         let result = G::from_bool(a_u32 < b_u32);
         map.push((result, 1));
       },
+      Op::AssertApp(function_index, inputs, expected_outputs) => {
+        let input_vals: Vec<G> = inputs.iter().map(|a| map[*a].0).collect();
+        let output_vals: Vec<G> =
+          expected_outputs.iter().map(|a| map[*a].0).collect();
+        let lookup = function_lookup(
+          G::ONE,
+          G::from_usize(*function_index),
+          &input_vals,
+          &output_vals,
+        );
+        slice.push_lookup(index, lookup);
+      },
       Op::AssertEq(..) | Op::IOSetInfo(..) | Op::IOWrite(_) | Op::Debug(..) => {
       },
     }

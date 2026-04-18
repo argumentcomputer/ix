@@ -447,6 +447,23 @@ impl Op {
           state.constraints.zeros.push(sel.clone() * (x.clone() - y.clone()));
         }
       },
+      Op::AssertApp(function_index, inputs, expected_outputs) => {
+        let mut lookup_args = vec![
+          sel.clone() * function_channel(),
+          sel.clone() * G::from_usize(*function_index),
+        ];
+        lookup_args.extend(
+          inputs.iter().map(|arg| sel.clone() * state.map[*arg].0.clone()),
+        );
+        lookup_args.extend(
+          expected_outputs
+            .iter()
+            .map(|arg| sel.clone() * state.map[*arg].0.clone()),
+        );
+        let lookup = state.next_lookup();
+        combine_lookup_args(lookup, lookup_args);
+        lookup.multiplicity += sel.clone();
+      },
       Op::IOGetInfo(_) => (0..2).for_each(|_| {
         let col = state.next_auxiliary();
         state.map.push((col, 1));

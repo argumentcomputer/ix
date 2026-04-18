@@ -105,6 +105,10 @@ partial def rewriteInner
   | .assertEq a b r =>
     .assertEq (rewriteTypedTerm decls subst mono a) (rewriteTypedTerm decls subst mono b)
       (rewriteTypedTerm decls subst mono r)
+  | .assertApp g tArgs args expected r =>
+    let g' := rewriteGlobal decls mono g tArgs
+    .assertApp g' #[] (args.map (rewriteTypedTerm decls subst mono))
+      (rewriteTypedTerm decls subst mono expected) (rewriteTypedTerm decls subst mono r)
   | .ioGetInfo k => .ioGetInfo (rewriteTypedTerm decls subst mono k)
   | .ioSetInfo k i l r =>
     .ioSetInfo (rewriteTypedTerm decls subst mono k) (rewriteTypedTerm decls subst mono i)
@@ -249,6 +253,10 @@ partial def collectInInner (seen : Std.HashSet (Global × Array Typ)) :
   | .set a _ v => collectInTypedTerm (collectInTypedTerm seen a) v
   | .assertEq a b r =>
     collectInTypedTerm (collectInTypedTerm (collectInTypedTerm seen a) b) r
+  | .assertApp _ tArgs args expected r =>
+    let seen := tArgs.foldl collectInTyp seen
+    let seen := args.foldl collectInTypedTerm seen
+    collectInTypedTerm (collectInTypedTerm seen expected) r
   | .ioSetInfo k i l r =>
     collectInTypedTerm (collectInTypedTerm
       (collectInTypedTerm (collectInTypedTerm seen k) i) l) r
@@ -293,6 +301,12 @@ where
     | .proj a _ | .get a _ | .slice a _ _ => goT seen a
     | .set a _ v => goT (goT seen a) v
     | .assertEq a b r => goT (goT (goT seen a) b) r
+    | .assertApp g tArgs args expected r =>
+      let seen := args.foldl goT (goT (goT seen expected) r)
+      if tArgs.isEmpty then seen else
+        match decls.getByKey g with
+        | some (.function _) => seen.insert (g, tArgs)
+        | _ => seen
     | .ioSetInfo k i l r => goT (goT (goT (goT seen k) i) l) r
     | .ioRead i _ => goT seen i
     | .ioWrite d r => goT (goT seen d) r
@@ -331,6 +345,10 @@ partial def substInInner (subst : Global → Option Typ) : TypedTermInner → Ty
   | .ptrVal a => .ptrVal (substInTypedTerm subst a)
   | .assertEq a b r =>
     .assertEq (substInTypedTerm subst a) (substInTypedTerm subst b) (substInTypedTerm subst r)
+  | .assertApp g tArgs args expected r =>
+    .assertApp g (tArgs.map (Typ.instantiate subst))
+      (args.map (substInTypedTerm subst))
+      (substInTypedTerm subst expected) (substInTypedTerm subst r)
   | .ioGetInfo k => .ioGetInfo (substInTypedTerm subst k)
   | .ioSetInfo k i l r =>
     .ioSetInfo (substInTypedTerm subst k) (substInTypedTerm subst i)
