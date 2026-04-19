@@ -21,53 +21,15 @@ pub struct Named {
   /// aux_gen form). Decompile uses `original` for faithful roundtrip of
   /// binder names and other cosmetic metadata.
   pub original: Option<(Address, ConstantMeta)>,
-  /// Name-level reference table, parallel to `Constant.refs`.
-  ///
-  /// `name_refs[i]` contains the Lean names that compiled to the address at
-  /// `Constant.refs[i]`. Multiple names can map to the same address due to
-  /// alpha-collapse, so each entry is a `Vec<Name>`.
-  ///
-  /// # Status — reserved for future use (CR3)
-  ///
-  /// As of the April 2026 adversarial review, this table is **populated**
-  /// by every compile path in `compile.rs` / `compile/mutual.rs` but is
-  /// **not currently read** by the decompiler. The intended disambiguation
-  /// use-case (resolving alpha-collapsed Ref names when the arena's single
-  /// `Ref { name_addr }` metadata is absent) is unnecessary in practice
-  /// because `name_addr` is already a name-content hash rather than a
-  /// content-content hash: distinct Lean names hash to distinct addresses
-  /// even when their referenced constants alpha-collapse.
-  ///
-  /// We keep the field rather than deleting it because:
-  ///   1. It's a schema-stable extension point for future work on
-  ///      deterministic topological ordering across blocks.
-  ///   2. Removing it would force a serialization-format bump that isn't
-  ///      worth the churn in pre-alpha.
-  ///
-  /// If you're reaching for this field, check first whether the arena's
-  /// `ExprMetaData::Ref { name: name_addr }` already gives you what you
-  /// need via `decompile_name(name_addr, stt)` — it almost always does.
-  pub name_refs: Vec<Vec<Name>>,
 }
 
 impl Named {
   pub fn new(addr: Address, meta: ConstantMeta) -> Self {
-    Named { addr, meta, original: None, name_refs: Vec::new() }
+    Named { addr, meta, original: None }
   }
 
   pub fn with_addr(addr: Address) -> Self {
-    Named {
-      addr,
-      meta: ConstantMeta::default(),
-      original: None,
-      name_refs: Vec::new(),
-    }
-  }
-
-  /// Set the name-level reference table (builder pattern).
-  pub fn with_name_refs(mut self, name_refs: Vec<Vec<Name>>) -> Self {
-    self.name_refs = name_refs;
-    self
+    Named { addr, meta: ConstantMeta::default(), original: None }
   }
 }
 

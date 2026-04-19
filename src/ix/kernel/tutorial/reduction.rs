@@ -4,7 +4,7 @@
 mod tests {
   use std::sync::Arc;
 
-  use crate::ix::env::ReducibilityHints;
+  use crate::ix::env::{Name, ReducibilityHints};
   use crate::ix::kernel::constant::KConst;
   use crate::ix::kernel::constant::RecRule;
   use crate::ix::kernel::env::KEnv;
@@ -374,8 +374,8 @@ mod tests {
         member_idx: 0,
         ty: rec_ty,
         rules: vec![
-          RecRule { fields: 0, rhs: rule_false_rhs },
-          RecRule { fields: 0, rhs: rule_true_rhs },
+          RecRule { ctor: Name::anon(), fields: 0, rhs: rule_false_rhs },
+          RecRule { ctor: Name::anon(), fields: 0, rhs: rule_true_rhs },
         ],
         lean_all: vec![block_id.clone()],
       },
@@ -593,8 +593,8 @@ mod tests {
         member_idx: 0,
         ty: rec_ty,
         rules: vec![
-          RecRule { fields: 0, rhs: rule_zero_rhs },
-          RecRule { fields: 1, rhs: rule_succ_rhs },
+          RecRule { ctor: Name::anon(), fields: 0, rhs: rule_zero_rhs },
+          RecRule { ctor: Name::anon(), fields: 1, rhs: rule_succ_rhs },
         ],
         lean_all: vec![block_id.clone()],
       },
@@ -883,8 +883,8 @@ mod tests {
         member_idx: 0,
         ty: rec_ty,
         rules: vec![
-          RecRule { fields: 0, rhs: rule_leaf_rhs },
-          RecRule { fields: 1, rhs: rule_node_rhs },
+          RecRule { ctor: Name::anon(), fields: 0, rhs: rule_leaf_rhs },
+          RecRule { ctor: Name::anon(), fields: 1, rhs: rule_node_rhs },
         ],
         lean_all: vec![block_id.clone()],
       },
@@ -1252,7 +1252,11 @@ mod tests {
         block: block_id.clone(),
         member_idx: 0,
         ty: rec_ty,
-        rules: vec![RecRule { fields: 2, rhs: rule_rhs }],
+        rules: vec![RecRule {
+          ctor: Name::anon(),
+          fields: 2,
+          rhs: rule_rhs,
+        }],
         lean_all: vec![block_id.clone()],
       },
     );

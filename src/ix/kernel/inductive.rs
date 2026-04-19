@@ -1295,6 +1295,7 @@ impl<M: KernelMode> TypeChecker<M> {
             univ_offset,
           ) {
             Ok(rhs) => rules.push(Some(super::constant::RecRule {
+              ctor: ctor_id.name.clone(),
               fields: ctor_fields,
               rhs,
             })),
@@ -2515,9 +2516,11 @@ impl<M: KernelMode> TypeChecker<M> {
         is_large,
         univ_offset,
       ) {
-        Ok(rhs) => {
-          rules.push(super::constant::RecRule { fields: ctor_fields, rhs })
-        },
+        Ok(rhs) => rules.push(super::constant::RecRule {
+          ctor: ctor_id.name.clone(),
+          fields: ctor_fields,
+          rhs,
+        }),
         Err(e) => {
           return Err(TcError::Other(format!(
             "[late_gen_rules] rule {ci} for {} failed: {e:?}",
@@ -3380,8 +3383,16 @@ mod tests {
         member_idx: 0,
         ty: rec_ty,
         rules: vec![
-          super::super::constant::RecRule { fields: 0, rhs: rule_true_rhs },
-          super::super::constant::RecRule { fields: 0, rhs: rule_false_rhs },
+          super::super::constant::RecRule {
+            ctor: (),
+            fields: 0,
+            rhs: rule_true_rhs,
+          },
+          super::super::constant::RecRule {
+            ctor: (),
+            fields: 0,
+            rhs: rule_false_rhs,
+          },
         ],
         lean_all: (),
       },
@@ -3528,8 +3539,16 @@ mod tests {
         member_idx: 0,
         ty: rec_ty,
         rules: vec![
-          super::super::constant::RecRule { fields: 0, rhs: rule_zero_rhs },
-          super::super::constant::RecRule { fields: 1, rhs: rule_succ_rhs },
+          super::super::constant::RecRule {
+            ctor: (),
+            fields: 0,
+            rhs: rule_zero_rhs,
+          },
+          super::super::constant::RecRule {
+            ctor: (),
+            fields: 1,
+            rhs: rule_succ_rhs,
+          },
         ],
         lean_all: (),
       },

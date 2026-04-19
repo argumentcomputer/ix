@@ -68,6 +68,11 @@ pub(crate) fn generate_rec_on(
     level_params: rec_val.cnst.level_params.clone(),
     typ: rec_on_type,
     value: rec_on_value,
+    // `.recOn` mirrors the recursor's safety — Lean builds it via
+    // `mkDefinitionValInferringUnsafe` (`Lean/Meta/Constructions/RecOn.lean:32`)
+    // and the inferred safety matches the parent inductive since the value
+    // references the inductive's `.rec`.
+    is_unsafe: rec_val.is_unsafe,
   })
 }
 

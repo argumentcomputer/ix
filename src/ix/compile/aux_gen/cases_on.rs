@@ -338,6 +338,10 @@ pub(crate) fn generate_cases_on(
     level_params: rec_val.cnst.level_params.clone(),
     typ: co_type,
     value: co_value,
+    // `.casesOn` mirrors the recursor's safety — its value references the
+    // parent inductive's `.rec`, so Lean's `mkDefinitionValInferringUnsafe`
+    // always infers the same safety as the inductive.
+    is_unsafe: rec_val.is_unsafe,
   })
 }
 

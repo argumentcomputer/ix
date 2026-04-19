@@ -646,8 +646,7 @@ impl<R: LeanRef> LeanIxonNamed<R> {
     Named {
       addr: LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array()).decode(),
       meta: LeanIxonConstantMeta::new(ctor.get(1).to_owned_ref()).decode(),
-      original: None,        // aux_gen not yet on FFI boundary
-      name_refs: Vec::new(), // populated during Rust compilation, not FFI
+      original: None, // aux_gen not yet on FFI boundary
     }
   }
 }

@@ -1031,16 +1031,26 @@ fn try_detect_nested_fvar(
     return;
   }
 
-  // Check if any parameter arg mentions a block inductive or existing flat
-  // member. This is what makes it "nested" — e.g., `List Tree` has param
-  // arg `Tree` which is in the block.
-  let all_flat_names: Vec<Name> = flat.iter().map(|m| m.name.clone()).collect();
-  let combined: Vec<Name> =
-    block_names.iter().chain(all_flat_names.iter()).cloned().collect();
+  // Check if any parameter arg mentions an *original* block inductive. This
+  // is the kernel's definition of a nested occurrence (C++
+  // `is_nested_inductive_app`: `m_new_types` contains unique auxiliary names
+  // like `_nested.List_1` that can never appear in user-written expressions,
+  // so in practice only originals ever trigger the check).
+  //
+  // We intentionally do NOT extend the check with `flat`-stored aux names.
+  // `FvarFlatMember.name` holds the EXTERNAL inductive (`Array`, `Option`,
+  // ...), so matching against it would false-positive on unrelated
+  // occurrences — e.g. `Option (Array Script.LazyStep)` inside
+  // `Aesop.RappData` gets flagged because `Array` sits in `flat`, even though
+  // `Script.LazyStep` doesn't reference any block member. That false positive
+  // creates a spurious `_nested.Option_N` aux, which then cascades into
+  // phantom `.rec_{N+1}` / `.below_{N+1}` / `.brecOn_{N+1}` constants during
+  // decompile (see `decompile_block_aux_gen`, which uses this function and
+  // doesn't have the expand/restore scaffolding to mask the bug).
   let has_nested_ref = args
     .iter()
     .take(ext_n_params)
-    .any(|a| expr_mentions_any_name(a, &combined));
+    .any(|a| expr_mentions_any_name(a, block_names));
   if !has_nested_ref {
     return;
   }

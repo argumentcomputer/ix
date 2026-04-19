@@ -112,12 +112,19 @@ pub(crate) enum PatchedConstant {
 }
 
 /// A simple auxiliary definition (type + value + level params).
+///
+/// `is_unsafe` mirrors the parent inductive's `is_unsafe` flag so downstream
+/// emission can pick the correct `DefinitionSafety`. Lean's
+/// `mkDefinitionValInferringUnsafe` (`refs/lean4/src/Lean/Environment.lean:2790`)
+/// flips to `Unsafe` whenever the type or value mentions any unsafe constant —
+/// and every auxiliary references its parent inductive.
 #[derive(Clone)]
 pub(crate) struct AuxDef {
   pub name: Name,
   pub level_params: Vec<Name>,
   pub typ: LeanExpr,
   pub value: LeanExpr,
+  pub is_unsafe: bool,
 }
 
 /// Generate all canonical auxiliary patches for a collapsed inductive block.
@@ -756,12 +763,14 @@ fn rename_patch(
       level_params: d.level_params.clone(),
       typ: expr_utils::replace_const_names(&d.typ, name_map),
       value: expr_utils::replace_const_names(&d.value, name_map),
+      is_unsafe: d.is_unsafe,
     }),
     PatchedConstant::CasesOn(d) => PatchedConstant::CasesOn(AuxDef {
       name: new_name.clone(),
       level_params: d.level_params.clone(),
       typ: expr_utils::replace_const_names(&d.typ, name_map),
       value: expr_utils::replace_const_names(&d.value, name_map),
+      is_unsafe: d.is_unsafe,
     }),
     PatchedConstant::BelowDef(d) => {
       PatchedConstant::BelowDef(below::BelowDef {
@@ -769,6 +778,7 @@ fn rename_patch(
         level_params: d.level_params.clone(),
         typ: expr_utils::replace_const_names(&d.typ, name_map),
         value: expr_utils::replace_const_names(&d.value, name_map),
+        is_unsafe: d.is_unsafe,
       })
     },
     PatchedConstant::BelowIndc(i) => {
@@ -784,6 +794,8 @@ fn rename_patch(
       level_params: d.level_params.clone(),
       typ: expr_utils::replace_const_names(&d.typ, name_map),
       value: expr_utils::replace_const_names(&d.value, name_map),
+      is_unsafe: d.is_unsafe,
+      is_prop: d.is_prop,
     }),
   }
 }

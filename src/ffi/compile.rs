@@ -341,55 +341,43 @@ pub extern "C" fn rs_compile_env(
       );
     }
 
-    // Explicit drops with timing so we can see which destructor stalls.
-    // Scope-exit would drop these anyway, but without timing we'd see only
-    // an opaque hang between "ByteArray built" and the function returning.
-    // Order: buf (just bytes, fast) → compile_stt (huge: DashMaps of Consts,
-    // Nameds, Names, Blobs, plus the KEnv cache) → rust_env Arc (decrements
-    // to 0 once compile_stt's internal clone also drops, freeing LeanEnv).
-    if !quiet {
-      eprintln!("[rs_compile_env] dropping buf ({} bytes)", buf.len());
+    // Skip destructors on the CLI path. `rs_compile_env` is called from
+    // one-shot commands (lake exe ix compile, serve/connect init) where the
+    // process exits shortly after returning the ByteArray. Running ~millions
+    // of Arc<NameData> chain-drops serially across DashMap shards costs 70+
+    // seconds of wall time on Mathlib and accomplishes nothing — the OS
+    // reclaims the allocations instantly at process exit.
+    //
+    // Safety: `mem::forget` on `Arc<T>` leaks one strong refcount; the
+    // underlying allocation is never freed but also never accessed. The
+    // `LeanEnv` inside `rust_env` was decoded into owned Rust data (no
+    // borrow lifetimes from Lean), so there's no UB risk from leaking it.
+    //
+    // Escape hatch: set `IX_SKIP_DROPS=0` to run destructors (for tests
+    // that assert clean teardown; not used by any production path).
+    if std::env::var("IX_SKIP_DROPS").ok().as_deref() != Some("0") {
+      if !quiet {
+        eprintln!("[rs_compile_env] skipping destructors (IX_SKIP_DROPS)");
+      }
+      std::mem::forget(compile_stt);
+      std::mem::forget(rust_env);
+      std::mem::forget(buf);
+    } else {
+      if !quiet {
+        eprintln!("[rs_compile_env] running destructors (IX_SKIP_DROPS=0)");
+      }
+      let drop_start = std::time::Instant::now();
+      drop(buf);
+      drop(compile_stt);
+      drop(rust_env);
+      if !quiet {
+        eprintln!(
+          "[rs_compile_env] destructors done in {:.2}s",
+          drop_start.elapsed().as_secs_f64(),
+        );
+      }
     }
-    let drop_start = std::time::Instant::now();
-    drop(buf);
     if !quiet {
-      eprintln!(
-        "[rs_compile_env] buf dropped in {:.2}s",
-        drop_start.elapsed().as_secs_f64(),
-      );
-    }
-
-    if !quiet {
-      eprintln!(
-        "[rs_compile_env] dropping compile_stt (consts={}, named={}, names={}, blobs={})",
-        compile_stt.env.const_count(),
-        compile_stt.env.named_count(),
-        compile_stt.env.name_count(),
-        compile_stt.env.blob_count(),
-      );
-    }
-    let drop_start = std::time::Instant::now();
-    drop(compile_stt);
-    if !quiet {
-      eprintln!(
-        "[rs_compile_env] compile_stt dropped in {:.2}s",
-        drop_start.elapsed().as_secs_f64(),
-      );
-    }
-
-    if !quiet {
-      eprintln!(
-        "[rs_compile_env] dropping rust_env Arc (strong_count={})",
-        Arc::strong_count(&rust_env),
-      );
-    }
-    let drop_start = std::time::Instant::now();
-    drop(rust_env);
-    if !quiet {
-      eprintln!(
-        "[rs_compile_env] rust_env dropped in {:.2}s",
-        drop_start.elapsed().as_secs_f64(),
-      );
       eprintln!("[rs_compile_env] returning ByteArray to Lean");
     }
     LeanIOResult::ok(ba)

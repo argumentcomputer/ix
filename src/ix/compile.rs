@@ -159,10 +159,6 @@ pub struct BlockCache {
   pub arena_roots: Vec<u64>,
   /// Reference table: unique addresses of constants referenced by Expr::Ref
   pub refs: indexmap::IndexSet<Address>,
-  /// Name-level references: for each address in `refs`, the Lean names that
-  /// compiled to that address. Used to populate `Named.name_refs` for the
-  /// decompiler's topological ordering.
-  pub ref_names: FxHashMap<Address, Vec<Name>>,
   /// Universe table: unique universes referenced by expressions
   pub univs: indexmap::IndexSet<Arc<Univ>>,
   /// Name of the constant currently being compiled (for error context).
@@ -170,24 +166,6 @@ pub struct BlockCache {
   /// Accumulated compiled Ixon expressions for collapsed call-site args.
   /// Drained into `ConstantMeta.meta_sharing` after compilation completes.
   pub surgery_sharing: Vec<Arc<Expr>>,
-}
-
-impl BlockCache {
-  /// Build the `name_refs` table for `Named`: for each address in `self.refs`,
-  /// collect the deduplicated names that compiled to it.
-  pub fn build_name_refs(&self) -> Vec<Vec<Name>> {
-    self
-      .refs
-      .iter()
-      .map(|addr| {
-        let mut names = self.ref_names.get(addr).cloned().unwrap_or_default();
-        names
-          .sort_by(|a, b| a.get_hash().as_bytes().cmp(b.get_hash().as_bytes()));
-        names.dedup();
-        names
-      })
-      .collect()
-  }
 }
 
 #[derive(Debug)]
@@ -526,7 +504,6 @@ pub fn compile_expr(
                 }
               })?;
               let (ref_idx, _) = cache.refs.insert_full(const_addr.clone());
-              cache.ref_names.entry(const_addr).or_default().push(name.clone());
               results.push(Expr::reference(ref_idx as u64, univ_indices));
               cache
                 .arena_roots
@@ -743,11 +720,6 @@ pub fn compile_expr(
             })?;
 
             let (ref_idx, _) = cache.refs.insert_full(type_addr.clone());
-            cache
-              .ref_names
-              .entry(type_addr)
-              .or_default()
-              .push(type_name.clone());
             let name_addr = compile_name(type_name, stt);
 
             stack.push(Frame::BuildProj(ref_idx as u64, idx_u64, name_addr));
@@ -1219,7 +1191,7 @@ pub(crate) fn apply_sharing_to_definition_with_stats(
 
 /// Apply sharing to an Axiom and return a Constant with stats.
 #[allow(clippy::needless_pass_by_value)]
-fn apply_sharing_to_axiom_with_stats(
+pub(crate) fn apply_sharing_to_axiom_with_stats(
   ax: Axiom,
   refs: Vec<Address>,
   univs: Vec<Arc<Univ>>,
@@ -1237,7 +1209,7 @@ fn apply_sharing_to_axiom_with_stats(
 
 /// Apply sharing to a Quotient and return a Constant with stats.
 #[allow(clippy::needless_pass_by_value)]
-fn apply_sharing_to_quotient_with_stats(
+pub(crate) fn apply_sharing_to_quotient_with_stats(
   quot: Quotient,
   refs: Vec<Address>,
   univs: Vec<Arc<Univ>>,
@@ -2756,10 +2728,9 @@ fn compile_const_inner(
     }
     if aux {
       stt.env.store_const(addr.clone(), result.constant);
-      let nr = cache.build_name_refs();
       stt.env.register_name(
         name.clone(),
-        Named::new(addr.clone(), meta.clone()).with_name_refs(nr),
+        Named::new(addr.clone(), meta.clone()),
       );
       stt.block_stats.insert(
         name.clone(),
@@ -2818,8 +2789,7 @@ fn compile_const_inner(
         stt.env.store_const(addr.clone(), result.constant);
         stt.env.register_name(
           name.clone(),
-          Named::new(addr.clone(), meta)
-            .with_name_refs(cache.build_name_refs()),
+          Named::new(addr.clone(), meta),
         );
         stt.block_stats.insert(
           name.clone(),
@@ -2846,8 +2816,7 @@ fn compile_const_inner(
         stt.env.store_const(addr.clone(), result.constant);
         stt.env.register_name(
           name.clone(),
-          Named::new(addr.clone(), meta)
-            .with_name_refs(cache.build_name_refs()),
+          Named::new(addr.clone(), meta),
         );
         stt.block_stats.insert(
           name.clone(),
@@ -2880,8 +2849,7 @@ fn compile_const_inner(
           stt.env.store_const(addr.clone(), result.constant);
           stt.env.register_name(
             name.clone(),
-            Named::new(addr.clone(), meta.clone())
-              .with_name_refs(cache.build_name_refs()),
+            Named::new(addr.clone(), meta.clone()),
           );
           stt.block_stats.insert(
             name.clone(),
@@ -3029,7 +2997,6 @@ fn compile_mutual(
   let compiled =
     compile_mutual_block(ixon_mutuals, refs, univs, Some(&name_str));
   let block_addr = compiled.addr.clone();
-  let block_name_refs = cache.build_name_refs();
 
   if aux {
     stt.env.store_const(block_addr.clone(), compiled.constant);
@@ -3085,8 +3052,7 @@ fn compile_mutual(
             stt.env.store_const(proj_addr.clone(), indc_proj);
             stt.env.register_name(
               n.clone(),
-              Named::new(proj_addr.clone(), meta.clone())
-                .with_name_refs(block_name_refs.clone()),
+              Named::new(proj_addr.clone(), meta.clone()),
             );
             stt.name_to_addr.insert(n.clone(), proj_addr.clone());
           } else {
@@ -3110,8 +3076,7 @@ fn compile_mutual(
               stt.env.store_const(ctor_addr.clone(), ctor_proj);
               stt.env.register_name(
                 ctor.cnst.name.clone(),
-                Named::new(ctor_addr.clone(), ctor_meta.clone())
-                  .with_name_refs(block_name_refs.clone()),
+                Named::new(ctor_addr.clone(), ctor_meta.clone()),
               );
               stt.name_to_addr.insert(ctor.cnst.name.clone(), ctor_addr);
             } else {
@@ -3134,8 +3099,7 @@ fn compile_mutual(
         stt.env.store_const(proj_addr.clone(), proj);
         stt.env.register_name(
           n.clone(),
-          Named::new(proj_addr.clone(), meta.clone())
-            .with_name_refs(block_name_refs.clone()),
+          Named::new(proj_addr.clone(), meta.clone()),
         );
         stt.name_to_addr.insert(n.clone(), proj_addr);
       } else {

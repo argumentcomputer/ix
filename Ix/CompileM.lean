@@ -1924,6 +1924,18 @@ def compileEnvParallel (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
 @[extern "rs_compile_env"]
 opaque rsCompileEnvBytesFFI : @& List (Lean.Name × Lean.ConstantInfo) → IO ByteArray
 
+/-- FFI: 8-phase validation of the aux_gen compile pipeline (compile +
+    decompile + roundtrip + alpha-equivalence + nested-detect checks).
+    Returns total failure count across all phases.
+
+    Shared between the `ix validate` CLI subcommand (`Ix.Cli.ValidateCmd`)
+    and the `validate-aux` test runner (`Tests.Ix.Compile.ValidateAux`).
+    The underlying Rust function is `rs_compile_validate_aux` in
+    `src/ffi/lean_env.rs`. -/
+@[extern "rs_compile_validate_aux"]
+opaque rsCompileValidateAuxFFI
+  : @& List (Lean.Name × Lean.ConstantInfo) → USize
+
 /-- Compile a Lean environment to Ixon.Env bytes using the Rust compiler. -/
 def rsCompileEnvBytes (leanEnv : Lean.Environment) : IO ByteArray := do
   let constList := leanEnv.constants.toList

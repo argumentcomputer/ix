@@ -31,12 +31,19 @@ pub(crate) enum BelowConstant {
 }
 
 /// A generated `.below` definition (Type-level case).
+///
+/// `is_unsafe` mirrors the parent inductive. Lean's
+/// `mkDefinitionValInferringUnsafe` (`refs/lean4/src/Lean/Environment.lean:2790`,
+/// called from `BRecOn.lean:106`) emits `safety := .unsafe` whenever the
+/// type or value references an unsafe constant — for unsafe inductives this
+/// always triggers because `.below` mentions the parent inductive's `.rec`.
 #[derive(Clone)]
 pub(crate) struct BelowDef {
   pub name: Name,
   pub level_params: Vec<Name>,
   pub typ: LeanExpr,
   pub value: LeanExpr,
+  pub is_unsafe: bool,
 }
 
 /// A generated `.below` inductive (Prop-level case).
@@ -54,6 +61,11 @@ pub(crate) struct BelowIndc {
   /// occurs-check / positivity; propagating it keeps the content hash aligned
   /// with Lean's auto-generated `.below` via `IndPredBelow`.
   pub is_reflexive: bool,
+  /// Mirrors the parent inductive's `is_unsafe`. Propagates to both the
+  /// `InductiveVal` emitted for this `.below` and every `ConstructorVal`
+  /// derived from it. Lean's `IndPredBelow` inherits the parent inductive's
+  /// safety because `.below`'s ctors mention the parent's ctors transitively.
+  pub is_unsafe: bool,
   pub typ: LeanExpr,
   pub ctors: Vec<BelowCtor>,
 }
@@ -169,6 +181,10 @@ pub(crate) fn rename_below_indc(
     n_params: canonical.n_params,
     n_indices: canonical.n_indices,
     is_reflexive: canonical.is_reflexive,
+    // `.below` shares the parent's `is_unsafe`; when aliasing across
+    // alpha-collapsed classes both parents have the same safety (mutual-block
+    // invariant), so cloning the canonical's flag is correct.
+    is_unsafe: canonical.is_unsafe,
     typ: replace_const_names(&canonical.typ, &name_map),
     ctors: renamed_ctors,
   }
@@ -440,6 +456,15 @@ fn build_below_def(
     level_params: below_level_params,
     typ: below_type,
     value: below_value,
+    // `.below` (Type-level) references the `.rec` it was built from, so
+    // `mkDefinitionValInferringUnsafe` propagates that recursor's safety.
+    // For originals `rec_val.is_unsafe` matches the class rep; for nested
+    // aux members `ind` is the external inductive (whose own safety is
+    // unrelated — think `List` in `_nested.List_1`), so we can't read the
+    // flag off `ind`. The canonical recursor was generated with the
+    // block-wide `is_unsafe` (see `aux_gen/recursor.rs`), which is what
+    // Lean's `mkBelowFromRec` sees during elaboration.
+    is_unsafe: rec_val.is_unsafe,
   })
 }
 
@@ -754,6 +779,10 @@ fn build_below_indc(
     // recursive field in the parent (the defining trait of a reflexive
     // inductive) produces a higher-order `.below` IH field.
     is_reflexive: ind.is_reflexive,
+    // Prop-level `.below` is an inductive whose constructors mirror the
+    // parent's. Lean's `IndPredBelow` inherits the parent inductive's
+    // safety (`env.hasUnsafe` fires via the parent's ctor types).
+    is_unsafe: ind.is_unsafe,
     typ: below_type,
     ctors,
   })
@@ -1466,10 +1495,283 @@ pub(super) fn level_max(a: &Level, b: &Level) -> Level {
   Level::max(a.clone(), b.clone())
 }
 
-// NOTE: a right-associating `normalize_level` used to live here but was
-// never called — it was flagged as display/debugging-only and Lean's
-// actual stored levels preserve left-association from occurrence-level
-// trees. Removed in Round 4 cleanup.
+/// Normalizing level rewrite, mirroring Lean's `Level.normalize`
+/// (`refs/lean4/src/Lean/Level.lean:379-401`). Applied by `inferForallType`
+/// before returning the sort of a forall type, so any level reported by
+/// `getLevel` on a forall-typed expression is already in this canonical
+/// form. Without it, our level tree stays in `mkLevelMax'` / `mkLevelIMax'`
+/// local-simp form — semantically equivalent, but with structurally
+/// different `max`/`Succ` nestings that break hash-level equality against
+/// the original Lean-produced aux_gen constants.
+///
+/// The algorithm:
+///   1. If already in `Succ*(Param|MVar|Zero)` shape, return as-is.
+///   2. Strip the outer offset `k`.
+///   3. For `max l1 l2`: flatten to a list of recursively-normalized
+///      atoms, sort with `norm_lt`, drop explicit numerals that are
+///      subsumed by a larger non-explicit offset, rebuild with `mk_max_aux`
+///      combining same-base-level items by their max offset, and finally
+///      re-add `k`.
+///   4. For `imax l1 l2`:
+///      - if `l2` is never zero, normalize `max l1 l2` and add `k`.
+///      - else normalize each side separately and rebuild via
+///        `mk_imax_aux`, then add `k`.
+pub(super) fn level_normalize(l: &Level) -> Level {
+  if is_already_normalized_cheap(l) {
+    return l.clone();
+  }
+  let k = get_offset(l);
+  let u = get_level_offset(l).clone();
+  match u.as_data() {
+    LevelData::Max(l1, l2, _) => {
+      let mut lvls: Vec<Level> = Vec::new();
+      get_max_args_aux(l1, false, &mut lvls);
+      get_max_args_aux(l2, false, &mut lvls);
+      lvls.sort_by(|a, b| {
+        if norm_lt(a, b) {
+          std::cmp::Ordering::Less
+        } else if norm_lt(b, a) {
+          std::cmp::Ordering::Greater
+        } else {
+          std::cmp::Ordering::Equal
+        }
+      });
+      let first_non_explicit = skip_explicit(&lvls, 0);
+      let i = if is_explicit_subsumed(&lvls, first_non_explicit) {
+        first_non_explicit
+      } else {
+        first_non_explicit.saturating_sub(1)
+      };
+      let lvl1 = &lvls[i];
+      let prev = get_level_offset(lvl1).clone();
+      let prev_k = get_offset(lvl1);
+      mk_max_aux(&lvls, k, i + 1, &prev, prev_k, &Level::zero())
+    },
+    LevelData::Imax(l1, l2, _) => {
+      if is_never_zero(l2) {
+        let m = Level::max(l1.clone(), l2.clone());
+        add_offset(&level_normalize(&m), k)
+      } else {
+        let l1n = level_normalize(l1);
+        let l2n = level_normalize(l2);
+        add_offset(&mk_imax_aux(&l1n, &l2n), k)
+      }
+    },
+    // Zero / Param: already normalized.
+    _ => l.clone(),
+  }
+}
+
+/// Quick check: `l` is already in `Succ*(Param|MVar|Zero)` form.
+fn is_already_normalized_cheap(l: &Level) -> bool {
+  match l.as_data() {
+    LevelData::Zero(_)
+    | LevelData::Param(_, _)
+    | LevelData::Mvar(_, _) => true,
+    LevelData::Succ(inner, _) => is_already_normalized_cheap(inner),
+    _ => false,
+  }
+}
+
+/// Add `k` `Succ` wrappers to `l`. Matches Lean's `Level.addOffset`.
+fn add_offset(l: &Level, k: u64) -> Level {
+  let mut cur = l.clone();
+  for _ in 0..k {
+    cur = Level::succ(cur);
+  }
+  cur
+}
+
+/// Recognize `Level.isNeverZero`: `l` is provably non-zero for every
+/// parameter assignment. Matches the kernel's `isNeverZero` check used by
+/// `mkLevelIMax` to decide whether `imax a b` collapses to `max a b`.
+fn is_never_zero(l: &Level) -> bool {
+  match l.as_data() {
+    LevelData::Succ(_, _) => true,
+    LevelData::Max(a, b, _) => is_never_zero(a) || is_never_zero(b),
+    LevelData::Imax(_, b, _) => is_never_zero(b),
+    _ => false,
+  }
+}
+
+/// Flatten a nested `max` tree, recursively normalizing any sub-term that
+/// isn't yet known to be normalized. Matches Lean's `getMaxArgsAux` with
+/// `normalize` as the recursive normalizer.
+fn get_max_args_aux(l: &Level, already_normalized: bool, out: &mut Vec<Level>) {
+  if let LevelData::Max(l1, l2, _) = l.as_data() {
+    get_max_args_aux(l1, already_normalized, out);
+    get_max_args_aux(l2, already_normalized, out);
+    return;
+  }
+  if already_normalized {
+    out.push(l.clone());
+  } else {
+    get_max_args_aux(&level_normalize(l), true, out);
+  }
+}
+
+/// `ctor_to_nat` for total-order tie-breaking in `norm_lt`. Matches Lean's
+/// `Level.ctorToNat`; MVar gets slot 2 so our numbering lines up even
+/// though MVars should never survive to the aux_gen output.
+fn ctor_to_nat(l: &Level) -> u32 {
+  match l.as_data() {
+    LevelData::Zero(_) => 0,
+    LevelData::Param(_, _) => 1,
+    LevelData::Mvar(_, _) => 2,
+    LevelData::Succ(_, _) => 3,
+    LevelData::Max(_, _, _) => 4,
+    LevelData::Imax(_, _, _) => 5,
+  }
+}
+
+/// Total order on levels used to sort `max` children during normalization.
+/// Matches Lean's `normLt` / `normLtAux`, with `Succ` offsets floated into
+/// an accumulator so that `succ^n(x)` and `succ^m(x)` compare by `(x, n)`.
+fn norm_lt(a: &Level, b: &Level) -> bool {
+  norm_lt_aux(a, 0, b, 0)
+}
+
+fn norm_lt_aux(l1: &Level, k1: u64, l2: &Level, k2: u64) -> bool {
+  // Float Succ offsets into `k1`/`k2`.
+  if let LevelData::Succ(inner, _) = l1.as_data() {
+    return norm_lt_aux(inner, k1 + 1, l2, k2);
+  }
+  if let LevelData::Succ(inner, _) = l2.as_data() {
+    return norm_lt_aux(l1, k1, inner, k2 + 1);
+  }
+  // Equal-kind recursion for Max / IMax.
+  match (l1.as_data(), l2.as_data()) {
+    (LevelData::Max(a1, a2, _), LevelData::Max(b1, b2, _)) => {
+      if l1 == l2 {
+        return k1 < k2;
+      }
+      if a1 != b1 {
+        return norm_lt_aux(a1, 0, b1, 0);
+      }
+      norm_lt_aux(a2, 0, b2, 0)
+    },
+    (LevelData::Imax(a1, a2, _), LevelData::Imax(b1, b2, _)) => {
+      if l1 == l2 {
+        return k1 < k2;
+      }
+      if a1 != b1 {
+        return norm_lt_aux(a1, 0, b1, 0);
+      }
+      norm_lt_aux(a2, 0, b2, 0)
+    },
+    (LevelData::Param(n1, _), LevelData::Param(n2, _)) => {
+      if n1 == n2 {
+        k1 < k2
+      } else {
+        // Lean uses lexicographic `Name.lt`; we approximate with the
+        // pretty-printed form. Name equality comparisons we care about
+        // are for same-declaration level params whose pretty names are
+        // already unique strings.
+        n1.pretty() < n2.pretty()
+      }
+    },
+    _ => {
+      if l1 == l2 {
+        k1 < k2
+      } else {
+        ctor_to_nat(l1) < ctor_to_nat(l2)
+      }
+    },
+  }
+}
+
+/// Returns the index of the first level in `lvls` that isn't an explicit
+/// numeral (`succ^n(zero)`). Used to locate the split point in the sorted
+/// `max`-argument list.
+fn skip_explicit(lvls: &[Level], start: usize) -> usize {
+  let mut i = start;
+  while i < lvls.len() && matches!(get_level_offset(&lvls[i]).as_data(), LevelData::Zero(_)) {
+    i += 1;
+  }
+  i
+}
+
+/// True when the largest explicit numeral in `lvls[..first_non_explicit]`
+/// is <= the offset of some non-explicit level (which therefore dominates).
+fn is_explicit_subsumed(lvls: &[Level], first_non_explicit: usize) -> bool {
+  if first_non_explicit == 0 {
+    return false;
+  }
+  let max_explicit = get_offset(&lvls[first_non_explicit - 1]);
+  let mut i = first_non_explicit;
+  while i < lvls.len() {
+    if get_offset(&lvls[i]) >= max_explicit {
+      return true;
+    }
+    i += 1;
+  }
+  false
+}
+
+/// `accMax result prev offset`: wrap `prev` in `offset` Succs then `max`
+/// it into `result` (treating `zero` as identity). Used by `mk_max_aux` to
+/// accumulate distinct base-levels while re-adding the stripped offset.
+fn acc_max(result: &Level, prev: &Level, offset: u64) -> Level {
+  let p = add_offset(prev, offset);
+  if matches!(result.as_data(), LevelData::Zero(_)) {
+    p
+  } else {
+    Level::max(result.clone(), p)
+  }
+}
+
+/// Scan the sorted `lvls` and combine same-base-level items by their max
+/// offset, producing a right-combined `max` chain + the stripped outer
+/// offset `extra_k`. Matches Lean's `mkMaxAux`.
+fn mk_max_aux(
+  lvls: &[Level],
+  extra_k: u64,
+  start: usize,
+  init_prev: &Level,
+  init_prev_k: u64,
+  init_result: &Level,
+) -> Level {
+  let mut i = start;
+  let mut prev = init_prev.clone();
+  let mut prev_k = init_prev_k;
+  let mut result = init_result.clone();
+  while i < lvls.len() {
+    let lvl = &lvls[i];
+    let curr = get_level_offset(lvl).clone();
+    let curr_k = get_offset(lvl);
+    if curr == prev {
+      prev = curr;
+      prev_k = prev_k.max(curr_k);
+    } else {
+      result = acc_max(&result, &prev, extra_k + prev_k);
+      prev = curr;
+      prev_k = curr_k;
+    }
+    i += 1;
+  }
+  acc_max(&result, &prev, extra_k + prev_k)
+}
+
+/// `mkIMaxAux`: build `imax l1 l2` with the kernel's cheap rewrites. Used
+/// by `level_normalize` for the `imax` case where `l2` isn't provably
+/// non-zero (otherwise the outer branch collapses `imax` to `max`).
+fn mk_imax_aux(l1: &Level, l2: &Level) -> Level {
+  if matches!(l2.as_data(), LevelData::Zero(_)) {
+    return Level::zero();
+  }
+  if matches!(l1.as_data(), LevelData::Zero(_)) {
+    return l2.clone();
+  }
+  if let LevelData::Succ(inner, _) = l1.as_data() {
+    if matches!(inner.as_data(), LevelData::Zero(_)) {
+      return l2.clone();
+    }
+  }
+  if l1 == l2 {
+    return l1.clone();
+  }
+  Level::imax(l1.clone(), l2.clone())
+}
 
 /// Convert a `KUniv<Meta>` back to a `Level`, using `param_names` to recover
 /// `Param` names from de Bruijn indices.

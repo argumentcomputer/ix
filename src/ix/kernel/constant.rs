@@ -11,8 +11,16 @@ use super::id::KId;
 use super::mode::KernelMode;
 
 /// A recursor computation rule.
+///
+/// `ctor` carries the Lean name of the constructor this rule dispatches on.
+/// The kernel doesn't use it for dispatch (the positional `cidx` on
+/// `KConst::Ctor` does), but we preserve it as a metadata field so LEON
+/// ingress ↔ egress roundtrips the full `RecursorRule { ctor, n_fields,
+/// rhs }` shape. In `Anon` mode the field is `()` and does not participate
+/// in hashing or equality.
 #[derive(Clone, Debug)]
 pub struct RecRule<M: KernelMode> {
+  pub ctor: M::MField<Name>,
   pub fields: u64,
   pub rhs: KExpr<M>,
 }

@@ -14,9 +14,12 @@ use rustc_hash::FxHashMap;
 use dashmap::DashMap;
 
 use crate::ix::address::Address;
-use crate::ix::env::{BinderInfo, Name};
+use crate::ix::env::{
+  BinderInfo, ConstantInfo as LeanCI, DefinitionSafety, Env as LeanEnv, Name,
+  ReducibilityHints,
+};
 use crate::ix::ixon::constant::{
-  Constant, ConstantInfo as IxonCI, MutConst as IxonMutConst,
+  Constant, ConstantInfo as IxonCI, DefKind, MutConst as IxonMutConst,
 };
 use crate::ix::ixon::env::Env as IxonEnv;
 use crate::ix::ixon::expr::Expr as IxonExpr;
@@ -32,7 +35,7 @@ use super::env::{InternTable, KEnv};
 use super::expr::{KExpr, MData};
 use super::id::KId;
 use super::level::KUniv;
-use super::mode::KernelMode;
+use super::mode::{KernelMode, Meta};
 
 // ============================================================================
 // Lookup tables
@@ -77,21 +80,44 @@ fn resolve_level_params(
   lvl_addrs.iter().map(|a| resolve_name(a, names)).collect()
 }
 
-/// Resolve a ConstantMeta `all` field to `Vec<KId<M>>`.
+/// Resolve a list of **Lean-name-hash** addresses to `KId<M>` pairs whose
+/// `addr` is the **projection-content address** under which the corresponding
+/// KConst is actually stored in `KEnv`.
+///
+/// The callers (`build_mut_ctx`, `ingress_muts_inductive`'s `ctor_ids`, and
+/// `lean_all` reconstruction in `ingress_defn` / `ingress_recursor` /
+/// `ingress_muts_inductive`) pull addresses out of `ConstantMetaInfo::*::{all,
+/// ctx, ctors}`. Those fields store **name-hash** addresses (they were written
+/// by compile via `compile_name`), but each KConst is stored in `KEnv` under
+/// its **projection** address (the content hash of the `IPrj` / `CPrj` / `RPrj`
+/// / `DPrj` struct, or `block_addr` for singleton Muts classes). The two
+/// address spaces are different, so we have to round-trip through the Lean
+/// name to recover the projection address:
+///
+///   name-hash-addr → Lean Name → `ixon_env.named[name].addr` → projection
+///
+/// If the `name_to_addr` lookup misses, that means the Named entry we expected
+/// the compile pipeline to register is missing — bailing with an error is far
+/// better than guessing (the prior behavior synthesized a name-hash address as
+/// a fallback, which produced **ghost KConsts**: KIds referring to addresses
+/// that no KConst was ever stored at, causing obscure downstream lookup
+/// failures and alpha-collapse confusion).
 fn resolve_all<M: KernelMode>(
   all_addrs: &[Address],
   names: &FxHashMap<Address, Name>,
   name_to_addr: &FxHashMap<Name, Address>,
-) -> Vec<KId<M>> {
+) -> Result<Vec<KId<M>>, String> {
   all_addrs
     .iter()
     .map(|name_addr| {
       let name = resolve_name(name_addr, names);
-      let addr = name_to_addr
-        .get(&name)
-        .cloned()
-        .unwrap_or_else(|| Address::from_blake3_hash(*name.get_hash()));
-      KId::new(addr, M::meta_field(name))
+      let addr = name_to_addr.get(&name).cloned().ok_or_else(|| {
+        format!(
+          "resolve_all: Named entry for '{name}' missing in ixon_env.named \
+           (expected projection or block address for the compiled constant)"
+        )
+      })?;
+      Ok(KId::new(addr, M::meta_field(name)))
     })
     .collect()
 }
@@ -109,7 +135,7 @@ fn build_mut_ctx<M: KernelMode>(
   meta: &ConstantMeta,
   names: &FxHashMap<Address, Name>,
   name_to_addr: &FxHashMap<Name, Address>,
-) -> Vec<KId<M>> {
+) -> Result<Vec<KId<M>>, String> {
   resolve_all(get_ctx_addrs(meta), names, name_to_addr)
 }
 
@@ -724,7 +750,7 @@ fn ingress_defn<M: KernelMode>(
     sharing,
     refs,
     univs,
-    mut_ctx: build_mut_ctx(meta, names, name_to_addr),
+    mut_ctx: build_mut_ctx(meta, names, name_to_addr)?,
     arena,
     names,
     lvls: level_params.clone(),
@@ -734,7 +760,7 @@ fn ingress_defn<M: KernelMode>(
 
   let typ = ingress_expr(&def.typ, type_root, &ctx, ixon_env, &mut cache)?;
   let value = ingress_expr(&def.value, value_root, &ctx, ixon_env, &mut cache)?;
-  let lean_all = resolve_all(&all_addrs, names, name_to_addr);
+  let lean_all = resolve_all(&all_addrs, names, name_to_addr)?;
 
   let name = resolve_name(
     match &meta.info {
@@ -776,25 +802,26 @@ fn ingress_recursor<M: KernelMode>(
   intern: &InternTable<M>,
 ) -> Result<Vec<(KId<M>, KConst<M>)>, String> {
   let mut cache: ExprCache<M> = FxHashMap::default();
-  let (level_params, arena, type_root, rule_roots, all_addrs) = match &meta.info
-  {
-    ConstantMetaInfo::Rec {
-      lvls, arena, type_root, rule_roots, all, ..
-    } => (
-      resolve_level_params(lvls, names),
-      arena,
-      *type_root,
-      rule_roots.clone(),
-      all.clone(),
-    ),
-    _ => (vec![], &DEFAULT_ARENA, 0, vec![], vec![]),
-  };
+  let (level_params, arena, type_root, rule_roots, rule_ctor_addrs, all_addrs) =
+    match &meta.info {
+      ConstantMetaInfo::Rec {
+        lvls, arena, type_root, rule_roots, rules, all, ..
+      } => (
+        resolve_level_params(lvls, names),
+        arena,
+        *type_root,
+        rule_roots.clone(),
+        rules.clone(),
+        all.clone(),
+      ),
+      _ => (vec![], &DEFAULT_ARENA, 0, vec![], vec![], vec![]),
+    };
 
   let ctx = Ctx {
     sharing,
     refs,
     univs,
-    mut_ctx: build_mut_ctx(meta, names, name_to_addr),
+    mut_ctx: build_mut_ctx(meta, names, name_to_addr)?,
     arena,
     names,
     lvls: level_params.clone(),
@@ -808,12 +835,29 @@ fn ingress_recursor<M: KernelMode>(
     .iter()
     .enumerate()
     .map(|(i, rule)| {
+      // If the meta arm above matched `Rec`, we have one `rule_root` per
+      // Ixon rule (compile emits them in lockstep). The `DEFAULT_ARENA`
+      // fallback arm supplies an empty `rule_roots` vec, in which case
+      // falling back to root 0 is fine because the arena is empty — every
+      // arena index then misses and degrades to `ExprMetaData::Leaf`.
       let rhs_root = rule_roots.get(i).copied().unwrap_or(0);
       let rhs = ingress_expr(&rule.rhs, rhs_root, &ctx, ixon_env, &mut cache)?;
-      Ok(RecRule { fields: rule.fields, rhs })
+      // `ConstantMetaInfo::Rec::rules[i]` is the name-hash address of the
+      // i-th rule's ctor. Resolve it through the names map; fall back to
+      // anonymous when metadata is absent (recursor compiled without
+      // meta, e.g. synthetic kernel tests).
+      let ctor_name = rule_ctor_addrs
+        .get(i)
+        .map(|a| resolve_name(a, names))
+        .unwrap_or_else(Name::anon);
+      Ok(RecRule {
+        ctor: M::meta_field(ctor_name),
+        fields: rule.fields,
+        rhs,
+      })
     })
     .collect();
-  let lean_all = resolve_all(&all_addrs, names, name_to_addr);
+  let lean_all = resolve_all(&all_addrs, names, name_to_addr)?;
 
   let name = resolve_name(
     match &meta.info {
@@ -1004,7 +1048,7 @@ fn ingress_muts_inductive<M: KernelMode>(
   };
 
   let mut cache: ExprCache<M> = FxHashMap::default();
-  let mut_ctx = build_mut_ctx(meta, names, name_to_addr);
+  let mut_ctx = build_mut_ctx(meta, names, name_to_addr)?;
   let ctx = Ctx {
     sharing: &block_constant.sharing,
     refs: &block_constant.refs,
@@ -1018,18 +1062,15 @@ fn ingress_muts_inductive<M: KernelMode>(
   };
 
   let typ = ingress_expr(&ind.typ, type_root, &ctx, ixon_env, &mut cache)?;
-  let lean_all = resolve_all(&all_addrs, names, name_to_addr);
-  let ctor_ids: Vec<KId<M>> = ctor_addrs
-    .iter()
-    .map(|a| {
-      let n = resolve_name(a, names);
-      let ca = name_to_addr
-        .get(&n)
-        .cloned()
-        .unwrap_or_else(|| Address::from_blake3_hash(*n.get_hash()));
-      KId::new(ca, M::meta_field(n))
-    })
-    .collect();
+  let lean_all = resolve_all(&all_addrs, names, name_to_addr)?;
+  // Constructor KIds: `ctor_addrs` holds the **name-hash** addresses the
+  // compile pass stored in `ConstantMetaInfo::Indc::ctors`, but each Ctor
+  // `KConst` is registered in the kernel env under its **projection**
+  // address (`CPrj` content hash). We must therefore round-trip through
+  // the Lean name to look up the projection address — see `resolve_all`
+  // for the rationale. Calling `resolve_all` directly reuses that error
+  // handling (error on missing Named instead of guessing a name-hash).
+  let ctor_ids: Vec<KId<M>> = resolve_all(&ctor_addrs, names, name_to_addr)?;
 
   let name = resolve_name(
     match &meta.info {
@@ -1059,28 +1100,44 @@ fn ingress_muts_inductive<M: KernelMode>(
     },
   )];
 
-  // Emit constructors
+  // Emit constructors. For each position `cidx`, `ctor_addrs[cidx]` is the
+  // name-hash address of the ctor's Lean name; from that we resolve the name
+  // and then look up its per-ctor ConstantMeta (holding the ctor's own arena
+  // and type_root). These must be present — the parent inductive's meta
+  // doesn't carry ctor-specific expression metadata inline, so if the Named
+  // entry is missing we'd be roundtripping with no arena and synthesize junk
+  // binder names. Error loudly instead of silently falling back.
   for (cidx, ctor) in ind.ctors.iter().enumerate() {
     cache.clear();
-    let ctor_id = match ctor_ids.get(cidx).cloned() {
-      Some(id) => id,
-      None => {
-        return Err(format!("missing ctor_id for constructor index {cidx}"));
+    let ctor_id = ctor_ids.get(cidx).cloned().ok_or_else(|| {
+      format!("missing ctor_id for constructor index {cidx}")
+    })?;
+    let ctor_name_addr = ctor_addrs.get(cidx).ok_or_else(|| {
+      format!("missing ctor_addrs entry for constructor index {cidx}")
+    })?;
+    let ctor_name = resolve_name(ctor_name_addr, names);
+    let ctor_named = ixon_env.lookup_name(&ctor_name).ok_or_else(|| {
+      format!(
+        "missing Named entry for ctor '{ctor_name}' (cidx={cidx}) — \
+         per-ctor metadata (arena, type_root, lvls) must be registered \
+         for every constructor of this inductive block"
+      )
+    })?;
+
+    let (ctor_lvl_params, ctor_arena, ctor_type_root) = match &ctor_named
+      .meta
+      .info
+    {
+      ConstantMetaInfo::Ctor { lvls, arena, type_root, .. } => {
+        (resolve_level_params(lvls, names), arena, *type_root)
+      },
+      other => {
+        return Err(format!(
+          "ctor '{ctor_name}' has unexpected meta kind '{}' (expected Ctor)",
+          other.kind_name()
+        ));
       },
     };
-
-    let ctor_name =
-      resolve_name(ctor_addrs.get(cidx).unwrap_or(&self_id.addr), names);
-    let ctor_named = ixon_env.lookup_name(&ctor_name);
-    let ctor_meta = ctor_named.as_ref().map(|n| &n.meta);
-
-    let (ctor_lvl_params, ctor_arena, ctor_type_root) =
-      match ctor_meta.map(|m| &m.info) {
-        Some(ConstantMetaInfo::Ctor { lvls, arena, type_root, .. }) => {
-          (resolve_level_params(lvls, names), arena, *type_root)
-        },
-        _ => (level_params.clone(), &DEFAULT_ARENA, 0),
-      };
 
     let ctor_ctx = Ctx {
       sharing: &block_constant.sharing,
@@ -1140,6 +1197,19 @@ fn ingress_muts_block<M: KernelMode>(
   let mut results: Vec<(KId<M>, KConst<M>)> = Vec::new();
 
   for (i, member) in members.iter().enumerate() {
+    // `all[i][0]` is the name-hash address of this member's canonical Lean
+    // name; we read the per-member metadata (arena, type_root, etc.) from
+    // that Named entry. Note the address distinction: `primary_name_addr`
+    // is a *name-content* hash (Blake3 of the Lean name components),
+    // whereas `member_named.addr` is the *projection-constant* content
+    // hash (address of the IPrj/CPrj/RPrj/DPrj struct that projects this
+    // member out of the enclosing Muts block). We want the projection
+    // address for the `KId`, because that's the address under which every
+    // `Expr::Ref` to this member in the rest of the env was registered.
+    //
+    // Error loudly if the Named entry is missing — the Muts-registration
+    // pass in `compile/mutual.rs` is supposed to emit one per member, and
+    // a missing entry means the compile phase dropped work we need here.
     let primary_name_addr = all
       .get(i)
       .and_then(|cls| cls.first())
@@ -1210,7 +1280,6 @@ fn ingress_muts_block<M: KernelMode>(
 // Lightweight LeanExpr → KExpr ingress (compile-side)
 // ============================================================================
 
-use super::mode::Meta;
 use crate::ix::env::{
   Expr as LeanExpr, ExprData as LeanExprData, Level, LevelData,
 };
@@ -1294,10 +1363,13 @@ pub fn lean_expr_to_zexpr(
   name_to_ixon_addr: Option<&dashmap::DashMap<Name, Address>>,
   aux_n2a: Option<&dashmap::DashMap<Name, Address>>,
 ) -> KExpr<Meta> {
-  // Uncached path — only for callers without KEnv access.
+  // Uncached path — only for callers without KEnv access. Top-level
+  // expressions start with an empty binder stack.
+  let mut binder_names: Vec<Name> = Vec::new();
   let e = lean_expr_to_zexpr_raw(
     expr,
     param_names,
+    &mut binder_names,
     intern,
     name_to_ixon_addr,
     aux_n2a,
@@ -1317,9 +1389,11 @@ pub fn lean_expr_to_zexpr_with_kenv(
   aux_n2a: Option<&dashmap::DashMap<Name, Address>>,
 ) -> KExpr<Meta> {
   let pn_h = param_names_hash(param_names);
+  let mut binder_names: Vec<Name> = Vec::new();
   lean_expr_to_zexpr_cached(
     expr,
     param_names,
+    &mut binder_names,
     &kenv.intern,
     n2a,
     aux_n2a,
@@ -1331,9 +1405,25 @@ pub fn lean_expr_to_zexpr_with_kenv(
 /// Cached variant: uses `ingress_cache` (if provided) to avoid re-converting
 /// shared LeanExpr subtrees. The cache is keyed by `(expr_hash, pn_hash)` to
 /// account for different level param bindings producing different KExprs.
+///
+/// `binder_names` is the stack of enclosing binder names (outermost first),
+/// pushed/popped around each Lam/All/Let body recursion. It's used to
+/// populate `ExprData::Var`'s `name` metadata by de Bruijn lookup — a
+/// cosmetic field for pretty-printing that doesn't affect type-checking.
+/// Top-level callers pass an empty `Vec`. Mirrors the `binder_names` stack
+/// used by the iterative Ixon-side `ingress_expr`.
+///
+/// Note: the cache key does not include `binder_names`, so a cache hit
+/// returns a `KExpr` whose Var names reflect the FIRST context the subtree
+/// was traversed under. The kernel itself never consults Var names (they're
+/// erased in Anon mode, ignored in Meta mode by type checking), and egress
+/// drops them on the way back to Lean's (nameless) Bvar, so this staleness
+/// is benign. Matches the behavior of `ixon_ingress`'s iterative cache.
+#[allow(clippy::too_many_arguments)]
 pub fn lean_expr_to_zexpr_cached(
   expr: &LeanExpr,
   param_names: &[Name],
+  binder_names: &mut Vec<Name>,
   intern: &InternTable<Meta>,
   n2a: Option<&dashmap::DashMap<Name, Address>>,
   aux_n2a: Option<&dashmap::DashMap<Name, Address>>,
@@ -1352,6 +1442,7 @@ pub fn lean_expr_to_zexpr_cached(
   let e = lean_expr_to_zexpr_raw(
     expr,
     param_names,
+    binder_names,
     intern,
     n2a,
     aux_n2a,
@@ -1369,63 +1460,230 @@ pub fn lean_expr_to_zexpr_cached(
   result
 }
 
+#[allow(clippy::too_many_arguments)]
 fn lean_expr_to_zexpr_raw(
   expr: &LeanExpr,
   pn: &[Name],
+  binder_names: &mut Vec<Name>,
   intern: &InternTable<Meta>,
   n2a: Option<&dashmap::DashMap<Name, Address>>,
   aux_n2a: Option<&dashmap::DashMap<Name, Address>>,
   cache: Option<&DashMap<(Addr, Addr), KExpr<Meta>>>,
   pn_hash: Option<&Addr>,
 ) -> KExpr<Meta> {
-  // Recursive calls go through the cached entry point.
-  let go = |e: &LeanExpr| -> KExpr<Meta> {
-    lean_expr_to_zexpr_cached(e, pn, intern, n2a, aux_n2a, cache, pn_hash)
-  };
+  // Walk through any consecutive `Mdata` wrappers first, accumulating them
+  // as kernel-side `MData` layers. Lean represents `Mdata(a, Mdata(b, e))`
+  // as two separate AST nodes; the kernel stores the layers in a single
+  // `Vec<MData>` attached to the innermost node via the `_mdata` constructors.
+  //
+  // The accumulation is **essential for roundtrip fidelity** — earlier
+  // versions discarded the kv-map here, which silently lost every Lean
+  // mdata annotation (`_recApp`, `_inaccessible`, `noImplicitLambda`,
+  // `borrowed`, `sunfoldMatch`, `save_info`, etc.). The `kernel-lean-
+  // roundtrip` test guards against regressing that.
+  let mut mdata_layers: Vec<MData> = Vec::new();
+  let mut cur = expr;
+  while let LeanExprData::Mdata(kv, inner, _) = cur.as_data() {
+    mdata_layers.push(kv.clone());
+    cur = inner;
+  }
 
-  match expr.as_data() {
+  // Emit the `_mdata` variant of the appropriate constructor. An empty
+  // `mdata_layers` hashes identically to the non-`_mdata` constructor (both
+  // go through `no_mdata::<Meta>()` which is just `Vec::new()`), so we
+  // don't need a separate empty-case branch.
+  //
+  // For subtree recursion into a fresh binder context, we push the binder
+  // name onto `binder_names`, recurse, then pop — mirroring the Ixon side
+  // of ingress.
+  match cur.as_data() {
     LeanExprData::Bvar(idx, _) => {
-      KExpr::var(idx.to_u64().unwrap_or(0), Name::anon())
+      let idx_u64 = idx.to_u64().unwrap_or(0);
+      // Resolve the bound variable's display name by de Bruijn lookup
+      // into the current binder stack. Missing entries (ill-scoped
+      // expressions, or traversals from a non-empty starting stack)
+      // fall back to anonymous; the idx itself is always correct.
+      let name = binder_names
+        .len()
+        .checked_sub(1 + idx_u64 as usize)
+        .and_then(|i| binder_names.get(i))
+        .cloned()
+        .unwrap_or_else(Name::anon);
+      KExpr::var_mdata(idx_u64, name, mdata_layers)
     },
-    LeanExprData::Sort(lvl, _) => KExpr::sort(lean_level_to_kuniv(lvl, pn)),
+    LeanExprData::Sort(lvl, _) => {
+      KExpr::sort_mdata(lean_level_to_kuniv(lvl, pn), mdata_layers)
+    },
     LeanExprData::Const(name, us, _) => {
       let addr = resolve_lean_name_addr(name, n2a, aux_n2a);
       let zid = KId::new(addr, name.clone());
       let zus: Box<[KUniv<Meta>]> =
         us.iter().map(|u| lean_level_to_kuniv(u, pn)).collect();
-      KExpr::cnst(zid, zus)
+      KExpr::cnst_mdata(zid, zus, mdata_layers)
     },
-    LeanExprData::App(f, a, _) => KExpr::app(go(f), go(a)),
+    LeanExprData::App(f, a, _) => {
+      let f_k = lean_expr_to_zexpr_cached(
+        f,
+        pn,
+        binder_names,
+        intern,
+        n2a,
+        aux_n2a,
+        cache,
+        pn_hash,
+      );
+      let a_k = lean_expr_to_zexpr_cached(
+        a,
+        pn,
+        binder_names,
+        intern,
+        n2a,
+        aux_n2a,
+        cache,
+        pn_hash,
+      );
+      KExpr::app_mdata(f_k, a_k, mdata_layers)
+    },
     LeanExprData::ForallE(binder_name, dom, body, bi, _) => {
-      KExpr::all(binder_name.clone(), bi.clone(), go(dom), go(body))
+      let dom_k = lean_expr_to_zexpr_cached(
+        dom,
+        pn,
+        binder_names,
+        intern,
+        n2a,
+        aux_n2a,
+        cache,
+        pn_hash,
+      );
+      binder_names.push(binder_name.clone());
+      let body_k = lean_expr_to_zexpr_cached(
+        body,
+        pn,
+        binder_names,
+        intern,
+        n2a,
+        aux_n2a,
+        cache,
+        pn_hash,
+      );
+      binder_names.pop();
+      KExpr::all_mdata(
+        binder_name.clone(),
+        bi.clone(),
+        dom_k,
+        body_k,
+        mdata_layers,
+      )
     },
     LeanExprData::Lam(binder_name, dom, body, bi, _) => {
-      KExpr::lam(binder_name.clone(), bi.clone(), go(dom), go(body))
+      let dom_k = lean_expr_to_zexpr_cached(
+        dom,
+        pn,
+        binder_names,
+        intern,
+        n2a,
+        aux_n2a,
+        cache,
+        pn_hash,
+      );
+      binder_names.push(binder_name.clone());
+      let body_k = lean_expr_to_zexpr_cached(
+        body,
+        pn,
+        binder_names,
+        intern,
+        n2a,
+        aux_n2a,
+        cache,
+        pn_hash,
+      );
+      binder_names.pop();
+      KExpr::lam_mdata(
+        binder_name.clone(),
+        bi.clone(),
+        dom_k,
+        body_k,
+        mdata_layers,
+      )
     },
     LeanExprData::LetE(binder_name, ty, val, body, nd, _) => {
-      KExpr::let_(binder_name.clone(), go(ty), go(val), go(body), *nd)
+      let ty_k = lean_expr_to_zexpr_cached(
+        ty,
+        pn,
+        binder_names,
+        intern,
+        n2a,
+        aux_n2a,
+        cache,
+        pn_hash,
+      );
+      let val_k = lean_expr_to_zexpr_cached(
+        val,
+        pn,
+        binder_names,
+        intern,
+        n2a,
+        aux_n2a,
+        cache,
+        pn_hash,
+      );
+      binder_names.push(binder_name.clone());
+      let body_k = lean_expr_to_zexpr_cached(
+        body,
+        pn,
+        binder_names,
+        intern,
+        n2a,
+        aux_n2a,
+        cache,
+        pn_hash,
+      );
+      binder_names.pop();
+      KExpr::let_mdata(
+        binder_name.clone(),
+        ty_k,
+        val_k,
+        body_k,
+        *nd,
+        mdata_layers,
+      )
     },
     LeanExprData::Proj(name, idx, e, _) => {
       let addr = resolve_lean_name_addr(name, n2a, aux_n2a);
       let zid = KId::new(addr, name.clone());
-      KExpr::prj(zid, idx.to_u64().unwrap_or(0), go(e))
+      let e_k = lean_expr_to_zexpr_cached(
+        e,
+        pn,
+        binder_names,
+        intern,
+        n2a,
+        aux_n2a,
+        cache,
+        pn_hash,
+      );
+      KExpr::prj_mdata(zid, idx.to_u64().unwrap_or(0), e_k, mdata_layers)
     },
     LeanExprData::Lit(lit, _) => {
       use crate::ix::env::Literal;
       match lit {
         Literal::NatVal(n) => {
-          let addr = Address::hash(&n.to_u64().unwrap_or(0).to_le_bytes());
-          KExpr::nat(n.clone(), addr)
+          // Address must match the Ixon-side blob address for this Nat,
+          // which is `Address::hash(&blob_bytes)` where `blob_bytes =
+          // n.to_le_bytes()` (see `store_nat` / `store_blob`). Hashing
+          // `to_u64()` instead truncates any value ≥ 2^64 to 0, causing
+          // distinct Nats to hash-cons to the same KExpr.
+          let addr = Address::hash(&n.to_le_bytes());
+          KExpr::nat_mdata(n.clone(), addr, mdata_layers)
         },
         Literal::StrVal(s) => {
           let addr = Address::hash(s.as_bytes());
-          KExpr::str(s.clone(), addr)
+          KExpr::str_mdata(s.clone(), addr, mdata_layers)
         },
       }
     },
-    LeanExprData::Mdata(_, inner, _) => {
-      // Mdata wraps a real expression — recurse through the annotation layer.
-      lean_expr_to_zexpr_raw(inner, pn, intern, n2a, aux_n2a, cache, pn_hash)
+    LeanExprData::Mdata(..) => {
+      // Unreachable — the while-loop above peeled off every `Mdata` layer.
+      unreachable!("Mdata should have been peeled off into mdata_layers");
     },
     LeanExprData::Fvar(name, _) => {
       panic!(
@@ -1452,8 +1710,22 @@ pub fn lean_name_to_addr(name: &Name) -> Address {
 /// Called after each block compiles in the topological compilation loop.
 /// `names` are the Lean names of constants in the block. For each name,
 /// we look up its Ixon address and constant, convert to KConst, and insert.
-/// Build lookup tables from the ixon env for use with `ingress_compiled_names`.
-/// Call once at compile start, then pass to each incremental ingress call.
+/// Build the address → name + name → address lookup tables for
+/// `ingress_compiled_names`. Call once at compile start, then pass to each
+/// incremental ingress call.
+///
+/// Two maps:
+/// - `name_map`: `ixon_env.names` inverted — address of a `Lean.Name` →
+///   the name itself. Used in Meta mode to recover names from arena
+///   metadata.
+/// - `addr_map`: `ixon_env.named` — each registered Lean name → the
+///   content address at which its compiled `Constant` is stored
+///   (projection address for Muts members, or direct block address for
+///   singletons). This is the kernel-addressing map: `KId`s for sibling
+///   references inside Muts blocks MUST use these addresses (the raw
+///   name-hash address is insufficient because an alpha-collapsed block
+///   is stored at its content address, not any individual member's name
+///   hash).
 pub fn build_ingress_lookups(
   ixon_env: &IxonEnv,
 ) -> (FxHashMap<Address, Name>, FxHashMap<Name, Address>) {
@@ -1544,21 +1816,276 @@ pub fn ingress_compiled_names(
 }
 
 // ============================================================================
+// Direct Lean env → kernel env (bypasses Ixon)
+// ============================================================================
+//
+// This path is used by the `kernel-lean-roundtrip` diagnostic
+// test (`src/ffi/kernel.rs::rs_kernel_roundtrip_no_compile`) to isolate
+// ingress bugs from compile/Ixon bugs. It produces a `KEnv<M>` directly
+// from the decoded Lean `Env`, using:
+//
+//   * `lean_name_to_addr` for `KId.addr`s — the same name-hash scheme that
+//     `resolve_lean_name_addr` falls back to when both maps are `None`, so
+//     `Const`-reference addresses inside expressions match constant keys.
+//   * `lean_expr_to_zexpr_with_kenv` for expression ingress — the very same
+//     helper aux_gen already uses after regeneration, so any binder-name /
+//     const-ref semantics are shared between the two paths.
+//   * `kenv.intern` is populated in-place (no separate `InternTable` to
+//     swap in the way `ixon_ingress` requires).
+
+/// Extract the `all` (mutual siblings) list from a Lean `ConstantInfo`.
+/// Returns `None` for variants without a mutual block (Axio, Quot, Ctor, Rec).
+/// Ctors/Recs have their own `induct`/`all` but the block identity comes
+/// from the inductive, which is what's on the map anyway.
+fn lean_constant_all(ci: &LeanCI) -> Option<&Vec<Name>> {
+  match ci {
+    LeanCI::DefnInfo(v) => Some(&v.all),
+    LeanCI::ThmInfo(v) => Some(&v.all),
+    LeanCI::OpaqueInfo(v) => Some(&v.all),
+    LeanCI::InductInfo(v) => Some(&v.all),
+    LeanCI::RecInfo(v) => Some(&v.all),
+    LeanCI::AxiomInfo(_) | LeanCI::QuotInfo(_) | LeanCI::CtorInfo(_) => None,
+  }
+}
+
+/// Look up position of `name` in its mutual `all` list, returning 0 for
+/// non-mutuals or constants not found in their own `all`.
+fn lean_member_idx(name: &Name, all: Option<&Vec<Name>>) -> u64 {
+  all
+    .and_then(|a| a.iter().position(|n| n == name))
+    .map(|i| i as u64)
+    .unwrap_or(0)
+}
+
+/// Build the `block` KId for a constant's mutual block. For singletons
+/// (no `all` or `all` length 1), the block id is the constant's own KId.
+/// For mutuals, it's the representative (first name in `all`).
+fn lean_block_id(self_name: &Name, all: Option<&Vec<Name>>) -> KId<Meta> {
+  let rep = all.and_then(|a| a.first()).unwrap_or(self_name);
+  KId::new(lean_name_to_addr(rep), rep.clone())
+}
+
+/// Build the `lean_all` KId list in Meta mode.
+fn lean_all_ids(all: &[Name]) -> Vec<KId<Meta>> {
+  all.iter().map(|n| KId::new(lean_name_to_addr(n), n.clone())).collect()
+}
+
+/// Convert one Lean `ConstantInfo` to a `KConst<Meta>`. Expressions go through
+/// `lean_expr_to_zexpr_with_kenv` (caches into `kenv.intern` +
+/// `kenv.ingress_cache`).
+fn lean_const_to_kconst(
+  self_name: &Name,
+  ci: &LeanCI,
+  kenv: &KEnv<Meta>,
+) -> KConst<Meta> {
+  // Helper: shorthand for expression ingress with no n2a fallback maps —
+  // `Const` refs inside the expr resolve via `lean_name_to_addr`.
+  let expr_to_k = |e: &crate::ix::env::Expr, pn: &[Name]| -> KExpr<Meta> {
+    lean_expr_to_zexpr_with_kenv(e, pn, kenv, None, None)
+  };
+
+  match ci {
+    LeanCI::AxiomInfo(v) => {
+      let pn = &v.cnst.level_params;
+      KConst::Axio {
+        name: self_name.clone(),
+        level_params: pn.clone(),
+        is_unsafe: v.is_unsafe,
+        lvls: pn.len() as u64,
+        ty: expr_to_k(&v.cnst.typ, pn),
+      }
+    },
+    LeanCI::DefnInfo(v) => {
+      let pn = &v.cnst.level_params;
+      let all = Some(&v.all);
+      KConst::Defn {
+        name: self_name.clone(),
+        level_params: pn.clone(),
+        kind: DefKind::Definition,
+        safety: v.safety,
+        hints: v.hints,
+        lvls: pn.len() as u64,
+        ty: expr_to_k(&v.cnst.typ, pn),
+        val: expr_to_k(&v.value, pn),
+        lean_all: lean_all_ids(&v.all),
+        block: lean_block_id(self_name, all),
+      }
+    },
+    LeanCI::ThmInfo(v) => {
+      let pn = &v.cnst.level_params;
+      let all = Some(&v.all);
+      KConst::Defn {
+        name: self_name.clone(),
+        level_params: pn.clone(),
+        kind: DefKind::Theorem,
+        safety: DefinitionSafety::Safe,
+        hints: ReducibilityHints::Opaque,
+        lvls: pn.len() as u64,
+        ty: expr_to_k(&v.cnst.typ, pn),
+        val: expr_to_k(&v.value, pn),
+        lean_all: lean_all_ids(&v.all),
+        block: lean_block_id(self_name, all),
+      }
+    },
+    LeanCI::OpaqueInfo(v) => {
+      let pn = &v.cnst.level_params;
+      let all = Some(&v.all);
+      KConst::Defn {
+        name: self_name.clone(),
+        level_params: pn.clone(),
+        kind: DefKind::Opaque,
+        safety: if v.is_unsafe {
+          DefinitionSafety::Unsafe
+        } else {
+          DefinitionSafety::Safe
+        },
+        hints: ReducibilityHints::Opaque,
+        lvls: pn.len() as u64,
+        ty: expr_to_k(&v.cnst.typ, pn),
+        val: expr_to_k(&v.value, pn),
+        lean_all: lean_all_ids(&v.all),
+        block: lean_block_id(self_name, all),
+      }
+    },
+    LeanCI::QuotInfo(v) => {
+      let pn = &v.cnst.level_params;
+      KConst::Quot {
+        name: self_name.clone(),
+        level_params: pn.clone(),
+        kind: v.kind,
+        lvls: pn.len() as u64,
+        ty: expr_to_k(&v.cnst.typ, pn),
+      }
+    },
+    LeanCI::InductInfo(v) => {
+      let pn = &v.cnst.level_params;
+      let all = Some(&v.all);
+      let ctors =
+        v.ctors.iter().map(|n| KId::new(lean_name_to_addr(n), n.clone())).collect();
+      KConst::Indc {
+        name: self_name.clone(),
+        level_params: pn.clone(),
+        lvls: pn.len() as u64,
+        params: v.num_params.to_u64().unwrap_or(0),
+        indices: v.num_indices.to_u64().unwrap_or(0),
+        is_rec: v.is_rec,
+        is_refl: v.is_reflexive,
+        is_unsafe: v.is_unsafe,
+        nested: v.num_nested.to_u64().unwrap_or(0),
+        block: lean_block_id(self_name, all),
+        member_idx: lean_member_idx(self_name, all),
+        ty: expr_to_k(&v.cnst.typ, pn),
+        ctors,
+        lean_all: lean_all_ids(&v.all),
+      }
+    },
+    LeanCI::CtorInfo(v) => {
+      let pn = &v.cnst.level_params;
+      KConst::Ctor {
+        name: self_name.clone(),
+        level_params: pn.clone(),
+        is_unsafe: v.is_unsafe,
+        lvls: pn.len() as u64,
+        induct: KId::new(lean_name_to_addr(&v.induct), v.induct.clone()),
+        cidx: v.cidx.to_u64().unwrap_or(0),
+        params: v.num_params.to_u64().unwrap_or(0),
+        fields: v.num_fields.to_u64().unwrap_or(0),
+        ty: expr_to_k(&v.cnst.typ, pn),
+      }
+    },
+    LeanCI::RecInfo(v) => {
+      let pn = &v.cnst.level_params;
+      let all = Some(&v.all);
+      let rules = v
+        .rules
+        .iter()
+        .map(|r| RecRule {
+          ctor: r.ctor.clone(),
+          fields: r.n_fields.to_u64().unwrap_or(0),
+          rhs: expr_to_k(&r.rhs, pn),
+        })
+        .collect();
+      KConst::Recr {
+        name: self_name.clone(),
+        level_params: pn.clone(),
+        k: v.k,
+        is_unsafe: v.is_unsafe,
+        lvls: pn.len() as u64,
+        params: v.num_params.to_u64().unwrap_or(0),
+        indices: v.num_indices.to_u64().unwrap_or(0),
+        motives: v.num_motives.to_u64().unwrap_or(0),
+        minors: v.num_minors.to_u64().unwrap_or(0),
+        block: lean_block_id(self_name, all),
+        member_idx: lean_member_idx(self_name, all),
+        ty: expr_to_k(&v.cnst.typ, pn),
+        rules,
+        lean_all: lean_all_ids(&v.all),
+      }
+    },
+  }
+}
+
+/// Direct ingress: build a `KEnv<Meta>` from a Lean `Env` without going
+/// through Ixon compilation. Used by the `kernel-lean-roundtrip`
+/// diagnostic test to bisect between compile bugs and ingress bugs.
+///
+/// All `KId.addr`s are derived via `lean_name_to_addr` (blake3 of the Name's
+/// own hash). `Const` references inside expressions also resolve via that
+/// scheme (both `n2a` maps are `None`), so constant keys and reference
+/// targets line up automatically.
+///
+/// Block entries (`kenv.blocks`) are emitted only for mutuals with >1 members,
+/// keyed by the representative (first name in `all`) to avoid duplicate
+/// inserts across members.
+///
+/// **Meta-only**: the existing `lean_expr_to_zexpr_*` family is Meta-mode only,
+/// so this helper is Meta-mode only by extension. Generalizing to `Anon` would
+/// require generalizing `lean_expr_to_zexpr_raw` too.
+pub fn lean_ingress(lean_env: &LeanEnv) -> KEnv<Meta> {
+  let kenv = KEnv::<Meta>::new();
+
+  // Pass 1: ingress every constant.
+  for (name, ci) in lean_env.iter() {
+    let kid = KId::new(lean_name_to_addr(name), name.clone());
+    let kc = lean_const_to_kconst(name, ci, &kenv);
+    kenv.insert(kid, kc);
+  }
+
+  // Pass 2: populate `kenv.blocks` for mutual blocks with >1 members.
+  // For each constant that's the representative of its mutual (first name
+  // in `all`), insert a block entry keyed by the representative's KId,
+  // with all sibling KIds as members.
+  for (name, ci) in lean_env.iter() {
+    if let Some(all) = lean_constant_all(ci)
+      && all.len() > 1
+      && all.first() == Some(name)
+    {
+      let block_id: KId<Meta> =
+        KId::new(lean_name_to_addr(name), name.clone());
+      let members: Vec<KId<Meta>> = lean_all_ids(all);
+      kenv.blocks.insert(block_id, members);
+    }
+  }
+
+  kenv
+}
+
+// ============================================================================
 // Top-level entry point
 // ============================================================================
 
 /// Convert an Ixon environment to a zero kernel environment.
-pub fn ixon_to_zenv<M: KernelMode>(
+pub fn ixon_ingress<M: KernelMode>(
   ixon_env: &IxonEnv,
 ) -> Result<(KEnv<M>, InternTable<M>), String> {
   let intern = InternTable::new();
 
-  // Build lookup tables
+  // Build the address → Lean-name lookup and the Lean-name → projection-
+  // address lookup. See `build_ingress_lookups` for the role each plays.
   let mut names: FxHashMap<Address, Name> = FxHashMap::default();
   for entry in ixon_env.names.iter() {
     names.insert(entry.key().clone(), entry.value().clone());
   }
-
   let mut name_to_addr: FxHashMap<Name, Address> = FxHashMap::default();
   for entry in ixon_env.named.iter() {
     name_to_addr.insert(entry.key().clone(), entry.value().addr.clone());

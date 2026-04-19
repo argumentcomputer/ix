@@ -16,6 +16,7 @@
 import Ix.Common
 import Ix.Meta
 import Tests.Ix.Compile.Mutual
+import Tests.Ix.Kernel.TutorialDefs
 import Lean
 
 /-- Collect the transitive closure of constants referenced by a set of seed names. -/
@@ -59,10 +60,6 @@ partial def collectDeps (env : Lean.Environment) (seeds : List Lean.Name)
             worklist := r :: worklist
   env.constants.toList.filter fun (n, _) => needed.contains n
 
-@[extern "rs_compile_validate_aux"]
-opaque compileValidateAux : @& List (Lean.Name × Lean.ConstantInfo) → USize
-
-
 def runCompileValidateAux (env : Lean.Environment) : IO UInt32 := do
   IO.println "[validate-aux] finding seeds..."
   let prefixes := [
@@ -70,7 +67,8 @@ def runCompileValidateAux (env : Lean.Environment) : IO UInt32 := do
     `Init,
     `_private.Init,
     `State,
-    `Lean
+    `Lean,
+    `Tests.Ix.Kernel.TutorialDefs
   ]
   let mut seeds := env.constants.toList.filterMap fun (n, _) =>
     if prefixes.any (·.isPrefixOf n) then some n else none
@@ -82,9 +80,15 @@ def runCompileValidateAux (env : Lean.Environment) : IO UInt32 := do
     `PProd, `PProd.mk, `PProd.rec,
     `Eq, `Eq.refl, `Eq.rec,
     `True, `True.intro, `True.rec,
-    `OfNat, `OfNat.rec, `SizeOf, `SizeOf.rec, 
+    `OfNat, `OfNat.rec, `SizeOf, `SizeOf.rec,
     `Iff, `Iff.rec, `Add, `Add.rec, `HAdd, `HAdd.rec, `Nat, `Nat.rec,
-    `Nat.brecOn.eq, `PULift, `PULift.rec
+    `Nat.brecOn.eq, `PULift, `PULift.rec,
+    -- Tutorial fixtures declared with bare top-level names via `good_decl`
+    -- (no `Tests.Ix.Kernel.TutorialDefs.` prefix). These are the rec-shape
+    -- cases that fail aux_gen congruence under rust-compile.
+    `reduceCtorParam, `reduceCtorParam.mk, `reduceCtorParam.rec,
+    `reduceCtorParamRefl, `reduceCtorParamRefl.mk, `reduceCtorParamRefl.rec,
+    `reduceCtorParamRefl2, `reduceCtorParamRefl2.mk, `reduceCtorParamRefl2.rec,
   ]
   IO.println s!"[validate-aux] {seeds.length} seeds"
 
@@ -93,6 +97,6 @@ def runCompileValidateAux (env : Lean.Environment) : IO UInt32 := do
   IO.println s!"[validate-aux] {filtered.length} constants (from {seeds.length} seeds)"
 
   IO.println "[validate-aux] calling Rust FFI..."
-  let failures := compileValidateAux filtered
+  let failures := Ix.CompileM.rsCompileValidateAuxFFI filtered
   IO.println s!"[validate-aux] total failures: {failures}"
   return if failures == 0 then 0 else 1

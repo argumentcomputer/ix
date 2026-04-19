@@ -1783,14 +1783,17 @@ pub(crate) fn ensure_in_kenv_of(
   let cache = Some(&kctx.kenv.ingress_cache);
 
   // Helper: convert a LeanExpr to KExpr with the given level param names,
-  // using the KEnv's persistent ingress cache.
+  // using the KEnv's persistent ingress cache. Callers are top-level, so
+  // we start with an empty binder-name stack.
   let to_z = |expr: &crate::ix::env::Expr,
               lp: &[Name]|
    -> crate::ix::kernel::expr::KExpr<Meta> {
     let pn_h = param_names_hash(lp);
+    let mut binder_names: Vec<Name> = Vec::new();
     lean_expr_to_zexpr_cached(
       expr,
       lp,
+      &mut binder_names,
       &kctx.kenv.intern,
       n2a,
       aux_n2a,
@@ -2111,7 +2114,22 @@ impl<'a> TcScope<'a> {
         desc: format!("TcScope::get_level: ensure_sort failed: {e}"),
       }
     })?;
-    Ok(super::below::kuniv_to_level(&ku, self.param_names))
+    let raw = super::below::kuniv_to_level(&ku, self.param_names);
+    // When `ty` is a forall, mirror Lean's `inferForallType`
+    // (`refs/lean4/src/Lean/Meta/InferType.lean:160`): apply
+    // `Level.normalize` before returning. Without this, the imax chain
+    // built by our kernel's `KUniv::imax` (cheap-simp only) stays in a
+    // structurally different max-tree than the Lean-stored form, and
+    // downstream PProd/PProd.mk uses of this level as a universe arg
+    // produce aux_gen output that's alpha-equivalent but not hash-equal
+    // to Lean's — e.g. `SetTheory.PGame.brecOn.go` d=9 PProd.mk.lvl[1].
+    // For non-forall `ty`, match Lean exactly and leave the level as-is.
+    let lvl = if matches!(ty.as_data(), crate::ix::env::ExprData::ForallE(..)) {
+      super::below::level_normalize(&raw)
+    } else {
+      raw
+    };
+    Ok(lvl)
   }
   /// Check if a Level is guaranteed non-zero. Matches Lean's `is_not_zero`:
   /// true for Succ(_), Param, Max(a,b) where either is not-zero.
@@ -2262,6 +2280,22 @@ impl<'a> TcScope<'a> {
       Err(_) => return ty.clone(),
     };
     kexpr_to_lean(&whnfed, depth, &self.fvar_levels, 0, self.param_names)
+  }
+
+  /// Check whether two `LeanExpr` types are definitionally equal in the
+  /// current FVar context, via the Rust kernel's `is_def_eq`. Matches
+  /// Lean's `Meta.isDefEq` used throughout the cases/subst machinery —
+  /// e.g. `mkEqAndProof` in `refs/lean4/src/Lean/Meta/Tactic/Cases.lean:30-37`
+  /// uses `isDefEq lhsType rhsType` to decide between `Eq` and `HEq`.
+  ///
+  /// Returns `false` on kernel errors (conservative: treat as not defEq).
+  pub(super) fn is_def_eq(&mut self, a: &LeanExpr, b: &LeanExpr) -> bool {
+    let depth = self.base_depth + self.extra_locals;
+    let ka =
+      to_kexpr_static(a, &self.fvar_levels, depth, self.param_names, self.stt);
+    let kb =
+      to_kexpr_static(b, &self.fvar_levels, depth, self.param_names, self.stt);
+    self.tc.is_def_eq(&ka, &kb).unwrap_or(false)
   }
 }
 

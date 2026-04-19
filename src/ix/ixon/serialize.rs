@@ -1011,10 +1011,7 @@ fn get_name_component(
 // ============================================================================
 
 use super::env::Named;
-use super::metadata::{
-  ConstantMeta, NameIndex, NameReverseIndex, get_idx, get_vec_len, put_idx,
-  put_vec_len,
-};
+use super::metadata::{ConstantMeta, NameIndex, NameReverseIndex};
 
 /// Serialize a Named entry with indexed metadata.
 pub fn put_named_indexed(
@@ -1033,27 +1030,13 @@ pub fn put_named_indexed(
       meta.put_indexed(idx, buf)?;
     },
   }
-  // Serialize name_refs: Vec<Vec<Name>> as Vec<Vec<idx>>
-  put_vec_len(named.name_refs.len(), buf);
-  for names in &named.name_refs {
-    put_vec_len(names.len(), buf);
-    for name in names {
-      let name_addr = Address::from_blake3_hash(*name.get_hash());
-      put_idx(&name_addr, idx, buf)?;
-    }
-  }
   Ok(())
 }
 
 /// Deserialize a Named entry with indexed metadata.
-///
-/// `names_lookup` maps name-hash Addresses to Names, used to resolve
-/// `name_refs` entries. Pass an empty map for backward compatibility
-/// with old formats (name_refs will be empty).
 pub fn get_named_indexed(
   buf: &mut &[u8],
   rev: &NameReverseIndex,
-  names_lookup: &rustc_hash::FxHashMap<Address, crate::ix::env::Name>,
 ) -> Result<Named, String> {
   let addr = get_address(buf)?;
   let meta = ConstantMeta::get_indexed(buf, rev)?;
@@ -1066,21 +1049,7 @@ pub fn get_named_indexed(
     },
     x => return Err(format!("Named.original: invalid tag {x}")),
   };
-  // Deserialize name_refs: Vec<Vec<Name>> from Vec<Vec<idx>>.
-  let n_outer = get_vec_len(buf)?;
-  let mut name_refs = Vec::with_capacity(n_outer);
-  for _ in 0..n_outer {
-    let n_inner = get_vec_len(buf)?;
-    let mut inner = Vec::with_capacity(n_inner);
-    for _ in 0..n_inner {
-      let name_addr = get_idx(buf, rev)?;
-      if let Some(name) = names_lookup.get(&name_addr) {
-        inner.push(name.clone());
-      }
-    }
-    name_refs.push(inner);
-  }
-  Ok(Named { addr, meta, original, name_refs })
+  Ok(Named { addr, meta, original })
 }
 
 // ============================================================================
@@ -1095,30 +1064,50 @@ impl Env {
   pub const FLAG: u8 = 0xE;
 
   /// Serialize an Env to bytes.
+  ///
+  /// Streaming design: for each section, collect only the *keys* from the
+  /// underlying DashMap, sort them (in parallel for the big ones), then
+  /// look up each value via `DashMap::get` and serialize it. The `Ref`
+  /// guard returned by `get` drops at the end of each loop iteration, so
+  /// at most one value is held live beyond the DashMap's own storage —
+  /// peak RAM stays close to the steady-state env size instead of 2×.
+  ///
+  /// Why not just iterate the DashMap directly? Serialization requires a
+  /// canonical order (byte-determinism across runs and across different
+  /// insertion orders), and DashMap iteration order is shard-dependent.
+  /// Sorting the keys is the minimum work to guarantee that.
   pub fn put(&self, buf: &mut Vec<u8>) -> Result<(), String> {
+    use rayon::slice::ParallelSliceMut;
+
     // Chatty per-section logging gated on IX_QUIET=1 (disables) so we can
-    // diagnose serialization stalls on huge envs (Mathlib: ~1M consts). The
-    // cost is a few eprintlns per put() call — negligible.
+    // diagnose serialization stalls on huge envs (Mathlib: ~1M consts).
     let quiet = std::env::var("IX_QUIET").is_ok();
     let overall_start = std::time::Instant::now();
 
     // Header: Tag4 with flag=0xE, size=0 (Env variant)
     Tag4::new(Self::FLAG, 0).put(buf);
 
+    // ─────────────────────────────────────────────────────────────────────
     // Section 1: Blobs (Address -> bytes)
-    // Sort by address for deterministic serialization (matches Lean)
+    // ─────────────────────────────────────────────────────────────────────
     let sec_start = std::time::Instant::now();
     if !quiet {
-      eprintln!("[Env::put] section 1/5 blobs: collecting {} entries", self.blobs.len());
+      eprintln!(
+        "[Env::put] section 1/5 blobs: {} entries",
+        self.blobs.len(),
+      );
     }
-    let mut blobs: Vec<_> =
-      self.blobs.iter().map(|e| (e.key().clone(), e.value().clone())).collect();
-    blobs.sort_by(|a, b| a.0.cmp(&b.0));
-    put_u64(blobs.len() as u64, buf);
-    for (addr, bytes) in &blobs {
-      put_address(addr, buf);
-      put_u64(bytes.len() as u64, buf);
-      buf.extend_from_slice(bytes);
+    let mut blob_addrs: Vec<Address> =
+      self.blobs.iter().map(|e| e.key().clone()).collect();
+    blob_addrs.par_sort_unstable();
+    put_u64(blob_addrs.len() as u64, buf);
+    for addr in &blob_addrs {
+      if let Some(entry) = self.blobs.get(addr) {
+        let bytes = entry.value();
+        put_address(addr, buf);
+        put_u64(bytes.len() as u64, buf);
+        buf.extend_from_slice(bytes);
+      }
     }
     if !quiet {
       eprintln!(
@@ -1128,52 +1117,57 @@ impl Env {
       );
     }
 
+    // ─────────────────────────────────────────────────────────────────────
     // Section 2: Consts (Address -> Constant)
-    // Sort by address for deterministic serialization (matches Lean)
+    // ─────────────────────────────────────────────────────────────────────
     let sec_start = std::time::Instant::now();
     if !quiet {
-      eprintln!("[Env::put] section 2/5 consts: collecting {} entries", self.consts.len());
+      eprintln!(
+        "[Env::put] section 2/5 consts: {} entries",
+        self.consts.len(),
+      );
     }
-    let mut consts: Vec<_> = self
-      .consts
-      .iter()
-      .map(|e| (e.key().clone(), e.value().clone()))
-      .collect();
+    let mut const_addrs: Vec<Address> =
+      self.consts.iter().map(|e| e.key().clone()).collect();
+    const_addrs.par_sort_unstable();
     if !quiet {
       eprintln!(
-        "[Env::put] section 2/5 consts: collected in {:.1}s, sorting...",
+        "[Env::put] section 2/5 consts: collected+sorted in {:.1}s, \
+         streaming put...",
         sec_start.elapsed().as_secs_f64(),
       );
     }
-    let sort_start = std::time::Instant::now();
-    consts.sort_by(|a, b| a.0.cmp(&b.0));
-    if !quiet {
-      eprintln!(
-        "[Env::put] section 2/5 consts: sorted in {:.1}s, serializing...",
-        sort_start.elapsed().as_secs_f64(),
-      );
-    }
     let put_start = std::time::Instant::now();
-    put_u64(consts.len() as u64, buf);
-    for (addr, constant) in &consts {
-      put_address(addr, buf);
-      constant.put(buf);
+    put_u64(const_addrs.len() as u64, buf);
+    for addr in &const_addrs {
+      if let Some(entry) = self.consts.get(addr) {
+        put_address(addr, buf);
+        entry.value().put(buf);
+      }
     }
     if !quiet {
       eprintln!(
-        "[Env::put] section 2/5 consts done: put in {:.1}s, total {:.1}s ({} bytes so far)",
+        "[Env::put] section 2/5 consts done: put in {:.1}s, total {:.1}s \
+         ({} bytes so far)",
         put_start.elapsed().as_secs_f64(),
         sec_start.elapsed().as_secs_f64(),
         buf.len(),
       );
     }
 
-    // Section 3: Names (Address -> Name component)
-    // Topologically sorted so parents come before children
-    // Also build name index for metadata serialization
+    // ─────────────────────────────────────────────────────────────────────
+    // Section 3: Names (Address -> Name component, topologically sorted)
+    // ─────────────────────────────────────────────────────────────────────
+    // Topological sort ensures parents come before children so the name
+    // index assigned during serialization is valid for all references that
+    // follow (e.g., in metadata). `topological_sort_names` handles the
+    // parallel key sort + DFS; see that function for details.
     let sec_start = std::time::Instant::now();
     if !quiet {
-      eprintln!("[Env::put] section 3/5 names: topo-sorting {} entries", self.names.len());
+      eprintln!(
+        "[Env::put] section 3/5 names: topo-sorting {} entries",
+        self.names.len(),
+      );
     }
     let sorted_names = topological_sort_names(&self.names);
     if !quiet {
@@ -1192,65 +1186,82 @@ impl Env {
     }
     if !quiet {
       eprintln!(
-        "[Env::put] section 3/5 names done: put in {:.1}s, total {:.1}s ({} bytes so far)",
+        "[Env::put] section 3/5 names done: put in {:.1}s, total {:.1}s \
+         ({} bytes so far)",
         put_start.elapsed().as_secs_f64(),
         sec_start.elapsed().as_secs_f64(),
         buf.len(),
       );
     }
 
-    // Section 4: Named (name Address -> Named)
-    // Sort by name hash for deterministic serialization (matches Lean)
-    // Use indexed serialization for metadata (saves ~24 bytes per address)
+    // ─────────────────────────────────────────────────────────────────────
+    // Section 4: Named (Name -> Named metadata with indexed addresses)
+    // ─────────────────────────────────────────────────────────────────────
+    // Named values are the *largest* per-entry (each carries a ConstantMeta
+    // with metadata arenas), so the streaming pattern's win is greatest
+    // here: on Mathlib, avoiding the clone-into-Vec saves ~30 GB peak RAM.
+    //
+    // Key clone cost: a `Name` is `Arc<NameData>`, so each clone is a
+    // single atomic refcount increment (<1s for 733k).
     let sec_start = std::time::Instant::now();
     if !quiet {
-      eprintln!("[Env::put] section 4/5 named: collecting {} entries", self.named.len());
-    }
-    let mut named: Vec<_> =
-      self.named.iter().map(|e| (e.key().clone(), e.value().clone())).collect();
-    if !quiet {
       eprintln!(
-        "[Env::put] section 4/5 named: collected in {:.1}s, sorting...",
-        sec_start.elapsed().as_secs_f64(),
+        "[Env::put] section 4/5 named: {} entries",
+        self.named.len(),
       );
     }
-    let sort_start = std::time::Instant::now();
-    named
-      .sort_by(|a, b| a.0.get_hash().as_bytes().cmp(b.0.get_hash().as_bytes()));
+    let mut named_keys: Vec<Name> =
+      self.named.iter().map(|e| e.key().clone()).collect();
+    // Sort by the cached name hash bytes (same key used by every existing
+    // Section 4 ordering guarantee). `par_sort_unstable_by` uses rayon to
+    // parallelize the compare across all cores.
+    named_keys.par_sort_unstable_by(|a, b| {
+      a.get_hash().as_bytes().cmp(b.get_hash().as_bytes())
+    });
     if !quiet {
       eprintln!(
-        "[Env::put] section 4/5 named: sorted in {:.1}s, serializing...",
-        sort_start.elapsed().as_secs_f64(),
+        "[Env::put] section 4/5 named: collected+sorted in {:.1}s, \
+         streaming put...",
+        sec_start.elapsed().as_secs_f64(),
       );
     }
     let put_start = std::time::Instant::now();
-    put_u64(named.len() as u64, buf);
-    for (name, named_entry) in &named {
-      put_bytes(name.get_hash().as_bytes(), buf);
-      put_named_indexed(named_entry, &name_index, buf)?;
+    put_u64(named_keys.len() as u64, buf);
+    for name in &named_keys {
+      if let Some(entry) = self.named.get(name) {
+        put_bytes(name.get_hash().as_bytes(), buf);
+        put_named_indexed(entry.value(), &name_index, buf)?;
+      }
     }
     if !quiet {
       eprintln!(
-        "[Env::put] section 4/5 named done: put in {:.1}s, total {:.1}s ({} bytes so far)",
+        "[Env::put] section 4/5 named done: put in {:.1}s, total {:.1}s \
+         ({} bytes so far)",
         put_start.elapsed().as_secs_f64(),
         sec_start.elapsed().as_secs_f64(),
         buf.len(),
       );
     }
 
-    // Section 5: Comms (Address -> Comm)
-    // Sort by address for deterministic serialization (matches Lean)
+    // ─────────────────────────────────────────────────────────────────────
+    // Section 5: Comms (Address -> Comm) — typically empty on compile path
+    // ─────────────────────────────────────────────────────────────────────
     let sec_start = std::time::Instant::now();
     if !quiet {
-      eprintln!("[Env::put] section 5/5 comms: collecting {} entries", self.comms.len());
+      eprintln!(
+        "[Env::put] section 5/5 comms: {} entries",
+        self.comms.len(),
+      );
     }
-    let mut comms: Vec<_> =
-      self.comms.iter().map(|e| (e.key().clone(), e.value().clone())).collect();
-    comms.sort_by(|a, b| a.0.cmp(&b.0));
-    put_u64(comms.len() as u64, buf);
-    for (addr, comm) in &comms {
-      put_address(addr, buf);
-      comm.put(buf);
+    let mut comm_addrs: Vec<Address> =
+      self.comms.iter().map(|e| e.key().clone()).collect();
+    comm_addrs.par_sort_unstable();
+    put_u64(comm_addrs.len() as u64, buf);
+    for addr in &comm_addrs {
+      if let Some(entry) = self.comms.get(addr) {
+        put_address(addr, buf);
+        entry.value().put(buf);
+      }
     }
     if !quiet {
       eprintln!(
@@ -1335,7 +1346,7 @@ impl Env {
     let num_named = get_u64(buf)?;
     for _ in 0..num_named {
       let name_addr = get_address(buf)?;
-      let named = get_named_indexed(buf, &name_reverse_index, &names_lookup)?;
+      let named = get_named_indexed(buf, &name_reverse_index)?;
       let name = names_lookup.get(&name_addr).cloned().ok_or_else(|| {
         format!("Env::get: missing name for addr {:?}", name_addr)
       })?;
@@ -1430,13 +1441,27 @@ impl Env {
 }
 
 /// Topologically sort names so parents come before children.
+///
+/// Collects `(Address, Name)` pairs up front (cheap: Arc clone + 32-byte
+/// address clone), parallel-sorts by address for canonical DFS order, then
+/// walks each entry via the Arc parent chain in `NameData::Str`/`Num`. The
+/// DFS recurses through those Arc pointers — parents are NOT looked up in
+/// the DashMap, which is why the result retains `Name` values rather than
+/// just addresses (ancestor names may not be stored as explicit DashMap
+/// keys).
+///
+/// We tried a keys-only streaming variant (collect `Vec<Address>` and look
+/// up each Name via `DashMap::get` in the DFS loop). It was 22s slower on
+/// Mathlib because 4.7M shard-lock acquisitions dominate vs the one-time
+/// ~150 MB tuple-clone allocation.
 fn topological_sort_names(
   names: &dashmap::DashMap<Address, Name>,
 ) -> Vec<(Address, Name)> {
-  use std::collections::HashSet;
+  use rayon::slice::ParallelSliceMut;
+  use rustc_hash::FxHashSet;
 
   let mut result = Vec::with_capacity(names.len() + 1);
-  let mut visited: HashSet<Address> = HashSet::new();
+  let mut visited: FxHashSet<Address> = FxHashSet::default();
 
   // Include anonymous name first so it gets index 0 in the name index.
   // Arena nodes frequently reference it as a binder name.
@@ -1446,7 +1471,7 @@ fn topological_sort_names(
 
   fn visit(
     name: &Name,
-    visited: &mut HashSet<Address>,
+    visited: &mut FxHashSet<Address>,
     result: &mut Vec<(Address, Name)>,
   ) {
     let addr = Address::from_blake3_hash(*name.get_hash());
@@ -1466,10 +1491,13 @@ fn topological_sort_names(
     result.push((addr, name.clone()));
   }
 
-  // Sort entries by address before DFS for deterministic order (matches Lean)
-  let mut sorted_entries: Vec<_> =
-    names.iter().map(|e| (e.key().clone(), e.value().clone())).collect();
-  sorted_entries.sort_by(|a, b| a.0.cmp(&b.0));
+  // Clone-collect entries for direct iteration (avoids 4.7M DashMap lookups
+  // during DFS). Parallel sort uses rayon over address bytes.
+  let mut sorted_entries: Vec<(Address, Name)> = names
+    .iter()
+    .map(|e| (e.key().clone(), e.value().clone()))
+    .collect();
+  sorted_entries.par_sort_unstable_by(|a, b| a.0.cmp(&b.0));
   for (_, name) in &sorted_entries {
     visit(name, &mut visited, &mut result);
   }
@@ -1616,8 +1644,7 @@ mod tests {
         } else {
           None
         };
-        let named =
-          Named { addr: addr.clone(), meta, original, name_refs: Vec::new() };
+        let named = Named { addr: addr.clone(), meta, original };
         env.named.insert(name, named);
       }
     }

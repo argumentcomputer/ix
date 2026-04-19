@@ -2,6 +2,7 @@ module
 public import Lean.Meta.Reduce
 public import Ix.Address
 public import Ix.CompileM
+public import Batteries.Data.String
 
 public section
 
@@ -54,6 +55,46 @@ def getCompileEnv (imports : Array Name) : IO Environment := do
 
 macro "get_env!" : term =>
   `(getCompileEnv this_file!)
+
+/-- If the project depends on Mathlib, download the Mathlib cache. -/
+def fetchMathlibCache (cwd : Option FilePath) : IO Unit := do
+  let root := cwd.getD "."
+  let manifest := root / "lake-manifest.json"
+  let contents ← IO.FS.readFile manifest
+  if contents.containsSubstr "leanprover-community/mathlib4" then
+    let mathlibBuild := root / ".lake" / "packages" / "mathlib" / ".lake" / "build"
+    if ← mathlibBuild.pathExists then
+      println! "Mathlib cache already present, skipping fetch."
+      return
+    println! "Detected Mathlib dependency. Fetching Mathlib cache..."
+    let child ← IO.Process.spawn {
+      cmd := "lake"
+      args := #["exe", "cache", "get"]
+      cwd := cwd
+      stdout := .inherit
+      stderr := .inherit
+    }
+    let exitCode ← child.wait
+    if exitCode != 0 then
+      throw $ IO.userError "lake exe cache get failed"
+
+/-- Build the Lean module at the given file path using Lake.
+Also fetches Mathlib cache if the project depends on it. -/
+def buildFile (path : FilePath) : IO Unit := do
+  let path ← IO.FS.realPath path
+  let some moduleName := path.fileStem
+    | throw $ IO.userError s!"cannot determine module name from {path}"
+  fetchMathlibCache path.parent
+  let child ← IO.Process.spawn {
+    cmd := "lake"
+    args := #["build", moduleName]
+    cwd := path.parent
+    stdout := .inherit
+    stderr := .inherit
+  }
+  let exitCode ← child.wait
+  if exitCode != 0 then
+    throw $ IO.userError "lake build failed"
 
 def runCore (f : CoreM α) (env : Environment) : IO α :=
   Prod.fst <$> f.toIO { fileName := default, fileMap := default } { env }

@@ -1898,7 +1898,23 @@ fn build_block_env(all_names: &[Name], lean_env: &LeanEnv) -> LeanEnv {
   env
 }
 
+/// Map an `is_unsafe` flag to a `DefinitionSafety`. The decompile side uses
+/// this to stay in lock-step with `ix::compile::mutual::def_safety`; if we
+/// ever want to represent `Partial` explicitly we can refine both sides.
+fn def_safety(is_unsafe: bool) -> DefinitionSafety {
+  if is_unsafe {
+    DefinitionSafety::Unsafe
+  } else {
+    DefinitionSafety::Safe
+  }
+}
+
 /// Convert a `BelowDef` (Type-level `.below`) to a `LeanConstantInfo`.
+///
+/// Safety mirrors the parent inductive's `is_unsafe` flag (propagated via
+/// `BelowDef::is_unsafe`) — Lean builds `.below` via
+/// `mkDefinitionValInferringUnsafe`, which always flips to `Unsafe` when the
+/// parent inductive is unsafe (the value references the parent's `.rec`).
 fn below_def_to_lean(
   def: &crate::ix::compile::aux_gen::below::BelowDef,
 ) -> LeanConstantInfo {
@@ -1910,12 +1926,16 @@ fn below_def_to_lean(
     },
     value: def.value.clone(),
     hints: ReducibilityHints::Abbrev,
-    safety: DefinitionSafety::Safe,
+    safety: def_safety(def.is_unsafe),
     all: vec![def.name.clone()],
   })
 }
 
 /// Convert a `BelowIndc` (Prop-level `.below`) to an `InductiveVal` and its constructors.
+///
+/// Safety mirrors the parent via `BelowIndc::is_unsafe` (see the Prop-level
+/// branch of `IndPredBelow`). The constructor `is_unsafe` matches the
+/// enclosing inductive — the kernel rejects mixed safety within an inductive.
 fn below_indc_to_lean(
   indc: &crate::ix::compile::aux_gen::below::BelowIndc,
   all_below_names: &[Name],
@@ -1938,7 +1958,7 @@ fn below_indc_to_lean(
     // The `ConstantInfo::InductInfo` hash includes `is_reflexive`, so the
     // regenerated `.below` must carry the same flag as Lean's original.
     is_reflexive: indc.is_reflexive,
-    is_unsafe: false,
+    is_unsafe: indc.is_unsafe,
   };
   let ctors: Vec<ConstructorVal> = indc
     .ctors
@@ -1954,24 +1974,43 @@ fn below_indc_to_lean(
       cidx: Nat::from(cidx as u64),
       num_params: Nat::from(c.n_params as u64),
       num_fields: Nat::from(c.n_fields as u64),
-      is_unsafe: false,
+      is_unsafe: indc.is_unsafe,
     })
     .collect();
   (ind_val, ctors)
 }
 
 /// Convert a `BRecOnDef` to a `LeanConstantInfo`.
-/// `as_theorem` controls whether to produce ThmInfo (Prop-level brecOn)
-/// or DefnInfo (Type-level brecOn).
+///
+/// Replicates Lean's `Lean/Meta/Constructions/BRecOn.lean` per-kind decisions:
+///
+/// | Shape                 | Emits                    | Hints    |
+/// |-----------------------|--------------------------|----------|
+/// | `.brecOn` (Prop, safe)   | `ThmInfo`                   | —        |
+/// | `.brecOn` (Prop, unsafe) | `DefnInfo` (`Unsafe`)       | `Opaque` |
+/// | `.brecOn` (Type)         | `DefnInfo` (`Safe`/`Unsafe`) | `Abbrev` |
+/// | `.brecOn.go`             | `DefnInfo` (`Safe`/`Unsafe`) | `Abbrev` |
+/// | `.brecOn.eq` (safe)      | `ThmInfo`                   | —        |
+/// | `.brecOn.eq` (unsafe)    | `DefnInfo` (`Unsafe`)       | `Opaque` |
+///
+/// The unsafe-`.eq` flip mirrors Lean's `mkThmOrUnsafeDef`
+/// (`Lean/Environment.lean:2797`), which replaces a theorem with an unsafe
+/// definition whenever `env.hasUnsafe` fires on the type or value.
 fn brecon_def_to_lean(
   def: &crate::ix::compile::aux_gen::brecon::BRecOnDef,
-  as_theorem: bool,
 ) -> LeanConstantInfo {
   let cnst = ConstantVal {
     name: def.name.clone(),
     level_params: def.level_params.clone(),
     typ: def.typ.clone(),
   };
+
+  let is_eq = def.name.last_str().as_deref() == Some("eq");
+  // Emit `ThmInfo` when Lean would have emitted `.thmDecl`: Prop-level
+  // `.brecOn` or safe Type-level `.brecOn.eq`. Unsafe cases always flatten
+  // into an unsafe `DefnInfo` with opaque reducibility.
+  let as_theorem = (def.is_prop || is_eq) && !def.is_unsafe;
+
   if as_theorem {
     LeanConstantInfo::ThmInfo(TheoremVal {
       cnst,
@@ -1979,11 +2018,21 @@ fn brecon_def_to_lean(
       all: vec![def.name.clone()],
     })
   } else {
+    // Hints: `.opaque` matches Lean's `mkThmOrUnsafeDef` for the unsafe-eq
+    // flip (and unsafe Prop-level `.brecOn`, which in practice never
+    // happens — Lean forbids `unsafe` in Prop — but we honor the flag).
+    // `.abbrev` matches `mkDefinitionValInferringUnsafe … .abbrev` for
+    // `.brecOn` / `.brecOn.go`.
+    let hints = if def.is_unsafe && (def.is_prop || is_eq) {
+      ReducibilityHints::Opaque
+    } else {
+      ReducibilityHints::Abbrev
+    };
     LeanConstantInfo::DefnInfo(DefinitionVal {
       cnst,
       value: def.value.clone(),
-      hints: ReducibilityHints::Abbrev,
-      safety: DefinitionSafety::Safe,
+      hints,
+      safety: def_safety(def.is_unsafe),
       all: vec![def.name.clone()],
     })
   }
@@ -3169,7 +3218,10 @@ fn decompile_block_aux_gen(
           kind: DefKind::Definition,
           value: d.value.clone(),
           hints: ReducibilityHints::Abbrev,
-          safety: DefinitionSafety::Safe,
+          // Propagate the parent inductive's `is_unsafe` so the recompiled
+          // Ixon address matches Lean's (see `brecon_to_mut_const` for the
+          // full decision matrix).
+          safety: def_safety(d.is_unsafe),
           all: vec![],
         })),
         _ => None,
@@ -3309,11 +3361,7 @@ fn decompile_block_aux_gen(
     ) {
       Ok(brecon_defs) => {
         for d in &brecon_defs {
-          let is_eq =
-            matches!(classify_aux_gen(&d.name), Some((AuxKind::BRecOnEq, _)));
-          let as_thm = is_prop || is_eq;
-          generated_consts
-            .insert(d.name.clone(), brecon_def_to_lean(d, as_thm));
+          generated_consts.insert(d.name.clone(), brecon_def_to_lean(d));
         }
 
         let brecon_members: Vec<&Name> = aux_members
@@ -3327,12 +3375,24 @@ fn decompile_block_aux_gen(
         for d in
           brecon_defs.iter().filter(|d| brecon_members.contains(&&d.name))
         {
+          // Mirror the `brecon_def_to_lean` / `brecon_to_mut_const`
+          // decision matrix so the roundtrip compile step emits the same
+          // Ixon bytes Lean does. Unsafe `.brecOn.eq` / unsafe Prop
+          // `.brecOn` flip from `Thm` to unsafe `Defn` with opaque hints.
           let is_eq =
             matches!(classify_aux_gen(&d.name), Some((AuxKind::BRecOnEq, _)));
-          let kind = if is_prop || is_eq {
+          let wants_thm = (d.is_prop || is_eq) && !d.is_unsafe;
+          let kind = if wants_thm {
             DefKind::Theorem
           } else {
             DefKind::Definition
+          };
+          let hints = if d.is_unsafe && (d.is_prop || is_eq) {
+            ReducibilityHints::Opaque
+          } else if matches!(kind, DefKind::Theorem) {
+            ReducibilityHints::Opaque
+          } else {
+            ReducibilityHints::Abbrev
           };
           let mc = LeanMutConst::Defn(Def {
             name: d.name.clone(),
@@ -3340,8 +3400,8 @@ fn decompile_block_aux_gen(
             typ: d.typ.clone(),
             kind,
             value: d.value.clone(),
-            hints: ReducibilityHints::Abbrev,
-            safety: DefinitionSafety::Safe,
+            hints,
+            safety: def_safety(d.is_unsafe),
             all: vec![],
           });
           match roundtrip_block(&[mc], &generated_consts, orig_env, stt, dstt) {
@@ -3351,14 +3411,14 @@ fn decompile_block_aux_gen(
               }
             },
             Ok(_) | Err(_) => {
-              let is_eq_fb = matches!(
-                classify_aux_gen(&d.name),
-                Some((AuxKind::BRecOnEq, _))
-              );
-              dstt.env.insert(
-                d.name.clone(),
-                brecon_def_to_lean(d, is_prop || is_eq_fb),
-              );
+              // Fallback when the roundtrip_block compile step fails:
+              // still surface a best-effort LeanConstantInfo so the
+              // decompiled env is populated. `brecon_def_to_lean` applies
+              // the same kind/safety/hints matrix that the compile path
+              // used, so the kind recorded here mirrors what Lean's
+              // original has (even if the recompile couldn't prove byte
+              // equivalence).
+              dstt.env.insert(d.name.clone(), brecon_def_to_lean(d));
             },
           }
         }

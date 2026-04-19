@@ -8,7 +8,7 @@
 //!
 //! 1. Decode the Lean environment into the Rust `Env` type.
 //! 2. Run `compile_env` to obtain the Ixon environment.
-//! 3. Run `ixon_to_zenv::<Meta>` to ingress into the kernel.
+//! 3. Run `ixon_ingress::<Meta>` to ingress into the kernel.
 //! 4. For each requested name, construct a `TypeChecker` sharing the
 //!    `Arc<KEnv>` (so whnf / infer / def_eq caches accumulate across the
 //!    batch) and call `check_const`.
@@ -32,11 +32,12 @@ use lean_ffi::object::{
 
 use crate::ffi::lean_env::{decode_env, parse_name};
 use crate::ix::compile::compile_env;
-use crate::ix::kernel::egress::egress_env;
+use crate::ix::decompile::decompile_env;
+use crate::ix::kernel::egress::{ixon_egress, lean_egress};
 use crate::ix::kernel::env::KEnv;
 use crate::ix::kernel::error::TcError;
 use crate::ix::kernel::id::KId;
-use crate::ix::kernel::ingress::ixon_to_zenv;
+use crate::ix::kernel::ingress::{ixon_ingress, lean_ingress};
 use crate::ix::kernel::mode::Meta;
 use crate::ix::kernel::tc::TypeChecker;
 
@@ -108,7 +109,7 @@ pub extern "C" fn rs_kernel_check_consts(
   // ---------------------------------------------------------------------
   let t2 = Instant::now();
   let (mut kenv, intern) =
-    match ixon_to_zenv::<Meta>(&compile_state.env) {
+    match ixon_ingress::<Meta>(&compile_state.env) {
       Ok(v) => v,
       Err(msg) => {
         return build_uniform_error(
@@ -117,11 +118,10 @@ pub extern "C" fn rs_kernel_check_consts(
         );
       },
     };
-  // FIXME: `ixon_to_zenv` returns a populated `InternTable` separately from
+  // FIXME: `ixon_ingress` returns a populated `InternTable` separately from
   // the fresh, empty one inside `KEnv::new()`. The TypeChecker reads
   // `env.intern`, so we have to swap. When ingress is refactored to populate
-  // `kenv.intern` directly (and the function is renamed to `ixon_to_kenv`),
-  // this line goes away.
+  // `kenv.intern` directly, this line goes away.
   kenv.intern = intern;
   eprintln!(
     "[rs_kernel_check] ingress:    {:>8.1?} ({} consts)",
@@ -140,29 +140,9 @@ pub extern "C" fn rs_kernel_check_consts(
   // any risk of reconstruction mismatch (e.g. Muts-block member naming vs
   // `named` map keys).
   let mut name_to_id: FxHashMap<String, KId<Meta>> = FxHashMap::default();
-  let mut anon_count = 0usize;
-  let mut sample_names: Vec<String> = Vec::new();
   for (kid, _kconst) in kenv.iter() {
     let lean_name = format!("{}", kid.name);
-    if lean_name.is_empty() || lean_name == "[anonymous]" {
-      anon_count += 1;
-    }
-    if sample_names.len() < 10 && !lean_name.is_empty() {
-      sample_names.push(lean_name.clone());
-    }
     name_to_id.insert(lean_name, kid);
-  }
-  eprintln!(
-    "[rs_kernel_check] name_to_id: {} entries ({} anonymous), sample: {:?}",
-    name_to_id.len(),
-    anon_count,
-    sample_names
-  );
-
-  // Specifically probe a few names we know we'll ask for.
-  for probe in &["Acc", "Acc.intro", "Acc.rec", "Nat", "Nat.succ", "Eq"] {
-    let present = name_to_id.contains_key(*probe);
-    eprintln!("[rs_kernel_check] probe '{probe}': {present}");
   }
   let total = name_strings.len();
   eprintln!("[rs_kernel_check] checking {total} constants...");
@@ -338,21 +318,32 @@ fn build_uniform_error(
 }
 
 // =============================================================================
-// Kernel ingress + egress roundtrip
+// Kernel ingress + egress roundtrip (via Ixon + decompile)
 // =============================================================================
 //
-// End-to-end check of the ingress pipeline WITHOUT typechecking: decode the
-// Lean env, compile to Ixon, ingress into `KEnv<Meta>`, egress back to
-// `crate::ix::env::Env`, then compare each constant's type/value expression
-// against the original (by content hash, with a structural diff walker to
-// pinpoint the mismatch when hashes disagree).
+// End-to-end check of the compile + kernel pipeline WITHOUT typechecking:
+//   Lean env → compile_env (stt)
+//            → ixon_ingress (stt.env) → KEnv<Meta>
+//            → ixon_egress (kenv, stt.env) → IxonEnv'
+//            → patch stt.env = IxonEnv'
+//            → decompile_env (stt) → DecompileState.env (Lean)
+// and compare each constant's type/value against the original by content
+// hash.
 //
-// This isolates ingress correctness from kernel-level reasoning, so if it
-// succeeds but `rs_kernel_check_consts` fails then we know the bug lives in
-// the check side (or in how we're looking up constants post-ingress).
+// Unlike the earlier direct `KEnv → lean_egress` variant, this path lets the
+// validated `decompile_env` (the same pass `validate-aux` and `rust-compile`
+// cover) regenerate the aux_gen auxiliaries (`.brecOn*`, `.brecOn_N.eq`,
+// etc.) from the kernel-canonicalized Ixon form. That's the critical step
+// for closing the `.brecOn*` binder-name / alpha-collapse drift: the prior
+// direct path was a second decompiler with no aux_gen awareness.
+//
+// If `ixon_egress` is structurally faithful (kenv → ixon inversion preserves
+// the original addressing) and decompile_env regenerates aux_gen correctly,
+// this test should report zero mismatches.
 
-/// FFI: exercise the full pipeline Lean env → Ixon → kernel → Lean (egress)
-/// and compare each constant against the original.
+/// FFI: exercise the full pipeline
+/// Lean → Ixon → kernel → Ixon' → decompile → Lean, and compare each
+/// constant against the original.
 ///
 /// Lean signature:
 /// ```lean
@@ -369,20 +360,20 @@ pub extern "C" fn rs_kernel_roundtrip(
 
   let t0 = Instant::now();
   let rust_env = decode_env(env_consts);
-  eprintln!("[rs_kernel_roundtrip] read env:    {:>8.1?}", t0.elapsed());
+  eprintln!("[rs_kernel_roundtrip] read env:      {:>8.1?}", t0.elapsed());
 
   let t1 = Instant::now();
   let rust_env_arc = Arc::new(rust_env);
-  let compile_state = match compile_env(&rust_env_arc) {
+  let mut compile_state = match compile_env(&rust_env_arc) {
     Ok(s) => s,
     Err(e) => {
       return build_string_array(&[format!("compile error: {e:?}")]);
     },
   };
-  eprintln!("[rs_kernel_roundtrip] compile:     {:>8.1?}", t1.elapsed());
+  eprintln!("[rs_kernel_roundtrip] compile:       {:>8.1?}", t1.elapsed());
 
   let t2 = Instant::now();
-  let (mut kenv, intern) = match ixon_to_zenv::<Meta>(&compile_state.env) {
+  let (mut kenv, intern) = match ixon_ingress::<Meta>(&compile_state.env) {
     Ok(v) => v,
     Err(msg) => {
       return build_string_array(&[format!("ingress error: {msg}")]);
@@ -390,67 +381,74 @@ pub extern "C" fn rs_kernel_roundtrip(
   };
   kenv.intern = intern;
   eprintln!(
-    "[rs_kernel_roundtrip] ingress:     {:>8.1?} ({} consts)",
+    "[rs_kernel_roundtrip] ingress:       {:>8.1?} ({} consts)",
     t2.elapsed(),
     kenv.len()
   );
 
-  // Diagnostic: sample KId names from kenv and probe for tutorial targets.
-  // Tells us whether ingress populated `kid.name` with meaningful values or
-  // left them as `Name::anon()`, which would make all tutorial lookups fail.
-  diagnose_kenv_names(
-    &kenv,
-    &compile_state.env,
-    &[
-      "Acc",
-      "Acc.intro",
-      "Acc.rec",
-      "Nat",
-      "Nat.succ",
-      "Eq",
-      "Prod",
-      "List.rec",
-      "Tests.Ix.Kernel.TutorialDefs.TRTree",
-      "Tests.Ix.Kernel.TutorialDefs.TN",
-    ],
-  );
-
-  // Diagnostic: check mdata-key name registration. `resolve_kvmap` uses
-  // `ixon_env.get_name(addr)` to reconstruct each mdata key, and silently
-  // drops entries where the name isn't registered. If `_recApp` (or other
-  // metadata keys) aren't in `ixon_env.names`, mdata layers get stripped.
-  {
-    use crate::ix::address::Address;
-    use crate::ix::env::Name;
-    let probes = ["_recApp", "_patWithRef", "_private", "pp.universes"];
-    for probe in &probes {
-      let name = Name::str(Name::anon(), probe.to_string());
-      let addr = Address::from_blake3_hash(*name.get_hash());
-      let resolved = compile_state.env.get_name(&addr);
-      eprintln!(
-        "[diag] mdata key '{probe}': addr={} in ixon_env.names? {}",
-        addr.hex()[..12].to_string(),
-        resolved.is_some()
-      );
-    }
-  }
-
-  // Egress ZEnv → Lean env.
+  // Egress KEnv → IxonEnv (reusing the original env's `ConstantMeta` +
+  // blobs + names).
   let t3 = Instant::now();
-  let egressed_env = egress_env(&kenv);
+  let egressed_ixon = match ixon_egress(&kenv, &compile_state.env) {
+    Ok(e) => e,
+    Err(msg) => {
+      return build_string_array(&[format!("ixon_egress error: {msg}")]);
+    },
+  };
   eprintln!(
-    "[rs_kernel_roundtrip] egress:      {:>8.1?} ({} consts)",
+    "[rs_kernel_roundtrip] ixon egress:   {:>8.1?} ({} consts, {} named)",
     t3.elapsed(),
-    egressed_env.len()
+    egressed_ixon.const_count(),
+    egressed_ixon.named_count()
   );
 
-  // Compare egressed env against original, content-hash by content-hash.
+  // Free the kenv now that we've extracted everything we need; decompile
+  // works off CompileState only and the kenv is the large structure we
+  // built during ingress.
+  drop(kenv);
+
+  // Patch the compile state to point at the egressed Ixon env. Decompile
+  // reads from `stt.env.named` / `stt.env.get_const` / `stt.env.get_blob` —
+  // the egressed env preserves all of those (meta is copied from the
+  // original; constants are re-synthesized from kenv; blobs/names are
+  // cloned). `stt.blocks`, `stt.kctx`, `stt.aux_gen_extra_names`, etc.
+  // remain untouched so decompile's Pass 2 (aux_gen regeneration) has the
+  // block structure it expects.
+  compile_state.env = egressed_ixon;
+
   let t4 = Instant::now();
-  let (errors, checked, not_found) =
-    compare_envs(&rust_env_arc, &egressed_env);
+  let dstt = match decompile_env(&compile_state) {
+    Ok(d) => d,
+    Err(e) => {
+      return build_string_array(&[format!("decompile error: {e:?}")]);
+    },
+  };
   eprintln!(
-    "[rs_kernel_roundtrip] verify:      {:>8.1?} (checked {checked}, not_found {not_found}, errors {})",
+    "[rs_kernel_roundtrip] decompile:     {:>8.1?} ({} consts)",
     t4.elapsed(),
+    dstt.env.len()
+  );
+
+  // Build a plain Lean `Env` from decompile's DashMap for the standard
+  // compare_envs / find_diff flow.
+  let t5 = Instant::now();
+  let mut decompiled_env = crate::ix::env::Env::default();
+  for entry in dstt.env.iter() {
+    decompiled_env.insert(entry.key().clone(), entry.value().clone());
+  }
+  eprintln!(
+    "[rs_kernel_roundtrip] build lean env:{:>8.1?} ({} consts)",
+    t5.elapsed(),
+    decompiled_env.len()
+  );
+
+  // Compare decompiled env against original, content-hash by content-hash.
+  let t6 = Instant::now();
+  let (errors, checked, not_found) =
+    compare_envs(&rust_env_arc, &decompiled_env);
+  eprintln!(
+    "[rs_kernel_roundtrip] verify:        {:>8.1?} (checked {checked}, not_found {not_found}, errors {})",
+    t6.elapsed(),
     errors.len()
   );
 
@@ -458,7 +456,7 @@ pub extern "C" fn rs_kernel_roundtrip(
   drop(rust_env_arc);
 
   eprintln!(
-    "[rs_kernel_roundtrip] total:       {:>8.1?}",
+    "[rs_kernel_roundtrip] total:         {:>8.1?}",
     total_start.elapsed()
   );
 
@@ -684,113 +682,79 @@ fn build_string_array(errors: &[String]) -> LeanIOResult<LeanOwned> {
   LeanIOResult::ok(arr)
 }
 
-/// Diagnostic: report the shape of `kid.name` in `kenv` vs what
-/// `compile_state.env.named` contains for the same Lean-visible names.
+// =============================================================================
+// Direct Lean env → kernel env roundtrip (no compile)
+// =============================================================================
+//
+// End-to-end check that skips `compile_env` / `ixon_ingress` entirely.
+// Pipeline: decoded Lean `Env` → `lean_ingress` → `KEnv<Meta>` →
+// `lean_egress` → `Lean env` → compare against original.
+//
+// Reuses the same `compare_envs` / `find_diff` / `build_string_array`
+// infrastructure as `rs_kernel_roundtrip`, so error messages have identical
+// shape and we can diff counts 1:1 between the two paths.
+//
+// Useful for bisecting brecOn-like regressions: if this path is clean and
+// `rs_kernel_roundtrip` has ~50 errors, the compile pipeline is dropping
+// information; if both show the same errors, ingress/egress is.
+
+/// FFI: exercise the full pipeline Lean env → kernel → Lean (egress) WITHOUT
+/// going through Ixon compilation, and compare each constant against the
+/// original.
 ///
-/// Prints:
-///   - total KId count and how many have `Name::anon()` (empty) names
-///   - the first 10 non-empty `format!("{}", kid.name)` values
-///   - for each probe name, whether `kenv` has a KId formatting to that name,
-///     whether `compile_state.env.named` has it, and if so the addr prefix.
-///
-/// This lets us triangulate: if `named` has "Acc" but `kenv` doesn't, ingress
-/// is dropping it; if `kenv` has it under a different formatted name, our
-/// key-formatting assumption is wrong; if neither has it, compile itself didn't
-/// register it.
-fn diagnose_kenv_names(
-  kenv: &KEnv<Meta>,
-  ixon_env: &crate::ix::ixon::env::Env,
-  probes: &[&str],
-) {
-  use crate::ix::address::Address;
+/// Lean signature:
+/// ```lean
+/// @[extern "rs_kernel_roundtrip_no_compile"]
+/// opaque rsKernelRoundtripNoCompileFFI :
+///     @& List (Lean.Name × Lean.ConstantInfo) → IO (Array String)
+/// ```
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_kernel_roundtrip_no_compile(
+  env_consts: LeanList<LeanBorrowed<'_>>,
+) -> LeanIOResult<LeanOwned> {
+  let total_start = Instant::now();
 
-  let mut by_name: FxHashMap<String, KId<Meta>> = FxHashMap::default();
-  let mut by_addr: FxHashMap<Address, Vec<KId<Meta>>> = FxHashMap::default();
-  let mut anon_count = 0usize;
-  let mut sample: Vec<String> = Vec::new();
-
-  for (kid, _kc) in kenv.iter() {
-    let n = format!("{}", kid.name);
-    if n.is_empty() || n == "[anonymous]" {
-      anon_count += 1;
-    } else if sample.len() < 10 {
-      sample.push(n.clone());
-    }
-    by_addr.entry(kid.addr.clone()).or_default().push(kid.clone());
-    // Last write wins on collisions; fine for diagnostic purposes.
-    by_name.insert(n, kid);
-  }
-
+  let t0 = Instant::now();
+  let rust_env = decode_env(env_consts);
   eprintln!(
-    "[diag] kenv has {} KIds total ({} unique addrs); {} anonymous; sample non-anon names: {:?}",
-    kenv.len(),
-    by_addr.len(),
-    anon_count,
-    sample
+    "[rs_kernel_roundtrip_no_compile] read env:    {:>8.1?}",
+    t0.elapsed()
   );
 
-  for probe in probes {
-    let in_kenv = by_name.get(*probe);
-    let named_entry = ixon_env
-      .named
-      .iter()
-      .find(|e| format!("{}", e.key()) == *probe)
-      .map(|e| (e.value().addr.clone(), e.value().addr.hex()[..12].to_string()));
+  // Direct Lean → kernel ingress. No compile, no Ixon.
+  let t1 = Instant::now();
+  let rust_env_arc = Arc::new(rust_env);
+  let kenv = lean_ingress(&rust_env_arc);
+  eprintln!(
+    "[rs_kernel_roundtrip_no_compile] ingress:     {:>8.1?} ({} consts)",
+    t1.elapsed(),
+    kenv.len()
+  );
 
-    match (in_kenv, &named_entry) {
-      (Some(kid), Some((_, named_addr))) => {
-        let kenv_addr = kid.addr.hex()[..12].to_string();
-        let match_str = if kenv_addr == *named_addr { "==" } else { "!=" };
-        eprintln!(
-          "[diag] '{probe}': kenv addr={kenv_addr} {match_str} named addr={named_addr}"
-        );
-      },
-      (Some(kid), None) => {
-        eprintln!(
-          "[diag] '{probe}': in kenv (addr={}) but NOT in compile_state.env.named",
-          kid.addr.hex()[..12].to_string()
-        );
-      },
-      (None, Some((addr, named_addr))) => {
-        // Probe by address into kenv — maybe the KId is there under a
-        // different name (anon, transformed, or with surgery).
-        let by_this_addr = by_addr.get(addr);
-        match by_this_addr {
-          Some(kids) => {
-            let names_under_addr: Vec<String> =
-              kids.iter().map(|k| format!("{}", k.name)).collect();
-            eprintln!(
-              "[diag] '{probe}': named addr={named_addr} present in kenv under other names: {:?}",
-              names_under_addr
-            );
-          },
-          None => {
-            // Check what IxonCI variant lives at that address.
-            let ci_variant = ixon_env
-              .get_const(addr)
-              .map(|c| match &c.info {
-                crate::ix::ixon::constant::ConstantInfo::Defn(_) => "Defn",
-                crate::ix::ixon::constant::ConstantInfo::Recr(_) => "Recr",
-                crate::ix::ixon::constant::ConstantInfo::Axio(_) => "Axio",
-                crate::ix::ixon::constant::ConstantInfo::Quot(_) => "Quot",
-                crate::ix::ixon::constant::ConstantInfo::Muts(_) => "Muts",
-                crate::ix::ixon::constant::ConstantInfo::IPrj(_) => "IPrj",
-                crate::ix::ixon::constant::ConstantInfo::CPrj(_) => "CPrj",
-                crate::ix::ixon::constant::ConstantInfo::RPrj(_) => "RPrj",
-                crate::ix::ixon::constant::ConstantInfo::DPrj(_) => "DPrj",
-              })
-              .unwrap_or("<get_const None>");
-            eprintln!(
-              "[diag] '{probe}': named addr={named_addr} (IxonCI::{ci_variant}) absent from kenv — ingress dropped it"
-            );
-          },
-        }
-      },
-      (None, None) => {
-        eprintln!(
-          "[diag] '{probe}': absent from both compile_state.env.named AND kenv — compile didn't register it"
-        );
-      },
-    }
-  }
+  // Egress kernel → Lean.
+  let t2 = Instant::now();
+  let egressed_env = lean_egress(&kenv);
+  eprintln!(
+    "[rs_kernel_roundtrip_no_compile] egress:      {:>8.1?} ({} consts)",
+    t2.elapsed(),
+    egressed_env.len()
+  );
+
+  // Compare.
+  let t3 = Instant::now();
+  let (errors, checked, not_found) = compare_envs(&rust_env_arc, &egressed_env);
+  eprintln!(
+    "[rs_kernel_roundtrip_no_compile] verify:      {:>8.1?} (checked {checked}, not_found {not_found}, errors {})",
+    t3.elapsed(),
+    errors.len()
+  );
+
+  drop(rust_env_arc);
+
+  eprintln!(
+    "[rs_kernel_roundtrip_no_compile] total:       {:>8.1?}",
+    total_start.elapsed()
+  );
+
+  build_string_array(&errors)
 }

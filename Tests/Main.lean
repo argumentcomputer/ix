@@ -8,6 +8,7 @@ import Tests.Ix.Compile
 import Tests.Ix.Compile.ValidateAux
 import Tests.Ix.Decompile
 import Tests.Ix.Kernel.Roundtrip
+import Tests.Ix.Kernel.RoundtripNoCompile
 import Tests.Ix.Kernel.Tutorial
 import Tests.Ix.RustSerialize
 import Tests.Ix.RustDecompile
@@ -53,7 +54,8 @@ def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("rust-serialize", Tests.RustSerialize.rustSerializeSuiteIO),
   ("rust-decompile", Tests.RustDecompile.rustDecompileSuiteIO),
   ("commit-io", Tests.Commit.suiteIO),
-  ("kernel-roundtrip", Tests.Ix.Kernel.Roundtrip.suite),
+  ("kernel-ixon-roundtrip", Tests.Ix.Kernel.Roundtrip.suite),
+  ("kernel-lean-roundtrip", Tests.Ix.Kernel.RoundtripNoCompile.suite),
   ("kernel-tutorial", Tests.Ix.Kernel.Tutorial.suite),
 ]
 

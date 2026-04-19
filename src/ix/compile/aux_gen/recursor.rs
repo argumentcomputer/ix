@@ -66,18 +66,36 @@ pub(crate) fn generate_recursors_from_expanded(
     .map(|m| m.name.clone())
     .collect();
 
+  // Block-wide `is_unsafe`: Lean's mutual block invariant requires every
+  // inductive in the block to share the same safety. Synthetic nested-aux
+  // inductives (which don't exist in `lean_env`) inherit this flag so that
+  // downstream aux_gen (`.rec_N`, `.below_N`, `.brecOn_N[.go|.eq]`) carries
+  // the correct `RecursorVal::is_unsafe` / `DefinitionSafety`.
+  let block_is_unsafe = original_names
+    .first()
+    .and_then(|n| match lean_env.get(n).as_deref() {
+      Some(ConstantInfo::InductInfo(v)) => Some(v.is_unsafe),
+      _ => None,
+    })
+    .unwrap_or(false);
+
   for member in &expanded.types {
     let ctor_names: Vec<Name> =
       member.ctors.iter().map(|c| c.name.clone()).collect();
 
-    // Use the original lean_env's `all`/`is_rec`/`is_reflexive` when available.
-    // For auxiliary types (not in lean_env), fall back to block-wide defaults.
-    let (all_field, is_rec, is_reflexive) = match lean_env.get(&member.name) {
-      Some(ConstantInfo::InductInfo(orig)) => {
-        (orig.all.clone(), orig.is_rec, orig.is_reflexive)
-      },
-      _ => (original_names.clone(), true, false),
-    };
+    // Use the original lean_env's `all`/`is_rec`/`is_reflexive`/`is_unsafe`
+    // when available. For auxiliary types (not in lean_env), fall back to
+    // block-wide defaults.
+    let (all_field, is_rec, is_reflexive, ind_is_unsafe) =
+      match lean_env.get(&member.name).as_deref() {
+        Some(ConstantInfo::InductInfo(orig)) => (
+          orig.all.clone(),
+          orig.is_rec,
+          orig.is_reflexive,
+          orig.is_unsafe,
+        ),
+        _ => (original_names.clone(), true, false, block_is_unsafe),
+      };
 
     let ind_val = InductiveVal {
       cnst: ConstantVal {
@@ -91,12 +109,19 @@ pub(crate) fn generate_recursors_from_expanded(
       ctors: ctor_names,
       num_nested: Nat::from(0u64),
       is_rec,
-      is_unsafe: false,
+      is_unsafe: ind_is_unsafe,
       is_reflexive,
     };
     overlay.insert(member.name.clone(), ConstantInfo::InductInfo(ind_val));
 
     for (ci, ctor) in member.ctors.iter().enumerate() {
+      // Look up original ctor's safety when available; fall back to the
+      // containing inductive's flag (ctor safety always matches its parent
+      // inductive — the kernel rejects unsafe ctors on safe inductives).
+      let ctor_is_unsafe = match lean_env.get(&ctor.name).as_deref() {
+        Some(ConstantInfo::CtorInfo(orig)) => orig.is_unsafe,
+        _ => ind_is_unsafe,
+      };
       let ctor_val = ConstructorVal {
         cnst: ConstantVal {
           name: ctor.name.clone(),
@@ -107,7 +132,7 @@ pub(crate) fn generate_recursors_from_expanded(
         cidx: Nat::from(ci as u64),
         num_params: Nat::from(member.n_params as u64),
         num_fields: Nat::from(ctor.n_fields as u64),
-        is_unsafe: false,
+        is_unsafe: ctor_is_unsafe,
       };
       overlay.insert(ctor.name.clone(), ConstantInfo::CtorInfo(ctor_val));
     }
@@ -459,8 +484,11 @@ pub(crate) fn generate_canonical_recursors_with_overlay(
       &class_infos,
       &elim_level,
       &ind_univs,
+      &rec_level_params,
       lean_env,
       overlay,
+      stt,
+      kctx,
     );
 
     // Build rules
@@ -472,15 +500,27 @@ pub(crate) fn generate_canonical_recursors_with_overlay(
       &ind_univs,
       &rec_level_params,
       &rec_type,
+      stt,
+      kctx,
     );
 
     // Lean propagates the inductive's safety to its recursor (see
     // `refs/lean4/src/kernel/inductive.cpp:774` — `m_is_unsafe` is sourced
-    // from `decl.is_unsafe()` when `mk_recursor_val` is constructed). For
-    // auxiliary (nested) members we use the external inductive's own
-    // `is_unsafe` flag; for originals it's shared across the block since
-    // mutual blocks are uniformly safe or unsafe.
-    let is_unsafe = di_member.ind.is_unsafe;
+    // from `decl.is_unsafe()` when `mk_recursor_val` is constructed).
+    //
+    // For originals the flag comes from the class representative. For
+    // auxiliary (nested) members the class's `ind` is the *external*
+    // inductive (e.g., `List`), whose own `is_unsafe` has nothing to do
+    // with the containing block. Lean still emits the aux recursor with
+    // the block's safety — `mkBRecOnFromRec` runs in the block's
+    // elaboration context, so `mkDefinitionValInferringUnsafe` sees the
+    // unsafe parents via the aux rec's type. We match that by taking the
+    // block-wide flag (mutual blocks are uniformly safe or unsafe).
+    let is_unsafe = if di_member.is_aux {
+      classes[0].ind.is_unsafe
+    } else {
+      di_member.ind.is_unsafe
+    };
 
     results.push((
       rec_name.clone(),
@@ -564,6 +604,7 @@ fn collect_binders(expr: &LeanExpr, n: usize) -> Vec<Binder> {
 /// class (indexed `0..n_classes`), used to source indices + major for
 /// non-aux recursors. Auxiliary (nested) recursors at `di >= n_classes`
 /// still peel the type themselves using `spec_params` substitution.
+#[allow(clippy::too_many_arguments)]
 fn build_rec_type(
   di: usize,
   classes: &[FlatInfo],
@@ -576,8 +617,11 @@ fn build_rec_type(
   class_infos: &[super::expr_utils::IndRecInfo],
   elim_level: &Level,
   ind_univs: &[Level],
+  rec_level_params: &[Name],
   lean_env: &LeanEnv,
   overlay: Option<&LeanEnv>,
+  stt: &crate::ix::compile::CompileState,
+  kctx: &crate::ix::compile::KernelCtx,
 ) -> LeanExpr {
   let env_get = |name: &Name| -> Option<ConstantInfo> {
     overlay
@@ -651,9 +695,13 @@ fn build_rec_type(
         classes,
         n_params,
         n_classes,
-        &param_fvars,
+        param_fvars,
+        param_decls,
         &motive_fvars,
         ind_univs,
+        rec_level_params,
+        stt,
+        kctx,
       );
       // Domain stays in FVar form — contains param + motive FVars.
       let minor_name = ctor.cnst.name.strip_prefix(ind_name).map_or_else(
@@ -940,6 +988,19 @@ fn build_motive_type_aux(
 ///
 /// `param_fvars`: FVars for the recursor's params (from outer context).
 /// `motive_fvars`: FVars for the recursor's motives (from outer context).
+/// `param_decls`: LocalDecls for params — seeded into the TcScope so WHNF
+///   during recursive-field detection can resolve param-referencing FVar
+///   occurrences.
+/// `rec_level_params`: recursor's level param names (shared across the
+///   whole block), used by `TcScope::new` to route the kernel's ingress
+///   cache per-inductive-signature.
+///
+/// The TcScope built here delta-unfolds definition heads in field domains
+/// (e.g., `constType (n α) (n α)` → `n α`). Without this, `find_rec_target`
+/// sees the stored `App(Const(constType), …)` head and fails to recognize
+/// a recursive occurrence, producing a minor premise missing the `x_ih`
+/// binder — cf. `reduceCtorParam.rec` regression in validate-aux.
+#[allow(clippy::too_many_arguments)]
 fn build_minor_type(
   class_idx: usize,
   ctor: &ConstructorVal,
@@ -947,8 +1008,12 @@ fn build_minor_type(
   n_params: usize,
   n_classes: usize,
   param_fvars: &[LeanExpr],
+  param_decls: &[LocalDecl],
   motive_fvars: &[LeanExpr],
   ind_univs: &[Level],
+  rec_level_params: &[Name],
+  stt: &crate::ix::compile::CompileState,
+  kctx: &crate::ix::compile::KernelCtx,
 ) -> LeanExpr {
   let member = &classes[class_idx];
   // For auxiliary members, substitute levels with occurrence_level_args.
@@ -1010,10 +1075,26 @@ fn build_minor_type(
   }
 
   // Collect fields: peel each field with a fresh FVar.
+  //
+  // A single `TcScope` is built here, seeded with the recursor's shared
+  // params. As we peel each field we push its decl into the scope, so
+  // subsequent field domains (which may reference earlier fields) see a
+  // consistent FVar context for kernel WHNF. The TcScope is reused for
+  // `find_rec_target` and `build_ih_type_fvar` via closures so both
+  // observe the same context and can unfold reducible aliases in field
+  // types — cf. the `reduceCtorParam*` test fixtures where an inductive
+  // appears under a definition head like `constType (n α) (n α)`.
   let n_fields = nat_to_usize(&ctor.num_fields);
   let mut field_decls: Vec<LocalDecl> = Vec::new();
   let mut field_fvars: Vec<LeanExpr> = Vec::new();
   let mut rec_fields: Vec<(usize, usize)> = Vec::new(); // (field_idx, target_class)
+
+  let mut scope = super::expr_utils::TcScope::new(
+    param_decls,
+    rec_level_params,
+    stt,
+    kctx,
+  );
 
   for fi in 0..n_fields {
     match cur.as_data() {
@@ -1022,18 +1103,24 @@ fn build_minor_type(
         // consumeTypeAnnotations in withLocalDecl calls.
         let clean_dom = super::expr_utils::consume_type_annotations(dom);
         let (fv_name, fv) = fresh_fvar("field", fi);
-        field_decls.push(LocalDecl {
+        let decl = LocalDecl {
           fvar_name: fv_name,
           binder_name: name.clone(),
           domain: clean_dom.clone(),
           info: bi.clone(),
-        });
-        field_fvars.push(fv.clone());
-        if let Some(ci) =
-          find_rec_target(&clean_dom, classes, param_fvars, n_params)
-        {
+        };
+        if let Some(ci) = find_rec_target(
+          &clean_dom,
+          classes,
+          param_fvars,
+          n_params,
+          &mut scope,
+        ) {
           rec_fields.push((fi, ci));
         }
+        scope.push_locals(std::slice::from_ref(&decl));
+        field_decls.push(decl);
+        field_fvars.push(fv.clone());
         cur = instantiate1(body, &fv);
       },
       _ => break,
@@ -1052,6 +1139,7 @@ fn build_minor_type(
       param_fvars,
       motive_fvars,
       classes,
+      &mut scope,
     );
     // Lean C++ uses appendAfter("_ih") which appends "_ih" to the
     // innermost string component of the Name structure.
@@ -1111,11 +1199,20 @@ fn build_minor_type(
   mk_forall(conclusion, &all_binders)
 }
 
-/// Build IH type for a recursive field using FVars.
+/// Build IH type for a recursive field using FVars, with kernel WHNF.
 ///
-/// `field_fvar`: the FVar for this field.
-/// `field_dom`: the field's domain (containing FVars for params/earlier fields).
-/// The domain's head (after peeling foralls) should be an inductive in the block.
+/// Delegates head reduction to the kernel via [`TcScope::whnf_lean`]
+/// instead of a pure-syntactic beta reduction, so a reflexive-recursive
+/// field like `(x:α) → constType (n α) (n α)` is seen as targeting
+/// `n α` with no indices, producing an IH of shape
+/// `∀ x : α, motive (field x)`. This matches Lean's
+/// `kernel/inductive.cpp::is_rec_argument` behavior.
+///
+/// The TcScope is borrowed mutably so the caller can reuse it across
+/// multiple field-domain queries within a single constructor — earlier
+/// fields pushed into the scope stay live for later ones that depend on
+/// them.
+#[allow(clippy::too_many_arguments)]
 fn build_ih_type_fvar(
   field_fvar: &LeanExpr,
   field_dom: &LeanExpr,
@@ -1124,22 +1221,14 @@ fn build_ih_type_fvar(
   _param_fvars: &[LeanExpr],
   motive_fvars: &[LeanExpr],
   classes: &[FlatInfo],
+  scope: &mut super::expr_utils::TcScope<'_>,
 ) -> LeanExpr {
-  // Use forallTelescope-style approach: peel foralls from the field domain
-  // using fresh FVars so that the inner application is fully FVar-based.
-  // This avoids the BVar/FVar mixing issues that cause FVar leaks.
-  //
-  // Head-reduce at each step so that lambda-valued spec params (e.g.
-  // `β := λ_:α. Json` for `Internal.Impl α β`) are transparently unwrapped.
-  // A field `v : (λ_:α. Json) k` must be seen as targeting `Json` with no
-  // extra args — without reduction we would treat `k` as an index, which
-  // would apply the motive to too many arguments.
   let mut xs_fvars: Vec<LeanExpr> = Vec::new();
   let mut xs_decls: Vec<LocalDecl> = Vec::new();
-  let mut cur = super::expr_utils::beta_reduce(field_dom);
+  let mut cur = scope.whnf_lean(field_dom);
 
   while let ExprData::ForallE(name, dom, body, bi, _) = cur.as_data() {
-    // Check if the expression head is an inductive in the block — stop if so
+    // Check if the expression head is an inductive in the block — stop if so.
     let (h, _) = decompose_apps(&cur);
     if let ExprData::Const(cname, _, _) = h.as_data()
       && classes.iter().any(|c| c.all_names.iter().any(|n| n == cname))
@@ -1147,15 +1236,22 @@ fn build_ih_type_fvar(
       break;
     }
     let (fv_name, fv) = fresh_fvar("ih_xs", xs_fvars.len());
-    xs_decls.push(LocalDecl {
+    let decl = LocalDecl {
       fvar_name: fv_name,
       binder_name: name.clone(),
       domain: dom.clone(),
       info: bi.clone(),
-    });
+    };
+    scope.push_locals(std::slice::from_ref(&decl));
+    xs_decls.push(decl);
     xs_fvars.push(fv.clone());
-    cur = super::expr_utils::beta_reduce(&instantiate1(body, &fv));
+    cur = scope.whnf_lean(&instantiate1(body, &fv));
   }
+
+  // Pop the xs decls we pushed during peeling so the scope stays balanced
+  // for the next field / constructor. The IH body construction below does
+  // not need them in the TC context.
+  scope.pop_locals(&xs_decls);
 
   // `cur` is now the fully FVar-instantiated inner expression: I params idx_args
   let (_, inner_args) = decompose_apps(&cur);
@@ -1189,6 +1285,7 @@ fn build_ih_type_fvar(
 /// still needed for recursive field detection (IH targets can be any member).
 ///
 /// Rule RHS: `λ params motives minors fields, minor fields ihs`
+#[allow(clippy::too_many_arguments)]
 fn build_rec_rules(
   di: usize,
   classes: &[FlatInfo],
@@ -1197,6 +1294,8 @@ fn build_rec_rules(
   ind_univs: &[Level],
   rec_level_params: &[Name],
   rec_type: &LeanExpr,
+  stt: &crate::ix::compile::CompileState,
+  kctx: &crate::ix::compile::KernelCtx,
 ) -> Vec<RecursorRule> {
   let n_flat = classes.len();
   let n_motives = n_flat;
@@ -1264,6 +1363,18 @@ fn build_rec_rules(
 
   let rec_univs: Vec<Level> =
     rec_level_params.iter().map(|n| Level::param(n.clone())).collect();
+
+  // TcScope seeded with params+motives+minors so `find_rec_target`
+  // and `build_rule_ih_fvar` can resolve FVar references during WHNF
+  // of constructor-field domains. Same rationale as `build_minor_type`:
+  // delta-unfolding reducible-alias heads matters for recognizing recursive
+  // fields hidden under a definition (`reduceCtorParam` family).
+  let mut scope = super::expr_utils::TcScope::new(
+    &pmm_decls,
+    rec_level_params,
+    stt,
+    kctx,
+  );
 
   let mut rules = Vec::new();
 
@@ -1337,17 +1448,23 @@ fn build_rec_rules(
           ExprData::ForallE(fname, dom, b, fbi, _) => {
             let clean_dom = super::expr_utils::consume_type_annotations(dom);
             let (fv_name, fv) = fresh_fvar("rfield", fi);
-            field_decls.push(LocalDecl {
+            let decl = LocalDecl {
               fvar_name: fv_name,
               binder_name: fname.clone(),
               domain: clean_dom.clone(),
               info: fbi.clone(),
-            });
-            if let Some(target_ci) =
-              find_rec_target(&clean_dom, classes, &param_fvars, n_params)
-            {
+            };
+            if let Some(target_ci) = find_rec_target(
+              &clean_dom,
+              classes,
+              &param_fvars,
+              n_params,
+              &mut scope,
+            ) {
               rec_field_data.push((fv.clone(), target_ci));
             }
+            scope.push_locals(std::slice::from_ref(&decl));
+            field_decls.push(decl);
             field_fvars.push(fv.clone());
             ty = instantiate1(b, &fv);
           },
@@ -1404,12 +1521,16 @@ fn build_rec_rules(
             &motive_fvars,
             &minor_fvars,
             classes,
+            &mut scope,
           )
         } else {
           field_fv.clone() // fallback — shouldn't happen
         };
         body = LeanExpr::app(body, ih);
       }
+
+      // Pop this ctor's field decls so the scope is clean for the next ctor.
+      scope.pop_locals(&field_decls);
 
       // Abstract and wrap: fields (innermost), then PMM (outermost).
       let mut all_decls: Vec<LocalDecl> = Vec::new();
@@ -1433,6 +1554,15 @@ fn build_rec_rules(
 /// Build IH value for a recursive field in a rule RHS using FVars.
 ///
 /// IH = `λ (xs...), rec[target] params motives minors indices (field xs)`
+/// WHNF-aware variant of [`build_rule_ih_fvar`].
+///
+/// Peels field-domain foralls using the kernel's WHNF (via `TcScope`)
+/// so that reducible-alias heads unfold into the actual inductive the
+/// IH targets. Without this, `idx_args` is extracted from an un-reduced
+/// head like `constType (n α) (n α)`, producing an `Eq.ndrec`-style
+/// partial app that the congruence check rejects. Mirrors
+/// `build_ih_type_fvar` in the minor-type path.
+#[allow(clippy::too_many_arguments)]
 fn build_rule_ih_fvar(
   field_fvar: &LeanExpr,
   field_dom: &LeanExpr,
@@ -1443,18 +1573,13 @@ fn build_rule_ih_fvar(
   motive_fvars: &[LeanExpr],
   minor_fvars: &[LeanExpr],
   classes: &[FlatInfo],
+  scope: &mut super::expr_utils::TcScope<'_>,
 ) -> LeanExpr {
   let target_n_params = nat_to_usize(&classes[target_ci].ind.num_params);
 
-  // Use forallTelescope-style approach: peel foralls with fresh FVars
-  // so the inner expression and all idx_args are fully in FVar form.
-  //
-  // Head-reduce at each step — same rationale as `build_ih_type_fvar`:
-  // lambda-valued spec params must be unwrapped so the idx_args we
-  // extract match the reduced form.
   let mut xs_fvars: Vec<LeanExpr> = Vec::new();
   let mut xs_decls: Vec<LocalDecl> = Vec::new();
-  let mut cur = super::expr_utils::beta_reduce(field_dom);
+  let mut cur = scope.whnf_lean(field_dom);
 
   while let ExprData::ForallE(name, dom, body, bi, _) = cur.as_data() {
     let (h, _) = decompose_apps(&cur);
@@ -1464,22 +1589,23 @@ fn build_rule_ih_fvar(
       break;
     }
     let (fv_name, fv) = fresh_fvar("rih_xs", xs_fvars.len());
-    xs_decls.push(LocalDecl {
+    let decl = LocalDecl {
       fvar_name: fv_name,
       binder_name: name.clone(),
       domain: dom.clone(),
       info: bi.clone(),
-    });
+    };
+    scope.push_locals(std::slice::from_ref(&decl));
+    xs_decls.push(decl);
     xs_fvars.push(fv.clone());
-    cur = super::expr_utils::beta_reduce(&instantiate1(body, &fv));
+    cur = scope.whnf_lean(&instantiate1(body, &fv));
   }
+  scope.pop_locals(&xs_decls);
 
-  // `cur` is now fully FVar-instantiated: I params idx_args
   let (_, inner_args) = decompose_apps(&cur);
   let idx_args: Vec<LeanExpr> =
     inner_args.into_iter().skip(target_n_params).collect();
 
-  // Build: rec[target] params motives minors indices (field xs_fvars)
   let mut ih = mk_const(rec_name, rec_univs);
   for pf in param_fvars {
     ih = LeanExpr::app(ih, pf.clone());
@@ -1499,7 +1625,6 @@ fn build_rule_ih_fvar(
   }
   ih = LeanExpr::app(ih, field_app);
 
-  // Abstract xs FVars back into lambdas, preserving original binder names
   mk_lambda(ih, &xs_decls)
 }
 
@@ -1587,75 +1712,80 @@ fn has_deeper_str(n: &Name) -> bool {
 /// For originals: validates that applied parameters match `param_fvars`.
 /// For auxiliaries: also matches spec_params to distinguish e.g. List Syntax
 /// from List Other.
+/// Detect whether a constructor field's type targets one of the block's
+/// inductives (returning its class index), using kernel WHNF to see
+/// through reducible-alias heads.
+///
+/// Peels foralls from `dom` with fresh FVars, delta-unfolds the head at
+/// each step via [`TcScope::whnf_lean`], then inspects the final head:
+/// if it's a `Const` naming a member of `classes` whose param slots
+/// match `param_fvars` (or, for aux members, whose spec-param slots
+/// match), the class index is returned.
+///
+/// Mirrors Lean's `kernel/inductive.cpp::is_rec_argument`. The TcScope
+/// is left balanced on return — every local pushed during peeling is
+/// popped.
 fn find_rec_target(
   dom: &LeanExpr,
   classes: &[FlatInfo],
   param_fvars: &[LeanExpr],
   n_params: usize,
+  scope: &mut super::expr_utils::TcScope<'_>,
 ) -> Option<usize> {
-  // Peel foralls with FVar instantiation (C++ uses mk_local_decl_for +
-  // instantiate). This avoids dangling BVars in the result type when
-  // fields have dependent index types.
-  //
-  // We head-reduce at each step so that lambda-valued parameters (e.g.,
-  // `β := λ_. PrefixTreeNode α β cmp` for `Internal.Impl α β`) are
-  // transparently unwrapped: a field like `v : (λ_:α. PT α β cmp) k`
-  // still resolves to the `PT` class. Lean's kernel uses `whnf` for the
-  // same purpose in `kernel/inductive.cpp::is_rec_argument` — the
-  // detection sees through the redex even though the stored field type
-  // keeps the unreduced form.
-  let mut ty = super::expr_utils::beta_reduce(dom);
-  let mut fvar_idx = 0usize;
+  let mut ty = scope.whnf_lean(dom);
+  let mut pushed: Vec<LocalDecl> = Vec::new();
   loop {
     match ty.as_data() {
-      ExprData::ForallE(_, _, body, _, _) => {
-        let (_, fv) = fresh_fvar("frt", fvar_idx);
-        fvar_idx += 1;
-        ty = super::expr_utils::beta_reduce(&instantiate1(body, &fv));
+      ExprData::ForallE(name, d, body, bi, _) => {
+        let (fv_name, fv) = fresh_fvar("frt", pushed.len());
+        let decl = LocalDecl {
+          fvar_name: fv_name,
+          binder_name: name.clone(),
+          domain: d.clone(),
+          info: bi.clone(),
+        };
+        scope.push_locals(std::slice::from_ref(&decl));
+        pushed.push(decl);
+        ty = scope.whnf_lean(&instantiate1(body, &fv));
       },
-      _ => {
-        let (head, args) = decompose_apps(&ty);
-        if let ExprData::Const(name, _, _) = head.as_data() {
-          for (ci, class) in classes.iter().enumerate() {
-            // Check if the name matches any name in the equivalence class.
-            if !class.all_names.iter().any(|n| n == name) {
-              continue;
-            }
-            if !class.is_aux {
-              // Original member: validate parameters match (C++ is_valid_ind_app
-              // checks m_params[i] == args[i] for each parameter).
-              if args.len() >= n_params
-                && args[..n_params]
-                  .iter()
-                  .zip(param_fvars.iter())
-                  .all(|(a, p)| a.get_hash() == p.get_hash())
-              {
-                return Some(ci);
-              }
-              // Name matched but params didn't — not a valid recursive occurrence.
-              continue;
-            }
-            // Auxiliary member: also match spec_params to distinguish
-            // e.g., List Syntax from List Other.
-            let sp_fvars =
-              instantiate_spec_with_fvars(&class.spec_params, param_fvars);
-            let n_par = class.own_params;
-            if args.len() >= n_par
-              && sp_fvars.len() == n_par
-              && args[..n_par]
-                .iter()
-                .zip(sp_fvars.iter())
-                .all(|(a, sp)| a.get_hash() == sp.get_hash())
-            {
-              return Some(ci);
-            }
-            // Name matched but spec_params didn't — try next member.
-          }
-        }
-        return None;
-      },
+      _ => break,
     }
   }
+  // Pop all peel-locals — keep the caller's scope balanced.
+  scope.pop_locals(&pushed);
+
+  let (head, args) = decompose_apps(&ty);
+  if let ExprData::Const(name, _, _) = head.as_data() {
+    for (ci, class) in classes.iter().enumerate() {
+      if !class.all_names.iter().any(|n| n == name) {
+        continue;
+      }
+      if !class.is_aux {
+        if args.len() >= n_params
+          && args[..n_params]
+            .iter()
+            .zip(param_fvars.iter())
+            .all(|(a, p)| a.get_hash() == p.get_hash())
+        {
+          return Some(ci);
+        }
+        continue;
+      }
+      let sp_fvars =
+        instantiate_spec_with_fvars(&class.spec_params, param_fvars);
+      let n_par = class.own_params;
+      if args.len() >= n_par
+        && sp_fvars.len() == n_par
+        && args[..n_par]
+          .iter()
+          .zip(sp_fvars.iter())
+          .all(|(a, sp)| a.get_hash() == sp.get_hash())
+      {
+        return Some(ci);
+      }
+    }
+  }
+  None
 }
 
 /// Port of Lean's `inferImplicit(ty, numParams, strict)`.
@@ -1860,7 +1990,7 @@ fn compute_is_large_and_k(
         KConst::Ctor {
           name: ctor.cnst.name.clone(),
           level_params: cls_lvl_params.clone(),
-          is_unsafe: false,
+          is_unsafe: ctor.is_unsafe,
           lvls: cls_n_lvls,
           induct: cls_zid.clone(),
           cidx: cls_ctor_zids.len() as u64,
@@ -1974,13 +2104,19 @@ fn compute_is_large_and_k(
   // Use classes.len() (full flat block including nested auxiliaries), not
   // n_classes, to match Lean's `m_ind_types.size() == 1` check which counts
   // the expanded block (inductive.cpp:556).
+  //
+  // Use the WHNF-reduced `result_kuniv` / `is_prop` for Prop-detection,
+  // NOT the syntactic `peek_result_sort(first_ty_z)`. For inductives whose
+  // target type is a reducible alias (e.g. `Presieve X := ∀ Y, (Y ⟶ X) →
+  // Prop`), `peek_result_sort` peels foralls but stops at the unreduced
+  // `App(Const(Presieve), X)` and returns `None`, falsely rejecting K.
+  // Lean's C++ init_K_target (`kernel/inductive.cpp`) uses the kernel's
+  // `m_result_level` which is set from the WHNF-reduced return-sort —
+  // same thing we already computed into `result_kuniv` a few lines up.
   let k = classes.len() == 1
     && classes[0].ctors.len() == 1
     && nat_to_u64(&classes[0].ctors[0].num_fields) == 0
-    && matches!(
-      peek_result_sort(first_ty_z),
-      Some(u) if u.is_zero()
-    );
+    && is_prop;
 
   let _cilk_elapsed = _cilk_start.elapsed();
   if *crate::ix::compile::IX_TIMING && _cilk_elapsed.as_secs_f32() > 0.1 {
@@ -2099,6 +2235,13 @@ fn collect_const_refs(expr: &LeanExpr, out: &mut Vec<Name>) {
 }
 
 /// Peek at the result sort of a KExpr type (peel foralls, check for Sort).
+///
+/// No longer wired into the K-target check (see `compute_is_large_and_k`),
+/// which now uses the WHNF-reduced `result_kuniv` to correctly classify
+/// inductives whose target type is a reducible alias. Kept available for
+/// potential future callers that need a syntactic-only peek, and
+/// referenced by that same comment for the historical record.
+#[allow(dead_code)]
 fn peek_result_sort(
   ty: &crate::ix::kernel::expr::KExpr<crate::ix::kernel::mode::Meta>,
 ) -> Option<crate::ix::kernel::level::KUniv<crate::ix::kernel::mode::Meta>> {

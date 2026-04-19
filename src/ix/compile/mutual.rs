@@ -28,7 +28,7 @@ use crate::ix::compile::{
 };
 use crate::ix::env::{
   ConstantInfo as LeanConstantInfo, ConstantVal, ConstructorVal,
-  DefinitionSafety, Env as LeanEnv, Name,
+  DefinitionSafety, Env as LeanEnv, Name, ReducibilityHints,
 };
 use crate::ix::ixon::{
   CompileError,
@@ -113,7 +113,6 @@ pub(crate) fn compile_aux_block(
   }
 
   // Compile the mutual block.
-  let name_refs = cache.build_name_refs();
   let block_refs: Vec<Address> = cache.refs.iter().cloned().collect();
   let block_univs: Vec<Arc<Univ>> = cache.univs.iter().cloned().collect();
   let name_str = aux_consts[0].name().pretty();
@@ -140,7 +139,7 @@ pub(crate) fn compile_aux_block(
       let meta = all_metas.remove(&n).unwrap_or_default();
       stt.env.register_name(
         n.clone(),
-        Named::new(block_addr.clone(), meta).with_name_refs(name_refs.clone()),
+        Named::new(block_addr.clone(), meta),
       );
       stt.aux_name_to_addr.insert(n.clone(), block_addr.clone());
       stt.aux_gen_extra_names.insert(n.clone());
@@ -165,8 +164,7 @@ pub(crate) fn compile_aux_block(
             stt.env.store_const(proj_addr.clone(), indc_proj);
             stt.env.register_name(
               n.clone(),
-              Named::new(proj_addr.clone(), meta)
-                .with_name_refs(name_refs.clone()),
+              Named::new(proj_addr.clone(), meta),
             );
             stt.aux_name_to_addr.insert(n.clone(), proj_addr.clone());
             stt.aux_gen_extra_names.insert(n.clone());
@@ -186,8 +184,7 @@ pub(crate) fn compile_aux_block(
               stt.env.store_const(ctor_addr.clone(), ctor_proj);
               stt.env.register_name(
                 ctor.cnst.name.clone(),
-                Named::new(ctor_addr.clone(), ctor_meta)
-                  .with_name_refs(name_refs.clone()),
+                Named::new(ctor_addr.clone(), ctor_meta),
               );
               stt
                 .aux_name_to_addr
@@ -205,8 +202,7 @@ pub(crate) fn compile_aux_block(
             stt.env.store_const(proj_addr.clone(), proj);
             stt.env.register_name(
               n.clone(),
-              Named::new(proj_addr.clone(), meta)
-                .with_name_refs(name_refs.clone()),
+              Named::new(proj_addr.clone(), meta),
             );
             stt.aux_name_to_addr.insert(n.clone(), proj_addr);
             stt.aux_gen_extra_names.insert(n.clone());
@@ -221,8 +217,7 @@ pub(crate) fn compile_aux_block(
             stt.env.store_const(proj_addr.clone(), proj);
             stt.env.register_name(
               n.clone(),
-              Named::new(proj_addr.clone(), meta)
-                .with_name_refs(name_refs.clone()),
+              Named::new(proj_addr.clone(), meta),
             );
             stt.aux_name_to_addr.insert(n.clone(), proj_addr);
             stt.aux_gen_extra_names.insert(n.clone());
@@ -365,8 +360,8 @@ pub(crate) fn generate_and_compile_aux_recursors(
         typ: d.typ.clone(),
         kind: DefKind::Definition,
         value: d.value.clone(),
-        hints: crate::ix::env::ReducibilityHints::Abbrev,
-        safety: DefinitionSafety::Safe,
+        hints: ReducibilityHints::Abbrev,
+        safety: def_safety(d.is_unsafe),
         all: vec![],
       })),
       _ => None,
@@ -389,8 +384,8 @@ pub(crate) fn generate_and_compile_aux_recursors(
         typ: d.typ.clone(),
         kind: DefKind::Definition,
         value: d.value.clone(),
-        hints: crate::ix::env::ReducibilityHints::Abbrev,
-        safety: DefinitionSafety::Safe,
+        hints: ReducibilityHints::Abbrev,
+        safety: def_safety(d.is_unsafe),
         all: vec![],
       })),
       _ => None,
@@ -437,8 +432,8 @@ pub(crate) fn generate_and_compile_aux_recursors(
         typ: d.typ.clone(),
         kind: DefKind::Definition,
         value: d.value.clone(),
-        hints: crate::ix::env::ReducibilityHints::Abbrev,
-        safety: DefinitionSafety::Safe,
+        hints: ReducibilityHints::Abbrev,
+        safety: def_safety(d.is_unsafe),
         all: vec![],
       })),
       _ => None,
@@ -528,7 +523,9 @@ fn below_indc_to_mut_const(
       cidx: Nat::from(ci as u64),
       num_params: Nat::from(c.n_params as u64),
       num_fields: Nat::from(c.n_fields as u64),
-      is_unsafe: false,
+      // A `.below` constructor inherits the parent inductive's safety; Lean's
+      // kernel requires ctor safety to match the enclosing inductive.
+      is_unsafe: bi.is_unsafe,
     })
     .collect();
 
@@ -545,7 +542,10 @@ fn below_indc_to_mut_const(
       all: all_below_names.to_vec(),
       ctors: bi.ctors.iter().map(|c| c.name.clone()).collect(),
       is_rec: true,
-      is_unsafe: false,
+      // Prop-level `.below` is an inductive; its safety mirrors the parent's
+      // (via `IndPredBelow`). Hardcoding `false` here diverged from Lean's
+      // content hash whenever the parent was `unsafe inductive`.
+      is_unsafe: bi.is_unsafe,
       // Propagate reflexivity from the parent: a `.below` built from a
       // reflexive parent has higher-order recursive IH fields of its own
       // (`∀ ys, I.below ... (h ys)`). Hardcoding `false` here silently
@@ -559,17 +559,82 @@ fn below_indc_to_mut_const(
 }
 
 /// Convert a `BRecOnDef` to a `MutConst::Defn`.
+///
+/// Replicates Lean's per-kind decisions from `Lean/Meta/Constructions/BRecOn.lean`:
+///
+/// | Shape              | Kind        | Safety                | Hints    |
+/// |--------------------|-------------|-----------------------|----------|
+/// | `.brecOn` (Prop)   | `Theorem`   | inferred from unsafe  | default  |
+/// | `.brecOn` (Type)   | `Definition`| inferred from unsafe  | `Abbrev` |
+/// | `.brecOn.go`       | `Definition`| inferred from unsafe  | `Abbrev` |
+/// | `.brecOn.eq` (safe)| `Theorem`   | `Safe`                | default  |
+/// | `.brecOn.eq` (unsafe) | `Definition` | `Unsafe`           | `Opaque` |
+///
+/// The unsafe-`.eq` flip is driven by Lean's `mkThmOrUnsafeDef`
+/// (`refs/lean4/src/Lean/Environment.lean:2797`), which replaces the theorem
+/// declaration with an unsafe definition when `env.hasUnsafe` fires on the
+/// type or value — always the case for unsafe inductives since the type
+/// mentions the parent. `.brecOn` / `.brecOn.go` pick up their safety via
+/// `mkDefinitionValInferringUnsafe` on the same predicate.
 fn brecon_to_mut_const(d: &BRecOnDef) -> MutConst {
+  let is_eq = d.name.last_str().as_deref() == Some("eq");
+  let is_go = d.name.last_str().as_deref() == Some("go");
+
+  // Determine kind.
+  let kind = if is_eq {
+    if d.is_unsafe {
+      DefKind::Definition
+    } else {
+      DefKind::Theorem
+    }
+  } else if d.is_prop {
+    // Prop-level `.brecOn` with non-unsafe inductive: Thm. Unsafe Prop
+    // inductives are effectively impossible (Lean forbids `unsafe` in Prop),
+    // but honor the flag anyway.
+    if d.is_unsafe {
+      DefKind::Definition
+    } else {
+      DefKind::Theorem
+    }
+  } else {
+    // Type-level `.brecOn` / `.brecOn.go`.
+    DefKind::Definition
+  };
+
+  // Hints: `.abbrev` for reducible aux definitions (matches Lean's
+  // `mkDefinitionValInferringUnsafe … .abbrev`); `.opaque` for the unsafe-eq
+  // case (per `mkThmOrUnsafeDef`). Theorems use the struct default (`Opaque`
+  // internally, not serialized for Thm).
+  let hints = if is_eq && d.is_unsafe {
+    ReducibilityHints::Opaque
+  } else if matches!(kind, DefKind::Theorem) {
+    ReducibilityHints::Opaque
+  } else {
+    ReducibilityHints::Abbrev
+  };
+
+  let _ = is_go; // kind decision doesn't differentiate go from plain brecOn above
   MutConst::Defn(Def {
     name: d.name.clone(),
     level_params: d.level_params.clone(),
     typ: d.typ.clone(),
-    kind: DefKind::Theorem,
+    kind,
     value: d.value.clone(),
-    hints: crate::ix::env::ReducibilityHints::Abbrev,
-    safety: DefinitionSafety::Safe,
+    hints,
+    safety: def_safety(d.is_unsafe),
     all: vec![],
   })
+}
+
+/// Map an `is_unsafe` flag to a `DefinitionSafety`. Isolated here so every
+/// aux-constant emission site picks up the same rule; if we ever need to
+/// distinguish `Partial` from `Unsafe` we can refine one place.
+fn def_safety(is_unsafe: bool) -> DefinitionSafety {
+  if is_unsafe {
+    DefinitionSafety::Unsafe
+  } else {
+    DefinitionSafety::Safe
+  }
 }
 
 /// Determine which batch a `.brecOn` definition belongs to.

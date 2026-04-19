@@ -1417,8 +1417,8 @@ mod tests {
         member_idx: 0,
         ty: rec_ty,
         rules: vec![
-          RecRule { fields: 0, rhs: rule_a_rhs },
-          RecRule { fields: 0, rhs: rule_b_rhs },
+          RecRule { ctor: Name::anon(), fields: 0, rhs: rule_a_rhs },
+          RecRule { ctor: Name::anon(), fields: 0, rhs: rule_b_rhs },
         ],
         lean_all: vec![block_id.clone()],
       },

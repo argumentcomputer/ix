@@ -1549,8 +1549,8 @@ mod tests {
         member_idx: 0,
         ty: rec_ty,
         rules: vec![
-          RecRule { fields: 0, rhs: rule_zero_rhs },
-          RecRule { fields: 1, rhs: rule_succ_rhs },
+          RecRule { ctor: (), fields: 0, rhs: rule_zero_rhs },
+          RecRule { ctor: (), fields: 1, rhs: rule_succ_rhs },
         ],
         lean_all: (),
       },
