@@ -48,10 +48,20 @@ elab "this_file!" : term => do
   let env ← getEnv
   return toExpr (env.header.imports.map (·.module) |>.push env.header.mainModule)
 
-/-- Loads a Lean `Environment` from compiled `.olean` files. -/
+/-- Loads a Lean `Environment` from compiled `.olean` files.
+
+Uses `loadExts := true` so that persistent environment extensions (e.g.
+`SimplePersistentEnvExtension` state registered via `registerTestCase`,
+attribute maps, etc.) are hydrated from the imported `.olean` data. Without
+this, `importModules` leaves every extension at its `addImportedFn #[]`
+initial value — all imported entries sit in raw form but the computed state
+σ is empty, which silently breaks any test that reads extension state via
+`get_env!`. Matches `Lean.Elab.processHeaderCore`'s import path (used by
+`getFileEnv`) and Lake's own `importModulesUsingCache`. -/
 def getCompileEnv (imports : Array Name) : IO Environment := do
   initLeanSearchPath
-  importModules (imports.map ({ module := · : Import })) default
+  unsafe enableInitializersExecution  -- required for `loadExts := true`
+  importModules (imports.map ({ module := · : Import })) default (loadExts := true)
 
 macro "get_env!" : term =>
   `(getCompileEnv this_file!)

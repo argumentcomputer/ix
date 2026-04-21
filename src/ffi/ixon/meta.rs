@@ -628,26 +628,88 @@ impl<R: LeanRef> LeanIxonConstantMeta<R> {
 // =============================================================================
 
 impl LeanIxonNamed<LeanOwned> {
-  /// Build Ixon.Named { addr : Address, constMeta : ConstantMeta }
-  pub fn build(addr: &Address, meta: &ConstantMeta) -> Self {
+  /// Build Ixon.Named { addr, constMeta, original }.
+  ///
+  /// The Lean structure (see `Ix/Ixon.lean` `structure Named`) has three
+  /// fields: the constant's address, its typed metadata, and an optional
+  /// pre-aux_gen original form used by the decompile path for roundtrip
+  /// fidelity. We must match that 3-slot layout exactly — allocating a
+  /// 2-slot ctor causes Lean-side reads of slot 2 to walk past the
+  /// constructor and SIGSEGV. See the FFI roundtrip test
+  /// `Ixon.Named roundtrip` in `Tests/FFI/Ixon.lean`.
+  ///
+  /// The `original` slot encodes `Option (Address × ConstantMeta)` using
+  /// Lean's boxed-tagged-union convention:
+  ///   `none`        → tag 0, 0 fields
+  ///   `some (a, m)` → tag 1, 1 field (a `Prod`: tag 0, 2 fields)
+  pub fn build(
+    addr: &Address,
+    meta: &ConstantMeta,
+    original: &Option<(Address, ConstantMeta)>,
+  ) -> Self {
     let addr_obj = LeanIxAddress::build(addr);
     let meta_obj = LeanIxonConstantMeta::build(meta);
-    let ctor = LeanCtor::alloc(0, 2, 0);
+    let original_obj: LeanOwned = match original {
+      None => {
+        // `Option.none` — zero-field ctor with tag 0.
+        LeanCtor::alloc(0, 0, 0).into()
+      },
+      Some((orig_addr, orig_meta)) => {
+        // Build the inner pair `(orig_addr, orig_meta) : Address × ConstantMeta`.
+        let pair = LeanCtor::alloc(0, 2, 0);
+        pair.set(0, LeanIxAddress::build(orig_addr));
+        pair.set(1, LeanIxonConstantMeta::build(orig_meta));
+        // Wrap in `Option.some` — tag 1, one field.
+        let some_ctor = LeanCtor::alloc(1, 1, 0);
+        some_ctor.set(0, pair);
+        some_ctor.into()
+      },
+    };
+    let ctor = LeanCtor::alloc(0, 3, 0);
     ctor.set(0, addr_obj);
     ctor.set(1, meta_obj);
+    ctor.set(2, original_obj);
     Self::new(ctor.into())
   }
 }
 
 impl<R: LeanRef> LeanIxonNamed<R> {
   /// Decode Ixon.Named.
+  ///
+  /// Mirrors `build`: reads three slots. The third slot is an
+  /// `Option (Address × ConstantMeta)` which Lean may represent either as
+  /// a scalar-optimized `Option.none` or as a boxed tagged ctor. We handle
+  /// both by checking `is_scalar()` before calling `as_ctor()`.
   pub fn decode(&self) -> Named {
     let ctor = self.as_ctor();
-    Named {
-      addr: LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array()).decode(),
-      meta: LeanIxonConstantMeta::new(ctor.get(1).to_owned_ref()).decode(),
-      original: None, // aux_gen not yet on FFI boundary
-    }
+    let addr =
+      LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array()).decode();
+    let meta =
+      LeanIxonConstantMeta::new(ctor.get(1).to_owned_ref()).decode();
+    let original_obj = ctor.get(2);
+    let original: Option<(Address, ConstantMeta)> = if original_obj
+      .is_scalar()
+    {
+      // Scalar-optimized `Option.none`.
+      None
+    } else {
+      let opt = original_obj.as_ctor();
+      match opt.tag() {
+        0 => None,
+        1 => {
+          let pair = opt.get(0).as_ctor();
+          let orig_addr = LeanIxAddress::from_borrowed(
+            pair.get(0).as_byte_array(),
+          )
+          .decode();
+          let orig_meta =
+            LeanIxonConstantMeta::new(pair.get(1).to_owned_ref()).decode();
+          Some((orig_addr, orig_meta))
+        },
+        tag => panic!("Invalid Option tag for Named.original: {tag}"),
+      }
+    };
+    Named { addr, meta, original }
   }
 }
 
@@ -730,12 +792,13 @@ pub extern "C" fn rs_roundtrip_ixon_constant_meta(
   LeanIxonConstantMeta::build(&meta)
 }
 
-/// Round-trip Ixon.Named (with real metadata).
+/// Round-trip Ixon.Named (with real metadata and optional pre-aux_gen
+/// original form).
 #[cfg(feature = "test-ffi")]
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_roundtrip_ixon_named(
   obj: LeanIxonNamed<LeanBorrowed<'_>>,
 ) -> LeanIxonNamed<LeanOwned> {
   let named = obj.decode();
-  LeanIxonNamed::build(&named.addr, &named.meta)
+  LeanIxonNamed::build(&named.addr, &named.meta, &named.original)
 }

@@ -1,5 +1,7 @@
 //! Type inference.
 
+use std::sync::LazyLock;
+
 use super::constant::KConst;
 use super::error::{TcError, u64_to_usize};
 use super::expr::{ExprData, KExpr};
@@ -9,19 +11,25 @@ use super::mode::KernelMode;
 use super::subst::subst;
 use super::tc::TypeChecker;
 
+/// Emit detailed `[app diff]` trace when `infer`'s App path rejects an
+/// argument via `AppTypeMismatch`. Off by default — every rejection in a
+/// kernel-check pass would print multiple whnf dumps per failing constant,
+/// drowning normal `FAIL` lines. Set `IX_APP_DIFF=1` when investigating
+/// why a specific `a_ty` and `dom` don't match after reduction. Pairs
+/// with the `a_ty` / `dom` pair already printed by the error display.
+static IX_APP_DIFF: LazyLock<bool> =
+  LazyLock::new(|| std::env::var("IX_APP_DIFF").is_ok());
+
 impl<M: KernelMode> TypeChecker<M> {
   pub fn infer(&mut self, e: &KExpr<M>) -> Result<KExpr<M>, TcError<M>> {
     let infer_only = self.infer_only;
 
-    // Cache: infer-only results use a separate cache since they skip validation.
-    // A full-check result can serve an infer-only lookup, so check both.
+    // Single `infer_cache` serves both modes. The cache only holds full-mode
+    // results (see write path below), which are strictly stronger than what
+    // `infer_only` would have produced — same inferred type, more validation
+    // performed. So it's always safe to read from here regardless of mode.
     let cache_key = (e.hash_key(), self.ctx_id.clone());
     if let Some(cached) = self.env.infer_cache.get(&cache_key) {
-      return Ok(cached.clone());
-    }
-    if infer_only
-      && let Some(cached) = self.env.infer_only_cache.get(&cache_key)
-    {
       return Ok(cached.clone());
     }
 
@@ -46,7 +54,7 @@ impl<M: KernelMode> TypeChecker<M> {
         }
         let ty = c.ty().clone();
         let us_vec: Vec<_> = us.to_vec();
-        self.instantiate_univ_params(&ty, &us_vec)
+        self.instantiate_univ_params(&ty, &us_vec)?
       },
 
       ExprData::App(f, a, _) => {
@@ -83,6 +91,28 @@ impl<M: KernelMode> TypeChecker<M> {
             self.eager_reduce = false;
           }
           if !eq {
+            if *IX_APP_DIFF {
+              // WHNF both sides so we can see where reduction actually
+              // terminates. The raw `a_ty` / `dom` are already in the
+              // error — what's useful here is the post-whnf forms and
+              // whether they converge under `is_def_eq`'s lazy unfold
+              // strategy.
+              let a_whnf = self.whnf(&a_ty);
+              let d_whnf = self.whnf(&dom);
+              eprintln!("[app diff] AppTypeMismatch at depth={}", self.ctx.len());
+              eprintln!("  f:          {f}");
+              eprintln!("  a:          {a}");
+              eprintln!("  a_ty:       {a_ty}");
+              eprintln!("  dom:        {dom}");
+              match &a_whnf {
+                Ok(w) => eprintln!("  a_ty whnf:  {w}"),
+                Err(e) => eprintln!("  a_ty whnf:  ERR {e}"),
+              }
+              match &d_whnf {
+                Ok(w) => eprintln!("  dom  whnf:  {w}"),
+                Err(e) => eprintln!("  dom  whnf:  ERR {e}"),
+              }
+            }
             return Err(TcError::AppTypeMismatch {
               a_ty,
               dom,
@@ -145,9 +175,9 @@ impl<M: KernelMode> TypeChecker<M> {
       ExprData::Str(..) => self.infer_str_type()?,
     };
 
-    if infer_only {
-      self.env.infer_only_cache.insert(cache_key, ty.clone());
-    } else {
+    // Only store full-mode results; infer-only skips validation so caching
+    // those entries would weaken the cache's "already validated" invariant.
+    if !infer_only {
       self.env.infer_cache.insert(cache_key, ty.clone());
     }
     Ok(ty)
@@ -213,7 +243,7 @@ impl<M: KernelMode> TypeChecker<M> {
     };
 
     let i_levels_vec: Vec<_> = i_levels.to_vec();
-    let mut r = self.instantiate_univ_params(&ctor_ty, &i_levels_vec);
+    let mut r = self.instantiate_univ_params(&ctor_ty, &i_levels_vec)?;
 
     for i in 0..num_params {
       let wr = self.whnf(&r)?;

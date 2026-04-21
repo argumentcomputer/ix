@@ -594,6 +594,43 @@ pub extern "C" fn rs_canonicalize_env_to_ix(
   }
 }
 
+/// FFI function to compute the LEON content hash of every constant in a
+/// Lean environment. Returns an `Array (Ix.Name × Ix.Address)` where each
+/// `Address` is the 32-byte Blake3 digest produced by
+/// `ConstantInfo::get_hash()` in `src/ix/env.rs`.
+///
+/// The LEON hash is the Rust kernel's "original" addressing scheme: it's
+/// derived from the serialized `ConstantInfo` (name + level params + type
+/// expression + variant-specific fields: ctors, rules, `all`, value, hints,
+/// etc.) so two constants with the same name but different content get
+/// distinct addresses. This is the address scheme `lean_ingress` uses (or
+/// will use) when populating `orig_kenv`, and the table Lean callers need
+/// to dump when regenerating `PrimOrigAddrs` in the Rust kernel.
+///
+/// No compilation happens here — we only decode the Lean env and hash each
+/// `ConstantInfo` in place. That makes this cheap relative to
+/// `rs_compile_env_to_ixon` and safe to run on the full environment.
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_leon_hashes(
+  env_consts_ptr: LeanList<LeanBorrowed<'_>>,
+) -> LeanIOResult<LeanOwned> {
+  let rust_env = decode_env(env_consts_ptr);
+  let mut cache = LeanBuildCache::with_capacity(rust_env.len());
+
+  let arr = LeanArray::alloc(rust_env.len());
+  for (i, (name, ci)) in rust_env.iter().enumerate() {
+    let name_obj = LeanIxName::build(&mut cache, name);
+    let addr_obj = LeanIxAddress::build_from_hash(&ci.get_hash());
+
+    // (Ix.Name × Ix.Address) pair — tag 0 ctor with 2 object fields.
+    let pair = LeanCtor::alloc(0, 2, 0);
+    pair.set(0, name_obj);
+    pair.set(1, addr_obj);
+    arr.set(i, pair);
+  }
+  LeanIOResult::ok(arr)
+}
+
 // =============================================================================
 // RustCompiledEnv - Holds Rust compilation results for comparison
 // =============================================================================

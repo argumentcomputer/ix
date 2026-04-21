@@ -7,6 +7,8 @@
 //! 4. Iterative lazy delta with same-head-spine optimization
 //! 5. Full WHNF, structural comparison, eta, struct eta
 
+use std::sync::LazyLock;
+
 use crate::ix::ixon::constant::DefKind;
 
 use super::constant::KConst;
@@ -22,6 +24,14 @@ use super::tc::{
   empty_ctx_addr,
 };
 
+/// When set, trace every `is_def_eq` call where one side's head constant
+/// starts with the prefix in `IX_DEF_EQ_TRACE` (e.g. `IX_DEF_EQ_TRACE=bmod`
+/// to watch all `Int.bmod`-involving comparisons). Prints `[deq] a <?> b`
+/// before entering `is_def_eq_inner`, then the boolean outcome. Useful for
+/// pinning down which sub-expression of an App-spine is stuck.
+static IX_DEF_EQ_TRACE: LazyLock<Option<String>> =
+  LazyLock::new(|| std::env::var("IX_DEF_EQ_TRACE").ok());
+
 impl<M: KernelMode> TypeChecker<M> {
   /// Check definitional equality of two expressions.
   pub fn is_def_eq(
@@ -34,17 +44,56 @@ impl<M: KernelMode> TypeChecker<M> {
       return Ok(true);
     }
 
-    // Context-aware EquivManager: closed exprs (lbr==0) share across contexts,
-    // open exprs under let-bindings are isolated by ctx_id.
+    // Diagnostic trace: emit a `[deq]` line when either side's head
+    // constant name contains the configured substring. Keeps output
+    // manageable — a naive unconditional trace blows out the log.
+    let trace_active = if let Some(prefix) = IX_DEF_EQ_TRACE.as_ref() {
+      let a_hit = head_const_name(a).is_some_and(|n| n.contains(prefix));
+      let b_hit = head_const_name(b).is_some_and(|n| n.contains(prefix));
+      if a_hit || b_hit {
+        let a_whnf_str = match self.whnf(a) {
+          Ok(w) => format!("{w}"),
+          Err(e) => format!("ERR {e}"),
+        };
+        let b_whnf_str = match self.whnf(b) {
+          Ok(w) => format!("{w}"),
+          Err(e) => format!("ERR {e}"),
+        };
+        eprintln!("[deq] depth={} a=      {}", self.def_eq_depth, a);
+        eprintln!("[deq] depth={} a_whnf= {}", self.def_eq_depth, a_whnf_str);
+        eprintln!("[deq] depth={} b=      {}", self.def_eq_depth, b);
+        eprintln!("[deq] depth={} b_whnf= {}", self.def_eq_depth, b_whnf_str);
+        true
+      } else {
+        false
+      }
+    } else {
+      false
+    };
+
+    // Context-aware EquivManager: closed exprs (lbr==0) share across
+    // contexts, open exprs under let-bindings are isolated by ctx_id.
+    //
+    // Build `a_key` and `b_key` ONCE and reuse them throughout. The
+    // `eq_ctx` Arc is cloned once into `a_key`; `b_key` receives the
+    // remaining owned copy. `is_equiv` and `find_root_key` take by
+    // reference (see `src/ix/kernel/equiv.rs`), so no additional Arc
+    // clones are paid per method call. Only the terminal `add_equiv`
+    // (success path) needs ownership, at which point we move the
+    // originals in. The rare equiv-root success branch still pays a
+    // `.clone()` pair to feed `add_equiv` there — it's mutually
+    // exclusive with the main-path `add_equiv`, so at most one pair
+    // of clones is ever charged.
     let eq_ctx = if self.num_let_bindings > 0 && (a.lbr() > 0 || b.lbr() > 0) {
       self.ctx_id.clone()
     } else {
       empty_ctx_addr()
     };
-    if self
-      .equiv_manager
-      .is_equiv((a.hash_key(), eq_ctx.clone()), (b.hash_key(), eq_ctx.clone()))
-    {
+    let a_key: crate::ix::kernel::equiv::EqKey =
+      (a.hash_key(), eq_ctx.clone());
+    let b_key: crate::ix::kernel::equiv::EqKey = (b.hash_key(), eq_ctx);
+
+    if self.equiv_manager.is_equiv(&a_key, &b_key) {
       return Ok(true);
     }
 
@@ -55,23 +104,21 @@ impl<M: KernelMode> TypeChecker<M> {
     }
 
     // Equiv-root second-chance: if (a,b) not cached, try (root(a), root(b)).
+    if let (Some(a_root), Some(b_root)) = (
+      self.equiv_manager.find_root_key(&a_key),
+      self.equiv_manager.find_root_key(&b_key),
+    ) && (a_root != a_key || b_root != b_key)
     {
-      let a_key = (a.hash_key(), eq_ctx.clone());
-      let b_key = (b.hash_key(), eq_ctx.clone());
-      if let (Some(a_root), Some(b_root)) = (
-        self.equiv_manager.find_root_key(a_key.clone()),
-        self.equiv_manager.find_root_key(b_key.clone()),
-      ) && (a_root != a_key || b_root != b_key)
-      {
-        let (rlo, rhi) = canonical_pair(a_root.0, b_root.0);
-        let root_cache_key = (rlo, rhi, self.ctx_id.clone());
-        if let Some(cached) = self.env.def_eq_cache.get(&root_cache_key) {
-          if *cached {
-            self.equiv_manager.add_equiv(a_key, b_key);
-          }
-          self.env.def_eq_cache.insert(cache_key, *cached);
-          return Ok(*cached);
+      let (rlo, rhi) = canonical_pair(a_root.0, b_root.0);
+      let root_cache_key = (rlo, rhi, self.ctx_id.clone());
+      if let Some(cached) = self.env.def_eq_cache.get(&root_cache_key) {
+        if *cached {
+          // Rare branch: the main-path `add_equiv` below is skipped by
+          // the early return, so clone here instead of moving.
+          self.equiv_manager.add_equiv(a_key.clone(), b_key.clone());
         }
+        self.env.def_eq_cache.insert(cache_key, *cached);
+        return Ok(*cached);
       }
     }
 
@@ -88,10 +135,17 @@ impl<M: KernelMode> TypeChecker<M> {
     self.def_eq_depth -= 1;
 
     let ok = result?;
+    if trace_active {
+      eprintln!(
+        "[deq] depth={} -> {} ({})",
+        self.def_eq_depth,
+        ok,
+        if ok { "OK" } else { "FAIL" }
+      );
+    }
     if ok {
-      self
-        .equiv_manager
-        .add_equiv((a.hash_key(), eq_ctx.clone()), (b.hash_key(), eq_ctx));
+      // Move the up-front `a_key` / `b_key` directly into `add_equiv`.
+      self.equiv_manager.add_equiv(a_key, b_key);
     }
     self.env.def_eq_cache.insert(cache_key, ok);
     Ok(ok)
@@ -171,6 +225,19 @@ impl<M: KernelMode> TypeChecker<M> {
         return self.is_def_eq(&wa2, &wb);
       }
       if let Some(wb2) = self.try_reduce_nat(&wb)? {
+        return self.is_def_eq(&wa, &wb2);
+      }
+
+      // Int primitive reduction inside lazy delta, parallel to Nat.
+      // Without this, `Int.bmod (-1) (2^32) =? -1` compared under
+      // `Eq.{1} Int _ _` would never converge: the Int.bmod side would
+      // delta-unfold to a stuck `Decidable.rec`, while the `-1` side
+      // reduces to `Int.negSucc 0` — `lazyDeltaReduction` would never
+      // find a common head.
+      if let Some(wa2) = self.try_reduce_int(&wa)? {
+        return self.is_def_eq(&wa2, &wb);
+      }
+      if let Some(wb2) = self.try_reduce_int(&wb)? {
         return self.is_def_eq(&wa, &wb2);
       }
 
@@ -963,6 +1030,15 @@ fn head_const_id<M: KernelMode>(e: &KExpr<M>) -> Option<KId<M>> {
     },
     _ => None,
   }
+}
+
+/// Extract head constant's display form as a string, for diagnostic
+/// prefix matching. Uses `{kid}`'s Display impl (which is defined for
+/// every `KernelMode`), not the inner `Name` which only has Display in
+/// Meta mode. Returns `None` if the head isn't a `Const`.
+fn head_const_name<M: KernelMode>(e: &KExpr<M>) -> Option<String> {
+  let id = head_const_id(e)?;
+  Some(format!("{id}"))
 }
 
 #[cfg(test)]

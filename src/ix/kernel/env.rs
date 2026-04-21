@@ -97,9 +97,11 @@ pub struct KEnv<M: KernelMode> {
   /// WHNF cache (no delta): (expr_hash, ctx_hash)-keyed.
   pub whnf_no_delta_cache: DashMap<(Addr, Addr), KExpr<M>>,
   /// Infer cache: keyed by (expr_hash, ctx_hash). Context-dependent.
+  /// Populated only from full-mode `infer` (i.e. not from `with_infer_only`),
+  /// so every cached result has passed the validation `infer_only` skips.
+  /// Both modes read from this same cache — an `infer_only` lookup happily
+  /// consumes a full-mode result since it's strictly stronger.
   pub infer_cache: DashMap<(Addr, Addr), KExpr<M>>,
-  /// Infer-only cache: results from infer_only mode (no def-eq checks).
-  pub infer_only_cache: DashMap<(Addr, Addr), KExpr<M>>,
   /// Def-eq cache: keyed by (expr_hash, expr_hash, ctx_hash). Context-dependent.
   pub def_eq_cache: DashMap<(Addr, Addr, Addr), bool>,
   /// Failed def-eq pairs in lazy delta: canonical ordering by hash.
@@ -112,6 +114,12 @@ pub struct KEnv<M: KernelMode> {
   pub recursor_cache: DashMap<KId<M>, Vec<GeneratedRecursor<M>>>,
   /// Maps the set of major inductive KIds to the inductive block id.
   pub rec_majors_cache: DashMap<BTreeSet<KId<M>>, KId<M>>,
+  /// Mutual-block peer-agreement cache: records block ids whose peers have
+  /// already been verified to share the same universe (S3) and parameter
+  /// prefix (S3b). Populated by `check_inductive` after the per-peer loop
+  /// succeeds; collapses the naturally O(N²) per-peer iteration to O(N)
+  /// total work per block across all the peers' individual checks.
+  pub block_peer_agreement_cache: DashSet<KId<M>>,
 }
 
 impl<M: KernelMode> Default for KEnv<M> {
@@ -130,18 +138,29 @@ impl<M: KernelMode> KEnv<M> {
       whnf_cache: DashMap::default(),
       whnf_no_delta_cache: DashMap::default(),
       infer_cache: DashMap::default(),
-      infer_only_cache: DashMap::default(),
       def_eq_cache: DashMap::default(),
       def_eq_failure: DashSet::default(),
       ingress_cache: DashMap::default(),
       recursor_cache: DashMap::default(),
       rec_majors_cache: DashMap::default(),
+      block_peer_agreement_cache: DashSet::default(),
     }
   }
 
   /// Resolve primitives from the environment (cached via OnceLock).
   pub fn prims(&self) -> &Primitives<M> {
     self.prims.get_or_init(|| Primitives::from_env(self))
+  }
+
+  /// Pre-initialize the primitives cache with an externally-resolved
+  /// `Primitives<M>`. Returns `Ok(())` on success, `Err(p)` if `prims()`
+  /// has already been called (the OnceLock is full).
+  ///
+  /// Used by `lean_ingress` to install `Primitives::from_env_orig`
+  /// (LEON-addressed) before any `TypeChecker::new(orig_kenv)` triggers
+  /// the default canonical-addressed `from_env`.
+  pub fn set_prims(&self, p: Primitives<M>) -> Result<(), Primitives<M>> {
+    self.prims.set(p)
   }
 
   pub fn get(&self, id: &KId<M>) -> Option<KConst<M>> {

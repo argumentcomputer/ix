@@ -41,18 +41,27 @@ use crate::ix::kernel::ingress::{ixon_ingress, lean_ingress};
 use crate::ix::kernel::mode::Meta;
 use crate::ix::kernel::tc::TypeChecker;
 
-/// Lean-side `CheckError` constructor tag for `kernelException`.
+/// Lean-side `CheckError` constructor tags.
 ///
 /// Defined in `Tests/Ix/Kernel/Tutorial.lean`:
 /// ```lean
 /// inductive CheckError where
-///   | kernelException (msg : String)
+///   | kernelException (msg : String)    -- tag 0
+///   | compileError    (msg : String)    -- tag 1
 ///   deriving Repr
 /// ```
-/// The `kernelException` variant is the first (and only) constructor, so its
-/// tag is `0`. If the Lean enum grows new variants ahead of this one, update
-/// this constant to match.
+/// Tags follow Lean's declaration order (top-to-bottom, starting at 0).
+///
+/// The second variant exists for two reasons: (1) to disambiguate compile-
+/// side rejections from kernel-side rejections at the Lean call site, and
+/// (2) to prevent Lean's LCNF "trivial structure" optimization from
+/// elididing a single-ctor-single-field inductive into its field type
+/// (`hasTrivialStructure?` in `Lean/Compiler/LCNF/MonoTypes.lean`). Without
+/// that, the runtime representation of `CheckError` would be identical to
+/// `String`, and the heap ctor we allocate here would be read as if it
+/// were a string header — `INTERNAL PANIC: out of memory` on decode.
 const KERNEL_EXCEPTION_TAG: u8 = 0;
+const COMPILE_ERROR_TAG: u8 = 1;
 
 /// FFI: type-check a batch of constants through the full pipeline.
 ///
@@ -85,10 +94,12 @@ pub extern "C" fn rs_kernel_check_consts(
   let rust_env = decode_env(env_consts);
   let name_strings: Vec<String> =
     names.map(|s| s.as_string().to_string()).into_iter().collect();
-  // Lean's `Bool` is an enum with two nullary constructors, so it's passed
-  // unboxed: raw pointer value 0 = false, 1 = true.
+  // `Array Bool` elements are boxed tagged scalars:
+  // `lean_box(n) = (n << 1) | 1`, so `Bool.false` has raw value 1 and
+  // `Bool.true` has raw value 3. `unbox_usize()` (= `as_raw() >> 1`)
+  // recovers the ctor tag (0 = false, 1 = true).
   let expect_pass_vec: Vec<bool> =
-    expect_pass.map(|b| b.as_raw() as usize == 1).into_iter().collect();
+    expect_pass.map(|b| b.unbox_usize() == 1).into_iter().collect();
   eprintln!("[rs_kernel_check] read env:   {:>8.1?}", t0.elapsed());
 
   // ---------------------------------------------------------------------
@@ -103,6 +114,36 @@ pub extern "C" fn rs_kernel_check_consts(
     },
   };
   eprintln!("[rs_kernel_check] compile:    {:>8.1?}", t1.elapsed());
+
+  // Snapshot per-constant compile failures (ill-formed inductives, cascading
+  // MissingConstant, etc.) keyed by Lean-display name string so the check
+  // loop can skip the kernel and report them as compile-side rejections.
+  // `compile_env` no longer aborts on per-block failure; it populates
+  // `CompileState.ungrounded` and continues, letting good constants still
+  // compile cleanly.
+  let ungrounded: FxHashMap<String, String> = compile_state
+    .ungrounded
+    .iter()
+    .map(|e| (format!("{}", e.key()), e.value().clone()))
+    .collect();
+  if !ungrounded.is_empty() {
+    eprintln!(
+      "[rs_kernel_check] {} constants failed to compile (will report as rejected without kernel check):",
+      ungrounded.len()
+    );
+    // Sort for deterministic output — `FxHashMap` iteration order is
+    // platform-defined. Sorting by name also groups related compile
+    // failures (e.g. an ill-formed inductive + its constructors + rec)
+    // next to each other in the log.
+    let mut ordered: Vec<(&String, &String)> = ungrounded.iter().collect();
+    ordered.sort_by(|a, b| a.0.cmp(b.0));
+    for (name, msg) in &ordered {
+      // `msg` from `compile_env` can be multi-line; collapse internal
+      // newlines so each constant occupies one log line.
+      let flat = msg.replace('\n', " ");
+      eprintln!("  [ungrounded] {name}: {flat}");
+    }
+  }
 
   // ---------------------------------------------------------------------
   // Ingress Ixon → kernel
@@ -158,6 +199,7 @@ pub extern "C" fn rs_kernel_check_consts(
     name_to_id,
     name_strings.clone(),
     expect_pass_vec,
+    ungrounded,
   ) {
     Ok(r) => r,
     Err(msg) => {
@@ -183,15 +225,38 @@ pub extern "C" fn rs_kernel_check_consts(
 // Checking loop (runs on a dedicated large-stack thread)
 // =============================================================================
 
+/// Kind of per-constant error — selects which `CheckError` ctor to build on
+/// the Lean side. See tag constants at the top of the module.
+#[derive(Clone, Copy)]
+enum ErrKind {
+  Kernel,
+  Compile,
+}
+
+impl ErrKind {
+  fn tag(self) -> u8 {
+    match self {
+      ErrKind::Kernel => KERNEL_EXCEPTION_TAG,
+      ErrKind::Compile => COMPILE_ERROR_TAG,
+    }
+  }
+}
+
+/// Per-constant result: `Ok(())` on pass, `Err((kind, msg))` on rejection.
+type CheckRes = Result<(), (ErrKind, String)>;
+
 fn run_checks_on_large_stack(
   kenv: Arc<KEnv<Meta>>,
   name_to_id: FxHashMap<String, KId<Meta>>,
   name_strings: Vec<String>,
   expect_pass: Vec<bool>,
-) -> Result<Vec<(String, Result<(), String>)>, String> {
+  ungrounded: FxHashMap<String, String>,
+) -> Result<Vec<(String, CheckRes)>, String> {
   std::thread::Builder::new()
     .stack_size(256 * 1024 * 1024)
-    .spawn(move || check_consts_loop(kenv, name_to_id, name_strings, expect_pass))
+    .spawn(move || {
+      check_consts_loop(kenv, name_to_id, name_strings, expect_pass, ungrounded)
+    })
     .map_err(|e| format!("failed to spawn kernel-check thread: {e}"))?
     .join()
     .map_err(|_| "kernel-check thread panicked".to_string())
@@ -202,9 +267,10 @@ fn check_consts_loop(
   name_to_id: FxHashMap<String, KId<Meta>>,
   name_strings: Vec<String>,
   expect_pass: Vec<bool>,
-) -> Vec<(String, Result<(), String>)> {
+  ungrounded: FxHashMap<String, String>,
+) -> Vec<(String, CheckRes)> {
   let total = name_strings.len();
-  let mut results: Vec<(String, Result<(), String>)> = Vec::with_capacity(total);
+  let mut results: Vec<(String, CheckRes)> = Vec::with_capacity(total);
 
   for (i, raw_name) in name_strings.iter().enumerate() {
     let should_pass = expect_pass.get(i).copied().unwrap_or(true);
@@ -214,6 +280,35 @@ fn check_consts_loop(
     // where the caller passes a raw-form string we parse-and-reformat to get
     // the canonical key.
     let pretty = format!("{}", parse_name(raw_name));
+
+    // Constants that failed to compile (ill-formed inductives, cascading
+    // MissingConstant, etc.) are reported as rejected without invoking the
+    // kernel. This matches the ix_old "ungrounded" handling and lets the
+    // bad_raw_consts tests (e.g. `inductBadNonSort`) round-trip correctly.
+    // The `Compile` kind lets the Lean caller distinguish this from a
+    // kernel-side rejection.
+    if let Some(msg) =
+      ungrounded.get(raw_name).or_else(|| ungrounded.get(&pretty))
+    {
+      match should_pass {
+        true => eprintln!(
+          "  [{}/{}] {raw_name} ... FAIL (compile): {msg}",
+          i + 1,
+          total,
+        ),
+        false => eprintln!(
+          "  [{}/{}] {raw_name} ... REJECTED (compile): {msg}",
+          i + 1,
+          total,
+        ),
+      }
+      results.push((
+        raw_name.clone(),
+        Err((ErrKind::Compile, msg.clone())),
+      ));
+      continue;
+    }
+
     let kid = match name_to_id
       .get(raw_name)
       .or_else(|| name_to_id.get(&pretty))
@@ -221,7 +316,12 @@ fn check_consts_loop(
       Some(id) => id.clone(),
       None => {
         eprintln!("  [{}/{}] ? {raw_name}: not found", i + 1, total);
-        results.push((raw_name.clone(), Err(format!("not found: {raw_name}"))));
+        // Treat "not found in kernel env" as a kernel-kind error so the
+        // Lean-side summary can lump it in with other kernel rejections.
+        results.push((
+          raw_name.clone(),
+          Err((ErrKind::Kernel, format!("not found: {raw_name}"))),
+        ));
         continue;
       },
     };
@@ -230,7 +330,8 @@ fn check_consts_loop(
 
     let tc_start = Instant::now();
     let mut tc = TypeChecker::new(kenv.clone());
-    let result = tc.check_const(&kid).map_err(|e| format_tc_error(&e));
+    let result: Result<(), String> =
+      tc.check_const(&kid).map_err(|e| format_tc_error(&e));
     let elapsed = tc_start.elapsed();
     let peak = tc.def_eq_peak;
 
@@ -244,7 +345,11 @@ fn check_consts_loop(
         eprintln!("FAIL ({elapsed:.1?}, depth={peak}): {msg}")
       },
     }
-    results.push((raw_name.clone(), result));
+    // Re-wrap: `(Ok(()), _) -> Ok(())`, `(Err(msg), _) -> Err((Kernel, msg))`.
+    results.push((
+      raw_name.clone(),
+      result.map_err(|msg| (ErrKind::Kernel, msg)),
+    ));
   }
 
   results
@@ -261,7 +366,10 @@ fn format_tc_error(e: &TcError<Meta>) -> String {
     TcError::FunExpected { e, whnf } => {
       format!("FunExpected\n    e    = {e}\n    whnf = {whnf}")
     },
-    other => format!("{other:?}"),
+    // Everything else has a hand-written `Display` impl in
+    // `src/ix/kernel/error.rs` — prefer it over `{:?}` which dumps raw
+    // KExpr internals.
+    other => format!("{other}"),
   }
 }
 
@@ -271,10 +379,11 @@ fn format_tc_error(e: &TcError<Meta>) -> String {
 
 /// Build an `IO (Array (String × Option CheckError))` from Rust results.
 ///
-/// - `Ok(())`  → `(name, none)`
-/// - `Err(msg)`→ `(name, some (CheckError.kernelException msg))`
+/// - `Ok(())`                     → `(name, none)`
+/// - `Err((Kernel, msg))`         → `(name, some (CheckError.kernelException msg))`
+/// - `Err((Compile, msg))`        → `(name, some (CheckError.compileError msg))`
 fn build_result_array(
-  results: &[(String, Result<(), String>)],
+  results: &[(String, CheckRes)],
 ) -> LeanIOResult<LeanOwned> {
   let arr = LeanArray::alloc(results.len());
   for (i, (name, result)) in results.iter().enumerate() {
@@ -285,9 +394,12 @@ fn build_result_array(
         // `Option.none` — tag 0, zero fields, zero scalars.
         LeanCtor::alloc(0, 0, 0).into()
       },
-      Err(msg) => {
-        // `CheckError.kernelException msg` — tag 0, one object field.
-        let err_ctor = LeanCtor::alloc(KERNEL_EXCEPTION_TAG, 1, 0);
+      Err((kind, msg)) => {
+        // `CheckError.<variant> msg` — tag comes from ErrKind, one object
+        // field. Lean's inductive has 2 ctors (kernelException,
+        // compileError) so it's NOT eligible for the LCNF trivial-structure
+        // optimization — the heap wrapper is required.
+        let err_ctor = LeanCtor::alloc(kind.tag(), 1, 0);
         err_ctor.set(0, LeanString::new(msg));
         // `Option.some err` — tag 1, one object field.
         let some_ctor = LeanCtor::alloc(1, 1, 0);
@@ -306,14 +418,17 @@ fn build_result_array(
 }
 
 /// Build a result array where every requested name is reported as failed with
-/// the same error message. Used when compile/ingress/thread setup fails before
-/// per-constant checking can begin.
+/// the same compile-kind error message. Used when compile/ingress/thread
+/// setup fails before per-constant checking can begin — the error arose
+/// before the kernel was consulted, so `Compile` is the honest tag.
 fn build_uniform_error(
   names: &[String],
   msg: &str,
 ) -> LeanIOResult<LeanOwned> {
-  let results: Vec<(String, Result<(), String>)> =
-    names.iter().map(|n| (n.clone(), Err(msg.to_string()))).collect();
+  let results: Vec<(String, CheckRes)> = names
+    .iter()
+    .map(|n| (n.clone(), Err((ErrKind::Compile, msg.to_string()))))
+    .collect();
   build_result_array(&results)
 }
 

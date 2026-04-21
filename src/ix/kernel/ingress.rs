@@ -8,8 +8,10 @@
 use std::cell::Cell;
 use std::sync::Arc;
 
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
-use rustc_hash::FxHashMap;
+use rayon::iter::{
+  IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
+};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use dashmap::DashMap;
 
@@ -1857,31 +1859,97 @@ fn lean_member_idx(name: &Name, all: Option<&Vec<Name>>) -> u64 {
     .unwrap_or(0)
 }
 
+/// Build a `Name → LEON content-hash` map for every constant in the Lean env.
+///
+/// The LEON hash is `ConstantInfo::get_hash()` in `src/ix/env.rs` — a Blake3
+/// digest over the serialized original `ConstantInfo` (name + level params
+/// + type expression + variant-specific fields). Two constants with the
+/// same Lean name but different content get distinct addresses, so a rogue
+/// environment can't shadow a primitive just by naming its own declaration
+/// `Nat`.
+///
+/// The resulting map is the addressing authority for `lean_ingress`: every
+/// `KId.addr` in `orig_kenv` and every `Const`-reference address inside
+/// `orig_kenv` expressions is drawn from it. Names absent from the env
+/// (dangling refs, partial envs) fall through to `lean_name_to_addr` as a
+/// best-effort — those cases produce mismatched addresses and will surface
+/// as `UnknownConst` in the type checker rather than silently succeeding.
+pub fn build_leon_addr_map(
+  lean_env: &LeanEnv,
+) -> dashmap::DashMap<Name, Address> {
+  // Build in parallel. Each shard's write lock is contended only when
+  // distinct names happen to hash into the same shard — with 64 default
+  // shards and ~199k names, contention is low. Pre-sizing `with_capacity`
+  // keeps the shards from growing during construction.
+  //
+  // The map type stays `DashMap` (rather than `FxHashMap`) because
+  // downstream signatures (`lean_expr_to_zexpr_cached`,
+  // `resolve_lean_name_addr`) share the `n2a` parameter slot with
+  // `aux_n2a`, which is concurrently *written* during the scheduler
+  // phase from `src/ix/compile/aux_gen.rs:823`. Splitting the two into
+  // different types would propagate a signature change through ~5
+  // functions with no matching perf win.
+  let entries: Vec<(&Name, &LeanCI)> = lean_env.iter().collect();
+  let map = dashmap::DashMap::with_capacity(lean_env.len());
+  entries.par_iter().for_each(|(name, ci)| {
+    map.insert((*name).clone(), Address::from_blake3_hash(ci.get_hash()));
+  });
+  map
+}
+
+/// Resolve a Lean name to its LEON content-hash address, falling back to
+/// the name-hash when the name isn't present in `n2a`.
+///
+/// The fallback exists for robustness against dangling references — a
+/// well-formed Lean env should never trigger it. Callers that need
+/// strict resolution (e.g. "does this name exist?") should check
+/// `n2a.contains_key` directly.
+fn leon_addr_of(
+  name: &Name,
+  n2a: &dashmap::DashMap<Name, Address>,
+) -> Address {
+  n2a
+    .get(name)
+    .map(|e| e.value().clone())
+    .unwrap_or_else(|| lean_name_to_addr(name))
+}
+
 /// Build the `block` KId for a constant's mutual block. For singletons
 /// (no `all` or `all` length 1), the block id is the constant's own KId.
 /// For mutuals, it's the representative (first name in `all`).
-fn lean_block_id(self_name: &Name, all: Option<&Vec<Name>>) -> KId<Meta> {
+fn lean_block_id(
+  self_name: &Name,
+  all: Option<&Vec<Name>>,
+  n2a: &dashmap::DashMap<Name, Address>,
+) -> KId<Meta> {
   let rep = all.and_then(|a| a.first()).unwrap_or(self_name);
-  KId::new(lean_name_to_addr(rep), rep.clone())
+  KId::new(leon_addr_of(rep, n2a), rep.clone())
 }
 
 /// Build the `lean_all` KId list in Meta mode.
-fn lean_all_ids(all: &[Name]) -> Vec<KId<Meta>> {
-  all.iter().map(|n| KId::new(lean_name_to_addr(n), n.clone())).collect()
+fn lean_all_ids(
+  all: &[Name],
+  n2a: &dashmap::DashMap<Name, Address>,
+) -> Vec<KId<Meta>> {
+  all.iter().map(|n| KId::new(leon_addr_of(n, n2a), n.clone())).collect()
 }
 
 /// Convert one Lean `ConstantInfo` to a `KConst<Meta>`. Expressions go through
-/// `lean_expr_to_zexpr_with_kenv` (caches into `kenv.intern` +
-/// `kenv.ingress_cache`).
+/// `lean_expr_to_zexpr_with_kenv` with the `n2a` map so inner `Const`
+/// references resolve to LEON addresses (same scheme used for the KId
+/// addresses in this constant's own fields).
 fn lean_const_to_kconst(
   self_name: &Name,
   ci: &LeanCI,
   kenv: &KEnv<Meta>,
+  n2a: &dashmap::DashMap<Name, Address>,
 ) -> KConst<Meta> {
-  // Helper: shorthand for expression ingress with no n2a fallback maps —
-  // `Const` refs inside the expr resolve via `lean_name_to_addr`.
+  // Helper: shorthand for expression ingress. `n2a` carries the env-wide
+  // LEON addressing so `Const` refs inside expressions resolve to the same
+  // addresses we're using for KId keys — any KId we construct here and any
+  // Const-ref we ingress agree on where they point.
   let expr_to_k = |e: &crate::ix::env::Expr, pn: &[Name]| -> KExpr<Meta> {
-    lean_expr_to_zexpr_with_kenv(e, pn, kenv, None, None)
+    lean_expr_to_zexpr_with_kenv(e, pn, kenv, Some(n2a), None)
   };
 
   match ci {
@@ -1907,8 +1975,8 @@ fn lean_const_to_kconst(
         lvls: pn.len() as u64,
         ty: expr_to_k(&v.cnst.typ, pn),
         val: expr_to_k(&v.value, pn),
-        lean_all: lean_all_ids(&v.all),
-        block: lean_block_id(self_name, all),
+        lean_all: lean_all_ids(&v.all, n2a),
+        block: lean_block_id(self_name, all, n2a),
       }
     },
     LeanCI::ThmInfo(v) => {
@@ -1923,8 +1991,8 @@ fn lean_const_to_kconst(
         lvls: pn.len() as u64,
         ty: expr_to_k(&v.cnst.typ, pn),
         val: expr_to_k(&v.value, pn),
-        lean_all: lean_all_ids(&v.all),
-        block: lean_block_id(self_name, all),
+        lean_all: lean_all_ids(&v.all, n2a),
+        block: lean_block_id(self_name, all, n2a),
       }
     },
     LeanCI::OpaqueInfo(v) => {
@@ -1943,8 +2011,8 @@ fn lean_const_to_kconst(
         lvls: pn.len() as u64,
         ty: expr_to_k(&v.cnst.typ, pn),
         val: expr_to_k(&v.value, pn),
-        lean_all: lean_all_ids(&v.all),
-        block: lean_block_id(self_name, all),
+        lean_all: lean_all_ids(&v.all, n2a),
+        block: lean_block_id(self_name, all, n2a),
       }
     },
     LeanCI::QuotInfo(v) => {
@@ -1960,8 +2028,11 @@ fn lean_const_to_kconst(
     LeanCI::InductInfo(v) => {
       let pn = &v.cnst.level_params;
       let all = Some(&v.all);
-      let ctors =
-        v.ctors.iter().map(|n| KId::new(lean_name_to_addr(n), n.clone())).collect();
+      let ctors = v
+        .ctors
+        .iter()
+        .map(|n| KId::new(leon_addr_of(n, n2a), n.clone()))
+        .collect();
       KConst::Indc {
         name: self_name.clone(),
         level_params: pn.clone(),
@@ -1972,11 +2043,11 @@ fn lean_const_to_kconst(
         is_refl: v.is_reflexive,
         is_unsafe: v.is_unsafe,
         nested: v.num_nested.to_u64().unwrap_or(0),
-        block: lean_block_id(self_name, all),
+        block: lean_block_id(self_name, all, n2a),
         member_idx: lean_member_idx(self_name, all),
         ty: expr_to_k(&v.cnst.typ, pn),
         ctors,
-        lean_all: lean_all_ids(&v.all),
+        lean_all: lean_all_ids(&v.all, n2a),
       }
     },
     LeanCI::CtorInfo(v) => {
@@ -1986,7 +2057,7 @@ fn lean_const_to_kconst(
         level_params: pn.clone(),
         is_unsafe: v.is_unsafe,
         lvls: pn.len() as u64,
-        induct: KId::new(lean_name_to_addr(&v.induct), v.induct.clone()),
+        induct: KId::new(leon_addr_of(&v.induct, n2a), v.induct.clone()),
         cidx: v.cidx.to_u64().unwrap_or(0),
         params: v.num_params.to_u64().unwrap_or(0),
         fields: v.num_fields.to_u64().unwrap_or(0),
@@ -2015,11 +2086,11 @@ fn lean_const_to_kconst(
         indices: v.num_indices.to_u64().unwrap_or(0),
         motives: v.num_motives.to_u64().unwrap_or(0),
         minors: v.num_minors.to_u64().unwrap_or(0),
-        block: lean_block_id(self_name, all),
+        block: lean_block_id(self_name, all, n2a),
         member_idx: lean_member_idx(self_name, all),
         ty: expr_to_k(&v.cnst.typ, pn),
         rules,
-        lean_all: lean_all_ids(&v.all),
+        lean_all: lean_all_ids(&v.all, n2a),
       }
     },
   }
@@ -2027,45 +2098,220 @@ fn lean_const_to_kconst(
 
 /// Direct ingress: build a `KEnv<Meta>` from a Lean `Env` without going
 /// through Ixon compilation. Used by the `kernel-lean-roundtrip`
-/// diagnostic test to bisect between compile bugs and ingress bugs.
+/// diagnostic test and by `compile_env` to produce the `orig_kenv`
+/// used for original-constant verification (see `src/ix/compile.rs::
+/// KernelCtx::orig_kenv`).
 ///
-/// All `KId.addr`s are derived via `lean_name_to_addr` (blake3 of the Name's
-/// own hash). `Const` references inside expressions also resolve via that
-/// scheme (both `n2a` maps are `None`), so constant keys and reference
-/// targets line up automatically.
+/// # Addressing
 ///
-/// Block entries (`kenv.blocks`) are emitted only for mutuals with >1 members,
-/// keyed by the representative (first name in `all`) to avoid duplicate
-/// inserts across members.
+/// All `KId.addr`s are derived via `ConstantInfo::get_hash()` — the LEON
+/// content hash, Blake3 over the serialized original `ConstantInfo`
+/// (name + level params + type + variant-specific fields). `Const`
+/// references inside expressions resolve against the same map so
+/// constant keys and reference targets line up automatically.
 ///
-/// **Meta-only**: the existing `lean_expr_to_zexpr_*` family is Meta-mode only,
-/// so this helper is Meta-mode only by extension. Generalizing to `Anon` would
-/// require generalizing `lean_expr_to_zexpr_raw` too.
+/// LEON addressing has two properties that name-hash addressing lacked:
+///
+/// - **Content-distinguishing**: two constants with the same name but
+///   different content hash to different addresses, so a rogue env
+///   can't silently shadow a primitive by naming its own declaration
+///   `Nat`.
+/// - **Compatible with `PrimOrigAddrs`**: the hardcoded original-addr
+///   table in `src/ix/kernel/primitive.rs` holds LEON hashes, so
+///   address-keyed primitive lookup against `orig_kenv` succeeds
+///   without a synthetic `@<hex>` fallback.
+///
+/// # Block entries
+///
+/// `kenv.blocks` is populated for every constant: each `KId` is pushed
+/// under its block's representative (first name in `all`, or the
+/// constant itself for singletons). Constructors follow their parent
+/// inductive's block.
+///
+/// **Meta-only**: the existing `lean_expr_to_zexpr_*` family is Meta-mode
+/// only, so this helper is Meta-mode only by extension. Generalizing to
+/// `Anon` would require generalizing `lean_expr_to_zexpr_raw` too.
 pub fn lean_ingress(lean_env: &LeanEnv) -> KEnv<Meta> {
+  use std::time::Instant;
+  let quiet = std::env::var("IX_QUIET").is_ok();
   let kenv = KEnv::<Meta>::new();
 
-  // Pass 1: ingress every constant.
-  for (name, ci) in lean_env.iter() {
-    let kid = KId::new(lean_name_to_addr(name), name.clone());
-    let kc = lean_const_to_kconst(name, ci, &kenv);
-    kenv.insert(kid, kc);
+  // Build the env-wide name → LEON-addr map once. Threaded through every
+  // KId construction below so all addresses in orig_kenv — whether
+  // stored as the KEnv key, or referenced from within a KExpr via
+  // `Const`, or captured in structural fields like `block`, `ctors`,
+  // `induct`, `lean_all` — come from the same authoritative source.
+  let t = Instant::now();
+  let n2a = build_leon_addr_map(lean_env);
+  if !quiet {
+    eprintln!(
+      "[lean_ingress]   build_leon_addr_map: {:.2}s ({} names)",
+      t.elapsed().as_secs_f32(),
+      n2a.len()
+    );
   }
 
-  // Pass 2: populate `kenv.blocks` for mutual blocks with >1 members.
-  // For each constant that's the representative of its mutual (first name
-  // in `all`), insert a block entry keyed by the representative's KId,
-  // with all sibling KIds as members.
+  // Pass 1: ingress every constant — parallelized via rayon.
+  //
+  // Every function called from the worker body is thread-safe:
+  //   - `leon_addr_of` reads from `n2a` (a DashMap).
+  //   - `lean_const_to_kconst` reads `ci`/`n2a` and builds fresh `KConst`
+  //     values; any expression interning it triggers goes through
+  //     `kenv.intern` (DashMap) and `kenv.ingress_cache` (DashMap), both
+  //     documented thread-safe. It does not read `kenv.consts` or
+  //     `kenv.blocks`, so parallel inserts here are partition-safe.
+  //   - `kenv.insert` writes the freshly-built `KConst` into
+  //     `kenv.consts` (DashMap). KIds are derived from LEON content
+  //     hashes, so no two workers produce the same key, so no shard
+  //     contention on the write.
+  //
+  // `lean_env` is an `FxHashMap`, so we collect a `Vec<_>` of references
+  // and hand that to rayon; the `std::collections::HashMap` par_iter
+  // impl requires the default hasher, which `FxHashMap` isn't.
+  let t = Instant::now();
+  let entries: Vec<(&Name, &LeanCI)> = lean_env.iter().collect();
+  entries.into_par_iter().for_each(|(name, ci)| {
+    let kid = KId::new(leon_addr_of(name, &n2a), name.clone());
+    let kc = lean_const_to_kconst(name, ci, &kenv, &n2a);
+    kenv.insert(kid, kc);
+  });
+  if !quiet {
+    eprintln!(
+      "[lean_ingress]   pass 1 (parallel ingress): {:.2}s",
+      t.elapsed().as_secs_f32()
+    );
+  }
+
+  // Pass 2: populate `kenv.blocks`.
+  //
+  // Each inductive block's entry under `blocks[rep_kid]` must hold
+  // *every* KId that the kernel's block-traversal paths need:
+  //
+  // - The inductives themselves (discovered by
+  //   `discover_block_inductives` during `check_inductive`'s A1–A4
+  //   pass and during `compute_is_rec`).
+  // - Their constructors (needed for ctor lookups keyed on the block).
+  // - Their recursors (needed by `find_peer_recursors` during
+  //   `generate_block_recursors`'s rule generation — without recs in
+  //   the block, rule RHS construction returns None and the stored
+  //   rules can't be verified).
+  //
+  // **Order matters for inductives.** `discover_block_inductives`
+  // filters the block's member list down to `KConst::Indc` entries
+  // and the resulting order drives `build_flat_block` → `build_rec_type`
+  // → motive-binder emission in `generate_block_recursors`. That
+  // order must match whatever order the *stored* recursor was
+  // generated against.
+  //
+  // For `orig_kenv` (what this function builds), the stored recursor
+  // is Lean's own — generated against the **declaration order** given
+  // by each constant's `all` list (the source order the user wrote
+  // the mutual block in). If `discover_block_inductives` returns
+  // members in any other order, the generated motive prefix permutes
+  // relative to Lean's, yielding spurious `check_recursor: type
+  // mismatch` on every mutual-block recursor (we saw this on
+  // `Lean.Xml.Content.rec`, `Lean.Compiler.LCNF.Code.rec`, every
+  // `Grind.Arith.*.*Cnstr*.rec`, etc.).
+  //
+  // Declaration order is *not* the canonical structural order that
+  // `sort_consts` produces during compilation — that second order
+  // only shows up in the compiled `kctx.kenv`, not here. Iterating
+  // `lean_env` directly to push each constant's `self_kid` gave
+  // random (FxHashMap iteration) order; we now seed each block with
+  // its `all` list the first time any member is observed, then
+  // append ctors and recursors in a second pass. Ctors/recursors
+  // land at the tail — the block's inductive-prefix carries the
+  // declaration order that `discover_block_inductives` consumes.
+  //
+  // `ixon_ingress` builds an analogous list for `kctx.kenv`, but
+  // there the ordering comes from `sort_consts`' equivalence-class
+  // output (structural, not declarational). The two paths diverge on
+  // purpose: `orig_kenv` carries Lean's source-order recursor
+  // expectations, `kctx.kenv` carries the canonical-compile recursor
+  // expectations.
+  //
+  // For singleton inductives, the block is keyed at `self_kid`; for
+  // multi-member mutuals, at the representative (first name in `all`).
+  let block_rep = |name: &Name, ci: &LeanCI| -> KId<Meta> {
+    let all = lean_constant_all(ci);
+    let rep =
+      all.and_then(|a| a.first()).cloned().unwrap_or_else(|| name.clone());
+    KId::new(leon_addr_of(&rep, &n2a), rep)
+  };
+
+  // Phase A: seed each block's initial member list from the constant's
+  // `all` list (canonical order), exactly once per block. Constants
+  // without `all` (axioms, quotients, ctors) seed a singleton block
+  // under their own KId.
+  let t = Instant::now();
+  let mut seeded: FxHashSet<KId<Meta>> = FxHashSet::default();
   for (name, ci) in lean_env.iter() {
-    if let Some(all) = lean_constant_all(ci)
-      && all.len() > 1
-      && all.first() == Some(name)
-    {
-      let block_id: KId<Meta> =
-        KId::new(lean_name_to_addr(name), name.clone());
-      let members: Vec<KId<Meta>> = lean_all_ids(all);
-      kenv.blocks.insert(block_id, members);
+    let block_id = block_rep(name, ci);
+    if !seeded.insert(block_id.clone()) {
+      continue;
+    }
+    let all = lean_constant_all(ci)
+      .cloned()
+      .unwrap_or_else(|| vec![name.clone()]);
+    let members: Vec<KId<Meta>> = all
+      .iter()
+      .map(|n| KId::new(leon_addr_of(n, &n2a), n.clone()))
+      .collect();
+    kenv.blocks.insert(block_id, members);
+  }
+  if !quiet {
+    eprintln!(
+      "[lean_ingress]   phase A (block seed): {:.2}s",
+      t.elapsed().as_secs_f32()
+    );
+  }
+
+  // Phase B: append constructors (for each inductive in the block) and
+  // recursors (which aren't in `all` — `all` lists inductives even for
+  // RecInfo). Order within ctors/recs doesn't affect kernel correctness
+  // because consumer lookups go by KId (ctors) or major-inductive match
+  // (`find_peer_recursors` for recs).
+  let t = Instant::now();
+  for (name, ci) in lean_env.iter() {
+    match ci {
+      LeanCI::InductInfo(v) => {
+        let block_id = block_rep(name, ci);
+        for ctor_name in &v.ctors {
+          let ctor_kid: KId<Meta> =
+            KId::new(leon_addr_of(ctor_name, &n2a), ctor_name.clone());
+          kenv.blocks.entry(block_id.clone()).or_default().push(ctor_kid);
+        }
+      },
+      LeanCI::RecInfo(_) => {
+        let block_id = block_rep(name, ci);
+        let self_kid = KId::new(leon_addr_of(name, &n2a), name.clone());
+        kenv.blocks.entry(block_id).or_default().push(self_kid);
+      },
+      // Inductives and Defns/Thms/Opaques are already in the Phase-A
+      // seed via their `all` list; axioms, quotients, and ctors are
+      // placed as singletons (the latter also get appended above).
+      _ => {},
     }
   }
+  if !quiet {
+    eprintln!(
+      "[lean_ingress]   phase B (ctor/rec append): {:.2}s",
+      t.elapsed().as_secs_f32()
+    );
+  }
+
+  // Pre-cache primitives against the LEON-addressed scheme so
+  // `TypeChecker::new(orig_kenv)` and any caller of `kenv.prims()`
+  // resolve primitives through `PrimAddrs::new_orig` (matching KIds in
+  // this env) instead of the canonical table (which would always miss
+  // here and produce synthetic `@<hex>` KIds).
+  //
+  // Returns `Err` only if `prims()` has already been called on this
+  // KEnv — fresh `KEnv::new()` above guarantees that hasn't happened,
+  // so we ignore the Result.
+  let _ = kenv.set_prims(
+    crate::ix::kernel::primitive::Primitives::from_env_orig(&kenv),
+  );
 
   kenv
 }

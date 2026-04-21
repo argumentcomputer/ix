@@ -36,6 +36,42 @@ impl Address {
     self.hash.as_bytes()
   }
 
+  /// Build a deterministic, collision-resistant `Name` for this address:
+  /// `Ix._#.<hex>`. Mirrors Lean-side `Ix.Address.toUniqueName`.
+  ///
+  /// Use this when you need to register a KId/Named entry at a synthetic
+  /// name that can't collide with any Lean-originated name (e.g. for
+  /// scratch `KEnv` entries that should not participate in the
+  /// `name_to_addr` / `aux_name_to_addr` namespace).
+  pub fn to_unique_name(&self) -> crate::ix::env::Name {
+    use crate::ix::env::Name;
+    Name::str(
+      Name::str(Name::str(Name::anon(), "Ix".to_string()), "_#".to_string()),
+      self.hex(),
+    )
+  }
+
+  /// Inverse of `to_unique_name`. Returns `Some(Address)` iff `name` has
+  /// shape `Ix._#.<hex>` with valid 64-char hex; otherwise `None`.
+  pub fn from_unique_name(name: &crate::ix::env::Name) -> Option<Self> {
+    use crate::ix::env::NameData;
+    let (parent, hex) = match name.as_data() {
+      NameData::Str(parent, s, _) => (parent.clone(), s.clone()),
+      _ => return None,
+    };
+    let parent = match parent.as_data() {
+      NameData::Str(pp, s, _) if s == "_#" => pp.clone(),
+      _ => return None,
+    };
+    match parent.as_data() {
+      NameData::Str(ppp, s, _) if s == "Ix" => match ppp.as_data() {
+        NameData::Anonymous(_) => Address::from_hex(&hex),
+        _ => None,
+      },
+      _ => None,
+    }
+  }
+
   /// Build a synthetic `Name` for a mutual block's `Named` entry:
   /// `Ix.<hex>.<first_member_name>`. Disambiguates alpha-equivalent blocks
   /// that share an `addr` but have different member names.

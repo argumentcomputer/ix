@@ -77,8 +77,24 @@ pub struct BlockSizeStats {
 /// `TypeChecker` instances are created per-use-site — they are cheap
 /// thread-local handles that share the `KEnv` via `Arc`.
 pub struct KernelCtx {
-  /// Shared kernel environment (constants, caches, intern table).
+  /// Shared **canonical** kernel environment. Populated incrementally by
+  /// aux_gen's Phase 1+ (`compute_is_large_and_k`, `ingress_field_deps`,
+  /// etc.) with aux-substituted types at `resolve_lean_name_addr`-derived
+  /// addresses that may shift as alpha-collapse reassigns addresses over
+  /// the course of compilation.
   pub kenv: Arc<crate::ix::kernel::env::KEnv<crate::ix::kernel::mode::Meta>>,
+  /// Shared **original** kernel environment. Populated **once** at the
+  /// start of `compile_env` via `lean_ingress(&lean_env)` and never
+  /// mutated after. Holds every Lean-original constant at
+  /// `lean_name_to_addr(name)` addresses with self-consistent type
+  /// references (no alpha-collapse, no aux rewriting, no staleness).
+  ///
+  /// Used exclusively for `check_originals` — verifying each block's
+  /// Lean-stored inductives, constructors, and recursors against a
+  /// pristine env, completely isolated from the canonical pipeline so
+  /// there's no risk of cross-contamination in either direction.
+  pub orig_kenv:
+    Arc<crate::ix::kernel::env::KEnv<crate::ix::kernel::mode::Meta>>,
 }
 
 impl Default for KernelCtx {
@@ -88,9 +104,23 @@ impl Default for KernelCtx {
 }
 
 impl KernelCtx {
-  /// Create a new empty kernel context.
+  /// Create a new empty kernel context. `orig_kenv` starts empty too;
+  /// call [`KernelCtx::with_originals`] to install a populated
+  /// `orig_kenv` from a `lean_ingress` of the input Lean env.
   pub fn new() -> Self {
-    KernelCtx { kenv: Arc::new(crate::ix::kernel::env::KEnv::new()) }
+    KernelCtx {
+      kenv: Arc::new(crate::ix::kernel::env::KEnv::new()),
+      orig_kenv: Arc::new(crate::ix::kernel::env::KEnv::new()),
+    }
+  }
+
+  /// Consume this context and return a new one with `orig_kenv`
+  /// replaced by the given (typically fully-populated) kenv.
+  pub fn with_originals(
+    self,
+    orig_kenv: Arc<crate::ix::kernel::env::KEnv<crate::ix::kernel::mode::Meta>>,
+  ) -> Self {
+    KernelCtx { kenv: self.kenv, orig_kenv }
   }
 }
 
@@ -110,8 +140,19 @@ pub struct CompileState {
   /// by the scheduler as blocks compile. Used by aux_gen for sort-level
   /// inference during `.rec`, `.below`, `.brecOn` generation.
   pub kctx: KernelCtx,
-  /// Constants filtered out during grounding (name -> error description).
-  pub ungrounded: FxHashMap<Name, String>,
+  /// Constants that couldn't be compiled (name -> error description).
+  ///
+  /// Populated in two phases:
+  /// 1. Pre-compile grounding: `ground_consts` identifies constants unreachable
+  ///    from axioms/primitives.
+  /// 2. During scheduling: per-block compile failures (e.g. `compute_is_large_and_k`
+  ///    rejecting an ill-formed inductive) are recorded here instead of
+  ///    aborting the scheduler, so the rest of the env still compiles and
+  ///    callers can report each failure per-constant.
+  ///
+  /// `DashMap` (rather than `FxHashMap`) because scheduler workers insert
+  /// concurrently on per-block failure paths.
+  pub ungrounded: DashMap<Name, String>,
   /// Persistent set of names compiled by aux_gen. Used for membership
   /// checks (e.g., "is this name aux_gen-rewritten?") throughout compilation.
   /// Never drained — callers rely on `.contains()` long after insertion.

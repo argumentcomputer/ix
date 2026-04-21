@@ -11,6 +11,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
+use rayon::prelude::*;
 use rustc_hash::FxHashSet;
 
 use crate::ix::address::Address;
@@ -99,25 +100,107 @@ where
 pub fn compile_env(
   lean_env: &Arc<LeanEnv>,
 ) -> Result<CompileState, CompileError> {
+  let setup_start = Instant::now();
+  let phase_start = Instant::now();
   let graph = build_ref_graph(lean_env.as_ref());
-
-  let ungrounded = ground_consts(lean_env.as_ref(), &graph.in_refs);
-  if !ungrounded.is_empty() {
-    for (n, e) in &ungrounded {
-      eprintln!("Ungrounded {:?}: {:?}", n, e);
-    }
-    return Err(CompileError::InvalidMutualBlock {
-      reason: "ungrounded environment".into(),
-    });
+  if !*IX_QUIET {
+    eprintln!(
+      "[compile_env] setup 1/7 build_ref_graph: {:.2}s",
+      phase_start.elapsed().as_secs_f32()
+    );
   }
 
-  let condensed = compute_sccs(&graph.out_refs);
+  // Grounding pass: identify constants whose transitive Const-refs can't all
+  // be resolved. These are collected into `stt.ungrounded` and filtered from
+  // the SCC input so they don't clog the scheduler. Callers (e.g. the kernel
+  // check FFI) inspect `stt.ungrounded` per-constant to report them as
+  // compile-side rejections without aborting the whole batch.
+  let phase_start = Instant::now();
+  let ungrounded = ground_consts(lean_env.as_ref(), &graph.in_refs);
+  if !*IX_QUIET {
+    eprintln!(
+      "[compile_env] setup 2/7 ground_consts: {:.2}s",
+      phase_start.elapsed().as_secs_f32()
+    );
+  }
+  let ungrounded_map: DashMap<Name, String> = ungrounded
+    .iter()
+    .map(|(n, e)| (n.clone(), format!("{e:?}")))
+    .collect();
+  if !ungrounded.is_empty() && !*IX_QUIET {
+    eprintln!(
+      "[compile_env] {} ungrounded constants filtered from graph",
+      ungrounded.len()
+    );
+    for (n, e) in ungrounded.iter().take(5) {
+      eprintln!("  ungrounded: {} ({:?})", n.pretty(), e);
+    }
+    if ungrounded.len() > 5 {
+      eprintln!("  ... and {} more", ungrounded.len() - 5);
+    }
+  }
 
-  let stt =
-    CompileState { lean_env: Some(lean_env.clone()), ..Default::default() };
+  // Filter ungrounded names from the ref graph before SCC computation so
+  // condensed blocks only contain constants we can actually compile.
+  let grounded_out_refs: crate::ix::graph::RefMap =
+    if ungrounded_map.is_empty() {
+      graph.out_refs
+    } else {
+      graph
+        .out_refs
+        .into_iter()
+        .filter(|(name, _)| !ungrounded_map.contains_key(name))
+        .map(|(k, refs)| {
+          let filtered: rustc_hash::FxHashSet<Name> = refs
+            .into_iter()
+            .filter(|r| !ungrounded_map.contains_key(r))
+            .collect();
+          (k, filtered)
+        })
+        .collect()
+    };
 
-  // The kenv is populated on-demand via ensure_in_kenv as constants are
-  // compiled. Precompiles (PUnit, PProd, Eq, True) are added below.
+  let phase_start = Instant::now();
+  let condensed = compute_sccs(&grounded_out_refs);
+  if !*IX_QUIET {
+    eprintln!(
+      "[compile_env] setup 3/7 compute_sccs ({} blocks): {:.2}s",
+      condensed.blocks.len(),
+      phase_start.elapsed().as_secs_f32()
+    );
+  }
+
+  // Build the shared **original** kenv up-front via `lean_ingress`. This
+  // is a full snapshot of the input Lean env with every constant at its
+  // LEON content-hash address (`ConstantInfo::get_hash()`), all type
+  // references self-consistent, and no alpha-collapse/aux rewriting
+  // applied. `lean_ingress` also pre-caches `Primitives::from_env_orig`
+  // so primitive lookups resolve through `PrimOrigAddrs` — the matching
+  // address table for this env. Used exclusively by `check_originals`
+  // during compile_mutual's Phase 0 to verify Lean-stored
+  // inductives/ctors/recursors in a pristine, unambiguous context —
+  // fully isolated from the canonical `kctx.kenv` that subsequent
+  // phases populate.
+  let phase_start = Instant::now();
+  let orig_kenv = Arc::new(crate::ix::kernel::ingress::lean_ingress(lean_env));
+  if !*IX_QUIET {
+    eprintln!(
+      "[compile_env] setup 4/7 lean_ingress (orig_kenv): {:.2}s",
+      phase_start.elapsed().as_secs_f32()
+    );
+  }
+  let kctx = crate::ix::compile::KernelCtx::new().with_originals(orig_kenv);
+
+  let stt = CompileState {
+    lean_env: Some(lean_env.clone()),
+    ungrounded: ungrounded_map,
+    kctx,
+    ..Default::default()
+  };
+
+  // The (canonical) kenv is populated on-demand via ensure_in_kenv as
+  // constants are compiled. Precompiles (PUnit, PProd, Eq, True) are
+  // added below.
 
   // Pre-compile the builtins that aux_gen is known to reference, so the
   // scheduler has their addresses in `aux_name_to_addr` before any block
@@ -147,10 +230,18 @@ pub fn compile_env(
   // Names absent from `lean_env` (e.g., unit-test fixtures) are silently
   // skipped at seeding time — the initial `condensed.low_links.get` is
   // optional. Transitive deps of surviving seeds are assumed present.
+  let phase_start = Instant::now();
   precompile_aux_gen_prereqs(&condensed, lean_env, &stt)?;
+  if !*IX_QUIET {
+    eprintln!(
+      "[compile_env] setup 5/7 precompile_aux_gen_prereqs: {:.2}s",
+      phase_start.elapsed().as_secs_f32()
+    );
+  }
 
   // Build work-stealing data structures
   let total_blocks = condensed.blocks.len();
+  let phase_start = Instant::now();
 
   // For each block: (all names in block, original deps, remaining deps).
   // Using an explicit HashSet instead of an atomic counter prevents silent
@@ -164,26 +255,51 @@ pub fn compile_env(
   // Reverse deps: name -> set of block leaders that depend on this name
   let reverse_deps: DashMap<Name, Vec<Name>> = DashMap::default();
 
-  // Initialize block info and reverse deps
-  for (lo, all) in &condensed.blocks {
+  // Initialize block info and reverse deps in parallel.
+  //
+  // `condensed.blocks` is an `FxHashMap` so we collect a `Vec` of references
+  // first; `par_iter` on `FxHashMap` would require enabling the `rayon`
+  // feature on `hashbrown`, which is not a current dep. The collection is
+  // sub-millisecond on 193k entries.
+  //
+  // Both `block_info` and `reverse_deps` are `DashMap`s; `DashMap::insert`
+  // and `DashMap::entry` are atomic against the per-shard lock, so parallel
+  // writes are safe. `reverse_deps.entry(dep).or_default().push(lo)` holds
+  // the shard write-lock for the duration of the `push`, which briefly
+  // serializes threads that hit the same shard for the same `dep`. The
+  // shard count (DashMap default 64) is large enough relative to thread
+  // count (32) that contention stays low. Vec insertion order within a
+  // reverse-dep entry becomes non-deterministic — that is fine because the
+  // consumer (the scheduler's unblock loop) only iterates the Vec to
+  // notify workers, never compares it for equality.
+  let block_entries: Vec<(&Name, &NameSet)> = condensed.blocks.iter().collect();
+  block_entries.par_iter().try_for_each(|(lo, all)| -> Result<(), CompileError> {
     let deps =
-      condensed.block_refs.get(lo).ok_or(CompileError::InvalidMutualBlock {
+      condensed.block_refs.get(*lo).ok_or(CompileError::InvalidMutualBlock {
         reason: "missing block refs".into(),
       })?;
 
     block_info.insert(
-      lo.clone(),
-      (all.clone(), deps.clone(), Mutex::new(deps.clone())),
+      (*lo).clone(),
+      ((*all).clone(), deps.clone(), Mutex::new(deps.clone())),
     );
 
-    // Register reverse dependencies
     for dep_name in deps {
-      reverse_deps.entry(dep_name.clone()).or_default().push(lo.clone());
+      reverse_deps.entry(dep_name.clone()).or_default().push((*lo).clone());
     }
-  }
+    Ok(())
+  })?;
 
   // Shared ready queue: blocks that are ready to compile
   let ready_queue: Mutex<Vec<(Name, NameSet)>> = Mutex::new(Vec::new());
+
+  if !*IX_QUIET {
+    eprintln!(
+      "[compile_env] setup 6/7 block_info init: {:.2}s",
+      phase_start.elapsed().as_secs_f32()
+    );
+  }
+  let phase_start = Instant::now();
 
   // Initialize with blocks that have zero remaining dependencies
   {
@@ -195,6 +311,13 @@ pub fn compile_env(
         queue.push((lo.clone(), all.clone()));
       }
     }
+  }
+  if !*IX_QUIET {
+    eprintln!(
+      "[compile_env] setup 7/7 ready_queue init: {:.2}s (total pre-scheduler: {:.2}s)",
+      phase_start.elapsed().as_secs_f32(),
+      setup_start.elapsed().as_secs_f32(),
+    );
   }
 
   // Track completed count for termination
@@ -454,21 +577,23 @@ pub fn compile_env(
                     },
                   );
                   if let Err(e) = res {
-                    // Drop in-flight entry before surfacing the error.
-                    active_ref
-                      .lock()
-                      .unwrap()
-                      .retain(|(n, _)| n != &lo);
-                    let mut err_guard = error_ref.lock().unwrap();
-                    if err_guard.is_none() {
+                    // Record the failure per-member and fall through. The
+                    // scheduler keeps running so other constants can still
+                    // compile; dependents of this block will hit
+                    // MissingConstant and be recorded here too. Callers
+                    // inspect `stt.ungrounded` to report per-constant
+                    // compile-side rejections.
+                    let msg = format!("{e}");
+                    for member in &all {
+                      stt_ref.ungrounded.insert(member.clone(), msg.clone());
+                    }
+                    if *IX_LOG_BLOCKS {
                       eprintln!(
                         "[compile_env] compile_const_no_aux failed for {}: {}",
                         lo.pretty(),
-                        e,
+                        msg,
                       );
-                      *err_guard = Some(e);
                     }
-                    return;
                   }
                 }
 
@@ -490,20 +615,29 @@ pub fn compile_env(
                   || compile_const(&lo, &all, lean_env, &mut cache, stt_ref),
                 );
                 if let Err(e) = res {
-                  // Drop in-flight entry before surfacing the error.
-                  active_ref.lock().unwrap().retain(|(n, _)| n != &lo);
-                  let mut err_guard = error_ref.lock().unwrap();
-                  if err_guard.is_none() {
-                    eprintln!(
-                      "[compile_env] ERROR in block {} ({} members): {}",
-                      lo.pretty(),
-                      all.len(),
-                      e,
-                    );
+                  // Record the failure per-member and fall through. The
+                  // scheduler keeps running so other constants can still
+                  // compile; dependents of this block will hit
+                  // MissingConstant and be recorded here too. Callers
+                  // inspect `stt.ungrounded` to report per-constant
+                  // compile-side rejections.
+                  let msg = format!("{e}");
+                  for member in &all {
+                    stt_ref.ungrounded.insert(member.clone(), msg.clone());
+                  }
+                  // The first time we fail on a given block, log a brief
+                  // line. Full dep-status diagnostics are gated on
+                  // IX_LOG_BLOCKS to avoid log spam on cascading failures.
+                  eprintln!(
+                    "[compile_env] block FAILED {} ({} members): {}",
+                    lo.pretty(),
+                    all.len(),
+                    msg,
+                  );
+                  if *IX_LOG_BLOCKS {
                     for member in &all {
                       eprintln!("    member: {}", member.pretty());
                     }
-                    // Print dep status for MissingConstant errors
                     if let CompileError::MissingConstant {
                       ref name,
                       ref caller,
@@ -512,19 +646,18 @@ pub fn compile_env(
                       eprintln!(
                         "[compile_env] MissingConstant: {name} (from {caller})"
                       );
-                      eprintln!(
-                        "  block: {} ({} members)",
-                        lo.pretty(),
-                        all.len()
-                      );
                       for member in &all {
                         let in_main = stt_ref.name_to_addr.contains_key(member);
                         let in_aux =
                           stt_ref.aux_name_to_addr.contains_key(member);
+                        let in_ungr =
+                          stt_ref.ungrounded.contains_key(member);
                         let status = if in_main {
                           "name_to_addr"
                         } else if in_aux {
                           "aux_name_to_addr"
+                        } else if in_ungr {
+                          "ungrounded"
                         } else {
                           "pending"
                         };
@@ -532,15 +665,17 @@ pub fn compile_env(
                       }
                       if let Some(entry) = block_info_ref.get(&lo) {
                         let (_, orig_deps, remaining) = entry.value();
-                        // Print all original deps with their resolution status
                         eprintln!("  deps ({}):", orig_deps.len());
                         for d in orig_deps.iter() {
                           let in_main = stt_ref.name_to_addr.contains_key(d);
                           let in_aux = stt_ref.aux_name_to_addr.contains_key(d);
+                          let in_ungr = stt_ref.ungrounded.contains_key(d);
                           let status = if in_main {
                             "name_to_addr"
                           } else if in_aux {
                             "aux_name_to_addr"
+                          } else if in_ungr {
+                            "ungrounded"
                           } else {
                             "UNRESOLVED"
                           };
@@ -555,9 +690,7 @@ pub fn compile_env(
                         }
                       }
                     }
-                    *err_guard = Some(e);
                   }
-                  return;
                 }
               }
 

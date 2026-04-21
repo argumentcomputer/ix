@@ -4,6 +4,8 @@
 //! constraints, return types) and generates canonical recursors following
 //! lean4lean's constructive approach, then compares with provided recursors.
 
+use std::sync::LazyLock;
+
 use crate::ix::address::Address;
 
 use super::constant::KConst;
@@ -15,6 +17,14 @@ use super::level::{KUniv, univ_eq, univ_geq};
 use super::mode::KernelMode;
 use super::subst::{lift, simul_subst, subst};
 use super::tc::{TypeChecker, collect_app_spine, expr_mentions_any_addr};
+
+/// Emit the `[type diff]` walk from `check_recursor`'s mismatch path.
+/// Off by default — every inductive over ~100k constants in an alpha-collapse
+/// regime or a mutual block with near-identical peers triggers a fresh diff,
+/// turning a normal compile into a wall of stderr. Set `IX_TYPE_DIFF=1` to
+/// enable when investigating a specific mismatch.
+static IX_TYPE_DIFF: LazyLock<bool> =
+  LazyLock::new(|| std::env::var("IX_TYPE_DIFF").is_ok());
 
 /// A member of the "flat" mutual block used for recursor generation.
 /// For non-nested inductives, this is just the original inductive.
@@ -150,23 +160,62 @@ impl<M: KernelMode> TypeChecker<M> {
     let ind_level =
       self.get_result_sort_level(&ty, u64_to_usize(params + indices)?)?;
 
-    // S3: Mutual inductives must live in the same universe.
-    for peer_id in &block_inds {
-      if peer_id.addr == id.addr {
-        continue;
-      }
-      if let Some(KConst::Indc {
-        params: pp, indices: pi, ty: peer_ty, ..
-      }) = self.env.get(peer_id)
-      {
+    // S3 + S3b: Peer-agreement invariants for mutual inductives.
+    //
+    // S3:  all peers live in the same result universe.
+    // S3b: all peers share the same parameter count and parameter-domain
+    //      types. Without S3b, `build_rec_type` — which takes the shared
+    //      param prefix uniformly from `ind_infos[0]` — would produce a
+    //      generated recursor whose param binders misalign with a peer's
+    //      ctor arguments, yielding de-Bruijn-shifted iota reductions and,
+    //      in the limit, ill-typed stored terms. Enforcing agreement
+    //      kernel-side removes the implicit compiler trust.
+    //
+    // References: lean4 `src/kernel/inductive.cpp:211–262 check_inductive_types`
+    // (line 230–231: "parameters of all inductive datatypes must match")
+    // and lean4lean `Lean4Lean/Inductive/Add.lean:80–82`.
+    //
+    // Memoization: the check is invariant across all peers of the block —
+    // if peer[0] agrees with each of peer[1..N], then by transitivity all
+    // pairs agree. Running this loop from *every* peer in the block yields
+    // redundant O(N²) work, which becomes significant on large Mathlib
+    // mutual families. We memo on successful completion, so subsequent
+    // peer checks of the same block skip the loop. Failure is not cached
+    // (the loop re-runs and re-reports on the next peer's check). Block
+    // ids are content-addressed, so cache entries are stable across the
+    // TypeChecker's lifetime.
+    if !self.env.block_peer_agreement_cache.contains(&block) {
+      for peer_id in &block_inds {
+        if peer_id.addr == id.addr {
+          continue;
+        }
+        let (peer_params, peer_indices, peer_ty) = match self.env.get(peer_id)
+        {
+          Some(KConst::Indc { params: pp, indices: pi, ty: pty, .. }) => {
+            (pp, pi, pty.clone())
+          },
+          _ => continue,
+        };
+        // S3: universe agreement.
         let peer_level = self
-          .get_result_sort_level(&peer_ty.clone(), u64_to_usize(pp + pi)?)?;
+          .get_result_sort_level(&peer_ty, u64_to_usize(peer_params + peer_indices)?)?;
         if !univ_eq(&ind_level, &peer_level) {
           return Err(TcError::Other(
             "mutually inductive types must live in the same universe".into(),
           ));
         }
+        // S3b: parameter-count agreement.
+        if peer_params != params {
+          return Err(TcError::Other(format!(
+            "mutual peers must declare the same number of parameters: \
+             self={params}, peer={peer_params}"
+          )));
+        }
+        // S3b: parameter-domain agreement. Walks the first `n_params`
+        // foralls of both types and `is_def_eq`s the domains.
+        self.check_param_agreement(&ty, &peer_ty, u64_to_usize(params)?)?;
       }
+      self.env.block_peer_agreement_cache.insert(block.clone());
     }
 
     // Validate each constructor
@@ -417,7 +466,7 @@ impl<M: KernelMode> TypeChecker<M> {
         // Instantiate ctor type with occurrence universe args (concrete) so that
         // transitively-detected nested occurrences get concrete universe args too.
         let ctor_ty_inst =
-          self.instantiate_univ_params(&ctor_ty, &member.occurrence_us);
+          self.instantiate_univ_params(&ctor_ty, &member.occurrence_us)?;
 
         // Walk past own_params, substituting with spec_params.
         let saved = self.save_depth();
@@ -813,7 +862,7 @@ impl<M: KernelMode> TypeChecker<M> {
     augmented_addrs: &[Address],
   ) -> Result<(), TcError<M>> {
     // Instantiate universe params
-    let mut ty = self.instantiate_univ_params(ctor_ty, us);
+    let mut ty = self.instantiate_univ_params(ctor_ty, us)?;
 
     // Strip param foralls
     for _ in 0..n_params {
@@ -1341,7 +1390,7 @@ impl<M: KernelMode> TypeChecker<M> {
 
     // Instantiate inductive type with shifted universe params before walking
     let ind_univs = self.mk_ind_univs(ind_lvls, univ_offset);
-    let ind_ty_inst = self.instantiate_univ_params(ind_ty, &ind_univs);
+    let ind_ty_inst = self.instantiate_univ_params(ind_ty, &ind_univs)?;
 
     // Walk the instantiated inductive type past params, collecting index domains
     let mut ty = ind_ty_inst;
@@ -1435,7 +1484,7 @@ impl<M: KernelMode> TypeChecker<M> {
       .ty()
       .clone();
     let ind_ty_inst =
-      self.instantiate_univ_params(&ind_ty, &member.occurrence_us);
+      self.instantiate_univ_params(&ind_ty, &member.occurrence_us)?;
 
     // Walk past own_params, substituting with spec_params (lifted to current depth).
     let mut ty = ind_ty_inst;
@@ -1566,7 +1615,7 @@ impl<M: KernelMode> TypeChecker<M> {
 
     // Instantiate ctor type with occurrence universe args (concrete for output).
     let ctor_ty =
-      self.instantiate_univ_params(&ctor_ty_raw, &member.occurrence_us);
+      self.instantiate_univ_params(&ctor_ty_raw, &member.occurrence_us)?;
 
     // Walk ctor type past member's own_params, substituting with spec_params.
     // For originals: spec_params = Var refs relative to depth 0, need re-indexing
@@ -1615,7 +1664,13 @@ impl<M: KernelMode> TypeChecker<M> {
       match w.data() {
         ExprData::All(_, _, dom, body, _) => {
           field_domains.push(dom.clone());
-          if let Some(bi) = self.is_rec_field(dom, flat)? {
+          // Field args reference block params at current pushed-local
+          // depth; spec_params live at depth = n_rec_params (shared
+          // block params = flat[0].own_params). Lift by the difference.
+          let n_rec_params =
+            flat.first().map(|m| m.own_params).unwrap_or(0);
+          let lift_by = self.depth().saturating_sub(n_rec_params);
+          if let Some(bi) = self.is_rec_field(dom, flat, lift_by)? {
             rec_field_indices.push((fidx, bi));
           }
           self.push_local(dom.clone());
@@ -1865,17 +1920,53 @@ impl<M: KernelMode> TypeChecker<M> {
     }
   }
 
-  /// Check if a field domain type is a recursive occurrence of a block inductive.
-  /// Returns Some(block_index) if after peeling foralls, the result is `I_k params args`.
   /// Check if a field domain is a recursive occurrence of a flat block member.
-  /// For original members: checks head address matches.
-  /// For auxiliary members: also checks that the first `own_params` args
-  /// match the member's spec_params (by content hash), preventing false
-  /// positives like `List Other` matching a `List Syntax` auxiliary.
+  /// Returns `Some(block_index)` if, after peeling foralls, the result is
+  /// `I_k params args` where `I_k` matches a flat member:
+  ///
+  /// - **Original** members (`is_aux = false`): head address match is
+  ///   sufficient.
+  /// - **Auxiliary** members (`is_aux = true`): head address must match
+  ///   AND the first `own_params` args must be definitionally equal to
+  ///   the member's stored `spec_params` (after lifting spec_params to
+  ///   the caller's param-reference frame). The addr check alone can't
+  ///   distinguish two auxiliaries sharing an external inductive (e.g.
+  ///   `List A` vs `List B`).
+  ///
+  /// # Depth handling
+  ///
+  /// `spec_params` are stored at the param context (depth =
+  /// `flat[0].own_params`). Callers reference block params via Var
+  /// indices that may live at different effective depths:
+  ///
+  /// - `build_minor_at_depth` pushes field locals as it scans; at the
+  ///   `is_rec_field` call `self.depth() - n_rec_params` gives the
+  ///   offset needed.
+  /// - `build_rule_rhs` does NOT push locals — it substitutes params
+  ///   with `Var(total_lams - 1 - j)` (virtual positions for the final
+  ///   lambda chain), leaving `self.depth() = 0` regardless of how
+  ///   many virtual binders are open. The correct offset is
+  ///   `total_lams - n_rec_params`.
+  ///
+  /// Rather than have the function guess, the caller passes
+  /// `spec_params_lift_by` explicitly. Comparison uses `is_def_eq`
+  /// after lifting, which handles alpha equivalence, whnf, and beta —
+  /// anything a raw `addr()` hash comparison would miss on `Var`
+  /// parameter references.
+  ///
+  /// Historical note: the original implementation used raw `addr()`
+  /// comparison after spine decomposition, which returned false
+  /// whenever a spec_param was a bare `Var` (block param). That
+  /// dropped the IH for any recursive field whose nested type used the
+  /// block's params directly — e.g. `head : Entry α β (Node α β)` in
+  /// a nested `List (Entry α β (Node α β))` scan. An interim fix
+  /// computed lift from `self.depth()`, which worked for
+  /// `build_minor_at_depth` but silently failed in `build_rule_rhs`.
   fn is_rec_field(
     &mut self,
     dom: &KExpr<M>,
     flat: &[FlatBlockMember<M>],
+    spec_params_lift_by: u64,
   ) -> Result<Option<usize>, TcError<M>> {
     let mut ty = dom.clone();
     loop {
@@ -1889,10 +1980,6 @@ impl<M: KernelMode> TypeChecker<M> {
             _ => return Ok(None),
           };
 
-          // Find the matching flat member. For originals, address match suffices.
-          // For auxiliaries (same external inductive, different spec_params),
-          // match by comparing spec_param content hashes.
-          let n_params_ext = args.len();
           for (idx, m) in flat.iter().enumerate() {
             if m.id.addr != *head_addr {
               continue;
@@ -1900,37 +1987,26 @@ impl<M: KernelMode> TypeChecker<M> {
             if !m.is_aux {
               return Ok(Some(idx));
             }
-            // Auxiliary: compare spec_params by content hash.
-            // Lower the field-domain args by field depth (args are at current
-            // depth; spec_params are at param context depth). Rather than
-            // lowering, compare structurally: the first own_params args of the
-            // application should match the member's spec_params.
-            if n_params_ext >= u64_to_usize::<M>(m.own_params)?
-              && m.spec_params.len() == u64_to_usize::<M>(m.own_params)?
-            {
-              let matches = args
-                .iter()
-                .take(u64_to_usize::<M>(m.own_params)?)
-                .zip(m.spec_params.iter())
-                .all(|(arg, sp)| {
-                  // Compare after lowering arg to param context depth.
-                  // Since spec_params are in param context and args are at
-                  // current depth, we can't directly compare addresses.
-                  // Instead check if the arg MENTIONS the same flat members.
-                  // For the common case (concrete type applications), comparing
-                  // the head constant of arg vs sp is sufficient.
-                  let (arg_h, _) = collect_app_spine(arg);
-                  let (sp_h, _) = collect_app_spine(sp);
-                  match (arg_h.data(), sp_h.data()) {
-                    (ExprData::Const(a, _, _), ExprData::Const(b, _, _)) => {
-                      a.addr == b.addr
-                    },
-                    _ => arg.addr() == sp.addr(),
-                  }
-                });
-              if matches {
-                return Ok(Some(idx));
+            // Auxiliary: verify the caller's args agree with the
+            // stored spec_params after lifting them to caller depth.
+            let own = u64_to_usize::<M>(m.own_params)?;
+            if args.len() < own || m.spec_params.len() != own {
+              continue;
+            }
+            let mut matches = true;
+            for (arg, sp) in args.iter().take(own).zip(m.spec_params.iter()) {
+              let sp_lifted = if spec_params_lift_by > 0 {
+                lift(&self.env.intern, sp, spec_params_lift_by, 0)
+              } else {
+                sp.clone()
+              };
+              if !self.is_def_eq(arg, &sp_lifted).unwrap_or(false) {
+                matches = false;
+                break;
               }
+            }
+            if matches {
+              return Ok(Some(idx));
             }
           }
           return Ok(None);
@@ -1974,7 +2050,7 @@ impl<M: KernelMode> TypeChecker<M> {
     };
     let first_ind_univs = self.mk_ind_univs(first_ind_lvls, univ_offset);
     let pty_inst =
-      self.instantiate_univ_params(&ind_infos[0].4, &first_ind_univs);
+      self.instantiate_univ_params(&ind_infos[0].4, &first_ind_univs)?;
     let mut pty = pty_inst;
     for _ in 0..n_params {
       let w = self.whnf(&pty)?;
@@ -2031,7 +2107,7 @@ impl<M: KernelMode> TypeChecker<M> {
     // --- Indices for THIS inductive (using flat block member info) ---
     let di_member = &flat[di];
     let ity_inst =
-      self.instantiate_univ_params(&ind_infos[di].4, &di_member.occurrence_us);
+      self.instantiate_univ_params(&ind_infos[di].4, &di_member.occurrence_us)?;
     let mut ity = ity_inst;
     // Walk past this member's own_params, substituting appropriately.
     for j in 0..di_member.own_params {
@@ -2575,7 +2651,7 @@ impl<M: KernelMode> TypeChecker<M> {
     // Walk ctor type past own_params WITHOUT substituting (field count is structural),
     // then count remaining foralls.
     let ctor_ty_inst =
-      self.instantiate_univ_params(&ctor_ty_raw, &member.occurrence_us);
+      self.instantiate_univ_params(&ctor_ty_raw, &member.occurrence_us)?;
     let mut count_ty = ctor_ty_inst.clone();
     for _ in 0..member.own_params {
       let w = self.whnf(&count_ty)?;
@@ -2625,6 +2701,17 @@ impl<M: KernelMode> TypeChecker<M> {
     }
 
     // Walk ctor type with param substitution to detect recursive fields.
+    //
+    // Aux spec_params live in the param context (depth =
+    // `n_rec_params` — their Var refs point at param positions
+    // `Var(n_rec_params - 1)..Var(0)`). We want those Vars to land
+    // on the rule body's param positions `Var(total_lams - 1)..
+    // Var(total_lams - n_rec_params)`, so we lift by
+    // `total_lams - n_rec_params` — NOT by `total_lams`, which would
+    // push them one past the param slots and out of the body's scope.
+    // Originals substitute directly to `Var(total_lams - 1 - j)`,
+    // matching the same positions.
+    let aux_sp_lift = total_lams.saturating_sub(n_rec_params as u64);
     let mut ty2 = ctor_ty_inst;
     for j in 0..member.own_params {
       let w = self.whnf(&ty2)?;
@@ -2634,7 +2721,7 @@ impl<M: KernelMode> TypeChecker<M> {
             KExpr::var(total_lams - 1 - j, anon())
           } else if u64_to_usize::<M>(j)? < member.spec_params.len() {
             let sp = member.spec_params[u64_to_usize::<M>(j)?].clone();
-            lift(&self.env.intern, &sp, total_lams, 0)
+            lift(&self.env.intern, &sp, aux_sp_lift, 0)
           } else {
             KExpr::var(total_lams - 1 - j, anon())
           };
@@ -2645,6 +2732,17 @@ impl<M: KernelMode> TypeChecker<M> {
     }
 
     // Detect recursive fields and build IH values.
+    //
+    // Field type Var refs point to the final-lambda positions we
+    // substituted above: params at `Var(total_lams - 1 - j)` (for
+    // originals) or embedded inside `lift(spec_params, total_lams)`
+    // (for auxiliaries). Stored aux spec_params in `flat[]` live at
+    // `n_rec_params` depth — so `is_rec_field` must lift them by
+    // `total_lams - n_rec_params` to align with the field's frame.
+    // Without this, Var-containing spec_params (e.g. `α` in
+    // `Entry α β (Node α β)`) would mis-match and their IHs would be
+    // silently dropped.
+    let rec_field_lift = total_lams.saturating_sub(n_rec_params as u64);
     let mut field_idx = 0u64;
     loop {
       let w = self.whnf(&ty2)?;
@@ -2653,7 +2751,9 @@ impl<M: KernelMode> TypeChecker<M> {
           let dom = dom.clone();
           let body2 = body2.clone();
 
-          if let Some(target_bi) = self.is_rec_field(&dom, flat)? {
+          if let Some(target_bi) =
+            self.is_rec_field(&dom, flat, rec_field_lift)?
+          {
             let ih = self.build_rule_ih(
               field_idx,
               n_fields,
@@ -2923,6 +3023,63 @@ impl<M: KernelMode> TypeChecker<M> {
     Ok(ih)
   }
 
+  /// Kernel-driven recursor coherence check (no syntactic compare).
+  ///
+  /// Catches the structural failure modes that `infer(rec.ty)` alone
+  /// misses:
+  /// - The major inductive is itself ill-formed (e.g. strict-positivity
+  ///   violation, bad ctor return shape, field universe too high).
+  ///   `check_inductive` runs A1–A4 and will reject the recursor-by-
+  ///   extension if those fail.
+  /// - The declared `k` flag disagrees with what the kernel computes
+  ///   from the inductive's shape. K-reduction is only sound for a very
+  ///   narrow class of inductives; a mismatch here is a soundness bug.
+  ///
+  /// Deliberately does **not** regenerate canonical recursors and
+  /// compare them syntactically against the stored form: that approach
+  /// produces false-positive mismatches on nested inductives and is
+  /// redundant once infer + the coherence gate agree.
+  pub fn check_recursor_coherence(
+    &mut self,
+    id: &KId<M>,
+  ) -> Result<(), TcError<M>> {
+    let (ty, declared_k) = match self.env.get(id) {
+      Some(KConst::Recr { ty, k, .. }) => (ty.clone(), k),
+      _ => {
+        return Err(TcError::Other(
+          "check_recursor_coherence: not a recursor".into(),
+        ));
+      },
+    };
+
+    let (params, motives, minors, indices) = match self.env.get(id) {
+      Some(KConst::Recr { params, motives, minors, indices, .. }) => {
+        (params, motives, minors, indices)
+      },
+      _ => unreachable!(),
+    };
+    let skip = params + motives + minors + indices;
+    let ind_id = self.get_major_inductive_id(&ty, skip)?;
+
+    // Coherence gate: the major inductive itself must pass A1–A4.
+    // Cycle invariant: `check_inductive` never calls back into
+    // `check_recursor_coherence` — it only drives its own structural
+    // checks. Keep it that way.
+    if matches!(self.env.get(&ind_id), Some(KConst::Indc { .. })) {
+      self.check_inductive(&ind_id)?;
+    }
+
+    // K-target flag must match the kernel's constructive computation.
+    let computed_k = self.compute_k_target(&ind_id)?;
+    if declared_k != computed_k {
+      return Err(TcError::Other(format!(
+        "check_recursor_coherence: K-target mismatch: declared k={declared_k}, computed k={computed_k}"
+      )));
+    }
+
+    Ok(())
+  }
+
   /// Validate a recursor by comparing with generated canonical form.
   pub fn check_recursor(&mut self, id: &KId<M>) -> Result<(), TcError<M>> {
     let (rec_block, ty, declared_k) = match self.env.get(id) {
@@ -2939,6 +3096,21 @@ impl<M: KernelMode> TypeChecker<M> {
     };
     let skip = params + motives + minors + indices;
     let ind_id = self.get_major_inductive_id(&ty, skip)?;
+
+    // Coherence gate: the major inductive itself must pass A1–A4. Without
+    // this, a recursor for a structurally-invalid inductive (bad ctor return
+    // shape, field-universe violation, strict-positivity violation, …) can
+    // slip through because recursor generation succeeds syntactically even
+    // when the inductive is unsound. `check_inductive` is idempotent with
+    // our own `generate_block_recursors` call below (both guarded by
+    // `recursor_cache.contains_key`), so re-entering is safe.
+    //
+    // Cycle invariant: `check_inductive` never calls back into
+    // `check_recursor` — it only calls `generate_block_recursors`. Keep it
+    // that way.
+    if matches!(self.env.get(&ind_id), Some(KConst::Indc { .. })) {
+      self.check_inductive(&ind_id)?;
+    }
 
     // Try direct lookup: major ind's own block.
     let ind_block = match self.env.get(&ind_id) {
@@ -3018,65 +3190,62 @@ impl<M: KernelMode> TypeChecker<M> {
     match gen_rec {
       Some(g) => {
         if !self.is_def_eq(&g.ty, &ty)? {
-          // Debug: walk binders to find first divergence
-          let mut gc = g.ty.clone();
-          let mut sc = ty.clone();
-          let mut bi = 0u64;
-          fn cz<M: KernelMode>(e: &KExpr<M>, d: usize) -> String {
-            if d > 8 {
-              return "...".into();
-            }
-            match e.data() {
-              ExprData::Var(i, _, _) => format!("#{i}"),
-              ExprData::Const(id, us, _) => {
-                format!("{:?}.{}u", id.name, us.len())
-              },
-              ExprData::App(f, a, _) => {
-                format!("({} {})", cz(f, d + 1), cz(a, d + 1))
-              },
-              ExprData::All(_, _, ty, body, _) => {
-                format!("∀[{}].{}", cz(ty, d + 1), cz(body, d + 1))
-              },
-              ExprData::Sort(_, _) => "Sort".into(),
-              _ => "?".into(),
-            }
-          }
-          loop {
-            match (gc.data(), sc.data()) {
-              (
-                ExprData::All(_, _, gd, gb, _),
-                ExprData::All(_, _, sd, sb, _),
-              ) => {
-                if !self.is_def_eq(gd, sd).unwrap_or(false) {
-                  let label = if bi < params {
-                    "param"
-                  } else if bi < params + motives {
-                    "motive"
-                  } else if bi < params + motives + minors {
-                    "minor"
-                  } else {
-                    "idx/major"
-                  };
-                  eprintln!(
-                    "[type diff] binder {bi} ({label}) DIFFERS (p={params} m={motives} min={minors})"
-                  );
-                  eprintln!("  gen: {}", cz::<M>(gd, 0));
-                  eprintln!("  sto: {}", cz::<M>(sd, 0));
+          // When `IX_TYPE_DIFF` is set, walk the binder chain to find the
+          // first divergent binder and print a readable gen/sto diff. Off
+          // by default: in alpha-collapse regimes or for mutual blocks
+          // with near-identical peers, every such mismatch ends up in
+          // `stt.ungrounded` (non-fatal), and printing them all drowns
+          // stderr under tens of thousands of lines. The walk only runs
+          // when the env var is set to keep the common path cheap.
+          //
+          // Uses `KExpr::Display` (Name.Pretty@shorthex for consts,
+          // `#idx` / `name` for vars, `(f a b …)` for spines, etc.) —
+          // the same formatter `TcError::AppTypeMismatch` uses — so the
+          // output format matches the rest of the kernel's diagnostic
+          // surface.
+          if *IX_TYPE_DIFF {
+            let mut gc = g.ty.clone();
+            let mut sc = ty.clone();
+            let mut bi = 0u64;
+            loop {
+              match (gc.data(), sc.data()) {
+                (
+                  ExprData::All(_, _, gd, gb, _),
+                  ExprData::All(_, _, sd, sb, _),
+                ) => {
+                  if !self.is_def_eq(gd, sd).unwrap_or(false) {
+                    let label = if bi < params {
+                      "param"
+                    } else if bi < params + motives {
+                      "motive"
+                    } else if bi < params + motives + minors {
+                      "minor"
+                    } else {
+                      "idx/major"
+                    };
+                    eprintln!(
+                      "[type diff] binder {bi} ({label}) DIFFERS (p={params} m={motives} min={minors})"
+                    );
+                    eprintln!("  gen: {gd}");
+                    eprintln!("  sto: {sd}");
+                    break;
+                  }
+                  self.push_local(gd.clone());
+                  gc = gb.clone();
+                  sc = sb.clone();
+                  bi += 1;
+                },
+                _ => {
+                  eprintln!("[type diff] return differs at {bi}");
+                  eprintln!("  gen: {gc}");
+                  eprintln!("  sto: {sc}");
                   break;
-                }
-                self.push_local(gd.clone());
-                gc = gb.clone();
-                sc = sb.clone();
-                bi += 1;
-              },
-              _ => {
-                eprintln!("[type diff] return differs at {bi}");
-                break;
-              },
+                },
+              }
             }
-          }
-          for _ in 0..bi {
-            self.pop_local();
+            for _ in 0..bi {
+              self.pop_local();
+            }
           }
           return Err(TcError::Other("check_recursor: type mismatch".into()));
         }
@@ -3089,26 +3258,41 @@ impl<M: KernelMode> TypeChecker<M> {
           g.rules.clone()
         };
 
-        // Compare rules
+        // Compare rules.
+        //
+        // Correctness invariant: `check_recursor` accepts iff the stored
+        // rule list matches the canonical one produced by
+        // `generate_block_recursors` under the element-wise checks below
+        // (`fields` count + `rhs` defeq). The length-zero case is just a
+        // vacuous instance of agreement — `Empty.rec`, `False.rec`,
+        // `PEmpty.rec`, and similar empty inductives canonically have
+        // zero computation rules, Lean stores zero, and the generator
+        // produces zero. No extra guard is needed or correct here; an
+        // earlier guard `both_empty → error` spuriously rejected these,
+        // conflating "agreement at zero" with "generation failure."
+        //
+        // The one-sided `is_empty()` branches below remain as legitimate
+        // asymmetric mismatches (e.g., generator produced N rules but
+        // storage has none, or vice versa).
         let stored_rules = match self.env.get(id) {
           Some(KConst::Recr { rules, .. }) => rules.clone(),
           _ => vec![],
         };
-        if gen_rules.is_empty() && stored_rules.is_empty() {
-          return Err(TcError::Other(
-            "check_recursor: neither generated nor stored rules present".into(),
-          ));
-        } else if gen_rules.is_empty() {
-          // C1: Rule generation failed — MUST NOT accept unverified rules.
+        if gen_rules.is_empty() && !stored_rules.is_empty() {
+          // C1: Generator produced no canonical rules but Lean stored
+          // some — we cannot verify the stored rules against a missing
+          // canonical form. MUST NOT accept.
           return Err(TcError::Other(format!(
             "check_recursor: rule generation failed for {}, cannot verify {} stored rules",
             &ind_id.addr.hex()[..8],
             stored_rules.len()
           )));
-        } else if stored_rules.is_empty() {
+        } else if !gen_rules.is_empty() && stored_rules.is_empty() {
+          // Dual of C1: generator produced N canonical rules but Lean
+          // stored none. Also a real mismatch.
           return Err(TcError::Other(format!(
             "check_recursor: stored recursor has no rules (expected {})",
-            g.rules.len()
+            gen_rules.len()
           )));
         } else if gen_rules.len() != stored_rules.len() {
           return Err(TcError::Other(format!(
@@ -3116,21 +3300,30 @@ impl<M: KernelMode> TypeChecker<M> {
             gen_rules.len(),
             stored_rules.len()
           )));
-        } else {
-          for (ri, (gen_rule, stored_rule)) in
-            gen_rules.iter().zip(stored_rules.iter()).enumerate()
-          {
-            if gen_rule.fields != stored_rule.fields {
-              return Err(TcError::Other(format!(
-                "check_recursor: rule {ri} field count mismatch: gen={} stored={}",
-                gen_rule.fields, stored_rule.fields
-              )));
+        }
+        // Element-wise comparison. Vacuous when both sides are empty
+        // (zero-constructor inductives), which is the agreement case.
+        for (ri, (gen_rule, stored_rule)) in
+          gen_rules.iter().zip(stored_rules.iter()).enumerate()
+        {
+          if gen_rule.fields != stored_rule.fields {
+            return Err(TcError::Other(format!(
+              "check_recursor: rule {ri} field count mismatch: gen={} stored={}",
+              gen_rule.fields, stored_rule.fields
+            )));
+          }
+          if !self.is_def_eq(&gen_rule.rhs, &stored_rule.rhs)? {
+            if *IX_TYPE_DIFF {
+              eprintln!(
+                "[rule rhs diff] rule {ri} RHS mismatch (fields={})",
+                gen_rule.fields
+              );
+              eprintln!("  gen: {}", gen_rule.rhs);
+              eprintln!("  sto: {}", stored_rule.rhs);
             }
-            if !self.is_def_eq(&gen_rule.rhs, &stored_rule.rhs)? {
-              return Err(TcError::Other(format!(
-                "check_recursor: rule {ri} RHS mismatch"
-              )));
-            }
+            return Err(TcError::Other(format!(
+              "check_recursor: rule {ri} RHS mismatch"
+            )));
           }
         }
         Ok(())
@@ -5373,6 +5566,305 @@ mod tests {
       result.is_ok(),
       "Tree with List nesting should be accepted, got: {:?}",
       result.err()
+    );
+  }
+
+  // ---------------------------------------------------------------------
+  // Regression tests for the P1 soundness gaps closed in the 2026-04
+  // hardening pass.
+  // ---------------------------------------------------------------------
+
+  /// P1-1 regression: a recursor with a syntactically well-typed but
+  /// semantically *swapped* rule RHS must be rejected by `check_recursor`
+  /// at the `is_def_eq(&gen_rule.rhs, &stored_rule.rhs)` gate
+  /// (see `inductive.rs:3218`). Without that gate, iota reduction could
+  /// produce the wrong minor for a given constructor — the P1-1 scenario
+  /// from the adversarial review.
+  #[test]
+  fn reject_bool_rec_with_swapped_rules() {
+    // Build `bool_env`, then replace `Bool.rec` with a version whose
+    // rule 0 (for `Bool.true`) has the body of rule 1 (`h_false`) and
+    // vice-versa. Both RHSes still have the correct type (each minor has
+    // type `motive (Bool.true/false)` — motive is Var(2) under the λ₃,
+    // so `var(1)` and `var(0)` both typecheck as the minor premise), but
+    // iota would produce the wrong value for the given ctor.
+    let env = bool_env();
+    let block = mk_id("Bool");
+
+    // Rebuild recursor type and rule-body domains exactly as `bool_env`
+    // does, then swap which Var is returned in each rule.
+    let motive_ty = pi(cnst("Bool", &[]), AE::sort(param(0)));
+    let minor_true = app(var(0), cnst("Bool.true", &[]));
+    let minor_false = app(var(1), cnst("Bool.false", &[]));
+    let major_ty = cnst("Bool", &[]);
+    let ret = app(var(3), var(0));
+    let rec_ty = pi(
+      motive_ty.clone(),
+      pi(minor_true.clone(), pi(minor_false.clone(), pi(major_ty, ret))),
+    );
+
+    // SWAPPED rules: rule 0 returns `h_false` (var 0), rule 1 returns `h_true` (var 1).
+    // Canonical: rule 0 returns `h_true` (var 1), rule 1 returns `h_false` (var 0).
+    let motive_dom = motive_ty;
+    let h_true_dom = minor_true;
+    let h_false_dom = minor_false;
+    let rule_true_rhs_swapped = lam(
+      motive_dom.clone(),
+      lam(
+        h_true_dom.clone(),
+        lam(h_false_dom.clone(), var(0)), // wrong: should be var(1)
+      ),
+    );
+    let rule_false_rhs_swapped = lam(
+      motive_dom,
+      lam(
+        h_true_dom,
+        lam(h_false_dom, var(1)), // wrong: should be var(0)
+      ),
+    );
+
+    env.insert(
+      mk_id("Bool.rec"),
+      KConst::Recr {
+        name: (),
+        level_params: (),
+        k: false,
+        is_unsafe: false,
+        lvls: 1,
+        params: 0,
+        indices: 0,
+        motives: 1,
+        minors: 2,
+        block,
+        member_idx: 0,
+        ty: rec_ty,
+        rules: vec![
+          super::super::constant::RecRule {
+            ctor: (),
+            fields: 0,
+            rhs: rule_true_rhs_swapped,
+          },
+          super::super::constant::RecRule {
+            ctor: (),
+            fields: 0,
+            rhs: rule_false_rhs_swapped,
+          },
+        ],
+        lean_all: (),
+      },
+    );
+
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    tc.check_const(&mk_id("Bool")).unwrap();
+    let result = tc.check_const(&mk_id("Bool.rec"));
+    assert!(
+      result.is_err(),
+      "Bool.rec with swapped rules must be rejected (P1-1 regression), got: Ok"
+    );
+  }
+
+  /// P1-2 regression: two mutual inductives whose parameter-prefix types
+  /// disagree must be rejected by `check_inductive` at the S3b gate.
+  /// Without this, recursor generation (which pulls the shared-param
+  /// prefix from the first peer) would produce a de-Bruijn mismatch when
+  /// iota-reducing against a ctor of the second peer.
+  #[test]
+  fn reject_mutual_peers_with_mismatched_param_domains() {
+    let env = Arc::new(KEnv::new());
+    let block = mk_id("Mut");
+
+    // Peer 1: `M1 : (α : Sort 1) → Sort 1`   (one Type parameter)
+    let m1_ty = pi(sort1(), sort1());
+    env.insert(
+      mk_id("M1"),
+      KConst::Indc {
+        name: (),
+        level_params: (),
+        lvls: 0,
+        params: 1,
+        indices: 0,
+        is_rec: false,
+        is_refl: false,
+        is_unsafe: false,
+        nested: 0,
+        block: block.clone(),
+        member_idx: 0,
+        ty: m1_ty,
+        ctors: vec![],
+        lean_all: (),
+      },
+    );
+
+    // Peer 2: `M2 : (α : Sort 0) → Sort 1`   (one *Prop* parameter)
+    // Same param count as M1 so we defeat the arity short-circuit and
+    // exercise the domain-agreement path specifically.
+    let m2_ty = pi(AE::sort(AU::zero()), sort1());
+    env.insert(
+      mk_id("M2"),
+      KConst::Indc {
+        name: (),
+        level_params: (),
+        lvls: 0,
+        params: 1,
+        indices: 0,
+        is_rec: false,
+        is_refl: false,
+        is_unsafe: false,
+        nested: 0,
+        block: block.clone(),
+        member_idx: 1,
+        ty: m2_ty,
+        ctors: vec![],
+        lean_all: (),
+      },
+    );
+
+    env.blocks.insert(block, vec![mk_id("M1"), mk_id("M2")]);
+
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let result = tc.check_const(&mk_id("M1"));
+    assert!(
+      result.is_err(),
+      "mutual peers with different param domains must be rejected \
+       (P1-2 regression), got: Ok"
+    );
+  }
+
+  /// P1-2 sanity: two mutual inductives with matching parameter-prefix
+  /// types must pass the peer agreement check.
+  #[test]
+  fn accept_mutual_peers_with_matching_param_domains() {
+    let env = Arc::new(KEnv::new());
+    let block = mk_id("Mut");
+
+    // Both peers share the param prefix `(α : Sort 1)`.
+    let shared_ty = pi(sort1(), sort1());
+    for (i, name) in ["M1", "M2"].iter().enumerate() {
+      env.insert(
+        mk_id(name),
+        KConst::Indc {
+          name: (),
+          level_params: (),
+          lvls: 0,
+          params: 1,
+          indices: 0,
+          is_rec: false,
+          is_refl: false,
+          is_unsafe: false,
+          nested: 0,
+          block: block.clone(),
+          member_idx: i as u64,
+          ty: shared_ty.clone(),
+          ctors: vec![],
+          lean_all: (),
+        },
+      );
+    }
+    env.blocks.insert(block, vec![mk_id("M1"), mk_id("M2")]);
+
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let result = tc.check_const(&mk_id("M1"));
+    assert!(
+      result.is_ok(),
+      "mutual peers with identical param domains must be accepted \
+       (P1-2 sanity), got: {:?}",
+      result.err()
+    );
+  }
+
+  /// P1-2 regression: two mutual inductives with *different* parameter
+  /// counts must also be rejected — at the explicit `peer_params != params`
+  /// arm of S3b, prior to reaching domain comparison.
+  #[test]
+  fn reject_mutual_peers_with_mismatched_param_count() {
+    let env = Arc::new(KEnv::new());
+    let block = mk_id("Mut");
+
+    // Peer 1: one param.
+    env.insert(
+      mk_id("M1"),
+      KConst::Indc {
+        name: (),
+        level_params: (),
+        lvls: 0,
+        params: 1,
+        indices: 0,
+        is_rec: false,
+        is_refl: false,
+        is_unsafe: false,
+        nested: 0,
+        block: block.clone(),
+        member_idx: 0,
+        ty: pi(sort1(), sort1()),
+        ctors: vec![],
+        lean_all: (),
+      },
+    );
+    // Peer 2: zero params.
+    env.insert(
+      mk_id("M2"),
+      KConst::Indc {
+        name: (),
+        level_params: (),
+        lvls: 0,
+        params: 0,
+        indices: 0,
+        is_rec: false,
+        is_refl: false,
+        is_unsafe: false,
+        nested: 0,
+        block: block.clone(),
+        member_idx: 1,
+        ty: sort1(),
+        ctors: vec![],
+        lean_all: (),
+      },
+    );
+    env.blocks.insert(block, vec![mk_id("M1"), mk_id("M2")]);
+
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let result = tc.check_const(&mk_id("M1"));
+    assert!(
+      result.is_err(),
+      "mutual peers with different param counts must be rejected, got: Ok"
+    );
+  }
+
+  /// P1-3 regression: universe substitution with fewer universes than
+  /// the type demands must return `UnivParamOutOfRange` rather than
+  /// silently producing an orphan `Param` node.
+  #[test]
+  fn subst_univ_rejects_out_of_range_param() {
+    use super::super::error::TcError;
+    let env = Arc::new(KEnv::<Anon>::new());
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    // Expression `Sort u` where `u = Param(0)`. Supplying zero universes
+    // to substitute makes `Param(0)` out of range.
+    let e = AE::sort(param(0));
+    let result = tc.instantiate_univ_params(&e, &[]);
+    // Empty `us` currently short-circuits with a clone (happy path for
+    // the overwhelmingly common "no params to substitute" case), so
+    // call the inner substitution directly with an empty slice.
+    let _ = result; // ignore the fast-path result
+    let direct = tc.subst_univ(&param(0), &[]);
+    assert!(
+      matches!(
+        direct,
+        Err(TcError::UnivParamOutOfRange { idx: 0, bound: 0 })
+      ),
+      "subst_univ with empty us must return UnivParamOutOfRange, got: {direct:?}"
+    );
+
+    // And in a non-empty-but-still-too-short slice, the error carries
+    // the correct `idx` and `bound`.
+    let u = AU::zero();
+    let direct2 = tc.subst_univ(&param(3), std::slice::from_ref(&u));
+    assert!(
+      matches!(
+        direct2,
+        Err(TcError::UnivParamOutOfRange { idx: 3, bound: 1 })
+      ),
+      "subst_univ with too-short us must report correct idx/bound, got: {direct2:?}"
     );
   }
 }

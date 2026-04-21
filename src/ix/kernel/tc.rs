@@ -248,91 +248,118 @@ impl<M: KernelMode> TypeChecker<M> {
     }
   }
 
-  /// Substitute universe parameters: replace Param(i) with us[i].
+  /// Substitute universe parameters: replace `Param(i)` with `us[i]`.
+  ///
+  /// Returns `Err(UnivParamOutOfRange)` if any interior `Param(i)` has
+  /// `i >= us.len()`. Callers are expected to have validated the universe
+  /// arity upstream (e.g. `infer` of a `Const` node — see
+  /// `src/ix/kernel/infer.rs:41`); the `Result` here is defense-in-depth
+  /// against code paths that reach substitution without that check.
   pub fn instantiate_univ_params(
     &mut self,
     e: &KExpr<M>,
     us: &[KUniv<M>],
-  ) -> KExpr<M> {
+  ) -> Result<KExpr<M>, TcError<M>> {
     if us.is_empty() {
-      return e.clone();
+      return Ok(e.clone());
     }
     self.inst_univ_inner(e, us)
   }
 
-  fn inst_univ_inner(&mut self, e: &KExpr<M>, us: &[KUniv<M>]) -> KExpr<M> {
+  fn inst_univ_inner(
+    &mut self,
+    e: &KExpr<M>,
+    us: &[KUniv<M>],
+  ) -> Result<KExpr<M>, TcError<M>> {
     let result = match e.data() {
       ExprData::Var(..) | ExprData::Nat(..) | ExprData::Str(..) => {
-        return e.clone();
+        return Ok(e.clone());
       },
 
       ExprData::Sort(u, _) => {
-        let u2 = self.subst_univ(u, us);
+        let u2 = self.subst_univ(u, us)?;
         KExpr::sort(u2)
       },
 
       ExprData::Const(id, cur_us, _) => {
-        let new_us: Box<[KUniv<M>]> =
-          cur_us.iter().map(|u| self.subst_univ(u, us)).collect();
+        let new_us: Box<[KUniv<M>]> = cur_us
+          .iter()
+          .map(|u| self.subst_univ(u, us))
+          .collect::<Result<Box<[_]>, _>>()?;
         KExpr::cnst(id.clone(), new_us)
       },
 
       ExprData::App(f, a, _) => {
-        let f2 = self.inst_univ_inner(f, us);
-        let a2 = self.inst_univ_inner(a, us);
+        let f2 = self.inst_univ_inner(f, us)?;
+        let a2 = self.inst_univ_inner(a, us)?;
         KExpr::app(f2, a2)
       },
 
       ExprData::Lam(name, bi, ty, body, _) => {
-        let ty2 = self.inst_univ_inner(ty, us);
-        let body2 = self.inst_univ_inner(body, us);
+        let ty2 = self.inst_univ_inner(ty, us)?;
+        let body2 = self.inst_univ_inner(body, us)?;
         KExpr::lam(name.clone(), bi.clone(), ty2, body2)
       },
 
       ExprData::All(name, bi, ty, body, _) => {
-        let ty2 = self.inst_univ_inner(ty, us);
-        let body2 = self.inst_univ_inner(body, us);
+        let ty2 = self.inst_univ_inner(ty, us)?;
+        let body2 = self.inst_univ_inner(body, us)?;
         KExpr::all(name.clone(), bi.clone(), ty2, body2)
       },
 
       ExprData::Let(name, ty, val, body, nd, _) => {
-        let ty2 = self.inst_univ_inner(ty, us);
-        let val2 = self.inst_univ_inner(val, us);
-        let body2 = self.inst_univ_inner(body, us);
+        let ty2 = self.inst_univ_inner(ty, us)?;
+        let val2 = self.inst_univ_inner(val, us)?;
+        let body2 = self.inst_univ_inner(body, us)?;
         KExpr::let_(name.clone(), ty2, val2, body2, *nd)
       },
 
       ExprData::Prj(id, field, val, _) => {
-        let val2 = self.inst_univ_inner(val, us);
+        let val2 = self.inst_univ_inner(val, us)?;
         KExpr::prj(id.clone(), *field, val2)
       },
     };
-    self.env.intern.intern_expr(result)
+    Ok(self.env.intern.intern_expr(result))
   }
 
   /// Substitute universe params in a universe level.
-  pub fn subst_univ(&mut self, u: &KUniv<M>, us: &[KUniv<M>]) -> KUniv<M> {
+  ///
+  /// Fails with `UnivParamOutOfRange { idx, bound }` if an interior
+  /// `Param(idx)` references beyond `us.len()`. In a well-typed kernel
+  /// run, every call site supplies `us` whose length matches the
+  /// arity of the enclosing constant (validated by `infer` at the Const
+  /// gate), so this error never fires on well-formed input. It exists
+  /// to turn any internal invariant slip into a loud failure instead of
+  /// a silent orphan `Param` propagating downstream.
+  pub fn subst_univ(
+    &mut self,
+    u: &KUniv<M>,
+    us: &[KUniv<M>],
+  ) -> Result<KUniv<M>, TcError<M>> {
     match u.data() {
-      UnivData::Zero(_) => u.clone(),
+      UnivData::Zero(_) => Ok(u.clone()),
       UnivData::Param(i, _, _) => {
         match usize::try_from(*i).ok().and_then(|i| us.get(i)) {
-          Some(v) => v.clone(),
-          None => u.clone(),
+          Some(v) => Ok(v.clone()),
+          None => Err(TcError::UnivParamOutOfRange {
+            idx: *i,
+            bound: us.len(),
+          }),
         }
       },
       UnivData::Succ(inner, _) => {
-        let inner2 = self.subst_univ(inner, us);
-        KUniv::succ(inner2)
+        let inner2 = self.subst_univ(inner, us)?;
+        Ok(KUniv::succ(inner2))
       },
       UnivData::Max(a, b, _) => {
-        let a2 = self.subst_univ(a, us);
-        let b2 = self.subst_univ(b, us);
-        KUniv::max(a2, b2)
+        let a2 = self.subst_univ(a, us)?;
+        let b2 = self.subst_univ(b, us)?;
+        Ok(KUniv::max(a2, b2))
       },
       UnivData::IMax(a, b, _) => {
-        let a2 = self.subst_univ(a, us);
-        let b2 = self.subst_univ(b, us);
-        KUniv::imax(a2, b2)
+        let a2 = self.subst_univ(a, us)?;
+        let b2 = self.subst_univ(b, us)?;
+        Ok(KUniv::imax(a2, b2))
       },
     }
   }

@@ -67,6 +67,21 @@ impl<M: KernelMode> TypeChecker<M> {
       KConst::Recr { ty, .. } => {
         let t = self.infer(ty)?;
         self.ensure_sort(&t)?;
+        // `check_recursor` runs the full kernel-driven verification:
+        // coherence (major inductive passes A1–A4, K-target flag
+        // matches), plus generated-canonical-vs-stored rule comparison
+        // via `is_def_eq`. The rule generator (shared between the
+        // kernel and the compile-time aux_gen) produces the same
+        // output for original and canonical inductives, so the
+        // syntactic compare is sound against either env.
+        //
+        // The old Array vs `_nested.Array_1` false positives are
+        // resolved by the two-env split: `check_originals` runs
+        // against `stt.kctx.orig_kenv` (pristine `lean_ingress`), and
+        // the post-compile FFI check runs against the `ixon_ingress`'d
+        // canonical env (aux-restored). Neither carries the compile-
+        // time overlay pollution that motivated removing the syntactic
+        // path earlier.
         self.check_recursor(id)?;
         Ok(())
       },

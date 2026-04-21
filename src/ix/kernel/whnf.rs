@@ -40,7 +40,7 @@ impl<M: KernelMode> TypeChecker<M> {
     // Equiv-root second-chance: WHNF is deterministic, so all members of
     // an equivalence class share the same normal form.
     if let Some(root_key) =
-      self.equiv_manager.find_root_key((e.hash_key(), key.1.clone()))
+      self.equiv_manager.find_root_key(&(e.hash_key(), key.1.clone()))
       && root_key.0 != e.hash_key()
     {
       let root_whnf_key = (root_key.0, key.1.clone());
@@ -72,6 +72,15 @@ impl<M: KernelMode> TypeChecker<M> {
         continue;
       }
 
+      // Int primitive reduction — same reasoning as Nat. Without this,
+      // `Int.bmod (-1) (2^32)` would delta-unfold to `Decidable.rec (LT.lt
+      // Int ...) ...` and get stuck at the `Int.decLt` instance. Runs
+      // BEFORE delta so the body is never exposed. See `try_reduce_int`.
+      if let Some(reduced) = self.try_reduce_int(&cur)? {
+        cur = reduced;
+        continue;
+      }
+
       // Nat decidability: Nat.decLe/decEq/decLt on literals → Decidable.isTrue/isFalse.
       // Must run BEFORE delta, so the body (which uses dite/Nat.rec) is never exposed.
       if let Some(reduced) = self.try_reduce_decidable(&cur)? {
@@ -98,7 +107,7 @@ impl<M: KernelMode> TypeChecker<M> {
       self.env.whnf_cache.insert(key, cur.clone());
       // Also cache under equiv root so all equiv-class members benefit.
       if let Some(root_key) =
-        self.equiv_manager.find_root_key((e.hash_key(), key_ctx.clone()))
+        self.equiv_manager.find_root_key(&(e.hash_key(), key_ctx.clone()))
         && root_key.0 != e.hash_key()
       {
         let root_whnf_key = (root_key.0, key_ctx);
@@ -231,7 +240,7 @@ impl<M: KernelMode> TypeChecker<M> {
     }
     // Equiv-root second-chance for whnf_no_delta.
     if let Some(root_key) =
-      self.equiv_manager.find_root_key((e.hash_key(), key.1.clone()))
+      self.equiv_manager.find_root_key(&(e.hash_key(), key.1.clone()))
       && root_key.0 != e.hash_key()
     {
       let root_whnf_key = (root_key.0, key.1.clone());
@@ -277,6 +286,12 @@ impl<M: KernelMode> TypeChecker<M> {
         continue;
       }
 
+      // Int primitive reduction (see whnf main loop for rationale).
+      if let Some(reduced) = self.try_reduce_int(&cur)? {
+        cur = reduced;
+        continue;
+      }
+
       // Quotient reduction
       if let Some(reduced) = self.try_quot_reduce(&cur)? {
         cur = reduced;
@@ -290,7 +305,7 @@ impl<M: KernelMode> TypeChecker<M> {
       let key_ctx = key.1.clone();
       self.env.whnf_no_delta_cache.insert(key, cur.clone());
       if let Some(root_key) =
-        self.equiv_manager.find_root_key((e.hash_key(), key_ctx.clone()))
+        self.equiv_manager.find_root_key(&(e.hash_key(), key_ctx.clone()))
         && root_key.0 != e.hash_key()
       {
         let root_whnf_key = (root_key.0, key_ctx);
@@ -319,7 +334,7 @@ impl<M: KernelMode> TypeChecker<M> {
     {
       let val = val.clone();
       let us: Vec<_> = us.to_vec();
-      return Ok(Some(self.instantiate_univ_params(&val, &us)));
+      return Ok(Some(self.instantiate_univ_params(&val, &us)?));
     }
     Ok(None)
   }
@@ -346,7 +361,7 @@ impl<M: KernelMode> TypeChecker<M> {
     };
 
     let us: Vec<_> = us.to_vec();
-    let val = self.instantiate_univ_params(&val, &us);
+    let val = self.instantiate_univ_params(&val, &us)?;
 
     let mut result = val;
     for arg in &args {
@@ -466,7 +481,7 @@ impl<M: KernelMode> TypeChecker<M> {
         return Ok(None);
       }
       let rec_us_vec: Vec<_> = rec_us.to_vec();
-      let rhs = self.instantiate_univ_params(&rule.rhs, &rec_us_vec);
+      let rhs = self.instantiate_univ_params(&rule.rhs, &rec_us_vec)?;
 
       let pmm_end = recr.params + recr.motives + recr.minors;
       let field_start = ctor_args.len() - ctor_fields;
@@ -548,7 +563,7 @@ impl<M: KernelMode> TypeChecker<M> {
       return Ok(None);
     }
     let rec_us_vec: Vec<_> = rec_us.to_vec();
-    let rhs = self.instantiate_univ_params(&rule.rhs, &rec_us_vec);
+    let rhs = self.instantiate_univ_params(&rule.rhs, &rec_us_vec)?;
     let pmm_end = recr.params + recr.motives + recr.minors;
     let mut result = rhs;
     for arg in spine.iter().take(pmm_end.min(spine.len())) {
@@ -705,12 +720,33 @@ impl<M: KernelMode> TypeChecker<M> {
   // -----------------------------------------------------------------------
 
   /// Get the major premise's inductive KId from a recursor type.
-  /// Peels `skip` foralls, then extracts the head constant of the result domain.
+  ///
+  /// Strategy: peel `skip` foralls per Lean's stored `params + motives +
+  /// minors + indices` count, then expect the next forall's domain to
+  /// have an inductive `Const` head. For well-formed Lean recursors this
+  /// lands exactly on the major premise.
+  ///
+  /// Resilience: if the strict `skip` position's domain head is not an
+  /// inductive `Const`, peel up to `MAX_EXTRA_FORALLS` additional foralls
+  /// scanning for the first one whose domain head IS an inductive
+  /// `KConst::Indc`. This handles recursor shapes where Lean's stored
+  /// counts don't align with the kernel's view of the forall structure
+  /// after WHNF (e.g., nested-inductive recursors that carry extra
+  /// instance/motive binders not captured by `num_params/num_motives/...`).
+  ///
+  /// We specifically require the head to be an **inductive** constant, not
+  /// any Const: minor premises of recursors like `Nat.rec`'s `succ` case
+  /// have a forall `(n : Nat)` where `Nat` is a Const inductive, but
+  /// those are consumed by the initial `skip` pass. The scan only ever
+  /// fires when `skip` under-counts; in that case the first Const
+  /// inductive encountered is structurally the major.
   pub fn get_major_inductive_id(
     &mut self,
     rec_ty: &KExpr<M>,
     skip: u64,
   ) -> Result<KId<M>, TcError<M>> {
+    const MAX_EXTRA_FORALLS: u64 = 8;
+
     let mut ty = rec_ty.clone();
     for _ in 0..skip {
       let w = self.whnf(&ty)?;
@@ -723,21 +759,34 @@ impl<M: KernelMode> TypeChecker<M> {
         },
       }
     }
-    let w = self.whnf(&ty)?;
-    match w.data() {
-      ExprData::All(_, _, dom, _, _) => {
-        let (head, _) = collect_app_spine(dom);
-        match head.data() {
-          ExprData::Const(id, _, _) => Ok(id.clone()),
-          _ => Err(TcError::Other(
-            "get_major_inductive_id: domain head not const".into(),
-          )),
-        }
-      },
-      _ => Err(TcError::Other(
-        "get_major_inductive_id: expected forall at major".into(),
-      )),
+
+    // Scan forward looking for a forall whose domain has a `KConst::Indc`
+    // head. Accept the first match. Bounded so we can't loop forever.
+    for _ in 0..=MAX_EXTRA_FORALLS {
+      let w = self.whnf(&ty)?;
+      match w.data() {
+        ExprData::All(_, _, dom, body, _) => {
+          let (head, _) = collect_app_spine(dom);
+          if let ExprData::Const(id, _, _) = head.data() {
+            // Only accept if the head resolves to an inductive.
+            if matches!(self.env.get(id), Some(KConst::Indc { .. })) {
+              return Ok(id.clone());
+            }
+          }
+          ty = body.clone();
+        },
+        _ => {
+          return Err(TcError::Other(
+            "get_major_inductive_id: expected forall at major".into(),
+          ));
+        },
+      }
     }
+
+    Err(TcError::Other(
+      "get_major_inductive_id: no inductive-headed forall within scan bound"
+        .into(),
+    ))
   }
 
   /// Convert a Nat literal to constructor form: 0 → Nat.zero, n+1 → Nat.succ(n-1).
@@ -1137,7 +1186,7 @@ impl<M: KernelMode> TypeChecker<M> {
 
     // Instantiate universe params and fully evaluate (guarded)
     let us_vec: Vec<_> = arg_us.to_vec();
-    let body = self.instantiate_univ_params(&body, &us_vec);
+    let body = self.instantiate_univ_params(&body, &us_vec)?;
     self.in_native_reduce = true;
     let result = self.whnf(&body);
     self.in_native_reduce = false;
@@ -1265,6 +1314,323 @@ fn compute_nat_bin<M: KernelMode>(
     return None;
   };
   Some(Nat(r))
+}
+
+// ---------------------------------------------------------------------------
+// Int native reduction
+// ---------------------------------------------------------------------------
+//
+// Lean's C++ kernel has no parallel `reduce_int` (only `reduce_nat` +
+// `reduce_native`). Instead, it reduces Int operations symbolically through
+// `Int.rec` pattern matching on `Int.ofNat` / `Int.negSucc`, cascading into
+// native Nat ops. For expressions like `Int.bmod (-1) (2^32)`, that chain
+// goes through `Decidable.rec (LT.lt Int ...) ...` which in turn requires
+// reducing `Int.decLt = decNonneg (b - a)` through `Int.sub` / `Int.subNatNat`
+// etc. — tractable for Lean's kernel but a known source of stuck reductions
+// when any link of the chain is missing. Lean's stdlib mitigates with
+// `Int.ble'` / `Int.blt'` "for kernel reduction" hand-crafted `noncomputable`
+// defs, but they still cascade through delta+iota.
+//
+// Our kernel takes the direct route: if the head of an app-spine is a known
+// Int primitive and all arguments whnf to literals (Int, Nat, or Bool), we
+// compute the result natively and short-circuit the whole delta+iota chain.
+
+use num_bigint::BigInt;
+
+/// An Int literal we can compute on. Produced by `extract_int_lit` and
+/// consumed by `compute_int_bin`.
+///
+/// Lean's canonical form is `Int.ofNat n` (non-negative) or
+/// `Int.negSucc n` (`= -(n+1)`, ≤ -1). We flatten both into a single
+/// `BigInt` for arithmetic and re-encode via `intern_int_lit` afterwards.
+type IntVal = BigInt;
+
+/// Extract an Int value from an app-spine whose head is `Int.ofNat` or
+/// `Int.negSucc` applied to a Nat literal. Returns `None` for any other
+/// shape so the caller leaves the expression unreduced for delta+iota to
+/// handle.
+///
+/// Callers typically pass a whnf'd expression so partially-applied
+/// constructors (e.g. `Int.ofNat` with a non-literal argument) will
+/// naturally be rejected here.
+fn extract_int_lit<M: KernelMode>(
+  e: &KExpr<M>,
+  prims: &Primitives<M>,
+) -> Option<IntVal> {
+  let (head, args) = collect_app_spine(e);
+  let (head_id, _) = match head.data() {
+    ExprData::Const(id, us, _) => (id, us),
+    _ => return None,
+  };
+  if args.len() != 1 {
+    return None;
+  }
+  let nat_val = extract_nat_lit(&args[0], prims)?;
+  let n: BigInt = nat_val.0.clone().into();
+  if head_id.addr == prims.int_of_nat.addr {
+    Some(n) // Int.ofNat n = n
+  } else if head_id.addr == prims.int_neg_succ.addr {
+    Some(-(n + BigInt::from(1))) // Int.negSucc n = -(n+1)
+  } else {
+    None
+  }
+}
+
+/// Build a canonical-form Int literal expression: `Int.ofNat n` for n ≥ 0,
+/// `Int.negSucc (|n| - 1)` for n < 0. Used as the return form of native
+/// Int reductions so subsequent delta+iota steps see the value in its
+/// ctor-headed shape (letting `decNonneg` / `Int.rec` iota-reduce in the
+/// caller).
+fn intern_int_lit<M: KernelMode>(
+  tc: &mut TypeChecker<M>,
+  v: IntVal,
+) -> KExpr<M> {
+  use num_bigint::Sign;
+  let (sign, magnitude) = v.into_parts();
+  let nat_val = match sign {
+    Sign::Minus => {
+      // negSucc n encodes -(n+1); shift magnitude down by 1 to get n.
+      // Safe: Sign::Minus implies magnitude >= 1, so subtract can't
+      // underflow.
+      Nat(magnitude - 1u32)
+    },
+    Sign::NoSign | Sign::Plus => Nat(magnitude),
+  };
+  let nat_addr = Address::hash(&nat_val.to_le_bytes());
+  let nat_expr = tc.intern(KExpr::nat(nat_val, nat_addr));
+  let ctor_id = match sign {
+    Sign::Minus => tc.prims.int_neg_succ.clone(),
+    _ => tc.prims.int_of_nat.clone(),
+  };
+  let ctor = tc.intern(KExpr::cnst(ctor_id, Box::new([])));
+  // With Sign::NoSign (zero) we use int_of_nat → Int.ofNat 0 = 0.
+  // With non-negative => Int.ofNat n. With negative => Int.negSucc (n-1).
+  tc.intern(KExpr::app(ctor, nat_expr))
+}
+
+/// Compute a binary Int operation given two literals. Returns `None` if
+/// the operation is unknown (the caller leaves the expression unreduced).
+fn compute_int_bin<M: KernelMode>(
+  addr: &Address,
+  p: &Primitives<M>,
+  a: &IntVal,
+  b: &IntVal,
+) -> Option<IntVal> {
+  let r = if *addr == p.int_add.addr {
+    a + b
+  } else if *addr == p.int_sub.addr {
+    a - b
+  } else if *addr == p.int_mul.addr {
+    a * b
+  } else {
+    return None;
+  };
+  Some(r)
+}
+
+impl<M: KernelMode> TypeChecker<M> {
+  /// Native Int reduction. Dispatches on the head constant:
+  ///
+  /// - `Int.neg x`: unary negation if `x` whnfs to an Int literal.
+  /// - `Int.add`/`Int.sub`/`Int.mul x y`: binary arithmetic, both args literal.
+  /// - `Int.emod`/`Int.ediv x y`: division or modulo, both args literal.
+  ///   `emod` semantics: result in `[0, |y|)` (Euclidean mod).
+  ///   `ediv` semantics: `y * (x/y) + (x % y) = x` with non-negative remainder.
+  /// - `Int.bmod x m`: balanced mod, `x : Int`, `m : Nat`. Returns an `Int`
+  ///   in `[-m/2, (m+1)/2)`. For `m = 0` returns `x` unchanged (matching
+  ///   Lean's `Int.bmod 0 _` behavior via the `if r < (m+1)/2` branch).
+  /// - `Int.bdiv x m`: balanced div (quotient matching `bmod`).
+  /// - `Int.natAbs x`: returns a Nat literal.
+  ///
+  /// Returns `None` if the head isn't a known Int primitive, arg count is
+  /// wrong, or any argument fails to whnf to the expected literal form.
+  /// Must run BEFORE `delta_unfold_one` on the containing `whnf` loop so
+  /// that the Int.bmod body's `Decidable.rec`-headed form is never exposed.
+  pub(super) fn try_reduce_int(
+    &mut self,
+    e: &KExpr<M>,
+  ) -> Result<Option<KExpr<M>>, TcError<M>> {
+    if e.lbr() > 0 {
+      return Ok(None);
+    }
+    let (head, args) = collect_app_spine(e);
+    let addr = match head.data() {
+      ExprData::Const(id, _, _) => id.addr.clone(),
+      _ => return Ok(None),
+    };
+
+    // Extract primitive addrs up-front so `self.whnf(...)` (mutable
+    // borrow) can run freely below. `Address` is cheap to clone (Arc
+    // refcount bump), so this isn't a perf concern.
+    let (
+      int_neg_addr,
+      int_nat_abs_addr,
+      int_add_addr,
+      int_sub_addr,
+      int_mul_addr,
+      int_emod_addr,
+      int_ediv_addr,
+      int_bmod_addr,
+      int_bdiv_addr,
+    ) = {
+      let p = &self.prims;
+      (
+        p.int_neg.addr.clone(),
+        p.int_nat_abs.addr.clone(),
+        p.int_add.addr.clone(),
+        p.int_sub.addr.clone(),
+        p.int_mul.addr.clone(),
+        p.int_emod.addr.clone(),
+        p.int_ediv.addr.clone(),
+        p.int_bmod.addr.clone(),
+        p.int_bdiv.addr.clone(),
+      )
+    };
+
+    // Unary ops
+    if addr == int_neg_addr && !args.is_empty() {
+      let wa = self.whnf(&args[0])?;
+      let Some(a) = extract_int_lit(&wa, &self.prims) else {
+        return Ok(None);
+      };
+      let r = intern_int_lit(self, -a);
+      return Ok(Some(apply_extra_args(self, r, &args[1..])));
+    }
+
+    if addr == int_nat_abs_addr && !args.is_empty() {
+      let wa = self.whnf(&args[0])?;
+      let Some(a) = extract_int_lit(&wa, &self.prims) else {
+        return Ok(None);
+      };
+      let nat_val = Nat(a.magnitude().clone());
+      let nat_addr = Address::hash(&nat_val.to_le_bytes());
+      let r = self.intern(KExpr::nat(nat_val, nat_addr));
+      return Ok(Some(apply_extra_args(self, r, &args[1..])));
+    }
+
+    if args.len() < 2 {
+      return Ok(None);
+    }
+
+    // Binary arithmetic: both args are Int.
+    let is_bin_arith =
+      addr == int_add_addr || addr == int_sub_addr || addr == int_mul_addr;
+    if is_bin_arith {
+      let wa = self.whnf(&args[0])?;
+      let wb = self.whnf(&args[1])?;
+      let Some(a) = extract_int_lit(&wa, &self.prims) else {
+        return Ok(None);
+      };
+      let Some(b) = extract_int_lit(&wb, &self.prims) else {
+        return Ok(None);
+      };
+      let Some(r) = compute_int_bin(&addr, &self.prims, &a, &b) else {
+        return Ok(None);
+      };
+      let r_expr = intern_int_lit(self, r);
+      return Ok(Some(apply_extra_args(self, r_expr, &args[2..])));
+    }
+
+    // Euclidean div/mod: both args Int, result Int. Matches `Int.emod` /
+    // `Int.ediv` in `Init/Data/Int/DivMod/Basic.lean`.
+    if addr == int_emod_addr || addr == int_ediv_addr {
+      let wa = self.whnf(&args[0])?;
+      let wb = self.whnf(&args[1])?;
+      let Some(a) = extract_int_lit(&wa, &self.prims) else {
+        return Ok(None);
+      };
+      let Some(b) = extract_int_lit(&wb, &self.prims) else {
+        return Ok(None);
+      };
+      let (q, m) = int_ediv_emod(&a, &b);
+      let r = if addr == int_emod_addr { m } else { q };
+      let r_expr = intern_int_lit(self, r);
+      return Ok(Some(apply_extra_args(self, r_expr, &args[2..])));
+    }
+
+    // Balanced div/mod: first arg Int, second arg Nat. Matches `Int.bmod`
+    // / `Int.bdiv` in `Init/Data/Int/DivMod/Basic.lean`. Semantics:
+    //     let r := x % m
+    //     if r < (m + 1) / 2 then r else r - m
+    // bdiv: quotient so that `bdiv x m * m + bmod x m = x`.
+    if addr == int_bmod_addr || addr == int_bdiv_addr {
+      let wa = self.whnf(&args[0])?;
+      let wb = self.whnf(&args[1])?;
+      let Some(a) = extract_int_lit(&wa, &self.prims) else {
+        return Ok(None);
+      };
+      let Some(b_nat) = extract_nat_lit(&wb, &self.prims).cloned() else {
+        return Ok(None);
+      };
+      // `Int.bmod x 0` returns x unchanged because (0+1)/2 = 0 is never
+      // less-than r, so the if falls through. Matches Lean's rfl.
+      if b_nat.0 == num_bigint::BigUint::ZERO {
+        if addr == int_bmod_addr {
+          let r_expr = intern_int_lit(self, a);
+          return Ok(Some(apply_extra_args(self, r_expr, &args[2..])));
+        } else {
+          // bdiv x 0 = 0 by Lean convention (see Int.bdiv definition).
+          let r_expr = intern_int_lit(self, BigInt::from(0));
+          return Ok(Some(apply_extra_args(self, r_expr, &args[2..])));
+        }
+      }
+      let m_big: BigInt = b_nat.0.clone().into();
+      let (q_e, r_e) = int_ediv_emod(&a, &m_big);
+      // Threshold: (m + 1) / 2, Nat division.
+      let half = (&b_nat.0 + 1u32) / 2u32;
+      let half_big: BigInt = half.into();
+      let (bq, bm) = if r_e < half_big {
+        (q_e, r_e)
+      } else {
+        (q_e + 1, r_e - m_big)
+      };
+      let r = if addr == int_bmod_addr { bm } else { bq };
+      let r_expr = intern_int_lit(self, r);
+      return Ok(Some(apply_extra_args(self, r_expr, &args[2..])));
+    }
+
+    Ok(None)
+  }
+}
+
+/// Euclidean division and modulo on BigInt. Matches Lean's `Int.ediv` /
+/// `Int.emod`: the remainder is always non-negative (in `[0, |b|)`).
+/// num-bigint's native `%` is "truncated" (remainder has the sign of the
+/// dividend), so we normalise by adding `|b|` when the dividend is negative.
+fn int_ediv_emod(a: &BigInt, b: &BigInt) -> (BigInt, BigInt) {
+  use num_bigint::Sign;
+  if *b == BigInt::from(0) {
+    // Lean's Int.ediv _ 0 = 0 and Int.emod x 0 = x.
+    return (BigInt::from(0), a.clone());
+  }
+  let abs_b = BigInt::from_biguint(Sign::Plus, b.magnitude().clone());
+  let q_trunc = a / b;
+  let r_trunc = a % b;
+  if r_trunc.sign() == Sign::Minus {
+    // r_trunc < 0: add |b| to r, and adjust q by ±1 to keep `b*q + r = a`.
+    // q adjustment direction: if b > 0, decrement q; if b < 0, increment q.
+    let (q_adj, r_adj) = if b.sign() == Sign::Plus {
+      (q_trunc - 1, r_trunc + &abs_b)
+    } else {
+      (q_trunc + 1, r_trunc + &abs_b)
+    };
+    (q_adj, r_adj)
+  } else {
+    (q_trunc, r_trunc)
+  }
+}
+
+/// Reapply extra args onto a reduced head. Used when the primitive
+/// application has more args than the primitive itself consumes.
+fn apply_extra_args<M: KernelMode>(
+  tc: &mut TypeChecker<M>,
+  mut head: KExpr<M>,
+  args: &[KExpr<M>],
+) -> KExpr<M> {
+  for a in args {
+    head = tc.intern(KExpr::app(head, a.clone()));
+  }
+  head
 }
 
 #[cfg(test)]

@@ -1289,62 +1289,85 @@ def putConstantMetaIndexed (cm : ConstantMeta) (idx : NameIndex) : PutM Unit := 
     putTag0 ⟨typeRoot⟩
     putTag0 ⟨ruleRoots.size.toUInt64⟩
     for r in ruleRoots do putTag0 ⟨r⟩
+  -- Extension tables (meta_sharing / meta_refs / meta_univs): Rust's
+  -- `ConstantMeta::put_indexed` always appends these three length-prefixed
+  -- vectors after the variant payload, used by call-site surgery roundtrip
+  -- (see src/ix/ixon/metadata.rs:229). Lean does not model these fields, so
+  -- we always write them as empty — this matches Rust's wire format for
+  -- Lean-produced bytes without changing the Lean-side data model.
+  putTag0 ⟨0⟩  -- meta_sharing length
+  putTag0 ⟨0⟩  -- meta_refs length
+  putTag0 ⟨0⟩  -- meta_univs length
 
 def getConstantMetaIndexed (rev : NameReverseIndex) : GetM ConstantMeta := do
-  match ← getU8 with
-  | 255 => pure .empty
-  | 0 =>
-    let name ← getIdx rev
-    let lvls ← getIdxVec rev
-    let hints ← getReducibilityHints
-    let all ← getIdxVec rev
-    let ctx ← getIdxVec rev
-    let arena ← getExprMetaArenaIndexed rev
-    let typeRoot := (← getTag0).size
-    let valueRoot := (← getTag0).size
-    pure (.defn name lvls hints all ctx arena typeRoot valueRoot)
-  | 1 =>
-    let name ← getIdx rev
-    let lvls ← getIdxVec rev
-    let arena ← getExprMetaArenaIndexed rev
-    let typeRoot := (← getTag0).size
-    pure (.axio name lvls arena typeRoot)
-  | 2 =>
-    let name ← getIdx rev
-    let lvls ← getIdxVec rev
-    let arena ← getExprMetaArenaIndexed rev
-    let typeRoot := (← getTag0).size
-    pure (.quot name lvls arena typeRoot)
-  | 3 =>
-    let name ← getIdx rev
-    let lvls ← getIdxVec rev
-    let ctors ← getIdxVec rev
-    let all ← getIdxVec rev
-    let ctx ← getIdxVec rev
-    let arena ← getExprMetaArenaIndexed rev
-    let typeRoot := (← getTag0).size
-    pure (.indc name lvls ctors all ctx arena typeRoot)
-  | 4 =>
-    let name ← getIdx rev
-    let lvls ← getIdxVec rev
-    let induct ← getIdx rev
-    let arena ← getExprMetaArenaIndexed rev
-    let typeRoot := (← getTag0).size
-    pure (.ctor name lvls induct arena typeRoot)
-  | 5 =>
-    let name ← getIdx rev
-    let lvls ← getIdxVec rev
-    let rules ← getIdxVec rev
-    let all ← getIdxVec rev
-    let ctx ← getIdxVec rev
-    let arena ← getExprMetaArenaIndexed rev
-    let typeRoot := (← getTag0).size
-    let numRuleRoots := (← getTag0).size.toNat
-    let mut ruleRoots : Array UInt64 := #[]
-    for _ in [0:numRuleRoots] do
-      ruleRoots := ruleRoots.push (← getTag0).size
-    pure (.recr name lvls rules all ctx arena typeRoot ruleRoots)
-  | x => throw s!"invalid ConstantMeta tag {x}"
+  let cm ← match ← getU8 with
+    | 255 => pure .empty
+    | 0 =>
+      let name ← getIdx rev
+      let lvls ← getIdxVec rev
+      let hints ← getReducibilityHints
+      let all ← getIdxVec rev
+      let ctx ← getIdxVec rev
+      let arena ← getExprMetaArenaIndexed rev
+      let typeRoot := (← getTag0).size
+      let valueRoot := (← getTag0).size
+      pure (.defn name lvls hints all ctx arena typeRoot valueRoot)
+    | 1 =>
+      let name ← getIdx rev
+      let lvls ← getIdxVec rev
+      let arena ← getExprMetaArenaIndexed rev
+      let typeRoot := (← getTag0).size
+      pure (.axio name lvls arena typeRoot)
+    | 2 =>
+      let name ← getIdx rev
+      let lvls ← getIdxVec rev
+      let arena ← getExprMetaArenaIndexed rev
+      let typeRoot := (← getTag0).size
+      pure (.quot name lvls arena typeRoot)
+    | 3 =>
+      let name ← getIdx rev
+      let lvls ← getIdxVec rev
+      let ctors ← getIdxVec rev
+      let all ← getIdxVec rev
+      let ctx ← getIdxVec rev
+      let arena ← getExprMetaArenaIndexed rev
+      let typeRoot := (← getTag0).size
+      pure (.indc name lvls ctors all ctx arena typeRoot)
+    | 4 =>
+      let name ← getIdx rev
+      let lvls ← getIdxVec rev
+      let induct ← getIdx rev
+      let arena ← getExprMetaArenaIndexed rev
+      let typeRoot := (← getTag0).size
+      pure (.ctor name lvls induct arena typeRoot)
+    | 5 =>
+      let name ← getIdx rev
+      let lvls ← getIdxVec rev
+      let rules ← getIdxVec rev
+      let all ← getIdxVec rev
+      let ctx ← getIdxVec rev
+      let arena ← getExprMetaArenaIndexed rev
+      let typeRoot := (← getTag0).size
+      let numRuleRoots := (← getTag0).size.toNat
+      let mut ruleRoots : Array UInt64 := #[]
+      for _ in [0:numRuleRoots] do
+        ruleRoots := ruleRoots.push (← getTag0).size
+      pure (.recr name lvls rules all ctx arena typeRoot ruleRoots)
+    | x => throw s!"invalid ConstantMeta tag {x}"
+  -- Extension tables (meta_sharing / meta_refs / meta_univs): mirror of the
+  -- Rust wire format (see `putConstantMetaIndexed` for the rationale). Lean
+  -- drops any payload here, so Rust → Lean roundtrips lose call-site surgery
+  -- sharing; this is acceptable because Lean does not consume that data.
+  let sharingLen := (← getTag0).size.toNat
+  for _ in [0:sharingLen] do
+    let _ ← getExpr
+  let refsLen := (← getTag0).size.toNat
+  for _ in [0:refsLen] do
+    let _ ← Serialize.get (α := Address)
+  let univsLen := (← getTag0).size.toNat
+  for _ in [0:univsLen] do
+    let _ ← getUniv
+  pure cm
 
 /-- Serialize Comm (simple - just two addresses). -/
 def putComm (c : Comm) : PutM Unit := do

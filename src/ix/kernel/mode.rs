@@ -219,6 +219,7 @@ impl KernelMode for ZMode<true> {
   ) -> T {
     val
   }
+
 }
 
 impl KernelMode for ZMode<false> {
@@ -232,6 +233,7 @@ impl KernelMode for ZMode<false> {
     _val: T,
   ) {
   }
+
 }
 
 #[cfg(test)]

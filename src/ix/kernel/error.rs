@@ -21,6 +21,12 @@ pub enum TcError<M: KernelMode> {
   DeclTypeMismatch,
   UnknownConst(Address),
   UnivParamMismatch { expected: u64, got: usize },
+  /// An interior universe substitution hit `Param(idx)` where `idx` was
+  /// out of range for the supplied universe list. Distinct from
+  /// `UnivParamMismatch` which is the arity gate at Const-infer time;
+  /// this variant fires from `subst_univ` as defense-in-depth against
+  /// any code path that reaches substitution without the arity check.
+  UnivParamOutOfRange { idx: u64, bound: usize },
   VarOutOfRange { idx: u64, ctx_len: usize },
   DefEqFailed,
   MaxRecDepth,
@@ -46,6 +52,12 @@ impl<M: KernelMode> std::fmt::Display for TcError<M> {
       },
       TcError::UnivParamMismatch { expected, got } => {
         write!(f, "universe param count: expected {expected}, got {got}")
+      },
+      TcError::UnivParamOutOfRange { idx, bound } => {
+        write!(
+          f,
+          "universe Param({idx}) out of range: only {bound} universes supplied"
+        )
       },
       TcError::VarOutOfRange { idx, ctx_len } => {
         write!(f, "variable #{idx} out of range (context depth {ctx_len})")

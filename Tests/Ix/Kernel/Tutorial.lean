@@ -15,11 +15,84 @@ open LSpec
 namespace Tests.Ix.Kernel.Tutorial
 
 /-- Type-check errors returned from the Rust kernel FFI.
-    Only one variant: rejection is reported as a formatted string. Matches
-    `KERNEL_EXCEPTION_TAG` in `src/ffi/kernel.rs`. -/
+
+    Two variants:
+    - `kernelException msg` — rejection during kernel typechecking (tag 0).
+    - `compileError msg`    — rejection during `compile_env` (tag 1), emitted
+      when `compile_env`'s tolerant scheduler records a block as ungrounded
+      (e.g. `inductBadNonSort` failing `compute_is_large_and_k`).
+
+    **Important**: keep at least two constructors so Lean's LCNF trivial
+    structure optimization does NOT elide the enum to just `String`. With
+    only one ctor + one field, `hasTrivialStructure?` fires and the runtime
+    representation becomes identical to `String`, which breaks any FFI that
+    allocates a heap ctor. See
+    `refs/lean4/src/Lean/Compiler/LCNF/MonoTypes.lean:20-28`.
+
+    Tags are stable across the Rust FFI — see `KERNEL_EXCEPTION_TAG` and
+    `COMPILE_ERROR_TAG` in `src/ffi/kernel.rs`. -/
 inductive CheckError where
   | kernelException (msg : String)
+  | compileError    (msg : String)
   deriving Repr
+
+/-- Compute the transitive closure of constants referenced by `seeds`, and
+    return the subset of `env.constants` reachable from them.
+
+    Mirrors `Ix/Cli/ValidateCmd.lean`'s `collectDeps` exactly, but extends the
+    lookup with `extraConsts` so seeds that only exist in `bad_raw_consts`
+    (e.g. `inductBadNonSort`, which the Lean kernel rejected and therefore
+    never entered `env.constants`) still get their transitive dependencies
+    pulled in.
+
+    Returns `(needed : Std.HashSet Name, closed : List (Name × ConstantInfo))`
+    so callers can both inspect membership and ship the closed subset. -/
+private partial def collectDepsWithExtras
+    (env : Lean.Environment)
+    (extraConsts : Std.HashMap Lean.Name Lean.ConstantInfo)
+    (seeds : List Lean.Name)
+    : Std.HashSet Lean.Name × List (Lean.Name × Lean.ConstantInfo) := Id.run do
+  let mut needed : Std.HashSet Lean.Name := {}
+  let mut worklist := seeds
+  while !worklist.isEmpty do
+    match worklist with
+    | [] => break
+    | n :: rest =>
+      worklist := rest
+      if needed.contains n then continue
+      needed := needed.insert n
+      -- Prefer env.constants; fall back to extraConsts for bad_raw_consts.
+      let ci? := env.constants.find? n <|> extraConsts.get? n
+      if let some ci := ci? then
+        let mut refs : Lean.NameSet := ci.type.getUsedConstantsAsSet
+        match ci with
+        | .defnInfo v =>
+          for r in v.value.getUsedConstantsAsSet do refs := refs.insert r
+        | .thmInfo v =>
+          for r in v.value.getUsedConstantsAsSet do refs := refs.insert r
+        | .opaqueInfo v =>
+          for r in v.value.getUsedConstantsAsSet do refs := refs.insert r
+        | .inductInfo v =>
+          for ctorName in v.ctors do
+            refs := refs.insert ctorName
+            if let some ctorCi :=
+                env.constants.find? ctorName <|> extraConsts.get? ctorName then
+              for r in ctorCi.type.getUsedConstantsAsSet do refs := refs.insert r
+          for mutName in v.all do
+            refs := refs.insert mutName
+        | .ctorInfo v =>
+          refs := refs.insert v.induct
+        | .recInfo v =>
+          for mutName in v.all do
+            refs := refs.insert mutName
+          for rule in v.rules do
+            for r in rule.rhs.getUsedConstantsAsSet do refs := refs.insert r
+        | _ => pure ()
+        for r in refs do
+          if !needed.contains r then
+            worklist := r :: worklist
+  let closed := env.constants.toList.filter fun (n, _) => needed.contains n
+  return (needed, closed)
 
 /-- FFI: type-check a batch of constants through the full pipeline
     (Lean env → Ixon compile → kernel ingress → typecheck).
@@ -116,13 +189,24 @@ def testTutorialConsts : TestSeq :=
           badNames := badNames.insert (toString n)
     let expectPass := constNames.map (fun n => !badNames.contains n)
 
-    IO.println s!"[kernel-tutorial] {testCases.size} test cases, {constNames.size} constants to check"
-
     -- Collect raw constants stored by bad_raw_consts (inductInfo/ctorInfo/recInfo
-    -- that couldn't go through the Lean kernel)
+    -- that couldn't go through the Lean kernel).
     let rawConsts := TutorialMeta.getRawConsts leanEnv
     let extraConstList := rawConsts.toList.map (fun ci => (ci.name, ci))
-    let allConstList := leanEnv.constants.toList ++ extraConstList
+
+    -- Filter the Lean env down to the transitive closure of the test
+    -- constants before shipping to Rust. Without this, `compile_env` processes
+    -- ~200k unrelated blocks (full Mathlib if imported), turning a 5s test
+    -- into a 45s test. Mirrors `Ix/Cli/ValidateCmd.lean`'s `collectDeps`.
+    let rawConstsMap : Std.HashMap Lean.Name Lean.ConstantInfo :=
+      rawConsts.foldl (fun m ci => m.insert ci.name ci)
+        (Std.HashMap.emptyWithCapacity rawConsts.size)
+    let seeds : List Lean.Name :=
+      (constNames.toList.map String.toName) ++ (rawConsts.toList.map (·.name))
+    let (_, closedConsts) := collectDepsWithExtras leanEnv rawConstsMap seeds
+    let allConstList := closedConsts ++ extraConstList
+
+    IO.println s!"[kernel-tutorial] {testCases.size} test cases, {constNames.size} constants to check ({allConstList.length} consts in closure)"
 
     let results ← rsCheckConstsFFI allConstList constNames expectPass
 
@@ -136,7 +220,10 @@ def testTutorialConsts : TestSeq :=
     let mut failed := 0
     let mut errors : Array String := #[]
 
-    -- Check good test cases (must pass)
+    -- Check good test cases (must pass). When a good constant is rejected,
+    -- pull the raw message string out of `CheckError.kernelException` rather
+    -- than calling `repr err` — derived `Repr` for long multi-line strings is
+    -- extremely slow (seconds per call) and can make the test appear to hang.
     for tc in testCases do
       if tc.outcome == .good then
         for n in tc.decls do
@@ -145,7 +232,10 @@ def testTutorialConsts : TestSeq :=
           | some none => passed := passed + 1
           | some (some err) =>
             failed := failed + 1
-            errors := errors.push s!"  ✗ GOOD {name}: rejected with {repr err}"
+            let msg := match err with
+              | .kernelException m => s!"kernel: {m}"
+              | .compileError m    => s!"compile: {m}"
+            errors := errors.push s!"  ✗ GOOD {name}: rejected with {msg}"
           | none =>
             failed := failed + 1
             errors := errors.push s!"  ✗ GOOD {name}: not found in results"
@@ -199,7 +289,10 @@ def testTutorialConsts : TestSeq :=
       | some none => passed := passed + 1
       | some (some err) =>
         failed := failed + 1
-        errors := errors.push s!"  ✗ {name}: {repr err}"
+        let msg := match err with
+          | .kernelException m => m
+          | .compileError m    => s!"(compile) {m}"
+        errors := errors.push s!"  ✗ {name}: {msg}"
       | none =>
         failed := failed + 1
         errors := errors.push s!"  ✗ {name}: not found"
@@ -210,7 +303,10 @@ def testTutorialConsts : TestSeq :=
       | some none => passed := passed + 1
       | some (some err) =>
         failed := failed + 1
-        errors := errors.push s!"  ✗ stdlib {name}: {repr err}"
+        let msg := match err with
+          | .kernelException m => m
+          | .compileError m    => s!"(compile) {m}"
+        errors := errors.push s!"  ✗ stdlib {name}: {msg}"
       | none =>
         failed := failed + 1
         errors := errors.push s!"  ✗ stdlib {name}: not found"

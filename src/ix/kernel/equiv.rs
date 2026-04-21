@@ -90,15 +90,21 @@ impl EquivManager {
   }
 
   /// Check if two composite keys are equivalent.
-  pub fn is_equiv(&mut self, k1: EqKey, k2: EqKey) -> bool {
+  ///
+  /// Takes keys by reference — callers in the `is_def_eq` hot path
+  /// already hold `EqKey` tuples as local bindings, and forcing them to
+  /// pass by value would require an Arc-clone on each component. With
+  /// by-ref we avoid that clone entirely (see `src/ix/kernel/def_eq.rs`
+  /// for the caller pattern).
+  pub fn is_equiv(&mut self, k1: &EqKey, k2: &EqKey) -> bool {
     if k1 == k2 {
       return true;
     }
-    let n1 = match self.key_to_node.get(&k1) {
+    let n1 = match self.key_to_node.get(k1) {
       Some(&n) => n,
       None => return false,
     };
-    let n2 = match self.key_to_node.get(&k2) {
+    let n2 = match self.key_to_node.get(k2) {
       Some(&n) => n,
       None => return false,
     };
@@ -107,13 +113,22 @@ impl EquivManager {
 
   /// Find the root representative key for a given composite key.
   /// Returns None if the key is not in the union-find.
-  pub fn find_root_key(&mut self, key: EqKey) -> Option<EqKey> {
-    let node = *self.key_to_node.get(&key)?;
+  ///
+  /// Like `is_equiv`, takes the lookup key by reference so callers can
+  /// reuse a single `EqKey` binding across multiple queries without
+  /// cloning it for each call.
+  pub fn find_root_key(&mut self, key: &EqKey) -> Option<EqKey> {
+    let node = *self.key_to_node.get(key)?;
     let root = self.find(node);
     Some(self.node_to_key[root].clone())
   }
 
   /// Record that two composite keys are definitionally equal.
+  ///
+  /// Kept by-value because `node_for_key` inserts the key into the
+  /// internal `key_to_node` map on first observation, requiring
+  /// ownership transfer. Callers that have already consumed their
+  /// `EqKey`s should clone at the call site, not here.
   pub fn add_equiv(&mut self, k1: EqKey, k2: EqKey) {
     let n1 = self.node_for_key(k1);
     let n2 = self.node_for_key(k2);
@@ -135,10 +150,10 @@ mod tests {
   fn test_basic_equiv() {
     let mut em = EquivManager::new();
     let zero = addr(0);
-    assert!(!em.is_equiv((addr(100), zero.clone()), (addr(200), zero.clone())));
+    assert!(!em.is_equiv(&(addr(100), zero.clone()), &(addr(200), zero.clone())));
     em.add_equiv((addr(100), zero.clone()), (addr(200), zero.clone()));
-    assert!(em.is_equiv((addr(100), zero.clone()), (addr(200), zero.clone())));
-    assert!(em.is_equiv((addr(200), zero.clone()), (addr(100), zero.clone())));
+    assert!(em.is_equiv(&(addr(100), zero.clone()), &(addr(200), zero.clone())));
+    assert!(em.is_equiv(&(addr(200), zero.clone()), &(addr(100), zero.clone())));
   }
 
   #[test]
@@ -147,7 +162,7 @@ mod tests {
     let zero = addr(0);
     em.add_equiv((addr(100), zero.clone()), (addr(200), zero.clone()));
     em.add_equiv((addr(200), zero.clone()), (addr(300), zero.clone()));
-    assert!(em.is_equiv((addr(100), zero.clone()), (addr(300), zero.clone())));
+    assert!(em.is_equiv(&(addr(100), zero.clone()), &(addr(300), zero.clone())));
   }
 
   #[test]
@@ -156,7 +171,7 @@ mod tests {
     let ctx1 = addr(1);
     let ctx2 = addr(2);
     em.add_equiv((addr(100), ctx1.clone()), (addr(200), ctx1.clone()));
-    assert!(em.is_equiv((addr(100), ctx1.clone()), (addr(200), ctx1.clone())));
-    assert!(!em.is_equiv((addr(100), ctx2.clone()), (addr(200), ctx2)));
+    assert!(em.is_equiv(&(addr(100), ctx1.clone()), &(addr(200), ctx1.clone())));
+    assert!(!em.is_equiv(&(addr(100), ctx2.clone()), &(addr(200), ctx2)));
   }
 }

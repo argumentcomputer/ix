@@ -1948,6 +1948,18 @@ export Ixon (RawConst RawNamed RawBlob RawComm RawEnv)
 @[extern "rs_compile_env_to_ixon"]
 opaque rsCompileEnvFFI : @& List (Lean.Name × Lean.ConstantInfo) → IO Ixon.RawEnv
 
+/-- FFI: Compute the LEON content hash of every constant in a Lean
+    environment. Returns `(Ix.Name, Ix.Address)` pairs where the address
+    is the 32-byte Blake3 digest produced by `ConstantInfo::get_hash()`
+    in `src/ix/env.rs`. This is the addressing scheme under which
+    `orig_kenv` stores KIds in the kernel — two constants with the same
+    Lean name but different content get distinct addresses. Used by
+    `Tests.Ix.Kernel.BuildPrimOrigs` to regenerate `PrimOrigAddrs` in
+    the Rust kernel. -/
+@[extern "rs_leon_hashes"]
+opaque rsLeonHashesFFI
+  : @& List (Lean.Name × Lean.ConstantInfo) → IO (Array (Ix.Name × Address))
+
 /-! ## Combined Compile Phases FFI -/
 
 /-- Raw FFI type returned from Rust's rs_compile_phases.
