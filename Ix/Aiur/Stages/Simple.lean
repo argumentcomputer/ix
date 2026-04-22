@@ -1,0 +1,136 @@
+module
+public import Ix.Aiur.Stages.Typed
+
+/-!
+Stage 3 (Simple) IR — post match-compilation.
+
+Produced by the (rewritten) match compiler. Pattern shapes are:
+`.wildcard`, `.field G`, `.ref Global (Array Local)`, `.tuple (Array Local)`,
+`.array (Array Local)`.
+
+Type-level invariants:
+- No `.or` subpatterns (match compiler eliminated them).
+- No `.pointer` subpatterns (lowered to `.letLoad`).
+- No nested subpatterns — pattern children are bare `Local`s.
+- `.let` binds only a `Local` or is a wildcard.
+- `.match` scrutinee is a `Local`.
+- No non-exhaustive matches (fallback optional).
+- `.match` appears only in let-RHS positions (non-tail match) or as tail
+  (the non-tail-in-arbitrary-position case is out of scope).
+-/
+
+public section
+
+namespace Aiur
+
+namespace Simple
+
+/-- Simplified pattern: bare-local children only. -/
+inductive Pattern
+  | wildcard
+  | field : G → Pattern
+  | ref : Global → Array Local → Pattern
+  | tuple : Array Local → Pattern
+  | array : Array Local → Pattern
+  deriving Repr, BEq, Hashable, Inhabited
+
+/-- Plain inductive form (same shape as Concrete.Term, Typed.Term):
+each constructor inlines `typ : Typ` and `escapes : Bool` so sub-Terms are
+direct constructor children. -/
+inductive Term : Type where
+  | unit (typ : Typ) (escapes : Bool) : Term
+  | var (typ : Typ) (escapes : Bool) (l : Local) : Term
+  | ref (typ : Typ) (escapes : Bool) (g : Global) (tArgs : Array Typ) : Term
+  | field (typ : Typ) (escapes : Bool) (g : G) : Term
+  | tuple (typ : Typ) (escapes : Bool) (ts : Array Term) : Term
+  | array (typ : Typ) (escapes : Bool) (ts : Array Term) : Term
+  | ret (typ : Typ) (escapes : Bool) (sub : Term) : Term
+  | letVar (typ : Typ) (escapes : Bool) (l : Local) (v : Term) (b : Term) : Term
+  | letWild (typ : Typ) (escapes : Bool) (v : Term) (b : Term) : Term
+  /-- See module-doc note on letLoad. -/
+  | letLoad (typ : Typ) (escapes : Bool) (dst : Local) (dstTyp : Typ) (src : Local) (b : Term) : Term
+  | match (typ : Typ) (escapes : Bool) (scrut : Local)
+          (cases : Array (Pattern × Term)) (defaultOpt : Option Term) : Term
+  | app (typ : Typ) (escapes : Bool) (g : Global) (tArgs : Array Typ)
+        (args : List Term) (unconstrained : Bool) : Term
+  | add (typ : Typ) (escapes : Bool) (a : Term) (b : Term) : Term
+  | sub (typ : Typ) (escapes : Bool) (a : Term) (b : Term) : Term
+  | mul (typ : Typ) (escapes : Bool) (a : Term) (b : Term) : Term
+  | eqZero (typ : Typ) (escapes : Bool) (a : Term) : Term
+  | proj (typ : Typ) (escapes : Bool) (a : Term) (n : Nat) : Term
+  | get (typ : Typ) (escapes : Bool) (a : Term) (n : Nat) : Term
+  | slice (typ : Typ) (escapes : Bool) (a : Term) (i : Nat) (j : Nat) : Term
+  | set (typ : Typ) (escapes : Bool) (a : Term) (n : Nat) (v : Term) : Term
+  | store (typ : Typ) (escapes : Bool) (a : Term) : Term
+  | load (typ : Typ) (escapes : Bool) (a : Term) : Term
+  | ptrVal (typ : Typ) (escapes : Bool) (a : Term) : Term
+  | assertEq (typ : Typ) (escapes : Bool) (a : Term) (b : Term) (r : Term) : Term
+  | ioGetInfo (typ : Typ) (escapes : Bool) (k : Term) : Term
+  | ioSetInfo (typ : Typ) (escapes : Bool) (k i l r : Term) : Term
+  | ioRead (typ : Typ) (escapes : Bool) (i : Term) (n : Nat) : Term
+  | ioWrite (typ : Typ) (escapes : Bool) (d r : Term) : Term
+  | u8BitDecomposition (typ : Typ) (escapes : Bool) (a : Term) : Term
+  | u8ShiftLeft (typ : Typ) (escapes : Bool) (a : Term) : Term
+  | u8ShiftRight (typ : Typ) (escapes : Bool) (a : Term) : Term
+  | u8Xor (typ : Typ) (escapes : Bool) (a : Term) (b : Term) : Term
+  | u8Add (typ : Typ) (escapes : Bool) (a : Term) (b : Term) : Term
+  | u8Sub (typ : Typ) (escapes : Bool) (a : Term) (b : Term) : Term
+  | u8And (typ : Typ) (escapes : Bool) (a : Term) (b : Term) : Term
+  | u8Or (typ : Typ) (escapes : Bool) (a : Term) (b : Term) : Term
+  | u8LessThan (typ : Typ) (escapes : Bool) (a : Term) (b : Term) : Term
+  | u32LessThan (typ : Typ) (escapes : Bool) (a : Term) (b : Term) : Term
+  | debug (typ : Typ) (escapes : Bool) (label : String) (t : Option Term) (r : Term) : Term
+  deriving Repr, Inhabited
+
+def Term.typ : Term → Typ
+  | .unit t _ | .var t _ _ | .ref t _ _ _ | .field t _ _
+  | .tuple t _ _ | .array t _ _ | .ret t _ _
+  | .letVar t _ _ _ _ | .letWild t _ _ _ | .letLoad t _ _ _ _ _
+  | .match t _ _ _ _ | .app t _ _ _ _ _
+  | .add t _ _ _ | .sub t _ _ _ | .mul t _ _ _ | .eqZero t _ _
+  | .proj t _ _ _ | .get t _ _ _ | .slice t _ _ _ _ | .set t _ _ _ _
+  | .store t _ _ | .load t _ _ | .ptrVal t _ _
+  | .assertEq t _ _ _ _ | .ioGetInfo t _ _ | .ioSetInfo t _ _ _ _ _
+  | .ioRead t _ _ _ | .ioWrite t _ _ _
+  | .u8BitDecomposition t _ _ | .u8ShiftLeft t _ _ | .u8ShiftRight t _ _
+  | .u8Xor t _ _ _ | .u8Add t _ _ _ | .u8Sub t _ _ _
+  | .u8And t _ _ _ | .u8Or t _ _ _ | .u8LessThan t _ _ _ | .u32LessThan t _ _ _
+  | .debug t _ _ _ _ => t
+
+def Term.escapes : Term → Bool
+  | .unit _ e | .var _ e _ | .ref _ e _ _ | .field _ e _
+  | .tuple _ e _ | .array _ e _ | .ret _ e _
+  | .letVar _ e _ _ _ | .letWild _ e _ _ | .letLoad _ e _ _ _ _
+  | .match _ e _ _ _ | .app _ e _ _ _ _
+  | .add _ e _ _ | .sub _ e _ _ | .mul _ e _ _ | .eqZero _ e _
+  | .proj _ e _ _ | .get _ e _ _ | .slice _ e _ _ _ | .set _ e _ _ _
+  | .store _ e _ | .load _ e _ | .ptrVal _ e _
+  | .assertEq _ e _ _ _ | .ioGetInfo _ e _ | .ioSetInfo _ e _ _ _ _
+  | .ioRead _ e _ _ | .ioWrite _ e _ _
+  | .u8BitDecomposition _ e _ | .u8ShiftLeft _ e _ | .u8ShiftRight _ e _
+  | .u8Xor _ e _ _ | .u8Add _ e _ _ | .u8Sub _ e _ _
+  | .u8And _ e _ _ | .u8Or _ e _ _ | .u8LessThan _ e _ _ | .u32LessThan _ e _ _
+  | .debug _ e _ _ _ => e
+
+structure Function where
+  name : Global
+  params : List String
+  inputs : List (Local × Typ)
+  output : Typ
+  body : Term
+  entry : Bool
+  deriving Repr
+
+inductive Declaration
+  | function : Function → Declaration
+  | dataType : DataType → Declaration
+  | constructor : DataType → Constructor → Declaration
+  deriving Repr, Inhabited
+
+abbrev Decls := IndexMap Global Declaration
+
+end Simple
+
+end Aiur
+
+end

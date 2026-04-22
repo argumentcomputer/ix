@@ -146,7 +146,7 @@ def entrypoints := ⟦
   }
 ⟧
 
-def ixVM : Except Aiur.Global Aiur.Toplevel := do
+def ixVM : Except Aiur.Global Aiur.Source.Toplevel := do
   let vm ← core.merge byteStream
   let vm ← vm.merge blake3
   let vm ← vm.merge ixon

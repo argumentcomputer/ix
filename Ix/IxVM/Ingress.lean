@@ -1,6 +1,6 @@
 module
 import Ix.Aiur.Meta
-public import Ix.Aiur.Term
+public import Ix.Aiur.Stages.Source
 
 public section
 
