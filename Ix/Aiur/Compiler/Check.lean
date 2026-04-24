@@ -149,53 +149,72 @@ def expandTypeM (visited : Std.HashSet Global) (toplevelAliases : Array TypeAlia
     (t : Typ) : StateT (Std.HashMap Global Typ) (Except CheckError) Typ :=
   expandTypeMBound (toplevelAliases.size + 1) visited toplevelAliases t
 
+/-- Alias-name duplicate check. Pure fold over `typeAliases` building up the
+name set; throws on first collision. -/
+def mkDecls_checkAliases (typeAliases : Array TypeAlias) :
+    Except CheckError (Std.HashSet Global) :=
+  typeAliases.foldlM (init := (∅ : Std.HashSet Global))
+    fun allNames alias => do
+      if allNames.contains alias.name then
+        throw (.duplicatedDefinition alias.name)
+      pure (allNames.insert alias.name)
+
+/-- Per-function step of `mkDecls`: duplicate-check, expand input/output types,
+insert the function declaration. -/
+def mkDecls_functionStep
+    (expandTyp : Typ → Except CheckError Typ)
+    (acc : Std.HashSet Global × Source.Decls) (function : Function) :
+    Except CheckError (Std.HashSet Global × Source.Decls) := do
+  let (allNames, decls) := acc
+  if allNames.contains function.name then
+    throw (.duplicatedDefinition function.name)
+  let inputs' ← function.inputs.mapM fun (loc, typ) => do
+    let typ' ← expandTyp typ
+    pure (loc, typ')
+  let output' ← expandTyp function.output
+  let function' := { function with inputs := inputs', output := output' }
+  pure (allNames.insert function.name,
+        decls.insert function.name (.function function'))
+
+/-- Per-datatype step of `mkDecls`: duplicate-check the datatype + each
+constructor name, expand argtypes, insert the datatype + each constructor. -/
+def mkDecls_dataTypeStep
+    (expandTyp : Typ → Except CheckError Typ)
+    (acc : Std.HashSet Global × Source.Decls) (dataType : DataType) :
+    Except CheckError (Std.HashSet Global × Source.Decls) := do
+  let (allNames, decls) := acc
+  if allNames.contains dataType.name then
+    throw (.duplicatedDefinition dataType.name)
+  let constructors ← dataType.constructors.foldlM (init := ([] : List Constructor))
+    fun ctors ctor => do
+      let argTypes' ← ctor.argTypes.mapM expandTyp
+      pure (ctors.concat { ctor with argTypes := argTypes' })
+  let dataType' := { dataType with constructors }
+  let allNames' := allNames.insert dataType.name
+  let decls' := decls.insert dataType.name (.dataType dataType')
+  constructors.foldlM (init := (allNames', decls'))
+    fun (allNames, decls) ctor => do
+      let ctorName := dataType.name.pushNamespace ctor.nameHead
+      if allNames.contains ctorName then
+        throw (.duplicatedDefinition ctorName)
+      pure (allNames.insert ctorName,
+            decls.insert ctorName (.constructor dataType' ctor))
+
 /-- Constructs a map of declarations from a toplevel, expanding all type aliases. -/
 def Source.Toplevel.mkDecls (toplevel : Source.Toplevel) : Except CheckError Source.Decls := do
-  let mut allNames : Std.HashSet Global := {}
-  for alias in toplevel.typeAliases do
-    if allNames.contains alias.name then
-      throw $ .duplicatedDefinition alias.name
-    allNames := allNames.insert alias.name
-
+  let aliasNames ← mkDecls_checkAliases toplevel.typeAliases
   let initAliasMap := {}
   let (_, finalAliasMap) ← (toplevel.typeAliases.mapM fun (alias : TypeAlias) => do
     let expanded ← expandTypeM {} toplevel.typeAliases alias.expansion
     modify fun (aliasMap : Std.HashMap Global Typ) => aliasMap.insert alias.name expanded
   ).run initAliasMap
-
   let expandTyp (typ : Typ) : Except CheckError Typ :=
     (expandTypeM {} toplevel.typeAliases typ).run' finalAliasMap
-
-  let mut decls : Decls := default
-  for function in toplevel.functions do
-    if allNames.contains function.name then
-      throw $ .duplicatedDefinition function.name
-    allNames := allNames.insert function.name
-    let inputs' ← function.inputs.mapM fun (loc, typ) => do
-      let typ' ← expandTyp typ
-      pure (loc, typ')
-    let output' ← expandTyp function.output
-    let function' := { function with inputs := inputs', output := output' }
-    decls := decls.insert function.name (.function function')
-
-  for dataType in toplevel.dataTypes do
-    if allNames.contains dataType.name then
-      throw $ .duplicatedDefinition dataType.name
-    allNames := allNames.insert dataType.name
-    let mut constructors : List Constructor := []
-    for ctor in dataType.constructors do
-      let argTypes' ← ctor.argTypes.mapM expandTyp
-      constructors := constructors.concat { ctor with argTypes := argTypes' }
-    let dataType' := { dataType with constructors }
-    decls := decls.insert dataType.name (.dataType dataType')
-    for ctor in constructors do
-      let ctorName := dataType.name.pushNamespace ctor.nameHead
-      if allNames.contains ctorName then
-        throw $ .duplicatedDefinition ctorName
-      allNames := allNames.insert ctorName
-      decls := decls.insert ctorName (.constructor dataType' ctor)
-
-  pure decls
+  let afterFns ← toplevel.functions.foldlM
+    (init := (aliasNames, (default : Source.Decls))) (mkDecls_functionStep expandTyp)
+  let afterDts ← toplevel.dataTypes.foldlM
+    (init := afterFns) (mkDecls_dataTypeStep expandTyp)
+  pure afterDts.2
 
 /-! ## Inference monad and unification -/
 
@@ -926,52 +945,62 @@ def getFunctionContext (function : Function) (decls : Decls) : CheckContext :=
     typeParams := function.params }
 
 def wellFormedDecls (decls : Decls) : Except CheckError Unit := do
-  let mut visited := default
-  for (_, decl) in decls.pairs do
-    match EStateM.run (wellFormedDecl decl) visited with
-    | .error e _ => throw e
-    | .ok () visited' => visited := visited'
+  let _ ← decls.pairs.foldlM (init := (default : Std.HashSet Global))
+    fun visited (_, decl) => wellFormedDecl visited decl
+  pure ()
 where
   checkUniqueParams (name : Global) (params : List String) :
-      EStateM CheckError (Std.HashSet Global) Unit :=
-    let rec go : List String → Std.HashSet String → EStateM CheckError (Std.HashSet Global) Unit
-      | [], _ => pure ()
+      Except CheckError Unit :=
+    let rec go : List String → Std.HashSet String → Except CheckError Unit
+      | [], _ => .ok ()
       | p :: ps, seen =>
-        if seen.contains p then throw $ .duplicatedTypeParam name p
+        if seen.contains p then .error (.duplicatedTypeParam name p)
         else go ps (seen.insert p)
     go params {}
-  wellFormedDecl : Declaration → EStateM CheckError (Std.HashSet Global) Unit
+  wellFormedDecl (visited : Std.HashSet Global) :
+      Declaration → Except CheckError (Std.HashSet Global)
     | .dataType dataType => do
-      let map ← get
-      if !map.contains dataType.name then
-        set $ map.insert dataType.name
+      if !visited.contains dataType.name then
         checkUniqueParams dataType.name dataType.params
-        dataType.constructors.flatMap (·.argTypes) |>.forM (wellFormedType dataType.params)
+        dataType.constructors.flatMap (·.argTypes)
+          |>.forM (wellFormedType dataType.params)
+        .ok (visited.insert dataType.name)
+      else
+        .ok visited
     | .function function => do
       checkUniqueParams function.name function.params
       wellFormedType function.params function.output
       function.inputs.forM fun (_, typ) => wellFormedType function.params typ
-    | .constructor .. => pure ()
-  wellFormedType (params : List String) : Typ → EStateM CheckError (Std.HashSet Global) Unit
+      .ok visited
+    | .constructor .. => .ok visited
+  wellFormedType (params : List String) : Typ → Except CheckError Unit
     | .tuple typs =>
         typs.attach.forM (fun ⟨t, _⟩ => wellFormedType params t)
     | .pointer pointerTyp => wellFormedType params pointerTyp
     | .array t _ => wellFormedType params t
     | .ref ref =>
-      if params.any (· == ref.toName.toString) then pure ()
+      -- Type-param refs are produced by the parser as `Global.init p` (single-
+      -- component name). Compare via `Global.init p == ref` so the predicate
+      -- aligns with `mkParamSubst` (which keys on `Global.init p` exactly).
+      if params.any (fun p => Global.init p == ref) then .ok ()
       else match decls.getByKey ref with
       | some (.dataType dt) =>
-        unless dt.params.isEmpty do throw $ .wrongNumTypeArgs ref 0 dt.params.length
-      | some _ => throw $ .notADataType ref
-      | none => throw $ .unboundGlobal ref
+        if dt.params.isEmpty then .ok ()
+        else .error (.wrongNumTypeArgs ref 0 dt.params.length)
+      | some _ => .error (.notADataType ref)
+      | none => .error (.unboundGlobal ref)
     | .app g args => match decls.getByKey g with
       | some (.dataType dt) => do
-        unless args.size == dt.params.length do
-          throw $ .wrongNumTypeArgs g args.size dt.params.length
-        args.attach.forM (fun ⟨t, _⟩ => wellFormedType params t)
-      | some _ => throw $ .notADataType g
-      | none => throw $ .unboundGlobal g
-    | _ => pure ()
+        if args.size == dt.params.length then
+          args.attach.forM (fun ⟨t, _⟩ => wellFormedType params t)
+        else
+          .error (.wrongNumTypeArgs g args.size dt.params.length)
+      | some _ => .error (.notADataType g)
+      | none => .error (.unboundGlobal g)
+    | .function ins out => do
+      ins.attach.forM (fun ⟨t, _⟩ => wellFormedType params t)
+      wellFormedType params out
+    | _ => .ok ()
   termination_by t => sizeOf t
 
 /-- Check a function (infer + zonk). -/
@@ -981,7 +1010,8 @@ def checkFunction (function : Function) : CheckM Typed.Function := do
     unless ← unifyTyp body.typ function.output do
       throw $ .typeMismatch body.typ function.output
   let body ← zonkTypedTerm body
-  pure ⟨function.name, function.params, function.inputs, function.output, body, function.entry⟩
+  pure ⟨function.name, function.params, function.inputs, function.output, body, function.entry,
+        function.notPolyEntry⟩
 
 end Aiur
 

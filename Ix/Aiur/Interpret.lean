@@ -404,4 +404,4 @@ def runFunction (decls : Decls) (funcName : Global) (inputs : List Value)
 
 end Aiur
 
-end
+end -- public section

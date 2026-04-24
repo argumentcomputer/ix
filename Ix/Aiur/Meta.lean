@@ -606,36 +606,32 @@ def elabFunction : ElabStxCat `aiur_function
     let g ← mkAppM ``Global.mk #[toExpr i.getId]
     let bindType ← mkAppM ``Prod #[mkConst ``Local, mkConst ``Typ]
     let e := elabEntryBool e
-    mkAppM ``Source.Function.mk
-      #[g, ← elabEmptyList ``String, ← mkListLit bindType [],
-        ← elabRetTyp ty, ← elabTrm t, e]
+    mkAppM ``Source.Function.mono
+      #[g, ← mkListLit bindType [], ← elabRetTyp ty, ← elabTrm t, e]
   | `(aiur_function| $[pub%$e]? fn $i:ident($b:aiur_bind $[, $bs:aiur_bind]*)
         $[-> $ty:aiur_typ]? {$t:aiur_trm}) => do
     let g ← mkAppM ``Global.mk #[toExpr i.getId]
     let bindType ← mkAppM ``Prod #[mkConst ``Local, mkConst ``Typ]
     let e := elabEntryBool e
-    mkAppM ``Source.Function.mk
-      #[g, ← elabEmptyList ``String,
-        ← elabListCore b bs elabBind bindType,
+    mkAppM ``Source.Function.mono
+      #[g, ← elabListCore b bs elabBind bindType,
         ← elabRetTyp ty, ← elabTrm t, e]
   | `(aiur_function| fn $i:ident‹$p:ident $[, $ps:ident]*›()
         $[-> $ty:aiur_typ]? {$t:aiur_trm}) => do
     let g ← mkAppM ``Global.mk #[toExpr i.getId]
     let (_, paramsExpr) ← elabTypeParams p ps
     let bindType ← mkAppM ``Prod #[mkConst ``Local, mkConst ``Typ]
-    mkAppM ``Source.Function.mk
-      #[g, paramsExpr, ← mkListLit bindType [],
-        ← elabRetTyp ty, ← elabTrm t, mkConst ``Bool.false]
+    mkAppM ``Source.Function.poly
+      #[g, paramsExpr, ← mkListLit bindType [], ← elabRetTyp ty, ← elabTrm t]
   | `(aiur_function| fn $i:ident‹$p:ident $[, $ps:ident]*›
         ($b:aiur_bind $[, $bs:aiur_bind]*)
         $[-> $ty:aiur_typ]? {$t:aiur_trm}) => do
     let g ← mkAppM ``Global.mk #[toExpr i.getId]
     let (_, paramsExpr) ← elabTypeParams p ps
     let bindType ← mkAppM ``Prod #[mkConst ``Local, mkConst ``Typ]
-    mkAppM ``Source.Function.mk
-      #[g, paramsExpr,
-        ← elabListCore b bs elabBind bindType,
-        ← elabRetTyp ty, ← elabTrm t, mkConst ``Bool.false]
+    mkAppM ``Source.Function.poly
+      #[g, paramsExpr, ← elabListCore b bs elabBind bindType,
+        ← elabRetTyp ty, ← elabTrm t]
   | stx => throw $ .error stx "Invalid syntax for function"
 where
   elabEntryBool : Option Syntax → Expr

@@ -9,6 +9,7 @@ same datatype.
 -/
 
 public section
+@[expose] section
 
 namespace Aiur
 
@@ -43,7 +44,7 @@ inductive Op
   | u8LessThan : ValIdx → ValIdx → Op
   | u32LessThan : ValIdx → ValIdx → Op
   | debug : String → Option (Array ValIdx) → Op
-  deriving Repr, BEq, Hashable
+  deriving Repr, Hashable, DecidableEq
 
 mutual
   inductive Ctrl where
@@ -61,7 +62,47 @@ mutual
     deriving Inhabited, Repr
 end
 
-deriving instance BEq, Hashable for Ctrl, Block
+deriving instance Hashable for Ctrl, Block
+
+
+-- Manual mutual `BEq Block` / `BEq Ctrl` via `Array.attach` for termination
+-- through nested `Array (G × Block)`. Each element carries `h : (k, b) ∈ br`,
+-- giving `sizeOf b < sizeOf br` via `Array.sizeOf_lt_of_mem`. Derived
+-- `deriving BEq` for this mutual-nested shape is opaque (see TACTICS.md §
+-- "Nested-inductive deriving BEq is opaque") — the manual version below is
+-- reducible in proofs.
+
+mutual
+  def Ctrl.beq : Ctrl → Ctrl → Bool
+    | .return s₁ v₁, .return s₂ v₂ => s₁ == s₂ && v₁ == v₂
+    | .yield s₁ v₁, .yield s₂ v₂ => s₁ == s₂ && v₁ == v₂
+    | .match v₁ br₁ none, .match v₂ br₂ none =>
+      v₁ == v₂ && Ctrl.beqBranches br₁.toList br₂.toList
+    | .match v₁ br₁ (some b₁), .match v₂ br₂ (some b₂) =>
+      v₁ == v₂ && Ctrl.beqBranches br₁.toList br₂.toList && Block.beq b₁ b₂
+    | .matchContinue v₁ br₁ none o₁ sa₁ sl₁ k₁,
+      .matchContinue v₂ br₂ none o₂ sa₂ sl₂ k₂ =>
+      v₁ == v₂ && o₁ == o₂ && sa₁ == sa₂ && sl₁ == sl₂ &&
+      Ctrl.beqBranches br₁.toList br₂.toList &&
+      Block.beq k₁ k₂
+    | .matchContinue v₁ br₁ (some b₁) o₁ sa₁ sl₁ k₁,
+      .matchContinue v₂ br₂ (some b₂) o₂ sa₂ sl₂ k₂ =>
+      v₁ == v₂ && o₁ == o₂ && sa₁ == sa₂ && sl₁ == sl₂ &&
+      Ctrl.beqBranches br₁.toList br₂.toList &&
+      Block.beq b₁ b₂ &&
+      Block.beq k₁ k₂
+    | _, _ => false
+  def Ctrl.beqBranches : List (G × Block) → List (G × Block) → Bool
+    | [], [] => true
+    | (k₁, b₁) :: rest₁, (k₂, b₂) :: rest₂ =>
+      k₁ == k₂ && Block.beq b₁ b₂ && Ctrl.beqBranches rest₁ rest₂
+    | _, _ => false
+  def Block.beq : Block → Block → Bool
+    | ⟨ops₁, ctrl₁⟩, ⟨ops₂, ctrl₂⟩ => ops₁ == ops₂ && Ctrl.beq ctrl₁ ctrl₂
+end
+
+instance : BEq Ctrl := ⟨Ctrl.beq⟩
+instance : BEq Block := ⟨Block.beq⟩
 
 
 /-- The circuit layout of a function (non-semantic; the bytecode evaluator ignores it). -/
@@ -96,4 +137,5 @@ end Bytecode
 
 end Aiur
 
+end -- @[expose] section
 end
