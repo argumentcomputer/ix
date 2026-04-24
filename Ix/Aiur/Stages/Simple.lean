@@ -19,7 +19,8 @@ Type-level invariants:
   (the non-tail-in-arbitrary-position case is out of scope).
 -/
 
-public section
+@[expose] public section
+
 
 namespace Aiur
 
@@ -119,6 +120,9 @@ structure Function where
   output : Typ
   body : Term
   entry : Bool
+  /-- Polymorphic public entry points are forbidden by construction. -/
+  notPolyEntry : params = [] ∨ entry = false := by
+    first | exact Or.inl rfl | exact Or.inr rfl
   deriving Repr
 
 inductive Declaration
@@ -133,4 +137,4 @@ end Simple
 
 end Aiur
 
-end
+end -- @[expose] public section

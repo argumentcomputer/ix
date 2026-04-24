@@ -1,6 +1,6 @@
 module
 
-public section
+@[expose] public section
 
 namespace Aiur
 
@@ -82,4 +82,4 @@ theorem G.mul_comm (a b : G) : a * b = b * a := by
 
 end Aiur
 
-end
+end -- @[expose] public section

@@ -1,5 +1,5 @@
 module
-public import Ix.Lib
+public import Ix.Aiur.Proofs.Lib
 public import Ix.Aiur.Compiler.Simple
 public import Ix.Aiur.Stages.Concrete
 
@@ -91,7 +91,7 @@ def Typ.toFlatName : Typ → String
 termination_by t => sizeOf t
 decreasing_by all_goals first | decreasing_tactic | grind
 
-def Typ.appendNameLimbs (g : Global) : Typ → Global
+@[expose, reducible] def Typ.appendNameLimbs (g : Global) : Typ → Global
   | .field => g.pushNamespace "G"
   | .unit => g.pushNamespace "Unit"
   | Typ.ref g' =>
@@ -118,7 +118,7 @@ decreasing_by
        -- 1 + sizeOf name + sizeOf args, so we need sizeOf args > 0.
        have := Array.two_le_sizeOf ‹Array Typ›; grind)
 
-def concretizeName (templateName : Global) (args : Array Typ) : Global :=
+@[expose] def concretizeName (templateName : Global) (args : Array Typ) : Global :=
   args.foldl Typ.appendNameLimbs templateName
 
 /-! ## Source → Concrete pattern translation — direct, non-nested subset only.
@@ -195,31 +195,27 @@ tuple, a list of sub-patterns (one per field), the element types, and a
 body `cb`, produce the nested `.letVar`/`.letWild` + `.proj` sequence. Used
 by the single-arm tuple pattern special case of `termToConcrete`'s `.match`. -/
 def destructureTuple (scrutTerm : Concrete.Term) (pats : Array Pattern)
-    (ts : Array Concrete.Typ) (cb : Concrete.Term) : Concrete.Term := Id.run do
-  let mut acc := cb
-  for i in [:pats.size] do
+    (ts : Array Concrete.Typ) (cb : Concrete.Term) : Concrete.Term :=
+  (List.range pats.size).foldl (init := cb) fun acc i =>
     let j := pats.size - 1 - i
     let p := pats[j]?.getD .wildcard
     let eltTyp := ts[j]?.getD .unit
     let projTerm : Concrete.Term := .proj eltTyp false scrutTerm j
-    acc := match p with
-      | .var x => .letVar acc.typ acc.escapes x projTerm acc
-      | _ => .letWild acc.typ acc.escapes projTerm acc
-  acc
+    match p with
+    | .var x => .letVar acc.typ acc.escapes x projTerm acc
+    | _ => .letWild acc.typ acc.escapes projTerm acc
 
 /-- Irrefutable array destructuring: analogous to `destructureTuple` but over
 a homogeneous array scrutinee, using `.get` for each element. -/
 def destructureArray (scrutTerm : Concrete.Term) (pats : Array Pattern)
-    (eltTyp : Concrete.Typ) (cb : Concrete.Term) : Concrete.Term := Id.run do
-  let mut acc := cb
-  for i in [:pats.size] do
+    (eltTyp : Concrete.Typ) (cb : Concrete.Term) : Concrete.Term :=
+  (List.range pats.size).foldl (init := cb) fun acc i =>
     let j := pats.size - 1 - i
     let p := pats[j]?.getD .wildcard
     let getTerm : Concrete.Term := .get eltTyp false scrutTerm j
-    acc := match p with
-      | .var x => .letVar acc.typ acc.escapes x getTerm acc
-      | _ => .letWild acc.typ acc.escapes getTerm acc
-  acc
+    match p with
+    | .var x => .letVar acc.typ acc.escapes x getTerm acc
+    | _ => .letWild acc.typ acc.escapes getTerm acc
 
 /-! ## The main pass
 
@@ -950,18 +946,16 @@ substitution)`. For fully-monomorphic programs, 1 suffices. Pick a generous
 bound: `decls.size + 1`. Caller can raise if polymorphism hits the ceiling. -/
 def concretizeDrainFuel (decls : Typed.Decls) : Nat := decls.size + 1
 
-/-- Specialise every polymorphic template reachable from concrete decls into a
-concrete monomorphic copy, then lower the whole table to `Concrete.Decls`. -/
-def Typed.Decls.concretize (decls : Typed.Decls) :
-    Except ConcretizeError Concrete.Decls := do
-  let pending := concretizeSeed decls
-  let initState : DrainState :=
-    { pending, seen := {}, mono := {}, newFunctions := #[], newDataTypes := #[] }
-  let drained ← concretizeDrain decls (concretizeDrainFuel decls) initState
-  let monoDecls := concretizeBuild decls drained.mono
-    drained.newFunctions drained.newDataTypes
-  let emptyMono : Std.HashMap (Global × Array Typ) Global := {}
-  monoDecls.foldlM (init := default) fun acc (name, d) => do match d with
+/-- The Step-4 lowering step: lowers one `(name, Typed.Declaration)` entry to
+`Concrete.Decls` with an empty mono-map (all template instantiation is baked
+into the keys by `concretizeBuild`). Named so downstream proofs can manipulate
+the final `foldlM` equationally instead of through an anonymous lambda. -/
+def step4Lower :
+    Concrete.Decls → Global × Typed.Declaration →
+      Except ConcretizeError Concrete.Decls :=
+  fun acc (name, d) => do
+    let emptyMono : Std.HashMap (Global × Array Typ) Global := {}
+    match d with
     | .function f =>
       let inputs ← f.inputs.mapM fun (l, t) => do
         let t' ← typToConcrete emptyMono t
@@ -985,6 +979,18 @@ def Typed.Decls.concretize (decls : Typed.Decls) :
       let argTypes ← c.argTypes.mapM (typToConcrete emptyMono)
       let concC : Concrete.Constructor := { nameHead := c.nameHead, argTypes }
       pure (acc.insert name (.constructor concDt concC))
+
+/-- Specialise every polymorphic template reachable from concrete decls into a
+concrete monomorphic copy, then lower the whole table to `Concrete.Decls`. -/
+def Typed.Decls.concretize (decls : Typed.Decls) :
+    Except ConcretizeError Concrete.Decls := do
+  let pending := concretizeSeed decls
+  let initState : DrainState :=
+    { pending, seen := {}, mono := {}, newFunctions := #[], newDataTypes := #[] }
+  let drained ← concretizeDrain decls (concretizeDrainFuel decls) initState
+  let monoDecls := concretizeBuild decls drained.mono
+    drained.newFunctions drained.newDataTypes
+  monoDecls.foldlM (init := default) step4Lower
 
 end Aiur
 

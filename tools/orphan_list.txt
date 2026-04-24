@@ -1,0 +1,137 @@
+# Orphans (in-degree 0, not reachable from compile_correct)
+# Total: 103 across 15 files
+# Reachable from compile_correct: 473 of 835
+
+## CheckSound.lean (6 orphans)
+  L38: Aiur.checkFunction_inner_preserves_inputs
+  L383: Aiur.checkAndSimplify_preserves_input_flat_sum
+  L622: Aiur.checkFunction_inner_preserves_params
+  L830: Aiur.htf_mono_bridge
+  L1209: Aiur.checkFunction_inner_preserves_output
+  L1634: Aiur.constructor_trivial_step
+
+## CompilerPreservation.lean (2 orphans)
+  L952: Aiur.concretize_preserves_runFunction_entry
+  L1002: Aiur.flatten_agree_entry
+
+## CompilerProgress.lean (10 orphans)
+  L895: Aiur.TypedCtorPresentP_default
+  L906: Aiur.ConcreteCtorPresentP_default
+  L1295: Aiur.SourceCtorPresentAux_default
+  L1370: Aiur.SourceCtorPresentAux_ctor_fold
+  L2529: Aiur.TypedDecls_DtNameIsKey_pairs_of_gen
+  L3333: Aiur.CtorPresentBody.rewriteC_nameHead
+  L3442: Aiur.CtorPresentBody.fromSource_ctor_trace
+  L3613: Aiur.CtorPresentBody.fromSource_dt_forward
+  L3761: Aiur.CtorPresentBody.mem_map_ctors_iff
+  L3826: Aiur.CtorPresentBody.pushNamespace_left_inj
+
+## ConcretizeProgress.lean (2 orphans)
+  L283: Aiur.concretize_match_foldlM_ok
+  L365: Aiur.termToConcrete_ok_of_concretizeReady
+
+## ConcretizeSound.lean (28 orphans)
+  L90: Aiur.concretize_drain_mono_has_decl
+  L217: Aiur.concretize_drain_shape_equation
+  L241: Aiur.concretize_build_registers_mono
+  L756: Aiur.FnFreeBody.NotFunctionATyp_concreteTypToSource
+  L823: Aiur.FnFreeBody.unflattenValue_FnFree
+  L2271: Aiur.substInTypedTerm_empty_id
+  L2688: Aiur.rewriteTypedTerm_preserves_RefsDt
+  L3761: Aiur.concretize_step_4_extract
+  L5266: Aiur.step4Lower_dataType_explicit
+  L5371: Aiur.step4Lower_preserves_function_kind_fwd
+  L6244: Aiur.PhaseA2.concretizeBuild_at_typed_ctor_explicit
+  L7015: Aiur.PhaseA2.concretizeBuild_containsKey_newDt_name
+  L7086: Aiur.PhaseA2.dtStep_preserves_ctor_kind_at_unconditional
+  L7147: Aiur.PhaseA2.concretizeBuild_at_newDt_ctor_name
+  L7167: Aiur.PhaseA2.concretizeBuild_at_newDt_name
+  L7183: Aiur.PhaseA2.concretizeBuild_at_newFn_name
+  L7384: Aiur.PhaseA2.concretizeBuild_at_newDt_name_explicit
+  L7467: Aiur.concretize_under_fullymono_preserves_dataType_kind_fwd
+  L7548: Aiur.step4Lower_backward_dataType_kind_at_key
+  L7564: Aiur.step4Lower_backward_function_kind_at_key
+  L7594: Aiur.fnStep_foldl_with_fname_yields_function
+  L7827: Aiur.typFlatSizeBound_zero_eq
+  L7833: Aiur.dataTypeFlatSizeBound_zero_eq
+  L7841: Aiur.typFlatSizeBound_leaf_unit
+  L7848: Aiur.typFlatSizeBound_leaf_field
+  L7855: Aiur.typFlatSizeBound_leaf_pointer
+  L7861: Aiur.typFlatSizeBound_leaf_function
+  L9925: Aiur.DirectDagBody.concretizeBuild_function_origin
+
+## DedupSound.lean (9 orphans)
+  L160: Aiur.partitionRefine_classes_bounded
+  L810: Aiur.array_rewriteOp_eq_of_skeleton_and_callees
+  L913: Aiur.branches_attach_map_skeleton_eq_map
+  L958: Aiur.list_flatMap_map_collectCalleesBlock
+  L2957: dedup_body_and_layout_from_raw_aux
+  L3431: evalOp_congr
+  L3454: evalCtrl_congr
+  L3468: runFunction_congr_at_fuel
+  L3857: Aiur.HFixRawCloseScratch.refine_step_refines
+
+## IOBufferEquiv.lean (1 orphans)
+  L18: Aiur.IOBuffer.equiv_symm
+
+## Lib.lean (2 orphans)
+  L138: Array.two_le_sizeOf
+  L143: Array.foldlM_attach_to_List_foldlM
+
+## LowerCalleesFromLayout.lean (16 orphans)
+  L80: Aiur.mem_block_collectAllCallees
+  L91: Aiur.block_callees_implies_ctrl
+  L1356: term_compile_delta_letVar_match_escape
+  L1383: term_compile_delta_letWild_match_escape
+  L1407: term_compile_delta_letVar_non_match
+  L1458: term_compile_delta_letWild_non_match
+  L1511: term_compile_delta_letLoad
+  L1542: term_compile_delta_debug
+  L1579: term_compile_delta_assertEq
+  L1612: term_compile_delta_ioSetInfo
+  L1647: term_compile_delta_ioWrite
+  L1679: term_compile_delta_ret
+  L1700: term_compile_delta_match
+  L1769: term_compile_delta_letWild_match_continue
+  L3047: IndexMap.getByKey_of_indices_eq
+  L3225: ops_fold_mem_iff
+
+## LowerShared.lean (7 orphans)
+  L60: Aiur.flattenValue_size_of_ValueHasTyp
+  L259: Aiur.flattenValue_slice_at_offset
+  L424: Aiur.IsCore.toExtended
+  L1299: Aiur.T3Private.bumpSelectors_preserves
+  L1302: Aiur.T3Private.bumpLookups_preserves
+  L1305: Aiur.T3Private.addMemSize_preserves
+  L1307: Aiur.T3Private.pushDegree_preserves
+
+## LowerSoundCore.lean (7 orphans)
+  L33: Aiur.Local.eq_implies_beq
+  L83: Aiur.boundFlat_insert
+  L349: Aiur.toIndex_preservation_core
+  L587: Aiur.compileM_typSize_match_run
+  L625: Aiur.proj_offset_compileM_fold_ok
+  L1054: Aiur.flattenValue_attach_flatMap_size_cons
+  L1208: Aiur.toIndex_preservation_core_extended
+
+## SimplifySound.lean (2 orphans)
+  L323: Aiur.simplifyDecls_progress
+  L396: Aiur.simplifyDecls_preservation
+
+## Simulation.lean (6 orphans)
+  L126: Aiur.Simulation.ValueR_of_FnFree_at_entry
+  L144: Aiur.Simulation.entry_R_initial
+  L180: Aiur.Simulation.step_R_preservation_applyGlobal
+  L359: Aiur.Simulation.Array.attach_flatMap_eq_of_pointwise
+  L401: Aiur.Simulation.ValueR_implies_flatten_eq
+  L576: Aiur.Simulation.step_R_preservation_term
+
+## StructCompatible.lean (1 orphans)
+  L424: Aiur.concretize_extract_concrete_function
+
+## ValueEqFlatten.lean (4 orphans)
+  L8: Aiur.ValueEq_iff_flattenValue
+  L13: Aiur.ValueEq.flattenValue_eq
+  L25: Aiur.ValueEq.of_flattenValue
+  L190: Aiur.ValueEq.funcIdx_irrelevant_of_fnFree
+

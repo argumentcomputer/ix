@@ -80,4 +80,4 @@ def buildClaim (funIdx : Bytecode.FunIdx) (input output : Array G) :=
 
 end Aiur
 
-end
+end -- public section

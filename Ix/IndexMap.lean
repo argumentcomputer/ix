@@ -1,5 +1,4 @@
 module
-public import Ix.Lib
 public import Std.Data.HashMap
 
 public section
@@ -122,7 +121,7 @@ def map (f : β → β) : IndexMap α β := by
     rw [hfst]
     exact m.pairsIndexed i hi'
 
-@[inline] def size : Nat :=
+@[inline, expose] def size : Nat :=
   m.pairs.size
 
 @[inline, expose] def getByKey : Option β :=
@@ -269,6 +268,36 @@ theorem getByKey_ne_none_iff_containsKey (m : IndexMap α β) (g : α) :
   Iff.trans (Iff.symm Option.isSome_iff_ne_none)
     (IndexMap.getByKey_isSome_iff_containsKey m g)
 
+omit [EquivBEq α] in
+/-- Converse of `getByKey_of_mem_pairs`: `getByKey a = some b` implies
+`(a, b) ∈ pairs.toList`. Follows from `indices[a]?` + `validIndices` +
+`LawfulBEq` (keys decide equality on the nose). -/
+theorem mem_pairs_of_getByKey [LawfulBEq α] (m : IndexMap α β) (a : α) (b : β)
+    (h : m.getByKey a = some b) : (a, b) ∈ m.pairs.toList := by
+  unfold getByKey at h
+  cases hi : m.indices[a]? with
+  | none => rw [hi] at h; simp at h
+  | some i =>
+    rw [hi] at h
+    have hbind : (some i >>= (fun j => m.pairs[j]?.map Prod.snd))
+                  = m.pairs[i]?.map Prod.snd := rfl
+    rw [hbind] at h
+    have hlt : i < m.pairs.size := (m.validIndices a hi).1
+    have hget? : m.pairs[i]? = some (m.pairs[i]'hlt) := by
+      rw [Array.getElem?_eq_some_iff]; exact ⟨hlt, rfl⟩
+    rw [hget?] at h
+    simp only [Option.map_some, Option.some.injEq] at h
+    have hfstBeq : (m.pairs[i]'hlt).1 == a := (m.validIndices a hi).2
+    have hfstEq : (m.pairs[i]'hlt).1 = a := LawfulBEq.eq_of_beq hfstBeq
+    rw [Array.mem_toList_iff, Array.mem_iff_getElem]
+    refine ⟨i, hlt, ?_⟩
+    cases hp : m.pairs[i]'hlt with
+    | mk a' b' =>
+      rw [hp] at hfstEq h
+      simp only at h
+      subst hfstEq
+      exact Prod.mk.injEq _ _ _ _ |>.mpr ⟨rfl, h⟩
+
 /-- Swapped-order form of `containsKey_insert_iff`. -/
 theorem containsKey_insert_iff_or (m : IndexMap α β) (a g : α) (b : β) :
     (m.insert a b).containsKey g ↔ m.containsKey g ∨ (a == g) = true := by
@@ -277,99 +306,71 @@ theorem containsKey_insert_iff_or (m : IndexMap α β) (a g : α) (b : β) :
   · rintro (h | h); exact Or.inr h; exact Or.inl h
   · rintro (h | h); exact Or.inr h; exact Or.inl h
 
+/-- `IndexMap.insert a b`: point-lookup at `a` returns `some b`. -/
+theorem getByKey_insert_self (m : IndexMap α β) (a : α) (b : β) :
+    (m.insert a b).getByKey a = some b := by
+  have hmem : (a, b) ∈ (m.insert a b).pairs.toList := by
+    rw [Array.mem_toList_iff]
+    unfold IndexMap.insert
+    split
+    · exact Array.mem_push_self
+    · rename_i _ _ idx h
+      have hlt : idx < m.pairs.size := (m.validIndices a h).1
+      rw [Array.mem_iff_getElem]
+      refine ⟨idx, ?_, ?_⟩
+      · rw [Array.size_set]; exact hlt
+      · simp [Array.getElem_set_self]
+  exact IndexMap.getByKey_of_mem_pairs _ a b hmem
+
+/-- `IndexMap.insert a b`: point-lookup at `a'` with `(a == a') = false` is
+unchanged. -/
+theorem getByKey_insert_of_beq_false
+    (m : IndexMap α β) {a a' : α} (b : β) (hne : (a == a') = false) :
+    (m.insert a b).getByKey a' = m.getByKey a' := by
+  unfold IndexMap.getByKey IndexMap.insert
+  split
+  · rename_i _ _ hnone
+    show ((m.indices.insert a m.pairs.size)[a']?.bind
+        ((m.pairs.push (a, b))[·]?.map Prod.snd)) = _
+    rw [Std.HashMap.getElem?_insert]
+    simp only [hne, Bool.false_eq_true, ↓reduceIte]
+    cases hi : m.indices[a']? with
+    | none => simp [Option.bind]
+    | some idx' =>
+      have hlt : idx' < m.pairs.size := (m.validIndices a' hi).1
+      have hlt_push : idx' < (m.pairs.push (a, b)).size := by
+        rw [Array.size_push]; exact Nat.lt_succ_of_lt hlt
+      show Option.map Prod.snd (m.pairs.push (a, b))[idx']? =
+        Option.map Prod.snd m.pairs[idx']?
+      rw [Array.getElem?_eq_getElem hlt_push, Array.getElem?_eq_getElem hlt]
+      simp only [Option.map_some]
+      congr 1
+      rw [Array.getElem_push_lt hlt]
+  · rename_i _ _ idx h
+    show (m.indices[a']?.bind
+        ((m.pairs.set idx (a, b) (m.validIndices a h).1)[·]?.map Prod.snd)) = _
+    cases hi : m.indices[a']? with
+    | none => simp [Option.bind]
+    | some idx' =>
+      have hlt' : idx' < m.pairs.size := (m.validIndices a' hi).1
+      have hpa : (m.pairs[idx]'(m.validIndices a h).1).1 == a := (m.validIndices a h).2
+      have hpa' : (m.pairs[idx']'hlt').1 == a' := (m.validIndices a' hi).2
+      have hidx_ne : idx ≠ idx' := by
+        intro heq
+        subst heq
+        have : a == a' := BEq.trans (BEq.symm hpa) hpa'
+        rw [this] at hne; cases hne
+      have hltSet : idx' < (m.pairs.set idx (a, b) (m.validIndices a h).1).size := by
+        rw [Array.size_set]; exact hlt'
+      show Option.map Prod.snd (m.pairs.set idx (a, b) (m.validIndices a h).1)[idx']? =
+        Option.map Prod.snd m.pairs[idx']?
+      rw [Array.getElem?_eq_getElem hltSet, Array.getElem?_eq_getElem hlt']
+      simp only [Option.map_some]
+      congr 1
+      rw [Array.getElem_set_ne (xs := m.pairs) (i := idx) (j := idx')
+        (v := (a, b)) (h' := (m.validIndices a h).1) (pj := hlt') hidx_ne]
+
 end Proofs
-
-/-! ## Generic `foldlM` key-preservation
-
-`List.foldlM` / `IndexMap.foldlM` over an insert-only step function preserves
-keys modulo the pairs seen. The three lemmas below package this as
-insert-only key-set invariants for folds that build up an `IndexMap`. -/
-
-section FoldlM
-
-variable {α : Type _} {β γ : Type _} [BEq α] [Hashable α]
-
-/-- `List.foldlM` over an `insert`-only step preserves keys modulo pairs seen. -/
-theorem List.foldlM_insertKey_iff
-    {ε : Type}
-    (step : IndexMap α γ → α × β → Except ε (IndexMap α γ))
-    (hstep : ∀ (acc : IndexMap α γ) (p : α × β) (r : IndexMap α γ),
-      step acc p = .ok r →
-      ∀ g, r.containsKey g ↔ acc.containsKey g ∨ (p.1 == g) = true)
-    (g : α) (pairs : List (α × β)) :
-    ∀ (init : IndexMap α γ) (result : IndexMap α γ),
-    _root_.List.foldlM step init pairs = .ok result →
-    (result.containsKey g ↔
-     init.containsKey g ∨ ∃ p ∈ pairs, (p.1 == g) = true) := by
-  induction pairs with
-  | nil =>
-    intro init result h
-    simp only [_root_.List.foldlM_nil, pure, Except.pure, Except.ok.injEq] at h
-    subst h
-    simp
-  | cons hd tl ih =>
-    intro init result h
-    simp only [_root_.List.foldlM_cons, bind, Except.bind] at h
-    rcases hok : step init hd with _ | acc'
-    · rw [hok] at h; simp at h
-    · rw [hok] at h
-      have hihv := ih acc' result h
-      have hkeys := hstep init hd acc' hok g
-      constructor
-      · intro hres
-        rcases hihv.mp hres with h1 | ⟨p, hp, hpe⟩
-        · rcases hkeys.mp h1 with h2 | h2
-          · exact Or.inl h2
-          · exact Or.inr ⟨hd, _root_.List.mem_cons_self, h2⟩
-        · exact Or.inr ⟨p, _root_.List.mem_cons_of_mem _ hp, hpe⟩
-      · rintro (h1 | ⟨p, hp, hpe⟩)
-        · exact hihv.mpr (Or.inl (hkeys.mpr (Or.inl h1)))
-        · rcases _root_.List.mem_cons.mp hp with rfl | htl'
-          · exact hihv.mpr (Or.inl (hkeys.mpr (Or.inr hpe)))
-          · exact hihv.mpr (Or.inr ⟨p, htl', hpe⟩)
-
-variable [EquivBEq α] [LawfulHashable α]
-
-/-- Specialisation to `init := default`. -/
-theorem List.foldlM_insertKey_default_iff
-    {ε : Type}
-    (step : IndexMap α γ → α × β → Except ε (IndexMap α γ))
-    (hstep : ∀ (acc : IndexMap α γ) (p : α × β) (r : IndexMap α γ),
-      step acc p = .ok r →
-      ∀ g, r.containsKey g ↔ acc.containsKey g ∨ (p.1 == g) = true)
-    (g : α) (pairs : List (α × β)) (result : IndexMap α γ)
-    (h : _root_.List.foldlM step default pairs = .ok result) :
-    result.containsKey g ↔ ∃ p ∈ pairs, (p.1 == g) = true := by
-  have := List.foldlM_insertKey_iff step hstep g pairs default result h
-  rw [this]; simp [IndexMap.containsKey_default]
-
-/-- Lift `IndexMap.foldlM` (via its `.pairs : Array`) to `List.foldlM`. -/
-theorem indexMap_foldlM_eq_list_foldlM.{ua, ub, us, ue}
-    {α : Type ua} {β : Type ub} {State : Type us} {Err : Type ue}
-    [BEq α] [Hashable α]
-    (m : IndexMap α β) (step : State → α × β → Except Err State) (init : State) :
-    m.foldlM (init := init) step =
-    _root_.List.foldlM step init m.pairs.toList := by
-  unfold IndexMap.foldlM
-  rw [← Array.foldlM_toList]
-
-/-- IndexMap-form of `List.foldlM_insertKey_default_iff`. -/
-theorem indexMap_foldlM_insertKey_default_iff
-    {ε : Type}
-    (m : IndexMap α β)
-    (step : IndexMap α γ → α × β → Except ε (IndexMap α γ))
-    (hstep : ∀ (acc : IndexMap α γ) (p : α × β) (r : IndexMap α γ),
-      step acc p = .ok r →
-      ∀ g, r.containsKey g ↔ acc.containsKey g ∨ (p.1 == g) = true)
-    (g : α) (result : IndexMap α γ)
-    (h : m.foldlM (init := default) step = .ok result) :
-    result.containsKey g ↔ ∃ p ∈ m.pairs.toList, (p.1 == g) = true := by
-  have hlist : _root_.List.foldlM step default m.pairs.toList = .ok result := by
-    have := indexMap_foldlM_eq_list_foldlM (State := IndexMap α γ) (Err := ε) m step default
-    rw [this] at h; exact h
-  exact List.foldlM_insertKey_default_iff step hstep g m.pairs.toList result hlist
-
-end FoldlM
 
 end IndexMap
 

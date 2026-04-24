@@ -112,12 +112,20 @@ by the checker). Mirrors `Layout.DataType.size:49-57`.
 
 **On the `Nat` parameter that looks like fuel.** It's a *bound* on the remaining
 recursion depth, not user-facing fuel. The outer interfaces
-`typFlatSize` / `dataTypeFlatSize` set the bound to `decls.size + 1`; the visited
-set's monotonic growth (capped at `decls.size`) guarantees the bound is never
-exhausted on well-formed inputs. To eliminate this Nat parameter entirely we'd
-need to refine `visited` to a subtype enforcing `visited.size ≤ decls.size` —
-that's a multi-hour refactor that produces equivalent provability with more
-ceremony, so we keep the bound parameter.
+`typFlatSize` / `dataTypeFlatSize` set the bound to
+`decls.size + decls.maxTypDepth + 1` — `decls.size + 1` for the
+`.ref`/`.app` cycle-walking budget (one fresh dt-key inserted into `visited`
+per recursion step, capped by `decls.size`) plus `decls.maxTypDepth` for
+the syntactic-descent budget through nested `.tuple` / `.array` levels.
+The widening summand is essential: without it, a syntactically-deep type
+like `data T = ctor (.tuple [.tuple [.tuple [.field]]])` with `decls.size = 1`
+would exhaust the bound and return `0`, even though the bound parameter is
+nominally a "fuel" cap. With the widening, both the cycle and syntactic-depth
+budgets are respected, so the bound is never exhausted on well-formed inputs.
+To eliminate this Nat parameter entirely we'd need to refine `visited` to a
+subtype enforcing `visited.size ≤ decls.size` plus thread an explicit
+syntactic-depth witness — that's a multi-hour refactor that produces
+equivalent provability with more ceremony, so we keep the bound parameter.
 
 (This is *not* the same as the fuel in the reference evaluators, which is
 genuine semantic call-counting and cannot be removed.)
@@ -159,15 +167,26 @@ def dataTypeFlatSizeBound (decls : Source.Decls) : Nat → HashSet Global → Da
 
 end
 
-/-- Outer interface. The bound `decls.size + 1` cannot be exhausted given the
-visited-set monotonicity (each step adds one fresh datatype name to `visited`,
-which is bounded by `decls.size`), but the function is sound regardless: if the
-bound were exhausted it returns `0`/`1`, which only matters on ill-formed inputs. -/
+/-- Outer interface. The bound `decls.size + decls.maxTypDepth + 1` cannot be
+exhausted on well-formed inputs:
+
+- the visited-set monotonicity contributes the `decls.size + 1` summand (each
+  `.ref` / `.app` recursion step inserts one fresh datatype name into
+  `visited`, bounded by `decls.size`);
+- the `decls.maxTypDepth` summand absorbs the syntactic descent through nested
+  `.tuple` / `.array` arms, since `.tuple ts` / `.array t n` consume bound at
+  the syntactic-descent depth (not the cycle-recursion depth).
+
+If the bound were exhausted it returns `0`/`1`, which only matters on
+ill-formed inputs. The widening matters in proofs (`#5sat` saturation chain):
+the bound parameter actually used by the recursion is *both* large enough to
+walk the dt-DAG once (visited cap) AND large enough to descend through the
+deepest nested type. -/
 def typFlatSize (decls : Source.Decls) (visited : HashSet Global) (t : Typ) : Nat :=
-  typFlatSizeBound decls (decls.size + 1) visited t
+  typFlatSizeBound decls (decls.size + decls.maxTypDepth + 1) visited t
 
 def dataTypeFlatSize (decls : Source.Decls) (visited : HashSet Global) (dt : DataType) : Nat :=
-  dataTypeFlatSizeBound decls (decls.size + 1) visited dt
+  dataTypeFlatSizeBound decls (decls.size + decls.maxTypDepth + 1) visited dt
 
 /-! ## Flattening: `Value → Array G` -/
 
@@ -276,7 +295,7 @@ termination_by v => sizeOf v
 
 /-- Read a structured `Value` from a flat `Array G`, guided by the type.
 Fuel-bounded like `typFlatSize`; the outer `unflattenValue` uses the same
-`decls.size + 1` bound. -/
+`decls.size + decls.maxTypDepth + 1` bound. -/
 def unflattenValueBound (decls : Source.Decls) (gs : Array G) :
     Nat → Nat → Typ → Value × Nat
   | 0, _, _ => (.unit, 0)
@@ -316,10 +335,11 @@ def unflattenValueBound (decls : Source.Decls) (gs : Array G) :
   | _+1, _, .mvar _ => (.unit, 0)
 termination_by bound _ _ => bound
 
-/-- Outer interface; the recursion bound is `decls.size + 1` (see note above). -/
+/-- Outer interface; the recursion bound is `decls.size + decls.maxTypDepth + 1`
+(see note above). -/
 def unflattenValue (decls : Source.Decls) (gs : Array G) (offset : Nat) (t : Typ) :
     Value × Nat :=
-  unflattenValueBound decls gs (decls.size + 1) offset t
+  unflattenValueBound decls gs (decls.size + decls.maxTypDepth + 1) offset t
 
 open Source in
 /-- Reconstruct structured input `Value`s from a flat `Array G`. -/

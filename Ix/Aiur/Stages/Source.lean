@@ -322,6 +322,30 @@ theorem eq_of_beq {a b : Typ} (h : beq a b = true) : a = b := by
         have hk : k < tl.length := by simp [List.length] at h; omega
         exact ihTl.2 k hk t' hb
 
+/-- Syntactic depth of a `Typ`. Counts nested `.tuple` / `.array` /
+`.function` levels — leaves and `.ref` / `.app` / `.pointer` / `.mvar` count
+as 1 (the flat-size recursion does not descend into pointer / ref / app
+arms beyond a single step, so for the bound-saturation argument only
+`.tuple` / `.array` consume bound by syntactic descent).
+
+Used to widen the outer bound in `typFlatSize` / `dataTypeFlatSize` from
+`decls.size + 1` (insufficient when nested-tuple depth exceeds
+`decls.size`) to `decls.size + decls.maxTypDepth + 1`. -/
+def depth : Typ → Nat
+  | .unit | .field | .pointer _ | .ref _ | .app _ _ | .mvar _ => 1
+  | .tuple ts =>
+      1 + ts.attach.foldl (init := 0) fun acc ⟨t, _⟩ => max acc (depth t)
+  | .array t _ => 1 + depth t
+  | .function ins out =>
+      1 + max (depth out)
+        (ins.foldl (init := 0) fun acc t => max acc (depth t))
+termination_by t => sizeOf t
+decreasing_by
+  all_goals first
+    | decreasing_tactic
+    | (have := Array.sizeOf_lt_of_mem ‹_ ∈ _›; grind)
+    | (have := List.sizeOf_lt_of_mem ‹_ ∈ _›; grind)
+
 end Typ
 
 instance : BEq Typ := ⟨Typ.beq⟩
@@ -397,6 +421,24 @@ structure Constructor where
   argTypes : List Typ
   deriving Repr, BEq, Inhabited
 
+instance : LawfulBEq Constructor where
+  eq_of_beq := by
+    intro a b h
+    cases a; cases b
+    rename_i n₁ a₁ n₂ a₂
+    have h' : (n₁ == n₂ && a₁ == a₂) = true := h
+    rw [Bool.and_eq_true] at h'
+    obtain ⟨h1, h2⟩ := h'
+    have e1 := eq_of_beq h1
+    have e2 := eq_of_beq h2
+    subst e1; subst e2; rfl
+  rfl := by
+    intro a
+    cases a
+    rename_i n a
+    show (n == n && a == a) = true
+    simp
+
 structure DataType where
   name : Global
   params : List String
@@ -418,7 +460,27 @@ structure Function where
   output : Typ
   body : Term
   entry : Bool
-  deriving Repr, Inhabited
+  /-- Polymorphic public entry points are forbidden by construction:
+  either the function is monomorphic (`params = []`) or not public
+  (`entry = false`). -/
+  notPolyEntry : params = [] ∨ entry = false := by
+    first | exact Or.inl rfl | exact Or.inr rfl
+  deriving Repr
+
+instance : Inhabited Function where
+  default :=
+    { name := default, params := [], inputs := default, output := default,
+      body := default, entry := default, notPolyEntry := Or.inl rfl }
+
+/-- Smart constructor for monomorphic functions (`params = []`). -/
+def Function.mono (name : Global) (inputs : List (Local × Typ))
+    (output : Typ) (body : Term) (entry : Bool) : Function :=
+  { name, params := [], inputs, output, body, entry, notPolyEntry := Or.inl rfl }
+
+/-- Smart constructor for polymorphic functions (`entry = false` forced). -/
+def Function.poly (name : Global) (params : List String) (inputs : List (Local × Typ))
+    (output : Typ) (body : Term) : Function :=
+  { name, params, inputs, output, body, entry := false, notPolyEntry := Or.inr rfl }
 
 structure Toplevel where
   dataTypes : Array DataType
@@ -456,6 +518,24 @@ inductive Declaration
   deriving Repr, Inhabited
 
 abbrev Decls := IndexMap Global Declaration
+
+/-- Maximum syntactic depth of any `Typ` reachable from a declaration in
+`decls`. Iterates over every constructor / function-input / function-output
+type and takes `Typ.depth`'s max. Used as a widening summand in the outer
+bound of `typFlatSize` / `dataTypeFlatSize` so the bound parameter does
+not under-saturate at deeply-nested-tuple types whose syntactic depth
+exceeds `decls.size`. -/
+def Decls.maxTypDepth (decls : Decls) : Nat :=
+  decls.pairs.foldl (init := 0) fun acc (_, decl) =>
+    match decl with
+    | .dataType dt =>
+        max acc (dt.constructors.foldl (init := 0) fun a c =>
+          max a (c.argTypes.foldl (init := 0) fun b t => max b t.depth))
+    | .constructor _ c =>
+        max acc (c.argTypes.foldl (init := 0) fun b t => max b t.depth)
+    | .function f =>
+        let inDepth := f.inputs.foldl (init := 0) fun b ⟨_, t⟩ => max b t.depth
+        max acc (max inDepth f.output.depth)
 
 end Source
 

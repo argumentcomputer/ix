@@ -106,4 +106,4 @@ def printStats (stats : ExecutionStats) : IO Unit := do
 
 end Aiur
 
-end
+end -- public section
