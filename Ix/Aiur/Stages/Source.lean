@@ -397,6 +397,24 @@ structure Constructor where
   argTypes : List Typ
   deriving Repr, BEq, Inhabited
 
+instance : LawfulBEq Constructor where
+  eq_of_beq := by
+    intro a b h
+    cases a; cases b
+    rename_i n₁ a₁ n₂ a₂
+    have h' : (n₁ == n₂ && a₁ == a₂) = true := h
+    rw [Bool.and_eq_true] at h'
+    obtain ⟨h1, h2⟩ := h'
+    have e1 := eq_of_beq h1
+    have e2 := eq_of_beq h2
+    subst e1; subst e2; rfl
+  rfl := by
+    intro a
+    cases a
+    rename_i n a
+    show (n == n && a == a) = true
+    simp
+
 structure DataType where
   name : Global
   params : List String
@@ -418,7 +436,27 @@ structure Function where
   output : Typ
   body : Term
   entry : Bool
-  deriving Repr, Inhabited
+  /-- Polymorphic public entry points are forbidden by construction:
+  either the function is monomorphic (`params = []`) or not public
+  (`entry = false`). -/
+  notPolyEntry : params = [] ∨ entry = false := by
+    first | exact Or.inl rfl | exact Or.inr rfl
+  deriving Repr
+
+instance : Inhabited Function where
+  default :=
+    { name := default, params := [], inputs := default, output := default,
+      body := default, entry := default, notPolyEntry := Or.inl rfl }
+
+/-- Smart constructor for monomorphic functions (`params = []`). -/
+def Function.mono (name : Global) (inputs : List (Local × Typ))
+    (output : Typ) (body : Term) (entry : Bool) : Function :=
+  { name, params := [], inputs, output, body, entry, notPolyEntry := Or.inl rfl }
+
+/-- Smart constructor for polymorphic functions (`entry = false` forced). -/
+def Function.poly (name : Global) (params : List String) (inputs : List (Local × Typ))
+    (output : Typ) (body : Term) : Function :=
+  { name, params, inputs, output, body, entry := false, notPolyEntry := Or.inr rfl }
 
 structure Toplevel where
   dataTypes : Array DataType

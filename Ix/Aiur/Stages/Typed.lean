@@ -95,6 +95,9 @@ structure Function where
   output : Typ
   body : Term
   entry : Bool
+  /-- Polymorphic public entry points are forbidden by construction. -/
+  notPolyEntry : params = [] ∨ entry = false := by
+    first | exact Or.inl rfl | exact Or.inr rfl
   deriving Repr
 
 inductive Declaration
