@@ -48,6 +48,14 @@ use super::expr_utils::{
 pub(crate) fn generate_recursors_from_expanded(
   sorted_classes: &[Vec<Name>],
   expanded: &super::nested::ExpandedBlock,
+  // `source_of_canonical[canonical_i]` = Lean source-walk index `source_j`
+  // for each canonical aux at position `canonical_i` in the sort_aux-
+  // ordered flat block. Used to emit `all0.rec_{source_j + 1}` naming
+  // directly, matching Lean's exported `.rec_N` / `.below_N` / `.brecOn_N`
+  // numbering. Pass `None` (or an empty slice) to fall back to
+  // `canonical_i + 1` — only safe when there is no alpha-collapse and
+  // no nested-aux hash-sort permutation.
+  source_of_canonical: Option<&[usize]>,
   lean_env: &LeanEnv,
   stt: &crate::ix::compile::CompileState,
   kctx: &crate::ix::compile::KernelCtx,
@@ -88,12 +96,9 @@ pub(crate) fn generate_recursors_from_expanded(
     // block-wide defaults.
     let (all_field, is_rec, is_reflexive, ind_is_unsafe) =
       match lean_env.get(&member.name).as_deref() {
-        Some(ConstantInfo::InductInfo(orig)) => (
-          orig.all.clone(),
-          orig.is_rec,
-          orig.is_reflexive,
-          orig.is_unsafe,
-        ),
+        Some(ConstantInfo::InductInfo(orig)) => {
+          (orig.all.clone(), orig.is_rec, orig.is_reflexive, orig.is_unsafe)
+        },
         _ => (original_names.clone(), true, false, block_is_unsafe),
       };
 
@@ -138,6 +143,10 @@ pub(crate) fn generate_recursors_from_expanded(
     }
   }
 
+  let identity_spec_params = |n: usize| -> Vec<LeanExpr> {
+    (0..n).map(|i| LeanExpr::bvar(Nat::from((n - 1 - i) as u64))).collect()
+  };
+
   // Build pre-flat from the expanded block's auxiliary members.
   // The expand phase already detected nested occurrences and created aux types;
   // we pass these directly so the recursor generator doesn't re-detect (which
@@ -158,7 +167,12 @@ pub(crate) fn generate_recursors_from_expanded(
   for member in expanded.types[expanded.n_originals..].iter() {
     pre_flat.push(CompileFlatMember {
       name: member.name.clone(),
-      spec_params: vec![], // aux types use block params — no spec_params needed
+      // Synthetic aux types are applied to the same block parameters as the
+      // original inductives. `find_rec_target` still matches by
+      // `spec_params`, so this must be the identity substitution rather than
+      // empty; otherwise fields like `List (A α)` are treated as non-recursive
+      // and their minor premises miss the nested IH binder.
+      spec_params: identity_spec_params(member.n_params),
       occurrence_level_args: expanded
         .level_params
         .iter()
@@ -169,14 +183,72 @@ pub(crate) fn generate_recursors_from_expanded(
     });
   }
 
-  generate_canonical_recursors_with_overlay(
+  generate_canonical_recursors_with_layout(
     sorted_classes,
     lean_env,
     Some(&overlay),
     Some(pre_flat),
     stt,
     kctx,
+    None,
+    source_of_canonical,
   )
+}
+
+/// Shared state for rewriting nested-aux Const level args across every
+/// ctor and recursor rule in a block.
+///
+/// The rewrite depends only on the block's `classes` — the set of block
+/// members and their aux-level metadata — so the `aux_info` and
+/// `block_names` maps are identical across every rewrite site within a
+/// single block. Building them once and reusing `walk_cache` across all
+/// rewrites turns per-ctor O(tree_size) walks on a DAG-shared expression
+/// into O(unique_nodes) amortised across all ctors: the same implicit-
+/// arg substructure that appears in ten sibling constructor types is
+/// walked once and cloned on subsequent hits.
+///
+/// `None` (returned by `NestedRewriteCtx::new`) signals "nothing to
+/// rewrite" — either the block has no aux members or every member is an
+/// aux — both conditions imply the `rewrite_nested_const_levels` gate
+/// `!member.is_aux && classes.iter().any(|c| c.is_aux)` is false for
+/// every caller, so we skip allocating the maps entirely.
+struct NestedRewriteCtx {
+  aux_info: std::collections::HashMap<Name, (usize, Vec<Level>)>,
+  block_names: rustc_hash::FxHashSet<Name>,
+  walk_cache: rustc_hash::FxHashMap<blake3::Hash, LeanExpr>,
+}
+
+impl NestedRewriteCtx {
+  fn new(classes: &[FlatInfo], n_classes: usize) -> Option<Self> {
+    let has_aux = classes.iter().any(|c| c.is_aux);
+    let has_user = classes.iter().take(n_classes).any(|c| !c.is_aux);
+    if !has_aux || !has_user {
+      return None;
+    }
+    Some(Self {
+      block_names: classes[..n_classes]
+        .iter()
+        .map(|c| c.name.clone())
+        .collect(),
+      aux_info: classes
+        .iter()
+        .filter(|c| c.is_aux)
+        .map(|c| {
+          (c.name.clone(), (c.own_params, c.occurrence_level_args.clone()))
+        })
+        .collect(),
+      walk_cache: rustc_hash::FxHashMap::default(),
+    })
+  }
+
+  fn rewrite(&mut self, expr: &LeanExpr) -> LeanExpr {
+    super::expr_utils::rewrite_nested_const_levels_cached(
+      expr,
+      &self.aux_info,
+      &self.block_names,
+      &mut self.walk_cache,
+    )
+  }
 }
 
 /// Info about one member of the flat block (original or auxiliary).
@@ -248,6 +320,121 @@ pub(crate) fn generate_canonical_recursors(
 /// `pre_flat`: Optional pre-built flat block (from expand/restore path).
 /// When provided, skips `build_compile_flat_block` and uses these entries
 /// instead. The expanded block already contains the correct auxiliary members.
+/// Reorder the aux section of a flat block per a stored AuxLayout perm.
+///
+/// Inputs:
+/// - `flat`: the flat block with `n_classes` primary members followed by
+///   the aux section in discovery order.
+/// - `n_classes`: number of primary (non-aux) members.
+/// - `layout`: `perm[source_j] = canonical_i` — source-walk position to
+///   canonical (stored) position.
+///
+/// Returns the same `Vec<CompileFlatMember>` with the aux section
+/// reordered so that the member currently at discovery index
+/// `source_j` ends up at canonical index `canonical_i`, for each
+/// source_j with `perm[source_j] != PERM_OUT_OF_SCC`.
+///
+/// Error cases (returns `Err((original_flat, msg))`):
+/// - Perm length mismatches the current aux count (reconstructed env
+///   diverged).
+/// - A canonical slot has no source mapping.
+fn reorder_flat_by_layout(
+  flat: Vec<super::nested::CompileFlatMember>,
+  n_classes: usize,
+  layout: &crate::ix::ixon::env::AuxLayout,
+) -> Result<
+  Vec<super::nested::CompileFlatMember>,
+  (Vec<super::nested::CompileFlatMember>, String),
+> {
+  let n_aux = flat.len().saturating_sub(n_classes);
+  if n_aux == 0 {
+    return Ok(flat); // Nothing to reorder.
+  }
+
+  // Determine canonical slot count from perm. Under alpha-collapse
+  // dedup, perm.len() may exceed canonical count (multiple source
+  // positions map to the same canonical).
+  let max_canon = layout
+    .perm
+    .iter()
+    .filter(|&&v| v != super::nested::PERM_OUT_OF_SCC)
+    .max()
+    .copied()
+    .map(|m| m + 1)
+    .unwrap_or(0);
+  if max_canon != n_aux {
+    return Err((
+      flat,
+      format!(
+        "aux_layout perm claims {max_canon} canonical slots but flat \
+         has {n_aux} aux members"
+      ),
+    ));
+  }
+  if layout.perm.len() != n_aux {
+    // Current decompile path is discovery-order — so perm.len() equals
+    // n_aux for bijective cases. Under alpha-collapse this may not
+    // hold; allow but log.
+    if layout.perm.len() < n_aux {
+      return Err((
+        flat,
+        format!(
+          "aux_layout perm has {} source positions but flat discovered \
+           {n_aux} auxes (need perm.len() >= n_aux)",
+          layout.perm.len()
+        ),
+      ));
+    }
+  }
+
+  // For each canonical slot, pick the FIRST source_j with
+  // perm[source_j] == canonical_i (stable rule).
+  let mut canon_repr = vec![usize::MAX; n_aux];
+  for (source_j, &canon_i) in layout.perm.iter().enumerate() {
+    if canon_i != super::nested::PERM_OUT_OF_SCC
+      && canon_i < n_aux
+      && canon_repr[canon_i] == usize::MAX
+      && source_j < n_aux
+    {
+      canon_repr[canon_i] = source_j;
+    }
+  }
+
+  // Verify every canonical slot has a source representative.
+  for (ci, &sj) in canon_repr.iter().enumerate() {
+    if sj == usize::MAX {
+      return Err((
+        flat,
+        format!("aux_layout perm: canonical slot {ci} has no source mapping"),
+      ));
+    }
+  }
+
+  // Rebuild `flat` with aux section in canonical order. Primary
+  // members [0..n_classes) are preserved as-is; aux members
+  // [n_classes..) are placed per canon_repr.
+  let mut primary: Vec<super::nested::CompileFlatMember> =
+    flat[..n_classes].to_vec();
+  let aux_src: Vec<super::nested::CompileFlatMember> =
+    flat[n_classes..].to_vec();
+  for canonical_i in 0..n_aux {
+    let source_j = canon_repr[canonical_i];
+    if source_j >= aux_src.len() {
+      return Err((
+        flat,
+        format!(
+          "aux_layout perm: canon_repr[{canonical_i}] = {source_j} >= \
+           n_aux ({})",
+          aux_src.len()
+        ),
+      ));
+    }
+    primary.push(aux_src[source_j].clone());
+  }
+
+  Ok(primary)
+}
+
 pub(crate) fn generate_canonical_recursors_with_overlay(
   sorted_classes: &[Vec<Name>],
   lean_env: &LeanEnv,
@@ -255,6 +442,41 @@ pub(crate) fn generate_canonical_recursors_with_overlay(
   pre_flat: Option<Vec<super::nested::CompileFlatMember>>,
   stt: &crate::ix::compile::CompileState,
   kctx: &crate::ix::compile::KernelCtx,
+) -> Result<(Vec<(Name, RecursorVal)>, bool), CompileError> {
+  generate_canonical_recursors_with_layout(
+    sorted_classes,
+    lean_env,
+    overlay,
+    pre_flat,
+    stt,
+    kctx,
+    None,
+    None,
+  )
+}
+
+/// Like [`generate_canonical_recursors_with_overlay`] but accepts an
+/// optional [`crate::ix::ixon::env::AuxLayout`] that reorders the aux
+/// section of the flat block per its `perm` before recursor generation.
+///
+/// This is the hook decompile uses to pin its canonical layout to
+/// compile's first-run result. With `aux_layout = None`, falls back to
+/// the discovery order produced by `build_compile_flat_block_with_overlay`.
+pub(crate) fn generate_canonical_recursors_with_layout(
+  sorted_classes: &[Vec<Name>],
+  lean_env: &LeanEnv,
+  overlay: Option<&LeanEnv>,
+  pre_flat: Option<Vec<super::nested::CompileFlatMember>>,
+  stt: &crate::ix::compile::CompileState,
+  kctx: &crate::ix::compile::KernelCtx,
+  aux_layout: Option<&crate::ix::ixon::env::AuxLayout>,
+  // Optional Lean-source index per canonical aux position, used for
+  // emitting `all0.rec_{source_j + 1}` names directly. If provided
+  // alongside `aux_layout`, both must agree (this parameter takes
+  // precedence at name-construction sites); if omitted and
+  // `aux_layout` is `Some`, it is derived from `aux_layout.perm`.
+  // If both are `None`, naming falls back to `canonical_i + 1`.
+  source_of_canonical: Option<&[usize]>,
 ) -> Result<(Vec<(Name, RecursorVal)>, bool), CompileError> {
   // Lookup helper: check overlay first, then base env.
   let env_get = |name: &Name| -> Option<ConstantInfo> {
@@ -317,6 +539,37 @@ pub(crate) fn generate_canonical_recursors_with_overlay(
     )?
   };
 
+  // If the caller supplied an AuxLayout, reorder the aux section of
+  // `flat` per the stored perm. This is the hook decompile uses to pin
+  // its canonical layout to what compile produced on the first run,
+  // guarding against bundle-hash drift across reconstruction.
+  //
+  // Hard error on size/shape mismatch. A stored aux_layout means the
+  // caller has asserted "this block's canonical layout IS this perm —
+  // generate against it". If our current flat-block discovery produces
+  // a different shape, silently falling back to discovery-order
+  // would just mask the inconsistency and emit a mislabeled canonical
+  // form. The right response is to surface the divergence as a
+  // compile error, so the caller (decompile, or anywhere else that
+  // threads an override) can diagnose why its input (classes + env)
+  // doesn't produce the stored layout — usually because the classes
+  // aren't sort_consts-collapsed the way compile originally saw them.
+  let flat = if let Some(layout) = aux_layout {
+    reorder_flat_by_layout(flat, n_classes, layout).map_err(|(_, msg)| {
+      CompileError::InvalidMutualBlock {
+        reason: format!(
+          "aux_layout override rejected: {msg}. The stored layout is \
+           inconsistent with the current flat-block discovery — usually \
+           because the `sorted_classes` passed here don't match the \
+           sort_consts-collapsed classes compile originally saw. See \
+           `docs/ix_canonicity.md` §17.2."
+        ),
+      }
+    })?
+  } else {
+    flat
+  };
+
   // Add auxiliary members (nested occurrences) to classes.
   for fm in flat.iter().skip(n_classes) {
     if let Some(ConstantInfo::InductInfo(ind)) = env_get(&fm.name) {
@@ -343,6 +596,67 @@ pub(crate) fn generate_canonical_recursors_with_overlay(
   }
 
   let n_flat = classes.len();
+  let n_aux = n_flat.saturating_sub(n_classes);
+
+  // Derive `source_of_canonical` for aux name construction. Precedence:
+  //   1. Explicit `source_of_canonical` parameter (compile path).
+  //   2. `aux_layout.perm` → min-source_j per canonical_i (decompile path).
+  //   3. No mapping: use discovery order directly. This is only for the
+  //      no-layout path; when a layout is supplied, every canonical aux must
+  //      have a real Lean source position.
+  //
+  // Output vector length is `n_aux`. Only consulted at aux naming sites
+  // (rec_N construction at ~line 637 and ~1669 below). Owned locally so
+  // we can materialize the derived form for aux_layout-only callers.
+  let source_of_canonical_owned: Option<Vec<usize>> = match (
+    source_of_canonical,
+    aux_layout,
+  ) {
+    (Some(_), _) => None,
+    (None, Some(layout)) => {
+      let mut s = vec![usize::MAX; n_aux];
+      for (src_j, &canon_i) in layout.perm.iter().enumerate() {
+        if canon_i != super::nested::PERM_OUT_OF_SCC
+          && canon_i < n_aux
+          && s[canon_i] == usize::MAX
+        {
+          s[canon_i] = src_j;
+        }
+      }
+      for (ci, &slot) in s.iter().enumerate() {
+        if slot == usize::MAX {
+          return Err(CompileError::InvalidMutualBlock {
+            reason: format!(
+              "aux_layout perm has no source mapping for canonical aux #{ci}; refusing to synthesize canonical-indexed _N names",
+            ),
+          });
+        }
+      }
+      Some(s)
+    },
+    (None, None) => None,
+  };
+  let source_of_canonical: Option<&[usize]> =
+    source_of_canonical.or(source_of_canonical_owned.as_deref());
+  if let Some(source_of_canonical) = source_of_canonical {
+    if source_of_canonical.len() < n_aux {
+      return Err(CompileError::InvalidMutualBlock {
+        reason: format!(
+          "source_of_canonical has {} entries for {n_aux} canonical aux members",
+          source_of_canonical.len(),
+        ),
+      });
+    }
+    for (ci, &source_j) in source_of_canonical.iter().take(n_aux).enumerate() {
+      if source_j == usize::MAX {
+        return Err(CompileError::InvalidMutualBlock {
+          reason: format!(
+            "source_of_canonical has no source mapping for canonical aux #{ci}; refusing to synthesize canonical-indexed _N names",
+          ),
+        });
+      }
+    }
+  }
 
   let n_minors: usize = classes.iter().map(|fi| fi.ctors.len()).sum();
 
@@ -431,8 +745,7 @@ pub(crate) fn generate_canonical_recursors_with_overlay(
   // Aux (nested) members at index `>= n_classes` are handled separately
   // inside `build_rec_type`'s aux path — they have different structure
   // (spec_params, occurrence_level_args) that doesn't fit this helper.
-  let class_infos: Vec<super::expr_utils::IndRecInfo> = classes
-    [..n_classes]
+  let class_infos: Vec<super::expr_utils::IndRecInfo> = classes[..n_classes]
     .iter()
     .map(|c| {
       super::expr_utils::decompose_inductive_type(
@@ -446,6 +759,15 @@ pub(crate) fn generate_canonical_recursors_with_overlay(
     .collect::<Result<_, _>>()?;
 
   // Generate one recursor per flat member (originals + auxiliaries).
+  //
+  // Block-wide nested-aux rewrite scratch: shared across every
+  // `build_rec_type` and `build_rec_rules` call for this block. The
+  // rewrite is keyed on the ctor-body expression hash; the input ctor
+  // body is invariant across `di` — only motive FVars differ, and those
+  // are injected AFTER the rewrite point — so a single cache amortises
+  // the rewrite work from O(n_flat × unique_subterms) down to
+  // O(unique_subterms) per block.
+  let mut block_nested_rewrite = NestedRewriteCtx::new(&classes, n_classes);
   let mut results = Vec::new();
   for di in 0..n_flat {
     let di_member = &classes[di];
@@ -463,7 +785,14 @@ pub(crate) fn generate_canonical_recursors_with_overlay(
         .first()
         .cloned()
         .unwrap_or_else(|| classes[0].ind.cnst.name.clone());
-      let aux_idx = di - n_classes + 1;
+      let canonical_i = di - n_classes;
+      // Prefer source-indexed `_N` when the caller supplied a perm;
+      // otherwise use discovery order directly. Missing entries were
+      // validated above and are construction errors, not names to invent.
+      let aux_idx = match source_of_canonical {
+        Some(s) => s[canonical_i],
+        None => canonical_i,
+      } + 1;
       Name::str(all0, format!("rec_{}", aux_idx))
     };
 
@@ -489,6 +818,7 @@ pub(crate) fn generate_canonical_recursors_with_overlay(
       overlay,
       stt,
       kctx,
+      block_nested_rewrite.as_mut(),
     );
 
     // Build rules
@@ -500,9 +830,11 @@ pub(crate) fn generate_canonical_recursors_with_overlay(
       &ind_univs,
       &rec_level_params,
       &rec_type,
+      source_of_canonical,
       stt,
       kctx,
-    );
+      block_nested_rewrite.as_mut(),
+    )?;
 
     // Lean propagates the inductive's safety to its recursor (see
     // `refs/lean4/src/kernel/inductive.cpp:774` — `m_is_unsafe` is sourced
@@ -605,6 +937,7 @@ fn collect_binders(expr: &LeanExpr, n: usize) -> Vec<Binder> {
 /// non-aux recursors. Auxiliary (nested) recursors at `di >= n_classes`
 /// still peel the type themselves using `spec_params` substitution.
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)]
 fn build_rec_type(
   di: usize,
   classes: &[FlatInfo],
@@ -622,6 +955,7 @@ fn build_rec_type(
   overlay: Option<&LeanEnv>,
   stt: &crate::ix::compile::CompileState,
   kctx: &crate::ix::compile::KernelCtx,
+  nested_rewrite: Option<&mut NestedRewriteCtx>,
 ) -> LeanExpr {
   let env_get = |name: &Name| -> Option<ConstantInfo> {
     overlay
@@ -671,6 +1005,13 @@ fn build_rec_type(
   }
 
   // --- Minors: build for each flat member's constructors, FVar domains ---
+  //
+  // `nested_rewrite` is caller-owned and shared across every recursor
+  // build in this block (see `generate_canonical_recursors_with_layout`).
+  // Its internal `walk_cache` persists across every ctor rewrite and
+  // across every `di` iteration, amortising DAG traversal to
+  // O(unique_subterms) total per block.
+  let mut nested_rewrite = nested_rewrite;
   for j in 0..n_flat {
     let member_ctors: Vec<ConstructorVal> = if j < n_classes {
       classes[j].ctors.clone()
@@ -702,6 +1043,7 @@ fn build_rec_type(
         rec_level_params,
         stt,
         kctx,
+        nested_rewrite.as_deref_mut(),
       );
       // Domain stays in FVar form — contains param + motive FVars.
       let minor_name = ctor.cnst.name.strip_prefix(ind_name).map_or_else(
@@ -746,9 +1088,8 @@ fn build_rec_type(
   if !di_is_aux {
     let info = &class_infos[di];
     all_decls.extend(info.indices.iter().cloned());
-    index_fvars.extend(
-      info.indices.iter().map(|d| LeanExpr::fvar(d.fvar_name.clone())),
-    );
+    index_fvars
+      .extend(info.indices.iter().map(|d| LeanExpr::fvar(d.fvar_name.clone())));
     major_dom = info.major.domain.clone();
     major_fv_name = info.major.fvar_name.clone();
     major_fv = LeanExpr::fvar(major_fv_name.clone());
@@ -1014,7 +1355,15 @@ fn build_minor_type(
   rec_level_params: &[Name],
   stt: &crate::ix::compile::CompileState,
   kctx: &crate::ix::compile::KernelCtx,
+  // Shared scratch for nested-aux level rewrites across every ctor in
+  // the block. `None` when the block doesn't need any rewriting.
+  mut nested_rewrite: Option<&mut NestedRewriteCtx>,
 ) -> LeanExpr {
+  // `n_classes` is no longer read inside this function since the
+  // nested-aux lookup moved to the caller-owned `nested_rewrite`; keep
+  // the parameter so the call-site signature stays self-describing and
+  // stable across future refactors.
+  let _ = n_classes;
   let member = &classes[class_idx];
   // For auxiliary members, substitute levels with occurrence_level_args.
   // For originals, substitute with the block's ind_univs.
@@ -1055,23 +1404,13 @@ fn build_minor_type(
   // Rewrite nested type universe levels for original members.
   // Lean's kernel recomputes nested type universes from the element's sort
   // (e.g., Array.{u} → Array.{max u v} when applied to Part.{u,v}).
-  // Only rewrite when the Const's args actually reference block members.
-  if !member.is_aux && classes.iter().any(|c| c.is_aux) {
-    let block_names: Vec<Name> =
-      classes[..n_classes].iter().map(|c| c.name.clone()).collect();
-    let aux_info: std::collections::HashMap<Name, (usize, Vec<Level>)> =
-      classes
-        .iter()
-        .filter(|c| c.is_aux)
-        .map(|c| {
-          (c.name.clone(), (c.own_params, c.occurrence_level_args.clone()))
-        })
-        .collect();
-    cur = super::expr_utils::rewrite_nested_const_levels(
-      &cur,
-      &aux_info,
-      &block_names,
-    );
+  // Only rewrite when the Const's args actually reference block members;
+  // the `nested_rewrite` caller-owned scratch is `Some` exactly when the
+  // block contains both user and aux members.
+  if !member.is_aux
+    && let Some(nr) = nested_rewrite.as_deref_mut()
+  {
+    cur = nr.rewrite(&cur);
   }
 
   // Collect fields: peel each field with a fresh FVar.
@@ -1089,12 +1428,8 @@ fn build_minor_type(
   let mut field_fvars: Vec<LeanExpr> = Vec::new();
   let mut rec_fields: Vec<(usize, usize)> = Vec::new(); // (field_idx, target_class)
 
-  let mut scope = super::expr_utils::TcScope::new(
-    param_decls,
-    rec_level_params,
-    stt,
-    kctx,
-  );
+  let mut scope =
+    super::expr_utils::TcScope::new(param_decls, rec_level_params, stt, kctx);
 
   for fi in 0..n_fields {
     match cur.as_data() {
@@ -1109,13 +1444,14 @@ fn build_minor_type(
           domain: clean_dom.clone(),
           info: bi.clone(),
         };
-        if let Some(ci) = find_rec_target(
+        let rec_ci = find_rec_target(
           &clean_dom,
           classes,
           param_fvars,
           n_params,
           &mut scope,
-        ) {
+        );
+        if let Some(ci) = rec_ci {
           rec_fields.push((fi, ci));
         }
         scope.push_locals(std::slice::from_ref(&decl));
@@ -1294,9 +1630,14 @@ fn build_rec_rules(
   ind_univs: &[Level],
   rec_level_params: &[Name],
   rec_type: &LeanExpr,
+  // Lean-source-indexed aux naming (see caller doc). `None` falls back
+  // to `canonical_i + 1`.
+  source_of_canonical: Option<&[usize]>,
   stt: &crate::ix::compile::CompileState,
   kctx: &crate::ix::compile::KernelCtx,
-) -> Vec<RecursorRule> {
+  nested_rewrite: Option<&mut NestedRewriteCtx>,
+) -> Result<Vec<RecursorRule>, CompileError> {
+  let _ = n_classes; // Kept for signature parity with `build_rec_type`.
   let n_flat = classes.len();
   let n_motives = n_flat;
   let n_minors: usize = classes.iter().map(|c| c.ctors.len()).sum();
@@ -1369,12 +1710,8 @@ fn build_rec_rules(
   // of constructor-field domains. Same rationale as `build_minor_type`:
   // delta-unfolding reducible-alias heads matters for recognizing recursive
   // fields hidden under a definition (`reduceCtorParam` family).
-  let mut scope = super::expr_utils::TcScope::new(
-    &pmm_decls,
-    rec_level_params,
-    stt,
-    kctx,
-  );
+  let mut scope =
+    super::expr_utils::TcScope::new(&pmm_decls, rec_level_params, stt, kctx);
 
   let mut rules = Vec::new();
 
@@ -1382,6 +1719,11 @@ fn build_rec_rules(
   // classes before `di`. This gives the correct index into `minor_fvars`.
   let mut global_minor_idx: usize =
     classes[..di].iter().map(|c| c.ctors.len()).sum();
+
+  // Caller-owned nested-aux rewrite scratch; the shared `walk_cache`
+  // also sees hits from `build_rec_type`, which processed the same ctor
+  // bodies ahead of us.
+  let mut nested_rewrite = nested_rewrite;
 
   {
     let class = &classes[di];
@@ -1420,23 +1762,13 @@ fn build_rec_rules(
       if class.is_aux {
         ty = super::expr_utils::beta_reduce(&ty);
       }
-      // Rewrite nested type universe levels for original members.
-      if !class.is_aux && classes.iter().any(|c| c.is_aux) {
-        let block_names: Vec<Name> =
-          classes[..n_classes].iter().map(|c| c.name.clone()).collect();
-        let aux_info: std::collections::HashMap<Name, (usize, Vec<Level>)> =
-          classes
-            .iter()
-            .filter(|c| c.is_aux)
-            .map(|c| {
-              (c.name.clone(), (c.own_params, c.occurrence_level_args.clone()))
-            })
-            .collect();
-        ty = super::expr_utils::rewrite_nested_const_levels(
-          &ty,
-          &aux_info,
-          &block_names,
-        );
+      // Rewrite nested type universe levels for original members via the
+      // caller-owned `nested_rewrite` scratch shared across the whole
+      // block.
+      if !class.is_aux
+        && let Some(nr) = nested_rewrite.as_deref_mut()
+      {
+        ty = nr.rewrite(&ty);
       }
       // Collect fields with FVars, detect recursive fields.
       let mut field_decls: Vec<LocalDecl> = Vec::new();
@@ -1495,7 +1827,17 @@ fn build_rec_rules(
             .first()
             .cloned()
             .unwrap_or_else(|| classes[0].ind.cnst.name.clone());
-          let aux_idx = *target_ci - n_classes + 1;
+          let canonical_i = *target_ci - n_classes;
+          let aux_idx = match source_of_canonical {
+            Some(s) => *s.get(canonical_i).ok_or_else(|| {
+              CompileError::InvalidMutualBlock {
+                reason: format!(
+                  "source_of_canonical missing canonical aux #{canonical_i} while building rule IH",
+                ),
+              }
+            })?,
+            None => canonical_i,
+          } + 1;
           Name::str(all0, format!("rec_{}", aux_idx))
         };
 
@@ -1548,7 +1890,7 @@ fn build_rec_rules(
     }
   }
 
-  rules
+  Ok(rules)
 }
 
 /// Build IH value for a recursive field in a rule RHS using FVars.
@@ -2023,6 +2365,13 @@ fn compute_is_large_and_k(
       },
     );
 
+    // Target types may hide their final `Sort` behind reducible aliases
+    // (`Set`, local `abbrev`s, etc.). Load just those referenced constants
+    // as real KEnv entries before asking the kernel to WHNF the target.
+    let _ig_target_start = std::time::Instant::now();
+    ingress_target_type_deps(&cls_ind.cnst.typ, lean_env, stt, kctx);
+    _ingress_total += _ig_target_start.elapsed();
+
     // Ingress field deps for this class
     let _ig_start = std::time::Instant::now();
     ingress_field_deps(cls, cls_lvl_params, lean_env, stt, kctx);
@@ -2058,13 +2407,14 @@ fn compute_is_large_and_k(
       ),
     })?;
 
-  let is_large = tc
-    .is_large_eliminator(&result_kuniv, &ind_infos)
-    .map_err(|e| CompileError::InvalidMutualBlock {
-      reason: format!(
-        "compute_is_large_and_k: is_large_eliminator failed for {}: {e}",
-        classes[0].ind.cnst.name.pretty()
-      ),
+  let is_large =
+    tc.is_large_eliminator(&result_kuniv, &ind_infos).map_err(|e| {
+      CompileError::InvalidMutualBlock {
+        reason: format!(
+          "compute_is_large_and_k: is_large_eliminator failed for {}: {e}",
+          classes[0].ind.cnst.name.pretty()
+        ),
+      }
     })?;
 
   // Spec-level override: non-Prop inductives always get large elimination
@@ -2073,11 +2423,8 @@ fn compute_is_large_and_k(
   // Param universe that happens to be non-zero syntactically (e.g., u+1)
   // falls through to the single-ctor check and can come back "small".
   // Correct that here using the WHNF-reduced result level.
-  let is_large = if !is_large && !result_kuniv.is_zero() {
-    true
-  } else {
-    is_large
-  };
+  let is_large =
+    if !is_large && !result_kuniv.is_zero() { true } else { is_large };
 
   // Prop determination: use the WHNF-reduced kernel-derived level, not the
   // raw LeanExpr-syntactic path. For reducible-alias targets the syntactic
@@ -2132,12 +2479,161 @@ fn compute_is_large_and_k(
   Ok((is_large, k, is_prop))
 }
 
+/// Ingress constants referenced by an inductive target type with enough
+/// fidelity for WHNF. Definitions are loaded as real `Defn` entries so target
+/// aliases like `Set α := α -> Prop` unfold; non-unfolded constants can remain
+/// type-only unless they are inductives/ctors needed for kernel metadata.
+fn ingress_target_type_deps(
+  target_ty: &LeanExpr,
+  lean_env: &LeanEnv,
+  stt: &crate::ix::compile::CompileState,
+  kctx: &crate::ix::compile::KernelCtx,
+) {
+  let mut seen = rustc_hash::FxHashSet::default();
+  let mut queue = Vec::new();
+  collect_const_refs(target_ty, &mut queue);
+
+  while let Some(name) = queue.pop() {
+    if !seen.insert(name.clone()) {
+      continue;
+    }
+    if let Some(ci) = lean_env.get(&name) {
+      match &*ci {
+        ConstantInfo::DefnInfo(v) => {
+          super::expr_utils::ensure_full_in_kenv_of(&name, lean_env, stt, kctx);
+          collect_const_refs(&v.cnst.typ, &mut queue);
+          collect_const_refs(&v.value, &mut queue);
+        },
+        ConstantInfo::InductInfo(v) => {
+          super::expr_utils::ensure_full_in_kenv_of(&name, lean_env, stt, kctx);
+          collect_const_refs(&v.cnst.typ, &mut queue);
+        },
+        ConstantInfo::CtorInfo(v) => {
+          super::expr_utils::ensure_full_in_kenv_of(&name, lean_env, stt, kctx);
+          collect_const_refs(&v.cnst.typ, &mut queue);
+        },
+        ConstantInfo::ThmInfo(v) => {
+          ingress_type_stub(
+            &name,
+            &v.cnst.typ,
+            &v.cnst.level_params,
+            stt,
+            kctx,
+          );
+          collect_const_refs(&v.cnst.typ, &mut queue);
+        },
+        ConstantInfo::OpaqueInfo(v) => {
+          ingress_type_stub(
+            &name,
+            &v.cnst.typ,
+            &v.cnst.level_params,
+            stt,
+            kctx,
+          );
+          collect_const_refs(&v.cnst.typ, &mut queue);
+        },
+        ConstantInfo::AxiomInfo(v) => {
+          ingress_type_stub(
+            &name,
+            &v.cnst.typ,
+            &v.cnst.level_params,
+            stt,
+            kctx,
+          );
+          collect_const_refs(&v.cnst.typ, &mut queue);
+        },
+        ConstantInfo::QuotInfo(v) => {
+          ingress_type_stub(
+            &name,
+            &v.cnst.typ,
+            &v.cnst.level_params,
+            stt,
+            kctx,
+          );
+          collect_const_refs(&v.cnst.typ, &mut queue);
+        },
+        ConstantInfo::RecInfo(v) => {
+          ingress_type_stub(
+            &name,
+            &v.cnst.typ,
+            &v.cnst.level_params,
+            stt,
+            kctx,
+          );
+          collect_const_refs(&v.cnst.typ, &mut queue);
+        },
+      }
+    }
+  }
+}
+
 /// Walk field domains of constructors and ingress any referenced constants
-/// into the KEnv as Axio stubs (type only), so `infer_type` can look them up.
+/// into the KEnv, so `infer_type` and WHNF can look them up. Reducible
+/// definitions must be real `Defn` entries; otherwise recursive occurrences
+/// hidden under aliases such as `constType (I α) (I α)` are missed.
 fn ingress_field_deps(
   class: &FlatInfo,
   _lvl_params: &[Name],
   lean_env: &LeanEnv,
+  stt: &crate::ix::compile::CompileState,
+  kctx: &crate::ix::compile::KernelCtx,
+) {
+  let mut seen = rustc_hash::FxHashSet::default();
+  let mut queue: Vec<Name> = Vec::new();
+
+  // Collect all Const references from constructor types.
+  for ctor in &class.ctors {
+    collect_const_refs(&ctor.cnst.typ, &mut queue);
+  }
+
+  while let Some(name) = queue.pop() {
+    if !seen.insert(name.clone()) {
+      continue;
+    }
+
+    let Some(ci) = lean_env.get(&name) else { continue };
+    match &*ci {
+      ConstantInfo::DefnInfo(v) => {
+        super::expr_utils::ensure_full_in_kenv_of(&name, lean_env, stt, kctx);
+        collect_const_refs(&v.cnst.typ, &mut queue);
+        collect_const_refs(&v.value, &mut queue);
+      },
+      ConstantInfo::InductInfo(v) => {
+        super::expr_utils::ensure_full_in_kenv_of(&name, lean_env, stt, kctx);
+        collect_const_refs(&v.cnst.typ, &mut queue);
+      },
+      ConstantInfo::CtorInfo(v) => {
+        super::expr_utils::ensure_full_in_kenv_of(&name, lean_env, stt, kctx);
+        collect_const_refs(&v.cnst.typ, &mut queue);
+      },
+      ConstantInfo::AxiomInfo(v) => {
+        ingress_type_stub(&name, &v.cnst.typ, &v.cnst.level_params, stt, kctx);
+        collect_const_refs(&v.cnst.typ, &mut queue);
+      },
+      ConstantInfo::ThmInfo(v) => {
+        ingress_type_stub(&name, &v.cnst.typ, &v.cnst.level_params, stt, kctx);
+        collect_const_refs(&v.cnst.typ, &mut queue);
+      },
+      ConstantInfo::OpaqueInfo(v) => {
+        ingress_type_stub(&name, &v.cnst.typ, &v.cnst.level_params, stt, kctx);
+        collect_const_refs(&v.cnst.typ, &mut queue);
+      },
+      ConstantInfo::RecInfo(v) => {
+        ingress_type_stub(&name, &v.cnst.typ, &v.cnst.level_params, stt, kctx);
+        collect_const_refs(&v.cnst.typ, &mut queue);
+      },
+      ConstantInfo::QuotInfo(v) => {
+        ingress_type_stub(&name, &v.cnst.typ, &v.cnst.level_params, stt, kctx);
+        collect_const_refs(&v.cnst.typ, &mut queue);
+      },
+    }
+  }
+}
+
+fn ingress_type_stub(
+  name: &Name,
+  typ: &LeanExpr,
+  level_params: &[Name],
   stt: &crate::ix::compile::CompileState,
   kctx: &crate::ix::compile::KernelCtx,
 ) {
@@ -2150,60 +2646,26 @@ fn ingress_field_deps(
 
   let n2a = Some(&stt.name_to_addr);
   let aux_n2a = Some(&stt.aux_name_to_addr);
-  let mut seen = rustc_hash::FxHashSet::default();
-  let mut queue: Vec<Name> = Vec::new();
 
-  // Collect all Const references from constructor types
-  for ctor in &class.ctors {
-    collect_const_refs(&ctor.cnst.typ, &mut queue);
+  let addr = resolve_lean_name_addr(name, n2a, aux_n2a);
+  let zid: KId<Meta> = KId::new(addr, name.clone());
+  if kctx.kenv.contains_key(&zid) {
+    return;
   }
 
-  while let Some(name) = queue.pop() {
-    if seen.contains(&name) {
-      continue;
-    }
-    seen.insert(name.clone());
-
-    let addr = resolve_lean_name_addr(&name, n2a, aux_n2a);
-    let zid: KId<Meta> = KId::new(addr, name.clone());
-    if kctx.kenv.contains_key(&zid) {
-      continue;
-    }
-
-    // Look up in LeanEnv and insert as Axio stub
-    if let Some(ci) = lean_env.get(&name) {
-      let (typ, dep_lvl_params) = match &*ci {
-        ConstantInfo::InductInfo(v) => (&v.cnst.typ, &v.cnst.level_params),
-        ConstantInfo::CtorInfo(v) => (&v.cnst.typ, &v.cnst.level_params),
-        ConstantInfo::DefnInfo(v) => (&v.cnst.typ, &v.cnst.level_params),
-        ConstantInfo::AxiomInfo(v) => (&v.cnst.typ, &v.cnst.level_params),
-        ConstantInfo::ThmInfo(v) => (&v.cnst.typ, &v.cnst.level_params),
-        ConstantInfo::OpaqueInfo(v) => (&v.cnst.typ, &v.cnst.level_params),
-        ConstantInfo::RecInfo(v) => (&v.cnst.typ, &v.cnst.level_params),
-        ConstantInfo::QuotInfo(v) => (&v.cnst.typ, &v.cnst.level_params),
-      };
-      let ty_z = lean_expr_to_zexpr_with_kenv(
-        typ,
-        dep_lvl_params,
-        &kctx.kenv,
-        n2a,
-        aux_n2a,
-      );
-      let n_lvls = dep_lvl_params.len() as u64;
-      kctx.kenv.insert(
-        zid,
-        KConst::Axio {
-          name: name.clone(),
-          level_params: dep_lvl_params.clone(),
-          is_unsafe: false,
-          lvls: n_lvls,
-          ty: ty_z,
-        },
-      );
-      // Also collect transitive deps from this type
-      collect_const_refs(typ, &mut queue);
-    }
-  }
+  let ty_z =
+    lean_expr_to_zexpr_with_kenv(typ, level_params, &kctx.kenv, n2a, aux_n2a);
+  let n_lvls = level_params.len() as u64;
+  kctx.kenv.insert(
+    zid,
+    KConst::Axio {
+      name: name.clone(),
+      level_params: level_params.to_vec(),
+      is_unsafe: false,
+      lvls: n_lvls,
+      ty: ty_z,
+    },
+  );
 }
 
 /// Collect all constant names referenced in a LeanExpr.

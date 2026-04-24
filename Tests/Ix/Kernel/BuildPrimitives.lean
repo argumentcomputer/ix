@@ -59,7 +59,7 @@ def kernelPrimitives : Array String := #[
   "Int.add", "Int.sub", "Int.mul", "Int.neg",
   "Int.emod", "Int.ediv",
   "Int.bmod", "Int.bdiv",
-  "Int.natAbs",
+  "Int.natAbs", "Int.pow",
   -- Below/brecOn dependencies — referenced by aux_gen, not Primitives<M>
   -- directly. Kept here so the dump is complete enough to debug drift.
   "PUnit", "PProd", "PProd.mk"

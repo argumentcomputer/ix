@@ -364,11 +364,7 @@ mod tests {
         block: block_id.clone(),
         member_idx: 0,
         ty: rec_ty,
-        rules: vec![RecRule {
-          ctor: Name::anon(),
-          fields: 0,
-          rhs: rule_rhs,
-        }],
+        rules: vec![RecRule { ctor: Name::anon(), fields: 0, rhs: rule_rhs }],
         lean_all: vec![block_id.clone()],
       },
     );
@@ -1099,11 +1095,7 @@ mod tests {
         block: eq_id.clone(),
         member_idx: 0,
         ty: eq_rec_ty,
-        rules: vec![RecRule {
-          ctor: Name::anon(),
-          fields: 0,
-          rhs: rule_rhs,
-        }],
+        rules: vec![RecRule { ctor: Name::anon(), fields: 0, rhs: rule_rhs }],
         lean_all: vec![eq_id.clone()],
       },
     );
@@ -1375,11 +1367,7 @@ mod tests {
         block: block_id.clone(),
         member_idx: 0,
         ty: rec_ty,
-        rules: vec![RecRule {
-          ctor: Name::anon(),
-          fields: 2,
-          rhs: rule_rhs,
-        }],
+        rules: vec![RecRule { ctor: Name::anon(), fields: 2, rhs: rule_rhs }],
         lean_all: vec![block_id.clone()],
       },
     );

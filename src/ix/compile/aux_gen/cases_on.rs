@@ -366,3 +366,226 @@ fn get_minor_name(
   }
   Name::str(Name::anon(), format!("minor_{}", ctor_idx))
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::ix::env::{BinderInfo, ConstantVal, InductiveVal, Literal};
+  use lean_ffi::nat::Nat;
+
+  fn mk_name_for(s: &str) -> Name {
+    let mut n = Name::anon();
+    for part in s.split('.') {
+      n = Name::str(n, part.to_string());
+    }
+    n
+  }
+
+  fn n_lit(x: u64) -> Nat {
+    Nat::from(x)
+  }
+
+  fn sort_prop() -> LeanExpr {
+    LeanExpr::sort(Level::zero())
+  }
+
+  fn prop_inductive_env(ind_name: &str, ctors: &[&str]) -> LeanEnv {
+    let mut env = LeanEnv::default();
+    let ind_name_val = mk_name_for(ind_name);
+    let ctor_names: Vec<Name> = ctors.iter().map(|c| mk_name_for(c)).collect();
+
+    env.insert(
+      ind_name_val.clone(),
+      ConstantInfo::InductInfo(InductiveVal {
+        cnst: ConstantVal {
+          name: ind_name_val.clone(),
+          level_params: vec![],
+          typ: sort_prop(),
+        },
+        num_params: n_lit(0),
+        num_indices: n_lit(0),
+        all: vec![ind_name_val.clone()],
+        ctors: ctor_names,
+        num_nested: n_lit(0),
+        is_rec: false,
+        is_unsafe: false,
+        is_reflexive: false,
+      }),
+    );
+    env
+  }
+
+  /// Build a rec type: `∀ {motive : P → Prop} (mk : motive P.mk) (t : P), motive t`
+  fn unit_prop_rec(ind_name: &str, ctor_name: &str) -> RecursorVal {
+    let p = LeanExpr::cnst(mk_name_for(ind_name), vec![]);
+    let prop = sort_prop();
+    let motive_ty =
+      LeanExpr::all(mk_name_for("t"), p.clone(), prop, BinderInfo::Default);
+    let mk_ty = LeanExpr::app(
+      LeanExpr::bvar(n_lit(0)),
+      LeanExpr::cnst(mk_name_for(ctor_name), vec![]),
+    );
+    let ret = LeanExpr::app(LeanExpr::bvar(n_lit(2)), LeanExpr::bvar(n_lit(0)));
+    let typ = LeanExpr::all(
+      mk_name_for("motive"),
+      motive_ty,
+      LeanExpr::all(
+        mk_name_for("mk"),
+        mk_ty,
+        LeanExpr::all(mk_name_for("t"), p, ret, BinderInfo::Default),
+        BinderInfo::Default,
+      ),
+      BinderInfo::Implicit,
+    );
+    RecursorVal {
+      cnst: ConstantVal {
+        name: mk_name_for(&format!("{ind_name}.rec")),
+        level_params: vec![],
+        typ,
+      },
+      all: vec![mk_name_for(ind_name)],
+      num_params: n_lit(0),
+      num_indices: n_lit(0),
+      num_motives: n_lit(1),
+      num_minors: n_lit(1),
+      rules: vec![],
+      k: true,
+      is_unsafe: false,
+    }
+  }
+
+  /// Count forall binders in `e`.
+  fn count_leading_foralls(e: &LeanExpr) -> usize {
+    let mut n = 0;
+    let mut cur = e.clone();
+    while let ExprData::ForallE(_, _, body, _, _) = cur.as_data() {
+      n += 1;
+      cur = body.clone();
+    }
+    n
+  }
+
+  /// Collect leading forall binder names.
+  fn binder_names(e: &LeanExpr) -> Vec<String> {
+    let mut names = Vec::new();
+    let mut cur = e.clone();
+    while let ExprData::ForallE(name, _, body, _, _) = cur.as_data() {
+      names.push(name.pretty());
+      cur = body.clone();
+    }
+    names
+  }
+
+  // ---- basic generation ----
+
+  #[test]
+  fn cases_on_generates_for_unit_prop() {
+    let env = prop_inductive_env("Unit", &["Unit.mk"]);
+    let rec_val = unit_prop_rec("Unit", "Unit.mk");
+    let co =
+      generate_cases_on(&mk_name_for("Unit.casesOn"), &rec_val, &env).unwrap();
+    assert_eq!(co.name, mk_name_for("Unit.casesOn"));
+    // Expected casesOn binder order: motive, t (major), mk (minor).
+    // The minor binder name is the ctor suffix (prefix "Unit" is stripped
+    // via `get_minor_name`), so `Unit.mk` → `mk`.
+    let names = binder_names(&co.typ);
+    assert_eq!(
+      names,
+      vec!["motive", "t", "mk"],
+      "casesOn reorders major before minors"
+    );
+  }
+
+  #[test]
+  fn cases_on_type_and_value_have_same_arity() {
+    let env = prop_inductive_env("Unit", &["Unit.mk"]);
+    let rec_val = unit_prop_rec("Unit", "Unit.mk");
+    let co =
+      generate_cases_on(&mk_name_for("Unit.casesOn"), &rec_val, &env).unwrap();
+    let type_arity = count_leading_foralls(&co.typ);
+    let value_lambda_count = {
+      let mut n = 0;
+      let mut cur = co.value.clone();
+      while let ExprData::Lam(_, _, body, _, _) = cur.as_data() {
+        n += 1;
+        cur = body.clone();
+      }
+      n
+    };
+    assert_eq!(type_arity, value_lambda_count);
+  }
+
+  #[test]
+  fn cases_on_rejects_wrong_suffix() {
+    let env = prop_inductive_env("Unit", &["Unit.mk"]);
+    let rec_val = unit_prop_rec("Unit", "Unit.mk");
+    // Suffix isn't "casesOn" — function returns None.
+    let r = generate_cases_on(&mk_name_for("Unit.wrong"), &rec_val, &env);
+    assert!(r.is_none());
+  }
+
+  #[test]
+  fn cases_on_rejects_missing_ind_in_env() {
+    let env = LeanEnv::default(); // empty — target inductive not present
+    let rec_val = unit_prop_rec("Unit", "Unit.mk");
+    let r = generate_cases_on(&mk_name_for("Unit.casesOn"), &rec_val, &env);
+    assert!(r.is_none());
+  }
+
+  #[test]
+  fn cases_on_preserves_level_params() {
+    let env = prop_inductive_env("Unit", &["Unit.mk"]);
+    let rec_val = unit_prop_rec("Unit", "Unit.mk");
+    let co =
+      generate_cases_on(&mk_name_for("Unit.casesOn"), &rec_val, &env).unwrap();
+    assert_eq!(co.level_params, rec_val.cnst.level_params);
+  }
+
+  #[test]
+  fn cases_on_preserves_unsafe_bit() {
+    let env = prop_inductive_env("Unit", &["Unit.mk"]);
+    let mut rec_val = unit_prop_rec("Unit", "Unit.mk");
+    rec_val.is_unsafe = true;
+    let co =
+      generate_cases_on(&mk_name_for("Unit.casesOn"), &rec_val, &env).unwrap();
+    assert!(co.is_unsafe);
+  }
+
+  /// Regression: the inner `mk_pi_unit` helper must terminate on a
+  /// non-forall — verify it returns `unit` unchanged in that case.
+  #[test]
+  fn mk_pi_unit_on_non_forall() {
+    let unit = LeanExpr::cnst(mk_name_for("PUnit"), vec![]);
+    let non_forall = LeanExpr::cnst(mk_name_for("Something"), vec![]);
+    let r = mk_pi_unit(&non_forall, &unit);
+    // Body is just `unit` — the non-forall expression is replaced.
+    match r.as_data() {
+      ExprData::Const(n, _, _) => assert_eq!(n, &mk_name_for("PUnit")),
+      _ => panic!("expected unit const"),
+    }
+    // suppress unused-import lint
+    let _ = Literal::NatVal(n_lit(0));
+  }
+
+  #[test]
+  fn mk_pi_unit_preserves_forall_chain() {
+    // ∀ (x : α), body → ∀ (x : α), unit
+    let alpha = LeanExpr::cnst(mk_name_for("α"), vec![]);
+    let body = LeanExpr::cnst(mk_name_for("Body"), vec![]);
+    let forall =
+      LeanExpr::all(mk_name_for("x"), alpha, body, BinderInfo::Default);
+    let unit = LeanExpr::cnst(mk_name_for("PUnit"), vec![]);
+    let r = mk_pi_unit(&forall, &unit);
+    match r.as_data() {
+      ExprData::ForallE(name, _, inner, _, _) => {
+        assert_eq!(name.pretty(), "x");
+        // Inner body should be the unit const.
+        match inner.as_data() {
+          ExprData::Const(n, _, _) => assert_eq!(n, &mk_name_for("PUnit")),
+          _ => panic!("expected unit in body"),
+        }
+      },
+      _ => panic!("expected forall"),
+    }
+  }
+}

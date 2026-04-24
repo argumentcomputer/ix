@@ -101,14 +101,24 @@ pub(crate) fn generate_brecon_constants(
       let brecon_name =
         Name::str(sorted_classes[ci][0].clone(), "brecOn".to_string());
       let all0 = &ind.all[0];
+      // Derive below names from below_consts (source-indexed, matching
+      // canon_kenv's content hashes). Positions align with the canonical
+      // flat block: 0..n_classes = primary belows, n_classes.. = aux belows.
+      let below_names: Vec<Name> = below_consts
+        .iter()
+        .map(|bc| match bc {
+          BelowConstant::Def(d) => d.name.clone(),
+          BelowConstant::Indc(i) => i.name.clone(),
+        })
+        .collect();
       let defs = build_type_brecon_fvar(
         ci,
         rec_val,
         &brecon_name,
         all0,
+        &below_names,
         lean_env,
         n_classes,
-        sorted_classes,
         stt,
         kctx,
       )?;
@@ -143,8 +153,18 @@ pub(crate) fn generate_brecon_constants(
       };
 
       for j in 0..n_aux {
-        let idx = j + 1; // 1-based Lean convention
-        let (_, aux_rec_val) = &canonical_recs[n_classes + j];
+        let (aux_rec_name, aux_rec_val) = &canonical_recs[n_classes + j];
+        // Derive source-indexed suffix from the aux rec's name
+        // (aux_gen already names it `<all0>.rec_{source_j+1}`).
+        let idx = super::below::aux_rec_suffix_idx(aux_rec_name).ok_or_else(|| {
+          CompileError::InvalidMutualBlock {
+            reason: format!(
+              "brecOn aux recursor '{}' is not source-indexed; refusing to synthesize brecOn_{}",
+              aux_rec_name.pretty(),
+              j + 1,
+            ),
+          }
+        })?;
         let brecon_name = Name::str(all0.clone(), format!("brecOn_{idx}"));
 
         // Only generate if this constant exists in the source environment.
@@ -159,14 +179,21 @@ pub(crate) fn generate_brecon_constants(
         }
 
         let ci = n_classes + j; // target motive index in the flat block
+        let below_names: Vec<Name> = below_consts
+          .iter()
+          .map(|bc| match bc {
+            BelowConstant::Def(d) => d.name.clone(),
+            BelowConstant::Indc(i) => i.name.clone(),
+          })
+          .collect();
         let defs = build_type_brecon_fvar(
           ci,
           aux_rec_val,
           &brecon_name,
           &all0,
+          &below_names,
           lean_env,
           n_classes,
-          sorted_classes,
           stt,
           kctx,
         )?;
@@ -333,6 +360,15 @@ fn build_prop_brecon(
 
     let f_name = Name::str(Name::anon(), format!("F_{}", j + 1));
     let (fj_fv_name, fj_fv) = fresh_fvar("pbf", j);
+    if std::env::var("IX_BRECON_DEBUG").is_ok() {
+      eprintln!(
+        "[brecon-build] j={}, below_names[{}]={}, f_type={}",
+        j,
+        j,
+        below_names[j].pretty(),
+        f_type.pretty(),
+      );
+    }
     f_decls.push(LocalDecl {
       fvar_name: fj_fv_name,
       binder_name: f_name,
@@ -584,9 +620,9 @@ fn build_type_brecon_fvar(
   rec_val: &RecursorVal,
   brecon_name: &Name,
   all0: &Name,
+  below_names: &[Name],
   lean_env: &LeanEnv,
   n_classes: usize,
-  sorted_classes: &[Vec<Name>],
   stt: &crate::ix::compile::CompileState,
   kctx: &crate::ix::compile::KernelCtx,
 ) -> Result<Vec<BRecOnDef>, CompileError> {
@@ -608,16 +644,34 @@ fn build_type_brecon_fvar(
 
   let elim_level = Level::param(rec_level_params[0].clone());
 
-  let below_names: Vec<Name> = (0..n_motives)
-    .map(|j| {
-      if j < n_classes {
-        Name::str(sorted_classes[j][0].clone(), "below".to_string())
-      } else {
-        let aux_idx = j - n_classes + 1;
-        Name::str(all0.clone(), format!("below_{}", aux_idx))
-      }
-    })
-    .collect();
+  // below_names for each motive position in the canonical flat block.
+  // Supplied by the caller (from `below_consts`), not locally constructed:
+  // the aux suffixes are Lean-source-indexed (via `aux_rec_suffix_idx` on
+  // the renamed aux_rec_name in `below::generate_below_constants`), so
+  // these names match what `populate_canon_kenv_with_below` inserts
+  // into `canon_kenv`. Building them here from `n_classes + canonical_i`
+  // produces canonical-indexed names that the kernel can't resolve when
+  // `perm` is non-identity, causing TcScope failures on
+  // `mk_const(below_names[j], ...)` applications below.
+  if below_names.len() != n_motives {
+    return Err(CompileError::InvalidMutualBlock {
+      reason: format!(
+        "build_type_brecon_fvar({}): {} below constants for {} recursor motives",
+        brecon_name.pretty(),
+        below_names.len(),
+        n_motives,
+      ),
+    });
+  }
+  let _ = all0;
+  if std::env::var("IX_BRECON_DEBUG").is_ok() {
+    eprintln!(
+      "[brecon] building {} (ci={}): below_names={:?}",
+      brecon_name.pretty(),
+      ci,
+      below_names.iter().map(|n| n.pretty()).collect::<Vec<_>>(),
+    );
+  }
 
   let rec_univs: Vec<Level> =
     rec_level_params.iter().map(|lp| Level::param(lp.clone())).collect();
@@ -1755,8 +1809,10 @@ fn build_indexed_eq_value(
 
   // Validate that `index_fvars` are all FVars — required for `fvar_order`
   // tracking in `build_minor_via_cases_sim`'s symm determination.
-  let n_fvar_indices =
-    index_fvars.iter().filter(|e| matches!(e.as_data(), ExprData::Fvar(..))).count();
+  let n_fvar_indices = index_fvars
+    .iter()
+    .filter(|e| matches!(e.as_data(), ExprData::Fvar(..)))
+    .count();
   if n_fvar_indices != n_indices {
     return None;
   }
@@ -1852,12 +1908,8 @@ fn build_indexed_eq_value(
   //     With a ≠ a_1, it's NOT defEq — Lean uses `HEq`.
   //
   // We use `TcScope::is_def_eq` for the decision.
-  let mut eq_tc = super::expr_utils::TcScope::new(
-    all_decls,
-    rec_level_params,
-    stt,
-    kctx,
-  );
+  let mut eq_tc =
+    super::expr_utils::TcScope::new(all_decls, rec_level_params, stt, kctx);
   // Track which index binders are HEq (for the remaining-list construction
   // below in `build_minor_via_cases_sim`).
   let mut idx_is_heq: Vec<bool> = Vec::with_capacity(n_indices);
@@ -2215,9 +2267,7 @@ fn collect_forward_deps<'a>(
     if d.fvar_name == *abstracted_fvar_name {
       continue;
     }
-    let depends = dep_names
-      .iter()
-      .any(|n| expr_contains_fvar(&d.domain, n));
+    let depends = dep_names.iter().any(|n| expr_contains_fvar(&d.domain, n));
     if depends {
       deps.push(d);
       dep_names.insert(d.fvar_name.clone());
@@ -2354,11 +2404,10 @@ fn handle_substcore_step(
   // Collect forward dependencies — context fvars depending transitively
   // on `abstracted_fvar`. Lean's `revert` pulls these in automatically
   // via `collectForwardDeps` (MetavarContext.lean:1372).
-  let forward_deps_refs = collect_forward_deps(&abstracted_fvar_name, local_context);
-  let forward_deps: Vec<LocalDecl> = forward_deps_refs
-    .iter()
-    .map(|d| (*d).clone())
-    .collect();
+  let forward_deps_refs =
+    collect_forward_deps(&abstracted_fvar_name, local_context);
+  let forward_deps: Vec<LocalDecl> =
+    forward_deps_refs.iter().map(|d| (*d).clone()).collect();
 
   // Build the motive. The motive body is the FULL current goal
   // (`∀ forward_deps. ∀ rest. body`) with `abstracted_fvar` abstracted.
@@ -2416,14 +2465,16 @@ fn handle_substcore_step(
   let new_rest: Vec<(EqBinderKind, LocalDecl)> = rest
     .iter()
     .map(|(k, d)| {
-      let new_domain = subst_fvar(&d.domain, &abstracted_fvar_name, &replacement);
+      let new_domain =
+        subst_fvar(&d.domain, &abstracted_fvar_name, &replacement);
       let new_decl = LocalDecl {
         fvar_name: d.fvar_name.clone(),
         binder_name: d.binder_name.clone(),
         domain: new_domain,
         info: d.info.clone(),
       };
-      let new_kind = subst_in_eq_binder_kind(k, &abstracted_fvar_name, &replacement);
+      let new_kind =
+        subst_in_eq_binder_kind(k, &abstracted_fvar_name, &replacement);
       (new_kind, new_decl)
     })
     .collect();
@@ -2471,7 +2522,13 @@ fn handle_substcore_step(
       // `heqToEq'` redex. Note: `a` and `b` are `lhs` and `rhs` of the
       // eq we're constructing — which for HEq correspond to the HEq's
       // `a` and `b` (homogeneous at this point).
-      mk_eq_of_heq(level, alpha, lhs, rhs, &LeanExpr::fvar(decl.fvar_name.clone()))
+      mk_eq_of_heq(
+        level,
+        alpha,
+        lhs,
+        rhs,
+        &LeanExpr::fvar(decl.fvar_name.clone()),
+      )
     },
   };
 
@@ -2589,12 +2646,7 @@ fn build_minor_via_cases_sim(
       )
     } else {
       eq_ret_types.push(index_decls[i].domain.clone());
-      mk_eq(
-        &idx_sort(i),
-        &index_decls[i].domain,
-        &index_fvars[i],
-        &ret_args[i],
-      )
+      mk_eq(&idx_sort(i), &index_decls[i].domain, &index_fvars[i], &ret_args[i])
     };
     let (fv_name, _) = fresh_fvar(&format!("ieq_eq_c{ctor_idx}"), i);
     eq_decls.push(LocalDecl {
@@ -2608,13 +2660,8 @@ fn build_minor_via_cases_sim(
   // Build the heq binder decl.
   let ctor_ret_type =
     build_specialized_major_type(major_type, index_fvars, ret_args);
-  let heq_ty = mk_heq(
-    major_level,
-    major_type,
-    outer_major,
-    &ctor_ret_type,
-    ctor_applied,
-  );
+  let heq_ty =
+    mk_heq(major_level, major_type, outer_major, &ctor_ret_type, ctor_applied);
   let (heq_name, _) = fresh_fvar(&format!("ieq_heq_c{ctor_idx}"), 0);
   let heq_decl = LocalDecl {
     fvar_name: heq_name,

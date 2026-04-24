@@ -16,7 +16,7 @@ use rustc_hash::FxHashSet;
 
 use crate::ix::address::Address;
 use crate::ix::compile::{
-  BlockCache, CompileState, compile_const, compile_const_no_aux,
+  BlockCache, CompileOptions, CompileState, compile_const, compile_const_no_aux,
 };
 use crate::ix::condense::compute_sccs;
 use crate::ix::env::{Env as LeanEnv, Name};
@@ -100,6 +100,16 @@ where
 pub fn compile_env(
   lean_env: &Arc<LeanEnv>,
 ) -> Result<CompileState, CompileError> {
+  compile_env_with_options(lean_env, CompileOptions::default())
+}
+
+/// Compile an entire Lean environment with explicit resource/correctness
+/// options. See [`CompileOptions`] for the intended call-site split between
+/// trusted Lean environments and adversarial raw-constant tests.
+pub fn compile_env_with_options(
+  lean_env: &Arc<LeanEnv>,
+  options: CompileOptions,
+) -> Result<CompileState, CompileError> {
   let setup_start = Instant::now();
   let phase_start = Instant::now();
   let graph = build_ref_graph(lean_env.as_ref());
@@ -123,10 +133,8 @@ pub fn compile_env(
       phase_start.elapsed().as_secs_f32()
     );
   }
-  let ungrounded_map: DashMap<Name, String> = ungrounded
-    .iter()
-    .map(|(n, e)| (n.clone(), format!("{e:?}")))
-    .collect();
+  let ungrounded_map: DashMap<Name, String> =
+    ungrounded.iter().map(|(n, e)| (n.clone(), format!("{e:?}"))).collect();
   if !ungrounded.is_empty() && !*IX_QUIET {
     eprintln!(
       "[compile_env] {} ungrounded constants filtered from graph",
@@ -142,23 +150,23 @@ pub fn compile_env(
 
   // Filter ungrounded names from the ref graph before SCC computation so
   // condensed blocks only contain constants we can actually compile.
-  let grounded_out_refs: crate::ix::graph::RefMap =
-    if ungrounded_map.is_empty() {
-      graph.out_refs
-    } else {
-      graph
-        .out_refs
-        .into_iter()
-        .filter(|(name, _)| !ungrounded_map.contains_key(name))
-        .map(|(k, refs)| {
-          let filtered: rustc_hash::FxHashSet<Name> = refs
-            .into_iter()
-            .filter(|r| !ungrounded_map.contains_key(r))
-            .collect();
-          (k, filtered)
-        })
-        .collect()
-    };
+  let grounded_out_refs: crate::ix::graph::RefMap = if ungrounded_map.is_empty()
+  {
+    graph.out_refs
+  } else {
+    graph
+      .out_refs
+      .into_iter()
+      .filter(|(name, _)| !ungrounded_map.contains_key(name))
+      .map(|(k, refs)| {
+        let filtered: rustc_hash::FxHashSet<Name> = refs
+          .into_iter()
+          .filter(|r| !ungrounded_map.contains_key(r))
+          .collect();
+        (k, filtered)
+      })
+      .collect()
+  };
 
   let phase_start = Instant::now();
   let condensed = compute_sccs(&grounded_out_refs);
@@ -170,24 +178,31 @@ pub fn compile_env(
     );
   }
 
-  // Build the shared **original** kenv up-front via `lean_ingress`. This
-  // is a full snapshot of the input Lean env with every constant at its
-  // LEON content-hash address (`ConstantInfo::get_hash()`), all type
-  // references self-consistent, and no alpha-collapse/aux rewriting
-  // applied. `lean_ingress` also pre-caches `Primitives::from_env_orig`
-  // so primitive lookups resolve through `PrimOrigAddrs` — the matching
-  // address table for this env. Used exclusively by `check_originals`
-  // during compile_mutual's Phase 0 to verify Lean-stored
-  // inductives/ctors/recursors in a pristine, unambiguous context —
-  // fully isolated from the canonical `kctx.kenv` that subsequent
-  // phases populate.
+  // Optionally build the shared **original** kenv up-front via
+  // `lean_ingress`. This is a full snapshot of the input Lean env with
+  // every constant at its LEON content-hash address
+  // (`ConstantInfo::get_hash()`), all type references self-consistent, and
+  // no alpha-collapse/aux rewriting applied.
+  //
+  // That snapshot is only needed for adversarial raw-constant validation.
+  // Normal callers compile trusted Lean environments; building a second
+  // kernel-form copy of all Mathlib declarations roughly doubles retained
+  // expression memory and is not needed for aux_gen correctness.
   let phase_start = Instant::now();
-  let orig_kenv = Arc::new(crate::ix::kernel::ingress::lean_ingress(lean_env));
+  let orig_kenv = if options.check_originals {
+    Arc::new(crate::ix::kernel::ingress::lean_ingress(lean_env))
+  } else {
+    Arc::new(crate::ix::kernel::env::KEnv::new())
+  };
   if !*IX_QUIET {
-    eprintln!(
-      "[compile_env] setup 4/7 lean_ingress (orig_kenv): {:.2}s",
-      phase_start.elapsed().as_secs_f32()
-    );
+    if options.check_originals {
+      eprintln!(
+        "[compile_env] setup 4/7 lean_ingress (orig_kenv): {:.2}s",
+        phase_start.elapsed().as_secs_f32()
+      );
+    } else {
+      eprintln!("[compile_env] setup 4/7 lean_ingress (orig_kenv): skipped");
+    }
   }
   let kctx = crate::ix::compile::KernelCtx::new().with_originals(orig_kenv);
 
@@ -195,6 +210,7 @@ pub fn compile_env(
     lean_env: Some(lean_env.clone()),
     ungrounded: ungrounded_map,
     kctx,
+    check_originals: options.check_originals,
     ..Default::default()
   };
 
@@ -273,22 +289,25 @@ pub fn compile_env(
   // consumer (the scheduler's unblock loop) only iterates the Vec to
   // notify workers, never compares it for equality.
   let block_entries: Vec<(&Name, &NameSet)> = condensed.blocks.iter().collect();
-  block_entries.par_iter().try_for_each(|(lo, all)| -> Result<(), CompileError> {
-    let deps =
-      condensed.block_refs.get(*lo).ok_or(CompileError::InvalidMutualBlock {
-        reason: "missing block refs".into(),
-      })?;
+  block_entries.par_iter().try_for_each(
+    |(lo, all)| -> Result<(), CompileError> {
+      let deps = condensed.block_refs.get(*lo).ok_or(
+        CompileError::InvalidMutualBlock {
+          reason: "missing block refs".into(),
+        },
+      )?;
 
-    block_info.insert(
-      (*lo).clone(),
-      ((*all).clone(), deps.clone(), Mutex::new(deps.clone())),
-    );
+      block_info.insert(
+        (*lo).clone(),
+        ((*all).clone(), deps.clone(), Mutex::new(deps.clone())),
+      );
 
-    for dep_name in deps {
-      reverse_deps.entry(dep_name.clone()).or_default().push((*lo).clone());
-    }
-    Ok(())
-  })?;
+      for dep_name in deps {
+        reverse_deps.entry(dep_name.clone()).or_default().push((*lo).clone());
+      }
+      Ok(())
+    },
+  )?;
 
   // Shared ready queue: blocks that are ready to compile
   let ready_queue: Mutex<Vec<(Name, NameSet)>> = Mutex::new(Vec::new());
@@ -333,9 +352,20 @@ pub fn compile_env(
   // Condvar for signaling workers when new work is available or completion
   let work_available = std::sync::Condvar::new();
 
-  // Use scoped threads to borrow from parent scope
-  let num_threads =
+  // Use scoped threads to borrow from parent scope. `IX_COMPILE_WORKERS`
+  // gives large-env callers a simple peak-memory/speed tradeoff knob.
+  let available_threads =
     thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
+  let requested_threads = options.max_workers.or_else(|| {
+    std::env::var("IX_COMPILE_WORKERS")
+      .ok()
+      .and_then(|s| s.parse::<usize>().ok())
+      .filter(|&n| n > 0)
+  });
+  let num_threads = requested_threads
+    .unwrap_or(available_threads)
+    .min(available_threads)
+    .max(1);
 
   // Progress tracking. `active` holds currently-compiling blocks per worker
   // so the reporter thread can show blocks that are still in-flight (useful
@@ -505,6 +535,7 @@ pub fn compile_env(
                 // Only compile — don't promote other names yet (promote_aux
                 // inside compile_const_no_aux needs names to still be in
                 // aux_name_to_addr, not yet in name_to_addr).
+                let mut aux_precompile_incomplete = false;
                 {
                   let mut unresolved_names = Vec::new();
                   for name in &all {
@@ -518,46 +549,69 @@ pub fn compile_env(
                     unresolved_names.push(name.clone());
                   }
                   if !unresolved_names.is_empty() {
-                    let unresolved_set: NameSet =
-                      unresolved_names.iter().cloned().collect();
-                    let mut cache = BlockCache::default();
-                    let cross_name = unresolved_names[0].clone();
-                    let res = run_compile_catching_panic(
-                      &cross_name,
-                      "compile_const(cross-SCC)",
-                      || {
-                        compile_const(
-                          &cross_name,
-                          &unresolved_set,
-                          lean_env,
-                          &mut cache,
-                          stt_ref,
-                        )
-                      },
-                    );
-                    if let Err(e) = res {
-                      eprintln!(
-                        "[compile_env] cross-SCC compile failed for {}: {}",
-                        unresolved_names[0].pretty(),
-                        e,
+                    if any_aux_gen {
+                      aux_precompile_incomplete = true;
+                      let missing = unresolved_names
+                        .iter()
+                        .map(|n| n.pretty())
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                      let msg = format!(
+                        "aux_gen precompile incomplete for {}; missing canonical aliases: {}",
+                        lo.pretty(),
+                        missing,
                       );
-                      // Don't register failed names — downstream blocks
-                      // will get MissingConstant rather than silently
-                      // referencing broken data.
-                    } else {
-                      for name in &unresolved_names {
-                        stt_ref.aux_gen_extra_names.insert(name.clone());
+                      eprintln!(
+                        "[compile_env] block FAILED {} ({} members): {}",
+                        lo.pretty(),
+                        all.len(),
+                        msg,
+                      );
+                      for member in &all {
+                        stt_ref.ungrounded.insert(member.clone(), msg.clone());
                       }
-                      stt_ref
-                        .aux_gen_pending
-                        .lock()
-                        .unwrap()
-                        .extend(unresolved_names);
+                    } else {
+                      let unresolved_set: NameSet =
+                        unresolved_names.iter().cloned().collect();
+                      let mut cache = BlockCache::default();
+                      let cross_name = unresolved_names[0].clone();
+                      let res = run_compile_catching_panic(
+                        &cross_name,
+                        "compile_const(cross-SCC)",
+                        || {
+                          compile_const(
+                            &cross_name,
+                            &unresolved_set,
+                            lean_env,
+                            &mut cache,
+                            stt_ref,
+                          )
+                        },
+                      );
+                      if let Err(e) = res {
+                        eprintln!(
+                          "[compile_env] cross-SCC compile failed for {}: {}",
+                          unresolved_names[0].pretty(),
+                          e,
+                        );
+                        // Don't register failed names — downstream blocks
+                        // will get MissingConstant rather than silently
+                        // referencing broken data.
+                      } else {
+                        for name in &unresolved_names {
+                          stt_ref.aux_gen_extra_names.insert(name.clone());
+                        }
+                        stt_ref
+                          .aux_gen_pending
+                          .lock()
+                          .unwrap()
+                          .extend(unresolved_names);
+                      }
                     }
                   }
                 }
 
-                if any_aux_gen {
+                if any_aux_gen && !aux_precompile_incomplete {
                   // Compile the original Lean form (without aux_gen).
                   // compile_mutual with aux=false calls promote_aux for
                   // each constant, setting Named.original with the
@@ -597,13 +651,15 @@ pub fn compile_env(
                   }
                 }
 
-                // Promote remaining names from aux_name_to_addr.
-                for name in &all {
-                  if stt_ref.name_to_addr.contains_key(name) {
-                    continue;
-                  }
-                  if let Some(addr) = stt_ref.resolve_addr(name) {
-                    stt_ref.name_to_addr.insert(name.clone(), addr);
+                if !aux_precompile_incomplete {
+                  // Promote remaining names from aux_name_to_addr.
+                  for name in &all {
+                    if stt_ref.name_to_addr.contains_key(name) {
+                      continue;
+                    }
+                    if let Some(addr) = stt_ref.resolve_addr(name) {
+                      stt_ref.name_to_addr.insert(name.clone(), addr);
+                    }
                   }
                 }
               } else {

@@ -99,13 +99,35 @@ private partial def collectDepsWithExtras
 
     Implemented in `src/ffi/kernel.rs::rs_kernel_check_consts`, which is
     only built with the `test-ffi` Cargo feature (enabled automatically by
-    `lake test` via `ix_rs_test`). -/
+    `lake test` via `ix_rs_test`).
+
+    The trailing `Bool` toggles ephemeral progress printing on the Rust
+    side:
+    - `false` (verbose): every constant is logged on its own line with
+      elapsed time and `def_eq` depth — ideal for small, targeted batches
+      where every result matters.
+    - `true` (quiet / ephemeral): the current `[i/N] name ...` label is
+      rewritten in place, and only slow constants (>=1s), unexpected
+      passes/failures, and ungrounded compile errors are promoted to
+      persistent lines. Ideal for full-env runs (`kernel-check-env`)
+      where thousands of fast constants would otherwise swamp the log.
+
+    Results come back in input-array order — the caller pairs each
+    `results[i]` with its `names[i]`. We pass `Lean.Name` structurally
+    (rather than shipping `name.toString` strings) because Lean's
+    default `toString` wraps non-identifier components in `«…»`, and
+    round-tripping that through a Rust string parser was brittle:
+    names like `Lean.Order.«term_⊑_»` failed lookup against the
+    kernel's unescaped `Lean.Order.term_⊑_` key. Rust decodes each
+    `Lean.Name` structurally via `decode_name_array`, so the kernel
+    lookup is an exact structural match. -/
 @[extern "rs_kernel_check_consts"]
 opaque rsCheckConstsFFI :
     @& List (Lean.Name × Lean.ConstantInfo) →
-    @& Array String →
+    @& Array Lean.Name →
     @& Array Bool →
-    IO (Array (String × Option CheckError))
+    @& Bool →
+    IO (Array (Option CheckError))
 
 def testTutorialConsts : TestSeq :=
   .individualIO "kernel tutorial checks" none (do
@@ -114,65 +136,69 @@ def testTutorialConsts : TestSeq :=
 
     -- Collect all constant names that need checking
     -- (skip renaming test cases — their collision check is done on the Lean side)
-    let mut allNames : Array String := #[]
+    let mut allNames : Array Lean.Name := #[]
     for tc in testCases do
       if tc.renamings.size == 0 then
         for n in tc.decls do
-          allNames := allNames.push (toString n)
+          allNames := allNames.push n
 
-    -- Also add stdlib constants we want to verify
-    let stdlibConsts := #[
-      "Acc", "Acc.intro", "Acc.rec",
-      "Quot", "Quot.mk", "Quot.lift", "Quot.ind", "Quot.sound",
-      "Prod", "Prod.mk", "Prod.rec",
-      "Eq", "Eq.refl", "Eq.rec",
-      "List", "List.nil", "List.cons", "List.rec",
-      "Exists", "Exists.intro", "Exists.rec"
+    -- Also add stdlib constants we want to verify. Using the `` `Foo.bar ``
+    -- name-quotation syntax keeps the source compact and removes the old
+    -- string → `Name` round-trip that `String.toName` used to do.
+    let stdlibConsts : Array Lean.Name := #[
+      `Acc, `Acc.intro, `Acc.rec,
+      `Quot, `Quot.mk, `Quot.lift, `Quot.ind, `Quot.sound,
+      `Prod, `Prod.mk, `Prod.rec,
+      `Eq, `Eq.refl, `Eq.rec,
+      `List, `List.nil, `List.cons, `List.rec,
+      `Exists, `Exists.intro, `Exists.rec
     ]
     for n in stdlibConsts do
       allNames := allNames.push n
 
     -- Also add the non-macro theorems/inductives defined directly
-    -- (good_def/good_thm/bad_thm are auto-registered; these are plain defs/theorems/inductives)
-    let p := "Tests.Ix.Kernel.TutorialDefs."
-    let directConsts := #[
+    -- (good_def/good_thm/bad_thm are auto-registered; these are plain defs/theorems/inductives).
+    -- `p` is the common namespace; `p ++ n` uses `Lean.Name.append` to
+    -- produce the fully-qualified name structurally (no string concat).
+    let p : Lean.Name := `Tests.Ix.Kernel.TutorialDefs
+    let directConsts : Array Lean.Name := #[
       -- TN (custom Nat)
-      p ++ "TN", p ++ "TN.zero", p ++ "TN.succ", p ++ "TN.rec",
-      p ++ "TN.add", p ++ "tnAddZero", p ++ "tnAddSucc",
+      p ++ `TN, p ++ `TN.zero, p ++ `TN.succ, p ++ `TN.rec,
+      p ++ `TN.add, p ++ `tnAddZero, p ++ `tnAddSucc,
       -- TRTree (reflexive)
-      p ++ "TRTree", p ++ "TRTree.leaf", p ++ "TRTree.node",
-      p ++ "TRTree.rec", p ++ "TRTree.left", p ++ "trtreeRecReduction",
+      p ++ `TRTree, p ++ `TRTree.leaf, p ++ `TRTree.node,
+      p ++ `TRTree.rec, p ++ `TRTree.left, p ++ `trtreeRecReduction,
       -- Good inductives
-      p ++ "TTwoBool", p ++ "TTwoBool.mk", p ++ "TTwoBool.rec",
-      p ++ "TN2", p ++ "TN2.zero", p ++ "TN2.succ", p ++ "TN2.rec",
+      p ++ `TTwoBool, p ++ `TTwoBool.mk, p ++ `TTwoBool.rec,
+      p ++ `TN2, p ++ `TN2.zero, p ++ `TN2.succ, p ++ `TN2.rec,
       -- TColor + TRBTree
-      p ++ "TColor", p ++ "TColor.r", p ++ "TColor.b", p ++ "TColor.rec",
-      p ++ "TRBTree", p ++ "TRBTree.leaf", p ++ "TRBTree.red",
-      p ++ "TRBTree.black", p ++ "TRBTree.rec", p ++ "TRBTree.id",
+      p ++ `TColor, p ++ `TColor.r, p ++ `TColor.b, p ++ `TColor.rec,
+      p ++ `TRBTree, p ++ `TRBTree.leaf, p ++ `TRBTree.red,
+      p ++ `TRBTree.black, p ++ `TRBTree.rec, p ++ `TRBTree.id,
       -- TBoolProp
-      p ++ "TBoolProp", p ++ "TBoolProp.a", p ++ "TBoolProp.b", p ++ "TBoolProp.rec",
+      p ++ `TBoolProp, p ++ `TBoolProp.a, p ++ `TBoolProp.b, p ++ `TBoolProp.rec,
       -- TSortElimProp
-      p ++ "TSortElimProp", p ++ "TSortElimProp.mk", p ++ "TSortElimProp.rec",
-      p ++ "TSortElimProp2", p ++ "TSortElimProp2.mk", p ++ "TSortElimProp2.rec",
+      p ++ `TSortElimProp, p ++ `TSortElimProp.mk, p ++ `TSortElimProp.rec,
+      p ++ `TSortElimProp2, p ++ `TSortElimProp2.mk, p ++ `TSortElimProp2.rec,
       -- Universe level inductives
-      p ++ "PredWithTypeField", p ++ "PredWithTypeField.mk", p ++ "PredWithTypeField.rec",
-      p ++ "TypeWithTypeField", p ++ "TypeWithTypeField.mk", p ++ "TypeWithTypeField.rec",
-      p ++ "TypeWithTypeFieldPoly", p ++ "TypeWithTypeFieldPoly.mk", p ++ "TypeWithTypeFieldPoly.rec",
+      p ++ `PredWithTypeField, p ++ `PredWithTypeField.mk, p ++ `PredWithTypeField.rec,
+      p ++ `TypeWithTypeField, p ++ `TypeWithTypeField.mk, p ++ `TypeWithTypeField.rec,
+      p ++ `TypeWithTypeFieldPoly, p ++ `TypeWithTypeFieldPoly.mk, p ++ `TypeWithTypeFieldPoly.rec,
       -- Recursor reduction defs
-      p ++ "TN2.add", p ++ "myListAppended",
+      p ++ `TN2.add, p ++ `myListAppended,
       -- Acc recursor type
-      p ++ "accRecType",
+      p ++ `accRecType,
       -- Eta corner cases: T structure
-      p ++ "T", p ++ "T.mk", p ++ "T.rec",
+      p ++ `T, p ++ `T.mk, p ++ `T.rec,
       -- Adversarial: AdvNat (for nat-rec-rules test; AdvNat.rec tested via bad_raw_consts)
-      p ++ "AdvNat", p ++ "AdvNat.zero", p ++ "AdvNat.succ",
+      p ++ `AdvNat, p ++ `AdvNat.zero, p ++ `AdvNat.succ,
       -- PropStructure (projection tests)
-      p ++ "PropStructure", p ++ "PropStructure.mk", p ++ "PropStructure.rec",
+      p ++ `PropStructure, p ++ `PropStructure.mk, p ++ `PropStructure.rec,
       -- ProjDataIndex (projection tests)
-      p ++ "ProjDataIndex", p ++ "ProjDataIndex.mk", p ++ "ProjDataIndex.rec",
-      p ++ "projDataIndexRec",
+      p ++ `ProjDataIndex, p ++ `ProjDataIndex.mk, p ++ `ProjDataIndex.rec,
+      p ++ `projDataIndexRec,
       -- PropPair (struct eta for Prop test)
-      p ++ "PropPair", p ++ "PropPair.mk", p ++ "PropPair.rec"
+      p ++ `PropPair, p ++ `PropPair.mk, p ++ `PropPair.rec
     ]
     for n in directConsts do
       allNames := allNames.push n
@@ -182,11 +208,11 @@ def testTutorialConsts : TestSeq :=
 
     -- Build expected outcomes: false for names in bad test cases (excluding
     -- renaming tests, whose constants are individually valid), true otherwise
-    let mut badNames : Std.HashSet String := Std.HashSet.emptyWithCapacity 64
+    let mut badNames : Std.HashSet Lean.Name := Std.HashSet.emptyWithCapacity 64
     for tc in testCases do
       if tc.outcome == .bad && tc.renamings.size == 0 then
         for n in tc.decls do
-          badNames := badNames.insert (toString n)
+          badNames := badNames.insert n
     let expectPass := constNames.map (fun n => !badNames.contains n)
 
     -- Collect raw constants stored by bad_raw_consts (inductInfo/ctorInfo/recInfo
@@ -202,18 +228,25 @@ def testTutorialConsts : TestSeq :=
       rawConsts.foldl (fun m ci => m.insert ci.name ci)
         (Std.HashMap.emptyWithCapacity rawConsts.size)
     let seeds : List Lean.Name :=
-      (constNames.toList.map String.toName) ++ (rawConsts.toList.map (·.name))
+      constNames.toList ++ (rawConsts.toList.map (·.name))
     let (_, closedConsts) := collectDepsWithExtras leanEnv rawConstsMap seeds
     let allConstList := closedConsts ++ extraConstList
 
     IO.println s!"[kernel-tutorial] {testCases.size} test cases, {constNames.size} constants to check ({allConstList.length} consts in closure)"
 
-    let results ← rsCheckConstsFFI allConstList constNames expectPass
+    -- Tutorial batches are small and targeted — every constant's outcome
+    -- is individually meaningful, so keep the verbose per-constant log.
+    -- Rust returns results in the same order as `constNames`, so we zip
+    -- them back into a `Name → result` map below.
+    let results ← rsCheckConstsFFI allConstList constNames expectPass false
 
-    -- Build name → result map
-    let mut resultMap : Std.HashMap String (Option CheckError) := Std.HashMap.emptyWithCapacity results.size
-    for (name, result) in results do
-      resultMap := resultMap.insert name result
+    -- Build Name → result map by pairing each input name with its result.
+    -- Rust preserves input order, so `results[i]` corresponds to
+    -- `constNames[i]`.
+    let mut resultMap : Std.HashMap Lean.Name (Option CheckError) :=
+      Std.HashMap.emptyWithCapacity results.size
+    for i in [:constNames.size] do
+      resultMap := resultMap.insert constNames[i]! results[i]!
 
     -- Check test case outcomes
     let mut passed := 0
@@ -227,18 +260,17 @@ def testTutorialConsts : TestSeq :=
     for tc in testCases do
       if tc.outcome == .good then
         for n in tc.decls do
-          let name := toString n
-          match resultMap.get? name with
+          match resultMap.get? n with
           | some none => passed := passed + 1
           | some (some err) =>
             failed := failed + 1
             let msg := match err with
               | .kernelException m => s!"kernel: {m}"
               | .compileError m    => s!"compile: {m}"
-            errors := errors.push s!"  ✗ GOOD {name}: rejected with {msg}"
+            errors := errors.push s!"  ✗ GOOD {n}: rejected with {msg}"
           | none =>
             failed := failed + 1
-            errors := errors.push s!"  ✗ GOOD {name}: not found in results"
+            errors := errors.push s!"  ✗ GOOD {n}: not found in results"
 
     -- Check bad test cases (must fail)
     for tc in testCases do
@@ -273,15 +305,14 @@ def testTutorialConsts : TestSeq :=
             errors := errors.push s!"  ✗ BAD renaming: expected name collision but none found in {targetStrs}"
           continue
         for n in tc.decls do
-          let name := toString n
-          match resultMap.get? name with
+          match resultMap.get? n with
           | some (some _) => passed := passed + 1  -- correctly rejected
           | some none =>
             failed := failed + 1
-            errors := errors.push s!"  ✗ BAD {name}: should have been rejected but was accepted"
+            errors := errors.push s!"  ✗ BAD {n}: should have been rejected but was accepted"
           | none =>
             failed := failed + 1
-            errors := errors.push s!"  ✗ BAD {name}: not found in results"
+            errors := errors.push s!"  ✗ BAD {n}: not found in results"
 
     -- Check direct theorems (must pass)
     for name in directConsts do

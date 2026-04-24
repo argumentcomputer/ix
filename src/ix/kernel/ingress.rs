@@ -26,7 +26,8 @@ use crate::ix::ixon::constant::{
 use crate::ix::ixon::env::Env as IxonEnv;
 use crate::ix::ixon::expr::Expr as IxonExpr;
 use crate::ix::ixon::metadata::{
-  ConstantMeta, ConstantMetaInfo, ExprMeta, ExprMetaData, resolve_kvmap,
+  CallSiteEntry, ConstantMeta, ConstantMetaInfo, ExprMeta, ExprMetaData,
+  resolve_kvmap,
 };
 use crate::ix::ixon::univ::Univ as IxonUniv;
 use crate::ix::kernel::env::Addr;
@@ -459,15 +460,161 @@ fn ingress_expr<M: KernelMode>(
           },
 
           IxonExpr::App(f, a) => {
-            let (f_arena, a_arena) = match node {
-              ExprMetaData::App { children } => (children[0], children[1]),
-              _ => (current_idx, current_idx),
-            };
-            stack.push(ExprFrame::AppDone { mdata });
-            stack
-              .push(ExprFrame::AppArg { arg: a.clone(), arg_arena: a_arena });
-            stack
-              .push(ExprFrame::Process { expr: f.clone(), arena_idx: f_arena });
+            // CallSite at the outermost App of a surgery spine. The
+            // arena replaces the spine's N+1 App/Ref nodes with one
+            // flat node whose `entries` carry per-argument arena
+            // indices and whose `name` holds the head's Ref name. Walk
+            // the IXON App telescope here and distribute each canonical
+            // arg's arena index from the CallSite entries — a plain App
+            // descent (`_` arm below) would propagate the CallSite
+            // arena down every child, losing per-arg binder names and
+            // failing the head's Ref metadata lookup (see
+            // `ingress_expr` Ref arm — no `CallSite` matching branch).
+            //
+            // The head is `IxonExpr::Ref | IxonExpr::Rec`. We build its
+            // KExpr here using `cs_name` so the normal Ref arm's
+            // `(_, Expr::Ref) => Err(...)` fallback never fires. The
+            // compile side's `BuildCallSite` drops the head's own
+            // arena root on the floor (the comment there reads
+            // "head's Ref metadata is subsumed by CallSite.name"), so
+            // there is no other source of truth for the head name.
+            if let ExprMetaData::CallSite { name: cs_name, entries } = node {
+              // Flatten the canonical App telescope. `a_i` is the arg
+              // applied at spine position `i` (0 = innermost, N-1 =
+              // outermost); `head` is the innermost function.
+              let mut canonical_args: Vec<Arc<IxonExpr>> = Vec::new();
+              let mut cur = expr.clone();
+              loop {
+                match cur.as_ref() {
+                  IxonExpr::App(f2, a2) => {
+                    canonical_args.push(a2.clone());
+                    cur = f2.clone();
+                  },
+                  _ => break,
+                }
+              }
+              canonical_args.reverse();
+              let head_ixon = cur;
+              let n_args = canonical_args.len();
+
+              // Per-arg arena from entries. Kept entries map canon_idx
+              // → arena index; sparse lookup keyed by position keeps
+              // the distribution robust even if entries are reordered.
+              let mut arg_arenas: Vec<u64> = vec![0; n_args];
+              for entry in entries.iter() {
+                if let CallSiteEntry::Kept { canon_idx, meta } = entry
+                  && (*canon_idx as usize) < n_args
+                {
+                  arg_arenas[*canon_idx as usize] = *meta;
+                }
+              }
+
+              // Build the head KExpr inline. `cs_name` is the name
+              // address stored in the CallSite (e.g. the address of
+              // `Code.rec`'s Lean name); resolving it gives the same
+              // `Name` the normal Ref arm would produce.
+              let head_kexpr: KExpr<M> = match head_ixon.as_ref() {
+                IxonExpr::Ref(ref_idx, univ_idxs) => {
+                  let addr = ctx
+                    .refs
+                    .get(usize::try_from(*ref_idx).map_err(|_e| {
+                      format!("Ref index {ref_idx} exceeds usize")
+                    })?)
+                    .ok_or_else(|| {
+                      format!("CallSite head: invalid Ref index {ref_idx}")
+                    })?
+                    .clone();
+                  let name = resolve_name(cs_name, ctx.names);
+                  let univs = ingress_univ_args(univ_idxs, ctx, ctx.intern)?;
+                  ctx.intern.intern_expr(KExpr::cnst(
+                    KId::new(addr, M::meta_field(name)),
+                    univs,
+                  ))
+                },
+                IxonExpr::Rec(rec_idx, univ_idxs) => {
+                  // Rec heads refer to the enclosing mutual block; the
+                  // KId already carries the member's name from
+                  // `mut_ctx`, so `cs_name` is redundant here. Kept
+                  // the shape parallel to the Ref arm for symmetry.
+                  let mid = ctx
+                    .mut_ctx
+                    .get(usize::try_from(*rec_idx).map_err(|_e| {
+                      format!("Rec index {rec_idx} exceeds usize")
+                    })?)
+                    .ok_or_else(|| {
+                      format!("CallSite head: invalid Rec index {rec_idx}")
+                    })?
+                    .clone();
+                  let univs = ingress_univ_args(univ_idxs, ctx, ctx.intern)?;
+                  ctx.intern.intern_expr(KExpr::cnst(mid, univs))
+                },
+                _ => {
+                  return Err(format!(
+                    "CallSite head is not Ref/Rec: {:?}",
+                    head_ixon
+                  ));
+                },
+              };
+
+              // Emit the canonical App spine via AppArg/AppDone pairs.
+              // Push order — LIFO, so last pushed is first processed:
+              //
+              //   push AppDone_outer (carries `mdata`)
+              //   push AppArg(a_{N-1})
+              //   push AppDone for each middle/inner App (no mdata)
+              //   push AppArg(a_i) for i from N-2 down to 0
+              //   push head_kexpr onto `values` (processed "first")
+              //
+              // Execution then pops AppArg(a_0), Process(a_0), runs
+              // the innermost AppDone to wrap (head, a_0), pops
+              // AppArg(a_1), runs the next AppDone, …, ending with
+              // AppDone_outer applying `mdata` to the full spine.
+              // Inner AppDones use an empty mdata because the IXON
+              // Mdata variant lives outside the App chain — only the
+              // outermost App carries the wrapper.
+              let no_mdata_inner: M::MField<Vec<MData>> = M::meta_field(vec![]);
+
+              if n_args == 0 {
+                // Defensive: we only arrive here from IxonExpr::App,
+                // so n_args >= 1. Fall through safely anyway.
+                values.push(head_kexpr);
+              } else {
+                // Outermost AppDone (with mdata) + AppArg for the
+                // outermost arg.
+                stack.push(ExprFrame::AppDone { mdata });
+                stack.push(ExprFrame::AppArg {
+                  arg: canonical_args[n_args - 1].clone(),
+                  arg_arena: arg_arenas[n_args - 1],
+                });
+                // Middle + inner AppDones (no mdata) + AppArgs for
+                // args n_args-2 down to 0. Iterating in reverse keeps
+                // each (AppDone, AppArg) pair in the correct LIFO
+                // position.
+                for i in (0..n_args - 1).rev() {
+                  stack
+                    .push(ExprFrame::AppDone { mdata: no_mdata_inner.clone() });
+                  stack.push(ExprFrame::AppArg {
+                    arg: canonical_args[i].clone(),
+                    arg_arena: arg_arenas[i],
+                  });
+                }
+                // Seed `values` with the head so the first AppDone
+                // popped sees (head, a_0) and produces App(head, a_0).
+                values.push(head_kexpr);
+              }
+            } else {
+              let (f_arena, a_arena) = match node {
+                ExprMetaData::App { children } => (children[0], children[1]),
+                _ => (current_idx, current_idx),
+              };
+              stack.push(ExprFrame::AppDone { mdata });
+              stack
+                .push(ExprFrame::AppArg { arg: a.clone(), arg_arena: a_arena });
+              stack.push(ExprFrame::Process {
+                expr: f.clone(),
+                arena_idx: f_arena,
+              });
+            }
           },
 
           IxonExpr::Lam(ty, body) => {
@@ -807,7 +954,13 @@ fn ingress_recursor<M: KernelMode>(
   let (level_params, arena, type_root, rule_roots, rule_ctor_addrs, all_addrs) =
     match &meta.info {
       ConstantMetaInfo::Rec {
-        lvls, arena, type_root, rule_roots, rules, all, ..
+        lvls,
+        arena,
+        type_root,
+        rule_roots,
+        rules,
+        all,
+        ..
       } => (
         resolve_level_params(lvls, names),
         arena,
@@ -852,11 +1005,7 @@ fn ingress_recursor<M: KernelMode>(
         .get(i)
         .map(|a| resolve_name(a, names))
         .unwrap_or_else(Name::anon);
-      Ok(RecRule {
-        ctor: M::meta_field(ctor_name),
-        fields: rule.fields,
-        rhs,
-      })
+      Ok(RecRule { ctor: M::meta_field(ctor_name), fields: rule.fields, rhs })
     })
     .collect();
   let lean_all = resolve_all(&all_addrs, names, name_to_addr)?;
@@ -1111,9 +1260,10 @@ fn ingress_muts_inductive<M: KernelMode>(
   // binder names. Error loudly instead of silently falling back.
   for (cidx, ctor) in ind.ctors.iter().enumerate() {
     cache.clear();
-    let ctor_id = ctor_ids.get(cidx).cloned().ok_or_else(|| {
-      format!("missing ctor_id for constructor index {cidx}")
-    })?;
+    let ctor_id = ctor_ids
+      .get(cidx)
+      .cloned()
+      .ok_or_else(|| format!("missing ctor_id for constructor index {cidx}"))?;
     let ctor_name_addr = ctor_addrs.get(cidx).ok_or_else(|| {
       format!("missing ctor_addrs entry for constructor index {cidx}")
     })?;
@@ -1126,20 +1276,18 @@ fn ingress_muts_inductive<M: KernelMode>(
       )
     })?;
 
-    let (ctor_lvl_params, ctor_arena, ctor_type_root) = match &ctor_named
-      .meta
-      .info
-    {
-      ConstantMetaInfo::Ctor { lvls, arena, type_root, .. } => {
-        (resolve_level_params(lvls, names), arena, *type_root)
-      },
-      other => {
-        return Err(format!(
-          "ctor '{ctor_name}' has unexpected meta kind '{}' (expected Ctor)",
-          other.kind_name()
-        ));
-      },
-    };
+    let (ctor_lvl_params, ctor_arena, ctor_type_root) =
+      match &ctor_named.meta.info {
+        ConstantMetaInfo::Ctor { lvls, arena, type_root, .. } => {
+          (resolve_level_params(lvls, names), arena, *type_root)
+        },
+        other => {
+          return Err(format!(
+            "ctor '{ctor_name}' has unexpected meta kind '{}' (expected Ctor)",
+            other.kind_name()
+          ));
+        },
+      };
 
     let ctor_ctx = Ctx {
       sharing: &block_constant.sharing,
@@ -1762,7 +1910,7 @@ pub fn ingress_compiled_names(
 
     // Check if this is a Muts entry (mutual block) — handle differently
     if matches!(&named.meta.info, ConstantMetaInfo::Muts { .. }) {
-      if let ConstantMetaInfo::Muts { all } = &named.meta.info
+      if let ConstantMetaInfo::Muts { all, .. } = &named.meta.info
         && let Ok(entries) = ingress_muts_block(
           name,
           &named.addr,
@@ -1904,10 +2052,7 @@ pub fn build_leon_addr_map(
 /// well-formed Lean env should never trigger it. Callers that need
 /// strict resolution (e.g. "does this name exist?") should check
 /// `n2a.contains_key` directly.
-fn leon_addr_of(
-  name: &Name,
-  n2a: &dashmap::DashMap<Name, Address>,
-) -> Address {
+fn leon_addr_of(name: &Name, n2a: &dashmap::DashMap<Name, Address>) -> Address {
   n2a
     .get(name)
     .map(|e| e.value().clone())
@@ -2250,13 +2395,10 @@ pub fn lean_ingress(lean_env: &LeanEnv) -> KEnv<Meta> {
     if !seeded.insert(block_id.clone()) {
       continue;
     }
-    let all = lean_constant_all(ci)
-      .cloned()
-      .unwrap_or_else(|| vec![name.clone()]);
-    let members: Vec<KId<Meta>> = all
-      .iter()
-      .map(|n| KId::new(leon_addr_of(n, &n2a), n.clone()))
-      .collect();
+    let all =
+      lean_constant_all(ci).cloned().unwrap_or_else(|| vec![name.clone()]);
+    let members: Vec<KId<Meta>> =
+      all.iter().map(|n| KId::new(leon_addr_of(n, &n2a), n.clone())).collect();
     kenv.blocks.insert(block_id, members);
   }
   if !quiet {
@@ -2309,9 +2451,8 @@ pub fn lean_ingress(lean_env: &LeanEnv) -> KEnv<Meta> {
   // Returns `Err` only if `prims()` has already been called on this
   // KEnv — fresh `KEnv::new()` above guarantees that hasn't happened,
   // so we ignore the Result.
-  let _ = kenv.set_prims(
-    crate::ix::kernel::primitive::Primitives::from_env_orig(&kenv),
-  );
+  let _ = kenv
+    .set_prims(crate::ix::kernel::primitive::Primitives::from_env_orig(&kenv));
 
   kenv
 }
@@ -2401,7 +2542,7 @@ pub fn ixon_ingress<M: KernelMode>(
     .into_par_iter()
     .map(|(entry_name, named)| {
       let all = match &named.meta.info {
-        ConstantMetaInfo::Muts { all } => all,
+        ConstantMetaInfo::Muts { all, .. } => all,
         _ => return Ok(vec![]),
       };
       ingress_muts_block(
@@ -2445,4 +2586,470 @@ pub fn ixon_ingress<M: KernelMode>(
   }
 
   Ok((zenv, intern))
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::ix::env::{self, BinderInfo};
+  use crate::ix::kernel::expr::ExprData;
+  use crate::ix::kernel::level::UnivData;
+
+  fn mk_name(s: &str) -> Name {
+    let mut n = Name::anon();
+    for part in s.split('.') {
+      n = Name::str(n, part.to_string());
+    }
+    n
+  }
+
+  fn n_lit(x: u64) -> lean_ffi::nat::Nat {
+    lean_ffi::nat::Nat::from(x)
+  }
+
+  // ---- lean_level_to_kuniv ----
+
+  #[test]
+  fn lean_level_zero_to_kuniv() {
+    let u = lean_level_to_kuniv(&Level::zero(), &[]);
+    assert!(matches!(u.data(), UnivData::Zero(_)));
+  }
+
+  #[test]
+  fn lean_level_succ_to_kuniv() {
+    let u = lean_level_to_kuniv(&Level::succ(Level::zero()), &[]);
+    match u.data() {
+      UnivData::Succ(inner, _) => {
+        assert!(matches!(inner.data(), UnivData::Zero(_)))
+      },
+      other => panic!("expected Succ, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn lean_level_param_by_index() {
+    let u_name = mk_name("u");
+    let v_name = mk_name("v");
+    let params = vec![u_name.clone(), v_name.clone()];
+    let u = lean_level_to_kuniv(&Level::param(v_name), &params);
+    match u.data() {
+      UnivData::Param(i, _, _) => assert_eq!(*i, 1),
+      other => panic!("expected Param, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn lean_level_max_to_kuniv() {
+    let u_name = mk_name("u");
+    let v_name = mk_name("v");
+    let params = vec![u_name.clone(), v_name.clone()];
+    let ll = Level::max(Level::param(u_name), Level::param(v_name));
+    let u = lean_level_to_kuniv(&ll, &params);
+    assert!(matches!(u.data(), UnivData::Max(..)));
+  }
+
+  #[test]
+  #[should_panic(expected = "unknown level param")]
+  fn lean_level_param_unknown_panics() {
+    let _ = lean_level_to_kuniv(&Level::param(mk_name("zzz")), &[mk_name("u")]);
+  }
+
+  #[test]
+  #[should_panic(expected = "unexpected level metavariable")]
+  fn lean_level_mvar_panics() {
+    let _ = lean_level_to_kuniv(&Level::mvar(mk_name("m")), &[]);
+  }
+
+  // ---- lean_name_to_addr ----
+
+  #[test]
+  fn lean_name_to_addr_is_deterministic() {
+    let a1 = lean_name_to_addr(&mk_name("Nat"));
+    let a2 = lean_name_to_addr(&mk_name("Nat"));
+    assert_eq!(a1, a2);
+  }
+
+  #[test]
+  fn lean_name_to_addr_different_names_differ() {
+    let a1 = lean_name_to_addr(&mk_name("Nat"));
+    let a2 = lean_name_to_addr(&mk_name("Bool"));
+    assert_ne!(a1, a2);
+  }
+
+  #[test]
+  fn lean_name_to_addr_respects_dot_segments() {
+    let a1 = lean_name_to_addr(&mk_name("Nat.zero"));
+    let a2 = lean_name_to_addr(&mk_name("Nat.succ"));
+    assert_ne!(a1, a2);
+  }
+
+  // ---- param_names_hash ----
+
+  #[test]
+  fn param_names_hash_determinism() {
+    let ps = [mk_name("u"), mk_name("v")];
+    let h1 = param_names_hash(&ps);
+    let h2 = param_names_hash(&ps);
+    assert_eq!(h1, h2);
+  }
+
+  #[test]
+  fn param_names_hash_order_sensitive() {
+    let h1 = param_names_hash(&[mk_name("u"), mk_name("v")]);
+    let h2 = param_names_hash(&[mk_name("v"), mk_name("u")]);
+    assert_ne!(h1, h2);
+  }
+
+  #[test]
+  fn param_names_hash_length_sensitive() {
+    let h1 = param_names_hash(&[mk_name("u")]);
+    let h2 = param_names_hash(&[mk_name("u"), mk_name("u")]);
+    assert_ne!(h1, h2);
+  }
+
+  #[test]
+  fn param_names_hash_empty_is_stable() {
+    let h1 = param_names_hash(&[]);
+    let h2 = param_names_hash(&[]);
+    assert_eq!(h1, h2);
+  }
+
+  // ---- resolve_lean_name_addr ----
+
+  #[test]
+  fn resolve_lean_name_addr_fallback_uses_name_hash() {
+    let name = mk_name("Unknown");
+    let expected = lean_name_to_addr(&name);
+    let a = resolve_lean_name_addr(&name, None, None);
+    assert_eq!(a, expected);
+  }
+
+  #[test]
+  fn resolve_lean_name_addr_uses_primary_map() {
+    let map: dashmap::DashMap<Name, Address> = dashmap::DashMap::new();
+    let name = mk_name("Foo");
+    let real = Address::hash(b"custom");
+    map.insert(name.clone(), real.clone());
+    let got = resolve_lean_name_addr(&name, Some(&map), None);
+    assert_eq!(got, real);
+  }
+
+  #[test]
+  fn resolve_lean_name_addr_falls_through_to_aux() {
+    let primary: dashmap::DashMap<Name, Address> = dashmap::DashMap::new();
+    let aux: dashmap::DashMap<Name, Address> = dashmap::DashMap::new();
+    let name = mk_name("Aux.name");
+    let real = Address::hash(b"aux");
+    aux.insert(name.clone(), real.clone());
+    let got = resolve_lean_name_addr(&name, Some(&primary), Some(&aux));
+    assert_eq!(got, real);
+  }
+
+  // ---- lean_expr_to_zexpr: variant coverage ----
+
+  fn do_ingress(e: &LeanExpr, pn: &[Name]) -> KExpr<Meta> {
+    let intern = InternTable::<Meta>::new();
+    lean_expr_to_zexpr(e, pn, &intern, None, None)
+  }
+
+  #[test]
+  fn ingress_bvar() {
+    let e = LeanExpr::bvar(n_lit(5));
+    let k = do_ingress(&e, &[]);
+    match k.data() {
+      ExprData::Var(i, _, _) => assert_eq!(*i, 5),
+      other => panic!("expected Var, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn ingress_sort_zero() {
+    let e = LeanExpr::sort(Level::zero());
+    let k = do_ingress(&e, &[]);
+    assert!(matches!(k.data(), ExprData::Sort(..)));
+  }
+
+  #[test]
+  fn ingress_const_without_universe_args() {
+    let e = LeanExpr::cnst(mk_name("Unit"), vec![]);
+    let k = do_ingress(&e, &[]);
+    match k.data() {
+      ExprData::Const(id, univs, _) => {
+        assert_eq!(univs.len(), 0);
+        assert_eq!(id.addr, lean_name_to_addr(&mk_name("Unit")));
+      },
+      other => panic!("expected Const, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn ingress_const_with_universe_args() {
+    let u_name = mk_name("u");
+    let e = LeanExpr::cnst(mk_name("List"), vec![Level::param(u_name.clone())]);
+    let k = do_ingress(&e, &[u_name]);
+    match k.data() {
+      ExprData::Const(_id, univs, _) => {
+        assert_eq!(univs.len(), 1);
+        assert!(matches!(univs[0].data(), UnivData::Param(0, _, _)));
+      },
+      other => panic!("expected Const, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn ingress_app() {
+    let e =
+      LeanExpr::app(LeanExpr::sort(Level::zero()), LeanExpr::bvar(n_lit(0)));
+    let k = do_ingress(&e, &[]);
+    assert!(matches!(k.data(), ExprData::App(..)));
+  }
+
+  #[test]
+  fn ingress_lambda() {
+    let e = LeanExpr::lam(
+      mk_name("x"),
+      LeanExpr::sort(Level::zero()),
+      LeanExpr::bvar(n_lit(0)),
+      BinderInfo::Default,
+    );
+    let k = do_ingress(&e, &[]);
+    assert!(matches!(k.data(), ExprData::Lam(..)));
+  }
+
+  #[test]
+  fn ingress_forall() {
+    let e = LeanExpr::all(
+      mk_name("x"),
+      LeanExpr::sort(Level::zero()),
+      LeanExpr::sort(Level::zero()),
+      BinderInfo::Default,
+    );
+    let k = do_ingress(&e, &[]);
+    assert!(matches!(k.data(), ExprData::All(..)));
+  }
+
+  #[test]
+  fn ingress_let() {
+    let e = LeanExpr::letE(
+      mk_name("x"),
+      LeanExpr::sort(Level::zero()),
+      LeanExpr::bvar(n_lit(0)),
+      LeanExpr::bvar(n_lit(0)),
+      false,
+    );
+    let k = do_ingress(&e, &[]);
+    assert!(matches!(k.data(), ExprData::Let(..)));
+  }
+
+  #[test]
+  fn ingress_nat_literal() {
+    let e = LeanExpr::lit(env::Literal::NatVal(n_lit(42)));
+    let k = do_ingress(&e, &[]);
+    assert!(matches!(k.data(), ExprData::Nat(..)));
+  }
+
+  #[test]
+  fn ingress_str_literal() {
+    let e = LeanExpr::lit(env::Literal::StrVal("hi".into()));
+    let k = do_ingress(&e, &[]);
+    assert!(matches!(k.data(), ExprData::Str(..)));
+  }
+
+  #[test]
+  fn ingress_proj() {
+    let e = LeanExpr::proj(mk_name("Prod"), n_lit(0), LeanExpr::bvar(n_lit(0)));
+    let k = do_ingress(&e, &[]);
+    match k.data() {
+      ExprData::Prj(id, field, _, _) => {
+        assert_eq!(id.addr, lean_name_to_addr(&mk_name("Prod")));
+        assert_eq!(*field, 0);
+      },
+      other => panic!("expected Prj, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn ingress_mdata_passes_through_inner_shape() {
+    // Mdata is metadata; the shape of the outer expression mirrors the inner.
+    let inner = LeanExpr::sort(Level::zero());
+    let e = LeanExpr::mdata(vec![], inner);
+    let k = do_ingress(&e, &[]);
+    assert!(matches!(k.data(), ExprData::Sort(..)));
+  }
+
+  // ---- Deep nesting: exercises the iterative stack ----
+
+  /// Drop a left-deep `Arc<ExprData::App>` spine iteratively so test
+  /// teardown doesn't recurse once per level. Without this, dropping a
+  /// chain of N `Expr`s recurses N times regardless of whether ingress
+  /// itself is iterative (the recursion is in `Arc<ExprData>::drop`).
+  fn drop_app_spine_iteratively(mut e: LeanExpr) {
+    loop {
+      let next = if let env::ExprData::App(f, _, _) = e.as_data() {
+        f.clone()
+      } else {
+        break;
+      };
+      drop(e);
+      e = next;
+    }
+    drop(e);
+  }
+
+  /// Same pattern for forall / lambda body chains.
+  fn drop_binder_chain_iteratively(mut e: LeanExpr) {
+    loop {
+      let next = match e.as_data() {
+        env::ExprData::ForallE(_, _, body, _, _)
+        | env::ExprData::Lam(_, _, body, _, _) => body.clone(),
+        _ => break,
+      };
+      drop(e);
+      e = next;
+    }
+    drop(e);
+  }
+
+  #[test]
+  fn ingress_deep_app_nesting_does_not_overflow() {
+    // Build a left-deep app spine and verify ingress completes without
+    // stack overflow. Depth is chosen to exercise the iterative stack
+    // without tipping the Arc<ExprData> drop chain over thread-stack
+    // limits (the recursive drop of a deeply nested `LeanExpr` is the
+    // dominant hazard here — ingress proper is iterative).
+    let depth = 500;
+    let mut e = LeanExpr::sort(Level::zero());
+    for _ in 0..depth {
+      e = LeanExpr::app(e, LeanExpr::bvar(n_lit(0)));
+    }
+    let _k = do_ingress(&e, &[]);
+    // Manual teardown: avoid `e`'s recursive Drop.
+    drop_app_spine_iteratively(e);
+  }
+
+  #[test]
+  fn ingress_deep_forall_nesting_does_not_overflow() {
+    // Body under deeply nested foralls. Binder-name stack must not
+    // overflow during ingress.
+    let depth = 500;
+    let mut e = LeanExpr::bvar(n_lit(0));
+    for _ in 0..depth {
+      e = LeanExpr::all(
+        mk_name("x"),
+        LeanExpr::sort(Level::zero()),
+        e,
+        BinderInfo::Default,
+      );
+    }
+    let _k = do_ingress(&e, &[]);
+    drop_binder_chain_iteratively(e);
+  }
+
+  #[test]
+  fn ingress_deep_max_univ_does_not_overflow() {
+    // Deeply nested Max chain. Level drop is also recursive; keep depth
+    // conservative.
+    let mut l = Level::zero();
+    for _ in 0..300 {
+      l = Level::max(l, Level::zero());
+    }
+    let _u = lean_level_to_kuniv(&l, &[]);
+  }
+
+  // ---- Panic-on-invalid-input regression guards ----
+
+  #[test]
+  #[should_panic(expected = "FVar")]
+  fn ingress_fvar_panics() {
+    let e = LeanExpr::fvar(mk_name("x"));
+    let _ = do_ingress(&e, &[]);
+  }
+
+  #[test]
+  #[should_panic(expected = "MVar")]
+  fn ingress_mvar_panics() {
+    let e = LeanExpr::mvar(mk_name("m"));
+    let _ = do_ingress(&e, &[]);
+  }
+
+  // ---- Caching ----
+
+  #[test]
+  fn ingress_cached_hits_cache_on_second_call() {
+    let env = KEnv::<Meta>::new();
+    let e = LeanExpr::app(
+      LeanExpr::sort(Level::zero()),
+      LeanExpr::sort(Level::zero()),
+    );
+    let k1 = lean_expr_to_zexpr_with_kenv(&e, &[], &env, None, None);
+    let k2 = lean_expr_to_zexpr_with_kenv(&e, &[], &env, None, None);
+    // Cache hit → same interned result.
+    assert!(k1.ptr_eq(&k2));
+  }
+
+  #[test]
+  fn ingress_cache_differentiates_by_param_names() {
+    let env = KEnv::<Meta>::new();
+    // Same Lean expression, but different param names should produce
+    // different cache keys and (for Param-containing exprs) different
+    // KExprs.
+    let u_name = mk_name("u");
+    let v_name = mk_name("v");
+    let e = LeanExpr::sort(Level::param(u_name.clone()));
+    let k1 =
+      lean_expr_to_zexpr_with_kenv(&e, &[u_name.clone()], &env, None, None);
+    let k2 = lean_expr_to_zexpr_with_kenv(
+      &e,
+      &[v_name, u_name.clone()],
+      &env,
+      None,
+      None,
+    );
+    // In the first, Param(u) has index 0; in the second, Param(u) has index 1.
+    let i1 = match k1.data() {
+      ExprData::Sort(u, _) => match u.data() {
+        UnivData::Param(i, _, _) => *i,
+        _ => panic!(),
+      },
+      _ => panic!(),
+    };
+    let i2 = match k2.data() {
+      ExprData::Sort(u, _) => match u.data() {
+        UnivData::Param(i, _, _) => *i,
+        _ => panic!(),
+      },
+      _ => panic!(),
+    };
+    assert_eq!(i1, 0);
+    assert_eq!(i2, 1);
+  }
+
+  // ---- build_ingress_lookups ----
+
+  #[test]
+  fn build_ingress_lookups_on_empty_env() {
+    let ie = IxonEnv::new();
+    let (name_map, addr_map) = build_ingress_lookups(&ie);
+    assert!(name_map.is_empty());
+    assert!(addr_map.is_empty());
+  }
+
+  #[test]
+  fn build_ingress_lookups_inverts_name_table() {
+    let ie = IxonEnv::new();
+    let nat_name = mk_name("Nat");
+    let nat_addr = lean_name_to_addr(&nat_name);
+    ie.names.insert(nat_addr.clone(), nat_name.clone());
+
+    let list_name = mk_name("List");
+    let list_addr = Address::hash(b"arbitrary");
+    ie.named.insert(
+      list_name.clone(),
+      crate::ix::ixon::env::Named::with_addr(list_addr.clone()),
+    );
+
+    let (name_map, addr_map) = build_ingress_lookups(&ie);
+    assert_eq!(name_map.get(&nat_addr), Some(&nat_name));
+    assert_eq!(addr_map.get(&list_name), Some(&list_addr));
+  }
 }

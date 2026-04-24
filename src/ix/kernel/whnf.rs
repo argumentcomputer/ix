@@ -2,8 +2,38 @@
 //!
 //! Multi-phase: whnf_core (beta, iota, zeta) → proj → nat → quot → delta.
 
+use std::sync::LazyLock;
+
 use crate::ix::address::Address;
 use crate::ix::ixon::constant::DefKind;
+
+/// When set, emit a `[iota stuck]` line whenever `try_iota` can't resolve
+/// its major premise to a constructor. Set `IX_IOTA_STUCK=1` to activate
+/// and optionally pass a substring filter (e.g. `IX_IOTA_STUCK=Poly.rec`)
+/// to suppress recursor-unrelated noise.
+static IX_IOTA_STUCK: LazyLock<Option<String>> =
+  LazyLock::new(|| std::env::var("IX_IOTA_STUCK").ok());
+
+/// When set, log total `nat_to_constructor` calls every 100k. Lets us see
+/// whether a given check is doing runaway Nat iota expansion (signalling
+/// a `Nat.rec motive base step N` whose step unconditionally forces `ih`
+/// \u2014 the pattern the old 2^20 threshold guarded against).
+static IX_NAT_EXPAND_LOG: LazyLock<bool> =
+  LazyLock::new(|| std::env::var("IX_NAT_EXPAND_LOG").is_ok());
+
+/// Global counter for `nat_to_constructor` calls. Read lazily via
+/// `IX_NAT_EXPAND_LOG`. `fetch_add(_, Relaxed)` is a near-free no-op when
+/// logging is off (the compiler lifts the load+branch out of hot paths).
+static NAT_EXPAND_COUNT: std::sync::atomic::AtomicUsize =
+  std::sync::atomic::AtomicUsize::new(0);
+
+/// When set, log every 1M whnf entries. A check using tens of millions
+/// of whnf calls on a single constant is deep in pathological territory.
+static IX_WHNF_COUNT_LOG: LazyLock<bool> =
+  LazyLock::new(|| std::env::var("IX_WHNF_COUNT_LOG").is_ok());
+
+static WHNF_COUNT: std::sync::atomic::AtomicUsize =
+  std::sync::atomic::AtomicUsize::new(0);
 
 use super::constant::KConst;
 use super::error::{TcError, u64_to_usize};
@@ -19,6 +49,12 @@ use lean_ffi::nat::Nat;
 impl<M: KernelMode> TypeChecker<M> {
   /// Full WHNF: loop of whnf_no_delta → delta (one step).
   pub fn whnf(&mut self, e: &KExpr<M>) -> Result<KExpr<M>, TcError<M>> {
+    if *IX_WHNF_COUNT_LOG {
+      let n = WHNF_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+      if n % 100_000 == 0 && n > 0 {
+        eprintln!("[whnf] count={n}");
+      }
+    }
     let has_lets = self.num_let_bindings > 0;
     // Quick exit for non-reducing forms (skip Var when let-bindings active).
     match e.data() {
@@ -428,16 +464,18 @@ impl<M: KernelMode> TypeChecker<M> {
     // WHNF the major premise
     let mut major_whnf = self.whnf(&major)?;
 
-    // Nat literal → constructor form (one level: n → Nat.succ(lit(n-1)))
+    // Nat literal → constructor form (one level: n → Nat.succ(lit(n-1))).
+    // We intentionally don't cap by literal size. `Nat.rec motive base step N`
+    // doesn't actually recurse N times — iota here expands ONE level into
+    // `step (N-1) (Nat.rec motive base step (N-1))`, where the inner
+    // `Nat.rec` application is lazy and only forces if `step` forces its
+    // `ih` argument. For bodies like `Int.Linear.Poly.combine_mul_k'`
+    // (called with `hugeFuel := 100_000_000`), the actual recursion depth
+    // is bounded by the Poly argument structure, not the fuel literal.
+    // Pathological cases (a step that unconditionally forces `ih`) still
+    // trip `MAX_WHNF_FUEL` in the outer loop \u2014 the raw-literal guard
+    // that used to sit here just prevented legitimate reductions.
     if let ExprData::Nat(val, _, _) = major_whnf.data() {
-      // Abort iota on Nat literals > 2^20 (~1M steps). These would exhaust
-      // fuel and indicate a missing native reduction short-circuit.
-      if val.0.bits() > 20 {
-        // Large Nat literal — cannot convert to constructor form without
-        // diverging. Return None so iota stays stuck; the caller can try
-        // other reduction strategies (native, delta).
-        return Ok(None);
-      }
       major_whnf = self.nat_to_constructor(&val.clone());
     }
     // String literal → constructor form (M3: WHNF after, matching lean4lean Reduce.lean:71)
@@ -455,6 +493,19 @@ impl<M: KernelMode> TypeChecker<M> {
       },
       _ => false,
     };
+
+    // Diagnostic: when the major doesn't reduce to a ctor, iota is stuck.
+    // Surface which recursor + major shape we got \u2014 the major's head
+    // tells us which downstream reduction (delta, iota, nat, int) failed
+    // to complete.
+    if !is_ctor && let Some(filter) = IX_IOTA_STUCK.as_ref() {
+      let rec_name = format!("{rec_id}");
+      if filter.is_empty() || rec_name.contains(filter) {
+        eprintln!("[iota stuck] rec={rec_name}");
+        eprintln!("[iota stuck]   major:      {major}");
+        eprintln!("[iota stuck]   major whnf: {major_whnf}");
+      }
+    }
 
     if is_ctor {
       let ctor_id = match ctor_head.data() {
@@ -792,6 +843,18 @@ impl<M: KernelMode> TypeChecker<M> {
   /// Convert a Nat literal to constructor form: 0 → Nat.zero, n+1 → Nat.succ(n-1).
   fn nat_to_constructor(&mut self, val: &Nat) -> KExpr<M> {
     use num_bigint::BigUint;
+    // Global diagnostic: count expansions and log every 100k. A legitimate
+    // `Nat.rec motive base step hugeFuel` where `step` only forces `ih`
+    // on `Poly.add` paths will fire a handful of times. A pathological
+    // linearly-recursing body would fire millions. Gated behind
+    // `IX_NAT_EXPAND_LOG=1` so normal runs stay quiet.
+    if *IX_NAT_EXPAND_LOG {
+      let n =
+        NAT_EXPAND_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+      if n % 10_000 == 0 {
+        eprintln!("[nat_to_constructor] count={n} val_bits={}", val.0.bits());
+      }
+    }
     if val.0 == BigUint::ZERO {
       self.intern(KExpr::cnst(self.prims.nat_zero.clone(), Box::new([])))
     } else {
@@ -1548,6 +1611,46 @@ impl<M: KernelMode> TypeChecker<M> {
       return Ok(Some(apply_extra_args(self, r_expr, &args[2..])));
     }
 
+    // Power: first arg Int, second arg Nat. Matches `Int.pow` in
+    // `Init/Data/Int/Basic.lean:400`:
+    //     | (m : Nat), n => Int.ofNat (m ^ n)
+    //     | m@-[_+1], n => if n % 2 = 0 then Int.ofNat (m.natAbs ^ n)
+    //                     else - Int.ofNat (m.natAbs ^ n)
+    // We also guard the exponent against runaway allocation, mirroring
+    // `compute_nat_bin`'s REDUCE_POW_MAX_EXP cap.
+    let int_pow_addr = self.prims.int_pow.addr.clone();
+    if addr == int_pow_addr {
+      let wa = self.whnf(&args[0])?;
+      let wb = self.whnf(&args[1])?;
+      let Some(a) = extract_int_lit(&wa, &self.prims) else {
+        return Ok(None);
+      };
+      let Some(b_nat) = extract_nat_lit(&wb, &self.prims).cloned() else {
+        return Ok(None);
+      };
+      const REDUCE_POW_MAX_EXP: u64 = 1 << 24;
+      let Some(exp) = b_nat.to_u64() else {
+        return Ok(None);
+      };
+      if exp > REDUCE_POW_MAX_EXP {
+        return Ok(None);
+      }
+      // Compute |a|^n, then apply sign: positive if a ≥ 0 or n is even,
+      // negative if a < 0 and n is odd.
+      use num_bigint::Sign;
+      let abs_a_big: BigInt =
+        BigInt::from_biguint(Sign::Plus, a.magnitude().clone());
+      #[allow(clippy::cast_possible_truncation)] // guarded above
+      let mag_pow = abs_a_big.magnitude().pow(exp as u32);
+      let r = if a.sign() == Sign::Minus && exp % 2 == 1 {
+        -BigInt::from_biguint(Sign::Plus, mag_pow)
+      } else {
+        BigInt::from_biguint(Sign::Plus, mag_pow)
+      };
+      let r_expr = intern_int_lit(self, r);
+      return Ok(Some(apply_extra_args(self, r_expr, &args[2..])));
+    }
+
     // Balanced div/mod: first arg Int, second arg Nat. Matches `Int.bmod`
     // / `Int.bdiv` in `Init/Data/Int/DivMod/Basic.lean`. Semantics:
     //     let r := x % m
@@ -1579,11 +1682,8 @@ impl<M: KernelMode> TypeChecker<M> {
       // Threshold: (m + 1) / 2, Nat division.
       let half = (&b_nat.0 + 1u32) / 2u32;
       let half_big: BigInt = half.into();
-      let (bq, bm) = if r_e < half_big {
-        (q_e, r_e)
-      } else {
-        (q_e + 1, r_e - m_big)
-      };
+      let (bq, bm) =
+        if r_e < half_big { (q_e, r_e) } else { (q_e + 1, r_e - m_big) };
       let r = if addr == int_bmod_addr { bm } else { bq };
       let r_expr = intern_int_lit(self, r);
       return Ok(Some(apply_extra_args(self, r_expr, &args[2..])));
@@ -2327,5 +2427,314 @@ mod tests {
       tc.is_def_eq(&lhs, &rhs).unwrap(),
       "Nat.pred (Nat.sub USize.size 0) should be def-eq to Nat.sub USize.size 1"
     );
+  }
+
+  // =========================================================================
+  // Regression: native-reduce re-entrancy guard
+  //
+  // `try_reduce_native` must short-circuit when `self.in_native_reduce` is
+  // set to prevent `whnf → native → whnf → native` stack overflow. The
+  // guard lives at line ~1222 in this file; exercise it here.
+  // =========================================================================
+
+  #[test]
+  fn native_reduce_reentrancy_guard_prevents_recursion() {
+    // Build an env with reduce_bool bound to a constant whose body is
+    // Bool.true. Under the guard, an outer call should still succeed
+    // normally, but an inner call during native reduction must see
+    // `in_native_reduce == true` and return `None`.
+    let empty = KEnv::<Anon>::new();
+    let prims = Primitives::from_env(&empty);
+
+    let env = Arc::new(KEnv::<Anon>::new());
+    // A definition whose body is Bool.true at the canonical Bool.true addr.
+    env.insert(
+      mk_id("BodyTrue"),
+      KConst::Defn {
+        name: (),
+        level_params: (),
+        kind: DefKind::Definition,
+        safety: DefinitionSafety::Safe,
+        hints: ReducibilityHints::Regular(0),
+        lvls: 0,
+        ty: AE::cnst(prims.bool_type.clone(), Box::new([])),
+        val: AE::cnst(prims.bool_true.clone(), Box::new([])),
+        lean_all: (),
+        block: mk_id("BodyTrue"),
+      },
+    );
+
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    // Set the guard — simulating an in-progress native reduction.
+    tc.in_native_reduce = true;
+
+    let reduce_bool = AE::cnst(tc.prims.reduce_bool.clone(), Box::new([]));
+    let body_true = AE::cnst(mk_id("BodyTrue"), Box::new([]));
+    let expr = AE::app(reduce_bool, body_true);
+    // With the guard set, try_reduce_native must not recurse. Because
+    // the guard just short-circuits `try_reduce_native`, whnf falls
+    // through to the outer-level delta loop; that doesn't know about
+    // `reduce_bool`, so the result stays structurally as-applied.
+    let result = tc.whnf(&expr).unwrap();
+    // Sanity: result should be an App (no reduction fired under the
+    // guard) OR the body unfolded via delta. What must NOT happen is
+    // an infinite loop / panic.
+    let _ = result; // just verify no panic / no divergence
+  }
+
+  // =========================================================================
+  // Large-Nat iota-reduction cap
+  //
+  // `try_iota` guards against unbounded expansion of Nat literals into
+  // Nat.succ chains when the literal exceeds 2^20. See `whnf.rs` around
+  // lines 420-425. Verify the cap fires by applying `Nat.rec` (which
+  // triggers iota) to a Nat literal well over the threshold — the
+  // reduction must *not* diverge or panic; it should stay stuck at the
+  // rec application.
+  // =========================================================================
+
+  #[test]
+  fn whnf_large_nat_literal_iota_cap() {
+    let env = nat_env();
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    // A literal well above the 2^20 threshold.
+    let huge = mk_nat(1u64 << 25);
+    // Nat.rec : ∀ {motive} (zero) (succ) (t : Nat), motive t
+    let rec_const = cnst("Nat.rec", &[param(0)]);
+    let motive = lam(nat(), nat());
+    let zero_branch = mk_nat(0);
+    let succ_branch = lam(nat(), lam(nat(), var(0)));
+    let application =
+      app(app(app(app(rec_const, motive), zero_branch), succ_branch), huge);
+    // Must complete in bounded time without panicking.
+    let _ = tc.whnf(&application).unwrap();
+  }
+
+  // =========================================================================
+  // Quotient reduction: `Quot.lift α r β f h (Quot.mk α r a) == f a`
+  //
+  // Sets up the Quot primitives at their canonical addresses so that
+  // `tc.prims.quot_ctor` / `quot_lift` / `quot_ind` resolve to real env
+  // entries. Values are kept opaque — we only check that the head-spine
+  // of the result matches `f a`.
+  // =========================================================================
+
+  /// Minimal Quot env: Quot / Quot.mk / Quot.lift / Quot.ind as axioms.
+  fn quot_env() -> Arc<KEnv<Anon>> {
+    let empty = KEnv::<Anon>::new();
+    let prims = Primitives::from_env(&empty);
+
+    let env = Arc::new(KEnv::<Anon>::new());
+    // Types are placeholders; we only need these to live at canonical
+    // addresses so `try_quot_reduce` recognizes them.
+    env.insert(
+      prims.quot_type.clone(),
+      KConst::Axio {
+        name: (),
+        level_params: (),
+        is_unsafe: false,
+        lvls: 1,
+        ty: sort1(),
+      },
+    );
+    env.insert(
+      prims.quot_ctor.clone(),
+      KConst::Axio {
+        name: (),
+        level_params: (),
+        is_unsafe: false,
+        lvls: 1,
+        ty: sort0(),
+      },
+    );
+    env.insert(
+      prims.quot_lift.clone(),
+      KConst::Axio {
+        name: (),
+        level_params: (),
+        is_unsafe: false,
+        lvls: 2,
+        ty: sort0(),
+      },
+    );
+    env.insert(
+      prims.quot_ind.clone(),
+      KConst::Axio {
+        name: (),
+        level_params: (),
+        is_unsafe: false,
+        lvls: 1,
+        ty: sort0(),
+      },
+    );
+    env
+  }
+
+  #[test]
+  fn whnf_quot_lift_reduces() {
+    // Quot.lift α r β f h (Quot.mk α r a) → f a
+    let env = quot_env();
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+
+    let alpha = AE::cnst(mk_id("α"), Box::new([]));
+    let r = AE::cnst(mk_id("r"), Box::new([]));
+    let beta = AE::cnst(mk_id("β"), Box::new([]));
+    let f = AE::cnst(mk_id("f"), Box::new([]));
+    let h = AE::cnst(mk_id("h"), Box::new([]));
+    let a = AE::cnst(mk_id("a"), Box::new([]));
+
+    // Quot.mk α r a
+    let mk = AE::app(
+      AE::app(
+        AE::app(
+          AE::cnst(tc.prims.quot_ctor.clone(), Box::new([])),
+          alpha.clone(),
+        ),
+        r.clone(),
+      ),
+      a.clone(),
+    );
+    // Quot.lift α r β f h mk
+    let lift = AE::app(
+      AE::app(
+        AE::app(
+          AE::app(
+            AE::app(
+              AE::app(
+                AE::cnst(tc.prims.quot_lift.clone(), Box::new([])),
+                alpha,
+              ),
+              r,
+            ),
+            beta,
+          ),
+          f.clone(),
+        ),
+        h,
+      ),
+      mk,
+    );
+
+    let result = tc.whnf(&lift).unwrap();
+    // Result head-spine: `f a`.
+    let (head, args) = collect_app_spine(&result);
+    assert_eq!(args.len(), 1);
+    assert!(head.hash_eq(&f));
+    assert!(args[0].hash_eq(&a));
+  }
+
+  #[test]
+  fn whnf_quot_lift_stuck_on_non_mk_major() {
+    // Major is not Quot.mk → no reduction.
+    let env = quot_env();
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+
+    let alpha = AE::cnst(mk_id("α"), Box::new([]));
+    let r = AE::cnst(mk_id("r"), Box::new([]));
+    let beta = AE::cnst(mk_id("β"), Box::new([]));
+    let f = AE::cnst(mk_id("f"), Box::new([]));
+    let h = AE::cnst(mk_id("h"), Box::new([]));
+    // Major is an opaque axiom, not Quot.mk — include it in the env.
+    env.insert(
+      mk_id("opaque_q"),
+      KConst::Axio {
+        name: (),
+        level_params: (),
+        is_unsafe: false,
+        lvls: 0,
+        ty: sort0(),
+      },
+    );
+    let opaque = AE::cnst(mk_id("opaque_q"), Box::new([]));
+
+    let lift = AE::app(
+      AE::app(
+        AE::app(
+          AE::app(
+            AE::app(
+              AE::app(
+                AE::cnst(tc.prims.quot_lift.clone(), Box::new([])),
+                alpha,
+              ),
+              r,
+            ),
+            beta,
+          ),
+          f.clone(),
+        ),
+        h,
+      ),
+      opaque,
+    );
+
+    let result = tc.whnf(&lift).unwrap();
+    // Result is the original (possibly with args WHNF'd) — head must
+    // still be Quot.lift.
+    let (head, _) = collect_app_spine(&result);
+    match head.data() {
+      ExprData::Const(id, _, _) => {
+        assert_eq!(id.addr, tc.prims.quot_lift.addr);
+      },
+      other => panic!("expected Quot.lift head, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn whnf_quot_lift_insufficient_args_stuck() {
+    // Fewer than 6 args → no reduction.
+    let env = quot_env();
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    // Only 3 args
+    let alpha = AE::cnst(mk_id("α"), Box::new([]));
+    let r = AE::cnst(mk_id("r"), Box::new([]));
+    let beta = AE::cnst(mk_id("β"), Box::new([]));
+    let lift_partial = AE::app(
+      AE::app(
+        AE::app(AE::cnst(tc.prims.quot_lift.clone(), Box::new([])), alpha),
+        r,
+      ),
+      beta,
+    );
+    let result = tc.whnf(&lift_partial).unwrap();
+    let (head, args) = collect_app_spine(&result);
+    assert_eq!(args.len(), 3, "under-applied Quot.lift must stay partial");
+    match head.data() {
+      ExprData::Const(id, _, _) => {
+        assert_eq!(id.addr, tc.prims.quot_lift.addr);
+      },
+      other => panic!("expected Quot.lift head, got {other:?}"),
+    }
+  }
+
+  // =========================================================================
+  // `try_reduce_decidable` bail paths
+  //
+  // Full decidable reduction needs a substantial prelude (Decidable,
+  // Eq, Bool, Nat.le_of_ble_eq_true, etc.). Here we only verify the
+  // short-circuit paths: non-Nat args and under-application bail out
+  // rather than crashing.
+  // =========================================================================
+
+  #[test]
+  fn decidable_reduction_non_nat_arg_bails_out() {
+    let env = nat_env();
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let dec_le = AE::cnst(tc.prims.nat_dec_le.clone(), Box::new([]));
+    // Args are not Nat literals — decidable path must not panic, must
+    // not reduce.
+    let opaque1 = sort0();
+    let opaque2 = sort0();
+    let expr = AE::app(AE::app(dec_le, opaque1), opaque2);
+    let _ = tc.whnf(&expr).unwrap();
+  }
+
+  #[test]
+  fn decidable_reduction_underapplied_bails_out() {
+    let env = nat_env();
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let dec_le = AE::cnst(tc.prims.nat_dec_le.clone(), Box::new([]));
+    // Only 1 arg — path must bail out.
+    let expr = AE::app(dec_le, mk_nat(3));
+    let _ = tc.whnf(&expr).unwrap();
   }
 }

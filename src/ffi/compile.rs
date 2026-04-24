@@ -10,7 +10,9 @@
 use std::sync::Arc;
 
 use crate::ix::address::Address;
-use crate::ix::compile::{CompileState, compile_env};
+use crate::ix::compile::{
+  CompileOptions, CompileState, compile_env_with_options,
+};
 use crate::ix::condense::compute_sccs;
 use crate::ix::decompile::decompile_env;
 use crate::ix::env::Name;
@@ -208,7 +210,10 @@ pub extern "C" fn rs_compile_env_full(
     let condensed = compute_sccs(&ref_graph.out_refs);
 
     // Phase 3: Compile
-    let compile_stt = match compile_env(&rust_env) {
+    let compile_stt = match compile_env_with_options(
+      &rust_env,
+      CompileOptions { check_originals: false, ..Default::default() },
+    ) {
       Ok(stt) => stt,
       Err(e) => {
         let msg =
@@ -302,7 +307,10 @@ pub extern "C" fn rs_compile_env(
     let rust_env = decode_env(env_consts_ptr);
     let rust_env = Arc::new(rust_env);
 
-    let compile_stt = match compile_env(&rust_env) {
+    let compile_stt = match compile_env_with_options(
+      &rust_env,
+      CompileOptions { check_originals: false, ..Default::default() },
+    ) {
       Ok(stt) => stt,
       Err(e) => {
         let msg = format!("rs_compile_env: Rust compilation failed: {:?}", e);
@@ -330,7 +338,10 @@ pub extern "C" fn rs_compile_env(
 
     // Build Lean ByteArray
     if !quiet {
-      eprintln!("[rs_compile_env] building Lean ByteArray ({} bytes)", buf.len());
+      eprintln!(
+        "[rs_compile_env] building Lean ByteArray ({} bytes)",
+        buf.len()
+      );
     }
     let ba_start = std::time::Instant::now();
     let ba = LeanByteArray::from_bytes(&buf);
@@ -414,7 +425,10 @@ pub extern "C" fn rs_compile_phases(
 
     let condensed_obj = LeanIxCondensedBlocks::build(&mut cache, &condensed);
 
-    let compile_stt = match compile_env(&rust_env) {
+    let compile_stt = match compile_env_with_options(
+      &rust_env,
+      CompileOptions { check_originals: false, ..Default::default() },
+    ) {
       Ok(stt) => stt,
       Err(e) => {
         let msg = format!("rs_compile_phases: compilation failed: {:?}", e);
@@ -504,7 +518,10 @@ pub extern "C" fn rs_compile_env_to_ixon(
     let rust_env = decode_env(env_consts_ptr);
     let rust_env = Arc::new(rust_env);
 
-    let compile_stt = match compile_env(&rust_env) {
+    let compile_stt = match compile_env_with_options(
+      &rust_env,
+      CompileOptions { check_originals: false, ..Default::default() },
+    ) {
       Ok(stt) => stt,
       Err(e) => {
         let msg =
@@ -678,7 +695,10 @@ extern "C" fn rs_compile_env_rust_first(
   let lean_env = Arc::new(lean_env);
 
   // Compile with Rust
-  let rust_stt = match compile_env(&lean_env) {
+  let rust_stt = match compile_env_with_options(
+    &lean_env,
+    CompileOptions { check_originals: false, ..Default::default() },
+  ) {
     Ok(stt) => stt,
     Err(_e) => {
       return std::ptr::null_mut();

@@ -460,9 +460,20 @@ impl LeanIxonConstantMeta<LeanOwned> {
         ctor.into()
       },
 
-      ConstantMetaInfo::Muts { all } => {
+      ConstantMetaInfo::Muts { all, aux_layout: _ } => {
+        // Muts is a Rust-only ConstantMeta variant (Lean's ConstantMeta
+        // has no `muts` constructor — `Ix/Ixon.lean`). The FFI build
+        // path for Muts is effectively dead because Lean never materializes
+        // a Muts meta; keeping the stub here preserves the historical
+        // tag-7 encoding for any Rust-side code that still reflects a
+        // Muts meta through the FFI roundtrip test (`rs_roundtrip_ixon_named`).
+        //
+        // `aux_layout` is intentionally NOT encoded through the FFI —
+        // the Lean side has no field for it, and anything crossing the
+        // FFI would immediately drop it on the next Rust-side build.
+        // Aux_layout round-tripping lives entirely in `put_indexed` /
+        // `get_indexed` (Rust-internal serialization).
         let ctor = LeanCtor::alloc(7, 1, 0);
-        // Encode `all: Vec<Vec<Address>>` as Array (Array Address)
         let outer = LeanArray::alloc(all.len());
         for (i, group) in all.iter().enumerate() {
           outer.set(i, LeanIxAddress::build_array(group));
@@ -610,12 +621,18 @@ impl<R: LeanRef> LeanIxonConstantMeta<R> {
 
       7 => {
         // muts: 1 obj field (Array (Array Address)), 0 scalar
+        //
+        // `aux_layout` is not carried across the FFI — Lean's
+        // ConstantMeta has no `muts` variant, so the only path here is
+        // the Rust-internal roundtrip test. We default to `None` on
+        // decode; the real aux_layout data survives through the
+        // Rust-side `put_indexed` / `get_indexed` path instead.
         let outer = ctor.get(0).as_array();
         let mut all = Vec::with_capacity(outer.len());
         for i in 0..outer.len() {
           all.push(decode_address_array(outer.get(i).as_array()));
         }
-        ConstantMeta::new(ConstantMetaInfo::Muts { all })
+        ConstantMeta::new(ConstantMetaInfo::Muts { all, aux_layout: None })
       },
 
       tag => panic!("Invalid Ixon.ConstantMeta tag: {}", tag),
@@ -684,11 +701,9 @@ impl<R: LeanRef> LeanIxonNamed<R> {
     let ctor = self.as_ctor();
     let addr =
       LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array()).decode();
-    let meta =
-      LeanIxonConstantMeta::new(ctor.get(1).to_owned_ref()).decode();
+    let meta = LeanIxonConstantMeta::new(ctor.get(1).to_owned_ref()).decode();
     let original_obj = ctor.get(2);
-    let original: Option<(Address, ConstantMeta)> = if original_obj
-      .is_scalar()
+    let original: Option<(Address, ConstantMeta)> = if original_obj.is_scalar()
     {
       // Scalar-optimized `Option.none`.
       None
@@ -698,10 +713,8 @@ impl<R: LeanRef> LeanIxonNamed<R> {
         0 => None,
         1 => {
           let pair = opt.get(0).as_ctor();
-          let orig_addr = LeanIxAddress::from_borrowed(
-            pair.get(0).as_byte_array(),
-          )
-          .decode();
+          let orig_addr =
+            LeanIxAddress::from_borrowed(pair.get(0).as_byte_array()).decode();
           let orig_meta =
             LeanIxonConstantMeta::new(pair.get(1).to_owned_ref()).decode();
           Some((orig_addr, orig_meta))

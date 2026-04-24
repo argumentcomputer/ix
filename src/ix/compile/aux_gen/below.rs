@@ -20,6 +20,21 @@ use super::expr_utils::{
   instantiate1, mk_app_n, mk_const, mk_forall, mk_lambda, replace_const_names,
 };
 
+/// Extract the 1-based suffix index from an auxiliary recursor name of
+/// shape `<head>.rec_N`. Returns `None` if the last component isn't a
+/// `rec_<n>` string.
+///
+/// Used by `generate_below_constants` and `generate_brecon_constants`
+/// to derive source-indexed `below_N` / `brecOn_N` suffixes from the
+/// (already source-indexed) aux rec names produced by
+/// `aux_gen::generate_aux_patches`.
+pub(super) fn aux_rec_suffix_idx(aux_rec_name: &Name) -> Option<usize> {
+  aux_rec_name
+    .last_str()
+    .and_then(|s| s.strip_prefix("rec_"))
+    .and_then(|t| t.parse::<usize>().ok())
+}
+
 /// A generated `.below` constant — either a definition (Type-level)
 /// or an inductive (Prop-level).
 #[derive(Clone)]
@@ -292,8 +307,24 @@ pub(crate) fn generate_below_constants(
       // not the canonical class representative.
       let all0 = &first_ind.all[0];
       for j in 0..n_aux {
-        let idx = j + 1; // 1-based Lean convention
-        let (_, aux_rec_val) = &canonical_recs[n_classes + j];
+        let (aux_rec_name, aux_rec_val) = &canonical_recs[n_classes + j];
+
+        // The aux rec's suffix is already Lean-source-indexed by
+        // `aux_gen.rs::generate_aux_patches` (it renames
+        // `_nested.X.rec` → `<all0>.rec_{source_j+1}` via `canon_repr`).
+        // So `below_N`'s N matches the aux rec's N — just swap the
+        // leading `rec` with `below`. This keeps below and rec in
+        // lockstep with Lean's source naming.
+        //
+        let idx = aux_rec_suffix_idx(aux_rec_name).ok_or_else(|| {
+          CompileError::InvalidMutualBlock {
+            reason: format!(
+              "below aux recursor '{}' is not source-indexed; refusing to synthesize below_{}",
+              aux_rec_name.pretty(),
+              j + 1,
+            ),
+          }
+        })?;
         let below_name = Name::str(all0.clone(), format!("below_{idx}"));
 
         // Only generate if this constant exists in the source environment.
@@ -381,10 +412,7 @@ fn build_below_def(
   // inferType rather than manually decomposing level trees.
   let ilvl = {
     let total = n_params + n_motives + n_minors + n_indices + 1;
-    let ctx = format!(
-      "build_below_def({})",
-      rec_val.cnst.name.pretty()
-    );
+    let ctx = format!("build_below_def({})", rec_val.cnst.name.pretty());
     let what = format!(
       "n_params({n_params}) + n_motives({n_motives}) + \
        n_minors({n_minors}) + n_indices({n_indices}) + 1 major"
@@ -1565,9 +1593,7 @@ pub(super) fn level_normalize(l: &Level) -> Level {
 /// Quick check: `l` is already in `Succ*(Param|MVar|Zero)` form.
 fn is_already_normalized_cheap(l: &Level) -> bool {
   match l.as_data() {
-    LevelData::Zero(_)
-    | LevelData::Param(_, _)
-    | LevelData::Mvar(_, _) => true,
+    LevelData::Zero(_) | LevelData::Param(_, _) | LevelData::Mvar(_, _) => true,
     LevelData::Succ(inner, _) => is_already_normalized_cheap(inner),
     _ => false,
   }
@@ -1685,7 +1711,9 @@ fn norm_lt_aux(l1: &Level, k1: u64, l2: &Level, k2: u64) -> bool {
 /// `max`-argument list.
 fn skip_explicit(lvls: &[Level], start: usize) -> usize {
   let mut i = start;
-  while i < lvls.len() && matches!(get_level_offset(&lvls[i]).as_data(), LevelData::Zero(_)) {
+  while i < lvls.len()
+    && matches!(get_level_offset(&lvls[i]).as_data(), LevelData::Zero(_))
+  {
     i += 1;
   }
   i

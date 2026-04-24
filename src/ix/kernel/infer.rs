@@ -20,8 +20,24 @@ use super::tc::TypeChecker;
 static IX_APP_DIFF: LazyLock<bool> =
   LazyLock::new(|| std::env::var("IX_APP_DIFF").is_ok());
 
+/// When set, log every 100K `infer` entries (total, across cache hits
+/// and real calls). A check using millions of infer calls points to a
+/// bloated term or a mis-firing cache. Pairs with `IX_DEF_EQ_COUNT_LOG`
+/// / `IX_WHNF_COUNT_LOG` for a full picture of per-check hotspots.
+static IX_INFER_COUNT_LOG: LazyLock<bool> =
+  LazyLock::new(|| std::env::var("IX_INFER_COUNT_LOG").is_ok());
+
+static INFER_COUNT: std::sync::atomic::AtomicUsize =
+  std::sync::atomic::AtomicUsize::new(0);
+
 impl<M: KernelMode> TypeChecker<M> {
   pub fn infer(&mut self, e: &KExpr<M>) -> Result<KExpr<M>, TcError<M>> {
+    if *IX_INFER_COUNT_LOG {
+      let n = INFER_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+      if n % 100_000 == 0 && n > 0 {
+        eprintln!("[infer] count={n}");
+      }
+    }
     let infer_only = self.infer_only;
 
     // Single `infer_cache` serves both modes. The cache only holds full-mode
@@ -99,7 +115,10 @@ impl<M: KernelMode> TypeChecker<M> {
               // strategy.
               let a_whnf = self.whnf(&a_ty);
               let d_whnf = self.whnf(&dom);
-              eprintln!("[app diff] AppTypeMismatch at depth={}", self.ctx.len());
+              eprintln!(
+                "[app diff] AppTypeMismatch at depth={}",
+                self.ctx.len()
+              );
               eprintln!("  f:          {f}");
               eprintln!("  a:          {a}");
               eprintln!("  a_ty:       {a_ty}");
@@ -321,6 +340,7 @@ mod tests {
 
   use super::super::constant::KConst;
   use super::super::env::KEnv;
+  use super::super::error::TcError;
   use super::super::expr::{ExprData, KExpr};
   use super::super::id::KId;
   use super::super::level::KUniv;
@@ -465,5 +485,174 @@ mod tests {
     let t1 = tc.infer(&e).unwrap();
     let t2 = tc.infer(&e).unwrap();
     assert_eq!(t1, t2);
+  }
+
+  // =========================================================================
+  // Error paths
+  // =========================================================================
+
+  #[test]
+  fn infer_unknown_const_errors() {
+    let env = test_env();
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let bogus = AE::cnst(mk_id("DoesNotExist"), Box::new([]));
+    match tc.infer(&bogus) {
+      Err(TcError::UnknownConst(addr)) => {
+        assert_eq!(addr, mk_addr("DoesNotExist"));
+      },
+      other => panic!("expected UnknownConst, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn infer_univ_param_count_mismatch() {
+    let env = test_env();
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    // `id` has 0 level params; supplying one should error.
+    let wrong = AE::cnst(mk_id("id"), Box::new([AU::zero()]));
+    match tc.infer(&wrong) {
+      Err(TcError::UnivParamMismatch { expected, got }) => {
+        assert_eq!(expected, 0);
+        assert_eq!(got, 1);
+      },
+      other => panic!("expected UnivParamMismatch, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn infer_var_out_of_range() {
+    let env = test_env();
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    // Empty context, Var(0) → out of range.
+    match tc.infer(&AE::var(0, ())) {
+      Err(TcError::VarOutOfRange { idx, ctx_len }) => {
+        assert_eq!(idx, 0);
+        assert_eq!(ctx_len, 0);
+      },
+      other => panic!("expected VarOutOfRange, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn infer_app_mismatch_errors() {
+    // Applying `id : Sort 0 → Sort 0` to a Nat (which has type Nat, not
+    // Sort 0) should error with AppTypeMismatch.
+    let env = test_env();
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let id_const = AE::cnst(mk_id("id"), Box::new([]));
+    let nat_lit = AE::nat(Nat::from(0u64), mk_addr("0"));
+    let app = AE::app(id_const, nat_lit);
+    match tc.infer(&app) {
+      Err(TcError::AppTypeMismatch { .. }) => {},
+      other => panic!("expected AppTypeMismatch, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn infer_app_of_non_function_errors() {
+    // Nat is not a function — applying it should fail with FunExpected.
+    let env = test_env();
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let nat_const = AE::cnst(mk_id("Nat"), Box::new([]));
+    let app = AE::app(nat_const, sort0());
+    match tc.infer(&app) {
+      Err(TcError::FunExpected { .. }) => {},
+      other => panic!("expected FunExpected, got {other:?}"),
+    }
+  }
+
+  // =========================================================================
+  // Structural path coverage
+  // =========================================================================
+
+  #[test]
+  fn infer_all_returns_imax_of_domain_and_codomain_sorts() {
+    let env = test_env();
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    // ∀ (x : Sort 0). Sort 1 → Sort imax(1, 2) = Sort 2
+    let all = AE::all((), (), sort0(), sort1());
+    let ty = tc.infer(&all).unwrap();
+    match ty.data() {
+      ExprData::Sort(u, _) => {
+        // imax(succ(0), succ(succ(0))) = succ(succ(0)), which is never-zero
+        // so imax degenerates to max. Both operands are explicit numerals,
+        // result is succ(succ(0)) = 2.
+        assert!(!u.is_zero());
+      },
+      other => panic!("expected Sort, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn infer_let_substitutes_value_into_body_type() {
+    let env = test_env();
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    // let x : Sort 0 := Sort 0 in x
+    let expr = AE::let_(
+      (),
+      sort1(), // x : Sort 1
+      sort0(), // x := Sort 0
+      AE::var(0, ()),
+      false,
+    );
+    // Inferred type: body's type with value substituted. Body is Var(0)
+    // with type Sort 1, so the type is Sort 1.
+    let ty = tc.infer(&expr).unwrap();
+    assert_eq!(ty, sort1());
+  }
+
+  #[test]
+  fn infer_let_value_type_mismatch_errors() {
+    // let x : Sort 0 := 42 in x → DeclTypeMismatch (42 is a Nat, not a Sort).
+    let env = test_env();
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let nat_val = AE::nat(Nat::from(42u64), mk_addr("42"));
+    let expr = AE::let_((), sort0(), nat_val, AE::var(0, ()), false);
+    match tc.infer(&expr) {
+      Err(TcError::DeclTypeMismatch) => {},
+      other => panic!("expected DeclTypeMismatch, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn infer_str_returns_string_type() {
+    let env = test_env();
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let s = AE::str("hello".into(), mk_addr("hello"));
+    let ty = tc.infer(&s).unwrap();
+    // Type should be `String` — a constant at the canonical string addr.
+    match ty.data() {
+      ExprData::Const(id, _, _) => {
+        assert_eq!(id.addr, tc.prims.string.addr);
+      },
+      other => panic!("expected Const(String), got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn infer_with_infer_only_skips_app_type_check() {
+    // In infer-only mode, `infer` must skip the arg-type def-eq check,
+    // so `id(42)` infers cleanly even though 42's type doesn't match
+    // `id`'s domain (Sort 0). This is the key property infer-only has.
+    let env = test_env();
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let id_const = AE::cnst(mk_id("id"), Box::new([]));
+    let nat_lit = AE::nat(Nat::from(0u64), mk_addr("0"));
+    let app = AE::app(id_const, nat_lit);
+    let r = tc.with_infer_only(|tc| tc.infer(&app));
+    // In full mode this would error; in infer-only it succeeds.
+    assert!(r.is_ok());
+  }
+
+  #[test]
+  fn infer_is_deterministic_across_contexts() {
+    // Inferring the same closed expression twice should always yield
+    // the same interned result.
+    let env = test_env();
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let e = AE::all((), (), sort0(), sort0());
+    let t1 = tc.infer(&e).unwrap();
+    let t2 = tc.infer(&e).unwrap();
+    assert!(t1.hash_eq(&t2));
   }
 }

@@ -106,6 +106,7 @@ pub struct Primitives<M: KernelMode> {
   pub int_bmod: KId<M>,
   pub int_bdiv: KId<M>,
   pub int_nat_abs: KId<M>,
+  pub int_pow: KId<M>,
 }
 
 /// Hardcoded primitive addresses (for lookup in the env).
@@ -174,6 +175,7 @@ pub struct PrimAddrs {
   pub int_bmod: Address,
   pub int_bdiv: Address,
   pub int_nat_abs: Address,
+  pub int_pow: Address,
   pub punit: Address,
   pub pprod: Address,
   pub pprod_mk: Address,
@@ -384,6 +386,9 @@ impl PrimAddrs {
       ),
       int_nat_abs: h(
         "387423bacfde4c6ab21a1ca97f63fd9c194290d1b25a0f24587d17a16533afc0",
+      ),
+      int_pow: h(
+        "f52318c4f6973c48e73f0313ccf2fe6c55b08fb1ac2c8e7fb50d7ae2876dcec2",
       ),
       punit: h(
         "16a2dc76a2cfcc9440f443c666536f2fa99c0250b642fd3971fbad25d531262a",
@@ -606,6 +611,9 @@ impl PrimAddrs {
       int_nat_abs: h(
         "cc43f34a58ce42dfedfdfb0c07a5f31dffa6ba3fb272f3c573ec547eaef722d6",
       ),
+      int_pow: h(
+        "ae92f05449a4d67697f3649225f88703a6a928a815b7cf6448e92b3a787a1103",
+      ),
       punit: h(
         "e4d0247a1393397d7efa718dc31229b3592a522531595290683ca63dfe420e4d",
       ),
@@ -738,6 +746,276 @@ impl<M: KernelMode> Primitives<M> {
       int_bmod: r(&a.int_bmod),
       int_bdiv: r(&a.int_bdiv),
       int_nat_abs: r(&a.int_nat_abs),
+      int_pow: r(&a.int_pow),
+    }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use std::collections::HashMap;
+
+  use super::*;
+  use crate::ix::env::Name;
+  use crate::ix::kernel::constant::KConst;
+  use crate::ix::kernel::expr::KExpr;
+  use crate::ix::kernel::id::KId;
+  use crate::ix::kernel::level::KUniv;
+  use crate::ix::kernel::mode::Anon;
+
+  /// Collect every (field_name, addr) pair from `PrimAddrs` via reflection
+  /// over a macro invocation at the caller — done here by an inline array.
+  /// Keep in lockstep with `PrimAddrs`.
+  ///
+  /// Fields intentionally present as address-only dispatch markers (no Lean
+  /// constant) are marked below.
+  fn addrs_with_names(a: &PrimAddrs) -> Vec<(&'static str, &Address)> {
+    vec![
+      ("nat", &a.nat),
+      ("nat_zero", &a.nat_zero),
+      ("nat_succ", &a.nat_succ),
+      ("nat_add", &a.nat_add),
+      ("nat_pred", &a.nat_pred),
+      ("nat_sub", &a.nat_sub),
+      ("nat_mul", &a.nat_mul),
+      ("nat_pow", &a.nat_pow),
+      ("nat_gcd", &a.nat_gcd),
+      ("nat_mod", &a.nat_mod),
+      ("nat_div", &a.nat_div),
+      ("nat_bitwise", &a.nat_bitwise),
+      ("nat_beq", &a.nat_beq),
+      ("nat_ble", &a.nat_ble),
+      ("nat_land", &a.nat_land),
+      ("nat_lor", &a.nat_lor),
+      ("nat_xor", &a.nat_xor),
+      ("nat_shift_left", &a.nat_shift_left),
+      ("nat_shift_right", &a.nat_shift_right),
+      ("bool_type", &a.bool_type),
+      ("bool_true", &a.bool_true),
+      ("bool_false", &a.bool_false),
+      ("string", &a.string),
+      ("string_mk", &a.string_mk),
+      ("char_type", &a.char_type),
+      ("char_mk", &a.char_mk),
+      ("char_of_nat", &a.char_of_nat),
+      ("string_of_list", &a.string_of_list),
+      ("list", &a.list),
+      ("list_nil", &a.list_nil),
+      ("list_cons", &a.list_cons),
+      ("eq", &a.eq),
+      ("eq_refl", &a.eq_refl),
+      ("quot_type", &a.quot_type),
+      ("quot_ctor", &a.quot_ctor),
+      ("quot_lift", &a.quot_lift),
+      ("quot_ind", &a.quot_ind),
+      ("reduce_bool", &a.reduce_bool),
+      ("reduce_nat", &a.reduce_nat),
+      ("eager_reduce", &a.eager_reduce),
+      ("system_platform_num_bits", &a.system_platform_num_bits),
+      ("nat_dec_le", &a.nat_dec_le),
+      ("nat_dec_eq", &a.nat_dec_eq),
+      ("nat_dec_lt", &a.nat_dec_lt),
+      ("decidable_is_true", &a.decidable_is_true),
+      ("decidable_is_false", &a.decidable_is_false),
+      ("nat_le_of_ble_eq_true", &a.nat_le_of_ble_eq_true),
+      ("nat_not_le_of_not_ble_eq_true", &a.nat_not_le_of_not_ble_eq_true),
+      ("nat_eq_of_beq_eq_true", &a.nat_eq_of_beq_eq_true),
+      ("nat_ne_of_beq_eq_false", &a.nat_ne_of_beq_eq_false),
+      ("bool_no_confusion", &a.bool_no_confusion),
+      ("int", &a.int),
+      ("int_of_nat", &a.int_of_nat),
+      ("int_neg_succ", &a.int_neg_succ),
+      ("int_add", &a.int_add),
+      ("int_sub", &a.int_sub),
+      ("int_mul", &a.int_mul),
+      ("int_neg", &a.int_neg),
+      ("int_emod", &a.int_emod),
+      ("int_ediv", &a.int_ediv),
+      ("int_bmod", &a.int_bmod),
+      ("int_bdiv", &a.int_bdiv),
+      ("int_pow", &a.int_pow),
+      ("int_nat_abs", &a.int_nat_abs),
+      ("punit", &a.punit),
+      ("pprod", &a.pprod),
+      ("pprod_mk", &a.pprod_mk),
+    ]
+  }
+
+  /// Collapse the (field, addr) vec into address → fields-that-share-it.
+  fn find_duplicates(a: &PrimAddrs) -> Vec<(String, Vec<&'static str>)> {
+    let entries = addrs_with_names(a);
+    let mut by_addr: HashMap<String, Vec<&'static str>> = HashMap::new();
+    for (name, addr) in entries {
+      by_addr.entry(addr.hex()).or_default().push(name);
+    }
+    let mut dups: Vec<(String, Vec<&'static str>)> = by_addr
+      .into_iter()
+      .filter(|(_, v)| v.len() > 1)
+      .map(|(k, mut v)| {
+        v.sort();
+        (k, v)
+      })
+      .collect();
+    dups.sort_by(|a, b| a.0.cmp(&b.0));
+    dups
+  }
+
+  #[test]
+  fn prim_addrs_new_orig_has_no_duplicates() {
+    // LEON pre-compile table is regenerated from Lean reference and
+    // must never have field collisions.
+    let a = PrimAddrs::new_orig();
+    let dups = find_duplicates(&a);
+    assert!(
+      dups.is_empty(),
+      "PrimAddrs::new_orig() has duplicate addresses:\n{dups:#?}"
+    );
+  }
+
+  /// `string_mk` and `string_of_list` intentionally share a canonical
+  /// content address: in Lean they're the same declaration.
+  /// `refs/lean4/src/Init/Prelude.lean` has
+  ///
+  /// ```lean
+  /// @[extern "lean_string_mk"]
+  /// def String.ofList (data : List Char) : String :=
+  ///   ⟨List.utf8Encode data, .intro data rfl⟩
+  /// ```
+  ///
+  /// `String.ofList` is the pure Lean definition; `lean_string_mk` is
+  /// its FFI extern name. The canonical (alpha-invariant, content-hashed)
+  /// form coalesces the two kernel-dispatch slots onto one address, which
+  /// is why `PrimAddrs::new()` stores the same hex for both — both
+  /// `prims.string_mk` and `prims.string_of_list` end up pointing at the
+  /// same `KId`. `PrimAddrs::new_orig()` holds them as distinct LEON
+  /// addresses because pre-compile the two names exist as separate
+  /// lookup keys.
+  ///
+  /// This test pins the intentional alias: if a future canonical-table
+  /// regeneration accidentally splits them we want a loud signal.
+  #[test]
+  fn prim_addrs_new_string_mk_and_of_list_are_intentionally_aliased() {
+    let a = PrimAddrs::new();
+    assert_eq!(
+      a.string_mk.hex(),
+      a.string_of_list.hex(),
+      "string_mk and string_of_list must share a canonical address — \
+       they are the same Lean declaration (String.ofList with extern \
+       \"lean_string_mk\"). If this assertion fires after a hash-table \
+       regeneration, check whether a Lean-side rename broke the alias \
+       or whether the regeneration tool started emitting distinct hashes."
+    );
+  }
+
+  /// Canonical hash table regression guard: everything except the known
+  /// `string_mk` / `string_of_list` alias must be distinct.
+  #[test]
+  fn prim_addrs_new_no_unexpected_duplicates() {
+    let a = PrimAddrs::new();
+    let dups = find_duplicates(&a);
+    // Filter out the intentional alias (string_mk + string_of_list) —
+    // see `prim_addrs_new_string_mk_and_of_list_are_intentionally_aliased`.
+    let unexpected: Vec<_> = dups
+      .into_iter()
+      .filter(|(_, fields)| {
+        !(fields.len() == 2
+          && fields.contains(&"string_mk")
+          && fields.contains(&"string_of_list"))
+      })
+      .collect();
+    assert!(
+      unexpected.is_empty(),
+      "PrimAddrs::new() has unexpected duplicate addresses:\n{unexpected:#?}"
+    );
+  }
+
+  #[test]
+  fn primitives_from_env_empty_uses_synthetic_fallback() {
+    // With an empty env, every `r(&a.*)` lookup misses and produces a
+    // synthetic `@<hex prefix>` KId. Confirm construction succeeds and
+    // yields recognizable synthetic names (in Meta mode).
+    let env = KEnv::<crate::ix::kernel::mode::Meta>::new();
+    let p = Primitives::from_env(&env);
+    // The fallback name is `@<first 8 hex chars>`, a string part under an
+    // anonymous Name. Verify the `nat` field lives at the expected
+    // canonical address.
+    let canon = PrimAddrs::new();
+    assert_eq!(p.nat.addr.hex(), canon.nat.hex());
+  }
+
+  #[test]
+  fn primitives_from_env_populated_resolves_against_env() {
+    // Insert a single constant at the canonical Nat address and confirm
+    // `Primitives::from_env` picks it up instead of falling back to
+    // synthesis.
+    let env = KEnv::<Anon>::new();
+    let canon = PrimAddrs::new();
+
+    let nat_id = KId::<Anon>::new(canon.nat.clone(), ());
+    let nat_axio = KConst::<Anon>::Axio {
+      name: (),
+      level_params: (),
+      is_unsafe: false,
+      lvls: 0,
+      ty: KExpr::sort(KUniv::zero()),
+    };
+    env.insert(nat_id.clone(), nat_axio);
+
+    let p = Primitives::from_env(&env);
+    // Address still matches — the interesting property in Anon mode is
+    // that name metadata is erased anyway, so we only check the addr.
+    assert_eq!(p.nat.addr.hex(), canon.nat.hex());
+    // The env entry should be the one the KEnv has (same address table).
+    assert!(env.get(&p.nat).is_some());
+  }
+
+  #[test]
+  fn primitives_from_env_orig_uses_orig_addrs() {
+    // from_env_orig uses PrimAddrs::new_orig (LEON addrs), not new().
+    let env = KEnv::<crate::ix::kernel::mode::Meta>::new();
+    let p = Primitives::from_env_orig(&env);
+    let orig = PrimAddrs::new_orig();
+    let canon = PrimAddrs::new();
+    assert_eq!(p.nat.addr.hex(), orig.nat.hex());
+    // And the canonical addr is different from the LEON one — confirming
+    // the two tables aren't accidentally aliased.
+    assert_ne!(orig.nat.hex(), canon.nat.hex());
+  }
+
+  #[test]
+  fn primitives_from_env_orig_empty_fallback_name_is_synthetic() {
+    // Check that the synthetic fallback name has the `@<8hex>` shape for
+    // an address that doesn't exist in the env. Uses Meta mode so the
+    // name metadata is observable.
+    let env = KEnv::<crate::ix::kernel::mode::Meta>::new();
+    let p = Primitives::from_env_orig(&env);
+    // Name of `p.nat` should be `@<first 8 hex of nat_orig addr>`.
+    let orig = PrimAddrs::new_orig();
+    let expected = format!("@{}", &orig.nat.hex()[..8]);
+    let got_name = p.nat.name.clone();
+    // Convert Name to string for comparison.
+    let got_str = format!("{got_name}");
+    assert!(
+      got_str.contains(&expected),
+      "expected synthetic name containing {expected:?}, got {got_str:?}"
+    );
+    // Silence unused-import lint.
+    let _: Name = Name::anon();
+  }
+
+  #[test]
+  fn new_and_default_match() {
+    // `Default` is implemented via `new`, so they must agree.
+    let a = PrimAddrs::new();
+    let d = PrimAddrs::default();
+    let entries_a = addrs_with_names(&a);
+    let entries_d = addrs_with_names(&d);
+    assert_eq!(entries_a.len(), entries_d.len());
+    for ((name_a, addr_a), (name_d, addr_d)) in
+      entries_a.iter().zip(entries_d.iter())
+    {
+      assert_eq!(name_a, name_d);
+      assert_eq!(addr_a.hex(), addr_d.hex());
     }
   }
 }

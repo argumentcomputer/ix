@@ -275,6 +275,66 @@ mutual
 end
 end NestedOverMerge
 
+-- Nested aux ordering: verify that auxiliary recursors generated for
+-- nested inductive occurrences are ordered canonically (by content hash)
+-- rather than by Lean's source-walk discovery order. Two semantically
+-- equivalent blocks declared in different orders should compile to the
+-- SAME canonical Ixon form.
+--
+-- The fixture declares three types {A, B, C} each with three nested
+-- occurrences `Array`, `Option`, `List`, then re-declares the same block
+-- with the types in a permuted order (C2, A2, B2). Without hash-sort of
+-- aux recs, the source-walk order of `_nested.Array/Option/List_N`
+-- differs between the two blocks, and so do the resulting aux recursor
+-- numberings — which leaks into addresses and breaks content-addressing.
+namespace NestedAuxOrdering
+mutual
+  public inductive A where | mk : Array B → Option C → List A → A
+  public inductive B where | mk : Array C → Option A → List B → B
+  public inductive C where | mk : Array A → Option B → List C → C
+end
+
+mutual
+  public inductive C2 where | mk : Array A2 → Option B2 → List C2 → C2
+  public inductive A2 where | mk : Array B2 → Option C2 → List A2 → A2
+  public inductive B2 where | mk : Array C2 → Option A2 → List B2 → B2
+end
+end NestedAuxOrdering
+
+-- Nested aux ordering with alpha-collapse: A and B have identical
+-- semantic structure under renaming (A ≅ B), nesting through two
+-- different containers (`Array`, `Option`). The block is declared
+-- unreordered, then reordered.
+namespace NestedAuxOrderingAlpha
+mutual
+  public inductive A where | mk : Array B → Option A → A
+  public inductive B where | mk : Array A → Option B → B
+end
+
+mutual
+  public inductive B2 where | mk : Array A2 → Option B2 → B2
+  public inductive A2 where | mk : Array B2 → Option A2 → A2
+end
+end NestedAuxOrderingAlpha
+
+-- Nested aux ordering with a binary nesting container (`Prod`). Exercises
+-- spec_params with multiple arguments, so the hash-based ordering
+-- depends on more than a single type argument. Declared twice with
+-- different source orderings.
+namespace NestedAuxOrderingProd
+mutual
+  public inductive A where | mk : Prod A B → Prod B C → Prod C A → A
+  public inductive B where | mk : Prod A B → Prod B C → Prod C A → B
+  public inductive C where | mk : Prod A B → Prod B C → Prod C A → C
+end
+
+mutual
+  public inductive C2 where | mk : Prod A2 B2 → Prod B2 C2 → Prod C2 A2 → C2
+  public inductive B2 where | mk : Prod A2 B2 → Prod B2 C2 → Prod C2 A2 → B2
+  public inductive A2 where | mk : Prod A2 B2 → Prod B2 C2 → Prod C2 A2 → A2
+end
+end NestedAuxOrderingProd
+
 -- Nested + over-merge + alpha-collapse: A ≅ B (identical structure under
 -- renaming), C is in a separate SCC referencing both. All nest through List.
 -- Exercises the combination of alpha-collapse AND nested detection in the

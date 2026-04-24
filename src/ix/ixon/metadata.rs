@@ -15,6 +15,7 @@ use std::sync::Arc;
 use crate::ix::address::Address;
 use crate::ix::env::{self, BinderInfo, Name, ReducibilityHints};
 
+use super::env::AuxLayout;
 use super::expr::Expr;
 use super::serialize::{get_expr, put_expr};
 use super::tag::Tag0;
@@ -152,8 +153,19 @@ pub enum ConstantMetaInfo {
   /// Synthetic metadata for a mutual block. Each inner `Vec` is an equivalence
   /// class of alpha-equivalent constants (same MutConst index), containing the
   /// name-hash addresses of all names in that class.
+  ///
+  /// `aux_layout` is the nested-auxiliary permutation sidecar for blocks
+  /// that underwent nested-inductive expansion. Used by decompile to
+  /// reconstruct the canonical aux layout without a fresh source walk
+  /// (see `docs/ix_canonicity.md` §10.2 / §17.3). `None` for blocks
+  /// with no nested auxes (the common case).
+  ///
+  /// The aux_layout is *metadata* — it lives in [`ConstantMeta`] (never
+  /// entering any constant's content hash) and survives round-trip
+  /// through [`Env::put`] / [`Env::get`] via the Muts variant below.
   Muts {
     all: Vec<Vec<Address>>,
+    aux_layout: Option<AuxLayout>,
   },
 }
 
@@ -1041,11 +1053,28 @@ impl ConstantMetaInfo {
         put_u64(*type_root, buf);
         put_u64_vec(rule_roots, buf);
       },
-      Self::Muts { all } => {
+      Self::Muts { all, aux_layout } => {
         put_u8(6, buf);
         put_u64(all.len() as u64, buf);
         for cls in all {
           put_idx_vec(cls, idx, buf)?;
+        }
+        // Option<AuxLayout>: 0 tag = None, 1 tag = Some(perm_vec, ctor_vec).
+        // Both vecs are Vec<usize> — written as Vec<u64> via Tag0 so the
+        // serialized form is target-word-size independent.
+        match aux_layout {
+          None => put_u8(0, buf),
+          Some(layout) => {
+            put_u8(1, buf);
+            put_u64(layout.perm.len() as u64, buf);
+            for &p in &layout.perm {
+              put_u64(p as u64, buf);
+            }
+            put_u64(layout.source_ctor_counts.len() as u64, buf);
+            for &c in &layout.source_ctor_counts {
+              put_u64(c as u64, buf);
+            }
+          },
         }
       },
     }
@@ -1112,7 +1141,24 @@ impl ConstantMetaInfo {
         for _ in 0..n {
           all.push(get_idx_vec(buf, rev)?);
         }
-        Ok(Self::Muts { all })
+        let aux_layout = match get_u8(buf)? {
+          0 => None,
+          1 => {
+            let n_perm = get_u64(buf)? as usize;
+            let mut perm = Vec::with_capacity(n_perm);
+            for _ in 0..n_perm {
+              perm.push(get_u64(buf)? as usize);
+            }
+            let n_counts = get_u64(buf)? as usize;
+            let mut source_ctor_counts = Vec::with_capacity(n_counts);
+            for _ in 0..n_counts {
+              source_ctor_counts.push(get_u64(buf)? as usize);
+            }
+            Some(AuxLayout { perm, source_ctor_counts })
+          },
+          x => return Err(format!("Muts.aux_layout: invalid tag {x}")),
+        };
+        Ok(Self::Muts { all, aux_layout })
       },
       x => Err(format!("ConstantMetaInfo::get: invalid tag {x}")),
     }

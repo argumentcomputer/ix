@@ -60,6 +60,27 @@ pub static ANALYZE_SHARING: std::sync::atomic::AtomicBool =
 pub static IX_TIMING: std::sync::LazyLock<bool> =
   std::sync::LazyLock::new(|| std::env::var("IX_TIMING").is_ok());
 
+/// Options controlling whole-environment compilation.
+#[derive(Clone, Copy, Debug)]
+pub struct CompileOptions {
+  /// Validate Lean-original inductives/constructors/recursors against a
+  /// direct `lean_ingress` kernel environment before aux_gen rewrites run.
+  ///
+  /// This is useful for adversarial raw-constant tests that bypass Lean's
+  /// kernel. Normal compilation from a trusted `Lean.Environment` can leave
+  /// it off and avoid retaining a second kernel-form copy of the full env.
+  pub check_originals: bool,
+  /// Override scheduler worker count. `None` uses available parallelism or
+  /// the `IX_COMPILE_WORKERS` environment variable if set.
+  pub max_workers: Option<usize>,
+}
+
+impl Default for CompileOptions {
+  fn default() -> Self {
+    CompileOptions { check_originals: true, max_workers: None }
+  }
+}
+
 /// Size statistics for a compiled block.
 #[derive(Clone, Debug, Default)]
 pub struct BlockSizeStats {
@@ -173,6 +194,20 @@ pub struct CompileState {
   /// Keyed by the original auxiliary name (e.g., `A.rec`, `B.rec`).
   /// Computed per original recursor name in `compile_mutual` after `sort_consts`.
   pub call_site_plans: DashMap<Name, surgery::CallSitePlan>,
+  /// Per-block nested-auxiliary layout (permutation + source ctor
+  /// counts) for each source `InductiveVal.all[0]` name. Used by:
+  ///  - `compute_call_site_plans` to rewrite source-order aux motive/minor
+  ///    call-site args to canonical positions.
+  ///  - `compile_aux_block` (via `generate_and_compile_aux_recursors`) to
+  ///    register Lean-source aux-rec/below/brecOn names at the canonical
+  ///    DPrj/RPrj position.
+  ///
+  /// Computed once per block in `generate_and_compile_aux_recursors`
+  /// right after `aux_gen::generate_aux_patches`. Blocks without nested
+  /// auxiliaries simply aren't inserted.
+  pub aux_perms: DashMap<Name, surgery::AuxLayout>,
+  /// Whether to run `check_originals` using `kctx.orig_kenv`.
+  pub check_originals: bool,
 }
 
 /// Cached compiled expression with arena root index.
@@ -231,6 +266,8 @@ impl Default for CompileState {
       aux_name_to_addr: Default::default(),
       lean_env: None,
       call_site_plans: Default::default(),
+      aux_perms: Default::default(),
+      check_originals: true,
     }
   }
 }
@@ -445,6 +482,174 @@ fn compile_univ_indices(
   levels.iter().map(|l| compile_univ_idx(l, univ_params, cache)).collect()
 }
 
+fn univ_sort_key(univ: &Arc<Univ>) -> Vec<u8> {
+  let mut buf = Vec::new();
+  crate::ix::ixon::univ::put_univ(univ, &mut buf);
+  buf
+}
+
+fn univ_params_key(univ_params: &[Name]) -> Address {
+  let mut hasher = blake3::Hasher::new();
+  for name in univ_params {
+    hasher.update(name.get_hash().as_bytes());
+  }
+  Address::from_blake3_hash(hasher.finalize())
+}
+
+fn collect_expr_tables(
+  expr: &LeanExpr,
+  univ_params: &[Name],
+  mut_ctx: &MutCtx,
+  cache: &mut BlockCache,
+  stt: &CompileState,
+  refs: &mut Vec<Address>,
+  univs: &mut Vec<Arc<Univ>>,
+  seen_exprs: &mut FxHashMap<(Address, Address), ()>,
+  caller: &str,
+) -> Result<(), CompileError> {
+  let ctx_key = univ_params_key(univ_params);
+  let mut stack = vec![expr];
+  while let Some(e) = stack.pop() {
+    let key = Address::from_blake3_hash(*e.get_hash());
+    if seen_exprs.insert((key, ctx_key.clone()), ()).is_some() {
+      continue;
+    }
+
+    match e.as_data() {
+      ExprData::Bvar(..) => {},
+      ExprData::Sort(level, _) => {
+        univs.push(compile_univ(level, univ_params, cache)?);
+      },
+      ExprData::Const(name, levels, _) => {
+        for level in levels {
+          univs.push(compile_univ(level, univ_params, cache)?);
+        }
+        if !mut_ctx.contains_key(name) {
+          let const_addr = stt.resolve_addr(name).ok_or_else(|| {
+            CompileError::MissingConstant {
+              name: name.pretty(),
+              caller: format!("{caller} @ preseed(Const)"),
+            }
+          })?;
+          refs.push(const_addr);
+        }
+      },
+      ExprData::App(fun, arg, _) => {
+        stack.push(arg);
+        stack.push(fun);
+      },
+      ExprData::Lam(_, ty, body, _, _)
+      | ExprData::ForallE(_, ty, body, _, _) => {
+        stack.push(body);
+        stack.push(ty);
+      },
+      ExprData::LetE(_, ty, value, body, _, _) => {
+        stack.push(body);
+        stack.push(value);
+        stack.push(ty);
+      },
+      ExprData::Lit(Literal::NatVal(n), _) => {
+        refs.push(store_nat(n, stt));
+      },
+      ExprData::Lit(Literal::StrVal(s), _) => {
+        refs.push(store_string(s, stt));
+      },
+      ExprData::Proj(type_name, _, struct_val, _) => {
+        let type_addr = stt.resolve_addr(type_name).ok_or_else(|| {
+          CompileError::MissingConstant {
+            name: type_name.pretty(),
+            caller: format!("{caller} @ preseed(Proj)"),
+          }
+        })?;
+        refs.push(type_addr);
+        stack.push(struct_val);
+      },
+      ExprData::Mdata(_, inner, _) => {
+        stack.push(inner);
+      },
+      ExprData::Fvar(..) => {
+        return Err(CompileError::UnsupportedExpr {
+          desc: "free variable".into(),
+        });
+      },
+      ExprData::Mvar(..) => {
+        return Err(CompileError::UnsupportedExpr {
+          desc: "metavariable".into(),
+        });
+      },
+    }
+  }
+  Ok(())
+}
+
+pub(crate) fn preseed_expr_tables(
+  exprs: &[(&LeanExpr, &[Name])],
+  mut_ctx: &MutCtx,
+  cache: &mut BlockCache,
+  stt: &CompileState,
+  caller: &str,
+) -> Result<(), CompileError> {
+  let mut refs = Vec::new();
+  let mut univs = Vec::new();
+  let mut seen_exprs = FxHashMap::default();
+
+  for (expr, univ_params) in exprs {
+    collect_expr_tables(
+      expr,
+      univ_params,
+      mut_ctx,
+      cache,
+      stt,
+      &mut refs,
+      &mut univs,
+      &mut seen_exprs,
+      caller,
+    )?;
+  }
+
+  refs.sort();
+  refs.dedup();
+  for addr in refs {
+    cache.refs.insert_full(addr);
+  }
+
+  let mut keyed_univs: Vec<_> =
+    univs.into_iter().map(|u| (univ_sort_key(&u), u)).collect();
+  keyed_univs.sort_by(|(ak, _), (bk, _)| ak.cmp(bk));
+  keyed_univs.dedup_by(|(ak, _), (bk, _)| ak == bk);
+  for (_, univ) in keyed_univs {
+    cache.univs.insert_full(univ);
+  }
+
+  Ok(())
+}
+
+pub(crate) fn collect_mut_const_exprs<'a>(
+  cnst: &'a MutConst,
+  exprs: &mut Vec<(&'a LeanExpr, &'a [Name])>,
+) {
+  match cnst {
+    MutConst::Defn(def) => {
+      let lvls = def.level_params.as_slice();
+      exprs.push((&def.typ, lvls));
+      exprs.push((&def.value, lvls));
+    },
+    MutConst::Indc(ind) => {
+      exprs.push((&ind.ind.cnst.typ, ind.ind.cnst.level_params.as_slice()));
+      for ctor in &ind.ctors {
+        exprs.push((&ctor.cnst.typ, ctor.cnst.level_params.as_slice()));
+      }
+    },
+    MutConst::Recr(rec) => {
+      let lvls = rec.cnst.level_params.as_slice();
+      exprs.push((&rec.cnst.typ, lvls));
+      for rule in &rec.rules {
+        exprs.push((&rule.rhs, lvls));
+      }
+    },
+  }
+}
+
 // ===========================================================================
 // Expression compilation
 // ===========================================================================
@@ -558,9 +763,61 @@ pub fn compile_expr(
             // for both the surgery check and the normal compilation path.
             let (head_expr, args) = surgery::collect_lean_telescope(e);
 
-            // Check for surgery: only when head is a Const in call_site_plans
+            // Check for surgery: only when head is a Const in
+            // `call_site_plans` *and* the body currently being compiled is
+            // in Lean source order. Canonical-order bodies generated by
+            // aux_gen (`.brecOn`, regenerated `.rec`, …) already pass
+            // args in sorted-block order — applying surgery there would
+            // permute correct args into the wrong positions. The flag
+            // tracks caller context; see `BlockCache::body_is_canonical`
+            // for the full rationale.
+            //
+            // The previous guard (`!aux_gen_extra_names.contains(name)`)
+            // checked the *head* rather than the caller, which meant
+            // Lean-auto-generated consts like `_sizeOf_N`,
+            // `_sparseCasesOn_N`, and `.sizeOf_spec` — whose bodies are
+            // in source order but whose heads (`Code.rec` etc.) are
+            // registered projections — never got surgery, producing
+            // `AppTypeMismatch` whenever `sort_consts` reordered a
+            // mutual block (the `Alt`↔`Cases`, `EqCnstr`↔`DiseqCnstr`
+            // failure family in `kernel-check-env`).
             if let ExprData::Const(name, _, _) = head_expr.as_data() {
-              if !stt.aux_gen_extra_names.contains(name) {
+              // Call-site surgery guard. Surgery applies iff:
+              //  (1) the compiling constant is *not* an AuxRegen name —
+              //      i.e. not one of the Lean auto-generated auxiliaries
+              //      we ourselves regenerate (`.rec`, `.recOn`,
+              //      `.casesOn`, `.below`, `.below.rec`, `.brecOn`,
+              //      `.brecOn.go`, `.brecOn.eq`). Our regenerator emits
+              //      those bodies in canonical order by construction, so
+              //      applying surgery would permute already-canonical
+              //      args into the wrong positions.
+              //  (2) the head has a non-identity surgery plan.
+              //
+              // Constants in the other categories pass through:
+              //   - AuxSurgery: Lean auto-generated consts whose bodies
+              //     reference `.rec` in Lean source order
+              //     (`_sizeOf_N`, `_sparseCasesOn_N`, `.sizeOf_spec`,
+              //     `.noConfusion`, etc.). Surgery MUST rewrite them.
+              //   - Primary: user-defined constants. Surgery applies
+              //     iff they transitively reference an AuxRegen name
+              //     whose canonical layout differs from Lean source
+              //     order (i.e. a non-identity plan).
+              //
+              // The guard is name-based rather than a cache flag
+              // because AuxRegen names are compiled *twice* — once as
+              // Lean originals via `compile_mutual` (cache flag would
+              // be false), once as regenerated canonicals via
+              // `compile_aux_block` (cache flag would be true) — and we
+              // need both compiles to skip surgery. Only the regen's
+              // output survives name-lookup anyway, but the Lean-
+              // original's Ixon still lives in `stt.env.consts` and its
+              // arena must be decompile-safe (decompile iterates all
+              // constants).
+              let compiling_is_aux_regen = cache
+                .compiling
+                .as_ref()
+                .is_some_and(crate::ix::decompile::is_aux_gen_suffix);
+              if !compiling_is_aux_regen {
                 if let Some(plan) = stt.call_site_plans.get(name) {
                   if !plan.is_identity() {
                     let expected_total = plan.n_params
@@ -939,14 +1196,21 @@ pub fn compile_expr(
           cache.surgery_sharing.push(expr.clone());
         }
 
-        // Fill in `meta` fields in entries and adjust sharing_idx offsets
-        let mut kept_idx = 0usize;
+        // Fill in `meta` fields in entries and adjust sharing_idx offsets.
+        // Kept entries record the source arg's `canon_idx` — its canonical
+        // position — so the arena root must come from `canonical_roots`
+        // indexed by `canon_idx` (since the Compile frames processed
+        // sorted_canon in canonical order, the roots land in canonical
+        // slots). `kept_idx` (source-sequential) coincides with
+        // `canon_idx` only under identity plans, which surgery
+        // short-circuits anyway — non-identity is the case where surgery
+        // actually fires, and only `canon_idx` gives the right root
+        // there.
         let mut collapsed_idx = 0usize;
         for entry in &mut entries {
           match entry {
-            CallSiteEntry::Kept { meta, .. } => {
-              *meta = canonical_roots[kept_idx];
-              kept_idx += 1;
+            CallSiteEntry::Kept { canon_idx, meta } => {
+              *meta = canonical_roots[*canon_idx as usize];
             },
             CallSiteEntry::Collapsed { sharing_idx, meta, .. } => {
               *meta = collapsed_roots[collapsed_idx];
@@ -1963,6 +2227,29 @@ pub fn compare_level(
   }
 }
 
+/// Compare two non-mutual references by compiled address.
+///
+/// Canonical sorting must not fall back to name order here: unresolved names
+/// would reintroduce namespace/source-order information into content hashes.
+fn compare_external_refs(
+  x: &Name,
+  y: &Name,
+  stt: &CompileState,
+  caller: &'static str,
+) -> Result<SOrd, CompileError> {
+  match (stt.resolve_addr(x), stt.resolve_addr(y)) {
+    (Some(xa), Some(ya)) => Ok(SOrd::cmp(&xa, &ya)),
+    (None, _) => Err(CompileError::MissingConstant {
+      name: x.pretty(),
+      caller: caller.into(),
+    }),
+    (_, None) => Err(CompileError::MissingConstant {
+      name: y.pretty(),
+      caller: caller.into(),
+    }),
+  }
+}
+
 /// Compare two Lean expressions structurally for canonical ordering.
 /// Strips `Mdata` wrappers, compares by constructor tag, then recurses
 /// into subexpressions. Constants are compared by address (or mutual index).
@@ -2013,15 +2300,7 @@ pub fn compare_expr(
           (Some(..), _) => Ok(SOrd::lt(true)),
           (None, Some(..)) => Ok(SOrd::gt(true)),
           (None, None) => {
-            // Compare by address
-            let xa = stt.name_to_addr.get(x);
-            let ya = stt.name_to_addr.get(y);
-            match (xa, ya) {
-              (Some(xa), Some(ya)) => Ok(SOrd::cmp(xa.value(), ya.value())),
-              _ => {
-                Ok(SOrd::cmp(x.get_hash().as_bytes(), y.get_hash().as_bytes()))
-              },
-            }
+            compare_external_refs(x, y, stt, "compare_expr(Const)")
           },
         }
       }
@@ -2071,15 +2350,7 @@ pub fn compare_expr(
           (Some(..), _) => Ok(SOrd::lt(true)),
           (None, Some(..)) => Ok(SOrd::gt(true)),
           (None, None) => {
-            let xa = stt.name_to_addr.get(tnx);
-            let ya = stt.name_to_addr.get(tny);
-            match (xa, ya) {
-              (Some(xa), Some(ya)) => Ok(SOrd::cmp(xa.value(), ya.value())),
-              _ => Ok(SOrd::cmp(
-                tnx.get_hash().as_bytes(),
-                tny.get_hash().as_bytes(),
-              )),
-            }
+            compare_external_refs(tnx, tny, stt, "compare_expr(Proj)")
           },
         };
       let tn = tn?;
@@ -2570,7 +2841,8 @@ pub fn compile_const_no_aux(
       },
       Some(LeanConstantInfo::InductInfo(_)) => Some(Phase::BelowIndc),
       Some(LeanConstantInfo::DefnInfo(_) | LeanConstantInfo::ThmInfo(_)) => {
-        if n.last_str() == Some("below") {
+        if matches!(n.last_str(), Some(s) if s == "below" || s.starts_with("below_"))
+        {
           Some(Phase::BelowDef)
         } else {
           Some(Phase::BrecOn)
@@ -2735,6 +3007,16 @@ fn compile_const_inner(
     let _t0 = std::time::Instant::now();
     let _name_str_entry = name.pretty();
     let mut_ctx = MutConst::single_ctx(def.name.clone());
+    preseed_expr_tables(
+      &[
+        (&def.typ, def.level_params.as_slice()),
+        (&def.value, def.level_params.as_slice()),
+      ],
+      &mut_ctx,
+      cache,
+      stt,
+      "compile_single_def",
+    )?;
     let (data, meta) = compile_definition(def, &mut_ctx, cache, stt)?;
     let _t_compile = _t0.elapsed();
     let n_unique_exprs = cache.exprs.len();
@@ -2755,7 +3037,7 @@ fn compile_const_inner(
     let serialized_size = bytes.len();
     let addr = Address::hash(&bytes);
     let _t_serial = _t2.elapsed();
-    if _t0.elapsed().as_secs_f32() > 1.0 {
+    if *IX_TIMING && _t0.elapsed().as_secs_f32() > 1.0 {
       eprintln!(
         "[slow_single] {:?} compile={:.2}s sharing={:.2}s serial={:.2}s unique_exprs={} refs={} bytes={}",
         name_str,
@@ -2769,10 +3051,9 @@ fn compile_const_inner(
     }
     if aux {
       stt.env.store_const(addr.clone(), result.constant);
-      stt.env.register_name(
-        name.clone(),
-        Named::new(addr.clone(), meta.clone()),
-      );
+      stt
+        .env
+        .register_name(name.clone(), Named::new(addr.clone(), meta.clone()));
       stt.block_stats.insert(
         name.clone(),
         BlockSizeStats {
@@ -2818,6 +3099,13 @@ fn compile_const_inner(
     },
 
     LeanConstantInfo::AxiomInfo(val) => {
+      preseed_expr_tables(
+        &[(&val.cnst.typ, val.cnst.level_params.as_slice())],
+        &MutCtx::default(),
+        cache,
+        stt,
+        "compile_axiom",
+      )?;
       let (data, meta) = compile_axiom(val, cache, stt)?;
       let refs: Vec<Address> = cache.refs.iter().cloned().collect();
       let univs: Vec<Arc<Univ>> = cache.univs.iter().cloned().collect();
@@ -2828,10 +3116,7 @@ fn compile_const_inner(
       let addr = Address::hash(&bytes);
       if aux {
         stt.env.store_const(addr.clone(), result.constant);
-        stt.env.register_name(
-          name.clone(),
-          Named::new(addr.clone(), meta),
-        );
+        stt.env.register_name(name.clone(), Named::new(addr.clone(), meta));
         stt.block_stats.insert(
           name.clone(),
           BlockSizeStats {
@@ -2845,6 +3130,13 @@ fn compile_const_inner(
     },
 
     LeanConstantInfo::QuotInfo(val) => {
+      preseed_expr_tables(
+        &[(&val.cnst.typ, val.cnst.level_params.as_slice())],
+        &MutCtx::default(),
+        cache,
+        stt,
+        "compile_quotient",
+      )?;
       let (data, meta) = compile_quotient(val, cache, stt)?;
       let refs: Vec<Address> = cache.refs.iter().cloned().collect();
       let univs: Vec<Arc<Univ>> = cache.univs.iter().cloned().collect();
@@ -2855,10 +3147,7 @@ fn compile_const_inner(
       let addr = Address::hash(&bytes);
       if aux {
         stt.env.store_const(addr.clone(), result.constant);
-        stt.env.register_name(
-          name.clone(),
-          Named::new(addr.clone(), meta),
-        );
+        stt.env.register_name(name.clone(), Named::new(addr.clone(), meta));
         stt.block_stats.insert(
           name.clone(),
           BlockSizeStats {
@@ -2878,6 +3167,11 @@ fn compile_const_inner(
     LeanConstantInfo::RecInfo(val) => {
       if all.len() == 1 {
         let mut_ctx = MutConst::single_ctx(val.cnst.name.clone());
+        let mut exprs = vec![(&val.cnst.typ, val.cnst.level_params.as_slice())];
+        for rule in &val.rules {
+          exprs.push((&rule.rhs, val.cnst.level_params.as_slice()));
+        }
+        preseed_expr_tables(&exprs, &mut_ctx, cache, stt, "compile_recursor")?;
         let (data, meta) = compile_recursor(val, &mut_ctx, cache, stt)?;
         let refs: Vec<Address> = cache.refs.iter().cloned().collect();
         let univs: Vec<Arc<Univ>> = cache.univs.iter().cloned().collect();
@@ -2934,13 +3228,6 @@ fn compile_const_inner(
 
   if aux {
     stt.name_to_addr.insert(name.clone(), addr.clone());
-
-    // Ingress the Lean constant into the kernel environment so the
-    // type checker can resolve it during sort inference (get_level).
-    if let Some(ref le) = stt.lean_env {
-      // For inductives, ensure_in_kenv also ingresses constructors.
-      aux_gen::expr_utils::ensure_in_kenv(name, le.as_ref(), stt);
-    }
   }
   Ok(addr)
 }
@@ -2985,6 +3272,12 @@ fn compile_mutual(
   // Sort constants
   let sorted_classes = sort_consts(&cs.iter().collect::<Vec<_>>(), cache, stt)?;
   let mut_ctx = MutConst::ctx(&sorted_classes);
+
+  let mut exprs = Vec::new();
+  for cnst in &cs {
+    collect_mut_const_exprs(cnst, &mut exprs);
+  }
+  preseed_expr_tables(&exprs, &mut_ctx, cache, stt, "compile_mutual")?;
 
   // Compile each constant
   let mut ixon_mutuals = Vec::new();
@@ -3183,7 +3476,10 @@ fn compile_mutual(
       muts_name,
       Named::new(
         block_addr.clone(),
-        ConstantMeta::new(ConstantMetaInfo::Muts { all: muts_all }),
+        ConstantMeta::new(ConstantMetaInfo::Muts {
+          all: muts_all,
+          aux_layout: None,
+        }),
       ),
     );
   }
@@ -3196,7 +3492,7 @@ fn compile_mutual(
       .iter()
       .map(|class| class.iter().map(|c| c.name()).collect())
       .collect();
-    mutual::generate_and_compile_aux_recursors(
+    let aux_layout_stored = mutual::generate_and_compile_aux_recursors(
       &cs,
       &class_names,
       lean_env,
@@ -3212,17 +3508,82 @@ fn compile_mutual(
         _ => None,
       })
       .unwrap_or_default();
-    if !original_all.is_empty() && class_names.len() < original_all.len()
-      || (class_names.len() == original_all.len()
-        && class_names
-          .iter()
-          .zip(original_all.iter())
-          .any(|(class, orig)| class[0] != *orig))
-    {
+    let plan_class_names: Vec<Vec<Name>> = if original_all.is_empty() {
+      Vec::new()
+    } else {
+      let original_all_lookup: FxHashMap<Name, ()> =
+        original_all.iter().cloned().map(|n| (n, ())).collect();
+      class_names
+        .iter()
+        .filter_map(|class| {
+          let names: Vec<Name> = class
+            .iter()
+            .filter(|n| original_all_lookup.contains_key(*n))
+            .cloned()
+            .collect();
+          (!names.is_empty()).then_some(names)
+        })
+        .collect()
+    };
+
+    // If the block carries an aux_layout, patch the primary Muts
+    // metadata so the layout travels with the block through serialize /
+    // decompile round-trip (spec §10.2 / §17.3). The layout returned by
+    // `generate_and_compile_aux_recursors` is deliberately block-local:
+    // SCC-split blocks from the same Lean mutual all share `all[0]`, so
+    // looking it up through a global `all[0]` side table lets one block's
+    // layout overwrite another's.
+    //
+    // The Muts name is `block_addr.muts_name(first_name)` — same key the
+    // initial registration used — and `DashMap::insert` overwrites.
+    if let Some(layout) = &aux_layout_stored {
+      let first_name = sorted_classes
+        .first()
+        .and_then(|c| c.first())
+        .map(|c| c.name())
+        .expect("compile_mutual invariant: at least one class");
+      let muts_name = block_addr.muts_name(&first_name);
+      let muts_all: Vec<Vec<Address>> = sorted_classes
+        .iter()
+        .map(|class| {
+          class
+            .iter()
+            .map(|c| Address::from_blake3_hash(*c.name().get_hash()))
+            .collect()
+        })
+        .collect();
+      stt.env.register_name(
+        muts_name,
+        Named::new(
+          block_addr.clone(),
+          ConstantMeta::new(ConstantMetaInfo::Muts {
+            all: muts_all,
+            aux_layout: Some(layout.clone()),
+          }),
+        ),
+      );
+    }
+
+    let user_layout_changed = !original_all.is_empty()
+      && (plan_class_names.len() < original_all.len()
+        || (plan_class_names.len() == original_all.len()
+          && plan_class_names
+            .iter()
+            .zip(original_all.iter())
+            .any(|(class, orig)| class[0] != *orig)));
+    let aux_layout_changed = aux_layout_stored.as_ref().is_some_and(|layout| {
+      layout.perm.iter().enumerate().any(|(source_j, &canonical_i)| {
+        canonical_i != aux_gen::nested::PERM_OUT_OF_SCC
+          && canonical_i != source_j
+      })
+    });
+
+    if user_layout_changed || aux_layout_changed {
       let plans = surgery::compute_call_site_plans(
-        &class_names,
+        &plan_class_names,
         &original_all,
         lean_env,
+        aux_layout_stored.as_ref(),
       )?;
       for (name, plan) in plans {
         stt.call_site_plans.insert(name, plan);
@@ -3246,12 +3607,13 @@ mod env;
 pub(crate) mod mutual;
 pub(crate) mod nat_conv;
 pub(crate) mod surgery;
-pub use env::compile_env;
+pub use env::{compile_env, compile_env_with_options};
 
 #[cfg(test)]
 mod tests {
   use super::*;
   use crate::ix::env::{BinderInfo, Expr as LeanExpr, Level};
+  use crate::ix::ixon::metadata::CallSiteEntry;
 
   #[test]
   fn test_compile_univ_zero() {
@@ -3451,6 +3813,94 @@ mod tests {
       },
       _ => panic!("expected Str"),
     }
+  }
+
+  #[test]
+  fn test_compile_expr_call_site_uses_nested_aux_telescope_perm() {
+    let stt = CompileState::default();
+    let head = Name::str(Name::anon(), "A".to_string());
+    let head = Name::str(head, "rec_1".to_string());
+    let head_addr = Address::hash(b"A.rec_1");
+    stt.name_to_addr.insert(head.clone(), head_addr);
+
+    // Source telescope:
+    //   motives: [A, B, aux0, aux1]
+    //   minors:  [A.mk, B.mk, aux0.mk, aux1.mk]
+    //   tail:    [major]
+    //
+    // Canonical nested-aux layout swaps aux0/aux1 while keeping user
+    // motives/minors fixed. This is the call-site side of AuxLayout.perm.
+    stt.call_site_plans.insert(
+      head.clone(),
+      surgery::CallSitePlan {
+        n_params: 0,
+        n_source_motives: 4,
+        n_source_minors: 4,
+        n_indices: 0,
+        motive_keep: vec![true, true, true, true],
+        minor_keep: vec![true, true, true, true],
+        source_to_canon_motive: vec![0, 1, 3, 2],
+        source_to_canon_minor: vec![0, 1, 3, 2],
+      },
+    );
+
+    let mut expr = LeanExpr::cnst(head.clone(), vec![]);
+    for i in 10..=18u64 {
+      expr = LeanExpr::app(expr, LeanExpr::bvar(Nat::from(i)));
+    }
+
+    let mut cache = BlockCache {
+      compiling: Some(Name::str(Name::anon(), "caller".to_string())),
+      ..BlockCache::default()
+    };
+    let result =
+      compile_expr(&expr, &[], &MutCtx::default(), &mut cache, &stt).unwrap();
+
+    fn app_args(e: &Arc<Expr>) -> Vec<u64> {
+      let mut cur = e.clone();
+      let mut args = Vec::new();
+      while let Expr::App(f, a) = cur.as_ref() {
+        match a.as_ref() {
+          Expr::Var(i) => args.push(*i),
+          other => panic!("expected Var arg, got {other:?}"),
+        }
+        cur = f.clone();
+      }
+      match cur.as_ref() {
+        Expr::Ref(0, lvls) => assert!(lvls.is_empty()),
+        other => panic!("expected Ref head, got {other:?}"),
+      }
+      args.reverse();
+      args
+    }
+
+    assert_eq!(
+      app_args(&result),
+      vec![10, 11, 13, 12, 14, 15, 17, 16, 18],
+      "source-order aux motive/minor args should be emitted in canonical aux order",
+    );
+
+    let root = *cache.arena_roots.last().expect("compiled expression root");
+    let ExprMetaData::CallSite { name, entries } =
+      &cache.arena.nodes[root as usize]
+    else {
+      panic!("expected CallSite metadata at expression root");
+    };
+    assert_eq!(*name, compile_name(&head, &stt));
+    let canon_indices: Vec<u64> = entries
+      .iter()
+      .map(|entry| match entry {
+        CallSiteEntry::Kept { canon_idx, .. } => *canon_idx,
+        CallSiteEntry::Collapsed { .. } => {
+          panic!("this fixture keeps every source argument")
+        },
+      })
+      .collect();
+    assert_eq!(
+      canon_indices,
+      vec![0, 1, 3, 2, 4, 5, 7, 6, 8],
+      "CallSite metadata stays in source order and records each canonical target",
+    );
   }
 
   #[test]

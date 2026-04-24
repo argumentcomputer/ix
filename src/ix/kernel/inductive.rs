@@ -189,16 +189,17 @@ impl<M: KernelMode> TypeChecker<M> {
         if peer_id.addr == id.addr {
           continue;
         }
-        let (peer_params, peer_indices, peer_ty) = match self.env.get(peer_id)
-        {
+        let (peer_params, peer_indices, peer_ty) = match self.env.get(peer_id) {
           Some(KConst::Indc { params: pp, indices: pi, ty: pty, .. }) => {
             (pp, pi, pty.clone())
           },
           _ => continue,
         };
         // S3: universe agreement.
-        let peer_level = self
-          .get_result_sort_level(&peer_ty, u64_to_usize(peer_params + peer_indices)?)?;
+        let peer_level = self.get_result_sort_level(
+          &peer_ty,
+          u64_to_usize(peer_params + peer_indices)?,
+        )?;
         if !univ_eq(&ind_level, &peer_level) {
           return Err(TcError::Other(
             "mutually inductive types must live in the same universe".into(),
@@ -1667,8 +1668,7 @@ impl<M: KernelMode> TypeChecker<M> {
           // Field args reference block params at current pushed-local
           // depth; spec_params live at depth = n_rec_params (shared
           // block params = flat[0].own_params). Lift by the difference.
-          let n_rec_params =
-            flat.first().map(|m| m.own_params).unwrap_or(0);
+          let n_rec_params = flat.first().map(|m| m.own_params).unwrap_or(0);
           let lift_by = self.depth().saturating_sub(n_rec_params);
           if let Some(bi) = self.is_rec_field(dom, flat, lift_by)? {
             rec_field_indices.push((fidx, bi));
@@ -2106,8 +2106,8 @@ impl<M: KernelMode> TypeChecker<M> {
 
     // --- Indices for THIS inductive (using flat block member info) ---
     let di_member = &flat[di];
-    let ity_inst =
-      self.instantiate_univ_params(&ind_infos[di].4, &di_member.occurrence_us)?;
+    let ity_inst = self
+      .instantiate_univ_params(&ind_infos[di].4, &di_member.occurrence_us)?;
     let mut ity = ity_inst;
     // Walk past this member's own_params, substituting appropriately.
     for j in 0..di_member.own_params {
@@ -5848,10 +5848,7 @@ mod tests {
     let _ = result; // ignore the fast-path result
     let direct = tc.subst_univ(&param(0), &[]);
     assert!(
-      matches!(
-        direct,
-        Err(TcError::UnivParamOutOfRange { idx: 0, bound: 0 })
-      ),
+      matches!(direct, Err(TcError::UnivParamOutOfRange { idx: 0, bound: 0 })),
       "subst_univ with empty us must return UnivParamOutOfRange, got: {direct:?}"
     );
 
@@ -5860,10 +5857,7 @@ mod tests {
     let u = AU::zero();
     let direct2 = tc.subst_univ(&param(3), std::slice::from_ref(&u));
     assert!(
-      matches!(
-        direct2,
-        Err(TcError::UnivParamOutOfRange { idx: 3, bound: 1 })
-      ),
+      matches!(direct2, Err(TcError::UnivParamOutOfRange { idx: 3, bound: 1 })),
       "subst_univ with too-short us must report correct idx/bound, got: {direct2:?}"
     );
   }

@@ -26,13 +26,14 @@ use std::time::Instant;
 use rustc_hash::FxHashMap;
 
 use lean_ffi::object::{
-  LeanArray, LeanBorrowed, LeanCtor, LeanIOResult, LeanList, LeanOwned,
-  LeanRef, LeanString,
+  LeanArray, LeanBool, LeanBorrowed, LeanCtor, LeanIOResult, LeanList,
+  LeanOwned, LeanRef, LeanString,
 };
 
-use crate::ffi::lean_env::{decode_env, parse_name};
-use crate::ix::compile::compile_env;
+use crate::ffi::lean_env::{decode_env, decode_name_array};
+use crate::ix::compile::{CompileOptions, compile_env_with_options};
 use crate::ix::decompile::decompile_env;
+use crate::ix::env::Name;
 use crate::ix::kernel::egress::{ixon_egress, lean_egress};
 use crate::ix::kernel::env::KEnv;
 use crate::ix::kernel::error::TcError;
@@ -70,30 +71,54 @@ const COMPILE_ERROR_TAG: u8 = 1;
 /// @[extern "rs_kernel_check_consts"]
 /// opaque rsCheckConstsFFI :
 ///     @& List (Lean.Name × Lean.ConstantInfo) →
-///     @& Array String →
+///     @& Array Lean.Name →
 ///     @& Array Bool →
-///     IO (Array (String × Option CheckError))
+///     @& Bool →
+///     IO (Array (Option CheckError))
 /// ```
+///
+/// Results come back in input order — the caller pairs each with its
+/// `names[i]`. This was previously `Array (String × Option CheckError)`
+/// with the Lean side round-tripping names through `Name.toString` (which
+/// adds `«»` escaping for non-identifier components) and Rust reparsing
+/// them back into a `Name`. That round-trip was brittle: Lean's escaped
+/// `Lean.Order.«term_⊑_»` didn't match the kernel's unescaped
+/// `Lean.Order.term_⊑_` key and logged `? not found`. Structural pass-
+/// through via `decode_name_array` is the canonical form.
 ///
 /// `expect_pass[i]` is a hint: `true` means "good" (checker expected to
 /// accept), `false` means "bad" (checker expected to reject). It only
-/// influences per-constant progress logging; the actual pass/fail logic lives
-/// on the Lean side.
+/// influences per-constant progress logging; the actual pass/fail logic
+/// lives on the Lean side.
+///
+/// `quiet` toggles the progress-output style:
+/// - `false` (verbose): every constant is printed with its elapsed time,
+///   matching the original line-per-constant behaviour.
+/// - `true` (ephemeral): the current `[i/N] name ...` label is written
+///   over itself each iteration, and *only* slow constants (>=1s),
+///   unexpected passes/failures, not-found names, and ungrounded compile
+///   failures are promoted to persistent lines. Suitable for full-env
+///   runs where the vast majority of constants are expected to pass
+///   quickly.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_kernel_check_consts(
   env_consts: LeanList<LeanBorrowed<'_>>,
   names: LeanArray<LeanBorrowed<'_>>,
   expect_pass: LeanArray<LeanBorrowed<'_>>,
+  quiet: LeanBool<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
   let total_start = Instant::now();
+  let quiet = quiet.to_bool();
 
   // ---------------------------------------------------------------------
   // Decode inputs
   // ---------------------------------------------------------------------
   let t0 = Instant::now();
   let rust_env = decode_env(env_consts);
-  let name_strings: Vec<String> =
-    names.map(|s| s.as_string().to_string()).into_iter().collect();
+  // Decode names structurally — no `Name.toString` / `parse_name` dance.
+  // The resulting `Name`s are byte-for-byte the same as the kernel's
+  // stored names (same component strings, same content hash).
+  let names_vec: Vec<Name> = decode_name_array(&names);
   // `Array Bool` elements are boxed tagged scalars:
   // `lean_box(n) = (n << 1) | 1`, so `Bool.false` has raw value 1 and
   // `Bool.true` has raw value 3. `unbox_usize()` (= `as_raw() >> 1`)
@@ -107,24 +132,28 @@ pub extern "C" fn rs_kernel_check_consts(
   // ---------------------------------------------------------------------
   let t1 = Instant::now();
   let rust_env_arc = Arc::new(rust_env);
-  let compile_state = match compile_env(&rust_env_arc) {
+  let check_originals = expect_pass_vec.iter().any(|pass| !*pass);
+  let compile_state = match compile_env_with_options(
+    &rust_env_arc,
+    CompileOptions { check_originals, ..Default::default() },
+  ) {
     Ok(s) => s,
     Err(e) => {
-      return build_uniform_error(&name_strings, &format!("[compile] {e:?}"));
+      return build_uniform_error(names_vec.len(), &format!("[compile] {e:?}"));
     },
   };
   eprintln!("[rs_kernel_check] compile:    {:>8.1?}", t1.elapsed());
 
-  // Snapshot per-constant compile failures (ill-formed inductives, cascading
-  // MissingConstant, etc.) keyed by Lean-display name string so the check
-  // loop can skip the kernel and report them as compile-side rejections.
+  // Snapshot per-constant compile failures (ill-formed inductives,
+  // cascading MissingConstant, etc.) keyed by `Name` so the check loop
+  // can skip the kernel and report them as compile-side rejections.
   // `compile_env` no longer aborts on per-block failure; it populates
   // `CompileState.ungrounded` and continues, letting good constants still
   // compile cleanly.
-  let ungrounded: FxHashMap<String, String> = compile_state
+  let ungrounded: FxHashMap<Name, String> = compile_state
     .ungrounded
     .iter()
-    .map(|e| (format!("{}", e.key()), e.value().clone()))
+    .map(|e| (e.key().clone(), e.value().clone()))
     .collect();
   if !ungrounded.is_empty() {
     eprintln!(
@@ -132,11 +161,11 @@ pub extern "C" fn rs_kernel_check_consts(
       ungrounded.len()
     );
     // Sort for deterministic output — `FxHashMap` iteration order is
-    // platform-defined. Sorting by name also groups related compile
-    // failures (e.g. an ill-formed inductive + its constructors + rec)
-    // next to each other in the log.
-    let mut ordered: Vec<(&String, &String)> = ungrounded.iter().collect();
-    ordered.sort_by(|a, b| a.0.cmp(b.0));
+    // platform-defined. Sort by pretty-form once up front rather than in
+    // the comparator to avoid repeated `format!` allocations.
+    let mut ordered: Vec<(String, &String)> =
+      ungrounded.iter().map(|(k, v)| (k.pretty(), v)).collect();
+    ordered.sort_by(|a, b| a.0.cmp(&b.0));
     for (name, msg) in &ordered {
       // `msg` from `compile_env` can be multi-line; collapse internal
       // newlines so each constant occupies one log line.
@@ -149,16 +178,12 @@ pub extern "C" fn rs_kernel_check_consts(
   // Ingress Ixon → kernel
   // ---------------------------------------------------------------------
   let t2 = Instant::now();
-  let (mut kenv, intern) =
-    match ixon_ingress::<Meta>(&compile_state.env) {
-      Ok(v) => v,
-      Err(msg) => {
-        return build_uniform_error(
-          &name_strings,
-          &format!("[ingress] {msg}"),
-        );
-      },
-    };
+  let (mut kenv, intern) = match ixon_ingress::<Meta>(&compile_state.env) {
+    Ok(v) => v,
+    Err(msg) => {
+      return build_uniform_error(names_vec.len(), &format!("[ingress] {msg}"));
+    },
+  };
   // FIXME: `ixon_ingress` returns a populated `InternTable` separately from
   // the fresh, empty one inside `KEnv::new()`. The TypeChecker reads
   // `env.intern`, so we have to swap. When ingress is refactored to populate
@@ -176,16 +201,16 @@ pub extern "C" fn rs_kernel_check_consts(
 
   let kenv = Arc::new(kenv);
 
-  // Build Lean-name-string → KId map by iterating `kenv` itself. This
-  // guarantees we look up by the exact KIds that ingress inserted, sidestepping
-  // any risk of reconstruction mismatch (e.g. Muts-block member naming vs
-  // `named` map keys).
-  let mut name_to_id: FxHashMap<String, KId<Meta>> = FxHashMap::default();
+  // Build `Name → KId` map by iterating `kenv` itself. This guarantees we
+  // look up by the exact KIds that ingress inserted, sidestepping any
+  // risk of reconstruction mismatch (e.g. Muts-block member naming vs
+  // `named` map keys). Keyed by `Name` directly (hash-based equality)
+  // rather than by `format!("{}", name)` — pure structural lookup.
+  let mut name_to_id: FxHashMap<Name, KId<Meta>> = FxHashMap::default();
   for (kid, _kconst) in kenv.iter() {
-    let lean_name = format!("{}", kid.name);
-    name_to_id.insert(lean_name, kid);
+    name_to_id.insert(kid.name.clone(), kid);
   }
-  let total = name_strings.len();
+  let total = names_vec.len();
   eprintln!("[rs_kernel_check] checking {total} constants...");
   let t3 = Instant::now();
 
@@ -197,21 +222,19 @@ pub extern "C" fn rs_kernel_check_consts(
   let results = match run_checks_on_large_stack(
     kenv.clone(),
     name_to_id,
-    name_strings.clone(),
+    names_vec.clone(),
     expect_pass_vec,
     ungrounded,
+    quiet,
   ) {
     Ok(r) => r,
     Err(msg) => {
-      return build_uniform_error(
-        &name_strings,
-        &format!("[thread] {msg}"),
-      );
+      return build_uniform_error(names_vec.len(), &format!("[thread] {msg}"));
     },
   };
 
-  let passed = results.iter().filter(|(_, r)| r.is_ok()).count();
-  let failed = results.iter().filter(|(_, r)| r.is_err()).count();
+  let passed = results.iter().filter(|r| r.is_ok()).count();
+  let failed = results.iter().filter(|r| r.is_err()).count();
   eprintln!(
     "[rs_kernel_check] {passed}/{total} passed, {failed} failed ({:.1?})",
     t3.elapsed()
@@ -247,39 +270,49 @@ type CheckRes = Result<(), (ErrKind, String)>;
 
 fn run_checks_on_large_stack(
   kenv: Arc<KEnv<Meta>>,
-  name_to_id: FxHashMap<String, KId<Meta>>,
-  name_strings: Vec<String>,
+  name_to_id: FxHashMap<Name, KId<Meta>>,
+  names: Vec<Name>,
   expect_pass: Vec<bool>,
-  ungrounded: FxHashMap<String, String>,
-) -> Result<Vec<(String, CheckRes)>, String> {
+  ungrounded: FxHashMap<Name, String>,
+  quiet: bool,
+) -> Result<Vec<CheckRes>, String> {
   std::thread::Builder::new()
     .stack_size(256 * 1024 * 1024)
     .spawn(move || {
-      check_consts_loop(kenv, name_to_id, name_strings, expect_pass, ungrounded)
+      check_consts_loop(kenv, name_to_id, names, expect_pass, ungrounded, quiet)
     })
     .map_err(|e| format!("failed to spawn kernel-check thread: {e}"))?
     .join()
     .map_err(|_| "kernel-check thread panicked".to_string())
 }
 
+/// Threshold at and above which a check is "slow" enough to keep a persistent
+/// line in quiet mode. Matches the ix_old behaviour.
+const SLOW_THRESHOLD: std::time::Duration = std::time::Duration::from_secs(1);
+
 fn check_consts_loop(
   kenv: Arc<KEnv<Meta>>,
-  name_to_id: FxHashMap<String, KId<Meta>>,
-  name_strings: Vec<String>,
+  name_to_id: FxHashMap<Name, KId<Meta>>,
+  names: Vec<Name>,
   expect_pass: Vec<bool>,
-  ungrounded: FxHashMap<String, String>,
-) -> Vec<(String, CheckRes)> {
-  let total = name_strings.len();
-  let mut results: Vec<(String, CheckRes)> = Vec::with_capacity(total);
+  ungrounded: FxHashMap<Name, String>,
+  quiet: bool,
+) -> Vec<CheckRes> {
+  let total = names.len();
+  let mut results: Vec<CheckRes> = Vec::with_capacity(total);
 
-  for (i, raw_name) in name_strings.iter().enumerate() {
+  // Terminal width is only needed for ephemeral clearing in quiet mode. In
+  // verbose mode we never rewrite, so the value is ignored.
+  let mut progress = Progress::new(quiet);
+
+  for (i, name) in names.iter().enumerate() {
     let should_pass = expect_pass.get(i).copied().unwrap_or(true);
 
-    // The test runner passes display-form names (e.g. "Nat.succ"). `name_to_id`
-    // is keyed by `format!("{}", Name)`, which matches — but in the rare case
-    // where the caller passes a raw-form string we parse-and-reformat to get
-    // the canonical key.
-    let pretty = format!("{}", parse_name(raw_name));
+    // Name lookup is structural (`Name` → `KId`) — no string round-trip,
+    // no escape handling, no `parse_name` fallback. The display string
+    // is computed once here for progress output and error messages.
+    let display = name.pretty();
+    let prefix = format!("  [{}/{}] {display}", i + 1, total);
 
     // Constants that failed to compile (ill-formed inductives, cascading
     // MissingConstant, etc.) are reported as rejected without invoking the
@@ -287,46 +320,37 @@ fn check_consts_loop(
     // bad_raw_consts tests (e.g. `inductBadNonSort`) round-trip correctly.
     // The `Compile` kind lets the Lean caller distinguish this from a
     // kernel-side rejection.
-    if let Some(msg) =
-      ungrounded.get(raw_name).or_else(|| ungrounded.get(&pretty))
-    {
-      match should_pass {
-        true => eprintln!(
-          "  [{}/{}] {raw_name} ... FAIL (compile): {msg}",
-          i + 1,
-          total,
-        ),
-        false => eprintln!(
-          "  [{}/{}] {raw_name} ... REJECTED (compile): {msg}",
-          i + 1,
-          total,
-        ),
+    if let Some(msg) = ungrounded.get(name) {
+      // Unexpected compile failure (should_pass=true) is a real problem and
+      // must persist. Expected rejections (should_pass=false) only persist in
+      // verbose mode; quiet mode drops them since they're part of the
+      // tutorial's bad-constant coverage, not user-visible failures.
+      if should_pass {
+        progress.persist(&format!("{prefix} ... FAIL (compile): {msg}"));
+      } else if !quiet {
+        progress.persist(&format!("{prefix} ... REJECTED (compile): {msg}"));
       }
-      results.push((
-        raw_name.clone(),
-        Err((ErrKind::Compile, msg.clone())),
-      ));
+      results.push(Err((ErrKind::Compile, msg.clone())));
       continue;
     }
 
-    let kid = match name_to_id
-      .get(raw_name)
-      .or_else(|| name_to_id.get(&pretty))
-    {
+    let kid = match name_to_id.get(name) {
       Some(id) => id.clone(),
       None => {
-        eprintln!("  [{}/{}] ? {raw_name}: not found", i + 1, total);
+        // Not-found is always unexpected — the Lean side asked for a name
+        // that compile+ingress didn't produce. Always persist.
+        progress.persist(&format!("{prefix} ? not found"));
         // Treat "not found in kernel env" as a kernel-kind error so the
         // Lean-side summary can lump it in with other kernel rejections.
-        results.push((
-          raw_name.clone(),
-          Err((ErrKind::Kernel, format!("not found: {raw_name}"))),
-        ));
+        results.push(Err((ErrKind::Kernel, format!("not found: {display}"))));
         continue;
       },
     };
 
-    eprint!("  [{}/{}] {raw_name} ... ", i + 1, total);
+    // Start the progress indicator. In quiet mode this writes an ephemeral
+    // label that will be cleared or overwritten; in verbose mode it writes
+    // the prefix without a newline so the result can append to it.
+    progress.start(&prefix);
 
     let tc_start = Instant::now();
     let mut tc = TypeChecker::new(kenv.clone());
@@ -334,25 +358,188 @@ fn check_consts_loop(
       tc.check_const(&kid).map_err(|e| format_tc_error(&e));
     let elapsed = tc_start.elapsed();
     let peak = tc.def_eq_peak;
+    let is_slow = elapsed >= SLOW_THRESHOLD;
 
-    match (&result, should_pass) {
-      (Ok(()), true) => eprintln!("ok ({elapsed:.1?}, depth={peak})"),
+    // Build the human-readable result suffix for this constant. The suffix is
+    // printed after `"{prefix} ... "` in both verbose and quiet modes.
+    let suffix = match (&result, should_pass) {
+      (Ok(()), true) => format!("ok ({elapsed:.1?}, depth={peak})"),
       (Ok(()), false) => {
-        eprintln!("UNEXPECTED PASS ({elapsed:.1?}, depth={peak})")
+        format!("UNEXPECTED PASS ({elapsed:.1?}, depth={peak})")
       },
-      (Err(msg), false) => eprintln!("REJECTED ({elapsed:.1?}): {msg}"),
-      (Err(msg), true) => {
-        eprintln!("FAIL ({elapsed:.1?}, depth={peak}): {msg}")
-      },
-    }
-    // Re-wrap: `(Ok(()), _) -> Ok(())`, `(Err(msg), _) -> Err((Kernel, msg))`.
-    results.push((
-      raw_name.clone(),
-      result.map_err(|msg| (ErrKind::Kernel, msg)),
-    ));
+      (Err(msg), false) => format!("REJECTED ({elapsed:.1?}): {msg}"),
+      (Err(msg), true) => format!("FAIL ({elapsed:.1?}, depth={peak}): {msg}"),
+    };
+
+    // Outcomes that must persist in quiet mode:
+    //   - Unexpected pass / unexpected failure: user cares about these.
+    //   - Slow runs with the expected outcome: useful for bisecting perf.
+    //
+    // Fast runs with the expected outcome stay ephemeral and are
+    // overwritten on the next iteration.
+    let is_expected = (result.is_ok()) == should_pass;
+    let must_persist = !is_expected || is_slow;
+    let suffix_final = if is_slow && is_expected {
+      // Tag slow-but-expected runs so they're easy to grep. Outright
+      // failures already carry their own loud "FAIL"/"UNEXPECTED PASS"
+      // marker, so we don't double-tag.
+      format!("{suffix} [slow]")
+    } else {
+      suffix
+    };
+
+    progress.finish(&prefix, &suffix_final, must_persist);
+
+    // `Ok(())` passes through; `Err(msg)` is tagged as a kernel rejection.
+    results.push(result.map_err(|msg| (ErrKind::Kernel, msg)));
   }
 
+  // Clear any trailing ephemeral label before the summary lines print.
+  progress.flush();
+
   results
+}
+
+// =============================================================================
+// Progress output (ephemeral + verbose)
+// =============================================================================
+//
+// Quiet mode rewrites the "[i/N] name ..." line in place and only promotes a
+// constant to a persistent log line when it's slow, unexpected, or otherwise
+// interesting. Verbose mode keeps the original behaviour: every constant
+// lives on its own line.
+//
+// The ANSI escape sequences used are a minimal subset supported by every
+// terminal the test suite has been exercised on:
+//   \x1b[2K — clear entire current line
+//   \x1b[A  — move cursor up one line
+//   \r      — move cursor to column 0
+//
+// Ported from ix_old's `rs_zero_check_env_impl` (see
+// `ix_old/src/lean/ffi/check.rs` around line 1798).
+
+/// Progress reporter used by `check_consts_loop`. In verbose mode it simply
+/// emits one line per constant; in quiet mode it rewrites the current line in
+/// place and persists only the ones we explicitly ask it to.
+struct Progress {
+  quiet: bool,
+  term_cols: usize,
+  /// Number of terminal lines the current ephemeral label occupies. Zero
+  /// means there's nothing to clear on the next `start`/`persist`.
+  ephemeral_lines: usize,
+}
+
+impl Progress {
+  fn new(quiet: bool) -> Self {
+    let term_cols = if quiet { term_cols_stderr() } else { 0 };
+    Self { quiet, term_cols, ephemeral_lines: 0 }
+  }
+
+  /// Begin the progress indicator for a new constant. Quiet mode writes
+  /// `{prefix} ...` as an ephemeral label; verbose mode writes it as the
+  /// start of a line that will be completed by `finish`.
+  fn start(&mut self, prefix: &str) {
+    if self.quiet {
+      self.clear_ephemeral();
+      let label = format!("{prefix} ...");
+      eprint!("{label}");
+      self.ephemeral_lines = lines_occupied(&label, self.term_cols);
+    } else {
+      eprint!("{prefix} ... ");
+    }
+  }
+
+  /// Complete the current constant's progress line. `persist=true` always
+  /// prints a `{prefix} ... {suffix}` line; `persist=false` means quiet mode
+  /// leaves the ephemeral label to be overwritten on the next `start`.
+  /// Verbose mode always prints the suffix (continuing the line `start`
+  /// opened).
+  fn finish(&mut self, prefix: &str, suffix: &str, persist: bool) {
+    if self.quiet {
+      if persist {
+        self.clear_ephemeral();
+        eprintln!("{prefix} ... {suffix}");
+      }
+      // else: ephemeral label stays, overwritten on next `start`
+    } else {
+      eprintln!("{suffix}");
+    }
+  }
+
+  /// Print a persistent line that is NOT preceded by a `start`, e.g. the
+  /// not-found / ungrounded branches where we don't call `check_const`.
+  fn persist(&mut self, line: &str) {
+    if self.quiet {
+      self.clear_ephemeral();
+    }
+    eprintln!("{line}");
+  }
+
+  /// Clear any trailing ephemeral output so subsequent prints start on a
+  /// fresh line. Safe to call when nothing is buffered.
+  fn flush(&mut self) {
+    if self.quiet {
+      self.clear_ephemeral();
+    }
+  }
+
+  /// Rewind over the currently-buffered ephemeral label (if any) so the next
+  /// write lands in column 0 of the topmost affected row.
+  fn clear_ephemeral(&mut self) {
+    let n = self.ephemeral_lines;
+    if n == 0 {
+      return;
+    }
+    if n == 1 {
+      eprint!("\x1b[2K\r");
+    } else {
+      // Clear current line, then move up and clear each line above.
+      eprint!("\x1b[2K");
+      for _ in 1..n {
+        eprint!("\x1b[A\x1b[2K");
+      }
+      eprint!("\r");
+    }
+    self.ephemeral_lines = 0;
+  }
+}
+
+/// How many terminal rows a single `text` occupies in a `cols`-wide terminal.
+///
+/// Uses byte length as a proxy for display width — good enough for ASCII
+/// constant names; Unicode-heavy names may under-count, but the resulting
+/// clear is at worst missing a trailing byte which the next label overwrites
+/// anyway.
+#[inline]
+fn lines_occupied(text: &str, cols: usize) -> usize {
+  if cols == 0 {
+    return 1;
+  }
+  let len = text.len();
+  if len == 0 { 1 } else { len.div_ceil(cols) }
+}
+
+/// Terminal width of stderr via `ioctl(TIOCGWINSZ)`. Falls back to 80 when
+/// stderr isn't a TTY (e.g. piped to `tee` or `less`) or the syscall fails.
+fn term_cols_stderr() -> usize {
+  // `winsize` layout: [ws_row, ws_col, ws_xpixel, ws_ypixel].
+  let mut ws = [0u16; 4];
+  #[cfg(target_os = "linux")]
+  const TIOCGWINSZ: std::ffi::c_ulong = 0x5413;
+  #[cfg(target_os = "macos")]
+  const TIOCGWINSZ: std::ffi::c_ulong = 0x40087468;
+  #[cfg(any(target_os = "linux", target_os = "macos"))]
+  {
+    unsafe extern "C" {
+      fn ioctl(fd: i32, request: std::ffi::c_ulong, ...) -> i32;
+    }
+    let ret = unsafe { ioctl(2, TIOCGWINSZ, ws.as_mut_ptr()) };
+    if ret == 0 && ws[1] > 0 { ws[1] as usize } else { 80 }
+  }
+  #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+  {
+    80
+  }
 }
 
 /// Format a `TcError` for user-facing Lean-side display. For the two cases we
@@ -361,7 +548,9 @@ fn check_consts_loop(
 fn format_tc_error(e: &TcError<Meta>) -> String {
   match e {
     TcError::AppTypeMismatch { a_ty, dom, depth } => {
-      format!("AppTypeMismatch at depth={depth}\n    a_ty = {a_ty}\n    dom  = {dom}")
+      format!(
+        "AppTypeMismatch at depth={depth}\n    a_ty = {a_ty}\n    dom  = {dom}"
+      )
     },
     TcError::FunExpected { e, whnf } => {
       format!("FunExpected\n    e    = {e}\n    whnf = {whnf}")
@@ -377,18 +566,17 @@ fn format_tc_error(e: &TcError<Meta>) -> String {
 // Lean-side result construction
 // =============================================================================
 
-/// Build an `IO (Array (String × Option CheckError))` from Rust results.
+/// Build an `IO (Array (Option CheckError))` from Rust results.
 ///
-/// - `Ok(())`                     → `(name, none)`
-/// - `Err((Kernel, msg))`         → `(name, some (CheckError.kernelException msg))`
-/// - `Err((Compile, msg))`        → `(name, some (CheckError.compileError msg))`
-fn build_result_array(
-  results: &[(String, CheckRes)],
-) -> LeanIOResult<LeanOwned> {
+/// The Lean caller pairs each slot with `names[i]` (the input array) for
+/// display, so there's no name in the returned tuple.
+///
+/// - `Ok(())`              → `none`
+/// - `Err((Kernel, msg))`  → `some (CheckError.kernelException msg)`
+/// - `Err((Compile, msg))` → `some (CheckError.compileError msg)`
+fn build_result_array(results: &[CheckRes]) -> LeanIOResult<LeanOwned> {
   let arr = LeanArray::alloc(results.len());
-  for (i, (name, result)) in results.iter().enumerate() {
-    let name_obj = LeanString::new(name);
-
+  for (i, result) in results.iter().enumerate() {
     let option_obj: LeanOwned = match result {
       Ok(()) => {
         // `Option.none` — tag 0, zero fields, zero scalars.
@@ -407,28 +595,18 @@ fn build_result_array(
         some_ctor.into()
       },
     };
-
-    // Product `(String, Option CheckError)` — tag 0, two object fields.
-    let pair = LeanCtor::alloc(0, 2, 0);
-    pair.set(0, name_obj);
-    pair.set(1, option_obj);
-    arr.set(i, pair);
+    arr.set(i, option_obj);
   }
   LeanIOResult::ok(arr)
 }
 
-/// Build a result array where every requested name is reported as failed with
-/// the same compile-kind error message. Used when compile/ingress/thread
-/// setup fails before per-constant checking can begin — the error arose
-/// before the kernel was consulted, so `Compile` is the honest tag.
-fn build_uniform_error(
-  names: &[String],
-  msg: &str,
-) -> LeanIOResult<LeanOwned> {
-  let results: Vec<(String, CheckRes)> = names
-    .iter()
-    .map(|n| (n.clone(), Err((ErrKind::Compile, msg.to_string()))))
-    .collect();
+/// Build a result array of length `count` where every slot is the same
+/// compile-kind error. Used when compile/ingress/thread setup fails
+/// before per-constant checking can begin — the error arose before the
+/// kernel was consulted, so `Compile` is the honest tag.
+fn build_uniform_error(count: usize, msg: &str) -> LeanIOResult<LeanOwned> {
+  let results: Vec<CheckRes> =
+    (0..count).map(|_| Err((ErrKind::Compile, msg.to_string()))).collect();
   build_result_array(&results)
 }
 
@@ -479,7 +657,10 @@ pub extern "C" fn rs_kernel_roundtrip(
 
   let t1 = Instant::now();
   let rust_env_arc = Arc::new(rust_env);
-  let mut compile_state = match compile_env(&rust_env_arc) {
+  let mut compile_state = match compile_env_with_options(
+    &rust_env_arc,
+    CompileOptions { check_originals: false, ..Default::default() },
+  ) {
     Ok(s) => s,
     Err(e) => {
       return build_string_array(&[format!("compile error: {e:?}")]);
@@ -624,7 +805,8 @@ fn compare_envs(
             errors.push(format!("{name}: {diff}"));
           },
           (LCI::RecInfo(a), LCI::RecInfo(b)) => {
-            for (i, (r1, r2)) in a.rules.iter().zip(b.rules.iter()).enumerate() {
+            for (i, (r1, r2)) in a.rules.iter().zip(b.rules.iter()).enumerate()
+            {
               if r1.rhs.get_hash() != r2.rhs.get_hash() {
                 let diff =
                   find_diff(&r1.rhs, &r2.rhs, &format!("rule[{i}].rhs"));
@@ -751,8 +933,7 @@ fn find_diff(
       } else {
         // Keys match — compare hashes of each value.
         let mut val_diffs = Vec::new();
-        for (i, ((n1, v1), (_, v2))) in
-          kvs1.iter().zip(kvs2.iter()).enumerate()
+        for (i, ((n1, v1), (_, v2))) in kvs1.iter().zip(kvs2.iter()).enumerate()
         {
           use crate::ix::env::hash_data_value;
           let mut h1 = blake3::Hasher::new();
@@ -760,8 +941,7 @@ fn find_diff(
           hash_data_value(v1, &mut h1);
           hash_data_value(v2, &mut h2);
           if h1.finalize() != h2.finalize() {
-            val_diffs
-              .push(format!("mdata[{i}] key={n1}: value hash differs"));
+            val_diffs.push(format!("mdata[{i}] key={n1}: value hash differs"));
           }
         }
         if !val_diffs.is_empty() {

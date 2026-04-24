@@ -92,7 +92,6 @@ use crate::ix::env::{
   RecursorVal,
 };
 use crate::ix::ixon::CompileError;
-use crate::ix::mutual::MutConst;
 
 /// A regenerated constant ready for compilation.
 #[derive(Clone)]
@@ -127,46 +126,101 @@ pub(crate) struct AuxDef {
   pub is_unsafe: bool,
 }
 
+/// Output of [`generate_aux_patches`].
+///
+/// In addition to the patch map, carries the canonical hash-sort permutation
+/// so callers can reuse it — both during compile (to build the
+/// `CallSitePlan` / surgery layout) and during decompile / validation
+/// (to canonicalize Lean-source-order originals before structural
+/// comparison).
+#[derive(Clone, Default)]
+pub(crate) struct AuxPatchesOutput {
+  /// The regenerated canonical-layout constants, keyed by their
+  /// Lean-visible source-indexed name (e.g. `A.rec`, `A.below_2`).
+  pub patches: FxHashMap<Name, PatchedConstant>,
+  /// Lean-visible aux names that should resolve to an already-compiled
+  /// canonical patch instead of compiling their own renamed copy.
+  ///
+  /// Key is the source name exported by Lean; value is the generated patch
+  /// name whose address should be reused. These are aliases, not new
+  /// constants.
+  pub aliases: FxHashMap<Name, Name>,
+  /// Hash-sort permutation for the aux section of the expanded block:
+  /// `perm[source_j] = canonical_i` for each source-walk aux position.
+  /// `None` when the block has no nested auxiliaries (or the aux_gen
+  /// pipeline didn't reach the hash-sort step, e.g. empty `original_all`).
+  pub perm: Option<Vec<usize>>,
+  /// Number of equivalence classes — i.e. primary (non-aux) members in the
+  /// canonical block. Reserved for callers that need to build
+  /// [`congruence::perm::PermCtx`] (see the `validate-aux` Phase 2 path in
+  /// `ffi/lean_env.rs`); the Phase 2 builder currently derives this from
+  /// the `all` slice directly, but keep the field exposed so future
+  /// callers don't have to duplicate the singleton-classes assumption.
+  #[allow(dead_code)]
+  pub n_classes: usize,
+  /// Number of canonical aux members (== length of the hash-sorted aux
+  /// section). Zero for blocks without nested inductives. Reserved for
+  /// downstream diagnostics / metadata; not read by the current
+  /// pipeline.
+  #[allow(dead_code)]
+  pub n_canonical_aux: usize,
+  /// Number of source-walk aux positions (== `perm.len()` when `perm` is
+  /// `Some`). Under alpha collapse this can exceed `n_canonical_aux`.
+  /// Reserved for diagnostics — same rationale as `n_canonical_aux`.
+  #[allow(dead_code)]
+  pub n_source_aux: usize,
+}
+
 /// Generate all canonical auxiliary patches for a collapsed inductive block.
 ///
 /// Called from `compile_mutual` after `sort_consts` determines the canonical
-/// classes. Returns a map from auxiliary name -> regenerated constant.
+/// classes. Returns an [`AuxPatchesOutput`] carrying the patch map and the
+/// canonical hash-sort permutation (when applicable).
 ///
 /// Only generates patches when alpha-collapse or SCC-splitting actually
 /// changes the block structure. Each auxiliary is only generated if the
 /// original Lean constant exists in the environment.
+///
+/// `original_all` is the Lean-source-walk inductive name list (typically
+/// `InductiveVal.all` of any block member). It determines the canonical
+/// `<all0>.rec_N` naming and the source-aux walk used to compute the
+/// hash-sort permutation.
 pub(crate) fn generate_aux_patches(
   sorted_classes: &[Vec<Name>],
-  original_cs: &[MutConst],
+  original_all: &[Name],
   lean_env: &Arc<LeanEnv>,
   stt: &CompileState,
   kctx: &crate::ix::compile::KernelCtx,
-) -> Result<FxHashMap<Name, PatchedConstant>, CompileError> {
+) -> Result<AuxPatchesOutput, CompileError> {
   let mut patches: FxHashMap<Name, PatchedConstant> = FxHashMap::default();
-
-  // Collect the original inductive names from the mutual block.
-  let original_all: Vec<Name> = original_cs
-    .iter()
-    .find_map(|c| match c {
-      MutConst::Indc(ind) => Some(ind.ind.all.clone()),
-      _ => None,
-    })
-    .unwrap_or_default();
+  let mut aliases: FxHashMap<Name, Name> = FxHashMap::default();
 
   if original_all.is_empty() {
-    return Ok(patches);
+    return Ok(AuxPatchesOutput {
+      patches,
+      aliases,
+      perm: None,
+      n_classes: sorted_classes.len(),
+      n_canonical_aux: 0,
+      n_source_aux: 0,
+    });
   }
 
-  let n_original = original_all.len();
   let n_classes = sorted_classes.len();
 
-  let has_nested = original_all.iter().any(|name| {
-    matches!(
-      lean_env.get(name).as_deref(),
-      Some(crate::ix::env::ConstantInfo::InductInfo(v))
-        if crate::ix::compile::nat_conv::nat_to_usize(&v.num_nested) > 0
-    )
-  });
+  // Captured below when we take the expand/restore path. Returned to the
+  // caller so Phase 2 / Phase 6 / Phase 7b can permute Lean-source-order
+  // originals into canonical order before structural comparison.
+  let mut captured_perm: Option<Vec<usize>> = None;
+  let mut captured_n_canonical_aux: usize = 0;
+  let mut captured_n_source_aux: usize = 0;
+
+  // NOTE: the historical `perm_rename_map` (canonical→source `_N`
+  // rename, applied post-generation over `.below`/`.brecOn*` patch
+  // bodies) has been eliminated. Generators now emit source-indexed
+  // `_N` suffixes directly via the `source_of_canonical` slice threaded
+  // through `generate_recursors_from_expanded`. See
+  // `docs/ix_canonicity.md` §6.4 on the two numberings.
 
   // Ensure PUnit and PProd are in kenv BEFORE any ingress (Phase 1) runs.
   // ingress_field_deps may encounter PProd in constructor field types and
@@ -186,48 +240,165 @@ pub(crate) fn generate_aux_patches(
   // declaration and expand nested occurrences from.
   let ordered_originals: Vec<Name> =
     sorted_classes.iter().map(|c| c[0].clone()).collect();
-  let (canonical_recs, is_prop) = if has_nested {
-    // Build alias→representative map for alpha-collapsed blocks.
-    // This ensures the expansion only sees representative names in ctor types.
-    let alias_to_rep: FxHashMap<Name, Name> = sorted_classes
-      .iter()
-      .flat_map(|class| {
-        class[1..].iter().map(move |alias| (alias.clone(), class[0].clone()))
-      })
-      .collect();
-    let expanded =
-      nested::expand_nested_block(&ordered_originals, lean_env, &alias_to_rep)?;
+  // Lean's `num_nested` metadata is not a complete structural detector for
+  // all exported forms (notably some parameterized nested blocks). Probe our
+  // own expansion result instead, so aux aliases are generated whenever the
+  // recursor generator will see flat auxiliaries.
+  let alias_to_rep: FxHashMap<Name, Name> = sorted_classes
+    .iter()
+    .flat_map(|class| {
+      class[1..].iter().map(move |alias| (alias.clone(), class[0].clone()))
+    })
+    .collect();
+  let expanded_probe =
+    nested::expand_nested_block(&ordered_originals, lean_env, &alias_to_rep)?;
+  let structural_has_nested =
+    expanded_probe.types.len() > expanded_probe.n_originals;
+  let metadata_has_nested = original_all.iter().any(|name| {
+    matches!(
+      lean_env.get(name).as_deref(),
+      Some(crate::ix::env::ConstantInfo::InductInfo(v))
+        if crate::ix::compile::nat_conv::nat_to_usize(&v.num_nested) > 0
+    )
+  });
+  let (canonical_recs, is_prop) = if metadata_has_nested
+    && structural_has_nested
+  {
+    let mut expanded = expanded_probe;
+    // Canonicalize the aux section of the expanded block by structural order.
+    // After this, patches (recs, belows, brecOns, etc.) are emitted in
+    // canonical order rather than Lean's source-walk order.
+    //
+    // Why this must happen here: call-site surgery uses `aux_perms` to
+    // reorder user code's arguments when they call the aux. If the patch
+    // layout doesn't match what surgery thinks it is, downstream bodies
+    // that reference the aux (notably `_sizeOf_*`) wind up with mismatched
+    // addresses. Keeping a single canonical layout shared by compile,
+    // decompile, and surgery is the only way to maintain that the same
+    // semantic block declared in permuted source orders hashes to the
+    // same Ixon bytes.
+    nested::sort_aux_by_content_hash(&mut expanded, stt)?;
     if expanded.types.len() > expanded.n_originals {
+      // Compute source→canonical permutation FIRST (before recursor
+      // generation) so the generator can emit source-indexed `_N`
+      // suffixes directly, avoiding any canonical-then-rename
+      // intermediate state. Lean exports `<all0>.rec_{source_j+1}`,
+      // `.below_{source_j+1}`, `.brecOn_{source_j+1}`; our canonical
+      // structural sort places the same auxes at different positions.
+      // `perm[source_j] = canonical_i` captures the mapping, and
+      // `source_of_canonical[canonical_i] = min source_j` is its
+      // semantic inverse (modulo alpha-collapse dedup, which makes the
+      // forward perm non-injective).
+      let orig_to_canon_map: std::collections::HashMap<Name, Name> =
+        sorted_classes
+          .iter()
+          .flat_map(|class| {
+            let rep = class[0].clone();
+            class.iter().map(move |n| (n.clone(), rep.clone()))
+          })
+          .collect();
+      let n_canon = expanded.types.len().saturating_sub(expanded.n_originals);
+      let perm = nested::compute_aux_perm(
+        &expanded,
+        original_all,
+        lean_env,
+        stt,
+        &orig_to_canon_map,
+      )?;
+      // Stash for caller (Phase 2 / Phase 6 / Phase 7b need it).
+      captured_perm = Some(perm.clone());
+      captured_n_canonical_aux = n_canon;
+      captured_n_source_aux = perm.len();
+
+      // `canon_repr[canonical_i]` = min source_j mapping to this
+      // canonical aux. Under alpha-collapse (n_source > n_canon)
+      // multiple source names map to the same canonical; the min
+      // ensures determinism. For well-formed in-SCC blocks every
+      // canonical slot has at least one source mapping.
+      let mut canon_repr = vec![usize::MAX; n_canon];
+      for (src_j, &canon_i) in perm.iter().enumerate() {
+        if canon_i != nested::PERM_OUT_OF_SCC
+          && canon_i < n_canon
+          && canon_repr[canon_i] == usize::MAX
+        {
+          canon_repr[canon_i] = src_j;
+        }
+      }
+
+      // Sanity: every canonical aux must correspond to a real Lean-exported
+      // source aux name. Synthesizing `<all0>.rec_{canonical_i+1}` /
+      // `.below_{canonical_i+1}` / `.brecOn_{canonical_i+1}` would create
+      // public names that Lean never exported, and later aliasing would make
+      // those names look canonical. Treat that as a construction bug instead.
+      for (ci, &source_j) in canon_repr.iter().enumerate() {
+        if source_j == usize::MAX {
+          return Err(CompileError::InvalidMutualBlock {
+            reason: format!(
+              "aux_gen canonical aux #{ci} has no Lean source mapping; refusing to synthesize canonical-indexed _N names",
+            ),
+          });
+        }
+      }
+      let source_of_canonical: Vec<usize> = canon_repr.clone();
+
       // Has auxiliaries — use expand/restore path.
-      // Pass the real sorted_classes so the recursor generator preserves
-      // the canonical class structure (n_classes, naming, etc.).
+      // Pass source_of_canonical so the generator emits aux rec names
+      // with Lean-source-indexed `_N` suffixes directly.
       let (raw_recs, is_prop) = recursor::generate_recursors_from_expanded(
         sorted_classes,
         &expanded,
+        Some(&source_of_canonical),
         lean_env,
         stt,
         kctx,
       )?;
 
-      // Build RestoreCtx.
+      // Build `aux_rec_map` for `RestoreCtx`: maps each `_nested.X.rec`
+      // (the aux inductive's own derived recursor, as it appears in raw
+      // rec bodies before restoration) to the Lean-source-indexed name
+      // `<source_all0>.rec_{source_j+1}`. `source_j = canon_repr[canonical_i]`
+      // is the min source index mapping to this canonical aux.
+      //
+      // Historical context: earlier versions of this loop also inserted
+      // blanket `_N`-suffix rename entries for `.rec_{canonical+1}`,
+      // `.below_{canonical+1}`, and `.brecOn_{canonical+1}.*` keys,
+      // plus a separate `perm_rename_map` post-pass over `.below` /
+      // `.brecOn*` patch bodies, because the generators emitted
+      // canonical-indexed references internally. Since recursor.rs now
+      // threads `source_of_canonical` into name construction, all those
+      // entries would be no-ops — and `below.rs` / `brecon.rs` read
+      // their `_N` suffixes from the already-renamed aux rec names, so
+      // their bodies land in source indexing directly. Only the
+      // `_nested.X.rec` mapping remains necessary; see
+      // `docs/ix_canonicity.md` §6.4.
+      //
+      // `original_all[0]` is the Lean-source-order first inductive —
+      // what Lean hangs `_N` names off in its env, and what
+      // `below::generate_below_constants` / `brecon::generate_brecon_constants`
+      // read from `first_ind.all[0]` for their own `_N` naming.
+      // Using `ordered_originals[0]` (a class rep) would diverge
+      // whenever sort_consts reorders the first class.
       let mut aux_rec_map: FxHashMap<Name, Name> = FxHashMap::default();
-      // Map auxiliary rec names (_nested.X.rec) → canonical names (all[0].rec_N).
-      let all0 = &ordered_originals[0];
-      for (i, member) in
+      let source_all0 = &original_all[0];
+      for (canonical_i, member) in
         expanded.types.iter().skip(expanded.n_originals).enumerate()
       {
-        let aux_rec_name = Name::str(member.name.clone(), "rec".to_string());
-        let canon_rec_name = Name::str(all0.clone(), format!("rec_{}", i + 1));
-        aux_rec_map.insert(aux_rec_name, canon_rec_name);
+        let source_j = source_of_canonical[canonical_i];
+
+        let aux_nested_rec_name =
+          Name::str(member.name.clone(), "rec".to_string());
+        let source_rec_name =
+          Name::str(source_all0.clone(), format!("rec_{}", source_j + 1));
+        aux_rec_map.insert(aux_nested_rec_name, source_rec_name);
       }
 
-      let restore_ctx = expr_utils::RestoreCtx {
-        aux_to_nested: expanded.aux_to_nested,
-        aux_ctor_map: expanded.aux_ctor_map,
+      let restore_ctx = expr_utils::RestoreCtx::new(
+        expanded.aux_to_nested,
+        expanded.aux_ctor_map,
         aux_rec_map,
-        block_param_fvars: expanded.block_param_fvars,
-        n_params: expanded.types.first().map(|t| t.n_params).unwrap_or(0),
-      };
+        expanded.block_param_fvars,
+        expanded.types.first().map(|t| t.n_params).unwrap_or(0),
+      );
 
       // Rename and restore all recursors.
       // Auxiliary recursors (_nested.X.rec) → canonical names (all[0].rec_N).
@@ -282,7 +453,42 @@ pub(crate) fn generate_aux_patches(
         .collect();
       (restored_recs, is_prop)
     } else {
-      // No nested auxiliaries — fall through to standard path.
+      // The structural detector can find auxiliaries in cases where Lean's
+      // `num_nested` metadata is zero (notably parameterized nested blocks).
+      // In those cases the standard flat-block recursor generator matches
+      // Lean's original telescope, but we still need the source→canonical
+      // permutation so extra Lean aux names can become address aliases instead
+      // of falling back to original compilation.
+      if structural_has_nested {
+        let expanded_for_perm = nested::expand_nested_block(
+          &ordered_originals,
+          lean_env,
+          &alias_to_rep,
+        )?;
+        let orig_to_canon_map: std::collections::HashMap<Name, Name> =
+          sorted_classes
+            .iter()
+            .flat_map(|class| {
+              let rep = class[0].clone();
+              class.iter().map(move |n| (n.clone(), rep.clone()))
+            })
+            .collect();
+        let n_canon = expanded_for_perm
+          .types
+          .len()
+          .saturating_sub(expanded_for_perm.n_originals);
+        let perm = nested::compute_aux_perm(
+          &expanded_for_perm,
+          original_all,
+          lean_env,
+          stt,
+          &orig_to_canon_map,
+        )?;
+        captured_perm = Some(perm.clone());
+        captured_n_canonical_aux = n_canon;
+        captured_n_source_aux = perm.len();
+      }
+      // No expand/restore recursor generation — fall through to standard path.
       recursor::generate_canonical_recursors_with_overlay(
         sorted_classes,
         lean_env,
@@ -369,7 +575,7 @@ pub(crate) fn generate_aux_patches(
       .is_some_and(|ci| is_below_shaped(ci.get_type()))
     {
       let _bt = std::time::Instant::now();
-      let below_consts = below::generate_below_constants(
+      let raw_below_consts = below::generate_below_constants(
         sorted_classes,
         &canonical_recs,
         lean_env,
@@ -378,6 +584,14 @@ pub(crate) fn generate_aux_patches(
         kctx,
       )?;
       let _below_elapsed = _bt.elapsed();
+
+      // `below.rs` now derives `.below_N` names and internal cross-aux
+      // references from already-source-indexed rec names (see
+      // `below::generate_below_constants` → `aux_rec_suffix_idx`), so
+      // there is no canonical-indexed leftover to rewrite. The
+      // post-generation rename pass that used to live here is gone.
+      let below_consts: Vec<below::BelowConstant> = raw_below_consts;
+
       for bc in &below_consts {
         match bc {
           below::BelowConstant::Def(d) => {
@@ -393,8 +607,9 @@ pub(crate) fn generate_aux_patches(
 
       // Populate canon_kenv with canonical .below types for Phase 3.
       // The canonical TC needs these to infer PProd(motive, I.below ...)
-      // during brecOn generation. We insert the regenerated types (which
-      // match the alpha-collapsed block structure), not the originals.
+      // during brecOn generation. Uses the SAME renamed below_consts
+      // that `patches` got — keeping the hash addressing consistent
+      // end-to-end.
       populate_canon_kenv_with_below(
         &below_consts,
         sorted_classes,
@@ -421,6 +636,11 @@ pub(crate) fn generate_aux_patches(
         for d in brecon_consts {
           // Only emit if the original Lean env has this constant
           // (e.g. .brecOn.eq may not be in the exported env subset).
+          // `brecon.rs` now emits `.below_N` / sibling `.rec_N` references
+          // in source-indexed form directly (the `below_consts` vec's
+          // stored names are source-indexed by `below.rs` / aux_rec
+          // naming, and intra-brecOn sibling refs use those names).
+          // No post-generation rewrite is needed.
           if lean_env.get(&d.name).is_some() {
             patches.insert(d.name.clone(), PatchedConstant::BRecOn(d));
           }
@@ -486,6 +706,13 @@ pub(crate) fn generate_aux_patches(
         let rep_name = Name::str(rep.clone(), suffix.to_string());
         let alias_name = Name::str(alias.clone(), suffix.to_string());
         if let Some(patch) = patches.get(&rep_name) {
+          if *suffix == "rec" {
+            if lean_env.get(&alias_name).is_some() {
+              aliases.insert(alias_name, rep_name);
+            }
+            continue;
+          }
+
           // BelowIndc needs structural renaming (constructor names in the
           // BelowCtor structs change too, not just expression-level Consts).
           let aliased = match patch {
@@ -521,118 +748,120 @@ pub(crate) fn generate_aux_patches(
   }
 
   // Register original-order auxiliary aliases. When alpha-collapse merges
-  // inductives, the original Lean block (.all) may have MORE nested
-  // auxiliaries than the canonical block. E.g., {RoseA, RoseB} in .all
-  // discovers List(RoseA α) + List(RoseB α) → rec_1, rec_2. But after
-  // alpha-collapse to {RoseA}, the canonical flat block has only List(RoseA α)
-  // → rec_1. We need rec_2 to alias to the canonical rec_1.
-  //
-  // The mapping is built by matching each original auxiliary's
-  // (ext_ind_name, normalized_spec_params) against the canonical auxiliaries.
-  // Normalization substitutes original names with their class representatives
-  // so that List(RoseB α) matches List(RoseA α).
-  if has_nested {
-    let n_canonical_aux = canonical_recs.len().saturating_sub(n_classes);
-    let original_flat =
-      nested::build_compile_flat_block(&original_all, lean_env)?;
-    let n_original_aux = original_flat.len().saturating_sub(n_original);
+  // inductives, the source Lean block may export more nested auxiliaries than
+  // the canonical block. E.g. source has `rec_1` and `rec_2`, but after
+  // collapse both source aux positions map to one canonical aux. Do not create
+  // renamed synthetic patches for the extra source names; record address
+  // aliases to the one generated canonical patch instead.
+  if structural_has_nested
+    && let Some(perm) = captured_perm.as_ref()
+    && captured_n_canonical_aux > 0
+    && let Some(first_orig_name) = original_all.first()
+  {
+    let mut source_of_canonical = vec![usize::MAX; captured_n_canonical_aux];
+    for (source_j, &canonical_i) in perm.iter().enumerate() {
+      if canonical_i != nested::PERM_OUT_OF_SCC
+        && canonical_i < captured_n_canonical_aux
+        && source_of_canonical[canonical_i] == usize::MAX
+      {
+        source_of_canonical[canonical_i] = source_j;
+      }
+    }
 
-    if n_original_aux > 0 && n_canonical_aux > 0 {
-      // Lean hangs _N suffixed names off all[0] (first in source order).
-      let first_orig_name = &original_all[0];
-      // Canonical _N names also use all[0] (via below.rs/brecon.rs fix).
-      let canon_first = first_orig_name;
-
-      // Build name substitution: original name → canonical class representative.
-      let orig_to_canon_names: std::collections::HashMap<Name, Name> =
-        sorted_classes
-          .iter()
-          .flat_map(|class| {
-            let rep = &class[0];
-            class.iter().map(move |name| (name.clone(), rep.clone()))
-          })
-          .collect();
-
-      // Build canonical flat block for matching.
-      let canonical_names: Vec<Name> =
-        sorted_classes.iter().map(|c| c[0].clone()).collect();
-      let canonical_flat =
-        nested::build_compile_flat_block(&canonical_names, lean_env)?;
-
-      // Map each original auxiliary to its canonical match.
-      for oj in 0..n_original_aux {
-        let orig_aux = &original_flat[n_original + oj];
-        let orig_idx = oj + 1; // 1-based
-
-        // Normalize original spec_params: replace original names with
-        // canonical representatives.
-        let normalized_specs: Vec<LeanExpr> = orig_aux
-          .spec_params
-          .iter()
-          .map(|sp| expr_utils::replace_const_names(sp, &orig_to_canon_names))
-          .collect();
-
-        // Find matching canonical auxiliary by (ext_ind_name, spec_params hash).
-        let canon_match = canonical_flat[n_classes..].iter().enumerate().find(
-          |(_, canon_aux)| {
-            canon_aux.name == orig_aux.name
-              && canon_aux.spec_params.len() == normalized_specs.len()
-              && canon_aux
-                .spec_params
-                .iter()
-                .zip(normalized_specs.iter())
-                .all(|(a, b)| a.get_hash() == b.get_hash())
-          },
-        );
-
-        let Some((cj, _)) = canon_match else {
-          // No canonical match — this auxiliary references inductives
-          // outside the current SCC (cross-SCC case). Don't insert as
-          // a patch — let the scheduler compile it normally from lean_env
-          // once all deps (including the external SCC) are available.
-          continue;
-        };
-        let canon_idx = cj + 1; // 1-based
-
-        // Alias original _N names to canonical _N patches.
-        // These only rename the _N suffix — both share the same parent
-        // inductive (canon_first == first_orig_name), so no internal
-        // Const rewriting is needed.
-        let empty_map = std::collections::HashMap::new();
-        for suffix in &["rec", "below", "brecOn"] {
-          let orig_name =
-            Name::str(first_orig_name.clone(), format!("{suffix}_{orig_idx}"));
-          if patches.contains_key(&orig_name) {
-            continue; // Already generated canonically.
-          }
-          let canon_name =
-            Name::str(canon_first.clone(), format!("{suffix}_{canon_idx}"));
-          if let Some(patch) = patches.get(&canon_name) {
-            let aliased = rename_patch(patch, &orig_name, &empty_map);
-            patches.insert(orig_name, aliased);
+    let find_target =
+      |canonical_i: usize, mk_name: &dyn Fn(usize) -> Name| -> Option<Name> {
+        // Prefer the deterministic representative used by generation, but fall
+        // back to any already-generated patch in the same equivalence class.
+        if let Some(&source_j) = source_of_canonical.get(canonical_i)
+          && source_j != usize::MAX
+        {
+          let target = mk_name(source_j);
+          if patches.contains_key(&target) {
+            return Some(target);
           }
         }
-        // Also .brecOn_N.go and .brecOn_N.eq
-        for sub in &["go", "eq"] {
-          let orig_base =
-            Name::str(first_orig_name.clone(), format!("brecOn_{orig_idx}"));
-          let orig_name = Name::str(orig_base, sub.to_string());
-          if patches.contains_key(&orig_name) {
-            continue;
+        for (source_j, &source_canonical_i) in perm.iter().enumerate() {
+          if source_canonical_i == canonical_i {
+            let target = mk_name(source_j);
+            if patches.contains_key(&target) {
+              return Some(target);
+            }
           }
-          let canon_base =
-            Name::str(canon_first.clone(), format!("brecOn_{canon_idx}"));
-          let canon_name = Name::str(canon_base, sub.to_string());
-          if let Some(patch) = patches.get(&canon_name) {
-            let aliased = rename_patch(patch, &orig_name, &empty_map);
-            patches.insert(orig_name, aliased);
-          }
+        }
+        None
+      };
+
+    for (source_j, &canonical_i) in perm.iter().enumerate() {
+      if canonical_i == nested::PERM_OUT_OF_SCC
+        || canonical_i >= captured_n_canonical_aux
+      {
+        continue;
+      }
+
+      let source_idx = source_j + 1;
+      for suffix in &["rec", "below", "brecOn"] {
+        let mk_name = |j: usize| {
+          Name::str(first_orig_name.clone(), format!("{suffix}_{}", j + 1))
+        };
+        let source_name =
+          Name::str(first_orig_name.clone(), format!("{suffix}_{source_idx}"));
+        if patches.contains_key(&source_name)
+          || lean_env.get(&source_name).is_none()
+        {
+          continue;
+        }
+        let Some(target_name) = find_target(canonical_i, &mk_name) else {
+          return Err(CompileError::InvalidMutualBlock {
+            reason: format!(
+              "aux_gen alias target missing: {} maps to canonical aux #{} but no generated {suffix} patch exists",
+              source_name.pretty(),
+              canonical_i,
+            ),
+          });
+        };
+        if target_name != source_name {
+          aliases.insert(source_name, target_name);
+        }
+      }
+
+      for sub in &["go", "eq"] {
+        let mk_name = |j: usize| {
+          let base =
+            Name::str(first_orig_name.clone(), format!("brecOn_{}", j + 1));
+          Name::str(base, sub.to_string())
+        };
+        let source_base =
+          Name::str(first_orig_name.clone(), format!("brecOn_{source_idx}"));
+        let source_name = Name::str(source_base, sub.to_string());
+        if patches.contains_key(&source_name)
+          || lean_env.get(&source_name).is_none()
+        {
+          continue;
+        }
+        let Some(target_name) = find_target(canonical_i, &mk_name) else {
+          return Err(CompileError::InvalidMutualBlock {
+            reason: format!(
+              "aux_gen alias target missing: {} maps to canonical aux #{} but no generated brecOn.{sub} patch exists",
+              source_name.pretty(),
+              canonical_i,
+            ),
+          });
+        };
+        if target_name != source_name {
+          aliases.insert(source_name, target_name);
         }
       }
     }
   }
 
-  Ok(patches)
+  Ok(AuxPatchesOutput {
+    patches,
+    aliases,
+    perm: captured_perm,
+    n_classes,
+    n_canonical_aux: captured_n_canonical_aux,
+    n_source_aux: captured_n_source_aux,
+  })
 }
 
 /// Check whether a type expression is shaped like a `.below` auxiliary.
@@ -743,19 +972,6 @@ fn rename_patch(
     PatchedConstant::Rec(r) => {
       let mut r2 = r.clone();
       r2.cnst.name = new_name.clone();
-      r2.cnst.typ = expr_utils::replace_const_names(&r2.cnst.typ, name_map);
-      for rule in &mut r2.rules {
-        if let Some(new_ctor) = name_map.get(&rule.ctor) {
-          rule.ctor = new_ctor.clone();
-        }
-        rule.rhs = expr_utils::replace_const_names(&rule.rhs, name_map);
-      }
-      // Rewrite the `all` list.
-      r2.all = r2
-        .all
-        .iter()
-        .map(|n| name_map.get(n).cloned().unwrap_or_else(|| n.clone()))
-        .collect();
       PatchedConstant::Rec(r2)
     },
     PatchedConstant::RecOn(d) => PatchedConstant::RecOn(AuxDef {

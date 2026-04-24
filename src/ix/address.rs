@@ -79,7 +79,10 @@ impl Address {
   /// Used by `compile/mutual.rs` to register each mutual block under a
   /// Muts-tagged meta so kernel ingress can discover and process it via
   /// `ingress_muts_block`.
-  pub fn muts_name(&self, first_member: &crate::ix::env::Name) -> crate::ix::env::Name {
+  pub fn muts_name(
+    &self,
+    first_member: &crate::ix::env::Name,
+  ) -> crate::ix::env::Name {
     use crate::ix::env::{Name, NameData};
     let base = Name::str(Name::str(Name::anon(), "Ix".to_string()), self.hex());
     // Append each component of `first_member` to the base, preserving

@@ -2,7 +2,9 @@
 //!
 //! Only works for `Meta` mode since it needs actual names and binder info.
 
-use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
+use rayon::iter::{
+  IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
+};
 use rustc_hash::FxHashMap;
 
 use crate::ix::env::{
@@ -340,10 +342,10 @@ use crate::ix::compile::{
 };
 use crate::ix::ixon::constant::{
   Axiom as IxonAxiom, Constant as IxonConstant, ConstantInfo as IxonCI,
-  Constructor as IxonConstructor, ConstructorProj, Definition as IxonDefinition,
-  DefinitionProj, Inductive as IxonInductive, InductiveProj,
-  MutConst as IxonMutConst, Quotient as IxonQuotient, Recursor as IxonRecursor,
-  RecursorProj, RecursorRule as IxonRecursorRule,
+  Constructor as IxonConstructor, ConstructorProj,
+  Definition as IxonDefinition, DefinitionProj, Inductive as IxonInductive,
+  InductiveProj, MutConst as IxonMutConst, Quotient as IxonQuotient,
+  Recursor as IxonRecursor, RecursorProj, RecursorRule as IxonRecursorRule,
 };
 use crate::ix::ixon::env::{Env as IxonEnv, Named};
 use crate::ix::ixon::expr::Expr as IxonExpr;
@@ -701,7 +703,8 @@ fn content_address_of(c: &IxonConstant) -> Address {
 fn build_name_index(
   kenv: &KEnv<Meta>,
 ) -> FxHashMap<Name, (KId<Meta>, KConst<Meta>)> {
-  let mut out: FxHashMap<Name, (KId<Meta>, KConst<Meta>)> = FxHashMap::default();
+  let mut out: FxHashMap<Name, (KId<Meta>, KConst<Meta>)> =
+    FxHashMap::default();
   for (kid, kc) in kenv.iter() {
     out.insert(kid.name.clone(), (kid, kc));
   }
@@ -732,9 +735,9 @@ fn build_block_mut_ctx(
         &name_addr.hex()[..8]
       )
     })?;
-    let (kid, _) = name_index.get(&name).ok_or_else(|| {
-      format!("build_block_mut_ctx: '{name}' not in kenv")
-    })?;
+    let (kid, _) = name_index
+      .get(&name)
+      .ok_or_else(|| format!("build_block_mut_ctx: '{name}' not in kenv"))?;
     ctx.push(kid.clone());
   }
   Ok(ctx)
@@ -803,10 +806,12 @@ fn register_muts_member(
   }
   // Multi-class / inductive block: build the projection wrapper.
   let proj_constant = match (member_kind, ctor_idx) {
-    (MutConstKind::Indc, None) => IxonConstant::new(IxonCI::IPrj(InductiveProj {
-      idx: member_idx,
-      block: block_addr.clone(),
-    })),
+    (MutConstKind::Indc, None) => {
+      IxonConstant::new(IxonCI::IPrj(InductiveProj {
+        idx: member_idx,
+        block: block_addr.clone(),
+      }))
+    },
     (MutConstKind::Indc, Some(ci)) => {
       IxonConstant::new(IxonCI::CPrj(ConstructorProj {
         idx: member_idx,
@@ -814,14 +819,18 @@ fn register_muts_member(
         block: block_addr.clone(),
       }))
     },
-    (MutConstKind::Recr, None) => IxonConstant::new(IxonCI::RPrj(RecursorProj {
-      idx: member_idx,
-      block: block_addr.clone(),
-    })),
-    (MutConstKind::Defn, None) => IxonConstant::new(IxonCI::DPrj(DefinitionProj {
-      idx: member_idx,
-      block: block_addr.clone(),
-    })),
+    (MutConstKind::Recr, None) => {
+      IxonConstant::new(IxonCI::RPrj(RecursorProj {
+        idx: member_idx,
+        block: block_addr.clone(),
+      }))
+    },
+    (MutConstKind::Defn, None) => {
+      IxonConstant::new(IxonCI::DPrj(DefinitionProj {
+        idx: member_idx,
+        block: block_addr.clone(),
+      }))
+    },
     (k, Some(_)) => {
       return Err(format!(
         "register_muts_member: ctor_idx is only valid for Indc (got {k:?})"
@@ -947,7 +956,10 @@ fn egress_muts_block(
   // Register the synthetic Muts Named entry at the new block_addr. Preserve
   // the original `meta` / `original` fields — decompile's Pass 2 keys off
   // `named.original.is_some()` to identify aux_gen entries.
-  out.register_name(muts_name.clone(), rebuild_named(block_addr.clone(), muts_named));
+  out.register_name(
+    muts_name.clone(),
+    rebuild_named(block_addr.clone(), muts_named),
+  );
 
   // Register all member names. Singleton case: no projections.
   let is_singleton = all.len() == 1 && !has_indc;
@@ -969,20 +981,20 @@ fn egress_muts_block(
     // projection/block addr (alpha-collapsed members share their post-
     // compile representation).
     for member_name_addr in cls {
-      let member_name = names.get(member_name_addr).cloned().ok_or_else(|| {
-        format!(
-          "egress_muts_block: member name addr {} not in names map",
-          &member_name_addr.hex()[..8]
-        )
-      })?;
-      let orig_named = original_env.lookup_name(&member_name).ok_or_else(
-        || {
+      let member_name =
+        names.get(member_name_addr).cloned().ok_or_else(|| {
+          format!(
+            "egress_muts_block: member name addr {} not in names map",
+            &member_name_addr.hex()[..8]
+          )
+        })?;
+      let orig_named =
+        original_env.lookup_name(&member_name).ok_or_else(|| {
           format!(
             "egress_muts_block: original Named for '{member_name}' missing \
              — can't preserve meta"
           )
-        },
-      )?;
+        })?;
       register_muts_member(
         out,
         &member_name,
@@ -1050,9 +1062,9 @@ fn egress_standalone(
   name_index: &FxHashMap<Name, (KId<Meta>, KConst<Meta>)>,
   out: &IxonEnv,
 ) -> Result<(), String> {
-  let (_, kc) = name_index.get(name).ok_or_else(|| {
-    format!("egress_standalone: '{name}' not in kenv")
-  })?;
+  let (_, kc) = name_index
+    .get(name)
+    .ok_or_else(|| format!("egress_standalone: '{name}' not in kenv"))?;
   let mut ctx = EgressCtx::new();
   let (constant, addr) = match kc {
     KConst::Defn { .. } => {
@@ -1197,7 +1209,7 @@ pub fn ixon_egress(
   muts_entries.par_iter().try_for_each(
     |(muts_name, muts_named)| -> Result<(), String> {
       let all: &[Vec<Address>] = match &muts_named.meta.info {
-        ConstantMetaInfo::Muts { all } => all.as_slice(),
+        ConstantMetaInfo::Muts { all, .. } => all.as_slice(),
         _ => unreachable!("partitioned above"),
       };
       egress_muts_block(
@@ -1211,10 +1223,7 @@ pub fn ixon_egress(
       )
     },
   )?;
-  eprintln!(
-    "[ixon_egress] muts blocks:         {:.2?}",
-    t_muts.elapsed()
-  );
+  eprintln!("[ixon_egress] muts blocks:         {:.2?}", t_muts.elapsed());
 
   // Process standalone constants in parallel.
   let t_solo = std::time::Instant::now();
@@ -1223,11 +1232,445 @@ pub fn ixon_egress(
       egress_standalone(name, named, &name_index, &out)
     },
   )?;
-  eprintln!(
-    "[ixon_egress] standalone consts:   {:.2?}",
-    t_solo.elapsed()
-  );
+  eprintln!("[ixon_egress] standalone consts:   {:.2?}", t_solo.elapsed());
   eprintln!("[ixon_egress] total:               {:.2?}", t_start.elapsed());
 
   Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::ix::address::Address;
+  use crate::ix::env::{
+    BinderInfo, DefinitionSafety, ExprData as LeanExprData, Literal, QuotKind,
+    ReducibilityHints,
+  };
+  use crate::ix::kernel::constant::RecRule;
+  use crate::ix::kernel::expr::KExpr;
+  use crate::ix::kernel::id::KId;
+
+  fn mk_name(s: &str) -> Name {
+    let mut n = Name::anon();
+    for part in s.split('.') {
+      n = Name::str(n, part.to_string());
+    }
+    n
+  }
+
+  fn mk_addr(s: &str) -> Address {
+    Address::hash(s.as_bytes())
+  }
+
+  fn mk_id(s: &str) -> KId<Meta> {
+    KId::new(mk_addr(s), mk_name(s))
+  }
+
+  fn sort0() -> KExpr<Meta> {
+    KExpr::sort(KUniv::zero())
+  }
+
+  fn sort_succ() -> KExpr<Meta> {
+    KExpr::sort(KUniv::succ(KUniv::zero()))
+  }
+
+  // ---- egress_level ----
+
+  #[test]
+  fn egress_level_zero() {
+    let l = egress_level(&KUniv::<Meta>::zero(), &[]);
+    assert!(matches!(l.as_data(), crate::ix::env::LevelData::Zero(_)));
+  }
+
+  #[test]
+  fn egress_level_succ() {
+    let l = egress_level(&KUniv::<Meta>::succ(KUniv::zero()), &[]);
+    assert!(matches!(l.as_data(), crate::ix::env::LevelData::Succ(..)));
+  }
+
+  #[test]
+  fn egress_level_param_by_index() {
+    // Param(0) with level_params=["u"] → Level::param("u")
+    let u_name = mk_name("u");
+    let ku = KUniv::<Meta>::param(0, u_name.clone());
+    let l = egress_level(&ku, &[u_name.clone()]);
+    match l.as_data() {
+      crate::ix::env::LevelData::Param(n, _) => assert_eq!(n, &u_name),
+      other => panic!("expected Param, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn egress_level_param_out_of_range_falls_back_to_anon() {
+    // Index 5 with only 1 level_param → fallback to Name::anon().
+    let ku = KUniv::<Meta>::param(5, mk_name("x"));
+    let l = egress_level(&ku, &[mk_name("u")]);
+    match l.as_data() {
+      crate::ix::env::LevelData::Param(n, _) => {
+        assert!(matches!(n.as_data(), crate::ix::env::NameData::Anonymous(_)));
+      },
+      other => panic!("expected Param, got {other:?}"),
+    }
+  }
+
+  // ---- egress_expr: each variant ----
+
+  fn do_egress(e: &KExpr<Meta>) -> env::Expr {
+    let mut cache = Cache::default();
+    egress_expr(e, &[], &mut cache)
+  }
+
+  #[test]
+  fn egress_expr_var() {
+    let k = KExpr::<Meta>::var(7, mk_name("_"));
+    let e = do_egress(&k);
+    match e.as_data() {
+      LeanExprData::Bvar(n, _) => {
+        assert_eq!(n.to_u64(), Some(7));
+      },
+      other => panic!("expected Bvar, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn egress_expr_sort() {
+    let k = sort0();
+    let e = do_egress(&k);
+    assert!(matches!(e.as_data(), LeanExprData::Sort(..)));
+  }
+
+  #[test]
+  fn egress_expr_const_without_univs() {
+    let k = KExpr::<Meta>::cnst(mk_id("Unit"), Box::new([]));
+    let e = do_egress(&k);
+    match e.as_data() {
+      LeanExprData::Const(name, us, _) => {
+        assert_eq!(name, &mk_name("Unit"));
+        assert_eq!(us.len(), 0);
+      },
+      other => panic!("expected Const, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn egress_expr_app() {
+    let k = KExpr::<Meta>::app(sort0(), KExpr::var(0, mk_name("_")));
+    let e = do_egress(&k);
+    assert!(matches!(e.as_data(), LeanExprData::App(..)));
+  }
+
+  #[test]
+  fn egress_expr_lambda() {
+    let k = KExpr::<Meta>::lam(
+      mk_name("x"),
+      BinderInfo::Default,
+      sort0(),
+      KExpr::var(0, mk_name("_")),
+    );
+    let e = do_egress(&k);
+    assert!(matches!(e.as_data(), LeanExprData::Lam(..)));
+  }
+
+  #[test]
+  fn egress_expr_forall() {
+    let k =
+      KExpr::<Meta>::all(mk_name("x"), BinderInfo::Default, sort0(), sort0());
+    let e = do_egress(&k);
+    assert!(matches!(e.as_data(), LeanExprData::ForallE(..)));
+  }
+
+  #[test]
+  fn egress_expr_let() {
+    let k = KExpr::<Meta>::let_(
+      mk_name("x"),
+      sort0(),
+      KExpr::var(0, mk_name("_")),
+      KExpr::var(0, mk_name("_")),
+      false,
+    );
+    let e = do_egress(&k);
+    assert!(matches!(e.as_data(), LeanExprData::LetE(..)));
+  }
+
+  #[test]
+  fn egress_expr_proj() {
+    let k = KExpr::<Meta>::prj(mk_id("Prod"), 0, KExpr::var(0, mk_name("_")));
+    let e = do_egress(&k);
+    match e.as_data() {
+      LeanExprData::Proj(name, idx, _, _) => {
+        assert_eq!(name, &mk_name("Prod"));
+        assert_eq!(idx.to_u64(), Some(0));
+      },
+      other => panic!("expected Proj, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn egress_expr_nat_lit() {
+    let k = KExpr::<Meta>::nat(Nat::from(42u64), mk_addr("blob"));
+    let e = do_egress(&k);
+    match e.as_data() {
+      LeanExprData::Lit(Literal::NatVal(n), _) => {
+        assert_eq!(n.to_u64(), Some(42));
+      },
+      other => panic!("expected Lit(NatVal), got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn egress_expr_str_lit() {
+    let k = KExpr::<Meta>::str("hi".into(), mk_addr("blob"));
+    let e = do_egress(&k);
+    match e.as_data() {
+      LeanExprData::Lit(Literal::StrVal(s), _) => {
+        assert_eq!(s, "hi");
+      },
+      other => panic!("expected Lit(StrVal), got {other:?}"),
+    }
+  }
+
+  // ---- egress_expr cache behavior ----
+
+  #[test]
+  fn egress_expr_cache_returns_same_tree() {
+    let k = KExpr::<Meta>::app(sort0(), sort0());
+    let mut cache = Cache::default();
+    let e1 = egress_expr(&k, &[], &mut cache);
+    // The inner Sort 0 was hit by the cache after the first subexpr. Run
+    // twice on the same cache and confirm deterministic output.
+    let e2 = egress_expr(&k, &[], &mut cache);
+    assert_eq!(e1.get_hash(), e2.get_hash());
+  }
+
+  // ---- egress_constant: each variant roundtrips ----
+
+  fn defn_meta(name: &str) -> KConst<Meta> {
+    KConst::<Meta>::Defn {
+      name: mk_name(name),
+      level_params: vec![mk_name("u")],
+      kind: DefKind::Definition,
+      safety: DefinitionSafety::Safe,
+      hints: ReducibilityHints::Opaque,
+      lvls: 1,
+      ty: sort_succ(),
+      val: sort0(),
+      lean_all: vec![mk_id(name)],
+      block: mk_id(name),
+    }
+  }
+
+  #[test]
+  fn egress_const_axio_roundtrip() {
+    let kc = KConst::<Meta>::Axio {
+      name: mk_name("A"),
+      level_params: vec![],
+      is_unsafe: false,
+      lvls: 0,
+      ty: sort0(),
+    };
+    let ci = egress_constant(&kc);
+    match ci {
+      LeanCI::AxiomInfo(v) => {
+        assert_eq!(v.cnst.name, mk_name("A"));
+        assert!(!v.is_unsafe);
+        assert_eq!(v.cnst.level_params.len(), 0);
+      },
+      other => panic!("expected AxiomInfo, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn egress_const_defn_kind_definition() {
+    let kc = defn_meta("f");
+    let ci = egress_constant(&kc);
+    match ci {
+      LeanCI::DefnInfo(v) => {
+        assert_eq!(v.cnst.name, mk_name("f"));
+        assert_eq!(v.cnst.level_params.len(), 1);
+        assert_eq!(v.all.len(), 1);
+        assert_eq!(v.all[0], mk_name("f"));
+      },
+      other => panic!("expected DefnInfo, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn egress_const_defn_kind_theorem() {
+    let mut kc = defn_meta("thm");
+    if let KConst::Defn { kind, .. } = &mut kc {
+      *kind = DefKind::Theorem;
+    }
+    let ci = egress_constant(&kc);
+    assert!(matches!(ci, LeanCI::ThmInfo(..)));
+  }
+
+  #[test]
+  fn egress_const_defn_kind_opaque() {
+    let mut kc = defn_meta("op");
+    if let KConst::Defn { kind, .. } = &mut kc {
+      *kind = DefKind::Opaque;
+    }
+    let ci = egress_constant(&kc);
+    assert!(matches!(ci, LeanCI::OpaqueInfo(..)));
+  }
+
+  #[test]
+  fn egress_const_opaque_preserves_unsafe_bit() {
+    let mut kc = defn_meta("op");
+    if let KConst::Defn { kind, safety, .. } = &mut kc {
+      *kind = DefKind::Opaque;
+      *safety = DefinitionSafety::Unsafe;
+    }
+    let ci = egress_constant(&kc);
+    match ci {
+      LeanCI::OpaqueInfo(v) => assert!(v.is_unsafe),
+      other => panic!("expected OpaqueInfo, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn egress_const_quot_roundtrip() {
+    let kc = KConst::<Meta>::Quot {
+      name: mk_name("Quot"),
+      level_params: vec![mk_name("u")],
+      kind: QuotKind::Type,
+      lvls: 1,
+      ty: sort_succ(),
+    };
+    let ci = egress_constant(&kc);
+    match ci {
+      LeanCI::QuotInfo(v) => {
+        assert_eq!(v.kind, QuotKind::Type);
+        assert_eq!(v.cnst.name, mk_name("Quot"));
+      },
+      other => panic!("expected QuotInfo, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn egress_const_indc_preserves_counts() {
+    let kc = KConst::<Meta>::Indc {
+      name: mk_name("A"),
+      level_params: vec![],
+      lvls: 0,
+      params: 2,
+      indices: 3,
+      is_rec: true,
+      is_refl: false,
+      is_unsafe: false,
+      nested: 1,
+      block: mk_id("A"),
+      member_idx: 0,
+      ty: sort0(),
+      ctors: vec![mk_id("A.mk")],
+      lean_all: vec![mk_id("A")],
+    };
+    let ci = egress_constant(&kc);
+    match ci {
+      LeanCI::InductInfo(v) => {
+        assert_eq!(v.num_params.to_u64(), Some(2));
+        assert_eq!(v.num_indices.to_u64(), Some(3));
+        assert_eq!(v.num_nested.to_u64(), Some(1));
+        assert!(v.is_rec);
+        assert!(!v.is_reflexive);
+        assert_eq!(v.all.len(), 1);
+        assert_eq!(v.ctors.len(), 1);
+        assert_eq!(v.ctors[0], mk_name("A.mk"));
+      },
+      other => panic!("expected InductInfo, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn egress_const_ctor_roundtrip() {
+    let kc = KConst::<Meta>::Ctor {
+      name: mk_name("A.mk"),
+      level_params: vec![],
+      is_unsafe: false,
+      lvls: 0,
+      induct: mk_id("A"),
+      cidx: 2,
+      params: 3,
+      fields: 4,
+      ty: sort0(),
+    };
+    let ci = egress_constant(&kc);
+    match ci {
+      LeanCI::CtorInfo(v) => {
+        assert_eq!(v.cidx.to_u64(), Some(2));
+        assert_eq!(v.num_params.to_u64(), Some(3));
+        assert_eq!(v.num_fields.to_u64(), Some(4));
+        assert_eq!(v.induct, mk_name("A"));
+      },
+      other => panic!("expected CtorInfo, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn egress_const_recr_with_rules_roundtrip() {
+    let rules =
+      vec![RecRule { ctor: mk_name("A.mk"), fields: 5, rhs: sort0() }];
+    let kc = KConst::<Meta>::Recr {
+      name: mk_name("A.rec"),
+      level_params: vec![],
+      k: true,
+      is_unsafe: false,
+      lvls: 0,
+      params: 0,
+      indices: 0,
+      motives: 1,
+      minors: 1,
+      block: mk_id("A"),
+      member_idx: 0,
+      ty: sort0(),
+      rules,
+      lean_all: vec![mk_id("A")],
+    };
+    let ci = egress_constant(&kc);
+    match ci {
+      LeanCI::RecInfo(v) => {
+        assert_eq!(v.num_motives.to_u64(), Some(1));
+        assert_eq!(v.num_minors.to_u64(), Some(1));
+        assert_eq!(v.rules.len(), 1);
+        assert_eq!(v.rules[0].ctor, mk_name("A.mk"));
+        assert_eq!(v.rules[0].n_fields.to_u64(), Some(5));
+        assert!(v.k);
+      },
+      other => panic!("expected RecInfo, got {other:?}"),
+    }
+  }
+
+  // ---- lean_egress: environment-level roundtrip ----
+
+  #[test]
+  fn lean_egress_on_empty_env() {
+    let zenv = KEnv::<Meta>::new();
+    let le = lean_egress(&zenv);
+    // `Env` is a `FxHashMap<Name, ConstantInfo>`.
+    assert_eq!(le.len(), 0);
+  }
+
+  #[test]
+  fn lean_egress_roundtrips_multiple_axioms() {
+    let zenv = KEnv::<Meta>::new();
+    for name in ["A", "B", "C"] {
+      let id = mk_id(name);
+      zenv.insert(
+        id.clone(),
+        KConst::<Meta>::Axio {
+          name: mk_name(name),
+          level_params: vec![],
+          is_unsafe: false,
+          lvls: 0,
+          ty: sort0(),
+        },
+      );
+    }
+    let le = lean_egress(&zenv);
+    assert_eq!(le.len(), 3);
+    for name in ["A", "B", "C"] {
+      let ci = le.get(&mk_name(name)).expect("missing name");
+      assert!(matches!(ci, LeanCI::AxiomInfo(..)));
+    }
+  }
 }

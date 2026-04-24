@@ -150,10 +150,16 @@ mod tests {
   fn test_basic_equiv() {
     let mut em = EquivManager::new();
     let zero = addr(0);
-    assert!(!em.is_equiv(&(addr(100), zero.clone()), &(addr(200), zero.clone())));
+    assert!(
+      !em.is_equiv(&(addr(100), zero.clone()), &(addr(200), zero.clone()))
+    );
     em.add_equiv((addr(100), zero.clone()), (addr(200), zero.clone()));
-    assert!(em.is_equiv(&(addr(100), zero.clone()), &(addr(200), zero.clone())));
-    assert!(em.is_equiv(&(addr(200), zero.clone()), &(addr(100), zero.clone())));
+    assert!(
+      em.is_equiv(&(addr(100), zero.clone()), &(addr(200), zero.clone()))
+    );
+    assert!(
+      em.is_equiv(&(addr(200), zero.clone()), &(addr(100), zero.clone()))
+    );
   }
 
   #[test]
@@ -162,7 +168,9 @@ mod tests {
     let zero = addr(0);
     em.add_equiv((addr(100), zero.clone()), (addr(200), zero.clone()));
     em.add_equiv((addr(200), zero.clone()), (addr(300), zero.clone()));
-    assert!(em.is_equiv(&(addr(100), zero.clone()), &(addr(300), zero.clone())));
+    assert!(
+      em.is_equiv(&(addr(100), zero.clone()), &(addr(300), zero.clone()))
+    );
   }
 
   #[test]
@@ -171,7 +179,9 @@ mod tests {
     let ctx1 = addr(1);
     let ctx2 = addr(2);
     em.add_equiv((addr(100), ctx1.clone()), (addr(200), ctx1.clone()));
-    assert!(em.is_equiv(&(addr(100), ctx1.clone()), &(addr(200), ctx1.clone())));
+    assert!(
+      em.is_equiv(&(addr(100), ctx1.clone()), &(addr(200), ctx1.clone()))
+    );
     assert!(!em.is_equiv(&(addr(100), ctx2.clone()), &(addr(200), ctx2)));
   }
 }

@@ -16,6 +16,7 @@
 import Ix.Common
 import Ix.Meta
 import Tests.Ix.Compile.Mutual
+import Tests.Ix.Compile.Canonicity
 import Tests.Ix.Kernel.TutorialDefs
 import Lean
 
@@ -64,6 +65,7 @@ def runCompileValidateAux (env : Lean.Environment) : IO UInt32 := do
   IO.println "[validate-aux] finding seeds..."
   let prefixes := [
     `Tests.Ix.Compile.Mutual,
+    `Tests.Ix.Compile.Canonicity,
     `Init,
     `_private.Init,
     `State,

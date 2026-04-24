@@ -32,6 +32,17 @@ use super::tc::{
 static IX_DEF_EQ_TRACE: LazyLock<Option<String>> =
   LazyLock::new(|| std::env::var("IX_DEF_EQ_TRACE").ok());
 
+/// Global perf counter: total `is_def_eq` entries across all checks.
+/// When `IX_DEF_EQ_COUNT_LOG=1`, logs every 1M calls. Useful for
+/// detecting checks that explode into millions of recursive
+/// comparisons \u2014 a signal that some caching optimization is
+/// mis-firing or some reduction is looping.
+static IX_DEF_EQ_COUNT_LOG: LazyLock<bool> =
+  LazyLock::new(|| std::env::var("IX_DEF_EQ_COUNT_LOG").is_ok());
+
+static DEF_EQ_COUNT: std::sync::atomic::AtomicUsize =
+  std::sync::atomic::AtomicUsize::new(0);
+
 impl<M: KernelMode> TypeChecker<M> {
   /// Check definitional equality of two expressions.
   pub fn is_def_eq(
@@ -40,6 +51,12 @@ impl<M: KernelMode> TypeChecker<M> {
     b: &KExpr<M>,
   ) -> Result<bool, TcError<M>> {
     self.tick()?;
+    if *IX_DEF_EQ_COUNT_LOG {
+      let n = DEF_EQ_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+      if n % 100_000 == 0 && n > 0 {
+        eprintln!("[is_def_eq] count={n}");
+      }
+    }
     if a.ptr_eq(b) {
       return Ok(true);
     }
@@ -89,8 +106,7 @@ impl<M: KernelMode> TypeChecker<M> {
     } else {
       empty_ctx_addr()
     };
-    let a_key: crate::ix::kernel::equiv::EqKey =
-      (a.hash_key(), eq_ctx.clone());
+    let a_key: crate::ix::kernel::equiv::EqKey = (a.hash_key(), eq_ctx.clone());
     let b_key: crate::ix::kernel::equiv::EqKey = (b.hash_key(), eq_ctx);
 
     if self.equiv_manager.is_equiv(&a_key, &b_key) {
@@ -1181,5 +1197,404 @@ mod tests {
     assert!(tc.is_def_eq(&a, &b).unwrap());
     // Second call should hit cache
     assert!(tc.is_def_eq(&a, &b).unwrap());
+  }
+
+  // =========================================================================
+  // Tier 3: proof irrelevance
+  //
+  // Two terms whose types live in Prop (Sort 0) are definitionally equal
+  // regardless of their value structure. Terms whose types live in Type
+  // (Sort ≥ 1) must match structurally.
+  // =========================================================================
+
+  /// Env with `P : Prop`, `p1 p2 : P`, `T : Type`, `a1 a2 : T`.
+  fn env_with_prop_and_type_axioms() -> Arc<KEnv<Anon>> {
+    let env = Arc::new(KEnv::new());
+
+    // P : Prop
+    env.insert(
+      mk_id("P"),
+      KConst::Axio {
+        name: (),
+        level_params: (),
+        is_unsafe: false,
+        lvls: 0,
+        ty: sort0(), // Sort 0 = Prop
+      },
+    );
+    // T : Type
+    env.insert(
+      mk_id("T"),
+      KConst::Axio {
+        name: (),
+        level_params: (),
+        is_unsafe: false,
+        lvls: 0,
+        ty: AE::sort(AU::succ(AU::zero())), // Sort 1 = Type
+      },
+    );
+    // p1, p2 : P
+    for name in ["p1", "p2"] {
+      env.insert(
+        mk_id(name),
+        KConst::Axio {
+          name: (),
+          level_params: (),
+          is_unsafe: false,
+          lvls: 0,
+          ty: AE::cnst(mk_id("P"), Box::new([])),
+        },
+      );
+    }
+    // a1, a2 : T
+    for name in ["a1", "a2"] {
+      env.insert(
+        mk_id(name),
+        KConst::Axio {
+          name: (),
+          level_params: (),
+          is_unsafe: false,
+          lvls: 0,
+          ty: AE::cnst(mk_id("T"), Box::new([])),
+        },
+      );
+    }
+    env
+  }
+
+  #[test]
+  fn def_eq_proof_irrelevance_prop() {
+    // Two structurally distinct proofs of the same Prop type are def-eq.
+    let env = env_with_prop_and_type_axioms();
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let p1 = AE::cnst(mk_id("p1"), Box::new([]));
+    let p2 = AE::cnst(mk_id("p2"), Box::new([]));
+    assert!(tc.is_def_eq(&p1, &p2).unwrap());
+  }
+
+  #[test]
+  fn def_eq_proof_irrelevance_symmetric() {
+    let env = env_with_prop_and_type_axioms();
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let p1 = AE::cnst(mk_id("p1"), Box::new([]));
+    let p2 = AE::cnst(mk_id("p2"), Box::new([]));
+    assert!(tc.is_def_eq(&p1, &p2).unwrap());
+    assert!(tc.is_def_eq(&p2, &p1).unwrap());
+  }
+
+  #[test]
+  fn def_eq_no_irrelevance_for_type_level() {
+    // Proof irrelevance must NOT apply to Type-valued terms.
+    let env = env_with_prop_and_type_axioms();
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let a1 = AE::cnst(mk_id("a1"), Box::new([]));
+    let a2 = AE::cnst(mk_id("a2"), Box::new([]));
+    assert!(!tc.is_def_eq(&a1, &a2).unwrap());
+  }
+
+  // =========================================================================
+  // Tier 5: unit-like types
+  //
+  // An inductive with 0 indices, 1 constructor with 0 fields, and `is_rec
+  // = false` is a "unit-like" type. Any two values of such a type are
+  // def-eq (both reduce to the unique constructor).
+  // =========================================================================
+
+  /// Env with `Unit : Sort 0` (0 indices, 1 ctor Unit.mk with 0 fields).
+  fn env_with_unit_like() -> Arc<KEnv<Anon>> {
+    let env = Arc::new(KEnv::new());
+
+    // Unit.mk : Unit
+    env.insert(
+      mk_id("Unit.mk"),
+      KConst::Ctor {
+        name: (),
+        level_params: (),
+        is_unsafe: false,
+        lvls: 0,
+        induct: mk_id("Unit"),
+        cidx: 0,
+        params: 0,
+        fields: 0,
+        ty: AE::cnst(mk_id("Unit"), Box::new([])),
+      },
+    );
+    // Unit : Prop  (make it a Prop inductive so proof irrelevance is out of the
+    // picture and we exercise try_def_eq_unit specifically)
+    env.insert(
+      mk_id("Unit"),
+      KConst::Indc {
+        name: (),
+        level_params: (),
+        lvls: 0,
+        params: 0,
+        indices: 0,
+        is_rec: false,
+        is_refl: false,
+        is_unsafe: false,
+        nested: 0,
+        block: mk_id("Unit"),
+        member_idx: 0,
+        ty: AE::sort(AU::succ(AU::zero())),
+        ctors: vec![mk_id("Unit.mk")],
+        lean_all: (),
+      },
+    );
+    // Two different proof-style terms of Unit, both reducing to Unit.mk.
+    for name in ["u1", "u2"] {
+      env.insert(
+        mk_id(name),
+        KConst::Axio {
+          name: (),
+          level_params: (),
+          is_unsafe: false,
+          lvls: 0,
+          ty: AE::cnst(mk_id("Unit"), Box::new([])),
+        },
+      );
+    }
+    env
+  }
+
+  #[test]
+  fn def_eq_unit_like_distinct_values() {
+    // Two distinct inhabitants of a unit-like inductive are def-eq.
+    let env = env_with_unit_like();
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let u1 = AE::cnst(mk_id("u1"), Box::new([]));
+    let u2 = AE::cnst(mk_id("u2"), Box::new([]));
+    assert!(tc.is_def_eq(&u1, &u2).unwrap());
+  }
+
+  #[test]
+  fn def_eq_unit_like_ctor_and_opaque() {
+    // The explicit constructor and an opaque axiom of the same unit-like
+    // type are def-eq.
+    let env = env_with_unit_like();
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mk = AE::cnst(mk_id("Unit.mk"), Box::new([]));
+    let u1 = AE::cnst(mk_id("u1"), Box::new([]));
+    assert!(tc.is_def_eq(&mk, &u1).unwrap());
+  }
+
+  // =========================================================================
+  // Tier 5: eta expansion for lambdas
+  //
+  // `f` def-eq `λ x, f x` when `f`'s type is a forall.
+  // =========================================================================
+
+  /// Env with `A : Type 0`, `B : Type 0`, `f : A → B`.
+  fn env_with_fun() -> Arc<KEnv<Anon>> {
+    let env = Arc::new(KEnv::new());
+    env.insert(
+      mk_id("A"),
+      KConst::Axio {
+        name: (),
+        level_params: (),
+        is_unsafe: false,
+        lvls: 0,
+        ty: AE::sort(AU::succ(AU::zero())),
+      },
+    );
+    env.insert(
+      mk_id("B"),
+      KConst::Axio {
+        name: (),
+        level_params: (),
+        is_unsafe: false,
+        lvls: 0,
+        ty: AE::sort(AU::succ(AU::zero())),
+      },
+    );
+    let a_cnst = AE::cnst(mk_id("A"), Box::new([]));
+    let b_cnst = AE::cnst(mk_id("B"), Box::new([]));
+    // A → B = ∀ (_ : A), B (since the body doesn't mention the bound var,
+    // using Var(1) in codomain would be wrong; Var-free B is correct).
+    let arrow_ab = AE::all((), (), a_cnst, b_cnst);
+    env.insert(
+      mk_id("f"),
+      KConst::Axio {
+        name: (),
+        level_params: (),
+        is_unsafe: false,
+        lvls: 0,
+        ty: arrow_ab,
+      },
+    );
+    env
+  }
+
+  #[test]
+  fn def_eq_eta_lambda_wraps_function() {
+    // f ≡ λ (x : A), f x
+    let env = env_with_fun();
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let f = AE::cnst(mk_id("f"), Box::new([]));
+    // Lifting `f` by 1 is a no-op because it's closed.
+    let eta = AE::lam(
+      (),
+      (),
+      AE::cnst(mk_id("A"), Box::new([])),
+      AE::app(f.clone(), AE::var(0, ())),
+    );
+    assert!(tc.is_def_eq(&f, &eta).unwrap());
+  }
+
+  #[test]
+  fn def_eq_eta_lambda_symmetric() {
+    // λ x, f x ≡ f (reverse direction)
+    let env = env_with_fun();
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let f = AE::cnst(mk_id("f"), Box::new([]));
+    let eta = AE::lam(
+      (),
+      (),
+      AE::cnst(mk_id("A"), Box::new([])),
+      AE::app(f.clone(), AE::var(0, ())),
+    );
+    assert!(tc.is_def_eq(&eta, &f).unwrap());
+  }
+
+  #[test]
+  fn def_eq_eta_lambda_fails_on_non_function() {
+    // `a : A` is not a function — η-expanding makes no sense, must NOT fire.
+    let env = env_with_fun();
+    env.insert(
+      mk_id("a"),
+      KConst::Axio {
+        name: (),
+        level_params: (),
+        is_unsafe: false,
+        lvls: 0,
+        ty: AE::cnst(mk_id("A"), Box::new([])),
+      },
+    );
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let a = AE::cnst(mk_id("a"), Box::new([]));
+    // A bogus "eta-like" wrapping of a non-function.
+    let bogus = AE::lam(
+      (),
+      (),
+      AE::cnst(mk_id("A"), Box::new([])),
+      AE::app(a.clone(), AE::var(0, ())),
+    );
+    assert!(!tc.is_def_eq(&a, &bogus).unwrap());
+  }
+
+  // =========================================================================
+  // Tier 5: struct eta
+  //
+  // For a struct-like inductive (non-recursive, 0 indices, single 0-field
+  // constructor? — here use a 2-field struct), a term `t` is def-eq to
+  // `Mk (t.1) (t.2)` via struct-eta.
+  // =========================================================================
+
+  /// Env with `Pair : Type 0` whose only ctor `Pair.mk : A → B → Pair`.
+  fn env_with_pair_struct() -> Arc<KEnv<Anon>> {
+    let env = Arc::new(KEnv::new());
+
+    env.insert(
+      mk_id("A"),
+      KConst::Axio {
+        name: (),
+        level_params: (),
+        is_unsafe: false,
+        lvls: 0,
+        ty: AE::sort(AU::succ(AU::zero())),
+      },
+    );
+    env.insert(
+      mk_id("B"),
+      KConst::Axio {
+        name: (),
+        level_params: (),
+        is_unsafe: false,
+        lvls: 0,
+        ty: AE::sort(AU::succ(AU::zero())),
+      },
+    );
+    // Pair : Type  (non-recursive, 0 indices, 1 ctor)
+    env.insert(
+      mk_id("Pair"),
+      KConst::Indc {
+        name: (),
+        level_params: (),
+        lvls: 0,
+        params: 0,
+        indices: 0,
+        is_rec: false,
+        is_refl: false,
+        is_unsafe: false,
+        nested: 0,
+        block: mk_id("Pair"),
+        member_idx: 0,
+        ty: AE::sort(AU::succ(AU::zero())),
+        ctors: vec![mk_id("Pair.mk")],
+        lean_all: (),
+      },
+    );
+    let a_cnst = AE::cnst(mk_id("A"), Box::new([]));
+    let b_cnst = AE::cnst(mk_id("B"), Box::new([]));
+    let pair_cnst = AE::cnst(mk_id("Pair"), Box::new([]));
+    // Pair.mk : A → B → Pair
+    env.insert(
+      mk_id("Pair.mk"),
+      KConst::Ctor {
+        name: (),
+        level_params: (),
+        is_unsafe: false,
+        lvls: 0,
+        induct: mk_id("Pair"),
+        cidx: 0,
+        params: 0,
+        fields: 2,
+        ty: AE::all((), (), a_cnst, AE::all((), (), b_cnst, pair_cnst)),
+      },
+    );
+    // a : A, b : B, p : Pair
+    env.insert(
+      mk_id("a"),
+      KConst::Axio {
+        name: (),
+        level_params: (),
+        is_unsafe: false,
+        lvls: 0,
+        ty: AE::cnst(mk_id("A"), Box::new([])),
+      },
+    );
+    env.insert(
+      mk_id("b"),
+      KConst::Axio {
+        name: (),
+        level_params: (),
+        is_unsafe: false,
+        lvls: 0,
+        ty: AE::cnst(mk_id("B"), Box::new([])),
+      },
+    );
+    env.insert(
+      mk_id("p"),
+      KConst::Axio {
+        name: (),
+        level_params: (),
+        is_unsafe: false,
+        lvls: 0,
+        ty: AE::cnst(mk_id("Pair"), Box::new([])),
+      },
+    );
+    env
+  }
+
+  #[test]
+  fn def_eq_struct_eta_via_projections() {
+    // p ≡ Pair.mk p.1 p.2
+    let env = env_with_pair_struct();
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let p = AE::cnst(mk_id("p"), Box::new([]));
+    let proj0 = AE::prj(mk_id("Pair"), 0, p.clone());
+    let proj1 = AE::prj(mk_id("Pair"), 1, p.clone());
+    let mk_app =
+      AE::app(AE::app(AE::cnst(mk_id("Pair.mk"), Box::new([])), proj0), proj1);
+    assert!(tc.is_def_eq(&p, &mk_app).unwrap());
   }
 }

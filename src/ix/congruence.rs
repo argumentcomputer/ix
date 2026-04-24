@@ -3,6 +3,16 @@
 //! Compares two `ConstantInfo` values structurally, ignoring binder names
 //! and mdata. Used to verify that aux_gen produces constants congruent to
 //! what Lean generates.
+//!
+//! Submodules:
+//! - [`perm`]: permutation-aware comparison for aux_gen-generated vs Lean
+//!   source-order originals. Accepts a context describing how canonical
+//!   (hash-sorted) aux positions map to source-walk positions, plus const
+//!   name rewrites for alpha-collapse aliasing; compares both sides in
+//!   lockstep with FVar correspondence established at outer binder
+//!   chains. Replaces the older `aux_gen::canonicalize` helper.
+
+pub mod perm;
 
 use crate::ix::env::{ConstantInfo, Expr, ExprData, Level, LevelData, Literal};
 use lean_ffi::nat::Nat;
@@ -277,7 +287,7 @@ pub fn const_alpha_eq(
 // =========================================================================
 
 /// Strip Mdata wrappers from an expression.
-fn strip_mdata(e: &Expr) -> &Expr {
+pub(crate) fn strip_mdata(e: &Expr) -> &Expr {
   let mut cur = e;
   while let ExprData::Mdata(_, inner, _) = cur.as_data() {
     cur = inner;
@@ -285,7 +295,11 @@ fn strip_mdata(e: &Expr) -> &Expr {
   cur
 }
 
-fn check_nat_eq(a: &Nat, b: &Nat, field: &str) -> Result<(), String> {
+pub(crate) fn check_nat_eq(
+  a: &Nat,
+  b: &Nat,
+  field: &str,
+) -> Result<(), String> {
   let av = a.to_u64().unwrap_or(u64::MAX);
   let bv = b.to_u64().unwrap_or(u64::MAX);
   if av != bv {

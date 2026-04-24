@@ -359,3 +359,636 @@ fn zero_const_tag<M: super::mode::KernelMode>(c: &KConst<M>) -> &'static str {
     KConst::Ctor { .. } => "Ctor",
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::ix::address::Address;
+  use crate::ix::env::{
+    self, AxiomVal, BinderInfo, ConstantVal, ConstructorVal, DefinitionSafety,
+    DefinitionVal, InductiveVal, Level as LL, Name, OpaqueVal, QuotKind,
+    QuotVal, RecursorRule as LeanRule, RecursorVal, ReducibilityHints,
+    TheoremVal,
+  };
+  use crate::ix::ixon::env::{Env as IxonEnv, Named};
+  use crate::ix::kernel::constant::KConst;
+  use crate::ix::kernel::id::KId;
+  use crate::ix::kernel::mode::Anon;
+
+  /// `Nat` from a u64 via the public `From<u64>` impl.
+  /// (The `Nat` type itself is a private re-export in `env.rs`.)
+  fn n(x: u64) -> lean_ffi::nat::Nat {
+    lean_ffi::nat::Nat::from(x)
+  }
+
+  // ---- test helpers ----
+
+  fn mk_name(s: &str) -> Name {
+    let mut n = Name::anon();
+    for part in s.split('.') {
+      n = Name::str(n, part.to_string());
+    }
+    n
+  }
+
+  fn mk_addr(s: &str) -> Address {
+    Address::hash(s.as_bytes())
+  }
+
+  fn empty_resolver() -> NameResolver {
+    NameResolver::from_ixon_env(&IxonEnv::new())
+  }
+
+  fn resolver_with(entries: &[(Name, Address)]) -> NameResolver {
+    let env = IxonEnv::new();
+    for (n, a) in entries {
+      env.register_name(n.clone(), Named::with_addr(a.clone()));
+    }
+    NameResolver::from_ixon_env(&env)
+  }
+
+  // ---- level_congruent ----
+
+  #[test]
+  fn level_zero_matches() {
+    let r = empty_resolver();
+    let ll = LL::zero();
+    let lu = KUniv::<Anon>::zero();
+    level_congruent(&ll, &lu, &r).unwrap();
+  }
+
+  #[test]
+  fn level_succ_matches() {
+    let r = empty_resolver();
+    let ll = LL::succ(LL::zero());
+    let lu = KUniv::<Anon>::succ(KUniv::zero());
+    level_congruent(&ll, &lu, &r).unwrap();
+  }
+
+  #[test]
+  fn level_max_matches() {
+    // KUniv::max / ::imax simplify at construction (e.g. `max(0, a) → a`),
+    // so use two params so neither side is reducible at the Zero case.
+    let r = empty_resolver();
+    let u_name = Name::str(Name::anon(), "u".to_string());
+    let v_name = Name::str(Name::anon(), "v".to_string());
+    let ll = LL::max(LL::param(u_name), LL::param(v_name));
+    let lu = KUniv::<Anon>::max(KUniv::param(0, ()), KUniv::param(1, ()));
+    level_congruent(&ll, &lu, &r).unwrap();
+  }
+
+  #[test]
+  fn level_imax_matches() {
+    let r = empty_resolver();
+    let u_name = Name::str(Name::anon(), "u".to_string());
+    let v_name = Name::str(Name::anon(), "v".to_string());
+    let ll = LL::imax(LL::param(u_name), LL::param(v_name));
+    let lu = KUniv::<Anon>::imax(KUniv::param(0, ()), KUniv::param(1, ()));
+    level_congruent(&ll, &lu, &r).unwrap();
+  }
+
+  #[test]
+  fn level_param_matches() {
+    // Lean Param has a name; zero Param has a positional index. Without a
+    // level_params list the check must pass (see module comment).
+    let r = empty_resolver();
+    let ll = LL::param(mk_name("u"));
+    let lu = KUniv::<Anon>::param(0, ());
+    level_congruent(&ll, &lu, &r).unwrap();
+  }
+
+  #[test]
+  fn level_zero_vs_succ_fails() {
+    let r = empty_resolver();
+    let ll = LL::zero();
+    let lu = KUniv::<Anon>::succ(KUniv::zero());
+    let e = level_congruent(&ll, &lu, &r).unwrap_err();
+    assert!(e.contains("Zero"));
+    assert!(e.contains("Succ"));
+  }
+
+  #[test]
+  fn level_max_vs_imax_fails() {
+    let r = empty_resolver();
+    let u_name = Name::str(Name::anon(), "u".to_string());
+    let v_name = Name::str(Name::anon(), "v".to_string());
+    let ll = LL::max(LL::param(u_name), LL::param(v_name));
+    let lu = KUniv::<Anon>::imax(KUniv::param(0, ()), KUniv::param(1, ()));
+    let e = level_congruent(&ll, &lu, &r).unwrap_err();
+    assert!(e.contains("Max"));
+    assert!(e.contains("IMax"));
+  }
+
+  #[test]
+  fn level_succ_inner_propagates_error() {
+    let r = empty_resolver();
+    // Succ(Zero) vs Succ(Succ(Zero)) — outer shape matches, inner differs.
+    let ll = LL::succ(LL::zero());
+    let lu = KUniv::<Anon>::succ(KUniv::succ(KUniv::zero()));
+    let e = level_congruent(&ll, &lu, &r).unwrap_err();
+    assert!(e.contains("Zero"));
+    assert!(e.contains("Succ"));
+  }
+
+  // ---- expr_congruent ----
+
+  #[test]
+  fn expr_bvar_matches() {
+    let r = empty_resolver();
+    let lean_e = env::Expr::bvar(n(3));
+    let zero_e = KExpr::<Anon>::var(3, ());
+    expr_congruent(&lean_e, &zero_e, &r).unwrap();
+  }
+
+  #[test]
+  fn expr_bvar_idx_mismatch_fails() {
+    let r = empty_resolver();
+    let lean_e = env::Expr::bvar(n(3));
+    let zero_e = KExpr::<Anon>::var(5, ());
+    let e = expr_congruent(&lean_e, &zero_e, &r).unwrap_err();
+    assert!(e.contains("var mismatch"));
+  }
+
+  #[test]
+  fn expr_sort_matches() {
+    let r = empty_resolver();
+    let lean_e = env::Expr::sort(LL::zero());
+    let zero_e = KExpr::<Anon>::sort(KUniv::zero());
+    expr_congruent(&lean_e, &zero_e, &r).unwrap();
+  }
+
+  #[test]
+  fn expr_const_matches_by_address() {
+    let name = mk_name("Nat");
+    let addr = mk_addr("Nat");
+    let r = resolver_with(&[(name.clone(), addr.clone())]);
+
+    let lean_e = env::Expr::cnst(name.clone(), vec![]);
+    let zero_e = KExpr::<Anon>::cnst(KId::new(addr, ()), Box::new([]));
+    expr_congruent(&lean_e, &zero_e, &r).unwrap();
+  }
+
+  #[test]
+  fn expr_const_addr_mismatch_fails() {
+    let name = mk_name("Nat");
+    let r = resolver_with(&[(name.clone(), mk_addr("Nat"))]);
+
+    let lean_e = env::Expr::cnst(name.clone(), vec![]);
+    // Wrong address in zero_e
+    let zero_e =
+      KExpr::<Anon>::cnst(KId::new(mk_addr("Bogus"), ()), Box::new([]));
+    let e = expr_congruent(&lean_e, &zero_e, &r).unwrap_err();
+    assert!(e.contains("address mismatch"));
+  }
+
+  #[test]
+  fn expr_const_name_missing_from_resolver_fails() {
+    let r = empty_resolver();
+    let lean_e = env::Expr::cnst(mk_name("Nat"), vec![]);
+    let zero_e =
+      KExpr::<Anon>::cnst(KId::new(mk_addr("Nat"), ()), Box::new([]));
+    let e = expr_congruent(&lean_e, &zero_e, &r).unwrap_err();
+    assert!(e.contains("not found"));
+  }
+
+  #[test]
+  fn expr_const_level_count_mismatch_fails() {
+    let name = mk_name("Nat");
+    let addr = mk_addr("Nat");
+    let r = resolver_with(&[(name.clone(), addr.clone())]);
+
+    let lean_e = env::Expr::cnst(name.clone(), vec![LL::zero()]);
+    let zero_e = KExpr::<Anon>::cnst(KId::new(addr, ()), Box::new([]));
+    let e = expr_congruent(&lean_e, &zero_e, &r).unwrap_err();
+    assert!(e.contains("level count mismatch"));
+  }
+
+  #[test]
+  fn expr_app_matches_recursively() {
+    let r = empty_resolver();
+    let lean_e =
+      env::Expr::app(env::Expr::sort(LL::zero()), env::Expr::bvar(n(0)));
+    let zero_e =
+      KExpr::<Anon>::app(KExpr::sort(KUniv::zero()), KExpr::var(0, ()));
+    expr_congruent(&lean_e, &zero_e, &r).unwrap();
+  }
+
+  #[test]
+  fn expr_lam_matches() {
+    let r = empty_resolver();
+    let lean_e = env::Expr::lam(
+      mk_name("x"),
+      env::Expr::sort(LL::zero()),
+      env::Expr::bvar(n(0)),
+      BinderInfo::Default,
+    );
+    let zero_e =
+      KExpr::<Anon>::lam((), (), KExpr::sort(KUniv::zero()), KExpr::var(0, ()));
+    expr_congruent(&lean_e, &zero_e, &r).unwrap();
+  }
+
+  #[test]
+  fn expr_forall_matches() {
+    let r = empty_resolver();
+    let lean_e = env::Expr::all(
+      mk_name("x"),
+      env::Expr::sort(LL::zero()),
+      env::Expr::bvar(n(0)),
+      BinderInfo::Default,
+    );
+    let zero_e =
+      KExpr::<Anon>::all((), (), KExpr::sort(KUniv::zero()), KExpr::var(0, ()));
+    expr_congruent(&lean_e, &zero_e, &r).unwrap();
+  }
+
+  #[test]
+  fn expr_let_matches() {
+    let r = empty_resolver();
+    let lean_e = env::Expr::letE(
+      mk_name("x"),
+      env::Expr::sort(LL::zero()),
+      env::Expr::bvar(n(0)),
+      env::Expr::bvar(n(0)),
+      false,
+    );
+    let zero_e = KExpr::<Anon>::let_(
+      (),
+      KExpr::sort(KUniv::zero()),
+      KExpr::var(0, ()),
+      KExpr::var(0, ()),
+      false,
+    );
+    expr_congruent(&lean_e, &zero_e, &r).unwrap();
+  }
+
+  #[test]
+  fn expr_mdata_is_transparent() {
+    let r = empty_resolver();
+    // Lean Mdata(_, Sort 0) must match the bare zero Sort 0.
+    let inner = env::Expr::sort(LL::zero());
+    let lean_e = env::Expr::mdata(vec![], inner);
+    let zero_e = KExpr::<Anon>::sort(KUniv::zero());
+    expr_congruent(&lean_e, &zero_e, &r).unwrap();
+  }
+
+  #[test]
+  fn expr_nat_lit_matches() {
+    let r = empty_resolver();
+    let lean_e = env::Expr::lit(crate::ix::env::Literal::NatVal(n(42)));
+    // Nat expr construction for the zero kernel.
+    let zero_e = KExpr::<Anon>::nat(n(42), mk_addr("any"));
+    expr_congruent(&lean_e, &zero_e, &r).unwrap();
+  }
+
+  #[test]
+  fn expr_str_lit_matches() {
+    let r = empty_resolver();
+    let lean_e = env::Expr::lit(crate::ix::env::Literal::StrVal("hi".into()));
+    let zero_e = KExpr::<Anon>::str("hi".into(), mk_addr("any"));
+    expr_congruent(&lean_e, &zero_e, &r).unwrap();
+  }
+
+  #[test]
+  fn expr_proj_matches() {
+    let name = mk_name("MyStruct");
+    let addr = mk_addr("MyStruct");
+    let r = resolver_with(&[(name.clone(), addr.clone())]);
+
+    let lean_e = env::Expr::proj(name.clone(), n(1), env::Expr::bvar(n(0)));
+    let zero_e = KExpr::<Anon>::prj(KId::new(addr, ()), 1, KExpr::var(0, ()));
+    expr_congruent(&lean_e, &zero_e, &r).unwrap();
+  }
+
+  #[test]
+  fn expr_proj_field_mismatch_fails() {
+    let name = mk_name("MyStruct");
+    let addr = mk_addr("MyStruct");
+    let r = resolver_with(&[(name.clone(), addr.clone())]);
+
+    let lean_e = env::Expr::proj(name.clone(), n(2), env::Expr::bvar(n(0)));
+    let zero_e = KExpr::<Anon>::prj(KId::new(addr, ()), 1, KExpr::var(0, ()));
+    let e = expr_congruent(&lean_e, &zero_e, &r).unwrap_err();
+    assert!(e.contains("proj field mismatch"));
+  }
+
+  #[test]
+  fn expr_fvar_unexpected() {
+    let r = empty_resolver();
+    let lean_e = env::Expr::fvar(mk_name("x"));
+    let zero_e = KExpr::<Anon>::var(0, ());
+    let e = expr_congruent(&lean_e, &zero_e, &r).unwrap_err();
+    assert!(e.contains("Fvar") || e.contains("unexpected"));
+  }
+
+  #[test]
+  fn expr_shape_mismatch_fails() {
+    let r = empty_resolver();
+    let lean_e = env::Expr::sort(LL::zero());
+    let zero_e = KExpr::<Anon>::var(0, ());
+    let e = expr_congruent(&lean_e, &zero_e, &r).unwrap_err();
+    assert!(e.contains("shape mismatch"));
+  }
+
+  // ---- const_congruent ----
+
+  fn lean_axio(
+    name: &str,
+    lvls: Vec<Name>,
+    typ: env::Expr,
+  ) -> env::ConstantInfo {
+    env::ConstantInfo::AxiomInfo(AxiomVal {
+      cnst: ConstantVal { name: mk_name(name), level_params: lvls, typ },
+      is_unsafe: false,
+    })
+  }
+
+  fn zero_axio(lvls: u64, ty: KExpr<Anon>) -> KConst<Anon> {
+    KConst::Axio { name: (), level_params: (), is_unsafe: false, lvls, ty }
+  }
+
+  #[test]
+  fn const_axio_matches() {
+    let r = empty_resolver();
+    let ltyp = env::Expr::sort(LL::zero());
+    let ztyp = KExpr::<Anon>::sort(KUniv::zero());
+    let lci = lean_axio("A", vec![], ltyp);
+    let kc = zero_axio(0, ztyp);
+    const_congruent(&lci, &kc, &r).unwrap();
+  }
+
+  #[test]
+  fn const_variant_mismatch_fails() {
+    // Axiom on the Lean side, Defn on the zero side → variant mismatch error.
+    let r = empty_resolver();
+    let lci = lean_axio("A", vec![], env::Expr::sort(LL::zero()));
+    let kc = KConst::<Anon>::Defn {
+      name: (),
+      level_params: (),
+      kind: crate::ix::ixon::constant::DefKind::Definition,
+      safety: DefinitionSafety::Safe,
+      hints: ReducibilityHints::Opaque,
+      lvls: 0,
+      ty: KExpr::sort(KUniv::zero()),
+      val: KExpr::sort(KUniv::zero()),
+      lean_all: (),
+      block: KId::new(mk_addr("A"), ()),
+    };
+    let e = const_congruent(&lci, &kc, &r).unwrap_err();
+    assert!(e.contains("variant mismatch"));
+  }
+
+  #[test]
+  fn const_lvls_count_mismatch_fails() {
+    let r = empty_resolver();
+    let lci = lean_axio(
+      "A",
+      vec![mk_name("u"), mk_name("v")],
+      env::Expr::sort(LL::zero()),
+    );
+    let kc = zero_axio(1, KExpr::sort(KUniv::zero())); // claims 1 lvl
+    let e = const_congruent(&lci, &kc, &r).unwrap_err();
+    assert!(e.contains("lvls"));
+  }
+
+  #[test]
+  fn const_defn_value_mismatch_propagates() {
+    let r = empty_resolver();
+    let lci = env::ConstantInfo::DefnInfo(DefinitionVal {
+      cnst: ConstantVal {
+        name: mk_name("f"),
+        level_params: vec![],
+        typ: env::Expr::sort(LL::zero()),
+      },
+      value: env::Expr::sort(LL::zero()), // value is Sort 0
+      hints: ReducibilityHints::Opaque,
+      safety: DefinitionSafety::Safe,
+      all: vec![],
+    });
+    let kc = KConst::<Anon>::Defn {
+      name: (),
+      level_params: (),
+      kind: crate::ix::ixon::constant::DefKind::Definition,
+      safety: DefinitionSafety::Safe,
+      hints: ReducibilityHints::Opaque,
+      lvls: 0,
+      ty: KExpr::sort(KUniv::zero()),
+      // mismatched value: Var(0) instead of Sort 0
+      val: KExpr::var(0, ()),
+      lean_all: (),
+      block: KId::new(mk_addr("f"), ()),
+    };
+    let e = const_congruent(&lci, &kc, &r).unwrap_err();
+    assert!(e.contains("value"));
+  }
+
+  #[test]
+  fn const_quot_matches_kind_free() {
+    // QuotInfo ↔ Quot must succeed regardless of the QuotKind variant.
+    let r = empty_resolver();
+    let lci = env::ConstantInfo::QuotInfo(QuotVal {
+      cnst: ConstantVal {
+        name: mk_name("Quot"),
+        level_params: vec![mk_name("u")],
+        typ: env::Expr::sort(LL::succ(LL::zero())),
+      },
+      kind: QuotKind::Type,
+    });
+    let kc = KConst::<Anon>::Quot {
+      name: (),
+      level_params: (),
+      kind: QuotKind::Type,
+      lvls: 1,
+      ty: KExpr::sort(KUniv::succ(KUniv::zero())),
+    };
+    const_congruent(&lci, &kc, &r).unwrap();
+  }
+
+  #[test]
+  fn const_induct_param_count_mismatch_fails() {
+    let r = empty_resolver();
+    let lci = env::ConstantInfo::InductInfo(InductiveVal {
+      cnst: ConstantVal {
+        name: mk_name("A"),
+        level_params: vec![],
+        typ: env::Expr::sort(LL::zero()),
+      },
+      num_params: n(2),
+      num_indices: n(0),
+      all: vec![mk_name("A")],
+      ctors: vec![],
+      num_nested: n(0),
+      is_rec: false,
+      is_unsafe: false,
+      is_reflexive: false,
+    });
+    let kc = KConst::<Anon>::Indc {
+      name: (),
+      level_params: (),
+      params: 5, // wrong
+      indices: 0,
+      is_rec: false,
+      is_refl: false,
+      ctors: vec![],
+      lvls: 0,
+      ty: KExpr::sort(KUniv::zero()),
+      lean_all: (),
+      block: KId::new(mk_addr("A"), ()),
+      is_unsafe: false,
+      nested: 0,
+      member_idx: 0,
+    };
+    let e = const_congruent(&lci, &kc, &r).unwrap_err();
+    assert!(e.contains("params"));
+  }
+
+  #[test]
+  fn const_ctor_field_count_mismatch_fails() {
+    let r = empty_resolver();
+    let lci = env::ConstantInfo::CtorInfo(ConstructorVal {
+      cnst: ConstantVal {
+        name: mk_name("A.mk"),
+        level_params: vec![],
+        typ: env::Expr::sort(LL::zero()),
+      },
+      induct: mk_name("A"),
+      cidx: n(0),
+      num_params: n(0),
+      num_fields: n(3),
+      is_unsafe: false,
+    });
+    let kc = KConst::<Anon>::Ctor {
+      name: (),
+      level_params: (),
+      induct: KId::new(mk_addr("A"), ()),
+      cidx: 0,
+      params: 0,
+      fields: 7, // wrong
+      lvls: 0,
+      ty: KExpr::sort(KUniv::zero()),
+      is_unsafe: false,
+    };
+    let e = const_congruent(&lci, &kc, &r).unwrap_err();
+    assert!(e.contains("fields"));
+  }
+
+  #[test]
+  fn const_rec_rule_count_mismatch_fails() {
+    let r = empty_resolver();
+    let lci = env::ConstantInfo::RecInfo(RecursorVal {
+      cnst: ConstantVal {
+        name: mk_name("A.rec"),
+        level_params: vec![],
+        typ: env::Expr::sort(LL::zero()),
+      },
+      all: vec![mk_name("A")],
+      num_params: n(0),
+      num_indices: n(0),
+      num_motives: n(1),
+      num_minors: n(1),
+      rules: vec![LeanRule {
+        ctor: mk_name("A.mk"),
+        n_fields: n(0),
+        rhs: env::Expr::sort(LL::zero()),
+      }],
+      k: false,
+      is_unsafe: false,
+    });
+    let kc = KConst::<Anon>::Recr {
+      name: (),
+      level_params: (),
+      params: 0,
+      indices: 0,
+      motives: 1,
+      minors: 1,
+      rules: vec![], // wrong: empty
+      k: false,
+      lvls: 0,
+      ty: KExpr::sort(KUniv::zero()),
+      block: KId::new(mk_addr("A"), ()),
+      member_idx: 0,
+      lean_all: (),
+      is_unsafe: false,
+    };
+    let e = const_congruent(&lci, &kc, &r).unwrap_err();
+    assert!(e.contains("rule count"));
+  }
+
+  #[test]
+  fn const_rec_k_mismatch_fails() {
+    let r = empty_resolver();
+    let lci = env::ConstantInfo::RecInfo(RecursorVal {
+      cnst: ConstantVal {
+        name: mk_name("A.rec"),
+        level_params: vec![],
+        typ: env::Expr::sort(LL::zero()),
+      },
+      all: vec![],
+      num_params: n(0),
+      num_indices: n(0),
+      num_motives: n(1),
+      num_minors: n(0),
+      rules: vec![],
+      k: true, // lean says k
+      is_unsafe: false,
+    });
+    let kc = KConst::<Anon>::Recr {
+      name: (),
+      level_params: (),
+      params: 0,
+      indices: 0,
+      motives: 1,
+      minors: 0,
+      rules: vec![],
+      k: false, // zero says !k
+      lvls: 0,
+      ty: KExpr::sort(KUniv::zero()),
+      block: KId::new(mk_addr("A.rec"), ()),
+      member_idx: 0,
+      lean_all: (),
+      is_unsafe: false,
+    };
+    let e = const_congruent(&lci, &kc, &r).unwrap_err();
+    assert!(e.contains("k:"));
+  }
+
+  #[test]
+  fn const_thm_and_opaque_match_via_defn_side() {
+    // Both ThmInfo and OpaqueInfo compare against KConst::Defn.
+    let r = empty_resolver();
+
+    let lthm = env::ConstantInfo::ThmInfo(TheoremVal {
+      cnst: ConstantVal {
+        name: mk_name("t"),
+        level_params: vec![],
+        typ: env::Expr::sort(LL::zero()),
+      },
+      value: env::Expr::sort(LL::zero()),
+      all: vec![],
+    });
+    let k = KConst::<Anon>::Defn {
+      name: (),
+      level_params: (),
+      kind: crate::ix::ixon::constant::DefKind::Theorem,
+      safety: DefinitionSafety::Safe,
+      hints: ReducibilityHints::Opaque,
+      lvls: 0,
+      ty: KExpr::sort(KUniv::zero()),
+      val: KExpr::sort(KUniv::zero()),
+      lean_all: (),
+      block: KId::new(mk_addr("t"), ()),
+    };
+    const_congruent(&lthm, &k, &r).unwrap();
+
+    let lop = env::ConstantInfo::OpaqueInfo(OpaqueVal {
+      cnst: ConstantVal {
+        name: mk_name("o"),
+        level_params: vec![],
+        typ: env::Expr::sort(LL::zero()),
+      },
+      value: env::Expr::sort(LL::zero()),
+      is_unsafe: false,
+      all: vec![],
+    });
+    const_congruent(&lop, &k, &r).unwrap();
+  }
+}

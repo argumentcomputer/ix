@@ -1010,8 +1010,39 @@ fn get_name_component(
 // Named serialization
 // ============================================================================
 
-use super::env::Named;
+use super::env::{AuxLayout, Named};
 use super::metadata::{ConstantMeta, NameIndex, NameReverseIndex};
+
+/// Serialize an `AuxLayout` side-table entry.
+///
+/// Encoding: two Vec<u64> telescopes. `usize` is written/read as `u64`
+/// (via `put_u64` / `Tag0`) to avoid target-word-size divergence in
+/// cross-platform serialized envs.
+pub fn put_aux_layout(layout: &AuxLayout, buf: &mut Vec<u8>) {
+  put_u64(layout.perm.len() as u64, buf);
+  for &p in &layout.perm {
+    put_u64(p as u64, buf);
+  }
+  put_u64(layout.source_ctor_counts.len() as u64, buf);
+  for &c in &layout.source_ctor_counts {
+    put_u64(c as u64, buf);
+  }
+}
+
+/// Deserialize an `AuxLayout` side-table entry.
+pub fn get_aux_layout(buf: &mut &[u8]) -> Result<AuxLayout, String> {
+  let n_perm = get_u64(buf)? as usize;
+  let mut perm = Vec::with_capacity(n_perm);
+  for _ in 0..n_perm {
+    perm.push(get_u64(buf)? as usize);
+  }
+  let n_counts = get_u64(buf)? as usize;
+  let mut source_ctor_counts = Vec::with_capacity(n_counts);
+  for _ in 0..n_counts {
+    source_ctor_counts.push(get_u64(buf)? as usize);
+  }
+  Ok(AuxLayout { perm, source_ctor_counts })
+}
 
 /// Serialize a Named entry with indexed metadata.
 pub fn put_named_indexed(
@@ -1092,10 +1123,7 @@ impl Env {
     // ─────────────────────────────────────────────────────────────────────
     let sec_start = std::time::Instant::now();
     if !quiet {
-      eprintln!(
-        "[Env::put] section 1/5 blobs: {} entries",
-        self.blobs.len(),
-      );
+      eprintln!("[Env::put] section 1/5 blobs: {} entries", self.blobs.len(),);
     }
     let mut blob_addrs: Vec<Address> =
       self.blobs.iter().map(|e| e.key().clone()).collect();
@@ -1122,10 +1150,7 @@ impl Env {
     // ─────────────────────────────────────────────────────────────────────
     let sec_start = std::time::Instant::now();
     if !quiet {
-      eprintln!(
-        "[Env::put] section 2/5 consts: {} entries",
-        self.consts.len(),
-      );
+      eprintln!("[Env::put] section 2/5 consts: {} entries", self.consts.len(),);
     }
     let mut const_addrs: Vec<Address> =
       self.consts.iter().map(|e| e.key().clone()).collect();
@@ -1205,10 +1230,7 @@ impl Env {
     // single atomic refcount increment (<1s for 733k).
     let sec_start = std::time::Instant::now();
     if !quiet {
-      eprintln!(
-        "[Env::put] section 4/5 named: {} entries",
-        self.named.len(),
-      );
+      eprintln!("[Env::put] section 4/5 named: {} entries", self.named.len(),);
     }
     let mut named_keys: Vec<Name> =
       self.named.iter().map(|e| e.key().clone()).collect();
@@ -1248,10 +1270,7 @@ impl Env {
     // ─────────────────────────────────────────────────────────────────────
     let sec_start = std::time::Instant::now();
     if !quiet {
-      eprintln!(
-        "[Env::put] section 5/5 comms: {} entries",
-        self.comms.len(),
-      );
+      eprintln!("[Env::put] section 5/5 comms: {} entries", self.comms.len(),);
     }
     let mut comm_addrs: Vec<Address> =
       self.comms.iter().map(|e| e.key().clone()).collect();
@@ -1493,10 +1512,8 @@ fn topological_sort_names(
 
   // Clone-collect entries for direct iteration (avoids 4.7M DashMap lookups
   // during DFS). Parallel sort uses rayon over address bytes.
-  let mut sorted_entries: Vec<(Address, Name)> = names
-    .iter()
-    .map(|e| (e.key().clone(), e.value().clone()))
-    .collect();
+  let mut sorted_entries: Vec<(Address, Name)> =
+    names.iter().map(|e| (e.key().clone(), e.value().clone())).collect();
   sorted_entries.par_sort_unstable_by(|a, b| a.0.cmp(&b.0));
   for (_, name) in &sorted_entries {
     visit(name, &mut visited, &mut result);

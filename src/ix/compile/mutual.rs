@@ -23,8 +23,9 @@ use crate::ix::compile::aux_gen::brecon::BRecOnDef;
 use crate::ix::compile::aux_gen::recursor;
 use crate::ix::compile::aux_gen::{self, PatchedConstant};
 use crate::ix::compile::{
-  BlockCache, CompileState, compile_definition, compile_inductive,
-  compile_mutual_block, compile_name, compile_recursor, sort_consts,
+  BlockCache, CompileState, collect_mut_const_exprs, compile_definition,
+  compile_inductive, compile_mutual_block, compile_name, compile_recursor,
+  preseed_expr_tables, sort_consts,
 };
 use crate::ix::env::{
   ConstantInfo as LeanConstantInfo, ConstantVal, ConstructorVal,
@@ -61,15 +62,61 @@ pub(crate) fn compile_aux_block(
   lean_env: &Arc<LeanEnv>,
   stt: &CompileState,
 ) -> Result<(), CompileError> {
+  compile_aux_block_with_rename(aux_consts, lean_env, stt, None)
+}
+
+/// Like `compile_aux_block`, but applies an optional name-rename map when
+/// registering named entries in the env.
+///
+/// The rename maps *canonical* constant names (the `cnst.name()` of
+/// `aux_consts` entries, produced by `aux_gen` at hash-sorted positions)
+/// to *source* names (what Lean's env exports for the same content).
+///
+/// For nested-auxiliary recursors/definitions (`.rec_N`, `.below_N`,
+/// `.brecOn_N[.go|.eq]`) the canonical naming uses hash-sorted indices
+/// while Lean uses source-walk indices. Without the rename, user code
+/// referencing Lean's `X.rec_1` would resolve to the canonical aux at
+/// index 0 (wrong semantic position under non-identity `perm`).
+///
+/// The rename is applied at:
+///   * `stt.env.register_name`  — so lookups hit the source name
+///   * `stt.aux_name_to_addr`   — so scheduler deps resolve source names
+///   * `stt.aux_gen_extra_names`— so membership checks use source names
+///   * `muts_all` name hashes   — so kernel ingress's `ingress_muts_block`
+///     looks up the source Named entry at each canonical block position
+///
+/// The block's internal order (and sort_consts decisions) are *not*
+/// affected by the rename — they still use canonical names for
+/// deterministic ordering.
+pub(crate) fn compile_aux_block_with_rename(
+  aux_consts: &[MutConst],
+  lean_env: &Arc<LeanEnv>,
+  stt: &CompileState,
+  name_rename: Option<&FxHashMap<Name, Name>>,
+) -> Result<(), CompileError> {
   if aux_consts.is_empty() {
     return Ok(());
   }
   let mut cache = BlockCache::default();
 
+  // Helper: given a canonical name, return the source name if a rename
+  // is in effect, otherwise return the canonical name unchanged.
+  let resolve_name = |canon: &Name| -> Name {
+    name_rename
+      .and_then(|m| m.get(canon).cloned())
+      .unwrap_or_else(|| canon.clone())
+  };
+
   // Sort into equivalence classes (same algorithm as compile_mutual).
   let refs: Vec<&MutConst> = aux_consts.iter().collect();
   let sorted_classes = sort_consts(&refs, &mut cache, stt)?;
   let mut_ctx = MutConst::ctx(&sorted_classes);
+
+  let mut exprs = Vec::new();
+  for cnst in aux_consts {
+    collect_mut_const_exprs(cnst, &mut exprs);
+  }
+  preseed_expr_tables(&exprs, &mut_ctx, &mut cache, stt, "compile_aux_block")?;
 
   // Compile each representative per class.
   let mut ixon_mutuals = Vec::new();
@@ -135,12 +182,12 @@ pub(crate) fn compile_aux_block(
   if singleton {
     // Single non-inductive class: register directly with block_addr.
     for cnst in &sorted_classes[0] {
-      let n = cnst.name();
-      let meta = all_metas.remove(&n).unwrap_or_default();
-      stt.env.register_name(
-        n.clone(),
-        Named::new(block_addr.clone(), meta),
-      );
+      let canon_n = cnst.name();
+      let n = resolve_name(&canon_n);
+      // Meta was keyed by canonical name during compile; transfer to
+      // source name at lookup but preserve the meta payload.
+      let meta = all_metas.remove(&canon_n).unwrap_or_default();
+      stt.env.register_name(n.clone(), Named::new(block_addr.clone(), meta));
       stt.aux_name_to_addr.insert(n.clone(), block_addr.clone());
       stt.aux_gen_extra_names.insert(n.clone());
       pending_names.push(n);
@@ -150,8 +197,9 @@ pub(crate) fn compile_aux_block(
     for (idx, class) in sorted_classes.iter().enumerate() {
       let idx = idx as u64;
       for cnst in class {
-        let n = cnst.name();
-        let meta = all_metas.get(&n).cloned().unwrap_or_default();
+        let canon_n = cnst.name();
+        let n = resolve_name(&canon_n);
+        let meta = all_metas.get(&canon_n).cloned().unwrap_or_default();
 
         match cnst {
           MutConst::Indc(ind) => {
@@ -162,15 +210,18 @@ pub(crate) fn compile_aux_block(
             }));
             let proj_addr = content_address(&indc_proj);
             stt.env.store_const(proj_addr.clone(), indc_proj);
-            stt.env.register_name(
-              n.clone(),
-              Named::new(proj_addr.clone(), meta),
-            );
+            stt
+              .env
+              .register_name(n.clone(), Named::new(proj_addr.clone(), meta));
             stt.aux_name_to_addr.insert(n.clone(), proj_addr.clone());
             stt.aux_gen_extra_names.insert(n.clone());
             pending_names.push(n);
 
-            // Constructor projections
+            // Constructor projections. Inductives don't typically get a
+            // source-name remap for ctors (rename map is applied to the
+            // inductive name only for nested aux cases, and those use
+            // structural ctor naming via name_replace_prefix). Ctor names
+            // pass through unchanged.
             for (cidx, ctor) in ind.ctors.iter().enumerate() {
               let ctor_meta =
                 all_metas.get(&ctor.cnst.name).cloned().unwrap_or_default();
@@ -200,10 +251,9 @@ pub(crate) fn compile_aux_block(
             }));
             let proj_addr = content_address(&proj);
             stt.env.store_const(proj_addr.clone(), proj);
-            stt.env.register_name(
-              n.clone(),
-              Named::new(proj_addr.clone(), meta),
-            );
+            stt
+              .env
+              .register_name(n.clone(), Named::new(proj_addr.clone(), meta));
             stt.aux_name_to_addr.insert(n.clone(), proj_addr);
             stt.aux_gen_extra_names.insert(n.clone());
             pending_names.push(n);
@@ -215,10 +265,9 @@ pub(crate) fn compile_aux_block(
             }));
             let proj_addr = content_address(&proj);
             stt.env.store_const(proj_addr.clone(), proj);
-            stt.env.register_name(
-              n.clone(),
-              Named::new(proj_addr.clone(), meta),
-            );
+            stt
+              .env
+              .register_name(n.clone(), Named::new(proj_addr.clone(), meta));
             stt.aux_name_to_addr.insert(n.clone(), proj_addr);
             stt.aux_gen_extra_names.insert(n.clone());
             pending_names.push(n);
@@ -239,27 +288,45 @@ pub(crate) fn compile_aux_block(
   // produced by `Address::muts_name`, so alpha-equivalent blocks with
   // different member names get distinct entries. `all` is a 2-D array of
   // name-hash addresses, one class per mutual component.
-  let first_name = sorted_classes
-    .first()
-    .and_then(|c| c.first())
-    .map(|c| c.name())
-    .expect("compile_aux_block invariant: at least one class with one member");
+  let first_name_canonical =
+    sorted_classes.first().and_then(|c| c.first()).map(|c| c.name()).expect(
+      "compile_aux_block invariant: at least one class with one member",
+    );
+  let first_name = resolve_name(&first_name_canonical);
+  // Build muts_all using *source* names (after rename). Kernel ingress
+  // (`ingress_muts_block`) looks up `muts_all[i][0]` in `ixon_env.named`
+  // to resolve each class's canonical-position primary name to its
+  // Named entry; we registered source names above, so `muts_all` must
+  // carry source-name hashes to match.
   let muts_all: Vec<Vec<Address>> = sorted_classes
     .iter()
     .map(|class| {
       class
         .iter()
-        .map(|c| Address::from_blake3_hash(*c.name().get_hash()))
+        .map(|c| {
+          let n = resolve_name(&c.name());
+          Address::from_blake3_hash(*n.get_hash())
+        })
         .collect()
     })
     .collect();
   let muts_name = block_addr.muts_name(&first_name);
   compile_name(&muts_name, stt);
+  // `compile_aux_block_with_rename` handles derivative blocks (rec, below,
+  // brecOn, ...) that share the same aux_layout as the primary inductive
+  // block. We DO NOT attach aux_layout here — those derived blocks inherit
+  // layout through their projection addresses into the primary's rec/aux
+  // block, and decompile resolves layout via the primary inductive's Muts
+  // meta (see `compile.rs:3254` for the primary-block registration and
+  // `decompile_block_aux_gen` for the lookup).
   stt.env.register_name(
     muts_name,
     Named::new(
       block_addr.clone(),
-      ConstantMeta::new(ConstantMetaInfo::Muts { all: muts_all }),
+      ConstantMeta::new(ConstantMetaInfo::Muts {
+        all: muts_all,
+        aux_layout: None,
+      }),
     ),
   );
 
@@ -275,6 +342,76 @@ pub(crate) fn compile_aux_block(
       lean_env.as_ref(),
       stt,
     );
+  }
+
+  Ok(())
+}
+
+/// Register Lean-source aux names as aliases of already-compiled canonical
+/// aux_gen patches. This preserves one compiled constant per canonical class
+/// while still letting scheduler deps and later original-form compilation
+/// resolve every real Lean-exported aux name.
+fn register_aux_aliases(
+  aliases: &FxHashMap<Name, Name>,
+  stt: &CompileState,
+) -> Result<(), CompileError> {
+  if aliases.is_empty() {
+    return Ok(());
+  }
+
+  let mut entries: Vec<(Name, Name)> = aliases
+    .iter()
+    .map(|(source, target)| (source.clone(), target.clone()))
+    .collect();
+  entries.sort_by_key(|(source, target)| (source.pretty(), target.pretty()));
+
+  let mut pending_names = Vec::new();
+  for (source, target) in entries {
+    if source == target {
+      continue;
+    }
+
+    let target_addr = stt.resolve_addr(&target).ok_or_else(|| {
+      CompileError::InvalidMutualBlock {
+        reason: format!(
+          "aux_gen alias target '{}' for '{}' has not been compiled",
+          target.pretty(),
+          source.pretty(),
+        ),
+      }
+    })?;
+
+    if let Some(existing_addr) = stt.resolve_addr(&source) {
+      if existing_addr != target_addr {
+        return Err(CompileError::InvalidMutualBlock {
+          reason: format!(
+            "aux_gen alias '{}' already resolves to {:.12}, expected {:.12} via '{}'",
+            source.pretty(),
+            existing_addr.hex(),
+            target_addr.hex(),
+            target.pretty(),
+          ),
+        });
+      }
+      continue;
+    }
+
+    let target_named = stt
+      .env
+      .lookup_name(&target)
+      .unwrap_or_else(|| Named::with_addr(target_addr.clone()));
+    let mut alias_named = target_named;
+    alias_named.addr = target_addr.clone();
+
+    compile_name(&source, stt);
+    stt.env.register_name(source.clone(), alias_named);
+    stt.aux_name_to_addr.insert(source.clone(), target_addr);
+    stt.aux_gen_extra_names.insert(source.clone());
+    pending_names.push(source);
+  }
+
+  if !pending_names.is_empty() {
+    stt.aux_gen_pending.lock().unwrap().extend(pending_names);
   }
 
   Ok(())
@@ -310,17 +447,13 @@ pub(crate) fn generate_and_compile_aux_recursors(
   class_names: &[Vec<Name>],
   lean_env: &Arc<LeanEnv>,
   stt: &CompileState,
-) -> Result<(), CompileError> {
-  // Phase 0: Verify every Lean-original constant in this block against
-  // the kernel, using the pre-populated `stt.kctx.orig_kenv` — a full
-  // `lean_ingress` snapshot built once at `compile_env` startup, never
-  // mutated afterward.
+) -> Result<Option<crate::ix::compile::surgery::AuxLayout>, CompileError> {
+  // Phase 0: optionally verify every Lean-original constant in this block
+  // against the kernel, using the pre-populated `stt.kctx.orig_kenv`.
   //
-  // This MUST run even when the block has no inductive (e.g. a
-  // recursor-only SCC from `bad_raw_consts`): such SCCs can carry
-  // adversarial recursors that wouldn't otherwise ever be kernel-
-  // checked. Running BEFORE the aux_gen gate below guarantees Phase 0
-  // has its say on every block.
+  // This is enabled for adversarial raw-constant tests. Normal compilation
+  // from a trusted Lean environment leaves it off to avoid retaining a
+  // second kernel-form copy of the full env.
   check_originals(cs, lean_env, stt)?;
 
   // Guard: aux_gen canonical generation only runs for blocks containing
@@ -328,7 +461,7 @@ pub(crate) fn generate_and_compile_aux_recursors(
   // etc.) have no canonical auxiliaries to generate.
   let is_inductive_block = cs.iter().any(|c| matches!(c, MutConst::Indc(_)));
   if !is_inductive_block {
-    return Ok(());
+    return Ok(None);
   }
 
   let aux_total_start = std::time::Instant::now();
@@ -338,16 +471,126 @@ pub(crate) fn generate_and_compile_aux_recursors(
     .map(|n| n.pretty())
     .unwrap_or_default();
 
+  // Extract Lean's source-walk `all` list from the first inductive in the
+  // block. `generate_aux_patches` uses this for source-indexed aux naming
+  // (`<all0>.rec_{source_j+1}`) and for the hash-sort permutation it
+  // returns.
+  let source_all: Vec<Name> = cs
+    .iter()
+    .find_map(|c| match c {
+      MutConst::Indc(ind) => Some(ind.ind.all.clone()),
+      _ => None,
+    })
+    .unwrap_or_default();
+  if source_all.is_empty() {
+    return Ok(None);
+  }
+
+  // Aux generation is defined relative to the Lean inductive declaration
+  // (`InductiveVal.all`) after canonical collapse/splitting. The scheduler SCC
+  // can contain extra inductive declarations through ordinary dependency
+  // cycles; those must not become primary recursor motives for this source
+  // declaration. Intersect with `.all`: over-merge splitting naturally leaves
+  // only the members present in this SCC, while alpha-collapse keeps the
+  // canonical class representatives.
+  let source_all_lookup: FxHashMap<Name, ()> =
+    source_all.iter().cloned().map(|n| (n, ())).collect();
+  let aux_class_names: Vec<Vec<Name>> = class_names
+    .iter()
+    .filter_map(|class| {
+      let names: Vec<Name> = class
+        .iter()
+        .filter(|n| source_all_lookup.contains_key(*n))
+        .cloned()
+        .collect();
+      (!names.is_empty()).then_some(names)
+    })
+    .collect();
+  if aux_class_names.is_empty() {
+    return Ok(None);
+  }
+
   // Phase 1: Generate patches. Errors here indicate a bug in aux_gen
   // (the input has already been validated by sort_consts and the compile
   // loop), so we propagate rather than swallow.
   let t0 = std::time::Instant::now();
-  let patches =
-    aux_gen::generate_aux_patches(class_names, cs, lean_env, stt, &stt.kctx)?;
+  let aux_out = aux_gen::generate_aux_patches(
+    &aux_class_names,
+    &source_all,
+    lean_env,
+    stt,
+    &stt.kctx,
+  )?;
+  let patches = &aux_out.patches;
   let gen_elapsed = t0.elapsed();
   if patches.is_empty() {
-    return Ok(());
+    return Ok(None);
   }
+
+  // Record the nested-auxiliary permutation mapping Lean's source-walk
+  // aux position to our canonical aux position.
+  //
+  // `aux_gen::generate_aux_patches` internally canonicalizes the expanded
+  // block's aux section and returns `perm[source_j] = canonical_i` via
+  // `AuxPatchesOutput.perm`. We record it here keyed by
+  // `InductiveVal.all[0]` for:
+  //   1. Call-site surgery plans (built below in compile.rs:compile_mutual)
+  //      so they can permute source-order aux motives/minors to canonical.
+  //   2. Compile_aux_block, to register Lean-source aux names at the
+  //      permuted block projection index (so user code calling `X.rec_1`
+  //      resolves to whatever aux Lean originally numbered `_1`, not
+  //      whatever aux happens to sort to canonical position 0).
+  //
+  // `original_all` (= `source_all` above) is hoisted to the enclosing
+  // scope so the aux-name rename map construction below can reuse it.
+  let original_all: Vec<Name> = source_all;
+  let mut aux_layout: Option<crate::ix::compile::surgery::AuxLayout> = None;
+  if !original_all.is_empty()
+    && let Some(perm) = aux_out.perm.clone()
+    && !perm.is_empty()
+  {
+    // Also compute per-source-aux ctor counts: for each source aux position j,
+    // look up the external inductive's constructor count. If this metadata is
+    // unavailable, fail closed: silently dropping `perm` makes call-site
+    // surgery fall back to identity, which is wrong precisely for the
+    // alpha-collapse / reordered cases that need the permutation.
+    let src_order = aux_gen::nested::source_aux_order(&original_all, lean_env)?;
+    let mut source_ctor_counts: Vec<usize> =
+      Vec::with_capacity(src_order.len());
+    for (head, _) in &src_order {
+      match lean_env.get(head).as_deref() {
+        Some(LeanConstantInfo::InductInfo(v)) => {
+          source_ctor_counts.push(v.ctors.len());
+        },
+        _ => {
+          return Err(CompileError::MissingConstant {
+            name: head.pretty(),
+            caller: "compile_aux_block(aux_layout.source_ctor_counts)".into(),
+          });
+        },
+      }
+    }
+    if source_ctor_counts.len() != perm.len() {
+      return Err(CompileError::InvalidMutualBlock {
+        reason: format!(
+          "aux layout mismatch: {} source aux ctor counts for {} permutation entries",
+          source_ctor_counts.len(),
+          perm.len()
+        ),
+      });
+    }
+    aux_layout =
+      Some(crate::ix::compile::surgery::AuxLayout { perm, source_ctor_counts });
+  }
+
+  // NOTE: Historically, a canonical→source rename map was built here
+  // to bridge aux_gen's canonical-indexed names (`rec_{canonical_i+1}`)
+  // to Lean's source-walk names (`rec_{source_j+1}`). Since aux_gen
+  // now emits patches with source-indexed names directly (via
+  // `canon_repr` in `generate_aux_patches`), the rename is redundant
+  // and double-applies. Pass an empty map to `compile_aux_block_with_rename`
+  // — the `resolve_name` closure becomes identity.
+  let aux_name_rename: FxHashMap<Name, Name> = FxHashMap::default();
 
   // Phase 2: Compile canonical recursors.
   let t1 = std::time::Instant::now();
@@ -359,8 +602,24 @@ pub(crate) fn generate_and_compile_aux_recursors(
     })
     .collect();
   if !rec_consts.is_empty() {
-    compile_aux_block(&rec_consts, lean_env, stt)?;
+    compile_aux_block_with_rename(
+      &rec_consts,
+      lean_env,
+      stt,
+      Some(&aux_name_rename),
+    )?;
   }
+  // Some later generated wrappers are named under alpha-collapsed aliases
+  // and may reference the alias `.rec` name. Register every alias whose target
+  // was compiled by the recursor phase now; remaining aliases (.below_N,
+  // .brecOn_N, etc.) are registered after their phases below.
+  let available_rec_aliases: FxHashMap<Name, Name> = aux_out
+    .aliases
+    .iter()
+    .filter(|(_, target)| stt.resolve_addr(target).is_some())
+    .map(|(source, target)| (source.clone(), target.clone()))
+    .collect();
+  register_aux_aliases(&available_rec_aliases, stt)?;
   let rec_elapsed = t1.elapsed();
   // Phase 2b: Compile .casesOn definitions.
   // casesOn wraps .rec and must be compiled after .rec but before .brecOn
@@ -430,7 +689,12 @@ pub(crate) fn generate_and_compile_aux_recursors(
     })
     .collect();
   if !below_indcs.is_empty() {
-    compile_aux_block(&below_indcs, lean_env, stt)?;
+    compile_aux_block_with_rename(
+      &below_indcs,
+      lean_env,
+      stt,
+      Some(&aux_name_rename),
+    )?;
     // Note: constructor names are already correctly set by rename_below_indc
     // during alias patching. register_below_ctor_aliases was removed because
     // it created spurious cross-aliases (e.g., Z.below.x for alpha-collapsed
@@ -455,7 +719,12 @@ pub(crate) fn generate_and_compile_aux_recursors(
     })
     .collect();
   if !below_defs.is_empty() {
-    compile_aux_block(&below_defs, lean_env, stt)?;
+    compile_aux_block_with_rename(
+      &below_defs,
+      lean_env,
+      stt,
+      Some(&aux_name_rename),
+    )?;
   }
   let below_elapsed = t4.elapsed();
 
@@ -479,10 +748,17 @@ pub(crate) fn generate_and_compile_aux_recursors(
       })
       .collect();
     if !defs.is_empty() {
-      compile_aux_block(&defs, lean_env, stt)?;
+      compile_aux_block_with_rename(
+        &defs,
+        lean_env,
+        stt,
+        Some(&aux_name_rename),
+      )?;
     }
   }
   let brecon_elapsed = t6.elapsed();
+
+  register_aux_aliases(&aux_out.aliases, stt)?;
 
   // Note: `.noConfusion`, `.noConfusionType`, `.ctor.noConfusion`, `.ctorIdx`,
   // `.ctorElim*`, `.ctor.inj*`, `._sizeOf_*`, etc. are **not** regenerated.
@@ -510,7 +786,7 @@ pub(crate) fn generate_and_compile_aux_recursors(
       patches.len(),
     );
   }
-  Ok(())
+  Ok(aux_layout)
 }
 
 // ===========================================================================
@@ -561,6 +837,10 @@ fn check_originals(
   use crate::ix::kernel::id::KId;
   use crate::ix::kernel::mode::Meta;
   use crate::ix::kernel::tc::TypeChecker;
+
+  if !stt.check_originals {
+    return Ok(());
+  }
 
   let orig_kenv = &stt.kctx.orig_kenv;
 
@@ -742,20 +1022,12 @@ fn brecon_to_mut_const(d: &BRecOnDef) -> MutConst {
 
   // Determine kind.
   let kind = if is_eq {
-    if d.is_unsafe {
-      DefKind::Definition
-    } else {
-      DefKind::Theorem
-    }
+    if d.is_unsafe { DefKind::Definition } else { DefKind::Theorem }
   } else if d.is_prop {
     // Prop-level `.brecOn` with non-unsafe inductive: Thm. Unsafe Prop
     // inductives are effectively impossible (Lean forbids `unsafe` in Prop),
     // but honor the flag anyway.
-    if d.is_unsafe {
-      DefKind::Definition
-    } else {
-      DefKind::Theorem
-    }
+    if d.is_unsafe { DefKind::Definition } else { DefKind::Theorem }
   } else {
     // Type-level `.brecOn` / `.brecOn.go`.
     DefKind::Definition
@@ -790,11 +1062,7 @@ fn brecon_to_mut_const(d: &BRecOnDef) -> MutConst {
 /// aux-constant emission site picks up the same rule; if we ever need to
 /// distinguish `Partial` from `Unsafe` we can refine one place.
 fn def_safety(is_unsafe: bool) -> DefinitionSafety {
-  if is_unsafe {
-    DefinitionSafety::Unsafe
-  } else {
-    DefinitionSafety::Safe
-  }
+  if is_unsafe { DefinitionSafety::Unsafe } else { DefinitionSafety::Safe }
 }
 
 /// Determine which batch a `.brecOn` definition belongs to.

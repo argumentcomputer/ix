@@ -33,6 +33,30 @@ impl Named {
   }
 }
 
+/// Nested-auxiliary layout info for a mutual inductive block.
+///
+/// Paired perm + source_ctor_counts so consumers have everything needed to
+/// correctly permute source-order aux motives/minors into canonical
+/// positions. Both arrays have one entry per source-walk-discovered aux.
+///
+/// This lives in `ixon::env` (not `compile::surgery`, where it originated)
+/// so it can be persisted into the serialized Ixon environment as a
+/// side-table on [`Env::aux_layouts`]. The surgery layer re-exports it.
+///
+/// Keyed by `<source_all[0]>` — the first inductive in the Lean source's
+/// mutual block, which is what Lean hangs `.rec_N` / `.below_N` /
+/// `.brecOn_N` names off.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AuxLayout {
+  /// `perm[source_j] = canonical_i`: Lean's source-walk position to
+  /// our canonical hash-sorted position.
+  pub perm: Vec<usize>,
+  /// Number of constructors for the aux inductive at source position j.
+  /// Same count regardless of which position the aux ends up at
+  /// canonically (it's a property of the external nested inductive).
+  pub source_ctor_counts: Vec<usize>,
+}
+
 /// The Ixon environment.
 ///
 /// Contains five maps:

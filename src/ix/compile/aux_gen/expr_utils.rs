@@ -28,7 +28,7 @@ use lean_ffi::nat::Nat;
 /// FVar space. The `fvar_name` is a unique identifier; `binder_name` is
 /// the cosmetic name that appears in the final forall/lambda chain.
 #[derive(Clone)]
-pub(super) struct LocalDecl {
+pub(crate) struct LocalDecl {
   pub fvar_name: Name,
   pub binder_name: Name,
   pub domain: LeanExpr,
@@ -36,7 +36,7 @@ pub(super) struct LocalDecl {
 }
 
 /// Create a fresh FVar with a unique name derived from `prefix` and `idx`.
-pub(super) fn fresh_fvar(prefix: &str, idx: usize) -> (Name, LeanExpr) {
+pub(crate) fn fresh_fvar(prefix: &str, idx: usize) -> (Name, LeanExpr) {
   let name = Name::str(Name::anon(), format!("_{}_{}", prefix, idx));
   let fvar = LeanExpr::fvar(name.clone());
   (name, fvar)
@@ -73,10 +73,6 @@ pub(super) struct IndRecInfo {
   /// head applied to all params (supplied via `param_fvars`) and indices
   /// as FVars.
   pub major: LocalDecl,
-
-  /// Target sort level (the level of `I params indices`). `Level::zero()`
-  /// for Prop-valued inductives.
-  pub target_level: Level,
 }
 
 /// Decompose an inductive's stored type into its recursor-structural
@@ -196,20 +192,17 @@ pub(super) fn decompose_inductive_type(
   }
 
   // Target sort.
-  let target_level = match cur.as_data() {
-    ExprData::Sort(lvl, _) => lvl.clone(),
-    _ => {
-      return Err(CompileError::InvalidMutualBlock {
-        reason: format!(
-          "decompose_inductive_type({}): peeled {n_params} params + {} \
-           indices; expected remaining body to be a Sort, got something \
-           else",
-          ind.cnst.name.pretty(),
-          indices.len(),
-        ),
-      });
-    },
-  };
+  if !matches!(cur.as_data(), ExprData::Sort(_, _)) {
+    return Err(CompileError::InvalidMutualBlock {
+      reason: format!(
+        "decompose_inductive_type({}): peeled {n_params} params + {} \
+         indices; expected remaining body to be a Sort, got something \
+         else",
+        ind.cnst.name.pretty(),
+        indices.len(),
+      ),
+    });
+  }
 
   // Major domain: `I params indices`, all FVars.
   let mut major_dom = mk_const(&ind.cnst.name, ind_univs);
@@ -228,7 +221,7 @@ pub(super) fn decompose_inductive_type(
     info: BinderInfo::Default,
   };
 
-  Ok(IndRecInfo { indices, major, target_level })
+  Ok(IndRecInfo { indices, major })
 }
 
 /// Open N leading foralls of `expr`, replacing each BVar(0) with a fresh
@@ -254,7 +247,7 @@ pub(super) fn decompose_inductive_type(
 /// position MUST verify `decls.len() == n` before indexing — otherwise
 /// a surprising input shape becomes a panic. Prefer
 /// [`forall_telescope_exact`] when a precise arity is required.
-pub(super) fn forall_telescope(
+pub(crate) fn forall_telescope(
   expr: &LeanExpr,
   n: usize,
   prefix: &str,
@@ -316,7 +309,9 @@ pub(super) fn forall_telescope_exact(
     // caller already prefixed this with the recursor name via `context`.
     let binder_list: Vec<String> = decls
       .iter()
-      .map(|d| format!("{}:{}", d.binder_name.pretty(), describe_expr_head(&d.domain)))
+      .map(|d| {
+        format!("{}:{}", d.binder_name.pretty(), describe_expr_head(&d.domain))
+      })
       .collect();
     return Err(crate::ix::ixon::CompileError::UnsupportedExpr {
       desc: format!(
@@ -944,9 +939,129 @@ pub(super) struct RestoreCtx {
   pub block_param_fvars: Vec<LeanExpr>,
   /// Number of block parameters.
   pub n_params: usize,
+  /// Block-scoped cache initialised on the first `restore()` call and
+  /// reused by every subsequent call on this context.
+  ///
+  /// Why this is safe to share across calls: `forall_telescope` /
+  /// `lambda_telescope` allocate FVars via the deterministic
+  /// `fresh_fvar("rp", i)` scheme (see `fresh_fvar` in this file), so
+  /// `subst_fvars` is identical for every `restore()` call — any
+  /// per-aux precomputation (`batch_abstract` + `instantiate_rev`)
+  /// yields the same result, and `walk_cache` entries keyed on an
+  /// expression hash remain valid regardless of which restored
+  /// expression first populated them.
+  cached: std::cell::RefCell<Option<RestoreStateCache>>,
+}
+
+/// The block-scoped cached state referenced by `RestoreCtx::cached`.
+/// Populated lazily on the first `restore()` call.
+struct RestoreStateCache {
+  /// `aux_name → nested instantiated with the per-call subst_fvars`.
+  ///
+  /// Previously `replace_walk` recomputed `batch_abstract` +
+  /// `instantiate_rev` on every encounter of an aux, even though the
+  /// inputs were identical across the entire block; now materialised
+  /// once.
+  aux_restored: rustc_hash::FxHashMap<Name, LeanExpr>,
+  /// `aux_ind name → (orig_head_levels, orig_ind_args)` derived from
+  /// decomposing the restored nested expression. Used for the aux-ctor
+  /// restoration path where we need to rebuild
+  /// `orig_ctor.{I_lvls} spec_params`.
+  aux_decomp:
+    rustc_hash::FxHashMap<Name, (Vec<crate::ix::env::Level>, Vec<LeanExpr>)>,
+  /// Walk memoization shared across every `restore()` call on this
+  /// context. DAG-shared subterms between recursor rules collapse to a
+  /// single rewrite.
+  walk_cache: rustc_hash::FxHashMap<blake3::Hash, LeanExpr>,
+}
+
+/// Per-call borrow of the cached state. The lifetime ties the state's
+/// `RefCell` borrow to the `replace_walk` call chain.
+struct RestoreState<'a> {
+  ctx: &'a RestoreCtx,
+  cache: std::cell::RefMut<'a, RestoreStateCache>,
 }
 
 impl RestoreCtx {
+  /// Build a context with an empty cache. The cache is populated lazily
+  /// on the first `restore()` call.
+  pub(super) fn new(
+    aux_to_nested: rustc_hash::FxHashMap<Name, LeanExpr>,
+    aux_ctor_map: rustc_hash::FxHashMap<Name, (Name, Name)>,
+    aux_rec_map: rustc_hash::FxHashMap<Name, Name>,
+    block_param_fvars: Vec<LeanExpr>,
+    n_params: usize,
+  ) -> Self {
+    Self {
+      aux_to_nested,
+      aux_ctor_map,
+      aux_rec_map,
+      block_param_fvars,
+      n_params,
+      cached: std::cell::RefCell::new(None),
+    }
+  }
+
+  /// Lazily initialise the cached per-aux substitution + walk cache.
+  ///
+  /// Called at the top of every `restore()` invocation. The cache is
+  /// keyed implicitly on `(self.n_params, self.aux_to_nested,
+  /// self.block_param_fvars)` — all inherent to the `RestoreCtx` —
+  /// which means entries populated by one call remain valid for every
+  /// subsequent call on the same context.
+  fn ensure_cache(&self) {
+    if self.cached.borrow().is_some() {
+      return;
+    }
+
+    // Canonical telescope FVars: every real `restore()` call uses
+    // `forall_telescope`/`lambda_telescope` which in turn allocate via
+    // `fresh_fvar("rp", i)` — deterministic on the index — so these
+    // are the exact FVars every call sees after peeling.
+    let as_fvars: Vec<LeanExpr> = (0..self.n_params)
+      .map(|i| {
+        let (_, fv) = fresh_fvar("rp", i);
+        fv
+      })
+      .collect();
+    let subst_fvars: Vec<LeanExpr> = as_fvars.iter().rev().cloned().collect();
+
+    let bp_fvar_map: rustc_hash::FxHashMap<Name, usize> = self
+      .block_param_fvars
+      .iter()
+      .enumerate()
+      .filter_map(|(i, fv)| match fv.as_data() {
+        ExprData::Fvar(n, _) => Some((n.clone(), i)),
+        _ => None,
+      })
+      .collect();
+
+    let mut aux_restored: rustc_hash::FxHashMap<Name, LeanExpr> =
+      rustc_hash::FxHashMap::with_capacity_and_hasher(
+        self.aux_to_nested.len(),
+        Default::default(),
+      );
+    let mut aux_decomp: rustc_hash::FxHashMap<
+      Name,
+      (Vec<crate::ix::env::Level>, Vec<LeanExpr>),
+    > = rustc_hash::FxHashMap::default();
+    for (aux_name, nested) in &self.aux_to_nested {
+      let abstracted = batch_abstract(nested, &bp_fvar_map, self.n_params, 0);
+      let restored = instantiate_rev(&abstracted, &subst_fvars);
+      let (orig_head, orig_args) = decompose_apps(&restored);
+      if let ExprData::Const(_, orig_levels, _) = orig_head.as_data() {
+        aux_decomp.insert(aux_name.clone(), (orig_levels.clone(), orig_args));
+      }
+      aux_restored.insert(aux_name.clone(), restored);
+    }
+
+    *self.cached.borrow_mut() = Some(RestoreStateCache {
+      aux_restored,
+      aux_decomp,
+      walk_cache: rustc_hash::FxHashMap::default(),
+    });
+  }
+
   /// Restore a complete expression (type or value) by peeling params,
   /// walking the body to replace aux references, and re-wrapping.
   ///
@@ -959,46 +1074,53 @@ impl RestoreCtx {
       return expr.clone();
     }
 
-    // Peel n_params Pi or Lambda binders, creating fresh locals.
+    self.ensure_cache();
+
+    // Peel n_params Pi or Lambda binders, creating fresh locals. These
+    // coincide with the FVars used by `ensure_cache` to precompute
+    // `aux_restored`.
     let is_pi = matches!(expr.as_data(), ExprData::ForallE(..));
-    let (as_fvars, as_decls, body) = if is_pi {
+    let (_as_fvars, as_decls, body) = if is_pi {
       forall_telescope(expr, self.n_params, "rp", 0)
     } else {
       lambda_telescope(expr, self.n_params, "rp", 0)
     };
 
-    // Build FVar map for block_param_fvars → BVar abstraction.
-    let bp_fvar_map: rustc_hash::FxHashMap<Name, usize> = self
-      .block_param_fvars
-      .iter()
-      .enumerate()
-      .filter_map(|(i, fv)| match fv.as_data() {
-        ExprData::Fvar(n, _) => Some((n.clone(), i)),
-        _ => None,
-      })
-      .collect();
+    let cache_borrow = self.cached.borrow_mut();
+    let cache_ref = std::cell::RefMut::map(cache_borrow, |c| {
+      c.as_mut().expect("RestoreStateCache must be initialised")
+    });
+    let mut state = RestoreState { ctx: self, cache: cache_ref };
 
-    // Walk the body, replacing aux references.
-    let restored_body = self.replace_walk(&body, &as_fvars, &bp_fvar_map);
+    let restored_body = state.replace_walk(&body);
 
-    // Re-wrap with the same binder structure.
     if is_pi {
       mk_forall(restored_body, &as_decls)
     } else {
       mk_lambda(restored_body, &as_decls)
     }
   }
+}
 
+impl<'a> RestoreState<'a> {
   /// Walk an expression and replace auxiliary const references.
-  fn replace_walk(
-    &self,
-    e: &LeanExpr,
-    as_fvars: &[LeanExpr],
-    bp_fvar_map: &rustc_hash::FxHashMap<Name, usize>,
-  ) -> LeanExpr {
+  ///
+  /// Memoizes on `e`'s structural hash. DAG-shared subterms are visited
+  /// once regardless of how many times they appear in the walked tree.
+  fn replace_walk(&mut self, e: &LeanExpr) -> LeanExpr {
+    let key = *e.get_hash();
+    if let Some(cached) = self.cache.walk_cache.get(&key) {
+      return cached.clone();
+    }
+    let result = self.replace_walk_uncached(e);
+    self.cache.walk_cache.insert(key, result.clone());
+    result
+  }
+
+  fn replace_walk_uncached(&mut self, e: &LeanExpr) -> LeanExpr {
     // Check for bare Const matching aux_rec_map (recursor rename).
     if let ExprData::Const(name, levels, _) = e.as_data() {
-      if let Some(new_name) = self.aux_rec_map.get(name) {
+      if let Some(new_name) = self.ctx.aux_rec_map.get(name) {
         return LeanExpr::cnst(new_name.clone(), levels.clone());
       }
     }
@@ -1007,8 +1129,8 @@ impl RestoreCtx {
     let (head, args) = decompose_apps(e);
     if let ExprData::Const(name, levels, _) = head.as_data() {
       // Case 1: aux type reference → replace with original nested app.
-      if let Some(nested) = self.aux_to_nested.get(name) {
-        let n = self.n_params;
+      if let Some(restored) = self.cache.aux_restored.get(name).cloned() {
+        let n = self.ctx.n_params;
         debug_assert!(
           args.len() >= n,
           "restore: aux {} has {} args but n_params={}",
@@ -1016,16 +1138,10 @@ impl RestoreCtx {
           args.len(),
           n,
         );
-        // abstract(nested, block_param_fvars) → instantiate_rev(_, As)
-        let abstracted = batch_abstract(nested, bp_fvar_map, n, 0);
-        let new_t = instantiate_rev(&abstracted, as_fvars);
         // Apply remaining args (indices past params).
-        let mut result = new_t;
+        let mut result = restored;
         for idx_arg in args.iter().skip(n) {
-          result = LeanExpr::app(
-            result,
-            self.replace_walk(idx_arg, as_fvars, bp_fvar_map),
-          );
+          result = LeanExpr::app(result, self.replace_walk(idx_arg));
         }
         return result;
       }
@@ -1039,48 +1155,40 @@ impl RestoreCtx {
       // `aux_ctor_map` stores `(orig_ctor, aux_ind)`, so we can look up the
       // aux inductive's nested expression in `aux_to_nested` directly — no
       // prefix scan needed.
-      if let Some((orig_ctor, aux_ind)) = self.aux_ctor_map.get(name) {
-        if let Some(nested) = self.aux_to_nested.get(aux_ind) {
-          // nested = "OrigInd.{I_lvls} spec_params" with block_param_fvars
-          let abstracted =
-            batch_abstract(nested, bp_fvar_map, self.n_params, 0);
-          let new_nested = instantiate_rev(&abstracted, as_fvars);
-          // Decompose: head = OrigInd.{I_lvls}, args = spec_params
-          let (orig_head, orig_ind_args) = decompose_apps(&new_nested);
-          if let ExprData::Const(_, orig_levels, _) = orig_head.as_data() {
-            // Build: orig_ctor.{I_lvls} spec_params remaining_args
-            let new_fn = LeanExpr::cnst(orig_ctor.clone(), orig_levels.clone());
-            let mut result = new_fn;
-            for a in &orig_ind_args {
-              result = LeanExpr::app(result, a.clone());
-            }
-            for idx_arg in args.iter().skip(self.n_params) {
-              result = LeanExpr::app(
-                result,
-                self.replace_walk(idx_arg, as_fvars, bp_fvar_map),
-              );
-            }
-            return result;
+      if let Some((orig_ctor, aux_ind)) = self.ctx.aux_ctor_map.get(name) {
+        if let Some((orig_levels, orig_ind_args)) =
+          self.cache.aux_decomp.get(aux_ind).cloned()
+        {
+          // Build: orig_ctor.{I_lvls} spec_params remaining_args
+          let new_fn = LeanExpr::cnst(orig_ctor.clone(), orig_levels);
+          let mut result = new_fn;
+          for a in orig_ind_args {
+            result = LeanExpr::app(result, a);
           }
+          for idx_arg in args.iter().skip(self.ctx.n_params) {
+            result = LeanExpr::app(result, self.replace_walk(idx_arg));
+          }
+          return result;
         }
 
-        // Fallback: just rename the const and recurse args.
+        // Fallback: just rename the const and recurse args. Hit when the
+        // aux's nested expression doesn't decompose to a Const head — in
+        // practice never, but kept for defensive parity with the original
+        // implementation.
         let new_head = LeanExpr::cnst(orig_ctor.clone(), levels.clone());
         let mut result = new_head;
         for a in &args {
-          result =
-            LeanExpr::app(result, self.replace_walk(a, as_fvars, bp_fvar_map));
+          result = LeanExpr::app(result, self.replace_walk(a));
         }
         return result;
       }
 
       // Case 3: aux rec name in application position.
-      if let Some(new_name) = self.aux_rec_map.get(name) {
+      if let Some(new_name) = self.ctx.aux_rec_map.get(name) {
         let new_head = LeanExpr::cnst(new_name.clone(), levels.clone());
         let mut result = new_head;
         for a in &args {
-          result =
-            LeanExpr::app(result, self.replace_walk(a, as_fvars, bp_fvar_map));
+          result = LeanExpr::app(result, self.replace_walk(a));
         }
         return result;
       }
@@ -1088,45 +1196,41 @@ impl RestoreCtx {
 
     // No match — recurse into sub-expressions.
     match e.as_data() {
-      ExprData::App(f, a, _) => LeanExpr::app(
-        self.replace_walk(f, as_fvars, bp_fvar_map),
-        self.replace_walk(a, as_fvars, bp_fvar_map),
-      ),
+      ExprData::App(f, a, _) => {
+        LeanExpr::app(self.replace_walk(f), self.replace_walk(a))
+      },
       ExprData::Lam(n, t, b, bi, _) => LeanExpr::lam(
         n.clone(),
-        self.replace_walk(t, as_fvars, bp_fvar_map),
-        self.replace_walk(b, as_fvars, bp_fvar_map),
+        self.replace_walk(t),
+        self.replace_walk(b),
         bi.clone(),
       ),
       ExprData::ForallE(n, t, b, bi, _) => LeanExpr::all(
         n.clone(),
-        self.replace_walk(t, as_fvars, bp_fvar_map),
-        self.replace_walk(b, as_fvars, bp_fvar_map),
+        self.replace_walk(t),
+        self.replace_walk(b),
         bi.clone(),
       ),
       ExprData::LetE(n, t, v, b, nd, _) => LeanExpr::letE(
         n.clone(),
-        self.replace_walk(t, as_fvars, bp_fvar_map),
-        self.replace_walk(v, as_fvars, bp_fvar_map),
-        self.replace_walk(b, as_fvars, bp_fvar_map),
+        self.replace_walk(t),
+        self.replace_walk(v),
+        self.replace_walk(b),
         *nd,
       ),
-      ExprData::Proj(n, i, val, _) => LeanExpr::proj(
-        n.clone(),
-        i.clone(),
-        self.replace_walk(val, as_fvars, bp_fvar_map),
-      ),
-      ExprData::Mdata(md, inner, _) => LeanExpr::mdata(
-        md.clone(),
-        self.replace_walk(inner, as_fvars, bp_fvar_map),
-      ),
+      ExprData::Proj(n, i, val, _) => {
+        LeanExpr::proj(n.clone(), i.clone(), self.replace_walk(val))
+      },
+      ExprData::Mdata(md, inner, _) => {
+        LeanExpr::mdata(md.clone(), self.replace_walk(inner))
+      },
       _ => e.clone(),
     }
   }
 }
 
 /// Open lambda binders into FVars (matching forall_telescope but for lambdas).
-pub(super) fn lambda_telescope(
+pub(crate) fn lambda_telescope(
   expr: &LeanExpr,
   n: usize,
   prefix: &str,
@@ -1244,10 +1348,38 @@ pub(super) fn beta_reduce(expr: &LeanExpr) -> LeanExpr {
 /// member, rewrites the Const's levels to `occurrence_level_args`.
 ///
 /// Non-nested occurrences (like `Array Nat`) are left unchanged.
-pub(super) fn rewrite_nested_const_levels(
+/// Rewrite nested-aux `Const` level args with a caller-managed cache.
+///
+/// Use a shared cache when rewriting multiple expressions against the
+/// SAME `aux_info` and `block_names` — every constructor type in a
+/// block, every recursor rule, etc. — so DAG-shared subterms (common in
+/// Mathlib ctor types with shared implicit-arg prefixes) collapse to a
+/// single traversal per unique subterm.
+///
+/// The cache must only be reused across calls whose `aux_info` and
+/// `block_names` are identical; mixing keys between maps would return
+/// stale rewrites.
+pub(super) fn rewrite_nested_const_levels_cached(
   expr: &LeanExpr,
   aux_info: &std::collections::HashMap<Name, (usize, Vec<Level>)>,
-  block_names: &[Name],
+  block_names: &rustc_hash::FxHashSet<Name>,
+  cache: &mut rustc_hash::FxHashMap<blake3::Hash, LeanExpr>,
+) -> LeanExpr {
+  let key = *expr.get_hash();
+  if let Some(cached) = cache.get(&key) {
+    return cached.clone();
+  }
+  let result =
+    rewrite_nested_const_levels_walk(expr, aux_info, block_names, cache);
+  cache.insert(key, result.clone());
+  result
+}
+
+fn rewrite_nested_const_levels_walk(
+  expr: &LeanExpr,
+  aux_info: &std::collections::HashMap<Name, (usize, Vec<Level>)>,
+  block_names: &rustc_hash::FxHashSet<Name>,
+  cache: &mut rustc_hash::FxHashMap<blake3::Hash, LeanExpr>,
 ) -> LeanExpr {
   // Try to decompose as an application of an auxiliary Const.
   let (head, args) = decompose_apps(expr);
@@ -1264,7 +1396,7 @@ pub(super) fn rewrite_nested_const_levels(
         for a in &args {
           result = LeanExpr::app(
             result,
-            rewrite_nested_const_levels(a, aux_info, block_names),
+            rewrite_nested_const_levels_cached(a, aux_info, block_names, cache),
           );
         }
         return result;
@@ -1275,36 +1407,36 @@ pub(super) fn rewrite_nested_const_levels(
   // Not a rewritable app — recurse into sub-expressions.
   match expr.as_data() {
     ExprData::App(f, a, _) => LeanExpr::app(
-      rewrite_nested_const_levels(f, aux_info, block_names),
-      rewrite_nested_const_levels(a, aux_info, block_names),
+      rewrite_nested_const_levels_cached(f, aux_info, block_names, cache),
+      rewrite_nested_const_levels_cached(a, aux_info, block_names, cache),
     ),
     ExprData::Lam(n, t, b, bi, _) => LeanExpr::lam(
       n.clone(),
-      rewrite_nested_const_levels(t, aux_info, block_names),
-      rewrite_nested_const_levels(b, aux_info, block_names),
+      rewrite_nested_const_levels_cached(t, aux_info, block_names, cache),
+      rewrite_nested_const_levels_cached(b, aux_info, block_names, cache),
       bi.clone(),
     ),
     ExprData::ForallE(n, t, b, bi, _) => LeanExpr::all(
       n.clone(),
-      rewrite_nested_const_levels(t, aux_info, block_names),
-      rewrite_nested_const_levels(b, aux_info, block_names),
+      rewrite_nested_const_levels_cached(t, aux_info, block_names, cache),
+      rewrite_nested_const_levels_cached(b, aux_info, block_names, cache),
       bi.clone(),
     ),
     ExprData::LetE(n, t, v, b, nd, _) => LeanExpr::letE(
       n.clone(),
-      rewrite_nested_const_levels(t, aux_info, block_names),
-      rewrite_nested_const_levels(v, aux_info, block_names),
-      rewrite_nested_const_levels(b, aux_info, block_names),
+      rewrite_nested_const_levels_cached(t, aux_info, block_names, cache),
+      rewrite_nested_const_levels_cached(v, aux_info, block_names, cache),
+      rewrite_nested_const_levels_cached(b, aux_info, block_names, cache),
       *nd,
     ),
     ExprData::Proj(n, i, e, _) => LeanExpr::proj(
       n.clone(),
       i.clone(),
-      rewrite_nested_const_levels(e, aux_info, block_names),
+      rewrite_nested_const_levels_cached(e, aux_info, block_names, cache),
     ),
     ExprData::Mdata(md, e, _) => LeanExpr::mdata(
       md.clone(),
-      rewrite_nested_const_levels(e, aux_info, block_names),
+      rewrite_nested_const_levels_cached(e, aux_info, block_names, cache),
     ),
     _ => expr.clone(),
   }
@@ -1448,44 +1580,75 @@ pub(super) fn replace_const_names(
   if map.is_empty() {
     return expr.clone();
   }
-  match expr.as_data() {
+  let mut cache: rustc_hash::FxHashMap<blake3::Hash, LeanExpr> =
+    rustc_hash::FxHashMap::default();
+  replace_const_names_cached(expr, map, &mut cache)
+}
+
+/// Like [`replace_const_names`] but accepts a caller-managed memoization
+/// cache. Use this when calling the rewriter many times with the SAME
+/// `map` in a tight loop — typical for `expand_nested_block`'s alias
+/// pass and `compute_aux_perm`'s spec-param normalization, where
+/// multiple expressions share large DAG substructure. The cache must
+/// only be reused for calls with identical `map`; using one cache
+/// across different maps would return stale results.
+pub(super) fn replace_const_names_cached(
+  expr: &LeanExpr,
+  map: &std::collections::HashMap<Name, Name>,
+  cache: &mut rustc_hash::FxHashMap<blake3::Hash, LeanExpr>,
+) -> LeanExpr {
+  if map.is_empty() {
+    return expr.clone();
+  }
+  let key = *expr.get_hash();
+  if let Some(cached) = cache.get(&key) {
+    return cached.clone();
+  }
+  let result = match expr.as_data() {
     ExprData::Const(name, lvls, _) => {
       let new_name = map.get(name).cloned().unwrap_or_else(|| name.clone());
       LeanExpr::cnst(new_name, lvls.clone())
     },
-    ExprData::App(f, a, _) => {
-      LeanExpr::app(replace_const_names(f, map), replace_const_names(a, map))
-    },
+    ExprData::App(f, a, _) => LeanExpr::app(
+      replace_const_names_cached(f, map, cache),
+      replace_const_names_cached(a, map, cache),
+    ),
     ExprData::ForallE(n, d, b, bi, _) => LeanExpr::all(
       n.clone(),
-      replace_const_names(d, map),
-      replace_const_names(b, map),
+      replace_const_names_cached(d, map, cache),
+      replace_const_names_cached(b, map, cache),
       bi.clone(),
     ),
     ExprData::Lam(n, d, b, bi, _) => LeanExpr::lam(
       n.clone(),
-      replace_const_names(d, map),
-      replace_const_names(b, map),
+      replace_const_names_cached(d, map, cache),
+      replace_const_names_cached(b, map, cache),
       bi.clone(),
     ),
     ExprData::LetE(n, t, v, b, nd, _) => LeanExpr::letE(
       n.clone(),
-      replace_const_names(t, map),
-      replace_const_names(v, map),
-      replace_const_names(b, map),
+      replace_const_names_cached(t, map, cache),
+      replace_const_names_cached(v, map, cache),
+      replace_const_names_cached(b, map, cache),
       *nd,
     ),
     ExprData::Proj(type_name, idx, e, _) => {
       let new_type_name =
         map.get(type_name).cloned().unwrap_or_else(|| type_name.clone());
-      LeanExpr::proj(new_type_name, idx.clone(), replace_const_names(e, map))
+      LeanExpr::proj(
+        new_type_name,
+        idx.clone(),
+        replace_const_names_cached(e, map, cache),
+      )
     },
     ExprData::Mdata(kvs, e, _) => {
-      LeanExpr::mdata(kvs.clone(), replace_const_names(e, map))
+      LeanExpr::mdata(kvs.clone(), replace_const_names_cached(e, map, cache))
     },
     // BVar, FVar, MVar, Sort, Lit — no constant names to replace.
     _ => expr.clone(),
-  }
+  };
+  cache.insert(key, result.clone());
+  result
 }
 
 /// This replaces the BVar-range-based `is_motive_application` and
@@ -1756,11 +1919,12 @@ pub(crate) fn ensure_prelude_in_kenv_of(
 ///   parent inductive and its sibling constructors, which is the one
 ///   place we *do* walk downstream (because kernel TC for a ctor use
 ///   requires the parent).
-pub(crate) fn ensure_in_kenv_of(
+fn ensure_in_kenv_of_inner(
   name: &Name,
   lean_env: &crate::ix::env::Env,
   stt: &crate::ix::compile::CompileState,
   kctx: &crate::ix::compile::KernelCtx,
+  replace_axio_stub: bool,
 ) {
   use crate::ix::env::{ConstantInfo as LCI, DefinitionSafety};
   use crate::ix::kernel::constant::KConst;
@@ -1775,8 +1939,14 @@ pub(crate) fn ensure_in_kenv_of(
   let addr = resolve_lean_name_addr(name, n2a, aux_n2a);
   let zid: KId<Meta> = KId::new(addr, name.clone());
 
-  if kctx.kenv.get(&zid).is_some() {
-    return; // Already loaded.
+  if let Some(existing) = kctx.kenv.get(&zid) {
+    // Most aux_gen ingress paths only need type-only stubs. When a later
+    // WHNF path needs a real definition/inductive, allow replacing those
+    // stubs; never overwrite already-real entries such as the current
+    // canonical mutual block.
+    if !replace_axio_stub || !matches!(existing, KConst::Axio { .. }) {
+      return; // Already loaded.
+    }
   }
 
   let Some(ci) = lean_env.get(name).cloned() else { return };
@@ -1933,13 +2103,40 @@ pub(crate) fn ensure_in_kenv_of(
     },
     LCI::CtorInfo(ctor) => {
       // Constructors are ingressed as part of their parent inductive.
-      ensure_in_kenv_of(&ctor.induct, lean_env, stt, kctx);
+      ensure_in_kenv_of_inner(
+        &ctor.induct,
+        lean_env,
+        stt,
+        kctx,
+        replace_axio_stub,
+      );
     },
     LCI::RecInfo(_) => {
       // Recursors are generated by the kernel, not ingressed from Lean.
       // They'll be created when check_inductive runs on the parent.
     },
   }
+}
+
+pub(crate) fn ensure_in_kenv_of(
+  name: &Name,
+  lean_env: &crate::ix::env::Env,
+  stt: &crate::ix::compile::CompileState,
+  kctx: &crate::ix::compile::KernelCtx,
+) {
+  ensure_in_kenv_of_inner(name, lean_env, stt, kctx, false);
+}
+
+/// Like [`ensure_in_kenv_of`], but upgrades an existing type-only `Axio`
+/// stub into the real constant. This is required before WHNF paths that must
+/// unfold reducible definitions or inspect inductive/ctor metadata.
+pub(crate) fn ensure_full_in_kenv_of(
+  name: &Name,
+  lean_env: &crate::ix::env::Env,
+  stt: &crate::ix::compile::CompileState,
+  kctx: &crate::ix::compile::KernelCtx,
+) {
+  ensure_in_kenv_of_inner(name, lean_env, stt, kctx, true);
 }
 
 /// Convenience wrapper: ingress into the **original** kenv (`stt.kctx`).
@@ -2510,5 +2707,480 @@ fn to_kexpr_static(
     _ => crate::ix::kernel::expr::KExpr::sort(
       crate::ix::kernel::level::KUniv::zero(),
     ),
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::ix::env::BinderInfo;
+
+  fn mk_name_for(s: &str) -> Name {
+    let mut n = Name::anon();
+    for part in s.split('.') {
+      n = Name::str(n, part.to_string());
+    }
+    n
+  }
+
+  fn sort0() -> LeanExpr {
+    LeanExpr::sort(Level::zero())
+  }
+
+  fn bvar_at(i: u64) -> LeanExpr {
+    LeanExpr::bvar(Nat::from(i))
+  }
+
+  /// `∀ (a : α) (b : β) (c : γ), body`
+  fn mk_triple_forall(
+    a: LeanExpr,
+    b: LeanExpr,
+    c: LeanExpr,
+    body: LeanExpr,
+  ) -> LeanExpr {
+    LeanExpr::all(
+      mk_name_for("a"),
+      a,
+      LeanExpr::all(
+        mk_name_for("b"),
+        b,
+        LeanExpr::all(mk_name_for("c"), c, body, BinderInfo::Default),
+        BinderInfo::Default,
+      ),
+      BinderInfo::Default,
+    )
+  }
+
+  fn is_fvar_with_name(e: &LeanExpr, expected: &Name) -> bool {
+    matches!(e.as_data(), ExprData::Fvar(n, _) if n == expected)
+  }
+
+  // ---- fresh_fvar ----
+
+  #[test]
+  fn fresh_fvar_produces_unique_names() {
+    let (n1, f1) = fresh_fvar("p", 0);
+    let (n2, f2) = fresh_fvar("p", 1);
+    assert_ne!(n1, n2);
+    assert!(is_fvar_with_name(&f1, &n1));
+    assert!(is_fvar_with_name(&f2, &n2));
+  }
+
+  #[test]
+  fn fresh_fvar_prefix_changes_name() {
+    let (na, _) = fresh_fvar("a", 0);
+    let (nb, _) = fresh_fvar("b", 0);
+    assert_ne!(na, nb);
+  }
+
+  // ---- forall_telescope ----
+
+  #[test]
+  fn forall_telescope_opens_exactly_n_binders() {
+    let e = mk_triple_forall(sort0(), sort0(), sort0(), bvar_at(0));
+    let (fvars, decls, body) = forall_telescope(&e, 3, "p", 0);
+    assert_eq!(fvars.len(), 3);
+    assert_eq!(decls.len(), 3);
+    // After instantiating all three foralls, body BVar(0) became the
+    // innermost FVar.
+    match body.as_data() {
+      ExprData::Fvar(n, _) => assert_eq!(n, &decls[2].fvar_name),
+      other => panic!("expected innermost FVar in body, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn forall_telescope_partial_with_too_small_n() {
+    let e = mk_triple_forall(sort0(), sort0(), sort0(), bvar_at(0));
+    let (fvars, decls, body) = forall_telescope(&e, 2, "p", 0);
+    assert_eq!(fvars.len(), 2);
+    assert_eq!(decls.len(), 2);
+    // Body is still a forall because we didn't peel the innermost.
+    assert!(matches!(body.as_data(), ExprData::ForallE(..)));
+  }
+
+  #[test]
+  fn forall_telescope_requests_more_than_available_stops_early() {
+    // Body is not a forall; telescope caps at 1.
+    let e =
+      LeanExpr::all(mk_name_for("x"), sort0(), bvar_at(0), BinderInfo::Default);
+    let (fvars, decls, _body) = forall_telescope(&e, 5, "p", 0);
+    assert_eq!(fvars.len(), 1);
+    assert_eq!(decls.len(), 1);
+  }
+
+  #[test]
+  fn forall_telescope_peels_mdata() {
+    // ∀ (x : α), Mdata(_, ∀ (y : β), body)
+    let inner_forall =
+      LeanExpr::all(mk_name_for("y"), sort0(), bvar_at(0), BinderInfo::Default);
+    let with_mdata = LeanExpr::mdata(vec![], inner_forall);
+    let outer =
+      LeanExpr::all(mk_name_for("x"), sort0(), with_mdata, BinderInfo::Default);
+    let (_, decls, _) = forall_telescope(&outer, 2, "p", 0);
+    assert_eq!(decls.len(), 2, "mdata should be transparent");
+  }
+
+  #[test]
+  fn forall_telescope_uses_start_idx_offset() {
+    let e = mk_triple_forall(sort0(), sort0(), sort0(), bvar_at(0));
+    let (_, decls1, _) = forall_telescope(&e, 1, "p", 0);
+    let (_, decls2, _) = forall_telescope(&e, 1, "p", 10);
+    assert_ne!(decls1[0].fvar_name, decls2[0].fvar_name);
+  }
+
+  #[test]
+  fn forall_telescope_exact_errors_on_short() {
+    let e =
+      LeanExpr::all(mk_name_for("x"), sort0(), sort0(), BinderInfo::Default);
+    let r = forall_telescope_exact(&e, 5, "p", 0, "test", "binders");
+    assert!(r.is_err());
+  }
+
+  // ---- decompose_apps ----
+
+  #[test]
+  fn decompose_apps_non_app() {
+    let e = sort0();
+    let (head, args) = decompose_apps(&e);
+    assert_eq!(args.len(), 0);
+    assert_eq!(head.get_hash(), e.get_hash());
+  }
+
+  #[test]
+  fn decompose_apps_left_deep_order() {
+    // ((f a) b) c → head=f, args=[a, b, c]
+    let f = LeanExpr::cnst(mk_name_for("f"), vec![]);
+    let a = sort0();
+    let b = LeanExpr::sort(Level::succ(Level::zero()));
+    let c = bvar_at(0);
+    let e = LeanExpr::app(
+      LeanExpr::app(LeanExpr::app(f.clone(), a.clone()), b.clone()),
+      c.clone(),
+    );
+    let (head, args) = decompose_apps(&e);
+    assert_eq!(head.get_hash(), f.get_hash());
+    assert_eq!(args.len(), 3);
+    assert_eq!(args[0].get_hash(), a.get_hash());
+    assert_eq!(args[1].get_hash(), b.get_hash());
+    assert_eq!(args[2].get_hash(), c.get_hash());
+  }
+
+  // ---- count_foralls ----
+
+  #[test]
+  fn count_foralls_counts_leading_only() {
+    let e = mk_triple_forall(sort0(), sort0(), sort0(), bvar_at(0));
+    assert_eq!(count_foralls(&e), 3);
+  }
+
+  #[test]
+  fn count_foralls_zero_on_non_forall() {
+    assert_eq!(count_foralls(&sort0()), 0);
+    assert_eq!(count_foralls(&bvar_at(7)), 0);
+  }
+
+  #[test]
+  fn count_foralls_does_not_enter_domain() {
+    // Forall with another forall in its domain — only one leading forall.
+    let e = LeanExpr::all(
+      mk_name_for("x"),
+      mk_triple_forall(sort0(), sort0(), sort0(), bvar_at(0)),
+      sort0(),
+      BinderInfo::Default,
+    );
+    assert_eq!(count_foralls(&e), 1);
+  }
+
+  // ---- mk_app_n ----
+
+  #[test]
+  fn mk_app_n_builds_left_deep_spine() {
+    let f = LeanExpr::cnst(mk_name_for("f"), vec![]);
+    let args = vec![sort0(), bvar_at(0), bvar_at(1)];
+    let e = mk_app_n(f.clone(), &args);
+    let (head, got_args) = decompose_apps(&e);
+    assert_eq!(head.get_hash(), f.get_hash());
+    assert_eq!(got_args.len(), args.len());
+  }
+
+  #[test]
+  fn mk_app_n_with_no_args_returns_head() {
+    let f = LeanExpr::cnst(mk_name_for("f"), vec![]);
+    let e = mk_app_n(f.clone(), &[]);
+    assert_eq!(e.get_hash(), f.get_hash());
+  }
+
+  // ---- mk_const ----
+
+  #[test]
+  fn mk_const_embeds_universes() {
+    let u = Level::param(mk_name_for("u"));
+    let e = mk_const(&mk_name_for("List"), &[u.clone()]);
+    match e.as_data() {
+      ExprData::Const(n, us, _) => {
+        assert_eq!(n, &mk_name_for("List"));
+        assert_eq!(us.len(), 1);
+      },
+      other => panic!("expected Const, got {other:?}"),
+    }
+  }
+
+  // ---- instantiate1 / instantiate1_at ----
+
+  #[test]
+  fn instantiate1_substitutes_bvar_0() {
+    // body = BVar(0), replacement = sort0 → sort0
+    let e = instantiate1(&bvar_at(0), &sort0());
+    assert_eq!(e.get_hash(), sort0().get_hash());
+  }
+
+  #[test]
+  fn instantiate1_shifts_bvar_above_depth_down() {
+    // body = BVar(3), replacement = sort0; BVar(3) -> BVar(2) (shifted down).
+    let e = instantiate1(&bvar_at(3), &sort0());
+    match e.as_data() {
+      ExprData::Bvar(n, _) => assert_eq!(nat_to_u64(n), 2),
+      other => panic!("expected Bvar, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn instantiate1_no_bvar_unchanged() {
+    let e = sort0();
+    let r = instantiate1(&e, &bvar_at(5));
+    assert_eq!(r.get_hash(), e.get_hash());
+  }
+
+  #[test]
+  fn instantiate1_at_non_zero_depth() {
+    // body = BVar(2), depth = 2, replacement = sort0.
+    let r = instantiate1_at(&bvar_at(2), &sort0(), 2);
+    assert_eq!(r.get_hash(), sort0().get_hash());
+  }
+
+  // ---- instantiate_rev ----
+
+  #[test]
+  fn instantiate_rev_empty_args_is_identity() {
+    let e = bvar_at(5);
+    let r = instantiate_rev(&e, &[]);
+    assert_eq!(r.get_hash(), e.get_hash());
+  }
+
+  #[test]
+  fn instantiate_rev_substitutes_multiple() {
+    // body = App(BVar(0), BVar(1)); args = [a, b]
+    // BVar(0) → a, BVar(1) → b
+    let a = LeanExpr::cnst(mk_name_for("a"), vec![]);
+    let b = LeanExpr::cnst(mk_name_for("b"), vec![]);
+    let body = LeanExpr::app(bvar_at(0), bvar_at(1));
+    let r = instantiate_rev(&body, &[a.clone(), b.clone()]);
+    let (f, args) = decompose_apps(&r);
+    assert_eq!(f.get_hash(), a.get_hash());
+    assert_eq!(args.len(), 1);
+    assert_eq!(args[0].get_hash(), b.get_hash());
+  }
+
+  // ---- subst_fvar ----
+
+  #[test]
+  fn subst_fvar_replaces_matching_fvar() {
+    let (nm, fv) = fresh_fvar("x", 0);
+    let r = subst_fvar(&fv, &nm, &sort0());
+    assert_eq!(r.get_hash(), sort0().get_hash());
+  }
+
+  #[test]
+  fn subst_fvar_leaves_unrelated_alone() {
+    let (_nm1, _fv1) = fresh_fvar("x", 0);
+    let (nm2, _fv2) = fresh_fvar("x", 1);
+    let e = sort0();
+    let r = subst_fvar(&e, &nm2, &bvar_at(99));
+    assert_eq!(r.get_hash(), e.get_hash());
+  }
+
+  #[test]
+  fn subst_fvar_goes_under_binders() {
+    let (nm, fv) = fresh_fvar("p", 0);
+    // λ (z : α), fv
+    let body =
+      LeanExpr::lam(mk_name_for("z"), sort0(), fv.clone(), BinderInfo::Default);
+    let r = subst_fvar(&body, &nm, &sort0());
+    match r.as_data() {
+      ExprData::Lam(_, _, inner, _, _) => {
+        assert_eq!(inner.get_hash(), sort0().get_hash());
+      },
+      other => panic!("expected Lam, got {other:?}"),
+    }
+  }
+
+  // ---- replace_const_names ----
+
+  #[test]
+  fn replace_const_names_empty_map_is_identity() {
+    let e = LeanExpr::cnst(mk_name_for("A"), vec![]);
+    let r = replace_const_names(&e, &std::collections::HashMap::new());
+    assert_eq!(r.get_hash(), e.get_hash());
+  }
+
+  #[test]
+  fn replace_const_names_renames_const() {
+    let mut map = std::collections::HashMap::new();
+    map.insert(mk_name_for("A"), mk_name_for("B"));
+    let e = LeanExpr::cnst(mk_name_for("A"), vec![]);
+    let r = replace_const_names(&e, &map);
+    match r.as_data() {
+      ExprData::Const(n, _, _) => assert_eq!(n, &mk_name_for("B")),
+      other => panic!("expected Const, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn replace_const_names_preserves_universes() {
+    let mut map = std::collections::HashMap::new();
+    map.insert(mk_name_for("List"), mk_name_for("Vec"));
+    let u = Level::param(mk_name_for("u"));
+    let e = LeanExpr::cnst(mk_name_for("List"), vec![u.clone()]);
+    let r = replace_const_names(&e, &map);
+    match r.as_data() {
+      ExprData::Const(n, us, _) => {
+        assert_eq!(n, &mk_name_for("Vec"));
+        assert_eq!(us.len(), 1);
+      },
+      other => panic!("expected Const, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn replace_const_names_renames_proj_type() {
+    let mut map = std::collections::HashMap::new();
+    map.insert(mk_name_for("Old"), mk_name_for("New"));
+    let e = LeanExpr::proj(mk_name_for("Old"), Nat::from(0u64), bvar_at(0));
+    let r = replace_const_names(&e, &map);
+    match r.as_data() {
+      ExprData::Proj(name, _, _, _) => assert_eq!(name, &mk_name_for("New")),
+      other => panic!("expected Proj, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn replace_const_names_nested_in_app_spine() {
+    let mut map = std::collections::HashMap::new();
+    map.insert(mk_name_for("A"), mk_name_for("B"));
+    let e = LeanExpr::app(
+      LeanExpr::cnst(mk_name_for("A"), vec![]),
+      LeanExpr::cnst(mk_name_for("A"), vec![]),
+    );
+    let r = replace_const_names(&e, &map);
+    let (head, args) = decompose_apps(&r);
+    match head.as_data() {
+      ExprData::Const(n, _, _) => assert_eq!(n, &mk_name_for("B")),
+      other => panic!("expected Const, got {other:?}"),
+    }
+    match args[0].as_data() {
+      ExprData::Const(n, _, _) => assert_eq!(n, &mk_name_for("B")),
+      other => panic!("expected Const, got {other:?}"),
+    }
+  }
+
+  // ---- consume_type_annotations ----
+
+  #[test]
+  fn consume_type_annotations_strips_known_wrappers() {
+    // `outParam α` reduces to `α`. We use a stub inductive name that the
+    // function recognizes.
+    use crate::ix::env::BinderInfo;
+    let inner = sort0();
+    let wrapped = LeanExpr::app(
+      LeanExpr::cnst(mk_name_for("outParam"), vec![]),
+      inner.clone(),
+    );
+    let r = consume_type_annotations(&wrapped);
+    assert_eq!(r.get_hash(), inner.get_hash());
+    // Use BinderInfo to suppress unused-import lint in this module.
+    let _ = BinderInfo::Default;
+  }
+
+  #[test]
+  fn consume_type_annotations_non_wrapper_unchanged() {
+    let e = sort0();
+    let r = consume_type_annotations(&e);
+    assert_eq!(r.get_hash(), e.get_hash());
+  }
+
+  // ---- mk_forall / mk_lambda + batch_abstract roundtrip ----
+
+  #[test]
+  fn mk_forall_roundtrips_with_forall_telescope() {
+    // Open a forall telescope, then reclose with mk_forall. Should match
+    // the original up to binder names (which are preserved via LocalDecl).
+    let orig = mk_triple_forall(sort0(), sort0(), sort0(), bvar_at(0));
+    let (_, decls, body) = forall_telescope(&orig, 3, "p", 0);
+    let rebuilt = mk_forall(body, &decls);
+    assert_eq!(rebuilt.get_hash(), orig.get_hash());
+  }
+
+  #[test]
+  fn mk_lambda_produces_lambda_not_forall() {
+    let (fv_name, fv) = fresh_fvar("p", 0);
+    let decl = LocalDecl {
+      fvar_name: fv_name,
+      binder_name: mk_name_for("x"),
+      domain: sort0(),
+      info: BinderInfo::Default,
+    };
+    let body = fv.clone();
+    let e = mk_lambda(body, &[decl]);
+    assert!(matches!(e.as_data(), ExprData::Lam(..)));
+  }
+
+  #[test]
+  fn mk_forall_empty_binders_returns_body_unchanged() {
+    let body = sort0();
+    let r = mk_forall(body.clone(), &[]);
+    assert_eq!(r.get_hash(), body.get_hash());
+  }
+
+  // ---- find_motive_fvar ----
+
+  #[test]
+  fn find_motive_fvar_direct_match() {
+    let (_, motive) = fresh_fvar("motive", 0);
+    let motives = vec![motive.clone()];
+    // dom = motive applied to some arg
+    let dom = LeanExpr::app(motive.clone(), bvar_at(0));
+    assert_eq!(find_motive_fvar(&dom, &motives), Some(0));
+  }
+
+  #[test]
+  fn find_motive_fvar_peels_foralls_then_matches() {
+    let (_, motive) = fresh_fvar("motive", 0);
+    let motives = vec![motive.clone()];
+    // ∀ (x : α), motive x
+    let dom = LeanExpr::all(
+      mk_name_for("x"),
+      sort0(),
+      LeanExpr::app(motive.clone(), bvar_at(0)),
+      BinderInfo::Default,
+    );
+    assert_eq!(find_motive_fvar(&dom, &motives), Some(0));
+  }
+
+  #[test]
+  fn find_motive_fvar_returns_correct_index() {
+    let (_, m1) = fresh_fvar("motive", 0);
+    let (_, m2) = fresh_fvar("motive", 1);
+    let motives = vec![m1.clone(), m2.clone()];
+    let dom = LeanExpr::app(m2.clone(), bvar_at(0));
+    assert_eq!(find_motive_fvar(&dom, &motives), Some(1));
+  }
+
+  #[test]
+  fn find_motive_fvar_no_match_returns_none() {
+    let (_, motive) = fresh_fvar("motive", 0);
+    let motives = vec![motive];
+    let dom = sort0();
+    assert_eq!(find_motive_fvar(&dom, &motives), None);
   }
 }
