@@ -829,8 +829,8 @@ pub fn compile_expr(
                 .as_ref()
                 .is_some_and(crate::ix::decompile::is_aux_gen_suffix);
               if !compiling_is_aux_regen {
-                if let Some(plan) = stt.call_site_plans.get(name) {
-                  if !plan.is_identity() {
+                if let Some(plan) = stt.call_site_plans.get(name)
+                  && !plan.is_identity() {
                     let expected_total = plan.n_params
                       + plan.n_source_motives
                       + plan.n_source_minors
@@ -978,9 +978,8 @@ pub fn compile_expr(
                       continue;
                     }
                   }
-                }
-                if let Some(plan) = stt.below_call_site_plans.get(name) {
-                  if !plan.is_identity() {
+                if let Some(plan) = stt.below_call_site_plans.get(name)
+                  && !plan.is_identity() {
                     let fixed_tail_len = plan.n_indices + 1; // indices + major
                     let expected_total =
                       plan.n_params + plan.n_source_motives + fixed_tail_len;
@@ -1080,9 +1079,8 @@ pub fn compile_expr(
                       continue;
                     }
                   }
-                }
-                if let Some(plan) = stt.brec_on_call_site_plans.get(name) {
-                  if !plan.is_identity() {
+                if let Some(plan) = stt.brec_on_call_site_plans.get(name)
+                  && !plan.is_identity() {
                     let fixed_tail_len = plan.n_indices + 1; // indices + major
                     let expected_total = plan.n_params
                       + plan.n_source_motives
@@ -1214,7 +1212,6 @@ pub fn compile_expr(
                       continue;
                     }
                   }
-                }
               }
             }
 
@@ -2414,7 +2411,7 @@ pub fn mk_indc(
   let mut ctors = Vec::with_capacity(ind.ctors.len());
   for ctor_name in &ind.ctors {
     if let Some(LeanConstantInfo::CtorInfo(c)) =
-      env.as_ref().get(ctor_name).as_deref()
+      env.as_ref().get(ctor_name)
     {
       ctors.push(c.clone());
     } else {
@@ -3067,7 +3064,7 @@ pub fn compile_const_no_aux(
   let mut lean_all: Vec<Name> = Vec::new();
   for n in all {
     if let Some(ci) = lean_env.get(n) {
-      let block_all = match &*ci {
+      let block_all = match ci {
         LeanConstantInfo::InductInfo(v) => &v.all,
         LeanConstantInfo::RecInfo(v) => &v.all,
         LeanConstantInfo::DefnInfo(v) => &v.all,
@@ -3094,7 +3091,7 @@ pub fn compile_const_no_aux(
     if !stt.aux_gen_extra_names.contains(n) {
       return None;
     }
-    match lean_env.get(n).as_deref() {
+    match lean_env.get(n) {
       Some(LeanConstantInfo::RecInfo(_)) => {
         // Distinguish .rec from .below.rec
         if matches!(n.as_data(), NameData::Str(p, _, _) if p.last_str() == Some("below"))
@@ -3133,7 +3130,7 @@ pub fn compile_const_no_aux(
       for n in all {
         if stt.aux_gen_extra_names.contains(n)
           && matches!(
-            lean_env.get(n).as_deref(),
+            lean_env.get(n),
             Some(LeanConstantInfo::RecInfo(_))
           )
         {
@@ -3145,12 +3142,12 @@ pub fn compile_const_no_aux(
       // Use .below's own .all, keep only inductives + their ctors.
       for n in all {
         if let Some(LeanConstantInfo::InductInfo(v)) =
-          lean_env.get(n).as_deref()
+          lean_env.get(n)
         {
           for a in &v.all {
             if stt.aux_gen_extra_names.contains(a)
               && let Some(LeanConstantInfo::InductInfo(bi)) =
-                lean_env.get(a).as_deref()
+                lean_env.get(a)
             {
               filtered.insert(a.clone());
               for ctor in &bi.ctors {
@@ -3168,7 +3165,7 @@ pub fn compile_const_no_aux(
       for a in &lean_all {
         if stt.aux_gen_extra_names.contains(a)
           && matches!(
-            lean_env.get(a).as_deref(),
+            lean_env.get(a),
             Some(LeanConstantInfo::DefnInfo(_))
           )
         {
@@ -3183,7 +3180,7 @@ pub fn compile_const_no_aux(
         let below_rec = Name::str(ind_name.clone(), "rec".to_string());
         if stt.aux_gen_extra_names.contains(&below_rec)
           && matches!(
-            lean_env.get(&below_rec).as_deref(),
+            lean_env.get(&below_rec),
             Some(LeanConstantInfo::RecInfo(_))
           )
         {
@@ -3471,7 +3468,7 @@ fn compile_const_inner(
     LeanConstantInfo::CtorInfo(val) => {
       // Constructors are compiled as part of their inductive
       if let Some(LeanConstantInfo::InductInfo(_)) =
-        lean_env.get(&val.induct).as_deref()
+        lean_env.get(&val.induct)
       {
         let _ = compile_mutual(&val.induct, all, lean_env, cache, stt, aux)?;
         stt

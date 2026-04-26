@@ -151,7 +151,7 @@ impl BRecOnCallSitePlan {
   }
 }
 
-pub fn rec_name_to_brecon_name(name: &Name) -> Option<Name> {
+pub(crate) fn rec_name_to_brecon_name(name: &Name) -> Option<Name> {
   match name.as_data() {
     NameData::Str(parent, s, _) if s == "rec" => {
       Some(Name::str(parent.clone(), "brecOn".to_string()))
@@ -163,7 +163,7 @@ pub fn rec_name_to_brecon_name(name: &Name) -> Option<Name> {
   }
 }
 
-pub fn rec_name_to_below_name(name: &Name) -> Option<Name> {
+pub(crate) fn rec_name_to_below_name(name: &Name) -> Option<Name> {
   match name.as_data() {
     NameData::Str(parent, s, _) if s == "rec" => {
       Some(Name::str(parent.clone(), "below".to_string()))
@@ -182,7 +182,7 @@ pub fn rec_name_to_below_name(name: &Name) -> Option<Name> {
 /// Collect a Lean App telescope: peel App nodes to get `(head, [a1, ..., aN])`.
 ///
 /// Arguments are returned in application order (leftmost first).
-pub fn collect_lean_telescope<'a>(
+pub(crate) fn collect_lean_telescope<'a>(
   e: &'a LeanExpr,
 ) -> (&'a LeanExpr, Vec<&'a LeanExpr>) {
   let mut args: Vec<&'a LeanExpr> = Vec::new();
@@ -199,7 +199,7 @@ pub fn collect_lean_telescope<'a>(
 ///
 /// Arguments are returned in application order (leftmost first).
 #[allow(dead_code)]
-pub fn collect_ixon_telescope(
+pub(crate) fn collect_ixon_telescope(
   e: &Arc<IxonExpr>,
 ) -> (Arc<IxonExpr>, Vec<Arc<IxonExpr>>) {
   let mut args: Vec<Arc<IxonExpr>> = Vec::new();
@@ -240,11 +240,11 @@ pub fn collect_ixon_telescope(
 /// The [`AuxLayout`] type is re-exported from `crate::ix::ixon::env` so it
 /// can live in the Ixon env side-table and survive serialization — see the
 /// doc on [`crate::ix::ixon::env::AuxLayout`] for the canonical definition.
-pub use crate::ix::ixon::env::AuxLayout;
+pub(crate) use crate::ix::ixon::env::AuxLayout;
 
 const PERM_OUT_OF_SCC: usize = usize::MAX;
 
-pub fn compute_call_site_plans(
+pub(crate) fn compute_call_site_plans(
   sorted_classes: &[Vec<Name>],
   original_all: &[Name],
   lean_env: &LeanEnv,
@@ -271,7 +271,7 @@ pub fn compute_call_site_plans(
   // counts are not included here; they're handled separately below.
   let ctor_counts: Vec<usize> = original_all
     .iter()
-    .map(|n| match lean_env.get(n).as_deref() {
+    .map(|n| match lean_env.get(n) {
       Some(LeanConstantInfo::InductInfo(v)) => v.ctors.len(),
       _ => 0,
     })
@@ -291,12 +291,12 @@ pub fn compute_call_site_plans(
     .iter()
     .find_map(|n| {
       let rec_name = Name::str(n.clone(), "rec".to_string());
-      match lean_env.get(&rec_name).as_deref() {
+      match lean_env.get(&rec_name) {
         Some(LeanConstantInfo::RecInfo(r)) => Some((
-          crate::ix::compile::nat_conv::nat_to_usize(&r.num_params),
-          crate::ix::compile::nat_conv::nat_to_usize(&r.num_indices),
-          crate::ix::compile::nat_conv::nat_to_usize(&r.num_motives),
-          crate::ix::compile::nat_conv::nat_to_usize(&r.num_minors),
+          nat_to_usize(&r.num_params),
+          nat_to_usize(&r.num_indices),
+          nat_to_usize(&r.num_motives),
+          nat_to_usize(&r.num_minors),
         )),
         _ => None,
       }
@@ -398,7 +398,7 @@ pub fn compute_call_site_plans(
     .iter()
     .map(|class| {
       let rep = &class[0];
-      match lean_env.get(rep).as_deref() {
+      match lean_env.get(rep) {
         Some(LeanConstantInfo::InductInfo(v)) => v.ctors.len(),
         _ => 0,
       }
@@ -560,11 +560,10 @@ pub fn compute_call_site_plans(
           .unwrap_or(0);
         for k in 0..n_ctors {
           minor_keep.push(parent_kept);
-          if parent_kept {
-            source_to_canon_minor.push(n_canon_user_minors + base + k);
-          } else {
-            source_to_canon_minor.push(n_canon_user_minors + base + k);
-          }
+          // Both kept and unkept positions reuse the canonical slot — this
+          // mirrors the user-side mapping where dropped sources still record
+          // where their canonical sibling landed.
+          source_to_canon_minor.push(n_canon_user_minors + base + k);
         }
       }
       // Safety fallback: if layout inventories don't sum to n_aux_minors
@@ -707,7 +706,7 @@ pub fn compute_call_site_plans(
 /// recursor call then goes through the normal call-site surgery for its own
 /// SCC.
 #[allow(clippy::too_many_arguments)]
-pub fn adapt_split_minor(
+pub(crate) fn adapt_split_minor(
   rec_name: &Name,
   rec_levels: &[Level],
   plan: &CallSitePlan,
@@ -805,7 +804,7 @@ fn source_ctor_for_minor(
     let n_ctors = ind.ctors.len();
     if src_minor_idx < offset + n_ctors {
       let ctor_name = &ind.ctors[src_minor_idx - offset];
-      let ctor = match lean_env.get(ctor_name).as_deref()? {
+      let ctor = match lean_env.get(ctor_name)? {
         LeanConstantInfo::CtorInfo(ctor) => ctor.clone(),
         _ => return None,
       };
@@ -908,7 +907,7 @@ fn find_source_rec_target(
     return None;
   };
   let source_pos = original_all.iter().position(|n| n == target_name)?;
-  let target_n_params = match lean_env.get(target_name).as_deref()? {
+  let target_n_params = match lean_env.get(target_name)? {
     LeanConstantInfo::InductInfo(ind) => nat_to_usize(&ind.num_params),
     _ => return None,
   };
@@ -1056,7 +1055,7 @@ fn dump_plan_state(
   // Dump Lean's source recursor telescope, labelled per binder section.
   let first_rec = original_all.iter().find_map(|n| {
     let rec_name = Name::str(n.clone(), "rec".to_string());
-    match lean_env.get(&rec_name).as_deref() {
+    match lean_env.get(&rec_name) {
       Some(LeanConstantInfo::RecInfo(r)) => {
         Some((rec_name, r.cnst.typ.clone()))
       },
@@ -1226,7 +1225,7 @@ mod tests {
           cnst: ConstantVal {
             name: ind_name.clone(),
             level_params: vec![],
-            typ: LeanExpr::sort(crate::ix::env::Level::zero()),
+            typ: LeanExpr::sort(Level::zero()),
           },
           num_params: Nat::from(0u64),
           num_indices: Nat::from(0u64),
@@ -1247,7 +1246,7 @@ mod tests {
             cnst: ConstantVal {
               name: ctor_name.clone(),
               level_params: vec![],
-              typ: LeanExpr::sort(crate::ix::env::Level::zero()),
+              typ: LeanExpr::sort(Level::zero()),
             },
             induct: ind_name.clone(),
             cidx: Nat::from(0u64),
@@ -1262,11 +1261,11 @@ mod tests {
       let rec_name = nn(name_str, "rec");
       env.insert(
         rec_name,
-        LeanConstantInfo::RecInfo(crate::ix::env::RecursorVal {
+        LeanConstantInfo::RecInfo(RecursorVal {
           cnst: ConstantVal {
             name: nn(name_str, "rec"),
             level_params: vec![],
-            typ: LeanExpr::sort(crate::ix::env::Level::zero()),
+            typ: LeanExpr::sort(Level::zero()),
           },
           all: all.clone(),
           num_params: Nat::from(0u64),
@@ -1408,11 +1407,11 @@ mod tests {
       let rec_name = nn(name_str, "rec");
       env.insert(
         rec_name.clone(),
-        LeanConstantInfo::RecInfo(crate::ix::env::RecursorVal {
+        LeanConstantInfo::RecInfo(RecursorVal {
           cnst: ConstantVal {
             name: rec_name,
             level_params: vec![],
-            typ: LeanExpr::sort(crate::ix::env::Level::zero()),
+            typ: LeanExpr::sort(Level::zero()),
           },
           all: names.iter().map(|s| n(s)).collect(),
           num_params: Nat::from(0u64),
@@ -1565,11 +1564,11 @@ mod tests {
       let rec_name = nn("Y", &format!("rec_{j}"));
       env.insert(
         rec_name.clone(),
-        LeanConstantInfo::RecInfo(crate::ix::env::RecursorVal {
+        LeanConstantInfo::RecInfo(RecursorVal {
           cnst: ConstantVal {
             name: rec_name,
             level_params: vec![],
-            typ: LeanExpr::sort(crate::ix::env::Level::zero()),
+            typ: LeanExpr::sort(Level::zero()),
           },
           all: vec![n("Y"), n("X")],
           num_params: Nat::from(0u64),
@@ -1626,11 +1625,11 @@ mod tests {
       let rec_name = nn("A", &format!("rec_{j}"));
       env.insert(
         rec_name.clone(),
-        LeanConstantInfo::RecInfo(crate::ix::env::RecursorVal {
+        LeanConstantInfo::RecInfo(RecursorVal {
           cnst: ConstantVal {
             name: rec_name,
             level_params: vec![],
-            typ: LeanExpr::sort(crate::ix::env::Level::zero()),
+            typ: LeanExpr::sort(Level::zero()),
           },
           all: vec![n("A"), n("B")],
           num_params: Nat::from(0u64),
@@ -1693,11 +1692,11 @@ mod tests {
       let rec_name = nn("A", &format!("rec_{j}"));
       env.insert(
         rec_name.clone(),
-        LeanConstantInfo::RecInfo(crate::ix::env::RecursorVal {
+        LeanConstantInfo::RecInfo(RecursorVal {
           cnst: ConstantVal {
             name: rec_name,
             level_params: vec![],
-            typ: LeanExpr::sort(crate::ix::env::Level::zero()),
+            typ: LeanExpr::sort(Level::zero()),
           },
           all: vec![n("A"), n("B"), n("C")],
           num_params: Nat::from(0u64),

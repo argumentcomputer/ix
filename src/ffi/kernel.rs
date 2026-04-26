@@ -340,9 +340,12 @@ fn run_checks_serial_on_large_stack(
     })
     .map_err(|e| format!("failed to spawn kernel-check thread: {e}"))?
     .join()
-    .map_err(|_| "kernel-check thread panicked".to_string())
+    .map_err(|_panic| "kernel-check thread panicked".to_string())
 }
 
+// All by-value arguments below are immediately wrapped in `Arc` for sharing
+// with worker threads — clippy can't see that, so suppress the lint.
+#[allow(clippy::needless_pass_by_value)]
 fn run_checks_parallel_on_large_stacks(
   kenv: Arc<KEnv<Meta>>,
   name_to_id: FxHashMap<Name, KId<Meta>>,
@@ -604,15 +607,14 @@ fn env_duration_ms(var: &str, default: Duration) -> Duration {
   std::env::var(var)
     .ok()
     .and_then(|s| s.parse::<u64>().ok())
-    .map(Duration::from_millis)
-    .unwrap_or(default)
+    .map_or(default, Duration::from_millis)
 }
 
 fn env_duration_ms_optional(var: &str, default: Duration) -> Option<Duration> {
   let ms = std::env::var(var)
     .ok()
     .and_then(|s| s.parse::<u64>().ok())
-    .unwrap_or(default.as_millis() as u64);
+    .unwrap_or_else(|| u64::try_from(default.as_millis()).unwrap_or(u64::MAX));
   if ms == 0 { None } else { Some(Duration::from_millis(ms)) }
 }
 
@@ -834,6 +836,10 @@ fn block_member_outcome(
   }
 }
 
+// Owned arguments are consumed via the worker pool but only borrowed in this
+// function body — clippy flags the by-value receivers, but transferring
+// ownership keeps the call sites simpler.
+#[allow(clippy::needless_pass_by_value)]
 fn check_consts_loop(
   kenv: Arc<KEnv<Meta>>,
   name_to_id: FxHashMap<Name, KId<Meta>>,
@@ -1036,13 +1042,18 @@ impl ParallelProgress {
 
   fn report(&self) {
     let done = self.done.load(Ordering::SeqCst);
+    // Progress reporting is approximate by nature; usize→f64 precision loss
+    // is acceptable for percentages and ETAs.
+    #[allow(clippy::cast_precision_loss)]
     let pct = if self.total == 0 {
       100.0
     } else {
       (done as f64 / self.total as f64) * 100.0
     };
     let elapsed = self.started.elapsed().as_secs_f64();
+    #[allow(clippy::cast_precision_loss)]
     let rate = if elapsed > 0.0 { done as f64 / elapsed } else { 0.0 };
+    #[allow(clippy::cast_precision_loss)]
     let eta = if rate > 0.0 && done < self.total {
       format!(" · eta {:.0}s", (self.total - done) as f64 / rate)
     } else {
@@ -1581,7 +1592,7 @@ fn compare_envs(
         }
       },
     }
-    if checked % 10000 == 0 && checked > 0 {
+    if checked.is_multiple_of(10000) && checked > 0 {
       eprintln!(
         "[rs_kernel_roundtrip] verify:      {checked}/{total} ({} errors so far)",
         errors.len()

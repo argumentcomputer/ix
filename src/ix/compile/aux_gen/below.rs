@@ -126,11 +126,11 @@ pub(crate) fn rename_below_indc(
 
   // Build a positional map from canonical parent ctor suffix → target parent ctor suffix.
   // e.g., BLE.ble → BLI.bli (both at position 0)
-  let canon_ctors: Vec<Name> = match lean_env.get(canonical_parent).as_deref() {
+  let canon_ctors: Vec<Name> = match lean_env.get(canonical_parent) {
     Some(ConstantInfo::InductInfo(v)) => v.ctors.clone(),
     _ => vec![],
   };
-  let target_ctors: Vec<Name> = match lean_env.get(new_parent).as_deref() {
+  let target_ctors: Vec<Name> = match lean_env.get(new_parent) {
     Some(ConstantInfo::InductInfo(v)) => v.ctors.clone(),
     _ => vec![],
   };
@@ -238,7 +238,7 @@ pub(crate) fn generate_below_constants(
     let class_rep = &sorted_classes[ci][0];
 
     let ind_ref = lean_env.get(class_rep);
-    let ind = match ind_ref.as_deref() {
+    let ind = match ind_ref {
       Some(ConstantInfo::InductInfo(v)) => v,
       _ => {
         return Err(CompileError::MissingConstant {
@@ -292,7 +292,7 @@ pub(crate) fn generate_below_constants(
     if n_aux > 0 {
       let first_class_name = &sorted_classes[0][0];
       let first_ind_ref = lean_env.get(first_class_name);
-      let first_ind = match first_ind_ref.as_deref() {
+      let first_ind = match first_ind_ref {
         Some(ConstantInfo::InductInfo(v)) => v,
         _ => {
           return Err(CompileError::MissingConstant {
@@ -441,7 +441,7 @@ fn build_below_def(
     };
     let major_domain = &decls[total - 1].domain;
 
-    let ctx_decls: Vec<super::expr_utils::LocalDecl> =
+    let ctx_decls: Vec<LocalDecl> =
       decls[..total - 1].to_vec();
     let mut tc =
       super::expr_utils::TcScope::new(&ctx_decls, rec_level_params, stt, kctx);
@@ -525,7 +525,7 @@ fn extract_major_head_ind(
   };
   let (head, _) = decompose_apps(major_dom);
   match head.as_data() {
-    ExprData::Const(name, _, _) => match lean_env.get(name).as_deref() {
+    ExprData::Const(name, _, _) => match lean_env.get(name) {
       Some(ConstantInfo::InductInfo(v)) => Some(v.clone()),
       _ => None,
     },
@@ -751,7 +751,7 @@ fn build_below_indc(
   for class_idx in 0..n_classes {
     let class_rep = &sorted_classes[class_idx][0];
     let class_ind_ref = lean_env.get(class_rep);
-    let class_ind = match class_ind_ref.as_deref() {
+    let class_ind = match class_ind_ref {
       Some(ConstantInfo::InductInfo(v)) => v,
       _ => {
         return Err(CompileError::MissingConstant {
@@ -768,7 +768,7 @@ fn build_below_indc(
       if class_idx == ci {
         // This ctor belongs to our class — build a .below ctor for it
         let ctor_ref = lean_env.get(ctor_name);
-        let ctor = match ctor_ref.as_deref() {
+        let ctor = match ctor_ref {
           Some(ConstantInfo::CtorInfo(c)) => c,
           _ => {
             return Err(CompileError::MissingConstant {
@@ -915,7 +915,6 @@ fn build_below_indc_ctor(
   let orig_below_ctor_name = below_name.append_components(&ctor_suffix);
   let orig_field_names: Vec<Name> = lean_env
     .get(&orig_below_ctor_name)
-    .as_deref()
     .and_then(|ci| match ci {
       ConstantInfo::CtorInfo(cv) => {
         let mut names = Vec::new();
@@ -984,7 +983,7 @@ fn build_below_indc_ctor(
   let all_ind_names: Vec<(Name, usize)> = (0..n_classes)
     .flat_map(|j| {
       sorted_classes[j].iter().filter_map(move |name| {
-        lean_env.get(name).as_deref().map(|ci| match ci {
+        lean_env.get(name).map(|ci| match ci {
           ConstantInfo::InductInfo(v) => (v.cnst.name.clone(), j),
           _ => (name.clone(), j),
         })
@@ -1444,8 +1443,9 @@ fn build_below_minor(
 /// elaborator does NOT distribute there.
 pub(super) fn mk_level_succ(l: &Level) -> Level {
   match l.as_data() {
-    LevelData::Max(a, b, _) => level_max(&mk_level_succ(a), &mk_level_succ(b)),
-    LevelData::Imax(a, b, _) => level_max(&mk_level_succ(a), &mk_level_succ(b)),
+    LevelData::Max(a, b, _) | LevelData::Imax(a, b, _) => {
+      level_max(&mk_level_succ(a), &mk_level_succ(b))
+    },
     _ => Level::succ(l.clone()),
   }
 }
@@ -1667,16 +1667,8 @@ fn norm_lt_aux(l1: &Level, k1: u64, l2: &Level, k2: u64) -> bool {
   }
   // Equal-kind recursion for Max / IMax.
   match (l1.as_data(), l2.as_data()) {
-    (LevelData::Max(a1, a2, _), LevelData::Max(b1, b2, _)) => {
-      if l1 == l2 {
-        return k1 < k2;
-      }
-      if a1 != b1 {
-        return norm_lt_aux(a1, 0, b1, 0);
-      }
-      norm_lt_aux(a2, 0, b2, 0)
-    },
-    (LevelData::Imax(a1, a2, _), LevelData::Imax(b1, b2, _)) => {
+    (LevelData::Max(a1, a2, _), LevelData::Max(b1, b2, _))
+    | (LevelData::Imax(a1, a2, _), LevelData::Imax(b1, b2, _)) => {
       if l1 == l2 {
         return k1 < k2;
       }
@@ -1790,11 +1782,10 @@ fn mk_imax_aux(l1: &Level, l2: &Level) -> Level {
   if matches!(l1.as_data(), LevelData::Zero(_)) {
     return l2.clone();
   }
-  if let LevelData::Succ(inner, _) = l1.as_data() {
-    if matches!(inner.as_data(), LevelData::Zero(_)) {
+  if let LevelData::Succ(inner, _) = l1.as_data()
+    && matches!(inner.as_data(), LevelData::Zero(_)) {
       return l2.clone();
     }
-  }
   if l1 == l2 {
     return l1.clone();
   }

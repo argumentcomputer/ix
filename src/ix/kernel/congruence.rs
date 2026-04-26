@@ -634,7 +634,7 @@ mod tests {
   #[test]
   fn expr_nat_lit_matches() {
     let r = empty_resolver();
-    let lean_e = env::Expr::lit(crate::ix::env::Literal::NatVal(n(42)));
+    let lean_e = env::Expr::lit(Literal::NatVal(n(42)));
     // Nat expr construction for the zero kernel.
     let zero_e = KExpr::<Anon>::nat(n(42), mk_addr("any"));
     expr_congruent(&lean_e, &zero_e, &r).unwrap();
@@ -643,7 +643,7 @@ mod tests {
   #[test]
   fn expr_str_lit_matches() {
     let r = empty_resolver();
-    let lean_e = env::Expr::lit(crate::ix::env::Literal::StrVal("hi".into()));
+    let lean_e = env::Expr::lit(Literal::StrVal("hi".into()));
     let zero_e = KExpr::<Anon>::str("hi".into(), mk_addr("any"));
     expr_congruent(&lean_e, &zero_e, &r).unwrap();
   }

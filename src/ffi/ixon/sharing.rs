@@ -43,8 +43,9 @@ pub extern "C" fn rs_debug_sharing_analysis(
   println!("[Rust] Subterms with usage >= 2:");
   for (hash, info, eff_size) in candidates {
     let n = info.usage_count;
-    let potential =
-      (n as isize - 1) * (eff_size as isize) - (n as isize + eff_size as isize);
+    let n_i = n.cast_signed();
+    let eff_size_i = eff_size.cast_signed();
+    let potential = (n_i - 1) * eff_size_i - (n_i + eff_size_i);
     println!(
       "  usage={} eff_size={} potential={} hash={:.8}",
       n, eff_size, potential, hash

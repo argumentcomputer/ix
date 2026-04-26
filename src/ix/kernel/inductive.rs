@@ -170,11 +170,12 @@ impl<M: KernelMode> TypeChecker<M> {
 
     for member in members {
       self.reset();
-      match self
+      let c = self
         .env
         .get(member)
-        .ok_or_else(|| TcError::UnknownConst(member.addr.clone()))?
-      {
+        .ok_or_else(|| TcError::UnknownConst(member.addr.clone()))?;
+      self.validate_const_well_scoped(&c)?;
+      match c {
         KConst::Indc { ty, .. } => {
           let t = self.infer(&ty)?;
           self.ensure_sort(&t)?;
@@ -315,7 +316,7 @@ impl<M: KernelMode> TypeChecker<M> {
 
     // Validate each constructor
     for (expected_cidx, ctor_id) in ctors.iter().enumerate() {
-      let (_ctor_params, ctor_fields, ctor_cidx, ctor_ty) =
+      let (ctor_params, ctor_fields, ctor_cidx, ctor_ty) =
         match self.env.get(ctor_id) {
           Some(KConst::Ctor { params, fields, cidx, ty, .. }) => (
             u64_to_usize(params)?,
@@ -329,6 +330,12 @@ impl<M: KernelMode> TypeChecker<M> {
             ));
           },
         };
+      let ind_params = u64_to_usize(params)?;
+      if ctor_params != ind_params {
+        return Err(TcError::Other(format!(
+          "check_inductive: ctor params mismatch: expected {ind_params}, got {ctor_params}"
+        )));
+      }
 
       // Validate constructor ordering: cidx must match position in ctors list
       if ctor_cidx != expected_cidx {
@@ -338,25 +345,21 @@ impl<M: KernelMode> TypeChecker<M> {
       }
 
       // A1: Parameter domain agreement
-      self.check_param_agreement(&ty, &ctor_ty, u64_to_usize(params)?)?;
+      self.check_param_agreement(&ty, &ctor_ty, ind_params)?;
 
       // A3: Strict positivity. Lean skips positivity for unsafe inductives;
       // those declarations are admitted only as unsafe constants.
       if !is_unsafe {
-        self.check_positivity(&ctor_ty, u64_to_usize(params)?, &block_addrs)?;
+        self.check_positivity(&ctor_ty, ind_params, &block_addrs)?;
       }
 
       // A4: Universe constraints
-      self.check_field_universes(
-        &ctor_ty,
-        u64_to_usize(params)?,
-        &ind_level,
-      )?;
+      self.check_field_universes(&ctor_ty, ind_params, &ind_level)?;
 
       // A2: Constructor return type
       self.check_ctor_return_type(
         &ctor_ty,
-        u64_to_usize(params)?,
+        ind_params,
         u64_to_usize(indices)?,
         ctor_fields,
         &id.addr,
@@ -1033,9 +1036,9 @@ impl<M: KernelMode> TypeChecker<M> {
     // Build synthetic Indc + Ctor views for each aux.
     // `aux_views[i]` corresponds to `aux[i]`.
     let mut aux_indcs: Vec<(KId<M>, KConst<M>)> = Vec::with_capacity(aux.len());
-    let mut all_ctor_lookup: FxHashMap<crate::ix::address::Address, KConst<M>> =
+    let mut all_ctor_lookup: FxHashMap<Address, KConst<M>> =
       FxHashMap::default();
-    let mut seed_key_by_addr: FxHashMap<crate::ix::address::Address, Address> =
+    let mut seed_key_by_addr: FxHashMap<Address, Address> =
       FxHashMap::default();
     let nested_prefix =
       all0_name.map(|all0| Name::str(all0, "_nested".to_string()));
@@ -1049,18 +1052,17 @@ impl<M: KernelMode> TypeChecker<M> {
       // deterministic seed/tiebreak, so the kernel feeds the same name hash
       // into the sorter while keeping the synthetic KId address structural.
       let ext_seed = M::meta_name(&member.id.name)
-        .map(|name| name.pretty().replace('.', "_"))
-        .unwrap_or_else(|| member.id.addr.hex());
+        .map_or_else(|| member.id.addr.hex(), |name| name.pretty().replace('.', "_"));
       let seed_suffix = format!("{}_{}", ext_seed, source_idx + 1);
-      let seed_name = nested_prefix
-        .as_ref()
-        .map(|prefix| Name::str(prefix.clone(), seed_suffix.clone()))
-        .unwrap_or_else(|| {
+      let seed_name = nested_prefix.as_ref().map_or_else(
+        || {
           Name::str(
             Name::str(Name::anon(), "IxKernelAux".to_string()),
             seed_suffix.clone(),
           )
-        });
+        },
+        |prefix| Name::str(prefix.clone(), seed_suffix.clone()),
+      );
       let seed_addr = Address::from_blake3_hash(*seed_name.get_hash());
 
       // Synthetic aux KId: unique per discovered aux source slot, with the
@@ -1077,7 +1079,7 @@ impl<M: KernelMode> TypeChecker<M> {
         h.update(u.addr().as_bytes());
       }
       let aux_addr =
-        crate::ix::address::Address::from_blake3_hash(h.finalize());
+        Address::from_blake3_hash(h.finalize());
       let aux_id = KId::new(aux_addr.clone(), M::meta_field(seed_name.clone()));
       seed_key_by_addr.insert(aux_addr.clone(), seed_addr);
       aux_ids.push(aux_id);
@@ -1180,14 +1182,14 @@ impl<M: KernelMode> TypeChecker<M> {
         ch.update(aux_addr.as_bytes());
         ch.update(ext_ctor_id.addr.as_bytes());
         let aux_ctor_addr =
-          crate::ix::address::Address::from_blake3_hash(ch.finalize());
+          Address::from_blake3_hash(ch.finalize());
         let aux_ctor_kid = KId::new(
           aux_ctor_addr.clone(),
-          M::meta_field(crate::ix::env::Name::anon()),
+          M::meta_field(Name::anon()),
         );
 
         let aux_ctor = KConst::Ctor {
-          name: M::meta_field(crate::ix::env::Name::anon()),
+          name: M::meta_field(Name::anon()),
           level_params: M::meta_field(vec![]),
           is_unsafe: false,
           lvls: block_us.len() as u64,
@@ -1212,8 +1214,8 @@ impl<M: KernelMode> TypeChecker<M> {
         is_unsafe: false,
         nested: 0,
         block: KId::new(
-          crate::ix::address::Address::hash(b"synthetic-aux-block"),
-          M::meta_field(crate::ix::env::Name::anon()),
+          Address::hash(b"synthetic-aux-block"),
+          M::meta_field(Name::anon()),
         ),
         member_idx: 0,
         ty: typ,
@@ -1248,7 +1250,7 @@ impl<M: KernelMode> TypeChecker<M> {
     // compiler-shaped seed key. Alpha-equivalent aux remain distinct
     // synthetic members until partition refinement collapses them, matching
     // compile-side `sort_consts`.
-    let aux_addr_to_orig_idx: FxHashMap<crate::ix::address::Address, usize> =
+    let aux_addr_to_orig_idx: FxHashMap<Address, usize> =
       pairs
         .iter()
         .enumerate()
@@ -2541,7 +2543,7 @@ impl<M: KernelMode> TypeChecker<M> {
           // Field args reference block params at current pushed-local
           // depth; spec_params live at depth = n_rec_params (shared
           // block params = flat[0].own_params). Lift by the difference.
-          let n_rec_params = flat.first().map(|m| m.own_params).unwrap_or(0);
+          let n_rec_params = flat.first().map_or(0, |m| m.own_params);
           let lift_by = self.depth().saturating_sub(n_rec_params);
           if let Some(bi) = self.is_rec_field(dom, flat, lift_by)? {
             rec_field_indices.push((fidx, bi));
@@ -3881,11 +3883,12 @@ impl<M: KernelMode> TypeChecker<M> {
   ) -> Result<(), TcError<M>> {
     for member in members {
       self.reset();
-      match self
+      let c = self
         .env
         .get(member)
-        .ok_or_else(|| TcError::UnknownConst(member.addr.clone()))?
-      {
+        .ok_or_else(|| TcError::UnknownConst(member.addr.clone()))?;
+      self.validate_const_well_scoped(&c)?;
+      match c {
         KConst::Recr { ty, .. } => {
           let t = self.infer(&ty)?;
           self.ensure_sort(&t)?;
@@ -4331,6 +4334,7 @@ mod tests {
 
   use super::super::constant::KConst;
   use super::super::env::KEnv;
+  use super::super::error::TcError;
   use super::super::expr::{ExprData, KExpr};
   use super::super::id::KId;
   use super::super::level::KUniv;
@@ -4510,6 +4514,31 @@ mod tests {
     let env = bool_env();
     let mut tc = TypeChecker::new(Arc::clone(&env));
     assert!(tc.check_const(&mk_id("Bool")).is_ok());
+  }
+
+  #[test]
+  fn check_inductive_rejects_ctor_param_count_mismatch() {
+    let env = bool_env();
+    env.insert(
+      mk_id("Bool.true"),
+      KConst::Ctor {
+        name: (),
+        level_params: (),
+        is_unsafe: false,
+        lvls: 0,
+        induct: mk_id("Bool"),
+        cidx: 0,
+        params: 1,
+        fields: 0,
+        ty: cnst("Bool", &[]),
+      },
+    );
+
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    match tc.check_const(&mk_id("Bool")) {
+      Err(TcError::Other(s)) => assert!(s.contains("ctor params mismatch")),
+      other => panic!("expected ctor params mismatch, got {other:?}"),
+    }
   }
 
   #[test]

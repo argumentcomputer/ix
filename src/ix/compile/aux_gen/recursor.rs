@@ -81,7 +81,7 @@ pub(crate) fn generate_recursors_from_expanded(
   // the correct `RecursorVal::is_unsafe` / `DefinitionSafety`.
   let block_is_unsafe = original_names
     .first()
-    .and_then(|n| match lean_env.get(n).as_deref() {
+    .and_then(|n| match lean_env.get(n) {
       Some(ConstantInfo::InductInfo(v)) => Some(v.is_unsafe),
       _ => None,
     })
@@ -95,7 +95,7 @@ pub(crate) fn generate_recursors_from_expanded(
     // when available. For auxiliary types (not in lean_env), fall back to
     // block-wide defaults.
     let (all_field, is_rec, is_reflexive, ind_is_unsafe) =
-      match lean_env.get(&member.name).as_deref() {
+      match lean_env.get(&member.name) {
         Some(ConstantInfo::InductInfo(orig)) => {
           (orig.all.clone(), orig.is_rec, orig.is_reflexive, orig.is_unsafe)
         },
@@ -123,7 +123,7 @@ pub(crate) fn generate_recursors_from_expanded(
       // Look up original ctor's safety when available; fall back to the
       // containing inductive's flag (ctor safety always matches its parent
       // inductive — the kernel rejects unsafe ctors on safe inductives).
-      let ctor_is_unsafe = match lean_env.get(&ctor.name).as_deref() {
+      let ctor_is_unsafe = match lean_env.get(&ctor.name) {
         Some(ConstantInfo::CtorInfo(orig)) => orig.is_unsafe,
         _ => ind_is_unsafe,
       };
@@ -176,7 +176,7 @@ pub(crate) fn generate_recursors_from_expanded(
       occurrence_level_args: expanded
         .level_params
         .iter()
-        .map(|lp| crate::ix::env::Level::param(lp.clone()))
+        .map(|lp| Level::param(lp.clone()))
         .collect(),
       own_params: member.n_params,
       n_indices: member.n_indices,
@@ -360,8 +360,7 @@ fn reorder_flat_by_layout(
     .filter(|&&v| v != super::nested::PERM_OUT_OF_SCC)
     .max()
     .copied()
-    .map(|m| m + 1)
-    .unwrap_or(0);
+    .map_or(0, |m| m + 1);
   if max_canon != n_aux {
     return Err((
       flat,
@@ -417,8 +416,7 @@ fn reorder_flat_by_layout(
     flat[..n_classes].to_vec();
   let aux_src: Vec<super::nested::CompileFlatMember> =
     flat[n_classes..].to_vec();
-  for canonical_i in 0..n_aux {
-    let source_j = canon_repr[canonical_i];
+  for (canonical_i, &source_j) in canon_repr.iter().take(n_aux).enumerate() {
     if source_j >= aux_src.len() {
       return Err((
         flat,
@@ -612,7 +610,6 @@ pub(crate) fn generate_canonical_recursors_with_layout(
     source_of_canonical,
     aux_layout,
   ) {
-    (Some(_), _) => None,
     (None, Some(layout)) => {
       let mut s = vec![usize::MAX; n_aux];
       for (src_j, &canon_i) in layout.perm.iter().enumerate() {
@@ -634,7 +631,7 @@ pub(crate) fn generate_canonical_recursors_with_layout(
       }
       Some(s)
     },
-    (None, None) => None,
+    (Some(_), _) | (None, None) => None,
   };
   let source_of_canonical: Option<&[usize]> =
     source_of_canonical.or(source_of_canonical_owned.as_deref());
@@ -722,7 +719,7 @@ pub(crate) fn generate_canonical_recursors_with_layout(
   // FVars the rec types will use, so the results embed without substitution.
   let (shared_param_fvars, raw_param_decls, _) =
     super::expr_utils::forall_telescope(&first_ty, n_params, "param", 0);
-  let shared_param_decls: Vec<super::expr_utils::LocalDecl> = raw_param_decls
+  let shared_param_decls: Vec<LocalDecl> = raw_param_decls
     .into_iter()
     .zip(param_binders.iter())
     .map(|(mut d, pb)| {
@@ -936,7 +933,6 @@ fn collect_binders(expr: &LeanExpr, n: usize) -> Vec<Binder> {
 /// class (indexed `0..n_classes`), used to source indices + major for
 /// non-aux recursors. Auxiliary (nested) recursors at `di >= n_classes`
 /// still peel the type themselves using `spec_params` substitution.
-#[allow(clippy::too_many_arguments)]
 #[allow(clippy::too_many_arguments)]
 fn build_rec_type(
   di: usize,
@@ -1357,7 +1353,7 @@ fn build_minor_type(
   kctx: &crate::ix::compile::KernelCtx,
   // Shared scratch for nested-aux level rewrites across every ctor in
   // the block. `None` when the block doesn't need any rewriting.
-  mut nested_rewrite: Option<&mut NestedRewriteCtx>,
+  nested_rewrite: Option<&mut NestedRewriteCtx>,
 ) -> LeanExpr {
   // `n_classes` is no longer read inside this function since the
   // nested-aux lookup moved to the caller-owned `nested_rewrite`; keep
@@ -1408,7 +1404,7 @@ fn build_minor_type(
   // the `nested_rewrite` caller-owned scratch is `Some` exactly when the
   // block contains both user and aux members.
   if !member.is_aux
-    && let Some(nr) = nested_rewrite.as_deref_mut()
+    && let Some(nr) = nested_rewrite
   {
     cur = nr.rewrite(&cur);
   }
@@ -2076,22 +2072,17 @@ fn find_rec_target(
 ) -> Option<usize> {
   let mut ty = scope.whnf_lean(dom);
   let mut pushed: Vec<LocalDecl> = Vec::new();
-  loop {
-    match ty.as_data() {
-      ExprData::ForallE(name, d, body, bi, _) => {
-        let (fv_name, fv) = fresh_fvar("frt", pushed.len());
-        let decl = LocalDecl {
-          fvar_name: fv_name,
-          binder_name: name.clone(),
-          domain: d.clone(),
-          info: bi.clone(),
-        };
-        scope.push_locals(std::slice::from_ref(&decl));
-        pushed.push(decl);
-        ty = scope.whnf_lean(&instantiate1(body, &fv));
-      },
-      _ => break,
-    }
+  while let ExprData::ForallE(name, d, body, bi, _) = ty.as_data() {
+    let (fv_name, fv) = fresh_fvar("frt", pushed.len());
+    let decl = LocalDecl {
+      fvar_name: fv_name,
+      binder_name: name.clone(),
+      domain: d.clone(),
+      info: bi.clone(),
+    };
+    scope.push_locals(std::slice::from_ref(&decl));
+    pushed.push(decl);
+    ty = scope.whnf_lean(&instantiate1(body, &fv));
   }
   // Pop all peel-locals — keep the caller's scope balanced.
   scope.pop_locals(&pushed);
@@ -2498,7 +2489,7 @@ fn ingress_target_type_deps(
       continue;
     }
     if let Some(ci) = lean_env.get(&name) {
-      ingress_aux_gen_dep(&name, &ci, lean_env, stt, kctx, &mut queue);
+      ingress_aux_gen_dep(&name, ci, lean_env, stt, kctx, &mut queue);
     }
   }
 }
@@ -2528,7 +2519,7 @@ fn ingress_field_deps(
     }
 
     let Some(ci) = lean_env.get(&name) else { continue };
-    ingress_aux_gen_dep(&name, &ci, lean_env, stt, kctx, &mut queue);
+    ingress_aux_gen_dep(&name, ci, lean_env, stt, kctx, &mut queue);
   }
 }
 
@@ -3196,9 +3187,9 @@ mod tests {
         Name::str(Name::anon(), "β".into()),
         sort_v.clone(),
         LeanExpr::sort(max_1_u_v),
-        crate::ix::env::BinderInfo::Default,
+        BinderInfo::Default,
       ),
-      crate::ix::env::BinderInfo::Default,
+      BinderInfo::Default,
     );
     // mk : ∀ {α : Sort u} {β : Sort v}, α → β → PProd α β
     let pprod_c = LeanExpr::cnst(
@@ -3221,13 +3212,13 @@ mod tests {
               LeanExpr::app(pprod_c, LeanExpr::bvar(Nat::from(3u64))),
               LeanExpr::bvar(Nat::from(2u64)),
             ),
-            crate::ix::env::BinderInfo::Default,
+            BinderInfo::Default,
           ),
-          crate::ix::env::BinderInfo::Default,
+          BinderInfo::Default,
         ),
-        crate::ix::env::BinderInfo::Implicit,
+        BinderInfo::Implicit,
       ),
-      crate::ix::env::BinderInfo::Implicit,
+      BinderInfo::Implicit,
     );
     env.insert(
       pprod.clone(),

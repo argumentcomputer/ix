@@ -7,10 +7,10 @@ use crate::ix::ixon::constant::DefKind;
 
 use super::constant::KConst;
 use super::env::BlockCheckStart;
-use super::error::TcError;
+use super::error::{TcError, u64_to_usize};
 use super::expr::{ExprData, KExpr};
 use super::id::KId;
-use super::level::{KUniv, univ_eq};
+use super::level::{KUniv, UnivData, univ_eq};
 use super::mode::{CheckDupLevelParams, KernelMode};
 use super::tc::TypeChecker;
 
@@ -94,6 +94,7 @@ impl<M: KernelMode> TypeChecker<M> {
     if c.level_params().has_duplicate_level_params() {
       return Err(TcError::Other("duplicate universe level parameter".into()));
     }
+    self.validate_const_well_scoped(c)?;
 
     match &c {
       KConst::Axio { ty, .. } => {
@@ -257,8 +258,7 @@ impl<M: KernelMode> TypeChecker<M> {
     let members = self.env.get_block(block)?;
     match self.classify_block(&members) {
       Ok(kind) if kind == expected => Some(block.clone()),
-      Ok(_) => None,
-      Err(_) => None,
+      Ok(_) | Err(_) => None,
     }
   }
 
@@ -318,6 +318,7 @@ impl<M: KernelMode> TypeChecker<M> {
         .env
         .get(member)
         .ok_or_else(|| TcError::UnknownConst(member.addr.clone()))?;
+      self.validate_const_well_scoped(&c)?;
       if c.level_params().has_duplicate_level_params() {
         return Err(TcError::Other(
           "duplicate universe level parameter".into(),
@@ -342,6 +343,123 @@ impl<M: KernelMode> TypeChecker<M> {
   // -----------------------------------------------------------------------
   // #5: Quotient type validation
   // -----------------------------------------------------------------------
+
+  /// Validate declaration expressions before inference.
+  ///
+  /// This is the Ix equivalent of Lean's declaration-admission closure and
+  /// universe-param checks: declarations must be closed at the top level, and
+  /// every `Param(idx)` in their type/value/rules must refer to one of the
+  /// declaration's own universe parameters.
+  pub(crate) fn validate_const_well_scoped(
+    &self,
+    c: &KConst<M>,
+  ) -> Result<(), TcError<M>> {
+    let lvl_bound = u64_to_usize::<M>(c.lvls())?;
+    self.validate_expr_well_scoped(c.ty(), 0, lvl_bound)?;
+    match c {
+      KConst::Defn { val, .. } => {
+        self.validate_expr_well_scoped(val, 0, lvl_bound)?;
+      },
+      KConst::Recr { rules, .. } => {
+        for rule in rules {
+          self.validate_expr_well_scoped(&rule.rhs, 0, lvl_bound)?;
+        }
+      },
+      KConst::Axio { .. }
+      | KConst::Quot { .. }
+      | KConst::Indc { .. }
+      | KConst::Ctor { .. } => {},
+    }
+    Ok(())
+  }
+
+  fn validate_expr_well_scoped(
+    &self,
+    root: &KExpr<M>,
+    root_depth: u64,
+    lvl_bound: usize,
+  ) -> Result<(), TcError<M>> {
+    let mut stack: Vec<(&KExpr<M>, u64)> = vec![(root, root_depth)];
+    while let Some((e, depth)) = stack.pop() {
+      match e.data() {
+        ExprData::Var(idx, _, _) => {
+          if *idx >= depth {
+            let ctx_len = usize::try_from(depth).unwrap_or(usize::MAX);
+            return Err(TcError::VarOutOfRange { idx: *idx, ctx_len });
+          }
+        },
+        ExprData::Sort(u, _) => {
+          self.validate_univ_params(u, lvl_bound)?;
+        },
+        ExprData::Const(id, us, _) => {
+          let c = self
+            .env
+            .get(id)
+            .ok_or_else(|| TcError::UnknownConst(id.addr.clone()))?;
+          if u64_to_usize::<M>(c.lvls())? != us.len() {
+            return Err(TcError::UnivParamMismatch {
+              expected: c.lvls(),
+              got: us.len(),
+            });
+          }
+          for u in us {
+            self.validate_univ_params(u, lvl_bound)?;
+          }
+        },
+        ExprData::App(f, a, _) => {
+          stack.push((f, depth));
+          stack.push((a, depth));
+        },
+        ExprData::Lam(_, _, ty, body, _) | ExprData::All(_, _, ty, body, _) => {
+          stack.push((ty, depth));
+          let body_depth = depth.checked_add(1).ok_or_else(|| {
+            TcError::Other("binder depth overflow during validation".into())
+          })?;
+          stack.push((body, body_depth));
+        },
+        ExprData::Let(_, ty, val, body, _, _) => {
+          stack.push((ty, depth));
+          stack.push((val, depth));
+          let body_depth = depth.checked_add(1).ok_or_else(|| {
+            TcError::Other("binder depth overflow during validation".into())
+          })?;
+          stack.push((body, body_depth));
+        },
+        ExprData::Prj(id, _, val, _) => {
+          if self.env.get(id).is_none() {
+            return Err(TcError::UnknownConst(id.addr.clone()));
+          }
+          stack.push((val, depth));
+        },
+        ExprData::Nat(..) | ExprData::Str(..) => {},
+      }
+    }
+    Ok(())
+  }
+
+  fn validate_univ_params(
+    &self,
+    root: &KUniv<M>,
+    bound: usize,
+  ) -> Result<(), TcError<M>> {
+    let mut stack = vec![root];
+    while let Some(u) = stack.pop() {
+      match u.data() {
+        UnivData::Zero(_) => {},
+        UnivData::Succ(inner, _) => stack.push(inner),
+        UnivData::Max(a, b, _) | UnivData::IMax(a, b, _) => {
+          stack.push(a);
+          stack.push(b);
+        },
+        UnivData::Param(idx, _, _) => {
+          if u64_to_usize::<M>(*idx)? >= bound {
+            return Err(TcError::UnivParamOutOfRange { idx: *idx, bound });
+          }
+        },
+      }
+    }
+    Ok(())
+  }
 
   /// Validate quotient constant structure.
   ///
@@ -840,6 +958,46 @@ mod tests {
         assert!(s.contains("duplicate universe level parameter"));
       },
       other => panic!("expected duplicate-level-param error, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn check_loose_var_in_decl_rejected_before_infer() {
+    let env = Arc::new(KEnv::<Anon>::new());
+    env.insert(
+      mk_id("bad_loose"),
+      KConst::Axio {
+        name: (),
+        level_params: (),
+        is_unsafe: false,
+        lvls: 0,
+        ty: AE::all((), (), sort0(), AE::var(1, ())),
+      },
+    );
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    match tc.check_const(&mk_id("bad_loose")) {
+      Err(TcError::VarOutOfRange { idx: 1, ctx_len: 1 }) => {},
+      other => panic!("expected closure VarOutOfRange, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn check_out_of_range_universe_param_rejected() {
+    let env = Arc::new(KEnv::<Anon>::new());
+    env.insert(
+      mk_id("bad_univ"),
+      KConst::Axio {
+        name: (),
+        level_params: (),
+        is_unsafe: false,
+        lvls: 1,
+        ty: AE::sort(AU::param(1, ())),
+      },
+    );
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    match tc.check_const(&mk_id("bad_univ")) {
+      Err(TcError::UnivParamOutOfRange { idx: 1, bound: 1 }) => {},
+      other => panic!("expected universe-param range error, got {other:?}"),
     }
   }
 

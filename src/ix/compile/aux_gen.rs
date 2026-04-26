@@ -256,7 +256,7 @@ pub(crate) fn generate_aux_patches(
     expanded_probe.types.len() > expanded_probe.n_originals;
   let metadata_has_nested = original_all.iter().any(|name| {
     matches!(
-      lean_env.get(name).as_deref(),
+      lean_env.get(name),
       Some(crate::ix::env::ConstantInfo::InductInfo(v))
         if crate::ix::compile::nat_conv::nat_to_usize(&v.num_nested) > 0
     )
@@ -397,7 +397,7 @@ pub(crate) fn generate_aux_patches(
         expanded.aux_ctor_map,
         aux_rec_map,
         expanded.block_param_fvars,
-        expanded.types.first().map(|t| t.n_params).unwrap_or(0),
+        expanded.types.first().map_or(0, |t| t.n_params),
       );
 
       // Rename and restore all recursors.
@@ -426,8 +426,7 @@ pub(crate) fn generate_aux_patches(
               let new_ctor = restore_ctx
                 .aux_ctor_map
                 .get(&r.ctor)
-                .map(|(orig_ctor, _)| orig_ctor.clone())
-                .unwrap_or_else(|| r.ctor.clone());
+                .map_or_else(|| r.ctor.clone(), |(orig_ctor, _)| orig_ctor.clone());
               RecursorRule {
                 ctor: new_ctor,
                 n_fields: r.n_fields.clone(),
@@ -909,11 +908,11 @@ fn build_alias_name_map(
   map.insert(rep.clone(), alias.clone());
 
   // Constructor names: positional mapping rep.ctor_i → alias.ctor_i.
-  let rep_ctors = match lean_env.get(rep).as_deref() {
+  let rep_ctors = match lean_env.get(rep) {
     Some(crate::ix::env::ConstantInfo::InductInfo(v)) => v.ctors.clone(),
     _ => vec![],
   };
-  let alias_ctors = match lean_env.get(alias).as_deref() {
+  let alias_ctors = match lean_env.get(alias) {
     Some(crate::ix::env::ConstantInfo::InductInfo(v)) => v.ctors.clone(),
     _ => vec![],
   };
@@ -1027,7 +1026,7 @@ pub(crate) fn populate_canon_kenv_with_below(
   below_consts: &[below::BelowConstant],
   sorted_classes: &[Vec<Name>],
   lean_env: &crate::ix::env::Env,
-  stt: &crate::ix::compile::CompileState,
+  stt: &CompileState,
   kctx: &crate::ix::compile::KernelCtx,
 ) {
   use crate::ix::kernel::constant::KConst;

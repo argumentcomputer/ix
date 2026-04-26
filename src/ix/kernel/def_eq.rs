@@ -65,7 +65,7 @@ impl<M: KernelMode> TypeChecker<M> {
   ) -> Result<bool, TcError<M>> {
     if *IX_DEF_EQ_COUNT_LOG {
       let n = DEF_EQ_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-      if n % 100_000 == 0 && n > 0 {
+      if n.is_multiple_of(100_000) && n > 0 {
         eprintln!("[is_def_eq] count={n}");
       }
     }
@@ -1176,7 +1176,7 @@ impl<M: KernelMode> TypeChecker<M> {
       fuel -= 1;
       match self.lazy_delta_reduction_step(a, b)? {
         LazyDeltaStep::Equal => return Ok(true),
-        LazyDeltaStep::Continue => continue,
+        LazyDeltaStep::Continue => {},
         LazyDeltaStep::Unknown => {
           self.dump_proj_delta_trace("stuck", struct_id, field, a, b);
           let pa = self.try_project_core(struct_id, field, a);
@@ -1343,7 +1343,7 @@ impl<M: KernelMode> TypeChecker<M> {
     if !self.debug_label_matches_env() {
       return;
     }
-    let id_s = id.map(|id| id.to_string()).unwrap_or_else(|| "<none>".into());
+    let id_s = id.map_or_else(|| "<none>".into(), |id| id.to_string());
     if !filter.is_empty() && !id_s.contains(filter) {
       return;
     }

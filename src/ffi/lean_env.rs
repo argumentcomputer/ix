@@ -717,13 +717,11 @@ extern "C" fn rs_tmp_decode_const_map(
   eprintln!("[rust-compile] Phase 1b: Checking aux_gen congruence...");
   {
     use crate::ix::compile::aux_gen::{self, PatchedConstant};
-    use crate::ix::compile::mk_indc;
     use crate::ix::congruence::const_alpha_eq;
     use crate::ix::env::{
       ConstantInfo as LeanCI, ConstantVal as LeanCV, DefinitionSafety,
       DefinitionVal, InductiveVal, ReducibilityHints,
     };
-    use crate::ix::mutual::MutConst;
     use rustc_hash::{FxHashMap, FxHashSet};
 
     // Build per-block PermCtx for the permutation-aware comparator.
@@ -732,7 +730,7 @@ extern "C" fn rs_tmp_decode_const_map(
     // doesn't escape its scope.
     fn build_perm_ctx_1b(
       all: &[Name],
-      env: &crate::ix::env::Env,
+      env: &Env,
       stt: &crate::ix::compile::CompileState,
       perm: &[usize],
     ) -> Option<crate::ix::congruence::perm::PermCtx> {
@@ -740,7 +738,7 @@ extern "C" fn rs_tmp_decode_const_map(
       use crate::ix::env::{ConstantInfo as LeanCI, ExprData};
 
       let first = all.first()?;
-      let n_params = match env.get(first).as_deref() {
+      let n_params = match env.get(first) {
         Some(LeanCI::InductInfo(v)) => {
           v.num_params.to_u64().unwrap_or(0) as usize
         },
@@ -749,19 +747,19 @@ extern "C" fn rs_tmp_decode_const_map(
       let n_primary = all.len();
       let primary_ctor_counts: Vec<usize> = all
         .iter()
-        .map(|n| match env.get(n).as_deref() {
+        .map(|n| match env.get(n) {
           Some(LeanCI::InductInfo(v)) => v.ctors.len(),
           _ => 0,
         })
         .collect();
       let source_aux_order =
-        match crate::ix::compile::aux_gen::nested::source_aux_order(all, env) {
+        match aux_gen::nested::source_aux_order(all, env) {
           Ok(order) => order,
           Err(_) => return None,
         };
       let source_aux_ctor_counts: Vec<usize> = source_aux_order
         .iter()
-        .map(|(head, _)| match env.get(head).as_deref() {
+        .map(|(head, _)| match env.get(head) {
           Some(LeanCI::InductInfo(v)) => v.ctors.len(),
           _ => 0,
         })
@@ -784,7 +782,7 @@ extern "C" fn rs_tmp_decode_const_map(
         source_aux_ctor_counts: source_aux_ctor_counts.clone(),
         aux_perm: perm.to_vec(),
       };
-      let n_indices_for = |rec_name: &Name| match env.get(rec_name).as_deref() {
+      let n_indices_for = |rec_name: &Name| match env.get(rec_name) {
         Some(LeanCI::RecInfo(r)) => {
           r.num_indices.to_u64().unwrap_or(0) as usize
         },
@@ -838,7 +836,7 @@ extern "C" fn rs_tmp_decode_const_map(
         for suffix in ["rec", "casesOn", "recOn", "below", "brecOn"] {
           add_addr(&Name::str(member.clone(), suffix.to_string()));
         }
-        if let Some(LeanCI::InductInfo(v)) = env.get(member).as_deref() {
+        if let Some(LeanCI::InductInfo(v)) = env.get(member) {
           for ctor in &v.ctors {
             add_addr(ctor);
           }
@@ -858,7 +856,7 @@ extern "C" fn rs_tmp_decode_const_map(
         }
       }
       fn collect_const_addrs(
-        e: &crate::ix::env::Expr,
+        e: &Expr,
         stt: &crate::ix::compile::CompileState,
         out: &mut FxHashMap<Name, crate::ix::address::Address>,
       ) {
@@ -936,7 +934,7 @@ extern "C" fn rs_tmp_decode_const_map(
       // broken envs.
       let has_indc = all
         .iter()
-        .any(|n| matches!(env.get(n).as_deref(), Some(LeanCI::InductInfo(_))));
+        .any(|n| matches!(env.get(n), Some(LeanCI::InductInfo(_))));
       if !has_indc {
         continue;
       }
@@ -1028,12 +1026,11 @@ extern "C" fn rs_tmp_decode_const_map(
             is_unsafe: false,
             is_reflexive: bi.is_reflexive,
           }),
-          _ => continue,
         };
         let Some(orig_ci_ref) = env.get(patch_name) else {
           continue;
         };
-        let orig_ci: &LeanCI = &*orig_ci_ref;
+        let orig_ci: &LeanCI = orig_ci_ref;
         let eq_result = match &perm_ctx_1b {
           Some(ctx) => crate::ix::congruence::perm::const_alpha_eq_with_perm(
             &gen_ci, orig_ci, ctx,
@@ -1376,11 +1373,11 @@ extern "C" fn rs_compile_validate_aux(
     let work: Vec<(Name, Vec<Name>, Vec<MutConst>)> = env
       .iter()
       .filter_map(|(name, ci)| {
-        let all = match &*ci {
+        let all = match ci {
           LeanCI::InductInfo(v) => v.all.clone(),
           _ => return None,
         };
-        if all.first() != Some(&*name) {
+        if all.first() != Some(name) {
           return None;
         }
         let mut key = all.clone();
@@ -1390,7 +1387,7 @@ extern "C" fn rs_compile_validate_aux(
         }
         let original_cs: Vec<MutConst> = all
           .iter()
-          .filter_map(|n| match env.get(n).as_deref() {
+          .filter_map(|n| match env.get(n) {
             Some(LeanCI::InductInfo(v)) => {
               Some(MutConst::Indc(mk_indc(v, &env).ok()?))
             },
@@ -1445,7 +1442,7 @@ extern "C" fn rs_compile_validate_aux(
             continue;
           }
           if let Some(ci) = env.get(&name) {
-            for ref_name in get_constant_info_references(&*ci) {
+            for ref_name in get_constant_info_references(ci) {
               if !p2_ingressed.contains(&ref_name) {
                 stack.push(ref_name);
               }
@@ -1487,7 +1484,7 @@ extern "C" fn rs_compile_validate_aux(
     // (one class per original, no alpha-collapse at the primary level).
     fn build_perm_ctx(
       all: &[Name],
-      env: &crate::ix::env::Env,
+      env: &Env,
       stt: &crate::ix::compile::CompileState,
       perm: &[usize],
     ) -> Option<crate::ix::congruence::perm::PermCtx> {
@@ -1496,7 +1493,7 @@ extern "C" fn rs_compile_validate_aux(
       use rustc_hash::FxHashMap;
 
       let first = all.first()?;
-      let n_params = match env.get(first).as_deref() {
+      let n_params = match env.get(first) {
         Some(LeanCI::InductInfo(v)) => {
           v.num_params.to_u64().unwrap_or(0) as usize
         },
@@ -1505,20 +1502,20 @@ extern "C" fn rs_compile_validate_aux(
       let n_primary = all.len();
       let primary_ctor_counts: Vec<usize> = all
         .iter()
-        .map(|n| match env.get(n).as_deref() {
+        .map(|n| match env.get(n) {
           Some(LeanCI::InductInfo(v)) => v.ctors.len(),
           _ => 0,
         })
         .collect();
       // Source-walk aux discovery: same walker `compute_aux_perm` uses.
       let source_aux_order =
-        match crate::ix::compile::aux_gen::nested::source_aux_order(all, env) {
+        match aux_gen::nested::source_aux_order(all, env) {
           Ok(order) => order,
           Err(_) => return None,
         };
       let source_aux_ctor_counts: Vec<usize> = source_aux_order
         .iter()
-        .map(|(head, _)| match env.get(head).as_deref() {
+        .map(|(head, _)| match env.get(head) {
           Some(LeanCI::InductInfo(v)) => v.ctors.len(),
           _ => 0,
         })
@@ -1559,7 +1556,7 @@ extern "C" fn rs_compile_validate_aux(
       // Helper: look up `n_indices` for a specific recursor, falling
       // back to 0 when the rec isn't in env (e.g., if Lean didn't
       // generate it for this aux — the entry is benign in that case).
-      let n_indices_for = |rec_name: &Name| match env.get(rec_name).as_deref() {
+      let n_indices_for = |rec_name: &Name| match env.get(rec_name) {
         Some(LeanCI::RecInfo(r)) => {
           r.num_indices.to_u64().unwrap_or(0) as usize
         },
@@ -1632,7 +1629,7 @@ extern "C" fn rs_compile_validate_aux(
         for suffix in ["rec", "casesOn", "recOn", "below", "brecOn"] {
           add_addr(&Name::str(member.clone(), suffix.to_string()));
         }
-        if let Some(LeanCI::InductInfo(v)) = env.get(member).as_deref() {
+        if let Some(LeanCI::InductInfo(v)) = env.get(member) {
           for ctor in &v.ctors {
             add_addr(ctor);
           }
@@ -1654,7 +1651,7 @@ extern "C" fn rs_compile_validate_aux(
         }
       }
       fn collect_const_addrs(
-        e: &crate::ix::env::Expr,
+        e: &Expr,
         stt: &crate::ix::compile::CompileState,
         out: &mut FxHashMap<Name, crate::ix::address::Address>,
       ) {
@@ -1709,7 +1706,7 @@ extern "C" fn rs_compile_validate_aux(
     // Helper to wrap a patch as a Lean `ConstantInfo` for alpha-eq.
     fn patch_to_lean_ci(
       patch: &PatchedConstant,
-    ) -> Option<crate::ix::env::ConstantInfo> {
+    ) -> Option<ConstantInfo> {
       use crate::ix::env::{
         ConstantInfo as LeanCI, ConstantVal as LeanCV, DefinitionSafety,
         DefinitionVal, InductiveVal, ReducibilityHints,
@@ -1718,7 +1715,7 @@ extern "C" fn rs_compile_validate_aux(
         PatchedConstant::Rec(r) => LeanCI::RecInfo(r.clone()),
         PatchedConstant::CasesOn(d) | PatchedConstant::RecOn(d) => {
           LeanCI::DefnInfo(DefinitionVal {
-            cnst: crate::ix::env::ConstantVal {
+            cnst: ConstantVal {
               name: d.name.clone(),
               level_params: d.level_params.clone(),
               typ: d.typ.clone(),
@@ -1730,7 +1727,7 @@ extern "C" fn rs_compile_validate_aux(
           })
         },
         PatchedConstant::BelowDef(d) => LeanCI::DefnInfo(DefinitionVal {
-          cnst: crate::ix::env::ConstantVal {
+          cnst: ConstantVal {
             name: d.name.clone(),
             level_params: d.level_params.clone(),
             typ: d.typ.clone(),
@@ -1741,7 +1738,7 @@ extern "C" fn rs_compile_validate_aux(
           all: vec![],
         }),
         PatchedConstant::BRecOn(d) => LeanCI::DefnInfo(DefinitionVal {
-          cnst: crate::ix::env::ConstantVal {
+          cnst: ConstantVal {
             name: d.name.clone(),
             level_params: d.level_params.clone(),
             typ: d.typ.clone(),
@@ -1775,8 +1772,8 @@ extern "C" fn rs_compile_validate_aux(
     // already preserved in `failures`.
     fn dump_diagnostics(
       patch_name: &Name,
-      gen_ci: &crate::ix::env::ConstantInfo,
-      orig_ci: &crate::ix::env::ConstantInfo,
+      gen_ci: &ConstantInfo,
+      orig_ci: &ConstantInfo,
       err: &str,
     ) {
       use crate::ix::env::{Expr, ExprData as ED};
@@ -1845,7 +1842,7 @@ extern "C" fn rs_compile_validate_aux(
           let Some(orig_ci_ref) = env.get(patch_name) else {
             continue; // Synthetic name — no Lean original.
           };
-          let orig_ci: &LeanCI = &*orig_ci_ref;
+          let orig_ci: &LeanCI = orig_ci_ref;
 
           let eq_result = match &perm_ctx {
             Some(ctx) => crate::ix::congruence::perm::const_alpha_eq_with_perm(
@@ -1858,7 +1855,7 @@ extern "C" fn rs_compile_validate_aux(
             Ok(()) => result.passes += 1,
             Err(e) => {
               if dumped < DUMP_PER_BLOCK {
-                dump_diagnostics(patch_name, &gen_ci, orig_ci, &e.to_string());
+                dump_diagnostics(patch_name, &gen_ci, orig_ci, &e);
                 dumped += 1;
               }
               result.failures.push(format!("{}: {e}", patch_name.pretty()));
@@ -2050,15 +2047,15 @@ extern "C" fn rs_compile_validate_aux(
       addr: &crate::ix::address::Address,
     ) -> Option<String> {
       fn expand_shares_expr(
-        expr: &std::sync::Arc<crate::ix::ixon::expr::Expr>,
-        sharing: &[std::sync::Arc<crate::ix::ixon::expr::Expr>],
-      ) -> std::sync::Arc<crate::ix::ixon::expr::Expr> {
+        expr: &Arc<crate::ix::ixon::expr::Expr>,
+        sharing: &[Arc<crate::ix::ixon::expr::Expr>],
+      ) -> Arc<crate::ix::ixon::expr::Expr> {
         use crate::ix::ixon::expr::Expr;
         match expr.as_ref() {
-          Expr::Share(idx) => sharing
-            .get(*idx as usize)
-            .map(|shared| expand_shares_expr(shared, sharing))
-            .unwrap_or_else(|| expr.clone()),
+          Expr::Share(idx) => sharing.get(*idx as usize).map_or_else(
+            || expr.clone(),
+            |shared| expand_shares_expr(shared, sharing),
+          ),
           Expr::Prj(type_ref_idx, field_idx, val) => Expr::prj(
             *type_ref_idx,
             *field_idx,
@@ -2088,7 +2085,7 @@ extern "C" fn rs_compile_validate_aux(
 
       fn expand_shares_member(
         member: &crate::ix::ixon::constant::MutConst,
-        sharing: &[std::sync::Arc<crate::ix::ixon::expr::Expr>],
+        sharing: &[Arc<crate::ix::ixon::expr::Expr>],
       ) -> crate::ix::ixon::constant::MutConst {
         use crate::ix::ixon::constant::{MutConst, RecursorRule};
         match member {
@@ -2123,7 +2120,7 @@ extern "C" fn rs_compile_validate_aux(
       }
 
       fn expr_hash_prefix(
-        expr: &std::sync::Arc<crate::ix::ixon::expr::Expr>,
+        expr: &Arc<crate::ix::ixon::expr::Expr>,
       ) -> String {
         let mut buf = Vec::new();
         crate::ix::ixon::serialize::put_expr(expr, &mut buf);
@@ -2133,7 +2130,7 @@ extern "C" fn rs_compile_validate_aux(
 
       fn member_parts_summary(
         member: &crate::ix::ixon::constant::MutConst,
-        sharing: &[std::sync::Arc<crate::ix::ixon::expr::Expr>],
+        sharing: &[Arc<crate::ix::ixon::expr::Expr>],
       ) -> String {
         use crate::ix::ixon::constant::MutConst;
         let expanded = expand_shares_member(member, sharing);
@@ -2992,7 +2989,7 @@ extern "C" fn rs_compile_validate_aux(
           return;
         },
       };
-      match const_alpha_eq(dec_ci.value(), &*orig_ci) {
+      match const_alpha_eq(dec_ci.value(), orig_ci) {
         Ok(()) => {
           passes.fetch_add(1, Ordering::Relaxed);
         },
@@ -3325,7 +3322,7 @@ extern "C" fn rs_compile_validate_aux(
 
       // Skip if any name is missing from the env (fixture not compiled).
       let all_present = originals.iter().all(|n| {
-        matches!(env.get(n).as_deref(), Some(ConstantInfo::InductInfo(_)))
+        matches!(env.get(n), Some(ConstantInfo::InductInfo(_)))
       });
       if !all_present {
         continue;

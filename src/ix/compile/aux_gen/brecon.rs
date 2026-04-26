@@ -79,7 +79,7 @@ pub(crate) fn generate_brecon_constants(
     let (_, rec_val) = &canonical_recs[ci];
     let class_rep = &sorted_classes[ci][0];
     let ind_ref = lean_env.get(class_rep);
-    let ind = match ind_ref.as_deref() {
+    let ind = match ind_ref {
       Some(ConstantInfo::InductInfo(v)) => v,
       _ => {
         return Err(CompileError::MissingConstant {
@@ -147,7 +147,7 @@ pub(crate) fn generate_brecon_constants(
     if n_aux > 0 {
       // all[0] from the first class's inductive — Lean hangs _N names here.
       let first_class_name = &sorted_classes[0][0];
-      let all0 = match lean_env.get(first_class_name).as_deref() {
+      let all0 = match lean_env.get(first_class_name) {
         Some(ConstantInfo::InductInfo(v)) => v.all[0].clone(),
         _ => first_class_name.clone(),
       };
@@ -593,12 +593,12 @@ fn build_prop_below_minor_fvar(
 // FVar-based Type-level brecOn implementation
 // =========================================================================
 
-/// Infer the inductive sort level from the major premise domain.
-///
-/// Matches Lean's `typeFormerTypeLevel (← inferType (← inferType major))`:
-/// finds the head constant of the major's type, looks it up in the
-/// environment, and peels foralls to get the resulting Sort level.
-///
+// Infer the inductive sort level from the major premise domain.
+//
+// Matches Lean's `typeFormerTypeLevel (← inferType (← inferType major))`:
+// finds the head constant of the major's type, looks it up in the
+// environment, and peels foralls to get the resulting Sort level.
+//
 // NOTE: the previous fallback helpers `infer_ilvl_from_motive_domain`,
 // `infer_ilvl_from_major`, and `get_ind_sort_level` (formerly in below.rs)
 // were removed when we switched to propagating TcScope::get_level errors
@@ -947,7 +947,7 @@ fn build_type_brecon_fvar(
       &param_fvars,
       &motive_fvars,
       &f_fvars,
-      &below_names,
+      below_names,
       &rec_univs,
       rlvl,
       &mut rtc,
@@ -991,7 +991,7 @@ fn build_type_brecon_fvar(
   // NestedParam.RoseA α: List.casesOn needs (α := RoseA α).
   let cases_on_spec: Vec<LeanExpr> = if ci >= n_classes {
     let (_, major_args) = decompose_apps(&major_decls[0].domain);
-    let ext_n_params = match lean_env.get(&target_ind_name).as_deref() {
+    let ext_n_params = match lean_env.get(&target_ind_name) {
       Some(ConstantInfo::InductInfo(v)) => try_nat_to_usize(&v.num_params)?,
       _ => 0,
     };
@@ -1039,7 +1039,7 @@ fn build_type_brecon_fvar(
     &f_decls,
     &all_decls,
     &all_fvars,
-    &below_names,
+    below_names,
     &minor_doms,
     n_minors,
     &motive_ci_app,
@@ -1498,19 +1498,14 @@ fn build_type_brecon_eq_fvar(
     .map(|md| {
       let mut ty = md.domain.clone();
       let mut last_dom = ty.clone();
-      loop {
-        match ty.as_data() {
-          ExprData::ForallE(_, dom, body, _, _) => {
-            last_dom = dom.clone();
-            ty = body.clone();
-          },
-          _ => break,
-        }
+      while let ExprData::ForallE(_, dom, body, _, _) = ty.as_data() {
+        last_dom = dom.clone();
+        ty = body.clone();
       }
       let (head, _) = decompose_apps(&last_dom);
       match head.as_data() {
         ExprData::Const(name, _, _) | ExprData::Fvar(name, _) => {
-          match lean_env.get(name).as_deref() {
+          match lean_env.get(name) {
             Some(ConstantInfo::InductInfo(v)) => v.ctors.len(),
             _ => 0,
           }
@@ -1519,7 +1514,7 @@ fn build_type_brecon_eq_fvar(
       }
     })
     .collect();
-  let target_ctors: Vec<Name> = match lean_env.get(target_ind_name).as_deref() {
+  let target_ctors: Vec<Name> = match lean_env.get(target_ind_name) {
     Some(ConstantInfo::InductInfo(v)) => v.ctors.clone(),
     _ => vec![],
   };
@@ -2438,8 +2433,7 @@ fn handle_substcore_step(
   let binder_type = local_context
     .iter()
     .find(|d| d.fvar_name == abstracted_fvar_name)
-    .map(|d| d.domain.clone())
-    .unwrap_or_else(|| alpha.clone());
+    .map_or_else(|| alpha.clone(), |d| d.domain.clone());
   let motive = LeanExpr::lam(
     Name::str(Name::anon(), "x".to_string()),
     binder_type,

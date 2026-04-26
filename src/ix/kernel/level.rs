@@ -169,17 +169,15 @@ impl<M: KernelMode> KUniv<M> {
       return a;
     }
     // max(a, max(a, b')) = max(a, b'), max(a, max(b', a)) = max(b', a)
-    if let UnivData::Max(bl, br, _) = b.data() {
-      if *bl == a || *br == a {
+    if let UnivData::Max(bl, br, _) = b.data()
+      && (*bl == a || *br == a) {
         return b;
       }
-    }
     // max(max(a', b), b) = max(a', b), max(max(b, a'), b) = max(b, a')
-    if let UnivData::Max(al, ar, _) = a.data() {
-      if *al == b || *ar == b {
+    if let UnivData::Max(al, ar, _) = a.data()
+      && (*al == b || *ar == b) {
         return a;
       }
-    }
     // Same base, different offsets: succ^n(x) vs succ^m(x) → take the larger.
     let (base_a, off_a) = a.offset();
     let (base_b, off_b) = b.offset();
@@ -219,11 +217,10 @@ impl<M: KernelMode> KUniv<M> {
       return b; // imax(0, b) = b
     }
     // imax(1, b) = b  (Lean: is_one check)
-    if let UnivData::Succ(inner, _) = a.data() {
-      if inner.is_zero() {
+    if let UnivData::Succ(inner, _) = a.data()
+      && inner.is_zero() {
         return b;
       }
-    }
     if a == b {
       return a; // imax(a, a) = a
     }
@@ -1043,7 +1040,10 @@ mod tests {
       x
     }
     fn next_u32(&mut self, bound: u32) -> u32 {
-      (self.next_u64() as u32) % bound.max(1)
+      // Truncating to u32 is intentional for the test RNG.
+      #[allow(clippy::cast_possible_truncation)]
+      let lo = self.next_u64() as u32;
+      lo % bound.max(1)
     }
   }
 

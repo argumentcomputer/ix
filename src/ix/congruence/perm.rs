@@ -596,11 +596,11 @@ fn has_suffix_with_optional_index(suffixes: &[String], base: &str) -> bool {
 /// The recursor type has binder structure
 /// `∀ params, ∀ motives, ∀ minors, ∀ indices, ∀ major, body_ret`.
 ///
-/// Total outer binder count on each side: `n_params + n_source_motives
-/// + n_source_minors + n_indices + 1`. Under Phase 2 singleton classes
-/// and bijective `aux_perm`, gen and orig have **the same** total
-/// binder count — only motive/minor sections are permuted, not added or
-/// removed.
+/// Total outer binder count on each side:
+/// `n_params + n_source_motives + n_source_minors + n_indices + 1`.
+/// Under Phase 2 singleton classes and bijective `aux_perm`, gen and orig
+/// have **the same** total binder count — only motive/minor sections are
+/// permuted, not added or removed.
 fn rec_alpha_eq_with_perm(
   g: &RecursorVal,
   o: &RecursorVal,
@@ -658,7 +658,9 @@ fn rec_alpha_eq_with_perm(
   // Build FVar correspondence: for each orig-side outer position, find
   // its gen-side counterpart via `source_to_canonical_pos`.
   let mut corr = Corr::new();
-  for source_pos in 0..n_source_outer {
+  for (source_pos, orig_decl) in
+    orig_decls.iter().take(n_source_outer).enumerate()
+  {
     let gen_pos = match ctx.source_to_canonical_pos(source_pos) {
       Some(p) => p,
       None => {
@@ -670,7 +672,7 @@ fn rec_alpha_eq_with_perm(
       },
     };
     corr.insert(
-      orig_decls[source_pos].fvar_name.clone(),
+      orig_decl.fvar_name.clone(),
       gen_decls[gen_pos].fvar_name.clone(),
     );
   }
@@ -685,11 +687,13 @@ fn rec_alpha_eq_with_perm(
   //
   // The decl order matters for scope reasoning but the DOMAIN we compare
   // is content — walk with corr.
-  for source_pos in 0..n_source_outer {
+  for (source_pos, orig_decl) in
+    orig_decls.iter().take(n_source_outer).enumerate()
+  {
     let gen_pos = ctx.source_to_canonical_pos(source_pos).unwrap();
     expr_alpha_eq_ctx(
       &gen_decls[gen_pos].domain,
-      &orig_decls[source_pos].domain,
+      &orig_decl.domain,
       ctx,
       &corr,
     )
@@ -854,12 +858,14 @@ fn rhs_alpha_eq_with_perm(
   // - Field section [outer_source..] pairs identity-wise after accounting
   //   for the shorter canonical aux band.
   let mut rhs_corr = Corr::new();
-  for source_pos in 0..outer_source {
+  for (source_pos, orig_decl) in
+    orig_decls.iter().take(outer_source).enumerate()
+  {
     let gen_pos = ctx
       .source_to_canonical_pos(source_pos)
       .ok_or_else(|| format!("rhs pos {source_pos}: out-of-SCC"))?;
     rhs_corr.insert(
-      orig_decls[source_pos].fvar_name.clone(),
+      orig_decl.fvar_name.clone(),
       gen_decls[gen_pos].fvar_name.clone(),
     );
   }
@@ -879,11 +885,13 @@ fn rhs_alpha_eq_with_perm(
   let _ = corr;
 
   // Compare domains pair-wise under increasing scope.
-  for source_pos in 0..outer_source {
+  for (source_pos, orig_decl) in
+    orig_decls.iter().take(outer_source).enumerate()
+  {
     let gen_pos = ctx.source_to_canonical_pos(source_pos).unwrap();
     expr_alpha_eq_ctx(
       &gen_decls[gen_pos].domain,
-      &orig_decls[source_pos].domain,
+      &orig_decl.domain,
       ctx,
       &rhs_corr,
     )
@@ -1031,7 +1039,7 @@ fn outer_telescope_alpha_eq(
     DefnShape::RecOn => (false, true),
     DefnShape::CasesOn => unreachable!("handled above"),
     DefnShape::Unknown => {
-      let looks_brecon = total >= n_params + 2 * n_source_motives + 1;
+      let looks_brecon = total > n_params + 2 * n_source_motives;
       (looks_brecon, false)
     },
   };
@@ -1134,7 +1142,7 @@ fn outer_telescope_alpha_eq(
 
   // Build FVar correspondence.
   let mut corr = Corr::new();
-  for src_pos in 0..total {
+  for (src_pos, orig_decl) in orig_decls.iter().take(total).enumerate() {
     let gen_pos = map_pos(src_pos)
       .ok_or_else(|| format!("outer pos {src_pos}: no canonical map"))?;
     if gen_pos >= gen_decls.len() {
@@ -1144,7 +1152,7 @@ fn outer_telescope_alpha_eq(
       ));
     }
     corr.insert(
-      orig_decls[src_pos].fvar_name.clone(),
+      orig_decl.fvar_name.clone(),
       gen_decls[gen_pos].fvar_name.clone(),
     );
   }
@@ -1165,7 +1173,7 @@ fn outer_telescope_alpha_eq(
   }
   // Walk each decl's domain. Each domain is in scope of the previous
   // binders; any FVar reference in a domain resolves through `corr`.
-  for src_pos in 0..total {
+  for (src_pos, orig_decl) in orig_decls.iter().take(total).enumerate() {
     let gen_pos = map_pos(src_pos).unwrap();
     if std::env::var("IX_MAPPOS_DEBUG").is_ok() && total == 17 && src_pos == 11
     {
@@ -1175,14 +1183,14 @@ fn outer_telescope_alpha_eq(
         gen_pos,
         ctx.aux_perm,
         src_pos,
-        orig_decls[src_pos].domain.pretty(),
+        orig_decl.domain.pretty(),
         gen_pos,
         gen_decls[gen_pos].domain.pretty(),
       );
     }
     expr_alpha_eq_ctx(
       &gen_decls[gen_pos].domain,
-      &orig_decls[src_pos].domain,
+      &orig_decl.domain,
       ctx,
       &corr,
     )
@@ -1805,20 +1813,15 @@ fn peel_all_lambdas(
   if decls.len() < min_count {
     return (fvars, decls, body);
   }
-  loop {
-    match body.as_data() {
-      ExprData::Lam(..) => {
-        let (extra_fvars, extra_decls, next_body) =
-          lambda_telescope(&body, 1, prefix, decls.len());
-        if extra_decls.is_empty() {
-          break;
-        }
-        fvars.extend(extra_fvars);
-        decls.extend(extra_decls);
-        body = next_body;
-      },
-      _ => break,
+  while let ExprData::Lam(..) = body.as_data() {
+    let (extra_fvars, extra_decls, next_body) =
+      lambda_telescope(&body, 1, prefix, decls.len());
+    if extra_decls.is_empty() {
+      break;
     }
+    fvars.extend(extra_fvars);
+    decls.extend(extra_decls);
+    body = next_body;
   }
   (fvars, decls, body)
 }

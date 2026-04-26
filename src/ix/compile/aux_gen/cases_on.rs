@@ -75,7 +75,7 @@ pub(crate) fn generate_cases_on(
   let target_idx = rec_val.all.iter().position(|n| *n == target_ind)?;
 
   // Determine elimination level
-  let ind_n_lparams = match lean_env.get(&target_ind).as_deref() {
+  let ind_n_lparams = match lean_env.get(&target_ind) {
     Some(ConstantInfo::InductInfo(v)) => v.cnst.level_params.len(),
     _ => return None,
   };
@@ -90,7 +90,7 @@ pub(crate) fn generate_cases_on(
   let ctor_counts: Vec<usize> = rec_val
     .all
     .iter()
-    .map(|ind_name| match lean_env.get(ind_name).as_deref() {
+    .map(|ind_name| match lean_env.get(ind_name) {
       Some(ConstantInfo::InductInfo(v)) => v.ctors.len(),
       _ => 0,
     })
@@ -355,7 +355,7 @@ fn get_minor_name(
   lean_env: &LeanEnv,
 ) -> Name {
   let ctor_idx = minor_idx - target_range.start;
-  if let Some(ConstantInfo::InductInfo(v)) = lean_env.get(target_ind).as_deref()
+  if let Some(ConstantInfo::InductInfo(v)) = lean_env.get(target_ind)
     && let Some(ctor_name) = v.ctors.get(ctor_idx)
   {
     // Strip prefix to get suffix (e.g., "A.mk" → "mk")

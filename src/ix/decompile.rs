@@ -895,9 +895,7 @@ pub fn decompile_expr(
             }
             // The outer `Frame::CacheResult` pushed at the top of
             // `Frame::Decompile` will fire after BuildTelescope finishes,
-            // caching the fully-assembled spine. `continue` here just exits
-            // the match cleanly (no trailing code in this arm).
-            continue;
+            // caching the fully-assembled spine.
           },
 
           // App: follow arena children
@@ -1780,7 +1778,7 @@ fn projection_mismatch_error(
   let has_addr = stt.name_to_addr.contains_key(name);
   let has_aux = stt.aux_name_to_addr.contains_key(name);
   let has_original =
-    stt.env.named.get(name).map(|n| n.original.is_some()).unwrap_or(false);
+    stt.env.named.get(name).is_some_and(|n| n.original.is_some());
   DecompileError::BadConstantFormat {
     msg: format!(
       "{kind} '{}' idx={idx} landed on {:?} (mutuals.len={mutuals_len}, \
@@ -2012,7 +2010,7 @@ fn build_block_env(all_names: &[Name], lean_env: &LeanEnv) -> LeanEnv {
   for ind_name in all_names {
     if let Some(ci) = lean_env.get(ind_name) {
       env.insert(ind_name.clone(), ci.clone());
-      if let LeanConstantInfo::InductInfo(v) = &*ci {
+      if let LeanConstantInfo::InductInfo(v) = ci {
         for ctor_name in &v.ctors {
           if let Some(ctor_ci) = lean_env.get(ctor_name) {
             env.insert(ctor_name.clone(), ctor_ci.clone());
@@ -2127,7 +2125,7 @@ fn brecon_def_to_lean(
     typ: def.typ.clone(),
   };
 
-  let is_eq = def.name.last_str().as_deref() == Some("eq");
+  let is_eq = def.name.last_str() == Some("eq");
   // Emit `ThmInfo` when Lean would have emitted `.thmDecl`: Prop-level
   // `.brecOn` or safe Type-level `.brecOn.eq`. Unsafe cases always flatten
   // into an unsafe `DefnInfo` with opaque reducibility.
@@ -2188,7 +2186,7 @@ fn print_const_comparison(
 ) {
   let Some(orig_env) = orig_env else { return };
   let Some(lean_ci_ref) = orig_env.get(name) else { return };
-  let lean_ci = &*lean_ci_ref;
+  let lean_ci = lean_ci_ref;
   if std::mem::discriminant(decompiled) != std::mem::discriminant(lean_ci) {
     eprintln!(
       "[aux_gen diff] {}: kind decompiled={} original={}",
@@ -2590,22 +2588,22 @@ fn roundtrip_block(
         } else {
           &named.addr
         };
-        stt.env.get_const(addr).and_then(|c| match &c.info {
-          crate::ix::ixon::constant::ConstantInfo::RPrj(p) => {
-            Some(p.block.clone())
+        stt.env.get_const(addr).map(|c| match &c.info {
+          ConstantInfo::RPrj(p) => {
+            p.block.clone()
           },
-          crate::ix::ixon::constant::ConstantInfo::DPrj(p) => {
-            Some(p.block.clone())
+          ConstantInfo::DPrj(p) => {
+            p.block.clone()
           },
-          crate::ix::ixon::constant::ConstantInfo::IPrj(p) => {
-            Some(p.block.clone())
+          ConstantInfo::IPrj(p) => {
+            p.block.clone()
           },
-          _ => Some(addr.clone()), // bare constant, not a projection
+          _ => addr.clone(), // bare constant, not a projection
         })
       })
     };
-    if let Some(orig) = orig_addr {
-      if block_addr != orig {
+    if let Some(orig) = orig_addr
+      && block_addr != orig {
         let first_is_aux_gen = is_aux_gen_suffix(&first_name);
         if std::env::var_os("IX_ROUNDTRIP_DEBUG").is_some() {
           // Full dump so we can compare what aux_gen regenerated vs
@@ -2642,7 +2640,7 @@ fn roundtrip_block(
             if let Some(orig_env) = orig_env
               && let Some(lean_ci_ref) = orig_env.get(&nm)
             {
-              let lean_ci = &*lean_ci_ref;
+              let lean_ci = lean_ci_ref;
               eprintln!("  -- lean  {} --", nm.pretty());
               eprintln!("    type: {}", lean_ci.get_type().pretty());
               if let Some(v) = get_value(lean_ci) {
@@ -2662,7 +2660,6 @@ fn roundtrip_block(
           });
         }
       }
-    }
   }
 
   // Build the decompile ctx from the compiled MutCtx.
@@ -2781,7 +2778,7 @@ fn roundtrip_block(
               && let Some(lean_ci_ref) = orig.get(&n)
               && ci.get_hash() != lean_ci_ref.get_hash()
             {
-              let lean_ci = &*lean_ci_ref;
+              let lean_ci = lean_ci_ref;
               if std::env::var_os("IX_ROUNDTRIP_DEBUG").is_some() {
                 eprintln!(
                   "[lean hash mismatch] {}: generated_ci_hash={:x?} lean_ci_hash={:x?}",
@@ -2982,7 +2979,7 @@ fn print_rec_comparison(
 ) {
   let Some(orig_env) = orig_env else { return };
   let orig_ci = orig_env.get(rec_name);
-  let Some(LeanConstantInfo::RecInfo(lean_rv)) = orig_ci.as_deref() else {
+  let Some(LeanConstantInfo::RecInfo(lean_rv)) = orig_ci else {
     return;
   };
 
@@ -3262,7 +3259,7 @@ fn rehydrate_aux_perms_from_env(stt: &CompileState) {
     // version whose Indc.all is also source-order; we prefer the
     // canonical-entry `Indc.all` since it's the same source-order list
     // under spec §10.2.)
-    let source_all: Option<&[crate::ix::address::Address]> =
+    let source_all: Option<&[Address]> =
       match &rep_named.meta.info {
         ConstantMetaInfo::Indc { all, .. } => Some(all.as_slice()),
         _ => None,
@@ -3580,7 +3577,7 @@ fn decompile_block_aux_gen(
     use crate::ix::graph::get_constant_info_references;
     for ind_name in all_names {
       if let Some(ci) = env.get(ind_name) {
-        for ref_name in get_constant_info_references(&*ci) {
+        for ref_name in get_constant_info_references(ci) {
           expr_utils::ensure_in_kenv_of(&ref_name, env, stt, kctx);
         }
       }
@@ -3737,7 +3734,7 @@ fn decompile_block_aux_gen(
         _ => continue,
       };
       let rec_name = Name::str(ind_name.clone(), "rec".to_string());
-      let rec_val = match env.get(&rec_name).as_deref() {
+      let rec_val = match env.get(&rec_name) {
         Some(LeanConstantInfo::RecInfo(rv)) => rv.clone(),
         _ => {
           // Try dstt.env (may have been inserted above)
@@ -3818,7 +3815,7 @@ fn decompile_block_aux_gen(
         _ => continue,
       };
       let rec_name = Name::str(ind_name, "rec".to_string());
-      let rec_val = match env.get(&rec_name).as_deref() {
+      let rec_val = match env.get(&rec_name) {
         Some(LeanConstantInfo::RecInfo(rv)) => rv.clone(),
         _ => match dstt.env.get(&rec_name).as_deref() {
           Some(LeanConstantInfo::RecInfo(rv)) => rv.clone(),
@@ -4017,7 +4014,7 @@ fn decompile_block_aux_gen(
       if std::env::var_os("IX_ROUNDTRIP_DEBUG").is_some()
         && let Some(ref lean_env) = stt.lean_env
       {
-        let lean_all = match lean_env.get(&d.name).as_deref() {
+        let lean_all = match lean_env.get(&d.name) {
           Some(LeanConstantInfo::DefnInfo(v)) => Some(v.all.clone()),
           Some(LeanConstantInfo::ThmInfo(v)) => Some(v.all.clone()),
           Some(LeanConstantInfo::OpaqueInfo(v)) => Some(v.all.clone()),
@@ -4029,13 +4026,12 @@ fn decompile_block_aux_gen(
             let kind = stt
               .env
               .get_const(&addr)
-              .map(|c| match &c.info {
+              .map_or("missing", |c| match &c.info {
                 ConstantInfo::Defn(_) => "Defn",
                 ConstantInfo::DPrj(_) => "DPrj",
                 ConstantInfo::Muts(_) => "Muts",
                 _ => "?",
               })
-              .unwrap_or("missing")
               .to_string();
             Some((addr.hex(), kind))
           });
@@ -4044,8 +4040,8 @@ fn decompile_block_aux_gen(
             "[below .all] {} lean.all={:?} orig_addr={} orig_kind={}",
             d.name.pretty(),
             all.iter().map(|n| n.pretty()).collect::<Vec<_>>(),
-            orig_info.as_ref().map(|(a, _)| a.as_str()).unwrap_or("<none>"),
-            orig_info.as_ref().map(|(_, k)| k.as_str()).unwrap_or("<none>"),
+            orig_info.as_ref().map_or("<none>", |(a, _)| a.as_str()),
+            orig_info.as_ref().map_or("<none>", |(_, k)| k.as_str()),
           );
         }
       }
@@ -4213,9 +4209,9 @@ fn decompile_block_aux_gen(
           let wants_thm = (d.is_prop || is_eq) && !d.is_unsafe;
           let kind =
             if wants_thm { DefKind::Theorem } else { DefKind::Definition };
-          let hints = if d.is_unsafe && (d.is_prop || is_eq) {
-            ReducibilityHints::Opaque
-          } else if matches!(kind, DefKind::Theorem) {
+          let hints = if (d.is_unsafe && (d.is_prop || is_eq))
+            || matches!(kind, DefKind::Theorem)
+          {
             ReducibilityHints::Opaque
           } else {
             ReducibilityHints::Abbrev
@@ -4271,7 +4267,7 @@ fn decompile_block_aux_gen(
     for (name, generated_ci) in &generated_consts {
       if let Some(orig_ci) = orig.get(name)
         && let Err(e) =
-          crate::ix::congruence::const_alpha_eq(generated_ci, &*orig_ci)
+          crate::ix::congruence::const_alpha_eq(generated_ci, orig_ci)
       {
         aux_gen_errors.push((
           name.clone(),
@@ -4392,12 +4388,11 @@ pub fn decompile_env(
       let mut deps = NameSet::default();
       for ind_name in all_names {
         if let Some(ci) = dstt.env.get(ind_name) {
-          for ref_name in get_constant_info_references(&*ci) {
-            if let Some(dep_block) = name_to_block.get(&ref_name) {
-              if dep_block != block_key {
+          for ref_name in get_constant_info_references(&ci) {
+            if let Some(dep_block) = name_to_block.get(&ref_name)
+              && dep_block != block_key {
                 deps.insert(dep_block.clone());
               }
-            }
           }
         }
       }
@@ -4514,13 +4509,17 @@ pub fn decompile_env(
         || now.duration_since(t_last_log) > std::time::Duration::from_secs(5);
       if should_log {
         let elapsed = t_p2.elapsed().as_secs_f32();
+        // Progress logging is approximate; precision/sign losses below are
+        // acceptable for human-readable percentages and ETA seconds.
+        #[allow(clippy::cast_precision_loss)]
         let rate = done as f32 / elapsed.max(0.001);
+        #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         let remaining = ((total_blocks - done) as f32 / rate.max(0.001)) as u64;
+        #[allow(clippy::cast_precision_loss)]
+        let pct = 100.0 * done as f32 / total_blocks as f32;
         eprintln!(
           "[decompile] Pass 2 progress: {done}/{total_blocks} blocks \
-           ({:.1}%), elapsed {elapsed:.1}s, eta {}s, kenv={}",
-          100.0 * done as f32 / total_blocks as f32,
-          remaining,
+           ({pct:.1}%), elapsed {elapsed:.1}s, eta {remaining}s, kenv={}",
           ingressed.len(),
         );
         t_last_log = now;
@@ -4601,7 +4600,7 @@ pub fn check_decompile(
               info.get_type().get_hash(),
               orig_info.get_value().map(|v| *v.get_hash()),
               info.get_value().map(|v| *v.get_hash()),
-              ci_kind(&*orig_info),
+              ci_kind(orig_info),
               ci_kind(info),
             );
           }

@@ -1279,13 +1279,13 @@ mod tests {
   #[test]
   fn egress_level_zero() {
     let l = egress_level(&KUniv::<Meta>::zero(), &[]);
-    assert!(matches!(l.as_data(), crate::ix::env::LevelData::Zero(_)));
+    assert!(matches!(l.as_data(), env::LevelData::Zero(_)));
   }
 
   #[test]
   fn egress_level_succ() {
     let l = egress_level(&KUniv::<Meta>::succ(KUniv::zero()), &[]);
-    assert!(matches!(l.as_data(), crate::ix::env::LevelData::Succ(..)));
+    assert!(matches!(l.as_data(), env::LevelData::Succ(..)));
   }
 
   #[test]
@@ -1293,9 +1293,9 @@ mod tests {
     // Param(0) with level_params=["u"] → Level::param("u")
     let u_name = mk_name("u");
     let ku = KUniv::<Meta>::param(0, u_name.clone());
-    let l = egress_level(&ku, &[u_name.clone()]);
+    let l = egress_level(&ku, std::slice::from_ref(&u_name));
     match l.as_data() {
-      crate::ix::env::LevelData::Param(n, _) => assert_eq!(n, &u_name),
+      env::LevelData::Param(n, _) => assert_eq!(n, &u_name),
       other => panic!("expected Param, got {other:?}"),
     }
   }
@@ -1306,8 +1306,8 @@ mod tests {
     let ku = KUniv::<Meta>::param(5, mk_name("x"));
     let l = egress_level(&ku, &[mk_name("u")]);
     match l.as_data() {
-      crate::ix::env::LevelData::Param(n, _) => {
-        assert!(matches!(n.as_data(), crate::ix::env::NameData::Anonymous(_)));
+      env::LevelData::Param(n, _) => {
+        assert!(matches!(n.as_data(), env::NameData::Anonymous(_)));
       },
       other => panic!("expected Param, got {other:?}"),
     }

@@ -179,7 +179,7 @@ impl<M: KernelMode> TypeChecker<M> {
   pub fn whnf(&mut self, e: &KExpr<M>) -> Result<KExpr<M>, TcError<M>> {
     if *IX_WHNF_COUNT_LOG {
       let n = WHNF_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-      if n % 100_000 == 0 && n > 0 {
+      if n.is_multiple_of(100_000) && n > 0 {
         eprintln!("[whnf] count={n}");
       }
     }
@@ -577,9 +577,11 @@ impl<M: KernelMode> TypeChecker<M> {
     };
 
     let val = match self.env.get(id) {
-      Some(KConst::Defn { kind, val, .. })
-        if matches!(kind, DefKind::Definition | DefKind::Theorem) =>
-      {
+      Some(KConst::Defn {
+        kind: DefKind::Definition | DefKind::Theorem,
+        val,
+        ..
+      }) => {
         self.dump_delta_trace(id, args.len(), e);
         val.clone()
       },
@@ -1173,7 +1175,7 @@ impl<M: KernelMode> TypeChecker<M> {
     if *IX_NAT_EXPAND_LOG {
       let n =
         NAT_EXPAND_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-      if n % 10_000 == 0 {
+      if n.is_multiple_of(10_000) {
         eprintln!("[nat_to_constructor] count={n} val_bits={}", val.0.bits());
       }
     }
@@ -2038,11 +2040,10 @@ impl<M: KernelMode> TypeChecker<M> {
       return Ok(None);
     }
 
-    if is_const_named(id, &["Decidable.decide"]) && args.len() >= 2 {
-      if let Some(result) = self.try_reduce_bitvec_lt_prop(&args[0])? {
+    if is_const_named(id, &["Decidable.decide"]) && args.len() >= 2
+      && let Some(result) = self.try_reduce_bitvec_lt_prop(&args[0])? {
         return Ok(Some(self.finish_app_result(result, &args, 2)));
       }
-    }
 
     Ok(None)
   }
@@ -2138,7 +2139,10 @@ impl<M: KernelMode> TypeChecker<M> {
       return Ok(None);
     }
 
-    let modulus = num_bigint::BigUint::from(1u64) << (width as usize);
+    // `width` was bounded above by `REDUCE_BITVEC_WIDTH_MAX = 1 << 24`, so
+    // it always fits in `usize` on every supported target.
+    let width_usize = usize::try_from(width).unwrap_or(usize::MAX);
+    let modulus = num_bigint::BigUint::from(1u64) << width_usize;
     let result = Nat(n.0 % modulus);
     Ok(Some(self.nat_expr_from_value(result)))
   }
@@ -2426,8 +2430,8 @@ enum NatCtorView<M: KernelMode> {
 }
 
 /// Zero constant shared across `extract_nat_lit` calls.
-static NAT_ZERO_LITERAL: std::sync::LazyLock<Nat> =
-  std::sync::LazyLock::new(|| Nat(num_bigint::BigUint::ZERO));
+static NAT_ZERO_LITERAL: LazyLock<Nat> =
+  LazyLock::new(|| Nat(num_bigint::BigUint::ZERO));
 
 /// Extract a nat value from a literal or `Nat.zero` constructor.
 ///
@@ -3730,7 +3734,7 @@ mod tests {
     let env = Arc::new(KEnv::<Meta>::new());
     let mut tc = TypeChecker::new(Arc::clone(&env));
     let width = kt::var(1);
-    let bv_ty = kt::apps(kt::cnst("BitVec", &[]), &[width.clone()]);
+    let bv_ty = kt::apps(kt::cnst("BitVec", &[]), std::slice::from_ref(&width));
     let zero =
       kt::apps(kt::cnst("BitVec.ofNat", &[]), &[width, mk_meta_nat(0)]);
     let prop =

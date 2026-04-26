@@ -246,7 +246,7 @@ impl<'a> ExpandCtx<'a> {
 
     // Verify head is an external inductive.
     let ext_ind_ref = self.lean_env.get(&head_name);
-    let ext_ind = match ext_ind_ref.as_deref() {
+    let ext_ind = match ext_ind_ref {
       Some(ConstantInfo::InductInfo(v)) => v,
       _ => return None,
     };
@@ -312,7 +312,7 @@ impl<'a> ExpandCtx<'a> {
 
     for j_name in &ext_all {
       let j_info_ref = self.lean_env.get(j_name);
-      let j_info = match j_info_ref.as_deref() {
+      let j_info = match j_info_ref {
         Some(ConstantInfo::InductInfo(v)) => v,
         _ => continue,
       };
@@ -355,7 +355,7 @@ impl<'a> ExpandCtx<'a> {
       let mut aux_ctors: Vec<ExpandedCtor> = Vec::new();
       for j_ctor_name in &j_info.ctors {
         let j_ctor_ref = self.lean_env.get(j_ctor_name);
-        let j_ctor = match j_ctor_ref.as_deref() {
+        let j_ctor = match j_ctor_ref {
           Some(ConstantInfo::CtorInfo(c)) => c,
           _ => continue,
         };
@@ -435,7 +435,7 @@ pub(crate) fn expand_nested_block(
     }
   })?;
   let first_ind_ref = lean_env.get(first_name);
-  let first_ind = match first_ind_ref.as_deref() {
+  let first_ind = match first_ind_ref {
     Some(ConstantInfo::InductInfo(v)) => v,
     _ => {
       return Err(CompileError::MissingConstant {
@@ -480,7 +480,7 @@ pub(crate) fn expand_nested_block(
   // Seed with original inductives.
   for name in ordered_originals {
     let ind_ref = lean_env.get(name);
-    let ind = match ind_ref.as_deref() {
+    let ind = match ind_ref {
       Some(ConstantInfo::InductInfo(v)) => v,
       _ => {
         return Err(CompileError::MissingConstant {
@@ -492,7 +492,7 @@ pub(crate) fn expand_nested_block(
     let ctors: Vec<ExpandedCtor> = ind
       .ctors
       .iter()
-      .filter_map(|cn| match lean_env.get(cn).as_deref() {
+      .filter_map(|cn| match lean_env.get(cn) {
         Some(ConstantInfo::CtorInfo(c)) => Some(ExpandedCtor {
           name: c.cnst.name.clone(),
           typ: c.cnst.typ.clone(),
@@ -715,7 +715,7 @@ pub(crate) fn sort_aux_by_partition_refinement(
       }
     }
   }
-  if perm.iter().any(|p| *p == usize::MAX) {
+  if perm.contains(&usize::MAX) {
     return Err(CompileError::InvalidMutualBlock {
       reason: "aux sort did not assign every auxiliary member".into(),
     });
@@ -753,8 +753,7 @@ pub(crate) fn sort_aux_by_partition_refinement(
   // canonicalizing the trailing index by sort position.
   let mut name_rename: FxHashMap<Name, Name> = FxHashMap::default();
   let mut new_aux_names: Vec<Name> = Vec::with_capacity(n_canon);
-  for new_j in 0..n_canon {
-    let old_j = sorted_order[new_j];
+  for (new_j, &old_j) in sorted_order.iter().take(n_canon).enumerate() {
     let old_name = expanded.types[n_originals + old_j].name.clone();
 
     // Extract the "<Ext>" identifier from old suffix.
@@ -928,7 +927,7 @@ fn source_aux_order_from_expanded(
     let Some(nested_expr) = expanded.aux_to_nested.get(&mem.name) else {
       continue;
     };
-    let (head, args) = super::expr_utils::decompose_apps(nested_expr);
+    let (head, args) = decompose_apps(nested_expr);
     let head_name = match head.as_data() {
       ExprData::Const(n, _, _) => n.clone(),
       _ => continue,
@@ -1018,7 +1017,7 @@ pub(crate) fn compute_aux_perm(
     .iter()
     .filter_map(|mem| {
       let nested_expr = expanded.aux_to_nested.get(&mem.name)?;
-      let (head, args) = super::expr_utils::decompose_apps(nested_expr);
+      let (head, args) = decompose_apps(nested_expr);
       let head_name = match head.as_data() {
         ExprData::Const(n, _, _) => n.clone(),
         _ => return None,
@@ -1646,7 +1645,7 @@ pub(crate) fn build_compile_flat_block_with_overlay(
   let first_ind_ref = overlay
     .and_then(|o| o.get(first_name))
     .or_else(|| lean_env.get(first_name));
-  let first_ind = match first_ind_ref.as_deref() {
+  let first_ind = match first_ind_ref {
     Some(ConstantInfo::InductInfo(v)) => v,
     _ => {
       return Err(CompileError::MissingConstant {
@@ -1681,7 +1680,7 @@ pub(crate) fn build_compile_flat_block_with_overlay(
   for name in ordered_originals {
     let ind_ref =
       overlay.and_then(|o| o.get(name)).or_else(|| lean_env.get(name));
-    let ind = match ind_ref.as_deref() {
+    let ind = match ind_ref {
       Some(ConstantInfo::InductInfo(v)) => v,
       _ => {
         return Err(CompileError::MissingConstant {
@@ -1716,7 +1715,7 @@ pub(crate) fn build_compile_flat_block_with_overlay(
     let member_ref = overlay
       .and_then(|o| o.get(&member.name))
       .or_else(|| lean_env.get(&member.name));
-    let (ctor_names, level_params) = match member_ref.as_deref() {
+    let (ctor_names, level_params) = match member_ref {
       Some(ConstantInfo::InductInfo(v)) => {
         (v.ctors.clone(), v.cnst.level_params.clone())
       },
@@ -1727,7 +1726,7 @@ pub(crate) fn build_compile_flat_block_with_overlay(
       let ctor_ref = overlay
         .and_then(|o| o.get(ctor_name))
         .or_else(|| lean_env.get(ctor_name));
-      let (ctor_n_fields, ctor_typ) = match ctor_ref.as_deref() {
+      let (ctor_n_fields, ctor_typ) = match ctor_ref {
         Some(ConstantInfo::CtorInfo(c)) => {
           let fields = nat_to_usize(&c.num_fields);
           (fields, c.cnst.typ.clone())
@@ -1827,7 +1826,7 @@ fn abstract_spec_params_to_bvars(
   if n == 0 {
     return spec_params.to_vec();
   }
-  let fvar_map: rustc_hash::FxHashMap<crate::ix::env::Name, usize> =
+  let fvar_map: FxHashMap<Name, usize> =
     block_param_decls
       .iter()
       .enumerate()
@@ -1880,11 +1879,10 @@ fn maximize_occurrence_levels(flat: &mut [FvarFlatMember], n_originals: usize) {
 
   // Apply the maximized levels to all auxiliaries.
   for entry in flat.iter_mut().skip(n_originals) {
-    if let Some(merged) = max_levels.get(&entry.name) {
-      if merged.len() == entry.occurrence_level_args.len() {
+    if let Some(merged) = max_levels.get(&entry.name)
+      && merged.len() == entry.occurrence_level_args.len() {
         entry.occurrence_level_args = merged.clone();
       }
-    }
   }
 
   /// Raw level max: `max(a, b)` with only zero elimination.
@@ -1942,7 +1940,7 @@ fn try_detect_nested_fvar(
   let head_ref = overlay
     .and_then(|o| o.get(&head_name))
     .or_else(|| lean_env.get(&head_name));
-  let (ext_n_params, ext_n_indices) = match head_ref.as_deref() {
+  let (ext_n_params, ext_n_indices) = match head_ref {
     Some(ConstantInfo::InductInfo(v)) => {
       let p = nat_to_usize(&v.num_params);
       let i = nat_to_usize(&v.num_indices);

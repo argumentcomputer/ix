@@ -159,7 +159,7 @@ pub fn compile_env_with_options(
       .into_iter()
       .filter(|(name, _)| !ungrounded_map.contains_key(name))
       .map(|(k, refs)| {
-        let filtered: rustc_hash::FxHashSet<Name> = refs
+        let filtered: FxHashSet<Name> = refs
           .into_iter()
           .filter(|r| !ungrounded_map.contains_key(r))
           .collect();
@@ -506,7 +506,7 @@ pub fn compile_env_with_options(
               }
 
               // Track time for slow block detection
-              let block_start = std::time::Instant::now();
+              let block_start = Instant::now();
 
               // Register as in-flight for the progress reporter. Remove on
               // every exit path (panic converted to error, graceful error,
@@ -523,7 +523,7 @@ pub fn compile_env_with_options(
 
               // Check if this block was pre-compiled into aux_name_to_addr.
               // Promote to name_to_addr without re-compiling.
-              let _cc_start = std::time::Instant::now();
+              let _cc_start = Instant::now();
               let _is_precompiled = stt_ref.resolve_addr(&lo).is_some();
               if _is_precompiled {
                 // Check if any names in this block are aux_gen-rewritten.
@@ -845,7 +845,7 @@ pub fn compile_env_with_options(
               // Wait for new work to become available
               let queue = ready_queue_ref.lock().unwrap();
               let _ = condvar_ref
-                .wait_timeout(queue, std::time::Duration::from_millis(10))
+                .wait_timeout(queue, Duration::from_millis(10))
                 .unwrap();
             },
           }
@@ -1013,11 +1013,10 @@ fn precompile_aux_gen_prereqs(
         // their SCC reps).
         if let Some(out_refs) = condensed.block_refs.get(&rep) {
           for referenced in out_refs {
-            if let Some(dep_rep) = condensed.low_links.get(referenced) {
-              if !visited.contains(dep_rep) {
+            if let Some(dep_rep) = condensed.low_links.get(referenced)
+              && !visited.contains(dep_rep) {
                 stack.push(Frame::Enter(dep_rep.clone()));
               }
-            }
           }
         }
       },

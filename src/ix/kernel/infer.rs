@@ -34,7 +34,7 @@ impl<M: KernelMode> TypeChecker<M> {
   pub fn infer(&mut self, e: &KExpr<M>) -> Result<KExpr<M>, TcError<M>> {
     if *IX_INFER_COUNT_LOG {
       let n = INFER_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-      if n % 100_000 == 0 && n > 0 {
+      if n.is_multiple_of(100_000) && n > 0 {
         eprintln!("[infer] count={n}");
       }
     }
@@ -79,7 +79,7 @@ impl<M: KernelMode> TypeChecker<M> {
 
       ExprData::App(f, a, _) => {
         let f_ty = self.infer(f)?;
-        let (dom, cod) = self.ensure_forall(&f_ty).map_err(|err| {
+        let (dom, cod) = self.ensure_forall(&f_ty).inspect_err(|_err| {
           eprintln!("[infer App] ensure_forall FAILED");
           eprintln!("  f:    {f}");
           eprintln!("  f_ty: {f_ty}");
@@ -98,7 +98,6 @@ impl<M: KernelMode> TypeChecker<M> {
             }
             eprintln!("  fa:    {fa}");
           }
-          err
         })?;
         if !infer_only {
           let a_ty = self.infer(a)?;

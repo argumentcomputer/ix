@@ -221,7 +221,7 @@ fn ingress_univ_args<M: KernelMode>(
     .iter()
     .map(|&idx| {
       let i = usize::try_from(idx)
-        .map_err(|_| format!("universe index {idx} exceeds usize"))?;
+        .map_err(|_e| format!("universe index {idx} exceeds usize"))?;
       let u = ctx.univs.get(i).ok_or_else(|| {
         format!("universe index {i} out of bounds (len {})", ctx.univs.len())
       })?;
@@ -912,7 +912,7 @@ fn ingress_defn<M: KernelMode>(
         &DEFAULT_ARENA,
         0,
         0,
-        crate::ix::env::ReducibilityHints::Regular(0),
+        ReducibilityHints::Regular(0),
         def.safety,
         vec![],
       ),
@@ -1026,8 +1026,7 @@ fn ingress_recursor<M: KernelMode>(
       // meta, e.g. synthetic kernel tests).
       let ctor_name = rule_ctor_addrs
         .get(i)
-        .map(|a| resolve_name(a, names))
-        .unwrap_or_else(Name::anon);
+        .map_or_else(Name::anon, |a| resolve_name(a, names));
       Ok(RecRule { ctor: M::meta_field(ctor_name), fields: rule.fields, rhs })
     })
     .collect();
@@ -1535,8 +1534,8 @@ pub fn lean_level_to_kuniv(lvl: &Level, param_names: &[Name]) -> KUniv<Meta> {
 /// `Address::from_blake3_hash(*name.get_hash())` for constants not yet compiled.
 pub fn resolve_lean_name_addr(
   name: &Name,
-  name_to_ixon_addr: Option<&dashmap::DashMap<Name, Address>>,
-  aux_n2a: Option<&dashmap::DashMap<Name, Address>>,
+  name_to_ixon_addr: Option<&DashMap<Name, Address>>,
+  aux_n2a: Option<&DashMap<Name, Address>>,
 ) -> Address {
   if let Some(map) = name_to_ixon_addr
     && let Some(entry) = map.get(name)
@@ -1572,8 +1571,8 @@ pub fn lean_expr_to_zexpr(
   expr: &LeanExpr,
   param_names: &[Name],
   intern: &InternTable<Meta>,
-  name_to_ixon_addr: Option<&dashmap::DashMap<Name, Address>>,
-  aux_n2a: Option<&dashmap::DashMap<Name, Address>>,
+  name_to_ixon_addr: Option<&DashMap<Name, Address>>,
+  aux_n2a: Option<&DashMap<Name, Address>>,
 ) -> KExpr<Meta> {
   // Uncached path — only for callers without KEnv access. Top-level
   // expressions start with an empty binder stack.
@@ -1596,9 +1595,9 @@ pub fn lean_expr_to_zexpr(
 pub fn lean_expr_to_zexpr_with_kenv(
   expr: &LeanExpr,
   param_names: &[Name],
-  kenv: &crate::ix::kernel::env::KEnv<Meta>,
-  n2a: Option<&dashmap::DashMap<Name, Address>>,
-  aux_n2a: Option<&dashmap::DashMap<Name, Address>>,
+  kenv: &KEnv<Meta>,
+  n2a: Option<&DashMap<Name, Address>>,
+  aux_n2a: Option<&DashMap<Name, Address>>,
 ) -> KExpr<Meta> {
   let pn_h = param_names_hash(param_names);
   let mut binder_names: Vec<Name> = Vec::new();
@@ -1637,8 +1636,8 @@ pub fn lean_expr_to_zexpr_cached(
   param_names: &[Name],
   binder_names: &mut Vec<Name>,
   intern: &InternTable<Meta>,
-  n2a: Option<&dashmap::DashMap<Name, Address>>,
-  aux_n2a: Option<&dashmap::DashMap<Name, Address>>,
+  n2a: Option<&DashMap<Name, Address>>,
+  aux_n2a: Option<&DashMap<Name, Address>>,
   cache: Option<&DashMap<(Addr, Addr), KExpr<Meta>>>,
   pn_hash: Option<&Addr>,
 ) -> KExpr<Meta> {
@@ -1678,8 +1677,8 @@ fn lean_expr_to_zexpr_raw(
   pn: &[Name],
   binder_names: &mut Vec<Name>,
   intern: &InternTable<Meta>,
-  n2a: Option<&dashmap::DashMap<Name, Address>>,
-  aux_n2a: Option<&dashmap::DashMap<Name, Address>>,
+  n2a: Option<&DashMap<Name, Address>>,
+  aux_n2a: Option<&DashMap<Name, Address>>,
   cache: Option<&DashMap<(Addr, Addr), KExpr<Meta>>>,
   pn_hash: Option<&Addr>,
 ) -> KExpr<Meta> {
@@ -1715,9 +1714,10 @@ fn lean_expr_to_zexpr_raw(
       // into the current binder stack. Missing entries (ill-scoped
       // expressions, or traversals from a non-empty starting stack)
       // fall back to anonymous; the idx itself is always correct.
+      let idx_usize = usize::try_from(idx_u64).unwrap_or(usize::MAX);
       let name = binder_names
         .len()
-        .checked_sub(1 + idx_u64 as usize)
+        .checked_sub(1 + idx_usize)
         .and_then(|i| binder_names.get(i))
         .cloned()
         .unwrap_or_else(Name::anon);
@@ -2065,18 +2065,17 @@ fn lean_constant_all(ci: &LeanCI) -> Option<&Vec<Name>> {
 fn lean_member_idx(name: &Name, all: Option<&Vec<Name>>) -> u64 {
   all
     .and_then(|a| a.iter().position(|n| n == name))
-    .map(|i| i as u64)
-    .unwrap_or(0)
+    .map_or(0, |i| i as u64)
 }
 
 /// Build a `Name → LEON content-hash` map for every constant in the Lean env.
 ///
 /// The LEON hash is `ConstantInfo::get_hash()` in `src/ix/env.rs` — a Blake3
-/// digest over the serialized original `ConstantInfo` (name + level params
-/// + type expression + variant-specific fields). Two constants with the
-/// same Lean name but different content get distinct addresses, so a rogue
-/// environment can't shadow a primitive just by naming its own declaration
-/// `Nat`.
+/// digest over the serialized original `ConstantInfo`
+/// (name, level params, type expression, variant-specific fields).
+/// Two constants with the same Lean name but different content get distinct
+/// addresses, so a rogue environment can't shadow a primitive just by naming
+/// its own declaration `Nat`.
 ///
 /// The resulting map is the addressing authority for `lean_ingress`: every
 /// `KId.addr` in `orig_kenv` and every `Const`-reference address inside
@@ -2086,7 +2085,7 @@ fn lean_member_idx(name: &Name, all: Option<&Vec<Name>>) -> u64 {
 /// as `UnknownConst` in the type checker rather than silently succeeding.
 pub fn build_leon_addr_map(
   lean_env: &LeanEnv,
-) -> dashmap::DashMap<Name, Address> {
+) -> DashMap<Name, Address> {
   // Build in parallel. Each shard's write lock is contended only when
   // distinct names happen to hash into the same shard — with 64 default
   // shards and ~199k names, contention is low. Pre-sizing `with_capacity`
@@ -2100,7 +2099,7 @@ pub fn build_leon_addr_map(
   // different types would propagate a signature change through ~5
   // functions with no matching perf win.
   let entries: Vec<(&Name, &LeanCI)> = lean_env.iter().collect();
-  let map = dashmap::DashMap::with_capacity(lean_env.len());
+  let map = DashMap::with_capacity(lean_env.len());
   entries.par_iter().for_each(|(name, ci)| {
     map.insert((*name).clone(), Address::from_blake3_hash(ci.get_hash()));
   });
@@ -2114,11 +2113,10 @@ pub fn build_leon_addr_map(
 /// well-formed Lean env should never trigger it. Callers that need
 /// strict resolution (e.g. "does this name exist?") should check
 /// `n2a.contains_key` directly.
-fn leon_addr_of(name: &Name, n2a: &dashmap::DashMap<Name, Address>) -> Address {
+fn leon_addr_of(name: &Name, n2a: &DashMap<Name, Address>) -> Address {
   n2a
     .get(name)
-    .map(|e| e.value().clone())
-    .unwrap_or_else(|| lean_name_to_addr(name))
+    .map_or_else(|| lean_name_to_addr(name), |e| e.value().clone())
 }
 
 /// Build the `block` KId for a constant's mutual block. For singletons
@@ -2127,7 +2125,7 @@ fn leon_addr_of(name: &Name, n2a: &dashmap::DashMap<Name, Address>) -> Address {
 fn lean_block_id(
   self_name: &Name,
   all: Option<&Vec<Name>>,
-  n2a: &dashmap::DashMap<Name, Address>,
+  n2a: &DashMap<Name, Address>,
 ) -> KId<Meta> {
   let rep = all.and_then(|a| a.first()).unwrap_or(self_name);
   KId::new(leon_addr_of(rep, n2a), rep.clone())
@@ -2136,7 +2134,7 @@ fn lean_block_id(
 /// Build the `lean_all` KId list in Meta mode.
 fn lean_all_ids(
   all: &[Name],
-  n2a: &dashmap::DashMap<Name, Address>,
+  n2a: &DashMap<Name, Address>,
 ) -> Vec<KId<Meta>> {
   all.iter().map(|n| KId::new(leon_addr_of(n, n2a), n.clone())).collect()
 }
@@ -2149,7 +2147,7 @@ fn lean_const_to_kconst(
   self_name: &Name,
   ci: &LeanCI,
   kenv: &KEnv<Meta>,
-  n2a: &dashmap::DashMap<Name, Address>,
+  n2a: &DashMap<Name, Address>,
 ) -> KConst<Meta> {
   // Helper: shorthand for expression ingress. `n2a` carries the env-wide
   // LEON addressing so `Const` refs inside expressions resolve to the same
@@ -2704,8 +2702,8 @@ mod tests {
     n
   }
 
-  fn n_lit(x: u64) -> lean_ffi::nat::Nat {
-    lean_ffi::nat::Nat::from(x)
+  fn n_lit(x: u64) -> Nat {
+    Nat::from(x)
   }
 
   // ---- lean_level_to_kuniv ----
@@ -2827,7 +2825,7 @@ mod tests {
 
   #[test]
   fn resolve_lean_name_addr_uses_primary_map() {
-    let map: dashmap::DashMap<Name, Address> = dashmap::DashMap::new();
+    let map: DashMap<Name, Address> = DashMap::new();
     let name = mk_name("Foo");
     let real = Address::hash(b"custom");
     map.insert(name.clone(), real.clone());
@@ -2837,8 +2835,8 @@ mod tests {
 
   #[test]
   fn resolve_lean_name_addr_falls_through_to_aux() {
-    let primary: dashmap::DashMap<Name, Address> = dashmap::DashMap::new();
-    let aux: dashmap::DashMap<Name, Address> = dashmap::DashMap::new();
+    let primary: DashMap<Name, Address> = DashMap::new();
+    let aux: DashMap<Name, Address> = DashMap::new();
     let name = mk_name("Aux.name");
     let real = Address::hash(b"aux");
     aux.insert(name.clone(), real.clone());
@@ -2867,7 +2865,7 @@ mod tests {
   fn ixon_ingress_rejects_reserved_marker_refs() {
     let env = IxonEnv::new();
     let marker = crate::ix::kernel::primitive::PrimAddrs::new().eager_reduce;
-    let constant = crate::ix::ixon::constant::Constant::with_tables(
+    let constant = Constant::with_tables(
       crate::ix::ixon::constant::ConstantInfo::Axio(
         crate::ix::ixon::constant::Axiom {
           is_unsafe: false,
@@ -3028,12 +3026,8 @@ mod tests {
   /// chain of N `Expr`s recurses N times regardless of whether ingress
   /// itself is iterative (the recursion is in `Arc<ExprData>::drop`).
   fn drop_app_spine_iteratively(mut e: LeanExpr) {
-    loop {
-      let next = if let env::ExprData::App(f, _, _) = e.as_data() {
-        f.clone()
-      } else {
-        break;
-      };
+    while let env::ExprData::App(f, _, _) = e.as_data() {
+      let next = f.clone();
       drop(e);
       e = next;
     }
@@ -3042,12 +3036,10 @@ mod tests {
 
   /// Same pattern for forall / lambda body chains.
   fn drop_binder_chain_iteratively(mut e: LeanExpr) {
-    loop {
-      let next = match e.as_data() {
-        env::ExprData::ForallE(_, _, body, _, _)
-        | env::ExprData::Lam(_, _, body, _, _) => body.clone(),
-        _ => break,
-      };
+    while let env::ExprData::ForallE(_, _, body, _, _)
+    | env::ExprData::Lam(_, _, body, _, _) = e.as_data()
+    {
+      let next = body.clone();
       drop(e);
       e = next;
     }
@@ -3206,8 +3198,13 @@ mod tests {
     let u_name = mk_name("u");
     let v_name = mk_name("v");
     let e = LeanExpr::sort(Level::param(u_name.clone()));
-    let k1 =
-      lean_expr_to_zexpr_with_kenv(&e, &[u_name.clone()], &env, None, None);
+    let k1 = lean_expr_to_zexpr_with_kenv(
+      &e,
+      std::slice::from_ref(&u_name),
+      &env,
+      None,
+      None,
+    );
     let k2 = lean_expr_to_zexpr_with_kenv(
       &e,
       &[v_name, u_name.clone()],

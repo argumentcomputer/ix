@@ -45,7 +45,7 @@ pub fn subst<M: KernelMode>(
 ) -> KExpr<M> {
   if *IX_SUBST_COUNT_LOG && depth == 0 {
     let n = SUBST_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    if n % 100_000 == 0 && n > 0 {
+    if n.is_multiple_of(100_000) && n > 0 {
       eprintln!("[subst] count={n}");
     }
   }
@@ -344,6 +344,28 @@ fn lift_cached<M: KernelMode>(
   interned
 }
 
+// Internal helper used only by the property tests: allow `ExprData` →
+// `KExpr` reconstruction for re-interning in determinism check.
+#[cfg(test)]
+impl<M: KernelMode> ExprData<M> {
+  fn into_kexpr(self) -> KExpr<M> {
+    match self {
+      ExprData::Var(i, name, _) => KExpr::var(i, name),
+      ExprData::Sort(u, _) => KExpr::sort(u),
+      ExprData::Const(id, us, _) => KExpr::cnst(id, us),
+      ExprData::App(f, a, _) => KExpr::app(f, a),
+      ExprData::Lam(n, bi, ty, body, _) => KExpr::lam(n, bi, ty, body),
+      ExprData::All(n, bi, ty, body, _) => KExpr::all(n, bi, ty, body),
+      ExprData::Let(n, ty, val, body, nd, _) => {
+        KExpr::let_(n, ty, val, body, nd)
+      },
+      ExprData::Prj(id, idx, val, _) => KExpr::prj(id, idx, val),
+      ExprData::Nat(n, addr, _) => KExpr::nat(n, addr),
+      ExprData::Str(s, addr, _) => KExpr::str(s, addr),
+    }
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -513,7 +535,10 @@ mod tests {
       x
     }
     fn next_u32(&mut self, bound: u32) -> u32 {
-      (self.next_u64() as u32) % bound.max(1)
+      // Truncating to u32 is intentional for the test RNG.
+      #[allow(clippy::cast_possible_truncation)]
+      let lo = self.next_u64() as u32;
+      lo % bound.max(1)
     }
   }
 
@@ -656,28 +681,6 @@ mod tests {
           "subst must return ptr-equal for closed expressions"
         );
       }
-    }
-  }
-}
-
-// Internal helper used only by the property tests: allow `ExprData` →
-// `KExpr` reconstruction for re-interning in determinism check.
-#[cfg(test)]
-impl<M: KernelMode> ExprData<M> {
-  fn into_kexpr(self) -> KExpr<M> {
-    match self {
-      ExprData::Var(i, name, _) => KExpr::var(i, name),
-      ExprData::Sort(u, _) => KExpr::sort(u),
-      ExprData::Const(id, us, _) => KExpr::cnst(id, us),
-      ExprData::App(f, a, _) => KExpr::app(f, a),
-      ExprData::Lam(n, bi, ty, body, _) => KExpr::lam(n, bi, ty, body),
-      ExprData::All(n, bi, ty, body, _) => KExpr::all(n, bi, ty, body),
-      ExprData::Let(n, ty, val, body, nd, _) => {
-        KExpr::let_(n, ty, val, body, nd)
-      },
-      ExprData::Prj(id, idx, val, _) => KExpr::prj(id, idx, val),
-      ExprData::Nat(n, addr, _) => KExpr::nat(n, addr),
-      ExprData::Str(s, addr, _) => KExpr::str(s, addr),
     }
   }
 }

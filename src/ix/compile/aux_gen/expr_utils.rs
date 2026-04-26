@@ -145,10 +145,10 @@ pub(super) fn decompose_inductive_type(
   // Instantiate `n_params` leading Pi's with the caller's param FVars.
   // WHNF after each substitution to expose any alias introduced by the
   // substitution (e.g., a param whose domain mentions a reducible def).
-  for p in 0..n_params {
+  for (p, param_fvar) in param_fvars.iter().take(n_params).enumerate() {
     match cur.as_data() {
       ExprData::ForallE(_, _, body, _, _) => {
-        let param_fv = LeanExpr::fvar(param_fvars[p].fvar_name.clone());
+        let param_fv = LeanExpr::fvar(param_fvar.fvar_name.clone());
         cur = instantiate1(body, &param_fv);
         cur = scope.whnf_lean(&cur);
       },
@@ -171,24 +171,19 @@ pub(super) fn decompose_inductive_type(
   // reducible-alias target case.
   let mut indices: Vec<LocalDecl> = Vec::new();
   let mut idx_i = 0usize;
-  loop {
-    match cur.as_data() {
-      ExprData::ForallE(name, dom, body, bi, _) => {
-        let (fv_name, fv) = fresh_fvar("idx", idx_i);
-        let decl = LocalDecl {
-          fvar_name: fv_name,
-          binder_name: name.clone(),
-          domain: dom.clone(),
-          info: bi.clone(),
-        };
-        scope.push_locals(std::slice::from_ref(&decl));
-        indices.push(decl);
-        cur = instantiate1(body, &fv);
-        cur = scope.whnf_lean(&cur);
-        idx_i += 1;
-      },
-      _ => break,
-    }
+  while let ExprData::ForallE(name, dom, body, bi, _) = cur.as_data() {
+    let (fv_name, fv) = fresh_fvar("idx", idx_i);
+    let decl = LocalDecl {
+      fvar_name: fv_name,
+      binder_name: name.clone(),
+      domain: dom.clone(),
+      info: bi.clone(),
+    };
+    scope.push_locals(std::slice::from_ref(&decl));
+    indices.push(decl);
+    cur = instantiate1(body, &fv);
+    cur = scope.whnf_lean(&cur);
+    idx_i += 1;
   }
 
   // Target sort.
@@ -258,11 +253,8 @@ pub(crate) fn forall_telescope(
   let mut cur = expr.clone();
   for i in 0..n {
     // Peel any Mdata wrappers before matching — they're structural no-ops.
-    loop {
-      match cur.as_data() {
-        ExprData::Mdata(_, inner, _) => cur = inner.clone(),
-        _ => break,
-      }
+    while let ExprData::Mdata(_, inner, _) = cur.as_data() {
+      cur = inner.clone();
     }
     match cur.as_data() {
       ExprData::ForallE(name, dom, body, bi, _) => {
@@ -428,6 +420,7 @@ pub(crate) fn mk_lambda(body: LeanExpr, binders: &[LocalDecl]) -> LeanExpr {
 }
 
 /// Whether to build forall or lambda binders.
+#[derive(Clone, Copy)]
 enum BinderKind {
   Forall,
   Lambda,
@@ -726,10 +719,10 @@ pub(super) fn instantiate_pi_params(
     n
   );
   let mut cur = typ.clone();
-  for i in 0..n {
+  for arg in args.iter().take(n) {
     match cur.as_data() {
       ExprData::ForallE(_, _, body, _, _) => {
-        cur = instantiate1(body, &args[i]);
+        cur = instantiate1(body, arg);
       },
       _ => break,
     }
@@ -927,13 +920,13 @@ pub(super) fn subst_level(
 pub(super) struct RestoreCtx {
   /// `aux_name → nested_expr`: the original nested application with block
   /// param FVars. Example: `"_nested.Array_1" → Array.{max u v}(Part.{u,v} fvar_α fvar_β)`
-  pub aux_to_nested: rustc_hash::FxHashMap<Name, LeanExpr>,
+  pub aux_to_nested: FxHashMap<Name, LeanExpr>,
   /// `aux_ctor_name → (original_ctor_name, original_ind_name)`: maps auxiliary
   /// constructor names back to originals for prefix replacement.
-  pub aux_ctor_map: rustc_hash::FxHashMap<Name, (Name, Name)>,
+  pub aux_ctor_map: FxHashMap<Name, (Name, Name)>,
   /// `aux_rec_name → canonical_rec_name`: maps auxiliary recursor names
   /// (e.g., `_nested.Array_1.rec`) to their canonical names (e.g., `Part.rec_1`).
-  pub aux_rec_map: rustc_hash::FxHashMap<Name, Name>,
+  pub aux_rec_map: FxHashMap<Name, Name>,
   /// Block-param FVars used during expansion. These are the free variables
   /// in the `aux_to_nested` expressions.
   pub block_param_fvars: Vec<LeanExpr>,
@@ -962,17 +955,17 @@ struct RestoreStateCache {
   /// `instantiate_rev` on every encounter of an aux, even though the
   /// inputs were identical across the entire block; now materialised
   /// once.
-  aux_restored: rustc_hash::FxHashMap<Name, LeanExpr>,
+  aux_restored: FxHashMap<Name, LeanExpr>,
   /// `aux_ind name → (orig_head_levels, orig_ind_args)` derived from
   /// decomposing the restored nested expression. Used for the aux-ctor
   /// restoration path where we need to rebuild
   /// `orig_ctor.{I_lvls} spec_params`.
   aux_decomp:
-    rustc_hash::FxHashMap<Name, (Vec<crate::ix::env::Level>, Vec<LeanExpr>)>,
+    FxHashMap<Name, (Vec<Level>, Vec<LeanExpr>)>,
   /// Walk memoization shared across every `restore()` call on this
   /// context. DAG-shared subterms between recursor rules collapse to a
   /// single rewrite.
-  walk_cache: rustc_hash::FxHashMap<blake3::Hash, LeanExpr>,
+  walk_cache: FxHashMap<blake3::Hash, LeanExpr>,
 }
 
 /// Per-call borrow of the cached state. The lifetime ties the state's
@@ -986,9 +979,9 @@ impl RestoreCtx {
   /// Build a context with an empty cache. The cache is populated lazily
   /// on the first `restore()` call.
   pub(super) fn new(
-    aux_to_nested: rustc_hash::FxHashMap<Name, LeanExpr>,
-    aux_ctor_map: rustc_hash::FxHashMap<Name, (Name, Name)>,
-    aux_rec_map: rustc_hash::FxHashMap<Name, Name>,
+    aux_to_nested: FxHashMap<Name, LeanExpr>,
+    aux_ctor_map: FxHashMap<Name, (Name, Name)>,
+    aux_rec_map: FxHashMap<Name, Name>,
     block_param_fvars: Vec<LeanExpr>,
     n_params: usize,
   ) -> Self {
@@ -1026,7 +1019,7 @@ impl RestoreCtx {
       .collect();
     let subst_fvars: Vec<LeanExpr> = as_fvars.iter().rev().cloned().collect();
 
-    let bp_fvar_map: rustc_hash::FxHashMap<Name, usize> = self
+    let bp_fvar_map: FxHashMap<Name, usize> = self
       .block_param_fvars
       .iter()
       .enumerate()
@@ -1036,15 +1029,15 @@ impl RestoreCtx {
       })
       .collect();
 
-    let mut aux_restored: rustc_hash::FxHashMap<Name, LeanExpr> =
-      rustc_hash::FxHashMap::with_capacity_and_hasher(
+    let mut aux_restored: FxHashMap<Name, LeanExpr> =
+      FxHashMap::with_capacity_and_hasher(
         self.aux_to_nested.len(),
         Default::default(),
       );
-    let mut aux_decomp: rustc_hash::FxHashMap<
+    let mut aux_decomp: FxHashMap<
       Name,
-      (Vec<crate::ix::env::Level>, Vec<LeanExpr>),
-    > = rustc_hash::FxHashMap::default();
+      (Vec<Level>, Vec<LeanExpr>),
+    > = FxHashMap::default();
     for (aux_name, nested) in &self.aux_to_nested {
       let abstracted = batch_abstract(nested, &bp_fvar_map, self.n_params, 0);
       let restored = instantiate_rev(&abstracted, &subst_fvars);
@@ -1058,7 +1051,7 @@ impl RestoreCtx {
     *self.cached.borrow_mut() = Some(RestoreStateCache {
       aux_restored,
       aux_decomp,
-      walk_cache: rustc_hash::FxHashMap::default(),
+      walk_cache: FxHashMap::default(),
     });
   }
 
@@ -1066,7 +1059,7 @@ impl RestoreCtx {
   /// walking the body to replace aux references, and re-wrapping.
   ///
   /// Matches C++ `restore_nested` (`inductive.cpp:828-872`).
-  pub fn restore(&self, expr: &LeanExpr) -> LeanExpr {
+  pub(super) fn restore(&self, expr: &LeanExpr) -> LeanExpr {
     if self.aux_to_nested.is_empty()
       && self.aux_ctor_map.is_empty()
       && self.aux_rec_map.is_empty()
@@ -1119,11 +1112,10 @@ impl<'a> RestoreState<'a> {
 
   fn replace_walk_uncached(&mut self, e: &LeanExpr) -> LeanExpr {
     // Check for bare Const matching aux_rec_map (recursor rename).
-    if let ExprData::Const(name, levels, _) = e.as_data() {
-      if let Some(new_name) = self.ctx.aux_rec_map.get(name) {
+    if let ExprData::Const(name, levels, _) = e.as_data()
+      && let Some(new_name) = self.ctx.aux_rec_map.get(name) {
         return LeanExpr::cnst(new_name.clone(), levels.clone());
       }
-    }
 
     // Check for application whose head is an aux type or aux constructor.
     let (head, args) = decompose_apps(e);
@@ -1363,7 +1355,7 @@ pub(super) fn rewrite_nested_const_levels_cached(
   expr: &LeanExpr,
   aux_info: &std::collections::HashMap<Name, (usize, Vec<Level>)>,
   block_names: &rustc_hash::FxHashSet<Name>,
-  cache: &mut rustc_hash::FxHashMap<blake3::Hash, LeanExpr>,
+  cache: &mut FxHashMap<blake3::Hash, LeanExpr>,
 ) -> LeanExpr {
   let key = *expr.get_hash();
   if let Some(cached) = cache.get(&key) {
@@ -1379,12 +1371,12 @@ fn rewrite_nested_const_levels_walk(
   expr: &LeanExpr,
   aux_info: &std::collections::HashMap<Name, (usize, Vec<Level>)>,
   block_names: &rustc_hash::FxHashSet<Name>,
-  cache: &mut rustc_hash::FxHashMap<blake3::Hash, LeanExpr>,
+  cache: &mut FxHashMap<blake3::Hash, LeanExpr>,
 ) -> LeanExpr {
   // Try to decompose as an application of an auxiliary Const.
   let (head, args) = decompose_apps(expr);
-  if let ExprData::Const(name, levels, _) = head.as_data() {
-    if let Some((n_params, new_levels)) = aux_info.get(name) {
+  if let ExprData::Const(name, levels, _) = head.as_data()
+    && let Some((n_params, new_levels)) = aux_info.get(name) {
       let has_nested_ref = args
         .iter()
         .take(*n_params)
@@ -1402,7 +1394,6 @@ fn rewrite_nested_const_levels_walk(
         return result;
       }
     }
-  }
 
   // Not a rewritable app — recurse into sub-expressions.
   match expr.as_data() {
@@ -1580,8 +1571,8 @@ pub(super) fn replace_const_names(
   if map.is_empty() {
     return expr.clone();
   }
-  let mut cache: rustc_hash::FxHashMap<blake3::Hash, LeanExpr> =
-    rustc_hash::FxHashMap::default();
+  let mut cache: FxHashMap<blake3::Hash, LeanExpr> =
+    FxHashMap::default();
   replace_const_names_cached(expr, map, &mut cache)
 }
 
@@ -1595,7 +1586,7 @@ pub(super) fn replace_const_names(
 pub(super) fn replace_const_names_cached(
   expr: &LeanExpr,
   map: &std::collections::HashMap<Name, Name>,
-  cache: &mut rustc_hash::FxHashMap<blake3::Hash, LeanExpr>,
+  cache: &mut FxHashMap<blake3::Hash, LeanExpr>,
 ) -> LeanExpr {
   if map.is_empty() {
     return expr.clone();
@@ -1717,11 +1708,10 @@ pub(crate) fn ensure_prelude_in_kenv_of(
 
   // Fast path: if PUnit is already registered as an Indc (not an Axio stub),
   // assume PProd is too and skip redundant construction.
-  if let Some(kconst) = kctx.kenv.get(&punit_id) {
-    if matches!(kconst, KConst::Indc { .. }) {
+  if let Some(kconst) = kctx.kenv.get(&punit_id)
+    && matches!(kconst, KConst::Indc { .. }) {
       return;
     }
-  }
 
   let u_name = Name::str(Name::anon(), "u".to_string());
   {
@@ -1979,7 +1969,7 @@ fn ensure_in_kenv_of_inner(
       let ty_z = to_z(&ind.cnst.typ, lp);
       let mut ctor_zids = Vec::new();
       for ctor_name in &ind.ctors {
-        if let Some(LCI::CtorInfo(ctor)) = lean_env.get(ctor_name).as_deref() {
+        if let Some(LCI::CtorInfo(ctor)) = lean_env.get(ctor_name) {
           let ctor_zid = KId::new(
             resolve_lean_name_addr(ctor_name, n2a, aux_n2a),
             ctor_name.clone(),
@@ -2029,8 +2019,8 @@ fn ensure_in_kenv_of_inner(
           name: name.clone(),
           level_params: lp.clone(),
           kind: crate::ix::ixon::constant::DefKind::Definition,
-          safety: d.safety.clone(),
-          hints: d.hints.clone(),
+          safety: d.safety,
+          hints: d.hints,
           lvls: lp.len() as u64,
           ty: to_z(&d.cnst.typ, lp),
           val: to_z(&d.value, lp),
@@ -2095,7 +2085,7 @@ fn ensure_in_kenv_of_inner(
         KConst::Quot {
           name: name.clone(),
           level_params: lp.clone(),
-          kind: q.kind.clone(),
+          kind: q.kind,
           lvls: lp.len() as u64,
           ty: to_z(&q.cnst.typ, lp),
         },
@@ -2321,7 +2311,7 @@ impl<'a> TcScope<'a> {
     // produce aux_gen output that's alpha-equivalent but not hash-equal
     // to Lean's — e.g. `SetTheory.PGame.brecOn.go` d=9 PProd.mk.lvl[1].
     // For non-forall `ty`, match Lean exactly and leave the level as-is.
-    let lvl = if matches!(ty.as_data(), crate::ix::env::ExprData::ForallE(..)) {
+    let lvl = if matches!(ty.as_data(), ExprData::ForallE(..)) {
       super::below::level_normalize(&raw)
     } else {
       raw
@@ -2334,11 +2324,12 @@ impl<'a> TcScope<'a> {
     use crate::ix::env::LevelData;
     match l.as_data() {
       LevelData::Succ(_, _) => true,
-      LevelData::Param(_, _) => false, // could be zero
       LevelData::Max(a, b, _) => {
         Self::is_not_zero_level(a) || Self::is_not_zero_level(b)
       },
       LevelData::Imax(_, b, _) => Self::is_not_zero_level(b),
+      // Param could be zero; everything else (Zero, Mvar) is treated as
+      // potentially zero too.
       _ => false,
     }
   }
@@ -2365,7 +2356,7 @@ impl<'a> TcScope<'a> {
     let n2a = Some(&self.stt.name_to_addr);
     let aux_n2a = Some(&self.stt.aux_name_to_addr);
     let addr =
-      crate::ix::kernel::ingress::resolve_lean_name_addr(name, n2a, aux_n2a);
+      resolve_lean_name_addr(name, n2a, aux_n2a);
     let kid = crate::ix::kernel::id::KId::new(addr, name.clone());
     let kconst = self.tc.env.get(&kid)?;
     let kty = kconst.ty();
@@ -2427,11 +2418,11 @@ impl<'a> TcScope<'a> {
         // zero/nonzero status is known.
         if Self::is_not_zero_level(&lb) {
           super::below::level_max(&la, &lb)
-        } else if matches!(lb.as_data(), LevelData::Zero(_)) {
-          lb
-        } else if matches!(la.as_data(), LevelData::Zero(_))
+        } else if matches!(lb.as_data(), LevelData::Zero(_))
+          || matches!(la.as_data(), LevelData::Zero(_))
           || matches!(la.as_data(), LevelData::Succ(inner, _) if matches!(inner.as_data(), LevelData::Zero(_)))
         {
+          // Lean's mk_imax: imax(_, 0) = 0, imax(0, _) = b, imax(1, b) = b.
           lb
         } else if la == lb {
           la
@@ -2445,8 +2436,8 @@ impl<'a> TcScope<'a> {
           // Fallback: use the TcScope's param names.
           let name =
             self.param_names.get(*idx as usize).cloned().unwrap_or_else(|| {
-              crate::ix::env::Name::str(
-                crate::ix::env::Name::anon(),
+              Name::str(
+                Name::anon(),
                 format!("u_{idx}"),
               )
             });
@@ -2704,8 +2695,8 @@ fn to_kexpr_static(
     ExprData::Mdata(_, inner, _) => {
       to_kexpr_static(inner, fvar_levels, ctx_depth, param_names, stt)
     },
-    _ => crate::ix::kernel::expr::KExpr::sort(
-      crate::ix::kernel::level::KUniv::zero(),
+    _ => KExpr::sort(
+      KUniv::zero(),
     ),
   }
 }
@@ -2916,7 +2907,7 @@ mod tests {
   #[test]
   fn mk_const_embeds_universes() {
     let u = Level::param(mk_name_for("u"));
-    let e = mk_const(&mk_name_for("List"), &[u.clone()]);
+    let e = mk_const(&mk_name_for("List"), std::slice::from_ref(&u));
     match e.as_data() {
       ExprData::Const(n, us, _) => {
         assert_eq!(n, &mk_name_for("List"));

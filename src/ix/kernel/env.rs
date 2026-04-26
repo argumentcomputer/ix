@@ -211,6 +211,10 @@ impl<M: KernelMode> KEnv<M> {
   /// Used by `lean_ingress` to install `Primitives::from_env_orig`
   /// (LEON-addressed) before any `TypeChecker::new(orig_kenv)` triggers
   /// the default canonical-addressed `from_env`.
+  ///
+  /// `Primitives<M>` is large (~2 KB), so the error path is allowed to be
+  /// big — the caller hands ownership in and only retrieves it on failure.
+  #[allow(clippy::result_large_err)]
   pub fn set_prims(&self, p: Primitives<M>) -> Result<(), Primitives<M>> {
     self.prims.set(p)
   }
@@ -287,6 +291,10 @@ impl<M: KernelMode> KEnv<M> {
   }
 
   /// Publish a completed block-check result and wake all waiters.
+  ///
+  /// The token is consumed deliberately: it's a one-shot RAII handle that
+  /// must not be reused after publishing the result.
+  #[allow(clippy::needless_pass_by_value)]
   pub fn finish_block_check(
     &self,
     token: BlockCheckToken<M>,

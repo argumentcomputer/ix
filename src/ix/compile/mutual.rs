@@ -337,7 +337,7 @@ pub(crate) fn compile_aux_block_with_rename(
 
   // Ingress all registered aux constants into the kernel environment.
   for cnst in aux_consts {
-    crate::ix::compile::aux_gen::expr_utils::ensure_in_kenv(
+    aux_gen::expr_utils::ensure_in_kenv(
       &cnst.name(),
       lean_env.as_ref(),
       stt,
@@ -559,7 +559,7 @@ pub(crate) fn generate_and_compile_aux_recursors(
     let mut source_ctor_counts: Vec<usize> =
       Vec::with_capacity(src_order.len());
     for (head, _) in &src_order {
-      match lean_env.get(head).as_deref() {
+      match lean_env.get(head) {
         Some(LeanConstantInfo::InductInfo(v)) => {
           source_ctor_counts.push(v.ctors.len());
         },
@@ -1021,8 +1021,8 @@ fn below_indc_to_mut_const(
 /// mentions the parent. `.brecOn` / `.brecOn.go` pick up their safety via
 /// `mkDefinitionValInferringUnsafe` on the same predicate.
 fn brecon_to_mut_const(d: &BRecOnDef) -> MutConst {
-  let is_eq = d.name.last_str().as_deref() == Some("eq");
-  let is_go = d.name.last_str().as_deref() == Some("go");
+  let is_eq = d.name.last_str() == Some("eq");
+  let is_go = d.name.last_str() == Some("go");
 
   // Determine kind.
   let kind = if is_eq {
@@ -1041,9 +1041,7 @@ fn brecon_to_mut_const(d: &BRecOnDef) -> MutConst {
   // `mkDefinitionValInferringUnsafe … .abbrev`); `.opaque` for the unsafe-eq
   // case (per `mkThmOrUnsafeDef`). Theorems use the struct default (`Opaque`
   // internally, not serialized for Thm).
-  let hints = if is_eq && d.is_unsafe {
-    ReducibilityHints::Opaque
-  } else if matches!(kind, DefKind::Theorem) {
+  let hints = if (is_eq && d.is_unsafe) || matches!(kind, DefKind::Theorem) {
     ReducibilityHints::Opaque
   } else {
     ReducibilityHints::Abbrev

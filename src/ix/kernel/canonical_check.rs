@@ -128,6 +128,10 @@ impl KMutCtx {
 /// Mirrors `compare_level` (`src/ix/compile.rs:2179`); simpler because
 /// there are no metavariables and `Param(idx)` carries the index directly.
 pub fn compare_kuniv<M: KernelMode>(x: &KUniv<M>, y: &KUniv<M>) -> SOrd {
+  // The Max and IMax arms intentionally use the same body — variant order
+  // is encoded by the surrounding wildcard arms (Max < IMax), so collapsing
+  // the recursive arms into one would obscure that structure.
+  #[allow(clippy::match_same_arms)]
   match (x.data(), y.data()) {
     (UnivData::Zero(_), UnivData::Zero(_)) => SOrd::eq(true),
     (UnivData::Zero(_), _) => SOrd::lt(true),
@@ -168,6 +172,10 @@ pub fn compare_kexpr<M: KernelMode>(
   if x.hash_eq(y) {
     return SOrd::eq(true);
   }
+  // The App/Lam/All arms intentionally use the same recursive body — variant
+  // ordering is preserved by the surrounding wildcard arms, so collapsing
+  // them would obscure the structural total order.
+  #[allow(clippy::match_same_arms)]
   match (x.data(), y.data()) {
     (ExprData::Var(xi, _, _), ExprData::Var(yi, _, _)) => SOrd::cmp(xi, yi),
     (ExprData::Var(..), _) => SOrd::lt(true),
@@ -696,9 +704,10 @@ fn classes_eq<M: KernelMode>(
 }
 
 fn default_seed_key<M: KernelMode>(id: &KId<M>) -> Address {
-  M::meta_name(&id.name)
-    .map(|name| Address::from_blake3_hash(*name.get_hash()))
-    .unwrap_or_else(|| id.addr.clone())
+  M::meta_name(&id.name).map_or_else(
+    || id.addr.clone(),
+    |name| Address::from_blake3_hash(*name.get_hash()),
+  )
 }
 
 fn validate_by_full_refinement<M: KernelMode>(
@@ -772,7 +781,7 @@ pub fn validate_canonical_block_single_pass<M: KernelMode>(
   for (i, w) in members.windows(2).enumerate() {
     let so = compare_kconst(w[0].1, w[1].1, &ctx, resolve_ctor);
     match so.ordering {
-      Ordering::Less if so.strong => continue,
+      Ordering::Less if so.strong => {},
       Ordering::Less => {
         return validate_by_full_refinement(block_addr, members, resolve_ctor);
       },

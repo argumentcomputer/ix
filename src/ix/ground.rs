@@ -19,6 +19,10 @@ use crate::{
 };
 
 /// Reason a constant failed groundedness checking.
+///
+/// `Indc` carries `InductiveVal + Option<ConstantInfo>` (~360 bytes) — the
+/// payload is boxed so the enum stays small and `Result<(), GroundError>`
+/// remains cheap to return up the call stack.
 #[derive(Debug)]
 pub enum GroundError {
   /// A universe level parameter or metavariable is not in scope.
@@ -30,7 +34,7 @@ pub enum GroundError {
   /// A free or out-of-scope bound variable was encountered.
   Var(Expr, usize),
   /// An inductive type's constructor is missing or has the wrong kind.
-  Indc(InductiveVal, Option<ConstantInfo>),
+  Indc(Box<(InductiveVal, Option<ConstantInfo>)>),
   /// An invalid de Bruijn index.
   Idx(Nat),
 }
@@ -125,7 +129,9 @@ fn ground_const(
         let ci = env.get(ctor).cloned();
         match ci.as_ref() {
           Some(ConstantInfo::CtorInfo(_)) => (),
-          _ => return Err(GroundError::Indc(val.clone(), ci)),
+          _ => {
+            return Err(GroundError::Indc(Box::new((val.clone(), ci))));
+          },
         }
       }
       ground_expr(&val.cnst.typ, env, univs, binds, stt)
@@ -435,7 +441,7 @@ mod tests {
     );
     let errors = check(&env);
     assert!(errors.contains_key(&n("T")));
-    assert!(matches!(errors[&n("T")], GroundError::Indc(_, _)));
+    assert!(matches!(errors[&n("T")], GroundError::Indc(_)));
   }
 
   #[test]
@@ -465,7 +471,10 @@ mod tests {
     );
     let errors = check(&env);
     assert!(errors.contains_key(&n("T")));
-    assert!(matches!(errors[&n("T")], GroundError::Indc(_, Some(_))));
+    assert!(matches!(
+      &errors[&n("T")],
+      GroundError::Indc(b) if b.1.is_some()
+    ));
   }
 
   #[test]
