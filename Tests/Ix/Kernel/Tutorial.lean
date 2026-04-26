@@ -6,6 +6,7 @@
 -/
 import Ix.Common
 import Ix.Meta
+import Ix.KernelCheck
 import Tests.Ix.Kernel.TutorialMeta
 import Tests.Ix.Kernel.TutorialDefs
 import LSpec
@@ -14,27 +15,10 @@ open LSpec
 
 namespace Tests.Ix.Kernel.Tutorial
 
-/-- Type-check errors returned from the Rust kernel FFI.
-
-    Two variants:
-    - `kernelException msg` — rejection during kernel typechecking (tag 0).
-    - `compileError msg`    — rejection during `compile_env` (tag 1), emitted
-      when `compile_env`'s tolerant scheduler records a block as ungrounded
-      (e.g. `inductBadNonSort` failing `compute_is_large_and_k`).
-
-    **Important**: keep at least two constructors so Lean's LCNF trivial
-    structure optimization does NOT elide the enum to just `String`. With
-    only one ctor + one field, `hasTrivialStructure?` fires and the runtime
-    representation becomes identical to `String`, which breaks any FFI that
-    allocates a heap ctor. See
-    `refs/lean4/src/Lean/Compiler/LCNF/MonoTypes.lean:20-28`.
-
-    Tags are stable across the Rust FFI — see `KERNEL_EXCEPTION_TAG` and
-    `COMPILE_ERROR_TAG` in `src/ffi/kernel.rs`. -/
-inductive CheckError where
-  | kernelException (msg : String)
-  | compileError    (msg : String)
-  deriving Repr
+-- Re-export the shared `CheckError` type so existing call sites
+-- (e.g. `Tests/Ix/Kernel/CheckEnv.lean`) keep working unchanged.
+-- The single source of truth lives in `Ix/KernelCheck.lean`.
+export Ix.KernelCheck (CheckError)
 
 /-- Compute the transitive closure of constants referenced by `seeds`, and
     return the subset of `env.constants` reachable from them.
@@ -94,40 +78,12 @@ private partial def collectDepsWithExtras
   let closed := env.constants.toList.filter fun (n, _) => needed.contains n
   return (needed, closed)
 
-/-- FFI: type-check a batch of constants through the full pipeline
-    (Lean env → Ixon compile → kernel ingress → typecheck).
-
-    Implemented in `src/ffi/kernel.rs::rs_kernel_check_consts`, which is
-    only built with the `test-ffi` Cargo feature (enabled automatically by
-    `lake test` via `ix_rs_test`).
-
-    The trailing `Bool` toggles ephemeral progress printing on the Rust
-    side:
-    - `false` (verbose): every constant is logged on its own line with
-      elapsed time and `def_eq` depth — ideal for small, targeted batches
-      where every result matters.
-    - `true` (quiet / ephemeral): the current `[i/N] name ...` label is
-      rewritten in place, and only slow constants (>=1s), unexpected
-      passes/failures, and ungrounded compile errors are promoted to
-      persistent lines. Ideal for full-env runs (`kernel-check-env`)
-      where thousands of fast constants would otherwise swamp the log.
-
-    Results come back in input-array order — the caller pairs each
-    `results[i]` with its `names[i]`. We pass `Lean.Name` structurally
-    (rather than shipping `name.toString` strings) because Lean's
-    default `toString` wraps non-identifier components in `«…»`, and
-    round-tripping that through a Rust string parser was brittle:
-    names like `Lean.Order.«term_⊑_»` failed lookup against the
-    kernel's unescaped `Lean.Order.term_⊑_` key. Rust decodes each
-    `Lean.Name` structurally via `decode_name_array`, so the kernel
-    lookup is an exact structural match. -/
-@[extern "rs_kernel_check_consts"]
-opaque rsCheckConstsFFI :
-    @& List (Lean.Name × Lean.ConstantInfo) →
-    @& Array Lean.Name →
-    @& Array Bool →
-    @& Bool →
-    IO (Array (Option CheckError))
+-- Re-export the shared FFI binding so existing call sites keep working
+-- without an explicit `Ix.KernelCheck.` qualifier. The single
+-- `@[extern "rs_kernel_check_consts"]` declaration lives in
+-- `Ix/KernelCheck.lean` so that `lake exe ix check` (production CLI)
+-- and the test runners share the same Lean-side opaque.
+export Ix.KernelCheck (rsCheckConstsFFI)
 
 def testTutorialConsts : TestSeq :=
   .individualIO "kernel tutorial checks" none (do

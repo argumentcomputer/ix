@@ -9,7 +9,9 @@ use std::sync::LazyLock;
 use crate::ix::address::Address;
 
 use super::constant::KConst;
-use super::env::{GeneratedRecursor, InternTable};
+use super::env::{
+  BlockCheckStart, GeneratedRecursor, InternTable, RecursorAuxOrder,
+};
 use super::error::{TcError, u64_to_usize};
 use super::expr::{ExprData, KExpr};
 use super::id::KId;
@@ -25,6 +27,13 @@ use super::tc::{TypeChecker, collect_app_spine, expr_mentions_any_addr};
 /// enable when investigating a specific mismatch.
 static IX_TYPE_DIFF: LazyLock<bool> =
   LazyLock::new(|| std::env::var("IX_TYPE_DIFF").is_ok());
+
+/// Emit nested-aux recursor ordering/selection diagnostics for names whose
+/// display form starts with the configured prefix. Example:
+/// `IX_RECURSOR_DUMP=Lean.Doc.Block`.
+static IX_RECURSOR_DUMP: LazyLock<Option<String>> = LazyLock::new(|| {
+  std::env::var("IX_RECURSOR_DUMP").ok().filter(|s| !s.is_empty())
+});
 
 /// A member of the "flat" mutual block used for recursor generation.
 /// For non-nested inductives, this is just the original inductive.
@@ -119,36 +128,121 @@ fn lower_vars_inner<M: KernelMode>(
 }
 
 impl<M: KernelMode> TypeChecker<M> {
-  /// Validate an inductive type and its constructors.
+  /// Validate an inductive block. Pure inductive blocks are coordinated
+  /// through `KEnv`; legacy mixed source blocks fall back to the member check
+  /// to avoid caching a partial result under a mixed block id.
   pub fn check_inductive(&mut self, id: &KId<M>) -> Result<(), TcError<M>> {
-    let (params, indices, lvls, ctors, block, is_rec, _nested, ty) = match self
-      .env
-      .get(id)
-    {
-      Some(KConst::Indc {
-        params,
-        indices,
-        lvls,
-        ctors,
-        block,
-        is_rec,
-        nested,
-        ty,
-        ..
-      }) => (
-        params,
-        indices,
-        lvls,
-        ctors.clone(),
-        block.clone(),
-        is_rec,
-        nested,
-        ty.clone(),
-      ),
+    let block = match self.env.get(id) {
+      Some(KConst::Indc { block, .. }) => block.clone(),
       _ => {
         return Err(TcError::Other("check_inductive: not an inductive".into()));
       },
     };
+    let Some(members) = self.env.get_block(&block) else {
+      return self.check_inductive_member(id);
+    };
+    if !members.iter().all(|member| {
+      matches!(
+        self.env.get(member),
+        Some(KConst::Indc { .. } | KConst::Ctor { .. })
+      )
+    }) {
+      return self.check_inductive_member(id);
+    }
+
+    match self.env.begin_block_check(&block) {
+      BlockCheckStart::Cached(result) => result,
+      BlockCheckStart::Owner(token) => {
+        let result = self.check_inductive_block(&block, &members);
+        self.env.finish_block_check(token, result)
+      },
+    }
+  }
+
+  /// Validate every inductive and constructor in an inductive block.
+  pub(crate) fn check_inductive_block(
+    &mut self,
+    block: &KId<M>,
+    members: &[KId<M>],
+  ) -> Result<(), TcError<M>> {
+    let mut ind_ids = Vec::new();
+    let mut ctor_ids = Vec::new();
+
+    for member in members {
+      self.reset();
+      match self
+        .env
+        .get(member)
+        .ok_or_else(|| TcError::UnknownConst(member.addr.clone()))?
+      {
+        KConst::Indc { ty, .. } => {
+          let t = self.infer(&ty)?;
+          self.ensure_sort(&t)?;
+          ind_ids.push(member.clone());
+        },
+        KConst::Ctor { ty, .. } => {
+          let t = self.infer(&ty)?;
+          self.ensure_sort(&t)?;
+          ctor_ids.push(member.clone());
+        },
+        _ => {
+          return Err(TcError::Other(format!(
+            "check_inductive_block: non-inductive member {member} in block {block}"
+          )));
+        },
+      }
+    }
+
+    for ind_id in &ind_ids {
+      self.reset();
+      self.check_inductive_member(ind_id)?;
+    }
+    for ctor_id in &ctor_ids {
+      let induct = match self.env.get(ctor_id) {
+        Some(KConst::Ctor { induct, .. }) => induct,
+        _ => continue,
+      };
+      self.reset();
+      self.check_ctor_against_inductive_member(ctor_id, &induct)?;
+    }
+    Ok(())
+  }
+
+  /// Validate an inductive type and its constructors.
+  pub fn check_inductive_member(
+    &mut self,
+    id: &KId<M>,
+  ) -> Result<(), TcError<M>> {
+    let (params, indices, lvls, ctors, block, is_rec, is_unsafe, _nested, ty) =
+      match self.env.get(id) {
+        Some(KConst::Indc {
+          params,
+          indices,
+          lvls,
+          ctors,
+          block,
+          is_rec,
+          is_unsafe,
+          nested,
+          ty,
+          ..
+        }) => (
+          params,
+          indices,
+          lvls,
+          ctors.clone(),
+          block.clone(),
+          is_rec,
+          is_unsafe,
+          nested,
+          ty.clone(),
+        ),
+        _ => {
+          return Err(TcError::Other(
+            "check_inductive: not an inductive".into(),
+          ));
+        },
+      };
 
     // Discover all inductives in the mutual block
     let block_inds = self.discover_block_inductives(&block);
@@ -246,8 +340,11 @@ impl<M: KernelMode> TypeChecker<M> {
       // A1: Parameter domain agreement
       self.check_param_agreement(&ty, &ctor_ty, u64_to_usize(params)?)?;
 
-      // A3: Strict positivity
-      self.check_positivity(&ctor_ty, u64_to_usize(params)?, &block_addrs)?;
+      // A3: Strict positivity. Lean skips positivity for unsafe inductives;
+      // those declarations are admitted only as unsafe constants.
+      if !is_unsafe {
+        self.check_positivity(&ctor_ty, u64_to_usize(params)?, &block_addrs)?;
+      }
 
       // A4: Universe constraints
       self.check_field_universes(
@@ -287,9 +384,42 @@ impl<M: KernelMode> TypeChecker<M> {
     Ok(())
   }
 
-  /// Validate a standalone constructor against its parent inductive.
-  /// Runs the same A1–A4 checks that `check_inductive` runs per-ctor.
+  /// Validate a standalone constructor by checking its parent inductive block.
   pub fn check_ctor_against_inductive(
+    &mut self,
+    ctor_id: &KId<M>,
+    induct_id: &KId<M>,
+  ) -> Result<(), TcError<M>> {
+    let block = match self.env.get(induct_id) {
+      Some(KConst::Indc { block, .. }) => block.clone(),
+      _ => {
+        return self.check_ctor_against_inductive_member(ctor_id, induct_id);
+      },
+    };
+    let Some(members) = self.env.get_block(&block) else {
+      return self.check_ctor_against_inductive_member(ctor_id, induct_id);
+    };
+    if !members.iter().all(|member| {
+      matches!(
+        self.env.get(member),
+        Some(KConst::Indc { .. } | KConst::Ctor { .. })
+      )
+    }) {
+      return self.check_ctor_against_inductive_member(ctor_id, induct_id);
+    }
+
+    match self.env.begin_block_check(&block) {
+      BlockCheckStart::Cached(result) => result,
+      BlockCheckStart::Owner(token) => {
+        let result = self.check_inductive_block(&block, &members);
+        self.env.finish_block_check(token, result)
+      },
+    }
+  }
+
+  /// Validate a standalone constructor against its parent inductive.
+  /// Runs the same A1–A4 checks that `check_inductive_member` runs per-ctor.
+  pub fn check_ctor_against_inductive_member(
     &mut self,
     ctor_id: &KId<M>,
     induct_id: &KId<M>,
@@ -301,11 +431,17 @@ impl<M: KernelMode> TypeChecker<M> {
       _ => return Err(TcError::Other("check_ctor: not a constructor".into())),
     };
 
-    let (ind_params, ind_indices, ind_lvls, ind_block, ind_ty) =
+    let (ind_params, ind_indices, ind_lvls, ind_block, ind_is_unsafe, ind_ty) =
       match self.env.get(induct_id) {
-        Some(KConst::Indc { params, indices, lvls, block, ty, .. }) => {
-          (params, indices, lvls, block.clone(), ty.clone())
-        },
+        Some(KConst::Indc {
+          params,
+          indices,
+          lvls,
+          block,
+          is_unsafe,
+          ty,
+          ..
+        }) => (params, indices, lvls, block.clone(), is_unsafe, ty.clone()),
         _ => {
           return Err(TcError::Other(
             "check_ctor: parent inductive not found".into(),
@@ -325,8 +461,14 @@ impl<M: KernelMode> TypeChecker<M> {
     // A1: Parameter domain agreement
     self.check_param_agreement(&ind_ty, &ctor_ty, u64_to_usize(ind_params)?)?;
 
-    // A3: Strict positivity
-    self.check_positivity(&ctor_ty, u64_to_usize(ind_params)?, &block_addrs)?;
+    // A3: Strict positivity. Match Lean: unsafe inductives bypass this check.
+    if !ind_is_unsafe {
+      self.check_positivity(
+        &ctor_ty,
+        u64_to_usize(ind_params)?,
+        &block_addrs,
+      )?;
+    }
 
     // A4: Universe constraints
     self.check_field_universes(
@@ -658,6 +800,666 @@ impl<M: KernelMode> TypeChecker<M> {
       ind_us: aux_us,
       occurrence_us,
     });
+  }
+
+  /// Rewrite nested occurrences in synthetic aux member/ctor types to the
+  /// corresponding synthetic aux constants before running `sort_consts`
+  /// partition refinement. Compile-side `expand_nested_block` does this via
+  /// its queue pass over all expanded constructors; the kernel has already
+  /// discovered the flat aux set, so it can rewrite by matching each
+  /// occurrence against that set.
+  fn replace_aux_refs_for_sort(
+    &mut self,
+    e: &KExpr<M>,
+    aux: &[FlatBlockMember<M>],
+    aux_ids: &[KId<M>],
+    block_us: &[KUniv<M>],
+    n_block_params: u64,
+    local_depth: u64,
+  ) -> Result<KExpr<M>, TcError<M>> {
+    if let Some(replaced) = self.try_replace_aux_ref_for_sort(
+      e,
+      aux,
+      aux_ids,
+      block_us,
+      n_block_params,
+      local_depth,
+    )? {
+      return Ok(replaced);
+    }
+
+    let result = match e.data() {
+      ExprData::App(f, a, _) => {
+        let f2 = self.replace_aux_refs_for_sort(
+          f,
+          aux,
+          aux_ids,
+          block_us,
+          n_block_params,
+          local_depth,
+        )?;
+        let a2 = self.replace_aux_refs_for_sort(
+          a,
+          aux,
+          aux_ids,
+          block_us,
+          n_block_params,
+          local_depth,
+        )?;
+        KExpr::app(f2, a2)
+      },
+      ExprData::Lam(n, bi, ty, body, _) => {
+        let ty2 = self.replace_aux_refs_for_sort(
+          ty,
+          aux,
+          aux_ids,
+          block_us,
+          n_block_params,
+          local_depth,
+        )?;
+        let body2 = self.replace_aux_refs_for_sort(
+          body,
+          aux,
+          aux_ids,
+          block_us,
+          n_block_params,
+          local_depth + 1,
+        )?;
+        KExpr::lam(n.clone(), bi.clone(), ty2, body2)
+      },
+      ExprData::All(n, bi, ty, body, _) => {
+        let ty2 = self.replace_aux_refs_for_sort(
+          ty,
+          aux,
+          aux_ids,
+          block_us,
+          n_block_params,
+          local_depth,
+        )?;
+        let body2 = self.replace_aux_refs_for_sort(
+          body,
+          aux,
+          aux_ids,
+          block_us,
+          n_block_params,
+          local_depth + 1,
+        )?;
+        KExpr::all(n.clone(), bi.clone(), ty2, body2)
+      },
+      ExprData::Let(n, ty, val, body, nd, _) => {
+        let ty2 = self.replace_aux_refs_for_sort(
+          ty,
+          aux,
+          aux_ids,
+          block_us,
+          n_block_params,
+          local_depth,
+        )?;
+        let val2 = self.replace_aux_refs_for_sort(
+          val,
+          aux,
+          aux_ids,
+          block_us,
+          n_block_params,
+          local_depth,
+        )?;
+        let body2 = self.replace_aux_refs_for_sort(
+          body,
+          aux,
+          aux_ids,
+          block_us,
+          n_block_params,
+          local_depth + 1,
+        )?;
+        KExpr::let_(n.clone(), ty2, val2, body2, *nd)
+      },
+      ExprData::Prj(id, field, val, _) => {
+        let val2 = self.replace_aux_refs_for_sort(
+          val,
+          aux,
+          aux_ids,
+          block_us,
+          n_block_params,
+          local_depth,
+        )?;
+        KExpr::prj(id.clone(), *field, val2)
+      },
+      _ => return Ok(e.clone()),
+    };
+    Ok(self.env.intern.intern_expr(result))
+  }
+
+  fn try_replace_aux_ref_for_sort(
+    &mut self,
+    e: &KExpr<M>,
+    aux: &[FlatBlockMember<M>],
+    aux_ids: &[KId<M>],
+    block_us: &[KUniv<M>],
+    n_block_params: u64,
+    local_depth: u64,
+  ) -> Result<Option<KExpr<M>>, TcError<M>> {
+    let (head, args) = collect_app_spine(e);
+    let head_id = match head.data() {
+      ExprData::Const(id, _, _) => id,
+      _ => return Ok(None),
+    };
+
+    for (idx, member) in aux.iter().enumerate() {
+      if member.id.addr != head_id.addr {
+        continue;
+      }
+      let own = u64_to_usize::<M>(member.own_params)?;
+      if args.len() < own || member.spec_params.len() != own {
+        continue;
+      }
+
+      let mut matched = true;
+      for (arg, sp) in args.iter().take(own).zip(member.spec_params.iter()) {
+        let sp_lifted = if local_depth > 0 {
+          lift(&self.env.intern, sp, local_depth, 0)
+        } else {
+          sp.clone()
+        };
+        if !self.is_def_eq(arg, &sp_lifted).unwrap_or(false) {
+          matched = false;
+          break;
+        }
+      }
+      if !matched {
+        continue;
+      }
+
+      let anon = || M::meta_field(crate::ix::env::Name::anon());
+      let mut result = self.env.intern.intern_expr(KExpr::cnst(
+        aux_ids[idx].clone(),
+        block_us.to_vec().into_boxed_slice(),
+      ));
+      for pi in 0..n_block_params {
+        let p = self.env.intern.intern_expr(KExpr::var(
+          local_depth + n_block_params - 1 - pi,
+          anon(),
+        ));
+        result = self.env.intern.intern_expr(KExpr::app(result, p));
+      }
+      for idx_arg in args.iter().skip(own) {
+        result =
+          self.env.intern.intern_expr(KExpr::app(result, idx_arg.clone()));
+      }
+      return Ok(Some(result));
+    }
+
+    Ok(None)
+  }
+
+  /// Compute the canonical aux ordering — kernel analogue of the
+  /// compile-side aux partition-refinement sort
+  /// (`src/ix/compile/aux_gen/nested.rs`).
+  ///
+  /// For each aux `FlatBlockMember`, synthesize a `KConst::Indc` view
+  /// (with its constructor `KConst::Ctor` views) that mirrors the
+  /// compile-side `MutConst::Indc` aux representation. Run
+  /// `sort_kconsts_with_seed_key` on the synthetic aux and return a
+  /// permutation `original_index → canonical_index` over the input slice.
+  ///
+  /// The synthetic indc carries the ext inductive's type with the
+  /// first `ext_n_params` Pi binders instantiated by the aux's
+  /// `spec_params`. The synthetic ctors carry the ext ctor's type
+  /// with the same instantiation. Compile-side wraps the result with
+  /// the block's parameter Pis and rewrites the ctor result head to
+  /// the aux name; the kernel mirror omits these wrappers because
+  /// every aux gets the same prefix (so it doesn't affect the
+  /// comparator's relative ordering) and uses synthetic aux KIds
+  /// derived from `(source index, ext_addr, spec_params hashes,
+  /// occurrence_us hashes)`. Alpha-equivalent aux remain distinct
+  /// synthetic members, then collapse into a single class under the
+  /// partition-refinement sorter just as compile-side distinct aux names
+  /// do.
+  ///
+  /// Returns a vector `perm[k] = original_idx_of_class_k_representative`
+  /// of length equal to the number of canonical classes.
+  fn canonical_aux_order(
+    &mut self,
+    aux: &[FlatBlockMember<M>],
+    n_block_params: u64,
+    block_us: &[KUniv<M>],
+    all0_name: Option<crate::ix::env::Name>,
+  ) -> Result<Vec<usize>, TcError<M>> {
+    use crate::ix::env::Name;
+    use crate::ix::kernel::canonical_check::{
+      KMutCtx, sort_kconsts_with_seed_key,
+    };
+    use rustc_hash::FxHashMap;
+
+    // Build synthetic Indc + Ctor views for each aux.
+    // `aux_views[i]` corresponds to `aux[i]`.
+    let mut aux_indcs: Vec<(KId<M>, KConst<M>)> = Vec::with_capacity(aux.len());
+    let mut all_ctor_lookup: FxHashMap<crate::ix::address::Address, KConst<M>> =
+      FxHashMap::default();
+    let mut seed_key_by_addr: FxHashMap<crate::ix::address::Address, Address> =
+      FxHashMap::default();
+    let nested_prefix =
+      all0_name.map(|all0| Name::str(all0, "_nested".to_string()));
+
+    let mut aux_ids: Vec<KId<M>> = Vec::with_capacity(aux.len());
+    let mut aux_seed_names: Vec<Name> = Vec::with_capacity(aux.len());
+    for (source_idx, member) in aux.iter().enumerate() {
+      // Compile-side aux names are `<all0>._nested.<Ext>_<N>` in source
+      // discovery order before the partition-refinement sort renames them
+      // by canonical position. `sort_consts` uses those names only as a
+      // deterministic seed/tiebreak, so the kernel feeds the same name hash
+      // into the sorter while keeping the synthetic KId address structural.
+      let ext_seed = M::meta_name(&member.id.name)
+        .map(|name| name.pretty().replace('.', "_"))
+        .unwrap_or_else(|| member.id.addr.hex());
+      let seed_suffix = format!("{}_{}", ext_seed, source_idx + 1);
+      let seed_name = nested_prefix
+        .as_ref()
+        .map(|prefix| Name::str(prefix.clone(), seed_suffix.clone()))
+        .unwrap_or_else(|| {
+          Name::str(
+            Name::str(Name::anon(), "IxKernelAux".to_string()),
+            seed_suffix.clone(),
+          )
+        });
+      let seed_addr = Address::from_blake3_hash(*seed_name.get_hash());
+
+      // Synthetic aux KId: unique per discovered aux source slot, with the
+      // semantic content included so structurally equal aux still compare
+      // Equal and collapse under the current partition.
+      let mut h = blake3::Hasher::new();
+      h.update(b"AUX_INDC_VIEW");
+      h.update(&(source_idx as u64).to_le_bytes());
+      h.update(member.id.addr.as_bytes());
+      for sp in &member.spec_params {
+        h.update(sp.addr().as_bytes());
+      }
+      for u in member.occurrence_us.iter() {
+        h.update(u.addr().as_bytes());
+      }
+      let aux_addr =
+        crate::ix::address::Address::from_blake3_hash(h.finalize());
+      let aux_id = KId::new(aux_addr.clone(), M::meta_field(seed_name.clone()));
+      seed_key_by_addr.insert(aux_addr.clone(), seed_addr);
+      aux_ids.push(aux_id);
+      aux_seed_names.push(seed_name);
+    }
+
+    for (source_idx, member) in aux.iter().enumerate() {
+      let aux_id = aux_ids[source_idx].clone();
+      let seed_name = aux_seed_names[source_idx].clone();
+      let aux_addr = aux_id.addr.clone();
+      let (ext_ty, ext_ctors, ext_n_params, ext_n_indices) =
+        match self.env.get(&member.id) {
+          Some(KConst::Indc { ty, ctors, params, indices, .. }) => {
+            (ty.clone(), ctors.clone(), params, indices)
+          },
+          _ => {
+            return Err(TcError::Other(
+              "canonical_aux_order: aux ext is not an inductive".into(),
+            ));
+          },
+        };
+
+      // Instantiate ext_ty: replace J's universe params with the
+      // occurrence's universe args, then walk past `ext_n_params` Pi
+      // binders, substituting with `spec_params`. The result is the
+      // aux's "internal" type — what `mem.typ` becomes after
+      // compile-side's `instantiate_pi_params(j_type_inst,
+      // ext_n_params, &spec_params)` step.
+      let mut typ =
+        self.instantiate_univ_params(&ext_ty, &member.occurrence_us)?;
+      for j in 0..ext_n_params {
+        let w = self.whnf(&typ)?;
+        match w.data() {
+          ExprData::All(_, _, _, body, _) => {
+            let body = body.clone();
+            let p_idx = u64_to_usize::<M>(j)?;
+            if p_idx >= member.spec_params.len() {
+              break;
+            }
+            let p = member.spec_params[p_idx].clone();
+            typ = subst(&self.env.intern, &body, &p, 0);
+          },
+          _ => break,
+        }
+      }
+      typ = self.replace_aux_refs_for_sort(
+        &typ,
+        aux,
+        &aux_ids,
+        block_us,
+        n_block_params,
+        0,
+      )?;
+
+      // Synthetic aux ctor KIds and KConst::Ctor entries.
+      let mut aux_ctor_kids: Vec<KId<M>> = Vec::with_capacity(ext_ctors.len());
+      for (ci, ext_ctor_id) in ext_ctors.iter().enumerate() {
+        let (ext_ctor_ty, ext_ctor_fields) = match self.env.get(ext_ctor_id) {
+          Some(KConst::Ctor { ty, fields, .. }) => (ty.clone(), fields),
+          _ => {
+            return Err(TcError::Other(
+              "canonical_aux_order: aux ext ctor is not a ctor".into(),
+            ));
+          },
+        };
+        let mut ctor_typ =
+          self.instantiate_univ_params(&ext_ctor_ty, &member.occurrence_us)?;
+        for j in 0..ext_n_params {
+          let w = self.whnf(&ctor_typ)?;
+          match w.data() {
+            ExprData::All(_, _, _, body, _) => {
+              let body = body.clone();
+              let p_idx = u64_to_usize::<M>(j)?;
+              if p_idx >= member.spec_params.len() {
+                break;
+              }
+              let p = member.spec_params[p_idx].clone();
+              ctor_typ = subst(&self.env.intern, &body, &p, 0);
+            },
+            _ => break,
+          }
+        }
+
+        // Rewrite nested occurrences inside aux ctor types to block-local
+        // synthetic aux references before sorting. This mirrors the
+        // compile-side `replace_all_nested` queue pass over the expanded
+        // aux members. It covers both recursive fields such as
+        // `List (ListItem Block)` and the ctor result head itself.
+        ctor_typ = self.replace_aux_refs_for_sort(
+          &ctor_typ,
+          aux,
+          &aux_ids,
+          block_us,
+          n_block_params,
+          0,
+        )?;
+
+        let mut ch = blake3::Hasher::new();
+        ch.update(b"AUX_CTOR_VIEW");
+        ch.update(aux_addr.as_bytes());
+        ch.update(ext_ctor_id.addr.as_bytes());
+        let aux_ctor_addr =
+          crate::ix::address::Address::from_blake3_hash(ch.finalize());
+        let aux_ctor_kid = KId::new(
+          aux_ctor_addr.clone(),
+          M::meta_field(crate::ix::env::Name::anon()),
+        );
+
+        let aux_ctor = KConst::Ctor {
+          name: M::meta_field(crate::ix::env::Name::anon()),
+          level_params: M::meta_field(vec![]),
+          is_unsafe: false,
+          lvls: block_us.len() as u64,
+          induct: aux_id.clone(),
+          cidx: ci as u64,
+          params: n_block_params,
+          fields: ext_ctor_fields,
+          ty: ctor_typ,
+        };
+        all_ctor_lookup.insert(aux_ctor_addr, aux_ctor);
+        aux_ctor_kids.push(aux_ctor_kid);
+      }
+
+      let aux_indc = KConst::Indc {
+        name: M::meta_field(seed_name),
+        level_params: M::meta_field(vec![]),
+        lvls: block_us.len() as u64,
+        params: n_block_params,
+        indices: ext_n_indices,
+        is_rec: false,
+        is_refl: false,
+        is_unsafe: false,
+        nested: 0,
+        block: KId::new(
+          crate::ix::address::Address::hash(b"synthetic-aux-block"),
+          M::meta_field(crate::ix::env::Name::anon()),
+        ),
+        member_idx: 0,
+        ty: typ,
+        ctors: aux_ctor_kids,
+        lean_all: M::meta_field(vec![]),
+      };
+
+      aux_indcs.push((aux_id, aux_indc));
+    }
+
+    // Build (KId, &KConst) pairs for sorting.
+    let pairs: Vec<(KId<M>, &KConst<M>)> =
+      aux_indcs.iter().map(|(id, c)| (id.clone(), c)).collect();
+
+    // resolve_ctor: synthetic ctors → synthetic KConst::Ctor.
+    let resolve_ctor = |cid: &KId<M>| -> Option<KConst<M>> {
+      all_ctor_lookup.get(&cid.addr).cloned()
+    };
+
+    let classes =
+      sort_kconsts_with_seed_key::<M>(&pairs, &resolve_ctor, &|id: &KId<M>,
+                                                               _c: &KConst<
+        M,
+      >| {
+        seed_key_by_addr
+          .get(&id.addr)
+          .cloned()
+          .unwrap_or_else(|| id.addr.clone())
+      });
+
+    // For each canonical class, pick the representative chosen by the
+    // compiler-shaped seed key. Alpha-equivalent aux remain distinct
+    // synthetic members until partition refinement collapses them, matching
+    // compile-side `sort_consts`.
+    let aux_addr_to_orig_idx: FxHashMap<crate::ix::address::Address, usize> =
+      pairs
+        .iter()
+        .enumerate()
+        .map(|(i, (id, _))| (id.addr.clone(), i))
+        .collect();
+    let mut perm: Vec<usize> = Vec::with_capacity(classes.len());
+    for class in &classes {
+      // The sorter keeps each class ordered by the compiler-shaped seed
+      // key, so the first member is the same representative compile-side
+      // `sort_consts` would choose for an alpha-equivalence class.
+      let rep_addr = &class[0].0.addr;
+      let orig_idx = *aux_addr_to_orig_idx.get(rep_addr).ok_or_else(|| {
+        TcError::Other(
+          "canonical_aux_order: synthetic addr not in original index map"
+            .into(),
+        )
+      })?;
+      perm.push(orig_idx);
+    }
+    let _ = KMutCtx::default(); // re-export anchor for doc cross-ref
+    Ok(perm)
+  }
+
+  fn recursor_dump_matches_id(&self, id: &KId<M>) -> bool {
+    IX_RECURSOR_DUMP
+      .as_ref()
+      .is_some_and(|prefix| format!("{id}").starts_with(prefix))
+  }
+
+  fn recursor_dump_matches_block(
+    &self,
+    block_id: &KId<M>,
+    flat: &[FlatBlockMember<M>],
+  ) -> bool {
+    IX_RECURSOR_DUMP.as_ref().is_some_and(|prefix| {
+      format!("{block_id}").starts_with(prefix)
+        || flat.iter().any(|m| format!("{}", m.id).starts_with(prefix))
+    })
+  }
+
+  fn dump_flat_aux_order(
+    &self,
+    label: &str,
+    block_id: &KId<M>,
+    flat: &[FlatBlockMember<M>],
+    n_originals: usize,
+  ) {
+    if !self.recursor_dump_matches_block(block_id, flat) {
+      return;
+    }
+    eprintln!(
+      "[recursor.dump] {label} flat aux order for {block_id}: originals={} aux={}",
+      n_originals,
+      flat.len().saturating_sub(n_originals)
+    );
+    for (aux_i, member) in flat.iter().skip(n_originals).enumerate() {
+      let spec =
+        member.spec_params.iter().map(|e| format!("{e}")).collect::<Vec<_>>();
+      eprintln!(
+        "  aux[{aux_i:2}] id={} own_params={} indices={} spec={spec:?}",
+        member.id, member.own_params, member.n_indices
+      );
+    }
+  }
+
+  fn recursor_major_domain_for_addr(
+    &mut self,
+    rec_ty: &KExpr<M>,
+    prefix_skip: u64,
+    target_addr: &Address,
+  ) -> Result<Option<KExpr<M>>, TcError<M>> {
+    const MAX_MAJOR_SCAN_FORALLS: u64 = 64;
+
+    let mut ty = rec_ty.clone();
+    for _ in 0..prefix_skip {
+      let w = self.whnf(&ty)?;
+      match w.data() {
+        ExprData::All(_, _, _, body, _) => ty = body.clone(),
+        _ => return Ok(None),
+      }
+    }
+
+    for _ in 0..=MAX_MAJOR_SCAN_FORALLS {
+      let w = self.whnf(&ty)?;
+      match w.data() {
+        ExprData::All(_, _, dom, body, _) => {
+          let (head, _) = collect_app_spine(dom);
+          if let ExprData::Const(id, _, _) = head.data()
+            && id.addr == *target_addr
+            && matches!(self.env.get(id), Some(KConst::Indc { .. }))
+          {
+            return Ok(Some(dom.clone()));
+          }
+          ty = body.clone();
+        },
+        _ => return Ok(None),
+      }
+    }
+
+    Ok(None)
+  }
+
+  fn major_domain_signature_eq(
+    &mut self,
+    a: &KExpr<M>,
+    b: &KExpr<M>,
+  ) -> Result<bool, TcError<M>> {
+    let (a_head, a_args) = collect_app_spine(a);
+    let (b_head, b_args) = collect_app_spine(b);
+    let (a_id, a_us) = match a_head.data() {
+      ExprData::Const(id, us, _) => (id, us),
+      _ => return Ok(false),
+    };
+    let (b_id, b_us) = match b_head.data() {
+      ExprData::Const(id, us, _) => (id, us),
+      _ => return Ok(false),
+    };
+    if a_id.addr != b_id.addr
+      || a_us.len() != b_us.len()
+      || a_args.len() != b_args.len()
+    {
+      return Ok(false);
+    }
+    if !a_us.iter().zip(b_us.iter()).all(|(u, v)| univ_eq(u, v)) {
+      return Ok(false);
+    }
+    for (a_arg, b_arg) in a_args.iter().zip(b_args.iter()) {
+      if !self.is_def_eq(a_arg, b_arg)? {
+        return Ok(false);
+      }
+    }
+    Ok(true)
+  }
+
+  fn major_domain_signature_text(domain: Option<&KExpr<M>>) -> String {
+    match domain {
+      Some(d) => {
+        let (head, args) = collect_app_spine(d);
+        match head.data() {
+          ExprData::Const(id, _, _) => {
+            format!("head={id} args={} dom={d}", args.len())
+          },
+          _ => format!("head=<non-const> args={} dom={d}", args.len()),
+        }
+      },
+      None => "<none>".to_string(),
+    }
+  }
+
+  fn dump_rule_rhs_first_diff(
+    &mut self,
+    lhs: &KExpr<M>,
+    rhs: &KExpr<M>,
+    path: &str,
+    depth: u64,
+  ) -> Result<bool, TcError<M>> {
+    if self.is_def_eq(lhs, rhs)? {
+      return Ok(false);
+    }
+    if depth > 80 {
+      eprintln!("[rule rhs diff] first diff {path}: recursion limit");
+      eprintln!("  gen: {lhs}");
+      eprintln!("  sto: {rhs}");
+      return Ok(true);
+    }
+
+    let lw = self.whnf(lhs)?;
+    let rw = self.whnf(rhs)?;
+    match (lw.data(), rw.data()) {
+      (
+        ExprData::Lam(_, _, lty, lbody, _),
+        ExprData::Lam(_, _, rty, rbody, _),
+      )
+      | (
+        ExprData::All(_, _, lty, lbody, _),
+        ExprData::All(_, _, rty, rbody, _),
+      ) => {
+        if !self.is_def_eq(lty, rty)? {
+          eprintln!("[rule rhs diff] first diff {path}.dom");
+          eprintln!("  gen: {lty}");
+          eprintln!("  sto: {rty}");
+          return Ok(true);
+        }
+        self.push_local(lty.clone());
+        let found = self.dump_rule_rhs_first_diff(
+          lbody,
+          rbody,
+          &format!("{path}.body"),
+          depth + 1,
+        );
+        self.pop_local();
+        found
+      },
+      (ExprData::App(lf, la, _), ExprData::App(rf, ra, _)) => {
+        if self.dump_rule_rhs_first_diff(
+          lf,
+          rf,
+          &format!("{path}.fn"),
+          depth + 1,
+        )? {
+          return Ok(true);
+        }
+        self.dump_rule_rhs_first_diff(la, ra, &format!("{path}.arg"), depth + 1)
+      },
+      _ => {
+        eprintln!("[rule rhs diff] first diff {path}");
+        eprintln!("  gen: {lw}");
+        eprintln!("  sto: {rw}");
+        Ok(true)
+      },
+    }
   }
 
   /// A1: Check that the first `n_params` forall domains of ind_ty and ctor_ty agree.
@@ -1248,7 +2050,51 @@ impl<M: KernelMode> TypeChecker<M> {
     };
 
     // Build flat block (detects nested occurrences).
-    let flat = self.build_flat_block(&block_inds, n_params, univ_offset)?;
+    let mut flat = self.build_flat_block(&block_inds, n_params, univ_offset)?;
+    let n_originals = block_inds.len();
+    self.dump_flat_aux_order("pre-canonical", block_id, &flat, n_originals);
+
+    // Canonicalize the discovered aux portion of `flat` when the stored
+    // recursors come from Ix's compiled environment. Lean's original
+    // recursors use source/queue aux order, so `lean_ingress` marks
+    // `orig_kenv` with `RecursorAuxOrder::Source` and skips this step.
+    //
+    // The stored recursor block ships aux recursors at positions
+    // determined by the compiler's canonical aux order. For
+    // position-by-position recursor matching to work, the kernel's flat
+    // block must list aux in the same canonical order. Since aux are
+    // discovered transiently (not serialized), the kernel re-runs
+    // `sort_consts` on its own discovery output. See
+    // `docs/ix_canonicity.md` §6.2 and the rationale in
+    // `plans/the-nested-inductive-work-declarative-naur.md`.
+    if self.env.recursor_aux_order == RecursorAuxOrder::Canonical
+      && flat.len() > n_originals + 1
+    {
+      let block_us = flat[0].occurrence_us.to_vec();
+      let all0_name = block_inds.first().and_then(|id| M::meta_name(&id.name));
+      let canonical_order = self.canonical_aux_order(
+        &flat[n_originals..],
+        n_params,
+        &block_us,
+        all0_name,
+      )?;
+      if self.recursor_dump_matches_block(block_id, &flat) {
+        eprintln!("[recursor.dump] canonical_order={canonical_order:?}");
+      }
+      // Apply the permutation produced by sort_consts: each canonical
+      // class index k maps to one representative aux from the original
+      // discovery order. Alpha-equivalent aux collapse to a single rep
+      // (matching the compile-side dedup behaviour).
+      let aux_part = flat[n_originals..].to_vec();
+      let mut new_aux: Vec<FlatBlockMember<M>> =
+        Vec::with_capacity(canonical_order.len());
+      for &orig_idx in &canonical_order {
+        new_aux.push(aux_part[orig_idx].clone());
+      }
+      flat.truncate(n_originals);
+      flat.extend(new_aux);
+    }
+    self.dump_flat_aux_order("post-canonical", block_id, &flat, n_originals);
 
     // Convert flat block to ind_infos format for existing build_motive_type / build_rec_type.
     // For auxiliary members, we need their type from the environment.
@@ -1284,7 +2130,6 @@ impl<M: KernelMode> TypeChecker<M> {
     // Generate recursor type for each ORIGINAL inductive (not auxiliaries).
     // The recursor type spans all flat block members (motives, minors).
     let mut generated = Vec::new();
-    let n_originals = block_inds.len();
     for di in 0..n_originals {
       let rec_type = self.build_rec_type(
         di,
@@ -1298,7 +2143,9 @@ impl<M: KernelMode> TypeChecker<M> {
       generated.push(GeneratedRecursor {
         ind_addr: flat[di].id.addr.clone(),
         ty: rec_type,
-        rules: vec![], // TODO: rule generation
+        // Rules are populated later from the recursor block by
+        // `populate_recursor_rules_from_block`.
+        rules: vec![],
       });
     }
 
@@ -1316,8 +2163,32 @@ impl<M: KernelMode> TypeChecker<M> {
       generated.push(GeneratedRecursor {
         ind_addr: flat[di].id.addr.clone(),
         ty: rec_type,
+        // Rules are populated later from the recursor block by
+        // `populate_recursor_rules_from_block`.
         rules: vec![],
       });
+    }
+
+    if self.recursor_dump_matches_block(block_id, &flat) {
+      let n_motives = flat.len() as u64;
+      let n_minors: u64 = flat.iter().map(|m| m.ctors.len() as u64).sum();
+      let prefix_skip = n_params + n_motives + n_minors;
+      eprintln!(
+        "[recursor.dump] generated recursors for {block_id}: count={} prefix_skip={prefix_skip}",
+        generated.len()
+      );
+      for (gi, g) in generated.iter().enumerate() {
+        let major = self.recursor_major_domain_for_addr(
+          &g.ty,
+          prefix_skip,
+          &g.ind_addr,
+        )?;
+        eprintln!(
+          "  gen[{gi:2}] ind_addr={} {}",
+          &g.ind_addr.hex()[..8],
+          Self::major_domain_signature_text(major.as_ref())
+        );
+      }
     }
 
     // Find peer recursor KIds for rule RHS generation.
@@ -1333,6 +2204,7 @@ impl<M: KernelMode> TypeChecker<M> {
             Some(KConst::Ctor { fields, .. }) => fields,
             _ => 0,
           };
+          let generated_rec_ty = generated_rec.ty.clone();
           match self.build_rule_rhs(
             gi,
             ci,
@@ -1340,6 +2212,7 @@ impl<M: KernelMode> TypeChecker<M> {
             member,
             &flat,
             peers,
+            &generated_rec_ty,
             u64_to_usize(n_params)?,
             is_large,
             univ_offset,
@@ -2326,47 +3199,48 @@ impl<M: KernelMode> TypeChecker<M> {
     }
   }
 
-  /// Late rule generation: when rules are empty because peer recursors weren't
-  /// available at inductive-check time, try regenerating using the recursor's
-  /// own block to find peers.
-  fn try_late_rule_generation(
+  /// Populate canonical recursor rules from the actual recursor block peers.
+  ///
+  /// `generate_block_recursors` is driven from the inductive block, where the
+  /// recursor constants are not necessarily block members. With block-level
+  /// recursor checking, the recursor block is available before comparing any
+  /// sibling. Build the rule RHSs once from that block and store them back at
+  /// the generated-recursors indices. This avoids per-member fallback rule
+  /// generation and, critically, disambiguates duplicate nested auxiliaries by
+  /// the full major premise signature instead of by inductive address alone.
+  fn populate_recursor_rules_from_block(
     &mut self,
     ind_block_id: &KId<M>,
     rec_block_id: &KId<M>,
-    ind_id: &KId<M>,
-  ) -> Result<Vec<super::constant::RecRule<M>>, TcError<M>> {
-    // Get the cached flat block and generated recursors
-    let generated = match self.env.recursor_cache.get(ind_block_id) {
+  ) -> Result<(), TcError<M>> {
+    let generated_snapshot = match self.env.recursor_cache.get(ind_block_id) {
       Some(g) => g.clone(),
-      None => return Ok(vec![]),
+      None => return Ok(()),
     };
+    if generated_snapshot.is_empty() {
+      return Ok(());
+    }
 
-    // Find peer recursors from the RECURSOR's block (not the inductive's).
-    // Match each peer recursor to our flat block by its major inductive address.
-    let flat_len = generated.len();
     let members = match self.env.blocks.get(rec_block_id) {
       Some(m) => m.clone(),
-      None => return Ok(vec![]),
+      None => return Ok(()),
     };
     let rec_ids: Vec<KId<M>> = members
       .iter()
       .filter(|id| matches!(self.env.get(id), Some(KConst::Recr { .. })))
       .cloned()
       .collect();
+    if rec_ids.is_empty() {
+      return Ok(());
+    }
 
-    // Align peer recursors with the flat block by matching major inductives.
-    // For each flat block member, find the recursor whose major inductive matches.
-    // Use is_def_eq on spec_params to disambiguate duplicate addresses.
-    let mut peers: Vec<KId<M>> = Vec::with_capacity(flat_len);
-    let mut used: Vec<bool> = vec![false; rec_ids.len()];
-    // Build flat block to get spec_params for matching
     let block_inds = self.discover_block_inductives(ind_block_id);
     if block_inds.is_empty() {
-      return Ok(vec![]);
+      return Ok(());
     }
-    let n_params = match self.env.get(&block_inds[0]) {
+    let n_params_u64 = match self.env.get(&block_inds[0]) {
       Some(KConst::Indc { params, .. }) => params,
-      _ => return Ok(vec![]),
+      _ => return Ok(()),
     };
     let ind_lvls = match self.env.get(&block_inds[0]) {
       Some(KConst::Indc { lvls, .. }) => lvls,
@@ -2385,12 +3259,63 @@ impl<M: KernelMode> TypeChecker<M> {
       },
       None => 0,
     };
-    let flat = self.build_flat_block(&block_inds, n_params, univ_offset)?;
-    if flat.len() != flat_len {
-      return Ok(vec![]);
+    let mut flat =
+      self.build_flat_block(&block_inds, n_params_u64, univ_offset)?;
+    let n_originals = block_inds.len();
+    if self.env.recursor_aux_order == RecursorAuxOrder::Canonical
+      && flat.len() > n_originals + 1
+    {
+      let block_us = flat[0].occurrence_us.to_vec();
+      let all0_name = block_inds.first().and_then(|id| M::meta_name(&id.name));
+      let canonical_order = self.canonical_aux_order(
+        &flat[n_originals..],
+        n_params_u64,
+        &block_us,
+        all0_name,
+      )?;
+      let aux_part = flat[n_originals..].to_vec();
+      let mut new_aux: Vec<FlatBlockMember<M>> =
+        Vec::with_capacity(canonical_order.len());
+      for &orig_idx in &canonical_order {
+        new_aux.push(aux_part[orig_idx].clone());
+      }
+      flat.truncate(n_originals);
+      flat.extend(new_aux);
     }
-    for member in flat.iter() {
-      let mut found = false;
+    if flat.len() != generated_snapshot.len() {
+      return Err(TcError::Other(format!(
+        "populate_recursor_rules_from_block: flat/generated length mismatch: flat={} generated={}",
+        flat.len(),
+        generated_snapshot.len()
+      )));
+    }
+    if generated_snapshot
+      .iter()
+      .zip(flat.iter())
+      .all(|(g, member)| g.rules.len() == member.ctors.len())
+    {
+      return Ok(());
+    }
+
+    let n_motives = flat.len() as u64;
+    let n_minors: u64 = flat.iter().map(|m| m.ctors.len() as u64).sum();
+    let prefix_base = n_params_u64 + n_motives + n_minors;
+    let mut peers: Vec<Option<KId<M>>> = vec![None; flat.len()];
+    let mut used: Vec<bool> = vec![false; rec_ids.len()];
+
+    for (gi, gen_rec) in generated_snapshot.iter().enumerate() {
+      let target_addr = &gen_rec.ind_addr;
+      let gen_major = self.recursor_major_domain_for_addr(
+        &gen_rec.ty,
+        prefix_base + flat[gi].n_indices,
+        target_addr,
+      )?;
+      let Some(gen_major) = gen_major else {
+        return Err(TcError::Other(format!(
+          "populate_recursor_rules_from_block: generated recursor {gi} has no major premise"
+        )));
+      };
+
       for (ri, rid) in rec_ids.iter().enumerate() {
         if used[ri] {
           continue;
@@ -2402,219 +3327,76 @@ impl<M: KernelMode> TypeChecker<M> {
           _ => continue,
         };
         let skip = params + motives + minors + indices;
-        let major_id = match self.get_major_inductive_id(&ty, skip) {
-          Ok(id) => id,
-          Err(_) => continue,
-        };
-        if major_id.addr != member.id.addr {
+        let Some(stored_major) =
+          self.recursor_major_domain_for_addr(&ty, skip, target_addr)?
+        else {
           continue;
-        }
-        if !member.is_aux {
-          peers.push(rid.clone());
+        };
+        if self.major_domain_signature_eq(&gen_major, &stored_major)? {
+          peers[gi] = Some(rid.clone());
           used[ri] = true;
-          found = true;
-          break;
-        }
-        // For aux members, compare spec_params via is_def_eq
-        let saved = self.save_depth();
-        let mut cur = ty;
-        for _ in 0..skip {
-          match self.whnf(&cur) {
-            Ok(w) => match w.data() {
-              ExprData::All(_, _, dom, b, _) => {
-                self.push_local(dom.clone());
-                cur = b.clone();
-              },
-              _ => break,
-            },
-            _ => break,
-          }
-        }
-        let mut matched = false;
-        if let Ok(w) = self.whnf(&cur)
-          && let ExprData::All(_, _, dom, _, _) = w.data()
-        {
-          let (_, major_args) = collect_app_spine(dom);
-          let n_par = u64_to_usize::<M>(member.own_params)?;
-          if major_args.len() >= n_par && member.spec_params.len() == n_par {
-            let _depth = self.depth();
-            // spec_params are in param context (depth = n_rec_params).
-            // Major args are at current depth. Lift by the difference.
-            let lift_by = self.depth().saturating_sub(n_params);
-            matched =
-              major_args.iter().take(n_par).zip(member.spec_params.iter()).all(
-                |(arg, sp)| {
-                  let sp_lifted = if lift_by > 0 {
-                    lift(&self.env.intern, sp, lift_by, 0)
-                  } else {
-                    sp.clone()
-                  };
-                  self.is_def_eq(arg, &sp_lifted).unwrap_or(false)
-                },
-              );
-          }
-        }
-        self.restore_depth(saved);
-        if matched {
-          peers.push(rid.clone());
-          used[ri] = true;
-          found = true;
           break;
         }
       }
-      if !found {
-        return Ok(vec![]);
+
+      if peers[gi].is_none() {
+        return Err(TcError::Other(format!(
+          "populate_recursor_rules_from_block: could not align recursor peer {gi}"
+        )));
       }
     }
 
-    // flat, block_inds, n_params, univ_offset already computed above
+    let peer_recs: Vec<KId<M>> =
+      peers.into_iter().map(|p| p.unwrap()).collect();
     let is_large = univ_offset > 0;
-    let n_params = u64_to_usize::<M>(n_params)?;
+    let n_params = u64_to_usize::<M>(n_params_u64)?;
+    let mut generated_with_rules = generated_snapshot;
 
-    // Generate rules for the target inductive
-    // Find the flat member for this recursor's major inductive.
-    // For duplicates (same address, different spec_params), match via is_def_eq
-    // on the major premise's parameter args vs the flat member's spec_params.
-    let peer_id = peers
-      .iter()
-      .find(|p| {
-        if let Some(KConst::Recr {
-          params: rp,
-          motives: rm,
-          minors: rmin,
-          indices: ri,
-          ty: rt,
-          ..
-        }) = self.env.get(p)
-        {
-          let skip = rp + rm + rmin + ri;
-          self
-            .get_major_inductive_id(&rt, skip)
-            .map(|mid| mid.addr == ind_id.addr)
-            .unwrap_or(false)
-        } else {
-          false
-        }
-      })
-      .unwrap_or(ind_id)
-      .clone();
-    let rec_ty = match self.env.get(&peer_id) {
-      Some(KConst::Recr {
-        params: rp,
-        motives: rm,
-        minors: rmin,
-        indices: ri,
-        ty: rt,
-        ..
-      }) => Some((rp, rm, rmin, ri, rt.clone())),
-      _ => None,
-    };
-    let gi = if let Some((rp, rm, rmin, ri, rt)) = rec_ty {
-      let skip = rp + rm + rmin + ri;
-      // Extract major premise spec_params
-      let saved = self.save_depth();
-      let mut cur = rt;
-      for _ in 0..skip {
-        match self.whnf(&cur) {
-          Ok(w) => match w.data() {
-            ExprData::All(_, _, dom, b, _) => {
-              self.push_local(dom.clone());
-              cur = b.clone();
-            },
-            _ => break,
-          },
-          _ => break,
-        }
-      }
-      let mut found_gi = None;
-      if let Ok(w) = self.whnf(&cur)
-        && let ExprData::All(_, _, dom, _, _) = w.data()
-      {
-        let (_, major_args) = collect_app_spine(dom);
-        let _depth = self.depth();
-        for (fi, member) in flat.iter().enumerate() {
-          if member.id.addr != ind_id.addr {
-            continue;
-          }
-          if !member.is_aux {
-            found_gi = Some(fi);
-            break;
-          }
-          let n_par = u64_to_usize::<M>(member.own_params)?;
-          if major_args.len() >= n_par && member.spec_params.len() == n_par {
-            let n_rp = flat.first().map_or(0, |m| m.own_params);
-            let lift_by = self.depth().saturating_sub(n_rp);
-            let matched =
-              major_args.iter().take(n_par).zip(member.spec_params.iter()).all(
-                |(arg, sp)| {
-                  let sp_lifted = if lift_by > 0 {
-                    lift(&self.env.intern, sp, lift_by, 0)
-                  } else {
-                    sp.clone()
-                  };
-                  self.is_def_eq(arg, &sp_lifted).unwrap_or(false)
-                },
-              );
-            if matched {
-              found_gi = Some(fi);
-              break;
-            }
-          }
-        }
-      }
-      self.restore_depth(saved);
-      match found_gi {
-        Some(i) => i,
-        None => return Ok(vec![]),
-      }
-    } else {
-      match flat.iter().position(|m| m.id.addr == ind_id.addr) {
-        Some(i) => i,
-        None => return Ok(vec![]),
-      }
-    };
-    let member = &flat[gi];
-
-    let mut rules = Vec::new();
-    for (ci, ctor_id) in member.ctors.iter().enumerate() {
-      let ctor_fields = match self.env.get(ctor_id) {
-        Some(KConst::Ctor { fields, .. }) => fields,
-        _ => 0,
-      };
-      match self.build_rule_rhs(
-        gi,
-        ci,
-        ctor_id,
-        member,
-        &flat,
-        &peers,
-        n_params,
-        is_large,
-        univ_offset,
-      ) {
-        Ok(rhs) => rules.push(super::constant::RecRule {
+    for gi in 0..flat.len() {
+      let member = &flat[gi];
+      let rec_ty_for_member = generated_with_rules[gi].ty.clone();
+      let mut rules = Vec::with_capacity(member.ctors.len());
+      for (ci, ctor_id) in member.ctors.iter().enumerate() {
+        let ctor_fields = match self.env.get(ctor_id) {
+          Some(KConst::Ctor { fields, .. }) => fields,
+          _ => 0,
+        };
+        let rhs = self.build_rule_rhs(
+          gi,
+          ci,
+          ctor_id,
+          member,
+          &flat,
+          &peer_recs,
+          &rec_ty_for_member,
+          n_params,
+          is_large,
+          univ_offset,
+        )?;
+        rules.push(super::constant::RecRule {
           ctor: ctor_id.name.clone(),
           fields: ctor_fields,
           rhs,
-        }),
-        Err(e) => {
-          return Err(TcError::Other(format!(
-            "[late_gen_rules] rule {ci} for {} failed: {e:?}",
-            &ind_id.addr.hex()[..8]
-          )));
-        },
+        });
+      }
+      generated_with_rules[gi].rules = rules;
+    }
+
+    if let Some(mut cached) = self.env.recursor_cache.get_mut(ind_block_id) {
+      if cached.len() != generated_with_rules.len() {
+        return Err(TcError::Other(format!(
+          "populate_recursor_rules_from_block: cache changed length: cached={} generated={}",
+          cached.len(),
+          generated_with_rules.len()
+        )));
+      }
+      for (dst, src) in cached.iter_mut().zip(generated_with_rules.into_iter())
+      {
+        dst.rules = src.rules;
       }
     }
 
-    // Update the cache
-    if let Some(mut cached) = self.env.recursor_cache.get_mut(ind_block_id)
-      && let Some(gen_rec) =
-        cached.iter_mut().find(|g| g.ind_addr == ind_id.addr)
-    {
-      gen_rec.rules = rules.clone();
-    }
-
-    Ok(rules)
+    Ok(())
   }
 
   /// Build the rule RHS for a single constructor.
@@ -2629,6 +3411,7 @@ impl<M: KernelMode> TypeChecker<M> {
     member: &FlatBlockMember<M>,
     flat: &[FlatBlockMember<M>],
     peer_recs: &[KId<M>],
+    rec_ty_for_member: &KExpr<M>,
     n_rec_params: usize,
     is_large: bool,
     _univ_offset: u64,
@@ -2787,16 +3570,8 @@ impl<M: KernelMode> TypeChecker<M> {
     // These domains already have correct de Bruijn indices relative to the
     // recursor's binding context (params, motives, earlier minors are above).
     let minor_domain = {
-      let rec_ty_for_fields = match self.env.get(&peer_recs[member_idx]) {
-        Some(c) => c.ty().clone(),
-        None => {
-          return Err(TcError::Other(
-            "build_rule_rhs: peer recursor not found".into(),
-          ));
-        },
-      };
       // Walk past params, motives, and earlier minors to reach this ctor's minor
-      let mut cur = rec_ty_for_fields;
+      let mut cur = rec_ty_for_member.clone();
       let skip_to_minor = n_rec_params + n_motives + global_minor_idx;
       for _ in 0..skip_to_minor {
         let w = self.whnf(&cur)?;
@@ -2853,19 +3628,11 @@ impl<M: KernelMode> TypeChecker<M> {
     // The recursor type has the shape:
     //   ∀ (params...) (motives...) (minors...) (indices...) (major), ret
     // We need the first pmm domains for the rule's leading lambdas.
-    let rec_ty = match self.env.get(&peer_recs[member_idx]) {
-      Some(c) => c.ty().clone(),
-      None => {
-        return Err(TcError::Other(
-          "build_rule_rhs: peer recursor not found".into(),
-        ));
-      },
-    };
     // Do NOT instantiate universe params: the rule RHS and recursor type share
     // the same Param references. The stored rule was built by Lean with the same
     // Param indices as the recursor type.
     let mut pmm_domains: Vec<KExpr<M>> = Vec::with_capacity(pmm);
-    let mut rec_ty_cur = rec_ty;
+    let mut rec_ty_cur = rec_ty_for_member.clone();
     for _ in 0..pmm {
       let w = self.whnf(&rec_ty_cur)?;
       match w.data() {
@@ -3080,8 +3847,69 @@ impl<M: KernelMode> TypeChecker<M> {
     Ok(())
   }
 
-  /// Validate a recursor by comparing with generated canonical form.
+  /// Validate a recursor block. A pure recursor block is checked once and the
+  /// result is shared by all sibling recursors.
   pub fn check_recursor(&mut self, id: &KId<M>) -> Result<(), TcError<M>> {
+    let block = match self.env.get(id) {
+      Some(KConst::Recr { block, .. }) => block.clone(),
+      _ => return Err(TcError::Other("check_recursor: not a recursor".into())),
+    };
+    let Some(members) = self.env.get_block(&block) else {
+      return self.check_recursor_member(id);
+    };
+    if !members
+      .iter()
+      .all(|member| matches!(self.env.get(member), Some(KConst::Recr { .. })))
+    {
+      return self.check_recursor_member(id);
+    }
+
+    match self.env.begin_block_check(&block) {
+      BlockCheckStart::Cached(result) => result,
+      BlockCheckStart::Owner(token) => {
+        let result = self.check_recursor_block(&block, &members);
+        self.env.finish_block_check(token, result)
+      },
+    }
+  }
+
+  /// Validate every recursor in a recursor block.
+  pub(crate) fn check_recursor_block(
+    &mut self,
+    block: &KId<M>,
+    members: &[KId<M>],
+  ) -> Result<(), TcError<M>> {
+    for member in members {
+      self.reset();
+      match self
+        .env
+        .get(member)
+        .ok_or_else(|| TcError::UnknownConst(member.addr.clone()))?
+      {
+        KConst::Recr { ty, .. } => {
+          let t = self.infer(&ty)?;
+          self.ensure_sort(&t)?;
+        },
+        _ => {
+          return Err(TcError::Other(format!(
+            "check_recursor_block: non-recursor member {member} in block {block}"
+          )));
+        },
+      }
+    }
+
+    for member in members {
+      self.reset();
+      self.check_recursor_member(member)?;
+    }
+    Ok(())
+  }
+
+  /// Validate a recursor by comparing with generated canonical form.
+  pub fn check_recursor_member(
+    &mut self,
+    id: &KId<M>,
+  ) -> Result<(), TcError<M>> {
     let (rec_block, ty, declared_k) = match self.env.get(id) {
       Some(KConst::Recr { block, ty, k, .. }) => (block.clone(), ty.clone(), k),
       _ => return Err(TcError::Other("check_recursor: not a recursor".into())),
@@ -3176,6 +4004,8 @@ impl<M: KernelMode> TypeChecker<M> {
       )));
     }
 
+    self.populate_recursor_rules_from_block(&resolved_block, &rec_block)?;
+
     // Find the generated recursor for this inductive.
     let generated = match self.env.recursor_cache.get(&resolved_block) {
       Some(g) => g.clone(),
@@ -3186,10 +4016,85 @@ impl<M: KernelMode> TypeChecker<M> {
       },
     };
 
-    let gen_rec = generated.iter().find(|g| g.ind_addr == ind_id.addr);
+    // Signature-based match for aux recursors.
+    //
+    // Nested auxiliaries can contain several recursors with the same external
+    // major head (for example multiple `List` auxes with different element
+    // types). Matching only by `ind_addr` picks the first such recursor.
+    // Matching primarily by the stored recursor's block position is also too
+    // brittle: the compiled recursor block is sorted as recursor constants,
+    // while generation is ordered by the flat inductive layout. Select by the
+    // extracted major premise domain first, then keep the old positional and
+    // address lookups as fixture fallbacks.
+    let stored_pos: Option<usize> = self
+      .env
+      .blocks
+      .get(&rec_block)
+      .and_then(|members| members.iter().position(|m| m == id));
+    let prefix_skip = params + motives + minors;
+    let stored_major =
+      self.recursor_major_domain_for_addr(&ty, prefix_skip, &ind_id.addr)?;
+    let mut signature_matches: Vec<usize> = Vec::new();
+    if let Some(stored_major) = stored_major.as_ref() {
+      for (gi, g) in generated.iter().enumerate() {
+        if g.ind_addr != ind_id.addr {
+          continue;
+        }
+        if let Some(gen_major) = self.recursor_major_domain_for_addr(
+          &g.ty,
+          prefix_skip,
+          &g.ind_addr,
+        )? && self.major_domain_signature_eq(&gen_major, stored_major)?
+        {
+          signature_matches.push(gi);
+        }
+      }
+    }
+    let selected_idx = stored_pos
+      .and_then(|p| signature_matches.iter().copied().find(|&gi| gi == p))
+      .or_else(|| signature_matches.first().copied())
+      .or_else(|| stored_pos.filter(|&p| p < generated.len()))
+      .or_else(|| generated.iter().position(|g| g.ind_addr == ind_id.addr));
+
+    if self.recursor_dump_matches_id(id) {
+      eprintln!(
+        "[recursor.dump] check {} rec_block={} resolved_block={} stored_pos={stored_pos:?} selected_idx={selected_idx:?}",
+        id, rec_block, resolved_block
+      );
+      eprintln!(
+        "[recursor.dump] stored major: {}",
+        Self::major_domain_signature_text(stored_major.as_ref())
+      );
+      eprintln!("[recursor.dump] signature_matches={signature_matches:?}");
+      for (gi, g) in generated.iter().enumerate() {
+        if g.ind_addr != ind_id.addr {
+          continue;
+        }
+        let major = self.recursor_major_domain_for_addr(
+          &g.ty,
+          prefix_skip,
+          &g.ind_addr,
+        )?;
+        eprintln!(
+          "  cand[{gi:2}] {}",
+          Self::major_domain_signature_text(major.as_ref())
+        );
+      }
+    }
+
+    let gen_rec = selected_idx.map(|i| &generated[i]);
     match gen_rec {
       Some(g) => {
         if !self.is_def_eq(&g.ty, &ty)? {
+          let selected_by_signature =
+            selected_idx.is_some_and(|idx| signature_matches.contains(&idx));
+          if self.env.recursor_aux_order == RecursorAuxOrder::Canonical
+            && motives > 1
+            && selected_by_signature
+          {
+            return self.check_recursor_coherence(id);
+          }
+
           // When `IX_TYPE_DIFF` is set, walk the binder chain to find the
           // first divergent binder and print a readable gen/sto diff. Off
           // by default: in alpha-collapse regimes or for mutual blocks
@@ -3250,13 +4155,7 @@ impl<M: KernelMode> TypeChecker<M> {
           return Err(TcError::Other("check_recursor: type mismatch".into()));
         }
 
-        // If rules are empty (peer recursors weren't available during inductive
-        // checking), try late regeneration using the recursor's own block.
-        let gen_rules = if g.rules.is_empty() {
-          self.try_late_rule_generation(&resolved_block, &rec_block, &ind_id)?
-        } else {
-          g.rules.clone()
-        };
+        let gen_rules = g.rules.clone();
 
         // Compare rules.
         //
@@ -3314,6 +4213,12 @@ impl<M: KernelMode> TypeChecker<M> {
           }
           if !self.is_def_eq(&gen_rule.rhs, &stored_rule.rhs)? {
             if *IX_TYPE_DIFF {
+              let _ = self.dump_rule_rhs_first_diff(
+                &gen_rule.rhs,
+                &stored_rule.rhs,
+                "rhs",
+                0,
+              );
               eprintln!(
                 "[rule rhs diff] rule {ri} RHS mismatch (fields={})",
                 gen_rule.fields
@@ -3484,6 +4389,7 @@ mod tests {
   fn bool_env() -> Arc<KEnv<Anon>> {
     let env = Arc::new(KEnv::new());
     let block = mk_id("Bool");
+    let rec_block = mk_id("Bool.rec.block");
 
     // Bool : Sort 1
     env.insert(
@@ -3572,7 +4478,7 @@ mod tests {
         indices: 0,
         motives: 1,
         minors: 2,
-        block: block.clone(),
+        block: rec_block.clone(),
         member_idx: 0,
         ty: rec_ty,
         rules: vec![
@@ -3593,13 +4499,9 @@ mod tests {
 
     env.blocks.insert(
       block,
-      vec![
-        mk_id("Bool"),
-        mk_id("Bool.true"),
-        mk_id("Bool.false"),
-        mk_id("Bool.rec"),
-      ],
+      vec![mk_id("Bool"), mk_id("Bool.true"), mk_id("Bool.false")],
     );
+    env.blocks.insert(rec_block, vec![mk_id("Bool.rec")]);
     env
   }
 
@@ -3608,6 +4510,16 @@ mod tests {
     let env = bool_env();
     let mut tc = TypeChecker::new(Arc::clone(&env));
     assert!(tc.check_const(&mk_id("Bool")).is_ok());
+  }
+
+  #[test]
+  fn check_bool_constructor_uses_parent_block() {
+    let env = bool_env();
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    tc.check_const(&mk_id("Bool.true")).unwrap();
+    assert!(
+      env.block_check_results.get(&mk_id("Bool")).is_some_and(|r| r.is_ok())
+    );
   }
 
   #[test]
@@ -3629,6 +4541,7 @@ mod tests {
   fn nat_env() -> Arc<KEnv<Anon>> {
     let env = Arc::new(KEnv::new());
     let block = mk_id("Nat");
+    let rec_block = mk_id("Nat.rec.block");
     let nat = || cnst("Nat", &[]);
 
     env.insert(
@@ -3728,7 +4641,7 @@ mod tests {
         indices: 0,
         motives: 1,
         minors: 2,
-        block: block.clone(),
+        block: rec_block.clone(),
         member_idx: 0,
         ty: rec_ty,
         rules: vec![
@@ -3747,15 +4660,10 @@ mod tests {
       },
     );
 
-    env.blocks.insert(
-      block,
-      vec![
-        mk_id("Nat"),
-        mk_id("Nat.zero"),
-        mk_id("Nat.succ"),
-        mk_id("Nat.rec"),
-      ],
-    );
+    env
+      .blocks
+      .insert(block, vec![mk_id("Nat"), mk_id("Nat.zero"), mk_id("Nat.succ")]);
+    env.blocks.insert(rec_block, vec![mk_id("Nat.rec")]);
     env
   }
 
@@ -3776,6 +4684,7 @@ mod tests {
     let env = nat_env();
     let mut tc = TypeChecker::new(Arc::clone(&env));
     tc.check_const(&mk_id("Nat")).unwrap();
+    tc.check_const(&mk_id("Nat.rec")).unwrap();
 
     let block = mk_id("Nat");
     let generated = tc.env.recursor_cache.get(&block).unwrap();
@@ -4414,7 +5323,7 @@ mod tests {
     // Check inductive first (consumes fuel for validation)
     tc.check_const(&mk_id("PTree")).unwrap();
     // Reset fuel and generate recursors explicitly
-    tc.rec_fuel = super::super::tc::MAX_REC_FUEL;
+    tc.rec_fuel = super::super::tc::max_rec_fuel();
     let block = mk_id("PTree");
     if !tc.env.recursor_cache.contains_key(&block) {
       tc.generate_block_recursors(&block).unwrap();
@@ -4434,7 +5343,7 @@ mod tests {
     let env = poly_nested_env();
     let mut tc = TypeChecker::new(Arc::clone(&env));
     tc.check_const(&mk_id("PTree")).unwrap();
-    tc.rec_fuel = super::super::tc::MAX_REC_FUEL;
+    tc.rec_fuel = super::super::tc::max_rec_fuel();
     let block = mk_id("PTree");
     if !tc.env.recursor_cache.contains_key(&block) {
       tc.generate_block_recursors(&block).unwrap();
@@ -4674,7 +5583,7 @@ mod tests {
     let env = syntax_like_env();
     let mut tc = TypeChecker::new(Arc::clone(&env));
     tc.check_const(&mk_id("Syn")).unwrap();
-    tc.rec_fuel = super::super::tc::MAX_REC_FUEL;
+    tc.rec_fuel = super::super::tc::max_rec_fuel();
     let block = mk_id("Syn");
     if !tc.env.recursor_cache.contains_key(&block) {
       tc.generate_block_recursors(&block).unwrap();
@@ -4741,7 +5650,7 @@ mod tests {
 
     let mut tc = TypeChecker::new(Arc::clone(&env));
     tc.check_const(&mk_id("Syn")).unwrap();
-    tc.rec_fuel = super::super::tc::MAX_REC_FUEL;
+    tc.rec_fuel = super::super::tc::max_rec_fuel();
     let block = mk_id("Syn");
     if !tc.env.recursor_cache.contains_key(&block) {
       tc.generate_block_recursors(&block).unwrap();
@@ -4798,7 +5707,7 @@ mod tests {
     let env = syntax_like_env();
     let mut tc = TypeChecker::new(Arc::clone(&env));
     tc.check_const(&mk_id("Syn")).unwrap();
-    tc.rec_fuel = super::super::tc::MAX_REC_FUEL;
+    tc.rec_fuel = super::super::tc::max_rec_fuel();
     let block = mk_id("Syn");
     if !tc.env.recursor_cache.contains_key(&block) {
       tc.generate_block_recursors(&block).unwrap();
@@ -5078,7 +5987,7 @@ mod tests {
     let env = inline_like_env();
     let mut tc = TypeChecker::new(Arc::clone(&env));
     tc.check_const(&mk_id("Inl")).unwrap();
-    tc.rec_fuel = super::super::tc::MAX_REC_FUEL;
+    tc.rec_fuel = super::super::tc::max_rec_fuel();
     let block = mk_id("Inl");
     if !tc.env.recursor_cache.contains_key(&block) {
       tc.generate_block_recursors(&block).unwrap();
@@ -5100,7 +6009,7 @@ mod tests {
     let env = inline_like_env();
     let mut tc = TypeChecker::new(Arc::clone(&env));
     tc.check_const(&mk_id("Inl")).unwrap();
-    tc.rec_fuel = super::super::tc::MAX_REC_FUEL;
+    tc.rec_fuel = super::super::tc::max_rec_fuel();
     let block = mk_id("Inl");
     if !tc.env.recursor_cache.contains_key(&block) {
       tc.generate_block_recursors(&block).unwrap();
@@ -5509,6 +6418,71 @@ mod tests {
     );
   }
 
+  fn negative_self_function_env(is_unsafe: bool) -> Arc<KEnv<Anon>> {
+    let env = bool_env();
+    let block = mk_id("Bad");
+
+    env.insert(
+      mk_id("Bad"),
+      KConst::Indc {
+        name: (),
+        level_params: (),
+        lvls: 0,
+        params: 0,
+        indices: 0,
+        is_rec: true,
+        is_refl: false,
+        is_unsafe,
+        nested: 0,
+        block: block.clone(),
+        member_idx: 0,
+        ty: sort1(),
+        ctors: vec![mk_id("Bad.mk")],
+        lean_all: (),
+      },
+    );
+
+    // Bad.mk : (Bad -> Bool) -> Bad. The occurrence of Bad in the
+    // function domain is negative and must be rejected unless Bad is unsafe.
+    env.insert(
+      mk_id("Bad.mk"),
+      KConst::Ctor {
+        name: (),
+        level_params: (),
+        is_unsafe,
+        lvls: 0,
+        induct: mk_id("Bad"),
+        cidx: 0,
+        params: 0,
+        fields: 1,
+        ty: pi(pi(cnst("Bad", &[]), cnst("Bool", &[])), cnst("Bad", &[])),
+      },
+    );
+
+    env.blocks.insert(block, vec![mk_id("Bad"), mk_id("Bad.mk")]);
+    env
+  }
+
+  #[test]
+  fn reject_safe_negative_self_function() {
+    let env = negative_self_function_env(false);
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    assert!(
+      tc.check_const(&mk_id("Bad")).is_err(),
+      "safe negative inductive should be rejected"
+    );
+  }
+
+  #[test]
+  fn accept_unsafe_negative_self_function() {
+    let env = negative_self_function_env(true);
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    assert!(
+      tc.check_const(&mk_id("Bad")).is_ok(),
+      "unsafe inductive should skip positivity like Lean"
+    );
+  }
+
   /// Valid nesting: `Tree : Type` with `Tree.node : List Tree → Tree`.
   /// List's constructor puts its param in strictly positive position only
   /// (as `head : α` and `tail : List α`), so this is fine.
@@ -5589,7 +6563,7 @@ mod tests {
     // so `var(1)` and `var(0)` both typecheck as the minor premise), but
     // iota would produce the wrong value for the given ctor.
     let env = bool_env();
-    let block = mk_id("Bool");
+    let rec_block = mk_id("Bool.rec.block");
 
     // Rebuild recursor type and rule-body domains exactly as `bool_env`
     // does, then swap which Var is returned in each rule.
@@ -5635,7 +6609,7 @@ mod tests {
         indices: 0,
         motives: 1,
         minors: 2,
-        block,
+        block: rec_block,
         member_idx: 0,
         ty: rec_ty,
         rules: vec![

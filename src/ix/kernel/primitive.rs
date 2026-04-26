@@ -7,10 +7,13 @@
 //! updated lines into `PrimAddrs::new`.
 //!
 //! `Primitives<M>` stores `KId<M>` values, resolved from the environment by
-//! address so that names match in both Meta and Anon modes. Optional
-//! markers (`reduce_bool`, `reduce_nat`, `eager_reduce`) don't exist in the
-//! env and always use the synthetic-KId fallback — they are dispatched on
-//! by address only, never invoked.
+//! address so that names match in both Meta and Anon modes. `Lean.reduceBool`
+//! and `Lean.reduceNat` are real primitive constants and are dispatched by
+//! content address. `eager_reduce` is a synthetic kernel-only marker because
+//! Lean's `eagerReduce` compiles to the same canonical content address as
+//! `id`; address-only dispatch on the real constant would be unsound.
+
+use std::sync::LazyLock;
 
 use crate::ix::address::Address;
 
@@ -54,6 +57,8 @@ pub struct Primitives<M: KernelMode> {
   pub char_mk: KId<M>,
   pub char_of_nat: KId<M>,
   pub string_of_list: KId<M>,
+  pub string_to_byte_array: KId<M>,
+  pub byte_array_empty: KId<M>,
 
   // -- List --
   pub list: KId<M>,
@@ -77,17 +82,21 @@ pub struct Primitives<M: KernelMode> {
 
   // -- Platform --
   pub system_platform_num_bits: KId<M>,
+  pub system_platform_get_num_bits: KId<M>,
+  pub subtype_val: KId<M>,
 
   // -- Decidable / Nat comparison --
   pub nat_dec_le: KId<M>,
   pub nat_dec_eq: KId<M>,
   pub nat_dec_lt: KId<M>,
+  pub decidable_rec: KId<M>,
   pub decidable_is_true: KId<M>,
   pub decidable_is_false: KId<M>,
   pub nat_le_of_ble_eq_true: KId<M>,
   pub nat_not_le_of_not_ble_eq_true: KId<M>,
   pub nat_eq_of_beq_eq_true: KId<M>,
   pub nat_ne_of_beq_eq_false: KId<M>,
+  pub fin: KId<M>,
   pub bool_no_confusion: KId<M>,
 
   // -- Int (type, ctors, native ops) --
@@ -139,6 +148,8 @@ pub struct PrimAddrs {
   pub char_mk: Address,
   pub char_of_nat: Address,
   pub string_of_list: Address,
+  pub string_to_byte_array: Address,
+  pub byte_array_empty: Address,
   pub list: Address,
   pub list_nil: Address,
   pub list_cons: Address,
@@ -152,15 +163,19 @@ pub struct PrimAddrs {
   pub reduce_nat: Address,
   pub eager_reduce: Address,
   pub system_platform_num_bits: Address,
+  pub system_platform_get_num_bits: Address,
+  pub subtype_val: Address,
   pub nat_dec_le: Address,
   pub nat_dec_eq: Address,
   pub nat_dec_lt: Address,
+  pub decidable_rec: Address,
   pub decidable_is_true: Address,
   pub decidable_is_false: Address,
   pub nat_le_of_ble_eq_true: Address,
   pub nat_not_le_of_not_ble_eq_true: Address,
   pub nat_eq_of_beq_eq_true: Address,
   pub nat_ne_of_beq_eq_false: Address,
+  pub fin: Address,
   pub bool_no_confusion: Address,
   // Int addresses — see `Primitives` for why these exist.
   pub int: Address,
@@ -188,6 +203,17 @@ impl Default for PrimAddrs {
 }
 
 impl PrimAddrs {
+  /// Addresses reserved for kernel-only reduction markers. These are not
+  /// Lean constants and must never be accepted as user environment entries.
+  pub fn reserved_marker_addrs() -> [(&'static str, Address); 2] {
+    let canon = Self::new();
+    let orig = Self::new_orig();
+    [
+      ("eager_reduce", canon.eager_reduce.clone()),
+      ("orig.eager_reduce", orig.eager_reduce.clone()),
+    ]
+  }
+
   /// Canonical content-hash addresses, hardcoded from the Ixon-compiled
   /// form of each primitive. Used by `Primitives::from_env` to resolve
   /// primitives against a `kctx.kenv` whose KIds live at canonical
@@ -207,52 +233,52 @@ impl PrimAddrs {
         "7190ce56f6a2a847b944a355e3ec595a4036fb07e3c3db9d9064fc041be72b64",
       ),
       nat_add: h(
-        "9eb5f067888c2ebf643e2fba899b6c18943ffa1016f4f713da5e76c63b3e9246",
+        "f94192058e41bc29e88924d857a6bd33f8b3e0a90f8786828270d1cc1dd0adc6",
       ),
       nat_pred: h(
-        "e24aca27bb68241c8408f82d9d0ebfe8a14b2c5c7d072a57e8be153482af0aa3",
+        "6b59cf449781f07b04207d665978b5c5ef9688afa7448590a68f7da7ff88c516",
       ),
       nat_sub: h(
-        "43589a9ad509d9e3903105b58c6a8ed57fd287428f69d4d0bceabc75eb1a3442",
+        "fa98dabf44d2a6307b490ac9e811433efc2f958996c67be1398cb4d1b264cf39",
       ),
       nat_mul: h(
-        "0b9b306e1294a6b28ba38738d776b1212a26490a93239e0a35a8211915fe33e8",
+        "9b5c57ea1cf2fb1de67ee5bec15e360d20a9635990273014e67851e049ff3619",
       ),
       nat_pow: h(
-        "e6243fc0c656b1dc227e02b9964f9c37c3dc7940cd0f3608c8e5c9beda95cecb",
+        "d015987bb10dd22863ddc41160d27dd3d1ea74f754fb2412432436f3ea5b5071",
       ),
       nat_gcd: h(
-        "68b1cd4bdfe5d9dbb532e39145f100bb5b15f500749bd32bf840bf050568318f",
+        "ee8ba9216b3fc81e7968586b43cebea15d0e143d5d4b1fde1bd301a74093f606",
       ),
       nat_mod: h(
-        "dfbb5855166a1478ff866042ad48514ddd59204efa9616597ec291698801d9d6",
+        "8ef8b28b4e9e0a59f3822e243e71299f06bb6e7afdb6cdd97976fb290b667bb4",
       ),
       nat_div: h(
-        "f23fc5ce69c0a96fce0d8b238acd8d80d337df9c0950d822af2dd52eaf50e792",
+        "fa583794c8ef368eff6881e816a4e889f95061116ce49b154056d38fce4b7f52",
       ),
       nat_bitwise: h(
-        "c5869a7f8f18e2131a6c99db95b5adae195971a19439d89406bae713bd5f3238",
+        "f21d747aca3e08f5290093bf8f4020838d8e1742a78b3e1f48d83ef159395e6a",
       ),
       nat_beq: h(
-        "8b63f97f5fe133df9fdaee27a049abfe928a179c48067e41b176112b32eb15ab",
+        "e8b7149d8a7d12414b06252f318d408204723ca4c02f3a38edfa37792448c0da",
       ),
       nat_ble: h(
-        "77da9490da2908a0460d27a271dc2a8bee41c1cb47601020722dadd321ba37b7",
+        "2275080a89c327904e3ad127ba44370a7c6c1bef3aa74792079f8f3159636957",
       ),
       nat_land: h(
-        "497f87814f7fcddc61618145787ff75e53d73d4aacaac86a81da5ec469c61c0f",
+        "a0db90e68ee3b7a166e35f619bd7b02c0896efd60eb46914ff3e4fb81252fb94",
       ),
       nat_lor: h(
-        "9b7992771f84b561a637b64ee7cc21aee519b4616760b6ad496b4d17c14602eb",
+        "d14419aaa47a03bf9a46938bf72e40f96cab853f9cc5869879e7699f45171773",
       ),
       nat_xor: h(
-        "580c6d3f632dbe97c5efe10d0ca76dcf993bf633a87ea5b45bb8c38bb181c397",
+        "ae68fd416ecb9ce20612272d43c2f86eaf21d9547f565968391e9e12e39372dc",
       ),
       nat_shift_left: h(
-        "96fccb7ab8eb33280948661d57cd92af2632eb9ba693a199c946d2fb0b1b012c",
+        "f606b7c23180a20ace60fe24d52bc0ea3854698d2d14da05c4837a97e1ab4469",
       ),
       nat_shift_right: h(
-        "882ee7b12f532899a549cd0aad43b2c14c30469bf3255fc0ac7dfd79c0ee5eba",
+        "d860b560156da68e801c8bd51d892e557fbe3526d7d198696ffb4d551ae04bb7",
       ),
       bool_type: h(
         "6405a455ba70c2b2179c7966c6f610bf3417bd0f3dd2ba7a522533c2cd9e1d0b",
@@ -264,22 +290,32 @@ impl PrimAddrs {
         "c127f89f92e0481f7a3e0631c5615fe7f6cbbf439d5fd7eba400fb0603aedf2f",
       ),
       string: h(
-        "e42dd85bf0d0aef95501eb91f93bc0dd31a9bc28f2b8147f9c0ea40c7b699aa0",
+        "cb1bca7fc5dbb1bdfbf6319df89da9fda3a679d22554b8a9d5dd4663c0a97312",
       ),
       string_mk: h(
-        "6dfb55a0905acbb447e37f11e64c6fd136f0e51b26f123fa124c31b831d6fe6a",
+        "63d95a0fd6a1144348d0f20e20cc5c3af61ac955923f45f42a782de933aad594",
       ),
       char_type: h(
-        "dab96f1cffc3eb69303bf253d0947b09c2581ec8e5e3f046a536b3a3ff795b7d",
+        "38aa12059fad3afa1e1e8740dc9470a47c26986350f6cb3bea1fae1276d7b5f1",
       ),
       char_mk: h(
-        "7b1fe2e331b699241bc83842c879baab51ae342235d4ba80fe5acf38b230c241",
+        "e62238c54b91395c2c06192cfccb5e80fce41ed11d1bf6db142d2c39d7c81a20",
       ),
       char_of_nat: h(
-        "94f05c77b4dbdcba974581c48a4e26e5ff9a495e80dd4079a4acd4b7f7a8c464",
+        "7a5754386b30bb86f0b6f70fd368bb50e603273a50ad79d8c17fc3cb59f80fac",
       ),
+      // NOTE: `String.ofList` and `String.mk` share the canonical content-hash
+      // because both compile to the same Ixon form (a one-constructor `String`
+      // built from `List Char`). The Lean-side deprecation of `String.mk` in
+      // favor of `String.ofList` is orthogonal to the compiled representation.
       string_of_list: h(
-        "6dfb55a0905acbb447e37f11e64c6fd136f0e51b26f123fa124c31b831d6fe6a",
+        "63d95a0fd6a1144348d0f20e20cc5c3af61ac955923f45f42a782de933aad594",
+      ),
+      string_to_byte_array: h(
+        "65f644286bc49464cc7a36b7d7952f8543ab67564cd509ee878a95375609069b",
+      ),
+      byte_array_empty: h(
+        "d97417c49206c61fe28cbb7a0b6095f722cdfbc213e034aa59de51b9218af074",
       ),
       list: h(
         "abed9ff1aba4634abc0bd3af76ca544285a32dcfe43dc27b129aea8867457620",
@@ -290,42 +326,55 @@ impl PrimAddrs {
       list_cons: h(
         "f79842f10206598929e6ba60ce3ebaa00d11f201c99e80285f46cc0e90932832",
       ),
-      eq: h("c1b8d6903a3966bfedeccb63b6702fe226f893740d5c7ecf40045e7ac7635db3"),
+      eq: h("9c0af2a393cb5c0835e44e60e4c3e68eeb266fd16affad3216096a35fe91b9c1"),
       eq_refl: h(
-        "154ff4baae9cd74c5ffd813f61d3afee0168827ce12fd49aad8141ebe011ae35",
+        "1e251198f30625628e2eb0983f7be9efe8d719a104a861f2bef2f47eabeed4f9",
       ),
       quot_type: h(
-        "c921b6c7a436a087df626ed10481acfe8872e0b9be11411b657fb40e14c48e6f",
+        "ab682c1778a17bbeae4032974df36447ce8bfcab6764a36d378566e3ad63cab8",
       ),
       quot_ctor: h(
-        "f6ced3154ed2bceb2a775f1d97b43c55f840c755fb2752a72ad44bfbec908014",
+        "88266677fee774d109867e4b2240281aa2ee12d97920c1171cf5c1f6c87decf6",
       ),
       quot_lift: h(
-        "33b791909105eff442e7577c641722f326b1b88829895b18869a5ff9cf637803",
+        "aa57e8c3f4f9e1cf6b02a038ac158198c3af4b28d61cea7995bf5ca7c7b82c29",
       ),
       quot_ind: h(
-        "b85b8052b28d37b6dd3eff67e53a5bd256f824788dbce1ba6b7cff81f191663c",
+        "124984bcb95208a0f30bb69d6736d3d59404e115e2202043fda3d34e01b0ad16",
       ),
       reduce_bool: h(
-        "f06a188b0808ddd62c656513e8c3b08f7e0e847122787441eafa2fc583df4d40",
+        "6e453a7cedafe2edbbc1f0503442be499e4cbf18a6c00dc99f3903ee7f05dbaf",
       ),
       reduce_nat: h(
-        "6dbac9c0a1e1f8a2d5e3bca1c3733640b8924cb353481196423bcd2d84811310",
+        "5419187fbf67ef1c4ff9ab0be1b01d4631a270647ffe434bf7e1f788b3c81dd4",
       ),
+      // Synthetic kernel-only marker. This is intentionally not the compiled
+      // Lean content hash: `eagerReduce` canonicalizes to the same content
+      // address as the real Lean constant `id`, so address-only dispatch would
+      // give ordinary `id` terms special reduction semantics.
       eager_reduce: h(
-        "71526128a0948658969223303fc252dde43778527a4793dcf2ef0b3bf6ec19eb",
+        "ff00000000000000000000000000000000000000000000000000000000000003",
       ),
       system_platform_num_bits: h(
-        "68fa5ce6081e1bcbb15d67122a83c3582e49a4b97160666363a810e2859d2cbd",
+        "d483966438ad47ce4155b3485819a377e22605b59a1aafd0b681cb38aca83107",
+      ),
+      system_platform_get_num_bits: h(
+        "ad44c90449faf86f63c170f092e2249bccab1e741c1fe10df84c95b44b384371",
+      ),
+      subtype_val: h(
+        "ad58c3656044d7faef697637f516d72674d35b18663cb263f7ccca8cdd2e6f00",
       ),
       nat_dec_le: h(
-        "631b6b215182ce79c7404581e4f0e1dc47c851b2db2e66a9f0db123d141b418b",
+        "e08c5141c44b27653957ae00a926a2dd68dcd7779c4fdf850e668fdc92b408de",
       ),
       nat_dec_eq: h(
-        "f08f1c7c0c26b236db2f86e0410ebc49d8a86678c510d260aadb0165f5066c68",
+        "38323fd9e17e9d1f17536dbb7f196b94b5ba19e4bf625d9e7c607c47365c15ad",
       ),
       nat_dec_lt: h(
-        "1726b59a1fc33ee52fe32f885e606dcab8c140fe1c59f08fca714d097082abc3",
+        "f445084f6805faf9be62aa328415651343c98ffe52db159dfb1b9a14cb28cf23",
+      ),
+      decidable_rec: h(
+        "f323a549ad4df6b2f32899237a281136f34d431ed72b33857c085e6c4d852738",
       ),
       decidable_is_true: h(
         "3ae2c71da2bf34179a5a8808857c34a3b7662ff5654d8c247c43e85a7cde493f",
@@ -334,19 +383,22 @@ impl PrimAddrs {
         "10ac5f48798b3ff01b0f74c0b544d22796c9775f6d43d328316bbb3aa1638999",
       ),
       nat_le_of_ble_eq_true: h(
-        "f99dbacc212a09f62bdd89120b361fc86d4ec83efc1a145ae4e69a983a617c46",
+        "7e5d1f1118a89f77f89d469a27731a754de336a05e33f383056bc92b36947812",
       ),
       nat_not_le_of_not_ble_eq_true: h(
-        "f66f3ab90d666010e6331e262b53ad489e0824f0378c29fa0a57964468ccec95",
+        "c1e23b8dafb3778b996312068a2bec3dcbcc72132efbf43c235e573084668241",
       ),
       nat_eq_of_beq_eq_true: h(
-        "541be2062680b17cae675f0a7e8071e3301dcff28a45d50929a37c7aa6acd383",
+        "b9acc81f2801af89b95e0962aa9d7390a3acfe8fb760559a811a82ed7443dbb5",
       ),
       nat_ne_of_beq_eq_false: h(
-        "5c0ba4f47403f37d3050dda3ae3010ac3ba5616c9719543ba7debc62c897aaf6",
+        "248779884109eed00600a0bd968f740db7f3d924fb2b1706ab552e7876062855",
+      ),
+      fin: h(
+        "272aa9e16c03e9ad7337e706d73efd14ccf1da10e2f8367dd34374b60e1556fa",
       ),
       bool_no_confusion: h(
-        "43aaa253568c8458cd2f3cd2fb957670a6da3e909c5634da5ccd8d71767c9a1a",
+        "473b2c948ddbce4ddb4b369e5cf6199ff185b64e9fbb1e90901d746de55190ef",
       ),
       // Int primitives — canonical content-hashes from
       // `lake test -- rust-kernel-build-primitives`. Used by
@@ -361,43 +413,43 @@ impl PrimAddrs {
         "25bbcd756b52eb78bce170410defa4c15b238dedef5f7b89691621dcbe919780",
       ),
       int_add: h(
-        "4559d31171cd56a5db2e8edf4ca1b8512b36b0a16c064e0c938cc99eaa5533be",
+        "d8e6cdc988d4288e48cc6092730bc5387176cff6592471a328cc4354f1878412",
       ),
       int_sub: h(
-        "e621381a7a172a6c34b4d15306bc8c0bbc1cb6173dd533a3a5e0e39b8a3cb693",
+        "93b2d12d7797fd62c20bec255336c1e91ca1cef7a6951071296fc1ab5bd1d8c8",
       ),
       int_mul: h(
-        "1228f343d24c4e833a264cca70587ca1f0bd27a94ad82f4a35c4115f8e17cb1b",
+        "9ad6ee18ef6d7d74bbe449ab61aa31f84a0e78951e9560d28fd82e0c3b071d01",
       ),
       int_neg: h(
-        "edfedb88c6268b63c1a954af4f8e73cb5f3c7e7fe1109b38368317fe57bd3dfd",
+        "8c3f64e6b5baaaa125f0637d7a824df627dbede0115968f3c80c55e022554462",
       ),
       int_emod: h(
-        "3890bf165ce378fa58a838d50c56c8d64ad6d9c6b985d42183765118ea1ffbea",
+        "7cdb112725d3a4f542bfb0cd309268641bd89ddc9890c7221ed01f99b6a00b63",
       ),
       int_ediv: h(
-        "7d78d9f6f65becae51196f45d7d3e6b38c160ed5d68a574764fde285045c8c70",
+        "ba194c0a3674e67b9968d0a65cdda3a4ddb9dcdce48ad6c62e91d478a10a3ddd",
       ),
       int_bmod: h(
-        "e0278ad1c59ce799268fbb0e1062e8c12e0cf8818c223eca6e9170cd54abfc6e",
+        "c8431b7adb918967aa05ba6fd8297f33e97d67003e4138021d912ea92cc1887f",
       ),
       int_bdiv: h(
-        "a22913a2ba75bbeb3c58763626441f89b773d42f35f5be5a4cec313fb0ba6185",
+        "ab72477254d1ca4738123ad612eae4dfb9126ef78310ed7d2ebde8100963bfb1",
       ),
       int_nat_abs: h(
-        "387423bacfde4c6ab21a1ca97f63fd9c194290d1b25a0f24587d17a16533afc0",
+        "60662e33224f55be9e367683378c7bf6093c125c04ff7c4e3eca370112e1c562",
       ),
       int_pow: h(
-        "f52318c4f6973c48e73f0313ccf2fe6c55b08fb1ac2c8e7fb50d7ae2876dcec2",
+        "0dfe8f22bd6cb67d538a2f018f0e406fc0b5d730caa63e1a798dfa9ad78bab07",
       ),
       punit: h(
         "16a2dc76a2cfcc9440f443c666536f2fa99c0250b642fd3971fbad25d531262a",
       ),
       pprod: h(
-        "7bd9dffee376ce0221cd83cc6aa94055cfe2046bfc5fb36acd2428598a25fb63",
+        "6e99b086700f2901804a107cad5ef0fe878077b1723f4b824615dd021d4d5157",
       ),
       pprod_mk: h(
-        "4ab0f13838e997e9546dc9644a095ef23a58cf5b61f1055afd26524b7a25b600",
+        "00ddf26efd5f7e5eee5561c2467b16ac856efcb3a1226544487645dd46208596",
       ),
     }
   }
@@ -505,6 +557,12 @@ impl PrimAddrs {
       string_of_list: h(
         "0422aae71a49fd82c87cc8493725a927c1205a9418dc648947d7fde8ed240625",
       ),
+      string_to_byte_array: h(
+        "714e5b7ea77110a862699b662ecc0bc5a6d70e25bbf6b69dc0f0ec5feb2cfbb3",
+      ),
+      byte_array_empty: h(
+        "5e80d9c092e5fd25417a3a011632e0d060adf9cfd4c0a0bd6798868f067a7cb2",
+      ),
       list: h(
         "5886afc36363b59242671f7171bedb319d2a8fa514bc4dc322e3ebcadc85e8ad",
       ),
@@ -536,11 +594,18 @@ impl PrimAddrs {
       reduce_nat: h(
         "604dc8af16829c747638e4b6d58be2baf5280077f8de9db71acb6ef8bbc5f25d",
       ),
+      // Synthetic kernel-only marker for the original Lean-addressed env.
       eager_reduce: h(
-        "fa60e28de4275583d04e0cd02d6bf876da017d8e1fcb9180674d2d8f1302ce08",
+        "ff00000000000000000000000000000000000000000000000000000000000013",
       ),
       system_platform_num_bits: h(
         "6fb004fbafb4b68446a57550e21ac08d7599cb157ab194c52fcd7ba1671f10da",
+      ),
+      system_platform_get_num_bits: h(
+        "b9fe4dfbc707ca46de307491541e35ad89a93115245bca3860b74ebcc96a1af2",
+      ),
+      subtype_val: h(
+        "1cf910601d9d86d741333d9547d69d0e299bfe2f99a23a9e838d207fd641eac0",
       ),
       nat_dec_le: h(
         "e34083eb212a258b36374129f6170a9972adceb78356b6c83aa32284ad4edee3",
@@ -550,6 +615,9 @@ impl PrimAddrs {
       ),
       nat_dec_lt: h(
         "759a284b4f73e6aa405b409d741fa2b35642693bd041e74b790623121c5e1e33",
+      ),
+      decidable_rec: h(
+        "19e688c7cc2966eb4f79a58eb501c776689f515a7a4cb39fdf7482f1294a1511",
       ),
       decidable_is_true: h(
         "d235a7033c457dfed0f1e34d1d50e97279893b63bdcab3c4490dd9da7d47327f",
@@ -568,6 +636,9 @@ impl PrimAddrs {
       ),
       nat_ne_of_beq_eq_false: h(
         "a09735868d12586f23121cecf12ea2dd1f197f1d44dadc94b7e056d6cceb1980",
+      ),
+      fin: h(
+        "aca8ccd74023a139175db5f1b5b4d037ba1559e25a5d091f2bdc797b23dbb275",
       ),
       bool_no_confusion: h(
         "68bd3c3b59b4bf7285096a8a0b90308db6307b082d24a08b91924b5e6cdcb53a",
@@ -634,10 +705,9 @@ impl<M: KernelMode> Primitives<M> {
   /// environment).
   ///
   /// Addresses that don't resolve fall back to a synthetic KId with the
-  /// address hex as the name — expected for optional markers
-  /// (`reduce_bool`, `reduce_nat`, `eager_reduce`) that have no
-  /// corresponding Lean constant, and a symptom of hash drift
-  /// otherwise. Regenerate stale hashes with
+  /// address hex as the name. That is expected for the synthetic
+  /// `eager_reduce` marker and is a symptom of hash drift otherwise.
+  /// Regenerate stale hashes with
   /// `lake test -- rust-kernel-build-primitives`.
   pub fn from_env(env: &KEnv<M>) -> Self {
     Self::from_env_with(env, &PrimAddrs::new())
@@ -669,8 +739,8 @@ impl<M: KernelMode> Primitives<M> {
     }
 
     // Resolve: look up in env, fall back to a synthetic KId with the address
-    // hex as the name (should only happen for constants not yet in the env,
-    // e.g. reduce_bool/reduce_nat markers that may not be real constants).
+    // hex as the name. For real primitives this should only happen in small
+    // unit-test envs or when the hardcoded table has drifted.
     let r = |addr: &Address| -> KId<M> {
       by_addr.get(addr).cloned().unwrap_or_else(|| {
         let hex = addr.hex();
@@ -680,6 +750,13 @@ impl<M: KernelMode> Primitives<M> {
         );
         KId::new(addr.clone(), M::meta_field(name))
       })
+    };
+    let marker = |addr: &Address, marker_name: &str| -> KId<M> {
+      let name = crate::ix::env::Name::str(
+        crate::ix::env::Name::anon(),
+        format!("@{marker_name}"),
+      );
+      KId::new(addr.clone(), M::meta_field(name))
     };
 
     Primitives {
@@ -711,6 +788,8 @@ impl<M: KernelMode> Primitives<M> {
       char_mk: r(&a.char_mk),
       char_of_nat: r(&a.char_of_nat),
       string_of_list: r(&a.string_of_list),
+      string_to_byte_array: r(&a.string_to_byte_array),
+      byte_array_empty: r(&a.byte_array_empty),
       list: r(&a.list),
       list_nil: r(&a.list_nil),
       list_cons: r(&a.list_cons),
@@ -722,17 +801,21 @@ impl<M: KernelMode> Primitives<M> {
       quot_ind: r(&a.quot_ind),
       reduce_bool: r(&a.reduce_bool),
       reduce_nat: r(&a.reduce_nat),
-      eager_reduce: r(&a.eager_reduce),
+      eager_reduce: marker(&a.eager_reduce, "eager_reduce"),
       system_platform_num_bits: r(&a.system_platform_num_bits),
+      system_platform_get_num_bits: r(&a.system_platform_get_num_bits),
+      subtype_val: r(&a.subtype_val),
       nat_dec_le: r(&a.nat_dec_le),
       nat_dec_eq: r(&a.nat_dec_eq),
       nat_dec_lt: r(&a.nat_dec_lt),
+      decidable_rec: r(&a.decidable_rec),
       decidable_is_true: r(&a.decidable_is_true),
       decidable_is_false: r(&a.decidable_is_false),
       nat_le_of_ble_eq_true: r(&a.nat_le_of_ble_eq_true),
       nat_not_le_of_not_ble_eq_true: r(&a.nat_not_le_of_not_ble_eq_true),
       nat_eq_of_beq_eq_true: r(&a.nat_eq_of_beq_eq_true),
       nat_ne_of_beq_eq_false: r(&a.nat_ne_of_beq_eq_false),
+      fin: r(&a.fin),
       bool_no_confusion: r(&a.bool_no_confusion),
       int: r(&a.int),
       int_of_nat: r(&a.int_of_nat),
@@ -749,6 +832,14 @@ impl<M: KernelMode> Primitives<M> {
       int_pow: r(&a.int_pow),
     }
   }
+}
+
+pub fn reserved_marker_name(addr: &Address) -> Option<&'static str> {
+  static MARKERS: LazyLock<[(&'static str, Address); 2]> =
+    LazyLock::new(PrimAddrs::reserved_marker_addrs);
+  MARKERS
+    .iter()
+    .find_map(|(name, marker_addr)| (marker_addr == addr).then_some(*name))
 }
 
 #[cfg(test)]
@@ -799,6 +890,8 @@ mod tests {
       ("char_mk", &a.char_mk),
       ("char_of_nat", &a.char_of_nat),
       ("string_of_list", &a.string_of_list),
+      ("string_to_byte_array", &a.string_to_byte_array),
+      ("byte_array_empty", &a.byte_array_empty),
       ("list", &a.list),
       ("list_nil", &a.list_nil),
       ("list_cons", &a.list_cons),
@@ -812,15 +905,19 @@ mod tests {
       ("reduce_nat", &a.reduce_nat),
       ("eager_reduce", &a.eager_reduce),
       ("system_platform_num_bits", &a.system_platform_num_bits),
+      ("system_platform_get_num_bits", &a.system_platform_get_num_bits),
+      ("subtype_val", &a.subtype_val),
       ("nat_dec_le", &a.nat_dec_le),
       ("nat_dec_eq", &a.nat_dec_eq),
       ("nat_dec_lt", &a.nat_dec_lt),
+      ("decidable_rec", &a.decidable_rec),
       ("decidable_is_true", &a.decidable_is_true),
       ("decidable_is_false", &a.decidable_is_false),
       ("nat_le_of_ble_eq_true", &a.nat_le_of_ble_eq_true),
       ("nat_not_le_of_not_ble_eq_true", &a.nat_not_le_of_not_ble_eq_true),
       ("nat_eq_of_beq_eq_true", &a.nat_eq_of_beq_eq_true),
       ("nat_ne_of_beq_eq_false", &a.nat_ne_of_beq_eq_false),
+      ("fin", &a.fin),
       ("bool_no_confusion", &a.bool_no_confusion),
       ("int", &a.int),
       ("int_of_nat", &a.int_of_nat),

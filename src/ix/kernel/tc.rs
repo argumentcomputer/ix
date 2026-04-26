@@ -8,7 +8,7 @@
 //! WHNF, type inference, def-eq, and constant checking are in separate modules
 //! that add `impl TypeChecker` blocks.
 
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use rustc_hash::FxHashMap;
 
@@ -40,9 +40,20 @@ pub const MAX_DEF_EQ_DEPTH: u32 = 2_000;
 
 /// Shared recursive fuel budget, consumed by each call to whnf/infer/isDefEq.
 /// lean4lean uses 10,000 with step-indexed recursion; the lean4 C++ kernel
-/// uses ~200,000 heartbeats. We use a higher budget than lean4lean because
-/// we lack compiled native reduction for large Nat/Bool computations.
-pub const MAX_REC_FUEL: u64 = 200_000;
+/// uses ~200,000 heartbeats. We use a higher budget than both because this
+/// kernel lacks compiled native reduction and checks some large proof terms
+/// by interpreting their full expression trees. In particular, BVDecide's
+/// generated mutual proofs can legitimately exceed one million recursive
+/// kernel steps even after cache hits stop consuming fuel.
+pub const MAX_REC_FUEL: u64 = 1_500_000;
+
+static IX_MAX_REC_FUEL: LazyLock<Option<u64>> = LazyLock::new(|| {
+  std::env::var("IX_MAX_REC_FUEL").ok().and_then(|s| s.parse().ok())
+});
+
+pub fn max_rec_fuel() -> u64 {
+  (*IX_MAX_REC_FUEL).unwrap_or(MAX_REC_FUEL)
+}
 
 /// Temporary struct for recursor info during iota reduction,
 /// avoiding borrow conflicts with `&self.env`.
@@ -72,8 +83,7 @@ pub struct TypeChecker<M: KernelMode> {
   /// Let-bound values, parallel to `ctx`. `Some(val)` for let-bindings, `None`
   /// for lambda/forall bindings. Used for let-variable zeta-reduction in whnf_core.
   pub let_vals: Vec<Option<KExpr<M>>>,
-  /// Number of active let-bindings in `ctx`. When > 0, WHNF cache keys include
-  /// ctx_id to avoid cross-context contamination.
+  /// Number of active let-bindings in `ctx`.
   pub num_let_bindings: usize,
   /// Content-addressed context identity: a blake3 hash derived from the
   /// binding-type chain. Immune to the ABA pointer-reuse problem.
@@ -99,6 +109,17 @@ pub struct TypeChecker<M: KernelMode> {
   pub def_eq_peak: u32,
   /// Shared recursive fuel remaining for this constant check.
   pub rec_fuel: u64,
+  /// Count of Nat-literal iota reductions on values above the large-literal
+  /// threshold for the current constant.
+  pub nat_iota_large_expansions: u32,
+  /// Consecutive `Nat` literal iota reductions on the same recursor where the
+  /// major premise is being peeled by one each time. This catches runaway
+  /// `Nat.rec ... N` paths whose step immediately forces `ih` while still
+  /// allowing large-fuel definitions that make only bounded progress.
+  pub nat_iota_last: Option<(Address, num_bigint::BigUint)>,
+  pub nat_iota_run: u32,
+  /// Optional diagnostic label for the current top-level constant.
+  pub debug_label: Option<String>,
 }
 
 impl<M: KernelMode> TypeChecker<M> {
@@ -118,7 +139,11 @@ impl<M: KernelMode> TypeChecker<M> {
       eager_reduce: false,
       def_eq_depth: 0,
       def_eq_peak: 0,
-      rec_fuel: MAX_REC_FUEL,
+      rec_fuel: max_rec_fuel(),
+      nat_iota_large_expansions: 0,
+      nat_iota_last: None,
+      nat_iota_run: 0,
+      debug_label: None,
     }
   }
 
@@ -133,14 +158,29 @@ impl<M: KernelMode> TypeChecker<M> {
 
   /// WHNF cache key: (expr_hash, ctx_hash).
   /// Closed expressions (lbr == 0) use the empty context hash since they
-  /// can't reference bindings. Open expressions under let-bindings use
-  /// ctx_id to distinguish contexts.
+  /// can't reference bindings. Open expressions use ctx_id to distinguish
+  /// contexts: WHNF itself is syntactic for most open terms, but reduction can
+  /// call infer through K/structure iota and projection paths, and infer of a
+  /// loose variable depends on the local binder types.
   #[inline]
   pub fn whnf_key(&self, e: &KExpr<M>) -> (Addr, Addr) {
-    if self.num_let_bindings > 0 && e.lbr() > 0 {
-      (e.hash_key(), self.ctx_id.clone())
-    } else {
+    if e.lbr() == 0 {
       (e.hash_key(), empty_ctx_addr())
+    } else {
+      (e.hash_key(), self.ctx_id.clone())
+    }
+  }
+
+  /// Type-inference cache key: (expr_hash, ctx_hash).
+  /// Closed expressions (lbr == 0) are context-independent. Open expressions
+  /// depend on local types, so they must stay isolated by ctx_id even when
+  /// there are no let-bindings.
+  #[inline]
+  pub fn infer_key(&self, e: &KExpr<M>) -> (Addr, Addr) {
+    if e.lbr() == 0 {
+      (e.hash_key(), empty_ctx_addr())
+    } else {
+      (e.hash_key(), self.ctx_id.clone())
     }
   }
 
@@ -405,13 +445,44 @@ impl<M: KernelMode> TypeChecker<M> {
     self.eager_reduce = false;
     self.def_eq_depth = 0;
     self.def_eq_peak = 0;
-    self.rec_fuel = MAX_REC_FUEL;
+    self.rec_fuel = max_rec_fuel();
+    self.nat_iota_large_expansions = 0;
+    self.nat_iota_last = None;
+    self.nat_iota_run = 0;
+  }
+
+  pub fn set_debug_label(&mut self, label: impl Into<String>) {
+    self.debug_label = Some(label.into());
+  }
+
+  pub fn debug_label_matches_env(&self) -> bool {
+    match std::env::var("IX_KERNEL_DEBUG_CONST") {
+      Ok(filter) if filter.is_empty() => true,
+      Ok(filter) => {
+        self.debug_label.as_ref().is_some_and(|label| label.contains(&filter))
+      },
+      Err(_) => true,
+    }
   }
 
   /// Consume one unit of shared recursive fuel. Returns Err if exhausted.
   #[inline]
   pub fn tick(&mut self) -> Result<(), TcError<M>> {
     if self.rec_fuel == 0 {
+      if std::env::var("IX_REC_FUEL_DUMP").is_ok()
+        && self.debug_label_matches_env()
+      {
+        eprintln!(
+          "[rec fuel] exhausted const={} depth={} def_eq_depth={} infer_only={} native_reduce={} eager_reduce={}",
+          self.debug_label.as_deref().unwrap_or("<unknown>"),
+          self.depth(),
+          self.def_eq_depth,
+          self.infer_only,
+          self.in_native_reduce,
+          self.eager_reduce
+        );
+        eprintln!("{}", std::backtrace::Backtrace::force_capture());
+      }
       return Err(TcError::MaxRecDepth);
     }
     self.rec_fuel -= 1;
@@ -421,7 +492,7 @@ impl<M: KernelMode> TypeChecker<M> {
   /// Starting fuel for the current check. Used by diagnostics that want
   /// to report fuel consumed at a given point.
   pub fn fuel_used(&self) -> u64 {
-    MAX_REC_FUEL.saturating_sub(self.rec_fuel)
+    max_rec_fuel().saturating_sub(self.rec_fuel)
   }
 
   // -----------------------------------------------------------------------
@@ -669,16 +740,15 @@ mod tests {
   }
 
   #[test]
-  fn whnf_key_empty_when_no_lets_even_under_locals() {
+  fn whnf_key_includes_ctx_id_for_open_expr_without_lets() {
     let mut tc = new_tc();
     // Push a lambda-bound local — num_let_bindings stays 0.
     tc.push_local(sort0());
-    // An expression with loose bvars still gets the empty ctx because
-    // there are no let bindings to discriminate against.
     let e = var(0);
     let (h, ctx) = tc.whnf_key(&e);
     assert_eq!(h, e.hash_key());
-    assert_eq!(ctx, empty_ctx_addr());
+    assert_eq!(ctx, tc.ctx_id);
+    assert_ne!(ctx, empty_ctx_addr());
   }
 
   #[test]
@@ -700,6 +770,29 @@ mod tests {
     let (_, ctx) = tc.whnf_key(&e);
     // Closed expression: empty ctx regardless of let-binding state.
     assert_eq!(ctx, empty_ctx_addr());
+  }
+
+  // ---- infer_key ----
+
+  #[test]
+  fn infer_key_closed_expr_ignores_ctx() {
+    let mut tc = new_tc();
+    tc.push_local(sort0());
+    let e = sort0();
+    let (h, ctx) = tc.infer_key(&e);
+    assert_eq!(h, e.hash_key());
+    assert_eq!(ctx, empty_ctx_addr());
+  }
+
+  #[test]
+  fn infer_key_open_expr_includes_ctx_even_without_lets() {
+    let mut tc = new_tc();
+    tc.push_local(sort0());
+    let e = var(0);
+    let (h, ctx) = tc.infer_key(&e);
+    assert_eq!(h, e.hash_key());
+    assert_eq!(ctx, tc.ctx_id);
+    assert_ne!(ctx, empty_ctx_addr());
   }
 
   // ---- lookup_var ----
@@ -865,7 +958,7 @@ mod tests {
     assert!(!tc.eager_reduce);
     assert_eq!(tc.def_eq_depth, 0);
     assert_eq!(tc.def_eq_peak, 0);
-    assert_eq!(tc.rec_fuel, MAX_REC_FUEL);
+    assert_eq!(tc.rec_fuel, max_rec_fuel());
   }
 
   // ---- instantiate_univ_params / subst_univ ----

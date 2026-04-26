@@ -104,11 +104,13 @@ pub struct KernelCtx {
   /// addresses that may shift as alpha-collapse reassigns addresses over
   /// the course of compilation.
   pub kenv: Arc<crate::ix::kernel::env::KEnv<crate::ix::kernel::mode::Meta>>,
-  /// Shared **original** kernel environment. Populated **once** at the
-  /// start of `compile_env` via `lean_ingress(&lean_env)` and never
-  /// mutated after. Holds every Lean-original constant at
-  /// `lean_name_to_addr(name)` addresses with self-consistent type
-  /// references (no alpha-collapse, no aux rewriting, no staleness).
+  /// Shared **original** kernel environment. When
+  /// `CompileOptions::check_originals` is enabled, this is populated once at
+  /// the start of `compile_env` via `lean_ingress(&lean_env)` and then never
+  /// mutated. It holds every Lean-original constant at its LEON content-hash
+  /// address with self-consistent type references (no alpha-collapse, no aux
+  /// rewriting, no staleness). Normal trusted compile paths leave it empty to
+  /// avoid retaining a second kernel-form copy of the whole environment.
   ///
   /// Used exclusively for `check_originals` — verifying each block's
   /// Lean-stored inductives, constructors, and recursors against a
@@ -194,6 +196,13 @@ pub struct CompileState {
   /// Keyed by the original auxiliary name (e.g., `A.rec`, `B.rec`).
   /// Computed per original recursor name in `compile_mutual` after `sort_consts`.
   pub call_site_plans: DashMap<Name, surgery::CallSitePlan>,
+  /// Per-`.brecOn` surgery plans. These share the motive permutation with
+  /// `.rec`, but `.brecOn` places indices+major before the handler binders,
+  /// so the telescope has to be rewritten by a separate layout rule.
+  pub brec_on_call_site_plans: DashMap<Name, surgery::BRecOnCallSitePlan>,
+  /// Per-`.below` surgery plans. `.below` has the motive-only telescope
+  /// `params, motives, indices, major`.
+  pub below_call_site_plans: DashMap<Name, surgery::BRecOnCallSitePlan>,
   /// Per-block nested-auxiliary layout (permutation + source ctor
   /// counts) for each source `InductiveVal.all[0]` name. Used by:
   ///  - `compute_call_site_plans` to rewrite source-order aux motive/minor
@@ -266,6 +275,8 @@ impl Default for CompileState {
       aux_name_to_addr: Default::default(),
       lean_env: None,
       call_site_plans: Default::default(),
+      brec_on_call_site_plans: Default::default(),
+      below_call_site_plans: Default::default(),
       aux_perms: Default::default(),
       check_originals: true,
     }
@@ -666,15 +677,15 @@ pub fn compile_expr(
   use crate::ix::ixon::metadata::CallSiteEntry;
 
   // Stack-based iterative compilation to avoid stack overflow
-  enum Frame<'a> {
-    Compile(&'a LeanExpr),
+  enum Frame {
+    Compile(LeanExpr),
     BuildApp,
     BuildLam(Address, BinderInfo),
     BuildAll(Address, BinderInfo),
     BuildLet(Address, bool),
     BuildProj(u64, u64, Address), // type_ref_idx, field_idx, struct_name_addr
     WrapMdata(Vec<KVMap>),
-    Cache(&'a LeanExpr),
+    Cache(LeanExpr),
     /// Build a surgered call-site from compiled head + canonical args + collapsed args.
     BuildCallSite {
       name_addr: Address,
@@ -694,7 +705,7 @@ pub fn compile_expr(
     return Ok(cached.expr);
   }
 
-  let mut stack: Vec<Frame<'_>> = vec![Frame::Compile(expr)];
+  let mut stack: Vec<Frame> = vec![Frame::Compile(expr.clone())];
   let mut results: Vec<Arc<Expr>> = Vec::new();
 
   while let Some(frame) = stack.pop() {
@@ -708,7 +719,7 @@ pub fn compile_expr(
           continue;
         }
 
-        stack.push(Frame::Cache(e));
+        stack.push(Frame::Cache(e.clone()));
 
         match e.as_data() {
           ExprData::Bvar(idx, _) => {
@@ -761,7 +772,7 @@ pub fn compile_expr(
             // Collect the full App telescope in one pass (O(depth) pointer chase).
             // This avoids any double-traversal and gives us the head + all args
             // for both the surgery check and the normal compilation path.
-            let (head_expr, args) = surgery::collect_lean_telescope(e);
+            let (head_expr, args) = surgery::collect_lean_telescope(&e);
 
             // Check for surgery: only when head is a Const in
             // `call_site_plans` *and* the body currently being compiled is
@@ -781,7 +792,7 @@ pub fn compile_expr(
             // `AppTypeMismatch` whenever `sort_consts` reordered a
             // mutual block (the `Alt`↔`Cases`, `EqCnstr`↔`DiseqCnstr`
             // failure family in `kernel-check-env`).
-            if let ExprData::Const(name, _, _) = head_expr.as_data() {
+            if let ExprData::Const(name, levels, _) = head_expr.as_data() {
               // Call-site surgery guard. Surgery applies iff:
               //  (1) the compiling constant is *not* an AuxRegen name —
               //      i.e. not one of the Lean auto-generated auxiliaries
@@ -830,34 +841,38 @@ pub fn compile_expr(
                       // reorder kept to canonical, compile everything.
                       let name_addr = compile_name(name, stt);
 
+                      let args_owned: Vec<LeanExpr> =
+                        args.iter().map(|arg| (*arg).clone()).collect();
+
                       // Decompose source args into regions
-                      let params = &args[..plan.n_params];
-                      let motives = &args
+                      let params = &args_owned[..plan.n_params];
+                      let motives = &args_owned
                         [plan.n_params..plan.n_params + plan.n_source_motives];
-                      let minors = &args[plan.n_params + plan.n_source_motives
+                      let minors = &args_owned[plan.n_params
+                        + plan.n_source_motives
                         ..plan.n_params
                           + plan.n_source_motives
                           + plan.n_source_minors];
-                      let tail = &args[plan.n_params
+                      let tail = &args_owned[plan.n_params
                         + plan.n_source_motives
                         + plan.n_source_minors..];
 
                       // Build canonical-order args and entries
                       let n_canon_motives = plan.n_canonical_motives();
                       let n_canon_minors = plan.n_canonical_minors();
-                      let mut canonical_args: Vec<&LeanExpr> =
+                      let mut canonical_args: Vec<(usize, LeanExpr)> =
                         Vec::with_capacity(
                           plan.n_params
                             + n_canon_motives
                             + n_canon_minors
                             + tail.len(),
                         );
-                      let mut collapsed_args: Vec<&LeanExpr> = Vec::new();
+                      let mut collapsed_args: Vec<LeanExpr> = Vec::new();
                       let mut entries: Vec<CallSiteEntry> = Vec::new();
 
                       // Params: always kept, identity mapping
                       for (i, p) in params.iter().enumerate() {
-                        canonical_args.push(p);
+                        canonical_args.push((i, p.clone()));
                         entries.push(CallSiteEntry::Kept {
                           canon_idx: i as u64,
                           meta: 0,
@@ -866,18 +881,18 @@ pub fn compile_expr(
 
                       // Motives: kept or collapsed per plan
                       let canon_base = plan.n_params;
-                      for (src_i, &motive) in motives.iter().enumerate() {
+                      for (src_i, motive) in motives.iter().enumerate() {
                         if plan.motive_keep[src_i] {
                           let canon_pos =
                             canon_base + plan.source_to_canon_motive[src_i];
-                          canonical_args.push(motive);
+                          canonical_args.push((canon_pos, motive.clone()));
                           entries.push(CallSiteEntry::Kept {
                             canon_idx: canon_pos as u64,
                             meta: 0,
                           });
                         } else {
                           let sharing_idx = collapsed_args.len();
-                          collapsed_args.push(motive);
+                          collapsed_args.push(motive.clone());
                           entries.push(CallSiteEntry::Collapsed {
                             sharing_idx: sharing_idx as u64,
                             meta: 0,
@@ -887,18 +902,37 @@ pub fn compile_expr(
 
                       // Minors: kept or collapsed per plan
                       let minor_canon_base = plan.n_params + n_canon_motives;
-                      for (src_i, &minor) in minors.iter().enumerate() {
+                      for (src_i, minor) in minors.iter().enumerate() {
                         if plan.minor_keep[src_i] {
                           let canon_pos = minor_canon_base
                             + plan.source_to_canon_minor[src_i];
-                          canonical_args.push(minor);
-                          entries.push(CallSiteEntry::Kept {
-                            canon_idx: canon_pos as u64,
-                            meta: 0,
-                          });
+                          let adapted_minor =
+                            stt.lean_env.as_deref().and_then(|lean_env| {
+                              surgery::adapt_split_minor(
+                                name, levels, &plan, src_i, minor, params,
+                                motives, minors, lean_env,
+                              )
+                            });
+                          let minor_arg = adapted_minor
+                            .clone()
+                            .unwrap_or_else(|| minor.clone());
+                          canonical_args.push((canon_pos, minor_arg));
+                          if adapted_minor.is_some() {
+                            let sharing_idx = collapsed_args.len();
+                            collapsed_args.push(minor.clone());
+                            entries.push(CallSiteEntry::Collapsed {
+                              sharing_idx: sharing_idx as u64,
+                              meta: 0,
+                            });
+                          } else {
+                            entries.push(CallSiteEntry::Kept {
+                              canon_idx: canon_pos as u64,
+                              meta: 0,
+                            });
+                          }
                         } else {
                           let sharing_idx = collapsed_args.len();
-                          collapsed_args.push(minor);
+                          collapsed_args.push(minor.clone());
                           entries.push(CallSiteEntry::Collapsed {
                             sharing_idx: sharing_idx as u64,
                             meta: 0,
@@ -910,7 +944,7 @@ pub fn compile_expr(
                       let tail_canon_base =
                         plan.n_params + n_canon_motives + n_canon_minors;
                       for (i, t) in tail.iter().enumerate() {
-                        canonical_args.push(t);
+                        canonical_args.push((tail_canon_base + i, t.clone()));
                         entries.push(CallSiteEntry::Kept {
                           canon_idx: (tail_canon_base + i) as u64,
                           meta: 0,
@@ -918,19 +952,11 @@ pub fn compile_expr(
                       }
 
                       // Sort canonical_args by their target canon_idx
-                      let mut indexed_canon: Vec<(usize, &LeanExpr)> =
-                        Vec::new();
-                      let mut ci = 0;
-                      for entry in &entries {
-                        if let CallSiteEntry::Kept { canon_idx, .. } = entry {
-                          indexed_canon
-                            .push((*canon_idx as usize, canonical_args[ci]));
-                          ci += 1;
-                        }
-                      }
-                      indexed_canon.sort_by_key(|(canon_idx, _)| *canon_idx);
-                      let sorted_canon: Vec<&LeanExpr> =
-                        indexed_canon.iter().map(|(_, e)| *e).collect();
+                      canonical_args.sort_by_key(|(canon_idx, _)| *canon_idx);
+                      let sorted_canon: Vec<LeanExpr> = canonical_args
+                        .into_iter()
+                        .map(|(_, expr)| expr)
+                        .collect();
 
                       let n_canonical = sorted_canon.len();
                       let n_collapsed = collapsed_args.len();
@@ -942,13 +968,249 @@ pub fn compile_expr(
                         n_canonical,
                         n_collapsed,
                       });
-                      for &arg in collapsed_args.iter().rev() {
-                        stack.push(Frame::Compile(arg));
+                      for arg in collapsed_args.iter().rev() {
+                        stack.push(Frame::Compile(arg.clone()));
                       }
-                      for &arg in sorted_canon.iter().rev() {
-                        stack.push(Frame::Compile(arg));
+                      for arg in sorted_canon.iter().rev() {
+                        stack.push(Frame::Compile(arg.clone()));
                       }
-                      stack.push(Frame::Compile(head_expr));
+                      stack.push(Frame::Compile(head_expr.clone()));
+                      continue;
+                    }
+                  }
+                }
+                if let Some(plan) = stt.below_call_site_plans.get(name) {
+                  if !plan.is_identity() {
+                    let fixed_tail_len = plan.n_indices + 1; // indices + major
+                    let expected_total =
+                      plan.n_params + plan.n_source_motives + fixed_tail_len;
+                    if args.len() >= expected_total {
+                      let name_addr = compile_name(name, stt);
+                      let args_owned: Vec<LeanExpr> =
+                        args.iter().map(|arg| (*arg).clone()).collect();
+                      let params = &args_owned[..plan.n_params];
+                      let motives = &args_owned
+                        [plan.n_params..plan.n_params + plan.n_source_motives];
+                      let fixed_tail = &args_owned
+                        [plan.n_params + plan.n_source_motives..expected_total];
+                      let extra_tail = &args_owned[expected_total..];
+
+                      let n_canon_motives = plan.n_canonical_motives();
+                      let mut canonical_args: Vec<(usize, LeanExpr)> =
+                        Vec::with_capacity(
+                          plan.n_params
+                            + n_canon_motives
+                            + fixed_tail.len()
+                            + extra_tail.len(),
+                        );
+                      let mut collapsed_args: Vec<LeanExpr> = Vec::new();
+                      let mut entries: Vec<CallSiteEntry> = Vec::new();
+
+                      for (i, p) in params.iter().enumerate() {
+                        canonical_args.push((i, p.clone()));
+                        entries.push(CallSiteEntry::Kept {
+                          canon_idx: i as u64,
+                          meta: 0,
+                        });
+                      }
+
+                      let motive_canon_base = plan.n_params;
+                      for (src_i, motive) in motives.iter().enumerate() {
+                        if plan.motive_keep[src_i] {
+                          let canon_pos = motive_canon_base
+                            + plan.source_to_canon_motive[src_i];
+                          canonical_args.push((canon_pos, motive.clone()));
+                          entries.push(CallSiteEntry::Kept {
+                            canon_idx: canon_pos as u64,
+                            meta: 0,
+                          });
+                        } else {
+                          let sharing_idx = collapsed_args.len();
+                          collapsed_args.push(motive.clone());
+                          entries.push(CallSiteEntry::Collapsed {
+                            sharing_idx: sharing_idx as u64,
+                            meta: 0,
+                          });
+                        }
+                      }
+
+                      let fixed_tail_canon_base =
+                        plan.n_params + n_canon_motives;
+                      for (i, t) in fixed_tail.iter().enumerate() {
+                        canonical_args
+                          .push((fixed_tail_canon_base + i, t.clone()));
+                        entries.push(CallSiteEntry::Kept {
+                          canon_idx: (fixed_tail_canon_base + i) as u64,
+                          meta: 0,
+                        });
+                      }
+
+                      let extra_tail_canon_base =
+                        fixed_tail_canon_base + fixed_tail_len;
+                      for (i, t) in extra_tail.iter().enumerate() {
+                        canonical_args
+                          .push((extra_tail_canon_base + i, t.clone()));
+                        entries.push(CallSiteEntry::Kept {
+                          canon_idx: (extra_tail_canon_base + i) as u64,
+                          meta: 0,
+                        });
+                      }
+
+                      canonical_args.sort_by_key(|(canon_idx, _)| *canon_idx);
+                      let sorted_canon: Vec<LeanExpr> = canonical_args
+                        .into_iter()
+                        .map(|(_, expr)| expr)
+                        .collect();
+
+                      let n_canonical = sorted_canon.len();
+                      let n_collapsed = collapsed_args.len();
+                      stack.push(Frame::BuildCallSite {
+                        name_addr,
+                        entries,
+                        n_canonical,
+                        n_collapsed,
+                      });
+                      for arg in collapsed_args.iter().rev() {
+                        stack.push(Frame::Compile(arg.clone()));
+                      }
+                      for arg in sorted_canon.iter().rev() {
+                        stack.push(Frame::Compile(arg.clone()));
+                      }
+                      stack.push(Frame::Compile(head_expr.clone()));
+                      continue;
+                    }
+                  }
+                }
+                if let Some(plan) = stt.brec_on_call_site_plans.get(name) {
+                  if !plan.is_identity() {
+                    let fixed_tail_len = plan.n_indices + 1; // indices + major
+                    let expected_total = plan.n_params
+                      + plan.n_source_motives
+                      + fixed_tail_len
+                      + plan.n_source_motives;
+                    if args.len() >= expected_total {
+                      let name_addr = compile_name(name, stt);
+
+                      let args_owned: Vec<LeanExpr> =
+                        args.iter().map(|arg| (*arg).clone()).collect();
+                      let params = &args_owned[..plan.n_params];
+                      let motives = &args_owned
+                        [plan.n_params..plan.n_params + plan.n_source_motives];
+                      let fixed_tail = &args_owned[plan.n_params
+                        + plan.n_source_motives
+                        ..plan.n_params
+                          + plan.n_source_motives
+                          + fixed_tail_len];
+                      let handlers = &args_owned[plan.n_params
+                        + plan.n_source_motives
+                        + fixed_tail_len
+                        ..expected_total];
+                      let extra_tail = &args_owned[expected_total..];
+
+                      let n_canon_motives = plan.n_canonical_motives();
+                      let mut canonical_args: Vec<(usize, LeanExpr)> =
+                        Vec::with_capacity(
+                          plan.n_params
+                            + n_canon_motives
+                            + fixed_tail.len()
+                            + n_canon_motives
+                            + extra_tail.len(),
+                        );
+                      let mut collapsed_args: Vec<LeanExpr> = Vec::new();
+                      let mut entries: Vec<CallSiteEntry> = Vec::new();
+
+                      for (i, p) in params.iter().enumerate() {
+                        canonical_args.push((i, p.clone()));
+                        entries.push(CallSiteEntry::Kept {
+                          canon_idx: i as u64,
+                          meta: 0,
+                        });
+                      }
+
+                      let motive_canon_base = plan.n_params;
+                      for (src_i, motive) in motives.iter().enumerate() {
+                        if plan.motive_keep[src_i] {
+                          let canon_pos = motive_canon_base
+                            + plan.source_to_canon_motive[src_i];
+                          canonical_args.push((canon_pos, motive.clone()));
+                          entries.push(CallSiteEntry::Kept {
+                            canon_idx: canon_pos as u64,
+                            meta: 0,
+                          });
+                        } else {
+                          let sharing_idx = collapsed_args.len();
+                          collapsed_args.push(motive.clone());
+                          entries.push(CallSiteEntry::Collapsed {
+                            sharing_idx: sharing_idx as u64,
+                            meta: 0,
+                          });
+                        }
+                      }
+
+                      let fixed_tail_canon_base =
+                        plan.n_params + n_canon_motives;
+                      for (i, t) in fixed_tail.iter().enumerate() {
+                        canonical_args
+                          .push((fixed_tail_canon_base + i, t.clone()));
+                        entries.push(CallSiteEntry::Kept {
+                          canon_idx: (fixed_tail_canon_base + i) as u64,
+                          meta: 0,
+                        });
+                      }
+
+                      let handler_canon_base =
+                        fixed_tail_canon_base + fixed_tail_len;
+                      for (src_i, handler) in handlers.iter().enumerate() {
+                        if plan.motive_keep[src_i] {
+                          let canon_pos = handler_canon_base
+                            + plan.source_to_canon_motive[src_i];
+                          canonical_args.push((canon_pos, handler.clone()));
+                          entries.push(CallSiteEntry::Kept {
+                            canon_idx: canon_pos as u64,
+                            meta: 0,
+                          });
+                        } else {
+                          let sharing_idx = collapsed_args.len();
+                          collapsed_args.push(handler.clone());
+                          entries.push(CallSiteEntry::Collapsed {
+                            sharing_idx: sharing_idx as u64,
+                            meta: 0,
+                          });
+                        }
+                      }
+
+                      let extra_tail_canon_base =
+                        handler_canon_base + n_canon_motives;
+                      for (i, t) in extra_tail.iter().enumerate() {
+                        canonical_args
+                          .push((extra_tail_canon_base + i, t.clone()));
+                        entries.push(CallSiteEntry::Kept {
+                          canon_idx: (extra_tail_canon_base + i) as u64,
+                          meta: 0,
+                        });
+                      }
+
+                      canonical_args.sort_by_key(|(canon_idx, _)| *canon_idx);
+                      let sorted_canon: Vec<LeanExpr> = canonical_args
+                        .into_iter()
+                        .map(|(_, expr)| expr)
+                        .collect();
+
+                      let n_canonical = sorted_canon.len();
+                      let n_collapsed = collapsed_args.len();
+                      stack.push(Frame::BuildCallSite {
+                        name_addr,
+                        entries,
+                        n_canonical,
+                        n_collapsed,
+                      });
+                      for arg in collapsed_args.iter().rev() {
+                        stack.push(Frame::Compile(arg.clone()));
+                      }
+                      for arg in sorted_canon.iter().rev() {
+                        stack.push(Frame::Compile(arg.clone()));
+                      }
+                      stack.push(Frame::Compile(head_expr.clone()));
                       continue;
                     }
                   }
@@ -962,31 +1224,31 @@ pub fn compile_expr(
             // approach, but avoids re-entering the App branch for inner nodes.
             for &arg in args.iter().rev() {
               stack.push(Frame::BuildApp);
-              stack.push(Frame::Compile(arg));
+              stack.push(Frame::Compile(arg.clone()));
             }
-            stack.push(Frame::Compile(head_expr));
+            stack.push(Frame::Compile(head_expr.clone()));
           },
 
           ExprData::Lam(name, ty, body, info, _) => {
             let name_addr = compile_name(name, stt);
             stack.push(Frame::BuildLam(name_addr, info.clone()));
-            stack.push(Frame::Compile(body));
-            stack.push(Frame::Compile(ty));
+            stack.push(Frame::Compile(body.clone()));
+            stack.push(Frame::Compile(ty.clone()));
           },
 
           ExprData::ForallE(name, ty, body, info, _) => {
             let name_addr = compile_name(name, stt);
             stack.push(Frame::BuildAll(name_addr, info.clone()));
-            stack.push(Frame::Compile(body));
-            stack.push(Frame::Compile(ty));
+            stack.push(Frame::Compile(body.clone()));
+            stack.push(Frame::Compile(ty.clone()));
           },
 
           ExprData::LetE(name, ty, val, body, non_dep, _) => {
             let name_addr = compile_name(name, stt);
             stack.push(Frame::BuildLet(name_addr, *non_dep));
-            stack.push(Frame::Compile(body));
-            stack.push(Frame::Compile(val));
-            stack.push(Frame::Compile(ty));
+            stack.push(Frame::Compile(body.clone()));
+            stack.push(Frame::Compile(val.clone()));
+            stack.push(Frame::Compile(ty.clone()));
           },
 
           ExprData::Lit(Literal::NatVal(n), _) => {
@@ -1021,7 +1283,7 @@ pub fn compile_expr(
             let name_addr = compile_name(type_name, stt);
 
             stack.push(Frame::BuildProj(ref_idx as u64, idx_u64, name_addr));
-            stack.push(Frame::Compile(struct_val));
+            stack.push(Frame::Compile(struct_val.clone()));
           },
 
           ExprData::Mdata(kv, inner, _) => {
@@ -1034,7 +1296,7 @@ pub fn compile_expr(
             }
             // Mdata becomes a separate arena node wrapping inner
             stack.push(Frame::WrapMdata(vec![pairs]));
-            stack.push(Frame::Compile(inner));
+            stack.push(Frame::Compile(inner.clone()));
           },
 
           ExprData::Fvar(..) => {
@@ -1182,6 +1444,7 @@ pub fn compile_expr(
         }
         canonical_exprs.reverse();
         canonical_roots.reverse();
+        let canon_meta = canonical_roots.clone();
 
         // Pop head result and root
         let head_root =
@@ -1221,9 +1484,11 @@ pub fn compile_expr(
         }
 
         // Allocate CallSite metadata node in the arena
-        let call_site_root = cache
-          .arena
-          .alloc(ExprMetaData::CallSite { name: name_addr, entries });
+        let call_site_root = cache.arena.alloc(ExprMetaData::CallSite {
+          name: name_addr,
+          entries,
+          canon_meta,
+        });
 
         // Build canonical Ixon App spine: foldl App head canonical_args
         let mut ixon = head_expr;
@@ -3586,6 +3851,22 @@ fn compile_mutual(
         aux_layout_stored.as_ref(),
       )?;
       for (name, plan) in plans {
+        if let Some(brecon_name) = surgery::rec_name_to_brecon_name(&name)
+          && lean_env.get(&brecon_name).is_some()
+        {
+          stt.brec_on_call_site_plans.insert(
+            brecon_name,
+            surgery::BRecOnCallSitePlan::from_rec_plan(&plan),
+          );
+        }
+        if let Some(below_name) = surgery::rec_name_to_below_name(&name)
+          && lean_env.get(&below_name).is_some()
+        {
+          stt.below_call_site_plans.insert(
+            below_name,
+            surgery::BRecOnCallSitePlan::from_rec_plan(&plan),
+          );
+        }
         stt.call_site_plans.insert(name, plan);
       }
     }
@@ -3841,6 +4122,7 @@ mod tests {
         minor_keep: vec![true, true, true, true],
         source_to_canon_motive: vec![0, 1, 3, 2],
         source_to_canon_minor: vec![0, 1, 3, 2],
+        source_in_block: vec![true, true, true, true],
       },
     );
 
@@ -3881,12 +4163,17 @@ mod tests {
     );
 
     let root = *cache.arena_roots.last().expect("compiled expression root");
-    let ExprMetaData::CallSite { name, entries } =
+    let ExprMetaData::CallSite { name, entries, canon_meta } =
       &cache.arena.nodes[root as usize]
     else {
       panic!("expected CallSite metadata at expression root");
     };
     assert_eq!(*name, compile_name(&head, &stt));
+    assert_eq!(
+      canon_meta.len(),
+      app_args(&result).len(),
+      "CallSite canonical metadata has one root per canonical argument",
+    );
     let canon_indices: Vec<u64> = entries
       .iter()
       .map(|entry| match entry {
@@ -3901,6 +4188,121 @@ mod tests {
       vec![0, 1, 3, 2, 4, 5, 7, 6, 8],
       "CallSite metadata stays in source order and records each canonical target",
     );
+  }
+
+  #[test]
+  fn test_compile_expr_brecon_call_site_permutes_motives_and_handlers() {
+    let stt = CompileState::default();
+    let head = Name::str(Name::anon(), "A".to_string());
+    let head = Name::str(head, "brecOn".to_string());
+    let head_addr = Address::hash(b"A.brecOn");
+    stt.name_to_addr.insert(head.clone(), head_addr);
+
+    // Source `.brecOn` telescope:
+    //   motives:  [A, B, C, D]
+    //   major:    t
+    //   handlers: [F_A, F_B, F_C, F_D]
+    //
+    // Canonical class order is [A, C, D, B], so both motives and handlers
+    // must be permuted while the major premise stays between them.
+    stt.brec_on_call_site_plans.insert(
+      head.clone(),
+      surgery::BRecOnCallSitePlan {
+        n_params: 0,
+        n_source_motives: 4,
+        n_indices: 0,
+        motive_keep: vec![true, true, true, true],
+        source_to_canon_motive: vec![0, 3, 1, 2],
+      },
+    );
+
+    let mut expr = LeanExpr::cnst(head.clone(), vec![]);
+    for i in 10..=18u64 {
+      expr = LeanExpr::app(expr, LeanExpr::bvar(Nat::from(i)));
+    }
+
+    let mut cache = BlockCache {
+      compiling: Some(Name::str(Name::anon(), "caller".to_string())),
+      ..BlockCache::default()
+    };
+    let result =
+      compile_expr(&expr, &[], &MutCtx::default(), &mut cache, &stt).unwrap();
+
+    fn app_args(e: &Arc<Expr>) -> Vec<u64> {
+      let mut cur = e.clone();
+      let mut args = Vec::new();
+      while let Expr::App(f, a) = cur.as_ref() {
+        match a.as_ref() {
+          Expr::Var(i) => args.push(*i),
+          other => panic!("expected Var arg, got {other:?}"),
+        }
+        cur = f.clone();
+      }
+      match cur.as_ref() {
+        Expr::Ref(0, lvls) => assert!(lvls.is_empty()),
+        other => panic!("expected Ref head, got {other:?}"),
+      }
+      args.reverse();
+      args
+    }
+
+    assert_eq!(
+      app_args(&result),
+      vec![10, 12, 13, 11, 14, 15, 17, 18, 16],
+      "brecOn call-site surgery should permute motives and handlers around the major premise",
+    );
+  }
+
+  #[test]
+  fn test_compile_expr_below_call_site_permutes_motives_before_major() {
+    let stt = CompileState::default();
+    let head = Name::str(Name::anon(), "A".to_string());
+    let head = Name::str(head, "below".to_string());
+    let head_addr = Address::hash(b"A.below");
+    stt.name_to_addr.insert(head.clone(), head_addr);
+
+    stt.below_call_site_plans.insert(
+      head.clone(),
+      surgery::BRecOnCallSitePlan {
+        n_params: 0,
+        n_source_motives: 4,
+        n_indices: 0,
+        motive_keep: vec![true, true, true, true],
+        source_to_canon_motive: vec![0, 3, 1, 2],
+      },
+    );
+
+    let mut expr = LeanExpr::cnst(head.clone(), vec![]);
+    for i in 10..=14u64 {
+      expr = LeanExpr::app(expr, LeanExpr::bvar(Nat::from(i)));
+    }
+
+    let mut cache = BlockCache {
+      compiling: Some(Name::str(Name::anon(), "caller".to_string())),
+      ..BlockCache::default()
+    };
+    let result =
+      compile_expr(&expr, &[], &MutCtx::default(), &mut cache, &stt).unwrap();
+
+    fn app_args(e: &Arc<Expr>) -> Vec<u64> {
+      let mut cur = e.clone();
+      let mut args = Vec::new();
+      while let Expr::App(f, a) = cur.as_ref() {
+        match a.as_ref() {
+          Expr::Var(i) => args.push(*i),
+          other => panic!("expected Var arg, got {other:?}"),
+        }
+        cur = f.clone();
+      }
+      match cur.as_ref() {
+        Expr::Ref(0, lvls) => assert!(lvls.is_empty()),
+        other => panic!("expected Ref head, got {other:?}"),
+      }
+      args.reverse();
+      args
+    }
+
+    assert_eq!(app_args(&result), vec![10, 12, 13, 11, 14]);
   }
 
   #[test]

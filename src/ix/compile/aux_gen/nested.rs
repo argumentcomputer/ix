@@ -612,7 +612,7 @@ pub(crate) fn expand_nested_block(
 /// appear in user-visible env: `RestoreCtx` converts them back to
 /// `ExtInd spec_params` expressions during recursor emission. So renaming
 /// them by canonical index is purely an internal-labeling change.
-pub(crate) fn sort_aux_by_content_hash(
+pub(crate) fn sort_aux_by_partition_refinement(
   expanded: &mut ExpandedBlock,
   stt: &crate::ix::compile::CompileState,
 ) -> Result<Vec<usize>, CompileError> {
@@ -888,7 +888,7 @@ pub(crate) fn sort_aux_by_content_hash(
 /// This walker structurally mirrors Lean's `inductive.cpp:1045`, so the
 /// returned order matches Lean's aux-recursor numbering (`X.rec_1`,
 /// `X.rec_2`, …). Used together with the canonical order (output of
-/// `sort_aux_by_content_hash` on a second expansion) to compute a
+/// `sort_aux_by_partition_refinement` on a second expansion) to compute a
 /// permutation `perm[source_j] = canonical_i`.
 ///
 /// `original_all` is the source-order Lean `InductiveVal.all` list —
@@ -962,7 +962,7 @@ pub(crate) const PERM_OUT_OF_SCC: usize = usize::MAX;
 /// walk sees them as separate.
 ///
 /// Inputs:
-/// - `expanded`: the canonical (post-`sort_aux_by_content_hash`) expanded
+/// - `expanded`: the canonical (post-`sort_aux_by_partition_refinement`) expanded
 ///   block. Auxes are in `expanded.types[n_originals..]`, structurally sorted.
 /// - `original_all`: Lean's source-order inductive names (from any
 ///   `InductiveVal.all` in the block). Drives the second expansion that
@@ -1153,7 +1153,7 @@ pub(crate) fn compute_aux_perm(
 
 /// Semantic equality for nested auxiliary spec parameters.
 ///
-/// `sort_aux_by_content_hash` canonicalizes aux motives by structural content,
+/// `sort_aux_by_partition_refinement` canonicalizes aux motives by structural content,
 /// not by raw Lean names. Source-walk signatures therefore need the same notion
 /// of equality: constants are equal if their names are equal or if both names
 /// already resolve to the same compiled address. Everything else is compared

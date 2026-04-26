@@ -5,6 +5,7 @@
 use std::sync::LazyLock;
 
 use crate::ix::address::Address;
+use crate::ix::env::{Name, NameData};
 use crate::ix::ixon::constant::DefKind;
 
 /// When set, emit a `[iota stuck]` line whenever `try_iota` can't resolve
@@ -27,6 +28,11 @@ static IX_NAT_EXPAND_LOG: LazyLock<bool> =
 static NAT_EXPAND_COUNT: std::sync::atomic::AtomicUsize =
   std::sync::atomic::AtomicUsize::new(0);
 
+/// Raw Nat literal value above which iota reduction starts consuming the
+/// per-constant large-literal budget.
+static NAT_IOTA_LITERAL_CAP: LazyLock<num_bigint::BigUint> =
+  LazyLock::new(|| num_bigint::BigUint::from(1u64 << 20));
+
 /// When set, log every 1M whnf entries. A check using tens of millions
 /// of whnf calls on a single constant is deep in pathological territory.
 static IX_WHNF_COUNT_LOG: LazyLock<bool> =
@@ -35,18 +41,140 @@ static IX_WHNF_COUNT_LOG: LazyLock<bool> =
 static WHNF_COUNT: std::sync::atomic::AtomicUsize =
   std::sync::atomic::AtomicUsize::new(0);
 
+static IX_DELTA_TRACE: LazyLock<Option<String>> =
+  LazyLock::new(|| std::env::var("IX_DELTA_TRACE").ok());
+
+static IX_PROJ_TRACE: LazyLock<Option<String>> =
+  LazyLock::new(|| std::env::var("IX_PROJ_TRACE").ok());
+
+static IX_NAT_TRACE: LazyLock<Option<String>> =
+  LazyLock::new(|| std::env::var("IX_NAT_TRACE").ok());
+
 use super::constant::KConst;
 use super::error::{TcError, u64_to_usize};
 use super::expr::{ExprData, KExpr};
 use super::id::KId;
 use super::level::KUniv;
 use super::mode::KernelMode;
-use super::subst::subst;
+use super::subst::{simul_subst, subst};
 use super::tc::{IotaInfo, MAX_WHNF_FUEL, TypeChecker, collect_app_spine};
 
 use lean_ffi::nat::Nat;
 
 impl<M: KernelMode> TypeChecker<M> {
+  fn dump_whnf_fuel(
+    &self,
+    phase: &str,
+    original: &KExpr<M>,
+    current: &KExpr<M>,
+  ) {
+    if std::env::var("IX_WHNF_FUEL_DUMP").is_err()
+      || !self.debug_label_matches_env()
+    {
+      return;
+    }
+    let (orig_head, orig_args) = collect_app_spine(original);
+    let (cur_head, cur_args) = collect_app_spine(current);
+    eprintln!(
+      "[whnf fuel] {phase} const={} depth={} original_head={} original_args={} current_head={} current_args={}",
+      self.debug_label.as_deref().unwrap_or("<unknown>"),
+      self.depth(),
+      orig_head,
+      orig_args.len(),
+      cur_head,
+      cur_args.len()
+    );
+    eprintln!("  original: {original}");
+    eprintln!("  current:  {current}");
+  }
+
+  fn dump_delta_trace(&self, id: &KId<M>, arity: usize, e: &KExpr<M>) {
+    let Some(filter) = IX_DELTA_TRACE.as_ref() else {
+      return;
+    };
+    if !self.debug_label_matches_env() {
+      return;
+    }
+    let id_s = id.to_string();
+    if !filter.is_empty() && !id_s.contains(filter) {
+      return;
+    }
+    eprintln!(
+      "[delta] const={} depth={} head={} args={arity} expr={}",
+      self.debug_label.as_deref().unwrap_or("<unknown>"),
+      self.depth(),
+      id,
+      e
+    );
+  }
+
+  fn dump_proj_trace(
+    &self,
+    id: &KId<M>,
+    field: u64,
+    wval: &KExpr<M>,
+    ctor_params: Option<usize>,
+    result: Option<&KExpr<M>>,
+  ) {
+    let Some(filter) = IX_PROJ_TRACE.as_ref() else {
+      return;
+    };
+    if !self.debug_label_matches_env() {
+      return;
+    }
+    let id_s = id.to_string();
+    if !filter.is_empty() && !id_s.contains(filter) {
+      return;
+    }
+    let (head, args) = collect_app_spine(wval);
+    match result {
+      Some(result) => eprintln!(
+        "[proj] const={} depth={} proj={} field={} struct_head={} struct_args={} ctor_params={:?} result={}",
+        self.debug_label.as_deref().unwrap_or("<unknown>"),
+        self.depth(),
+        id,
+        field,
+        head,
+        args.len(),
+        ctor_params,
+        result
+      ),
+      None => eprintln!(
+        "[proj] const={} depth={} proj={} field={} struct_head={} struct_args={} ctor_params={:?} result=<stuck>",
+        self.debug_label.as_deref().unwrap_or("<unknown>"),
+        self.depth(),
+        id,
+        field,
+        head,
+        args.len(),
+        ctor_params
+      ),
+    }
+  }
+
+  fn dump_nat_trace(&self, phase: &str, e: &KExpr<M>) {
+    let Some(filter) = IX_NAT_TRACE.as_ref() else {
+      return;
+    };
+    if !self.debug_label_matches_env() {
+      return;
+    }
+    let (head, args) = collect_app_spine(e);
+    let head_s = head.to_string();
+    if !filter.is_empty() && !head_s.contains(filter) {
+      return;
+    }
+    eprintln!(
+      "[nat] const={} depth={} phase={} head={} args={} expr={}",
+      self.debug_label.as_deref().unwrap_or("<unknown>"),
+      self.depth(),
+      phase,
+      head,
+      args.len(),
+      e
+    );
+  }
+
   /// Full WHNF: loop of whnf_no_delta → delta (one step).
   pub fn whnf(&mut self, e: &KExpr<M>) -> Result<KExpr<M>, TcError<M>> {
     if *IX_WHNF_COUNT_LOG {
@@ -67,8 +195,8 @@ impl<M: KernelMode> TypeChecker<M> {
       _ => {},
     }
 
-    // Context-aware cache: closed exprs use ptr only, open exprs under
-    // let-bindings include ctx_id to avoid cross-context contamination.
+    // Context-aware cache: closed exprs use ptr only; open exprs include
+    // ctx_id because some reductions consult local binder types.
     let key = self.whnf_key(e);
     if let Some(cached) = self.env.whnf_cache.get(&key) {
       return Ok(cached.clone());
@@ -91,14 +219,29 @@ impl<M: KernelMode> TypeChecker<M> {
 
     let mut cur = e.clone();
     let mut fuel = MAX_WHNF_FUEL;
+    let mut seen = Vec::new();
 
     loop {
       if fuel == 0 {
+        self.dump_whnf_fuel("whnf", e, &cur);
         return Err(TcError::MaxRecDepth);
       }
       fuel -= 1;
 
       cur = self.whnf_no_delta(&cur)?;
+      let cur_key = cur.hash_key();
+      if seen.iter().any(|seen_key| seen_key == &cur_key) {
+        break;
+      }
+      seen.push(cur_key);
+
+      // BitVec definitions reduce through Nat comparisons. Keep this before
+      // native/delta so small definitional facts such as `x < 0#w` collapse
+      // without unfolding the full Fin-backed representation of BitVec.
+      if let Some(reduced) = self.try_reduce_bitvec(&cur)? {
+        cur = reduced;
+        continue;
+      }
 
       // Nat primitive reduction in main WHNF loop (lean4lean TypeChecker.lean:439).
       // Must run BEFORE delta_unfold_one, so that Nat.sub/Nat.pow/etc. get
@@ -106,6 +249,9 @@ impl<M: KernelMode> TypeChecker<M> {
       if let Some(reduced) = self.try_reduce_nat(&cur)? {
         cur = reduced;
         continue;
+      }
+      if self.is_stuck_nat_predicate(&cur) {
+        break;
       }
 
       // Int primitive reduction — same reasoning as Nat. Without this,
@@ -126,6 +272,12 @@ impl<M: KernelMode> TypeChecker<M> {
 
       // Native reduction: Lean.reduceBool, Lean.reduceNat, System.Platform.numBits
       if let Some(reduced) = self.try_reduce_native(&cur)? {
+        cur = reduced;
+        continue;
+      }
+
+      // String literal primitives such as `String.back ""`.
+      if let Some(reduced) = self.try_reduce_string(&cur)? {
         cur = reduced;
         continue;
       }
@@ -163,6 +315,7 @@ impl<M: KernelMode> TypeChecker<M> {
 
     loop {
       if fuel == 0 {
+        self.dump_whnf_fuel("whnf_core", e, &cur);
         return Err(TcError::MaxRecDepth);
       }
       fuel -= 1;
@@ -185,11 +338,12 @@ impl<M: KernelMode> TypeChecker<M> {
 
         // Cheap projection: whnf_core the struct (no delta), try to extract field.
         // Matches lean4lean/C++ whnf_core with cheap_proj=false behavior.
-        ExprData::Prj(_id, field, val, _) => {
+        ExprData::Prj(id, field, val, _) => {
           let field = *field;
+          let id = id.clone();
           let val = val.clone();
           let wval = self.whnf_core(&val)?;
-          if let Some(result) = self.try_proj_reduce(field, &wval) {
+          if let Some(result) = self.try_proj_reduce(&id, field, &wval) {
             cur = result;
             continue;
           }
@@ -214,17 +368,22 @@ impl<M: KernelMode> TypeChecker<M> {
       // Multi-arg beta
       if matches!(f.data(), ExprData::Lam(..)) {
         let mut body = f;
-        let mut i = 0;
-        while i < args.len() {
+        let mut consumed_args = Vec::new();
+        while consumed_args.len() < args.len() {
           if let ExprData::Lam(_, _, _, inner, _) = body.data() {
             let inner = inner.clone();
-            body = subst(&self.env.intern, &inner, &args[i], 0);
-            i += 1;
+            consumed_args.push(args[consumed_args.len()].clone());
+            body = inner;
           } else {
             break;
           }
         }
-        for arg in &args[i..] {
+        let remaining_start = consumed_args.len();
+        if !consumed_args.is_empty() {
+          consumed_args.reverse();
+          body = simul_subst(&self.env.intern, &body, &consumed_args, 0);
+        }
+        for arg in &args[remaining_start..] {
           body = self.intern(KExpr::app(body, arg.clone()));
         }
         cur = body;
@@ -290,6 +449,7 @@ impl<M: KernelMode> TypeChecker<M> {
 
     loop {
       if fuel == 0 {
+        self.dump_whnf_fuel("whnf_no_delta", e, &cur);
         return Err(TcError::MaxRecDepth);
       }
       fuel -= 1;
@@ -297,11 +457,12 @@ impl<M: KernelMode> TypeChecker<M> {
       cur = self.whnf_core(&cur)?;
 
       // Projection reduction (bare Prj or App(Prj, args...))
-      if let ExprData::Prj(_id, field, val, _) = cur.data() {
+      if let ExprData::Prj(id, field, val, _) = cur.data() {
         let field = *field;
+        let id = id.clone();
         let val = val.clone();
         let wval = self.whnf(&val)?;
-        if let Some(result) = self.try_proj_reduce(field, &wval) {
+        if let Some(result) = self.try_proj_reduce(&id, field, &wval) {
           cur = result;
           continue;
         }
@@ -316,6 +477,12 @@ impl<M: KernelMode> TypeChecker<M> {
         continue;
       }
 
+      // BitVec.toNat/ult reductions are definitional wrappers around Nat.
+      if let Some(reduced) = self.try_reduce_bitvec(&cur)? {
+        cur = reduced;
+        continue;
+      }
+
       // Nat primitive reduction
       if let Some(reduced) = self.try_reduce_nat(&cur)? {
         cur = reduced;
@@ -324,6 +491,27 @@ impl<M: KernelMode> TypeChecker<M> {
 
       // Int primitive reduction (see whnf main loop for rationale).
       if let Some(reduced) = self.try_reduce_int(&cur)? {
+        cur = reduced;
+        continue;
+      }
+
+      // Native/string primitives must run before projection-definition
+      // rewriting. In the compiled environment, wrappers such as
+      // `Subtype.val` and `String.toByteArray` are projection definitions;
+      // once rewritten to `Prj`, the cheap primitive recognizers no longer
+      // see the original head.
+      if let Some(reduced) = self.try_reduce_native(&cur)? {
+        cur = reduced;
+        continue;
+      }
+
+      // String literal primitives.
+      if let Some(reduced) = self.try_reduce_string(&cur)? {
+        cur = reduced;
+        continue;
+      }
+
+      if let Some(reduced) = self.try_reduce_projection_definition(&cur) {
         cur = reduced;
         continue;
       }
@@ -366,8 +554,9 @@ impl<M: KernelMode> TypeChecker<M> {
     // Bare constant
     if let ExprData::Const(id, us, _) = e.data()
       && let Some(KConst::Defn { kind, val, .. }) = self.env.get(id)
-      && (kind == DefKind::Definition || kind == DefKind::Theorem)
+      && matches!(kind, DefKind::Definition | DefKind::Theorem)
     {
+      self.dump_delta_trace(id, 0, e);
       let val = val.clone();
       let us: Vec<_> = us.to_vec();
       return Ok(Some(self.instantiate_univ_params(&val, &us)?));
@@ -389,8 +578,9 @@ impl<M: KernelMode> TypeChecker<M> {
 
     let val = match self.env.get(id) {
       Some(KConst::Defn { kind, val, .. })
-        if kind == DefKind::Definition || kind == DefKind::Theorem =>
+        if matches!(kind, DefKind::Definition | DefKind::Theorem) =>
       {
+        self.dump_delta_trace(id, args.len(), e);
         val.clone()
       },
       _ => return Ok(None),
@@ -465,18 +655,18 @@ impl<M: KernelMode> TypeChecker<M> {
     let mut major_whnf = self.whnf(&major)?;
 
     // Nat literal → constructor form (one level: n → Nat.succ(lit(n-1))).
-    // We intentionally don't cap by literal size. `Nat.rec motive base step N`
-    // doesn't actually recurse N times — iota here expands ONE level into
-    // `step (N-1) (Nat.rec motive base step (N-1))`, where the inner
-    // `Nat.rec` application is lazy and only forces if `step` forces its
-    // `ih` argument. For bodies like `Int.Linear.Poly.combine_mul_k'`
-    // (called with `hugeFuel := 100_000_000`), the actual recursion depth
-    // is bounded by the Poly argument structure, not the fuel literal.
-    // Pathological cases (a step that unconditionally forces `ih`) still
-    // trip `MAX_WHNF_FUEL` in the outer loop \u2014 the raw-literal guard
-    // that used to sit here just prevented legitimate reductions.
+    // Keep only the runaway shape bounded. Lean uses large raw numerals as
+    // fuel in definitions such as `Int.Linear.Poly.combine_mul_k'`; those are
+    // fine when recursion is actually bounded by a data argument. The bad case
+    // is the same recursor peeling N, N-1, N-2, ... because its step
+    // immediately forces `ih`.
     if let ExprData::Nat(val, _, _) = major_whnf.data() {
+      if self.nat_iota_should_stick(&rec_id, val) {
+        return Ok(None);
+      }
       major_whnf = self.nat_to_constructor(&val.clone());
+    } else {
+      self.reset_nat_iota_run();
     }
     // String literal → constructor form (M3: WHNF after, matching lean4lean Reduce.lean:71)
     if let ExprData::Str(val, _, _) = major_whnf.data() {
@@ -713,8 +903,9 @@ impl<M: KernelMode> TypeChecker<M> {
   // Projection reduction
   // -----------------------------------------------------------------------
 
-  fn try_proj_reduce(
+  pub(super) fn try_proj_reduce(
     &mut self,
+    id: &KId<M>,
     field: u64,
     wval: &KExpr<M>,
   ) -> Option<KExpr<M>> {
@@ -729,19 +920,96 @@ impl<M: KernelMode> TypeChecker<M> {
 
     let (head, args) = collect_app_spine(wval);
 
+    if let Some(result) =
+      self.try_reduce_fin_val_decidable_rec(id, field, &head, &args)
+    {
+      self.dump_proj_trace(id, field, wval, None, Some(&result));
+      return Some(result);
+    }
+
     let ctor_id = match head.data() {
       ExprData::Const(id, _, _) => id,
-      _ => return None,
+      _ => {
+        self.dump_proj_trace(id, field, wval, None, None);
+        return None;
+      },
     };
 
     let ctor_params = match self.env.get(ctor_id) {
       Some(KConst::Ctor { params, .. }) => usize::try_from(params).ok()?,
-      _ => return None,
+      _ => {
+        self.dump_proj_trace(id, field, wval, None, None);
+        return None;
+      },
     };
 
     let field_start = ctor_params;
     let idx = field_start + usize::try_from(field).ok()?;
-    args.get(idx).cloned()
+    let result = args.get(idx).cloned();
+    self.dump_proj_trace(id, field, wval, Some(ctor_params), result.as_ref());
+    result
+  }
+
+  fn try_reduce_fin_val_decidable_rec(
+    &mut self,
+    id: &KId<M>,
+    field: u64,
+    head: &KExpr<M>,
+    args: &[KExpr<M>],
+  ) -> Option<KExpr<M>> {
+    if id.addr != self.prims.fin.addr || field != 0 {
+      return None;
+    }
+
+    let ExprData::Const(rec_id, rec_us, _) = head.data() else {
+      return None;
+    };
+    if rec_id.addr != self.prims.decidable_rec.addr || args.len() < 5 {
+      return None;
+    }
+
+    let ExprData::Lam(motive_name, motive_bi, motive_dom, _, _) =
+      args[1].data()
+    else {
+      return None;
+    };
+    let false_minor =
+      self.project_decidable_fin_val_minor(id, field, &args[2])?;
+    let true_minor =
+      self.project_decidable_fin_val_minor(id, field, &args[3])?;
+
+    let nat_ty = self.intern(KExpr::cnst(self.prims.nat.clone(), Box::new([])));
+    let motive = self.intern(KExpr::lam(
+      motive_name.clone(),
+      motive_bi.clone(),
+      motive_dom.clone(),
+      nat_ty,
+    ));
+
+    let mut result = self.intern(KExpr::cnst(rec_id.clone(), rec_us.clone()));
+    result = self.intern(KExpr::app(result, args[0].clone()));
+    result = self.intern(KExpr::app(result, motive));
+    result = self.intern(KExpr::app(result, false_minor));
+    result = self.intern(KExpr::app(result, true_minor));
+    result = self.intern(KExpr::app(result, args[4].clone()));
+    for arg in args.iter().skip(5) {
+      result = self.intern(KExpr::app(result, arg.clone()));
+    }
+
+    Some(result)
+  }
+
+  fn project_decidable_fin_val_minor(
+    &mut self,
+    id: &KId<M>,
+    field: u64,
+    minor: &KExpr<M>,
+  ) -> Option<KExpr<M>> {
+    let ExprData::Lam(name, bi, dom, body, _) = minor.data() else {
+      return None;
+    };
+    let proj = self.intern(KExpr::prj(id.clone(), field, body.clone()));
+    Some(self.intern(KExpr::lam(name.clone(), bi.clone(), dom.clone(), proj)))
   }
 
   /// Try to reduce a projection-headed application: App(Prj(S, i, v), args...).
@@ -755,15 +1023,69 @@ impl<M: KernelMode> TypeChecker<M> {
       return Ok(None);
     }
 
-    if let ExprData::Prj(_id, field, val, _) = head.data() {
+    if let ExprData::Prj(id, field, val, _) = head.data() {
       let field = *field;
+      let id = id.clone();
       let val = val.clone();
       let wval = self.whnf(&val)?;
-      if let Some(result) = self.try_proj_reduce(field, &wval) {
+      if let Some(result) = self.try_proj_reduce(&id, field, &wval) {
         return Ok(Some((result, args)));
       }
     }
     Ok(None)
+  }
+
+  fn try_reduce_projection_definition(
+    &mut self,
+    e: &KExpr<M>,
+  ) -> Option<KExpr<M>> {
+    let (head, args) = collect_app_spine(e);
+    let ExprData::Const(id, _, _) = head.data() else {
+      return None;
+    };
+    let val = match self.env.get(id) {
+      Some(KConst::Defn { kind: DefKind::Definition, val, .. }) => val,
+      _ => return None,
+    };
+    let (arity, struct_id, field, struct_arg_idx) =
+      self.projection_definition_info(&val)?;
+    if args.len() < arity {
+      return None;
+    }
+    let mut result =
+      self.intern(KExpr::prj(struct_id, field, args[struct_arg_idx].clone()));
+    for arg in args.iter().skip(arity) {
+      result = self.intern(KExpr::app(result, arg.clone()));
+    }
+    Some(result)
+  }
+
+  fn projection_definition_info(
+    &self,
+    val: &KExpr<M>,
+  ) -> Option<(usize, KId<M>, u64, usize)> {
+    let mut arity = 0usize;
+    let mut cur = val.clone();
+    loop {
+      match cur.data() {
+        ExprData::Lam(_, _, _, body, _) => {
+          arity += 1;
+          cur = body.clone();
+        },
+        ExprData::Prj(struct_id, field, projected, _) => {
+          let ExprData::Var(idx, _, _) = projected.data() else {
+            return None;
+          };
+          let idx = usize::try_from(*idx).ok()?;
+          if idx >= arity {
+            return None;
+          }
+          let struct_arg_idx = arity - 1 - idx;
+          return Some((arity, struct_id.clone(), *field, struct_arg_idx));
+        },
+        _ => return None,
+      }
+    }
   }
 
   // -----------------------------------------------------------------------
@@ -867,16 +1189,46 @@ impl<M: KernelMode> TypeChecker<M> {
     }
   }
 
+  fn nat_literal(&mut self, n: u64) -> KExpr<M> {
+    let val = Nat::from(n);
+    let addr = Address::hash(&val.to_le_bytes());
+    self.intern(KExpr::nat(val, addr))
+  }
+
+  fn nat_iota_should_stick(&mut self, rec_id: &KId<M>, val: &Nat) -> bool {
+    const MAX_LARGE_NAT_LITERAL_IOTA: u32 = 16_384;
+    const MAX_CONSECUTIVE_NAT_LITERAL_IOTA: u32 = 8192;
+
+    if val.0 > *NAT_IOTA_LITERAL_CAP {
+      self.nat_iota_large_expansions =
+        self.nat_iota_large_expansions.saturating_add(1);
+      if self.nat_iota_large_expansions > MAX_LARGE_NAT_LITERAL_IOTA {
+        return true;
+      }
+    }
+
+    let is_next_predecessor =
+      self.nat_iota_last.as_ref().is_some_and(|(last_rec, last_val)| {
+        last_rec == &rec_id.addr && last_val == &(&val.0 + 1u64)
+      });
+
+    self.nat_iota_run =
+      if is_next_predecessor { self.nat_iota_run.saturating_add(1) } else { 1 };
+    self.nat_iota_last = Some((rec_id.addr.clone(), val.0.clone()));
+
+    self.nat_iota_run > MAX_CONSECUTIVE_NAT_LITERAL_IOTA
+  }
+
+  fn reset_nat_iota_run(&mut self) {
+    self.nat_iota_last = None;
+    self.nat_iota_run = 0;
+  }
+
   /// Nat primitive reduction (add, sub, mul, div, mod, pow, gcd, bitwise, predicates).
   pub(super) fn try_reduce_nat(
     &mut self,
     e: &KExpr<M>,
   ) -> Result<Option<KExpr<M>>, TcError<M>> {
-    // Skip if expression has loose bound variables — can't reduce to a literal.
-    // Matches lean4lean's `if e.hasFVar then return none` (TypeChecker.lean:396).
-    if e.lbr() > 0 {
-      return Ok(None);
-    }
     let (head, args) = collect_app_spine(e);
     let addr = match head.data() {
       ExprData::Const(id, _, _) => id.addr.clone(),
@@ -886,7 +1238,7 @@ impl<M: KernelMode> TypeChecker<M> {
     // Nat.succ n → n + 1
     if addr == self.prims.nat_succ.addr && args.len() == 1 {
       let a = self.whnf(&args[0])?;
-      if let Some(n) = extract_nat_lit(&a, &self.prims) {
+      if let Some(n) = extract_nat_value(&a, &self.prims) {
         let result = Nat(&n.0 + 1u64);
         let blob_addr = Address::hash(&result.to_le_bytes());
         return Ok(Some(self.intern(KExpr::nat(result, blob_addr))));
@@ -897,7 +1249,14 @@ impl<M: KernelMode> TypeChecker<M> {
     // Nat.pred n → n - 1 (or 0 if n = 0)
     if addr == self.prims.nat_pred.addr && args.len() == 1 {
       let a = self.whnf(&args[0])?;
-      if let Some(n) = extract_nat_lit(&a, &self.prims) {
+      if let Some(view) = self.nat_ctor_view(&a) {
+        let result = match view {
+          NatCtorView::Zero => self.nat_literal(0),
+          NatCtorView::Succ(pred) => pred,
+        };
+        return Ok(Some(result));
+      }
+      if let Some(n) = extract_nat_value(&a, &self.prims) {
         let result = if n.0 == num_bigint::BigUint::ZERO {
           Nat(num_bigint::BigUint::ZERO)
         } else {
@@ -913,40 +1272,53 @@ impl<M: KernelMode> TypeChecker<M> {
       return Ok(None);
     }
 
-    let p = &self.prims;
-    let is_bin_arith = addr == p.nat_add.addr
-      || addr == p.nat_sub.addr
-      || addr == p.nat_mul.addr
-      || addr == p.nat_div.addr
-      || addr == p.nat_mod.addr
-      || addr == p.nat_pow.addr
-      || addr == p.nat_gcd.addr
-      || addr == p.nat_land.addr
-      || addr == p.nat_lor.addr
-      || addr == p.nat_xor.addr
-      || addr == p.nat_shift_left.addr
-      || addr == p.nat_shift_right.addr;
-    let is_bin_pred = addr == p.nat_beq.addr || addr == p.nat_ble.addr;
+    let is_bin_arith = self.is_nat_bin_arith_addr(&addr);
+    let is_bin_pred = self.is_nat_bin_pred_addr(&addr);
 
     if !is_bin_arith && !is_bin_pred {
       return Ok(None);
     }
+    self.dump_nat_trace("candidate", e);
+
+    if is_bin_pred {
+      return self.try_reduce_nat_predicate(&addr, &args);
+    }
 
     let wa = self.whnf(&args[0])?;
     let wb = self.whnf(&args[1])?;
-    let a_val = match extract_nat_lit(&wa, &self.prims) {
+    self.dump_nat_trace("arg0-whnf", &wa);
+    self.dump_nat_trace("arg1-whnf", &wb);
+    let a_val = extract_nat_value(&wa, &self.prims);
+    let b_val = extract_nat_value(&wb, &self.prims);
+
+    if let Some(result) = self
+      .try_reduce_nat_symbolic_bin(&addr, &args, &wa, &wb, &a_val, &b_val)?
+    {
+      return Ok(Some(result));
+    }
+
+    let a_val = match a_val {
       Some(v) => v,
-      None => return Ok(None),
+      None => {
+        self.dump_nat_trace("arg0-not-nat", &wa);
+        return Ok(None);
+      },
     };
-    let b_val = match extract_nat_lit(&wb, &self.prims) {
+    let b_val = match b_val {
       Some(v) => v,
-      None => return Ok(None),
+      None => {
+        self.dump_nat_trace("arg1-not-nat", &wb);
+        return Ok(None);
+      },
     };
 
     let result_expr = if is_bin_arith {
-      let result = match compute_nat_bin(&addr, &self.prims, a_val, b_val) {
+      let result = match compute_nat_bin(&addr, &self.prims, &a_val, &b_val) {
         Some(r) => r,
-        None => return Ok(None), // can't compute, leave unreduced
+        None => {
+          self.dump_nat_trace("not-computed", e);
+          return Ok(None); // can't compute, leave unreduced
+        },
       };
       let blob_addr = Address::hash(&result.to_le_bytes());
       self.intern(KExpr::nat(result, blob_addr))
@@ -971,6 +1343,448 @@ impl<M: KernelMode> TypeChecker<M> {
     Ok(Some(result))
   }
 
+  fn try_reduce_nat_symbolic_bin(
+    &mut self,
+    addr: &Address,
+    args: &[KExpr<M>],
+    wa: &KExpr<M>,
+    wb: &KExpr<M>,
+    a_val: &Option<Nat>,
+    b_val: &Option<Nat>,
+  ) -> Result<Option<KExpr<M>>, TcError<M>> {
+    const MAX_SYMBOLIC_NAT_LITERAL: u64 = 64;
+
+    let result = if *addr == self.prims.nat_add.addr {
+      let Some(n) = b_val.as_ref().and_then(Nat::to_u64) else {
+        return Ok(None);
+      };
+      if n > MAX_SYMBOLIC_NAT_LITERAL {
+        return Ok(None);
+      }
+      self.nat_succ_n(wa.clone(), n)
+    } else if *addr == self.prims.nat_mul.addr {
+      match b_val.as_ref().and_then(Nat::to_u64) {
+        Some(0) => self.nat_literal(0),
+        _ => return Ok(None),
+      }
+    } else if *addr == self.prims.nat_sub.addr {
+      let Some(n) = b_val.as_ref().and_then(Nat::to_u64) else {
+        return Ok(None);
+      };
+      if n > MAX_SYMBOLIC_NAT_LITERAL {
+        return Ok(None);
+      }
+      match self.nat_pred_n(wa.clone(), n) {
+        Some(result) => result,
+        None => return Ok(None),
+      }
+    } else if *addr == self.prims.nat_mod.addr {
+      let Some(a) = a_val else {
+        return Ok(None);
+      };
+      let b_lower = self.nat_lower_bound(wb)?;
+      if b_lower.0 <= a.0 {
+        return Ok(None);
+      }
+      self.nat_expr_from_value(a.clone())
+    } else {
+      return Ok(None);
+    };
+
+    Ok(Some(self.finish_nat_symbolic_result(result, args)))
+  }
+
+  fn finish_nat_symbolic_result(
+    &mut self,
+    mut result: KExpr<M>,
+    args: &[KExpr<M>],
+  ) -> KExpr<M> {
+    for arg in args.iter().skip(2) {
+      result = self.intern(KExpr::app(result, arg.clone()));
+    }
+    result
+  }
+
+  fn nat_expr_from_value(&mut self, n: Nat) -> KExpr<M> {
+    let blob_addr = Address::hash(&n.to_le_bytes());
+    self.intern(KExpr::nat(n, blob_addr))
+  }
+
+  fn nat_succ_n(&mut self, mut e: KExpr<M>, n: u64) -> KExpr<M> {
+    for _ in 0..n {
+      let succ =
+        self.intern(KExpr::cnst(self.prims.nat_succ.clone(), Box::new([])));
+      e = self.intern(KExpr::app(succ, e));
+    }
+    e
+  }
+
+  fn nat_pred_n(&mut self, mut e: KExpr<M>, n: u64) -> Option<KExpr<M>> {
+    for _ in 0..n {
+      e = match self.nat_ctor_view(&e)? {
+        NatCtorView::Zero => self.nat_literal(0),
+        NatCtorView::Succ(pred) => pred,
+      };
+    }
+    Some(e)
+  }
+
+  fn nat_lower_bound(&mut self, e: &KExpr<M>) -> Result<Nat, TcError<M>> {
+    self.nat_lower_bound_core(e, 0)
+  }
+
+  fn nat_lower_bound_core(
+    &mut self,
+    e: &KExpr<M>,
+    depth: u8,
+  ) -> Result<Nat, TcError<M>> {
+    const MAX_LOWER_BOUND_DEPTH: u8 = 24;
+    if depth >= MAX_LOWER_BOUND_DEPTH {
+      return Ok(Nat(num_bigint::BigUint::ZERO));
+    }
+
+    if let Some(n) = extract_nat_lit(e, &self.prims) {
+      return Ok(n.clone());
+    }
+
+    let (head, args) = collect_app_spine(e);
+    if let ExprData::Const(id, _, _) = head.data() {
+      if id.addr == self.prims.nat_succ.addr && args.len() == 1 {
+        let pred = self.nat_lower_bound_core(&args[0], depth + 1)?;
+        return Ok(Nat(pred.0 + 1u64));
+      }
+      if id.addr == self.prims.nat_add.addr && args.len() == 2 {
+        let a = self.nat_lower_bound_core(&args[0], depth + 1)?;
+        let b = self.nat_lower_bound_core(&args[1], depth + 1)?;
+        return Ok(Nat(a.0 + b.0));
+      }
+      if id.addr == self.prims.nat_mul.addr && args.len() == 2 {
+        let a = self.nat_lower_bound_core(&args[0], depth + 1)?;
+        let b = self.nat_lower_bound_core(&args[1], depth + 1)?;
+        return Ok(Nat(a.0 * b.0));
+      }
+      if self.is_nat_bin_arith_addr(&id.addr)
+        || self.is_nat_bin_pred_addr(&id.addr)
+        || is_const_named(id, &["Nat.rec", "Nat.casesOn", "BitVec.toNat"])
+      {
+        return Ok(Nat(num_bigint::BigUint::ZERO));
+      }
+    }
+
+    if self.is_stuck_nat_predicate_probe(e) {
+      return Ok(Nat(num_bigint::BigUint::ZERO));
+    }
+
+    let w = self.whnf(e)?;
+    if &w == e {
+      return Ok(Nat(num_bigint::BigUint::ZERO));
+    }
+    self.nat_lower_bound_core(&w, depth + 1)
+  }
+
+  fn is_nat_bin_arith_addr(&self, addr: &Address) -> bool {
+    let p = &self.prims;
+    *addr == p.nat_add.addr
+      || *addr == p.nat_sub.addr
+      || *addr == p.nat_mul.addr
+      || *addr == p.nat_div.addr
+      || *addr == p.nat_mod.addr
+      || *addr == p.nat_pow.addr
+      || *addr == p.nat_gcd.addr
+      || *addr == p.nat_land.addr
+      || *addr == p.nat_lor.addr
+      || *addr == p.nat_xor.addr
+      || *addr == p.nat_shift_left.addr
+      || *addr == p.nat_shift_right.addr
+  }
+
+  fn is_nat_bin_pred_addr(&self, addr: &Address) -> bool {
+    *addr == self.prims.nat_beq.addr || *addr == self.prims.nat_ble.addr
+  }
+
+  fn try_reduce_nat_predicate(
+    &mut self,
+    addr: &Address,
+    args: &[KExpr<M>],
+  ) -> Result<Option<KExpr<M>>, TcError<M>> {
+    let a_val = self.try_eval_nat_value_for_pred(&args[0])?;
+    let b_val = self.try_eval_nat_value_for_pred(&args[1])?;
+    let decision = if *addr == self.prims.nat_beq.addr {
+      match (&a_val, &b_val) {
+        (Some(a), Some(b)) => Some(a == b),
+        _ => None,
+      }
+    } else {
+      match (&a_val, &b_val) {
+        (Some(a), Some(b)) => Some(a <= b),
+        (Some(a), None) if a.0 == num_bigint::BigUint::ZERO => Some(true),
+        _ => None,
+      }
+    };
+
+    let Some(decision) = decision else {
+      if let Some(result) = self.try_reduce_nat_predicate_by_ctor(addr, args)? {
+        return Ok(Some(result));
+      }
+      return Ok(None);
+    };
+    Ok(Some(self.nat_predicate_bool_result(decision, args)))
+  }
+
+  fn try_reduce_nat_predicate_by_ctor(
+    &mut self,
+    addr: &Address,
+    args: &[KExpr<M>],
+  ) -> Result<Option<KExpr<M>>, TcError<M>> {
+    let a = self.nat_ctor_view_for_pred(&args[0], 0)?;
+    let b = self.nat_ctor_view_for_pred(&args[1], 0)?;
+    let result = if *addr == self.prims.nat_beq.addr {
+      match (a, b) {
+        (Some(NatCtorView::Zero), Some(NatCtorView::Zero)) => {
+          self.nat_predicate_bool_result(true, args)
+        },
+        (Some(NatCtorView::Zero), Some(NatCtorView::Succ(_)))
+        | (Some(NatCtorView::Succ(_)), Some(NatCtorView::Zero)) => {
+          self.nat_predicate_bool_result(false, args)
+        },
+        (Some(NatCtorView::Succ(a)), Some(NatCtorView::Succ(b))) => {
+          self.nat_predicate_recur_result(addr, &a, &b, args)
+        },
+        _ => return Ok(None),
+      }
+    } else {
+      match (a, b) {
+        (Some(NatCtorView::Zero), _) => {
+          self.nat_predicate_bool_result(true, args)
+        },
+        (Some(NatCtorView::Succ(_)), Some(NatCtorView::Zero)) => {
+          self.nat_predicate_bool_result(false, args)
+        },
+        (Some(NatCtorView::Succ(a)), Some(NatCtorView::Succ(b))) => {
+          self.nat_predicate_recur_result(addr, &a, &b, args)
+        },
+        _ => return Ok(None),
+      }
+    };
+    Ok(Some(result))
+  }
+
+  fn nat_predicate_bool_result(
+    &mut self,
+    decision: bool,
+    args: &[KExpr<M>],
+  ) -> KExpr<M> {
+    let bool_id = if decision {
+      self.prims.bool_true.clone()
+    } else {
+      self.prims.bool_false.clone()
+    };
+    let mut result = self.intern(KExpr::cnst(bool_id, Box::new([])));
+    for arg in args.iter().skip(2) {
+      result = self.intern(KExpr::app(result, arg.clone()));
+    }
+    result
+  }
+
+  fn nat_predicate_recur_result(
+    &mut self,
+    addr: &Address,
+    a: &KExpr<M>,
+    b: &KExpr<M>,
+    args: &[KExpr<M>],
+  ) -> KExpr<M> {
+    let head_id = if *addr == self.prims.nat_beq.addr {
+      self.prims.nat_beq.clone()
+    } else {
+      self.prims.nat_ble.clone()
+    };
+    let head = self.intern(KExpr::cnst(head_id, Box::new([])));
+    let mut result = self.intern(KExpr::app(head, a.clone()));
+    result = self.intern(KExpr::app(result, b.clone()));
+    for arg in args.iter().skip(2) {
+      result = self.intern(KExpr::app(result, arg.clone()));
+    }
+    result
+  }
+
+  fn nat_ctor_view_for_pred(
+    &mut self,
+    e: &KExpr<M>,
+    depth: u8,
+  ) -> Result<Option<NatCtorView<M>>, TcError<M>> {
+    const MAX_PRED_NAT_CTOR_VIEW_DEPTH: u8 = 8;
+    if let Some(view) = self.nat_ctor_view(e) {
+      return Ok(Some(view));
+    }
+    if depth >= MAX_PRED_NAT_CTOR_VIEW_DEPTH {
+      return Ok(None);
+    }
+
+    if self.is_stuck_nat_predicate_probe(e) {
+      return Ok(None);
+    }
+
+    let w = self.whnf(e)?;
+    if &w == e {
+      return Ok(None);
+    }
+    if let Some(view) = self.nat_ctor_view(&w) {
+      return Ok(Some(view));
+    }
+    self.nat_ctor_view_for_pred(&w, depth + 1)
+  }
+
+  fn nat_ctor_view(&mut self, e: &KExpr<M>) -> Option<NatCtorView<M>> {
+    if let Some(n) = extract_nat_lit(e, &self.prims) {
+      if n.0 == num_bigint::BigUint::ZERO {
+        return Some(NatCtorView::Zero);
+      }
+      let pred = Nat(&n.0 - num_bigint::BigUint::from(1u64));
+      let pred_addr = Address::hash(&pred.to_le_bytes());
+      let pred_expr = self.intern(KExpr::nat(pred, pred_addr));
+      return Some(NatCtorView::Succ(pred_expr));
+    }
+
+    let (head, args) = collect_app_spine(e);
+    let ExprData::Const(id, _, _) = head.data() else {
+      return None;
+    };
+    if id.addr != self.prims.nat_succ.addr || args.len() != 1 {
+      return None;
+    }
+    Some(NatCtorView::Succ(args[0].clone()))
+  }
+
+  /// A shallow Nat evaluator for predicate arguments.
+  ///
+  /// `Nat.beq`/`Nat.ble` are often used as branching conditions. When one
+  /// side is symbolic, fully WHNF-ing it can expose large recursive models
+  /// such as `Nat.rec` over `BitVec.toFin` projections. For predicates we only
+  /// need enough evaluation to decide literal comparisons; unknown values can
+  /// safely remain stuck.
+  fn try_eval_nat_value_for_pred(
+    &mut self,
+    e: &KExpr<M>,
+  ) -> Result<Option<Nat>, TcError<M>> {
+    self.try_eval_nat_value_for_pred_core(e, 0)
+  }
+
+  fn try_eval_nat_value_for_pred_core(
+    &mut self,
+    e: &KExpr<M>,
+    depth: u8,
+  ) -> Result<Option<Nat>, TcError<M>> {
+    const MAX_PRED_NAT_EVAL_DEPTH: u8 = 64;
+    if depth >= MAX_PRED_NAT_EVAL_DEPTH {
+      return Ok(None);
+    }
+    if let Some(n) = extract_nat_lit(e, &self.prims) {
+      return Ok(Some(n.clone()));
+    }
+
+    if self.is_stuck_nat_predicate_probe(e) {
+      return Ok(None);
+    }
+
+    let (head, args) = collect_app_spine(e);
+    match head.data() {
+      ExprData::Const(id, _, _) => {
+        if id.addr == self.prims.nat_succ.addr && args.len() == 1 {
+          let Some(pred) =
+            self.try_eval_nat_value_for_pred_core(&args[0], depth + 1)?
+          else {
+            return Ok(None);
+          };
+          return Ok(Some(Nat(pred.0 + 1u64)));
+        }
+        if id.addr == self.prims.nat_pred.addr && args.len() == 1 {
+          let Some(n) =
+            self.try_eval_nat_value_for_pred_core(&args[0], depth + 1)?
+          else {
+            return Ok(None);
+          };
+          let result = if n.0 == num_bigint::BigUint::ZERO {
+            Nat(num_bigint::BigUint::ZERO)
+          } else {
+            Nat(n.0 - 1u64)
+          };
+          return Ok(Some(result));
+        }
+        if self.is_nat_bin_arith_addr(&id.addr) && args.len() == 2 {
+          let Some(a) =
+            self.try_eval_nat_value_for_pred_core(&args[0], depth + 1)?
+          else {
+            return Ok(None);
+          };
+          let Some(b) =
+            self.try_eval_nat_value_for_pred_core(&args[1], depth + 1)?
+          else {
+            return Ok(None);
+          };
+          return Ok(compute_nat_bin(&id.addr, &self.prims, &a, &b));
+        }
+      },
+      ExprData::Var(..)
+      | ExprData::Sort(..)
+      | ExprData::Lam(..)
+      | ExprData::All(..)
+      | ExprData::Str(..)
+      | ExprData::Nat(..) => return Ok(None),
+      ExprData::App(..) | ExprData::Let(..) | ExprData::Prj(..) => {},
+    }
+
+    let w = self.whnf(e)?;
+    self.dump_nat_trace("pred-arg-whnf", &w);
+    if let Some(n) = extract_nat_value(&w, &self.prims) {
+      return Ok(Some(n));
+    }
+    if &w == e {
+      return Ok(None);
+    }
+    self.try_eval_nat_value_for_pred_core(&w, depth + 1)
+  }
+
+  fn is_stuck_nat_predicate_probe(&self, e: &KExpr<M>) -> bool {
+    let (head, _) = collect_app_spine(e);
+    match head.data() {
+      ExprData::Const(id, _, _) => {
+        self.is_nat_bin_pred_addr(&id.addr)
+          || is_const_named(id, &["Nat.rec", "Nat.casesOn", "BitVec.toNat"])
+      },
+      ExprData::Prj(id, _, val, _) => {
+        if is_const_named(id, &["Fin"]) {
+          return true;
+        }
+        let (val_head, _) = collect_app_spine(val);
+        matches!(
+          val_head.data(),
+          ExprData::Const(val_id, _, _)
+            if is_const_named(
+              val_id,
+              &["Nat.rec", "Nat.casesOn", "BitVec.toNat"],
+            )
+        )
+      },
+      _ => false,
+    }
+  }
+
+  /// `Nat.beq`/`Nat.ble` are extern primitives with recursive Lean models.
+  /// If native reduction cannot decide them, unfolding the model can peel huge
+  /// literals against an unknown argument. Leave the primitive app stuck.
+  fn is_stuck_nat_predicate(&self, e: &KExpr<M>) -> bool {
+    let (head, args) = collect_app_spine(e);
+    if args.len() != 2 {
+      return false;
+    }
+    matches!(
+      head.data(),
+      ExprData::Const(id, _, _)
+        if id.addr == self.prims.nat_beq.addr
+          || id.addr == self.prims.nat_ble.addr
+    )
+  }
+
   /// Native Nat.decLe/decEq/decLt reduction.
   ///
   /// Intercepts `Nat.decLe n m`, `Nat.decEq n m`, `Nat.decLt n m` when both
@@ -993,9 +1807,6 @@ impl<M: KernelMode> TypeChecker<M> {
     &mut self,
     e: &KExpr<M>,
   ) -> Result<Option<KExpr<M>>, TcError<M>> {
-    if e.lbr() > 0 {
-      return Ok(None);
-    }
     let (head, args) = collect_app_spine(e);
     let addr = match head.data() {
       ExprData::Const(id, _, _) => id.addr.clone(),
@@ -1015,12 +1826,12 @@ impl<M: KernelMode> TypeChecker<M> {
 
     let wa = self.whnf(&args[0])?;
     let wb = self.whnf(&args[1])?;
-    let a_val = match extract_nat_lit(&wa, &self.prims) {
-      Some(v) => v.clone(),
+    let a_val = match extract_nat_value(&wa, &self.prims) {
+      Some(v) => v,
       None => return Ok(None),
     };
-    let b_val = match extract_nat_lit(&wb, &self.prims) {
-      Some(v) => v.clone(),
+    let b_val = match extract_nat_value(&wb, &self.prims) {
+      Some(v) => v,
       None => return Ok(None),
     };
 
@@ -1195,6 +2006,192 @@ impl<M: KernelMode> TypeChecker<M> {
   }
 
   // -----------------------------------------------------------------------
+  // BitVec reduction
+  // -----------------------------------------------------------------------
+
+  /// Reduce the small BitVec fragment that is definitionally Nat-backed:
+  /// - `BitVec.toNat (BitVec.ofNat w n)` reduces to `n % 2^w`
+  /// - `BitVec.ult w x y` reduces by evaluating `x.toNat < y.toNat`
+  /// - `decide (x < y)` for BitVec reduces through the same comparison
+  fn try_reduce_bitvec(
+    &mut self,
+    e: &KExpr<M>,
+  ) -> Result<Option<KExpr<M>>, TcError<M>> {
+    let (head, args) = collect_app_spine(e);
+    let ExprData::Const(id, _, _) = head.data() else {
+      return Ok(None);
+    };
+
+    if is_const_named(id, &["BitVec.toNat"]) && args.len() >= 2 {
+      if let Some(result) = self.try_reduce_bitvec_to_nat(&args[1])? {
+        return Ok(Some(self.finish_app_result(result, &args, 2)));
+      }
+      return Ok(None);
+    }
+
+    if is_const_named(id, &["BitVec.ult"]) && args.len() >= 3 {
+      if let Some(result) =
+        self.try_reduce_bitvec_ult(&args[0], &args[1], &args[2])?
+      {
+        return Ok(Some(self.finish_app_result(result, &args, 3)));
+      }
+      return Ok(None);
+    }
+
+    if is_const_named(id, &["Decidable.decide"]) && args.len() >= 2 {
+      if let Some(result) = self.try_reduce_bitvec_lt_prop(&args[0])? {
+        return Ok(Some(self.finish_app_result(result, &args, 2)));
+      }
+    }
+
+    Ok(None)
+  }
+
+  fn try_reduce_bitvec_ult(
+    &mut self,
+    width: &KExpr<M>,
+    lhs: &KExpr<M>,
+    rhs: &KExpr<M>,
+  ) -> Result<Option<KExpr<M>>, TcError<M>> {
+    let lhs_nat = self.bitvec_to_nat_expr(width, lhs)?;
+    let rhs_nat = self.bitvec_to_nat_expr(width, rhs)?;
+
+    // `BitVec.ult x y` is definitionally `decide (x.toNat < y.toNat)`.
+    // Kernel Nat LT reduces through `Nat.ble (Nat.succ x.toNat) y.toNat`.
+    let lhs_succ = self.nat_succ_n(lhs_nat, 1);
+    let ble =
+      self.intern(KExpr::cnst(self.prims.nat_ble.clone(), Box::new([])));
+    let cmp_lhs = self.intern(KExpr::app(ble, lhs_succ));
+    let cmp = self.intern(KExpr::app(cmp_lhs, rhs_nat));
+    let result = self.whnf(&cmp)?;
+    if self.bool_lit_value(&result).is_some() {
+      Ok(Some(result))
+    } else {
+      Ok(None)
+    }
+  }
+
+  fn try_reduce_bitvec_lt_prop(
+    &mut self,
+    prop: &KExpr<M>,
+  ) -> Result<Option<KExpr<M>>, TcError<M>> {
+    let (head, args) = collect_app_spine(prop);
+    let ExprData::Const(id, _, _) = head.data() else {
+      return Ok(None);
+    };
+    if !is_const_named(id, &["LT.lt"]) || args.len() != 4 {
+      return Ok(None);
+    }
+
+    let (type_head, type_args) = collect_app_spine(&args[0]);
+    let ExprData::Const(type_id, _, _) = type_head.data() else {
+      return Ok(None);
+    };
+    if !is_const_named(type_id, &["BitVec"]) || type_args.len() != 1 {
+      return Ok(None);
+    }
+
+    self.try_reduce_bitvec_ult(&type_args[0], &args[2], &args[3])
+  }
+
+  fn bitvec_to_nat_expr(
+    &mut self,
+    width: &KExpr<M>,
+    value: &KExpr<M>,
+  ) -> Result<KExpr<M>, TcError<M>> {
+    if let Some(result) = self.try_reduce_bitvec_to_nat(value)? {
+      return Ok(result);
+    }
+
+    let to_nat = self
+      .find_const_id_named("BitVec.toNat")
+      .unwrap_or_else(|| synthetic_named_id("BitVec.toNat"));
+    let head = self.intern(KExpr::cnst(to_nat, Box::new([])));
+    let with_width = self.intern(KExpr::app(head, width.clone()));
+    Ok(self.intern(KExpr::app(with_width, value.clone())))
+  }
+
+  fn try_reduce_bitvec_to_nat(
+    &mut self,
+    value: &KExpr<M>,
+  ) -> Result<Option<KExpr<M>>, TcError<M>> {
+    let Some((width, n_expr)) = self.bitvec_of_nat_args(value) else {
+      return Ok(None);
+    };
+
+    let n_whnf = self.whnf(&n_expr)?;
+    let Some(n) = extract_nat_value(&n_whnf, &self.prims) else {
+      return Ok(None);
+    };
+
+    if n.0 == num_bigint::BigUint::ZERO {
+      return Ok(Some(self.nat_literal(0)));
+    }
+
+    let width_val = self.try_eval_nat_value_for_pred(&width)?;
+    let Some(width) = width_val.and_then(|w| w.to_u64()) else {
+      return Ok(None);
+    };
+
+    const REDUCE_BITVEC_WIDTH_MAX: u64 = 1 << 24;
+    if width > REDUCE_BITVEC_WIDTH_MAX {
+      return Ok(None);
+    }
+
+    let modulus = num_bigint::BigUint::from(1u64) << (width as usize);
+    let result = Nat(n.0 % modulus);
+    Ok(Some(self.nat_expr_from_value(result)))
+  }
+
+  fn bitvec_of_nat_args(&self, e: &KExpr<M>) -> Option<(KExpr<M>, KExpr<M>)> {
+    let (head, args) = collect_app_spine(e);
+    let ExprData::Const(id, _, _) = head.data() else {
+      return None;
+    };
+    if is_const_named(id, &["BitVec.ofNat"]) && args.len() == 2 {
+      return Some((args[0].clone(), args[1].clone()));
+    }
+    if !is_const_named(id, &["OfNat.ofNat"]) || args.len() < 2 {
+      return None;
+    }
+
+    let (type_head, type_args) = collect_app_spine(&args[0]);
+    let ExprData::Const(type_id, _, _) = type_head.data() else {
+      return None;
+    };
+    if is_const_named(type_id, &["BitVec"]) && type_args.len() == 1 {
+      Some((type_args[0].clone(), args[1].clone()))
+    } else {
+      None
+    }
+  }
+
+  fn bool_lit_value(&self, e: &KExpr<M>) -> Option<bool> {
+    let ExprData::Const(id, _, _) = e.data() else {
+      return None;
+    };
+    if id.addr == self.prims.bool_true.addr {
+      Some(true)
+    } else if id.addr == self.prims.bool_false.addr {
+      Some(false)
+    } else {
+      None
+    }
+  }
+
+  fn finish_app_result(
+    &mut self,
+    mut result: KExpr<M>,
+    args: &[KExpr<M>],
+    consumed: usize,
+  ) -> KExpr<M> {
+    for arg in args.iter().skip(consumed) {
+      result = self.intern(KExpr::app(result, arg.clone()));
+    }
+    result
+  }
+
+  // -----------------------------------------------------------------------
   // Native reduction (Lean.reduceBool, Lean.reduceNat, System.Platform.numBits)
   // -----------------------------------------------------------------------
 
@@ -1206,19 +2203,60 @@ impl<M: KernelMode> TypeChecker<M> {
     &mut self,
     e: &KExpr<M>,
   ) -> Result<Option<KExpr<M>>, TcError<M>> {
-    if e.lbr() > 0 {
-      return Ok(None);
-    }
     let (head, args) = collect_app_spine(e);
     let head_addr = match head.data() {
       ExprData::Const(id, _, _) => id.addr.clone(),
       _ => return Ok(None),
     };
 
-    // System.Platform.numBits has type { n : Nat // n = 32 ∨ n = 64 } (Subtype).
-    // We do NOT reduce it natively because the result must be a Subtype.mk
-    // constructor application, not a bare Nat literal. Let delta+iota handle it.
-    // (Previously returned bare Nat(64) which was a type error.)
+    if let ExprData::Const(id, _, _) = head.data() {
+      let is_unit_sizeof_impl =
+        is_const_named(id, &["PUnit._sizeOf_1", "Unit._sizeOf_1"])
+          && args.len() == 1;
+
+      if e.lbr() > 0 {
+        if is_unit_sizeof_impl {
+          return Ok(Some(self.nat_literal(1)));
+        }
+        return Ok(None);
+      }
+
+      // `System.Platform.numBits` is defined as the value projection from the
+      // platform subtype returned by `System.Platform.getNumBits ()`.
+      if id.addr == self.prims.subtype_val.addr && args.len() == 3 {
+        let (value_head, value_args) = collect_app_spine(&args[2]);
+        if value_args.len() == 1
+          && let ExprData::Const(value_id, _, _) = value_head.data()
+          && value_id.addr == self.prims.system_platform_get_num_bits.addr
+        {
+          return Ok(Some(self.nat_literal(64)));
+        }
+      }
+
+      // Lean's generated `PUnit`/`Unit` SizeOf instance is extensionally the
+      // constant function 1, but its body recurses on an open unit variable.
+      // Reduce this primitive singleton case directly.
+      if is_const_named(id, &["SizeOf.sizeOf"]) && args.len() == 3 {
+        let (ty_head, _) = collect_app_spine(&args[0]);
+        if let ExprData::Const(ty_id, _, _) = ty_head.data()
+          && is_const_named(ty_id, &["Unit", "PUnit"])
+        {
+          return Ok(Some(self.nat_literal(1)));
+        }
+      }
+
+      if is_unit_sizeof_impl {
+        return Ok(Some(self.nat_literal(1)));
+      }
+    }
+
+    // System.Platform.numBits is a Nat-valued wrapper around the opaque
+    // extern `System.Platform.getNumBits`. Delta-unfolding gets stuck at
+    // the extern, so reduce the public Nat constant directly.
+    if head_addr == self.prims.system_platform_num_bits.addr && args.is_empty()
+    {
+      return Ok(Some(self.nat_literal(64)));
+    }
 
     // Lean.reduceBool / Lean.reduceNat: arg must be a single constant
     let is_reduce_bool = head_addr == self.prims.reduce_bool.addr;
@@ -1276,6 +2314,66 @@ impl<M: KernelMode> TypeChecker<M> {
       }
     }
   }
+
+  // -----------------------------------------------------------------------
+  // String primitive reduction
+  // -----------------------------------------------------------------------
+
+  pub(super) fn try_reduce_string(
+    &mut self,
+    e: &KExpr<M>,
+  ) -> Result<Option<KExpr<M>>, TcError<M>> {
+    let (head, args) = collect_app_spine(e);
+    if args.len() != 1 {
+      return Ok(None);
+    }
+    let ExprData::Const(id, _, _) = head.data() else {
+      return Ok(None);
+    };
+    let is_back = is_const_named(id, &["String.back", "String.Legacy.back"]);
+    let is_utf8_byte_size = is_const_named(id, &["String.utf8ByteSize"]);
+    let is_to_byte_array = id.addr == self.prims.string_to_byte_array.addr;
+    if !is_back && !is_utf8_byte_size && !is_to_byte_array {
+      return Ok(None);
+    }
+
+    let s = match args[0].data() {
+      ExprData::Str(s, _, _) => s,
+      _ => return Ok(None),
+    };
+    if is_utf8_byte_size {
+      let n = Nat::from(s.len() as u64);
+      let addr = Address::hash(&n.to_le_bytes());
+      return Ok(Some(self.intern(KExpr::nat(n, addr))));
+    }
+    if is_to_byte_array {
+      if s.is_empty() {
+        return Ok(Some(self.intern(KExpr::cnst(
+          self.prims.byte_array_empty.clone(),
+          Box::new([]),
+        ))));
+      }
+      return Ok(None);
+    }
+
+    let codepoint = s.chars().last().map_or(65u32, u32::from);
+    Ok(Some(self.char_of_nat_expr(u64::from(codepoint))))
+  }
+
+  fn find_const_id_named(&self, dotted: &str) -> Option<KId<M>> {
+    self.env.iter().find_map(|(id, _)| {
+      if is_const_named(&id, &[dotted]) { Some(id) } else { None }
+    })
+  }
+
+  fn char_of_nat_expr(&mut self, n: u64) -> KExpr<M> {
+    let char_of_nat =
+      self.intern(KExpr::cnst(self.prims.char_of_nat.clone(), Box::new([])));
+    let nat_val = Nat::from(n);
+    let nat_addr = Address::hash(&nat_val.to_le_bytes());
+    let nat_lit = self.intern(KExpr::nat(nat_val, nat_addr));
+    self.intern(KExpr::app(char_of_nat, nat_lit))
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1283,6 +2381,49 @@ impl<M: KernelMode> TypeChecker<M> {
 // ---------------------------------------------------------------------------
 
 use super::primitive::Primitives;
+
+fn dotted_name(dotted: &str) -> Name {
+  let mut name = Name::anon();
+  for part in dotted.split('.') {
+    name = Name::str(name, part.to_string());
+  }
+  name
+}
+
+fn synthetic_named_id<M: KernelMode>(dotted: &str) -> KId<M> {
+  KId::new(Address::hash(dotted.as_bytes()), M::meta_field(dotted_name(dotted)))
+}
+
+fn name_components_eq_dotted(mut name: &Name, mut dotted: &str) -> bool {
+  loop {
+    let (prefix, part) = match dotted.rsplit_once('.') {
+      Some((prefix, part)) => (Some(prefix), part),
+      None => (None, dotted),
+    };
+    match name.as_data() {
+      NameData::Str(pre, s, _) if s == part => {
+        name = pre;
+        match prefix {
+          Some(next) => dotted = next,
+          None => return matches!(name.as_data(), NameData::Anonymous(_)),
+        }
+      },
+      _ => return false,
+    }
+  }
+}
+
+fn is_const_named<M: KernelMode>(id: &KId<M>, names: &[&str]) -> bool {
+  let Some(name) = M::meta_name(&id.name) else {
+    return false;
+  };
+  names.iter().any(|expected| name_components_eq_dotted(&name, expected))
+}
+
+enum NatCtorView<M: KernelMode> {
+  Zero,
+  Succ(KExpr<M>),
+}
 
 /// Zero constant shared across `extract_nat_lit` calls.
 static NAT_ZERO_LITERAL: std::sync::LazyLock<Nat> =
@@ -1305,6 +2446,41 @@ fn extract_nat_lit<'a, M: KernelMode>(
     },
     _ => None,
   }
+}
+
+/// Extract a Nat value from either literal form or a constructor numeral.
+///
+/// Iota reduction on `Nat` literals can expose the matched value as
+/// `Nat.succ <literal predecessor>` inside branch bodies. Lean's C++ kernel
+/// keeps primitive numerals available to its native Nat reducer across this
+/// path; in this kernel we recover the same value here before deciding to
+/// unfold recursive Nat definitions such as `Nat.modCore`.
+fn extract_nat_value<M: KernelMode>(
+  e: &KExpr<M>,
+  prims: &Primitives<M>,
+) -> Option<Nat> {
+  if let Some(n) = extract_nat_lit(e, prims) {
+    return Some(n.clone());
+  }
+
+  let (head, args) = collect_app_spine(e);
+  let ExprData::Const(id, _, _) = head.data() else {
+    return None;
+  };
+  if is_const_named(id, &["OfNat.ofNat"]) && args.len() >= 2 {
+    let (type_head, type_args) = collect_app_spine(&args[0]);
+    if type_args.is_empty()
+      && let ExprData::Const(type_id, _, _) = type_head.data()
+      && type_id.addr == prims.nat.addr
+    {
+      return extract_nat_value(&args[1], prims);
+    }
+  }
+  if id.addr != prims.nat_succ.addr || args.len() != 1 {
+    return None;
+  }
+  let pred = extract_nat_value(&args[0], prims)?;
+  Some(Nat(pred.0 + 1u64))
 }
 
 fn gcd_biguint(
@@ -1428,7 +2604,7 @@ fn extract_int_lit<M: KernelMode>(
   if args.len() != 1 {
     return None;
   }
-  let nat_val = extract_nat_lit(&args[0], prims)?;
+  let nat_val = extract_nat_value(&args[0], prims)?;
   let n: BigInt = nat_val.0.clone().into();
   if head_id.addr == prims.int_of_nat.addr {
     Some(n) // Int.ofNat n = n
@@ -1625,7 +2801,7 @@ impl<M: KernelMode> TypeChecker<M> {
       let Some(a) = extract_int_lit(&wa, &self.prims) else {
         return Ok(None);
       };
-      let Some(b_nat) = extract_nat_lit(&wb, &self.prims).cloned() else {
+      let Some(b_nat) = extract_nat_value(&wb, &self.prims) else {
         return Ok(None);
       };
       const REDUCE_POW_MAX_EXP: u64 = 1 << 24;
@@ -1662,7 +2838,7 @@ impl<M: KernelMode> TypeChecker<M> {
       let Some(a) = extract_int_lit(&wa, &self.prims) else {
         return Ok(None);
       };
-      let Some(b_nat) = extract_nat_lit(&wb, &self.prims).cloned() else {
+      let Some(b_nat) = extract_nat_value(&wb, &self.prims) else {
         return Ok(None);
       };
       // `Int.bmod x 0` returns x unchanged because (0+1)/2 = 0 is never
@@ -1742,7 +2918,7 @@ mod tests {
   use super::super::expr::{ExprData, KExpr};
   use super::super::id::KId;
   use super::super::level::KUniv;
-  use super::super::mode::Anon;
+  use super::super::mode::{Anon, Meta};
   use super::super::primitive::Primitives;
   use super::super::tc::TypeChecker;
   use super::*;
@@ -1802,6 +2978,23 @@ mod tests {
         val: opaq_val,
         lean_all: (),
         block: mk_id("opaque"),
+      },
+    );
+    let opaque_def_ty = sort0();
+    let opaque_def_val = sort1();
+    env.insert(
+      mk_id("opaque_def"),
+      KConst::Defn {
+        name: (),
+        level_params: (),
+        kind: DefKind::Definition,
+        safety: DefinitionSafety::Safe,
+        hints: ReducibilityHints::Opaque,
+        lvls: 0,
+        ty: opaque_def_ty,
+        val: opaque_def_val,
+        lean_all: (),
+        block: mk_id("opaque_def"),
       },
     );
     env
@@ -1885,6 +3078,73 @@ mod tests {
   }
 
   #[test]
+  fn whnf_delta_opaque_hint_unfolds() {
+    let env = env_with_id();
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let opaque_def = AE::cnst(mk_id("opaque_def"), Box::new([]));
+    let result = tc.whnf(&opaque_def).unwrap();
+    assert_eq!(result, sort1());
+  }
+
+  #[test]
+  fn whnf_string_legacy_back_empty_literal() {
+    use super::super::testing as kt;
+
+    let env = Arc::new(KEnv::new());
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let back = kt::ME::cnst(kt::mk_id("String.Legacy.back"), Box::new([]));
+    let empty = kt::ME::str(String::new(), Address::hash(b""));
+    let result = tc.whnf(&kt::ME::app(back, empty)).unwrap();
+    let (head, args) = collect_app_spine(&result);
+    match head.data() {
+      ExprData::Const(id, _, _) => {
+        assert_eq!(id.addr, tc.prims.char_of_nat.addr)
+      },
+      other => panic!("expected Char.ofNat head, got {:?}", other),
+    }
+    assert_eq!(args.len(), 1);
+    match args[0].data() {
+      ExprData::Nat(v, _, _) => {
+        assert_eq!(v.0, num_bigint::BigUint::from(65u64));
+      },
+      other => panic!("expected default Char Nat literal, got {:?}", other),
+    }
+  }
+
+  #[test]
+  fn whnf_string_utf8_byte_size_literal() {
+    use super::super::testing as kt;
+
+    let env = Arc::new(KEnv::new());
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let size = kt::ME::cnst(kt::mk_id("String.utf8ByteSize"), Box::new([]));
+    let s = kt::ME::str("L∃∀N".to_string(), Address::hash("L∃∀N".as_bytes()));
+    let result = tc.whnf(&kt::ME::app(size, s)).unwrap();
+    match result.data() {
+      ExprData::Nat(v, _, _) => {
+        assert_eq!(v.0, num_bigint::BigUint::from(8u64));
+      },
+      other => {
+        panic!("expected UTF-8 byte length Nat literal, got {:?}", other)
+      },
+    }
+  }
+
+  #[test]
+  fn def_eq_string_to_byte_array_empty() {
+    use super::super::testing as kt;
+
+    let env = Arc::new(KEnv::new());
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let to_byte_array =
+      kt::ME::cnst(tc.prims.string_to_byte_array.clone(), Box::new([]));
+    let empty_string = kt::ME::str(String::new(), Address::hash(b""));
+    let lhs = kt::ME::app(to_byte_array, empty_string);
+    let rhs = kt::ME::cnst(tc.prims.byte_array_empty.clone(), Box::new([]));
+    assert!(tc.is_def_eq(&lhs, &rhs).unwrap());
+  }
+
+  #[test]
   fn whnf_cache_hit() {
     let env = env_with_id();
     let mut tc = TypeChecker::new(Arc::clone(&env));
@@ -1921,6 +3181,12 @@ mod tests {
     let v = Nat::from(n);
     let addr = Address::hash(&v.to_le_bytes());
     AE::nat(v, addr)
+  }
+
+  fn mk_meta_nat(n: u64) -> super::super::testing::ME {
+    let v = Nat::from(n);
+    let addr = Address::hash(&v.to_le_bytes());
+    super::super::testing::ME::nat(v, addr)
   }
 
   /// Build a Nat env with Nat, Nat.zero, Nat.succ, Nat.rec, and Nat.sub.
@@ -2061,6 +3327,29 @@ mod tests {
     env
   }
 
+  fn insert_nat_add_model(env: &Arc<KEnv<Anon>>, add_id: KId<Anon>) {
+    let empty = KEnv::new();
+    let prims = Primitives::from_env(&empty);
+    let add_ty = pi(nat(), pi(nat(), nat()));
+    let succ = AE::cnst(prims.nat_succ.clone(), Box::new([]));
+    let add_val = lam(nat(), lam(nat(), app(succ.clone(), app(succ, var(1)))));
+    env.insert(
+      add_id.clone(),
+      KConst::Defn {
+        name: (),
+        level_params: (),
+        kind: DefKind::Definition,
+        safety: DefinitionSafety::Safe,
+        hints: ReducibilityHints::Regular(0),
+        lvls: 0,
+        ty: add_ty,
+        val: add_val,
+        lean_all: (),
+        block: add_id,
+      },
+    );
+  }
+
   #[test]
   fn whnf_nat_sub_native() {
     // Nat.sub 1000 500 should reduce to Nat(500) via try_reduce_nat,
@@ -2103,6 +3392,28 @@ mod tests {
   }
 
   #[test]
+  fn whnf_nat_primitive_accepts_constructor_value_with_loose_bvar() {
+    // Iota on Nat literals can expose a value as `Nat.succ <literal>`.
+    // Sparse-case code also carries binders that disappear after WHNF of
+    // primitive arguments, so primitive reduction must not reject the whole
+    // application just because it syntactically contains a loose bvar.
+    let env = nat_env();
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let add = AE::cnst(tc.prims.nat_add.clone(), Box::new([]));
+    let succ = AE::cnst(tc.prims.nat_succ.clone(), Box::new([]));
+    let ctor_num = app(succ, mk_nat(4));
+    let dead_open_arg = app(lam(nat(), ctor_num), var(0));
+    let expr = app(app(add, dead_open_arg), mk_nat(2));
+    let result = tc.whnf(&expr).unwrap();
+    match result.data() {
+      ExprData::Nat(v, _, _) => {
+        assert_eq!(v.0, num_bigint::BigUint::from(7u64));
+      },
+      other => panic!("expected Nat(7), got {:?}", other),
+    }
+  }
+
+  #[test]
   fn whnf_nat_ble_large() {
     // Nat.ble 2^32 2^32 should reduce to Bool.true via try_reduce_nat
     let env = nat_env();
@@ -2115,6 +3426,323 @@ mod tests {
     match result.data() {
       ExprData::Const(id, _, _) => assert_eq!(id.addr, tc.prims.bool_true.addr),
       other => panic!("expected Bool.true, got {:?}", other),
+    }
+  }
+
+  #[test]
+  fn whnf_nat_ble_symbolic_succ_stays_stuck() {
+    let env = nat_env();
+    let empty = KEnv::new();
+    let prims = Primitives::from_env(&empty);
+    let ble_id = prims.nat_ble.clone();
+    env.insert(
+      ble_id.clone(),
+      KConst::Defn {
+        name: (),
+        level_params: (),
+        kind: DefKind::Definition,
+        safety: DefinitionSafety::Safe,
+        hints: ReducibilityHints::Regular(0),
+        lvls: 0,
+        ty: pi(nat(), pi(nat(), cnst("Bool", &[]))),
+        val: lam(
+          nat(),
+          lam(nat(), AE::cnst(prims.bool_false.clone(), Box::new([]))),
+        ),
+        lean_all: (),
+        block: ble_id.clone(),
+      },
+    );
+
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let ble = AE::cnst(ble_id.clone(), Box::new([]));
+    let succ = AE::cnst(tc.prims.nat_succ.clone(), Box::new([]));
+    let expr = app(app(ble, mk_nat(65536)), app(succ, var(0)));
+    let result = tc.whnf(&expr).unwrap();
+    let (head, args) = collect_app_spine(&result);
+    assert_eq!(args.len(), 2);
+    match head.data() {
+      ExprData::Const(id, _, _) => assert_eq!(id.addr, ble_id.addr),
+      other => panic!("expected stuck Nat.ble head, got {:?}", other),
+    }
+    match args[0].data() {
+      ExprData::Nat(v, _, _) => {
+        assert_eq!(v.0, num_bigint::BigUint::from(65535u64))
+      },
+      other => panic!("expected decremented literal, got {:?}", other),
+    }
+    assert_eq!(args[1], var(0));
+  }
+
+  #[test]
+  fn whnf_nat_predicates_reduce_one_symbolic_ctor_layer() {
+    let env = nat_env();
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let ble = AE::cnst(tc.prims.nat_ble.clone(), Box::new([]));
+    let beq = AE::cnst(tc.prims.nat_beq.clone(), Box::new([]));
+    let succ = AE::cnst(tc.prims.nat_succ.clone(), Box::new([]));
+
+    let ble_expr = app(app(ble, app(succ.clone(), var(1))), app(succ, var(0)));
+    let ble_result = tc.whnf(&ble_expr).unwrap();
+    let (ble_head, ble_args) = collect_app_spine(&ble_result);
+    match ble_head.data() {
+      ExprData::Const(id, _, _) => assert_eq!(id.addr, tc.prims.nat_ble.addr),
+      other => panic!("expected Nat.ble head, got {:?}", other),
+    }
+    assert_eq!(ble_args, vec![var(1), var(0)]);
+
+    let zero = AE::cnst(tc.prims.nat_zero.clone(), Box::new([]));
+    let succ = AE::cnst(tc.prims.nat_succ.clone(), Box::new([]));
+    let beq_expr = app(app(beq, zero), app(succ, var(0)));
+    let beq_result = tc.whnf(&beq_expr).unwrap();
+    match beq_result.data() {
+      ExprData::Const(id, _, _) => {
+        assert_eq!(id.addr, tc.prims.bool_false.addr)
+      },
+      other => panic!("expected Bool.false, got {:?}", other),
+    }
+  }
+
+  #[test]
+  fn whnf_nat_predicates_reduce_literal_ctor_against_symbolic_ctor() {
+    let env = nat_env();
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let ble = AE::cnst(tc.prims.nat_ble.clone(), Box::new([]));
+    let succ = AE::cnst(tc.prims.nat_succ.clone(), Box::new([]));
+
+    let lhs = app(succ.clone(), app(succ, var(0)));
+    let expr = app(app(ble, lhs), mk_nat(1));
+    let result = tc.whnf(&expr).unwrap();
+    match result.data() {
+      ExprData::Const(id, _, _) => {
+        assert_eq!(id.addr, tc.prims.bool_false.addr)
+      },
+      other => panic!("expected Bool.false, got {:?}", other),
+    }
+  }
+
+  #[test]
+  fn whnf_nat_predicates_peek_through_symbolic_add() {
+    let env = nat_env();
+    let empty = KEnv::new();
+    let prims = Primitives::from_env(&empty);
+    insert_nat_add_model(&env, prims.nat_add.clone());
+
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let add = AE::cnst(tc.prims.nat_add.clone(), Box::new([]));
+    let ble = AE::cnst(tc.prims.nat_ble.clone(), Box::new([]));
+    let lhs = app(app(add, var(0)), mk_nat(2));
+    let expr = app(app(ble, lhs), mk_nat(1));
+    let result = tc.whnf(&expr).unwrap();
+    match result.data() {
+      ExprData::Const(id, _, _) => {
+        assert_eq!(id.addr, tc.prims.bool_false.addr)
+      },
+      other => panic!("expected Bool.false, got {:?}", other),
+    }
+  }
+
+  #[test]
+  fn whnf_nat_add_symbolic_literal_rhs_exposes_succ() {
+    let env = nat_env();
+    let empty = KEnv::new();
+    let prims = Primitives::from_env(&empty);
+    insert_nat_add_model(&env, prims.nat_add.clone());
+
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let add = AE::cnst(tc.prims.nat_add.clone(), Box::new([]));
+    let expr = app(app(add, var(0)), mk_nat(2));
+    let result = tc.whnf(&expr).unwrap();
+    let succ = AE::cnst(tc.prims.nat_succ.clone(), Box::new([]));
+    assert_eq!(result, app(succ.clone(), app(succ, var(0))));
+  }
+
+  #[test]
+  fn whnf_nat_add_ofnat_zero_lhs_stays_stuck() {
+    use super::super::testing as kt;
+
+    let env = Arc::new(KEnv::<Meta>::new());
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let nat_ty = kt::ME::cnst(tc.prims.nat.clone(), Box::new([]));
+    let ofnat_zero = kt::apps(
+      kt::cnst("OfNat.ofNat", &[]),
+      &[nat_ty, mk_meta_nat(0), kt::cnst("instOfNatNat", &[])],
+    );
+    let add = kt::ME::cnst(tc.prims.nat_add.clone(), Box::new([]));
+    let expr = kt::apps(add, &[ofnat_zero, kt::var(0)]);
+    let result = tc.whnf(&expr).unwrap();
+    assert_eq!(result, expr);
+  }
+
+  #[test]
+  fn whnf_nat_mul_ofnat_one_rhs_stays_stuck() {
+    use super::super::testing as kt;
+
+    let env = Arc::new(KEnv::<Meta>::new());
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let nat_ty = kt::ME::cnst(tc.prims.nat.clone(), Box::new([]));
+    let ofnat_one = kt::apps(
+      kt::cnst("OfNat.ofNat", &[]),
+      &[nat_ty, mk_meta_nat(1), kt::cnst("instOfNatNat", &[])],
+    );
+    let mul = kt::ME::cnst(tc.prims.nat_mul.clone(), Box::new([]));
+    let expr = kt::apps(mul, &[kt::var(0), ofnat_one]);
+    let result = tc.whnf(&expr).unwrap();
+    assert_eq!(result, expr);
+  }
+
+  #[test]
+  fn whnf_nat_mul_symbolic_zero_rhs_returns_zero() {
+    let env = nat_env();
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mul = AE::cnst(tc.prims.nat_mul.clone(), Box::new([]));
+    let expr = app(app(mul, var(0)), mk_nat(0));
+    let result = tc.whnf(&expr).unwrap();
+    match result.data() {
+      ExprData::Nat(v, _, _) => {
+        assert_eq!(v.0, num_bigint::BigUint::from(0u64));
+      },
+      other => panic!("expected Nat(0), got {:?}", other),
+    }
+  }
+
+  #[test]
+  fn def_eq_nat_add_literal_lhs_not_succ_chain() {
+    let env = nat_env();
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    tc.push_local(nat());
+
+    for n in 0..=4 {
+      let add = AE::cnst(tc.prims.nat_add.clone(), Box::new([]));
+      let lhs = app(app(add, mk_nat(n)), var(0));
+      let mut rhs = var(0);
+      for _ in 0..n {
+        let succ = AE::cnst(tc.prims.nat_succ.clone(), Box::new([]));
+        rhs = app(succ, rhs);
+      }
+
+      assert!(
+        !tc.is_def_eq(&lhs, &rhs).unwrap(),
+        "Nat.add {n} x must stay distinct from succ^{n} x"
+      );
+    }
+  }
+
+  #[test]
+  fn def_eq_nat_mul_non_iota_symbolic_cases_stay_distinct() {
+    let env = nat_env();
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    tc.push_local(nat());
+
+    let mul = AE::cnst(tc.prims.nat_mul.clone(), Box::new([]));
+    let x = var(0);
+
+    let lhs_zero = app(app(mul.clone(), mk_nat(0)), x.clone());
+    assert!(
+      !tc.is_def_eq(&lhs_zero, &mk_nat(0)).unwrap(),
+      "Nat.mul 0 x must not reduce to 0 while x is stuck"
+    );
+
+    let lhs_one = app(app(mul.clone(), mk_nat(1)), x.clone());
+    assert!(
+      !tc.is_def_eq(&lhs_one, &x).unwrap(),
+      "Nat.mul 1 x must not reduce to x while x is stuck"
+    );
+
+    let rhs_one = app(app(mul, x.clone()), mk_nat(1));
+    assert!(
+      !tc.is_def_eq(&rhs_one, &x).unwrap(),
+      "Nat.mul x 1 must not reduce directly to x"
+    );
+  }
+
+  #[test]
+  fn whnf_nat_mod_literal_by_symbolic_lower_bound() {
+    let env = nat_env();
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let add = AE::cnst(tc.prims.nat_add.clone(), Box::new([]));
+    let modu = AE::cnst(tc.prims.nat_mod.clone(), Box::new([]));
+    let denom = app(app(add, var(0)), mk_nat(2));
+    let expr = app(app(modu, mk_nat(1)), denom);
+    let result = tc.whnf(&expr).unwrap();
+    match result.data() {
+      ExprData::Nat(v, _, _) => {
+        assert_eq!(v.0, num_bigint::BigUint::from(1u64));
+      },
+      other => panic!("expected Nat(1), got {:?}", other),
+    }
+  }
+
+  #[test]
+  fn whnf_nat_sub_symbolic_literal_rhs_peels_succ() {
+    let env = nat_env();
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let add = AE::cnst(tc.prims.nat_add.clone(), Box::new([]));
+    let sub = AE::cnst(tc.prims.nat_sub.clone(), Box::new([]));
+    let lhs = app(app(add, var(0)), mk_nat(2));
+    let expr = app(app(sub, lhs), mk_nat(1));
+    let result = tc.whnf(&expr).unwrap();
+    let succ = AE::cnst(tc.prims.nat_succ.clone(), Box::new([]));
+    assert_eq!(result, app(succ, var(0)));
+  }
+
+  #[test]
+  fn whnf_bitvec_ult_zero_rhs_is_false() {
+    use super::super::testing as kt;
+
+    let env = Arc::new(KEnv::<Meta>::new());
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let zero =
+      kt::apps(kt::cnst("BitVec.ofNat", &[]), &[kt::var(1), mk_meta_nat(0)]);
+    let ult =
+      kt::apps(kt::cnst("BitVec.ult", &[]), &[kt::var(1), kt::var(0), zero]);
+    let result = tc.whnf(&ult).unwrap();
+    match result.data() {
+      ExprData::Const(id, _, _) => {
+        assert_eq!(id.addr, tc.prims.bool_false.addr)
+      },
+      other => panic!("expected Bool.false, got {:?}", other),
+    }
+  }
+
+  #[test]
+  fn whnf_bitvec_to_nat_ofnat_zero_is_zero() {
+    use super::super::testing as kt;
+
+    let env = Arc::new(KEnv::<Meta>::new());
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let zero =
+      kt::apps(kt::cnst("BitVec.ofNat", &[]), &[kt::var(0), mk_meta_nat(0)]);
+    let expr = kt::apps(kt::cnst("BitVec.toNat", &[]), &[kt::var(0), zero]);
+    let result = tc.whnf(&expr).unwrap();
+    match result.data() {
+      ExprData::Nat(v, _, _) => {
+        assert_eq!(v.0, num_bigint::BigUint::ZERO);
+      },
+      other => panic!("expected Nat(0), got {:?}", other),
+    }
+  }
+
+  #[test]
+  fn whnf_decide_bitvec_lt_zero_is_false() {
+    use super::super::testing as kt;
+
+    let env = Arc::new(KEnv::<Meta>::new());
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let width = kt::var(1);
+    let bv_ty = kt::apps(kt::cnst("BitVec", &[]), &[width.clone()]);
+    let zero =
+      kt::apps(kt::cnst("BitVec.ofNat", &[]), &[width, mk_meta_nat(0)]);
+    let prop =
+      kt::apps(kt::cnst("LT.lt", &[]), &[bv_ty, kt::var(2), kt::var(0), zero]);
+    let decide =
+      kt::apps(kt::cnst("Decidable.decide", &[]), &[prop, kt::var(3)]);
+    let result = tc.whnf(&decide).unwrap();
+    match result.data() {
+      ExprData::Const(id, _, _) => {
+        assert_eq!(id.addr, tc.prims.bool_false.addr)
+      },
+      other => panic!("expected Bool.false, got {:?}", other),
     }
   }
 
@@ -2219,8 +3847,8 @@ mod tests {
     let prims = Primitives::from_env(&empty);
 
     // System.Platform.numBits — insert at the real primitive address
-    // so try_reduce_native recognizes it. It's a def whose body doesn't
-    // matter (native handler intercepts it) but it needs to be present.
+    // so try_reduce_native recognizes it. Give it a stuck body so this test
+    // fails if native handling regresses and WHNF falls through to delta.
     env.insert(
       prims.system_platform_num_bits.clone(),
       KConst::Defn {
@@ -2231,7 +3859,7 @@ mod tests {
         hints: ReducibilityHints::Abbrev,
         lvls: 0,
         ty: nat(),
-        val: mk_nat(64), // body: just 64 (native handler returns this anyway)
+        val: AE::cnst(mk_id("opaque.bits"), Box::new([])),
         lean_all: (),
         block: prims.system_platform_num_bits.clone(),
       },
@@ -2483,14 +4111,13 @@ mod tests {
   }
 
   // =========================================================================
-  // Large-Nat iota-reduction cap
+  // Large-Nat iota runaway guard
   //
   // `try_iota` guards against unbounded expansion of Nat literals into
-  // Nat.succ chains when the literal exceeds 2^20. See `whnf.rs` around
-  // lines 420-425. Verify the cap fires by applying `Nat.rec` (which
-  // triggers iota) to a Nat literal well over the threshold — the
-  // reduction must *not* diverge or panic; it should stay stuck at the
-  // rec application.
+  // Nat.succ chains when the same recursor peels consecutive predecessors
+  // for thousands of steps. Verify the guard fires by applying `Nat.rec`
+  // whose step immediately forces `ih` to a large literal. The reduction
+  // must not diverge or panic.
   // =========================================================================
 
   #[test]

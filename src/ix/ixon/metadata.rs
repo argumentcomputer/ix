@@ -72,6 +72,14 @@ pub enum ExprMetaData {
     name: Address,
     /// Source-order entries for the argument telescope.
     entries: Vec<CallSiteEntry>,
+    /// Canonical-order metadata roots, one per argument in the IXON App spine.
+    ///
+    /// This is separate from `entries` because some source arguments are
+    /// represented by `Collapsed` entries even though compile-side surgery
+    /// synthesized a canonical replacement argument. Kernel ingress needs the
+    /// replacement argument's metadata by canonical position, while decompile
+    /// needs the source-order `entries` to reconstruct the original spine.
+    canon_meta: Vec<u64>,
   },
 }
 
@@ -828,7 +836,7 @@ impl ExprMetaData {
         put_mdata_stack_indexed(mdata, idx, buf)?;
         put_u64(*child, buf);
       },
-      Self::CallSite { name, entries } => {
+      Self::CallSite { name, entries, canon_meta } => {
         put_u8(10, buf);
         put_idx(name, idx, buf)?;
         put_vec_len(entries.len(), buf);
@@ -846,6 +854,7 @@ impl ExprMetaData {
             },
           }
         }
+        put_u64_vec(canon_meta, buf);
       },
     }
     Ok(())
@@ -916,7 +925,8 @@ impl ExprMetaData {
           };
           entries.push(entry);
         }
-        Ok(Self::CallSite { name, entries })
+        let canon_meta = get_u64_vec(buf)?;
+        Ok(Self::CallSite { name, entries, canon_meta })
       },
       x => Err(format!("ExprMetaData::get: invalid tag {x}")),
     }

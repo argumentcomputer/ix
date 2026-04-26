@@ -2498,71 +2498,7 @@ fn ingress_target_type_deps(
       continue;
     }
     if let Some(ci) = lean_env.get(&name) {
-      match &*ci {
-        ConstantInfo::DefnInfo(v) => {
-          super::expr_utils::ensure_full_in_kenv_of(&name, lean_env, stt, kctx);
-          collect_const_refs(&v.cnst.typ, &mut queue);
-          collect_const_refs(&v.value, &mut queue);
-        },
-        ConstantInfo::InductInfo(v) => {
-          super::expr_utils::ensure_full_in_kenv_of(&name, lean_env, stt, kctx);
-          collect_const_refs(&v.cnst.typ, &mut queue);
-        },
-        ConstantInfo::CtorInfo(v) => {
-          super::expr_utils::ensure_full_in_kenv_of(&name, lean_env, stt, kctx);
-          collect_const_refs(&v.cnst.typ, &mut queue);
-        },
-        ConstantInfo::ThmInfo(v) => {
-          ingress_type_stub(
-            &name,
-            &v.cnst.typ,
-            &v.cnst.level_params,
-            stt,
-            kctx,
-          );
-          collect_const_refs(&v.cnst.typ, &mut queue);
-        },
-        ConstantInfo::OpaqueInfo(v) => {
-          ingress_type_stub(
-            &name,
-            &v.cnst.typ,
-            &v.cnst.level_params,
-            stt,
-            kctx,
-          );
-          collect_const_refs(&v.cnst.typ, &mut queue);
-        },
-        ConstantInfo::AxiomInfo(v) => {
-          ingress_type_stub(
-            &name,
-            &v.cnst.typ,
-            &v.cnst.level_params,
-            stt,
-            kctx,
-          );
-          collect_const_refs(&v.cnst.typ, &mut queue);
-        },
-        ConstantInfo::QuotInfo(v) => {
-          ingress_type_stub(
-            &name,
-            &v.cnst.typ,
-            &v.cnst.level_params,
-            stt,
-            kctx,
-          );
-          collect_const_refs(&v.cnst.typ, &mut queue);
-        },
-        ConstantInfo::RecInfo(v) => {
-          ingress_type_stub(
-            &name,
-            &v.cnst.typ,
-            &v.cnst.level_params,
-            stt,
-            kctx,
-          );
-          collect_const_refs(&v.cnst.typ, &mut queue);
-        },
-      }
+      ingress_aux_gen_dep(&name, &ci, lean_env, stt, kctx, &mut queue);
     }
   }
 }
@@ -2592,41 +2528,52 @@ fn ingress_field_deps(
     }
 
     let Some(ci) = lean_env.get(&name) else { continue };
-    match &*ci {
-      ConstantInfo::DefnInfo(v) => {
-        super::expr_utils::ensure_full_in_kenv_of(&name, lean_env, stt, kctx);
-        collect_const_refs(&v.cnst.typ, &mut queue);
-        collect_const_refs(&v.value, &mut queue);
-      },
-      ConstantInfo::InductInfo(v) => {
-        super::expr_utils::ensure_full_in_kenv_of(&name, lean_env, stt, kctx);
-        collect_const_refs(&v.cnst.typ, &mut queue);
-      },
-      ConstantInfo::CtorInfo(v) => {
-        super::expr_utils::ensure_full_in_kenv_of(&name, lean_env, stt, kctx);
-        collect_const_refs(&v.cnst.typ, &mut queue);
-      },
-      ConstantInfo::AxiomInfo(v) => {
-        ingress_type_stub(&name, &v.cnst.typ, &v.cnst.level_params, stt, kctx);
-        collect_const_refs(&v.cnst.typ, &mut queue);
-      },
-      ConstantInfo::ThmInfo(v) => {
-        ingress_type_stub(&name, &v.cnst.typ, &v.cnst.level_params, stt, kctx);
-        collect_const_refs(&v.cnst.typ, &mut queue);
-      },
-      ConstantInfo::OpaqueInfo(v) => {
-        ingress_type_stub(&name, &v.cnst.typ, &v.cnst.level_params, stt, kctx);
-        collect_const_refs(&v.cnst.typ, &mut queue);
-      },
-      ConstantInfo::RecInfo(v) => {
-        ingress_type_stub(&name, &v.cnst.typ, &v.cnst.level_params, stt, kctx);
-        collect_const_refs(&v.cnst.typ, &mut queue);
-      },
-      ConstantInfo::QuotInfo(v) => {
-        ingress_type_stub(&name, &v.cnst.typ, &v.cnst.level_params, stt, kctx);
-        collect_const_refs(&v.cnst.typ, &mut queue);
-      },
-    }
+    ingress_aux_gen_dep(&name, &ci, lean_env, stt, kctx, &mut queue);
+  }
+}
+
+fn ingress_aux_gen_dep(
+  name: &Name,
+  ci: &ConstantInfo,
+  lean_env: &LeanEnv,
+  stt: &crate::ix::compile::CompileState,
+  kctx: &crate::ix::compile::KernelCtx,
+  queue: &mut Vec<Name>,
+) {
+  match ci {
+    ConstantInfo::DefnInfo(v) => {
+      super::expr_utils::ensure_full_in_kenv_of(name, lean_env, stt, kctx);
+      collect_const_refs(&v.cnst.typ, queue);
+      collect_const_refs(&v.value, queue);
+    },
+    ConstantInfo::InductInfo(v) => {
+      super::expr_utils::ensure_full_in_kenv_of(name, lean_env, stt, kctx);
+      collect_const_refs(&v.cnst.typ, queue);
+    },
+    ConstantInfo::CtorInfo(v) => {
+      super::expr_utils::ensure_full_in_kenv_of(name, lean_env, stt, kctx);
+      collect_const_refs(&v.cnst.typ, queue);
+    },
+    ConstantInfo::AxiomInfo(v) => {
+      ingress_type_stub(name, &v.cnst.typ, &v.cnst.level_params, stt, kctx);
+      collect_const_refs(&v.cnst.typ, queue);
+    },
+    ConstantInfo::ThmInfo(v) => {
+      ingress_type_stub(name, &v.cnst.typ, &v.cnst.level_params, stt, kctx);
+      collect_const_refs(&v.cnst.typ, queue);
+    },
+    ConstantInfo::OpaqueInfo(v) => {
+      ingress_type_stub(name, &v.cnst.typ, &v.cnst.level_params, stt, kctx);
+      collect_const_refs(&v.cnst.typ, queue);
+    },
+    ConstantInfo::RecInfo(v) => {
+      ingress_type_stub(name, &v.cnst.typ, &v.cnst.level_params, stt, kctx);
+      collect_const_refs(&v.cnst.typ, queue);
+    },
+    ConstantInfo::QuotInfo(v) => {
+      ingress_type_stub(name, &v.cnst.typ, &v.cnst.level_params, stt, kctx);
+      collect_const_refs(&v.cnst.typ, queue);
+    },
   }
 }
 

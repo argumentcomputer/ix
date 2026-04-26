@@ -277,7 +277,7 @@ pub(crate) fn generate_aux_patches(
     // decompile, and surgery is the only way to maintain that the same
     // semantic block declared in permuted source orders hashes to the
     // same Ixon bytes.
-    nested::sort_aux_by_content_hash(&mut expanded, stt)?;
+    nested::sort_aux_by_partition_refinement(&mut expanded, stt)?;
     if expanded.types.len() > expanded.n_originals {
       // Compute source→canonical permutation FIRST (before recursor
       // generation) so the generator can emit source-indexed `_N`

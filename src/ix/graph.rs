@@ -297,6 +297,35 @@ mod tests {
   }
 
   #[test]
+  fn inductive_all_members_are_not_graph_edges() {
+    // `InductiveVal.all` is Lean source metadata. The canonical compiler
+    // must still split inductive declarations into their minimal SCCs, so
+    // members that do not structurally reference each other are not graph
+    // dependencies merely because Lean recorded them in the same `all` list.
+    let mut env = Env::default();
+    for name in ["A", "B"] {
+      env.insert(
+        n(name),
+        ConstantInfo::InductInfo(InductiveVal {
+          cnst: mk_cv(name),
+          num_params: Nat::from(0u64),
+          num_indices: Nat::from(0u64),
+          all: vec![n("A"), n("B")],
+          ctors: vec![],
+          num_nested: Nat::from(0u64),
+          is_rec: false,
+          is_unsafe: false,
+          is_reflexive: false,
+        }),
+      );
+    }
+
+    let graph = build_ref_graph(&env);
+    assert!(!graph.out_refs[&n("A")].contains(&n("B")));
+    assert!(!graph.out_refs[&n("B")].contains(&n("A")));
+  }
+
+  #[test]
   fn ctor_includes_induct() {
     // Constructor T.mk references its parent T
     let mut env = Env::default();
@@ -392,6 +421,9 @@ mod tests {
     assert!(rec_out.contains(&n("T.mk")));
     // References Q from the rule's rhs
     assert!(rec_out.contains(&n("Q")));
+    // `RecursorVal.all` is metadata; structural references come from the
+    // recursor type and rules.
+    assert!(!rec_out.contains(&n("T")));
   }
 
   #[test]

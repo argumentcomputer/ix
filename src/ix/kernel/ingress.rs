@@ -26,8 +26,7 @@ use crate::ix::ixon::constant::{
 use crate::ix::ixon::env::Env as IxonEnv;
 use crate::ix::ixon::expr::Expr as IxonExpr;
 use crate::ix::ixon::metadata::{
-  CallSiteEntry, ConstantMeta, ConstantMetaInfo, ExprMeta, ExprMetaData,
-  resolve_kvmap,
+  ConstantMeta, ConstantMetaInfo, ExprMeta, ExprMetaData, resolve_kvmap,
 };
 use crate::ix::ixon::univ::Univ as IxonUniv;
 use crate::ix::kernel::env::Addr;
@@ -39,6 +38,7 @@ use super::expr::{KExpr, MData};
 use super::id::KId;
 use super::level::KUniv;
 use super::mode::{KernelMode, Meta};
+use super::primitive::reserved_marker_name;
 
 // ============================================================================
 // Lookup tables
@@ -462,13 +462,13 @@ fn ingress_expr<M: KernelMode>(
           IxonExpr::App(f, a) => {
             // CallSite at the outermost App of a surgery spine. The
             // arena replaces the spine's N+1 App/Ref nodes with one
-            // flat node whose `entries` carry per-argument arena
-            // indices and whose `name` holds the head's Ref name. Walk
-            // the IXON App telescope here and distribute each canonical
-            // arg's arena index from the CallSite entries — a plain App
-            // descent (`_` arm below) would propagate the CallSite
-            // arena down every child, losing per-arg binder names and
-            // failing the head's Ref metadata lookup (see
+            // flat node whose `canon_meta` carries per-canonical-arg
+            // arena indices and whose `name` holds the head's Ref name.
+            // Walk the IXON App telescope here and distribute each
+            // canonical arg's arena index from `canon_meta`; a plain App
+            // descent (`_` arm below) would propagate the CallSite arena
+            // down every child, losing per-arg binder names and failing
+            // the head's Ref metadata lookup (see
             // `ingress_expr` Ref arm — no `CallSite` matching branch).
             //
             // The head is `IxonExpr::Ref | IxonExpr::Rec`. We build its
@@ -478,13 +478,27 @@ fn ingress_expr<M: KernelMode>(
             // arena root on the floor (the comment there reads
             // "head's Ref metadata is subsumed by CallSite.name"), so
             // there is no other source of truth for the head name.
-            if let ExprMetaData::CallSite { name: cs_name, entries } = node {
+            if let ExprMetaData::CallSite {
+              name: cs_name,
+              entries: _,
+              canon_meta,
+            } = node
+            {
               // Flatten the canonical App telescope. `a_i` is the arg
               // applied at spine position `i` (0 = innermost, N-1 =
               // outermost); `head` is the innermost function.
               let mut canonical_args: Vec<Arc<IxonExpr>> = Vec::new();
               let mut cur = expr.clone();
               loop {
+                while let IxonExpr::Share(share_idx) = cur.as_ref() {
+                  cur = ctx
+                    .sharing
+                    .get(usize::try_from(*share_idx).map_err(|_e| {
+                      format!("Share index {share_idx} exceeds usize")
+                    })?)
+                    .ok_or_else(|| format!("invalid Share index {share_idx}"))?
+                    .clone();
+                }
                 match cur.as_ref() {
                   IxonExpr::App(f2, a2) => {
                     canonical_args.push(a2.clone());
@@ -494,20 +508,29 @@ fn ingress_expr<M: KernelMode>(
                 }
               }
               canonical_args.reverse();
-              let head_ixon = cur;
+              let mut head_ixon = cur;
+              while let IxonExpr::Share(share_idx) = head_ixon.as_ref() {
+                head_ixon = ctx
+                  .sharing
+                  .get(usize::try_from(*share_idx).map_err(|_e| {
+                    format!("Share index {share_idx} exceeds usize")
+                  })?)
+                  .ok_or_else(|| format!("invalid Share index {share_idx}"))?
+                  .clone();
+              }
               let n_args = canonical_args.len();
 
-              // Per-arg arena from entries. Kept entries map canon_idx
-              // → arena index; sparse lookup keyed by position keeps
-              // the distribution robust even if entries are reordered.
-              let mut arg_arenas: Vec<u64> = vec![0; n_args];
-              for entry in entries.iter() {
-                if let CallSiteEntry::Kept { canon_idx, meta } = entry
-                  && (*canon_idx as usize) < n_args
-                {
-                  arg_arenas[*canon_idx as usize] = *meta;
-                }
+              if canon_meta.len() != n_args {
+                let head_name = resolve_name(cs_name, ctx.names);
+                return Err(format!(
+                  "CallSite for '{}' has {} canonical metadata entries but \
+                   canonical telescope has {} args",
+                  head_name.pretty(),
+                  canon_meta.len(),
+                  n_args
+                ));
               }
+              let arg_arenas = canon_meta.clone();
 
               // Build the head KExpr inline. `cs_name` is the name
               // address stored in the CallSite (e.g. the address of
@@ -1423,6 +1446,45 @@ fn ingress_muts_block<M: KernelMode>(
     }
   }
 
+  // Canonicity validation for Indc-only blocks.
+  //
+  // Per `docs/ix_canonicity.md` §6.0, the inductive block's primary
+  // members ship in `sort_consts` canonical order. Take that ordering
+  // as the alleged partition (each member ↔ class index = its position)
+  // and reject any adjacent pair that doesn't satisfy strict `Less`.
+  //
+  // Skip Recr blocks (they contain primary + aux recursors, with the
+  // aux portion in kernel-computed canonical order, not stored
+  // sort_consts) and Defn blocks (the plan focuses on Indc; defn-block
+  // ordering can be added later if needed).
+  //
+  // Returns `TcError::NonCanonicalBlock` on failure, propagated as the
+  // string error variant `ingress_muts_block` already returns.
+  let mut indcs: Vec<(KId<M>, &KConst<M>)> = Vec::new();
+  for (id, c) in &results {
+    if matches!(c, KConst::Indc { .. }) {
+      indcs.push((id.clone(), c));
+    }
+  }
+  let all_primary_indc = !indcs.is_empty()
+    && indcs.len()
+      == members.iter().filter(|m| matches!(m, IxonMutConst::Indc(_))).count();
+  if all_primary_indc
+    && members.iter().all(|m| matches!(m, IxonMutConst::Indc(_)))
+  {
+    // Resolve a ctor by id by scanning the ingested results — simpler
+    // than threading the env, since the comparator only needs Ctor
+    // payloads for Indc ctors.
+    let results_ref: &Vec<(KId<M>, KConst<M>)> = &results;
+    let resolve_ctor = |cid: &KId<M>| -> Option<KConst<M>> {
+      results_ref.iter().find(|(rid, _)| rid == cid).map(|(_, c)| c.clone())
+    };
+    crate::ix::kernel::canonical_check::validate_canonical_block_single_pass::<
+      M,
+    >(entry_addr, &indcs, &resolve_ctor)
+    .map_err(|e| format!("{e}"))?;
+  }
+
   Ok(results)
 }
 
@@ -2279,7 +2341,9 @@ fn lean_const_to_kconst(
 pub fn lean_ingress(lean_env: &LeanEnv) -> KEnv<Meta> {
   use std::time::Instant;
   let quiet = std::env::var("IX_QUIET").is_ok();
-  let kenv = KEnv::<Meta>::new();
+  let kenv = KEnv::<Meta>::new_with_recursor_aux_order(
+    super::env::RecursorAuxOrder::Source,
+  );
 
   // Build the env-wide name → LEON-addr map once. Threaded through every
   // KId construction below so all addresses in orig_kenv — whether
@@ -2465,6 +2529,8 @@ pub fn lean_ingress(lean_env: &LeanEnv) -> KEnv<Meta> {
 pub fn ixon_ingress<M: KernelMode>(
   ixon_env: &IxonEnv,
 ) -> Result<(KEnv<M>, InternTable<M>), String> {
+  validate_no_reserved_marker_addresses(ixon_env)?;
+
   let intern = InternTable::new();
 
   // Build the address → Lean-name lookup and the Lean-name → projection-
@@ -2588,10 +2654,45 @@ pub fn ixon_ingress<M: KernelMode>(
   Ok((zenv, intern))
 }
 
+fn validate_no_reserved_marker_addresses(
+  ixon_env: &IxonEnv,
+) -> Result<(), String> {
+  for entry in ixon_env.consts.iter() {
+    if let Some(marker) = reserved_marker_name(entry.key()) {
+      return Err(format!(
+        "reserved kernel marker address {marker} ({}) used as an Ixon constant key",
+        entry.key().hex()
+      ));
+    }
+    for (idx, addr) in entry.value().refs.iter().enumerate() {
+      if let Some(marker) = reserved_marker_name(addr) {
+        return Err(format!(
+          "reserved kernel marker address {marker} ({}) used in refs[{idx}] of Ixon constant {}",
+          addr.hex(),
+          entry.key().hex()
+        ));
+      }
+    }
+  }
+
+  for entry in ixon_env.named.iter() {
+    if let Some(marker) = reserved_marker_name(&entry.value().addr) {
+      return Err(format!(
+        "reserved kernel marker address {marker} ({}) used as the named address for {}",
+        entry.value().addr.hex(),
+        entry.key().pretty()
+      ));
+    }
+  }
+
+  Ok(())
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
   use crate::ix::env::{self, BinderInfo};
+  use crate::ix::ixon::metadata::CallSiteEntry;
   use crate::ix::kernel::expr::ExprData;
   use crate::ix::kernel::level::UnivData;
 
@@ -2743,6 +2844,49 @@ mod tests {
     aux.insert(name.clone(), real.clone());
     let got = resolve_lean_name_addr(&name, Some(&primary), Some(&aux));
     assert_eq!(got, real);
+  }
+
+  #[test]
+  fn ixon_ingress_rejects_reserved_marker_named_addr() {
+    let env = IxonEnv::new();
+    let marker = crate::ix::kernel::primitive::PrimAddrs::new().eager_reduce;
+    env.register_name(
+      mk_name("Evil.marker"),
+      crate::ix::ixon::env::Named::with_addr(marker),
+    );
+
+    let err = match ixon_ingress::<Meta>(&env) {
+      Ok(_) => panic!("expected reserved marker rejection"),
+      Err(err) => err,
+    };
+    assert!(err.contains("eager_reduce"), "{err}");
+    assert!(err.contains("named address"), "{err}");
+  }
+
+  #[test]
+  fn ixon_ingress_rejects_reserved_marker_refs() {
+    let env = IxonEnv::new();
+    let marker = crate::ix::kernel::primitive::PrimAddrs::new().eager_reduce;
+    let constant = crate::ix::ixon::constant::Constant::with_tables(
+      crate::ix::ixon::constant::ConstantInfo::Axio(
+        crate::ix::ixon::constant::Axiom {
+          is_unsafe: false,
+          lvls: 0,
+          typ: IxonExpr::sort(0),
+        },
+      ),
+      vec![],
+      vec![marker],
+      vec![],
+    );
+    env.store_const(Address::hash(b"evil-const"), constant);
+
+    let err = match ixon_ingress::<Meta>(&env) {
+      Ok(_) => panic!("expected reserved marker rejection"),
+      Err(err) => err,
+    };
+    assert!(err.contains("eager_reduce"), "{err}");
+    assert!(err.contains("refs[0]"), "{err}");
   }
 
   // ---- lean_expr_to_zexpr: variant coverage ----
@@ -2985,6 +3129,72 @@ mod tests {
     let k2 = lean_expr_to_zexpr_with_kenv(&e, &[], &env, None, None);
     // Cache hit → same interned result.
     assert!(k1.ptr_eq(&k2));
+  }
+
+  #[test]
+  fn callsite_ingress_uses_canon_meta_for_collapsed_canonical_arg() {
+    let head_name = mk_name("Head.rec");
+    let arg_name = mk_name("GoodArg");
+    let bad_name = mk_name("BadArg");
+    let head_name_addr = lean_name_to_addr(&head_name);
+    let arg_name_addr = lean_name_to_addr(&arg_name);
+    let bad_name_addr = lean_name_to_addr(&bad_name);
+    let head_ref_addr = Address::hash(b"head-content");
+    let arg_ref_addr = Address::hash(b"arg-content");
+
+    let mut names = FxHashMap::default();
+    names.insert(head_name_addr.clone(), head_name.clone());
+    names.insert(arg_name_addr.clone(), arg_name.clone());
+    names.insert(bad_name_addr.clone(), bad_name);
+
+    let mut arena = ExprMeta::default();
+    let bad_entry_meta = arena.alloc(ExprMetaData::Ref { name: bad_name_addr });
+    let arg_canon_meta = arena.alloc(ExprMetaData::Ref { name: arg_name_addr });
+    let root = arena.alloc(ExprMetaData::CallSite {
+      name: head_name_addr,
+      entries: vec![CallSiteEntry::Collapsed {
+        sharing_idx: 0,
+        meta: bad_entry_meta,
+      }],
+      canon_meta: vec![arg_canon_meta],
+    });
+
+    let ixon = IxonExpr::app(
+      IxonExpr::reference(0, vec![]),
+      IxonExpr::reference(1, vec![]),
+    );
+    let sharing: Vec<Arc<IxonExpr>> = vec![];
+    let refs = vec![head_ref_addr.clone(), arg_ref_addr.clone()];
+    let univs: Vec<Arc<IxonUniv>> = vec![];
+    let intern = InternTable::<Meta>::new();
+    let ctx = Ctx {
+      sharing: &sharing,
+      refs: &refs,
+      univs: &univs,
+      mut_ctx: vec![],
+      arena: &arena,
+      names: &names,
+      lvls: vec![],
+      intern: &intern,
+      synth_counter: Cell::new(0),
+    };
+    let ixon_env = IxonEnv::new();
+    let mut cache = ExprCache::<Meta>::default();
+
+    let k = ingress_expr(&ixon, root, &ctx, &ixon_env, &mut cache).unwrap();
+    let ExprData::App(f, a, _) = k.data() else {
+      panic!("expected App, got {:?}", k.data());
+    };
+    let ExprData::Const(head_id, _, _) = f.data() else {
+      panic!("expected CallSite head Const, got {:?}", f.data());
+    };
+    let ExprData::Const(arg_id, _, _) = a.data() else {
+      panic!("expected canonical arg Const, got {:?}", a.data());
+    };
+    assert_eq!(head_id.addr, head_ref_addr);
+    assert_eq!(head_id.name, head_name);
+    assert_eq!(arg_id.addr, arg_ref_addr);
+    assert_eq!(arg_id.name, arg_name);
   }
 
   #[test]

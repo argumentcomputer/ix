@@ -552,7 +552,35 @@ pub fn decompile_expr(
     })
   }
 
-  use crate::ix::compile::surgery;
+  fn collect_ixon_telescope_expanding_shares(
+    expr: &Arc<Expr>,
+    cache: &BlockCache,
+  ) -> Result<(Arc<Expr>, Vec<Arc<Expr>>), DecompileError> {
+    let mut args: Vec<Arc<Expr>> = Vec::new();
+    let mut cur = expr.clone();
+    loop {
+      while let Expr::Share(share_idx) = cur.as_ref() {
+        cur = cache
+          .sharing
+          .get(*share_idx as usize)
+          .ok_or_else(|| DecompileError::InvalidShareIndex {
+            idx: *share_idx,
+            max: cache.sharing.len(),
+            constant: cache.current_const.clone(),
+          })?
+          .clone();
+      }
+      match cur.as_ref() {
+        Expr::App(f, a) => {
+          args.push(a.clone());
+          cur = f.clone();
+        },
+        _ => break,
+      }
+    }
+    args.reverse();
+    Ok((cur, args))
+  }
 
   enum Frame {
     Decompile(Arc<Expr>, u64),
@@ -755,23 +783,25 @@ pub fn decompile_expr(
           },
 
           // CallSite: surgered call-site — reconstruct source-order telescope
-          (ExprMetaData::CallSite { name, entries }, _) => {
+          (ExprMetaData::CallSite { name, entries, canon_meta: _ }, _) => {
             // Collect the canonical Ixon App telescope
             let (head_ixon, canonical_args) =
-              surgery::collect_ixon_telescope(&e);
+              collect_ixon_telescope_expanding_shares(&e, cache)?;
 
-            // Invariant: every canonical arg must correspond to exactly one
-            // Kept entry. BuildTelescope below will pop `entries.len()`
-            // results off the stack; if a Kept entry silently dropped its
-            // decompile, the spine would be malformed.
+            // Most CallSites have one Kept entry per canonical arg. Split-SCC
+            // minor adaptation is the exception: the canonical arg is a
+            // synthesized wrapper, while the source-order argument is stored
+            // as Collapsed metadata for roundtrip. In that case canonical
+            // args may outnumber Kept entries, but every Kept entry still
+            // must point at an existing canonical slot.
             let kept_count = entries
               .iter()
               .filter(|e| matches!(e, CallSiteEntry::Kept { .. }))
               .count();
-            if kept_count != canonical_args.len() {
+            if kept_count > canonical_args.len() {
               return Err(DecompileError::BadConstantFormat {
                 msg: format!(
-                  "CallSite in '{}': {} Kept entries but canonical telescope has {} args",
+                  "CallSite in '{}': {} Kept entries but canonical telescope has only {} args",
                   cache.current_const,
                   kept_count,
                   canonical_args.len()
@@ -1558,8 +1588,28 @@ fn decompile_inductive(
       ConstantMeta::default()
     };
 
-    let ctor_val =
-      decompile_constructor(ctor, &ctor_meta, name.clone(), cache, stt, dstt)?;
+    // Constructor metadata is per-constructor, not inherited from the parent
+    // inductive. In particular, aux-generated `.below` constructors can carry
+    // CallSite metadata whose Collapsed entries point into the constructor's
+    // own `meta_sharing` table. Install those extensions only while walking
+    // this constructor so they do not leak across sibling constructor arenas.
+    let saved_meta_sharing = std::mem::replace(
+      &mut cache.meta_sharing,
+      ctor_meta.meta_sharing.clone(),
+    );
+    let refs_len = cache.refs.len();
+    let univs_len = cache.univ_table.len();
+    cache.refs.extend(ctor_meta.meta_refs.iter().cloned());
+    cache.univ_table.extend(ctor_meta.meta_univs.iter().cloned());
+
+    let ctor_result =
+      decompile_constructor(ctor, &ctor_meta, name.clone(), cache, stt, dstt);
+
+    cache.meta_sharing = saved_meta_sharing;
+    cache.refs.truncate(refs_len);
+    cache.univ_table.truncate(univs_len);
+
+    let ctor_val = ctor_result?;
     ctor_names.push(ctor_val.cnst.name.clone());
     ctors.push(ctor_val);
   }
@@ -2674,10 +2724,11 @@ fn roundtrip_block(
         current_const: name.pretty(),
         ..Default::default()
       };
-      // Note: do NOT load_meta_extensions here. The roundtrip_block path
-      // decompiles canonical Ixon with original metadata. Extension tables
-      // are only relevant for user definitions with CallSite surgery nodes,
-      // which aux_gen constants never have.
+      // Aux_gen constants can carry CallSite metadata after source-order
+      // surgery of `.below`/`.brecOn` calls. Load the per-constant metadata
+      // extensions so Collapsed entries have their source-order arguments
+      // available during binder-name restoration.
+      dec_cache.load_meta_extensions(&orig_meta);
 
       // Find the Ixon data for this constant.
       let class_idx = name_to_class.get(&name).copied().unwrap_or(0);
@@ -3242,6 +3293,247 @@ fn rehydrate_aux_perms_from_env(stt: &CompileState) {
   }
 }
 
+fn block_mut_consts_from_env(
+  all_names: &[Name],
+  env: &LeanEnv,
+) -> Result<Vec<LeanMutConst>, DecompileError> {
+  let mut cs = Vec::with_capacity(all_names.len());
+  for name in all_names {
+    let Some(LeanConstantInfo::InductInfo(ind)) = env.get(name) else {
+      return Err(DecompileError::BadConstantFormat {
+        msg: format!(
+          "decompile aux plan: block member '{}' is not an inductive",
+          name.pretty()
+        ),
+      });
+    };
+    let mut ctors = Vec::with_capacity(ind.ctors.len());
+    for ctor_name in &ind.ctors {
+      match env.get(ctor_name) {
+        Some(LeanConstantInfo::CtorInfo(ctor)) => ctors.push(ctor.clone()),
+        _ => {
+          return Err(DecompileError::BadConstantFormat {
+            msg: format!(
+              "decompile aux plan: constructor '{}' for '{}' is missing",
+              ctor_name.pretty(),
+              name.pretty()
+            ),
+          });
+        },
+      }
+    }
+    cs.push(LeanMutConst::Indc(Ind { ind: ind.clone(), ctors }));
+  }
+  Ok(cs)
+}
+
+#[derive(Clone)]
+struct StoredPlanBlock {
+  class_names: Vec<Vec<Name>>,
+  aux_layout: Option<crate::ix::ixon::env::AuxLayout>,
+  flat_names: Vec<Name>,
+}
+
+fn names_from_addrs(
+  addrs: &[Address],
+  stt: &CompileState,
+) -> Option<Vec<Name>> {
+  addrs.iter().map(|addr| stt.env.get_name(addr)).collect()
+}
+
+fn indc_source_all(name: &Name, stt: &CompileState) -> Option<Vec<Name>> {
+  let named = stt.env.named.get(name)?;
+  match &named.meta.info {
+    ConstantMetaInfo::Indc { all, .. } => names_from_addrs(all, stt),
+    _ => None,
+  }
+}
+
+fn stored_plan_blocks_for_original_all(
+  original_all: &[Name],
+  stt: &CompileState,
+) -> Vec<StoredPlanBlock> {
+  let original_set: FxHashSet<Name> = original_all.iter().cloned().collect();
+  let mut candidates = Vec::new();
+  let mut seen: FxHashSet<Vec<Name>> = FxHashSet::default();
+
+  for muts_entry in stt.env.named.iter() {
+    let ConstantMetaInfo::Muts { all, aux_layout } =
+      &muts_entry.value().meta.info
+    else {
+      continue;
+    };
+
+    let mut class_names = Vec::with_capacity(all.len());
+    let mut flat_names = Vec::new();
+    let mut valid = true;
+    for class in all {
+      let Some(names) = names_from_addrs(class, stt) else {
+        valid = false;
+        break;
+      };
+      if names.is_empty() {
+        valid = false;
+        break;
+      }
+      flat_names.extend(names.iter().cloned());
+      class_names.push(names);
+    }
+    if !valid || flat_names.is_empty() {
+      continue;
+    }
+    if !flat_names.iter().all(|name| original_set.contains(name)) {
+      continue;
+    }
+
+    let same_source_all = flat_names.iter().any(|name| {
+      indc_source_all(name, stt)
+        .is_some_and(|source_all| source_all.as_slice() == original_all)
+    });
+    if !same_source_all {
+      continue;
+    }
+
+    if !seen.insert(flat_names.clone()) {
+      continue;
+    }
+    candidates.push(StoredPlanBlock {
+      class_names,
+      aux_layout: aux_layout.clone(),
+      flat_names,
+    });
+  }
+
+  // Prefer persisted minimal SCCs. If a stale/full source block is present,
+  // it is a strict superset of the minimal candidates and would recreate an
+  // over-merged call-site plan after deserialization.
+  candidates
+    .iter()
+    .filter(|candidate| {
+      let candidate_set: FxHashSet<Name> =
+        candidate.flat_names.iter().cloned().collect();
+      !candidates.iter().any(|other| {
+        other.flat_names.len() < candidate.flat_names.len()
+          && other.flat_names.iter().all(|name| candidate_set.contains(name))
+      })
+    })
+    .cloned()
+    .collect()
+}
+
+fn fallback_plan_blocks_from_sort(
+  all_names: &[Name],
+  env: &LeanEnv,
+  stt: &CompileState,
+) -> Result<Vec<StoredPlanBlock>, DecompileError> {
+  use crate::ix::compile::{BlockCache as CompileBlockCache, sort_consts};
+
+  let cs = block_mut_consts_from_env(all_names, env)?;
+  if cs.is_empty() {
+    return Ok(Vec::new());
+  }
+
+  let mut cache = CompileBlockCache::default();
+  let refs: Vec<&LeanMutConst> = cs.iter().collect();
+  let sorted_classes = sort_consts(&refs, &mut cache, stt).map_err(|e| {
+    DecompileError::BadConstantFormat {
+      msg: format!("decompile aux plan sort_consts: {e}"),
+    }
+  })?;
+  let class_names: Vec<Vec<Name>> = sorted_classes
+    .iter()
+    .map(|class| class.iter().map(|c| c.name()).collect())
+    .collect();
+  let aux_layout = all_names
+    .first()
+    .and_then(|n| stt.aux_perms.get(n).map(|layout| layout.clone()));
+  let flat_names = class_names.iter().flatten().cloned().collect();
+
+  Ok(vec![StoredPlanBlock { class_names, aux_layout, flat_names }])
+}
+
+fn install_decompile_call_site_plans(
+  all_names: &[Name],
+  aux_members: &[(AuxKind, Name)],
+  env: &LeanEnv,
+  stt: &CompileState,
+) -> Result<(), DecompileError> {
+  use crate::ix::compile::{aux_gen, surgery};
+
+  if all_names.is_empty() {
+    return Ok(());
+  }
+
+  let original_all: Vec<Name> = all_names.to_vec();
+  let mut plan_blocks = stored_plan_blocks_for_original_all(&original_all, stt);
+  if plan_blocks.is_empty() {
+    plan_blocks = fallback_plan_blocks_from_sort(all_names, env, stt)?;
+  }
+  let aux_member_names: FxHashSet<Name> =
+    aux_members.iter().map(|(_, n)| n.clone()).collect();
+
+  for block in plan_blocks {
+    if block.class_names.is_empty() {
+      continue;
+    }
+    let user_layout_changed = block.class_names.len() < original_all.len()
+      || (block.class_names.len() == original_all.len()
+        && block
+          .class_names
+          .iter()
+          .zip(original_all.iter())
+          .any(|(class, orig)| class[0] != *orig));
+    let aux_layout_changed = block.aux_layout.as_ref().is_some_and(|layout| {
+      layout.perm.iter().enumerate().any(|(source_j, &canonical_i)| {
+        canonical_i != aux_gen::nested::PERM_OUT_OF_SCC
+          && canonical_i != source_j
+      })
+    });
+
+    if !user_layout_changed && !aux_layout_changed {
+      continue;
+    }
+
+    let plans = surgery::compute_call_site_plans(
+      &block.class_names,
+      &original_all,
+      env,
+      block.aux_layout.as_ref(),
+    )
+    .map_err(|e| DecompileError::BadConstantFormat {
+      msg: format!("decompile aux plan compute_call_site_plans: {e}"),
+    })?;
+
+    for (name, plan) in plans {
+      if let Some(brecon_name) = surgery::rec_name_to_brecon_name(&name)
+        && (aux_member_names.contains(&brecon_name)
+          || env.contains_key(&brecon_name))
+        && !stt.brec_on_call_site_plans.contains_key(&brecon_name)
+      {
+        stt.brec_on_call_site_plans.insert(
+          brecon_name,
+          surgery::BRecOnCallSitePlan::from_rec_plan(&plan),
+        );
+      }
+      if let Some(below_name) = surgery::rec_name_to_below_name(&name)
+        && (aux_member_names.contains(&below_name)
+          || env.contains_key(&below_name))
+        && !stt.below_call_site_plans.contains_key(&below_name)
+      {
+        stt.below_call_site_plans.insert(
+          below_name,
+          surgery::BRecOnCallSitePlan::from_rec_plan(&plan),
+        );
+      }
+      if !stt.call_site_plans.contains_key(&name) {
+        stt.call_site_plans.insert(name, plan);
+      }
+    }
+  }
+
+  Ok(())
+}
+
 fn decompile_block_aux_gen(
   all_names: &[Name],
   aux_members: &[(AuxKind, Name)],
@@ -3423,6 +3715,12 @@ fn decompile_block_aux_gen(
   for (n, ci) in &generated_consts {
     env.entry(n.clone()).or_insert_with(|| ci.clone());
     dstt.env.entry(n.clone()).or_insert_with(|| ci.clone());
+  }
+
+  if let Err(e) =
+    install_decompile_call_site_plans(all_names, aux_members, env, stt)
+  {
+    aux_gen_errors.push((all_names[0].clone(), e));
   }
 
   // Phase 1b: Generate .casesOn definitions.
@@ -4466,8 +4764,11 @@ mod tests {
       CallSiteEntry::Kept { canon_idx: 0, meta: leaf0 }, // source[1] = Var(11) -> canon 0
       CallSiteEntry::Kept { canon_idx: 1, meta: leaf1 }, // source[2] = Var(12) -> canon 1
     ];
-    let callsite_root =
-      arena.alloc(ExprMetaData::CallSite { name: head_addr.clone(), entries });
+    let callsite_root = arena.alloc(ExprMetaData::CallSite {
+      name: head_addr.clone(),
+      entries,
+      canon_meta: vec![leaf0, leaf1, leaf2],
+    });
 
     // Canonical Ixon App spine: head applied to canonical-order args
     // (Var 11 first, Var 12 second, Var 10 third).
@@ -4556,8 +4857,11 @@ mod tests {
       CallSiteEntry::Collapsed { sharing_idx: 0, meta: motive_ref_leaf },
       CallSiteEntry::Kept { canon_idx: 0, meta: major_leaf },
     ];
-    let callsite_root =
-      arena.alloc(ExprMetaData::CallSite { name: head_addr.clone(), entries });
+    let callsite_root = arena.alloc(ExprMetaData::CallSite {
+      name: head_addr.clone(),
+      entries,
+      canon_meta: vec![major_leaf],
+    });
 
     // Canonical Ixon spine: App(head, major). Major is a distinguishable
     // marker bvar so we can assert it lands in the right position.
@@ -4678,6 +4982,7 @@ mod tests {
         CallSiteEntry::Collapsed { sharing_idx: 0, meta: motive_ref_leaf },
         CallSiteEntry::Kept { canon_idx: 0, meta: major_leaf },
       ],
+      canon_meta: vec![major_leaf],
     });
 
     // Ixon expressions: type is Sort 0, value is the canonical App spine

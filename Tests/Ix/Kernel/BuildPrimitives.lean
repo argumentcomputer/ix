@@ -45,10 +45,13 @@ def kernelPrimitives : Array String := #[
   "Quot", "Quot.mk", "Quot.lift", "Quot.ind",
   "Lean.reduceBool", "Lean.reduceNat", "eagerReduce",
   "System.Platform.numBits",
+  "System.Platform.getNumBits", "Subtype.val",
+  "String.toByteArray", "ByteArray.empty",
   "Nat.decLe", "Nat.decEq", "Nat.decLt",
-  "Decidable.isTrue", "Decidable.isFalse",
+  "Decidable.rec", "Decidable.isTrue", "Decidable.isFalse",
   "Nat.le_of_ble_eq_true", "Nat.not_le_of_not_ble_eq_true",
   "Nat.eq_of_beq_eq_true", "Nat.ne_of_beq_eq_false",
+  "Fin",
   "Bool.noConfusion",
   -- Int + ctors + ops. Native reduction for Int operations short-circuits
   -- the symbolic `Int.rec` + `decNonneg` cascade that would otherwise get

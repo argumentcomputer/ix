@@ -423,7 +423,7 @@ pub(super) fn mk_forall(body: LeanExpr, binders: &[LocalDecl]) -> LeanExpr {
 /// Build a lambda chain by batch-abstracting all FVars in a single pass.
 ///
 /// Same semantics as `mk_forall` but produces `λ (x : T), body`.
-pub(super) fn mk_lambda(body: LeanExpr, binders: &[LocalDecl]) -> LeanExpr {
+pub(crate) fn mk_lambda(body: LeanExpr, binders: &[LocalDecl]) -> LeanExpr {
   mk_binder_chain(body, binders, BinderKind::Lambda)
 }
 
@@ -576,7 +576,7 @@ pub(super) fn batch_abstract(
 ///
 /// `instantiate1` is used when peeling forall binders during recursor
 /// construction (matching Lean C++ and lean4lean).
-pub(super) fn instantiate1(
+pub(crate) fn instantiate1(
   body: &LeanExpr,
   replacement: &LeanExpr,
 ) -> LeanExpr {
@@ -837,7 +837,7 @@ pub(super) fn shift_vars(
 // =========================================================================
 
 /// Substitute universe parameters in expressions.
-pub(super) fn subst_levels(
+pub(crate) fn subst_levels(
   expr: &LeanExpr,
   params: &[Name],
   univs: &[Level],
@@ -1461,7 +1461,7 @@ pub(super) fn mk_const(name: &Name, univs: &[Level]) -> LeanExpr {
 ///
 /// Called by the kernel's `mk_local_decl` during inductive processing
 /// to ensure parameter/field types are clean before entering the local context.
-pub(super) fn consume_type_annotations(e: &LeanExpr) -> LeanExpr {
+pub(crate) fn consume_type_annotations(e: &LeanExpr) -> LeanExpr {
   let (head, args) = decompose_apps(e);
   if let ExprData::Const(name, _, _) = head.as_data() {
     let n = name.pretty();
@@ -1478,7 +1478,7 @@ pub(super) fn consume_type_annotations(e: &LeanExpr) -> LeanExpr {
 }
 
 /// Decompose an application spine: `f a1 a2 ... an` -> `(f, [a1, ..., an])`.
-pub(super) fn decompose_apps(expr: &LeanExpr) -> (LeanExpr, Vec<LeanExpr>) {
+pub(crate) fn decompose_apps(expr: &LeanExpr) -> (LeanExpr, Vec<LeanExpr>) {
   let mut args = Vec::new();
   let mut cur = expr.clone();
   while let ExprData::App(f, a, _) = cur.as_data() {

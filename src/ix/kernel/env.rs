@@ -6,14 +6,15 @@
 //! All mutable state uses `DashMap`/`DashSet` for lock-free concurrent access.
 //! Multiple `TypeChecker` instances can share one `Arc<KEnv>` and run in parallel.
 
-use std::collections::BTreeSet;
-use std::sync::{Arc, OnceLock};
+use std::collections::{BTreeSet, HashSet};
+use std::sync::{Arc, Condvar, Mutex, OnceLock};
 
 use dashmap::{DashMap, DashSet};
 
 use crate::ix::address::Address;
 
 use super::constant::{KConst, RecRule};
+use super::error::TcError;
 use super::expr::KExpr;
 use super::id::KId;
 use super::level::KUniv;
@@ -67,6 +68,32 @@ pub struct GeneratedRecursor<M: KernelMode> {
   pub rules: Vec<RecRule<M>>,
 }
 
+/// Which nested-auxiliary order generated recursor validation should use.
+///
+/// Lean's original environment emits nested auxiliary recursors in the
+/// source/queue order used by `elim_nested_inductive_fn`. Ix's compiled
+/// environment canonicalizes the aux portion with `sort_consts` partition
+/// refinement, so its stored recursors must be regenerated in canonical order.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RecursorAuxOrder {
+  Source,
+  Canonical,
+}
+
+/// Result of entering the block-check coordinator.
+pub enum BlockCheckStart<M: KernelMode> {
+  /// A finished result was already cached, or another owner finished while
+  /// this caller waited.
+  Cached(Result<(), TcError<M>>),
+  /// This caller owns the check and must publish the result.
+  Owner(BlockCheckToken<M>),
+}
+
+/// Ownership token for a block currently being checked.
+pub struct BlockCheckToken<M: KernelMode> {
+  block: KId<M>,
+}
+
 /// The global zero kernel environment.
 ///
 /// Thread-safe via `DashMap`/`DashSet`: supports concurrent reads and writes
@@ -102,6 +129,11 @@ pub struct KEnv<M: KernelMode> {
   /// Both modes read from this same cache — an `infer_only` lookup happily
   /// consumes a full-mode result since it's strictly stronger.
   pub infer_cache: DashMap<(Addr, Addr), KExpr<M>>,
+  /// Infer-only cache: keyed like `infer_cache`, but populated only by
+  /// `with_infer_only` synthesis and read only while infer-only is active.
+  /// This keeps unchecked results out of the validated full-mode cache while
+  /// still sharing repeated proof-irrelevance/projection probes.
+  pub infer_only_cache: DashMap<(Addr, Addr), KExpr<M>>,
   /// Def-eq cache: keyed by (expr_hash, expr_hash, ctx_hash). Context-dependent.
   pub def_eq_cache: DashMap<(Addr, Addr, Addr), bool>,
   /// Failed def-eq pairs in lazy delta: canonical ordering by hash.
@@ -112,6 +144,8 @@ pub struct KEnv<M: KernelMode> {
   pub ingress_cache: DashMap<(Addr, Addr), KExpr<M>>,
   /// Generated recursors, keyed by inductive Muts block id.
   pub recursor_cache: DashMap<KId<M>, Vec<GeneratedRecursor<M>>>,
+  /// Nested-auxiliary order expected by stored recursors in this environment.
+  pub recursor_aux_order: RecursorAuxOrder,
   /// Maps the set of major inductive KIds to the inductive block id.
   pub rec_majors_cache: DashMap<BTreeSet<KId<M>>, KId<M>>,
   /// Mutual-block peer-agreement cache: records block ids whose peers have
@@ -120,6 +154,13 @@ pub struct KEnv<M: KernelMode> {
   /// succeeds; collapses the naturally O(N²) per-peer iteration to O(N)
   /// total work per block across all the peers' individual checks.
   pub block_peer_agreement_cache: DashSet<KId<M>>,
+  /// Whole-block type-check results. Both successes and failures are cached,
+  /// so every member of a bad block reports the same structured failure.
+  pub block_check_results: DashMap<KId<M>, Result<(), TcError<M>>>,
+  /// Blocks currently owned by a checker thread.
+  pub block_checks_in_progress: Mutex<HashSet<KId<M>>>,
+  /// Waiters park here while another thread checks their block.
+  pub block_check_cv: Condvar,
 }
 
 impl<M: KernelMode> Default for KEnv<M> {
@@ -130,6 +171,12 @@ impl<M: KernelMode> Default for KEnv<M> {
 
 impl<M: KernelMode> KEnv<M> {
   pub fn new() -> Self {
+    Self::new_with_recursor_aux_order(RecursorAuxOrder::Canonical)
+  }
+
+  pub fn new_with_recursor_aux_order(
+    recursor_aux_order: RecursorAuxOrder,
+  ) -> Self {
     KEnv {
       consts: DashMap::default(),
       blocks: DashMap::default(),
@@ -138,12 +185,17 @@ impl<M: KernelMode> KEnv<M> {
       whnf_cache: DashMap::default(),
       whnf_no_delta_cache: DashMap::default(),
       infer_cache: DashMap::default(),
+      infer_only_cache: DashMap::default(),
       def_eq_cache: DashMap::default(),
       def_eq_failure: DashSet::default(),
       ingress_cache: DashMap::default(),
       recursor_cache: DashMap::default(),
+      recursor_aux_order,
       rec_majors_cache: DashMap::default(),
       block_peer_agreement_cache: DashSet::default(),
+      block_check_results: DashMap::default(),
+      block_checks_in_progress: Mutex::new(HashSet::new()),
+      block_check_cv: Condvar::new(),
     }
   }
 
@@ -168,6 +220,12 @@ impl<M: KernelMode> KEnv<M> {
   }
 
   pub fn insert(&self, id: KId<M>, c: KConst<M>) {
+    if let Some(marker) = super::primitive::reserved_marker_name(&id.addr) {
+      panic!(
+        "attempted to insert {id} at reserved kernel marker address {marker} ({})",
+        id.addr.hex()
+      );
+    }
     self.consts.insert(id, c);
   }
 
@@ -198,11 +256,55 @@ impl<M: KernelMode> KEnv<M> {
   pub fn insert_block(&self, id: KId<M>, members: Vec<KId<M>>) {
     self.blocks.insert(id, members);
   }
+
+  /// Enter the shared whole-block checker.
+  ///
+  /// The first caller for `block` becomes owner. Concurrent callers wait on the
+  /// condition variable until the owner publishes a cached result.
+  pub fn begin_block_check(&self, block: &KId<M>) -> BlockCheckStart<M> {
+    loop {
+      if let Some(result) = self.block_check_results.get(block) {
+        return BlockCheckStart::Cached(result.value().clone());
+      }
+
+      let mut in_progress = self.block_checks_in_progress.lock().unwrap();
+      if let Some(result) = self.block_check_results.get(block) {
+        return BlockCheckStart::Cached(result.value().clone());
+      }
+      if in_progress.insert(block.clone()) {
+        return BlockCheckStart::Owner(BlockCheckToken {
+          block: block.clone(),
+        });
+      }
+
+      while in_progress.contains(block) {
+        in_progress = self.block_check_cv.wait(in_progress).unwrap();
+        if let Some(result) = self.block_check_results.get(block) {
+          return BlockCheckStart::Cached(result.value().clone());
+        }
+      }
+    }
+  }
+
+  /// Publish a completed block-check result and wake all waiters.
+  pub fn finish_block_check(
+    &self,
+    token: BlockCheckToken<M>,
+    result: Result<(), TcError<M>>,
+  ) -> Result<(), TcError<M>> {
+    self.block_check_results.insert(token.block.clone(), result.clone());
+    let mut in_progress = self.block_checks_in_progress.lock().unwrap();
+    in_progress.remove(&token.block);
+    drop(in_progress);
+    self.block_check_cv.notify_all();
+    result
+  }
 }
 
 #[cfg(test)]
 mod tests {
   use super::super::mode::Anon;
+  use super::super::primitive::PrimAddrs;
   use super::*;
   use crate::ix::address::Address;
 
@@ -238,6 +340,14 @@ mod tests {
     env.insert(id.clone(), mk_axio("Nat"));
     assert_eq!(env.len(), 1);
     assert!(env.get(&id).is_some());
+  }
+
+  #[test]
+  #[should_panic(expected = "reserved kernel marker")]
+  fn insert_reserved_marker_panics() {
+    let env = KEnv::<Anon>::new();
+    let id = KId::new(PrimAddrs::new().eager_reduce, ());
+    env.insert(id, mk_axio("eager_reduce"));
   }
 
   #[test]

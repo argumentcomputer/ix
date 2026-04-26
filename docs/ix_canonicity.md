@@ -104,9 +104,9 @@ Lean' ◀─decompile─  Ixon + Metadata
 
 where `Lean' ≡ Lean` as Lean `ConstantInfo`s, not just observationally.
 
-## 4. Three Operational Invariants
+## 4. Four Operational Invariants
 
-The abstract property in §1 decomposes into three concrete invariants
+The abstract property in §1 decomposes into four concrete invariants
 that every stage of the pipeline must uphold:
 
 ### 4.1 Content-address invariance under declaration permutation
@@ -147,9 +147,61 @@ must preserve the original `N ↦ source position` relationship on
 decompile, even across Lean-version drift, so downstream constants
 continue to resolve their references consistently.
 
-These three invariants taken together give the full canonicity story:
+### 4.4 Kernel-side canonicity validation
+
+The kernel must not trust compile-side metadata for canonicity. It
+runs an independent `sort_consts` port (`src/ix/kernel/canonical_check.rs`)
+and validates against it in two modes:
+
+1. **Primary validation with refinement fallback.** When a
+   `Muts(Indc, …)` block
+   is ingested, the stored member list is taken as the alleged
+   canonical partition (each member at its own class index) and
+   adjacent pairs are required to satisfy **strong** strict `Less`
+   under the ported comparator. `Greater` rejects ordering violations;
+   `Equal` rejects uncollapsed alpha-equivalent pairs (the compiler
+   should have collapsed them to one canonical address). A weak
+   `Less` means the singleton partition itself supplied the ordering
+   for a block-local recursive reference, so the validator falls back
+   to full `sort_kconsts` refinement and accepts only if refinement
+   returns the same ordered list of singleton classes. Returns
+   `TcError::NonCanonicalBlock` on failure. Implemented as
+   `validate_canonical_block_single_pass` in `canonical_check.rs`,
+   wired into `ingress_muts_block` (`src/ix/kernel/ingress.rs`).
+
+2. **Iterative aux-discovery sort.** When the kernel rediscovers
+   nested auxiliaries during recursor generation
+   (`build_flat_block` in `src/ix/kernel/inductive.rs`), the
+   resulting aux set is unsorted: discovery order depends on the
+   primary ctor walk. The kernel synthesizes `KConst::Indc` views
+   of each aux (instantiating ext type with `spec_params`,
+   replacing the ctor result head with the synthetic aux KId) and
+   runs `sort_kconsts` — the iterative partition-refinement port —
+   to compute the canonical aux order. Stored aux recursors are
+   then validated by position against the kernel-canonical aux:
+   the stored `.rec_N` at rec-block position `n_originals + k`
+   must validate against `generated[n_originals + k]` via
+   `is_def_eq` on the recursor type.
+
+The primary validator is cheap (O(n) comparator calls, no fixpoint
+iteration) when every adjacent proof is strong. If any adjacent proof
+is weak, it runs the full iterative algorithm for that block. The
+iterative mode is also used when the kernel must derive canonical
+order from scratch (rediscovered aux). Both share the same comparator:
+`compare_kconst` / `compare_kexpr` / `compare_kuniv`.
+
+**Trust boundary.** The kernel never reads `AuxLayout.perm` or any
+other sidecar to decide canonical order — the sidecar persists
+Lean-source `_N` numbering only (§6.4). The canonical *order* is
+recomputed kernel-side every time, making it adversary-resistant:
+shipping a permuted recursor block triggers the position-by-position
+`is_def_eq` mismatch and rejects.
+
+These four invariants taken together give the full canonicity story:
 (4.1) fixes the forward direction, (4.2) fixes the round-trip,
-(4.3) fixes Lean interop under the permuted aux layout.
+(4.3) fixes Lean interop under the permuted aux layout, and (4.4)
+makes the kernel an independent oracle that doesn't trust the
+compiler's canonicity claims.
 
 ## 5. What Is Erased vs. What Is Preserved
 
@@ -164,8 +216,8 @@ Everything that depends on source choices is stripped before hashing:
 | `Expr.mdata` wrappers              | canonical form has no `Mdata` node                   |
 | Free variable identity             | FVar and MVar are rejected — `compile.rs:848-857`    |
 | De Bruijn depth artifacts          | indices are **the** identifier; no names survive     |
-| Lean `InductiveVal.all` order      | replaced by `sort_consts` canonical class order      |
-| Nested-aux discovery order         | replaced by structural aux sort                      |
+| Lean `InductiveVal.all` order      | replaced by `sort_consts` canonical class order; kernel enforces via `validate_canonical_block_single_pass` at ingress (§4.4) |
+| Nested-aux discovery order         | replaced by structural aux sort; kernel enforces via `sort_kconsts` on rediscovered aux + position-by-position recursor match (§4.4) |
 | `_N` suffixes on aux names         | internal `_nested.Ext_N` uses canonical `N`          |
 | Hygiene info on `Name`             | stripped by `compile_name`                           |
 
@@ -181,6 +233,7 @@ Everything needed to round-trip back to a source-faithful Lean
 | `Expr.mdata` KVMaps                     | `ExprMetaData::Mdata`                                |
 | Reference names (per `Const` / `Rec`)   | `ExprMetaData::Ref`                                  |
 | Projection struct name                  | `ExprMetaData::Prj`                                  |
+| Call-site source/canonical metadata     | `ExprMetaData::CallSite { entries, canon_meta }`     |
 | Level-parameter names                   | `ConstantMetaInfo::*.lvls`                           |
 | `InductiveVal.all` (Lean source order)  | `ConstantMetaInfo::{Def,Indc,Rec}.all`               |
 | `ReducibilityHints`                     | `ConstantMetaInfo::Def.hints`                        |
@@ -240,13 +293,28 @@ canonical blocks (each block has its own content address):
 ```
 Muts([
   Indc(rep₀),  Indc(rep₁), … Indc(rep_{n−1}),     // user reps in sort_consts order
-  Indc(_nested.Ext_1), …    Indc(_nested.Ext_m),  // aux inductives in structural order
 ])
 ```
 
 Each `Indc(I)` carries `I.ctors: Vec<Constructor>` inline. **Constructors
 are not separate `MutConst` entries** — they live inside their parent
 `Inductive`. This matters for projections (see 6.0.x below).
+
+**Aux inductives are not serialized in the inductive block.** They are
+transient compile-time entities, derived from primary ctor walks during
+nested-occurrence detection. Per the compile pipeline
+(`compile_mutual` in `src/ix/compile.rs`), `ixon_mutuals` is built by
+iterating user (primary) classes only; aux `Indc`s are constructed
+inside `expand_nested_block` and used solely as inputs to aux
+recursor generation. The aux's only persistent footprint is via the
+recursor block (one `.rec_N` per canonical aux signature) and any
+downstream auxiliary blocks (`.below_N`, `.brecOn_N`).
+
+The kernel rediscovers aux inductives from the primary ctors during
+recursor regeneration (`build_flat_block` in
+`src/ix/kernel/inductive.rs`) and computes the canonical aux order
+itself via `sort_kconsts` (§4.4). There is no stored aux ordering
+to validate against in the inductive block.
 
 #### Recursor block — `Muts([ Recr, Recr, … ])`
 
@@ -360,8 +428,8 @@ A                        IPrj { block: <ind-block-addr>, idx: 0 }
 A.mk                     CPrj { block: <ind-block-addr>, idx: 0, cidx: 0 }
 B                        IPrj { block: <ind-block-addr>, idx: 1 }
 B.mk                     CPrj { block: <ind-block-addr>, idx: 1, cidx: 0 }
-A._nested.List_1         IPrj { block: <ind-block-addr>, idx: 2 }
-A._nested.List_1.cons    CPrj { block: <ind-block-addr>, idx: 2, cidx: 0 }
+A._nested.List_1         (no IPrj) — aux Indc not stored; reached via rec block
+A._nested.List_1.cons    (no CPrj) — aux ctor not stored; rule positions only
 A.rec                    RPrj { block: <rec-block-addr>, idx: 0 }
 B.rec                    RPrj { block: <rec-block-addr>, idx: 1 }
 A.rec_1                  RPrj { block: <rec-block-addr>, idx: 2 }   ← canonical _N
@@ -385,14 +453,22 @@ A few key consequences:
   carries both `idx` (which inductive in the Muts block) and `cidx`
   (which constructor inside that inductive).
 
-- **Aux inductives sit in the same block as user inductives.**
-  Position 0..n-1 hold user reps, n..n+m-1 hold nested auxes. There
-  is no separate "aux inductive block".
+- **Aux inductives are not stored in the inductive block.** Only
+  user reps live there (positions 0..n-1). Aux inductives are
+  rediscovered structurally during recursor regeneration, both at
+  compile time (`expand_nested_block` in `compile/aux_gen/nested.rs`)
+  and kernel-side (`build_flat_block` in `kernel/inductive.rs`).
+  No aux `IPrj` / `CPrj` exists; aux references inside other
+  constants are routed through the recursor block by canonical
+  position (`A.rec_1`, `A.rec_2`, …).
 
 - **Aux recursors sit in the same block as user recursors.** Same
   layout: user recursors first (in `sort_consts` order), then aux
-  recursors (in structural aux order). `A.rec` and `A.rec_1` differ only
-  in `idx`.
+  recursors (in canonical aux order computed by `sort_consts` on
+  rediscovered aux signatures). `A.rec` and `A.rec_1` differ only
+  in `idx`. The kernel revalidates aux ordering by independently
+  re-running `sort_kconsts` on its own discovery output and
+  position-matching against the stored rec-block (§4.4).
 
 - **Aux `.below_N` definitions sit inside the existing below-def
   block.** They're appended after the user-class `.below` defs.
@@ -468,34 +544,57 @@ primary members in the same order.
 
 ### 6.2 Nested-aux section ordering
 
-The nested-aux section appears in the **inductive block** and the
-**recursor block** (plus below and brecOn derivatives). It's sorted
-by the same structural comparator used for ordinary mutual constants:
+The canonical nested-aux ordering is a **property recomputed at
+validation time**, not a stored serialization. It appears positionally
+in the **recursor block** (and below / brecOn derivatives), but never
+in the inductive block — aux inductives are not stored on disk
+(§6.0).
 
 - `expand_nested_block` walks user-class ctors, replacing each nested
   occurrence `ExtInd (args containing block params)` with a synthetic
-  `_nested.ExtInd_N α` aux inductive.
-- `sort_aux_by_content_hash` is a legacy name. The implementation now
-  builds temporary aux `Indc` values and runs `sort_consts` on the aux
-  slice, so ordering and alpha-collapse use the same structural relation
-  as normal mutual blocks.
-- References to already-compiled originals/external constants compare by
-  compiled content address. If a referenced name cannot be resolved, the
-  comparator errors instead of falling back to a namespace-sensitive name
-  hash.
-- Alpha-equivalent auxes collapse into one aux class; source auxes that
-  share that class all point at the same canonical representative aux
-  inductive.
+  `_nested.ExtInd_N α` aux inductive (compile time).
+- `sort_aux_by_content_hash` is a legacy name. The implementation
+  builds temporary aux `Indc` values and runs `sort_consts` on the
+  aux slice, so ordering and alpha-collapse use the same structural
+  relation as normal mutual blocks.
+- References to already-compiled originals/external constants
+  compare by compiled content address. If a referenced name cannot
+  be resolved, the comparator errors instead of falling back to a
+  namespace-sensitive name hash.
+- Alpha-equivalent auxes collapse into one aux class; source auxes
+  that share that class all point at the same canonical
+  representative aux inductive.
 
 This gives a **source-order-independent** canonical layout: any
-permutation of user source declaration produces the same ordered aux
-section, because the sort key is structural content plus resolved addresses.
+permutation of user source declaration produces the same ordered
+aux section, because the sort key is structural content plus
+resolved addresses.
+
+The recursor block's aux positions (`<addr>.rec_1`, `.rec_2`, …) are
+the **only stored manifestation** of this canonical ordering. The
+kernel revalidates by:
+
+1. Rediscovering aux from primary ctor walks
+   (`build_flat_block` in `src/ix/kernel/inductive.rs`).
+2. Synthesizing comparable `KConst::Indc` views (instantiating ext
+   types with `spec_params`, replacing aux ctor result heads with
+   the synthetic aux KId).
+3. Running `sort_kconsts` (§4.4) to compute the kernel-canonical
+   aux order.
+4. Position-by-position validating each stored aux recursor against
+   the kernel-canonical aux at the same offset
+   (`is_def_eq` on the recursor type).
+
+Compile-side and kernel-side use the same comparator
+(`sort_consts` ↔ `sort_kconsts`), so they produce the same canonical
+order on the same input. A divergence is a kernel correctness bug,
+immediately observable as a `kernel-check-const` regression.
 
 All downstream blocks (recursors, below, brecOn) number their
-aux-derived members in this same structural order, so a given aux
-inductive at canonical position `i` in the inductive block has its
-recursor at `i`-aligned position in the recursor block, its `.below`
-at `i`-aligned position in the below block, and so on.
+aux-derived members in this same canonical order, so an aux at
+canonical position `i` has its recursor at `i`-aligned position in
+the recursor block, its `.below` at `i`-aligned position in the
+below block, and so on.
 
 ### 6.3 Recursor binder layout
 
@@ -683,6 +782,35 @@ The `CallSitePlan` per aux name records:
 
 At every `App(rec, args)` site, surgery decomposes the spine and
 reorders / drops arguments accordingly.
+
+The IXON expression after surgery is already the canonical App spine.
+`ExprMetaData::CallSite` is the metadata wrapper for that spine, with
+two deliberately different views:
+
+- `entries` is in **Lean source order**. Decompile uses it to rebuild
+  the original source-order telescope. A `Kept` entry points at a
+  canonical argument by `canon_idx`; a `Collapsed` entry points into
+  `ConstantMeta.meta_sharing` for source arguments that did not survive
+  canonicalization.
+- `canon_meta` is in **canonical App-spine order**, one arena root per
+  canonical argument actually present in the IXON expression. Kernel
+  ingress uses it to assign binder / reference metadata to each
+  canonical argument without guessing names from content addresses.
+
+These two maps are both metadata. They do not choose the canonical
+argument order — the IXON App spine already does that — and they are
+not accepted as evidence of canonicity. Kernel ingress only checks that
+`canon_meta.len()` matches the canonical telescope length and then
+uses those roots as names / binder info for the already-present
+arguments. The kernel still validates block order and aux-recursion
+order independently (§4.4).
+
+The separation matters for split-SCC minors: a source minor may be
+stored as `Collapsed` for decompile while compile emits a synthesized
+canonical wrapper argument. In that case there is no source-order
+`Kept` entry from which kernel ingress could recover the wrapper's
+reference metadata; `canon_meta` is the direct metadata sidecar for
+the canonical wrapper.
 
 **This is why patches must be emitted in canonical layout.** Surgery
 operates on call sites, assuming the callee has canonical binder
@@ -1039,7 +1167,29 @@ a block's layout before handing it to
 `metadata.rs:1056-1065` (write) and `metadata.rs:1144-1161` (read);
 the 0/1 tag for `Option<AuxLayout>` lives on disk.
 
-### 10.3 Not stored (derived at compile and decompile time)
+### 10.3 CallSite metadata alignment
+
+`ExprMetaData::CallSite` is expression metadata, not block-layout
+metadata. Its `entries` field is the source-order inverse map needed
+by decompile; its `canon_meta` field is the canonical-order metadata
+alignment needed by kernel ingress.
+
+`canon_meta` is allowed because it stores arena roots for arguments
+that already exist in the canonical IXON expression. It does not store
+or influence:
+
+- user-class order,
+- nested-aux order,
+- recursor block positions,
+- the source-walk → canonical aux permutation.
+
+Those remain derived from `sort_consts` / `sort_kconsts` and validated
+kernel-side. A malformed `canon_meta` can make metadata-bearing kernel
+ingress reject or assign different metadata names to already-present
+arguments, but it cannot cause the kernel to accept a non-canonical
+block order or pick a different canonical aux target.
+
+### 10.4 Not stored (derived at compile and decompile time)
 
 The **canonical block layout** (canonical aux positions, user-class
 order, recursor binder split) is derived from the inductives plus
@@ -1373,7 +1523,10 @@ that enforces it:
 | Nested-aux section is structurally sorted                  | `sort_aux_by_content_hash`, `nested.rs`                         |
 | Source-walk → canonical permutation is reversible          | `compute_aux_perm`, `nested.rs:797-907`                         |
 | Call sites are surgically rewritten to canonical order     | `compute_call_site_plans`, `surgery.rs:166-570`                 |
-| Canonical kernel checks `orig_kenv` before aux_gen rewrite | `mutual.rs::check_originals`, `orig_kenv` in `compile/env.rs:185` |
+| CallSite metadata keeps source and canonical views separate | `ExprMetaData::CallSite { entries, canon_meta }`; `compile_expr::BuildCallSite`; `kernel/ingress.rs` |
+| Optional original-kernel check isolates adversarial raw constants | `CompileOptions::check_originals`, `mutual.rs::check_originals`, `orig_kenv` in `compile/env.rs` |
+| Stored primary order matches `sort_consts` (kernel-side)   | `validate_canonical_block_single_pass`, `src/ix/kernel/canonical_check.rs` (called from `ingress_muts_block`) |
+| Aux ordering matches `sort_consts` on rediscovered aux     | `sort_kconsts`, `src/ix/kernel/canonical_check.rs` (called from `canonical_aux_order` in `inductive.rs`); position-by-position recursor validation in `check_recursor` |
 
 ## 16. Testing Plan
 
@@ -1441,6 +1594,46 @@ cover reordered mutuals, alpha-collapse, nested aux ordering, over-merge
 splits, parameterized nested blocks, and cross-namespace twins. New
 fixtures should be added when a new equivalence mechanism is introduced
 or when a failure mode cannot be reduced to one of those existing shapes.
+
+### 16.6 Kernel canonicity validation
+
+The kernel-side validator (§4.4) is exercised by both unit tests and
+integration tests:
+
+**Unit tests** (`src/ix/kernel/canonical_check.rs::tests`):
+
+- `compare_kuniv_*` — universe comparator agrees with compile-side
+  `compare_level` on the cases visible in Anon mode.
+- `compare_kexpr_alpha_blind` — binder-named and binder-anonymous
+  λ/∀/let bodies compare Equal under the comparator.
+- `compare_kexpr_var_ordering` — `Var(0) < Var(1)` etc.
+- `compare_kexpr_const_external_by_addr` — refs not in `KMutCtx`
+  fall back to `Address` order.
+- `compare_kexpr_const_block_local` — refs in `KMutCtx` resolve to
+  class indices.
+- `compare_kindc_alpha_collapse` — structurally-equal Indcs compare
+  Equal.
+- `sort_kconsts_canonical_three_indcs` — three Indcs in arbitrary
+  input order produce the canonical (params-ascending) output.
+- `sort_kconsts_alpha_collapses_into_one_class` — alpha-equivalent
+  Indcs collapse to a single class.
+- `validate_single_pass_accepts_canonical_order` — Ok on canonical
+  input.
+- `validate_single_pass_rejects_swap` — `Greater` rejection.
+- `validate_single_pass_rejects_uncollapsed_alpha` — `Equal`
+  rejection.
+
+**Integration tests** (existing test suites that exercise the
+validator end-to-end):
+
+- `lake test -- validate-aux --ignored` — must remain at 0 failures
+  (Phases 7 and 7b round-trip every constant through the kernel).
+- `lake test -- kernel-tutorial --ignored` — 267/267, covering the
+  manually-constructed kernel fixtures.
+- `lake test -- kernel-check-const --ignored` — focus list of the
+  Mathlib failure shapes; this is where Step 5 of the
+  kernel-canonicity port shows up: stored aux recursor positions
+  must align with the kernel-canonical aux order produced by Step 4.
 
 ### 16.5 Roundtrip fixed-point
 
@@ -1532,9 +1725,23 @@ Add `doc_string: Option<Address>` to `ConstantMeta`. Ingest via
   `NestedAuxOrdering.second { C2 | A2 | B2 }` (permuted sources),
   assert block addresses are equal.
 
+### 17.7 `kernel-check-const` Category B residue
+
+After the §4.4 kernel-canonicity port (independent `sort_consts`
+on rediscovered aux + position-based stored-recursor lookup),
+Categories A, C, F, and G still show some residual failures.
+Investigate whether the kernel's synthetic aux Indc views
+(in `canonical_aux_order`) need a more faithful mirror of
+compile-side's `replace_ctor_result_head_with_aux` — the current
+implementation rewrites the result head but does not re-wrap with
+block-param Pis. Some failure modes may also reflect orthogonal
+issues (e.g. `String.Legacy.back ""` reduction, `_sparseCasesOn_N`
+regeneration) that surface alongside the canonical-order
+mismatches but have unrelated root causes.
+
 ## 18. Summary
 
-Anonymous canonicity in Ix reduces to five operational commitments:
+Anonymous canonicity in Ix reduces to six operational commitments:
 
 1. Binder names, mdata, and hygiene **never enter the hash input**.
 2. Mutual blocks are **structurally sorted** by an iterative-refinement
@@ -1545,9 +1752,18 @@ Anonymous canonicity in Ix reduces to five operational commitments:
 4. Call sites are **surgically rewritten** so source-order aux
    references resolve to canonical-order auxes.
 5. A **metadata sidecar** — binder names, mdata, Lean-order `all`,
-   and `AuxLayout` on the block's Muts metadata (plus docstrings,
-   planned) — preserves everything the hash erases, making
+   `CallSite.entries` / `CallSite.canon_meta`, and `AuxLayout` on
+   the block's Muts metadata (plus docstrings, planned) — preserves
+   everything the hash erases, making
    `canonical + metadata` isomorphic to source Lean.
+6. The **kernel independently re-runs `sort_consts`** on every
+   stored mutual block when the primary validator needs refinement
+   (fast strong-adjacent validation at ingress)
+   and on every set of rediscovered auxes (full iterative sort
+   during recursor regeneration). The kernel never trusts the
+   compiler's claim that an input is canonical; it verifies the
+   claim by recomputing it. See §4.4 and
+   `src/ix/kernel/canonical_check.rs`.
 
 The failure of any one commitment breaks the zk-PCC story. The test
 harness in §16 makes each commitment observable as an address-equality
@@ -1559,12 +1775,28 @@ is known to be partial.
 - [`docs/Ixon.md`](./Ixon.md) — binary format, Expr/Constant/Meta
   layout, serialization details.
 - `src/ix/compile.rs` — `sort_consts`, `Frame`, `compile_expr`.
+- `src/ix/kernel/canonical_check.rs` — kernel-side `sort_consts`
+  port: `compare_kuniv`, `compare_kexpr`, `compare_kconst`,
+  `sort_kconsts`, `validate_canonical_block_single_pass`. The
+  kernel's independent canonicity oracle (§4.4).
+- `src/ix/kernel/ingress.rs::ingress_muts_block` — wires
+  `validate_canonical_block_single_pass` for stored Indc blocks.
+- `src/ix/kernel/inductive.rs::canonical_aux_order` — synthesizes
+  `KConst::Indc` views of rediscovered auxes and runs
+  `sort_kconsts` to compute the kernel-canonical aux order.
+  Position-by-position recursor validation lives in
+  `check_recursor`.
+- `src/ix/kernel/error.rs::TcError::NonCanonicalBlock` — rejection
+  variant emitted when ingress finds a non-canonical primary block.
 - `src/ix/compile/aux_gen.rs` — main `generate_aux_patches` entry
   and the `AuxPatchesOutput` return type.
 - `src/ix/compile/aux_gen/nested.rs` — `expand_nested_block`,
   `sort_aux_by_content_hash`, `compute_aux_perm`, `source_aux_order`.
 - `src/ix/compile/aux_gen/recursor.rs` — canonical recursors from an
-  expanded block.
+  expanded block, plus targeted canonical KEnv ingress for aux_gen
+  sort/recursor generation. Reducible definitions referenced by inductive
+  target types or constructor fields are loaded as real definitions;
+  type-only dependencies remain stubs to avoid mirroring the full Lean env.
 - `src/ix/compile/aux_gen/below.rs`, `brecon.rs`, `cases_on.rs`,
   `rec_on.rs` — derived aux generation.
 - `src/ix/compile/aux_gen/expr_utils.rs` — FVar-based expression
@@ -1574,9 +1806,10 @@ is known to be partial.
 - `src/ix/compile/surgery.rs` — call-site argument reordering;
   `CallSitePlan`, `compute_call_site_plans`.
 - `src/ix/compile/mutual.rs` — orchestrates `generate_aux_patches` +
-  surgery + compilation per mutual block; two-env split with
-  `orig_kenv`; `check_originals` compares aux_gen patches against
-  the pre-aux_gen originals stored via `compile_const_no_aux`.
+  surgery + compilation per mutual block. Normal trusted compile paths skip
+  the full `orig_kenv`; adversarial raw-constant tests can opt into
+  `CompileOptions::check_originals` to validate Lean-original constants
+  against a separate `lean_ingress` kernel environment.
 - `src/ix/decompile.rs::rehydrate_aux_perms_from_env` — rehydrates
   `stt.aux_perms` from `ConstantMetaInfo::Muts.aux_layout` before any
   block is decompiled.

@@ -10,6 +10,7 @@ public import Ix.GraphM
 public import Ix.CondenseM
 public import Ix.CompileM
 public import Ix.DecompileM
+public import Ix.KernelCheck
 public import Ix.Claim
 public import Ix.Commit
 public import Ix.Benchmark.Bench

@@ -1,10 +1,12 @@
-//! Test-only FFI: kernel constant checking.
+//! Kernel constant checking FFI.
 //!
-//! Exposes `rs_kernel_check_consts` for `Tests/Ix/Kernel/Tutorial.lean`, which
-//! runs the full pipeline `Lean env → Ixon compile → kernel ingress →
-//! typecheck` against a batch of requested constant names.
+//! Exposes `rs_kernel_check_consts` (production, used by `lake exe ix check`
+//! and `Tests/Ix/Kernel/Tutorial.lean`) plus a pair of test-only roundtrip
+//! probes (`rs_kernel_roundtrip` / `rs_kernel_roundtrip_no_compile`).
 //!
-//! Pipeline (mirroring the old ix_old `rs_zero_check_consts`):
+//! `rs_kernel_check_consts` runs the full pipeline `Lean env → Ixon compile
+//! → kernel ingress → typecheck` against a batch of requested constant names.
+//! Pipeline:
 //!
 //! 1. Decode the Lean environment into the Rust `Env` type.
 //! 2. Run `compile_env` to obtain the Ixon environment.
@@ -12,16 +14,23 @@
 //! 4. For each requested name, construct a `TypeChecker` sharing the
 //!    `Arc<KEnv>` (so whnf / infer / def_eq caches accumulate across the
 //!    batch) and call `check_const`.
-//! 5. Return a Lean `Array (String × Option CheckError)` reporting per-name
+//! 5. Return a Lean `Array (Option CheckError)` reporting per-name
 //!    results, where `some (.kernelException msg)` signals a rejection.
 //!
-//! The `CheckError` ABI (tag 0 = `kernelException`) is defined in
-//! `Tests/Ix/Kernel/Tutorial.lean`; see `KERNEL_EXCEPTION_TAG` below.
+//! The `CheckError` ABI (tag 0 = `kernelException`, tag 1 = `compileError`)
+//! lives in `Ix/KernelCheck.lean`; see `KERNEL_EXCEPTION_TAG` below.
+//!
+//! The roundtrip helpers below `rs_kernel_check_consts` are test-only
+//! (cfg-gated to `feature = "test-ffi"`) — they import `egress` /
+//! `decompile_env` to compare against the original env, which is dead
+//! weight in production builds.
 
-#![cfg(feature = "test-ffi")]
-
-use std::sync::Arc;
-use std::time::Instant;
+use std::sync::{
+  Arc, Mutex, OnceLock,
+  atomic::{AtomicBool, AtomicUsize, Ordering},
+};
+use std::thread;
+use std::time::{Duration, Instant};
 
 use rustc_hash::FxHashMap;
 
@@ -32,19 +41,23 @@ use lean_ffi::object::{
 
 use crate::ffi::lean_env::{decode_env, decode_name_array};
 use crate::ix::compile::{CompileOptions, compile_env_with_options};
+#[cfg(feature = "test-ffi")]
 use crate::ix::decompile::decompile_env;
 use crate::ix::env::Name;
+#[cfg(feature = "test-ffi")]
 use crate::ix::kernel::egress::{ixon_egress, lean_egress};
 use crate::ix::kernel::env::KEnv;
 use crate::ix::kernel::error::TcError;
 use crate::ix::kernel::id::KId;
-use crate::ix::kernel::ingress::{ixon_ingress, lean_ingress};
+use crate::ix::kernel::ingress::ixon_ingress;
+#[cfg(feature = "test-ffi")]
+use crate::ix::kernel::ingress::lean_ingress;
 use crate::ix::kernel::mode::Meta;
 use crate::ix::kernel::tc::TypeChecker;
 
 /// Lean-side `CheckError` constructor tags.
 ///
-/// Defined in `Tests/Ix/Kernel/Tutorial.lean`:
+/// Defined in `Ix/KernelCheck.lean`:
 /// ```lean
 /// inductive CheckError where
 ///   | kernelException (msg : String)    -- tag 0
@@ -95,11 +108,17 @@ const COMPILE_ERROR_TAG: u8 = 1;
 /// - `false` (verbose): every constant is printed with its elapsed time,
 ///   matching the original line-per-constant behaviour.
 /// - `true` (ephemeral): the current `[i/N] name ...` label is written
-///   over itself each iteration, and *only* slow constants (>=1s),
+///   over itself each iteration, and *only* slow constants (>=7s by default),
 ///   unexpected passes/failures, not-found names, and ungrounded compile
 ///   failures are promoted to persistent lines. Suitable for full-env
 ///   runs where the vast majority of constants are expected to pass
 ///   quickly.
+///
+/// Parallel quiet-mode progress is persistent and compiler-like: periodic
+/// `done/total`, rate, ETA, and oldest in-flight constants. Useful knobs:
+/// `IX_KERNEL_CHECK_PROGRESS_MS`, `IX_KERNEL_CHECK_SLOW_MS`,
+/// `IX_KERNEL_CHECK_ACTIVE_SLOW_MS`, `IX_KERNEL_CHECK_INFLIGHT`, and
+/// `IX_KERNEL_CHECK_NAME_CHARS`.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_kernel_check_consts(
   env_consts: LeanList<LeanBorrowed<'_>>,
@@ -211,7 +230,6 @@ pub extern "C" fn rs_kernel_check_consts(
     name_to_id.insert(kid.name.clone(), kid);
   }
   let total = names_vec.len();
-  eprintln!("[rs_kernel_check] checking {total} constants...");
   let t3 = Instant::now();
 
   // ---------------------------------------------------------------------
@@ -245,7 +263,7 @@ pub extern "C" fn rs_kernel_check_consts(
 }
 
 // =============================================================================
-// Checking loop (runs on a dedicated large-stack thread)
+// Checking runners (large-stack workers)
 // =============================================================================
 
 /// Kind of per-constant error — selects which `CheckError` ctor to build on
@@ -268,6 +286,8 @@ impl ErrKind {
 /// Per-constant result: `Ok(())` on pass, `Err((kind, msg))` on rejection.
 type CheckRes = Result<(), (ErrKind, String)>;
 
+const KERNEL_CHECK_STACK_SIZE: usize = 256 * 1024 * 1024;
+
 fn run_checks_on_large_stack(
   kenv: Arc<KEnv<Meta>>,
   name_to_id: FxHashMap<Name, KId<Meta>>,
@@ -276,8 +296,45 @@ fn run_checks_on_large_stack(
   ungrounded: FxHashMap<Name, String>,
   quiet: bool,
 ) -> Result<Vec<CheckRes>, String> {
-  std::thread::Builder::new()
-    .stack_size(256 * 1024 * 1024)
+  if names.is_empty() {
+    eprintln!("[rs_kernel_check] checking 0 constants...");
+    return Ok(Vec::new());
+  }
+
+  let worker_count = resolve_kernel_check_workers(names.len(), quiet);
+  if worker_count == 1 {
+    eprintln!("[rs_kernel_check] checking {} constants...", names.len());
+    return run_checks_serial_on_large_stack(
+      kenv,
+      name_to_id,
+      names,
+      expect_pass,
+      ungrounded,
+      quiet,
+    );
+  }
+
+  run_checks_parallel_on_large_stacks(
+    kenv,
+    name_to_id,
+    names,
+    expect_pass,
+    ungrounded,
+    quiet,
+    worker_count,
+  )
+}
+
+fn run_checks_serial_on_large_stack(
+  kenv: Arc<KEnv<Meta>>,
+  name_to_id: FxHashMap<Name, KId<Meta>>,
+  names: Vec<Name>,
+  expect_pass: Vec<bool>,
+  ungrounded: FxHashMap<Name, String>,
+  quiet: bool,
+) -> Result<Vec<CheckRes>, String> {
+  thread::Builder::new()
+    .stack_size(KERNEL_CHECK_STACK_SIZE)
     .spawn(move || {
       check_consts_loop(kenv, name_to_id, names, expect_pass, ungrounded, quiet)
     })
@@ -286,9 +343,496 @@ fn run_checks_on_large_stack(
     .map_err(|_| "kernel-check thread panicked".to_string())
 }
 
-/// Threshold at and above which a check is "slow" enough to keep a persistent
-/// line in quiet mode. Matches the ix_old behaviour.
-const SLOW_THRESHOLD: std::time::Duration = std::time::Duration::from_secs(1);
+fn run_checks_parallel_on_large_stacks(
+  kenv: Arc<KEnv<Meta>>,
+  name_to_id: FxHashMap<Name, KId<Meta>>,
+  names: Vec<Name>,
+  expect_pass: Vec<bool>,
+  ungrounded: FxHashMap<Name, String>,
+  quiet: bool,
+  worker_count: usize,
+) -> Result<Vec<CheckRes>, String> {
+  let total = names.len();
+  eprintln!(
+    "[rs_kernel_check] checking {total} constants with {worker_count} workers..."
+  );
+
+  let name_to_id = Arc::new(name_to_id);
+  let names = Arc::new(names);
+  let expect_pass = Arc::new(expect_pass);
+  let ungrounded = Arc::new(ungrounded);
+  let tasks = Arc::new(build_parallel_check_tasks(
+    &kenv,
+    &name_to_id,
+    &names,
+    &ungrounded,
+  ));
+  let next_task = Arc::new(AtomicUsize::new(0));
+  let results: Arc<Vec<OnceLock<CheckRes>>> =
+    Arc::new((0..total).map(|_| OnceLock::new()).collect());
+  let progress = Arc::new(ParallelProgress::new(total, worker_count, quiet));
+  let mut reporter = ParallelProgress::spawn_reporter(Arc::clone(&progress));
+
+  let mut handles: Vec<thread::JoinHandle<()>> =
+    Vec::with_capacity(worker_count);
+  for worker_idx in 0..worker_count {
+    let kenv = Arc::clone(&kenv);
+    let name_to_id = Arc::clone(&name_to_id);
+    let names = Arc::clone(&names);
+    let expect_pass = Arc::clone(&expect_pass);
+    let ungrounded = Arc::clone(&ungrounded);
+    let tasks = Arc::clone(&tasks);
+    let next_task = Arc::clone(&next_task);
+    let results = Arc::clone(&results);
+    let progress_worker = Arc::clone(&progress);
+
+    let handle = match thread::Builder::new()
+      .name(format!("ix-kernel-check-{worker_idx}"))
+      .stack_size(KERNEL_CHECK_STACK_SIZE)
+      .spawn(move || {
+        loop {
+          let task_idx = next_task.fetch_add(1, Ordering::Relaxed);
+          let Some(task) = tasks.get(task_idx) else {
+            break;
+          };
+
+          for outcome in check_task(
+            task,
+            total,
+            &kenv,
+            name_to_id.as_ref(),
+            names.as_slice(),
+            expect_pass.as_slice(),
+            ungrounded.as_ref(),
+            |prefix| progress_worker.begin(worker_idx, prefix),
+          ) {
+            progress_worker.finish(worker_idx, &outcome);
+            let _ = results[outcome.index].set(outcome.result);
+          }
+        }
+      }) {
+      Ok(handle) => handle,
+      Err(e) => {
+        progress.stop_reporter();
+        if let Some(reporter) = reporter.take() {
+          let _ = reporter.join();
+        }
+        for handle in handles {
+          let _ = handle.join();
+        }
+        return Err(format!("failed to spawn kernel-check worker: {e}"));
+      },
+    };
+    handles.push(handle);
+  }
+
+  let mut panicked = false;
+  for handle in handles {
+    if handle.join().is_err() {
+      panicked = true;
+    }
+  }
+  progress.stop_reporter();
+  if let Some(reporter) = reporter {
+    let _ = reporter.join();
+  }
+  if panicked {
+    return Err("kernel-check worker panicked".to_string());
+  }
+
+  let mut ordered = Vec::with_capacity(total);
+  for i in 0..total {
+    match results[i].get() {
+      Some(result) => ordered.push(result.clone()),
+      None => {
+        return Err(format!("kernel-check worker missed result index {i}"));
+      },
+    }
+  }
+  Ok(ordered)
+}
+
+#[derive(Clone, Debug)]
+enum CheckTask {
+  Standalone { index: usize },
+  Block { indices: Vec<usize> },
+}
+
+fn build_parallel_check_tasks(
+  kenv: &Arc<KEnv<Meta>>,
+  name_to_id: &FxHashMap<Name, KId<Meta>>,
+  names: &[Name],
+  ungrounded: &FxHashMap<Name, String>,
+) -> Vec<CheckTask> {
+  // Collapse requested members of a coordinated kernel block into one work
+  // unit. The owner checks the block once and later emits per-request results.
+  let mut tasks = Vec::with_capacity(names.len());
+  let mut block_tasks: FxHashMap<KId<Meta>, usize> = FxHashMap::default();
+  let tc = TypeChecker::new(kenv.clone());
+
+  for (index, name) in names.iter().enumerate() {
+    if ungrounded.contains_key(name) {
+      tasks.push(CheckTask::Standalone { index });
+      continue;
+    }
+
+    let Some(kid) = name_to_id.get(name) else {
+      tasks.push(CheckTask::Standalone { index });
+      continue;
+    };
+
+    let Some(block) = tc.coordinated_check_block_for_const(kid) else {
+      tasks.push(CheckTask::Standalone { index });
+      continue;
+    };
+
+    if let Some(task_index) = block_tasks.get(&block).copied() {
+      match &mut tasks[task_index] {
+        CheckTask::Block { indices } => indices.push(index),
+        CheckTask::Standalone { .. } => unreachable!(
+          "block task index must refer to a block-shaped check task"
+        ),
+      }
+    } else {
+      block_tasks.insert(block, tasks.len());
+      tasks.push(CheckTask::Block { indices: vec![index] });
+    }
+  }
+
+  tasks
+}
+
+fn resolve_kernel_check_workers(total: usize, quiet: bool) -> usize {
+  let env_workers = std::env::var("IX_KERNEL_CHECK_WORKERS").ok();
+  let no_par = std::env::var("IX_NO_PAR").ok().as_deref() == Some("1");
+  let available = thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
+  resolve_kernel_check_workers_from(
+    total,
+    quiet,
+    env_workers.as_deref(),
+    no_par,
+    available,
+  )
+}
+
+fn resolve_kernel_check_workers_from(
+  total: usize,
+  quiet: bool,
+  env_workers: Option<&str>,
+  no_par: bool,
+  available_parallelism: usize,
+) -> usize {
+  if let Some(n) =
+    env_workers.and_then(|s| s.parse::<usize>().ok()).filter(|&n| n > 0)
+  {
+    return n;
+  }
+  if no_par || !quiet {
+    return 1;
+  }
+  if total == 0 { 1 } else { available_parallelism.max(1).min(total) }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::{compact_in_flight_label, resolve_kernel_check_workers_from};
+
+  #[test]
+  fn explicit_kernel_check_workers_wins_when_positive() {
+    assert_eq!(
+      resolve_kernel_check_workers_from(3, false, Some("8"), true, 2),
+      8
+    );
+  }
+
+  #[test]
+  fn zero_or_invalid_worker_override_falls_through() {
+    assert_eq!(
+      resolve_kernel_check_workers_from(10, true, Some("0"), false, 4),
+      4
+    );
+    assert_eq!(
+      resolve_kernel_check_workers_from(10, true, Some("nope"), false, 4),
+      4
+    );
+  }
+
+  #[test]
+  fn no_par_and_verbose_force_serial_without_override() {
+    assert_eq!(resolve_kernel_check_workers_from(10, true, None, true, 4), 1);
+    assert_eq!(resolve_kernel_check_workers_from(10, false, None, false, 4), 1);
+  }
+
+  #[test]
+  fn default_parallelism_is_clamped_to_total() {
+    assert_eq!(resolve_kernel_check_workers_from(3, true, None, false, 16), 3);
+    assert_eq!(resolve_kernel_check_workers_from(10, true, None, false, 0), 1);
+    assert_eq!(resolve_kernel_check_workers_from(0, true, None, false, 16), 1);
+  }
+
+  #[test]
+  fn compact_in_flight_label_preserves_index_and_tail() {
+    let label =
+      "[123/456] _private.Std.Tactic.BVDecide.LRAT.Internal.Formula.Proof";
+    let compact = compact_in_flight_label(label, 40);
+    assert!(compact.starts_with("[123/456] ..."));
+    assert!(compact.ends_with("Internal.Formula.Proof"));
+    assert!(compact.chars().count() <= 40);
+  }
+
+  #[test]
+  fn compact_in_flight_label_handles_tiny_limits() {
+    assert_eq!(compact_in_flight_label("[1/2] Very.Long.Name", 0), "");
+    assert_eq!(compact_in_flight_label("[1/2] Very.Long.Name", 2), "[1");
+  }
+}
+
+/// Default threshold at and above which a completed check is "slow" enough to
+/// keep a persistent line in quiet mode. Override with
+/// `IX_KERNEL_CHECK_SLOW_MS`.
+const DEFAULT_SLOW_THRESHOLD: Duration = Duration::from_secs(7);
+
+/// Default threshold for a one-shot "still checking ..." line when an active
+/// parallel check has been in-flight for a long time. Override with
+/// `IX_KERNEL_CHECK_ACTIVE_SLOW_MS`; set it to `0` to disable the notice.
+const DEFAULT_ACTIVE_SLOW_THRESHOLD: Duration = Duration::from_secs(30);
+
+const DEFAULT_IN_FLIGHT_LIMIT: usize = 3;
+const DEFAULT_IN_FLIGHT_LABEL_CHARS: usize = 120;
+
+fn env_duration_ms(var: &str, default: Duration) -> Duration {
+  std::env::var(var)
+    .ok()
+    .and_then(|s| s.parse::<u64>().ok())
+    .map(Duration::from_millis)
+    .unwrap_or(default)
+}
+
+fn env_duration_ms_optional(var: &str, default: Duration) -> Option<Duration> {
+  let ms = std::env::var(var)
+    .ok()
+    .and_then(|s| s.parse::<u64>().ok())
+    .unwrap_or(default.as_millis() as u64);
+  if ms == 0 { None } else { Some(Duration::from_millis(ms)) }
+}
+
+fn env_usize(var: &str, default: usize) -> usize {
+  std::env::var(var)
+    .ok()
+    .and_then(|s| s.parse::<usize>().ok())
+    .unwrap_or(default)
+}
+
+fn kernel_check_slow_threshold() -> Duration {
+  env_duration_ms("IX_KERNEL_CHECK_SLOW_MS", DEFAULT_SLOW_THRESHOLD)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CheckStatus {
+  Checked,
+  CompileFailed,
+  NotFound,
+}
+
+#[derive(Clone)]
+struct CheckOutcome {
+  index: usize,
+  total: usize,
+  display: String,
+  should_pass: bool,
+  result: CheckRes,
+  status: CheckStatus,
+  elapsed: Option<Duration>,
+  peak: Option<u32>,
+}
+
+impl CheckOutcome {
+  fn prefix(&self) -> String {
+    format!("  [{}/{}] {}", self.index + 1, self.total, self.display)
+  }
+
+  fn err_msg(&self) -> &str {
+    match &self.result {
+      Ok(()) => "",
+      Err((_kind, msg)) => msg,
+    }
+  }
+
+  fn is_expected(&self) -> bool {
+    self.result.is_ok() == self.should_pass
+  }
+
+  fn is_slow(&self, slow_threshold: Duration) -> bool {
+    self.elapsed.is_some_and(|elapsed| elapsed >= slow_threshold)
+  }
+
+  fn checked_suffix(&self, slow_threshold: Duration) -> String {
+    let elapsed = self.elapsed.unwrap_or_default();
+    let peak = self.peak.unwrap_or_default();
+    let suffix = match (&self.result, self.should_pass) {
+      (Ok(()), true) => format!("ok ({elapsed:.1?}, depth={peak})"),
+      (Ok(()), false) => {
+        format!("UNEXPECTED PASS ({elapsed:.1?}, depth={peak})")
+      },
+      (Err((_kind, msg)), false) => {
+        format!("REJECTED ({elapsed:.1?}): {msg}")
+      },
+      (Err((_kind, msg)), true) => {
+        format!("FAIL ({elapsed:.1?}, depth={peak}): {msg}")
+      },
+    };
+
+    if self.is_slow(slow_threshold) && self.is_expected() {
+      format!("{suffix} [slow]")
+    } else {
+      suffix
+    }
+  }
+}
+
+fn check_one_const<F>(
+  i: usize,
+  total: usize,
+  kenv: &Arc<KEnv<Meta>>,
+  name_to_id: &FxHashMap<Name, KId<Meta>>,
+  names: &[Name],
+  expect_pass: &[bool],
+  ungrounded: &FxHashMap<Name, String>,
+  mut before_kernel_check: F,
+) -> CheckOutcome
+where
+  F: FnMut(&str),
+{
+  let name = &names[i];
+  let should_pass = expect_pass.get(i).copied().unwrap_or(true);
+  let display = name.pretty();
+
+  if let Some(msg) = ungrounded.get(name) {
+    return CheckOutcome {
+      index: i,
+      total,
+      display,
+      should_pass,
+      result: Err((ErrKind::Compile, msg.clone())),
+      status: CheckStatus::CompileFailed,
+      elapsed: None,
+      peak: None,
+    };
+  }
+
+  let kid = match name_to_id.get(name) {
+    Some(id) => id.clone(),
+    None => {
+      return CheckOutcome {
+        index: i,
+        total,
+        display: display.clone(),
+        should_pass,
+        result: Err((ErrKind::Kernel, format!("not found: {display}"))),
+        status: CheckStatus::NotFound,
+        elapsed: None,
+        peak: None,
+      };
+    },
+  };
+
+  let prefix = format!("  [{}/{}] {display}", i + 1, total);
+  before_kernel_check(&prefix);
+
+  let tc_start = Instant::now();
+  let mut tc = TypeChecker::new(kenv.clone());
+  tc.set_debug_label(display.clone());
+  let result: Result<(), String> =
+    tc.check_const(&kid).map_err(|e| format_tc_error(&e));
+  let elapsed = tc_start.elapsed();
+  let peak = tc.def_eq_peak;
+
+  CheckOutcome {
+    index: i,
+    total,
+    display,
+    should_pass,
+    result: result.map_err(|msg| (ErrKind::Kernel, msg)),
+    status: CheckStatus::Checked,
+    elapsed: Some(elapsed),
+    peak: Some(peak),
+  }
+}
+
+fn check_task<F>(
+  task: &CheckTask,
+  total: usize,
+  kenv: &Arc<KEnv<Meta>>,
+  name_to_id: &FxHashMap<Name, KId<Meta>>,
+  names: &[Name],
+  expect_pass: &[bool],
+  ungrounded: &FxHashMap<Name, String>,
+  before_kernel_check: F,
+) -> Vec<CheckOutcome>
+where
+  F: FnMut(&str),
+{
+  match task {
+    CheckTask::Standalone { index } => {
+      vec![check_one_const(
+        *index,
+        total,
+        kenv,
+        name_to_id,
+        names,
+        expect_pass,
+        ungrounded,
+        before_kernel_check,
+      )]
+    },
+    CheckTask::Block { indices } => {
+      let Some((&owner_index, rest)) = indices.split_first() else {
+        return Vec::new();
+      };
+      let owner = check_one_const(
+        owner_index,
+        total,
+        kenv,
+        name_to_id,
+        names,
+        expect_pass,
+        ungrounded,
+        before_kernel_check,
+      );
+      let mut outcomes = Vec::with_capacity(indices.len());
+      outcomes.push(owner.clone());
+      for index in rest {
+        outcomes.push(block_member_outcome(
+          *index,
+          total,
+          names,
+          expect_pass,
+          &owner,
+        ));
+      }
+      outcomes
+    },
+  }
+}
+
+fn block_member_outcome(
+  index: usize,
+  total: usize,
+  names: &[Name],
+  expect_pass: &[bool],
+  owner: &CheckOutcome,
+) -> CheckOutcome {
+  CheckOutcome {
+    index,
+    total,
+    display: names[index].pretty(),
+    should_pass: expect_pass.get(index).copied().unwrap_or(true),
+    result: owner.result.clone(),
+    status: CheckStatus::Checked,
+    elapsed: owner.elapsed,
+    peak: owner.peak,
+  }
+}
 
 fn check_consts_loop(
   kenv: Arc<KEnv<Meta>>,
@@ -300,104 +844,318 @@ fn check_consts_loop(
 ) -> Vec<CheckRes> {
   let total = names.len();
   let mut results: Vec<CheckRes> = Vec::with_capacity(total);
+  let slow_threshold = kernel_check_slow_threshold();
 
   // Terminal width is only needed for ephemeral clearing in quiet mode. In
   // verbose mode we never rewrite, so the value is ignored.
   let mut progress = Progress::new(quiet);
 
-  for (i, name) in names.iter().enumerate() {
-    let should_pass = expect_pass.get(i).copied().unwrap_or(true);
+  for i in 0..total {
+    let outcome = check_one_const(
+      i,
+      total,
+      &kenv,
+      &name_to_id,
+      &names,
+      &expect_pass,
+      &ungrounded,
+      |prefix| progress.start(prefix),
+    );
+    let prefix = outcome.prefix();
 
-    // Name lookup is structural (`Name` → `KId`) — no string round-trip,
-    // no escape handling, no `parse_name` fallback. The display string
-    // is computed once here for progress output and error messages.
-    let display = name.pretty();
-    let prefix = format!("  [{}/{}] {display}", i + 1, total);
-
-    // Constants that failed to compile (ill-formed inductives, cascading
-    // MissingConstant, etc.) are reported as rejected without invoking the
-    // kernel. This matches the ix_old "ungrounded" handling and lets the
-    // bad_raw_consts tests (e.g. `inductBadNonSort`) round-trip correctly.
-    // The `Compile` kind lets the Lean caller distinguish this from a
-    // kernel-side rejection.
-    if let Some(msg) = ungrounded.get(name) {
-      // Unexpected compile failure (should_pass=true) is a real problem and
-      // must persist. Expected rejections (should_pass=false) only persist in
-      // verbose mode; quiet mode drops them since they're part of the
-      // tutorial's bad-constant coverage, not user-visible failures.
-      if should_pass {
-        progress.persist(&format!("{prefix} ... FAIL (compile): {msg}"));
-      } else if !quiet {
-        progress.persist(&format!("{prefix} ... REJECTED (compile): {msg}"));
-      }
-      results.push(Err((ErrKind::Compile, msg.clone())));
-      continue;
-    }
-
-    let kid = match name_to_id.get(name) {
-      Some(id) => id.clone(),
-      None => {
+    match outcome.status {
+      CheckStatus::CompileFailed => {
+        // Unexpected compile failure (should_pass=true) is a real problem and
+        // must persist. Expected rejections (should_pass=false) only persist in
+        // verbose mode; quiet mode drops them since they're part of the
+        // tutorial's bad-constant coverage, not user-visible failures.
+        if outcome.should_pass {
+          progress.persist(&format!(
+            "{prefix} ... FAIL (compile): {}",
+            outcome.err_msg()
+          ));
+        } else if !quiet {
+          progress.persist(&format!(
+            "{prefix} ... REJECTED (compile): {}",
+            outcome.err_msg()
+          ));
+        }
+      },
+      CheckStatus::NotFound => {
         // Not-found is always unexpected — the Lean side asked for a name
         // that compile+ingress didn't produce. Always persist.
         progress.persist(&format!("{prefix} ? not found"));
-        // Treat "not found in kernel env" as a kernel-kind error so the
-        // Lean-side summary can lump it in with other kernel rejections.
-        results.push(Err((ErrKind::Kernel, format!("not found: {display}"))));
-        continue;
       },
-    };
-
-    // Start the progress indicator. In quiet mode this writes an ephemeral
-    // label that will be cleared or overwritten; in verbose mode it writes
-    // the prefix without a newline so the result can append to it.
-    progress.start(&prefix);
-
-    let tc_start = Instant::now();
-    let mut tc = TypeChecker::new(kenv.clone());
-    let result: Result<(), String> =
-      tc.check_const(&kid).map_err(|e| format_tc_error(&e));
-    let elapsed = tc_start.elapsed();
-    let peak = tc.def_eq_peak;
-    let is_slow = elapsed >= SLOW_THRESHOLD;
-
-    // Build the human-readable result suffix for this constant. The suffix is
-    // printed after `"{prefix} ... "` in both verbose and quiet modes.
-    let suffix = match (&result, should_pass) {
-      (Ok(()), true) => format!("ok ({elapsed:.1?}, depth={peak})"),
-      (Ok(()), false) => {
-        format!("UNEXPECTED PASS ({elapsed:.1?}, depth={peak})")
+      CheckStatus::Checked => {
+        // Outcomes that must persist in quiet mode:
+        //   - Unexpected pass / unexpected failure: user cares about these.
+        //   - Slow runs with the expected outcome: useful for bisecting perf.
+        //
+        // Fast runs with the expected outcome stay ephemeral and are
+        // overwritten on the next iteration.
+        let must_persist =
+          !outcome.is_expected() || outcome.is_slow(slow_threshold);
+        progress.finish(
+          &prefix,
+          &outcome.checked_suffix(slow_threshold),
+          must_persist,
+        );
       },
-      (Err(msg), false) => format!("REJECTED ({elapsed:.1?}): {msg}"),
-      (Err(msg), true) => format!("FAIL ({elapsed:.1?}, depth={peak}): {msg}"),
-    };
+    }
 
-    // Outcomes that must persist in quiet mode:
-    //   - Unexpected pass / unexpected failure: user cares about these.
-    //   - Slow runs with the expected outcome: useful for bisecting perf.
-    //
-    // Fast runs with the expected outcome stay ephemeral and are
-    // overwritten on the next iteration.
-    let is_expected = (result.is_ok()) == should_pass;
-    let must_persist = !is_expected || is_slow;
-    let suffix_final = if is_slow && is_expected {
-      // Tag slow-but-expected runs so they're easy to grep. Outright
-      // failures already carry their own loud "FAIL"/"UNEXPECTED PASS"
-      // marker, so we don't double-tag.
-      format!("{suffix} [slow]")
-    } else {
-      suffix
-    };
-
-    progress.finish(&prefix, &suffix_final, must_persist);
-
-    // `Ok(())` passes through; `Err(msg)` is tagged as a kernel rejection.
-    results.push(result.map_err(|msg| (ErrKind::Kernel, msg)));
+    results.push(outcome.result);
   }
 
   // Clear any trailing ephemeral label before the summary lines print.
   progress.flush();
 
   results
+}
+
+// =============================================================================
+// Parallel progress output
+// =============================================================================
+
+struct InFlightCheck {
+  label: String,
+  started: Instant,
+  reported_active_slow: bool,
+}
+
+struct ParallelProgress {
+  total: usize,
+  quiet: bool,
+  started: Instant,
+  slow_threshold: Duration,
+  active_slow_threshold: Option<Duration>,
+  in_flight_limit: usize,
+  in_flight_label_chars: usize,
+  done: AtomicUsize,
+  active: Mutex<Vec<Option<InFlightCheck>>>,
+  stop: AtomicBool,
+  print_lock: Mutex<()>,
+}
+
+impl ParallelProgress {
+  fn new(total: usize, worker_count: usize, quiet: bool) -> Self {
+    let active = std::iter::repeat_with(|| None).take(worker_count).collect();
+    Self {
+      total,
+      quiet,
+      started: Instant::now(),
+      slow_threshold: kernel_check_slow_threshold(),
+      active_slow_threshold: env_duration_ms_optional(
+        "IX_KERNEL_CHECK_ACTIVE_SLOW_MS",
+        DEFAULT_ACTIVE_SLOW_THRESHOLD,
+      ),
+      in_flight_limit: env_usize(
+        "IX_KERNEL_CHECK_INFLIGHT",
+        DEFAULT_IN_FLIGHT_LIMIT,
+      ),
+      in_flight_label_chars: env_usize(
+        "IX_KERNEL_CHECK_NAME_CHARS",
+        DEFAULT_IN_FLIGHT_LABEL_CHARS,
+      ),
+      done: AtomicUsize::new(0),
+      active: Mutex::new(active),
+      stop: AtomicBool::new(false),
+      print_lock: Mutex::new(()),
+    }
+  }
+
+  fn spawn_reporter(progress: Arc<Self>) -> Option<thread::JoinHandle<()>> {
+    let interval = kernel_check_progress_interval()?;
+    Some(thread::spawn(move || {
+      let check_interval = interval.min(Duration::from_millis(250));
+      let mut last_print = Instant::now();
+      while !progress.stop.load(Ordering::Relaxed) {
+        thread::sleep(check_interval);
+        if progress.stop.load(Ordering::Relaxed) {
+          break;
+        }
+        if last_print.elapsed() < interval {
+          continue;
+        }
+        last_print = Instant::now();
+        progress.report();
+      }
+    }))
+  }
+
+  fn begin(&self, worker_idx: usize, prefix: &str) {
+    if let Some(slot) = self.active.lock().unwrap().get_mut(worker_idx) {
+      *slot = Some(InFlightCheck {
+        label: prefix.trim().to_string(),
+        started: Instant::now(),
+        reported_active_slow: false,
+      });
+    }
+  }
+
+  fn finish(&self, worker_idx: usize, outcome: &CheckOutcome) {
+    if let Some(slot) = self.active.lock().unwrap().get_mut(worker_idx) {
+      *slot = None;
+    }
+    self.done.fetch_add(1, Ordering::SeqCst);
+    if let Some(line) = self.persistent_line(outcome) {
+      self.log(&line);
+    }
+  }
+
+  fn stop_reporter(&self) {
+    self.stop.store(true, Ordering::Relaxed);
+  }
+
+  fn persistent_line(&self, outcome: &CheckOutcome) -> Option<String> {
+    let prefix = outcome.prefix();
+    match outcome.status {
+      CheckStatus::CompileFailed => {
+        let label = if outcome.should_pass {
+          "FAIL (compile)"
+        } else {
+          "REJECTED (compile)"
+        };
+        Some(format!("{prefix} ... {label}: {}", outcome.err_msg()))
+      },
+      CheckStatus::NotFound => Some(format!("{prefix} ? not found")),
+      CheckStatus::Checked => {
+        let must_persist = !self.quiet
+          || !outcome.is_expected()
+          || outcome.is_slow(self.slow_threshold);
+        if must_persist {
+          Some(format!(
+            "{prefix} ... {}",
+            outcome.checked_suffix(self.slow_threshold)
+          ))
+        } else {
+          None
+        }
+      },
+    }
+  }
+
+  fn report(&self) {
+    let done = self.done.load(Ordering::SeqCst);
+    let pct = if self.total == 0 {
+      100.0
+    } else {
+      (done as f64 / self.total as f64) * 100.0
+    };
+    let elapsed = self.started.elapsed().as_secs_f64();
+    let rate = if elapsed > 0.0 { done as f64 / elapsed } else { 0.0 };
+    let eta = if rate > 0.0 && done < self.total {
+      format!(" · eta {:.0}s", (self.total - done) as f64 / rate)
+    } else {
+      String::new()
+    };
+
+    let (in_flight, active_slow_lines) = {
+      let mut active = self.active.lock().unwrap();
+      let mut active_slow_lines = Vec::new();
+      if let Some(active_slow_threshold) = self.active_slow_threshold {
+        for slot in active.iter_mut() {
+          if let Some(check) = slot.as_mut() {
+            let age = check.started.elapsed();
+            if !check.reported_active_slow && age >= active_slow_threshold {
+              check.reported_active_slow = true;
+              active_slow_lines.push(format!(
+                "[rs_kernel_check] still checking {} after {:.0}s",
+                compact_in_flight_label(
+                  &check.label,
+                  self.in_flight_label_chars
+                ),
+                age.as_secs_f64()
+              ));
+            }
+          }
+        }
+      }
+
+      let mut entries: Vec<_> = active
+        .iter()
+        .filter_map(|slot| {
+          slot.as_ref().map(|check| (check.started, check.label.clone()))
+        })
+        .collect();
+      entries.sort_by_key(|(started, _)| *started);
+      let in_flight = entries
+        .into_iter()
+        .take(self.in_flight_limit)
+        .map(|(started, label)| {
+          format!(
+            "{} ({:.0}s)",
+            compact_in_flight_label(&label, self.in_flight_label_chars),
+            started.elapsed().as_secs_f64()
+          )
+        })
+        .collect::<Vec<_>>();
+      (in_flight, active_slow_lines)
+    };
+    let active_suffix = if in_flight.is_empty() {
+      String::new()
+    } else {
+      format!(" · in-flight: {}", in_flight.join(", "))
+    };
+
+    self.log(&format!(
+      "[rs_kernel_check] {done}/{} ({pct:.1}%) · {:.1}/s · elapsed {:.0}s{eta}{active_suffix}",
+      self.total,
+      rate,
+      elapsed,
+    ));
+    for line in active_slow_lines {
+      self.log(&line);
+    }
+  }
+
+  fn log(&self, line: &str) {
+    let _guard = self.print_lock.lock().unwrap();
+    eprintln!("{line}");
+  }
+}
+
+fn kernel_check_progress_interval() -> Option<Duration> {
+  let ms = std::env::var("IX_KERNEL_CHECK_PROGRESS_MS")
+    .ok()
+    .or_else(|| std::env::var("IX_PROGRESS_MS").ok())
+    .and_then(|s| s.parse::<u64>().ok())
+    .unwrap_or(2000);
+  if ms == 0 { None } else { Some(Duration::from_millis(ms)) }
+}
+
+fn compact_in_flight_label(label: &str, max_chars: usize) -> String {
+  if max_chars == 0 {
+    return String::new();
+  }
+
+  let label = label.trim();
+  if label.chars().count() <= max_chars {
+    return label.to_string();
+  }
+
+  const ELLIPSIS: &str = "...";
+  if max_chars <= ELLIPSIS.len() {
+    return label.chars().take(max_chars).collect();
+  }
+
+  if let Some((head, tail)) = label.split_once("] ") {
+    let head = format!("{head}] ");
+    let head_chars = head.chars().count();
+    if head_chars + ELLIPSIS.len() < max_chars {
+      let tail_chars = max_chars - head_chars - ELLIPSIS.len();
+      return format!("{head}{ELLIPSIS}{}", last_chars(tail, tail_chars));
+    }
+  }
+
+  format!("{ELLIPSIS}{}", last_chars(label, max_chars - ELLIPSIS.len()))
+}
+
+fn last_chars(s: &str, count: usize) -> String {
+  let chars: Vec<char> = s.chars().collect();
+  if chars.len() <= count {
+    return s.to_string();
+  }
+  chars[chars.len() - count..].iter().collect()
 }
 
 // =============================================================================
@@ -547,14 +1305,10 @@ fn term_cols_stderr() -> usize {
 /// falls through to `Debug`.
 fn format_tc_error(e: &TcError<Meta>) -> String {
   match e {
-    TcError::AppTypeMismatch { a_ty, dom, depth } => {
-      format!(
-        "AppTypeMismatch at depth={depth}\n    a_ty = {a_ty}\n    dom  = {dom}"
-      )
+    TcError::AppTypeMismatch { depth, .. } => {
+      format!("AppTypeMismatch at depth={depth}")
     },
-    TcError::FunExpected { e, whnf } => {
-      format!("FunExpected\n    e    = {e}\n    whnf = {whnf}")
-    },
+    TcError::FunExpected { .. } => "FunExpected".to_string(),
     // Everything else has a hand-written `Display` impl in
     // `src/ix/kernel/error.rs` — prefer it over `{:?}` which dumps raw
     // KExpr internals.
@@ -633,6 +1387,10 @@ fn build_uniform_error(count: usize, msg: &str) -> LeanIOResult<LeanOwned> {
 // If `ixon_egress` is structurally faithful (kenv → ixon inversion preserves
 // the original addressing) and decompile_env regenerates aux_gen correctly,
 // this test should report zero mismatches.
+//
+// Test-only: this and the no-compile variant below import `egress` and
+// `decompile_env`, which the production CLI path (`rs_kernel_check_consts`)
+// doesn't need. Cfg-gating keeps `lake build ix` (no `test-ffi`) lean.
 
 /// FFI: exercise the full pipeline
 /// Lean → Ixon → kernel → Ixon' → decompile → Lean, and compare each
@@ -645,6 +1403,7 @@ fn build_uniform_error(count: usize, msg: &str) -> LeanIOResult<LeanOwned> {
 ///     @& List (Lean.Name × Lean.ConstantInfo) → IO (Array String)
 /// ```
 /// Returns an `Array String` of per-constant diff messages. Empty = pass.
+#[cfg(feature = "test-ffi")]
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_kernel_roundtrip(
   env_consts: LeanList<LeanBorrowed<'_>>,
@@ -762,6 +1521,7 @@ pub extern "C" fn rs_kernel_roundtrip(
 /// Compare two envs for structural equality under content-hashing. Returns
 /// `(errors, checked, not_found)`. `errors` is capped at 50 to keep outputs
 /// manageable.
+#[cfg(feature = "test-ffi")]
 fn compare_envs(
   original: &crate::ix::env::Env,
   egressed: &crate::ix::env::Env,
@@ -834,6 +1594,7 @@ fn compare_envs(
 
 /// Walk two `Expr` trees in parallel and return the first structural diff.
 /// Returns a path-annotated description of where the mismatch is.
+#[cfg(feature = "test-ffi")]
 fn find_diff(
   a: &crate::ix::env::Expr,
   b: &crate::ix::env::Expr,
@@ -969,6 +1730,7 @@ fn find_diff(
 }
 
 /// Build an `IO (Array String)` from a slice of error messages.
+#[cfg(feature = "test-ffi")]
 fn build_string_array(errors: &[String]) -> LeanIOResult<LeanOwned> {
   let arr = LeanArray::alloc(errors.len());
   for (i, msg) in errors.iter().enumerate() {
@@ -1003,6 +1765,7 @@ fn build_string_array(errors: &[String]) -> LeanIOResult<LeanOwned> {
 /// opaque rsKernelRoundtripNoCompileFFI :
 ///     @& List (Lean.Name × Lean.ConstantInfo) → IO (Array String)
 /// ```
+#[cfg(feature = "test-ffi")]
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_kernel_roundtrip_no_compile(
   env_consts: LeanList<LeanBorrowed<'_>>,

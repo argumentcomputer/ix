@@ -24,11 +24,19 @@ use std::sync::Arc;
 use rustc_hash::FxHashMap;
 
 use crate::ix::env::{
-  ConstantInfo as LeanConstantInfo, Env as LeanEnv, Expr as LeanExpr, ExprData,
-  Name,
+  ConstantInfo as LeanConstantInfo, ConstructorVal, Env as LeanEnv,
+  Expr as LeanExpr, ExprData, Level, Name, NameData, RecursorVal,
 };
 use crate::ix::ixon::error::CompileError;
 use crate::ix::ixon::expr::Expr as IxonExpr;
+
+use super::{
+  aux_gen::expr_utils::{
+    LocalDecl, consume_type_annotations, decompose_apps, fresh_fvar,
+    instantiate1, mk_lambda, subst_levels,
+  },
+  nat_conv::nat_to_usize,
+};
 
 // NOTE: an `AuxKind` enum (Rec / BelowDef / BelowIndc / BrecOn / CasesOn /
 // RecOn) used to live here to tag the region layout for each auxiliary
@@ -64,6 +72,15 @@ pub struct CallSitePlan {
   pub source_to_canon_motive: Vec<usize>,
   /// Same for minors.
   pub source_to_canon_minor: Vec<usize>,
+  /// `true` when the source motive belongs to this canonical SCC.
+  ///
+  /// Source recursor types use Lean's original `all` block, but canonical
+  /// recursors are generated per minimal SCC. A source motive can therefore
+  /// be present in the source telescope while absent from this canonical
+  /// block. Call-site minor adaptation uses this bit to distinguish
+  /// "canonical recursor supplies an IH binder" from "the IH must be
+  /// synthesized by a recursive call into another canonical block".
+  pub source_in_block: Vec<bool>,
 }
 
 impl CallSitePlan {
@@ -95,6 +112,69 @@ impl CallSitePlan {
   }
 }
 
+/// Call-site surgery plan for `.brecOn` / `.brecOn_N`.
+///
+/// `.rec` telescope layout is:
+/// `params, motives, minors, indices, major`.
+///
+/// `.brecOn` telescope layout is:
+/// `params, motives, indices, major, handlers`, with one handler per motive.
+/// The motive permutation/drop decision is the same as the corresponding
+/// recursor plan, and the handlers mirror that motive layout.
+#[derive(Clone, Debug)]
+pub struct BRecOnCallSitePlan {
+  pub n_params: usize,
+  pub n_source_motives: usize,
+  pub n_indices: usize,
+  pub motive_keep: Vec<bool>,
+  pub source_to_canon_motive: Vec<usize>,
+}
+
+impl BRecOnCallSitePlan {
+  pub fn from_rec_plan(plan: &CallSitePlan) -> Self {
+    Self {
+      n_params: plan.n_params,
+      n_source_motives: plan.n_source_motives,
+      n_indices: plan.n_indices,
+      motive_keep: plan.motive_keep.clone(),
+      source_to_canon_motive: plan.source_to_canon_motive.clone(),
+    }
+  }
+
+  pub fn n_canonical_motives(&self) -> usize {
+    self.motive_keep.iter().filter(|&&k| k).count()
+  }
+
+  pub fn is_identity(&self) -> bool {
+    self.motive_keep.iter().all(|&k| k)
+      && self.source_to_canon_motive.iter().enumerate().all(|(i, &c)| c == i)
+  }
+}
+
+pub fn rec_name_to_brecon_name(name: &Name) -> Option<Name> {
+  match name.as_data() {
+    NameData::Str(parent, s, _) if s == "rec" => {
+      Some(Name::str(parent.clone(), "brecOn".to_string()))
+    },
+    NameData::Str(parent, s, _) if s.starts_with("rec_") => {
+      Some(Name::str(parent.clone(), format!("brecOn_{}", &s[4..])))
+    },
+    _ => None,
+  }
+}
+
+pub fn rec_name_to_below_name(name: &Name) -> Option<Name> {
+  match name.as_data() {
+    NameData::Str(parent, s, _) if s == "rec" => {
+      Some(Name::str(parent.clone(), "below".to_string()))
+    },
+    NameData::Str(parent, s, _) if s.starts_with("rec_") => {
+      Some(Name::str(parent.clone(), format!("below_{}", &s[4..])))
+    },
+    _ => None,
+  }
+}
+
 // ===========================================================================
 // Telescope utilities
 // ===========================================================================
@@ -118,6 +198,7 @@ pub fn collect_lean_telescope<'a>(
 /// Collect an Ixon App telescope: peel App nodes to get `(head, [a1, ..., aN])`.
 ///
 /// Arguments are returned in application order (leftmost first).
+#[allow(dead_code)]
 pub fn collect_ixon_telescope(
   e: &Arc<IxonExpr>,
 ) -> (Arc<IxonExpr>, Vec<Arc<IxonExpr>>) {
@@ -282,6 +363,15 @@ pub fn compute_call_site_plans(
         !name_to_class.contains_key(&original_all[src_i])
       } else {
         false // aux motives are never phantom
+      }
+    })
+    .collect();
+  let source_in_block: Vec<bool> = (0..n_source_motives)
+    .map(|src_i| {
+      if src_i < n_user_motives {
+        !is_phantom[src_i]
+      } else {
+        aux_canon_of_source(src_i - n_user_motives).is_some()
       }
     })
     .collect();
@@ -503,6 +593,7 @@ pub fn compute_call_site_plans(
       minor_keep,
       source_to_canon_motive: source_to_canon_motive.clone(),
       source_to_canon_minor,
+      source_in_block: source_in_block.clone(),
     }
   };
 
@@ -561,7 +652,465 @@ pub fn compute_call_site_plans(
     }
   }
 
+  // -----------------------------------------------------------------------
+  // Gated diagnostic dump — IX_SURGERY_DUMP=<prefix>
+  //
+  // When the env var is set and its value is a prefix of `original_all[0]`'s
+  // pretty name, dump the full intermediate state of this call-site-plan
+  // computation. Used to pin down where a Category A/B mismatch originates
+  // (see plans/the-nested-inductive-work-declarative-naur.md).
+  // -----------------------------------------------------------------------
+  if let Ok(filter) = std::env::var("IX_SURGERY_DUMP")
+    && !filter.is_empty()
+    && let Some(head) = original_all.first()
+    && head.pretty().starts_with(&filter)
+  {
+    dump_plan_state(
+      &filter,
+      sorted_classes,
+      original_all,
+      lean_env,
+      aux_layout,
+      n_params,
+      n_indices,
+      lean_num_motives,
+      lean_num_minors,
+      n_user_motives,
+      n_source_motives,
+      n_source_aux_motives,
+      n_user_minors,
+      n_source_minors,
+      n_aux_minors,
+      aux_canonical_count,
+      &ctor_counts,
+      &canon_ctor_counts,
+      &canon_minor_offset,
+      &aux_repr_for_canon,
+      &is_phantom,
+      &source_to_canon_motive,
+      &plans,
+    );
+  }
+
   Ok(plans)
+}
+
+/// Adapt a kept source minor for a canonical recursor whose SCC is smaller
+/// than Lean's original mutual `all` block.
+///
+/// Lean's source recursor minor for a constructor receives an IH argument for
+/// every recursive field targeting any inductive in the original mutual block.
+/// After canonical SCC splitting, the regenerated recursor only supplies IHs
+/// for fields targeting the current SCC. For fields targeting another SCC, we
+/// synthesize the missing IH by recursively calling the target's source
+/// recursor with the original source-order motive/minor telescope. That inner
+/// recursor call then goes through the normal call-site surgery for its own
+/// SCC.
+#[allow(clippy::too_many_arguments)]
+pub fn adapt_split_minor(
+  rec_name: &Name,
+  rec_levels: &[Level],
+  plan: &CallSitePlan,
+  src_minor_idx: usize,
+  minor: &LeanExpr,
+  params: &[LeanExpr],
+  motives: &[LeanExpr],
+  minors: &[LeanExpr],
+  lean_env: &LeanEnv,
+) -> Option<LeanExpr> {
+  if plan.source_in_block.iter().all(|&in_block| in_block) {
+    return None;
+  }
+
+  let rec_info = lean_env.get(rec_name)?;
+  let rec = match rec_info {
+    LeanConstantInfo::RecInfo(rec) => rec,
+    _ => return None,
+  };
+  let original_all = rec.all.as_slice();
+  let (_parent_src, ctor) =
+    source_ctor_for_minor(src_minor_idx, rec, lean_env)?;
+  let n_fields = nat_to_usize(&ctor.num_fields);
+  let source_minor_ty =
+    source_minor_type(rec, rec_levels, params, motives, minors, src_minor_idx)?;
+
+  let (field_decls, field_fvars, after_fields) =
+    peel_binders(source_minor_ty, n_fields, "split_field", 0)?;
+
+  let mut rec_fields = Vec::new();
+  for (field_idx, decl) in field_decls.iter().enumerate() {
+    if let Some(target) = find_source_rec_target(
+      &decl.domain,
+      original_all,
+      params,
+      lean_env,
+      "split_xs",
+      field_idx,
+    ) {
+      rec_fields.push((field_idx, target));
+    }
+  }
+
+  if !rec_fields.iter().any(|(_, target)| {
+    !plan.source_in_block.get(target.source_pos).copied().unwrap_or(false)
+  }) {
+    return None;
+  }
+
+  let (source_ih_decls, source_ih_fvars, _) =
+    peel_binders(after_fields, rec_fields.len(), "split_ih", 0)?;
+  if source_ih_decls.len() != rec_fields.len() {
+    return None;
+  }
+
+  let mut wrapper_decls = field_decls.clone();
+  let mut body = minor.clone();
+  for fv in &field_fvars {
+    body = LeanExpr::app(body, fv.clone());
+  }
+
+  for (ih_idx, (field_idx, target)) in rec_fields.iter().enumerate() {
+    if plan.source_in_block.get(target.source_pos).copied().unwrap_or(false) {
+      wrapper_decls.push(source_ih_decls[ih_idx].clone());
+      body = LeanExpr::app(body, source_ih_fvars[ih_idx].clone());
+    } else {
+      let synth = synthesize_external_ih(
+        target,
+        &field_fvars[*field_idx],
+        original_all,
+        rec_levels,
+        params,
+        motives,
+        minors,
+      );
+      body = LeanExpr::app(body, synth);
+    }
+  }
+
+  Some(mk_lambda(body, &wrapper_decls))
+}
+
+fn source_ctor_for_minor(
+  src_minor_idx: usize,
+  rec: &RecursorVal,
+  lean_env: &LeanEnv,
+) -> Option<(usize, ConstructorVal)> {
+  let mut offset = 0usize;
+  for (source_pos, ind_name) in rec.all.iter().enumerate() {
+    let ind_info = lean_env.get(ind_name)?;
+    let ind = match ind_info {
+      LeanConstantInfo::InductInfo(ind) => ind,
+      _ => return None,
+    };
+    let n_ctors = ind.ctors.len();
+    if src_minor_idx < offset + n_ctors {
+      let ctor_name = &ind.ctors[src_minor_idx - offset];
+      let ctor = match lean_env.get(ctor_name).as_deref()? {
+        LeanConstantInfo::CtorInfo(ctor) => ctor.clone(),
+        _ => return None,
+      };
+      return Some((source_pos, ctor));
+    }
+    offset += n_ctors;
+  }
+  None
+}
+
+fn source_minor_type(
+  rec: &RecursorVal,
+  rec_levels: &[Level],
+  params: &[LeanExpr],
+  motives: &[LeanExpr],
+  minors: &[LeanExpr],
+  src_minor_idx: usize,
+) -> Option<LeanExpr> {
+  let mut cur = subst_levels(&rec.cnst.typ, &rec.cnst.level_params, rec_levels);
+  for arg in
+    params.iter().chain(motives.iter()).chain(minors.iter().take(src_minor_idx))
+  {
+    match cur.as_data() {
+      ExprData::ForallE(_, _, body, _, _) => {
+        cur = instantiate1(body, arg);
+      },
+      _ => return None,
+    }
+  }
+  match cur.as_data() {
+    ExprData::ForallE(_, dom, _, _, _) => Some(consume_type_annotations(dom)),
+    _ => None,
+  }
+}
+
+fn peel_binders(
+  mut cur: LeanExpr,
+  n: usize,
+  prefix: &str,
+  offset: usize,
+) -> Option<(Vec<LocalDecl>, Vec<LeanExpr>, LeanExpr)> {
+  let mut decls = Vec::with_capacity(n);
+  let mut fvars = Vec::with_capacity(n);
+  for i in 0..n {
+    match cur.as_data() {
+      ExprData::ForallE(name, dom, body, bi, _) => {
+        let (fv_name, fv) = fresh_fvar(prefix, offset + i);
+        let decl = LocalDecl {
+          fvar_name: fv_name,
+          binder_name: name.clone(),
+          domain: consume_type_annotations(dom),
+          info: bi.clone(),
+        };
+        cur = instantiate1(body, &fv);
+        fvars.push(fv);
+        decls.push(decl);
+      },
+      _ => return None,
+    }
+  }
+  Some((decls, fvars, cur))
+}
+
+#[derive(Clone)]
+struct SourceRecTarget {
+  source_pos: usize,
+  idx_args: Vec<LeanExpr>,
+  xs_decls: Vec<LocalDecl>,
+  xs_fvars: Vec<LeanExpr>,
+}
+
+fn find_source_rec_target(
+  dom: &LeanExpr,
+  original_all: &[Name],
+  params: &[LeanExpr],
+  lean_env: &LeanEnv,
+  prefix: &str,
+  field_idx: usize,
+) -> Option<SourceRecTarget> {
+  let mut cur = consume_type_annotations(dom);
+  let mut xs_decls = Vec::new();
+  let mut xs_fvars = Vec::new();
+
+  while let ExprData::ForallE(name, dom, body, bi, _) = cur.as_data() {
+    let (fv_name, fv) =
+      fresh_fvar(prefix, field_idx.saturating_mul(1024) + xs_fvars.len());
+    let decl = LocalDecl {
+      fvar_name: fv_name,
+      binder_name: name.clone(),
+      domain: consume_type_annotations(dom),
+      info: bi.clone(),
+    };
+    cur = instantiate1(body, &fv);
+    xs_fvars.push(fv);
+    xs_decls.push(decl);
+  }
+
+  let (head, args) = decompose_apps(&cur);
+  let ExprData::Const(target_name, _, _) = head.as_data() else {
+    return None;
+  };
+  let source_pos = original_all.iter().position(|n| n == target_name)?;
+  let target_n_params = match lean_env.get(target_name).as_deref()? {
+    LeanConstantInfo::InductInfo(ind) => nat_to_usize(&ind.num_params),
+    _ => return None,
+  };
+  if args.len() < target_n_params || params.len() < target_n_params {
+    return None;
+  }
+  if !args[..target_n_params]
+    .iter()
+    .zip(params.iter())
+    .all(|(arg, param)| arg.get_hash() == param.get_hash())
+  {
+    return None;
+  }
+
+  Some(SourceRecTarget {
+    source_pos,
+    idx_args: args.into_iter().skip(target_n_params).collect(),
+    xs_decls,
+    xs_fvars,
+  })
+}
+
+fn synthesize_external_ih(
+  target: &SourceRecTarget,
+  field_fvar: &LeanExpr,
+  original_all: &[Name],
+  rec_levels: &[Level],
+  params: &[LeanExpr],
+  motives: &[LeanExpr],
+  minors: &[LeanExpr],
+) -> LeanExpr {
+  let target_name = &original_all[target.source_pos];
+  let target_rec_name = Name::str(target_name.clone(), "rec".to_string());
+  let mut ih = LeanExpr::cnst(target_rec_name, rec_levels.to_vec());
+
+  for arg in params {
+    ih = LeanExpr::app(ih, arg.clone());
+  }
+  for arg in motives {
+    ih = LeanExpr::app(ih, arg.clone());
+  }
+  for arg in minors {
+    ih = LeanExpr::app(ih, arg.clone());
+  }
+  for idx in &target.idx_args {
+    ih = LeanExpr::app(ih, idx.clone());
+  }
+
+  let mut field_app = field_fvar.clone();
+  for fv in &target.xs_fvars {
+    field_app = LeanExpr::app(field_app, fv.clone());
+  }
+  ih = LeanExpr::app(ih, field_app);
+
+  mk_lambda(ih, &target.xs_decls)
+}
+
+/// Dump the intermediate state of `compute_call_site_plans` for a single
+/// block. Gated by `IX_SURGERY_DUMP=<prefix>`. See the call site for the
+/// full set of scalars and vectors printed.
+#[allow(clippy::too_many_arguments)]
+fn dump_plan_state(
+  filter: &str,
+  sorted_classes: &[Vec<Name>],
+  original_all: &[Name],
+  lean_env: &LeanEnv,
+  aux_layout: Option<&AuxLayout>,
+  n_params: usize,
+  n_indices: usize,
+  lean_num_motives: usize,
+  lean_num_minors: usize,
+  n_user_motives: usize,
+  n_source_motives: usize,
+  n_source_aux_motives: usize,
+  n_user_minors: usize,
+  n_source_minors: usize,
+  n_aux_minors: usize,
+  aux_canonical_count: usize,
+  ctor_counts: &[usize],
+  canon_ctor_counts: &[usize],
+  canon_minor_offset: &[usize],
+  aux_repr_for_canon: &[usize],
+  is_phantom: &[bool],
+  source_to_canon_motive: &[usize],
+  plans: &FxHashMap<Name, CallSitePlan>,
+) {
+  let head0 = original_all.first().map(|n| n.pretty()).unwrap_or_default();
+  eprintln!(
+    "[surgery.dump] ═══════════════════════════════════════════════════"
+  );
+  eprintln!("[surgery.dump] filter={filter} head_all[0]={head0}");
+  eprintln!(
+    "[surgery.dump] sorted_classes ({} classes):",
+    sorted_classes.len()
+  );
+  for (ci, class) in sorted_classes.iter().enumerate() {
+    let names: Vec<String> = class.iter().map(|n| n.pretty()).collect();
+    eprintln!("  class[{ci:2}] = {names:?}");
+  }
+  eprintln!("[surgery.dump] original_all ({} names):", original_all.len());
+  for (i, n) in original_all.iter().enumerate() {
+    let phantom = if is_phantom.get(i).copied().unwrap_or(false) {
+      " [phantom]"
+    } else {
+      ""
+    };
+    eprintln!("  [{i:2}] {}{phantom}", n.pretty());
+  }
+  eprintln!(
+    "[surgery.dump] scalars: n_params={n_params} n_indices={n_indices} \
+     lean_num_motives={lean_num_motives} lean_num_minors={lean_num_minors} \
+     n_user_motives={n_user_motives} n_source_motives={n_source_motives} \
+     n_source_aux_motives={n_source_aux_motives} n_user_minors={n_user_minors} \
+     n_source_minors={n_source_minors} n_aux_minors={n_aux_minors} \
+     aux_canonical_count={aux_canonical_count}"
+  );
+  if let Some(layout) = aux_layout {
+    eprintln!(
+      "[surgery.dump] aux_layout.perm               = {:?}",
+      layout.perm
+    );
+    eprintln!(
+      "[surgery.dump] aux_layout.source_ctor_counts = {:?}",
+      layout.source_ctor_counts
+    );
+  } else {
+    eprintln!("[surgery.dump] aux_layout = None");
+  }
+  eprintln!(
+    "[surgery.dump] ctor_counts        (per user src) = {ctor_counts:?}"
+  );
+  eprintln!(
+    "[surgery.dump] canon_ctor_counts  (per user class) = {canon_ctor_counts:?}"
+  );
+  eprintln!(
+    "[surgery.dump] canon_minor_offset (per user class) = {canon_minor_offset:?}"
+  );
+  eprintln!(
+    "[surgery.dump] aux_repr_for_canon (canon_i -> rep source_j) = {aux_repr_for_canon:?}"
+  );
+  eprintln!(
+    "[surgery.dump] source_to_canon_motive (all plans share) = {source_to_canon_motive:?}"
+  );
+
+  // Dump Lean's source recursor telescope, labelled per binder section.
+  let first_rec = original_all.iter().find_map(|n| {
+    let rec_name = Name::str(n.clone(), "rec".to_string());
+    match lean_env.get(&rec_name).as_deref() {
+      Some(LeanConstantInfo::RecInfo(r)) => {
+        Some((rec_name, r.cnst.typ.clone()))
+      },
+      _ => None,
+    }
+  });
+  if let Some((rname, rty)) = first_rec {
+    let total = n_params + n_source_motives + n_source_minors + n_indices + 1;
+    eprintln!(
+      "[surgery.dump] source recursor {} (expecting {} binders):",
+      rname.pretty(),
+      total
+    );
+    let mut cur = &rty;
+    for bi in 0..total {
+      let tag = if bi < n_params {
+        "param"
+      } else if bi < n_params + n_source_motives {
+        "motive"
+      } else if bi < n_params + n_source_motives + n_source_minors {
+        "minor"
+      } else if bi < n_params + n_source_motives + n_source_minors + n_indices {
+        "index"
+      } else {
+        "major"
+      };
+      match cur.as_data() {
+        ExprData::ForallE(bn, dom, body, _, _) => {
+          eprintln!("  [{bi:3} {tag:6}] {} : {}", bn.pretty(), dom.pretty());
+          cur = body;
+        },
+        _ => {
+          eprintln!("  [{bi:3} {tag:6}] <telescope ended early>");
+          break;
+        },
+      }
+    }
+  }
+
+  // Per-plan details.
+  let mut plan_names: Vec<&Name> = plans.keys().collect();
+  plan_names.sort_by_key(|n| n.pretty());
+  eprintln!("[surgery.dump] plans registered ({}):", plan_names.len());
+  for name in plan_names {
+    let plan = &plans[name];
+    eprintln!("  {}", name.pretty());
+    eprintln!("    motive_keep            = {:?}", plan.motive_keep);
+    eprintln!("    minor_keep             = {:?}", plan.minor_keep);
+    eprintln!("    source_to_canon_motive = {:?}", plan.source_to_canon_motive);
+    eprintln!("    source_to_canon_minor  = {:?}", plan.source_to_canon_minor);
+  }
+  eprintln!(
+    "[surgery.dump] ═══════════════════════════════════════════════════"
+  );
 }
 
 #[cfg(test)]
@@ -615,6 +1164,7 @@ mod tests {
       minor_keep: vec![true, true],
       source_to_canon_motive: vec![0, 1],
       source_to_canon_minor: vec![0, 1],
+      source_in_block: vec![true, true],
     };
     assert!(plan.is_identity());
   }
@@ -630,6 +1180,7 @@ mod tests {
       minor_keep: vec![true, true, false],
       source_to_canon_motive: vec![0, 1, 0],
       source_to_canon_minor: vec![0, 1, 0],
+      source_in_block: vec![true, true, true],
     };
     assert!(!plan.is_identity());
   }
@@ -645,6 +1196,7 @@ mod tests {
       minor_keep: vec![true, true, true],
       source_to_canon_motive: vec![2, 0, 1], // permuted
       source_to_canon_minor: vec![2, 0, 1],
+      source_in_block: vec![true, true, true],
     };
     assert!(!plan.is_identity());
   }

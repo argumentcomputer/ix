@@ -1,5 +1,7 @@
 //! Type checker error types.
 
+use std::cmp::Ordering;
+
 use crate::ix::address::Address;
 
 use super::expr::KExpr;
@@ -13,7 +15,7 @@ pub fn u64_to_usize<M: KernelMode>(val: u64) -> Result<usize, TcError<M>> {
     .map_err(|_e| TcError::Other(format!("{val} exceeds usize::MAX")))
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum TcError<M: KernelMode> {
   TypeExpected,
   FunExpected {
@@ -46,6 +48,21 @@ pub enum TcError<M: KernelMode> {
   },
   DefEqFailed,
   MaxRecDepth,
+  /// A stored mutual block fails the kernel's canonicity check: under the
+  /// stored partition, an adjacent pair did not satisfy strict `Less`.
+  ///
+  /// - `Greater`: the stored order disagrees with `sort_consts`.
+  /// - `Equal`: two distinct entries are alpha-equivalent — the
+  ///   compiler should have collapsed them to a single canonical Ixon
+  ///   constant. Two separate addresses for the same alpha-equivalence
+  ///   class is a canonicity violation.
+  ///
+  /// `pos` is the index of the first member of the offending pair.
+  NonCanonicalBlock {
+    block: Address,
+    pos: usize,
+    ordering: Ordering,
+  },
   Other(String),
 }
 
@@ -80,6 +97,18 @@ impl<M: KernelMode> std::fmt::Display for TcError<M> {
       },
       TcError::DefEqFailed => write!(f, "definitional equality check failed"),
       TcError::MaxRecDepth => write!(f, "max recursion depth exceeded"),
+      TcError::NonCanonicalBlock { block, pos, ordering } => {
+        let dir = match ordering {
+          Ordering::Less => "Less",
+          Ordering::Equal => "Equal (uncollapsed alpha-equivalence)",
+          Ordering::Greater => "Greater (wrong order)",
+        };
+        write!(
+          f,
+          "non-canonical block {:.12}: adjacent pair at position {pos} compares {dir} (expected strict Less)",
+          block.hex()
+        )
+      },
       TcError::Other(s) => write!(f, "{s}"),
     }
   }

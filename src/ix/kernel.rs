@@ -1,3 +1,4 @@
+pub mod canonical_check;
 pub mod check;
 pub mod congruence;
 pub mod constant;

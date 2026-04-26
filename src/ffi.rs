@@ -22,8 +22,7 @@ pub mod compile; // Compilation: rs_compile_env_full, rs_compile_phases, etc.
 pub mod graph; // Graph/SCC: rs_build_ref_graph, rs_compute_sccs
 pub mod ix; // Ix types: Name, Level, Expr, ConstantInfo, Environment
 pub mod ixon; // Ixon types: Univ, Expr, Constant, metadata
-#[cfg(feature = "test-ffi")]
-pub mod kernel; // Kernel type-checker FFI: rs_kernel_check_consts (test-only)
+pub mod kernel; // Kernel type-checker FFI: rs_kernel_check_consts (production); rs_kernel_roundtrip* (test-only)
 pub mod primitives; // Primitives: rs_roundtrip_nat, rs_roundtrip_string, etc.
 #[cfg(feature = "test-ffi")]
 pub mod refcount; // Reference counting / ownership tests (test-only)

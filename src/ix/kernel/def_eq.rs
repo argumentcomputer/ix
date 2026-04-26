@@ -11,6 +11,7 @@ use std::sync::LazyLock;
 
 use crate::ix::ixon::constant::DefKind;
 
+use super::canonical_check::{KMutCtx, compare_kexpr};
 use super::constant::KConst;
 use super::env::Addr;
 use super::error::{TcError, u64_to_usize};
@@ -40,6 +41,18 @@ static IX_DEF_EQ_TRACE: LazyLock<Option<String>> =
 static IX_DEF_EQ_COUNT_LOG: LazyLock<bool> =
   LazyLock::new(|| std::env::var("IX_DEF_EQ_COUNT_LOG").is_ok());
 
+/// Dump the expression pair when `is_def_eq` hits its recursion/fuel guard.
+/// The optional env var value is used as a substring filter over the two head
+/// constants; an empty value dumps every guard hit.
+static IX_DEF_EQ_MAX_DUMP: LazyLock<Option<String>> =
+  LazyLock::new(|| std::env::var("IX_DEF_EQ_MAX_DUMP").ok());
+
+static IX_ETA_TRACE: LazyLock<Option<String>> =
+  LazyLock::new(|| std::env::var("IX_ETA_TRACE").ok());
+
+static IX_PROJ_DELTA_TRACE: LazyLock<Option<String>> =
+  LazyLock::new(|| std::env::var("IX_PROJ_DELTA_TRACE").ok());
+
 static DEF_EQ_COUNT: std::sync::atomic::AtomicUsize =
   std::sync::atomic::AtomicUsize::new(0);
 
@@ -50,7 +63,6 @@ impl<M: KernelMode> TypeChecker<M> {
     a: &KExpr<M>,
     b: &KExpr<M>,
   ) -> Result<bool, TcError<M>> {
-    self.tick()?;
     if *IX_DEF_EQ_COUNT_LOG {
       let n = DEF_EQ_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
       if n % 100_000 == 0 && n > 0 {
@@ -58,6 +70,14 @@ impl<M: KernelMode> TypeChecker<M> {
       }
     }
     if a.ptr_eq(b) {
+      return Ok(true);
+    }
+    if a.hash_key() == b.hash_key() {
+      return Ok(true);
+    }
+    if compare_kexpr(a, b, &KMutCtx::default()).ordering
+      == std::cmp::Ordering::Equal
+    {
       return Ok(true);
     }
 
@@ -68,18 +88,16 @@ impl<M: KernelMode> TypeChecker<M> {
       let a_hit = head_const_name(a).is_some_and(|n| n.contains(prefix));
       let b_hit = head_const_name(b).is_some_and(|n| n.contains(prefix));
       if a_hit || b_hit {
-        let a_whnf_str = match self.whnf(a) {
-          Ok(w) => format!("{w}"),
-          Err(e) => format!("ERR {e}"),
-        };
-        let b_whnf_str = match self.whnf(b) {
-          Ok(w) => format!("{w}"),
-          Err(e) => format!("ERR {e}"),
-        };
-        eprintln!("[deq] depth={} a=      {}", self.def_eq_depth, a);
-        eprintln!("[deq] depth={} a_whnf= {}", self.def_eq_depth, a_whnf_str);
-        eprintln!("[deq] depth={} b=      {}", self.def_eq_depth, b);
-        eprintln!("[deq] depth={} b_whnf= {}", self.def_eq_depth, b_whnf_str);
+        eprintln!(
+          "[deq] depth={} a={}",
+          self.def_eq_depth,
+          compact_def_eq_expr(a)
+        );
+        eprintln!(
+          "[deq] depth={} b={}",
+          self.def_eq_depth,
+          compact_def_eq_expr(b)
+        );
         true
       } else {
         false
@@ -88,8 +106,9 @@ impl<M: KernelMode> TypeChecker<M> {
       false
     };
 
-    // Context-aware EquivManager: closed exprs (lbr==0) share across
-    // contexts, open exprs under let-bindings are isolated by ctx_id.
+    // Context-aware EquivManager/cache: closed exprs (lbr==0) share across
+    // contexts. Open exprs are isolated by ctx_id because proof irrelevance
+    // can consult local types even when no let-bindings are present.
     //
     // Build `a_key` and `b_key` ONCE and reuse them throughout. The
     // `eq_ctx` Arc is cloned once into `a_key`; `b_key` receives the
@@ -101,22 +120,22 @@ impl<M: KernelMode> TypeChecker<M> {
     // `.clone()` pair to feed `add_equiv` there — it's mutually
     // exclusive with the main-path `add_equiv`, so at most one pair
     // of clones is ever charged.
-    let eq_ctx = if self.num_let_bindings > 0 && (a.lbr() > 0 || b.lbr() > 0) {
-      self.ctx_id.clone()
-    } else {
+    let eq_ctx = if a.lbr() == 0 && b.lbr() == 0 {
       empty_ctx_addr()
+    } else {
+      self.ctx_id.clone()
     };
     let a_key: crate::ix::kernel::equiv::EqKey = (a.hash_key(), eq_ctx.clone());
-    let b_key: crate::ix::kernel::equiv::EqKey = (b.hash_key(), eq_ctx);
+    let b_key: crate::ix::kernel::equiv::EqKey = (b.hash_key(), eq_ctx.clone());
 
     if self.equiv_manager.is_equiv(&a_key, &b_key) {
       return Ok(true);
     }
 
     let (lo, hi) = canonical_pair(a.hash_key(), b.hash_key());
-    let cache_key = (lo, hi, self.ctx_id.clone());
-    if let Some(cached) = self.env.def_eq_cache.get(&cache_key) {
-      return Ok(*cached);
+    let cache_key = (lo, hi, eq_ctx.clone());
+    if let Some(cached) = self.env.def_eq_cache.get(&cache_key).map(|v| *v) {
+      return Ok(cached);
     }
 
     // Equiv-root second-chance: if (a,b) not cached, try (root(a), root(b)).
@@ -126,17 +145,23 @@ impl<M: KernelMode> TypeChecker<M> {
     ) && (a_root != a_key || b_root != b_key)
     {
       let (rlo, rhi) = canonical_pair(a_root.0, b_root.0);
-      let root_cache_key = (rlo, rhi, self.ctx_id.clone());
-      if let Some(cached) = self.env.def_eq_cache.get(&root_cache_key) {
-        if *cached {
+      let root_cache_key = (rlo, rhi, eq_ctx.clone());
+      let cached = self.env.def_eq_cache.get(&root_cache_key).map(|v| *v);
+      if let Some(cached) = cached {
+        if cached {
           // Rare branch: the main-path `add_equiv` below is skipped by
           // the early return, so clone here instead of moving.
           self.equiv_manager.add_equiv(a_key.clone(), b_key.clone());
         }
-        self.env.def_eq_cache.insert(cache_key, *cached);
-        return Ok(*cached);
+        self.env.def_eq_cache.insert(cache_key, cached);
+        return Ok(cached);
       }
     }
+
+    // Charge recursive fuel only after the O(1) exits above. Large proof
+    // terms can perform hundreds of thousands of pointer/equiv/cache hits;
+    // those should not consume the same budget as an actual comparison.
+    self.tick()?;
 
     self.def_eq_depth += 1;
     if self.def_eq_depth > self.def_eq_peak {
@@ -144,6 +169,7 @@ impl<M: KernelMode> TypeChecker<M> {
     }
     if self.def_eq_depth > MAX_DEF_EQ_DEPTH {
       self.def_eq_depth -= 1;
+      self.dump_def_eq_max("depth", a, b, None, None);
       return Err(TcError::MaxRecDepth);
     }
 
@@ -208,6 +234,23 @@ impl<M: KernelMode> TypeChecker<M> {
       }
     }
 
+    // Tier 1d: beta/iota/zeta-only app congruence before projection
+    // definitions and primitive wrappers are exposed. This catches open
+    // wrappers where one side is syntactically `C args` and the other is a
+    // beta-redex reducing to the same `C args`; unfolding them can expose
+    // recursive implementation details such as `Nat.brecOn.go`.
+    let ca = self.whnf_core(a)?;
+    let cb = self.whnf_core(b)?;
+    if ca.ptr_eq(&cb) {
+      return Ok(true);
+    }
+    if self.quick_def_eq(&ca, &cb)? {
+      return Ok(true);
+    }
+    if self.try_def_eq_app(&ca, &cb)? {
+      return Ok(true);
+    }
+
     // Tier 2: WHNF without delta
     let mut wa = self.whnf_no_delta(a)?;
     let mut wb = self.whnf_no_delta(b)?;
@@ -223,10 +266,18 @@ impl<M: KernelMode> TypeChecker<M> {
       return Ok(true);
     }
 
+    // Congruence before lazy delta.  This keeps open primitive-wrapper terms
+    // such as `Nat.sub (x + 1) y` from unfolding to their recursive model when
+    // both sides already have the same head and definitionally equal args.
+    if self.try_def_eq_app(&wa, &wb)? {
+      return Ok(true);
+    }
+
     // Tier 4: iterative lazy delta (lean4lean lazyDeltaReduction)
     let mut fuel = MAX_WHNF_FUEL;
     loop {
       if fuel == 0 {
+        self.dump_def_eq_max("fuel", a, b, Some(&wa), Some(&wb));
         return Err(TcError::MaxRecDepth);
       }
       fuel -= 1;
@@ -386,6 +437,9 @@ impl<M: KernelMode> TypeChecker<M> {
     let wa = self.whnf(&wa)?;
     let wb = self.whnf(&wb)?;
     if wa.ptr_eq(&wb) {
+      return Ok(true);
+    }
+    if self.try_structural_congruence(&wa, &wb)? {
       return Ok(true);
     }
 
@@ -857,11 +911,16 @@ impl<M: KernelMode> TypeChecker<M> {
   ) -> Result<bool, TcError<M>> {
     use super::tc::collect_app_spine;
 
+    let t_norm = self.whnf_no_delta(t).unwrap_or_else(|_| t.clone());
+
     // s must be a constructor application
     let (s_head, s_args) = collect_app_spine(s);
     let ctor_id = match s_head.data() {
       ExprData::Const(id, _, _) => id.clone(),
-      _ => return Ok(false),
+      _ => {
+        self.dump_eta_trace("rhs-not-ctor-head", None, 0, &t_norm, s);
+        return Ok(false);
+      },
     };
 
     // Head must be a constructor
@@ -869,11 +928,21 @@ impl<M: KernelMode> TypeChecker<M> {
       Some(KConst::Ctor { induct, params, fields, .. }) => {
         (induct.clone(), u64_to_usize::<M>(params)?, u64_to_usize::<M>(fields)?)
       },
-      _ => return Ok(false),
+      _ => {
+        self.dump_eta_trace("rhs-head-not-ctor", Some(&ctor_id), 0, &t_norm, s);
+        return Ok(false);
+      },
     };
 
     // Must be fully applied
     if s_args.len() != num_params + num_fields {
+      self.dump_eta_trace(
+        "ctor-arity",
+        Some(&ctor_id),
+        s_args.len(),
+        &t_norm,
+        s,
+      );
       return Ok(false);
     }
 
@@ -881,10 +950,26 @@ impl<M: KernelMode> TypeChecker<M> {
     match self.env.get(&induct_id) {
       Some(KConst::Indc { is_rec, indices, ctors, .. }) => {
         if is_rec || indices != 0 || ctors.len() != 1 {
+          self.dump_eta_trace(
+            "not-struct-like",
+            Some(&induct_id),
+            0,
+            &t_norm,
+            s,
+          );
           return Ok(false);
         }
       },
-      _ => return Ok(false),
+      _ => {
+        self.dump_eta_trace(
+          "inductive-missing",
+          Some(&induct_id),
+          0,
+          &t_norm,
+          s,
+        );
+        return Ok(false);
+      },
     }
 
     // Types must be def-eq (lean4lean tryEtaStructCore, line 515).
@@ -894,26 +979,82 @@ impl<M: KernelMode> TypeChecker<M> {
     // where eta-expanding creates projections that would be unsound for Prop.
     let s_ty = match self.with_infer_only(|tc| tc.infer(s)) {
       Ok(ty) => ty,
-      Err(_) => return Ok(false),
+      Err(_) => {
+        self.dump_eta_trace("infer-rhs-type", Some(&induct_id), 0, t, s);
+        return Ok(false);
+      },
     };
-    let t_ty = match self.with_infer_only(|tc| tc.infer(t)) {
+    let t_ty = match self.with_infer_only(|tc| tc.infer(&t_norm)) {
       Ok(ty) => ty,
-      Err(_) => return Ok(false),
+      Err(_) => {
+        self.dump_eta_trace("infer-lhs-type", Some(&induct_id), 0, &t_norm, s);
+        return Ok(false);
+      },
     };
     if !self.is_def_eq(&t_ty, &s_ty)? {
+      self.dump_eta_trace("type-mismatch", Some(&induct_id), 0, &t_norm, s);
       return Ok(false);
+    }
+
+    if let Some(base) =
+      self.eta_expansion_base(&induct_id, num_params, num_fields, &s_args)?
+      && self.is_def_eq(&t_norm, &base)?
+    {
+      self.dump_eta_trace(
+        "eta-base",
+        Some(&induct_id),
+        num_fields,
+        &t_norm,
+        &base,
+      );
+      return Ok(true);
     }
 
     // Compare each field: proj(induct, i, t) ≡ s_args[params + i]
     for i in 0..num_fields {
       let proj =
-        self.intern(KExpr::prj(induct_id.clone(), i as u64, t.clone()));
+        self.intern(KExpr::prj(induct_id.clone(), i as u64, t_norm.clone()));
       if !self.is_def_eq(&proj, &s_args[num_params + i])? {
+        self.dump_eta_trace(
+          "field-mismatch",
+          Some(&induct_id),
+          i,
+          &proj,
+          &s_args[num_params + i],
+        );
         return Ok(false);
       }
     }
 
+    self.dump_eta_trace("ok", Some(&induct_id), num_fields, &t_norm, s);
     Ok(true)
+  }
+
+  fn eta_expansion_base(
+    &mut self,
+    induct_id: &KId<M>,
+    num_params: usize,
+    num_fields: usize,
+    args: &[KExpr<M>],
+  ) -> Result<Option<KExpr<M>>, TcError<M>> {
+    let mut base: Option<KExpr<M>> = None;
+    for i in 0..num_fields {
+      let field = &args[num_params + i];
+      let field = self.whnf_no_delta(field)?;
+      let ExprData::Prj(id, idx, val, _) = field.data() else {
+        return Ok(None);
+      };
+      if id.addr != induct_id.addr || *idx != i as u64 {
+        return Ok(None);
+      }
+      let val = self.whnf_no_delta(val).unwrap_or_else(|_| val.clone());
+      match &base {
+        Some(base) if base.hash_key() != val.hash_key() => return Ok(None),
+        Some(_) => {},
+        None => base = Some(val),
+      }
+    }
+    Ok(base)
   }
 
   /// App spine comparison (lean4lean isDefEqApp): decompose both sides into
@@ -954,11 +1095,12 @@ impl<M: KernelMode> TypeChecker<M> {
     }
   }
 
-  /// Check if a constant is delta-reducible (definitions only, not theorems or opaques).
+  /// Check if a constant is delta-reducible.
   fn is_delta(&self, id: &KId<M>) -> bool {
     matches!(
       self.env.get(id),
-      Some(KConst::Defn { kind, .. }) if kind == DefKind::Definition
+      Some(KConst::Defn { kind, .. })
+        if matches!(kind, DefKind::Definition | DefKind::Theorem)
     )
   }
 
@@ -1007,10 +1149,170 @@ impl<M: KernelMode> TypeChecker<M> {
       ),
       (ExprData::Var(i, _, _), ExprData::Var(j, _, _)) => Ok(i == j),
       (ExprData::Prj(id1, f1, v1, _), ExprData::Prj(id2, f2, v2, _)) => {
-        Ok(id1.addr == id2.addr && f1 == f2 && self.is_def_eq(v1, v2)?)
+        if id1.addr != id2.addr || f1 != f2 {
+          return Ok(false);
+        }
+        let mut v1 = v1.clone();
+        let mut v2 = v2.clone();
+        self.lazy_delta_proj_reduction(id1, *f1, &mut v1, &mut v2)
       },
       _ => Ok(false),
     }
+  }
+
+  fn lazy_delta_proj_reduction(
+    &mut self,
+    struct_id: &KId<M>,
+    field: u64,
+    a: &mut KExpr<M>,
+    b: &mut KExpr<M>,
+  ) -> Result<bool, TcError<M>> {
+    let mut fuel = MAX_WHNF_FUEL;
+    loop {
+      if fuel == 0 {
+        self.dump_def_eq_max("proj-delta-fuel", a, b, None, None);
+        return Err(TcError::MaxRecDepth);
+      }
+      fuel -= 1;
+      match self.lazy_delta_reduction_step(a, b)? {
+        LazyDeltaStep::Equal => return Ok(true),
+        LazyDeltaStep::Continue => continue,
+        LazyDeltaStep::Unknown => {
+          self.dump_proj_delta_trace("stuck", struct_id, field, a, b);
+          let pa = self.try_project_core(struct_id, field, a);
+          let pb = self.try_project_core(struct_id, field, b);
+          return match (pa, pb) {
+            (Some(pa), Some(pb)) => {
+              self.dump_proj_delta_trace(
+                "projected",
+                struct_id,
+                field,
+                &pa,
+                &pb,
+              );
+              self.is_def_eq(&pa, &pb)
+            },
+            _ => {
+              self.dump_proj_delta_trace("fallback", struct_id, field, a, b);
+              self.is_def_eq(a, b)
+            },
+          };
+        },
+      }
+    }
+  }
+
+  fn lazy_delta_reduction_step(
+    &mut self,
+    a: &mut KExpr<M>,
+    b: &mut KExpr<M>,
+  ) -> Result<LazyDeltaStep, TcError<M>> {
+    let a_head = head_const_id(a);
+    let b_head = head_const_id(b);
+    let a_delta = a_head.as_ref().is_some_and(|h| self.is_delta(h));
+    let b_delta = b_head.as_ref().is_some_and(|h| self.is_delta(h));
+
+    if !a_delta && !b_delta {
+      return Ok(LazyDeltaStep::Unknown);
+    }
+
+    if a_delta && !b_delta {
+      if let Some(b2) = self.try_unfold_proj_app(b)? {
+        *b = b2;
+      } else if let Some(a2) = self.delta_unfold_one(a)? {
+        *a = self.whnf_core(&a2)?;
+      } else {
+        return Ok(LazyDeltaStep::Unknown);
+      }
+    } else if !a_delta && b_delta {
+      if let Some(a2) = self.try_unfold_proj_app(a)? {
+        *a = a2;
+      } else if let Some(b2) = self.delta_unfold_one(b)? {
+        *b = self.whnf_core(&b2)?;
+      } else {
+        return Ok(LazyDeltaStep::Unknown);
+      }
+    } else {
+      let a_id = a_head.as_ref().expect("a_delta implies head");
+      let b_id = b_head.as_ref().expect("b_delta implies head");
+      let cmp = self.def_weight_id(a_id).cmp(&self.def_weight_id(b_id));
+      if cmp.is_gt() {
+        if let Some(a2) = self.delta_unfold_one(a)? {
+          *a = self.whnf_core(&a2)?;
+        } else {
+          return Ok(LazyDeltaStep::Unknown);
+        }
+      } else if cmp.is_lt() {
+        if let Some(b2) = self.delta_unfold_one(b)? {
+          *b = self.whnf_core(&b2)?;
+        } else {
+          return Ok(LazyDeltaStep::Unknown);
+        }
+      } else {
+        if a_id.addr == b_id.addr
+          && self.is_regular(a_id)
+          && let Some(true) = self.try_same_head_spine(a, b)?
+        {
+          return Ok(LazyDeltaStep::Equal);
+        }
+        let a2 = self.delta_unfold_one(a)?;
+        let b2 = self.delta_unfold_one(b)?;
+        match (a2, b2) {
+          (Some(a2), Some(b2)) => {
+            *a = self.whnf_core(&a2)?;
+            *b = self.whnf_core(&b2)?;
+          },
+          (Some(a2), None) => *a = self.whnf_core(&a2)?,
+          (None, Some(b2)) => *b = self.whnf_core(&b2)?,
+          (None, None) => return Ok(LazyDeltaStep::Unknown),
+        }
+      }
+    }
+
+    if a.ptr_eq(b) || self.quick_def_eq(a, b)? {
+      Ok(LazyDeltaStep::Equal)
+    } else {
+      Ok(LazyDeltaStep::Continue)
+    }
+  }
+
+  fn try_project_core(
+    &mut self,
+    struct_id: &KId<M>,
+    field: u64,
+    e: &KExpr<M>,
+  ) -> Option<KExpr<M>> {
+    self.try_proj_reduce(struct_id, field, e)
+  }
+
+  fn dump_proj_delta_trace(
+    &self,
+    phase: &str,
+    id: &KId<M>,
+    field: u64,
+    a: &KExpr<M>,
+    b: &KExpr<M>,
+  ) {
+    let Some(filter) = IX_PROJ_DELTA_TRACE.as_ref() else {
+      return;
+    };
+    if !self.debug_label_matches_env() {
+      return;
+    }
+    let id_s = id.to_string();
+    if !filter.is_empty() && !id_s.contains(filter) {
+      return;
+    }
+    eprintln!(
+      "[proj-delta] const={} depth={} phase={} proj={}.{} a={} b={}",
+      self.debug_label.as_deref().unwrap_or("<unknown>"),
+      self.def_eq_depth,
+      phase,
+      id,
+      field,
+      compact_def_eq_expr(a),
+      compact_def_eq_expr(b)
+    );
   }
 
   /// If the head of `e` is a projection, try reducing it via whnf_no_delta.
@@ -1026,6 +1328,93 @@ impl<M: KernelMode> TypeChecker<M> {
     let reduced = self.whnf_no_delta(e)?;
     if reduced.ptr_eq(e) { Ok(None) } else { Ok(Some(reduced)) }
   }
+
+  fn dump_eta_trace(
+    &self,
+    reason: &str,
+    id: Option<&KId<M>>,
+    idx: usize,
+    a: &KExpr<M>,
+    b: &KExpr<M>,
+  ) {
+    let Some(filter) = IX_ETA_TRACE.as_ref() else {
+      return;
+    };
+    if !self.debug_label_matches_env() {
+      return;
+    }
+    let id_s = id.map(|id| id.to_string()).unwrap_or_else(|| "<none>".into());
+    if !filter.is_empty() && !id_s.contains(filter) {
+      return;
+    }
+    eprintln!(
+      "[eta] const={} depth={} reason={} id={} idx={} a={} b={}",
+      self.debug_label.as_deref().unwrap_or("<unknown>"),
+      self.def_eq_depth,
+      reason,
+      id_s,
+      idx,
+      compact_def_eq_expr(a),
+      compact_def_eq_expr(b)
+    );
+  }
+}
+
+enum LazyDeltaStep {
+  Equal,
+  Unknown,
+  Continue,
+}
+
+fn compact_def_eq_expr<M: KernelMode>(e: &KExpr<M>) -> String {
+  let (head, args) = collect_app_spine(e);
+  let base = match head.data() {
+    ExprData::Var(i, _, _) => format!("#{i}"),
+    ExprData::Sort(u, _) => format!("Sort({u})"),
+    ExprData::Const(id, us, _) => format!("{id}.{{{}}}", us.len()),
+    ExprData::App(..) => "app".to_string(),
+    ExprData::Lam(..) => "lam".to_string(),
+    ExprData::All(..) => "forall".to_string(),
+    ExprData::Let(..) => "let".to_string(),
+    ExprData::Prj(id, field, val, _) => {
+      format!("Prj({id}.{field}, {})", compact_def_eq_expr(val))
+    },
+    ExprData::Nat(v, _, _) => format!("Nat({})", v.0),
+    ExprData::Str(v, _, _) => format!("Str(len={})", v.len()),
+  };
+  if args.is_empty() {
+    format!("{base}@{}", short_def_eq_addr(e))
+  } else {
+    let shown = args
+      .iter()
+      .take(6)
+      .map(compact_def_eq_head)
+      .collect::<Vec<_>>()
+      .join(", ");
+    let more = if args.len() > 6 { ", ..." } else { "" };
+    format!("{base}/{} [{shown}{more}]@{}", args.len(), short_def_eq_addr(e))
+  }
+}
+
+fn compact_def_eq_head<M: KernelMode>(e: &KExpr<M>) -> String {
+  let (head, args) = collect_app_spine(e);
+  let base = match head.data() {
+    ExprData::Var(i, _, _) => format!("#{i}"),
+    ExprData::Sort(u, _) => format!("Sort({u})"),
+    ExprData::Const(id, us, _) => format!("{id}.{{{}}}", us.len()),
+    ExprData::App(..) => "app".to_string(),
+    ExprData::Lam(..) => "lam".to_string(),
+    ExprData::All(..) => "forall".to_string(),
+    ExprData::Let(..) => "let".to_string(),
+    ExprData::Prj(id, field, _, _) => format!("Prj({id}.{field})"),
+    ExprData::Nat(v, _, _) => format!("Nat({})", v.0),
+    ExprData::Str(v, _, _) => format!("Str(len={})", v.len()),
+  };
+  if args.is_empty() { base } else { format!("{base}/{}", args.len()) }
+}
+
+fn short_def_eq_addr<M: KernelMode>(e: &KExpr<M>) -> String {
+  e.addr().to_hex().chars().take(12).collect()
 }
 
 /// Canonical ordering for cache keys: (min, max) by hash bytes.
@@ -1057,6 +1446,50 @@ fn head_const_name<M: KernelMode>(e: &KExpr<M>) -> Option<String> {
   Some(format!("{id}"))
 }
 
+impl<M: KernelMode> TypeChecker<M> {
+  fn dump_def_eq_max(
+    &self,
+    kind: &str,
+    a: &KExpr<M>,
+    b: &KExpr<M>,
+    wa: Option<&KExpr<M>>,
+    wb: Option<&KExpr<M>>,
+  ) {
+    let Some(filter) = IX_DEF_EQ_MAX_DUMP.as_ref() else {
+      return;
+    };
+    if !self.debug_label_matches_env() {
+      return;
+    }
+    let a_head = head_const_name(a).unwrap_or_else(|| "<none>".to_string());
+    let b_head = head_const_name(b).unwrap_or_else(|| "<none>".to_string());
+    let wa_head =
+      wa.and_then(head_const_name).unwrap_or_else(|| "<none>".to_string());
+    let wb_head =
+      wb.and_then(head_const_name).unwrap_or_else(|| "<none>".to_string());
+    if !filter.is_empty()
+      && !a_head.contains(filter)
+      && !b_head.contains(filter)
+      && !wa_head.contains(filter)
+      && !wb_head.contains(filter)
+    {
+      return;
+    }
+    eprintln!(
+      "[deq max] {kind} depth={} a_head={} b_head={} wa_head={} wb_head={}",
+      self.def_eq_depth, a_head, b_head, wa_head, wb_head
+    );
+    eprintln!("  a:  {a}");
+    eprintln!("  b:  {b}");
+    if let Some(wa) = wa {
+      eprintln!("  wa: {wa}");
+    }
+    if let Some(wb) = wb {
+      eprintln!("  wb: {wb}");
+    }
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use std::sync::Arc;
@@ -1066,13 +1499,14 @@ mod tests {
   use super::super::expr::KExpr;
   use super::super::id::KId;
   use super::super::level::KUniv;
-  use super::super::mode::Anon;
+  use super::super::mode::{Anon, Meta};
   use super::super::tc::TypeChecker;
   use crate::ix::address::Address;
-  use crate::ix::env::{DefinitionSafety, ReducibilityHints};
+  use crate::ix::env::{DataValue, DefinitionSafety, Name, ReducibilityHints};
   use crate::ix::ixon::constant::DefKind;
 
   type AE = KExpr<Anon>;
+  type ME = KExpr<Meta>;
   type AU = KUniv<Anon>;
 
   fn mk_addr(s: &str) -> Address {
@@ -1081,8 +1515,19 @@ mod tests {
   fn mk_id(s: &str) -> KId<Anon> {
     KId::new(mk_addr(s), ())
   }
+  fn mk_meta_name(s: &str) -> Name {
+    let mut name = Name::anon();
+    for part in s.split('.') {
+      name = Name::str(name, part.to_string());
+    }
+    name
+  }
   fn sort0() -> AE {
     AE::sort(AU::zero())
+  }
+
+  fn sort1() -> AE {
+    AE::sort(AU::succ(AU::zero()))
   }
 
   fn env_with_id() -> Arc<KEnv<Anon>> {
@@ -1143,6 +1588,25 @@ mod tests {
   }
 
   #[test]
+  fn def_eq_ignores_meta_mdata() {
+    let env = Arc::new(KEnv::<Meta>::new());
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let id = KId::new(mk_addr("C"), mk_meta_name("C"));
+    let tagged = ME::cnst_mdata(
+      id.clone(),
+      Box::new([]),
+      vec![vec![(
+        mk_meta_name("tag"),
+        DataValue::OfString("ignored".to_string()),
+      )]],
+    );
+    let plain = ME::cnst(id, Box::new([]));
+
+    assert_ne!(tagged.addr(), plain.addr());
+    assert!(tc.is_def_eq(&tagged, &plain).unwrap());
+  }
+
+  #[test]
   fn def_eq_const_diff_addr() {
     let env = env_with_id();
     let mut tc = TypeChecker::new(Arc::clone(&env));
@@ -1197,6 +1661,22 @@ mod tests {
     assert!(tc.is_def_eq(&a, &b).unwrap());
     // Second call should hit cache
     assert!(tc.is_def_eq(&a, &b).unwrap());
+  }
+
+  #[test]
+  fn def_eq_closed_cache_ignores_context_across_checkers() {
+    let env = env_with_id();
+    let a = AE::app(AE::cnst(mk_id("id"), Box::new([])), sort0());
+    let b = sort0();
+
+    let mut tc1 = TypeChecker::new(Arc::clone(&env));
+    assert!(tc1.is_def_eq(&a, &b).unwrap());
+    let cache_len = env.def_eq_cache.len();
+
+    let mut tc2 = TypeChecker::new(Arc::clone(&env));
+    tc2.push_local(sort1());
+    assert!(tc2.is_def_eq(&a, &b).unwrap());
+    assert_eq!(env.def_eq_cache.len(), cache_len);
   }
 
   // =========================================================================

@@ -196,6 +196,9 @@ pub trait KernelMode: 'static + Clone + Debug + Send + Sync {
   >(
     val: T,
   ) -> Self::MField<T>;
+
+  /// Extract a name from a metadata field when running in Meta mode.
+  fn meta_name(field: &Self::MField<Name>) -> Option<Name>;
 }
 
 /// Const-generic kernel mode. `META` controls metadata fields.
@@ -219,6 +222,10 @@ impl KernelMode for ZMode<true> {
   ) -> T {
     val
   }
+
+  fn meta_name(field: &Name) -> Option<Name> {
+    Some(field.clone())
+  }
 }
 
 impl KernelMode for ZMode<false> {
@@ -231,6 +238,10 @@ impl KernelMode for ZMode<false> {
   >(
     _val: T,
   ) {
+  }
+
+  fn meta_name(_field: &()) -> Option<Name> {
+    None
   }
 }
 

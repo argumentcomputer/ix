@@ -9,7 +9,7 @@ use super::id::KId;
 use super::level::KUniv;
 use super::mode::KernelMode;
 use super::subst::subst;
-use super::tc::TypeChecker;
+use super::tc::{TypeChecker, collect_app_spine};
 
 /// Emit detailed `[app diff]` trace when `infer`'s App path rejects an
 /// argument via `AppTypeMismatch`. Off by default — every rejection in a
@@ -40,12 +40,16 @@ impl<M: KernelMode> TypeChecker<M> {
     }
     let infer_only = self.infer_only;
 
-    // Single `infer_cache` serves both modes. The cache only holds full-mode
-    // results (see write path below), which are strictly stronger than what
-    // `infer_only` would have produced — same inferred type, more validation
-    // performed. So it's always safe to read from here regardless of mode.
-    let cache_key = (e.hash_key(), self.ctx_id.clone());
+    let cache_key = self.infer_key(e);
+    // Full-mode results are validated and may be consumed by either mode.
     if let Some(cached) = self.env.infer_cache.get(&cache_key) {
+      return Ok(cached.clone());
+    }
+    // Infer-only results skipped argument/let validation, so only infer-only
+    // callers may reuse them.
+    if infer_only
+      && let Some(cached) = self.env.infer_only_cache.get(&cache_key)
+    {
       return Ok(cached.clone());
     }
 
@@ -107,7 +111,7 @@ impl<M: KernelMode> TypeChecker<M> {
             self.eager_reduce = false;
           }
           if !eq {
-            if *IX_APP_DIFF {
+            if *IX_APP_DIFF && self.debug_label_matches_env() {
               // WHNF both sides so we can see where reduction actually
               // terminates. The raw `a_ty` / `dom` are already in the
               // error — what's useful here is the post-whnf forms and
@@ -119,16 +123,16 @@ impl<M: KernelMode> TypeChecker<M> {
                 "[app diff] AppTypeMismatch at depth={}",
                 self.ctx.len()
               );
-              eprintln!("  f:          {f}");
-              eprintln!("  a:          {a}");
-              eprintln!("  a_ty:       {a_ty}");
-              eprintln!("  dom:        {dom}");
+              eprintln!("  f:          {}", compact_expr(f));
+              eprintln!("  a:          {}", compact_expr(a));
+              eprintln!("  a_ty:       {}", compact_expr_deep(&a_ty, 2));
+              eprintln!("  dom:        {}", compact_expr_deep(&dom, 2));
               match &a_whnf {
-                Ok(w) => eprintln!("  a_ty whnf:  {w}"),
+                Ok(w) => eprintln!("  a_ty whnf:  {}", compact_expr_deep(w, 2)),
                 Err(e) => eprintln!("  a_ty whnf:  ERR {e}"),
               }
               match &d_whnf {
-                Ok(w) => eprintln!("  dom  whnf:  {w}"),
+                Ok(w) => eprintln!("  dom  whnf:  {}", compact_expr_deep(w, 2)),
                 Err(e) => eprintln!("  dom  whnf:  ERR {e}"),
               }
             }
@@ -194,10 +198,10 @@ impl<M: KernelMode> TypeChecker<M> {
       ExprData::Str(..) => self.infer_str_type()?,
     };
 
-    // Only store full-mode results; infer-only skips validation so caching
-    // those entries would weaken the cache's "already validated" invariant.
     if !infer_only {
       self.env.infer_cache.insert(cache_key, ty.clone());
+    } else {
+      self.env.infer_only_cache.insert(cache_key, ty.clone());
     }
     Ok(ty)
   }
@@ -209,7 +213,7 @@ impl<M: KernelMode> TypeChecker<M> {
     val: &KExpr<M>,
     val_ty: &KExpr<M>,
   ) -> Result<KExpr<M>, TcError<M>> {
-    use super::level::{KUniv, univ_eq};
+    use super::level::univ_eq;
     use super::tc::collect_app_spine;
 
     let wty = self.whnf(val_ty)?;
@@ -229,13 +233,19 @@ impl<M: KernelMode> TypeChecker<M> {
       ));
     }
 
-    let (i_levels, num_params, ctors) = match self.env.get(head_id) {
-      Some(KConst::Indc { params, ctors, .. }) => {
+    let (i_levels, num_params, num_indices, ctors) = match self.env.get(head_id)
+    {
+      Some(KConst::Indc { params, indices, ctors, .. }) => {
         let levels = match head.data() {
           ExprData::Const(_, us, _) => us.clone(),
           _ => unreachable!(),
         };
-        (levels, u64_to_usize::<M>(params)?, ctors.clone())
+        (
+          levels,
+          u64_to_usize::<M>(params)?,
+          u64_to_usize::<M>(indices)?,
+          ctors.clone(),
+        )
       },
       _ => {
         return Err(TcError::Other("projection: not an inductive type".into()));
@@ -248,11 +258,15 @@ impl<M: KernelMode> TypeChecker<M> {
       ));
     }
 
-    // Check if the structure type is in Prop (Sort 0).
-    // If so, projection restrictions apply.
-    let struct_sort_ty = self.infer(val_ty)?;
-    let struct_level = self.ensure_sort(&struct_sort_ty)?;
-    let is_prop_struct = univ_eq(&struct_level, &KUniv::zero());
+    // Check if the structure lives in Prop. Do this from the inductive
+    // declaration's result sort instead of inferring the full applied value
+    // type: projection-heavy proof terms otherwise re-infer every parameter
+    // and index argument just to recover a universe that is declaration-local.
+    let is_prop_struct = self.inductive_app_is_prop(
+      head_id,
+      &i_levels,
+      num_params + num_indices,
+    )?;
 
     let ctor_ty = match self.env.get(&ctors[0]) {
       Some(c) => c.ty().clone(),
@@ -332,6 +346,122 @@ impl<M: KernelMode> TypeChecker<M> {
   fn infer_str_type(&mut self) -> Result<KExpr<M>, TcError<M>> {
     Ok(self.intern(KExpr::cnst(self.prims.string.clone(), Box::new([]))))
   }
+
+  fn inductive_app_is_prop(
+    &mut self,
+    ind_id: &KId<M>,
+    levels: &[KUniv<M>],
+    binders: usize,
+  ) -> Result<bool, TcError<M>> {
+    use super::level::{KUniv, univ_eq};
+
+    let ind_ty = match self.env.get(ind_id) {
+      Some(KConst::Indc { ty, .. }) => ty,
+      _ => {
+        return Err(TcError::Other("projection: not an inductive type".into()));
+      },
+    };
+    let levels_vec: Vec<_> = levels.to_vec();
+    let mut r = self.instantiate_univ_params(&ind_ty, &levels_vec)?;
+    for _ in 0..binders {
+      let wr = self.whnf(&r)?;
+      match wr.data() {
+        ExprData::All(_, _, _, body, _) => {
+          r = body.clone();
+        },
+        _ => {
+          return Err(TcError::Other(
+            "projection: expected forall in inductive type".into(),
+          ));
+        },
+      }
+    }
+    let sort_ty = self.whnf(&r)?;
+    let level = self.ensure_sort(&sort_ty)?;
+    Ok(univ_eq(&level, &KUniv::zero()))
+  }
+}
+
+fn compact_expr<M: KernelMode>(e: &KExpr<M>) -> String {
+  compact_expr_deep(e, 1)
+}
+
+fn compact_expr_deep<M: KernelMode>(e: &KExpr<M>, depth: usize) -> String {
+  if depth > 0 {
+    match e.data() {
+      ExprData::Lam(_, _, ty, body, _) => {
+        return format!(
+          "lam(ty={}, body={}) @{} lbr={}",
+          compact_expr_deep(ty, depth - 1),
+          compact_expr_deep(body, depth - 1),
+          short_addr(e),
+          e.lbr()
+        );
+      },
+      ExprData::All(_, _, ty, body, _) => {
+        return format!(
+          "forall(ty={}, body={}) @{} lbr={}",
+          compact_expr_deep(ty, depth - 1),
+          compact_expr_deep(body, depth - 1),
+          short_addr(e),
+          e.lbr()
+        );
+      },
+      ExprData::Let(_, ty, val, body, _, _) => {
+        return format!(
+          "let(ty={}, val={}, body={}) @{} lbr={}",
+          compact_expr_deep(ty, depth - 1),
+          compact_expr_deep(val, depth - 1),
+          compact_expr_deep(body, depth - 1),
+          short_addr(e),
+          e.lbr()
+        );
+      },
+      _ => {},
+    }
+  }
+  let (head, args) = collect_app_spine(e);
+  let mut out = compact_head(&head);
+  if !args.is_empty() {
+    let shown = args
+      .iter()
+      .take(8)
+      .map(|arg| {
+        if depth == 0 {
+          compact_head(arg)
+        } else {
+          compact_expr_deep(arg, depth - 1)
+        }
+      })
+      .collect::<Vec<_>>()
+      .join(", ");
+    let more = if args.len() > 8 { ", ..." } else { "" };
+    out = format!("{out}/{} [{shown}{more}]", args.len());
+  }
+  format!("{out} @{} lbr={}", short_addr(e), e.lbr())
+}
+
+fn compact_head<M: KernelMode>(e: &KExpr<M>) -> String {
+  let (head, args) = collect_app_spine(e);
+  let base = match head.data() {
+    ExprData::Var(i, _, _) => format!("#{i}"),
+    ExprData::Sort(u, _) => format!("Sort({u})"),
+    ExprData::Const(id, us, _) => format!("{id}.{{{}}}", us.len()),
+    ExprData::App(..) => "app".to_string(),
+    ExprData::Lam(..) => "lam".to_string(),
+    ExprData::All(..) => "forall".to_string(),
+    ExprData::Let(..) => "let".to_string(),
+    ExprData::Prj(id, field, val, _) => {
+      format!("Prj({id}.{field}, {})", compact_head(val))
+    },
+    ExprData::Nat(v, _, _) => format!("Nat({})", v.0),
+    ExprData::Str(v, _, _) => format!("Str(len={})", v.len()),
+  };
+  if args.is_empty() { base } else { format!("{base}/{}", args.len()) }
+}
+
+fn short_addr<M: KernelMode>(e: &KExpr<M>) -> String {
+  e.addr().to_hex().chars().take(12).collect()
 }
 
 #[cfg(test)]
@@ -485,6 +615,37 @@ mod tests {
     let t1 = tc.infer(&e).unwrap();
     let t2 = tc.infer(&e).unwrap();
     assert_eq!(t1, t2);
+  }
+
+  #[test]
+  fn infer_closed_cache_ignores_context() {
+    let env = test_env();
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let e = sort0();
+    let t1 = tc.infer(&e).unwrap();
+    let cache_len = env.infer_cache.len();
+
+    tc.push_local(sort1());
+    let t2 = tc.infer(&e).unwrap();
+    assert_eq!(t1, t2);
+    assert_eq!(env.infer_cache.len(), cache_len);
+  }
+
+  #[test]
+  fn infer_open_cache_is_context_sensitive() {
+    let env = test_env();
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let e = AE::var(0, ());
+
+    tc.push_local(sort0());
+    let t1 = tc.infer(&e).unwrap();
+    let cache_len = env.infer_cache.len();
+    tc.pop_local();
+
+    tc.push_local(sort1());
+    let t2 = tc.infer(&e).unwrap();
+    assert_ne!(t1, t2);
+    assert!(env.infer_cache.len() > cache_len);
   }
 
   // =========================================================================
@@ -642,6 +803,24 @@ mod tests {
     let r = tc.with_infer_only(|tc| tc.infer(&app));
     // In full mode this would error; in infer-only it succeeds.
     assert!(r.is_ok());
+  }
+
+  #[test]
+  fn infer_only_cache_does_not_validate_full_mode() {
+    let env = test_env();
+    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let id_const = AE::cnst(mk_id("id"), Box::new([]));
+    let nat_lit = AE::nat(Nat::from(0u64), mk_addr("0"));
+    let app = AE::app(id_const, nat_lit);
+
+    assert!(tc.with_infer_only(|tc| tc.infer(&app)).is_ok());
+    assert!(!env.infer_only_cache.is_empty());
+    assert!(env.infer_cache.get(&tc.infer_key(&app)).is_none());
+
+    match tc.infer(&app) {
+      Err(TcError::AppTypeMismatch { .. }) => {},
+      other => panic!("expected full-mode AppTypeMismatch, got {other:?}"),
+    }
   }
 
   #[test]

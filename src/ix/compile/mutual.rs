@@ -449,7 +449,8 @@ pub(crate) fn generate_and_compile_aux_recursors(
   stt: &CompileState,
 ) -> Result<Option<crate::ix::compile::surgery::AuxLayout>, CompileError> {
   // Phase 0: optionally verify every Lean-original constant in this block
-  // against the kernel, using the pre-populated `stt.kctx.orig_kenv`.
+  // against the separate original kernel env, populated only when
+  // `CompileOptions::check_originals` is enabled.
   //
   // This is enabled for adversarial raw-constant tests. Normal compilation
   // from a trusted Lean environment leaves it off to avoid retaining a
@@ -797,6 +798,10 @@ pub(crate) fn generate_and_compile_aux_recursors(
 /// (the inductives, their constructors, and their recursors) **before** any
 /// aux_gen work runs, against the pristine `orig_kenv`.
 ///
+/// This check only runs when `CompileOptions::check_originals` is enabled.
+/// Fast trusted-environment callers leave it disabled and keep `orig_kenv`
+/// empty.
+///
 /// ## Why this runs at Phase 0
 ///
 /// aux_gen's Phase 1 (`compute_is_large_and_k`) populates the canonical
@@ -808,20 +813,19 @@ pub(crate) fn generate_and_compile_aux_recursors(
 /// forms are already `restore_nested`-processed: `Array X` everywhere,
 /// no `_nested.*` refs.
 ///
-/// Running this check at Phase 0, against the `orig_kenv` (populated
-/// once up-front via `lean_ingress` at the start of `compile_env`),
-/// sidesteps that entirely. `orig_kenv` holds every Lean-original
-/// constant at `lean_name_to_addr(name)` addresses with all type
-/// references self-consistent — no alpha-collapse, no aux rewriting, no
-/// staleness. Subsequent aux_gen phases then freely populate the
-/// canonical `kctx.kenv` without any risk of cross-contamination in
-/// either direction.
+/// Running this check at Phase 0, against `orig_kenv` when the caller opted
+/// into building it via `lean_ingress`, sidesteps that entirely. `orig_kenv`
+/// holds every Lean-original constant at its LEON content-hash address with
+/// all type references self-consistent — no alpha-collapse, no aux rewriting,
+/// no staleness. Subsequent aux_gen phases then freely populate the canonical
+/// `kctx.kenv` without any risk of cross-contamination in either direction.
 ///
 /// ## Approach
 ///
 /// For each original inductive `I`, ctor `C`, and recursor `R` in `cs`:
-/// - Look up its KId in `orig_kenv` (address = `lean_name_to_addr(name)`,
-///   name = the Lean name).
+/// - Look up its KId in `orig_kenv` (address =
+///   `Address::from_blake3_hash(ConstantInfo::get_hash())`, name = the Lean
+///   name).
 /// - Run `tc.check_const(&kid)` against the orig_kenv's TypeChecker.
 /// - Record failures under the Lean name in `stt.ungrounded`.
 ///
