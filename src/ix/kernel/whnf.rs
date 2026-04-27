@@ -2040,10 +2040,12 @@ impl<M: KernelMode> TypeChecker<M> {
       return Ok(None);
     }
 
-    if is_const_named(id, &["Decidable.decide"]) && args.len() >= 2
-      && let Some(result) = self.try_reduce_bitvec_lt_prop(&args[0])? {
-        return Ok(Some(self.finish_app_result(result, &args, 2)));
-      }
+    if is_const_named(id, &["Decidable.decide"])
+      && args.len() >= 2
+      && let Some(result) = self.try_reduce_bitvec_lt_prop(&args[0])?
+    {
+      return Ok(Some(self.finish_app_result(result, &args, 2)));
+    }
 
     Ok(None)
   }

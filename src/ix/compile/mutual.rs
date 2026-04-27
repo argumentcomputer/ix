@@ -337,11 +337,7 @@ pub(crate) fn compile_aux_block_with_rename(
 
   // Ingress all registered aux constants into the kernel environment.
   for cnst in aux_consts {
-    aux_gen::expr_utils::ensure_in_kenv(
-      &cnst.name(),
-      lean_env.as_ref(),
-      stt,
-    );
+    aux_gen::expr_utils::ensure_in_kenv(&cnst.name(), lean_env.as_ref(), stt);
   }
 
   Ok(())

@@ -7,6 +7,7 @@
 
 use std::cell::Cell;
 use std::sync::Arc;
+use std::time::Instant;
 
 use rayon::iter::{
   IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
@@ -2063,9 +2064,7 @@ fn lean_constant_all(ci: &LeanCI) -> Option<&Vec<Name>> {
 /// Look up position of `name` in its mutual `all` list, returning 0 for
 /// non-mutuals or constants not found in their own `all`.
 fn lean_member_idx(name: &Name, all: Option<&Vec<Name>>) -> u64 {
-  all
-    .and_then(|a| a.iter().position(|n| n == name))
-    .map_or(0, |i| i as u64)
+  all.and_then(|a| a.iter().position(|n| n == name)).map_or(0, |i| i as u64)
 }
 
 /// Build a `Name → LEON content-hash` map for every constant in the Lean env.
@@ -2083,9 +2082,7 @@ fn lean_member_idx(name: &Name, all: Option<&Vec<Name>>) -> u64 {
 /// (dangling refs, partial envs) fall through to `lean_name_to_addr` as a
 /// best-effort — those cases produce mismatched addresses and will surface
 /// as `UnknownConst` in the type checker rather than silently succeeding.
-pub fn build_leon_addr_map(
-  lean_env: &LeanEnv,
-) -> DashMap<Name, Address> {
+pub fn build_leon_addr_map(lean_env: &LeanEnv) -> DashMap<Name, Address> {
   // Build in parallel. Each shard's write lock is contended only when
   // distinct names happen to hash into the same shard — with 64 default
   // shards and ~199k names, contention is low. Pre-sizing `with_capacity`
@@ -2114,9 +2111,7 @@ pub fn build_leon_addr_map(
 /// strict resolution (e.g. "does this name exist?") should check
 /// `n2a.contains_key` directly.
 fn leon_addr_of(name: &Name, n2a: &DashMap<Name, Address>) -> Address {
-  n2a
-    .get(name)
-    .map_or_else(|| lean_name_to_addr(name), |e| e.value().clone())
+  n2a.get(name).map_or_else(|| lean_name_to_addr(name), |e| e.value().clone())
 }
 
 /// Build the `block` KId for a constant's mutual block. For singletons
@@ -2132,10 +2127,7 @@ fn lean_block_id(
 }
 
 /// Build the `lean_all` KId list in Meta mode.
-fn lean_all_ids(
-  all: &[Name],
-  n2a: &DashMap<Name, Address>,
-) -> Vec<KId<Meta>> {
+fn lean_all_ids(all: &[Name], n2a: &DashMap<Name, Address>) -> Vec<KId<Meta>> {
   all.iter().map(|n| KId::new(leon_addr_of(n, n2a), n.clone())).collect()
 }
 
@@ -2523,16 +2515,89 @@ pub fn lean_ingress(lean_env: &LeanEnv) -> KEnv<Meta> {
 // Top-level entry point
 // ============================================================================
 
+enum IngressWorkItem {
+  Standalone(Name),
+  Muts(Name),
+}
+
+fn insert_standalone_entries<M: KernelMode>(
+  zenv: &KEnv<M>,
+  entries: Vec<(KId<M>, KConst<M>)>,
+) {
+  for (id, zc) in entries {
+    zenv.blocks.entry(id.clone()).or_default().push(id.clone());
+    zenv.insert(id, zc);
+  }
+}
+
+fn insert_muts_entries<M: KernelMode>(
+  zenv: &KEnv<M>,
+  entries: Vec<(KId<M>, KConst<M>)>,
+) {
+  let block_id = entries.first().and_then(|(_, zc)| match zc {
+    KConst::Defn { block, .. }
+    | KConst::Recr { block, .. }
+    | KConst::Indc { block, .. } => Some(block.clone()),
+    _ => None,
+  });
+  let member_ids: Vec<KId<M>> =
+    entries.iter().map(|(id, _)| id.clone()).collect();
+  if let Some(bid) = block_id {
+    zenv.blocks.insert(bid, member_ids);
+  }
+  for (id, zc) in entries {
+    zenv.insert(id, zc);
+  }
+}
+
 /// Convert an Ixon environment to a zero kernel environment.
 pub fn ixon_ingress<M: KernelMode>(
   ixon_env: &IxonEnv,
 ) -> Result<(KEnv<M>, InternTable<M>), String> {
+  ixon_ingress_inner(ixon_env)
+}
+
+/// Convert an owned Ixon environment to a zero kernel environment.
+///
+/// This is the production path for callers that do not need the compiled Ixon
+/// environment after ingress. Taking ownership ensures the Ixon side is dropped
+/// before the kernel check loop starts.
+pub fn ixon_ingress_owned<M: KernelMode>(
+  ixon_env: IxonEnv,
+) -> Result<(KEnv<M>, InternTable<M>), String> {
+  let quiet = std::env::var_os("IX_QUIET").is_some();
+  let result = ixon_ingress_inner(&ixon_env);
+  let phase_start = Instant::now();
+  drop(ixon_env);
+  if !quiet {
+    eprintln!(
+      "[ixon_ingress] drop ixon_env: {:.2}s",
+      phase_start.elapsed().as_secs_f32()
+    );
+  }
+  result
+}
+
+fn ixon_ingress_inner<M: KernelMode>(
+  ixon_env: &IxonEnv,
+) -> Result<(KEnv<M>, InternTable<M>), String> {
+  let quiet = std::env::var_os("IX_QUIET").is_some();
+  let total_start = Instant::now();
+
+  let phase_start = Instant::now();
   validate_no_reserved_marker_addresses(ixon_env)?;
+  if !quiet {
+    eprintln!(
+      "[ixon_ingress] validate_reserved: {:.2}s",
+      phase_start.elapsed().as_secs_f32()
+    );
+  }
 
   let intern = InternTable::new();
 
   // Build the address → Lean-name lookup and the Lean-name → projection-
   // address lookup. See `build_ingress_lookups` for the role each plays.
+  let phase_start = Instant::now();
   let mut names: FxHashMap<Address, Name> = FxHashMap::default();
   for entry in ixon_env.names.iter() {
     names.insert(entry.key().clone(), entry.value().clone());
@@ -2541,112 +2606,138 @@ pub fn ixon_ingress<M: KernelMode>(
   for entry in ixon_env.named.iter() {
     name_to_addr.insert(entry.key().clone(), entry.value().addr.clone());
   }
+  if !quiet {
+    eprintln!(
+      "[ixon_ingress] build lookups: {:.2}s ({} names, {} named)",
+      phase_start.elapsed().as_secs_f32(),
+      names.len(),
+      name_to_addr.len()
+    );
+  }
 
-  // Partition named entries into standalone vs Muts
-  let mut standalone: Vec<(Name, crate::ix::ixon::env::Named)> = Vec::new();
-  let mut muts: Vec<(Name, crate::ix::ixon::env::Named)> = Vec::new();
+  // Partition named entries into work items without cloning the `Named`
+  // metadata payloads. Each worker resolves its current Named entry just
+  // before conversion.
+  let phase_start = Instant::now();
+  let mut work_items: Vec<IngressWorkItem> = Vec::new();
+  let mut standalone_count = 0usize;
+  let mut muts_count = 0usize;
 
   for entry in ixon_env.named.iter() {
     let const_name = entry.key().clone();
-    let named = entry.value().clone();
+    let named = entry.value();
     match &named.meta.info {
       ConstantMetaInfo::Muts { .. } => {
-        muts.push((const_name, named));
+        muts_count += 1;
+        work_items.push(IngressWorkItem::Muts(const_name));
       },
       ConstantMetaInfo::Indc { .. }
       | ConstantMetaInfo::Ctor { .. }
       | ConstantMetaInfo::Rec { .. } => {
-        if let Some(c) = ixon_env.get_const(&named.addr) {
+        if let Some(c) = ixon_env.consts.get(&named.addr) {
           match &c.info {
             IxonCI::IPrj(_)
             | IxonCI::CPrj(_)
             | IxonCI::RPrj(_)
             | IxonCI::DPrj(_) => {},
-            _ => standalone.push((const_name, named)),
+            _ => {
+              standalone_count += 1;
+              work_items.push(IngressWorkItem::Standalone(const_name));
+            },
           }
         }
       },
       ConstantMetaInfo::Def { .. } => {
-        if let Some(c) = ixon_env.get_const(&named.addr) {
+        if let Some(c) = ixon_env.consts.get(&named.addr) {
           match &c.info {
             IxonCI::DPrj(_) => {},
-            _ => standalone.push((const_name, named)),
+            _ => {
+              standalone_count += 1;
+              work_items.push(IngressWorkItem::Standalone(const_name));
+            },
           }
         }
       },
-      _ => standalone.push((const_name, named)),
+      _ => {
+        standalone_count += 1;
+        work_items.push(IngressWorkItem::Standalone(const_name));
+      },
     }
   }
+  if !quiet {
+    eprintln!(
+      "[ixon_ingress] partition work: {:.2}s ({} standalone, {} muts)",
+      phase_start.elapsed().as_secs_f32(),
+      standalone_count,
+      muts_count
+    );
+  }
 
-  // Pass 1: Parallel standalone constants
-  let standalone_results: Result<Vec<Vec<(KId<M>, KConst<M>)>>, String> =
-    standalone
-      .into_par_iter()
-      .map(|(const_name, named)| {
-        let constant = match ixon_env.get_const(&named.addr) {
-          Some(c) => c,
-          None => return Ok(vec![]),
-        };
-        ingress_standalone(
-          &const_name,
-          &named.addr,
-          &constant,
-          &named.meta,
-          ixon_env,
-          &names,
-          &name_to_addr,
-          &intern,
-        )
-        .map_err(|e| format!("{const_name}: {e}"))
-      })
-      .collect();
-
-  // Pass 2: Parallel Muts blocks
-  let muts_results: Result<Vec<Vec<(KId<M>, KConst<M>)>>, String> = muts
-    .into_par_iter()
-    .map(|(entry_name, named)| {
-      let all = match &named.meta.info {
-        ConstantMetaInfo::Muts { all, .. } => all,
-        _ => return Ok(vec![]),
-      };
-      ingress_muts_block(
-        &entry_name,
-        &named.addr,
-        all,
-        ixon_env,
-        &names,
-        &name_to_addr,
-        &intern,
-      )
-      .map_err(|e| format!("{entry_name}: {e}"))
-    })
-    .collect();
-
-  // Assemble environment
+  // Convert each standalone constant or Muts block in parallel, then insert
+  // the completed block directly into the DashMap-backed KEnv. This keeps peak
+  // memory bounded by in-flight worker outputs instead of materializing every
+  // converted constant before assembly.
+  let phase_start = Instant::now();
   let zenv: KEnv<M> = KEnv::new();
-
-  for entries in standalone_results? {
-    for (id, zc) in entries {
-      zenv.blocks.entry(id.clone()).or_default().push(id.clone());
-      zenv.insert(id, zc);
-    }
-  }
-
-  for entries in muts_results? {
-    let block_id = entries.first().and_then(|(_, zc)| match zc {
-      KConst::Defn { block, .. }
-      | KConst::Recr { block, .. }
-      | KConst::Indc { block, .. } => Some(block.clone()),
-      _ => None,
-    });
-    let member_ids: Vec<KId<M>> =
-      entries.iter().map(|(id, _)| id.clone()).collect();
-    if let Some(bid) = block_id {
-      zenv.blocks.insert(bid, member_ids);
-    }
-    for (id, zc) in entries {
-      zenv.insert(id, zc);
-    }
+  work_items.into_par_iter().try_for_each(
+    |work_item| -> Result<(), String> {
+      match work_item {
+        IngressWorkItem::Standalone(const_name) => {
+          let named = ixon_env
+            .lookup_name(&const_name)
+            .ok_or_else(|| format!("{const_name}: missing Named entry"))?;
+          let constant = match ixon_env.get_const(&named.addr) {
+            Some(c) => c,
+            None => return Ok(()),
+          };
+          let entries = ingress_standalone(
+            &const_name,
+            &named.addr,
+            &constant,
+            &named.meta,
+            ixon_env,
+            &names,
+            &name_to_addr,
+            &intern,
+          )
+          .map_err(|e| format!("{const_name}: {e}"))?;
+          insert_standalone_entries(&zenv, entries);
+        },
+        IngressWorkItem::Muts(entry_name) => {
+          let named = ixon_env
+            .lookup_name(&entry_name)
+            .ok_or_else(|| format!("{entry_name}: missing Named entry"))?;
+          let all = match &named.meta.info {
+            ConstantMetaInfo::Muts { all, .. } => all,
+            _ => return Ok(()),
+          };
+          let entries = ingress_muts_block(
+            &entry_name,
+            &named.addr,
+            all,
+            ixon_env,
+            &names,
+            &name_to_addr,
+            &intern,
+          )
+          .map_err(|e| format!("{entry_name}: {e}"))?;
+          insert_muts_entries(&zenv, entries);
+        },
+      }
+      Ok(())
+    },
+  )?;
+  if !quiet {
+    eprintln!(
+      "[ixon_ingress] stream ingress+insert: {:.2}s",
+      phase_start.elapsed().as_secs_f32()
+    );
+    eprintln!(
+      "[ixon_ingress] complete: {:.2}s ({} consts, {} blocks)",
+      total_start.elapsed().as_secs_f32(),
+      zenv.len(),
+      zenv.blocks.len()
+    );
   }
 
   Ok((zenv, intern))

@@ -441,8 +441,7 @@ fn build_below_def(
     };
     let major_domain = &decls[total - 1].domain;
 
-    let ctx_decls: Vec<LocalDecl> =
-      decls[..total - 1].to_vec();
+    let ctx_decls: Vec<LocalDecl> = decls[..total - 1].to_vec();
     let mut tc =
       super::expr_utils::TcScope::new(&ctx_decls, rec_level_params, stt, kctx);
     tc.get_level(major_domain)?
@@ -1783,9 +1782,10 @@ fn mk_imax_aux(l1: &Level, l2: &Level) -> Level {
     return l2.clone();
   }
   if let LevelData::Succ(inner, _) = l1.as_data()
-    && matches!(inner.as_data(), LevelData::Zero(_)) {
-      return l2.clone();
-    }
+    && matches!(inner.as_data(), LevelData::Zero(_))
+  {
+    return l2.clone();
+  }
   if l1 == l2 {
     return l1.clone();
   }

@@ -1826,12 +1826,11 @@ fn abstract_spec_params_to_bvars(
   if n == 0 {
     return spec_params.to_vec();
   }
-  let fvar_map: FxHashMap<Name, usize> =
-    block_param_decls
-      .iter()
-      .enumerate()
-      .map(|(i, d)| (d.fvar_name.clone(), i))
-      .collect();
+  let fvar_map: FxHashMap<Name, usize> = block_param_decls
+    .iter()
+    .enumerate()
+    .map(|(i, d)| (d.fvar_name.clone(), i))
+    .collect();
   spec_params.iter().map(|sp| batch_abstract(sp, &fvar_map, n, 0)).collect()
 }
 
@@ -1880,9 +1879,10 @@ fn maximize_occurrence_levels(flat: &mut [FvarFlatMember], n_originals: usize) {
   // Apply the maximized levels to all auxiliaries.
   for entry in flat.iter_mut().skip(n_originals) {
     if let Some(merged) = max_levels.get(&entry.name)
-      && merged.len() == entry.occurrence_level_args.len() {
-        entry.occurrence_level_args = merged.clone();
-      }
+      && merged.len() == entry.occurrence_level_args.len()
+    {
+      entry.occurrence_level_args = merged.clone();
+    }
   }
 
   /// Raw level max: `max(a, b)` with only zero elimination.

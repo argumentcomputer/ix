@@ -960,8 +960,7 @@ struct RestoreStateCache {
   /// decomposing the restored nested expression. Used for the aux-ctor
   /// restoration path where we need to rebuild
   /// `orig_ctor.{I_lvls} spec_params`.
-  aux_decomp:
-    FxHashMap<Name, (Vec<Level>, Vec<LeanExpr>)>,
+  aux_decomp: FxHashMap<Name, (Vec<Level>, Vec<LeanExpr>)>,
   /// Walk memoization shared across every `restore()` call on this
   /// context. DAG-shared subterms between recursor rules collapse to a
   /// single rewrite.
@@ -1034,10 +1033,8 @@ impl RestoreCtx {
         self.aux_to_nested.len(),
         Default::default(),
       );
-    let mut aux_decomp: FxHashMap<
-      Name,
-      (Vec<Level>, Vec<LeanExpr>),
-    > = FxHashMap::default();
+    let mut aux_decomp: FxHashMap<Name, (Vec<Level>, Vec<LeanExpr>)> =
+      FxHashMap::default();
     for (aux_name, nested) in &self.aux_to_nested {
       let abstracted = batch_abstract(nested, &bp_fvar_map, self.n_params, 0);
       let restored = instantiate_rev(&abstracted, &subst_fvars);
@@ -1113,9 +1110,10 @@ impl<'a> RestoreState<'a> {
   fn replace_walk_uncached(&mut self, e: &LeanExpr) -> LeanExpr {
     // Check for bare Const matching aux_rec_map (recursor rename).
     if let ExprData::Const(name, levels, _) = e.as_data()
-      && let Some(new_name) = self.ctx.aux_rec_map.get(name) {
-        return LeanExpr::cnst(new_name.clone(), levels.clone());
-      }
+      && let Some(new_name) = self.ctx.aux_rec_map.get(name)
+    {
+      return LeanExpr::cnst(new_name.clone(), levels.clone());
+    }
 
     // Check for application whose head is an aux type or aux constructor.
     let (head, args) = decompose_apps(e);
@@ -1376,24 +1374,25 @@ fn rewrite_nested_const_levels_walk(
   // Try to decompose as an application of an auxiliary Const.
   let (head, args) = decompose_apps(expr);
   if let ExprData::Const(name, levels, _) = head.as_data()
-    && let Some((n_params, new_levels)) = aux_info.get(name) {
-      let has_nested_ref = args
-        .iter()
-        .take(*n_params)
-        .any(|a| super::nested::expr_mentions_any_name(a, block_names));
-      if has_nested_ref && new_levels.len() == levels.len() {
-        // Rewrite head levels and recurse into args.
-        let new_head = LeanExpr::cnst(name.clone(), new_levels.clone());
-        let mut result = new_head;
-        for a in &args {
-          result = LeanExpr::app(
-            result,
-            rewrite_nested_const_levels_cached(a, aux_info, block_names, cache),
-          );
-        }
-        return result;
+    && let Some((n_params, new_levels)) = aux_info.get(name)
+  {
+    let has_nested_ref = args
+      .iter()
+      .take(*n_params)
+      .any(|a| super::nested::expr_mentions_any_name(a, block_names));
+    if has_nested_ref && new_levels.len() == levels.len() {
+      // Rewrite head levels and recurse into args.
+      let new_head = LeanExpr::cnst(name.clone(), new_levels.clone());
+      let mut result = new_head;
+      for a in &args {
+        result = LeanExpr::app(
+          result,
+          rewrite_nested_const_levels_cached(a, aux_info, block_names, cache),
+        );
       }
+      return result;
     }
+  }
 
   // Not a rewritable app — recurse into sub-expressions.
   match expr.as_data() {
@@ -1571,8 +1570,7 @@ pub(super) fn replace_const_names(
   if map.is_empty() {
     return expr.clone();
   }
-  let mut cache: FxHashMap<blake3::Hash, LeanExpr> =
-    FxHashMap::default();
+  let mut cache: FxHashMap<blake3::Hash, LeanExpr> = FxHashMap::default();
   replace_const_names_cached(expr, map, &mut cache)
 }
 
@@ -1709,9 +1707,10 @@ pub(crate) fn ensure_prelude_in_kenv_of(
   // Fast path: if PUnit is already registered as an Indc (not an Axio stub),
   // assume PProd is too and skip redundant construction.
   if let Some(kconst) = kctx.kenv.get(&punit_id)
-    && matches!(kconst, KConst::Indc { .. }) {
-      return;
-    }
+    && matches!(kconst, KConst::Indc { .. })
+  {
+    return;
+  }
 
   let u_name = Name::str(Name::anon(), "u".to_string());
   {
@@ -2355,8 +2354,7 @@ impl<'a> TcScope<'a> {
     // Look up the constant in the kernel env to get its stored type.
     let n2a = Some(&self.stt.name_to_addr);
     let aux_n2a = Some(&self.stt.aux_name_to_addr);
-    let addr =
-      resolve_lean_name_addr(name, n2a, aux_n2a);
+    let addr = resolve_lean_name_addr(name, n2a, aux_n2a);
     let kid = crate::ix::kernel::id::KId::new(addr, name.clone());
     let kconst = self.tc.env.get(&kid)?;
     let kty = kconst.ty();
@@ -2434,13 +2432,11 @@ impl<'a> TcScope<'a> {
         // Substitute with the concrete level from the Const's level args.
         const_levels.get(*idx as usize).cloned().unwrap_or_else(|| {
           // Fallback: use the TcScope's param names.
-          let name =
-            self.param_names.get(*idx as usize).cloned().unwrap_or_else(|| {
-              Name::str(
-                Name::anon(),
-                format!("u_{idx}"),
-              )
-            });
+          let name = self
+            .param_names
+            .get(*idx as usize)
+            .cloned()
+            .unwrap_or_else(|| Name::str(Name::anon(), format!("u_{idx}")));
           Level::param(name)
         })
       },
@@ -2695,9 +2691,7 @@ fn to_kexpr_static(
     ExprData::Mdata(_, inner, _) => {
       to_kexpr_static(inner, fvar_levels, ctx_depth, param_names, stt)
     },
-    _ => KExpr::sort(
-      KUniv::zero(),
-    ),
+    _ => KExpr::sort(KUniv::zero()),
   }
 }
 

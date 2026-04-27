@@ -1051,8 +1051,10 @@ impl<M: KernelMode> TypeChecker<M> {
       // by canonical position. `sort_consts` uses those names only as a
       // deterministic seed/tiebreak, so the kernel feeds the same name hash
       // into the sorter while keeping the synthetic KId address structural.
-      let ext_seed = M::meta_name(&member.id.name)
-        .map_or_else(|| member.id.addr.hex(), |name| name.pretty().replace('.', "_"));
+      let ext_seed = M::meta_name(&member.id.name).map_or_else(
+        || member.id.addr.hex(),
+        |name| name.pretty().replace('.', "_"),
+      );
       let seed_suffix = format!("{}_{}", ext_seed, source_idx + 1);
       let seed_name = nested_prefix.as_ref().map_or_else(
         || {
@@ -1078,8 +1080,7 @@ impl<M: KernelMode> TypeChecker<M> {
       for u in member.occurrence_us.iter() {
         h.update(u.addr().as_bytes());
       }
-      let aux_addr =
-        Address::from_blake3_hash(h.finalize());
+      let aux_addr = Address::from_blake3_hash(h.finalize());
       let aux_id = KId::new(aux_addr.clone(), M::meta_field(seed_name.clone()));
       seed_key_by_addr.insert(aux_addr.clone(), seed_addr);
       aux_ids.push(aux_id);
@@ -1181,12 +1182,9 @@ impl<M: KernelMode> TypeChecker<M> {
         ch.update(b"AUX_CTOR_VIEW");
         ch.update(aux_addr.as_bytes());
         ch.update(ext_ctor_id.addr.as_bytes());
-        let aux_ctor_addr =
-          Address::from_blake3_hash(ch.finalize());
-        let aux_ctor_kid = KId::new(
-          aux_ctor_addr.clone(),
-          M::meta_field(Name::anon()),
-        );
+        let aux_ctor_addr = Address::from_blake3_hash(ch.finalize());
+        let aux_ctor_kid =
+          KId::new(aux_ctor_addr.clone(), M::meta_field(Name::anon()));
 
         let aux_ctor = KConst::Ctor {
           name: M::meta_field(Name::anon()),
@@ -1250,12 +1248,11 @@ impl<M: KernelMode> TypeChecker<M> {
     // compiler-shaped seed key. Alpha-equivalent aux remain distinct
     // synthetic members until partition refinement collapses them, matching
     // compile-side `sort_consts`.
-    let aux_addr_to_orig_idx: FxHashMap<Address, usize> =
-      pairs
-        .iter()
-        .enumerate()
-        .map(|(i, (id, _))| (id.addr.clone(), i))
-        .collect();
+    let aux_addr_to_orig_idx: FxHashMap<Address, usize> = pairs
+      .iter()
+      .enumerate()
+      .map(|(i, (id, _))| (id.addr.clone(), i))
+      .collect();
     let mut perm: Vec<usize> = Vec::with_capacity(classes.len());
     for class in &classes {
       // The sorter keeps each class ordered by the compiler-shaped seed

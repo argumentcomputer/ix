@@ -752,11 +752,10 @@ extern "C" fn rs_tmp_decode_const_map(
           _ => 0,
         })
         .collect();
-      let source_aux_order =
-        match aux_gen::nested::source_aux_order(all, env) {
-          Ok(order) => order,
-          Err(_) => return None,
-        };
+      let source_aux_order = match aux_gen::nested::source_aux_order(all, env) {
+        Ok(order) => order,
+        Err(_) => return None,
+      };
       let source_aux_ctor_counts: Vec<usize> = source_aux_order
         .iter()
         .map(|(head, _)| match env.get(head) {
@@ -932,9 +931,8 @@ extern "C" fn rs_tmp_decode_const_map(
       // longer required at this call site. Still verify the block has at
       // least one ingress-able inductive so we don't waste work on
       // broken envs.
-      let has_indc = all
-        .iter()
-        .any(|n| matches!(env.get(n), Some(LeanCI::InductInfo(_))));
+      let has_indc =
+        all.iter().any(|n| matches!(env.get(n), Some(LeanCI::InductInfo(_))));
       if !has_indc {
         continue;
       }
@@ -1508,11 +1506,10 @@ extern "C" fn rs_compile_validate_aux(
         })
         .collect();
       // Source-walk aux discovery: same walker `compute_aux_perm` uses.
-      let source_aux_order =
-        match aux_gen::nested::source_aux_order(all, env) {
-          Ok(order) => order,
-          Err(_) => return None,
-        };
+      let source_aux_order = match aux_gen::nested::source_aux_order(all, env) {
+        Ok(order) => order,
+        Err(_) => return None,
+      };
       let source_aux_ctor_counts: Vec<usize> = source_aux_order
         .iter()
         .map(|(head, _)| match env.get(head) {
@@ -1704,9 +1701,7 @@ extern "C" fn rs_compile_validate_aux(
     }
 
     // Helper to wrap a patch as a Lean `ConstantInfo` for alpha-eq.
-    fn patch_to_lean_ci(
-      patch: &PatchedConstant,
-    ) -> Option<ConstantInfo> {
+    fn patch_to_lean_ci(patch: &PatchedConstant) -> Option<ConstantInfo> {
       use crate::ix::env::{
         ConstantInfo as LeanCI, ConstantVal as LeanCV, DefinitionSafety,
         DefinitionVal, InductiveVal, ReducibilityHints,
@@ -2119,9 +2114,7 @@ extern "C" fn rs_compile_validate_aux(
         }
       }
 
-      fn expr_hash_prefix(
-        expr: &Arc<crate::ix::ixon::expr::Expr>,
-      ) -> String {
+      fn expr_hash_prefix(expr: &Arc<crate::ix::ixon::expr::Expr>) -> String {
         let mut buf = Vec::new();
         crate::ix::ixon::serialize::put_expr(expr, &mut buf);
         let h = crate::ix::address::Address::hash(&buf);
@@ -3321,9 +3314,9 @@ extern "C" fn rs_compile_validate_aux(
         original_strs.iter().map(|s| mk_name(s)).collect();
 
       // Skip if any name is missing from the env (fixture not compiled).
-      let all_present = originals.iter().all(|n| {
-        matches!(env.get(n), Some(ConstantInfo::InductInfo(_)))
-      });
+      let all_present = originals
+        .iter()
+        .all(|n| matches!(env.get(n), Some(ConstantInfo::InductInfo(_))));
       if !all_present {
         continue;
       }

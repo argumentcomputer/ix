@@ -40,7 +40,9 @@ use lean_ffi::object::{
 };
 
 use crate::ffi::lean_env::{decode_env, decode_name_array};
-use crate::ix::compile::{CompileOptions, compile_env_with_options};
+use crate::ix::compile::{
+  CompileOptions, CompileState, compile_env_with_options,
+};
 #[cfg(feature = "test-ffi")]
 use crate::ix::decompile::decompile_env;
 use crate::ix::env::Name;
@@ -49,9 +51,9 @@ use crate::ix::kernel::egress::{ixon_egress, lean_egress};
 use crate::ix::kernel::env::KEnv;
 use crate::ix::kernel::error::TcError;
 use crate::ix::kernel::id::KId;
-use crate::ix::kernel::ingress::ixon_ingress;
+use crate::ix::kernel::ingress::ixon_ingress_owned;
 #[cfg(feature = "test-ffi")]
-use crate::ix::kernel::ingress::lean_ingress;
+use crate::ix::kernel::ingress::{ixon_ingress, lean_ingress};
 use crate::ix::kernel::mode::Meta;
 use crate::ix::kernel::tc::TypeChecker;
 
@@ -163,17 +165,21 @@ pub extern "C" fn rs_kernel_check_consts(
   };
   eprintln!("[rs_kernel_check] compile:    {:>8.1?}", t1.elapsed());
 
+  let CompileState { env: ixon_env, ungrounded: compile_ungrounded, .. } =
+    compile_state;
+
   // Snapshot per-constant compile failures (ill-formed inductives,
   // cascading MissingConstant, etc.) keyed by `Name` so the check loop
   // can skip the kernel and report them as compile-side rejections.
   // `compile_env` no longer aborts on per-block failure; it populates
   // `CompileState.ungrounded` and continues, letting good constants still
   // compile cleanly.
-  let ungrounded: FxHashMap<Name, String> = compile_state
-    .ungrounded
+  let ungrounded: FxHashMap<Name, String> = compile_ungrounded
     .iter()
     .map(|e| (e.key().clone(), e.value().clone()))
     .collect();
+  drop(compile_ungrounded);
+  drop(rust_env_arc);
   if !ungrounded.is_empty() {
     eprintln!(
       "[rs_kernel_check] {} constants failed to compile (will report as rejected without kernel check):",
@@ -197,7 +203,7 @@ pub extern "C" fn rs_kernel_check_consts(
   // Ingress Ixon → kernel
   // ---------------------------------------------------------------------
   let t2 = Instant::now();
-  let (mut kenv, intern) = match ixon_ingress::<Meta>(&compile_state.env) {
+  let (mut kenv, intern) = match ixon_ingress_owned::<Meta>(ixon_env) {
     Ok(v) => v,
     Err(msg) => {
       return build_uniform_error(names_vec.len(), &format!("[ingress] {msg}"));
@@ -213,10 +219,6 @@ pub extern "C" fn rs_kernel_check_consts(
     t2.elapsed(),
     kenv.len()
   );
-
-  // Release decoded-env + compile state before the heavy check loop runs.
-  drop(compile_state);
-  drop(rust_env_arc);
 
   let kenv = Arc::new(kenv);
 

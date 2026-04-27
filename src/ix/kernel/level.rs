@@ -170,14 +170,16 @@ impl<M: KernelMode> KUniv<M> {
     }
     // max(a, max(a, b')) = max(a, b'), max(a, max(b', a)) = max(b', a)
     if let UnivData::Max(bl, br, _) = b.data()
-      && (*bl == a || *br == a) {
-        return b;
-      }
+      && (*bl == a || *br == a)
+    {
+      return b;
+    }
     // max(max(a', b), b) = max(a', b), max(max(b, a'), b) = max(b, a')
     if let UnivData::Max(al, ar, _) = a.data()
-      && (*al == b || *ar == b) {
-        return a;
-      }
+      && (*al == b || *ar == b)
+    {
+      return a;
+    }
     // Same base, different offsets: succ^n(x) vs succ^m(x) → take the larger.
     let (base_a, off_a) = a.offset();
     let (base_b, off_b) = b.offset();
@@ -218,9 +220,10 @@ impl<M: KernelMode> KUniv<M> {
     }
     // imax(1, b) = b  (Lean: is_one check)
     if let UnivData::Succ(inner, _) = a.data()
-      && inner.is_zero() {
-        return b;
-      }
+      && inner.is_zero()
+    {
+      return b;
+    }
     if a == b {
       return a; // imax(a, a) = a
     }

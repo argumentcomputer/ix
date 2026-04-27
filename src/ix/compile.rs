@@ -830,388 +830,387 @@ pub fn compile_expr(
                 .is_some_and(crate::ix::decompile::is_aux_gen_suffix);
               if !compiling_is_aux_regen {
                 if let Some(plan) = stt.call_site_plans.get(name)
-                  && !plan.is_identity() {
-                    let expected_total = plan.n_params
+                  && !plan.is_identity()
+                {
+                  let expected_total = plan.n_params
+                    + plan.n_source_motives
+                    + plan.n_source_minors
+                    + plan.n_indices
+                    + 1; // major
+                  if args.len() >= expected_total {
+                    // Surgery path: separate args into kept/collapsed,
+                    // reorder kept to canonical, compile everything.
+                    let name_addr = compile_name(name, stt);
+
+                    let args_owned: Vec<LeanExpr> =
+                      args.iter().map(|arg| (*arg).clone()).collect();
+
+                    // Decompose source args into regions
+                    let params = &args_owned[..plan.n_params];
+                    let motives = &args_owned
+                      [plan.n_params..plan.n_params + plan.n_source_motives];
+                    let minors = &args_owned[plan.n_params
                       + plan.n_source_motives
-                      + plan.n_source_minors
-                      + plan.n_indices
-                      + 1; // major
-                    if args.len() >= expected_total {
-                      // Surgery path: separate args into kept/collapsed,
-                      // reorder kept to canonical, compile everything.
-                      let name_addr = compile_name(name, stt);
-
-                      let args_owned: Vec<LeanExpr> =
-                        args.iter().map(|arg| (*arg).clone()).collect();
-
-                      // Decompose source args into regions
-                      let params = &args_owned[..plan.n_params];
-                      let motives = &args_owned
-                        [plan.n_params..plan.n_params + plan.n_source_motives];
-                      let minors = &args_owned[plan.n_params
+                      ..plan.n_params
                         + plan.n_source_motives
-                        ..plan.n_params
-                          + plan.n_source_motives
-                          + plan.n_source_minors];
-                      let tail = &args_owned[plan.n_params
-                        + plan.n_source_motives
-                        + plan.n_source_minors..];
+                        + plan.n_source_minors];
+                    let tail = &args_owned[plan.n_params
+                      + plan.n_source_motives
+                      + plan.n_source_minors..];
 
-                      // Build canonical-order args and entries
-                      let n_canon_motives = plan.n_canonical_motives();
-                      let n_canon_minors = plan.n_canonical_minors();
-                      let mut canonical_args: Vec<(usize, LeanExpr)> =
-                        Vec::with_capacity(
-                          plan.n_params
-                            + n_canon_motives
-                            + n_canon_minors
-                            + tail.len(),
-                        );
-                      let mut collapsed_args: Vec<LeanExpr> = Vec::new();
-                      let mut entries: Vec<CallSiteEntry> = Vec::new();
+                    // Build canonical-order args and entries
+                    let n_canon_motives = plan.n_canonical_motives();
+                    let n_canon_minors = plan.n_canonical_minors();
+                    let mut canonical_args: Vec<(usize, LeanExpr)> =
+                      Vec::with_capacity(
+                        plan.n_params
+                          + n_canon_motives
+                          + n_canon_minors
+                          + tail.len(),
+                      );
+                    let mut collapsed_args: Vec<LeanExpr> = Vec::new();
+                    let mut entries: Vec<CallSiteEntry> = Vec::new();
 
-                      // Params: always kept, identity mapping
-                      for (i, p) in params.iter().enumerate() {
-                        canonical_args.push((i, p.clone()));
+                    // Params: always kept, identity mapping
+                    for (i, p) in params.iter().enumerate() {
+                      canonical_args.push((i, p.clone()));
+                      entries.push(CallSiteEntry::Kept {
+                        canon_idx: i as u64,
+                        meta: 0,
+                      });
+                    }
+
+                    // Motives: kept or collapsed per plan
+                    let canon_base = plan.n_params;
+                    for (src_i, motive) in motives.iter().enumerate() {
+                      if plan.motive_keep[src_i] {
+                        let canon_pos =
+                          canon_base + plan.source_to_canon_motive[src_i];
+                        canonical_args.push((canon_pos, motive.clone()));
                         entries.push(CallSiteEntry::Kept {
-                          canon_idx: i as u64,
+                          canon_idx: canon_pos as u64,
+                          meta: 0,
+                        });
+                      } else {
+                        let sharing_idx = collapsed_args.len();
+                        collapsed_args.push(motive.clone());
+                        entries.push(CallSiteEntry::Collapsed {
+                          sharing_idx: sharing_idx as u64,
                           meta: 0,
                         });
                       }
+                    }
 
-                      // Motives: kept or collapsed per plan
-                      let canon_base = plan.n_params;
-                      for (src_i, motive) in motives.iter().enumerate() {
-                        if plan.motive_keep[src_i] {
-                          let canon_pos =
-                            canon_base + plan.source_to_canon_motive[src_i];
-                          canonical_args.push((canon_pos, motive.clone()));
-                          entries.push(CallSiteEntry::Kept {
-                            canon_idx: canon_pos as u64,
-                            meta: 0,
+                    // Minors: kept or collapsed per plan
+                    let minor_canon_base = plan.n_params + n_canon_motives;
+                    for (src_i, minor) in minors.iter().enumerate() {
+                      if plan.minor_keep[src_i] {
+                        let canon_pos =
+                          minor_canon_base + plan.source_to_canon_minor[src_i];
+                        let adapted_minor =
+                          stt.lean_env.as_deref().and_then(|lean_env| {
+                            surgery::adapt_split_minor(
+                              name, levels, &plan, src_i, minor, params,
+                              motives, minors, lean_env,
+                            )
                           });
-                        } else {
-                          let sharing_idx = collapsed_args.len();
-                          collapsed_args.push(motive.clone());
-                          entries.push(CallSiteEntry::Collapsed {
-                            sharing_idx: sharing_idx as u64,
-                            meta: 0,
-                          });
-                        }
-                      }
-
-                      // Minors: kept or collapsed per plan
-                      let minor_canon_base = plan.n_params + n_canon_motives;
-                      for (src_i, minor) in minors.iter().enumerate() {
-                        if plan.minor_keep[src_i] {
-                          let canon_pos = minor_canon_base
-                            + plan.source_to_canon_minor[src_i];
-                          let adapted_minor =
-                            stt.lean_env.as_deref().and_then(|lean_env| {
-                              surgery::adapt_split_minor(
-                                name, levels, &plan, src_i, minor, params,
-                                motives, minors, lean_env,
-                              )
-                            });
-                          let minor_arg = adapted_minor
-                            .clone()
-                            .unwrap_or_else(|| minor.clone());
-                          canonical_args.push((canon_pos, minor_arg));
-                          if adapted_minor.is_some() {
-                            let sharing_idx = collapsed_args.len();
-                            collapsed_args.push(minor.clone());
-                            entries.push(CallSiteEntry::Collapsed {
-                              sharing_idx: sharing_idx as u64,
-                              meta: 0,
-                            });
-                          } else {
-                            entries.push(CallSiteEntry::Kept {
-                              canon_idx: canon_pos as u64,
-                              meta: 0,
-                            });
-                          }
-                        } else {
+                        let minor_arg = adapted_minor
+                          .clone()
+                          .unwrap_or_else(|| minor.clone());
+                        canonical_args.push((canon_pos, minor_arg));
+                        if adapted_minor.is_some() {
                           let sharing_idx = collapsed_args.len();
                           collapsed_args.push(minor.clone());
                           entries.push(CallSiteEntry::Collapsed {
                             sharing_idx: sharing_idx as u64,
                             meta: 0,
                           });
-                        }
-                      }
-
-                      // Tail (indices + major): always kept, identity
-                      let tail_canon_base =
-                        plan.n_params + n_canon_motives + n_canon_minors;
-                      for (i, t) in tail.iter().enumerate() {
-                        canonical_args.push((tail_canon_base + i, t.clone()));
-                        entries.push(CallSiteEntry::Kept {
-                          canon_idx: (tail_canon_base + i) as u64,
-                          meta: 0,
-                        });
-                      }
-
-                      // Sort canonical_args by their target canon_idx
-                      canonical_args.sort_by_key(|(canon_idx, _)| *canon_idx);
-                      let sorted_canon: Vec<LeanExpr> = canonical_args
-                        .into_iter()
-                        .map(|(_, expr)| expr)
-                        .collect();
-
-                      let n_canonical = sorted_canon.len();
-                      let n_collapsed = collapsed_args.len();
-
-                      // Push frames in reverse order (LIFO)
-                      stack.push(Frame::BuildCallSite {
-                        name_addr,
-                        entries,
-                        n_canonical,
-                        n_collapsed,
-                      });
-                      for arg in collapsed_args.iter().rev() {
-                        stack.push(Frame::Compile(arg.clone()));
-                      }
-                      for arg in sorted_canon.iter().rev() {
-                        stack.push(Frame::Compile(arg.clone()));
-                      }
-                      stack.push(Frame::Compile(head_expr.clone()));
-                      continue;
-                    }
-                  }
-                if let Some(plan) = stt.below_call_site_plans.get(name)
-                  && !plan.is_identity() {
-                    let fixed_tail_len = plan.n_indices + 1; // indices + major
-                    let expected_total =
-                      plan.n_params + plan.n_source_motives + fixed_tail_len;
-                    if args.len() >= expected_total {
-                      let name_addr = compile_name(name, stt);
-                      let args_owned: Vec<LeanExpr> =
-                        args.iter().map(|arg| (*arg).clone()).collect();
-                      let params = &args_owned[..plan.n_params];
-                      let motives = &args_owned
-                        [plan.n_params..plan.n_params + plan.n_source_motives];
-                      let fixed_tail = &args_owned
-                        [plan.n_params + plan.n_source_motives..expected_total];
-                      let extra_tail = &args_owned[expected_total..];
-
-                      let n_canon_motives = plan.n_canonical_motives();
-                      let mut canonical_args: Vec<(usize, LeanExpr)> =
-                        Vec::with_capacity(
-                          plan.n_params
-                            + n_canon_motives
-                            + fixed_tail.len()
-                            + extra_tail.len(),
-                        );
-                      let mut collapsed_args: Vec<LeanExpr> = Vec::new();
-                      let mut entries: Vec<CallSiteEntry> = Vec::new();
-
-                      for (i, p) in params.iter().enumerate() {
-                        canonical_args.push((i, p.clone()));
-                        entries.push(CallSiteEntry::Kept {
-                          canon_idx: i as u64,
-                          meta: 0,
-                        });
-                      }
-
-                      let motive_canon_base = plan.n_params;
-                      for (src_i, motive) in motives.iter().enumerate() {
-                        if plan.motive_keep[src_i] {
-                          let canon_pos = motive_canon_base
-                            + plan.source_to_canon_motive[src_i];
-                          canonical_args.push((canon_pos, motive.clone()));
+                        } else {
                           entries.push(CallSiteEntry::Kept {
                             canon_idx: canon_pos as u64,
                             meta: 0,
                           });
-                        } else {
-                          let sharing_idx = collapsed_args.len();
-                          collapsed_args.push(motive.clone());
-                          entries.push(CallSiteEntry::Collapsed {
-                            sharing_idx: sharing_idx as u64,
-                            meta: 0,
-                          });
                         }
-                      }
-
-                      let fixed_tail_canon_base =
-                        plan.n_params + n_canon_motives;
-                      for (i, t) in fixed_tail.iter().enumerate() {
-                        canonical_args
-                          .push((fixed_tail_canon_base + i, t.clone()));
-                        entries.push(CallSiteEntry::Kept {
-                          canon_idx: (fixed_tail_canon_base + i) as u64,
+                      } else {
+                        let sharing_idx = collapsed_args.len();
+                        collapsed_args.push(minor.clone());
+                        entries.push(CallSiteEntry::Collapsed {
+                          sharing_idx: sharing_idx as u64,
                           meta: 0,
                         });
                       }
-
-                      let extra_tail_canon_base =
-                        fixed_tail_canon_base + fixed_tail_len;
-                      for (i, t) in extra_tail.iter().enumerate() {
-                        canonical_args
-                          .push((extra_tail_canon_base + i, t.clone()));
-                        entries.push(CallSiteEntry::Kept {
-                          canon_idx: (extra_tail_canon_base + i) as u64,
-                          meta: 0,
-                        });
-                      }
-
-                      canonical_args.sort_by_key(|(canon_idx, _)| *canon_idx);
-                      let sorted_canon: Vec<LeanExpr> = canonical_args
-                        .into_iter()
-                        .map(|(_, expr)| expr)
-                        .collect();
-
-                      let n_canonical = sorted_canon.len();
-                      let n_collapsed = collapsed_args.len();
-                      stack.push(Frame::BuildCallSite {
-                        name_addr,
-                        entries,
-                        n_canonical,
-                        n_collapsed,
-                      });
-                      for arg in collapsed_args.iter().rev() {
-                        stack.push(Frame::Compile(arg.clone()));
-                      }
-                      for arg in sorted_canon.iter().rev() {
-                        stack.push(Frame::Compile(arg.clone()));
-                      }
-                      stack.push(Frame::Compile(head_expr.clone()));
-                      continue;
                     }
+
+                    // Tail (indices + major): always kept, identity
+                    let tail_canon_base =
+                      plan.n_params + n_canon_motives + n_canon_minors;
+                    for (i, t) in tail.iter().enumerate() {
+                      canonical_args.push((tail_canon_base + i, t.clone()));
+                      entries.push(CallSiteEntry::Kept {
+                        canon_idx: (tail_canon_base + i) as u64,
+                        meta: 0,
+                      });
+                    }
+
+                    // Sort canonical_args by their target canon_idx
+                    canonical_args.sort_by_key(|(canon_idx, _)| *canon_idx);
+                    let sorted_canon: Vec<LeanExpr> = canonical_args
+                      .into_iter()
+                      .map(|(_, expr)| expr)
+                      .collect();
+
+                    let n_canonical = sorted_canon.len();
+                    let n_collapsed = collapsed_args.len();
+
+                    // Push frames in reverse order (LIFO)
+                    stack.push(Frame::BuildCallSite {
+                      name_addr,
+                      entries,
+                      n_canonical,
+                      n_collapsed,
+                    });
+                    for arg in collapsed_args.iter().rev() {
+                      stack.push(Frame::Compile(arg.clone()));
+                    }
+                    for arg in sorted_canon.iter().rev() {
+                      stack.push(Frame::Compile(arg.clone()));
+                    }
+                    stack.push(Frame::Compile(head_expr.clone()));
+                    continue;
                   }
+                }
+                if let Some(plan) = stt.below_call_site_plans.get(name)
+                  && !plan.is_identity()
+                {
+                  let fixed_tail_len = plan.n_indices + 1; // indices + major
+                  let expected_total =
+                    plan.n_params + plan.n_source_motives + fixed_tail_len;
+                  if args.len() >= expected_total {
+                    let name_addr = compile_name(name, stt);
+                    let args_owned: Vec<LeanExpr> =
+                      args.iter().map(|arg| (*arg).clone()).collect();
+                    let params = &args_owned[..plan.n_params];
+                    let motives = &args_owned
+                      [plan.n_params..plan.n_params + plan.n_source_motives];
+                    let fixed_tail = &args_owned
+                      [plan.n_params + plan.n_source_motives..expected_total];
+                    let extra_tail = &args_owned[expected_total..];
+
+                    let n_canon_motives = plan.n_canonical_motives();
+                    let mut canonical_args: Vec<(usize, LeanExpr)> =
+                      Vec::with_capacity(
+                        plan.n_params
+                          + n_canon_motives
+                          + fixed_tail.len()
+                          + extra_tail.len(),
+                      );
+                    let mut collapsed_args: Vec<LeanExpr> = Vec::new();
+                    let mut entries: Vec<CallSiteEntry> = Vec::new();
+
+                    for (i, p) in params.iter().enumerate() {
+                      canonical_args.push((i, p.clone()));
+                      entries.push(CallSiteEntry::Kept {
+                        canon_idx: i as u64,
+                        meta: 0,
+                      });
+                    }
+
+                    let motive_canon_base = plan.n_params;
+                    for (src_i, motive) in motives.iter().enumerate() {
+                      if plan.motive_keep[src_i] {
+                        let canon_pos = motive_canon_base
+                          + plan.source_to_canon_motive[src_i];
+                        canonical_args.push((canon_pos, motive.clone()));
+                        entries.push(CallSiteEntry::Kept {
+                          canon_idx: canon_pos as u64,
+                          meta: 0,
+                        });
+                      } else {
+                        let sharing_idx = collapsed_args.len();
+                        collapsed_args.push(motive.clone());
+                        entries.push(CallSiteEntry::Collapsed {
+                          sharing_idx: sharing_idx as u64,
+                          meta: 0,
+                        });
+                      }
+                    }
+
+                    let fixed_tail_canon_base = plan.n_params + n_canon_motives;
+                    for (i, t) in fixed_tail.iter().enumerate() {
+                      canonical_args
+                        .push((fixed_tail_canon_base + i, t.clone()));
+                      entries.push(CallSiteEntry::Kept {
+                        canon_idx: (fixed_tail_canon_base + i) as u64,
+                        meta: 0,
+                      });
+                    }
+
+                    let extra_tail_canon_base =
+                      fixed_tail_canon_base + fixed_tail_len;
+                    for (i, t) in extra_tail.iter().enumerate() {
+                      canonical_args
+                        .push((extra_tail_canon_base + i, t.clone()));
+                      entries.push(CallSiteEntry::Kept {
+                        canon_idx: (extra_tail_canon_base + i) as u64,
+                        meta: 0,
+                      });
+                    }
+
+                    canonical_args.sort_by_key(|(canon_idx, _)| *canon_idx);
+                    let sorted_canon: Vec<LeanExpr> = canonical_args
+                      .into_iter()
+                      .map(|(_, expr)| expr)
+                      .collect();
+
+                    let n_canonical = sorted_canon.len();
+                    let n_collapsed = collapsed_args.len();
+                    stack.push(Frame::BuildCallSite {
+                      name_addr,
+                      entries,
+                      n_canonical,
+                      n_collapsed,
+                    });
+                    for arg in collapsed_args.iter().rev() {
+                      stack.push(Frame::Compile(arg.clone()));
+                    }
+                    for arg in sorted_canon.iter().rev() {
+                      stack.push(Frame::Compile(arg.clone()));
+                    }
+                    stack.push(Frame::Compile(head_expr.clone()));
+                    continue;
+                  }
+                }
                 if let Some(plan) = stt.brec_on_call_site_plans.get(name)
-                  && !plan.is_identity() {
-                    let fixed_tail_len = plan.n_indices + 1; // indices + major
-                    let expected_total = plan.n_params
+                  && !plan.is_identity()
+                {
+                  let fixed_tail_len = plan.n_indices + 1; // indices + major
+                  let expected_total = plan.n_params
+                    + plan.n_source_motives
+                    + fixed_tail_len
+                    + plan.n_source_motives;
+                  if args.len() >= expected_total {
+                    let name_addr = compile_name(name, stt);
+
+                    let args_owned: Vec<LeanExpr> =
+                      args.iter().map(|arg| (*arg).clone()).collect();
+                    let params = &args_owned[..plan.n_params];
+                    let motives = &args_owned
+                      [plan.n_params..plan.n_params + plan.n_source_motives];
+                    let fixed_tail = &args_owned[plan.n_params
+                      + plan.n_source_motives
+                      ..plan.n_params + plan.n_source_motives + fixed_tail_len];
+                    let handlers = &args_owned[plan.n_params
                       + plan.n_source_motives
                       + fixed_tail_len
-                      + plan.n_source_motives;
-                    if args.len() >= expected_total {
-                      let name_addr = compile_name(name, stt);
+                      ..expected_total];
+                    let extra_tail = &args_owned[expected_total..];
 
-                      let args_owned: Vec<LeanExpr> =
-                        args.iter().map(|arg| (*arg).clone()).collect();
-                      let params = &args_owned[..plan.n_params];
-                      let motives = &args_owned
-                        [plan.n_params..plan.n_params + plan.n_source_motives];
-                      let fixed_tail = &args_owned[plan.n_params
-                        + plan.n_source_motives
-                        ..plan.n_params
-                          + plan.n_source_motives
-                          + fixed_tail_len];
-                      let handlers = &args_owned[plan.n_params
-                        + plan.n_source_motives
-                        + fixed_tail_len
-                        ..expected_total];
-                      let extra_tail = &args_owned[expected_total..];
+                    let n_canon_motives = plan.n_canonical_motives();
+                    let mut canonical_args: Vec<(usize, LeanExpr)> =
+                      Vec::with_capacity(
+                        plan.n_params
+                          + n_canon_motives
+                          + fixed_tail.len()
+                          + n_canon_motives
+                          + extra_tail.len(),
+                      );
+                    let mut collapsed_args: Vec<LeanExpr> = Vec::new();
+                    let mut entries: Vec<CallSiteEntry> = Vec::new();
 
-                      let n_canon_motives = plan.n_canonical_motives();
-                      let mut canonical_args: Vec<(usize, LeanExpr)> =
-                        Vec::with_capacity(
-                          plan.n_params
-                            + n_canon_motives
-                            + fixed_tail.len()
-                            + n_canon_motives
-                            + extra_tail.len(),
-                        );
-                      let mut collapsed_args: Vec<LeanExpr> = Vec::new();
-                      let mut entries: Vec<CallSiteEntry> = Vec::new();
-
-                      for (i, p) in params.iter().enumerate() {
-                        canonical_args.push((i, p.clone()));
-                        entries.push(CallSiteEntry::Kept {
-                          canon_idx: i as u64,
-                          meta: 0,
-                        });
-                      }
-
-                      let motive_canon_base = plan.n_params;
-                      for (src_i, motive) in motives.iter().enumerate() {
-                        if plan.motive_keep[src_i] {
-                          let canon_pos = motive_canon_base
-                            + plan.source_to_canon_motive[src_i];
-                          canonical_args.push((canon_pos, motive.clone()));
-                          entries.push(CallSiteEntry::Kept {
-                            canon_idx: canon_pos as u64,
-                            meta: 0,
-                          });
-                        } else {
-                          let sharing_idx = collapsed_args.len();
-                          collapsed_args.push(motive.clone());
-                          entries.push(CallSiteEntry::Collapsed {
-                            sharing_idx: sharing_idx as u64,
-                            meta: 0,
-                          });
-                        }
-                      }
-
-                      let fixed_tail_canon_base =
-                        plan.n_params + n_canon_motives;
-                      for (i, t) in fixed_tail.iter().enumerate() {
-                        canonical_args
-                          .push((fixed_tail_canon_base + i, t.clone()));
-                        entries.push(CallSiteEntry::Kept {
-                          canon_idx: (fixed_tail_canon_base + i) as u64,
-                          meta: 0,
-                        });
-                      }
-
-                      let handler_canon_base =
-                        fixed_tail_canon_base + fixed_tail_len;
-                      for (src_i, handler) in handlers.iter().enumerate() {
-                        if plan.motive_keep[src_i] {
-                          let canon_pos = handler_canon_base
-                            + plan.source_to_canon_motive[src_i];
-                          canonical_args.push((canon_pos, handler.clone()));
-                          entries.push(CallSiteEntry::Kept {
-                            canon_idx: canon_pos as u64,
-                            meta: 0,
-                          });
-                        } else {
-                          let sharing_idx = collapsed_args.len();
-                          collapsed_args.push(handler.clone());
-                          entries.push(CallSiteEntry::Collapsed {
-                            sharing_idx: sharing_idx as u64,
-                            meta: 0,
-                          });
-                        }
-                      }
-
-                      let extra_tail_canon_base =
-                        handler_canon_base + n_canon_motives;
-                      for (i, t) in extra_tail.iter().enumerate() {
-                        canonical_args
-                          .push((extra_tail_canon_base + i, t.clone()));
-                        entries.push(CallSiteEntry::Kept {
-                          canon_idx: (extra_tail_canon_base + i) as u64,
-                          meta: 0,
-                        });
-                      }
-
-                      canonical_args.sort_by_key(|(canon_idx, _)| *canon_idx);
-                      let sorted_canon: Vec<LeanExpr> = canonical_args
-                        .into_iter()
-                        .map(|(_, expr)| expr)
-                        .collect();
-
-                      let n_canonical = sorted_canon.len();
-                      let n_collapsed = collapsed_args.len();
-                      stack.push(Frame::BuildCallSite {
-                        name_addr,
-                        entries,
-                        n_canonical,
-                        n_collapsed,
+                    for (i, p) in params.iter().enumerate() {
+                      canonical_args.push((i, p.clone()));
+                      entries.push(CallSiteEntry::Kept {
+                        canon_idx: i as u64,
+                        meta: 0,
                       });
-                      for arg in collapsed_args.iter().rev() {
-                        stack.push(Frame::Compile(arg.clone()));
-                      }
-                      for arg in sorted_canon.iter().rev() {
-                        stack.push(Frame::Compile(arg.clone()));
-                      }
-                      stack.push(Frame::Compile(head_expr.clone()));
-                      continue;
                     }
+
+                    let motive_canon_base = plan.n_params;
+                    for (src_i, motive) in motives.iter().enumerate() {
+                      if plan.motive_keep[src_i] {
+                        let canon_pos = motive_canon_base
+                          + plan.source_to_canon_motive[src_i];
+                        canonical_args.push((canon_pos, motive.clone()));
+                        entries.push(CallSiteEntry::Kept {
+                          canon_idx: canon_pos as u64,
+                          meta: 0,
+                        });
+                      } else {
+                        let sharing_idx = collapsed_args.len();
+                        collapsed_args.push(motive.clone());
+                        entries.push(CallSiteEntry::Collapsed {
+                          sharing_idx: sharing_idx as u64,
+                          meta: 0,
+                        });
+                      }
+                    }
+
+                    let fixed_tail_canon_base = plan.n_params + n_canon_motives;
+                    for (i, t) in fixed_tail.iter().enumerate() {
+                      canonical_args
+                        .push((fixed_tail_canon_base + i, t.clone()));
+                      entries.push(CallSiteEntry::Kept {
+                        canon_idx: (fixed_tail_canon_base + i) as u64,
+                        meta: 0,
+                      });
+                    }
+
+                    let handler_canon_base =
+                      fixed_tail_canon_base + fixed_tail_len;
+                    for (src_i, handler) in handlers.iter().enumerate() {
+                      if plan.motive_keep[src_i] {
+                        let canon_pos = handler_canon_base
+                          + plan.source_to_canon_motive[src_i];
+                        canonical_args.push((canon_pos, handler.clone()));
+                        entries.push(CallSiteEntry::Kept {
+                          canon_idx: canon_pos as u64,
+                          meta: 0,
+                        });
+                      } else {
+                        let sharing_idx = collapsed_args.len();
+                        collapsed_args.push(handler.clone());
+                        entries.push(CallSiteEntry::Collapsed {
+                          sharing_idx: sharing_idx as u64,
+                          meta: 0,
+                        });
+                      }
+                    }
+
+                    let extra_tail_canon_base =
+                      handler_canon_base + n_canon_motives;
+                    for (i, t) in extra_tail.iter().enumerate() {
+                      canonical_args
+                        .push((extra_tail_canon_base + i, t.clone()));
+                      entries.push(CallSiteEntry::Kept {
+                        canon_idx: (extra_tail_canon_base + i) as u64,
+                        meta: 0,
+                      });
+                    }
+
+                    canonical_args.sort_by_key(|(canon_idx, _)| *canon_idx);
+                    let sorted_canon: Vec<LeanExpr> = canonical_args
+                      .into_iter()
+                      .map(|(_, expr)| expr)
+                      .collect();
+
+                    let n_canonical = sorted_canon.len();
+                    let n_collapsed = collapsed_args.len();
+                    stack.push(Frame::BuildCallSite {
+                      name_addr,
+                      entries,
+                      n_canonical,
+                      n_collapsed,
+                    });
+                    for arg in collapsed_args.iter().rev() {
+                      stack.push(Frame::Compile(arg.clone()));
+                    }
+                    for arg in sorted_canon.iter().rev() {
+                      stack.push(Frame::Compile(arg.clone()));
+                    }
+                    stack.push(Frame::Compile(head_expr.clone()));
+                    continue;
                   }
+                }
               }
             }
 
@@ -2410,9 +2409,7 @@ pub fn mk_indc(
 ) -> Result<Ind, CompileError> {
   let mut ctors = Vec::with_capacity(ind.ctors.len());
   for ctor_name in &ind.ctors {
-    if let Some(LeanConstantInfo::CtorInfo(c)) =
-      env.as_ref().get(ctor_name)
-    {
+    if let Some(LeanConstantInfo::CtorInfo(c)) = env.as_ref().get(ctor_name) {
       ctors.push(c.clone());
     } else {
       return Err(CompileError::MissingConstant {
@@ -3129,10 +3126,7 @@ pub fn compile_const_no_aux(
       // SCC including rec_N names.
       for n in all {
         if stt.aux_gen_extra_names.contains(n)
-          && matches!(
-            lean_env.get(n),
-            Some(LeanConstantInfo::RecInfo(_))
-          )
+          && matches!(lean_env.get(n), Some(LeanConstantInfo::RecInfo(_)))
         {
           filtered.insert(n.clone());
         }
@@ -3141,13 +3135,10 @@ pub fn compile_const_no_aux(
     Phase::BelowIndc => {
       // Use .below's own .all, keep only inductives + their ctors.
       for n in all {
-        if let Some(LeanConstantInfo::InductInfo(v)) =
-          lean_env.get(n)
-        {
+        if let Some(LeanConstantInfo::InductInfo(v)) = lean_env.get(n) {
           for a in &v.all {
             if stt.aux_gen_extra_names.contains(a)
-              && let Some(LeanConstantInfo::InductInfo(bi)) =
-                lean_env.get(a)
+              && let Some(LeanConstantInfo::InductInfo(bi)) = lean_env.get(a)
             {
               filtered.insert(a.clone());
               for ctor in &bi.ctors {
@@ -3164,10 +3155,7 @@ pub fn compile_const_no_aux(
       // (from DefnInfo.all = [EqC.below]), so use directly.
       for a in &lean_all {
         if stt.aux_gen_extra_names.contains(a)
-          && matches!(
-            lean_env.get(a),
-            Some(LeanConstantInfo::DefnInfo(_))
-          )
+          && matches!(lean_env.get(a), Some(LeanConstantInfo::DefnInfo(_)))
         {
           filtered.insert(a.clone());
         }
@@ -3467,9 +3455,7 @@ fn compile_const_inner(
 
     LeanConstantInfo::CtorInfo(val) => {
       // Constructors are compiled as part of their inductive
-      if let Some(LeanConstantInfo::InductInfo(_)) =
-        lean_env.get(&val.induct)
-      {
+      if let Some(LeanConstantInfo::InductInfo(_)) = lean_env.get(&val.induct) {
         let _ = compile_mutual(&val.induct, all, lean_env, cache, stt, aux)?;
         stt
           .name_to_addr

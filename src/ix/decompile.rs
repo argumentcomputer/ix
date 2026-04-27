@@ -2589,77 +2589,72 @@ fn roundtrip_block(
           &named.addr
         };
         stt.env.get_const(addr).map(|c| match &c.info {
-          ConstantInfo::RPrj(p) => {
-            p.block.clone()
-          },
-          ConstantInfo::DPrj(p) => {
-            p.block.clone()
-          },
-          ConstantInfo::IPrj(p) => {
-            p.block.clone()
-          },
+          ConstantInfo::RPrj(p) => p.block.clone(),
+          ConstantInfo::DPrj(p) => p.block.clone(),
+          ConstantInfo::IPrj(p) => p.block.clone(),
           _ => addr.clone(), // bare constant, not a projection
         })
       })
     };
     if let Some(orig) = orig_addr
-      && block_addr != orig {
-        let first_is_aux_gen = is_aux_gen_suffix(&first_name);
-        if std::env::var_os("IX_ROUNDTRIP_DEBUG").is_some() {
-          // Full dump so we can compare what aux_gen regenerated vs
-          // Lean's source for the failing constant. Set
-          // IX_ROUNDTRIP_DEBUG=1 to enable.
-          eprintln!(
-            "[roundtrip DEBUG] {}: regen block_addr={:.12} != orig {:.12}",
-            first_name.pretty(),
-            block_addr.hex(),
-            orig.hex(),
-          );
-          for cnst in consts {
-            let nm = cnst.name();
-            eprintln!("  -- regen {} --", nm.pretty());
-            match cnst {
-              LeanMutConst::Defn(def) => {
-                eprintln!("    type: {}", def.typ.pretty());
-                eprintln!("    value: {}", def.value.pretty());
-              },
-              LeanMutConst::Recr(rec) => {
-                eprintln!("    type: {}", rec.cnst.typ.pretty());
-                for (i, r) in rec.rules.iter().enumerate() {
-                  eprintln!(
-                    "    rule[{i}] {} rhs: {}",
-                    r.ctor.pretty(),
-                    r.rhs.pretty()
-                  );
-                }
-              },
-              LeanMutConst::Indc(ind) => {
-                eprintln!("    type: {}", ind.ind.cnst.typ.pretty());
-              },
-            }
-            if let Some(orig_env) = orig_env
-              && let Some(lean_ci_ref) = orig_env.get(&nm)
-            {
-              let lean_ci = lean_ci_ref;
-              eprintln!("  -- lean  {} --", nm.pretty());
-              eprintln!("    type: {}", lean_ci.get_type().pretty());
-              if let Some(v) = get_value(lean_ci) {
-                eprintln!("    value: {}", v.pretty());
+      && block_addr != orig
+    {
+      let first_is_aux_gen = is_aux_gen_suffix(&first_name);
+      if std::env::var_os("IX_ROUNDTRIP_DEBUG").is_some() {
+        // Full dump so we can compare what aux_gen regenerated vs
+        // Lean's source for the failing constant. Set
+        // IX_ROUNDTRIP_DEBUG=1 to enable.
+        eprintln!(
+          "[roundtrip DEBUG] {}: regen block_addr={:.12} != orig {:.12}",
+          first_name.pretty(),
+          block_addr.hex(),
+          orig.hex(),
+        );
+        for cnst in consts {
+          let nm = cnst.name();
+          eprintln!("  -- regen {} --", nm.pretty());
+          match cnst {
+            LeanMutConst::Defn(def) => {
+              eprintln!("    type: {}", def.typ.pretty());
+              eprintln!("    value: {}", def.value.pretty());
+            },
+            LeanMutConst::Recr(rec) => {
+              eprintln!("    type: {}", rec.cnst.typ.pretty());
+              for (i, r) in rec.rules.iter().enumerate() {
+                eprintln!(
+                  "    rule[{i}] {} rhs: {}",
+                  r.ctor.pretty(),
+                  r.rhs.pretty()
+                );
               }
+            },
+            LeanMutConst::Indc(ind) => {
+              eprintln!("    type: {}", ind.ind.cnst.typ.pretty());
+            },
+          }
+          if let Some(orig_env) = orig_env
+            && let Some(lean_ci_ref) = orig_env.get(&nm)
+          {
+            let lean_ci = lean_ci_ref;
+            eprintln!("  -- lean  {} --", nm.pretty());
+            eprintln!("    type: {}", lean_ci.get_type().pretty());
+            if let Some(v) = get_value(lean_ci) {
+              eprintln!("    value: {}", v.pretty());
             }
           }
         }
-        if !first_is_aux_gen {
-          return Err(DecompileError::BadConstantFormat {
-            msg: format!(
-              "roundtrip recompile hash mismatch for '{}': recompiled={:.12} original={:.12}",
-              first_name.pretty(),
-              block_addr.hex(),
-              orig.hex(),
-            ),
-          });
-        }
       }
+      if !first_is_aux_gen {
+        return Err(DecompileError::BadConstantFormat {
+          msg: format!(
+            "roundtrip recompile hash mismatch for '{}': recompiled={:.12} original={:.12}",
+            first_name.pretty(),
+            block_addr.hex(),
+            orig.hex(),
+          ),
+        });
+      }
+    }
   }
 
   // Build the decompile ctx from the compiled MutCtx.
@@ -3259,11 +3254,10 @@ fn rehydrate_aux_perms_from_env(stt: &CompileState) {
     // version whose Indc.all is also source-order; we prefer the
     // canonical-entry `Indc.all` since it's the same source-order list
     // under spec §10.2.)
-    let source_all: Option<&[Address]> =
-      match &rep_named.meta.info {
-        ConstantMetaInfo::Indc { all, .. } => Some(all.as_slice()),
-        _ => None,
-      };
+    let source_all: Option<&[Address]> = match &rep_named.meta.info {
+      ConstantMetaInfo::Indc { all, .. } => Some(all.as_slice()),
+      _ => None,
+    };
     let source_all = match source_all {
       Some(s) if !s.is_empty() => s,
       _ => continue,
@@ -4390,9 +4384,10 @@ pub fn decompile_env(
         if let Some(ci) = dstt.env.get(ind_name) {
           for ref_name in get_constant_info_references(&ci) {
             if let Some(dep_block) = name_to_block.get(&ref_name)
-              && dep_block != block_key {
-                deps.insert(dep_block.clone());
-              }
+              && dep_block != block_key
+            {
+              deps.insert(dep_block.clone());
+            }
           }
         }
       }
@@ -4513,7 +4508,11 @@ pub fn decompile_env(
         // acceptable for human-readable percentages and ETA seconds.
         #[allow(clippy::cast_precision_loss)]
         let rate = done as f32 / elapsed.max(0.001);
-        #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        #[allow(
+          clippy::cast_precision_loss,
+          clippy::cast_possible_truncation,
+          clippy::cast_sign_loss
+        )]
         let remaining = ((total_blocks - done) as f32 / rate.max(0.001)) as u64;
         #[allow(clippy::cast_precision_loss)]
         let pct = 100.0 * done as f32 / total_blocks as f32;

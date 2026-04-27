@@ -423,10 +423,10 @@ pub(crate) fn generate_aux_patches(
             .rules
             .iter()
             .map(|r| {
-              let new_ctor = restore_ctx
-                .aux_ctor_map
-                .get(&r.ctor)
-                .map_or_else(|| r.ctor.clone(), |(orig_ctor, _)| orig_ctor.clone());
+              let new_ctor = restore_ctx.aux_ctor_map.get(&r.ctor).map_or_else(
+                || r.ctor.clone(),
+                |(orig_ctor, _)| orig_ctor.clone(),
+              );
               RecursorRule {
                 ctor: new_ctor,
                 n_fields: r.n_fields.clone(),

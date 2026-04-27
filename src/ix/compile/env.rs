@@ -1014,9 +1014,10 @@ fn precompile_aux_gen_prereqs(
         if let Some(out_refs) = condensed.block_refs.get(&rep) {
           for referenced in out_refs {
             if let Some(dep_rep) = condensed.low_links.get(referenced)
-              && !visited.contains(dep_rep) {
-                stack.push(Frame::Enter(dep_rep.clone()));
-              }
+              && !visited.contains(dep_rep)
+            {
+              stack.push(Frame::Enter(dep_rep.clone()));
+            }
           }
         }
       },
