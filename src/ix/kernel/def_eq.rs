@@ -114,12 +114,8 @@ impl<M: KernelMode> TypeChecker<M> {
     // `eq_ctx` Arc is cloned once into `a_key`; `b_key` receives the
     // remaining owned copy. `is_equiv` and `find_root_key` take by
     // reference (see `src/ix/kernel/equiv.rs`), so no additional Arc
-    // clones are paid per method call. Only the terminal `add_equiv`
-    // (success path) needs ownership, at which point we move the
-    // originals in. The rare equiv-root success branch still pays a
-    // `.clone()` pair to feed `add_equiv` there — it's mutually
-    // exclusive with the main-path `add_equiv`, so at most one pair
-    // of clones is ever charged.
+    // clones are paid per method call. Any true result moves the originals
+    // into `add_equiv` before returning.
     let eq_ctx = if a.lbr() == 0 && b.lbr() == 0 {
       empty_ctx_addr()
     } else {
@@ -134,7 +130,25 @@ impl<M: KernelMode> TypeChecker<M> {
 
     let (lo, hi) = canonical_pair(a.hash_key(), b.hash_key());
     let cache_key = (lo, hi, eq_ctx.clone());
+    let cheap_mode = self.cheap_recursion_depth > 0;
     if let Some(cached) = self.env.def_eq_cache.get(&cache_key).map(|v| *v) {
+      if cheap_mode {
+        self.env.def_eq_cheap_cache.insert(cache_key.clone(), cached);
+      }
+      if cached {
+        self.equiv_manager.add_equiv(a_key, b_key);
+      }
+      self.env.perf.record_def_eq_hit();
+      return Ok(cached);
+    }
+    if cheap_mode
+      && let Some(cached) =
+        self.env.def_eq_cheap_cache.get(&cache_key).map(|v| *v)
+    {
+      if cached {
+        self.env.def_eq_cache.insert(cache_key.clone(), true);
+        self.equiv_manager.add_equiv(a_key, b_key);
+      }
       self.env.perf.record_def_eq_hit();
       return Ok(cached);
     }
@@ -147,14 +161,33 @@ impl<M: KernelMode> TypeChecker<M> {
     {
       let (rlo, rhi) = canonical_pair(a_root.0, b_root.0);
       let root_cache_key = (rlo, rhi, eq_ctx.clone());
-      let cached = self.env.def_eq_cache.get(&root_cache_key).map(|v| *v);
-      if let Some(cached) = cached {
-        if cached {
-          // Rare branch: the main-path `add_equiv` below is skipped by
-          // the early return, so clone here instead of moving.
-          self.equiv_manager.add_equiv(a_key.clone(), b_key.clone());
+      let mut cached = self
+        .env
+        .def_eq_cache
+        .get(&root_cache_key)
+        .map(|v| (*v, false));
+      if cached.is_none() && cheap_mode {
+        cached = self
+          .env
+          .def_eq_cheap_cache
+          .get(&root_cache_key)
+          .map(|v| (*v, true));
+      }
+      if let Some((cached, from_cheap_cache)) = cached {
+        if from_cheap_cache {
+          self.env.def_eq_cheap_cache.insert(cache_key.clone(), cached);
+          if cached {
+            self.env.def_eq_cache.insert(cache_key.clone(), true);
+          }
+        } else {
+          self.env.def_eq_cache.insert(cache_key.clone(), cached);
+          if cheap_mode {
+            self.env.def_eq_cheap_cache.insert(cache_key.clone(), cached);
+          }
         }
-        self.env.def_eq_cache.insert(cache_key, cached);
+        if cached {
+          self.equiv_manager.add_equiv(a_key, b_key);
+        }
         self.env.perf.record_def_eq_hit();
         return Ok(cached);
       }
@@ -191,9 +224,37 @@ impl<M: KernelMode> TypeChecker<M> {
     }
     if ok {
       // Move the up-front `a_key` / `b_key` directly into `add_equiv`.
+      //
+      // SOUNDNESS: cheap-mode `true` is monotone (cheap-equal implies
+      // FULL-equal), so it may be recorded as a local equivalence. WHNF
+      // caches deliberately do not consult these equivalence roots; they are
+      // only a def-eq shortcut.
       self.equiv_manager.add_equiv(a_key, b_key);
     }
-    self.env.def_eq_cache.insert(cache_key, ok);
+    // SOUNDNESS: cheap-mode WHNF can leave projections stuck where FULL
+    // would reduce, causing `is_def_eq` to return `false`
+    // for terms FULL would judge equal. Caching such a cheap-mode `false`
+    // would let a later FULL-mode caller hit the poisoned key and
+    // short-circuit before doing the actual comparison.
+    //
+    // Cheap-mode `true` is monotone-sound to cache: cheap WHNF leaves
+    // terms less-reduced, so any pair found equal at the cheap level is
+    // also equal at the FULL level (further reduction preserves equality).
+    // Caching cheap `true` is also performance-critical — without it,
+    // heavy proof terms recompute the same comparisons inside lazy delta
+    // and blow past `MAX_DEF_EQ_DEPTH`.
+    //
+    // The depth counter is bumped by the def-eq WHNF helpers in `whnf.rs`.
+    // Any `is_def_eq` call inside a cheap reduction observes `cheap_mode`
+    // and records cheap `false` only in `def_eq_cheap_cache`.
+    if cheap_mode {
+      self.env.def_eq_cheap_cache.insert(cache_key.clone(), ok);
+      if ok {
+        self.env.def_eq_cache.insert(cache_key, true);
+      }
+    } else {
+      self.env.def_eq_cache.insert(cache_key, ok);
+    }
     Ok(ok)
   }
 
@@ -238,13 +299,11 @@ impl<M: KernelMode> TypeChecker<M> {
       }
     }
 
-    // Tier 1d: beta/iota/zeta-only app congruence before projection
-    // definitions and primitive wrappers are exposed. This catches open
-    // wrappers where one side is syntactically `C args` and the other is a
-    // beta-redex reducing to the same `C args`; unfolding them can expose
-    // recursive implementation details such as `Nat.brecOn.go`.
-    let ca = self.whnf_core(a)?;
-    let cb = self.whnf_core(b)?;
+    // Tier 1d: Lean-style structural WHNF for def-eq. This uses cheap
+    // projections so `a.i =?= b.i` first has a chance to compare `a =?= b`
+    // before unfolding definitions hidden behind each projection.
+    let ca = self.whnf_core_for_def_eq(a)?;
+    let cb = self.whnf_core_for_def_eq(b)?;
     if ca.ptr_eq(&cb) {
       return Ok(true);
     }
@@ -255,9 +314,11 @@ impl<M: KernelMode> TypeChecker<M> {
       return Ok(true);
     }
 
-    // Tier 2: WHNF without delta
-    let mut wa = self.whnf_no_delta(a)?;
-    let mut wb = self.whnf_no_delta(b)?;
+    // Ix's no-delta layer also contains primitive/native reductions needed
+    // by the existing kernel model. Keep cheap projection behavior here, but
+    // do not expose this as a public WHNF mode.
+    let mut wa = self.whnf_no_delta_for_def_eq(a)?;
+    let mut wb = self.whnf_no_delta_for_def_eq(b)?;
     if wa.ptr_eq(&wb) {
       return Ok(true);
     }
@@ -382,40 +443,40 @@ impl<M: KernelMode> TypeChecker<M> {
           let ub = self.delta_unfold_one(&wb)?;
           match (ua, ub) {
             (Some(ua), Some(ub)) => {
-              wa = self.whnf_no_delta(&ua)?;
-              wb = self.whnf_no_delta(&ub)?;
+              wa = self.whnf_no_delta_for_def_eq(&ua)?;
+              wb = self.whnf_no_delta_for_def_eq(&ub)?;
             },
             (Some(ua), None) => {
-              wa = self.whnf_no_delta(&ua)?;
+              wa = self.whnf_no_delta_for_def_eq(&ua)?;
             },
             (None, Some(ub)) => {
-              wb = self.whnf_no_delta(&ub)?;
+              wb = self.whnf_no_delta_for_def_eq(&ub)?;
             },
             (None, None) => break,
           }
         } else if wa_w > wb_w {
           // a is heavier — unfold a first
           if let Some(ua) = self.delta_unfold_one(&wa)? {
-            wa = self.whnf_no_delta(&ua)?;
+            wa = self.whnf_no_delta_for_def_eq(&ua)?;
           } else {
             break;
           }
         } else {
           // b is heavier — unfold b first
           if let Some(ub) = self.delta_unfold_one(&wb)? {
-            wb = self.whnf_no_delta(&ub)?;
+            wb = self.whnf_no_delta_for_def_eq(&ub)?;
           } else {
             break;
           }
         }
       } else if a_delta {
         if let Some(ua) = self.delta_unfold_one(&wa)? {
-          wa = self.whnf_no_delta(&ua)?;
+          wa = self.whnf_no_delta_for_def_eq(&ua)?;
         } else {
           break;
         }
       } else if let Some(ub) = self.delta_unfold_one(&wb)? {
-        wb = self.whnf_no_delta(&ub)?;
+        wb = self.whnf_no_delta_for_def_eq(&ub)?;
       } else {
         break;
       }
@@ -433,8 +494,8 @@ impl<M: KernelMode> TypeChecker<M> {
       return Ok(true);
     }
 
-    // Tier 4c: second structural pass (lean4lean:683-686, lean4 type_checker.cpp:1109-1110)
-    // whnf_core with cheap projections — catches structural matches after delta exhaustion.
+    // Tier 4c: second structural pass (lean4lean:683-686, lean4 type_checker.cpp:1109-1110).
+    // Use full projection reduction after lazy-delta exhaustion.
     let wa = self.whnf_core(&wa)?;
     let wb = self.whnf_core(&wb)?;
     if wa.ptr_eq(&wb) {

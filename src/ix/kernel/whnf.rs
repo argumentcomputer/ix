@@ -61,43 +61,27 @@ use super::tc::{IotaInfo, MAX_WHNF_FUEL, TypeChecker, collect_app_spine};
 
 use lean_ffi::nat::Nat;
 
-/// Reduction flags for the no-delta layer of WHNF.
+/// Reduction policy for structural WHNF.
 ///
 /// `cheap_proj` and `cheap_rec` mirror Lean4Lean's `cheapProj` and `cheapRec`
 /// flags (`refs/lean4lean/Lean4Lean/TypeChecker.lean:337–341`): when set,
 /// projection-of-`Prj`'s value uses `whnf_core` instead of full `whnf`, and
-/// the recursor's major premise reduces with the same cheap variant. The
-/// def-eq lazy-delta loop runs against this cheap mode so it can compare
-/// projection-headed terms structurally without paying for delta on every
-/// projected value.
+/// the recursor's major premise reduces with the same structural variant.
 ///
-/// Cheap results are not cached: caching them under `whnf_no_delta_cache`
-/// would let a later FULL-mode caller observe a partially-reduced result. To
-/// keep both modes safe, only `is_full()` callers read or write the cache.
+/// The only non-full policy currently used is `DEF_EQ_CORE`, matching
+/// Lean/Lean4Lean's `whnfCore (cheapProj := true)` scaffold in def-eq.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) struct WhnfFlags {
-  pub cheap_rec: bool,
-  pub cheap_proj: bool,
+struct WhnfFlags {
+  cheap_rec: bool,
+  cheap_proj: bool,
 }
 
 impl WhnfFlags {
-  pub const FULL: Self = Self { cheap_rec: false, cheap_proj: false };
-  /// Cheap mode used by the def-eq lazy-delta loop. Currently DISABLED
-  /// (equal to FULL) — the cheap_proj fix needs further investigation:
-  /// even with the architectural alignment in P3b (whnf_core now hosts
-  /// the projection branch matching Lean4Lean), enabling cheap_proj
-  /// reproduced 5 failures on `Lean.Language.Lean.HeaderParsedSnapshot.*`
-  /// chained projections.
-  ///
-  /// The substrate is left in place so future investigation can flip a
-  /// flag without restructuring; the def-eq site selection in P3c is
-  /// also preserved (the `_cheap` calls are no-ops with this constant).
-  pub const CHEAP: Self = Self { cheap_rec: false, cheap_proj: false };
+  const FULL: Self = Self { cheap_rec: false, cheap_proj: false };
+  const DEF_EQ_CORE: Self = Self { cheap_rec: false, cheap_proj: true };
 
-  /// True when both flags are off — i.e. behave like the original
-  /// `whnf_core` / `whnf_no_delta` semantics.
   #[inline]
-  pub fn is_full(self) -> bool {
+  fn is_full(self) -> bool {
     !self.cheap_rec && !self.cheap_proj
   }
 }
@@ -243,18 +227,6 @@ impl<M: KernelMode> TypeChecker<M> {
       self.env.perf.record_whnf_hit();
       return Ok(cached.clone());
     }
-    // Equiv-root second-chance: WHNF is deterministic, so all members of
-    // an equivalence class share the same normal form.
-    if let Some(root_key) =
-      self.equiv_manager.find_root_key(&(e.hash_key(), key.1.clone()))
-      && root_key.0 != e.hash_key()
-    {
-      let root_whnf_key = (root_key.0, key.1.clone());
-      if let Some(cached) = self.env.whnf_cache.get(&root_whnf_key) {
-        self.env.perf.record_whnf_hit();
-        return Ok(cached.clone());
-      }
-    }
     // Both probes missed.
     self.env.perf.record_whnf_miss();
 
@@ -336,16 +308,7 @@ impl<M: KernelMode> TypeChecker<M> {
     }
 
     if !self.in_native_reduce {
-      let key_ctx = key.1.clone();
       self.env.whnf_cache.insert(key, cur.clone());
-      // Also cache under equiv root so all equiv-class members benefit.
-      if let Some(root_key) =
-        self.equiv_manager.find_root_key(&(e.hash_key(), key_ctx.clone()))
-        && root_key.0 != e.hash_key()
-      {
-        let root_whnf_key = (root_key.0, key_ctx);
-        self.env.whnf_cache.entry(root_whnf_key).or_insert(cur.clone());
-      }
     }
     Ok(cur)
   }
@@ -363,24 +326,28 @@ impl<M: KernelMode> TypeChecker<M> {
     self.whnf_core_with_flags(e, WhnfFlags::FULL)
   }
 
-  /// Cheap structural WHNF used by the def-eq lazy-delta loop: beta, iota,
-  /// zeta with `WhnfFlags::CHEAP`. Skips full-WHNF on projection values and
-  /// recursor major premises — those defer to the caller's outer reduction.
+  /// Structural WHNF for def-eq's cheap projection scaffold:
+  /// `whnfCore (cheapProj := true)` in Lean/Lean4Lean. Projection values are
+  /// reduced structurally instead of through full WHNF, but recursor majors
+  /// still use full WHNF because def-eq does not enable `cheapRec` here.
   ///
-  /// Currently unused (Phase 3a substrate). Phase 3c will route specific
-  /// def-eq sites through this entry point.
-  #[allow(dead_code)] // Wired by Phase 3c.
-  pub(super) fn whnf_core_cheap(
+  /// Increments `cheap_recursion_depth` for the duration of the call so
+  /// `is_def_eq` can detect it is running inside a cheap reduction and
+  /// keep cheap-mode false negatives out of the full def-eq cache.
+  pub(super) fn whnf_core_for_def_eq(
     &mut self,
     e: &KExpr<M>,
   ) -> Result<KExpr<M>, TcError<M>> {
-    self.whnf_core_with_flags(e, WhnfFlags::CHEAP)
+    self.cheap_recursion_depth += 1;
+    let result = self.whnf_core_with_flags(e, WhnfFlags::DEF_EQ_CORE);
+    self.cheap_recursion_depth -= 1;
+    result
   }
 
   /// Internal flags-threaded core: callers go through [`whnf_core`] or
-  /// [`whnf_core_cheap`]. Recursive sub-reductions and `try_iota` propagate
-  /// the same flags so a single CHEAP call doesn't accidentally fan out into
-  /// FULL reductions on inner projections.
+  /// [`whnf_core_for_def_eq`]. Recursive sub-reductions and `try_iota`
+  /// propagate the same flags so a def-eq structural pass does not
+  /// accidentally unfold projected values.
   fn whnf_core_with_flags(
     &mut self,
     e: &KExpr<M>,
@@ -423,11 +390,6 @@ impl<M: KernelMode> TypeChecker<M> {
         // structurally to a ctor application. The caller is responsible for
         // handling stuck projections (def-eq compares them structurally).
         //
-        // Phase 3a (this file's commit) had whnf_core unconditionally do the
-        // cheap thing; Phase 3b lifts the gating into here so whnf_core's
-        // Prj branch matches Lean4Lean's whnfCore exactly. Phase 3c can now
-        // remove the duplicate Prj branch from whnf_no_delta_with_flags
-        // since whnf_core handles it directly.
         ExprData::Prj(id, field, val, _) => {
           let field = *field;
           let id = id.clone();
@@ -507,40 +469,29 @@ impl<M: KernelMode> TypeChecker<M> {
     }
   }
 
-  /// WHNF without delta: whnf_core → proj → nat → quot.
-  ///
-  /// FULL semantics — projection values are reduced with full `whnf` (which
-  /// includes delta on the projected value). Use [`whnf_no_delta_cheap`] for
-  /// the def-eq lazy-delta hot path; per audit §3.2 (Tier 2 #10) the cheap
-  /// variant avoids the full-WHNF cost on every projected value.
+  /// WHNF without delta: whnf_core → proj-app → nat/native/string → quot.
+  /// Projection values use full WHNF, preserving the public/full semantics.
   pub fn whnf_no_delta(
     &mut self,
     e: &KExpr<M>,
   ) -> Result<KExpr<M>, TcError<M>> {
-    self.whnf_no_delta_with_flags(e, WhnfFlags::FULL)
+    self.whnf_no_delta_impl(e, WhnfFlags::FULL)
   }
 
-  /// CHEAP no-delta WHNF: projection values reduce with `whnf_core_cheap`
-  /// (no delta), and recursor majors inside `try_iota` reduce the same way.
-  /// Cheap results are not cached, since a future FULL caller could observe
-  /// a partially-reduced normal form.
-  ///
-  /// Currently unused (Phase 3a substrate). Phase 3c will route the
-  /// initial structural WHNF in `is_def_eq_inner` through this entry
-  /// point once Phase 3b inlines projection into `whnf_core`.
-  #[allow(dead_code)] // Wired by Phase 3c.
-  pub(super) fn whnf_no_delta_cheap(
+  /// Def-eq no-delta WHNF. This is broader than Lean's pure `whnfCore`
+  /// because Ix relies on the no-delta layer for primitive/native reductions,
+  /// but it preserves Lean's cheap projection policy for projected values.
+  pub(super) fn whnf_no_delta_for_def_eq(
     &mut self,
     e: &KExpr<M>,
   ) -> Result<KExpr<M>, TcError<M>> {
-    self.whnf_no_delta_with_flags(e, WhnfFlags::CHEAP)
+    self.cheap_recursion_depth += 1;
+    let result = self.whnf_no_delta_impl(e, WhnfFlags::DEF_EQ_CORE);
+    self.cheap_recursion_depth -= 1;
+    result
   }
 
-  /// Internal flags-threaded driver. Caches and equiv-root second-chance
-  /// probes are gated on `flags.is_full()` so cheap callers neither read nor
-  /// write the cache, preserving the invariant that any cached entry is a
-  /// fully-reduced normal form.
-  fn whnf_no_delta_with_flags(
+  fn whnf_no_delta_impl(
     &mut self,
     e: &KExpr<M>,
     flags: WhnfFlags,
@@ -562,17 +513,6 @@ impl<M: KernelMode> TypeChecker<M> {
         self.env.perf.record_whnf_no_delta_hit();
         return Ok(cached.clone());
       }
-      // Equiv-root second-chance for whnf_no_delta.
-      if let Some(root_key) =
-        self.equiv_manager.find_root_key(&(e.hash_key(), key.1.clone()))
-        && root_key.0 != e.hash_key()
-      {
-        let root_whnf_key = (root_key.0, key.1.clone());
-        if let Some(cached) = self.env.whnf_no_delta_cache.get(&root_whnf_key) {
-          self.env.perf.record_whnf_no_delta_hit();
-          return Ok(cached.clone());
-        }
-      }
       // Both probes missed.
       self.env.perf.record_whnf_no_delta_miss();
     }
@@ -590,19 +530,18 @@ impl<M: KernelMode> TypeChecker<M> {
       cur = self.whnf_core_with_flags(&cur, flags)?;
 
       // Projection reduction is now handled inside `whnf_core_with_flags`
-      // (Phase 3b: matches Lean4Lean's `whnfCore`/`reduceProj` integration
-      // at TypeChecker.lean:284-292, 337-341). The bare `Prj(...)` branch
-      // formerly here is gone — `whnf_core` either returns a stuck `Prj`
+      // (`whnfCore`/`reduceProj` at TypeChecker.lean:284-292, 337-341).
+      // `whnf_core` either returns a stuck `Prj`
       // (struct value didn't reduce to a ctor) or a fully-reduced field.
       //
       // We only need to handle the App-of-Prj case here, since `whnf_core`
       // doesn't iterate after a Prj reduces (its loop returns once the
       // outermost Prj is resolved). When the outer expression is
       // `App(Prj(S, i, val), args...)`, `whnf_core` reduces the App spine
-      // and may leave the Prj head stuck; `try_proj_app_reduce_with_flags`
-      // gives it one more attempt with the same cheap_proj policy.
+      // and may leave the Prj head stuck; `try_proj_app_reduce` gives it
+      // one more attempt with the same projection policy.
       if let Some((proj_result, args)) =
-        self.try_proj_app_reduce_with_flags(&cur, flags)?
+        self.try_proj_app_reduce(&cur, flags)?
       {
         let mut result = proj_result;
         for arg in &args {
@@ -660,25 +599,8 @@ impl<M: KernelMode> TypeChecker<M> {
       break;
     }
 
-    // Only FULL-mode results land in the cache: a CHEAP result is a
-    // partially-reduced normal form (cheap projections / cheap recursor
-    // major), and storing it would let a later FULL caller observe a
-    // weaker normal form. The native-reduce reentrancy guard still applies
-    // (matches the prior behavior).
     if flags.is_full() && !self.in_native_reduce {
-      let key_ctx = key.1.clone();
       self.env.whnf_no_delta_cache.insert(key, cur.clone());
-      if let Some(root_key) =
-        self.equiv_manager.find_root_key(&(e.hash_key(), key_ctx.clone()))
-        && root_key.0 != e.hash_key()
-      {
-        let root_whnf_key = (root_key.0, key_ctx);
-        self
-          .env
-          .whnf_no_delta_cache
-          .entry(root_whnf_key)
-          .or_insert(cur.clone());
-      }
     }
     Ok(cur)
   }
@@ -1177,12 +1099,7 @@ impl<M: KernelMode> TypeChecker<M> {
 
   /// Try to reduce a projection-headed application: App(Prj(S, i, v), args...).
   /// Returns Some((reduced_proj, remaining_args)) if the projection reduced.
-  ///
-  /// Flags-threaded: mirrors the `cheap_proj` plumbing in
-  /// `whnf_no_delta_with_flags` — the projected value reduces with
-  /// `whnf_core` (no delta) instead of full `whnf` when in cheap mode.
-  /// Internal-only — callers go through `whnf_no_delta_with_flags`.
-  fn try_proj_app_reduce_with_flags(
+  fn try_proj_app_reduce(
     &mut self,
     e: &KExpr<M>,
     flags: WhnfFlags,

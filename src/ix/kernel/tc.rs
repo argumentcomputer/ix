@@ -101,6 +101,11 @@ pub struct TypeChecker<M: KernelMode> {
   pub infer_only: bool,
   /// Re-entrancy guard for native reduction (prevents whnf → native → whnf loops).
   pub in_native_reduce: bool,
+  /// Counter incremented while inside def-eq's cheap projection reductions.
+  /// Used by `is_def_eq` to route cheap false negatives into a cheap-only
+  /// cache while projected values are reduced structurally instead of through
+  /// full WHNF.
+  pub cheap_recursion_depth: u32,
   /// When true, the Bool.true fast-path in is_def_eq fires even on open terms.
   pub eager_reduce: bool,
   /// Current def-eq recursion depth.
@@ -136,6 +141,7 @@ impl<M: KernelMode> TypeChecker<M> {
       equiv_manager: EquivManager::new(),
       infer_only: false,
       in_native_reduce: false,
+      cheap_recursion_depth: 0,
       eager_reduce: false,
       def_eq_depth: 0,
       def_eq_peak: 0,
@@ -442,6 +448,7 @@ impl<M: KernelMode> TypeChecker<M> {
     self.equiv_manager.clear();
     self.infer_only = false;
     self.in_native_reduce = false;
+    self.cheap_recursion_depth = 0;
     self.eager_reduce = false;
     self.def_eq_depth = 0;
     self.def_eq_peak = 0;

@@ -132,7 +132,15 @@ def focusConsts : Array Lean.Name := #[
   `Char.ofOrdinal_ordinal,
   Lean.mkPrivateNameCore `Init.Data.Char.Ordinal
     `Char.ofOrdinal_ordinal._proof_1_4,
-  `String.toByteArray_empty
+  `String.toByteArray_empty,
+  -- Extended-structure projection regression coverage. These exercise
+  -- chained projections generated for `structure HeaderParsedSnapshot extends
+  -- Snapshot`.
+  `Lean.Language.Lean.HeaderParsedSnapshot.stx,
+  `Lean.Language.Lean.HeaderParsedSnapshot.result?,
+  `Lean.Language.Lean.HeaderParsedSnapshot.metaSnap,
+  `Lean.Language.Lean.HeaderParsedSnapshot.toSnapshot,
+  `Lean.Language.Lean.HeaderParsedSnapshot.ictx
 ]
 
 def expectedPass (_name : Lean.Name) : Bool := true

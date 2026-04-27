@@ -167,8 +167,15 @@ pub struct KEnv<M: KernelMode> {
   /// This keeps unchecked results out of the validated full-mode cache while
   /// still sharing repeated proof-irrelevance/projection probes.
   pub infer_only_cache: DashMap<(Addr, Addr), KExpr<M>>,
-  /// Def-eq cache: keyed by (expr_hash, expr_hash, ctx_hash). Context-dependent.
+  /// Full def-eq cache: keyed by (expr_hash, expr_hash, ctx_hash).
+  /// Context-dependent. Entries in this cache are valid for both full and
+  /// cheap def-eq callers.
   pub def_eq_cache: DashMap<(Addr, Addr, Addr), bool>,
+  /// Cheap def-eq cache: same key as `def_eq_cache`, but only for comparisons
+  /// performed inside cheap projection reductions. Cheap `false` can be a
+  /// full-mode false negative, so those entries must not be visible to full
+  /// callers.
+  pub def_eq_cheap_cache: DashMap<(Addr, Addr, Addr), bool>,
   /// Failed def-eq pairs in lazy delta: canonical ordering by hash.
   pub def_eq_failure: DashSet<(Addr, Addr, Addr)>,
   /// Ingress cache: LeanExpr → KExpr conversion results.
@@ -241,6 +248,7 @@ impl<M: KernelMode> KEnv<M> {
       infer_cache: DashMap::default(),
       infer_only_cache: DashMap::default(),
       def_eq_cache: DashMap::default(),
+      def_eq_cheap_cache: DashMap::default(),
       def_eq_failure: DashSet::default(),
       ingress_cache: DashMap::default(),
       recursor_cache: DashMap::default(),
