@@ -79,37 +79,37 @@ def kernel := ⟦
 
   -- Look up a value in a value environment by de Bruijn index
   -- Find recursor rule by constructor index
-  fn rec_rule_try_find(rules: List‹&KRecRule›, ctor_idx: G) -> Option‹&KRecRule› {
+  fn rec_rule_try_find(rules: List‹KRecRule›, ctor_idx: G) -> Option‹KRecRule› {
     match load(rules) {
       ListNode.Nil => Option.None,
-      ListNode.Cons(&rule, rest) =>
+      ListNode.Cons(rule, rest) =>
         match rule {
-          KRecRule.Mk(idx, nf, &rhs) =>
+          KRecRule.Mk(idx, nf, rhs) =>
             match idx - ctor_idx {
-              0 => Option.Some(store(KRecRule.Mk(idx, nf, store(rhs)))),
+              0 => Option.Some(KRecRule.Mk(idx, nf, rhs)),
               _ => rec_rule_try_find(rest, ctor_idx),
             },
         },
     }
   }
 
-  fn rec_rule_find(rules: List‹&KRecRule›, ctor_idx: G) -> KRecRule {
+  fn rec_rule_find(rules: List‹KRecRule›, ctor_idx: G) -> KRecRule {
     match load(rules) {
-      ListNode.Cons(&rule, rest) =>
+      ListNode.Cons(rule, rest) =>
         match rule {
-          KRecRule.Mk(idx, nf, &rhs) =>
+          KRecRule.Mk(idx, nf, rhs) =>
             match idx - ctor_idx {
-              0 => KRecRule.Mk(idx, nf, store(rhs)),
+              0 => KRecRule.Mk(idx, nf, rhs),
               _ => rec_rule_find(rest, ctor_idx),
             },
         },
     }
   }
 
-  -- Extract the ctor_idx from the first rule in a List‹&KRecRule›
-  fn rec_rule_first_ctor(rules: List‹&KRecRule›) -> G {
+  -- Extract the ctor_idx from the first rule in a List‹KRecRule›
+  fn rec_rule_first_ctor(rules: List‹KRecRule›) -> G {
     match load(rules) {
-      ListNode.Cons(&rule, _) =>
+      ListNode.Cons(rule, _) =>
         match rule {
           KRecRule.Mk(ctor_idx, _, _) => ctor_idx,
         },
@@ -123,14 +123,14 @@ def kernel := ⟦
   -- Extract the type expression from any constant info variant
   fn const_type(ci: KConstantInfo) -> KExpr {
     match ci {
-      KConstantInfo.Axiom(_, &ty, _) => ty,
-      KConstantInfo.Defn(_, &ty, _, _) => ty,
-      KConstantInfo.Thm(_, &ty, _) => ty,
-      KConstantInfo.Opaque(_, &ty, _, _) => ty,
-      KConstantInfo.Quot(_, &ty, _) => ty,
-      KConstantInfo.Induct(_, &ty, _, _, _, _, _, _) => ty,
-      KConstantInfo.Ctor(_, &ty, _, _, _, _, _) => ty,
-      KConstantInfo.Rec(_, &ty, _, _, _, _, _, _, _) => ty,
+      KConstantInfo.Axiom(_, ty, _) => ty,
+      KConstantInfo.Defn(_, ty, _, _) => ty,
+      KConstantInfo.Thm(_, ty, _) => ty,
+      KConstantInfo.Opaque(_, ty, _, _) => ty,
+      KConstantInfo.Quot(_, ty, _) => ty,
+      KConstantInfo.Induct(_, ty, _, _, _, _, _, _) => ty,
+      KConstantInfo.Ctor(_, ty, _, _, _, _, _) => ty,
+      KConstantInfo.Rec(_, ty, _, _, _, _, _, _, _) => ty,
     }
   }
 
@@ -522,10 +522,10 @@ def kernel := ⟦
       KExprNode.Const(idx, lvls) =>
         let ci = load(list_lookup(top, idx));
         match ci {
-          KConstantInfo.Defn(_, _, &value, _) =>
+          KConstantInfo.Defn(_, _, value, _) =>
             let body = expr_inst_levels(value, lvls);
             k_eval(body, store(ListNode.Nil), top),
-          KConstantInfo.Thm(_, _, &value) =>
+          KConstantInfo.Thm(_, _, value) =>
             let body = expr_inst_levels(value, lvls);
             k_eval(body, store(ListNode.Nil), top),
           KConstantInfo.Ctor(_, _, _, _, nparams, _, _) =>
@@ -710,9 +710,9 @@ def kernel := ⟦
                 match rule_found {
                   Option.None =>
                     store(KValNode.Rec(idx, lvls, spine)),
-                  Option.Some(&rule) =>
+                  Option.Some(rule) =>
                     match rule {
-                      KRecRule.Mk(_, nfields, &rhs) =>
+                      KRecRule.Mk(_, nfields, rhs) =>
                         let rhs_inst = expr_inst_levels(rhs, lvls);
                         let rhs_val = k_eval(rhs_inst, store(ListNode.Nil), top);
                         let params_motives_minors = list_take(spine, nparams + nmotives + nminors);
@@ -737,7 +737,7 @@ def kernel := ⟦
                             let zero_ctor_idx = list_lookup(ctor_indices, 0);
                             let rule = rec_rule_find(rules, zero_ctor_idx);
                             match rule {
-                              KRecRule.Mk(_, _, &rhs) =>
+                              KRecRule.Mk(_, _, rhs) =>
                                 let rhs_inst = expr_inst_levels(rhs, lvls);
                                 let rhs_val = k_eval(rhs_inst, store(ListNode.Nil), top);
                                 let pmm = list_take(spine, pmm_end);
@@ -747,7 +747,7 @@ def kernel := ⟦
                             let succ_ctor_idx = list_lookup(ctor_indices, 1);
                             let rule = rec_rule_find(rules, succ_ctor_idx);
                             match rule {
-                              KRecRule.Mk(_, _, &rhs) =>
+                              KRecRule.Mk(_, _, rhs) =>
                                 let rhs_inst = expr_inst_levels(rhs, lvls);
                                 let rhs_val = k_eval(rhs_inst, store(ListNode.Nil), top);
                                 let pmm = list_take(spine, pmm_end);
@@ -1801,20 +1801,20 @@ def kernel := ⟦
   -- nat_idx/str_idx are the constant indices for the Nat/String types.
   fn k_check_const(ci: KConstantInfo, top: List‹&KConstantInfo›, nat_idx: G, str_idx: G) {
     match ci {
-      KConstantInfo.Axiom(_, &ty, _) =>
+      KConstantInfo.Axiom(_, ty, _) =>
         let _ = k_ensure_sort(ty, store(ListNode.Nil), store(ListNode.Nil), 0, top, nat_idx, str_idx),
 
-      KConstantInfo.Defn(_, &ty, &value, _) =>
+      KConstantInfo.Defn(_, ty, value, _) =>
         let _ = k_ensure_sort(ty, store(ListNode.Nil), store(ListNode.Nil), 0, top, nat_idx, str_idx);
         let ty_val = k_eval(ty, store(ListNode.Nil), top);
         k_check(value, ty_val, store(ListNode.Nil), store(ListNode.Nil), 0, top, nat_idx, str_idx),
 
-      KConstantInfo.Thm(_, &ty, &value) =>
+      KConstantInfo.Thm(_, ty, value) =>
         let _ = k_ensure_sort(ty, store(ListNode.Nil), store(ListNode.Nil), 0, top, nat_idx, str_idx);
         let ty_val = k_eval(ty, store(ListNode.Nil), top);
         k_check(value, ty_val, store(ListNode.Nil), store(ListNode.Nil), 0, top, nat_idx, str_idx),
 
-      KConstantInfo.Opaque(_, &ty, &value, is_unsafe) =>
+      KConstantInfo.Opaque(_, ty, value, is_unsafe) =>
         let _ = k_ensure_sort(ty, store(ListNode.Nil), store(ListNode.Nil), 0, top, nat_idx, str_idx);
         match is_unsafe {
           1 => (),
@@ -1823,16 +1823,16 @@ def kernel := ⟦
             k_check(value, ty_val, store(ListNode.Nil), store(ListNode.Nil), 0, top, nat_idx, str_idx),
         },
 
-      KConstantInfo.Quot(_, &ty, _) =>
+      KConstantInfo.Quot(_, ty, _) =>
         let _ = k_ensure_sort(ty, store(ListNode.Nil), store(ListNode.Nil), 0, top, nat_idx, str_idx),
 
-      KConstantInfo.Induct(_, &ty, _, _, _, _, _, _) =>
+      KConstantInfo.Induct(_, ty, _, _, _, _, _, _) =>
         let _ = k_ensure_sort(ty, store(ListNode.Nil), store(ListNode.Nil), 0, top, nat_idx, str_idx),
 
-      KConstantInfo.Ctor(_, &ty, _, _, _, _, _) =>
+      KConstantInfo.Ctor(_, ty, _, _, _, _, _) =>
         let _ = k_ensure_sort(ty, store(ListNode.Nil), store(ListNode.Nil), 0, top, nat_idx, str_idx),
 
-      KConstantInfo.Rec(_, &ty, _, _, _, _, _, _, _) =>
+      KConstantInfo.Rec(_, ty, _, _, _, _, _, _, _) =>
         let _ = k_ensure_sort(ty, store(ListNode.Nil), store(ListNode.Nil), 0, top, nat_idx, str_idx),
     }
   }

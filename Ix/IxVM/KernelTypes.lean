@@ -82,7 +82,7 @@ def kernelTypes := ⟦
   -- ============================================================================
 
   enum KRecRule {
-    Mk(G, G, &KExpr)
+    Mk(G, G, KExpr)
   }
 
   -- ============================================================================
@@ -102,14 +102,14 @@ def kernelTypes := ⟦
   -- ============================================================================
 
   enum KConstantInfo {
-    Axiom(G, &KExpr, G),
-    Defn(G, &KExpr, &KExpr, DefinitionSafety),
-    Thm(G, &KExpr, &KExpr),
-    Opaque(G, &KExpr, &KExpr, G),
-    Quot(G, &KExpr, QuotKind),
-    Induct(G, &KExpr, G, G, List‹G›, G, G, G),
-    Ctor(G, &KExpr, G, G, G, G, G),
-    Rec(G, &KExpr, G, G, G, G, List‹&KRecRule›, G, G)
+    Axiom(G, KExpr, G),
+    Defn(G, KExpr, KExpr, DefinitionSafety),
+    Thm(G, KExpr, KExpr),
+    Opaque(G, KExpr, KExpr, G),
+    Quot(G, KExpr, QuotKind),
+    Induct(G, KExpr, G, G, List‹G›, G, G, G),
+    Ctor(G, KExpr, G, G, G, G, G),
+    Rec(G, KExpr, G, G, G, G, List‹KRecRule›, G, G)
   }
 
 ⟧

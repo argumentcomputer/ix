@@ -213,13 +213,13 @@ def convert := ⟦
   -- Recursor rule conversion
   -- ============================================================================
 
-  -- Convert Ixon List‹RecursorRule› to List‹&KRecRule›.
+  -- Convert Ixon List‹RecursorRule› to List‹KRecRule›.
   -- rule_ctor_idxs provides the kernel constant index for each rule's constructor.
   fn convert_rules(
     rules: List‹RecursorRule›,
     rule_ctor_idxs: List‹G›,
     ctx: ConvertCtx
-  ) -> List‹&KRecRule› {
+  ) -> List‹KRecRule› {
     match load(rules) {
       ListNode.Nil => store(ListNode.Nil),
       ListNode.Cons(rule, rest_rules) =>
@@ -228,9 +228,9 @@ def convert := ⟦
             match load(rule_ctor_idxs) {
               ListNode.Cons(ctor_idx, rest_ctor_idxs) =>
                 let krhs = ctx_convert_expr(rhs, ctx);
-                let krule = KRecRule.Mk(ctor_idx, flatten_u64(nfields), store(krhs));
+                let krule = KRecRule.Mk(ctor_idx, flatten_u64(nfields), krhs);
                 store(ListNode.Cons(
-                  store(krule),
+                  krule,
                   convert_rules(rest_rules, rest_ctor_idxs, ctx))),
             },
         },
@@ -248,16 +248,16 @@ def convert := ⟦
         let kval = ctx_convert_expr(value, ctx);
         match kind {
           DefKind.Definition =>
-            KConstantInfo.Defn(flatten_u64(lvls), store(ktyp), store(kval), safety),
+            KConstantInfo.Defn(flatten_u64(lvls), ktyp, kval, safety),
           DefKind.Opaque =>
             match safety {
               DefinitionSafety.Unsafe =>
-                KConstantInfo.Opaque(flatten_u64(lvls), store(ktyp), store(kval), 1),
+                KConstantInfo.Opaque(flatten_u64(lvls), ktyp, kval, 1),
               _ =>
-                KConstantInfo.Opaque(flatten_u64(lvls), store(ktyp), store(kval), 0),
+                KConstantInfo.Opaque(flatten_u64(lvls), ktyp, kval, 0),
             },
           DefKind.Theorem =>
-            KConstantInfo.Thm(flatten_u64(lvls), store(ktyp), store(kval)),
+            KConstantInfo.Thm(flatten_u64(lvls), ktyp, kval),
         },
     }
   }
@@ -266,7 +266,7 @@ def convert := ⟦
     match a {
       Axiom.Mk(is_unsafe, lvls, &typ) =>
         let ktyp = ctx_convert_expr(typ, ctx);
-        KConstantInfo.Axiom(flatten_u64(lvls), store(ktyp), is_unsafe),
+        KConstantInfo.Axiom(flatten_u64(lvls), ktyp, is_unsafe),
     }
   }
 
@@ -274,7 +274,7 @@ def convert := ⟦
     match q {
       Quotient.Mk(kind, lvls, &typ) =>
         let ktyp = ctx_convert_expr(typ, ctx);
-        KConstantInfo.Quot(flatten_u64(lvls), store(ktyp), kind),
+        KConstantInfo.Quot(flatten_u64(lvls), ktyp, kind),
     }
   }
 
@@ -284,7 +284,7 @@ def convert := ⟦
         let ktyp = ctx_convert_expr(typ, ctx);
         let krules = convert_rules(rules, rule_ctor_idxs, ctx);
         KConstantInfo.Rec(
-          flatten_u64(lvls), store(ktyp), flatten_u64(params), flatten_u64(indices),
+          flatten_u64(lvls), ktyp, flatten_u64(params), flatten_u64(indices),
           flatten_u64(motives), flatten_u64(minors),
           krules, k, is_unsafe),
     }
@@ -295,7 +295,7 @@ def convert := ⟦
       Inductive.Mk(is_rec, is_refl, is_unsafe, lvls, params, indices, _, &typ, _) =>
         let ktyp = ctx_convert_expr(typ, ctx);
         KConstantInfo.Induct(
-          flatten_u64(lvls), store(ktyp), flatten_u64(params), flatten_u64(indices),
+          flatten_u64(lvls), ktyp, flatten_u64(params), flatten_u64(indices),
           ctor_idxs, is_rec, is_refl, is_unsafe),
     }
   }
@@ -305,7 +305,7 @@ def convert := ⟦
       Constructor.Mk(is_unsafe, lvls, cidx, params, fields, &typ) =>
         let ktyp = ctx_convert_expr(typ, ctx);
         KConstantInfo.Ctor(
-          flatten_u64(lvls), store(ktyp), induct_idx, flatten_u64(cidx),
+          flatten_u64(lvls), ktyp, induct_idx, flatten_u64(cidx),
           flatten_u64(params), flatten_u64(fields), is_unsafe),
     }
   }
