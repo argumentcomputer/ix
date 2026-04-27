@@ -99,8 +99,9 @@ def blake3 := ⟦
     let CHUNK_END = 2;
     let PARENT = 4;
     let ROOT = 8;
-    match (input, block_index, chunk_index) {
-      (List.Nil, 0, 0) =>
+    let input_node = load(input);
+    match (input_node, block_index, chunk_index) {
+      (ListNode.Nil, 0, 0) =>
         match chunk_count {
           [0, 0, 0, 0, 0, 0, 0, 0] =>
             let flags = ROOT + CHUNK_START + CHUNK_END;
@@ -108,14 +109,13 @@ def blake3 := ⟦
           _ => layer,
         },
 
-      (List.Nil, 0, _) => Layer.Push(store(layer), block_digest),
+      (ListNode.Nil, 0, _) => Layer.Push(store(layer), block_digest),
 
-      (List.Nil, _, _) =>
+      (ListNode.Nil, _, _) =>
         let flags = CHUNK_END + u64_is_zero(chunk_count) * ROOT + eq_zero(chunk_index - block_index) * CHUNK_START;
         Layer.Push(store(layer), blake3_compress(block_digest, block_buffer, chunk_count, block_index, flags)),
 
-      (List.Cons(head, input_ptr), 63, 1023) =>
-        let input = load(input_ptr);
+      (ListNode.Cons(head, input), 63, 1023) =>
         let flags = ROOT * list_is_empty(input) * u64_is_zero(chunk_count) + CHUNK_END;
         let block_buffer = assign_block_value(block_buffer, block_index, head);
         let IV = [[103, 230, 9, 106], [133, 174, 103, 187], [114, 243, 110, 60], [58, 245, 79, 165], [127, 82, 14, 81], [140, 104, 5, 155], [171, 217, 131, 31], [25, 205, 224, 91]];
@@ -123,8 +123,7 @@ def blake3 := ⟦
         let layer = Layer.Push(store(layer), blake3_compress(block_digest, block_buffer, chunk_count, 64, flags));
         blake3_compress_chunks(input, empty_buffer, 0, 0, relaxed_u64_succ(chunk_count), IV, layer),
 
-      (List.Cons(head, input_ptr), 63, _) =>
-        let input = load(input_ptr);
+      (ListNode.Cons(head, input), 63, _) =>
         let block_buffer = assign_block_value(block_buffer, block_index, head);
         let chunk_end_flag = list_is_empty(input) * CHUNK_END;
         let root_flag = list_is_empty(input) * u64_is_zero(chunk_count) * ROOT;
@@ -148,8 +147,7 @@ def blake3 := ⟦
             layer
         ),
 
-      (List.Cons(head, input_ptr), _, _) =>
-        let input = load(input_ptr);
+      (ListNode.Cons(head, input), _, _) =>
         let block_buffer = assign_block_value(block_buffer, block_index, head);
         blake3_compress_chunks(
             input,

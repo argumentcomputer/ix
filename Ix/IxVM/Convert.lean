@@ -28,7 +28,7 @@ def convert := ⟦
   -- lit_blobs:  maps blob ref index -> raw blob ByteStream
   -- univs:      the constant's universe array
   enum ConvertCtx {
-    Mk(&List‹&Expr›, &List‹G›, &List‹G›, &List‹ByteStream›, &List‹&Univ›)
+    Mk(List‹&Expr›, List‹G›, List‹G›, List‹ByteStream›, List‹&Univ›)
   }
 
   -- What to convert, with kind-specific auxiliary data
@@ -36,8 +36,8 @@ def convert := ⟦
     CKDefn(Definition),
     CKAxio(Axiom),
     CKQuot(Quotient),
-    CKRecr(Recursor, &List‹G›),
-    CKIndc(Inductive, &List‹G›),
+    CKRecr(Recursor, List‹G›),
+    CKIndc(Inductive, List‹G›),
     CKCtor(Constructor, G)
   }
 
@@ -63,11 +63,11 @@ def convert := ⟦
 
   -- Resolve a list of universe indices to a List‹&KLevel›
   fn convert_univ_idxs(idxs: List‹U64›, univs: List‹&Univ›) -> List‹&KLevel› {
-    match idxs {
-      List.Nil => List.Nil,
-      List.Cons(idx, &rest) =>
+    match load(idxs) {
+      ListNode.Nil => store(ListNode.Nil),
+      ListNode.Cons(idx, rest) =>
         let u = load(list_lookup_u64(univs, idx));
-        List.Cons(store(convert_univ(u)), store(convert_univ_idxs(rest, univs))),
+        store(ListNode.Cons(store(convert_univ(u)), convert_univ_idxs(rest, univs))),
     }
   }
 
@@ -84,16 +84,16 @@ def convert := ⟦
     match limb {
       -- If this limb is zero and there are no more bytes, return Nil
       _ =>
-        match rest_bytes {
-          List.Nil =>
+        match load(rest_bytes) {
+          ListNode.Nil =>
             let is_zero = u64_is_zero(limb);
             match is_zero {
-              1 => List.Nil,
-              0 => List.Cons(limb, store(List.Nil)),
+              1 => store(ListNode.Nil),
+              0 => store(ListNode.Cons(limb, store(ListNode.Nil))),
             },
           _ =>
             let rest_limbs = bytes_to_limbs(rest_bytes);
-            List.Cons(limb, store(rest_limbs)),
+            store(ListNode.Cons(limb, rest_limbs)),
         },
     }
   }
@@ -103,9 +103,9 @@ def convert := ⟦
     match pos {
       8 => acc,
       _ =>
-        match bytes {
-          List.Nil => acc,
-          List.Cons(byte, &rest) =>
+        match load(bytes) {
+          ListNode.Nil => acc,
+          ListNode.Cons(byte, rest) =>
             let [v0, v1, v2, v3, v4, v5, v6, v7] = acc;
             match pos {
               0 => bytes_to_u64_limb(rest, [byte, v1, v2, v3, v4, v5, v6, v7], 1),
@@ -126,9 +126,9 @@ def convert := ⟦
     match n {
       0 => bytes,
       _ =>
-        match bytes {
-          List.Nil => List.Nil,
-          List.Cons(_, &rest) => skip_bytes(rest, n - 1),
+        match load(bytes) {
+          ListNode.Nil => store(ListNode.Nil),
+          ListNode.Cons(_, rest) => skip_bytes(rest, n - 1),
         },
     }
   }
@@ -149,15 +149,15 @@ def convert := ⟦
       Expr.Var(idx) =>
         store(KExprNode.BVar(flatten_u64(idx))),
 
-      Expr.Ref(ref_idx, &univ_idxs) =>
+      Expr.Ref(ref_idx, univ_idxs) =>
         let const_idx = list_lookup(ref_idxs, flatten_u64(ref_idx));
         let levels = convert_univ_idxs(univ_idxs, univs);
-        store(KExprNode.Const(const_idx, store(levels))),
+        store(KExprNode.Const(const_idx, levels)),
 
-      Expr.Rec(rec_idx, &univ_idxs) =>
+      Expr.Rec(rec_idx, univ_idxs) =>
         let const_idx = list_lookup(recur_idxs, flatten_u64(rec_idx));
         let levels = convert_univ_idxs(univ_idxs, univs);
-        store(KExprNode.Const(const_idx, store(levels))),
+        store(KExprNode.Const(const_idx, levels)),
 
       Expr.Prj(type_ref_idx, field_idx, &inner) =>
         let type_idx = list_lookup(ref_idxs, flatten_u64(type_ref_idx));
@@ -173,7 +173,7 @@ def convert := ⟦
       Expr.Nat(blob_ref_idx) =>
         let bs = list_lookup_u64(lit_blobs, blob_ref_idx);
         let limbs = bytes_to_limbs(bs);
-        store(KExprNode.Lit(KLiteral.Nat(store(limbs)))),
+        store(KExprNode.Lit(KLiteral.Nat(limbs))),
 
       Expr.App(&f, &a) =>
         store(KExprNode.App(
@@ -204,7 +204,7 @@ def convert := ⟦
 
   fn ctx_convert_expr(e: Expr, ctx: ConvertCtx) -> KExpr {
     match ctx {
-      ConvertCtx.Mk(&sharing, &ref_idxs, &recur_idxs, &lit_blobs, &univs) =>
+      ConvertCtx.Mk(sharing, ref_idxs, recur_idxs, lit_blobs, univs) =>
         convert_expr(e, sharing, ref_idxs, recur_idxs, lit_blobs, univs),
     }
   }
@@ -220,18 +220,18 @@ def convert := ⟦
     rule_ctor_idxs: List‹G›,
     ctx: ConvertCtx
   ) -> List‹&KRecRule› {
-    match rules {
-      List.Nil => List.Nil,
-      List.Cons(rule, &rest_rules) =>
+    match load(rules) {
+      ListNode.Nil => store(ListNode.Nil),
+      ListNode.Cons(rule, rest_rules) =>
         match rule {
           RecursorRule.Mk(nfields, &rhs) =>
-            match rule_ctor_idxs {
-              List.Cons(ctor_idx, &rest_ctor_idxs) =>
+            match load(rule_ctor_idxs) {
+              ListNode.Cons(ctor_idx, rest_ctor_idxs) =>
                 let krhs = ctx_convert_expr(rhs, ctx);
                 let krule = KRecRule.Mk(ctor_idx, flatten_u64(nfields), store(krhs));
-                List.Cons(
+                store(ListNode.Cons(
                   store(krule),
-                  store(convert_rules(rest_rules, rest_ctor_idxs, ctx))),
+                  convert_rules(rest_rules, rest_ctor_idxs, ctx))),
             },
         },
     }
@@ -280,13 +280,13 @@ def convert := ⟦
 
   fn convert_recursor(r: Recursor, ctx: ConvertCtx, rule_ctor_idxs: List‹G›) -> KConstantInfo {
     match r {
-      Recursor.Mk(k, is_unsafe, lvls, params, indices, motives, minors, &typ, &rules) =>
+      Recursor.Mk(k, is_unsafe, lvls, params, indices, motives, minors, &typ, rules) =>
         let ktyp = ctx_convert_expr(typ, ctx);
         let krules = convert_rules(rules, rule_ctor_idxs, ctx);
         KConstantInfo.Rec(
           flatten_u64(lvls), store(ktyp), flatten_u64(params), flatten_u64(indices),
           flatten_u64(motives), flatten_u64(minors),
-          store(krules), k, is_unsafe),
+          krules, k, is_unsafe),
     }
   }
 
@@ -296,7 +296,7 @@ def convert := ⟦
         let ktyp = ctx_convert_expr(typ, ctx);
         KConstantInfo.Induct(
           flatten_u64(lvls), store(ktyp), flatten_u64(params), flatten_u64(indices),
-          store(ctor_idxs), is_rec, is_refl, is_unsafe),
+          ctor_idxs, is_rec, is_refl, is_unsafe),
     }
   }
 
@@ -322,8 +322,8 @@ def convert := ⟦
           ConvertKind.CKDefn(d) => convert_definition(d, ctx),
           ConvertKind.CKAxio(a) => convert_axiom(a, ctx),
           ConvertKind.CKQuot(q) => convert_quotient(q, ctx),
-          ConvertKind.CKRecr(r, &rule_ctor_idxs) => convert_recursor(r, ctx, rule_ctor_idxs),
-          ConvertKind.CKIndc(ind, &ctor_idxs) => convert_inductive(ind, ctx, ctor_idxs),
+          ConvertKind.CKRecr(r, rule_ctor_idxs) => convert_recursor(r, ctx, rule_ctor_idxs),
+          ConvertKind.CKIndc(ind, ctor_idxs) => convert_inductive(ind, ctx, ctor_idxs),
           ConvertKind.CKCtor(c, induct_idx) => convert_constructor(c, ctx, induct_idx),
         },
     }
@@ -331,11 +331,11 @@ def convert := ⟦
 
   -- Convert a list of resolved inputs to a List‹&KConstantInfo›
   fn convert_all(inputs: List‹&ConvertInput›) -> List‹&KConstantInfo› {
-    match inputs {
-      List.Nil => List.Nil,
-      List.Cons(&input, &rest) =>
+    match load(inputs) {
+      ListNode.Nil => store(ListNode.Nil),
+      ListNode.Cons(&input, rest) =>
         let ci = convert_one(input);
-        List.Cons(store(ci), store(convert_all(rest))),
+        store(ListNode.Cons(store(ci), convert_all(rest))),
     }
   }
 ⟧

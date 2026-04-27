@@ -28,7 +28,7 @@ def kernelTypes := ⟦
   type KLimbs = List‹U64›
 
   enum KLiteral {
-    Nat(&KLimbs),
+    Nat(KLimbs),
     Str(ByteStream)
   }
 
@@ -39,7 +39,7 @@ def kernelTypes := ⟦
   enum KExprNode {
     BVar(G),
     Srt(&KLevel),
-    Const(G, &List‹&KLevel›),
+    Const(G, List‹&KLevel›),
     App(KExpr, KExpr),
     Lam(KExpr, KExpr),
     Forall(KExpr, KExpr),
@@ -57,19 +57,19 @@ def kernelTypes := ⟦
   enum KValNode {
     Srt(&KLevel),
     Lit(KLiteral),
-    Lam(KVal, KExpr, &KValEnv),
-    Pi(KVal, KExpr, &KValEnv),
-    Ctor(G, &List‹&KLevel›, G, &List‹KVal›),
-    FVar(G, KVal, &List‹KVal›),
-    Axiom(G, &List‹&KLevel›, &List‹KVal›),
-    Defn(G, &List‹&KLevel›, &List‹KVal›),
-    Thm(G, &List‹&KLevel›, &List‹KVal›),
-    Opaque(G, &List‹&KLevel›, &List‹KVal›),
-    Quot(G, &List‹&KLevel›, &List‹KVal›),
-    Induct(G, &List‹&KLevel›, &List‹KVal›),
-    Rec(G, &List‹&KLevel›, &List‹KVal›),
-    Proj(G, G, KVal, &List‹KVal›),
-    Thunk(KExpr, &KValEnv)
+    Lam(KVal, KExpr, KValEnv),
+    Pi(KVal, KExpr, KValEnv),
+    Ctor(G, List‹&KLevel›, G, List‹KVal›),
+    FVar(G, KVal, List‹KVal›),
+    Axiom(G, List‹&KLevel›, List‹KVal›),
+    Defn(G, List‹&KLevel›, List‹KVal›),
+    Thm(G, List‹&KLevel›, List‹KVal›),
+    Opaque(G, List‹&KLevel›, List‹KVal›),
+    Quot(G, List‹&KLevel›, List‹KVal›),
+    Induct(G, List‹&KLevel›, List‹KVal›),
+    Rec(G, List‹&KLevel›, List‹KVal›),
+    Proj(G, G, KVal, List‹KVal›),
+    Thunk(KExpr, KValEnv)
   }
 
   type KVal = &KValNode
@@ -107,9 +107,9 @@ def kernelTypes := ⟦
     Thm(G, &KExpr, &KExpr),
     Opaque(G, &KExpr, &KExpr, G),
     Quot(G, &KExpr, QuotKind),
-    Induct(G, &KExpr, G, G, &List‹G›, G, G, G),
+    Induct(G, &KExpr, G, G, List‹G›, G, G, G),
     Ctor(G, &KExpr, G, G, G, G, G),
-    Rec(G, &KExpr, G, G, G, G, &List‹&KRecRule›, G, G)
+    Rec(G, &KExpr, G, G, G, G, List‹&KRecRule›, G, G)
   }
 
 ⟧

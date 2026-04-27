@@ -11,9 +11,9 @@ def ixonDeserialize := ⟦
   -- ============================================================================
 
   fn read_byte(stream: ByteStream) -> (G, ByteStream) {
-    match stream {
-      List.Cons(byte, &rest) => (byte, rest),
-      List.Nil => (0, List.Nil),
+    match load(stream) {
+      ListNode.Cons(byte, rest) => (byte, rest),
+      ListNode.Nil => (0, store(ListNode.Nil)),
     }
   }
 
@@ -89,11 +89,11 @@ def ixonDeserialize := ⟦
   fn get_u64_list(stream: ByteStream, count: [G; 8]) -> (List‹U64›, ByteStream) {
     let is_zero = u64_is_zero(count);
     match is_zero {
-      1 => (List.Nil, stream),
+      1 => (store(ListNode.Nil), stream),
       0 =>
         let (val, s) = get_tag0(stream);
         let (rest, s2) = get_u64_list(s, relaxed_u64_pred(count));
-        (List.Cons(val, store(rest)), s2),
+        (store(ListNode.Cons(val, rest)), s2),
     }
   }
 
@@ -157,13 +157,13 @@ def ixonDeserialize := ⟦
       0x2 =>
         let (ref_idx, s2) = get_tag0(s);
         let (univ_list, s3) = get_u64_list(s2, size);
-        (Expr.Ref(ref_idx, store(univ_list)), s3),
+        (Expr.Ref(ref_idx, univ_list), s3),
 
       -- Rec: Tag4(0x3, len) + Tag0(rec_idx) + univ_list
       0x3 =>
         let (rec_idx, s2) = get_tag0(s);
         let (univ_list, s3) = get_u64_list(s2, size);
-        (Expr.Rec(rec_idx, store(univ_list)), s3),
+        (Expr.Rec(rec_idx, univ_list), s3),
 
       -- Prj: Tag4(0x4, field_idx) + Tag0(type_ref_idx) + expr(val)
       0x4 =>
@@ -294,33 +294,33 @@ def ixonDeserialize := ⟦
   fn get_expr_list(stream: ByteStream, count: [G; 8]) -> (List‹&Expr›, ByteStream) {
     let is_zero = u64_is_zero(count);
     match is_zero {
-      1 => (List.Nil, stream),
+      1 => (store(ListNode.Nil), stream),
       0 =>
         let (expr, s) = get_expr(stream);
         let (rest, s2) = get_expr_list(s, relaxed_u64_pred(count));
-        (List.Cons(store(expr), store(rest)), s2),
+        (store(ListNode.Cons(store(expr), rest)), s2),
     }
   }
 
   fn get_univ_list(stream: ByteStream, count: [G; 8]) -> (List‹&Univ›, ByteStream) {
     let is_zero = u64_is_zero(count);
     match is_zero {
-      1 => (List.Nil, stream),
+      1 => (store(ListNode.Nil), stream),
       0 =>
         let (u, s) = get_univ(stream);
         let (rest, s2) = get_univ_list(s, relaxed_u64_pred(count));
-        (List.Cons(store(u), store(rest)), s2),
+        (store(ListNode.Cons(store(u), rest)), s2),
     }
   }
 
   fn get_address_list(stream: ByteStream, count: [G; 8]) -> (List‹[G; 32]›, ByteStream) {
     let is_zero = u64_is_zero(count);
     match is_zero {
-      1 => (List.Nil, stream),
+      1 => (store(ListNode.Nil), stream),
       0 =>
         let (addr, s) = get_address(stream);
         let (rest, s2) = get_address_list(s, relaxed_u64_pred(count));
-        (List.Cons(addr, store(rest)), s2),
+        (store(ListNode.Cons(addr, rest)), s2),
     }
   }
 
@@ -385,11 +385,11 @@ def ixonDeserialize := ⟦
   fn get_recursor_rule_list(stream: ByteStream, count: [G; 8]) -> (List‹RecursorRule›, ByteStream) {
     let is_zero = u64_is_zero(count);
     match is_zero {
-      1 => (List.Nil, stream),
+      1 => (store(ListNode.Nil), stream),
       0 =>
         let (rule, s) = get_recursor_rule(stream);
         let (rest, s2) = get_recursor_rule_list(s, relaxed_u64_pred(count));
-        (List.Cons(rule, store(rest)), s2),
+        (store(ListNode.Cons(rule, rest)), s2),
     }
   }
 
@@ -408,7 +408,7 @@ def ixonDeserialize := ⟦
     let (typ, s7) = get_expr(s6);
     let (rules_len, s8) = get_tag0(s7);
     let (rules, s9) = get_recursor_rule_list(s8, rules_len);
-    (Recursor.Mk(k, is_unsafe, lvls, params, indices, motives, minors, store(typ), store(rules)), s9)
+    (Recursor.Mk(k, is_unsafe, lvls, params, indices, motives, minors, store(typ), rules), s9)
   }
 
   -- Axiom: byte(is_unsafe) + Tag0(lvls) + expr(typ)
@@ -453,11 +453,11 @@ def ixonDeserialize := ⟦
   fn get_constructor_list(stream: ByteStream, count: [G; 8]) -> (List‹Constructor›, ByteStream) {
     let is_zero = u64_is_zero(count);
     match is_zero {
-      1 => (List.Nil, stream),
+      1 => (store(ListNode.Nil), stream),
       0 =>
         let (ctor, s) = get_constructor(stream);
         let (rest, s2) = get_constructor_list(s, relaxed_u64_pred(count));
-        (List.Cons(ctor, store(rest)), s2),
+        (store(ListNode.Cons(ctor, rest)), s2),
     }
   }
 
@@ -476,7 +476,7 @@ def ixonDeserialize := ⟦
     let (typ, s6) = get_expr(s5);
     let (ctors_len, s7) = get_tag0(s6);
     let (ctors, s8) = get_constructor_list(s7, ctors_len);
-    (Inductive.Mk(recr, refl, is_unsafe, lvls, params, indices, nested, store(typ), store(ctors)), s8)
+    (Inductive.Mk(recr, refl, is_unsafe, lvls, params, indices, nested, store(typ), ctors), s8)
   }
 
   -- ============================================================================
@@ -535,11 +535,11 @@ def ixonDeserialize := ⟦
   fn get_mut_const_list(stream: ByteStream, count: [G; 8]) -> (List‹MutConst›, ByteStream) {
     let is_zero = u64_is_zero(count);
     match is_zero {
-      1 => (List.Nil, stream),
+      1 => (store(ListNode.Nil), stream),
       0 =>
         let (mc, s) = get_mut_const(stream);
         let (rest, s2) = get_mut_const_list(s, relaxed_u64_pred(count));
-        (List.Cons(mc, store(rest)), s2),
+        (store(ListNode.Cons(mc, rest)), s2),
     }
   }
 
@@ -583,7 +583,7 @@ def ixonDeserialize := ⟦
       -- Muts: flag=0xC, size is the entry count
       0xC =>
         let (mutuals, s) = get_mut_const_list(stream, size);
-        (ConstantInfo.Muts(store(mutuals)), s),
+        (ConstantInfo.Muts(mutuals), s),
       -- Non-Muts: flag=0xD, size[0] is the variant number
       0xD =>
         get_constant_info_by_variant(size[0], stream),
@@ -601,7 +601,7 @@ def ixonDeserialize := ⟦
     let (sharing, s3) = get_sharing(s2);
     let (refs, s4) = get_refs(s3);
     let (univs, s5) = get_univs(s4);
-    (Constant.Mk(info, store(sharing), store(refs), store(univs)), s5)
+    (Constant.Mk(info, sharing, refs, univs), s5)
   }
 ⟧
 
