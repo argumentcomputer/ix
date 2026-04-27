@@ -34,7 +34,7 @@ use crate::ix::kernel::env::Addr;
 use lean_ffi::nat::Nat;
 
 use super::constant::{KConst, RecRule};
-use super::env::{InternTable, KEnv};
+use super::env::{InternTable, KEnv, intern_addr};
 use super::expr::{KExpr, MData};
 use super::id::KId;
 use super::level::KUniv;
@@ -1565,7 +1565,7 @@ pub fn param_names_hash(param_names: &[Name]) -> Addr {
   for n in param_names {
     hasher.update(n.get_hash().as_bytes());
   }
-  Arc::new(hasher.finalize())
+  intern_addr(hasher.finalize())
 }
 
 pub fn lean_expr_to_zexpr(

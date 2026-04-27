@@ -135,6 +135,7 @@ impl<M: KernelMode> TypeChecker<M> {
     let (lo, hi) = canonical_pair(a.hash_key(), b.hash_key());
     let cache_key = (lo, hi, eq_ctx.clone());
     if let Some(cached) = self.env.def_eq_cache.get(&cache_key).map(|v| *v) {
+      self.env.perf.record_def_eq_hit();
       return Ok(cached);
     }
 
@@ -154,9 +155,12 @@ impl<M: KernelMode> TypeChecker<M> {
           self.equiv_manager.add_equiv(a_key.clone(), b_key.clone());
         }
         self.env.def_eq_cache.insert(cache_key, cached);
+        self.env.perf.record_def_eq_hit();
         return Ok(cached);
       }
     }
+    // Both probes missed.
+    self.env.perf.record_def_eq_miss();
 
     // Charge recursive fuel only after the O(1) exits above. Large proof
     // terms can perform hundreds of thousands of pointer/equiv/cache hits;
@@ -341,8 +345,17 @@ impl<M: KernelMode> TypeChecker<M> {
       }
 
       if a_delta && b_delta {
-        let wa_w = a_head.as_ref().map_or(u32::MAX, |h| self.def_weight_id(h));
-        let wb_w = b_head.as_ref().map_or(u32::MAX, |h| self.def_weight_id(h));
+        // Both `a_delta` and `b_delta` already imply a present head, so the
+        // `map_or` defaults are dead code in practice. We keep the
+        // "missing-head ranks above all real ranks" semantic by mapping the
+        // None case to `(u8::MAX, u32::MAX)` — preserving the old `u32::MAX`
+        // sentinel under the new tuple-based comparator.
+        let wa_w = a_head
+          .as_ref()
+          .map_or((u8::MAX, u32::MAX), |h| self.def_rank_id(h));
+        let wb_w = b_head
+          .as_ref()
+          .map_or((u8::MAX, u32::MAX), |h| self.def_rank_id(h));
 
         if wa_w == wb_w {
           // H2: Same-head-spine optimization — only for Regular hints, same head,
@@ -359,6 +372,9 @@ impl<M: KernelMode> TypeChecker<M> {
               }
               // Spine comparison was attempted and failed — cache it
               self.env.def_eq_failure.insert(failure_key);
+              self.env.perf.record_def_eq_failure_insert();
+            } else {
+              self.env.perf.record_def_eq_failure_hit();
             }
           }
           // H1: Equal height — unfold BOTH sides (lean4lean:596)
@@ -1114,19 +1130,32 @@ impl<M: KernelMode> TypeChecker<M> {
     )
   }
 
-  /// Reducibility weight by id. Higher weight = unfold first.
-  fn def_weight_id(&self, id: &KId<M>) -> u32 {
+  /// Reducibility rank by id. Higher rank = unfold first.
+  ///
+  /// Returns a `(class, height)` tuple compared lexicographically, so that
+  /// `Abbrev` strictly dominates every `Regular(h)` regardless of `h`. The
+  /// previous `u32` encoding mapped `Abbrev` to `u32::MAX - 1` and saturated
+  /// `Regular(h)` to `h.saturating_add(1)`, which collapsed at `h ≥ u32::MAX-2`
+  /// — flipping delta direction in the rare case of an `Abbrev` paired with
+  /// a maximally heavy regular definition. The structured tuple matches
+  /// Lean's `compare(d_t->get_hints(), d_s->get_hints())`
+  /// (`type_checker.cpp:910`):
+  ///
+  /// - `Opaque` / `Theorem` / unknown → `(0, 0)`
+  /// - `Regular(h)` → `(1, h)` (ordered by height within the class)
+  /// - `Abbrev` → `(2, 0)` (strictly greater than every `Regular(h)`)
+  fn def_rank_id(&self, id: &KId<M>) -> (u8, u32) {
     use crate::ix::env::ReducibilityHints;
     match self.env.get(id) {
       Some(KConst::Defn { kind, hints, .. }) => match kind {
-        DefKind::Opaque | DefKind::Theorem => 0,
+        DefKind::Opaque | DefKind::Theorem => (0, 0),
         DefKind::Definition => match hints {
-          ReducibilityHints::Abbrev => u32::MAX - 1,
-          ReducibilityHints::Regular(h) => h.saturating_add(1),
-          ReducibilityHints::Opaque => 0,
+          ReducibilityHints::Opaque => (0, 0),
+          ReducibilityHints::Regular(h) => (1, h),
+          ReducibilityHints::Abbrev => (2, 0),
         },
       },
-      _ => 0,
+      _ => (0, 0),
     }
   }
 
@@ -1235,7 +1264,7 @@ impl<M: KernelMode> TypeChecker<M> {
     } else {
       let a_id = a_head.as_ref().expect("a_delta implies head");
       let b_id = b_head.as_ref().expect("b_delta implies head");
-      let cmp = self.def_weight_id(a_id).cmp(&self.def_weight_id(b_id));
+      let cmp = self.def_rank_id(a_id).cmp(&self.def_rank_id(b_id));
       if cmp.is_gt() {
         if let Some(a2) = self.delta_unfold_one(a)? {
           *a = self.whnf_core(&a2)?;
@@ -1550,6 +1579,56 @@ mod tests {
       },
     );
     env
+  }
+
+  /// Insert a `Defn` with the given reducibility hints under `name`, returning
+  /// its `KId`. Used by `def_rank_id` ordering tests.
+  fn insert_rank_def(
+    env: &Arc<KEnv<Anon>>,
+    name: &str,
+    hints: ReducibilityHints,
+  ) -> KId<Anon> {
+    let id = mk_id(name);
+    env.insert(
+      id.clone(),
+      KConst::Defn {
+        name: (),
+        level_params: (),
+        kind: DefKind::Definition,
+        safety: DefinitionSafety::Safe,
+        hints,
+        lvls: 0,
+        ty: sort1(),
+        val: sort0(),
+        lean_all: (),
+        block: id.clone(),
+      },
+    );
+    id
+  }
+
+  /// `Abbrev` must outrank a `Regular(u32::MAX)` — the saturation collision
+  /// the `def_weight_id : u32` encoding admitted (audit Tier 1 #3).
+  #[test]
+  fn def_rank_abbrev_above_saturated_regular() {
+    let env = Arc::new(KEnv::new());
+    let abbrev = insert_rank_def(&env, "abbrev", ReducibilityHints::Abbrev);
+    let regular =
+      insert_rank_def(&env, "regular", ReducibilityHints::Regular(u32::MAX));
+    let tc = TypeChecker::new(Arc::clone(&env));
+
+    assert!(tc.def_rank_id(&abbrev) > tc.def_rank_id(&regular));
+  }
+
+  /// Within the `Regular` class, height orders rank monotonically.
+  #[test]
+  fn def_rank_regular_orders_by_height() {
+    let env = Arc::new(KEnv::new());
+    let low = insert_rank_def(&env, "low", ReducibilityHints::Regular(1));
+    let high = insert_rank_def(&env, "high", ReducibilityHints::Regular(10));
+    let tc = TypeChecker::new(Arc::clone(&env));
+
+    assert!(tc.def_rank_id(&high) > tc.def_rank_id(&low));
   }
 
   #[test]

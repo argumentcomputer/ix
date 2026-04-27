@@ -14,6 +14,7 @@ pub mod infer;
 pub mod ingress;
 pub mod level;
 pub mod mode;
+pub mod perf;
 pub mod primitive;
 pub mod subst;
 pub mod tc;

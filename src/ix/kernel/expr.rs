@@ -13,7 +13,7 @@ use crate::ix::env::{
 };
 use lean_ffi::nat::Nat;
 
-use super::env::Addr;
+use super::env::{Addr, intern_addr};
 use super::id::KId;
 use super::level::KUniv;
 use super::mode::{KernelMode, MetaDisplay, MetaHash};
@@ -111,8 +111,30 @@ impl<M: KernelMode> KExpr<M> {
     Arc::ptr_eq(&self.0, &other.0)
   }
 
+  /// Content-addressed equality with a layered fast path.
+  ///
+  /// 1. `ptr_eq` on the outer `KExpr` Arc — fires when both sides
+  ///    came through the [`InternTable`](super::env::InternTable).
+  /// 2. `Arc::ptr_eq` on the [`Addr`] — fires when both sides went
+  ///    through [`intern_addr`](super::env::intern_addr) (which is
+  ///    every kernel-side `KExpr` constructor after audit Tier 1 #1
+  ///    in `plans/kernel-perf-adversarial-audit-2026-04-26.md` §6.1).
+  ///    Exact iff Addrs are interned, but always a sound positive
+  ///    (true ⇒ same Blake3 content), and the cost on miss is just
+  ///    one pointer compare.
+  /// 3. Full 32-byte Blake3 fallback — covers any uninterned Addrs
+  ///    (e.g. a synthetic test fixture that builds an `Addr` directly
+  ///    via `Arc::new`).
+  ///
+  /// `Arc::ptr_eq` semantics on `Addr` is sound regardless of interning:
+  /// two distinct Arc allocations with different content can never
+  /// alias, so a pointer match implies content match. Whether the
+  /// converse holds depends on interning — the 32-byte fallback is the
+  /// safety net.
   pub fn hash_eq(&self, other: &KExpr<M>) -> bool {
-    self.ptr_eq(other) || self.addr() == other.addr()
+    self.ptr_eq(other)
+      || Arc::ptr_eq(self.addr(), other.addr())
+      || self.addr() == other.addr()
   }
 }
 
@@ -153,7 +175,7 @@ impl<M: KernelMode> KExpr<M> {
     name.meta_hash(&mut h);
     mdata.meta_hash(&mut h);
     let info = mk_info::<M>(
-      Arc::new(h.finalize()),
+      intern_addr(h.finalize()),
       idx + 1,
       if idx == 0 { 1 } else { 0 },
       mdata,
@@ -172,7 +194,7 @@ impl<M: KernelMode> KExpr<M> {
     mdata.meta_hash(&mut h);
     KExpr::new(ExprData::Sort(
       u,
-      mk_info::<M>(Arc::new(h.finalize()), 0, 0, mdata),
+      mk_info::<M>(intern_addr(h.finalize()), 0, 0, mdata),
     ))
   }
 
@@ -196,7 +218,7 @@ impl<M: KernelMode> KExpr<M> {
     KExpr::new(ExprData::Const(
       id,
       univs,
-      mk_info::<M>(Arc::new(h.finalize()), 0, 0, mdata),
+      mk_info::<M>(intern_addr(h.finalize()), 0, 0, mdata),
     ))
   }
 
@@ -215,7 +237,7 @@ impl<M: KernelMode> KExpr<M> {
     h.update(a.addr().as_bytes());
     mdata.meta_hash(&mut h);
     let info = mk_info::<M>(
-      Arc::new(h.finalize()),
+      intern_addr(h.finalize()),
       f.lbr().max(a.lbr()),
       f.count_0() + a.count_0(),
       mdata,
@@ -247,7 +269,7 @@ impl<M: KernelMode> KExpr<M> {
     h.update(body.addr().as_bytes());
     mdata.meta_hash(&mut h);
     let info = mk_info::<M>(
-      Arc::new(h.finalize()),
+      intern_addr(h.finalize()),
       ty.lbr().max(body.lbr().saturating_sub(1)),
       ty.count_0(),
       mdata,
@@ -279,7 +301,7 @@ impl<M: KernelMode> KExpr<M> {
     h.update(body.addr().as_bytes());
     mdata.meta_hash(&mut h);
     let info = mk_info::<M>(
-      Arc::new(h.finalize()),
+      intern_addr(h.finalize()),
       ty.lbr().max(body.lbr().saturating_sub(1)),
       ty.count_0(),
       mdata,
@@ -314,7 +336,7 @@ impl<M: KernelMode> KExpr<M> {
     h.update(&[non_dep as u8]);
     mdata.meta_hash(&mut h);
     let info = mk_info::<M>(
-      Arc::new(h.finalize()),
+      intern_addr(h.finalize()),
       ty.lbr().max(val.lbr()).max(body.lbr().saturating_sub(1)),
       ty.count_0() + val.count_0(),
       mdata,
@@ -340,7 +362,7 @@ impl<M: KernelMode> KExpr<M> {
     h.update(val.addr().as_bytes());
     mdata.meta_hash(&mut h);
     let info =
-      mk_info::<M>(Arc::new(h.finalize()), val.lbr(), val.count_0(), mdata);
+      mk_info::<M>(intern_addr(h.finalize()), val.lbr(), val.count_0(), mdata);
     KExpr::new(ExprData::Prj(id, field, val, info))
   }
 
@@ -360,7 +382,7 @@ impl<M: KernelMode> KExpr<M> {
     KExpr::new(ExprData::Nat(
       val,
       blob_addr,
-      mk_info::<M>(Arc::new(h.finalize()), 0, 0, mdata),
+      mk_info::<M>(intern_addr(h.finalize()), 0, 0, mdata),
     ))
   }
 
@@ -380,7 +402,7 @@ impl<M: KernelMode> KExpr<M> {
     KExpr::new(ExprData::Str(
       val,
       blob_addr,
-      mk_info::<M>(Arc::new(h.finalize()), 0, 0, mdata),
+      mk_info::<M>(intern_addr(h.finalize()), 0, 0, mdata),
     ))
   }
 }

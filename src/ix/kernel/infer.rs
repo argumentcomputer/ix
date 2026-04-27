@@ -43,14 +43,18 @@ impl<M: KernelMode> TypeChecker<M> {
     let cache_key = self.infer_key(e);
     // Full-mode results are validated and may be consumed by either mode.
     if let Some(cached) = self.env.infer_cache.get(&cache_key) {
+      self.env.perf.record_infer_hit();
       return Ok(cached.clone());
     }
+    self.env.perf.record_infer_miss();
     // Infer-only results skipped argument/let validation, so only infer-only
     // callers may reuse them.
-    if infer_only
-      && let Some(cached) = self.env.infer_only_cache.get(&cache_key)
-    {
-      return Ok(cached.clone());
+    if infer_only {
+      if let Some(cached) = self.env.infer_only_cache.get(&cache_key) {
+        self.env.perf.record_infer_only_hit();
+        return Ok(cached.clone());
+      }
+      self.env.perf.record_infer_only_miss();
     }
 
     let ty = match e.data() {
@@ -278,64 +282,79 @@ impl<M: KernelMode> TypeChecker<M> {
     let mut r = self.instantiate_univ_params(&ctor_ty, &i_levels_vec)?;
 
     for i in 0..num_params {
-      let wr = self.whnf(&r)?;
-      match wr.data() {
-        ExprData::All(_, _, _, body, _) => {
-          if i < args.len() {
-            r = subst(&self.env.intern, body, &args[i], 0);
-          } else {
-            return Err(TcError::Other("projection: not enough params".into()));
-          }
-        },
-        _ => {
-          return Err(TcError::Other(
-            "projection: expected forall in ctor type".into(),
-          ));
-        },
+      let (_, body) =
+        self.peel_proj_forall(&r, "projection: expected forall in ctor type")?;
+      if i < args.len() {
+        r = subst(&self.env.intern, &body, &args[i], 0);
+      } else {
+        return Err(TcError::Other("projection: not enough params".into()));
       }
     }
 
     for i in 0..=field {
-      let wr = self.whnf(&r)?;
-      match wr.data() {
-        ExprData::All(_, _, dom, body, _) => {
-          if i == field {
-            // For Prop structures, the projected field must be in Prop.
-            if is_prop_struct {
-              let field_sort_ty = self.infer(dom)?;
-              let field_level = self.ensure_sort(&field_sort_ty)?;
-              if !univ_eq(&field_level, &KUniv::zero()) {
-                return Err(TcError::Other(
-                  "projection: cannot project data field from Prop structure"
-                    .into(),
-                ));
-              }
-            }
-            return Ok(dom.clone());
+      let (dom, body) =
+        self.peel_proj_forall(&r, "projection: not enough fields")?;
+      if i == field {
+        // For Prop structures, the projected field must be in Prop.
+        if is_prop_struct {
+          let field_sort_ty = self.infer(&dom)?;
+          let field_level = self.ensure_sort(&field_sort_ty)?;
+          if !univ_eq(&field_level, &KUniv::zero()) {
+            return Err(TcError::Other(
+              "projection: cannot project data field from Prop structure"
+                .into(),
+            ));
           }
-          // For Prop structures, check if this preceding field is a data field
-          // that subsequent fields depend on. If so, projection is forbidden.
-          if is_prop_struct {
-            let field_sort_ty = self.infer(dom)?;
-            let field_level = self.ensure_sort(&field_sort_ty)?;
-            let is_data = !univ_eq(&field_level, &KUniv::zero());
-            // body.lbr() > 0 means the body references Var(0), i.e., depends on this field
-            if is_data && body.lbr() > 0 {
-              return Err(TcError::Other(
-                "projection: forbidden after dependent data field in Prop structure".into(),
-              ));
-            }
-          }
-          let proj = self.intern(KExpr::prj(struct_id.clone(), i, val.clone()));
-          r = subst(&self.env.intern, body, &proj, 0);
-        },
-        _ => {
-          return Err(TcError::Other("projection: not enough fields".into()));
-        },
+        }
+        return Ok(dom);
       }
+      // For Prop structures, check if this preceding field is a data field
+      // that subsequent fields depend on. If so, projection is forbidden.
+      if is_prop_struct {
+        let field_sort_ty = self.infer(&dom)?;
+        let field_level = self.ensure_sort(&field_sort_ty)?;
+        let is_data = !univ_eq(&field_level, &KUniv::zero());
+        // body.lbr() > 0 means the body references Var(0), i.e., depends on this field
+        if is_data && body.lbr() > 0 {
+          return Err(TcError::Other(
+            "projection: forbidden after dependent data field in Prop structure"
+              .into(),
+          ));
+        }
+      }
+      let proj = self.intern(KExpr::prj(struct_id.clone(), i, val.clone()));
+      r = subst(&self.env.intern, &body, &proj, 0);
     }
 
     Err(TcError::Other("projection: unreachable".into()))
+  }
+
+  /// Peel the leading `Π` binder from `e`, returning `(domain, body)`.
+  ///
+  /// Tries the syntactic fast path first: if `e` is already
+  /// `ExprData::All(..)`, no WHNF call is made. Only on miss does it fall
+  /// back to full `whnf` and re-check. This is the audit Tier 1 #2 fix
+  /// (`infer.rs:218, 281, 299`); the per-iteration full WHNF on a body
+  /// mutated by `subst` rarely hits the WHNF cache and re-traverses the
+  /// substituted body each iteration.
+  ///
+  /// `err` is the message used when the binder cannot be peeled even after
+  /// WHNF — distinct messages are useful for callers (e.g. "expected forall
+  /// in ctor type" vs. "not enough fields") so the helper takes it as a
+  /// parameter rather than baking one in.
+  fn peel_proj_forall(
+    &mut self,
+    e: &KExpr<M>,
+    err: &'static str,
+  ) -> Result<(KExpr<M>, KExpr<M>), TcError<M>> {
+    if let ExprData::All(_, _, dom, body, _) = e.data() {
+      return Ok((dom.clone(), body.clone()));
+    }
+    let w = self.whnf(e)?;
+    match w.data() {
+      ExprData::All(_, _, dom, body, _) => Ok((dom.clone(), body.clone())),
+      _ => Err(TcError::Other(err.into())),
+    }
   }
 
   fn infer_nat_type(&mut self) -> Result<KExpr<M>, TcError<M>> {

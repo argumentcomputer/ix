@@ -15,7 +15,7 @@ use rustc_hash::FxHashMap;
 use crate::ix::address::Address;
 
 use super::constant::RecRule;
-use super::env::{Addr, KEnv};
+use super::env::{Addr, KEnv, intern_addr};
 use super::equiv::EquivManager;
 use super::error::{TcError, u64_to_usize};
 use super::expr::{ExprData, KExpr};
@@ -28,7 +28,7 @@ use super::subst::lift;
 pub fn empty_ctx_addr() -> Addr {
   use std::sync::LazyLock;
   static ADDR: LazyLock<Addr> =
-    LazyLock::new(|| Arc::new(blake3::hash(b"ix.kernel.ctx.empty")));
+    LazyLock::new(|| intern_addr(blake3::hash(b"ix.kernel.ctx.empty")));
   ADDR.clone()
 }
 
@@ -191,7 +191,7 @@ impl<M: KernelMode> TypeChecker<M> {
     h.update(ty.addr().as_bytes());
     h.update(self.ctx_id.as_bytes());
     self.ctx_id_stack.push(self.ctx_id.clone());
-    self.ctx_id = Arc::new(h.finalize());
+    self.ctx_id = intern_addr(h.finalize());
     self.ctx.push(ty);
     self.let_vals.push(None);
   }
@@ -205,7 +205,7 @@ impl<M: KernelMode> TypeChecker<M> {
     h.update(val.addr().as_bytes());
     h.update(self.ctx_id.as_bytes());
     self.ctx_id_stack.push(self.ctx_id.clone());
-    self.ctx_id = Arc::new(h.finalize());
+    self.ctx_id = intern_addr(h.finalize());
     self.ctx.push(ty);
     self.let_vals.push(Some(val));
     self.num_let_bindings += 1;
@@ -445,6 +445,15 @@ impl<M: KernelMode> TypeChecker<M> {
     self.eager_reduce = false;
     self.def_eq_depth = 0;
     self.def_eq_peak = 0;
+    // Record fuel consumed by the *previous* constant check (if any) before
+    // wiping it — this is per-constant peak/total tracking for audit §10
+    // measurements. No-op when IX_PERF_COUNTERS is unset. We use
+    // saturating_sub so a fresh TypeChecker (rec_fuel == max) records zero
+    // rather than panicking on underflow.
+    let used = max_rec_fuel().saturating_sub(self.rec_fuel);
+    if used > 0 {
+      self.env.perf.record_constant_fuel_used(used);
+    }
     self.rec_fuel = max_rec_fuel();
     self.nat_iota_large_expansions = 0;
     self.nat_iota_last = None;

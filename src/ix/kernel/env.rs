@@ -7,7 +7,7 @@
 //! Multiple `TypeChecker` instances can share one `Arc<KEnv>` and run in parallel.
 
 use std::collections::{BTreeSet, HashSet};
-use std::sync::{Arc, Condvar, Mutex, OnceLock};
+use std::sync::{Arc, Condvar, LazyLock, Mutex, OnceLock};
 
 use dashmap::{DashMap, DashSet};
 
@@ -19,10 +19,43 @@ use super::expr::KExpr;
 use super::id::KId;
 use super::level::KUniv;
 use super::mode::KernelMode;
+use super::perf::PerfCounters;
 use super::primitive::Primitives;
 
 /// Shared Merkle hash. Cheap to clone (Arc refcount bump).
 pub type Addr = Arc<blake3::Hash>;
+
+/// Process-wide hash-cons for [`Addr`]. Interning makes
+/// `Arc::ptr_eq(a, b)` an exact equivalence to `**a == **b`, which is
+/// the basis for [`KExpr::hash_eq`](super::expr::KExpr::hash_eq)'s 8-byte
+/// pointer fast path before the 32-byte Blake3 fallback (audit Tier 1 #1
+/// in `plans/kernel-perf-adversarial-audit-2026-04-26.md` §6.1).
+///
+/// We use a process-global `DashMap` rather than per-`KEnv` interning so
+/// the change is local to `mk_info` (`expr.rs`) and the universe info
+/// helper (`level.rs`); threading an `&InternTable` through every
+/// `KExpr::var`/`sort`/etc. constructor would touch 300+ call sites for
+/// no observable benefit (KEnvs don't outlive the process and the Addr
+/// content space is the same regardless of which session created it).
+///
+/// Memory cost: one [`Addr`] entry per distinct content hash for the
+/// lifetime of the process. A typical kernel-check-env run holds a few
+/// million distinct hashes, so on the order of 10s of MB; trivially
+/// dominated by the constants table itself.
+static ADDR_INTERN: LazyLock<DashMap<blake3::Hash, Addr>> =
+  LazyLock::new(DashMap::default);
+
+/// Return the canonical [`Addr`] for `hash`. After this returns, every
+/// caller that interns the same content gets the same `Arc` allocation —
+/// `Arc::ptr_eq` between any two interned addresses is iff their hashes
+/// are equal.
+///
+/// Atomic via `DashMap::entry`; safe under parallel ingress and
+/// type-checking.
+#[inline]
+pub fn intern_addr(hash: blake3::Hash) -> Addr {
+  ADDR_INTERN.entry(hash).or_insert_with(|| Arc::new(hash)).value().clone()
+}
 
 /// Hash-consing intern table for expressions and universes.
 ///
@@ -161,11 +194,32 @@ pub struct KEnv<M: KernelMode> {
   pub block_checks_in_progress: Mutex<HashSet<KId<M>>>,
   /// Waiters park here while another thread checks their block.
   pub block_check_cv: Condvar,
+
+  // -- Performance counters (audit §10) --
+  /// Cache hit/miss and fuel-consumption counters, gated by
+  /// `IX_PERF_COUNTERS=1`. When the env var is unset the counters are
+  /// no-ops; when set, the totals are dumped from the `Drop` impl below.
+  pub perf: PerfCounters,
 }
 
 impl<M: KernelMode> Default for KEnv<M> {
   fn default() -> Self {
     Self::new()
+  }
+}
+
+/// Dump performance counters when the env is dropped, but only when
+/// `IX_PERF_COUNTERS=1` is set. This piggybacks on `KEnv`'s natural
+/// teardown (e.g. at the end of `rs_kernel_check_consts`) so any harness
+/// that drives a check-env run picks up the totals automatically.
+impl<M: KernelMode> Drop for KEnv<M> {
+  fn drop(&mut self) {
+    if super::perf::enabled() {
+      let summary = self.perf.summary();
+      if !summary.is_empty() {
+        eprint!("{summary}");
+      }
+    }
   }
 }
 
@@ -196,6 +250,7 @@ impl<M: KernelMode> KEnv<M> {
       block_check_results: DashMap::default(),
       block_checks_in_progress: Mutex::new(HashSet::new()),
       block_check_cv: Condvar::new(),
+      perf: PerfCounters::default(),
     }
   }
 
