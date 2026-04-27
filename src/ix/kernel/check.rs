@@ -1,12 +1,16 @@
 //! Constant checking dispatch.
 
 use std::sync::LazyLock;
+use std::time::{Duration, Instant};
 
+use rustc_hash::FxHashSet;
+
+use crate::ix::address::Address;
 use crate::ix::env::{DefinitionSafety, QuotKind};
 use crate::ix::ixon::constant::DefKind;
 
 use super::constant::KConst;
-use super::env::BlockCheckStart;
+use super::env::{Addr, BlockCheckStart};
 use super::error::{TcError, u64_to_usize};
 use super::expr::{ExprData, KExpr};
 use super::id::KId;
@@ -23,12 +27,19 @@ use super::tc::TypeChecker;
 static IX_DECL_DIFF: LazyLock<bool> =
   LazyLock::new(|| std::env::var("IX_DECL_DIFF").is_ok());
 
-/// Per-phase timing for `Defn` checks (infer-ty, infer-val, is_def_eq,
-/// safety-ty, safety-val). Set `IX_PHASE_TIMING=1` to see where a slow
-/// constant spends its time. Noisy — gate on a single constant via
-/// focus mode so only one line is printed.
+/// Per-phase timing for `Defn` checks. Set `IX_PHASE_TIMING=1` to see where a
+/// slow constant spends its time. Noisy — gate on a single constant via focus
+/// mode so only one line is printed.
 static IX_PHASE_TIMING: LazyLock<bool> =
   LazyLock::new(|| std::env::var("IX_PHASE_TIMING").is_ok());
+
+#[derive(Clone, Copy, Debug, Default)]
+struct ValidationTiming {
+  ty: Duration,
+  val: Duration,
+  rules: Duration,
+  univ: Duration,
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum CheckBlockKind {
@@ -91,10 +102,23 @@ impl<M: KernelMode> TypeChecker<M> {
   where
     M::MField<Vec<crate::ix::env::Name>>: CheckDupLevelParams,
   {
+    let phase_timing = *IX_PHASE_TIMING;
+    let overall = if phase_timing { Some(Instant::now()) } else { None };
+
+    let dup_start = overall.map(|_| Instant::now());
     if c.level_params().has_duplicate_level_params() {
       return Err(TcError::Other("duplicate universe level parameter".into()));
     }
-    self.validate_const_well_scoped(c)?;
+    let dup_elapsed = dup_start.map(|s| s.elapsed());
+
+    let mut validation_timing = ValidationTiming::default();
+    let validate_start = overall.map(|_| Instant::now());
+    if phase_timing {
+      self.validate_const_well_scoped_timed(c, Some(&mut validation_timing))?;
+    } else {
+      self.validate_const_well_scoped(c)?;
+    }
+    let validate_elapsed = validate_start.map(|s| s.elapsed());
 
     match &c {
       KConst::Axio { ty, .. } => {
@@ -104,14 +128,7 @@ impl<M: KernelMode> TypeChecker<M> {
       },
 
       KConst::Defn { ty, val, safety, kind, .. } => {
-        // Phase timing (guarded): give each phase its own instant so
-        // we can see where a slow check spends its time. The caller
-        // typically runs this via a focus-mode batch of one constant
-        // so the single `[phase]` line is easy to read.
-        let overall =
-          if *IX_PHASE_TIMING { Some(std::time::Instant::now()) } else { None };
-
-        let t_infer_ty_start = overall.map(|_| std::time::Instant::now());
+        let t_infer_ty_start = overall.map(|_| Instant::now());
         let t = self.infer(ty)?;
         let lvl = self.ensure_sort(&t)?;
         let infer_ty_elapsed = t_infer_ty_start.map(|s| s.elapsed());
@@ -123,11 +140,11 @@ impl<M: KernelMode> TypeChecker<M> {
           ));
         }
 
-        let t_infer_val_start = overall.map(|_| std::time::Instant::now());
+        let t_infer_val_start = overall.map(|_| Instant::now());
         let val_ty = self.infer(val)?;
         let infer_val_elapsed = t_infer_val_start.map(|s| s.elapsed());
 
-        let t_def_eq_start = overall.map(|_| std::time::Instant::now());
+        let t_def_eq_start = overall.map(|_| Instant::now());
         let def_eq_ok = self.is_def_eq(&val_ty, ty)?;
         let def_eq_elapsed = t_def_eq_start.map(|s| s.elapsed());
 
@@ -154,22 +171,39 @@ impl<M: KernelMode> TypeChecker<M> {
         }
 
         // #9: Safety level checking — safe/partial defs must not reference unsafe/partial constants
-        let t_safety_start = overall.map(|_| std::time::Instant::now());
+        let t_safety_start = overall.map(|_| Instant::now());
+        let mut safety_ty_elapsed = None;
+        let mut safety_val_elapsed = None;
         if *safety != DefinitionSafety::Unsafe {
+          let t_safety_ty_start = overall.map(|_| Instant::now());
           self.check_no_unsafe_refs(ty, *safety)?;
+          safety_ty_elapsed = t_safety_ty_start.map(|s| s.elapsed());
+
+          let t_safety_val_start = overall.map(|_| Instant::now());
           self.check_no_unsafe_refs(val, *safety)?;
+          safety_val_elapsed = t_safety_val_start.map(|s| s.elapsed());
         }
         let safety_elapsed = t_safety_start.map(|s| s.elapsed());
 
-        if let Some(t0) = overall {
+        if let Some(t0) = overall
+          && self.phase_timing_label_matches(id)
+        {
           eprintln!(
-            "[phase] {} total={:>8.1?} infer_ty={:>8.1?} infer_val={:>8.1?} def_eq={:>8.1?} safety={:>8.1?}",
+            "[phase] {} total={:>8.1?} dup_lvls={:>8.1?} validate={:>8.1?} validate_ty={:>8.1?} validate_val={:>8.1?} validate_rules={:>8.1?} validate_univ={:>8.1?} infer_ty={:>8.1?} infer_val={:>8.1?} def_eq={:>8.1?} safety={:>8.1?} safety_ty={:>8.1?} safety_val={:>8.1?}",
             id,
             t0.elapsed(),
+            dup_elapsed.unwrap_or_default(),
+            validate_elapsed.unwrap_or_default(),
+            validation_timing.ty,
+            validation_timing.val,
+            validation_timing.rules,
+            validation_timing.univ,
             infer_ty_elapsed.unwrap_or_default(),
             infer_val_elapsed.unwrap_or_default(),
             def_eq_elapsed.unwrap_or_default(),
             safety_elapsed.unwrap_or_default(),
+            safety_ty_elapsed.unwrap_or_default(),
+            safety_val_elapsed.unwrap_or_default(),
           );
         }
         Ok(())
@@ -311,21 +345,45 @@ impl<M: KernelMode> TypeChecker<M> {
   where
     M::MField<Vec<crate::ix::env::Name>>: CheckDupLevelParams,
   {
+    let phase_timing = *IX_PHASE_TIMING;
+    let overall = if phase_timing { Some(Instant::now()) } else { None };
+
+    let get_members_start = overall.map(|_| Instant::now());
     let members =
       self.env.get_block(block).unwrap_or_else(|| vec![requested.clone()]);
-    for member in &members {
-      let c = self
-        .env
-        .get(member)
-        .ok_or_else(|| TcError::UnknownConst(member.addr.clone()))?;
-      self.validate_const_well_scoped(&c)?;
-      if c.level_params().has_duplicate_level_params() {
-        return Err(TcError::Other(
-          "duplicate universe level parameter".into(),
-        ));
+    let get_members_elapsed = get_members_start.map(|s| s.elapsed());
+
+    let classify_start = overall.map(|_| Instant::now());
+    let kind = self.classify_block(&members)?;
+    let classify_elapsed = classify_start.map(|s| s.elapsed());
+
+    let mut validation_timing = ValidationTiming::default();
+    let prevalidate_start = overall.map(|_| Instant::now());
+    if kind != CheckBlockKind::Defn {
+      for member in &members {
+        let c = self
+          .env
+          .get(member)
+          .ok_or_else(|| TcError::UnknownConst(member.addr.clone()))?;
+        if c.level_params().has_duplicate_level_params() {
+          return Err(TcError::Other(
+            "duplicate universe level parameter".into(),
+          ));
+        }
+        if phase_timing {
+          self.validate_const_well_scoped_timed(
+            &c,
+            Some(&mut validation_timing),
+          )?;
+        } else {
+          self.validate_const_well_scoped(&c)?;
+        }
       }
     }
-    match self.classify_block(&members)? {
+    let prevalidate_elapsed = prevalidate_start.map(|s| s.elapsed());
+
+    let body_start = overall.map(|_| Instant::now());
+    let result = match kind {
       CheckBlockKind::Defn => {
         let mut peak = 0;
         for member in &members {
@@ -337,7 +395,30 @@ impl<M: KernelMode> TypeChecker<M> {
       },
       CheckBlockKind::Inductive => self.check_inductive_block(block, &members),
       CheckBlockKind::Recursor => self.check_recursor_block(block, &members),
+    };
+    let body_elapsed = body_start.map(|s| s.elapsed());
+
+    if let Some(t0) = overall
+      && self.phase_timing_label_matches(block)
+    {
+      eprintln!(
+        "[phase-block] {} kind={:?} members={} total={:>8.1?} get_members={:>8.1?} prevalidate={:>8.1?} validate_ty={:>8.1?} validate_val={:>8.1?} validate_rules={:>8.1?} validate_univ={:>8.1?} classify={:>8.1?} body={:>8.1?}",
+        block,
+        kind,
+        members.len(),
+        t0.elapsed(),
+        get_members_elapsed.unwrap_or_default(),
+        prevalidate_elapsed.unwrap_or_default(),
+        validation_timing.ty,
+        validation_timing.val,
+        validation_timing.rules,
+        validation_timing.univ,
+        classify_elapsed.unwrap_or_default(),
+        body_elapsed.unwrap_or_default(),
+      );
     }
+
+    result
   }
 
   // -----------------------------------------------------------------------
@@ -354,15 +435,50 @@ impl<M: KernelMode> TypeChecker<M> {
     &self,
     c: &KConst<M>,
   ) -> Result<(), TcError<M>> {
+    self.validate_const_well_scoped_timed(c, None)
+  }
+
+  fn validate_const_well_scoped_timed(
+    &self,
+    c: &KConst<M>,
+    mut timing: Option<&mut ValidationTiming>,
+  ) -> Result<(), TcError<M>> {
     let lvl_bound = u64_to_usize::<M>(c.lvls())?;
-    self.validate_expr_well_scoped(c.ty(), 0, lvl_bound)?;
+    let ty_start = timing.as_ref().map(|_| Instant::now());
+    self.validate_expr_well_scoped(
+      c.ty(),
+      0,
+      lvl_bound,
+      timing.as_deref_mut(),
+    )?;
+    if let (Some(t), Some(start)) = (timing.as_deref_mut(), ty_start) {
+      t.ty += start.elapsed();
+    }
     match c {
       KConst::Defn { val, .. } => {
-        self.validate_expr_well_scoped(val, 0, lvl_bound)?;
+        let val_start = timing.as_ref().map(|_| Instant::now());
+        self.validate_expr_well_scoped(
+          val,
+          0,
+          lvl_bound,
+          timing.as_deref_mut(),
+        )?;
+        if let (Some(t), Some(start)) = (timing.as_deref_mut(), val_start) {
+          t.val += start.elapsed();
+        }
       },
       KConst::Recr { rules, .. } => {
+        let rules_start = timing.as_ref().map(|_| Instant::now());
         for rule in rules {
-          self.validate_expr_well_scoped(&rule.rhs, 0, lvl_bound)?;
+          self.validate_expr_well_scoped(
+            &rule.rhs,
+            0,
+            lvl_bound,
+            timing.as_deref_mut(),
+          )?;
+        }
+        if let (Some(t), Some(start)) = (timing.as_deref_mut(), rules_start) {
+          t.rules += start.elapsed();
         }
       },
       KConst::Axio { .. }
@@ -373,14 +489,34 @@ impl<M: KernelMode> TypeChecker<M> {
     Ok(())
   }
 
+  fn phase_timing_label_matches(&self, id: &KId<M>) -> bool {
+    match std::env::var("IX_KERNEL_DEBUG_CONST") {
+      Ok(filter) if filter.is_empty() => true,
+      Ok(filter) => {
+        id.to_string().contains(&filter)
+          || self
+            .debug_label
+            .as_ref()
+            .is_some_and(|label| label.contains(&filter))
+      },
+      Err(_) => true,
+    }
+  }
+
   fn validate_expr_well_scoped(
     &self,
     root: &KExpr<M>,
     root_depth: u64,
     lvl_bound: usize,
+    mut timing: Option<&mut ValidationTiming>,
   ) -> Result<(), TcError<M>> {
     let mut stack: Vec<(&KExpr<M>, u64)> = vec![(root, root_depth)];
+    let mut seen_exprs: FxHashSet<(Addr, u64)> = FxHashSet::default();
+    let mut seen_univs: FxHashSet<Addr> = FxHashSet::default();
     while let Some((e, depth)) = stack.pop() {
+      if !seen_exprs.insert((e.hash_key(), depth)) {
+        continue;
+      }
       match e.data() {
         ExprData::Var(idx, _, _) => {
           if *idx >= depth {
@@ -389,7 +525,11 @@ impl<M: KernelMode> TypeChecker<M> {
           }
         },
         ExprData::Sort(u, _) => {
-          self.validate_univ_params(u, lvl_bound)?;
+          let univ_start = timing.as_ref().map(|_| Instant::now());
+          self.validate_univ_params_seen(u, lvl_bound, &mut seen_univs)?;
+          if let (Some(t), Some(start)) = (timing.as_deref_mut(), univ_start) {
+            t.univ += start.elapsed();
+          }
         },
         ExprData::Const(id, us, _) => {
           let c = self
@@ -403,7 +543,12 @@ impl<M: KernelMode> TypeChecker<M> {
             });
           }
           for u in us {
-            self.validate_univ_params(u, lvl_bound)?;
+            let univ_start = timing.as_ref().map(|_| Instant::now());
+            self.validate_univ_params_seen(u, lvl_bound, &mut seen_univs)?;
+            if let (Some(t), Some(start)) = (timing.as_deref_mut(), univ_start)
+            {
+              t.univ += start.elapsed();
+            }
           }
         },
         ExprData::App(f, a, _) => {
@@ -437,13 +582,17 @@ impl<M: KernelMode> TypeChecker<M> {
     Ok(())
   }
 
-  fn validate_univ_params(
+  fn validate_univ_params_seen(
     &self,
     root: &KUniv<M>,
     bound: usize,
+    seen: &mut FxHashSet<Addr>,
   ) -> Result<(), TcError<M>> {
     let mut stack = vec![root];
     while let Some(u) = stack.pop() {
+      if !seen.insert(u.addr().clone()) {
+        continue;
+      }
       match u.data() {
         UnivData::Zero(_) => {},
         UnivData::Succ(inner, _) => stack.push(inner),
@@ -630,52 +779,62 @@ impl<M: KernelMode> TypeChecker<M> {
     caller_safety: DefinitionSafety,
   ) -> Result<(), TcError<M>> {
     let mut stack: Vec<&KExpr<M>> = vec![root];
+    let mut seen_exprs: FxHashSet<Addr> = FxHashSet::default();
+    let mut seen_consts: FxHashSet<Address> = FxHashSet::default();
     while let Some(e) = stack.pop() {
+      if !seen_exprs.insert(e.hash_key()) {
+        continue;
+      }
       match e.data() {
         ExprData::Var(..)
         | ExprData::Sort(..)
         | ExprData::Nat(..)
         | ExprData::Str(..) => {},
-        ExprData::Const(id, _, _) => match self.env.get(id) {
-          Some(KConst::Axio { is_unsafe: true, .. }) => {
-            return Err(TcError::Other(format!(
-              "safe definition references unsafe axiom {}",
-              &id.addr.hex()[..8]
-            )));
-          },
-          Some(KConst::Defn { safety: DefinitionSafety::Unsafe, .. }) => {
-            return Err(TcError::Other(format!(
-              "safe definition references unsafe definition {}",
-              &id.addr.hex()[..8]
-            )));
-          },
-          Some(KConst::Defn { safety: DefinitionSafety::Partial, .. })
-            if caller_safety == DefinitionSafety::Safe =>
-          {
-            return Err(TcError::Other(format!(
-              "safe definition references partial definition {}",
-              &id.addr.hex()[..8]
-            )));
-          },
-          Some(KConst::Recr { is_unsafe: true, .. }) => {
-            return Err(TcError::Other(format!(
-              "safe definition references unsafe recursor {}",
-              &id.addr.hex()[..8]
-            )));
-          },
-          Some(KConst::Indc { is_unsafe: true, .. }) => {
-            return Err(TcError::Other(format!(
-              "safe definition references unsafe inductive {}",
-              &id.addr.hex()[..8]
-            )));
-          },
-          Some(KConst::Ctor { is_unsafe: true, .. }) => {
-            return Err(TcError::Other(format!(
-              "safe definition references unsafe constructor {}",
-              &id.addr.hex()[..8]
-            )));
-          },
-          _ => {},
+        ExprData::Const(id, _, _) => {
+          if !seen_consts.insert(id.addr.clone()) {
+            continue;
+          }
+          match self.env.get(id) {
+            Some(KConst::Axio { is_unsafe: true, .. }) => {
+              return Err(TcError::Other(format!(
+                "safe definition references unsafe axiom {}",
+                &id.addr.hex()[..8]
+              )));
+            },
+            Some(KConst::Defn { safety: DefinitionSafety::Unsafe, .. }) => {
+              return Err(TcError::Other(format!(
+                "safe definition references unsafe definition {}",
+                &id.addr.hex()[..8]
+              )));
+            },
+            Some(KConst::Defn {
+              safety: DefinitionSafety::Partial, ..
+            }) if caller_safety == DefinitionSafety::Safe => {
+              return Err(TcError::Other(format!(
+                "safe definition references partial definition {}",
+                &id.addr.hex()[..8]
+              )));
+            },
+            Some(KConst::Recr { is_unsafe: true, .. }) => {
+              return Err(TcError::Other(format!(
+                "safe definition references unsafe recursor {}",
+                &id.addr.hex()[..8]
+              )));
+            },
+            Some(KConst::Indc { is_unsafe: true, .. }) => {
+              return Err(TcError::Other(format!(
+                "safe definition references unsafe inductive {}",
+                &id.addr.hex()[..8]
+              )));
+            },
+            Some(KConst::Ctor { is_unsafe: true, .. }) => {
+              return Err(TcError::Other(format!(
+                "safe definition references unsafe constructor {}",
+                &id.addr.hex()[..8]
+              )));
+            },
+            _ => {},
+          }
         },
         ExprData::App(f, a, _) => {
           stack.push(f);

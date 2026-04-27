@@ -178,16 +178,64 @@ impl<M: KernelMode> TypeChecker<M> {
   }
 
   /// Type-inference cache key: (expr_hash, ctx_hash).
-  /// Closed expressions (lbr == 0) are context-independent. Open expressions
-  /// depend on local types, so they must stay isolated by ctx_id even when
-  /// there are no let-bindings.
+  /// Closed expressions (lbr == 0) are context-independent. For open
+  /// expressions, only the context suffix reachable from their loose bound
+  /// variables matters. The suffix length is closed over binder type/value
+  /// dependencies, so two equal open subterms can share an infer result across
+  /// different outer binders when the relevant local suffix is identical.
   #[inline]
   pub fn infer_key(&self, e: &KExpr<M>) -> (Addr, Addr) {
-    if e.lbr() == 0 {
-      (e.hash_key(), empty_ctx_addr())
-    } else {
-      (e.hash_key(), self.ctx_id.clone())
+    (e.hash_key(), self.ctx_addr_for_lbr(e.lbr()))
+  }
+
+  pub(crate) fn ctx_addr_for_lbr(&self, lbr: u64) -> Addr {
+    if lbr == 0 || self.ctx.is_empty() {
+      return empty_ctx_addr();
     }
+
+    let n = self.ctx.len();
+    let mut need = usize::try_from(lbr).unwrap_or(usize::MAX).min(n);
+
+    loop {
+      let start = n - need;
+      let mut next_need = need;
+      for i in start..n {
+        let frame_offset = n - i;
+        let ty_need = usize::try_from(self.ctx[i].lbr()).unwrap_or(usize::MAX);
+        next_need = next_need.max(frame_offset.saturating_add(ty_need));
+        if let Some(val) = &self.let_vals[i] {
+          let val_need = usize::try_from(val.lbr()).unwrap_or(usize::MAX);
+          next_need = next_need.max(frame_offset.saturating_add(val_need));
+        }
+      }
+      next_need = next_need.min(n);
+      if next_need == need {
+        break;
+      }
+      need = next_need;
+    }
+
+    if need == n {
+      return self.ctx_id.clone();
+    }
+
+    let mut h = blake3::Hasher::new();
+    h.update(b"ctx.suffix");
+    h.update(&(need as u64).to_le_bytes());
+    for i in (n - need)..n {
+      match &self.let_vals[i] {
+        Some(val) => {
+          h.update(b"let");
+          h.update(self.ctx[i].addr().as_bytes());
+          h.update(val.addr().as_bytes());
+        },
+        None => {
+          h.update(b"local");
+          h.update(self.ctx[i].addr().as_bytes());
+        },
+      }
+    }
+    intern_addr(h.finalize())
   }
 
   /// Push a local variable type (lambda/forall binding, no let-value).

@@ -7,7 +7,8 @@
 
 use std::cell::Cell;
 use std::sync::Arc;
-use std::time::Instant;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant};
 
 use rayon::iter::{
   IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
@@ -63,6 +64,106 @@ struct Ctx<'a, M: KernelMode> {
 
 /// Expression conversion cache, keyed on (expr pointer, arena_idx).
 type ExprCache<M> = FxHashMap<(usize, u64), KExpr<M>>;
+/// Universe conversion cache, scoped to one level-parameter context.
+type UnivCache<M> = FxHashMap<usize, KUniv<M>>;
+
+#[derive(Clone, Default)]
+struct ConvertStats {
+  enabled: bool,
+  expr_roots: u64,
+  expr_process: u64,
+  expr_cache_hits: u64,
+  expr_cache_misses: u64,
+  expr_cache_inserts: u64,
+  expr_cache_peak: u64,
+  expr_cache_clears: u64,
+  expr_cache_entries_cleared: u64,
+  share_expansions: u64,
+  mdata_nodes: u64,
+  mdata_kv_maps: u64,
+  callsites: u64,
+  callsite_args: u64,
+  univ_roots: u64,
+  univ_cache_hits: u64,
+  univ_cache_misses: u64,
+  univ_cache_inserts: u64,
+  univ_cache_peak: u64,
+  univ_process: u64,
+  univ_interns: u64,
+  sort_nodes: u64,
+  var_nodes: u64,
+  ref_nodes: u64,
+  rec_nodes: u64,
+  app_nodes: u64,
+  lam_nodes: u64,
+  all_nodes: u64,
+  let_nodes: u64,
+  prj_nodes: u64,
+  str_nodes: u64,
+  nat_nodes: u64,
+}
+
+impl ConvertStats {
+  fn new(enabled: bool) -> Self {
+    ConvertStats { enabled, ..ConvertStats::default() }
+  }
+
+  fn merge(mut self, other: Self) -> Self {
+    self.enabled |= other.enabled;
+    self.expr_roots += other.expr_roots;
+    self.expr_process += other.expr_process;
+    self.expr_cache_hits += other.expr_cache_hits;
+    self.expr_cache_misses += other.expr_cache_misses;
+    self.expr_cache_inserts += other.expr_cache_inserts;
+    self.expr_cache_peak = self.expr_cache_peak.max(other.expr_cache_peak);
+    self.expr_cache_clears += other.expr_cache_clears;
+    self.expr_cache_entries_cleared += other.expr_cache_entries_cleared;
+    self.share_expansions += other.share_expansions;
+    self.mdata_nodes += other.mdata_nodes;
+    self.mdata_kv_maps += other.mdata_kv_maps;
+    self.callsites += other.callsites;
+    self.callsite_args += other.callsite_args;
+    self.univ_roots += other.univ_roots;
+    self.univ_cache_hits += other.univ_cache_hits;
+    self.univ_cache_misses += other.univ_cache_misses;
+    self.univ_cache_inserts += other.univ_cache_inserts;
+    self.univ_cache_peak = self.univ_cache_peak.max(other.univ_cache_peak);
+    self.univ_process += other.univ_process;
+    self.univ_interns += other.univ_interns;
+    self.sort_nodes += other.sort_nodes;
+    self.var_nodes += other.var_nodes;
+    self.ref_nodes += other.ref_nodes;
+    self.rec_nodes += other.rec_nodes;
+    self.app_nodes += other.app_nodes;
+    self.lam_nodes += other.lam_nodes;
+    self.all_nodes += other.all_nodes;
+    self.let_nodes += other.let_nodes;
+    self.prj_nodes += other.prj_nodes;
+    self.str_nodes += other.str_nodes;
+    self.nat_nodes += other.nat_nodes;
+    self
+  }
+
+  fn record_cache_clear<M: KernelMode>(&mut self, cache: &ExprCache<M>) {
+    if self.enabled {
+      self.expr_cache_clears += 1;
+      self.expr_cache_entries_cleared += cache.len() as u64;
+    }
+  }
+}
+
+macro_rules! bump_convert_stat {
+  ($stats:expr, $field:ident) => {
+    if ($stats).enabled {
+      ($stats).$field += 1;
+    }
+  };
+  ($stats:expr, $field:ident, $amount:expr) => {
+    if ($stats).enabled {
+      ($stats).$field += $amount as u64;
+    }
+  };
+}
 
 fn resolve_name(addr: &Address, names: &FxHashMap<Address, Name>) -> Name {
   names.get(addr).cloned().unwrap_or_else(Name::anon)
@@ -160,38 +261,58 @@ fn ingress_univ<M: KernelMode>(
   root: &Arc<IxonUniv>,
   ctx: &Ctx<'_, M>,
   intern: &InternTable<M>,
+  cache: &mut UnivCache<M>,
+  stats: &mut ConvertStats,
 ) -> KUniv<M> {
+  bump_convert_stat!(stats, univ_roots);
+  let cache_key = Arc::as_ptr(root) as usize;
+  if let Some(cached) = cache.get(&cache_key) {
+    bump_convert_stat!(stats, univ_cache_hits);
+    return cached.clone();
+  }
+  bump_convert_stat!(stats, univ_cache_misses);
+
   let mut stack: Vec<UnivFrame> = vec![UnivFrame::Process(root.clone())];
   let mut values: Vec<KUniv<M>> = Vec::new();
 
   while let Some(frame) = stack.pop() {
     match frame {
       UnivFrame::Process(u) => match u.as_ref() {
-        IxonUniv::Zero => values.push(intern.intern_univ(KUniv::zero())),
+        IxonUniv::Zero => {
+          bump_convert_stat!(stats, univ_process);
+          bump_convert_stat!(stats, univ_interns);
+          values.push(intern.intern_univ(KUniv::zero()));
+        },
         IxonUniv::Succ(inner) => {
+          bump_convert_stat!(stats, univ_process);
           stack.push(UnivFrame::Succ);
           stack.push(UnivFrame::Process(inner.clone()));
         },
         IxonUniv::Max(a, b) => {
+          bump_convert_stat!(stats, univ_process);
           stack.push(UnivFrame::Max);
           stack.push(UnivFrame::Process(b.clone()));
           stack.push(UnivFrame::MaxLeft(a.clone()));
         },
         IxonUniv::IMax(a, b) => {
+          bump_convert_stat!(stats, univ_process);
           stack.push(UnivFrame::IMax);
           stack.push(UnivFrame::Process(b.clone()));
           stack.push(UnivFrame::IMaxLeft(a.clone()));
         },
         IxonUniv::Var(idx) => {
+          bump_convert_stat!(stats, univ_process);
           let pos =
             usize::try_from(*idx).expect("univ var index exceeds usize");
           let name = ctx.lvls.get(pos).cloned().unwrap_or_else(Name::anon);
+          bump_convert_stat!(stats, univ_interns);
           values
             .push(intern.intern_univ(KUniv::param(*idx, M::meta_field(name))));
         },
       },
       UnivFrame::Succ => {
         let inner = values.pop().unwrap();
+        bump_convert_stat!(stats, univ_interns);
         values.push(intern.intern_univ(KUniv::succ(inner)));
       },
       UnivFrame::MaxLeft(a) | UnivFrame::IMaxLeft(a) => {
@@ -200,35 +321,45 @@ fn ingress_univ<M: KernelMode>(
       UnivFrame::Max => {
         let b = values.pop().unwrap();
         let a = values.pop().unwrap();
+        bump_convert_stat!(stats, univ_interns);
         values.push(intern.intern_univ(KUniv::max(a, b)));
       },
       UnivFrame::IMax => {
         let b = values.pop().unwrap();
         let a = values.pop().unwrap();
+        bump_convert_stat!(stats, univ_interns);
         values.push(intern.intern_univ(KUniv::imax(a, b)));
       },
     }
   }
 
-  intern.intern_univ(values.pop().unwrap())
+  bump_convert_stat!(stats, univ_interns);
+  let result = intern.intern_univ(values.pop().unwrap());
+  cache.insert(cache_key, result.clone());
+  if stats.enabled {
+    stats.univ_cache_inserts += 1;
+    stats.univ_cache_peak = stats.univ_cache_peak.max(cache.len() as u64);
+  }
+  result
 }
 
 fn ingress_univ_args<M: KernelMode>(
   univ_idxs: &[u64],
   ctx: &Ctx<'_, M>,
   intern: &InternTable<M>,
+  cache: &mut UnivCache<M>,
+  stats: &mut ConvertStats,
 ) -> Result<Box<[KUniv<M>]>, String> {
-  univ_idxs
-    .iter()
-    .map(|&idx| {
-      let i = usize::try_from(idx)
-        .map_err(|_e| format!("universe index {idx} exceeds usize"))?;
-      let u = ctx.univs.get(i).ok_or_else(|| {
-        format!("universe index {i} out of bounds (len {})", ctx.univs.len())
-      })?;
-      Ok(ingress_univ(u, ctx, intern))
-    })
-    .collect::<Result<Box<[_]>, _>>()
+  let mut result = Vec::with_capacity(univ_idxs.len());
+  for &idx in univ_idxs {
+    let i = usize::try_from(idx)
+      .map_err(|_e| format!("universe index {idx} exceeds usize"))?;
+    let u = ctx.univs.get(i).ok_or_else(|| {
+      format!("universe index {i} out of bounds (len {})", ctx.univs.len())
+    })?;
+    result.push(ingress_univ(u, ctx, intern, cache, stats));
+  }
+  Ok(result.into_boxed_slice())
 }
 
 // ============================================================================
@@ -306,7 +437,10 @@ fn ingress_expr<M: KernelMode>(
   ctx: &Ctx<'_, M>,
   ixon_env: &IxonEnv,
   cache: &mut ExprCache<M>,
+  univ_cache: &mut UnivCache<M>,
+  stats: &mut ConvertStats,
 ) -> Result<KExpr<M>, String> {
+  bump_convert_stat!(stats, expr_roots);
   let mut stack: Vec<ExprFrame<M>> =
     vec![ExprFrame::Process { expr: root_expr.clone(), arena_idx: root_arena }];
   let mut values: Vec<KExpr<M>> = Vec::new();
@@ -316,7 +450,38 @@ fn ingress_expr<M: KernelMode>(
 
   while let Some(frame) = stack.pop() {
     match frame {
-      ExprFrame::Process { expr, arena_idx } => {
+      ExprFrame::Process { mut expr, arena_idx } => {
+        bump_convert_stat!(stats, expr_process);
+
+        // `Share` is transparent and keeps the same arena root. Expand it
+        // before cache/mdata work; the old path walked metadata for the Share
+        // frame, discarded it, then reprocessed the shared expression.
+        while let IxonExpr::Share(share_idx) = expr.as_ref() {
+          bump_convert_stat!(stats, share_expansions);
+          expr =
+            ctx
+              .sharing
+              .get(usize::try_from(*share_idx).map_err(|_e| {
+                format!("Share index {share_idx} exceeds usize")
+              })?)
+              .ok_or_else(|| format!("invalid Share index {share_idx}"))?
+              .clone();
+        }
+
+        let is_var = matches!(expr.as_ref(), IxonExpr::Var(_));
+
+        // Check cache before walking mdata. The key includes the original arena
+        // root, so a hit already includes the resolved metadata layers.
+        let cache_key = (Arc::as_ptr(&expr) as usize, arena_idx);
+        if !is_var {
+          if let Some(cached) = cache.get(&cache_key) {
+            bump_convert_stat!(stats, expr_cache_hits);
+            values.push(cached.clone());
+            continue;
+          }
+          bump_convert_stat!(stats, expr_cache_misses);
+        }
+
         // Walk mdata chain in arena
         let mut current_idx = arena_idx;
         let mut mdata_layers: Vec<MData> = Vec::new();
@@ -327,6 +492,8 @@ fn ingress_expr<M: KernelMode>(
             })?,
           )
         {
+          bump_convert_stat!(stats, mdata_nodes);
+          bump_convert_stat!(stats, mdata_kv_maps, mdata.len());
           for kvm in mdata {
             mdata_layers.push(resolve_kvmap(kvm, ixon_env));
           }
@@ -345,21 +512,9 @@ fn ingress_expr<M: KernelMode>(
         //  }
         //}
 
-        // Expand Share transparently
-        if let IxonExpr::Share(share_idx) = expr.as_ref() {
-          if let Some(shared) = ctx.sharing.get(
-            usize::try_from(*share_idx)
-              .map_err(|_e| format!("Share index {share_idx} exceeds usize"))?,
-          ) {
-            stack.push(ExprFrame::Process { expr: shared.clone(), arena_idx });
-            continue;
-          } else {
-            return Err(format!("invalid Share index {share_idx}"));
-          }
-        }
-
         // BVar early return (no caching needed for leaves)
         if let IxonExpr::Var(idx) = expr.as_ref() {
+          bump_convert_stat!(stats, var_nodes);
           // Resolve name from the binder context using de Bruijn index.
           let idx_usize = usize::try_from(*idx)
             .map_err(|_e| format!("BVar index {idx} exceeds usize"))?;
@@ -383,13 +538,6 @@ fn ingress_expr<M: KernelMode>(
           continue;
         }
 
-        // Check cache
-        let cache_key = (Arc::as_ptr(&expr) as usize, arena_idx);
-        if let Some(cached) = cache.get(&cache_key) {
-          values.push(cached.clone());
-          continue;
-        }
-
         let node =
           ctx
             .arena
@@ -404,6 +552,7 @@ fn ingress_expr<M: KernelMode>(
 
         match expr.as_ref() {
           IxonExpr::Sort(idx) => {
+            bump_convert_stat!(stats, sort_nodes);
             let u =
               ctx
                 .univs
@@ -411,13 +560,14 @@ fn ingress_expr<M: KernelMode>(
                   format!("Sort univ index {idx} exceeds usize")
                 })?)
                 .ok_or_else(|| format!("invalid Sort univ index {idx}"))?;
-            let zu = ingress_univ(u, ctx, ctx.intern);
+            let zu = ingress_univ(u, ctx, ctx.intern, univ_cache, stats);
             values.push(ctx.intern.intern_expr(KExpr::sort_mdata(zu, mdata)));
           },
 
           IxonExpr::Var(_) | IxonExpr::Share(_) => unreachable!(),
 
           IxonExpr::Ref(ref_idx, univ_idxs) => {
+            bump_convert_stat!(stats, ref_nodes);
             let addr = ctx
               .refs
               .get(
@@ -437,7 +587,8 @@ fn ingress_expr<M: KernelMode>(
                 ));
               },
             };
-            let univs = ingress_univ_args(univ_idxs, ctx, ctx.intern)?;
+            let univs =
+              ingress_univ_args(univ_idxs, ctx, ctx.intern, univ_cache, stats)?;
             values.push(ctx.intern.intern_expr(KExpr::cnst_mdata(
               KId::new(addr, M::meta_field(name)),
               univs,
@@ -446,6 +597,7 @@ fn ingress_expr<M: KernelMode>(
           },
 
           IxonExpr::Rec(rec_idx, univ_idxs) => {
+            bump_convert_stat!(stats, rec_nodes);
             let mid = ctx
               .mut_ctx
               .get(
@@ -454,13 +606,15 @@ fn ingress_expr<M: KernelMode>(
               )
               .ok_or_else(|| format!("invalid Rec index {rec_idx}"))?
               .clone();
-            let univs = ingress_univ_args(univ_idxs, ctx, ctx.intern)?;
+            let univs =
+              ingress_univ_args(univ_idxs, ctx, ctx.intern, univ_cache, stats)?;
             values.push(
               ctx.intern.intern_expr(KExpr::cnst_mdata(mid, univs, mdata)),
             );
           },
 
           IxonExpr::App(f, a) => {
+            bump_convert_stat!(stats, app_nodes);
             // CallSite at the outermost App of a surgery spine. The
             // arena replaces the spine's N+1 App/Ref nodes with one
             // flat node whose `canon_meta` carries per-canonical-arg
@@ -520,6 +674,8 @@ fn ingress_expr<M: KernelMode>(
                   .clone();
               }
               let n_args = canonical_args.len();
+              bump_convert_stat!(stats, callsites);
+              bump_convert_stat!(stats, callsite_args, n_args);
 
               if canon_meta.len() != n_args {
                 let head_name = resolve_name(cs_name, ctx.names);
@@ -549,7 +705,9 @@ fn ingress_expr<M: KernelMode>(
                     })?
                     .clone();
                   let name = resolve_name(cs_name, ctx.names);
-                  let univs = ingress_univ_args(univ_idxs, ctx, ctx.intern)?;
+                  let univs = ingress_univ_args(
+                    univ_idxs, ctx, ctx.intern, univ_cache, stats,
+                  )?;
                   ctx.intern.intern_expr(KExpr::cnst(
                     KId::new(addr, M::meta_field(name)),
                     univs,
@@ -569,7 +727,9 @@ fn ingress_expr<M: KernelMode>(
                       format!("CallSite head: invalid Rec index {rec_idx}")
                     })?
                     .clone();
-                  let univs = ingress_univ_args(univ_idxs, ctx, ctx.intern)?;
+                  let univs = ingress_univ_args(
+                    univ_idxs, ctx, ctx.intern, univ_cache, stats,
+                  )?;
                   ctx.intern.intern_expr(KExpr::cnst(mid, univs))
                 },
                 _ => {
@@ -642,6 +802,7 @@ fn ingress_expr<M: KernelMode>(
           },
 
           IxonExpr::Lam(ty, body) => {
+            bump_convert_stat!(stats, lam_nodes);
             let (name, bi, ty_arena, body_arena) = match node {
               ExprMetaData::Binder { name: addr, info, children } => (
                 resolve_name(addr, ctx.names),
@@ -671,6 +832,7 @@ fn ingress_expr<M: KernelMode>(
           },
 
           IxonExpr::All(ty, body) => {
+            bump_convert_stat!(stats, all_nodes);
             let (name, bi, ty_arena, body_arena) = match node {
               ExprMetaData::Binder { name: addr, info, children } => (
                 resolve_name(addr, ctx.names),
@@ -700,6 +862,7 @@ fn ingress_expr<M: KernelMode>(
           },
 
           IxonExpr::Let(nd, ty, val, body) => {
+            bump_convert_stat!(stats, let_nodes);
             let (name, ty_arena, val_arena, body_arena) = match node {
               ExprMetaData::LetBinder { name: addr, children } => (
                 resolve_name(addr, ctx.names),
@@ -729,6 +892,7 @@ fn ingress_expr<M: KernelMode>(
           },
 
           IxonExpr::Prj(type_ref_idx, field_idx, s) => {
+            bump_convert_stat!(stats, prj_nodes);
             let type_addr = ctx
               .refs
               .get(usize::try_from(*type_ref_idx).map_err(|_e| {
@@ -761,6 +925,7 @@ fn ingress_expr<M: KernelMode>(
           },
 
           IxonExpr::Str(ref_idx) => {
+            bump_convert_stat!(stats, str_nodes);
             let addr = ctx
               .refs
               .get(usize::try_from(*ref_idx).map_err(|_e| {
@@ -781,6 +946,7 @@ fn ingress_expr<M: KernelMode>(
           },
 
           IxonExpr::Nat(ref_idx) => {
+            bump_convert_stat!(stats, nat_nodes);
             let addr = ctx
               .refs
               .get(usize::try_from(*ref_idx).map_err(|_e| {
@@ -863,6 +1029,10 @@ fn ingress_expr<M: KernelMode>(
       ExprFrame::Cache { key } => {
         let result = values.last().unwrap().clone();
         cache.insert(key, result);
+        if stats.enabled {
+          stats.expr_cache_inserts += 1;
+          stats.expr_cache_peak = stats.expr_cache_peak.max(cache.len() as u64);
+        }
       },
     }
   }
@@ -887,8 +1057,10 @@ fn ingress_defn<M: KernelMode>(
   univs: &[Arc<IxonUniv>],
   block: KId<M>,
   intern: &InternTable<M>,
+  stats: &mut ConvertStats,
 ) -> Result<Vec<(KId<M>, KConst<M>)>, String> {
   let mut cache: ExprCache<M> = FxHashMap::default();
+  let mut univ_cache: UnivCache<M> = FxHashMap::default();
   let (level_params, arena, type_root, value_root, hints, safety, all_addrs) =
     match &meta.info {
       ConstantMetaInfo::Def {
@@ -931,8 +1103,24 @@ fn ingress_defn<M: KernelMode>(
     synth_counter: Cell::new(0),
   };
 
-  let typ = ingress_expr(&def.typ, type_root, &ctx, ixon_env, &mut cache)?;
-  let value = ingress_expr(&def.value, value_root, &ctx, ixon_env, &mut cache)?;
+  let typ = ingress_expr(
+    &def.typ,
+    type_root,
+    &ctx,
+    ixon_env,
+    &mut cache,
+    &mut univ_cache,
+    stats,
+  )?;
+  let value = ingress_expr(
+    &def.value,
+    value_root,
+    &ctx,
+    ixon_env,
+    &mut cache,
+    &mut univ_cache,
+    stats,
+  )?;
   let lean_all = resolve_all(&all_addrs, names, name_to_addr)?;
 
   let name = resolve_name(
@@ -973,8 +1161,10 @@ fn ingress_recursor<M: KernelMode>(
   univs: &[Arc<IxonUniv>],
   block: KId<M>,
   intern: &InternTable<M>,
+  stats: &mut ConvertStats,
 ) -> Result<Vec<(KId<M>, KConst<M>)>, String> {
   let mut cache: ExprCache<M> = FxHashMap::default();
+  let mut univ_cache: UnivCache<M> = FxHashMap::default();
   let (level_params, arena, type_root, rule_roots, rule_ctor_addrs, all_addrs) =
     match &meta.info {
       ConstantMetaInfo::Rec {
@@ -1008,7 +1198,15 @@ fn ingress_recursor<M: KernelMode>(
     synth_counter: Cell::new(0),
   };
 
-  let typ = ingress_expr(&rec.typ, type_root, &ctx, ixon_env, &mut cache)?;
+  let typ = ingress_expr(
+    &rec.typ,
+    type_root,
+    &ctx,
+    ixon_env,
+    &mut cache,
+    &mut univ_cache,
+    stats,
+  )?;
   let rules: Result<Vec<RecRule<M>>, String> = rec
     .rules
     .iter()
@@ -1020,7 +1218,15 @@ fn ingress_recursor<M: KernelMode>(
       // falling back to root 0 is fine because the arena is empty — every
       // arena index then misses and degrades to `ExprMetaData::Leaf`.
       let rhs_root = rule_roots.get(i).copied().unwrap_or(0);
-      let rhs = ingress_expr(&rule.rhs, rhs_root, &ctx, ixon_env, &mut cache)?;
+      let rhs = ingress_expr(
+        &rule.rhs,
+        rhs_root,
+        &ctx,
+        ixon_env,
+        &mut cache,
+        &mut univ_cache,
+        stats,
+      )?;
       // `ConstantMetaInfo::Rec::rules[i]` is the name-hash address of the
       // i-th rule's ctor. Resolve it through the names map; fall back to
       // anonymous when metadata is absent (recursor compiled without
@@ -1072,6 +1278,7 @@ fn ingress_standalone<M: KernelMode>(
   names: &FxHashMap<Address, Name>,
   name_to_addr: &FxHashMap<Name, Address>,
   intern: &InternTable<M>,
+  stats: &mut ConvertStats,
 ) -> Result<Vec<(KId<M>, KConst<M>)>, String> {
   let self_id: KId<M> =
     KId::new(addr.clone(), M::meta_field(const_name.clone()));
@@ -1089,10 +1296,12 @@ fn ingress_standalone<M: KernelMode>(
       &constant.univs,
       self_id,
       intern,
+      stats,
     ),
 
     IxonCI::Axio(ax) => {
       let mut cache: ExprCache<M> = FxHashMap::default();
+      let mut univ_cache: UnivCache<M> = FxHashMap::default();
       let (level_params, arena, type_root) = match &meta.info {
         ConstantMetaInfo::Axio { lvls, arena, type_root, .. } => {
           (resolve_level_params(lvls, names), arena, *type_root)
@@ -1110,7 +1319,15 @@ fn ingress_standalone<M: KernelMode>(
         intern,
         synth_counter: Cell::new(0),
       };
-      let typ = ingress_expr(&ax.typ, type_root, &ctx, ixon_env, &mut cache)?;
+      let typ = ingress_expr(
+        &ax.typ,
+        type_root,
+        &ctx,
+        ixon_env,
+        &mut cache,
+        &mut univ_cache,
+        stats,
+      )?;
       let name = resolve_name(
         match &meta.info {
           ConstantMetaInfo::Axio { name, .. } => name,
@@ -1132,6 +1349,7 @@ fn ingress_standalone<M: KernelMode>(
 
     IxonCI::Quot(q) => {
       let mut cache: ExprCache<M> = FxHashMap::default();
+      let mut univ_cache: UnivCache<M> = FxHashMap::default();
       let (level_params, arena, type_root) = match &meta.info {
         ConstantMetaInfo::Quot { lvls, arena, type_root, .. } => {
           (resolve_level_params(lvls, names), arena, *type_root)
@@ -1149,7 +1367,15 @@ fn ingress_standalone<M: KernelMode>(
         intern,
         synth_counter: Cell::new(0),
       };
-      let typ = ingress_expr(&q.typ, type_root, &ctx, ixon_env, &mut cache)?;
+      let typ = ingress_expr(
+        &q.typ,
+        type_root,
+        &ctx,
+        ixon_env,
+        &mut cache,
+        &mut univ_cache,
+        stats,
+      )?;
       let name = resolve_name(
         match &meta.info {
           ConstantMetaInfo::Quot { name, .. } => name,
@@ -1181,6 +1407,7 @@ fn ingress_standalone<M: KernelMode>(
       &constant.univs,
       self_id,
       intern,
+      stats,
     ),
 
     // Projections and Muts are handled in ingress_muts_block
@@ -1208,6 +1435,7 @@ fn ingress_muts_inductive<M: KernelMode>(
   block_id: KId<M>,
   member_idx: u64,
   intern: &InternTable<M>,
+  stats: &mut ConvertStats,
 ) -> Result<Vec<(KId<M>, KConst<M>)>, String> {
   let (level_params, arena, type_root, all_addrs, ctor_addrs) = match &meta.info
   {
@@ -1222,6 +1450,7 @@ fn ingress_muts_inductive<M: KernelMode>(
   };
 
   let mut cache: ExprCache<M> = FxHashMap::default();
+  let mut univ_cache: UnivCache<M> = FxHashMap::default();
   let mut_ctx = build_mut_ctx(meta, names, name_to_addr)?;
   let ctx = Ctx {
     sharing: &block_constant.sharing,
@@ -1235,7 +1464,15 @@ fn ingress_muts_inductive<M: KernelMode>(
     synth_counter: Cell::new(0),
   };
 
-  let typ = ingress_expr(&ind.typ, type_root, &ctx, ixon_env, &mut cache)?;
+  let typ = ingress_expr(
+    &ind.typ,
+    type_root,
+    &ctx,
+    ixon_env,
+    &mut cache,
+    &mut univ_cache,
+    stats,
+  )?;
   let lean_all = resolve_all(&all_addrs, names, name_to_addr)?;
   // Constructor KIds: `ctor_addrs` holds the **name-hash** addresses the
   // compile pass stored in `ConstantMetaInfo::Indc::ctors`, but each Ctor
@@ -1282,6 +1519,7 @@ fn ingress_muts_inductive<M: KernelMode>(
   // entry is missing we'd be roundtripping with no arena and synthesize junk
   // binder names. Error loudly instead of silently falling back.
   for (cidx, ctor) in ind.ctors.iter().enumerate() {
+    stats.record_cache_clear(&cache);
     cache.clear();
     let ctor_id = ctor_ids
       .get(cidx)
@@ -1323,9 +1561,17 @@ fn ingress_muts_inductive<M: KernelMode>(
       intern,
       synth_counter: Cell::new(0),
     };
+    let mut ctor_univ_cache: UnivCache<M> = FxHashMap::default();
 
-    let ctor_typ =
-      ingress_expr(&ctor.typ, ctor_type_root, &ctor_ctx, ixon_env, &mut cache)?;
+    let ctor_typ = ingress_expr(
+      &ctor.typ,
+      ctor_type_root,
+      &ctor_ctx,
+      ixon_env,
+      &mut cache,
+      &mut ctor_univ_cache,
+      stats,
+    )?;
 
     results.push((
       ctor_id,
@@ -1355,6 +1601,7 @@ fn ingress_muts_block<M: KernelMode>(
   names: &FxHashMap<Address, Name>,
   name_to_addr: &FxHashMap<Name, Address>,
   intern: &InternTable<M>,
+  stats: &mut ConvertStats,
 ) -> Result<Vec<(KId<M>, KConst<M>)>, String> {
   let block_id: KId<M> =
     KId::new(entry_addr.clone(), M::meta_field(entry_name.clone()));
@@ -1411,6 +1658,7 @@ fn ingress_muts_block<M: KernelMode>(
           block_id.clone(),
           i as u64,
           intern,
+          stats,
         )?);
       },
       IxonMutConst::Recr(rec) => {
@@ -1426,6 +1674,7 @@ fn ingress_muts_block<M: KernelMode>(
           &block_constant.univs,
           block_id.clone(),
           intern,
+          stats,
         )?);
       },
       IxonMutConst::Defn(def) => {
@@ -1441,6 +1690,7 @@ fn ingress_muts_block<M: KernelMode>(
           &block_constant.univs,
           block_id.clone(),
           intern,
+          stats,
         )?);
       },
     }
@@ -1970,6 +2220,7 @@ pub fn ingress_compiled_names(
       Some(c) => c,
       None => continue,
     };
+    let mut stats = ConvertStats::default();
 
     // Check if this is a Muts entry (mutual block) — handle differently
     if matches!(&named.meta.info, ConstantMetaInfo::Muts { .. }) {
@@ -1982,6 +2233,7 @@ pub fn ingress_compiled_names(
           name_map,
           addr_map,
           intern,
+          &mut stats,
         )
       {
         let block_id = entries.first().and_then(|(_, zc)| match zc {
@@ -2020,6 +2272,7 @@ pub fn ingress_compiled_names(
       name_map,
       addr_map,
       intern,
+      &mut stats,
     ) {
       for (id, zc) in entries {
         zenv.insert(id, zc);
@@ -2520,20 +2773,165 @@ enum IngressWorkItem {
   Muts(Name),
 }
 
+#[derive(Default)]
+struct IngressInsertTiming {
+  blocks_ns: u64,
+  consts_ns: u64,
+}
+
+#[derive(Default)]
+struct IngressStreamTimingSnapshot {
+  standalone_items: u64,
+  muts_items: u64,
+  output_consts: u64,
+  missing_consts: u64,
+  lookup_ns: u64,
+  const_get_ns: u64,
+  convert_ns: u64,
+  insert_ns: u64,
+  insert_blocks_ns: u64,
+  insert_consts_ns: u64,
+  convert_stats: ConvertStats,
+}
+
+impl IngressStreamTimingSnapshot {
+  fn merge(mut self, other: Self) -> Self {
+    self.standalone_items += other.standalone_items;
+    self.muts_items += other.muts_items;
+    self.output_consts += other.output_consts;
+    self.missing_consts += other.missing_consts;
+    self.lookup_ns += other.lookup_ns;
+    self.const_get_ns += other.const_get_ns;
+    self.convert_ns += other.convert_ns;
+    self.insert_ns += other.insert_ns;
+    self.insert_blocks_ns += other.insert_blocks_ns;
+    self.insert_consts_ns += other.insert_consts_ns;
+    self.convert_stats = self.convert_stats.merge(other.convert_stats);
+    self
+  }
+}
+
+#[derive(Default)]
+struct IxonDropTiming {
+  consts_ns: u64,
+  named_ns: u64,
+  names_ns: u64,
+  blobs_ns: u64,
+  comms_ns: u64,
+}
+
+struct LookupDropTiming {
+  names_ns: u64,
+  name_to_addr_ns: u64,
+}
+
+fn duration_ns(d: Duration) -> u64 {
+  d.as_nanos().min(u128::from(u64::MAX)) as u64
+}
+
+fn elapsed_ns(start: Instant) -> u64 {
+  duration_ns(start.elapsed())
+}
+
+fn seconds(ns: u64) -> f64 {
+  ns as f64 / 1_000_000_000.0
+}
+
+fn percent(part: u64, total: u64) -> f64 {
+  if total == 0 { 0.0 } else { (part as f64 * 100.0) / total as f64 }
+}
+
+fn timed_drop_ns<T>(value: T) -> u64 {
+  let start = Instant::now();
+  drop(value);
+  elapsed_ns(start)
+}
+
+fn parallel_ixon_drop_enabled() -> bool {
+  std::env::var_os("IX_PARALLEL_IXON_DROP").is_some()
+}
+
+fn ingress_convert_stats_enabled() -> bool {
+  std::env::var_os("IX_INGRESS_CONVERT_STATS").is_some()
+}
+
+fn drop_ingress_lookups(
+  names: FxHashMap<Address, Name>,
+  name_to_addr: FxHashMap<Name, Address>,
+  quiet: bool,
+) {
+  let total_start = Instant::now();
+  let names_len = names.len();
+  let name_to_addr_len = name_to_addr.len();
+  let parallel = parallel_ixon_drop_enabled();
+
+  let timing = if parallel {
+    let names_ns = AtomicU64::new(0);
+    let name_to_addr_ns = AtomicU64::new(0);
+
+    rayon::scope(|s| {
+      s.spawn(|_| {
+        names_ns.store(timed_drop_ns(names), Ordering::Relaxed);
+      });
+      s.spawn(|_| {
+        name_to_addr_ns.store(timed_drop_ns(name_to_addr), Ordering::Relaxed);
+      });
+    });
+
+    LookupDropTiming {
+      names_ns: names_ns.load(Ordering::Relaxed),
+      name_to_addr_ns: name_to_addr_ns.load(Ordering::Relaxed),
+    }
+  } else {
+    LookupDropTiming {
+      names_ns: timed_drop_ns(names),
+      name_to_addr_ns: timed_drop_ns(name_to_addr),
+    }
+  };
+
+  let total_ns = elapsed_ns(total_start);
+  if !quiet {
+    eprintln!(
+      "[ixon_ingress] drop lookups: {:.2}s {} \
+       (names {:.2}s/{} name_to_addr {:.2}s/{})",
+      seconds(total_ns),
+      if parallel { "parallel" } else { "sequential" },
+      seconds(timing.names_ns),
+      names_len,
+      seconds(timing.name_to_addr_ns),
+      name_to_addr_len
+    );
+  }
+}
+
 fn insert_standalone_entries<M: KernelMode>(
   zenv: &KEnv<M>,
   entries: Vec<(KId<M>, KConst<M>)>,
-) {
-  for (id, zc) in entries {
+) -> IngressInsertTiming {
+  let mut timing = IngressInsertTiming::default();
+
+  let phase_start = Instant::now();
+  for (id, _) in &entries {
     zenv.blocks.entry(id.clone()).or_default().push(id.clone());
+  }
+  timing.blocks_ns = elapsed_ns(phase_start);
+
+  let phase_start = Instant::now();
+  for (id, zc) in entries {
     zenv.insert(id, zc);
   }
+  timing.consts_ns = elapsed_ns(phase_start);
+
+  timing
 }
 
 fn insert_muts_entries<M: KernelMode>(
   zenv: &KEnv<M>,
   entries: Vec<(KId<M>, KConst<M>)>,
-) {
+) -> IngressInsertTiming {
+  let mut timing = IngressInsertTiming::default();
+
+  let phase_start = Instant::now();
   let block_id = entries.first().and_then(|(_, zc)| match zc {
     KConst::Defn { block, .. }
     | KConst::Recr { block, .. }
@@ -2545,9 +2943,15 @@ fn insert_muts_entries<M: KernelMode>(
   if let Some(bid) = block_id {
     zenv.blocks.insert(bid, member_ids);
   }
+  timing.blocks_ns = elapsed_ns(phase_start);
+
+  let phase_start = Instant::now();
   for (id, zc) in entries {
     zenv.insert(id, zc);
   }
+  timing.consts_ns = elapsed_ns(phase_start);
+
+  timing
 }
 
 /// Convert an Ixon environment to a zero kernel environment.
@@ -2567,15 +2971,81 @@ pub fn ixon_ingress_owned<M: KernelMode>(
 ) -> Result<(KEnv<M>, InternTable<M>), String> {
   let quiet = std::env::var_os("IX_QUIET").is_some();
   let result = ixon_ingress_inner(&ixon_env);
-  let phase_start = Instant::now();
-  drop(ixon_env);
+  drop_ixon_env(ixon_env, quiet);
+  result
+}
+
+fn drop_ixon_env(ixon_env: IxonEnv, quiet: bool) {
+  let total_start = Instant::now();
+  let IxonEnv { consts, named, blobs, names, comms } = ixon_env;
+  let consts_len = consts.len();
+  let named_len = named.len();
+  let names_len = names.len();
+  let blobs_len = blobs.len();
+  let comms_len = comms.len();
+
+  let parallel = parallel_ixon_drop_enabled();
+  let timing = if parallel {
+    let consts_ns = AtomicU64::new(0);
+    let named_ns = AtomicU64::new(0);
+    let names_ns = AtomicU64::new(0);
+    let blobs_ns = AtomicU64::new(0);
+    let comms_ns = AtomicU64::new(0);
+
+    rayon::scope(|s| {
+      s.spawn(|_| {
+        consts_ns.store(timed_drop_ns(consts), Ordering::Relaxed);
+      });
+      s.spawn(|_| {
+        named_ns.store(timed_drop_ns(named), Ordering::Relaxed);
+      });
+      s.spawn(|_| {
+        names_ns.store(timed_drop_ns(names), Ordering::Relaxed);
+      });
+      s.spawn(|_| {
+        blobs_ns.store(timed_drop_ns(blobs), Ordering::Relaxed);
+      });
+      s.spawn(|_| {
+        comms_ns.store(timed_drop_ns(comms), Ordering::Relaxed);
+      });
+    });
+
+    IxonDropTiming {
+      consts_ns: consts_ns.load(Ordering::Relaxed),
+      named_ns: named_ns.load(Ordering::Relaxed),
+      names_ns: names_ns.load(Ordering::Relaxed),
+      blobs_ns: blobs_ns.load(Ordering::Relaxed),
+      comms_ns: comms_ns.load(Ordering::Relaxed),
+    }
+  } else {
+    IxonDropTiming {
+      consts_ns: timed_drop_ns(consts),
+      named_ns: timed_drop_ns(named),
+      names_ns: timed_drop_ns(names),
+      blobs_ns: timed_drop_ns(blobs),
+      comms_ns: timed_drop_ns(comms),
+    }
+  };
+
+  let total_ns = elapsed_ns(total_start);
   if !quiet {
     eprintln!(
-      "[ixon_ingress] drop ixon_env: {:.2}s",
-      phase_start.elapsed().as_secs_f32()
+      "[ixon_ingress] drop ixon_env: {:.2}s {} \
+       (consts {:.2}s/{} named {:.2}s/{} names {:.2}s/{} blobs {:.2}s/{} comms {:.2}s/{})",
+      seconds(total_ns),
+      if parallel { "parallel" } else { "sequential" },
+      seconds(timing.consts_ns),
+      consts_len,
+      seconds(timing.named_ns),
+      named_len,
+      seconds(timing.names_ns),
+      names_len,
+      seconds(timing.blobs_ns),
+      blobs_len,
+      seconds(timing.comms_ns),
+      comms_len
     );
   }
-  result
 }
 
 fn ixon_ingress_inner<M: KernelMode>(
@@ -2678,18 +3148,35 @@ fn ixon_ingress_inner<M: KernelMode>(
   // memory bounded by in-flight worker outputs instead of materializing every
   // converted constant before assembly.
   let phase_start = Instant::now();
+  let convert_stats_enabled = ingress_convert_stats_enabled();
   let zenv: KEnv<M> = KEnv::new();
-  work_items.into_par_iter().try_for_each(
-    |work_item| -> Result<(), String> {
+  let stream = work_items
+    .into_par_iter()
+    .map(|work_item| -> Result<IngressStreamTimingSnapshot, String> {
+      let mut timing = IngressStreamTimingSnapshot::default();
+      let mut convert_stats = ConvertStats::new(convert_stats_enabled);
       match work_item {
         IngressWorkItem::Standalone(const_name) => {
+          timing.standalone_items += 1;
+          let lookup_start = Instant::now();
           let named = ixon_env
             .lookup_name(&const_name)
             .ok_or_else(|| format!("{const_name}: missing Named entry"))?;
+          timing.lookup_ns += elapsed_ns(lookup_start);
+
+          let const_start = Instant::now();
           let constant = match ixon_env.get_const(&named.addr) {
-            Some(c) => c,
-            None => return Ok(()),
+            Some(c) => {
+              timing.const_get_ns += elapsed_ns(const_start);
+              c
+            },
+            None => {
+              timing.const_get_ns += elapsed_ns(const_start);
+              timing.missing_consts += 1;
+              return Ok(timing);
+            },
           };
+          let convert_start = Instant::now();
           let entries = ingress_standalone(
             &const_name,
             &named.addr,
@@ -2699,18 +3186,31 @@ fn ixon_ingress_inner<M: KernelMode>(
             &names,
             &name_to_addr,
             &intern,
+            &mut convert_stats,
           )
           .map_err(|e| format!("{const_name}: {e}"))?;
-          insert_standalone_entries(&zenv, entries);
+          timing.convert_ns += elapsed_ns(convert_start);
+          timing.output_consts += entries.len() as u64;
+
+          let insert_start = Instant::now();
+          let insert_timing = insert_standalone_entries(&zenv, entries);
+          timing.insert_ns += elapsed_ns(insert_start);
+          timing.insert_blocks_ns += insert_timing.blocks_ns;
+          timing.insert_consts_ns += insert_timing.consts_ns;
         },
         IngressWorkItem::Muts(entry_name) => {
+          timing.muts_items += 1;
+          let lookup_start = Instant::now();
           let named = ixon_env
             .lookup_name(&entry_name)
             .ok_or_else(|| format!("{entry_name}: missing Named entry"))?;
+          timing.lookup_ns += elapsed_ns(lookup_start);
+
           let all = match &named.meta.info {
             ConstantMetaInfo::Muts { all, .. } => all,
-            _ => return Ok(()),
+            _ => return Ok(timing),
           };
+          let convert_start = Instant::now();
           let entries = ingress_muts_block(
             &entry_name,
             &named.addr,
@@ -2719,19 +3219,86 @@ fn ixon_ingress_inner<M: KernelMode>(
             &names,
             &name_to_addr,
             &intern,
+            &mut convert_stats,
           )
           .map_err(|e| format!("{entry_name}: {e}"))?;
-          insert_muts_entries(&zenv, entries);
+          timing.convert_ns += elapsed_ns(convert_start);
+          timing.output_consts += entries.len() as u64;
+
+          let insert_start = Instant::now();
+          let insert_timing = insert_muts_entries(&zenv, entries);
+          timing.insert_ns += elapsed_ns(insert_start);
+          timing.insert_blocks_ns += insert_timing.blocks_ns;
+          timing.insert_consts_ns += insert_timing.consts_ns;
         },
       }
-      Ok(())
-    },
-  )?;
+      timing.convert_stats = convert_stats;
+      Ok(timing)
+    })
+    .try_reduce(IngressStreamTimingSnapshot::default, |a, b| Ok(a.merge(b)))?;
   if !quiet {
     eprintln!(
       "[ixon_ingress] stream ingress+insert: {:.2}s",
       phase_start.elapsed().as_secs_f32()
     );
+    eprintln!(
+      "[ixon_ingress]   stream detail (worker-sum): lookup {:.2}s, const_get {:.2}s, convert {:.2}s, insert {:.2}s (blocks {:.2}s, consts {:.2}s), work {} standalone/{} muts, output {} consts, missing {}",
+      seconds(stream.lookup_ns),
+      seconds(stream.const_get_ns),
+      seconds(stream.convert_ns),
+      seconds(stream.insert_ns),
+      seconds(stream.insert_blocks_ns),
+      seconds(stream.insert_consts_ns),
+      stream.standalone_items,
+      stream.muts_items,
+      stream.output_consts,
+      stream.missing_consts
+    );
+    let cs = &stream.convert_stats;
+    if cs.enabled {
+      let cache_lookups = cs.expr_cache_hits + cs.expr_cache_misses;
+      eprintln!(
+        "[ixon_ingress]   convert cache: roots {} process {} hits {} misses {} hit {:.1}% inserts {} peak {} clears {} cleared {} shares {}",
+        cs.expr_roots,
+        cs.expr_process,
+        cs.expr_cache_hits,
+        cs.expr_cache_misses,
+        percent(cs.expr_cache_hits, cache_lookups),
+        cs.expr_cache_inserts,
+        cs.expr_cache_peak,
+        cs.expr_cache_clears,
+        cs.expr_cache_entries_cleared,
+        cs.share_expansions
+      );
+      eprintln!(
+        "[ixon_ingress]   convert nodes: sort {} var {} ref {} rec {} app {} lam {} all {} let {} prj {} str {} nat {} callsites {} args {}",
+        cs.sort_nodes,
+        cs.var_nodes,
+        cs.ref_nodes,
+        cs.rec_nodes,
+        cs.app_nodes,
+        cs.lam_nodes,
+        cs.all_nodes,
+        cs.let_nodes,
+        cs.prj_nodes,
+        cs.str_nodes,
+        cs.nat_nodes,
+        cs.callsites,
+        cs.callsite_args
+      );
+      eprintln!(
+        "[ixon_ingress]   convert metadata/univ: mdata_nodes {} mdata_kv_maps {} univ_roots {} univ_cache_hits {} univ_cache_misses {} univ_hit {:.1}% univ_cache_peak {} univ_process {} univ_interns {}",
+        cs.mdata_nodes,
+        cs.mdata_kv_maps,
+        cs.univ_roots,
+        cs.univ_cache_hits,
+        cs.univ_cache_misses,
+        percent(cs.univ_cache_hits, cs.univ_cache_hits + cs.univ_cache_misses),
+        cs.univ_cache_peak,
+        cs.univ_process,
+        cs.univ_interns
+      );
+    }
     eprintln!(
       "[ixon_ingress] complete: {:.2}s ({} consts, {} blocks)",
       total_start.elapsed().as_secs_f32(),
@@ -2739,6 +3306,8 @@ fn ixon_ingress_inner<M: KernelMode>(
       zenv.blocks.len()
     );
   }
+
+  drop_ingress_lookups(names, name_to_addr, quiet);
 
   Ok((zenv, intern))
 }
@@ -3263,8 +3832,19 @@ mod tests {
     };
     let ixon_env = IxonEnv::new();
     let mut cache = ExprCache::<Meta>::default();
+    let mut univ_cache = UnivCache::<Meta>::default();
 
-    let k = ingress_expr(&ixon, root, &ctx, &ixon_env, &mut cache).unwrap();
+    let mut stats = ConvertStats::default();
+    let k = ingress_expr(
+      &ixon,
+      root,
+      &ctx,
+      &ixon_env,
+      &mut cache,
+      &mut univ_cache,
+      &mut stats,
+    )
+    .unwrap();
     let ExprData::App(f, a, _) = k.data() else {
       panic!("expected App, got {:?}", k.data());
     };
