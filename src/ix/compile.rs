@@ -2986,10 +2986,23 @@ pub fn sort_consts<'a>(
   cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<Vec<Vec<&'a MutConst>>, CompileError> {
+  let dump = std::env::var("IX_RECURSOR_DUMP")
+    .ok()
+    .filter(|s| !s.is_empty())
+    .filter(|prefix| {
+      cs.iter().any(|c| c.name().pretty().contains(prefix.as_str()))
+    });
   // Sort by name first to match Lean's behavior and ensure deterministic output
   let mut sorted_cs: Vec<&'a MutConst> = cs.to_owned();
   sorted_cs.sort_by_key(|x| x.name());
+  if dump.is_some() {
+    eprintln!("[compile.sort_consts] seed-sorted by name:");
+    for (i, c) in sorted_cs.iter().enumerate() {
+      eprintln!("  seed[{i}] {}", c.name().pretty());
+    }
+  }
   let mut classes = vec![sorted_cs];
+  let mut iter = 0;
   loop {
     let ctx = MutConst::ctx(&classes);
     let mut new_classes: Vec<Vec<&MutConst>> = vec![];
@@ -3011,9 +3024,24 @@ pub fn sort_consts<'a>(
         },
       }
     }
-    for class in &mut new_classes {
-      class.sort_by_key(|x| x.name())
+    if dump.is_some() {
+      eprintln!("[compile.sort_consts] iter {iter} → classes:");
+      for (ci, class) in new_classes.iter().enumerate() {
+        for (mi, m) in class.iter().enumerate() {
+          eprintln!("  c[{ci}][{mi}] {}", m.name().pretty());
+        }
+      }
     }
+    iter += 1;
+    // No within-class re-sort by name. Items in a class are either
+    // alpha-equivalent (any rep is fine) or weak-Equal pending future
+    // refinement (and their order is whatever `sort_by_compare` gave —
+    // stable on previous-iter order). Re-sorting by name here would
+    // promote that "tentatively equal" relationship into a name-derived
+    // tiebreak that propagates through subsequent iterations as if it
+    // were a structural fact, producing a name-dependent canonical
+    // order for purely-structural alpha-equivalence classes. Mirrors
+    // the same removal in the kernel's `sort_kconsts_with_seed_key`.
     if classes == new_classes {
       return Ok(new_classes);
     }

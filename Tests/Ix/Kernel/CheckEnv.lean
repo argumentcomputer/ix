@@ -133,6 +133,8 @@ def focusConsts : Array Lean.Name := #[
   Lean.mkPrivateNameCore `Init.Data.Char.Ordinal
     `Char.ofOrdinal_ordinal._proof_1_4,
   `String.toByteArray_empty,
+  -- Nested auxiliary recursor canonical-order mismatch.
+  `Lean.Json.rec_1,
   -- Extended-structure projection regression coverage. These exercise
   -- chained projections generated for `structure HeaderParsedSnapshot extends
   -- Snapshot`.

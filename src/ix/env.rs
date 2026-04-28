@@ -330,6 +330,97 @@ impl Level {
     hasher.update(y.get_hash().as_bytes());
     Level(Arc::new(LevelData::Max(x, y, hasher.finalize())))
   }
+  /// Smart `max x y` constructor mirroring the kernel's `KUniv::max`. Applies
+  /// Lean-style level simplifications so substituted levels match the
+  /// canonical form the kernel sees post-ingress: `max(a,a)=a`, zero
+  /// absorption, same-base offset, and `Max` absorption. Used by
+  /// canonical-aux sorting, where compile-side and kernel-side must agree
+  /// on `Sort` levels under partition refinement (see
+  /// `kernel/level.rs:KUniv::max`).
+  pub fn max_smart(x: Level, y: Level) -> Self {
+    if let (Some((bx, ox)), Some((by, oy))) = (x.explicit_offset(), y.explicit_offset()) {
+      // Both explicit numerals (Succ^n(Zero)): take the larger.
+      let _ = (bx, by);
+      return if ox >= oy { x } else { y };
+    }
+    if x == y {
+      return x;
+    }
+    if matches!(x.as_data(), LevelData::Zero(_)) {
+      return y;
+    }
+    if matches!(y.as_data(), LevelData::Zero(_)) {
+      return x;
+    }
+    // max(a, max(a, b')) = max(a, b'), max(a, max(b', a)) = max(b', a)
+    if let LevelData::Max(bl, br, _) = y.as_data()
+      && (*bl == x || *br == x)
+    {
+      return y;
+    }
+    // max(max(a', b), b) = max(a', b), max(max(b, a'), b) = max(b, a')
+    if let LevelData::Max(al, ar, _) = x.as_data()
+      && (*al == y || *ar == y)
+    {
+      return x;
+    }
+    // Same base, different offsets: succ^n(x) vs succ^m(x) → take larger.
+    let (base_x, off_x) = x.peel_succ();
+    let (base_y, off_y) = y.peel_succ();
+    if base_x == base_y {
+      return if off_x >= off_y { x } else { y };
+    }
+    Self::max(x, y)
+  }
+  /// Smart `imax x y` constructor mirroring the kernel's `KUniv::imax`.
+  /// Applies Lean-style simplifications: when `y` is provably never zero
+  /// (succ-headed), `imax = max`; `imax(_, 0) = 0`; `imax(0, b) = b`;
+  /// `imax(1, b) = b`; `imax(a, a) = a`. Used in the same canonical-sort
+  /// path as [`Level::max_smart`].
+  pub fn imax_smart(x: Level, y: Level) -> Self {
+    // y "never zero" cases: succ-headed levels are always > 0, so
+    // imax(a, succ _) = max(a, succ _).
+    if matches!(y.as_data(), LevelData::Succ(_, _)) {
+      return Self::max_smart(x, y);
+    }
+    if matches!(y.as_data(), LevelData::Zero(_)) {
+      return y; // imax(a, 0) = 0
+    }
+    if matches!(x.as_data(), LevelData::Zero(_)) {
+      return y; // imax(0, b) = b
+    }
+    // imax(1, b) = b
+    if let LevelData::Succ(inner, _) = x.as_data()
+      && matches!(inner.as_data(), LevelData::Zero(_))
+    {
+      return y;
+    }
+    if x == y {
+      return x;
+    }
+    Self::imax(x, y)
+  }
+  /// Peel a chain of `Succ` constructors. Returns `(base, n)` where
+  /// `level == Succ^n(base)` and `base` is not a `Succ`.
+  pub fn peel_succ(&self) -> (Level, u64) {
+    let mut cur = self.clone();
+    let mut n: u64 = 0;
+    while let LevelData::Succ(inner, _) = cur.as_data() {
+      n += 1;
+      cur = inner.clone();
+    }
+    (cur, n)
+  }
+  /// If this level is an explicit numeral `Succ^n(Zero)`, returns
+  /// `Some((Zero, n))`. Otherwise returns `None`.
+  pub fn explicit_offset(&self) -> Option<(Level, u64)> {
+    let (base, n) = self.peel_succ();
+    if matches!(base.as_data(), LevelData::Zero(_)) {
+      Some((base, n))
+    } else {
+      None
+    }
+  }
   /// Constructs `imax x y` (impredicative max).
   pub fn imax(x: Level, y: Level) -> Self {
     let mut hasher = blake3::Hasher::new();

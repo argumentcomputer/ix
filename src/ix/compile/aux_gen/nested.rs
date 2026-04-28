@@ -688,7 +688,58 @@ pub(crate) fn sort_aux_by_partition_refinement(
     all_mut_consts[n_originals..].iter().collect();
   let mut cache = BlockCache::default();
 
+  // Optional debug dump (mirror kernel `canonical_aux_order.dump`). Triggered
+  // when `IX_RECURSOR_DUMP` matches the all0 name. Used to compare against the
+  // kernel's reconstruction.
+  let dump = std::env::var("IX_RECURSOR_DUMP")
+    .ok()
+    .filter(|s| !s.is_empty())
+    .filter(|prefix| {
+      expanded
+        .types
+        .first()
+        .is_some_and(|m| m.name.pretty().contains(prefix.as_str()))
+    });
+  if let Some(_) = &dump {
+    let all0 = expanded.types.first().map(|m| m.name.pretty());
+    eprintln!(
+      "[compile.canonical_aux_order.dump] all0={:?} n_aux={} n_block_params={}",
+      all0,
+      aux_consts.len(),
+      expanded.types.first().map(|m| m.n_params).unwrap_or(0)
+    );
+    for (i, c) in aux_consts.iter().enumerate() {
+      let name_pretty = c.name().pretty();
+      if let MutConst::Indc(ind) = c {
+        eprintln!(
+          "  pre-sort[{i}] name={name_pretty} n_ctors={}",
+          ind.ctors.len()
+        );
+        eprintln!("    indc.ty={}", ind.ind.cnst.typ.pretty());
+        for (ci, ctor) in ind.ctors.iter().enumerate() {
+          eprintln!(
+            "    ctor[{ci}].fields={:?} ty={}",
+            ctor.num_fields,
+            ctor.cnst.typ.pretty()
+          );
+        }
+      }
+    }
+  }
+
   let sorted_classes = sort_consts(&aux_consts, &mut cache, stt)?;
+
+  if dump.is_some() {
+    eprintln!("[compile.canonical_aux_order.dump] post-sort classes:");
+    for (ci, class) in sorted_classes.iter().enumerate() {
+      for (mi, m) in class.iter().enumerate() {
+        eprintln!(
+          "  class[{ci}][{mi}] name={}",
+          m.name().pretty()
+        );
+      }
+    }
+  }
 
   let n_canon = sorted_classes.len();
 

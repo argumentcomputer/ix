@@ -878,6 +878,16 @@ pub(crate) fn subst_levels(
 }
 
 /// Substitute universe parameters in a level.
+///
+/// Uses the smart constructors `Level::max_smart` and `Level::imax_smart` so
+/// that substituting away parameters produces the same canonical form the
+/// kernel sees post-ingress (`KUniv::max` does the same simplifications at
+/// kernel-side construction time). Without this normalization, `Max(Succ Param u,
+/// Succ Param v)` substituted to `Max(Succ Zero, Succ Zero)` stays as a `Max`
+/// node compile-side while the kernel collapses it to `Succ Zero` —
+/// `sort_aux_by_partition_refinement` would then disagree with the kernel's
+/// `canonical_aux_order` on whether two structurally-different aux types
+/// (e.g. `Sort 1` vs `Sort (max 1 1)`) are equivalent.
 pub(super) fn subst_level(
   lvl: &Level,
   params: &[Name],
@@ -886,16 +896,19 @@ pub(super) fn subst_level(
   match lvl.as_data() {
     LevelData::Zero(_) | LevelData::Mvar(_, _) => lvl.clone(),
     LevelData::Succ(l, _) => {
-      // Use raw Level::succ, matching Lean's Level.instantiateParams.
-      // mk_level_succ distributes Succ over Max (Succ(Max(a,b)) →
-      // Max(Succ(a),Succ(b))), but Lean preserves the factored form.
       Level::succ(subst_level(l, params, univs))
     },
     LevelData::Max(a, b, _) => {
-      Level::max(subst_level(a, params, univs), subst_level(b, params, univs))
+      Level::max_smart(
+        subst_level(a, params, univs),
+        subst_level(b, params, univs),
+      )
     },
     LevelData::Imax(a, b, _) => {
-      Level::imax(subst_level(a, params, univs), subst_level(b, params, univs))
+      Level::imax_smart(
+        subst_level(a, params, univs),
+        subst_level(b, params, univs),
+      )
     },
     LevelData::Param(name, _) => {
       for (i, p) in params.iter().enumerate() {

@@ -666,16 +666,15 @@ pub fn sort_kconsts_with_seed_key<'a, M: KernelMode>(
         },
       }
     }
-    // Tiebreak within each class using the same seed key. For aux constants
-    // this mirrors compile-side `class.sort_by_key(|x| x.name())`, which
-    // determines the representative of an alpha-equivalence class.
-    for class in new_classes.iter_mut() {
-      class.sort_by(|a, b| {
-        seed_key(&a.0, a.1)
-          .cmp(&seed_key(&b.0, b.1))
-          .then_with(|| a.0.addr.cmp(&b.0.addr))
-      });
-    }
+    // No within-class re-sort by seed_key. Items in a class are either
+    // alpha-equivalent (and any rep is fine) or weak-Equal pending future
+    // refinement (and their order is whatever `sort_by_compare` gave —
+    // stable on previous-iter order). Re-sorting by seed_key here would
+    // turn that "tentatively equal" relationship into a name-derived
+    // tiebreak that propagates through subsequent iterations as if it
+    // were a structural fact, producing different canonical orders for
+    // identical content depending on Meta/Anon mode and discovery
+    // numbering. See `docs/ix_canonicity.md` and the rationale below.
     if classes_eq(&classes, &new_classes) {
       return new_classes;
     }

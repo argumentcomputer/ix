@@ -62,7 +62,7 @@ pub(crate) fn compile_aux_block(
   lean_env: &Arc<LeanEnv>,
   stt: &CompileState,
 ) -> Result<(), CompileError> {
-  compile_aux_block_with_rename(aux_consts, lean_env, stt, None)
+  compile_aux_block_with_rename(aux_consts, lean_env, stt, None, None)
 }
 
 /// Like `compile_aux_block`, but applies an optional name-rename map when
@@ -85,14 +85,26 @@ pub(crate) fn compile_aux_block(
 ///   * `muts_all` name hashes   — so kernel ingress's `ingress_muts_block`
 ///     looks up the source Named entry at each canonical block position
 ///
-/// The block's internal order (and sort_consts decisions) are *not*
-/// affected by the rename — they still use canonical names for
-/// deterministic ordering.
+/// `class_order_key`, when provided, is used to reorder the classes
+/// produced by `sort_consts` before they're laid out in the block. Used by
+/// the recursor block path to align stored block positions with the
+/// inductive block's flat layout: the kernel's `populate_recursor_rules_from_block`
+/// expects `rec_block[i]` to be the recursor for `flat[i]`, where `flat` is
+/// `[originals (in inductive-block class order), aux (in canonical_aux_order)]`.
+/// Without this reorder, `sort_consts` on recursors picks an independent
+/// canonical permutation that diverges from the inductive block's layout.
+/// See `docs/ix_canonicity.md` §6.2 and the rationale in
+/// `kernel::inductive::populate_recursor_rules_from_block`.
+///
+/// The class ordering produced by `sort_consts` is preserved as a
+/// stable tiebreak: classes that map to `u64::MAX` (no key entry) keep
+/// their `sort_consts` relative position at the tail.
 pub(crate) fn compile_aux_block_with_rename(
   aux_consts: &[MutConst],
   lean_env: &Arc<LeanEnv>,
   stt: &CompileState,
   name_rename: Option<&FxHashMap<Name, Name>>,
+  class_order_key: Option<&dyn Fn(&MutConst) -> u64>,
 ) -> Result<(), CompileError> {
   if aux_consts.is_empty() {
     return Ok(());
@@ -109,7 +121,20 @@ pub(crate) fn compile_aux_block_with_rename(
 
   // Sort into equivalence classes (same algorithm as compile_mutual).
   let refs: Vec<&MutConst> = aux_consts.iter().collect();
-  let sorted_classes = sort_consts(&refs, &mut cache, stt)?;
+  let mut sorted_classes = sort_consts(&refs, &mut cache, stt)?;
+
+  // Optional class reorder: callers (recursor block path) supply a key
+  // that maps each class member to its canonical block position. Sort
+  // classes by the minimum key over the class — well-formed callers give
+  // every member of a class the same key, so this is just `key(class[0])`
+  // in practice. `sort_by_key` is stable, so classes with the same key
+  // keep their `sort_consts` relative order.
+  if let Some(key_fn) = class_order_key {
+    sorted_classes.sort_by_key(|class| {
+      class.iter().map(|c| key_fn(c)).min().unwrap_or(u64::MAX)
+    });
+  }
+
   let mut_ctx = MutConst::ctx(&sorted_classes);
 
   let mut exprs = Vec::new();
@@ -590,6 +615,26 @@ pub(crate) fn generate_and_compile_aux_recursors(
   let aux_name_rename: FxHashMap<Name, Name> = FxHashMap::default();
 
   // Phase 2: Compile canonical recursors.
+  //
+  // The recursor block's storage order must align with the inductive
+  // block's flat layout, so the kernel's
+  // `populate_recursor_rules_from_block` can match `rec_block[i]` with
+  // `flat[i]` positionally (no signature search). The desired order is:
+  //
+  //   * positions `[0..n_originals)`: rec for original i, in inductive
+  //     block class order (`aux_class_names`, which mirrors
+  //     `compile_mutual`'s `sorted_classes` filtered to inductives).
+  //   * positions `[n_originals..total)`: rec for canonical aux ci.
+  //     Aux recursor name is `<original_all[0]>.rec_{source_j+1}` where
+  //     `source_j = source_of_canonical[ci]` (min source position
+  //     mapping to that canonical aux).
+  //
+  // We build a name → canonical-position map, then pass it to
+  // `compile_aux_block_with_rename` as a class-order key so the recursor
+  // block lays out classes in canonical position order. Without this,
+  // `sort_consts` on recursors would pick its own (independent)
+  // permutation that diverges from the inductive block — see the
+  // `populate_recursor_rules_from_block` comment in the kernel.
   let t1 = std::time::Instant::now();
   let rec_consts: Vec<MutConst> = patches
     .iter()
@@ -599,11 +644,45 @@ pub(crate) fn generate_and_compile_aux_recursors(
     })
     .collect();
   if !rec_consts.is_empty() {
+    let mut name_to_pos: FxHashMap<Name, u64> = FxHashMap::default();
+    let n_originals_in_block = aux_class_names.len();
+    for (pos, class) in aux_class_names.iter().enumerate() {
+      for member_name in class {
+        let rec_name = Name::str(member_name.clone(), "rec".to_string());
+        name_to_pos.insert(rec_name, pos as u64);
+      }
+    }
+    if let Some(perm) = aux_out.perm.as_ref()
+      && !perm.is_empty()
+    {
+      let n_canon = aux_out.n_canonical_aux;
+      let mut source_of_canonical: Vec<usize> = vec![usize::MAX; n_canon];
+      for (src_j, &canon_i) in perm.iter().enumerate() {
+        if canon_i < n_canon && source_of_canonical[canon_i] == usize::MAX {
+          source_of_canonical[canon_i] = src_j;
+        }
+      }
+      for (canonical_i, &source_j) in source_of_canonical.iter().enumerate() {
+        if source_j == usize::MAX {
+          continue;
+        }
+        let aux_rec_name = Name::str(
+          original_all[0].clone(),
+          format!("rec_{}", source_j + 1),
+        );
+        name_to_pos
+          .insert(aux_rec_name, (n_originals_in_block + canonical_i) as u64);
+      }
+    }
+    let class_order_key = |c: &MutConst| -> u64 {
+      name_to_pos.get(&c.name()).copied().unwrap_or(u64::MAX)
+    };
     compile_aux_block_with_rename(
       &rec_consts,
       lean_env,
       stt,
       Some(&aux_name_rename),
+      Some(&class_order_key),
     )?;
   }
   // Some later generated wrappers are named under alpha-collapsed aliases
@@ -691,6 +770,7 @@ pub(crate) fn generate_and_compile_aux_recursors(
       lean_env,
       stt,
       Some(&aux_name_rename),
+      None,
     )?;
     // Note: constructor names are already correctly set by rename_below_indc
     // during alias patching. register_below_ctor_aliases was removed because
@@ -721,6 +801,7 @@ pub(crate) fn generate_and_compile_aux_recursors(
       lean_env,
       stt,
       Some(&aux_name_rename),
+      None,
     )?;
   }
   let below_elapsed = t4.elapsed();
@@ -750,6 +831,7 @@ pub(crate) fn generate_and_compile_aux_recursors(
         lean_env,
         stt,
         Some(&aux_name_rename),
+        None,
       )?;
     }
   }
