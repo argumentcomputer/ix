@@ -673,6 +673,16 @@ impl<M: KernelMode> TypeChecker<M> {
   /// A nested occurrence is: after peeling foralls, the result is `ExtInd Ds is`
   /// where `ExtInd` is a previously-declared inductive (not in our block) and
   /// some param arg `Ds[i]` mentions a block inductive.
+  ///
+  /// **Important: do not WHNF the domain here.** Compile-side
+  /// `replace_if_nested` (and Lean's C++ `is_nested_inductive_app`,
+  /// `inductive.cpp:920`) checks the head literally — if the head is a
+  /// definition like `IO.Ref`, it is *not* a nested-inductive occurrence.
+  /// WHNF would unfold `IO.Ref α` to `ST.Ref IO.RealWorld α`, which IS an
+  /// inductive — the kernel would then synthesize auxiliaries (e.g.
+  /// `_nested.ST_Ref_*`) that the compile side never generates, and
+  /// `populate_recursor_rules_from_block` would fail with `rec_ids/flat
+  /// count mismatch`. Peel `All` constructors structurally instead.
   fn try_detect_nested(
     &mut self,
     dom: &KExpr<M>,
@@ -683,17 +693,10 @@ impl<M: KernelMode> TypeChecker<M> {
     param_depth: usize, // depth at the param context (before field locals)
     n_rec_params: u64, // number of inductive parameters (valid Var refs in spec_params)
   ) {
-    // Peel foralls to get to the result type.
+    // Peel foralls structurally — no WHNF, see doc comment above.
     let mut cur = dom.clone();
-    loop {
-      match self.whnf(&cur) {
-        Ok(w) => cur = w,
-        Err(_) => return,
-      };
-      match cur.data() {
-        ExprData::All(_, _, _, body, _) => cur = body.clone(),
-        _ => break,
-      }
+    while let ExprData::All(_, _, _, body, _) = cur.data() {
+      cur = body.clone();
     }
 
     let (head, args) = collect_app_spine(&cur);
@@ -727,15 +730,20 @@ impl<M: KernelMode> TypeChecker<M> {
       return;
     }
 
-    // Check if any param arg mentions a block inductive (or a flat member).
-    let all_flat_addrs: Vec<Address> =
-      flat.iter().map(|m| m.id.addr.clone()).collect();
-    let combined_addrs: Vec<Address> =
-      block_addrs.iter().chain(all_flat_addrs.iter()).cloned().collect();
+    // Check if any param arg mentions a block original. Match Lean's
+    // `is_nested_inductive_app` (`inductive.cpp:920`) and compile-side
+    // `replace_if_nested`, which check INTERNAL identity (block originals
+    // by name / aux internal names like `_nested.Array_4`). The kernel
+    // doesn't carry internal aux names, only `flat[i].id.addr` — but for an
+    // aux that's the EXTERNAL inductive's address (e.g., `Array`'s addr).
+    // Including those flat addresses here would falsely match unrelated
+    // occurrences such as `Option (Array LazyStep)` (which mentions
+    // `Array`'s addr because `Array_4` shares it, even though `LazyStep`
+    // is not in this block). Originals only.
     let has_nested_ref = args
       .iter()
       .take(ext_n_params)
-      .any(|a| expr_mentions_any_addr(a, &combined_addrs));
+      .any(|a| expr_mentions_any_addr(a, block_addrs));
     if !has_nested_ref {
       return;
     }
