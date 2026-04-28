@@ -28,7 +28,7 @@ def kernelTypes := ⟦
   type KLimbs = List‹U64›
 
   enum KLiteral {
-    Nat(&KLimbs),
+    Nat(KLimbs),
     Str(ByteStream)
   }
 
@@ -36,74 +36,53 @@ def kernelTypes := ⟦
   -- Expressions (de Bruijn indexed, no binder info or names)
   -- ============================================================================
 
-  enum KExpr {
+  enum KExprNode {
     BVar(G),
     Srt(&KLevel),
-    Const(G, &List‹&KLevel›),
-    App(&KExpr, &KExpr),
-    Lam(&KExpr, &KExpr),
-    Forall(&KExpr, &KExpr),
-    Let(&KExpr, &KExpr, &KExpr),
+    Const(G, List‹&KLevel›),
+    App(KExpr, KExpr),
+    Lam(KExpr, KExpr),
+    Forall(KExpr, KExpr),
+    Let(KExpr, KExpr, KExpr),
     Lit(KLiteral),
-    Proj(G, G, &KExpr)
+    Proj(G, G, KExpr)
   }
+
+  type KExpr = &KExprNode
 
   -- ============================================================================
   -- Values (NbE semantic domain)
   -- ============================================================================
 
-  enum KVal {
+  enum KValNode {
     Srt(&KLevel),
     Lit(KLiteral),
-    Lam(&KVal, &KExpr, &KValEnv),
-    Pi(&KVal, &KExpr, &KValEnv),
-    Ctor(G, &List‹&KLevel›, G, &List‹&KVal›),
-    FVar(G, &KVal, &List‹&KVal›),
-    Const(G, &List‹&KLevel›, &List‹&KVal›),
-    Proj(G, G, &KVal, &List‹&KVal›),
-    Thunk(&KExpr, &KValEnv)
+    Lam(KVal, KExpr, KValEnv),
+    Pi(KVal, KExpr, KValEnv),
+    Ctor(G, List‹&KLevel›, G, List‹KVal›),
+    FVar(G, KVal, List‹KVal›),
+    Axiom(G, List‹&KLevel›, List‹KVal›),
+    Defn(G, List‹&KLevel›, List‹KVal›),
+    Thm(G, List‹&KLevel›, List‹KVal›),
+    Opaque(G, List‹&KLevel›, List‹KVal›),
+    Quot(G, List‹&KLevel›, List‹KVal›),
+    Induct(G, List‹&KLevel›, List‹KVal›),
+    Rec(G, List‹&KLevel›, List‹KVal›),
+    Proj(G, G, KVal, List‹KVal›),
+    Thunk(KExpr, KValEnv)
   }
+
+  type KVal = &KValNode
 
   -- Value environment (de Bruijn indexed, front = most recent binder)
-  type KValEnv = List‹&KVal›
-
-  -- ============================================================================
-  -- Reducibility Hints
-  -- ============================================================================
-
-  enum KHints {
-    Opaque,
-    Abbrev,
-    Regular(G)
-  }
-
-  -- ============================================================================
-  -- Definition Safety
-  -- ============================================================================
-
-  enum KSafety {
-    Unsafe,
-    Safe,
-    Partial
-  }
-
-  -- ============================================================================
-  -- Quotient Kind
-  -- ============================================================================
-
-  enum KQuotKind {
-    Typ,
-    Ctor,
-    Lift,
-    Ind
-  }
+  type KValEnv = List‹KVal›
 
   -- ============================================================================
   -- Recursor Rule: (ctor_const_idx, num_fields, rhs)
   -- ============================================================================
 
   enum KRecRule {
-    Mk(G, G, &KExpr)
+    Mk(G, G, KExpr)
   }
 
   -- ============================================================================
@@ -123,14 +102,14 @@ def kernelTypes := ⟦
   -- ============================================================================
 
   enum KConstantInfo {
-    Axiom(G, &KExpr, G),
-    Defn(G, &KExpr, &KExpr, KHints, KSafety),
-    Thm(G, &KExpr, &KExpr),
-    Opaque(G, &KExpr, &KExpr, G),
-    Quot(G, &KExpr, KQuotKind),
-    Induct(G, &KExpr, G, G, &List‹G›, G, G, G),
-    Ctor(G, &KExpr, G, G, G, G, G),
-    Rec(G, &KExpr, G, G, G, G, &List‹&KRecRule›, G, G)
+    Axiom(G, KExpr, G),
+    Defn(G, KExpr, KExpr, DefinitionSafety),
+    Thm(G, KExpr, KExpr),
+    Opaque(G, KExpr, KExpr, G),
+    Quot(G, KExpr, QuotKind),
+    Induct(G, KExpr, G, G, List‹G›, G, G, G),
+    Ctor(G, KExpr, G, G, G, G, G),
+    Rec(G, KExpr, G, G, G, G, List‹KRecRule›, G, G)
   }
 
 ⟧

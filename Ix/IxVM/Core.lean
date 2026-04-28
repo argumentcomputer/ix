@@ -6,10 +6,12 @@ public section
 namespace IxVM
 
 def core := ⟦
-  enum List‹T› {
-    Cons(T, &List‹T›),
+  enum ListNode‹T› {
+    Cons(T, List‹T›),
     Nil
   }
+
+  type List‹T› = &ListNode‹T›
 
   enum Option‹T› {
     Some(T),
@@ -17,35 +19,35 @@ def core := ⟦
   }
 
   fn list_length‹T›(list: List‹T›) -> G {
-    match list {
-      List.Nil => 0,
-      List.Cons(_, &rest) => list_length(rest) + 1,
+    match load(list) {
+      ListNode.Nil => 0,
+      ListNode.Cons(_, rest) => list_length(rest) + 1,
     }
   }
 
   fn list_length_u64‹T›(list: List‹T›) -> U64 {
-    match list {
-      List.Nil => [0; 8],
-      List.Cons(_, &rest) => relaxed_u64_succ(list_length_u64(rest)),
+    match load(list) {
+      ListNode.Nil => [0; 8],
+      ListNode.Cons(_, rest) => relaxed_u64_succ(list_length_u64(rest)),
     }
   }
 
   fn list_concat‹T›(a: List‹T›, b: List‹T›) -> List‹T› {
-    match a {
-      List.Nil => b,
-      List.Cons(v, &rest) => List.Cons(v, store(list_concat(rest, b))),
+    match load(a) {
+      ListNode.Nil => b,
+      ListNode.Cons(v, rest) => store(ListNode.Cons(v, list_concat(rest, b))),
     }
   }
 
   fn list_is_empty‹T›(list: List‹T›) -> G {
-    match list {
-      List.Nil => 1,
-      List.Cons(_, _) => 0,
+    match load(list) {
+      ListNode.Nil => 1,
+      ListNode.Cons(_, _) => 0,
     }
   }
 
   fn list_lookup‹T›(list: List‹T›, idx: G) -> T {
-    let List.Cons(v, &rest) = list;
+    let ListNode.Cons(v, rest) = load(list);
     match idx {
       0 => v,
       _ => list_lookup(rest, idx - 1),
@@ -53,7 +55,7 @@ def core := ⟦
   }
 
   fn list_lookup_u64‹T›(list: List‹T›, idx: [G; 8]) -> T {
-    let List.Cons(v, &rest) = list;
+    let ListNode.Cons(v, rest) = load(list);
     let z = u64_is_zero(idx);
     match z {
       1 => v,
@@ -65,24 +67,24 @@ def core := ⟦
     match n {
       0 => list,
       _ =>
-        let List.Cons(_, &rest) = list_drop(list, n - 1);
+        let ListNode.Cons(_, rest) = load(list_drop(list, n - 1));
         rest,
     }
   }
 
   fn list_take‹T›(list: List‹T›, n: G) -> List‹T› {
     match n {
-      0 => List.Nil,
+      0 => store(ListNode.Nil),
       _ =>
-        let List.Cons(v, &rest) = list;
-        List.Cons(v, store(list_take(rest, n - 1))),
+        let ListNode.Cons(v, rest) = load(list);
+        store(ListNode.Cons(v, list_take(rest, n - 1))),
     }
   }
 
   fn list_snoc‹T›(list: List‹T›, v: T) -> List‹T› {
-    match list {
-      List.Nil => List.Cons(v, store(List.Nil)),
-      List.Cons(head, &rest) => List.Cons(head, store(list_snoc(rest, v))),
+    match load(list) {
+      ListNode.Nil => store(ListNode.Cons(v, store(ListNode.Nil))),
+      ListNode.Cons(head, rest) => store(ListNode.Cons(head, list_snoc(rest, v))),
     }
   }
 ⟧
