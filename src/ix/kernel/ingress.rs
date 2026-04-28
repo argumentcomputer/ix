@@ -101,6 +101,65 @@ struct ConvertStats {
   prj_nodes: u64,
   str_nodes: u64,
   nat_nodes: u64,
+  // ---- Phase-1 timing breakdown (ns), gated by IX_INGRESS_CONVERT_STATS ----
+  /// Time spent in the `for kvm in mdata { resolve_kvmap(...) }` loop in
+  /// `ingress_expr`. Aggregates blob fetches, name lookups, and (for
+  /// OfSyntax) recursive `deser_syntax` work.
+  resolve_kvmap_ns: u64,
+  /// Number of `resolve_kvmap` calls (bumped by `mdata.len()` per Mdata
+  /// arena node, matching `mdata_kv_maps`).
+  resolve_kvmap_calls: u64,
+  /// Time spent walking the `ExprMetaData::Mdata` arena chain (the whole
+  /// `while let Some(Mdata)` loop including `resolve_kvmap`).
+  arena_walk_ns: u64,
+  /// Time spent inside `intern_expr` (sum of fast-path get + slow-path
+  /// entry).
+  intern_expr_ns: u64,
+  /// Number of `intern_expr` calls.
+  intern_expr_calls: u64,
+  /// Of those calls, how many were satisfied by the read-locked fast path
+  /// (vs. falling through to the write-locked entry path).
+  intern_expr_get_hits: u64,
+  /// Time spent inside `intern_univ`.
+  intern_univ_ns: u64,
+  /// Number of `intern_univ` calls.
+  intern_univ_calls: u64,
+  /// Of those, fast-path hits.
+  intern_univ_get_hits: u64,
+  /// Time spent on `cache.get(&cache_key)` lookups in `ingress_expr`.
+  expr_cache_lookup_ns: u64,
+  /// Time spent on `cache.insert(...)` for `ExprFrame::Cache`.
+  expr_cache_insert_ns: u64,
+  /// Time spent in `ixon_env.get_blob` calls from the `Str`/`Nat` arms of
+  /// `ingress_expr` (does NOT include `resolve_kvmap`'s blob fetches —
+  /// those live inside `resolve_kvmap_ns`).
+  get_blob_ns: u64,
+  /// Number of those `get_blob` calls.
+  get_blob_calls: u64,
+  /// Total time spent inside the `ExprFrame::Process` arm body — covers
+  /// share expansion, cache check, arena walk, `resolve_kvmap`, the
+  /// per-variant match arms (KExpr constructor calls, stack pushes for
+  /// continuations), and `intern_expr` invocations from this arm.
+  /// Subtracting the inner timed sub-stages from this gives the cost of
+  /// "everything else": KExpr construction, match dispatch, frame
+  /// allocation, Arc clones, and minor lookups.
+  process_arm_ns: u64,
+  /// Total time spent inside continuation arms (`AppDone`, `LamDone`,
+  /// `AllDone`, `LetDone`, `PrjDone`, `LetVal`, `BinderPush`, `BinderPop`,
+  /// `AppArg`, `LamBody`, `AllBody`, `LetBody`, `Cache`). These build a
+  /// new KExpr from already-converted children and then call
+  /// `intern_expr`. Subtracting `intern_expr_ns` (continuation share) and
+  /// `expr_cache_insert_ns` (Cache arm) from this gives the cost of the
+  /// continuation-side KExpr construction + frame manipulation.
+  continuation_arms_ns: u64,
+  /// Time spent constructing KExprs at all 13 call sites in
+  /// `ingress_expr` — covers blake3 hashing, `intern_addr`, and the outer
+  /// `Arc<ExprData>` allocation. Excludes the subsequent `intern_expr`
+  /// call (separately timed). Bumped by every `KExpr::*_mdata` /
+  /// `KExpr::*` constructor we wrap.
+  kexpr_construct_ns: u64,
+  /// Number of timed KExpr constructor calls.
+  kexpr_construct_calls: u64,
 }
 
 impl ConvertStats {
@@ -141,6 +200,23 @@ impl ConvertStats {
     self.prj_nodes += other.prj_nodes;
     self.str_nodes += other.str_nodes;
     self.nat_nodes += other.nat_nodes;
+    self.resolve_kvmap_ns += other.resolve_kvmap_ns;
+    self.resolve_kvmap_calls += other.resolve_kvmap_calls;
+    self.arena_walk_ns += other.arena_walk_ns;
+    self.intern_expr_ns += other.intern_expr_ns;
+    self.intern_expr_calls += other.intern_expr_calls;
+    self.intern_expr_get_hits += other.intern_expr_get_hits;
+    self.intern_univ_ns += other.intern_univ_ns;
+    self.intern_univ_calls += other.intern_univ_calls;
+    self.intern_univ_get_hits += other.intern_univ_get_hits;
+    self.expr_cache_lookup_ns += other.expr_cache_lookup_ns;
+    self.expr_cache_insert_ns += other.expr_cache_insert_ns;
+    self.get_blob_ns += other.get_blob_ns;
+    self.get_blob_calls += other.get_blob_calls;
+    self.process_arm_ns += other.process_arm_ns;
+    self.continuation_arms_ns += other.continuation_arms_ns;
+    self.kexpr_construct_ns += other.kexpr_construct_ns;
+    self.kexpr_construct_calls += other.kexpr_construct_calls;
     self
   }
 
@@ -163,6 +239,88 @@ macro_rules! bump_convert_stat {
       ($stats).$field += $amount as u64;
     }
   };
+}
+
+/// Universe counterpart of [`timed_intern_or_build`].
+#[inline]
+fn timed_intern_univ<M: KernelMode>(
+  intern: &InternTable<M>,
+  u: KUniv<M>,
+  stats: &mut ConvertStats,
+) -> KUniv<M> {
+  if !stats.enabled {
+    return intern.intern_univ(u);
+  }
+  let t0 = Instant::now();
+  let key = **u.addr();
+  let result = if let Some(existing) = intern.try_get_univ(&key) {
+    stats.intern_univ_get_hits += 1;
+    existing
+  } else {
+    intern.intern_univ(u)
+  };
+  stats.intern_univ_calls += 1;
+  stats.intern_univ_ns += t0.elapsed().as_nanos() as u64;
+  result
+}
+
+/// Hash-first interning. Precomputes the content hash, asks the intern
+/// table for an existing canonical KExpr; only on a miss does it call
+/// `build(addr)` to allocate a new KExpr.
+///
+/// Why this exists: profiling on Mathlib shows `kexpr_construct` (the
+/// blake3 hash + `intern_addr` + `Arc<ExprData>` allocation triple)
+/// is ~45% of `convert` worker-sum, of which ~62% is wasted because the
+/// intern table already has the same canonical value. By computing just
+/// the hash up front and skipping construction entirely on a hit, we
+/// avoid the allocation + the duplicate `intern_addr` work for the
+/// majority case.
+///
+/// The `build` closure receives the canonical `Addr` (the result of
+/// `intern_addr(hash)`) and is expected to call one of the
+/// `KExpr::*_mdata_with_addr` constructors so it can plug the
+/// pre-interned `Addr` into `ExprInfo` without re-hashing or
+/// re-traversing `ADDR_INTERN`.
+///
+/// Stats accounting (when enabled): the hit path bumps
+/// `intern_expr_get_hits`. The miss path also bumps `kexpr_construct_*`
+/// for the cost of the closure body. `intern_expr_ns` covers the
+/// surrounding DashMap traffic on both paths but excludes the
+/// closure-internal time.
+#[inline]
+fn timed_intern_or_build<M: KernelMode>(
+  intern: &InternTable<M>,
+  hash: blake3::Hash,
+  build: impl FnOnce(Addr) -> KExpr<M>,
+  stats: &mut ConvertStats,
+) -> KExpr<M> {
+  if !stats.enabled {
+    if let Some(existing) = intern.try_get_expr(&hash) {
+      return existing;
+    }
+    let addr = intern_addr(hash);
+    return intern.intern_expr(build(addr));
+  }
+  let t0 = Instant::now();
+  if let Some(existing) = intern.try_get_expr(&hash) {
+    stats.intern_expr_get_hits += 1;
+    stats.intern_expr_calls += 1;
+    stats.intern_expr_ns += t0.elapsed().as_nanos() as u64;
+    return existing;
+  }
+  let addr = intern_addr(hash);
+  let kc_t0 = Instant::now();
+  let new = build(addr);
+  let kc_elapsed = kc_t0.elapsed().as_nanos() as u64;
+  stats.kexpr_construct_ns += kc_elapsed;
+  stats.kexpr_construct_calls += 1;
+  let interned = intern.intern_expr(new);
+  let total = t0.elapsed().as_nanos() as u64;
+  // Account for the DashMap traffic only — the closure body's time is
+  // already in `kexpr_construct_ns`.
+  stats.intern_expr_ns += total.saturating_sub(kc_elapsed);
+  stats.intern_expr_calls += 1;
+  interned
 }
 
 fn resolve_name(addr: &Address, names: &FxHashMap<Address, Name>) -> Name {
@@ -281,7 +439,7 @@ fn ingress_univ<M: KernelMode>(
         IxonUniv::Zero => {
           bump_convert_stat!(stats, univ_process);
           bump_convert_stat!(stats, univ_interns);
-          values.push(intern.intern_univ(KUniv::zero()));
+          values.push(timed_intern_univ(intern, KUniv::zero(), stats));
         },
         IxonUniv::Succ(inner) => {
           bump_convert_stat!(stats, univ_process);
@@ -306,14 +464,17 @@ fn ingress_univ<M: KernelMode>(
             usize::try_from(*idx).expect("univ var index exceeds usize");
           let name = ctx.lvls.get(pos).cloned().unwrap_or_else(Name::anon);
           bump_convert_stat!(stats, univ_interns);
-          values
-            .push(intern.intern_univ(KUniv::param(*idx, M::meta_field(name))));
+          values.push(timed_intern_univ(
+            intern,
+            KUniv::param(*idx, M::meta_field(name)),
+            stats,
+          ));
         },
       },
       UnivFrame::Succ => {
         let inner = values.pop().unwrap();
         bump_convert_stat!(stats, univ_interns);
-        values.push(intern.intern_univ(KUniv::succ(inner)));
+        values.push(timed_intern_univ(intern, KUniv::succ(inner), stats));
       },
       UnivFrame::MaxLeft(a) | UnivFrame::IMaxLeft(a) => {
         stack.push(UnivFrame::Process(a));
@@ -322,19 +483,19 @@ fn ingress_univ<M: KernelMode>(
         let b = values.pop().unwrap();
         let a = values.pop().unwrap();
         bump_convert_stat!(stats, univ_interns);
-        values.push(intern.intern_univ(KUniv::max(a, b)));
+        values.push(timed_intern_univ(intern, KUniv::max(a, b), stats));
       },
       UnivFrame::IMax => {
         let b = values.pop().unwrap();
         let a = values.pop().unwrap();
         bump_convert_stat!(stats, univ_interns);
-        values.push(intern.intern_univ(KUniv::imax(a, b)));
+        values.push(timed_intern_univ(intern, KUniv::imax(a, b), stats));
       },
     }
   }
 
   bump_convert_stat!(stats, univ_interns);
-  let result = intern.intern_univ(values.pop().unwrap());
+  let result = timed_intern_univ(intern, values.pop().unwrap(), stats);
   cache.insert(cache_key, result.clone());
   if stats.enabled {
     stats.univ_cache_inserts += 1;
@@ -452,6 +613,8 @@ fn ingress_expr<M: KernelMode>(
     match frame {
       ExprFrame::Process { mut expr, arena_idx } => {
         bump_convert_stat!(stats, expr_process);
+        let process_t0 =
+          if stats.enabled { Some(Instant::now()) } else { None };
 
         // `Share` is transparent and keeps the same arena root. Expand it
         // before cache/mdata work; the old path walked metadata for the Share
@@ -474,15 +637,28 @@ fn ingress_expr<M: KernelMode>(
         // root, so a hit already includes the resolved metadata layers.
         let cache_key = (Arc::as_ptr(&expr) as usize, arena_idx);
         if !is_var {
-          if let Some(cached) = cache.get(&cache_key) {
+          let lookup_t0 = if stats.enabled {
+            Some(Instant::now())
+          } else {
+            None
+          };
+          let cached = cache.get(&cache_key);
+          if let Some(t0) = lookup_t0 {
+            stats.expr_cache_lookup_ns += t0.elapsed().as_nanos() as u64;
+          }
+          if let Some(cached) = cached {
             bump_convert_stat!(stats, expr_cache_hits);
             values.push(cached.clone());
+            if let Some(t0) = process_t0 {
+              stats.process_arm_ns += t0.elapsed().as_nanos() as u64;
+            }
             continue;
           }
           bump_convert_stat!(stats, expr_cache_misses);
         }
 
         // Walk mdata chain in arena
+        let arena_t0 = if stats.enabled { Some(Instant::now()) } else { None };
         let mut current_idx = arena_idx;
         let mut mdata_layers: Vec<MData> = Vec::new();
         while let Some(ExprMetaData::Mdata { mdata, child }) =
@@ -494,10 +670,18 @@ fn ingress_expr<M: KernelMode>(
         {
           bump_convert_stat!(stats, mdata_nodes);
           bump_convert_stat!(stats, mdata_kv_maps, mdata.len());
+          let kv_t0 = if stats.enabled { Some(Instant::now()) } else { None };
           for kvm in mdata {
             mdata_layers.push(resolve_kvmap(kvm, ixon_env));
           }
+          if let Some(t0) = kv_t0 {
+            stats.resolve_kvmap_ns += t0.elapsed().as_nanos() as u64;
+            stats.resolve_kvmap_calls += mdata.len() as u64;
+          }
           current_idx = *child;
+        }
+        if let Some(t0) = arena_t0 {
+          stats.arena_walk_ns += t0.elapsed().as_nanos() as u64;
         }
 
         //loop {
@@ -525,15 +709,36 @@ fn ingress_expr<M: KernelMode>(
             .cloned()
             .unwrap_or_else(Name::anon);
           if mdata_layers.is_empty() {
-            values.push(
-              ctx.intern.intern_expr(KExpr::var(*idx, M::meta_field(name))),
-            );
+            let name_field = M::meta_field(name);
+            let mdata_field: M::MField<Vec<MData>> = M::meta_field(vec![]);
+            let hash = KExpr::<M>::var_hash(*idx, &name_field, &mdata_field);
+            values.push(timed_intern_or_build(
+              ctx.intern,
+              hash,
+              |addr| {
+                KExpr::var_mdata_with_addr(
+                  *idx, name_field, mdata_field, addr,
+                )
+              },
+              stats,
+            ));
           } else {
-            values.push(ctx.intern.intern_expr(KExpr::var_mdata(
-              *idx,
-              M::meta_field(name),
-              M::meta_field(mdata_layers),
-            )));
+            let name_field = M::meta_field(name);
+            let mdata_field = M::meta_field(mdata_layers);
+            let hash = KExpr::<M>::var_hash(*idx, &name_field, &mdata_field);
+            values.push(timed_intern_or_build(
+              ctx.intern,
+              hash,
+              |addr| {
+                KExpr::var_mdata_with_addr(
+                  *idx, name_field, mdata_field, addr,
+                )
+              },
+              stats,
+            ));
+          }
+          if let Some(t0) = process_t0 {
+            stats.process_arm_ns += t0.elapsed().as_nanos() as u64;
           }
           continue;
         }
@@ -561,7 +766,13 @@ fn ingress_expr<M: KernelMode>(
                 })?)
                 .ok_or_else(|| format!("invalid Sort univ index {idx}"))?;
             let zu = ingress_univ(u, ctx, ctx.intern, univ_cache, stats);
-            values.push(ctx.intern.intern_expr(KExpr::sort_mdata(zu, mdata)));
+            let hash = KExpr::<M>::sort_hash(&zu, &mdata);
+            values.push(timed_intern_or_build(
+              ctx.intern,
+              hash,
+              |addr| KExpr::sort_mdata_with_addr(zu, mdata, addr),
+              stats,
+            ));
           },
 
           IxonExpr::Var(_) | IxonExpr::Share(_) => unreachable!(),
@@ -589,11 +800,14 @@ fn ingress_expr<M: KernelMode>(
             };
             let univs =
               ingress_univ_args(univ_idxs, ctx, ctx.intern, univ_cache, stats)?;
-            values.push(ctx.intern.intern_expr(KExpr::cnst_mdata(
-              KId::new(addr, M::meta_field(name)),
-              univs,
-              mdata,
-            )));
+            let id = KId::new(addr, M::meta_field(name));
+            let hash = KExpr::<M>::cnst_hash(&id, &univs, &mdata);
+            values.push(timed_intern_or_build(
+              ctx.intern,
+              hash,
+              |a| KExpr::cnst_mdata_with_addr(id, univs, mdata, a),
+              stats,
+            ));
           },
 
           IxonExpr::Rec(rec_idx, univ_idxs) => {
@@ -608,9 +822,13 @@ fn ingress_expr<M: KernelMode>(
               .clone();
             let univs =
               ingress_univ_args(univ_idxs, ctx, ctx.intern, univ_cache, stats)?;
-            values.push(
-              ctx.intern.intern_expr(KExpr::cnst_mdata(mid, univs, mdata)),
-            );
+            let hash = KExpr::<M>::cnst_hash(&mid, &univs, &mdata);
+            values.push(timed_intern_or_build(
+              ctx.intern,
+              hash,
+              |a| KExpr::cnst_mdata_with_addr(mid, univs, mdata, a),
+              stats,
+            ));
           },
 
           IxonExpr::App(f, a) => {
@@ -708,10 +926,19 @@ fn ingress_expr<M: KernelMode>(
                   let univs = ingress_univ_args(
                     univ_idxs, ctx, ctx.intern, univ_cache, stats,
                   )?;
-                  ctx.intern.intern_expr(KExpr::cnst(
-                    KId::new(addr, M::meta_field(name)),
-                    univs,
-                  ))
+                  let id = KId::new(addr, M::meta_field(name));
+                  let mdata_field: M::MField<Vec<MData>> =
+                    M::meta_field(vec![]);
+                  let hash =
+                    KExpr::<M>::cnst_hash(&id, &univs, &mdata_field);
+                  timed_intern_or_build(
+                    ctx.intern,
+                    hash,
+                    |a| {
+                      KExpr::cnst_mdata_with_addr(id, univs, mdata_field, a)
+                    },
+                    stats,
+                  )
                 },
                 IxonExpr::Rec(rec_idx, univ_idxs) => {
                   // Rec heads refer to the enclosing mutual block; the
@@ -730,7 +957,18 @@ fn ingress_expr<M: KernelMode>(
                   let univs = ingress_univ_args(
                     univ_idxs, ctx, ctx.intern, univ_cache, stats,
                   )?;
-                  ctx.intern.intern_expr(KExpr::cnst(mid, univs))
+                  let mdata_field: M::MField<Vec<MData>> =
+                    M::meta_field(vec![]);
+                  let hash =
+                    KExpr::<M>::cnst_hash(&mid, &univs, &mdata_field);
+                  timed_intern_or_build(
+                    ctx.intern,
+                    hash,
+                    |a| {
+                      KExpr::cnst_mdata_with_addr(mid, univs, mdata_field, a)
+                    },
+                    stats,
+                  )
                 },
                 _ => {
                   return Err(format!(
@@ -932,17 +1170,25 @@ fn ingress_expr<M: KernelMode>(
                 format!("Str ref index {ref_idx} exceeds usize")
               })?)
               .ok_or_else(|| format!("invalid Str ref index {ref_idx}"))?;
+            let gb_t0 = if stats.enabled { Some(Instant::now()) } else { None };
             let blob = ixon_env.get_blob(addr).ok_or_else(|| {
               format!("missing Str blob at addr {}", addr.hex())
             })?;
+            if let Some(t0) = gb_t0 {
+              stats.get_blob_ns += t0.elapsed().as_nanos() as u64;
+              stats.get_blob_calls += 1;
+            }
             let s = String::from_utf8(blob).map_err(|e| {
               format!("invalid UTF-8 in Str blob at addr {}: {e}", addr.hex())
             })?;
-            values.push(ctx.intern.intern_expr(KExpr::str_mdata(
-              s,
-              addr.clone(),
-              mdata,
-            )));
+            let blob_addr = addr.clone();
+            let hash = KExpr::<M>::str_hash(&blob_addr, &mdata);
+            values.push(timed_intern_or_build(
+              ctx.intern,
+              hash,
+              |a| KExpr::str_mdata_with_addr(s, blob_addr, mdata, a),
+              stats,
+            ));
           },
 
           IxonExpr::Nat(ref_idx) => {
@@ -953,85 +1199,180 @@ fn ingress_expr<M: KernelMode>(
                 format!("Nat ref index {ref_idx} exceeds usize")
               })?)
               .ok_or_else(|| format!("invalid Nat ref index {ref_idx}"))?;
+            let gb_t0 = if stats.enabled { Some(Instant::now()) } else { None };
             let blob = ixon_env.get_blob(addr).ok_or_else(|| {
               format!("missing Nat blob at addr {}", addr.hex())
             })?;
+            if let Some(t0) = gb_t0 {
+              stats.get_blob_ns += t0.elapsed().as_nanos() as u64;
+              stats.get_blob_calls += 1;
+            }
             let n = Nat::from_le_bytes(&blob);
-            values.push(ctx.intern.intern_expr(KExpr::nat_mdata(
-              n,
-              addr.clone(),
-              mdata,
-            )));
+            let blob_addr = addr.clone();
+            let hash = KExpr::<M>::nat_hash(&blob_addr, &mdata);
+            values.push(timed_intern_or_build(
+              ctx.intern,
+              hash,
+              |a| KExpr::nat_mdata_with_addr(n, blob_addr, mdata, a),
+              stats,
+            ));
           },
+        }
+        if let Some(t0) = process_t0 {
+          stats.process_arm_ns += t0.elapsed().as_nanos() as u64;
         }
       },
 
       // Continuation frames
       ExprFrame::AppArg { arg, arg_arena } => {
+        let cont_t0 =
+          if stats.enabled { Some(Instant::now()) } else { None };
         stack.push(ExprFrame::Process { expr: arg, arena_idx: arg_arena });
+        if let Some(t0) = cont_t0 {
+          stats.continuation_arms_ns += t0.elapsed().as_nanos() as u64;
+        }
       },
       ExprFrame::AppDone { mdata } => {
+        let cont_t0 =
+          if stats.enabled { Some(Instant::now()) } else { None };
         let a = values.pop().unwrap();
         let f = values.pop().unwrap();
-        values.push(ctx.intern.intern_expr(KExpr::app_mdata(f, a, mdata)));
+        let hash = KExpr::<M>::app_hash(&f, &a, &mdata);
+        values.push(timed_intern_or_build(
+          ctx.intern,
+          hash,
+          |addr| KExpr::app_mdata_with_addr(f, a, mdata, addr),
+          stats,
+        ));
+        if let Some(t0) = cont_t0 {
+          stats.continuation_arms_ns += t0.elapsed().as_nanos() as u64;
+        }
       },
       ExprFrame::LamBody { body, body_arena } => {
+        let cont_t0 =
+          if stats.enabled { Some(Instant::now()) } else { None };
         // The binder name was already pushed by BinderPush before this frame
         stack.push(ExprFrame::Process { expr: body, arena_idx: body_arena });
+        if let Some(t0) = cont_t0 {
+          stats.continuation_arms_ns += t0.elapsed().as_nanos() as u64;
+        }
       },
       ExprFrame::LamDone { name, bi, mdata } => {
+        let cont_t0 =
+          if stats.enabled { Some(Instant::now()) } else { None };
         let body = values.pop().unwrap();
         let ty = values.pop().unwrap();
-        values.push(
-          ctx.intern.intern_expr(KExpr::lam_mdata(name, bi, ty, body, mdata)),
-        );
+        let hash = KExpr::<M>::lam_hash(&name, &bi, &ty, &body, &mdata);
+        values.push(timed_intern_or_build(
+          ctx.intern,
+          hash,
+          |addr| KExpr::lam_mdata_with_addr(name, bi, ty, body, mdata, addr),
+          stats,
+        ));
+        if let Some(t0) = cont_t0 {
+          stats.continuation_arms_ns += t0.elapsed().as_nanos() as u64;
+        }
       },
       ExprFrame::AllBody { body, body_arena }
       | ExprFrame::LetBody { body, body_arena } => {
+        let cont_t0 =
+          if stats.enabled { Some(Instant::now()) } else { None };
         stack.push(ExprFrame::Process { expr: body, arena_idx: body_arena });
+        if let Some(t0) = cont_t0 {
+          stats.continuation_arms_ns += t0.elapsed().as_nanos() as u64;
+        }
       },
       ExprFrame::AllDone { name, bi, mdata } => {
+        let cont_t0 =
+          if stats.enabled { Some(Instant::now()) } else { None };
         let body = values.pop().unwrap();
         let ty = values.pop().unwrap();
-        values.push(
-          ctx.intern.intern_expr(KExpr::all_mdata(name, bi, ty, body, mdata)),
-        );
+        let hash = KExpr::<M>::all_hash(&name, &bi, &ty, &body, &mdata);
+        values.push(timed_intern_or_build(
+          ctx.intern,
+          hash,
+          |addr| KExpr::all_mdata_with_addr(name, bi, ty, body, mdata, addr),
+          stats,
+        ));
+        if let Some(t0) = cont_t0 {
+          stats.continuation_arms_ns += t0.elapsed().as_nanos() as u64;
+        }
       },
       ExprFrame::LetVal { val, val_arena, body, body_arena, binder_name } => {
+        let cont_t0 =
+          if stats.enabled { Some(Instant::now()) } else { None };
         stack.push(ExprFrame::LetBody { body, body_arena });
         stack.push(ExprFrame::BinderPush { name: binder_name });
         stack.push(ExprFrame::Process { expr: val, arena_idx: val_arena });
+        if let Some(t0) = cont_t0 {
+          stats.continuation_arms_ns += t0.elapsed().as_nanos() as u64;
+        }
       },
       ExprFrame::LetDone { name, nd, mdata } => {
+        let cont_t0 =
+          if stats.enabled { Some(Instant::now()) } else { None };
         let body = values.pop().unwrap();
         let val = values.pop().unwrap();
         let ty = values.pop().unwrap();
-        values.push(
-          ctx
-            .intern
-            .intern_expr(KExpr::let_mdata(name, ty, val, body, nd, mdata)),
-        );
+        let hash = KExpr::<M>::let_hash(&name, &ty, &val, &body, nd, &mdata);
+        values.push(timed_intern_or_build(
+          ctx.intern,
+          hash,
+          |addr| {
+            KExpr::let_mdata_with_addr(name, ty, val, body, nd, mdata, addr)
+          },
+          stats,
+        ));
+        if let Some(t0) = cont_t0 {
+          stats.continuation_arms_ns += t0.elapsed().as_nanos() as u64;
+        }
       },
       ExprFrame::BinderPush { name } => {
+        let cont_t0 =
+          if stats.enabled { Some(Instant::now()) } else { None };
         binder_names.push(name);
+        if let Some(t0) = cont_t0 {
+          stats.continuation_arms_ns += t0.elapsed().as_nanos() as u64;
+        }
       },
       ExprFrame::BinderPop => {
+        let cont_t0 =
+          if stats.enabled { Some(Instant::now()) } else { None };
         binder_names.pop();
+        if let Some(t0) = cont_t0 {
+          stats.continuation_arms_ns += t0.elapsed().as_nanos() as u64;
+        }
       },
       ExprFrame::PrjDone { type_id, field_idx, mdata } => {
+        let cont_t0 =
+          if stats.enabled { Some(Instant::now()) } else { None };
         let s = values.pop().unwrap();
-        values.push(
-          ctx
-            .intern
-            .intern_expr(KExpr::prj_mdata(type_id, field_idx, s, mdata)),
-        );
+        let hash = KExpr::<M>::prj_hash(&type_id, field_idx, &s, &mdata);
+        values.push(timed_intern_or_build(
+          ctx.intern,
+          hash,
+          |addr| {
+            KExpr::prj_mdata_with_addr(type_id, field_idx, s, mdata, addr)
+          },
+          stats,
+        ));
+        if let Some(t0) = cont_t0 {
+          stats.continuation_arms_ns += t0.elapsed().as_nanos() as u64;
+        }
       },
       ExprFrame::Cache { key } => {
+        let cont_t0 =
+          if stats.enabled { Some(Instant::now()) } else { None };
         let result = values.last().unwrap().clone();
+        let ins_t0 = if stats.enabled { Some(Instant::now()) } else { None };
         cache.insert(key, result);
-        if stats.enabled {
+        if let Some(t0) = ins_t0 {
+          stats.expr_cache_insert_ns += t0.elapsed().as_nanos() as u64;
           stats.expr_cache_inserts += 1;
           stats.expr_cache_peak = stats.expr_cache_peak.max(cache.len() as u64);
+        }
+        if let Some(t0) = cont_t0 {
+          stats.continuation_arms_ns += t0.elapsed().as_nanos() as u64;
         }
       },
     }
@@ -3311,6 +3652,35 @@ fn ixon_ingress_inner<M: KernelMode>(
         cs.univ_cache_peak,
         cs.univ_process,
         cs.univ_interns
+      );
+      let ie_lookups = cs.intern_expr_calls;
+      let iu_lookups = cs.intern_univ_calls;
+      eprintln!(
+        "[ixon_ingress]   convert timing (worker-sum): \
+         resolve_kvmap {:.2}s/{} arena_walk {:.2}s \
+         intern_expr {:.2}s/{} (get_hits {:.1}%) \
+         intern_univ {:.2}s/{} (get_hits {:.1}%) \
+         expr_cache lookup {:.2}s / insert {:.2}s \
+         get_blob {:.2}s/{} \
+         kexpr_construct {:.2}s/{} \
+         process_arm {:.2}s continuation_arms {:.2}s",
+        seconds(cs.resolve_kvmap_ns),
+        cs.resolve_kvmap_calls,
+        seconds(cs.arena_walk_ns),
+        seconds(cs.intern_expr_ns),
+        cs.intern_expr_calls,
+        percent(cs.intern_expr_get_hits, ie_lookups),
+        seconds(cs.intern_univ_ns),
+        cs.intern_univ_calls,
+        percent(cs.intern_univ_get_hits, iu_lookups),
+        seconds(cs.expr_cache_lookup_ns),
+        seconds(cs.expr_cache_insert_ns),
+        seconds(cs.get_blob_ns),
+        cs.get_blob_calls,
+        seconds(cs.kexpr_construct_ns),
+        cs.kexpr_construct_calls,
+        seconds(cs.process_arm_ns),
+        seconds(cs.continuation_arms_ns)
       );
     }
     eprintln!(

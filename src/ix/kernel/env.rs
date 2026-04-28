@@ -44,18 +44,39 @@ pub type Addr = Arc<blake3::Hash>;
 /// lifetime of the process. A typical kernel-check-env run holds a few
 /// million distinct hashes, so on the order of 10s of MB; trivially
 /// dominated by the constants table itself.
+///
+/// Shard count is set to [`INTERN_SHARDS`] — much higher than DashMap's
+/// default (`4 * num_cpus()`) — so 32 concurrent ingress workers don't
+/// collide on the same shard's write lock. Empirically this is most of
+/// the `intern_expr_ns` cost on Mathlib.
 static ADDR_INTERN: LazyLock<DashMap<blake3::Hash, Addr>> =
-  LazyLock::new(DashMap::default);
+  LazyLock::new(|| DashMap::with_shard_amount(INTERN_SHARDS));
+
+/// Number of shards used by [`ADDR_INTERN`] and the [`InternTable`] maps.
+///
+/// DashMap's default is `4 * num_cpus()`; on a 32-thread box that's 128.
+/// With 32 rayon workers all interning concurrently, ~25% of operations
+/// collide on a shard, which under `parking_lot::RwLock` serializes
+/// readers behind any pending writer. Bumping the shard count cuts the
+/// collision probability with negligible memory overhead (~32 KB extra
+/// for the shard headers at 2048).
+const INTERN_SHARDS: usize = 2048;
 
 /// Return the canonical [`Addr`] for `hash`. After this returns, every
 /// caller that interns the same content gets the same `Arc` allocation —
 /// `Arc::ptr_eq` between any two interned addresses is iff their hashes
 /// are equal.
 ///
-/// Atomic via `DashMap::entry`; safe under parallel ingress and
-/// type-checking.
+/// Get-first-then-entry: most calls are hits (the address space saturates
+/// quickly during ingress), so we take the read-locked fast path before
+/// falling back to the write-locked `entry` path on a miss. Behaviour is
+/// identical to a plain `entry().or_insert_with(...)` — the slow path
+/// still races safely if two threads insert concurrently.
 #[inline]
 pub fn intern_addr(hash: blake3::Hash) -> Addr {
+  if let Some(existing) = ADDR_INTERN.get(&hash) {
+    return existing.value().clone();
+  }
   ADDR_INTERN.entry(hash).or_insert_with(|| Arc::new(hash)).value().clone()
 }
 
@@ -77,20 +98,50 @@ impl<M: KernelMode> Default for InternTable<M> {
 
 impl<M: KernelMode> InternTable<M> {
   pub fn new() -> Self {
-    InternTable { univs: DashMap::default(), exprs: DashMap::default() }
+    InternTable {
+      univs: DashMap::with_shard_amount(INTERN_SHARDS),
+      exprs: DashMap::with_shard_amount(INTERN_SHARDS),
+    }
+  }
+
+  /// Read-only fast path: return the canonical interned universe for `hash`
+  /// if already present, without taking a shard write lock. Used by
+  /// instrumented callers that want to record hit/miss separately; plain
+  /// callers should use `intern_univ`.
+  #[inline]
+  pub fn try_get_univ(&self, hash: &blake3::Hash) -> Option<KUniv<M>> {
+    self.univs.get(hash).map(|r| r.value().clone())
+  }
+
+  /// Read-only fast path counterpart of `try_get_univ` for expressions.
+  #[inline]
+  pub fn try_get_expr(&self, hash: &blake3::Hash) -> Option<KExpr<M>> {
+    self.exprs.get(hash).map(|r| r.value().clone())
   }
 
   /// Intern a universe: if one with the same hash exists, return the
   /// existing Arc (ensuring pointer uniqueness). Otherwise insert and return.
-  /// Atomic via DashMap entry — safe for concurrent access.
+  ///
+  /// Get-first-then-entry: hash-cons tables saturate quickly, so most calls
+  /// are hits and we want them to take only the per-shard read lock. The
+  /// slow path falls back to `entry().or_insert(...)`, which still races
+  /// safely if two threads insert concurrently — the second-arriving thread
+  /// gets back the first's value.
   pub fn intern_univ(&self, u: KUniv<M>) -> KUniv<M> {
     let key = **u.addr();
+    if let Some(existing) = self.univs.get(&key) {
+      return existing.value().clone();
+    }
     self.univs.entry(key).or_insert(u).value().clone()
   }
 
-  /// Intern an expression: same pointer-uniqueness guarantee as `intern_univ`.
+  /// Intern an expression: same pointer-uniqueness guarantee as `intern_univ`,
+  /// same get-first-then-entry contention strategy.
   pub fn intern_expr(&self, e: KExpr<M>) -> KExpr<M> {
     let key = **e.addr();
+    if let Some(existing) = self.exprs.get(&key) {
+      return existing.value().clone();
+    }
     self.exprs.entry(key).or_insert(e).value().clone()
   }
 }

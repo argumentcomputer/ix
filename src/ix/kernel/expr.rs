@@ -159,23 +159,47 @@ fn mk_info<M: KernelMode>(
   ExprInfo { addr, lbr, count_0, mdata }
 }
 
+// =============================================================================
+// Hash-first interning: each `*_mdata` constructor is split into a
+// hash-only function (no allocation) and a `*_mdata_with_addr` builder
+// that takes a precomputed canonical [`Addr`]. The plain `*_mdata` form is
+// kept as a convenience wrapper for callers that don't pre-check the
+// intern table.
+//
+// Hot-path callers in `ingress.rs` use the split form so they can ask
+// `InternTable::try_get_expr(&hash)` *before* paying the
+// blake3-hash + `intern_addr` + `Arc<ExprData>` allocation cost — a
+// significant win because >60% of constructed values are immediately
+// discarded for an existing canonical Arc on the intern table.
+// =============================================================================
+
 impl<M: KernelMode> KExpr<M> {
   pub fn var(idx: u64, name: M::MField<Name>) -> Self {
     Self::var_mdata(idx, name, no_mdata::<M>())
   }
 
-  pub fn var_mdata(
+  /// Compute the content hash for [`KExpr::var_mdata`] without allocating.
+  pub fn var_hash(
     idx: u64,
-    name: M::MField<Name>,
-    mdata: M::MField<Vec<MData>>,
-  ) -> Self {
+    name: &M::MField<Name>,
+    mdata: &M::MField<Vec<MData>>,
+  ) -> blake3::Hash {
     let mut h = blake3::Hasher::new();
     h.update(&[EVAR]);
     h.update(&idx.to_le_bytes());
     name.meta_hash(&mut h);
     mdata.meta_hash(&mut h);
+    h.finalize()
+  }
+
+  pub fn var_mdata_with_addr(
+    idx: u64,
+    name: M::MField<Name>,
+    mdata: M::MField<Vec<MData>>,
+    addr: Addr,
+  ) -> Self {
     let info = mk_info::<M>(
-      intern_addr(h.finalize()),
+      addr,
       idx + 1,
       if idx == 0 { 1 } else { 0 },
       mdata,
@@ -183,30 +207,52 @@ impl<M: KernelMode> KExpr<M> {
     KExpr::new(ExprData::Var(idx, name, info))
   }
 
+  pub fn var_mdata(
+    idx: u64,
+    name: M::MField<Name>,
+    mdata: M::MField<Vec<MData>>,
+  ) -> Self {
+    let addr = intern_addr(Self::var_hash(idx, &name, &mdata));
+    Self::var_mdata_with_addr(idx, name, mdata, addr)
+  }
+
   pub fn sort(u: KUniv<M>) -> Self {
     Self::sort_mdata(u, no_mdata::<M>())
   }
 
-  pub fn sort_mdata(u: KUniv<M>, mdata: M::MField<Vec<MData>>) -> Self {
+  pub fn sort_hash(
+    u: &KUniv<M>,
+    mdata: &M::MField<Vec<MData>>,
+  ) -> blake3::Hash {
     let mut h = blake3::Hasher::new();
     h.update(&[ESORT]);
     h.update(u.addr().as_bytes());
     mdata.meta_hash(&mut h);
-    KExpr::new(ExprData::Sort(
-      u,
-      mk_info::<M>(intern_addr(h.finalize()), 0, 0, mdata),
-    ))
+    h.finalize()
+  }
+
+  pub fn sort_mdata_with_addr(
+    u: KUniv<M>,
+    mdata: M::MField<Vec<MData>>,
+    addr: Addr,
+  ) -> Self {
+    KExpr::new(ExprData::Sort(u, mk_info::<M>(addr, 0, 0, mdata)))
+  }
+
+  pub fn sort_mdata(u: KUniv<M>, mdata: M::MField<Vec<MData>>) -> Self {
+    let addr = intern_addr(Self::sort_hash(&u, &mdata));
+    Self::sort_mdata_with_addr(u, mdata, addr)
   }
 
   pub fn cnst(id: KId<M>, univs: Box<[KUniv<M>]>) -> Self {
     Self::cnst_mdata(id, univs, no_mdata::<M>())
   }
 
-  pub fn cnst_mdata(
-    id: KId<M>,
-    univs: Box<[KUniv<M>]>,
-    mdata: M::MField<Vec<MData>>,
-  ) -> Self {
+  pub fn cnst_hash(
+    id: &KId<M>,
+    univs: &[KUniv<M>],
+    mdata: &M::MField<Vec<MData>>,
+  ) -> blake3::Hash {
     let mut h = blake3::Hasher::new();
     h.update(&[EREF]);
     h.update(id.addr.as_bytes());
@@ -215,15 +261,57 @@ impl<M: KernelMode> KExpr<M> {
       h.update(u.addr().as_bytes());
     }
     mdata.meta_hash(&mut h);
-    KExpr::new(ExprData::Const(
-      id,
-      univs,
-      mk_info::<M>(intern_addr(h.finalize()), 0, 0, mdata),
-    ))
+    h.finalize()
+  }
+
+  pub fn cnst_mdata_with_addr(
+    id: KId<M>,
+    univs: Box<[KUniv<M>]>,
+    mdata: M::MField<Vec<MData>>,
+    addr: Addr,
+  ) -> Self {
+    KExpr::new(ExprData::Const(id, univs, mk_info::<M>(addr, 0, 0, mdata)))
+  }
+
+  pub fn cnst_mdata(
+    id: KId<M>,
+    univs: Box<[KUniv<M>]>,
+    mdata: M::MField<Vec<MData>>,
+  ) -> Self {
+    let addr = intern_addr(Self::cnst_hash(&id, &univs, &mdata));
+    Self::cnst_mdata_with_addr(id, univs, mdata, addr)
   }
 
   pub fn app(f: KExpr<M>, a: KExpr<M>) -> Self {
     Self::app_mdata(f, a, no_mdata::<M>())
+  }
+
+  pub fn app_hash(
+    f: &KExpr<M>,
+    a: &KExpr<M>,
+    mdata: &M::MField<Vec<MData>>,
+  ) -> blake3::Hash {
+    let mut h = blake3::Hasher::new();
+    h.update(&[EAPP]);
+    h.update(f.addr().as_bytes());
+    h.update(a.addr().as_bytes());
+    mdata.meta_hash(&mut h);
+    h.finalize()
+  }
+
+  pub fn app_mdata_with_addr(
+    f: KExpr<M>,
+    a: KExpr<M>,
+    mdata: M::MField<Vec<MData>>,
+    addr: Addr,
+  ) -> Self {
+    let info = mk_info::<M>(
+      addr,
+      f.lbr().max(a.lbr()),
+      f.count_0() + a.count_0(),
+      mdata,
+    );
+    KExpr::new(ExprData::App(f, a, info))
   }
 
   pub fn app_mdata(
@@ -231,18 +319,8 @@ impl<M: KernelMode> KExpr<M> {
     a: KExpr<M>,
     mdata: M::MField<Vec<MData>>,
   ) -> Self {
-    let mut h = blake3::Hasher::new();
-    h.update(&[EAPP]);
-    h.update(f.addr().as_bytes());
-    h.update(a.addr().as_bytes());
-    mdata.meta_hash(&mut h);
-    let info = mk_info::<M>(
-      intern_addr(h.finalize()),
-      f.lbr().max(a.lbr()),
-      f.count_0() + a.count_0(),
-      mdata,
-    );
-    KExpr::new(ExprData::App(f, a, info))
+    let addr = intern_addr(Self::app_hash(&f, &a, &mdata));
+    Self::app_mdata_with_addr(f, a, mdata, addr)
   }
 
   pub fn lam(
@@ -254,13 +332,13 @@ impl<M: KernelMode> KExpr<M> {
     Self::lam_mdata(name, bi, ty, body, no_mdata::<M>())
   }
 
-  pub fn lam_mdata(
-    name: M::MField<Name>,
-    bi: M::MField<BinderInfo>,
-    ty: KExpr<M>,
-    body: KExpr<M>,
-    mdata: M::MField<Vec<MData>>,
-  ) -> Self {
+  pub fn lam_hash(
+    name: &M::MField<Name>,
+    bi: &M::MField<BinderInfo>,
+    ty: &KExpr<M>,
+    body: &KExpr<M>,
+    mdata: &M::MField<Vec<MData>>,
+  ) -> blake3::Hash {
     let mut h = blake3::Hasher::new();
     h.update(&[ELAM]);
     name.meta_hash(&mut h);
@@ -268,13 +346,35 @@ impl<M: KernelMode> KExpr<M> {
     h.update(ty.addr().as_bytes());
     h.update(body.addr().as_bytes());
     mdata.meta_hash(&mut h);
+    h.finalize()
+  }
+
+  pub fn lam_mdata_with_addr(
+    name: M::MField<Name>,
+    bi: M::MField<BinderInfo>,
+    ty: KExpr<M>,
+    body: KExpr<M>,
+    mdata: M::MField<Vec<MData>>,
+    addr: Addr,
+  ) -> Self {
     let info = mk_info::<M>(
-      intern_addr(h.finalize()),
+      addr,
       ty.lbr().max(body.lbr().saturating_sub(1)),
       ty.count_0(),
       mdata,
     );
     KExpr::new(ExprData::Lam(name, bi, ty, body, info))
+  }
+
+  pub fn lam_mdata(
+    name: M::MField<Name>,
+    bi: M::MField<BinderInfo>,
+    ty: KExpr<M>,
+    body: KExpr<M>,
+    mdata: M::MField<Vec<MData>>,
+  ) -> Self {
+    let addr = intern_addr(Self::lam_hash(&name, &bi, &ty, &body, &mdata));
+    Self::lam_mdata_with_addr(name, bi, ty, body, mdata, addr)
   }
 
   pub fn all(
@@ -286,13 +386,13 @@ impl<M: KernelMode> KExpr<M> {
     Self::all_mdata(name, bi, ty, body, no_mdata::<M>())
   }
 
-  pub fn all_mdata(
-    name: M::MField<Name>,
-    bi: M::MField<BinderInfo>,
-    ty: KExpr<M>,
-    body: KExpr<M>,
-    mdata: M::MField<Vec<MData>>,
-  ) -> Self {
+  pub fn all_hash(
+    name: &M::MField<Name>,
+    bi: &M::MField<BinderInfo>,
+    ty: &KExpr<M>,
+    body: &KExpr<M>,
+    mdata: &M::MField<Vec<MData>>,
+  ) -> blake3::Hash {
     let mut h = blake3::Hasher::new();
     h.update(&[EALL]);
     name.meta_hash(&mut h);
@@ -300,13 +400,35 @@ impl<M: KernelMode> KExpr<M> {
     h.update(ty.addr().as_bytes());
     h.update(body.addr().as_bytes());
     mdata.meta_hash(&mut h);
+    h.finalize()
+  }
+
+  pub fn all_mdata_with_addr(
+    name: M::MField<Name>,
+    bi: M::MField<BinderInfo>,
+    ty: KExpr<M>,
+    body: KExpr<M>,
+    mdata: M::MField<Vec<MData>>,
+    addr: Addr,
+  ) -> Self {
     let info = mk_info::<M>(
-      intern_addr(h.finalize()),
+      addr,
       ty.lbr().max(body.lbr().saturating_sub(1)),
       ty.count_0(),
       mdata,
     );
     KExpr::new(ExprData::All(name, bi, ty, body, info))
+  }
+
+  pub fn all_mdata(
+    name: M::MField<Name>,
+    bi: M::MField<BinderInfo>,
+    ty: KExpr<M>,
+    body: KExpr<M>,
+    mdata: M::MField<Vec<MData>>,
+  ) -> Self {
+    let addr = intern_addr(Self::all_hash(&name, &bi, &ty, &body, &mdata));
+    Self::all_mdata_with_addr(name, bi, ty, body, mdata, addr)
   }
 
   pub fn let_(
@@ -319,14 +441,14 @@ impl<M: KernelMode> KExpr<M> {
     Self::let_mdata(name, ty, val, body, non_dep, no_mdata::<M>())
   }
 
-  pub fn let_mdata(
-    name: M::MField<Name>,
-    ty: KExpr<M>,
-    val: KExpr<M>,
-    body: KExpr<M>,
+  pub fn let_hash(
+    name: &M::MField<Name>,
+    ty: &KExpr<M>,
+    val: &KExpr<M>,
+    body: &KExpr<M>,
     non_dep: bool,
-    mdata: M::MField<Vec<MData>>,
-  ) -> Self {
+    mdata: &M::MField<Vec<MData>>,
+  ) -> blake3::Hash {
     let mut h = blake3::Hasher::new();
     h.update(&[ELET]);
     name.meta_hash(&mut h);
@@ -335,8 +457,20 @@ impl<M: KernelMode> KExpr<M> {
     h.update(body.addr().as_bytes());
     h.update(&[non_dep as u8]);
     mdata.meta_hash(&mut h);
+    h.finalize()
+  }
+
+  pub fn let_mdata_with_addr(
+    name: M::MField<Name>,
+    ty: KExpr<M>,
+    val: KExpr<M>,
+    body: KExpr<M>,
+    non_dep: bool,
+    mdata: M::MField<Vec<MData>>,
+    addr: Addr,
+  ) -> Self {
     let info = mk_info::<M>(
-      intern_addr(h.finalize()),
+      addr,
       ty.lbr().max(val.lbr()).max(body.lbr().saturating_sub(1)),
       ty.count_0() + val.count_0(),
       mdata,
@@ -344,8 +478,48 @@ impl<M: KernelMode> KExpr<M> {
     KExpr::new(ExprData::Let(name, ty, val, body, non_dep, info))
   }
 
+  pub fn let_mdata(
+    name: M::MField<Name>,
+    ty: KExpr<M>,
+    val: KExpr<M>,
+    body: KExpr<M>,
+    non_dep: bool,
+    mdata: M::MField<Vec<MData>>,
+  ) -> Self {
+    let addr =
+      intern_addr(Self::let_hash(&name, &ty, &val, &body, non_dep, &mdata));
+    Self::let_mdata_with_addr(name, ty, val, body, non_dep, mdata, addr)
+  }
+
   pub fn prj(id: KId<M>, field: u64, val: KExpr<M>) -> Self {
     Self::prj_mdata(id, field, val, no_mdata::<M>())
+  }
+
+  pub fn prj_hash(
+    id: &KId<M>,
+    field: u64,
+    val: &KExpr<M>,
+    mdata: &M::MField<Vec<MData>>,
+  ) -> blake3::Hash {
+    let mut h = blake3::Hasher::new();
+    h.update(&[EPRJ]);
+    h.update(id.addr.as_bytes());
+    id.name.meta_hash(&mut h);
+    h.update(&field.to_le_bytes());
+    h.update(val.addr().as_bytes());
+    mdata.meta_hash(&mut h);
+    h.finalize()
+  }
+
+  pub fn prj_mdata_with_addr(
+    id: KId<M>,
+    field: u64,
+    val: KExpr<M>,
+    mdata: M::MField<Vec<MData>>,
+    addr: Addr,
+  ) -> Self {
+    let info = mk_info::<M>(addr, val.lbr(), val.count_0(), mdata);
+    KExpr::new(ExprData::Prj(id, field, val, info))
   }
 
   pub fn prj_mdata(
@@ -354,20 +528,32 @@ impl<M: KernelMode> KExpr<M> {
     val: KExpr<M>,
     mdata: M::MField<Vec<MData>>,
   ) -> Self {
-    let mut h = blake3::Hasher::new();
-    h.update(&[EPRJ]);
-    h.update(id.addr.as_bytes());
-    id.name.meta_hash(&mut h);
-    h.update(&field.to_le_bytes());
-    h.update(val.addr().as_bytes());
-    mdata.meta_hash(&mut h);
-    let info =
-      mk_info::<M>(intern_addr(h.finalize()), val.lbr(), val.count_0(), mdata);
-    KExpr::new(ExprData::Prj(id, field, val, info))
+    let addr = intern_addr(Self::prj_hash(&id, field, &val, &mdata));
+    Self::prj_mdata_with_addr(id, field, val, mdata, addr)
   }
 
   pub fn nat(val: Nat, blob_addr: Address) -> Self {
     Self::nat_mdata(val, blob_addr, no_mdata::<M>())
+  }
+
+  pub fn nat_hash(
+    blob_addr: &Address,
+    mdata: &M::MField<Vec<MData>>,
+  ) -> blake3::Hash {
+    let mut h = blake3::Hasher::new();
+    h.update(&[ENAT]);
+    h.update(blob_addr.as_bytes());
+    mdata.meta_hash(&mut h);
+    h.finalize()
+  }
+
+  pub fn nat_mdata_with_addr(
+    val: Nat,
+    blob_addr: Address,
+    mdata: M::MField<Vec<MData>>,
+    addr: Addr,
+  ) -> Self {
+    KExpr::new(ExprData::Nat(val, blob_addr, mk_info::<M>(addr, 0, 0, mdata)))
   }
 
   pub fn nat_mdata(
@@ -375,19 +561,32 @@ impl<M: KernelMode> KExpr<M> {
     blob_addr: Address,
     mdata: M::MField<Vec<MData>>,
   ) -> Self {
-    let mut h = blake3::Hasher::new();
-    h.update(&[ENAT]);
-    h.update(blob_addr.as_bytes());
-    mdata.meta_hash(&mut h);
-    KExpr::new(ExprData::Nat(
-      val,
-      blob_addr,
-      mk_info::<M>(intern_addr(h.finalize()), 0, 0, mdata),
-    ))
+    let addr = intern_addr(Self::nat_hash(&blob_addr, &mdata));
+    Self::nat_mdata_with_addr(val, blob_addr, mdata, addr)
   }
 
   pub fn str(val: String, blob_addr: Address) -> Self {
     Self::str_mdata(val, blob_addr, no_mdata::<M>())
+  }
+
+  pub fn str_hash(
+    blob_addr: &Address,
+    mdata: &M::MField<Vec<MData>>,
+  ) -> blake3::Hash {
+    let mut h = blake3::Hasher::new();
+    h.update(&[ESTR]);
+    h.update(blob_addr.as_bytes());
+    mdata.meta_hash(&mut h);
+    h.finalize()
+  }
+
+  pub fn str_mdata_with_addr(
+    val: String,
+    blob_addr: Address,
+    mdata: M::MField<Vec<MData>>,
+    addr: Addr,
+  ) -> Self {
+    KExpr::new(ExprData::Str(val, blob_addr, mk_info::<M>(addr, 0, 0, mdata)))
   }
 
   pub fn str_mdata(
@@ -395,15 +594,8 @@ impl<M: KernelMode> KExpr<M> {
     blob_addr: Address,
     mdata: M::MField<Vec<MData>>,
   ) -> Self {
-    let mut h = blake3::Hasher::new();
-    h.update(&[ESTR]);
-    h.update(blob_addr.as_bytes());
-    mdata.meta_hash(&mut h);
-    KExpr::new(ExprData::Str(
-      val,
-      blob_addr,
-      mk_info::<M>(intern_addr(h.finalize()), 0, 0, mdata),
-    ))
+    let addr = intern_addr(Self::str_hash(&blob_addr, &mdata));
+    Self::str_mdata_with_addr(val, blob_addr, mdata, addr)
   }
 }
 
