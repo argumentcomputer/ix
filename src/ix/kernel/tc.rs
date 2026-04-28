@@ -163,18 +163,27 @@ impl<M: KernelMode> TypeChecker<M> {
   }
 
   /// WHNF cache key: (expr_hash, ctx_hash).
-  /// Closed expressions (lbr == 0) use the empty context hash since they
-  /// can't reference bindings. Open expressions use ctx_id to distinguish
-  /// contexts: WHNF itself is syntactic for most open terms, but reduction can
-  /// call infer through K/structure iota and projection paths, and infer of a
-  /// loose variable depends on the local binder types.
+  ///
+  /// Uses the same suffix-aware key shape as [`infer_key`]: closed expressions
+  /// (lbr == 0) collapse to the empty context hash, and open expressions use
+  /// `ctx_addr_for_lbr(e.lbr())` to capture only the context suffix reachable
+  /// from the term's loose bound variables.
+  ///
+  /// Soundness: WHNF only consults the local context in three places, and
+  /// each is bounded by `e.lbr()`:
+  /// (1) let-zeta: `Var(i)` reduction looks up `let_vals[level]` for `i < e.lbr`
+  ///     — frames `≥ depth - e.lbr` are covered by the suffix and `ctx_addr_for_lbr`
+  ///     transitively closes over their types and values;
+  /// (2) recursive `infer` from `try_struct_eta_iota` / `synth_ctor_when_k` /
+  ///     `try_proof_irrel` — those callees use their argument's own lbr, which
+  ///     is `≤ e.lbr`, so the WHNF suffix dominates;
+  /// (3) native reduction body unfold — closed body, no context dependence.
+  ///
+  /// Sharing two distinct outer contexts that share a relevant suffix is the
+  /// payoff: the same WHNF subterm can hit cache across them.
   #[inline]
   pub fn whnf_key(&self, e: &KExpr<M>) -> (Addr, Addr) {
-    if e.lbr() == 0 {
-      (e.hash_key(), empty_ctx_addr())
-    } else {
-      (e.hash_key(), self.ctx_id.clone())
-    }
+    (e.hash_key(), self.ctx_addr_for_lbr(e.lbr()))
   }
 
   /// Type-inference cache key: (expr_hash, ctx_hash).
@@ -834,6 +843,34 @@ mod tests {
     let (_, ctx) = tc.whnf_key(&e);
     // Closed expression: empty ctx regardless of let-binding state.
     assert_eq!(ctx, empty_ctx_addr());
+  }
+
+  #[test]
+  fn whnf_key_uses_suffix_across_different_outer_ctx() {
+    // The suffix-aware key should let an open subterm hit cache across
+    // different OUTER contexts when only the inner suffix matters.
+    //
+    // Both checkers push the same innermost local frame after a different
+    // outer frame. A `var(0)` with lbr=1 should key only by the inner
+    // suffix, so the two `whnf_key`s should match even though the outer
+    // contexts (and hence ctx_ids) differ.
+    let mut tc1 = new_tc();
+    tc1.push_local(sort0()); // outer A
+    tc1.push_local(sort1()); // inner X
+
+    let mut tc2 = new_tc();
+    tc2.push_local(sort1()); // outer B (different from A)
+    tc2.push_local(sort1()); // inner X (same as tc1's inner)
+
+    // ctx_ids differ (different outer frames).
+    assert_ne!(tc1.ctx_id, tc2.ctx_id);
+
+    let e = var(0); // lbr = 1, depends only on innermost frame
+    let (h1, ctx1) = tc1.whnf_key(&e);
+    let (h2, ctx2) = tc2.whnf_key(&e);
+    assert_eq!(h1, h2);
+    assert_eq!(ctx1, ctx2, "suffix-aware key should match across different outers");
+    assert_ne!(ctx1, empty_ctx_addr());
   }
 
   // ---- infer_key ----

@@ -1,8 +1,10 @@
 //! Kernel constant checking FFI.
 //!
 //! Exposes `rs_kernel_check_consts` (production, used by `lake exe ix check`
-//! and `Tests/Ix/Kernel/Tutorial.lean`) plus a pair of test-only roundtrip
-//! probes (`rs_kernel_roundtrip` / `rs_kernel_roundtrip_no_compile`).
+//! and `Tests/Ix/Kernel/Tutorial.lean`), `rs_kernel_ingress` (production,
+//! used by `lake exe ix ingress` for ingress-only performance analysis),
+//! plus a pair of test-only roundtrip probes (`rs_kernel_roundtrip` /
+//! `rs_kernel_roundtrip_no_compile`).
 //!
 //! `rs_kernel_check_consts` runs the full pipeline `Lean env → Ixon compile
 //! → kernel ingress → typecheck` against a batch of requested constant names.
@@ -262,6 +264,128 @@ pub extern "C" fn rs_kernel_check_consts(
   eprintln!("[rs_kernel_check] total:      {:>8.1?}", total_start.elapsed());
 
   build_result_array(&results)
+}
+
+/// FFI: ingress a Lean environment through compile + `ixon_ingress`, stopping
+/// before kernel typechecking. Used by `lake exe ix ingress` for performance
+/// analysis of the Lean → Ixon → KEnv pipeline in isolation.
+///
+/// Lean signature:
+/// ```lean
+/// @[extern "rs_kernel_ingress"]
+/// opaque rsKernelIngressFFI : @& List (Lean.Name × Lean.ConstantInfo) → IO USize
+/// ```
+///
+/// Returns the number of kernel constants ingressed. The Rust side prints a
+/// per-phase timing breakdown to stderr, mirroring `rs_kernel_check_consts`'s
+/// `[rs_kernel_check] read env / compile / ingress` lines (renamed to
+/// `[rs_kernel_ingress] ...`). Errors during compile or ingress are reported
+/// via `LeanIOResult::error_string`, matching `rs_compile_env`.
+///
+/// **Always runs destructors** by default (opt out with `IX_SKIP_DROPS=1`),
+/// because this is a perf-analysis tool — the `Arc<NameData>` chain-drops
+/// across the InternTable shards and the KEnv consts map are part of the
+/// real ingress pipeline we want to measure. The reported `total:` line
+/// therefore includes teardown cost. Contrast with `rs_compile_env`, which
+/// defaults to leaking those allocations to keep a one-shot CLI's wall
+/// clock low; here measurement beats wall-clock.
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_kernel_ingress(
+  env_consts: LeanList<LeanBorrowed<'_>>,
+) -> LeanIOResult<LeanOwned> {
+  let total_start = Instant::now();
+
+  // ---------------------------------------------------------------------
+  // Decode inputs
+  // ---------------------------------------------------------------------
+  let t0 = Instant::now();
+  let rust_env = decode_env(env_consts);
+  eprintln!("[rs_kernel_ingress] read env:   {:>8.1?}", t0.elapsed());
+
+  // ---------------------------------------------------------------------
+  // Compile Lean → Ixon
+  // ---------------------------------------------------------------------
+  let t1 = Instant::now();
+  let rust_env_arc = Arc::new(rust_env);
+  // `check_originals: false` matches `rs_compile_env`'s default — the
+  // ingress pipeline doesn't need original-LEON cross-checks.
+  let compile_state = match compile_env_with_options(
+    &rust_env_arc,
+    CompileOptions { check_originals: false, ..Default::default() },
+  ) {
+    Ok(s) => s,
+    Err(e) => {
+      return LeanIOResult::error_string(&format!(
+        "rs_kernel_ingress: compile failed: {e:?}"
+      ));
+    },
+  };
+  eprintln!("[rs_kernel_ingress] compile:    {:>8.1?}", t1.elapsed());
+
+  let CompileState { env: ixon_env, ungrounded: compile_ungrounded, .. } =
+    compile_state;
+  let ungrounded_count = compile_ungrounded.len();
+  drop(compile_ungrounded);
+  drop(rust_env_arc);
+  if ungrounded_count > 0 {
+    eprintln!(
+      "[rs_kernel_ingress] {ungrounded_count} constants failed to compile (ungrounded; ignored for ingress)"
+    );
+  }
+
+  // ---------------------------------------------------------------------
+  // Ingress Ixon → kernel
+  // ---------------------------------------------------------------------
+  let t2 = Instant::now();
+  let (mut kenv, intern) = match ixon_ingress_owned::<Meta>(ixon_env) {
+    Ok(v) => v,
+    Err(msg) => {
+      return LeanIOResult::error_string(&format!(
+        "rs_kernel_ingress: ingress failed: {msg}"
+      ));
+    },
+  };
+  // Move `intern` into the KEnv so they form a single owned tree, matching
+  // `rs_kernel_check_consts`'s post-ingress shape. Dropping kenv (which
+  // owns intern) gives the same drop-order as the check FFI: KEnv first
+  // releases its expr/univ refs into the InternTable's DashMaps, then the
+  // InternTable releases the underlying KExpr/KUniv values. Dropping the
+  // two as separate locals would invert that order on `intern`'s contents
+  // and (empirically) destabilises Lean's later runtime shutdown — this
+  // form is segfault-free.
+  kenv.intern = intern;
+  let kenv_len = kenv.len();
+  eprintln!(
+    "[rs_kernel_ingress] ingress:    {:>8.1?} ({kenv_len} consts)",
+    t2.elapsed(),
+  );
+
+  // Always run destructors so the reported `total:` includes teardown
+  // cost — this is a perf-analysis CLI, and `Arc<NameData>` chain-drops
+  // across the InternTable shards are part of the real ingress pipeline
+  // we want to measure. (Contrast with `rs_compile_env`, which intentionally
+  // forgets state to keep one-shot CLI wall-clock low; here measurement
+  // beats wall-clock.) Opt out with `IX_SKIP_DROPS=1` if you want to
+  // compare against the leaked-allocation baseline.
+  if std::env::var("IX_SKIP_DROPS").ok().as_deref() == Some("1") {
+    eprintln!("[rs_kernel_ingress] skipping destructors (IX_SKIP_DROPS=1)");
+    std::mem::forget(kenv);
+  } else {
+    let drop_start = Instant::now();
+    drop(kenv);
+    eprintln!(
+      "[rs_kernel_ingress] destructors: {:>8.1?}",
+      drop_start.elapsed()
+    );
+  }
+
+  eprintln!("[rs_kernel_ingress] total:      {:>8.1?}", total_start.elapsed());
+
+  // Return the kenv length to Lean so the CLI can include it in its
+  // `##ingress##` benchmark line. `USize` values stored inside Lean objects
+  // must use Lean's heap scalar representation (`lean_box_usize`), not the
+  // tagged-small-object representation used by `lean_box`.
+  LeanIOResult::ok(LeanOwned::box_usize_obj(kenv_len))
 }
 
 // =============================================================================

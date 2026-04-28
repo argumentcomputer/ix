@@ -8,8 +8,10 @@
 
 use std::collections::{BTreeSet, HashSet};
 use std::sync::{Arc, Condvar, LazyLock, Mutex, OnceLock};
+use std::time::Instant;
 
 use dashmap::{DashMap, DashSet};
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 use crate::ix::address::Address;
 
@@ -156,6 +158,12 @@ pub struct KEnv<M: KernelMode> {
   pub whnf_cache: DashMap<(Addr, Addr), KExpr<M>>,
   /// WHNF cache (no delta): (expr_hash, ctx_hash)-keyed.
   pub whnf_no_delta_cache: DashMap<(Addr, Addr), KExpr<M>>,
+  /// WHNF core cache: structural-only reduction (beta/iota/zeta/proj),
+  /// no native primitives, no delta. Mirrors lean4lean's `whnfCoreCache`
+  /// (refs/lean4lean/Lean4Lean/TypeChecker.lean:19) and lean4 C++'s
+  /// `m_whnf_core`. Populated only when flags are FULL — cheap-projection
+  /// results are not safe to share with full callers.
+  pub whnf_core_cache: DashMap<(Addr, Addr), KExpr<M>>,
   /// Infer cache: keyed by (expr_hash, ctx_hash). Context-dependent.
   /// Populated only from full-mode `infer` (i.e. not from `with_infer_only`),
   /// so every cached result has passed the validation `infer_only` skips.
@@ -178,6 +186,13 @@ pub struct KEnv<M: KernelMode> {
   pub def_eq_cheap_cache: DashMap<(Addr, Addr, Addr), bool>,
   /// Failed def-eq pairs in lazy delta: canonical ordering by hash.
   pub def_eq_failure: DashSet<(Addr, Addr, Addr)>,
+  /// Constant-instantiation cache: caches the result of
+  /// `instantiate_univ_params(val, us)` for each `Const(id, us)` head encountered
+  /// during delta unfolding. Keyed by the head expression's content hash, which
+  /// already content-addresses `(id, us)` (the head's address derives from id +
+  /// universe args). Mirrors lean4 C++ `m_unfold` cache. Cross-call sharing of
+  /// universe-substituted bodies eliminates O(body) walks on every unfold.
+  pub unfold_cache: DashMap<Addr, KExpr<M>>,
   /// Ingress cache: LeanExpr → KExpr conversion results.
   /// Keyed by (expr_hash, param_names_hash) to account for different
   /// level param bindings producing different KExprs from the same LeanExpr.
@@ -219,6 +234,19 @@ impl<M: KernelMode> Default for KEnv<M> {
 /// `IX_PERF_COUNTERS=1` is set. This piggybacks on `KEnv`'s natural
 /// teardown (e.g. at the end of `rs_kernel_check_consts`) so any harness
 /// that drives a check-env run picks up the totals automatically.
+///
+/// Then tear down the heavy `DashMap` fields in parallel across their shards.
+/// A fully-loaded `KEnv` after a mathlib-scale ingress holds millions of
+/// `Arc<ExprData>` / `Arc<UnivData>` allocations across its `consts` map,
+/// `intern` table, and (post type-check) WHNF/infer caches. The default
+/// `drop(DashMap)` walks shards single-threaded, taking ~200s; using
+/// `into_par_iter().for_each(drop)` brings that to seconds. `mem::take`
+/// pulls each `DashMap` out into a local that we then parallel-drop;
+/// the now-empty `Default` left in `*self` drops trivially when this
+/// function returns.
+///
+/// Set `IX_SEQ_KENV_DROP=1` to fall back to the old single-threaded path
+/// for measurement comparisons.
 impl<M: KernelMode> Drop for KEnv<M> {
   fn drop(&mut self) {
     if super::perf::enabled() {
@@ -226,6 +254,104 @@ impl<M: KernelMode> Drop for KEnv<M> {
       if !summary.is_empty() {
         eprint!("{summary}");
       }
+    }
+
+    if std::env::var_os("IX_SEQ_KENV_DROP").is_some() {
+      // Skip the parallel teardown — let the auto-derived field drops run
+      // sequentially as before.
+      return;
+    }
+
+    let quiet = std::env::var_os("IX_QUIET").is_some();
+    let total_start = Instant::now();
+
+    // Snapshot lengths up-front for logging before we move the maps out.
+    let consts_len = self.consts.len();
+    let blocks_len = self.blocks.len();
+    let intern_exprs_len = self.intern.exprs.len();
+    let intern_univs_len = self.intern.univs.len();
+    let ingress_cache_len = self.ingress_cache.len();
+    let whnf_total = self.whnf_cache.len()
+      + self.whnf_no_delta_cache.len()
+      + self.whnf_core_cache.len();
+    let infer_total = self.infer_cache.len() + self.infer_only_cache.len();
+    // Only log when the env actually held something — empty
+    // create-and-immediately-drop sites in the compile/ingress pipeline
+    // would otherwise produce noisy `0.00s ... 0/0 ...` lines.
+    let nonempty = consts_len
+      + blocks_len
+      + intern_exprs_len
+      + intern_univs_len
+      + ingress_cache_len
+      + whnf_total
+      + infer_total
+      > 0;
+
+    // Drop each heavy DashMap/DashSet in parallel via rayon work-stealing
+    // across shards. Maps are dropped sequentially with respect to each
+    // other so we don't fight for the global rayon pool; each one
+    // saturates the pool internally.
+    //
+    // Order doesn't matter for correctness — shared `Arc` content is
+    // refcounted, and the last decrementer destroys exactly once.
+    let consts_start = Instant::now();
+    std::mem::take(&mut self.consts).into_par_iter().for_each(drop);
+    let consts_ns = consts_start.elapsed();
+
+    let blocks_start = Instant::now();
+    std::mem::take(&mut self.blocks).into_par_iter().for_each(drop);
+    let blocks_ns = blocks_start.elapsed();
+
+    let intern_start = Instant::now();
+    std::mem::take(&mut self.intern.univs).into_par_iter().for_each(drop);
+    std::mem::take(&mut self.intern.exprs).into_par_iter().for_each(drop);
+    let intern_ns = intern_start.elapsed();
+
+    let caches_start = Instant::now();
+    std::mem::take(&mut self.whnf_cache).into_par_iter().for_each(drop);
+    std::mem::take(&mut self.whnf_no_delta_cache)
+      .into_par_iter()
+      .for_each(drop);
+    std::mem::take(&mut self.whnf_core_cache).into_par_iter().for_each(drop);
+    std::mem::take(&mut self.infer_cache).into_par_iter().for_each(drop);
+    std::mem::take(&mut self.infer_only_cache)
+      .into_par_iter()
+      .for_each(drop);
+    std::mem::take(&mut self.def_eq_cache).into_par_iter().for_each(drop);
+    std::mem::take(&mut self.def_eq_cheap_cache)
+      .into_par_iter()
+      .for_each(drop);
+    std::mem::take(&mut self.def_eq_failure).into_par_iter().for_each(drop);
+    std::mem::take(&mut self.unfold_cache).into_par_iter().for_each(drop);
+    std::mem::take(&mut self.ingress_cache).into_par_iter().for_each(drop);
+    std::mem::take(&mut self.recursor_cache).into_par_iter().for_each(drop);
+    std::mem::take(&mut self.rec_majors_cache).into_par_iter().for_each(drop);
+    std::mem::take(&mut self.block_peer_agreement_cache)
+      .into_par_iter()
+      .for_each(drop);
+    std::mem::take(&mut self.block_check_results)
+      .into_par_iter()
+      .for_each(drop);
+    let caches_ns = caches_start.elapsed();
+
+    if !quiet && nonempty {
+      eprintln!(
+        "[kenv_drop] {:.2}s parallel threads={} \
+         (consts {:.2}s/{} blocks {:.2}s intern {:.2}s/{}+{} \
+         caches {:.2}s/whnf={} infer={} ingress={})",
+        total_start.elapsed().as_secs_f32(),
+        rayon::current_num_threads(),
+        consts_ns.as_secs_f32(),
+        consts_len,
+        blocks_ns.as_secs_f32(),
+        intern_ns.as_secs_f32(),
+        intern_univs_len,
+        intern_exprs_len,
+        caches_ns.as_secs_f32(),
+        whnf_total,
+        infer_total,
+        ingress_cache_len,
+      );
     }
   }
 }
@@ -245,11 +371,13 @@ impl<M: KernelMode> KEnv<M> {
       prims: OnceLock::new(),
       whnf_cache: DashMap::default(),
       whnf_no_delta_cache: DashMap::default(),
+      whnf_core_cache: DashMap::default(),
       infer_cache: DashMap::default(),
       infer_only_cache: DashMap::default(),
       def_eq_cache: DashMap::default(),
       def_eq_cheap_cache: DashMap::default(),
       def_eq_failure: DashSet::default(),
+      unfold_cache: DashMap::default(),
       ingress_cache: DashMap::default(),
       recursor_cache: DashMap::default(),
       recursor_aux_order,

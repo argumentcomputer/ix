@@ -348,7 +348,35 @@ impl<M: KernelMode> TypeChecker<M> {
   /// [`whnf_core_for_def_eq`]. Recursive sub-reductions and `try_iota`
   /// propagate the same flags so a def-eq structural pass does not
   /// accidentally unfold projected values.
+  ///
+  /// FULL-mode results are cached in [`KEnv::whnf_core_cache`], mirroring
+  /// lean4lean's `whnfCoreCache` (TypeChecker.lean:19) and lean4 C++'s
+  /// `m_whnf_core`. Cheap-mode results are NOT cached — projection values
+  /// reduce structurally instead of through full WHNF, so cheap output is
+  /// not safe to share with full callers.
   fn whnf_core_with_flags(
+    &mut self,
+    e: &KExpr<M>,
+    flags: WhnfFlags,
+  ) -> Result<KExpr<M>, TcError<M>> {
+    if flags.is_full() {
+      let key = self.whnf_key(e);
+      if let Some(cached) = self.env.whnf_core_cache.get(&key) {
+        self.env.perf.record_whnf_core_hit();
+        return Ok(cached.clone());
+      }
+      self.env.perf.record_whnf_core_miss();
+      let result = self.whnf_core_with_flags_uncached(e, flags)?;
+      self.env.whnf_core_cache.insert(key, result.clone());
+      Ok(result)
+    } else {
+      self.whnf_core_with_flags_uncached(e, flags)
+    }
+  }
+
+  /// Inner loop for [`whnf_core_with_flags`]. Does not consult or update
+  /// `whnf_core_cache`; the caller wraps it for FULL mode.
+  fn whnf_core_with_flags_uncached(
     &mut self,
     e: &KExpr<M>,
     flags: WhnfFlags,
@@ -621,7 +649,7 @@ impl<M: KernelMode> TypeChecker<M> {
       self.dump_delta_trace(id, 0, e);
       let val = val.clone();
       let us: Vec<_> = us.to_vec();
-      return Ok(Some(self.instantiate_univ_params(&val, &us)?));
+      return Ok(Some(self.unfold_const_value(e, &val, &us)?));
     }
     Ok(None)
   }
@@ -651,7 +679,7 @@ impl<M: KernelMode> TypeChecker<M> {
     };
 
     let us: Vec<_> = us.to_vec();
-    let val = self.instantiate_univ_params(&val, &us)?;
+    let val = self.unfold_const_value(&head, &val, &us)?;
 
     let mut result = val;
     for arg in &args {
@@ -659,6 +687,37 @@ impl<M: KernelMode> TypeChecker<M> {
     }
 
     Ok(Some(result))
+  }
+
+  /// Cache wrapper around `instantiate_univ_params` for delta unfolding.
+  ///
+  /// `head_expr` is the `Const(id, us)` head whose body we are unfolding;
+  /// its content hash already encodes `(id, us)`, so we use it directly
+  /// as the cache key. The cached value is the universe-instantiated body
+  /// returned by `instantiate_univ_params(val, us)`.
+  ///
+  /// Soundness: `instantiate_univ_params` is a pure function of `(val, us)`
+  /// — it only walks the term and substitutes universe params, touching
+  /// neither `tc.ctx` nor any thread-local mutable state. Two distinct
+  /// `(id, us)` pairs always produce distinct head hashes (KExpr interning
+  /// is by content), so cache hits are content-correct.
+  ///
+  /// Mirrors the lean4 C++ kernel `m_unfold` cache in `type_checker.cpp`.
+  fn unfold_const_value(
+    &mut self,
+    head_expr: &KExpr<M>,
+    val: &KExpr<M>,
+    us: &[KUniv<M>],
+  ) -> Result<KExpr<M>, TcError<M>> {
+    let key = head_expr.hash_key();
+    if let Some(cached) = self.env.unfold_cache.get(&key) {
+      self.env.perf.record_unfold_hit();
+      return Ok(cached.clone());
+    }
+    self.env.perf.record_unfold_miss();
+    let result = self.instantiate_univ_params(val, us)?;
+    self.env.unfold_cache.insert(key, result.clone());
+    Ok(result)
   }
 
   // -----------------------------------------------------------------------

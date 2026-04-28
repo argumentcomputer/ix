@@ -6,8 +6,8 @@
 //! to avoid stack overflow on deeply nested expressions.
 
 use std::cell::Cell;
+use std::hash::{BuildHasher, Hash};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use rayon::iter::{
@@ -2847,8 +2847,46 @@ fn timed_drop_ns<T>(value: T) -> u64 {
   elapsed_ns(start)
 }
 
-fn parallel_ixon_drop_enabled() -> bool {
-  std::env::var_os("IX_PARALLEL_IXON_DROP").is_some()
+/// Drop a `DashMap` in parallel across its shards.
+///
+/// DashMap's `IntoParallelIterator` impl yields owned `(K, V)` pairs by
+/// processing shards as the parallel unit (one rayon task per shard,
+/// sequential within a shard). Default shard count is `4 * num_cpus()`, which
+/// gives rayon's work-stealing plenty to distribute.
+///
+/// Used by `drop_ixon_env` to tear down the five `DashMap`s holding the
+/// post-ingress IxonEnv. Concurrent `Arc::drop` is safe by construction
+/// (atomic refcount; the last decrementer destroys exactly once), and none
+/// of the value types have custom `Drop` impls — so this is a pure
+/// parallelisation of the existing teardown.
+fn timed_drop_dashmap_par<K, V, S>(map: DashMap<K, V, S>) -> u64
+where
+  K: Eq + Hash + Send,
+  V: Send,
+  S: BuildHasher + Clone + Send,
+{
+  let start = Instant::now();
+  map.into_par_iter().for_each(drop);
+  elapsed_ns(start)
+}
+
+/// Drop an `FxHashMap` (= `std::HashMap` with FxHasher) in parallel.
+///
+/// `std::HashMap` only exposes a sequential `into_iter()`, so we drain into
+/// a `Vec<(K, V)>` first (a cheap O(n) sequential pass that just moves owned
+/// pairs) and then `into_par_iter().for_each(drop)` on the Vec, letting
+/// rayon distribute the actual destructor work.
+fn timed_drop_fxmap_par<K: Send, V: Send>(map: FxHashMap<K, V>) -> u64 {
+  let start = Instant::now();
+  let entries: Vec<(K, V)> = map.into_iter().collect();
+  entries.into_par_iter().for_each(drop);
+  elapsed_ns(start)
+}
+
+/// Opt-out for the parallel drop path: set `IX_SEQ_IXON_DROP=1` to fall back
+/// to single-threaded `drop` for measurement comparisons.
+fn seq_ixon_drop_enabled() -> bool {
+  std::env::var_os("IX_SEQ_IXON_DROP").is_some()
 }
 
 fn ingress_convert_stats_enabled() -> bool {
@@ -2863,39 +2901,32 @@ fn drop_ingress_lookups(
   let total_start = Instant::now();
   let names_len = names.len();
   let name_to_addr_len = name_to_addr.len();
-  let parallel = parallel_ixon_drop_enabled();
+  let sequential = seq_ixon_drop_enabled();
 
-  let timing = if parallel {
-    let names_ns = AtomicU64::new(0);
-    let name_to_addr_ns = AtomicU64::new(0);
-
-    rayon::scope(|s| {
-      s.spawn(|_| {
-        names_ns.store(timed_drop_ns(names), Ordering::Relaxed);
-      });
-      s.spawn(|_| {
-        name_to_addr_ns.store(timed_drop_ns(name_to_addr), Ordering::Relaxed);
-      });
-    });
-
-    LookupDropTiming {
-      names_ns: names_ns.load(Ordering::Relaxed),
-      name_to_addr_ns: name_to_addr_ns.load(Ordering::Relaxed),
-    }
-  } else {
+  // Drop the two lookup tables in series; each one fully utilises the rayon
+  // pool internally via `timed_drop_fxmap_par`. Running them in parallel via
+  // `rayon::scope` would just fight for the same global thread pool and
+  // entangle per-map timings.
+  let timing = if sequential {
     LookupDropTiming {
       names_ns: timed_drop_ns(names),
       name_to_addr_ns: timed_drop_ns(name_to_addr),
+    }
+  } else {
+    LookupDropTiming {
+      names_ns: timed_drop_fxmap_par(names),
+      name_to_addr_ns: timed_drop_fxmap_par(name_to_addr),
     }
   };
 
   let total_ns = elapsed_ns(total_start);
   if !quiet {
     eprintln!(
-      "[ixon_ingress] drop lookups: {:.2}s {} \
+      "[ixon_ingress] drop lookups: {:.2}s {} threads={} \
        (names {:.2}s/{} name_to_addr {:.2}s/{})",
       seconds(total_ns),
-      if parallel { "parallel" } else { "sequential" },
+      if sequential { "sequential" } else { "parallel" },
+      rayon::current_num_threads(),
       seconds(timing.names_ns),
       names_len,
       seconds(timing.name_to_addr_ns),
@@ -2984,40 +3015,14 @@ fn drop_ixon_env(ixon_env: IxonEnv, quiet: bool) {
   let blobs_len = blobs.len();
   let comms_len = comms.len();
 
-  let parallel = parallel_ixon_drop_enabled();
-  let timing = if parallel {
-    let consts_ns = AtomicU64::new(0);
-    let named_ns = AtomicU64::new(0);
-    let names_ns = AtomicU64::new(0);
-    let blobs_ns = AtomicU64::new(0);
-    let comms_ns = AtomicU64::new(0);
-
-    rayon::scope(|s| {
-      s.spawn(|_| {
-        consts_ns.store(timed_drop_ns(consts), Ordering::Relaxed);
-      });
-      s.spawn(|_| {
-        named_ns.store(timed_drop_ns(named), Ordering::Relaxed);
-      });
-      s.spawn(|_| {
-        names_ns.store(timed_drop_ns(names), Ordering::Relaxed);
-      });
-      s.spawn(|_| {
-        blobs_ns.store(timed_drop_ns(blobs), Ordering::Relaxed);
-      });
-      s.spawn(|_| {
-        comms_ns.store(timed_drop_ns(comms), Ordering::Relaxed);
-      });
-    });
-
-    IxonDropTiming {
-      consts_ns: consts_ns.load(Ordering::Relaxed),
-      named_ns: named_ns.load(Ordering::Relaxed),
-      names_ns: names_ns.load(Ordering::Relaxed),
-      blobs_ns: blobs_ns.load(Ordering::Relaxed),
-      comms_ns: comms_ns.load(Ordering::Relaxed),
-    }
-  } else {
+  // Drop each map sequentially, but parallelise across each map's shards via
+  // `timed_drop_dashmap_par`. The previous `rayon::scope` 5-task fan-out only
+  // achieved map-level parallelism — wall-clock was bounded by `consts`,
+  // which is single-threaded internally and dominates the total. Doing one
+  // map at a time, fully parallel within, gives clean per-map timing and
+  // saturates the rayon pool on the work that actually matters.
+  let sequential = seq_ixon_drop_enabled();
+  let timing = if sequential {
     IxonDropTiming {
       consts_ns: timed_drop_ns(consts),
       named_ns: timed_drop_ns(named),
@@ -3025,15 +3030,24 @@ fn drop_ixon_env(ixon_env: IxonEnv, quiet: bool) {
       blobs_ns: timed_drop_ns(blobs),
       comms_ns: timed_drop_ns(comms),
     }
+  } else {
+    IxonDropTiming {
+      consts_ns: timed_drop_dashmap_par(consts),
+      named_ns: timed_drop_dashmap_par(named),
+      names_ns: timed_drop_dashmap_par(names),
+      blobs_ns: timed_drop_dashmap_par(blobs),
+      comms_ns: timed_drop_dashmap_par(comms),
+    }
   };
 
   let total_ns = elapsed_ns(total_start);
   if !quiet {
     eprintln!(
-      "[ixon_ingress] drop ixon_env: {:.2}s {} \
+      "[ixon_ingress] drop ixon_env: {:.2}s {} threads={} \
        (consts {:.2}s/{} named {:.2}s/{} names {:.2}s/{} blobs {:.2}s/{} comms {:.2}s/{})",
       seconds(total_ns),
-      if parallel { "parallel" } else { "sequential" },
+      if sequential { "sequential" } else { "parallel" },
+      rayon::current_num_threads(),
       seconds(timing.consts_ns),
       consts_len,
       seconds(timing.named_ns),
