@@ -3529,7 +3529,7 @@ fn decompile_block_aux_gen(
   all_names: &[Name],
   aux_members: &[(AuxKind, Name)],
   env: &mut LeanEnv,
-  kctx: &crate::ix::compile::KernelCtx,
+  kctx: &mut crate::ix::compile::KernelCtx,
   stt: &CompileState,
   dstt: &DecompileState,
 ) -> Vec<(Name, DecompileError)> {
@@ -4410,8 +4410,8 @@ pub fn decompile_env(
   // Decompile must start from a cold kernel env (the whole point of Phase 2
   // is to verify we can regenerate auxiliaries from the Ixon env alone,
   // independent of the compile phase's state).
-  let kctx = KernelCtx::new();
-  expr_utils::ensure_prelude_in_kenv_of(stt, &kctx);
+  let mut kctx = KernelCtx::new();
+  expr_utils::ensure_prelude_in_kenv_of(stt, &mut kctx);
 
   // Snapshot dstt.env (DashMap) into work_env (FxHashMap) for aux_gen lookups.
   // This grows incrementally as each block's aux_gen generates new constants.
@@ -4457,7 +4457,7 @@ pub fn decompile_env(
       if !ingressed.insert(name.clone()) {
         continue;
       }
-      expr_utils::ensure_in_kenv_of(&name, &work_env, stt, &kctx);
+      expr_utils::ensure_in_kenv_of(&name, &work_env, stt, &mut kctx);
       if let Some(ci) = work_env.get(&name) {
         for ref_name in get_constant_info_references(ci) {
           if !ingressed.contains(&ref_name) {
@@ -4472,7 +4472,7 @@ pub fn decompile_env(
       all_names,
       aux_members,
       &mut work_env,
-      &kctx,
+      &mut kctx,
       stt,
       &dstt,
     );

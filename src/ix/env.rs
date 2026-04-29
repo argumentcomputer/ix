@@ -338,7 +338,9 @@ impl Level {
   /// on `Sort` levels under partition refinement (see
   /// `kernel/level.rs:KUniv::max`).
   pub fn max_smart(x: Level, y: Level) -> Self {
-    if let (Some((bx, ox)), Some((by, oy))) = (x.explicit_offset(), y.explicit_offset()) {
+    if let (Some((bx, ox)), Some((by, oy))) =
+      (x.explicit_offset(), y.explicit_offset())
+    {
       // Both explicit numerals (Succ^n(Zero)): take the larger.
       let _ = (bx, by);
       return if ox >= oy { x } else { y };

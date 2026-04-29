@@ -190,7 +190,7 @@ pub(crate) fn generate_aux_patches(
   original_all: &[Name],
   lean_env: &Arc<LeanEnv>,
   stt: &CompileState,
-  kctx: &crate::ix::compile::KernelCtx,
+  kctx: &mut crate::ix::compile::KernelCtx,
 ) -> Result<AuxPatchesOutput, CompileError> {
   let mut patches: FxHashMap<Name, PatchedConstant> = FxHashMap::default();
   let mut aliases: FxHashMap<Name, Name> = FxHashMap::default();
@@ -1027,7 +1027,7 @@ pub(crate) fn populate_canon_kenv_with_below(
   sorted_classes: &[Vec<Name>],
   lean_env: &crate::ix::env::Env,
   stt: &CompileState,
-  kctx: &crate::ix::compile::KernelCtx,
+  kctx: &mut crate::ix::compile::KernelCtx,
 ) {
   use crate::ix::kernel::constant::KConst;
   use crate::ix::kernel::id::KId;
@@ -1037,7 +1037,6 @@ pub(crate) fn populate_canon_kenv_with_below(
 
   let n2a = Some(&stt.name_to_addr);
   let aux_n2a = Some(&stt.aux_name_to_addr);
-  let canon = &kctx.kenv;
 
   // Ensure PUnit and PProd are in kenv.
   expr_utils::ensure_prelude_in_kenv_of(stt, kctx);
@@ -1058,18 +1057,18 @@ pub(crate) fn populate_canon_kenv_with_below(
         let ty_z = lean_expr_to_zexpr_with_kenv(
           &d.typ,
           &d.level_params,
-          &kctx.kenv,
+          &mut kctx.kenv,
           n2a,
           aux_n2a,
         );
         let val_z = lean_expr_to_zexpr_with_kenv(
           &d.value,
           &d.level_params,
-          &kctx.kenv,
+          &mut kctx.kenv,
           n2a,
           aux_n2a,
         );
-        canon.insert(
+        kctx.kenv.insert(
           zid.clone(),
           KConst::Defn {
             name: d.name.clone(),
@@ -1091,7 +1090,7 @@ pub(crate) fn populate_canon_kenv_with_below(
         let ty_z = lean_expr_to_zexpr_with_kenv(
           &i.typ,
           &i.level_params,
-          &kctx.kenv,
+          &mut kctx.kenv,
           n2a,
           aux_n2a,
         );
@@ -1102,11 +1101,11 @@ pub(crate) fn populate_canon_kenv_with_below(
           let ctor_ty_z = lean_expr_to_zexpr_with_kenv(
             &ctor.typ,
             &i.level_params,
-            &kctx.kenv,
+            &mut kctx.kenv,
             n2a,
             aux_n2a,
           );
-          canon.insert(
+          kctx.kenv.insert(
             ctor_zid.clone(),
             KConst::Ctor {
               name: ctor.name.clone(),
@@ -1122,7 +1121,7 @@ pub(crate) fn populate_canon_kenv_with_below(
           );
           ctor_zids.push(ctor_zid);
         }
-        canon.insert(
+        kctx.kenv.insert(
           zid.clone(),
           KConst::Indc {
             name: i.name.clone(),

@@ -37,8 +37,15 @@ static SUBST_COUNT: std::sync::atomic::AtomicUsize =
 /// variables above `depth` down by 1. Uses `lbr()` for fast-path
 /// skipping. The internal traversal is memoized by content hash so
 /// shared sub-expressions within `body` are walked once per depth.
+///
+/// Memoization scratch is borrowed from `env.subst_scratch` to avoid
+/// allocating a fresh `FxHashMap` per call. We `mem::take` it out
+/// (replacing with an empty placeholder) so the borrow checker lets us
+/// thread `&mut env` and `&mut scratch` separately into `subst_cached`,
+/// then put it back on the way out. `subst_cached` does not call back
+/// into `subst`, so there is no risk of recursive scratch use.
 pub fn subst<M: KernelMode>(
-  env: &InternTable<M>,
+  env: &mut InternTable<M>,
   body: &KExpr<M>,
   arg: &KExpr<M>,
   depth: u64,
@@ -54,8 +61,11 @@ pub fn subst<M: KernelMode>(
   if body.lbr() <= depth {
     return body.clone();
   }
-  let mut cache: FxHashMap<(Addr, u64), KExpr<M>> = FxHashMap::default();
-  subst_cached(env, body, arg, depth, &mut cache)
+  let mut cache = std::mem::take(&mut env.subst_scratch);
+  cache.clear();
+  let result = subst_cached(env, body, arg, depth, &mut cache);
+  env.subst_scratch = cache;
+  result
 }
 
 /// Inner recursive worker with memoization keyed by `(sub-expr addr,
@@ -65,7 +75,7 @@ pub fn subst<M: KernelMode>(
 /// substitution site. Two subtrees with the same address but visited at
 /// different depths must not share a result.
 fn subst_cached<M: KernelMode>(
-  env: &InternTable<M>,
+  env: &mut InternTable<M>,
   body: &KExpr<M>,
   arg: &KExpr<M>,
   depth: u64,
@@ -158,7 +168,7 @@ fn subst_cached<M: KernelMode>(
 /// shared sub-expressions are traversed once per depth level (see the
 /// module-level docs).
 pub fn simul_subst<M: KernelMode>(
-  env: &InternTable<M>,
+  env: &mut InternTable<M>,
   body: &KExpr<M>,
   substs: &[KExpr<M>],
   depth: u64,
@@ -166,12 +176,18 @@ pub fn simul_subst<M: KernelMode>(
   if body.lbr() <= depth {
     return body.clone();
   }
-  let mut cache: FxHashMap<(Addr, u64), KExpr<M>> = FxHashMap::default();
-  simul_subst_cached(env, body, substs, depth, &mut cache)
+  // See `subst` for the mem::take/restore pattern. `simul_subst_cached`
+  // does not call into `subst`/`simul_subst`, so it is safe to share the
+  // single `subst_scratch` between them.
+  let mut cache = std::mem::take(&mut env.subst_scratch);
+  cache.clear();
+  let result = simul_subst_cached(env, body, substs, depth, &mut cache);
+  env.subst_scratch = cache;
+  result
 }
 
 fn simul_subst_cached<M: KernelMode>(
-  env: &InternTable<M>,
+  env: &mut InternTable<M>,
   body: &KExpr<M>,
   substs: &[KExpr<M>],
   depth: u64,
@@ -257,7 +273,7 @@ fn simul_subst_cached<M: KernelMode>(
 /// `subst`, memoizes by content hash within a single call so shared
 /// sub-expressions are walked once per cutoff level.
 pub fn lift<M: KernelMode>(
-  env: &InternTable<M>,
+  env: &mut InternTable<M>,
   e: &KExpr<M>,
   shift: u64,
   cutoff: u64,
@@ -265,12 +281,20 @@ pub fn lift<M: KernelMode>(
   if shift == 0 || e.lbr() <= cutoff {
     return e.clone();
   }
-  let mut cache: FxHashMap<(Addr, u64), KExpr<M>> = FxHashMap::default();
-  lift_cached(env, e, shift, cutoff, &mut cache)
+  // Borrow the dedicated `lift_scratch`. `lift` is invoked from inside
+  // `subst_cached`, which already holds `subst_scratch`; using a separate
+  // buffer keeps both available simultaneously. `lift_cached` does not
+  // call back into `lift`/`subst`/`simul_subst`, so the scratch is safe
+  // to share across calls without nested-borrow risk.
+  let mut cache = std::mem::take(&mut env.lift_scratch);
+  cache.clear();
+  let result = lift_cached(env, e, shift, cutoff, &mut cache);
+  env.lift_scratch = cache;
+  result
 }
 
 fn lift_cached<M: KernelMode>(
-  env: &InternTable<M>,
+  env: &mut InternTable<M>,
   e: &KExpr<M>,
   shift: u64,
   cutoff: u64,
@@ -383,52 +407,52 @@ mod tests {
 
   #[test]
   fn subst_var_0() {
-    let env = InternTable::<Anon>::new();
+    let mut env = InternTable::<Anon>::new();
     let v0 = AE::var(0, ());
     let arg = AE::nat(Nat::from(3u64), mk_addr("3"));
-    let result = subst(&env, &v0, &arg, 0);
+    let result = subst(&mut env, &v0, &arg, 0);
     assert_eq!(result, arg);
   }
 
   #[test]
   fn subst_closed_skip() {
-    let env = InternTable::<Anon>::new();
+    let mut env = InternTable::<Anon>::new();
     let nat = AE::cnst(KId::new(mk_addr("Nat"), ()), Box::new([]));
     let arg = AE::nat(Nat::from(3u64), mk_addr("3"));
-    let result = subst(&env, &nat, &arg, 0);
+    let result = subst(&mut env, &nat, &arg, 0);
     assert!(result.ptr_eq(&nat));
   }
 
   #[test]
   fn subst_free_var_shift() {
-    let env = InternTable::<Anon>::new();
+    let mut env = InternTable::<Anon>::new();
     let v1 = AE::var(1, ());
     let arg = AE::nat(Nat::from(3u64), mk_addr("3"));
-    let result = subst(&env, &v1, &arg, 0);
+    let result = subst(&mut env, &v1, &arg, 0);
     assert_eq!(result, AE::var(0, ()));
   }
 
   #[test]
   fn subst_app() {
-    let env = InternTable::<Anon>::new();
+    let mut env = InternTable::<Anon>::new();
     let c = AE::cnst(KId::new(mk_addr("f"), ()), Box::new([]));
     let v0 = AE::var(0, ());
     let app = AE::app(c.clone(), v0);
     let arg = AE::nat(Nat::from(3u64), mk_addr("3"));
-    let result = subst(&env, &app, &arg, 0);
+    let result = subst(&mut env, &app, &arg, 0);
     let expected = AE::app(c, arg);
     assert_eq!(result, expected);
   }
 
   #[test]
   fn subst_under_lambda() {
-    let env = InternTable::<Anon>::new();
+    let mut env = InternTable::<Anon>::new();
     let nat = AE::cnst(KId::new(mk_addr("Nat"), ()), Box::new([]));
     let v1 = AE::var(1, ());
     // λ(_:Nat). Var(1) — body references outer variable
     let lam = AE::lam((), (), nat.clone(), v1);
     let arg = AE::nat(Nat::from(3u64), mk_addr("3"));
-    let result = subst(&env, &lam, &arg, 0);
+    let result = subst(&mut env, &lam, &arg, 0);
     // Result: λ(_:Nat). 3
     let expected = AE::lam((), (), nat, arg);
     assert_eq!(result, expected);
@@ -436,39 +460,39 @@ mod tests {
 
   #[test]
   fn subst_bound_var_unchanged() {
-    let env = InternTable::<Anon>::new();
+    let mut env = InternTable::<Anon>::new();
     let nat = AE::cnst(KId::new(mk_addr("Nat"), ()), Box::new([]));
     let v0 = AE::var(0, ());
     // λ(_:Nat). Var(0) — body is lambda-bound, closed under binder
     let lam = AE::lam((), (), nat, v0);
     let arg = AE::nat(Nat::from(3u64), mk_addr("3"));
-    let result = subst(&env, &lam, &arg, 0);
+    let result = subst(&mut env, &lam, &arg, 0);
     assert!(result.ptr_eq(&lam));
   }
 
   #[test]
   fn lift_var() {
-    let env = InternTable::<Anon>::new();
+    let mut env = InternTable::<Anon>::new();
     let v0 = AE::var(0, ());
     // lift(Var(0), shift=1, cutoff=0) → Var(1)
-    let result = lift(&env, &v0, 1, 0);
+    let result = lift(&mut env, &v0, 1, 0);
     assert_eq!(result, AE::var(1, ()));
     // lift(Var(0), shift=1, cutoff=1) → Var(0) (below cutoff)
-    let result2 = lift(&env, &v0, 1, 1);
+    let result2 = lift(&mut env, &v0, 1, 1);
     assert!(result2.ptr_eq(&v0));
   }
 
   #[test]
   fn lift_zero_shift() {
-    let env = InternTable::<Anon>::new();
+    let mut env = InternTable::<Anon>::new();
     let v0 = AE::var(0, ());
-    let result = lift(&env, &v0, 0, 0);
+    let result = lift(&mut env, &v0, 0, 0);
     assert!(result.ptr_eq(&v0));
   }
 
   #[test]
   fn simul_subst_basic() {
-    let env = InternTable::<Anon>::new();
+    let mut env = InternTable::<Anon>::new();
     let v0 = AE::var(0, ());
     let v1 = AE::var(1, ());
     let app = AE::app(v1, v0); // App(Var(1), Var(0))
@@ -479,34 +503,34 @@ mod tests {
     // simul_subst([a, b], depth=0):
     //   Var(0) → substs[0] = a
     //   Var(1) → substs[1] = b
-    let result = simul_subst(&env, &app, &[a.clone(), b.clone()], 0);
+    let result = simul_subst(&mut env, &app, &[a.clone(), b.clone()], 0);
     let expected = AE::app(b, a);
     assert_eq!(result, expected);
   }
 
   #[test]
   fn simul_subst_shift() {
-    let env = InternTable::<Anon>::new();
+    let mut env = InternTable::<Anon>::new();
     let v2 = AE::var(2, ());
 
     let a = AE::nat(Nat::from(1u64), mk_addr("a"));
     let b = AE::nat(Nat::from(2u64), mk_addr("b"));
 
     // Var(2) >= depth+2 → shifted to Var(0)
-    let result = simul_subst(&env, &v2, &[a, b], 0);
+    let result = simul_subst(&mut env, &v2, &[a, b], 0);
     assert_eq!(result, AE::var(0, ()));
   }
 
   #[test]
   fn intern_dedup() {
-    let env = InternTable::<Anon>::new();
+    let mut env = InternTable::<Anon>::new();
     let _v0 = AE::var(0, ());
     let v2 = AE::var(2, ());
     let arg = AE::nat(Nat::from(3u64), mk_addr("3"));
 
     // Two substitutions producing the same result should be pointer-equal after interning
-    let r1 = subst(&env, &v2, &arg, 0);
-    let r2 = subst(&env, &v2, &arg, 0);
+    let r1 = subst(&mut env, &v2, &arg, 0);
+    let r2 = subst(&mut env, &v2, &arg, 0);
     assert!(r1.ptr_eq(&r2), "interned results should be ptr-equal");
   }
 
@@ -546,7 +570,7 @@ mod tests {
   /// `0..=max_var`. Leaf distribution is biased toward concrete data
   /// (Var/Sort/Const) to produce meaningful expressions.
   fn gen_expr(
-    env: &InternTable<Anon>,
+    env: &mut InternTable<Anon>,
     rng: &mut Prng,
     depth: u32,
     max_var: u64,
@@ -625,10 +649,10 @@ mod tests {
 
   #[test]
   fn prop_lbr_matches_observed_walk() {
-    let env = InternTable::<Anon>::new();
+    let mut env = InternTable::<Anon>::new();
     let mut rng = Prng::new(0x1234_5678);
     for _ in 0..200 {
-      let e = gen_expr(&env, &mut rng, 4, 3);
+      let e = gen_expr(&mut env, &mut rng, 4, 3);
       let observed = observed_lbr(&e);
       let reported = e.lbr();
       assert_eq!(
@@ -640,10 +664,10 @@ mod tests {
 
   #[test]
   fn prop_intern_determinism() {
-    let env = InternTable::<Anon>::new();
+    let mut env = InternTable::<Anon>::new();
     let mut rng = Prng::new(0x55aa_55aa);
     for _ in 0..200 {
-      let e = gen_expr(&env, &mut rng, 4, 3);
+      let e = gen_expr(&mut env, &mut rng, 4, 3);
       // Re-interning the same shape should return the same Arc.
       let e2 = env.intern_expr(e.data().clone().into_kexpr());
       assert!(
@@ -655,27 +679,27 @@ mod tests {
 
   #[test]
   fn prop_lift_zero_shift_is_identity() {
-    let env = InternTable::<Anon>::new();
+    let mut env = InternTable::<Anon>::new();
     let mut rng = Prng::new(0xCAFE_F00D);
     for _ in 0..200 {
-      let e = gen_expr(&env, &mut rng, 4, 3);
-      let r = lift(&env, &e, 0, 0);
+      let e = gen_expr(&mut env, &mut rng, 4, 3);
+      let r = lift(&mut env, &e, 0, 0);
       assert!(r.ptr_eq(&e), "lift with shift=0 must be identity");
     }
   }
 
   #[test]
   fn prop_subst_preserves_closed_expressions() {
-    let env = InternTable::<Anon>::new();
+    let mut env = InternTable::<Anon>::new();
     let mut rng = Prng::new(0xDEAD_BEEF);
     // Closed sub-expressions are not walked — verify `subst` returns the
     // same Arc.
     let arg = AE::nat(Nat::from(7u64), mk_addr("arg"));
     for _ in 0..100 {
-      let e = gen_expr(&env, &mut rng, 3, 0);
+      let e = gen_expr(&mut env, &mut rng, 3, 0);
       // Only closed (lbr == 0) expressions qualify; skip others.
       if e.lbr() == 0 {
-        let r = subst(&env, &e, &arg, 0);
+        let r = subst(&mut env, &e, &arg, 0);
         assert!(
           r.ptr_eq(&e),
           "subst must return ptr-equal for closed expressions"

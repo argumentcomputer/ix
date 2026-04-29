@@ -733,10 +733,7 @@ pub(crate) fn sort_aux_by_partition_refinement(
     eprintln!("[compile.canonical_aux_order.dump] post-sort classes:");
     for (ci, class) in sorted_classes.iter().enumerate() {
       for (mi, m) in class.iter().enumerate() {
-        eprintln!(
-          "  class[{ci}][{mi}] name={}",
-          m.name().pretty()
-        );
+        eprintln!("  class[{ci}][{mi}] name={}", m.name().pretty());
       }
     }
   }

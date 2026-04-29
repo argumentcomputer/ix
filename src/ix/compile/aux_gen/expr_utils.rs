@@ -7,7 +7,7 @@
 //! Also includes substitution, shifting, and universe manipulation helpers
 //! used across `recursor.rs`, `below.rs`, and `brecon.rs`.
 
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::ix::address::Address;
 use crate::ix::compile::nat_conv::{nat_to_u64, nat_to_usize};
@@ -123,7 +123,7 @@ pub(super) fn decompose_inductive_type(
   ind_univs: &[Level],
   param_fvars: &[LocalDecl],
   stt: &crate::ix::compile::CompileState,
-  kctx: &crate::ix::compile::KernelCtx,
+  kctx: &mut crate::ix::compile::KernelCtx,
 ) -> Result<IndRecInfo, crate::ix::ixon::CompileError> {
   use crate::ix::ixon::CompileError;
 
@@ -895,21 +895,15 @@ pub(super) fn subst_level(
 ) -> Level {
   match lvl.as_data() {
     LevelData::Zero(_) | LevelData::Mvar(_, _) => lvl.clone(),
-    LevelData::Succ(l, _) => {
-      Level::succ(subst_level(l, params, univs))
-    },
-    LevelData::Max(a, b, _) => {
-      Level::max_smart(
-        subst_level(a, params, univs),
-        subst_level(b, params, univs),
-      )
-    },
-    LevelData::Imax(a, b, _) => {
-      Level::imax_smart(
-        subst_level(a, params, univs),
-        subst_level(b, params, univs),
-      )
-    },
+    LevelData::Succ(l, _) => Level::succ(subst_level(l, params, univs)),
+    LevelData::Max(a, b, _) => Level::max_smart(
+      subst_level(a, params, univs),
+      subst_level(b, params, univs),
+    ),
+    LevelData::Imax(a, b, _) => Level::imax_smart(
+      subst_level(a, params, univs),
+      subst_level(b, params, univs),
+    ),
     LevelData::Param(name, _) => {
       for (i, p) in params.iter().enumerate() {
         if p == name && i < univs.len() {
@@ -1699,7 +1693,7 @@ pub(super) fn find_motive_fvar(
 /// Accepts `kctx` so callers can choose which KernelCtx to populate.
 pub(crate) fn ensure_prelude_in_kenv_of(
   stt: &crate::ix::compile::CompileState,
-  kctx: &crate::ix::compile::KernelCtx,
+  kctx: &mut crate::ix::compile::KernelCtx,
 ) {
   use crate::ix::kernel::constant::KConst;
   use crate::ix::kernel::expr::KExpr;
@@ -1921,11 +1915,11 @@ pub(crate) fn ensure_prelude_in_kenv_of(
 ///   parent inductive and its sibling constructors, which is the one
 ///   place we *do* walk downstream (because kernel TC for a ctor use
 ///   requires the parent).
-fn ensure_in_kenv_of_inner(
+fn ensure_in_kenv_of_inner_env(
   name: &Name,
   lean_env: &crate::ix::env::Env,
   stt: &crate::ix::compile::CompileState,
-  kctx: &crate::ix::compile::KernelCtx,
+  kenv: &mut crate::ix::kernel::env::KEnv<Meta>,
   replace_axio_stub: bool,
 ) {
   use crate::ix::env::{ConstantInfo as LCI, DefinitionSafety};
@@ -1941,7 +1935,7 @@ fn ensure_in_kenv_of_inner(
   let addr = resolve_lean_name_addr(name, n2a, aux_n2a);
   let zid: KId<Meta> = KId::new(addr, name.clone());
 
-  if let Some(existing) = kctx.kenv.get(&zid) {
+  if let Some(existing) = kenv.get(&zid) {
     // Most aux_gen ingress paths only need type-only stubs. When a later
     // WHNF path needs a real definition/inductive, allow replacing those
     // stubs; never overwrite already-real entries such as the current
@@ -1952,13 +1946,12 @@ fn ensure_in_kenv_of_inner(
   }
 
   let Some(ci) = lean_env.get(name).cloned() else { return };
-  let cache = Some(&kctx.kenv.ingress_cache);
-
   // Helper: convert a LeanExpr to KExpr with the given level param names,
   // using the KEnv's persistent ingress cache. Callers are top-level, so
   // we start with an empty binder-name stack.
   let to_z = |expr: &crate::ix::env::Expr,
-              lp: &[Name]|
+              lp: &[Name],
+              kenv: &mut crate::ix::kernel::env::KEnv<Meta>|
    -> crate::ix::kernel::expr::KExpr<Meta> {
     let pn_h = param_names_hash(lp);
     let mut binder_names: Vec<Name> = Vec::new();
@@ -1966,10 +1959,10 @@ fn ensure_in_kenv_of_inner(
       expr,
       lp,
       &mut binder_names,
-      &kctx.kenv.intern,
+      &mut kenv.intern,
       n2a,
       aux_n2a,
-      cache,
+      Some(&mut kenv.ingress_cache),
       Some(&pn_h),
     )
   };
@@ -1978,7 +1971,7 @@ fn ensure_in_kenv_of_inner(
     LCI::InductInfo(ind) => {
       let lp = &ind.cnst.level_params;
       let n_lvls = lp.len() as u64;
-      let ty_z = to_z(&ind.cnst.typ, lp);
+      let ty_z = to_z(&ind.cnst.typ, lp, kenv);
       let mut ctor_zids = Vec::new();
       for ctor_name in &ind.ctors {
         if let Some(LCI::CtorInfo(ctor)) = lean_env.get(ctor_name) {
@@ -1986,7 +1979,8 @@ fn ensure_in_kenv_of_inner(
             resolve_lean_name_addr(ctor_name, n2a, aux_n2a),
             ctor_name.clone(),
           );
-          kctx.kenv.insert(
+          let ty = to_z(&ctor.cnst.typ, lp, kenv);
+          kenv.insert(
             ctor_zid.clone(),
             KConst::Ctor {
               name: ctor_name.clone(),
@@ -1997,13 +1991,13 @@ fn ensure_in_kenv_of_inner(
               cidx: ctor_zids.len() as u64,
               params: nat_to_u64(&ctor.num_params),
               fields: nat_to_u64(&ctor.num_fields),
-              ty: to_z(&ctor.cnst.typ, lp),
+              ty,
             },
           );
           ctor_zids.push(ctor_zid);
         }
       }
-      kctx.kenv.insert(
+      kenv.insert(
         zid.clone(),
         KConst::Indc {
           name: name.clone(),
@@ -2025,7 +2019,9 @@ fn ensure_in_kenv_of_inner(
     },
     LCI::DefnInfo(d) => {
       let lp = &d.cnst.level_params;
-      kctx.kenv.insert(
+      let ty = to_z(&d.cnst.typ, lp, kenv);
+      let val = to_z(&d.value, lp, kenv);
+      kenv.insert(
         zid.clone(),
         KConst::Defn {
           name: name.clone(),
@@ -2034,8 +2030,8 @@ fn ensure_in_kenv_of_inner(
           safety: d.safety,
           hints: d.hints,
           lvls: lp.len() as u64,
-          ty: to_z(&d.cnst.typ, lp),
-          val: to_z(&d.value, lp),
+          ty,
+          val,
           lean_all: vec![],
           block: zid,
         },
@@ -2043,7 +2039,9 @@ fn ensure_in_kenv_of_inner(
     },
     LCI::ThmInfo(d) => {
       let lp = &d.cnst.level_params;
-      kctx.kenv.insert(
+      let ty = to_z(&d.cnst.typ, lp, kenv);
+      let val = to_z(&d.value, lp, kenv);
+      kenv.insert(
         zid.clone(),
         KConst::Defn {
           name: name.clone(),
@@ -2052,8 +2050,8 @@ fn ensure_in_kenv_of_inner(
           safety: DefinitionSafety::Safe,
           hints: crate::ix::env::ReducibilityHints::Opaque,
           lvls: lp.len() as u64,
-          ty: to_z(&d.cnst.typ, lp),
-          val: to_z(&d.value, lp),
+          ty,
+          val,
           lean_all: vec![],
           block: zid,
         },
@@ -2061,7 +2059,9 @@ fn ensure_in_kenv_of_inner(
     },
     LCI::OpaqueInfo(d) => {
       let lp = &d.cnst.level_params;
-      kctx.kenv.insert(
+      let ty = to_z(&d.cnst.typ, lp, kenv);
+      let val = to_z(&d.value, lp, kenv);
+      kenv.insert(
         zid.clone(),
         KConst::Defn {
           name: name.clone(),
@@ -2070,8 +2070,8 @@ fn ensure_in_kenv_of_inner(
           safety: DefinitionSafety::Safe,
           hints: crate::ix::env::ReducibilityHints::Opaque,
           lvls: lp.len() as u64,
-          ty: to_z(&d.cnst.typ, lp),
-          val: to_z(&d.value, lp),
+          ty,
+          val,
           lean_all: vec![],
           block: zid,
         },
@@ -2079,37 +2079,39 @@ fn ensure_in_kenv_of_inner(
     },
     LCI::AxiomInfo(a) => {
       let lp = &a.cnst.level_params;
-      kctx.kenv.insert(
+      let ty = to_z(&a.cnst.typ, lp, kenv);
+      kenv.insert(
         zid.clone(),
         KConst::Axio {
           name: name.clone(),
           level_params: lp.clone(),
           is_unsafe: a.is_unsafe,
           lvls: lp.len() as u64,
-          ty: to_z(&a.cnst.typ, lp),
+          ty,
         },
       );
     },
     LCI::QuotInfo(q) => {
       let lp = &q.cnst.level_params;
-      kctx.kenv.insert(
+      let ty = to_z(&q.cnst.typ, lp, kenv);
+      kenv.insert(
         zid.clone(),
         KConst::Quot {
           name: name.clone(),
           level_params: lp.clone(),
           kind: q.kind,
           lvls: lp.len() as u64,
-          ty: to_z(&q.cnst.typ, lp),
+          ty,
         },
       );
     },
     LCI::CtorInfo(ctor) => {
       // Constructors are ingressed as part of their parent inductive.
-      ensure_in_kenv_of_inner(
+      ensure_in_kenv_of_inner_env(
         &ctor.induct,
         lean_env,
         stt,
-        kctx,
+        kenv,
         replace_axio_stub,
       );
     },
@@ -2120,11 +2122,27 @@ fn ensure_in_kenv_of_inner(
   }
 }
 
+fn ensure_in_kenv_of_inner(
+  name: &Name,
+  lean_env: &crate::ix::env::Env,
+  stt: &crate::ix::compile::CompileState,
+  kctx: &mut crate::ix::compile::KernelCtx,
+  replace_axio_stub: bool,
+) {
+  ensure_in_kenv_of_inner_env(
+    name,
+    lean_env,
+    stt,
+    &mut kctx.kenv,
+    replace_axio_stub,
+  );
+}
+
 pub(crate) fn ensure_in_kenv_of(
   name: &Name,
   lean_env: &crate::ix::env::Env,
   stt: &crate::ix::compile::CompileState,
-  kctx: &crate::ix::compile::KernelCtx,
+  kctx: &mut crate::ix::compile::KernelCtx,
 ) {
   ensure_in_kenv_of_inner(name, lean_env, stt, kctx, false);
 }
@@ -2136,9 +2154,18 @@ pub(crate) fn ensure_full_in_kenv_of(
   name: &Name,
   lean_env: &crate::ix::env::Env,
   stt: &crate::ix::compile::CompileState,
-  kctx: &crate::ix::compile::KernelCtx,
+  kctx: &mut crate::ix::compile::KernelCtx,
 ) {
   ensure_in_kenv_of_inner(name, lean_env, stt, kctx, true);
+}
+
+fn ensure_full_in_tc_env(
+  name: &Name,
+  lean_env: &crate::ix::env::Env,
+  stt: &crate::ix::compile::CompileState,
+  kenv: &mut crate::ix::kernel::env::KEnv<Meta>,
+) {
+  ensure_in_kenv_of_inner_env(name, lean_env, stt, kenv, true);
 }
 
 /// Convenience wrapper: ingress into the **original** kenv (`stt.kctx`).
@@ -2146,8 +2173,9 @@ pub(crate) fn ensure_in_kenv(
   name: &Name,
   lean_env: &crate::ix::env::Env,
   stt: &crate::ix::compile::CompileState,
+  kctx: &mut crate::ix::compile::KernelCtx,
 ) {
-  ensure_in_kenv_of(name, lean_env, stt, &stt.kctx);
+  ensure_in_kenv_of(name, lean_env, stt, kctx);
 }
 
 // =========================================================================
@@ -2164,7 +2192,7 @@ pub(super) struct TcScope<'a> {
   base_depth: usize,
   param_names: &'a [Name],
   stt: &'a crate::ix::compile::CompileState,
-  tc: crate::ix::kernel::tc::TypeChecker<Meta>,
+  tc: crate::ix::kernel::tc::TypeChecker<'a, Meta>,
   /// How many extra locals are currently pushed above base_depth.
   extra_locals: usize,
 }
@@ -2175,7 +2203,7 @@ impl<'a> TcScope<'a> {
     outer_fvar_ctx: &[LocalDecl],
     param_names: &'a [Name],
     stt: &'a crate::ix::compile::CompileState,
-    kctx: &'a crate::ix::compile::KernelCtx,
+    kctx: &'a mut crate::ix::compile::KernelCtx,
   ) -> Self {
     let fvar_levels: FxHashMap<Name, usize> = outer_fvar_ctx
       .iter()
@@ -2183,7 +2211,7 @@ impl<'a> TcScope<'a> {
       .map(|(i, decl)| (decl.fvar_name.clone(), i))
       .collect();
 
-    let mut tc = crate::ix::kernel::tc::TypeChecker::new(kctx.kenv.clone());
+    let mut tc = crate::ix::kernel::tc::TypeChecker::new(&mut kctx.kenv);
     tc.infer_only = true;
 
     // Push outer FVar types once.
@@ -2230,6 +2258,114 @@ impl<'a> TcScope<'a> {
     self.extra_locals -= decls.len();
   }
 
+  fn fault_in_direct_expr_consts(&mut self, expr: &LeanExpr) {
+    let mut refs = FxHashSet::default();
+    collect_lean_const_refs(expr, &mut refs);
+    for name in refs {
+      self.fault_in_name(&name);
+    }
+  }
+
+  fn fault_in_name(&mut self, name: &Name) -> bool {
+    let Some(lean_env) = self.stt.lean_env.as_deref() else {
+      return false;
+    };
+    ensure_full_in_tc_env(name, lean_env, self.stt, self.tc.env);
+    let addr = resolve_lean_name_addr(
+      name,
+      Some(&self.stt.name_to_addr),
+      Some(&self.stt.aux_name_to_addr),
+    );
+    self.addr_present(&addr)
+  }
+
+  fn fault_in_addr(&mut self, addr: &Address) -> bool {
+    if self.addr_present(addr) {
+      return true;
+    }
+    let Some(name) = self.name_for_addr(addr) else {
+      return false;
+    };
+    self.fault_in_name(&name) && self.addr_present(addr)
+  }
+
+  fn addr_present(&self, addr: &Address) -> bool {
+    self.tc.env.consts.keys().any(|id| &id.addr == addr)
+  }
+
+  fn name_for_addr(&self, addr: &Address) -> Option<Name> {
+    for entry in self.stt.name_to_addr.iter() {
+      if entry.value() == addr {
+        return Some(entry.key().clone());
+      }
+    }
+    for entry in self.stt.aux_name_to_addr.iter() {
+      if entry.value() == addr {
+        return Some(entry.key().clone());
+      }
+    }
+    let lean_env = self.stt.lean_env.as_deref()?;
+    lean_env.keys().find_map(|name| {
+      let name_addr = Address::from_blake3_hash(*name.get_hash());
+      if &name_addr == addr { Some(name.clone()) } else { None }
+    })
+  }
+
+  fn get_level_error(
+    &self,
+    ty: &LeanExpr,
+    kexpr: &crate::ix::kernel::expr::KExpr<Meta>,
+    e: &crate::ix::kernel::error::TcError<Meta>,
+  ) -> crate::ix::ixon::CompileError {
+    eprintln!("[TcScope::get_level] FAILED");
+    eprintln!("  lean_expr: {}", ty.pretty());
+    eprintln!("  kexpr:     {kexpr}");
+    eprintln!("  error:     {e}");
+    eprintln!(
+      "  ctx depth: {} (base={}, extra={})",
+      self.tc.ctx.len(),
+      self.base_depth,
+      self.extra_locals
+    );
+    // Dump kenv entries for constants referenced in the expression.
+    let mut stack: Vec<&crate::ix::kernel::expr::KExpr<Meta>> = vec![kexpr];
+    let mut seen_ids = std::collections::HashSet::new();
+    while let Some(expr) = stack.pop() {
+      use crate::ix::kernel::expr::ExprData as ZED;
+      match expr.data() {
+        ZED::Const(id, us, _) => {
+          if seen_ids.insert(id.clone()) {
+            match self.tc.env.get(id) {
+              Some(c) => {
+                eprintln!("  kenv[{}]: lvls={}, ty={}", id, c.lvls(), c.ty())
+              },
+              None => eprintln!("  kenv[{}]: NOT FOUND", id),
+            }
+            eprintln!(
+              "    level_args: [{}]",
+              us.iter().map(|u| format!("{u}")).collect::<Vec<_>>().join(", ")
+            );
+          }
+        },
+        ZED::App(f, a, _) => {
+          stack.push(f);
+          stack.push(a);
+        },
+        ZED::All(_, _, d, b, _) | ZED::Lam(_, _, d, b, _) => {
+          stack.push(d);
+          stack.push(b);
+        },
+        _ => {},
+      }
+    }
+    crate::ix::ixon::CompileError::UnsupportedExpr {
+      desc: format!(
+        "TcScope::get_level({}): tc.infer failed: {e}",
+        ty.pretty()
+      ),
+    }
+  }
+
   /// Infer the sort level of a type expression in the current context.
   ///
   /// Uses a fast path matching Lean's `inferAppType` (InferType.lean:79-91):
@@ -2256,58 +2392,22 @@ impl<'a> TcScope<'a> {
     let kexpr =
       to_kexpr_static(ty, &self.fvar_levels, depth, self.param_names, self.stt);
 
-    let inferred = self.tc.infer(&kexpr).map_err(|e| {
-      eprintln!("[TcScope::get_level] FAILED");
-      eprintln!("  lean_expr: {}", ty.pretty());
-      eprintln!("  kexpr:     {kexpr}");
-      eprintln!("  error:     {e}");
-      eprintln!(
-        "  ctx depth: {} (base={}, extra={})",
-        self.tc.ctx.len(),
-        self.base_depth,
-        self.extra_locals
-      );
-      // Dump kenv entries for constants referenced in the expression
-      let mut stack: Vec<&crate::ix::kernel::expr::KExpr<Meta>> = vec![&kexpr];
-      let mut seen_ids = std::collections::HashSet::new();
-      while let Some(expr) = stack.pop() {
-        use crate::ix::kernel::expr::ExprData as ZED;
-        match expr.data() {
-          ZED::Const(id, us, _) => {
-            if seen_ids.insert(id.clone()) {
-              match self.tc.env.get(id) {
-                Some(c) => {
-                  eprintln!("  kenv[{}]: lvls={}, ty={}", id, c.lvls(), c.ty())
-                },
-                None => eprintln!("  kenv[{}]: NOT FOUND", id),
-              }
-              eprintln!(
-                "    level_args: [{}]",
-                us.iter()
-                  .map(|u| format!("{u}"))
-                  .collect::<Vec<_>>()
-                  .join(", ")
-              );
-            }
-          },
-          ZED::App(f, a, _) => {
-            stack.push(f);
-            stack.push(a);
-          },
-          ZED::All(_, _, d, b, _) | ZED::Lam(_, _, d, b, _) => {
-            stack.push(d);
-            stack.push(b);
-          },
-          _ => {},
-        }
+    // Lazy on-demand ingress: load only constants demanded by this specific
+    // aux_gen inference, then retry one missing upstream constant at a time.
+    self.fault_in_direct_expr_consts(ty);
+    let mut faulted_addrs = FxHashSet::default();
+    let inferred = loop {
+      match self.tc.infer(&kexpr) {
+        Ok(inferred) => break inferred,
+        Err(crate::ix::kernel::error::TcError::UnknownConst(addr))
+          if faulted_addrs.insert(addr.clone())
+            && self.fault_in_addr(&addr) =>
+        {
+          continue;
+        },
+        Err(e) => return Err(self.get_level_error(ty, &kexpr, &e)),
       }
-      crate::ix::ixon::CompileError::UnsupportedExpr {
-        desc: format!(
-          "TcScope::get_level({}): tc.infer failed: {e}",
-          ty.pretty()
-        ),
-      }
-    })?;
+    };
     let ku = self.tc.ensure_sort(&inferred).map_err(|e| {
       crate::ix::ixon::CompileError::UnsupportedExpr {
         desc: format!("TcScope::get_level: ensure_sort failed: {e}"),
@@ -2705,6 +2805,36 @@ fn to_kexpr_static(
       to_kexpr_static(inner, fvar_levels, ctx_depth, param_names, stt)
     },
     _ => KExpr::sort(KUniv::zero()),
+  }
+}
+
+fn collect_lean_const_refs(expr: &LeanExpr, out: &mut FxHashSet<Name>) {
+  let mut stack = vec![expr];
+  while let Some(expr) = stack.pop() {
+    match expr.as_data() {
+      ExprData::Const(name, _, _) => {
+        out.insert(name.clone());
+      },
+      ExprData::App(f, a, _) => {
+        stack.push(f);
+        stack.push(a);
+      },
+      ExprData::ForallE(_, d, b, _, _) | ExprData::Lam(_, d, b, _, _) => {
+        stack.push(d);
+        stack.push(b);
+      },
+      ExprData::LetE(_, t, v, b, _, _) => {
+        stack.push(t);
+        stack.push(v);
+        stack.push(b);
+      },
+      ExprData::Proj(type_name, _, e, _) => {
+        out.insert(type_name.clone());
+        stack.push(e);
+      },
+      ExprData::Mdata(_, e, _) => stack.push(e),
+      _ => {},
+    }
   }
 }
 

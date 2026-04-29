@@ -68,6 +68,10 @@ pub struct PerfCounters {
   pub unfold_cache_hits: AtomicU64,
   pub unfold_cache_misses: AtomicU64,
 
+  // -- isProp cache (propositional-type detection for proof irrelevance) --
+  pub is_prop_cache_hits: AtomicU64,
+  pub is_prop_cache_misses: AtomicU64,
+
   // -- Recursive fuel --
   /// Running max of fuel actually consumed by any single constant check.
   pub peak_rec_fuel_used: AtomicU64,
@@ -169,6 +173,18 @@ impl PerfCounters {
   }
 
   // -----------------------------------------------------------------------
+  // isProp cache
+  // -----------------------------------------------------------------------
+
+  pub fn record_is_prop_hit(&self) {
+    bump(&self.is_prop_cache_hits);
+  }
+
+  pub fn record_is_prop_miss(&self) {
+    bump(&self.is_prop_cache_misses);
+  }
+
+  // -----------------------------------------------------------------------
   // Recursive fuel
   // -----------------------------------------------------------------------
 
@@ -217,13 +233,54 @@ impl PerfCounters {
 
   fn write_summary(&self, out: &mut impl fmt::Write) -> fmt::Result {
     writeln!(out, "[ix-perf] cache hit rates:")?;
-    write_rate(out, "  whnf_cache         ", &self.whnf_cache_hits, &self.whnf_cache_misses)?;
-    write_rate(out, "  whnf_no_delta      ", &self.whnf_no_delta_cache_hits, &self.whnf_no_delta_cache_misses)?;
-    write_rate(out, "  whnf_core          ", &self.whnf_core_cache_hits, &self.whnf_core_cache_misses)?;
-    write_rate(out, "  infer_cache        ", &self.infer_cache_hits, &self.infer_cache_misses)?;
-    write_rate(out, "  infer_only_cache   ", &self.infer_only_cache_hits, &self.infer_only_cache_misses)?;
-    write_rate(out, "  def_eq_cache       ", &self.def_eq_cache_hits, &self.def_eq_cache_misses)?;
-    write_rate(out, "  unfold_cache       ", &self.unfold_cache_hits, &self.unfold_cache_misses)?;
+    write_rate(
+      out,
+      "  whnf_cache         ",
+      &self.whnf_cache_hits,
+      &self.whnf_cache_misses,
+    )?;
+    write_rate(
+      out,
+      "  whnf_no_delta      ",
+      &self.whnf_no_delta_cache_hits,
+      &self.whnf_no_delta_cache_misses,
+    )?;
+    write_rate(
+      out,
+      "  whnf_core          ",
+      &self.whnf_core_cache_hits,
+      &self.whnf_core_cache_misses,
+    )?;
+    write_rate(
+      out,
+      "  infer_cache        ",
+      &self.infer_cache_hits,
+      &self.infer_cache_misses,
+    )?;
+    write_rate(
+      out,
+      "  infer_only_cache   ",
+      &self.infer_only_cache_hits,
+      &self.infer_only_cache_misses,
+    )?;
+    write_rate(
+      out,
+      "  def_eq_cache       ",
+      &self.def_eq_cache_hits,
+      &self.def_eq_cache_misses,
+    )?;
+    write_rate(
+      out,
+      "  unfold_cache       ",
+      &self.unfold_cache_hits,
+      &self.unfold_cache_misses,
+    )?;
+    write_rate(
+      out,
+      "  is_prop_cache      ",
+      &self.is_prop_cache_hits,
+      &self.is_prop_cache_misses,
+    )?;
 
     let fail_hits = self.def_eq_failure_hits.load(Ordering::Relaxed);
     let fail_inserts = self.def_eq_failure_inserts.load(Ordering::Relaxed);

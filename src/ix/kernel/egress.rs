@@ -416,7 +416,7 @@ impl EgressCtx {
 
 /// Convert a kernel universe to an Ixon universe (memoized by content hash).
 fn kuniv_to_ixon(u: &KUniv<Meta>, ctx: &mut EgressCtx) -> Arc<IxonUniv> {
-  let key = **u.addr();
+  let key = *u.addr();
   if let Some(hit) = ctx.univ_cache.get(&key) {
     return hit.clone();
   }
@@ -464,7 +464,7 @@ fn kunivs_to_idxs(us: &[KUniv<Meta>], ctx: &mut EgressCtx) -> Vec<u64> {
 /// Note on `Share`: we never emit `IxonExpr::Share(_)` here; sharing is
 /// discovered fresh by the `apply_sharing_*` pass that wraps our output.
 fn kexpr_to_ixon(expr: &KExpr<Meta>, ctx: &mut EgressCtx) -> Arc<IxonExpr> {
-  let key = **expr.addr();
+  let key = *expr.addr();
   if let Some(hit) = ctx.expr_cache.get(&key) {
     return hit.clone();
   }
@@ -1652,7 +1652,7 @@ mod tests {
 
   #[test]
   fn lean_egress_roundtrips_multiple_axioms() {
-    let zenv = KEnv::<Meta>::new();
+    let mut zenv = KEnv::<Meta>::new();
     for name in ["A", "B", "C"] {
       let id = mk_id(name);
       zenv.insert(

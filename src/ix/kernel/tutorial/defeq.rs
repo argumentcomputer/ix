@@ -2,7 +2,6 @@
 
 #[cfg(test)]
 mod tests {
-  use std::sync::Arc;
 
   use crate::ix::env::Name;
   use crate::ix::kernel::constant::{KConst, RecRule};
@@ -17,8 +16,8 @@ mod tests {
   /// proofIrrelevance : ∀ (p : Prop) (h1 h2 : p), h1 = h2 := fun _ _ _ => rfl
   #[test]
   fn good_proof_irrelevance() {
-    let env = Arc::new(KEnv::<Meta>::new());
-    add_eq_axioms(&env);
+    let mut env = KEnv::<Meta>::new();
+    add_eq_axioms(&mut env);
 
     // ∀ (p : Prop) (h1 h2 : p), Eq.{0} p h1 h2
     // depth 3: p=var(2), h1=var(1), h2=var(0)
@@ -54,14 +53,14 @@ mod tests {
       crate::ix::env::ReducibilityHints::Abbrev,
     );
     env.insert(id.clone(), c);
-    check_accepts(&env, &id);
+    check_accepts(&mut env, &id);
   }
 
   /// funEta : ∀ (α β : Type) (f : α → β), (fun x => f x) = f := fun _ _ f => rfl
   #[test]
   fn good_fun_eta() {
-    let env = Arc::new(KEnv::<Meta>::new());
-    add_eq_axioms(&env);
+    let mut env = KEnv::<Meta>::new();
+    add_eq_axioms(&mut env);
 
     // ∀ (α : Type) (β : Type) (f : α → β), (fun x => f x) = f
     // At f_ty position (depth 2): α=var(1), β=var(0)
@@ -99,15 +98,15 @@ mod tests {
 
     let (id, c) = mk_thm("funEta", 0, vec![], ty, val);
     env.insert(id.clone(), c);
-    check_accepts(&env, &id);
+    check_accepts(&mut env, &id);
   }
 
   /// funEtaBad : ∀ (α β : Type) (g : α → α) (f : α → β), (fun x => f (g x)) = f
   /// BAD: eta should NOT identify functions with different bodies.
   #[test]
   fn bad_fun_eta() {
-    let env = Arc::new(KEnv::<Meta>::new());
-    add_eq_axioms(&env);
+    let mut env = KEnv::<Meta>::new();
+    add_eq_axioms(&mut env);
 
     // ∀ (α : Type) (β : Type) (g : α → α) (f : α → β), (fun x => f (g x)) = f
     // At g_ty position (depth 2): α=var(1), β=var(0)
@@ -164,14 +163,14 @@ mod tests {
 
     let (id, c) = mk_thm("funEtaBad", 0, vec![], ty, val);
     env.insert(id.clone(), c);
-    check_rejects(&env, &id);
+    check_rejects(&mut env, &id);
   }
 
   /// funEtaDep : ∀ (α : Type) (β : α → Type) (f : ∀ a, β a), (fun a => f a) = f
   #[test]
   fn good_fun_eta_dep() {
-    let env = Arc::new(KEnv::<Meta>::new());
-    add_eq_axioms(&env);
+    let mut env = KEnv::<Meta>::new();
+    add_eq_axioms(&mut env);
 
     // At depth 3: f=var(0), β=var(1), α=var(2)
     // f : ∀ (a : α), β a. At depth 2: α=var(1), β=var(0)
@@ -214,7 +213,7 @@ mod tests {
 
     let (id, c) = mk_thm("funEtaDep", 0, vec![], ty, val);
     env.insert(id.clone(), c);
-    check_accepts(&env, &id);
+    check_accepts(&mut env, &id);
   }
 
   // ==========================================================================
@@ -226,8 +225,8 @@ mod tests {
   /// ∀ (p : Prop) (h : p), h = h
   #[test]
   fn good_trivial_eq() {
-    let env = Arc::new(KEnv::<Meta>::new());
-    add_eq_axioms(&env);
+    let mut env = KEnv::<Meta>::new();
+    add_eq_axioms(&mut env);
 
     // ∀ (p : Prop) (h : p), Eq.{0} p h h
     let ty = npi(
@@ -243,15 +242,15 @@ mod tests {
     );
     let (id, c) = mk_thm("trivialEq", 0, vec![], ty, val);
     env.insert(id.clone(), c);
-    check_accepts(&env, &id);
+    check_accepts(&mut env, &id);
   }
 
   /// bad: claim Eq.refl proves h1 = h2 for NON-Prop types (no proof irrelevance)
   /// ∀ (α : Type) (a b : α), Eq a b
   #[test]
   fn bad_non_prop_eq() {
-    let env = Arc::new(KEnv::<Meta>::new());
-    add_eq_axioms(&env);
+    let mut env = KEnv::<Meta>::new();
+    add_eq_axioms(&mut env);
 
     // ∀ (α : Type) (a b : α), Eq.{1} α a b
     // depth 3: α=var(2), a=var(1), b=var(0)
@@ -276,7 +275,7 @@ mod tests {
     );
     let (id, c) = mk_thm("badNonPropEq", 0, vec![], ty, val);
     env.insert(id.clone(), c);
-    check_rejects(&env, &id);
+    check_rejects(&mut env, &id);
   }
 
   // ==========================================================================
@@ -285,8 +284,8 @@ mod tests {
 
   /// Build a PUnit-like unit type environment.
   /// MyUnit : Type, MyUnit.star : MyUnit, MyUnit.rec
-  fn unit_env() -> Arc<KEnv<Meta>> {
-    let env = Arc::new(KEnv::<Meta>::new());
+  fn unit_env() -> KEnv<Meta> {
+    let mut env = KEnv::<Meta>::new();
     let n = "MyUnit";
     let block_id = mk_id(n);
     let ctor_id = mk_id(&format!("{n}.star"));
@@ -370,7 +369,7 @@ mod tests {
     );
 
     env.blocks.insert(block_id.clone(), vec![block_id, ctor_id, rec_id]);
-    add_eq_axioms(&env);
+    add_eq_axioms(&mut env);
     env
   }
 
@@ -378,7 +377,7 @@ mod tests {
   /// Any two values of a unit type are definitionally equal (structure eta).
   #[test]
   fn good_unit_eta() {
-    let env = unit_env();
+    let mut env = unit_env();
     // ∀ (x y : MyUnit), Eq.{1} MyUnit x y
     let ty = npi(
       "x",
@@ -402,7 +401,7 @@ mod tests {
     );
     let (id, c) = mk_thm("unitEta", 0, vec![], ty, val);
     env.insert(id.clone(), c);
-    check_accepts(&env, &id);
+    check_accepts(&mut env, &id);
   }
 
   // ==========================================================================
@@ -413,9 +412,9 @@ mod tests {
   /// Acc : {α : Sort u} → (α → α → Prop) → α → Prop
   /// Acc.intro : ∀ {α} {r} {x}, (∀ y, r y x → Acc r y) → Acc r x
   /// Acc.rec with k = false (NOT a structure-like recursor)
-  fn acc_env() -> Arc<KEnv<Meta>> {
-    let env = Arc::new(KEnv::<Meta>::new());
-    add_eq_axioms(&env);
+  fn acc_env() -> KEnv<Meta> {
+    let mut env = KEnv::<Meta>::new();
+    add_eq_axioms(&mut env);
 
     // We also need Bool for the reduction test
     let bool_id = mk_id("Bool");
@@ -759,7 +758,7 @@ mod tests {
   /// so it can't reduce on a non-constructor argument `h`.
   #[test]
   fn bad_acc_rec_no_eta() {
-    let env = acc_env();
+    let mut env = acc_env();
 
     // ∀ {α : Type} (r : α → α → Prop) (a : α) (h : Acc r a) (p : Bool), ...
     // depth 5: p=var(0), h=var(1), a=var(2), r=var(3), α=var(4)
@@ -835,7 +834,7 @@ mod tests {
 
     let (id, c) = mk_thm("accRecNoEta", 0, vec![], ty, val);
     env.insert(id.clone(), c);
-    check_rejects(&env, &id);
+    check_rejects(&mut env, &id);
   }
 
   // ==========================================================================
@@ -847,8 +846,8 @@ mod tests {
   /// Eq.{u} : {α : Sort u} → α → α → Prop (indexed, 2 params, 1 index)
   /// Eq.refl.{u} : {α : Sort u} → (a : α) → Eq a a
   /// Eq.rec.{u,v} with k = true (enables Rule K)
-  fn eq_inductive_env() -> Arc<KEnv<Meta>> {
-    let env = Arc::new(KEnv::<Meta>::new());
+  fn eq_inductive_env() -> KEnv<Meta> {
+    let mut env = KEnv::<Meta>::new();
 
     // -- Bool --
     let bool_id = mk_id("Bool");
@@ -1109,7 +1108,7 @@ mod tests {
   /// can be replaced by Eq.refl true (same constructor indices).
   #[test]
   fn good_rule_k() {
-    let env = eq_inductive_env();
+    let mut env = eq_inductive_env();
 
     // true = true = @Eq Bool true true
     let tt_eq = apps(
@@ -1169,14 +1168,14 @@ mod tests {
 
     let (id, c) = mk_thm("ruleK", 0, vec![], ty, val);
     env.insert(id.clone(), c);
-    check_accepts(&env, &id);
+    check_accepts(&mut env, &id);
   }
 
   /// ruleKbad: ∀ (h : true = false) (a : Bool), Eq.rec (motive := fun _ _ => Bool) a h = a
   /// Rule K should NOT fire because the constructor indices don't match (true ≠ false).
   #[test]
   fn bad_rule_k() {
-    let env = eq_inductive_env();
+    let mut env = eq_inductive_env();
 
     // true = false = @Eq Bool true false
     let tf_eq = apps(
@@ -1230,7 +1229,7 @@ mod tests {
 
     let (id, c) = mk_thm("ruleKbad", 0, vec![], ty, val);
     env.insert(id.clone(), c);
-    check_rejects(&env, &id);
+    check_rejects(&mut env, &id);
   }
 
   // ==========================================================================
@@ -1239,9 +1238,9 @@ mod tests {
   // ==========================================================================
 
   /// Build And : Prop → Prop → Prop with And.intro constructor.
-  fn and_env() -> Arc<KEnv<Meta>> {
-    let env = Arc::new(KEnv::<Meta>::new());
-    add_eq_axioms(&env);
+  fn and_env() -> KEnv<Meta> {
+    let mut env = KEnv::<Meta>::new();
+    add_eq_axioms(&mut env);
 
     let n = "And";
     let block_id = mk_id(n);
@@ -1379,7 +1378,7 @@ mod tests {
   /// projOutOfRange: .proj And 2 z — And only has fields 0,1 (left, right)
   #[test]
   fn bad_proj_out_of_range() {
-    let env = and_env();
+    let mut env = and_env();
 
     // type: ∀ (x y : Prop) (z : And x y), x
     // depth 3: z=var(0), y=var(1), x=var(2)
@@ -1400,13 +1399,13 @@ mod tests {
       crate::ix::env::ReducibilityHints::Opaque,
     );
     env.insert(id.clone(), c);
-    check_rejects(&env, &id);
+    check_rejects(&mut env, &id);
   }
 
   /// projNotStruct: .proj N 0 x — N is not a structure (2 ctors)
   #[test]
   fn bad_proj_not_struct() {
-    let env = Arc::new(KEnv::<Meta>::new());
+    let mut env = KEnv::<Meta>::new();
 
     // Need N (Nat-like) with 2 ctors — not a structure
     let n = "N";
@@ -1503,7 +1502,7 @@ mod tests {
       crate::ix::env::ReducibilityHints::Opaque,
     );
     env.insert(id.clone(), c);
-    check_rejects(&env, &id);
+    check_rejects(&mut env, &id);
   }
 
   // ==========================================================================
@@ -1514,7 +1513,7 @@ mod tests {
   /// can type-check definitions that project from And.
   #[test]
   fn good_and_left() {
-    let env = and_env();
+    let mut env = and_env();
 
     // And.left : ∀ {a b : Prop}, And a b → a
     // depth 3: h=var(0), b=var(1), a=var(2)
@@ -1543,12 +1542,12 @@ mod tests {
       crate::ix::env::ReducibilityHints::Abbrev,
     );
     env.insert(id.clone(), c);
-    check_accepts(&env, &id);
+    check_accepts(&mut env, &id);
   }
 
   #[test]
   fn good_and_right() {
-    let env = and_env();
+    let mut env = and_env();
 
     let and_ab = app(app(cnst("And", &[]), var(1)), var(0));
     let ty = ipi("a", sort0(), ipi("b", sort0(), pi(and_ab.clone(), var(1)))); // returns b, not a
@@ -1574,7 +1573,7 @@ mod tests {
       crate::ix::env::ReducibilityHints::Abbrev,
     );
     env.insert(id.clone(), c);
-    check_accepts(&env, &id);
+    check_accepts(&mut env, &id);
   }
 
   // ==========================================================================
@@ -1585,7 +1584,7 @@ mod tests {
   /// typeWithTypeFieldPoly: inductive Type (u+1) with a Type u field
   #[test]
   fn good_type_with_type_field_poly() {
-    let env = Arc::new(KEnv::<Meta>::new());
+    let mut env = KEnv::<Meta>::new();
     let n = "TypeWithTypeFieldPoly";
     let block_id = mk_id(n);
     let ctor_id = mk_id(&format!("{n}.mk"));
@@ -1666,7 +1665,7 @@ mod tests {
     env
       .blocks
       .insert(block_id.clone(), vec![block_id.clone(), ctor_id, rec_id]);
-    check_accepts(&env, &block_id);
+    check_accepts(&mut env, &block_id);
   }
 
   // ==========================================================================
@@ -1687,9 +1686,9 @@ mod tests {
   // ==========================================================================
 
   /// Build PUnit.{u} + Eq + PropStructure.{u,v} env.
-  fn prop_structure_env() -> Arc<KEnv<Meta>> {
-    let env = Arc::new(KEnv::<Meta>::new());
-    add_eq_axioms(&env);
+  fn prop_structure_env() -> KEnv<Meta> {
+    let mut env = KEnv::<Meta>::new();
+    add_eq_axioms(&mut env);
 
     // -- PUnit.{u} : Sort u, PUnit.unit.{u} : PUnit.{u} --
     let pu_id = mk_id("PUnit");
@@ -1890,7 +1889,7 @@ mod tests {
 
   /// Helper: build test `name : PropStructure.{0,1} → resType := fun x => .proj PropStructure idx x`
   fn mk_prop_structure_proj_test(
-    env: &KEnv<Meta>,
+    env: &mut KEnv<Meta>,
     name: &str,
     res_ty: ME,
     idx: u64,
@@ -1913,59 +1912,59 @@ mod tests {
   /// projProp1 (good): idx=0, aProof : PUnit.{0} — proof before all data
   #[test]
   fn good_proj_prop1() {
-    let env = prop_structure_env();
+    let mut env = prop_structure_env();
     let id = mk_prop_structure_proj_test(
-      &env,
+      &mut env,
       "projProp1",
       cnst("PUnit", &[uzero()]),
       0,
     );
-    check_accepts(&env, &id);
+    check_accepts(&mut env, &id);
   }
 
   /// projProp2 (bad): idx=1, someData : PUnit.{1} — data projection forbidden
   #[test]
   fn bad_proj_prop2() {
-    let env = prop_structure_env();
+    let mut env = prop_structure_env();
     let id = mk_prop_structure_proj_test(
-      &env,
+      &mut env,
       "projProp2",
       cnst("PUnit", &[usucc(uzero())]),
       1,
     );
-    check_rejects(&env, &id);
+    check_rejects(&mut env, &id);
   }
 
   /// projProp3 (good): idx=2, aSecondProof : PUnit.{0} — proof before dependent data
   #[test]
   fn good_proj_prop3() {
-    let env = prop_structure_env();
+    let mut env = prop_structure_env();
     let id = mk_prop_structure_proj_test(
-      &env,
+      &mut env,
       "projProp3",
       cnst("PUnit", &[uzero()]),
       2,
     );
-    check_accepts(&env, &id);
+    check_accepts(&mut env, &id);
   }
 
   /// projProp4 (bad): idx=3, someMoreData : PUnit.{1} — data projection forbidden
   #[test]
   fn bad_proj_prop4() {
-    let env = prop_structure_env();
+    let mut env = prop_structure_env();
     let id = mk_prop_structure_proj_test(
-      &env,
+      &mut env,
       "projProp4",
       cnst("PUnit", &[usucc(uzero())]),
       3,
     );
-    check_rejects(&env, &id);
+    check_rejects(&mut env, &id);
   }
 
   /// projProp5 (bad): idx=4, aProofAboutData — proof that depends on data field
   #[test]
   fn bad_proj_prop5() {
-    let env = prop_structure_env();
+    let mut env = prop_structure_env();
     // Result type: Eq.{1} PUnit.{1} (.proj PropStructure 3 x) (.proj PropStructure 3 x)
     // Inside the lambda (depth 1): x = var(0)
     let proj3 = ME::prj(mk_id("PropStructure"), 3, var(0));
@@ -1977,21 +1976,22 @@ mod tests {
     // The helper mk_prop_structure_proj_test wraps it in pi(PS, res_ty)
     // so res_ty should reference var(0) for x. But var(0) inside pi body
     // IS x. The .proj expressions use var(0) = x. Good.
-    let id = mk_prop_structure_proj_test(&env, "projProp5", res_ty_inner, 4);
-    check_rejects(&env, &id);
+    let id =
+      mk_prop_structure_proj_test(&mut env, "projProp5", res_ty_inner, 4);
+    check_rejects(&mut env, &id);
   }
 
   /// projProp6 (bad): idx=5, aFinalProof : PUnit.{0} — after dependent data
   #[test]
   fn bad_proj_prop6() {
-    let env = prop_structure_env();
+    let mut env = prop_structure_env();
     let id = mk_prop_structure_proj_test(
-      &env,
+      &mut env,
       "projProp6",
       cnst("PUnit", &[uzero()]),
       5,
     );
-    check_rejects(&env, &id);
+    check_rejects(&mut env, &id);
   }
 
   // ==========================================================================
@@ -2007,7 +2007,7 @@ mod tests {
   /// BAD: partially applied recursor should not eta-expand to match `a`.
   #[test]
   fn bad_eta_rule_k() {
-    let env = eq_inductive_env();
+    let mut env = eq_inductive_env();
 
     let u1 = usucc(uzero());
     let bool_ty = cnst("Bool", &[]);
@@ -2074,7 +2074,7 @@ mod tests {
       crate::ix::env::ReducibilityHints::Opaque,
     );
     env.insert(id.clone(), c);
-    check_rejects(&env, &id);
+    check_rejects(&mut env, &id);
   }
 
   // ==========================================================================
@@ -2086,8 +2086,8 @@ mod tests {
   // ==========================================================================
 
   /// Build a simple structure T with val : Bool, proof : True
-  fn t_struct_env() -> Arc<KEnv<Meta>> {
-    let env = eq_inductive_env();
+  fn t_struct_env() -> KEnv<Meta> {
+    let mut env = eq_inductive_env();
 
     // True : Prop, single ctor True.intro
     let true_ty_id = mk_id("True");
@@ -2250,7 +2250,7 @@ mod tests {
   /// but this should NOT be identified with x via eta.
   #[test]
   fn bad_eta_ctor() {
-    let env = t_struct_env();
+    let mut env = t_struct_env();
 
     let u1 = usucc(uzero());
 
@@ -2282,6 +2282,6 @@ mod tests {
       crate::ix::env::ReducibilityHints::Opaque,
     );
     env.insert(id.clone(), c);
-    check_rejects(&env, &id);
+    check_rejects(&mut env, &id);
   }
 }

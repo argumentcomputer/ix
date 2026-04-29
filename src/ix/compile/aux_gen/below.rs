@@ -224,7 +224,7 @@ pub(crate) fn generate_below_constants(
   lean_env: &LeanEnv,
   is_prop: bool,
   stt: &crate::ix::compile::CompileState,
-  kctx: &crate::ix::compile::KernelCtx,
+  kctx: &mut crate::ix::compile::KernelCtx,
 ) -> Result<Vec<BelowConstant>, CompileError> {
   let n_classes = sorted_classes.len();
   if n_classes == 0 || canonical_recs.is_empty() {
@@ -388,7 +388,7 @@ fn build_below_def(
   n_classes: usize,
   canonical_recs: &[(Name, RecursorVal)],
   stt: &crate::ix::compile::CompileState,
-  kctx: &crate::ix::compile::KernelCtx,
+  kctx: &mut crate::ix::compile::KernelCtx,
 ) -> Result<BelowDef, CompileError> {
   let n_params = try_nat_to_usize(&rec_val.num_params)?;
   let n_motives = try_nat_to_usize(&rec_val.num_motives)?;
@@ -587,7 +587,7 @@ fn build_below_value(
   _n_classes: usize,
   _canonical_recs: &[(Name, RecursorVal)],
   stt: &crate::ix::compile::CompileState,
-  kctx: &crate::ix::compile::KernelCtx,
+  kctx: &mut crate::ix::compile::KernelCtx,
 ) -> Result<LeanExpr, CompileError> {
   let n_params = try_nat_to_usize(&rec_val.num_params)?;
   let n_motives = try_nat_to_usize(&rec_val.num_motives)?;

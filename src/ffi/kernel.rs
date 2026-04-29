@@ -29,11 +29,13 @@
 
 use std::sync::{
   Arc, Mutex, OnceLock,
-  atomic::{AtomicBool, AtomicUsize, Ordering},
+  atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
 };
 use std::thread;
 use std::time::{Duration, Instant};
 
+use lean_ffi::include::lean_object;
+use lean_ffi::nat::Nat;
 use rustc_hash::FxHashMap;
 
 use lean_ffi::object::{
@@ -42,22 +44,39 @@ use lean_ffi::object::{
 };
 
 use crate::ffi::lean_env::{decode_env, decode_name_array};
+use crate::ix::address::Address;
 use crate::ix::compile::{
   CompileOptions, CompileState, compile_env_with_options,
 };
 #[cfg(feature = "test-ffi")]
 use crate::ix::decompile::decompile_env;
-use crate::ix::env::Name;
+use crate::ix::env::{Name, NameData};
+use crate::ix::ixon::constant::ConstantInfo as IxonCI;
+use crate::ix::ixon::env::Env as IxonEnv;
+use crate::ix::ixon::metadata::ConstantMetaInfo;
 #[cfg(feature = "test-ffi")]
 use crate::ix::kernel::egress::{ixon_egress, lean_egress};
 use crate::ix::kernel::env::KEnv;
 use crate::ix::kernel::error::TcError;
-use crate::ix::kernel::id::KId;
-use crate::ix::kernel::ingress::ixon_ingress_owned;
+use crate::ix::kernel::ingress::{
+  IxonIngressLookups, build_ixon_ingress_lookups,
+  ingress_const_shallow_into_kenv_with_lookups, ixon_ingress_owned,
+};
 #[cfg(feature = "test-ffi")]
 use crate::ix::kernel::ingress::{ixon_ingress, lean_ingress};
 use crate::ix::kernel::mode::Meta;
 use crate::ix::kernel::tc::TypeChecker;
+
+unsafe extern "C" {
+  fn lean_name_mk_string(
+    parent: *mut lean_object,
+    part: *mut lean_object,
+  ) -> *mut lean_object;
+  fn lean_name_mk_numeral(
+    parent: *mut lean_object,
+    part: *mut lean_object,
+  ) -> *mut lean_object;
+}
 
 /// Lean-side `CheckError` constructor tags.
 ///
@@ -155,16 +174,16 @@ pub extern "C" fn rs_kernel_check_consts(
   // ---------------------------------------------------------------------
   let t1 = Instant::now();
   let rust_env_arc = Arc::new(rust_env);
-  let check_originals = expect_pass_vec.iter().any(|pass| !*pass);
-  let compile_state = match compile_env_with_options(
-    &rust_env_arc,
-    CompileOptions { check_originals, ..Default::default() },
-  ) {
-    Ok(s) => s,
-    Err(e) => {
-      return build_uniform_error(names_vec.len(), &format!("[compile] {e:?}"));
-    },
-  };
+  let compile_state =
+    match compile_env_with_options(&rust_env_arc, CompileOptions::default()) {
+      Ok(s) => s,
+      Err(e) => {
+        return build_uniform_error(
+          names_vec.len(),
+          &format!("[compile] {e:?}"),
+        );
+      },
+    };
   eprintln!("[rs_kernel_check] compile:    {:>8.1?}", t1.elapsed());
 
   let CompileState { env: ixon_env, ungrounded: compile_ungrounded, .. } =
@@ -202,37 +221,17 @@ pub extern "C" fn rs_kernel_check_consts(
   }
 
   // ---------------------------------------------------------------------
-  // Ingress Ixon → kernel
+  // Prepare read-only Ixon lookups. Kernel ingress happens on demand inside
+  // each worker's private KEnv, so there is no shared typecheck cache.
   // ---------------------------------------------------------------------
   let t2 = Instant::now();
-  let (mut kenv, intern) = match ixon_ingress_owned::<Meta>(ixon_env) {
-    Ok(v) => v,
-    Err(msg) => {
-      return build_uniform_error(names_vec.len(), &format!("[ingress] {msg}"));
-    },
-  };
-  // FIXME: `ixon_ingress` returns a populated `InternTable` separately from
-  // the fresh, empty one inside `KEnv::new()`. The TypeChecker reads
-  // `env.intern`, so we have to swap. When ingress is refactored to populate
-  // `kenv.intern` directly, this line goes away.
-  kenv.intern = intern;
+  let ixon_env = Arc::new(ixon_env);
+  let lookups = Arc::new(build_ixon_ingress_lookups(&ixon_env));
   eprintln!(
-    "[rs_kernel_check] ingress:    {:>8.1?} ({} consts)",
+    "[rs_kernel_check] ingress prep:{:>8.1?} ({} named)",
     t2.elapsed(),
-    kenv.len()
+    ixon_env.named_count()
   );
-
-  let kenv = Arc::new(kenv);
-
-  // Build `Name → KId` map by iterating `kenv` itself. This guarantees we
-  // look up by the exact KIds that ingress inserted, sidestepping any
-  // risk of reconstruction mismatch (e.g. Muts-block member naming vs
-  // `named` map keys). Keyed by `Name` directly (hash-based equality)
-  // rather than by `format!("{}", name)` — pure structural lookup.
-  let mut name_to_id: FxHashMap<Name, KId<Meta>> = FxHashMap::default();
-  for (kid, _kconst) in kenv.iter() {
-    name_to_id.insert(kid.name.clone(), kid);
-  }
   let total = names_vec.len();
   let t3 = Instant::now();
 
@@ -242,8 +241,8 @@ pub extern "C" fn rs_kernel_check_consts(
   // Deep recursor expansions push the Rust stack. A dedicated thread with a
   // large stack matches the old ix_old pattern.
   let results = match run_checks_on_large_stack(
-    kenv.clone(),
-    name_to_id,
+    Arc::clone(&ixon_env),
+    lookups,
     names_vec.clone(),
     expect_pass_vec,
     ungrounded,
@@ -264,6 +263,162 @@ pub extern "C" fn rs_kernel_check_consts(
   eprintln!("[rs_kernel_check] total:      {:>8.1?}", total_start.elapsed());
 
   build_result_array(&results)
+}
+
+/// FFI: type-check constants from a serialized Ixon environment produced by
+/// `ix compile --out`.
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_kernel_check_ixon(
+  env_path: LeanString<LeanBorrowed<'_>>,
+  names: LeanArray<LeanBorrowed<'_>>,
+  expect_pass: LeanArray<LeanBorrowed<'_>>,
+  quiet: LeanBool<LeanBorrowed<'_>>,
+) -> LeanIOResult<LeanOwned> {
+  let total_start = Instant::now();
+  let quiet = quiet.to_bool();
+  let path = env_path.to_string();
+  let names_vec: Vec<Name> = decode_name_array(&names);
+  let expect_pass_vec: Vec<bool> =
+    expect_pass.map(|b| b.unbox_usize() == 1).into_iter().collect();
+
+  let t0 = Instant::now();
+  let bytes = match std::fs::read(&path) {
+    Ok(bytes) => bytes,
+    Err(e) => {
+      return LeanIOResult::error_string(&format!(
+        "rs_kernel_check_ixon: failed to read {path}: {e}"
+      ));
+    },
+  };
+  eprintln!(
+    "[rs_kernel_check_ixon] read env:   {:>8.1?} ({} bytes)",
+    t0.elapsed(),
+    bytes.len()
+  );
+
+  let t1 = Instant::now();
+  let mut slice: &[u8] = &bytes;
+  let ixon_env = match IxonEnv::get(&mut slice) {
+    Ok(env) => env,
+    Err(e) => {
+      return LeanIOResult::error_string(&format!(
+        "rs_kernel_check_ixon: failed to deserialize {path}: {e}"
+      ));
+    },
+  };
+  drop(bytes);
+  eprintln!(
+    "[rs_kernel_check_ixon] deserialize:{:>8.1?} ({} named)",
+    t1.elapsed(),
+    ixon_env.named_count()
+  );
+
+  let t2 = Instant::now();
+  let ixon_env = Arc::new(ixon_env);
+  let lookups = Arc::new(build_ixon_ingress_lookups(&ixon_env));
+  eprintln!("[rs_kernel_check_ixon] ingress prep:{:>8.1?}", t2.elapsed());
+
+  let total = names_vec.len();
+  let t3 = Instant::now();
+  let results = match run_checks_on_large_stack(
+    ixon_env,
+    lookups,
+    names_vec,
+    expect_pass_vec,
+    FxHashMap::default(),
+    quiet,
+  ) {
+    Ok(r) => r,
+    Err(msg) => {
+      return build_uniform_error(total, &format!("[thread] {msg}"));
+    },
+  };
+
+  let passed = results.iter().filter(|r| r.is_ok()).count();
+  let failed = results.iter().filter(|r| r.is_err()).count();
+  eprintln!(
+    "[rs_kernel_check_ixon] {passed}/{total} passed, {failed} failed ({:.1?})",
+    t3.elapsed()
+  );
+  eprintln!(
+    "[rs_kernel_check_ixon] total:      {:>8.1?}",
+    total_start.elapsed()
+  );
+
+  build_result_array(&results)
+}
+
+/// FFI: list the checkable names in a serialized Ixon environment.
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_kernel_ixon_names(
+  env_path: LeanString<LeanBorrowed<'_>>,
+) -> LeanIOResult<LeanOwned> {
+  let path = env_path.to_string();
+  let bytes = match std::fs::read(&path) {
+    Ok(bytes) => bytes,
+    Err(e) => {
+      return LeanIOResult::error_string(&format!(
+        "rs_kernel_ixon_names: failed to read {path}: {e}"
+      ));
+    },
+  };
+  let mut slice: &[u8] = &bytes;
+  let ixon_env = match IxonEnv::get(&mut slice) {
+    Ok(env) => env,
+    Err(e) => {
+      return LeanIOResult::error_string(&format!(
+        "rs_kernel_ixon_names: failed to deserialize {path}: {e}"
+      ));
+    },
+  };
+  let names = all_checkable_ixon_names(&ixon_env);
+  LeanIOResult::ok(build_lean_name_array(&names))
+}
+
+fn all_checkable_ixon_names(ixon_env: &IxonEnv) -> Vec<Name> {
+  let mut names = Vec::with_capacity(ixon_env.named_count());
+  for entry in ixon_env.named.iter() {
+    if matches!(entry.value().meta.info, ConstantMetaInfo::Muts { .. }) {
+      continue;
+    }
+    names.push(entry.key().clone());
+  }
+  names.sort_by_key(|name| name.pretty());
+  names
+}
+
+fn build_lean_name_array(names: &[Name]) -> LeanArray<LeanOwned> {
+  let arr = LeanArray::alloc(names.len());
+  for (i, name) in names.iter().enumerate() {
+    arr.set(i, build_lean_name(name));
+  }
+  arr
+}
+
+fn build_lean_name(name: &Name) -> LeanOwned {
+  match name.as_data() {
+    NameData::Anonymous(_) => LeanOwned::box_usize(0),
+    NameData::Str(parent, s, _) => {
+      let parent = build_lean_name(parent);
+      let part = LeanString::new(s);
+      unsafe {
+        LeanOwned::from_raw(lean_name_mk_string(
+          parent.into_raw(),
+          part.into_raw(),
+        ))
+      }
+    },
+    NameData::Num(parent, n, _) => {
+      let parent = build_lean_name(parent);
+      let part = Nat::to_lean(n);
+      unsafe {
+        LeanOwned::from_raw(lean_name_mk_numeral(
+          parent.into_raw(),
+          part.into_raw(),
+        ))
+      }
+    },
+  }
 }
 
 /// FFI: ingress a Lean environment through compile + `ixon_ingress`, stopping
@@ -307,19 +462,15 @@ pub extern "C" fn rs_kernel_ingress(
   // ---------------------------------------------------------------------
   let t1 = Instant::now();
   let rust_env_arc = Arc::new(rust_env);
-  // `check_originals: false` matches `rs_compile_env`'s default — the
-  // ingress pipeline doesn't need original-LEON cross-checks.
-  let compile_state = match compile_env_with_options(
-    &rust_env_arc,
-    CompileOptions { check_originals: false, ..Default::default() },
-  ) {
-    Ok(s) => s,
-    Err(e) => {
-      return LeanIOResult::error_string(&format!(
-        "rs_kernel_ingress: compile failed: {e:?}"
-      ));
-    },
-  };
+  let compile_state =
+    match compile_env_with_options(&rust_env_arc, CompileOptions::default()) {
+      Ok(s) => s,
+      Err(e) => {
+        return LeanIOResult::error_string(&format!(
+          "rs_kernel_ingress: compile failed: {e:?}"
+        ));
+      },
+    };
   eprintln!("[rs_kernel_ingress] compile:    {:>8.1?}", t1.elapsed());
 
   let CompileState { env: ixon_env, ungrounded: compile_ungrounded, .. } =
@@ -414,9 +565,70 @@ type CheckRes = Result<(), (ErrKind, String)>;
 
 const KERNEL_CHECK_STACK_SIZE: usize = 256 * 1024 * 1024;
 
+#[derive(Clone, Debug)]
+struct CheckWorkItem {
+  primary: usize,
+  aliases: Vec<usize>,
+}
+
+fn build_check_work(
+  ixon_env: &IxonEnv,
+  names: &[Name],
+  expect_pass: &[bool],
+  ungrounded: &FxHashMap<Name, String>,
+) -> Vec<CheckWorkItem> {
+  let mut work: Vec<CheckWorkItem> = Vec::with_capacity(names.len());
+  let mut by_block: FxHashMap<(Address, bool), usize> = FxHashMap::default();
+
+  for (i, name) in names.iter().enumerate() {
+    let should_pass = expect_pass.get(i).copied().unwrap_or(true);
+    let block_key = check_schedule_block_addr(ixon_env, name, ungrounded);
+    if let Some(block_key) = block_key {
+      let key = (block_key, should_pass);
+      if let Some(work_idx) = by_block.get(&key).copied() {
+        work[work_idx].aliases.push(i);
+        continue;
+      }
+      let work_idx = work.len();
+      by_block.insert(key, work_idx);
+    }
+
+    work.push(CheckWorkItem { primary: i, aliases: vec![i] });
+  }
+
+  work
+}
+
+fn check_schedule_block_addr(
+  ixon_env: &IxonEnv,
+  name: &Name,
+  ungrounded: &FxHashMap<Name, String>,
+) -> Option<Address> {
+  if ungrounded.contains_key(name) {
+    return None;
+  }
+  let named = ixon_env.lookup_name(name)?;
+  if matches!(named.meta.info, ConstantMetaInfo::Muts { .. }) {
+    return None;
+  }
+  let constant = ixon_env.get_const(&named.addr)?;
+  // Only collapse work by actual serialized kernel blocks. Projection
+  // constants carry the SCC block address directly; ordinary constants are
+  // singleton blocks. Do not use declaration-family `all` metadata here: it
+  // can include names that are not checked by the same kernel block.
+  match &constant.info {
+    IxonCI::IPrj(p) => Some(p.block.clone()),
+    IxonCI::CPrj(p) => Some(p.block.clone()),
+    IxonCI::RPrj(p) => Some(p.block.clone()),
+    IxonCI::DPrj(p) => Some(p.block.clone()),
+    IxonCI::Muts(_) => None,
+    _ => Some(named.addr),
+  }
+}
+
 fn run_checks_on_large_stack(
-  kenv: Arc<KEnv<Meta>>,
-  name_to_id: FxHashMap<Name, KId<Meta>>,
+  ixon_env: Arc<IxonEnv>,
+  lookups: Arc<IxonIngressLookups>,
   names: Vec<Name>,
   expect_pass: Vec<bool>,
   ungrounded: FxHashMap<Name, String>,
@@ -427,42 +639,63 @@ fn run_checks_on_large_stack(
     return Ok(Vec::new());
   }
 
-  let worker_count = resolve_kernel_check_workers(names.len(), quiet);
-  if worker_count == 1 {
+  let work = build_check_work(&ixon_env, &names, &expect_pass, &ungrounded);
+  if work.len() == names.len() {
     eprintln!("[rs_kernel_check] checking {} constants...", names.len());
+  } else {
+    eprintln!(
+      "[rs_kernel_check] checking {} block work item(s) for {} constants...",
+      work.len(),
+      names.len()
+    );
+  }
+
+  let worker_count = resolve_kernel_check_workers(work.len(), quiet);
+  if worker_count == 1 {
     return run_checks_serial_on_large_stack(
-      kenv,
-      name_to_id,
+      ixon_env,
+      lookups,
       names,
       expect_pass,
       ungrounded,
+      work,
       quiet,
     );
   }
 
   run_checks_parallel_on_large_stacks(
-    kenv,
-    name_to_id,
+    ixon_env,
+    lookups,
     names,
     expect_pass,
     ungrounded,
+    work,
     quiet,
     worker_count,
   )
 }
 
 fn run_checks_serial_on_large_stack(
-  kenv: Arc<KEnv<Meta>>,
-  name_to_id: FxHashMap<Name, KId<Meta>>,
+  ixon_env: Arc<IxonEnv>,
+  lookups: Arc<IxonIngressLookups>,
   names: Vec<Name>,
   expect_pass: Vec<bool>,
   ungrounded: FxHashMap<Name, String>,
+  work: Vec<CheckWorkItem>,
   quiet: bool,
 ) -> Result<Vec<CheckRes>, String> {
   thread::Builder::new()
     .stack_size(KERNEL_CHECK_STACK_SIZE)
     .spawn(move || {
-      check_consts_loop(kenv, name_to_id, names, expect_pass, ungrounded, quiet)
+      check_consts_loop(
+        ixon_env,
+        lookups,
+        names,
+        expect_pass,
+        ungrounded,
+        work,
+        quiet,
+      )
     })
     .map_err(|e| format!("failed to spawn kernel-check thread: {e}"))?
     .join()
@@ -473,45 +706,42 @@ fn run_checks_serial_on_large_stack(
 // with worker threads — clippy can't see that, so suppress the lint.
 #[allow(clippy::needless_pass_by_value)]
 fn run_checks_parallel_on_large_stacks(
-  kenv: Arc<KEnv<Meta>>,
-  name_to_id: FxHashMap<Name, KId<Meta>>,
+  ixon_env: Arc<IxonEnv>,
+  lookups: Arc<IxonIngressLookups>,
   names: Vec<Name>,
   expect_pass: Vec<bool>,
   ungrounded: FxHashMap<Name, String>,
+  work: Vec<CheckWorkItem>,
   quiet: bool,
   worker_count: usize,
 ) -> Result<Vec<CheckRes>, String> {
   let total = names.len();
+  let work_total = work.len();
   eprintln!(
-    "[rs_kernel_check] checking {total} constants with {worker_count} workers..."
+    "[rs_kernel_check] checking {work_total} work item(s) for {total} constants with {worker_count} workers..."
   );
 
-  let name_to_id = Arc::new(name_to_id);
   let names = Arc::new(names);
   let expect_pass = Arc::new(expect_pass);
   let ungrounded = Arc::new(ungrounded);
-  let tasks = Arc::new(build_parallel_check_tasks(
-    &kenv,
-    &name_to_id,
-    &names,
-    &ungrounded,
-  ));
-  let next_task = Arc::new(AtomicUsize::new(0));
+  let work = Arc::new(work);
+  let next_index = Arc::new(AtomicUsize::new(0));
   let results: Arc<Vec<OnceLock<CheckRes>>> =
     Arc::new((0..total).map(|_| OnceLock::new()).collect());
-  let progress = Arc::new(ParallelProgress::new(total, worker_count, quiet));
+  let progress =
+    Arc::new(ParallelProgress::new(work_total, worker_count, quiet));
   let mut reporter = ParallelProgress::spawn_reporter(Arc::clone(&progress));
 
   let mut handles: Vec<thread::JoinHandle<()>> =
     Vec::with_capacity(worker_count);
   for worker_idx in 0..worker_count {
-    let kenv = Arc::clone(&kenv);
-    let name_to_id = Arc::clone(&name_to_id);
+    let ixon_env = Arc::clone(&ixon_env);
+    let lookups = Arc::clone(&lookups);
     let names = Arc::clone(&names);
     let expect_pass = Arc::clone(&expect_pass);
     let ungrounded = Arc::clone(&ungrounded);
-    let tasks = Arc::clone(&tasks);
-    let next_task = Arc::clone(&next_task);
+    let work = Arc::clone(&work);
+    let next_index = Arc::clone(&next_index);
     let results = Arc::clone(&results);
     let progress_worker = Arc::clone(&progress);
 
@@ -519,25 +749,52 @@ fn run_checks_parallel_on_large_stacks(
       .name(format!("ix-kernel-check-{worker_idx}"))
       .stack_size(KERNEL_CHECK_STACK_SIZE)
       .spawn(move || {
+        let mut kenv = KEnv::<Meta>::new();
+        let clear_every = kernel_check_clear_every();
+        let mut checks_since_clear = clear_every;
+        let diag_threshold = kernel_check_diag_threshold();
+        let mut worker_peak_cache: usize = 0;
         loop {
-          let task_idx = next_task.fetch_add(1, Ordering::Relaxed);
-          let Some(task) = tasks.get(task_idx) else {
+          let work_idx = next_index.fetch_add(1, Ordering::Relaxed);
+          if work_idx >= work_total {
             break;
-          };
+          }
+          let item = &work[work_idx];
+          if checks_since_clear >= clear_every {
+            kenv.clear_releasing_memory();
+            checks_since_clear = 0;
+          }
 
-          for outcome in check_task(
-            task,
-            total,
-            &kenv,
-            name_to_id.as_ref(),
+          let outcome = check_one_const(
+            item.primary,
+            work_idx,
+            work_total,
+            &ixon_env,
+            &lookups,
             names.as_slice(),
             expect_pass.as_slice(),
             ungrounded.as_ref(),
+            &mut kenv,
             |prefix| progress_worker.begin(worker_idx, prefix),
-          ) {
-            progress_worker.finish(worker_idx, &outcome);
-            let _ = results[outcome.index].set(outcome.result);
+          );
+          progress_worker.finish(worker_idx, &outcome);
+          if let Some(threshold) = diag_threshold {
+            log_block_diag_if_big(
+              &kenv,
+              worker_idx,
+              work_idx,
+              work_total,
+              &outcome,
+              threshold,
+              &mut worker_peak_cache,
+              &progress_worker,
+            );
           }
+          let result = outcome.result.clone();
+          for &result_idx in &item.aliases {
+            let _ = results[result_idx].set(result.clone());
+          }
+          checks_since_clear += 1;
         }
       }) {
       Ok(handle) => handle,
@@ -565,6 +822,7 @@ fn run_checks_parallel_on_large_stacks(
   if let Some(reporter) = reporter {
     let _ = reporter.join();
   }
+  progress.log_mem_summary();
   if panicked {
     return Err("kernel-check worker panicked".to_string());
   }
@@ -579,56 +837,6 @@ fn run_checks_parallel_on_large_stacks(
     }
   }
   Ok(ordered)
-}
-
-#[derive(Clone, Debug)]
-enum CheckTask {
-  Standalone { index: usize },
-  Block { indices: Vec<usize> },
-}
-
-fn build_parallel_check_tasks(
-  kenv: &Arc<KEnv<Meta>>,
-  name_to_id: &FxHashMap<Name, KId<Meta>>,
-  names: &[Name],
-  ungrounded: &FxHashMap<Name, String>,
-) -> Vec<CheckTask> {
-  // Collapse requested members of a coordinated kernel block into one work
-  // unit. The owner checks the block once and later emits per-request results.
-  let mut tasks = Vec::with_capacity(names.len());
-  let mut block_tasks: FxHashMap<KId<Meta>, usize> = FxHashMap::default();
-  let tc = TypeChecker::new(kenv.clone());
-
-  for (index, name) in names.iter().enumerate() {
-    if ungrounded.contains_key(name) {
-      tasks.push(CheckTask::Standalone { index });
-      continue;
-    }
-
-    let Some(kid) = name_to_id.get(name) else {
-      tasks.push(CheckTask::Standalone { index });
-      continue;
-    };
-
-    let Some(block) = tc.coordinated_check_block_for_const(kid) else {
-      tasks.push(CheckTask::Standalone { index });
-      continue;
-    };
-
-    if let Some(task_index) = block_tasks.get(&block).copied() {
-      match &mut tasks[task_index] {
-        CheckTask::Block { indices } => indices.push(index),
-        CheckTask::Standalone { .. } => unreachable!(
-          "block task index must refer to a block-shaped check task"
-        ),
-      }
-    } else {
-      block_tasks.insert(block, tasks.len());
-      tasks.push(CheckTask::Block { indices: vec![index] });
-    }
-  }
-
-  tasks
 }
 
 fn resolve_kernel_check_workers(total: usize, quiet: bool) -> usize {
@@ -728,6 +936,7 @@ const DEFAULT_ACTIVE_SLOW_THRESHOLD: Duration = Duration::from_secs(30);
 
 const DEFAULT_IN_FLIGHT_LIMIT: usize = 3;
 const DEFAULT_IN_FLIGHT_LABEL_CHARS: usize = 120;
+const DEFAULT_CHECK_CLEAR_EVERY: usize = 1;
 
 fn env_duration_ms(var: &str, default: Duration) -> Duration {
   std::env::var(var)
@@ -755,6 +964,101 @@ fn kernel_check_slow_threshold() -> Duration {
   env_duration_ms("IX_KERNEL_CHECK_SLOW_MS", DEFAULT_SLOW_THRESHOLD)
 }
 
+fn kernel_check_clear_every() -> usize {
+  env_usize("IX_KERNEL_CHECK_CLEAR_EVERY", DEFAULT_CHECK_CLEAR_EVERY).max(1)
+}
+
+/// Threshold (max cache len) above which a per-block diagnostic line is
+/// emitted, when `IX_KERNEL_CHECK_DIAG=1`. Default 100k entries — empirically
+/// well above the typical mathlib block, so only the heavy outliers print.
+/// Override with `IX_KERNEL_CHECK_DIAG_THRESHOLD=N`.
+fn kernel_check_diag_threshold() -> Option<usize> {
+  let enabled = matches!(
+    std::env::var("IX_KERNEL_CHECK_DIAG").as_deref(),
+    Ok("1" | "true" | "on" | "yes")
+  );
+  if !enabled {
+    return None;
+  }
+  Some(env_usize("IX_KERNEL_CHECK_DIAG_THRESHOLD", 100_000))
+}
+
+fn kernel_check_mem_stats_enabled() -> bool {
+  // Default ON: RSS via /proc/self/status + DashMap.len() is one syscall and
+  // one atomic load per progress tick (~2s). Negligible overhead, and the
+  // suffix is the primary signal for diagnosing memory growth across a long
+  // env-check run. Explicit `IX_KERNEL_CHECK_MEM_STATS=0|false|off|no` opts
+  // out for callers who want a clean line.
+  match std::env::var("IX_KERNEL_CHECK_MEM_STATS").as_deref() {
+    Ok("0" | "false" | "off" | "no") => false,
+    _ => true,
+  }
+}
+
+/// Emit a per-block cache-size diagnostic when the just-finished block
+/// pushed any single cache past `threshold` entries, or when this block
+/// set a new per-worker peak. Used only with `IX_KERNEL_CHECK_DIAG=1`.
+#[allow(clippy::too_many_arguments)]
+fn log_block_diag_if_big(
+  kenv: &KEnv<Meta>,
+  worker_idx: usize,
+  work_idx: usize,
+  work_total: usize,
+  outcome: &CheckOutcome,
+  threshold: usize,
+  worker_peak_cache: &mut usize,
+  progress: &ParallelProgress,
+) {
+  let sizes = kenv.cache_sizes();
+  let max_cache = sizes.max();
+  let is_new_peak = max_cache > *worker_peak_cache;
+  let exceeds_threshold = max_cache >= threshold;
+  if !is_new_peak && !exceeds_threshold {
+    return;
+  }
+  if is_new_peak {
+    *worker_peak_cache = max_cache;
+  }
+  let elapsed = outcome
+    .elapsed
+    .map(|d| format!("{:.1}s", d.as_secs_f64()))
+    .unwrap_or_else(|| "?".to_string());
+  let tag = if is_new_peak { "[diag-peak]" } else { "[diag-big]" };
+  progress.log(&format!(
+    "{tag} w={worker_idx} block={}/{} ({}) elapsed={elapsed} max={max_cache} {sizes}",
+    work_idx + 1,
+    work_total,
+    outcome.display,
+  ));
+}
+
+fn current_rss_mib() -> Option<u64> {
+  let status = std::fs::read_to_string("/proc/self/status").ok()?;
+  for line in status.lines() {
+    let Some(rest) = line.strip_prefix("VmRSS:") else {
+      continue;
+    };
+    let kb = rest.split_whitespace().next()?.parse::<u64>().ok()?;
+    return Some(kb.div_ceil(1024));
+  }
+  None
+}
+
+fn kernel_check_mem_suffix(peak_rss_mib: Option<&AtomicU64>) -> String {
+  if !kernel_check_mem_stats_enabled() {
+    return String::new();
+  }
+  let rss_now = current_rss_mib();
+  if let (Some(now), Some(peak)) = (rss_now, peak_rss_mib) {
+    // Monotonic max: load-then-CAS loop, but a relaxed fetch_max is simpler.
+    peak.fetch_max(now, Ordering::Relaxed);
+  }
+  let rss = rss_now
+    .map(|mib| format!("{mib}MiB"))
+    .unwrap_or_else(|| "unknown".to_string());
+  format!(" · mem: rss={rss}")
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum CheckStatus {
   Checked,
@@ -764,8 +1068,8 @@ enum CheckStatus {
 
 #[derive(Clone)]
 struct CheckOutcome {
-  index: usize,
-  total: usize,
+  progress_index: usize,
+  progress_total: usize,
   display: String,
   should_pass: bool,
   result: CheckRes,
@@ -776,7 +1080,12 @@ struct CheckOutcome {
 
 impl CheckOutcome {
   fn prefix(&self) -> String {
-    format!("  [{}/{}] {}", self.index + 1, self.total, self.display)
+    format!(
+      "  [{}/{}] {}",
+      self.progress_index + 1,
+      self.progress_total,
+      self.display
+    )
   }
 
   fn err_msg(&self) -> &str {
@@ -820,12 +1129,14 @@ impl CheckOutcome {
 
 fn check_one_const<F>(
   i: usize,
-  total: usize,
-  kenv: &Arc<KEnv<Meta>>,
-  name_to_id: &FxHashMap<Name, KId<Meta>>,
+  progress_index: usize,
+  progress_total: usize,
+  ixon_env: &IxonEnv,
+  lookups: &IxonIngressLookups,
   names: &[Name],
   expect_pass: &[bool],
   ungrounded: &FxHashMap<Name, String>,
+  kenv: &mut KEnv<Meta>,
   mut before_kernel_check: F,
 ) -> CheckOutcome
 where
@@ -837,8 +1148,8 @@ where
 
   if let Some(msg) = ungrounded.get(name) {
     return CheckOutcome {
-      index: i,
-      total,
+      progress_index,
+      progress_total,
       display,
       should_pass,
       result: Err((ErrKind::Compile, msg.clone())),
@@ -848,36 +1159,49 @@ where
     };
   }
 
-  let kid = match name_to_id.get(name) {
-    Some(id) => id.clone(),
-    None => {
+  let prefix =
+    format!("  [{}/{}] {display}", progress_index + 1, progress_total);
+  before_kernel_check(&prefix);
+
+  let tc_start = Instant::now();
+  let kid = match ingress_const_shallow_into_kenv_with_lookups(
+    kenv, ixon_env, lookups, name,
+  ) {
+    Ok(kid) => kid,
+    Err(msg) => {
+      let elapsed = tc_start.elapsed();
+      let status = if msg.contains("missing Named entry") {
+        CheckStatus::NotFound
+      } else {
+        CheckStatus::Checked
+      };
       return CheckOutcome {
-        index: i,
-        total,
-        display: display.clone(),
+        progress_index,
+        progress_total,
+        display,
         should_pass,
-        result: Err((ErrKind::Kernel, format!("not found: {display}"))),
-        status: CheckStatus::NotFound,
-        elapsed: None,
+        result: Err((ErrKind::Kernel, msg)),
+        status,
+        elapsed: Some(elapsed),
         peak: None,
       };
     },
   };
 
-  let prefix = format!("  [{}/{}] {display}", i + 1, total);
-  before_kernel_check(&prefix);
-
-  let tc_start = Instant::now();
-  let mut tc = TypeChecker::new(kenv.clone());
-  tc.set_debug_label(display.clone());
-  let result: Result<(), String> =
-    tc.check_const(&kid).map_err(|e| format_tc_error(&e));
+  let (result, peak): (Result<(), String>, u32) = {
+    let mut tc = TypeChecker::new_with_lazy_ixon(kenv, ixon_env, lookups);
+    tc.set_debug_label(display.clone());
+    let result =
+      tc.check_const(&kid).map_err(|e| format_tc_error(&e, ixon_env, lookups));
+    let peak = tc.def_eq_peak;
+    tc.finish_constant_accounting();
+    (result, peak)
+  };
   let elapsed = tc_start.elapsed();
-  let peak = tc.def_eq_peak;
 
   CheckOutcome {
-    index: i,
-    total,
+    progress_index,
+    progress_total,
     display,
     should_pass,
     result: result.map_err(|msg| (ErrKind::Kernel, msg)),
@@ -887,110 +1211,46 @@ where
   }
 }
 
-fn check_task<F>(
-  task: &CheckTask,
-  total: usize,
-  kenv: &Arc<KEnv<Meta>>,
-  name_to_id: &FxHashMap<Name, KId<Meta>>,
-  names: &[Name],
-  expect_pass: &[bool],
-  ungrounded: &FxHashMap<Name, String>,
-  before_kernel_check: F,
-) -> Vec<CheckOutcome>
-where
-  F: FnMut(&str),
-{
-  match task {
-    CheckTask::Standalone { index } => {
-      vec![check_one_const(
-        *index,
-        total,
-        kenv,
-        name_to_id,
-        names,
-        expect_pass,
-        ungrounded,
-        before_kernel_check,
-      )]
-    },
-    CheckTask::Block { indices } => {
-      let Some((&owner_index, rest)) = indices.split_first() else {
-        return Vec::new();
-      };
-      let owner = check_one_const(
-        owner_index,
-        total,
-        kenv,
-        name_to_id,
-        names,
-        expect_pass,
-        ungrounded,
-        before_kernel_check,
-      );
-      let mut outcomes = Vec::with_capacity(indices.len());
-      outcomes.push(owner.clone());
-      for index in rest {
-        outcomes.push(block_member_outcome(
-          *index,
-          total,
-          names,
-          expect_pass,
-          &owner,
-        ));
-      }
-      outcomes
-    },
-  }
-}
-
-fn block_member_outcome(
-  index: usize,
-  total: usize,
-  names: &[Name],
-  expect_pass: &[bool],
-  owner: &CheckOutcome,
-) -> CheckOutcome {
-  CheckOutcome {
-    index,
-    total,
-    display: names[index].pretty(),
-    should_pass: expect_pass.get(index).copied().unwrap_or(true),
-    result: owner.result.clone(),
-    status: CheckStatus::Checked,
-    elapsed: owner.elapsed,
-    peak: owner.peak,
-  }
-}
-
 // Owned arguments are consumed via the worker pool but only borrowed in this
 // function body — clippy flags the by-value receivers, but transferring
 // ownership keeps the call sites simpler.
 #[allow(clippy::needless_pass_by_value)]
 fn check_consts_loop(
-  kenv: Arc<KEnv<Meta>>,
-  name_to_id: FxHashMap<Name, KId<Meta>>,
+  ixon_env: Arc<IxonEnv>,
+  lookups: Arc<IxonIngressLookups>,
   names: Vec<Name>,
   expect_pass: Vec<bool>,
   ungrounded: FxHashMap<Name, String>,
+  work: Vec<CheckWorkItem>,
   quiet: bool,
 ) -> Vec<CheckRes> {
   let total = names.len();
-  let mut results: Vec<CheckRes> = Vec::with_capacity(total);
+  let work_total = work.len();
+  let mut results: Vec<Option<CheckRes>> = vec![None; total];
   let slow_threshold = kernel_check_slow_threshold();
 
   // Terminal width is only needed for ephemeral clearing in quiet mode. In
   // verbose mode we never rewrite, so the value is ignored.
   let mut progress = Progress::new(quiet);
+  let mut kenv = KEnv::<Meta>::new();
+  let clear_every = kernel_check_clear_every();
+  let mut checks_since_clear = clear_every;
 
-  for i in 0..total {
+  for (work_idx, item) in work.iter().enumerate() {
+    if checks_since_clear >= clear_every {
+      kenv.clear_releasing_memory();
+      checks_since_clear = 0;
+    }
     let outcome = check_one_const(
-      i,
-      total,
-      &kenv,
-      &name_to_id,
+      item.primary,
+      work_idx,
+      work_total,
+      &ixon_env,
+      &lookups,
       &names,
       &expect_pass,
       &ungrounded,
+      &mut kenv,
       |prefix| progress.start(prefix),
     );
     let prefix = outcome.prefix();
@@ -1035,13 +1295,24 @@ fn check_consts_loop(
       },
     }
 
-    results.push(outcome.result);
+    for &result_idx in &item.aliases {
+      results[result_idx] = Some(outcome.result.clone());
+    }
+    checks_since_clear += 1;
   }
 
   // Clear any trailing ephemeral label before the summary lines print.
   progress.flush();
 
   results
+    .into_iter()
+    .enumerate()
+    .map(|(i, result)| {
+      result.unwrap_or_else(|| {
+        Err((ErrKind::Kernel, format!("kernel-check missed result index {i}")))
+      })
+    })
+    .collect()
 }
 
 // =============================================================================
@@ -1066,6 +1337,9 @@ struct ParallelProgress {
   active: Mutex<Vec<Option<InFlightCheck>>>,
   stop: AtomicBool,
   print_lock: Mutex<()>,
+  /// Peak resident-set size (MiB) sampled at progress ticks. Updated by the
+  /// reporter and printed at end-of-run when memory stats are enabled.
+  peak_rss_mib: AtomicU64,
 }
 
 impl ParallelProgress {
@@ -1092,6 +1366,7 @@ impl ParallelProgress {
       active: Mutex::new(active),
       stop: AtomicBool::new(false),
       print_lock: Mutex::new(()),
+      peak_rss_mib: AtomicU64::new(0),
     }
   }
 
@@ -1136,6 +1411,28 @@ impl ParallelProgress {
 
   fn stop_reporter(&self) {
     self.stop.store(true, Ordering::Relaxed);
+  }
+
+  /// Print a one-shot summary of memory-related telemetry collected during
+  /// the run. No-op when `IX_KERNEL_CHECK_MEM_STATS` is disabled.
+  fn log_mem_summary(&self) {
+    if !kernel_check_mem_stats_enabled() {
+      return;
+    }
+    // Sample one more time so the suffix reflects post-completion state and
+    // peak gets a final fetch_max.
+    let final_rss = current_rss_mib();
+    if let Some(now) = final_rss {
+      self.peak_rss_mib.fetch_max(now, Ordering::Relaxed);
+    }
+    let rss_now = final_rss
+      .map(|mib| format!("{mib}MiB"))
+      .unwrap_or_else(|| "unknown".to_string());
+    let peak = self.peak_rss_mib.load(Ordering::Relaxed);
+    let peak_str = if peak == 0 { "unknown".to_string() } else { format!("{peak}MiB") };
+    self.log(&format!(
+      "[rs_kernel_check] mem summary: peak_rss={peak_str} final_rss={rss_now}"
+    ));
   }
 
   fn persistent_line(&self, outcome: &CheckOutcome) -> Option<String> {
@@ -1233,9 +1530,10 @@ impl ParallelProgress {
     } else {
       format!(" · in-flight: {}", in_flight.join(", "))
     };
+    let mem_suffix = kernel_check_mem_suffix(Some(&self.peak_rss_mib));
 
     self.log(&format!(
-      "[rs_kernel_check] {done}/{} ({pct:.1}%) · {:.1}/s · elapsed {:.0}s{eta}{active_suffix}",
+      "[rs_kernel_check] {done}/{} ({pct:.1}%) · {:.1}/s · elapsed {:.0}s{eta}{mem_suffix}{active_suffix}",
       self.total,
       rate,
       elapsed,
@@ -1440,12 +1738,27 @@ fn term_cols_stderr() -> usize {
 /// Format a `TcError` for user-facing Lean-side display. For the two cases we
 /// hit most often we emit a human-tuned multi-line message; everything else
 /// falls through to `Debug`.
-fn format_tc_error(e: &TcError<Meta>) -> String {
+fn format_tc_error(
+  e: &TcError<Meta>,
+  ixon_env: &IxonEnv,
+  lookups: &IxonIngressLookups,
+) -> String {
   match e {
     TcError::AppTypeMismatch { depth, .. } => {
       format!("AppTypeMismatch at depth={depth}")
     },
     TcError::FunExpected { .. } => "FunExpected".to_string(),
+    TcError::UnknownConst(addr) => {
+      let name =
+        lookups.name_for_addr(addr).map(|n| n.pretty()).unwrap_or_else(|| {
+          if ixon_env.consts.contains_key(addr) {
+            "<unnamed Ixon const>".to_string()
+          } else {
+            "<not in Ixon env>".to_string()
+          }
+        });
+      format!("unknown constant {name} ({:.12})", addr.hex())
+    },
     // Everything else has a hand-written `Display` impl in
     // `src/ix/kernel/error.rs` — prefer it over `{:?}` which dumps raw
     // KExpr internals.
@@ -1553,15 +1866,13 @@ pub extern "C" fn rs_kernel_roundtrip(
 
   let t1 = Instant::now();
   let rust_env_arc = Arc::new(rust_env);
-  let mut compile_state = match compile_env_with_options(
-    &rust_env_arc,
-    CompileOptions { check_originals: false, ..Default::default() },
-  ) {
-    Ok(s) => s,
-    Err(e) => {
-      return build_string_array(&[format!("compile error: {e:?}")]);
-    },
-  };
+  let mut compile_state =
+    match compile_env_with_options(&rust_env_arc, CompileOptions::default()) {
+      Ok(s) => s,
+      Err(e) => {
+        return build_string_array(&[format!("compile error: {e:?}")]);
+      },
+    };
   eprintln!("[rs_kernel_roundtrip] compile:       {:>8.1?}", t1.elapsed());
 
   let t2 = Instant::now();

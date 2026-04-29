@@ -13,7 +13,7 @@ use crate::ix::env::{
 };
 use lean_ffi::nat::Nat;
 
-use super::env::{Addr, intern_addr};
+use super::env::Addr;
 use super::id::KId;
 use super::level::KUniv;
 use super::mode::{KernelMode, MetaDisplay, MetaHash};
@@ -101,10 +101,10 @@ impl<M: KernelMode> KExpr<M> {
     &self.info().mdata
   }
 
-  /// Content-addressed key for cache lookups. Returns a clone of the
-  /// blake3 hash Arc — cheap (refcount bump) and immune to pointer reuse.
+  /// Content-addressed key for cache lookups. Returns the blake3 hash
+  /// by value — `Addr` is `Copy`, so this is a 32-byte memcpy.
   pub fn hash_key(&self) -> Addr {
-    self.addr().clone()
+    *self.addr()
   }
 
   pub fn ptr_eq(&self, other: &KExpr<M>) -> bool {
@@ -115,26 +115,15 @@ impl<M: KernelMode> KExpr<M> {
   ///
   /// 1. `ptr_eq` on the outer `KExpr` Arc — fires when both sides
   ///    came through the [`InternTable`](super::env::InternTable).
-  /// 2. `Arc::ptr_eq` on the [`Addr`] — fires when both sides went
-  ///    through [`intern_addr`](super::env::intern_addr) (which is
-  ///    every kernel-side `KExpr` constructor after audit Tier 1 #1
-  ///    in `plans/kernel-perf-adversarial-audit-2026-04-26.md` §6.1).
-  ///    Exact iff Addrs are interned, but always a sound positive
-  ///    (true ⇒ same Blake3 content), and the cost on miss is just
-  ///    one pointer compare.
-  /// 3. Full 32-byte Blake3 fallback — covers any uninterned Addrs
-  ///    (e.g. a synthetic test fixture that builds an `Addr` directly
-  ///    via `Arc::new`).
-  ///
-  /// `Arc::ptr_eq` semantics on `Addr` is sound regardless of interning:
-  /// two distinct Arc allocations with different content can never
-  /// alias, so a pointer match implies content match. Whether the
-  /// converse holds depends on interning — the 32-byte fallback is the
-  /// safety net.
+  /// 2. 32-byte Blake3 hash compare — sound on its own (collisions
+  ///    require an adversarial preimage attack), and a single AVX2
+  ///    cycle on modern x86. Earlier revisions interposed an
+  ///    `Arc::ptr_eq` fast path on a process-globally-interned `Addr`,
+  ///    but that intern table dominated RSS at mathlib scale; the
+  ///    pure-content compare keeps the same correctness with no
+  ///    process-global state.
   pub fn hash_eq(&self, other: &KExpr<M>) -> bool {
-    self.ptr_eq(other)
-      || Arc::ptr_eq(self.addr(), other.addr())
-      || self.addr() == other.addr()
+    self.ptr_eq(other) || self.addr() == other.addr()
   }
 }
 
@@ -198,12 +187,7 @@ impl<M: KernelMode> KExpr<M> {
     mdata: M::MField<Vec<MData>>,
     addr: Addr,
   ) -> Self {
-    let info = mk_info::<M>(
-      addr,
-      idx + 1,
-      if idx == 0 { 1 } else { 0 },
-      mdata,
-    );
+    let info = mk_info::<M>(addr, idx + 1, if idx == 0 { 1 } else { 0 }, mdata);
     KExpr::new(ExprData::Var(idx, name, info))
   }
 
@@ -212,7 +196,7 @@ impl<M: KernelMode> KExpr<M> {
     name: M::MField<Name>,
     mdata: M::MField<Vec<MData>>,
   ) -> Self {
-    let addr = intern_addr(Self::var_hash(idx, &name, &mdata));
+    let addr = Self::var_hash(idx, &name, &mdata);
     Self::var_mdata_with_addr(idx, name, mdata, addr)
   }
 
@@ -240,7 +224,7 @@ impl<M: KernelMode> KExpr<M> {
   }
 
   pub fn sort_mdata(u: KUniv<M>, mdata: M::MField<Vec<MData>>) -> Self {
-    let addr = intern_addr(Self::sort_hash(&u, &mdata));
+    let addr = Self::sort_hash(&u, &mdata);
     Self::sort_mdata_with_addr(u, mdata, addr)
   }
 
@@ -278,7 +262,7 @@ impl<M: KernelMode> KExpr<M> {
     univs: Box<[KUniv<M>]>,
     mdata: M::MField<Vec<MData>>,
   ) -> Self {
-    let addr = intern_addr(Self::cnst_hash(&id, &univs, &mdata));
+    let addr = Self::cnst_hash(&id, &univs, &mdata);
     Self::cnst_mdata_with_addr(id, univs, mdata, addr)
   }
 
@@ -319,7 +303,7 @@ impl<M: KernelMode> KExpr<M> {
     a: KExpr<M>,
     mdata: M::MField<Vec<MData>>,
   ) -> Self {
-    let addr = intern_addr(Self::app_hash(&f, &a, &mdata));
+    let addr = Self::app_hash(&f, &a, &mdata);
     Self::app_mdata_with_addr(f, a, mdata, addr)
   }
 
@@ -373,7 +357,7 @@ impl<M: KernelMode> KExpr<M> {
     body: KExpr<M>,
     mdata: M::MField<Vec<MData>>,
   ) -> Self {
-    let addr = intern_addr(Self::lam_hash(&name, &bi, &ty, &body, &mdata));
+    let addr = Self::lam_hash(&name, &bi, &ty, &body, &mdata);
     Self::lam_mdata_with_addr(name, bi, ty, body, mdata, addr)
   }
 
@@ -427,7 +411,7 @@ impl<M: KernelMode> KExpr<M> {
     body: KExpr<M>,
     mdata: M::MField<Vec<MData>>,
   ) -> Self {
-    let addr = intern_addr(Self::all_hash(&name, &bi, &ty, &body, &mdata));
+    let addr = Self::all_hash(&name, &bi, &ty, &body, &mdata);
     Self::all_mdata_with_addr(name, bi, ty, body, mdata, addr)
   }
 
@@ -486,8 +470,7 @@ impl<M: KernelMode> KExpr<M> {
     non_dep: bool,
     mdata: M::MField<Vec<MData>>,
   ) -> Self {
-    let addr =
-      intern_addr(Self::let_hash(&name, &ty, &val, &body, non_dep, &mdata));
+    let addr = Self::let_hash(&name, &ty, &val, &body, non_dep, &mdata);
     Self::let_mdata_with_addr(name, ty, val, body, non_dep, mdata, addr)
   }
 
@@ -528,7 +511,7 @@ impl<M: KernelMode> KExpr<M> {
     val: KExpr<M>,
     mdata: M::MField<Vec<MData>>,
   ) -> Self {
-    let addr = intern_addr(Self::prj_hash(&id, field, &val, &mdata));
+    let addr = Self::prj_hash(&id, field, &val, &mdata);
     Self::prj_mdata_with_addr(id, field, val, mdata, addr)
   }
 
@@ -561,7 +544,7 @@ impl<M: KernelMode> KExpr<M> {
     blob_addr: Address,
     mdata: M::MField<Vec<MData>>,
   ) -> Self {
-    let addr = intern_addr(Self::nat_hash(&blob_addr, &mdata));
+    let addr = Self::nat_hash(&blob_addr, &mdata);
     Self::nat_mdata_with_addr(val, blob_addr, mdata, addr)
   }
 
@@ -594,7 +577,7 @@ impl<M: KernelMode> KExpr<M> {
     blob_addr: Address,
     mdata: M::MField<Vec<MData>>,
   ) -> Self {
-    let addr = intern_addr(Self::str_hash(&blob_addr, &mdata));
+    let addr = Self::str_hash(&blob_addr, &mdata);
     Self::str_mdata_with_addr(val, blob_addr, mdata, addr)
   }
 }

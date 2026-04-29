@@ -10,7 +10,7 @@ use crate::ix::env::{DefinitionSafety, QuotKind};
 use crate::ix::ixon::constant::DefKind;
 
 use super::constant::KConst;
-use super::env::{Addr, BlockCheckStart};
+use super::env::Addr;
 use super::error::{TcError, u64_to_usize};
 use super::expr::{ExprData, KExpr};
 use super::id::KId;
@@ -48,15 +48,17 @@ enum CheckBlockKind {
   Recursor,
 }
 
-impl<M: KernelMode> TypeChecker<M> {
+impl<M: KernelMode> TypeChecker<'_, M> {
   /// Return the whole-block check key for a constant when its block has a
   /// supported homogeneous shape. This is used by batch schedulers to avoid
   /// assigning multiple workers to members of the same block.
   pub fn coordinated_check_block_for_const(
-    &self,
+    &mut self,
     id: &KId<M>,
-  ) -> Option<KId<M>> {
-    let c = self.env.get(id)?;
+  ) -> Result<Option<KId<M>>, TcError<M>> {
+    let Some(c) = self.try_get_const(id)? else {
+      return Ok(None);
+    };
     self.coordinated_block_for(&c)
   }
 
@@ -65,16 +67,14 @@ impl<M: KernelMode> TypeChecker<M> {
   where
     M::MField<Vec<crate::ix::env::Name>>: CheckDupLevelParams,
   {
-    let c =
-      self.env.get(id).ok_or_else(|| TcError::UnknownConst(id.addr.clone()))?;
-    if let Some(block) = self.coordinated_block_for(&c) {
-      return match self.env.begin_block_check(&block) {
-        BlockCheckStart::Cached(result) => result,
-        BlockCheckStart::Owner(token) => {
-          let result = self.check_block_body(&block, id);
-          self.env.finish_block_check(token, result)
-        },
-      };
+    let c = self.get_const(id)?;
+    if let Some(block) = self.coordinated_block_for(&c)? {
+      if let Some(result) = self.env.block_check_results.get(&block).cloned() {
+        return result;
+      }
+      let result = self.check_block_body(&block, id);
+      self.env.block_check_results.insert(block, result.clone());
+      return result;
     }
 
     self.check_const_member_fresh(id)
@@ -86,11 +86,7 @@ impl<M: KernelMode> TypeChecker<M> {
   {
     self.reset();
 
-    let c = self
-      .env
-      .get(id)
-      .ok_or_else(|| TcError::UnknownConst(id.addr.clone()))?
-      .clone();
+    let c = self.get_const(id)?;
     self.check_const_member(id, &c)
   }
 
@@ -220,22 +216,12 @@ impl<M: KernelMode> TypeChecker<M> {
         let t = self.infer(ty)?;
         self.ensure_sort(&t)?;
         // `check_recursor` runs the full kernel-driven verification:
-        // coherence (major inductive passes A1–A4, K-target flag
-        // matches), plus generated-canonical-vs-stored rule comparison
-        // via `is_def_eq`. The rule generator (shared between the
-        // kernel and the compile-time aux_gen) produces the same
-        // output for original and canonical inductives, with the nested-aux
-        // ordering selected by the KEnv (`Source` for `orig_kenv`,
-        // `Canonical` for compiled Ixon), so the syntactic compare is sound
-        // against either env.
-        //
-        // The old Array vs `_nested.Array_1` false positives are
-        // resolved by the two-env split: `check_originals` runs
-        // against `stt.kctx.orig_kenv` (pristine `lean_ingress`), and
-        // the post-compile FFI check runs against the `ixon_ingress`'d
-        // canonical env (aux-restored). Neither carries the compile-
-        // time overlay pollution that motivated removing the syntactic
-        // path earlier.
+        // coherence (major inductive passes A1–A4, K-target flag matches),
+        // plus generated-canonical-vs-stored rule comparison via
+        // `is_def_eq`. The rule generator is shared between the kernel and
+        // the compile-time aux_gen, with the nested-aux ordering selected
+        // by `KEnv::recursor_aux_order`, so the syntactic compare is sound
+        // against the canonical aux-restored env produced by `ixon_ingress`.
         self.check_recursor_member(id)?;
         Ok(())
       },
@@ -260,7 +246,10 @@ impl<M: KernelMode> TypeChecker<M> {
     }
   }
 
-  fn coordinated_block_for(&self, c: &KConst<M>) -> Option<KId<M>> {
+  fn coordinated_block_for(
+    &mut self,
+    c: &KConst<M>,
+  ) -> Result<Option<KId<M>>, TcError<M>> {
     match c {
       KConst::Defn { block, .. } => {
         self.coordinated_block_if_kind(block, CheckBlockKind::Defn)
@@ -269,35 +258,39 @@ impl<M: KernelMode> TypeChecker<M> {
         self.coordinated_block_if_kind(block, CheckBlockKind::Inductive)
       },
       KConst::Ctor { induct, .. } => {
-        let parent = self.env.get(induct)?;
+        let Some(parent) = self.try_get_const(induct)? else {
+          return Ok(None);
+        };
         match parent {
           KConst::Indc { block, .. } => {
             self.coordinated_block_if_kind(&block, CheckBlockKind::Inductive)
           },
-          _ => None,
+          _ => Ok(None),
         }
       },
       KConst::Recr { block, .. } => {
         self.coordinated_block_if_kind(block, CheckBlockKind::Recursor)
       },
-      KConst::Axio { .. } | KConst::Quot { .. } => None,
+      KConst::Axio { .. } | KConst::Quot { .. } => Ok(None),
     }
   }
 
   fn coordinated_block_if_kind(
-    &self,
+    &mut self,
     block: &KId<M>,
     expected: CheckBlockKind,
-  ) -> Option<KId<M>> {
-    let members = self.env.get_block(block)?;
+  ) -> Result<Option<KId<M>>, TcError<M>> {
+    let Some(members) = self.try_get_block(block)? else {
+      return Ok(None);
+    };
     match self.classify_block(&members) {
-      Ok(kind) if kind == expected => Some(block.clone()),
-      Ok(_) | Err(_) => None,
+      Ok(kind) if kind == expected => Ok(Some(block.clone())),
+      Ok(_) | Err(_) => Ok(None),
     }
   }
 
   fn classify_block(
-    &self,
+    &mut self,
     members: &[KId<M>],
   ) -> Result<CheckBlockKind, TcError<M>> {
     if members.is_empty() {
@@ -308,11 +301,7 @@ impl<M: KernelMode> TypeChecker<M> {
     let mut saw_recr = false;
     let mut saw_inductive_like = false;
     for member in members {
-      match self
-        .env
-        .get(member)
-        .ok_or_else(|| TcError::UnknownConst(member.addr.clone()))?
-      {
+      match self.get_const(member)? {
         KConst::Defn { .. } => saw_defn = true,
         KConst::Recr { .. } => saw_recr = true,
         KConst::Indc { .. } | KConst::Ctor { .. } => {
@@ -350,7 +339,7 @@ impl<M: KernelMode> TypeChecker<M> {
 
     let get_members_start = overall.map(|_| Instant::now());
     let members =
-      self.env.get_block(block).unwrap_or_else(|| vec![requested.clone()]);
+      self.try_get_block(block)?.unwrap_or_else(|| vec![requested.clone()]);
     let get_members_elapsed = get_members_start.map(|s| s.elapsed());
 
     let classify_start = overall.map(|_| Instant::now());
@@ -361,10 +350,7 @@ impl<M: KernelMode> TypeChecker<M> {
     let prevalidate_start = overall.map(|_| Instant::now());
     if kind != CheckBlockKind::Defn {
       for member in &members {
-        let c = self
-          .env
-          .get(member)
-          .ok_or_else(|| TcError::UnknownConst(member.addr.clone()))?;
+        let c = self.get_const(member)?;
         if c.level_params().has_duplicate_level_params() {
           return Err(TcError::Other(
             "duplicate universe level parameter".into(),
@@ -432,14 +418,14 @@ impl<M: KernelMode> TypeChecker<M> {
   /// every `Param(idx)` in their type/value/rules must refer to one of the
   /// declaration's own universe parameters.
   pub(crate) fn validate_const_well_scoped(
-    &self,
+    &mut self,
     c: &KConst<M>,
   ) -> Result<(), TcError<M>> {
     self.validate_const_well_scoped_timed(c, None)
   }
 
   fn validate_const_well_scoped_timed(
-    &self,
+    &mut self,
     c: &KConst<M>,
     mut timing: Option<&mut ValidationTiming>,
   ) -> Result<(), TcError<M>> {
@@ -504,7 +490,7 @@ impl<M: KernelMode> TypeChecker<M> {
   }
 
   fn validate_expr_well_scoped(
-    &self,
+    &mut self,
     root: &KExpr<M>,
     root_depth: u64,
     lvl_bound: usize,
@@ -532,10 +518,7 @@ impl<M: KernelMode> TypeChecker<M> {
           }
         },
         ExprData::Const(id, us, _) => {
-          let c = self
-            .env
-            .get(id)
-            .ok_or_else(|| TcError::UnknownConst(id.addr.clone()))?;
+          let c = self.get_const(id)?;
           if u64_to_usize::<M>(c.lvls())? != us.len() {
             return Err(TcError::UnivParamMismatch {
               expected: c.lvls(),
@@ -571,7 +554,7 @@ impl<M: KernelMode> TypeChecker<M> {
           stack.push((body, body_depth));
         },
         ExprData::Prj(id, _, val, _) => {
-          if self.env.get(id).is_none() {
+          if !self.has_const(id)? {
             return Err(TcError::UnknownConst(id.addr.clone()));
           }
           stack.push((val, depth));
@@ -765,7 +748,7 @@ impl<M: KernelMode> TypeChecker<M> {
   /// - Safe defs cannot reference unsafe or partial constants
   /// - Partial defs cannot reference unsafe constants
   fn check_no_unsafe_refs(
-    &self,
+    &mut self,
     e: &KExpr<M>,
     caller_safety: DefinitionSafety,
   ) -> Result<(), TcError<M>> {
@@ -774,7 +757,7 @@ impl<M: KernelMode> TypeChecker<M> {
 
   /// Iterative (stack-based) walk — immune to stack overflow on deeply nested input.
   fn walk_for_unsafe(
-    &self,
+    &mut self,
     root: &KExpr<M>,
     caller_safety: DefinitionSafety,
   ) -> Result<(), TcError<M>> {
@@ -794,7 +777,7 @@ impl<M: KernelMode> TypeChecker<M> {
           if !seen_consts.insert(id.addr.clone()) {
             continue;
           }
-          match self.env.get(id) {
+          match self.try_get_const(id)? {
             Some(KConst::Axio { is_unsafe: true, .. }) => {
               return Err(TcError::Other(format!(
                 "safe definition references unsafe axiom {}",
@@ -860,8 +843,6 @@ impl<M: KernelMode> TypeChecker<M> {
 
 #[cfg(test)]
 mod tests {
-  use std::sync::{Arc, Barrier};
-  use std::thread;
 
   use super::super::constant::KConst;
   use super::super::env::KEnv;
@@ -891,8 +872,8 @@ mod tests {
     AE::sort(AU::succ(AU::zero()))
   }
 
-  fn test_env() -> Arc<KEnv<Anon>> {
-    let env = Arc::new(KEnv::new());
+  fn test_env() -> KEnv<Anon> {
+    let mut env = KEnv::new();
     // Axiom: Nat : Sort 1
     env.insert(
       mk_id("Nat"),
@@ -945,36 +926,36 @@ mod tests {
 
   #[test]
   fn check_axiom() {
-    let env = test_env();
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut env = test_env();
+    let mut tc = TypeChecker::new(&mut env);
     assert!(tc.check_const(&mk_id("Nat")).is_ok());
   }
 
   #[test]
   fn check_defn_ok() {
-    let env = test_env();
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut env = test_env();
+    let mut tc = TypeChecker::new(&mut env);
     assert!(tc.check_const(&mk_id("id")).is_ok());
   }
 
   #[test]
   fn check_defn_mismatch() {
-    let env = test_env();
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut env = test_env();
+    let mut tc = TypeChecker::new(&mut env);
     assert!(tc.check_const(&mk_id("wrong")).is_err());
   }
 
   #[test]
   fn check_unknown_const() {
-    let env = test_env();
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut env = test_env();
+    let mut tc = TypeChecker::new(&mut env);
     assert!(tc.check_const(&mk_id("nonexistent")).is_err());
   }
 
   #[test]
   fn check_clears_caches() {
-    let env = test_env();
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut env = test_env();
+    let mut tc = TypeChecker::new(&mut env);
     tc.check_const(&mk_id("Nat")).unwrap();
     // def_eq_depth should be reset
     assert_eq!(tc.def_eq_depth, 0);
@@ -987,7 +968,7 @@ mod tests {
 
   #[test]
   fn check_theorem_with_type_in_prop_ok() {
-    let env = Arc::new(KEnv::<Anon>::new());
+    let mut env = KEnv::<Anon>::new();
     // Axiom P : Prop.
     env.insert(
       mk_id("P"),
@@ -1026,13 +1007,13 @@ mod tests {
         block: mk_id("thm"),
       },
     );
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut tc = TypeChecker::new(&mut env);
     tc.check_const(&mk_id("thm")).unwrap();
   }
 
   #[test]
   fn check_theorem_with_non_prop_type_rejected() {
-    let env = Arc::new(KEnv::<Anon>::new());
+    let mut env = KEnv::<Anon>::new();
     // Theorem claiming to inhabit Sort 1 (not Prop) — must be rejected.
     env.insert(
       mk_id("thm_bad"),
@@ -1049,7 +1030,7 @@ mod tests {
         block: mk_id("thm_bad"),
       },
     );
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut tc = TypeChecker::new(&mut env);
     match tc.check_const(&mk_id("thm_bad")) {
       Err(TcError::Other(s)) => {
         assert!(s.contains("theorem type must be a proposition"));
@@ -1065,8 +1046,7 @@ mod tests {
   #[test]
   fn check_axiom_with_non_sort_type_rejected() {
     // Axiom whose declared type is `id` (a definition, not a Sort) → error.
-    let base = test_env();
-    let env = Arc::clone(&base);
+    let mut env = test_env();
     // Add an axiom with a bogus type — the type expression is valid, but its
     // _inferred type_ (the type of its type) is `Sort 0 → Sort 0`'s type,
     // which is a Sort. To actually hit `TypeExpected` we need a type that
@@ -1083,7 +1063,7 @@ mod tests {
         ty: AE::var(0, ()),
       },
     );
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut tc = TypeChecker::new(&mut env);
     assert!(tc.check_const(&mk_id("bad_ax")).is_err());
   }
 
@@ -1097,7 +1077,7 @@ mod tests {
     type ME = KExpr<Meta>;
     type MU = KUniv<Meta>;
 
-    let env = Arc::new(KEnv::<Meta>::new());
+    let mut env = KEnv::<Meta>::new();
     let dup_name =
       crate::ix::env::Name::str(crate::ix::env::Name::anon(), "u".into());
     let id = KId::new(mk_addr("T"), dup_name.clone());
@@ -1111,7 +1091,7 @@ mod tests {
         ty: ME::sort(MU::succ(MU::zero())),
       },
     );
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut tc = TypeChecker::new(&mut env);
     match tc.check_const(&id) {
       Err(TcError::Other(s)) => {
         assert!(s.contains("duplicate universe level parameter"));
@@ -1122,7 +1102,7 @@ mod tests {
 
   #[test]
   fn check_loose_var_in_decl_rejected_before_infer() {
-    let env = Arc::new(KEnv::<Anon>::new());
+    let mut env = KEnv::<Anon>::new();
     env.insert(
       mk_id("bad_loose"),
       KConst::Axio {
@@ -1133,7 +1113,7 @@ mod tests {
         ty: AE::all((), (), sort0(), AE::var(1, ())),
       },
     );
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut tc = TypeChecker::new(&mut env);
     match tc.check_const(&mk_id("bad_loose")) {
       Err(TcError::VarOutOfRange { idx: 1, ctx_len: 1 }) => {},
       other => panic!("expected closure VarOutOfRange, got {other:?}"),
@@ -1142,7 +1122,7 @@ mod tests {
 
   #[test]
   fn check_out_of_range_universe_param_rejected() {
-    let env = Arc::new(KEnv::<Anon>::new());
+    let mut env = KEnv::<Anon>::new();
     env.insert(
       mk_id("bad_univ"),
       KConst::Axio {
@@ -1153,7 +1133,7 @@ mod tests {
         ty: AE::sort(AU::param(1, ())),
       },
     );
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut tc = TypeChecker::new(&mut env);
     match tc.check_const(&mk_id("bad_univ")) {
       Err(TcError::UnivParamOutOfRange { idx: 1, bound: 1 }) => {},
       other => panic!("expected universe-param range error, got {other:?}"),
@@ -1166,8 +1146,8 @@ mod tests {
 
   #[test]
   fn check_const_idempotent() {
-    let env = test_env();
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut env = test_env();
+    let mut tc = TypeChecker::new(&mut env);
     tc.check_const(&mk_id("id")).unwrap();
     tc.check_const(&mk_id("id")).unwrap();
     tc.check_const(&mk_id("id")).unwrap();
@@ -1175,7 +1155,7 @@ mod tests {
 
   #[test]
   fn safe_definition_rejects_unsafe_inductive_ref() {
-    let env = Arc::new(KEnv::<Anon>::new());
+    let mut env = KEnv::<Anon>::new();
     let unsafe_ty = mk_id("UnsafeTy");
     env.insert(
       unsafe_ty.clone(),
@@ -1214,7 +1194,7 @@ mod tests {
       },
     );
 
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut tc = TypeChecker::new(&mut env);
     match tc.check_const(&mk_id("useUnsafe")) {
       Err(TcError::Other(s)) => assert!(s.contains("unsafe inductive")),
       other => {
@@ -1223,7 +1203,7 @@ mod tests {
     }
   }
 
-  fn insert_id_def(env: &Arc<KEnv<Anon>>, id: KId<Anon>, block: KId<Anon>) {
+  fn insert_id_def(env: &mut KEnv<Anon>, id: KId<Anon>, block: KId<Anon>) {
     env.insert(
       id,
       KConst::Defn {
@@ -1243,11 +1223,11 @@ mod tests {
 
   #[test]
   fn checking_one_definition_checks_sibling_block() {
-    let env = Arc::new(KEnv::<Anon>::new());
+    let mut env = KEnv::<Anon>::new();
     let block = mk_id("def_block");
     let good = mk_id("good");
     let bad = mk_id("bad");
-    insert_id_def(&env, good.clone(), block.clone());
+    insert_id_def(&mut env, good.clone(), block.clone());
     env.insert(
       bad.clone(),
       KConst::Defn {
@@ -1265,44 +1245,25 @@ mod tests {
     );
     env.insert_block(block.clone(), vec![good.clone(), bad.clone()]);
 
-    let mut tc = TypeChecker::new(Arc::clone(&env));
-    let first = tc.check_const(&good).unwrap_err();
-    let mut tc2 = TypeChecker::new(Arc::clone(&env));
-    let second = tc2.check_const(&bad).unwrap_err();
+    let first = {
+      let mut tc = TypeChecker::new(&mut env);
+      tc.check_const(&good).unwrap_err()
+    };
+    let second = {
+      let mut tc2 = TypeChecker::new(&mut env);
+      tc2.check_const(&bad).unwrap_err()
+    };
 
     assert_eq!(format!("{first}"), format!("{second}"));
     assert!(env.block_check_results.get(&block).is_some_and(|r| r.is_err()));
   }
 
-  #[test]
-  fn concurrent_definition_block_checks_share_result() {
-    let env = Arc::new(KEnv::<Anon>::new());
-    let block = mk_id("parallel_def_block");
-    let a = mk_id("a");
-    let b = mk_id("b");
-    insert_id_def(&env, a.clone(), block.clone());
-    insert_id_def(&env, b.clone(), block.clone());
-    env.insert_block(block.clone(), vec![a.clone(), b.clone()]);
-
-    let barrier = Arc::new(Barrier::new(3));
-    let mut handles = Vec::new();
-    for id in [a, b] {
-      let env = Arc::clone(&env);
-      let barrier = Arc::clone(&barrier);
-      handles.push(thread::spawn(move || {
-        let mut tc = TypeChecker::new(env);
-        barrier.wait();
-        tc.check_const(&id)
-      }));
-    }
-    barrier.wait();
-
-    for handle in handles {
-      handle.join().unwrap().unwrap();
-    }
-    assert_eq!(env.block_check_results.len(), 1);
-    assert!(env.block_check_results.get(&block).is_some_and(|r| r.is_ok()));
-  }
+  // Note: the previous `concurrent_definition_block_checks_share_result`
+  // test exercised cross-thread block-check coordination via the old
+  // `Arc<KEnv>` + `Mutex/Condvar` machinery. With the per-worker
+  // single-threaded `KEnv` design, there is no shared block-check
+  // coordination to test — each worker owns its env and the
+  // `block_check_results` cache is purely a within-worker memo.
 
   // =========================================================================
   // Axiom with unknown referent in its type errors
@@ -1310,7 +1271,7 @@ mod tests {
 
   #[test]
   fn check_axiom_referencing_unknown_const_errors() {
-    let env = Arc::new(KEnv::<Anon>::new());
+    let mut env = KEnv::<Anon>::new();
     env.insert(
       mk_id("x"),
       KConst::Axio {
@@ -1321,7 +1282,7 @@ mod tests {
         ty: AE::cnst(mk_id("UnknownType"), Box::new([])),
       },
     );
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut tc = TypeChecker::new(&mut env);
     match tc.check_const(&mk_id("x")) {
       Err(TcError::UnknownConst(_)) => {},
       other => panic!("expected UnknownConst, got {other:?}"),

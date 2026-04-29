@@ -2,7 +2,6 @@
 
 #[cfg(test)]
 mod tests {
-  use std::sync::Arc;
 
   use crate::ix::env::{Name, ReducibilityHints};
   use crate::ix::kernel::constant::KConst;
@@ -19,8 +18,8 @@ mod tests {
   /// PN := ∀ α, (α → α) → α → α
   /// PN.zero : PN := fun α s z => z
   /// PN.succ : PN → PN := fun n α s z => s (n α s z)
-  fn peano_env() -> Arc<KEnv<Meta>> {
-    let env = Arc::new(KEnv::<Meta>::new());
+  fn peano_env() -> KEnv<Meta> {
+    let mut env = KEnv::<Meta>::new();
     // PN := ∀ α, (α → α) → α → α
     // = ∀ (α : Type), (α → α) → α → α
     // depth 0: α=var(0). (α → α) = pi(var(0), var(1)). α → α at depth 1.
@@ -166,7 +165,7 @@ mod tests {
       env.insert(id, c);
     }
 
-    add_eq_axioms(&env);
+    add_eq_axioms(&mut env);
     env
   }
 
@@ -192,10 +191,10 @@ mod tests {
         app(var(0), cnst("PN.lit2", &[])),
       ),
     );
-    let env2 = env;
+    let mut env2 = env;
     let (id, c) = mk_thm("peano1", 0, vec![], ty, val);
     env2.insert(id.clone(), c);
-    check_accepts(&env2, &id);
+    check_accepts(&mut env2, &id);
   }
 
   /// peano2 : ∀ (t : PN → Prop) (v : (n : PN) → t n), t PN.lit2 := fun t v => v (PN.add PN.lit1 PN.lit1)
@@ -224,10 +223,10 @@ mod tests {
         app(var(0), one_plus_one),
       ),
     );
-    let env2 = env;
+    let mut env2 = env;
     let (id, c) = mk_thm("peano2", 0, vec![], ty, val);
     env2.insert(id.clone(), c);
-    check_accepts(&env2, &id);
+    check_accepts(&mut env2, &id);
   }
 
   /// peano3 : ∀ (t : PN → Prop) (v : (n : PN) → t n), t PN.lit4 := fun t v => v (PN.mul PN.lit2 PN.lit2)
@@ -255,10 +254,10 @@ mod tests {
         app(var(0), two_times_two),
       ),
     );
-    let env2 = env;
+    let mut env2 = env;
     let (id, c) = mk_thm("peano3", 0, vec![], ty, val);
     env2.insert(id.clone(), c);
-    check_accepts(&env2, &id);
+    check_accepts(&mut env2, &id);
   }
 
   // ==========================================================================
@@ -266,8 +265,8 @@ mod tests {
   // ==========================================================================
 
   /// Build Bool environment with working recursor rules.
-  fn bool_env() -> Arc<KEnv<Meta>> {
-    let env = Arc::new(KEnv::<Meta>::new());
+  fn bool_env() -> KEnv<Meta> {
+    let mut env = KEnv::<Meta>::new();
     let n = "Bool";
     let block_id = mk_id(n);
     let false_id = mk_id("Bool.false");
@@ -384,7 +383,7 @@ mod tests {
     env
       .blocks
       .insert(block_id.clone(), vec![block_id, false_id, true_id, rec_id]);
-    add_eq_axioms(&env);
+    add_eq_axioms(&mut env);
     env
   }
 
@@ -392,7 +391,7 @@ mod tests {
   ///           ∧ Bool.rec false_val true_val true  = true_val
   #[test]
   fn good_bool_rec_reduction() {
-    let env = bool_env();
+    let mut env = bool_env();
 
     // Test: Bool.rec (motive := fun _ => Bool) Bool.false Bool.true Bool.false = Bool.false
     // i.e., the recursor on false returns the false-case value
@@ -422,13 +421,13 @@ mod tests {
       eq_refl_expr(usucc(uzero()), cnst("Bool", &[]), cnst("Bool.false", &[]));
     let (id, c) = mk_thm("boolRecFalse", 0, vec![], ty, val);
     env.insert(id.clone(), c);
-    check_accepts(&env, &id);
+    check_accepts(&mut env, &id);
   }
 
   /// Bool.rec on true returns the true-case value
   #[test]
   fn good_bool_rec_reduction_true() {
-    let env = bool_env();
+    let mut env = bool_env();
 
     let motive = nlam("_", cnst("Bool", &[]), cnst("Bool", &[]));
     let rec_app = apps(
@@ -450,7 +449,7 @@ mod tests {
       eq_refl_expr(usucc(uzero()), cnst("Bool", &[]), cnst("Bool.true", &[]));
     let (id, c) = mk_thm("boolRecTrue", 0, vec![], ty, val);
     env.insert(id.clone(), c);
-    check_accepts(&env, &id);
+    check_accepts(&mut env, &id);
   }
 
   // ==========================================================================
@@ -458,8 +457,8 @@ mod tests {
   // ==========================================================================
 
   /// Build N (Nat-like) environment with working recursor rules.
-  fn nat_env() -> Arc<KEnv<Meta>> {
-    let env = Arc::new(KEnv::<Meta>::new());
+  fn nat_env() -> KEnv<Meta> {
+    let mut env = KEnv::<Meta>::new();
     let n = "N";
     let block_id = mk_id(n);
     let zero_id = mk_id("N.zero");
@@ -603,7 +602,7 @@ mod tests {
     env
       .blocks
       .insert(block_id.clone(), vec![block_id, zero_id, succ_id, rec_id]);
-    add_eq_axioms(&env);
+    add_eq_axioms(&mut env);
     env
   }
 
@@ -612,7 +611,7 @@ mod tests {
   /// Tests: N.add N.zero m = m  ∧  N.add (N.succ n) m = N.succ (N.add n m)
   #[test]
   fn good_n_rec_reduction() {
-    let env = nat_env();
+    let mut env = nat_env();
 
     let nat = || cnst("N", &[]);
 
@@ -665,13 +664,13 @@ mod tests {
     let val1 = nlam("m", nat(), eq_refl_expr(usucc(uzero()), nat(), var(0)));
     let (id1, c1) = mk_thm("nAddZero", 0, vec![], ty1, val1);
     env.insert(id1.clone(), c1);
-    check_accepts(&env, &id1);
+    check_accepts(&mut env, &id1);
   }
 
   /// N.add N.succ reduction: N.add (N.succ n) m = N.succ (N.add n m)
   #[test]
   fn good_n_rec_reduction_succ() {
-    let env = nat_env();
+    let mut env = nat_env();
     let nat = || cnst("N", &[]);
 
     let motive = nlam("_", nat(), pi(nat(), nat()));
@@ -727,7 +726,7 @@ mod tests {
     );
     let (id2, c2) = mk_thm("nAddSucc", 0, vec![], ty2, val2);
     env.insert(id2.clone(), c2);
-    check_accepts(&env, &id2);
+    check_accepts(&mut env, &id2);
   }
 
   // ==========================================================================
@@ -736,8 +735,8 @@ mod tests {
 
   /// Build an environment with Bool + RTree (reflexive inductive).
   /// RTree : Type, RTree.leaf : RTree, RTree.node : (Bool → RTree) → RTree
-  fn rtree_env() -> Arc<KEnv<Meta>> {
-    let env = bool_env();
+  fn rtree_env() -> KEnv<Meta> {
+    let mut env = bool_env();
 
     let n = "RTree";
     let block_id = mk_id(n);
@@ -901,7 +900,7 @@ mod tests {
   /// rtreeRecReduction : ∀ (t1 t2 : RTree), (RTree.node (Bool.rec t2 t1)).left = t1
   #[test]
   fn good_rtree_rec_reduction() {
-    let env = rtree_env();
+    let mut env = rtree_env();
 
     let rt = || cnst("RTree", &[]);
 
@@ -968,7 +967,7 @@ mod tests {
 
     let (id, c) = mk_thm("rtreeRecReduction", 0, vec![], ty, val);
     env.insert(id.clone(), c);
-    check_accepts(&env, &id);
+    check_accepts(&mut env, &id);
   }
 
   // ==========================================================================
@@ -979,7 +978,7 @@ mod tests {
   /// Type checking a Nat literal — needs Primitives wired up.
   #[test]
   fn good_nat_lit() {
-    let env = nat_env();
+    let mut env = nat_env();
     let nat = || cnst("N", &[]);
 
     // We need to use the actual Nat type for nat literals.
@@ -996,14 +995,14 @@ mod tests {
     prims.nat = mk_id("N");
     prims.nat_zero = mk_id("N.zero");
     prims.nat_succ = mk_id("N.succ");
-    check_accepts_with_prims(&env, &id, prims);
+    check_accepts_with_prims(&mut env, &id, prims);
   }
 
   /// natLitEq : Eq N 3 (N.succ (N.succ (N.succ N.zero))) := Eq.refl 3
   /// Nat literal 3 must reduce to succ(succ(succ(zero))).
   #[test]
   fn good_nat_lit_eq() {
-    let env = nat_env();
+    let mut env = nat_env();
     let nat = || cnst("N", &[]);
 
     use crate::ix::address::Address;
@@ -1026,7 +1025,7 @@ mod tests {
     prims.nat = mk_id("N");
     prims.nat_zero = mk_id("N.zero");
     prims.nat_succ = mk_id("N.succ");
-    check_accepts_with_prims(&env, &id, prims);
+    check_accepts_with_prims(&mut env, &id, prims);
   }
 
   // ==========================================================================
@@ -1034,9 +1033,9 @@ mod tests {
   // ==========================================================================
 
   /// Build Prod.{u,v} : Type u → Type v → Type (max u v) environment.
-  fn prod_env() -> Arc<KEnv<Meta>> {
-    let env = Arc::new(KEnv::<Meta>::new());
-    add_eq_axioms(&env);
+  fn prod_env() -> KEnv<Meta> {
+    let mut env = KEnv::<Meta>::new();
+    add_eq_axioms(&mut env);
 
     // Also need Bool for projection tests
     let bool_id = mk_id("Bool");
@@ -1265,7 +1264,7 @@ mod tests {
   /// Projection .proj Prod 1 (Prod.mk true false) reduces to false.
   #[test]
   fn good_proj_red() {
-    let env = prod_env();
+    let mut env = prod_env();
 
     // Prod.mk.{0,0} Bool Bool true false : Prod Bool Bool
     let pair = apps(
@@ -1287,14 +1286,14 @@ mod tests {
 
     let (id, c) = mk_thm("projRed", 0, vec![], ty, val);
     env.insert(id.clone(), c);
-    check_accepts(&env, &id);
+    check_accepts(&mut env, &id);
   }
 
   /// structEta : ∀ (x : Prod Bool Bool), x = Prod.mk (.proj Prod 0 x) (.proj Prod 1 x)
   /// Structure eta: a value of a structure type equals the constructor applied to its projections.
   #[test]
   fn good_struct_eta() {
-    let env = prod_env();
+    let mut env = prod_env();
 
     let prod_bb = app(
       app(cnst("Prod", &[uzero(), uzero()]), cnst("Bool", &[])),
@@ -1322,13 +1321,13 @@ mod tests {
 
     let (id, c) = mk_thm("structEta", 0, vec![], ty, val);
     env.insert(id.clone(), c);
-    check_accepts(&env, &id);
+    check_accepts(&mut env, &id);
   }
 
   /// prodRecEqns: Prod.rec f (Prod.mk true false) = f true false = true
   #[test]
   fn good_prod_rec_reduction() {
-    let env = prod_env();
+    let mut env = prod_env();
     let u1 = usucc(uzero());
 
     let prod_bb = app(
@@ -1357,7 +1356,7 @@ mod tests {
 
     let (id, c) = mk_thm("prodRecEqns", 0, vec![], ty, val);
     env.insert(id.clone(), c);
-    check_accepts(&env, &id);
+    check_accepts(&mut env, &id);
   }
 
   // ==========================================================================
@@ -1365,7 +1364,7 @@ mod tests {
   // ==========================================================================
 
   /// Add Eq as a full inductive (not just axioms) — needed for Quot.lift validation.
-  fn add_eq_inductive(env: &KEnv<Meta>) {
+  fn add_eq_inductive(env: &mut KEnv<Meta>) {
     let eq_id = mk_id("Eq");
     let refl_id = mk_id("Eq.refl");
     let eq_rec_id = mk_id("Eq.rec");
@@ -1465,9 +1464,9 @@ mod tests {
 
   /// Build Quot environment: Quot, Quot.mk, Quot.lift, Quot.ind as KConst::Quot.
   /// Also includes Eq as full inductive (needed for Quot.lift validation).
-  fn quot_env() -> Arc<KEnv<Meta>> {
-    let env = Arc::new(KEnv::<Meta>::new());
-    add_eq_inductive(&env);
+  fn quot_env() -> KEnv<Meta> {
+    let mut env = KEnv::<Meta>::new();
+    add_eq_inductive(&mut env);
 
     use crate::ix::env::QuotKind;
 
@@ -1644,28 +1643,31 @@ mod tests {
   /// quotMkType: type assertion for Quot.mk
   #[test]
   fn good_quot_mk_type() {
-    let env = quot_env();
-    check_accepts_with_prims(&env, &mk_id("Quot.mk"), quot_prims(&env));
+    let mut env = quot_env();
+    let prims = quot_prims(&env);
+    check_accepts_with_prims(&mut env, &mk_id("Quot.mk"), prims);
   }
 
   /// quotLiftType: type assertion for Quot.lift
   #[test]
   fn good_quot_lift_type() {
-    let env = quot_env();
-    check_accepts_with_prims(&env, &mk_id("Quot.lift"), quot_prims(&env));
+    let mut env = quot_env();
+    let prims = quot_prims(&env);
+    check_accepts_with_prims(&mut env, &mk_id("Quot.lift"), prims);
   }
 
   /// quotIndType: type assertion for Quot.ind
   #[test]
   fn good_quot_ind_type() {
-    let env = quot_env();
-    check_accepts_with_prims(&env, &mk_id("Quot.ind"), quot_prims(&env));
+    let mut env = quot_env();
+    let prims = quot_prims(&env);
+    check_accepts_with_prims(&mut env, &mk_id("Quot.ind"), prims);
   }
 
   /// quotLiftReduction: Quot.lift f h (Quot.mk r a) = f a
   #[test]
   fn good_quot_lift_reduction() {
-    let env = quot_env();
+    let mut env = quot_env();
     let prims = quot_prims(&env);
 
     // We need a concrete type for testing. Use Bool (as axiom).
@@ -1740,6 +1742,6 @@ mod tests {
 
     let (id, c) = mk_thm("quotLiftReduction", 0, vec![], ty, val);
     env.insert(id.clone(), c);
-    check_accepts_with_prims(&env, &id, prims);
+    check_accepts_with_prims(&mut env, &id, prims);
   }
 }

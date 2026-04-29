@@ -48,6 +48,7 @@ pub enum TcError<M: KernelMode> {
   },
   DefEqFailed,
   MaxRecDepth,
+  MaxRecFuel,
   /// A stored mutual block fails the kernel's canonicity check: under the
   /// stored partition, an adjacent pair did not satisfy strict `Less`.
   ///
@@ -97,6 +98,7 @@ impl<M: KernelMode> std::fmt::Display for TcError<M> {
       },
       TcError::DefEqFailed => write!(f, "definitional equality check failed"),
       TcError::MaxRecDepth => write!(f, "max recursion depth exceeded"),
+      TcError::MaxRecFuel => write!(f, "recursive fuel exhausted"),
       TcError::NonCanonicalBlock { block, pos, ordering } => {
         let dir = match ordering {
           Ordering::Less => "Less",
@@ -214,6 +216,12 @@ mod tests {
   fn display_max_rec_depth() {
     let e: TcError<Anon> = TcError::MaxRecDepth;
     assert_eq!(format!("{e}"), "max recursion depth exceeded");
+  }
+
+  #[test]
+  fn display_max_rec_fuel() {
+    let e: TcError<Anon> = TcError::MaxRecFuel;
+    assert_eq!(format!("{e}"), "recursive fuel exhausted");
   }
 
   #[test]

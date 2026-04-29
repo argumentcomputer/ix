@@ -39,7 +39,7 @@ use std::sync::Arc;
 
 use crate::ix::env::{Name, UIMAX, UMAX, UPARAM, USUCC, UZERO};
 
-use super::env::{Addr, intern_addr};
+use super::env::Addr;
 use super::mode::{KernelMode, MetaDisplay, MetaHash};
 
 /// Universe level. Thin Arc wrapper — cheap to clone, O(1) identity
@@ -130,14 +130,14 @@ impl<M: KernelMode> KUniv<M> {
 
 impl<M: KernelMode> KUniv<M> {
   pub fn zero() -> Self {
-    KUniv::new(UnivData::Zero(intern_addr(blake3::hash(&[UZERO]))))
+    KUniv::new(UnivData::Zero(blake3::hash(&[UZERO])))
   }
 
   pub fn succ(inner: KUniv<M>) -> Self {
     let mut hasher = blake3::Hasher::new();
     hasher.update(&[USUCC]);
     hasher.update(inner.addr().as_bytes());
-    KUniv::new(UnivData::Succ(inner, intern_addr(hasher.finalize())))
+    KUniv::new(UnivData::Succ(inner, hasher.finalize()))
   }
 
   /// Construct `max(a, b)` with Lean-style simplifications:
@@ -197,7 +197,7 @@ impl<M: KernelMode> KUniv<M> {
     hasher.update(&[UMAX]);
     hasher.update(a.addr().as_bytes());
     hasher.update(b.addr().as_bytes());
-    KUniv::new(UnivData::Max(a, b, intern_addr(hasher.finalize())))
+    KUniv::new(UnivData::Max(a, b, hasher.finalize()))
   }
 
   /// Construct `imax(a, b)` with Lean-style simplifications:
@@ -232,7 +232,7 @@ impl<M: KernelMode> KUniv<M> {
     hasher.update(&[UIMAX]);
     hasher.update(a.addr().as_bytes());
     hasher.update(b.addr().as_bytes());
-    KUniv::new(UnivData::IMax(a, b, intern_addr(hasher.finalize())))
+    KUniv::new(UnivData::IMax(a, b, hasher.finalize()))
   }
 
   pub fn param(idx: u64, name: M::MField<Name>) -> Self {
@@ -240,7 +240,7 @@ impl<M: KernelMode> KUniv<M> {
     hasher.update(&[UPARAM]);
     hasher.update(&idx.to_le_bytes());
     name.meta_hash(&mut hasher);
-    KUniv::new(UnivData::Param(idx, name, intern_addr(hasher.finalize())))
+    KUniv::new(UnivData::Param(idx, name, hasher.finalize()))
   }
 }
 

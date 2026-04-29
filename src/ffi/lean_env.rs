@@ -694,10 +694,7 @@ extern "C" fn rs_tmp_decode_const_map(
 
   // Phase 1: Compile
   eprintln!("[rust-compile] Phase 1: Compiling {n} constants...");
-  let stt = match compile_env_with_options(
-    &env,
-    CompileOptions { check_originals: false, ..Default::default() },
-  ) {
+  let stt = match compile_env_with_options(&env, CompileOptions::default()) {
     Ok(s) => s,
     Err(e) => {
       eprintln!("[rust-compile] Phase 1 FAILED: {e:?}");
@@ -716,7 +713,7 @@ extern "C" fn rs_tmp_decode_const_map(
   // Phase 1b: Aux_gen congruence (full env)
   eprintln!("[rust-compile] Phase 1b: Checking aux_gen congruence...");
   {
-    use crate::ix::compile::aux_gen::{self, PatchedConstant};
+    use crate::ix::compile::aux_gen::{self, PatchedConstant, expr_utils};
     use crate::ix::congruence::const_alpha_eq;
     use crate::ix::env::{
       ConstantInfo as LeanCI, ConstantVal as LeanCV, DefinitionSafety,
@@ -937,12 +934,14 @@ extern "C" fn rs_tmp_decode_const_map(
         continue;
       }
 
+      let mut local_kctx = crate::ix::compile::KernelCtx::new();
+      expr_utils::ensure_prelude_in_kenv_of(&stt, &mut local_kctx);
       let orig_aux_out = match aux_gen::generate_aux_patches(
         &original_classes,
         all.as_slice(),
         &env,
         &stt,
-        &stt.kctx,
+        &mut local_kctx,
       ) {
         Ok(p) => p,
         Err(e) => {
@@ -1268,10 +1267,7 @@ extern "C" fn rs_compile_validate_aux(
   // (kctx, name_to_addr, etc.) before serialize allocates a 3 GB buffer.
   let mut stt =
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-      compile_env_with_options(
-        &env,
-        CompileOptions { check_originals: false, ..Default::default() },
-      )
+      compile_env_with_options(&env, CompileOptions::default())
     })) {
       Ok(Ok(s)) => s,
       Ok(Err(e)) => {
@@ -1361,8 +1357,8 @@ extern "C" fn rs_compile_validate_aux(
 
     // Ephemeral kernel context for original-structure congruence testing.
     // Shared across all blocks (accumulates inductives incrementally).
-    let p2_kctx = KernelCtx::new();
-    expr_utils::ensure_prelude_in_kenv_of(&stt, &p2_kctx);
+    let mut p2_kctx = KernelCtx::new();
+    expr_utils::ensure_prelude_in_kenv_of(&stt, &mut p2_kctx);
 
     // ── Pass 1: collect unique work items ─────────────────────────────
     // Dedup by sorted `.all` names so mutually-recursive blocks aren't
@@ -1451,14 +1447,9 @@ extern "C" fn rs_compile_validate_aux(
       }
       drop(p2_ingressed);
 
-      // Step B (parallel): each `ensure_in_kenv_of` is idempotent and the
-      // shared `p2_kctx.kenv` is DashMap-backed, so concurrent ingress of
-      // distinct names is safe. Names already visited in Step A are
-      // deduplicated, so there's no redundant work here beyond the
-      // internal `kctx.kenv.get(&zid).is_some()` early-exit guard.
-      p2_names.par_iter().for_each(|name| {
-        expr_utils::ensure_in_kenv_of(name, &env, &stt, &p2_kctx);
-      });
+      for name in &p2_names {
+        expr_utils::ensure_in_kenv_of(name, &env, &stt, &mut p2_kctx);
+      }
     }
 
     // ── Pass 3: parallel aux_gen + alpha-equivalence check ────────────
@@ -1796,6 +1787,8 @@ extern "C" fn rs_compile_validate_aux(
     let results: Vec<BlockResult> = work
       .par_iter()
       .map(|(name, all, _original_cs)| {
+        let mut local_kctx = KernelCtx::new();
+        expr_utils::ensure_prelude_in_kenv_of(&stt, &mut local_kctx);
         let original_classes: Vec<Vec<Name>> =
           all.iter().map(|n| vec![n.clone()]).collect();
 
@@ -1804,7 +1797,7 @@ extern "C" fn rs_compile_validate_aux(
           all.as_slice(),
           &env,
           &stt,
-          &p2_kctx,
+          &mut local_kctx,
         ) {
           Ok(p) => p,
           Err(e) => {

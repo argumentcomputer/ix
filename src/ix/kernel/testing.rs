@@ -3,8 +3,6 @@
 //! Provides convenience constructors for `KExpr<Meta>`, `KUniv<Meta>`, `KId<Meta>`,
 //! and `KConst<Meta>` to reduce boilerplate in hand-built test environments.
 
-use std::sync::Arc;
-
 use crate::ix::address::Address;
 use crate::ix::env::{BinderInfo, DefinitionSafety, Name, ReducibilityHints};
 use crate::ix::ixon::constant::DefKind;
@@ -200,7 +198,7 @@ pub fn mk_axiom(
 /// Add Eq.{u} and Eq.refl.{u} as axioms to the environment.
 /// Eq : {α : Sort u} → α → α → Prop
 /// Eq.refl : {α : Sort u} → (a : α) → Eq a a
-pub fn add_eq_axioms(env: &KEnv<Meta>) {
+pub fn add_eq_axioms(env: &mut KEnv<Meta>) {
   let eq_ty =
     ipi("α", sort(param(0)), npi("a", var(0), npi("b", var(1), sort0())));
   let (eq_id, eq_c) = mk_axiom("Eq", 1, vec![mk_name("u")], eq_ty);
@@ -228,16 +226,16 @@ pub fn eq_refl_expr(u: MU, alpha: ME, a: ME) -> ME {
 
 // ---- Test runner helpers ----
 
-pub fn check_accepts(env: &Arc<KEnv<Meta>>, id: &MId) {
-  let mut tc = TypeChecker::new(Arc::clone(env));
+pub fn check_accepts(env: &mut KEnv<Meta>, id: &MId) {
+  let mut tc = TypeChecker::new(env);
   match tc.check_const(id) {
     Ok(()) => {},
     Err(e) => panic!("expected {id} to be accepted, got error: {e:?}"),
   }
 }
 
-pub fn check_rejects(env: &Arc<KEnv<Meta>>, id: &MId) {
-  let mut tc = TypeChecker::new(Arc::clone(env));
+pub fn check_rejects(env: &mut KEnv<Meta>, id: &MId) {
+  let mut tc = TypeChecker::new(env);
   match tc.check_const(id) {
     Err(_) => {},
     Ok(()) => panic!("expected {id} to be rejected, but it was accepted"),
@@ -246,11 +244,11 @@ pub fn check_rejects(env: &Arc<KEnv<Meta>>, id: &MId) {
 
 /// Check with custom primitives (needed for Nat literal tests etc.)
 pub fn check_accepts_with_prims(
-  env: &Arc<KEnv<Meta>>,
+  env: &mut KEnv<Meta>,
   id: &MId,
   prims: super::primitive::Primitives<Meta>,
 ) {
-  let mut tc = TypeChecker::new(Arc::clone(env));
+  let mut tc = TypeChecker::new(env);
   tc.prims = prims;
   match tc.check_const(id) {
     Ok(()) => {},

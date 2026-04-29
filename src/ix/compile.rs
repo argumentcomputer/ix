@@ -63,13 +63,6 @@ pub static IX_TIMING: std::sync::LazyLock<bool> =
 /// Options controlling whole-environment compilation.
 #[derive(Clone, Copy, Debug)]
 pub struct CompileOptions {
-  /// Validate Lean-original inductives/constructors/recursors against a
-  /// direct `lean_ingress` kernel environment before aux_gen rewrites run.
-  ///
-  /// This is useful for adversarial raw-constant tests that bypass Lean's
-  /// kernel. Normal compilation from a trusted `Lean.Environment` can leave
-  /// it off and avoid retaining a second kernel-form copy of the full env.
-  pub check_originals: bool,
   /// Override scheduler worker count. `None` uses available parallelism or
   /// the `IX_COMPILE_WORKERS` environment variable if set.
   pub max_workers: Option<usize>,
@@ -77,7 +70,7 @@ pub struct CompileOptions {
 
 impl Default for CompileOptions {
   fn default() -> Self {
-    CompileOptions { check_originals: true, max_workers: None }
+    CompileOptions { max_workers: None }
   }
 }
 
@@ -92,32 +85,14 @@ pub struct BlockSizeStats {
   pub const_count: usize,
 }
 
-/// Bundled kernel context for aux_gen sort-level inference.
-///
-/// Holds the shared kernel environment (constants, caches, intern table).
-/// `TypeChecker` instances are created per-use-site — they are cheap
-/// thread-local handles that share the `KEnv` via `Arc`.
+/// Worker-local kernel context for aux_gen sort-level inference.
 pub struct KernelCtx {
-  /// Shared **canonical** kernel environment. Populated incrementally by
+  /// Worker-local **canonical** kernel environment. Populated incrementally by
   /// aux_gen's Phase 1+ (`compute_is_large_and_k`, `ingress_field_deps`,
   /// etc.) with aux-substituted types at `resolve_lean_name_addr`-derived
   /// addresses that may shift as alpha-collapse reassigns addresses over
   /// the course of compilation.
-  pub kenv: Arc<crate::ix::kernel::env::KEnv<crate::ix::kernel::mode::Meta>>,
-  /// Shared **original** kernel environment. When
-  /// `CompileOptions::check_originals` is enabled, this is populated once at
-  /// the start of `compile_env` via `lean_ingress(&lean_env)` and then never
-  /// mutated. It holds every Lean-original constant at its LEON content-hash
-  /// address with self-consistent type references (no alpha-collapse, no aux
-  /// rewriting, no staleness). Normal trusted compile paths leave it empty to
-  /// avoid retaining a second kernel-form copy of the whole environment.
-  ///
-  /// Used exclusively for `check_originals` — verifying each block's
-  /// Lean-stored inductives, constructors, and recursors against a
-  /// pristine env, completely isolated from the canonical pipeline so
-  /// there's no risk of cross-contamination in either direction.
-  pub orig_kenv:
-    Arc<crate::ix::kernel::env::KEnv<crate::ix::kernel::mode::Meta>>,
+  pub kenv: crate::ix::kernel::env::KEnv<crate::ix::kernel::mode::Meta>,
 }
 
 impl Default for KernelCtx {
@@ -127,23 +102,8 @@ impl Default for KernelCtx {
 }
 
 impl KernelCtx {
-  /// Create a new empty kernel context. `orig_kenv` starts empty too;
-  /// call [`KernelCtx::with_originals`] to install a populated
-  /// `orig_kenv` from a `lean_ingress` of the input Lean env.
   pub fn new() -> Self {
-    KernelCtx {
-      kenv: Arc::new(crate::ix::kernel::env::KEnv::new()),
-      orig_kenv: Arc::new(crate::ix::kernel::env::KEnv::new()),
-    }
-  }
-
-  /// Consume this context and return a new one with `orig_kenv`
-  /// replaced by the given (typically fully-populated) kenv.
-  pub fn with_originals(
-    self,
-    orig_kenv: Arc<crate::ix::kernel::env::KEnv<crate::ix::kernel::mode::Meta>>,
-  ) -> Self {
-    KernelCtx { kenv: self.kenv, orig_kenv }
+    KernelCtx { kenv: crate::ix::kernel::env::KEnv::new() }
   }
 }
 
@@ -159,10 +119,6 @@ pub struct CompileState {
   pub blocks: DashMap<Name, Vec<Vec<Name>>>,
   /// Per-block size statistics (keyed by low-link name)
   pub block_stats: DashMap<Name, BlockSizeStats>,
-  /// Kernel context for **canonical** constants, populated incrementally
-  /// by the scheduler as blocks compile. Used by aux_gen for sort-level
-  /// inference during `.rec`, `.below`, `.brecOn` generation.
-  pub kctx: KernelCtx,
   /// Constants that couldn't be compiled (name -> error description).
   ///
   /// Populated in two phases:
@@ -215,8 +171,6 @@ pub struct CompileState {
   /// right after `aux_gen::generate_aux_patches`. Blocks without nested
   /// auxiliaries simply aren't inserted.
   pub aux_perms: DashMap<Name, surgery::AuxLayout>,
-  /// Whether to run `check_originals` using `kctx.orig_kenv`.
-  pub check_originals: bool,
 }
 
 /// Cached compiled expression with arena root index.
@@ -268,7 +222,6 @@ impl Default for CompileState {
       name_to_addr: Default::default(),
       blocks: Default::default(),
       block_stats: Default::default(),
-      kctx: KernelCtx::new(),
       ungrounded: Default::default(),
       aux_gen_extra_names: Default::default(),
       aux_gen_pending: std::sync::Mutex::new(Vec::new()),
@@ -278,7 +231,6 @@ impl Default for CompileState {
       brec_on_call_site_plans: Default::default(),
       below_call_site_plans: Default::default(),
       aux_perms: Default::default(),
-      check_originals: true,
     }
   }
 }
@@ -2986,12 +2938,10 @@ pub fn sort_consts<'a>(
   cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<Vec<Vec<&'a MutConst>>, CompileError> {
-  let dump = std::env::var("IX_RECURSOR_DUMP")
-    .ok()
-    .filter(|s| !s.is_empty())
-    .filter(|prefix| {
-      cs.iter().any(|c| c.name().pretty().contains(prefix.as_str()))
-    });
+  let dump =
+    std::env::var("IX_RECURSOR_DUMP").ok().filter(|s| !s.is_empty()).filter(
+      |prefix| cs.iter().any(|c| c.name().pretty().contains(prefix.as_str())),
+    );
   // Sort by name first to match Lean's behavior and ensure deterministic output
   let mut sorted_cs: Vec<&'a MutConst> = cs.to_owned();
   sorted_cs.sort_by_key(|x| x.name());
@@ -3060,8 +3010,9 @@ pub fn compile_const(
   lean_env: &Arc<LeanEnv>,
   cache: &mut BlockCache,
   stt: &CompileState,
+  kctx: &mut KernelCtx,
 ) -> Result<Address, CompileError> {
-  compile_const_inner(name, all, lean_env, cache, stt, true)
+  compile_const_inner(name, all, lean_env, cache, stt, kctx, true)
 }
 
 /// Compile a constant without aux_gen: no `aux_name_to_addr` fallback,
@@ -3073,6 +3024,7 @@ pub fn compile_const_no_aux(
   lean_env: &Arc<LeanEnv>,
   cache: &mut BlockCache,
   stt: &CompileState,
+  kctx: &mut KernelCtx,
 ) -> Result<Address, CompileError> {
   // Expand the SCC `all` to include same-phase aux_gen constants from
   // the full Lean mutual block. Each constant's `.all` field determines
@@ -3141,7 +3093,7 @@ pub fn compile_const_no_aux(
 
   let Some(phase) = phase else {
     // No aux_gen constants found — just compile as-is.
-    return compile_const_inner(name, all, lean_env, cache, stt, false);
+    return compile_const_inner(name, all, lean_env, cache, stt, kctx, false);
   };
 
   // Build the filtered set from the .all field based on phase.
@@ -3231,10 +3183,10 @@ pub fn compile_const_no_aux(
   }
 
   if filtered.is_empty() {
-    return compile_const_inner(name, all, lean_env, cache, stt, false);
+    return compile_const_inner(name, all, lean_env, cache, stt, kctx, false);
   }
 
-  compile_const_inner(name, &filtered, lean_env, cache, stt, false)
+  compile_const_inner(name, &filtered, lean_env, cache, stt, kctx, false)
 }
 
 fn compile_const_inner(
@@ -3243,6 +3195,7 @@ fn compile_const_inner(
   lean_env: &Arc<LeanEnv>,
   cache: &mut BlockCache,
   stt: &CompileState,
+  kctx: &mut KernelCtx,
   aux: bool,
 ) -> Result<Address, CompileError> {
   let _cci_start = std::time::Instant::now();
@@ -3356,7 +3309,7 @@ fn compile_const_inner(
       if all.len() == 1 {
         compile_single_def(name, &Def::mk_defn(val), cache, stt, aux)?.0
       } else {
-        compile_mutual(name, all, lean_env, cache, stt, aux)?
+        compile_mutual(name, all, lean_env, cache, stt, kctx, aux)?
       }
     },
 
@@ -3364,7 +3317,7 @@ fn compile_const_inner(
       if all.len() == 1 {
         compile_single_def(name, &Def::mk_theo(val), cache, stt, aux)?.0
       } else {
-        compile_mutual(name, all, lean_env, cache, stt, aux)?
+        compile_mutual(name, all, lean_env, cache, stt, kctx, aux)?
       }
     },
 
@@ -3372,7 +3325,7 @@ fn compile_const_inner(
       if all.len() == 1 {
         compile_single_def(name, &Def::mk_opaq(val), cache, stt, aux)?.0
       } else {
-        compile_mutual(name, all, lean_env, cache, stt, aux)?
+        compile_mutual(name, all, lean_env, cache, stt, kctx, aux)?
       }
     },
 
@@ -3439,7 +3392,7 @@ fn compile_const_inner(
     },
 
     LeanConstantInfo::InductInfo(_) => {
-      compile_mutual(name, all, lean_env, cache, stt, aux)?
+      compile_mutual(name, all, lean_env, cache, stt, kctx, aux)?
     },
 
     LeanConstantInfo::RecInfo(val) => {
@@ -3477,14 +3430,15 @@ fn compile_const_inner(
         }
         addr
       } else {
-        compile_mutual(name, all, lean_env, cache, stt, aux)?
+        compile_mutual(name, all, lean_env, cache, stt, kctx, aux)?
       }
     },
 
     LeanConstantInfo::CtorInfo(val) => {
       // Constructors are compiled as part of their inductive
       if let Some(LeanConstantInfo::InductInfo(_)) = lean_env.get(&val.induct) {
-        let _ = compile_mutual(&val.induct, all, lean_env, cache, stt, aux)?;
+        let _ =
+          compile_mutual(&val.induct, all, lean_env, cache, stt, kctx, aux)?;
         stt
           .name_to_addr
           .get(name)
@@ -3518,6 +3472,7 @@ fn compile_mutual(
   lean_env: &Arc<LeanEnv>,
   cache: &mut BlockCache,
   stt: &CompileState,
+  kctx: &mut KernelCtx,
   aux: bool,
 ) -> Result<Address, CompileError> {
   // Collect all constants in the mutual block
@@ -3773,6 +3728,7 @@ fn compile_mutual(
       &class_names,
       lean_env,
       stt,
+      kctx,
     )?;
 
     // Compute call-site surgery plans for reordered/collapsed blocks.
@@ -4335,7 +4291,14 @@ mod tests {
     let mut all = NameSet::default();
     all.insert(name.clone());
 
-    let result = compile_const(&name, &all, &lean_env, &mut cache, &stt);
+    let result = compile_const(
+      &name,
+      &all,
+      &lean_env,
+      &mut cache,
+      &stt,
+      &mut crate::ix::compile::KernelCtx::new(),
+    );
     assert!(result.is_ok(), "compile_const failed: {:?}", result.err());
 
     let addr = result.unwrap();
@@ -4375,7 +4338,14 @@ mod tests {
     all.insert(name.clone());
 
     // This will fail because nat_name isn't in name_to_addr, but let's see the error
-    let result = compile_const(&name, &all, &lean_env, &mut cache, &stt);
+    let result = compile_const(
+      &name,
+      &all,
+      &lean_env,
+      &mut cache,
+      &stt,
+      &mut crate::ix::compile::KernelCtx::new(),
+    );
     // We expect this to fail with MissingConstant for Nat
     match result {
       Err(CompileError::MissingConstant { name: missing, .. }) => {
@@ -4422,7 +4392,14 @@ mod tests {
     all.insert(name.clone());
 
     // This should work because it's a single self-referential def
-    let result = compile_const(&name, &all, &lean_env, &mut cache, &stt);
+    let result = compile_const(
+      &name,
+      &all,
+      &lean_env,
+      &mut cache,
+      &stt,
+      &mut crate::ix::compile::KernelCtx::new(),
+    );
     assert!(result.is_ok(), "compile_const failed: {:?}", result.err());
 
     let addr = result.unwrap();

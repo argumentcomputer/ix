@@ -58,7 +58,7 @@ pub(crate) fn generate_recursors_from_expanded(
   source_of_canonical: Option<&[usize]>,
   lean_env: &LeanEnv,
   stt: &crate::ix::compile::CompileState,
-  kctx: &crate::ix::compile::KernelCtx,
+  kctx: &mut crate::ix::compile::KernelCtx,
 ) -> Result<(Vec<(Name, RecursorVal)>, bool), CompileError> {
   if expanded.types.is_empty() {
     return Ok((vec![], false));
@@ -296,6 +296,7 @@ pub(crate) fn generate_canonical_recursors(
   sorted_classes: &[Vec<Name>],
   lean_env: &LeanEnv,
   stt: &crate::ix::compile::CompileState,
+  kctx: &mut crate::ix::compile::KernelCtx,
 ) -> Result<(Vec<(Name, RecursorVal)>, bool), CompileError> {
   generate_canonical_recursors_with_overlay(
     sorted_classes,
@@ -303,7 +304,7 @@ pub(crate) fn generate_canonical_recursors(
     None,
     None,
     stt,
-    &stt.kctx,
+    kctx,
   )
 }
 
@@ -439,7 +440,7 @@ pub(crate) fn generate_canonical_recursors_with_overlay(
   overlay: Option<&LeanEnv>,
   pre_flat: Option<Vec<super::nested::CompileFlatMember>>,
   stt: &crate::ix::compile::CompileState,
-  kctx: &crate::ix::compile::KernelCtx,
+  kctx: &mut crate::ix::compile::KernelCtx,
 ) -> Result<(Vec<(Name, RecursorVal)>, bool), CompileError> {
   generate_canonical_recursors_with_layout(
     sorted_classes,
@@ -466,7 +467,7 @@ pub(crate) fn generate_canonical_recursors_with_layout(
   overlay: Option<&LeanEnv>,
   pre_flat: Option<Vec<super::nested::CompileFlatMember>>,
   stt: &crate::ix::compile::CompileState,
-  kctx: &crate::ix::compile::KernelCtx,
+  kctx: &mut crate::ix::compile::KernelCtx,
   aux_layout: Option<&crate::ix::ixon::env::AuxLayout>,
   // Optional Lean-source index per canonical aux position, used for
   // emitting `all0.rec_{source_j + 1}` names directly. If provided
@@ -950,7 +951,7 @@ fn build_rec_type(
   lean_env: &LeanEnv,
   overlay: Option<&LeanEnv>,
   stt: &crate::ix::compile::CompileState,
-  kctx: &crate::ix::compile::KernelCtx,
+  kctx: &mut crate::ix::compile::KernelCtx,
   nested_rewrite: Option<&mut NestedRewriteCtx>,
 ) -> LeanExpr {
   let env_get = |name: &Name| -> Option<ConstantInfo> {
@@ -1350,7 +1351,7 @@ fn build_minor_type(
   ind_univs: &[Level],
   rec_level_params: &[Name],
   stt: &crate::ix::compile::CompileState,
-  kctx: &crate::ix::compile::KernelCtx,
+  kctx: &mut crate::ix::compile::KernelCtx,
   // Shared scratch for nested-aux level rewrites across every ctor in
   // the block. `None` when the block doesn't need any rewriting.
   nested_rewrite: Option<&mut NestedRewriteCtx>,
@@ -1630,7 +1631,7 @@ fn build_rec_rules(
   // to `canonical_i + 1`.
   source_of_canonical: Option<&[usize]>,
   stt: &crate::ix::compile::CompileState,
-  kctx: &crate::ix::compile::KernelCtx,
+  kctx: &mut crate::ix::compile::KernelCtx,
   nested_rewrite: Option<&mut NestedRewriteCtx>,
 ) -> Result<Vec<RecursorRule>, CompileError> {
   let _ = n_classes; // Kept for signature parity with `build_rec_type`.
@@ -2255,7 +2256,7 @@ fn compute_is_large_and_k(
   n_params: usize,
   lean_env: &LeanEnv,
   stt: &crate::ix::compile::CompileState,
-  kctx: &crate::ix::compile::KernelCtx,
+  kctx: &mut crate::ix::compile::KernelCtx,
 ) -> Result<(bool, bool, bool), CompileError> {
   use crate::ix::kernel::constant::KConst;
   use crate::ix::kernel::id::KId;
@@ -2298,7 +2299,7 @@ fn compute_is_large_and_k(
     let cls_ty_z = lean_expr_to_zexpr_with_kenv(
       &cls_ind.cnst.typ,
       cls_lvl_params,
-      &kctx.kenv,
+      &mut kctx.kenv,
       n2a,
       aux_n2a,
     );
@@ -2311,7 +2312,7 @@ fn compute_is_large_and_k(
       let ctor_ty_z = lean_expr_to_zexpr_with_kenv(
         &ctor.cnst.typ,
         cls_lvl_params,
-        &kctx.kenv,
+        &mut kctx.kenv,
         n2a,
         aux_n2a,
       );
@@ -2383,7 +2384,7 @@ fn compute_is_large_and_k(
   let first_n_indices = ind_infos[0].2;
 
   // Use the TC for the appropriate context.
-  let mut tc = crate::ix::kernel::tc::TypeChecker::new(kctx.kenv.clone());
+  let mut tc = crate::ix::kernel::tc::TypeChecker::new(&mut kctx.kenv);
 
   // Compute the WHNF-reduced result sort level via the kernel. This peels
   // params+indices with whnf at each step — crucial for inductives whose
@@ -2478,7 +2479,7 @@ fn ingress_target_type_deps(
   target_ty: &LeanExpr,
   lean_env: &LeanEnv,
   stt: &crate::ix::compile::CompileState,
-  kctx: &crate::ix::compile::KernelCtx,
+  kctx: &mut crate::ix::compile::KernelCtx,
 ) {
   let mut seen = rustc_hash::FxHashSet::default();
   let mut queue = Vec::new();
@@ -2503,7 +2504,7 @@ fn ingress_field_deps(
   _lvl_params: &[Name],
   lean_env: &LeanEnv,
   stt: &crate::ix::compile::CompileState,
-  kctx: &crate::ix::compile::KernelCtx,
+  kctx: &mut crate::ix::compile::KernelCtx,
 ) {
   let mut seen = rustc_hash::FxHashSet::default();
   let mut queue: Vec<Name> = Vec::new();
@@ -2528,7 +2529,7 @@ fn ingress_aux_gen_dep(
   ci: &ConstantInfo,
   lean_env: &LeanEnv,
   stt: &crate::ix::compile::CompileState,
-  kctx: &crate::ix::compile::KernelCtx,
+  kctx: &mut crate::ix::compile::KernelCtx,
   queue: &mut Vec<Name>,
 ) {
   match ci {
@@ -2573,7 +2574,7 @@ fn ingress_type_stub(
   typ: &LeanExpr,
   level_params: &[Name],
   stt: &crate::ix::compile::CompileState,
-  kctx: &crate::ix::compile::KernelCtx,
+  kctx: &mut crate::ix::compile::KernelCtx,
 ) {
   use crate::ix::kernel::constant::KConst;
   use crate::ix::kernel::id::KId;
@@ -2591,8 +2592,13 @@ fn ingress_type_stub(
     return;
   }
 
-  let ty_z =
-    lean_expr_to_zexpr_with_kenv(typ, level_params, &kctx.kenv, n2a, aux_n2a);
+  let ty_z = lean_expr_to_zexpr_with_kenv(
+    typ,
+    level_params,
+    &mut kctx.kenv,
+    n2a,
+    aux_n2a,
+  );
   let n_lvls = level_params.len() as u64;
   kctx.kenv.insert(
     zid,
@@ -3344,8 +3350,10 @@ mod tests {
 
     let classes = vec![vec![ind_name]];
     let tmp_stt = crate::ix::compile::CompileState::default();
+    let mut kctx = crate::ix::compile::KernelCtx::new();
     let (result, _is_prop) =
-      generate_canonical_recursors(&classes, &env, &tmp_stt).unwrap();
+      generate_canonical_recursors(&classes, &env, &tmp_stt, &mut kctx)
+        .unwrap();
     assert_eq!(result.len(), 1);
     let (_, rec) = &result[0];
     assert_eq!(rec.num_motives.to_u64().unwrap_or(0), 1);
@@ -3368,11 +3376,12 @@ mod tests {
   fn test_aux_gen_alpha_collapse() {
     let (env, a, b) = build_alpha_collapse_env();
     let stt = crate::ix::compile::CompileState::default();
+    let mut kctx = crate::ix::compile::KernelCtx::new();
 
     // After sort_consts collapse, A≅B → 1 class.
     let classes = vec![vec![a.clone(), b.clone()]];
     let (recs, is_prop) =
-      generate_canonical_recursors(&classes, &env, &stt).unwrap();
+      generate_canonical_recursors(&classes, &env, &stt, &mut kctx).unwrap();
 
     // Should produce 1 recursor (1 class).
     assert_eq!(recs.len(), 1, "alpha-collapse → 1 class → 1 recursor");
@@ -3405,7 +3414,7 @@ mod tests {
 
     // .below generation: should produce BelowIndc for Prop.
     let below =
-      generate_below_constants(&classes, &recs, &env, is_prop, &stt, &stt.kctx)
+      generate_below_constants(&classes, &recs, &env, is_prop, &stt, &mut kctx)
         .unwrap();
     assert_eq!(below.len(), 1, "1 class → 1 .below constant");
     match &below[0] {
@@ -3429,11 +3438,12 @@ mod tests {
   fn test_aux_gen_alpha_collapse_3() {
     let (env, a, b, c) = build_alpha_collapse_3_env();
     let stt = crate::ix::compile::CompileState::default();
+    let mut kctx = crate::ix::compile::KernelCtx::new();
 
     // All 3 collapse into 1 class.
     let classes = vec![vec![a.clone(), b.clone(), c.clone()]];
     let (recs, is_prop) =
-      generate_canonical_recursors(&classes, &env, &stt).unwrap();
+      generate_canonical_recursors(&classes, &env, &stt, &mut kctx).unwrap();
 
     assert_eq!(recs.len(), 1, "3-way alpha-collapse → 1 class → 1 recursor");
     let (rec_name, rec) = &recs[0];
@@ -3449,7 +3459,7 @@ mod tests {
 
     // .below
     let below =
-      generate_below_constants(&classes, &recs, &env, is_prop, &stt, &stt.kctx)
+      generate_below_constants(&classes, &recs, &env, is_prop, &stt, &mut kctx)
         .unwrap();
     assert_eq!(below.len(), 1);
     assert!(
@@ -3463,11 +3473,12 @@ mod tests {
   fn test_aux_gen_over_merge_alpha_collapse() {
     let (env, a, b, c) = build_over_merge_alpha_collapse_env();
     let stt = crate::ix::compile::CompileState::default();
+    let mut kctx = crate::ix::compile::KernelCtx::new();
 
     // A≅B collapse into 1 class, C is a separate class → 2 classes.
     let classes = vec![vec![a.clone(), b.clone()], vec![c.clone()]];
     let (recs, is_prop) =
-      generate_canonical_recursors(&classes, &env, &stt).unwrap();
+      generate_canonical_recursors(&classes, &env, &stt, &mut kctx).unwrap();
 
     assert_eq!(
       recs.len(),
@@ -3503,7 +3514,7 @@ mod tests {
 
     // .below: one per class.
     let below =
-      generate_below_constants(&classes, &recs, &env, is_prop, &stt, &stt.kctx)
+      generate_below_constants(&classes, &recs, &env, is_prop, &stt, &mut kctx)
         .unwrap();
     assert_eq!(below.len(), 2, "2 classes → 2 .below constants");
     for bc in &below {
@@ -3519,11 +3530,12 @@ mod tests {
   fn test_aux_gen_over_merge() {
     let (env, a, b, c) = build_over_merge_env();
     let stt = crate::ix::compile::CompileState::default();
+    let mut kctx = crate::ix::compile::KernelCtx::new();
 
     // No alpha-collapse: A≠B (B has 2 fields), A≠C, B≠C → 3 classes.
     let classes = vec![vec![a.clone()], vec![b.clone()], vec![c.clone()]];
     let (recs, is_prop) =
-      generate_canonical_recursors(&classes, &env, &stt).unwrap();
+      generate_canonical_recursors(&classes, &env, &stt, &mut kctx).unwrap();
 
     assert_eq!(recs.len(), 3, "no collapse → 3 classes → 3 recursors");
 
@@ -3548,7 +3560,7 @@ mod tests {
 
     // .below: one per class.
     let below =
-      generate_below_constants(&classes, &recs, &env, is_prop, &stt, &stt.kctx)
+      generate_below_constants(&classes, &recs, &env, is_prop, &stt, &mut kctx)
         .unwrap();
     assert_eq!(below.len(), 3);
   }
@@ -3561,14 +3573,15 @@ mod tests {
   fn test_aux_gen_below_indc_prop() {
     let (env, a, b) = build_alpha_collapse_env();
     let stt = crate::ix::compile::CompileState::default();
+    let mut kctx = crate::ix::compile::KernelCtx::new();
 
     let classes = vec![vec![a.clone(), b.clone()]];
     let (recs, is_prop) =
-      generate_canonical_recursors(&classes, &env, &stt).unwrap();
+      generate_canonical_recursors(&classes, &env, &stt, &mut kctx).unwrap();
     assert!(is_prop, "should be Prop");
 
     let below =
-      generate_below_constants(&classes, &recs, &env, is_prop, &stt, &stt.kctx)
+      generate_below_constants(&classes, &recs, &env, is_prop, &stt, &mut kctx)
         .unwrap();
     assert_eq!(below.len(), 1);
     match &below[0] {
@@ -3596,10 +3609,11 @@ mod tests {
   fn test_aux_gen_below_def_type() {
     let (env, t) = build_type_nat_env();
     let stt = crate::ix::compile::CompileState::default();
+    let mut kctx = crate::ix::compile::KernelCtx::new();
 
     let classes = vec![vec![t.clone()]];
     let (recs, is_prop) =
-      generate_canonical_recursors(&classes, &env, &stt).unwrap();
+      generate_canonical_recursors(&classes, &env, &stt, &mut kctx).unwrap();
     assert!(!is_prop, "Type-level should not be is_prop");
 
     // Large eliminator: level_params should have "u" prefix.
@@ -3614,7 +3628,7 @@ mod tests {
     assert_eq!(rec.rules.len(), 2);
 
     let below =
-      generate_below_constants(&classes, &recs, &env, is_prop, &stt, &stt.kctx)
+      generate_below_constants(&classes, &recs, &env, is_prop, &stt, &mut kctx)
         .unwrap();
     assert_eq!(below.len(), 1);
     match &below[0] {
@@ -3637,10 +3651,11 @@ mod tests {
   fn test_aux_gen_is_prop_vs_is_large() {
     let (env, p) = build_prop_drec_env();
     let stt = crate::ix::compile::CompileState::default();
+    let mut kctx = crate::ix::compile::KernelCtx::new();
 
     let classes = vec![vec![p.clone()]];
     let (recs, is_prop) =
-      generate_canonical_recursors(&classes, &env, &stt).unwrap();
+      generate_canonical_recursors(&classes, &env, &stt, &mut kctx).unwrap();
 
     // is_prop = true (it's in Prop).
     assert!(is_prop, "P : Prop should have is_prop = true");
@@ -3655,7 +3670,7 @@ mod tests {
 
     // .below should use BelowIndc (Prop path) regardless of is_large.
     let below =
-      generate_below_constants(&classes, &recs, &env, is_prop, &stt, &stt.kctx)
+      generate_below_constants(&classes, &recs, &env, is_prop, &stt, &mut kctx)
         .unwrap();
     assert_eq!(below.len(), 1);
     match &below[0] {
@@ -3727,22 +3742,23 @@ mod tests {
 
     let (env, t) = build_type_nat_env();
     let stt = crate::ix::compile::CompileState::default();
+    let mut kctx = crate::ix::compile::KernelCtx::new();
     // Ingress prelude (PUnit, PProd) and the inductive into the kenv
     // so TcScope can resolve them during brecOn sort-level inference.
     crate::ix::compile::aux_gen::expr_utils::ensure_prelude_in_kenv_of(
-      &stt, &stt.kctx,
+      &stt, &mut kctx,
     );
     crate::ix::compile::aux_gen::expr_utils::ensure_in_kenv_of(
-      &t, &env, &stt, &stt.kctx,
+      &t, &env, &stt, &mut kctx,
     );
 
     let classes = vec![vec![t.clone()]];
     let (recs, is_prop) =
-      generate_canonical_recursors(&classes, &env, &stt).unwrap();
+      generate_canonical_recursors(&classes, &env, &stt, &mut kctx).unwrap();
     assert!(!is_prop);
 
     let below =
-      generate_below_constants(&classes, &recs, &env, is_prop, &stt, &stt.kctx)
+      generate_below_constants(&classes, &recs, &env, is_prop, &stt, &mut kctx)
         .unwrap();
     assert_eq!(below.len(), 1);
 
@@ -3752,11 +3768,11 @@ mod tests {
       &classes,
       &std::sync::Arc::new(env.clone()),
       &stt,
-      &stt.kctx,
+      &mut kctx,
     );
 
     let brecon = generate_brecon_constants(
-      &classes, &recs, &below, &env, is_prop, &stt, &stt.kctx,
+      &classes, &recs, &below, &env, is_prop, &stt, &mut kctx,
     )
     .unwrap();
     // .brecOn.go + .brecOn + .brecOn.eq
@@ -3786,19 +3802,20 @@ mod tests {
 
     let (env, a, b) = build_alpha_collapse_env();
     let stt = crate::ix::compile::CompileState::default();
+    let mut kctx = crate::ix::compile::KernelCtx::new();
 
     let classes = vec![vec![a.clone(), b.clone()]];
     let (recs, is_prop) =
-      generate_canonical_recursors(&classes, &env, &stt).unwrap();
+      generate_canonical_recursors(&classes, &env, &stt, &mut kctx).unwrap();
     assert!(is_prop);
 
     let below =
-      generate_below_constants(&classes, &recs, &env, is_prop, &stt, &stt.kctx)
+      generate_below_constants(&classes, &recs, &env, is_prop, &stt, &mut kctx)
         .unwrap();
     assert_eq!(below.len(), 1);
 
     let brecon = generate_brecon_constants(
-      &classes, &recs, &below, &env, is_prop, &stt, &stt.kctx,
+      &classes, &recs, &below, &env, is_prop, &stt, &mut kctx,
     )
     .unwrap();
     // Prop-level: 1 .brecOn per class (no .go, no .eq)
@@ -3857,14 +3874,15 @@ mod tests {
     );
 
     let stt = crate::ix::compile::CompileState::default();
+    let mut kctx = crate::ix::compile::KernelCtx::new();
     let classes = vec![vec![unit]];
     let (recs, is_prop) =
-      generate_canonical_recursors(&classes, &env, &stt).unwrap();
+      generate_canonical_recursors(&classes, &env, &stt, &mut kctx).unwrap();
     let below =
-      generate_below_constants(&classes, &recs, &env, is_prop, &stt, &stt.kctx)
+      generate_below_constants(&classes, &recs, &env, is_prop, &stt, &mut kctx)
         .unwrap();
     let brecon = generate_brecon_constants(
-      &classes, &recs, &below, &env, is_prop, &stt, &stt.kctx,
+      &classes, &recs, &below, &env, is_prop, &stt, &mut kctx,
     )
     .unwrap();
 

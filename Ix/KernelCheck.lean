@@ -88,6 +88,22 @@ opaque rsCheckConstsFFI :
     @& Bool →
     IO (Array (Option CheckError))
 
+/-- FFI: type-check constants from a serialized Ixon env file produced by
+    `ix compile --out`. If the name array is empty, Rust checks every
+    checkable named constant in the file. -/
+@[extern "rs_kernel_check_ixon"]
+opaque rsCheckIxonFFI :
+    @& String →
+    @& Array Lean.Name →
+    @& Array Bool →
+    @& Bool →
+    IO (Array (Option CheckError))
+
+/-- FFI: list checkable names from a serialized Ixon env file. Used by the
+    `check-ixon` CLI to support `--ns` filtering without rebuilding Lean. -/
+@[extern "rs_kernel_ixon_names"]
+opaque rsIxonNamesFFI : @& String → IO (Array Lean.Name)
+
 end Ix.KernelCheck
 
 end

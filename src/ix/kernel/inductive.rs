@@ -9,9 +9,7 @@ use std::sync::LazyLock;
 use crate::ix::address::Address;
 
 use super::constant::KConst;
-use super::env::{
-  BlockCheckStart, GeneratedRecursor, InternTable, RecursorAuxOrder,
-};
+use super::env::{GeneratedRecursor, InternTable, RecursorAuxOrder};
 use super::error::{TcError, u64_to_usize};
 use super::expr::{ExprData, KExpr};
 use super::id::KId;
@@ -71,7 +69,7 @@ pub struct FlatBlockMember<M: KernelMode> {
 /// Lower free Var indices by `shift`: Var(i) where i >= shift becomes Var(i - shift).
 /// Vars with i < shift are left unchanged (they refer to local binders).
 fn lower_vars<M: KernelMode>(
-  env: &InternTable<M>,
+  env: &mut InternTable<M>,
   e: &KExpr<M>,
   shift: u64,
 ) -> KExpr<M> {
@@ -82,7 +80,7 @@ fn lower_vars<M: KernelMode>(
 }
 
 fn lower_vars_inner<M: KernelMode>(
-  env: &InternTable<M>,
+  env: &mut InternTable<M>,
   e: &KExpr<M>,
   shift: u64,
   cutoff: u64,
@@ -127,36 +125,34 @@ fn lower_vars_inner<M: KernelMode>(
   env.intern_expr(result)
 }
 
-impl<M: KernelMode> TypeChecker<M> {
+impl<M: KernelMode> TypeChecker<'_, M> {
   /// Validate an inductive block. Pure inductive blocks are coordinated
   /// through `KEnv`; legacy mixed source blocks fall back to the member check
   /// to avoid caching a partial result under a mixed block id.
   pub fn check_inductive(&mut self, id: &KId<M>) -> Result<(), TcError<M>> {
-    let block = match self.env.get(id) {
-      Some(KConst::Indc { block, .. }) => block.clone(),
+    let block = match self.get_const(id)? {
+      KConst::Indc { block, .. } => block.clone(),
       _ => {
         return Err(TcError::Other("check_inductive: not an inductive".into()));
       },
     };
-    let Some(members) = self.env.get_block(&block) else {
+    let Some(members) = self.try_get_block(&block)? else {
       return self.check_inductive_member(id);
     };
-    if !members.iter().all(|member| {
-      matches!(
-        self.env.get(member),
+    for member in &members {
+      if !matches!(
+        self.try_get_const(member)?,
         Some(KConst::Indc { .. } | KConst::Ctor { .. })
-      )
-    }) {
-      return self.check_inductive_member(id);
+      ) {
+        return self.check_inductive_member(id);
+      }
     }
-
-    match self.env.begin_block_check(&block) {
-      BlockCheckStart::Cached(result) => result,
-      BlockCheckStart::Owner(token) => {
-        let result = self.check_inductive_block(&block, &members);
-        self.env.finish_block_check(token, result)
-      },
+    if let Some(result) = self.env.block_check_results.get(&block).cloned() {
+      return result;
     }
+    let result = self.check_inductive_block(&block, &members);
+    self.env.block_check_results.insert(block, result.clone());
+    result
   }
 
   /// Validate every inductive and constructor in an inductive block.
@@ -170,10 +166,7 @@ impl<M: KernelMode> TypeChecker<M> {
 
     for member in members {
       self.reset();
-      let c = self
-        .env
-        .get(member)
-        .ok_or_else(|| TcError::UnknownConst(member.addr.clone()))?;
+      let c = self.get_const(member)?;
       self.validate_const_well_scoped(&c)?;
       match c {
         KConst::Indc { ty, .. } => {
@@ -199,8 +192,8 @@ impl<M: KernelMode> TypeChecker<M> {
       self.check_inductive_member(ind_id)?;
     }
     for ctor_id in &ctor_ids {
-      let induct = match self.env.get(ctor_id) {
-        Some(KConst::Ctor { induct, .. }) => induct,
+      let induct = match self.get_const(ctor_id)? {
+        KConst::Ctor { induct, .. } => induct,
         _ => continue,
       };
       self.reset();
@@ -215,8 +208,8 @@ impl<M: KernelMode> TypeChecker<M> {
     id: &KId<M>,
   ) -> Result<(), TcError<M>> {
     let (params, indices, lvls, ctors, block, is_rec, is_unsafe, _nested, ty) =
-      match self.env.get(id) {
-        Some(KConst::Indc {
+      match self.get_const(id)? {
+        KConst::Indc {
           params,
           indices,
           lvls,
@@ -227,7 +220,7 @@ impl<M: KernelMode> TypeChecker<M> {
           nested,
           ty,
           ..
-        }) => (
+        } => (
           params,
           indices,
           lvls,
@@ -246,7 +239,7 @@ impl<M: KernelMode> TypeChecker<M> {
       };
 
     // Discover all inductives in the mutual block
-    let block_inds = self.discover_block_inductives(&block);
+    let block_inds = self.discover_block_inductives(&block)?;
     let block_addrs: Vec<Address> =
       block_inds.iter().map(|id| id.addr.clone()).collect();
 
@@ -284,12 +277,13 @@ impl<M: KernelMode> TypeChecker<M> {
         if peer_id.addr == id.addr {
           continue;
         }
-        let (peer_params, peer_indices, peer_ty) = match self.env.get(peer_id) {
-          Some(KConst::Indc { params: pp, indices: pi, ty: pty, .. }) => {
-            (pp, pi, pty.clone())
-          },
-          _ => continue,
-        };
+        let (peer_params, peer_indices, peer_ty) =
+          match self.get_const(peer_id)? {
+            KConst::Indc { params: pp, indices: pi, ty: pty, .. } => {
+              (pp, pi, pty.clone())
+            },
+            _ => continue,
+          };
         // S3: universe agreement.
         let peer_level = self.get_result_sort_level(
           &peer_ty,
@@ -317,8 +311,8 @@ impl<M: KernelMode> TypeChecker<M> {
     // Validate each constructor
     for (expected_cidx, ctor_id) in ctors.iter().enumerate() {
       let (ctor_params, ctor_fields, ctor_cidx, ctor_ty) =
-        match self.env.get(ctor_id) {
-          Some(KConst::Ctor { params, fields, cidx, ty, .. }) => (
+        match self.get_const(ctor_id)? {
+          KConst::Ctor { params, fields, cidx, ty, .. } => (
             u64_to_usize(params)?,
             u64_to_usize(fields)?,
             u64_to_usize(cidx)?,
@@ -393,31 +387,30 @@ impl<M: KernelMode> TypeChecker<M> {
     ctor_id: &KId<M>,
     induct_id: &KId<M>,
   ) -> Result<(), TcError<M>> {
-    let block = match self.env.get(induct_id) {
+    let block = match self.try_get_const(induct_id)? {
       Some(KConst::Indc { block, .. }) => block.clone(),
       _ => {
         return self.check_ctor_against_inductive_member(ctor_id, induct_id);
       },
     };
-    let Some(members) = self.env.get_block(&block) else {
+    let Some(members) = self.try_get_block(&block)? else {
       return self.check_ctor_against_inductive_member(ctor_id, induct_id);
     };
-    if !members.iter().all(|member| {
-      matches!(
-        self.env.get(member),
+    for member in &members {
+      if !matches!(
+        self.try_get_const(member)?,
         Some(KConst::Indc { .. } | KConst::Ctor { .. })
-      )
-    }) {
-      return self.check_ctor_against_inductive_member(ctor_id, induct_id);
+      ) {
+        return self.check_ctor_against_inductive_member(ctor_id, induct_id);
+      }
     }
 
-    match self.env.begin_block_check(&block) {
-      BlockCheckStart::Cached(result) => result,
-      BlockCheckStart::Owner(token) => {
-        let result = self.check_inductive_block(&block, &members);
-        self.env.finish_block_check(token, result)
-      },
+    if let Some(result) = self.env.block_check_results.get(&block).cloned() {
+      return result;
     }
+    let result = self.check_inductive_block(&block, &members);
+    self.env.block_check_results.insert(block, result.clone());
+    result
   }
 
   /// Validate a standalone constructor against its parent inductive.
@@ -427,24 +420,18 @@ impl<M: KernelMode> TypeChecker<M> {
     ctor_id: &KId<M>,
     induct_id: &KId<M>,
   ) -> Result<(), TcError<M>> {
-    let (ctor_ty, _ctor_params, ctor_fields) = match self.env.get(ctor_id) {
-      Some(KConst::Ctor { ty, params, fields, .. }) => {
+    let (ctor_ty, _ctor_params, ctor_fields) = match self.get_const(ctor_id)? {
+      KConst::Ctor { ty, params, fields, .. } => {
         (ty.clone(), u64_to_usize(params)?, u64_to_usize(fields)?)
       },
       _ => return Err(TcError::Other("check_ctor: not a constructor".into())),
     };
 
     let (ind_params, ind_indices, ind_lvls, ind_block, ind_is_unsafe, ind_ty) =
-      match self.env.get(induct_id) {
-        Some(KConst::Indc {
-          params,
-          indices,
-          lvls,
-          block,
-          is_unsafe,
-          ty,
-          ..
-        }) => (params, indices, lvls, block.clone(), is_unsafe, ty.clone()),
+      match self.get_const(induct_id)? {
+        KConst::Indc {
+          params, indices, lvls, block, is_unsafe, ty, ..
+        } => (params, indices, lvls, block.clone(), is_unsafe, ty.clone()),
         _ => {
           return Err(TcError::Other(
             "check_ctor: parent inductive not found".into(),
@@ -452,7 +439,7 @@ impl<M: KernelMode> TypeChecker<M> {
         },
       };
 
-    let block_inds = self.discover_block_inductives(&ind_block);
+    let block_inds = self.discover_block_inductives(&ind_block)?;
     let block_addrs: Vec<Address> =
       block_inds.iter().map(|id| id.addr.clone()).collect();
 
@@ -495,15 +482,20 @@ impl<M: KernelMode> TypeChecker<M> {
   }
 
   /// Discover all inductives in a mutual block.
-  fn discover_block_inductives(&self, block_id: &KId<M>) -> Vec<KId<M>> {
-    match self.env.blocks.get(block_id) {
-      Some(members) => members
-        .iter()
-        .filter(|id| matches!(self.env.get(id), Some(KConst::Indc { .. })))
-        .cloned()
-        .collect(),
-      None => vec![],
+  fn discover_block_inductives(
+    &mut self,
+    block_id: &KId<M>,
+  ) -> Result<Vec<KId<M>>, TcError<M>> {
+    let Some(members) = self.try_get_block(block_id)? else {
+      return Ok(vec![]);
+    };
+    let mut inds = Vec::new();
+    for id in members {
+      if matches!(self.try_get_const(&id)?, Some(KConst::Indc { .. })) {
+        inds.push(id);
+      }
     }
+    Ok(inds)
   }
 
   /// H1: Compute `is_rec` constructively by scanning constructor fields for
@@ -519,7 +511,7 @@ impl<M: KernelMode> TypeChecker<M> {
     block_addrs: &[Address],
   ) -> Result<bool, TcError<M>> {
     for ctor_id in ctors {
-      let ctor_ty = match self.env.get(ctor_id) {
+      let ctor_ty = match self.try_get_const(ctor_id)? {
         Some(KConst::Ctor { ty, .. }) => ty.clone(),
         _ => continue,
       };
@@ -571,8 +563,8 @@ impl<M: KernelMode> TypeChecker<M> {
 
     // Seed with original block inductives.
     for ind_id in block_inds {
-      let (own_params, n_indices, ctors, lvls) = match self.env.get(ind_id) {
-        Some(KConst::Indc { params, indices, ctors, lvls, .. }) => {
+      let (own_params, n_indices, ctors, lvls) = match self.get_const(ind_id)? {
+        KConst::Indc { params, indices, ctors, lvls, .. } => {
           (params, indices, ctors.clone(), lvls)
         },
         _ => continue,
@@ -602,7 +594,7 @@ impl<M: KernelMode> TypeChecker<M> {
 
       for ctor_id in &member.ctors {
         let (_ctor_own_params, ctor_fields, ctor_ty, _ctor_lvls) =
-          match self.env.get(ctor_id) {
+          match self.try_get_const(ctor_id)? {
             Some(KConst::Ctor { params, fields, ty, lvls, .. }) => {
               (params, fields, ty.clone(), lvls)
             },
@@ -626,7 +618,7 @@ impl<M: KernelMode> TypeChecker<M> {
               } else {
                 KExpr::var(n_rec_params - 1 - j, anon())
               };
-              cur = subst(&self.env.intern, body, &p, 0);
+              cur = subst(&mut self.env.intern, body, &p, 0);
             },
             _ => break,
           }
@@ -652,7 +644,7 @@ impl<M: KernelMode> TypeChecker<M> {
                 univ_offset,
                 saved,
                 n_rec_params,
-              );
+              )?;
 
               self.push_local(dom);
               cur = body;
@@ -692,7 +684,7 @@ impl<M: KernelMode> TypeChecker<M> {
     univ_offset: u64,
     param_depth: usize, // depth at the param context (before field locals)
     n_rec_params: u64, // number of inductive parameters (valid Var refs in spec_params)
-  ) {
+  ) -> Result<(), TcError<M>> {
     // Peel foralls structurally — no WHNF, see doc comment above.
     let mut cur = dom.clone();
     while let ExprData::All(_, _, _, body, _) = cur.data() {
@@ -702,32 +694,32 @@ impl<M: KernelMode> TypeChecker<M> {
     let (head, args) = collect_app_spine(&cur);
     let head_id = match head.data() {
       ExprData::Const(id, _, _) => id.clone(),
-      _ => return,
+      _ => return Ok(()),
     };
 
     // Skip if head is already a block member (direct recursive, not nested).
     if block_addrs.contains(&head_id.addr) {
-      return;
+      return Ok(());
     }
     // Also skip if head is already a flat block member (already detected).
     if flat.iter().any(|m| m.id.addr == head_id.addr && !m.is_aux) {
-      return;
+      return Ok(());
     }
 
     // Check if head is an external inductive.
     let (ext_params, ext_indices, ext_ctors, ext_lvls) =
-      match self.env.get(&head_id) {
+      match self.try_get_const(&head_id)? {
         Some(KConst::Indc { params, indices, ctors, lvls, .. }) => {
           (params, indices, ctors.clone(), lvls)
         },
-        _ => return,
+        _ => return Ok(()),
       };
 
     #[allow(clippy::cast_possible_truncation)]
     // ext_params is a small structural count
     let ext_n_params = ext_params as usize;
     if args.len() < ext_n_params {
-      return;
+      return Ok(());
     }
 
     // Check if any param arg mentions a block original. Match Lean's
@@ -745,7 +737,7 @@ impl<M: KernelMode> TypeChecker<M> {
       .take(ext_n_params)
       .any(|a| expr_mentions_any_addr(a, block_addrs));
     if !has_nested_ref {
-      return;
+      return Ok(());
     }
 
     // Extract spec_params (the first ext_n_params args) and normalize them
@@ -761,7 +753,7 @@ impl<M: KernelMode> TypeChecker<M> {
       .take(ext_n_params)
       .map(|e| {
         if field_depth > 0 {
-          lower_vars(&self.env.intern, e, field_depth)
+          lower_vars(&mut self.env.intern, e, field_depth)
         } else {
           e.clone()
         }
@@ -775,7 +767,7 @@ impl<M: KernelMode> TypeChecker<M> {
     // (lean4lean: isNestedInductiveApp? checks looseBVars on param args.)
     for sp in spec_params.iter() {
       if sp.lbr() > param_depth as u64 + n_rec_params {
-        return; // param arg depends on field-local variables — not a valid nesting
+        return Ok(()); // param arg depends on field-local variables — not a valid nesting
       }
     }
 
@@ -788,7 +780,7 @@ impl<M: KernelMode> TypeChecker<M> {
         && s.len() == spec_hashes.len()
         && s.iter().zip(spec_hashes.iter()).all(|(a, b)| a == b)
     }) {
-      return;
+      return Ok(());
     }
     aux_seen.push((head_id.addr.clone(), spec_hashes));
 
@@ -811,6 +803,7 @@ impl<M: KernelMode> TypeChecker<M> {
       ind_us: aux_us,
       occurrence_us,
     });
+    Ok(())
   }
 
   /// Rewrite nested occurrences in synthetic aux member/ctor types to the
@@ -967,7 +960,7 @@ impl<M: KernelMode> TypeChecker<M> {
       let mut matched = true;
       for (arg, sp) in args.iter().take(own).zip(member.spec_params.iter()) {
         let sp_lifted = if local_depth > 0 {
-          lift(&self.env.intern, sp, local_depth, 0)
+          lift(&mut self.env.intern, sp, local_depth, 0)
         } else {
           sp.clone()
         };
@@ -1014,10 +1007,14 @@ impl<M: KernelMode> TypeChecker<M> {
     block_first_id: &KId<M>,
     n_block_params: u64,
   ) -> Result<
-    Vec<(M::MField<crate::ix::env::Name>, M::MField<crate::ix::env::BinderInfo>, KExpr<M>)>,
+    Vec<(
+      M::MField<crate::ix::env::Name>,
+      M::MField<crate::ix::env::BinderInfo>,
+      KExpr<M>,
+    )>,
     TcError<M>,
   > {
-    let ind_ty = match self.env.get(block_first_id) {
+    let ind_ty = match self.try_get_const(block_first_id)? {
       Some(KConst::Indc { ty, .. }) => ty.clone(),
       _ => return Ok(Vec::new()),
     };
@@ -1200,8 +1197,8 @@ impl<M: KernelMode> TypeChecker<M> {
       let seed_name = aux_seed_names[source_idx].clone();
       let aux_addr = aux_id.addr.clone();
       let (ext_ty, ext_ctors, ext_n_params, ext_n_indices) =
-        match self.env.get(&member.id) {
-          Some(KConst::Indc { ty, ctors, params, indices, .. }) => {
+        match self.get_const(&member.id)? {
+          KConst::Indc { ty, ctors, params, indices, .. } => {
             (ty.clone(), ctors.clone(), params, indices)
           },
           _ => {
@@ -1229,7 +1226,7 @@ impl<M: KernelMode> TypeChecker<M> {
               break;
             }
             let p = member.spec_params[p_idx].clone();
-            typ = subst(&self.env.intern, &body, &p, 0);
+            typ = subst(&mut self.env.intern, &body, &p, 0);
           },
           _ => break,
         }
@@ -1251,14 +1248,15 @@ impl<M: KernelMode> TypeChecker<M> {
       // Synthetic aux ctor KIds and KConst::Ctor entries.
       let mut aux_ctor_kids: Vec<KId<M>> = Vec::with_capacity(ext_ctors.len());
       for (ci, ext_ctor_id) in ext_ctors.iter().enumerate() {
-        let (ext_ctor_ty, ext_ctor_fields) = match self.env.get(ext_ctor_id) {
-          Some(KConst::Ctor { ty, fields, .. }) => (ty.clone(), fields),
-          _ => {
-            return Err(TcError::Other(
-              "canonical_aux_order: aux ext ctor is not a ctor".into(),
-            ));
-          },
-        };
+        let (ext_ctor_ty, ext_ctor_fields) =
+          match self.get_const(ext_ctor_id)? {
+            KConst::Ctor { ty, fields, .. } => (ty.clone(), fields),
+            _ => {
+              return Err(TcError::Other(
+                "canonical_aux_order: aux ext ctor is not a ctor".into(),
+              ));
+            },
+          };
         let mut ctor_typ =
           self.instantiate_univ_params(&ext_ctor_ty, &member.occurrence_us)?;
         for j in 0..ext_n_params {
@@ -1271,7 +1269,7 @@ impl<M: KernelMode> TypeChecker<M> {
                 break;
               }
               let p = member.spec_params[p_idx].clone();
-              ctor_typ = subst(&self.env.intern, &body, &p, 0);
+              ctor_typ = subst(&mut self.env.intern, &body, &p, 0);
             },
             _ => break,
           }
@@ -1409,10 +1407,7 @@ impl<M: KernelMode> TypeChecker<M> {
       eprintln!("[canonical_aux_order.dump] post-sort classes:");
       for (ci, class) in classes.iter().enumerate() {
         for (mi, (kid, _)) in class.iter().enumerate() {
-          eprintln!(
-            "  class[{ci}][{mi}] addr={}",
-            &kid.addr.hex()[..8]
-          );
+          eprintln!("  class[{ci}][{mi}] addr={}", &kid.addr.hex()[..8]);
         }
       }
     }
@@ -1510,7 +1505,7 @@ impl<M: KernelMode> TypeChecker<M> {
           let (head, _) = collect_app_spine(dom);
           if let ExprData::Const(id, _, _) = head.data()
             && id.addr == *target_addr
-            && matches!(self.env.get(id), Some(KConst::Indc { .. }))
+            && matches!(self.try_get_const(id)?, Some(KConst::Indc { .. }))
           {
             return Ok(Some(dom.clone()));
           }
@@ -1619,12 +1614,13 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
         )
         .unwrap_or(None);
       let rid = &rec_ids[gi];
-      let (stored_skip, stored_ty) = match self.env.get(rid) {
-        Some(KConst::Recr { params, motives, minors, indices, ty, .. }) => {
-          (params + motives + minors + indices, Some(ty.clone()))
-        },
-        _ => (0, None),
-      };
+      let (stored_skip, stored_ty) =
+        match self.try_get_const(rid).ok().flatten() {
+          Some(KConst::Recr {
+            params, motives, minors, indices, ty, ..
+          }) => (params + motives + minors + indices, Some(ty.clone())),
+          _ => (0, None),
+        };
       let stored_major = match stored_ty {
         Some(ty) => self
           .recursor_major_domain_for_addr(&ty, stored_skip, target_addr)
@@ -1829,8 +1825,8 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
           ExprData::Const(id, us, _) => {
             // Check if this is a nested inductive: head is an inductive type
             // (not in our block) and its params contain block inductives.
-            let (n_params, block, ctors) = match self.env.get(id) {
-              Some(KConst::Indc { params, block, ctors, .. }) => {
+            let (n_params, block, ctors) = match self.get_const(id)? {
+              KConst::Indc { params, block, ctors, .. } => {
                 (u64_to_usize(params)?, block.clone(), ctors.clone())
               },
               _ => {
@@ -1862,7 +1858,8 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
 
             // Build augmented address set: original block + external inductive's block
             let mut augmented: Vec<Address> = block_addrs.to_vec();
-            let ext_block_inductives = self.discover_block_inductives(&block);
+            let ext_block_inductives =
+              self.discover_block_inductives(&block)?;
             for ext_id in &ext_block_inductives {
               if !augmented.contains(&ext_id.addr) {
                 augmented.push(ext_id.addr.clone());
@@ -1877,8 +1874,8 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
             // For each constructor, strip params, substitute actual param args,
             // and recursively check positivity of each field domain
             for ctor_id in &ctors {
-              let ctor_ty = match self.env.get(ctor_id) {
-                Some(KConst::Ctor { ty, .. }) => ty.clone(),
+              let ctor_ty = match self.get_const(ctor_id)? {
+                KConst::Ctor { ty, .. } => ty.clone(),
                 _ => {
                   return Err(TcError::Other(
                     "positivity: nested ctor not found".into(),
@@ -1940,7 +1937,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
     // We need substs[i] = param_args[n_params-1-i] to reverse the order.
     let reversed_params: Vec<KExpr<M>> =
       param_args.iter().rev().cloned().collect();
-    ty = simul_subst(&self.env.intern, &ty, &reversed_params, 0);
+    ty = simul_subst(&mut self.env.intern, &ty, &reversed_params, 0);
 
     // Now check each remaining field domain
     self.check_nested_ctor_fields_loop(&ty, augmented_addrs)
@@ -2195,7 +2192,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
       0 => Ok(true),
       // Case 3: 1 constructor → check fields
       1 => {
-        let (ctor_ty, ctor_fields) = match self.env.get(&ctors[0]) {
+        let (ctor_ty, ctor_fields) = match self.try_get_const(&ctors[0])? {
           Some(KConst::Ctor { ty, fields, .. }) => {
             (ty.clone(), u64_to_usize(fields)?)
           },
@@ -2256,7 +2253,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
     block_id: &KId<M>,
   ) -> Result<(), TcError<M>> {
     // Collect block inductives
-    let block_inds = self.discover_block_inductives(block_id);
+    let block_inds = self.discover_block_inductives(block_id)?;
     if block_inds.is_empty() {
       self.env.recursor_cache.insert(block_id.clone(), vec![]);
       return Ok(());
@@ -2267,8 +2264,8 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
       Vec::new();
     let mut n_params: u64 = 0;
     for (i, ind_id) in block_inds.iter().enumerate() {
-      match self.env.get(ind_id) {
-        Some(KConst::Indc { params, indices, ctors, ty, is_rec, .. }) => {
+      match self.get_const(ind_id)? {
+        KConst::Indc { params, indices, ctors, ty, is_rec, .. } => {
           if i == 0 {
             n_params = params;
           }
@@ -2353,21 +2350,27 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
 
     // Convert flat block to ind_infos format for existing build_motive_type / build_rec_type.
     // For auxiliary members, we need their type from the environment.
-    let flat_ind_infos: Vec<(KId<M>, u64, u64, Vec<KId<M>>, KExpr<M>, bool)> =
-      flat
-        .iter()
-        .map(|m| {
-          let ty = self
-            .env
-            .get(&m.id)
-            .map_or_else(|| KExpr::sort(KUniv::zero()), |c| c.ty().clone());
-          let is_rec = self
-            .env
-            .get(&m.id)
-            .is_some_and(|c| matches!(c, KConst::Indc { is_rec: true, .. }));
-          (m.id.clone(), m.own_params, m.n_indices, m.ctors.clone(), ty, is_rec)
-        })
-        .collect();
+    let mut flat_ind_infos: Vec<(
+      KId<M>,
+      u64,
+      u64,
+      Vec<KId<M>>,
+      KExpr<M>,
+      bool,
+    )> = Vec::with_capacity(flat.len());
+    for m in &flat {
+      let c = self.get_const(&m.id)?;
+      let ty = c.ty().clone();
+      let is_rec = matches!(c, KConst::Indc { is_rec: true, .. });
+      flat_ind_infos.push((
+        m.id.clone(),
+        m.own_params,
+        m.n_indices,
+        m.ctors.clone(),
+        ty,
+        is_rec,
+      ));
+    }
     let flat_ids: Vec<KId<M>> = flat.iter().map(|m| m.id.clone()).collect();
 
     // Build motive types for ALL flat block members.
@@ -2448,16 +2451,20 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
 
     // Find peer recursor KIds for rule RHS generation.
     // Each flat member needs its corresponding recursor constant for IH values.
-    let peer_recs = self.find_peer_recursors(block_id, &flat);
+    let peer_recs = self.find_peer_recursors(block_id, &flat)?;
     // Generate rules for each recursor.
     if let Some(ref peers) = peer_recs {
       for (gi, generated_rec) in generated.iter_mut().enumerate() {
         let member = &flat[gi];
         let mut rules = Vec::new();
         for (ci, ctor_id) in member.ctors.iter().enumerate() {
-          let ctor_fields = match self.env.get(ctor_id) {
-            Some(KConst::Ctor { fields, .. }) => fields,
-            _ => 0,
+          let ctor_fields = match self.get_const(ctor_id)? {
+            KConst::Ctor { fields, .. } => fields,
+            _ => {
+              return Err(TcError::Other(
+                "generate_block_recursors: ctor not found".into(),
+              ));
+            },
           };
           let generated_rec_ty = generated_rec.ty.clone();
           match self.build_rule_rhs(
@@ -2604,14 +2611,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
 
     // Get inductive type and instantiate with occurrence universe args
     // (concrete for auxiliaries, same as ind_us for originals).
-    let ind_ty = self
-      .env
-      .get(&member.id)
-      .ok_or_else(|| {
-        TcError::Other("build_motive_type_flat: ind not found".into())
-      })?
-      .ty()
-      .clone();
+    let ind_ty = self.get_const(&member.id)?.ty().clone();
     let ind_ty_inst =
       self.instantiate_univ_params(&ind_ty, &member.occurrence_us)?;
 
@@ -2627,14 +2627,14 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
             // spec_params are in terms of recursor params at depth n_rec_params.
             // Current depth might differ; lift accordingly.
             if lift_amount > 0 {
-              lift(&self.env.intern, &sp, lift_amount, 0)
+              lift(&mut self.env.intern, &sp, lift_amount, 0)
             } else {
               sp
             }
           } else {
             KExpr::var(n_rec_params as u64 - 1 - j, anon())
           };
-          ty = subst(&self.env.intern, body, &p, 0);
+          ty = subst(&mut self.env.intern, body, &p, 0);
         },
         _ => break,
       }
@@ -2674,7 +2674,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
       let lift_by = u64_to_usize::<M>(depth)?;
       for sp in member.spec_params.iter() {
         let lifted = if lift_by > 0 {
-          lift(&self.env.intern, sp, lift_by as u64, 0)
+          lift(&mut self.env.intern, sp, lift_by as u64, 0)
         } else {
           sp.clone()
         };
@@ -2729,8 +2729,8 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
     block_addrs: &[Address],
     _univ_offset: u64,
   ) -> Result<KExpr<M>, TcError<M>> {
-    let ctor = match self.env.get(ctor_id) {
-      Some(KConst::Ctor { ty, lvls, .. }) => (ty.clone(), lvls),
+    let ctor = match self.get_const(ctor_id)? {
+      KConst::Ctor { ty, lvls, .. } => (ty.clone(), lvls),
       _ => {
         return Err(TcError::Other(
           "build_minor_at_depth: ctor not found".into(),
@@ -2769,7 +2769,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
             let depth = u64_to_usize::<M>(self.depth())?;
             let lift_by = depth.saturating_sub(n_rec_params);
             if lift_by > 0 {
-              lift(&self.env.intern, &sp, lift_by as u64, 0)
+              lift(&mut self.env.intern, &sp, lift_by as u64, 0)
             } else {
               sp
             }
@@ -2777,7 +2777,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
             let depth = self.depth();
             KExpr::var(depth - 1 - j, anon())
           };
-          ty = subst(&self.env.intern, body, &p, 0);
+          ty = subst(&mut self.env.intern, body, &p, 0);
         },
         _ => break,
       }
@@ -2863,7 +2863,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
     for idx_expr in &ret_indices {
       let lifted = if n_ihs > 0 {
         lift(
-          &self.env.intern,
+          &mut self.env.intern,
           idx_expr,
           n_ihs as u64,
           0, // lift ALL Var refs, not just those above fields
@@ -2891,7 +2891,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
       let lift_by = u64_to_usize::<M>(depth)?.saturating_sub(n_rec_params);
       for sp in &member.spec_params {
         let lifted = if lift_by > 0 {
-          lift(&self.env.intern, sp, lift_by as u64, 0)
+          lift(&mut self.env.intern, sp, lift_by as u64, 0)
         } else {
           sp.clone()
         };
@@ -2958,7 +2958,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
     // to the current depth (minor_saved + n_fields + k).
     let dom = &field_domains[field_idx];
     let shift = (n_fields + k - field_idx) as u64;
-    let dom_lifted = lift(&self.env.intern, dom, shift, 0);
+    let dom_lifted = lift(&mut self.env.intern, dom, shift, 0);
     let wdom = self.whnf(&dom_lifted)?;
 
     // Check if direct (head is block inductive) or forall-wrapped
@@ -3124,7 +3124,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
             let mut matches = true;
             for (arg, sp) in args.iter().take(own).zip(m.spec_params.iter()) {
               let sp_lifted = if spec_params_lift_by > 0 {
-                lift(&self.env.intern, sp, spec_params_lift_by, 0)
+                lift(&mut self.env.intern, sp, spec_params_lift_by, 0)
               } else {
                 sp.clone()
               };
@@ -3172,7 +3172,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
     let mut domains: Vec<KExpr<M>> = Vec::new();
 
     // --- Params: walk first inductive's type, with shifted universe instantiation ---
-    let first_ind_lvls = match self.env.get(&block_inds[0]) {
+    let first_ind_lvls = match self.try_get_const(&block_inds[0])? {
       Some(KConst::Indc { lvls, .. }) => lvls,
       _ => 0,
     };
@@ -3198,7 +3198,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
     // j motives already pushed before it).
     for (j, mt) in motive_types.iter().enumerate() {
       let lifted_mt = if j > 0 {
-        lift(&self.env.intern, mt, j as u64, 0)
+        lift(&mut self.env.intern, mt, j as u64, 0)
       } else {
         mt.clone()
       };
@@ -3250,7 +3250,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
             let lift_by =
               u64_to_usize::<M>(self.depth())?.saturating_sub(n_params);
             if lift_by > 0 {
-              lift(&self.env.intern, &sp, lift_by as u64, 0)
+              lift(&mut self.env.intern, &sp, lift_by as u64, 0)
             } else {
               sp
             }
@@ -3258,7 +3258,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
             let depth = self.depth();
             KExpr::var(depth - 1 - j, anon())
           };
-          ity = subst(&self.env.intern, body, &p, 0);
+          ity = subst(&mut self.env.intern, body, &p, 0);
         },
         _ => break,
       }
@@ -3292,7 +3292,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
       let lift_by = u64_to_usize::<M>(depth)?.saturating_sub(n_params);
       for sp in &di_member.spec_params {
         let lifted = if lift_by > 0 {
-          lift(&self.env.intern, sp, lift_by as u64, 0)
+          lift(&mut self.env.intern, sp, lift_by as u64, 0)
         } else {
           sp.clone()
         };
@@ -3348,7 +3348,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
     &mut self,
     block_id: &KId<M>,
     flat: &[FlatBlockMember<M>],
-  ) -> Option<Vec<KId<M>>> {
+  ) -> Result<Option<Vec<KId<M>>>, TcError<M>> {
     // Position-by-position alignment.
     //
     // `flat` is in canonical order (`canonical_aux_order` was applied above
@@ -3362,30 +3362,40 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
     // Returns `None` if any sanity check fails — caller falls back to
     // `populate_recursor_rules_from_block`, which performs the same
     // positional alignment with a more verbose diagnostic on failure.
-    let members: Vec<KId<M>> = self.env.blocks.get(block_id)?.clone();
-    let rec_ids: Vec<KId<M>> = members
-      .iter()
-      .filter(|id| matches!(self.env.get(id), Some(KConst::Recr { .. })))
-      .cloned()
-      .collect();
+    let Some(members) = self.try_get_block(block_id)? else {
+      return Ok(None);
+    };
+    let mut rec_ids: Vec<KId<M>> = Vec::new();
+    for id in members {
+      if matches!(self.try_get_const(&id)?, Some(KConst::Recr { .. })) {
+        rec_ids.push(id);
+      }
+    }
 
     if rec_ids.len() != flat.len() {
-      return None;
+      return Ok(None);
     }
 
     let mut result: Vec<KId<M>> = Vec::with_capacity(flat.len());
     for (fi, member) in flat.iter().enumerate() {
       let rec_id = &rec_ids[fi];
-      let (params, motives, minors, indices, ty) = match self.env.get(rec_id) {
-        Some(KConst::Recr {
-          params, motives, minors, indices, ty, ..
-        }) => (params, motives, minors, indices, ty.clone()),
-        _ => return None,
-      };
+      let (params, motives, minors, indices, ty) =
+        match self.try_get_const(rec_id)? {
+          Some(KConst::Recr {
+            params, motives, minors, indices, ty, ..
+          }) => (params, motives, minors, indices, ty.clone()),
+          _ => return Ok(None),
+        };
       let skip = params + motives + minors + indices;
-      let major_id = self.get_major_inductive_id(&ty, skip).ok()?;
+      let major_id = match self.get_major_inductive_id(&ty, skip) {
+        Ok(id) => id,
+        Err(TcError::UnknownConst(addr)) => {
+          return Err(TcError::UnknownConst(addr));
+        },
+        Err(_) => return Ok(None),
+      };
       if major_id.addr != member.id.addr {
-        return None;
+        return Ok(None);
       }
       if !member.is_aux {
         result.push(rec_id.clone());
@@ -3411,31 +3421,37 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
         && let ExprData::All(_, _, dom, _, _) = w.data()
       {
         let (_, major_args) = collect_app_spine(dom);
-        let n_par = u64_to_usize::<M>(member.own_params).ok()?;
+        let n_par = match u64_to_usize::<M>(member.own_params) {
+          Ok(n) => n,
+          Err(_) => return Ok(None),
+        };
         if major_args.len() >= n_par && member.spec_params.len() == n_par {
           let n_rec_params = flat.first().map_or(0, |m| m.own_params);
           let lift_by = self.depth().saturating_sub(n_rec_params);
-          matched =
-            major_args.iter().take(n_par).zip(member.spec_params.iter()).all(
-              |(arg, sp)| {
-                let sp_lifted = if lift_by > 0 {
-                  lift(&self.env.intern, sp, lift_by, 0)
-                } else {
-                  sp.clone()
-                };
-                self.is_def_eq(arg, &sp_lifted).unwrap_or(false)
-              },
-            );
+          matched = true;
+          for (arg, sp) in
+            major_args.iter().take(n_par).zip(member.spec_params.iter())
+          {
+            let sp_lifted = if lift_by > 0 {
+              lift(&mut self.env.intern, sp, lift_by, 0)
+            } else {
+              sp.clone()
+            };
+            if !self.is_def_eq(arg, &sp_lifted)? {
+              matched = false;
+              break;
+            }
+          }
         }
       }
       self.restore_depth(saved);
       if !matched {
-        return None;
+        return Ok(None);
       }
       result.push(rec_id.clone());
     }
 
-    Some(result)
+    Ok(Some(result))
   }
 
   /// Populate canonical recursor rules from the actual recursor block peers.
@@ -3460,33 +3476,34 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
       return Ok(());
     }
 
-    let members = match self.env.blocks.get(rec_block_id) {
-      Some(m) => m.clone(),
+    let members = match self.try_get_block(rec_block_id)? {
+      Some(m) => m,
       None => return Ok(()),
     };
-    let rec_ids: Vec<KId<M>> = members
-      .iter()
-      .filter(|id| matches!(self.env.get(id), Some(KConst::Recr { .. })))
-      .cloned()
-      .collect();
+    let mut rec_ids: Vec<KId<M>> = Vec::new();
+    for id in members {
+      if matches!(self.try_get_const(&id)?, Some(KConst::Recr { .. })) {
+        rec_ids.push(id);
+      }
+    }
     if rec_ids.is_empty() {
       return Ok(());
     }
 
-    let block_inds = self.discover_block_inductives(ind_block_id);
+    let block_inds = self.discover_block_inductives(ind_block_id)?;
     if block_inds.is_empty() {
       return Ok(());
     }
-    let n_params_u64 = match self.env.get(&block_inds[0]) {
+    let n_params_u64 = match self.try_get_const(&block_inds[0])? {
       Some(KConst::Indc { params, .. }) => params,
       _ => return Ok(()),
     };
-    let ind_lvls = match self.env.get(&block_inds[0]) {
+    let ind_lvls = match self.try_get_const(&block_inds[0])? {
       Some(KConst::Indc { lvls, .. }) => lvls,
       _ => 0,
     };
     let univ_offset = match rec_ids.first() {
-      Some(rid) => match self.env.get(rid) {
+      Some(rid) => match self.try_get_const(rid)? {
         Some(KConst::Recr { lvls, .. }) => {
           if lvls > ind_lvls {
             1u64
@@ -3568,10 +3585,10 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
     for (gi, gen_rec) in generated_snapshot.iter().enumerate() {
       let target_addr = &gen_rec.ind_addr;
       let rid = &rec_ids[gi];
-      let (params, motives, minors, indices, ty) = match self.env.get(rid) {
-        Some(KConst::Recr {
-          params, motives, minors, indices, ty, ..
-        }) => (params, motives, minors, indices, ty.clone()),
+      let (params, motives, minors, indices, ty) = match self.get_const(rid)? {
+        KConst::Recr { params, motives, minors, indices, ty, .. } => {
+          (params, motives, minors, indices, ty.clone())
+        },
         _ => {
           return Err(TcError::Other(format!(
             "populate_recursor_rules_from_block: rec_ids[{gi}]={rid} is not a recursor"
@@ -3626,9 +3643,13 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
       let rec_ty_for_member = generated_with_rules[gi].ty.clone();
       let mut rules = Vec::with_capacity(member.ctors.len());
       for (ci, ctor_id) in member.ctors.iter().enumerate() {
-        let ctor_fields = match self.env.get(ctor_id) {
-          Some(KConst::Ctor { fields, .. }) => fields,
-          _ => 0,
+        let ctor_fields = match self.get_const(ctor_id)? {
+          KConst::Ctor { fields, .. } => fields,
+          _ => {
+            return Err(TcError::Other(
+              "populate_recursor_rules_from_block: ctor not found".into(),
+            ));
+          },
         };
         let rhs = self.build_rule_rhs(
           gi,
@@ -3651,7 +3672,7 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
       generated_with_rules[gi].rules = rules;
     }
 
-    if let Some(mut cached) = self.env.recursor_cache.get_mut(ind_block_id) {
+    if let Some(cached) = self.env.recursor_cache.get_mut(ind_block_id) {
       if cached.len() != generated_with_rules.len() {
         return Err(TcError::Other(format!(
           "populate_recursor_rules_from_block: cache changed length: cached={} generated={}",
@@ -3688,8 +3709,8 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
     let anon = || M::meta_field(crate::ix::env::Name::anon());
     let bi_default = || M::meta_field(crate::ix::env::BinderInfo::Default);
 
-    let ctor_ty_raw = match self.env.get(ctor_id) {
-      Some(KConst::Ctor { ty, .. }) => ty.clone(),
+    let ctor_ty_raw = match self.get_const(ctor_id)? {
+      KConst::Ctor { ty, .. } => ty.clone(),
       _ => return Err(TcError::Other("build_rule_rhs: ctor not found".into())),
     };
 
@@ -3773,11 +3794,11 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
             KExpr::var(total_lams - 1 - j, anon())
           } else if u64_to_usize::<M>(j)? < member.spec_params.len() {
             let sp = member.spec_params[u64_to_usize::<M>(j)?].clone();
-            lift(&self.env.intern, &sp, aux_sp_lift, 0)
+            lift(&mut self.env.intern, &sp, aux_sp_lift, 0)
           } else {
             KExpr::var(total_lams - 1 - j, anon())
           };
-          ty2 = subst(&self.env.intern, body2, &p, 0);
+          ty2 = subst(&mut self.env.intern, body2, &p, 0);
         },
         _ => break,
       }
@@ -3824,7 +3845,7 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
 
           // Substitute this field with its Var ref for dependent types
           let fvar = KExpr::var(n_fields - 1 - field_idx, anon());
-          ty2 = subst(&self.env.intern, &body2, &fvar, 0);
+          ty2 = subst(&mut self.env.intern, &body2, &fvar, 0);
           field_idx += 1;
         },
         _ => break,
@@ -3871,7 +3892,7 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
       match w.data() {
         ExprData::All(_, _, dom, b, _) => {
           let lifted_dom = if field_dom_lift > 0 {
-            lift(&self.env.intern, dom, field_dom_lift, fi)
+            lift(&mut self.env.intern, dom, field_dom_lift, fi)
           } else {
             dom.clone()
           };
@@ -3962,7 +3983,7 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
     // matching lean4lean (Add.lean:427), lean4 C++ (inductive.cpp:738),
     // and ix/kernel (recursor.rs:1391).
     let peer_rec = &peer_recs[target_bi];
-    let peer_rec_lvls = match self.env.get(peer_rec) {
+    let peer_rec_lvls = match self.try_get_const(peer_rec)? {
       Some(KConst::Recr { lvls, .. }) => lvls,
       _ => {
         if is_large {
@@ -4079,21 +4100,17 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
     &mut self,
     id: &KId<M>,
   ) -> Result<(), TcError<M>> {
-    let (ty, declared_k) = match self.env.get(id) {
-      Some(KConst::Recr { ty, k, .. }) => (ty.clone(), k),
-      _ => {
-        return Err(TcError::Other(
-          "check_recursor_coherence: not a recursor".into(),
-        ));
-      },
-    };
-
-    let (params, motives, minors, indices) = match self.env.get(id) {
-      Some(KConst::Recr { params, motives, minors, indices, .. }) => {
-        (params, motives, minors, indices)
-      },
-      _ => unreachable!(),
-    };
+    let (ty, declared_k, params, motives, minors, indices) =
+      match self.get_const(id)? {
+        KConst::Recr { ty, k, params, motives, minors, indices, .. } => {
+          (ty.clone(), k, params, motives, minors, indices)
+        },
+        _ => {
+          return Err(TcError::Other(
+            "check_recursor_coherence: not a recursor".into(),
+          ));
+        },
+      };
     let skip = params + motives + minors + indices;
     let ind_id = self.get_major_inductive_id(&ty, skip)?;
 
@@ -4101,7 +4118,7 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
     // Cycle invariant: `check_inductive` never calls back into
     // `check_recursor_coherence` — it only drives its own structural
     // checks. Keep it that way.
-    if matches!(self.env.get(&ind_id), Some(KConst::Indc { .. })) {
+    if matches!(self.try_get_const(&ind_id)?, Some(KConst::Indc { .. })) {
       self.check_inductive(&ind_id)?;
     }
 
@@ -4119,27 +4136,25 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
   /// Validate a recursor block. A pure recursor block is checked once and the
   /// result is shared by all sibling recursors.
   pub fn check_recursor(&mut self, id: &KId<M>) -> Result<(), TcError<M>> {
-    let block = match self.env.get(id) {
-      Some(KConst::Recr { block, .. }) => block.clone(),
+    let block = match self.get_const(id)? {
+      KConst::Recr { block, .. } => block.clone(),
       _ => return Err(TcError::Other("check_recursor: not a recursor".into())),
     };
-    let Some(members) = self.env.get_block(&block) else {
+    let Some(members) = self.try_get_block(&block)? else {
       return self.check_recursor_member(id);
     };
-    if !members
-      .iter()
-      .all(|member| matches!(self.env.get(member), Some(KConst::Recr { .. })))
-    {
-      return self.check_recursor_member(id);
+    for member in &members {
+      if !matches!(self.try_get_const(member)?, Some(KConst::Recr { .. })) {
+        return self.check_recursor_member(id);
+      }
     }
 
-    match self.env.begin_block_check(&block) {
-      BlockCheckStart::Cached(result) => result,
-      BlockCheckStart::Owner(token) => {
-        let result = self.check_recursor_block(&block, &members);
-        self.env.finish_block_check(token, result)
-      },
+    if let Some(result) = self.env.block_check_results.get(&block).cloned() {
+      return result;
     }
+    let result = self.check_recursor_block(&block, &members);
+    self.env.block_check_results.insert(block, result.clone());
+    result
   }
 
   /// Validate every recursor in a recursor block.
@@ -4150,10 +4165,7 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
   ) -> Result<(), TcError<M>> {
     for member in members {
       self.reset();
-      let c = self
-        .env
-        .get(member)
-        .ok_or_else(|| TcError::UnknownConst(member.addr.clone()))?;
+      let c = self.get_const(member)?;
       self.validate_const_well_scoped(&c)?;
       match c {
         KConst::Recr { ty, .. } => {
@@ -4180,18 +4192,16 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
     &mut self,
     id: &KId<M>,
   ) -> Result<(), TcError<M>> {
-    let (rec_block, ty, declared_k) = match self.env.get(id) {
-      Some(KConst::Recr { block, ty, k, .. }) => (block.clone(), ty.clone(), k),
-      _ => return Err(TcError::Other("check_recursor: not a recursor".into())),
-    };
-
+    let (rec_block, ty, declared_k, params, motives, minors, indices) =
+      match self.get_const(id)? {
+        KConst::Recr {
+          block, ty, k, params, motives, minors, indices, ..
+        } => (block.clone(), ty.clone(), k, params, motives, minors, indices),
+        _ => {
+          return Err(TcError::Other("check_recursor: not a recursor".into()));
+        },
+      };
     // Find the major inductive from this recursor's type.
-    let (params, motives, minors, indices) = match self.env.get(id) {
-      Some(KConst::Recr { params, motives, minors, indices, .. }) => {
-        (params, motives, minors, indices)
-      },
-      _ => unreachable!(),
-    };
     let skip = params + motives + minors + indices;
     let ind_id = self.get_major_inductive_id(&ty, skip)?;
 
@@ -4206,12 +4216,12 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
     // Cycle invariant: `check_inductive` never calls back into
     // `check_recursor` — it only calls `generate_block_recursors`. Keep it
     // that way.
-    if matches!(self.env.get(&ind_id), Some(KConst::Indc { .. })) {
+    if matches!(self.try_get_const(&ind_id)?, Some(KConst::Indc { .. })) {
       self.check_inductive(&ind_id)?;
     }
 
     // Try direct lookup: major ind's own block.
-    let ind_block = match self.env.get(&ind_id) {
+    let ind_block = match self.try_get_const(&ind_id)? {
       Some(KConst::Indc { block, .. }) => Some(block.clone()),
       _ => None,
     };
@@ -4241,7 +4251,9 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
             // Not generated yet — try generating from each peer major's
             // inductive block until the majors cache is populated.
             for major_id in &majors_key {
-              if let Some(KConst::Indc { block, .. }) = self.env.get(major_id) {
+              if let Some(KConst::Indc { block, .. }) =
+                self.try_get_const(major_id)?
+              {
                 let ib = block.clone();
                 if !self.env.recursor_cache.contains_key(&ib) {
                   let _ = self.generate_block_recursors(&ib);
@@ -4443,8 +4455,8 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
         // The one-sided `is_empty()` branches below remain as legitimate
         // asymmetric mismatches (e.g., generator produced N rules but
         // storage has none, or vice versa).
-        let stored_rules = match self.env.get(id) {
-          Some(KConst::Recr { rules, .. }) => rules.clone(),
+        let stored_rules = match self.get_const(id)? {
+          KConst::Recr { rules, .. } => rules.clone(),
           _ => vec![],
         };
         if gen_rules.is_empty() && !stored_rules.is_empty() {
@@ -4522,29 +4534,35 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
   ) -> Result<std::collections::BTreeSet<KId<M>>, TcError<M>> {
     let mut majors = std::collections::BTreeSet::new();
 
-    let peers: Vec<KId<M>> = match self.env.blocks.get(rec_block) {
-      Some(members) => members
-        .iter()
-        .filter(|id| matches!(self.env.get(id), Some(KConst::Recr { .. })))
-        .cloned()
-        .collect(),
+    let peers: Vec<KId<M>> = match self.try_get_block(rec_block)? {
+      Some(members) => {
+        let mut peers = Vec::new();
+        for id in members {
+          if matches!(self.try_get_const(&id)?, Some(KConst::Recr { .. })) {
+            peers.push(id);
+          }
+        }
+        peers
+      },
       None => vec![],
     };
 
     for peer_id in &peers {
-      let (p, mo, mi, ix) = match self.env.get(peer_id) {
-        Some(KConst::Recr { params, motives, minors, indices, .. }) => {
-          (params, motives, minors, indices)
+      let (p, mo, mi, ix, peer_ty) = match self.get_const(peer_id)? {
+        KConst::Recr { params, motives, minors, indices, ty, .. } => {
+          (params, motives, minors, indices, ty.clone())
         },
         _ => continue,
       };
-      let peer_ty = match self.env.get(peer_id) {
-        Some(c) => c.ty().clone(),
-        _ => continue,
-      };
       let skip = p + mo + mi + ix;
-      if let Ok(major_id) = self.get_major_inductive_id(&peer_ty, skip) {
-        majors.insert(major_id);
+      match self.get_major_inductive_id(&peer_ty, skip) {
+        Ok(major_id) => {
+          majors.insert(major_id);
+        },
+        Err(TcError::UnknownConst(addr)) => {
+          return Err(TcError::UnknownConst(addr));
+        },
+        Err(_) => {},
       }
     }
 
@@ -4557,20 +4575,22 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
   ///   2. Result universe is Prop (level is zero)
   ///   3. Exactly one constructor with zero non-param fields
   fn compute_k_target(&mut self, ind_id: &KId<M>) -> Result<bool, TcError<M>> {
-    let (ind_params, ind_indices, ctors, block, ty) = match self.env.get(ind_id)
-    {
-      Some(KConst::Indc { params, indices, ctors, block, ty, .. }) => {
-        (params, indices, ctors.clone(), block.clone(), ty.clone())
-      },
-      _ => return Ok(false),
-    };
+    let (ind_params, ind_indices, ctors, block, ty) =
+      match self.try_get_const(ind_id)? {
+        Some(KConst::Indc { params, indices, ctors, block, ty, .. }) => {
+          (params, indices, ctors.clone(), block.clone(), ty.clone())
+        },
+        _ => return Ok(false),
+      };
 
     // 1. Must be a single inductive (not mutual)
-    let block_inds = self.discover_block_inductives(&block);
-    let ind_count = block_inds
-      .iter()
-      .filter(|id| matches!(self.env.get(id), Some(KConst::Indc { .. })))
-      .count();
+    let block_inds = self.discover_block_inductives(&block)?;
+    let mut ind_count = 0;
+    for id in &block_inds {
+      if matches!(self.try_get_const(id)?, Some(KConst::Indc { .. })) {
+        ind_count += 1;
+      }
+    }
     if ind_count != 1 {
       return Ok(false);
     }
@@ -4588,7 +4608,7 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
     if ctors.len() != 1 {
       return Ok(false);
     }
-    match self.env.get(&ctors[0]) {
+    match self.try_get_const(&ctors[0])? {
       Some(KConst::Ctor { fields, .. }) => Ok(fields == 0),
       _ => Ok(false),
     }
@@ -4597,7 +4617,6 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
 
 #[cfg(test)]
 mod tests {
-  use std::sync::Arc;
 
   use super::super::constant::KConst;
   use super::super::env::KEnv;
@@ -4657,8 +4676,8 @@ mod tests {
   /// Bool.true : Bool
   /// Bool.false : Bool
   /// Bool.rec : ∀ (motive : Bool → Sort u) (h₁ : motive Bool.true) (h₂ : motive Bool.false) (t : Bool), motive t
-  fn bool_env() -> Arc<KEnv<Anon>> {
-    let env = Arc::new(KEnv::new());
+  fn bool_env() -> KEnv<Anon> {
+    let mut env = KEnv::new();
     let block = mk_id("Bool");
     let rec_block = mk_id("Bool.rec.block");
 
@@ -4778,14 +4797,14 @@ mod tests {
 
   #[test]
   fn check_bool_inductive() {
-    let env = bool_env();
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut env = bool_env();
+    let mut tc = TypeChecker::new(&mut env);
     assert!(tc.check_const(&mk_id("Bool")).is_ok());
   }
 
   #[test]
   fn check_inductive_rejects_ctor_param_count_mismatch() {
-    let env = bool_env();
+    let mut env = bool_env();
     env.insert(
       mk_id("Bool.true"),
       KConst::Ctor {
@@ -4801,7 +4820,7 @@ mod tests {
       },
     );
 
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut tc = TypeChecker::new(&mut env);
     match tc.check_const(&mk_id("Bool")) {
       Err(TcError::Other(s)) => assert!(s.contains("ctor params mismatch")),
       other => panic!("expected ctor params mismatch, got {other:?}"),
@@ -4810,8 +4829,8 @@ mod tests {
 
   #[test]
   fn check_bool_constructor_uses_parent_block() {
-    let env = bool_env();
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut env = bool_env();
+    let mut tc = TypeChecker::new(&mut env);
     tc.check_const(&mk_id("Bool.true")).unwrap();
     assert!(
       env.block_check_results.get(&mk_id("Bool")).is_some_and(|r| r.is_ok())
@@ -4820,8 +4839,8 @@ mod tests {
 
   #[test]
   fn check_bool_rec() {
-    let env = bool_env();
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut env = bool_env();
+    let mut tc = TypeChecker::new(&mut env);
     // Must check inductive first to trigger recursor generation
     tc.check_const(&mk_id("Bool")).unwrap();
     assert!(tc.check_const(&mk_id("Bool.rec")).is_ok(), "Bool.rec should pass");
@@ -4834,8 +4853,8 @@ mod tests {
   /// Nat.rec : ∀ (motive : Nat → Sort u) (zero : motive Nat.zero)
   ///             (succ : ∀ (n : Nat), motive n → motive (Nat.succ n))
   ///             (t : Nat), motive t
-  fn nat_env() -> Arc<KEnv<Anon>> {
-    let env = Arc::new(KEnv::new());
+  fn nat_env() -> KEnv<Anon> {
+    let mut env = KEnv::new();
     let block = mk_id("Nat");
     let rec_block = mk_id("Nat.rec.block");
     let nat = || cnst("Nat", &[]);
@@ -4965,8 +4984,8 @@ mod tests {
 
   #[test]
   fn check_nat_rec() {
-    let env = nat_env();
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut env = nat_env();
+    let mut tc = TypeChecker::new(&mut env);
     tc.check_const(&mk_id("Nat")).unwrap();
     assert!(tc.check_const(&mk_id("Nat.rec")).is_ok(), "Nat.rec should pass");
   }
@@ -4977,8 +4996,8 @@ mod tests {
     // Rule 0 (Nat.zero): fields=0, rhs = λ (motive) (h_zero) (h_succ), h_zero
     // Rule 1 (Nat.succ): fields=1, rhs = λ (motive) (h_zero) (h_succ) (n),
     //   h_succ n (Nat.rec.{Param(0), ...} motive h_zero h_succ n)
-    let env = nat_env();
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut env = nat_env();
+    let mut tc = TypeChecker::new(&mut env);
     tc.check_const(&mk_id("Nat")).unwrap();
     tc.check_const(&mk_id("Nat.rec")).unwrap();
 
@@ -5033,8 +5052,8 @@ mod tests {
   /// List.{u} : Sort u → Sort u
   /// List.nil.{u} : ∀ (α : Sort u), List.{u} α
   /// List.cons.{u} : ∀ (α : Sort u), α → List.{u} α → List.{u} α
-  fn list_env() -> Arc<KEnv<Anon>> {
-    let env = Arc::new(KEnv::new());
+  fn list_env() -> KEnv<Anon> {
+    let mut env = KEnv::new();
     let block = mk_id("List");
 
     // List : Sort u → Sort u  (1 lvl param)
@@ -5144,8 +5163,8 @@ mod tests {
 
   #[test]
   fn check_list_inductive() {
-    let env = list_env();
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut env = list_env();
+    let mut tc = TypeChecker::new(&mut env);
     assert!(tc.check_const(&mk_id("List")).is_ok());
     // Verify recursor was generated with the right structure
     let block = mk_id("List");
@@ -5170,8 +5189,8 @@ mod tests {
   /// Tree.leaf : Tree
   /// Tree.node : List Tree → Tree
   /// This should create a flat block [Tree, List] with Tree nesting into List.
-  fn nested_tree_env() -> Arc<KEnv<Anon>> {
-    let env = Arc::new(KEnv::new());
+  fn nested_tree_env() -> KEnv<Anon> {
+    let mut env = KEnv::new();
     let tree_block = mk_id("Tree");
     let tree = || cnst("Tree", &[]);
 
@@ -5305,8 +5324,8 @@ mod tests {
 
   #[test]
   fn nested_tree_flat_block_detection() {
-    let env = nested_tree_env();
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut env = nested_tree_env();
+    let mut tc = TypeChecker::new(&mut env);
 
     // Check Tree inductive — this triggers flat block building
     tc.check_const(&mk_id("Tree")).unwrap();
@@ -5338,8 +5357,8 @@ mod tests {
     //                  (h_nil : motive₁ (List.nil.{1} Tree))
     //                  (h_cons : ∀ (hd : Tree) (tl : List.{1} Tree), motive₀ hd → motive₁ tl → motive₁ (List.cons.{1} Tree hd tl))
     //                  (t : Tree), motive₀ t
-    let env = nested_tree_env();
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut env = nested_tree_env();
+    let mut tc = TypeChecker::new(&mut env);
     tc.check_const(&mk_id("Tree")).unwrap();
 
     let tree_block = mk_id("Tree");
@@ -5428,8 +5447,8 @@ mod tests {
 
   #[test]
   fn nested_tree_rec_binder_count() {
-    let env = nested_tree_env();
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut env = nested_tree_env();
+    let mut tc = TypeChecker::new(&mut env);
     tc.check_const(&mk_id("Tree")).unwrap();
 
     let tree_block = mk_id("Tree");
@@ -5473,8 +5492,8 @@ mod tests {
   /// Like Tree but with one universe param and one type param.
   /// PTree.leaf.{u} : ∀ (α : Sort (u+1)), α → PTree.{u} α
   /// PTree.node.{u} : ∀ (α : Sort (u+1)), List.{u+1} (PTree.{u} α) → PTree.{u} α
-  fn poly_nested_env() -> Arc<KEnv<Anon>> {
-    let env = Arc::new(KEnv::new());
+  fn poly_nested_env() -> KEnv<Anon> {
+    let mut env = KEnv::new();
     let block = mk_id("PTree");
     let su = || AU::succ(param(0)); // u+1
 
@@ -5614,8 +5633,8 @@ mod tests {
 
   #[test]
   fn poly_nested_flat_block() {
-    let env = poly_nested_env();
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut env = poly_nested_env();
+    let mut tc = TypeChecker::new(&mut env);
     // Check inductive first (consumes fuel for validation)
     tc.check_const(&mk_id("PTree")).unwrap();
     // Reset fuel and generate recursors explicitly
@@ -5636,8 +5655,8 @@ mod tests {
 
   #[test]
   fn poly_nested_rec_binder_count() {
-    let env = poly_nested_env();
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut env = poly_nested_env();
+    let mut tc = TypeChecker::new(&mut env);
     tc.check_const(&mk_id("PTree")).unwrap();
     tc.rec_fuel = super::super::tc::max_rec_fuel();
     let block = mk_id("PTree");
@@ -5672,8 +5691,8 @@ mod tests {
   /// This should create a flat block:
   ///   [Syn, List (Pair Name Syn), Pair (Name, Syn)]
   /// with 3 motives.
-  fn syntax_like_env() -> Arc<KEnv<Anon>> {
-    let env = Arc::new(KEnv::new());
+  fn syntax_like_env() -> KEnv<Anon> {
+    let mut env = KEnv::new();
     let block = mk_id("Syn");
     let syn = || cnst("Syn", &[]);
 
@@ -5876,8 +5895,8 @@ mod tests {
 
   #[test]
   fn syntax_like_flat_block() {
-    let env = syntax_like_env();
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut env = syntax_like_env();
+    let mut tc = TypeChecker::new(&mut env);
     tc.check_const(&mk_id("Syn")).unwrap();
     tc.rec_fuel = super::super::tc::max_rec_fuel();
     let block = mk_id("Syn");
@@ -5904,7 +5923,7 @@ mod tests {
     // `List (Pair Name Syn)` is a valid auxiliary. This replicates the
     // Lean.Syntax.rec binder 6 failure where `List Preresolved` was
     // incorrectly matched to the `List Syntax` auxiliary.
-    let env = syntax_like_env();
+    let mut env = syntax_like_env();
 
     // Add OtherType : Sort 1 (external, non-recursive)
     env.insert(
@@ -5938,13 +5957,13 @@ mod tests {
     );
 
     // Update Syn to have 3 ctors
-    if let Some(mut entry) = env.consts.get_mut(&mk_id("Syn"))
-      && let KConst::Indc { ctors, .. } = entry.value_mut()
+    if let Some(entry) = env.consts.get_mut(&mk_id("Syn"))
+      && let KConst::Indc { ctors, .. } = entry
     {
       ctors.push(mk_id("Syn.ident"));
     }
 
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut tc = TypeChecker::new(&mut env);
     tc.check_const(&mk_id("Syn")).unwrap();
     tc.rec_fuel = super::super::tc::max_rec_fuel();
     let block = mk_id("Syn");
@@ -6000,8 +6019,8 @@ mod tests {
 
   #[test]
   fn syntax_like_rec_binder_count() {
-    let env = syntax_like_env();
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut env = syntax_like_env();
+    let mut tc = TypeChecker::new(&mut env);
     tc.check_const(&mk_id("Syn")).unwrap();
     tc.rec_fuel = super::super::tc::max_rec_fuel();
     let block = mk_id("Syn");
@@ -6039,8 +6058,8 @@ mod tests {
   /// Inl.text.{u} : ∀ (i : Sort (u+1)), String → Inl.{u} i
   /// Inl.emph.{u} : ∀ (i : Sort (u+1)), Array.{u+1} (Inl.{u} i) → Inl.{u} i
   /// Inl.other.{u} : ∀ (i : Sort (u+1)), i → Array.{u+1} (Inl.{u} i) → Inl.{u} i
-  fn inline_like_env() -> Arc<KEnv<Anon>> {
-    let env = Arc::new(KEnv::new());
+  fn inline_like_env() -> KEnv<Anon> {
+    let mut env = KEnv::new();
     let block = mk_id("Inl");
     let su = || AU::succ(param(0)); // u+1
 
@@ -6280,8 +6299,8 @@ mod tests {
 
   #[test]
   fn inline_like_flat_block() {
-    let env = inline_like_env();
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut env = inline_like_env();
+    let mut tc = TypeChecker::new(&mut env);
     tc.check_const(&mk_id("Inl")).unwrap();
     tc.rec_fuel = super::super::tc::max_rec_fuel();
     let block = mk_id("Inl");
@@ -6302,8 +6321,8 @@ mod tests {
 
   #[test]
   fn inline_like_rec_2_binder_count() {
-    let env = inline_like_env();
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut env = inline_like_env();
+    let mut tc = TypeChecker::new(&mut env);
     tc.check_const(&mk_id("Inl")).unwrap();
     tc.rec_fuel = super::super::tc::max_rec_fuel();
     let block = mk_id("Inl");
@@ -6385,8 +6404,8 @@ mod tests {
   /// Ok.step.{u} : ∀ (α : Sort (u+1)) (n : Nat), Ok.{u} α n → Ok.{u} α n
   ///
   /// This has 1 univ param, 1 type param, 1 index (Nat), and is in Prop.
-  fn wf_like_env() -> Arc<KEnv<Anon>> {
-    let env = Arc::new(KEnv::new());
+  fn wf_like_env() -> KEnv<Anon> {
+    let mut env = KEnv::new();
     let block = mk_id("Ok");
 
     // Nat : Sort 1
@@ -6454,8 +6473,8 @@ mod tests {
       },
     );
     // Fix: fields should be 1 (n), not 0
-    if let Some(mut entry) = env.consts.get_mut(&mk_id("Ok.base"))
-      && let KConst::Ctor { fields, .. } = entry.value_mut()
+    if let Some(entry) = env.consts.get_mut(&mk_id("Ok.base"))
+      && let KConst::Ctor { fields, .. } = entry
     {
       *fields = 1;
     }
@@ -6491,8 +6510,8 @@ mod tests {
 
   #[test]
   fn wf_like_rec_type() {
-    let env = wf_like_env();
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut env = wf_like_env();
+    let mut tc = TypeChecker::new(&mut env);
     tc.check_const(&mk_id("Ok")).unwrap();
 
     let block = mk_id("Ok");
@@ -6600,8 +6619,8 @@ mod tests {
   /// in a **negative** position: `Wrap.mk : ∀ (α : Type), (α → Bool) → Wrap α`.
   /// Then define `Evil : Type` with `Evil.mk : Wrap Evil → Evil`.
   /// This must be REJECTED: `Evil` appears negatively inside `Wrap`'s constructor.
-  fn wrap_evil_env() -> Arc<KEnv<Anon>> {
-    let env = bool_env();
+  fn wrap_evil_env() -> KEnv<Anon> {
+    let mut env = bool_env();
 
     // Wrap : Type → Type  (1 param, 0 indices)
     let wrap_ty = pi(sort1(), sort1());
@@ -6705,8 +6724,8 @@ mod tests {
     // in negative position: `(α → Bool) → Wrap α`. So `Evil` appears in
     // `(Evil → Bool)` — a negative occurrence smuggled through nesting.
     // The positivity checker must reject this.
-    let env = wrap_evil_env();
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut env = wrap_evil_env();
+    let mut tc = TypeChecker::new(&mut env);
     let result = tc.check_const(&mk_id("Evil"));
     assert!(
       result.is_err(),
@@ -6714,8 +6733,8 @@ mod tests {
     );
   }
 
-  fn negative_self_function_env(is_unsafe: bool) -> Arc<KEnv<Anon>> {
-    let env = bool_env();
+  fn negative_self_function_env(is_unsafe: bool) -> KEnv<Anon> {
+    let mut env = bool_env();
     let block = mk_id("Bad");
 
     env.insert(
@@ -6761,8 +6780,8 @@ mod tests {
 
   #[test]
   fn reject_safe_negative_self_function() {
-    let env = negative_self_function_env(false);
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut env = negative_self_function_env(false);
+    let mut tc = TypeChecker::new(&mut env);
     assert!(
       tc.check_const(&mk_id("Bad")).is_err(),
       "safe negative inductive should be rejected"
@@ -6771,8 +6790,8 @@ mod tests {
 
   #[test]
   fn accept_unsafe_negative_self_function() {
-    let env = negative_self_function_env(true);
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut env = negative_self_function_env(true);
+    let mut tc = TypeChecker::new(&mut env);
     assert!(
       tc.check_const(&mk_id("Bad")).is_ok(),
       "unsafe inductive should skip positivity like Lean"
@@ -6784,7 +6803,7 @@ mod tests {
   /// (as `head : α` and `tail : List α`), so this is fine.
   #[test]
   fn accept_valid_nested_list_tree() {
-    let env = list_env();
+    let mut env = list_env();
 
     // Tree : Type  (0 params, 0 indices, recursive via List nesting)
     let tree_block = mk_id("Tree");
@@ -6830,7 +6849,7 @@ mod tests {
 
     env.blocks.insert(tree_block, vec![mk_id("Tree"), mk_id("Tree.node")]);
 
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut tc = TypeChecker::new(&mut env);
     let result = tc.check_const(&mk_id("Tree"));
     assert!(
       result.is_ok(),
@@ -6858,7 +6877,7 @@ mod tests {
     // type `motive (Bool.true/false)` — motive is Var(2) under the λ₃,
     // so `var(1)` and `var(0)` both typecheck as the minor premise), but
     // iota would produce the wrong value for the given ctor.
-    let env = bool_env();
+    let mut env = bool_env();
     let rec_block = mk_id("Bool.rec.block");
 
     // Rebuild recursor type and rule-body domains exactly as `bool_env`
@@ -6924,7 +6943,7 @@ mod tests {
       },
     );
 
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut tc = TypeChecker::new(&mut env);
     tc.check_const(&mk_id("Bool")).unwrap();
     let result = tc.check_const(&mk_id("Bool.rec"));
     assert!(
@@ -6940,7 +6959,7 @@ mod tests {
   /// iota-reducing against a ctor of the second peer.
   #[test]
   fn reject_mutual_peers_with_mismatched_param_domains() {
-    let env = Arc::new(KEnv::new());
+    let mut env = KEnv::new();
     let block = mk_id("Mut");
 
     // Peer 1: `M1 : (α : Sort 1) → Sort 1`   (one Type parameter)
@@ -6991,7 +7010,7 @@ mod tests {
 
     env.blocks.insert(block, vec![mk_id("M1"), mk_id("M2")]);
 
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut tc = TypeChecker::new(&mut env);
     let result = tc.check_const(&mk_id("M1"));
     assert!(
       result.is_err(),
@@ -7004,7 +7023,7 @@ mod tests {
   /// types must pass the peer agreement check.
   #[test]
   fn accept_mutual_peers_with_matching_param_domains() {
-    let env = Arc::new(KEnv::new());
+    let mut env = KEnv::new();
     let block = mk_id("Mut");
 
     // Both peers share the param prefix `(α : Sort 1)`.
@@ -7032,7 +7051,7 @@ mod tests {
     }
     env.blocks.insert(block, vec![mk_id("M1"), mk_id("M2")]);
 
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut tc = TypeChecker::new(&mut env);
     let result = tc.check_const(&mk_id("M1"));
     assert!(
       result.is_ok(),
@@ -7047,7 +7066,7 @@ mod tests {
   /// arm of S3b, prior to reaching domain comparison.
   #[test]
   fn reject_mutual_peers_with_mismatched_param_count() {
-    let env = Arc::new(KEnv::new());
+    let mut env = KEnv::new();
     let block = mk_id("Mut");
 
     // Peer 1: one param.
@@ -7092,7 +7111,7 @@ mod tests {
     );
     env.blocks.insert(block, vec![mk_id("M1"), mk_id("M2")]);
 
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut tc = TypeChecker::new(&mut env);
     let result = tc.check_const(&mk_id("M1"));
     assert!(
       result.is_err(),
@@ -7106,8 +7125,8 @@ mod tests {
   #[test]
   fn subst_univ_rejects_out_of_range_param() {
     use super::super::error::TcError;
-    let env = Arc::new(KEnv::<Anon>::new());
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut env = KEnv::<Anon>::new();
+    let mut tc = TypeChecker::new(&mut env);
     // Expression `Sort u` where `u = Param(0)`. Supplying zero universes
     // to substitute makes `Param(0)` out of range.
     let e = AE::sort(param(0));

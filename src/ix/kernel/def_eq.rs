@@ -22,7 +22,6 @@ use super::mode::KernelMode;
 use super::subst::lift;
 use super::tc::{
   MAX_DEF_EQ_DEPTH, MAX_WHNF_FUEL, TypeChecker, collect_app_spine,
-  empty_ctx_addr,
 };
 
 /// When set, trace every `is_def_eq` call where one side's head constant
@@ -56,7 +55,7 @@ static IX_PROJ_DELTA_TRACE: LazyLock<Option<String>> =
 static DEF_EQ_COUNT: std::sync::atomic::AtomicUsize =
   std::sync::atomic::AtomicUsize::new(0);
 
-impl<M: KernelMode> TypeChecker<M> {
+impl<M: KernelMode> TypeChecker<'_, M> {
   /// Check definitional equality of two expressions.
   pub fn is_def_eq(
     &mut self,
@@ -106,21 +105,18 @@ impl<M: KernelMode> TypeChecker<M> {
       false
     };
 
-    // Context-aware EquivManager/cache: closed exprs (lbr==0) share across
-    // contexts. Open exprs are isolated by ctx_id because proof irrelevance
-    // can consult local types even when no let-bindings are present.
+    // Context-aware EquivManager/cache. Closed pairs use the empty context;
+    // open pairs use only the context suffix reachable from the compared
+    // expressions. This matches the WHNF/infer cache shape and avoids
+    // rechecking the same small open pair under many irrelevant outer
+    // binders in large proof terms.
     //
-    // Build `a_key` and `b_key` ONCE and reuse them throughout. The
-    // `eq_ctx` Arc is cloned once into `a_key`; `b_key` receives the
-    // remaining owned copy. `is_equiv` and `find_root_key` take by
-    // reference (see `src/ix/kernel/equiv.rs`), so no additional Arc
-    // clones are paid per method call. Any true result moves the originals
-    // into `add_equiv` before returning.
-    let eq_ctx = if a.lbr() == 0 && b.lbr() == 0 {
-      empty_ctx_addr()
-    } else {
-      self.ctx_id.clone()
-    };
+    // Build `a_key` and `b_key` ONCE and reuse them throughout.
+    // `is_equiv` and `find_root_key` take by reference (see
+    // `src/ix/kernel/equiv.rs`), so no additional key construction is paid
+    // per method call. Any true result moves the originals into `add_equiv`
+    // before returning.
+    let eq_ctx = self.def_eq_ctx_key(a, b);
     let a_key: crate::ix::kernel::equiv::EqKey = (a.hash_key(), eq_ctx.clone());
     let b_key: crate::ix::kernel::equiv::EqKey = (b.hash_key(), eq_ctx.clone());
 
@@ -161,17 +157,11 @@ impl<M: KernelMode> TypeChecker<M> {
     {
       let (rlo, rhi) = canonical_pair(a_root.0, b_root.0);
       let root_cache_key = (rlo, rhi, eq_ctx.clone());
-      let mut cached = self
-        .env
-        .def_eq_cache
-        .get(&root_cache_key)
-        .map(|v| (*v, false));
+      let mut cached =
+        self.env.def_eq_cache.get(&root_cache_key).map(|v| (*v, false));
       if cached.is_none() && cheap_mode {
-        cached = self
-          .env
-          .def_eq_cheap_cache
-          .get(&root_cache_key)
-          .map(|v| (*v, true));
+        cached =
+          self.env.def_eq_cheap_cache.get(&root_cache_key).map(|v| (*v, true));
       }
       if let Some((cached, from_cheap_cache)) = cached {
         if from_cheap_cache {
@@ -383,8 +373,14 @@ impl<M: KernelMode> TypeChecker<M> {
 
       let a_head = head_const_id(&wa);
       let b_head = head_const_id(&wb);
-      let a_delta = a_head.as_ref().is_some_and(|h| self.is_delta(h));
-      let b_delta = b_head.as_ref().is_some_and(|h| self.is_delta(h));
+      let a_delta = match &a_head {
+        Some(h) => self.is_delta(h)?,
+        None => false,
+      };
+      let b_delta = match &b_head {
+        Some(h) => self.is_delta(h)?,
+        None => false,
+      };
 
       if !a_delta && !b_delta {
         break;
@@ -411,22 +407,24 @@ impl<M: KernelMode> TypeChecker<M> {
         // "missing-head ranks above all real ranks" semantic by mapping the
         // None case to `(u8::MAX, u32::MAX)` — preserving the old `u32::MAX`
         // sentinel under the new tuple-based comparator.
-        let wa_w = a_head
-          .as_ref()
-          .map_or((u8::MAX, u32::MAX), |h| self.def_rank_id(h));
-        let wb_w = b_head
-          .as_ref()
-          .map_or((u8::MAX, u32::MAX), |h| self.def_rank_id(h));
+        let wa_w = match &a_head {
+          Some(h) => self.def_rank_id(h)?,
+          None => (u8::MAX, u32::MAX),
+        };
+        let wb_w = match &b_head {
+          Some(h) => self.def_rank_id(h)?,
+          None => (u8::MAX, u32::MAX),
+        };
 
         if wa_w == wb_w {
           // H2: Same-head-spine optimization — only for Regular hints, same head,
           // and only cache failure when spine args are actually compared (lean4lean:589-596)
           if let (Some(ah), Some(bh)) = (&a_head, &b_head)
             && ah.addr == bh.addr
-            && self.is_regular(ah)
+            && self.is_regular(ah)?
           {
             let (lo, hi) = canonical_pair(wa.hash_key(), wb.hash_key());
-            let failure_key = (lo, hi, self.ctx_id.clone());
+            let failure_key = (lo, hi, self.def_eq_ctx_key(&wa, &wb));
             if !self.env.def_eq_failure.contains(&failure_key) {
               if let Some(result) = self.try_same_head_spine(&wa, &wb)? {
                 return Ok(result);
@@ -704,6 +702,14 @@ impl<M: KernelMode> TypeChecker<M> {
 
   /// Proof irrelevance: if both are proofs of propositions (types in Prop),
   /// they're def-eq. We check type(type(a)) = Sort(0), meaning type(a) : Prop.
+  ///
+  /// The "is `a_ty` propositional?" question is delegated to
+  /// [`Self::is_prop_type`], which caches by the type's content hash so a
+  /// repeat probe on the same proposition skips the recursive
+  /// `infer ∘ whnf` chain entirely. Without that cache, every successful
+  /// proof-irrelevance call paid 2× `infer` + 1× `whnf` of overhead, even
+  /// when the inner caches were warm — empirically the dominant cost on
+  /// mathlib proof-heavy blocks.
   fn try_proof_irrel(
     &mut self,
     a: &KExpr<M>,
@@ -713,25 +719,51 @@ impl<M: KernelMode> TypeChecker<M> {
       Ok(ty) => ty,
       Err(_) => return Ok(false),
     };
-    // Check if a_ty lives in Prop: infer(a_ty) should be Sort(0)
-    let a_ty_ty = match self.with_infer_only(|tc| tc.infer(&a_ty)) {
+    if !self.is_prop_type(&a_ty)? {
+      return Ok(false);
+    }
+    let b_ty = match self.with_infer_only(|tc| tc.infer(b)) {
       Ok(ty) => ty,
       Err(_) => return Ok(false),
     };
-    let a_ty_sort = match self.whnf(&a_ty_ty) {
-      Ok(s) => s,
-      Err(_) => return Ok(false),
-    };
-    match a_ty_sort.data() {
-      ExprData::Sort(u, _) if u.is_zero() => {
-        let b_ty = match self.with_infer_only(|tc| tc.infer(b)) {
-          Ok(ty) => ty,
-          Err(_) => return Ok(false),
-        };
-        self.is_def_eq(&a_ty, &b_ty)
-      },
-      _ => Ok(false),
+    self.is_def_eq(&a_ty, &b_ty)
+  }
+
+  /// Returns true iff `ty` is a propositional type — i.e. its sort is
+  /// `Sort 0`. Memoized on `(ty.hash_key(), ctx_hash)` because the answer
+  /// is a pure function of the type and the relevant context suffix.
+  ///
+  /// On a hit this is one `FxHashMap` probe; on a miss it pays the
+  /// existing `infer ∘ whnf` chain and stores the result. Errors from
+  /// the inner chain are propagated as `Ok(false)` (treating ill-typed
+  /// metadata as non-prop), matching the previous behaviour of
+  /// `try_proof_irrel`.
+  pub(crate) fn is_prop_type(
+    &mut self,
+    ty: &KExpr<M>,
+  ) -> Result<bool, TcError<M>> {
+    let cache_key = (ty.hash_key(), self.ctx_addr_for_lbr(ty.lbr()));
+    if let Some(&cached) = self.env.is_prop_cache.get(&cache_key) {
+      self.env.perf.record_is_prop_hit();
+      return Ok(cached);
     }
+    self.env.perf.record_is_prop_miss();
+
+    // infer(ty) returns the Sort that classifies `ty`. WHNF is needed because
+    // the inferred sort may be wrapped in `mdata` or a let-bound sort
+    // synonym before being structurally `Sort u`.
+    let result = match self.with_infer_only(|tc| tc.infer(ty)) {
+      Ok(sort) => match self.whnf(&sort) {
+        Ok(reduced) => match reduced.data() {
+          ExprData::Sort(u, _) => u.is_zero(),
+          _ => false,
+        },
+        Err(_) => false,
+      },
+      Err(_) => false,
+    };
+    self.env.is_prop_cache.insert(cache_key, result);
+    Ok(result)
   }
 
   /// Unit-like type: non-recursive, 0 indices, 1 ctor with 0 fields.
@@ -755,12 +787,12 @@ impl<M: KernelMode> TypeChecker<M> {
       _ => return Ok(false),
     };
     // Check unit-like: non-recursive, 0 indices, 1 ctor with 0 fields
-    let is_unit = match self.env.get(&a_ind) {
+    let is_unit = match self.try_get_const(&a_ind)? {
       Some(KConst::Indc { is_rec, indices, ctors, .. }) => {
         if is_rec || indices != 0 || ctors.len() != 1 {
           false
         } else {
-          match self.env.get(&ctors[0]) {
+          match self.try_get_const(&ctors[0])? {
             Some(KConst::Ctor { fields, .. }) => fields == 0,
             _ => false,
           }
@@ -806,7 +838,7 @@ impl<M: KernelMode> TypeChecker<M> {
 
   /// If expression is nat-succ, return the predecessor.
   /// Matches both `Nat(n+1)` → `Nat(n)` and `Nat.succ e` → `e`.
-  fn nat_succ_of(&self, e: &KExpr<M>) -> Option<KExpr<M>> {
+  fn nat_succ_of(&mut self, e: &KExpr<M>) -> Option<KExpr<M>> {
     match e.data() {
       ExprData::Nat(v, _, _) => {
         if v.0 == num_bigint::BigUint::ZERO {
@@ -970,7 +1002,7 @@ impl<M: KernelMode> TypeChecker<M> {
       _ => return Ok(false),
     };
     // Wrap s as λ(ty). s #0
-    let s_lifted = lift(&self.env.intern, s, 1, 0);
+    let s_lifted = lift(&mut self.env.intern, s, 1, 0);
     let v0 =
       self.intern(KExpr::var(0, M::meta_field(crate::ix::env::Name::anon())));
     let body = self.intern(KExpr::app(s_lifted, v0));
@@ -1001,7 +1033,9 @@ impl<M: KernelMode> TypeChecker<M> {
     };
 
     // Head must be a constructor
-    let (induct_id, num_params, num_fields) = match self.env.get(&ctor_id) {
+    let (induct_id, num_params, num_fields) = match self
+      .try_get_const(&ctor_id)?
+    {
       Some(KConst::Ctor { induct, params, fields, .. }) => {
         (induct.clone(), u64_to_usize::<M>(params)?, u64_to_usize::<M>(fields)?)
       },
@@ -1024,7 +1058,7 @@ impl<M: KernelMode> TypeChecker<M> {
     }
 
     // Inductive must be struct-like (non-recursive, 0 indices, 1 ctor)
-    match self.env.get(&induct_id) {
+    match self.try_get_const(&induct_id)? {
       Some(KConst::Indc { is_rec, indices, ctors, .. }) => {
         if is_rec || indices != 0 || ctors.len() != 1 {
           self.dump_eta_trace(
@@ -1173,22 +1207,22 @@ impl<M: KernelMode> TypeChecker<M> {
   }
 
   /// Check if a constant is delta-reducible.
-  fn is_delta(&self, id: &KId<M>) -> bool {
-    matches!(
-      self.env.get(id),
+  fn is_delta(&mut self, id: &KId<M>) -> Result<bool, TcError<M>> {
+    Ok(matches!(
+      self.try_get_const(id)?,
       Some(KConst::Defn { kind, .. })
         if matches!(kind, DefKind::Definition | DefKind::Theorem)
-    )
+    ))
   }
 
   /// Check if a constant has Regular reducibility hints (not Abbrev or Opaque).
   /// Used to guard the same-head-spine optimization (lean4lean: dt.hints.isRegular).
-  fn is_regular(&self, id: &KId<M>) -> bool {
+  fn is_regular(&mut self, id: &KId<M>) -> Result<bool, TcError<M>> {
     use crate::ix::env::ReducibilityHints;
-    matches!(
-      self.env.get(id),
+    Ok(matches!(
+      self.try_get_const(id)?,
       Some(KConst::Defn { hints: ReducibilityHints::Regular(_), .. })
-    )
+    ))
   }
 
   /// Reducibility rank by id. Higher rank = unfold first.
@@ -1205,9 +1239,9 @@ impl<M: KernelMode> TypeChecker<M> {
   /// - `Opaque` / `Theorem` / unknown → `(0, 0)`
   /// - `Regular(h)` → `(1, h)` (ordered by height within the class)
   /// - `Abbrev` → `(2, 0)` (strictly greater than every `Regular(h)`)
-  fn def_rank_id(&self, id: &KId<M>) -> (u8, u32) {
+  fn def_rank_id(&mut self, id: &KId<M>) -> Result<(u8, u32), TcError<M>> {
     use crate::ix::env::ReducibilityHints;
-    match self.env.get(id) {
+    Ok(match self.try_get_const(id)? {
       Some(KConst::Defn { kind, hints, .. }) => match kind {
         DefKind::Opaque | DefKind::Theorem => (0, 0),
         DefKind::Definition => match hints {
@@ -1217,7 +1251,7 @@ impl<M: KernelMode> TypeChecker<M> {
         },
       },
       _ => (0, 0),
-    }
+    })
   }
 
   // -----------------------------------------------------------------------
@@ -1269,8 +1303,8 @@ impl<M: KernelMode> TypeChecker<M> {
         LazyDeltaStep::Continue => {},
         LazyDeltaStep::Unknown => {
           self.dump_proj_delta_trace("stuck", struct_id, field, a, b);
-          let pa = self.try_project_core(struct_id, field, a);
-          let pb = self.try_project_core(struct_id, field, b);
+          let pa = self.try_project_core(struct_id, field, a)?;
+          let pb = self.try_project_core(struct_id, field, b)?;
           return match (pa, pb) {
             (Some(pa), Some(pb)) => {
               self.dump_proj_delta_trace(
@@ -1299,8 +1333,14 @@ impl<M: KernelMode> TypeChecker<M> {
   ) -> Result<LazyDeltaStep, TcError<M>> {
     let a_head = head_const_id(a);
     let b_head = head_const_id(b);
-    let a_delta = a_head.as_ref().is_some_and(|h| self.is_delta(h));
-    let b_delta = b_head.as_ref().is_some_and(|h| self.is_delta(h));
+    let a_delta = match &a_head {
+      Some(h) => self.is_delta(h)?,
+      None => false,
+    };
+    let b_delta = match &b_head {
+      Some(h) => self.is_delta(h)?,
+      None => false,
+    };
 
     if !a_delta && !b_delta {
       return Ok(LazyDeltaStep::Unknown);
@@ -1325,7 +1365,7 @@ impl<M: KernelMode> TypeChecker<M> {
     } else {
       let a_id = a_head.as_ref().expect("a_delta implies head");
       let b_id = b_head.as_ref().expect("b_delta implies head");
-      let cmp = self.def_rank_id(a_id).cmp(&self.def_rank_id(b_id));
+      let cmp = self.def_rank_id(a_id)?.cmp(&self.def_rank_id(b_id)?);
       if cmp.is_gt() {
         if let Some(a2) = self.delta_unfold_one(a)? {
           *a = self.whnf_core(&a2)?;
@@ -1340,7 +1380,7 @@ impl<M: KernelMode> TypeChecker<M> {
         }
       } else {
         if a_id.addr == b_id.addr
-          && self.is_regular(a_id)
+          && self.is_regular(a_id)?
           && let Some(true) = self.try_same_head_spine(a, b)?
         {
           return Ok(LazyDeltaStep::Equal);
@@ -1371,7 +1411,7 @@ impl<M: KernelMode> TypeChecker<M> {
     struct_id: &KId<M>,
     field: u64,
     e: &KExpr<M>,
-  ) -> Option<KExpr<M>> {
+  ) -> Result<Option<KExpr<M>>, TcError<M>> {
     self.try_proj_reduce(struct_id, field, e)
   }
 
@@ -1536,7 +1576,7 @@ fn head_const_name<M: KernelMode>(e: &KExpr<M>) -> Option<String> {
   Some(format!("{id}"))
 }
 
-impl<M: KernelMode> TypeChecker<M> {
+impl<M: KernelMode> TypeChecker<'_, M> {
   fn dump_def_eq_max(
     &self,
     kind: &str,
@@ -1582,7 +1622,6 @@ impl<M: KernelMode> TypeChecker<M> {
 
 #[cfg(test)]
 mod tests {
-  use std::sync::Arc;
 
   use super::super::constant::KConst;
   use super::super::env::KEnv;
@@ -1620,8 +1659,8 @@ mod tests {
     AE::sort(AU::succ(AU::zero()))
   }
 
-  fn env_with_id() -> Arc<KEnv<Anon>> {
-    let env = Arc::new(KEnv::new());
+  fn env_with_id() -> KEnv<Anon> {
+    let mut env = KEnv::new();
     let id_ty = AE::all((), (), sort0(), sort0());
     let id_val = AE::lam((), (), sort0(), AE::var(0, ()));
     env.insert(
@@ -1645,7 +1684,7 @@ mod tests {
   /// Insert a `Defn` with the given reducibility hints under `name`, returning
   /// its `KId`. Used by `def_rank_id` ordering tests.
   fn insert_rank_def(
-    env: &Arc<KEnv<Anon>>,
+    env: &mut KEnv<Anon>,
     name: &str,
     hints: ReducibilityHints,
   ) -> KId<Anon> {
@@ -1672,38 +1711,44 @@ mod tests {
   /// the `def_weight_id : u32` encoding admitted (audit Tier 1 #3).
   #[test]
   fn def_rank_abbrev_above_saturated_regular() {
-    let env = Arc::new(KEnv::new());
-    let abbrev = insert_rank_def(&env, "abbrev", ReducibilityHints::Abbrev);
-    let regular =
-      insert_rank_def(&env, "regular", ReducibilityHints::Regular(u32::MAX));
-    let tc = TypeChecker::new(Arc::clone(&env));
+    let mut env = KEnv::new();
+    let abbrev = insert_rank_def(&mut env, "abbrev", ReducibilityHints::Abbrev);
+    let regular = insert_rank_def(
+      &mut env,
+      "regular",
+      ReducibilityHints::Regular(u32::MAX),
+    );
+    let mut tc = TypeChecker::new(&mut env);
 
-    assert!(tc.def_rank_id(&abbrev) > tc.def_rank_id(&regular));
+    assert!(
+      tc.def_rank_id(&abbrev).unwrap() > tc.def_rank_id(&regular).unwrap()
+    );
   }
 
   /// Within the `Regular` class, height orders rank monotonically.
   #[test]
   fn def_rank_regular_orders_by_height() {
-    let env = Arc::new(KEnv::new());
-    let low = insert_rank_def(&env, "low", ReducibilityHints::Regular(1));
-    let high = insert_rank_def(&env, "high", ReducibilityHints::Regular(10));
-    let tc = TypeChecker::new(Arc::clone(&env));
+    let mut env = KEnv::new();
+    let low = insert_rank_def(&mut env, "low", ReducibilityHints::Regular(1));
+    let high =
+      insert_rank_def(&mut env, "high", ReducibilityHints::Regular(10));
+    let mut tc = TypeChecker::new(&mut env);
 
-    assert!(tc.def_rank_id(&high) > tc.def_rank_id(&low));
+    assert!(tc.def_rank_id(&high).unwrap() > tc.def_rank_id(&low).unwrap());
   }
 
   #[test]
   fn def_eq_ptr_eq() {
-    let env = env_with_id();
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut env = env_with_id();
+    let mut tc = TypeChecker::new(&mut env);
     let e = sort0();
     assert!(tc.is_def_eq(&e, &e).unwrap());
   }
 
   #[test]
   fn def_eq_sort_same() {
-    let env = env_with_id();
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut env = env_with_id();
+    let mut tc = TypeChecker::new(&mut env);
     let s1 = AE::sort(AU::zero());
     let s2 = AE::sort(AU::zero());
     assert!(tc.is_def_eq(&s1, &s2).unwrap());
@@ -1711,8 +1756,8 @@ mod tests {
 
   #[test]
   fn def_eq_sort_diff() {
-    let env = env_with_id();
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut env = env_with_id();
+    let mut tc = TypeChecker::new(&mut env);
     let s0 = AE::sort(AU::zero());
     let s1 = AE::sort(AU::succ(AU::zero()));
     assert!(!tc.is_def_eq(&s0, &s1).unwrap());
@@ -1720,8 +1765,8 @@ mod tests {
 
   #[test]
   fn def_eq_const_same() {
-    let env = env_with_id();
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut env = env_with_id();
+    let mut tc = TypeChecker::new(&mut env);
     let c1 = AE::cnst(mk_id("id"), Box::new([]));
     let c2 = AE::cnst(mk_id("id"), Box::new([]));
     assert!(tc.is_def_eq(&c1, &c2).unwrap());
@@ -1729,8 +1774,8 @@ mod tests {
 
   #[test]
   fn def_eq_ignores_meta_mdata() {
-    let env = Arc::new(KEnv::<Meta>::new());
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut env = KEnv::<Meta>::new();
+    let mut tc = TypeChecker::new(&mut env);
     let id = KId::new(mk_addr("C"), mk_meta_name("C"));
     let tagged = ME::cnst_mdata(
       id.clone(),
@@ -1748,8 +1793,8 @@ mod tests {
 
   #[test]
   fn def_eq_const_diff_addr() {
-    let env = env_with_id();
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut env = env_with_id();
+    let mut tc = TypeChecker::new(&mut env);
     let c1 = AE::cnst(mk_id("a"), Box::new([]));
     let c2 = AE::cnst(mk_id("b"), Box::new([]));
     assert!(!tc.is_def_eq(&c1, &c2).unwrap());
@@ -1757,8 +1802,8 @@ mod tests {
 
   #[test]
   fn def_eq_lam_structural() {
-    let env = env_with_id();
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut env = env_with_id();
+    let mut tc = TypeChecker::new(&mut env);
     let l1 = AE::lam((), (), sort0(), AE::var(0, ()));
     let l2 = AE::lam((), (), sort0(), AE::var(0, ()));
     assert!(tc.is_def_eq(&l1, &l2).unwrap());
@@ -1766,8 +1811,8 @@ mod tests {
 
   #[test]
   fn def_eq_all_structural() {
-    let env = env_with_id();
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut env = env_with_id();
+    let mut tc = TypeChecker::new(&mut env);
     let a1 = AE::all((), (), sort0(), sort0());
     let a2 = AE::all((), (), sort0(), sort0());
     assert!(tc.is_def_eq(&a1, &a2).unwrap());
@@ -1775,8 +1820,8 @@ mod tests {
 
   #[test]
   fn def_eq_beta() {
-    let env = env_with_id();
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut env = env_with_id();
+    let mut tc = TypeChecker::new(&mut env);
     // (λ x. x)(Sort 0) ≡ Sort 0
     let lam = AE::lam((), (), sort0(), AE::var(0, ()));
     let app = AE::app(lam, sort0());
@@ -1785,8 +1830,8 @@ mod tests {
 
   #[test]
   fn def_eq_delta_unfold() {
-    let env = env_with_id();
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut env = env_with_id();
+    let mut tc = TypeChecker::new(&mut env);
     // id(Sort 0) ≡ Sort 0 (via delta + beta)
     let id_app = AE::app(AE::cnst(mk_id("id"), Box::new([])), sort0());
     assert!(tc.is_def_eq(&id_app, &sort0()).unwrap());
@@ -1794,8 +1839,8 @@ mod tests {
 
   #[test]
   fn def_eq_cache_hit() {
-    let env = env_with_id();
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut env = env_with_id();
+    let mut tc = TypeChecker::new(&mut env);
     let a = sort0();
     let b = AE::sort(AU::zero());
     assert!(tc.is_def_eq(&a, &b).unwrap());
@@ -1805,18 +1850,47 @@ mod tests {
 
   #[test]
   fn def_eq_closed_cache_ignores_context_across_checkers() {
-    let env = env_with_id();
+    let mut env = env_with_id();
     let a = AE::app(AE::cnst(mk_id("id"), Box::new([])), sort0());
     let b = sort0();
 
-    let mut tc1 = TypeChecker::new(Arc::clone(&env));
+    let mut tc1 = TypeChecker::new(&mut env);
     assert!(tc1.is_def_eq(&a, &b).unwrap());
     let cache_len = env.def_eq_cache.len();
 
-    let mut tc2 = TypeChecker::new(Arc::clone(&env));
+    let mut tc2 = TypeChecker::new(&mut env);
     tc2.push_local(sort1());
     assert!(tc2.is_def_eq(&a, &b).unwrap());
     assert_eq!(env.def_eq_cache.len(), cache_len);
+  }
+
+  #[test]
+  fn def_eq_open_cache_uses_relevant_context_suffix() {
+    let mut env = env_with_id();
+    let id = AE::cnst(mk_id("id"), Box::new([]));
+    let v0 = AE::var(0, ());
+    let id_v0 = AE::app(id, v0.clone());
+
+    {
+      let mut tc1 = TypeChecker::new(&mut env);
+      tc1.push_local(sort0()); // irrelevant outer frame
+      tc1.push_local(sort0()); // relevant innermost frame
+      assert!(tc1.is_def_eq(&id_v0, &v0).unwrap());
+    }
+    let cache_len = env.def_eq_cache.len();
+
+    {
+      let mut tc2 = TypeChecker::new(&mut env);
+      tc2.push_local(sort1()); // different irrelevant outer frame
+      tc2.push_local(sort0()); // same relevant innermost suffix
+      assert!(tc2.is_def_eq(&id_v0, &v0).unwrap());
+    }
+
+    assert_eq!(
+      env.def_eq_cache.len(),
+      cache_len,
+      "open def-eq cache should ignore irrelevant outer context frames"
+    );
   }
 
   // =========================================================================
@@ -1828,8 +1902,8 @@ mod tests {
   // =========================================================================
 
   /// Env with `P : Prop`, `p1 p2 : P`, `T : Type`, `a1 a2 : T`.
-  fn env_with_prop_and_type_axioms() -> Arc<KEnv<Anon>> {
-    let env = Arc::new(KEnv::new());
+  fn env_with_prop_and_type_axioms() -> KEnv<Anon> {
+    let mut env = KEnv::new();
 
     // P : Prop
     env.insert(
@@ -1885,8 +1959,8 @@ mod tests {
   #[test]
   fn def_eq_proof_irrelevance_prop() {
     // Two structurally distinct proofs of the same Prop type are def-eq.
-    let env = env_with_prop_and_type_axioms();
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut env = env_with_prop_and_type_axioms();
+    let mut tc = TypeChecker::new(&mut env);
     let p1 = AE::cnst(mk_id("p1"), Box::new([]));
     let p2 = AE::cnst(mk_id("p2"), Box::new([]));
     assert!(tc.is_def_eq(&p1, &p2).unwrap());
@@ -1894,8 +1968,8 @@ mod tests {
 
   #[test]
   fn def_eq_proof_irrelevance_symmetric() {
-    let env = env_with_prop_and_type_axioms();
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut env = env_with_prop_and_type_axioms();
+    let mut tc = TypeChecker::new(&mut env);
     let p1 = AE::cnst(mk_id("p1"), Box::new([]));
     let p2 = AE::cnst(mk_id("p2"), Box::new([]));
     assert!(tc.is_def_eq(&p1, &p2).unwrap());
@@ -1905,8 +1979,8 @@ mod tests {
   #[test]
   fn def_eq_no_irrelevance_for_type_level() {
     // Proof irrelevance must NOT apply to Type-valued terms.
-    let env = env_with_prop_and_type_axioms();
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut env = env_with_prop_and_type_axioms();
+    let mut tc = TypeChecker::new(&mut env);
     let a1 = AE::cnst(mk_id("a1"), Box::new([]));
     let a2 = AE::cnst(mk_id("a2"), Box::new([]));
     assert!(!tc.is_def_eq(&a1, &a2).unwrap());
@@ -1921,8 +1995,8 @@ mod tests {
   // =========================================================================
 
   /// Env with `Unit : Sort 0` (0 indices, 1 ctor Unit.mk with 0 fields).
-  fn env_with_unit_like() -> Arc<KEnv<Anon>> {
-    let env = Arc::new(KEnv::new());
+  fn env_with_unit_like() -> KEnv<Anon> {
+    let mut env = KEnv::new();
 
     // Unit.mk : Unit
     env.insert(
@@ -1979,8 +2053,8 @@ mod tests {
   #[test]
   fn def_eq_unit_like_distinct_values() {
     // Two distinct inhabitants of a unit-like inductive are def-eq.
-    let env = env_with_unit_like();
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut env = env_with_unit_like();
+    let mut tc = TypeChecker::new(&mut env);
     let u1 = AE::cnst(mk_id("u1"), Box::new([]));
     let u2 = AE::cnst(mk_id("u2"), Box::new([]));
     assert!(tc.is_def_eq(&u1, &u2).unwrap());
@@ -1990,8 +2064,8 @@ mod tests {
   fn def_eq_unit_like_ctor_and_opaque() {
     // The explicit constructor and an opaque axiom of the same unit-like
     // type are def-eq.
-    let env = env_with_unit_like();
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut env = env_with_unit_like();
+    let mut tc = TypeChecker::new(&mut env);
     let mk = AE::cnst(mk_id("Unit.mk"), Box::new([]));
     let u1 = AE::cnst(mk_id("u1"), Box::new([]));
     assert!(tc.is_def_eq(&mk, &u1).unwrap());
@@ -2004,8 +2078,8 @@ mod tests {
   // =========================================================================
 
   /// Env with `A : Type 0`, `B : Type 0`, `f : A → B`.
-  fn env_with_fun() -> Arc<KEnv<Anon>> {
-    let env = Arc::new(KEnv::new());
+  fn env_with_fun() -> KEnv<Anon> {
+    let mut env = KEnv::new();
     env.insert(
       mk_id("A"),
       KConst::Axio {
@@ -2047,8 +2121,8 @@ mod tests {
   #[test]
   fn def_eq_eta_lambda_wraps_function() {
     // f ≡ λ (x : A), f x
-    let env = env_with_fun();
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut env = env_with_fun();
+    let mut tc = TypeChecker::new(&mut env);
     let f = AE::cnst(mk_id("f"), Box::new([]));
     // Lifting `f` by 1 is a no-op because it's closed.
     let eta = AE::lam(
@@ -2063,8 +2137,8 @@ mod tests {
   #[test]
   fn def_eq_eta_lambda_symmetric() {
     // λ x, f x ≡ f (reverse direction)
-    let env = env_with_fun();
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut env = env_with_fun();
+    let mut tc = TypeChecker::new(&mut env);
     let f = AE::cnst(mk_id("f"), Box::new([]));
     let eta = AE::lam(
       (),
@@ -2078,7 +2152,7 @@ mod tests {
   #[test]
   fn def_eq_eta_lambda_fails_on_non_function() {
     // `a : A` is not a function — η-expanding makes no sense, must NOT fire.
-    let env = env_with_fun();
+    let mut env = env_with_fun();
     env.insert(
       mk_id("a"),
       KConst::Axio {
@@ -2089,7 +2163,7 @@ mod tests {
         ty: AE::cnst(mk_id("A"), Box::new([])),
       },
     );
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut tc = TypeChecker::new(&mut env);
     let a = AE::cnst(mk_id("a"), Box::new([]));
     // A bogus "eta-like" wrapping of a non-function.
     let bogus = AE::lam(
@@ -2110,8 +2184,8 @@ mod tests {
   // =========================================================================
 
   /// Env with `Pair : Type 0` whose only ctor `Pair.mk : A → B → Pair`.
-  fn env_with_pair_struct() -> Arc<KEnv<Anon>> {
-    let env = Arc::new(KEnv::new());
+  fn env_with_pair_struct() -> KEnv<Anon> {
+    let mut env = KEnv::new();
 
     env.insert(
       mk_id("A"),
@@ -2208,8 +2282,8 @@ mod tests {
   #[test]
   fn def_eq_struct_eta_via_projections() {
     // p ≡ Pair.mk p.1 p.2
-    let env = env_with_pair_struct();
-    let mut tc = TypeChecker::new(Arc::clone(&env));
+    let mut env = env_with_pair_struct();
+    let mut tc = TypeChecker::new(&mut env);
     let p = AE::cnst(mk_id("p"), Box::new([]));
     let proj0 = AE::prj(mk_id("Pair"), 0, p.clone());
     let proj1 = AE::prj(mk_id("Pair"), 1, p.clone());

@@ -66,7 +66,7 @@ pub(crate) fn generate_brecon_constants(
   lean_env: &LeanEnv,
   is_prop: bool,
   stt: &crate::ix::compile::CompileState,
-  kctx: &crate::ix::compile::KernelCtx,
+  kctx: &mut crate::ix::compile::KernelCtx,
 ) -> Result<Vec<BRecOnDef>, CompileError> {
   let n_classes = sorted_classes.len();
   if n_classes == 0 || canonical_recs.is_empty() || below_consts.is_empty() {
@@ -624,7 +624,7 @@ fn build_type_brecon_fvar(
   lean_env: &LeanEnv,
   n_classes: usize,
   stt: &crate::ix::compile::CompileState,
-  kctx: &crate::ix::compile::KernelCtx,
+  kctx: &mut crate::ix::compile::KernelCtx,
 ) -> Result<Vec<BRecOnDef>, CompileError> {
   // canon_kenv is populated by `populate_canon_kenv_with_below` in
   // aux_gen.rs between Phase 2 and Phase 3. It contains PUnit, PProd,
@@ -1442,7 +1442,7 @@ fn build_type_brecon_eq_fvar(
   // `build_minor_via_cases_sim`'s remaining list.
   rec_level_params: &[Name],
   stt: &crate::ix::compile::CompileState,
-  kctx: &crate::ix::compile::KernelCtx,
+  kctx: &mut crate::ix::compile::KernelCtx,
 ) -> Option<(LeanExpr, LeanExpr)> {
   // .brecOn.eq requires Eq and Eq.refl as constants. In the full pipeline,
   // aux_gen is only called when the original Lean environment has these
@@ -1786,7 +1786,7 @@ fn build_indexed_eq_value(
   // `refs/lean4/src/Lean/Meta/Tactic/Cases.lean:30-37`).
   rec_level_params: &[Name],
   stt: &crate::ix::compile::CompileState,
-  kctx: &crate::ix::compile::KernelCtx,
+  kctx: &mut crate::ix::compile::KernelCtx,
 ) -> Option<LeanExpr> {
   let n_indices = index_decls.len();
   let outer_major = &major_fvars[0];

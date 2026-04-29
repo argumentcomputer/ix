@@ -1,24 +1,28 @@
 //! TypeChecker struct and core helpers.
 //!
-//! The TypeChecker is a lightweight thread-local handle for type-checking.
-//! All shared state (caches, intern table, constants) lives in `KEnv` and
-//! is accessed through `self.env`. Multiple TypeChecker instances can run
-//! in parallel, all sharing one `Arc<KEnv>`.
+//! The TypeChecker is a lightweight handle for type-checking against one
+//! worker-owned `KEnv`.
 //!
 //! WHNF, type inference, def-eq, and constant checking are in separate modules
 //! that add `impl TypeChecker` blocks.
 
-use std::sync::{Arc, LazyLock};
+use std::sync::LazyLock;
 
 use rustc_hash::FxHashMap;
+use rustc_hash::FxHashSet;
 
 use crate::ix::address::Address;
+use crate::ix::ixon::env::Env as IxonEnv;
 
-use super::constant::RecRule;
-use super::env::{Addr, KEnv, intern_addr};
+use super::constant::{KConst, RecRule};
+use super::env::{Addr, KEnv};
 use super::equiv::EquivManager;
 use super::error::{TcError, u64_to_usize};
 use super::expr::{ExprData, KExpr};
+use super::id::KId;
+use super::ingress::{
+  IxonIngressLookups, ingress_addr_shallow_into_kenv_with_lookups,
+};
 use super::level::{KUniv, UnivData};
 use super::mode::KernelMode;
 use super::primitive::Primitives;
@@ -28,8 +32,8 @@ use super::subst::lift;
 pub fn empty_ctx_addr() -> Addr {
   use std::sync::LazyLock;
   static ADDR: LazyLock<Addr> =
-    LazyLock::new(|| intern_addr(blake3::hash(b"ix.kernel.ctx.empty")));
-  ADDR.clone()
+    LazyLock::new(|| blake3::hash(b"ix.kernel.ctx.empty"));
+  *ADDR
 }
 
 /// Maximum iterations in the WHNF delta loop (local per-call).
@@ -45,7 +49,12 @@ pub const MAX_DEF_EQ_DEPTH: u32 = 2_000;
 /// by interpreting their full expression trees. In particular, BVDecide's
 /// generated mutual proofs can legitimately exceed one million recursive
 /// kernel steps even after cache hits stop consuming fuel.
-pub const MAX_REC_FUEL: u64 = 1_500_000;
+///
+/// Mathlib-scale category/algebra proof terms also exceed the old 1.5M budget
+/// without hitting the actual `MAX_DEF_EQ_DEPTH` guard. Keep this high enough
+/// for legitimate large proofs while retaining the `IX_MAX_REC_FUEL` override
+/// for bisecting suspected loops.
+pub const MAX_REC_FUEL: u64 = 10_000_000;
 
 static IX_MAX_REC_FUEL: LazyLock<Option<u64>> = LazyLock::new(|| {
   std::env::var("IX_MAX_REC_FUEL").ok().and_then(|s| s.parse().ok())
@@ -68,11 +77,20 @@ pub struct IotaInfo<M: KernelMode> {
   pub lvls: u64,
 }
 
+pub struct LazyIxonIngress<'a> {
+  ixon_env: &'a IxonEnv,
+  lookups: &'a IxonIngressLookups,
+  faulted_addrs: FxHashSet<Address>,
+}
+
 /// Thread-local type-checking handle. Cheap to create — only allocates empty
-/// vectors and counters. All shared state lives in `Arc<KEnv>`.
-pub struct TypeChecker<M: KernelMode> {
-  /// Shared kernel environment (constants, caches, intern table).
-  pub env: Arc<KEnv<M>>,
+/// vectors and counters. Kernel state lives in the borrowed worker `KEnv`.
+pub struct TypeChecker<'a, M: KernelMode> {
+  /// Worker-owned kernel environment (constants, caches, intern table).
+  pub env: &'a mut KEnv<M>,
+  /// Optional read-only Ixon source used to fault constants into `env` when
+  /// typechecking discovers a missing address.
+  lazy_ixon: Option<LazyIxonIngress<'a>>,
   /// Primitive constant KIds. Copied from `env.prims()` at construction;
   /// overridable for tests via `tc.prims = custom`.
   pub prims: Primitives<M>,
@@ -125,13 +143,28 @@ pub struct TypeChecker<M: KernelMode> {
   pub nat_iota_run: u32,
   /// Optional diagnostic label for the current top-level constant.
   pub debug_label: Option<String>,
+
+  /// Memoization cache for [`Self::ctx_addr_for_lbr`].
+  ///
+  /// `ctx_addr_for_lbr(lbr)` is a pure function of `(self.ctx_id, lbr)`:
+  /// the function walks `self.ctx` from a depth-derived start, runs a
+  /// fixpoint over loose-bound-variable closures, and finalizes a blake3
+  /// hash of the suffix. With millions of cache probes per big mathlib
+  /// block (each `whnf_key` / `infer_key` / `def_eq_ctx_key` triggers
+  /// one), this dominates lookup overhead. Memoizing on `(ctx_id, lbr)`
+  /// is sound because two contexts sharing the same `ctx_id` are bytewise
+  /// equal in the suffix-relevant prefix (`ctx_id` content-addresses the
+  /// full context). The cache lifetime is the `TypeChecker` (one per
+  /// `check_const`), so it is automatically reclaimed.
+  ctx_addr_cache: FxHashMap<(Addr, u64), Addr>,
 }
 
-impl<M: KernelMode> TypeChecker<M> {
-  pub fn new(env: Arc<KEnv<M>>) -> Self {
+impl<'a, M: KernelMode> TypeChecker<'a, M> {
+  pub fn new(env: &'a mut KEnv<M>) -> Self {
     let prims = env.prims().clone();
     TypeChecker {
       env,
+      lazy_ixon: None,
       prims,
       ctx: Vec::new(),
       let_vals: Vec::new(),
@@ -150,7 +183,84 @@ impl<M: KernelMode> TypeChecker<M> {
       nat_iota_last: None,
       nat_iota_run: 0,
       debug_label: None,
+      ctx_addr_cache: FxHashMap::default(),
     }
+  }
+
+  pub fn new_with_lazy_ixon(
+    env: &'a mut KEnv<M>,
+    ixon_env: &'a IxonEnv,
+    lookups: &'a IxonIngressLookups,
+  ) -> Self {
+    if !env.has_prims() {
+      let prims = Primitives::from_addr_names(|addr| {
+        lookups.name_for_addr(addr).cloned()
+      });
+      let _ = env.set_prims(prims);
+    }
+    let mut tc = Self::new(env);
+    tc.lazy_ixon = Some(LazyIxonIngress {
+      ixon_env,
+      lookups,
+      faulted_addrs: FxHashSet::default(),
+    });
+    tc
+  }
+
+  pub fn try_get_const(
+    &mut self,
+    id: &KId<M>,
+  ) -> Result<Option<KConst<M>>, TcError<M>> {
+    if let Some(c) = self.env.get(id) {
+      return Ok(Some(c));
+    }
+    let lazy_enabled = self.lazy_ixon.is_some();
+    self.lazy_ingress_addr(&id.addr)?;
+    match self.env.get(id) {
+      Some(c) => Ok(Some(c)),
+      None if lazy_enabled => Err(TcError::UnknownConst(id.addr.clone())),
+      None => Ok(None),
+    }
+  }
+
+  pub fn get_const(&mut self, id: &KId<M>) -> Result<KConst<M>, TcError<M>> {
+    self
+      .try_get_const(id)?
+      .ok_or_else(|| TcError::UnknownConst(id.addr.clone()))
+  }
+
+  pub fn has_const(&mut self, id: &KId<M>) -> Result<bool, TcError<M>> {
+    Ok(self.try_get_const(id)?.is_some())
+  }
+
+  pub fn try_get_block(
+    &mut self,
+    id: &KId<M>,
+  ) -> Result<Option<Vec<KId<M>>>, TcError<M>> {
+    if let Some(members) = self.env.get_block(id) {
+      return Ok(Some(members));
+    }
+    self.lazy_ingress_addr(&id.addr)?;
+    Ok(self.env.get_block(id))
+  }
+
+  fn lazy_ingress_addr(&mut self, addr: &Address) -> Result<(), TcError<M>> {
+    let Some(lazy) = self.lazy_ixon.as_mut() else {
+      return Ok(());
+    };
+    if !lazy.faulted_addrs.insert(addr.clone()) {
+      return Ok(());
+    }
+    ingress_addr_shallow_into_kenv_with_lookups(
+      self.env,
+      lazy.ixon_env,
+      lazy.lookups,
+      addr,
+    )
+    .map(|_| ())
+    .map_err(|msg| {
+      TcError::Other(format!("lazy ingress {}: {msg}", addr.hex()))
+    })
   }
 
   // -----------------------------------------------------------------------
@@ -182,7 +292,7 @@ impl<M: KernelMode> TypeChecker<M> {
   /// Sharing two distinct outer contexts that share a relevant suffix is the
   /// payoff: the same WHNF subterm can hit cache across them.
   #[inline]
-  pub fn whnf_key(&self, e: &KExpr<M>) -> (Addr, Addr) {
+  pub fn whnf_key(&mut self, e: &KExpr<M>) -> (Addr, Addr) {
     (e.hash_key(), self.ctx_addr_for_lbr(e.lbr()))
   }
 
@@ -193,13 +303,34 @@ impl<M: KernelMode> TypeChecker<M> {
   /// dependencies, so two equal open subterms can share an infer result across
   /// different outer binders when the relevant local suffix is identical.
   #[inline]
-  pub fn infer_key(&self, e: &KExpr<M>) -> (Addr, Addr) {
+  pub fn infer_key(&mut self, e: &KExpr<M>) -> (Addr, Addr) {
     (e.hash_key(), self.ctx_addr_for_lbr(e.lbr()))
   }
 
-  pub(crate) fn ctx_addr_for_lbr(&self, lbr: u64) -> Addr {
+  /// Context key for a definitional-equality pair.
+  ///
+  /// Def-eq may inspect both sides through WHNF, inference, proof
+  /// irrelevance, eta, and structural recursion. All of those operations are
+  /// bounded by the loose-bound-variable range reachable from the compared
+  /// expressions, so the relevant context is the suffix needed by the larger
+  /// `lbr`.
+  #[inline]
+  pub fn def_eq_ctx_key(&mut self, a: &KExpr<M>, b: &KExpr<M>) -> Addr {
+    self.ctx_addr_for_lbr(a.lbr().max(b.lbr()))
+  }
+
+  pub(crate) fn ctx_addr_for_lbr(&mut self, lbr: u64) -> Addr {
     if lbr == 0 || self.ctx.is_empty() {
       return empty_ctx_addr();
+    }
+
+    // Memoize on (ctx_id, lbr) — the result is a pure function of these
+    // two inputs (ctx_id content-addresses the suffix-relevant prefix of
+    // self.ctx). Hot path on big mathlib blocks; called once per
+    // whnf_key / infer_key / def_eq_ctx_key.
+    let cache_key = (self.ctx_id, lbr);
+    if let Some(cached) = self.ctx_addr_cache.get(&cache_key) {
+      return *cached;
     }
 
     let n = self.ctx.len();
@@ -224,27 +355,30 @@ impl<M: KernelMode> TypeChecker<M> {
       need = next_need;
     }
 
-    if need == n {
-      return self.ctx_id.clone();
-    }
-
-    let mut h = blake3::Hasher::new();
-    h.update(b"ctx.suffix");
-    h.update(&(need as u64).to_le_bytes());
-    for i in (n - need)..n {
-      match &self.let_vals[i] {
-        Some(val) => {
-          h.update(b"let");
-          h.update(self.ctx[i].addr().as_bytes());
-          h.update(val.addr().as_bytes());
-        },
-        None => {
-          h.update(b"local");
-          h.update(self.ctx[i].addr().as_bytes());
-        },
+    let result = if need == n {
+      self.ctx_id
+    } else {
+      let mut h = blake3::Hasher::new();
+      h.update(b"ctx.suffix");
+      h.update(&(need as u64).to_le_bytes());
+      for i in (n - need)..n {
+        match &self.let_vals[i] {
+          Some(val) => {
+            h.update(b"let");
+            h.update(self.ctx[i].addr().as_bytes());
+            h.update(val.addr().as_bytes());
+          },
+          None => {
+            h.update(b"local");
+            h.update(self.ctx[i].addr().as_bytes());
+          },
+        }
       }
-    }
-    intern_addr(h.finalize())
+      h.finalize()
+    };
+
+    self.ctx_addr_cache.insert(cache_key, result);
+    result
   }
 
   /// Push a local variable type (lambda/forall binding, no let-value).
@@ -253,8 +387,8 @@ impl<M: KernelMode> TypeChecker<M> {
     h.update(b"ctx.local");
     h.update(ty.addr().as_bytes());
     h.update(self.ctx_id.as_bytes());
-    self.ctx_id_stack.push(self.ctx_id.clone());
-    self.ctx_id = intern_addr(h.finalize());
+    self.ctx_id_stack.push(self.ctx_id);
+    self.ctx_id = h.finalize();
     self.ctx.push(ty);
     self.let_vals.push(None);
   }
@@ -267,8 +401,8 @@ impl<M: KernelMode> TypeChecker<M> {
     h.update(ty.addr().as_bytes());
     h.update(val.addr().as_bytes());
     h.update(self.ctx_id.as_bytes());
-    self.ctx_id_stack.push(self.ctx_id.clone());
-    self.ctx_id = intern_addr(h.finalize());
+    self.ctx_id_stack.push(self.ctx_id);
+    self.ctx_id = h.finalize();
     self.ctx.push(ty);
     self.let_vals.push(Some(val));
     self.num_let_bindings += 1;
@@ -293,7 +427,7 @@ impl<M: KernelMode> TypeChecker<M> {
     }
     let level = n - 1 - idx_us;
     let val = self.let_vals[level].as_ref()?.clone();
-    Some(lift(&self.env.intern, &val, idx + 1, 0))
+    Some(lift(&mut self.env.intern, &val, idx + 1, 0))
   }
 
   /// Save current depth for later restore.
@@ -317,7 +451,7 @@ impl<M: KernelMode> TypeChecker<M> {
     }
     let level = n - 1 - idx_us;
     let ty = self.ctx[level].clone();
-    Ok(lift(&self.env.intern, &ty, idx + 1, 0))
+    Ok(lift(&mut self.env.intern, &ty, idx + 1, 0))
   }
 
   // -----------------------------------------------------------------------
@@ -510,14 +644,8 @@ impl<M: KernelMode> TypeChecker<M> {
     self.def_eq_depth = 0;
     self.def_eq_peak = 0;
     // Record fuel consumed by the *previous* constant check (if any) before
-    // wiping it — this is per-constant peak/total tracking for audit §10
-    // measurements. No-op when IX_PERF_COUNTERS is unset. We use
-    // saturating_sub so a fresh TypeChecker (rec_fuel == max) records zero
-    // rather than panicking on underflow.
-    let used = max_rec_fuel().saturating_sub(self.rec_fuel);
-    if used > 0 {
-      self.env.perf.record_constant_fuel_used(used);
-    }
+    // wiping it. `Drop` records the final check in a TypeChecker's lifetime.
+    self.record_current_fuel_used();
     self.rec_fuel = max_rec_fuel();
     self.nat_iota_large_expansions = 0;
     self.nat_iota_last = None;
@@ -556,7 +684,7 @@ impl<M: KernelMode> TypeChecker<M> {
         );
         eprintln!("{}", std::backtrace::Backtrace::force_capture());
       }
-      return Err(TcError::MaxRecDepth);
+      return Err(TcError::MaxRecFuel);
     }
     self.rec_fuel -= 1;
     Ok(())
@@ -566,6 +694,18 @@ impl<M: KernelMode> TypeChecker<M> {
   /// to report fuel consumed at a given point.
   pub fn fuel_used(&self) -> u64 {
     max_rec_fuel().saturating_sub(self.rec_fuel)
+  }
+
+  pub fn finish_constant_accounting(&mut self) {
+    self.record_current_fuel_used();
+    self.rec_fuel = max_rec_fuel();
+  }
+
+  fn record_current_fuel_used(&mut self) {
+    let used = self.fuel_used();
+    if used > 0 {
+      self.env.perf.record_constant_fuel_used(used);
+    }
   }
 
   // -----------------------------------------------------------------------
@@ -662,10 +802,28 @@ pub fn expr_mentions_any_addr<M: KernelMode>(
 }
 
 /// Collect the application spine: `App(App(f, a1), a2)` → `(f, [a1, a2])`.
+///
+/// Counts args first so the result `Vec` is allocated exactly once with
+/// the correct capacity, sparing the first-push grow allocation on the
+/// hot path. Most applications in mathlib have 1–8 args, so the count
+/// pass is cheap (a chain walk) and saves one allocation + memcpy
+/// compared to repeatedly growing from the default capacity.
 pub fn collect_app_spine<M: KernelMode>(
   e: &KExpr<M>,
 ) -> (KExpr<M>, Vec<KExpr<M>>) {
-  let mut args = Vec::new();
+  // First pass: count arity without cloning.
+  let mut count = 0usize;
+  {
+    let mut cur = e;
+    while let ExprData::App(f, _, _) = cur.data() {
+      count += 1;
+      cur = f;
+    }
+  }
+  if count == 0 {
+    return (e.clone(), Vec::new());
+  }
+  let mut args = Vec::with_capacity(count);
   let mut cur = e.clone();
   while let ExprData::App(f, a, _) = cur.data() {
     args.push(a.clone());
@@ -684,8 +842,9 @@ mod tests {
   use crate::ix::address::Address;
   use crate::ix::kernel::mode::Meta;
 
-  fn new_tc() -> TypeChecker<Meta> {
-    TypeChecker::new(Arc::new(KEnv::<Meta>::new()))
+  fn new_tc() -> TypeChecker<'static, Meta> {
+    let env = Box::leak(Box::new(KEnv::<Meta>::new()));
+    TypeChecker::new(env)
   }
 
   // ---- Context push/pop ----
@@ -805,7 +964,7 @@ mod tests {
 
   #[test]
   fn whnf_key_empty_ctx_for_closed_expr() {
-    let tc = new_tc();
+    let mut tc = new_tc();
     let e = sort0();
     let (h, ctx) = tc.whnf_key(&e);
     assert_eq!(h, e.hash_key());
@@ -869,7 +1028,10 @@ mod tests {
     let (h1, ctx1) = tc1.whnf_key(&e);
     let (h2, ctx2) = tc2.whnf_key(&e);
     assert_eq!(h1, h2);
-    assert_eq!(ctx1, ctx2, "suffix-aware key should match across different outers");
+    assert_eq!(
+      ctx1, ctx2,
+      "suffix-aware key should match across different outers"
+    );
     assert_ne!(ctx1, empty_ctx_addr());
   }
 
@@ -991,8 +1153,8 @@ mod tests {
     assert!(tc.tick().is_ok());
     assert!(tc.tick().is_ok());
     match tc.tick() {
-      Err(TcError::MaxRecDepth) => {},
-      other => panic!("expected MaxRecDepth, got {other:?}"),
+      Err(TcError::MaxRecFuel) => {},
+      other => panic!("expected MaxRecFuel, got {other:?}"),
     }
   }
 
@@ -1001,8 +1163,8 @@ mod tests {
     let mut tc = new_tc();
     tc.rec_fuel = 0;
     match tc.tick() {
-      Err(TcError::MaxRecDepth) => {},
-      other => panic!("expected MaxRecDepth at zero fuel, got {other:?}"),
+      Err(TcError::MaxRecFuel) => {},
+      other => panic!("expected MaxRecFuel at zero fuel, got {other:?}"),
     }
   }
 

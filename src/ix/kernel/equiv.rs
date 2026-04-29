@@ -138,12 +138,10 @@ impl EquivManager {
 
 #[cfg(test)]
 mod tests {
-  use std::sync::Arc;
-
   use super::*;
 
   fn addr(n: u64) -> Addr {
-    Arc::new(blake3::hash(&n.to_le_bytes()))
+    blake3::hash(&n.to_le_bytes())
   }
 
   #[test]

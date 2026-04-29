@@ -210,17 +210,15 @@ pub extern "C" fn rs_compile_env_full(
     let condensed = compute_sccs(&ref_graph.out_refs);
 
     // Phase 3: Compile
-    let compile_stt = match compile_env_with_options(
-      &rust_env,
-      CompileOptions { check_originals: false, ..Default::default() },
-    ) {
-      Ok(stt) => stt,
-      Err(e) => {
-        let msg =
-          format!("rs_compile_env_full: Rust compilation failed: {:?}", e);
-        return LeanIOResult::error_string(&msg);
-      },
-    };
+    let compile_stt =
+      match compile_env_with_options(&rust_env, CompileOptions::default()) {
+        Ok(stt) => stt,
+        Err(e) => {
+          let msg =
+            format!("rs_compile_env_full: Rust compilation failed: {:?}", e);
+          return LeanIOResult::error_string(&msg);
+        },
+      };
 
     // Phase 4: Build Lean structures
     let mut cache = LeanBuildCache::with_capacity(env_len);
@@ -307,16 +305,14 @@ pub extern "C" fn rs_compile_env(
     let rust_env = decode_env(env_consts_ptr);
     let rust_env = Arc::new(rust_env);
 
-    let compile_stt = match compile_env_with_options(
-      &rust_env,
-      CompileOptions { check_originals: false, ..Default::default() },
-    ) {
-      Ok(stt) => stt,
-      Err(e) => {
-        let msg = format!("rs_compile_env: Rust compilation failed: {:?}", e);
-        return LeanIOResult::error_string(&msg);
-      },
-    };
+    let compile_stt =
+      match compile_env_with_options(&rust_env, CompileOptions::default()) {
+        Ok(stt) => stt,
+        Err(e) => {
+          let msg = format!("rs_compile_env: Rust compilation failed: {:?}", e);
+          return LeanIOResult::error_string(&msg);
+        },
+      };
 
     // Serialize the compiled Env to bytes
     if !quiet {
@@ -425,16 +421,14 @@ pub extern "C" fn rs_compile_phases(
 
     let condensed_obj = LeanIxCondensedBlocks::build(&mut cache, &condensed);
 
-    let compile_stt = match compile_env_with_options(
-      &rust_env,
-      CompileOptions { check_originals: false, ..Default::default() },
-    ) {
-      Ok(stt) => stt,
-      Err(e) => {
-        let msg = format!("rs_compile_phases: compilation failed: {:?}", e);
-        return LeanIOResult::error_string(&msg);
-      },
-    };
+    let compile_stt =
+      match compile_env_with_options(&rust_env, CompileOptions::default()) {
+        Ok(stt) => stt,
+        Err(e) => {
+          let msg = format!("rs_compile_phases: compilation failed: {:?}", e);
+          return LeanIOResult::error_string(&msg);
+        },
+      };
 
     // Build Lean objects from compile results
     let consts: Vec<_> = compile_stt
@@ -518,17 +512,15 @@ pub extern "C" fn rs_compile_env_to_ixon(
     let rust_env = decode_env(env_consts_ptr);
     let rust_env = Arc::new(rust_env);
 
-    let compile_stt = match compile_env_with_options(
-      &rust_env,
-      CompileOptions { check_originals: false, ..Default::default() },
-    ) {
-      Ok(stt) => stt,
-      Err(e) => {
-        let msg =
-          format!("rs_compile_env_to_ixon: compilation failed: {:?}", e);
-        return LeanIOResult::error_string(&msg);
-      },
-    };
+    let compile_stt =
+      match compile_env_with_options(&rust_env, CompileOptions::default()) {
+        Ok(stt) => stt,
+        Err(e) => {
+          let msg =
+            format!("rs_compile_env_to_ixon: compilation failed: {:?}", e);
+          return LeanIOResult::error_string(&msg);
+        },
+      };
 
     let mut cache = LeanBuildCache::with_capacity(rust_env.len());
 
@@ -695,15 +687,13 @@ extern "C" fn rs_compile_env_rust_first(
   let lean_env = Arc::new(lean_env);
 
   // Compile with Rust
-  let rust_stt = match compile_env_with_options(
-    &lean_env,
-    CompileOptions { check_originals: false, ..Default::default() },
-  ) {
-    Ok(stt) => stt,
-    Err(_e) => {
-      return std::ptr::null_mut();
-    },
-  };
+  let rust_stt =
+    match compile_env_with_options(&lean_env, CompileOptions::default()) {
+      Ok(stt) => stt,
+      Err(_e) => {
+        return std::ptr::null_mut();
+      },
+    };
 
   // Build block map: lowlink name -> (serialized bytes, sharing len)
   let mut blocks: HashMap<Name, (Vec<u8>, usize)> = HashMap::new();

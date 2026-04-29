@@ -178,39 +178,9 @@ pub fn compile_env_with_options(
     );
   }
 
-  // Optionally build the shared **original** kenv up-front via
-  // `lean_ingress`. This is a full snapshot of the input Lean env with
-  // every constant at its LEON content-hash address
-  // (`ConstantInfo::get_hash()`), all type references self-consistent, and
-  // no alpha-collapse/aux rewriting applied.
-  //
-  // That snapshot is only needed for adversarial raw-constant validation.
-  // Normal callers compile trusted Lean environments; building a second
-  // kernel-form copy of all Mathlib declarations roughly doubles retained
-  // expression memory and is not needed for aux_gen correctness.
-  let phase_start = Instant::now();
-  let orig_kenv = if options.check_originals {
-    Arc::new(crate::ix::kernel::ingress::lean_ingress(lean_env))
-  } else {
-    Arc::new(crate::ix::kernel::env::KEnv::new())
-  };
-  if !*IX_QUIET {
-    if options.check_originals {
-      eprintln!(
-        "[compile_env] setup 4/7 lean_ingress (orig_kenv): {:.2}s",
-        phase_start.elapsed().as_secs_f32()
-      );
-    } else {
-      eprintln!("[compile_env] setup 4/7 lean_ingress (orig_kenv): skipped");
-    }
-  }
-  let kctx = crate::ix::compile::KernelCtx::new().with_originals(orig_kenv);
-
   let stt = CompileState {
     lean_env: Some(lean_env.clone()),
     ungrounded: ungrounded_map,
-    kctx,
-    check_originals: options.check_originals,
     ..Default::default()
   };
 
@@ -485,6 +455,7 @@ pub fn compile_env_with_options(
     // Spawn worker threads
     for _ in 0..num_threads {
       s.spawn(move || {
+        let mut worker_kctx = crate::ix::compile::KernelCtx::new();
         loop {
           // Try to get work from the ready queue
           let work = {
@@ -585,6 +556,7 @@ pub fn compile_env_with_options(
                             lean_env,
                             &mut cache,
                             stt_ref,
+                            &mut worker_kctx,
                           )
                         },
                       );
@@ -627,6 +599,7 @@ pub fn compile_env_with_options(
                         lean_env,
                         &mut orig_cache,
                         stt_ref,
+                        &mut worker_kctx,
                       )
                     },
                   );
@@ -668,7 +641,16 @@ pub fn compile_env_with_options(
                 let res = run_compile_catching_panic(
                   &lo,
                   "compile_const",
-                  || compile_const(&lo, &all, lean_env, &mut cache, stt_ref),
+                  || {
+                    compile_const(
+                      &lo,
+                      &all,
+                      lean_env,
+                      &mut cache,
+                      stt_ref,
+                      &mut worker_kctx,
+                    )
+                  },
                 );
                 if let Err(e) = res {
                   // Record the failure per-member and fall through. The
@@ -1029,6 +1011,7 @@ fn precompile_aux_gen_prereqs(
 
   // Compile each SCC in dep-first order, moving compiled names to
   // `aux_name_to_addr` so later SCCs can resolve their Const refs.
+  let mut prereq_kctx = crate::ix::compile::KernelCtx::new();
   for rep in order {
     if stt.aux_name_to_addr.contains_key(&rep) {
       continue; // Already compiled (e.g., via a prior prereq run).
@@ -1038,8 +1021,8 @@ fn precompile_aux_gen_prereqs(
       None => continue,
     };
     let mut cache = BlockCache::default();
-    compile_const(&rep, &all, lean_env, &mut cache, stt).map_err(|e| {
-      CompileError::InvalidMutualBlock {
+    compile_const(&rep, &all, lean_env, &mut cache, stt, &mut prereq_kctx)
+      .map_err(|e| CompileError::InvalidMutualBlock {
         reason: format!(
           "aux_gen prereq pre-compile failed for SCC '{}' ({} members): \
            {:?}. The SCC closure is traversed in reverse-topological \
@@ -1052,8 +1035,7 @@ fn precompile_aux_gen_prereqs(
           all.len(),
           e,
         ),
-      }
-    })?;
+      })?;
     // Move compiled names → aux_name_to_addr. The scheduler can still
     // re-encounter this SCC later; the entries will just be no-ops.
     let just_compiled: Vec<(Name, Address)> = stt

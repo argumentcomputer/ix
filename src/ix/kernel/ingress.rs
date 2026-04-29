@@ -35,7 +35,7 @@ use crate::ix::kernel::env::Addr;
 use lean_ffi::nat::Nat;
 
 use super::constant::{KConst, RecRule};
-use super::env::{InternTable, KEnv, intern_addr};
+use super::env::{InternTable, KEnv};
 use super::expr::{KExpr, MData};
 use super::id::KId;
 use super::level::KUniv;
@@ -56,8 +56,6 @@ struct Ctx<'a, M: KernelMode> {
   arena: &'a ExprMeta,
   names: &'a FxHashMap<Address, Name>,
   lvls: Vec<Name>,
-  /// Canonical intern table (shared across all ingress calls).
-  intern: &'a InternTable<M>,
   /// Counter for generating synthetic unique names when metadata is missing.
   synth_counter: Cell<u64>,
 }
@@ -244,7 +242,7 @@ macro_rules! bump_convert_stat {
 /// Universe counterpart of [`timed_intern_or_build`].
 #[inline]
 fn timed_intern_univ<M: KernelMode>(
-  intern: &InternTable<M>,
+  intern: &mut InternTable<M>,
   u: KUniv<M>,
   stats: &mut ConvertStats,
 ) -> KUniv<M> {
@@ -252,7 +250,7 @@ fn timed_intern_univ<M: KernelMode>(
     return intern.intern_univ(u);
   }
   let t0 = Instant::now();
-  let key = **u.addr();
+  let key = *u.addr();
   let result = if let Some(existing) = intern.try_get_univ(&key) {
     stats.intern_univ_get_hits += 1;
     existing
@@ -269,18 +267,16 @@ fn timed_intern_univ<M: KernelMode>(
 /// `build(addr)` to allocate a new KExpr.
 ///
 /// Why this exists: profiling on Mathlib shows `kexpr_construct` (the
-/// blake3 hash + `intern_addr` + `Arc<ExprData>` allocation triple)
-/// is ~45% of `convert` worker-sum, of which ~62% is wasted because the
-/// intern table already has the same canonical value. By computing just
-/// the hash up front and skipping construction entirely on a hit, we
-/// avoid the allocation + the duplicate `intern_addr` work for the
-/// majority case.
+/// blake3 hash + `Arc<ExprData>` allocation pair) is ~45% of `convert`
+/// worker-sum, of which ~62% is wasted because the intern table
+/// already has the same canonical value. By computing just the hash up
+/// front and skipping construction entirely on a hit, we avoid the
+/// allocation in the majority case.
 ///
-/// The `build` closure receives the canonical `Addr` (the result of
-/// `intern_addr(hash)`) and is expected to call one of the
-/// `KExpr::*_mdata_with_addr` constructors so it can plug the
-/// pre-interned `Addr` into `ExprInfo` without re-hashing or
-/// re-traversing `ADDR_INTERN`.
+/// The `build` closure receives the precomputed `Addr` (a `blake3::Hash`
+/// by value) and is expected to call one of the
+/// `KExpr::*_mdata_with_addr` constructors so it can plug the hash into
+/// `ExprInfo` without re-hashing.
 ///
 /// Stats accounting (when enabled): the hit path bumps
 /// `intern_expr_get_hits`. The miss path also bumps `kexpr_construct_*`
@@ -289,7 +285,7 @@ fn timed_intern_univ<M: KernelMode>(
 /// closure-internal time.
 #[inline]
 fn timed_intern_or_build<M: KernelMode>(
-  intern: &InternTable<M>,
+  intern: &mut InternTable<M>,
   hash: blake3::Hash,
   build: impl FnOnce(Addr) -> KExpr<M>,
   stats: &mut ConvertStats,
@@ -298,8 +294,7 @@ fn timed_intern_or_build<M: KernelMode>(
     if let Some(existing) = intern.try_get_expr(&hash) {
       return existing;
     }
-    let addr = intern_addr(hash);
-    return intern.intern_expr(build(addr));
+    return intern.intern_expr(build(hash));
   }
   let t0 = Instant::now();
   if let Some(existing) = intern.try_get_expr(&hash) {
@@ -308,7 +303,7 @@ fn timed_intern_or_build<M: KernelMode>(
     stats.intern_expr_ns += t0.elapsed().as_nanos() as u64;
     return existing;
   }
-  let addr = intern_addr(hash);
+  let addr = hash;
   let kc_t0 = Instant::now();
   let new = build(addr);
   let kc_elapsed = kc_t0.elapsed().as_nanos() as u64;
@@ -418,7 +413,7 @@ enum UnivFrame {
 fn ingress_univ<M: KernelMode>(
   root: &Arc<IxonUniv>,
   ctx: &Ctx<'_, M>,
-  intern: &InternTable<M>,
+  intern: &mut InternTable<M>,
   cache: &mut UnivCache<M>,
   stats: &mut ConvertStats,
 ) -> KUniv<M> {
@@ -507,7 +502,7 @@ fn ingress_univ<M: KernelMode>(
 fn ingress_univ_args<M: KernelMode>(
   univ_idxs: &[u64],
   ctx: &Ctx<'_, M>,
-  intern: &InternTable<M>,
+  intern: &mut InternTable<M>,
   cache: &mut UnivCache<M>,
   stats: &mut ConvertStats,
 ) -> Result<Box<[KUniv<M>]>, String> {
@@ -596,6 +591,7 @@ fn ingress_expr<M: KernelMode>(
   root_expr: &Arc<IxonExpr>,
   root_arena: u64,
   ctx: &Ctx<'_, M>,
+  intern: &mut InternTable<M>,
   ixon_env: &IxonEnv,
   cache: &mut ExprCache<M>,
   univ_cache: &mut UnivCache<M>,
@@ -637,11 +633,8 @@ fn ingress_expr<M: KernelMode>(
         // root, so a hit already includes the resolved metadata layers.
         let cache_key = (Arc::as_ptr(&expr) as usize, arena_idx);
         if !is_var {
-          let lookup_t0 = if stats.enabled {
-            Some(Instant::now())
-          } else {
-            None
-          };
+          let lookup_t0 =
+            if stats.enabled { Some(Instant::now()) } else { None };
           let cached = cache.get(&cache_key);
           if let Some(t0) = lookup_t0 {
             stats.expr_cache_lookup_ns += t0.elapsed().as_nanos() as u64;
@@ -713,12 +706,10 @@ fn ingress_expr<M: KernelMode>(
             let mdata_field: M::MField<Vec<MData>> = M::meta_field(vec![]);
             let hash = KExpr::<M>::var_hash(*idx, &name_field, &mdata_field);
             values.push(timed_intern_or_build(
-              ctx.intern,
+              intern,
               hash,
               |addr| {
-                KExpr::var_mdata_with_addr(
-                  *idx, name_field, mdata_field, addr,
-                )
+                KExpr::var_mdata_with_addr(*idx, name_field, mdata_field, addr)
               },
               stats,
             ));
@@ -727,12 +718,10 @@ fn ingress_expr<M: KernelMode>(
             let mdata_field = M::meta_field(mdata_layers);
             let hash = KExpr::<M>::var_hash(*idx, &name_field, &mdata_field);
             values.push(timed_intern_or_build(
-              ctx.intern,
+              intern,
               hash,
               |addr| {
-                KExpr::var_mdata_with_addr(
-                  *idx, name_field, mdata_field, addr,
-                )
+                KExpr::var_mdata_with_addr(*idx, name_field, mdata_field, addr)
               },
               stats,
             ));
@@ -765,10 +754,10 @@ fn ingress_expr<M: KernelMode>(
                   format!("Sort univ index {idx} exceeds usize")
                 })?)
                 .ok_or_else(|| format!("invalid Sort univ index {idx}"))?;
-            let zu = ingress_univ(u, ctx, ctx.intern, univ_cache, stats);
+            let zu = ingress_univ(u, ctx, intern, univ_cache, stats);
             let hash = KExpr::<M>::sort_hash(&zu, &mdata);
             values.push(timed_intern_or_build(
-              ctx.intern,
+              intern,
               hash,
               |addr| KExpr::sort_mdata_with_addr(zu, mdata, addr),
               stats,
@@ -799,11 +788,11 @@ fn ingress_expr<M: KernelMode>(
               },
             };
             let univs =
-              ingress_univ_args(univ_idxs, ctx, ctx.intern, univ_cache, stats)?;
+              ingress_univ_args(univ_idxs, ctx, intern, univ_cache, stats)?;
             let id = KId::new(addr, M::meta_field(name));
             let hash = KExpr::<M>::cnst_hash(&id, &univs, &mdata);
             values.push(timed_intern_or_build(
-              ctx.intern,
+              intern,
               hash,
               |a| KExpr::cnst_mdata_with_addr(id, univs, mdata, a),
               stats,
@@ -821,10 +810,10 @@ fn ingress_expr<M: KernelMode>(
               .ok_or_else(|| format!("invalid Rec index {rec_idx}"))?
               .clone();
             let univs =
-              ingress_univ_args(univ_idxs, ctx, ctx.intern, univ_cache, stats)?;
+              ingress_univ_args(univ_idxs, ctx, intern, univ_cache, stats)?;
             let hash = KExpr::<M>::cnst_hash(&mid, &univs, &mdata);
             values.push(timed_intern_or_build(
-              ctx.intern,
+              intern,
               hash,
               |a| KExpr::cnst_mdata_with_addr(mid, univs, mdata, a),
               stats,
@@ -924,19 +913,16 @@ fn ingress_expr<M: KernelMode>(
                     .clone();
                   let name = resolve_name(cs_name, ctx.names);
                   let univs = ingress_univ_args(
-                    univ_idxs, ctx, ctx.intern, univ_cache, stats,
+                    univ_idxs, ctx, intern, univ_cache, stats,
                   )?;
                   let id = KId::new(addr, M::meta_field(name));
                   let mdata_field: M::MField<Vec<MData>> =
                     M::meta_field(vec![]);
-                  let hash =
-                    KExpr::<M>::cnst_hash(&id, &univs, &mdata_field);
+                  let hash = KExpr::<M>::cnst_hash(&id, &univs, &mdata_field);
                   timed_intern_or_build(
-                    ctx.intern,
+                    intern,
                     hash,
-                    |a| {
-                      KExpr::cnst_mdata_with_addr(id, univs, mdata_field, a)
-                    },
+                    |a| KExpr::cnst_mdata_with_addr(id, univs, mdata_field, a),
                     stats,
                   )
                 },
@@ -955,18 +941,15 @@ fn ingress_expr<M: KernelMode>(
                     })?
                     .clone();
                   let univs = ingress_univ_args(
-                    univ_idxs, ctx, ctx.intern, univ_cache, stats,
+                    univ_idxs, ctx, intern, univ_cache, stats,
                   )?;
                   let mdata_field: M::MField<Vec<MData>> =
                     M::meta_field(vec![]);
-                  let hash =
-                    KExpr::<M>::cnst_hash(&mid, &univs, &mdata_field);
+                  let hash = KExpr::<M>::cnst_hash(&mid, &univs, &mdata_field);
                   timed_intern_or_build(
-                    ctx.intern,
+                    intern,
                     hash,
-                    |a| {
-                      KExpr::cnst_mdata_with_addr(mid, univs, mdata_field, a)
-                    },
+                    |a| KExpr::cnst_mdata_with_addr(mid, univs, mdata_field, a),
                     stats,
                   )
                 },
@@ -1184,7 +1167,7 @@ fn ingress_expr<M: KernelMode>(
             let blob_addr = addr.clone();
             let hash = KExpr::<M>::str_hash(&blob_addr, &mdata);
             values.push(timed_intern_or_build(
-              ctx.intern,
+              intern,
               hash,
               |a| KExpr::str_mdata_with_addr(s, blob_addr, mdata, a),
               stats,
@@ -1211,7 +1194,7 @@ fn ingress_expr<M: KernelMode>(
             let blob_addr = addr.clone();
             let hash = KExpr::<M>::nat_hash(&blob_addr, &mdata);
             values.push(timed_intern_or_build(
-              ctx.intern,
+              intern,
               hash,
               |a| KExpr::nat_mdata_with_addr(n, blob_addr, mdata, a),
               stats,
@@ -1225,21 +1208,19 @@ fn ingress_expr<M: KernelMode>(
 
       // Continuation frames
       ExprFrame::AppArg { arg, arg_arena } => {
-        let cont_t0 =
-          if stats.enabled { Some(Instant::now()) } else { None };
+        let cont_t0 = if stats.enabled { Some(Instant::now()) } else { None };
         stack.push(ExprFrame::Process { expr: arg, arena_idx: arg_arena });
         if let Some(t0) = cont_t0 {
           stats.continuation_arms_ns += t0.elapsed().as_nanos() as u64;
         }
       },
       ExprFrame::AppDone { mdata } => {
-        let cont_t0 =
-          if stats.enabled { Some(Instant::now()) } else { None };
+        let cont_t0 = if stats.enabled { Some(Instant::now()) } else { None };
         let a = values.pop().unwrap();
         let f = values.pop().unwrap();
         let hash = KExpr::<M>::app_hash(&f, &a, &mdata);
         values.push(timed_intern_or_build(
-          ctx.intern,
+          intern,
           hash,
           |addr| KExpr::app_mdata_with_addr(f, a, mdata, addr),
           stats,
@@ -1249,8 +1230,7 @@ fn ingress_expr<M: KernelMode>(
         }
       },
       ExprFrame::LamBody { body, body_arena } => {
-        let cont_t0 =
-          if stats.enabled { Some(Instant::now()) } else { None };
+        let cont_t0 = if stats.enabled { Some(Instant::now()) } else { None };
         // The binder name was already pushed by BinderPush before this frame
         stack.push(ExprFrame::Process { expr: body, arena_idx: body_arena });
         if let Some(t0) = cont_t0 {
@@ -1258,13 +1238,12 @@ fn ingress_expr<M: KernelMode>(
         }
       },
       ExprFrame::LamDone { name, bi, mdata } => {
-        let cont_t0 =
-          if stats.enabled { Some(Instant::now()) } else { None };
+        let cont_t0 = if stats.enabled { Some(Instant::now()) } else { None };
         let body = values.pop().unwrap();
         let ty = values.pop().unwrap();
         let hash = KExpr::<M>::lam_hash(&name, &bi, &ty, &body, &mdata);
         values.push(timed_intern_or_build(
-          ctx.intern,
+          intern,
           hash,
           |addr| KExpr::lam_mdata_with_addr(name, bi, ty, body, mdata, addr),
           stats,
@@ -1275,21 +1254,19 @@ fn ingress_expr<M: KernelMode>(
       },
       ExprFrame::AllBody { body, body_arena }
       | ExprFrame::LetBody { body, body_arena } => {
-        let cont_t0 =
-          if stats.enabled { Some(Instant::now()) } else { None };
+        let cont_t0 = if stats.enabled { Some(Instant::now()) } else { None };
         stack.push(ExprFrame::Process { expr: body, arena_idx: body_arena });
         if let Some(t0) = cont_t0 {
           stats.continuation_arms_ns += t0.elapsed().as_nanos() as u64;
         }
       },
       ExprFrame::AllDone { name, bi, mdata } => {
-        let cont_t0 =
-          if stats.enabled { Some(Instant::now()) } else { None };
+        let cont_t0 = if stats.enabled { Some(Instant::now()) } else { None };
         let body = values.pop().unwrap();
         let ty = values.pop().unwrap();
         let hash = KExpr::<M>::all_hash(&name, &bi, &ty, &body, &mdata);
         values.push(timed_intern_or_build(
-          ctx.intern,
+          intern,
           hash,
           |addr| KExpr::all_mdata_with_addr(name, bi, ty, body, mdata, addr),
           stats,
@@ -1299,8 +1276,7 @@ fn ingress_expr<M: KernelMode>(
         }
       },
       ExprFrame::LetVal { val, val_arena, body, body_arena, binder_name } => {
-        let cont_t0 =
-          if stats.enabled { Some(Instant::now()) } else { None };
+        let cont_t0 = if stats.enabled { Some(Instant::now()) } else { None };
         stack.push(ExprFrame::LetBody { body, body_arena });
         stack.push(ExprFrame::BinderPush { name: binder_name });
         stack.push(ExprFrame::Process { expr: val, arena_idx: val_arena });
@@ -1309,14 +1285,13 @@ fn ingress_expr<M: KernelMode>(
         }
       },
       ExprFrame::LetDone { name, nd, mdata } => {
-        let cont_t0 =
-          if stats.enabled { Some(Instant::now()) } else { None };
+        let cont_t0 = if stats.enabled { Some(Instant::now()) } else { None };
         let body = values.pop().unwrap();
         let val = values.pop().unwrap();
         let ty = values.pop().unwrap();
         let hash = KExpr::<M>::let_hash(&name, &ty, &val, &body, nd, &mdata);
         values.push(timed_intern_or_build(
-          ctx.intern,
+          intern,
           hash,
           |addr| {
             KExpr::let_mdata_with_addr(name, ty, val, body, nd, mdata, addr)
@@ -1328,32 +1303,27 @@ fn ingress_expr<M: KernelMode>(
         }
       },
       ExprFrame::BinderPush { name } => {
-        let cont_t0 =
-          if stats.enabled { Some(Instant::now()) } else { None };
+        let cont_t0 = if stats.enabled { Some(Instant::now()) } else { None };
         binder_names.push(name);
         if let Some(t0) = cont_t0 {
           stats.continuation_arms_ns += t0.elapsed().as_nanos() as u64;
         }
       },
       ExprFrame::BinderPop => {
-        let cont_t0 =
-          if stats.enabled { Some(Instant::now()) } else { None };
+        let cont_t0 = if stats.enabled { Some(Instant::now()) } else { None };
         binder_names.pop();
         if let Some(t0) = cont_t0 {
           stats.continuation_arms_ns += t0.elapsed().as_nanos() as u64;
         }
       },
       ExprFrame::PrjDone { type_id, field_idx, mdata } => {
-        let cont_t0 =
-          if stats.enabled { Some(Instant::now()) } else { None };
+        let cont_t0 = if stats.enabled { Some(Instant::now()) } else { None };
         let s = values.pop().unwrap();
         let hash = KExpr::<M>::prj_hash(&type_id, field_idx, &s, &mdata);
         values.push(timed_intern_or_build(
-          ctx.intern,
+          intern,
           hash,
-          |addr| {
-            KExpr::prj_mdata_with_addr(type_id, field_idx, s, mdata, addr)
-          },
+          |addr| KExpr::prj_mdata_with_addr(type_id, field_idx, s, mdata, addr),
           stats,
         ));
         if let Some(t0) = cont_t0 {
@@ -1361,8 +1331,7 @@ fn ingress_expr<M: KernelMode>(
         }
       },
       ExprFrame::Cache { key } => {
-        let cont_t0 =
-          if stats.enabled { Some(Instant::now()) } else { None };
+        let cont_t0 = if stats.enabled { Some(Instant::now()) } else { None };
         let result = values.last().unwrap().clone();
         let ins_t0 = if stats.enabled { Some(Instant::now()) } else { None };
         cache.insert(key, result);
@@ -1397,7 +1366,7 @@ fn ingress_defn<M: KernelMode>(
   refs: &[Address],
   univs: &[Arc<IxonUniv>],
   block: KId<M>,
-  intern: &InternTable<M>,
+  intern: &mut InternTable<M>,
   stats: &mut ConvertStats,
 ) -> Result<Vec<(KId<M>, KConst<M>)>, String> {
   let mut cache: ExprCache<M> = FxHashMap::default();
@@ -1440,7 +1409,6 @@ fn ingress_defn<M: KernelMode>(
     arena,
     names,
     lvls: level_params.clone(),
-    intern,
     synth_counter: Cell::new(0),
   };
 
@@ -1448,6 +1416,7 @@ fn ingress_defn<M: KernelMode>(
     &def.typ,
     type_root,
     &ctx,
+    intern,
     ixon_env,
     &mut cache,
     &mut univ_cache,
@@ -1457,6 +1426,7 @@ fn ingress_defn<M: KernelMode>(
     &def.value,
     value_root,
     &ctx,
+    intern,
     ixon_env,
     &mut cache,
     &mut univ_cache,
@@ -1501,7 +1471,7 @@ fn ingress_recursor<M: KernelMode>(
   refs: &[Address],
   univs: &[Arc<IxonUniv>],
   block: KId<M>,
-  intern: &InternTable<M>,
+  intern: &mut InternTable<M>,
   stats: &mut ConvertStats,
 ) -> Result<Vec<(KId<M>, KConst<M>)>, String> {
   let mut cache: ExprCache<M> = FxHashMap::default();
@@ -1535,7 +1505,6 @@ fn ingress_recursor<M: KernelMode>(
     arena,
     names,
     lvls: level_params.clone(),
-    intern,
     synth_counter: Cell::new(0),
   };
 
@@ -1543,6 +1512,7 @@ fn ingress_recursor<M: KernelMode>(
     &rec.typ,
     type_root,
     &ctx,
+    intern,
     ixon_env,
     &mut cache,
     &mut univ_cache,
@@ -1563,6 +1533,7 @@ fn ingress_recursor<M: KernelMode>(
         &rule.rhs,
         rhs_root,
         &ctx,
+        intern,
         ixon_env,
         &mut cache,
         &mut univ_cache,
@@ -1618,7 +1589,7 @@ fn ingress_standalone<M: KernelMode>(
   ixon_env: &IxonEnv,
   names: &FxHashMap<Address, Name>,
   name_to_addr: &FxHashMap<Name, Address>,
-  intern: &InternTable<M>,
+  intern: &mut InternTable<M>,
   stats: &mut ConvertStats,
 ) -> Result<Vec<(KId<M>, KConst<M>)>, String> {
   let self_id: KId<M> =
@@ -1657,13 +1628,13 @@ fn ingress_standalone<M: KernelMode>(
         arena,
         names,
         lvls: level_params.clone(),
-        intern,
         synth_counter: Cell::new(0),
       };
       let typ = ingress_expr(
         &ax.typ,
         type_root,
         &ctx,
+        intern,
         ixon_env,
         &mut cache,
         &mut univ_cache,
@@ -1705,13 +1676,13 @@ fn ingress_standalone<M: KernelMode>(
         arena,
         names,
         lvls: level_params.clone(),
-        intern,
         synth_counter: Cell::new(0),
       };
       let typ = ingress_expr(
         &q.typ,
         type_root,
         &ctx,
+        intern,
         ixon_env,
         &mut cache,
         &mut univ_cache,
@@ -1775,7 +1746,7 @@ fn ingress_muts_inductive<M: KernelMode>(
   block_constant: &Constant,
   block_id: KId<M>,
   member_idx: u64,
-  intern: &InternTable<M>,
+  intern: &mut InternTable<M>,
   stats: &mut ConvertStats,
 ) -> Result<Vec<(KId<M>, KConst<M>)>, String> {
   let (level_params, arena, type_root, all_addrs, ctor_addrs) = match &meta.info
@@ -1801,7 +1772,6 @@ fn ingress_muts_inductive<M: KernelMode>(
     arena,
     names,
     lvls: level_params.clone(),
-    intern,
     synth_counter: Cell::new(0),
   };
 
@@ -1809,6 +1779,7 @@ fn ingress_muts_inductive<M: KernelMode>(
     &ind.typ,
     type_root,
     &ctx,
+    intern,
     ixon_env,
     &mut cache,
     &mut univ_cache,
@@ -1899,7 +1870,6 @@ fn ingress_muts_inductive<M: KernelMode>(
       arena: ctor_arena,
       names,
       lvls: ctor_lvl_params.clone(),
-      intern,
       synth_counter: Cell::new(0),
     };
     let mut ctor_univ_cache: UnivCache<M> = FxHashMap::default();
@@ -1908,6 +1878,7 @@ fn ingress_muts_inductive<M: KernelMode>(
       &ctor.typ,
       ctor_type_root,
       &ctor_ctx,
+      intern,
       ixon_env,
       &mut cache,
       &mut ctor_univ_cache,
@@ -1941,7 +1912,7 @@ fn ingress_muts_block<M: KernelMode>(
   ixon_env: &IxonEnv,
   names: &FxHashMap<Address, Name>,
   name_to_addr: &FxHashMap<Name, Address>,
-  intern: &InternTable<M>,
+  intern: &mut InternTable<M>,
   stats: &mut ConvertStats,
 ) -> Result<Vec<(KId<M>, KConst<M>)>, String> {
   let block_id: KId<M> =
@@ -2156,13 +2127,13 @@ pub fn param_names_hash(param_names: &[Name]) -> Addr {
   for n in param_names {
     hasher.update(n.get_hash().as_bytes());
   }
-  intern_addr(hasher.finalize())
+  hasher.finalize()
 }
 
 pub fn lean_expr_to_zexpr(
   expr: &LeanExpr,
   param_names: &[Name],
-  intern: &InternTable<Meta>,
+  intern: &mut InternTable<Meta>,
   name_to_ixon_addr: Option<&DashMap<Name, Address>>,
   aux_n2a: Option<&DashMap<Name, Address>>,
 ) -> KExpr<Meta> {
@@ -2187,7 +2158,7 @@ pub fn lean_expr_to_zexpr(
 pub fn lean_expr_to_zexpr_with_kenv(
   expr: &LeanExpr,
   param_names: &[Name],
-  kenv: &KEnv<Meta>,
+  kenv: &mut KEnv<Meta>,
   n2a: Option<&DashMap<Name, Address>>,
   aux_n2a: Option<&DashMap<Name, Address>>,
 ) -> KExpr<Meta> {
@@ -2197,10 +2168,10 @@ pub fn lean_expr_to_zexpr_with_kenv(
     expr,
     param_names,
     &mut binder_names,
-    &kenv.intern,
+    &mut kenv.intern,
     n2a,
     aux_n2a,
-    Some(&kenv.ingress_cache),
+    Some(&mut kenv.ingress_cache),
     Some(&pn_h),
   )
 }
@@ -2227,18 +2198,18 @@ pub fn lean_expr_to_zexpr_cached(
   expr: &LeanExpr,
   param_names: &[Name],
   binder_names: &mut Vec<Name>,
-  intern: &InternTable<Meta>,
+  intern: &mut InternTable<Meta>,
   n2a: Option<&DashMap<Name, Address>>,
   aux_n2a: Option<&DashMap<Name, Address>>,
-  cache: Option<&DashMap<(Addr, Addr), KExpr<Meta>>>,
+  mut cache: Option<&mut FxHashMap<(Addr, Addr), KExpr<Meta>>>,
   pn_hash: Option<&Addr>,
 ) -> KExpr<Meta> {
   // Check cache
-  if let (Some(cache), Some(pn_hash)) = (cache, pn_hash) {
-    let expr_key = Arc::new(*expr.get_hash());
-    let key = (expr_key, pn_hash.clone());
+  if let (Some(cache), Some(pn_hash)) = (cache.as_ref(), pn_hash) {
+    let expr_key = *expr.get_hash();
+    let key = (expr_key, *pn_hash);
     if let Some(hit) = cache.get(&key) {
-      return hit.value().clone();
+      return hit.clone();
     }
   }
 
@@ -2249,15 +2220,15 @@ pub fn lean_expr_to_zexpr_cached(
     intern,
     n2a,
     aux_n2a,
-    cache,
+    cache.as_deref_mut(),
     pn_hash,
   );
   let result = intern.intern_expr(e);
 
   // Store in cache
-  if let (Some(cache), Some(pn_hash)) = (cache, pn_hash) {
-    let expr_key = Arc::new(*expr.get_hash());
-    cache.insert((expr_key, pn_hash.clone()), result.clone());
+  if let (Some(cache), Some(pn_hash)) = (cache.as_deref_mut(), pn_hash) {
+    let expr_key = *expr.get_hash();
+    cache.insert((expr_key, *pn_hash), result.clone());
   }
 
   result
@@ -2268,10 +2239,10 @@ fn lean_expr_to_zexpr_raw(
   expr: &LeanExpr,
   pn: &[Name],
   binder_names: &mut Vec<Name>,
-  intern: &InternTable<Meta>,
+  intern: &mut InternTable<Meta>,
   n2a: Option<&DashMap<Name, Address>>,
   aux_n2a: Option<&DashMap<Name, Address>>,
-  cache: Option<&DashMap<(Addr, Addr), KExpr<Meta>>>,
+  mut cache: Option<&mut FxHashMap<(Addr, Addr), KExpr<Meta>>>,
   pn_hash: Option<&Addr>,
 ) -> KExpr<Meta> {
   // Walk through any consecutive `Mdata` wrappers first, accumulating them
@@ -2333,7 +2304,7 @@ fn lean_expr_to_zexpr_raw(
         intern,
         n2a,
         aux_n2a,
-        cache,
+        cache.as_deref_mut(),
         pn_hash,
       );
       let a_k = lean_expr_to_zexpr_cached(
@@ -2343,7 +2314,7 @@ fn lean_expr_to_zexpr_raw(
         intern,
         n2a,
         aux_n2a,
-        cache,
+        cache.as_deref_mut(),
         pn_hash,
       );
       KExpr::app_mdata(f_k, a_k, mdata_layers)
@@ -2356,7 +2327,7 @@ fn lean_expr_to_zexpr_raw(
         intern,
         n2a,
         aux_n2a,
-        cache,
+        cache.as_deref_mut(),
         pn_hash,
       );
       binder_names.push(binder_name.clone());
@@ -2367,7 +2338,7 @@ fn lean_expr_to_zexpr_raw(
         intern,
         n2a,
         aux_n2a,
-        cache,
+        cache.as_deref_mut(),
         pn_hash,
       );
       binder_names.pop();
@@ -2387,7 +2358,7 @@ fn lean_expr_to_zexpr_raw(
         intern,
         n2a,
         aux_n2a,
-        cache,
+        cache.as_deref_mut(),
         pn_hash,
       );
       binder_names.push(binder_name.clone());
@@ -2398,7 +2369,7 @@ fn lean_expr_to_zexpr_raw(
         intern,
         n2a,
         aux_n2a,
-        cache,
+        cache.as_deref_mut(),
         pn_hash,
       );
       binder_names.pop();
@@ -2418,7 +2389,7 @@ fn lean_expr_to_zexpr_raw(
         intern,
         n2a,
         aux_n2a,
-        cache,
+        cache.as_deref_mut(),
         pn_hash,
       );
       let val_k = lean_expr_to_zexpr_cached(
@@ -2428,7 +2399,7 @@ fn lean_expr_to_zexpr_raw(
         intern,
         n2a,
         aux_n2a,
-        cache,
+        cache.as_deref_mut(),
         pn_hash,
       );
       binder_names.push(binder_name.clone());
@@ -2439,7 +2410,7 @@ fn lean_expr_to_zexpr_raw(
         intern,
         n2a,
         aux_n2a,
-        cache,
+        cache.as_deref_mut(),
         pn_hash,
       );
       binder_names.pop();
@@ -2462,7 +2433,7 @@ fn lean_expr_to_zexpr_raw(
         intern,
         n2a,
         aux_n2a,
-        cache,
+        cache.as_deref_mut(),
         pn_hash,
       );
       KExpr::prj_mdata(zid, idx.to_u64().unwrap_or(0), e_k, mdata_layers)
@@ -2547,8 +2518,8 @@ pub fn build_ingress_lookups(
 pub fn ingress_compiled_names(
   names: &[Name],
   ixon_env: &IxonEnv,
-  zenv: &KEnv<Meta>,
-  intern: &InternTable<Meta>,
+  zenv: &mut KEnv<Meta>,
+  intern: &mut InternTable<Meta>,
   name_map: &FxHashMap<Address, Name>,
   addr_map: &FxHashMap<Name, Address>,
 ) {
@@ -2732,14 +2703,14 @@ fn lean_all_ids(all: &[Name], n2a: &DashMap<Name, Address>) -> Vec<KId<Meta>> {
 fn lean_const_to_kconst(
   self_name: &Name,
   ci: &LeanCI,
-  kenv: &KEnv<Meta>,
+  kenv: &mut KEnv<Meta>,
   n2a: &DashMap<Name, Address>,
 ) -> KConst<Meta> {
   // Helper: shorthand for expression ingress. `n2a` carries the env-wide
   // LEON addressing so `Const` refs inside expressions resolve to the same
   // addresses we're using for KId keys — any KId we construct here and any
   // Const-ref we ingress agree on where they point.
-  let expr_to_k = |e: &crate::ix::env::Expr, pn: &[Name]| -> KExpr<Meta> {
+  let mut expr_to_k = |e: &crate::ix::env::Expr, pn: &[Name]| -> KExpr<Meta> {
     lean_expr_to_zexpr_with_kenv(e, pn, kenv, Some(n2a), None)
   };
 
@@ -2925,7 +2896,7 @@ fn lean_const_to_kconst(
 pub fn lean_ingress(lean_env: &LeanEnv) -> KEnv<Meta> {
   use std::time::Instant;
   let quiet = std::env::var("IX_QUIET").is_ok();
-  let kenv = KEnv::<Meta>::new_with_recursor_aux_order(
+  let mut kenv = KEnv::<Meta>::new_with_recursor_aux_order(
     super::env::RecursorAuxOrder::Source,
   );
 
@@ -2944,33 +2915,16 @@ pub fn lean_ingress(lean_env: &LeanEnv) -> KEnv<Meta> {
     );
   }
 
-  // Pass 1: ingress every constant — parallelized via rayon.
-  //
-  // Every function called from the worker body is thread-safe:
-  //   - `leon_addr_of` reads from `n2a` (a DashMap).
-  //   - `lean_const_to_kconst` reads `ci`/`n2a` and builds fresh `KConst`
-  //     values; any expression interning it triggers goes through
-  //     `kenv.intern` (DashMap) and `kenv.ingress_cache` (DashMap), both
-  //     documented thread-safe. It does not read `kenv.consts` or
-  //     `kenv.blocks`, so parallel inserts here are partition-safe.
-  //   - `kenv.insert` writes the freshly-built `KConst` into
-  //     `kenv.consts` (DashMap). KIds are derived from LEON content
-  //     hashes, so no two workers produce the same key, so no shard
-  //     contention on the write.
-  //
-  // `lean_env` is an `FxHashMap`, so we collect a `Vec<_>` of references
-  // and hand that to rayon; the `std::collections::HashMap` par_iter
-  // impl requires the default hasher, which `FxHashMap` isn't.
+  // Pass 1: ingress every constant sequentially into this worker-local env.
   let t = Instant::now();
-  let entries: Vec<(&Name, &LeanCI)> = lean_env.iter().collect();
-  entries.into_par_iter().for_each(|(name, ci)| {
+  for (name, ci) in lean_env.iter() {
     let kid = KId::new(leon_addr_of(name, &n2a), name.clone());
-    let kc = lean_const_to_kconst(name, ci, &kenv, &n2a);
+    let kc = lean_const_to_kconst(name, ci, &mut kenv, &n2a);
     kenv.insert(kid, kc);
-  });
+  }
   if !quiet {
     eprintln!(
-      "[lean_ingress]   pass 1 (parallel ingress): {:.2}s",
+      "[lean_ingress]   pass 1 (serial ingress): {:.2}s",
       t.elapsed().as_secs_f32()
     );
   }
@@ -3112,6 +3066,264 @@ pub fn lean_ingress(lean_env: &LeanEnv) -> KEnv<Meta> {
 enum IngressWorkItem {
   Standalone(Name),
   Muts(Name),
+}
+
+#[derive(Clone, Default)]
+pub struct IxonIngressLookups {
+  names: FxHashMap<Address, Name>,
+  name_to_addr: FxHashMap<Name, Address>,
+  addr_to_name: FxHashMap<Address, Name>,
+  names_by_addr: FxHashMap<Address, Vec<Name>>,
+  muts_by_addr: FxHashMap<Address, Vec<(Name, Vec<Vec<Address>>)>>,
+}
+
+impl IxonIngressLookups {
+  pub fn name_for_addr(&self, addr: &Address) -> Option<&Name> {
+    self.addr_to_name.get(addr)
+  }
+
+  fn names_for_addr(&self, addr: &Address) -> Option<&[Name]> {
+    self.names_by_addr.get(addr).map(Vec::as_slice)
+  }
+}
+
+pub fn build_ixon_ingress_lookups(ixon_env: &IxonEnv) -> IxonIngressLookups {
+  let mut lookups = IxonIngressLookups::default();
+  for entry in ixon_env.names.iter() {
+    lookups.names.insert(entry.key().clone(), entry.value().clone());
+  }
+  for entry in ixon_env.named.iter() {
+    let name = entry.key().clone();
+    let named = entry.value();
+    lookups.name_to_addr.insert(name.clone(), named.addr.clone());
+    lookups
+      .names_by_addr
+      .entry(named.addr.clone())
+      .or_default()
+      .push(name.clone());
+    lookups
+      .addr_to_name
+      .entry(named.addr.clone())
+      .or_insert_with(|| name.clone());
+    if let ConstantMetaInfo::Muts { all, .. } = &named.meta.info {
+      lookups
+        .muts_by_addr
+        .entry(named.addr.clone())
+        .or_default()
+        .push((name, all.clone()));
+    }
+  }
+  lookups
+}
+
+fn projection_block(info: &IxonCI) -> Option<&Address> {
+  match info {
+    IxonCI::IPrj(p) => Some(&p.block),
+    IxonCI::CPrj(p) => Some(&p.block),
+    IxonCI::RPrj(p) => Some(&p.block),
+    IxonCI::DPrj(p) => Some(&p.block),
+    _ => None,
+  }
+}
+
+enum IngressNeed {
+  Addr(Address),
+  ProjectionAliases(Address),
+}
+
+fn insert_addr_aliases<M: KernelMode>(
+  kenv: &mut KEnv<M>,
+  lookups: &IxonIngressLookups,
+  addr: &Address,
+) {
+  let Some(names) = lookups.names_for_addr(addr) else {
+    return;
+  };
+  let Some(template) = kenv
+    .consts
+    .iter()
+    .find_map(|(id, c)| if &id.addr == addr { Some(c.clone()) } else { None })
+  else {
+    return;
+  };
+  for name in names {
+    let id = KId::new(addr.clone(), M::meta_field(name.clone()));
+    if !kenv.contains_key(&id) {
+      kenv.insert(id, template.clone());
+    }
+  }
+}
+
+pub fn ingress_const_into_kenv<M: KernelMode>(
+  kenv: &mut KEnv<M>,
+  ixon_env: &IxonEnv,
+  name: &Name,
+) -> Result<KId<M>, String> {
+  let lookups = build_ixon_ingress_lookups(ixon_env);
+  ingress_const_into_kenv_with_lookups(kenv, ixon_env, &lookups, name)
+}
+
+pub fn ingress_const_into_kenv_with_lookups<M: KernelMode>(
+  kenv: &mut KEnv<M>,
+  ixon_env: &IxonEnv,
+  lookups: &IxonIngressLookups,
+  name: &Name,
+) -> Result<KId<M>, String> {
+  ingress_const_into_kenv_with_lookups_impl(kenv, ixon_env, lookups, name, true)
+}
+
+pub fn ingress_const_shallow_into_kenv_with_lookups<M: KernelMode>(
+  kenv: &mut KEnv<M>,
+  ixon_env: &IxonEnv,
+  lookups: &IxonIngressLookups,
+  name: &Name,
+) -> Result<KId<M>, String> {
+  ingress_const_into_kenv_with_lookups_impl(
+    kenv, ixon_env, lookups, name, false,
+  )
+}
+
+pub fn ingress_addr_shallow_into_kenv_with_lookups<M: KernelMode>(
+  kenv: &mut KEnv<M>,
+  ixon_env: &IxonEnv,
+  lookups: &IxonIngressLookups,
+  addr: &Address,
+) -> Result<bool, String> {
+  ingress_addr_set_into_kenv(kenv, ixon_env, lookups, addr.clone(), false)
+}
+
+fn ingress_const_into_kenv_with_lookups_impl<M: KernelMode>(
+  kenv: &mut KEnv<M>,
+  ixon_env: &IxonEnv,
+  lookups: &IxonIngressLookups,
+  name: &Name,
+  follow_refs: bool,
+) -> Result<KId<M>, String> {
+  let requested = ixon_env
+    .lookup_name(name)
+    .ok_or_else(|| format!("{}: missing Named entry", name.pretty()))?;
+  let requested_id =
+    KId::new(requested.addr.clone(), M::meta_field(name.clone()));
+
+  ingress_addr_set_into_kenv(
+    kenv,
+    ixon_env,
+    lookups,
+    requested.addr.clone(),
+    follow_refs,
+  )?;
+
+  if !kenv.contains_key(&requested_id) {
+    return Err(format!("{}: no ingressed kernel constant", name.pretty()));
+  }
+  Ok(requested_id)
+}
+
+fn ingress_addr_set_into_kenv<M: KernelMode>(
+  kenv: &mut KEnv<M>,
+  ixon_env: &IxonEnv,
+  lookups: &IxonIngressLookups,
+  seed_addr: Address,
+  follow_refs: bool,
+) -> Result<bool, String> {
+  let mut seen: FxHashSet<Address> = FxHashSet::default();
+  let mut found_seed = false;
+  let mut worklist = vec![IngressNeed::Addr(seed_addr.clone())];
+  let convert_stats_enabled = ingress_convert_stats_enabled();
+
+  while let Some(need) = worklist.pop() {
+    let addr = match need {
+      IngressNeed::Addr(addr) => addr,
+      IngressNeed::ProjectionAliases(addr) => {
+        insert_addr_aliases(kenv, lookups, &addr);
+        continue;
+      },
+    };
+
+    if !seen.insert(addr.clone()) {
+      continue;
+    }
+
+    let Some(constant) = ixon_env.get_const(&addr) else {
+      // `Constant.refs` also contains blob addresses for string/nat payloads.
+      continue;
+    };
+    if addr == seed_addr {
+      found_seed = true;
+    }
+
+    if let Some(block_addr) = projection_block(&constant.info) {
+      worklist.push(IngressNeed::ProjectionAliases(addr));
+      worklist.push(IngressNeed::Addr(block_addr.clone()));
+      continue;
+    }
+
+    if follow_refs {
+      for dep in &constant.refs {
+        if ixon_env.consts.contains_key(dep) {
+          worklist.push(IngressNeed::Addr(dep.clone()));
+        }
+      }
+    }
+
+    match &constant.info {
+      IxonCI::Muts(_) => {
+        let Some(block_entries) = lookups.muts_by_addr.get(&addr) else {
+          return Err(format!("Muts block {} has no named entry", addr.hex()));
+        };
+        for (entry_name, all) in block_entries {
+          let block_id =
+            KId::new(addr.clone(), M::meta_field(entry_name.clone()));
+          if kenv.blocks.contains_key(&block_id) {
+            continue;
+          }
+          let mut convert_stats = ConvertStats::new(convert_stats_enabled);
+          let entries = ingress_muts_block(
+            entry_name,
+            &addr,
+            all,
+            ixon_env,
+            &lookups.names,
+            &lookups.name_to_addr,
+            &mut kenv.intern,
+            &mut convert_stats,
+          )
+          .map_err(|e| format!("{entry_name}: {e}"))?;
+          insert_muts_entries(kenv, entries);
+        }
+      },
+      _ => {
+        let Some(const_names) = lookups.names_for_addr(&addr) else {
+          return Err(format!("constant {} has no named entry", addr.hex()));
+        };
+        for const_name in const_names {
+          let kid = KId::new(addr.clone(), M::meta_field(const_name.clone()));
+          if kenv.contains_key(&kid) {
+            continue;
+          }
+          let named = ixon_env
+            .lookup_name(const_name)
+            .ok_or_else(|| format!("{const_name}: missing Named entry"))?;
+          let mut convert_stats = ConvertStats::new(convert_stats_enabled);
+          let entries = ingress_standalone(
+            const_name,
+            &addr,
+            &constant,
+            &named.meta,
+            ixon_env,
+            &lookups.names,
+            &lookups.name_to_addr,
+            &mut kenv.intern,
+            &mut convert_stats,
+          )
+          .map_err(|e| format!("{const_name}: {e}"))?;
+          insert_standalone_entries(kenv, entries);
+        }
+      },
+    }
+  }
+
+  Ok(found_seed)
 }
 
 #[derive(Default)]
@@ -3277,7 +3489,7 @@ fn drop_ingress_lookups(
 }
 
 fn insert_standalone_entries<M: KernelMode>(
-  zenv: &KEnv<M>,
+  zenv: &mut KEnv<M>,
   entries: Vec<(KId<M>, KConst<M>)>,
 ) -> IngressInsertTiming {
   let mut timing = IngressInsertTiming::default();
@@ -3298,7 +3510,7 @@ fn insert_standalone_entries<M: KernelMode>(
 }
 
 fn insert_muts_entries<M: KernelMode>(
-  zenv: &KEnv<M>,
+  zenv: &mut KEnv<M>,
   entries: Vec<(KId<M>, KConst<M>)>,
 ) -> IngressInsertTiming {
   let mut timing = IngressInsertTiming::default();
@@ -3418,7 +3630,7 @@ fn ixon_ingress_inner<M: KernelMode>(
     );
   }
 
-  let intern = InternTable::new();
+  let mut intern = InternTable::new();
 
   // Build the address → Lean-name lookup and the Lean-name → projection-
   // address lookup. See `build_ingress_lookups` for the role each plays.
@@ -3498,99 +3710,101 @@ fn ixon_ingress_inner<M: KernelMode>(
     );
   }
 
-  // Convert each standalone constant or Muts block in parallel, then insert
-  // the completed block directly into the DashMap-backed KEnv. This keeps peak
-  // memory bounded by in-flight worker outputs instead of materializing every
-  // converted constant before assembly.
+  // Convert each standalone constant or Muts block sequentially into the
+  // single-threaded KEnv.
   let phase_start = Instant::now();
   let convert_stats_enabled = ingress_convert_stats_enabled();
-  let zenv: KEnv<M> = KEnv::new();
-  let stream = work_items
-    .into_par_iter()
-    .map(|work_item| -> Result<IngressStreamTimingSnapshot, String> {
-      let mut timing = IngressStreamTimingSnapshot::default();
-      let mut convert_stats = ConvertStats::new(convert_stats_enabled);
-      match work_item {
-        IngressWorkItem::Standalone(const_name) => {
-          timing.standalone_items += 1;
-          let lookup_start = Instant::now();
-          let named = ixon_env
-            .lookup_name(&const_name)
-            .ok_or_else(|| format!("{const_name}: missing Named entry"))?;
-          timing.lookup_ns += elapsed_ns(lookup_start);
+  let mut zenv: KEnv<M> = KEnv::new();
+  let mut stream = IngressStreamTimingSnapshot::default();
+  for work_item in work_items {
+    let mut timing = IngressStreamTimingSnapshot::default();
+    let mut convert_stats = ConvertStats::new(convert_stats_enabled);
+    match work_item {
+      IngressWorkItem::Standalone(const_name) => {
+        timing.standalone_items += 1;
+        let lookup_start = Instant::now();
+        let named = ixon_env
+          .lookup_name(&const_name)
+          .ok_or_else(|| format!("{const_name}: missing Named entry"))?;
+        timing.lookup_ns += elapsed_ns(lookup_start);
 
-          let const_start = Instant::now();
-          let constant = match ixon_env.get_const(&named.addr) {
-            Some(c) => {
-              timing.const_get_ns += elapsed_ns(const_start);
-              c
-            },
-            None => {
-              timing.const_get_ns += elapsed_ns(const_start);
-              timing.missing_consts += 1;
-              return Ok(timing);
-            },
-          };
-          let convert_start = Instant::now();
-          let entries = ingress_standalone(
-            &const_name,
-            &named.addr,
-            &constant,
-            &named.meta,
-            ixon_env,
-            &names,
-            &name_to_addr,
-            &intern,
-            &mut convert_stats,
-          )
-          .map_err(|e| format!("{const_name}: {e}"))?;
-          timing.convert_ns += elapsed_ns(convert_start);
-          timing.output_consts += entries.len() as u64;
+        let const_start = Instant::now();
+        let constant = match ixon_env.get_const(&named.addr) {
+          Some(c) => {
+            timing.const_get_ns += elapsed_ns(const_start);
+            c
+          },
+          None => {
+            timing.const_get_ns += elapsed_ns(const_start);
+            timing.missing_consts += 1;
+            timing.convert_stats = convert_stats;
+            stream = stream.merge(timing);
+            continue;
+          },
+        };
+        let convert_start = Instant::now();
+        let entries = ingress_standalone(
+          &const_name,
+          &named.addr,
+          &constant,
+          &named.meta,
+          ixon_env,
+          &names,
+          &name_to_addr,
+          &mut intern,
+          &mut convert_stats,
+        )
+        .map_err(|e| format!("{const_name}: {e}"))?;
+        timing.convert_ns += elapsed_ns(convert_start);
+        timing.output_consts += entries.len() as u64;
 
-          let insert_start = Instant::now();
-          let insert_timing = insert_standalone_entries(&zenv, entries);
-          timing.insert_ns += elapsed_ns(insert_start);
-          timing.insert_blocks_ns += insert_timing.blocks_ns;
-          timing.insert_consts_ns += insert_timing.consts_ns;
-        },
-        IngressWorkItem::Muts(entry_name) => {
-          timing.muts_items += 1;
-          let lookup_start = Instant::now();
-          let named = ixon_env
-            .lookup_name(&entry_name)
-            .ok_or_else(|| format!("{entry_name}: missing Named entry"))?;
-          timing.lookup_ns += elapsed_ns(lookup_start);
+        let insert_start = Instant::now();
+        let insert_timing = insert_standalone_entries(&mut zenv, entries);
+        timing.insert_ns += elapsed_ns(insert_start);
+        timing.insert_blocks_ns += insert_timing.blocks_ns;
+        timing.insert_consts_ns += insert_timing.consts_ns;
+      },
+      IngressWorkItem::Muts(entry_name) => {
+        timing.muts_items += 1;
+        let lookup_start = Instant::now();
+        let named = ixon_env
+          .lookup_name(&entry_name)
+          .ok_or_else(|| format!("{entry_name}: missing Named entry"))?;
+        timing.lookup_ns += elapsed_ns(lookup_start);
 
-          let all = match &named.meta.info {
-            ConstantMetaInfo::Muts { all, .. } => all,
-            _ => return Ok(timing),
-          };
-          let convert_start = Instant::now();
-          let entries = ingress_muts_block(
-            &entry_name,
-            &named.addr,
-            all,
-            ixon_env,
-            &names,
-            &name_to_addr,
-            &intern,
-            &mut convert_stats,
-          )
-          .map_err(|e| format!("{entry_name}: {e}"))?;
-          timing.convert_ns += elapsed_ns(convert_start);
-          timing.output_consts += entries.len() as u64;
+        let all = match &named.meta.info {
+          ConstantMetaInfo::Muts { all, .. } => all,
+          _ => {
+            timing.convert_stats = convert_stats;
+            stream = stream.merge(timing);
+            continue;
+          },
+        };
+        let convert_start = Instant::now();
+        let entries = ingress_muts_block(
+          &entry_name,
+          &named.addr,
+          all,
+          ixon_env,
+          &names,
+          &name_to_addr,
+          &mut intern,
+          &mut convert_stats,
+        )
+        .map_err(|e| format!("{entry_name}: {e}"))?;
+        timing.convert_ns += elapsed_ns(convert_start);
+        timing.output_consts += entries.len() as u64;
 
-          let insert_start = Instant::now();
-          let insert_timing = insert_muts_entries(&zenv, entries);
-          timing.insert_ns += elapsed_ns(insert_start);
-          timing.insert_blocks_ns += insert_timing.blocks_ns;
-          timing.insert_consts_ns += insert_timing.consts_ns;
-        },
-      }
-      timing.convert_stats = convert_stats;
-      Ok(timing)
-    })
-    .try_reduce(IngressStreamTimingSnapshot::default, |a, b| Ok(a.merge(b)))?;
+        let insert_start = Instant::now();
+        let insert_timing = insert_muts_entries(&mut zenv, entries);
+        timing.insert_ns += elapsed_ns(insert_start);
+        timing.insert_blocks_ns += insert_timing.blocks_ns;
+        timing.insert_consts_ns += insert_timing.consts_ns;
+      },
+    }
+    timing.convert_stats = convert_stats;
+    stream = stream.merge(timing);
+  }
   if !quiet {
     eprintln!(
       "[ixon_ingress] stream ingress+insert: {:.2}s",
@@ -3934,8 +4148,8 @@ mod tests {
   // ---- lean_expr_to_zexpr: variant coverage ----
 
   fn do_ingress(e: &LeanExpr, pn: &[Name]) -> KExpr<Meta> {
-    let intern = InternTable::<Meta>::new();
-    lean_expr_to_zexpr(e, pn, &intern, None, None)
+    let mut intern = InternTable::<Meta>::new();
+    lean_expr_to_zexpr(e, pn, &mut intern, None, None)
   }
 
   #[test]
@@ -4156,13 +4370,13 @@ mod tests {
 
   #[test]
   fn ingress_cached_hits_cache_on_second_call() {
-    let env = KEnv::<Meta>::new();
+    let mut env = KEnv::<Meta>::new();
     let e = LeanExpr::app(
       LeanExpr::sort(Level::zero()),
       LeanExpr::sort(Level::zero()),
     );
-    let k1 = lean_expr_to_zexpr_with_kenv(&e, &[], &env, None, None);
-    let k2 = lean_expr_to_zexpr_with_kenv(&e, &[], &env, None, None);
+    let k1 = lean_expr_to_zexpr_with_kenv(&e, &[], &mut env, None, None);
+    let k2 = lean_expr_to_zexpr_with_kenv(&e, &[], &mut env, None, None);
     // Cache hit → same interned result.
     assert!(k1.ptr_eq(&k2));
   }
@@ -4202,7 +4416,7 @@ mod tests {
     let sharing: Vec<Arc<IxonExpr>> = vec![];
     let refs = vec![head_ref_addr.clone(), arg_ref_addr.clone()];
     let univs: Vec<Arc<IxonUniv>> = vec![];
-    let intern = InternTable::<Meta>::new();
+    let mut intern = InternTable::<Meta>::new();
     let ctx = Ctx {
       sharing: &sharing,
       refs: &refs,
@@ -4211,7 +4425,6 @@ mod tests {
       arena: &arena,
       names: &names,
       lvls: vec![],
-      intern: &intern,
       synth_counter: Cell::new(0),
     };
     let ixon_env = IxonEnv::new();
@@ -4223,6 +4436,7 @@ mod tests {
       &ixon,
       root,
       &ctx,
+      &mut intern,
       &ixon_env,
       &mut cache,
       &mut univ_cache,
@@ -4246,7 +4460,7 @@ mod tests {
 
   #[test]
   fn ingress_cache_differentiates_by_param_names() {
-    let env = KEnv::<Meta>::new();
+    let mut env = KEnv::<Meta>::new();
     // Same Lean expression, but different param names should produce
     // different cache keys and (for Param-containing exprs) different
     // KExprs.
@@ -4256,14 +4470,14 @@ mod tests {
     let k1 = lean_expr_to_zexpr_with_kenv(
       &e,
       std::slice::from_ref(&u_name),
-      &env,
+      &mut env,
       None,
       None,
     );
     let k2 = lean_expr_to_zexpr_with_kenv(
       &e,
       &[v_name, u_name.clone()],
-      &env,
+      &mut env,
       None,
       None,
     );

@@ -3,15 +3,13 @@
 //! `KEnv<M>` maps `KId<M>` to `KConst<M>`, and owns all shared kernel state:
 //! the intern table, type-checking caches, and resolved primitives.
 //!
-//! All mutable state uses `DashMap`/`DashSet` for lock-free concurrent access.
-//! Multiple `TypeChecker` instances can share one `Arc<KEnv>` and run in parallel.
+//! The environment is single-threaded. Worker pools own one `KEnv` per worker
+//! and move parallelism above the kernel state boundary.
 
-use std::collections::{BTreeSet, HashSet};
-use std::sync::{Arc, Condvar, LazyLock, Mutex, OnceLock};
-use std::time::Instant;
+use std::collections::BTreeSet;
 
-use dashmap::{DashMap, DashSet};
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use rustc_hash::{FxHashMap, FxHashSet};
+use std::cell::OnceCell;
 
 use crate::ix::address::Address;
 
@@ -24,70 +22,47 @@ use super::mode::KernelMode;
 use super::perf::PerfCounters;
 use super::primitive::Primitives;
 
-/// Shared Merkle hash. Cheap to clone (Arc refcount bump).
-pub type Addr = Arc<blake3::Hash>;
-
-/// Process-wide hash-cons for [`Addr`]. Interning makes
-/// `Arc::ptr_eq(a, b)` an exact equivalence to `**a == **b`, which is
-/// the basis for [`KExpr::hash_eq`](super::expr::KExpr::hash_eq)'s 8-byte
-/// pointer fast path before the 32-byte Blake3 fallback (audit Tier 1 #1
-/// in `plans/kernel-perf-adversarial-audit-2026-04-26.md` §6.1).
+/// Content-addressed Merkle hash. 32 bytes, `Copy`, no allocation.
 ///
-/// We use a process-global `DashMap` rather than per-`KEnv` interning so
-/// the change is local to `mk_info` (`expr.rs`) and the universe info
-/// helper (`level.rs`); threading an `&InternTable` through every
-/// `KExpr::var`/`sort`/etc. constructor would touch 300+ call sites for
-/// no observable benefit (KEnvs don't outlive the process and the Addr
-/// content space is the same regardless of which session created it).
-///
-/// Memory cost: one [`Addr`] entry per distinct content hash for the
-/// lifetime of the process. A typical kernel-check-env run holds a few
-/// million distinct hashes, so on the order of 10s of MB; trivially
-/// dominated by the constants table itself.
-///
-/// Shard count is set to [`INTERN_SHARDS`] — much higher than DashMap's
-/// default (`4 * num_cpus()`) — so 32 concurrent ingress workers don't
-/// collide on the same shard's write lock. Empirically this is most of
-/// the `intern_expr_ns` cost on Mathlib.
-static ADDR_INTERN: LazyLock<DashMap<blake3::Hash, Addr>> =
-  LazyLock::new(|| DashMap::with_shard_amount(INTERN_SHARDS));
-
-/// Number of shards used by [`ADDR_INTERN`] and the [`InternTable`] maps.
-///
-/// DashMap's default is `4 * num_cpus()`; on a 32-thread box that's 128.
-/// With 32 rayon workers all interning concurrently, ~25% of operations
-/// collide on a shard, which under `parking_lot::RwLock` serializes
-/// readers behind any pending writer. Bumping the shard count cuts the
-/// collision probability with negligible memory overhead (~32 KB extra
-/// for the shard headers at 2048).
-const INTERN_SHARDS: usize = 2048;
-
-/// Return the canonical [`Addr`] for `hash`. After this returns, every
-/// caller that interns the same content gets the same `Arc` allocation —
-/// `Arc::ptr_eq` between any two interned addresses is iff their hashes
-/// are equal.
-///
-/// Get-first-then-entry: most calls are hits (the address space saturates
-/// quickly during ingress), so we take the read-locked fast path before
-/// falling back to the write-locked `entry` path on a miss. Behaviour is
-/// identical to a plain `entry().or_insert_with(...)` — the slow path
-/// still races safely if two threads insert concurrently.
-#[inline]
-pub fn intern_addr(hash: blake3::Hash) -> Addr {
-  if let Some(existing) = ADDR_INTERN.get(&hash) {
-    return existing.value().clone();
-  }
-  ADDR_INTERN.entry(hash).or_insert_with(|| Arc::new(hash)).value().clone()
-}
+/// Earlier revisions stored `Addr = Arc<blake3::Hash>` and threaded all
+/// constructions through a process-global `DashMap` intern table to dedup
+/// the inner allocation. On full-mathlib kernel-check runs that table grew
+/// to 100M+ entries (≈8+ GiB) and dominated RSS, even though the per-worker
+/// `KEnv` caches were correctly cleared per scheduled block. Switching to a
+/// `Copy` value drops the global intern, eliminates one allocation per
+/// `KExpr`/`KUniv` construction, and reduces per-`ExprData` overhead
+/// from `Arc<Hash>` (8-byte pointer + 16-byte heap header + 32-byte
+/// Hash) to a single in-place 32-byte field. Identity comparison falls
+/// back from `Arc::ptr_eq` (single pointer compare) to a 32-byte memcmp,
+/// which is a single AVX2 cycle on modern x86 and dominated by the
+/// surrounding kernel work.
+pub type Addr = blake3::Hash;
 
 /// Hash-consing intern table for expressions and universes.
 ///
-/// Thread-safe via `DashMap`: usable from parallel ingress and
-/// sequential type checking alike. Guarantees pointer uniqueness
-/// by blake3 hash: `ptr(a) == ptr(b)` iff `hash(a) == hash(b)`.
+/// Single-threaded and owned by one `KEnv`. Guarantees pointer uniqueness
+/// by blake3 hash within that environment: `ptr(a) == ptr(b)` iff
+/// `hash(a) == hash(b)`.
+///
+/// Also owns reusable scratch buffers used by `subst`, `simul_subst`, and
+/// `lift` to memoize content-addressed sub-traversals within a single
+/// call. Allocating these as `FxHashMap::default()` per call shows up in
+/// profiles for big mathlib blocks where beta/zeta reductions fire
+/// millions of times; threading the scratch through the `&mut InternTable`
+/// already passed for hash-consing eliminates the malloc/free churn while
+/// keeping the per-call invariant (caches are cleared on entry).
 pub struct InternTable<M: KernelMode> {
-  univs: DashMap<blake3::Hash, KUniv<M>>,
-  exprs: DashMap<blake3::Hash, KExpr<M>>,
+  pub(crate) univs: FxHashMap<blake3::Hash, KUniv<M>>,
+  pub(crate) exprs: FxHashMap<blake3::Hash, KExpr<M>>,
+  /// Scratch buffer for `subst` / `simul_subst` per-call memoization,
+  /// keyed by `(addr, depth)`. Cleared on entry. Owned here so the
+  /// allocation persists across calls.
+  pub(crate) subst_scratch: FxHashMap<(Addr, u64), KExpr<M>>,
+  /// Scratch buffer for `lift` per-call memoization, keyed by
+  /// `(addr, cutoff)`. Cleared on entry. Separate from `subst_scratch`
+  /// because `lift` is invoked from inside `subst_cached`, and the two
+  /// caches have different semantics, so they must not share entries.
+  pub(crate) lift_scratch: FxHashMap<(Addr, u64), KExpr<M>>,
 }
 
 impl<M: KernelMode> Default for InternTable<M> {
@@ -99,50 +74,47 @@ impl<M: KernelMode> Default for InternTable<M> {
 impl<M: KernelMode> InternTable<M> {
   pub fn new() -> Self {
     InternTable {
-      univs: DashMap::with_shard_amount(INTERN_SHARDS),
-      exprs: DashMap::with_shard_amount(INTERN_SHARDS),
+      univs: FxHashMap::default(),
+      exprs: FxHashMap::default(),
+      subst_scratch: FxHashMap::default(),
+      lift_scratch: FxHashMap::default(),
     }
   }
 
-  /// Read-only fast path: return the canonical interned universe for `hash`
-  /// if already present, without taking a shard write lock. Used by
-  /// instrumented callers that want to record hit/miss separately; plain
-  /// callers should use `intern_univ`.
+  /// Read-only fast path: return the canonical interned universe for
+  /// `hash` if already present. Used by instrumented callers that want
+  /// to record hit/miss separately; plain callers should use
+  /// `intern_univ`.
   #[inline]
   pub fn try_get_univ(&self, hash: &blake3::Hash) -> Option<KUniv<M>> {
-    self.univs.get(hash).map(|r| r.value().clone())
+    self.univs.get(hash).cloned()
   }
 
   /// Read-only fast path counterpart of `try_get_univ` for expressions.
   #[inline]
   pub fn try_get_expr(&self, hash: &blake3::Hash) -> Option<KExpr<M>> {
-    self.exprs.get(hash).map(|r| r.value().clone())
+    self.exprs.get(hash).cloned()
   }
 
   /// Intern a universe: if one with the same hash exists, return the
-  /// existing Arc (ensuring pointer uniqueness). Otherwise insert and return.
-  ///
-  /// Get-first-then-entry: hash-cons tables saturate quickly, so most calls
-  /// are hits and we want them to take only the per-shard read lock. The
-  /// slow path falls back to `entry().or_insert(...)`, which still races
-  /// safely if two threads insert concurrently — the second-arriving thread
-  /// gets back the first's value.
-  pub fn intern_univ(&self, u: KUniv<M>) -> KUniv<M> {
-    let key = **u.addr();
+  /// existing Arc (ensuring pointer uniqueness). Otherwise insert and
+  /// return.
+  pub fn intern_univ(&mut self, u: KUniv<M>) -> KUniv<M> {
+    let key = *u.addr();
     if let Some(existing) = self.univs.get(&key) {
-      return existing.value().clone();
+      return existing.clone();
     }
-    self.univs.entry(key).or_insert(u).value().clone()
+    self.univs.entry(key).or_insert(u).clone()
   }
 
-  /// Intern an expression: same pointer-uniqueness guarantee as `intern_univ`,
-  /// same get-first-then-entry contention strategy.
-  pub fn intern_expr(&self, e: KExpr<M>) -> KExpr<M> {
-    let key = **e.addr();
+  /// Intern an expression: same pointer-uniqueness guarantee as
+  /// `intern_univ`.
+  pub fn intern_expr(&mut self, e: KExpr<M>) -> KExpr<M> {
+    let key = *e.addr();
     if let Some(existing) = self.exprs.get(&key) {
-      return existing.value().clone();
+      return existing.clone();
     }
-    self.exprs.entry(key).or_insert(e).value().clone()
+    self.exprs.entry(key).or_insert(e).clone()
   }
 }
 
@@ -166,107 +138,185 @@ pub enum RecursorAuxOrder {
   Canonical,
 }
 
-/// Result of entering the block-check coordinator.
-pub enum BlockCheckStart<M: KernelMode> {
-  /// A finished result was already cached, or another owner finished while
-  /// this caller waited.
-  Cached(Result<(), TcError<M>>),
-  /// This caller owns the check and must publish the result.
-  Owner(BlockCheckToken<M>),
+/// Snapshot of all `KEnv` cache sizes at a point in time.
+///
+/// Used by the parallel kernel-check diagnostic mode (gated on
+/// `IX_KERNEL_CHECK_DIAG=1`) to surface which scheduled blocks ratchet
+/// per-worker cache memory. Each field is the entry count of one of
+/// `KEnv`'s `FxHashMap`/`FxHashSet` caches at the moment of snapshotting.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct KEnvCacheSizes {
+  pub consts: usize,
+  pub blocks: usize,
+  pub intern_exprs: usize,
+  pub intern_univs: usize,
+  pub whnf: usize,
+  pub whnf_no_delta: usize,
+  pub whnf_core: usize,
+  pub infer: usize,
+  pub infer_only: usize,
+  pub def_eq: usize,
+  pub def_eq_cheap: usize,
+  pub def_eq_failure: usize,
+  pub unfold: usize,
+  pub ingress: usize,
+  pub is_prop: usize,
+  pub recursor: usize,
+  pub rec_majors: usize,
+  pub block_peer_agreement: usize,
+  pub block_check_results: usize,
 }
 
-/// Ownership token for a block currently being checked.
-pub struct BlockCheckToken<M: KernelMode> {
-  block: KId<M>,
+impl KEnvCacheSizes {
+  /// Largest single cache size. Cheap proxy for "how big did this block
+  /// get" without summing. (Sum is misleading because the same content
+  /// hash can appear in multiple caches.)
+  pub fn max(&self) -> usize {
+    [
+      self.consts,
+      self.blocks,
+      self.intern_exprs,
+      self.intern_univs,
+      self.whnf,
+      self.whnf_no_delta,
+      self.whnf_core,
+      self.infer,
+      self.infer_only,
+      self.def_eq,
+      self.def_eq_cheap,
+      self.def_eq_failure,
+      self.unfold,
+      self.ingress,
+      self.is_prop,
+      self.recursor,
+      self.rec_majors,
+      self.block_peer_agreement,
+      self.block_check_results,
+    ]
+    .into_iter()
+    .max()
+    .unwrap_or(0)
+  }
+}
+
+impl std::fmt::Display for KEnvCacheSizes {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(
+      f,
+      "consts={} intern_exprs={} intern_univs={} whnf={}/{}/{} infer={}/{} def_eq={}/{}/{} unfold={} ingress={} is_prop={}",
+      self.consts,
+      self.intern_exprs,
+      self.intern_univs,
+      self.whnf,
+      self.whnf_no_delta,
+      self.whnf_core,
+      self.infer,
+      self.infer_only,
+      self.def_eq,
+      self.def_eq_cheap,
+      self.def_eq_failure,
+      self.unfold,
+      self.ingress,
+      self.is_prop,
+    )
+  }
 }
 
 /// The global zero kernel environment.
 ///
-/// Thread-safe via `DashMap`/`DashSet`: supports concurrent reads and writes
-/// from multiple `TypeChecker` instances running in parallel. Contains all
-/// shared kernel state: constants, intern table, and type-checking caches.
+/// Single-threaded: one worker owns one environment at a time. Contains all
+/// kernel state for that worker: constants, intern table, and type-checking
+/// caches.
 ///
 /// `get()` returns owned `KConst`/`Vec` (cheap Arc clones) to avoid
-/// holding DashMap guards across call boundaries.
+/// tying callers to internal map borrows.
 pub struct KEnv<M: KernelMode> {
   // -- Constants --
   /// Loaded constants keyed by `KId`.
-  pub consts: DashMap<KId<M>, KConst<M>>,
+  pub consts: FxHashMap<KId<M>, KConst<M>>,
   /// Block membership: block id → ordered member ids.
-  pub blocks: DashMap<KId<M>, Vec<KId<M>>>,
+  pub blocks: FxHashMap<KId<M>, Vec<KId<M>>>,
 
   // -- Intern table (hash-consing for pointer dedup) --
   pub intern: InternTable<M>,
 
   // -- Primitives (resolved lazily from consts) --
-  prims: OnceLock<Primitives<M>>,
+  prims: OnceCell<Primitives<M>>,
 
   // -- Global caches (grow monotonically, keyed by content hash) --
   // All cache keys use `Addr` (= `Arc<blake3::Hash>`, content-addressed) rather
   // than `Arc::as_ptr` pointers, avoiding the ABA problem where deallocated
   // pointers are reused by the allocator for semantically different expressions.
   /// WHNF cache (full, with delta): (expr_hash, ctx_hash)-keyed.
-  pub whnf_cache: DashMap<(Addr, Addr), KExpr<M>>,
+  pub whnf_cache: FxHashMap<(Addr, Addr), KExpr<M>>,
   /// WHNF cache (no delta): (expr_hash, ctx_hash)-keyed.
-  pub whnf_no_delta_cache: DashMap<(Addr, Addr), KExpr<M>>,
+  pub whnf_no_delta_cache: FxHashMap<(Addr, Addr), KExpr<M>>,
   /// WHNF core cache: structural-only reduction (beta/iota/zeta/proj),
   /// no native primitives, no delta. Mirrors lean4lean's `whnfCoreCache`
   /// (refs/lean4lean/Lean4Lean/TypeChecker.lean:19) and lean4 C++'s
   /// `m_whnf_core`. Populated only when flags are FULL — cheap-projection
   /// results are not safe to share with full callers.
-  pub whnf_core_cache: DashMap<(Addr, Addr), KExpr<M>>,
+  pub whnf_core_cache: FxHashMap<(Addr, Addr), KExpr<M>>,
   /// Infer cache: keyed by (expr_hash, ctx_hash). Context-dependent.
   /// Populated only from full-mode `infer` (i.e. not from `with_infer_only`),
   /// so every cached result has passed the validation `infer_only` skips.
   /// Both modes read from this same cache — an `infer_only` lookup happily
   /// consumes a full-mode result since it's strictly stronger.
-  pub infer_cache: DashMap<(Addr, Addr), KExpr<M>>,
+  pub infer_cache: FxHashMap<(Addr, Addr), KExpr<M>>,
   /// Infer-only cache: keyed like `infer_cache`, but populated only by
   /// `with_infer_only` synthesis and read only while infer-only is active.
   /// This keeps unchecked results out of the validated full-mode cache while
   /// still sharing repeated proof-irrelevance/projection probes.
-  pub infer_only_cache: DashMap<(Addr, Addr), KExpr<M>>,
+  pub infer_only_cache: FxHashMap<(Addr, Addr), KExpr<M>>,
   /// Full def-eq cache: keyed by (expr_hash, expr_hash, ctx_hash).
   /// Context-dependent. Entries in this cache are valid for both full and
   /// cheap def-eq callers.
-  pub def_eq_cache: DashMap<(Addr, Addr, Addr), bool>,
+  pub def_eq_cache: FxHashMap<(Addr, Addr, Addr), bool>,
   /// Cheap def-eq cache: same key as `def_eq_cache`, but only for comparisons
   /// performed inside cheap projection reductions. Cheap `false` can be a
   /// full-mode false negative, so those entries must not be visible to full
   /// callers.
-  pub def_eq_cheap_cache: DashMap<(Addr, Addr, Addr), bool>,
+  pub def_eq_cheap_cache: FxHashMap<(Addr, Addr, Addr), bool>,
   /// Failed def-eq pairs in lazy delta: canonical ordering by hash.
-  pub def_eq_failure: DashSet<(Addr, Addr, Addr)>,
+  pub def_eq_failure: FxHashSet<(Addr, Addr, Addr)>,
   /// Constant-instantiation cache: caches the result of
   /// `instantiate_univ_params(val, us)` for each `Const(id, us)` head encountered
   /// during delta unfolding. Keyed by the head expression's content hash, which
   /// already content-addresses `(id, us)` (the head's address derives from id +
   /// universe args). Mirrors lean4 C++ `m_unfold` cache. Cross-call sharing of
   /// universe-substituted bodies eliminates O(body) walks on every unfold.
-  pub unfold_cache: DashMap<Addr, KExpr<M>>,
+  pub unfold_cache: FxHashMap<Addr, KExpr<M>>,
   /// Ingress cache: LeanExpr → KExpr conversion results.
   /// Keyed by (expr_hash, param_names_hash) to account for different
   /// level param bindings producing different KExprs from the same LeanExpr.
-  pub ingress_cache: DashMap<(Addr, Addr), KExpr<M>>,
+  pub ingress_cache: FxHashMap<(Addr, Addr), KExpr<M>>,
+  /// "Is this type Prop?" cache, keyed by (type_hash, ctx_hash).
+  ///
+  /// `try_proof_irrel` is called on essentially every `is_def_eq`
+  /// invocation, and its uncached path costs `infer ∘ infer ∘ whnf` —
+  /// two type-inference runs and one full WHNF — to decide whether the
+  /// term's type is `Prop`. Because the answer depends only on the
+  /// *type* (not on the term whose type was inferred), caching by the
+  /// type's content hash + suffix-aware context lets every subsequent
+  /// proof-irrelevance probe skip those three calls. Empirically this
+  /// is the dominant cost on mathlib proof-heavy blocks, where the same
+  /// propositions are tested for equality thousands of times.
+  pub is_prop_cache: FxHashMap<(Addr, Addr), bool>,
   /// Generated recursors, keyed by inductive Muts block id.
-  pub recursor_cache: DashMap<KId<M>, Vec<GeneratedRecursor<M>>>,
+  pub recursor_cache: FxHashMap<KId<M>, Vec<GeneratedRecursor<M>>>,
   /// Nested-auxiliary order expected by stored recursors in this environment.
   pub recursor_aux_order: RecursorAuxOrder,
   /// Maps the set of major inductive KIds to the inductive block id.
-  pub rec_majors_cache: DashMap<BTreeSet<KId<M>>, KId<M>>,
+  pub rec_majors_cache: FxHashMap<BTreeSet<KId<M>>, KId<M>>,
   /// Mutual-block peer-agreement cache: records block ids whose peers have
   /// already been verified to share the same universe (S3) and parameter
   /// prefix (S3b). Populated by `check_inductive` after the per-peer loop
   /// succeeds; collapses the naturally O(N²) per-peer iteration to O(N)
   /// total work per block across all the peers' individual checks.
-  pub block_peer_agreement_cache: DashSet<KId<M>>,
+  pub block_peer_agreement_cache: FxHashSet<KId<M>>,
   /// Whole-block type-check results. Both successes and failures are cached,
   /// so every member of a bad block reports the same structured failure.
-  pub block_check_results: DashMap<KId<M>, Result<(), TcError<M>>>,
-  /// Blocks currently owned by a checker thread.
-  pub block_checks_in_progress: Mutex<HashSet<KId<M>>>,
-  /// Waiters park here while another thread checks their block.
-  pub block_check_cv: Condvar,
+  pub block_check_results: FxHashMap<KId<M>, Result<(), TcError<M>>>,
 
   // -- Performance counters (audit §10) --
   /// Cache hit/miss and fuel-consumption counters, gated by
@@ -282,22 +332,8 @@ impl<M: KernelMode> Default for KEnv<M> {
 }
 
 /// Dump performance counters when the env is dropped, but only when
-/// `IX_PERF_COUNTERS=1` is set. This piggybacks on `KEnv`'s natural
-/// teardown (e.g. at the end of `rs_kernel_check_consts`) so any harness
-/// that drives a check-env run picks up the totals automatically.
-///
-/// Then tear down the heavy `DashMap` fields in parallel across their shards.
-/// A fully-loaded `KEnv` after a mathlib-scale ingress holds millions of
-/// `Arc<ExprData>` / `Arc<UnivData>` allocations across its `consts` map,
-/// `intern` table, and (post type-check) WHNF/infer caches. The default
-/// `drop(DashMap)` walks shards single-threaded, taking ~200s; using
-/// `into_par_iter().for_each(drop)` brings that to seconds. `mem::take`
-/// pulls each `DashMap` out into a local that we then parallel-drop;
-/// the now-empty `Default` left in `*self` drops trivially when this
-/// function returns.
-///
-/// Set `IX_SEQ_KENV_DROP=1` to fall back to the old single-threaded path
-/// for measurement comparisons.
+/// `IX_PERF_COUNTERS=1` is set. Serial `FxHashMap` teardown is left to
+/// normal Rust drop order.
 impl<M: KernelMode> Drop for KEnv<M> {
   fn drop(&mut self) {
     if super::perf::enabled() {
@@ -305,104 +341,6 @@ impl<M: KernelMode> Drop for KEnv<M> {
       if !summary.is_empty() {
         eprint!("{summary}");
       }
-    }
-
-    if std::env::var_os("IX_SEQ_KENV_DROP").is_some() {
-      // Skip the parallel teardown — let the auto-derived field drops run
-      // sequentially as before.
-      return;
-    }
-
-    let quiet = std::env::var_os("IX_QUIET").is_some();
-    let total_start = Instant::now();
-
-    // Snapshot lengths up-front for logging before we move the maps out.
-    let consts_len = self.consts.len();
-    let blocks_len = self.blocks.len();
-    let intern_exprs_len = self.intern.exprs.len();
-    let intern_univs_len = self.intern.univs.len();
-    let ingress_cache_len = self.ingress_cache.len();
-    let whnf_total = self.whnf_cache.len()
-      + self.whnf_no_delta_cache.len()
-      + self.whnf_core_cache.len();
-    let infer_total = self.infer_cache.len() + self.infer_only_cache.len();
-    // Only log when the env actually held something — empty
-    // create-and-immediately-drop sites in the compile/ingress pipeline
-    // would otherwise produce noisy `0.00s ... 0/0 ...` lines.
-    let nonempty = consts_len
-      + blocks_len
-      + intern_exprs_len
-      + intern_univs_len
-      + ingress_cache_len
-      + whnf_total
-      + infer_total
-      > 0;
-
-    // Drop each heavy DashMap/DashSet in parallel via rayon work-stealing
-    // across shards. Maps are dropped sequentially with respect to each
-    // other so we don't fight for the global rayon pool; each one
-    // saturates the pool internally.
-    //
-    // Order doesn't matter for correctness — shared `Arc` content is
-    // refcounted, and the last decrementer destroys exactly once.
-    let consts_start = Instant::now();
-    std::mem::take(&mut self.consts).into_par_iter().for_each(drop);
-    let consts_ns = consts_start.elapsed();
-
-    let blocks_start = Instant::now();
-    std::mem::take(&mut self.blocks).into_par_iter().for_each(drop);
-    let blocks_ns = blocks_start.elapsed();
-
-    let intern_start = Instant::now();
-    std::mem::take(&mut self.intern.univs).into_par_iter().for_each(drop);
-    std::mem::take(&mut self.intern.exprs).into_par_iter().for_each(drop);
-    let intern_ns = intern_start.elapsed();
-
-    let caches_start = Instant::now();
-    std::mem::take(&mut self.whnf_cache).into_par_iter().for_each(drop);
-    std::mem::take(&mut self.whnf_no_delta_cache)
-      .into_par_iter()
-      .for_each(drop);
-    std::mem::take(&mut self.whnf_core_cache).into_par_iter().for_each(drop);
-    std::mem::take(&mut self.infer_cache).into_par_iter().for_each(drop);
-    std::mem::take(&mut self.infer_only_cache)
-      .into_par_iter()
-      .for_each(drop);
-    std::mem::take(&mut self.def_eq_cache).into_par_iter().for_each(drop);
-    std::mem::take(&mut self.def_eq_cheap_cache)
-      .into_par_iter()
-      .for_each(drop);
-    std::mem::take(&mut self.def_eq_failure).into_par_iter().for_each(drop);
-    std::mem::take(&mut self.unfold_cache).into_par_iter().for_each(drop);
-    std::mem::take(&mut self.ingress_cache).into_par_iter().for_each(drop);
-    std::mem::take(&mut self.recursor_cache).into_par_iter().for_each(drop);
-    std::mem::take(&mut self.rec_majors_cache).into_par_iter().for_each(drop);
-    std::mem::take(&mut self.block_peer_agreement_cache)
-      .into_par_iter()
-      .for_each(drop);
-    std::mem::take(&mut self.block_check_results)
-      .into_par_iter()
-      .for_each(drop);
-    let caches_ns = caches_start.elapsed();
-
-    if !quiet && nonempty {
-      eprintln!(
-        "[kenv_drop] {:.2}s parallel threads={} \
-         (consts {:.2}s/{} blocks {:.2}s intern {:.2}s/{}+{} \
-         caches {:.2}s/whnf={} infer={} ingress={})",
-        total_start.elapsed().as_secs_f32(),
-        rayon::current_num_threads(),
-        consts_ns.as_secs_f32(),
-        consts_len,
-        blocks_ns.as_secs_f32(),
-        intern_ns.as_secs_f32(),
-        intern_univs_len,
-        intern_exprs_len,
-        caches_ns.as_secs_f32(),
-        whnf_total,
-        infer_total,
-        ingress_cache_len,
-      );
     }
   }
 }
@@ -416,56 +354,63 @@ impl<M: KernelMode> KEnv<M> {
     recursor_aux_order: RecursorAuxOrder,
   ) -> Self {
     KEnv {
-      consts: DashMap::default(),
-      blocks: DashMap::default(),
+      consts: FxHashMap::default(),
+      blocks: FxHashMap::default(),
       intern: InternTable::new(),
-      prims: OnceLock::new(),
-      whnf_cache: DashMap::default(),
-      whnf_no_delta_cache: DashMap::default(),
-      whnf_core_cache: DashMap::default(),
-      infer_cache: DashMap::default(),
-      infer_only_cache: DashMap::default(),
-      def_eq_cache: DashMap::default(),
-      def_eq_cheap_cache: DashMap::default(),
-      def_eq_failure: DashSet::default(),
-      unfold_cache: DashMap::default(),
-      ingress_cache: DashMap::default(),
-      recursor_cache: DashMap::default(),
+      prims: OnceCell::new(),
+      whnf_cache: FxHashMap::default(),
+      whnf_no_delta_cache: FxHashMap::default(),
+      whnf_core_cache: FxHashMap::default(),
+      infer_cache: FxHashMap::default(),
+      infer_only_cache: FxHashMap::default(),
+      def_eq_cache: FxHashMap::default(),
+      def_eq_cheap_cache: FxHashMap::default(),
+      def_eq_failure: FxHashSet::default(),
+      unfold_cache: FxHashMap::default(),
+      ingress_cache: FxHashMap::default(),
+      is_prop_cache: FxHashMap::default(),
+      recursor_cache: FxHashMap::default(),
       recursor_aux_order,
-      rec_majors_cache: DashMap::default(),
-      block_peer_agreement_cache: DashSet::default(),
-      block_check_results: DashMap::default(),
-      block_checks_in_progress: Mutex::new(HashSet::new()),
-      block_check_cv: Condvar::new(),
+      rec_majors_cache: FxHashMap::default(),
+      block_peer_agreement_cache: FxHashSet::default(),
+      block_check_results: FxHashMap::default(),
       perf: PerfCounters::default(),
     }
   }
 
-  /// Resolve primitives from the environment (cached via OnceLock).
+  /// Resolve primitives from the environment (cached via `OnceCell`).
   pub fn prims(&self) -> &Primitives<M> {
     self.prims.get_or_init(|| Primitives::from_env(self))
   }
 
   /// Pre-initialize the primitives cache with an externally-resolved
   /// `Primitives<M>`. Returns `Ok(())` on success, `Err(p)` if `prims()`
-  /// has already been called (the OnceLock is full).
+  /// has already been called (the `OnceCell` is full).
   ///
-  /// Used by `lean_ingress` to install `Primitives::from_env_orig`
-  /// (LEON-addressed) before any `TypeChecker::new(orig_kenv)` triggers
-  /// the default canonical-addressed `from_env`.
+  /// Used by `TypeChecker::new_with_lazy_ixon` to install primitives
+  /// resolved from the IxonIngressLookups address→name map *before* any
+  /// constants have been faulted into the local KEnv — without this
+  /// seeding, `prims()` would derive primitives from an empty env and
+  /// return synthetic `@<hex>` KIds that wouldn't match the real names
+  /// later faulted in.
   ///
-  /// `Primitives<M>` is large (~2 KB), so the error path is allowed to be
-  /// big — the caller hands ownership in and only retrieves it on failure.
+  /// `Primitives<M>` is large (~2 KB), so the error path is allowed to
+  /// be big — the caller hands ownership in and only retrieves it on
+  /// failure.
   #[allow(clippy::result_large_err)]
-  pub fn set_prims(&self, p: Primitives<M>) -> Result<(), Primitives<M>> {
+  pub fn set_prims(&mut self, p: Primitives<M>) -> Result<(), Primitives<M>> {
     self.prims.set(p)
   }
 
-  pub fn get(&self, id: &KId<M>) -> Option<KConst<M>> {
-    self.consts.get(id).map(|r| r.value().clone())
+  pub fn has_prims(&self) -> bool {
+    self.prims.get().is_some()
   }
 
-  pub fn insert(&self, id: KId<M>, c: KConst<M>) {
+  pub fn get(&self, id: &KId<M>) -> Option<KConst<M>> {
+    self.consts.get(id).cloned()
+  }
+
+  pub fn insert(&mut self, id: KId<M>, c: KConst<M>) {
     if let Some(marker) = super::primitive::reserved_marker_name(&id.addr) {
       panic!(
         "attempted to insert {id} at reserved kernel marker address {marker} ({})",
@@ -488,66 +433,104 @@ impl<M: KernelMode> KEnv<M> {
   }
 
   /// Iterate over all constants. Returns owned (KId, KConst) pairs.
-  /// Internally snapshots the DashMap — safe for concurrent access.
   pub fn iter(&self) -> impl Iterator<Item = (KId<M>, KConst<M>)> + '_ {
-    self.consts.iter().map(|r| (r.key().clone(), r.value().clone()))
+    self.consts.iter().map(|(id, c)| (id.clone(), c.clone()))
   }
 
   /// Get block members. Returns owned Vec (cheap KId clones).
   pub fn get_block(&self, id: &KId<M>) -> Option<Vec<KId<M>>> {
-    self.blocks.get(id).map(|r| r.value().clone())
+    self.blocks.get(id).cloned()
   }
 
   /// Insert a block membership entry.
-  pub fn insert_block(&self, id: KId<M>, members: Vec<KId<M>>) {
+  pub fn insert_block(&mut self, id: KId<M>, members: Vec<KId<M>>) {
     self.blocks.insert(id, members);
   }
 
-  /// Enter the shared whole-block checker.
-  ///
-  /// The first caller for `block` becomes owner. Concurrent callers wait on the
-  /// condition variable until the owner publishes a cached result.
-  pub fn begin_block_check(&self, block: &KId<M>) -> BlockCheckStart<M> {
-    loop {
-      if let Some(result) = self.block_check_results.get(block) {
-        return BlockCheckStart::Cached(result.value().clone());
-      }
+  /// Clear all worker-local kernel state before checking another scheduled
+  /// block or when a caller needs a fresh environment.
+  pub fn clear(&mut self) {
+    self.consts.clear();
+    self.blocks.clear();
+    self.intern.univs.clear();
+    self.intern.exprs.clear();
+    // Scratch buffers retain entries from the most recent subst/lift call;
+    // emptying them releases the KExpr Arc references they hold so the
+    // intern.exprs cleanup above can actually drop ExprData allocations.
+    self.intern.subst_scratch.clear();
+    self.intern.lift_scratch.clear();
+    let _ = self.prims.take();
+    self.whnf_cache.clear();
+    self.whnf_no_delta_cache.clear();
+    self.whnf_core_cache.clear();
+    self.infer_cache.clear();
+    self.infer_only_cache.clear();
+    self.def_eq_cache.clear();
+    self.def_eq_cheap_cache.clear();
+    self.def_eq_failure.clear();
+    self.unfold_cache.clear();
+    self.ingress_cache.clear();
+    self.is_prop_cache.clear();
+    self.recursor_cache.clear();
+    self.rec_majors_cache.clear();
+    self.block_peer_agreement_cache.clear();
+    self.block_check_results.clear();
+  }
 
-      let mut in_progress = self.block_checks_in_progress.lock().unwrap();
-      if let Some(result) = self.block_check_results.get(block) {
-        return BlockCheckStart::Cached(result.value().clone());
-      }
-      if in_progress.insert(block.clone()) {
-        return BlockCheckStart::Owner(BlockCheckToken {
-          block: block.clone(),
-        });
-      }
-
-      while in_progress.contains(block) {
-        in_progress = self.block_check_cv.wait(in_progress).unwrap();
-        if let Some(result) = self.block_check_results.get(block) {
-          return BlockCheckStart::Cached(result.value().clone());
-        }
-      }
+  /// Snapshot of all per-worker cache sizes. Cheap (each `len()` is O(1));
+  /// useful as diagnostic input to identify which blocks blow up
+  /// individual caches before `clear_releasing_memory` reclaims them.
+  pub fn cache_sizes(&self) -> KEnvCacheSizes {
+    KEnvCacheSizes {
+      consts: self.consts.len(),
+      blocks: self.blocks.len(),
+      intern_exprs: self.intern.exprs.len(),
+      intern_univs: self.intern.univs.len(),
+      whnf: self.whnf_cache.len(),
+      whnf_no_delta: self.whnf_no_delta_cache.len(),
+      whnf_core: self.whnf_core_cache.len(),
+      infer: self.infer_cache.len(),
+      infer_only: self.infer_only_cache.len(),
+      def_eq: self.def_eq_cache.len(),
+      def_eq_cheap: self.def_eq_cheap_cache.len(),
+      def_eq_failure: self.def_eq_failure.len(),
+      unfold: self.unfold_cache.len(),
+      ingress: self.ingress_cache.len(),
+      is_prop: self.is_prop_cache.len(),
+      recursor: self.recursor_cache.len(),
+      rec_majors: self.rec_majors_cache.len(),
+      block_peer_agreement: self.block_peer_agreement_cache.len(),
+      block_check_results: self.block_check_results.len(),
     }
   }
 
-  /// Publish a completed block-check result and wake all waiters.
+  /// Clear worker-local state and drop backing allocations.
   ///
-  /// The token is consumed deliberately: it's a one-shot RAII handle that
-  /// must not be reused after publishing the result.
-  #[allow(clippy::needless_pass_by_value)]
-  pub fn finish_block_check(
-    &self,
-    token: BlockCheckToken<M>,
-    result: Result<(), TcError<M>>,
-  ) -> Result<(), TcError<M>> {
-    self.block_check_results.insert(token.block.clone(), result.clone());
-    let mut in_progress = self.block_checks_in_progress.lock().unwrap();
-    in_progress.remove(&token.block);
-    drop(in_progress);
-    self.block_check_cv.notify_all();
-    result
+  /// `clear()` preserves `HashMap` capacity, which is useful for reuse but
+  /// problematic for full-env checking: one very large block can permanently
+  /// ratchet a worker's retained cache allocation. This variant is for
+  /// scheduled-block boundaries where memory pressure matters more than
+  /// preserving buckets for the next unrelated block.
+  pub fn clear_releasing_memory(&mut self) {
+    self.consts = FxHashMap::default();
+    self.blocks = FxHashMap::default();
+    self.intern = InternTable::new();
+    self.prims = OnceCell::new();
+    self.whnf_cache = FxHashMap::default();
+    self.whnf_no_delta_cache = FxHashMap::default();
+    self.whnf_core_cache = FxHashMap::default();
+    self.infer_cache = FxHashMap::default();
+    self.infer_only_cache = FxHashMap::default();
+    self.def_eq_cache = FxHashMap::default();
+    self.def_eq_cheap_cache = FxHashMap::default();
+    self.def_eq_failure = FxHashSet::default();
+    self.unfold_cache = FxHashMap::default();
+    self.ingress_cache = FxHashMap::default();
+    self.is_prop_cache = FxHashMap::default();
+    self.recursor_cache = FxHashMap::default();
+    self.rec_majors_cache = FxHashMap::default();
+    self.block_peer_agreement_cache = FxHashSet::default();
+    self.block_check_results = FxHashMap::default();
   }
 }
 
@@ -585,7 +568,7 @@ mod tests {
 
   #[test]
   fn insert_and_get() {
-    let env = KEnv::<Anon>::new();
+    let mut env = KEnv::<Anon>::new();
     let id = mk_id("Nat");
     env.insert(id.clone(), mk_axio("Nat"));
     assert_eq!(env.len(), 1);
@@ -595,14 +578,14 @@ mod tests {
   #[test]
   #[should_panic(expected = "reserved kernel marker")]
   fn insert_reserved_marker_panics() {
-    let env = KEnv::<Anon>::new();
+    let mut env = KEnv::<Anon>::new();
     let id = KId::new(PrimAddrs::new().eager_reduce, ());
     env.insert(id, mk_axio("eager_reduce"));
   }
 
   #[test]
   fn contains_key_works() {
-    let env = KEnv::<Anon>::new();
+    let mut env = KEnv::<Anon>::new();
     let id = mk_id("Nat");
     assert!(!env.contains_key(&id));
     env.insert(id.clone(), mk_axio("Nat"));
@@ -617,7 +600,7 @@ mod tests {
 
   #[test]
   fn get_by_id_works() {
-    let env = KEnv::<Anon>::new();
+    let mut env = KEnv::<Anon>::new();
     let id = mk_id("Nat");
     env.insert(id.clone(), mk_axio("Nat"));
     assert!(env.get(&id).is_some());
@@ -626,7 +609,7 @@ mod tests {
 
   #[test]
   fn intern_univ_dedup() {
-    let it = InternTable::<Anon>::new();
+    let mut it = InternTable::<Anon>::new();
     let z1 = KUniv::zero();
     let z2 = KUniv::zero();
     // Before interning, same hash but different Arcs
@@ -638,7 +621,7 @@ mod tests {
 
   #[test]
   fn intern_univ_different() {
-    let it = InternTable::<Anon>::new();
+    let mut it = InternTable::<Anon>::new();
     let z = it.intern_univ(KUniv::zero());
     let s = it.intern_univ(KUniv::succ(KUniv::zero()));
     assert!(!z.ptr_eq(&s));
@@ -646,7 +629,7 @@ mod tests {
 
   #[test]
   fn intern_expr_dedup() {
-    let it = InternTable::<Anon>::new();
+    let mut it = InternTable::<Anon>::new();
     let v1 = KExpr::var(0, ());
     let v2 = KExpr::var(0, ());
     assert!(!v1.ptr_eq(&v2));
@@ -657,7 +640,7 @@ mod tests {
 
   #[test]
   fn intern_expr_different() {
-    let it = InternTable::<Anon>::new();
+    let mut it = InternTable::<Anon>::new();
     let v0 = it.intern_expr(KExpr::var(0, ()));
     let v1 = it.intern_expr(KExpr::var(1, ()));
     assert!(!v0.ptr_eq(&v1));
@@ -665,7 +648,7 @@ mod tests {
 
   #[test]
   fn iter_all_entries() {
-    let env = KEnv::<Anon>::new();
+    let mut env = KEnv::<Anon>::new();
     env.insert(mk_id("A"), mk_axio("A"));
     env.insert(mk_id("B"), mk_axio("B"));
     assert_eq!(env.iter().count(), 2);

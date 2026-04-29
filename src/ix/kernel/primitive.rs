@@ -728,6 +728,21 @@ impl<M: KernelMode> Primitives<M> {
     Self::from_env_with(env, &PrimAddrs::new_orig())
   }
 
+  /// Resolve canonical primitive KIds from an external address → name
+  /// lookup. Lazy IxOn workers call this before any primitive has
+  /// necessarily been faulted into their local KEnv, so Meta-mode KIds
+  /// still use the real serialized Lean names instead of synthetic
+  /// `@<hex>` fallbacks.
+  pub fn from_addr_names<F>(mut name_for_addr: F) -> Self
+  where
+    F: FnMut(&Address) -> Option<crate::ix::env::Name>,
+  {
+    Self::from_addrs_with(&PrimAddrs::new(), |addr| {
+      name_for_addr(addr)
+        .map(|name| KId::new(addr.clone(), M::meta_field(name)))
+    })
+  }
+
   /// Core primitive-resolution logic parameterized on the address
   /// table. See `from_env` (canonical) and `from_env_orig` (LEON) for
   /// the entry points.
@@ -738,11 +753,17 @@ impl<M: KernelMode> Primitives<M> {
       by_addr.entry(id.addr.clone()).or_insert_with(|| id.clone());
     }
 
-    // Resolve: look up in env, fall back to a synthetic KId with the address
-    // hex as the name. For real primitives this should only happen in small
-    // unit-test envs or when the hardcoded table has drifted.
-    let r = |addr: &Address| -> KId<M> {
-      by_addr.get(addr).cloned().unwrap_or_else(|| {
+    Self::from_addrs_with(a, |addr| by_addr.get(addr).cloned())
+  }
+
+  /// Shared primitive table construction once the caller has chosen the
+  /// address table and resolution source.
+  fn from_addrs_with<F>(a: &PrimAddrs, mut resolve: F) -> Self
+  where
+    F: FnMut(&Address) -> Option<KId<M>>,
+  {
+    let mut r = |addr: &Address| -> KId<M> {
+      resolve(addr).unwrap_or_else(|| {
         let hex = addr.hex();
         let name = crate::ix::env::Name::str(
           crate::ix::env::Name::anon(),
@@ -1045,7 +1066,7 @@ mod tests {
     // Insert a single constant at the canonical Nat address and confirm
     // `Primitives::from_env` picks it up instead of falling back to
     // synthesis.
-    let env = KEnv::<Anon>::new();
+    let mut env = KEnv::<Anon>::new();
     let canon = PrimAddrs::new();
 
     let nat_id = KId::<Anon>::new(canon.nat.clone(), ());

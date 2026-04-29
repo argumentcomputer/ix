@@ -61,8 +61,9 @@ pub(crate) fn compile_aux_block(
   aux_consts: &[MutConst],
   lean_env: &Arc<LeanEnv>,
   stt: &CompileState,
+  kctx: &mut crate::ix::compile::KernelCtx,
 ) -> Result<(), CompileError> {
-  compile_aux_block_with_rename(aux_consts, lean_env, stt, None, None)
+  compile_aux_block_with_rename(aux_consts, lean_env, stt, kctx, None, None)
 }
 
 /// Like `compile_aux_block`, but applies an optional name-rename map when
@@ -103,6 +104,7 @@ pub(crate) fn compile_aux_block_with_rename(
   aux_consts: &[MutConst],
   lean_env: &Arc<LeanEnv>,
   stt: &CompileState,
+  kctx: &mut crate::ix::compile::KernelCtx,
   name_rename: Option<&FxHashMap<Name, Name>>,
   class_order_key: Option<&dyn Fn(&MutConst) -> u64>,
 ) -> Result<(), CompileError> {
@@ -362,7 +364,12 @@ pub(crate) fn compile_aux_block_with_rename(
 
   // Ingress all registered aux constants into the kernel environment.
   for cnst in aux_consts {
-    aux_gen::expr_utils::ensure_in_kenv(&cnst.name(), lean_env.as_ref(), stt);
+    aux_gen::expr_utils::ensure_in_kenv(
+      &cnst.name(),
+      lean_env.as_ref(),
+      stt,
+      kctx,
+    );
   }
 
   Ok(())
@@ -468,16 +475,8 @@ pub(crate) fn generate_and_compile_aux_recursors(
   class_names: &[Vec<Name>],
   lean_env: &Arc<LeanEnv>,
   stt: &CompileState,
+  kctx: &mut crate::ix::compile::KernelCtx,
 ) -> Result<Option<crate::ix::compile::surgery::AuxLayout>, CompileError> {
-  // Phase 0: optionally verify every Lean-original constant in this block
-  // against the separate original kernel env, populated only when
-  // `CompileOptions::check_originals` is enabled.
-  //
-  // This is enabled for adversarial raw-constant tests. Normal compilation
-  // from a trusted Lean environment leaves it off to avoid retaining a
-  // second kernel-form copy of the full env.
-  check_originals(cs, lean_env, stt)?;
-
   // Guard: aux_gen canonical generation only runs for blocks containing
   // inductives. Non-inductive blocks (plain defs, recursor-only SCCs,
   // etc.) have no canonical auxiliaries to generate.
@@ -541,7 +540,7 @@ pub(crate) fn generate_and_compile_aux_recursors(
     &source_all,
     lean_env,
     stt,
-    &stt.kctx,
+    kctx,
   )?;
   let patches = &aux_out.patches;
   let gen_elapsed = t0.elapsed();
@@ -666,10 +665,8 @@ pub(crate) fn generate_and_compile_aux_recursors(
         if source_j == usize::MAX {
           continue;
         }
-        let aux_rec_name = Name::str(
-          original_all[0].clone(),
-          format!("rec_{}", source_j + 1),
-        );
+        let aux_rec_name =
+          Name::str(original_all[0].clone(), format!("rec_{}", source_j + 1));
         name_to_pos
           .insert(aux_rec_name, (n_originals_in_block + canonical_i) as u64);
       }
@@ -681,6 +678,7 @@ pub(crate) fn generate_and_compile_aux_recursors(
       &rec_consts,
       lean_env,
       stt,
+      kctx,
       Some(&aux_name_rename),
       Some(&class_order_key),
     )?;
@@ -718,7 +716,7 @@ pub(crate) fn generate_and_compile_aux_recursors(
     })
     .collect();
   if !cases_on_defs.is_empty() {
-    compile_aux_block(&cases_on_defs, lean_env, stt)?;
+    compile_aux_block(&cases_on_defs, lean_env, stt, kctx)?;
   }
   let cases_elapsed = t2.elapsed();
 
@@ -742,7 +740,7 @@ pub(crate) fn generate_and_compile_aux_recursors(
     })
     .collect();
   if !rec_on_defs.is_empty() {
-    compile_aux_block(&rec_on_defs, lean_env, stt)?;
+    compile_aux_block(&rec_on_defs, lean_env, stt, kctx)?;
   }
   let rec_on_elapsed = t3.elapsed();
   // Phase 3: Compile .below inductives (Prop-level).
@@ -769,6 +767,7 @@ pub(crate) fn generate_and_compile_aux_recursors(
       &below_indcs,
       lean_env,
       stt,
+      kctx,
       Some(&aux_name_rename),
       None,
     )?;
@@ -800,6 +799,7 @@ pub(crate) fn generate_and_compile_aux_recursors(
       &below_defs,
       lean_env,
       stt,
+      kctx,
       Some(&aux_name_rename),
       None,
     )?;
@@ -809,7 +809,7 @@ pub(crate) fn generate_and_compile_aux_recursors(
   // Phase 5: Compile .below.rec (for Prop-level .below inductives).
   let t5 = std::time::Instant::now();
   if !below_indcs.is_empty() {
-    compile_below_recursors(&below_indcs, lean_env, stt)?;
+    compile_below_recursors(&below_indcs, lean_env, stt, kctx)?;
   }
   let below_rec_elapsed = t5.elapsed();
 
@@ -830,6 +830,7 @@ pub(crate) fn generate_and_compile_aux_recursors(
         &defs,
         lean_env,
         stt,
+        kctx,
         Some(&aux_name_rename),
         None,
       )?;
@@ -866,158 +867,6 @@ pub(crate) fn generate_and_compile_aux_recursors(
     );
   }
   Ok(aux_layout)
-}
-
-// ===========================================================================
-// check_originals
-// ===========================================================================
-
-/// Type-check every original Lean-stored constant in the inductive block
-/// (the inductives, their constructors, and their recursors) **before** any
-/// aux_gen work runs, against the pristine `orig_kenv`.
-///
-/// This check only runs when `CompileOptions::check_originals` is enabled.
-/// Fast trusted-environment callers leave it disabled and keep `orig_kenv`
-/// empty.
-///
-/// ## Why this runs at Phase 0
-///
-/// aux_gen's Phase 1 (`compute_is_large_and_k`) populates the canonical
-/// `kctx.kenv` with ctor types pulled from an **expand/restore overlay**,
-/// where fields that nest a foreign inductive (e.g. `Array X`) get
-/// rewritten to reference a synthetic aux inductive (`X._nested.Array_1`).
-/// That representation is correct for canonical recursor *generation*,
-/// but it's *not* what Lean's stored originals refer to — the stored
-/// forms are already `restore_nested`-processed: `Array X` everywhere,
-/// no `_nested.*` refs.
-///
-/// Running this check at Phase 0, against `orig_kenv` when the caller opted
-/// into building it via `lean_ingress`, sidesteps that entirely. `orig_kenv`
-/// holds every Lean-original constant at its LEON content-hash address with
-/// all type references self-consistent — no alpha-collapse, no aux rewriting,
-/// no staleness. Subsequent aux_gen phases then freely populate the canonical
-/// `kctx.kenv` without any risk of cross-contamination in either direction.
-///
-/// ## Approach
-///
-/// For each original inductive `I`, ctor `C`, and recursor `R` in `cs`:
-/// - Look up its KId in `orig_kenv` (address =
-///   `Address::from_blake3_hash(ConstantInfo::get_hash())`, name = the Lean
-///   name).
-/// - Run `tc.check_const(&kid)` against the orig_kenv's TypeChecker.
-/// - Record failures under the Lean name in `stt.ungrounded`.
-///
-/// No ingress step, no shadow addresses, no dep walking. `orig_kenv`
-/// already contains every Lean-original constant and every transitive
-/// dep, all with consistent addressing.
-fn check_originals(
-  cs: &[MutConst],
-  lean_env: &Arc<LeanEnv>,
-  stt: &CompileState,
-) -> Result<(), CompileError> {
-  use crate::ix::address::Address;
-  use crate::ix::kernel::id::KId;
-  use crate::ix::kernel::mode::Meta;
-  use crate::ix::kernel::tc::TypeChecker;
-
-  if !stt.check_originals {
-    return Ok(());
-  }
-
-  let orig_kenv = &stt.kctx.orig_kenv;
-
-  // Build a KId for the given Lean name against the orig_kenv address
-  // scheme. `lean_ingress` inserts every constant at its LEON content
-  // hash (`ConstantInfo::get_hash()`), so `orig_kid` must compute the
-  // same address. Returns `None` if the name isn't present in
-  // `lean_env` — callers skip silently in that case (the constant was
-  // filtered out of ingress, or the name dangles from a bad ref).
-  let orig_kid = |name: &Name| -> Option<KId<Meta>> {
-    let ci = lean_env.get(name)?;
-    Some(KId::new(Address::from_blake3_hash(ci.get_hash()), name.clone()))
-  };
-
-  // Helper: run check_const on one KId and record any failure under the
-  // given Lean name with the supplied error-prefix.
-  let run_check = |lean_name: &Name, kid: &KId<Meta>, kind: &str| {
-    if !orig_kenv.contains_key(kid) {
-      // The original wasn't ingressed (e.g., it was filtered out of
-      // the lean_env input, or the caller's block refers to a name
-      // that Lean's kernel rejected so it never landed in
-      // env.constants). Skip silently — compile_const will report
-      // the missing-constant condition later.
-      return;
-    }
-    let mut tc = TypeChecker::new(orig_kenv.clone());
-    if let Err(e) = tc.check_const(kid) {
-      stt.ungrounded.insert(
-        lean_name.clone(),
-        format!("original {kind} rejected: {}: {e}", lean_name.pretty()),
-      );
-    }
-  };
-
-  // Which recursor names might Lean have generated for an inductive
-  // with mutual-group members `all`? `I.rec` is the primary; aux-nested
-  // inductives also get `I.rec_1`, `I.rec_2`, ... (one per auxiliary
-  // created by `elim_nested_inductive_fn`). Empirically 8 aux recursors
-  // is more than enough for any Lean inductive we've seen; we probe
-  // each in `lean_env` and only check those that exist.
-  //
-  // We probe through `lean_env` (not restricted to names in `cs`)
-  // because a bad recursor can live in its own Recr-only SCC that
-  // `compile_mutual` processes with `cs = [Recr(bad_rec)]`, handled by
-  // the `MutConst::Recr` branch below — or as an orphan that never
-  // reaches us via `cs`, handled here.
-  fn recursor_names(ind_name: &Name) -> Vec<Name> {
-    let mut names = Vec::new();
-    names.push(Name::str(ind_name.clone(), "rec".to_string()));
-    // Aux-recursor naming convention: `<main_ind>.rec_<N>` where
-    // `<main_ind>` is the first inductive in the mutual block's `all`
-    // list — see Lean's `mk_aux_rec_name_map` in
-    // `refs/lean4/src/kernel/inductive.cpp`. Callers pass each `ind` in
-    // `all` here; the first one's `<name>.rec_N` probes will hit, the
-    // others' probes will simply miss `lean_env` and be skipped.
-    let rec_base = Name::str(ind_name.clone(), "rec".to_string());
-    for i in 1u64..=16 {
-      names.push(Name::num(rec_base.clone(), Nat::from(i)));
-    }
-    names
-  }
-
-  for c in cs {
-    match c {
-      MutConst::Indc(ind) => {
-        let ind_name = &ind.ind.cnst.name;
-        if let Some(ind_kid) = orig_kid(ind_name) {
-          run_check(ind_name, &ind_kid, "inductive");
-        }
-        for ctor in &ind.ctors {
-          if let Some(ctor_kid) = orig_kid(&ctor.cnst.name) {
-            run_check(&ctor.cnst.name, &ctor_kid, "ctor");
-          }
-        }
-        // Probe for associated recursors in `lean_env` and check each
-        // that exists. Covers the case where the recursor lives in a
-        // separate SCC that `check_originals` wouldn't otherwise see.
-        for rec_name in recursor_names(ind_name) {
-          if let Some(rec_kid) = orig_kid(&rec_name) {
-            run_check(&rec_name, &rec_kid, "rec");
-          }
-        }
-      },
-      MutConst::Recr(rec) => {
-        let rec_name = &rec.cnst.name;
-        if let Some(rec_kid) = orig_kid(rec_name) {
-          run_check(rec_name, &rec_kid, "rec");
-        }
-      },
-      // Non-inductive members aren't part of this check.
-      MutConst::Defn(_) => {},
-    }
-  }
-
-  Ok(())
 }
 
 // ===========================================================================
@@ -1167,6 +1016,7 @@ fn compile_below_recursors(
   below_indcs: &[MutConst],
   lean_env: &Arc<LeanEnv>,
   stt: &CompileState,
+  kctx: &mut crate::ix::compile::KernelCtx,
 ) -> Result<(), CompileError> {
   // Build a small overlay with just the .below inductives + ctors.
   // These don't exist in the original lean_env, but generate_canonical_recursors
@@ -1210,14 +1060,14 @@ fn compile_below_recursors(
     Some(&overlay),
     None,
     stt,
-    &stt.kctx,
+    kctx,
   )?;
   for (_, rec) in recs {
     below_recs.push(MutConst::Recr(rec));
   }
 
   if !below_recs.is_empty() {
-    compile_aux_block(&below_recs, lean_env, stt)?;
+    compile_aux_block(&below_recs, lean_env, stt, kctx)?;
   }
   Ok(())
 }
