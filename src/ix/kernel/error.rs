@@ -64,6 +64,12 @@ pub enum TcError<M: KernelMode> {
     pos: usize,
     ordering: Ordering,
   },
+  /// A free variable reached a comparator (canonical-sort or related)
+  /// that requires de-Bruijn-only inputs. Canonicalization runs over
+  /// closed, egressed expressions before any binder opening; an FVar
+  /// here means a kernel path leaked an open expression into the
+  /// canonical-ordering stage.
+  UnexpectedFVarInComparator,
   Other(String),
 }
 
@@ -111,6 +117,11 @@ impl<M: KernelMode> std::fmt::Display for TcError<M> {
           block.hex()
         )
       },
+      TcError::UnexpectedFVarInComparator => write!(
+        f,
+        "unexpected free variable in canonical-ordering comparator: \
+         canonicalization must run before any binder opening"
+      ),
       TcError::Other(s) => write!(f, "{s}"),
     }
   }

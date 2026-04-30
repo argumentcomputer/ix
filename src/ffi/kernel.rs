@@ -27,6 +27,8 @@
 //! `decompile_env` to compare against the original env, which is dead
 //! weight in production builds.
 
+use std::fs::File;
+use std::io::Write;
 use std::sync::{
   Arc, Mutex, OnceLock,
   atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
@@ -43,6 +45,8 @@ use lean_ffi::object::{
   LeanOwned, LeanRef, LeanString,
 };
 
+#[cfg(feature = "test-ffi")]
+use crate::ffi::lean_env::{GlobalCache, decode_name};
 use crate::ffi::lean_env::{decode_env, decode_name_array};
 use crate::ix::address::Address;
 use crate::ix::compile::{
@@ -52,7 +56,11 @@ use crate::ix::compile::{
 use crate::ix::decompile::decompile_env;
 use crate::ix::env::{Name, NameData};
 use crate::ix::ixon::constant::ConstantInfo as IxonCI;
+#[cfg(feature = "test-ffi")]
+use crate::ix::ixon::constant::MutConst as IxonMutConst;
 use crate::ix::ixon::env::Env as IxonEnv;
+#[cfg(feature = "test-ffi")]
+use crate::ix::ixon::expr::Expr as IxonExpr;
 use crate::ix::ixon::metadata::ConstantMetaInfo;
 #[cfg(feature = "test-ffi")]
 use crate::ix::kernel::egress::{ixon_egress, lean_egress};
@@ -99,6 +107,70 @@ unsafe extern "C" {
 /// were a string header — `INTERNAL PANIC: out of memory` on decode.
 const KERNEL_EXCEPTION_TAG: u8 = 0;
 const COMPILE_ERROR_TAG: u8 = 1;
+
+/// Streaming writer for the `--fail-out` file used by `lake exe ix
+/// check-ixon`.
+///
+/// The previous implementation buffered all failures in Lean and dumped them
+/// once at the very end of the run, which meant a long-running full-env
+/// check exposed nothing to a `tail -f` observer until the whole batch had
+/// completed. Streaming here writes a header up front, appends each failure
+/// (one record == one comment-line + one bare-name line + a trailing blank
+/// line, matching the format `readNamesFile` understands) as it is detected,
+/// and flushes after every record so the file is immediately readable from
+/// outside the process.
+///
+/// Records are written under a `Mutex<File>` so parallel workers don't
+/// interleave bytes — failures are rare enough that the lock contention is
+/// negligible, and `File` writes go straight to the kernel page cache so
+/// `tail -f` observers see new entries without needing `fsync`.
+struct FailureLog {
+  writer: Mutex<File>,
+  count: AtomicUsize,
+}
+
+impl FailureLog {
+  /// Truncate-create the file at `path`, write the comment header (`# env`,
+  /// `# seeds`), and return a handle ready to record per-failure entries.
+  fn open(path: &str, env_path: &str, seeds: usize) -> std::io::Result<Self> {
+    let mut file = File::create(path)?;
+    writeln!(file, "# ix check-ixon failures")?;
+    writeln!(file, "# env: {env_path}")?;
+    writeln!(file, "# seeds: {seeds}")?;
+    writeln!(file)?;
+    file.flush()?;
+    Ok(Self { writer: Mutex::new(file), count: AtomicUsize::new(0) })
+  }
+
+  /// Append a single failure record. `name_pretty` is the dot-separated form
+  /// of the constant; `msg` is the raw error string (newlines collapsed to
+  /// ` | ` to keep each comment on one line).
+  fn record(&self, name_pretty: &str, msg: &str) {
+    let one_line = msg.replace('\n', " | ");
+    let mut file = self.writer.lock().unwrap();
+    let _ = writeln!(file, "# {one_line}");
+    let _ = writeln!(file, "{name_pretty}");
+    let _ = writeln!(file);
+    let _ = file.flush();
+    self.count.fetch_add(1, Ordering::Relaxed);
+  }
+
+  /// Append the trailing `# total failures: N` summary. Called once after
+  /// all per-constant checks have reported.
+  fn finalize(&self) {
+    let mut file = self.writer.lock().unwrap();
+    let _ = writeln!(
+      file,
+      "# total failures: {}",
+      self.count.load(Ordering::Relaxed)
+    );
+    let _ = file.flush();
+  }
+
+  fn count(&self) -> usize {
+    self.count.load(Ordering::Relaxed)
+  }
+}
 
 /// FFI: type-check a batch of constants through the full pipeline.
 ///
@@ -247,6 +319,7 @@ pub extern "C" fn rs_kernel_check_consts(
     expect_pass_vec,
     ungrounded,
     quiet,
+    None,
   ) {
     Ok(r) => r,
     Err(msg) => {
@@ -265,18 +338,257 @@ pub extern "C" fn rs_kernel_check_consts(
   build_result_array(&results)
 }
 
+/// Test-only FFI: compile a Lean fixture to Ixon, deliberately corrupt one
+/// recursor rule in the compiled Ixon payload, then check that exact malformed
+/// Ixon with the kernel.
+///
+/// This is intentionally separate from `rs_kernel_check_consts`: the normal
+/// compile path may regenerate aux recursors, which is correct production
+/// behavior but masks tests whose point is "reject this stored recursor
+/// payload." Mutating after compile gives the tutorial suite a precise
+/// regression hook without weakening aux generation for real inputs.
+#[cfg(feature = "test-ffi")]
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_kernel_check_malformed_rec_rule_ixon(
+  env_consts: LeanList<LeanBorrowed<'_>>,
+  rec_name_obj: LeanBorrowed<'_>,
+) -> LeanIOResult<LeanOwned> {
+  let t0 = Instant::now();
+  let rust_env = decode_env(env_consts);
+  let global = GlobalCache::default();
+  let rec_name = decode_name(rec_name_obj, &global);
+  eprintln!(
+    "[rs_kernel_check_malformed_rec_rule_ixon] read env: {:>8.1?}",
+    t0.elapsed()
+  );
+
+  let t1 = Instant::now();
+  let rust_env_arc = Arc::new(rust_env);
+  let compile_state =
+    match compile_env_with_options(&rust_env_arc, CompileOptions::default()) {
+      Ok(s) => s,
+      Err(e) => {
+        return LeanIOResult::error_string(&format!(
+          "rs_kernel_check_malformed_rec_rule_ixon: compile failed: {e:?}"
+        ));
+      },
+    };
+  eprintln!(
+    "[rs_kernel_check_malformed_rec_rule_ixon] compile:  {:>8.1?}",
+    t1.elapsed()
+  );
+
+  let CompileState { env: ixon_env, ungrounded, .. } = compile_state;
+  if let Some(msg) = ungrounded.get(&rec_name).map(|m| m.clone()) {
+    drop(ungrounded);
+    drop(rust_env_arc);
+    return LeanIOResult::ok(build_option_result(&Err((
+      ErrKind::Compile,
+      msg,
+    ))));
+  }
+  drop(ungrounded);
+  drop(rust_env_arc);
+
+  let rec_addr =
+    match poison_second_rec_rule_returns_first_minor(&ixon_env, &rec_name) {
+      Ok(addr) => addr,
+      Err(msg) => {
+        return LeanIOResult::error_string(&format!(
+          "rs_kernel_check_malformed_rec_rule_ixon: {msg}"
+        ));
+      },
+    };
+
+  let t2 = Instant::now();
+  let (mut kenv, intern) = match ixon_ingress_owned::<Meta>(ixon_env) {
+    Ok(v) => v,
+    Err(msg) => {
+      return LeanIOResult::error_string(&format!(
+        "rs_kernel_check_malformed_rec_rule_ixon: ingress failed: {msg}"
+      ));
+    },
+  };
+  kenv.intern = intern;
+  eprintln!(
+    "[rs_kernel_check_malformed_rec_rule_ixon] ingress:  {:>8.1?}",
+    t2.elapsed()
+  );
+
+  let kid = crate::ix::kernel::id::KId::new(rec_addr, rec_name);
+  let result = {
+    let mut tc = TypeChecker::new(&mut kenv);
+    match tc.check_const(&kid) {
+      Ok(()) => Ok(()),
+      Err(e) => Err((ErrKind::Kernel, e.to_string())),
+    }
+  };
+  LeanIOResult::ok(build_option_result(&result))
+}
+
+#[cfg(feature = "test-ffi")]
+fn poison_second_rec_rule_returns_first_minor(
+  ixon_env: &IxonEnv,
+  rec_name: &Name,
+) -> Result<Address, String> {
+  let named = ixon_env
+    .lookup_name(rec_name)
+    .ok_or_else(|| format!("{}: missing Named entry", rec_name.pretty()))?;
+  let rec_addr = named.addr.clone();
+  let mut rec_constant = ixon_env.get_const(&rec_addr).ok_or_else(|| {
+    format!("{}: missing constant {}", rec_name.pretty(), rec_addr.hex())
+  })?;
+
+  match &mut rec_constant.info {
+    IxonCI::Recr(rec) => {
+      poison_recursor_rule_payload(rec)?;
+      ixon_env.store_const(rec_addr.clone(), rec_constant);
+      Ok(rec_addr)
+    },
+    IxonCI::Muts(members) => {
+      let mut found = false;
+      for member in members.iter_mut() {
+        if let IxonMutConst::Recr(rec) = member {
+          poison_recursor_rule_payload(rec)?;
+          found = true;
+          break;
+        }
+      }
+      if !found {
+        return Err(format!(
+          "{}: directly named Muts block contains no recursor member",
+          rec_name.pretty()
+        ));
+      }
+      ixon_env.store_const(rec_addr.clone(), rec_constant);
+      Ok(rec_addr)
+    },
+    IxonCI::RPrj(proj) => {
+      let block_addr = proj.block.clone();
+      let mut block_constant =
+        ixon_env.get_const(&block_addr).ok_or_else(|| {
+          format!(
+            "{}: recursor projection points at missing block {}",
+            rec_name.pretty(),
+            block_addr.hex()
+          )
+        })?;
+      match &mut block_constant.info {
+        IxonCI::Muts(members) => {
+          let idx = usize::try_from(proj.idx).map_err(|_| {
+            format!(
+              "{}: recursor projection index too large",
+              rec_name.pretty()
+            )
+          })?;
+          match members.get_mut(idx) {
+            Some(IxonMutConst::Recr(rec)) => poison_recursor_rule_payload(rec)?,
+            Some(_) => {
+              return Err(format!(
+                "{}: projection index {} is not a recursor member",
+                rec_name.pretty(),
+                proj.idx
+              ));
+            },
+            None => {
+              return Err(format!(
+                "{}: projection index {} out of range for recursor block",
+                rec_name.pretty(),
+                proj.idx
+              ));
+            },
+          }
+        },
+        other => {
+          return Err(format!(
+            "{}: recursor projection block is not Muts (got {other:?})",
+            rec_name.pretty()
+          ));
+        },
+      }
+      ixon_env.store_const(block_addr, block_constant);
+      Ok(rec_addr)
+    },
+    other => Err(format!(
+      "{}: expected recursor or recursor projection, got {other:?}",
+      rec_name.pretty()
+    )),
+  }
+}
+
+#[cfg(feature = "test-ffi")]
+fn poison_recursor_rule_payload(
+  rec: &mut crate::ix::ixon::constant::Recursor,
+) -> Result<(), String> {
+  if rec.rules.len() < 2 {
+    return Err(format!(
+      "expected at least two recursor rules, got {}",
+      rec.rules.len()
+    ));
+  }
+  rec.rules[1].rhs =
+    wrong_successor_rule_returning_first_minor(rec.rules[1].rhs.clone())?;
+  Ok(())
+}
+
+#[cfg(feature = "test-ffi")]
+fn wrong_successor_rule_returning_first_minor(
+  succ_rhs: Arc<IxonExpr>,
+) -> Result<Arc<IxonExpr>, String> {
+  match succ_rhs.as_ref() {
+    IxonExpr::Lam(motive_ty, rest) => match rest.as_ref() {
+      IxonExpr::Lam(h_zero_ty, rest) => match rest.as_ref() {
+        IxonExpr::Lam(h_succ_ty, rest) => match rest.as_ref() {
+          IxonExpr::Lam(n_ty, _) => Ok(IxonExpr::lam(
+            motive_ty.clone(),
+            IxonExpr::lam(
+              h_zero_ty.clone(),
+              IxonExpr::lam(
+                h_succ_ty.clone(),
+                IxonExpr::lam(n_ty.clone(), IxonExpr::var(2)),
+              ),
+            ),
+          )),
+          other => {
+            Err(format!("successor rule fourth node is not Lam: {other:?}"))
+          },
+        },
+        other => {
+          Err(format!("successor rule third node is not Lam: {other:?}"))
+        },
+      },
+      other => Err(format!("successor rule second node is not Lam: {other:?}")),
+    },
+    other => Err(format!("successor rule first node is not Lam: {other:?}")),
+  }
+}
+
 /// FFI: type-check constants from a serialized Ixon environment produced by
 /// `ix compile --out`.
+///
+/// `fail_out` is a streaming-friendly failure file. An empty string means
+/// "no file"; any other value is treated as a filesystem path that gets
+/// truncate-created at start-of-run, populated incrementally as failures
+/// are detected (one record per failure, flushed immediately so `tail -f`
+/// observers see entries as they happen), and capped with a `# total
+/// failures: N` footer once all checks complete. The format is the same
+/// one `Ix.Cli.CheckIxonCmd.readNamesFile` expects (`#`-prefixed comments
+/// + bare-name lines), so the file is round-trippable as a `--consts-file`
+/// input on a re-run.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_kernel_check_ixon(
   env_path: LeanString<LeanBorrowed<'_>>,
   names: LeanArray<LeanBorrowed<'_>>,
   expect_pass: LeanArray<LeanBorrowed<'_>>,
   quiet: LeanBool<LeanBorrowed<'_>>,
+  fail_out: LeanString<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
   let total_start = Instant::now();
   let quiet = quiet.to_bool();
   let path = env_path.to_string();
+  let fail_out_path = fail_out.to_string();
+  let fail_out_path =
+    if fail_out_path.is_empty() { None } else { Some(fail_out_path) };
   let names_vec: Vec<Name> = decode_name_array(&names);
   let expect_pass_vec: Vec<bool> =
     expect_pass.map(|b| b.unbox_usize() == 1).into_iter().collect();
@@ -313,6 +625,27 @@ pub extern "C" fn rs_kernel_check_ixon(
     ixon_env.named_count()
   );
 
+  // Open the streaming failure log up front so any seed that fails
+  // mid-run is persisted before this function returns. We open it before
+  // the ingress lookups are built so that even a setup-time crash leaves
+  // the user with a header noting the env path and seed count.
+  let failure_log: Option<Arc<FailureLog>> = match fail_out_path.as_deref() {
+    None => None,
+    Some(out_path) => {
+      match FailureLog::open(out_path, &path, names_vec.len()) {
+        Ok(log) => {
+          eprintln!("[rs_kernel_check_ixon] streaming failures to {out_path}");
+          Some(Arc::new(log))
+        },
+        Err(e) => {
+          return LeanIOResult::error_string(&format!(
+            "rs_kernel_check_ixon: failed to open fail-out file {out_path}: {e}"
+          ));
+        },
+      }
+    },
+  };
+
   let t2 = Instant::now();
   let ixon_env = Arc::new(ixon_env);
   let lookups = Arc::new(build_ixon_ingress_lookups(&ixon_env));
@@ -327,9 +660,13 @@ pub extern "C" fn rs_kernel_check_ixon(
     expect_pass_vec,
     FxHashMap::default(),
     quiet,
+    failure_log.clone(),
   ) {
     Ok(r) => r,
     Err(msg) => {
+      if let Some(log) = failure_log.as_ref() {
+        log.finalize();
+      }
       return build_uniform_error(total, &format!("[thread] {msg}"));
     },
   };
@@ -344,6 +681,13 @@ pub extern "C" fn rs_kernel_check_ixon(
     "[rs_kernel_check_ixon] total:      {:>8.1?}",
     total_start.elapsed()
   );
+  if let Some(log) = failure_log.as_ref() {
+    log.finalize();
+    eprintln!(
+      "[rs_kernel_check_ixon] streamed {} failure(s) to fail-out",
+      log.count()
+    );
+  }
 
   build_result_array(&results)
 }
@@ -633,6 +977,7 @@ fn run_checks_on_large_stack(
   expect_pass: Vec<bool>,
   ungrounded: FxHashMap<Name, String>,
   quiet: bool,
+  failure_log: Option<Arc<FailureLog>>,
 ) -> Result<Vec<CheckRes>, String> {
   if names.is_empty() {
     eprintln!("[rs_kernel_check] checking 0 constants...");
@@ -660,6 +1005,7 @@ fn run_checks_on_large_stack(
       ungrounded,
       work,
       quiet,
+      failure_log,
     );
   }
 
@@ -672,6 +1018,7 @@ fn run_checks_on_large_stack(
     work,
     quiet,
     worker_count,
+    failure_log,
   )
 }
 
@@ -683,6 +1030,7 @@ fn run_checks_serial_on_large_stack(
   ungrounded: FxHashMap<Name, String>,
   work: Vec<CheckWorkItem>,
   quiet: bool,
+  failure_log: Option<Arc<FailureLog>>,
 ) -> Result<Vec<CheckRes>, String> {
   thread::Builder::new()
     .stack_size(KERNEL_CHECK_STACK_SIZE)
@@ -695,6 +1043,7 @@ fn run_checks_serial_on_large_stack(
         ungrounded,
         work,
         quiet,
+        failure_log,
       )
     })
     .map_err(|e| format!("failed to spawn kernel-check thread: {e}"))?
@@ -714,6 +1063,7 @@ fn run_checks_parallel_on_large_stacks(
   work: Vec<CheckWorkItem>,
   quiet: bool,
   worker_count: usize,
+  failure_log: Option<Arc<FailureLog>>,
 ) -> Result<Vec<CheckRes>, String> {
   let total = names.len();
   let work_total = work.len();
@@ -744,6 +1094,7 @@ fn run_checks_parallel_on_large_stacks(
     let next_index = Arc::clone(&next_index);
     let results = Arc::clone(&results);
     let progress_worker = Arc::clone(&progress);
+    let failure_log_worker = failure_log.clone();
 
     let handle = match thread::Builder::new()
       .name(format!("ix-kernel-check-{worker_idx}"))
@@ -793,6 +1144,14 @@ fn run_checks_parallel_on_large_stacks(
           let result = outcome.result.clone();
           for &result_idx in &item.aliases {
             let _ = results[result_idx].set(result.clone());
+            // Stream this seed's failure to the fail-out file (if any) as
+            // soon as it's known, so a long full-env run grows the file
+            // incrementally instead of dropping everything at the end.
+            if let (Some(log), Err((_, msg))) =
+              (failure_log_worker.as_ref(), result.as_ref())
+            {
+              log.record(&names[result_idx].pretty(), msg);
+            }
           }
           checks_since_clear += 1;
         }
@@ -1223,6 +1582,7 @@ fn check_consts_loop(
   ungrounded: FxHashMap<Name, String>,
   work: Vec<CheckWorkItem>,
   quiet: bool,
+  failure_log: Option<Arc<FailureLog>>,
 ) -> Vec<CheckRes> {
   let total = names.len();
   let work_total = work.len();
@@ -1297,6 +1657,14 @@ fn check_consts_loop(
 
     for &result_idx in &item.aliases {
       results[result_idx] = Some(outcome.result.clone());
+      // Stream this seed's failure to the fail-out file (if any) as soon as
+      // it's known, so a long check grows the file incrementally rather
+      // than dumping everything at the end.
+      if let (Some(log), Err((_, msg))) =
+        (failure_log.as_ref(), outcome.result.as_ref())
+      {
+        log.record(&names[result_idx].pretty(), msg);
+      }
     }
     checks_since_clear += 1;
   }
@@ -1429,7 +1797,8 @@ impl ParallelProgress {
       .map(|mib| format!("{mib}MiB"))
       .unwrap_or_else(|| "unknown".to_string());
     let peak = self.peak_rss_mib.load(Ordering::Relaxed);
-    let peak_str = if peak == 0 { "unknown".to_string() } else { format!("{peak}MiB") };
+    let peak_str =
+      if peak == 0 { "unknown".to_string() } else { format!("{peak}MiB") };
     self.log(&format!(
       "[rs_kernel_check] mem summary: peak_rss={peak_str} final_rss={rss_now}"
     ));
@@ -1770,36 +2139,40 @@ fn format_tc_error(
 // Lean-side result construction
 // =============================================================================
 
-/// Build an `IO (Array (Option CheckError))` from Rust results.
-///
-/// The Lean caller pairs each slot with `names[i]` (the input array) for
-/// display, so there's no name in the returned tuple.
+/// Build one `Option CheckError` object from a Rust check result.
 ///
 /// - `Ok(())`              → `none`
 /// - `Err((Kernel, msg))`  → `some (CheckError.kernelException msg)`
 /// - `Err((Compile, msg))` → `some (CheckError.compileError msg)`
+fn build_option_result(result: &CheckRes) -> LeanOwned {
+  match result {
+    Ok(()) => {
+      // `Option.none` — tag 0, zero fields, zero scalars.
+      LeanCtor::alloc(0, 0, 0).into()
+    },
+    Err((kind, msg)) => {
+      // `CheckError.<variant> msg` — tag comes from ErrKind, one object
+      // field. Lean's inductive has 2 ctors (kernelException,
+      // compileError) so it's NOT eligible for the LCNF trivial-structure
+      // optimization — the heap wrapper is required.
+      let err_ctor = LeanCtor::alloc(kind.tag(), 1, 0);
+      err_ctor.set(0, LeanString::new(msg));
+      // `Option.some err` — tag 1, one object field.
+      let some_ctor = LeanCtor::alloc(1, 1, 0);
+      some_ctor.set(0, err_ctor);
+      some_ctor.into()
+    },
+  }
+}
+
+/// Build an `IO (Array (Option CheckError))` from Rust results.
+///
+/// The Lean caller pairs each slot with `names[i]` (the input array) for
+/// display, so there's no name in the returned tuple.
 fn build_result_array(results: &[CheckRes]) -> LeanIOResult<LeanOwned> {
   let arr = LeanArray::alloc(results.len());
   for (i, result) in results.iter().enumerate() {
-    let option_obj: LeanOwned = match result {
-      Ok(()) => {
-        // `Option.none` — tag 0, zero fields, zero scalars.
-        LeanCtor::alloc(0, 0, 0).into()
-      },
-      Err((kind, msg)) => {
-        // `CheckError.<variant> msg` — tag comes from ErrKind, one object
-        // field. Lean's inductive has 2 ctors (kernelException,
-        // compileError) so it's NOT eligible for the LCNF trivial-structure
-        // optimization — the heap wrapper is required.
-        let err_ctor = LeanCtor::alloc(kind.tag(), 1, 0);
-        err_ctor.set(0, LeanString::new(msg));
-        // `Option.some err` — tag 1, one object field.
-        let some_ctor = LeanCtor::alloc(1, 1, 0);
-        some_ctor.set(0, err_ctor);
-        some_ctor.into()
-      },
-    };
-    arr.set(i, option_obj);
+    arr.set(i, build_option_result(result));
   }
   LeanIOResult::ok(arr)
 }

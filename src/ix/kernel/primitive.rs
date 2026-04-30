@@ -99,10 +99,10 @@ pub struct Primitives<M: KernelMode> {
   pub fin: KId<M>,
   pub bool_no_confusion: KId<M>,
 
-  // -- Int (type, ctors, native ops) --
-  // Native reduction of `Int.bmod` etc. dispatches on these addresses,
-  // mirroring the Nat primitive scheme. Driven by `try_reduce_int` in
-  // `whnf.rs`. See `Primitives::from_env_with` for address resolution.
+  // -- Int (type, ctors, ops) --
+  // Int operations reduce by ordinary delta/iota plus native Nat reduction,
+  // matching Lean's kernel. We still record these primitive addresses for
+  // constructor recognition and Int decidable normalization.
   pub int: KId<M>,
   pub int_of_nat: KId<M>,
   pub int_neg_succ: KId<M>,
@@ -116,6 +116,34 @@ pub struct Primitives<M: KernelMode> {
   pub int_bdiv: KId<M>,
   pub int_nat_abs: KId<M>,
   pub int_pow: KId<M>,
+  pub int_dec_eq: KId<M>,
+  pub int_dec_le: KId<M>,
+  pub int_dec_lt: KId<M>,
+
+  // -- Names previously matched via name-based `is_const_named` --
+  // The whnf reductions in `whnf.rs` historically string-matched these
+  // by `id.name`, which is unsound under alpha-canonical content
+  // hashing: an expression that happens to be ingested with an
+  // alpha-twin's display name (e.g. `Lean.RBColor.rec` instead of
+  // `Bool.rec`) would miss the check despite identical addresses.
+  // Hardcoding each address per-name here lets the callsites compare
+  // by `id.addr ==` and stay alpha-stable.
+  pub punit: KId<M>,
+  pub nat_rec: KId<M>,
+  pub nat_cases_on: KId<M>,
+  pub bit_vec: KId<M>,
+  pub bit_vec_to_nat: KId<M>,
+  pub bit_vec_of_nat: KId<M>,
+  pub bit_vec_ult: KId<M>,
+  pub decidable_decide: KId<M>,
+  pub lt_lt: KId<M>,
+  pub of_nat_of_nat: KId<M>,
+  pub unit: KId<M>,
+  pub punit_size_of_1: KId<M>,
+  pub size_of_size_of: KId<M>,
+  pub string_back: KId<M>,
+  pub string_legacy_back: KId<M>,
+  pub string_utf8_byte_size: KId<M>,
 }
 
 /// Hardcoded primitive addresses (for lookup in the env).
@@ -191,9 +219,30 @@ pub struct PrimAddrs {
   pub int_bdiv: Address,
   pub int_nat_abs: Address,
   pub int_pow: Address,
+  pub int_dec_eq: Address,
+  pub int_dec_le: Address,
+  pub int_dec_lt: Address,
   pub punit: Address,
   pub pprod: Address,
   pub pprod_mk: Address,
+
+  // See `Primitives<M>` for the rationale on these — names previously
+  // matched via name-based `is_const_named` and now resolved by address.
+  pub nat_rec: Address,
+  pub nat_cases_on: Address,
+  pub bit_vec: Address,
+  pub bit_vec_to_nat: Address,
+  pub bit_vec_of_nat: Address,
+  pub bit_vec_ult: Address,
+  pub decidable_decide: Address,
+  pub lt_lt: Address,
+  pub of_nat_of_nat: Address,
+  pub unit: Address,
+  pub punit_size_of_1: Address,
+  pub size_of_size_of: Address,
+  pub string_back: Address,
+  pub string_legacy_back: Address,
+  pub string_utf8_byte_size: Address,
 }
 
 impl Default for PrimAddrs {
@@ -401,8 +450,7 @@ impl PrimAddrs {
         "473b2c948ddbce4ddb4b369e5cf6199ff185b64e9fbb1e90901d746de55190ef",
       ),
       // Int primitives — canonical content-hashes from
-      // `lake test -- rust-kernel-build-primitives`. Used by
-      // `try_reduce_int` to dispatch native Int reductions.
+      // `lake test -- rust-kernel-build-primitives`.
       int: h(
         "e7dc2d5a2e153e1ab0c78797bcbfd53a2c01ff40918877cfad8ade8c4169a43a",
       ),
@@ -442,6 +490,15 @@ impl PrimAddrs {
       int_pow: h(
         "0dfe8f22bd6cb67d538a2f018f0e406fc0b5d730caa63e1a798dfa9ad78bab07",
       ),
+      int_dec_eq: h(
+        "42d9b7a94aefc77a6616936be31264eaf8bed7bd80f5d34967fc42afaf29a7fd",
+      ),
+      int_dec_le: h(
+        "ee0370e426a400c8b16782fabfa0e43ff87ecac1a0c1c765cc5179fc423ab1bd",
+      ),
+      int_dec_lt: h(
+        "15070e920204272369f0f2e80ff3f5035c05b39efa714ec8e6bbfce9950637af",
+      ),
       punit: h(
         "16a2dc76a2cfcc9440f443c666536f2fa99c0250b642fd3971fbad25d531262a",
       ),
@@ -450,6 +507,53 @@ impl PrimAddrs {
       ),
       pprod_mk: h(
         "00ddf26efd5f7e5eee5561c2467b16ac856efcb3a1226544487645dd46208596",
+      ),
+      // Names previously matched via `is_const_named` in whnf.rs.
+      // Canonical content-hashes from `lake test -- rust-kernel-build-primitives`.
+      nat_rec: h(
+        "6e855f04485df8d97767f8aa89f223bcac977e2a155c45c66d6e094ec3163194",
+      ),
+      nat_cases_on: h(
+        "9a6b32af194fdf0b447633077d9fa89c249d6d7df243d300b89dd9b14d92bb03",
+      ),
+      bit_vec: h(
+        "cf55115c75343f824fdd932178b0cbc75a86e5052de93db98f05b37885ffb09b",
+      ),
+      bit_vec_to_nat: h(
+        "7834865c1c6cd963b9365cb06500623880de4d9930343e96e19e62a026e7cace",
+      ),
+      bit_vec_of_nat: h(
+        "a08acf4cedb4c05eddb55bff366cd952d5b7b88602c3fc6d875e8ea732a3c2f4",
+      ),
+      bit_vec_ult: h(
+        "6a3f262c2f4a2c517a616fbae54a31eccb85998ad9c1f93be8cc590d97117c04",
+      ),
+      decidable_decide: h(
+        "6ddaaed263740b5d5d67e6c12ecfadb24ad8867d4a09fe784b59dac7f72754ab",
+      ),
+      lt_lt: h(
+        "01d871bcdfb2e769e1aca00e7a3b3a21a8d902cc273707c892eb867b7fc78ae2",
+      ),
+      of_nat_of_nat: h(
+        "8fdc869f7b7aa2b7b5929ba242ed899ce2d7c5d42df1d4e2393690cfa85e94d2",
+      ),
+      unit: h(
+        "211bf5ed2f4c51d45750e75b891fa267db4d4e6f46c2079282fa2be3e88781a1",
+      ),
+      punit_size_of_1: h(
+        "8c2cbfe328910bfe7feb60072b46f7487692cb37599681b137a31dd99e708f03",
+      ),
+      size_of_size_of: h(
+        "7105eaf4c52ce3a19372a87fac57a8f9598a246334ce6effaee3e48e7e6d3aad",
+      ),
+      string_back: h(
+        "5137669b3f13d32c61880fb57db0ba0f9aa1acc245856768958f219f6b38328a",
+      ),
+      string_legacy_back: h(
+        "13ae83b2ccf25ad37aa682a4a21eda0145ce95788b831d9ab1c55cf2b006df13",
+      ),
+      string_utf8_byte_size: h(
+        "11ea1432562b1132853f173fda9add591b0606a8dee36b00f71bec2967fb6447",
       ),
     }
   }
@@ -685,6 +789,15 @@ impl PrimAddrs {
       int_pow: h(
         "ae92f05449a4d67697f3649225f88703a6a928a815b7cf6448e92b3a787a1103",
       ),
+      int_dec_eq: h(
+        "6dc280a4f5be950140e02d61f81ce01b1e21ec06f338a973039bcebf13e8e08b",
+      ),
+      int_dec_le: h(
+        "dcce6645b4b207f4805c7c6878b7704ebd840903387f7848a3e544fe196f6ee3",
+      ),
+      int_dec_lt: h(
+        "ecffd44f689ee7dd7462e3a4b4620ae72637bc59c38b91e8dd5c3d98d899623d",
+      ),
       punit: h(
         "e4d0247a1393397d7efa718dc31229b3592a522531595290683ca63dfe420e4d",
       ),
@@ -693,6 +806,53 @@ impl PrimAddrs {
       ),
       pprod_mk: h(
         "0a9e6c68e0531826a4b7e6cb74c5dacb7689e7ef1b78fc21f56acaf65ea25add",
+      ),
+      // Names previously matched via `is_const_named` in whnf.rs.
+      // LEON content-hashes from `lake test -- rust-kernel-build-prim-origs`.
+      nat_rec: h(
+        "02af71bf807e615ee42b36d8d5b210329cddfd1e739fc11f6ba097a2bf74fe5a",
+      ),
+      nat_cases_on: h(
+        "df2e7a477bd8b2ac4936f22c6a60a98e9055759cbcb856895497ee02bbd4af67",
+      ),
+      bit_vec: h(
+        "6f450298341dec31bbbd159414a9193b437e8541e24304c9b680a7d5384643b3",
+      ),
+      bit_vec_to_nat: h(
+        "ae3d3b7ad4c1376fe9d30b335ee19a6e5397672a5b5800f2a0276f8d249d2ed9",
+      ),
+      bit_vec_of_nat: h(
+        "b685da004503283d7a3b2b73a3ad29100762de6eced0b305aede886af05cb3ee",
+      ),
+      bit_vec_ult: h(
+        "7d0fd8eb0e739c1643319a0e6554ee7070aa575416d54c80f8f3d2b166cb7ac8",
+      ),
+      decidable_decide: h(
+        "741a3a166dabcf41a357ad70893ac52feb84068a4bc9de54596bbe602648e3d0",
+      ),
+      lt_lt: h(
+        "3f3eff2353822391e4db7f2b403cb79d2fca36c5a9a0d2dc4fce20850bb8b355",
+      ),
+      of_nat_of_nat: h(
+        "f75083bb57a4a1c5ce0b83945e39da01e11fb9f28f2ab4b57d8f0615ccda8c9d",
+      ),
+      unit: h(
+        "a9be73125f8d296246aa55a183e74d49c420b79c852c36df4fbb87a2ca1d751b",
+      ),
+      punit_size_of_1: h(
+        "6f48fa355d342f1b035ef0777c1ad72e669978816c2c09a3048c4848de4ff443",
+      ),
+      size_of_size_of: h(
+        "ac6c0f1adb8f8f74235dab15b624902bdc0832ed77fae0d62242d0e7717cb06a",
+      ),
+      string_back: h(
+        "54317bf07a28017fbfccf7d9f11c97846c106be220ab98ce1e1b58a196c12be8",
+      ),
+      string_legacy_back: h(
+        "2943dd3d52e8db4fc5b68543ec64d786ba8c70c1f304fe1c0164cc80f2aaaf17",
+      ),
+      string_utf8_byte_size: h(
+        "06ba07154a1cd0e1e9eec2b6e27b195a6fc3ae20a70d1ced7643a61e4e3e6d0f",
       ),
     }
   }
@@ -851,6 +1011,25 @@ impl<M: KernelMode> Primitives<M> {
       int_bdiv: r(&a.int_bdiv),
       int_nat_abs: r(&a.int_nat_abs),
       int_pow: r(&a.int_pow),
+      int_dec_eq: r(&a.int_dec_eq),
+      int_dec_le: r(&a.int_dec_le),
+      int_dec_lt: r(&a.int_dec_lt),
+      punit: r(&a.punit),
+      nat_rec: r(&a.nat_rec),
+      nat_cases_on: r(&a.nat_cases_on),
+      bit_vec: r(&a.bit_vec),
+      bit_vec_to_nat: r(&a.bit_vec_to_nat),
+      bit_vec_of_nat: r(&a.bit_vec_of_nat),
+      bit_vec_ult: r(&a.bit_vec_ult),
+      decidable_decide: r(&a.decidable_decide),
+      lt_lt: r(&a.lt_lt),
+      of_nat_of_nat: r(&a.of_nat_of_nat),
+      unit: r(&a.unit),
+      punit_size_of_1: r(&a.punit_size_of_1),
+      size_of_size_of: r(&a.size_of_size_of),
+      string_back: r(&a.string_back),
+      string_legacy_back: r(&a.string_legacy_back),
+      string_utf8_byte_size: r(&a.string_utf8_byte_size),
     }
   }
 }
@@ -953,9 +1132,27 @@ mod tests {
       ("int_bdiv", &a.int_bdiv),
       ("int_pow", &a.int_pow),
       ("int_nat_abs", &a.int_nat_abs),
+      ("int_dec_eq", &a.int_dec_eq),
+      ("int_dec_le", &a.int_dec_le),
+      ("int_dec_lt", &a.int_dec_lt),
       ("punit", &a.punit),
       ("pprod", &a.pprod),
       ("pprod_mk", &a.pprod_mk),
+      ("nat_rec", &a.nat_rec),
+      ("nat_cases_on", &a.nat_cases_on),
+      ("bit_vec", &a.bit_vec),
+      ("bit_vec_to_nat", &a.bit_vec_to_nat),
+      ("bit_vec_of_nat", &a.bit_vec_of_nat),
+      ("bit_vec_ult", &a.bit_vec_ult),
+      ("decidable_decide", &a.decidable_decide),
+      ("lt_lt", &a.lt_lt),
+      ("of_nat_of_nat", &a.of_nat_of_nat),
+      ("unit", &a.unit),
+      ("punit_size_of_1", &a.punit_size_of_1),
+      ("size_of_size_of", &a.size_of_size_of),
+      ("string_back", &a.string_back),
+      ("string_legacy_back", &a.string_legacy_back),
+      ("string_utf8_byte_size", &a.string_utf8_byte_size),
     ]
   }
 

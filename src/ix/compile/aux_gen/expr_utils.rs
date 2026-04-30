@@ -2659,6 +2659,15 @@ pub(super) fn kexpr_to_lean(
         LeanExpr::fvar(name)
       }
     },
+    // Kernel-side FVar nodes (introduced by binder opening during type
+    // checking) should never appear in the inputs of `kexpr_to_lean`,
+    // which converts ingressed/compile-time expressions back to Lean
+    // syntax. If one does appear, it indicates a path leaked an open
+    // expression past its abstraction step — treat it as a synthetic
+    // free variable named after its id so diagnostics can surface it.
+    KED::FVar(id, _, _) => {
+      LeanExpr::fvar(Name::str(Name::anon(), format!("_kernel_fvar_{}", id.0)))
+    },
     KED::Sort(u, _) => {
       LeanExpr::sort(super::below::kuniv_to_level(u, param_names))
     },

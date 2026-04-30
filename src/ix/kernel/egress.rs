@@ -70,6 +70,15 @@ fn egress_expr(
 
   let inner = match expr.data() {
     ExprData::Var(idx, _, _) => env::Expr::bvar(Nat::from(*idx)),
+    // Egress is meant to be invoked only on closed expressions that are
+    // already abstracted back into de Bruijn binders. A live FVar here
+    // means a kernel path leaked an open expression past its binder
+    // open/close pairing — surface it loudly rather than silently emit a
+    // bogus Lean term.
+    ExprData::FVar(id, _, _) => panic!(
+      "egress_expr: unexpected FVar({id}) — abstract back to de Bruijn \
+       before exporting"
+    ),
     ExprData::Sort(u, _) => env::Expr::sort(egress_level(u, level_params)),
     ExprData::Const(id, levels, _) => {
       let lvls = egress_levels(levels, level_params);
@@ -470,6 +479,12 @@ fn kexpr_to_ixon(expr: &KExpr<Meta>, ctx: &mut EgressCtx) -> Arc<IxonExpr> {
   }
   let out = match expr.data() {
     ExprData::Var(idx, _, _) => IxonExpr::var(*idx),
+    // See `egress_expr`: FVars must be abstracted back into de Bruijn
+    // before serialization. They have no Ixon representation.
+    ExprData::FVar(id, _, _) => panic!(
+      "kexpr_to_ixon: unexpected FVar({id}) — abstract back to de Bruijn \
+       before exporting"
+    ),
     ExprData::Sort(u, _) => {
       let u_idx = kuniv_idx(u, ctx);
       IxonExpr::sort(u_idx)

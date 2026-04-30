@@ -11,15 +11,15 @@ use std::sync::LazyLock;
 
 use crate::ix::ixon::constant::DefKind;
 
-use super::canonical_check::{KMutCtx, compare_kexpr};
 use super::constant::KConst;
 use super::env::Addr;
 use super::error::{TcError, u64_to_usize};
 use super::expr::{ExprData, KExpr};
 use super::id::KId;
+use super::lctx::LocalDecl;
 use super::level::{KUniv, univ_eq};
 use super::mode::KernelMode;
-use super::subst::lift;
+use super::subst::{instantiate_rev, lift};
 use super::tc::{
   MAX_DEF_EQ_DEPTH, MAX_WHNF_FUEL, TypeChecker, collect_app_spine,
 };
@@ -72,11 +72,11 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       return Ok(true);
     }
     if a.hash_key() == b.hash_key() {
-      return Ok(true);
-    }
-    if compare_kexpr(a, b, &KMutCtx::default()).ordering
-      == std::cmp::Ordering::Equal
-    {
+      // Hashes are alpha-invariant in both `Anon` and `Meta` modes — see
+      // `KExpr::lam_hash` etc., which deliberately omit binder `name`/
+      // `bi`/`mdata` from the content hash. So hash equality is the only
+      // structural alpha-equivalence fast-path we need; an earlier
+      // additional `compare_kexpr` call here was redundant.
       return Ok(true);
     }
 
@@ -104,6 +104,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     } else {
       false
     };
+    if trace_active {
+      self.def_eq_trace_depth += 1;
+    }
 
     // Context-aware EquivManager/cache. Closed pairs use the empty context;
     // open pairs use only the context suffix reachable from the compared
@@ -184,10 +187,14 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     }
     // Both probes missed.
     self.env.perf.record_def_eq_miss();
+    self.record_hot_def_eq_miss(a, b);
 
     // Charge recursive fuel only after the O(1) exits above. Large proof
     // terms can perform hundreds of thousands of pointer/equiv/cache hits;
     // those should not consume the same budget as an actual comparison.
+    if self.rec_fuel == 0 && IX_DEF_EQ_MAX_DUMP.is_some() {
+      self.dump_def_eq_rec_fuel(a, b);
+    }
     self.tick()?;
 
     self.def_eq_depth += 1;
@@ -211,6 +218,13 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         ok,
         if ok { "OK" } else { "FAIL" }
       );
+      // On FAIL, also dump the full a/b that failed (post-Tier-1 quick).
+      // Lets us see what the def-eq engine actually compared.
+      if !ok {
+        eprintln!("[deq fail] depth={} a-full: {a}", self.def_eq_depth);
+        eprintln!("[deq fail] depth={} b-full: {b}", self.def_eq_depth);
+      }
+      self.def_eq_trace_depth = self.def_eq_trace_depth.saturating_sub(1);
     }
     if ok {
       // Move the up-front `a_key` / `b_key` directly into `add_equiv`.
@@ -259,14 +273,15 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     }
 
     // Tier 1b: Eager Bool reduction (lean4 type_checker.cpp:1066)
-    // If one side is Bool.true and the other has no loose bound vars (or eagerReduce
-    // is active), try full WHNF. Critical for Decidable/decide-based definitions.
-    if self.is_bool_true(b) && (a.lbr() == 0 || self.eager_reduce) {
+    // If one side is Bool.true and the other has no free variables (or
+    // eagerReduce is active), try full WHNF. Critical for Decidable/decide-based
+    // definitions.
+    if self.is_bool_true(b) && (!a.has_fvars() || self.eager_reduce) {
       let wa = self.whnf(a)?;
       if self.is_bool_true(&wa) {
         return Ok(true);
       }
-    } else if self.is_bool_true(a) && (b.lbr() == 0 || self.eager_reduce) {
+    } else if self.is_bool_true(a) && (!b.has_fvars() || self.eager_reduce) {
       let wb = self.whnf(b)?;
       if self.is_bool_true(&wb) {
         return Ok(true);
@@ -300,10 +315,6 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     if self.quick_def_eq(&ca, &cb)? {
       return Ok(true);
     }
-    if self.try_def_eq_app(&ca, &cb)? {
-      return Ok(true);
-    }
-
     // Ix's no-delta layer also contains primitive/native reductions needed
     // by the existing kernel model. Keep cheap projection behavior here, but
     // do not expose this as a public WHNF mode.
@@ -321,13 +332,6 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       return Ok(true);
     }
 
-    // Congruence before lazy delta.  This keeps open primitive-wrapper terms
-    // such as `Nat.sub (x + 1) y` from unfolding to their recursive model when
-    // both sides already have the same head and definitionally equal args.
-    if self.try_def_eq_app(&wa, &wb)? {
-      return Ok(true);
-    }
-
     // Tier 4: iterative lazy delta (lean4lean lazyDeltaReduction)
     let mut fuel = MAX_WHNF_FUEL;
     loop {
@@ -342,32 +346,37 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         return Ok(result);
       }
 
-      // Nat primitive reduction inside lazy delta (lean4lean:620-623)
-      if let Some(wa2) = self.try_reduce_nat(&wa)? {
-        return self.is_def_eq(&wa2, &wb);
-      }
-      if let Some(wb2) = self.try_reduce_nat(&wb)? {
-        return self.is_def_eq(&wa, &wb2);
-      }
-
-      // Int primitive reduction inside lazy delta, parallel to Nat.
-      // Without this, `Int.bmod (-1) (2^32) =? -1` compared under
-      // `Eq.{1} Int _ _` would never converge: the Int.bmod side would
-      // delta-unfold to a stuck `Decidable.rec`, while the `-1` side
-      // reduces to `Int.negSucc 0` — `lazyDeltaReduction` would never
-      // find a common head.
-      if let Some(wa2) = self.try_reduce_int(&wa)? {
-        return self.is_def_eq(&wa2, &wb);
-      }
-      if let Some(wb2) = self.try_reduce_int(&wb)? {
-        return self.is_def_eq(&wa, &wb2);
+      // Nat primitive reduction inside lazy delta. Mirrors lean4
+      // (`refs/lean4/src/kernel/type_checker.cpp:978-984`) and lean4lean
+      // (`refs/lean4lean/Lean4Lean/TypeChecker.lean:619`): skip Nat
+      // primitives entirely when either side has a free variable, unless
+      // eagerReduce is active.
+      let nat_ok = (!wa.has_fvars() && !wb.has_fvars()) || self.eager_reduce;
+      if nat_ok {
+        if let Some(wa2) = self.try_reduce_nat(&wa)? {
+          return self.is_def_eq(&wa2, &wb);
+        }
+        if let Some(wb2) = self.try_reduce_nat(&wb)? {
+          return self.is_def_eq(&wa, &wb2);
+        }
       }
 
-      // Native reduction inside lazy delta (lean4lean:625-628)
+      // Native reduction inside lazy delta. Reference order is
+      // `is_def_eq_offset → reduce_nat (gated) → reduce_native → delta`
+      // (lean4 `type_checker.cpp:986-991`, lean4lean `TypeChecker.lean:625-628`).
+      // Ix-specific `try_reduce_decidable` runs after native to keep the
+      // reference-aligned segment tight.
       if let Some(wa2) = self.try_reduce_native(&wa)? {
         return self.is_def_eq(&wa2, &wb);
       }
       if let Some(wb2) = self.try_reduce_native(&wb)? {
+        return self.is_def_eq(&wa, &wb2);
+      }
+
+      if let Some(wa2) = self.try_reduce_decidable(&wa)? {
+        return self.is_def_eq(&wa2, &wb);
+      }
+      if let Some(wb2) = self.try_reduce_decidable(&wb)? {
         return self.is_def_eq(&wa, &wb2);
       }
 
@@ -487,15 +496,33 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       }
     }
 
+    if self.def_eq_trace_depth > 0 {
+      eprintln!("[deq tier4 break] depth={}", self.def_eq_depth);
+      eprintln!("  wa: {wa}");
+      eprintln!("  wb: {wb}");
+    }
+
     // Tier 4b: post-delta congruence checks (lean4lean isDefEqConst/Fvar/Proj)
     if self.try_structural_congruence(&wa, &wb)? {
       return Ok(true);
     }
 
-    // Tier 4c: second structural pass (lean4lean:683-686, lean4 type_checker.cpp:1109-1110).
-    // Use full projection reduction after lazy-delta exhaustion.
-    let wa = self.whnf_core(&wa)?;
-    let wb = self.whnf_core(&wb)?;
+    // Tier 4c: second structural pass (lean4lean:683-686, lean4
+    // type_checker.cpp:1109-1110). This is deliberately `whnfCore`, not full
+    // `whnf`: full WHNF would delta-unfold stuck open primitives such as
+    // `Nat.ble` and can literally walk enormous Nat literals in their
+    // recursive logical models.
+    let wa_core = self.whnf_core(&wa)?;
+    let wb_core = self.whnf_core(&wb)?;
+    let wa_changed =
+      !wa_core.ptr_eq(&wa) && wa_core.hash_key() != wa.hash_key();
+    let wb_changed =
+      !wb_core.ptr_eq(&wb) && wb_core.hash_key() != wb.hash_key();
+    if wa_changed || wb_changed {
+      return self.is_def_eq(&wa_core, &wb_core);
+    }
+    let wa = wa_core;
+    let wb = wb_core;
     if wa.ptr_eq(&wb) {
       return Ok(true);
     }
@@ -508,17 +535,24 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       return Ok(true);
     }
 
-    // Tier 5: full WHNF, structural comparison
-    let wa = self.whnf(&wa)?;
-    let wb = self.whnf(&wb)?;
-    if wa.ptr_eq(&wb) {
-      return Ok(true);
-    }
-    if self.try_structural_congruence(&wa, &wb)? {
-      return Ok(true);
+    let result = self.is_def_eq_whnf(&wa, &wb);
+
+    // Tier 5 final-fail trace: when IX_DEF_EQ_TIER5_DUMP is set and the
+    // pair's head names contain the configured substring, dump the
+    // post-whnfCore wa/wb. This is where lazy-delta + Tier 4c gave up.
+    if let Ok(prefix) = std::env::var("IX_DEF_EQ_TIER5_DUMP")
+      && let Ok(false) = result.as_ref()
+    {
+      let a_match = head_const_name(&wa).is_some_and(|n| n.contains(&prefix));
+      let b_match = head_const_name(&wb).is_some_and(|n| n.contains(&prefix));
+      if prefix.is_empty() || a_match || b_match {
+        eprintln!("[deq tier5 fail] depth={}", self.def_eq_depth);
+        eprintln!("  wa: {wa}");
+        eprintln!("  wb: {wb}");
+      }
     }
 
-    self.is_def_eq_whnf(&wa, &wb)
+    result
   }
 
   /// Quick structural: same constructor, recursively same children (no WHNF).
@@ -530,19 +564,37 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     match (a.data(), b.data()) {
       (ExprData::Sort(u1, _), ExprData::Sort(u2, _)) => Ok(univ_eq(u1, u2)),
       (
-        ExprData::Lam(_, _, ty1, body1, _),
+        ExprData::Lam(name, bi, ty1, body1, _),
         ExprData::Lam(_, _, ty2, body2, _),
       )
       | (
-        ExprData::All(_, _, ty1, body1, _),
+        ExprData::All(name, bi, ty1, body1, _),
         ExprData::All(_, _, ty2, body2, _),
       ) => {
         if !self.is_def_eq(ty1, ty2)? {
           return Ok(false);
         }
-        self.push_local(ty1.clone());
-        let r = self.is_def_eq(body1, body2);
-        self.pop_local();
+        // Open both bodies with the SAME fresh fvar — the common-fvar
+        // trick that makes alpha-renamed bodies hash-equal under
+        // `instantiate_rev` and lets def-eq compare them structurally.
+        // Mirrors lean4lean `isDefEqBinding`
+        // (refs/lean4lean/Lean4Lean/TypeChecker.lean:546).
+        let saved = self.lctx.len();
+        let fv_id = self.fresh_fvar_id();
+        let fv = self.intern(KExpr::fvar(fv_id, name.clone()));
+        self.lctx.push(
+          fv_id,
+          LocalDecl::CDecl {
+            name: name.clone(),
+            bi: bi.clone(),
+            ty: ty1.clone(),
+          },
+        );
+        let b1_open =
+          instantiate_rev(&mut self.env.intern, body1, &[fv.clone()]);
+        let b2_open = instantiate_rev(&mut self.env.intern, body2, &[fv]);
+        let r = self.is_def_eq(&b1_open, &b2_open);
+        self.lctx.truncate(saved);
         r
       },
       _ => Ok(false),
@@ -611,17 +663,31 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         false
       },
       (
-        ExprData::Lam(_, _, ty1, body1, _),
+        ExprData::Lam(name, bi, ty1, body1, _),
         ExprData::Lam(_, _, ty2, body2, _),
       )
       | (
-        ExprData::All(_, _, ty1, body1, _),
+        ExprData::All(name, bi, ty1, body1, _),
         ExprData::All(_, _, ty2, body2, _),
       ) => {
         if self.is_def_eq(ty1, ty2)? {
-          self.push_local(ty1.clone());
-          let r = self.is_def_eq(body1, body2)?;
-          self.pop_local();
+          // Open both bodies with the same fresh fvar (see `quick_def_eq`).
+          let saved = self.lctx.len();
+          let fv_id = self.fresh_fvar_id();
+          let fv = self.intern(KExpr::fvar(fv_id, name.clone()));
+          self.lctx.push(
+            fv_id,
+            LocalDecl::CDecl {
+              name: name.clone(),
+              bi: bi.clone(),
+              ty: ty1.clone(),
+            },
+          );
+          let b1_open =
+            instantiate_rev(&mut self.env.intern, body1, &[fv.clone()]);
+          let b2_open = instantiate_rev(&mut self.env.intern, body2, &[fv]);
+          let r = self.is_def_eq(&b1_open, &b2_open)?;
+          self.lctx.truncate(saved);
           if r {
             return Ok(true);
           }
@@ -629,16 +695,30 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         false
       },
       (
-        ExprData::Let(_, ty1, v1, body1, _, _),
+        ExprData::Let(name, ty1, v1, body1, _, _),
         ExprData::Let(_, ty2, v2, body2, _, _),
       ) => {
-        // H3: Let should be zeta-reduced by whnf_core before reaching this point.
-        // Use push_let (not push_local) so the let-bound value is available for
-        // reduction in the body comparison, in case this code IS reached.
+        // H3: Let should be zeta-reduced by whnf_core before reaching this
+        // point. Push as LDecl so the let-bound value is available for
+        // FVar zeta-reduction in body comparison, in case this branch IS
+        // reached.
         if self.is_def_eq(ty1, ty2)? && self.is_def_eq(v1, v2)? {
-          self.push_let(ty1.clone(), v1.clone());
-          let r = self.is_def_eq(body1, body2)?;
-          self.pop_local();
+          let saved = self.lctx.len();
+          let fv_id = self.fresh_fvar_id();
+          let fv = self.intern(KExpr::fvar(fv_id, name.clone()));
+          self.lctx.push(
+            fv_id,
+            LocalDecl::LDecl {
+              name: name.clone(),
+              ty: ty1.clone(),
+              val: v1.clone(),
+            },
+          );
+          let b1_open =
+            instantiate_rev(&mut self.env.intern, body1, &[fv.clone()]);
+          let b2_open = instantiate_rev(&mut self.env.intern, body2, &[fv]);
+          let r = self.is_def_eq(&b1_open, &b2_open)?;
+          self.lctx.truncate(saved);
           if r {
             return Ok(true);
           }
@@ -748,6 +828,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       return Ok(cached);
     }
     self.env.perf.record_is_prop_miss();
+    self.record_hot_miss("is-prop", ty);
 
     // infer(ty) returns the Sort that classifies `ty`. WHNF is needed because
     // the inferred sort may be wrapped in `mdata` or a let-bound sort
@@ -1500,6 +1581,7 @@ fn compact_def_eq_expr<M: KernelMode>(e: &KExpr<M>) -> String {
   let (head, args) = collect_app_spine(e);
   let base = match head.data() {
     ExprData::Var(i, _, _) => format!("#{i}"),
+    ExprData::FVar(id, _, _) => format!("{id}"),
     ExprData::Sort(u, _) => format!("Sort({u})"),
     ExprData::Const(id, us, _) => format!("{id}.{{{}}}", us.len()),
     ExprData::App(..) => "app".to_string(),
@@ -1530,6 +1612,7 @@ fn compact_def_eq_head<M: KernelMode>(e: &KExpr<M>) -> String {
   let (head, args) = collect_app_spine(e);
   let base = match head.data() {
     ExprData::Var(i, _, _) => format!("#{i}"),
+    ExprData::FVar(id, _, _) => format!("{id}"),
     ExprData::Sort(u, _) => format!("Sort({u})"),
     ExprData::Const(id, us, _) => format!("{id}.{{{}}}", us.len()),
     ExprData::App(..) => "app".to_string(),
@@ -1617,6 +1700,29 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     if let Some(wb) = wb {
       eprintln!("  wb: {wb}");
     }
+  }
+
+  fn dump_def_eq_rec_fuel(&self, a: &KExpr<M>, b: &KExpr<M>) {
+    let Some(filter) = IX_DEF_EQ_MAX_DUMP.as_ref() else {
+      return;
+    };
+    if !self.debug_label_matches_env() {
+      return;
+    }
+    let a_head = head_const_name(a).unwrap_or_else(|| "<none>".to_string());
+    let b_head = head_const_name(b).unwrap_or_else(|| "<none>".to_string());
+    if !filter.is_empty()
+      && !a_head.contains(filter)
+      && !b_head.contains(filter)
+    {
+      return;
+    }
+    eprintln!(
+      "[deq max] rec-fuel depth={} a={} b={}",
+      self.def_eq_depth,
+      compact_def_eq_expr(a),
+      compact_def_eq_expr(b)
+    );
   }
 }
 
@@ -1787,7 +1893,7 @@ mod tests {
     );
     let plain = ME::cnst(id, Box::new([]));
 
-    assert_ne!(tagged.addr(), plain.addr());
+    assert_eq!(tagged.addr(), plain.addr());
     assert!(tc.is_def_eq(&tagged, &plain).unwrap());
   }
 

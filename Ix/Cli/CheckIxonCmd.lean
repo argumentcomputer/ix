@@ -92,26 +92,6 @@ private def reportFailures (failures : Array (Lean.Name × String))
   if failures.size > limit then
     IO.println s!"  ... ({failures.size - limit} more failures suppressed)"
 
-private def commentLine (msg : String) : String :=
-  let oneLine := msg.replace "\n" " | "
-  s!"# {oneLine}"
-
-private def writeFailuresFile
-    (path : String)
-    (envPath : String)
-    (seedCount : Nat)
-    (failures : Array (Lean.Name × String))
-    : IO Unit := do
-  let mut buf : String :=
-    "# ix check-ixon failures\n"
-    ++ s!"# env: {envPath}\n"
-    ++ s!"# seeds: {seedCount}\n"
-    ++ s!"# failures: {failures.size}\n\n"
-  for (name, msg) in failures do
-    buf := buf ++ commentLine msg ++ "\n" ++ s!"{name}\n\n"
-  IO.FS.writeFile path buf
-  IO.println s!"[check-ixon] wrote {failures.size} failure(s) to {path}"
-
 def runCheckIxonCmd (p : Cli.Parsed) : IO UInt32 := do
   let some env := p.flag? "env"
     | p.printError "error: must specify --env"
@@ -120,19 +100,39 @@ def runCheckIxonCmd (p : Cli.Parsed) : IO UInt32 := do
   let verbose := p.flag? "verbose" |>.isSome
 
   IO.println s!"Running Ix kernel check on serialized env {envPath}"
-  let namesInEnv ← rsIxonNamesFFI envPath
-  IO.println s!"Total checkable names in env: {namesInEnv.size}"
-
   let spec ← resolveSeedSpec p
-  let seedNames ← selectNames namesInEnv spec
+  let seedNames ←
+    match spec with
+    | some s =>
+        if s.prefixes.isEmpty && !s.exacts.isEmpty then
+          IO.println s!"[check-ixon] exact-only filter: {s.exacts.length} name(s); skipping full env name preflight"
+          pure s.exacts.toArray
+        else
+          let namesInEnv ← rsIxonNamesFFI envPath
+          IO.println s!"Total checkable names in env: {namesInEnv.size}"
+          selectNames namesInEnv spec
+    | none =>
+        let namesInEnv ← rsIxonNamesFFI envPath
+        IO.println s!"Total checkable names in env: {namesInEnv.size}"
+        pure namesInEnv
   if spec.isSome && seedNames.isEmpty then
     IO.println "[check-ixon] error: filter resolved to zero constants; refusing to run full-env check"
     return 1
   IO.println s!"[check-ixon] checking {seedNames.size} seed constant(s)"
 
   let expectPass : Array Bool := Array.replicate seedNames.size true
+  -- Pass an empty string when --fail-out is unset; the Rust side treats ""
+  -- as "no streaming file". When the flag is set, Rust opens the file at
+  -- start-of-run, writes a header, appends one record per failure as it's
+  -- detected (flushed immediately), and finalises with a footer. That's
+  -- what makes the file visible to `tail -f` during a long run instead of
+  -- being dumped only after every constant finishes.
+  let failOutPath : String :=
+    match p.flag? "fail-out" with
+    | some flag => flag.as! String
+    | none => ""
   let start ← IO.monoMsNow
-  let results ← rsCheckIxonFFI envPath seedNames expectPass (!verbose)
+  let results ← rsCheckIxonFFI envPath seedNames expectPass (!verbose) failOutPath
   let elapsed := (← IO.monoMsNow) - start
 
   let mut passed := 0
@@ -146,8 +146,8 @@ def runCheckIxonCmd (p : Cli.Parsed) : IO UInt32 := do
   IO.println s!"[check-ixon] {passed}/{seedNames.size} passed"
   reportFailures failures
 
-  if let some flag := p.flag? "fail-out" then
-    writeFailuresFile (flag.as! String) envPath seedNames.size failures
+  if !failOutPath.isEmpty then
+    IO.println s!"[check-ixon] streamed {failures.size} failure(s) to {failOutPath}"
 
   IO.println s!"##check-ixon## {elapsed} {passed} {failures.size} {seedNames.size}"
   return if failures.isEmpty then 0 else 1

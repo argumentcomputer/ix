@@ -2541,6 +2541,11 @@ fn ingress_aux_gen_dep(
     ConstantInfo::InductInfo(v) => {
       super::expr_utils::ensure_full_in_kenv_of(name, lean_env, stt, kctx);
       collect_const_refs(&v.cnst.typ, queue);
+      for ctor_name in &v.ctors {
+        if let Some(ConstantInfo::CtorInfo(ctor)) = lean_env.get(ctor_name) {
+          collect_const_refs(&ctor.cnst.typ, queue);
+        }
+      }
     },
     ConstantInfo::CtorInfo(v) => {
       super::expr_utils::ensure_full_in_kenv_of(name, lean_env, stt, kctx);
@@ -2632,7 +2637,11 @@ fn collect_const_refs(expr: &LeanExpr, out: &mut Vec<Name>) {
         stack.push(v);
         stack.push(b);
       },
-      ExprData::Proj(_, _, e, _) | ExprData::Mdata(_, e, _) => {
+      ExprData::Proj(name, _, e, _) => {
+        out.push(name.clone());
+        stack.push(e);
+      },
+      ExprData::Mdata(_, e, _) => {
         stack.push(e);
       },
       _ => {},

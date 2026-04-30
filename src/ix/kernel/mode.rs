@@ -6,16 +6,16 @@
 //! - **type Meta = ZMode<true>**: metadata fields stored as `T`.
 //! - **type Anon = ZMode<false>**: metadata fields erased to `()`.
 //!
-//! `MetaHash` provides serialization into `blake3::Hasher` so that metadata
-//! contributes to content hashes in Meta mode. The `()` impl is a no-op,
-//! so metadata vanishes from hashes in Anon mode.
+//! `MetaHash` provides serialization into `blake3::Hasher` for callers that
+//! explicitly need metadata ordering or diagnostics. Semantic expression and
+//! universe hashes deliberately do not include metadata in either mode.
 
 use std::fmt::{self, Debug};
 use std::hash::Hash;
 
 use crate::ix::env::{BinderInfo, DataValue, Name, NameData};
 
-/// Serialize a value into a `blake3::Hasher` for content hashing.
+/// Serialize a metadata value into a `blake3::Hasher`.
 /// The `()` impl is a no-op, so erased metadata contributes nothing.
 pub trait MetaHash {
   fn meta_hash(&self, hasher: &mut blake3::Hasher);

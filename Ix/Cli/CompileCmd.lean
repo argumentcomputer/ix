@@ -8,12 +8,18 @@ public section
 
 open System (FilePath)
 
+private def defaultOutPathFor (pathStr : String) : String :=
+  let path := FilePath.mk pathStr
+  let stem := path.fileStem.getD (path.fileName.getD pathStr)
+  stem.toLower ++ ".ixe"
+
 def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   let some path := p.flag? "path"
     | p.printError "error: must specify --path"
       return 1
   let pathStr := path.as! String
-  let outPath? : Option String := (p.flag? "out").map (·.as! String)
+  let outPath : String :=
+    (p.flag? "out").map (·.as! String) |>.getD (defaultOutPathFor pathStr)
 
   buildFile pathStr
   let leanEnv ← getFileEnv pathStr
@@ -31,19 +37,16 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   -- Machine-readable line for CI benchmark tracking
   IO.println s!"##benchmark## {elapsed} {bytes.size} {totalConsts}"
 
-  -- Optionally persist the serialized IxonEnv (`Env::put` bytes) to disk so
-  -- subsequent runs (e.g. `ix check-ixon`) can skip the Lean → IxOn compile
-  -- step. The resulting file is the canonical streaming format produced by
-  -- `Ixon.Env::put` (see `src/ix/ixon/serialize.rs:1093-1297`); it round-
-  -- trips through `Ixon.Env::get`.
-  match outPath? with
-  | none => return 0
-  | some out =>
-    let writeStart ← IO.monoMsNow
-    IO.FS.writeBinFile out bytes
-    let writeMs := (← IO.monoMsNow) - writeStart
-    println! "Wrote {fmtBytes bytes.size} to {out} in {writeMs.formatMs}"
-    return 0
+  -- Persist the serialized IxonEnv (`Env::put` bytes) to disk so subsequent
+  -- runs (e.g. `ix check-ixon`) can skip the Lean → IxOn compile step. The
+  -- resulting file is the canonical streaming format produced by
+  -- `Ixon.Env::put` (see `src/ix/ixon/serialize.rs:1093-1297`); it round-trips
+  -- through `Ixon.Env::get`.
+  let writeStart ← IO.monoMsNow
+  IO.FS.writeBinFile outPath bytes
+  let writeMs := (← IO.monoMsNow) - writeStart
+  println! "Wrote {fmtBytes bytes.size} to {outPath} in {writeMs.formatMs}"
+  return 0
 
 
 def compileCmd : Cli.Cmd := `[Cli|
@@ -52,7 +55,7 @@ def compileCmd : Cli.Cmd := `[Cli|
 
   FLAGS:
     path : String; "Path to file to compile"
-    out  : String; "Optional output path: write the serialized Ixon.Env bytes (`Env::put` format) so later runs can load via `ix check-ixon --env <path>`"
+    out  : String; "Output path for serialized Ixon.Env bytes; defaults to the lowercased input file stem with `.ixe` (e.g. CompileMathlib.lean -> compilemathlib.ixe)"
 ]
 
 end

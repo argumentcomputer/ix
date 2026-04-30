@@ -6,9 +6,10 @@ use super::constant::KConst;
 use super::error::{TcError, u64_to_usize};
 use super::expr::{ExprData, KExpr};
 use super::id::KId;
+use super::lctx::LocalDecl;
 use super::level::KUniv;
 use super::mode::KernelMode;
-use super::subst::subst;
+use super::subst::{abstract_fvars, cheap_beta_reduce, instantiate_rev, subst};
 use super::tc::{TypeChecker, collect_app_spine};
 
 /// Emit detailed `[app diff]` trace when `infer`'s App path rejects an
@@ -47,6 +48,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       return Ok(cached.clone());
     }
     self.env.perf.record_infer_miss();
+    if !infer_only {
+      self.record_hot_miss("infer", e);
+    }
     // Infer-only results skipped argument/let validation, so only infer-only
     // callers may reuse them.
     if infer_only {
@@ -55,10 +59,29 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         return Ok(cached.clone());
       }
       self.env.perf.record_infer_only_miss();
+      self.record_hot_miss("infer-only", e);
     }
 
     let ty = match e.data() {
+      // Legacy de Bruijn lookup: still used by inductive validation paths
+      // that push types via `push_local`/`push_let` rather than opening
+      // binders into fvars. Keeps the dual-bookkeeping correctness during
+      // the partial fvar transition (Stage B of the plan).
       ExprData::Var(i, _, _) => self.lookup_var(*i)?,
+
+      // Free variable: look up the type stored in the active local
+      // context. No lift is needed: every type pushed to `lctx` is closed
+      // under fvar identity (its outer Vars/FVars were already
+      // instantiate_rev'd or were absent), so the stored type is depth-
+      // invariant. Mirrors lean4lean's `inferType` `.fvar` branch.
+      ExprData::FVar(id, _, _) => match self.lctx.find(*id) {
+        Some(decl) => decl.ty().clone(),
+        None => {
+          return Err(TcError::Other(format!(
+            "infer: unknown FVar({id}); not bound in the active local context"
+          )));
+        },
+      },
 
       ExprData::Sort(u, _) => {
         let u2 = KUniv::succ(u.clone());
@@ -119,20 +142,30 @@ impl<M: KernelMode> TypeChecker<'_, M> {
               // strategy.
               let a_whnf = self.whnf(&a_ty);
               let d_whnf = self.whnf(&dom);
+              let depth = std::env::var("IX_APP_DIFF_DEPTH")
+                .ok()
+                .and_then(|s| s.parse::<usize>().ok())
+                .unwrap_or(2);
               eprintln!(
                 "[app diff] AppTypeMismatch at depth={}",
                 self.ctx.len()
               );
               eprintln!("  f:          {}", compact_expr(f));
               eprintln!("  a:          {}", compact_expr(a));
-              eprintln!("  a_ty:       {}", compact_expr_deep(&a_ty, 2));
-              eprintln!("  dom:        {}", compact_expr_deep(&dom, 2));
+              eprintln!("  a_ty:       {}", compact_expr_deep(&a_ty, depth));
+              eprintln!("  dom:        {}", compact_expr_deep(&dom, depth));
+              eprintln!("  a_ty data:  {:?}", a_ty.data());
+              eprintln!("  dom data:   {:?}", dom.data());
               match &a_whnf {
-                Ok(w) => eprintln!("  a_ty whnf:  {}", compact_expr_deep(w, 2)),
+                Ok(w) => {
+                  eprintln!("  a_ty whnf:  {}", compact_expr_deep(w, depth))
+                },
                 Err(e) => eprintln!("  a_ty whnf:  ERR {e}"),
               }
               match &d_whnf {
-                Ok(w) => eprintln!("  dom  whnf:  {}", compact_expr_deep(w, 2)),
+                Ok(w) => {
+                  eprintln!("  dom  whnf:  {}", compact_expr_deep(w, depth))
+                },
                 Err(e) => eprintln!("  dom  whnf:  ERR {e}"),
               }
             }
@@ -146,34 +179,82 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         subst(&mut self.env.intern, &cod, a, 0)
       },
 
-      ExprData::Lam(_, _, ty, body, _) => {
+      ExprData::Lam(name, bi, ty, body, _) => {
         if !infer_only {
           let t = self.infer(ty)?;
           self.ensure_sort(&t)?;
         }
-        self.push_local(ty.clone());
-        let body_ty = self.infer(body)?;
-        self.pop_local();
+        // Open the binder with a fresh fvar. Mirrors lean4lean
+        // `inferLambda` (TypeChecker.lean:122) and the C++
+        // `infer_lambda` (refs/lean4/src/kernel/type_checker.cpp:116).
+        let saved = self.lctx.len();
+        let fv_id = self.fresh_fvar_id();
+        let fv = self.intern(KExpr::fvar(fv_id, name.clone()));
+        self.lctx.push(
+          fv_id,
+          LocalDecl::CDecl {
+            name: name.clone(),
+            bi: bi.clone(),
+            ty: ty.clone(),
+          },
+        );
+        let body_open = instantiate_rev(&mut self.env.intern, body, &[fv]);
+        let body_ty = self.infer(&body_open)?;
+        // Peephole-reduce App(λ.., ..) shapes inside the inferred type
+        // before wrapping in the Pi. Idempotent in the Pi case, so
+        // outer frames pay nothing.
+        let body_ty = cheap_beta_reduce(&mut self.env.intern, &body_ty);
+        // Close back: abstract the fvar and wrap in `All` with anonymous
+        // name + default binder info (matching the pre-fvar legacy shape;
+        // the Lam's user-facing name does not propagate into the
+        // inferred Pi type). Recursor coherence relies on this exact
+        // shape — `lctx.mk_pi` would preserve the Lam's `name`/`bi`,
+        // diverging from what `inductive.rs::build_recursor_*` produces
+        // canonically.
+        let abstracted =
+          abstract_fvars(&mut self.env.intern, &body_ty, &[fv_id]);
+        self.lctx.truncate(saved);
         self.intern(KExpr::all(
           M::meta_field(crate::ix::env::Name::anon()),
           M::meta_field(crate::ix::env::BinderInfo::Default),
           ty.clone(),
-          body_ty,
+          abstracted,
         ))
       },
 
-      ExprData::All(_, _, ty, body, _) => {
+      ExprData::All(name, bi, ty, body, _) => {
         let ty_ty = self.infer(ty)?;
         let u1 = self.ensure_sort(&ty_ty)?;
-        self.push_local(ty.clone());
-        let body_ty = self.infer(body)?;
+        let saved = self.lctx.len();
+        let fv_id = self.fresh_fvar_id();
+        let fv = self.intern(KExpr::fvar(fv_id, name.clone()));
+        if std::env::var("IX_FVAR_TRACE").is_ok() {
+          eprintln!(
+            "[fvar All push] fv={fv_id} ty.addr={:?} ty.lbr={} ctx_len_before_push={} body.lbr={}",
+            ty.addr(),
+            ty.lbr(),
+            self.ctx.len(),
+            body.lbr(),
+          );
+          eprintln!("    ty data: {:?}", ty.data());
+        }
+        self.lctx.push(
+          fv_id,
+          LocalDecl::CDecl {
+            name: name.clone(),
+            bi: bi.clone(),
+            ty: ty.clone(),
+          },
+        );
+        let body_open = instantiate_rev(&mut self.env.intern, body, &[fv]);
+        let body_ty = self.infer(&body_open)?;
         let u2 = self.ensure_sort(&body_ty)?;
-        self.pop_local();
+        self.lctx.truncate(saved);
         let u = KUniv::imax(u1, u2);
         self.intern(KExpr::sort(u))
       },
 
-      ExprData::Let(_, ty, val, body, _, _) => {
+      ExprData::Let(name, ty, val, body, _, _) => {
         if !infer_only {
           let t = self.infer(ty)?;
           self.ensure_sort(&t)?;
@@ -182,10 +263,37 @@ impl<M: KernelMode> TypeChecker<'_, M> {
             return Err(TcError::DeclTypeMismatch);
           }
         }
-        self.push_let(ty.clone(), val.clone());
-        let body_ty = self.infer(body)?;
-        self.pop_local();
-        subst(&mut self.env.intern, &body_ty, val, 0)
+        // Open with let-bound fvar. Mirrors lean4lean `inferLet`
+        // (TypeChecker.lean:165). The let value lives in the LDecl so
+        // WHNF can zeta-reduce on FVar(let) lookup, and so the closing
+        // step below produces a `Let` wrapper whose body is the
+        // abstracted body_ty.
+        let saved = self.lctx.len();
+        let fv_id = self.fresh_fvar_id();
+        let fv = self.intern(KExpr::fvar(fv_id, name.clone()));
+        self.lctx.push(
+          fv_id,
+          LocalDecl::LDecl {
+            name: name.clone(),
+            ty: ty.clone(),
+            val: val.clone(),
+          },
+        );
+        let body_open = instantiate_rev(&mut self.env.intern, body, &[fv]);
+        let body_ty = self.infer(&body_open)?;
+        // Eagerly substitute `val` for the let's fvar in the inferred
+        // type, then cheap-beta. This matches the pre-fvar behavior of
+        // `inferLet` (which used a single `subst(body_ty, val, 0)` after
+        // pop) and avoids leaking a `Let` wrapper into cached infer
+        // results, which would change cache shapes for downstream
+        // consumers. Equivalent to `lctx.mk_pi([fv_id], body_ty)`
+        // followed by zeta — we collapse directly.
+        let abstracted =
+          abstract_fvars(&mut self.env.intern, &body_ty, &[fv_id]);
+        let r = subst(&mut self.env.intern, &abstracted, val, 0);
+        let r = cheap_beta_reduce(&mut self.env.intern, &r);
+        self.lctx.truncate(saved);
+        r
       },
 
       ExprData::Prj(struct_id, field, val, _) => {
@@ -461,6 +569,7 @@ fn compact_head<M: KernelMode>(e: &KExpr<M>) -> String {
   let (head, args) = collect_app_spine(e);
   let base = match head.data() {
     ExprData::Var(i, _, _) => format!("#{i}"),
+    ExprData::FVar(id, _, _) => format!("{id}"),
     ExprData::Sort(u, _) => format!("Sort({u})"),
     ExprData::Const(id, us, _) => format!("{id}.{{{}}}", us.len()),
     ExprData::App(..) => "app".to_string(),

@@ -16,7 +16,7 @@ use std::sync::LazyLock;
 use rustc_hash::FxHashMap;
 
 use super::env::{Addr, InternTable};
-use super::expr::{ExprData, KExpr};
+use super::expr::{ExprData, FVarId, KExpr};
 use super::mode::KernelMode;
 
 /// When set, log every 100K `subst` (top-level) entries. Substitution is
@@ -66,6 +66,71 @@ pub fn subst<M: KernelMode>(
   let result = subst_cached(env, body, arg, depth, &mut cache);
   env.subst_scratch = cache;
   result
+}
+
+/// Substitution variant for short-lived WHNF intermediates.
+///
+/// This deliberately does not use the global [`InternTable`]. It is intended
+/// for reductions that may produce a long chain of distinct, never-reused
+/// expressions, such as Nat literal recursor peeling. Interning those nodes
+/// keeps every predecessor alive for the entire environment check.
+pub fn subst_no_intern<M: KernelMode>(
+  body: &KExpr<M>,
+  arg: &KExpr<M>,
+  depth: u64,
+) -> KExpr<M> {
+  if body.lbr() <= depth {
+    return body.clone();
+  }
+
+  match body.data() {
+    ExprData::Var(i, name, _) => {
+      let i = *i;
+      if i == depth {
+        lift_no_intern(arg, depth, 0)
+      } else if i > depth {
+        KExpr::var(i - 1, name.clone())
+      } else {
+        body.clone()
+      }
+    },
+
+    ExprData::App(f, x, _) => {
+      let f2 = subst_no_intern(f, arg, depth);
+      let x2 = subst_no_intern(x, arg, depth);
+      KExpr::app(f2, x2)
+    },
+
+    ExprData::Lam(name, bi, ty, inner, _) => {
+      let ty2 = subst_no_intern(ty, arg, depth);
+      let inner2 = subst_no_intern(inner, arg, depth + 1);
+      KExpr::lam(name.clone(), bi.clone(), ty2, inner2)
+    },
+
+    ExprData::All(name, bi, ty, inner, _) => {
+      let ty2 = subst_no_intern(ty, arg, depth);
+      let inner2 = subst_no_intern(inner, arg, depth + 1);
+      KExpr::all(name.clone(), bi.clone(), ty2, inner2)
+    },
+
+    ExprData::Let(name, ty, val, inner, nd, _) => {
+      let ty2 = subst_no_intern(ty, arg, depth);
+      let val2 = subst_no_intern(val, arg, depth);
+      let inner2 = subst_no_intern(inner, arg, depth + 1);
+      KExpr::let_(name.clone(), ty2, val2, inner2, *nd)
+    },
+
+    ExprData::Prj(id, field, val, _) => {
+      let val2 = subst_no_intern(val, arg, depth);
+      KExpr::prj(id.clone(), *field, val2)
+    },
+
+    ExprData::FVar(..)
+    | ExprData::Sort(..)
+    | ExprData::Const(..)
+    | ExprData::Nat(..)
+    | ExprData::Str(..) => body.clone(),
+  }
 }
 
 /// Inner recursive worker with memoization keyed by `(sub-expr addr,
@@ -143,13 +208,15 @@ fn subst_cached<M: KernelMode>(
       KExpr::prj(id.clone(), *field, val2)
     },
 
-    ExprData::Sort(..)
+    ExprData::FVar(..)
+    | ExprData::Sort(..)
     | ExprData::Const(..)
     | ExprData::Nat(..)
     | ExprData::Str(..) => {
       // Closed atoms — the outer `lbr() <= depth` guard should have
-      // caught these, so this arm is defensive. Cache to stay
-      // consistent with other branches.
+      // caught these, so this arm is defensive. FVars carry no loose
+      // bound variables (lbr=0) so they always pass through unchanged.
+      // Cache to stay consistent with other branches.
       let r = body.clone();
       cache.insert(key, r.clone());
       return r;
@@ -252,7 +319,8 @@ fn simul_subst_cached<M: KernelMode>(
       KExpr::prj(id.clone(), *field, val2)
     },
 
-    ExprData::Sort(..)
+    ExprData::FVar(..)
+    | ExprData::Sort(..)
     | ExprData::Const(..)
     | ExprData::Nat(..)
     | ExprData::Str(..) => {
@@ -291,6 +359,59 @@ pub fn lift<M: KernelMode>(
   let result = lift_cached(env, e, shift, cutoff, &mut cache);
   env.lift_scratch = cache;
   result
+}
+
+fn lift_no_intern<M: KernelMode>(
+  e: &KExpr<M>,
+  shift: u64,
+  cutoff: u64,
+) -> KExpr<M> {
+  if shift == 0 || e.lbr() <= cutoff {
+    return e.clone();
+  }
+
+  match e.data() {
+    ExprData::Var(i, name, _) => {
+      let i = *i;
+      if i >= cutoff { KExpr::var(i + shift, name.clone()) } else { e.clone() }
+    },
+
+    ExprData::App(f, x, _) => {
+      let f2 = lift_no_intern(f, shift, cutoff);
+      let x2 = lift_no_intern(x, shift, cutoff);
+      KExpr::app(f2, x2)
+    },
+
+    ExprData::Lam(name, bi, ty, body, _) => {
+      let ty2 = lift_no_intern(ty, shift, cutoff);
+      let body2 = lift_no_intern(body, shift, cutoff + 1);
+      KExpr::lam(name.clone(), bi.clone(), ty2, body2)
+    },
+
+    ExprData::All(name, bi, ty, body, _) => {
+      let ty2 = lift_no_intern(ty, shift, cutoff);
+      let body2 = lift_no_intern(body, shift, cutoff + 1);
+      KExpr::all(name.clone(), bi.clone(), ty2, body2)
+    },
+
+    ExprData::Let(name, ty, val, body, nd, _) => {
+      let ty2 = lift_no_intern(ty, shift, cutoff);
+      let val2 = lift_no_intern(val, shift, cutoff);
+      let body2 = lift_no_intern(body, shift, cutoff + 1);
+      KExpr::let_(name.clone(), ty2, val2, body2, *nd)
+    },
+
+    ExprData::Prj(id, field, val, _) => {
+      let val2 = lift_no_intern(val, shift, cutoff);
+      KExpr::prj(id.clone(), *field, val2)
+    },
+
+    ExprData::FVar(..)
+    | ExprData::Sort(..)
+    | ExprData::Const(..)
+    | ExprData::Nat(..)
+    | ExprData::Str(..) => e.clone(),
+  }
 }
 
 fn lift_cached<M: KernelMode>(
@@ -353,11 +474,370 @@ fn lift_cached<M: KernelMode>(
       KExpr::prj(id.clone(), *field, val2)
     },
 
-    ExprData::Sort(..)
+    ExprData::FVar(..)
+    | ExprData::Sort(..)
     | ExprData::Const(..)
     | ExprData::Nat(..)
     | ExprData::Str(..) => {
       let r = e.clone();
+      cache.insert(key, r.clone());
+      return r;
+    },
+  };
+
+  let interned = env.intern_expr(result);
+  cache.insert(key, interned.clone());
+  interned
+}
+
+/// Cheap beta reduction: peephole-reduce `App(λ...λ. body, args)` shapes
+/// without invoking the full [`subst`] machinery in trivial cases.
+///
+/// Mirrors `lean4lean`'s `Expr.cheapBetaReduce`
+/// (refs/lean4lean/Lean4Lean/Instantiate.lean:8-27) and the C++ kernel's
+/// `cheap_beta_reduce` (refs/lean4/src/kernel/instantiate.cpp:211).
+///
+/// For a spine `App(λx_0 ... λx_{n-1}. body, a_0, ..., a_{m-1})` we peel
+/// `i = min(n, m)` lambdas. After peeling:
+/// - **Closed body**: if `body.lbr() == 0`, no var refers to the peeled
+///   binders or anything outside; rebuild `body @ a_i .. a_{m-1}`.
+/// - **Single bvar body**: if `body` is `Var(k)` with `k < i`, the body
+///   just selects one of the peeled args. Pick `a_{i-k-1}` and apply the
+///   remaining args.
+/// - Otherwise: defer to full WHNF; return the input unchanged.
+///
+/// Used by `inferLambda` / `inferLet` (and equivalents) to clean up
+/// redexes that arise when an inferred type has the form
+/// `App(λ_. T, x)` — common when motives or `id`-like applications
+/// appear in the body's type. Returning a redex-free form here saves
+/// downstream `is_def_eq` and `whnf` from instantiating-then-reducing.
+pub fn cheap_beta_reduce<M: KernelMode>(
+  env: &mut InternTable<M>,
+  e: &KExpr<M>,
+) -> KExpr<M> {
+  // Only Apps can be redexes.
+  if !matches!(e.data(), ExprData::App(..)) {
+    return e.clone();
+  }
+
+  // Collect the spine. Mirrors `tc::collect_app_spine` but inlined to
+  // avoid a circular `tc` ↔ `subst` dependency.
+  let mut count = 0usize;
+  {
+    let mut cur = e;
+    while let ExprData::App(f, _, _) = cur.data() {
+      count += 1;
+      cur = f;
+    }
+  }
+  if count == 0 {
+    return e.clone();
+  }
+  let mut args: Vec<KExpr<M>> = Vec::with_capacity(count);
+  let mut head = e.clone();
+  while let ExprData::App(f, a, _) = head.data() {
+    args.push(a.clone());
+    head = f.clone();
+  }
+  args.reverse();
+
+  // Quick exit: head must be a lambda for any peeling to fire.
+  if !matches!(head.data(), ExprData::Lam(..)) {
+    return e.clone();
+  }
+
+  // Peel up to `args.len()` lambdas, advancing `head` to the body.
+  let mut i: usize = 0;
+  while i < args.len() {
+    if let ExprData::Lam(_, _, _, inner, _) = head.data() {
+      let inner = inner.clone();
+      head = inner;
+      i += 1;
+    } else {
+      break;
+    }
+  }
+
+  // Case A: body has no free var references. Safe to drop the peeled
+  // binders; rebuild App with remaining args.
+  if head.lbr() == 0 {
+    let mut result = head;
+    for arg in &args[i..] {
+      result = env.intern_expr(KExpr::app(result, arg.clone()));
+    }
+    return result;
+  }
+
+  // Case B: body is a single Var(k) referring to one of the peeled
+  // binders (k < i). The peeled lambdas were applied in spine order, so
+  // `Var(0)` is the innermost (last peeled, took `args[i-1]`) and
+  // `Var(k)` is `args[i-k-1]`.
+  if let ExprData::Var(k, _, _) = head.data() {
+    let k = *k;
+    if k < i as u64 {
+      #[allow(clippy::cast_possible_truncation)]
+      let chosen_idx = i - (k as usize) - 1;
+      let mut result = args[chosen_idx].clone();
+      for arg in &args[i..] {
+        result = env.intern_expr(KExpr::app(result, arg.clone()));
+      }
+      return result;
+    }
+  }
+
+  // Otherwise the redex needs a real substitution; let WHNF handle it.
+  e.clone()
+}
+
+/// Instantiate the outermost `n = fvars.len()` loose bound variables in
+/// `body` by the corresponding fvars, in reverse order (mirrors
+/// `Lean.Expr.instantiateRev` and the C++ kernel's `instantiate_rev`).
+///
+/// For an opened binder body where `Var(0)` is the innermost bound and
+/// `Var(n-1)` the outermost, calling `instantiate_rev(body, [fv_0, ..,
+/// fv_{n-1}])` replaces `Var(0) → fv_{n-1}`, ..., `Var(n-1) → fv_0`. Free
+/// variables `Var(k)` with `k >= n` shift **down by `n`** because the
+/// surrounding `n` binders have been opened and consumed.
+///
+/// The argument array `fvars` must contain `KExpr`s whose `ExprData` is
+/// `FVar(..)`. The function does not enforce this — the lambda head check
+/// is the caller's responsibility — but the substitution is only sound
+/// when every replacement is fvar-shaped (closed, lbr=0). Other shapes
+/// would need their own lifting under each binder, which is what
+/// [`simul_subst`] does.
+///
+/// Fast path: returns `body` unchanged when `body.lbr() == 0` (the body
+/// has no loose bvars to instantiate).
+pub fn instantiate_rev<M: KernelMode>(
+  env: &mut InternTable<M>,
+  body: &KExpr<M>,
+  fvars: &[KExpr<M>],
+) -> KExpr<M> {
+  if fvars.is_empty() || body.lbr() == 0 {
+    return body.clone();
+  }
+  // Borrow the dedicated `subst_scratch` (same allocation reuse trick as
+  // `subst`/`simul_subst`). `instantiate_rev_cached` does not call back
+  // into subst/simul_subst/lift, so the scratch is safe to share across
+  // top-level calls without nested-borrow risk.
+  let mut cache = std::mem::take(&mut env.subst_scratch);
+  cache.clear();
+  let result = instantiate_rev_cached(env, body, fvars, 0, &mut cache);
+  env.subst_scratch = cache;
+  result
+}
+
+fn instantiate_rev_cached<M: KernelMode>(
+  env: &mut InternTable<M>,
+  body: &KExpr<M>,
+  fvars: &[KExpr<M>],
+  depth: u64,
+  cache: &mut FxHashMap<(Addr, u64), KExpr<M>>,
+) -> KExpr<M> {
+  // No loose bvars at or below `depth` means nothing to instantiate at
+  // this subtree.
+  if body.lbr() <= depth {
+    return body.clone();
+  }
+
+  let key = (body.hash_key(), depth);
+  if let Some(cached) = cache.get(&key) {
+    return cached.clone();
+  }
+
+  let n = fvars.len() as u64;
+
+  let result = match body.data() {
+    ExprData::Var(i, _, _) => {
+      let i = *i;
+      if i >= depth && i < depth + n {
+        // `Var(depth)` corresponds to the innermost peeled binder, which
+        // matches `fvars[n-1]` (last element). `Var(depth + n - 1)` is
+        // the outermost, matching `fvars[0]`.
+        #[allow(clippy::cast_possible_truncation)]
+        let idx = (n - 1 - (i - depth)) as usize;
+        let r = fvars[idx].clone();
+        cache.insert(key, r.clone());
+        return r;
+      } else if i >= depth + n {
+        // Free variable above the instantiated range: shift down by `n`.
+        KExpr::var(i - n, M::meta_field(crate::ix::env::Name::anon()))
+      } else {
+        // i < depth: bound by an inner binder we walked under; unchanged.
+        let r = body.clone();
+        cache.insert(key, r.clone());
+        return r;
+      }
+    },
+
+    ExprData::App(f, x, _) => {
+      let f2 = instantiate_rev_cached(env, f, fvars, depth, cache);
+      let x2 = instantiate_rev_cached(env, x, fvars, depth, cache);
+      KExpr::app(f2, x2)
+    },
+
+    ExprData::Lam(name, bi, ty, inner, _) => {
+      let ty2 = instantiate_rev_cached(env, ty, fvars, depth, cache);
+      let inner2 = instantiate_rev_cached(env, inner, fvars, depth + 1, cache);
+      KExpr::lam(name.clone(), bi.clone(), ty2, inner2)
+    },
+
+    ExprData::All(name, bi, ty, inner, _) => {
+      let ty2 = instantiate_rev_cached(env, ty, fvars, depth, cache);
+      let inner2 = instantiate_rev_cached(env, inner, fvars, depth + 1, cache);
+      KExpr::all(name.clone(), bi.clone(), ty2, inner2)
+    },
+
+    ExprData::Let(name, ty, val, inner, nd, _) => {
+      let ty2 = instantiate_rev_cached(env, ty, fvars, depth, cache);
+      let val2 = instantiate_rev_cached(env, val, fvars, depth, cache);
+      let inner2 = instantiate_rev_cached(env, inner, fvars, depth + 1, cache);
+      KExpr::let_(name.clone(), ty2, val2, inner2, *nd)
+    },
+
+    ExprData::Prj(id, field, val, _) => {
+      let val2 = instantiate_rev_cached(env, val, fvars, depth, cache);
+      KExpr::prj(id.clone(), *field, val2)
+    },
+
+    ExprData::FVar(..)
+    | ExprData::Sort(..)
+    | ExprData::Const(..)
+    | ExprData::Nat(..)
+    | ExprData::Str(..) => {
+      let r = body.clone();
+      cache.insert(key, r.clone());
+      return r;
+    },
+  };
+
+  let interned = env.intern_expr(result);
+  cache.insert(key, interned.clone());
+  interned
+}
+
+/// Inverse of [`instantiate_rev`]: replace each occurrence of the listed
+/// fvars in `body` with the appropriate `Var(level)` and shift other
+/// loose bvars upward by `n` so the result is closed under `n` new
+/// binders. `fvars[0]` becomes `Var(n - 1 + depth)` (outermost), `fvars[n-1]`
+/// becomes `Var(depth)` (innermost).
+///
+/// Used by `LocalContext::mk_lambda` / `mk_pi` to close a body back into
+/// a chain of de Bruijn binders after binder opening.
+///
+/// Fast path: returns `body` unchanged when `!body.has_fvars()`.
+pub fn abstract_fvars<M: KernelMode>(
+  env: &mut InternTable<M>,
+  body: &KExpr<M>,
+  fvars: &[FVarId],
+) -> KExpr<M> {
+  if fvars.is_empty() || !body.has_fvars() {
+    return body.clone();
+  }
+  // Build a position map for O(1) fvar → position lookup. For typical
+  // usage (n ≤ 16), a linear scan would also be fine, but the map keeps
+  // the cost predictable for inductive validation paths that abstract
+  // larger fvar sets.
+  let mut pos: FxHashMap<FVarId, u64> = FxHashMap::default();
+  pos.reserve(fvars.len());
+  for (i, fv) in fvars.iter().enumerate() {
+    // Innermost (last) gets position 0; outermost (first) gets position
+    // `n - 1`, matching the `instantiate_rev` convention.
+    pos.insert(*fv, (fvars.len() - 1 - i) as u64);
+  }
+
+  let mut cache = std::mem::take(&mut env.subst_scratch);
+  cache.clear();
+  let n = fvars.len() as u64;
+  let result = abstract_fvars_cached(env, body, &pos, n, 0, &mut cache);
+  env.subst_scratch = cache;
+  result
+}
+
+fn abstract_fvars_cached<M: KernelMode>(
+  env: &mut InternTable<M>,
+  body: &KExpr<M>,
+  pos: &FxHashMap<FVarId, u64>,
+  n: u64,
+  depth: u64,
+  cache: &mut FxHashMap<(Addr, u64), KExpr<M>>,
+) -> KExpr<M> {
+  // If this subtree has neither fvars nor loose bvars >= depth, nothing
+  // changes. (Loose bvars below `depth` are bound by enclosing binders we
+  // walked under, so they are unaffected.)
+  if !body.has_fvars() && body.lbr() <= depth {
+    return body.clone();
+  }
+
+  let key = (body.hash_key(), depth);
+  if let Some(cached) = cache.get(&key) {
+    return cached.clone();
+  }
+
+  let result = match body.data() {
+    ExprData::FVar(id, _, _) => {
+      // Replace target fvars with Var(level). Other fvars are leaves and
+      // pass through unchanged (they belong to outer abstractions).
+      if let Some(&p) = pos.get(id) {
+        let new_var =
+          KExpr::var(depth + p, M::meta_field(crate::ix::env::Name::anon()));
+        let interned = env.intern_expr(new_var);
+        cache.insert(key, interned.clone());
+        return interned;
+      }
+      let r = body.clone();
+      cache.insert(key, r.clone());
+      return r;
+    },
+
+    ExprData::Var(i, name, _) => {
+      let i = *i;
+      // Loose bvars at or above `depth` shift up by `n` because we are
+      // wrapping the body in `n` new binders.
+      if i >= depth {
+        KExpr::var(i + n, name.clone())
+      } else {
+        let r = body.clone();
+        cache.insert(key, r.clone());
+        return r;
+      }
+    },
+
+    ExprData::App(f, x, _) => {
+      let f2 = abstract_fvars_cached(env, f, pos, n, depth, cache);
+      let x2 = abstract_fvars_cached(env, x, pos, n, depth, cache);
+      KExpr::app(f2, x2)
+    },
+
+    ExprData::Lam(name, bi, ty, inner, _) => {
+      let ty2 = abstract_fvars_cached(env, ty, pos, n, depth, cache);
+      let inner2 = abstract_fvars_cached(env, inner, pos, n, depth + 1, cache);
+      KExpr::lam(name.clone(), bi.clone(), ty2, inner2)
+    },
+
+    ExprData::All(name, bi, ty, inner, _) => {
+      let ty2 = abstract_fvars_cached(env, ty, pos, n, depth, cache);
+      let inner2 = abstract_fvars_cached(env, inner, pos, n, depth + 1, cache);
+      KExpr::all(name.clone(), bi.clone(), ty2, inner2)
+    },
+
+    ExprData::Let(name, ty, val, inner, nd, _) => {
+      let ty2 = abstract_fvars_cached(env, ty, pos, n, depth, cache);
+      let val2 = abstract_fvars_cached(env, val, pos, n, depth, cache);
+      let inner2 = abstract_fvars_cached(env, inner, pos, n, depth + 1, cache);
+      KExpr::let_(name.clone(), ty2, val2, inner2, *nd)
+    },
+
+    ExprData::Prj(id, field, val, _) => {
+      let val2 = abstract_fvars_cached(env, val, pos, n, depth, cache);
+      KExpr::prj(id.clone(), *field, val2)
+    },
+
+    ExprData::Sort(..)
+    | ExprData::Const(..)
+    | ExprData::Nat(..)
+    | ExprData::Str(..) => {
+      let r = body.clone();
       cache.insert(key, r.clone());
       return r;
     },
@@ -386,6 +866,7 @@ impl<M: KernelMode> ExprData<M> {
       ExprData::Prj(id, idx, val, _) => KExpr::prj(id, idx, val),
       ExprData::Nat(n, addr, _) => KExpr::nat(n, addr),
       ExprData::Str(s, addr, _) => KExpr::str(s, addr),
+      ExprData::FVar(id, name, _) => KExpr::fvar(id, name),
     }
   }
 }
@@ -490,6 +971,186 @@ mod tests {
     assert!(result.ptr_eq(&v0));
   }
 
+  // ---- instantiate_rev ----
+
+  #[test]
+  fn instantiate_rev_empty_passthrough() {
+    let mut env = InternTable::<Anon>::new();
+    let v0 = AE::var(0, ());
+    let result = instantiate_rev(&mut env, &v0, &[]);
+    assert!(result.ptr_eq(&v0));
+  }
+
+  #[test]
+  fn instantiate_rev_closed_passthrough() {
+    let mut env = InternTable::<Anon>::new();
+    let nat = AE::cnst(KId::new(mk_addr("Nat"), ()), Box::new([]));
+    let fv0 = AE::fvar(FVarId(0), ());
+    let result = instantiate_rev(&mut env, &nat, &[fv0]);
+    assert!(result.ptr_eq(&nat));
+  }
+
+  #[test]
+  fn instantiate_rev_innermost() {
+    let mut env = InternTable::<Anon>::new();
+    let v0 = AE::var(0, ());
+    let fv0 = AE::fvar(FVarId(0), ());
+    // Single-binder body: instantiate Var(0) → fvars[0]
+    let result = instantiate_rev(&mut env, &v0, &[fv0.clone()]);
+    assert_eq!(result, fv0);
+  }
+
+  #[test]
+  fn instantiate_rev_outermost() {
+    let mut env = InternTable::<Anon>::new();
+    let v1 = AE::var(1, ());
+    let fv0 = AE::fvar(FVarId(0), ());
+    let fv1 = AE::fvar(FVarId(1), ());
+    // Two-binder body, body is Var(1): outermost binder → fvars[0]
+    let result = instantiate_rev(&mut env, &v1, &[fv0.clone(), fv1]);
+    assert_eq!(result, fv0);
+  }
+
+  #[test]
+  fn instantiate_rev_mix() {
+    let mut env = InternTable::<Anon>::new();
+    let v0 = AE::var(0, ());
+    let v1 = AE::var(1, ());
+    let app = AE::app(v0, v1);
+    let fv0 = AE::fvar(FVarId(0), ());
+    let fv1 = AE::fvar(FVarId(1), ());
+    // Two-binder body: Var(0) → fvars[1]=fv1, Var(1) → fvars[0]=fv0
+    let result = instantiate_rev(&mut env, &app, &[fv0.clone(), fv1.clone()]);
+    let expected = AE::app(fv1, fv0);
+    assert_eq!(result, expected);
+  }
+
+  #[test]
+  fn instantiate_rev_free_var_shifts_down() {
+    let mut env = InternTable::<Anon>::new();
+    let v3 = AE::var(3, ());
+    let fv0 = AE::fvar(FVarId(0), ());
+    let fv1 = AE::fvar(FVarId(1), ());
+    // Two binders peeled → Var(3) shifts down to Var(1)
+    let result = instantiate_rev(&mut env, &v3, &[fv0, fv1]);
+    assert_eq!(result, AE::var(1, ()));
+  }
+
+  #[test]
+  fn instantiate_rev_under_inner_binder() {
+    let mut env = InternTable::<Anon>::new();
+    let nat = AE::cnst(KId::new(mk_addr("Nat"), ()), Box::new([]));
+    let v0 = AE::var(0, ()); // bound by inner λ
+    let v1 = AE::var(1, ()); // refers to outer (the peeled binder at depth 0)
+    let inner = AE::app(v0, v1);
+    let lam = AE::lam((), (), nat.clone(), inner);
+    let fv0 = AE::fvar(FVarId(0), ());
+    let result = instantiate_rev(&mut env, &lam, &[fv0.clone()]);
+    // Inside the lambda, Var(0) is still bound, Var(1) becomes fv0.
+    let expected = AE::lam((), (), nat, AE::app(AE::var(0, ()), fv0));
+    assert_eq!(result, expected);
+  }
+
+  // ---- abstract_fvars ----
+
+  #[test]
+  fn abstract_fvars_empty_passthrough() {
+    let mut env = InternTable::<Anon>::new();
+    let v0 = AE::var(0, ());
+    let result = abstract_fvars(&mut env, &v0, &[]);
+    assert!(result.ptr_eq(&v0));
+  }
+
+  #[test]
+  fn abstract_fvars_no_fvars_passthrough() {
+    let mut env = InternTable::<Anon>::new();
+    let v0 = AE::var(0, ());
+    let result = abstract_fvars(&mut env, &v0, &[FVarId(0)]);
+    assert!(result.ptr_eq(&v0));
+  }
+
+  #[test]
+  fn abstract_fvars_single_replacement() {
+    let mut env = InternTable::<Anon>::new();
+    let fv0 = AE::fvar(FVarId(0), ());
+    // One target fvar → becomes Var(0)
+    let result = abstract_fvars(&mut env, &fv0, &[FVarId(0)]);
+    assert_eq!(result, AE::var(0, ()));
+  }
+
+  #[test]
+  fn abstract_fvars_position_mapping() {
+    let mut env = InternTable::<Anon>::new();
+    let fv0 = AE::fvar(FVarId(0), ());
+    let fv1 = AE::fvar(FVarId(1), ());
+    let app = AE::app(fv0, fv1);
+    // [fv0, fv1]: fv0 outermost (Var(1)), fv1 innermost (Var(0))
+    let result = abstract_fvars(&mut env, &app, &[FVarId(0), FVarId(1)]);
+    let expected = AE::app(AE::var(1, ()), AE::var(0, ()));
+    assert_eq!(result, expected);
+  }
+
+  #[test]
+  fn abstract_fvars_unrelated_pass_through() {
+    let mut env = InternTable::<Anon>::new();
+    let fv0 = AE::fvar(FVarId(0), ());
+    let fv2 = AE::fvar(FVarId(2), ());
+    // fv2 is not in the abstraction list → unchanged
+    let result = abstract_fvars(&mut env, &fv2, &[FVarId(0), FVarId(1)]);
+    assert!(result.ptr_eq(&fv2));
+    let _ = fv0; // silence unused
+  }
+
+  #[test]
+  fn abstract_fvars_lifts_loose_bvars() {
+    let mut env = InternTable::<Anon>::new();
+    let fv0 = AE::fvar(FVarId(0), ());
+    let v0 = AE::var(0, ());
+    let app = AE::app(fv0, v0);
+    // Wrap one new binder around `app`; fv0 → Var(0); existing Var(0)
+    // (loose) shifts up to Var(1).
+    let result = abstract_fvars(&mut env, &app, &[FVarId(0)]);
+    let expected = AE::app(AE::var(0, ()), AE::var(1, ()));
+    assert_eq!(result, expected);
+  }
+
+  #[test]
+  fn instantiate_rev_then_abstract_roundtrip() {
+    let mut env = InternTable::<Anon>::new();
+    // Body: λ. App(#0, #1) — under one extra binder; Var(0) is the inner
+    // peeled binder, Var(1) is the outer one.
+    let nat = AE::cnst(KId::new(mk_addr("Nat"), ()), Box::new([]));
+    let body =
+      AE::lam((), (), nat.clone(), AE::app(AE::var(0, ()), AE::var(1, ())));
+    let fv_outer_id = FVarId(7);
+    let fv_inner_id = FVarId(8);
+    let fv_outer = AE::fvar(fv_outer_id, ());
+    let fv_inner = AE::fvar(fv_inner_id, ());
+
+    // Open: peel the outer binder around body... actually body itself is a
+    // lambda (the outer binder), and its inner is what we want to peel.
+    // For simplicity, treat `body` directly as a body under one peeled
+    // outer binder, then peel its inner lambda manually.
+    let opened_outer = instantiate_rev(&mut env, &body, &[fv_outer.clone()]);
+    // opened_outer is now: λ(Nat). App(#0, fv_outer)
+    let inner_body = match opened_outer.data() {
+      ExprData::Lam(_, _, _, b, _) => b.clone(),
+      _ => unreachable!(),
+    };
+    let opened_inner =
+      instantiate_rev(&mut env, &inner_body, &[fv_inner.clone()]);
+    // opened_inner is now: App(fv_inner, fv_outer)
+    let expected_open = AE::app(fv_inner.clone(), fv_outer.clone());
+    assert_eq!(opened_inner, expected_open);
+
+    // Close: abstract back over [fv_outer, fv_inner] — outer first.
+    let closed =
+      abstract_fvars(&mut env, &opened_inner, &[fv_outer_id, fv_inner_id]);
+    // Expected: App(#0, #1) — fv_inner → Var(0), fv_outer → Var(1).
+    let expected_closed = AE::app(AE::var(0, ()), AE::var(1, ()));
+    assert_eq!(closed, expected_closed);
+  }
+
   #[test]
   fn simul_subst_basic() {
     let mut env = InternTable::<Anon>::new();
@@ -532,6 +1193,139 @@ mod tests {
     let r1 = subst(&mut env, &v2, &arg, 0);
     let r2 = subst(&mut env, &v2, &arg, 0);
     assert!(r1.ptr_eq(&r2), "interned results should be ptr-equal");
+  }
+
+  // ---------------------------------------------------------------------
+  // cheap_beta_reduce — see lean4lean Instantiate.lean:8-27.
+  // ---------------------------------------------------------------------
+
+  #[test]
+  fn cheap_beta_non_app_returns_input() {
+    let mut env = InternTable::<Anon>::new();
+    let v0 = AE::var(0, ());
+    let result = cheap_beta_reduce(&mut env, &v0);
+    assert!(result.ptr_eq(&v0));
+
+    let nat = AE::cnst(KId::new(mk_addr("Nat"), ()), Box::new([]));
+    let result = cheap_beta_reduce(&mut env, &nat);
+    assert!(result.ptr_eq(&nat));
+  }
+
+  #[test]
+  fn cheap_beta_app_non_lam_head_returns_input() {
+    let mut env = InternTable::<Anon>::new();
+    let f = AE::cnst(KId::new(mk_addr("f"), ()), Box::new([]));
+    let arg = AE::nat(Nat::from(3u64), mk_addr("3"));
+    let app = env.intern_expr(AE::app(f, arg));
+    let result = cheap_beta_reduce(&mut env, &app);
+    assert!(result.ptr_eq(&app));
+  }
+
+  #[test]
+  fn cheap_beta_closed_body_drops_lam() {
+    // (λ_:Nat. Nat) 3 → Nat
+    let mut env = InternTable::<Anon>::new();
+    let nat = AE::cnst(KId::new(mk_addr("Nat"), ()), Box::new([]));
+    let lam = AE::lam((), (), nat.clone(), nat.clone());
+    let arg = AE::nat(Nat::from(3u64), mk_addr("3"));
+    let app = AE::app(lam, arg);
+    let result = cheap_beta_reduce(&mut env, &app);
+    assert_eq!(result, nat);
+  }
+
+  #[test]
+  fn cheap_beta_bvar_picks_arg() {
+    // (λx:Nat. x) 3 → 3
+    let mut env = InternTable::<Anon>::new();
+    let nat = AE::cnst(KId::new(mk_addr("Nat"), ()), Box::new([]));
+    let v0 = AE::var(0, ());
+    let lam = AE::lam((), (), nat, v0);
+    let arg = AE::nat(Nat::from(3u64), mk_addr("3"));
+    let app = AE::app(lam, arg.clone());
+    let result = cheap_beta_reduce(&mut env, &app);
+    assert_eq!(result, arg);
+  }
+
+  #[test]
+  fn cheap_beta_nested_bvar_picks_outer_arg() {
+    // (λa b. a) x y → x  (a is Var(1) under both binders)
+    let mut env = InternTable::<Anon>::new();
+    let nat = AE::cnst(KId::new(mk_addr("Nat"), ()), Box::new([]));
+    let v1 = AE::var(1, ()); // refers to outermost lambda
+    // λa:Nat. λb:Nat. a
+    let inner_lam = AE::lam((), (), nat.clone(), v1);
+    let outer_lam = AE::lam((), (), nat, inner_lam);
+    let x = AE::nat(Nat::from(7u64), mk_addr("x"));
+    let y = AE::nat(Nat::from(8u64), mk_addr("y"));
+    let app = AE::app(AE::app(outer_lam, x.clone()), y);
+    let result = cheap_beta_reduce(&mut env, &app);
+    assert_eq!(result, x);
+  }
+
+  #[test]
+  fn cheap_beta_overapplied_appends_remaining() {
+    // (λx:Nat. x) y z → y z   (Var(0) body, two args; pick args[0]=y, apply z)
+    let mut env = InternTable::<Anon>::new();
+    let nat = AE::cnst(KId::new(mk_addr("Nat"), ()), Box::new([]));
+    let v0 = AE::var(0, ());
+    let lam = AE::lam((), (), nat, v0);
+    let y = AE::cnst(KId::new(mk_addr("y"), ()), Box::new([]));
+    let z = AE::cnst(KId::new(mk_addr("z"), ()), Box::new([]));
+    let app = AE::app(AE::app(lam, y.clone()), z.clone());
+    let result = cheap_beta_reduce(&mut env, &app);
+    let expected = AE::app(y, z);
+    assert_eq!(result, expected);
+  }
+
+  #[test]
+  fn cheap_beta_non_trivial_body_returns_input() {
+    // (λx:Nat. f x) 3 — body is App(f, Var(0)), neither closed nor a single bvar
+    let mut env = InternTable::<Anon>::new();
+    let nat = AE::cnst(KId::new(mk_addr("Nat"), ()), Box::new([]));
+    let f = AE::cnst(KId::new(mk_addr("f"), ()), Box::new([]));
+    let v0 = AE::var(0, ());
+    let body = AE::app(f, v0);
+    let lam = AE::lam((), (), nat, body);
+    let arg = AE::nat(Nat::from(3u64), mk_addr("3"));
+    let app = env.intern_expr(AE::app(lam, arg));
+    let result = cheap_beta_reduce(&mut env, &app);
+    // Non-trivial: defer to WHNF, return original.
+    assert_eq!(result, app);
+  }
+
+  #[test]
+  fn cheap_beta_underapplied_returns_input() {
+    // (λa b. a) x — only one arg supplied; body Var(1) but only 1 lam peeled
+    // (we peel min(2 lams, 1 arg) = 1, body is `λb. Var(1)` — still a Lam,
+    // the loop terminates with i=1 and head=lam, which doesn't match Var
+    // case nor closed-body case).
+    //
+    // Actually after peeling 1 lambda, head is still `λb:Nat. Var(1)`,
+    // which has lbr=2 > 0 (Var(1) at this depth), and isn't a Var(k).
+    // So we fall through to the no-reduce case.
+    let mut env = InternTable::<Anon>::new();
+    let nat = AE::cnst(KId::new(mk_addr("Nat"), ()), Box::new([]));
+    let v1 = AE::var(1, ());
+    let inner_lam = AE::lam((), (), nat.clone(), v1);
+    let outer_lam = AE::lam((), (), nat, inner_lam);
+    let x = AE::cnst(KId::new(mk_addr("x"), ()), Box::new([]));
+    let app = env.intern_expr(AE::app(outer_lam, x));
+    let result = cheap_beta_reduce(&mut env, &app);
+    assert_eq!(result, app);
+  }
+
+  #[test]
+  fn cheap_beta_idempotent() {
+    // Result of cheap_beta_reduce should itself reduce to itself.
+    let mut env = InternTable::<Anon>::new();
+    let nat = AE::cnst(KId::new(mk_addr("Nat"), ()), Box::new([]));
+    let v0 = AE::var(0, ());
+    let lam = AE::lam((), (), nat, v0);
+    let arg = AE::nat(Nat::from(3u64), mk_addr("3"));
+    let app = AE::app(lam, arg);
+    let r1 = cheap_beta_reduce(&mut env, &app);
+    let r2 = cheap_beta_reduce(&mut env, &r1);
+    assert_eq!(r1, r2);
   }
 
   // =========================================================================
@@ -636,7 +1430,8 @@ mod tests {
           walk(body, binders + 1, max);
         },
         ExprData::Prj(_, _, val, _) => walk(val, binders, max),
-        ExprData::Sort(..)
+        ExprData::FVar(..)
+        | ExprData::Sort(..)
         | ExprData::Const(..)
         | ExprData::Nat(..)
         | ExprData::Str(..) => {},

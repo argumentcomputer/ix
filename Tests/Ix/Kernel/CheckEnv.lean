@@ -28,38 +28,43 @@ namespace Tests.Ix.Kernel.CheckEnv
 private def tutorialDefsNamespace : Lean.Name :=
   `Tests.Ix.Kernel.TutorialDefs
 
-private def isFromTutorialDefsModule (env : Lean.Environment) (name : Lean.Name) : Bool :=
+private def natReductionNamespace : Lean.Name :=
+  `Tests.Ix.Kernel.NatReduction
+
+private def isFromFixtureModule (env : Lean.Environment) (name : Lean.Name) : Bool :=
   match env.getModuleIdxFor? name with
   | some modIdx =>
     match env.header.moduleNames[modIdx]? with
-    | some modName => modName == tutorialDefsNamespace
+    | some modName => modName == tutorialDefsNamespace || modName == natReductionNamespace
     | none => false
   | none => false
 
-private def tutorialFixtureNames (env : Lean.Environment) : Std.HashSet Lean.Name :=
+private def fixtureNames (env : Lean.Environment) : Std.HashSet Lean.Name :=
   Id.run do
     let mut names : Std.HashSet Lean.Name := Std.HashSet.emptyWithCapacity 256
     for tc in getTestCases env do
       for n in tc.decls do
-        if isFromTutorialDefsModule env n then
+        if isFromFixtureModule env n then
           names := names.insert n
     for ci in getRawConsts env do
-      if isFromTutorialDefsModule env ci.name then
+      if isFromFixtureModule env ci.name then
         names := names.insert ci.name
     return names
 
-private def isTutorialDefsName (fixtures : Std.HashSet Lean.Name) (name : Lean.Name) : Bool :=
+private def isFixtureName (fixtures : Std.HashSet Lean.Name) (name : Lean.Name) : Bool :=
   tutorialDefsNamespace.isPrefixOf name
     || name.toString.contains "_private.Tests.Ix.Kernel.TutorialDefs."
+    || natReductionNamespace.isPrefixOf name
+    || name.toString.contains "_private.Tests.Ix.Kernel.NatReduction."
     || fixtures.contains name
 
 def testRustCheckEnv : TestSeq :=
   .individualIO "Rust kernel check_env" none (do
     let leanEnv ← get_env!
     let envConsts := leanEnv.constants.toList
-    let tutorialFixtures := tutorialFixtureNames leanEnv
+    let fixtures := fixtureNames leanEnv
     let allConsts := envConsts.filter fun (name, _) =>
-      !isTutorialDefsName tutorialFixtures name
+      !isFixtureName fixtures name
     -- Pass `Lean.Name` structurally across the FFI; Rust's
     -- `decode_name_array` reconstructs the same `Name` value (same
     -- component strings, same content hash) that the kernel uses
@@ -73,7 +78,7 @@ def testRustCheckEnv : TestSeq :=
     let expectPass : Array Bool := Array.replicate allNames.size true
     let skippedCount := envConsts.length - allConsts.length
 
-    IO.println s!"[check-env] Environment has {envConsts.length} constants; checking {allNames.size} (skipping {skippedCount} TutorialDefs constants)"
+    IO.println s!"[check-env] Environment has {envConsts.length} constants; checking {allNames.size} (skipping {skippedCount} fixture constants)"
 
     let start ← IO.monoMsNow
     -- Full-env runs ship tens of thousands of constants: `quiet=true`
@@ -126,6 +131,25 @@ def testRustCheckEnv : TestSeq :=
     check proceeds, so a hang is recognisable by a missing terminator
     after `[i/N] name ...` — look for the last printed name. -/
 def focusConsts : Array Lean.Name := #[
+  -- Current Nat-conformance follow-up residue from 2026-04-30.
+  `Lean.Grind.Fin.instPowFinCoOfNatIntCast,
+  `Fin.pred_one,
+  `Fin.mul_one,
+  `Array.setIfInBounds_empty,
+  `Nat.eq_of_beq_eq_true,
+  `Nat.gcd_add_one,
+  `BitVec.msb_neg,
+  Lean.mkPrivateNameCore `Init.GrindInstances.ToInt
+    `Lean.Grind.instOfNatInt32SintOfNatNat._proof_2,
+  Lean.mkPrivateNameCore `Init.GrindInstances.ToInt
+    `Lean.Grind.instOfNatInt32SintOfNatNat._proof_3,
+  Lean.mkPrivateNameCore `Init.GrindInstances.ToInt
+    `Lean.Grind.instOfNatInt64SintOfNatNat._proof_2,
+  Lean.mkPrivateNameCore `Init.GrindInstances.ToInt
+    `Lean.Grind.instOfNatInt16SintOfNatNat._proof_2,
+  Lean.mkPrivateNameCore `Init.Data.Range.Polymorphic.SInt
+    `ISize.instRxcHasSize_eq,
+
   -- Current full-env residue from 2026-04-26 after the LRAT/SInt fixes.
   `System.Platform.numBits_eq,
   `BitVec.umulOverflow_eq,
@@ -142,7 +166,37 @@ def focusConsts : Array Lean.Name := #[
   `Lean.Language.Lean.HeaderParsedSnapshot.result?,
   `Lean.Language.Lean.HeaderParsedSnapshot.metaSnap,
   `Lean.Language.Lean.HeaderParsedSnapshot.toSnapshot,
-  `Lean.Language.Lean.HeaderParsedSnapshot.ictx
+  `Lean.Language.Lean.HeaderParsedSnapshot.ictx,
+
+  -- Full-env recursion-depth residue from 2026-04-30 after Nat reducer
+  -- conformance cleanup.
+  `List.drop_replicate,
+  `List.getElem_cons_drop,
+  `Nat.ble_succ_eq_true,
+  `Nat.le_of_ble_eq_true,
+  `Int.negSucc_mul_subNatNat,
+  Lean.mkPrivateNameCore `Lean.Server.FileWorker.WidgetRequests
+    `Lean.Widget.makePopup._sparseCasesOn_3,
+  Lean.mkPrivateNameCore `Lean.Server.References
+    `Lean.Server.identOf._sparseCasesOn_4,
+  Lean.mkPrivateNameCore `Lean.Server.InfoUtils
+    `Lean.Elab.Info.type?._sparseCasesOn_1,
+  Lean.mkPrivateNameCore `Std.Time.Format
+    `Std.Time.PlainTime.format._sparseCasesOn_1,
+  Lean.mkPrivateNameCore `Lean.Server.InfoUtils
+    `Lean.Elab.Info.lctx._sparseCasesOn_1,
+  Lean.mkPrivateNameCore `Lean.Server.GoTo
+    `Lean.Server.locationLinksOfInfo._sparseCasesOn_1,
+  Lean.mkPrivateNameCore `Lean.Server.InfoUtils
+    `Lean.Elab.Info.docString?._sparseCasesOn_9,
+  Lean.mkPrivateNameCore `Init.Prelude
+    `noConfusion_of_Nat.aux,
+  Lean.mkPrivateNameCore `Init.Data.Char.Ordinal
+    `Char.succ?._proof_5,
+  Lean.mkPrivateNameCore `Lean.Exception
+    `Lean.throwKernelException._sparseCasesOn_1,
+  Lean.mkPrivateNameCore `Lean.Compiler.IR.Basic
+    `Lean.IR.FnBody.isTerminal._sparseCasesOn_1
 ]
 
 def expectedPass (_name : Lean.Name) : Bool := true
@@ -163,9 +217,9 @@ def testRustCheckConsts (names : Array Lean.Name := focusConsts) : TestSeq :=
   .individualIO s!"kernel check {names.size} focus consts" none (do
     let leanEnv ← get_env!
     let names ← filterFocusConsts names
-    let tutorialFixtures := tutorialFixtureNames leanEnv
+    let fixtures := fixtureNames leanEnv
     let allConsts := leanEnv.constants.toList.filter fun (name, _) =>
-      !isTutorialDefsName tutorialFixtures name
+      !isFixtureName fixtures name
     let expectPass : Array Bool := names.map expectedPass
     let start ← IO.monoMsNow
     -- Focus batches are intentionally tiny — keep verbose output so each

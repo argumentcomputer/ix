@@ -14,8 +14,10 @@ use super::env::Addr;
 use super::error::{TcError, u64_to_usize};
 use super::expr::{ExprData, KExpr};
 use super::id::KId;
+use super::lctx::LocalDecl;
 use super::level::{KUniv, UnivData, univ_eq};
 use super::mode::{CheckDupLevelParams, KernelMode};
+use super::subst::instantiate_rev;
 use super::tc::TypeChecker;
 
 /// Emit `[decl diff]` when a `Defn`'s value fails the `is_def_eq(val_ty,
@@ -510,6 +512,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
             return Err(TcError::VarOutOfRange { idx: *idx, ctx_len });
           }
         },
+        // FVars carry no de Bruijn index, so the depth check does not apply.
+        // They are leaves with no further children to traverse.
+        ExprData::FVar(..) => {},
         ExprData::Sort(u, _) => {
           let univ_start = timing.as_ref().map(|_| Instant::now());
           self.validate_univ_params_seen(u, lvl_bound, &mut seen_univs)?;
@@ -720,19 +725,28 @@ impl<M: KernelMode> TypeChecker<'_, M> {
 
   /// Count the number of leading foralls in a type.
   fn count_foralls(&mut self, ty: &KExpr<M>) -> Result<usize, TcError<M>> {
-    let saved = self.save_depth();
+    let saved = self.lctx.len();
     let mut n = 0;
     let mut cur = ty.clone();
     loop {
       let w = self.whnf(&cur)?;
       match w.data() {
-        ExprData::All(_, _, dom, body, _) => {
+        ExprData::All(name, bi, dom, body, _) => {
           n += 1;
-          self.push_local(dom.clone());
-          cur = body.clone();
+          let fv_id = self.fresh_fvar_id();
+          let fv = self.intern(KExpr::fvar(fv_id, name.clone()));
+          self.lctx.push(
+            fv_id,
+            LocalDecl::CDecl {
+              name: name.clone(),
+              bi: bi.clone(),
+              ty: dom.clone(),
+            },
+          );
+          cur = instantiate_rev(&mut self.env.intern, body, &[fv]);
         },
         _ => {
-          self.restore_depth(saved);
+          self.lctx.truncate(saved);
           return Ok(n);
         },
       }
@@ -770,6 +784,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       }
       match e.data() {
         ExprData::Var(..)
+        | ExprData::FVar(..)
         | ExprData::Sort(..)
         | ExprData::Nat(..)
         | ExprData::Str(..) => {},

@@ -63,9 +63,25 @@ def kernelPrimitives : Array String := #[
   "Int.emod", "Int.ediv",
   "Int.bmod", "Int.bdiv",
   "Int.natAbs", "Int.pow",
+  "Int.decEq", "Int.decLe", "Int.decLt",
   -- Below/brecOn dependencies — referenced by aux_gen, not Primitives<M>
   -- directly. Kept here so the dump is complete enough to debug drift.
-  "PUnit", "PProd", "PProd.mk"
+  "PUnit", "PProd", "PProd.mk",
+  -- Names previously matched via `is_const_named` (string compare on
+  -- `id.name`) in src/ix/kernel/whnf.rs. Under alpha-canonical content
+  -- hashing, expressions ingested with one alpha-twin's name (e.g.
+  -- `Lean.RBColor.rec`) miss any name-based check that expected the
+  -- canonical name (e.g. `Bool.rec`), even though the addresses match.
+  -- Hardcoding the address per name flips those callsites to address-only
+  -- comparison, which is alpha-stable.
+  "Nat.rec", "Nat.casesOn",
+  "BitVec", "BitVec.toNat", "BitVec.ofNat", "BitVec.ult",
+  "Decidable.decide",
+  "LT.lt",
+  "OfNat.ofNat",
+  "Unit", "PUnit._sizeOf_1",
+  "SizeOf.sizeOf",
+  "String.back", "String.Legacy.back", "String.utf8ByteSize"
 ]
 
 /-- Parse a dotted string into a `Lean.Name`, preferring numeric components

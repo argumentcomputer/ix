@@ -9,13 +9,13 @@ use std::sync::LazyLock;
 use crate::ix::address::Address;
 
 use super::constant::KConst;
-use super::env::{GeneratedRecursor, InternTable, RecursorAuxOrder};
+use super::env::{GeneratedRecursor, RecursorAuxOrder};
 use super::error::{TcError, u64_to_usize};
 use super::expr::{ExprData, KExpr};
 use super::id::KId;
 use super::level::{KUniv, univ_eq, univ_geq};
 use super::mode::KernelMode;
-use super::subst::{lift, simul_subst, subst};
+use super::subst::{instantiate_rev, lift, simul_subst, subst};
 use super::tc::{TypeChecker, collect_app_spine, expr_mentions_any_addr};
 
 /// Emit the `[type diff]` walk from `check_recursor`'s mismatch path.
@@ -64,65 +64,6 @@ pub struct FlatBlockMember<M: KernelMode> {
   /// For auxiliaries: the concrete args from the ctor field (e.g., [Succ(Zero)]).
   /// Used for the final output type (motives, major, ctor apps).
   pub occurrence_us: Box<[KUniv<M>]>,
-}
-
-/// Lower free Var indices by `shift`: Var(i) where i >= shift becomes Var(i - shift).
-/// Vars with i < shift are left unchanged (they refer to local binders).
-fn lower_vars<M: KernelMode>(
-  env: &mut InternTable<M>,
-  e: &KExpr<M>,
-  shift: u64,
-) -> KExpr<M> {
-  if shift == 0 {
-    return e.clone();
-  }
-  lower_vars_inner(env, e, shift, 0)
-}
-
-fn lower_vars_inner<M: KernelMode>(
-  env: &mut InternTable<M>,
-  e: &KExpr<M>,
-  shift: u64,
-  cutoff: u64,
-) -> KExpr<M> {
-  // Quick exit: no free vars below lbr
-  if e.lbr() <= cutoff {
-    return e.clone();
-  }
-
-  let result = match e.data() {
-    ExprData::Var(i, name, _) => {
-      let i = *i;
-      if i >= cutoff + shift {
-        KExpr::var(i - shift, name.clone())
-      } else {
-        return e.clone();
-      }
-    },
-    ExprData::App(f, a, _) => {
-      let f2 = lower_vars_inner(env, f, shift, cutoff);
-      let a2 = lower_vars_inner(env, a, shift, cutoff);
-      KExpr::app(f2, a2)
-    },
-    ExprData::Lam(n, bi, ty, body, _) => {
-      let ty2 = lower_vars_inner(env, ty, shift, cutoff);
-      let body2 = lower_vars_inner(env, body, shift, cutoff + 1);
-      KExpr::lam(n.clone(), bi.clone(), ty2, body2)
-    },
-    ExprData::All(n, bi, ty, body, _) => {
-      let ty2 = lower_vars_inner(env, ty, shift, cutoff);
-      let body2 = lower_vars_inner(env, body, shift, cutoff + 1);
-      KExpr::all(n.clone(), bi.clone(), ty2, body2)
-    },
-    ExprData::Let(n, ty, val, body, nd, _) => {
-      let ty2 = lower_vars_inner(env, ty, shift, cutoff);
-      let val2 = lower_vars_inner(env, val, shift, cutoff);
-      let body2 = lower_vars_inner(env, body, shift, cutoff + 1);
-      KExpr::let_(n.clone(), ty2, val2, body2, *nd)
-    },
-    _ => return e.clone(), // Sort, Const, Nat, Str, Prj — no free Var shifting
-  };
-  env.intern_expr(result)
 }
 
 impl<M: KernelMode> TypeChecker<'_, M> {
@@ -607,7 +548,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
           self.instantiate_univ_params(&ctor_ty, &member.occurrence_us)?;
 
         // Walk past own_params, substituting with spec_params.
-        let saved = self.save_depth();
+        let saved = self.lctx.len();
         let mut cur = ctor_ty_inst;
         for j in 0..member.own_params {
           let w = self.whnf(&cur)?;
@@ -646,13 +587,13 @@ impl<M: KernelMode> TypeChecker<'_, M> {
                 n_rec_params,
               )?;
 
-              self.push_local(dom);
-              cur = body;
+              let (open, _) = self.open_binder_anon(dom, &body);
+              cur = open;
             },
             _ => break,
           }
         }
-        self.restore_depth(saved);
+        self.lctx.truncate(saved);
       }
     }
 
@@ -685,125 +626,127 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     param_depth: usize, // depth at the param context (before field locals)
     n_rec_params: u64, // number of inductive parameters (valid Var refs in spec_params)
   ) -> Result<(), TcError<M>> {
-    // Peel foralls structurally — no WHNF, see doc comment above.
-    let mut cur = dom.clone();
-    while let ExprData::All(_, _, _, body, _) = cur.data() {
-      cur = body.clone();
-    }
+    let saved_lctx = self.lctx.len();
+    let result = (|| -> Result<(), TcError<M>> {
+      // Peel foralls structurally — no WHNF, see doc comment above. Open
+      // each peeled binder with a temporary fvar so domain-local dependencies
+      // in external inductive parameters are rejected by the same locality
+      // check as field-local dependencies.
+      let mut cur = dom.clone();
+      while let ExprData::All(_, _, inner_dom, body, _) = cur.data() {
+        let inner_dom = inner_dom.clone();
+        let body = body.clone();
+        let (open, _) = self.open_binder_anon(inner_dom, &body);
+        cur = open;
+      }
 
-    let (head, args) = collect_app_spine(&cur);
-    let head_id = match head.data() {
-      ExprData::Const(id, _, _) => id.clone(),
-      _ => return Ok(()),
-    };
-
-    // Skip if head is already a block member (direct recursive, not nested).
-    if block_addrs.contains(&head_id.addr) {
-      return Ok(());
-    }
-    // Also skip if head is already a flat block member (already detected).
-    if flat.iter().any(|m| m.id.addr == head_id.addr && !m.is_aux) {
-      return Ok(());
-    }
-
-    // Check if head is an external inductive.
-    let (ext_params, ext_indices, ext_ctors, ext_lvls) =
-      match self.try_get_const(&head_id)? {
-        Some(KConst::Indc { params, indices, ctors, lvls, .. }) => {
-          (params, indices, ctors.clone(), lvls)
-        },
+      let (head, args) = collect_app_spine(&cur);
+      let head_id = match head.data() {
+        ExprData::Const(id, _, _) => id.clone(),
         _ => return Ok(()),
       };
 
-    #[allow(clippy::cast_possible_truncation)]
-    // ext_params is a small structural count
-    let ext_n_params = ext_params as usize;
-    if args.len() < ext_n_params {
-      return Ok(());
-    }
-
-    // Check if any param arg mentions a block original. Match Lean's
-    // `is_nested_inductive_app` (`inductive.cpp:920`) and compile-side
-    // `replace_if_nested`, which check INTERNAL identity (block originals
-    // by name / aux internal names like `_nested.Array_4`). The kernel
-    // doesn't carry internal aux names, only `flat[i].id.addr` — but for an
-    // aux that's the EXTERNAL inductive's address (e.g., `Array`'s addr).
-    // Including those flat addresses here would falsely match unrelated
-    // occurrences such as `Option (Array LazyStep)` (which mentions
-    // `Array`'s addr because `Array_4` shares it, even though `LazyStep`
-    // is not in this block). Originals only.
-    let has_nested_ref = args
-      .iter()
-      .take(ext_n_params)
-      .any(|a| expr_mentions_any_addr(a, block_addrs));
-    if !has_nested_ref {
-      return Ok(());
-    }
-
-    // Extract spec_params (the first ext_n_params args) and normalize them
-    // to the param context by lowering Var indices by the field depth.
-    // This ensures the same logical spec_params produce the same hash
-    // regardless of how many field locals are on the context.
-    #[allow(clippy::cast_possible_truncation)]
-    // depth and param_depth are small
-    let field_depth =
-      (self.depth() as usize).saturating_sub(param_depth) as u64;
-    let spec_params: Vec<KExpr<M>> = args
-      .iter()
-      .take(ext_n_params)
-      .map(|e| {
-        if field_depth > 0 {
-          lower_vars(&mut self.env.intern, e, field_depth)
-        } else {
-          e.clone()
-        }
-      })
-      .collect();
-
-    // S7: Reject nested occurrences whose parameter args still contain
-    // loose bound variables after lowering. This means a param arg depends
-    // on a locally-bound field variable, creating an ill-formed auxiliary.
-    // Allow Var(0)..Var(n_rec_params-1) as valid parameter references.
-    // (lean4lean: isNestedInductiveApp? checks looseBVars on param args.)
-    for sp in spec_params.iter() {
-      if sp.lbr() > param_depth as u64 + n_rec_params {
-        return Ok(()); // param arg depends on field-local variables — not a valid nesting
+      // Skip if head is already a block member (direct recursive, not nested).
+      if block_addrs.contains(&head_id.addr) {
+        return Ok(());
       }
-    }
+      // Also skip if head is already a flat block member (already detected).
+      if flat.iter().any(|m| m.id.addr == head_id.addr && !m.is_aux) {
+        return Ok(());
+      }
 
-    // Dedup: check if we've already seen this (ext_ind, spec_params) pair.
-    // Use blake3 content hash (addr) for structural dedup.
-    let spec_hashes: Vec<[u8; 32]> =
-      spec_params.iter().map(|e| *e.addr().as_bytes()).collect();
-    if aux_seen.iter().any(|(a, s)| {
-      *a == head_id.addr
-        && s.len() == spec_hashes.len()
-        && s.iter().zip(spec_hashes.iter()).all(|(a, b)| a == b)
-    }) {
-      return Ok(());
-    }
-    aux_seen.push((head_id.addr.clone(), spec_hashes));
+      // Check if head is an external inductive.
+      let (ext_params, ext_indices, ext_ctors, ext_lvls) =
+        match self.try_get_const(&head_id)? {
+          Some(KConst::Indc { params, indices, ctors, lvls, .. }) => {
+            (params, indices, ctors.clone(), lvls)
+          },
+          _ => return Ok(()),
+        };
 
-    // Abstract shifted universe params for internal processing (dedup, ctor walking).
-    let aux_us = self.mk_ind_univs(ext_lvls, univ_offset);
-    // Concrete universe args from the actual occurrence (for output types).
-    let occurrence_us: Box<[KUniv<M>]> = match head.data() {
-      ExprData::Const(_, us, _) => us.clone(),
-      _ => Box::new([]),
-    };
+      #[allow(clippy::cast_possible_truncation)]
+      // ext_params is a small structural count
+      let ext_n_params = ext_params as usize;
+      if args.len() < ext_n_params {
+        return Ok(());
+      }
 
-    flat.push(FlatBlockMember {
-      id: head_id,
-      is_aux: true,
-      spec_params,
-      own_params: ext_params,
-      n_indices: ext_indices,
-      ctors: ext_ctors,
-      lvls: ext_lvls,
-      ind_us: aux_us,
-      occurrence_us,
-    });
-    Ok(())
+      // Check if any param arg mentions a block original. Match Lean's
+      // `is_nested_inductive_app` (`inductive.cpp:920`) and compile-side
+      // `replace_if_nested`, which check INTERNAL identity (block originals
+      // by name / aux internal names like `_nested.Array_4`). The kernel
+      // doesn't carry internal aux names, only `flat[i].id.addr` — but for an
+      // aux that's the EXTERNAL inductive's address (e.g., `Array`'s addr).
+      // Including those flat addresses here would falsely match unrelated
+      // occurrences such as `Option (Array LazyStep)` (which mentions
+      // `Array`'s addr because `Array_4` shares it, even though `LazyStep`
+      // is not in this block). Originals only.
+      let has_nested_ref = args
+        .iter()
+        .take(ext_n_params)
+        .any(|a| expr_mentions_any_addr(a, block_addrs));
+      if !has_nested_ref {
+        return Ok(());
+      }
+
+      // Extract spec_params (the first ext_n_params args). Field and
+      // domain-local binders are opened as fvars in this path, while valid
+      // block parameters remain Var refs in the recursor parameter context.
+      let spec_params: Vec<KExpr<M>> =
+        args.iter().take(ext_n_params).cloned().collect();
+
+      // S7: Reject nested occurrences whose parameter args contain local
+      // variables. FVars are field-local or domain-local binders opened by
+      // this pass. Loose Vars above the shared parameter range are legacy
+      // local de Bruijn refs. Either case means the would-be aux parameter
+      // depends on a constructor field, so it is not a valid nested inductive
+      // parameter. Allow Var(0)..Var(n_rec_params-1) as shared parameter refs.
+      // (lean4lean: isNestedInductiveApp? checks looseBVars on param args.)
+      for sp in spec_params.iter() {
+        if sp.has_fvars() {
+          return Ok(());
+        }
+        if sp.lbr() > param_depth as u64 + n_rec_params {
+          return Ok(()); // param arg depends on field-local variables — not a valid nesting
+        }
+      }
+
+      // Dedup: check if we've already seen this (ext_ind, spec_params) pair.
+      // Use blake3 content hash (addr) for structural dedup.
+      let spec_hashes: Vec<[u8; 32]> =
+        spec_params.iter().map(|e| *e.addr().as_bytes()).collect();
+      if aux_seen.iter().any(|(a, s)| {
+        *a == head_id.addr
+          && s.len() == spec_hashes.len()
+          && s.iter().zip(spec_hashes.iter()).all(|(a, b)| a == b)
+      }) {
+        return Ok(());
+      }
+      aux_seen.push((head_id.addr.clone(), spec_hashes));
+
+      // Abstract shifted universe params for internal processing (dedup, ctor walking).
+      let aux_us = self.mk_ind_univs(ext_lvls, univ_offset);
+      // Concrete universe args from the actual occurrence (for output types).
+      let occurrence_us: Box<[KUniv<M>]> = match head.data() {
+        ExprData::Const(_, us, _) => us.clone(),
+        _ => Box::new([]),
+      };
+
+      flat.push(FlatBlockMember {
+        id: head_id,
+        is_aux: true,
+        spec_params,
+        own_params: ext_params,
+        n_indices: ext_indices,
+        ctors: ext_ctors,
+        lvls: ext_lvls,
+        ind_us: aux_us,
+        occurrence_us,
+      });
+      Ok(())
+    })();
+    self.lctx.truncate(saved_lctx);
+    result
   }
 
   /// Rewrite nested occurrences in synthetic aux member/ctor types to the
@@ -1392,16 +1335,16 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       }
     }
 
-    let classes =
-      sort_kconsts_with_seed_key::<M>(&pairs, &resolve_ctor, &|id: &KId<M>,
-                                                               _c: &KConst<
-        M,
-      >| {
+    let classes = sort_kconsts_with_seed_key::<M>(
+      &pairs,
+      &resolve_ctor,
+      &|id: &KId<M>, _c: &KConst<M>| {
         seed_key_by_addr
           .get(&id.addr)
           .cloned()
           .unwrap_or_else(|| id.addr.clone())
-      });
+      },
+    )?;
 
     if dump_canonical {
       eprintln!("[canonical_aux_order.dump] post-sort classes:");
@@ -1681,14 +1624,17 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
           eprintln!("  sto: {rty}");
           return Ok(true);
         }
-        self.push_local(lty.clone());
+        let saved = self.lctx.len();
+        let (lbody_open, fv, _) =
+          self.open_binder_anon_with_fv(lty.clone(), lbody);
+        let rbody_open = instantiate_rev(&mut self.env.intern, rbody, &[fv]);
         let found = self.dump_rule_rhs_first_diff(
-          lbody,
-          rbody,
+          &lbody_open,
+          &rbody_open,
           &format!("{path}.body"),
           depth + 1,
         );
-        self.pop_local();
+        self.lctx.truncate(saved);
         found
       },
       (ExprData::App(lf, la, _), ExprData::App(rf, ra, _)) => {
@@ -1718,7 +1664,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
     ctor_ty: &KExpr<M>,
     n_params: usize,
   ) -> Result<(), TcError<M>> {
-    let saved = self.save_depth();
+    let saved = self.lctx.len();
     let mut it = ind_ty.clone();
     let mut ct = ctor_ty.clone();
 
@@ -1731,15 +1677,17 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
           ExprData::All(_, _, c_dom, c_body, _),
         ) => {
           if !self.is_def_eq(i_dom, c_dom)? {
-            self.restore_depth(saved);
+            self.lctx.truncate(saved);
             return Err(TcError::Other("param domain mismatch".into()));
           }
-          self.push_local(i_dom.clone());
-          it = i_body.clone();
-          ct = c_body.clone();
+          let (i_open, fv, _) =
+            self.open_binder_anon_with_fv(i_dom.clone(), i_body);
+          let c_open = instantiate_rev(&mut self.env.intern, c_body, &[fv]);
+          it = i_open;
+          ct = c_open;
         },
         _ => {
-          self.restore_depth(saved);
+          self.lctx.truncate(saved);
           return Err(TcError::Other(
             "expected forall in param agreement".into(),
           ));
@@ -1747,7 +1695,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
       }
     }
 
-    self.restore_depth(saved);
+    self.lctx.truncate(saved);
     Ok(())
   }
 
@@ -1807,11 +1755,13 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
         if expr_mentions_any_addr(inner_dom, block_addrs) {
           return Err(TcError::Other("strict positivity violation".into()));
         }
-        // H4: Push local so WHNF works correctly on dependent types
-        // (lean4lean Add.lean:187-189 uses withLocalDecl)
-        self.push_local(inner_dom.clone());
-        let result = self.check_positivity_domain(inner_body, block_addrs);
-        self.pop_local();
+        // H4: Open binder with fvar so WHNF works correctly on dependent
+        // types (lean4lean Add.lean:187-189 uses withLocalDecl).
+        let saved = self.lctx.len();
+        let (inner_open, _) =
+          self.open_binder_anon(inner_dom.clone(), inner_body);
+        let result = self.check_positivity_domain(&inner_open, block_addrs);
+        self.lctx.truncate(saved);
         result
       },
       _ => {
@@ -1954,9 +1904,10 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
     match w.data() {
       ExprData::All(_, _, dom, body, _) => {
         self.check_positivity_domain(dom, augmented_addrs)?;
-        self.push_local(dom.clone());
-        let result = self.check_nested_ctor_fields_loop(body, augmented_addrs);
-        self.pop_local();
+        let saved = self.lctx.len();
+        let (open, _) = self.open_binder_anon(dom.clone(), body);
+        let result = self.check_nested_ctor_fields_loop(&open, augmented_addrs);
+        self.lctx.truncate(saved);
         result
       },
       _ => Ok(()), // base case: return type — no more fields to check
@@ -1975,7 +1926,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
       return Ok(());
     }
 
-    let saved = self.save_depth();
+    let saved = self.lctx.len();
     let mut ty = ctor_ty.clone();
 
     // Skip params
@@ -1983,8 +1934,8 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
       let w = self.whnf(&ty)?;
       match w.data() {
         ExprData::All(_, _, dom, body, _) => {
-          self.push_local(dom.clone());
-          ty = body.clone();
+          let (open, _) = self.open_binder_anon(dom.clone(), body);
+          ty = open;
         },
         _ => break,
       }
@@ -1998,19 +1949,19 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
           let dom_ty = self.infer(dom)?;
           let field_level = self.ensure_sort(&dom_ty)?;
           if !univ_geq(ind_level, &field_level) {
-            self.restore_depth(saved);
+            self.lctx.truncate(saved);
             return Err(TcError::Other(
               "field universe exceeds inductive level".into(),
             ));
           }
-          self.push_local(dom.clone());
-          ty = body.clone();
+          let (open, _) = self.open_binder_anon(dom.clone(), body);
+          ty = open;
         },
         _ => break,
       }
     }
 
-    self.restore_depth(saved);
+    self.lctx.truncate(saved);
     Ok(())
   }
 
@@ -2025,26 +1976,34 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
     ind_lvls: u64,
     block_addrs: &[Address],
   ) -> Result<(), TcError<M>> {
-    let saved = self.save_depth();
+    let saved = self.lctx.len();
     let mut ty = ctor_ty.clone();
 
-    // Skip params + fields
+    // Skip params + fields. Track the param fvars so we can verify the
+    // return type's first n_params args are exactly the param fvars by
+    // FVar identity (replaces the legacy de Bruijn `Var(expected_idx)`
+    // match after the fvar transition).
     let total_binders = n_params + n_fields;
-    for _ in 0..total_binders {
+    let mut param_fvars: Vec<KExpr<M>> = Vec::with_capacity(n_params);
+    for i in 0..total_binders {
       let w = self.whnf(&ty)?;
       match w.data() {
         ExprData::All(_, _, dom, body, _) => {
-          self.push_local(dom.clone());
-          ty = body.clone();
+          let (open, fv, _) = self.open_binder_anon_with_fv(dom.clone(), body);
+          if i < n_params {
+            param_fvars.push(fv);
+          }
+          ty = open;
         },
         _ => {
-          self.restore_depth(saved);
+          self.lctx.truncate(saved);
           return Err(TcError::Other(
             "ctor return type: not enough binders".into(),
           ));
         },
       }
     }
+    let _ = total_binders;
 
     // Now ty should be the return type: I params... indices...
     // Important: do NOT whnf here. The constructor return type must be
@@ -2058,7 +2017,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
       ExprData::Const(id, us, _) if id.addr == *ind_addr => {
         // Universe args must be Param(0), Param(1), ..., Param(lvls-1) in order
         if us.len() as u64 != ind_lvls {
-          self.restore_depth(saved);
+          self.lctx.truncate(saved);
           return Err(TcError::Other(format!(
             "ctor return type: expected {} universe args, got {}",
             ind_lvls,
@@ -2069,7 +2028,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
           let expected =
             KUniv::param(i as u64, M::meta_field(crate::ix::env::Name::anon()));
           if !univ_eq(u, &expected) {
-            self.restore_depth(saved);
+            self.lctx.truncate(saved);
             return Err(TcError::Other(format!(
               "ctor return type: universe arg {i} is not Param({i})"
             )));
@@ -2077,7 +2036,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
         }
       },
       _ => {
-        self.restore_depth(saved);
+        self.lctx.truncate(saved);
         return Err(TcError::Other(
           "ctor return type: head is not the inductive".into(),
         ));
@@ -2086,7 +2045,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
 
     // S2: Total args must equal n_params + n_indices exactly.
     if args.len() != n_params + n_indices {
-      self.restore_depth(saved);
+      self.lctx.truncate(saved);
       return Err(TcError::Other(format!(
         "ctor return type: expected {} args (params={} + indices={}), got {}",
         n_params + n_indices,
@@ -2096,37 +2055,34 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
       )));
     }
 
-    // First n_params args should be de Bruijn refs to the params
+    // First n_params args should be exactly the param fvars (FVar
+    // identity replaces legacy de Bruijn `Var(expected_idx)` matching).
     for i in 0..n_params {
       if i >= args.len() {
-        self.restore_depth(saved);
+        self.lctx.truncate(saved);
         return Err(TcError::Other(
           "ctor return type: not enough args for params".into(),
         ));
       }
-      let expected_idx = (total_binders - 1 - i) as u64;
-      match args[i].data() {
-        ExprData::Var(idx, _, _) if *idx == expected_idx => {},
-        _ => {
-          self.restore_depth(saved);
-          return Err(TcError::Other(
-            "ctor return type: param arg not correct var".into(),
-          ));
-        },
+      if !args[i].hash_eq(&param_fvars[i]) {
+        self.lctx.truncate(saved);
+        return Err(TcError::Other(
+          "ctor return type: param arg not the param fvar".into(),
+        ));
       }
     }
 
     // Index args should not mention block inductives
     for arg in &args[n_params..] {
       if expr_mentions_any_addr(arg, block_addrs) {
-        self.restore_depth(saved);
+        self.lctx.truncate(saved);
         return Err(TcError::Other(
           "ctor return type: index mentions block inductive".into(),
         ));
       }
     }
 
-    self.restore_depth(saved);
+    self.lctx.truncate(saved);
     Ok(())
   }
 
@@ -2136,17 +2092,17 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
     ty: &KExpr<M>,
     n: usize,
   ) -> Result<KUniv<M>, TcError<M>> {
-    let saved = self.save_depth();
+    let saved = self.lctx.len();
     let mut t = ty.clone();
     for i in 0..n {
       let w = self.whnf(&t)?;
       match w.data() {
         ExprData::All(_, _, dom, body, _) => {
-          self.push_local(dom.clone());
-          t = body.clone();
+          let (open, _) = self.open_binder_anon(dom.clone(), body);
+          t = open;
         },
         _ => {
-          self.restore_depth(saved);
+          self.lctx.truncate(saved);
           return Err(TcError::Other(format!(
             "get_result_sort_level: expected {n} foralls, only found {i}"
           )));
@@ -2158,7 +2114,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
       ExprData::Sort(u, _) => Ok(u.clone()),
       _ => Err(TcError::Other("get_result_sort_level: not a sort".into())),
     };
-    self.restore_depth(saved);
+    self.lctx.truncate(saved);
     result
   }
 
@@ -2202,10 +2158,14 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
         if ctor_fields == 0 {
           return Ok(true);
         }
-        // Walk ctor type, collecting non-trivial field positions
-        let saved = self.save_depth();
+        // Walk ctor type, collecting non-trivial field positions and the
+        // fvars opened for the field binders. We later check that each
+        // non-trivial field's fvar appears among the return-type args
+        // (FVar identity replaces the legacy de Bruijn match).
+        let saved = self.lctx.len();
         let mut ty = ctor_ty;
         let mut non_trivial: Vec<usize> = Vec::new(); // field index (0-based among fields)
+        let mut field_fvars: Vec<KExpr<M>> = Vec::with_capacity(ctor_fields);
         for i in 0..(n_params + ctor_fields) {
           let w = self.whnf(&ty)?;
           match w.data() {
@@ -2219,8 +2179,12 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
                   non_trivial.push(i - n_params);
                 }
               }
-              self.push_local(dom.clone());
-              ty = body.clone();
+              let (open, fv, _) =
+                self.open_binder_anon_with_fv(dom.clone(), body);
+              if i >= n_params {
+                field_fvars.push(fv);
+              }
+              ty = open;
             },
             _ => break,
           }
@@ -2228,14 +2192,12 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
         // ty is now the return type: I params args...
         let (_, ret_args) = collect_app_spine(&ty);
         let result = non_trivial.iter().all(|&fi| {
-          // Field fi (0-indexed among fields) was pushed at position n_params + fi.
-          // From current depth (n_params + ctor_fields), de Bruijn index is:
-          let dbi = (ctor_fields - 1 - fi) as u64;
+          let target = &field_fvars[fi];
           ret_args.iter().any(
-            |arg| matches!(arg.data(), ExprData::Var(v, _, _) if *v == dbi),
+            |arg| matches!(arg.data(), ExprData::FVar(_, _, _) if arg.hash_eq(target)),
           )
         });
-        self.restore_depth(saved);
+        self.lctx.truncate(saved);
         Ok(result)
       },
       // 2+ constructors → never large for Prop
@@ -2505,93 +2467,6 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
     Ok(())
   }
 
-  /// Build the motive type for inductive j:
-  /// `∀ (indices...) (major : I_j params indices), Sort elim_level`
-  ///
-  /// `univ_offset`: 1 for large eliminators (elim level at Param(0), inductive
-  /// params shifted to Param(1)..Param(n)), 0 for small (Prop) eliminators.
-  #[allow(dead_code)]
-  fn build_motive_type(
-    &mut self,
-    ind_id: &KId<M>,
-    ind_ty: &KExpr<M>,
-    ind_lvls: u64,
-    n_indices: usize,
-    shared_params: usize,
-    elim_level: &KUniv<M>,
-    univ_offset: u64,
-  ) -> Result<KExpr<M>, TcError<M>> {
-    let saved = self.save_depth();
-    let anon = || M::meta_field(crate::ix::env::Name::anon());
-
-    // Instantiate inductive type with shifted universe params before walking
-    let ind_univs = self.mk_ind_univs(ind_lvls, univ_offset);
-    let ind_ty_inst = self.instantiate_univ_params(ind_ty, &ind_univs)?;
-
-    // Walk the instantiated inductive type past params, collecting index domains
-    let mut ty = ind_ty_inst;
-    for _ in 0..shared_params {
-      let w = self.whnf(&ty)?;
-      match w.data() {
-        ExprData::All(_, _, dom, body, _) => {
-          self.push_local(dom.clone());
-          ty = body.clone();
-        },
-        _ => break,
-      }
-    }
-
-    let mut index_doms: Vec<KExpr<M>> = Vec::new();
-    for _ in 0..n_indices {
-      let w = self.whnf(&ty)?;
-      match w.data() {
-        ExprData::All(_, _, dom, body, _) => {
-          index_doms.push(dom.clone());
-          self.push_local(dom.clone());
-          ty = body.clone();
-        },
-        _ => break,
-      }
-    }
-
-    // Build major premise type: I.{shifted_params} params indices
-    let mut major_ty =
-      KExpr::cnst(ind_id.clone(), self.mk_ind_univs(ind_lvls, univ_offset));
-    // params are Var refs to the outer param binders
-    let depth = self.depth();
-    for i in 0..shared_params {
-      let v = KExpr::var(depth - 1 - i as u64, anon());
-      major_ty = self.intern(KExpr::app(major_ty, v));
-    }
-    // indices are the just-bound vars
-    for i in 0..n_indices {
-      let v = KExpr::var((n_indices - 1 - i) as u64, anon());
-      major_ty = self.intern(KExpr::app(major_ty, v));
-    }
-
-    // Build: ∀ (major : major_ty), Sort elim_level
-    let sort = KExpr::sort(elim_level.clone());
-    let mut result = KExpr::all(
-      anon(),
-      M::meta_field(crate::ix::env::BinderInfo::Default),
-      major_ty,
-      sort,
-    );
-
-    // Wrap with index foralls (from inside out)
-    for i in (0..n_indices).rev() {
-      result = KExpr::all(
-        anon(),
-        M::meta_field(crate::ix::env::BinderInfo::Default),
-        index_doms[i].clone(),
-        result,
-      );
-    }
-
-    self.restore_depth(saved);
-    Ok(result)
-  }
-
   /// Build motive type for a flat block member, handling spec_params.
   ///
   /// For original members: walks ind type past shared params (as binders),
@@ -2605,7 +2480,6 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
     elim_level: &KUniv<M>,
     _univ_offset: u64,
   ) -> Result<KExpr<M>, TcError<M>> {
-    let saved = self.save_depth();
     let anon = || M::meta_field(crate::ix::env::Name::anon());
     let bi_default = || M::meta_field(crate::ix::env::BinderInfo::Default);
 
@@ -2615,22 +2489,19 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
     let ind_ty_inst =
       self.instantiate_univ_params(&ind_ty, &member.occurrence_us)?;
 
-    // Walk past own_params, substituting with spec_params (lifted to current depth).
+    // Walk past own_params, substituting with spec_params or recursor-param
+    // Var refs. No ctx pushes are needed here — `subst` handles the binder
+    // peel + Var(0) substitution structurally.
     let mut ty = ind_ty_inst;
     for j in 0..member.own_params {
       let w = self.whnf(&ty)?;
       match w.data() {
         ExprData::All(_, _, _dom, body, _) => {
           let p = if u64_to_usize::<M>(j)? < member.spec_params.len() {
-            let sp = member.spec_params[u64_to_usize::<M>(j)?].clone();
-            let lift_amount = self.depth();
-            // spec_params are in terms of recursor params at depth n_rec_params.
-            // Current depth might differ; lift accordingly.
-            if lift_amount > 0 {
-              lift(&mut self.env.intern, &sp, lift_amount, 0)
-            } else {
-              sp
-            }
+            // spec_params live in the recursor-param context (depth =
+            // n_rec_params). We're at depth 0 here (no ctx pushes), so no
+            // lift is needed.
+            member.spec_params[u64_to_usize::<M>(j)?].clone()
           } else {
             KExpr::var(n_rec_params as u64 - 1 - j, anon())
           };
@@ -2640,28 +2511,34 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
       }
     }
 
-    // Collect index domains.
+    // Collect index domains. No ctx push: track the index count in a local
+    // counter and use Var refs against it when building the major's args.
+    // The result is wrapped in `∀ indices major. Sort` afterwards, so the
+    // Var refs end up bound by those wrap binders.
     let mut index_doms: Vec<KExpr<M>> = Vec::new();
     for _ in 0..member.n_indices {
       let w = self.whnf(&ty)?;
       match w.data() {
         ExprData::All(_, _, dom, body, _) => {
           index_doms.push(dom.clone());
-          self.push_local(dom.clone());
           ty = body.clone();
         },
         _ => break,
       }
     }
+    let n_idx = u64_to_usize::<M>(member.n_indices)?;
 
-    // Build major premise type: I.{us} params/spec_params indices
+    // Build major premise type: I.{us} params/spec_params indices.
+    // The major binder will sit below `∀ indices`, so internal Var refs
+    // are computed at depth = n_idx (the depth where major_ty appears as
+    // the binder type of the major-Pi inside the index-Pi chain).
     let mut major_ty =
       self.intern(KExpr::cnst(member.id.clone(), member.occurrence_us.clone()));
-    let depth = self.depth();
+    let depth = n_idx as u64;
     if !member.is_aux {
-      // Original: params are Var refs. At this point, indices are pushed but
-      // params aren't (they were substituted). Params are free Var refs that
-      // will be under (n_indices) binders in the final motive type.
+      // Original: params are loose Var refs that will be bound by the
+      // recursor's outer param-Pi chain (added by the caller). They sit
+      // (depth) binders below the major scope.
       for i in 0..n_rec_params {
         let v = self.intern(KExpr::var(
           (n_rec_params as u64 - 1 - i as u64) + depth,
@@ -2670,7 +2547,8 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
         major_ty = self.intern(KExpr::app(major_ty, v));
       }
     } else {
-      // Auxiliary: lift spec_params from param context (n_rec_params)
+      // Auxiliary: lift spec_params from the recursor-param context to the
+      // major scope.
       let lift_by = u64_to_usize::<M>(depth)?;
       for sp in member.spec_params.iter() {
         let lifted = if lift_by > 0 {
@@ -2681,8 +2559,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
         major_ty = self.intern(KExpr::app(major_ty, lifted));
       }
     }
-    // Apply indices (the just-bound vars).
-    let n_idx = u64_to_usize::<M>(member.n_indices)?;
+    // Apply indices (the index binders we're about to wrap around).
     for i in 0..n_idx {
       let v = self.intern(KExpr::var((n_idx - 1 - i) as u64, anon()));
       major_ty = self.intern(KExpr::app(major_ty, v));
@@ -2703,7 +2580,6 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
       ));
     }
 
-    self.restore_depth(saved);
     Ok(result)
   }
 
@@ -2740,7 +2616,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
     let (ctor_ty_raw, _ctor_lvls) = ctor;
     let anon = || M::meta_field(crate::ix::env::Name::anon());
     let bi_default = || M::meta_field(crate::ix::env::BinderInfo::Default);
-    let saved = self.save_depth();
+    let saved = self.lctx.len();
 
     // Instantiate ctor type with occurrence universe args (concrete for output).
     let ctor_ty =
@@ -2801,7 +2677,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
           if let Some(bi) = self.is_rec_field(dom, flat, lift_by)? {
             rec_field_indices.push((fidx, bi));
           }
-          self.push_local(dom.clone());
+          let _ = self.push_fvar_decl_anon(dom.clone());
           ty = body.clone();
           fidx += 1;
         },
@@ -2835,7 +2711,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
         block_addrs,
       )?;
       ih_domains.push(ih_ty.clone());
-      self.push_local(ih_ty);
+      let _ = self.push_fvar_decl_anon(ih_ty);
     }
     let n_ihs = ih_domains.len();
     let n_binders = n_fields + n_ihs;
@@ -2907,7 +2783,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
     // Fold: ∀ (ihs...) (fields...), conclusion (from inside out)
     // Pop IHs first (innermost)
     for i in (0..n_ihs).rev() {
-      self.pop_local();
+      self.lctx.truncate(self.lctx.len() - 1);
       conclusion = self.intern(KExpr::all(
         anon(),
         bi_default(),
@@ -2917,7 +2793,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
     }
     // Pop fields
     for i in (0..n_fields).rev() {
-      self.pop_local();
+      self.lctx.truncate(self.lctx.len() - 1);
       conclusion = self.intern(KExpr::all(
         anon(),
         bi_default(),
@@ -2926,7 +2802,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
       ));
     }
 
-    self.restore_depth(saved);
+    self.lctx.truncate(saved);
     Ok(conclusion)
   }
 
@@ -2966,7 +2842,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
       ExprData::All(..) => {
         // Forall-wrapped: ∀ (xs...), I_bi params idx_args(xs)
         // IH = ∀ (xs...), motive_bi(idx_args(xs), field xs)
-        let ih_saved = self.save_depth();
+        let ih_saved = self.lctx.len();
         let mut inner_ty = wdom.clone();
         let mut forall_doms: Vec<KExpr<M>> = Vec::new();
         let inner_whnf;
@@ -2982,7 +2858,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
                 break;
               }
               forall_doms.push(inner_dom.clone());
-              self.push_local(inner_dom.clone());
+              let _ = self.push_fvar_decl_anon(inner_dom.clone());
               inner_ty = inner_body.clone();
             },
             _ => {
@@ -3016,12 +2892,12 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
 
         // Fold ∀ xs
         for i in (0..n_xs).rev() {
-          self.pop_local();
+          self.lctx.truncate(self.lctx.len() - 1);
           ih_body =
             KExpr::all(anon(), bi_default(), forall_doms[i].clone(), ih_body);
         }
 
-        self.restore_depth(ih_saved);
+        self.lctx.truncate(ih_saved);
         Ok(ih_body)
       },
       _ => {
@@ -3159,7 +3035,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
     motive_types: &[KExpr<M>],
     univ_offset: u64,
   ) -> Result<KExpr<M>, TcError<M>> {
-    let saved = self.save_depth();
+    let saved = self.lctx.len();
     let n_params = u64_to_usize::<M>(ind_infos[0].1)?;
     let n_motives = ind_infos.len();
     let n_indices = u64_to_usize::<M>(ind_infos[di].2)?;
@@ -3185,7 +3061,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
       match w.data() {
         ExprData::All(_, _, dom, body, _) => {
           domains.push(dom.clone());
-          self.push_local(dom.clone());
+          let _ = self.push_fvar_decl_anon(dom.clone());
           pty = body.clone();
         },
         _ => break,
@@ -3203,7 +3079,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
         mt.clone()
       };
       domains.push(lifted_mt.clone());
-      self.push_local(lifted_mt);
+      let _ = self.push_fvar_decl_anon(lifted_mt);
     }
 
     // --- Minors: built inline at the correct depth ---
@@ -3223,7 +3099,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
           univ_offset,
         )?;
         domains.push(minor_ty.clone());
-        self.push_local(minor_ty);
+        let _ = self.push_fvar_decl_anon(minor_ty);
       }
     }
     let _n_minors = domains.len().checked_sub(n_params + n_motives)
@@ -3268,7 +3144,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
       match w.data() {
         ExprData::All(_, _, dom, body, _) => {
           domains.push(dom.clone());
-          self.push_local(dom.clone());
+          let _ = self.push_fvar_decl_anon(dom.clone());
           ity = body.clone();
         },
         _ => break,
@@ -3304,7 +3180,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
       major_dom = self.intern(KExpr::app(major_dom, ivar));
     }
     domains.push(major_dom.clone());
-    self.push_local(major_dom);
+    let _ = self.push_fvar_decl_anon(major_dom);
 
     // --- Return type: motive_di indices major ---
     let depth = self.depth();
@@ -3319,12 +3195,12 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
 
     // --- Fold into forall chain (from inside out) ---
     for i in (0..domains.len()).rev() {
-      self.pop_local();
+      self.lctx.truncate(self.lctx.len() - 1);
       ret =
         self.intern(KExpr::all(anon(), bi_default(), domains[i].clone(), ret));
     }
 
-    self.restore_depth(saved);
+    self.lctx.truncate(saved);
     Ok(ret)
   }
 
@@ -3402,13 +3278,13 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
         continue;
       }
       // Auxiliary: verify spec_params match the stored major's param args.
-      let saved = self.save_depth();
+      let saved = self.lctx.len();
       let mut cur = ty;
       for _ in 0..skip {
         match self.whnf(&cur) {
           Ok(w) => match w.data() {
             ExprData::All(_, _, dom, b, _) => {
-              self.push_local(dom.clone());
+              let _ = self.push_fvar_decl_anon(dom.clone());
               cur = b.clone();
             },
             _ => break,
@@ -3444,7 +3320,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
           }
         }
       }
-      self.restore_depth(saved);
+      self.lctx.truncate(saved);
       if !matched {
         return Ok(None);
       }
@@ -3714,7 +3590,7 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
       _ => return Err(TcError::Other("build_rule_rhs: ctor not found".into())),
     };
 
-    let saved = self.save_depth();
+    let saved = self.lctx.len();
 
     let n_motives = flat.len();
     let n_minors: usize = flat.iter().map(|m| m.ctors.len()).sum();
@@ -3949,7 +3825,7 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
       body = self.intern(KExpr::lam(anon(), bi_default(), dom, body));
     }
 
-    self.restore_depth(saved);
+    self.lctx.truncate(saved);
     Ok(body)
   }
 
@@ -4417,7 +4293,7 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
                     eprintln!("  sto: {sd}");
                     break;
                   }
-                  self.push_local(gd.clone());
+                  let _ = self.push_fvar_decl_anon(gd.clone());
                   gc = gb.clone();
                   sc = sb.clone();
                   bi += 1;
@@ -4431,7 +4307,7 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
               }
             }
             for _ in 0..bi {
-              self.pop_local();
+              self.lctx.truncate(self.lctx.len() - 1);
             }
           }
           return Err(TcError::Other("check_recursor: type mismatch".into()));

@@ -9,6 +9,7 @@ import Ix.Meta
 import Ix.KernelCheck
 import Tests.Ix.Kernel.TutorialMeta
 import Tests.Ix.Kernel.TutorialDefs
+import Tests.Ix.Kernel.NatReduction
 import LSpec
 
 open LSpec
@@ -84,6 +85,12 @@ private partial def collectDepsWithExtras
 -- `Ix/KernelCheck.lean` so that `lake exe ix check` (production CLI)
 -- and the test runners share the same Lean-side opaque.
 export Ix.KernelCheck (rsCheckConstsFFI)
+
+@[extern "rs_kernel_check_malformed_rec_rule_ixon"]
+opaque rsCheckMalformedRecRuleIxonFFI :
+    @& List (Lean.Name × Lean.ConstantInfo) →
+    @& Lean.Name →
+    IO (Option CheckError)
 
 def testTutorialConsts : TestSeq :=
   .individualIO "kernel tutorial checks" none (do
@@ -169,7 +176,9 @@ def testTutorialConsts : TestSeq :=
       if tc.outcome == .bad && tc.renamings.size == 0 then
         for n in tc.decls do
           badNames := badNames.insert n
-    let expectPass := constNames.map (fun n => !badNames.contains n)
+    let advNatRec := p ++ `AdvNat.rec
+    let expectPass := constNames.map (fun n =>
+      if n == advNatRec then true else !badNames.contains n)
 
     -- Collect raw constants stored by bad_raw_consts (inductInfo/ctorInfo/recInfo
     -- that couldn't go through the Lean kernel).
@@ -203,6 +212,21 @@ def testTutorialConsts : TestSeq :=
       Std.HashMap.emptyWithCapacity results.size
     for i in [:constNames.size] do
       resultMap := resultMap.insert constNames[i]! results[i]!
+
+    -- `AdvNat.rec` is an adversarial raw recursor payload. The production
+    -- compile path is allowed to regenerate aux recursors, which sanitizes
+    -- that raw payload before `rsCheckConstsFFI` sees it. For this one test,
+    -- mutate the compiled Ixon after aux generation and check that exact
+    -- malformed stored rule directly.
+    if constNames.contains advNatRec then
+      let advNatConsts := #[
+        p ++ `AdvNat, p ++ `AdvNat.zero, p ++ `AdvNat.succ, advNatRec
+      ]
+      let malformedConstList := advNatConsts.toList.filterMap fun n =>
+        (leanEnv.constants.find? n).map fun ci => (n, ci)
+      let malformedResult ←
+        rsCheckMalformedRecRuleIxonFFI malformedConstList advNatRec
+      resultMap := resultMap.insert advNatRec malformedResult
 
     -- Check test case outcomes
     let mut passed := 0

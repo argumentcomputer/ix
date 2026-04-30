@@ -158,7 +158,9 @@ pub fn compare_kuniv<M: KernelMode>(x: &KUniv<M>, y: &KUniv<M>) -> SOrd {
 /// `ctx` to resolve block-local constant references.
 ///
 /// Mirrors `compare_expr` (`src/ix/compile.rs:2258`). Differences:
-/// - No `Mvar`/`Fvar`/`Mdata` cases (the kernel form has none).
+/// - No `Mvar`/`Mdata` cases (the kernel form has none).
+/// - `FVar` is rejected with `TcError::UnexpectedFVarInComparator`,
+///   mirroring the compile-side `Fvar` rejection.
 /// - `Const` lookup uses `ctx.get(&id.addr)`; misses fall back to
 ///   `SOrd::cmp(&x.addr, &y.addr)` (the kernel analogue of
 ///   `compare_external_refs`, which directly compares compiled addresses).
@@ -166,24 +168,38 @@ pub fn compare_kexpr<M: KernelMode>(
   x: &KExpr<M>,
   y: &KExpr<M>,
   ctx: &KMutCtx,
-) -> SOrd {
+) -> Result<SOrd, TcError<M>> {
+  if x.has_fvars() || y.has_fvars() {
+    return Err(TcError::UnexpectedFVarInComparator);
+  }
   // Cheap pointer / hash equality short-circuit. Equal-by-content kernel
   // expressions trivially produce SOrd::eq(true).
   if x.hash_eq(y) {
-    return SOrd::eq(true);
+    return Ok(SOrd::eq(true));
   }
   // The App/Lam/All arms intentionally use the same recursive body — variant
   // ordering is preserved by the surrounding wildcard arms, so collapsing
   // them would obscure the structural total order.
   #[allow(clippy::match_same_arms)]
   match (x.data(), y.data()) {
-    (ExprData::Var(xi, _, _), ExprData::Var(yi, _, _)) => SOrd::cmp(xi, yi),
-    (ExprData::Var(..), _) => SOrd::lt(true),
-    (_, ExprData::Var(..)) => SOrd::gt(true),
+    // FVars must NOT appear during canonical sorting. The
+    // alpha-collapse pass runs on closed, egressed expressions whose
+    // binders are still in de Bruijn form; any FVar reaching this
+    // comparator means a kernel path leaked an open expression past
+    // its binder open/close pairing into the canonicalization stage.
+    // Mirrors compile-side `compare_expr`'s rejection of `Fvar`
+    // (`src/ix/compile.rs:2481`).
+    (ExprData::FVar(_, _, _), _) | (_, ExprData::FVar(_, _, _)) => {
+      Err(TcError::UnexpectedFVarInComparator)
+    },
 
-    (ExprData::Sort(xu, _), ExprData::Sort(yu, _)) => compare_kuniv(xu, yu),
-    (ExprData::Sort(..), _) => SOrd::lt(true),
-    (_, ExprData::Sort(..)) => SOrd::gt(true),
+    (ExprData::Var(xi, _, _), ExprData::Var(yi, _, _)) => Ok(SOrd::cmp(xi, yi)),
+    (ExprData::Var(..), _) => Ok(SOrd::lt(true)),
+    (_, ExprData::Var(..)) => Ok(SOrd::gt(true)),
+
+    (ExprData::Sort(xu, _), ExprData::Sort(yu, _)) => Ok(compare_kuniv(xu, yu)),
+    (ExprData::Sort(..), _) => Ok(SOrd::lt(true)),
+    (_, ExprData::Sort(..)) => Ok(SOrd::gt(true)),
 
     (ExprData::Const(xid, xls, _), ExprData::Const(yid, yls, _)) => {
       let us = SOrd::try_zip::<_, (), _>(
@@ -193,58 +209,57 @@ pub fn compare_kexpr<M: KernelMode>(
       )
       .expect("compare_kuniv is infallible");
       if us.ordering != Ordering::Equal {
-        us
+        Ok(us)
       } else if xid.addr == yid.addr {
-        SOrd::eq(true)
+        Ok(SOrd::eq(true))
       } else {
         match (ctx.get(&xid.addr), ctx.get(&yid.addr)) {
-          (Some(nx), Some(ny)) => SOrd::weak_cmp(&nx, &ny),
-          (Some(_), None) => SOrd::lt(true),
-          (None, Some(_)) => SOrd::gt(true),
-          (None, None) => SOrd::cmp(&xid.addr, &yid.addr),
+          (Some(nx), Some(ny)) => Ok(SOrd::weak_cmp(&nx, &ny)),
+          (Some(_), None) => Ok(SOrd::lt(true)),
+          (None, Some(_)) => Ok(SOrd::gt(true)),
+          (None, None) => Ok(SOrd::cmp(&xid.addr, &yid.addr)),
         }
       }
     },
-    (ExprData::Const(..), _) => SOrd::lt(true),
-    (_, ExprData::Const(..)) => SOrd::gt(true),
+    (ExprData::Const(..), _) => Ok(SOrd::lt(true)),
+    (_, ExprData::Const(..)) => Ok(SOrd::gt(true)),
 
     (ExprData::App(xl, xr, _), ExprData::App(yl, yr, _)) => {
-      compare_kexpr(xl, yl, ctx).compare(compare_kexpr(xr, yr, ctx))
+      Ok(compare_kexpr(xl, yl, ctx)?.compare(compare_kexpr(xr, yr, ctx)?))
     },
-    (ExprData::App(..), _) => SOrd::lt(true),
-    (_, ExprData::App(..)) => SOrd::gt(true),
+    (ExprData::App(..), _) => Ok(SOrd::lt(true)),
+    (_, ExprData::App(..)) => Ok(SOrd::gt(true)),
 
     (ExprData::Lam(_, _, xt, xb, _), ExprData::Lam(_, _, yt, yb, _)) => {
-      compare_kexpr(xt, yt, ctx).compare(compare_kexpr(xb, yb, ctx))
+      Ok(compare_kexpr(xt, yt, ctx)?.compare(compare_kexpr(xb, yb, ctx)?))
     },
-    (ExprData::Lam(..), _) => SOrd::lt(true),
-    (_, ExprData::Lam(..)) => SOrd::gt(true),
+    (ExprData::Lam(..), _) => Ok(SOrd::lt(true)),
+    (_, ExprData::Lam(..)) => Ok(SOrd::gt(true)),
 
     (ExprData::All(_, _, xt, xb, _), ExprData::All(_, _, yt, yb, _)) => {
-      compare_kexpr(xt, yt, ctx).compare(compare_kexpr(xb, yb, ctx))
+      Ok(compare_kexpr(xt, yt, ctx)?.compare(compare_kexpr(xb, yb, ctx)?))
     },
-    (ExprData::All(..), _) => SOrd::lt(true),
-    (_, ExprData::All(..)) => SOrd::gt(true),
+    (ExprData::All(..), _) => Ok(SOrd::lt(true)),
+    (_, ExprData::All(..)) => Ok(SOrd::gt(true)),
 
     (
       ExprData::Let(_, xt, xv, xb, _, _),
       ExprData::Let(_, yt, yv, yb, _, _),
-    ) => SOrd::try_zip::<_, (), _>(
-      |a, b| Ok::<_, ()>(compare_kexpr(a, b, ctx)),
+    ) => SOrd::try_zip::<_, TcError<M>, _>(
+      |a, b| compare_kexpr(a, b, ctx),
       &[xt, xv, xb],
       &[yt, yv, yb],
-    )
-    .expect("compare_kexpr is infallible"),
-    (ExprData::Let(..), _) => SOrd::lt(true),
-    (_, ExprData::Let(..)) => SOrd::gt(true),
+    ),
+    (ExprData::Let(..), _) => Ok(SOrd::lt(true)),
+    (_, ExprData::Let(..)) => Ok(SOrd::gt(true)),
 
-    (ExprData::Nat(xv, _, _), ExprData::Nat(yv, _, _)) => SOrd::cmp(xv, yv),
-    (ExprData::Nat(..), _) => SOrd::lt(true),
-    (_, ExprData::Nat(..)) => SOrd::gt(true),
+    (ExprData::Nat(xv, _, _), ExprData::Nat(yv, _, _)) => Ok(SOrd::cmp(xv, yv)),
+    (ExprData::Nat(..), _) => Ok(SOrd::lt(true)),
+    (_, ExprData::Nat(..)) => Ok(SOrd::gt(true)),
 
-    (ExprData::Str(xv, _, _), ExprData::Str(yv, _, _)) => SOrd::cmp(xv, yv),
-    (ExprData::Str(..), _) => SOrd::lt(true),
-    (_, ExprData::Str(..)) => SOrd::gt(true),
+    (ExprData::Str(xv, _, _), ExprData::Str(yv, _, _)) => Ok(SOrd::cmp(xv, yv)),
+    (ExprData::Str(..), _) => Ok(SOrd::lt(true)),
+    (_, ExprData::Str(..)) => Ok(SOrd::gt(true)),
 
     (ExprData::Prj(xid, xi, xb, _), ExprData::Prj(yid, yi, yb, _)) => {
       // Type ref: ctx-aware (block-local) then ctx-miss falls back to
@@ -255,7 +270,7 @@ pub fn compare_kexpr<M: KernelMode>(
         (None, Some(_)) => SOrd::gt(true),
         (None, None) => SOrd::cmp(&xid.addr, &yid.addr),
       };
-      tn.compare(SOrd::cmp(xi, yi)).compare(compare_kexpr(xb, yb, ctx))
+      Ok(tn.compare(SOrd::cmp(xi, yi)).compare(compare_kexpr(xb, yb, ctx)?))
     },
   }
 }
@@ -266,8 +281,11 @@ pub fn compare_krec_rule<M: KernelMode>(
   x: &RecRule<M>,
   y: &RecRule<M>,
   ctx: &KMutCtx,
-) -> SOrd {
-  SOrd::cmp(&x.fields, &y.fields).compare(compare_kexpr(&x.rhs, &y.rhs, ctx))
+) -> Result<SOrd, TcError<M>> {
+  Ok(
+    SOrd::cmp(&x.fields, &y.fields)
+      .compare(compare_kexpr(&x.rhs, &y.rhs, ctx)?),
+  )
 }
 
 /// Compare two `KConst::Indc` payloads. Mirrors `compare_indc`
@@ -295,32 +313,31 @@ fn compare_kindc<M: KernelMode>(
   y_ctors: &[KId<M>],
   ctx: &KMutCtx,
   resolve_ctor: &dyn Fn(&KId<M>) -> Option<KConst<M>>,
-) -> SOrd {
-  SOrd::cmp(&x_is_rec, &y_is_rec)
-    .compare(SOrd::cmp(&x_is_unsafe, &y_is_unsafe))
-    .compare(SOrd::cmp(&x_lvls, &y_lvls))
-    .compare(SOrd::cmp(&x_params, &y_params))
-    .compare(SOrd::cmp(&x_indices, &y_indices))
-    .compare(SOrd::cmp(&x_ctors.len(), &y_ctors.len()))
-    .compare(compare_kexpr(x_ty, y_ty, ctx))
-    .compare(
-      SOrd::try_zip::<_, (), _>(
+) -> Result<SOrd, TcError<M>> {
+  Ok(
+    SOrd::cmp(&x_is_rec, &y_is_rec)
+      .compare(SOrd::cmp(&x_is_unsafe, &y_is_unsafe))
+      .compare(SOrd::cmp(&x_lvls, &y_lvls))
+      .compare(SOrd::cmp(&x_params, &y_params))
+      .compare(SOrd::cmp(&x_indices, &y_indices))
+      .compare(SOrd::cmp(&x_ctors.len(), &y_ctors.len()))
+      .compare(compare_kexpr(x_ty, y_ty, ctx)?)
+      .compare(SOrd::try_zip::<_, TcError<M>, _>(
         |a, b| {
           let xc = resolve_ctor(a);
           let yc = resolve_ctor(b);
-          Ok::<_, ()>(match (xc, yc) {
+          match (xc, yc) {
             (Some(xc), Some(yc)) => compare_kctor(&xc, &yc, ctx),
             // If either ctor is missing from env, fall back to address.
             // This shouldn't happen for valid blocks but keeps the
             // comparator total.
-            (None, _) | (_, None) => SOrd::cmp(&a.addr, &b.addr),
-          })
+            (None, _) | (_, None) => Ok(SOrd::cmp(&a.addr, &b.addr)),
+          }
         },
         x_ctors,
         y_ctors,
-      )
-      .expect("compare_kctor is infallible"),
-    )
+      )?),
+  )
 }
 
 /// Compare two `KConst::Ctor` payloads.
@@ -330,7 +347,7 @@ fn compare_kctor<M: KernelMode>(
   x: &KConst<M>,
   y: &KConst<M>,
   ctx: &KMutCtx,
-) -> SOrd {
+) -> Result<SOrd, TcError<M>> {
   match (x, y) {
     (
       KConst::Ctor {
@@ -339,12 +356,14 @@ fn compare_kctor<M: KernelMode>(
       KConst::Ctor {
         lvls: yl, cidx: yc, params: yp, fields: yf, ty: yt, ..
       },
-    ) => SOrd::cmp(xl, yl)
-      .compare(SOrd::cmp(xc, yc))
-      .compare(SOrd::cmp(xp, yp))
-      .compare(SOrd::cmp(xf, yf))
-      .compare(compare_kexpr(xt, yt, ctx)),
-    _ => SOrd::cmp(&kconst_kind_ord(x), &kconst_kind_ord(y)),
+    ) => Ok(
+      SOrd::cmp(xl, yl)
+        .compare(SOrd::cmp(xc, yc))
+        .compare(SOrd::cmp(xp, yp))
+        .compare(SOrd::cmp(xf, yf))
+        .compare(compare_kexpr(xt, yt, ctx)?),
+    ),
+    _ => Ok(SOrd::cmp(&kconst_kind_ord(x), &kconst_kind_ord(y))),
   }
 }
 
@@ -370,22 +389,21 @@ fn compare_krecr<M: KernelMode>(
   y_ty: &KExpr<M>,
   y_rules: &[RecRule<M>],
   ctx: &KMutCtx,
-) -> SOrd {
-  SOrd::cmp(&x_lvls, &y_lvls)
-    .compare(SOrd::cmp(&x_params, &y_params))
-    .compare(SOrd::cmp(&x_indices, &y_indices))
-    .compare(SOrd::cmp(&x_motives, &y_motives))
-    .compare(SOrd::cmp(&x_minors, &y_minors))
-    .compare(SOrd::cmp(&x_k, &y_k))
-    .compare(compare_kexpr(x_ty, y_ty, ctx))
-    .compare(
-      SOrd::try_zip::<_, (), _>(
-        |a, b| Ok::<_, ()>(compare_krec_rule(a, b, ctx)),
+) -> Result<SOrd, TcError<M>> {
+  Ok(
+    SOrd::cmp(&x_lvls, &y_lvls)
+      .compare(SOrd::cmp(&x_params, &y_params))
+      .compare(SOrd::cmp(&x_indices, &y_indices))
+      .compare(SOrd::cmp(&x_motives, &y_motives))
+      .compare(SOrd::cmp(&x_minors, &y_minors))
+      .compare(SOrd::cmp(&x_k, &y_k))
+      .compare(compare_kexpr(x_ty, y_ty, ctx)?)
+      .compare(SOrd::try_zip::<_, TcError<M>, _>(
+        |a, b| compare_krec_rule(a, b, ctx),
         x_rules,
         y_rules,
-      )
-      .expect("compare_krec_rule is infallible"),
-    )
+      )?),
+  )
 }
 
 /// Compare two `KConst::Defn` payloads. Mirrors `compare_defn`
@@ -406,11 +424,13 @@ fn compare_kdefn<M: KernelMode>(
   y_ty: &KExpr<M>,
   y_val: &KExpr<M>,
   ctx: &KMutCtx,
-) -> SOrd {
-  SOrd::cmp(&x_kind, &y_kind)
-    .compare(SOrd::cmp(&x_lvls, &y_lvls))
-    .compare(compare_kexpr(x_ty, y_ty, ctx))
-    .compare(compare_kexpr(x_val, y_val, ctx))
+) -> Result<SOrd, TcError<M>> {
+  Ok(
+    SOrd::cmp(&x_kind, &y_kind)
+      .compare(SOrd::cmp(&x_lvls, &y_lvls))
+      .compare(compare_kexpr(x_ty, y_ty, ctx)?)
+      .compare(compare_kexpr(x_val, y_val, ctx)?),
+  )
 }
 
 /// A stable kind ordinal for cross-kind `KConst` comparison. Matches the
@@ -440,7 +460,7 @@ pub fn compare_kconst<M: KernelMode>(
   y: &KConst<M>,
   ctx: &KMutCtx,
   resolve_ctor: &dyn Fn(&KId<M>) -> Option<KConst<M>>,
-) -> SOrd {
+) -> Result<SOrd, TcError<M>> {
   match (x, y) {
     (
       KConst::Defn { kind: xk, lvls: xl, ty: xt, val: xv, .. },
@@ -512,7 +532,7 @@ pub fn compare_kconst<M: KernelMode>(
       *xl, *xp, *xi, *xm, *xn, *xk, xt, xr, *yl, *yp, *yi, *ym, *yn, *yk, yt,
       yr, ctx,
     ),
-    _ => SOrd::cmp(&kconst_kind_ord(x), &kconst_kind_ord(y)),
+    _ => Ok(SOrd::cmp(&kconst_kind_ord(x), &kconst_kind_ord(y))),
   }
 }
 
@@ -527,7 +547,7 @@ fn merge<'a, M: KernelMode>(
   right: Vec<(KId<M>, &'a KConst<M>)>,
   ctx: &KMutCtx,
   resolve_ctor: &dyn Fn(&KId<M>) -> Option<KConst<M>>,
-) -> Vec<(KId<M>, &'a KConst<M>)> {
+) -> Result<Vec<(KId<M>, &'a KConst<M>)>, TcError<M>> {
   let mut result = Vec::with_capacity(left.len() + right.len());
   let mut left_iter = left.into_iter();
   let mut right_iter = right.into_iter();
@@ -535,7 +555,7 @@ fn merge<'a, M: KernelMode>(
   let mut right_item = right_iter.next();
 
   while let (Some(l), Some(r)) = (&left_item, &right_item) {
-    let cmp = compare_kconst(l.1, r.1, ctx, resolve_ctor).ordering;
+    let cmp = compare_kconst(l.1, r.1, ctx, resolve_ctor)?.ordering;
     if cmp == Ordering::Greater {
       result.push(right_item.take().unwrap());
       right_item = right_iter.next();
@@ -552,7 +572,7 @@ fn merge<'a, M: KernelMode>(
     result.push(r);
     result.extend(right_iter);
   }
-  result
+  Ok(result)
 }
 
 /// Merge-sort a class of `(KId, &KConst)` pairs by structural comparison.
@@ -561,14 +581,14 @@ fn sort_by_compare<'a, M: KernelMode>(
   items: &[(KId<M>, &'a KConst<M>)],
   ctx: &KMutCtx,
   resolve_ctor: &dyn Fn(&KId<M>) -> Option<KConst<M>>,
-) -> Vec<(KId<M>, &'a KConst<M>)> {
+) -> Result<Vec<(KId<M>, &'a KConst<M>)>, TcError<M>> {
   if items.len() <= 1 {
-    return items.to_vec();
+    return Ok(items.to_vec());
   }
   let mid = items.len() / 2;
   let (left, right) = items.split_at(mid);
-  let left = sort_by_compare::<M>(left, ctx, resolve_ctor);
-  let right = sort_by_compare::<M>(right, ctx, resolve_ctor);
+  let left = sort_by_compare::<M>(left, ctx, resolve_ctor)?;
+  let right = sort_by_compare::<M>(right, ctx, resolve_ctor)?;
   merge::<M>(left, right, ctx, resolve_ctor)
 }
 
@@ -579,12 +599,12 @@ fn group_consecutive<'a, M: KernelMode>(
   items: Vec<(KId<M>, &'a KConst<M>)>,
   ctx: &KMutCtx,
   resolve_ctor: &dyn Fn(&KId<M>) -> Option<KConst<M>>,
-) -> Vec<Vec<(KId<M>, &'a KConst<M>)>> {
+) -> Result<Vec<Vec<(KId<M>, &'a KConst<M>)>>, TcError<M>> {
   let mut groups: Vec<Vec<(KId<M>, &'a KConst<M>)>> = Vec::new();
   let mut current: Vec<(KId<M>, &'a KConst<M>)> = Vec::new();
   for item in items {
     if let Some(last) = current.last() {
-      let eq = compare_kconst(last.1, item.1, ctx, resolve_ctor).ordering
+      let eq = compare_kconst(last.1, item.1, ctx, resolve_ctor)?.ordering
         == Ordering::Equal;
       if eq {
         current.push(item);
@@ -598,7 +618,7 @@ fn group_consecutive<'a, M: KernelMode>(
   if !current.is_empty() {
     groups.push(current);
   }
-  groups
+  Ok(groups)
 }
 
 /// Sort kernel constants into canonical equivalence classes.
@@ -620,7 +640,7 @@ fn group_consecutive<'a, M: KernelMode>(
 pub fn sort_kconsts<'a, M: KernelMode>(
   members: &[(KId<M>, &'a KConst<M>)],
   resolve_ctor: &dyn Fn(&KId<M>) -> Option<KConst<M>>,
-) -> Vec<Vec<(KId<M>, &'a KConst<M>)>> {
+) -> Result<Vec<Vec<(KId<M>, &'a KConst<M>)>>, TcError<M>> {
   sort_kconsts_with_seed_key::<M>(
     members,
     resolve_ctor,
@@ -638,9 +658,9 @@ pub fn sort_kconsts_with_seed_key<'a, M: KernelMode>(
   members: &[(KId<M>, &'a KConst<M>)],
   resolve_ctor: &dyn Fn(&KId<M>) -> Option<KConst<M>>,
   seed_key: &dyn Fn(&KId<M>, &KConst<M>) -> Address,
-) -> Vec<Vec<(KId<M>, &'a KConst<M>)>> {
+) -> Result<Vec<Vec<(KId<M>, &'a KConst<M>)>>, TcError<M>> {
   if members.is_empty() {
-    return Vec::new();
+    return Ok(Vec::new());
   }
 
   // Seed with a single class, ordered by the caller's compile-side analogue.
@@ -660,8 +680,8 @@ pub fn sort_kconsts_with_seed_key<'a, M: KernelMode>(
         0 => unreachable!("sort_kconsts: empty class"),
         1 => new_classes.push(class.clone()),
         _ => {
-          let sorted = sort_by_compare::<M>(class, &ctx, resolve_ctor);
-          let groups = group_consecutive::<M>(sorted, &ctx, resolve_ctor);
+          let sorted = sort_by_compare::<M>(class, &ctx, resolve_ctor)?;
+          let groups = group_consecutive::<M>(sorted, &ctx, resolve_ctor)?;
           new_classes.extend(groups);
         },
       }
@@ -676,7 +696,7 @@ pub fn sort_kconsts_with_seed_key<'a, M: KernelMode>(
     // identical content depending on Meta/Anon mode and discovery
     // numbering. See `docs/ix_canonicity.md` and the rationale below.
     if classes_eq(&classes, &new_classes) {
-      return new_classes;
+      return Ok(new_classes);
     }
     classes = new_classes;
   }
@@ -717,7 +737,7 @@ fn validate_by_full_refinement<M: KernelMode>(
   let classes =
     sort_kconsts_with_seed_key::<M>(members, resolve_ctor, &|id, _| {
       default_seed_key::<M>(id)
-    });
+    })?;
 
   if classes.len() != members.len() {
     let pos = classes.iter().position(|class| class.len() > 1).unwrap_or(0);
@@ -778,7 +798,7 @@ pub fn validate_canonical_block_single_pass<M: KernelMode>(
   }
   let ctx = KMutCtx::from_id_pairs::<M>(members);
   for (i, w) in members.windows(2).enumerate() {
-    let so = compare_kconst(w[0].1, w[1].1, &ctx, resolve_ctor);
+    let so = compare_kconst(w[0].1, w[1].1, &ctx, resolve_ctor)?;
     match so.ordering {
       Ordering::Less if so.strong => {},
       Ordering::Less => {
@@ -922,7 +942,10 @@ mod tests {
     // the test still asserts the structural-only comparator
     let l1 = AE::lam((), (), sort0(), AE::var(0, ()));
     let l2 = AE::lam((), (), sort0(), AE::var(0, ()));
-    assert_eq!(compare_kexpr(&l1, &l2, &ctx).ordering, Ordering::Equal);
+    assert_eq!(
+      compare_kexpr(&l1, &l2, &ctx).unwrap().ordering,
+      Ordering::Equal
+    );
   }
 
   #[test]
@@ -930,8 +953,21 @@ mod tests {
     let ctx = KMutCtx::default();
     let v0 = AE::var(0, ());
     let v1 = AE::var(1, ());
-    assert_eq!(compare_kexpr(&v0, &v1, &ctx).ordering, Ordering::Less);
-    assert_eq!(compare_kexpr(&v1, &v0, &ctx).ordering, Ordering::Greater);
+    assert_eq!(compare_kexpr(&v0, &v1, &ctx).unwrap().ordering, Ordering::Less);
+    assert_eq!(
+      compare_kexpr(&v1, &v0, &ctx).unwrap().ordering,
+      Ordering::Greater
+    );
+  }
+
+  #[test]
+  fn compare_kexpr_rejects_fvars_even_when_hash_equal() {
+    let ctx = KMutCtx::default();
+    let fv = AE::fvar(super::super::expr::FVarId(0), ());
+    assert!(matches!(
+      compare_kexpr(&fv, &fv, &ctx),
+      Err(TcError::UnexpectedFVarInComparator)
+    ));
   }
 
   #[test]
@@ -940,7 +976,7 @@ mod tests {
     // Two distinct Const refs neither in the ctx → fall back to address.
     let a = AE::cnst(mk_id("Foo"), Box::new([]));
     let b = AE::cnst(mk_id("Bar"), Box::new([]));
-    let so = compare_kexpr(&a, &b, &ctx);
+    let so = compare_kexpr(&a, &b, &ctx).unwrap();
     let direct = mk_addr("Foo").cmp(&mk_addr("Bar"));
     assert_eq!(so.ordering, direct);
     assert!(so.strong);
@@ -954,7 +990,7 @@ mod tests {
     ctx.map.insert(mk_addr("B"), 1);
     let ca = AE::cnst(mk_id("A"), Box::new([]));
     let cb = AE::cnst(mk_id("B"), Box::new([]));
-    let so = compare_kexpr(&ca, &cb, &ctx);
+    let so = compare_kexpr(&ca, &cb, &ctx).unwrap();
     assert_eq!(so.ordering, Ordering::Less);
     assert!(!so.strong); // weak: name-resolved (block-local)
   }
@@ -967,7 +1003,10 @@ mod tests {
     ctx.map.insert(mk_addr("Local"), 0);
     let local = AE::cnst(mk_id("Local"), Box::new([]));
     let external = AE::cnst(mk_id("External"), Box::new([]));
-    assert_eq!(compare_kexpr(&local, &external, &ctx).ordering, Ordering::Less);
+    assert_eq!(
+      compare_kexpr(&local, &external, &ctx).unwrap().ordering,
+      Ordering::Less
+    );
   }
 
   // ---- compare_kindc / compare_kconst Indc-Indc ----
@@ -992,7 +1031,7 @@ mod tests {
       }
     };
     let ctx = KMutCtx::default();
-    let so = compare_kconst(&ind_a, &ind_b, &ctx, &resolve);
+    let so = compare_kconst(&ind_a, &ind_b, &ctx, &resolve).unwrap();
     assert_eq!(so.ordering, Ordering::Equal);
   }
 
@@ -1002,7 +1041,10 @@ mod tests {
     let ctx = KMutCtx::default();
     let (_, a) = mk_indc("A", 1, 0, vec![], sort0()); // 1 param
     let (_, b) = mk_indc("B", 2, 0, vec![], sort0()); // 2 params
-    assert_eq!(compare_kconst(&a, &b, &ctx, &resolve).ordering, Ordering::Less);
+    assert_eq!(
+      compare_kconst(&a, &b, &ctx, &resolve).unwrap().ordering,
+      Ordering::Less
+    );
   }
 
   // ---- sort_kconsts ----
@@ -1019,7 +1061,7 @@ mod tests {
 
     // Pass in arbitrary order
     let members = vec![(id_a, &ind_a), (id_b, &ind_b), (id_c, &ind_c)];
-    let classes = sort_kconsts::<Anon>(&members, &resolve);
+    let classes = sort_kconsts::<Anon>(&members, &resolve).unwrap();
     let order: Vec<u64> = classes
       .iter()
       .map(|cls| match cls[0].1 {
@@ -1037,7 +1079,7 @@ mod tests {
     let (id_a, ind_a) = mk_indc("A", 1, 0, vec![], sort0());
     let (id_b, ind_b) = mk_indc("B", 1, 0, vec![], sort0());
     let members = vec![(id_a, &ind_a), (id_b, &ind_b)];
-    let classes = sort_kconsts::<Anon>(&members, &resolve);
+    let classes = sort_kconsts::<Anon>(&members, &resolve).unwrap();
     assert_eq!(classes.len(), 1);
     assert_eq!(classes[0].len(), 2);
   }
@@ -1063,7 +1105,8 @@ mod tests {
         } else {
           id.addr.clone()
         }
-      });
+      })
+      .unwrap();
     assert_eq!(classes.len(), 1);
     assert_eq!(classes[0].len(), 2);
     assert_eq!(classes[0][0].0.addr, id_b_addr);
@@ -1155,7 +1198,7 @@ mod tests {
     let members = vec![(id_a, &ind_a), (id_b, &ind_b)];
     let singleton_ctx = KMutCtx::from_id_pairs::<Anon>(&members);
     let singleton_cmp =
-      compare_kconst(&ind_a, &ind_b, &singleton_ctx, &resolve);
+      compare_kconst(&ind_a, &ind_b, &singleton_ctx, &resolve).unwrap();
     assert_eq!(singleton_cmp.ordering, Ordering::Less);
     assert!(!singleton_cmp.strong);
 

@@ -18,15 +18,16 @@ use super::constant::{KConst, RecRule};
 use super::env::{Addr, KEnv};
 use super::equiv::EquivManager;
 use super::error::{TcError, u64_to_usize};
-use super::expr::{ExprData, KExpr};
+use super::expr::{ExprData, FVarId, KExpr};
 use super::id::KId;
 use super::ingress::{
   IxonIngressLookups, ingress_addr_shallow_into_kenv_with_lookups,
 };
+use super::lctx::LocalDecl;
 use super::level::{KUniv, UnivData};
 use super::mode::KernelMode;
 use super::primitive::Primitives;
-use super::subst::lift;
+use super::subst::{instantiate_rev, lift};
 
 /// Content-addressed context identity for the empty context (no bindings).
 pub fn empty_ctx_addr() -> Addr {
@@ -59,6 +60,12 @@ pub const MAX_REC_FUEL: u64 = 10_000_000;
 static IX_MAX_REC_FUEL: LazyLock<Option<u64>> = LazyLock::new(|| {
   std::env::var("IX_MAX_REC_FUEL").ok().and_then(|s| s.parse().ok())
 });
+
+static IX_HOT_MISSES: LazyLock<bool> =
+  LazyLock::new(|| std::env::var("IX_HOT_MISSES").is_ok());
+
+static IX_HOT_MISS_CTX: LazyLock<bool> =
+  LazyLock::new(|| std::env::var("IX_HOT_MISS_CTX").is_ok());
 
 pub fn max_rec_fuel() -> u64 {
   (*IX_MAX_REC_FUEL).unwrap_or(MAX_REC_FUEL)
@@ -128,21 +135,18 @@ pub struct TypeChecker<'a, M: KernelMode> {
   pub eager_reduce: bool,
   /// Current def-eq recursion depth.
   pub def_eq_depth: u32,
+  /// Stack depth of active `IX_DEF_EQ_TRACE` outer frames. While > 0,
+  /// inner def-eq tier dumps fire too. Diagnostic-only.
+  pub def_eq_trace_depth: u32,
   /// Peak def-eq depth (diagnostics).
   pub def_eq_peak: u32,
   /// Shared recursive fuel remaining for this constant check.
   pub rec_fuel: u64,
-  /// Count of Nat-literal iota reductions on values above the large-literal
-  /// threshold for the current constant.
-  pub nat_iota_large_expansions: u32,
-  /// Consecutive `Nat` literal iota reductions on the same recursor where the
-  /// major premise is being peeled by one each time. This catches runaway
-  /// `Nat.rec ... N` paths whose step immediately forces `ih` while still
-  /// allowing large-fuel definitions that make only bounded progress.
-  pub nat_iota_last: Option<(Address, num_bigint::BigUint)>,
-  pub nat_iota_run: u32,
   /// Optional diagnostic label for the current top-level constant.
   pub debug_label: Option<String>,
+  /// Gated miss sampler for fuel-exhaustion diagnostics. Populated only when
+  /// `IX_HOT_MISSES=1`, keyed by a compact phase/head/lbr shape.
+  hot_misses: FxHashMap<String, u64>,
 
   /// Memoization cache for [`Self::ctx_addr_for_lbr`].
   ///
@@ -157,6 +161,12 @@ pub struct TypeChecker<'a, M: KernelMode> {
   /// full context). The cache lifetime is the `TypeChecker` (one per
   /// `check_const`), so it is automatically reclaimed.
   ctx_addr_cache: FxHashMap<(Addr, u64), Addr>,
+
+  // -- Free-variable infrastructure --
+  /// Local context for fvar-based binder opening. Some validation paths still
+  /// use the legacy `ctx`/`let_vals` stack, so `depth()` accounts for both
+  /// during the transition.
+  pub lctx: super::lctx::LocalContext<M>,
 }
 
 impl<'a, M: KernelMode> TypeChecker<'a, M> {
@@ -177,13 +187,13 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
       cheap_recursion_depth: 0,
       eager_reduce: false,
       def_eq_depth: 0,
+      def_eq_trace_depth: 0,
       def_eq_peak: 0,
       rec_fuel: max_rec_fuel(),
-      nat_iota_large_expansions: 0,
-      nat_iota_last: None,
-      nat_iota_run: 0,
       debug_label: None,
+      hot_misses: FxHashMap::default(),
       ctx_addr_cache: FxHashMap::default(),
+      lctx: super::lctx::LocalContext::new(),
     }
   }
 
@@ -267,9 +277,14 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
   // Context management
   // -----------------------------------------------------------------------
 
-  /// Current binding depth.
+  /// Current logical binding depth.
+  ///
+  /// During the FVar transition, some code pushes legacy de-Bruijn locals into
+  /// `ctx` while newer code opens binders into `lctx`. Most paths use one or
+  /// the other, but mixed validation code can observe both; the logical depth
+  /// is the sum of the two stacks.
   pub fn depth(&self) -> u64 {
-    self.ctx.len() as u64
+    (self.ctx.len() + self.lctx.len()) as u64
   }
 
   /// WHNF cache key: (expr_hash, ctx_hash).
@@ -408,6 +423,10 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     self.num_let_bindings += 1;
   }
 
+  pub fn fresh_fvar_id(&mut self) -> FVarId {
+    self.env.fresh_fvar_id()
+  }
+
   /// Pop the most recent local variable.
   pub fn pop_local(&mut self) {
     if let Some(Some(_)) = self.let_vals.pop() {
@@ -430,6 +449,19 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     Some(lift(&mut self.env.intern, &val, idx + 1, 0))
   }
 
+  /// Whether a de-Bruijn variable points at a let-bound local.
+  pub fn is_let_var(&self, idx: u64) -> bool {
+    let n = self.ctx.len();
+    let Some(idx_us) = usize::try_from(idx).ok() else {
+      return false;
+    };
+    if idx_us >= n {
+      return false;
+    }
+    let level = n - 1 - idx_us;
+    self.let_vals[level].is_some()
+  }
+
   /// Save current depth for later restore.
   pub fn save_depth(&self) -> usize {
     self.ctx.len()
@@ -440,6 +472,106 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     while self.ctx.len() > saved {
       self.pop_local();
     }
+  }
+
+  // -----------------------------------------------------------------------
+  // Free-variable binder opening helpers
+  // -----------------------------------------------------------------------
+
+  /// Open a binder by minting a fresh [`FVarId`], pushing a `CDecl` to
+  /// `lctx`, and instantiating `body` so its `Var(0)` becomes the new
+  /// fvar (with `Var(>=1)` shifting down). Returns the opened body and
+  /// the fresh fvar id (the caller may pass `_` to discard).
+  ///
+  /// Mirrors lean4lean's `withLocalDecl` in shape; differs in that the
+  /// caller is responsible for `lctx.truncate(saved_len)` when leaving
+  /// the binder scope.
+  pub fn open_binder(
+    &mut self,
+    name: M::MField<crate::ix::env::Name>,
+    bi: M::MField<crate::ix::env::BinderInfo>,
+    ty: KExpr<M>,
+    body: &KExpr<M>,
+  ) -> (KExpr<M>, FVarId) {
+    let fv_id = self.fresh_fvar_id();
+    let fv = self.intern(KExpr::fvar(fv_id, name.clone()));
+    self.lctx.push(fv_id, LocalDecl::CDecl { name, bi, ty });
+    let body_open = instantiate_rev(&mut self.env.intern, body, &[fv]);
+    (body_open, fv_id)
+  }
+
+  /// Anonymous variant of [`Self::open_binder`] that uses
+  /// `Name::anon()` / `BinderInfo::Default`. Convenient for kernel-internal
+  /// walks (inductive validation, recursor synthesis) that don't carry
+  /// user-visible binder metadata.
+  pub fn open_binder_anon(
+    &mut self,
+    ty: KExpr<M>,
+    body: &KExpr<M>,
+  ) -> (KExpr<M>, FVarId) {
+    let name = M::meta_field(crate::ix::env::Name::anon());
+    let bi = M::meta_field(crate::ix::env::BinderInfo::Default);
+    self.open_binder(name, bi, ty, body)
+  }
+
+  /// Like [`Self::open_binder`] but also returns the fvar `KExpr` itself
+  /// (for callers that need to record it in a Vec for later
+  /// abstract_fvars / structural identity comparisons).
+  pub fn open_binder_with_fv(
+    &mut self,
+    name: M::MField<crate::ix::env::Name>,
+    bi: M::MField<crate::ix::env::BinderInfo>,
+    ty: KExpr<M>,
+    body: &KExpr<M>,
+  ) -> (KExpr<M>, KExpr<M>, FVarId) {
+    let fv_id = self.fresh_fvar_id();
+    let fv = self.intern(KExpr::fvar(fv_id, name.clone()));
+    self.lctx.push(fv_id, LocalDecl::CDecl { name, bi, ty });
+    let body_open = instantiate_rev(&mut self.env.intern, body, &[fv.clone()]);
+    (body_open, fv, fv_id)
+  }
+
+  /// Anonymous-name variant of [`Self::open_binder_with_fv`].
+  pub fn open_binder_anon_with_fv(
+    &mut self,
+    ty: KExpr<M>,
+    body: &KExpr<M>,
+  ) -> (KExpr<M>, KExpr<M>, FVarId) {
+    let name = M::meta_field(crate::ix::env::Name::anon());
+    let bi = M::meta_field(crate::ix::env::BinderInfo::Default);
+    self.open_binder_with_fv(name, bi, ty, body)
+  }
+
+  /// Push an `LDecl` for a let-bound fvar and instantiate the body. Returns
+  /// the opened body and the fresh fvar id. Mirrors `withLetDecl`-shaped
+  /// flows (e.g. inductive validation that needs to model the let value
+  /// for downstream WHNF zeta-reduction).
+  pub fn open_let(
+    &mut self,
+    name: M::MField<crate::ix::env::Name>,
+    ty: KExpr<M>,
+    val: KExpr<M>,
+    body: &KExpr<M>,
+  ) -> (KExpr<M>, FVarId) {
+    let fv_id = self.fresh_fvar_id();
+    let fv = self.intern(KExpr::fvar(fv_id, name.clone()));
+    self.lctx.push(fv_id, LocalDecl::LDecl { name, ty, val });
+    let body_open = instantiate_rev(&mut self.env.intern, body, &[fv]);
+    (body_open, fv_id)
+  }
+
+  /// Push a fresh fvar declaration without any body to instantiate.
+  /// Useful for paths that introduce a binder for type-tracking purposes
+  /// only (e.g. inductive validation walks where the binder is consumed
+  /// later or in parallel). Returns the fvar id and the interned fvar
+  /// expression.
+  pub fn push_fvar_decl_anon(&mut self, ty: KExpr<M>) -> (FVarId, KExpr<M>) {
+    let name = M::meta_field(crate::ix::env::Name::anon());
+    let bi = M::meta_field(crate::ix::env::BinderInfo::Default);
+    let fv_id = self.fresh_fvar_id();
+    let fv = self.intern(KExpr::fvar(fv_id, name.clone()));
+    self.lctx.push(fv_id, LocalDecl::CDecl { name, bi, ty });
+    (fv_id, fv)
   }
 
   /// Look up a bound variable's type, lifted to the current depth.
@@ -526,7 +658,10 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     }
 
     let result = match e.data() {
-      ExprData::Var(..) | ExprData::Nat(..) | ExprData::Str(..) => {
+      ExprData::Var(..)
+      | ExprData::FVar(..)
+      | ExprData::Nat(..)
+      | ExprData::Str(..) => {
         // These have no universe parameters, so substitution is a no-op.
         // Cache the pass-through so the ptr-identity check above fires
         // for subsequent visits to the same sub-term.
@@ -647,9 +782,12 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     // wiping it. `Drop` records the final check in a TypeChecker's lifetime.
     self.record_current_fuel_used();
     self.rec_fuel = max_rec_fuel();
-    self.nat_iota_large_expansions = 0;
-    self.nat_iota_last = None;
-    self.nat_iota_run = 0;
+    self.hot_misses.clear();
+    // Reset the local context (it must always be empty between constants).
+    // The fvar id counter lives on KEnv and is intentionally not reset here:
+    // caches also live on KEnv, so reused fvar ids would make open-term cache
+    // entries unsound across TypeChecker instances.
+    self.lctx = super::lctx::LocalContext::new();
   }
 
   pub fn set_debug_label(&mut self, label: impl Into<String>) {
@@ -682,6 +820,7 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
           self.in_native_reduce,
           self.eager_reduce
         );
+        self.dump_hot_misses();
         eprintln!("{}", std::backtrace::Backtrace::force_capture());
       }
       return Err(TcError::MaxRecFuel);
@@ -748,6 +887,51 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
   pub fn intern_univ(&mut self, u: KUniv<M>) -> KUniv<M> {
     self.env.intern.intern_univ(u)
   }
+
+  pub fn record_hot_miss(&mut self, phase: &'static str, e: &KExpr<M>) {
+    if !*IX_HOT_MISSES {
+      return;
+    }
+    let mut key = format!("{} {}", phase, hot_expr_shape(e));
+    if *IX_HOT_MISS_CTX {
+      let ctx = self.ctx_addr_for_lbr(e.lbr());
+      key.push_str(&format!(
+        " ctx={} depth={}",
+        short_addr(&ctx),
+        self.depth()
+      ));
+    }
+    *self.hot_misses.entry(key).or_insert(0) += 1;
+  }
+
+  pub fn record_hot_def_eq_miss(&mut self, a: &KExpr<M>, b: &KExpr<M>) {
+    if !*IX_HOT_MISSES {
+      return;
+    }
+    let mut key =
+      format!("defeq {} =?= {}", hot_expr_shape(a), hot_expr_shape(b));
+    if *IX_HOT_MISS_CTX {
+      let ctx = self.def_eq_ctx_key(a, b);
+      key.push_str(&format!(
+        " ctx={} depth={}",
+        short_addr(&ctx),
+        self.depth()
+      ));
+    }
+    *self.hot_misses.entry(key).or_insert(0) += 1;
+  }
+
+  fn dump_hot_misses(&self) {
+    if !*IX_HOT_MISSES || self.hot_misses.is_empty() {
+      return;
+    }
+    let mut entries: Vec<_> = self.hot_misses.iter().collect();
+    entries.sort_unstable_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
+    eprintln!("[hot misses] top {}:", entries.len().min(25));
+    for (key, count) in entries.into_iter().take(25) {
+      eprintln!("  {count:>8}  {key}");
+    }
+  }
 }
 
 // -----------------------------------------------------------------------
@@ -785,6 +969,7 @@ pub fn expr_mentions_addr<M: KernelMode>(e: &KExpr<M>, addr: &Address) -> bool {
         stack.push(val);
       },
       ExprData::Var(..)
+      | ExprData::FVar(..)
       | ExprData::Sort(..)
       | ExprData::Nat(..)
       | ExprData::Str(..) => {},
@@ -833,6 +1018,28 @@ pub fn collect_app_spine<M: KernelMode>(
   (cur, args)
 }
 
+fn hot_expr_shape<M: KernelMode>(e: &KExpr<M>) -> String {
+  let (head, args) = collect_app_spine(e);
+  let head = match head.data() {
+    ExprData::Var(i, _, _) => format!("#{i}"),
+    ExprData::FVar(id, _, _) => format!("{id}"),
+    ExprData::Sort(u, _) => format!("Sort({u})"),
+    ExprData::Const(id, us, _) => format!("{id}.{{{}}}", us.len()),
+    ExprData::App(..) => "app".to_string(),
+    ExprData::Lam(..) => "lam".to_string(),
+    ExprData::All(..) => "forall".to_string(),
+    ExprData::Let(..) => "let".to_string(),
+    ExprData::Prj(id, field, _, _) => format!("Prj({id}.{field})"),
+    ExprData::Nat(v, _, _) => format!("Nat({})", v.0),
+    ExprData::Str(v, _, _) => format!("Str(len={})", v.len()),
+  };
+  format!("{head}/{} lbr={} @{}", args.len(), e.lbr(), short_addr(e.addr()))
+}
+
+fn short_addr(addr: &Addr) -> String {
+  addr.to_hex().chars().take(12).collect()
+}
+
 #[cfg(test)]
 mod tests {
   use super::super::testing::{
@@ -861,6 +1068,22 @@ mod tests {
     assert_eq!(tc.depth(), 1);
     tc.pop_local();
     assert_eq!(tc.depth(), 0);
+  }
+
+  #[test]
+  fn fvar_ids_are_env_scoped_across_type_checkers() {
+    let mut env = KEnv::<Meta>::new();
+    let first = {
+      let mut tc = TypeChecker::new(&mut env);
+      tc.fresh_fvar_id()
+    };
+    let second = {
+      let mut tc = TypeChecker::new(&mut env);
+      tc.fresh_fvar_id()
+    };
+    assert_ne!(first, second);
+    assert_eq!(first.0, 0);
+    assert_eq!(second.0, 1);
   }
 
   #[test]

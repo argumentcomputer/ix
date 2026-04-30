@@ -40,7 +40,7 @@ use std::sync::Arc;
 use crate::ix::env::{Name, UIMAX, UMAX, UPARAM, USUCC, UZERO};
 
 use super::env::Addr;
-use super::mode::{KernelMode, MetaDisplay, MetaHash};
+use super::mode::{KernelMode, MetaDisplay};
 
 /// Universe level. Thin Arc wrapper — cheap to clone, O(1) identity
 /// via `Arc::ptr_eq`.
@@ -239,7 +239,6 @@ impl<M: KernelMode> KUniv<M> {
     let mut hasher = blake3::Hasher::new();
     hasher.update(&[UPARAM]);
     hasher.update(&idx.to_le_bytes());
-    name.meta_hash(&mut hasher);
     KUniv::new(UnivData::Param(idx, name, hasher.finalize()))
   }
 }
@@ -769,13 +768,13 @@ mod tests {
     assert_ne!(p0.addr(), p1.addr());
   }
 
-  // ---- Meta mode: names affect hash ----
+  // ---- Meta mode: names are display-only for hashes ----
 
   #[test]
-  fn meta_param_name_affects_hash() {
+  fn meta_param_name_does_not_affect_hash() {
     let a = MU::param(0, mk_name("u"));
     let b = MU::param(0, mk_name("v"));
-    assert_ne!(a.addr(), b.addr());
+    assert_eq!(a.addr(), b.addr());
   }
 
   #[test]
@@ -794,23 +793,20 @@ mod tests {
     assert_eq!(a.addr(), b.addr());
   }
 
-  // ---- Anon vs Meta structural hash differs (meta contributes name bytes) ----
+  // ---- Anon vs Meta structural hash matches (metadata erased) ----
 
   #[test]
-  fn anon_vs_meta_named_param_differ() {
+  fn anon_vs_meta_named_param_match() {
     let anon = AU::param(0, ());
     let meta = MU::param(0, mk_name("u"));
-    assert_ne!(anon.addr(), meta.addr());
+    assert_eq!(anon.addr(), meta.addr());
   }
 
   #[test]
   fn anon_vs_meta_anon_param_same() {
-    // Meta with anonymous name: UPARAM ++ idx ++ anon_name_hash_bytes
-    // Anon: UPARAM ++ idx (no name bytes)
-    // These differ because Meta still writes the anon name hash.
     let anon = AU::param(0, ());
     let meta = MU::param(0, Name::anon());
-    assert_ne!(anon.addr(), meta.addr());
+    assert_eq!(anon.addr(), meta.addr());
   }
 
   // ---- PartialEq ----
@@ -1015,8 +1011,8 @@ mod tests {
     // Same structure, different names — semantically equal
     let a = MU::param(0, mk_name("u"));
     let b = MU::param(0, mk_name("v"));
-    // Hash differs (names contribute), but Géran comparison sees same index
-    assert_ne!(a.addr(), b.addr());
+    // Hashes are metadata-erased, and Géran comparison sees the same index.
+    assert_eq!(a.addr(), b.addr());
     assert!(univ_eq(&a, &b));
   }
 

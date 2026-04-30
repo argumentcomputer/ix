@@ -324,6 +324,7 @@ fn lean_expr_tag(e: &lean::Expr) -> &'static str {
 fn zero_expr_tag(e: &KExpr<Anon>) -> &'static str {
   match e.data() {
     ExprData::Var(..) => "Var",
+    ExprData::FVar(..) => "FVar",
     ExprData::Sort(..) => "Sort",
     ExprData::Const(..) => "Const",
     ExprData::App(..) => "App",

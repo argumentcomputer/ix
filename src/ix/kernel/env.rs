@@ -15,7 +15,7 @@ use crate::ix::address::Address;
 
 use super::constant::{KConst, RecRule};
 use super::error::TcError;
-use super::expr::KExpr;
+use super::expr::{FVarId, KExpr};
 use super::id::KId;
 use super::level::KUniv;
 use super::mode::KernelMode;
@@ -152,7 +152,9 @@ pub struct KEnvCacheSizes {
   pub intern_univs: usize,
   pub whnf: usize,
   pub whnf_no_delta: usize,
+  pub whnf_no_delta_cheap: usize,
   pub whnf_core: usize,
+  pub whnf_core_cheap: usize,
   pub infer: usize,
   pub infer_only: usize,
   pub def_eq: usize,
@@ -179,7 +181,9 @@ impl KEnvCacheSizes {
       self.intern_univs,
       self.whnf,
       self.whnf_no_delta,
+      self.whnf_no_delta_cheap,
       self.whnf_core,
+      self.whnf_core_cheap,
       self.infer,
       self.infer_only,
       self.def_eq,
@@ -203,13 +207,15 @@ impl std::fmt::Display for KEnvCacheSizes {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     write!(
       f,
-      "consts={} intern_exprs={} intern_univs={} whnf={}/{}/{} infer={}/{} def_eq={}/{}/{} unfold={} ingress={} is_prop={}",
+      "consts={} intern_exprs={} intern_univs={} whnf={}/{}/{}/{}/{} infer={}/{} def_eq={}/{}/{} unfold={} ingress={} is_prop={}",
       self.consts,
       self.intern_exprs,
       self.intern_univs,
       self.whnf,
       self.whnf_no_delta,
+      self.whnf_no_delta_cheap,
       self.whnf_core,
+      self.whnf_core_cheap,
       self.infer,
       self.infer_only,
       self.def_eq,
@@ -251,12 +257,27 @@ pub struct KEnv<M: KernelMode> {
   pub whnf_cache: FxHashMap<(Addr, Addr), KExpr<M>>,
   /// WHNF cache (no delta): (expr_hash, ctx_hash)-keyed.
   pub whnf_no_delta_cache: FxHashMap<(Addr, Addr), KExpr<M>>,
+  /// Cheap-mode WHNF cache (no delta, DEF_EQ_CORE flags): same key shape as
+  /// `whnf_no_delta_cache`, but populated by cheap-projection callers in the
+  /// def-eq lazy-delta loop. Cheap output is NOT shared with full callers
+  /// because cheap projections leave projection-of-non-ctor terms stuck where
+  /// FULL would unfold the underlying definition. Reads and writes here are
+  /// gated to cheap-mode callers only — mirrors the `def_eq_cheap_cache`
+  /// pattern. Without this, every iteration of the lazy-delta loop redoes
+  /// `whnf_no_delta_for_def_eq` from scratch (mathlib hot path).
+  pub whnf_no_delta_cheap_cache: FxHashMap<(Addr, Addr), KExpr<M>>,
   /// WHNF core cache: structural-only reduction (beta/iota/zeta/proj),
   /// no native primitives, no delta. Mirrors lean4lean's `whnfCoreCache`
   /// (refs/lean4lean/Lean4Lean/TypeChecker.lean:19) and lean4 C++'s
   /// `m_whnf_core`. Populated only when flags are FULL — cheap-projection
   /// results are not safe to share with full callers.
   pub whnf_core_cache: FxHashMap<(Addr, Addr), KExpr<M>>,
+  /// Cheap-mode WHNF core cache: same key shape as `whnf_core_cache`, but
+  /// populated by cheap-projection callers (DEF_EQ_CORE flags) inside the
+  /// def-eq lazy-delta loop. Same soundness reasoning as
+  /// `whnf_no_delta_cheap_cache` — cheap output stays in its own pool so
+  /// full callers always see a properly-reduced result.
+  pub whnf_core_cheap_cache: FxHashMap<(Addr, Addr), KExpr<M>>,
   /// Infer cache: keyed by (expr_hash, ctx_hash). Context-dependent.
   /// Populated only from full-mode `infer` (i.e. not from `with_infer_only`),
   /// so every cached result has passed the validation `infer_only` skips.
@@ -318,6 +339,14 @@ pub struct KEnv<M: KernelMode> {
   /// so every member of a bad block reports the same structured failure.
   pub block_check_results: FxHashMap<KId<M>, Result<(), TcError<M>>>,
 
+  /// Next free-variable id for checker-local binder openings.
+  ///
+  /// Type-checking caches live on `KEnv`, not on one `TypeChecker`, so FVar
+  /// ids must also be allocated from the shared environment. Otherwise two
+  /// checker instances could both mint `fv$0` and reuse an `infer(fv$0)` cache
+  /// entry under different local contexts.
+  next_fvar_id: u64,
+
   // -- Performance counters (audit §10) --
   /// Cache hit/miss and fuel-consumption counters, gated by
   /// `IX_PERF_COUNTERS=1`. When the env var is unset the counters are
@@ -360,7 +389,9 @@ impl<M: KernelMode> KEnv<M> {
       prims: OnceCell::new(),
       whnf_cache: FxHashMap::default(),
       whnf_no_delta_cache: FxHashMap::default(),
+      whnf_no_delta_cheap_cache: FxHashMap::default(),
       whnf_core_cache: FxHashMap::default(),
+      whnf_core_cheap_cache: FxHashMap::default(),
       infer_cache: FxHashMap::default(),
       infer_only_cache: FxHashMap::default(),
       def_eq_cache: FxHashMap::default(),
@@ -374,8 +405,17 @@ impl<M: KernelMode> KEnv<M> {
       rec_majors_cache: FxHashMap::default(),
       block_peer_agreement_cache: FxHashSet::default(),
       block_check_results: FxHashMap::default(),
+      next_fvar_id: 0,
       perf: PerfCounters::default(),
     }
+  }
+
+  pub fn fresh_fvar_id(&mut self) -> FVarId {
+    let id = self.next_fvar_id;
+    self.next_fvar_id = self.next_fvar_id.checked_add(1).expect(
+      "KEnv::fresh_fvar_id: u64 counter overflow (more than 2^64 fvars in one environment)",
+    );
+    FVarId(id)
   }
 
   /// Resolve primitives from the environment (cached via `OnceCell`).
@@ -462,7 +502,9 @@ impl<M: KernelMode> KEnv<M> {
     let _ = self.prims.take();
     self.whnf_cache.clear();
     self.whnf_no_delta_cache.clear();
+    self.whnf_no_delta_cheap_cache.clear();
     self.whnf_core_cache.clear();
+    self.whnf_core_cheap_cache.clear();
     self.infer_cache.clear();
     self.infer_only_cache.clear();
     self.def_eq_cache.clear();
@@ -475,6 +517,7 @@ impl<M: KernelMode> KEnv<M> {
     self.rec_majors_cache.clear();
     self.block_peer_agreement_cache.clear();
     self.block_check_results.clear();
+    self.next_fvar_id = 0;
   }
 
   /// Snapshot of all per-worker cache sizes. Cheap (each `len()` is O(1));
@@ -488,7 +531,9 @@ impl<M: KernelMode> KEnv<M> {
       intern_univs: self.intern.univs.len(),
       whnf: self.whnf_cache.len(),
       whnf_no_delta: self.whnf_no_delta_cache.len(),
+      whnf_no_delta_cheap: self.whnf_no_delta_cheap_cache.len(),
       whnf_core: self.whnf_core_cache.len(),
+      whnf_core_cheap: self.whnf_core_cheap_cache.len(),
       infer: self.infer_cache.len(),
       infer_only: self.infer_only_cache.len(),
       def_eq: self.def_eq_cache.len(),
@@ -518,7 +563,9 @@ impl<M: KernelMode> KEnv<M> {
     self.prims = OnceCell::new();
     self.whnf_cache = FxHashMap::default();
     self.whnf_no_delta_cache = FxHashMap::default();
+    self.whnf_no_delta_cheap_cache = FxHashMap::default();
     self.whnf_core_cache = FxHashMap::default();
+    self.whnf_core_cheap_cache = FxHashMap::default();
     self.infer_cache = FxHashMap::default();
     self.infer_only_cache = FxHashMap::default();
     self.def_eq_cache = FxHashMap::default();
@@ -531,6 +578,7 @@ impl<M: KernelMode> KEnv<M> {
     self.rec_majors_cache = FxHashMap::default();
     self.block_peer_agreement_cache = FxHashSet::default();
     self.block_check_results = FxHashMap::default();
+    self.next_fvar_id = 0;
   }
 }
 

@@ -90,13 +90,24 @@ opaque rsCheckConstsFFI :
 
 /-- FFI: type-check constants from a serialized Ixon env file produced by
     `ix compile --out`. If the name array is empty, Rust checks every
-    checkable named constant in the file. -/
+    checkable named constant in the file.
+
+    The trailing `String` is the `--fail-out` path. An empty string means
+    "no streaming"; any other value is a filesystem path that Rust opens
+    truncate-create and incrementally appends one record per failing
+    constant to (with an immediate flush per record), capping with a
+    `# total failures: N` footer once all checks finish. The format is the
+    same one `Ix.Cli.CheckIxonCmd.readNamesFile` reads, so the same file
+    is round-trippable as a `--consts-file` input. Streaming from Rust is
+    what makes a long full-env run visible to a `tail -f` observer instead
+    of dumping every failure only at the very end. -/
 @[extern "rs_kernel_check_ixon"]
 opaque rsCheckIxonFFI :
     @& String →
     @& Array Lean.Name →
     @& Array Bool →
     @& Bool →
+    @& String →
     IO (Array (Option CheckError))
 
 /-- FFI: list checkable names from a serialized Ixon env file. Used by the
