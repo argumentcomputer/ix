@@ -41,9 +41,11 @@ use lean_ffi::nat::Nat;
 use rustc_hash::FxHashMap;
 
 use lean_ffi::object::{
-  LeanArray, LeanBool, LeanBorrowed, LeanCtor, LeanIOResult, LeanList,
+  LeanArray, LeanBool, LeanBorrowed, LeanIOResult, LeanList, LeanOption,
   LeanOwned, LeanRef, LeanString,
 };
+
+use crate::lean::LeanIxCheckError;
 
 #[cfg(feature = "test-ffi")]
 use crate::ffi::lean_env::{GlobalCache, decode_name};
@@ -2145,21 +2147,11 @@ fn format_tc_error(
 /// - `Err((Compile, msg))` → `some (CheckError.compileError msg)`
 fn build_option_result(result: &CheckRes) -> LeanOwned {
   match result {
-    Ok(()) => {
-      // `Option.none` — tag 0, zero fields, zero scalars.
-      LeanCtor::alloc(0, 0, 0).into()
-    },
+    Ok(()) => LeanOption::none().into(),
     Err((kind, msg)) => {
-      // `CheckError.<variant> msg` — tag comes from ErrKind, one object
-      // field. Lean's inductive has 2 ctors (kernelException,
-      // compileError) so it's NOT eligible for the LCNF trivial-structure
-      // optimization — the heap wrapper is required.
-      let err_ctor = LeanCtor::alloc(kind.tag(), 1, 0);
-      err_ctor.set(0, LeanString::new(msg));
-      // `Option.some err` — tag 1, one object field.
-      let some_ctor = LeanCtor::alloc(1, 1, 0);
-      some_ctor.set(0, err_ctor);
-      some_ctor.into()
+      let err_ctor = LeanIxCheckError::alloc(kind.tag());
+      err_ctor.set_obj(0, LeanString::new(msg));
+      LeanOption::some(err_ctor).into()
     },
   }
 }
