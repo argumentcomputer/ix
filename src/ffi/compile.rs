@@ -32,8 +32,8 @@ use crate::lean::{
 use lean_ffi::nat::Nat;
 use lean_ffi::object::LeanIOResult;
 use lean_ffi::object::{
-  LeanArray, LeanBorrowed, LeanByteArray, LeanCtor, LeanExcept, LeanList,
-  LeanOwned, LeanProd, LeanRef, LeanString,
+  LeanArray, LeanBorrowed, LeanByteArray, LeanExcept, LeanList, LeanOwned,
+  LeanProd, LeanRef, LeanString,
 };
 
 use crate::ffi::builder::LeanBuildCache;
@@ -622,12 +622,7 @@ pub extern "C" fn rs_leon_hashes(
   for (i, (name, ci)) in rust_env.iter().enumerate() {
     let name_obj = LeanIxName::build(&mut cache, name);
     let addr_obj = LeanIxAddress::build_from_hash(&ci.get_hash());
-
-    // (Ix.Name × Ix.Address) pair — tag 0 ctor with 2 object fields.
-    let pair = LeanCtor::alloc(0, 2, 0);
-    pair.set(0, name_obj);
-    pair.set(1, addr_obj);
-    arr.set(i, pair);
+    arr.set(i, LeanProd::new(name_obj, addr_obj));
   }
   LeanIOResult::ok(arr)
 }

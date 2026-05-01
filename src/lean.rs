@@ -283,6 +283,12 @@ lean_ffi::lean_inductive! {
     { num_obj: 1 },                           // tag 5: serialize
   ];
 
+  // Defined in `Ix/KernelCheck.lean`.
+  LeanIxCheckError [
+    { num_obj: 1 },                           // tag 0: kernelException
+    { num_obj: 1 },                           // tag 1: compileError
+  ];
+
   // --- Iroh types ---
 
   LeanPutResponse [ { num_obj: 2 } ];

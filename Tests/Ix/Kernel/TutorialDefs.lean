@@ -1214,8 +1214,6 @@ good_thm proofIrrelAnd :
 /-! ## String literal def-eq
   String literals must be def-eq to their constructor form. -/
 
-good_thm stringEmptyMk : ("" : String) = String.mk [] := by rfl
-
 good_thm stringEmptyOfList : ("" : String) = String.ofList [] := by rfl
 
 good_thm natOfNatLit : (97 : Nat) = @OfNat.ofNat Nat 97 (instOfNatNat 97) := by rfl
@@ -1225,8 +1223,6 @@ good_thm charOfNatLit : Char.ofNat 97 = Char.ofNat (@OfNat.ofNat Nat 97 (instOfN
 good_thm charListLit : [Char.ofNat 97] = [@Char.ofNat (@OfNat.ofNat Nat 97 (instOfNatNat 97))] := by rfl
 
 good_thm stringOfListBoth : String.ofList [Char.ofNat 97] = String.ofList [@Char.ofNat (@OfNat.ofNat Nat 97 (instOfNatNat 97))] := by rfl
-
-good_thm stringAMk : ("a" : String) = String.mk [Char.ofNat 97] := by rfl
 
 good_thm stringAOfList : ("a" : String) = String.ofList [Char.ofNat 97] := by rfl
 
