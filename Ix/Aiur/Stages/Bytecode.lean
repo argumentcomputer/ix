@@ -1,6 +1,13 @@
 module
 public import Ix.Aiur.Goldilocks
 
+/-!
+Stage 5 (Bytecode) IR — flat, post-lowering.
+
+Later passes (`deduplicate`, `needsCircuit`) produce Stage 6 bytecode with the
+same datatype.
+-/
+
 public section
 
 namespace Aiur
@@ -42,31 +49,28 @@ mutual
   inductive Ctrl where
     | match : ValIdx → Array (G × Block) → Option Block → Ctrl
     | return : SelIdx → Array ValIdx → Ctrl
+    | yield : SelIdx → Array ValIdx → Ctrl
+    | matchContinue : ValIdx → Array (G × Block) → Option Block
+        → (outputSize : Nat) → (sharedAuxiliaries : Nat) → (sharedLookups : Nat)
+        → Block → Ctrl
     deriving Inhabited, Repr
 
   structure Block where
     ops : Array Op
     ctrl : Ctrl
-    minSelIncluded: SelIdx
-    maxSelExcluded: SelIdx
     deriving Inhabited, Repr
 end
 
 deriving instance BEq, Hashable for Ctrl, Block
 
-/-- The circuit layout of a function -/
+
+/-- The circuit layout of a function (non-semantic; the bytecode evaluator ignores it). -/
 structure FunctionLayout where
   inputSize : Nat
-  /-- Bit values that identify which path the computation took.
-    Exactly one selector must be set. -/
   selectors : Nat
-  /-- Represent registers that hold temporary values and can be shared by
-    different circuit paths, since they never overlap. -/
   auxiliaries : Nat
-  /-- Lookups can be shared across calls, stores, loads and returns from
-    different paths. -/
   lookups : Nat
-  deriving Inhabited, Repr, BEq, Hashable
+  deriving Inhabited, Repr, BEq, Hashable, DecidableEq
 
 def FunctionLayout.width (l : FunctionLayout) : Nat :=
   l.inputSize + l.selectors + l.auxiliaries

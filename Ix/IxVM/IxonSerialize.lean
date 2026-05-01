@@ -15,12 +15,12 @@ def ixonSerialize := ⟦
       Expr.Var(idx) => put_tag4(0x1, idx, rest),
 
       -- Ref: Tag4(0x2, len) + Tag0(ref_idx) + univ_list
-      Expr.Ref(ref_idx, &univ_list) =>
+      Expr.Ref(ref_idx, univ_list) =>
         let len = list_length_u64(univ_list);
         put_tag4(0x2, len, put_tag0(ref_idx, put_u64_list(univ_list, rest))),
 
       -- Rec: Tag4(0x3, len) + Tag0(rec_idx) + univ_list
-      Expr.Rec(rec_idx, &univ_list) =>
+      Expr.Rec(rec_idx, univ_list) =>
         let len = list_length_u64(univ_list);
         put_tag4(0x3, len, put_tag0(rec_idx, put_u64_list(univ_list, rest))),
 
@@ -65,7 +65,7 @@ def ixonSerialize := ⟦
       _ =>
         let [b1, b2, b3, b4, b5, b6, b7, b8] = bs;
         let rest_shifted = [b2, b3, b4, b5, b6, b7, b8, 0];
-        List.Cons(b1, store(put_u64_le(rest_shifted, num_bytes - 1, rest))),
+        store(ListNode.Cons(b1, put_u64_le(rest_shifted, num_bytes - 1, rest))),
     }
   }
 
@@ -73,10 +73,10 @@ def ixonSerialize := ⟦
     let byte_count = u64_byte_count(bs);
     let small = u8_less_than(bs[0], 128);
     match (byte_count, small) {
-      (1, 1) => List.Cons(bs[0], store(rest)),
+      (1, 1) => store(ListNode.Cons(bs[0], rest)),
       _ =>
         let head = 128 + (byte_count - 1);
-        List.Cons(head, store(put_u64_le(bs, byte_count, rest))),
+        store(ListNode.Cons(head, put_u64_le(bs, byte_count, rest))),
     }
   }
 
@@ -89,11 +89,11 @@ def ixonSerialize := ⟦
       (1, 1) =>
         -- Single byte: flag in bits 6-7, size in bits 0-4
         let head = flag * 64 + size[0];
-        List.Cons(head, store(rest)),
+        store(ListNode.Cons(head, rest)),
       _ =>
         -- Multi-byte: flag in bits 6-7, large=1 in bit 5, size_bytes-1 in bits 0-4
         let head = flag * 64 + 32 + (byte_count - 1);
-        List.Cons(head, store(put_u64_le(size, byte_count, rest))),
+        store(ListNode.Cons(head, put_u64_le(size, byte_count, rest))),
     }
   }
 
@@ -103,19 +103,19 @@ def ixonSerialize := ⟦
     match (byte_count, small) {
       (1, 1) =>
         let head = flag * 16 + bs[0];
-        List.Cons(head, store(rest)),
+        store(ListNode.Cons(head, rest)),
       _ =>
         let head = flag * 16 + 8 + (byte_count - 1);
-        List.Cons(head, store(put_u64_le(bs, byte_count, rest))),
+        store(ListNode.Cons(head, put_u64_le(bs, byte_count, rest))),
     }
   }
 
   -- Serialize field list (each element as Tag0)
   fn put_u64_list(list: List‹U64›, rest: ByteStream) -> ByteStream {
-    match list {
-      List.Nil => rest,
-      List.Cons(idx, rest_list) =>
-        put_tag0(idx, put_u64_list(load(rest_list), rest)),
+    match load(list) {
+      ListNode.Nil => rest,
+      ListNode.Cons(idx, rest_list) =>
+        put_tag0(idx, put_u64_list(rest_list, rest)),
     }
   }
 
@@ -172,38 +172,38 @@ def ixonSerialize := ⟦
 
   -- Write a 32-byte address
   fn put_address(a: [G; 32], rest: ByteStream) -> ByteStream {
-    let list31 = List.Cons(a[31], store(rest));
-    let list30 = List.Cons(a[30], store(list31));
-    let list29 = List.Cons(a[29], store(list30));
-    let list28 = List.Cons(a[28], store(list29));
-    let list27 = List.Cons(a[27], store(list28));
-    let list26 = List.Cons(a[26], store(list27));
-    let list25 = List.Cons(a[25], store(list26));
-    let list24 = List.Cons(a[24], store(list25));
-    let list23 = List.Cons(a[23], store(list24));
-    let list22 = List.Cons(a[22], store(list23));
-    let list21 = List.Cons(a[21], store(list22));
-    let list20 = List.Cons(a[20], store(list21));
-    let list19 = List.Cons(a[19], store(list20));
-    let list18 = List.Cons(a[18], store(list19));
-    let list17 = List.Cons(a[17], store(list18));
-    let list16 = List.Cons(a[16], store(list17));
-    let list15 = List.Cons(a[15], store(list16));
-    let list14 = List.Cons(a[14], store(list15));
-    let list13 = List.Cons(a[13], store(list14));
-    let list12 = List.Cons(a[12], store(list13));
-    let list11 = List.Cons(a[11], store(list12));
-    let list10 = List.Cons(a[10], store(list11));
-    let list9 = List.Cons(a[9], store(list10));
-    let list8 = List.Cons(a[8], store(list9));
-    let list7 = List.Cons(a[7], store(list8));
-    let list6 = List.Cons(a[6], store(list7));
-    let list5 = List.Cons(a[5], store(list6));
-    let list4 = List.Cons(a[4], store(list5));
-    let list3 = List.Cons(a[3], store(list4));
-    let list2 = List.Cons(a[2], store(list3));
-    let list1 = List.Cons(a[1], store(list2));
-    List.Cons(a[0], store(list1))
+    let list31 = store(ListNode.Cons(a[31], rest));
+    let list30 = store(ListNode.Cons(a[30], list31));
+    let list29 = store(ListNode.Cons(a[29], list30));
+    let list28 = store(ListNode.Cons(a[28], list29));
+    let list27 = store(ListNode.Cons(a[27], list28));
+    let list26 = store(ListNode.Cons(a[26], list27));
+    let list25 = store(ListNode.Cons(a[25], list26));
+    let list24 = store(ListNode.Cons(a[24], list25));
+    let list23 = store(ListNode.Cons(a[23], list24));
+    let list22 = store(ListNode.Cons(a[22], list23));
+    let list21 = store(ListNode.Cons(a[21], list22));
+    let list20 = store(ListNode.Cons(a[20], list21));
+    let list19 = store(ListNode.Cons(a[19], list20));
+    let list18 = store(ListNode.Cons(a[18], list19));
+    let list17 = store(ListNode.Cons(a[17], list18));
+    let list16 = store(ListNode.Cons(a[16], list17));
+    let list15 = store(ListNode.Cons(a[15], list16));
+    let list14 = store(ListNode.Cons(a[14], list15));
+    let list13 = store(ListNode.Cons(a[13], list14));
+    let list12 = store(ListNode.Cons(a[12], list13));
+    let list11 = store(ListNode.Cons(a[11], list12));
+    let list10 = store(ListNode.Cons(a[10], list11));
+    let list9 = store(ListNode.Cons(a[9], list10));
+    let list8 = store(ListNode.Cons(a[8], list9));
+    let list7 = store(ListNode.Cons(a[7], list8));
+    let list6 = store(ListNode.Cons(a[6], list7));
+    let list5 = store(ListNode.Cons(a[5], list6));
+    let list4 = store(ListNode.Cons(a[4], list5));
+    let list3 = store(ListNode.Cons(a[3], list4));
+    let list2 = store(ListNode.Cons(a[2], list3));
+    let list1 = store(ListNode.Cons(a[1], list2));
+    store(ListNode.Cons(a[0], list1))
   }
 
   -- Pack DefKind (2 bits) and DefinitionSafety (2 bits) into a single byte
@@ -245,7 +245,7 @@ def ixonSerialize := ⟦
     match u {
       Univ.Zero =>
         -- Tag2(FLAG_ZERO_SUCC=0, size=0)
-        List.Cons(0, store(rest)),
+        store(ListNode.Cons(0, rest)),
 
       Univ.Succ(_) =>
         -- Count nested Succs for telescope compression
@@ -274,25 +274,25 @@ def ixonSerialize := ⟦
   -- ============================================================================
 
   fn put_expr_list(list: List‹&Expr›, rest: ByteStream) -> ByteStream {
-    match list {
-      List.Nil => rest,
-      List.Cons(&expr, &rest_list) =>
+    match load(list) {
+      ListNode.Nil => rest,
+      ListNode.Cons(&expr, rest_list) =>
         put_expr(expr, put_expr_list(rest_list, rest)),
     }
   }
 
   fn put_univ_list(list: List‹&Univ›, rest: ByteStream) -> ByteStream {
-    match list {
-      List.Nil => rest,
-      List.Cons(&u, &rest_list) =>
+    match load(list) {
+      ListNode.Nil => rest,
+      ListNode.Cons(&u, rest_list) =>
         put_univ(u, put_univ_list(rest_list, rest)),
     }
   }
 
   fn put_address_list(list: List‹[G; 32]›, rest: ByteStream) -> ByteStream {
-    match list {
-      List.Nil => rest,
-      List.Cons(addr, &rest_list) =>
+    match load(list) {
+      ListNode.Nil => rest,
+      ListNode.Cons(addr, rest_list) =>
         put_address(addr, put_address_list(rest_list, rest)),
     }
   }
@@ -303,10 +303,10 @@ def ixonSerialize := ⟦
 
   fn put_quot_kind(kind: QuotKind, rest: ByteStream) -> ByteStream {
     match kind {
-      QuotKind.Typ => List.Cons(0, store(rest)),
-      QuotKind.Ctor => List.Cons(1, store(rest)),
-      QuotKind.Lift => List.Cons(2, store(rest)),
-      QuotKind.Ind => List.Cons(3, store(rest)),
+      QuotKind.Typ => store(ListNode.Cons(0, rest)),
+      QuotKind.Ctor => store(ListNode.Cons(1, rest)),
+      QuotKind.Lift => store(ListNode.Cons(2, rest)),
+      QuotKind.Ind => store(ListNode.Cons(3, rest)),
     }
   }
 
@@ -314,7 +314,7 @@ def ixonSerialize := ⟦
     match defn {
       Definition.Mk(kind, safety, lvls, &typ, &value) =>
         let packed = pack_def_kind_safety(kind, safety);
-        List.Cons(packed, store(put_tag0(lvls, put_expr(typ, put_expr(value, rest))))),
+        store(ListNode.Cons(packed, put_tag0(lvls, put_expr(typ, put_expr(value, rest))))),
     }
   }
 
@@ -326,19 +326,19 @@ def ixonSerialize := ⟦
   }
 
   fn put_recursor_rule_list(list: List‹RecursorRule›, rest: ByteStream) -> ByteStream {
-    match list {
-      List.Nil => rest,
-      List.Cons(rule, &rest_list) =>
+    match load(list) {
+      ListNode.Nil => rest,
+      ListNode.Cons(rule, rest_list) =>
         put_recursor_rule(rule, put_recursor_rule_list(rest_list, rest)),
     }
   }
 
   fn put_recursor(recr: Recursor, rest: ByteStream) -> ByteStream {
     match recr {
-      Recursor.Mk(k, is_unsafe, lvls, params, indices, motives, minors, &typ, &rules) =>
+      Recursor.Mk(k, is_unsafe, lvls, params, indices, motives, minors, &typ, rules) =>
         let bools = k + 2 * is_unsafe;
         let rules_len = list_length_u64(rules);
-        List.Cons(bools, store(
+        store(ListNode.Cons(bools,
           put_tag0(lvls,
             put_tag0(params,
               put_tag0(indices,
@@ -353,7 +353,7 @@ def ixonSerialize := ⟦
   fn put_axiom(axim: Axiom, rest: ByteStream) -> ByteStream {
     match axim {
       Axiom.Mk(is_unsafe, lvls, &typ) =>
-        List.Cons(is_unsafe, store(put_tag0(lvls, put_expr(typ, rest)))),
+        store(ListNode.Cons(is_unsafe, put_tag0(lvls, put_expr(typ, rest)))),
     }
   }
 
@@ -367,7 +367,7 @@ def ixonSerialize := ⟦
   fn put_constructor(ctor: Constructor, rest: ByteStream) -> ByteStream {
     match ctor {
       Constructor.Mk(is_unsafe, lvls, cidx, params, fields, &typ) =>
-        List.Cons(is_unsafe, store(
+        store(ListNode.Cons(is_unsafe,
           put_tag0(lvls,
             put_tag0(cidx,
               put_tag0(params,
@@ -377,19 +377,19 @@ def ixonSerialize := ⟦
   }
 
   fn put_constructor_list(list: List‹Constructor›, rest: ByteStream) -> ByteStream {
-    match list {
-      List.Nil => rest,
-      List.Cons(ctor, &rest_list) =>
+    match load(list) {
+      ListNode.Nil => rest,
+      ListNode.Cons(ctor, rest_list) =>
         put_constructor(ctor, put_constructor_list(rest_list, rest)),
     }
   }
 
   fn put_inductive(indc: Inductive, rest: ByteStream) -> ByteStream {
     match indc {
-      Inductive.Mk(recr, refl, is_unsafe, lvls, params, indices, nested, &typ, &ctors) =>
+      Inductive.Mk(recr, refl, is_unsafe, lvls, params, indices, nested, &typ, ctors) =>
         let bools = recr + 2 * refl + 4 * is_unsafe;
         let ctors_len = list_length_u64(ctors);
-        List.Cons(bools, store(
+        store(ListNode.Cons(bools,
           put_tag0(lvls,
             put_tag0(params,
               put_tag0(indices,
@@ -431,18 +431,18 @@ def ixonSerialize := ⟦
   fn put_mut_const(mc: MutConst, rest: ByteStream) -> ByteStream {
     match mc {
       MutConst.Defn(defn) =>
-        List.Cons(0, store(put_definition(defn, rest))),
+        store(ListNode.Cons(0, put_definition(defn, rest))),
       MutConst.Indc(indc) =>
-        List.Cons(1, store(put_inductive(indc, rest))),
+        store(ListNode.Cons(1, put_inductive(indc, rest))),
       MutConst.Recr(recr) =>
-        List.Cons(2, store(put_recursor(recr, rest))),
+        store(ListNode.Cons(2, put_recursor(recr, rest))),
     }
   }
 
   fn put_mut_const_list(list: List‹MutConst›, rest: ByteStream) -> ByteStream {
-    match list {
-      List.Nil => rest,
-      List.Cons(mc, &rest_list) =>
+    match load(list) {
+      ListNode.Nil => rest,
+      ListNode.Cons(mc, rest_list) =>
         put_mut_const(mc, put_mut_const_list(rest_list, rest)),
     }
   }
@@ -477,10 +477,10 @@ def ixonSerialize := ⟦
 
   fn put_constant(cnst: Constant, rest: ByteStream) -> ByteStream {
     match cnst {
-      Constant.Mk(info, &sharing, &refs, &univs) =>
+      Constant.Mk(info, sharing, refs, univs) =>
         let up_to_sharing = put_sharing(sharing, put_refs(refs, put_univs(univs, rest)));
         match info {
-          ConstantInfo.Muts(&mutuals) =>
+          ConstantInfo.Muts(mutuals) =>
             -- Use FLAG_MUTS (0xC) with entry count in size field
             let count = list_length_u64(mutuals);
             put_tag4(0xC, count, put_mut_const_list(mutuals, up_to_sharing)),

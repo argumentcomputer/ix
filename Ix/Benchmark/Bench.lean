@@ -5,15 +5,55 @@ public import Ix.Cronos
 public import Ix.Address
 public import Batteries
 
-public import Ix.Benchmark.Serde
-public import Ix.Benchmark.Tukey
+public import Ix.Benchmark.Report
 
 public section
 
 open Batteries (RBMap)
 
 /-!
-# Benchmarking library modeled after Criterion in Haskell and Rust
+# Benchmarking library modeled after Criterion in Rust and Haskell
+
+## Quick start
+
+Simple benchmark of a pure function:
+
+```
+import Ix.Benchmark.Bench
+open BgroupM
+
+def main : IO Unit := do
+  let _ ← bgroup "sorting" {} do
+    bench "List.mergeSort 1000" List.mergeSort (List.range 1000)
+    bench "List.mergeSort 10000" List.mergeSort (List.range 10000)
+```
+
+With throughput, iterating over input sizes:
+
+```
+import Ix.Benchmark.Bench
+open BgroupM
+
+def sizes := #[1000, 10000, 100000]
+
+def main : IO Unit := do
+  let _ ← bgroup "sorting" { avgThroughput := true, report := true } do
+    for n in sizes do
+      throughput (.Elements n.toUInt64 "items")
+      bench s!"mergeSort n={n}" List.mergeSort (List.range n)
+```
+
+## Verbosity
+
+Three levels controlled by `Config.verbosity` or the `BENCH_VERBOSITY` env var
+(env var overrides `Config` default). See `getConfigEnv` and the `Verbosity`
+enum doc comments for details.
+
+- `quiet`   — only per-bench summary lines (time / thrpt / change / perf note)
+- `normal`  — default; adds warmup + running lines, plus the outlier-variance warning when moderate or severe
+- `verbose` — adds R² alongside the time line, always prints outlier-variance + Tukey breakdown
+
+Example: `BENCH_VERBOSITY=v lake exe bench-shardmap`
 
 ## Limitations
 - Measures time in nanoseconds using `IO.monoNanosNow`, which is less precise than the picoseconds used in Criterion.rs
@@ -33,81 +73,83 @@ structure BenchGroup where
   name : String
   config : Config
 
-inductive BenchFn ( α β : Type) where
-| pure (fn : α → β)
-| io (fn : α → IO β)
+/--
+A registered benchmark ready to run. Its function and argument are held inside
+the `run` closure, so one `bgroup` can collect benches with different input
+and output types in a single `Array`:
 
-structure Benchmarkable (α β : Type) where
+```
+bench "sort ints"   (List.mergeSort (α := Int))    [3, 1, 2]
+bench "length str"  String.length                  "hello"
+```
+-/
+structure Benchmarkable where
   name : String
-  func : BenchFn α β
-  arg : α
+  /-- Runs one iteration. Pure functions are wrapped in `blackBoxIO` so the
+      compiler can't elide the call. -/
+  run : IO Unit
+  /-- If `true`, this bench runs in one-shot mode (a single un-sampled
+      iteration) even when the group is otherwise sampled. Set to `true` on
+      individual slow stages like proof generation. -/
+  oneShot : Bool := false
 
-/--
-Creates a `Benchmarkable` instance. Use with pure functions, which will later be called with `blackBoxIO` to prevent compiler optimizations.
--/
-def bench (name : String) (fn : α → β) (arg : α) : Benchmarkable α β := { name, func := BenchFn.pure fn, arg }
-
-/--
-Creates a `Benchmarkable` instance. Use with functions that return IO, as they don't need to be black boxed.
--/
-def benchIO (name : String) (fn : α → IO β) (arg : α) : Benchmarkable α β :=  { name, func := BenchFn.io fn, arg }
-
-/-- If the function is pure, we need to wrap it in `blackBoxIO` so that Lean doesn't optimize away the result -/
-def Benchmarkable.getFn ( bench: Benchmarkable α β) : α → IO β :=
-  match bench.func with
-  | .pure f => blackBoxIO f
-  | .io f => f
-
--- TODO: According to Criterion.rs docs the warmup iterations should increase linearly until the warmup time is reached, rather than one iteration per time check
-def BenchGroup.warmup (bg : BenchGroup) (bench : Benchmarkable α β) : IO Float := do
-  IO.println s!"Warming up for {bg.config.warmupTime.floatPretty 2}s"
-  let mut count := 0
+/-- Runs the benchmark repeatedly for `warmupTime` seconds and returns the
+    mean per-iteration time in nanoseconds. Iteration counts increase linearly
+    (1, 2, 3, 4, …) between clock checks to minimize the overhead of
+    `IO.monoNanosNow` syscalls. -/
+def BenchGroup.warmup (bg : BenchGroup) (bench : Benchmarkable) (style : CliStyle) (benchId : String) : IO Float := do
+  style.printEphemeral s!"Benchmarking {benchId}: Warming up for {bg.config.warmupTime.floatPretty 2}s"
   let warmupNanos := Cronos.secToNano bg.config.warmupTime
-  let mut elapsed := 0
-  let func := bench.getFn
   let startTime ← IO.monoNanosNow
+  let mut totalIters : Nat := 0
+  let mut elapsed : Nat := 0
+  let mut batchSize : Nat := 1
   while elapsed < warmupNanos do
-    let _res ← func bench.arg
+    for _ in List.range batchSize do
+      bench.run
+    totalIters := totalIters + batchSize
     let now ← IO.monoNanosNow
-    count := count + 1
     elapsed := now - startTime
-  let mean := Float.ofNat elapsed / Float.ofNat count
-  --IO.println s!"{bench.name} warmup avg: {mean}ns"
+    batchSize := batchSize + 1
+  let mean := Float.ofNat elapsed / Float.ofNat (totalIters.max 1)
   return mean
 
-def printRunning (config : Config) (expectedTime : Float) (numIters : Nat) (warningFactor : Nat) : IO Unit := do
-  if warningFactor == 1 then
-    IO.eprintln s!"Warning: Unable to complete {config.numSamples} samples in {config.sampleTime.floatPretty 2}s. You may wish to increase target time to {expectedTime.floatPretty 2}s"
-  IO.println s!"Running {config.numSamples} samples in {expectedTime.floatPretty 2}s ({numIters.natPretty} iterations)\n"
+-- Formats a sample-iters array as a compact preview: first 3 entries,
+-- then `...`, then the last entry (e.g. `[94, 188, 282, ..., 9400]`).
+def formatItersPreview (iters : Array Nat) : String :=
+  if iters.size ≤ 4 then
+    s!"[{", ".intercalate (iters.toList.map toString)}]"
+  else
+    let head := (iters.extract 0 3).toList.map toString
+    s!"[{", ".intercalate head}, ..., {iters.back!}]"
 
 -- Core sampling loop that runs the benchmark function and returns the array of measured timings
-def runSample (sampleIters : Array Nat) (bench : Benchmarkable α β) : IO (Array Nat) := do
-  let func := bench.getFn
+def runSample (sampleIters : Array Nat) (bench : Benchmarkable) : IO (Array Nat) := do
   let mut timings : Array Nat := #[]
   for iters in sampleIters do
     let start ← IO.monoNanosNow
     for _i in Array.range iters do
-      let _res ← func bench.arg
+      bench.run
     let finish ← IO.monoNanosNow
     timings := timings.push (finish - start)
   return timings
 
--- TODO: Recommend sample count if expectedTime >>> bg.config.sampleTime (i.e. itersPerSample == 1)
 /--
 Runs the sample as a sequence of constant iterations per data point, where the iteration count attempts to fit into the configurable `sampleTime` but cannot be less than 1.
 
 Returns the iteration counts and elapsed time per data point.
 -/
-def BenchGroup.sampleFlat (bg : BenchGroup) (bench : Benchmarkable α β)
-(warmupMean : Float) : IO (Array Nat × Array Nat) := do
+def BenchGroup.sampleFlat (bg : BenchGroup) (bench : Benchmarkable)
+(warmupMean : Float) (style : CliStyle) (benchId : String) : IO (Array Nat × Array Nat) := do
   let targetTime := bg.config.sampleTime.toNanos
   let timePerSample := targetTime / (Float.ofNat bg.config.numSamples)
   let itersPerSample := (timePerSample / warmupMean).ceil.toUInt64.toNat.max 1
   let totalIters := itersPerSample * bg.config.numSamples
   let expectedTime := warmupMean * Float.ofNat itersPerSample * bg.config.numSamples.toSeconds
-  printRunning bg.config expectedTime totalIters itersPerSample
-  --IO.println s!"Flat sample. Iters per sample: {itersPerSample}"
+  printRunning bg.config style benchId expectedTime totalIters itersPerSample
   let sampleIters := Array.replicate bg.config.numSamples itersPerSample
+  if bg.config.verbosity == .verbose then
+    IO.println s!"Iterations per sample: {formatItersPreview sampleIters}"
   let timings ← runSample sampleIters bench
   return (sampleIters, timings)
 
@@ -118,7 +160,7 @@ The sum of this series should be roughly equivalent to the total `sampleTime`.
 
 Returns the iteration counts and elapsed time per sample.
 -/
-def BenchGroup.sampleLinear (bg : BenchGroup) (bench : Benchmarkable α β) (warmupMean : Float) : IO (Array Nat × Array Nat) := do
+def BenchGroup.sampleLinear (bg : BenchGroup) (bench : Benchmarkable) (warmupMean : Float) (style : CliStyle) (benchId : String) : IO (Array Nat × Array Nat) := do
   let totalRuns := bg.config.numSamples * (bg.config.numSamples + 1) / 2
   let targetTime := bg.config.sampleTime.toNanos
   -- `d` has a minimum value of 1 if the `warmupMean` is sufficiently large
@@ -126,32 +168,52 @@ def BenchGroup.sampleLinear (bg : BenchGroup) (bench : Benchmarkable α β) (war
   let d := (targetTime / warmupMean / (Float.ofNat totalRuns)).ceil.toUInt64.toNat.max 1
   let expectedTime := (Float.ofNat totalRuns) * (Float.ofNat d) * warmupMean.toSeconds
   let sampleIters := (Array.range bg.config.numSamples).map (fun x => (x + 1) * d)
-  printRunning bg.config expectedTime sampleIters.sum d
-  --IO.println s!"Linear sample. Iters increase by a factor of {d} per sample"
+  printRunning bg.config style benchId expectedTime sampleIters.sum d
+  if bg.config.verbosity == .verbose then
+    IO.println s!"Iterations per sample: {formatItersPreview sampleIters}"
   let timings ← runSample sampleIters bench
   return (sampleIters, timings)
 
-def BenchGroup.sample (bg : BenchGroup) (bench : Benchmarkable α β) (warmupMean : Float) : IO (Array Nat × Array Nat) := do
-  match bg.config.samplingMode with
-  | .flat => bg.sampleFlat bench warmupMean
-  | .linear => bg.sampleLinear bench warmupMean
+/-- Picks a concrete sampling mode for `.auto`: choose linear iff the expected total
+    linear-mode time is at most 2× the target sample time, else fall back to
+    flat. For `.flat` / `.linear` this returns the user's explicit choice. -/
+def chooseSamplingMode (config : Config) (warmupMean : Float) : SamplingMode :=
+  match config.samplingMode with
+  | .flat => .flat
+  | .linear => .linear
+  | .auto =>
+    let targetTime := config.sampleTime.toNanos
+    let totalRuns := config.numSamples * (config.numSamples + 1) / 2
+    let d := (targetTime / warmupMean / (Float.ofNat totalRuns)).ceil.toUInt64.toNat.max 1
+    let expectedNs := (Float.ofNat totalRuns) * (Float.ofNat d) * warmupMean
+    if expectedNs > 2 * targetTime then .flat else .linear
 
--- TODO
-inductive Throughput where
-| Bytes (n : UInt64)
-| BytesDecimal (n : UInt64)
-| Elements (n : UInt64)
-| Bits (n : UInt64)
-  deriving Repr
+/--
+On-disk payload for `sample.{fmt}`. Carries the raw `(iters, time)` data plus
+a snapshot of the `Config` used to collect this run, so that a later run can
+decide whether it's statistically comparable.
 
-structure MeasurementData where
+`config.samplingMode` is always the resolved mode (`.flat` or `.linear`);
+`.auto` is resolved in `bgroup` before the `SampleRun` is constructed, and the
+`Serialize SamplingMode` instance panics if `.auto` ever reaches disk.
+-/
+structure SampleRun where
   data : Data
-  avgTimes : Distribution
-  absoluteEstimates : Estimates
-  distributions : Distributions
-  comparison : Option ComparisonData
-  throughput : Option Throughput
-  deriving Repr
+  config : Config
+  deriving Repr, Lean.ToJson, Lean.FromJson
+
+def putSampleRun (r : SampleRun) : Ixon.PutM Unit := do
+  Ixon.Serialize.put r.data
+  Ixon.Serialize.put r.config
+
+def getSampleRun : Ixon.GetM SampleRun := do
+  let data ← Ixon.Serialize.get
+  let config ← Ixon.Serialize.get
+  return { data, config }
+
+instance : Ixon.Serialize SampleRun where
+  put := putSampleRun
+  get := getSampleRun
 
 /-- Compares bench results against prior run, using T-test to determine statistical significance -/
 def BenchGroup.compare (bg : BenchGroup) (baseSample : Data) (baseEstimates : Estimates) (avgTimes : Distribution) (gen : StdGen) : ComparisonData :=
@@ -174,282 +236,371 @@ def BenchGroup.compare (bg : BenchGroup) (baseSample : Data) (baseEstimates : Es
     baseEstimates
   }
 
--- TODO: Don't compare if different sampling modes were used
-/-- Retrieves prior bench result from disk and runs the comparison -/
-def BenchGroup.getComparison (bg : BenchGroup) (benchName : String) (avgTimes : Distribution) (config: Config) : IO (Option ComparisonData) := do
-  let benchPath := System.mkFilePath [".", ".lake", "benches", bg.name, benchName]
+/-- Retrieves prior bench result from disk and runs the comparison. Refuses
+    to compare if the base was collected with a different resolved sampling
+    mode (flat vs linear), since mixing the two through the same bootstrap
+    gives misleading confidence intervals. -/
+def BenchGroup.getComparison (bg : BenchGroup) (benchName : String)
+    (avgTimes : Distribution) (config : Config) (resolvedMode : SamplingMode)
+    (style : CliStyle) : IO (Option ComparisonData) := do
+  let benchPath := config.outputDir / bg.name / benchName
   let fileExt := toString config.serde
   -- Base data is at `new` since we haven't written the latest result to disk yet, which moves the prior data to `base`
   let basePath := benchPath / "new"
-  if (← System.FilePath.pathExists (basePath / s!"estimates.{fileExt}")) then do
-    let baseSample : Data ← loadFile config.serde (basePath / s!"sample.{fileExt}")
-    let baseEstimates : Estimates ← loadFile config.serde (basePath / s!"estimates.{fileExt}")
-    let gen ← IO.stdGenRef.get
-    return some $ bg.compare baseSample baseEstimates avgTimes gen
-  else
+  if !(← System.FilePath.pathExists (basePath / s!"estimates.{fileExt}")) then
     return none
+  let baseRun? : Option SampleRun ← try
+    let r : SampleRun ← loadFile config.serde (basePath / s!"sample.{fileExt}")
+    pure (some r)
+  catch _ =>
+    style.overwrite
+    IO.eprintln s!"Skipping comparison for {benchName}: failed to parse base sample.{fileExt}"
+    pure none
+  let some baseRun := baseRun? | return none
+  if baseRun.config.samplingMode != resolvedMode then
+    style.overwrite
+    IO.eprintln s!"Skipping comparison for {benchName}: base ran in {repr baseRun.config.samplingMode} mode, current run is {repr resolvedMode}"
+    return none
+  let baseEstimates : Estimates ← loadFile config.serde (basePath / s!"estimates.{fileExt}")
+  let gen ← IO.stdGenRef.get
+  return some $ bg.compare baseRun.data baseEstimates avgTimes gen
 
-inductive ComparisonResult where
-| Improved
-| Regressed
-| NonSignificant
-
-def compareToThreshold (estimate : Estimate) (noiseThreshold : Float) : ComparisonResult :=
-  let ci := estimate.confidenceInterval
-  let (lb, ub) := (ci.lowerBound, ci.upperBound)
-  let noiseNeg := noiseThreshold.neg
-
-  if lb < noiseNeg && ub < noiseNeg
-  then
-    ComparisonResult.Improved
-  else if lb > noiseThreshold && ub > noiseThreshold
-  then
-    ComparisonResult.Regressed
-  else
-    ComparisonResult.NonSignificant
-
-
--- TODO: Print ~24 whitespace characters before time, change, regression
-def BenchGroup.printResults (bg : BenchGroup) (benchName : String) (m : MeasurementData) : IO Unit := do
-  let estimates := m.absoluteEstimates
-  let typicalEstimate := estimates.slope.getD estimates.mean
-  IO.println s!"{bg.name}/{benchName}"
-  let lb := typicalEstimate.confidenceInterval.lowerBound.formatNanos
-  let pointEst := typicalEstimate.pointEstimate.formatNanos
-  let ub := typicalEstimate.confidenceInterval.upperBound.formatNanos
-  IO.println s!"time:   [{lb} {pointEst} {ub}]"
-  if let some comp := m.comparison
-  then
-    let diffMean := comp.pValue > comp.significanceThreshold
-    let meanEst := comp.relativeEstimates.mean
-    let pointEst := (meanEst.pointEstimate * 100).floatPretty 4
-    let lb := (meanEst.confidenceInterval.lowerBound * 100).floatPretty 4
-    let ub := (meanEst.confidenceInterval.upperBound * 100).floatPretty 4
-    let symbol := if diffMean then ">" else "<"
-    IO.println s!"change: [{lb}% {pointEst}% {ub}%] (p = {comp.pValue.floatPretty 2} {symbol} {comp.significanceThreshold.floatPretty 2})"
-    let explanation := if diffMean
-    then
-      "No change in performance detected"
-    else
-      match compareToThreshold meanEst comp.noiseThreshold with
-      | ComparisonResult.Improved => "Performance has improved"
-      | ComparisonResult.Regressed => "Performance has regressed"
-      | ComparisonResult.NonSignificant => "Change within noise threshold"
-    IO.println explanation
-  IO.println ""
-  m.avgTimes.tukey
-
--- TODO: Write sampling mode and config in `sample.json` for comparison
 def saveComparison (groupName : String) (benchName : String) (comparison : ComparisonData) (config : Config) : IO Unit := do
-  let changePath := System.mkFilePath [".", ".lake", "benches", groupName, benchName, "change"]
+  let changePath := config.outputDir / groupName / benchName / "change"
   storeFile config.serde comparison.relativeEstimates (changePath / s!"estimates.{toString config.serde}")
 
-def mkDirs (groupName : String) (benchName : String) : IO (System.FilePath × System.FilePath) := do
-  let benchPath := System.mkFilePath [".", ".lake", "benches", groupName, benchName]
+def mkDirs (outputDir : System.FilePath) (groupName : String) (benchName : String) : IO (System.FilePath × System.FilePath) := do
+  let benchPath := outputDir / groupName / benchName
   let (basePath, changePath, newPath) := (benchPath / "base", benchPath / "change", benchPath / "new")
-  let (baseDir, changeDir, newDir) := (basePath.toString, changePath.toString, newPath.toString)
-  let _out ← IO.Process.run {cmd := "mkdir", args := #["-p", baseDir, changeDir, newDir] }
+  IO.FS.createDirAll basePath
+  IO.FS.createDirAll changePath
+  IO.FS.createDirAll newPath
   return (basePath, newPath)
 
-def moveBaseFile (file : System.FilePath) (baseDir : String) : IO Unit := do
-  if (← System.FilePath.pathExists file) then do
-    -- Move prior bench from `new` to `base`
-    let _ ← IO.Process.run { cmd := "mv", args := #[file.toString, baseDir] }
+def moveBaseFile (file : System.FilePath) (baseDir : System.FilePath) : IO Unit := do
+  if (← System.FilePath.pathExists file) then
+    -- Move prior bench from `new` to `base`, preserving the filename.
+    if let some fname := file.fileName then
+      IO.FS.rename file (baseDir / fname)
 
--- Results are always saved to `.lake/benches/<benchName>/new`. If files of the same serde format already exist from a prior run, move them to `base`
+-- Results are always saved to `<outputDir>/<groupName>/<benchName>/new`. If files of the same serde format already exist from a prior run, move them to `base`.
+-- `config.samplingMode` must be the resolved mode (`.flat` / `.linear`) — callers must never pass `.auto` here.
 def saveMeasurement (groupName : String) (benchName : String) (mData : MeasurementData) (config : Config) : IO Unit := do
-  let (basePath, newPath) ← mkDirs groupName benchName
-  let baseDir := basePath.toString
+  let (basePath, newPath) ← mkDirs config.outputDir groupName benchName
   let fileExt := toString config.serde
-  if let some compData := mData.comparison then saveComparison groupName benchName compData config
-  else
-    println! "No compdata"
+  if let some compData := mData.comparison then
+    saveComparison groupName benchName compData config
   let (newEstimatesFile, newSampleFile) := (newPath / s!"estimates.{fileExt}", newPath / s!"sample.{fileExt}")
-  moveBaseFile newSampleFile baseDir
-  moveBaseFile newEstimatesFile baseDir
-  storeFile config.serde mData.data newSampleFile
+  let newThroughputFile := newPath / s!"throughput.{fileExt}"
+  moveBaseFile newSampleFile basePath
+  moveBaseFile newEstimatesFile basePath
+  moveBaseFile newThroughputFile basePath
+  let sampleRun : SampleRun := { data := mData.data, config }
+  storeFile config.serde sampleRun newSampleFile
   storeFile config.serde mData.absoluteEstimates newEstimatesFile
+  if let some t := mData.throughput then
+    storeFile config.serde t newThroughputFile
 
--- TODO: Use a typeclass instead?
-inductive BenchResult where
-| oneShot : OneShot → BenchResult
-| sample : Estimates → BenchResult
-  deriving Repr
-
-def BenchResult.getTime (bench: BenchResult) : Float :=
-  match bench with
-  | oneShot o => o.benchTime.toFloat
-  | sample s => s.mean.pointEstimate
-
--- TODO: Include input parameters if specified for post-processing
--- E.g. Blake3 bench wants to have `dataSize` and `numHashes`
--- Currently has to parse this from the `function` string
-structure BenchReport where
-  function: String
-  newBench : BenchResult
-  baseBench : Option BenchResult
-  percentChange : Option Float
-
-def percentChangeToString (pc : Float) : String :=
-  let rounded := (100 * pc).floatPretty 2
-  if pc < 0 then s!"{rounded.drop 1}% faster"
-  else if pc > 0 then s!"{rounded}% slower"
-  else "No change"
-
-structure ColumnWidths where
-  function : Nat
-  newBench : Nat
-  baseBench : Nat
-  percentChange : Nat
-
-def getColumnWidths' (maxWidths : ColumnWidths) (row: BenchReport) : ColumnWidths :=
-  let fnLen := row.function.length
-  let function := if fnLen > maxWidths.function then fnLen else maxWidths.function
-  let newBenchLen := row.newBench.getTime.formatNanos.length
-  let newBench := if newBenchLen > maxWidths.newBench then newBenchLen else maxWidths.newBench
-  let baseBench := if let some baseBench := row.baseBench then
-    let baseBenchLen := baseBench.getTime.formatNanos.length
-    if baseBenchLen > maxWidths.baseBench then baseBenchLen
-    else maxWidths.baseBench
-  else maxWidths.baseBench
-  let percentChange := if let some percentChange := row.percentChange then
-    let percentChangeStr := percentChangeToString percentChange
-    let percentLen := percentChangeStr.length
-    if percentLen > maxWidths.percentChange then percentLen
-    else maxWidths.percentChange
-  else maxWidths.percentChange
-  { function, newBench, baseBench, percentChange }
-
--- Gets the max lengths of each data type for pretty-printing columns
-def getColumnWidths (report : Array BenchReport) : ColumnWidths :=
-  let maxWidths : ColumnWidths := {
-    function := "Function".length
-    newBench := "New Benchmark".length
-    baseBench := "Base Benchmark".length
-    percentChange := "% change".length
-  }
-  report.foldl getColumnWidths' maxWidths
-
--- Centers a string with padded whitespace given the total width
-def padWhitespace (input : String) (width : Nat) : String :=
-  let padWidth := width - input.length
-  let leftPad := padWidth / 2
-  let rightPad := padWidth - leftPad
-  String.ofList (List.replicate leftPad ' ') ++ input ++ (String.ofList (List.replicate rightPad ' '))
-
-def padDashes (width : Nat) : String :=
-  String.ofList (List.replicate width '-')
-
-def mkReportPretty' (columnWidths : ColumnWidths) (reportPretty : String) (row : BenchReport) : String :=
-  let functionStr := padWhitespace row.function columnWidths.function
-  let newBenchStr := row.newBench.getTime.formatNanos
-  let newBenchStr := padWhitespace newBenchStr columnWidths.newBench
-  let baseBenchStr := if let some baseBench := row.baseBench then
-    baseBench.getTime.formatNanos
-  else "None"
-  let baseBenchStr := padWhitespace baseBenchStr columnWidths.baseBench
-  let percentChangeStr := if let some percentChange := row.percentChange then
-    percentChangeToString percentChange
-  else "N/A"
-  let percentChangeStr := padWhitespace percentChangeStr columnWidths.percentChange
-  let rowPretty :=
-    s!"| {functionStr} | {newBenchStr} | {baseBenchStr} | {percentChangeStr} |\n"
-  reportPretty ++ rowPretty
-
--- TODO: Bold the faster result and faster/slower % change
-/--
-Generates a Markdown table with comparative benchmark timings based on the results on disk.
-Each table row contains the benchmakr function name, the new timing, the base timing, and the percent change between the two.
--/
-def mkReportPretty (groupName : String) (report : Array BenchReport) : String :=
-  let columnWidths := getColumnWidths report
-  let title := s!"## {groupName}\n\n"
-  let (fn, new, base, percent) := (
-    padWhitespace "Function" columnWidths.function,
-    padWhitespace "New Benchmark" columnWidths.newBench,
-    padWhitespace "Base Benchmark" columnWidths.baseBench,
-    padWhitespace "% change" columnWidths.percentChange
-  )
-  let header := s!"| {fn} | {new} | {base} | {percent} |\n"
-  let (d1, d2, d3, d4) := (
-    padDashes columnWidths.function,
-    padDashes columnWidths.newBench,
-    padDashes columnWidths.baseBench,
-    padDashes columnWidths.percentChange
-  )
-  let dashes := s!"|-{d1}-|-{d2}-|-{d3}-|-{d4}-|\n"
-  let reportPretty := title ++ header ++ dashes
-  report.foldl (mkReportPretty' columnWidths) reportPretty
-
-def oneShotBench {α β : Type} (groupName : String) (bench: Benchmarkable α β) (config : Config) : IO BenchReport := do
+def oneShotBench (groupName : String) (b : Benchmarkable)
+    (tput : Option Throughput) (config : Config) (style : CliStyle) : IO BenchReport := do
+  let benchId := s!"{groupName}/{b.name}"
+  style.printEphemeral s!"Benchmarking {benchId}"
+  if config.verbosity == .verbose then
+    IO.println "Sampling mode: one-shot"
   let start ← IO.monoNanosNow
-  let _res ← bench.getFn bench.arg
+  b.run
   let finish ← IO.monoNanosNow
   let benchTime := finish - start
-  IO.println s!"time:   {benchTime.toFloat.formatNanos}"
-  let (basePath, newPath) ← mkDirs groupName bench.name
-  let fileExt := toString config.serde
-  let newFile := newPath / s!"one-shot.{fileExt}"
+  style.overwrite
+  -- Use the same 24-char column layout as sampled mode
+  printBenchLine benchId s!"time:   {Ansi.bold (benchTime.toFloat.formatNanos)}"
+  if let some t := tput then
+    IO.println s!"{indent24}thrpt:  {Ansi.bold (t.formatRate benchTime.toFloat)}"
+  let (basePath, newPath) ← mkDirs config.outputDir groupName b.name
+  let oneShotFile := s!"one-shot.{toString config.serde}"
+  let newFile := newPath / oneShotFile
   let (baseBench, percentChange) ← if (← System.FilePath.pathExists newFile) then do
     let baseBench : OneShot ← loadFile config.serde newFile
     let baseTime := baseBench.benchTime.toFloat
     let percentChange := (benchTime.toFloat - baseTime) / baseTime
-    IO.println s!"change: {percentChangeToString percentChange}"
-    let _ ← IO.Process.run { cmd := "mv", args := #[newFile.toString, basePath.toString] }
+    IO.println s!"{indent24}change: {Ansi.bold (percentChangeToString percentChange)}"
+    IO.FS.rename newFile (basePath / oneShotFile)
     pure (some baseBench, some percentChange)
   else
-    let _ ← IO.Process.run { cmd := "mkdir", args := #["-p", newPath.toString] }
     pure (.none, .none)
-  let newBench : OneShot := { benchTime }
-  IO.println ""
+  -- One-shot mode embeds throughput inside the OneShot record so there is no
+  -- separate throughput file on disk — switching between sample and one-shot
+  -- modes never overlaps on the same filename.
+  let newBench : OneShot := { benchTime, throughput := tput }
   storeFile config.serde newBench newFile
-  let benchReport : BenchReport := { function := bench.name, newBench := (.oneShot newBench), baseBench := baseBench.map .oneShot, percentChange }
+  let benchReport : BenchReport := {
+    function := b.name,
+    newBench := (.oneShot newBench),
+    baseBench := baseBench.map .oneShot,
+    percentChange,
+    throughput := tput
+  }
   return benchReport
 
--- TODO: Make sure compiler isn't caching partial evaluation result for future runs of the same function (measure first vs subsequent runs)
-/-- Runs each benchmark in a `BenchGroup` and analyzes the results -/
-def bgroup {α β : Type} (name: String) (benches : List (Benchmarkable α β)) (config : Config := {}) : IO $ Array BenchReport := do
+/--
+Runs a single benchmark end-to-end: warms up (sampled mode only), takes
+measurements, prints the result line, writes timings to disk, and returns the
+`BenchReport`. Picks one-shot mode if either `config.oneShot` or
+`b.oneShot` is set; otherwise samples according to `config.samplingMode`.
+-/
+def runSingleBench (groupName : String) (b : Benchmarkable)
+    (tput : Option Throughput) (config : Config) (style : CliStyle) : IO BenchReport := do
+  let benchId := s!"{groupName}/{b.name}"
+  let bg : BenchGroup := { name := groupName, config }
+  -- Per-bench override: bench is one-shot if either the group config or the
+  -- bench itself is marked one-shot, so a mostly-sampled group can still
+  -- include e.g. a slow setup stage that takes seconds per iteration.
+  let isOneShot := config.oneShot || b.oneShot
+  if isOneShot then
+    oneShotBench groupName b tput config style
+  else
+    -- Ephemeral: "Benchmarking {id}" → overwrite → "Warming up" → overwrite → "Collecting" → overwrite → permanent results
+    style.printEphemeral s!"Benchmarking {benchId}"
+    let warmupMean ← bg.warmup b style benchId
+    -- Resolve `.auto` to a concrete mode now so both sampling and the
+    -- downstream regression-vs-mean choice see the same decision.
+    let resolvedMode := chooseSamplingMode bg.config warmupMean
+    if bg.config.verbosity == .verbose then
+      let modeName := match resolvedMode with
+        | .flat => "flat"
+        | .linear => "linear"
+        | .auto => "auto"
+      let picked := if bg.config.samplingMode == .auto then " (picked by auto)" else ""
+      IO.println s!"Sampling mode: {modeName}{picked}"
+    -- From here on use `resolvedConfig` (never `.auto`) so the `SampleRun`
+    -- persisted to disk and the regression branch agree on the actual mode.
+    let resolvedConfig := { bg.config with samplingMode := resolvedMode }
+    let (iters, times) ← match resolvedMode with
+      | .flat => bg.sampleFlat b warmupMean style benchId
+      | .linear => bg.sampleLinear b warmupMean style benchId
+      | .auto => bg.sampleFlat b warmupMean style benchId -- unreachable
+    -- Show "Analyzing" ephemeral while bootstrap runs (matches criterion.rs)
+    style.printEphemeral s!"Benchmarking {benchId}: Analyzing"
+    let data := iters.zip times
+    let avgTimes : Distribution := { d := data.map (fun (x,y) => Float.ofNat y / Float.ofNat x) }
+    let gen ← IO.stdGenRef.get
+    let mut (distributions, estimates) := avgTimes.estimates resolvedConfig gen
+    let mut rSquared : Option Float := none
+    if resolvedMode == .linear
+    then
+      let data' : Data := { d := data }
+      let (distribution, slope, r2) := data'.regression resolvedConfig gen
+      estimates := { estimates with slope := .some slope }
+      distributions := { distributions with slope := .some distribution }
+      rSquared := some r2
+    -- Outlier analysis: classify per-sample average times and compute the
+    -- variance-inflation metric (consumed by `printResults` under the verbosity gate).
+    let outliers := avgTimes.classifyOutliers
+    let ov := outlierVariance estimates.mean estimates.stdDev (Float.ofNat resolvedConfig.numSamples)
+    let comparisonData : Option ComparisonData ← bg.getComparison b.name avgTimes resolvedConfig resolvedMode style
+    let measurement : MeasurementData :=  {
+      data := { d := data },
+      avgTimes,
+      absoluteEstimates := estimates,
+      distributions,
+      comparison := comparisonData
+      throughput := tput
+      rSquared,
+      outlierVariance := some ov,
+      outliers := some outliers
+    }
+    style.overwrite
+    printResults groupName resolvedConfig b.name measurement
+    saveMeasurement groupName b.name measurement resolvedConfig
+    return {
+      function := b.name,
+      newBench := (.sample estimates),
+      baseBench := (comparisonData.map (.sample ·.baseEstimates)),
+      percentChange := comparisonData.map (·.relativeEstimates.mean.pointEstimate),
+      throughput := tput
+    }
+
+/-!
+## Monadic bgroup builder
+
+Inside a `bgroup` do-block, benches run in the order they appear. `benchStep`
+returns the result of its function so you can feed it to the next stage with
+`let x ← benchStep …`; `bench` is the discard-the-result variant. `throughput`
+and `skipE2E` / `countInE2E` are stateful toggles — they affect every bench
+that comes after the call, so you can set them once and register several
+benches, or flip them between registrations.
+-/
+
+/-- Internal state threaded through a `bgroup` do-block. -/
+structure GroupState where
+  /-- Group name, used when forming per-bench `benchId`s. -/
+  groupName : String
+  config : Config
+  /-- Reports collected as each bench runs, in declaration order. -/
+  reports : Array BenchReport := #[]
+  /-- Sum of per-bench times (ns) for benches that were counted toward the
+      end-to-end total. Each bench reads `config.countInE2E` when it runs
+      (flip with `skipE2E` / `countInE2E`) and adds its time here if set.
+      Reported as the e2e total when `config.e2e` is on. -/
+  e2eSumNs : Float := 0.0
+
+/-- Monad used inside a `bgroup` do-block. -/
+abbrev BgroupM := StateT GroupState IO
+
+namespace BgroupM
+
+/-- Attach throughput info to subsequent benches in this group. Each bench
+    records whatever throughput is current when it runs, so setting this
+    in the middle of a group only affects benches that come after. -/
+def throughput (t : Throughput) : BgroupM Unit :=
+  modify fun s => { s with config := { s.config with throughput := some t } }
+
+/-- Stops attaching throughput info to subsequent benches. -/
+def clearThroughput : BgroupM Unit :=
+  modify fun s => { s with config := { s.config with throughput := none } }
+
+/-- Stops subsequent benches from contributing to the end-to-end total (when
+    `config.e2e` is on). Pair with `countInE2E` to flip back on. Typical use:
+    group side-benches (micro-measurements already covered by a bigger
+    pipeline stage) under `skipE2E` so they don't double-count. -/
+def skipE2E : BgroupM Unit :=
+  modify fun s => { s with config := { s.config with countInE2E := false } }
+
+/-- Resumes counting subsequent benches toward the end-to-end total. -/
+def countInE2E : BgroupM Unit :=
+  modify fun s => { s with config := { s.config with countInE2E := true } }
+
+/-- Runs `b` via `runSingleBench`, appends the resulting `BenchReport` to the
+    group state, adds the bench's time to the e2e total if `countInE2E` is
+    set, and returns the `β` the bench stashed in `resultRef`. -/
+def runCapturedBench (b : Benchmarkable) (resultRef : IO.Ref (Option β)) : BgroupM β := do
+  let st ← get
+  let style : CliStyle := { overwriteEnabled := st.config.verbosity != .verbose }
+  let report ← runSingleBench st.groupName b st.config.throughput st.config style
+  IO.println ""
+  let delta := if st.config.countInE2E then report.newBench.getTime else 0.0
+  modify fun s => { s with
+    reports  := s.reports.push report
+    e2eSumNs := s.e2eSumNs + delta
+  }
+  match ← resultRef.get with
+  | some r => return r
+  | none => throw (IO.userError s!"benchStep '{b.name}' produced no result")
+
+/--
+Benchmarks `fn arg` and returns the last iteration's result so it can feed the
+next pipeline stage. Equivalent to a `let x := fn arg` that also times the
+call:
+
+```
+bgroup "pipeline" {} do
+  let parsed  ← benchStep "parse"    parseFile   input
+  let checked ← benchStep "check"    typecheck   parsed
+  let _       ← benchStep "emit"     emit        checked
+```
+
+Pass `oneShot := true` for stages whose single iteration already takes long
+enough that sampling would be wasteful.
+-/
+def benchStep (name : String) (fn : α → β) (arg : α) (oneShot : Bool := false) : BgroupM β := do
+  let resultRef ← IO.mkRef (none : Option β)
+  let run : IO Unit := do resultRef.set (some (← blackBoxIO fn arg))
+  runCapturedBench { name, run, oneShot } resultRef
+
+/-- Like `benchStep`, but for `fn : α → IO β`. The final iteration's `β` is
+    captured and returned; every iteration's side effects have already run
+    during measurement. -/
+def benchStepIO (name : String) (fn : α → IO β) (arg : α) (oneShot : Bool := false) : BgroupM β := do
+  let resultRef ← IO.mkRef (none : Option β)
+  let run : IO Unit := do resultRef.set (some (← fn arg))
+  runCapturedBench { name, run, oneShot } resultRef
+
+/--
+Like `benchStep`, but for `fn : α → Except ε β`. Returns `β` on success and
+throws an `IO.userError` carrying `{name}: {e}` on `.error`, so a pipeline
+can chain through fallible stages without an extra `match`:
+
+```
+let decls ← benchStepE "simplify" Toplevel.checkAndSimplify toplevel
+-- decls : TypedDecls (unwrapped from Except CheckError TypedDecls)
+```
+-/
+def benchStepE [ToString ε] (name : String) (fn : α → Except ε β) (arg : α)
+    (oneShot : Bool := false) : BgroupM β := do
+  match ← benchStep name fn arg oneShot with
+  | .ok x    => return x
+  | .error e => throw (IO.userError s!"{name}: {e}")
+
+/-- Benchmarks `fn arg` and discards the result. Use this when a stage's
+    output isn't needed downstream — surrounding `skipE2E` / `countInE2E`
+    controls whether the time counts toward the end-to-end total. -/
+def bench (name : String) (fn : α → β) (arg : α) (oneShot : Bool := false) : BgroupM Unit := do
+  let _ ← benchStep name fn arg oneShot
+  return ()
+
+/-- Like `bench`, but for `fn : α → IO β`. -/
+def benchIO (name : String) (fn : α → IO β) (arg : α) (oneShot : Bool := false) : BgroupM Unit := do
+  let _ ← benchStepIO name fn arg oneShot
+  return ()
+
+end BgroupM
+
+/-- Runs the benches in `action` under the given name and config, then — after
+    all benches have finished — prints the average throughput, the end-to-end
+    total, and the Markdown comparison table, each gated by its corresponding
+    `config` flag. Returns the collected `BenchReport`s. -/
+def bgroup (name: String) (config : Config := {})
+    (action : BgroupM Unit) : IO $ Array BenchReport := do
   let config ← getConfigEnv config
-  let bg : BenchGroup := { name, config }
-  IO.println s!"Running bench group {name}\n"
-  let mut reports : Array BenchReport := #[]
-  for b in benches do
-    let report : BenchReport ← if config.oneShot then do
-      IO.println s!"{bg.name}/{b.name}"
-      oneShotBench name b config
-    else
-      let warmupMean ← bg.warmup b
-      IO.println s!"Running {b.name}"
-      let (iters, times) ← bg.sample b warmupMean
-      let data := iters.zip times
-      let avgTimes : Distribution := { d := data.map (fun (x,y) => Float.ofNat y / Float.ofNat x) }
-      let gen ← IO.stdGenRef.get
-      let mut (distributions, estimates) := avgTimes.estimates bg.config gen
-      if bg.config.samplingMode == .linear
-      then
-        let data' : Data := { d := data }
-        let (distribution, slope) := data'.regression bg.config gen
-        estimates := { estimates with slope := .some slope }
-        distributions := { distributions with slope := .some distribution }
-      let comparisonData : Option ComparisonData ← bg.getComparison b.name avgTimes bg.config
-      let measurement :=  {
-        data := { d := data },
-        avgTimes,
-        absoluteEstimates := estimates,
-        distributions,
-        comparison := comparisonData
-        throughput := none
-      }
-      bg.printResults b.name measurement
-      IO.println ""
-      saveMeasurement name b.name measurement config
-      let benchReport : BenchReport := { function := b.name, newBench := (.sample estimates), baseBench := (comparisonData.map (.sample ·.baseEstimates)), percentChange := comparisonData.map (·.relativeEstimates.mean.pointEstimate) }
-      pure benchReport
-    reports := reports.push report
+  let (_, state) ← action.run { groupName := name, config }
+  let reports := state.reports
+  if config.avgThroughput then
+    match weightedAverageThroughput reports with
+    | some (t, primaryAvg, secondaryAvg) =>
+      IO.println s!"Average throughput: {t.formatRateValue primaryAvg}"
+      -- For ElementsAndBytes, also print the secondary bytes/s average
+      if let some bytesAvg := secondaryAvg then
+        IO.println s!"Average throughput (bytes): {Float.formatBytesRate bytesAvg}"
+    | none =>
+      IO.eprintln "Average throughput: skipped (no throughput set, or mixed Throughput variants across benches)"
+  -- End-to-end total: sum of per-stage mean/one-shot times, compared against
+  -- the prior saved total for change tracking. Not itself sampled.
+  let reports ← if config.e2e then do
+    let totalNs : Float := state.e2eSumNs
+    let reportDir := config.outputDir / name
+    let e2eFile := reportDir / s!"e2e.{toString config.serde}"
+    let priorTotal : Option Float ← if ← System.FilePath.pathExists e2eFile then do
+      let prior : E2ETotal ← loadFile config.serde e2eFile
+      pure (some prior.totalNs)
+    else pure none
+    let percentChange : Option Float := priorTotal.bind fun prior =>
+      if prior == 0 then none else some ((totalNs - prior) / prior)
+    -- Summary line: matches per-bench 24-char column layout.
+    printBenchLine s!"{name}/end-to-end" s!"time:   {Ansi.bold totalNs.formatNanos}"
+    if let some pc := percentChange then
+      IO.println s!"{indent24}change: {Ansi.bold (percentChangeToString pc)}"
+    IO.println ""
+    -- Persist for next run, then (if we're writing a report) append the total
+    -- as a synthetic row so the Markdown table includes it.
+    IO.FS.createDirAll reportDir
+    storeFile config.serde { totalNs : E2ETotal } e2eFile
+    let totalToOneShot (t : Float) : BenchResult :=
+      .oneShot { benchTime := t.round.toUInt64.toNat, throughput := none }
+    pure <| reports.push {
+      function     := "end-to-end"
+      newBench     := totalToOneShot totalNs
+      baseBench    := priorTotal.map totalToOneShot
+      percentChange
+      throughput   := none
+    }
+  else pure reports
   if config.report then
-    let table := mkReportPretty name reports
-    IO.println table
-    IO.FS.writeFile (System.mkFilePath [".", s!"benchmark-report-{name}.md"]) table
+    -- Plaintext table (`## {name}\n\n...`) to stdout; GitHub-flavored Markdown
+    -- (table wrapped in `<details>`) to disk for the PR-workflow comment.
+    IO.println (mkReportPlain name reports)
+    let reportDir := config.outputDir / name
+    IO.FS.createDirAll reportDir
+    IO.FS.writeFile (reportDir / "report.md") (mkReportMarkdown name reports)
   return reports
 
 end

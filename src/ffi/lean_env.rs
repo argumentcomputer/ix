@@ -26,6 +26,8 @@ use lean_ffi::object::{
   LeanArray, LeanBorrowed, LeanList, LeanRef, LeanShared,
 };
 
+use crate::lean::{LeanIxInductiveVal, LeanIxRecursorVal};
+
 use crate::ix::env::{
   AxiomVal, BinderInfo, ConstantInfo, ConstantVal, ConstructorVal, DataValue,
   DefinitionSafety, DefinitionVal, Env, Expr, InductiveVal, Int, Level,
@@ -443,8 +445,8 @@ pub fn decode_constant_info(
   cache: &mut Cache<'_>,
 ) -> ConstantInfo {
   let ctor = obj.as_ctor();
-  let [inner_val] = ctor.objs::<1>();
-  let inner = inner_val.as_ctor();
+  let [inner_obj] = ctor.objs::<1>();
+  let inner = inner_obj.as_ctor();
 
   match ctor.tag() {
     0 => {
@@ -525,15 +527,8 @@ pub fn decode_constant_info(
       ConstantInfo::QuotInfo(QuotVal { cnst: constant_val, kind })
     },
     5 => {
-      let [
-        constant_val,
-        num_params,
-        num_indices,
-        all,
-        ctors,
-        num_nested,
-        bools,
-      ] = inner.objs();
+      let [constant_val, num_params, num_indices, all, ctors, num_nested] =
+        inner.objs::<6>();
       let constant_val = decode_constant_val(constant_val, cache);
       let num_params = Nat::from_obj(&num_params);
       let num_indices = Nat::from_obj(&num_indices);
@@ -546,8 +541,10 @@ pub fn decode_constant_info(
         .map(|o| decode_name(o, cache.global))
         .collect();
       let num_nested = Nat::from_obj(&num_nested);
-      let [is_rec, is_unsafe, is_reflexive, ..] =
-        (bools.as_raw() as usize).to_le_bytes().map(|b| b == 1);
+      let inner_val = LeanIxInductiveVal(inner_obj);
+      let is_rec = inner_val.get_num_8(0) != 0;
+      let is_unsafe = inner_val.get_num_8(1) != 0;
+      let is_reflexive = inner_val.get_num_8(2) != 0;
       ConstantInfo::InductInfo(InductiveVal {
         cnst: constant_val,
         num_params,
@@ -587,8 +584,7 @@ pub fn decode_constant_info(
         num_motives,
         num_minors,
         rules,
-        bools,
-      ] = inner.objs();
+      ] = inner.objs::<7>();
       let constant_val = decode_constant_val(constant_val, cache);
       let all: Vec<_> = collect_list_borrowed(all.as_list())
         .into_iter()
@@ -602,8 +598,9 @@ pub fn decode_constant_info(
         .into_iter()
         .map(|o| decode_recursor_rule(o, cache))
         .collect();
-      let [k, is_unsafe, ..] =
-        (bools.as_raw() as usize).to_le_bytes().map(|b| b == 1);
+      let inner_val = LeanIxRecursorVal(inner_obj);
+      let k = inner_val.get_num_8(0) != 0;
+      let is_unsafe = inner_val.get_num_8(1) != 0;
       ConstantInfo::RecInfo(RecursorVal {
         cnst: constant_val,
         all,

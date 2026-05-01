@@ -1,6 +1,6 @@
 module
 import Ix.Aiur.Meta
-public import Ix.Aiur.Term
+public import Ix.Aiur.Stages.Source
 
 public section
 
@@ -26,7 +26,7 @@ def ingress := ⟦
       addr
     );
     let (constant, rest) = get_constant(bytes);
-    assert_eq!(rest, List.Nil);
+    assert_eq!(load(rest), ListNode.Nil);
     constant
   }
 
@@ -86,18 +86,18 @@ def ingress := ⟦
 
   -- Build lit_blobs by loading and verifying each blob on demand.
   -- A ref is a blob if it's not in all_addrs (the constant address list).
-  -- For constant refs, returns List.Nil (never read by conversion).
+  -- For constant refs, returns an empty ByteStream (never read by conversion).
   fn build_lit_blobs(refs: List‹[G; 32]›, all_addrs: List‹[G; 32]›) -> List‹ByteStream› {
-    match refs {
-      List.Nil => List.Nil,
-      List.Cons(addr, &rest) =>
+    match load(refs) {
+      ListNode.Nil => store(ListNode.Nil),
+      ListNode.Cons(addr, rest) =>
         let blob = is_blob(addr, all_addrs);
         match blob {
           1 =>
             let bs = load_verified_blob(addr);
-            List.Cons(bs, store(build_lit_blobs(rest, all_addrs))),
+            store(ListNode.Cons(bs, build_lit_blobs(rest, all_addrs))),
           0 =>
-            List.Cons(List.Nil, store(build_lit_blobs(rest, all_addrs))),
+            store(ListNode.Cons(store(ListNode.Nil), build_lit_blobs(rest, all_addrs))),
         },
     }
   }
@@ -133,9 +133,9 @@ def ingress := ⟦
   -- projection constant (IPrj, CPrj, RPrj, DPrj). Used for standalone
   -- recursors to locate their inductive's block.
   fn find_block_addr_from_refs(refs: List‹[G; 32]›, all_addrs: List‹[G; 32]›) -> [G; 32] {
-    match refs {
-      List.Nil => [0; 32],
-      List.Cons(addr, &rest) =>
+    match load(refs) {
+      ListNode.Nil => [0; 32],
+      ListNode.Cons(addr, rest) =>
         let blob = is_blob(addr, all_addrs);
         match blob {
           1 => find_block_addr_from_refs(rest, all_addrs),
@@ -161,28 +161,28 @@ def ingress := ⟦
 
   fn recr_rule_count(recr: Recursor) -> G {
     match recr {
-      Recursor.Mk(_, _, _, _, _, _, _, _, &rules) =>
+      Recursor.Mk(_, _, _, _, _, _, _, _, rules) =>
         count_recr_rules(rules),
     }
   }
 
   -- Count recursor rules
   fn count_recr_rules(rules: List‹RecursorRule›) -> G {
-    match rules {
-      List.Nil => 0,
-      List.Cons(_, &rest) => count_recr_rules(rest) + 1,
+    match load(rules) {
+      ListNode.Nil => 0,
+      ListNode.Cons(_, rest) => count_recr_rules(rest) + 1,
     }
   }
 
   -- Count constructors in a Muts block's first inductive
   fn count_block_ctors(members: List‹MutConst›) -> G {
-    match members {
-      List.Nil => 0,
-      List.Cons(mc, &rest) =>
+    match load(members) {
+      ListNode.Nil => 0,
+      ListNode.Cons(mc, rest) =>
         match mc {
           MutConst.Indc(ind) =>
             match ind {
-              Inductive.Mk(_, _, _, _, _, _, _, _, &ctors) =>
+              Inductive.Mk(_, _, _, _, _, _, _, _, ctors) =>
                 list_length(ctors),
             },
           _ => count_block_ctors(rest),
@@ -193,9 +193,9 @@ def ingress := ⟦
   -- Find the correct block address for a standalone recursor by matching
   -- the number of recursor rules to the number of constructors in the block.
   fn find_matching_block_addr(refs: List‹[G; 32]›, all_addrs: List‹[G; 32]›, nrules: G) -> [G; 32] {
-    match refs {
-      List.Nil => [0; 32],
-      List.Cons(addr, &rest) =>
+    match load(refs) {
+      ListNode.Nil => [0; 32],
+      ListNode.Cons(addr, rest) =>
         let blob = is_blob(addr, all_addrs);
         match blob {
           1 => find_matching_block_addr(rest, all_addrs, nrules),
@@ -211,12 +211,11 @@ def ingress := ⟦
                         match bc {
                           Constant.Mk(bi, _, _, _) =>
                             match bi {
-                              ConstantInfo.Muts(&members) =>
+                              ConstantInfo.Muts(members) =>
                                 let nctors = count_block_ctors(members);
-                                let is_match = eq_zero(nctors - nrules);
-                                match is_match {
-                                  1 => block_addr,
-                                  0 => find_matching_block_addr(rest, all_addrs, nrules),
+                                match nctors - nrules {
+                                  0 => block_addr,
+                                  _ => find_matching_block_addr(rest, all_addrs, nrules),
                                 },
                               _ => find_matching_block_addr(rest, all_addrs, nrules),
                             },
@@ -247,7 +246,7 @@ def ingress := ⟦
     match mc {
       MutConst.Indc(ind) =>
         match ind {
-          Inductive.Mk(_, _, _, _, _, _, _, _, &ctors) =>
+          Inductive.Mk(_, _, _, _, _, _, _, _, ctors) =>
             list_length(ctors) + 1,
         },
       MutConst.Recr(_) => 1,
@@ -257,9 +256,9 @@ def ingress := ⟦
 
   -- Count total kernel entries for an entire List‹MutConst›
   fn block_kernel_size(members: List‹MutConst›) -> G {
-    match members {
-      List.Nil => 0,
-      List.Cons(mc, &rest) =>
+    match load(members) {
+      ListNode.Nil => 0,
+      ListNode.Cons(mc, rest) =>
         member_kernel_size(mc) + block_kernel_size(rest),
     }
   }
@@ -270,8 +269,8 @@ def ingress := ⟦
     match target_idx {
       0 => 0,
       _ =>
-        match members {
-          List.Cons(mc, &rest) =>
+        match load(members) {
+          ListNode.Cons(mc, rest) =>
             member_kernel_size(mc) + member_offset(rest, target_idx - 1),
         },
     }
@@ -279,11 +278,11 @@ def ingress := ⟦
 
   -- Look up the kernel position for an address using parallel lists.
   fn lookup_addr_pos(target: [G; 32], all_addrs: List‹[G; 32]›, pos_map: List‹G›) -> G {
-    match all_addrs {
-      List.Nil => 0,
-      List.Cons(addr, &rest_addrs) =>
-        match pos_map {
-          List.Cons(pos, &rest_pos) =>
+    match load(all_addrs) {
+      ListNode.Nil => 0,
+      ListNode.Cons(addr, rest_addrs) =>
+        match load(pos_map) {
+          ListNode.Cons(pos, rest_pos) =>
             let eq = address_eq(target, addr);
             match eq {
               1 => pos,
@@ -295,11 +294,11 @@ def ingress := ⟦
 
   -- Find the start position of a block by its block address.
   fn lookup_block_start(target: [G; 32], block_addrs: List‹[G; 32]›, block_starts: List‹G›) -> G {
-    match block_addrs {
-      List.Nil => 0,
-      List.Cons(addr, &rest_addrs) =>
-        match block_starts {
-          List.Cons(start, &rest_starts) =>
+    match load(block_addrs) {
+      ListNode.Nil => 0,
+      ListNode.Cons(addr, rest_addrs) =>
+        match load(block_starts) {
+          ListNode.Cons(start, rest_starts) =>
             let eq = address_eq(target, addr);
             match eq {
               1 => start,
@@ -318,19 +317,19 @@ def ingress := ⟦
     addrs: List‹[G; 32]›,
     pos: G
   ) -> (List‹[G; 32]›, List‹G›, G) {
-    match consts {
-      List.Nil => (List.Nil, List.Nil, pos),
-      List.Cons(&c, &rest_consts) =>
-        match addrs {
-          List.Cons(addr, &rest_addrs) =>
+    match load(consts) {
+      ListNode.Nil => (store(ListNode.Nil), store(ListNode.Nil), pos),
+      ListNode.Cons(&c, rest_consts) =>
+        match load(addrs) {
+          ListNode.Cons(addr, rest_addrs) =>
             match c {
               Constant.Mk(info, _, _, _) =>
                 match info {
-                  ConstantInfo.Muts(&members) =>
+                  ConstantInfo.Muts(members) =>
                     let size = block_kernel_size(members);
                     let (ba, bs, next) = compute_layout(rest_consts, rest_addrs, pos + size);
-                    (List.Cons(addr, store(ba)),
-                     List.Cons(pos, store(bs)),
+                    (store(ListNode.Cons(addr, ba)),
+                     store(ListNode.Cons(pos, bs)),
                      next),
                   ConstantInfo.IPrj(_) =>
                     compute_layout(rest_consts, rest_addrs, pos),
@@ -365,17 +364,17 @@ def ingress := ⟦
     block_starts: List‹G›,
     pos: G
   ) -> List‹G› {
-    match consts {
-      List.Nil => List.Nil,
-      List.Cons(&c, &rest_consts) =>
-        match addrs {
-          List.Cons(_, &rest_addrs) =>
+    match load(consts) {
+      ListNode.Nil => store(ListNode.Nil),
+      ListNode.Cons(&c, rest_consts) =>
+        match load(addrs) {
+          ListNode.Cons(_, rest_addrs) =>
             match c {
               Constant.Mk(info, _, _, _) =>
                 match info {
-                  ConstantInfo.Muts(&members) =>
+                  ConstantInfo.Muts(members) =>
                     let size = block_kernel_size(members);
-                    List.Cons(0, store(build_pos_map(rest_consts, rest_addrs, block_addrs, block_starts, pos + size))),
+                    store(ListNode.Cons(0, build_pos_map(rest_consts, rest_addrs, block_addrs, block_starts, pos + size))),
                   ConstantInfo.IPrj(prj) =>
                     match prj {
                       InductiveProj.Mk(idx, block_addr) =>
@@ -384,10 +383,10 @@ def ingress := ⟦
                         match block_const {
                           Constant.Mk(block_info, _, _, _) =>
                             match block_info {
-                              ConstantInfo.Muts(&members) =>
+                              ConstantInfo.Muts(members) =>
                                 let off = member_offset(members, flatten_u64(idx));
-                                List.Cons(block_start + off,
-                                  store(build_pos_map(rest_consts, rest_addrs, block_addrs, block_starts, pos))),
+                                store(ListNode.Cons(block_start + off,
+                                  build_pos_map(rest_consts, rest_addrs, block_addrs, block_starts, pos))),
                             },
                         },
                     },
@@ -399,10 +398,10 @@ def ingress := ⟦
                         match block_const {
                           Constant.Mk(block_info, _, _, _) =>
                             match block_info {
-                              ConstantInfo.Muts(&members) =>
+                              ConstantInfo.Muts(members) =>
                                 let mem_off = member_offset(members, flatten_u64(idx));
-                                List.Cons(block_start + mem_off + 1 + flatten_u64(cidx),
-                                  store(build_pos_map(rest_consts, rest_addrs, block_addrs, block_starts, pos))),
+                                store(ListNode.Cons(block_start + mem_off + 1 + flatten_u64(cidx),
+                                  build_pos_map(rest_consts, rest_addrs, block_addrs, block_starts, pos))),
                             },
                         },
                     },
@@ -414,10 +413,10 @@ def ingress := ⟦
                         match block_const {
                           Constant.Mk(block_info, _, _, _) =>
                             match block_info {
-                              ConstantInfo.Muts(&members) =>
+                              ConstantInfo.Muts(members) =>
                                 let off = member_offset(members, flatten_u64(idx));
-                                List.Cons(block_start + off,
-                                  store(build_pos_map(rest_consts, rest_addrs, block_addrs, block_starts, pos))),
+                                store(ListNode.Cons(block_start + off,
+                                  build_pos_map(rest_consts, rest_addrs, block_addrs, block_starts, pos))),
                             },
                         },
                     },
@@ -429,16 +428,16 @@ def ingress := ⟦
                         match block_const {
                           Constant.Mk(block_info, _, _, _) =>
                             match block_info {
-                              ConstantInfo.Muts(&members) =>
+                              ConstantInfo.Muts(members) =>
                                 let off = member_offset(members, flatten_u64(idx));
-                                List.Cons(block_start + off,
-                                  store(build_pos_map(rest_consts, rest_addrs, block_addrs, block_starts, pos))),
+                                store(ListNode.Cons(block_start + off,
+                                  build_pos_map(rest_consts, rest_addrs, block_addrs, block_starts, pos))),
                             },
                         },
                     },
                   _ =>
-                    List.Cons(pos,
-                      store(build_pos_map(rest_consts, rest_addrs, block_addrs, block_starts, pos + 1))),
+                    store(ListNode.Cons(pos,
+                      build_pos_map(rest_consts, rest_addrs, block_addrs, block_starts, pos + 1))),
                 },
             },
         },
@@ -450,41 +449,41 @@ def ingress := ⟦
   -- ============================================================================
 
   fn build_ref_idxs_mapped(refs: List‹[G; 32]›, all_addrs: List‹[G; 32]›, pos_map: List‹G›) -> List‹G› {
-    match refs {
-      List.Nil => List.Nil,
-      List.Cons(addr, &rest) =>
+    match load(refs) {
+      ListNode.Nil => store(ListNode.Nil),
+      ListNode.Cons(addr, rest) =>
         let pos = lookup_addr_pos(addr, all_addrs, pos_map);
-        List.Cons(pos, store(build_ref_idxs_mapped(rest, all_addrs, pos_map))),
+        store(ListNode.Cons(pos, build_ref_idxs_mapped(rest, all_addrs, pos_map))),
     }
   }
 
   fn build_recur_idxs(members: List‹MutConst›, block_start: G, member_idx: G) -> List‹G› {
-    match members {
-      List.Nil => List.Nil,
-      List.Cons(_, &rest) =>
+    match load(members) {
+      ListNode.Nil => store(ListNode.Nil),
+      ListNode.Cons(_, rest) =>
         let off = member_offset(members, member_idx);
-        List.Cons(block_start + off,
-          store(build_recur_idxs(rest, block_start, member_idx + 1))),
+        store(ListNode.Cons(block_start + off,
+          build_recur_idxs(rest, block_start, member_idx + 1))),
     }
   }
 
   fn build_ctor_idxs(num_ctors: G, induct_pos: G, cidx: G) -> List‹G› {
     match num_ctors {
-      0 => List.Nil,
+      0 => store(ListNode.Nil),
       _ =>
-        List.Cons(induct_pos + 1 + cidx,
-          store(build_ctor_idxs(num_ctors - 1, induct_pos, cidx + 1))),
+        store(ListNode.Cons(induct_pos + 1 + cidx,
+          build_ctor_idxs(num_ctors - 1, induct_pos, cidx + 1))),
     }
   }
 
   fn build_rule_ctor_idxs(members: List‹MutConst›, block_start: G, member_idx: G) -> List‹G› {
-    match members {
-      List.Nil => List.Nil,
-      List.Cons(mc, &rest) =>
+    match load(members) {
+      ListNode.Nil => store(ListNode.Nil),
+      ListNode.Cons(mc, rest) =>
         match mc {
           MutConst.Indc(ind) =>
             match ind {
-              Inductive.Mk(_, _, _, _, _, _, _, _, &ctors) =>
+              Inductive.Mk(_, _, _, _, _, _, _, _, ctors) =>
                 let num_ctors = list_length(ctors);
                 let induct_pos = block_start + member_offset(members, member_idx);
                 let this_ctors = build_ctor_idxs(num_ctors, induct_pos, 0);
@@ -517,30 +516,30 @@ def ingress := ⟦
     match mc {
       MutConst.Indc(ind) =>
         match ind {
-          Inductive.Mk(_, _, _, _, _, _, _, _, &ctors) =>
+          Inductive.Mk(_, _, _, _, _, _, _, _, ctors) =>
             let num_ctors = list_length(ctors);
             let induct_pos = block_start + member_offset(members, member_idx);
             let ctor_idxs = build_ctor_idxs(num_ctors, induct_pos, 0);
-            let indc_input = ConvertInput.Mk(ctx, ConvertKind.CKIndc(ind, store(ctor_idxs)));
+            let indc_input = ConvertInput.Mk(ctx, ConvertKind.CKIndc(ind, ctor_idxs));
             let ctor_inputs = expand_ctors(ctors, ctx, induct_pos);
-            List.Cons(store(indc_input), store(ctor_inputs)),
+            store(ListNode.Cons(store(indc_input), ctor_inputs)),
         },
       MutConst.Recr(recr) =>
         let rule_ctor_idxs = build_rule_ctor_idxs(members, block_start, 0);
-        let input = ConvertInput.Mk(ctx, ConvertKind.CKRecr(recr, store(rule_ctor_idxs)));
-        List.Cons(store(input), store(List.Nil)),
+        let input = ConvertInput.Mk(ctx, ConvertKind.CKRecr(recr, rule_ctor_idxs));
+        store(ListNode.Cons(store(input), store(ListNode.Nil))),
       MutConst.Defn(defn) =>
-        let input = ConvertInput.Mk(ctx, ConvertKind.CKDefn(defn, KHints.Abbrev));
-        List.Cons(store(input), store(List.Nil)),
+        let input = ConvertInput.Mk(ctx, ConvertKind.CKDefn(defn));
+        store(ListNode.Cons(store(input), store(ListNode.Nil))),
     }
   }
 
   fn expand_ctors(ctors: List‹Constructor›, ctx: ConvertCtx, induct_pos: G) -> List‹&ConvertInput› {
-    match ctors {
-      List.Nil => List.Nil,
-      List.Cons(ctor, &rest) =>
+    match load(ctors) {
+      ListNode.Nil => store(ListNode.Nil),
+      ListNode.Cons(ctor, rest) =>
         let input = ConvertInput.Mk(ctx, ConvertKind.CKCtor(ctor, induct_pos));
-        List.Cons(store(input), store(expand_ctors(rest, ctx, induct_pos))),
+        store(ListNode.Cons(store(input), expand_ctors(rest, ctx, induct_pos))),
     }
   }
 
@@ -551,9 +550,9 @@ def ingress := ⟦
     block_start: G,
     member_idx: G
   ) -> List‹&ConvertInput› {
-    match members {
-      List.Nil => List.Nil,
-      List.Cons(mc, &rest) =>
+    match load(members) {
+      ListNode.Nil => store(ListNode.Nil),
+      ListNode.Cons(mc, rest) =>
         let this = expand_member(mc, ctx, all_members, block_start, member_idx);
         let more = expand_members(rest, ctx, all_members, block_start, member_idx + 1);
         list_concat(this, more),
@@ -572,18 +571,18 @@ def ingress := ⟦
     block_starts: List‹G›,
     pos: G
   ) -> List‹&ConvertInput› {
-    match consts {
-      List.Nil => List.Nil,
-      List.Cons(&c, &rest) =>
+    match load(consts) {
+      ListNode.Nil => store(ListNode.Nil),
+      ListNode.Cons(&c, rest) =>
         match c {
-          Constant.Mk(info, &sharing, &refs, &univs) =>
+          Constant.Mk(info, sharing, refs, univs) =>
             match info {
-              ConstantInfo.Muts(&members) =>
+              ConstantInfo.Muts(members) =>
                 let size = block_kernel_size(members);
                 let ref_idxs = build_ref_idxs_mapped(refs, all_addrs, pos_map);
                 let lit_blobs = build_lit_blobs(refs, all_addrs);
                 let recur_idxs = build_recur_idxs(members, pos, 0);
-                let ctx = ConvertCtx.Mk(store(sharing), store(ref_idxs), store(recur_idxs), store(lit_blobs), store(univs));
+                let ctx = ConvertCtx.Mk(sharing, ref_idxs, recur_idxs, lit_blobs, univs);
                 let expanded = expand_members(members, ctx, members, pos, 0);
                 let more = build_convert_inputs(rest, all_addrs, pos_map, block_addrs, block_starts, pos + size);
                 list_concat(expanded, more),
@@ -598,25 +597,25 @@ def ingress := ⟦
               ConstantInfo.Defn(defn) =>
                 let ref_idxs = build_ref_idxs_mapped(refs, all_addrs, pos_map);
                 let lit_blobs = build_lit_blobs(refs, all_addrs);
-                let recur_idxs = List.Cons(pos, store(List.Nil));
-                let ctx = ConvertCtx.Mk(store(sharing), store(ref_idxs), store(recur_idxs), store(lit_blobs), store(univs));
-                let input = ConvertInput.Mk(ctx, ConvertKind.CKDefn(defn, KHints.Abbrev));
-                List.Cons(store(input),
-                  store(build_convert_inputs(rest, all_addrs, pos_map, block_addrs, block_starts, pos + 1))),
+                let recur_idxs = store(ListNode.Cons(pos, store(ListNode.Nil)));
+                let ctx = ConvertCtx.Mk(sharing, ref_idxs, recur_idxs, lit_blobs, univs);
+                let input = ConvertInput.Mk(ctx, ConvertKind.CKDefn(defn));
+                store(ListNode.Cons(store(input),
+                  build_convert_inputs(rest, all_addrs, pos_map, block_addrs, block_starts, pos + 1))),
               ConstantInfo.Axio(axio) =>
                 let ref_idxs = build_ref_idxs_mapped(refs, all_addrs, pos_map);
                 let lit_blobs = build_lit_blobs(refs, all_addrs);
-                let ctx = ConvertCtx.Mk(store(sharing), store(ref_idxs), store(List.Nil), store(lit_blobs), store(univs));
+                let ctx = ConvertCtx.Mk(sharing, ref_idxs, store(ListNode.Nil), lit_blobs, univs);
                 let input = ConvertInput.Mk(ctx, ConvertKind.CKAxio(axio));
-                List.Cons(store(input),
-                  store(build_convert_inputs(rest, all_addrs, pos_map, block_addrs, block_starts, pos + 1))),
+                store(ListNode.Cons(store(input),
+                  build_convert_inputs(rest, all_addrs, pos_map, block_addrs, block_starts, pos + 1))),
               ConstantInfo.Quot(quot) =>
                 let ref_idxs = build_ref_idxs_mapped(refs, all_addrs, pos_map);
                 let lit_blobs = build_lit_blobs(refs, all_addrs);
-                let ctx = ConvertCtx.Mk(store(sharing), store(ref_idxs), store(List.Nil), store(lit_blobs), store(univs));
+                let ctx = ConvertCtx.Mk(sharing, ref_idxs, store(ListNode.Nil), lit_blobs, univs);
                 let input = ConvertInput.Mk(ctx, ConvertKind.CKQuot(quot));
-                List.Cons(store(input),
-                  store(build_convert_inputs(rest, all_addrs, pos_map, block_addrs, block_starts, pos + 1))),
+                store(ListNode.Cons(store(input),
+                  build_convert_inputs(rest, all_addrs, pos_map, block_addrs, block_starts, pos + 1))),
               ConstantInfo.Recr(recr) =>
                 let ref_idxs = build_ref_idxs_mapped(refs, all_addrs, pos_map);
                 let lit_blobs = build_lit_blobs(refs, all_addrs);
@@ -626,14 +625,14 @@ def ingress := ⟦
                 match block_const {
                   Constant.Mk(block_info, _, _, _) =>
                     match block_info {
-                      ConstantInfo.Muts(&members) =>
-                        let recur_idxs = List.Cons(pos, store(List.Nil));
+                      ConstantInfo.Muts(members) =>
+                        let recur_idxs = store(ListNode.Cons(pos, store(ListNode.Nil)));
                         let bs = lookup_block_start(block_addr, block_addrs, block_starts);
                         let rule_ctor_idxs = build_rule_ctor_idxs(members, bs, 0);
-                        let ctx = ConvertCtx.Mk(store(sharing), store(ref_idxs), store(recur_idxs), store(lit_blobs), store(univs));
-                        let input = ConvertInput.Mk(ctx, ConvertKind.CKRecr(recr, store(rule_ctor_idxs)));
-                        List.Cons(store(input),
-                          store(build_convert_inputs(rest, all_addrs, pos_map, block_addrs, block_starts, pos + 1))),
+                        let ctx = ConvertCtx.Mk(sharing, ref_idxs, recur_idxs, lit_blobs, univs);
+                        let input = ConvertInput.Mk(ctx, ConvertKind.CKRecr(recr, rule_ctor_idxs));
+                        store(ListNode.Cons(store(input),
+                          build_convert_inputs(rest, all_addrs, pos_map, block_addrs, block_starts, pos + 1))),
                     },
                 },
             },
@@ -647,9 +646,9 @@ def ingress := ⟦
 
   -- Check if an address is already in a list
   fn address_in_list(addr: [G; 32], list: List‹[G; 32]›) -> G {
-    match list {
-      List.Nil => 0,
-      List.Cons(a, &rest) =>
+    match load(list) {
+      ListNode.Nil => 0,
+      ListNode.Cons(a, rest) =>
         let eq = address_eq(addr, a);
         match eq {
           1 => 1,
@@ -673,9 +672,9 @@ def ingress := ⟦
     let already = address_in_list(addr, visited_addrs);
     match already {
       1 =>
-        match worklist {
-          List.Nil => (visited_addrs, visited_consts),
-          List.Cons(next, &rest) =>
+        match load(worklist) {
+          ListNode.Nil => (visited_addrs, visited_consts),
+          ListNode.Cons(next, rest) =>
             load_with_deps(next, rest, visited_addrs, visited_consts),
         },
       0 =>
@@ -686,36 +685,36 @@ def ingress := ⟦
         match len {
           0 =>
             -- Blob address: skip (blob values are loaded on demand in build_lit_blobs)
-            match worklist {
-              List.Nil => (visited_addrs, visited_consts),
-              List.Cons(next, &rest) =>
+            match load(worklist) {
+              ListNode.Nil => (visited_addrs, visited_consts),
+              ListNode.Cons(next, rest) =>
                 load_with_deps(next, rest, visited_addrs, visited_consts),
             },
           _ =>
-            let new_addrs = List.Cons(addr, store(visited_addrs));
+            let new_addrs = store(ListNode.Cons(addr, visited_addrs));
             let constant = load_verified_constant(addr);
-            let new_consts = List.Cons(store(constant), store(visited_consts));
+            let new_consts = store(ListNode.Cons(store(constant), visited_consts));
             match constant {
-              Constant.Mk(info, _, &refs, _) =>
+              Constant.Mk(info, _, refs, _) =>
                 let block_addr = get_proj_block_addr(info);
                 match address_eq(block_addr, [0; 32]) {
                   1 =>
-                    let combined_refs = list_concat(refs, List.Nil);
+                    let combined_refs = list_concat(refs, store(ListNode.Nil));
                     let next_worklist = list_concat(combined_refs, worklist);
-                    match next_worklist {
-                      List.Nil => (new_addrs, new_consts),
-                      List.Cons(next, &rest) =>
+                    match load(next_worklist) {
+                      ListNode.Nil => (new_addrs, new_consts),
+                      ListNode.Cons(next, rest) =>
                         load_with_deps(next, rest, new_addrs, new_consts),
                     },
                   0 =>
                     let combined_refs = list_concat(
                       refs,
-                      List.Cons(block_addr, store(List.Nil))
+                      store(ListNode.Cons(block_addr, store(ListNode.Nil)))
                     );
                     let next_worklist = list_concat(combined_refs, worklist);
-                    match next_worklist {
-                      List.Nil => (new_addrs, new_consts),
-                      List.Cons(next, &rest) =>
+                    match load(next_worklist) {
+                      ListNode.Nil => (new_addrs, new_consts),
+                      ListNode.Cons(next, rest) =>
                         load_with_deps(next, rest, new_addrs, new_consts),
                     },
                 },
@@ -728,7 +727,7 @@ def ingress := ⟦
   -- verifies blake3 hashes then converts to kernel types.
   fn ingress(target_addr: [G; 32]) -> List‹&KConstantInfo› {
     let (all_addrs, all_consts) = load_with_deps(
-      target_addr, List.Nil, List.Nil, List.Nil);
+      target_addr, store(ListNode.Nil), store(ListNode.Nil), store(ListNode.Nil));
     let (block_addrs, block_starts, _total) = compute_layout(all_consts, all_addrs, 0);
     let pos_map = build_pos_map(all_consts, all_addrs, block_addrs, block_starts, 0);
     let inputs = build_convert_inputs(all_consts, all_addrs, pos_map, block_addrs, block_starts, 0);
@@ -738,11 +737,11 @@ def ingress := ⟦
   -- Look up a constant's position by its blake3 address.
   -- Returns 0 - 1 (sentinel) if the address is not found.
   fn find_addr_pos(target: [G; 32], all_addrs: List‹[G; 32]›, pos_map: List‹G›) -> G {
-    match all_addrs {
-      List.Nil => 0 - 1,
-      List.Cons(addr, &rest_addrs) =>
-        match pos_map {
-          List.Cons(pos, &rest_pos) =>
+    match load(all_addrs) {
+      ListNode.Nil => 0 - 1,
+      ListNode.Cons(addr, rest_addrs) =>
+        match load(pos_map) {
+          ListNode.Cons(pos, rest_pos) =>
             let eq = address_eq(target, addr);
             match eq {
               1 => pos,
@@ -757,7 +756,7 @@ def ingress := ⟦
   -- Returns (constants, nat_idx, str_idx).
   fn ingress_with_primitives(target_addr: [G; 32]) -> (List‹&KConstantInfo›, G, G) {
     let (all_addrs, all_consts) = load_with_deps(
-      target_addr, List.Nil, List.Nil, List.Nil);
+      target_addr, store(ListNode.Nil), store(ListNode.Nil), store(ListNode.Nil));
     let (block_addrs, block_starts, _total) = compute_layout(all_consts, all_addrs, 0);
     let pos_map = build_pos_map(all_consts, all_addrs, block_addrs, block_starts, 0);
     let inputs = build_convert_inputs(all_consts, all_addrs, pos_map, block_addrs, block_starts, 0);

@@ -64,7 +64,11 @@ where
     (← IO.getStdout).flush
     let testCase ← kernelCheck name env
     let funcName := Aiur.Global.mk testCase.functionName
-    let inputs := testCase.input.toList.map Aiur.Value.field
+    -- Get function's input types to properly unflatten the input array
+    let inputTypes ← match decls.getByKey funcName with
+      | some (.function f) => pure $ f.inputs.map (·.2)
+      | _ => IO.eprintln s!"{name}: function not found in decls"; return 1
+    let inputs := Aiur.unflattenInputs decls testCase.input inputTypes
     match Aiur.runFunction decls funcName inputs testCase.inputIOBuffer with
     | .error e =>
       IO.eprintln s!"{name}: interpreter error:\n{e}"

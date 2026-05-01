@@ -4,37 +4,36 @@ use std::sync::Arc;
 
 use crate::ix::ixon::univ::Univ;
 use crate::lean::LeanIxonUniv;
-use lean_ffi::object::{LeanArray, LeanBorrowed, LeanCtor, LeanOwned, LeanRef};
+use lean_ffi::object::{LeanArray, LeanBorrowed, LeanOwned, LeanRef};
 
 impl LeanIxonUniv<LeanOwned> {
   /// Build Ixon.Univ
   pub fn build(univ: &Univ) -> Self {
-    let obj = match univ {
-      Univ::Zero => LeanOwned::box_usize(0),
+    match univ {
+      Univ::Zero => Self::new(LeanOwned::box_usize(0)),
       Univ::Succ(inner) => {
-        let ctor = LeanCtor::alloc(1, 1, 0);
-        ctor.set(0, Self::build(inner));
-        ctor.into()
+        let ctor = LeanIxonUniv::alloc(1);
+        ctor.set_obj(0, Self::build(inner));
+        ctor
       },
       Univ::Max(a, b) => {
-        let ctor = LeanCtor::alloc(2, 2, 0);
-        ctor.set(0, Self::build(a));
-        ctor.set(1, Self::build(b));
-        ctor.into()
+        let ctor = LeanIxonUniv::alloc(2);
+        ctor.set_obj(0, Self::build(a));
+        ctor.set_obj(1, Self::build(b));
+        ctor
       },
       Univ::IMax(a, b) => {
-        let ctor = LeanCtor::alloc(3, 2, 0);
-        ctor.set(0, Self::build(a));
-        ctor.set(1, Self::build(b));
-        ctor.into()
+        let ctor = LeanIxonUniv::alloc(3);
+        ctor.set_obj(0, Self::build(a));
+        ctor.set_obj(1, Self::build(b));
+        ctor
       },
       Univ::Var(idx) => {
-        let ctor = LeanCtor::alloc(4, 0, 8);
-        ctor.set_u64(0, 0, *idx);
-        ctor.into()
+        let ctor = LeanIxonUniv::alloc(4);
+        ctor.set_num_64(0, *idx);
+        ctor
       },
-    };
-    Self::new(obj)
+    }
   }
 
   /// Build an Array of Ixon.Univ.
@@ -65,7 +64,7 @@ impl<R: LeanRef> LeanIxonUniv<R> {
         Arc::new(LeanIxonUniv(ctor.get(0)).decode()),
         Arc::new(LeanIxonUniv(ctor.get(1)).decode()),
       ),
-      4 => Univ::Var(ctor.get_u64(0, 0)),
+      4 => Univ::Var(self.get_num_64(0)),
       tag => panic!("Invalid Ixon.Univ tag: {tag}"),
     }
   }

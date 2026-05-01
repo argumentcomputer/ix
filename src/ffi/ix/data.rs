@@ -10,7 +10,7 @@ use crate::lean::{
 use lean_ffi::nat::Nat;
 #[cfg(feature = "test-ffi")]
 use lean_ffi::object::LeanBorrowed;
-use lean_ffi::object::{LeanArray, LeanCtor, LeanOwned, LeanRef, LeanString};
+use lean_ffi::object::{LeanArray, LeanOwned, LeanProd, LeanRef, LeanString};
 
 use crate::ffi::builder::LeanBuildCache;
 
@@ -19,14 +19,14 @@ impl LeanIxInt<LeanOwned> {
   pub fn build(int: &Int) -> Self {
     match int {
       Int::OfNat(n) => {
-        let obj = LeanCtor::alloc(0, 1, 0);
-        obj.set(0, Nat::to_lean(n));
-        Self::new(obj.into())
+        let ctor = LeanIxInt::alloc(0);
+        ctor.set_obj(0, Nat::to_lean(n));
+        ctor
       },
       Int::NegSucc(n) => {
-        let obj = LeanCtor::alloc(1, 1, 0);
-        obj.set(0, Nat::to_lean(n));
-        Self::new(obj.into())
+        let ctor = LeanIxInt::alloc(1);
+        ctor.set_obj(0, Nat::to_lean(n));
+        ctor
       },
     }
   }
@@ -49,11 +49,11 @@ impl<R: LeanRef> LeanIxInt<R> {
 impl LeanIxSubstring<LeanOwned> {
   /// Build a Ix.Substring.
   pub fn build(ss: &Substring) -> Self {
-    let obj = LeanCtor::alloc(0, 3, 0);
-    obj.set(0, LeanString::new(ss.str.as_str()));
-    obj.set(1, Nat::to_lean(&ss.start_pos));
-    obj.set(2, Nat::to_lean(&ss.stop_pos));
-    Self::new(obj.into())
+    let ctor = LeanIxSubstring::alloc(0);
+    ctor.set_obj(0, LeanString::new(ss.str.as_str()));
+    ctor.set_obj(1, Nat::to_lean(&ss.start_pos));
+    ctor.set_obj(2, Nat::to_lean(&ss.stop_pos));
+    ctor
   }
 }
 
@@ -75,23 +75,23 @@ impl LeanIxSourceInfo<LeanOwned> {
     match si {
       // | original (leading : Substring) (pos : Nat) (trailing : Substring) (endPos : Nat) -- tag 0
       SourceInfo::Original(leading, pos, trailing, end_pos) => {
-        let obj = LeanCtor::alloc(0, 4, 0);
-        obj.set(0, LeanIxSubstring::build(leading));
-        obj.set(1, Nat::to_lean(pos));
-        obj.set(2, LeanIxSubstring::build(trailing));
-        obj.set(3, Nat::to_lean(end_pos));
-        Self::new(obj.into())
+        let ctor = LeanIxSourceInfo::alloc(0);
+        ctor.set_obj(0, LeanIxSubstring::build(leading));
+        ctor.set_obj(1, Nat::to_lean(pos));
+        ctor.set_obj(2, LeanIxSubstring::build(trailing));
+        ctor.set_obj(3, Nat::to_lean(end_pos));
+        ctor
       },
       // | synthetic (pos : Nat) (endPos : Nat) (canonical : Bool) -- tag 1
       SourceInfo::Synthetic(pos, end_pos, canonical) => {
-        let obj = LeanCtor::alloc(1, 2, 1);
-        obj.set(0, Nat::to_lean(pos));
-        obj.set(1, Nat::to_lean(end_pos));
-        obj.set_bool(2, 0, *canonical);
-        Self::new(obj.into())
+        let ctor = LeanIxSourceInfo::alloc(1);
+        ctor.set_obj(0, Nat::to_lean(pos));
+        ctor.set_obj(1, Nat::to_lean(end_pos));
+        ctor.set_num_8(0, *canonical as u8);
+        ctor
       },
-      // | none -- tag 2
-      SourceInfo::None => Self::new(LeanCtor::alloc(2, 0, 0).into()),
+      // | none -- tag 2 (no fields — scalar)
+      SourceInfo::None => Self::new(LeanOwned::box_usize(2)),
     }
   }
 }
@@ -115,11 +115,11 @@ impl<R: LeanRef> LeanIxSourceInfo<R> {
       },
       1 => {
         // synthetic: 2 obj fields (pos, end_pos), 1 scalar byte (canonical)
-        let canonical = ctor.get_u8(2, 0) != 0;
+        let canonical = self.get_num_8(0) != 0;
 
         SourceInfo::Synthetic(
-          Nat::from_obj(&ctor.get(0)),
-          Nat::from_obj(&ctor.get(1)),
+          Nat::from_obj(&self.get_obj(0)),
+          Nat::from_obj(&self.get_obj(1)),
           canonical,
         )
       },
@@ -135,18 +135,16 @@ impl LeanIxSyntaxPreresolved<LeanOwned> {
     match sp {
       // | namespace (name : Name) -- tag 0
       SyntaxPreresolved::Namespace(name) => {
-        let obj = LeanCtor::alloc(0, 1, 0);
-        obj.set(0, LeanIxName::build(cache, name));
-        Self::new(obj.into())
+        let ctor = LeanIxSyntaxPreresolved::alloc(0);
+        ctor.set_obj(0, LeanIxName::build(cache, name));
+        ctor
       },
       // | decl (name : Name) (aliases : Array String) -- tag 1
       SyntaxPreresolved::Decl(name, aliases) => {
-        let name_obj = LeanIxName::build(cache, name);
-        let aliases_obj = build_string_array(aliases);
-        let obj = LeanCtor::alloc(1, 2, 0);
-        obj.set(0, name_obj);
-        obj.set(1, aliases_obj);
-        Self::new(obj.into())
+        let ctor = LeanIxSyntaxPreresolved::alloc(1);
+        ctor.set_obj(0, LeanIxName::build(cache, name));
+        ctor.set_obj(1, build_string_array(aliases));
+        ctor
       },
     }
   }
@@ -187,39 +185,31 @@ impl LeanIxSyntax<LeanOwned> {
   /// Build a Ix.Syntax.
   pub fn build(cache: &mut LeanBuildCache, syn: &Syntax) -> Self {
     match syn {
-      // | missing -- tag 0
-      Syntax::Missing => Self::new(LeanCtor::alloc(0, 0, 0).into()),
+      // | missing -- tag 0 (no fields — scalar)
+      Syntax::Missing => Self::new(LeanOwned::box_usize(0)),
       // | node (info : SourceInfo) (kind : Name) (args : Array Syntax) -- tag 1
       Syntax::Node(info, kind, args) => {
-        let info_obj = LeanIxSourceInfo::build(info);
-        let kind_obj = LeanIxName::build(cache, kind);
-        let args_obj = Self::build_array(cache, args);
-        let obj = LeanCtor::alloc(1, 3, 0);
-        obj.set(0, info_obj);
-        obj.set(1, kind_obj);
-        obj.set(2, args_obj);
-        Self::new(obj.into())
+        let ctor = LeanIxSyntax::alloc(1);
+        ctor.set_obj(0, LeanIxSourceInfo::build(info));
+        ctor.set_obj(1, LeanIxName::build(cache, kind));
+        ctor.set_obj(2, Self::build_array(cache, args));
+        ctor
       },
       // | atom (info : SourceInfo) (val : String) -- tag 2
       Syntax::Atom(info, val) => {
-        let info_obj = LeanIxSourceInfo::build(info);
-        let obj = LeanCtor::alloc(2, 2, 0);
-        obj.set(0, info_obj);
-        obj.set(1, LeanString::new(val.as_str()));
-        Self::new(obj.into())
+        let ctor = LeanIxSyntax::alloc(2);
+        ctor.set_obj(0, LeanIxSourceInfo::build(info));
+        ctor.set_obj(1, LeanString::new(val.as_str()));
+        ctor
       },
       // | ident (info : SourceInfo) (rawVal : Substring) (val : Name) (preresolved : Array SyntaxPreresolved) -- tag 3
       Syntax::Ident(info, raw_val, val, preresolved) => {
-        let info_obj = LeanIxSourceInfo::build(info);
-        let raw_val_obj = LeanIxSubstring::build(raw_val);
-        let val_obj = LeanIxName::build(cache, val);
-        let preresolved_obj = Self::build_preresolved_array(cache, preresolved);
-        let obj = LeanCtor::alloc(3, 4, 0);
-        obj.set(0, info_obj);
-        obj.set(1, raw_val_obj);
-        obj.set(2, val_obj);
-        obj.set(3, preresolved_obj);
-        Self::new(obj.into())
+        let ctor = LeanIxSyntax::alloc(3);
+        ctor.set_obj(0, LeanIxSourceInfo::build(info));
+        ctor.set_obj(1, LeanIxSubstring::build(raw_val));
+        ctor.set_obj(2, LeanIxName::build(cache, val));
+        ctor.set_obj(3, Self::build_preresolved_array(cache, preresolved));
+        ctor
       },
     }
   }
@@ -292,35 +282,34 @@ impl LeanIxDataValue<LeanOwned> {
   pub fn build(cache: &mut LeanBuildCache, dv: &DataValue) -> Self {
     match dv {
       DataValue::OfString(s) => {
-        let obj = LeanCtor::alloc(0, 1, 0);
-        obj.set(0, LeanString::new(s.as_str()));
-        Self::new(obj.into())
+        let ctor = LeanIxDataValue::alloc(0);
+        ctor.set_obj(0, LeanString::new(s.as_str()));
+        ctor
       },
       DataValue::OfBool(b) => {
-        // 0 object fields, 1 scalar byte
-        let obj = LeanCtor::alloc(1, 0, 1);
-        obj.set_bool(0, 0, *b);
-        Self::new(obj.into())
+        let ctor = LeanIxDataValue::alloc(1);
+        ctor.set_num_8(0, *b as u8);
+        ctor
       },
       DataValue::OfName(n) => {
-        let obj = LeanCtor::alloc(2, 1, 0);
-        obj.set(0, LeanIxName::build(cache, n));
-        Self::new(obj.into())
+        let ctor = LeanIxDataValue::alloc(2);
+        ctor.set_obj(0, LeanIxName::build(cache, n));
+        ctor
       },
       DataValue::OfNat(n) => {
-        let obj = LeanCtor::alloc(3, 1, 0);
-        obj.set(0, Nat::to_lean(n));
-        Self::new(obj.into())
+        let ctor = LeanIxDataValue::alloc(3);
+        ctor.set_obj(0, Nat::to_lean(n));
+        ctor
       },
       DataValue::OfInt(i) => {
-        let obj = LeanCtor::alloc(4, 1, 0);
-        obj.set(0, LeanIxInt::build(i));
-        Self::new(obj.into())
+        let ctor = LeanIxDataValue::alloc(4);
+        ctor.set_obj(0, LeanIxInt::build(i));
+        ctor
       },
       DataValue::OfSyntax(syn) => {
-        let obj = LeanCtor::alloc(5, 1, 0);
-        obj.set(0, LeanIxSyntax::build(cache, syn));
-        Self::new(obj.into())
+        let ctor = LeanIxDataValue::alloc(5);
+        ctor.set_obj(0, LeanIxSyntax::build(cache, syn));
+        ctor
       },
     }
   }
@@ -335,9 +324,7 @@ impl LeanIxDataValue<LeanOwned> {
       let name_obj = LeanIxName::build(cache, name);
       let dv_obj = Self::build(cache, dv);
       // Prod (Name x DataValue)
-      let pair = LeanCtor::alloc(0, 2, 0);
-      pair.set(0, name_obj);
-      pair.set(1, dv_obj);
+      let pair = LeanProd::new(name_obj, dv_obj);
       arr.set(i, pair);
     }
     arr
@@ -355,7 +342,7 @@ impl<R: LeanRef> LeanIxDataValue<R> {
       },
       1 => {
         // ofBool: 0 object fields, 1 scalar byte
-        let b = ctor.get_u8(0, 0) != 0;
+        let b = self.get_num_8(0) != 0;
         DataValue::OfBool(b)
       },
       2 => {

@@ -3,6 +3,8 @@ import Ix.Aiur.Compiler
 import Ix.Aiur.Protocol
 import Ix.Benchmark.Bench
 
+open BgroupM
+
 def toplevel := ⟦
   enum Nat {
     Zero,
@@ -62,65 +64,31 @@ def friParameters : Aiur.FriParameters := {
   queryProofOfWorkBits := 0
 }
 
-def proveE2E (name: Lean.Name) : IO UInt32 := do
-  let compiled ← match toplevel.compile with
-    | .error e => IO.eprintln e; return 1
-    | .ok compiled => pure compiled
-  let system := Aiur.AiurSystem.build compiled.bytecode commitmentParameters
-  let funIdx := compiled.getFuncIdx name |>.get!
-  let (claim, proof, _) := system.prove friParameters funIdx #[10] default
-  match system.verify friParameters claim proof with
-  | .ok _ => return 0
-  | .error e => IO.eprintln e; return 1
-
-
--- End-to-end proof generation and verification benchmark
-def proveE2EBench := bgroup "prove E2E" [
-  benchIO "fib 10" proveE2E `main
-] { samplingMode := .flat }
-
--- Individual benchmarks of each step from `proveE2E`
-
-def toplevelBench := bgroup "nat_fib" [
-  bench "simplify toplevel" Aiur.Toplevel.checkAndSimplify toplevel
-]
-
-def compileBench : IO $ Array BenchReport := do
-  match toplevel.checkAndSimplify with
-  | .error e => throw (IO.userError s!"{repr e}")
-  | .ok decls =>
-    bgroup "nat_fib" [
-      bench "compile decls" Aiur.TypedDecls.toBytecode decls
-    ]
-
-def buildAiurSystemBench : IO $ Array BenchReport := do
-  let compiled ← match toplevel.compile with
-    | .error e => throw (IO.userError e)
-    | .ok compiled => pure compiled
-  bgroup "nat_fib" [
-    bench "build AiurSystem" (Aiur.AiurSystem.build compiled.bytecode) commitmentParameters
-  ]
-
-def proveBench : IO $ Array BenchReport := do
-  let compiled ← match toplevel.compile with
-    | .error e => throw (IO.userError e)
-    | .ok compiled => pure compiled
-  let system := Aiur.AiurSystem.build compiled.bytecode commitmentParameters
-  let funIdx := compiled.getFuncIdx `main |>.get!
-  bgroup "nat_fib" [
-    bench "prove fib 10" (Aiur.AiurSystem.prove system friParameters funIdx #[10]) default,
-  ]
-
-def verifyBench : IO $ Array BenchReport := do
-  let compiled ← match toplevel.compile with
-    | .error e => throw (IO.userError e)
-    | .ok compiled => pure compiled
-  let system := Aiur.AiurSystem.build compiled.bytecode commitmentParameters
-  let funIdx := compiled.getFuncIdx `main |>.get!
-  let (claim, proof, _) := system.prove friParameters funIdx #[10] default
-  bgroup "nat_fib" [
-    bench "verify fib 10" (Aiur.AiurSystem.verify system friParameters claim) proof
-  ]
-
-def main (_args : List String) : IO Unit := do
-  let _result ← proveBench
+-- Stages the e2e proving pipeline through `benchStep`: each call times a stage
+-- and threads its output into the next. `prove fib 10` is one-shot because a
+-- single iteration already runs in the hundreds of milliseconds.
+--
+-- `simplify toplevel` and `compile decls` are side-benches that measure
+-- sub-steps of `Toplevel.compile`. They sit inside a `skipE2E` block so they
+-- show up in the report without double-counting against `compile`.
+def main : IO Unit := do
+  let decls ← match toplevel.checkAndSimplify with
+    | .error e => throw (IO.userError s!"{repr e}")
+    | .ok decls => pure decls
+  let concDecls ← match decls.concretize with
+    | .error e => throw (IO.userError s!"{repr e}")
+    | .ok cd => pure cd
+  let _ ← bgroup "nat_fib" { e2e := true } do
+    skipE2E
+    bench "simplify toplevel" Aiur.Source.Toplevel.checkAndSimplify toplevel
+    bench "concretize decls" Aiur.Typed.Decls.concretize decls
+    bench "compile decls" Aiur.Concrete.Decls.toBytecode concDecls
+    countInE2E
+    let compiled ← benchStepE "compile" Aiur.Source.Toplevel.compile toplevel
+    let system ← benchStep "build AiurSystem"
+        (Aiur.AiurSystem.build compiled.bytecode) commitmentParameters
+    let funIdx := compiled.getFuncIdx `main |>.get!
+    let (claim, proof, _) ← benchStep "prove fib 10"
+        (Aiur.AiurSystem.prove system friParameters funIdx #[10]) default (oneShot := true)
+    let _ ← benchStepE "verify fib 10"
+        (Aiur.AiurSystem.verify system friParameters claim) proof

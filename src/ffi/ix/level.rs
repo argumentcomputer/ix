@@ -10,7 +10,7 @@
 
 use crate::ix::env::{Level, LevelData};
 use crate::lean::{LeanIxLevel, LeanIxName};
-use lean_ffi::object::{LeanArray, LeanBorrowed, LeanCtor, LeanOwned, LeanRef};
+use lean_ffi::object::{LeanArray, LeanBorrowed, LeanOwned, LeanRef};
 
 use crate::ffi::builder::LeanBuildCache;
 use crate::lean::LeanIxAddress;
@@ -26,48 +26,48 @@ impl LeanIxLevel<LeanOwned> {
 
     let result = match level.as_data() {
       LevelData::Zero(h) => {
-        let ctor = LeanCtor::alloc(0, 1, 0);
-        ctor.set(0, LeanIxAddress::build_from_hash(h));
-        Self::new(ctor.into())
+        let ctor = LeanIxLevel::alloc(0);
+        ctor.set_obj(0, LeanIxAddress::build_from_hash(h));
+        ctor
       },
       LevelData::Succ(x, h) => {
         let x_obj = Self::build(cache, x);
-        let ctor = LeanCtor::alloc(1, 2, 0);
-        ctor.set(0, x_obj);
-        ctor.set(1, LeanIxAddress::build_from_hash(h));
-        Self::new(ctor.into())
+        let ctor = LeanIxLevel::alloc(1);
+        ctor.set_obj(0, x_obj);
+        ctor.set_obj(1, LeanIxAddress::build_from_hash(h));
+        ctor
       },
       LevelData::Max(x, y, h) => {
         let x_obj = Self::build(cache, x);
         let y_obj = Self::build(cache, y);
-        let ctor = LeanCtor::alloc(2, 3, 0);
-        ctor.set(0, x_obj);
-        ctor.set(1, y_obj);
-        ctor.set(2, LeanIxAddress::build_from_hash(h));
-        Self::new(ctor.into())
+        let ctor = LeanIxLevel::alloc(2);
+        ctor.set_obj(0, x_obj);
+        ctor.set_obj(1, y_obj);
+        ctor.set_obj(2, LeanIxAddress::build_from_hash(h));
+        ctor
       },
       LevelData::Imax(x, y, h) => {
         let x_obj = Self::build(cache, x);
         let y_obj = Self::build(cache, y);
-        let ctor = LeanCtor::alloc(3, 3, 0);
-        ctor.set(0, x_obj);
-        ctor.set(1, y_obj);
-        ctor.set(2, LeanIxAddress::build_from_hash(h));
-        Self::new(ctor.into())
+        let ctor = LeanIxLevel::alloc(3);
+        ctor.set_obj(0, x_obj);
+        ctor.set_obj(1, y_obj);
+        ctor.set_obj(2, LeanIxAddress::build_from_hash(h));
+        ctor
       },
       LevelData::Param(n, h) => {
         let n_obj = LeanIxName::build(cache, n);
-        let ctor = LeanCtor::alloc(4, 2, 0);
-        ctor.set(0, n_obj);
-        ctor.set(1, LeanIxAddress::build_from_hash(h));
-        Self::new(ctor.into())
+        let ctor = LeanIxLevel::alloc(4);
+        ctor.set_obj(0, n_obj);
+        ctor.set_obj(1, LeanIxAddress::build_from_hash(h));
+        ctor
       },
       LevelData::Mvar(n, h) => {
         let n_obj = LeanIxName::build(cache, n);
-        let ctor = LeanCtor::alloc(5, 2, 0);
-        ctor.set(0, n_obj);
-        ctor.set(1, LeanIxAddress::build_from_hash(h));
-        Self::new(ctor.into())
+        let ctor = LeanIxLevel::alloc(5);
+        ctor.set_obj(0, n_obj);
+        ctor.set_obj(1, LeanIxAddress::build_from_hash(h));
+        ctor
       },
     };
 

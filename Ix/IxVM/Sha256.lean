@@ -46,476 +46,476 @@ def sha256 := ⟦
 
   fn sha256_aux(stream: ByteStream, len_be: U64, state: [[G; 4]; 8]) -> [[G; 4]; 8] {
     let W = [[0; 4]; 16];
-    match stream {
-      List.Nil =>
+    match load(stream) {
+      ListNode.Nil =>
         let W = set(W, 0, [0x80, 0, 0, 0]);
         let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
         let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
         fill_W_and_run_rounds(W, state),
-      List.Cons(b0, &tail) => match tail {
-        List.Nil =>
+      ListNode.Cons(b0, tail) => match load(tail) {
+        ListNode.Nil =>
           let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 8]);
           let W = set(W, 0, [b0, 0x80, 0, 0]);
           let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
           let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
           fill_W_and_run_rounds(W, state),
-        List.Cons(b1, &tail) => match tail {
-          List.Nil =>
+        ListNode.Cons(b1, tail) => match load(tail) {
+          ListNode.Nil =>
             let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 16]);
             let W = set(W, 0, [b0, b1, 0x80, 0]);
             let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
             let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
             fill_W_and_run_rounds(W, state),
-          List.Cons(b2, &tail) => match tail {
-            List.Nil =>
+          ListNode.Cons(b2, tail) => match load(tail) {
+            ListNode.Nil =>
               let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 24]);
               let W = set(W, 0, [b0, b1, b2, 0x80]);
               let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
               let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
               fill_W_and_run_rounds(W, state),
-            List.Cons(b3, &tail) =>
+            ListNode.Cons(b3, tail) =>
               let W = set(W, 0, [b0, b1, b2, b3]);
-              match tail {
-              List.Nil =>
+              match load(tail) {
+              ListNode.Nil =>
                 let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 32]);
                 let W = set(W, 1, [0x80, 0, 0, 0]);
                 let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                 let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                 fill_W_and_run_rounds(W, state),
-              List.Cons(b4, &tail) => match tail {
-                List.Nil =>
+              ListNode.Cons(b4, tail) => match load(tail) {
+                ListNode.Nil =>
                   let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 40]);
                   let W = set(W, 1, [b4, 0x80, 0, 0]);
                   let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                   let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                   fill_W_and_run_rounds(W, state),
-                List.Cons(b5, &tail) => match tail {
-                  List.Nil =>
+                ListNode.Cons(b5, tail) => match load(tail) {
+                  ListNode.Nil =>
                     let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 48]);
                     let W = set(W, 1, [b4, b5, 0x80, 0]);
                     let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                     let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                     fill_W_and_run_rounds(W, state),
-                  List.Cons(b6, &tail) => match tail {
-                    List.Nil =>
+                  ListNode.Cons(b6, tail) => match load(tail) {
+                    ListNode.Nil =>
                       let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 56]);
                       let W = set(W, 1, [b4, b5, b6, 0x80]);
                       let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                       let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                       fill_W_and_run_rounds(W, state),
-                    List.Cons(b7, &tail) =>
+                    ListNode.Cons(b7, tail) =>
                       let W = set(W, 1, [b4, b5, b6, b7]);
-                      match tail {
-                      List.Nil =>
+                      match load(tail) {
+                      ListNode.Nil =>
                         let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 64]);
                         let W = set(W, 2, [0x80, 0, 0, 0]);
                         let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                         let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                         fill_W_and_run_rounds(W, state),
-                      List.Cons(b8, &tail) => match tail {
-                        List.Nil =>
+                      ListNode.Cons(b8, tail) => match load(tail) {
+                        ListNode.Nil =>
                           let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 72]);
                           let W = set(W, 2, [b8, 0x80, 0, 0]);
                           let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                           let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                           fill_W_and_run_rounds(W, state),
-                        List.Cons(b9, &tail) => match tail {
-                          List.Nil =>
+                        ListNode.Cons(b9, tail) => match load(tail) {
+                          ListNode.Nil =>
                             let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 80]);
                             let W = set(W, 2, [b8, b9, 0x80, 0]);
                             let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                             let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                             fill_W_and_run_rounds(W, state),
-                          List.Cons(b10, &tail) => match tail {
-                            List.Nil =>
+                          ListNode.Cons(b10, tail) => match load(tail) {
+                            ListNode.Nil =>
                               let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 88]);
                               let W = set(W, 2, [b8, b9, b10, 0x80]);
                               let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                               let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                               fill_W_and_run_rounds(W, state),
-                            List.Cons(b11, &tail) =>
+                            ListNode.Cons(b11, tail) =>
                               let W = set(W, 2, [b8, b9, b10, b11]);
-                              match tail {
-                              List.Nil =>
+                              match load(tail) {
+                              ListNode.Nil =>
                                 let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 96]);
                                 let W = set(W, 3, [0x80, 0, 0, 0]);
                                 let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                 let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                 fill_W_and_run_rounds(W, state),
-                              List.Cons(b12, &tail) => match tail {
-                                List.Nil =>
+                              ListNode.Cons(b12, tail) => match load(tail) {
+                                ListNode.Nil =>
                                   let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 104]);
                                   let W = set(W, 3, [b12, 0x80, 0, 0]);
                                   let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                   let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                   fill_W_and_run_rounds(W, state),
-                                List.Cons(b13, &tail) => match tail {
-                                  List.Nil =>
+                                ListNode.Cons(b13, tail) => match load(tail) {
+                                  ListNode.Nil =>
                                     let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 112]);
                                     let W = set(W, 3, [b12, b13, 0x80, 0]);
                                     let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                     let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                     fill_W_and_run_rounds(W, state),
-                                  List.Cons(b14, &tail) => match tail {
-                                    List.Nil =>
+                                  ListNode.Cons(b14, tail) => match load(tail) {
+                                    ListNode.Nil =>
                                       let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 120]);
                                       let W = set(W, 3, [b12, b13, b14, 0x80]);
                                       let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                       let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                       fill_W_and_run_rounds(W, state),
-                                    List.Cons(b15, &tail) =>
+                                    ListNode.Cons(b15, tail) =>
                                       let W = set(W, 3, [b12, b13, b14, b15]);
-                                      match tail {
-                                      List.Nil =>
+                                      match load(tail) {
+                                      ListNode.Nil =>
                                         let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 128]);
                                         let W = set(W, 4, [0x80, 0, 0, 0]);
                                         let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                         let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                         fill_W_and_run_rounds(W, state),
-                                      List.Cons(b16, &tail) => match tail {
-                                        List.Nil =>
+                                      ListNode.Cons(b16, tail) => match load(tail) {
+                                        ListNode.Nil =>
                                           let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 136]);
                                           let W = set(W, 4, [b16, 0x80, 0, 0]);
                                           let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                           let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                           fill_W_and_run_rounds(W, state),
-                                        List.Cons(b17, &tail) => match tail {
-                                          List.Nil =>
+                                        ListNode.Cons(b17, tail) => match load(tail) {
+                                          ListNode.Nil =>
                                             let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 144]);
                                             let W = set(W, 4, [b16, b17, 0x80, 0]);
                                             let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                             let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                             fill_W_and_run_rounds(W, state),
-                                          List.Cons(b18, &tail) => match tail {
-                                            List.Nil =>
+                                          ListNode.Cons(b18, tail) => match load(tail) {
+                                            ListNode.Nil =>
                                               let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 152]);
                                               let W = set(W, 4, [b16, b17, b18, 0x80]);
                                               let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                               let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                               fill_W_and_run_rounds(W, state),
-                                            List.Cons(b19, &tail) =>
+                                            ListNode.Cons(b19, tail) =>
                                               let W = set(W, 4, [b16, b17, b18, b19]);
-                                              match tail {
-                                              List.Nil =>
+                                              match load(tail) {
+                                              ListNode.Nil =>
                                                 let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 160]);
                                                 let W = set(W, 5, [0x80, 0, 0, 0]);
                                                 let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                 let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                 fill_W_and_run_rounds(W, state),
-                                              List.Cons(b20, &tail) => match tail {
-                                                List.Nil =>
+                                              ListNode.Cons(b20, tail) => match load(tail) {
+                                                ListNode.Nil =>
                                                   let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 168]);
                                                   let W = set(W, 5, [b20, 0x80, 0, 0]);
                                                   let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                   let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                   fill_W_and_run_rounds(W, state),
-                                                List.Cons(b21, &tail) => match tail {
-                                                  List.Nil =>
+                                                ListNode.Cons(b21, tail) => match load(tail) {
+                                                  ListNode.Nil =>
                                                     let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 176]);
                                                     let W = set(W, 5, [b20, b21, 0x80, 0]);
                                                     let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                     let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                     fill_W_and_run_rounds(W, state),
-                                                  List.Cons(b22, &tail) => match tail {
-                                                    List.Nil =>
+                                                  ListNode.Cons(b22, tail) => match load(tail) {
+                                                    ListNode.Nil =>
                                                       let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 184]);
                                                       let W = set(W, 5, [b20, b21, b22, 0x80]);
                                                       let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                       let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                       fill_W_and_run_rounds(W, state),
-                                                    List.Cons(b23, &tail) =>
+                                                    ListNode.Cons(b23, tail) =>
                                                       let W = set(W, 5, [b20, b21, b22, b23]);
-                                                      match tail {
-                                                      List.Nil =>
+                                                      match load(tail) {
+                                                      ListNode.Nil =>
                                                         let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 192]);
                                                         let W = set(W, 6, [0x80, 0, 0, 0]);
                                                         let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                         let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                         fill_W_and_run_rounds(W, state),
-                                                      List.Cons(b24, &tail) => match tail {
-                                                        List.Nil =>
+                                                      ListNode.Cons(b24, tail) => match load(tail) {
+                                                        ListNode.Nil =>
                                                           let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 200]);
                                                           let W = set(W, 6, [b24, 0x80, 0, 0]);
                                                           let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                           let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                           fill_W_and_run_rounds(W, state),
-                                                        List.Cons(b25, &tail) => match tail {
-                                                          List.Nil =>
+                                                        ListNode.Cons(b25, tail) => match load(tail) {
+                                                          ListNode.Nil =>
                                                             let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 208]);
                                                             let W = set(W, 6, [b24, b25, 0x80, 0]);
                                                             let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                             let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                             fill_W_and_run_rounds(W, state),
-                                                          List.Cons(b26, &tail) => match tail {
-                                                            List.Nil =>
+                                                          ListNode.Cons(b26, tail) => match load(tail) {
+                                                            ListNode.Nil =>
                                                               let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 216]);
                                                               let W = set(W, 6, [b24, b25, b26, 0x80]);
                                                               let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                               let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                               fill_W_and_run_rounds(W, state),
-                                                            List.Cons(b27, &tail) =>
+                                                            ListNode.Cons(b27, tail) =>
                                                               let W = set(W, 6, [b24, b25, b26, b27]);
-                                                              match tail {
-                                                              List.Nil =>
+                                                              match load(tail) {
+                                                              ListNode.Nil =>
                                                                 let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 224]);
                                                                 let W = set(W, 7, [0x80, 0, 0, 0]);
                                                                 let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                 let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                 fill_W_and_run_rounds(W, state),
-                                                              List.Cons(b28, &tail) => match tail {
-                                                                List.Nil =>
+                                                              ListNode.Cons(b28, tail) => match load(tail) {
+                                                                ListNode.Nil =>
                                                                   let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 232]);
                                                                   let W = set(W, 7, [b28, 0x80, 0, 0]);
                                                                   let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                   let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                   fill_W_and_run_rounds(W, state),
-                                                                List.Cons(b29, &tail) => match tail {
-                                                                  List.Nil =>
+                                                                ListNode.Cons(b29, tail) => match load(tail) {
+                                                                  ListNode.Nil =>
                                                                     let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 240]);
                                                                     let W = set(W, 7, [b28, b29, 0x80, 0]);
                                                                     let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                     let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                     fill_W_and_run_rounds(W, state),
-                                                                  List.Cons(b30, &tail) => match tail {
-                                                                    List.Nil =>
+                                                                  ListNode.Cons(b30, tail) => match load(tail) {
+                                                                    ListNode.Nil =>
                                                                       let len_be = relaxed_u64_be_add_2_bytes(len_be, [0, 248]);
                                                                       let W = set(W, 7, [b28, b29, b30, 0x80]);
                                                                       let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                       let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                       fill_W_and_run_rounds(W, state),
-                                                                    List.Cons(b31, &tail) =>
+                                                                    ListNode.Cons(b31, tail) =>
                                                                       let W = set(W, 7, [b28, b29, b30, b31]);
-                                                                      match tail {
-                                                                      List.Nil =>
+                                                                      match load(tail) {
+                                                                      ListNode.Nil =>
                                                                         let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 0]);
                                                                         let W = set(W, 8, [0x80, 0, 0, 0]);
                                                                         let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                         let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                         fill_W_and_run_rounds(W, state),
-                                                                      List.Cons(b32, &tail) => match tail {
-                                                                        List.Nil =>
+                                                                      ListNode.Cons(b32, tail) => match load(tail) {
+                                                                        ListNode.Nil =>
                                                                           let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 8]);
                                                                           let W = set(W, 8, [b32, 0x80, 0, 0]);
                                                                           let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                           let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                           fill_W_and_run_rounds(W, state),
-                                                                        List.Cons(b33, &tail) => match tail {
-                                                                          List.Nil =>
+                                                                        ListNode.Cons(b33, tail) => match load(tail) {
+                                                                          ListNode.Nil =>
                                                                             let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 16]);
                                                                             let W = set(W, 8, [b32, b33, 0x80, 0]);
                                                                             let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                             let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                             fill_W_and_run_rounds(W, state),
-                                                                          List.Cons(b34, &tail) => match tail {
-                                                                            List.Nil =>
+                                                                          ListNode.Cons(b34, tail) => match load(tail) {
+                                                                            ListNode.Nil =>
                                                                               let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 24]);
                                                                               let W = set(W, 8, [b32, b33, b34, 0x80]);
                                                                               let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                               let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                               fill_W_and_run_rounds(W, state),
-                                                                            List.Cons(b35, &tail) =>
+                                                                            ListNode.Cons(b35, tail) =>
                                                                               let W = set(W, 8, [b32, b33, b34, b35]);
-                                                                              match tail {
-                                                                              List.Nil =>
+                                                                              match load(tail) {
+                                                                              ListNode.Nil =>
                                                                                 let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 32]);
                                                                                 let W = set(W, 9, [0x80, 0, 0, 0]);
                                                                                 let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                                 let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                                 fill_W_and_run_rounds(W, state),
-                                                                              List.Cons(b36, &tail) => match tail {
-                                                                                List.Nil =>
+                                                                              ListNode.Cons(b36, tail) => match load(tail) {
+                                                                                ListNode.Nil =>
                                                                                   let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 40]);
                                                                                   let W = set(W, 9, [b36, 0x80, 0, 0]);
                                                                                   let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                                   let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                                   fill_W_and_run_rounds(W, state),
-                                                                                List.Cons(b37, &tail) => match tail {
-                                                                                  List.Nil =>
+                                                                                ListNode.Cons(b37, tail) => match load(tail) {
+                                                                                  ListNode.Nil =>
                                                                                     let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 48]);
                                                                                     let W = set(W, 9, [b36, b37, 0x80, 0]);
                                                                                     let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                                     let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                                     fill_W_and_run_rounds(W, state),
-                                                                                  List.Cons(b38, &tail) => match tail {
-                                                                                    List.Nil =>
+                                                                                  ListNode.Cons(b38, tail) => match load(tail) {
+                                                                                    ListNode.Nil =>
                                                                                       let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 56]);
                                                                                       let W = set(W, 9, [b36, b37, b38, 0x80]);
                                                                                       let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                                       let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                                       fill_W_and_run_rounds(W, state),
-                                                                                    List.Cons(b39, &tail) =>
+                                                                                    ListNode.Cons(b39, tail) =>
                                                                                       let W = set(W, 9, [b36, b37, b38, b39]);
-                                                                                      match tail {
-                                                                                      List.Nil =>
+                                                                                      match load(tail) {
+                                                                                      ListNode.Nil =>
                                                                                         let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 64]);
                                                                                         let W = set(W, 10, [0x80, 0, 0, 0]);
                                                                                         let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                                         let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                                         fill_W_and_run_rounds(W, state),
-                                                                                      List.Cons(b40, &tail) => match tail {
-                                                                                        List.Nil =>
+                                                                                      ListNode.Cons(b40, tail) => match load(tail) {
+                                                                                        ListNode.Nil =>
                                                                                           let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 72]);
                                                                                           let W = set(W, 10, [b40, 0x80, 0, 0]);
                                                                                           let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                                           let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                                           fill_W_and_run_rounds(W, state),
-                                                                                        List.Cons(b41, &tail) => match tail {
-                                                                                          List.Nil =>
+                                                                                        ListNode.Cons(b41, tail) => match load(tail) {
+                                                                                          ListNode.Nil =>
                                                                                             let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 80]);
                                                                                             let W = set(W, 10, [b40, b41, 0x80, 0]);
                                                                                             let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                                             let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                                             fill_W_and_run_rounds(W, state),
-                                                                                          List.Cons(b42, &tail) => match tail {
-                                                                                            List.Nil =>
+                                                                                          ListNode.Cons(b42, tail) => match load(tail) {
+                                                                                            ListNode.Nil =>
                                                                                               let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 88]);
                                                                                               let W = set(W, 10, [b40, b41, b42, 0x80]);
                                                                                               let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                                               let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                                               fill_W_and_run_rounds(W, state),
-                                                                                            List.Cons(b43, &tail) =>
+                                                                                            ListNode.Cons(b43, tail) =>
                                                                                               let W = set(W, 10, [b40, b41, b42, b43]);
-                                                                                              match tail {
-                                                                                              List.Nil =>
+                                                                                              match load(tail) {
+                                                                                              ListNode.Nil =>
                                                                                                 let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 96]);
                                                                                                 let W = set(W, 11, [0x80, 0, 0, 0]);
                                                                                                 let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                                                 let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                                                 fill_W_and_run_rounds(W, state),
-                                                                                              List.Cons(b44, &tail) => match tail {
-                                                                                                List.Nil =>
+                                                                                              ListNode.Cons(b44, tail) => match load(tail) {
+                                                                                                ListNode.Nil =>
                                                                                                   let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 104]);
                                                                                                   let W = set(W, 11, [b44, 0x80, 0, 0]);
                                                                                                   let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                                                   let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                                                   fill_W_and_run_rounds(W, state),
-                                                                                                List.Cons(b45, &tail) => match tail {
-                                                                                                  List.Nil =>
+                                                                                                ListNode.Cons(b45, tail) => match load(tail) {
+                                                                                                  ListNode.Nil =>
                                                                                                     let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 112]);
                                                                                                     let W = set(W, 11, [b44, b45, 0x80, 0]);
                                                                                                     let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                                                     let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                                                     fill_W_and_run_rounds(W, state),
-                                                                                                  List.Cons(b46, &tail) => match tail {
-                                                                                                    List.Nil =>
+                                                                                                  ListNode.Cons(b46, tail) => match load(tail) {
+                                                                                                    ListNode.Nil =>
                                                                                                       let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 120]);
                                                                                                       let W = set(W, 11, [b44, b45, b46, 0x80]);
                                                                                                       let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                                                       let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                                                       fill_W_and_run_rounds(W, state),
-                                                                                                    List.Cons(b47, &tail) =>
+                                                                                                    ListNode.Cons(b47, tail) =>
                                                                                                       let W = set(W, 11, [b44, b45, b46, b47]);
-                                                                                                      match tail {
-                                                                                                      List.Nil =>
+                                                                                                      match load(tail) {
+                                                                                                      ListNode.Nil =>
                                                                                                         let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 128]);
                                                                                                         let W = set(W, 12, [0x80, 0, 0, 0]);
                                                                                                         let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                                                         let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                                                         fill_W_and_run_rounds(W, state),
-                                                                                                      List.Cons(b48, &tail) => match tail {
-                                                                                                        List.Nil =>
+                                                                                                      ListNode.Cons(b48, tail) => match load(tail) {
+                                                                                                        ListNode.Nil =>
                                                                                                           let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 136]);
                                                                                                           let W = set(W, 12, [b48, 0x80, 0, 0]);
                                                                                                           let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                                                           let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                                                           fill_W_and_run_rounds(W, state),
-                                                                                                        List.Cons(b49, &tail) => match tail {
-                                                                                                          List.Nil =>
+                                                                                                        ListNode.Cons(b49, tail) => match load(tail) {
+                                                                                                          ListNode.Nil =>
                                                                                                             let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 144]);
                                                                                                             let W = set(W, 12, [b48, b49, 0x80, 0]);
                                                                                                             let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                                                             let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                                                             fill_W_and_run_rounds(W, state),
-                                                                                                          List.Cons(b50, &tail) => match tail {
-                                                                                                            List.Nil =>
+                                                                                                          ListNode.Cons(b50, tail) => match load(tail) {
+                                                                                                            ListNode.Nil =>
                                                                                                               let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 152]);
                                                                                                               let W = set(W, 12, [b48, b49, b50, 0x80]);
                                                                                                               let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                                                               let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                                                               fill_W_and_run_rounds(W, state),
-                                                                                                            List.Cons(b51, &tail) =>
+                                                                                                            ListNode.Cons(b51, tail) =>
                                                                                                               let W = set(W, 12, [b48, b49, b50, b51]);
-                                                                                                              match tail {
-                                                                                                              List.Nil =>
+                                                                                                              match load(tail) {
+                                                                                                              ListNode.Nil =>
                                                                                                                 let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 160]);
                                                                                                                 let W = set(W, 13, [0x80, 0, 0, 0]);
                                                                                                                 let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                                                                 let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                                                                 fill_W_and_run_rounds(W, state),
-                                                                                                              List.Cons(b52, &tail) => match tail {
-                                                                                                                List.Nil =>
+                                                                                                              ListNode.Cons(b52, tail) => match load(tail) {
+                                                                                                                ListNode.Nil =>
                                                                                                                   let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 168]);
                                                                                                                   let W = set(W, 13, [b52, 0x80, 0, 0]);
                                                                                                                   let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                                                                   let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                                                                   fill_W_and_run_rounds(W, state),
-                                                                                                                List.Cons(b53, &tail) => match tail {
-                                                                                                                  List.Nil =>
+                                                                                                                ListNode.Cons(b53, tail) => match load(tail) {
+                                                                                                                  ListNode.Nil =>
                                                                                                                     let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 176]);
                                                                                                                     let W = set(W, 13, [b52, b53, 0x80, 0]);
                                                                                                                     let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                                                                     let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                                                                     fill_W_and_run_rounds(W, state),
-                                                                                                                  List.Cons(b54, &tail) => match tail {
-                                                                                                                    List.Nil =>
+                                                                                                                  ListNode.Cons(b54, tail) => match load(tail) {
+                                                                                                                    ListNode.Nil =>
                                                                                                                       let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 184]);
                                                                                                                       let W = set(W, 13, [b52, b53, b54, 0x80]);
                                                                                                                       let W = set(W, 14, [len_be[0], len_be[1], len_be[2], len_be[3]]);
                                                                                                                       let W = set(W, 15, [len_be[4], len_be[5], len_be[6], len_be[7]]);
                                                                                                                       fill_W_and_run_rounds(W, state),
-                                                                                                                    List.Cons(b55, &tail) =>
+                                                                                                                    ListNode.Cons(b55, tail) =>
                                                                                                                       let W = set(W, 13, [b52, b53, b54, b55]);
-                                                                                                                      match tail {
-                                                                                                                      List.Nil =>
+                                                                                                                      match load(tail) {
+                                                                                                                      ListNode.Nil =>
                                                                                                                         let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 192]);
                                                                                                                         let W = set(W, 14, [0x80, 0, 0, 0]);
                                                                                                                         let state = fill_W_and_run_rounds(W, state);
                                                                                                                         fill_W_with_length_and_run_rounds(len_be, state),
-                                                                                                                      List.Cons(b56, &tail) => match tail {
-                                                                                                                        List.Nil =>
+                                                                                                                      ListNode.Cons(b56, tail) => match load(tail) {
+                                                                                                                        ListNode.Nil =>
                                                                                                                           let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 200]);
                                                                                                                           let W = set(W, 14, [b56, 0x80, 0, 0]);
                                                                                                                           let state = fill_W_and_run_rounds(W, state);
                                                                                                                           fill_W_with_length_and_run_rounds(len_be, state),
-                                                                                                                        List.Cons(b57, &tail) => match tail {
-                                                                                                                          List.Nil =>
+                                                                                                                        ListNode.Cons(b57, tail) => match load(tail) {
+                                                                                                                          ListNode.Nil =>
                                                                                                                             let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 208]);
                                                                                                                             let W = set(W, 14, [b56, b57, 0x80, 0]);
                                                                                                                             let state = fill_W_and_run_rounds(W, state);
                                                                                                                             fill_W_with_length_and_run_rounds(len_be, state),
-                                                                                                                          List.Cons(b58, &tail) => match tail {
-                                                                                                                            List.Nil =>
+                                                                                                                          ListNode.Cons(b58, tail) => match load(tail) {
+                                                                                                                            ListNode.Nil =>
                                                                                                                               let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 216]);
                                                                                                                               let W = set(W, 14, [b56, b57, b58, 0x80]);
                                                                                                                               let state = fill_W_and_run_rounds(W, state);
                                                                                                                               fill_W_with_length_and_run_rounds(len_be, state),
-                                                                                                                            List.Cons(b59, &tail) =>
+                                                                                                                            ListNode.Cons(b59, tail) =>
                                                                                                                               let W = set(W, 14, [b56, b57, b58, b59]);
-                                                                                                                              match tail {
-                                                                                                                              List.Nil =>
+                                                                                                                              match load(tail) {
+                                                                                                                              ListNode.Nil =>
                                                                                                                                 let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 224]);
                                                                                                                                 let W = set(W, 15, [0x80, 0, 0, 0]);
                                                                                                                                 let state = fill_W_and_run_rounds(W, state);
                                                                                                                                 fill_W_with_length_and_run_rounds(len_be, state),
-                                                                                                                              List.Cons(b60, &tail) => match tail {
-                                                                                                                                List.Nil =>
+                                                                                                                              ListNode.Cons(b60, tail) => match load(tail) {
+                                                                                                                                ListNode.Nil =>
                                                                                                                                   let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 232]);
                                                                                                                                   let W = set(W, 15, [b60, 0x80, 0, 0]);
                                                                                                                                   let state = fill_W_and_run_rounds(W, state);
                                                                                                                                   fill_W_with_length_and_run_rounds(len_be, state),
-                                                                                                                                List.Cons(b61, &tail) => match tail {
-                                                                                                                                  List.Nil =>
+                                                                                                                                ListNode.Cons(b61, tail) => match load(tail) {
+                                                                                                                                  ListNode.Nil =>
                                                                                                                                     let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 240]);
                                                                                                                                     let W = set(W, 15, [b60, b61, 0x80, 0]);
                                                                                                                                     let state = fill_W_and_run_rounds(W, state);
                                                                                                                                     fill_W_with_length_and_run_rounds(len_be, state),
-                                                                                                                                  List.Cons(b62, &tail) => match tail {
-                                                                                                                                    List.Nil =>
+                                                                                                                                  ListNode.Cons(b62, tail) => match load(tail) {
+                                                                                                                                    ListNode.Nil =>
                                                                                                                                       let len_be = relaxed_u64_be_add_2_bytes(len_be, [1, 248]);
                                                                                                                                       let W = set(W, 15, [b60, b61, b62, 0x80]);
                                                                                                                                       let state = fill_W_and_run_rounds(W, state);
                                                                                                                                       fill_W_with_length_and_run_rounds(len_be, state),
-                                                                                                                                    List.Cons(b63, &tail) =>
+                                                                                                                                    ListNode.Cons(b63, tail) =>
                                                                                                                                       let len_be = relaxed_u64_be_add_2_bytes(len_be, [2, 0]);
                                                                                                                                       let W = set(W, 15, [b60, b61, b62, b63]);
                                                                                                                                       let state = fill_W_and_run_rounds(W, state);

@@ -6,7 +6,7 @@ use crate::ix::condense::compute_sccs;
 use crate::ix::graph::build_ref_graph;
 use crate::lean::LeanIxCondensedBlocks;
 use lean_ffi::object::{
-  LeanArray, LeanBorrowed, LeanCtor, LeanIOResult, LeanList, LeanOwned,
+  LeanArray, LeanBorrowed, LeanIOResult, LeanList, LeanOwned, LeanProd,
 };
 
 use crate::ffi::builder::LeanBuildCache;
@@ -28,9 +28,7 @@ pub fn build_ref_graph_array(
       refs_arr.set(j, ref_name_obj);
     }
 
-    let pair = LeanCtor::alloc(0, 2, 0);
-    pair.set(0, name_obj);
-    pair.set(1, refs_arr);
+    let pair = LeanProd::new(name_obj, refs_arr);
     arr.set(i, pair);
   }
   arr
@@ -47,9 +45,7 @@ impl LeanIxCondensedBlocks<LeanOwned> {
     for (i, (name, low_link)) in condensed.low_links.iter().enumerate() {
       let name_obj = LeanIxName::build(cache, name);
       let low_link_obj = LeanIxName::build(cache, low_link);
-      let pair = LeanCtor::alloc(0, 2, 0);
-      pair.set(0, name_obj);
-      pair.set(1, low_link_obj);
+      let pair = LeanProd::new(name_obj, low_link_obj);
       low_links_arr.set(i, pair);
     }
 
@@ -62,9 +58,7 @@ impl LeanIxCondensedBlocks<LeanOwned> {
         let block_name_obj = LeanIxName::build(cache, block_name);
         block_names_arr.set(j, block_name_obj);
       }
-      let pair = LeanCtor::alloc(0, 2, 0);
-      pair.set(0, name_obj);
-      pair.set(1, block_names_arr);
+      let pair = LeanProd::new(name_obj, block_names_arr);
       blocks_arr.set(i, pair);
     }
 
@@ -77,18 +71,16 @@ impl LeanIxCondensedBlocks<LeanOwned> {
         let ref_name_obj = LeanIxName::build(cache, ref_name);
         refs_arr.set(j, ref_name_obj);
       }
-      let pair = LeanCtor::alloc(0, 2, 0);
-      pair.set(0, name_obj);
-      pair.set(1, refs_arr);
+      let pair = LeanProd::new(name_obj, refs_arr);
       block_refs_arr.set(i, pair);
     }
 
     // Build RustCondensedBlocks structure (3 fields)
-    let result = LeanCtor::alloc(0, 3, 0);
-    result.set(0, low_links_arr);
-    result.set(1, blocks_arr);
-    result.set(2, block_refs_arr);
-    Self::new(result.into())
+    let result = LeanIxCondensedBlocks::alloc(0);
+    result.set_obj(0, low_links_arr);
+    result.set_obj(1, blocks_arr);
+    result.set_obj(2, block_refs_arr);
+    result
   }
 }
 

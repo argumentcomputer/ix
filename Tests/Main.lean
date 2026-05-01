@@ -42,6 +42,7 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("sharing", Tests.Sharing.suite),
   ("graph-unit", Tests.Ix.GraphM.suite),
   ("condense-unit", Tests.Ix.CondenseM.suite),
+  ("aiur-cross", [AiurTests.Cross.tests]),
 ]
 
 /-- Ignored test suites - expensive, run only when explicitly requested. These require significant RAM -/

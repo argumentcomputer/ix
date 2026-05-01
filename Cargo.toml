@@ -8,10 +8,10 @@ crate-type = ["staticlib"]
 
 [dependencies]
 anyhow = "1"
-blake3 = "1.8.3"
+blake3 = "1.8.4"
 itertools = "0.14.0"
 indexmap = { version = "2", features = ["rayon"] }
-lean-ffi = { git = "https://github.com/argumentcomputer/lean-ffi", rev = "2ee6267354ce460a8dd95ae9f087cc2569a90ad6" }
+lean-ffi = { git = "https://github.com/argumentcomputer/lean-ffi", rev = "cc98ebf67bf453ac3827cb767f78b13ea674dd6a" }
 mimalloc = { version = "0.1", default-features = false }
 multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "a8a15ea6aa2890f9f60f32a6e0e5e66afc1535ff" }
 num-bigint = "0.4.6"
@@ -23,11 +23,10 @@ sha2 = "0.10"
 # Iroh dependencies
 bytes = { version = "1.10.1", optional = true }
 tokio = { version = "1.44.1", optional = true }
-iroh = { version = "0.91", optional = true }
-iroh-base = { version = "0.91", optional = true }
-n0-snafu = { version = "0.2.1", optional = true }
-n0-watcher = { version = "0.3", optional = true }
-rand = { version = "0.8", optional = true }
+iroh = { version = "0.97", optional = true }
+iroh-base = { version = "0.97", optional = true }
+n0-error = { version = "0.1", optional = true }
+getrandom = { version = "0.3", optional = true }
 tracing = { version = "0.1", optional = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
 bincode = { version = "2.0.1", optional = true }
@@ -35,14 +34,14 @@ serde = { version = "1.0.219", features = ["derive"], optional = true }
 
 [dev-dependencies]
 quickcheck = "1.0.3"
-rand = "0.8.5"
+rand = "0.10.1"
 quickcheck_macros = "1.0.0"
 
 [features]
 default = []
 parallel = ["multi-stark/parallel"]
 test-ffi = []
-net = ["bytes", "tokio", "iroh", "iroh-base", "n0-snafu", "n0-watcher", "rand", "tracing", "tracing-subscriber", "bincode", "serde" ]
+net = ["bytes", "tokio", "iroh", "iroh-base", "n0-error", "getrandom", "tracing", "tracing-subscriber", "bincode", "serde" ]
 
 [profile.dev]
 panic = "abort"

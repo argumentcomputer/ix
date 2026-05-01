@@ -2,6 +2,8 @@ use multi_stark::p3_field::PrimeCharacteristicRing;
 
 use lean_ffi::object::{LeanBorrowed, LeanCtor, LeanRef};
 
+use crate::lean::LeanAiurFunction;
+
 use crate::{
   FxIndexMap,
   aiur::{
@@ -168,17 +170,56 @@ fn decode_ctrl(ctor: LeanCtor<LeanBorrowed<'_>>) -> Ctrl {
       let val_idxs = decode_vec_val_idx(val_idxs_obj);
       Ctrl::Return(sel_idx, val_idxs)
     },
+    2 => {
+      let [sel_idx_obj, val_idxs_obj] = ctor.objs::<2>();
+      let sel_idx = lean_unbox_nat_as_usize(&sel_idx_obj);
+      let val_idxs = decode_vec_val_idx(val_idxs_obj);
+      Ctrl::Yield(sel_idx, val_idxs)
+    },
+    3 => {
+      let [
+        val_idx_obj,
+        cases_obj,
+        default_obj,
+        output_size_obj,
+        shared_aux_obj,
+        shared_lookups_obj,
+        cont_obj,
+      ] = ctor.objs::<7>();
+      let val_idx = lean_unbox_nat_as_usize(&val_idx_obj);
+      let vec_cases =
+        cases_obj.as_array().map(|o| decode_g_block_pair(o.as_ctor()));
+      let cases = FxIndexMap::from_iter(vec_cases);
+      let default = if default_obj.is_scalar() {
+        None
+      } else {
+        let inner_ctor = default_obj.as_ctor();
+        let block = decode_block(inner_ctor.get(0).as_ctor());
+        Some(Box::new(block))
+      };
+      let output_size = lean_unbox_nat_as_usize(&output_size_obj);
+      let shared_aux = lean_unbox_nat_as_usize(&shared_aux_obj);
+      let shared_lookups = lean_unbox_nat_as_usize(&shared_lookups_obj);
+      let continuation = Box::new(decode_block(cont_obj.as_ctor()));
+      Ctrl::MatchContinue(
+        val_idx,
+        cases,
+        default,
+        output_size,
+        shared_aux,
+        shared_lookups,
+        continuation,
+      )
+    },
     _ => unreachable!(),
   }
 }
 
 fn decode_block(ctor: LeanCtor<LeanBorrowed<'_>>) -> Block {
-  let [ops_obj, ctrl_obj, min_sel_obj, max_sel_obj] = ctor.objs::<4>();
+  let [ops_obj, ctrl_obj] = ctor.objs::<2>();
   let ops = ops_obj.as_array().map(|o| decode_op(o.as_ctor()));
   let ctrl = decode_ctrl(ctrl_obj.as_ctor());
-  let min_sel_included = lean_unbox_nat_as_usize(&min_sel_obj);
-  let max_sel_excluded = lean_unbox_nat_as_usize(&max_sel_obj);
-  Block { ops, ctrl, min_sel_included, max_sel_excluded }
+  Block { ops, ctrl }
 }
 
 fn decode_function_layout(ctor: LeanCtor<LeanBorrowed<'_>>) -> FunctionLayout {
@@ -192,11 +233,11 @@ fn decode_function_layout(ctor: LeanCtor<LeanBorrowed<'_>>) -> FunctionLayout {
 }
 
 fn decode_function(ctor: LeanCtor<LeanBorrowed<'_>>) -> Function {
-  let [body_obj, layout_obj, entry_obj, constrained_obj] = ctor.objs::<4>();
-  let body = decode_block(body_obj.as_ctor());
-  let layout = decode_function_layout(layout_obj.as_ctor());
-  let entry = entry_obj.as_enum_tag() != 0;
-  let constrained = constrained_obj.as_enum_tag() != 0;
+  let ctor = LeanAiurFunction::from_ctor(ctor);
+  let body = decode_block(ctor.get_obj(0).as_ctor());
+  let layout = decode_function_layout(ctor.get_obj(1).as_ctor());
+  let entry = ctor.get_num_8(0) != 0;
+  let constrained = ctor.get_num_8(1) != 0;
   Function { body, layout, entry, constrained }
 }
 

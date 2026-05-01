@@ -10,8 +10,8 @@ def ixon := ⟦
   enum Expr {
     Srt([G; 8]),
     Var([G; 8]),
-    Ref([G; 8], &List‹U64›),
-    Rec([G; 8], &List‹U64›),
+    Ref([G; 8], List‹U64›),
+    Rec([G; 8], List‹U64›),
     Prj([G; 8], [G; 8], &Expr),
     Str([G; 8]),
     Nat([G; 8]),
@@ -65,7 +65,7 @@ def ixon := ⟦
 
   -- Recursor: (k, is_unsafe, lvls, params, indices, motives, minors, typ, rules)
   enum Recursor {
-    Mk(G, G, [G; 8], [G; 8], [G; 8], [G; 8], [G; 8], &Expr, &List‹RecursorRule›)
+    Mk(G, G, [G; 8], [G; 8], [G; 8], [G; 8], [G; 8], &Expr, List‹RecursorRule›)
   }
 
   -- Axiom: (is_unsafe, lvls, typ)
@@ -85,7 +85,7 @@ def ixon := ⟦
 
   -- Inductive: (recr, refl, is_unsafe, lvls, params, indices, nested, typ, ctors)
   enum Inductive {
-    Mk(G, G, G, [G; 8], [G; 8], [G; 8], [G; 8], &Expr, &List‹Constructor›)
+    Mk(G, G, G, [G; 8], [G; 8], [G; 8], [G; 8], &Expr, List‹Constructor›)
   }
 
   -- InductiveProj: (idx, block_address)
@@ -125,12 +125,12 @@ def ixon := ⟦
     RPrj(RecursorProj),
     IPrj(InductiveProj),
     DPrj(DefinitionProj),
-    Muts(&List‹MutConst›)
+    Muts(List‹MutConst›)
   }
 
   -- Constant: (info, sharing, refs, univs)
   enum Constant {
-    Mk(ConstantInfo, &List‹&Expr›, &List‹[G; 32]›, &List‹&Univ›)
+    Mk(ConstantInfo, List‹&Expr›, List‹[G; 32]›, List‹&Univ›)
   }
 
   -- Blob: decoded literal value associated with a content address

@@ -12,11 +12,11 @@ def byteStream := ⟦
 
   fn read_byte_stream(idx: G, len: G) -> ByteStream {
     match len {
-      0 => List.Nil,
+      0 => store(ListNode.Nil),
       _ =>
         let tail = read_byte_stream(idx + 1, len - 1);
         let [byte] = io_read(idx, 1);
-        List.Cons(byte, store(tail)),
+        store(ListNode.Cons(byte, tail)),
     }
   }
 
