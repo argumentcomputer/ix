@@ -2190,8 +2190,7 @@ fn match_classes_against_app(
       }
       continue;
     }
-    let sp_fvars =
-      instantiate_spec_with_fvars(&class.spec_params, param_fvars);
+    let sp_fvars = instantiate_spec_with_fvars(&class.spec_params, param_fvars);
     let n_par = class.own_params;
     if args.len() >= n_par
       && sp_fvars.len() == n_par
