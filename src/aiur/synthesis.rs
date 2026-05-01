@@ -116,11 +116,16 @@ impl AiurSystem {
     input: &[G],
     io_buffer: &mut IOBuffer,
   ) -> (Vec<G>, Proof) {
+    cronos::clock("aiur/prove");
+
     // Execute the Aiur bytecode.
+    cronos::clock("aiur/execute");
     let (query_record, output) =
       self.toplevel.execute(fun_idx, input.to_vec(), io_buffer);
+    cronos::clock("aiur/execute");
 
     // Build the `SystemWitness`
+    cronos::clock("aiur/witness");
     let functions =
       (0..self.toplevel.functions.len()).into_par_iter().filter_map(|idx| {
         if self.toplevel.functions[idx].constrained {
@@ -152,6 +157,7 @@ impl AiurSystem {
     drop(query_record); // Early drop to free memory.
     let (traces, lookups) = witness_data.into_iter().unzip();
     let witness = SystemWitness { traces, lookups };
+    cronos::clock("aiur/witness");
 
     // Construct the claim.
     let mut claim = vec![function_channel(), G::from_usize(fun_idx)];
@@ -160,6 +166,7 @@ impl AiurSystem {
 
     // Finally prove.
     let proof = self.system.prove(fri_parameters, &self.key, &claim, witness);
+    cronos::clock("aiur/prove");
     (claim, proof)
   }
 

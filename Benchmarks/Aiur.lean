@@ -90,5 +90,6 @@ def main : IO Unit := do
     let funIdx := compiled.getFuncIdx `main |>.get!
     let (claim, proof, _) ← benchStep "prove fib 10"
         (Aiur.AiurSystem.prove system friParameters funIdx #[10]) default (oneShot := true)
+    IO.println s!"proof size: {proof.toBytes.size} bytes"
     let _ ← benchStepE "verify fib 10"
         (Aiur.AiurSystem.verify system friParameters claim) proof

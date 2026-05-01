@@ -31,7 +31,17 @@ before overwriting the lib, since they write to the same lib path. The second ca
 -/
 section FFI
 
-/-- Build args for `cargo build --release` with feature flags from env vars.
+/-- IX_PROFILE=1 routes Cargo through the `profiling` profile (release +
+debug info) instead of `release`. Used for samply / flamegraph runs. -/
+def profileMode : IO (String × String) := do
+  let enabled := match ← IO.getEnv "IX_PROFILE" with
+    | some v => !v.isEmpty && v != "0"
+    | none => false
+  if enabled then return ("--profile=profiling", "profiling")
+  else return ("--release", "release")
+
+/-- Build args for `cargo build` with feature flags from env vars. The
+profile (`--release` vs `--profile profiling`) is selected by `IX_PROFILE`.
 Cargo output is visible with `lake -v build`. -/
 def cargoArgs (testFfi : Bool := false) (net : Bool := false) : IO (Array String) := do
   -- IX_NO_PAR=1 disables parallel
@@ -40,15 +50,17 @@ def cargoArgs (testFfi : Bool := false) (net : Bool := false) : IO (Array String
   if ixNoPar != some "1" then features := features.push "parallel"
   if net && !System.Platform.isOSX then features := features.push "net"
   if testFfi then features := features.push "test-ffi"
-  let buildArgs := #["build", "--release"]
+  let (profileFlag, _) ← profileMode
+  let buildArgs := #["build", profileFlag]
   if features.isEmpty then return buildArgs
   else return buildArgs ++ #["--features", ",".intercalate features.toList]
 
 /-- Build the Rust static lib with default features (`parallel`). -/
 target ix_rs pkg : FilePath := do
   let args ← cargoArgs
+  let (_, profileDir) ← profileMode
   proc { cmd := "cargo", args, cwd := pkg.dir } (quiet := true)
-  inputBinFile $ pkg.dir / "target" / "release" / nameToStaticLib "ix_rs"
+  inputBinFile $ pkg.dir / "target" / profileDir / nameToStaticLib "ix_rs"
 
 /-- Rebuild the Rust static lib with `test-ffi`.
 Only triggered by `lake test` (via `moreLinkObjs` on `IxTests`).
@@ -56,16 +68,18 @@ Fetches `ix_rs` first to guarantee ordering before overwriting the lib. -/
 target ix_rs_test pkg : FilePath := do
   let _ ← ix_rs.fetch
   let args ← cargoArgs (testFfi := true)
+  let (_, profileDir) ← profileMode
   proc { cmd := "cargo", args, cwd := pkg.dir } (quiet := true)
-  inputBinFile $ pkg.dir / "target" / "release" / nameToStaticLib "ix_rs"
+  inputBinFile $ pkg.dir / "target" / profileDir / nameToStaticLib "ix_rs"
 
 /-- Build the Rust static lib with `net` for the `ix` CLI.
 Fetches `ix_rs` first to guarantee ordering before overwriting the lib. -/
 target ix_rs_net pkg : FilePath := do
   let _ ← ix_rs.fetch
   let args ← cargoArgs (net := true)
+  let (_, profileDir) ← profileMode
   proc { cmd := "cargo", args, cwd := pkg.dir } (quiet := true)
-  inputBinFile $ pkg.dir / "target" / "release" / nameToStaticLib "ix_rs"
+  inputBinFile $ pkg.dir / "target" / profileDir / nameToStaticLib "ix_rs"
 
 end FFI
 
