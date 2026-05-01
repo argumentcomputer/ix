@@ -24,3 +24,19 @@ extern "C" fn rs_cronos_streaming_disable() -> LeanIOResult<LeanOwned> {
   cronos::set_streaming(false);
   LeanIOResult::ok(LeanOwned::box_usize(0))
 }
+
+/// Enable RAM tracking: each `clock(tag)` samples `/proc/self/status` so
+/// streaming output and the timeline include net RSS deltas plus the running
+/// peak. Off by default — costs one `read()` per clock call. Linux only.
+#[unsafe(no_mangle)]
+extern "C" fn rs_cronos_ram_enable() -> LeanIOResult<LeanOwned> {
+  cronos::set_ram(true);
+  LeanIOResult::ok(LeanOwned::box_usize(0))
+}
+
+/// Disable RAM tracking.
+#[unsafe(no_mangle)]
+extern "C" fn rs_cronos_ram_disable() -> LeanIOResult<LeanOwned> {
+  cronos::set_ram(false);
+  LeanIOResult::ok(LeanOwned::box_usize(0))
+}
