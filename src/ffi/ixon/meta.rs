@@ -665,9 +665,10 @@ impl<R: LeanRef> LeanIxonNamed<R> {
   /// Decode Ixon.Named. The `original` slot may be a scalar-optimized
   /// `Option.none` or a boxed tag-1 ctor wrapping a `Prod`.
   pub fn decode(&self) -> Named {
-    let addr = LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array())
-      .decode();
-    let meta = LeanIxonConstantMeta::new(self.get_obj(1).to_owned_ref()).decode();
+    let addr =
+      LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array()).decode();
+    let meta =
+      LeanIxonConstantMeta::new(self.get_obj(1).to_owned_ref()).decode();
     let original_obj = self.get_obj(2);
     let original: Option<(Address, ConstantMeta)> = if original_obj.is_scalar()
     {
