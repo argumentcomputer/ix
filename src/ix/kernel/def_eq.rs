@@ -141,8 +141,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       return Ok(cached);
     }
     if cheap_mode
-      && let Some(cached) =
-        self.env.def_eq_cheap_cache.get(&cache_key).copied()
+      && let Some(cached) = self.env.def_eq_cheap_cache.get(&cache_key).copied()
     {
       if cached {
         self.env.def_eq_cache.insert(cache_key, true);

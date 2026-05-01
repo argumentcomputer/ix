@@ -38,6 +38,495 @@ use crate::ix::env::{
 
 const PARALLEL_THRESHOLD: usize = 100;
 
+/// Whether compilation collapsed at least two primary members of a Lean
+/// mutual block to the same canonical address.
+///
+/// Source-shape aux congruence compares regenerated auxiliaries with Lean's
+/// original source-order declarations. That invariant stops being meaningful
+/// once primary inductives are alpha-collapsed: aux generation consults the
+/// compiled canonical addresses when choosing recursive targets, so the
+/// generated recursor is intentionally canonical rather than source-identical.
+fn primary_addresses_collapse(
+  all: &[Name],
+  stt: &crate::ix::compile::CompileState,
+) -> bool {
+  let mut seen = rustc_hash::FxHashSet::default();
+  for name in all {
+    let Some(addr) = stt.resolve_addr(name) else {
+      continue;
+    };
+    if !seen.insert(addr) {
+      return true;
+    }
+  }
+  false
+}
+
+fn build_aux_perm_ctx(
+  all: &[Name],
+  env: &Env,
+  stt: &crate::ix::compile::CompileState,
+  perm: &[usize],
+) -> Option<crate::ix::congruence::perm::PermCtx> {
+  use crate::ix::compile::aux_gen;
+  use crate::ix::congruence::perm::{PermCtx, RecHeadInfo, RecHeadKind};
+  use crate::ix::env::{ConstantInfo as LeanCI, ExprData};
+
+  let first = all.first()?;
+  let n_params = match env.get(first) {
+    Some(LeanCI::InductInfo(v)) => v.num_params.to_u64().unwrap_or(0) as usize,
+    _ => return None,
+  };
+  let n_primary = all.len();
+  let primary_ctor_counts: Vec<usize> = all
+    .iter()
+    .map(|n| match env.get(n) {
+      Some(LeanCI::InductInfo(v)) => v.ctors.len(),
+      _ => 0,
+    })
+    .collect();
+  let source_aux_order = match aux_gen::nested::source_aux_order(all, env) {
+    Ok(order) => order,
+    Err(_) => return None,
+  };
+  let source_aux_ctor_counts: Vec<usize> = source_aux_order
+    .iter()
+    .map(|(head, _)| match env.get(head) {
+      Some(LeanCI::InductInfo(v)) => v.ctors.len(),
+      _ => 0,
+    })
+    .collect();
+  let n_motives = n_primary + source_aux_ctor_counts.len();
+  let n_minors: usize = primary_ctor_counts.iter().sum::<usize>()
+    + source_aux_ctor_counts.iter().sum::<usize>();
+
+  let mut rec_heads: FxHashMap<Name, RecHeadInfo> = FxHashMap::default();
+  let mk_info = |kind: RecHeadKind, n_indices: usize| RecHeadInfo {
+    kind,
+    n_params,
+    n_motives,
+    n_minors: match kind {
+      RecHeadKind::Rec => n_minors,
+      _ => 0,
+    },
+    n_indices,
+    primary_ctor_counts: primary_ctor_counts.clone(),
+    source_aux_ctor_counts: source_aux_ctor_counts.clone(),
+    aux_perm: perm.to_vec(),
+  };
+  let n_indices_for = |rec_name: &Name| match env.get(rec_name) {
+    Some(LeanCI::RecInfo(r)) => r.num_indices.to_u64().unwrap_or(0) as usize,
+    _ => 0,
+  };
+
+  for member in all {
+    let rec_name = Name::str(member.clone(), "rec".to_string());
+    let ni = n_indices_for(&rec_name);
+    rec_heads.insert(rec_name, mk_info(RecHeadKind::Rec, ni));
+    let below_name = Name::str(member.clone(), "below".to_string());
+    rec_heads.insert(below_name, mk_info(RecHeadKind::Below, ni));
+    let brecon_name = Name::str(member.clone(), "brecOn".to_string());
+    rec_heads.insert(brecon_name.clone(), mk_info(RecHeadKind::BRecOn, ni));
+    rec_heads.insert(
+      Name::str(brecon_name.clone(), "go".to_string()),
+      mk_info(RecHeadKind::BRecOn, ni),
+    );
+    rec_heads.insert(
+      Name::str(brecon_name, "eq".to_string()),
+      mk_info(RecHeadKind::BRecOn, ni),
+    );
+  }
+  for source_j in 0..source_aux_ctor_counts.len() {
+    let idx = source_j + 1;
+    let rec_name = Name::str(first.clone(), format!("rec_{idx}"));
+    let ni = n_indices_for(&rec_name);
+    rec_heads.insert(rec_name, mk_info(RecHeadKind::Rec, ni));
+    let below_name = Name::str(first.clone(), format!("below_{idx}"));
+    rec_heads.insert(below_name, mk_info(RecHeadKind::Below, ni));
+    let brecon_name = Name::str(first.clone(), format!("brecOn_{idx}"));
+    rec_heads.insert(brecon_name.clone(), mk_info(RecHeadKind::BRecOn, ni));
+    rec_heads.insert(
+      Name::str(brecon_name.clone(), "go".to_string()),
+      mk_info(RecHeadKind::BRecOn, ni),
+    );
+    rec_heads.insert(
+      Name::str(brecon_name, "eq".to_string()),
+      mk_info(RecHeadKind::BRecOn, ni),
+    );
+  }
+
+  let mut const_addr: FxHashMap<Name, crate::ix::address::Address> =
+    FxHashMap::default();
+  let mut add_addr = |name: &Name| {
+    if let Some(addr) = stt.resolve_addr(name) {
+      const_addr.insert(name.clone(), addr);
+    }
+  };
+  for member in all {
+    add_addr(member);
+    for suffix in ["rec", "casesOn", "recOn", "below", "brecOn"] {
+      add_addr(&Name::str(member.clone(), suffix.to_string()));
+    }
+    if let Some(LeanCI::InductInfo(v)) = env.get(member) {
+      for ctor in &v.ctors {
+        add_addr(ctor);
+      }
+    }
+  }
+  for source_j in 0..source_aux_order.len() {
+    let idx = source_j + 1;
+    for suffix in
+      [format!("rec_{idx}"), format!("below_{idx}"), format!("brecOn_{idx}")]
+    {
+      let name = Name::str(first.clone(), suffix);
+      add_addr(&name);
+      add_addr(&Name::str(name.clone(), "go".to_string()));
+      add_addr(&Name::str(name, "eq".to_string()));
+    }
+  }
+
+  fn collect_const_addrs(
+    e: &Expr,
+    stt: &crate::ix::compile::CompileState,
+    out: &mut FxHashMap<Name, crate::ix::address::Address>,
+  ) {
+    match e.as_data() {
+      ExprData::Const(n, _, _) => {
+        if let Some(addr) = stt.resolve_addr(n) {
+          out.insert(n.clone(), addr);
+        }
+      },
+      ExprData::App(f, a, _) => {
+        collect_const_addrs(f, stt, out);
+        collect_const_addrs(a, stt, out);
+      },
+      ExprData::Lam(_, t, b, _, _) | ExprData::ForallE(_, t, b, _, _) => {
+        collect_const_addrs(t, stt, out);
+        collect_const_addrs(b, stt, out);
+      },
+      ExprData::LetE(_, t, v, b, _, _) => {
+        collect_const_addrs(t, stt, out);
+        collect_const_addrs(v, stt, out);
+        collect_const_addrs(b, stt, out);
+      },
+      ExprData::Proj(n, _, v, _) => {
+        if let Some(addr) = stt.resolve_addr(n) {
+          out.insert(n.clone(), addr);
+        }
+        collect_const_addrs(v, stt, out);
+      },
+      ExprData::Mdata(_, v, _) => collect_const_addrs(v, stt, out),
+      _ => {},
+    }
+  }
+  for (_head, specs) in &source_aux_order {
+    for spec in specs {
+      collect_const_addrs(spec, stt, &mut const_addr);
+    }
+  }
+
+  let const_map = build_collapse_const_map(all, env, stt);
+
+  Some(PermCtx {
+    aux_perm: perm.to_vec(),
+    n_params,
+    n_primary,
+    primary_ctor_counts,
+    source_aux_ctor_counts,
+    const_map,
+    const_addr,
+    rec_heads,
+  })
+}
+
+/// Build the `B → A` rename map for an alpha-collapsed mutual block.
+///
+/// When two primary inductives (e.g. `A` and `B`) compile to the same
+/// canonical address, the original Lean env still emits separate
+/// `B`/`B.below`/`B.rec`/`B.b`/... declarations whose bodies reference
+/// `A`/`B` as distinct names. The decompiled (canonical) form, however,
+/// has those references collapsed onto a single representative — typically
+/// the first member of `all` that mapped to that address.
+///
+/// `const_map` rewrites the orig-side names to their canonical
+/// representatives so [`const_alpha_eq_with_perm`] can compare the two
+/// sides structurally.
+fn build_collapse_const_map(
+  all: &[Name],
+  env: &Env,
+  stt: &crate::ix::compile::CompileState,
+) -> FxHashMap<Name, Name> {
+  use crate::ix::env::ConstantInfo as LeanCI;
+  let mut map: FxHashMap<Name, Name> = FxHashMap::default();
+  // Group primary members by canonical address; the first member with a
+  // given address is the representative.
+  let mut rep_by_addr: FxHashMap<crate::ix::address::Address, &Name> =
+    FxHashMap::default();
+  for member in all {
+    let Some(addr) = stt.resolve_addr(member) else {
+      continue;
+    };
+    rep_by_addr.entry(addr).or_insert(member);
+  }
+  for member in all {
+    let Some(addr) = stt.resolve_addr(member) else {
+      continue;
+    };
+    let Some(&rep) = rep_by_addr.get(&addr) else {
+      continue;
+    };
+    if rep == member {
+      continue;
+    }
+    map.insert(member.clone(), rep.clone());
+    // Derived names: `.rec`, `.below`, `.brecOn`, `.brecOn.go`,
+    // `.brecOn.eq`, `.casesOn`, `.recOn`.
+    for suffix in ["rec", "below", "brecOn", "casesOn", "recOn"] {
+      let from = Name::str(member.clone(), suffix.to_string());
+      let to = Name::str(rep.clone(), suffix.to_string());
+      map.insert(from, to);
+    }
+    for suffix in ["go", "eq"] {
+      let from = Name::str(
+        Name::str(member.clone(), "brecOn".to_string()),
+        suffix.to_string(),
+      );
+      let to = Name::str(
+        Name::str(rep.clone(), "brecOn".to_string()),
+        suffix.to_string(),
+      );
+      map.insert(from, to);
+    }
+    // Constructors: positional mapping. Both members are alpha-collapsed,
+    // so they have the same number of constructors in the same order.
+    if let (Some(LeanCI::InductInfo(m_ind)), Some(LeanCI::InductInfo(r_ind))) =
+      (env.get(member), env.get(rep))
+      && m_ind.ctors.len() == r_ind.ctors.len()
+    {
+      for (m_ctor, r_ctor) in m_ind.ctors.iter().zip(r_ind.ctors.iter()) {
+        if m_ctor != r_ctor {
+          map.insert(m_ctor.clone(), r_ctor.clone());
+        }
+      }
+    }
+  }
+  map
+}
+
+#[derive(Clone)]
+struct AuxCompareEntry {
+  generated: ConstantInfo,
+  ctx: Option<crate::ix::congruence::perm::PermCtx>,
+}
+
+fn aux_patch_to_lean_ci(
+  patch: &crate::ix::compile::aux_gen::PatchedConstant,
+) -> Option<ConstantInfo> {
+  use crate::ix::env::{
+    ConstantInfo as LeanCI, ConstantVal as LeanCV, DefinitionVal, InductiveVal,
+  };
+  Some(match patch {
+    crate::ix::compile::aux_gen::PatchedConstant::Rec(r) => {
+      LeanCI::RecInfo(r.clone())
+    },
+    crate::ix::compile::aux_gen::PatchedConstant::CasesOn(d)
+    | crate::ix::compile::aux_gen::PatchedConstant::RecOn(d) => {
+      LeanCI::DefnInfo(DefinitionVal {
+        cnst: LeanCV {
+          name: d.name.clone(),
+          level_params: d.level_params.clone(),
+          typ: d.typ.clone(),
+        },
+        value: d.value.clone(),
+        hints: ReducibilityHints::Abbrev,
+        safety: DefinitionSafety::Safe,
+        all: vec![],
+      })
+    },
+    crate::ix::compile::aux_gen::PatchedConstant::BelowDef(d) => {
+      LeanCI::DefnInfo(DefinitionVal {
+        cnst: LeanCV {
+          name: d.name.clone(),
+          level_params: d.level_params.clone(),
+          typ: d.typ.clone(),
+        },
+        value: d.value.clone(),
+        hints: ReducibilityHints::Abbrev,
+        safety: DefinitionSafety::Safe,
+        all: vec![],
+      })
+    },
+    crate::ix::compile::aux_gen::PatchedConstant::BRecOn(d) => {
+      LeanCI::DefnInfo(DefinitionVal {
+        cnst: LeanCV {
+          name: d.name.clone(),
+          level_params: d.level_params.clone(),
+          typ: d.typ.clone(),
+        },
+        value: d.value.clone(),
+        hints: ReducibilityHints::Abbrev,
+        safety: DefinitionSafety::Safe,
+        all: vec![],
+      })
+    },
+    crate::ix::compile::aux_gen::PatchedConstant::BelowIndc(bi) => {
+      LeanCI::InductInfo(InductiveVal {
+        cnst: LeanCV {
+          name: bi.name.clone(),
+          level_params: bi.level_params.clone(),
+          typ: bi.typ.clone(),
+        },
+        num_params: Nat::from(bi.n_params as u64),
+        num_indices: Nat::from(bi.n_indices as u64),
+        all: vec![bi.name.clone()],
+        ctors: bi.ctors.iter().map(|c| c.name.clone()).collect(),
+        num_nested: Nat::from(0u64),
+        is_rec: false,
+        is_unsafe: false,
+        is_reflexive: bi.is_reflexive,
+      })
+    },
+  })
+}
+
+fn aux_congruence_result(
+  name: &Name,
+  decompiled: &ConstantInfo,
+  original: &ConstantInfo,
+  entry: Option<&AuxCompareEntry>,
+) -> Result<(), String> {
+  use crate::ix::congruence::const_alpha_eq;
+  use crate::ix::congruence::perm::const_alpha_eq_with_perm;
+  if let Ok(()) = const_alpha_eq(decompiled, original) {
+    return Ok(());
+  }
+  let Some(entry) = entry else {
+    return const_alpha_eq(decompiled, original);
+  };
+  let ctx = entry.ctx.as_ref();
+
+  // Tier 1: round-trip fidelity — decompiled vs original Lean. Under
+  // alpha-collapse / nested aux permutation this only holds modulo perm.
+  if let Some(ctx) = ctx
+    && const_alpha_eq_with_perm(decompiled, original, ctx).is_ok()
+  {
+    return Ok(());
+  }
+
+  // Tier 2: aux_gen baseline vs original Lean. `entry.generated` was
+  // regenerated with singleton classes (no collapse), so both sides
+  // share the source-shape regime — keep `A` and `B` distinct. We
+  // still need motive/minor permutation when the block has nested
+  // auxes, but not the collapse-driven `B → A` rewrites in
+  // `const_map`. Strip those out for this tier.
+  let ctx_no_collapse = ctx.map(|c| {
+    let mut c = c.clone();
+    c.const_map = FxHashMap::default();
+    c
+  });
+  let gen_orig = const_alpha_eq(&entry.generated, original).or_else(|e| {
+    match &ctx_no_collapse {
+      Some(ctx) => const_alpha_eq_with_perm(&entry.generated, original, ctx),
+      None => Err(e),
+    }
+  });
+
+  match gen_orig {
+    Ok(()) => {
+      // Tier 3: decompiled vs the regenerated baseline. Both are
+      // compile-side, but `entry.generated` was built with singleton
+      // classes (Lean source shape) while `decompiled` is reconstructed
+      // from the canonical (collapsed) Ixon. They agree only modulo
+      // perm whenever collapse occurred.
+      if let Ok(()) = const_alpha_eq(decompiled, &entry.generated) {
+        return Ok(());
+      }
+      let perm_err = match ctx {
+        Some(ctx) => {
+          const_alpha_eq_with_perm(decompiled, &entry.generated, ctx).err()
+        },
+        None => None,
+      };
+      let plain_err = const_alpha_eq(decompiled, &entry.generated).err();
+      let err_msg = perm_err.or(plain_err).unwrap_or_else(|| "?".to_string());
+      if std::env::var("IX_VALIDATE_AUX_DUMP")
+        .ok()
+        .is_some_and(|filter| filter == "1" || name.pretty().contains(&filter))
+      {
+        eprintln!(
+          "[validate-aux dump] {}\n  === decompiled type ===\n  {}\n  === generated type ===\n  {}\n  === original type ===\n  {}",
+          name.pretty(),
+          decompiled.get_type().pretty(),
+          entry.generated.get_type().pretty(),
+          original.get_type().pretty(),
+        );
+      }
+      // Both Tier-1 and Tier-3 perm-aware checks failed; if neither plain
+      // path succeeded either, only then is this a real mismatch.
+      Err(format!("decompiled vs generated: {err_msg}"))
+    },
+    Err(e) => Err(format!("generated vs original: {e}")),
+  }
+}
+
+fn build_aux_compare_contexts(
+  env: &Arc<Env>,
+  stt: &crate::ix::compile::CompileState,
+) -> FxHashMap<Name, AuxCompareEntry> {
+  use crate::ix::compile::KernelCtx;
+  use crate::ix::compile::aux_gen::{self, expr_utils};
+  use crate::ix::env::ConstantInfo as LeanCI;
+  use rustc_hash::FxHashSet;
+
+  let mut by_name = FxHashMap::default();
+  let mut seen_blocks: FxHashSet<Vec<Name>> = FxHashSet::default();
+  for (name, ci) in env.iter() {
+    let all = match ci {
+      LeanCI::InductInfo(v) => &v.all,
+      _ => continue,
+    };
+    if all.first() != Some(name) {
+      continue;
+    }
+    let mut key = all.clone();
+    key.sort();
+    if !seen_blocks.insert(key) {
+      continue;
+    }
+    let original_classes: Vec<Vec<Name>> =
+      all.iter().map(|n| vec![n.clone()]).collect();
+    let mut local_kctx = KernelCtx::new();
+    expr_utils::ensure_prelude_in_kenv_of(stt, &mut local_kctx);
+    let Ok(aux_out) = aux_gen::generate_aux_patches(
+      &original_classes,
+      all.as_slice(),
+      env,
+      stt,
+      &mut local_kctx,
+    ) else {
+      continue;
+    };
+    let ctx = if let Some(perm) = &aux_out.perm
+      && !perm.is_empty()
+    {
+      build_aux_perm_ctx(all.as_slice(), env.as_ref(), stt, perm)
+    } else if primary_addresses_collapse(all.as_slice(), stt) {
+      build_aux_perm_ctx(all.as_slice(), env.as_ref(), stt, &[])
+    } else {
+      None
+    };
+    for (patch_name, patch) in aux_out.patches.iter() {
+      if let Some(generated) = aux_patch_to_lean_ci(patch) {
+        by_name.insert(
+          patch_name.clone(),
+          AuxCompareEntry { generated, ctx: ctx.clone() },
+        );
+      }
+    }
+  }
+  by_name
+}
+
 /// Global cache for Names, shared across all threads.
 #[derive(Default)]
 pub struct GlobalCache {
@@ -888,13 +1377,19 @@ extern "C" fn rs_tmp_decode_const_map(
         }
       }
 
+      // Phase 1b ingress congruence is source-vs-source (singleton-
+      // class aux_gen output vs original Lean). Both sides keep `A`
+      // and `B` distinct even under compile-time collapse, so a
+      // collapse-driven `B → A` const_map would break the comparison.
+      let const_map: FxHashMap<Name, Name> = FxHashMap::default();
+
       Some(PermCtx {
         aux_perm: perm.to_vec(),
         n_params,
         n_primary,
         primary_ctor_counts,
         source_aux_ctor_counts,
-        const_map: FxHashMap::default(),
+        const_map,
         const_addr,
         rec_heads,
       })
@@ -960,11 +1455,14 @@ extern "C" fn rs_tmp_decode_const_map(
       // `#[cfg(feature = "test-ffi")]` Phase 1b path here uses a
       // local copy with the same logic.
       let perm_ctx_1b: Option<crate::ix::congruence::perm::PermCtx> =
-        match &orig_aux_out.perm {
-          Some(perm) if !perm.is_empty() => {
-            build_perm_ctx_1b(all, &env, &stt, perm)
-          },
-          _ => None,
+        if let Some(perm) = &orig_aux_out.perm
+          && !perm.is_empty()
+        {
+          build_perm_ctx_1b(all, &env, &stt, perm)
+        } else if primary_addresses_collapse(all, &stt) {
+          build_perm_ctx_1b(all, &env, &stt, &[])
+        } else {
+          None
         };
 
       for (patch_name, patch) in orig_patches.iter() {
@@ -1591,17 +2089,15 @@ extern "C" fn rs_compile_validate_aux(
         );
       }
 
-      // `const_map` is empty for Phase 2 (singleton classes).
-      // Under singleton classes there's no primary alpha-collapse, so
-      // no aliases to rewrite. Source vs canonical aux inductive names
-      // also don't need remapping because `aux_gen::RestoreCtx::restore`
-      // replaces `_nested.X_N` references in gen bodies with external
-      // applications — the orig side's `_nested.*` names (if any) don't
-      // appear in gen at all, and vice versa.
-      //
-      // This may need to grow when we extend to blocks that DO undergo
-      // alpha-collapse (Phase 1b and beyond).
-      let const_map: FxHashMap<Name, Name> = FxHashMap::default();
+      // `const_map` is built from compile-side address collapse: for any
+      // pair of primaries that resolved to the same address, map the
+      // non-representative to the representative (and the same for
+      // derived names — `.rec`, `.below`, `.brecOn`, `.casesOn`,
+      // `.recOn`, ctors). Phase 2's singleton-class regime sees no
+      // collapse and the map stays empty there; later phases that
+      // operate on collapsed blocks pick up the rewrites automatically.
+      // (Built below at the PermCtx construction site so `env`/`stt`
+      // borrows don't conflict with the const_addr-collecting closure.)
       let mut const_addr: FxHashMap<Name, crate::ix::address::Address> =
         FxHashMap::default();
       let mut add_addr = |name: &Name| {
@@ -1675,6 +2171,15 @@ extern "C" fn rs_compile_validate_aux(
           collect_const_addrs(spec, stt, &mut const_addr);
         }
       }
+
+      // Phase 2 compares regenerated singleton-class aux_gen output
+      // against the original Lean. Both sides are source-shape (use
+      // both `A` and `B` separately even when those primaries collapse
+      // at compile time), so collapse-driven `B → A` rewrites would
+      // *break* the comparison rather than help. Phase 2 only needs
+      // the nested-aux motive/minor permutation, which is encoded by
+      // `aux_perm` + `rec_heads` on this PermCtx.
+      let const_map: FxHashMap<Name, Name> = FxHashMap::default();
 
       Some(PermCtx {
         aux_perm: perm.to_vec(),
@@ -1813,11 +2318,14 @@ extern "C" fn rs_compile_validate_aux(
         // nested auxes (`perm == None` or empty), we pass `None` and
         // fall through to plain `const_alpha_eq`.
         let perm_ctx: Option<crate::ix::congruence::perm::PermCtx> =
-          match &orig_aux_out.perm {
-            Some(p) if !p.is_empty() => {
-              build_perm_ctx(all.as_slice(), &env, &stt, p)
-            },
-            _ => None,
+          if let Some(p) = &orig_aux_out.perm
+            && !p.is_empty()
+          {
+            build_perm_ctx(all.as_slice(), &env, &stt, p)
+          } else if primary_addresses_collapse(all.as_slice(), &stt) {
+            build_perm_ctx(all.as_slice(), &env, &stt, &[])
+          } else {
+            None
           };
 
         let mut result = BlockResult::default();
@@ -2932,6 +3440,11 @@ extern "C" fn rs_compile_validate_aux(
   }
   p5.report();
 
+  let aux_compare_contexts =
+    stt.lean_env.as_ref().map_or_else(FxHashMap::default, |lean_env| {
+      build_aux_compare_contexts(lean_env, &stt)
+    });
+
   // ══════════════════════════════════════════════════════════════════════
   // Phase 6: Aux congruence (post-compilation roundtrip)
   // ══════════════════════════════════════════════════════════════════════
@@ -2954,8 +3467,11 @@ extern "C" fn rs_compile_validate_aux(
     };
 
     // Parallel alpha-equivalence check per aux_gen extra name. Reads are
-    // against DashMap-backed lean_env and dstt_ref.env; `const_alpha_eq`
-    // is pure and thread-safe.
+    // against DashMap-backed lean_env and dstt_ref.env. For blocks whose
+    // generated auxiliaries are intentionally canonicalized by nested aux
+    // permutation or primary alpha-collapse, compare with the same
+    // permutation-aware context as Phase 2 instead of requiring source
+    // shape.
     stt.aux_gen_extra_names.par_iter().for_each(|entry| {
       let name = entry.key();
       let orig_ci = match lean_env.get(name) {
@@ -2972,7 +3488,13 @@ extern "C" fn rs_compile_validate_aux(
           return;
         },
       };
-      match const_alpha_eq(dec_ci.value(), orig_ci) {
+      let eq_result = aux_congruence_result(
+        name,
+        dec_ci.value(),
+        orig_ci,
+        aux_compare_contexts.get(name),
+      );
+      match eq_result {
         Ok(()) => {
           passes.fetch_add(1, Ordering::Relaxed);
         },
@@ -3186,7 +3708,9 @@ extern "C" fn rs_compile_validate_aux(
 
     // Parallel scan: every original constant must appear in the
     // roundtripped env with matching type hash (and value hash if
-    // present). `get_hash()` reads are pure — ok to run concurrently.
+    // present). Aux-generated constants get an alpha-collapse-aware
+    // semantic fallback when exact source-shape comparison fails.
+    // `get_hash()` reads are pure — ok to run concurrently.
     orig.par_iter().for_each(|(name, orig_ci)| match dstt2.env.get(name) {
       Some(dec_entry) => {
         let dec_ci = dec_entry.value();
@@ -3197,22 +3721,44 @@ extern "C" fn rs_compile_validate_aux(
           (None, None) => true,
           _ => false,
         };
-        if type_ok && val_ok {
+        let aux_eq_result = if crate::ix::decompile::is_aux_gen_suffix(name)
+          && !(type_ok && val_ok)
+        {
+          Some(aux_congruence_result(
+            name,
+            dec_ci,
+            orig_ci,
+            aux_compare_contexts.get(name),
+          ))
+        } else {
+          None
+        };
+        let ok = match aux_eq_result.as_ref() {
+          Some(Ok(())) => true,
+          Some(Err(_)) => false,
+          None => type_ok && val_ok,
+        };
+        if ok {
           passes.fetch_add(1, Ordering::Relaxed);
         } else {
           fails.fetch_add(1, Ordering::Relaxed);
           let mut msgs = fail_msgs.lock().unwrap();
           if msgs.len() < 20 {
             let mut parts = Vec::new();
-            if !type_ok {
-              parts.push(format!(
-                "type: dec={} orig={}",
-                dec_ci.get_type().pretty(),
-                orig_ci.get_type().pretty(),
-              ));
-            }
-            if !val_ok {
-              parts.push("value hash mismatch".to_string());
+            match aux_eq_result {
+              Some(Err(e)) => parts.push(format!("aux congruence: {e}")),
+              _ => {
+                if !type_ok {
+                  parts.push(format!(
+                    "type: dec={} orig={}",
+                    dec_ci.get_type().pretty(),
+                    orig_ci.get_type().pretty(),
+                  ));
+                }
+                if !val_ok {
+                  parts.push("value hash mismatch".to_string());
+                }
+              },
             }
             msgs.push(format!("{}: {}", name.pretty(), parts.join("; ")));
           }

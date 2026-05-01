@@ -21,6 +21,14 @@ use super::tc::{TypeChecker, collect_app_spine};
 static IX_APP_DIFF: LazyLock<bool> =
   LazyLock::new(|| std::env::var("IX_APP_DIFF").is_ok());
 
+/// Dump the full function/type/argument context when App inference fails
+/// because the inferred function type is not a forall. Off by default: these
+/// terms can be enormous in mathlib and hide the constant-level failure line.
+/// Set `IX_INFER_APP_FORALL_DUMP=1`, optionally with
+/// `IX_KERNEL_DEBUG_CONST=<substring>`, for targeted debugging.
+static IX_INFER_APP_FORALL_DUMP: LazyLock<bool> =
+  LazyLock::new(|| std::env::var("IX_INFER_APP_FORALL_DUMP").is_ok());
+
 /// When set, log every 100K `infer` entries (total, across cache hits
 /// and real calls). A check using millions of infer calls points to a
 /// bloated term or a mis-firing cache. Pairs with `IX_DEF_EQ_COUNT_LOG`
@@ -104,23 +112,29 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       ExprData::App(f, a, _) => {
         let f_ty = self.infer(f)?;
         let (dom, cod) = self.ensure_forall(&f_ty).inspect_err(|_err| {
-          eprintln!("[infer App] ensure_forall FAILED");
-          eprintln!("  f:    {f}");
-          eprintln!("  f_ty: {f_ty}");
-          eprintln!("  f_ty addr: {:?}", f_ty.addr());
-          eprintln!("  a:    {a}");
-          if let ExprData::App(ff, fa, _) = f.data() {
-            eprintln!("  ff:    {ff}");
-            eprintln!("  ff addr: {:?}", ff.addr());
-            if let Ok(ff_ty) = self.infer(ff) {
-              eprintln!("  ff_ty: {ff_ty}");
-              eprintln!("  ff_ty addr: {:?}", ff_ty.addr());
-              if let Ok((dom2, cod2)) = self.ensure_forall(&ff_ty) {
-                eprintln!("  ff_ty dom: {dom2}");
-                eprintln!("  ff_ty cod: {cod2}");
+          if *IX_INFER_APP_FORALL_DUMP && self.debug_label_matches_env() {
+            eprintln!("[infer App] ensure_forall FAILED");
+            eprintln!(
+              "  const: {}",
+              self.debug_label.as_deref().unwrap_or("<unknown>")
+            );
+            eprintln!("  f:    {f}");
+            eprintln!("  f_ty: {f_ty}");
+            eprintln!("  f_ty addr: {:?}", f_ty.addr());
+            eprintln!("  a:    {a}");
+            if let ExprData::App(ff, fa, _) = f.data() {
+              eprintln!("  ff:    {ff}");
+              eprintln!("  ff addr: {:?}", ff.addr());
+              if let Ok(ff_ty) = self.infer(ff) {
+                eprintln!("  ff_ty: {ff_ty}");
+                eprintln!("  ff_ty addr: {:?}", ff_ty.addr());
+                if let Ok((dom2, cod2)) = self.ensure_forall(&ff_ty) {
+                  eprintln!("  ff_ty dom: {dom2}");
+                  eprintln!("  ff_ty cod: {cod2}");
+                }
               }
+              eprintln!("  fa:    {fa}");
             }
-            eprintln!("  fa:    {fa}");
           }
         })?;
         if !infer_only {

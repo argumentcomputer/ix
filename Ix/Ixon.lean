@@ -493,6 +493,7 @@ inductive ConstantMeta where
          (all : Array Address) (ctx : Array Address)
          (arena : ExprMetaArena) (typeRoot : UInt64)
          (ruleRoots : Array UInt64)
+  | muts (all : Array (Array Address))
   deriving Inhabited, BEq, Repr
 
 /-- Count total arena nodes in this ConstantMeta. -/
@@ -504,6 +505,7 @@ def ConstantMeta.exprMetaCount : ConstantMeta → Nat
   | .indc _ _ _ _ _ arena _ => arena.nodes.size
   | .ctor _ _ _ arena _ => arena.nodes.size
   | .recr _ _ _ _ _ arena _ _ => arena.nodes.size
+  | .muts _ => 0
 
 /-- Count total arena nodes and mdata items in this ConstantMeta. -/
 def ConstantMeta.exprMetaStats : ConstantMeta → Nat × Nat
@@ -514,6 +516,7 @@ def ConstantMeta.exprMetaStats : ConstantMeta → Nat × Nat
   | .indc _ _ _ _ _ arena _ => (arena.nodes.size, arena.mdataItemCount)
   | .ctor _ _ _ arena _ => (arena.nodes.size, arena.mdataItemCount)
   | .recr _ _ _ _ _ arena _ _ => (arena.nodes.size, arena.mdataItemCount)
+  | .muts _ => (0, 0)
 
 /-- Count ExprMetaData nodes by type: (binder, letBinder, ref, prj, mdata)
     (compatible signature with old ExprMetas.countByType for comparison) -/
@@ -528,6 +531,7 @@ def ConstantMeta.exprMetaByType : ConstantMeta → Nat × Nat × Nat × Nat × N
       | .ctor _ _ _ a _ => a
       | .recr _ _ _ _ _ a _ _ => a
       | .empty => {}
+      | .muts _ => {}
     let (_, _, bi, lb, rf, pj, md) := arena.countByType
     (bi, lb, rf, pj, md)
 
@@ -1289,6 +1293,15 @@ def putConstantMetaIndexed (cm : ConstantMeta) (idx : NameIndex) : PutM Unit := 
     putTag0 ⟨typeRoot⟩
     putTag0 ⟨ruleRoots.size.toUInt64⟩
     for r in ruleRoots do putTag0 ⟨r⟩
+  | .muts all =>
+    putU8 6
+    putTag0 ⟨all.size.toUInt64⟩
+    for cls in all do
+      putIdxVec cls idx
+    -- Rust's `ConstantMetaInfo::Muts` also serializes `aux_layout`.
+    -- Lean preserves only the alpha-equivalence classes and writes
+    -- `None` for the Rust-only nested-auxiliary sidecar.
+    putU8 0
   -- Extension tables (meta_sharing / meta_refs / meta_univs): Rust's
   -- `ConstantMeta::put_indexed` always appends these three length-prefixed
   -- vectors after the variant payload, used by call-site surgery roundtrip
@@ -1353,6 +1366,25 @@ def getConstantMetaIndexed (rev : NameReverseIndex) : GetM ConstantMeta := do
       for _ in [0:numRuleRoots] do
         ruleRoots := ruleRoots.push (← getTag0).size
       pure (.recr name lvls rules all ctx arena typeRoot ruleRoots)
+    | 6 =>
+      let n := (← getTag0).size.toNat
+      let mut all : Array (Array Address) := #[]
+      for _ in [0:n] do
+        all := all.push (← getIdxVec rev)
+      match ← getU8 with
+      | 0 => pure (.muts all)
+      | 1 =>
+        -- Rust carries an optional nested-auxiliary permutation here.
+        -- Lean does not model it, but consumes it so Rust-produced bytes
+        -- remain readable.
+        let nPerm := (← getTag0).size.toNat
+        for _ in [0:nPerm] do
+          let _ ← getTag0
+        let nCounts := (← getTag0).size.toNat
+        for _ in [0:nCounts] do
+          let _ ← getTag0
+        pure (.muts all)
+      | x => throw s!"invalid ConstantMeta muts aux_layout tag {x}"
     | x => throw s!"invalid ConstantMeta tag {x}"
   -- Extension tables (meta_sharing / meta_refs / meta_univs): mirror of the
   -- Rust wire format (see `putConstantMetaIndexed` for the rationale). Lean

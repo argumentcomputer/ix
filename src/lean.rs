@@ -44,7 +44,7 @@ lean_ffi::lean_inductive! {
   LeanIxonConstructorProj [ { num_obj: 1, num_64: 2 } ];
   LeanIxonRecursorProj    [ { num_obj: 1, num_64: 1 } ];
   LeanIxonDefinitionProj  [ { num_obj: 1, num_64: 1 } ];
-  LeanIxonNamed           [ { num_obj: 2 } ];
+  LeanIxonNamed           [ { num_obj: 3 } ];
   LeanIxonComm            [ { num_obj: 2 } ];
   LeanIxonConstant        [ { num_obj: 4 } ];
   LeanIxonRawConst        [ { num_obj: 2 } ];
@@ -97,6 +97,7 @@ lean_ffi::lean_inductive! {
     { num_obj: 6, num_64: 1 },                // tag 4: indc
     { num_obj: 4, num_64: 1 },                // tag 5: ctor
     { num_obj: 7, num_64: 1 },                // tag 6: recr
+    { num_obj: 1 },                           // tag 7: muts
   ];
 
   LeanIxonDataValue [

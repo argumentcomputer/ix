@@ -4137,8 +4137,7 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
             }
             // Re-check the majors cache.
             let majors_key = self.gather_peer_majors(&rec_block)?;
-            match self.env.rec_majors_cache.get(&majors_key).cloned()
-            {
+            match self.env.rec_majors_cache.get(&majors_key).cloned() {
               Some(block_id) => block_id,
               None => {
                 return Err(TcError::Other(

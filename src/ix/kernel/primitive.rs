@@ -547,10 +547,10 @@ impl PrimAddrs {
         "7105eaf4c52ce3a19372a87fac57a8f9598a246334ce6effaee3e48e7e6d3aad",
       ),
       string_back: h(
-        "5137669b3f13d32c61880fb57db0ba0f9aa1acc245856768958f219f6b38328a",
+        "11baba55cbdf3649fc1b696c2e775696e995c38ef313cf276553e1898da45e0f",
       ),
       string_legacy_back: h(
-        "13ae83b2ccf25ad37aa682a4a21eda0145ce95788b831d9ab1c55cf2b006df13",
+        "998c3e640c8b3a35c627200dcd694f67f8b1d41e68760c90e361da24734d39bc",
       ),
       string_utf8_byte_size: h(
         "11ea1432562b1132853f173fda9add591b0606a8dee36b00f71bec2967fb6447",

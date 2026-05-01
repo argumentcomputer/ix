@@ -370,6 +370,7 @@ def genConstantMeta : Gen ConstantMeta := do
     (15, ConstantMeta.recr <$> genAddress <*> genSmallArray genAddress <*> genSmallArray genAddress
       <*> genSmallArray genAddress <*> genSmallArray genAddress
       <*> pure arena <*> genRoot <*> genSmallArray genRoot),
+    (5, ConstantMeta.muts <$> genSmallArray (genSmallArray genAddress)),
   ]
 
 instance : Shrinkable ExprMetaData where

@@ -1447,6 +1447,7 @@ fn build_minor_type(
           param_fvars,
           n_params,
           &mut scope,
+          stt,
         );
         if let Some(ci) = rec_ci {
           rec_fields.push((fi, ci));
@@ -1789,6 +1790,7 @@ fn build_rec_rules(
               &param_fvars,
               n_params,
               &mut scope,
+              stt,
             ) {
               rec_field_data.push((fv.clone(), target_ci));
             }
@@ -2055,11 +2057,31 @@ fn has_deeper_str(n: &Name) -> bool {
 /// inductives (returning its class index), using kernel WHNF to see
 /// through reducible-alias heads.
 ///
-/// Peels foralls from `dom` with fresh FVars, delta-unfolds the head at
-/// each step via [`TcScope::whnf_lean`], then inspects the final head:
-/// if it's a `Const` naming a member of `classes` whose param slots
-/// match `param_fvars` (or, for aux members, whose spec-param slots
-/// match), the class index is returned.
+/// Inspects the final head: if it's a `Const` naming a member of
+/// `classes` whose param slots match `param_fvars` (or, for aux members,
+/// whose spec-param slots match), the class index is returned.
+///
+/// **Two-phase strategy: syntactic first, kernel WHNF as fallback.** The
+/// kernel's content hash for `Const` is name-erased
+/// (`expr.rs::cnst_hash` includes only `id.addr`), and the WHNF cache is
+/// keyed by that hash. So if alpha-collapse makes two source names share
+/// one canonical address (e.g. `A` and `B` collapse, or `_nested.List_1`
+/// and `_nested.List_2` collapse via shared block-member addresses) and
+/// the cache has previously seen one variant, a later `whnf_lean` call
+/// may return the **other** variant's display name — the addresses are
+/// equal but the `Name` carried back is whichever was inserted first.
+///
+/// Source-shape singleton-class aux_gen needs the original source name
+/// to dispatch to the right motive (class `[A]` vs class `[B]`,
+/// `_nested.List_1` vs `_nested.List_2`). Phase 1 peels `ForallE` foralls
+/// syntactically (no kernel call) and matches the source-name head
+/// directly. This handles direct (`A`), parameterized (`List A`), and
+/// higher-order (`Nat → A`, `(α → β) → A`) recursive fields without ever
+/// touching the kernel cache. Phase 2 only runs when Phase 1 fails to
+/// find a recursive target, which is exactly the case where `dom`'s
+/// peeled head is a reducible alias not in `classes`
+/// (`Set σ := σ → Prop`, `constType := λ α. α → α`); WHNF then
+/// delta-unfolds it.
 ///
 /// Mirrors Lean's `kernel/inductive.cpp::is_rec_argument`. The TcScope
 /// is left balanced on return — every local pushed during peeling is
@@ -2070,7 +2092,34 @@ fn find_rec_target(
   param_fvars: &[LeanExpr],
   n_params: usize,
   scope: &mut super::expr_utils::TcScope<'_>,
+  _stt: &crate::ix::compile::CompileState,
 ) -> Option<usize> {
+  // Phase 1: syntactic peel + match. Walk `ForallE` binders without any
+  // kernel WHNF, instantiating each body with a fresh FVar. The final
+  // head's source name is preserved exactly, so source-shape singleton
+  // generation dispatches correctly even when the head is one half of
+  // an alpha-collapsed pair (whose canonical address would otherwise be
+  // cache-aliased to its twin's display name during WHNF).
+  let mut ty = dom.clone();
+  loop {
+    if let Some(ci) =
+      match_classes_against_app(&ty, classes, param_fvars, n_params)
+    {
+      return Some(ci);
+    }
+    match ty.as_data() {
+      ExprData::ForallE(_, _, body, _, _) => {
+        let (_, fv) = fresh_fvar("frt_syn", 0);
+        ty = instantiate1(body, &fv);
+      },
+      _ => break,
+    }
+  }
+
+  // Phase 2: WHNF fallback for reducible-alias heads. Phase 1 didn't
+  // find a class-member head at any peeling depth, so either the field
+  // doesn't reference a class member at all, or the head is a reducible
+  // alias that needs delta-unfolding to expose the underlying inductive.
   let mut ty = scope.whnf_lean(dom);
   let mut pushed: Vec<LocalDecl> = Vec::new();
   while let ExprData::ForallE(name, d, body, bi, _) = ty.as_data() {
@@ -2088,35 +2137,70 @@ fn find_rec_target(
   // Pop all peel-locals — keep the caller's scope balanced.
   scope.pop_locals(&pushed);
 
-  let (head, args) = decompose_apps(&ty);
-  if let ExprData::Const(name, _, _) = head.as_data() {
-    for (ci, class) in classes.iter().enumerate() {
-      if !class.all_names.iter().any(|n| n == name) {
-        continue;
-      }
-      if !class.is_aux {
-        if args.len() >= n_params
-          && args[..n_params]
-            .iter()
-            .zip(param_fvars.iter())
-            .all(|(a, p)| a.get_hash() == p.get_hash())
-        {
-          return Some(ci);
-        }
-        continue;
-      }
-      let sp_fvars =
-        instantiate_spec_with_fvars(&class.spec_params, param_fvars);
-      let n_par = class.own_params;
-      if args.len() >= n_par
-        && sp_fvars.len() == n_par
-        && args[..n_par]
+  if std::env::var("IX_FIND_REC_TARGET_DUMP").ok().is_some_and(|filter| {
+    let (h, _) = decompose_apps(&ty);
+    matches!(h.as_data(), ExprData::Const(n, _, _) if n.pretty().contains(&filter))
+  }) {
+    let (h, args) = decompose_apps(&ty);
+    if let ExprData::Const(name, _, _) = h.as_data() {
+      eprintln!(
+        "[find_rec_target] (whnf path) head={} args={} n_params={} classes={:?}",
+        name.pretty(),
+        args.len(),
+        n_params,
+        classes
           .iter()
-          .zip(sp_fvars.iter())
-          .all(|(a, sp)| a.get_hash() == sp.get_hash())
+          .map(|c| c.all_names.iter().map(|n| n.pretty()).collect::<Vec<_>>())
+          .collect::<Vec<_>>()
+      );
+    }
+  }
+  match_classes_against_app(&ty, classes, param_fvars, n_params)
+}
+
+/// Helper for [`find_rec_target`]: match an `App`-spine against the
+/// block's classes by source name.
+///
+/// Decomposes `ty` into head + args. If the head is a `Const` whose
+/// name appears in some `class.all_names`, validates the param/spec_param
+/// slots match the recursor's outer params (`param_fvars`) and returns
+/// the class index.
+fn match_classes_against_app(
+  ty: &LeanExpr,
+  classes: &[FlatInfo],
+  param_fvars: &[LeanExpr],
+  n_params: usize,
+) -> Option<usize> {
+  let (head, args) = decompose_apps(ty);
+  let ExprData::Const(name, _, _) = head.as_data() else {
+    return None;
+  };
+  for (ci, class) in classes.iter().enumerate() {
+    if !class.all_names.iter().any(|n| n == name) {
+      continue;
+    }
+    if !class.is_aux {
+      if args.len() >= n_params
+        && args[..n_params]
+          .iter()
+          .zip(param_fvars.iter())
+          .all(|(a, p)| a.get_hash() == p.get_hash())
       {
         return Some(ci);
       }
+      continue;
+    }
+    let sp_fvars =
+      instantiate_spec_with_fvars(&class.spec_params, param_fvars);
+    let n_par = class.own_params;
+    if args.len() >= n_par
+      && sp_fvars.len() == n_par
+      && args[..n_par]
+        .iter()
+        .zip(sp_fvars.iter())
+        .all(|(a, sp)| a.get_hash() == sp.get_hash())
+    {
+      return Some(ci);
     }
   }
   None
@@ -2776,6 +2860,50 @@ mod tests {
       }),
     );
     (env, a, b)
+  }
+
+  fn insert_aux_stub_rec(env: &mut LeanEnv, all: &[Name], ind: &Name) -> Name {
+    let rec_name = Name::str(ind.clone(), "rec".into());
+    env.insert(
+      rec_name.clone(),
+      ConstantInfo::RecInfo(RecursorVal {
+        cnst: ConstantVal {
+          name: rec_name.clone(),
+          level_params: vec![],
+          typ: LeanExpr::sort(Level::zero()),
+        },
+        all: all.to_vec(),
+        num_params: Nat::from(0u64),
+        num_indices: Nat::from(0u64),
+        num_motives: Nat::from(0u64),
+        num_minors: Nat::from(0u64),
+        rules: vec![],
+        k: false,
+        is_unsafe: false,
+      }),
+    );
+    rec_name
+  }
+
+  fn insert_aux_stub_def(env: &mut LeanEnv, ind: &Name, suffix: &str) -> Name {
+    use crate::ix::env::{DefinitionSafety, DefinitionVal, ReducibilityHints};
+
+    let def_name = Name::str(ind.clone(), suffix.into());
+    env.insert(
+      def_name.clone(),
+      ConstantInfo::DefnInfo(DefinitionVal {
+        cnst: ConstantVal {
+          name: def_name.clone(),
+          level_params: vec![],
+          typ: LeanExpr::sort(Level::zero()),
+        },
+        value: LeanExpr::sort(Level::zero()),
+        hints: ReducibilityHints::Abbrev,
+        safety: DefinitionSafety::Safe,
+        all: vec![],
+      }),
+    );
+    def_name
   }
 
   /// Build a 3-way alpha-collapse: A→B→C→A cycle, all Prop.
@@ -3439,6 +3567,116 @@ mod tests {
       BelowConstant::Def(_) => {
         panic!("Prop mutual should produce BelowIndc, not BelowDef");
       },
+    }
+  }
+
+  #[test]
+  fn test_alpha_collapse_sort_consts_groups_inductives() {
+    use crate::ix::compile::{BlockCache, mk_indc, sort_consts};
+    use crate::ix::env::ConstantInfo as LeanCI;
+    use crate::ix::mutual::MutConst;
+
+    let (env, a, b) = build_alpha_collapse_env();
+    let stt = crate::ix::compile::CompileState::default();
+    let mut cache = BlockCache::default();
+
+    let mut cs = Vec::new();
+    for name in [&a, &b] {
+      match env.get(name) {
+        Some(LeanCI::InductInfo(v)) => {
+          cs.push(MutConst::Indc(
+            mk_indc(v, &std::sync::Arc::new(env.clone())).unwrap(),
+          ));
+        },
+        _ => panic!("missing inductive {}", name.pretty()),
+      }
+    }
+
+    let refs: Vec<&MutConst> = cs.iter().collect();
+    let classes = sort_consts(&refs, &mut cache, &stt).unwrap();
+    assert_eq!(classes.len(), 1, "A and B should alpha-collapse to one class");
+    let collapsed: Vec<Name> = classes[0].iter().map(|c| c.name()).collect();
+    assert_eq!(collapsed.len(), 2);
+    assert!(collapsed.contains(&a), "collapsed class should contain A");
+    assert!(collapsed.contains(&b), "collapsed class should contain B");
+  }
+
+  #[test]
+  fn test_alpha_collapse_compile_env_addresses_inductives_and_ctors() {
+    use crate::ix::compile::env::compile_env;
+
+    let (env, a, b) = build_alpha_collapse_env();
+    let lean_env = std::sync::Arc::new(env);
+    let stt = compile_env(&lean_env)
+      .expect("compile_env should compile the minimal AlphaCollapse block");
+
+    let a_addr = stt.resolve_addr(&a).expect("A should resolve");
+    let b_addr = stt.resolve_addr(&b).expect("B should resolve");
+    assert_eq!(a_addr, b_addr, "A and B should share one inductive address");
+
+    let a_ctor = Name::str(a.clone(), "a".into());
+    let b_ctor = Name::str(b.clone(), "b".into());
+    let a_ctor_addr = stt.resolve_addr(&a_ctor).expect("A.a should resolve");
+    let b_ctor_addr = stt.resolve_addr(&b_ctor).expect("B.b should resolve");
+    assert_eq!(
+      a_ctor_addr, b_ctor_addr,
+      "A.a and B.b should share one constructor address",
+    );
+  }
+
+  #[test]
+  fn test_alpha_collapse_aux_gen_aliases_primary_aux_to_rep() {
+    use crate::ix::compile::aux_gen::{self, PatchedConstant};
+
+    let (mut env, a, b) = build_alpha_collapse_env();
+    let all = vec![a.clone(), b.clone()];
+
+    let a_rec = insert_aux_stub_rec(&mut env, &all, &a);
+    let b_rec = insert_aux_stub_rec(&mut env, &all, &b);
+    let a_cases = insert_aux_stub_def(&mut env, &a, "casesOn");
+    let b_cases = insert_aux_stub_def(&mut env, &b, "casesOn");
+    let a_rec_on = insert_aux_stub_def(&mut env, &a, "recOn");
+    let b_rec_on = insert_aux_stub_def(&mut env, &b, "recOn");
+    let a_below = insert_aux_stub_def(&mut env, &a, "below");
+    let b_below = insert_aux_stub_def(&mut env, &b, "below");
+    let a_brecon = insert_aux_stub_def(&mut env, &a, "brecOn");
+    let b_brecon = insert_aux_stub_def(&mut env, &b, "brecOn");
+
+    let stt = crate::ix::compile::CompileState::default();
+    let mut kctx = crate::ix::compile::KernelCtx::new();
+    let out = aux_gen::generate_aux_patches(
+      &[vec![a.clone(), b.clone()]],
+      &all,
+      &std::sync::Arc::new(env),
+      &stt,
+      &mut kctx,
+    )
+    .unwrap();
+
+    assert!(
+      matches!(out.patches.get(&a_rec), Some(PatchedConstant::Rec(_))),
+      "representative recursor should be generated",
+    );
+
+    for (alias, rep) in [
+      (&b_rec, &a_rec),
+      (&b_cases, &a_cases),
+      (&b_rec_on, &a_rec_on),
+      (&b_below, &a_below),
+      (&b_brecon, &a_brecon),
+    ] {
+      assert_eq!(
+        out.aliases.get(alias),
+        Some(rep),
+        "{} should alias to representative {}",
+        alias.pretty(),
+        rep.pretty(),
+      );
+      assert!(
+        !out.patches.contains_key(alias),
+        "{} should not get a separate deep-renamed patch",
+        alias.pretty(),
+      );
     }
   }
 

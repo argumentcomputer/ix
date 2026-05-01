@@ -17,15 +17,62 @@ pub mod perm;
 use crate::ix::env::{ConstantInfo, Expr, ExprData, Level, LevelData, Literal};
 use lean_ffi::nat::Nat;
 
-/// Check that two Lean levels are structurally equal.
+/// Check that two Lean levels are equal modulo the same simplifications
+/// `Level::max_smart` / `Level::imax_smart` perform.
+///
+/// Why normalize: `aux_gen::expr_utils::subst_level` routes through the
+/// smart constructors so substituted levels match the form the kernel
+/// produces post-ingress (see commit `ec95312` "Align nested-aux canonical
+/// order"). Lean's own `Level.instantiateParams` keeps the un-simplified
+/// factored form, so the same source-level expression can appear as
+/// `Sort (max u u)` from Lean and `Sort u` from aux_gen — semantically
+/// equal but structurally distinct. Strict structural comparison would
+/// flag every such case as a congruence failure on nested inductives;
+/// normalizing both sides through the same `max_smart` / `imax_smart`
+/// simplifier closes the gap without weakening the comparator (the smart
+/// constructor only applies semantically-valid simplifications:
+/// `max(a,a) = a`, zero absorption, same-base offset, `Max` absorption,
+/// and the analogous `imax` rules).
+///
+/// `Succ` is intentionally **not** normalized: Lean and aux_gen both
+/// preserve the factored form, so distributing `Succ` over `Max` would
+/// only introduce drift. See the "Use raw Level::succ" comment that lived
+/// in `expr_utils::subst_level` prior to `ec95312`.
 pub fn level_alpha_eq(a: &Level, b: &Level) -> Result<(), String> {
+  level_alpha_eq_struct(&normalize_level(a), &normalize_level(b))
+}
+
+/// Normalize a level by applying `Level::max_smart` / `Level::imax_smart`
+/// bottom-up. Idempotent. `Succ` is left raw (see [`level_alpha_eq`]).
+fn normalize_level(l: &Level) -> Level {
+  match l.as_data() {
+    LevelData::Zero(_) | LevelData::Param(_, _) | LevelData::Mvar(_, _) => {
+      l.clone()
+    },
+    LevelData::Succ(inner, _) => Level::succ(normalize_level(inner)),
+    LevelData::Max(x, y, _) => {
+      Level::max_smart(normalize_level(x), normalize_level(y))
+    },
+    LevelData::Imax(x, y, _) => {
+      Level::imax_smart(normalize_level(x), normalize_level(y))
+    },
+  }
+}
+
+/// Strict structural alpha-equivalence on already-normalized levels.
+/// Direct callers should go through [`level_alpha_eq`] so both sides
+/// are normalized first; this helper exists only to avoid re-normalizing
+/// at every recursion step.
+fn level_alpha_eq_struct(a: &Level, b: &Level) -> Result<(), String> {
   match (a.as_data(), b.as_data()) {
     (LevelData::Zero(_), LevelData::Zero(_)) => Ok(()),
-    (LevelData::Succ(a1, _), LevelData::Succ(b1, _)) => level_alpha_eq(a1, b1),
+    (LevelData::Succ(a1, _), LevelData::Succ(b1, _)) => {
+      level_alpha_eq_struct(a1, b1)
+    },
     (LevelData::Max(a1, a2, _), LevelData::Max(b1, b2, _))
     | (LevelData::Imax(a1, a2, _), LevelData::Imax(b1, b2, _)) => {
-      level_alpha_eq(a1, b1)?;
-      level_alpha_eq(a2, b2)
+      level_alpha_eq_struct(a1, b1)?;
+      level_alpha_eq_struct(a2, b2)
     },
     (LevelData::Param(_, _), LevelData::Param(_, _)) => {
       // Positional: both sides have the same level_params order,
@@ -347,5 +394,142 @@ fn ci_tag(ci: &ConstantInfo) -> &'static str {
     ConstantInfo::InductInfo(_) => "Induct",
     ConstantInfo::CtorInfo(_) => "Ctor",
     ConstantInfo::RecInfo(_) => "Rec",
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  //! Regression tests for [`level_alpha_eq`] level normalization.
+  //!
+  //! Each test pairs a Lean-source-shaped level (raw `Level::max` /
+  //! `Level::imax`, as `Level.instantiateParams` would emit) with the
+  //! aux_gen-shaped level that `subst_level`'s smart-constructor route
+  //! produces for the same input. Pre-fix (strict structural compare),
+  //! every pair would fail with "level mismatch". Post-fix, they pass.
+  //!
+  //! The cases mirror the simplifications inside `Level::max_smart` /
+  //! `Level::imax_smart` (see `src/ix/env.rs:340-404`), so they double
+  //! as a contract test for those constructors.
+  use super::*;
+  use crate::ix::env::Name;
+  fn p(s: &str) -> Level {
+    Level::param(Name::str(Name::anon(), s.to_string()))
+  }
+  fn z() -> Level {
+    Level::zero()
+  }
+  fn s(l: Level) -> Level {
+    Level::succ(l)
+  }
+  /// Raw `Level::max` (no simplification) — what Lean's exporter and
+  /// `Level.instantiateParams` produce.
+  fn m(x: Level, y: Level) -> Level {
+    Level::max(x, y)
+  }
+  /// Raw `Level::imax`.
+  fn im(x: Level, y: Level) -> Level {
+    Level::imax(x, y)
+  }
+
+  /// `max(a, a) = a` — the canonical aux_gen vs Lean divergence on
+  /// nested-aux level args from `ec95312` (the `Sort (max 1 1)` vs
+  /// `Sort 1` example in the commit message).
+  #[test]
+  fn level_max_same_arg_dedup() {
+    let lean = m(s(z()), s(z()));
+    let aux_gen = s(z());
+    assert!(level_alpha_eq(&lean, &aux_gen).is_ok());
+    assert!(level_alpha_eq(&aux_gen, &lean).is_ok());
+  }
+
+  /// `max(0, x) = x` — Zero absorption.
+  #[test]
+  fn level_max_zero_absorption() {
+    let u = p("u");
+    let lean = m(z(), u.clone());
+    assert!(level_alpha_eq(&lean, &u).is_ok());
+    let lean_r = m(u.clone(), z());
+    assert!(level_alpha_eq(&lean_r, &u).is_ok());
+  }
+
+  /// `max(succ x, succ y)` with `x == y` collapses to `succ x`.
+  #[test]
+  fn level_max_same_base_succ() {
+    let u = p("u");
+    let lean = m(s(u.clone()), s(u.clone()));
+    let aux_gen = s(u);
+    assert!(level_alpha_eq(&lean, &aux_gen).is_ok());
+  }
+
+  /// `max(succ^n x, succ^m x) = succ^max(n,m) x` — same-base offset.
+  #[test]
+  fn level_max_same_base_different_offsets() {
+    let u = p("u");
+    let lean = m(s(u.clone()), s(s(u.clone())));
+    let aux_gen = s(s(u));
+    assert!(level_alpha_eq(&lean, &aux_gen).is_ok());
+  }
+
+  /// `imax(_, succ _) = max(_, succ _)` — succ-headed second arg.
+  #[test]
+  fn level_imax_succ_collapses_to_max() {
+    let u = p("u");
+    let v = p("v");
+    let lean = im(u.clone(), s(v.clone()));
+    let aux_gen = m(u, s(v));
+    assert!(level_alpha_eq(&lean, &aux_gen).is_ok());
+  }
+
+  /// `imax(_, 0) = 0`.
+  #[test]
+  fn level_imax_zero_second_arg() {
+    let u = p("u");
+    let lean = im(u, z());
+    let aux_gen = z();
+    assert!(level_alpha_eq(&lean, &aux_gen).is_ok());
+  }
+
+  /// Nested `max` absorption: `max(a, max(a, b)) = max(a, b)`.
+  #[test]
+  fn level_max_absorption_left_in_right() {
+    let u = p("u");
+    let v = p("v");
+    let lean = m(u.clone(), m(u.clone(), v.clone()));
+    let aux_gen = m(u, v);
+    assert!(level_alpha_eq(&lean, &aux_gen).is_ok());
+  }
+
+  /// Strict structural mismatch is still rejected — sanity check that
+  /// normalization didn't accidentally make `level_alpha_eq` reflexive
+  /// over unrelated levels.
+  #[test]
+  fn level_genuinely_different_still_rejected() {
+    let u = p("u");
+    let v = p("v");
+    // succ u vs max u v — neither side reduces; strict compare disagrees.
+    assert!(level_alpha_eq(&s(u.clone()), &m(u, v)).is_err());
+  }
+
+  /// Normalization is idempotent: applying it twice doesn't change the
+  /// result. Guards against future smart-constructor changes that lose
+  /// idempotency (which would make `level_alpha_eq_struct`'s assumption
+  /// "post-normalize subterms are normalized" silently invalid).
+  #[test]
+  fn level_normalize_idempotent() {
+    let u = p("u");
+    let v = p("v");
+    let cases = [
+      m(s(z()), s(z())),
+      m(z(), u.clone()),
+      m(u.clone(), m(u.clone(), v.clone())),
+      im(u.clone(), s(v.clone())),
+      im(u, z()),
+      m(s(v.clone()), s(s(v))),
+    ];
+    for l in &cases {
+      let n1 = normalize_level(l);
+      let n2 = normalize_level(&n1);
+      assert_eq!(n1, n2, "normalize_level not idempotent on {}", l.pretty());
+    }
   }
 }

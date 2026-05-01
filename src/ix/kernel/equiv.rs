@@ -148,16 +148,10 @@ mod tests {
   fn test_basic_equiv() {
     let mut em = EquivManager::new();
     let zero = addr(0);
-    assert!(
-      !em.is_equiv(&(addr(100), zero), &(addr(200), zero))
-    );
+    assert!(!em.is_equiv(&(addr(100), zero), &(addr(200), zero)));
     em.add_equiv((addr(100), zero), (addr(200), zero));
-    assert!(
-      em.is_equiv(&(addr(100), zero), &(addr(200), zero))
-    );
-    assert!(
-      em.is_equiv(&(addr(200), zero), &(addr(100), zero))
-    );
+    assert!(em.is_equiv(&(addr(100), zero), &(addr(200), zero)));
+    assert!(em.is_equiv(&(addr(200), zero), &(addr(100), zero)));
   }
 
   #[test]
@@ -166,9 +160,7 @@ mod tests {
     let zero = addr(0);
     em.add_equiv((addr(100), zero), (addr(200), zero));
     em.add_equiv((addr(200), zero), (addr(300), zero));
-    assert!(
-      em.is_equiv(&(addr(100), zero), &(addr(300), zero))
-    );
+    assert!(em.is_equiv(&(addr(100), zero), &(addr(300), zero)));
   }
 
   #[test]
@@ -177,9 +169,7 @@ mod tests {
     let ctx1 = addr(1);
     let ctx2 = addr(2);
     em.add_equiv((addr(100), ctx1), (addr(200), ctx1));
-    assert!(
-      em.is_equiv(&(addr(100), ctx1), &(addr(200), ctx1))
-    );
+    assert!(em.is_equiv(&(addr(100), ctx1), &(addr(200), ctx1)));
     assert!(!em.is_equiv(&(addr(100), ctx2), &(addr(200), ctx2)));
   }
 }

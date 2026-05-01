@@ -686,53 +686,81 @@ pub(crate) fn generate_aux_patches(
   // results — verified end-to-end by the validate-aux roundtrip test.
   // See the module-level documentation for the full classification.
 
-  // Register patches for non-representative names (alpha-collapsed aliases).
-  // Each alias gets deep-renamed: internal Const references to the
-  // representative's auxiliaries are rewritten to reference the alias's own.
-  let mut alias_patches: Vec<(Name, PatchedConstant)> = Vec::new();
+  // Register Lean-exported names for non-representative alpha-collapsed
+  // members as aliases of the representative's canonical aux patches.
+  //
+  // The primary inductive block has already collapsed the class to one
+  // content address, so generating deep-renamed `B.casesOn`/`B.below`/...
+  // patches would create source-shaped auxiliaries instead of the class
+  // canonical ones. Keep one patch per representative and let every
+  // non-representative name resolve to it.
   for class in sorted_classes {
     if class.len() <= 1 {
       continue;
     }
     let rep = &class[0];
     for alias in &class[1..] {
-      // Build the rep→alias name map for deep renaming.
-      let name_map = build_alias_name_map(rep, alias, lean_env);
-
-      // For each active suffix that has a patch for rep, register the same for alias.
+      // For each active suffix that has a representative patch, register the
+      // alias name only when Lean actually exported that name.
       let suffixes = ["rec", "recOn", "casesOn", "below", "brecOn"];
       for suffix in &suffixes {
         let rep_name = Name::str(rep.clone(), suffix.to_string());
         let alias_name = Name::str(alias.clone(), suffix.to_string());
-        if let Some(patch) = patches.get(&rep_name) {
-          if *suffix == "rec" {
-            if lean_env.get(&alias_name).is_some() {
-              aliases.insert(alias_name, rep_name);
-            }
-            continue;
-          }
+        if patches.contains_key(&rep_name)
+          && lean_env.get(&alias_name).is_some()
+        {
+          aliases.insert(alias_name.clone(), rep_name.clone());
 
-          // BelowIndc needs structural renaming (constructor names in the
-          // BelowCtor structs change too, not just expression-level Consts).
-          let aliased = match patch {
-            PatchedConstant::BelowIndc(bi) => PatchedConstant::BelowIndc(
-              below::rename_below_indc(bi, alias, rep, lean_env),
-            ),
-            _ => rename_patch(patch, &alias_name, &name_map),
-          };
-          alias_patches.push((alias_name, aliased));
+          // Prop-level `.below` is itself an inductive, so Lean also exports
+          // constructor names under the alias-side `.below`. Register those
+          // positionally to the representative `.below` constructors.
+          if *suffix == "below"
+            && matches!(
+              patches.get(&rep_name),
+              Some(PatchedConstant::BelowIndc(_))
+            )
+          {
+            let rep_ctors = match lean_env.get(rep) {
+              Some(crate::ix::env::ConstantInfo::InductInfo(v)) => {
+                v.ctors.clone()
+              },
+              _ => vec![],
+            };
+            let alias_ctors = match lean_env.get(alias) {
+              Some(crate::ix::env::ConstantInfo::InductInfo(v)) => {
+                v.ctors.clone()
+              },
+              _ => vec![],
+            };
+            for (rep_ctor, alias_ctor) in
+              rep_ctors.iter().zip(alias_ctors.iter())
+            {
+              if let Some(rep_suffix) = rep_ctor.strip_prefix(rep) {
+                let alias_suffix = alias_ctor
+                  .strip_prefix(alias)
+                  .unwrap_or_else(|| alias_ctor.components());
+                let rep_below_ctor = rep_name.append_components(&rep_suffix);
+                let alias_below_ctor =
+                  alias_name.append_components(&alias_suffix);
+                if lean_env.get(&alias_below_ctor).is_some() {
+                  aliases.insert(alias_below_ctor, rep_below_ctor);
+                }
+              }
+            }
+          }
         }
       }
-      // Also .brecOn.go and .brecOn.eq — sub-names of brecOn that are
+      // Also `.brecOn.go` and `.brecOn.eq` — sub-names of `.brecOn` that are
       // generated for Type-level inductives by build_type_brecon_fvar.
       for sub in &["go", "eq"] {
         let rep_base = Name::str(rep.clone(), "brecOn".to_string());
         let alias_base = Name::str(alias.clone(), "brecOn".to_string());
         let rep_name = Name::str(rep_base, sub.to_string());
         let alias_name = Name::str(alias_base, sub.to_string());
-        if let Some(patch) = patches.get(&rep_name) {
-          let aliased = rename_patch(patch, &alias_name, &name_map);
-          alias_patches.push((alias_name, aliased));
+        if patches.contains_key(&rep_name)
+          && lean_env.get(&alias_name).is_some()
+        {
+          aliases.insert(alias_name, rep_name);
         }
       }
 
@@ -741,9 +769,6 @@ pub(crate) fn generate_aux_patches(
       // source order), not per-class-representative. There is no TreeB.rec_1
       // in Lean — only TreeA.rec_1.
     }
-  }
-  for (name, patch) in alias_patches {
-    patches.insert(name, patch);
   }
 
   // Register original-order auxiliary aliases. When alpha-collapse merges
@@ -879,139 +904,6 @@ fn is_below_shaped(typ: &LeanExpr) -> bool {
       ExprData::Sort(_, _) => return true,
       _ => return false,
     }
-  }
-}
-
-/// Extract the parent prefix from a Name.
-/// E.g., `A.rec` → `A`, `A.below` → `A`.
-fn _name_parent(name: &Name) -> Name {
-  match name.as_data() {
-    crate::ix::env::NameData::Str(parent, _, _)
-    | crate::ix::env::NameData::Num(parent, _, _) => parent.clone(),
-    crate::ix::env::NameData::Anonymous(_) => Name::anon(),
-  }
-}
-
-/// Build a name substitution map for aliasing `rep` → `alias`.
-///
-/// Covers the inductive itself, its constructors (positional mapping),
-/// and all known auxiliary suffixes. This ensures `replace_const_names`
-/// rewrites all internal Const references when creating alias patches.
-fn build_alias_name_map(
-  rep: &Name,
-  alias: &Name,
-  lean_env: &Arc<LeanEnv>,
-) -> std::collections::HashMap<Name, Name> {
-  let mut map = std::collections::HashMap::new();
-
-  // Inductive name itself.
-  map.insert(rep.clone(), alias.clone());
-
-  // Constructor names: positional mapping rep.ctor_i → alias.ctor_i.
-  let rep_ctors = match lean_env.get(rep) {
-    Some(crate::ix::env::ConstantInfo::InductInfo(v)) => v.ctors.clone(),
-    _ => vec![],
-  };
-  let alias_ctors = match lean_env.get(alias) {
-    Some(crate::ix::env::ConstantInfo::InductInfo(v)) => v.ctors.clone(),
-    _ => vec![],
-  };
-  for (rc, ac) in rep_ctors.iter().zip(alias_ctors.iter()) {
-    map.insert(rc.clone(), ac.clone());
-  }
-
-  // Auxiliary suffixes that can appear as Const references inside patch
-  // expressions. We only list the ones we actually regenerate — auxiliaries
-  // we don't regenerate (`.noConfusion*`, `.ctorIdx`, etc.) are never
-  // emitted by this pipeline, so no rename entries are needed for them.
-  for suffix in &["rec", "recOn", "casesOn", "below", "brecOn"] {
-    map.insert(
-      Name::str(rep.clone(), suffix.to_string()),
-      Name::str(alias.clone(), suffix.to_string()),
-    );
-  }
-
-  // Sub-names of brecOn.
-  for sub in &["go", "eq"] {
-    let rep_sub =
-      Name::str(Name::str(rep.clone(), "brecOn".to_string()), sub.to_string());
-    let alias_sub = Name::str(
-      Name::str(alias.clone(), "brecOn".to_string()),
-      sub.to_string(),
-    );
-    map.insert(rep_sub, alias_sub);
-  }
-
-  // Below constructor names (for Prop-level .below inductives).
-  let rep_below = Name::str(rep.clone(), "below".to_string());
-  let alias_below = Name::str(alias.clone(), "below".to_string());
-  map.insert(rep_below.clone(), alias_below.clone());
-  // Map positional .below constructors: Rep.below.ctor_suffix → Alias.below.ctor_suffix.
-  for (rc, ac) in rep_ctors.iter().zip(alias_ctors.iter()) {
-    if let Some(rc_suffix) = rc.strip_prefix(rep) {
-      let rep_bc = rep_below.append_components(&rc_suffix);
-      let alias_bc = alias_below.append_components(
-        &ac.strip_prefix(alias).unwrap_or_else(|| ac.components()),
-      );
-      map.insert(rep_bc, alias_bc);
-    }
-  }
-
-  map
-}
-
-/// Clone a PatchedConstant with a new name, rewriting internal Const
-/// references via `name_map`.
-fn rename_patch(
-  patch: &PatchedConstant,
-  new_name: &Name,
-  name_map: &std::collections::HashMap<Name, Name>,
-) -> PatchedConstant {
-  match patch {
-    PatchedConstant::Rec(r) => {
-      let mut r2 = r.clone();
-      r2.cnst.name = new_name.clone();
-      PatchedConstant::Rec(r2)
-    },
-    PatchedConstant::RecOn(d) => PatchedConstant::RecOn(AuxDef {
-      name: new_name.clone(),
-      level_params: d.level_params.clone(),
-      typ: expr_utils::replace_const_names(&d.typ, name_map),
-      value: expr_utils::replace_const_names(&d.value, name_map),
-      is_unsafe: d.is_unsafe,
-    }),
-    PatchedConstant::CasesOn(d) => PatchedConstant::CasesOn(AuxDef {
-      name: new_name.clone(),
-      level_params: d.level_params.clone(),
-      typ: expr_utils::replace_const_names(&d.typ, name_map),
-      value: expr_utils::replace_const_names(&d.value, name_map),
-      is_unsafe: d.is_unsafe,
-    }),
-    PatchedConstant::BelowDef(d) => {
-      PatchedConstant::BelowDef(below::BelowDef {
-        name: new_name.clone(),
-        level_params: d.level_params.clone(),
-        typ: expr_utils::replace_const_names(&d.typ, name_map),
-        value: expr_utils::replace_const_names(&d.value, name_map),
-        is_unsafe: d.is_unsafe,
-      })
-    },
-    PatchedConstant::BelowIndc(i) => {
-      // BelowIndc is handled by rename_below_indc at the call site.
-      // This arm is a fallback — just rename the name.
-      PatchedConstant::BelowIndc(below::BelowIndc {
-        name: new_name.clone(),
-        ..i.clone()
-      })
-    },
-    PatchedConstant::BRecOn(d) => PatchedConstant::BRecOn(brecon::BRecOnDef {
-      name: new_name.clone(),
-      level_params: d.level_params.clone(),
-      typ: expr_utils::replace_const_names(&d.typ, name_map),
-      value: expr_utils::replace_const_names(&d.value, name_map),
-      is_unsafe: d.is_unsafe,
-      is_prop: d.is_prop,
-    }),
   }
 }
 

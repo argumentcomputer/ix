@@ -17,7 +17,7 @@ use crate::ix::ixon::CompileError;
 
 use super::expr_utils::{
   LocalDecl, decompose_apps, find_motive_fvar, forall_telescope, fresh_fvar,
-  instantiate1, mk_app_n, mk_const, mk_forall, mk_lambda, replace_const_names,
+  instantiate1, mk_app_n, mk_const, mk_forall, mk_lambda,
 };
 
 /// Extract the 1-based suffix index from an auxiliary recursor name of
@@ -92,117 +92,6 @@ pub(crate) struct BelowCtor {
   pub typ: LeanExpr,
   pub n_params: usize,
   pub n_fields: usize,
-}
-
-/// Rename a `BelowIndc` to match a different parent inductive name.
-///
-/// Given a canonical `BLE.below` with constructors named after `BLE`'s ctors,
-/// produces `BLI.below` with constructors named after `BLI`'s ctors.
-/// Uses positional mapping: canonical parent's ctor[i] → target parent's ctor[i].
-///
-/// `canonical_parent`: the representative inductive name (e.g., `BLE`)
-/// `lean_env`: to look up constructor names for both parent inductives
-/// **Note on level params**:
-/// we clone `canonical.level_params` verbatim without renaming, and only
-/// rewrite `Const` *names* via `name_map`. This is correct by construction
-/// because level params are formal bound variables scoped to the
-/// `BelowIndc`: the aliased struct declares `level_params = [u₁..uₙ]`
-/// and its body's `Level::param(u_i)` refs are consistent with those same
-/// formal names. When an external caller invokes `<new_parent>.below.{v_i}`,
-/// the kernel's `instantiate_level_params` binds each formal `u_i` to the
-/// concrete `v_i` — identical to how the canonical `.below` works.
-///
-/// This means alias blocks whose Lean-source level-param *names* differ
-/// (`A.{u}` vs `B.{v}` collapsed to one class) roundtrip correctly: the
-/// Ixon form uses formals `[u]` for both, and decompile re-emits those
-/// formals. Lean-side naming is purely cosmetic metadata.
-pub(crate) fn rename_below_indc(
-  canonical: &BelowIndc,
-  new_parent: &Name,
-  canonical_parent: &Name,
-  lean_env: &LeanEnv,
-) -> BelowIndc {
-  let new_below_name = Name::str(new_parent.clone(), "below".to_string());
-
-  // Build a positional map from canonical parent ctor suffix → target parent ctor suffix.
-  // e.g., BLE.ble → BLI.bli (both at position 0)
-  let canon_ctors: Vec<Name> = match lean_env.get(canonical_parent) {
-    Some(ConstantInfo::InductInfo(v)) => v.ctors.clone(),
-    _ => vec![],
-  };
-  let target_ctors: Vec<Name> = match lean_env.get(new_parent) {
-    Some(ConstantInfo::InductInfo(v)) => v.ctors.clone(),
-    _ => vec![],
-  };
-
-  // Build a complete name replacement map for expressions.
-  //
-  // The canonical `.below` constructor types contain Const references to:
-  //   1. The canonical parent inductive (e.g., `BLE` in motive/major domains)
-  //   2. The canonical `.below` inductive (e.g., `BLE.below` in return type and IH fields)
-  //   3. The canonical parent's constructors (e.g., `BLE.ble` in the return type)
-  //
-  // All three categories must be rewritten to reference the alias target.
-  let mut name_map = std::collections::HashMap::new();
-  name_map.insert(canonical_parent.clone(), new_parent.clone());
-  name_map.insert(canonical.name.clone(), new_below_name.clone());
-  for (canon_ctor, target_ctor) in canon_ctors.iter().zip(target_ctors.iter()) {
-    name_map.insert(canon_ctor.clone(), target_ctor.clone());
-  }
-
-  // Build suffix map for renaming .below constructor names (structural, not expression-level).
-  use crate::ix::env::NameComponent;
-  let suffix_map: Vec<(Vec<NameComponent>, Vec<NameComponent>)> = canon_ctors
-    .iter()
-    .zip(target_ctors.iter())
-    .map(|(c, t)| {
-      let c_suffix =
-        c.strip_prefix(canonical_parent).unwrap_or_else(|| c.components());
-      let t_suffix =
-        t.strip_prefix(new_parent).unwrap_or_else(|| t.components());
-      (c_suffix, t_suffix)
-    })
-    .collect();
-
-  let renamed_ctors = canonical
-    .ctors
-    .iter()
-    .map(|ctor| {
-      // Strip the canonical .below prefix to get the ctor suffix components.
-      let ctor_suffix = ctor
-        .name
-        .strip_prefix(&canonical.name)
-        .unwrap_or_else(|| ctor.name.components());
-
-      // Look up the positional rename: find which canonical ctor suffix matches.
-      let new_suffix = suffix_map
-        .iter()
-        .find(|(cs, _)| *cs == ctor_suffix)
-        .map(|(_, ts)| ts.clone())
-        .unwrap_or(ctor_suffix);
-
-      BelowCtor {
-        name: new_below_name.append_components(&new_suffix),
-        typ: replace_const_names(&ctor.typ, &name_map),
-        n_params: ctor.n_params,
-        n_fields: ctor.n_fields,
-      }
-    })
-    .collect();
-
-  BelowIndc {
-    name: new_below_name,
-    level_params: canonical.level_params.clone(),
-    n_params: canonical.n_params,
-    n_indices: canonical.n_indices,
-    is_reflexive: canonical.is_reflexive,
-    // `.below` shares the parent's `is_unsafe`; when aliasing across
-    // alpha-collapsed classes both parents have the same safety (mutual-block
-    // invariant), so cloning the canonical's flag is correct.
-    is_unsafe: canonical.is_unsafe,
-    typ: replace_const_names(&canonical.typ, &name_map),
-    ctors: renamed_ctors,
-  }
 }
 
 /// Generate `.below` constants for all classes in a block.

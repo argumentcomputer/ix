@@ -357,6 +357,7 @@ impl LeanIxonConstantMeta<LeanOwned> {
   /// | indc    | 4   | 6 (name, lvls, ctors, all, ctx, arena) | 8 (1× u64) |
   /// | ctor    | 5   | 4 (name, lvls, induct, arena) | 8 (1× u64) |
   /// | recr    | 6   | 7 (name, lvls, rules, all, ctx, arena, ruleRoots) | 8 (1× u64) |
+  /// | muts    | 7   | 1 (Array (Array Address)) | 0 |
   pub fn build(meta: &ConstantMeta) -> Self {
     match &meta.info {
       ConstantMetaInfo::Empty => Self::new(LeanOwned::box_usize(0)),
@@ -454,18 +455,11 @@ impl LeanIxonConstantMeta<LeanOwned> {
       },
 
       ConstantMetaInfo::Muts { all, aux_layout: _ } => {
-        // Muts is a Rust-only ConstantMeta variant (Lean's ConstantMeta
-        // has no `muts` constructor — `Ix/Ixon.lean`). The FFI build
-        // path for Muts is effectively dead because Lean never materializes
-        // a Muts meta; keeping the stub here preserves the historical
-        // tag-7 encoding for any Rust-side code that still reflects a
-        // Muts meta through the FFI roundtrip test (`rs_roundtrip_ixon_named`).
-        //
-        // `aux_layout` is intentionally NOT encoded through the FFI —
-        // the Lean side has no field for it, and anything crossing the
-        // FFI would immediately drop it on the next Rust-side build.
-        // Aux_layout round-tripping lives entirely in `put_indexed` /
-        // `get_indexed` (Rust-internal serialization).
+        // Lean's FFI shape carries the alpha-equivalence classes for a
+        // mutual block, but not the Rust-only nested-auxiliary `aux_layout`
+        // sidecar. The sidecar survives through Rust `put_indexed` /
+        // `get_indexed`; a Rust → Lean → Rust FFI roundtrip intentionally
+        // decodes it as `None`.
         let ctor = LeanIxonConstantMeta::alloc(7);
         let outer = LeanArray::alloc(all.len());
         for (i, group) in all.iter().enumerate() {
@@ -619,13 +613,9 @@ impl<R: LeanRef> LeanIxonConstantMeta<R> {
       },
 
       7 => {
-        // muts: 1 obj field (Array (Array Address)), 0 scalar
-        //
-        // `aux_layout` is not carried across the FFI — Lean's
-        // ConstantMeta has no `muts` variant, so the only path here is
-        // the Rust-internal roundtrip test. We default to `None` on
-        // decode; the real aux_layout data survives through the
-        // Rust-side `put_indexed` / `get_indexed` path instead.
+        // muts: 1 obj field (Array (Array Address)), 0 scalar.
+        // The Rust-only `aux_layout` sidecar is not represented on the
+        // Lean side, so FFI decode defaults it to `None`.
         let outer = ctor.get(0).as_array();
         let mut all = Vec::with_capacity(outer.len());
         for i in 0..outer.len() {

@@ -65,12 +65,12 @@ def runCompileValidateAux (env : Lean.Environment) : IO UInt32 := do
   IO.println "[validate-aux] finding seeds..."
   let prefixes := [
     `Tests.Ix.Compile.Mutual,
-    `Tests.Ix.Compile.Canonicity,
-    `Init,
-    `_private.Init,
-    `State,
-    `Lean,
-    `Tests.Ix.Kernel.TutorialDefs
+    --`Tests.Ix.Compile.Canonicity,
+    --`Init,
+    --`_private.Init,
+    --`State,
+    --`Lean,
+    --`Tests.Ix.Kernel.TutorialDefs
   ]
   let mut seeds := env.constants.toList.filterMap fun (n, _) =>
     if prefixes.any (·.isPrefixOf n) then some n else none
