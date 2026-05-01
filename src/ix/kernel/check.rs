@@ -465,7 +465,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
             timing.as_deref_mut(),
           )?;
         }
-        if let (Some(t), Some(start)) = (timing.as_deref_mut(), rules_start) {
+        if let (Some(t), Some(start)) = (timing, rules_start) {
           t.rules += start.elapsed();
         }
       },
@@ -512,9 +512,6 @@ impl<M: KernelMode> TypeChecker<'_, M> {
             return Err(TcError::VarOutOfRange { idx: *idx, ctx_len });
           }
         },
-        // FVars carry no de Bruijn index, so the depth check does not apply.
-        // They are leaves with no further children to traverse.
-        ExprData::FVar(..) => {},
         ExprData::Sort(u, _) => {
           let univ_start = timing.as_ref().map(|_| Instant::now());
           self.validate_univ_params_seen(u, lvl_bound, &mut seen_univs)?;
@@ -564,7 +561,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
           }
           stack.push((val, depth));
         },
-        ExprData::Nat(..) | ExprData::Str(..) => {},
+        // FVars carry no de Bruijn index, so the depth check does not apply.
+        // They are leaves with no further children to traverse.
+        ExprData::FVar(..) | ExprData::Nat(..) | ExprData::Str(..) => {},
       }
     }
     Ok(())
@@ -578,7 +577,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   ) -> Result<(), TcError<M>> {
     let mut stack = vec![root];
     while let Some(u) = stack.pop() {
-      if !seen.insert(u.addr().clone()) {
+      if !seen.insert(*u.addr()) {
         continue;
       }
       match u.data() {

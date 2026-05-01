@@ -527,7 +527,8 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     let fv_id = self.fresh_fvar_id();
     let fv = self.intern(KExpr::fvar(fv_id, name.clone()));
     self.lctx.push(fv_id, LocalDecl::CDecl { name, bi, ty });
-    let body_open = instantiate_rev(&mut self.env.intern, body, &[fv.clone()]);
+    let body_open =
+      instantiate_rev(&mut self.env.intern, body, std::slice::from_ref(&fv));
     (body_open, fv, fv_id)
   }
 
@@ -1130,12 +1131,12 @@ mod tests {
   #[test]
   fn ctx_id_changes_when_pushing_different_types() {
     let mut tc = new_tc();
-    let initial = tc.ctx_id.clone();
+    let initial = tc.ctx_id;
     tc.push_local(sort0());
-    let after_sort0 = tc.ctx_id.clone();
+    let after_sort0 = tc.ctx_id;
     assert_ne!(initial, after_sort0);
     tc.push_local(sort1());
-    let after_sort1 = tc.ctx_id.clone();
+    let after_sort1 = tc.ctx_id;
     assert_ne!(after_sort0, after_sort1);
   }
 
@@ -1153,9 +1154,9 @@ mod tests {
   #[test]
   fn ctx_id_restores_on_pop() {
     let mut tc = new_tc();
-    let initial = tc.ctx_id.clone();
+    let initial = tc.ctx_id;
     tc.push_local(sort0());
-    let level1 = tc.ctx_id.clone();
+    let level1 = tc.ctx_id;
     tc.push_local(sort1());
     assert_ne!(level1, tc.ctx_id);
     tc.pop_local();

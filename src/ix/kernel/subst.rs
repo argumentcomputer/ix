@@ -996,7 +996,7 @@ mod tests {
     let v0 = AE::var(0, ());
     let fv0 = AE::fvar(FVarId(0), ());
     // Single-binder body: instantiate Var(0) → fvars[0]
-    let result = instantiate_rev(&mut env, &v0, &[fv0.clone()]);
+    let result = instantiate_rev(&mut env, &v0, std::slice::from_ref(&fv0));
     assert_eq!(result, fv0);
   }
 
@@ -1045,7 +1045,7 @@ mod tests {
     let inner = AE::app(v0, v1);
     let lam = AE::lam((), (), nat.clone(), inner);
     let fv0 = AE::fvar(FVarId(0), ());
-    let result = instantiate_rev(&mut env, &lam, &[fv0.clone()]);
+    let result = instantiate_rev(&mut env, &lam, std::slice::from_ref(&fv0));
     // Inside the lambda, Var(0) is still bound, Var(1) becomes fv0.
     let expected = AE::lam((), (), nat, AE::app(AE::var(0, ()), fv0));
     assert_eq!(result, expected);
@@ -1131,14 +1131,15 @@ mod tests {
     // lambda (the outer binder), and its inner is what we want to peel.
     // For simplicity, treat `body` directly as a body under one peeled
     // outer binder, then peel its inner lambda manually.
-    let opened_outer = instantiate_rev(&mut env, &body, &[fv_outer.clone()]);
+    let opened_outer =
+      instantiate_rev(&mut env, &body, std::slice::from_ref(&fv_outer));
     // opened_outer is now: λ(Nat). App(#0, fv_outer)
     let inner_body = match opened_outer.data() {
       ExprData::Lam(_, _, _, b, _) => b.clone(),
       _ => unreachable!(),
     };
     let opened_inner =
-      instantiate_rev(&mut env, &inner_body, &[fv_inner.clone()]);
+      instantiate_rev(&mut env, &inner_body, std::slice::from_ref(&fv_inner));
     // opened_inner is now: App(fv_inner, fv_outer)
     let expected_open = AE::app(fv_inner.clone(), fv_outer.clone());
     assert_eq!(opened_inner, expected_open);

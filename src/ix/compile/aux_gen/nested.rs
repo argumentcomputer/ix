@@ -700,13 +700,13 @@ pub(crate) fn sort_aux_by_partition_refinement(
         .first()
         .is_some_and(|m| m.name.pretty().contains(prefix.as_str()))
     });
-  if let Some(_) = &dump {
+  if dump.is_some() {
     let all0 = expanded.types.first().map(|m| m.name.pretty());
     eprintln!(
       "[compile.canonical_aux_order.dump] all0={:?} n_aux={} n_block_params={}",
       all0,
       aux_consts.len(),
-      expanded.types.first().map(|m| m.n_params).unwrap_or(0)
+      expanded.types.first().map_or(0, |m| m.n_params)
     );
     for (i, c) in aux_consts.iter().enumerate() {
       let name_pretty = c.name().pretty();

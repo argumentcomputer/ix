@@ -165,7 +165,7 @@ impl ConvertStats {
     ConvertStats { enabled, ..ConvertStats::default() }
   }
 
-  fn merge(mut self, other: Self) -> Self {
+  fn merge(mut self, other: &Self) -> Self {
     self.enabled |= other.enabled;
     self.expr_roots += other.expr_roots;
     self.expr_process += other.expr_process;
@@ -258,7 +258,7 @@ fn timed_intern_univ<M: KernelMode>(
     intern.intern_univ(u)
   };
   stats.intern_univ_calls += 1;
-  stats.intern_univ_ns += t0.elapsed().as_nanos() as u64;
+  stats.intern_univ_ns += elapsed_ns(t0);
   result
 }
 
@@ -300,17 +300,17 @@ fn timed_intern_or_build<M: KernelMode>(
   if let Some(existing) = intern.try_get_expr(&hash) {
     stats.intern_expr_get_hits += 1;
     stats.intern_expr_calls += 1;
-    stats.intern_expr_ns += t0.elapsed().as_nanos() as u64;
+    stats.intern_expr_ns += elapsed_ns(t0);
     return existing;
   }
   let addr = hash;
   let kc_t0 = Instant::now();
   let new = build(addr);
-  let kc_elapsed = kc_t0.elapsed().as_nanos() as u64;
+  let kc_elapsed = elapsed_ns(kc_t0);
   stats.kexpr_construct_ns += kc_elapsed;
   stats.kexpr_construct_calls += 1;
   let interned = intern.intern_expr(new);
-  let total = t0.elapsed().as_nanos() as u64;
+  let total = elapsed_ns(t0);
   // Account for the DashMap traffic only — the closure body's time is
   // already in `kexpr_construct_ns`.
   stats.intern_expr_ns += total.saturating_sub(kc_elapsed);
@@ -637,13 +637,13 @@ fn ingress_expr<M: KernelMode>(
             if stats.enabled { Some(Instant::now()) } else { None };
           let cached = cache.get(&cache_key);
           if let Some(t0) = lookup_t0 {
-            stats.expr_cache_lookup_ns += t0.elapsed().as_nanos() as u64;
+            stats.expr_cache_lookup_ns += elapsed_ns(t0);
           }
           if let Some(cached) = cached {
             bump_convert_stat!(stats, expr_cache_hits);
             values.push(cached.clone());
             if let Some(t0) = process_t0 {
-              stats.process_arm_ns += t0.elapsed().as_nanos() as u64;
+              stats.process_arm_ns += elapsed_ns(t0);
             }
             continue;
           }
@@ -668,13 +668,13 @@ fn ingress_expr<M: KernelMode>(
             mdata_layers.push(resolve_kvmap(kvm, ixon_env));
           }
           if let Some(t0) = kv_t0 {
-            stats.resolve_kvmap_ns += t0.elapsed().as_nanos() as u64;
+            stats.resolve_kvmap_ns += elapsed_ns(t0);
             stats.resolve_kvmap_calls += mdata.len() as u64;
           }
           current_idx = *child;
         }
         if let Some(t0) = arena_t0 {
-          stats.arena_walk_ns += t0.elapsed().as_nanos() as u64;
+          stats.arena_walk_ns += elapsed_ns(t0);
         }
 
         //loop {
@@ -727,7 +727,7 @@ fn ingress_expr<M: KernelMode>(
             ));
           }
           if let Some(t0) = process_t0 {
-            stats.process_arm_ns += t0.elapsed().as_nanos() as u64;
+            stats.process_arm_ns += elapsed_ns(t0);
           }
           continue;
         }
@@ -1158,7 +1158,7 @@ fn ingress_expr<M: KernelMode>(
               format!("missing Str blob at addr {}", addr.hex())
             })?;
             if let Some(t0) = gb_t0 {
-              stats.get_blob_ns += t0.elapsed().as_nanos() as u64;
+              stats.get_blob_ns += elapsed_ns(t0);
               stats.get_blob_calls += 1;
             }
             let s = String::from_utf8(blob).map_err(|e| {
@@ -1187,7 +1187,7 @@ fn ingress_expr<M: KernelMode>(
               format!("missing Nat blob at addr {}", addr.hex())
             })?;
             if let Some(t0) = gb_t0 {
-              stats.get_blob_ns += t0.elapsed().as_nanos() as u64;
+              stats.get_blob_ns += elapsed_ns(t0);
               stats.get_blob_calls += 1;
             }
             let n = Nat::from_le_bytes(&blob);
@@ -1202,7 +1202,7 @@ fn ingress_expr<M: KernelMode>(
           },
         }
         if let Some(t0) = process_t0 {
-          stats.process_arm_ns += t0.elapsed().as_nanos() as u64;
+          stats.process_arm_ns += elapsed_ns(t0);
         }
       },
 
@@ -1211,7 +1211,7 @@ fn ingress_expr<M: KernelMode>(
         let cont_t0 = if stats.enabled { Some(Instant::now()) } else { None };
         stack.push(ExprFrame::Process { expr: arg, arena_idx: arg_arena });
         if let Some(t0) = cont_t0 {
-          stats.continuation_arms_ns += t0.elapsed().as_nanos() as u64;
+          stats.continuation_arms_ns += elapsed_ns(t0);
         }
       },
       ExprFrame::AppDone { mdata } => {
@@ -1226,7 +1226,7 @@ fn ingress_expr<M: KernelMode>(
           stats,
         ));
         if let Some(t0) = cont_t0 {
-          stats.continuation_arms_ns += t0.elapsed().as_nanos() as u64;
+          stats.continuation_arms_ns += elapsed_ns(t0);
         }
       },
       ExprFrame::LamBody { body, body_arena } => {
@@ -1234,7 +1234,7 @@ fn ingress_expr<M: KernelMode>(
         // The binder name was already pushed by BinderPush before this frame
         stack.push(ExprFrame::Process { expr: body, arena_idx: body_arena });
         if let Some(t0) = cont_t0 {
-          stats.continuation_arms_ns += t0.elapsed().as_nanos() as u64;
+          stats.continuation_arms_ns += elapsed_ns(t0);
         }
       },
       ExprFrame::LamDone { name, bi, mdata } => {
@@ -1249,7 +1249,7 @@ fn ingress_expr<M: KernelMode>(
           stats,
         ));
         if let Some(t0) = cont_t0 {
-          stats.continuation_arms_ns += t0.elapsed().as_nanos() as u64;
+          stats.continuation_arms_ns += elapsed_ns(t0);
         }
       },
       ExprFrame::AllBody { body, body_arena }
@@ -1257,7 +1257,7 @@ fn ingress_expr<M: KernelMode>(
         let cont_t0 = if stats.enabled { Some(Instant::now()) } else { None };
         stack.push(ExprFrame::Process { expr: body, arena_idx: body_arena });
         if let Some(t0) = cont_t0 {
-          stats.continuation_arms_ns += t0.elapsed().as_nanos() as u64;
+          stats.continuation_arms_ns += elapsed_ns(t0);
         }
       },
       ExprFrame::AllDone { name, bi, mdata } => {
@@ -1272,7 +1272,7 @@ fn ingress_expr<M: KernelMode>(
           stats,
         ));
         if let Some(t0) = cont_t0 {
-          stats.continuation_arms_ns += t0.elapsed().as_nanos() as u64;
+          stats.continuation_arms_ns += elapsed_ns(t0);
         }
       },
       ExprFrame::LetVal { val, val_arena, body, body_arena, binder_name } => {
@@ -1281,7 +1281,7 @@ fn ingress_expr<M: KernelMode>(
         stack.push(ExprFrame::BinderPush { name: binder_name });
         stack.push(ExprFrame::Process { expr: val, arena_idx: val_arena });
         if let Some(t0) = cont_t0 {
-          stats.continuation_arms_ns += t0.elapsed().as_nanos() as u64;
+          stats.continuation_arms_ns += elapsed_ns(t0);
         }
       },
       ExprFrame::LetDone { name, nd, mdata } => {
@@ -1299,21 +1299,21 @@ fn ingress_expr<M: KernelMode>(
           stats,
         ));
         if let Some(t0) = cont_t0 {
-          stats.continuation_arms_ns += t0.elapsed().as_nanos() as u64;
+          stats.continuation_arms_ns += elapsed_ns(t0);
         }
       },
       ExprFrame::BinderPush { name } => {
         let cont_t0 = if stats.enabled { Some(Instant::now()) } else { None };
         binder_names.push(name);
         if let Some(t0) = cont_t0 {
-          stats.continuation_arms_ns += t0.elapsed().as_nanos() as u64;
+          stats.continuation_arms_ns += elapsed_ns(t0);
         }
       },
       ExprFrame::BinderPop => {
         let cont_t0 = if stats.enabled { Some(Instant::now()) } else { None };
         binder_names.pop();
         if let Some(t0) = cont_t0 {
-          stats.continuation_arms_ns += t0.elapsed().as_nanos() as u64;
+          stats.continuation_arms_ns += elapsed_ns(t0);
         }
       },
       ExprFrame::PrjDone { type_id, field_idx, mdata } => {
@@ -1327,7 +1327,7 @@ fn ingress_expr<M: KernelMode>(
           stats,
         ));
         if let Some(t0) = cont_t0 {
-          stats.continuation_arms_ns += t0.elapsed().as_nanos() as u64;
+          stats.continuation_arms_ns += elapsed_ns(t0);
         }
       },
       ExprFrame::Cache { key } => {
@@ -1336,12 +1336,12 @@ fn ingress_expr<M: KernelMode>(
         let ins_t0 = if stats.enabled { Some(Instant::now()) } else { None };
         cache.insert(key, result);
         if let Some(t0) = ins_t0 {
-          stats.expr_cache_insert_ns += t0.elapsed().as_nanos() as u64;
+          stats.expr_cache_insert_ns += elapsed_ns(t0);
           stats.expr_cache_inserts += 1;
           stats.expr_cache_peak = stats.expr_cache_peak.max(cache.len() as u64);
         }
         if let Some(t0) = cont_t0 {
-          stats.continuation_arms_ns += t0.elapsed().as_nanos() as u64;
+          stats.continuation_arms_ns += elapsed_ns(t0);
         }
       },
     }
@@ -2226,7 +2226,7 @@ pub fn lean_expr_to_zexpr_cached(
   let result = intern.intern_expr(e);
 
   // Store in cache
-  if let (Some(cache), Some(pn_hash)) = (cache.as_deref_mut(), pn_hash) {
+  if let (Some(cache), Some(pn_hash)) = (cache, pn_hash) {
     let expr_key = *expr.get_hash();
     cache.insert((expr_key, *pn_hash), result.clone());
   }
@@ -2433,7 +2433,7 @@ fn lean_expr_to_zexpr_raw(
         intern,
         n2a,
         aux_n2a,
-        cache.as_deref_mut(),
+        cache,
         pn_hash,
       );
       KExpr::prj_mdata(zid, idx.to_u64().unwrap_or(0), e_k, mdata_layers)
@@ -3189,7 +3189,7 @@ pub fn ingress_addr_shallow_into_kenv_with_lookups<M: KernelMode>(
   lookups: &IxonIngressLookups,
   addr: &Address,
 ) -> Result<bool, String> {
-  ingress_addr_set_into_kenv(kenv, ixon_env, lookups, addr.clone(), false)
+  ingress_addr_set_into_kenv(kenv, ixon_env, lookups, addr, false)
 }
 
 fn ingress_const_into_kenv_with_lookups_impl<M: KernelMode>(
@@ -3209,7 +3209,7 @@ fn ingress_const_into_kenv_with_lookups_impl<M: KernelMode>(
     kenv,
     ixon_env,
     lookups,
-    requested.addr.clone(),
+    &requested.addr,
     follow_refs,
   )?;
 
@@ -3223,7 +3223,7 @@ fn ingress_addr_set_into_kenv<M: KernelMode>(
   kenv: &mut KEnv<M>,
   ixon_env: &IxonEnv,
   lookups: &IxonIngressLookups,
-  seed_addr: Address,
+  seed_addr: &Address,
   follow_refs: bool,
 ) -> Result<bool, String> {
   let mut seen: FxHashSet<Address> = FxHashSet::default();
@@ -3248,7 +3248,7 @@ fn ingress_addr_set_into_kenv<M: KernelMode>(
       // `Constant.refs` also contains blob addresses for string/nat payloads.
       continue;
     };
-    if addr == seed_addr {
+    if &addr == seed_addr {
       found_seed = true;
     }
 
@@ -3348,7 +3348,7 @@ struct IngressStreamTimingSnapshot {
 }
 
 impl IngressStreamTimingSnapshot {
-  fn merge(mut self, other: Self) -> Self {
+  fn merge(mut self, other: &Self) -> Self {
     self.standalone_items += other.standalone_items;
     self.muts_items += other.muts_items;
     self.output_consts += other.output_consts;
@@ -3359,7 +3359,7 @@ impl IngressStreamTimingSnapshot {
     self.insert_ns += other.insert_ns;
     self.insert_blocks_ns += other.insert_blocks_ns;
     self.insert_consts_ns += other.insert_consts_ns;
-    self.convert_stats = self.convert_stats.merge(other.convert_stats);
+    self.convert_stats = self.convert_stats.merge(&other.convert_stats);
     self
   }
 }
@@ -3379,17 +3379,19 @@ struct LookupDropTiming {
 }
 
 fn duration_ns(d: Duration) -> u64 {
-  d.as_nanos().min(u128::from(u64::MAX)) as u64
+  u64::try_from(d.as_nanos()).unwrap_or(u64::MAX)
 }
 
 fn elapsed_ns(start: Instant) -> u64 {
   duration_ns(start.elapsed())
 }
 
+#[allow(clippy::cast_precision_loss)]
 fn seconds(ns: u64) -> f64 {
   ns as f64 / 1_000_000_000.0
 }
 
+#[allow(clippy::cast_precision_loss)]
 fn percent(part: u64, total: u64) -> f64 {
   if total == 0 { 0.0 } else { (part as f64 * 100.0) / total as f64 }
 }
@@ -3738,7 +3740,7 @@ fn ixon_ingress_inner<M: KernelMode>(
             timing.const_get_ns += elapsed_ns(const_start);
             timing.missing_consts += 1;
             timing.convert_stats = convert_stats;
-            stream = stream.merge(timing);
+            stream = stream.merge(&timing);
             continue;
           },
         };
@@ -3776,7 +3778,7 @@ fn ixon_ingress_inner<M: KernelMode>(
           ConstantMetaInfo::Muts { all, .. } => all,
           _ => {
             timing.convert_stats = convert_stats;
-            stream = stream.merge(timing);
+            stream = stream.merge(&timing);
             continue;
           },
         };
@@ -3803,7 +3805,7 @@ fn ixon_ingress_inner<M: KernelMode>(
       },
     }
     timing.convert_stats = convert_stats;
-    stream = stream.merge(timing);
+    stream = stream.merge(&timing);
   }
   if !quiet {
     eprintln!(

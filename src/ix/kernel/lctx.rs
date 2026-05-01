@@ -140,9 +140,9 @@ impl<M: KernelMode> LocalContext<M> {
     &self,
     intern: &mut InternTable<M>,
     fvars: &[FVarId],
-    body: KExpr<M>,
+    body: &KExpr<M>,
   ) -> KExpr<M> {
-    let abstracted = abstract_fvars(intern, &body, fvars);
+    let abstracted = abstract_fvars(intern, body, fvars);
     self.wrap_binders(intern, fvars, abstracted, /* as_lambda */ true)
   }
 
@@ -155,9 +155,9 @@ impl<M: KernelMode> LocalContext<M> {
     &self,
     intern: &mut InternTable<M>,
     fvars: &[FVarId],
-    body: KExpr<M>,
+    body: &KExpr<M>,
   ) -> KExpr<M> {
-    let abstracted = abstract_fvars(intern, &body, fvars);
+    let abstracted = abstract_fvars(intern, body, fvars);
     self.wrap_binders(intern, fvars, abstracted, /* as_lambda */ false)
   }
 
@@ -260,8 +260,11 @@ mod tests {
   type AE = KExpr<Anon>;
   type AU = KUniv<Anon>;
 
-  fn anon_name() -> () {}
-  fn anon_bi() -> () {}
+  /// Anon-mode `M::MField<Name>` is `()`; tests construct it with this
+  /// trivially-named alias to make the call sites read like the meta
+  /// equivalents (`ANON_NAME` ↔ `Name::anon()`).
+  const ANON_NAME: () = ();
+  const ANON_BI: () = ();
 
   #[test]
   fn name_generator_unique() {
@@ -290,11 +293,11 @@ mod tests {
 
     lctx.push(
       id1,
-      LocalDecl::CDecl { name: anon_name(), bi: anon_bi(), ty: ty1.clone() },
+      LocalDecl::CDecl { name: ANON_NAME, bi: ANON_BI, ty: ty1.clone() },
     );
     lctx.push(
       id2,
-      LocalDecl::CDecl { name: anon_name(), bi: anon_bi(), ty: ty2.clone() },
+      LocalDecl::CDecl { name: ANON_NAME, bi: ANON_BI, ty: ty2.clone() },
     );
 
     assert_eq!(lctx.len(), 2);
@@ -316,8 +319,8 @@ mod tests {
     let mut ngen = NameGenerator::new();
     let id1 = ngen.fresh();
     let id2 = ngen.fresh();
-    let fv1: AE = AE::fvar(id1, anon_name());
-    let fv2: AE = AE::fvar(id2, anon_name());
+    let fv1: AE = AE::fvar(id1, ANON_NAME);
+    let fv2: AE = AE::fvar(id2, ANON_NAME);
     assert_ne!(fv1.addr(), fv2.addr());
     assert!(fv1.has_fvars());
     assert!(fv2.has_fvars());
@@ -328,8 +331,8 @@ mod tests {
   #[test]
   fn is_fvar_predicate() {
     let mut ngen = NameGenerator::new();
-    let fv: AE = AE::fvar(ngen.fresh(), anon_name());
-    let v: AE = AE::var(0, anon_name());
+    let fv: AE = AE::fvar(ngen.fresh(), ANON_NAME);
+    let v: AE = AE::var(0, ANON_NAME);
     let s: AE = AE::sort(AU::zero());
     assert!(is_fvar(&fv));
     assert!(!is_fvar(&v));

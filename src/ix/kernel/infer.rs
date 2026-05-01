@@ -940,7 +940,7 @@ mod tests {
     let key = tc.infer_key(&app);
     assert!(tc.with_infer_only(|tc| tc.infer(&app)).is_ok());
     assert!(!tc.env.infer_only_cache.is_empty());
-    assert!(tc.env.infer_cache.get(&key).is_none());
+    assert!(!tc.env.infer_cache.contains_key(&key));
 
     match tc.infer(&app) {
       Err(TcError::AppTypeMismatch { .. }) => {},

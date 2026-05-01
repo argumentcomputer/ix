@@ -61,17 +61,11 @@ pub static IX_TIMING: std::sync::LazyLock<bool> =
   std::sync::LazyLock::new(|| std::env::var("IX_TIMING").is_ok());
 
 /// Options controlling whole-environment compilation.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct CompileOptions {
   /// Override scheduler worker count. `None` uses available parallelism or
   /// the `IX_COMPILE_WORKERS` environment variable if set.
   pub max_workers: Option<usize>,
-}
-
-impl Default for CompileOptions {
-  fn default() -> Self {
-    CompileOptions { max_workers: None }
-  }
 }
 
 /// Size statistics for a compiled block.
@@ -4297,7 +4291,7 @@ mod tests {
       &lean_env,
       &mut cache,
       &stt,
-      &mut crate::ix::compile::KernelCtx::new(),
+      &mut KernelCtx::new(),
     );
     assert!(result.is_ok(), "compile_const failed: {:?}", result.err());
 
@@ -4344,7 +4338,7 @@ mod tests {
       &lean_env,
       &mut cache,
       &stt,
-      &mut crate::ix::compile::KernelCtx::new(),
+      &mut KernelCtx::new(),
     );
     // We expect this to fail with MissingConstant for Nat
     match result {
@@ -4398,7 +4392,7 @@ mod tests {
       &lean_env,
       &mut cache,
       &stt,
-      &mut crate::ix::compile::KernelCtx::new(),
+      &mut KernelCtx::new(),
     );
     assert!(result.is_ok(), "compile_const failed: {:?}", result.err());
 

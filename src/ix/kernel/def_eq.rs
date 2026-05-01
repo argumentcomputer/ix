@@ -120,19 +120,19 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     // per method call. Any true result moves the originals into `add_equiv`
     // before returning.
     let eq_ctx = self.def_eq_ctx_key(a, b);
-    let a_key: crate::ix::kernel::equiv::EqKey = (a.hash_key(), eq_ctx.clone());
-    let b_key: crate::ix::kernel::equiv::EqKey = (b.hash_key(), eq_ctx.clone());
+    let a_key: crate::ix::kernel::equiv::EqKey = (a.hash_key(), eq_ctx);
+    let b_key: crate::ix::kernel::equiv::EqKey = (b.hash_key(), eq_ctx);
 
     if self.equiv_manager.is_equiv(&a_key, &b_key) {
       return Ok(true);
     }
 
     let (lo, hi) = canonical_pair(a.hash_key(), b.hash_key());
-    let cache_key = (lo, hi, eq_ctx.clone());
+    let cache_key = (lo, hi, eq_ctx);
     let cheap_mode = self.cheap_recursion_depth > 0;
-    if let Some(cached) = self.env.def_eq_cache.get(&cache_key).map(|v| *v) {
+    if let Some(cached) = self.env.def_eq_cache.get(&cache_key).copied() {
       if cheap_mode {
-        self.env.def_eq_cheap_cache.insert(cache_key.clone(), cached);
+        self.env.def_eq_cheap_cache.insert(cache_key, cached);
       }
       if cached {
         self.equiv_manager.add_equiv(a_key, b_key);
@@ -142,10 +142,10 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     }
     if cheap_mode
       && let Some(cached) =
-        self.env.def_eq_cheap_cache.get(&cache_key).map(|v| *v)
+        self.env.def_eq_cheap_cache.get(&cache_key).copied()
     {
       if cached {
-        self.env.def_eq_cache.insert(cache_key.clone(), true);
+        self.env.def_eq_cache.insert(cache_key, true);
         self.equiv_manager.add_equiv(a_key, b_key);
       }
       self.env.perf.record_def_eq_hit();
@@ -159,7 +159,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     ) && (a_root != a_key || b_root != b_key)
     {
       let (rlo, rhi) = canonical_pair(a_root.0, b_root.0);
-      let root_cache_key = (rlo, rhi, eq_ctx.clone());
+      let root_cache_key = (rlo, rhi, eq_ctx);
       let mut cached =
         self.env.def_eq_cache.get(&root_cache_key).map(|v| (*v, false));
       if cached.is_none() && cheap_mode {
@@ -168,14 +168,14 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       }
       if let Some((cached, from_cheap_cache)) = cached {
         if from_cheap_cache {
-          self.env.def_eq_cheap_cache.insert(cache_key.clone(), cached);
+          self.env.def_eq_cheap_cache.insert(cache_key, cached);
           if cached {
-            self.env.def_eq_cache.insert(cache_key.clone(), true);
+            self.env.def_eq_cache.insert(cache_key, true);
           }
         } else {
-          self.env.def_eq_cache.insert(cache_key.clone(), cached);
+          self.env.def_eq_cache.insert(cache_key, cached);
           if cheap_mode {
-            self.env.def_eq_cheap_cache.insert(cache_key.clone(), cached);
+            self.env.def_eq_cheap_cache.insert(cache_key, cached);
           }
         }
         if cached {
@@ -252,7 +252,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     // Any `is_def_eq` call inside a cheap reduction observes `cheap_mode`
     // and records cheap `false` only in `def_eq_cheap_cache`.
     if cheap_mode {
-      self.env.def_eq_cheap_cache.insert(cache_key.clone(), ok);
+      self.env.def_eq_cheap_cache.insert(cache_key, ok);
       if ok {
         self.env.def_eq_cache.insert(cache_key, true);
       }
@@ -590,8 +590,11 @@ impl<M: KernelMode> TypeChecker<'_, M> {
             ty: ty1.clone(),
           },
         );
-        let b1_open =
-          instantiate_rev(&mut self.env.intern, body1, &[fv.clone()]);
+        let b1_open = instantiate_rev(
+          &mut self.env.intern,
+          body1,
+          std::slice::from_ref(&fv),
+        );
         let b2_open = instantiate_rev(&mut self.env.intern, body2, &[fv]);
         let r = self.is_def_eq(&b1_open, &b2_open);
         self.lctx.truncate(saved);
@@ -683,8 +686,11 @@ impl<M: KernelMode> TypeChecker<'_, M> {
               ty: ty1.clone(),
             },
           );
-          let b1_open =
-            instantiate_rev(&mut self.env.intern, body1, &[fv.clone()]);
+          let b1_open = instantiate_rev(
+            &mut self.env.intern,
+            body1,
+            std::slice::from_ref(&fv),
+          );
           let b2_open = instantiate_rev(&mut self.env.intern, body2, &[fv]);
           let r = self.is_def_eq(&b1_open, &b2_open)?;
           self.lctx.truncate(saved);
@@ -714,8 +720,11 @@ impl<M: KernelMode> TypeChecker<'_, M> {
               val: v1.clone(),
             },
           );
-          let b1_open =
-            instantiate_rev(&mut self.env.intern, body1, &[fv.clone()]);
+          let b1_open = instantiate_rev(
+            &mut self.env.intern,
+            body1,
+            std::slice::from_ref(&fv),
+          );
           let b2_open = instantiate_rev(&mut self.env.intern, body2, &[fv]);
           let r = self.is_def_eq(&b1_open, &b2_open)?;
           self.lctx.truncate(saved);

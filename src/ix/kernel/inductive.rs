@@ -1042,7 +1042,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     aux: &[FlatBlockMember<M>],
     n_block_params: u64,
     block_us: &[KUniv<M>],
-    all0_name: Option<crate::ix::env::Name>,
+    all0_name: Option<&crate::ix::env::Name>,
     block_first_id: Option<&KId<M>>,
   ) -> Result<Vec<usize>, TcError<M>> {
     use crate::ix::env::Name;
@@ -1058,9 +1058,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       FxHashMap::default();
     let mut seed_key_by_addr: FxHashMap<Address, Address> =
       FxHashMap::default();
-    let nested_prefix = all0_name
-      .as_ref()
-      .map(|all0| Name::str(all0.clone(), "_nested".to_string()));
+    let nested_prefix =
+      all0_name.map(|all0| Name::str(all0.clone(), "_nested".to_string()));
 
     // Extract the block's first inductive's leading `n_block_params` Pi
     // binders. These domains are used to wrap each synthetic aux indc/ctor
@@ -1129,7 +1128,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     for (rank, source_idx) in seed_order.into_iter().enumerate() {
       let mut bytes = [0u8; 32];
       bytes[..8].copy_from_slice(&(rank as u64).to_be_bytes());
-      let rank_addr = Address::from_slice(&bytes).map_err(|_| {
+      let rank_addr = Address::from_slice(&bytes).map_err(|_e| {
         TcError::Other("canonical_aux_order: invalid seed-rank address".into())
       })?;
       seed_key_by_addr.insert(aux_ids[source_idx].addr.clone(), rank_addr);
@@ -1309,7 +1308,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     if dump_canonical {
       eprintln!(
         "[canonical_aux_order.dump] all0={:?} n_aux={} n_block_params={}",
-        all0_name.as_ref().map(crate::ix::env::Name::pretty),
+        all0_name.map(Name::pretty),
         pairs.len(),
         n_block_params
       );
@@ -2289,7 +2288,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
         &flat[n_originals..],
         n_params,
         &block_us,
-        all0_name,
+        all0_name.as_ref(),
         block_first_id.as_ref(),
       )?;
       if self.recursor_dump_matches_block(block_id, &flat) {
@@ -3404,7 +3403,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
         &flat[n_originals..],
         n_params_u64,
         &block_us,
-        all0_name,
+        all0_name.as_ref(),
         block_first_id.as_ref(),
       )?;
       let aux_part = flat[n_originals..].to_vec();
@@ -4121,7 +4120,7 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
       Some(b) => b,
       None => {
         let majors_key = self.gather_peer_majors(&rec_block)?;
-        match self.env.rec_majors_cache.get(&majors_key).map(|r| r.clone()) {
+        match self.env.rec_majors_cache.get(&majors_key).cloned() {
           Some(block_id) => block_id,
           None => {
             // Not generated yet — try generating from each peer major's
@@ -4138,7 +4137,7 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
             }
             // Re-check the majors cache.
             let majors_key = self.gather_peer_majors(&rec_block)?;
-            match self.env.rec_majors_cache.get(&majors_key).map(|r| r.clone())
+            match self.env.rec_majors_cache.get(&majors_key).cloned()
             {
               Some(block_id) => block_id,
               None => {

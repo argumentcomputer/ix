@@ -57,7 +57,7 @@ impl EquivManager {
     let node = self.parent.len();
     self.parent.push(node);
     self.rank.push(0);
-    self.node_to_key.push(key.clone());
+    self.node_to_key.push(key);
     self.key_to_node.insert(key, node);
     node
   }
@@ -120,7 +120,7 @@ impl EquivManager {
   pub fn find_root_key(&mut self, key: &EqKey) -> Option<EqKey> {
     let node = *self.key_to_node.get(key)?;
     let root = self.find(node);
-    Some(self.node_to_key[root].clone())
+    Some(self.node_to_key[root])
   }
 
   /// Record that two composite keys are definitionally equal.
@@ -149,14 +149,14 @@ mod tests {
     let mut em = EquivManager::new();
     let zero = addr(0);
     assert!(
-      !em.is_equiv(&(addr(100), zero.clone()), &(addr(200), zero.clone()))
+      !em.is_equiv(&(addr(100), zero), &(addr(200), zero))
     );
-    em.add_equiv((addr(100), zero.clone()), (addr(200), zero.clone()));
+    em.add_equiv((addr(100), zero), (addr(200), zero));
     assert!(
-      em.is_equiv(&(addr(100), zero.clone()), &(addr(200), zero.clone()))
+      em.is_equiv(&(addr(100), zero), &(addr(200), zero))
     );
     assert!(
-      em.is_equiv(&(addr(200), zero.clone()), &(addr(100), zero.clone()))
+      em.is_equiv(&(addr(200), zero), &(addr(100), zero))
     );
   }
 
@@ -164,10 +164,10 @@ mod tests {
   fn test_transitivity() {
     let mut em = EquivManager::new();
     let zero = addr(0);
-    em.add_equiv((addr(100), zero.clone()), (addr(200), zero.clone()));
-    em.add_equiv((addr(200), zero.clone()), (addr(300), zero.clone()));
+    em.add_equiv((addr(100), zero), (addr(200), zero));
+    em.add_equiv((addr(200), zero), (addr(300), zero));
     assert!(
-      em.is_equiv(&(addr(100), zero.clone()), &(addr(300), zero.clone()))
+      em.is_equiv(&(addr(100), zero), &(addr(300), zero))
     );
   }
 
@@ -176,10 +176,10 @@ mod tests {
     let mut em = EquivManager::new();
     let ctx1 = addr(1);
     let ctx2 = addr(2);
-    em.add_equiv((addr(100), ctx1.clone()), (addr(200), ctx1.clone()));
+    em.add_equiv((addr(100), ctx1), (addr(200), ctx1));
     assert!(
-      em.is_equiv(&(addr(100), ctx1.clone()), &(addr(200), ctx1.clone()))
+      em.is_equiv(&(addr(100), ctx1), &(addr(200), ctx1))
     );
-    assert!(!em.is_equiv(&(addr(100), ctx2.clone()), &(addr(200), ctx2)));
+    assert!(!em.is_equiv(&(addr(100), ctx2), &(addr(200), ctx2)));
   }
 }

@@ -1359,7 +1359,7 @@ pub(super) fn beta_reduce(expr: &LeanExpr) -> LeanExpr {
 pub(super) fn rewrite_nested_const_levels_cached(
   expr: &LeanExpr,
   aux_info: &std::collections::HashMap<Name, (usize, Vec<Level>)>,
-  block_names: &rustc_hash::FxHashSet<Name>,
+  block_names: &FxHashSet<Name>,
   cache: &mut FxHashMap<blake3::Hash, LeanExpr>,
 ) -> LeanExpr {
   let key = *expr.get_hash();
@@ -1375,7 +1375,7 @@ pub(super) fn rewrite_nested_const_levels_cached(
 fn rewrite_nested_const_levels_walk(
   expr: &LeanExpr,
   aux_info: &std::collections::HashMap<Name, (usize, Vec<Level>)>,
-  block_names: &rustc_hash::FxHashSet<Name>,
+  block_names: &FxHashSet<Name>,
   cache: &mut FxHashMap<blake3::Hash, LeanExpr>,
 ) -> LeanExpr {
   // Try to decompose as an application of an auxiliary Const.
@@ -2401,10 +2401,7 @@ impl<'a> TcScope<'a> {
         Ok(inferred) => break inferred,
         Err(crate::ix::kernel::error::TcError::UnknownConst(addr))
           if faulted_addrs.insert(addr.clone())
-            && self.fault_in_addr(&addr) =>
-        {
-          continue;
-        },
+            && self.fault_in_addr(&addr) => {},
         Err(e) => return Err(self.get_level_error(ty, &kexpr, &e)),
       }
     };

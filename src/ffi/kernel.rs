@@ -475,7 +475,7 @@ fn poison_second_rec_rule_returns_first_minor(
         })?;
       match &mut block_constant.info {
         IxonCI::Muts(members) => {
-          let idx = usize::try_from(proj.idx).map_err(|_| {
+          let idx = usize::try_from(proj.idx).map_err(|_e| {
             format!(
               "{}: recursor projection index too large",
               rec_name.pretty()
@@ -527,13 +527,13 @@ fn poison_recursor_rule_payload(
     ));
   }
   rec.rules[1].rhs =
-    wrong_successor_rule_returning_first_minor(rec.rules[1].rhs.clone())?;
+    wrong_successor_rule_returning_first_minor(&rec.rules[1].rhs)?;
   Ok(())
 }
 
 #[cfg(feature = "test-ffi")]
 fn wrong_successor_rule_returning_first_minor(
-  succ_rhs: Arc<IxonExpr>,
+  succ_rhs: &Arc<IxonExpr>,
 ) -> Result<Arc<IxonExpr>, String> {
   match succ_rhs.as_ref() {
     IxonExpr::Lam(motive_ty, rest) => match rest.as_ref() {
@@ -573,8 +573,8 @@ fn wrong_successor_rule_returning_first_minor(
 /// observers see entries as they happen), and capped with a `# total
 /// failures: N` footer once all checks complete. The format is the same
 /// one `Ix.Cli.CheckIxonCmd.readNamesFile` expects (`#`-prefixed comments
-/// + bare-name lines), so the file is round-trippable as a `--consts-file`
-/// input on a re-run.
+/// plus bare-name lines), so the file is round-trippable as a
+/// `--consts-file` input on a re-run.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_kernel_check_ixon(
   env_path: LeanString<LeanBorrowed<'_>>,
@@ -1348,10 +1348,10 @@ fn kernel_check_mem_stats_enabled() -> bool {
   // suffix is the primary signal for diagnosing memory growth across a long
   // env-check run. Explicit `IX_KERNEL_CHECK_MEM_STATS=0|false|off|no` opts
   // out for callers who want a clean line.
-  match std::env::var("IX_KERNEL_CHECK_MEM_STATS").as_deref() {
-    Ok("0" | "false" | "off" | "no") => false,
-    _ => true,
-  }
+  !matches!(
+    std::env::var("IX_KERNEL_CHECK_MEM_STATS").as_deref(),
+    Ok("0" | "false" | "off" | "no")
+  )
 }
 
 /// Emit a per-block cache-size diagnostic when the just-finished block
@@ -1380,8 +1380,7 @@ fn log_block_diag_if_big(
   }
   let elapsed = outcome
     .elapsed
-    .map(|d| format!("{:.1}s", d.as_secs_f64()))
-    .unwrap_or_else(|| "?".to_string());
+    .map_or_else(|| "?".to_string(), |d| format!("{:.1}s", d.as_secs_f64()));
   let tag = if is_new_peak { "[diag-peak]" } else { "[diag-big]" };
   progress.log(&format!(
     "{tag} w={worker_idx} block={}/{} ({}) elapsed={elapsed} max={max_cache} {sizes}",
@@ -1412,9 +1411,8 @@ fn kernel_check_mem_suffix(peak_rss_mib: Option<&AtomicU64>) -> String {
     // Monotonic max: load-then-CAS loop, but a relaxed fetch_max is simpler.
     peak.fetch_max(now, Ordering::Relaxed);
   }
-  let rss = rss_now
-    .map(|mib| format!("{mib}MiB"))
-    .unwrap_or_else(|| "unknown".to_string());
+  let rss =
+    rss_now.map_or_else(|| "unknown".to_string(), |mib| format!("{mib}MiB"));
   format!(" · mem: rss={rss}")
 }
 
@@ -1794,8 +1792,7 @@ impl ParallelProgress {
       self.peak_rss_mib.fetch_max(now, Ordering::Relaxed);
     }
     let rss_now = final_rss
-      .map(|mib| format!("{mib}MiB"))
-      .unwrap_or_else(|| "unknown".to_string());
+      .map_or_else(|| "unknown".to_string(), |mib| format!("{mib}MiB"));
     let peak = self.peak_rss_mib.load(Ordering::Relaxed);
     let peak_str =
       if peak == 0 { "unknown".to_string() } else { format!("{peak}MiB") };
@@ -2118,14 +2115,16 @@ fn format_tc_error(
     },
     TcError::FunExpected { .. } => "FunExpected".to_string(),
     TcError::UnknownConst(addr) => {
-      let name =
-        lookups.name_for_addr(addr).map(|n| n.pretty()).unwrap_or_else(|| {
+      let name = lookups.name_for_addr(addr).map_or_else(
+        || {
           if ixon_env.consts.contains_key(addr) {
             "<unnamed Ixon const>".to_string()
           } else {
             "<not in Ixon env>".to_string()
           }
-        });
+        },
+        |n| n.pretty(),
+      );
       format!("unknown constant {name} ({:.12})", addr.hex())
     },
     // Everything else has a hand-written `Display` impl in

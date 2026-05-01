@@ -412,11 +412,11 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     let key = self.whnf_key(e);
     let transient_nat_work = self.is_transient_nat_literal_work(e)?;
     if flags.is_full() {
-      if !transient_nat_work {
-        if let Some(cached) = self.env.whnf_core_cache.get(&key) {
-          self.env.perf.record_whnf_core_hit();
-          return Ok(cached.clone());
-        }
+      if !transient_nat_work
+        && let Some(cached) = self.env.whnf_core_cache.get(&key)
+      {
+        self.env.perf.record_whnf_core_hit();
+        return Ok(cached.clone());
       }
       self.env.perf.record_whnf_core_miss();
       self.record_hot_miss("whnf-core", e);
@@ -432,11 +432,11 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       // → whnf_core_with_flags), so caching here cuts O(N²) iteration cost
       // back to O(N). Soundness mirrors `whnf_no_delta_cheap_cache`:
       // cheap-mode results are never shared with full callers.
-      if !transient_nat_work {
-        if let Some(cached) = self.env.whnf_core_cheap_cache.get(&key) {
-          self.env.perf.record_whnf_core_hit();
-          return Ok(cached.clone());
-        }
+      if !transient_nat_work
+        && let Some(cached) = self.env.whnf_core_cheap_cache.get(&key)
+      {
+        self.env.perf.record_whnf_core_hit();
+        return Ok(cached.clone());
       }
       self.env.perf.record_whnf_core_miss();
       self.record_hot_miss("whnf-core-cheap", e);
@@ -632,11 +632,12 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     let use_cache = nat_succ_mode == NatSuccMode::Collapse;
     let transient_nat_work = self.is_transient_nat_literal_work(e)?;
     if flags.is_full() {
-      if use_cache && !transient_nat_work {
-        if let Some(cached) = self.env.whnf_no_delta_cache.get(&key) {
-          self.env.perf.record_whnf_no_delta_hit();
-          return Ok(cached.clone());
-        }
+      if use_cache
+        && !transient_nat_work
+        && let Some(cached) = self.env.whnf_no_delta_cache.get(&key)
+      {
+        self.env.perf.record_whnf_no_delta_hit();
+        return Ok(cached.clone());
       }
       // Both probes missed.
       if use_cache {
@@ -648,11 +649,12 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       // shared with full callers, but cheap → cheap reuse is sound and is the
       // dominant pattern inside the lazy-delta loop, where the same operand
       // is re-reduced after every delta_unfold_one of the *other* operand.
-      if use_cache && !transient_nat_work {
-        if let Some(cached) = self.env.whnf_no_delta_cheap_cache.get(&key) {
-          self.env.perf.record_whnf_no_delta_hit();
-          return Ok(cached.clone());
-        }
+      if use_cache
+        && !transient_nat_work
+        && let Some(cached) = self.env.whnf_no_delta_cheap_cache.get(&key)
+      {
+        self.env.perf.record_whnf_no_delta_hit();
+        return Ok(cached.clone());
       }
       if use_cache {
         self.env.perf.record_whnf_no_delta_miss();
@@ -724,11 +726,11 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         continue;
       }
 
-      if flags.is_full() {
-        if let Some(reduced) = self.try_reduce_projection_definition(&cur)? {
-          cur = reduced;
-          continue;
-        }
+      if flags.is_full()
+        && let Some(reduced) = self.try_reduce_projection_definition(&cur)?
+      {
+        cur = reduced;
+        continue;
       }
 
       // Quotient reduction
@@ -2985,7 +2987,7 @@ fn extract_int_lit<M: KernelMode>(
 /// ctor-headed shape (letting `decNonneg` / `Int.rec` iota-reduce in the
 /// caller).
 fn intern_int_lit<M: KernelMode>(
-  tc: &mut TypeChecker<M>,
+  tc: &mut TypeChecker<'_, M>,
   v: IntVal,
 ) -> KExpr<M> {
   use num_bigint::Sign;
@@ -3324,17 +3326,18 @@ mod tests {
           sort0(),
           pi(
             var(0),
-            pi(app(list_const.clone(), var(1)), app(list_const.clone(), var(2))),
+            pi(
+              app(list_const.clone(), var(1)),
+              app(list_const.clone(), var(2)),
+            ),
           ),
         ),
       },
     );
 
     let rec_const = AE::cnst(list_rec_id.clone(), Box::new([]));
-    let ih = apps_ae(
-      rec_const.clone(),
-      &[var(5), var(4), var(3), var(2), var(0)],
-    );
+    let ih =
+      apps_ae(rec_const.clone(), &[var(5), var(4), var(3), var(2), var(0)]);
     let cons_result = apps_ae(var(2), &[var(1), var(0), ih]);
     env.insert(
       list_rec_id.clone(),
@@ -3382,7 +3385,8 @@ mod tests {
     let list_cons = AE::cnst(list_cons_id.clone(), Box::new([]));
     let nil_char = app(list_nil, char_ty.clone());
     let char_a = app(char_of_nat, mk_nat(65));
-    let one_char_list = apps_ae(list_cons, &[char_ty.clone(), char_a, nil_char]);
+    let one_char_list =
+      apps_ae(list_cons, &[char_ty.clone(), char_a, nil_char]);
     env.insert(
       string_to_list_id.clone(),
       KConst::Defn {
@@ -3403,15 +3407,10 @@ mod tests {
     let motive = lam(sort0(), nat());
     let cons_case = lam(
       var(1),
-      lam(
-        app(list_const.clone(), var(2)),
-        lam(nat(), app(nat_succ, var(0))),
-      ),
+      lam(app(list_const.clone(), var(2)), lam(nat(), app(nat_succ, var(0)))),
     );
-    let length_body = apps_ae(
-      rec_const,
-      &[var(1), motive, mk_nat(0), cons_case, var(0)],
-    );
+    let length_body =
+      apps_ae(rec_const, &[var(1), motive, mk_nat(0), cons_case, var(0)]);
     env.insert(
       list_length_id.clone(),
       KConst::Defn {
