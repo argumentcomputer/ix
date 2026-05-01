@@ -2068,20 +2068,24 @@ fn has_deeper_str(n: &Name) -> bool {
 /// one canonical address (e.g. `A` and `B` collapse, or `_nested.List_1`
 /// and `_nested.List_2` collapse via shared block-member addresses) and
 /// the cache has previously seen one variant, a later `whnf_lean` call
-/// may return the **other** variant's display name — the addresses are
-/// equal but the `Name` carried back is whichever was inserted first.
+/// may return the **other** variant's display name.
 ///
 /// Source-shape singleton-class aux_gen needs the original source name
 /// to dispatch to the right motive (class `[A]` vs class `[B]`,
-/// `_nested.List_1` vs `_nested.List_2`). Phase 1 peels `ForallE` foralls
-/// syntactically (no kernel call) and matches the source-name head
-/// directly. This handles direct (`A`), parameterized (`List A`), and
-/// higher-order (`Nat → A`, `(α → β) → A`) recursive fields without ever
-/// touching the kernel cache. Phase 2 only runs when Phase 1 fails to
-/// find a recursive target, which is exactly the case where `dom`'s
-/// peeled head is a reducible alias not in `classes`
-/// (`Set σ := σ → Prop`, `constType := λ α. α → α`); WHNF then
-/// delta-unfolds it.
+/// `_nested.List_1` vs `_nested.List_2`). Phase 1 peels `ForallE`
+/// foralls syntactically (no kernel call) and matches the source-name
+/// head directly. This handles direct (`A`), parameterized (`List A`),
+/// and higher-order (`Nat → A`, `(α → β) → A`) recursive fields without
+/// ever touching the kernel cache. Phase 2 only runs when Phase 1 fails
+/// to find a class member at any peeling depth — exactly the case where
+/// `dom`'s head is a reducible alias not in `classes`
+/// (`Set σ := σ → Prop`, `constType := λ α. α → α`) and WHNF needs to
+/// delta-unfold it. Phase 2 also warms the kernel WHNF cache for the
+/// downstream `build_ih_type_fvar` / `build_rule_ih_fvar` callers in the
+/// recursive-target case (Phase 1 hit). Without that pre-warming
+/// `build_ih_type_fvar`'s subsequent WHNF on the same field_dom would be
+/// cold, and the cumulative cold-cache cost dominates wall-clock time
+/// on mathlib-scale runs (hundreds of seconds in Phase 5 Pass 2).
 ///
 /// Mirrors Lean's `kernel/inductive.cpp::is_rec_argument`. The TcScope
 /// is left balanced on return — every local pushed during peeling is
@@ -2094,18 +2098,15 @@ fn find_rec_target(
   scope: &mut super::expr_utils::TcScope<'_>,
   _stt: &crate::ix::compile::CompileState,
 ) -> Option<usize> {
-  // Phase 1: syntactic peel + match. Walk `ForallE` binders without any
-  // kernel WHNF, instantiating each body with a fresh FVar. The final
-  // head's source name is preserved exactly, so source-shape singleton
-  // generation dispatches correctly even when the head is one half of
-  // an alpha-collapsed pair (whose canonical address would otherwise be
-  // cache-aliased to its twin's display name during WHNF).
+  // Phase 1: syntactic peel + match.
   let mut ty = dom.clone();
+  let mut phase1_match: Option<usize> = None;
   loop {
     if let Some(ci) =
       match_classes_against_app(&ty, classes, param_fvars, n_params)
     {
-      return Some(ci);
+      phase1_match = Some(ci);
+      break;
     }
     match ty.as_data() {
       ExprData::ForallE(_, _, body, _, _) => {
@@ -2116,10 +2117,21 @@ fn find_rec_target(
     }
   }
 
+  // Pre-warm the kernel cache for `dom`. Even on a Phase 1 hit, downstream
+  // callers (`build_ih_type_fvar`, `build_rule_ih_fvar`) re-WHNF the same
+  // `field_dom`; without this warming pass, every recursive field's
+  // downstream WHNF is cold. Discard the result — class matching above
+  // already used the source-shape head.
+  let _ = scope.whnf_lean(dom);
+
+  if let Some(ci) = phase1_match {
+    return Some(ci);
+  }
+
   // Phase 2: WHNF fallback for reducible-alias heads. Phase 1 didn't
-  // find a class-member head at any peeling depth, so either the field
-  // doesn't reference a class member at all, or the head is a reducible
-  // alias that needs delta-unfolding to expose the underlying inductive.
+  // find a class-member head at any peeling depth, so the head is
+  // either not a class member at all, or is a reducible alias that
+  // delta-unfolds to one.
   let mut ty = scope.whnf_lean(dom);
   let mut pushed: Vec<LocalDecl> = Vec::new();
   while let ExprData::ForallE(name, d, body, bi, _) = ty.as_data() {
@@ -2134,27 +2146,7 @@ fn find_rec_target(
     pushed.push(decl);
     ty = scope.whnf_lean(&instantiate1(body, &fv));
   }
-  // Pop all peel-locals — keep the caller's scope balanced.
   scope.pop_locals(&pushed);
-
-  if std::env::var("IX_FIND_REC_TARGET_DUMP").ok().is_some_and(|filter| {
-    let (h, _) = decompose_apps(&ty);
-    matches!(h.as_data(), ExprData::Const(n, _, _) if n.pretty().contains(&filter))
-  }) {
-    let (h, args) = decompose_apps(&ty);
-    if let ExprData::Const(name, _, _) = h.as_data() {
-      eprintln!(
-        "[find_rec_target] (whnf path) head={} args={} n_params={} classes={:?}",
-        name.pretty(),
-        args.len(),
-        n_params,
-        classes
-          .iter()
-          .map(|c| c.all_names.iter().map(|n| n.pretty()).collect::<Vec<_>>())
-          .collect::<Vec<_>>()
-      );
-    }
-  }
   match_classes_against_app(&ty, classes, param_fvars, n_params)
 }
 
@@ -2190,8 +2182,7 @@ fn match_classes_against_app(
       }
       continue;
     }
-    let sp_fvars =
-      instantiate_spec_with_fvars(&class.spec_params, param_fvars);
+    let sp_fvars = instantiate_spec_with_fvars(&class.spec_params, param_fvars);
     let n_par = class.own_params;
     if args.len() >= n_par
       && sp_fvars.len() == n_par

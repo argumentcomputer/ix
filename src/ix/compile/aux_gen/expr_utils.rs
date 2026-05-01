@@ -137,20 +137,40 @@ pub(super) fn decompose_inductive_type(
   // `Var` bound to a `let` binding — rare but possible in principle).
   let mut scope = TcScope::new(param_fvars, &ind.cnst.level_params, stt, kctx);
 
-  // Initial WHNF — the stored type may start with a reducible head
-  // (unusual for Lean-generated types, but cheap insurance matching the
-  // `whnf(t);` before the main loop in `mk_rec_infos`).
-  let mut cur = scope.whnf_lean(&ty);
+  // **Syntactic-first peeling.** The stored inductive type for a
+  // Lean-generated `inductive` declaration is already a forall telescope
+  // — we don't want to WHNF its index domains, because:
+  //   1. Lean's exporter doesn't WHNF them either, so any unfolding we
+  //      do here drifts the regenerated recursor's binders away from
+  //      the source-shape form Lean's recursor preserves.
+  //   2. Under alpha-invariant `cnst_hash` (commit 8f15dc0), the kernel
+  //      WHNF cache is keyed by content address only — display names
+  //      get aliased across alpha-twin or wrapper-def pairs (`Paths` vs
+  //      `Symmetrify`, etc.). A "no-op" cache hit then silently rewrites
+  //      the binder's domain to the cached twin's name.
+  //
+  // We still call WHNF *if and only if* the current head isn't already
+  // a forall, to expose hidden Pis behind reducible-alias targets like
+  // `Set σ := σ → Prop` (kernel/inductive.cpp's `mk_rec_infos` parity).
+  let mut cur = ty;
+  if !matches!(cur.as_data(), ExprData::ForallE(..)) {
+    cur = scope.whnf_lean(&cur);
+  }
 
   // Instantiate `n_params` leading Pi's with the caller's param FVars.
-  // WHNF after each substitution to expose any alias introduced by the
-  // substitution (e.g., a param whose domain mentions a reducible def).
+  // No WHNF between substitutions — body remains source-shape unless a
+  // post-substitution head is non-Pi, in which case we trigger a
+  // targeted WHNF below.
   for (p, param_fvar) in param_fvars.iter().take(n_params).enumerate() {
     match cur.as_data() {
       ExprData::ForallE(_, _, body, _, _) => {
         let param_fv = LeanExpr::fvar(param_fvar.fvar_name.clone());
         cur = instantiate1(body, &param_fv);
-        cur = scope.whnf_lean(&cur);
+        if !matches!(cur.as_data(), ExprData::ForallE(..)) {
+          // Post-substitution head isn't a forall — try delta-unfolding
+          // a reducible alias to expose any remaining params.
+          cur = scope.whnf_lean(&cur);
+        }
       },
       _ => {
         return Err(CompileError::InvalidMutualBlock {
@@ -167,11 +187,24 @@ pub(super) fn decompose_inductive_type(
   // Peel all remaining leading Pi's as indices. Matches Lean's
   // `while (is_pi(t)) { ... }` — we don't impose a count; the stored
   // `num_indices` is informational, but authoritative count comes from
-  // actual post-WHNF binders. This is what handles the `Set σ`-style
-  // reducible-alias target case.
+  // actual binders. The same syntactic-first / WHNF-on-stuck pattern
+  // as above keeps source names verbatim for ordinary index telescopes
+  // while still handling the `Set σ`-style reducible-alias target case.
   let mut indices: Vec<LocalDecl> = Vec::new();
   let mut idx_i = 0usize;
-  while let ExprData::ForallE(name, dom, body, bi, _) = cur.as_data() {
+  loop {
+    if !matches!(cur.as_data(), ExprData::ForallE(..)) {
+      // Try delta-unfolding once to expose hidden foralls.
+      let after = scope.whnf_lean(&cur);
+      if !matches!(after.as_data(), ExprData::ForallE(..)) {
+        cur = after;
+        break;
+      }
+      cur = after;
+    }
+    let ExprData::ForallE(name, dom, body, bi, _) = cur.as_data() else {
+      break;
+    };
     let (fv_name, fv) = fresh_fvar("idx", idx_i);
     let decl = LocalDecl {
       fvar_name: fv_name,
@@ -182,7 +215,6 @@ pub(super) fn decompose_inductive_type(
     scope.push_locals(std::slice::from_ref(&decl));
     indices.push(decl);
     cur = instantiate1(body, &fv);
-    cur = scope.whnf_lean(&cur);
     idx_i += 1;
   }
 
@@ -2573,7 +2605,36 @@ impl<'a> TcScope<'a> {
       Ok(k) => k,
       Err(_) => return ty.clone(),
     };
-    kexpr_to_lean(&whnfed, depth, &self.fvar_levels, 0, self.param_names)
+    let out =
+      kexpr_to_lean(&whnfed, depth, &self.fvar_levels, 0, self.param_names);
+    // The kernel hashes `Const` nodes by content address, not display name.
+    // A WHNF cache hit can therefore return an expression with the right
+    // address but the wrong source name (`Paths` vs `Symmetrify`). When WHNF
+    // is a no-op modulo metadata/name erasure, overlay the caller's source
+    // names back onto the egressed expression structurally. If WHNF really
+    // reduced, preserve the reduced structure but restore any source subterms
+    // that were copied into the reduct under an aliased display name.
+    if whnfed.hash_key() == kexpr.hash_key() {
+      restore_source_names_same_content(&out, ty, self.stt)
+    } else {
+      let mut source_name_hints = FxHashMap::default();
+      collect_lean_source_name_hints(
+        ty,
+        &self.fvar_levels,
+        depth,
+        self.param_names,
+        self.stt,
+        &mut source_name_hints,
+      );
+      restore_lean_source_name_hints(
+        &out,
+        &self.fvar_levels,
+        depth,
+        self.param_names,
+        self.stt,
+        &source_name_hints,
+      )
+    }
   }
 
   /// Check whether two `LeanExpr` types are definitionally equal in the
@@ -2725,6 +2786,374 @@ pub(super) fn kexpr_to_lean(
     .iter()
     .rev()
     .fold(inner, |acc, kvs| LeanExpr::mdata(kvs.clone(), acc))
+}
+
+fn source_name_hint_candidate(expr: &LeanExpr) -> bool {
+  matches!(expr.as_data(), ExprData::App(..) | ExprData::Proj(..))
+}
+
+/// Collect source-shaped subterms that WHNF may copy into a reduct.
+///
+/// Keys use the kernel content hash so alpha-collapsed aliases like
+/// `CategoryTheory.Paths V` and `Quiver.Symmetrify V` line up, while values
+/// keep the Lean display names from the caller. We skip BVar-containing terms:
+/// WHNF may lift copied arguments under freshly-exposed binders, so matching
+/// those by raw de Bruijn indices would be unstable.
+fn collect_lean_source_name_hints(
+  source: &LeanExpr,
+  fvar_levels: &FxHashMap<Name, usize>,
+  depth: usize,
+  param_names: &[Name],
+  stt: &crate::ix::compile::CompileState,
+  out: &mut FxHashMap<crate::ix::kernel::env::Addr, LeanExpr>,
+) {
+  if source_name_hint_candidate(source) && !expr_has_bvar(source) {
+    let key =
+      to_kexpr_static(source, fvar_levels, depth, param_names, stt).hash_key();
+    out.entry(key).or_insert_with(|| source.clone());
+  }
+
+  match source.as_data() {
+    ExprData::Mdata(_, inner, _) => collect_lean_source_name_hints(
+      inner,
+      fvar_levels,
+      depth,
+      param_names,
+      stt,
+      out,
+    ),
+    ExprData::App(f, a, _) => {
+      collect_lean_source_name_hints(
+        f,
+        fvar_levels,
+        depth,
+        param_names,
+        stt,
+        out,
+      );
+      collect_lean_source_name_hints(
+        a,
+        fvar_levels,
+        depth,
+        param_names,
+        stt,
+        out,
+      );
+    },
+    ExprData::ForallE(_, d, b, _, _) | ExprData::Lam(_, d, b, _, _) => {
+      collect_lean_source_name_hints(
+        d,
+        fvar_levels,
+        depth,
+        param_names,
+        stt,
+        out,
+      );
+      collect_lean_source_name_hints(
+        b,
+        fvar_levels,
+        depth,
+        param_names,
+        stt,
+        out,
+      );
+    },
+    ExprData::LetE(_, t, v, b, _, _) => {
+      collect_lean_source_name_hints(
+        t,
+        fvar_levels,
+        depth,
+        param_names,
+        stt,
+        out,
+      );
+      collect_lean_source_name_hints(
+        v,
+        fvar_levels,
+        depth,
+        param_names,
+        stt,
+        out,
+      );
+      collect_lean_source_name_hints(
+        b,
+        fvar_levels,
+        depth,
+        param_names,
+        stt,
+        out,
+      );
+    },
+    ExprData::Proj(_, _, v, _) => collect_lean_source_name_hints(
+      v,
+      fvar_levels,
+      depth,
+      param_names,
+      stt,
+      out,
+    ),
+    _ => {},
+  }
+}
+
+/// Restore source spellings for copied subterms after a real WHNF reduction.
+///
+/// This is intentionally subterm-based rather than whole-expression based:
+/// unfolding a reducible alias such as `HomRel (Paths (Symmetrify V))` should
+/// keep the expanded `∀` telescope, but the repeated argument subterms inside
+/// that telescope should retain the caller's `Symmetrify` spelling instead of
+/// whichever same-address alias the kernel cache/intern table already held.
+fn restore_lean_source_name_hints(
+  generated: &LeanExpr,
+  fvar_levels: &FxHashMap<Name, usize>,
+  depth: usize,
+  param_names: &[Name],
+  stt: &crate::ix::compile::CompileState,
+  hints: &FxHashMap<crate::ix::kernel::env::Addr, LeanExpr>,
+) -> LeanExpr {
+  if source_name_hint_candidate(generated) && !expr_has_bvar(generated) {
+    let key = to_kexpr_static(generated, fvar_levels, depth, param_names, stt)
+      .hash_key();
+    if let Some(source) = hints.get(&key) {
+      return source.clone();
+    }
+  }
+
+  match generated.as_data() {
+    ExprData::App(f, a, _) => LeanExpr::app(
+      restore_lean_source_name_hints(
+        f,
+        fvar_levels,
+        depth,
+        param_names,
+        stt,
+        hints,
+      ),
+      restore_lean_source_name_hints(
+        a,
+        fvar_levels,
+        depth,
+        param_names,
+        stt,
+        hints,
+      ),
+    ),
+    ExprData::ForallE(n, d, b, bi, _) => LeanExpr::all(
+      n.clone(),
+      restore_lean_source_name_hints(
+        d,
+        fvar_levels,
+        depth,
+        param_names,
+        stt,
+        hints,
+      ),
+      restore_lean_source_name_hints(
+        b,
+        fvar_levels,
+        depth,
+        param_names,
+        stt,
+        hints,
+      ),
+      bi.clone(),
+    ),
+    ExprData::Lam(n, d, b, bi, _) => LeanExpr::lam(
+      n.clone(),
+      restore_lean_source_name_hints(
+        d,
+        fvar_levels,
+        depth,
+        param_names,
+        stt,
+        hints,
+      ),
+      restore_lean_source_name_hints(
+        b,
+        fvar_levels,
+        depth,
+        param_names,
+        stt,
+        hints,
+      ),
+      bi.clone(),
+    ),
+    ExprData::LetE(n, t, v, b, nd, _) => LeanExpr::letE(
+      n.clone(),
+      restore_lean_source_name_hints(
+        t,
+        fvar_levels,
+        depth,
+        param_names,
+        stt,
+        hints,
+      ),
+      restore_lean_source_name_hints(
+        v,
+        fvar_levels,
+        depth,
+        param_names,
+        stt,
+        hints,
+      ),
+      restore_lean_source_name_hints(
+        b,
+        fvar_levels,
+        depth,
+        param_names,
+        stt,
+        hints,
+      ),
+      *nd,
+    ),
+    ExprData::Proj(n, i, v, _) => LeanExpr::proj(
+      n.clone(),
+      i.clone(),
+      restore_lean_source_name_hints(
+        v,
+        fvar_levels,
+        depth,
+        param_names,
+        stt,
+        hints,
+      ),
+    ),
+    ExprData::Mdata(kvs, v, _) => LeanExpr::mdata(
+      kvs.clone(),
+      restore_lean_source_name_hints(
+        v,
+        fvar_levels,
+        depth,
+        param_names,
+        stt,
+        hints,
+      ),
+    ),
+    _ => generated.clone(),
+  }
+}
+
+fn expr_has_bvar(expr: &LeanExpr) -> bool {
+  match expr.as_data() {
+    ExprData::Bvar(..) => true,
+    ExprData::App(f, a, _) => expr_has_bvar(f) || expr_has_bvar(a),
+    ExprData::ForallE(_, d, b, _, _) | ExprData::Lam(_, d, b, _, _) => {
+      expr_has_bvar(d) || expr_has_bvar(b)
+    },
+    ExprData::LetE(_, t, v, b, _, _) => {
+      expr_has_bvar(t) || expr_has_bvar(v) || expr_has_bvar(b)
+    },
+    ExprData::Proj(_, _, v, _) | ExprData::Mdata(_, v, _) => expr_has_bvar(v),
+    _ => false,
+  }
+}
+
+/// Restore source-side display names after a WHNF roundtrip that did not
+/// change the expression's kernel content hash.
+///
+/// Kernel cache keys intentionally ignore `KId.name`, so two content-equal
+/// aliases can share a WHNF result that carries whichever name populated the
+/// cache first. Aux generation is source-shape-sensitive, so when the input and
+/// output are equal as kernel content we prefer the caller's Lean names while
+/// keeping the output's reduced levels/subterms. Real reductions are filtered
+/// by the caller's top-level content-hash check before this function is used.
+fn restore_source_names_same_content(
+  generated: &LeanExpr,
+  source: &LeanExpr,
+  stt: &crate::ix::compile::CompileState,
+) -> LeanExpr {
+  let source = strip_mdata_ref(source);
+
+  match generated.as_data() {
+    ExprData::Mdata(kvs, inner, _) => LeanExpr::mdata(
+      kvs.clone(),
+      restore_source_names_same_content(inner, source, stt),
+    ),
+    _ => restore_source_names_same_content_inner(generated, source, stt),
+  }
+}
+
+fn restore_source_names_same_content_inner(
+  generated: &LeanExpr,
+  source: &LeanExpr,
+  stt: &crate::ix::compile::CompileState,
+) -> LeanExpr {
+  match (generated.as_data(), source.as_data()) {
+    (
+      ExprData::Const(gen_name, gen_lvls, _),
+      ExprData::Const(source_name, _, _),
+    ) if same_resolved_name_addr(gen_name, source_name, stt) => {
+      LeanExpr::cnst(source_name.clone(), gen_lvls.clone())
+    },
+    (ExprData::App(gen_f, gen_a, _), ExprData::App(source_f, source_a, _)) => {
+      LeanExpr::app(
+        restore_source_names_same_content(gen_f, source_f, stt),
+        restore_source_names_same_content(gen_a, source_a, stt),
+      )
+    },
+    (
+      ExprData::ForallE(_, gen_dom, gen_body, gen_bi, _),
+      ExprData::ForallE(source_name, source_dom, source_body, _, _),
+    ) => LeanExpr::all(
+      source_name.clone(),
+      restore_source_names_same_content(gen_dom, source_dom, stt),
+      restore_source_names_same_content(gen_body, source_body, stt),
+      gen_bi.clone(),
+    ),
+    (
+      ExprData::Lam(_, gen_dom, gen_body, gen_bi, _),
+      ExprData::Lam(source_name, source_dom, source_body, _, _),
+    ) => LeanExpr::lam(
+      source_name.clone(),
+      restore_source_names_same_content(gen_dom, source_dom, stt),
+      restore_source_names_same_content(gen_body, source_body, stt),
+      gen_bi.clone(),
+    ),
+    (
+      ExprData::LetE(_, gen_ty, gen_val, gen_body, gen_nd, _),
+      ExprData::LetE(source_name, source_ty, source_val, source_body, _, _),
+    ) => LeanExpr::letE(
+      source_name.clone(),
+      restore_source_names_same_content(gen_ty, source_ty, stt),
+      restore_source_names_same_content(gen_val, source_val, stt),
+      restore_source_names_same_content(gen_body, source_body, stt),
+      *gen_nd,
+    ),
+    (
+      ExprData::Proj(gen_name, gen_field, gen_val, _),
+      ExprData::Proj(source_name, source_field, source_val, _),
+    ) if gen_field == source_field
+      && same_resolved_name_addr(gen_name, source_name, stt) =>
+    {
+      LeanExpr::proj(
+        source_name.clone(),
+        gen_field.clone(),
+        restore_source_names_same_content(gen_val, source_val, stt),
+      )
+    },
+    _ => generated.clone(),
+  }
+}
+
+fn strip_mdata_ref(mut expr: &LeanExpr) -> &LeanExpr {
+  while let ExprData::Mdata(_, inner, _) = expr.as_data() {
+    expr = inner;
+  }
+  expr
+}
+
+fn same_resolved_name_addr(
+  a: &Name,
+  b: &Name,
+  stt: &crate::ix::compile::CompileState,
+) -> bool {
+  if a == b {
+    return true;
+  }
+  let n2a = Some(&stt.name_to_addr);
+  let aux_n2a = Some(&stt.aux_name_to_addr);
+  resolve_lean_name_addr(a, n2a, aux_n2a)
+    == resolve_lean_name_addr(b, n2a, aux_n2a)
 }
 
 /// Static version of `to_kexpr` that takes borrowed references.
