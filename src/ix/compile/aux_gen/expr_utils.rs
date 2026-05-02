@@ -1598,10 +1598,10 @@ pub(super) fn subst_fvar(
 /// and `Proj` type names that appear as keys in `map` with their
 /// corresponding values. All other expression structure is preserved.
 ///
-/// Used by `rename_below_indc` to fix up constructor types when creating
-/// alpha-collapsed aliases: the canonical `.below` constructor types
-/// reference the canonical parent inductive and its constructors, which
-/// must be rewritten to reference the alias target.
+/// Test-only thin wrapper that allocates a fresh memoization cache.
+/// Production callers (`nested.rs`) use [`replace_const_names_cached`]
+/// directly with a caller-managed cache.
+#[cfg(test)]
 pub(super) fn replace_const_names(
   expr: &LeanExpr,
   map: &std::collections::HashMap<Name, Name>,
