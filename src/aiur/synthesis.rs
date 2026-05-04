@@ -109,6 +109,7 @@ impl AiurSystem {
     AiurSystem { system, key, toplevel }
   }
 
+  #[tracing::instrument(level = "info", skip_all, name = "aiur/prove")]
   pub fn prove(
     &self,
     fri_parameters: FriParameters,
@@ -116,16 +117,17 @@ impl AiurSystem {
     input: &[G],
     io_buffer: &mut IOBuffer,
   ) -> (Vec<G>, Proof) {
-    cronos::clock("aiur/prove");
+    // Register the instrumented span for tracing-texray's tree dump on exit.
+    tracing_texray::examine_current();
 
     // Execute the Aiur bytecode.
-    cronos::clock("aiur/execute");
+    let _g = tracing::info_span!("aiur/execute").entered();
     let (query_record, output) =
       self.toplevel.execute(fun_idx, input.to_vec(), io_buffer);
-    cronos::clock("aiur/execute");
+    drop(_g);
 
     // Build the `SystemWitness`
-    cronos::clock("aiur/witness");
+    let _g = tracing::info_span!("aiur/witness").entered();
     let functions =
       (0..self.toplevel.functions.len()).into_par_iter().filter_map(|idx| {
         if self.toplevel.functions[idx].constrained {
@@ -157,7 +159,7 @@ impl AiurSystem {
     drop(query_record); // Early drop to free memory.
     let (traces, lookups) = witness_data.into_iter().unzip();
     let witness = SystemWitness { traces, lookups };
-    cronos::clock("aiur/witness");
+    drop(_g);
 
     // Construct the claim.
     let mut claim = vec![function_channel(), G::from_usize(fun_idx)];
@@ -166,7 +168,6 @@ impl AiurSystem {
 
     // Finally prove.
     let proof = self.system.prove(fri_parameters, &self.key, &claim, witness);
-    cronos::clock("aiur/prove");
     (claim, proof)
   }
 

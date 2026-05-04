@@ -7,7 +7,6 @@
 pub mod _iroh;
 pub mod aiur;
 pub mod byte_array;
-pub mod cronos;
 #[cfg(all(
   feature = "net",
   not(all(target_os = "macos", target_arch = "aarch64"))
@@ -15,6 +14,7 @@ pub mod cronos;
 pub mod iroh;
 pub mod keccak;
 pub mod lean_env;
+pub mod texray;
 pub mod unsigned;
 
 // Modular FFI structure
