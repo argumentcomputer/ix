@@ -69,8 +69,7 @@ def G.u8BitDecomposition (a : G) : Fin 8 → G :=
 
 def G.u32LessThan (a b : G) : G := if a.n < b.n then 1 else 0
 
--- Requires native evaluation because G.ofNat uses @[extern] Nat.toUInt64
-theorem G.one_ne_zero : ¬(1 : G) = (0 : G) := by native_decide
+theorem G.one_ne_zero : ¬(1 : G) = (0 : G) := by decide
 
 theorem G.add_comm (a b : G) : a + b = b + a := by
   show G.ofNat (a.val.toNat + b.val.toNat) = G.ofNat (b.val.toNat + a.val.toNat)
