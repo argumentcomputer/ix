@@ -298,7 +298,7 @@ Muts([
 
 Each `Indc(I)` carries `I.ctors: Vec<Constructor>` inline. **Constructors
 are not separate `MutConst` entries** — they live inside their parent
-`Inductive`. This matters for projections (see 6.0.x below).
+`Inductive`. This matters for projections (see [projections](inter-block-references--projections)).
 
 **Aux inductives are not serialized in the inductive block.** They are
 transient compile-time entities, derived from primary ctor walks during
