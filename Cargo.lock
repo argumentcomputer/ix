@@ -1951,7 +1951,7 @@ dependencies = [
 [[package]]
 name = "multi-stark"
 version = "0.1.0"
-source = "git+https://github.com/argumentcomputer/multi-stark.git?branch=sb%2Fcronos#cca7f954580608d721a07226d18de2435d0ceb73"
+source = "git+https://github.com/argumentcomputer/multi-stark.git?branch=sb%2Fgpu#353fabc4823d7f4f9aeb537f2ea9bae9f7ab8cae"
 dependencies = [
  "bincode",
  "p3-air",
@@ -1961,7 +1961,6 @@ dependencies = [
  "p3-field",
  "p3-fri",
  "p3-goldilocks",
- "p3-keccak",
  "p3-matrix",
  "p3-maybe-rayon",
  "p3-merkle-tree",
@@ -2479,16 +2478,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "p3-keccak"
-version = "0.5.1"
-source = "git+https://github.com/Plonky3/Plonky3?rev=e9d75614dd6816f9b5dbb4413c69be63536efd64#e9d75614dd6816f9b5dbb4413c69be63536efd64"
-dependencies = [
- "p3-symmetric",
- "p3-util",
- "tiny-keccak",
-]
-
-[[package]]
 name = "p3-matrix"
 version = "0.5.1"
 source = "git+https://github.com/Plonky3/Plonky3?rev=e9d75614dd6816f9b5dbb4413c69be63536efd64#e9d75614dd6816f9b5dbb4413c69be63536efd64"
@@ -2956,7 +2945,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
