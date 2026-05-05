@@ -67,6 +67,11 @@ pub extern "C" fn rs_eq_constant_serialization(
 
 /// Check if Lean's Ixon.Env serialization can be deserialized by Rust and content matches.
 /// Due to HashMap ordering differences, we compare deserialized content rather than bytes.
+///
+/// On mismatch, emits a diagnostic line to stderr (gated on
+/// `IX_DEBUG_SERDE=1`) identifying the section that differs. This is
+/// invaluable for property-test counter-examples where "false does not
+/// hold" is otherwise opaque.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_eq_env_serialization(
   raw_env_obj: LeanIxonRawEnv<LeanBorrowed<'_>>,
@@ -74,57 +79,156 @@ pub extern "C" fn rs_eq_env_serialization(
 ) -> bool {
   use crate::ix::ixon::env::Env;
 
+  let debug = std::env::var("IX_DEBUG_SERDE").is_ok();
   let decoded = raw_env_obj.decode();
   let bytes_data = bytes_obj.as_bytes();
 
   // Deserialize Lean's bytes using Rust's deserializer
   let rust_env = match Env::get(&mut &bytes_data[..]) {
     Ok(env) => env,
-    Err(_) => return false,
+    Err(e) => {
+      if debug {
+        eprintln!("[rs_eq_env_serialization] Env::get failed: {e}");
+      }
+      return false;
+    },
   };
 
   // Compare content: check that all items from decoded RawEnv are in the deserialized Env
   // Consts
   if rust_env.consts.len() != decoded.consts.len() {
+    if debug {
+      eprintln!(
+        "[rs_eq_env_serialization] consts len mismatch: rust={}, decoded={}",
+        rust_env.consts.len(),
+        decoded.consts.len()
+      );
+    }
     return false;
   }
   for rc in &decoded.consts {
     match rust_env.consts.get(&rc.addr) {
       Some(c) if *c == rc.constant => {},
-      _ => return false,
+      Some(_) => {
+        if debug {
+          eprintln!(
+            "[rs_eq_env_serialization] const value mismatch for addr {}",
+            rc.addr.hex(),
+          );
+        }
+        return false;
+      },
+      None => {
+        if debug {
+          eprintln!(
+            "[rs_eq_env_serialization] const missing for addr {}",
+            rc.addr.hex(),
+          );
+        }
+        return false;
+      },
     }
   }
 
   // Blobs
   if rust_env.blobs.len() != decoded.blobs.len() {
+    if debug {
+      eprintln!(
+        "[rs_eq_env_serialization] blobs len mismatch: rust={}, decoded={}",
+        rust_env.blobs.len(),
+        decoded.blobs.len()
+      );
+    }
     return false;
   }
   for rb in &decoded.blobs {
     match rust_env.blobs.get(&rb.addr) {
       Some(b) if *b == rb.bytes => {},
-      _ => return false,
+      Some(b) => {
+        if debug {
+          eprintln!(
+            "[rs_eq_env_serialization] blob bytes mismatch for addr {}: \
+             rust_len={}, decoded_len={}",
+            rb.addr.hex(),
+            b.len(),
+            rb.bytes.len(),
+          );
+        }
+        return false;
+      },
+      None => {
+        if debug {
+          eprintln!(
+            "[rs_eq_env_serialization] blob missing for addr {}",
+            rb.addr.hex(),
+          );
+        }
+        return false;
+      },
     }
   }
 
   // Comms
   if rust_env.comms.len() != decoded.comms.len() {
+    if debug {
+      eprintln!(
+        "[rs_eq_env_serialization] comms len mismatch: rust={}, decoded={}",
+        rust_env.comms.len(),
+        decoded.comms.len()
+      );
+    }
     return false;
   }
   for rc in &decoded.comms {
     match rust_env.comms.get(&rc.addr) {
       Some(c) if *c == rc.comm => {},
-      _ => return false,
+      _ => {
+        if debug {
+          eprintln!(
+            "[rs_eq_env_serialization] comm mismatch for addr {}",
+            rc.addr.hex(),
+          );
+        }
+        return false;
+      },
     }
   }
 
   // Named: compare by checking all entries exist with matching addresses
   if rust_env.named.len() != decoded.named.len() {
+    if debug {
+      eprintln!(
+        "[rs_eq_env_serialization] named len mismatch: rust={}, decoded={}",
+        rust_env.named.len(),
+        decoded.named.len()
+      );
+    }
     return false;
   }
   for rn in &decoded.named {
     match rust_env.named.get(&rn.name) {
       Some(named) if named.addr == rn.addr => {},
-      _ => return false,
+      Some(named) => {
+        if debug {
+          eprintln!(
+            "[rs_eq_env_serialization] named addr mismatch for name hash {}: \
+             rust={}, decoded={}",
+            Address::from_blake3_hash(*rn.name.get_hash()).hex(),
+            named.addr.hex(),
+            rn.addr.hex(),
+          );
+        }
+        return false;
+      },
+      None => {
+        if debug {
+          eprintln!(
+            "[rs_eq_env_serialization] named missing for name hash {}",
+            Address::from_blake3_hash(*rn.name.get_hash()).hex(),
+          );
+        }
+        return false;
+      },
     }
   }
 

@@ -16,6 +16,7 @@ public import Ix.Sharing
 public import Lean
 public import LSpec
 public import Tests.Ix.Fixtures
+public import Tests.Ix.Compile.Mutual
 
 open LSpec
 
@@ -239,6 +240,7 @@ def testCrossImpl : TestSeq :=
               | .indc _ _ _ _ _ arena typeRoot => do
                 dumpArena label "arena" arena
                 IO.println s!"  {label} typeRoot={typeRoot}"
+              | .muts all => IO.println s!"  {label}: muts classes={all.size}"
               | .empty => IO.println s!"  {label}: empty"
             dumpMeta "Lean" leanNamed.constMeta
             dumpMeta "Rust" rustNamed.constMeta
@@ -251,8 +253,8 @@ def testCrossImpl : TestSeq :=
           for (name, leanCM, rustCM) in result.fullMetaMismatches[:min 5 result.fullMetaMismatches.size] do
             IO.println s!"  {name}:"
             -- Compare variant tags
-            let leanTag := match leanCM with | .empty => "empty" | .defn .. => "defn" | .axio .. => "axio" | .quot .. => "quot" | .indc .. => "indc" | .ctor .. => "ctor" | .recr .. => "recr"
-            let rustTag := match rustCM with | .empty => "empty" | .defn .. => "defn" | .axio .. => "axio" | .quot .. => "quot" | .indc .. => "indc" | .ctor .. => "ctor" | .recr .. => "recr"
+            let leanTag := match leanCM with | .empty => "empty" | .defn .. => "defn" | .axio .. => "axio" | .quot .. => "quot" | .indc .. => "indc" | .ctor .. => "ctor" | .recr .. => "recr" | .muts .. => "muts"
+            let rustTag := match rustCM with | .empty => "empty" | .defn .. => "defn" | .axio .. => "axio" | .quot .. => "quot" | .indc .. => "indc" | .ctor .. => "ctor" | .recr .. => "recr" | .muts .. => "muts"
             if leanTag != rustTag then
               IO.println s!"    VARIANT DIFFERS: Lean={leanTag} Rust={rustTag}"
             else
@@ -291,6 +293,8 @@ def testCrossImpl : TestSeq :=
                 if larena != rarena then IO.println s!"    arena DIFFERS: Lean={larena.nodes.size} Rust={rarena.nodes.size}"
                 if ltr != rtr then IO.println s!"    typeRoot DIFFERS: Lean={ltr} Rust={rtr}"
                 if lrr != rrr then IO.println s!"    ruleRoots DIFFERS: Lean={lrr} Rust={rrr}"
+              | .muts la, .muts ra => do
+                if la != ra then IO.println s!"    all DIFFERS: Lean={la} Rust={ra}"
               | _, _ => IO.println s!"    (other variant - use repr for details)"
         else
           IO.println s!"[Step 3]   All full ConstantMeta match! ✓"

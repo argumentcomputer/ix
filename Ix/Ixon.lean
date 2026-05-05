@@ -493,6 +493,7 @@ inductive ConstantMeta where
          (all : Array Address) (ctx : Array Address)
          (arena : ExprMetaArena) (typeRoot : UInt64)
          (ruleRoots : Array UInt64)
+  | muts (all : Array (Array Address))
   deriving Inhabited, BEq, Repr
 
 /-- Count total arena nodes in this ConstantMeta. -/
@@ -504,6 +505,7 @@ def ConstantMeta.exprMetaCount : ConstantMeta → Nat
   | .indc _ _ _ _ _ arena _ => arena.nodes.size
   | .ctor _ _ _ arena _ => arena.nodes.size
   | .recr _ _ _ _ _ arena _ _ => arena.nodes.size
+  | .muts _ => 0
 
 /-- Count total arena nodes and mdata items in this ConstantMeta. -/
 def ConstantMeta.exprMetaStats : ConstantMeta → Nat × Nat
@@ -514,6 +516,7 @@ def ConstantMeta.exprMetaStats : ConstantMeta → Nat × Nat
   | .indc _ _ _ _ _ arena _ => (arena.nodes.size, arena.mdataItemCount)
   | .ctor _ _ _ arena _ => (arena.nodes.size, arena.mdataItemCount)
   | .recr _ _ _ _ _ arena _ _ => (arena.nodes.size, arena.mdataItemCount)
+  | .muts _ => (0, 0)
 
 /-- Count ExprMetaData nodes by type: (binder, letBinder, ref, prj, mdata)
     (compatible signature with old ExprMetas.countByType for comparison) -/
@@ -528,13 +531,17 @@ def ConstantMeta.exprMetaByType : ConstantMeta → Nat × Nat × Nat × Nat × N
       | .ctor _ _ _ a _ => a
       | .recr _ _ _ _ _ a _ _ => a
       | .empty => {}
+      | .muts _ => {}
     let (_, _, bi, lb, rf, pj, md) := arena.countByType
     (bi, lb, rf, pj, md)
 
-/-- A named constant with metadata -/
+/-- A named constant with metadata.
+    For aux_gen-rewritten constants, `original` stores the pre-rewrite
+    (address, metadata) pair for decompile roundtrip fidelity. -/
 structure Named where
   addr : Address
   constMeta : ConstantMeta := .empty
+  original : Option (Address × ConstantMeta) := none
   deriving Inhabited, BEq, Repr
 
 /-- A cryptographic commitment -/
@@ -1286,62 +1293,113 @@ def putConstantMetaIndexed (cm : ConstantMeta) (idx : NameIndex) : PutM Unit := 
     putTag0 ⟨typeRoot⟩
     putTag0 ⟨ruleRoots.size.toUInt64⟩
     for r in ruleRoots do putTag0 ⟨r⟩
+  | .muts all =>
+    putU8 6
+    putTag0 ⟨all.size.toUInt64⟩
+    for cls in all do
+      putIdxVec cls idx
+    -- Rust's `ConstantMetaInfo::Muts` also serializes `aux_layout`.
+    -- Lean preserves only the alpha-equivalence classes and writes
+    -- `None` for the Rust-only nested-auxiliary sidecar.
+    putU8 0
+  -- Extension tables (meta_sharing / meta_refs / meta_univs): Rust's
+  -- `ConstantMeta::put_indexed` always appends these three length-prefixed
+  -- vectors after the variant payload, used by call-site surgery roundtrip
+  -- (see src/ix/ixon/metadata.rs:229). Lean does not model these fields, so
+  -- we always write them as empty — this matches Rust's wire format for
+  -- Lean-produced bytes without changing the Lean-side data model.
+  putTag0 ⟨0⟩  -- meta_sharing length
+  putTag0 ⟨0⟩  -- meta_refs length
+  putTag0 ⟨0⟩  -- meta_univs length
 
 def getConstantMetaIndexed (rev : NameReverseIndex) : GetM ConstantMeta := do
-  match ← getU8 with
-  | 255 => pure .empty
-  | 0 =>
-    let name ← getIdx rev
-    let lvls ← getIdxVec rev
-    let hints ← getReducibilityHints
-    let all ← getIdxVec rev
-    let ctx ← getIdxVec rev
-    let arena ← getExprMetaArenaIndexed rev
-    let typeRoot := (← getTag0).size
-    let valueRoot := (← getTag0).size
-    pure (.defn name lvls hints all ctx arena typeRoot valueRoot)
-  | 1 =>
-    let name ← getIdx rev
-    let lvls ← getIdxVec rev
-    let arena ← getExprMetaArenaIndexed rev
-    let typeRoot := (← getTag0).size
-    pure (.axio name lvls arena typeRoot)
-  | 2 =>
-    let name ← getIdx rev
-    let lvls ← getIdxVec rev
-    let arena ← getExprMetaArenaIndexed rev
-    let typeRoot := (← getTag0).size
-    pure (.quot name lvls arena typeRoot)
-  | 3 =>
-    let name ← getIdx rev
-    let lvls ← getIdxVec rev
-    let ctors ← getIdxVec rev
-    let all ← getIdxVec rev
-    let ctx ← getIdxVec rev
-    let arena ← getExprMetaArenaIndexed rev
-    let typeRoot := (← getTag0).size
-    pure (.indc name lvls ctors all ctx arena typeRoot)
-  | 4 =>
-    let name ← getIdx rev
-    let lvls ← getIdxVec rev
-    let induct ← getIdx rev
-    let arena ← getExprMetaArenaIndexed rev
-    let typeRoot := (← getTag0).size
-    pure (.ctor name lvls induct arena typeRoot)
-  | 5 =>
-    let name ← getIdx rev
-    let lvls ← getIdxVec rev
-    let rules ← getIdxVec rev
-    let all ← getIdxVec rev
-    let ctx ← getIdxVec rev
-    let arena ← getExprMetaArenaIndexed rev
-    let typeRoot := (← getTag0).size
-    let numRuleRoots := (← getTag0).size.toNat
-    let mut ruleRoots : Array UInt64 := #[]
-    for _ in [0:numRuleRoots] do
-      ruleRoots := ruleRoots.push (← getTag0).size
-    pure (.recr name lvls rules all ctx arena typeRoot ruleRoots)
-  | x => throw s!"invalid ConstantMeta tag {x}"
+  let cm ← match ← getU8 with
+    | 255 => pure .empty
+    | 0 =>
+      let name ← getIdx rev
+      let lvls ← getIdxVec rev
+      let hints ← getReducibilityHints
+      let all ← getIdxVec rev
+      let ctx ← getIdxVec rev
+      let arena ← getExprMetaArenaIndexed rev
+      let typeRoot := (← getTag0).size
+      let valueRoot := (← getTag0).size
+      pure (.defn name lvls hints all ctx arena typeRoot valueRoot)
+    | 1 =>
+      let name ← getIdx rev
+      let lvls ← getIdxVec rev
+      let arena ← getExprMetaArenaIndexed rev
+      let typeRoot := (← getTag0).size
+      pure (.axio name lvls arena typeRoot)
+    | 2 =>
+      let name ← getIdx rev
+      let lvls ← getIdxVec rev
+      let arena ← getExprMetaArenaIndexed rev
+      let typeRoot := (← getTag0).size
+      pure (.quot name lvls arena typeRoot)
+    | 3 =>
+      let name ← getIdx rev
+      let lvls ← getIdxVec rev
+      let ctors ← getIdxVec rev
+      let all ← getIdxVec rev
+      let ctx ← getIdxVec rev
+      let arena ← getExprMetaArenaIndexed rev
+      let typeRoot := (← getTag0).size
+      pure (.indc name lvls ctors all ctx arena typeRoot)
+    | 4 =>
+      let name ← getIdx rev
+      let lvls ← getIdxVec rev
+      let induct ← getIdx rev
+      let arena ← getExprMetaArenaIndexed rev
+      let typeRoot := (← getTag0).size
+      pure (.ctor name lvls induct arena typeRoot)
+    | 5 =>
+      let name ← getIdx rev
+      let lvls ← getIdxVec rev
+      let rules ← getIdxVec rev
+      let all ← getIdxVec rev
+      let ctx ← getIdxVec rev
+      let arena ← getExprMetaArenaIndexed rev
+      let typeRoot := (← getTag0).size
+      let numRuleRoots := (← getTag0).size.toNat
+      let mut ruleRoots : Array UInt64 := #[]
+      for _ in [0:numRuleRoots] do
+        ruleRoots := ruleRoots.push (← getTag0).size
+      pure (.recr name lvls rules all ctx arena typeRoot ruleRoots)
+    | 6 =>
+      let n := (← getTag0).size.toNat
+      let mut all : Array (Array Address) := #[]
+      for _ in [0:n] do
+        all := all.push (← getIdxVec rev)
+      match ← getU8 with
+      | 0 => pure (.muts all)
+      | 1 =>
+        -- Rust carries an optional nested-auxiliary permutation here.
+        -- Lean does not model it, but consumes it so Rust-produced bytes
+        -- remain readable.
+        let nPerm := (← getTag0).size.toNat
+        for _ in [0:nPerm] do
+          let _ ← getTag0
+        let nCounts := (← getTag0).size.toNat
+        for _ in [0:nCounts] do
+          let _ ← getTag0
+        pure (.muts all)
+      | x => throw s!"invalid ConstantMeta muts aux_layout tag {x}"
+    | x => throw s!"invalid ConstantMeta tag {x}"
+  -- Extension tables (meta_sharing / meta_refs / meta_univs): mirror of the
+  -- Rust wire format (see `putConstantMetaIndexed` for the rationale). Lean
+  -- drops any payload here, so Rust → Lean roundtrips lose call-site surgery
+  -- sharing; this is acceptable because Lean does not consume that data.
+  let sharingLen := (← getTag0).size.toNat
+  for _ in [0:sharingLen] do
+    let _ ← getExpr
+  let refsLen := (← getTag0).size.toNat
+  for _ in [0:refsLen] do
+    let _ ← Serialize.get (α := Address)
+  let univsLen := (← getTag0).size.toNat
+  for _ in [0:univsLen] do
+    let _ ← getUniv
+  pure cm
 
 /-- Serialize Comm (simple - just two addresses). -/
 def putComm (c : Comm) : PutM Unit := do
@@ -1555,7 +1613,7 @@ def toEnv (raw : RawEnv) : Env := Id.run do
   for ⟨name, addr, constMeta⟩ in raw.named do
     -- Also add name components for indexed serialization
     env := { env with names := addNameComponents env.names name }
-    env := env.registerName name ⟨addr, constMeta⟩
+    env := env.registerName name { addr, constMeta }
   for ⟨addr, bytes⟩ in raw.blobs do
     env := { env with blobs := env.blobs.insert addr bytes }
   for ⟨addr, comm⟩ in raw.comms do
@@ -1688,6 +1746,13 @@ def putEnv (env : Env) : PutM Unit := do
     Serialize.put name.getHash
     Serialize.put namedEntry.addr
     putConstantMetaIndexed namedEntry.constMeta nameIdx
+    -- Serialize original as Option: 0 = None, 1 = Some(addr, meta)
+    match namedEntry.original with
+    | none => putU8 0
+    | some (origAddr, origMeta) =>
+      putU8 1
+      Serialize.put origAddr
+      putConstantMetaIndexed origMeta nameIdx
 
   -- Section 5: Comms (Address -> Comm)
   let comms := env.comms.toList.toArray.qsort fun a b => (compare a.1 b.1).isLT
@@ -1741,9 +1806,18 @@ def getEnv : GetM Env := do
     let nameAddr ← Serialize.get
     let constAddr : Address ← Serialize.get
     let constMeta ← getConstantMetaIndexed nameRev
+    -- Deserialize original as Option: 0 = None, 1 = Some(addr, meta)
+    let origTag ← getU8
+    let original ← match origTag with
+    | 0 => pure none
+    | 1 => do
+      let origAddr ← Serialize.get (α := Address)
+      let origMeta ← getConstantMetaIndexed nameRev
+      pure (some (origAddr, origMeta))
+    | x => throw s!"getEnv: Named.original: invalid tag {x}"
     match namesLookup.get? nameAddr with
     | some name =>
-      let namedEntry : Named := ⟨constAddr, constMeta⟩
+      let namedEntry : Named := { addr := constAddr, constMeta, original }
       env := { env with
         named := env.named.insert name namedEntry
         addrToName := env.addrToName.insert constAddr name }
@@ -1805,6 +1879,12 @@ def envSectionSizes (env : Env) : Nat × Nat × Nat × Nat × Nat := Id.run do
       Serialize.put name.getHash
       Serialize.put namedEntry.addr
       putConstantMetaIndexed namedEntry.constMeta nameIdx
+      match namedEntry.original with
+      | none => putU8 0
+      | some (origAddr, origMeta) =>
+        putU8 1
+        Serialize.put origAddr
+        putConstantMetaIndexed origMeta nameIdx
 
   -- Comms section
   let commsBytes := runPut do

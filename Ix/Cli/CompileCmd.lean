@@ -3,56 +3,23 @@ public import Cli
 public import Ix.Common
 public import Ix.CompileM
 public import Ix.Meta
-public import Batteries.Data.String
 
 public section
 
 open System (FilePath)
 
-/-- If the project depends on Mathlib, download the Mathlib cache. -/
-private def fetchMathlibCache (cwd : Option FilePath) : IO Unit := do
-  let root := cwd.getD "."
-  let manifest := root / "lake-manifest.json"
-  let contents ← IO.FS.readFile manifest
-  if contents.containsSubstr "leanprover-community/mathlib4" then
-    let mathlibBuild := root / ".lake" / "packages" / "mathlib" / ".lake" / "build"
-    if ← mathlibBuild.pathExists then
-      println! "Mathlib cache already present, skipping fetch."
-      return
-    println! "Detected Mathlib dependency. Fetching Mathlib cache..."
-    let child ← IO.Process.spawn {
-      cmd := "lake"
-      args := #["exe", "cache", "get"]
-      cwd := cwd
-      stdout := .inherit
-      stderr := .inherit
-    }
-    let exitCode ← child.wait
-    if exitCode != 0 then
-      throw $ IO.userError "lake exe cache get failed"
-
-/-- Build the Lean module at the given file path using Lake. -/
-private def buildFile (path : FilePath) : IO Unit := do
-  let path ← IO.FS.realPath path
-  let some moduleName := path.fileStem
-    | throw $ IO.userError s!"cannot determine module name from {path}"
-  fetchMathlibCache path.parent
-  let child ← IO.Process.spawn {
-    cmd := "lake"
-    args := #["build", moduleName]
-    cwd := path.parent
-    stdout := .inherit
-    stderr := .inherit
-  }
-  let exitCode ← child.wait
-  if exitCode != 0 then
-    throw $ IO.userError "lake build failed"
+private def defaultOutPathFor (pathStr : String) : String :=
+  let path := FilePath.mk pathStr
+  let stem := path.fileStem.getD (path.fileName.getD pathStr)
+  stem.toLower ++ ".ixe"
 
 def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   let some path := p.flag? "path"
     | p.printError "error: must specify --path"
       return 1
   let pathStr := path.as! String
+  let outPath : String :=
+    (p.flag? "out").map (·.as! String) |>.getD (defaultOutPathFor pathStr)
 
   buildFile pathStr
   let leanEnv ← getFileEnv pathStr
@@ -69,6 +36,16 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   println! "Compiled {fmtBytes bytes.size} env in {elapsed.formatMs}"
   -- Machine-readable line for CI benchmark tracking
   IO.println s!"##benchmark## {elapsed} {bytes.size} {totalConsts}"
+
+  -- Persist the serialized IxonEnv (`Env::put` bytes) to disk so subsequent
+  -- runs (e.g. `ix check-ixon`) can skip the Lean → IxOn compile step. The
+  -- resulting file is the canonical streaming format produced by
+  -- `Ixon.Env::put` (see `src/ix/ixon/serialize.rs:1093-1297`); it round-trips
+  -- through `Ixon.Env::get`.
+  let writeStart ← IO.monoMsNow
+  IO.FS.writeBinFile outPath bytes
+  let writeMs := (← IO.monoMsNow) - writeStart
+  println! "Wrote {fmtBytes bytes.size} to {outPath} in {writeMs.formatMs}"
   return 0
 
 
@@ -78,6 +55,7 @@ def compileCmd : Cli.Cmd := `[Cli|
 
   FLAGS:
     path : String; "Path to file to compile"
+    out  : String; "Output path for serialized Ixon.Env bytes; defaults to the lowercased input file stem with `.ixe` (e.g. CompileMathlib.lean -> compilemathlib.ixe)"
 ]
 
 end

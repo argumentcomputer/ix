@@ -305,7 +305,7 @@ def suite : List TestSeq := [
   checkIO "Ixon.ExprMetaData roundtrip" (∀ x : ExprMetaData, roundtripIxonExprMetaData x == x),
   checkIO "Ixon.ConstantMeta roundtrip" (∀ x : ConstantMeta, roundtripIxonConstantMeta x == x),
   checkIO "Ixon.Named roundtrip" (∀ x : Named, roundtripIxonNamed x == x),
-  -- RawEnv roundtrip
+  ---- RawEnv roundtrip
   checkIO "Ixon.RawEnv roundtrip" (∀ env : RawEnv, rawEnvEq (roundtripRawEnv env) env),
 ]
 

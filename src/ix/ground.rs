@@ -19,8 +19,12 @@ use crate::{
 };
 
 /// Reason a constant failed groundedness checking.
+///
+/// `Indc` carries `InductiveVal + Option<ConstantInfo>` (~360 bytes) — the
+/// payload is boxed so the enum stays small and `Result<(), GroundError>`
+/// remains cheap to return up the call stack.
 #[derive(Debug)]
-pub enum GroundError<'a> {
+pub enum GroundError {
   /// A universe level parameter or metavariable is not in scope.
   Level(Level, Vec<Name>),
   /// A referenced constant does not exist in the environment (or is itself ungrounded).
@@ -30,7 +34,7 @@ pub enum GroundError<'a> {
   /// A free or out-of-scope bound variable was encountered.
   Var(Expr, usize),
   /// An inductive type's constructor is missing or has the wrong kind.
-  Indc(&'a InductiveVal, Option<&'a ConstantInfo>),
+  Indc(Box<(InductiveVal, Option<ConstantInfo>)>),
   /// An invalid de Bruijn index.
   Idx(Nat),
 }
@@ -39,14 +43,15 @@ pub enum GroundError<'a> {
 ///
 /// First collects immediately ungrounded constants in parallel, then propagates
 /// ungroundedness transitively through `in_refs` (the reverse reference graph).
-pub fn ground_consts<'a>(
-  env: &'a Env,
+pub fn ground_consts(
+  env: &Env,
   in_refs: &RefMap,
-) -> FxHashMap<Name, GroundError<'a>> {
+) -> FxHashMap<Name, GroundError> {
   // Collect immediate ungrounded constants.
   let mut ungrounded: FxHashMap<_, _> = env
     .par_iter()
-    .filter_map(|(name, constant)| {
+    .filter_map(|entry| {
+      let (name, constant) = entry;
       let univs = const_univs(constant);
       let mut stt = GroundState::default();
       if let Err(err) = ground_const(constant, env, univs, 0, &mut stt) {
@@ -93,13 +98,13 @@ struct GroundState {
   univ_cache: FxHashSet<Level>,
 }
 
-fn ground_const<'a>(
-  constant: &'a ConstantInfo,
-  env: &'a Env,
+fn ground_const(
+  constant: &ConstantInfo,
+  env: &Env,
   univs: &[Name],
   binds: usize,
   stt: &mut GroundState,
-) -> Result<(), GroundError<'a>> {
+) -> Result<(), GroundError> {
   match constant {
     ConstantInfo::AxiomInfo(val) => {
       ground_expr(&val.cnst.typ, env, univs, binds, stt)
@@ -121,9 +126,12 @@ fn ground_const<'a>(
     },
     ConstantInfo::InductInfo(val) => {
       for ctor in &val.ctors {
-        match env.get(ctor) {
+        let ci = env.get(ctor).cloned();
+        match ci.as_ref() {
           Some(ConstantInfo::CtorInfo(_)) => (),
-          c => return Err(GroundError::Indc(val, c)),
+          _ => {
+            return Err(GroundError::Indc(Box::new((val.clone(), ci))));
+          },
         }
       }
       ground_expr(&val.cnst.typ, env, univs, binds, stt)
@@ -140,13 +148,13 @@ fn ground_const<'a>(
   }
 }
 
-fn ground_expr<'a>(
+fn ground_expr(
   expr: &Expr,
-  env: &'a Env,
+  env: &Env,
   univs: &[Name],
   binds: usize,
   stt: &mut GroundState,
-) -> Result<(), GroundError<'a>> {
+) -> Result<(), GroundError> {
   let key = (binds, expr.clone());
   if stt.expr_cache.contains(&key) {
     return Ok(());
@@ -195,11 +203,11 @@ fn ground_expr<'a>(
   }
 }
 
-fn ground_level<'a>(
+fn ground_level(
   level: &Level,
   univs: &[Name],
   stt: &mut GroundState,
-) -> Result<(), GroundError<'a>> {
+) -> Result<(), GroundError> {
   let key = level.clone();
   if stt.univ_cache.contains(&key) {
     return Ok(());
@@ -242,7 +250,7 @@ mod tests {
     ConstantVal { name: n(name), level_params: vec![], typ: sort0() }
   }
 
-  fn check(env: &Env) -> FxHashMap<Name, GroundError<'_>> {
+  fn check(env: &Env) -> FxHashMap<Name, GroundError> {
     let graph = build_ref_graph(env);
     ground_consts(env, &graph.in_refs)
   }
@@ -433,7 +441,7 @@ mod tests {
     );
     let errors = check(&env);
     assert!(errors.contains_key(&n("T")));
-    assert!(matches!(errors[&n("T")], GroundError::Indc(_, _)));
+    assert!(matches!(errors[&n("T")], GroundError::Indc(_)));
   }
 
   #[test]
@@ -463,7 +471,10 @@ mod tests {
     );
     let errors = check(&env);
     assert!(errors.contains_key(&n("T")));
-    assert!(matches!(errors[&n("T")], GroundError::Indc(_, Some(_))));
+    assert!(matches!(
+      &errors[&n("T")],
+      GroundError::Indc(b) if b.1.is_some()
+    ));
   }
 
   #[test]

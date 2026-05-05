@@ -5,7 +5,14 @@ import Tests.Ix.IxVM
 import Tests.Ix.Claim
 import Tests.Ix.Commit
 import Tests.Ix.Compile
+import Tests.Ix.Compile.ValidateAux
 import Tests.Ix.Decompile
+import Tests.Ix.Kernel.BuildPrimitives
+import Tests.Ix.Kernel.BuildPrimOrigs
+import Tests.Ix.Kernel.CheckEnv
+import Tests.Ix.Kernel.Roundtrip
+import Tests.Ix.Kernel.RoundtripNoCompile
+import Tests.Ix.Kernel.Tutorial
 import Tests.Ix.RustSerialize
 import Tests.Ix.RustDecompile
 import Tests.Ix.Sharing
@@ -51,6 +58,13 @@ def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("rust-serialize", Tests.RustSerialize.rustSerializeSuiteIO),
   ("rust-decompile", Tests.RustDecompile.rustDecompileSuiteIO),
   ("commit-io", Tests.Commit.suiteIO),
+  ("kernel-ixon-roundtrip", Tests.Ix.Kernel.Roundtrip.suite),
+  ("kernel-lean-roundtrip", Tests.Ix.Kernel.RoundtripNoCompile.suite),
+  ("kernel-tutorial", Tests.Ix.Kernel.Tutorial.suite),
+  ("kernel-check-env", Tests.Ix.Kernel.CheckEnv.suite),
+  ("kernel-check-const", Tests.Ix.Kernel.CheckEnv.constSuite),
+  ("rust-kernel-build-primitives", Tests.Ix.Kernel.BuildPrimitives.suite),
+  ("rust-kernel-build-prim-origs", Tests.Ix.Kernel.BuildPrimOrigs.suite),
 ]
 
 /-- Ignored test runners - expensive, deferred IO actions run only when explicitly requested -/
@@ -82,10 +96,11 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
     match AiurTestEnv.build (pure IxVM.rbTreeMap) with
     | .error e => IO.eprintln s!"RBTreeMap setup failed: {e}"; return 1
     | .ok env => LSpec.lspecEachIO rbTreeMapTestCases fun tc => pure (env.runTestCase tc)),
+  ("validate-aux", runCompileValidateAux env),
 ]
 
 def main (args : List String) : IO UInt32 := do
-  -- Special case: rust-compile diagnostic
+  -- Special case: rust-compile diagnostic (full env)
   if args.contains "rust-compile" then
     let env ← get_env!
     IO.println s!"Loaded environment with {env.constants.toList.length} constants"
