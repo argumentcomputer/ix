@@ -3936,7 +3936,18 @@ mod tests {
     use crate::ix::compile::env::compile_env;
     use std::sync::Arc;
 
-    let (env, a, b) = build_alpha_collapse_env();
+    let (mut env, a, b) = build_alpha_collapse_env();
+
+    // aux_gen only emits a regenerated `.rec` when the source env already has
+    // one (gate: `lean_env.get(rec_name).is_some()`). The minimal
+    // `build_alpha_collapse_env` doesn't add the auxiliary constants Lean
+    // would normally generate, so insert stub `.rec` entries here. Note: the
+    // stubs only have to exist for the gate; aux_gen replaces their contents
+    // with the regenerated value.
+    let all = vec![a.clone(), b.clone()];
+    let _ = insert_aux_stub_rec(&mut env, &all, &a);
+    let _ = insert_aux_stub_rec(&mut env, &all, &b);
+
     let lean_env = Arc::new(env);
 
     // Compile.
@@ -3952,9 +3963,9 @@ mod tests {
     let b_rec = Name::str(b.clone(), "rec".into());
     assert!(has_name(&b_rec), "B.rec should be compiled");
 
-    // Note: .below and .brecOn are only generated if the original Lean env
-    // contains them (gate: lean_env.get(&below_name).is_some()). This minimal
-    // test env has no .below or .brecOn, so they aren't generated.
+    // Note: .below, .brecOn, .casesOn, and .recOn are only generated if the
+    // original Lean env contains them (same gate as `.rec`). This minimal
+    // test env doesn't add those, so they aren't generated.
     // Full-environment tests (lake test -- rust-compile) exercise that path.
 
     // Verify A.rec and B.rec resolve to the same underlying Ixon block.
