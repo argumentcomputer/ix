@@ -1252,12 +1252,6 @@ impl<R: LeanRef> LeanIxSerializeError<R> {
 
 impl LeanIxDecompileError<LeanOwned> {
   /// Build a Lean DecompileError from a Rust DecompileError.
-  ///
-  /// Layout for index variants (tags 0–4):
-  ///   `(idx : UInt64) (len/max : Nat) (constant : String)`
-  ///   → 2 object fields (Nat, String) + 8 scalar bytes (UInt64)
-  ///   → `lean_alloc_ctor(tag, 2, 8)`
-  ///   → obj[0] = Nat, obj[1] = String, scalar[0] = UInt64
   pub fn build(err: &DecompileError) -> Self {
     match err {
       DecompileError::InvalidRefIndex { idx, refs_len, constant } => {

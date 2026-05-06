@@ -515,14 +515,16 @@ impl<M: KernelMode> KExpr<M> {
     Self::let_mdata(name, ty, val, body, non_dep, no_mdata::<M>())
   }
 
-  /// See [`KExpr::lam_hash`] — binder `name` and the cached `non_dep` flag
-  /// are intentionally not hashed.
+  /// See [`KExpr::lam_hash`] — binder `name` is intentionally not hashed.
+  /// `non_dep` IS hashed: dropping it would intern two letEs that differ only
+  /// in `non_dep` to the same KExpr, and egress would then return whichever
+  /// `non_dep` was interned first, breaking Ixon roundtrip fidelity.
   pub fn let_hash(
     _name: &M::MField<Name>,
     ty: &KExpr<M>,
     val: &KExpr<M>,
     body: &KExpr<M>,
-    _non_dep: bool,
+    non_dep: bool,
     _mdata: &M::MField<Vec<MData>>,
   ) -> blake3::Hash {
     let mut h = blake3::Hasher::new();
@@ -530,6 +532,7 @@ impl<M: KernelMode> KExpr<M> {
     h.update(ty.addr().as_bytes());
     h.update(val.addr().as_bytes());
     h.update(body.addr().as_bytes());
+    h.update(&[non_dep as u8]);
     h.finalize()
   }
 
@@ -934,13 +937,13 @@ mod tests {
   }
 
   #[test]
-  fn let_non_dep_does_not_affect_hash() {
+  fn let_non_dep_distinguishes_hash() {
     let ty = AE::sort(AU::zero());
     let val = AE::var(0, ());
     let body = AE::var(0, ());
     let a = AE::let_((), ty.clone(), val.clone(), body.clone(), true);
     let b = AE::let_((), ty, val, body, false);
-    assert_eq!(a.addr(), b.addr());
+    assert_ne!(a.addr(), b.addr());
   }
 
   #[test]
