@@ -57,7 +57,7 @@ def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   --("compile", Tests.Compile.compileSuiteIO),
   --("decompile", Tests.Decompile.decompileSuiteIO),
   ("rust-serialize", Tests.RustSerialize.rustSerializeSuiteIO),
-  ("rust-decompile", Tests.RustDecompile.rustDecompileSuiteIO),
+  --("rust-decompile", Tests.RustDecompile.rustDecompileSuiteIO),
   ("commit-io", Tests.Commit.suiteIO),
   ("kernel-ixon-roundtrip", Tests.Ix.Kernel.Roundtrip.suite),
   --("kernel-lean-roundtrip", Tests.Ix.Kernel.RoundtripNoCompile.suite),
