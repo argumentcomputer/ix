@@ -635,6 +635,7 @@ impl LeanIxonNamed<LeanOwned> {
   ///
   /// The third field encodes `Option (Address × ConstantMeta)` for
   /// pre-aux_gen roundtrip fidelity (see `Ix/Ixon.lean` `structure Named`).
+  /// Regression test: `Ixon.Named roundtrip` in `Tests/FFI/Ixon.lean`.
   pub fn build(
     addr: &Address,
     meta: &ConstantMeta,
@@ -659,7 +660,7 @@ impl LeanIxonNamed<LeanOwned> {
 }
 
 impl<R: LeanRef> LeanIxonNamed<R> {
-  /// Decode Ixon.Named. The `original` slot may be a scalar-optimized
+  /// Decode Ixon.Named. The `original` field may be a scalar-optimized
   /// `Option.none` or a boxed tag-1 ctor wrapping a `Prod`.
   pub fn decode(&self) -> Named {
     let addr =

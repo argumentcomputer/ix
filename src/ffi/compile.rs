@@ -1390,7 +1390,8 @@ impl<R: LeanRef> LeanIxDecompileError<R> {
       ),
       8 => {
         let addr =
-          LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array()).decode();
+          LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array())
+            .decode();
         let expected = self.get_obj(1).as_string().to_string();
         DecompileError::BadBlobFormat { addr, expected }
       },
@@ -1480,9 +1481,9 @@ impl<R: LeanRef> LeanIxCompileError<R> {
         let param = self.get_obj(1).as_string().to_string();
         CompileError::UnknownUnivParam { curr, param }
       },
-      5 => CompileError::Serialize(
-        LeanIxSerializeError(self.get_obj(0)).decode(),
-      ),
+      5 => {
+        CompileError::Serialize(LeanIxSerializeError(self.get_obj(0)).decode())
+      },
       tag => unreachable!("Invalid CompileError tag: {tag}"),
     }
   }
