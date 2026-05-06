@@ -67,5 +67,5 @@ jobs:
             --errors-for-leak-kinds=definite \
             --track-origins=yes \
             --error-exitcode=1 \
-            --suppressions=.github/valgrind.supp
+            --suppressions=.github/valgrind.supp \
             .lake/build/bin/IxTests -- ffi
