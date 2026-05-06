@@ -26,7 +26,14 @@ use lean_ffi::object::{
   LeanArray, LeanBorrowed, LeanList, LeanRef, LeanShared,
 };
 
-use crate::lean::{LeanIxInductiveVal, LeanIxRecursorVal};
+use crate::lean::{
+  LeanIxAxiomVal, LeanIxConstantInfo, LeanIxConstantVal, LeanIxConstructorVal,
+  LeanIxDataValue, LeanIxDefinitionVal, LeanIxExpr, LeanIxInductiveVal,
+  LeanIxInt, LeanIxLevel, LeanIxLiteral, LeanIxName, LeanIxOpaqueVal,
+  LeanIxQuotVal, LeanIxRecursorRule, LeanIxRecursorVal,
+  LeanIxReducibilityHints, LeanIxSourceInfo, LeanIxSubstring, LeanIxSyntax,
+  LeanIxSyntaxPreresolved, LeanIxTheoremVal,
+};
 
 use crate::ix::env::{
   AxiomVal, BinderInfo, ConstantInfo, ConstantVal, ConstructorVal, DataValue,
@@ -598,14 +605,13 @@ pub fn decode_name(obj: LeanBorrowed<'_>, global: &GlobalCache) -> Name {
   let name = if obj.is_scalar() {
     Name::anon()
   } else {
-    let ctor = obj.as_ctor();
-    let [pre, pos] = ctor.objs();
-    // Recursive call - will also use global cache
-    let pre = decode_name(pre, global);
-    match ctor.tag() {
+    let n = LeanIxName::from_ctor(obj.as_ctor());
+    let pre = decode_name(n.get_obj(0), global);
+    let pos = n.get_obj(1);
+    match n.as_ctor().tag() {
       1 => Name::str(pre, pos.as_string().to_string()),
       2 => Name::num(pre, Nat::from_obj(&pos)),
-      _ => unreachable!(),
+      tag => unreachable!("Invalid Lean.Name tag: {tag}"),
     }
   };
 
@@ -639,29 +645,20 @@ fn decode_level(obj: LeanBorrowed<'_>, cache: &mut Cache<'_>) -> Level {
   let level = if obj.is_scalar() {
     Level::zero()
   } else {
-    let ctor = obj.as_ctor();
-    match ctor.tag() {
-      1 => {
-        let [u] = ctor.objs::<1>().map(|o| decode_level(o, cache));
-        Level::succ(u)
-      },
-      2 => {
-        let [u, v] = ctor.objs::<2>().map(|o| decode_level(o, cache));
-        Level::max(u, v)
-      },
-      3 => {
-        let [u, v] = ctor.objs::<2>().map(|o| decode_level(o, cache));
-        Level::imax(u, v)
-      },
-      4 => {
-        let [name] = ctor.objs::<1>().map(|o| decode_name(o, cache.global));
-        Level::param(name)
-      },
-      5 => {
-        let [name] = ctor.objs::<1>().map(|o| decode_name(o, cache.global));
-        Level::mvar(name)
-      },
-      _ => unreachable!(),
+    let l = LeanIxLevel::from_ctor(obj.as_ctor());
+    match l.as_ctor().tag() {
+      1 => Level::succ(decode_level(l.get_obj(0), cache)),
+      2 => Level::max(
+        decode_level(l.get_obj(0), cache),
+        decode_level(l.get_obj(1), cache),
+      ),
+      3 => Level::imax(
+        decode_level(l.get_obj(0), cache),
+        decode_level(l.get_obj(1), cache),
+      ),
+      4 => Level::param(decode_name(l.get_obj(0), cache.global)),
+      5 => Level::mvar(decode_name(l.get_obj(0), cache.global)),
+      tag => unreachable!("Invalid Lean.Level tag: {tag}"),
     }
   };
   cache.local.univs.insert(ptr, level.clone());
@@ -669,11 +666,10 @@ fn decode_level(obj: LeanBorrowed<'_>, cache: &mut Cache<'_>) -> Level {
 }
 
 fn decode_substring(obj: LeanBorrowed<'_>) -> Substring {
-  let ctor = obj.as_ctor();
-  let [str_obj, start_pos, stop_pos] = ctor.objs();
-  let str = str_obj.as_string().to_string();
-  let start_pos = Nat::from_obj(&start_pos);
-  let stop_pos = Nat::from_obj(&stop_pos);
+  let s = LeanIxSubstring::from_ctor(obj.as_ctor());
+  let str = s.get_obj(0).as_string().to_string();
+  let start_pos = Nat::from_obj(&s.get_obj(1));
+  let stop_pos = Nat::from_obj(&s.get_obj(2));
   Substring { str, start_pos, stop_pos }
 }
 
@@ -681,24 +677,22 @@ fn decode_source_info(obj: LeanBorrowed<'_>) -> SourceInfo {
   if obj.is_scalar() {
     return SourceInfo::None;
   }
-  let ctor = obj.as_ctor();
-  match ctor.tag() {
+  let si = LeanIxSourceInfo::from_ctor(obj.as_ctor());
+  match si.as_ctor().tag() {
     0 => {
-      let [leading, pos, trailing, end_pos] = ctor.objs();
-      let leading = decode_substring(leading);
-      let pos = Nat::from_obj(&pos);
-      let trailing = decode_substring(trailing);
-      let end_pos = Nat::from_obj(&end_pos);
+      let leading = decode_substring(si.get_obj(0));
+      let pos = Nat::from_obj(&si.get_obj(1));
+      let trailing = decode_substring(si.get_obj(2));
+      let end_pos = Nat::from_obj(&si.get_obj(3));
       SourceInfo::Original(leading, pos, trailing, end_pos)
     },
     1 => {
-      let [pos, end_pos, canonical] = ctor.objs();
-      let pos = Nat::from_obj(&pos);
-      let end_pos = Nat::from_obj(&end_pos);
-      let canonical = canonical.as_raw() as usize == 1;
+      let pos = Nat::from_obj(&si.get_obj(0));
+      let end_pos = Nat::from_obj(&si.get_obj(1));
+      let canonical = si.get_num_8(0) != 0;
       SourceInfo::Synthetic(pos, end_pos, canonical)
     },
-    _ => unreachable!(),
+    tag => unreachable!("Invalid Lean.SourceInfo tag: {tag}"),
   }
 }
 
@@ -706,24 +700,23 @@ fn decode_syntax_preresolved(
   obj: LeanBorrowed<'_>,
   cache: &mut Cache<'_>,
 ) -> SyntaxPreresolved {
-  let ctor = obj.as_ctor();
-  match ctor.tag() {
+  let p = LeanIxSyntaxPreresolved::from_ctor(obj.as_ctor());
+  match p.as_ctor().tag() {
     0 => {
-      let [name_obj] = ctor.objs::<1>();
-      let name = decode_name(name_obj, cache.global);
+      let name = decode_name(p.get_obj(0), cache.global);
       SyntaxPreresolved::Namespace(name)
     },
     1 => {
-      let [name_obj, fields_obj] = ctor.objs();
-      let name = decode_name(name_obj, cache.global);
-      let fields: Vec<String> = fields_obj
+      let name = decode_name(p.get_obj(0), cache.global);
+      let fields: Vec<String> = p
+        .get_obj(1)
         .as_list()
         .iter()
         .map(|o| o.as_string().to_string())
         .collect();
       SyntaxPreresolved::Decl(name, fields)
     },
-    _ => unreachable!(),
+    tag => unreachable!("Invalid Lean.Syntax.Preresolved tag: {tag}"),
   }
 }
 
@@ -731,33 +724,34 @@ fn decode_syntax(obj: LeanBorrowed<'_>, cache: &mut Cache<'_>) -> Syntax {
   if obj.is_scalar() {
     return Syntax::Missing;
   }
-  let ctor = obj.as_ctor();
-  match ctor.tag() {
+  let s = LeanIxSyntax::from_ctor(obj.as_ctor());
+  match s.as_ctor().tag() {
     1 => {
-      let [info, kind, args] = ctor.objs();
-      let info = decode_source_info(info);
-      let kind = decode_name(kind, cache.global);
-      let args: Vec<_> =
-        args.as_array().iter().map(|o| decode_syntax(o, cache)).collect();
+      let info = decode_source_info(s.get_obj(0));
+      let kind = decode_name(s.get_obj(1), cache.global);
+      let args: Vec<_> = s
+        .get_obj(2)
+        .as_array()
+        .iter()
+        .map(|o| decode_syntax(o, cache))
+        .collect();
       Syntax::Node(info, kind, args)
     },
     2 => {
-      let [info, val] = ctor.objs();
-      let info = decode_source_info(info);
-      Syntax::Atom(info, val.as_string().to_string())
+      let info = decode_source_info(s.get_obj(0));
+      Syntax::Atom(info, s.get_obj(1).as_string().to_string())
     },
     3 => {
-      let [info, raw_val, val, preresolved] = ctor.objs();
-      let info = decode_source_info(info);
-      let raw_val = decode_substring(raw_val);
-      let val = decode_name(val, cache.global);
-      let preresolved = collect_list_borrowed(preresolved.as_list())
+      let info = decode_source_info(s.get_obj(0));
+      let raw_val = decode_substring(s.get_obj(1));
+      let val = decode_name(s.get_obj(2), cache.global);
+      let preresolved = collect_list_borrowed(s.get_obj(3).as_list())
         .into_iter()
         .map(|o| decode_syntax_preresolved(o, cache))
         .collect();
       Syntax::Ident(info, raw_val, val, preresolved)
     },
-    _ => unreachable!(),
+    tag => unreachable!("Invalid Lean.Syntax tag: {tag}"),
   }
 }
 
@@ -765,29 +759,28 @@ fn decode_name_data_value(
   obj: LeanBorrowed<'_>,
   cache: &mut Cache<'_>,
 ) -> (Name, DataValue) {
-  let ctor = obj.as_ctor();
-  let [name_obj, data_value_obj] = ctor.objs();
-  let name = decode_name(name_obj, cache.global);
-  let dv_ctor = data_value_obj.as_ctor();
-  let [inner] = dv_ctor.objs::<1>();
-  let data_value = match dv_ctor.tag() {
-    0 => DataValue::OfString(inner.as_string().to_string()),
-    1 => DataValue::OfBool(inner.as_raw() as usize == 1),
-    2 => DataValue::OfName(decode_name(inner, cache.global)),
-    3 => DataValue::OfNat(Nat::from_obj(&inner)),
+  // Outer Prod (Name × DataValue) has no public LeanProd<LeanBorrowed>
+  // constructor, so read the two fields through the raw ctor.
+  let pair = obj.as_ctor();
+  let name = decode_name(pair.get(0), cache.global);
+  let dv = LeanIxDataValue::from_ctor(pair.get(1).as_ctor());
+  let data_value = match dv.as_ctor().tag() {
+    0 => DataValue::OfString(dv.get_obj(0).as_string().to_string()),
+    1 => DataValue::OfBool(dv.get_num_8(0) != 0),
+    2 => DataValue::OfName(decode_name(dv.get_obj(0), cache.global)),
+    3 => DataValue::OfNat(Nat::from_obj(&dv.get_obj(0))),
     4 => {
-      let inner_ctor = inner.as_ctor();
-      let [nat_obj] = inner_ctor.objs::<1>();
-      let nat = Nat::from_obj(&nat_obj);
-      let int = match inner_ctor.tag() {
+      let i = LeanIxInt::from_ctor(dv.get_obj(0).as_ctor());
+      let nat = Nat::from_obj(&i.get_obj(0));
+      let int = match i.as_ctor().tag() {
         0 => Int::OfNat(nat),
         1 => Int::NegSucc(nat),
-        _ => unreachable!(),
+        tag => unreachable!("Invalid Lean.Int tag: {tag}"),
       };
       DataValue::OfInt(int)
     },
-    5 => DataValue::OfSyntax(decode_syntax(inner, cache).into()),
-    _ => unreachable!(),
+    5 => DataValue::OfSyntax(decode_syntax(dv.get_obj(0), cache).into()),
+    tag => unreachable!("Invalid Lean.DataValue tag: {tag}"),
   };
   (name, data_value)
 }
@@ -797,106 +790,78 @@ pub fn decode_expr(obj: LeanBorrowed<'_>, cache: &mut Cache<'_>) -> Expr {
   if let Some(cached) = cache.local.exprs.get(&ptr) {
     return cached.clone();
   }
-  let ctor = obj.as_ctor();
-  let expr = match ctor.tag() {
-    0 => {
-      let [nat, _hash] = ctor.objs();
-      Expr::bvar(Nat::from_obj(&nat))
-    },
-    1 => {
-      let [name_obj, _hash] = ctor.objs();
-      let name = decode_name(name_obj, cache.global);
-      Expr::fvar(name)
-    },
-    2 => {
-      let [name_obj, _hash] = ctor.objs();
-      let name = decode_name(name_obj, cache.global);
-      Expr::mvar(name)
-    },
-    3 => {
-      let [u, _hash] = ctor.objs();
-      let u = decode_level(u, cache);
-      Expr::sort(u)
-    },
+  let e = LeanIxExpr::from_ctor(obj.as_ctor());
+  let decode_binder_info = |b: u8| match b {
+    0 => BinderInfo::Default,
+    1 => BinderInfo::Implicit,
+    2 => BinderInfo::StrictImplicit,
+    3 => BinderInfo::InstImplicit,
+    _ => unreachable!("Invalid Lean.BinderInfo tag: {b}"),
+  };
+  let expr = match e.as_ctor().tag() {
+    0 => Expr::bvar(Nat::from_obj(&e.get_obj(0))),
+    1 => Expr::fvar(decode_name(e.get_obj(0), cache.global)),
+    2 => Expr::mvar(decode_name(e.get_obj(0), cache.global)),
+    3 => Expr::sort(decode_level(e.get_obj(0), cache)),
     4 => {
-      let [name_obj, levels, _hash] = ctor.objs();
-      let name = decode_name(name_obj, cache.global);
-      let levels = collect_list_borrowed(levels.as_list())
+      let name = decode_name(e.get_obj(0), cache.global);
+      let levels = collect_list_borrowed(e.get_obj(1).as_list())
         .into_iter()
         .map(|o| decode_level(o, cache))
         .collect();
       Expr::cnst(name, levels)
     },
     5 => {
-      let [f, a, _hash] = ctor.objs();
-      let f = decode_expr(f, cache);
-      let a = decode_expr(a, cache);
+      let f = decode_expr(e.get_obj(0), cache);
+      let a = decode_expr(e.get_obj(1), cache);
       Expr::app(f, a)
     },
     6 => {
-      let [binder_name, binder_typ, body, _hash, binder_info] = ctor.objs();
-      let binder_name = decode_name(binder_name, cache.global);
-      let binder_typ = decode_expr(binder_typ, cache);
-      let body = decode_expr(body, cache);
-      let binder_info = match binder_info.as_raw() as usize {
-        0 => BinderInfo::Default,
-        1 => BinderInfo::Implicit,
-        2 => BinderInfo::StrictImplicit,
-        3 => BinderInfo::InstImplicit,
-        _ => unreachable!(),
-      };
+      let binder_name = decode_name(e.get_obj(0), cache.global);
+      let binder_typ = decode_expr(e.get_obj(1), cache);
+      let body = decode_expr(e.get_obj(2), cache);
+      let binder_info = decode_binder_info(e.get_num_8(0));
       Expr::lam(binder_name, binder_typ, body, binder_info)
     },
     7 => {
-      let [binder_name, binder_typ, body, _hash, binder_info] = ctor.objs();
-      let binder_name = decode_name(binder_name, cache.global);
-      let binder_typ = decode_expr(binder_typ, cache);
-      let body = decode_expr(body, cache);
-      let binder_info = match binder_info.as_raw() as usize {
-        0 => BinderInfo::Default,
-        1 => BinderInfo::Implicit,
-        2 => BinderInfo::StrictImplicit,
-        3 => BinderInfo::InstImplicit,
-        _ => unreachable!(),
-      };
+      let binder_name = decode_name(e.get_obj(0), cache.global);
+      let binder_typ = decode_expr(e.get_obj(1), cache);
+      let body = decode_expr(e.get_obj(2), cache);
+      let binder_info = decode_binder_info(e.get_num_8(0));
       Expr::all(binder_name, binder_typ, body, binder_info)
     },
     8 => {
-      let [decl_name, typ, value, body, _hash, nondep] = ctor.objs();
-      let decl_name = decode_name(decl_name, cache.global);
-      let typ = decode_expr(typ, cache);
-      let value = decode_expr(value, cache);
-      let body = decode_expr(body, cache);
-      let nondep = nondep.as_raw() as usize == 1;
+      let decl_name = decode_name(e.get_obj(0), cache.global);
+      let typ = decode_expr(e.get_obj(1), cache);
+      let value = decode_expr(e.get_obj(2), cache);
+      let body = decode_expr(e.get_obj(3), cache);
+      let nondep = e.get_num_8(0) != 0;
       Expr::letE(decl_name, typ, value, body, nondep)
     },
     9 => {
-      let [literal, _hash] = ctor.objs();
-      let lit_ctor = literal.as_ctor();
-      let [inner] = lit_ctor.objs::<1>();
-      match lit_ctor.tag() {
+      let lit = LeanIxLiteral::from_ctor(e.get_obj(0).as_ctor());
+      let inner = lit.get_obj(0);
+      match lit.as_ctor().tag() {
         0 => Expr::lit(Literal::NatVal(Nat::from_obj(&inner))),
         1 => Expr::lit(Literal::StrVal(inner.as_string().to_string())),
-        _ => unreachable!(),
+        tag => unreachable!("Invalid Lean.Literal tag: {tag}"),
       }
     },
     10 => {
-      let [data, expr_obj] = ctor.objs();
-      let kv_map: Vec<_> = collect_list_borrowed(data.as_list())
+      let kv_map: Vec<_> = collect_list_borrowed(e.get_obj(0).as_list())
         .into_iter()
         .map(|o| decode_name_data_value(o, cache))
         .collect();
-      let expr = decode_expr(expr_obj, cache);
+      let expr = decode_expr(e.get_obj(1), cache);
       Expr::mdata(kv_map, expr)
     },
     11 => {
-      let [typ_name, idx, struct_expr] = ctor.objs();
-      let typ_name = decode_name(typ_name, cache.global);
-      let idx = Nat::from_obj(&idx);
-      let struct_expr = decode_expr(struct_expr, cache);
+      let typ_name = decode_name(e.get_obj(0), cache.global);
+      let idx = Nat::from_obj(&e.get_obj(1));
+      let struct_expr = decode_expr(e.get_obj(2), cache);
       Expr::proj(typ_name, idx, struct_expr)
     },
-    _ => unreachable!(),
+    tag => unreachable!("Invalid Lean.Expr tag: {tag}"),
   };
   cache.local.exprs.insert(ptr, expr.clone());
   expr
@@ -906,11 +871,10 @@ fn decode_recursor_rule(
   obj: LeanBorrowed<'_>,
   cache: &mut Cache<'_>,
 ) -> RecursorRule {
-  let ctor = obj.as_ctor();
-  let [ctor_name, n_fields, rhs] = ctor.objs();
-  let ctor_name = decode_name(ctor_name, cache.global);
-  let n_fields = Nat::from_obj(&n_fields);
-  let rhs = decode_expr(rhs, cache);
+  let r = LeanIxRecursorRule::from_ctor(obj.as_ctor());
+  let ctor_name = decode_name(r.get_obj(0), cache.global);
+  let n_fields = Nat::from_obj(&r.get_obj(1));
+  let rhs = decode_expr(r.get_obj(2), cache);
   RecursorRule { ctor: ctor_name, n_fields, rhs }
 }
 
@@ -918,14 +882,13 @@ fn decode_constant_val(
   obj: LeanBorrowed<'_>,
   cache: &mut Cache<'_>,
 ) -> ConstantVal {
-  let ctor = obj.as_ctor();
-  let [name_obj, level_params, typ] = ctor.objs();
-  let name = decode_name(name_obj, cache.global);
-  let level_params: Vec<_> = collect_list_borrowed(level_params.as_list())
+  let cv = LeanIxConstantVal::from_ctor(obj.as_ctor());
+  let name = decode_name(cv.get_obj(0), cache.global);
+  let level_params: Vec<_> = collect_list_borrowed(cv.get_obj(1).as_list())
     .into_iter()
     .map(|o| decode_name(o, cache.global))
     .collect();
-  let typ = decode_expr(typ, cache);
+  let typ = decode_expr(cv.get_obj(2), cache);
   ConstantVal { name, level_params, typ }
 }
 
@@ -933,41 +896,40 @@ pub fn decode_constant_info(
   obj: LeanBorrowed<'_>,
   cache: &mut Cache<'_>,
 ) -> ConstantInfo {
-  let ctor = obj.as_ctor();
-  let [inner_obj] = ctor.objs::<1>();
-  let inner = inner_obj.as_ctor();
+  let outer = LeanIxConstantInfo::from_ctor(obj.as_ctor());
+  let inner_obj = outer.get_obj(0);
 
-  match ctor.tag() {
+  match outer.as_ctor().tag() {
     0 => {
-      let [constant_val, is_unsafe] = inner.objs();
-      let constant_val = decode_constant_val(constant_val, cache);
-      let is_unsafe = is_unsafe.as_raw() as usize == 1;
+      let inner = LeanIxAxiomVal::from_ctor(inner_obj.as_ctor());
+      let constant_val = decode_constant_val(inner.get_obj(0), cache);
+      let is_unsafe = inner.get_num_8(0) != 0;
       ConstantInfo::AxiomInfo(AxiomVal { cnst: constant_val, is_unsafe })
     },
     1 => {
-      let [constant_val, value, hints, all, safety] = inner.objs();
-      let constant_val = decode_constant_val(constant_val, cache);
-      let value = decode_expr(value, cache);
-      let hints = if hints.is_scalar() {
-        match hints.unbox_usize() {
+      let inner = LeanIxDefinitionVal::from_ctor(inner_obj.as_ctor());
+      let constant_val = decode_constant_val(inner.get_obj(0), cache);
+      let value = decode_expr(inner.get_obj(1), cache);
+      let hints_obj = inner.get_obj(2);
+      let hints = if hints_obj.is_scalar() {
+        match hints_obj.unbox_usize() {
           0 => ReducibilityHints::Opaque,
           1 => ReducibilityHints::Abbrev,
-          _ => unreachable!(),
+          tag => unreachable!("Invalid scalar ReducibilityHints tag: {tag}"),
         }
       } else {
-        let hints_ctor = hints.as_ctor();
-        let [height] = hints_ctor.objs::<1>();
-        ReducibilityHints::Regular(height.as_raw() as u32)
+        let h = LeanIxReducibilityHints::from_ctor(hints_obj.as_ctor());
+        ReducibilityHints::Regular(h.get_num_32(0))
       };
-      let all: Vec<_> = collect_list_borrowed(all.as_list())
+      let all: Vec<_> = collect_list_borrowed(inner.get_obj(3).as_list())
         .into_iter()
         .map(|o| decode_name(o, cache.global))
         .collect();
-      let safety = match safety.as_raw() as usize {
+      let safety = match inner.get_num_8(0) {
         0 => DefinitionSafety::Unsafe,
         1 => DefinitionSafety::Safe,
         2 => DefinitionSafety::Partial,
-        _ => unreachable!(),
+        b => unreachable!("Invalid DefinitionSafety byte: {b}"),
       };
       ConstantInfo::DefnInfo(DefinitionVal {
         cnst: constant_val,
@@ -978,24 +940,24 @@ pub fn decode_constant_info(
       })
     },
     2 => {
-      let [constant_val, value, all] = inner.objs();
-      let constant_val = decode_constant_val(constant_val, cache);
-      let value = decode_expr(value, cache);
-      let all: Vec<_> = collect_list_borrowed(all.as_list())
+      let inner = LeanIxTheoremVal::from_ctor(inner_obj.as_ctor());
+      let constant_val = decode_constant_val(inner.get_obj(0), cache);
+      let value = decode_expr(inner.get_obj(1), cache);
+      let all: Vec<_> = collect_list_borrowed(inner.get_obj(2).as_list())
         .into_iter()
         .map(|o| decode_name(o, cache.global))
         .collect();
       ConstantInfo::ThmInfo(TheoremVal { cnst: constant_val, value, all })
     },
     3 => {
-      let [constant_val, value, all, is_unsafe] = inner.objs();
-      let constant_val = decode_constant_val(constant_val, cache);
-      let value = decode_expr(value, cache);
-      let all: Vec<_> = collect_list_borrowed(all.as_list())
+      let inner = LeanIxOpaqueVal::from_ctor(inner_obj.as_ctor());
+      let constant_val = decode_constant_val(inner.get_obj(0), cache);
+      let value = decode_expr(inner.get_obj(1), cache);
+      let all: Vec<_> = collect_list_borrowed(inner.get_obj(2).as_list())
         .into_iter()
         .map(|o| decode_name(o, cache.global))
         .collect();
-      let is_unsafe = is_unsafe.as_raw() as usize == 1;
+      let is_unsafe = inner.get_num_8(0) != 0;
       ConstantInfo::OpaqueInfo(OpaqueVal {
         cnst: constant_val,
         value,
@@ -1004,36 +966,34 @@ pub fn decode_constant_info(
       })
     },
     4 => {
-      let [constant_val, kind] = inner.objs();
-      let constant_val = decode_constant_val(constant_val, cache);
-      let kind = match kind.as_raw() as usize {
+      let inner = LeanIxQuotVal::from_ctor(inner_obj.as_ctor());
+      let constant_val = decode_constant_val(inner.get_obj(0), cache);
+      let kind = match inner.get_num_8(0) {
         0 => QuotKind::Type,
         1 => QuotKind::Ctor,
         2 => QuotKind::Lift,
         3 => QuotKind::Ind,
-        _ => unreachable!(),
+        b => unreachable!("Invalid QuotKind byte: {b}"),
       };
       ConstantInfo::QuotInfo(QuotVal { cnst: constant_val, kind })
     },
     5 => {
-      let [constant_val, num_params, num_indices, all, ctors, num_nested] =
-        inner.objs::<6>();
-      let constant_val = decode_constant_val(constant_val, cache);
-      let num_params = Nat::from_obj(&num_params);
-      let num_indices = Nat::from_obj(&num_indices);
-      let all: Vec<_> = collect_list_borrowed(all.as_list())
+      let inner = LeanIxInductiveVal::from_ctor(inner_obj.as_ctor());
+      let constant_val = decode_constant_val(inner.get_obj(0), cache);
+      let num_params = Nat::from_obj(&inner.get_obj(1));
+      let num_indices = Nat::from_obj(&inner.get_obj(2));
+      let all: Vec<_> = collect_list_borrowed(inner.get_obj(3).as_list())
         .into_iter()
         .map(|o| decode_name(o, cache.global))
         .collect();
-      let ctors: Vec<_> = collect_list_borrowed(ctors.as_list())
+      let ctors: Vec<_> = collect_list_borrowed(inner.get_obj(4).as_list())
         .into_iter()
         .map(|o| decode_name(o, cache.global))
         .collect();
-      let num_nested = Nat::from_obj(&num_nested);
-      let inner_val = LeanIxInductiveVal(inner_obj);
-      let is_rec = inner_val.get_num_8(0) != 0;
-      let is_unsafe = inner_val.get_num_8(1) != 0;
-      let is_reflexive = inner_val.get_num_8(2) != 0;
+      let num_nested = Nat::from_obj(&inner.get_obj(5));
+      let is_rec = inner.get_num_8(0) != 0;
+      let is_unsafe = inner.get_num_8(1) != 0;
+      let is_reflexive = inner.get_num_8(2) != 0;
       ConstantInfo::InductInfo(InductiveVal {
         cnst: constant_val,
         num_params,
@@ -1047,14 +1007,13 @@ pub fn decode_constant_info(
       })
     },
     6 => {
-      let [constant_val, induct, cidx, num_params, num_fields, is_unsafe] =
-        inner.objs();
-      let constant_val = decode_constant_val(constant_val, cache);
-      let induct = decode_name(induct, cache.global);
-      let cidx = Nat::from_obj(&cidx);
-      let num_params = Nat::from_obj(&num_params);
-      let num_fields = Nat::from_obj(&num_fields);
-      let is_unsafe = is_unsafe.as_raw() as usize == 1;
+      let inner = LeanIxConstructorVal::from_ctor(inner_obj.as_ctor());
+      let constant_val = decode_constant_val(inner.get_obj(0), cache);
+      let induct = decode_name(inner.get_obj(1), cache.global);
+      let cidx = Nat::from_obj(&inner.get_obj(2));
+      let num_params = Nat::from_obj(&inner.get_obj(3));
+      let num_fields = Nat::from_obj(&inner.get_obj(4));
+      let is_unsafe = inner.get_num_8(0) != 0;
       ConstantInfo::CtorInfo(ConstructorVal {
         cnst: constant_val,
         induct,
@@ -1065,31 +1024,22 @@ pub fn decode_constant_info(
       })
     },
     7 => {
-      let [
-        constant_val,
-        all,
-        num_params,
-        num_indices,
-        num_motives,
-        num_minors,
-        rules,
-      ] = inner.objs::<7>();
-      let constant_val = decode_constant_val(constant_val, cache);
-      let all: Vec<_> = collect_list_borrowed(all.as_list())
+      let inner = LeanIxRecursorVal::from_ctor(inner_obj.as_ctor());
+      let constant_val = decode_constant_val(inner.get_obj(0), cache);
+      let all: Vec<_> = collect_list_borrowed(inner.get_obj(1).as_list())
         .into_iter()
         .map(|o| decode_name(o, cache.global))
         .collect();
-      let num_params = Nat::from_obj(&num_params);
-      let num_indices = Nat::from_obj(&num_indices);
-      let num_motives = Nat::from_obj(&num_motives);
-      let num_minors = Nat::from_obj(&num_minors);
-      let rules: Vec<_> = collect_list_borrowed(rules.as_list())
+      let num_params = Nat::from_obj(&inner.get_obj(2));
+      let num_indices = Nat::from_obj(&inner.get_obj(3));
+      let num_motives = Nat::from_obj(&inner.get_obj(4));
+      let num_minors = Nat::from_obj(&inner.get_obj(5));
+      let rules: Vec<_> = collect_list_borrowed(inner.get_obj(6).as_list())
         .into_iter()
         .map(|o| decode_recursor_rule(o, cache))
         .collect();
-      let inner_val = LeanIxRecursorVal(inner_obj);
-      let k = inner_val.get_num_8(0) != 0;
-      let is_unsafe = inner_val.get_num_8(1) != 0;
+      let k = inner.get_num_8(0) != 0;
+      let is_unsafe = inner.get_num_8(1) != 0;
       ConstantInfo::RecInfo(RecursorVal {
         cnst: constant_val,
         all,
@@ -1102,7 +1052,7 @@ pub fn decode_constant_info(
         is_unsafe,
       })
     },
-    _ => unreachable!(),
+    tag => unreachable!("Invalid Lean.ConstantInfo tag: {tag}"),
   }
 }
 
@@ -1112,10 +1062,11 @@ fn decode_name_constant_info(
   global: &GlobalCache,
 ) -> (Name, ConstantInfo) {
   let mut cache = Cache::new(global);
-  let ctor = obj.as_ctor();
-  let [name_obj, constant_info] = ctor.objs();
-  let name = decode_name(name_obj, global);
-  let constant_info = decode_constant_info(constant_info, &mut cache);
+  // Outer Prod (Name × ConstantInfo) has no public LeanProd<LeanBorrowed>
+  // constructor, so read the two fields through the raw ctor.
+  let pair = obj.as_ctor();
+  let name = decode_name(pair.get(0), global);
+  let constant_info = decode_constant_info(pair.get(1), &mut cache);
   (name, constant_info)
 }
 

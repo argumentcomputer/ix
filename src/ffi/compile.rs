@@ -32,8 +32,8 @@ use crate::lean::{
 use lean_ffi::nat::Nat;
 use lean_ffi::object::LeanIOResult;
 use lean_ffi::object::{
-  LeanArray, LeanBorrowed, LeanByteArray, LeanCtor, LeanExcept, LeanList,
-  LeanOwned, LeanProd, LeanRef, LeanString,
+  LeanArray, LeanBorrowed, LeanByteArray, LeanExcept, LeanList, LeanOwned,
+  LeanProd, LeanRef, LeanString,
 };
 
 use crate::ffi::builder::LeanBuildCache;
@@ -106,10 +106,9 @@ fn build_raw_comm(addr: &Address, comm: &Comm) -> LeanIxonRawComm<LeanOwned> {
 pub extern "C" fn rs_roundtrip_rust_condensed_blocks(
   obj: LeanIxCondensedBlocks<LeanBorrowed<'_>>,
 ) -> LeanIxCondensedBlocks<LeanOwned> {
-  let ctor = obj.as_ctor();
-  let low_links = ctor.get(0).to_owned_ref();
-  let blocks = ctor.get(1).to_owned_ref();
-  let block_refs = ctor.get(2).to_owned_ref();
+  let low_links = obj.get_obj(0).to_owned_ref();
+  let blocks = obj.get_obj(1).to_owned_ref();
+  let block_refs = obj.get_obj(2).to_owned_ref();
 
   let result = LeanIxCondensedBlocks::alloc(0);
   result.set_obj(0, low_links);
@@ -124,10 +123,9 @@ pub extern "C" fn rs_roundtrip_rust_condensed_blocks(
 pub extern "C" fn rs_roundtrip_rust_compile_phases(
   obj: LeanIxCompilePhases<LeanBorrowed<'_>>,
 ) -> LeanIxCompilePhases<LeanOwned> {
-  let ctor = obj.as_ctor();
-  let raw_env = ctor.get(0).to_owned_ref();
-  let condensed = ctor.get(1).to_owned_ref();
-  let compile_env = ctor.get(2).to_owned_ref();
+  let raw_env = obj.get_obj(0).to_owned_ref();
+  let condensed = obj.get_obj(1).to_owned_ref();
+  let compile_env = obj.get_obj(2).to_owned_ref();
 
   let result = LeanIxCompilePhases::alloc(0);
   result.set_obj(0, raw_env);
@@ -150,8 +148,7 @@ pub extern "C" fn rs_roundtrip_block_compare_result(
   if obj.inner().is_scalar() {
     return LeanIxBlockCompareResult::new(obj.inner().to_owned_ref());
   }
-  let ctor = obj.as_ctor();
-  match ctor.tag() {
+  match obj.as_ctor().tag() {
     1 => {
       // mismatch: 0 obj, 24 scalar bytes (3 × u64)
       let lean_size = obj.get_num_64(0);
@@ -164,7 +161,7 @@ pub extern "C" fn rs_roundtrip_block_compare_result(
       out.set_num_64(2, first_diff);
       out
     },
-    _ => unreachable!("Invalid BlockCompareResult tag: {}", ctor.tag()),
+    tag => unreachable!("Invalid BlockCompareResult tag: {tag}"),
   }
 }
 
@@ -622,12 +619,7 @@ pub extern "C" fn rs_leon_hashes(
   for (i, (name, ci)) in rust_env.iter().enumerate() {
     let name_obj = LeanIxName::build(&mut cache, name);
     let addr_obj = LeanIxAddress::build_from_hash(&ci.get_hash());
-
-    // (Ix.Name × Ix.Address) pair — tag 0 ctor with 2 object fields.
-    let pair = LeanCtor::alloc(0, 2, 0);
-    pair.set(0, name_obj);
-    pair.set(1, addr_obj);
-    arr.set(i, pair);
+    arr.set(i, LeanProd::new(name_obj, addr_obj));
   }
   LeanIOResult::ok(arr)
 }
@@ -1220,10 +1212,9 @@ impl<R: LeanRef> LeanIxSerializeError<R> {
       assert_eq!(tag, 5, "Invalid scalar SerializeError tag: {}", tag);
       return SerializeError::AddressError;
     }
-    let ctor = self.as_ctor();
-    match ctor.tag() {
+    match self.as_ctor().tag() {
       0 => {
-        let expected = ctor.get(0).as_string().to_string();
+        let expected = self.get_obj(0).as_string().to_string();
         SerializeError::UnexpectedEof { expected }
       },
       1 => {
@@ -1254,19 +1245,13 @@ impl<R: LeanRef> LeanIxSerializeError<R> {
         let idx = self.get_num_64(0);
         SerializeError::InvalidShareIndex { idx, max }
       },
-      _ => unreachable!("Invalid SerializeError tag: {}", ctor.tag()),
+      tag => unreachable!("Invalid SerializeError tag: {tag}"),
     }
   }
 }
 
 impl LeanIxDecompileError<LeanOwned> {
   /// Build a Lean DecompileError from a Rust DecompileError.
-  ///
-  /// Layout for index variants (tags 0–4):
-  ///   `(idx : UInt64) (len/max : Nat) (constant : String)`
-  ///   → 2 object fields (Nat, String) + 8 scalar bytes (UInt64)
-  ///   → `lean_alloc_ctor(tag, 2, 8)`
-  ///   → obj[0] = Nat, obj[1] = String, scalar[0] = UInt64
   pub fn build(err: &DecompileError) -> Self {
     match err {
       DecompileError::InvalidRefIndex { idx, refs_len, constant } => {
@@ -1342,8 +1327,7 @@ impl LeanIxDecompileError<LeanOwned> {
 impl<R: LeanRef> LeanIxDecompileError<R> {
   /// Decode a Lean DecompileError to a Rust DecompileError.
   pub fn decode(&self) -> DecompileError {
-    let ctor = self.as_ctor();
-    match ctor.tag() {
+    match self.as_ctor().tag() {
       0 => {
         let refs_len = Nat::from_obj(&self.get_obj(0))
           .to_u64()
@@ -1390,28 +1374,29 @@ impl<R: LeanRef> LeanIxDecompileError<R> {
         DecompileError::InvalidUnivVarIndex { idx, max, constant }
       },
       5 => DecompileError::MissingAddress(
-        LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array()).decode(),
+        LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array()).decode(),
       ),
       6 => DecompileError::MissingMetadata(
-        LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array()).decode(),
+        LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array()).decode(),
       ),
       7 => DecompileError::BlobNotFound(
-        LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array()).decode(),
+        LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array()).decode(),
       ),
       8 => {
         let addr =
-          LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array()).decode();
-        let expected = ctor.get(1).as_string().to_string();
+          LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array())
+            .decode();
+        let expected = self.get_obj(1).as_string().to_string();
         DecompileError::BadBlobFormat { addr, expected }
       },
       9 => {
-        let msg = ctor.get(0).as_string().to_string();
+        let msg = self.get_obj(0).as_string().to_string();
         DecompileError::BadConstantFormat { msg }
       },
-      10 => {
-        DecompileError::Serialize(LeanIxSerializeError(ctor.get(0)).decode())
-      },
-      _ => unreachable!("Invalid DecompileError tag: {}", ctor.tag()),
+      10 => DecompileError::Serialize(
+        LeanIxSerializeError(self.get_obj(0)).decode(),
+      ),
+      tag => unreachable!("Invalid DecompileError tag: {tag}"),
     }
   }
 }
@@ -1466,33 +1451,34 @@ impl LeanIxCompileError<LeanOwned> {
 impl<R: LeanRef> LeanIxCompileError<R> {
   /// Decode a Lean CompileError to a Rust CompileError.
   pub fn decode(&self) -> CompileError {
-    let ctor = self.as_ctor();
-    match ctor.tag() {
+    match self.as_ctor().tag() {
       0 => {
-        let name = ctor.get(0).as_string().to_string();
+        let name = self.get_obj(0).as_string().to_string();
         CompileError::MissingConstant {
           name,
           caller: "ffi:decode_compile_error".into(),
         }
       },
       1 => CompileError::MissingAddress(
-        LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array()).decode(),
+        LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array()).decode(),
       ),
       2 => {
-        let reason = ctor.get(0).as_string().to_string();
+        let reason = self.get_obj(0).as_string().to_string();
         CompileError::InvalidMutualBlock { reason }
       },
       3 => {
-        let desc = ctor.get(0).as_string().to_string();
+        let desc = self.get_obj(0).as_string().to_string();
         CompileError::UnsupportedExpr { desc }
       },
       4 => {
-        let curr = ctor.get(0).as_string().to_string();
-        let param = ctor.get(1).as_string().to_string();
+        let curr = self.get_obj(0).as_string().to_string();
+        let param = self.get_obj(1).as_string().to_string();
         CompileError::UnknownUnivParam { curr, param }
       },
-      5 => CompileError::Serialize(LeanIxSerializeError(ctor.get(0)).decode()),
-      _ => unreachable!("Invalid CompileError tag: {}", ctor.tag()),
+      5 => {
+        CompileError::Serialize(LeanIxSerializeError(self.get_obj(0)).decode())
+      },
+      tag => unreachable!("Invalid CompileError tag: {tag}"),
     }
   }
 }

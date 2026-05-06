@@ -1,0 +1,31 @@
+{
+   mimalloc-prim-mem-init-uninit-cond
+   Memcheck:Cond
+   fun:_mi_strnlen
+   fun:_mi_strnstr
+   fun:_mi_prim_mem_init
+   fun:mi_process_init
+   ...
+}
+
+{
+   mimalloc-prim-mem-init-uninit-value8
+   Memcheck:Value8
+   fun:_mi_strnlen
+   fun:_mi_strnstr
+   fun:_mi_prim_mem_init
+   fun:mi_process_init
+   ...
+}
+
+{
+   glibc-pthread-create-tls-dtv
+   Memcheck:Leak
+   match-leak-kinds: possible
+   fun:calloc
+   fun:allocate_dtv
+   fun:_dl_allocate_tls
+   ...
+   fun:pthread_create*
+   ...
+}

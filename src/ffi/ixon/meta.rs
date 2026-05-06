@@ -16,7 +16,7 @@ use crate::lean::{
   LeanIxonNamed,
 };
 use lean_ffi::object::{
-  LeanArray, LeanBorrowed, LeanCtor, LeanOwned, LeanProd, LeanRef,
+  LeanArray, LeanBorrowed, LeanOption, LeanOwned, LeanProd, LeanRef,
 };
 
 use crate::lean::LeanIxAddress;
@@ -133,28 +133,27 @@ impl LeanIxonDataValue<LeanOwned> {
 impl<R: LeanRef> LeanIxonDataValue<R> {
   /// Decode Ixon.DataValue.
   pub fn decode(&self) -> IxonDataValue {
-    let ctor = self.as_ctor();
-    match ctor.tag() {
+    match self.as_ctor().tag() {
       0 => IxonDataValue::OfString(
-        LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array()).decode(),
+        LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array()).decode(),
       ),
       1 => {
         let b = self.get_num_8(0) != 0;
         IxonDataValue::OfBool(b)
       },
       2 => IxonDataValue::OfName(
-        LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array()).decode(),
+        LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array()).decode(),
       ),
       3 => IxonDataValue::OfNat(
-        LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array()).decode(),
+        LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array()).decode(),
       ),
       4 => IxonDataValue::OfInt(
-        LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array()).decode(),
+        LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array()).decode(),
       ),
       5 => IxonDataValue::OfSyntax(
-        LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array()).decode(),
+        LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array()).decode(),
       ),
-      tag => panic!("Invalid Ixon.DataValue tag: {}", tag),
+      tag => panic!("Invalid Ixon.DataValue tag: {tag}"),
     }
   }
 }
@@ -243,8 +242,7 @@ impl<R: LeanRef> LeanIxonExprMetaData<R> {
       assert_eq!(tag, 0, "Invalid scalar ExprMetaData tag: {}", tag);
       return ExprMetaData::Leaf;
     }
-    let ctor = self.as_ctor();
-    match ctor.tag() {
+    match self.as_ctor().tag() {
       1 => {
         // app: 0 obj fields, 2× u64 scalar
         let fun_ = self.get_num_64(0);
@@ -287,7 +285,7 @@ impl<R: LeanRef> LeanIxonExprMetaData<R> {
       4 => {
         // ref: 1 obj field (name), 0 scalar
         ExprMetaData::Ref {
-          name: LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array())
+          name: LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array())
             .decode(),
         }
       },
@@ -481,8 +479,7 @@ impl<R: LeanRef> LeanIxonConstantMeta<R> {
       assert_eq!(tag, 0, "Invalid scalar ConstantMeta tag: {}", tag);
       return ConstantMeta::default();
     }
-    let ctor = self.as_ctor();
-    match ctor.tag() {
+    match self.as_ctor().tag() {
       1 => {
         // defn: 6 obj fields, 2× u64 scalar
         let name =
@@ -616,7 +613,7 @@ impl<R: LeanRef> LeanIxonConstantMeta<R> {
         // muts: 1 obj field (Array (Array Address)), 0 scalar.
         // The Rust-only `aux_layout` sidecar is not represented on the
         // Lean side, so FFI decode defaults it to `None`.
-        let outer = ctor.get(0).as_array();
+        let outer = self.get_obj(0).as_array();
         let mut all = Vec::with_capacity(outer.len());
         for i in 0..outer.len() {
           all.push(decode_address_array(outer.get(i).as_array()));
@@ -636,65 +633,43 @@ impl<R: LeanRef> LeanIxonConstantMeta<R> {
 impl LeanIxonNamed<LeanOwned> {
   /// Build Ixon.Named { addr, constMeta, original }.
   ///
-  /// The Lean structure (see `Ix/Ixon.lean` `structure Named`) has three
-  /// fields: the constant's address, its typed metadata, and an optional
-  /// pre-aux_gen original form used by the decompile path for roundtrip
-  /// fidelity. We must match that 3-slot layout exactly — allocating a
-  /// 2-slot ctor causes Lean-side reads of slot 2 to walk past the
-  /// constructor and SIGSEGV. See the FFI roundtrip test
-  /// `Ixon.Named roundtrip` in `Tests/FFI/Ixon.lean`.
-  ///
-  /// The `original` slot encodes `Option (Address × ConstantMeta)` using
-  /// Lean's boxed-tagged-union convention:
-  ///   `none`        → tag 0, 0 fields
-  ///   `some (a, m)` → tag 1, 1 field (a `Prod`: tag 0, 2 fields)
+  /// The third field encodes `Option (Address × ConstantMeta)` for
+  /// pre-aux_gen roundtrip fidelity (see `Ix/Ixon.lean` `structure Named`).
+  /// Regression test: `Ixon.Named roundtrip` in `Tests/FFI/Ixon.lean`.
   pub fn build(
     addr: &Address,
     meta: &ConstantMeta,
     original: &Option<(Address, ConstantMeta)>,
   ) -> Self {
-    let addr_obj = LeanIxAddress::build(addr);
-    let meta_obj = LeanIxonConstantMeta::build(meta);
     let original_obj: LeanOwned = match original {
-      None => {
-        // `Option.none` — zero-field ctor with tag 0.
-        LeanCtor::alloc(0, 0, 0).into()
-      },
+      None => LeanOption::none().into(),
       Some((orig_addr, orig_meta)) => {
-        // Build the inner pair `(orig_addr, orig_meta) : Address × ConstantMeta`.
-        let pair = LeanCtor::alloc(0, 2, 0);
-        pair.set(0, LeanIxAddress::build(orig_addr));
-        pair.set(1, LeanIxonConstantMeta::build(orig_meta));
-        // Wrap in `Option.some` — tag 1, one field.
-        let some_ctor = LeanCtor::alloc(1, 1, 0);
-        some_ctor.set(0, pair);
-        some_ctor.into()
+        let pair = LeanProd::new(
+          LeanIxAddress::build(orig_addr),
+          LeanIxonConstantMeta::build(orig_meta),
+        );
+        LeanOption::some(pair).into()
       },
     };
-    let ctor = LeanCtor::alloc(0, 3, 0);
-    ctor.set(0, addr_obj);
-    ctor.set(1, meta_obj);
-    ctor.set(2, original_obj);
-    Self::new(ctor.into())
+    let ctor = LeanIxonNamed::alloc(0);
+    ctor.set_obj(0, LeanIxAddress::build(addr));
+    ctor.set_obj(1, LeanIxonConstantMeta::build(meta));
+    ctor.set_obj(2, original_obj);
+    ctor
   }
 }
 
 impl<R: LeanRef> LeanIxonNamed<R> {
-  /// Decode Ixon.Named.
-  ///
-  /// Mirrors `build`: reads three slots. The third slot is an
-  /// `Option (Address × ConstantMeta)` which Lean may represent either as
-  /// a scalar-optimized `Option.none` or as a boxed tagged ctor. We handle
-  /// both by checking `is_scalar()` before calling `as_ctor()`.
+  /// Decode Ixon.Named. The `original` field may be a scalar-optimized
+  /// `Option.none` or a boxed tag-1 ctor wrapping a `Prod`.
   pub fn decode(&self) -> Named {
-    let ctor = self.as_ctor();
     let addr =
-      LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array()).decode();
-    let meta = LeanIxonConstantMeta::new(ctor.get(1).to_owned_ref()).decode();
-    let original_obj = ctor.get(2);
+      LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array()).decode();
+    let meta =
+      LeanIxonConstantMeta::new(self.get_obj(1).to_owned_ref()).decode();
+    let original_obj = self.get_obj(2);
     let original: Option<(Address, ConstantMeta)> = if original_obj.is_scalar()
     {
-      // Scalar-optimized `Option.none`.
       None
     } else {
       let opt = original_obj.as_ctor();
@@ -728,11 +703,10 @@ impl LeanIxonComm<LeanOwned> {
 impl<R: LeanRef> LeanIxonComm<R> {
   /// Decode Ixon.Comm.
   pub fn decode(&self) -> Comm {
-    let ctor = self.as_ctor();
     Comm {
-      secret: LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array())
+      secret: LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array())
         .decode(),
-      payload: LeanIxAddress::from_borrowed(ctor.get(1).as_byte_array())
+      payload: LeanIxAddress::from_borrowed(self.get_obj(1).as_byte_array())
         .decode(),
     }
   }
