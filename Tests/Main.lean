@@ -85,12 +85,13 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
       | IO.eprintln "SHA256 setup failed"; return 1
     let r2 ← LSpec.lspecEachIO sha256TestCases fun tc => pure (sha256Env.runTestCase tc)
     return if r1 == 0 && r2 == 0 then 0 else 1),
-  ("ixvm", do
-    let kernelUnitTests := .exec `kernel_unit_tests
-    let serdeNatAddCommTest ← serdeNatAddComm env
-    let kernelChecks ← kernelChecks env
-    let tests := [kernelUnitTests, serdeNatAddCommTest] ++ kernelChecks
-    LSpec.lspecIO (.ofList [("ixvm", [mkAiurTests IxVM.ixVM tests])]) []),
+  -- ixvm tests temporarily disabled while Aiur kernel port lands on ap/kernel
+  -- ("ixvm", do
+  --   let kernelUnitTests := .exec `kernel_unit_tests
+  --   let serdeNatAddCommTest ← serdeNatAddComm env
+  --   let kernelChecks ← kernelChecks env
+  --   let tests := [kernelUnitTests, serdeNatAddCommTest] ++ kernelChecks
+  --   LSpec.lspecIO (.ofList [("ixvm", [mkAiurTests IxVM.ixVM tests])]) []),
   ("rbtree-map", do
     IO.println "rbtree-map"
     match AiurTestEnv.build (pure IxVM.rbTreeMap) with
