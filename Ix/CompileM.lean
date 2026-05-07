@@ -1564,7 +1564,7 @@ def compileEnv (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (dbg : Bool 
       -- If there are projections, store them and map names to projection addresses
       if result.projections.isEmpty then
         -- No projections: map lowlink name directly to block
-        compileEnv := { compileEnv with nameToNamed := compileEnv.nameToNamed.insert lo ⟨blockAddr, result.blockMeta⟩ }
+        compileEnv := { compileEnv with nameToNamed := compileEnv.nameToNamed.insert lo { addr := blockAddr, constMeta := result.blockMeta } }
       else
         -- Store each projection and map name to projection address
         for (name, proj, constMeta) in result.projections do
@@ -1573,7 +1573,7 @@ def compileEnv (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (dbg : Bool 
           compileEnv := { compileEnv with
             totalBytes := compileEnv.totalBytes + projBytes.size
             constants := compileEnv.constants.insert projAddr proj
-            nameToNamed := compileEnv.nameToNamed.insert name ⟨projAddr, constMeta⟩
+            nameToNamed := compileEnv.nameToNamed.insert name { addr := projAddr, constMeta }
           }
 
       -- Decrement dep counts for blocks that depend on constants in this block
@@ -1868,7 +1868,7 @@ def compileEnvParallel (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
         -- Store projections and update nameToNamed
         for (name, proj, addr, constMeta) in result.projections do
           constants := constants.insert addr proj
-          nameToNamed := nameToNamed.insert name ⟨addr, constMeta⟩
+          nameToNamed := nameToNamed.insert name { addr, constMeta }
         -- Store blobs and names
         blobs := result.blobs.fold (fun m k v => m.insert k v) blobs
         blockNames := result.names.fold (fun m k v => m.insert k v) blockNames
@@ -1924,6 +1924,18 @@ def compileEnvParallel (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
 @[extern "rs_compile_env"]
 opaque rsCompileEnvBytesFFI : @& List (Lean.Name × Lean.ConstantInfo) → IO ByteArray
 
+/-- FFI: 8-phase validation of the aux_gen compile pipeline (compile +
+    decompile + roundtrip + alpha-equivalence + nested-detect checks).
+    Returns total failure count across all phases.
+
+    Shared between the `ix validate` CLI subcommand (`Ix.Cli.ValidateCmd`)
+    and the `validate-aux` test runner (`Tests.Ix.Compile.ValidateAux`).
+    The underlying Rust function is `rs_compile_validate_aux` in
+    `src/ffi/lean_env.rs`. -/
+@[extern "rs_compile_validate_aux"]
+opaque rsCompileValidateAuxFFI
+  : @& List (Lean.Name × Lean.ConstantInfo) → USize
+
 /-- Compile a Lean environment to Ixon.Env bytes using the Rust compiler. -/
 def rsCompileEnvBytes (leanEnv : Lean.Environment) : IO ByteArray := do
   let constList := leanEnv.constants.toList
@@ -1935,6 +1947,18 @@ export Ixon (RawConst RawNamed RawBlob RawComm RawEnv)
 /-- FFI: Compile a Lean environment to RawEnv (structured Lean objects) using Rust. -/
 @[extern "rs_compile_env_to_ixon"]
 opaque rsCompileEnvFFI : @& List (Lean.Name × Lean.ConstantInfo) → IO Ixon.RawEnv
+
+/-- FFI: Compute the LEON content hash of every constant in a Lean
+    environment. Returns `(Ix.Name, Ix.Address)` pairs where the address
+    is the 32-byte Blake3 digest produced by `ConstantInfo::get_hash()`
+    in `src/ix/env.rs`. This is the addressing scheme under which
+    `orig_kenv` stores KIds in the kernel — two constants with the same
+    Lean name but different content get distinct addresses. Used by
+    `Tests.Ix.Kernel.BuildPrimOrigs` to regenerate `PrimOrigAddrs` in
+    the Rust kernel. -/
+@[extern "rs_leon_hashes"]
+opaque rsLeonHashesFFI
+  : @& List (Lean.Name × Lean.ConstantInfo) → IO (Array (Ix.Name × Address))
 
 /-! ## Combined Compile Phases FFI -/
 

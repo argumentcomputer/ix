@@ -498,13 +498,13 @@ def getNameAddr : ConstantMeta → Option Address
   | .defn name .. => some name | .axio name .. => some name
   | .quot name .. => some name | .indc name .. => some name
   | .ctor name .. => some name | .recr name .. => some name
-  | .empty => none
+  | .empty | .muts _ => none
 
 def getLvlAddrs : ConstantMeta → Array Address
   | .defn _ lvls .. => lvls | .axio _ lvls .. => lvls
   | .quot _ lvls .. => lvls | .indc _ lvls .. => lvls
   | .ctor _ lvls .. => lvls | .recr _ lvls .. => lvls
-  | .empty => #[]
+  | .empty | .muts _ => #[]
 
 def getArenaAndTypeRoot : ConstantMeta → ExprMetaArena × UInt64
   | .defn _ _ _ _ _ arena typeRoot _ => (arena, typeRoot)
@@ -513,7 +513,7 @@ def getArenaAndTypeRoot : ConstantMeta → ExprMetaArena × UInt64
   | .indc _ _ _ _ _ arena typeRoot => (arena, typeRoot)
   | .ctor _ _ _ arena typeRoot => (arena, typeRoot)
   | .recr _ _ _ _ _ arena typeRoot _ => (arena, typeRoot)
-  | .empty => ({}, 0)
+  | .empty | .muts _ => ({}, 0)
 
 def getAllAddrs : ConstantMeta → Array Address
   | .defn _ _ _ all .. => all | .indc _ _ _ all .. => all

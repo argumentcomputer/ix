@@ -72,7 +72,8 @@ end FFI
 @[default_target]
 lean_lib Ix where
   moreLinkObjs := #[ix_rs]
-  precompileModules := true
+  -- disabled because it breaks the binary
+  --precompileModules := true
 
 lean_exe ix where
   root := `Main

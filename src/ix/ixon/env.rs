@@ -16,16 +16,45 @@ pub struct Named {
   pub addr: Address,
   /// Typed metadata for this constant (includes mutual context in `all` field)
   pub meta: ConstantMeta,
+  /// For aux_gen-rewritten constants: the original Lean constant's compiled
+  /// form (address + metadata). Ingress uses `addr`/`meta` (the canonical
+  /// aux_gen form). Decompile uses `original` for faithful roundtrip of
+  /// binder names and other cosmetic metadata.
+  pub original: Option<(Address, ConstantMeta)>,
 }
 
 impl Named {
   pub fn new(addr: Address, meta: ConstantMeta) -> Self {
-    Named { addr, meta }
+    Named { addr, meta, original: None }
   }
 
   pub fn with_addr(addr: Address) -> Self {
-    Named { addr, meta: ConstantMeta::default() }
+    Named { addr, meta: ConstantMeta::default(), original: None }
   }
+}
+
+/// Nested-auxiliary layout info for a mutual inductive block.
+///
+/// Paired perm + source_ctor_counts so consumers have everything needed to
+/// correctly permute source-order aux motives/minors into canonical
+/// positions. Both arrays have one entry per source-walk-discovered aux.
+///
+/// This lives in `ixon::env` (not `compile::surgery`, where it originated)
+/// so it can be persisted into the serialized Ixon environment as a
+/// side-table on [`Env::aux_layouts`]. The surgery layer re-exports it.
+///
+/// Keyed by `<source_all[0]>` — the first inductive in the Lean source's
+/// mutual block, which is what Lean hangs `.rec_N` / `.below_N` /
+/// `.brecOn_N` names off.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AuxLayout {
+  /// `perm[source_j] = canonical_i`: Lean's source-walk position to
+  /// our canonical hash-sorted position.
+  pub perm: Vec<usize>,
+  /// Number of constructors for the aux inductive at source position j.
+  /// Same count regardless of which position the aux ends up at
+  /// canonically (it's a property of the external nested inductive).
+  pub source_ctor_counts: Vec<usize>,
 }
 
 /// The Ixon environment.
@@ -36,7 +65,6 @@ impl Named {
 /// - `blobs`: Raw data (strings, nats, files)
 /// - `names`: Hash-consed Lean.Name components (Address -> Name)
 /// - `comms`: Cryptographic commitments (secrets)
-/// - `addr_to_name`: Reverse index from constant address to name (for O(1) lookup)
 #[derive(Debug, Default)]
 pub struct Env {
   /// Alpha-invariant constants: Address -> Constant
@@ -49,8 +77,6 @@ pub struct Env {
   pub names: DashMap<Address, Name>,
   /// Cryptographic commitments: commitment Address -> Comm
   pub comms: DashMap<Address, Comm>,
-  /// Reverse index: constant Address -> Name (for fast lookup during decompile)
-  pub addr_to_name: DashMap<Address, Name>,
 }
 
 impl Env {
@@ -61,7 +87,6 @@ impl Env {
       blobs: DashMap::new(),
       names: DashMap::new(),
       comms: DashMap::new(),
-      addr_to_name: DashMap::new(),
     }
   }
 
@@ -90,24 +115,12 @@ impl Env {
 
   /// Register a named constant.
   pub fn register_name(&self, name: Name, named: Named) {
-    // Also insert into reverse index for O(1) lookup by address
-    self.addr_to_name.insert(named.addr.clone(), name.clone());
     self.named.insert(name, named);
   }
 
   /// Look up a name.
   pub fn lookup_name(&self, name: &Name) -> Option<Named> {
     self.named.get(name).map(|r| r.clone())
-  }
-
-  /// Look up name by constant address (O(1) using reverse index).
-  pub fn get_name_by_addr(&self, addr: &Address) -> Option<Name> {
-    self.addr_to_name.get(addr).map(|r| r.clone())
-  }
-
-  /// Look up named entry by constant address (O(1) using reverse index).
-  pub fn get_named_by_addr(&self, addr: &Address) -> Option<Named> {
-    self.get_name_by_addr(addr).and_then(|name| self.lookup_name(&name))
   }
 
   /// Store a hash-consed name component.
@@ -183,12 +196,7 @@ impl Clone for Env {
       comms.insert(entry.key().clone(), entry.value().clone());
     }
 
-    let addr_to_name = DashMap::new();
-    for entry in self.addr_to_name.iter() {
-      addr_to_name.insert(entry.key().clone(), entry.value().clone());
-    }
-
-    Env { consts, named, blobs, names, comms, addr_to_name }
+    Env { consts, named, blobs, names, comms }
   }
 }
 
@@ -241,28 +249,6 @@ mod tests {
     let named = Named::with_addr(addr.clone());
     env.register_name(name.clone(), named.clone());
     let got = env.lookup_name(&name).unwrap();
-    assert_eq!(got.addr, addr);
-  }
-
-  #[test]
-  fn get_name_by_addr_reverse_index() {
-    let env = Env::new();
-    let name = n("Reverse");
-    let addr = Address::hash(b"reverse-addr");
-    let named = Named::with_addr(addr.clone());
-    env.register_name(name.clone(), named);
-    let got_name = env.get_name_by_addr(&addr).unwrap();
-    assert_eq!(got_name, name);
-  }
-
-  #[test]
-  fn get_named_by_addr_resolves_through_reverse_index() {
-    let env = Env::new();
-    let name = n("Through");
-    let addr = Address::hash(b"through-addr");
-    let named = Named::with_addr(addr.clone());
-    env.register_name(name.clone(), named);
-    let got = env.get_named_by_addr(&addr).unwrap();
     assert_eq!(got.addr, addr);
   }
 
@@ -322,8 +308,7 @@ mod tests {
     assert!(env.get_blob(&missing).is_none());
     assert!(env.get_const(&missing).is_none());
     assert!(env.lookup_name(&n("missing")).is_none());
-    assert!(env.get_name_by_addr(&missing).is_none());
-    assert!(env.get_named_by_addr(&missing).is_none());
+    // addr_to_name reverse index was removed (unsound for alpha-equivalent constants)
     assert!(env.get_name(&missing).is_none());
     assert!(env.get_comm(&missing).is_none());
   }

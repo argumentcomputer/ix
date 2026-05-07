@@ -52,8 +52,9 @@ impl std::error::Error for SerializeError {}
 /// Variant order matches Lean constructor tags (0–5).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CompileError {
-  /// Referenced constant not found (tag 0)
-  MissingConstant { name: String },
+  /// Referenced constant not found (tag 0).
+  /// `caller` identifies which compilation step triggered the lookup.
+  MissingConstant { name: String, caller: String },
   /// Address not found in store (tag 1)
   MissingAddress(Address),
   /// Invalid mutual block structure (tag 2)
@@ -69,7 +70,9 @@ pub enum CompileError {
 impl std::fmt::Display for CompileError {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
-      Self::MissingConstant { name } => write!(f, "missing constant: {name}"),
+      Self::MissingConstant { name, caller } => {
+        write!(f, "missing constant: {name} (from {caller})")
+      },
       Self::MissingAddress(addr) => write!(f, "missing address: {addr:?}"),
       Self::InvalidMutualBlock { reason } => {
         write!(f, "invalid mutual block: {reason}")

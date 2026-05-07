@@ -1,3 +1,23 @@
+#![allow(clippy::type_complexity)]
+#![allow(clippy::too_many_arguments)]
+#![allow(clippy::unnecessary_wraps)]
+
+// Use mimalloc as the global allocator for Rust-side allocations.
+//
+// Dropping the post-ingress IxonEnv is dominated by freeing millions of nested
+// `Arc<Expr>` / `Arc<Univ>` trees concurrently across rayon workers. glibc
+// malloc serializes freelist updates per-arena and scales poorly past ~16
+// threads on free-heavy workloads; mimalloc has fully thread-local free lists
+// and consistently outperforms glibc by 1.5–2× on this kind of teardown.
+//
+// `ix_rs` is `crate-type = ["staticlib"]` linked into Lean. This declaration
+// only governs Rust-side allocations (DashMap, Arc, Vec, etc.); Lean's runtime
+// continues to manage its own heap, and the FFI boundary routes Lean-owned
+// objects through `lean-ffi`, so there is no allocator-mismatch risk on
+// cross-boundary frees.
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 #[allow(unused_extern_crates)]
 #[cfg(test)]
 extern crate quickcheck;

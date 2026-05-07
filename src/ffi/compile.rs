@@ -10,7 +10,9 @@
 use std::sync::Arc;
 
 use crate::ix::address::Address;
-use crate::ix::compile::{CompileState, compile_env};
+use crate::ix::compile::{
+  CompileOptions, CompileState, compile_env_with_options,
+};
 use crate::ix::condense::compute_sccs;
 use crate::ix::decompile::decompile_env;
 use crate::ix::env::Name;
@@ -33,9 +35,6 @@ use lean_ffi::object::{
   LeanArray, LeanBorrowed, LeanByteArray, LeanExcept, LeanList, LeanOwned,
   LeanProd, LeanRef, LeanString,
 };
-
-use dashmap::DashMap;
-use dashmap::DashSet;
 
 use crate::ffi::builder::LeanBuildCache;
 use crate::ffi::ixon::env::decoded_to_ixon_env;
@@ -107,10 +106,9 @@ fn build_raw_comm(addr: &Address, comm: &Comm) -> LeanIxonRawComm<LeanOwned> {
 pub extern "C" fn rs_roundtrip_rust_condensed_blocks(
   obj: LeanIxCondensedBlocks<LeanBorrowed<'_>>,
 ) -> LeanIxCondensedBlocks<LeanOwned> {
-  let ctor = obj.as_ctor();
-  let low_links = ctor.get(0).to_owned_ref();
-  let blocks = ctor.get(1).to_owned_ref();
-  let block_refs = ctor.get(2).to_owned_ref();
+  let low_links = obj.get_obj(0).to_owned_ref();
+  let blocks = obj.get_obj(1).to_owned_ref();
+  let block_refs = obj.get_obj(2).to_owned_ref();
 
   let result = LeanIxCondensedBlocks::alloc(0);
   result.set_obj(0, low_links);
@@ -125,10 +123,9 @@ pub extern "C" fn rs_roundtrip_rust_condensed_blocks(
 pub extern "C" fn rs_roundtrip_rust_compile_phases(
   obj: LeanIxCompilePhases<LeanBorrowed<'_>>,
 ) -> LeanIxCompilePhases<LeanOwned> {
-  let ctor = obj.as_ctor();
-  let raw_env = ctor.get(0).to_owned_ref();
-  let condensed = ctor.get(1).to_owned_ref();
-  let compile_env = ctor.get(2).to_owned_ref();
+  let raw_env = obj.get_obj(0).to_owned_ref();
+  let condensed = obj.get_obj(1).to_owned_ref();
+  let compile_env = obj.get_obj(2).to_owned_ref();
 
   let result = LeanIxCompilePhases::alloc(0);
   result.set_obj(0, raw_env);
@@ -151,8 +148,7 @@ pub extern "C" fn rs_roundtrip_block_compare_result(
   if obj.inner().is_scalar() {
     return LeanIxBlockCompareResult::new(obj.inner().to_owned_ref());
   }
-  let ctor = obj.as_ctor();
-  match ctor.tag() {
+  match obj.as_ctor().tag() {
     1 => {
       // mismatch: 0 obj, 24 scalar bytes (3 × u64)
       let lean_size = obj.get_num_64(0);
@@ -165,7 +161,7 @@ pub extern "C" fn rs_roundtrip_block_compare_result(
       out.set_num_64(2, first_diff);
       out
     },
-    _ => unreachable!("Invalid BlockCompareResult tag: {}", ctor.tag()),
+    tag => unreachable!("Invalid BlockCompareResult tag: {tag}"),
   }
 }
 
@@ -208,14 +204,15 @@ pub extern "C" fn rs_compile_env_full(
     let condensed = compute_sccs(&ref_graph.out_refs);
 
     // Phase 3: Compile
-    let compile_stt = match compile_env(&rust_env) {
-      Ok(stt) => stt,
-      Err(e) => {
-        let msg =
-          format!("rs_compile_env_full: Rust compilation failed: {:?}", e);
-        return LeanIOResult::error_string(&msg);
-      },
-    };
+    let compile_stt =
+      match compile_env_with_options(&rust_env, CompileOptions::default()) {
+        Ok(stt) => stt,
+        Err(e) => {
+          let msg =
+            format!("rs_compile_env_full: Rust compilation failed: {:?}", e);
+          return LeanIOResult::error_string(&msg);
+        },
+      };
 
     // Phase 4: Build Lean structures
     let mut cache = LeanBuildCache::with_capacity(env_len);
@@ -293,26 +290,92 @@ pub extern "C" fn rs_compile_env(
   env_consts_ptr: LeanList<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
   {
+    let quiet = std::env::var("IX_QUIET").is_ok();
     let rust_env = decode_env(env_consts_ptr);
     let rust_env = Arc::new(rust_env);
 
-    let compile_stt = match compile_env(&rust_env) {
-      Ok(stt) => stt,
-      Err(e) => {
-        let msg = format!("rs_compile_env: Rust compilation failed: {:?}", e);
-        return LeanIOResult::error_string(&msg);
-      },
-    };
+    let compile_stt =
+      match compile_env_with_options(&rust_env, CompileOptions::default()) {
+        Ok(stt) => stt,
+        Err(e) => {
+          let msg = format!("rs_compile_env: Rust compilation failed: {:?}", e);
+          return LeanIOResult::error_string(&msg);
+        },
+      };
 
     // Serialize the compiled Env to bytes
+    if !quiet {
+      eprintln!("[rs_compile_env] starting serialization");
+    }
+    let ser_start = std::time::Instant::now();
     let mut buf = Vec::new();
     if let Err(e) = compile_stt.env.put(&mut buf) {
       let msg = format!("rs_compile_env: Env serialization failed: {}", e);
       return LeanIOResult::error_string(&msg);
     }
+    if !quiet {
+      eprintln!(
+        "[rs_compile_env] serialization done in {:.1}s: {} bytes",
+        ser_start.elapsed().as_secs_f64(),
+        buf.len(),
+      );
+    }
 
     // Build Lean ByteArray
+    if !quiet {
+      eprintln!(
+        "[rs_compile_env] building Lean ByteArray ({} bytes)",
+        buf.len()
+      );
+    }
+    let ba_start = std::time::Instant::now();
     let ba = LeanByteArray::from_bytes(&buf);
+    if !quiet {
+      eprintln!(
+        "[rs_compile_env] ByteArray built in {:.1}s",
+        ba_start.elapsed().as_secs_f64(),
+      );
+    }
+
+    // Skip destructors on the CLI path. `rs_compile_env` is called from
+    // one-shot commands (lake exe ix compile, serve/connect init) where the
+    // process exits shortly after returning the ByteArray. Running ~millions
+    // of Arc<NameData> chain-drops serially across DashMap shards costs 70+
+    // seconds of wall time on Mathlib and accomplishes nothing — the OS
+    // reclaims the allocations instantly at process exit.
+    //
+    // Safety: `mem::forget` on `Arc<T>` leaks one strong refcount; the
+    // underlying allocation is never freed but also never accessed. The
+    // `LeanEnv` inside `rust_env` was decoded into owned Rust data (no
+    // borrow lifetimes from Lean), so there's no UB risk from leaking it.
+    //
+    // Escape hatch: set `IX_SKIP_DROPS=0` to run destructors (for tests
+    // that assert clean teardown; not used by any production path).
+    if std::env::var("IX_SKIP_DROPS").ok().as_deref() != Some("0") {
+      if !quiet {
+        eprintln!("[rs_compile_env] skipping destructors (IX_SKIP_DROPS)");
+      }
+      std::mem::forget(compile_stt);
+      std::mem::forget(rust_env);
+      std::mem::forget(buf);
+    } else {
+      if !quiet {
+        eprintln!("[rs_compile_env] running destructors (IX_SKIP_DROPS=0)");
+      }
+      let drop_start = std::time::Instant::now();
+      drop(buf);
+      drop(compile_stt);
+      drop(rust_env);
+      if !quiet {
+        eprintln!(
+          "[rs_compile_env] destructors done in {:.2}s",
+          drop_start.elapsed().as_secs_f64(),
+        );
+      }
+    }
+    if !quiet {
+      eprintln!("[rs_compile_env] returning ByteArray to Lean");
+    }
     LeanIOResult::ok(ba)
   }
 }
@@ -347,13 +410,14 @@ pub extern "C" fn rs_compile_phases(
 
     let condensed_obj = LeanIxCondensedBlocks::build(&mut cache, &condensed);
 
-    let compile_stt = match compile_env(&rust_env) {
-      Ok(stt) => stt,
-      Err(e) => {
-        let msg = format!("rs_compile_phases: compilation failed: {:?}", e);
-        return LeanIOResult::error_string(&msg);
-      },
-    };
+    let compile_stt =
+      match compile_env_with_options(&rust_env, CompileOptions::default()) {
+        Ok(stt) => stt,
+        Err(e) => {
+          let msg = format!("rs_compile_phases: compilation failed: {:?}", e);
+          return LeanIOResult::error_string(&msg);
+        },
+      };
 
     // Build Lean objects from compile results
     let consts: Vec<_> = compile_stt
@@ -437,14 +501,15 @@ pub extern "C" fn rs_compile_env_to_ixon(
     let rust_env = decode_env(env_consts_ptr);
     let rust_env = Arc::new(rust_env);
 
-    let compile_stt = match compile_env(&rust_env) {
-      Ok(stt) => stt,
-      Err(e) => {
-        let msg =
-          format!("rs_compile_env_to_ixon: compilation failed: {:?}", e);
-        return LeanIOResult::error_string(&msg);
-      },
-    };
+    let compile_stt =
+      match compile_env_with_options(&rust_env, CompileOptions::default()) {
+        Ok(stt) => stt,
+        Err(e) => {
+          let msg =
+            format!("rs_compile_env_to_ixon: compilation failed: {:?}", e);
+          return LeanIOResult::error_string(&msg);
+        },
+      };
 
     let mut cache = LeanBuildCache::with_capacity(rust_env.len());
 
@@ -527,6 +592,38 @@ pub extern "C" fn rs_canonicalize_env_to_ix(
   }
 }
 
+/// FFI function to compute the LEON content hash of every constant in a
+/// Lean environment. Returns an `Array (Ix.Name × Ix.Address)` where each
+/// `Address` is the 32-byte Blake3 digest produced by
+/// `ConstantInfo::get_hash()` in `src/ix/env.rs`.
+///
+/// The LEON hash is the Rust kernel's "original" addressing scheme: it's
+/// derived from the serialized `ConstantInfo` (name + level params + type
+/// expression + variant-specific fields: ctors, rules, `all`, value, hints,
+/// etc.) so two constants with the same name but different content get
+/// distinct addresses. This is the address scheme `lean_ingress` uses (or
+/// will use) when populating `orig_kenv`, and the table Lean callers need
+/// to dump when regenerating `PrimOrigAddrs` in the Rust kernel.
+///
+/// No compilation happens here — we only decode the Lean env and hash each
+/// `ConstantInfo` in place. That makes this cheap relative to
+/// `rs_compile_env_to_ixon` and safe to run on the full environment.
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_leon_hashes(
+  env_consts_ptr: LeanList<LeanBorrowed<'_>>,
+) -> LeanIOResult<LeanOwned> {
+  let rust_env = decode_env(env_consts_ptr);
+  let mut cache = LeanBuildCache::with_capacity(rust_env.len());
+
+  let arr = LeanArray::alloc(rust_env.len());
+  for (i, (name, ci)) in rust_env.iter().enumerate() {
+    let name_obj = LeanIxName::build(&mut cache, name);
+    let addr_obj = LeanIxAddress::build_from_hash(&ci.get_hash());
+    arr.set(i, LeanProd::new(name_obj, addr_obj));
+  }
+  LeanIOResult::ok(arr)
+}
+
 // =============================================================================
 // RustCompiledEnv - Holds Rust compilation results for comparison
 // =============================================================================
@@ -574,12 +671,13 @@ extern "C" fn rs_compile_env_rust_first(
   let lean_env = Arc::new(lean_env);
 
   // Compile with Rust
-  let rust_stt = match compile_env(&lean_env) {
-    Ok(stt) => stt,
-    Err(_e) => {
-      return std::ptr::null_mut();
-    },
-  };
+  let rust_stt =
+    match compile_env_with_options(&lean_env, CompileOptions::default()) {
+      Ok(stt) => stt,
+      Err(_e) => {
+        return std::ptr::null_mut();
+      },
+    };
 
   // Build block map: lowlink name -> (serialized bytes, sharing len)
   let mut blocks: HashMap<Name, (Vec<u8>, usize)> = HashMap::new();
@@ -1114,10 +1212,9 @@ impl<R: LeanRef> LeanIxSerializeError<R> {
       assert_eq!(tag, 5, "Invalid scalar SerializeError tag: {}", tag);
       return SerializeError::AddressError;
     }
-    let ctor = self.as_ctor();
-    match ctor.tag() {
+    match self.as_ctor().tag() {
       0 => {
-        let expected = ctor.get(0).as_string().to_string();
+        let expected = self.get_obj(0).as_string().to_string();
         SerializeError::UnexpectedEof { expected }
       },
       1 => {
@@ -1148,19 +1245,13 @@ impl<R: LeanRef> LeanIxSerializeError<R> {
         let idx = self.get_num_64(0);
         SerializeError::InvalidShareIndex { idx, max }
       },
-      _ => unreachable!("Invalid SerializeError tag: {}", ctor.tag()),
+      tag => unreachable!("Invalid SerializeError tag: {tag}"),
     }
   }
 }
 
 impl LeanIxDecompileError<LeanOwned> {
   /// Build a Lean DecompileError from a Rust DecompileError.
-  ///
-  /// Layout for index variants (tags 0–4):
-  ///   `(idx : UInt64) (len/max : Nat) (constant : String)`
-  ///   → 2 object fields (Nat, String) + 8 scalar bytes (UInt64)
-  ///   → `lean_alloc_ctor(tag, 2, 8)`
-  ///   → obj[0] = Nat, obj[1] = String, scalar[0] = UInt64
   pub fn build(err: &DecompileError) -> Self {
     match err {
       DecompileError::InvalidRefIndex { idx, refs_len, constant } => {
@@ -1236,8 +1327,7 @@ impl LeanIxDecompileError<LeanOwned> {
 impl<R: LeanRef> LeanIxDecompileError<R> {
   /// Decode a Lean DecompileError to a Rust DecompileError.
   pub fn decode(&self) -> DecompileError {
-    let ctor = self.as_ctor();
-    match ctor.tag() {
+    match self.as_ctor().tag() {
       0 => {
         let refs_len = Nat::from_obj(&self.get_obj(0))
           .to_u64()
@@ -1284,28 +1374,29 @@ impl<R: LeanRef> LeanIxDecompileError<R> {
         DecompileError::InvalidUnivVarIndex { idx, max, constant }
       },
       5 => DecompileError::MissingAddress(
-        LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array()).decode(),
+        LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array()).decode(),
       ),
       6 => DecompileError::MissingMetadata(
-        LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array()).decode(),
+        LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array()).decode(),
       ),
       7 => DecompileError::BlobNotFound(
-        LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array()).decode(),
+        LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array()).decode(),
       ),
       8 => {
         let addr =
-          LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array()).decode();
-        let expected = ctor.get(1).as_string().to_string();
+          LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array())
+            .decode();
+        let expected = self.get_obj(1).as_string().to_string();
         DecompileError::BadBlobFormat { addr, expected }
       },
       9 => {
-        let msg = ctor.get(0).as_string().to_string();
+        let msg = self.get_obj(0).as_string().to_string();
         DecompileError::BadConstantFormat { msg }
       },
-      10 => {
-        DecompileError::Serialize(LeanIxSerializeError(ctor.get(0)).decode())
-      },
-      _ => unreachable!("Invalid DecompileError tag: {}", ctor.tag()),
+      10 => DecompileError::Serialize(
+        LeanIxSerializeError(self.get_obj(0)).decode(),
+      ),
+      tag => unreachable!("Invalid DecompileError tag: {tag}"),
     }
   }
 }
@@ -1322,7 +1413,7 @@ impl LeanIxCompileError<LeanOwned> {
   ///   5: serializeError (msg : String) → 1 obj
   pub fn build(err: &CompileError) -> Self {
     match err {
-      CompileError::MissingConstant { name } => {
+      CompileError::MissingConstant { name, .. } => {
         let ctor = LeanIxCompileError::alloc(0);
         ctor.set_obj(0, build_lean_string(name));
         ctor
@@ -1360,30 +1451,34 @@ impl LeanIxCompileError<LeanOwned> {
 impl<R: LeanRef> LeanIxCompileError<R> {
   /// Decode a Lean CompileError to a Rust CompileError.
   pub fn decode(&self) -> CompileError {
-    let ctor = self.as_ctor();
-    match ctor.tag() {
+    match self.as_ctor().tag() {
       0 => {
-        let name = ctor.get(0).as_string().to_string();
-        CompileError::MissingConstant { name }
+        let name = self.get_obj(0).as_string().to_string();
+        CompileError::MissingConstant {
+          name,
+          caller: "ffi:decode_compile_error".into(),
+        }
       },
       1 => CompileError::MissingAddress(
-        LeanIxAddress::from_borrowed(ctor.get(0).as_byte_array()).decode(),
+        LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array()).decode(),
       ),
       2 => {
-        let reason = ctor.get(0).as_string().to_string();
+        let reason = self.get_obj(0).as_string().to_string();
         CompileError::InvalidMutualBlock { reason }
       },
       3 => {
-        let desc = ctor.get(0).as_string().to_string();
+        let desc = self.get_obj(0).as_string().to_string();
         CompileError::UnsupportedExpr { desc }
       },
       4 => {
-        let curr = ctor.get(0).as_string().to_string();
-        let param = ctor.get(1).as_string().to_string();
+        let curr = self.get_obj(0).as_string().to_string();
+        let param = self.get_obj(1).as_string().to_string();
         CompileError::UnknownUnivParam { curr, param }
       },
-      5 => CompileError::Serialize(LeanIxSerializeError(ctor.get(0)).decode()),
-      _ => unreachable!("Invalid CompileError tag: {}", ctor.tag()),
+      5 => {
+        CompileError::Serialize(LeanIxSerializeError(self.get_obj(0)).decode())
+      },
+      tag => unreachable!("Invalid CompileError tag: {tag}"),
     }
   }
 }
@@ -1431,12 +1526,7 @@ pub extern "C" fn rs_decompile_env(
   let env = decoded_to_ixon_env(&decoded);
 
   // Wrap in CompileState (decompile_env only uses .env)
-  let stt = CompileState {
-    env,
-    name_to_addr: DashMap::new(),
-    blocks: DashSet::new(),
-    block_stats: DashMap::new(),
-  };
+  let stt = CompileState { env, ..CompileState::default() };
 
   match decompile_env(&stt) {
     Ok(dstt) => {

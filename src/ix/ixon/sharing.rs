@@ -221,8 +221,11 @@ fn get_children(expr: &Expr) -> Vec<&Arc<Expr>> {
 pub fn analyze_block(
   exprs: &[Arc<Expr>],
   track_hash_consed_size: bool,
-) -> (HashMap<blake3::Hash, SubtermInfo>, FxHashMap<*const Expr, blake3::Hash>)
-{
+) -> (
+  HashMap<blake3::Hash, SubtermInfo>,
+  FxHashMap<*const Expr, blake3::Hash>,
+  Vec<blake3::Hash>,
+) {
   let mut info_map: HashMap<blake3::Hash, SubtermInfo> = HashMap::new();
   let mut ptr_to_hash: FxHashMap<*const Expr, blake3::Hash> =
     FxHashMap::default();
@@ -322,13 +325,13 @@ pub fn analyze_block(
     }
   }
 
-  (info_map, ptr_to_hash)
+  (info_map, ptr_to_hash, topo_order)
 }
 
 /// Compute the hash of a single expression.
 /// This is useful for testing hash compatibility with Lean.
 pub fn hash_expr(expr: &Arc<Expr>) -> blake3::Hash {
-  let (_info_map, ptr_to_hash) =
+  let (_info_map, ptr_to_hash, _) =
     analyze_block(std::slice::from_ref(expr), false);
   let ptr = expr.as_ref() as *const Expr;
   *ptr_to_hash.get(&ptr).expect("Expression not found in ptr_to_hash")
@@ -410,9 +413,9 @@ pub fn compute_effective_sizes(
 #[allow(dead_code)]
 pub fn analyze_sharing_stats(
   info_map: &HashMap<blake3::Hash, SubtermInfo>,
+  topo_order: &[blake3::Hash],
 ) -> SharingStats {
-  let topo_order = topological_sort(info_map);
-  let effective_sizes = compute_effective_sizes(info_map, &topo_order);
+  let effective_sizes = compute_effective_sizes(info_map, topo_order);
 
   let total_subterms = info_map.len();
   let mut usage_distribution: HashMap<usize, usize> = HashMap::new();
@@ -574,9 +577,9 @@ impl std::fmt::Display for SharingStats {
 /// Optimized from O(k×n) to O(n log n) by pre-sorting candidates.
 pub fn decide_sharing(
   info_map: &HashMap<blake3::Hash, SubtermInfo>,
+  topo_order: &[blake3::Hash],
 ) -> IndexSet<blake3::Hash> {
-  let topo_order = topological_sort(info_map);
-  let effective_sizes = compute_effective_sizes(info_map, &topo_order);
+  let effective_sizes = compute_effective_sizes(info_map, topo_order);
 
   // Pre-filter and sort candidates by potential savings (assuming minimal ref_size=1)
   // This gives us a stable ordering since relative savings don't change as ref_size grows
@@ -631,14 +634,14 @@ pub fn build_sharing_vec(
   shared_hashes: &IndexSet<blake3::Hash>,
   ptr_to_hash: &FxHashMap<*const Expr, blake3::Hash>,
   info_map: &HashMap<blake3::Hash, SubtermInfo>,
+  topo_order: &[blake3::Hash],
 ) -> (Vec<Arc<Expr>>, Vec<Arc<Expr>>) {
   // CRITICAL: Re-sort shared_hashes in topological order (leaves first).
   // decide_sharing returns hashes sorted by gross benefit (large terms first),
   // but we need leaves first so that when serializing sharing[i], all its
   // children are already available as Share(j) for j < i.
-  let topo_order = topological_sort(info_map);
   let shared_in_topo_order: Vec<blake3::Hash> =
-    topo_order.into_iter().filter(|h| shared_hashes.contains(h)).collect();
+    topo_order.iter().copied().filter(|h| shared_hashes.contains(h)).collect();
 
   // Build sharing vector incrementally to avoid forward references.
   // When building sharing[i], only Share(j) for j < i is allowed.
@@ -648,9 +651,12 @@ pub fn build_sharing_vec(
 
   for h in &shared_in_topo_order {
     let info = info_map.get(h).expect("shared hash must be in info_map");
-    // Clear cache - hash_to_idx changed, so cached rewrites are invalid
-    cache.clear();
-    // Rewrite using only indices < current length (hash_to_idx doesn't include this entry yet)
+    // No cache.clear() needed: rewrite_expr checks hash_to_idx BEFORE the
+    // cache, so newly-shareable expressions are always caught even if the
+    // cache has a stale entry from a prior iteration. Topological order
+    // guarantees all children of `h` were already added to hash_to_idx,
+    // so their cached rewrites (containing correct Share references) remain
+    // valid.
     let rewritten =
       rewrite_expr(&info.expr, &hash_to_idx, ptr_to_hash, &mut cache);
 
@@ -661,8 +667,6 @@ pub fn build_sharing_vec(
   }
 
   // Rewrite the root expressions (can use all Share indices)
-  // Use a fresh cache since hash_to_idx is now complete
-  cache.clear();
   let rewritten_exprs: Vec<Arc<Expr>> = exprs
     .iter()
     .map(|e| rewrite_expr(e, &hash_to_idx, ptr_to_hash, &mut cache))
@@ -703,19 +707,22 @@ fn rewrite_expr(
       RewriteFrame::Visit(e) => {
         let ptr = e.as_ref() as *const Expr;
 
-        // Check cache first
-        if let Some(cached) = cache.get(&ptr) {
-          results.push(cached.clone());
-          continue;
-        }
-
-        // Check if this expression should become a Share reference
+        // Check hash_to_idx FIRST: if this expression is shareable, replace
+        // it with Share(idx) even if the cache has a stale (pre-sharing)
+        // entry. This ordering eliminates the need for cache.clear() in the
+        // outer build_sharing_vec loop.
         if let Some(hash) = ptr_to_hash.get(&ptr)
           && let Some(&idx) = hash_to_idx.get(hash)
         {
           let share = Expr::share(idx);
           cache.insert(ptr, share.clone());
           results.push(share);
+          continue;
+        }
+
+        // Cache hit for non-shareable sub-expressions
+        if let Some(cached) = cache.get(&ptr) {
+          results.push(cached.clone());
           continue;
         }
 
@@ -913,8 +920,8 @@ mod tests {
     all_exprs.push(term_b.clone());
 
     // Analyze all expressions together
-    let (info_map, ptr_to_hash) = analyze_block(&all_exprs, false);
-    let shared = decide_sharing(&info_map);
+    let (info_map, ptr_to_hash, topo_order) = analyze_block(&all_exprs, false);
+    let shared = decide_sharing(&info_map, &topo_order);
 
     // Verify term_a was found with usage_count=10
     let term_a_ptr = term_a.as_ref() as *const Expr;
@@ -933,8 +940,7 @@ mod tests {
       assert_eq!(info.usage_count, 2, "term_b should have usage_count=2");
 
       // Compute effective size
-      let topo = topological_sort(&info_map);
-      let sizes = compute_effective_sizes(&info_map, &topo);
+      let sizes = compute_effective_sizes(&info_map, &topo_order);
       let term_b_size = sizes.get(hash).copied().unwrap_or(0);
 
       // This assertion will FAIL with buggy code (early break) and PASS with fix
@@ -960,7 +966,7 @@ mod tests {
     let var0 = Expr::var(0);
     let app = Expr::app(var0.clone(), var0);
 
-    let (info_map, ptr_to_hash) = analyze_block(&[app], false);
+    let (info_map, ptr_to_hash, _topo_order) = analyze_block(&[app], false);
 
     // Should have 2 unique subterms: Var(0) and App(Var(0), Var(0))
     assert_eq!(info_map.len(), 2);
@@ -984,8 +990,8 @@ mod tests {
     let lam2 = Expr::lam(ty.clone(), Expr::var(1));
     let app = Expr::app(lam1, lam2);
 
-    let (info_map, _) = analyze_block(&[app], false);
-    let shared = decide_sharing(&info_map);
+    let (info_map, _, topo_order) = analyze_block(&[app], false);
+    let shared = decide_sharing(&info_map, &topo_order);
 
     // ty (Sort(0)) appears twice, might be shared depending on size
     // This is a basic smoke test
@@ -998,8 +1004,7 @@ mod tests {
     let var1 = Expr::var(1);
     let app = Expr::app(var0, var1);
 
-    let (info_map, _) = analyze_block(&[app], false);
-    let topo = topological_sort(&info_map);
+    let (info_map, _, topo) = analyze_block(&[app], false);
 
     // Should have all hashes
     assert_eq!(topo.len(), info_map.len());
@@ -1031,14 +1036,19 @@ mod tests {
     let app1 = Expr::app(var0.clone(), var0.clone());
     let app2 = Expr::app(app1, var0);
 
-    let (info_map, ptr_to_hash) =
+    let (info_map, ptr_to_hash, topo_order) =
       analyze_block(std::slice::from_ref(&app2), false);
-    let shared = decide_sharing(&info_map);
+    let shared = decide_sharing(&info_map, &topo_order);
 
     // If var0 is shared, verify it
     if !shared.is_empty() {
-      let (rewritten, sharing_vec) =
-        build_sharing_vec(&[app2], &shared, &ptr_to_hash, &info_map);
+      let (rewritten, sharing_vec) = build_sharing_vec(
+        &[app2],
+        &shared,
+        &ptr_to_hash,
+        &info_map,
+        &topo_order,
+      );
 
       // Sharing vec should have the shared expressions
       assert_eq!(sharing_vec.len(), shared.len());

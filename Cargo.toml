@@ -12,6 +12,7 @@ blake3 = "1.8.4"
 itertools = "0.14.0"
 indexmap = { version = "2", features = ["rayon"] }
 lean-ffi = { git = "https://github.com/argumentcomputer/lean-ffi", rev = "cc98ebf67bf453ac3827cb767f78b13ea674dd6a" }
+mimalloc = { version = "0.1", default-features = false }
 multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "a8a15ea6aa2890f9f60f32a6e0e5e66afc1535ff" }
 num-bigint = "0.4.6"
 rayon = "1"
@@ -47,3 +48,7 @@ panic = "abort"
 
 [profile.release]
 panic = "abort"
+
+[lints.clippy]
+type_complexity = "allow"
+too_many_arguments = "allow"

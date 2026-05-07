@@ -108,15 +108,35 @@ private def serdeEnvEq (a b : RawEnv) : Bool :=
       rc.const.refs.size == rc'.const.refs.size &&
       rc.const.univs.size == rc'.const.univs.size
 
+/-- Wrap a pure computation in an IO action that only executes when the
+    IO value is run — not when it is constructed. Lean normally evaluates
+    pure `let` bindings strictly even inside `do` blocks, so `rsSerEnvFFI`
+    would otherwise fire at `TestSeq` construction time. Placing the
+    computation inside `fun s => ...` puts it under a lambda, which Lean
+    does not evaluate until the outer closure is applied — i.e., until the
+    IO action actually runs. See `EST.pure`/`EST.bind` in
+    `refs/lean4/src/Init/System/ST.lean`; this is hand-rolled `pure` that
+    cannot accidentally beta-reduce eagerly. -/
+@[inline] private def deferIO (f : Unit → α) : IO α := fun s =>
+  EST.Out.ok (f ()) s
+
+/-- Build a single serde roundtrip test that defers all FFI calls to
+    execution time. Constructing the returned `TestSeq` does no FFI work —
+    the `rsSerEnvFFI` / `rsDeEnvFFI` pair fires only when LSpec actually
+    runs the test. -/
+private def mkSerdeRoundtripTest (descr : String) (env : RawEnv) : TestSeq :=
+  .individualIO descr none (deferIO fun () =>
+    match rsDeEnvFFI (rsSerEnvFFI env) with
+    | .ok decoded =>
+      let ok := serdeEnvEq decoded env
+      (ok, 0, 0, if ok then none else some "mismatch")
+    | .error e =>
+      (false, 0, 0, some s!"deserialization failed: {e}")) .done
+
 def serdeTests : TestSeq :=
-  -- Empty RawEnv
+  -- Empty RawEnv. Only data construction happens eagerly; FFI is deferred
+  -- inside `mkSerdeRoundtripTest`.
   let empty : RawEnv := { consts := #[], named := #[], blobs := #[], comms := #[] }
-  let emptyBytes := rsSerEnvFFI empty
-  let emptyResult := rsDeEnvFFI emptyBytes
-  .individualIO "serde empty RawEnv" none (do
-    match emptyResult with
-    | .ok decoded => pure (serdeEnvEq decoded empty, 0, 0, if serdeEnvEq decoded empty then none else some "mismatch")
-    | .error e => pure (false, 0, 0, some s!"deserialization failed: {e}")) .done ++
   -- RawEnv with data (include name entries for all referenced addresses)
   let testAddr := Address.blake3 (ByteArray.mk #[1, 2, 3])
   let testExpr : Expr := .sort 0
@@ -143,12 +163,8 @@ def serdeTests : TestSeq :=
     comms := #[testRawComm],
     names := #[testNameEntry]
   }
-  let dataBytes := rsSerEnvFFI withData
-  let dataResult := rsDeEnvFFI dataBytes
-  .individualIO "serde RawEnv with data" none (do
-    match dataResult with
-    | .ok decoded => pure (serdeEnvEq decoded withData, 0, 0, if serdeEnvEq decoded withData then none else some "mismatch")
-    | .error e => pure (false, 0, 0, some s!"deserialization failed: {e}")) .done
+  mkSerdeRoundtripTest "serde empty RawEnv" empty ++
+  mkSerdeRoundtripTest "serde RawEnv with data" withData
 
 /-- Generate a ConstantInfo without embedded Address fields.
     Projections contain Addresses that would need name entries;

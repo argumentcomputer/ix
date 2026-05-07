@@ -10,11 +10,16 @@
 #![allow(clippy::cast_possible_truncation)]
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::ix::address::Address;
-use crate::ix::env::{BinderInfo, ReducibilityHints};
+use crate::ix::env::{self, BinderInfo, Name, ReducibilityHints};
 
+use super::env::AuxLayout;
+use super::expr::Expr;
+use super::serialize::{get_expr, put_expr};
 use super::tag::Tag0;
+use super::univ::{Univ, get_univ, put_univ};
 
 // ===========================================================================
 // Types (use Address internally)
@@ -22,6 +27,18 @@ use super::tag::Tag0;
 
 /// Key-value map for Lean.Expr.mdata
 pub type KVMap = Vec<(Address, DataValue)>;
+
+/// Entry in a `CallSite` metadata node, representing one source-order argument.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum CallSiteEntry {
+  /// Argument exists in canonical form at App-spine position `canon_idx`.
+  /// `meta` is the arena index for this argument's metadata subtree.
+  Kept { canon_idx: u64, meta: u64 },
+  /// Argument was collapsed. Expression stored in `ConstantMeta.meta_sharing[sharing_idx]`.
+  /// `meta` is the arena index for this argument's metadata subtree
+  /// (may differ from the representative's metadata — different names, refs, etc.).
+  Collapsed { sharing_idx: u64, meta: u64 },
+}
 
 /// Arena node for per-expression metadata.
 ///
@@ -43,6 +60,27 @@ pub enum ExprMetaData {
   Prj { struct_name: Address, child: u64 },
   /// Mdata wrapper: always a separate node, never absorbed into Binder/Ref/Prj
   Mdata { mdata: Vec<KVMap>, child: u64 },
+  /// Surgered call-site. Replaces the entire App-spine metadata chain
+  /// (outermost App down to the Ref head) with a single node. Entries are
+  /// in SOURCE order. The corresponding Ixon expression is a normal App
+  /// telescope — only the metadata changes shape.
+  ///
+  /// Sits at the outermost position so both compiler and decompiler see it
+  /// first, avoiding the need to recurse through App nodes to discover surgery.
+  CallSite {
+    /// Name address of the referenced auxiliary (doubles as Ref name metadata).
+    name: Address,
+    /// Source-order entries for the argument telescope.
+    entries: Vec<CallSiteEntry>,
+    /// Canonical-order metadata roots, one per argument in the IXON App spine.
+    ///
+    /// This is separate from `entries` because some source arguments are
+    /// represented by `Collapsed` entries even though compile-side surgery
+    /// synthesized a canonical replacement argument. Kernel ingress needs the
+    /// replacement argument's metadata by canonical position, while decompile
+    /// needs the source-order `entries` to reconstruct the original spine.
+    canon_meta: Vec<u64>,
+  },
 }
 
 /// Arena for expression metadata within a single constant.
@@ -63,13 +101,13 @@ impl ExprMeta {
   }
 }
 
-/// Per-constant metadata with arena-based expression metadata.
+/// Per-variant metadata payload for a constant.
 ///
 /// Each variant stores an ExprMeta arena covering all expressions in
 /// that constant, plus root indices pointing into the arena for each
 /// expression position (type, value, rule RHS, etc.).
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
-pub enum ConstantMeta {
+pub enum ConstantMetaInfo {
   #[default]
   Empty,
   Def {
@@ -120,6 +158,141 @@ pub enum ConstantMeta {
     type_root: u64,
     rule_roots: Vec<u64>,
   },
+  /// Synthetic metadata for a mutual block. Each inner `Vec` is an equivalence
+  /// class of alpha-equivalent constants (same MutConst index), containing the
+  /// name-hash addresses of all names in that class.
+  ///
+  /// `aux_layout` is the nested-auxiliary permutation sidecar for blocks
+  /// that underwent nested-inductive expansion. Used by decompile to
+  /// reconstruct the canonical aux layout without a fresh source walk
+  /// (see `docs/ix_canonicity.md` §10.2 / §17.3). `None` for blocks
+  /// with no nested auxes (the common case).
+  ///
+  /// The aux_layout is *metadata* — it lives in [`ConstantMeta`] (never
+  /// entering any constant's content hash) and survives round-trip
+  /// through [`Env::put`] / [`Env::get`] via the Muts variant below.
+  Muts {
+    all: Vec<Vec<Address>>,
+    aux_layout: Option<AuxLayout>,
+  },
+}
+
+impl ConstantMetaInfo {
+  /// Returns a short kind name for diagnostics.
+  pub fn kind_name(&self) -> &'static str {
+    match self {
+      Self::Empty => "empty",
+      Self::Def { .. } => "def",
+      Self::Axio { .. } => "axio",
+      Self::Quot { .. } => "quot",
+      Self::Indc { .. } => "indc",
+      Self::Ctor { .. } => "ctor",
+      Self::Rec { .. } => "rec",
+      Self::Muts { .. } => "muts",
+    }
+  }
+}
+
+/// Per-constant metadata wrapper: variant payload + extension tables.
+///
+/// Extension tables (`meta_sharing`, `meta_refs`, `meta_univs`) form a
+/// virtual address space extending the primary `Constant` tables. They are
+/// used by `CallSite` nodes in the metadata arena for call-site surgery
+/// roundtrip: collapsed argument expressions reference these tables via
+/// `Share(idx)`, `Ref(idx)`, and universe indices.
+///
+/// At decompile time, extension tables are appended to the block cache,
+/// creating a contiguous address space.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ConstantMeta {
+  pub info: ConstantMetaInfo,
+  /// Compiled Ixon expressions for collapsed call-site arguments.
+  /// May contain `Share(idx)` references into the extended sharing table.
+  pub meta_sharing: Vec<Arc<Expr>>,
+  /// Extension refs table (addresses referenced by collapsed arg expressions).
+  pub meta_refs: Vec<Address>,
+  /// Extension univs table (universe terms in collapsed arg expressions).
+  pub meta_univs: Vec<Arc<Univ>>,
+}
+
+impl Default for ConstantMeta {
+  fn default() -> Self {
+    Self {
+      info: ConstantMetaInfo::Empty,
+      meta_sharing: Vec::new(),
+      meta_refs: Vec::new(),
+      meta_univs: Vec::new(),
+    }
+  }
+}
+
+impl ConstantMeta {
+  /// Wrap a `ConstantMetaInfo` payload (no extension tables).
+  pub fn new(info: ConstantMetaInfo) -> Self {
+    Self {
+      info,
+      meta_sharing: Vec::new(),
+      meta_refs: Vec::new(),
+      meta_univs: Vec::new(),
+    }
+  }
+
+  /// Whether this metadata has any surgery extension tables.
+  pub fn has_extensions(&self) -> bool {
+    !self.meta_sharing.is_empty()
+      || !self.meta_refs.is_empty()
+      || !self.meta_univs.is_empty()
+  }
+
+  /// Delegate indexed serialization to the inner enum, then serialize
+  /// extension tables.
+  pub fn put_indexed(
+    &self,
+    idx: &NameIndex,
+    buf: &mut Vec<u8>,
+  ) -> Result<(), String> {
+    self.info.put_indexed(idx, buf)?;
+    // Extension tables (backward-compatible: 0-length for old constants)
+    put_vec_len(self.meta_sharing.len(), buf);
+    for expr in &self.meta_sharing {
+      put_expr(expr, buf);
+    }
+    put_vec_len(self.meta_refs.len(), buf);
+    for addr in &self.meta_refs {
+      put_address_raw(addr, buf);
+    }
+    put_vec_len(self.meta_univs.len(), buf);
+    for univ in &self.meta_univs {
+      put_univ(univ, buf);
+    }
+    Ok(())
+  }
+
+  /// Delegate indexed deserialization, then deserialize extension tables.
+  pub fn get_indexed(
+    buf: &mut &[u8],
+    rev: &NameReverseIndex,
+  ) -> Result<Self, String> {
+    let info = ConstantMetaInfo::get_indexed(buf, rev)?;
+    // Extension tables: always present (put_indexed always writes them,
+    // even when empty — three zero-length vectors).
+    let sharing_len = get_vec_len(buf)?;
+    let mut meta_sharing = Vec::with_capacity(sharing_len);
+    for _ in 0..sharing_len {
+      meta_sharing.push(get_expr(buf)?);
+    }
+    let refs_len = get_vec_len(buf)?;
+    let mut meta_refs = Vec::with_capacity(refs_len);
+    for _ in 0..refs_len {
+      meta_refs.push(get_address_raw(buf)?);
+    }
+    let univs_len = get_vec_len(buf)?;
+    let mut meta_univs = Vec::with_capacity(univs_len);
+    for _ in 0..univs_len {
+      meta_univs.push(get_univ(buf)?);
+    }
+    Ok(Self { info, meta_sharing, meta_refs, meta_univs })
+  }
 }
 
 /// Data values for KVMap metadata.
@@ -131,6 +304,194 @@ pub enum DataValue {
   OfNat(Address),
   OfInt(Address),
   OfSyntax(Address),
+}
+
+/// Resolve an Ixon KVMap (address-based) to Lean-level MData (name/value pairs).
+///
+/// Used by kernel ingress to convert expression metadata from the
+/// content-addressed Ixon representation to the named kernel representation.
+pub fn resolve_kvmap(
+  kvm: &KVMap,
+  ixon_env: &super::env::Env,
+) -> Vec<(Name, env::DataValue)> {
+  kvm
+    .iter()
+    .filter_map(|(addr, dv)| {
+      let name = ixon_env.get_name(addr)?;
+      let resolved = match dv {
+        DataValue::OfString(a) => {
+          let bytes = ixon_env.get_blob(a)?;
+          env::DataValue::OfString(String::from_utf8(bytes).ok()?)
+        },
+        DataValue::OfBool(b) => env::DataValue::OfBool(*b),
+        DataValue::OfName(a) => {
+          let n = ixon_env.get_name(a)?;
+          env::DataValue::OfName(n)
+        },
+        DataValue::OfNat(a) => {
+          let bytes = ixon_env.get_blob(a)?;
+          env::DataValue::OfNat(lean_ffi::nat::Nat::from_le_bytes(&bytes))
+        },
+        DataValue::OfInt(a) => {
+          let bytes = ixon_env.get_blob(a)?;
+          let int = deser_int(&bytes)?;
+          env::DataValue::OfInt(int)
+        },
+        DataValue::OfSyntax(a) => {
+          // Deserialize the Syntax tree from its blob. Mirrors
+          // `compile.rs::serialize_syntax_inner`; the deserializer only
+          // needs `Env::get_blob` + `Env::get_name`, so it lives here
+          // rather than in `decompile.rs` (which depends on CompileState).
+          let bytes = ixon_env.get_blob(a)?;
+          let mut buf = bytes.as_slice();
+          let syn = deser_syntax(&mut buf, ixon_env)?;
+          env::DataValue::OfSyntax(Box::new(syn))
+        },
+      };
+      Some((name, resolved))
+    })
+    .collect()
+}
+
+// ===========================================================================
+// Syntax deserialization from blobs
+// ===========================================================================
+//
+// These mirror the compile-side `serialize_syntax_inner` /
+// `serialize_source_info` / `serialize_substring` / `serialize_preresolved`
+// in `src/ix/compile.rs`. They live here (not `decompile.rs`) so that
+// `resolve_kvmap` can materialize `DataValue::OfSyntax` entries during
+// kernel ingress — the decompile-side helpers depend on `CompileState`,
+// which isn't available in the ingress path. All we need is the `Env`
+// (for blob + name lookups).
+
+fn deser_u8(buf: &mut &[u8]) -> Option<u8> {
+  let (&x, rest) = buf.split_first()?;
+  *buf = rest;
+  Some(x)
+}
+
+fn deser_tag0(buf: &mut &[u8]) -> Option<u64> {
+  Tag0::get(buf).ok().map(|t| t.size)
+}
+
+fn deser_addr(buf: &mut &[u8]) -> Option<Address> {
+  if buf.len() < 32 {
+    return None;
+  }
+  let (bytes, rest) = buf.split_at(32);
+  *buf = rest;
+  Address::from_slice(bytes).ok()
+}
+
+/// Deserialize a signed `Int` from bytes (mirrors compile-side encoding in
+/// `compile_data_value` / `DataValue::OfInt`).
+fn deser_int(bytes: &[u8]) -> Option<env::Int> {
+  let (&tag, rest) = bytes.split_first()?;
+  match tag {
+    0 => Some(env::Int::OfNat(lean_ffi::nat::Nat::from_le_bytes(rest))),
+    1 => Some(env::Int::NegSucc(lean_ffi::nat::Nat::from_le_bytes(rest))),
+    _ => None,
+  }
+}
+
+fn deser_substring(
+  buf: &mut &[u8],
+  ixon_env: &super::env::Env,
+) -> Option<env::Substring> {
+  let str_addr = deser_addr(buf)?;
+  let s = String::from_utf8(ixon_env.get_blob(&str_addr)?).ok()?;
+  let start_pos = lean_ffi::nat::Nat::from(deser_tag0(buf)?);
+  let stop_pos = lean_ffi::nat::Nat::from(deser_tag0(buf)?);
+  Some(env::Substring { str: s, start_pos, stop_pos })
+}
+
+fn deser_source_info(
+  buf: &mut &[u8],
+  ixon_env: &super::env::Env,
+) -> Option<env::SourceInfo> {
+  match deser_u8(buf)? {
+    0 => {
+      let leading = deser_substring(buf, ixon_env)?;
+      let leading_pos = lean_ffi::nat::Nat::from(deser_tag0(buf)?);
+      let trailing = deser_substring(buf, ixon_env)?;
+      let trailing_pos = lean_ffi::nat::Nat::from(deser_tag0(buf)?);
+      Some(env::SourceInfo::Original(
+        leading,
+        leading_pos,
+        trailing,
+        trailing_pos,
+      ))
+    },
+    1 => {
+      let start = lean_ffi::nat::Nat::from(deser_tag0(buf)?);
+      let end = lean_ffi::nat::Nat::from(deser_tag0(buf)?);
+      let canonical = deser_u8(buf)? != 0;
+      Some(env::SourceInfo::Synthetic(start, end, canonical))
+    },
+    2 => Some(env::SourceInfo::None),
+    _ => None,
+  }
+}
+
+fn deser_preresolved(
+  buf: &mut &[u8],
+  ixon_env: &super::env::Env,
+) -> Option<env::SyntaxPreresolved> {
+  match deser_u8(buf)? {
+    0 => {
+      let name = ixon_env.get_name(&deser_addr(buf)?)?;
+      Some(env::SyntaxPreresolved::Namespace(name))
+    },
+    1 => {
+      let name = ixon_env.get_name(&deser_addr(buf)?)?;
+      let count = deser_tag0(buf)? as usize;
+      let mut fields = Vec::with_capacity(count);
+      for _ in 0..count {
+        let addr = deser_addr(buf)?;
+        fields.push(String::from_utf8(ixon_env.get_blob(&addr)?).ok()?);
+      }
+      Some(env::SyntaxPreresolved::Decl(name, fields))
+    },
+    _ => None,
+  }
+}
+
+fn deser_syntax(
+  buf: &mut &[u8],
+  ixon_env: &super::env::Env,
+) -> Option<env::Syntax> {
+  match deser_u8(buf)? {
+    0 => Some(env::Syntax::Missing),
+    1 => {
+      let info = deser_source_info(buf, ixon_env)?;
+      let kind = ixon_env.get_name(&deser_addr(buf)?)?;
+      let arg_count = deser_tag0(buf)? as usize;
+      let mut args = Vec::with_capacity(arg_count);
+      for _ in 0..arg_count {
+        args.push(deser_syntax(buf, ixon_env)?);
+      }
+      Some(env::Syntax::Node(info, kind, args))
+    },
+    2 => {
+      let info = deser_source_info(buf, ixon_env)?;
+      let val_addr = deser_addr(buf)?;
+      let val = String::from_utf8(ixon_env.get_blob(&val_addr)?).ok()?;
+      Some(env::Syntax::Atom(info, val))
+    },
+    3 => {
+      let info = deser_source_info(buf, ixon_env)?;
+      let raw_val = deser_substring(buf, ixon_env)?;
+      let val = ixon_env.get_name(&deser_addr(buf)?)?;
+      let pr_count = deser_tag0(buf)? as usize;
+      let mut preresolved = Vec::with_capacity(pr_count);
+      for _ in 0..pr_count {
+        preresolved.push(deser_preresolved(buf, ixon_env)?);
+      }
+      Some(env::Syntax::Ident(info, raw_val, val, preresolved))
+    },
+    _ => None,
+  }
 }
 
 // ===========================================================================
@@ -187,11 +548,11 @@ fn get_u64(buf: &mut &[u8]) -> Result<u64, String> {
   Ok(Tag0::get(buf)?.size)
 }
 
-fn put_vec_len(len: usize, buf: &mut Vec<u8>) {
+pub(super) fn put_vec_len(len: usize, buf: &mut Vec<u8>) {
   Tag0::new(len as u64).put(buf);
 }
 
-fn get_vec_len(buf: &mut &[u8]) -> Result<usize, String> {
+pub(super) fn get_vec_len(buf: &mut &[u8]) -> Result<usize, String> {
   Ok(Tag0::get(buf)?.size as usize)
 }
 
@@ -255,7 +616,7 @@ pub type NameIndex = HashMap<Address, u64>;
 /// Reverse name index for deserialization: position -> Address
 pub type NameReverseIndex = Vec<Address>;
 
-fn put_idx(
+pub(super) fn put_idx(
   addr: &Address,
   idx: &NameIndex,
   buf: &mut Vec<u8>,
@@ -271,7 +632,10 @@ fn put_idx(
   Ok(())
 }
 
-fn get_idx(buf: &mut &[u8], rev: &NameReverseIndex) -> Result<Address, String> {
+pub(super) fn get_idx(
+  buf: &mut &[u8],
+  rev: &NameReverseIndex,
+) -> Result<Address, String> {
   let i = get_u64(buf)? as usize;
   rev
     .get(i)
@@ -472,6 +836,26 @@ impl ExprMetaData {
         put_mdata_stack_indexed(mdata, idx, buf)?;
         put_u64(*child, buf);
       },
+      Self::CallSite { name, entries, canon_meta } => {
+        put_u8(10, buf);
+        put_idx(name, idx, buf)?;
+        put_vec_len(entries.len(), buf);
+        for entry in entries {
+          match entry {
+            CallSiteEntry::Kept { canon_idx, meta } => {
+              put_u8(0, buf);
+              put_u64(*canon_idx, buf);
+              put_u64(*meta, buf);
+            },
+            CallSiteEntry::Collapsed { sharing_idx, meta } => {
+              put_u8(1, buf);
+              put_u64(*sharing_idx, buf);
+              put_u64(*meta, buf);
+            },
+          }
+        }
+        put_u64_vec(canon_meta, buf);
+      },
     }
     Ok(())
   }
@@ -520,6 +904,29 @@ impl ExprMetaData {
         let mdata = get_mdata_stack_indexed(buf, rev)?;
         let child = get_u64(buf)?;
         Ok(Self::Mdata { mdata, child })
+      },
+      10 => {
+        let name = get_idx(buf, rev)?;
+        let n_entries = get_vec_len(buf)?;
+        let mut entries = Vec::with_capacity(n_entries);
+        for _ in 0..n_entries {
+          let entry = match get_u8(buf)? {
+            0 => {
+              let canon_idx = get_u64(buf)?;
+              let meta = get_u64(buf)?;
+              CallSiteEntry::Kept { canon_idx, meta }
+            },
+            1 => {
+              let sharing_idx = get_u64(buf)?;
+              let meta = get_u64(buf)?;
+              CallSiteEntry::Collapsed { sharing_idx, meta }
+            },
+            x => return Err(format!("CallSiteEntry::get: invalid tag {x}")),
+          };
+          entries.push(entry);
+        }
+        let canon_meta = get_u64_vec(buf)?;
+        Ok(Self::CallSite { name, entries, canon_meta })
       },
       x => Err(format!("ExprMetaData::get: invalid tag {x}")),
     }
@@ -576,7 +983,7 @@ fn get_u64_vec(buf: &mut &[u8]) -> Result<Vec<u64>, String> {
 // ConstantMeta indexed serialization
 // ===========================================================================
 
-impl ConstantMeta {
+impl ConstantMetaInfo {
   pub fn put_indexed(
     &self,
     idx: &NameIndex,
@@ -656,6 +1063,30 @@ impl ConstantMeta {
         put_u64(*type_root, buf);
         put_u64_vec(rule_roots, buf);
       },
+      Self::Muts { all, aux_layout } => {
+        put_u8(6, buf);
+        put_u64(all.len() as u64, buf);
+        for cls in all {
+          put_idx_vec(cls, idx, buf)?;
+        }
+        // Option<AuxLayout>: 0 tag = None, 1 tag = Some(perm_vec, ctor_vec).
+        // Both vecs are Vec<usize> — written as Vec<u64> via Tag0 so the
+        // serialized form is target-word-size independent.
+        match aux_layout {
+          None => put_u8(0, buf),
+          Some(layout) => {
+            put_u8(1, buf);
+            put_u64(layout.perm.len() as u64, buf);
+            for &p in &layout.perm {
+              put_u64(p as u64, buf);
+            }
+            put_u64(layout.source_ctor_counts.len() as u64, buf);
+            for &c in &layout.source_ctor_counts {
+              put_u64(c as u64, buf);
+            }
+          },
+        }
+      },
     }
     Ok(())
   }
@@ -714,7 +1145,32 @@ impl ConstantMeta {
         type_root: get_u64(buf)?,
         rule_roots: get_u64_vec(buf)?,
       }),
-      x => Err(format!("ConstantMeta::get: invalid tag {x}")),
+      6 => {
+        let n = get_u64(buf)? as usize;
+        let mut all = Vec::with_capacity(n);
+        for _ in 0..n {
+          all.push(get_idx_vec(buf, rev)?);
+        }
+        let aux_layout = match get_u8(buf)? {
+          0 => None,
+          1 => {
+            let n_perm = get_u64(buf)? as usize;
+            let mut perm = Vec::with_capacity(n_perm);
+            for _ in 0..n_perm {
+              perm.push(get_u64(buf)? as usize);
+            }
+            let n_counts = get_u64(buf)? as usize;
+            let mut source_ctor_counts = Vec::with_capacity(n_counts);
+            for _ in 0..n_counts {
+              source_ctor_counts.push(get_u64(buf)? as usize);
+            }
+            Some(AuxLayout { perm, source_ctor_counts })
+          },
+          x => return Err(format!("Muts.aux_layout: invalid tag {x}")),
+        };
+        Ok(Self::Muts { all, aux_layout })
+      },
+      x => Err(format!("ConstantMetaInfo::get: invalid tag {x}")),
     }
   }
 }
@@ -802,7 +1258,7 @@ mod tests {
       children: [leaf, leaf],
     });
 
-    let meta = ConstantMeta::Def {
+    let meta = ConstantMeta::new(ConstantMetaInfo::Def {
       name: addr1.clone(),
       lvls: vec![addr2.clone(), addr3.clone()],
       hints: ReducibilityHints::Regular(10),
@@ -811,7 +1267,7 @@ mod tests {
       arena,
       type_root: binder,
       value_root: leaf,
-    };
+    });
 
     let mut buf = Vec::new();
     meta.put_indexed(&idx, &mut buf).unwrap();

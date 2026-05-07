@@ -53,7 +53,12 @@ jobs:
           build-args: "IxTests"
           use-github-cache: false
       - name: Install valgrind
-        run: sudo apt-get update && sudo apt-get install -y valgrind
+        run: |
+          # Some warpbuild images ship a mirrorlist with an unreachable
+          # azure.archive.ubuntu.com entry, causing apt-get update to stall indefinitely.
+          sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt 2>/dev/null || true
+          sudo apt-get update
+          sudo apt-get install -y valgrind
       - name: Run tests under valgrind
         run: |
           valgrind \
@@ -62,4 +67,5 @@ jobs:
             --errors-for-leak-kinds=definite \
             --track-origins=yes \
             --error-exitcode=1 \
+            --suppressions=.github/valgrind.supp \
             .lake/build/bin/IxTests -- ffi

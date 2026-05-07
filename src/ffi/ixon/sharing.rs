@@ -21,8 +21,7 @@ pub extern "C" fn rs_debug_sharing_analysis(
 
   println!("[Rust] Analyzing {} input expressions", exprs.len());
 
-  let (info_map, _ptr_to_hash) = analyze_block(&exprs, false);
-  let topo_order = crate::ix::ixon::sharing::topological_sort(&info_map);
+  let (info_map, _ptr_to_hash, topo_order) = analyze_block(&exprs, false);
   let effective_sizes =
     crate::ix::ixon::sharing::compute_effective_sizes(&info_map, &topo_order);
 
@@ -44,8 +43,9 @@ pub extern "C" fn rs_debug_sharing_analysis(
   println!("[Rust] Subterms with usage >= 2:");
   for (hash, info, eff_size) in candidates {
     let n = info.usage_count;
-    let potential = (n.cast_signed() - 1) * eff_size.cast_signed()
-      - (n.cast_signed() + eff_size.cast_signed());
+    let n_i = n.cast_signed();
+    let eff_size_i = eff_size.cast_signed();
+    let potential = (n_i - 1) * eff_size_i - (n_i + eff_size_i);
     println!(
       "  usage={} eff_size={} potential={} hash={:.8}",
       n, eff_size, potential, hash
@@ -62,8 +62,8 @@ extern "C" fn rs_analyze_sharing_count(
 ) -> u64 {
   let exprs = LeanIxonExpr::decode_array(&exprs_obj);
 
-  let (info_map, _ptr_to_hash) = analyze_block(&exprs, false);
-  let shared_hashes = decide_sharing(&info_map);
+  let (info_map, _ptr_to_hash, topo_order) = analyze_block(&exprs, false);
+  let shared_hashes = decide_sharing(&info_map, &topo_order);
 
   shared_hashes.len() as u64
 }
@@ -79,10 +79,15 @@ extern "C" fn rs_run_sharing_analysis(
 ) -> u64 {
   let exprs = LeanIxonExpr::decode_array(&exprs_obj);
 
-  let (info_map, ptr_to_hash) = analyze_block(&exprs, false);
-  let shared_hashes = decide_sharing(&info_map);
-  let (rewritten_exprs, sharing_vec) =
-    build_sharing_vec(&exprs, &shared_hashes, &ptr_to_hash, &info_map);
+  let (info_map, ptr_to_hash, topo_order) = analyze_block(&exprs, false);
+  let shared_hashes = decide_sharing(&info_map, &topo_order);
+  let (rewritten_exprs, sharing_vec) = build_sharing_vec(
+    &exprs,
+    &shared_hashes,
+    &ptr_to_hash,
+    &info_map,
+    &topo_order,
+  );
 
   // Serialize sharing vector to bytes
   let mut sharing_bytes: Vec<u8> = Vec::new();
@@ -122,10 +127,15 @@ extern "C" fn rs_compare_sharing_analysis(
   let lean_sharing = LeanIxonExpr::decode_array(&lean_sharing_obj);
 
   // Run Rust's sharing analysis
-  let (info_map, ptr_to_hash) = analyze_block(&exprs, false);
-  let shared_hashes = decide_sharing(&info_map);
-  let (_rewritten_exprs, rust_sharing) =
-    build_sharing_vec(&exprs, &shared_hashes, &ptr_to_hash, &info_map);
+  let (info_map, ptr_to_hash, topo_order) = analyze_block(&exprs, false);
+  let shared_hashes = decide_sharing(&info_map, &topo_order);
+  let (_rewritten_exprs, rust_sharing) = build_sharing_vec(
+    &exprs,
+    &shared_hashes,
+    &ptr_to_hash,
+    &info_map,
+    &topo_order,
+  );
 
   // Compare sharing vectors
   let lean_count = lean_sharing.len() as u64;

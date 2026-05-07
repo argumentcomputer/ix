@@ -370,6 +370,7 @@ def genConstantMeta : Gen ConstantMeta := do
     (15, ConstantMeta.recr <$> genAddress <*> genSmallArray genAddress <*> genSmallArray genAddress
       <*> genSmallArray genAddress <*> genSmallArray genAddress
       <*> pure arena <*> genRoot <*> genSmallArray genRoot),
+    (5, ConstantMeta.muts <$> genSmallArray (genSmallArray genAddress)),
   ]
 
 instance : Shrinkable ExprMetaData where
@@ -389,9 +390,17 @@ instance : SampleableExt ExprMetaData := SampleableExt.mkSelfContained (genExprM
 instance : SampleableExt ExprMetaArena := SampleableExt.mkSelfContained genExprMetaArena
 instance : SampleableExt ConstantMeta := SampleableExt.mkSelfContained genConstantMeta
 
-/-- Generate a Named entry with proper metadata. -/
-def genNamed : Gen Named :=
-  Named.mk <$> genAddress <*> genConstantMeta
+/-- Generate a Named entry with proper metadata.
+    Exercises both `none` and `some (addr, meta)` for the `original` field
+    so the FFI roundtrip test covers the full `Option` encoding. -/
+def genNamed : Gen Named := do
+  let addr ← genAddress
+  let constMeta ← genConstantMeta
+  let original ← frequency [
+    (3, pure none),
+    (1, (fun a m => some (a, m)) <$> genAddress <*> genConstantMeta),
+  ]
+  return { addr, constMeta, original }
 
 /-- Generate a Comm. -/
 def genCommNew : Gen Comm :=

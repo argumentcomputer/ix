@@ -90,7 +90,7 @@ def compileDef (compileEnv : CompileM.CompileEnv)
     -- 6. Update CompileEnv with new constant
     let compileEnv'' := { compileEnv' with
       constants := compileEnv'.constants.insert addr result.block
-      nameToNamed := compileEnv'.nameToNamed.insert ixName ⟨addr, result.blockMeta⟩
+      nameToNamed := compileEnv'.nameToNamed.insert ixName { addr, constMeta := result.blockMeta }
       blobs := blockState.blockBlobs.fold (fun m k v => m.insert k v) compileEnv'.blobs
       totalBytes := compileEnv'.totalBytes + blockBytes.size
     }
@@ -143,7 +143,7 @@ def commitDef (compileEnv : CompileM.CompileEnv) (leanEnv : Lean.Environment)
   let (ixCommitName, _) := (CanonM.canonName commitName).run {}
   let compileEnv'' := { compileEnv' with
     nameToNamed := compileEnv'.nameToNamed.insert ixCommitName
-      ⟨payloadAddr, .empty⟩
+      { addr := payloadAddr, constMeta := .empty }
   }
 
   return (commitAddr, leanEnv', compileEnv'')
