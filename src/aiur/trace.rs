@@ -267,8 +267,7 @@ impl Op {
       Op::Call(function_index, inputs, _, _op_unconstrained) => {
         let inputs = inputs.iter().map(|a| map[*a].0).collect::<Vec<_>>();
         let queries = &context.query_record.function_queries[*function_index];
-        let result =
-          queries.get(inputs.as_slice()).expect("Cannot find query result");
+        let result = queries.get(&inputs).expect("Cannot find query result");
         for f in result.output.iter() {
           map.push((*f, 1));
           slice.push_auxiliary(index, *f);
@@ -283,9 +282,7 @@ impl Op {
           .expect("Invalid memory size");
         let values = values.iter().map(|a| map[*a].0).collect::<Vec<_>>();
         let ptr = G::from_usize(
-          memory_queries
-            .get_index_of(values.as_slice())
-            .expect("Unbound pointer"),
+          memory_queries.get_index_of(&values).expect("Unbound pointer"),
         );
         map.push((ptr, 1));
         slice.push_auxiliary(index, ptr);
