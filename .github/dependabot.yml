@@ -6,7 +6,7 @@ updates:
       separator: "-"
     schedule:
       interval: "weekly"
-    # Create separate pull requests for major vs minor/patch version updates, as major bumps will likely introduce breaking changes
+    # Create separate pull requests for major vs minor/patch version updates, as major bumps will likely introduce breaking changes and Dependabot will put each one in its own PR.
     groups:
       rust-minor:
         patterns:
@@ -14,15 +14,7 @@ updates:
         update-types:
           - "minor"
           - "patch"
-      rust-major:
-        patterns:
-          - "*"
-        update-types:
-          - "major"
-    allow:
-      # Update both direct and indirect dependencies
-      - dependency-type: "all"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 10
 
   - package-ecosystem: "github-actions"
     directory: "/"
