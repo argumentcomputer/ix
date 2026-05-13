@@ -633,7 +633,7 @@ fn hash_source_info(si: &SourceInfo, hasher: &mut blake3::Hasher) {
       hasher.update(&[1]);
       hasher.update(&start.to_le_bytes());
       hasher.update(&stop.to_le_bytes());
-      hasher.update(&[*canonical as u8]);
+      hasher.update(&[u8::from(*canonical)]);
     },
     SourceInfo::None => {
       hasher.update(&[2]);
@@ -743,7 +743,7 @@ pub fn hash_data_value(dv: &DataValue, hasher: &mut blake3::Hasher) {
     },
     DataValue::OfBool(b) => {
       hasher.update(&[1]);
-      hasher.update(&[*b as u8]);
+      hasher.update(&[u8::from(*b)]);
     },
     DataValue::OfName(name) => {
       hasher.update(&[2]);
@@ -907,7 +907,7 @@ impl Expr {
     hasher.update(t.get_hash().as_bytes());
     hasher.update(v.get_hash().as_bytes());
     hasher.update(b.get_hash().as_bytes());
-    hasher.update(&[nd as u8]);
+    hasher.update(&[u8::from(nd)]);
     Expr(Arc::new(ExprData::LetE(n, t, v, b, nd, hasher.finalize())))
   }
 
@@ -1309,7 +1309,7 @@ impl ConstantInfo {
       ConstantInfo::AxiomInfo(v) => {
         hasher.update(&[AXIO]);
         hash_constant_val(&v.cnst, &mut hasher);
-        hasher.update(&[v.is_unsafe as u8]);
+        hasher.update(&[u8::from(v.is_unsafe)]);
       },
       ConstantInfo::DefnInfo(v) => {
         hasher.update(&[DEFN]);
@@ -1335,7 +1335,7 @@ impl ConstantInfo {
         hasher.update(&[OPAQ]);
         hash_constant_val(&v.cnst, &mut hasher);
         hasher.update(v.value.get_hash().as_bytes());
-        hasher.update(&[v.is_unsafe as u8]);
+        hasher.update(&[u8::from(v.is_unsafe)]);
         hasher.update(&(v.all.len() as u64).to_le_bytes());
         for name in &v.all {
           hasher.update(name.get_hash().as_bytes());
@@ -1360,9 +1360,9 @@ impl ConstantInfo {
           hasher.update(name.get_hash().as_bytes());
         }
         hasher.update(&v.num_nested.to_le_bytes());
-        hasher.update(&[v.is_rec as u8]);
-        hasher.update(&[v.is_unsafe as u8]);
-        hasher.update(&[v.is_reflexive as u8]);
+        hasher.update(&[u8::from(v.is_rec)]);
+        hasher.update(&[u8::from(v.is_unsafe)]);
+        hasher.update(&[u8::from(v.is_reflexive)]);
       },
       ConstantInfo::CtorInfo(v) => {
         hasher.update(&[CTOR]);
@@ -1371,7 +1371,7 @@ impl ConstantInfo {
         hasher.update(&v.cidx.to_le_bytes());
         hasher.update(&v.num_params.to_le_bytes());
         hasher.update(&v.num_fields.to_le_bytes());
-        hasher.update(&[v.is_unsafe as u8]);
+        hasher.update(&[u8::from(v.is_unsafe)]);
       },
       ConstantInfo::RecInfo(v) => {
         hasher.update(&[RECR]);
@@ -1388,8 +1388,8 @@ impl ConstantInfo {
         for rule in &v.rules {
           hash_recursor_rule(rule, &mut hasher);
         }
-        hasher.update(&[v.k as u8]);
-        hasher.update(&[v.is_unsafe as u8]);
+        hasher.update(&[u8::from(v.k)]);
+        hasher.update(&[u8::from(v.is_unsafe)]);
       },
     }
     hasher.finalize()

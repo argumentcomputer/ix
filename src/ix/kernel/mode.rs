@@ -65,7 +65,7 @@ impl<A: MetaHash, B: MetaHash> MetaHash for (A, B) {
 
 impl MetaHash for bool {
   fn meta_hash(&self, hasher: &mut blake3::Hasher) {
-    hasher.update(&[*self as u8]);
+    hasher.update(&[u8::from(*self)]);
   }
 }
 
