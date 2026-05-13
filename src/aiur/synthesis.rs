@@ -116,9 +116,12 @@ impl AiurSystem {
     input: &[G],
     io_buffer: &mut IOBuffer,
   ) -> (Vec<G>, Proof) {
-    // Execute the Aiur bytecode.
-    let (query_record, output) =
-      self.toplevel.execute(fun_idx, input.to_vec(), io_buffer);
+    // Execute the Aiur bytecode. The prover assumes inputs are valid; any
+    // execution error here is a programmer bug, so we unwrap.
+    let (query_record, output) = self
+      .toplevel
+      .execute(fun_idx, input.to_vec(), io_buffer)
+      .expect("Aiur execution failed during prove");
 
     // Build the `SystemWitness`
     let functions =

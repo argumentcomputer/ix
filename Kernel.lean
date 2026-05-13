@@ -48,17 +48,20 @@ where
     (← IO.getStdout).flush
     let testCase ← kernelCheck name env
     let funIdx := compiled.getFuncIdx testCase.functionName |>.get!
-    let (output, ioBuffer, queryCounts) :=
-      compiled.bytecode.execute funIdx testCase.input testCase.inputIOBuffer
-    if output != testCase.expectedOutput then
-      IO.eprintln s!"{name}: output mismatch"
+    match compiled.bytecode.execute funIdx testCase.input testCase.inputIOBuffer with
+    | .error e =>
+      IO.eprintln s!"{name}: Aiur execution error: {e}"
       return 1
-    if ioBuffer != testCase.expectedIOBuffer then
-      IO.eprintln s!"{name}: IOBuffer mismatch"
-      return 1
-    let stats := Aiur.computeStats compiled queryCounts
-    Aiur.printStats stats
-    pure 0
+    | .ok (output, ioBuffer, queryCounts) =>
+      if output != testCase.expectedOutput then
+        IO.eprintln s!"{name}: output mismatch"
+        return 1
+      if ioBuffer != testCase.expectedIOBuffer then
+        IO.eprintln s!"{name}: IOBuffer mismatch"
+        return 1
+      let stats := Aiur.computeStats compiled queryCounts
+      Aiur.printStats stats
+      pure 0
   interpCheck decls name env : IO UInt32 := do
     IO.println s!"Interpreting {name}"
     (← IO.getStdout).flush

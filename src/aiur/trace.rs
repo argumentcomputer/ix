@@ -361,7 +361,8 @@ impl Op {
       },
       Op::IOGetInfo(key) => {
         let key = key.iter().map(|a| map[*a].0).collect::<Vec<_>>();
-        let IOKeyInfo { idx, len } = io_buffer.get_info(&key);
+        let IOKeyInfo { idx, len } =
+          io_buffer.get_info(&key).expect("Invalid IO key");
         for f in [G::from_usize(*idx), G::from_usize(*len)] {
           map.push((f, 1));
           slice.push_auxiliary(index, f);
@@ -373,7 +374,7 @@ impl Op {
           .as_canonical_u64()
           .try_into()
           .expect("Index is too big for an usize");
-        for &f in io_buffer.read(idx, *len) {
+        for &f in io_buffer.read(idx, *len).expect("IO read out of bounds") {
           map.push((f, 1));
           slice.push_auxiliary(index, f);
         }

@@ -79,28 +79,29 @@ def AiurTestEnv.interpTest (env : AiurTestEnv) (testCase : AiurTestCase)
 def AiurTestEnv.runTestCase (env : AiurTestEnv) (testCase : AiurTestCase) : TestSeq :=
   let label := testCase.label
   let funIdx := env.compiled.getFuncIdx testCase.functionName |>.get!
-  let (execOutput, execIOBuffer, _queryCounts) := env.compiled.bytecode.execute
-    funIdx testCase.input testCase.inputIOBuffer
-  let execOutputTest := test s!"Execute output matches for {label}"
-    (execOutput == testCase.expectedOutput)
-  let execIOTest := test s!"Execute IOBuffer matches for {label}"
-    (execIOBuffer == testCase.expectedIOBuffer)
-  let execTest := execOutputTest ++ execIOTest
-  let interpTest :=
-    if testCase.interpret then env.interpTest testCase execOutput execIOBuffer
-    else .done
-  if testCase.executionOnly then execTest ++ interpTest
-  else
-    let (claim, proof, ioBuffer) := env.aiurSystem.prove
-      friParameters funIdx testCase.input testCase.inputIOBuffer
-    let claimTest := test s!"Claim matches for {label}"
-      (claim == Aiur.buildClaim funIdx testCase.input testCase.expectedOutput)
-    let ioTest := test s!"IOBuffer matches for {label}"
-      (ioBuffer == testCase.expectedIOBuffer)
-    let proof := .ofBytes proof.toBytes
-    let pvTest := withExceptOk s!"Prove/verify works for {label}"
-      (env.aiurSystem.verify friParameters claim proof) fun _ => .done
-    execTest ++ interpTest ++ claimTest ++ ioTest ++ pvTest
+  match env.compiled.bytecode.execute funIdx testCase.input testCase.inputIOBuffer with
+  | .error e => test s!"Execute succeeds for {label}: {e}" false
+  | .ok (execOutput, execIOBuffer, _queryCounts) =>
+    let execOutputTest := test s!"Execute output matches for {label}"
+      (execOutput == testCase.expectedOutput)
+    let execIOTest := test s!"Execute IOBuffer matches for {label}"
+      (execIOBuffer == testCase.expectedIOBuffer)
+    let execTest := execOutputTest ++ execIOTest
+    let interpTest :=
+      if testCase.interpret then env.interpTest testCase execOutput execIOBuffer
+      else .done
+    if testCase.executionOnly then execTest ++ interpTest
+    else
+      let (claim, proof, ioBuffer) := env.aiurSystem.prove
+        friParameters funIdx testCase.input testCase.inputIOBuffer
+      let claimTest := test s!"Claim matches for {label}"
+        (claim == Aiur.buildClaim funIdx testCase.input testCase.expectedOutput)
+      let ioTest := test s!"IOBuffer matches for {label}"
+        (ioBuffer == testCase.expectedIOBuffer)
+      let proof := .ofBytes proof.toBytes
+      let pvTest := withExceptOk s!"Prove/verify works for {label}"
+        (env.aiurSystem.verify friParameters claim proof) fun _ => .done
+      execTest ++ interpTest ++ claimTest ++ ioTest ++ pvTest
 
 def mkAiurTests (toplevelFn : Except Aiur.Global Aiur.Source.Toplevel)
     (cases : List AiurTestCase) : TestSeq :=

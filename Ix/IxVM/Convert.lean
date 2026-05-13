@@ -33,11 +33,13 @@ def convert := ⟦
 
   -- What to convert, with kind-specific auxiliary data
   enum ConvertKind {
-    CKDefn(Definition),
+    -- CKDefn carries Definition + reducibility hint G (packed:
+    -- 0=Opaque, 1+h=Regular(h), 0xFFFFFFFF=Abbrev). See KernelTypes.
+    CKDefn(Definition, G),
     CKAxio(Axiom),
     CKQuot(Quotient),
-    CKRecr(Recursor, List‹G›),
-    CKIndc(Inductive, List‹G›),
+    CKRecr(Recursor, List‹G›, [G; 32]),
+    CKIndc(Inductive, List‹G›, [G; 32]),
     CKCtor(Constructor, G)
   }
 
@@ -241,14 +243,14 @@ def convert := ⟦
   -- Per-kind conversion
   -- ============================================================================
 
-  fn convert_definition(d: Definition, ctx: ConvertCtx) -> KConstantInfo {
+  fn convert_definition(d: Definition, ctx: ConvertCtx, hint: G) -> KConstantInfo {
     match d {
       Definition.Mk(kind, safety, lvls, &typ, &value) =>
         let ktyp = ctx_convert_expr(typ, ctx);
         let kval = ctx_convert_expr(value, ctx);
         match kind {
           DefKind.Definition =>
-            KConstantInfo.Defn(flatten_u64(lvls), ktyp, kval, safety),
+            KConstantInfo.Defn(flatten_u64(lvls), ktyp, kval, safety, hint),
           DefKind.Opaque =>
             match safety {
               DefinitionSafety.Unsafe =>
@@ -278,7 +280,8 @@ def convert := ⟦
     }
   }
 
-  fn convert_recursor(r: Recursor, ctx: ConvertCtx, rule_ctor_idxs: List‹G›) -> KConstantInfo {
+  fn convert_recursor(r: Recursor, ctx: ConvertCtx, rule_ctor_idxs: List‹G›,
+                      block_addr: [G; 32]) -> KConstantInfo {
     match r {
       Recursor.Mk(k, is_unsafe, lvls, params, indices, motives, minors, &typ, rules) =>
         let ktyp = ctx_convert_expr(typ, ctx);
@@ -286,17 +289,18 @@ def convert := ⟦
         KConstantInfo.Rec(
           flatten_u64(lvls), ktyp, flatten_u64(params), flatten_u64(indices),
           flatten_u64(motives), flatten_u64(minors),
-          krules, k, is_unsafe),
+          krules, k, is_unsafe, block_addr),
     }
   }
 
-  fn convert_inductive(ind: Inductive, ctx: ConvertCtx, ctor_idxs: List‹G›) -> KConstantInfo {
+  fn convert_inductive(ind: Inductive, ctx: ConvertCtx, ctor_idxs: List‹G›,
+                       block_addr: [G; 32]) -> KConstantInfo {
     match ind {
-      Inductive.Mk(is_rec, is_refl, is_unsafe, lvls, params, indices, _, &typ, _) =>
+      Inductive.Mk(is_rec, is_refl, is_unsafe, lvls, params, indices, nested, &typ, _) =>
         let ktyp = ctx_convert_expr(typ, ctx);
         KConstantInfo.Induct(
           flatten_u64(lvls), ktyp, flatten_u64(params), flatten_u64(indices),
-          ctor_idxs, is_rec, is_refl, is_unsafe),
+          ctor_idxs, is_rec, is_refl, is_unsafe, flatten_u64(nested), block_addr),
     }
   }
 
@@ -319,11 +323,12 @@ def convert := ⟦
     match input {
       ConvertInput.Mk(ctx, kind) =>
         match kind {
-          ConvertKind.CKDefn(d) => convert_definition(d, ctx),
+          ConvertKind.CKDefn(d, hint) => convert_definition(d, ctx, hint),
           ConvertKind.CKAxio(a) => convert_axiom(a, ctx),
           ConvertKind.CKQuot(q) => convert_quotient(q, ctx),
-          ConvertKind.CKRecr(r, rule_ctor_idxs) => convert_recursor(r, ctx, rule_ctor_idxs),
-          ConvertKind.CKIndc(ind, ctor_idxs) => convert_inductive(ind, ctx, ctor_idxs),
+          ConvertKind.CKRecr(r, rule_ctor_idxs, block_addr) =>
+            convert_recursor(r, ctx, rule_ctor_idxs, block_addr),
+          ConvertKind.CKIndc(ind, ctor_idxs, block_addr) => convert_inductive(ind, ctx, ctor_idxs, block_addr),
           ConvertKind.CKCtor(c, induct_idx) => convert_constructor(c, ctx, induct_idx),
         },
     }

@@ -29,14 +29,8 @@ def main : IO Unit := do
   let aiurSystem := Aiur.AiurSystem.build compiled.bytecode commitmentParameters
 
   let env ← get_env!
-  let natAddCommName := ``Nat.add_comm
-  let constList := Lean.collectDependencies natAddCommName env.constants
-  let rawEnv ← Ix.CompileM.rsCompileEnvFFI constList
-  let ixonEnv := rawEnv.toEnv
-  let ixonConsts := ixonEnv.consts.valuesIter
-  let (ioBuffer, n) := ixonConsts.fold (init := (default, 0)) fun (ioBuffer, i) c =>
-    let (_, bytes) := Ixon.Serialize.put c |>.run default
-    (ioBuffer.extend #[.ofNat i] (bytes.data.map .ofUInt8), i + 1)
+  let ixonEnv ← IxVM.CheckHarness.loadIxonEnv ``Nat.add_comm env
+  let (ioBuffer, n) := IxVM.CheckHarness.buildSerdeIOBuffer ixonEnv
 
   let _ ← bgroup "IxVM benchmarks" { oneShot := true } do
     throughput (.Elements n.toUInt64 "consts")

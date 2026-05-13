@@ -13,6 +13,7 @@ import Tests.Ix.Kernel.CheckEnv
 import Tests.Ix.Kernel.Roundtrip
 import Tests.Ix.Kernel.RoundtripNoCompile
 import Tests.Ix.Kernel.Tutorial
+import Tests.Ix.Kernel.Arena
 import Tests.Ix.RustSerialize
 import Tests.Ix.RustDecompile
 import Tests.Ix.Sharing
@@ -86,13 +87,21 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
       | IO.eprintln "SHA256 setup failed"; return 1
     let r2 ← LSpec.lspecEachIO sha256TestCases fun tc => pure (sha256Env.runTestCase tc)
     return if r1 == 0 && r2 == 0 then 0 else 1),
-  -- ixvm tests temporarily disabled while Aiur kernel port lands on ap/kernel
-  -- ("ixvm", do
-  --   let kernelUnitTests := .exec `kernel_unit_tests
-  --   let serdeNatAddCommTest ← serdeNatAddComm env
-  --   let kernelChecks ← kernelChecks env
-  --   let tests := [kernelUnitTests, serdeNatAddCommTest] ++ kernelChecks
-  --   LSpec.lspecIO (.ofList [("ixvm", [mkAiurTests IxVM.ixVM tests])]) []),
+  ("ixvm", do
+    let kernelUnitTests := .exec `kernel_unit_tests
+    let serdeNatAddCommTest ← serdeNatAddComm env
+    let kernelChecks ← kernelChecks env
+    let aiurTests := [kernelUnitTests, serdeNatAddCommTest] ++ kernelChecks
+    -- The arena suite shares the compiled toplevel with the AiurTestCase
+    -- runs above; build it once here and weave the resulting TestSeq in
+    -- alongside `mkAiurTests`'s output.
+    match AiurTestEnv.build IxVM.ixVM with
+    | .error e => IO.eprintln s!"IxVM env build failed: {e}"; return 1
+    | .ok aiurEnv =>
+      let arenaSeq ← Tests.Ix.Kernel.Arena.arenaTests env aiurEnv.compiled
+      let aiurSeq := aiurTests.foldl (init := .done) fun s tc =>
+        s ++ aiurEnv.runTestCase tc
+      LSpec.lspecIO (.ofList [("ixvm", [aiurSeq, arenaSeq])]) []),
   ("rbtree-map", do
     IO.println "rbtree-map"
     match AiurTestEnv.build (pure IxVM.rbTreeMap) with
