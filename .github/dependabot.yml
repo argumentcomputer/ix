@@ -6,6 +6,8 @@ updates:
       separator: "-"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
     # Create separate pull requests for major vs minor/patch version updates, as major bumps will likely introduce breaking changes and Dependabot will put each one in its own PR.
     groups:
       rust-minor:
