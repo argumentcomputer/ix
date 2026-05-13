@@ -1944,7 +1944,6 @@ dependencies = [
 [[package]]
 name = "multi-stark"
 version = "0.1.0"
-source = "git+https://github.com/argumentcomputer/multi-stark.git?branch=sb%2Fstreaming-print#dbe77db42f71ac27ace80d54e69d7e33c9636d0e"
 dependencies = [
  "bincode",
  "p3-air",

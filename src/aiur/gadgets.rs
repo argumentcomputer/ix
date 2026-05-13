@@ -35,13 +35,8 @@ pub(crate) trait AiurGadget {
   /// Returns the symbolic lookups associated with this gadget.
   fn lookups(&self) -> Vec<Lookup<SymbolicExpression<G>>>;
 
-  /// Returns the witness data for the prover, including a row-major trace matrix and
-  /// the lookup values, which also follow a row-major layout.
-  ///
-  /// The lookups must be fully padded. That is, every row must have the exact same number
-  /// of lookups, matching the number of lookups returned by the `lookups` method.
-  fn witness_data(
-    &self,
-    record: &QueryRecord,
-  ) -> (RowMajorMatrix<G>, Vec<Vec<Lookup<G>>>);
+  /// Returns the witness data (stage 1 main trace) for the prover. Concrete
+  /// per-row lookup values are derived in `multi_stark::Lookup::stage_2_traces`
+  /// from this trace plus the symbolic lookups returned by `lookups`.
+  fn witness_data(&self, record: &QueryRecord) -> RowMajorMatrix<G>;
 }

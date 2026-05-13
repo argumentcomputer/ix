@@ -157,50 +157,18 @@ impl AiurGadget for Bytes1 {
     vec![pull_bit_decomposition, pull_shift_left, pull_shift_right]
   }
 
-  fn witness_data(
-    &self,
-    record: &QueryRecord,
-  ) -> (RowMajorMatrix<G>, Vec<Vec<Lookup<G>>>) {
+  fn witness_data(&self, record: &QueryRecord) -> RowMajorMatrix<G> {
     let mut rows = vec![G::ZERO; 256 * TRACE_WIDTH];
 
-    // There are `TRACE_WIDTH` lookups per row, one for each multiplicity.
-    let mut lookups = vec![vec![Lookup::empty(); TRACE_WIDTH]; 256];
-
-    let bit_decomposition_channel = u8_bit_decomposition_channel();
-    let shift_left_channel = u8_shift_left_channel();
-    let shift_right_channel = u8_shift_right_channel();
-
-    // There are at most 256 rows so parallelism is not necessay.
-    rows
-      .chunks_exact_mut(TRACE_WIDTH)
-      .enumerate()
-      .zip(&record.bytes1_queries.0)
-      .zip(&mut lookups)
-      .for_each(|(((byte, row), &[bd, shl, shr]), row_lookups)| {
-        let byte = G::from_usize(byte);
+    // There are at most 256 rows so parallelism is not necessary.
+    rows.chunks_exact_mut(TRACE_WIDTH).zip(&record.bytes1_queries.0).for_each(
+      |(row, &[bd, shl, shr])| {
         row[0] = bd;
         row[1] = shl;
         row[2] = shr;
-
-        // Pull bit decomposition.
-        let mut bit_decomposition_args = Vec::with_capacity(10);
-        bit_decomposition_args.extend([bit_decomposition_channel, byte]);
-        bit_decomposition_args.extend(Self::bit_decompose(&byte));
-        row_lookups[0] = Lookup::pull(bd, bit_decomposition_args);
-
-        // Pull shift left.
-        row_lookups[1] = Lookup::pull(
-          shl,
-          vec![shift_left_channel, byte, Self::shift_left(&byte)],
-        );
-
-        // Pull shift right.
-        row_lookups[2] = Lookup::pull(
-          shr,
-          vec![shift_right_channel, byte, Self::shift_right(&byte)],
-        );
-      });
-    (RowMajorMatrix::new(rows, TRACE_WIDTH), lookups)
+      },
+    );
+    RowMajorMatrix::new(rows, TRACE_WIDTH)
   }
 }
 

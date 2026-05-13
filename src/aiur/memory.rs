@@ -5,13 +5,10 @@ use multi_stark::{
   p3_field::PrimeCharacteristicRing,
   p3_matrix::dense::RowMajorMatrix,
 };
-use rayon::{
-  iter::{
-    IndexedParallelIterator, IntoParallelRefIterator,
-    IntoParallelRefMutIterator, ParallelIterator,
-  },
-  slice::ParallelSliceMut,
+use rayon::iter::{
+  IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator,
 };
+use rayon::slice::ParallelSliceMut;
 
 use crate::aiur::{G, execute::QueryRecord, memory_channel};
 
@@ -20,18 +17,6 @@ pub struct Memory {
 }
 
 impl Memory {
-  pub(super) fn lookup(
-    multiplicity: G,
-    size: G,
-    ptr: G,
-    values: &[G],
-  ) -> Lookup<G> {
-    let mut args = Vec::with_capacity(3 + values.len());
-    args.extend([memory_channel(), size, ptr]);
-    args.extend(values);
-    Lookup { multiplicity, args }
-  }
-
   fn width(size: usize) -> usize {
     // Multiplicity, selector, pointer and values.
     3 + size
@@ -52,10 +37,7 @@ impl Memory {
     (Self { width }, vec![Lookup::pull(multiplicity, args)])
   }
 
-  pub fn witness_data(
-    size: usize,
-    record: &QueryRecord,
-  ) -> (RowMajorMatrix<G>, Vec<Vec<Lookup<G>>>) {
+  pub fn witness_data(size: usize, record: &QueryRecord) -> RowMajorMatrix<G> {
     let queries = record.memory_queries.get(&size).expect("Invalid size");
     let width = Self::width(size);
     let height_no_padding = queries.len();
@@ -64,26 +46,18 @@ impl Memory {
     let mut rows = vec![G::ZERO; height * width];
     let rows_no_padding = &mut rows[0..height_no_padding * width];
 
-    let mut lookups = vec![vec![Lookup::empty()]; height];
-    let lookups_no_padding = &mut lookups[0..height_no_padding];
-
     rows_no_padding
       .par_chunks_mut(width)
       .zip(queries.par_iter())
-      .zip(lookups_no_padding.par_iter_mut())
       .enumerate()
-      .for_each(|(i, ((row, (values, result)), row_lookups))| {
+      .for_each(|(i, (row, (values, result)))| {
         row[0] = result.multiplicity;
         row[1] = G::ONE;
         row[2] = G::from_usize(i);
         row[3..].copy_from_slice(values);
-
-        row_lookups[0] =
-          Self::lookup(-row[0], G::from_usize(size), row[2], &row[3..]);
       });
 
-    let trace = RowMajorMatrix::new(rows, width);
-    (trace, lookups)
+    RowMajorMatrix::new(rows, width)
   }
 }
 

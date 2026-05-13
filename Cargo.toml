@@ -13,7 +13,7 @@ itertools = "0.14.0"
 indexmap = { version = "2", features = ["rayon"] }
 lean-ffi = { git = "https://github.com/argumentcomputer/lean-ffi", rev = "cc98ebf67bf453ac3827cb767f78b13ea674dd6a" }
 mimalloc = { version = "0.1", default-features = false }
-multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", branch = "sb/streaming-print" }
+multi-stark = { path = "/home/sam/repos/multi-stark.perf-lookups" }
 num-bigint = "0.4.6"
 rayon = "1"
 rustc-hash = "2"

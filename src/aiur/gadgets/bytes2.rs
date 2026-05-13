@@ -215,76 +215,21 @@ impl AiurGadget for Bytes2 {
     ]
   }
 
-  fn witness_data(
-    &self,
-    record: &QueryRecord,
-  ) -> (RowMajorMatrix<G>, Vec<Vec<Lookup<G>>>) {
+  fn witness_data(&self, record: &QueryRecord) -> RowMajorMatrix<G> {
     let mut rows = vec![G::ZERO; 256 * 256 * TRACE_WIDTH];
 
-    // There are `TRACE_WIDTH` lookups per row, one for each multiplicity.
-    let mut lookups = vec![vec![Lookup::empty(); TRACE_WIDTH]; 256 * 256];
-
-    let xor_channel = u8_xor_channel();
-    let add_channel = u8_add_channel();
-    let sub_channel = u8_sub_channel();
-    let and_channel = u8_and_channel();
-    let or_channel = u8_or_channel();
-    let less_than_channel = u8_less_than_channel();
-    let range_check_channel = u8_range_check_channel();
-
-    rows
-      .chunks_exact_mut(TRACE_WIDTH)
-      .enumerate()
-      .zip(&record.bytes2_queries.0)
-      .zip(&mut lookups)
-      .for_each(
-        |(
-          ((row_idx, row), &[xor, add, sub, and, or, less_than, range_check]),
-          row_lookups,
-        )| {
-          let i = G::from_usize(row_idx / 256);
-          let j = G::from_usize(row_idx % 256);
-
-          row[0] = xor;
-          row[1] = add;
-          row[2] = sub;
-          row[3] = and;
-          row[4] = or;
-          row[5] = less_than;
-          row[6] = range_check;
-
-          // Pull xor.
-          row_lookups[0] =
-            Lookup::pull(xor, vec![xor_channel, i, j, Self::xor(&i, &j)]);
-
-          // Pull add.
-          let (r, o) = Self::add(&i, &j);
-          row_lookups[1] = Lookup::pull(add, vec![add_channel, i, j, r, o]);
-
-          // Pull sub.
-          let (r, u) = Self::sub(&i, &j);
-          row_lookups[2] = Lookup::pull(sub, vec![sub_channel, i, j, r, u]);
-
-          // Pull and.
-          row_lookups[3] =
-            Lookup::pull(and, vec![and_channel, i, j, Self::and(&i, &j)]);
-
-          // Pull or.
-          row_lookups[4] =
-            Lookup::pull(or, vec![or_channel, i, j, Self::or(&i, &j)]);
-
-          // Pull less_than.
-          row_lookups[5] = Lookup::pull(
-            less_than,
-            vec![less_than_channel, i, j, Self::less_than(&i, &j)],
-          );
-
-          // Pull range_check.
-          row_lookups[6] =
-            Lookup::pull(range_check, vec![range_check_channel, i, j]);
-        },
-      );
-    (RowMajorMatrix::new(rows, TRACE_WIDTH), lookups)
+    rows.chunks_exact_mut(TRACE_WIDTH).zip(&record.bytes2_queries.0).for_each(
+      |(row, &[xor, add, sub, and, or, less_than, range_check])| {
+        row[0] = xor;
+        row[1] = add;
+        row[2] = sub;
+        row[3] = and;
+        row[4] = or;
+        row[5] = less_than;
+        row[6] = range_check;
+      },
+    );
+    RowMajorMatrix::new(rows, TRACE_WIDTH)
   }
 }
 

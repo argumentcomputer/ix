@@ -126,7 +126,8 @@ impl AiurSystem {
       self.toplevel.execute(fun_idx, input.to_vec(), io_buffer);
     drop(_g);
 
-    // Build the `SystemWitness`
+    // Build the `SystemWitness` (main traces only — multi-stark resolves
+    // lookups symbolically against these during stage 2).
     let _g = tracing::info_span!("aiur/witness").entered();
     let functions =
       (0..self.toplevel.functions.len()).into_par_iter().filter_map(|idx| {
@@ -142,7 +143,7 @@ impl AiurSystem {
       .par_iter()
       .map(|&width| CircuitType::Memory { width });
     let gadgets = [CircuitType::Bytes1, CircuitType::Bytes2].into_par_iter();
-    let witness_data = functions
+    let traces: Vec<_> = functions
       .chain(memories)
       .chain(gadgets)
       .map(|circuit_type| match circuit_type {
@@ -155,10 +156,9 @@ impl AiurSystem {
         CircuitType::Bytes1 => Bytes1.witness_data(&query_record),
         CircuitType::Bytes2 => Bytes2.witness_data(&query_record),
       })
-      .collect::<Vec<_>>();
+      .collect();
     drop(query_record); // Early drop to free memory.
-    let (traces, lookups) = witness_data.into_iter().unzip();
-    let witness = SystemWitness { traces, lookups };
+    let witness = SystemWitness::new(traces);
     drop(_g);
 
     // Construct the claim.

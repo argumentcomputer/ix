@@ -229,11 +229,11 @@ fn decode_fri_parameters(
 
 fn decode_io_buffer_map(
   arr: &LeanArray<LeanBorrowed<'_>>,
-) -> FxHashMap<Vec<G>, IOKeyInfo> {
+) -> FxHashMap<Box<[G]>, IOKeyInfo> {
   let mut map = FxHashMap::with_capacity_and_hasher(arr.len(), FxBuildHasher);
   for elt in arr.iter() {
     let pair = elt.as_ctor();
-    let key = pair.get(0).as_array().map(|x| lean_unbox_g(&x));
+    let key: Box<[G]> = pair.get(0).as_array().map(|x| lean_unbox_g(&x)).into();
     let info_ctor = pair.get(1).as_ctor();
     let info = IOKeyInfo {
       idx: lean_unbox_nat_as_usize(&info_ctor.get(0)),

@@ -16,11 +16,18 @@ use crate::{
 };
 
 pub struct QueryResult {
-  pub(crate) output: Vec<G>,
+  pub(crate) output: Box<[G]>,
   pub(crate) multiplicity: G,
 }
 
-pub type QueryMap = FxIndexMap<Vec<G>, QueryResult>;
+/// Memoization table for (function|memory) queries.
+///
+/// Keys and outputs are stored as `Box<[G]>` rather than `Vec<G>` to drop
+/// the per-entry capacity field and the over-allocation that `Vec`'s
+/// growth strategy introduces. For workloads with millions of memoized
+/// queries (e.g. SHA256 / Blake3 benches), this trims ~16 B / entry from
+/// peak `QueryRecord` size.
+pub type QueryMap = FxIndexMap<Box<[G]>, QueryResult>;
 
 pub struct QueryRecord {
   pub(crate) function_queries: Vec<QueryMap>,
@@ -51,7 +58,9 @@ pub(crate) struct IOKeyInfo {
 
 pub struct IOBuffer {
   pub(crate) data: Vec<G>,
-  pub(crate) map: FxHashMap<Vec<G>, IOKeyInfo>,
+  /// Keys are stored as `Box<[G]>` rather than `Vec<G>` to drop each
+  /// entry's capacity field; matches `QueryMap`'s representation.
+  pub(crate) map: FxHashMap<Box<[G]>, IOKeyInfo>,
 }
 
 impl IOBuffer {
@@ -59,7 +68,7 @@ impl IOBuffer {
   pub(crate) fn get_info(&self, key: &[G]) -> &IOKeyInfo {
     self.map.get(key).expect("Invalid IO key")
   }
-  fn set_info(&mut self, key: Vec<G>, idx: usize, len: usize) {
+  fn set_info(&mut self, key: Box<[G]>, idx: usize, len: usize) {
     let Entry::Vacant(e) = self.map.entry(key) else {
       panic!("Mapping already set for key");
     };
@@ -149,14 +158,14 @@ impl Function {
           map.push(G::from_bool(a == G::ZERO));
         },
         ExecEntry::Op(Op::Call(callee_idx, args, _, op_unconstrained)) => {
-          let args = args.iter().map(|i| map[*i]).collect();
+          let args = args.iter().map(|i| map[*i]).collect::<Vec<_>>();
           if let Some(result) =
-            record.function_queries[*callee_idx].get_mut(&args)
+            record.function_queries[*callee_idx].get_mut(args.as_slice())
           {
             if !unconstrained && !op_unconstrained {
               result.multiplicity += G::ONE;
             }
-            map.extend(result.output.clone());
+            map.extend_from_slice(&result.output);
           } else {
             let saved_map = std::mem::replace(&mut map, args);
             callers_states_stack.push(CallerState {
@@ -175,18 +184,18 @@ impl Function {
           let size = values.len();
           let memory_queries =
             record.memory_queries.get_mut(&size).expect("Invalid memory size");
-          if let Some(result) = memory_queries.get_mut(&values) {
+          if let Some(result) = memory_queries.get_mut(values.as_slice()) {
             if !unconstrained {
               result.multiplicity += G::ONE;
             }
-            map.extend(&result.output);
+            map.extend_from_slice(&result.output);
           } else {
             let ptr = G::from_usize(memory_queries.len());
             let result = QueryResult {
-              output: vec![ptr],
+              output: Box::from([ptr]),
               multiplicity: G::from_bool(!unconstrained),
             };
-            memory_queries.insert(values, result);
+            memory_queries.insert(values.into_boxed_slice(), result);
             map.push(ptr);
           }
         },
@@ -201,7 +210,7 @@ impl Function {
           if !unconstrained {
             result.multiplicity += G::ONE;
           }
-          map.extend(args);
+          map.extend_from_slice(args);
         },
         ExecEntry::Op(Op::AssertEq(xs, ys)) => {
           assert_eq!(xs.len(), ys.len());
@@ -216,7 +225,7 @@ impl Function {
           map.push(G::from_usize(*len));
         },
         ExecEntry::Op(Op::IOSetInfo(key, idx, len)) => {
-          let key = key.iter().map(|v| map[*v]).collect::<Vec<_>>();
+          let key = key.iter().map(|v| map[*v]).collect::<Box<[_]>>();
           let get = |x: &usize| {
             map[*x]
               .as_canonical_u64()
@@ -384,10 +393,10 @@ impl Function {
         ExecEntry::Ctrl(Ctrl::Return(_, output)) => {
           // Register the query.
           let input_size = toplevel.functions[fun_idx].layout.input_size;
-          let args = map[..input_size].to_vec();
+          let args: Box<[G]> = Box::from(&map[..input_size]);
           let output = output.iter().map(|i| map[*i]).collect::<Vec<_>>();
           let result = QueryResult {
-            output: output.clone(),
+            output: output.as_slice().into(),
             multiplicity: G::from_bool(!unconstrained),
           };
           record.function_queries[fun_idx].insert(args, result);
