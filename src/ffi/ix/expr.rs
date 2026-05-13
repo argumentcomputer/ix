@@ -118,7 +118,7 @@ impl LeanIxExpr<LeanOwned> {
         ctor.set_obj(2, val_obj);
         ctor.set_obj(3, body_obj);
         ctor.set_obj(4, hash_obj);
-        ctor.set_num_8(0, *non_dep as u8);
+        ctor.set_num_8(0, u8::from(*non_dep));
         ctor
       },
       ExprData::Lit(lit, h) => {

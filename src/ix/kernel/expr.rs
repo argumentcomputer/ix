@@ -532,7 +532,7 @@ impl<M: KernelMode> KExpr<M> {
     h.update(ty.addr().as_bytes());
     h.update(val.addr().as_bytes());
     h.update(body.addr().as_bytes());
-    h.update(&[non_dep as u8]);
+    h.update(&[u8::from(non_dep)]);
     h.finalize()
   }
 

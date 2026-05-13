@@ -131,8 +131,8 @@ impl LeanIxonRecursor<LeanOwned> {
     ctor.set_num_64(2, rec.indices);
     ctor.set_num_64(3, rec.motives);
     ctor.set_num_64(4, rec.minors);
-    ctor.set_num_8(0, rec.k as u8);
-    ctor.set_num_8(1, rec.is_unsafe as u8);
+    ctor.set_num_8(0, u8::from(rec.k));
+    ctor.set_num_8(1, u8::from(rec.is_unsafe));
     ctor
   }
 }
@@ -179,7 +179,7 @@ impl LeanIxonAxiom<LeanOwned> {
     let ctor = Self::alloc(0);
     ctor.set_obj(0, typ_obj);
     ctor.set_num_64(0, ax.lvls);
-    ctor.set_num_8(0, ax.is_unsafe as u8);
+    ctor.set_num_8(0, u8::from(ax.is_unsafe));
     ctor
   }
 }
@@ -254,7 +254,7 @@ impl LeanIxonConstructor<LeanOwned> {
     ctor.set_num_64(1, c.cidx);
     ctor.set_num_64(2, c.params);
     ctor.set_num_64(3, c.fields);
-    ctor.set_num_8(0, c.is_unsafe as u8);
+    ctor.set_num_8(0, u8::from(c.is_unsafe));
     ctor
   }
 }
@@ -295,9 +295,9 @@ impl LeanIxonInductive<LeanOwned> {
     ctor.set_num_64(1, ind.params);
     ctor.set_num_64(2, ind.indices);
     ctor.set_num_64(3, ind.nested);
-    ctor.set_num_8(0, ind.recr as u8);
-    ctor.set_num_8(1, ind.refl as u8);
-    ctor.set_num_8(2, ind.is_unsafe as u8);
+    ctor.set_num_8(0, u8::from(ind.recr));
+    ctor.set_num_8(1, u8::from(ind.refl));
+    ctor.set_num_8(2, u8::from(ind.is_unsafe));
     ctor
   }
 }

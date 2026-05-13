@@ -92,7 +92,7 @@ impl Tag4 {
     let size = if large {
       u64_get_trimmed_le((small + 1) as usize, buf)?
     } else {
-      small as u64
+      u64::from(small)
     };
     Ok(Tag4 { flag, size })
   }
@@ -152,7 +152,7 @@ impl Tag2 {
     let size = if large {
       u64_get_trimmed_le((small + 1) as usize, buf)?
     } else {
-      small as u64
+      u64::from(small)
     };
     Ok(Tag2 { flag, size })
   }
@@ -210,7 +210,7 @@ impl Tag0 {
     let size = if large {
       u64_get_trimmed_le((small + 1) as usize, buf)?
     } else {
-      small as u64
+      u64::from(small)
     };
     Ok(Tag0 { size })
   }

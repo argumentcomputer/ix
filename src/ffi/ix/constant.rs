@@ -165,7 +165,7 @@ impl LeanIxConstantInfo<LeanOwned> {
         let cnst_obj = LeanIxConstantVal::build(cache, &v.cnst);
         let axiom_val = LeanIxAxiomVal::alloc(0);
         axiom_val.set_obj(0, cnst_obj);
-        axiom_val.set_num_8(0, v.is_unsafe as u8);
+        axiom_val.set_num_8(0, u8::from(v.is_unsafe));
 
         let obj = LeanIxConstantInfo::alloc(0);
         obj.set_obj(0, axiom_val);
@@ -223,7 +223,7 @@ impl LeanIxConstantInfo<LeanOwned> {
         opaque_val.set_obj(0, cnst_obj);
         opaque_val.set_obj(1, value_obj);
         opaque_val.set_obj(2, all_obj);
-        opaque_val.set_num_8(0, v.is_unsafe as u8);
+        opaque_val.set_num_8(0, u8::from(v.is_unsafe));
 
         let obj = LeanIxConstantInfo::alloc(3);
         obj.set_obj(0, opaque_val);
@@ -267,9 +267,9 @@ impl LeanIxConstantInfo<LeanOwned> {
         induct_val.set_obj(3, all_obj);
         induct_val.set_obj(4, ctors_obj);
         induct_val.set_obj(5, num_nested_obj);
-        induct_val.set_num_8(0, v.is_rec as u8);
-        induct_val.set_num_8(1, v.is_unsafe as u8);
-        induct_val.set_num_8(2, v.is_reflexive as u8);
+        induct_val.set_num_8(0, u8::from(v.is_rec));
+        induct_val.set_num_8(1, u8::from(v.is_unsafe));
+        induct_val.set_num_8(2, u8::from(v.is_reflexive));
 
         let obj = LeanIxConstantInfo::alloc(5);
         obj.set_obj(0, induct_val);
@@ -291,7 +291,7 @@ impl LeanIxConstantInfo<LeanOwned> {
         ctor_val.set_obj(2, cidx_obj);
         ctor_val.set_obj(3, num_params_obj);
         ctor_val.set_obj(4, num_fields_obj);
-        ctor_val.set_num_8(0, v.is_unsafe as u8);
+        ctor_val.set_num_8(0, u8::from(v.is_unsafe));
 
         let obj = LeanIxConstantInfo::alloc(6);
         obj.set_obj(0, ctor_val);
@@ -317,8 +317,8 @@ impl LeanIxConstantInfo<LeanOwned> {
         rec_val.set_obj(4, num_motives_obj);
         rec_val.set_obj(5, num_minors_obj);
         rec_val.set_obj(6, rules_obj);
-        rec_val.set_num_8(0, v.k as u8);
-        rec_val.set_num_8(1, v.is_unsafe as u8);
+        rec_val.set_num_8(0, u8::from(v.k));
+        rec_val.set_num_8(1, u8::from(v.is_unsafe));
 
         let obj = LeanIxConstantInfo::alloc(7);
         obj.set_obj(0, rec_val);

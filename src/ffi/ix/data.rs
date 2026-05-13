@@ -87,7 +87,7 @@ impl LeanIxSourceInfo<LeanOwned> {
         let ctor = LeanIxSourceInfo::alloc(1);
         ctor.set_obj(0, Nat::to_lean(pos));
         ctor.set_obj(1, Nat::to_lean(end_pos));
-        ctor.set_num_8(0, *canonical as u8);
+        ctor.set_num_8(0, u8::from(*canonical));
         ctor
       },
       // | none -- tag 2 (no fields — scalar)
@@ -288,7 +288,7 @@ impl LeanIxDataValue<LeanOwned> {
       },
       DataValue::OfBool(b) => {
         let ctor = LeanIxDataValue::alloc(1);
-        ctor.set_num_8(0, *b as u8);
+        ctor.set_num_8(0, u8::from(*b));
         ctor
       },
       DataValue::OfName(n) => {
