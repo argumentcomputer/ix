@@ -87,6 +87,20 @@ def core := ⟦
       ListNode.Cons(head, rest) => store(ListNode.Cons(head, list_snoc(rest, v))),
     }
   }
+
+  -- O(N) reverse via accumulator. Used by hot-path builders that
+  -- accumulate via cons (O(1)) then reverse once instead of O(N²) snoc.
+  fn list_reverse‹T›(list: List‹T›) -> List‹T› {
+    list_reverse_acc(list, store(ListNode.Nil))
+  }
+
+  fn list_reverse_acc‹T›(list: List‹T›, acc: List‹T›) -> List‹T› {
+    match load(list) {
+      ListNode.Nil => acc,
+      ListNode.Cons(head, rest) =>
+        list_reverse_acc(rest, store(ListNode.Cons(head, acc))),
+    }
+  }
 ⟧
 
 end IxVM

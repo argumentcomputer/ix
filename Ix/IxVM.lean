@@ -9,7 +9,16 @@ public import Ix.IxVM.IxonSerialize
 public import Ix.IxVM.IxonDeserialize
 public import Ix.IxVM.Convert
 public import Ix.IxVM.KernelTypes
-public import Ix.IxVM.Kernel
+public import Ix.IxVM.Kernel.Levels
+public import Ix.IxVM.Kernel.Primitive
+public import Ix.IxVM.Kernel.Subst
+public import Ix.IxVM.Kernel.Whnf
+public import Ix.IxVM.Kernel.Infer
+public import Ix.IxVM.Kernel.DefEq
+public import Ix.IxVM.Kernel.Inductive
+public import Ix.IxVM.Kernel.CanonicalCheck
+public import Ix.IxVM.Kernel.Check
+public import Ix.IxVM.CheckHarness
 
 public section
 
@@ -33,9 +42,22 @@ def entrypoints := ⟦
     }
   }
 
-  pub fn kernel_check_test(target_addr: [G; 32]) {
-    let (k_consts, nat_idx, str_idx) = ingress_with_primitives(target_addr);
-    k_check_all_go(k_consts, k_consts, nat_idx, str_idx, 0)
+  -- `check_deps` controls whether transitive dependencies are
+  -- typechecked along with the target. When 1, runs `check_all`
+  -- (current behavior). When 0, runs `check_const` only on the target
+  -- — saving the per-dep `validate_const_well_scoped`, `k_check`,
+  -- recursor canonical-build, positivity, etc. Deps still need to be
+  -- in `k_consts`/`addrs` so the target's own `whnf`/`infer` can
+  -- resolve `Const` refs; the IOBuffer payload doesn't shrink.
+  pub fn kernel_check_test(target_addr: [G; 32], check_deps: G) {
+    let (k_consts, addrs) = ingress_with_primitives(target_addr);
+    match check_deps {
+      0 =>
+        let target_pos = find_addr_idx(target_addr, addrs, 0);
+        let ci = load(list_lookup(k_consts, target_pos));
+        check_const(ci, target_pos, k_consts, addrs),
+      _ => check_all(k_consts, k_consts, addrs),
+    }
   }
 
   fn level_cmp_tests() {
@@ -155,7 +177,15 @@ def ixVM : Except Aiur.Global Aiur.Source.Toplevel := do
   let vm ← vm.merge convert
   let vm ← vm.merge ingress
   let vm ← vm.merge kernelTypes
-  let vm ← vm.merge kernel
+  let vm ← vm.merge levels
+  let vm ← vm.merge primitive
+  let vm ← vm.merge subst
+  let vm ← vm.merge whnf
+  let vm ← vm.merge infer
+  let vm ← vm.merge defEq
+  let vm ← vm.merge inductive_check
+  let vm ← vm.merge canonicalCheck
+  let vm ← vm.merge check
   vm.merge entrypoints
 
 end IxVM

@@ -87,7 +87,10 @@ extern "C" fn rs_aiur_system_verify(
 }
 
 /// `Bytecode.Toplevel.execute`: runs execution only (no proof) and returns
-/// `Array G × Array G × Array (Array G × IOKeyInfo)`
+/// `Except String (Array G × (Array G × Array (Array G × IOKeyInfo)) × Array Nat)`.
+/// On execution failure (e.g. assertion mismatch from a typechecker
+/// rejecting a constant), returns `Except.error msg` instead of panicking
+/// — letting Lean test runners (`KernelArena.lean`) classify failures.
 #[unsafe(no_mangle)]
 extern "C" fn rs_aiur_toplevel_execute(
   toplevel: LeanAiurToplevel<LeanBorrowed<'_>>,
@@ -95,13 +98,19 @@ extern "C" fn rs_aiur_toplevel_execute(
   args: LeanArray<LeanBorrowed<'_>>,
   io_data_arr: LeanArray<LeanBorrowed<'_>>,
   io_map_arr: LeanArray<LeanBorrowed<'_>>,
-) -> LeanOwned {
+) -> LeanExcept<LeanOwned> {
   let toplevel = decode_toplevel(&toplevel);
   let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
   let mut io_buffer = decode_io_buffer(&io_data_arr, &io_map_arr);
 
-  let (query_record, output) =
-    toplevel.execute(fun_idx, args.map(|x| lean_unbox_g(&x)), &mut io_buffer);
+  let (query_record, output) = match toplevel.execute(
+    fun_idx,
+    args.map(|x| lean_unbox_g(&x)),
+    &mut io_buffer,
+  ) {
+    Ok(pair) => pair,
+    Err(err) => return LeanExcept::error_string(&err.to_string()),
+  };
 
   // Build query counts: one per function, then one per memory size
   let mut query_counts: Vec<usize> = Vec::with_capacity(
@@ -130,7 +139,7 @@ extern "C" fn rs_aiur_toplevel_execute(
   // (Array G, (Array G × Array (Array G × IOKeyInfo), Array Nat))
   let io_counts = LeanProd::new(lean_io, lean_query_counts);
   let result = LeanProd::new(build_g_array(&output), io_counts);
-  result.into()
+  LeanExcept::ok(result)
 }
 
 /// `AiurSystem.prove`: runs the prover and returns

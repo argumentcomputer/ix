@@ -56,20 +56,23 @@ namespace Bytecode.Toplevel
 private opaque execute' : @& Bytecode.Toplevel →
   @& Bytecode.FunIdx → @& Array G → (ioData : @& Array G) →
   (ioMap : @& Array (Array G × IOKeyInfo)) →
-    Array G × (Array G × Array (Array G × IOKeyInfo)) × Array Nat
+    Except String (Array G × (Array G × Array (Array G × IOKeyInfo)) × Array Nat)
 
 /-- Executes the bytecode function `funIdx` with the given `args` and `ioBuffer`,
 returning the raw output of the function, the updated `IOBuffer`, and an array
-of query counts (one per function circuit, then one per memory size). -/
+of query counts (one per function circuit, then one per memory size). Returns
+`Except.error msg` when execution fails (e.g. `assert_eq!` mismatch from a
+typechecker rejecting a constant), so callers can recover instead of crashing. -/
 def execute (toplevel : @& Bytecode.Toplevel)
   (funIdx : @& Bytecode.FunIdx) (args : @& Array G) (ioBuffer : IOBuffer) :
-    Array G × IOBuffer × Array Nat :=
+    Except String (Array G × IOBuffer × Array Nat) :=
   let ioData := ioBuffer.data
   let ioMap := ioBuffer.map
-  let (output, (ioData, ioMap), queryCounts) := execute' toplevel funIdx args
-    ioData ioMap.toArray
-  let ioMap := ioMap.foldl (fun acc (k, v) => acc.insert k v) ∅
-  (output, ⟨ioData, ioMap⟩, queryCounts)
+  match execute' toplevel funIdx args ioData ioMap.toArray with
+  | .error e => .error e
+  | .ok (output, (ioData, ioMap), queryCounts) =>
+    let ioMap := ioMap.foldl (fun acc (k, v) => acc.insert k v) ∅
+    .ok (output, ⟨ioData, ioMap⟩, queryCounts)
 
 end Bytecode.Toplevel
 

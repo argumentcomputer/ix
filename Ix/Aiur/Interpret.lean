@@ -49,6 +49,31 @@ partial def ppValue : Value → String
 
 instance : ToString Value := ⟨ppValue⟩
 
+/-- Pretty-print a `Value` while auto-dereferencing pointers up to `depth`
+levels. Used by the `dbg!` interpreter helper so users see structured
+content like `App(Const(3, []), BVar(0))` instead of opaque `&0x123`. -/
+partial def ppValueDeref (store : Store) (depth : Nat) : Value → String
+  | .unit      => "()"
+  | .field g   => toString g.val.toNat
+  | .tuple vs  => "(" ++ String.intercalate ", " (vs.toList.map (ppValueDeref store depth)) ++ ")"
+  | .array vs  => "[" ++ String.intercalate ", " (vs.toList.map (ppValueDeref store depth)) ++ "]"
+  | .ctor g args =>
+      let name := g.toName.toString
+      if args.isEmpty then name
+      else name ++ "(" ++ String.intercalate ", " (args.toList.map (ppValueDeref store depth)) ++ ")"
+  | .fn g        => "fn(" ++ g.toName.toString ++ ")"
+  | .pointer _ n =>
+      if depth == 0 then "&0x" ++ natToHex n
+      else
+        match store.getByIdx n with
+        | some (vs, _) =>
+            -- Stored value is `Array Value`; for tagged enums it's
+            -- typically `[ctor]` or `[tag, fields...]`. Recurse on each.
+            match vs.toList with
+            | [v] => ppValueDeref store (depth - 1) v
+            | _   => "[" ++ String.intercalate ", " (vs.toList.map (ppValueDeref store (depth - 1))) ++ "]"
+        | none => "&0x" ++ natToHex n ++ "(unbound)"
+
 -- ---------------------------------------------------------------------------
 -- Pattern matching
 -- ---------------------------------------------------------------------------
@@ -330,7 +355,8 @@ partial def interp (decls : Decls) (bindings : Bindings) : Term → InterpM Valu
       | none   => dbg_trace s!"{label}"
       | some t =>
         let v ← interp decls bindings t
-        dbg_trace s!"{label}: {v}"
+        let store ← getStore
+        dbg_trace s!"{label}: {ppValueDeref store 16 v}"
       interp decls bindings cont
   | .ioGetInfo key => do
       let keyGs ← expectFieldArray (← interp decls bindings key)

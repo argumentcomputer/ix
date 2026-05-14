@@ -78,7 +78,14 @@ def kernelTypes := ⟦
   type KValEnv = List‹KVal›
 
   -- ============================================================================
-  -- Recursor Rule: (ctor_const_idx, num_fields, rhs)
+  -- Recursor Rule
+  --
+  -- Mirror: src/ix/kernel/constant.rs::RecRule { ctor, fields, rhs }.
+  -- Aiur keeps a global ctor idx in the first slot for direct lookup
+  -- convenience. Could be simplified to (fields, rhs) at the cost of an
+  -- ingress refactor.
+  --
+  -- Layout: (global_ctor_idx, num_fields, rhs).
   -- ============================================================================
 
   enum KRecRule {
@@ -89,27 +96,36 @@ def kernelTypes := ⟦
   -- Constant Info
   --
   -- CIAxiom:  (num_levels, type, is_unsafe)
-  -- CIDefn:   (num_levels, type, value, hints, safety)
+  -- CIDefn:   (num_levels, type, value, safety, hints)
+  --
+  -- `hints` is a packed G encoding of `Lean.ReducibilityHints`:
+  --   0           = Opaque   (never unfold in whnf; lazy-delta-only)
+  --   1 + h       = Regular(h)  (h up to 2^32 - 2; height drives lazy-delta priority)
+  --   2^32 - 1    = Abbrev   (always unfold, highest priority in lazy-delta)
+  -- Larger value = higher delta-rank (unfold first).
+  -- Plumbed via secondary IOBuffer key `[2] ++ addr` from Lean side.
   -- CIThm:    (num_levels, type, value)
   -- CIOpaque: (num_levels, type, value, is_unsafe)
   -- CIQuot:   (num_levels, type, kind)
   -- CIInduct: (num_levels, type, num_params, num_indices,
-  --            ctor_indices, is_rec, is_reflexive, is_unsafe)
+  --            ctor_indices, is_rec, is_reflexive, is_unsafe, nested)
   -- CICtor:   (num_levels, type, induct_idx, cidx,
   --            num_params, num_fields, is_unsafe)
   -- CIRec:    (num_levels, type, num_params, num_indices,
-  --            num_motives, num_minors, rules, k_flag, is_unsafe)
+  --            num_motives, num_minors, rules, k_flag, is_unsafe, block_addr)
+  -- block_addr = address of the Muts wrapper this Recursor lives in. Used
+  -- by canonical_block_sort to validate recursor-block ordering.
   -- ============================================================================
 
   enum KConstantInfo {
     Axiom(G, KExpr, G),
-    Defn(G, KExpr, KExpr, DefinitionSafety),
+    Defn(G, KExpr, KExpr, DefinitionSafety, G),
     Thm(G, KExpr, KExpr),
     Opaque(G, KExpr, KExpr, G),
     Quot(G, KExpr, QuotKind),
-    Induct(G, KExpr, G, G, List‹G›, G, G, G),
+    Induct(G, KExpr, G, G, List‹G›, G, G, G, G, [G; 32]),
     Ctor(G, KExpr, G, G, G, G, G),
-    Rec(G, KExpr, G, G, G, G, List‹KRecRule›, G, G)
+    Rec(G, KExpr, G, G, G, G, List‹KRecRule›, G, G, [G; 32])
   }
 
 ⟧

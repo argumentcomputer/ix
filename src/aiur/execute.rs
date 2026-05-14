@@ -56,23 +56,89 @@ pub struct IOBuffer {
 
 impl IOBuffer {
   #[inline]
-  pub(crate) fn get_info(&self, key: &[G]) -> &IOKeyInfo {
-    self.map.get(key).expect("Invalid IO key")
+  pub(crate) fn get_info(&self, key: &[G]) -> Result<&IOKeyInfo, ExecError> {
+    self.map.get(key).ok_or(ExecError::InvalidIOKey)
   }
-  fn set_info(&mut self, key: Vec<G>, idx: usize, len: usize) {
+  fn set_info(
+    &mut self,
+    key: Vec<G>,
+    idx: usize,
+    len: usize,
+  ) -> Result<(), ExecError> {
     let Entry::Vacant(e) = self.map.entry(key) else {
-      panic!("Mapping already set for key");
+      return Err(ExecError::IOMappingAlreadySet);
     };
     e.insert(IOKeyInfo { idx, len });
+    Ok(())
   }
   #[inline]
-  pub(crate) fn read(&self, idx: usize, len: usize) -> &[G] {
-    &self.data[idx..idx + len]
+  pub(crate) fn read(&self, idx: usize, len: usize) -> Result<&[G], ExecError> {
+    self
+      .data
+      .get(idx..idx.saturating_add(len))
+      .ok_or(ExecError::IOReadOutOfBounds { idx, len })
   }
   fn write(&mut self, data: impl Iterator<Item = G>) {
     self.data.extend(data)
   }
 }
+
+/// Errors raised by Aiur bytecode execution. Mirrors the panic/assert sites
+/// in `Function::execute` so callers (tests, kernel-arena runner) can
+/// distinguish recoverable rejections (`AssertEq`, `MatchNoCase`) from
+/// genuine bytecode bugs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExecError {
+  NotEntryFunction(FunIdx),
+  InvalidMemorySize(usize),
+  UnboundPointer { ptr: u64, size: usize },
+  PointerTooLarge(u64),
+  IndexTooLarge(u64),
+  U32OutOfRange(u64),
+  AssertEqLengthMismatch { lhs: usize, rhs: usize },
+  AssertEqMismatch { lhs: u64, rhs: u64 },
+  MatchNoCase(u64),
+  NoContinuation,
+  StackNotEmpty,
+  InvalidIOKey,
+  IOMappingAlreadySet,
+  IOReadOutOfBounds { idx: usize, len: usize },
+}
+
+impl std::fmt::Display for ExecError {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      Self::NotEntryFunction(idx) => {
+        write!(f, "cannot execute non-entry function {idx}")
+      },
+      Self::InvalidMemorySize(s) => write!(f, "invalid memory size {s}"),
+      Self::UnboundPointer { ptr, size } => {
+        write!(f, "unbound pointer {ptr} for memory size {size}")
+      },
+      Self::PointerTooLarge(p) => write!(f, "pointer {p} too large for usize"),
+      Self::IndexTooLarge(i) => write!(f, "index {i} too large for usize"),
+      Self::U32OutOfRange(v) => write!(f, "value {v} out of u32 range"),
+      Self::AssertEqLengthMismatch { lhs, rhs } => {
+        write!(f, "assert_eq length mismatch: lhs={lhs}, rhs={rhs}")
+      },
+      Self::AssertEqMismatch { lhs, rhs } => {
+        write!(f, "assert_eq mismatch: {lhs} != {rhs}")
+      },
+      Self::MatchNoCase(v) => write!(f, "no match case for value {v}"),
+      Self::NoContinuation => write!(f, "yield without continuation"),
+      Self::StackNotEmpty => {
+        write!(f, "exec entries stack not empty at return")
+      },
+      Self::InvalidIOKey => write!(f, "invalid IO key"),
+      Self::IOMappingAlreadySet => write!(f, "IO mapping already set for key"),
+      Self::IOReadOutOfBounds { idx, len } => {
+        write!(f, "IO read out of bounds: idx={idx}, len={len}")
+      },
+    }
+  }
+}
+
+impl std::error::Error for ExecError {}
 
 impl Toplevel {
   pub fn execute(
@@ -80,12 +146,15 @@ impl Toplevel {
     fun_idx: FunIdx,
     args: Vec<G>,
     io_buffer: &mut IOBuffer,
-  ) -> (QueryRecord, Vec<G>) {
-    assert!(self.functions[fun_idx].entry, "Cannot execute non-entry function");
+  ) -> Result<(QueryRecord, Vec<G>), ExecError> {
+    if !self.functions[fun_idx].entry {
+      return Err(ExecError::NotEntryFunction(fun_idx));
+    }
     let mut record = QueryRecord::new(self);
     let function = &self.functions[fun_idx];
-    let output = function.execute(fun_idx, args, self, &mut record, io_buffer);
-    (record, output)
+    let output =
+      function.execute(fun_idx, args, self, &mut record, io_buffer)?;
+    Ok((record, output))
   }
 }
 
@@ -114,7 +183,7 @@ impl Function {
     toplevel: &Toplevel,
     record: &mut QueryRecord,
     io_buffer: &mut IOBuffer,
-  ) -> Vec<G> {
+  ) -> Result<Vec<G>, ExecError> {
     let mut exec_entries_stack = vec![];
     let mut callers_states_stack = vec![];
     let mut continuation_stack: Vec<ContinuationState<'_>> = vec![];
@@ -173,8 +242,10 @@ impl Function {
         ExecEntry::Op(Op::Store(values)) => {
           let values = values.iter().map(|v| map[*v]).collect::<Vec<_>>();
           let size = values.len();
-          let memory_queries =
-            record.memory_queries.get_mut(&size).expect("Invalid memory size");
+          let memory_queries = record
+            .memory_queries
+            .get_mut(&size)
+            .ok_or(ExecError::InvalidMemorySize(size))?;
           if let Some(result) = memory_queries.get_mut(&values) {
             if !unconstrained {
               result.multiplicity += G::ONE;
@@ -191,46 +262,61 @@ impl Function {
           }
         },
         ExecEntry::Op(Op::Load(size, ptr)) => {
-          let memory_queries =
-            record.memory_queries.get_mut(size).expect("Invalid memory size");
+          let memory_queries = record
+            .memory_queries
+            .get_mut(size)
+            .ok_or(ExecError::InvalidMemorySize(*size))?;
           let ptr = &map[*ptr];
           let ptr_u64 = ptr.as_canonical_u64();
-          let ptr_usize = usize::try_from(ptr_u64).expect("Pointer is too big");
-          let (args, result) =
-            memory_queries.get_index_mut(ptr_usize).expect("Unbound pointer");
+          let ptr_usize = usize::try_from(ptr_u64)
+            .ok()
+            .ok_or(ExecError::PointerTooLarge(ptr_u64))?;
+          let (args, result) = memory_queries
+            .get_index_mut(ptr_usize)
+            .ok_or(ExecError::UnboundPointer { ptr: ptr_u64, size: *size })?;
           if !unconstrained {
             result.multiplicity += G::ONE;
           }
           map.extend(args);
         },
         ExecEntry::Op(Op::AssertEq(xs, ys)) => {
-          assert_eq!(xs.len(), ys.len());
+          if xs.len() != ys.len() {
+            return Err(ExecError::AssertEqLengthMismatch {
+              lhs: xs.len(),
+              rhs: ys.len(),
+            });
+          }
           for (x, y) in xs.iter().zip(ys) {
-            assert_eq!(map[*x], map[*y]);
+            let lhs = map[*x];
+            let rhs = map[*y];
+            if lhs != rhs {
+              return Err(ExecError::AssertEqMismatch {
+                lhs: lhs.as_canonical_u64(),
+                rhs: rhs.as_canonical_u64(),
+              });
+            }
           }
         },
         ExecEntry::Op(Op::IOGetInfo(key)) => {
           let key = key.iter().map(|v| map[*v]).collect::<Vec<_>>();
-          let IOKeyInfo { idx, len } = io_buffer.get_info(&key);
+          let IOKeyInfo { idx, len } = io_buffer.get_info(&key)?;
           map.push(G::from_usize(*idx));
           map.push(G::from_usize(*len));
         },
         ExecEntry::Op(Op::IOSetInfo(key, idx, len)) => {
           let key = key.iter().map(|v| map[*v]).collect::<Vec<_>>();
           let get = |x: &usize| {
-            map[*x]
-              .as_canonical_u64()
-              .try_into()
-              .expect("Index is too big for an usize")
+            let v = map[*x].as_canonical_u64();
+            usize::try_from(v).ok().ok_or(ExecError::IndexTooLarge(v))
           };
-          io_buffer.set_info(key, get(idx), get(len));
+          io_buffer.set_info(key, get(idx)?, get(len)?)?;
         },
         ExecEntry::Op(Op::IORead(idx, len)) => {
-          let idx = map[*idx]
-            .as_canonical_u64()
-            .try_into()
-            .expect("Index is too big for an usize");
-          let data = io_buffer.read(idx, *len);
+          let idx_val = map[*idx].as_canonical_u64();
+          let idx = usize::try_from(idx_val)
+            .ok()
+            .ok_or(ExecError::IndexTooLarge(idx_val))?;
+          let data = io_buffer.read(idx, *len)?;
           map.extend(data);
         },
         ExecEntry::Op(Op::IOWrite(data)) => {
@@ -307,12 +393,12 @@ impl Function {
           }
         },
         ExecEntry::Op(Op::U32LessThan(x_idx, y_idx)) => {
-          let a_val = map[*x_idx];
-          let b_val = map[*y_idx];
+          let a_val = map[*x_idx].as_canonical_u64();
+          let b_val = map[*y_idx].as_canonical_u64();
           let a_u32 =
-            u32::try_from(a_val.as_canonical_u64()).expect("Out of range");
+            u32::try_from(a_val).ok().ok_or(ExecError::U32OutOfRange(a_val))?;
           let b_u32 =
-            u32::try_from(b_val.as_canonical_u64()).expect("Out of range");
+            u32::try_from(b_val).ok().ok_or(ExecError::U32OutOfRange(b_val))?;
           let result = G::from_bool(a_u32 < b_u32);
           map.push(result);
           if !unconstrained {
@@ -349,7 +435,9 @@ impl Function {
           if let Some(block) = cases.get(val) {
             push_block_exec_entries!(block);
           } else {
-            let default = default.as_ref().expect("No match");
+            let default = default
+              .as_ref()
+              .ok_or_else(|| ExecError::MatchNoCase(val.as_canonical_u64()))?;
             push_block_exec_entries!(default);
           }
         },
@@ -370,12 +458,15 @@ impl Function {
           if let Some(block) = cases.get(val) {
             push_block_exec_entries!(block);
           } else {
-            let default = default.as_ref().expect("No match");
+            let default = default
+              .as_ref()
+              .ok_or_else(|| ExecError::MatchNoCase(val.as_canonical_u64()))?;
             push_block_exec_entries!(default);
           }
         },
         ExecEntry::Ctrl(Ctrl::Yield(_, output)) => {
-          let cont = continuation_stack.pop().expect("No continuation");
+          let cont =
+            continuation_stack.pop().ok_or(ExecError::NoContinuation)?;
           let yielded: Vec<G> = output.iter().map(|&v| map[v]).collect();
           map.truncate(cont.map_len);
           map.extend(yielded);
@@ -405,14 +496,16 @@ impl Function {
             unconstrained = caller_unconstrained;
           } else {
             continuation_stack.clear();
-            assert!(exec_entries_stack.is_empty());
+            if !exec_entries_stack.is_empty() {
+              return Err(ExecError::StackNotEmpty);
+            }
             map = output;
             break;
           }
         },
       }
     }
-    map
+    Ok(map)
   }
 }
 
