@@ -142,49 +142,49 @@ def inductive_check := ⟦
   -- result universe. Skipped for Prop (Sort 0) per Rust line 1924.
   --
   -- Walks the ctor type past `n_params` Foralls (param binders),
-  -- threading the binder types into `types`. Then on each remaining
+  -- threading the binder depth into `depth`. Then on each remaining
   -- Forall (a field), ensures `dom`'s sort level is ≤ ind_level via
   -- `k_ensure_sort` + `level_leq`.
   fn check_field_universes(ctor_ty: KExpr, n_params: G, ind_level: KLevel,
-                           types: List‹KExpr›,
+                           depth: G,
                            top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) {
     -- Skip if inductive is Prop.
     match ind_level {
       KLevel.Zero => (),
-      _ => check_field_universes_skip_params(ctor_ty, n_params, ind_level, types, top, addrs),
+      _ => check_field_universes_skip_params(ctor_ty, n_params, ind_level, depth, top, addrs),
     }
   }
 
   fn check_field_universes_skip_params(ctor_ty: KExpr, n_params: G, ind_level: KLevel,
-                                        types: List‹KExpr›,
+                                        depth: G,
                                         top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) {
     match n_params {
-      0 => check_field_universes_inner(ctor_ty, ind_level, types, top, addrs),
+      0 => check_field_universes_inner(ctor_ty, ind_level, depth, top, addrs),
       _ =>
         match load(ctor_ty) {
           KExprNode.Forall(dom, body) =>
-            let fid = list_length(types);
+            let fid = depth;
             let fv = store(KExprNode.FVar(fid, dom));
-            let body_open = expr_inst1(body, fv, 0);
-            let types2 = store(ListNode.Cons(dom, types));
-            check_field_universes_skip_params(body_open, n_params - 1, ind_level, types2, top, addrs),
+            let body_open = expr_subst1(body, fv, 0);
+            let depth2 = depth + 1;
+            check_field_universes_skip_params(body_open, n_params - 1, ind_level, depth2, top, addrs),
         },
     }
   }
 
   fn check_field_universes_inner(ty: KExpr, ind_level: KLevel,
-                                  types: List‹KExpr›,
+                                  depth: G,
                                   top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) {
     match load(ty) {
       KExprNode.Forall(dom, body) =>
-        let dom_level = k_ensure_sort(dom, types, top, addrs);
+        let dom_level = k_ensure_sort(dom, depth, top, addrs);
         let ok = level_leq(load(dom_level), ind_level);
         assert_eq!(ok, 1);
-        let fid = list_length(types);
+        let fid = depth;
         let fv = store(KExprNode.FVar(fid, dom));
-        let body_open = expr_inst1(body, fv, 0);
-        let types2 = store(ListNode.Cons(dom, types));
-        check_field_universes_inner(body_open, ind_level, types2, top, addrs),
+        let body_open = expr_subst1(body, fv, 0);
+        let depth2 = depth + 1;
+        check_field_universes_inner(body_open, ind_level, depth2, top, addrs),
       _ => (),
     }
   }
@@ -197,13 +197,13 @@ def inductive_check := ⟦
   -- peer inductive idxs (derived via block_addr). Nested inductives are
   -- handled by augment_block_idxs walking ctor bodies recursively.
   fn check_positivity(ctor_ty: KExpr, n_params: G, ind_idx: G,
-                      types: List‹KExpr›,
+                      depth: G,
                       top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) {
-    let pair = peel_n_foralls_with_types(ctor_ty, n_params, types);
+    let pair = peel_n_foralls_with_types(ctor_ty, n_params, depth);
     match pair {
-      (body, types_after) =>
+      (body, depth_after) =>
         let block_idxs = derive_block_member_idxs(ind_idx, top);
-        check_positivity_fields(body, block_idxs, types_after, top, addrs),
+        check_positivity_fields(body, block_idxs, depth_after, top, addrs),
     }
   }
 
@@ -219,57 +219,48 @@ def inductive_check := ⟦
   }
 
   -- Like `peel_n_foralls_tolerant` but accumulates each binder's domain into
-  -- the types context so subsequent WHNF calls have the right local context.
-  fn peel_n_foralls_with_types(e: KExpr, n: G, types: List‹KExpr›) -> (KExpr, List‹KExpr›) {
+  -- the depth context so subsequent WHNF calls have the right local context.
+  fn peel_n_foralls_with_types(e: KExpr, n: G, depth: G) -> (KExpr, G) {
     match n {
-      0 => (e, types),
+      0 => (e, depth),
       _ =>
         match load(e) {
           KExprNode.Forall(dom, body) =>
-            let fid = list_length(types);
-            let fv = store(KExprNode.FVar(fid, dom));
-            let body_open = expr_inst1(body, fv, 0);
-            let types2 = store(ListNode.Cons(dom, types));
-            peel_n_foralls_with_types(body_open, n - 1, types2),
-          _ => (e, types),
+            let depth2 = depth + 1;
+            peel_n_foralls_with_types(body, n - 1, depth2),
+          _ => (e, depth),
         },
     }
   }
 
   fn check_positivity_fields(ty: KExpr, block_idxs: List‹G›,
-                             types: List‹KExpr›,
+                             depth: G,
                              top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) {
     match load(ty) {
       KExprNode.Forall(dom, body) =>
-        let _ = check_positivity_aug(dom, block_idxs, types, top, addrs);
-        let fid = list_length(types);
-        let fv = store(KExprNode.FVar(fid, dom));
-        let body_open = expr_inst1(body, fv, 0);
-        let types2 = store(ListNode.Cons(dom, types));
-        check_positivity_fields(body_open, block_idxs, types2, top, addrs),
+        let _ = check_positivity_aug(dom, block_idxs, depth, top, addrs);
+        let depth2 = depth + 1;
+        check_positivity_fields(body, block_idxs, depth2, top, addrs),
       _ => (),
     }
   }
 
   -- Mirror src/ix/kernel/inductive.rs:1741-1850. WHNF `dom` first so that
-  -- ctor-field types written via reducible defs (e.g. `constType (n α) (n α)`,
+  -- ctor-field depth written via reducible defs (e.g. `constType (n α) (n α)`,
   -- `id Sort`) collapse to their underlying inductive head before we
   -- classify them as block / nested / non-inductive.
   fn check_positivity_aug(dom: KExpr, block_idxs: List‹G›,
-                           types: List‹KExpr›,
+                           depth: G,
                            top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) {
     match expr_mentions_any_idx(dom, block_idxs) {
       0 => (),
       _ =>
-        let dom_w = whnf(dom, types, top, addrs);
+        let dom_w = whnf(dom, depth, top, addrs);
         match load(dom_w) {
           KExprNode.Forall(inner_dom, inner_body) =>
             assert_eq!(expr_mentions_any_idx(inner_dom, block_idxs), 0);
-            let fid = list_length(types);
-            let fv = store(KExprNode.FVar(fid, inner_dom));
-            let inner_body_open = expr_inst1(inner_body, fv, 0);
-            let types2 = store(ListNode.Cons(inner_dom, types));
-            check_positivity_aug(inner_body_open, block_idxs, types2, top, addrs),
+            let depth2 = depth + 1;
+            check_positivity_aug(inner_body, block_idxs, depth2, top, addrs),
           _ =>
             match collect_spine_simple(dom_w) {
               (head, args) =>
@@ -384,7 +375,6 @@ def inductive_check := ⟦
         },
       KExprNode.Lit(_) => 0,
       KExprNode.Proj(_, _, e1) => expr_mentions_any_idx(e1, idxs),
-      KExprNode.FVar(_, _) => 0,
     }
   }
 
@@ -433,7 +423,7 @@ def inductive_check := ⟦
   }
 
   -- Walk ext inductive's ctors. For each, apply substituted-positivity check
-  -- on field types via `check_positivity_aug`. Param substitution is implicit
+  -- on field depth via `check_positivity_aug`. Param substitution is implicit
   -- — ext ctors reference params via BVar; we treat ext's params as lifted
   -- block_idxs since the nested ext fields can mention any of those.
   -- Simplification: walk ctor body fields directly; their refs to ext
@@ -448,10 +438,10 @@ def inductive_check := ⟦
         let ctor_ci = load(list_lookup(top, ctor_idx));
         match ctor_ci {
           KConstantInfo.Ctor(_, ctor_ty, _, _, n_params, _, _) =>
-            let pair = peel_n_foralls_with_types(ctor_ty, n_params, store(ListNode.Nil));
+            let pair = peel_n_foralls_with_types(ctor_ty, n_params, 0);
             match pair {
-              (body, types_after) =>
-                let _ = check_positivity_fields_aug(body, aug, types_after, top, addrs);
+              (body, depth_after) =>
+                let _ = check_positivity_fields_aug(body, aug, depth_after, top, addrs);
                 check_ctors_positivity(rest, args, aug, top, addrs),
             },
           _ => check_ctors_positivity(rest, args, aug, top, addrs),
@@ -460,16 +450,13 @@ def inductive_check := ⟦
   }
 
   fn check_positivity_fields_aug(ty: KExpr, aug: List‹G›,
-                                  types: List‹KExpr›,
+                                  depth: G,
                                   top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) {
     match load(ty) {
       KExprNode.Forall(dom, body) =>
-        let _ = check_positivity_aug(dom, aug, types, top, addrs);
-        let fid = list_length(types);
-        let fv = store(KExprNode.FVar(fid, dom));
-        let body_open = expr_inst1(body, fv, 0);
-        let types2 = store(ListNode.Cons(dom, types));
-        check_positivity_fields_aug(body_open, aug, types2, top, addrs),
+        let _ = check_positivity_aug(dom, aug, depth, top, addrs);
+        let depth2 = depth + 1;
+        check_positivity_fields_aug(body, aug, depth2, top, addrs),
       _ => (),
     }
   }
@@ -495,7 +482,6 @@ def inductive_check := ⟦
              g_or(expr_mentions_idx(v, ind_idx), expr_mentions_idx(b, ind_idx))),
       KExprNode.Lit(_) => 0,
       KExprNode.Proj(_, _, e1) => expr_mentions_idx(e1, ind_idx),
-      KExprNode.FVar(_, _) => 0,
     }
   }
 
@@ -556,7 +542,7 @@ def inductive_check := ⟦
                   0 => 1,
                   _ =>
                     check_large_prop_ctor(ctor_ty, n_params, n_fields,
-                                          store(ListNode.Nil), top, addrs),
+                                          0, top, addrs),
                 },
             },
           _ => 0,
@@ -571,78 +557,77 @@ def inductive_check := ⟦
   -- type; check each data field's BVar appears in the return-type's spine
   -- args. If all do → large eliminator.
   fn check_large_prop_ctor(ty: KExpr, n_params: G, n_fields: G,
-                           types: List‹KExpr›, top: List‹&KConstantInfo›,
+                           depth: G, top: List‹&KConstantInfo›,
                            addrs: List‹[G; 32]›) -> G {
     match n_params {
       0 =>
-        check_large_walk_fields(ty, n_fields, 0, types, top, addrs,
+        check_large_walk_fields(ty, n_fields, 0, depth, top, addrs,
                                 store(ListNode.Nil)),
       _ =>
         match load(ty) {
           KExprNode.Forall(dom, body) =>
-            let fid = list_length(types);
-            let fv = store(KExprNode.FVar(fid, dom));
-            let body_open = expr_inst1(body, fv, 0);
-            let inner = store(ListNode.Cons(dom, types));
-            check_large_prop_ctor(body_open, n_params - 1, n_fields, inner, top, addrs),
+            let depth2 = depth + 1;
+            check_large_prop_ctor(body, n_params - 1, n_fields, depth2, top, addrs),
           _ => 0,
         },
     }
   }
 
-  -- Walk `n_fields` Foralls, threading list of data-field FVars (opened
-  -- when peeling each field's binder). After walk, collect ret spine
-  -- args and verify every data FVar appears.
+  -- Walk `n_fields` Foralls, threading list of data-field BVars (de Bruijn
+  -- indices in the post-walk ret context). After walk, collect ret spine
+  -- args and verify every data BVar appears.
   fn check_large_walk_fields(ty: KExpr, n_fields: G, field_idx: G,
-                              types: List‹KExpr›, top: List‹&KConstantInfo›,
+                              depth: G, top: List‹&KConstantInfo›,
                               addrs: List‹[G; 32]›,
-                              data_fvars: List‹KExpr›) -> G {
+                              data_bvars: List‹G›) -> G {
     match n_fields - field_idx {
       0 =>
         match collect_spine_simple(ty) {
-          (_, args) => all_fvars_in_args(data_fvars, args),
+          (_, args) => all_bvars_in_args(data_bvars, args),
         },
       _ =>
         match load(ty) {
           KExprNode.Forall(dom, body) =>
-            let lvl = k_ensure_sort(dom, types, top, addrs);
+            let lvl = k_ensure_sort(dom, depth, top, addrs);
             let is_data = 1 - level_equal(load(lvl), KLevel.Zero);
-            let fid = list_length(types);
-            let fv = store(KExprNode.FVar(fid, dom));
-            let body_open = expr_inst1(body, fv, 0);
-            let new_fvars = match is_data {
-              0 => data_fvars,
-              _ => store(ListNode.Cons(fv, data_fvars)),
+            let bvar_idx = n_fields - 1 - field_idx;
+            let new_bvars = match is_data {
+              0 => data_bvars,
+              _ => store(ListNode.Cons(bvar_idx, data_bvars)),
             };
-            let inner = store(ListNode.Cons(dom, types));
-            check_large_walk_fields(body_open, n_fields, field_idx + 1, inner, top, addrs,
-                                     new_fvars),
+            let depth2 = depth + 1;
+            check_large_walk_fields(body, n_fields, field_idx + 1, depth2, top, addrs,
+                                     new_bvars),
           _ => 0,
         },
     }
   }
 
-  -- Returns 1 iff every FVar in `fvars` appears in `args` (as a syntactic
-  -- FVar reference, compared by pointer).
-  fn all_fvars_in_args(fvars: List‹KExpr›, args: List‹KExpr›) -> G {
-    match load(fvars) {
+  -- Returns 1 iff every BVar idx in `bvars` appears in `args` (as a syntactic
+  -- BVar at the ret-binder depth).
+  fn all_bvars_in_args(bvars: List‹G›, args: List‹KExpr›) -> G {
+    match load(bvars) {
       ListNode.Nil => 1,
-      ListNode.Cons(f, rest) =>
-        match args_contain_fvar(args, f) {
+      ListNode.Cons(b, rest) =>
+        match args_contain_bvar(args, b) {
           0 => 0,
-          1 => all_fvars_in_args(rest, args),
+          1 => all_bvars_in_args(rest, args),
         },
     }
   }
 
-  -- Returns 1 if any element of `args` is the same `FVar` ptr as `target`.
-  fn args_contain_fvar(args: List‹KExpr›, target: KExpr) -> G {
+  -- Returns 1 if any element of `args` is syntactically `BVar(target)`.
+  fn args_contain_bvar(args: List‹KExpr›, target: G) -> G {
     match load(args) {
       ListNode.Nil => 0,
       ListNode.Cons(a, rest) =>
-        match ptr_val(a) - ptr_val(target) {
-          0 => 1,
-          _ => args_contain_fvar(rest, target),
+        match load(a) {
+          KExprNode.BVar(i) =>
+            match i - target {
+              0 => 1,
+              _ => args_contain_bvar(rest, target),
+            },
+          _ => args_contain_bvar(rest, target),
         },
     }
   }
@@ -867,7 +852,7 @@ def inductive_check := ⟦
     let self_mem_idx = match self_mem_pair { (_, m) => m, };
     let walk = walk_fields_classify(after_params, flat_idxs, store(ListNode.Nil),
                                      store(ListNode.Nil), store(ListNode.Nil),
-                                     store(ListNode.Nil), top, addrs, 0);
+                                     0, top, addrs, 0);
     match walk {
       (field_doms, rec_indices, rec_member_idxs, ret_ty) =>
         let n_fields = list_length(field_doms);
@@ -893,7 +878,7 @@ def inductive_check := ⟦
             let conclusion = store(KExprNode.App(with_indices, ctor_app));
             let ih_doms = build_ih_doms(rec_indices, rec_member_idxs, field_doms,
                                         flat_own_params, motive_base, n_fields,
-                                        minor_saved, store(ListNode.Nil), top, addrs, 0);
+                                        minor_saved, 0, top, addrs, 0);
             let with_ihs = wrap_foralls(conclusion, ih_doms);
             wrap_foralls(with_ihs, field_doms),
         },
@@ -933,23 +918,23 @@ def inductive_check := ⟦
   fn walk_fields_classify(ty: KExpr, block_member_idxs: List‹G›,
                           doms_acc: List‹KExpr›, rec_acc: List‹G›,
                           rec_mem_acc: List‹G›,
-                          types: List‹KExpr›,
+                          depth: G,
                           top: List‹&KConstantInfo›, addrs: List‹[G; 32]›,
                           fidx: G) -> (List‹KExpr›, List‹G›, List‹G›, KExpr) {
     match load(ty) {
       KExprNode.Forall(dom, body) =>
-        let r = is_rec_field(dom, block_member_idxs, types, top, addrs);
+        let r = is_rec_field(dom, block_member_idxs, depth, top, addrs);
         let new_doms = store(ListNode.Cons(dom, doms_acc));
-        let types2 = store(ListNode.Cons(dom, types));
+        let depth2 = depth + 1;
         match r {
           (1, mem_idx) =>
             let new_rec = store(ListNode.Cons(fidx, rec_acc));
             let new_mem = store(ListNode.Cons(mem_idx, rec_mem_acc));
             walk_fields_classify(body, block_member_idxs, new_doms, new_rec, new_mem,
-                                 types2, top, addrs, fidx + 1),
+                                 depth2, top, addrs, fidx + 1),
           _ =>
             walk_fields_classify(body, block_member_idxs, new_doms, rec_acc, rec_mem_acc,
-                                 types2, top, addrs, fidx + 1),
+                                 depth2, top, addrs, fidx + 1),
         },
       _ => (list_reverse(doms_acc), list_reverse(rec_acc), list_reverse(rec_mem_acc), ty),
     }
@@ -1011,16 +996,16 @@ def inductive_check := ⟦
   -- Returns (is_rec, member_local_idx) where member_local_idx is the
   -- position of the head idx within block_member_idxs (0 for direct).
   -- Returns (0, 0) if not recursive. WHNFs the per-field body so that
-  -- ctor field types written via reducible defs (e.g. `constType (n α)
+  -- ctor field depth written via reducible defs (e.g. `constType (n α)
   -- (n α)`) collapse to expose the underlying inductive head, mirroring
   -- the Rust kernel's whnf inside `is_rec_field`.
   fn is_rec_field(dom: KExpr, block_member_idxs: List‹G›,
-                   types: List‹KExpr›, top: List‹&KConstantInfo›,
+                   depth: G, top: List‹&KConstantInfo›,
                    addrs: List‹[G; 32]›) -> (G, G) {
     match peel_leading_foralls(dom) {
       (doms, body) =>
-        let inner_types = list_concat(list_reverse(doms), types);
-        let body_w = whnf(body, inner_types, top, addrs);
+        let inner_depth = depth + list_length(doms);
+        let body_w = whnf(body, inner_depth, top, addrs);
         match collect_spine_simple(body_w) {
           (head, _) =>
             match load(head) {
@@ -1170,7 +1155,7 @@ def inductive_check := ⟦
     }
   }
 
-  -- Build motive types for every flat block member. Each member's motive_ty
+  -- Build motive depth for every flat block member. Each member's motive_ty
   -- references shared params (BVar 0..n_rec_params-1) and its own n_indices,
   -- with elim_level + univ_offset shared. Motive j (j>0) lifted by j to
   -- account for the j prior motives bound between params and motive j
@@ -1214,7 +1199,7 @@ def inductive_check := ⟦
     }
   }
 
-  -- Aggregate minor types across all flat block members' ctors. prev_minors
+  -- Aggregate minor depth across all flat block members' ctors. prev_minors
   -- is the count of minors already added from previous members; threaded
   -- through so each minor's depth math is correct. flat carries (ind_idx,
   -- is_aux, spec_params) so aux ctors can substitute spec_params during
@@ -1387,7 +1372,7 @@ def inductive_check := ⟦
                                               is_aux, spec_params);
     let walk = walk_fields_classify(after_params, flat_idxs, store(ListNode.Nil),
                                      store(ListNode.Nil), store(ListNode.Nil),
-                                     store(ListNode.Nil), top, addrs, 0);
+                                     0, top, addrs, 0);
     match walk {
       (field_doms, rec_indices, rec_member_idxs, _ret_ty) =>
         let n_fields = list_length(field_doms);
@@ -1403,7 +1388,7 @@ def inductive_check := ⟦
         let body = apply_ihs(with_fields, rec_indices, rec_member_idxs, field_doms,
                              peer_recs, flat_own_params,
                              n_params, n_motives, n_minors, n_fields,
-                             rec_lvls_list, store(ListNode.Nil), top, addrs, 0);
+                             rec_lvls_list, 0, top, addrs, 0);
         -- Lift each field_dom (in walk-pos i scope) into its Lam-type
         -- scope: peer refs (BVar < walk_pos i) stay; param refs
         -- (BVar >= i) lift by n_motives + n_minors (= the additional
@@ -1450,7 +1435,7 @@ def inductive_check := ⟦
                field_doms: List‹KExpr›,
                peer_recs: List‹G›, flat_own_params: List‹G›,
                n_params: G, n_motives: G, n_minors: G, n_fields: G,
-               rec_lvls_list: List‹&KLevel›, types: List‹KExpr›,
+               rec_lvls_list: List‹&KLevel›, depth: G,
                top: List‹&KConstantInfo›, addrs: List‹[G; 32]›, k: G) -> KExpr {
     match load(rec_indices) {
       ListNode.Nil => head,
@@ -1462,12 +1447,11 @@ def inductive_check := ⟦
         let dom = list_lookup(field_doms, field_idx);
         let dom_s1 = expr_lift(dom, n_fields - field_idx, 0);
         let dom_lifted = expr_lift(dom_s1, n_motives + n_minors, n_fields);
-        let dom_w = whnf(dom_lifted, types, top, addrs);
+        let dom_w = whnf(dom_lifted, depth, top, addrs);
         match peel_leading_foralls(dom_w) {
           (forall_doms, inner_body_raw) =>
-            let inner_types = list_concat(list_reverse(forall_doms), types);
-            let inner_body = whnf(inner_body_raw, inner_types, top, addrs);
             let n_xs = list_length(forall_doms);
+            let inner_body = whnf(inner_body_raw, depth + n_xs, top, addrs);
             let inner_depth = body_depth + n_xs;
             let rec_const = store(KExprNode.Const(target_rec, rec_lvls_list));
             let with_params = build_apply_bvars_decreasing(rec_const, n_params, inner_depth - 1, 0);
@@ -1487,7 +1471,7 @@ def inductive_check := ⟦
                 let new_head = store(KExprNode.App(head, ih));
                 apply_ihs(new_head, rest, rec_member_idxs, field_doms, peer_recs,
                           flat_own_params, n_params, n_motives, n_minors, n_fields,
-                          rec_lvls_list, types, top, addrs, k + 1),
+                          rec_lvls_list, depth, top, addrs, k + 1),
             },
         },
     }
@@ -1632,7 +1616,7 @@ def inductive_check := ⟦
                   KRecRule.Mk(c_ctor, c_nf, c_rhs) =>
                     assert_eq!(s_ctor, c_ctor);
                     assert_eq!(s_nf, c_nf);
-                    let eq = k_is_def_eq(s_rhs, c_rhs, store(ListNode.Nil), top, addrs);
+                    let eq = k_is_def_eq(s_rhs, c_rhs, 0, top, addrs);
                     assert_eq!(eq, 1);
                     compare_rules(rs, rc, top, addrs),
                 },
@@ -1723,7 +1707,7 @@ def inductive_check := ⟦
                 let canonical_ty = build_rec_type(self_major, self_ind_ty, self_ctor_indices,
                                                    ind_n_params, self_n_indices, ind_lvls,
                                                    self_own_params, ind_idx, top, addrs);
-                let ty_eq = k_is_def_eq(ty, canonical_ty, store(ListNode.Nil), top, addrs);
+                let ty_eq = k_is_def_eq(ty, canonical_ty, 0, top, addrs);
                 assert_eq!(ty_eq, 1);
                 -- Re-derive elim_level / univ_offset using self's data.
                 let result_level = get_result_sort_level(self_ind_ty, self_own_params + self_n_indices);
@@ -2305,7 +2289,7 @@ def inductive_check := ⟦
                    field_doms: List‹KExpr›,
                    flat_own_params: List‹G›,
                    motive_base: G, n_fields: G,
-                   minor_saved: G, types: List‹KExpr›,
+                   minor_saved: G, depth: G,
                    top: List‹&KConstantInfo›, addrs: List‹[G; 32]›,
                    k: G) -> List‹KExpr› {
     match load(rec_indices) {
@@ -2316,12 +2300,11 @@ def inductive_check := ⟦
         let depth = minor_saved + n_fields + k;
         let dom = list_lookup(field_doms, field_idx);
         let dom_lifted = expr_lift(dom, (n_fields - field_idx) + k, 0);
-        let dom_w = whnf(dom_lifted, types, top, addrs);
+        let dom_w = whnf(dom_lifted, depth, top, addrs);
         match peel_leading_foralls(dom_w) {
           (forall_doms, inner_body_raw) =>
-            let inner_types = list_concat(list_reverse(forall_doms), types);
-            let inner_body = whnf(inner_body_raw, inner_types, top, addrs);
             let n_xs = list_length(forall_doms);
+            let inner_body = whnf(inner_body_raw, depth + n_xs, top, addrs);
             let inner_depth = depth + n_xs;
             let motive_bvar = (inner_depth - 1) - (motive_base + mem_idx);
             let field_bvar = (inner_depth - 1) - (minor_saved + field_idx);
@@ -2336,7 +2319,7 @@ def inductive_check := ⟦
                 let ih_dom = wrap_foralls(ih_body, forall_doms);
                 store(ListNode.Cons(ih_dom,
                   build_ih_doms(rest, rec_member_idxs, field_doms, flat_own_params,
-                                motive_base, n_fields, minor_saved, types, top, addrs, k + 1))),
+                                motive_base, n_fields, minor_saved, depth, top, addrs, k + 1))),
             },
         },
     }
@@ -2394,15 +2377,15 @@ def inductive_check := ⟦
     }
   }
 
-  -- Walk first n Foralls of both types asserting domain def-eq under the
+  -- Walk first n Foralls of both depth asserting domain def-eq under the
   -- accumulated param-binder context.
   fn check_param_agreement(ta: KExpr, tb: KExpr, n: G,
                            top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) {
-    check_param_agreement_go(ta, tb, n, store(ListNode.Nil), top, addrs)
+    check_param_agreement_go(ta, tb, n, 0, top, addrs)
   }
 
   fn check_param_agreement_go(ta: KExpr, tb: KExpr, n: G,
-                              types: List‹KExpr›,
+                              depth: G,
                               top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) {
     match n {
       0 => (),
@@ -2411,14 +2394,10 @@ def inductive_check := ⟦
           KExprNode.Forall(da, ba) =>
             match load(tb) {
               KExprNode.Forall(db, bb) =>
-                let eq = k_is_def_eq(da, db, types, top, addrs);
+                let eq = k_is_def_eq(da, db, depth, top, addrs);
                 assert_eq!(eq, 1);
-                let fid = list_length(types);
-                let fv = store(KExprNode.FVar(fid, da));
-                let ba_open = expr_inst1(ba, fv, 0);
-                let bb_open = expr_inst1(bb, fv, 0);
-                let inner = store(ListNode.Cons(da, types));
-                check_param_agreement_go(ba_open, bb_open, n - 1, inner, top, addrs),
+                let depth2 = depth + 1;
+                check_param_agreement_go(ba, bb, n - 1, depth2, top, addrs),
             },
         },
     }

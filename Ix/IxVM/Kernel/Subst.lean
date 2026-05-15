@@ -194,6 +194,61 @@ def subst := ⟦
   }
 
   -- ============================================================================
+  -- expr_subst1
+  --
+  -- Like `expr_inst1` but assumes `arg` has no loose `BVar`s (FVar-form
+  -- under the opening invariant), so the `expr_lift(arg, depth, 0)`
+  -- inside `expr_inst1` would be a no-op. Used by the typechecking path
+  -- (Whnf/Infer/DefEq); `Inductive.lean` keeps `expr_inst1` since its
+  -- callers build BVar-form recursor pieces.
+  -- ============================================================================
+  fn expr_subst1(e: KExpr, arg: KExpr, depth: G) -> KExpr {
+    let l = expr_lbr(e);
+    match u32_less_than(depth, l) {
+      0 => e,
+      1 => expr_subst1_walk(e, arg, depth),
+    }
+  }
+
+  fn expr_subst1_walk(e: KExpr, arg: KExpr, depth: G) -> KExpr {
+    match load(e) {
+      KExprNode.BVar(i) =>
+        let lt = u32_less_than(i, depth);
+        match lt {
+          1 => e,
+          0 =>
+            match i - depth {
+              0 => arg,
+              _ => store(KExprNode.BVar(i - 1)),
+            },
+        },
+      KExprNode.Srt(l) => store(KExprNode.Srt(l)),
+      KExprNode.Const(idx, lvls) => store(KExprNode.Const(idx, lvls)),
+      KExprNode.App(f, a) =>
+        store(KExprNode.App(
+          expr_subst1(f, arg, depth),
+          expr_subst1(a, arg, depth))),
+      KExprNode.Lam(ty, body) =>
+        store(KExprNode.Lam(
+          expr_subst1(ty, arg, depth),
+          expr_subst1(body, arg, depth + 1))),
+      KExprNode.Forall(ty, body) =>
+        store(KExprNode.Forall(
+          expr_subst1(ty, arg, depth),
+          expr_subst1(body, arg, depth + 1))),
+      KExprNode.Let(ty, val, body) =>
+        store(KExprNode.Let(
+          expr_subst1(ty, arg, depth),
+          expr_subst1(val, arg, depth),
+          expr_subst1(body, arg, depth + 1))),
+      KExprNode.Lit(lit) => store(KExprNode.Lit(lit)),
+      KExprNode.Proj(tidx, fidx, e1) =>
+        store(KExprNode.Proj(tidx, fidx, expr_subst1(e1, arg, depth))),
+      KExprNode.FVar(idx, ty) => store(KExprNode.FVar(idx, ty)),
+    }
+  }
+
+  -- ============================================================================
   -- expr_close
   --
   -- Inverse of opening with `expr_inst1`. Replaces `FVar(fid, _)` with
