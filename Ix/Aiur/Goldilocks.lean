@@ -56,6 +56,10 @@ def G.u8LessThan (a b : G) : G := if a.n < b.n then 1 else 0
 def G.u8Add (a b : G) : G × G :=
   (G.ofNat ((a.n + b.n) % 256), G.ofNat ((a.n + b.n) / 256))
 
+/-- u8 multiplication returns `(low byte, high byte)`. -/
+def G.u8Mul (a b : G) : G × G :=
+  (G.ofNat ((a.n * b.n) % 256), G.ofNat ((a.n * b.n) / 256))
+
 /-- u8 subtraction returns `(result % 256, borrow)`. -/
 def G.u8Sub (a b : G) : G × G :=
   (G.ofNat ((a.n + 256 - b.n) % 256), if a.n < b.n then 1 else 0)

@@ -363,6 +363,14 @@ impl Function {
             bytes2_execute(*i, *j, &Bytes2Op::Add, &mut map, record);
           }
         },
+        ExecEntry::Op(Op::U8Mul(i, j)) => {
+          if unconstrained {
+            let (lo, hi) = Bytes2::mul(&map[*i], &map[*j]);
+            map.extend([lo, hi]);
+          } else {
+            bytes2_execute(*i, *j, &Bytes2Op::Mul, &mut map, record);
+          }
+        },
         ExecEntry::Op(Op::U8Sub(i, j)) => {
           if unconstrained {
             let (r, u) = Bytes2::sub(&map[*i], &map[*j]);

@@ -382,6 +382,14 @@ def interp (decls : Decls) (fuel : Nat) (bindings : Bindings)
                    .field (if x >= 256 then 1 else 0)])
         (interp decls fuel bindings t1 st)
         (fun st1 => interp decls fuel bindings t2 st1)
+  | .u8Mul t1 t2 =>
+      combineFieldsResult
+        (fun a b =>
+          let x := a.val.toUInt8.toNat * b.val.toUInt8.toNat
+          .tuple #[.field (G.ofUInt8 x.toUInt8),
+                   .field (G.ofUInt8 (x / 256).toUInt8)])
+        (interp decls fuel bindings t1 st)
+        (fun st1 => interp decls fuel bindings t2 st1)
   | .u8Sub t1 t2 =>
       combineFieldsResult
         (fun a b =>

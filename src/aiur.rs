@@ -69,3 +69,8 @@ pub fn u8_less_than_channel() -> G {
 pub fn u8_range_check_channel() -> G {
   G::from_u8(11)
 }
+
+#[inline]
+pub fn u8_mul_channel() -> G {
+  G::from_u8(12)
+}
