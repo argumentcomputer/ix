@@ -13,37 +13,25 @@ namespace IxVM
 
 Mirrors `src/ix/kernel/infer.rs::infer`.
 
-Local context is a `List‹KExpr›` of binder types in innermost-first order.
-A `BVar(i)` looks up `types[i]` and lifts it by `i + 1` (since the binder
-was bound `i + 1` levels up).
+Binder bodies are opened on entry: when we recurse into `Lam(ty, body)`,
+`Forall(ty, body)`, or `Let(ty, val, body)`, we replace `BVar(0)` in `body`
+with `FVar(fresh, ty)` and decrement remaining loose `BVar`s via
+`expr_inst1`. `fresh` is the current binder depth (= `list_length types`),
+so distinct opened binders get distinct indices. Recursion then sees a
+"locally nameless" body where the previously-bound variable shows up as
+a free variable carrying its own declared type.
 
-For `Lam(ty, body)`, the inferred type is `Forall(ty, body_type)` where
-`body_type` is computed under `types ++ [ty]` (which means `Cons(ty, types)`).
-No fvars — we work directly with de Bruijn indices.
+`BVar(i)` lookups still use `types` and the lift-by-`i+1` convention,
+so non-opened binders deeper in the surrounding context continue to
+work. `FVar(_, ty)` just returns `ty` directly — no lift needed since
+the type was assembled at the opening site under the outer context.
+
+When wrapping an inferred body's type back into a `Forall`, we close it
+by replacing `FVar(fresh, _)` with `BVar(0)` and shifting loose BVars up
+(`expr_close`).
 -/
 
 def infer := ⟦
-  -- ============================================================================
-  -- Context lookup with lift
-  --
-  -- types[i] is the type of the i-th binder from the innermost. When we
-  -- look up BVar(i), we get types[i] but it was assembled at depth d-i-1
-  -- (counting from outermost). The current context is at depth d, so we
-  -- need to lift the result by (i + 1).
-  -- ============================================================================
-  fn types_lookup(types: List‹KExpr›, i: G) -> KExpr {
-    match load(types) {
-      ListNode.Nil => store(KExprNode.BVar(0)),
-      ListNode.Cons(ty, rest) =>
-        match i {
-          0 => expr_lift(ty, 1, 0),
-          _ =>
-            let inner = types_lookup(rest, i - 1);
-            expr_lift(inner, 1, 0),
-        },
-    }
-  }
-
   -- ============================================================================
   -- k_infer
   --
@@ -55,8 +43,11 @@ def infer := ⟦
   fn k_infer(e: KExpr, types: List‹KExpr›,
              top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) -> KExpr {
     match load(e) {
-      KExprNode.BVar(i) => types_lookup(types, i),
-
+      -- The `BVar` case should be impossible: callers hand in
+      -- FVar-opened expressions where every loose bound variable has
+      -- been substituted by an `FVar`. Aiur panics ("no match case
+      -- for value 0") if a leaf BVar slips through.
+      KExprNode.FVar(_, ty) => ty,
       -- Normalize the constructed `Succ(l)` so callers see canonical
       -- forms (e.g. `Succ(IMax 0 1)` → `Succ(Succ Zero) = 2`). Without
       -- this, `level_leq` for cases like `levelComp2` (`Sort(IMax 0 1)`)
@@ -93,18 +84,37 @@ def infer := ⟦
             },
         },
 
+      -- Open body via `expr_inst1(body, fv, 0)`: substitute `BVar(0)`
+      -- with the fresh FVar and decrement remaining loose BVars so they
+      -- index the outer `types` context directly (no shadow extension).
+      -- `fid = list_length(types)` distinguishes binders across nesting
+      -- since each opening grows `types` by one entry used as a depth
+      -- counter (BVar lookups under the invariant should never reach
+      -- the shadow slot).
       KExprNode.Lam(ty, body) =>
         let _ = k_ensure_sort(ty, types, top, addrs);
+        let fid = list_length(types);
+        let fv = store(KExprNode.FVar(fid, ty));
+        let body_open = expr_inst1(body, fv, 0);
         let types2 = store(ListNode.Cons(ty, types));
-        let body_ty = k_infer(body, types2, top, addrs);
+        let body_ty_open = k_infer(body_open, types2, top, addrs);
+        let body_ty = expr_close(body_ty_open, fid, 0);
         store(KExprNode.Forall(ty, body_ty)),
 
       KExprNode.Forall(ty, body) =>
         let u1 = k_ensure_sort(ty, types, top, addrs);
+        let fid = list_length(types);
+        let fv = store(KExprNode.FVar(fid, ty));
+        let body_open = expr_inst1(body, fv, 0);
         let types2 = store(ListNode.Cons(ty, types));
-        let u2 = k_ensure_sort(body, types2, top, addrs);
+        let u2 = k_ensure_sort(body_open, types2, top, addrs);
         store(KExprNode.Srt(store(level_imax(load(u1), load(u2))))),
 
+      -- Let is a definitional binder, not a quantifier: the result type
+      -- of `let x : ty := val in body` is `body`'s type with `x` replaced
+      -- by `val`, not by a fresh free variable. Substituting `val` keeps
+      -- the result closed in the surrounding context with no outer
+      -- binder to re-introduce.
       KExprNode.Let(ty, val, body) =>
         let _ = k_ensure_sort(ty, types, top, addrs);
         let _ = k_check(val, ty, types, top, addrs);

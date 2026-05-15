@@ -229,6 +229,8 @@ def whnf := ⟦
                 },
             },
         },
+      -- FVar is whnf-stuck atom (like BVar / a stuck Const).
+      KExprNode.FVar(_, _) => e,
     }
   }
 

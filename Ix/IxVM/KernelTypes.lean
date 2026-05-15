@@ -45,7 +45,15 @@ def kernelTypes := ⟦
     Forall(KExpr, KExpr),
     Let(KExpr, KExpr, KExpr),
     Lit(KLiteral),
-    Proj(G, G, KExpr)
+    Proj(G, G, KExpr),
+    -- Free variable carrying its own type. Introduced by `k_infer` when
+    -- opening a Lam/Forall/Let body: the bound `BVar(0)` is substituted
+    -- with `FVar(fresh, ty)`, decrementing remaining loose BVars. The
+    -- index `fresh` is the binder depth at the opening site, so FVars
+    -- with the same index refer to the same opened binder. FVar carries
+    -- its declared type to avoid threading a separate context for
+    -- type-of lookups.
+    FVar(G, KExpr)
   }
 
   type KExpr = &KExprNode

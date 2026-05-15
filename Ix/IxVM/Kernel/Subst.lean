@@ -60,6 +60,7 @@ def subst := ⟦
         lbr_max(lbr_max(expr_lbr(ty), expr_lbr(val)),
                 lbr_dec(expr_lbr(body))),
       KExprNode.Proj(_, _, e1) => expr_lbr(e1),
+      KExprNode.FVar(_, _) => 0,
     }
   }
 
@@ -101,14 +102,16 @@ def subst := ⟦
 
   fn expr_lift_walk(e: KExpr, shift: G, cutoff: G) -> KExpr {
     match load(e) {
+      KExprNode.Srt(_) => e,
+      KExprNode.Const(_, _) => e,
+      KExprNode.Lit(_) => e,
+      KExprNode.FVar(_, _) => e,
       KExprNode.BVar(i) =>
         let lt = u32_less_than(i, cutoff);
         match lt {
           1 => e,
           0 => store(KExprNode.BVar(i + shift)),
         },
-      KExprNode.Srt(l) => store(KExprNode.Srt(l)),
-      KExprNode.Const(idx, lvls) => store(KExprNode.Const(idx, lvls)),
       KExprNode.App(f, a) =>
         store(KExprNode.App(
           expr_lift(f, shift, cutoff),
@@ -126,7 +129,6 @@ def subst := ⟦
           expr_lift(ty, shift, cutoff),
           expr_lift(val, shift, cutoff),
           expr_lift(body, shift, cutoff + 1))),
-      KExprNode.Lit(lit) => store(KExprNode.Lit(lit)),
       KExprNode.Proj(tidx, fidx, e1) =>
         store(KExprNode.Proj(tidx, fidx, expr_lift(e1, shift, cutoff))),
     }
@@ -186,6 +188,58 @@ def subst := ⟦
       KExprNode.Lit(lit) => store(KExprNode.Lit(lit)),
       KExprNode.Proj(tidx, fidx, e1) =>
         store(KExprNode.Proj(tidx, fidx, expr_inst1(e1, arg, depth))),
+      -- FVar is unaffected by BVar substitution.
+      KExprNode.FVar(idx, ty) => store(KExprNode.FVar(idx, ty)),
+    }
+  }
+
+  -- ============================================================================
+  -- expr_close
+  --
+  -- Inverse of opening with `expr_inst1`. Replaces `FVar(fid, _)` with
+  -- `BVar(depth)` and shifts loose `BVar(i)` with `i >= depth` up by 1
+  -- to make room for the re-introduced binder. Crossing a binder bumps
+  -- `depth` by 1.
+  --
+  -- Used by `k_infer` to wrap a `Lam`'s inferred body type back in a
+  -- `Forall`. Mirrors lean4lean's `abstract_fvars` for the single-FVar
+  -- case.
+  -- ============================================================================
+  fn expr_close(e: KExpr, fid: G, depth: G) -> KExpr {
+    match load(e) {
+      KExprNode.FVar(i, ty) =>
+        match i - fid {
+          0 => store(KExprNode.BVar(depth)),
+          _ => store(KExprNode.FVar(i, ty)),
+        },
+      KExprNode.BVar(i) =>
+        let lt = u32_less_than(i, depth);
+        match lt {
+          1 => e,
+          0 => store(KExprNode.BVar(i + 1)),
+        },
+      KExprNode.Srt(l) => store(KExprNode.Srt(l)),
+      KExprNode.Const(idx, lvls) => store(KExprNode.Const(idx, lvls)),
+      KExprNode.App(f, a) =>
+        store(KExprNode.App(
+          expr_close(f, fid, depth),
+          expr_close(a, fid, depth))),
+      KExprNode.Lam(ty, body) =>
+        store(KExprNode.Lam(
+          expr_close(ty, fid, depth),
+          expr_close(body, fid, depth + 1))),
+      KExprNode.Forall(ty, body) =>
+        store(KExprNode.Forall(
+          expr_close(ty, fid, depth),
+          expr_close(body, fid, depth + 1))),
+      KExprNode.Let(ty, val, body) =>
+        store(KExprNode.Let(
+          expr_close(ty, fid, depth),
+          expr_close(val, fid, depth),
+          expr_close(body, fid, depth + 1))),
+      KExprNode.Lit(lit) => store(KExprNode.Lit(lit)),
+      KExprNode.Proj(tidx, fidx, e1) =>
+        store(KExprNode.Proj(tidx, fidx, expr_close(e1, fid, depth))),
     }
   }
 ⟧

@@ -379,8 +379,12 @@ def defEq := ⟦
             let ty_eq = k_is_def_eq(ty_a, ty_b, types, top, addrs);
             match ty_eq {
               1 =>
+                let fid = list_length(types);
+                let fv = store(KExprNode.FVar(fid, ty_a));
+                let body_a_open = expr_inst1(body_a, fv, 0);
+                let body_b_open = expr_inst1(body_b, fv, 0);
                 let inner = store(ListNode.Cons(ty_a, types));
-                k_is_def_eq(body_a, body_b, inner, top, addrs),
+                k_is_def_eq(body_a_open, body_b_open, inner, top, addrs),
               0 => 0,
             },
           _ => try_eta_expand(ty_a, body_a, b, types, top, addrs),
@@ -392,8 +396,12 @@ def defEq := ⟦
             let ty_eq = k_is_def_eq(ty_a, ty_b, types, top, addrs);
             match ty_eq {
               1 =>
+                let fid = list_length(types);
+                let fv = store(KExprNode.FVar(fid, ty_a));
+                let body_a_open = expr_inst1(body_a, fv, 0);
+                let body_b_open = expr_inst1(body_b, fv, 0);
                 let inner = store(ListNode.Cons(ty_a, types));
-                k_is_def_eq(body_a, body_b, inner, top, addrs),
+                k_is_def_eq(body_a_open, body_b_open, inner, top, addrs),
               0 => 0,
             },
           KExprNode.Lam(ty_b, body_b) => try_eta_expand(ty_b, body_b, a, types, top, addrs),
@@ -409,8 +417,12 @@ def defEq := ⟦
                 let v_eq = k_is_def_eq(val_a, val_b, types, top, addrs);
                 match v_eq {
                   1 =>
+                    let fid = list_length(types);
+                    let fv = store(KExprNode.FVar(fid, ty_a));
+                    let body_a_open = expr_inst1(body_a, fv, 0);
+                    let body_b_open = expr_inst1(body_b, fv, 0);
                     let inner = store(ListNode.Cons(ty_a, types));
-                    k_is_def_eq(body_a, body_b, inner, top, addrs),
+                    k_is_def_eq(body_a_open, body_b_open, inner, top, addrs),
                   0 => 0,
                 },
               0 => 0,
@@ -437,6 +449,20 @@ def defEq := ⟦
           KExprNode.Lam(ty_b, body_b) => try_eta_expand(ty_b, body_b, a, types, top, addrs),
           _ => 0,
         },
+
+      -- Two FVars are equal iff they share an index (= same opened binder).
+      -- Carried type isn't compared: it's redundant data derived from the
+      -- opening site. Eta-expand if paired with Lam.
+      KExprNode.FVar(ia, _) =>
+        match load(b) {
+          KExprNode.FVar(ib, _) =>
+            match ia - ib {
+              0 => 1,
+              _ => 0,
+            },
+          KExprNode.Lam(ty_b, body_b) => try_eta_expand(ty_b, body_b, a, types, top, addrs),
+          _ => 0,
+        },
     }
   }
 
@@ -452,11 +478,12 @@ def defEq := ⟦
   fn try_eta_expand(ty_a: KExpr, body_a: KExpr, b: KExpr,
                     types: List‹KExpr›,
                     top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) -> G {
-    let b_lifted = expr_lift(b, 1, 0);
-    let bvar0 = store(KExprNode.BVar(0));
-    let b_app = store(KExprNode.App(b_lifted, bvar0));
+    let fid = list_length(types);
+    let fv = store(KExprNode.FVar(fid, ty_a));
+    let body_a_open = expr_inst1(body_a, fv, 0);
+    let b_app = store(KExprNode.App(b, fv));
     let inner = store(ListNode.Cons(ty_a, types));
-    k_is_def_eq(body_a, b_app, inner, top, addrs)
+    k_is_def_eq(body_a_open, b_app, inner, top, addrs)
   }
 
   -- ============================================================================

@@ -303,6 +303,9 @@ def levels := ⟦
       KExprNode.Lit(lit) => store(KExprNode.Lit(lit)),
       KExprNode.Proj(tidx, fidx, e1) =>
         store(KExprNode.Proj(tidx, fidx, expr_inst_levels(e1, params))),
+      -- FVar isn't created until k_infer opens a binder, well after any
+      -- level instantiation of stored declared types. So we assume the
+      -- FVar case is impossible
     }
   }
 

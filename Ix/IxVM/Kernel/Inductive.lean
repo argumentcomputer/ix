@@ -163,8 +163,11 @@ def inductive_check := ⟦
       _ =>
         match load(ctor_ty) {
           KExprNode.Forall(dom, body) =>
+            let fid = list_length(types);
+            let fv = store(KExprNode.FVar(fid, dom));
+            let body_open = expr_inst1(body, fv, 0);
             let types2 = store(ListNode.Cons(dom, types));
-            check_field_universes_skip_params(body, n_params - 1, ind_level, types2, top, addrs),
+            check_field_universes_skip_params(body_open, n_params - 1, ind_level, types2, top, addrs),
         },
     }
   }
@@ -177,8 +180,11 @@ def inductive_check := ⟦
         let dom_level = k_ensure_sort(dom, types, top, addrs);
         let ok = level_leq(load(dom_level), ind_level);
         assert_eq!(ok, 1);
+        let fid = list_length(types);
+        let fv = store(KExprNode.FVar(fid, dom));
+        let body_open = expr_inst1(body, fv, 0);
         let types2 = store(ListNode.Cons(dom, types));
-        check_field_universes_inner(body, ind_level, types2, top, addrs),
+        check_field_universes_inner(body_open, ind_level, types2, top, addrs),
       _ => (),
     }
   }
@@ -220,8 +226,11 @@ def inductive_check := ⟦
       _ =>
         match load(e) {
           KExprNode.Forall(dom, body) =>
+            let fid = list_length(types);
+            let fv = store(KExprNode.FVar(fid, dom));
+            let body_open = expr_inst1(body, fv, 0);
             let types2 = store(ListNode.Cons(dom, types));
-            peel_n_foralls_with_types(body, n - 1, types2),
+            peel_n_foralls_with_types(body_open, n - 1, types2),
           _ => (e, types),
         },
     }
@@ -233,8 +242,11 @@ def inductive_check := ⟦
     match load(ty) {
       KExprNode.Forall(dom, body) =>
         let _ = check_positivity_aug(dom, block_idxs, types, top, addrs);
+        let fid = list_length(types);
+        let fv = store(KExprNode.FVar(fid, dom));
+        let body_open = expr_inst1(body, fv, 0);
         let types2 = store(ListNode.Cons(dom, types));
-        check_positivity_fields(body, block_idxs, types2, top, addrs),
+        check_positivity_fields(body_open, block_idxs, types2, top, addrs),
       _ => (),
     }
   }
@@ -253,8 +265,11 @@ def inductive_check := ⟦
         match load(dom_w) {
           KExprNode.Forall(inner_dom, inner_body) =>
             assert_eq!(expr_mentions_any_idx(inner_dom, block_idxs), 0);
+            let fid = list_length(types);
+            let fv = store(KExprNode.FVar(fid, inner_dom));
+            let inner_body_open = expr_inst1(inner_body, fv, 0);
             let types2 = store(ListNode.Cons(inner_dom, types));
-            check_positivity_aug(inner_body, block_idxs, types2, top, addrs),
+            check_positivity_aug(inner_body_open, block_idxs, types2, top, addrs),
           _ =>
             match collect_spine_simple(dom_w) {
               (head, args) =>
@@ -369,6 +384,7 @@ def inductive_check := ⟦
         },
       KExprNode.Lit(_) => 0,
       KExprNode.Proj(_, _, e1) => expr_mentions_any_idx(e1, idxs),
+      KExprNode.FVar(_, _) => 0,
     }
   }
 
@@ -449,8 +465,11 @@ def inductive_check := ⟦
     match load(ty) {
       KExprNode.Forall(dom, body) =>
         let _ = check_positivity_aug(dom, aug, types, top, addrs);
+        let fid = list_length(types);
+        let fv = store(KExprNode.FVar(fid, dom));
+        let body_open = expr_inst1(body, fv, 0);
         let types2 = store(ListNode.Cons(dom, types));
-        check_positivity_fields_aug(body, aug, types2, top, addrs),
+        check_positivity_fields_aug(body_open, aug, types2, top, addrs),
       _ => (),
     }
   }
@@ -476,6 +495,7 @@ def inductive_check := ⟦
              g_or(expr_mentions_idx(v, ind_idx), expr_mentions_idx(b, ind_idx))),
       KExprNode.Lit(_) => 0,
       KExprNode.Proj(_, _, e1) => expr_mentions_idx(e1, ind_idx),
+      KExprNode.FVar(_, _) => 0,
     }
   }
 
@@ -560,68 +580,69 @@ def inductive_check := ⟦
       _ =>
         match load(ty) {
           KExprNode.Forall(dom, body) =>
+            let fid = list_length(types);
+            let fv = store(KExprNode.FVar(fid, dom));
+            let body_open = expr_inst1(body, fv, 0);
             let inner = store(ListNode.Cons(dom, types));
-            check_large_prop_ctor(body, n_params - 1, n_fields, inner, top, addrs),
+            check_large_prop_ctor(body_open, n_params - 1, n_fields, inner, top, addrs),
           _ => 0,
         },
     }
   }
 
-  -- Walk `n_fields` Foralls, threading list of data-field BVars (de Bruijn
-  -- indices in the post-walk ret context). After walk, collect ret spine
-  -- args and verify every data BVar appears.
+  -- Walk `n_fields` Foralls, threading list of data-field FVars (opened
+  -- when peeling each field's binder). After walk, collect ret spine
+  -- args and verify every data FVar appears.
   fn check_large_walk_fields(ty: KExpr, n_fields: G, field_idx: G,
                               types: List‹KExpr›, top: List‹&KConstantInfo›,
                               addrs: List‹[G; 32]›,
-                              data_bvars: List‹G›) -> G {
+                              data_fvars: List‹KExpr›) -> G {
     match n_fields - field_idx {
       0 =>
         match collect_spine_simple(ty) {
-          (_, args) => all_bvars_in_args(data_bvars, args),
+          (_, args) => all_fvars_in_args(data_fvars, args),
         },
       _ =>
         match load(ty) {
           KExprNode.Forall(dom, body) =>
             let lvl = k_ensure_sort(dom, types, top, addrs);
             let is_data = 1 - level_equal(load(lvl), KLevel.Zero);
-            let bvar_idx = n_fields - 1 - field_idx;
-            let new_bvars = match is_data {
-              0 => data_bvars,
-              _ => store(ListNode.Cons(bvar_idx, data_bvars)),
+            let fid = list_length(types);
+            let fv = store(KExprNode.FVar(fid, dom));
+            let body_open = expr_inst1(body, fv, 0);
+            let new_fvars = match is_data {
+              0 => data_fvars,
+              _ => store(ListNode.Cons(fv, data_fvars)),
             };
             let inner = store(ListNode.Cons(dom, types));
-            check_large_walk_fields(body, n_fields, field_idx + 1, inner, top, addrs,
-                                     new_bvars),
+            check_large_walk_fields(body_open, n_fields, field_idx + 1, inner, top, addrs,
+                                     new_fvars),
           _ => 0,
         },
     }
   }
 
-  -- Returns 1 iff every BVar idx in `bvars` appears in `args` (as a syntactic
-  -- BVar at the ret-binder depth).
-  fn all_bvars_in_args(bvars: List‹G›, args: List‹KExpr›) -> G {
-    match load(bvars) {
+  -- Returns 1 iff every FVar in `fvars` appears in `args` (as a syntactic
+  -- FVar reference, compared by pointer).
+  fn all_fvars_in_args(fvars: List‹KExpr›, args: List‹KExpr›) -> G {
+    match load(fvars) {
       ListNode.Nil => 1,
-      ListNode.Cons(b, rest) =>
-        match args_contain_bvar(args, b) {
+      ListNode.Cons(f, rest) =>
+        match args_contain_fvar(args, f) {
           0 => 0,
-          1 => all_bvars_in_args(rest, args),
+          1 => all_fvars_in_args(rest, args),
         },
     }
   }
 
-  -- Returns 1 if any element of `args` is syntactically `BVar(target)`.
-  fn args_contain_bvar(args: List‹KExpr›, target: G) -> G {
+  -- Returns 1 if any element of `args` is the same `FVar` ptr as `target`.
+  fn args_contain_fvar(args: List‹KExpr›, target: KExpr) -> G {
     match load(args) {
       ListNode.Nil => 0,
       ListNode.Cons(a, rest) =>
-        match load(a) {
-          KExprNode.BVar(i) =>
-            match i - target {
-              0 => 1,
-              _ => args_contain_bvar(rest, target),
-            },
-          _ => args_contain_bvar(rest, target),
+        match ptr_val(a) - ptr_val(target) {
+          0 => 1,
+          _ => args_contain_fvar(rest, target),
         },
     }
   }
@@ -2392,8 +2413,12 @@ def inductive_check := ⟦
               KExprNode.Forall(db, bb) =>
                 let eq = k_is_def_eq(da, db, types, top, addrs);
                 assert_eq!(eq, 1);
+                let fid = list_length(types);
+                let fv = store(KExprNode.FVar(fid, da));
+                let ba_open = expr_inst1(ba, fv, 0);
+                let bb_open = expr_inst1(bb, fv, 0);
                 let inner = store(ListNode.Cons(da, types));
-                check_param_agreement_go(ba, bb, n - 1, inner, top, addrs),
+                check_param_agreement_go(ba_open, bb_open, n - 1, inner, top, addrs),
             },
         },
     }
