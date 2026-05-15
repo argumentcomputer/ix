@@ -693,48 +693,13 @@ def primitive := ⟦
      0xa4, 0x00, 0xfb, 0x06, 0x03, 0xae, 0xdf, 0x2f]
   }
 
-  -- Mirror: `u64_add` in ByteStream.lean expanded to expose final
-  -- carry. Used by klimbs_succ / klimbs_add.
-  --
-  -- TODO: delete this once `ByteStream.lean::u64_add` is patched to
-  -- return `(U64, G)` and existing call sites updated. Tracking this
-  -- as a follow-up because the patch ripples beyond the kernel
-  -- (Blake3 / IxonSerialize / ByteStream itself).
-  fn u64_add_with_carry(a: U64, b: U64) -> (U64, G) {
-    let [a0, a1, a2, a3, a4, a5, a6, a7] = a;
-    let [b0, b1, b2, b3, b4, b5, b6, b7] = b;
-    let (s0, c1) = u8_add(a0, b0);
-    let (t1, o1) = u8_add(a1, b1);
-    let (s1, c1a) = u8_add(t1, c1);
-    let c2 = u8_xor(o1, c1a);
-    let (t2, o2) = u8_add(a2, b2);
-    let (s2, c2a) = u8_add(t2, c2);
-    let c3 = u8_xor(o2, c2a);
-    let (t3, o3) = u8_add(a3, b3);
-    let (s3, c3a) = u8_add(t3, c3);
-    let c4 = u8_xor(o3, c3a);
-    let (t4, o4) = u8_add(a4, b4);
-    let (s4, c4a) = u8_add(t4, c4);
-    let c5 = u8_xor(o4, c4a);
-    let (t5, o5) = u8_add(a5, b5);
-    let (s5, c5a) = u8_add(t5, c5);
-    let c6 = u8_xor(o5, c5a);
-    let (t6, o6) = u8_add(a6, b6);
-    let (s6, c6a) = u8_add(t6, c6);
-    let c7 = u8_xor(o6, c6a);
-    let (t7, o7) = u8_add(a7, b7);
-    let (s7, c7a) = u8_add(t7, c7);
-    let final_carry = u8_xor(o7, c7a);
-    ([s0, s1, s2, s3, s4, s5, s6, s7], final_carry)
-  }
-
   -- Mirror: BigUint::succ. Increment a KLimbs by 1; ripple carry.
   fn klimbs_succ(n: KLimbs) -> KLimbs {
     match load(n) {
       ListNode.Nil =>
         store(ListNode.Cons([1, 0, 0, 0, 0, 0, 0, 0], store(ListNode.Nil))),
       ListNode.Cons(limb, rest) =>
-        let pair = u64_add_with_carry(limb, [1, 0, 0, 0, 0, 0, 0, 0]);
+        let pair = u64_add(limb, [1, 0, 0, 0, 0, 0, 0, 0]);
         match pair {
           (sum, carry) =>
             match carry {
@@ -764,10 +729,10 @@ def primitive := ⟦
               _ => klimbs_succ(a),
             },
           ListNode.Cons(lb, rb) =>
-            let pair1 = u64_add_with_carry(la, lb);
+            let pair1 = u64_add(la, lb);
             match pair1 {
               (sum1, carry1) =>
-                let pair2 = u64_add_with_carry(sum1, [carry, 0, 0, 0, 0, 0, 0, 0]);
+                let pair2 = u64_add(sum1, [carry, 0, 0, 0, 0, 0, 0, 0]);
                 match pair2 {
                   (sum2, carry2) =>
                     let total_carry = g_or(carry1, carry2);
@@ -1016,9 +981,9 @@ def primitive := ⟦
       ListNode.Cons(b_limb, rest) =>
         match u64_mul(a_limb, b_limb) {
           (lo, hi) =>
-            match u64_add_with_carry(lo, carry) {
+            match u64_add(lo, carry) {
               (sum, carry_out) =>
-                match u64_add_with_carry(hi, [carry_out, 0, 0, 0, 0, 0, 0, 0]) {
+                match u64_add(hi, [carry_out, 0, 0, 0, 0, 0, 0, 0]) {
                   (new_carry, _) =>
                     let new_acc = list_snoc(acc, sum);
                     klimbs_mul_single(a_limb, rest, new_carry, new_acc),
