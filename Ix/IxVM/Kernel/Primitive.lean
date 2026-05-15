@@ -873,10 +873,9 @@ def primitive := ⟦
     klimbs_sub(a, one)
   }
 
-  -- TODO(u8_mul_gadget): replace `divmod_256` + byte-schoolbook `u64_mul`
-  -- with a proper u8_mul Aiur gadget once it lands. Tracking on a separate
-  -- branch.
-  -- Returns (remainder, quotient) where remainder = x mod 256, quotient = x / 256.
+  -- Returns (remainder, quotient): remainder = x mod 256, quotient = x / 256.
+  -- `u64_mul` feeds this only small column sums (sums of bytes, < ~4096),
+  -- so the repeated subtraction terminates in a handful of steps.
   fn divmod_256(x: G, q: G) -> (G, G) {
     match u32_less_than(x, 256) {
       1 => (x, q),
@@ -884,56 +883,126 @@ def primitive := ⟦
     }
   }
 
-  -- u64×u64 → (lo: U64, hi: U64) via byte schoolbook.
+  -- u64×u64 → (lo: U64, hi: U64) via byte schoolbook. Each byte×byte
+  -- product is split into (low, high) bytes by the `u8_mul` gadget, so
+  -- every column is a sum of bytes (not products) and `divmod_256` only
+  -- carry-propagates small values.
   fn u64_mul(a: U64, b: U64) -> (U64, U64) {
     let [a0, a1, a2, a3, a4, a5, a6, a7] = a;
     let [b0, b1, b2, b3, b4, b5, b6, b7] = b;
-    let pp0  = a0*b0;
-    let pp1  = a0*b1 + a1*b0;
-    let pp2  = a0*b2 + a1*b1 + a2*b0;
-    let pp3  = a0*b3 + a1*b2 + a2*b1 + a3*b0;
-    let pp4  = a0*b4 + a1*b3 + a2*b2 + a3*b1 + a4*b0;
-    let pp5  = a0*b5 + a1*b4 + a2*b3 + a3*b2 + a4*b1 + a5*b0;
-    let pp6  = a0*b6 + a1*b5 + a2*b4 + a3*b3 + a4*b2 + a5*b1 + a6*b0;
-    let pp7  = a0*b7 + a1*b6 + a2*b5 + a3*b4 + a4*b3 + a5*b2 + a6*b1 + a7*b0;
-    let pp8  = a1*b7 + a2*b6 + a3*b5 + a4*b4 + a5*b3 + a6*b2 + a7*b1;
-    let pp9  = a2*b7 + a3*b6 + a4*b5 + a5*b4 + a6*b3 + a7*b2;
-    let pp10 = a3*b7 + a4*b6 + a5*b5 + a6*b4 + a7*b3;
-    let pp11 = a4*b7 + a5*b6 + a6*b5 + a7*b4;
-    let pp12 = a5*b7 + a6*b6 + a7*b5;
-    let pp13 = a6*b7 + a7*b6;
-    let pp14 = a7*b7;
-    match divmod_256(pp0, 0) {
+    let (l00, h00) = u8_mul(a0, b0);
+    let (l01, h01) = u8_mul(a0, b1);
+    let (l02, h02) = u8_mul(a0, b2);
+    let (l03, h03) = u8_mul(a0, b3);
+    let (l04, h04) = u8_mul(a0, b4);
+    let (l05, h05) = u8_mul(a0, b5);
+    let (l06, h06) = u8_mul(a0, b6);
+    let (l07, h07) = u8_mul(a0, b7);
+    let (l10, h10) = u8_mul(a1, b0);
+    let (l11, h11) = u8_mul(a1, b1);
+    let (l12, h12) = u8_mul(a1, b2);
+    let (l13, h13) = u8_mul(a1, b3);
+    let (l14, h14) = u8_mul(a1, b4);
+    let (l15, h15) = u8_mul(a1, b5);
+    let (l16, h16) = u8_mul(a1, b6);
+    let (l17, h17) = u8_mul(a1, b7);
+    let (l20, h20) = u8_mul(a2, b0);
+    let (l21, h21) = u8_mul(a2, b1);
+    let (l22, h22) = u8_mul(a2, b2);
+    let (l23, h23) = u8_mul(a2, b3);
+    let (l24, h24) = u8_mul(a2, b4);
+    let (l25, h25) = u8_mul(a2, b5);
+    let (l26, h26) = u8_mul(a2, b6);
+    let (l27, h27) = u8_mul(a2, b7);
+    let (l30, h30) = u8_mul(a3, b0);
+    let (l31, h31) = u8_mul(a3, b1);
+    let (l32, h32) = u8_mul(a3, b2);
+    let (l33, h33) = u8_mul(a3, b3);
+    let (l34, h34) = u8_mul(a3, b4);
+    let (l35, h35) = u8_mul(a3, b5);
+    let (l36, h36) = u8_mul(a3, b6);
+    let (l37, h37) = u8_mul(a3, b7);
+    let (l40, h40) = u8_mul(a4, b0);
+    let (l41, h41) = u8_mul(a4, b1);
+    let (l42, h42) = u8_mul(a4, b2);
+    let (l43, h43) = u8_mul(a4, b3);
+    let (l44, h44) = u8_mul(a4, b4);
+    let (l45, h45) = u8_mul(a4, b5);
+    let (l46, h46) = u8_mul(a4, b6);
+    let (l47, h47) = u8_mul(a4, b7);
+    let (l50, h50) = u8_mul(a5, b0);
+    let (l51, h51) = u8_mul(a5, b1);
+    let (l52, h52) = u8_mul(a5, b2);
+    let (l53, h53) = u8_mul(a5, b3);
+    let (l54, h54) = u8_mul(a5, b4);
+    let (l55, h55) = u8_mul(a5, b5);
+    let (l56, h56) = u8_mul(a5, b6);
+    let (l57, h57) = u8_mul(a5, b7);
+    let (l60, h60) = u8_mul(a6, b0);
+    let (l61, h61) = u8_mul(a6, b1);
+    let (l62, h62) = u8_mul(a6, b2);
+    let (l63, h63) = u8_mul(a6, b3);
+    let (l64, h64) = u8_mul(a6, b4);
+    let (l65, h65) = u8_mul(a6, b5);
+    let (l66, h66) = u8_mul(a6, b6);
+    let (l67, h67) = u8_mul(a6, b7);
+    let (l70, h70) = u8_mul(a7, b0);
+    let (l71, h71) = u8_mul(a7, b1);
+    let (l72, h72) = u8_mul(a7, b2);
+    let (l73, h73) = u8_mul(a7, b3);
+    let (l74, h74) = u8_mul(a7, b4);
+    let (l75, h75) = u8_mul(a7, b5);
+    let (l76, h76) = u8_mul(a7, b6);
+    let (l77, h77) = u8_mul(a7, b7);
+    -- Column k gathers low bytes of products with i+j=k and high bytes
+    -- of products with i+j=k-1.
+    let col0 = l00;
+    let col1 = l01 + l10 + h00;
+    let col2 = l02 + l11 + l20 + h01 + h10;
+    let col3 = l03 + l12 + l21 + l30 + h02 + h11 + h20;
+    let col4 = l04 + l13 + l22 + l31 + l40 + h03 + h12 + h21 + h30;
+    let col5 = l05 + l14 + l23 + l32 + l41 + l50 + h04 + h13 + h22 + h31 + h40;
+    let col6 = l06 + l15 + l24 + l33 + l42 + l51 + l60 + h05 + h14 + h23 + h32 + h41 + h50;
+    let col7 = l07 + l16 + l25 + l34 + l43 + l52 + l61 + l70 + h06 + h15 + h24 + h33 + h42 + h51 + h60;
+    let col8 = l17 + l26 + l35 + l44 + l53 + l62 + l71 + h07 + h16 + h25 + h34 + h43 + h52 + h61 + h70;
+    let col9 = l27 + l36 + l45 + l54 + l63 + l72 + h17 + h26 + h35 + h44 + h53 + h62 + h71;
+    let col10 = l37 + l46 + l55 + l64 + l73 + h27 + h36 + h45 + h54 + h63 + h72;
+    let col11 = l47 + l56 + l65 + l74 + h37 + h46 + h55 + h64 + h73;
+    let col12 = l57 + l66 + l75 + h47 + h56 + h65 + h74;
+    let col13 = l67 + l76 + h57 + h66 + h75;
+    let col14 = l77 + h67 + h76;
+    let col15 = h77;
+    match divmod_256(col0, 0) {
       (r0, c1) =>
-        match divmod_256(pp1 + c1, 0) {
+        match divmod_256(col1 + c1, 0) {
           (r1, c2) =>
-            match divmod_256(pp2 + c2, 0) {
+            match divmod_256(col2 + c2, 0) {
               (r2, c3) =>
-                match divmod_256(pp3 + c3, 0) {
+                match divmod_256(col3 + c3, 0) {
                   (r3, c4) =>
-                    match divmod_256(pp4 + c4, 0) {
+                    match divmod_256(col4 + c4, 0) {
                       (r4, c5) =>
-                        match divmod_256(pp5 + c5, 0) {
+                        match divmod_256(col5 + c5, 0) {
                           (r5, c6) =>
-                            match divmod_256(pp6 + c6, 0) {
+                            match divmod_256(col6 + c6, 0) {
                               (r6, c7) =>
-                                match divmod_256(pp7 + c7, 0) {
+                                match divmod_256(col7 + c7, 0) {
                                   (r7, c8) =>
-                                    match divmod_256(pp8 + c8, 0) {
+                                    match divmod_256(col8 + c8, 0) {
                                       (r8, c9) =>
-                                        match divmod_256(pp9 + c9, 0) {
+                                        match divmod_256(col9 + c9, 0) {
                                           (r9, c10) =>
-                                            match divmod_256(pp10 + c10, 0) {
+                                            match divmod_256(col10 + c10, 0) {
                                               (r10, c11) =>
-                                                match divmod_256(pp11 + c11, 0) {
+                                                match divmod_256(col11 + c11, 0) {
                                                   (r11, c12) =>
-                                                    match divmod_256(pp12 + c12, 0) {
+                                                    match divmod_256(col12 + c12, 0) {
                                                       (r12, c13) =>
-                                                        match divmod_256(pp13 + c13, 0) {
+                                                        match divmod_256(col13 + c13, 0) {
                                                           (r13, c14) =>
-                                                            match divmod_256(pp14 + c14, 0) {
+                                                            match divmod_256(col14 + c14, 0) {
                                                               (r14, c15) =>
-                                                                match divmod_256(c15, 0) {
+                                                                match divmod_256(col15 + c15, 0) {
                                                                   (r15, _) =>
                                                                     ([r0, r1, r2, r3, r4, r5, r6, r7],
                                                                      [r8, r9, r10, r11, r12, r13, r14, r15]),
