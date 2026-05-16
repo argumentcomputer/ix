@@ -146,7 +146,7 @@ def defEq := ⟦
 
   -- 1 iff ty is `Const(I, _) args` for non-rec 1-ctor 0-field inductive.
   fn is_unit_like_type(ty: KExpr, top: List‹&KConstantInfo›) -> G {
-    match collect_spine_simple(ty) {
+    match collect_spine(ty) {
       (head, _) =>
         match load(head) {
           KExprNode.Const(idx, _) =>
