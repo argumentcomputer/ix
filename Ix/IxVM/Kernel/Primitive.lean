@@ -874,8 +874,9 @@ def primitive := ⟦
   }
 
   -- Returns (remainder, quotient): remainder = x mod 256, quotient = x / 256.
-  -- Repeated subtraction — callers feed it small `x`, or call it only from
-  -- unconstrained code where the iteration cost is off-circuit.
+  -- Repeated subtraction. Only ever invoked from the `#split_carry` /
+  -- `#split_u32` unconstrained witness generators, so the O(x/256)
+  -- iteration cost is off-circuit (untraced).
   fn divmod_256(x: G, q: G) -> (G, G) {
     match u32_less_than(x, 256) {
       1 => (x, q),
@@ -2192,8 +2193,11 @@ def primitive := ⟦
     }
   }
 
-  -- Convert G value (≤ 2^32) into single-limb KLimbs via byte decomp.
-  fn klimbs_from_g(x: G) -> KLimbs {
+  -- Unconstrained witness generator: split `x` (< 2^32) into 4
+  -- little-endian bytes. Always invoked as `#split_u32(...)`; the result
+  -- is prover-provided and MUST be pinned by the caller with u8 range
+  -- checks + a reconstruction assert. Division is off-circuit (untraced).
+  fn split_u32(x: G) -> (G, G, G, G) {
     match divmod_256(x, 0) {
       (b0, q1) =>
         match divmod_256(q1, 0) {
@@ -2201,12 +2205,27 @@ def primitive := ⟦
             match divmod_256(q2, 0) {
               (b2, q3) =>
                 match divmod_256(q3, 0) {
-                  (b3, _q4) =>
-                    store(ListNode.Cons([b0, b1, b2, b3, 0, 0, 0, 0],
-                                        store(ListNode.Nil))),
+                  (b3, _) => (b0, b1, b2, b3),
                 },
             },
         },
+    }
+  }
+
+  -- Convert G value (< 2^32) into single-limb KLimbs. The 4-byte
+  -- decomposition is a prover-provided (unconstrained) witness, pinned by
+  -- four u8 range checks + the reconstruction assert. `x >= 2^32` is
+  -- rejected (assert fails) rather than silently truncated.
+  fn klimbs_from_g(x: G) -> KLimbs {
+    match #split_u32(x) {
+      (rb0, rb1, rb2, rb3) =>
+        let b0 = u8_xor(rb0, 0);
+        let b1 = u8_xor(rb1, 0);
+        let b2 = u8_xor(rb2, 0);
+        let b3 = u8_xor(rb3, 0);
+        assert_eq!(x, b0 + (256 * b1) + (65536 * b2) + (16777216 * b3));
+        store(ListNode.Cons([b0, b1, b2, b3, 0, 0, 0, 0],
+                            store(ListNode.Nil))),
     }
   }
 
