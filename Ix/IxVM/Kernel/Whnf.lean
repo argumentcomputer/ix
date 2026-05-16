@@ -77,13 +77,13 @@ def whnf := ⟦
   -- Each arg goes through `apply`, which beta-reduces if head is Lam or
   -- attempts Const dispatch on the accumulating App-spine.
   fn apply_spine_whnf(f: KExpr, spine: List‹KExpr›,
-                      depth: G, top: List‹&KConstantInfo›,
+                      top: List‹&KConstantInfo›,
                       addrs: List‹[G; 32]›) -> KExpr {
     match load(spine) {
       ListNode.Nil => f,
       ListNode.Cons(a, rest) =>
-        let next = apply(f, a, depth, top, addrs);
-        apply_spine_whnf(next, rest, depth, top, addrs),
+        let next = apply(f, a, top, addrs);
+        apply_spine_whnf(next, rest, top, addrs),
     }
   }
 
@@ -92,19 +92,18 @@ def whnf := ⟦
   -- Otherwise f is whnf-stuck (App-spine over Const/BVar/Proj). Form
   -- App(f, a) and attempt Const dispatch on the resulting spine (iota,
   -- nat-prim, str, bitvec, native, decidable, proj-def, delta).
-  fn apply(f: KExpr, a: KExpr, depth: G,
-           top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) -> KExpr {
+  fn apply(f: KExpr, a: KExpr, top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) -> KExpr {
     match load(f) {
       KExprNode.Lam(_, body) =>
         let next = expr_subst1(body, a, 0);
-        whnf(next, depth, top, addrs),
+        whnf(next, top, addrs),
       _ =>
         let app = store(KExprNode.App(f, a));
         match collect_spine(app) {
           (head, spine) =>
             match load(head) {
               KExprNode.Const(idx, lvls) =>
-                const_dispatch(app, idx, lvls, spine, depth, top, addrs),
+                const_dispatch(app, idx, lvls, spine, top, addrs),
               _ => app,
             },
         },
@@ -116,8 +115,7 @@ def whnf := ⟦
   -- `orig` is the original App-spine expression to return on stuck.
   -- Spine may be empty (bare Const in whnf) or non-empty (from apply).
   fn const_dispatch(orig: KExpr, idx: G, lvls: List‹&KLevel›,
-                    spine: List‹KExpr›, depth: G,
-                    top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) -> KExpr {
+                    spine: List‹KExpr›, top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) -> KExpr {
     let head_addr = list_lookup(addrs, idx);
     let ci = load(list_lookup(top, idx));
     -- Recr / Quot heads can never match a primitive address (Nat ops,
@@ -125,41 +123,41 @@ def whnf := ⟦
     -- Defn). Skip the primitive dispatch chain for those.
     match ci {
       KConstantInfo.Rec(num_lvls, _, num_params, num_indices, num_motives, num_minors, rules, k_flag, _, _) =>
-        let iota = try_iota(lvls, spine, num_lvls, num_params, num_indices, num_motives, num_minors, rules, k_flag, depth, top, addrs);
+        let iota = try_iota(lvls, spine, num_lvls, num_params, num_indices, num_motives, num_minors, rules, k_flag, top, addrs);
         match iota {
-          (1, reduced2) => whnf(reduced2, depth, top, addrs),
+          (1, reduced2) => whnf(reduced2, top, addrs),
           (0, _) => orig,
         },
       KConstantInfo.Quot(_, _, kind) =>
-        let qiota = try_quot_iota(kind, spine, depth, top, addrs);
+        let qiota = try_quot_iota(kind, spine, top, addrs);
         match qiota {
-          (1, reduced_q) => whnf(reduced_q, depth, top, addrs),
+          (1, reduced_q) => whnf(reduced_q, top, addrs),
           (0, _) => orig,
         },
       _ =>
-        let nat_pair = try_nat_dispatch(head_addr, spine, depth, top, addrs);
+        let nat_pair = try_nat_dispatch(head_addr, spine, top, addrs);
         match nat_pair {
-          (1, reduced) => whnf(reduced, depth, top, addrs),
+          (1, reduced) => whnf(reduced, top, addrs),
           (0, _) =>
             let str_pair = try_str_dispatch(head_addr, spine, addrs);
             match str_pair {
-              (1, reduced_s) => whnf(reduced_s, depth, top, addrs),
+              (1, reduced_s) => whnf(reduced_s, top, addrs),
               (0, _) =>
-                let bv_pair = try_bitvec_dispatch(head_addr, spine, depth, top, addrs);
+                let bv_pair = try_bitvec_dispatch(head_addr, spine, top, addrs);
                 match bv_pair {
-                  (1, reduced_b) => whnf(reduced_b, depth, top, addrs),
+                  (1, reduced_b) => whnf(reduced_b, top, addrs),
                   (0, _) =>
-                    let nat_pair2 = try_reduce_native(head_addr, spine, depth, top, addrs);
+                    let nat_pair2 = try_reduce_native(head_addr, spine, top, addrs);
                     match nat_pair2 {
-                      (1, reduced_n) => whnf(reduced_n, depth, top, addrs),
+                      (1, reduced_n) => whnf(reduced_n, top, addrs),
                       (0, _) =>
-                        let dec_pair = try_reduce_decidable(head_addr, idx, lvls, spine, depth, top, addrs);
+                        let dec_pair = try_reduce_decidable(head_addr, idx, lvls, spine, top, addrs);
                         match dec_pair {
-                          (1, reduced_d) => whnf(reduced_d, depth, top, addrs),
+                          (1, reduced_d) => whnf(reduced_d, top, addrs),
                           (0, _) =>
                             let proj_def_pair = try_reduce_projection_definition(idx, spine, top);
                             match proj_def_pair {
-                              (1, reduced_pd) => whnf(reduced_pd, depth, top, addrs),
+                              (1, reduced_pd) => whnf(reduced_pd, top, addrs),
                               (0, _) =>
                                 -- Mirror src/ix/kernel/whnf.rs:756-774
                                 -- (`delta_unfold_one`): unfold any Defn
@@ -170,8 +168,8 @@ def whnf := ⟦
                                 match ci {
                                   KConstantInfo.Defn(_, _, value, _, _) =>
                                     let body = expr_inst_levels(value, lvls);
-                                    let body_w = whnf(body, depth, top, addrs);
-                                    apply_spine_whnf(body_w, spine, depth, top, addrs),
+                                    let body_w = whnf(body, top, addrs);
+                                    apply_spine_whnf(body_w, spine, top, addrs),
                                   _ => orig,
                                 },
                             },
@@ -187,8 +185,7 @@ def whnf := ⟦
   -- `src/ix/kernel/tc.rs`). In a zk prover context, divergent input simply
   -- fails to produce a proof — the caller guarantees termination, so a
   -- soundness-preserving early abort is unnecessary.
-  fn whnf(e: KExpr, depth: G,
-          top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) -> KExpr {
+  fn whnf(e: KExpr, top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) -> KExpr {
     match load(e) {
       KExprNode.Srt(_) => e,
       KExprNode.Lit(_) => e,
@@ -196,15 +193,15 @@ def whnf := ⟦
       KExprNode.Forall(_, _) => e,
       KExprNode.BVar(_) => e,
       KExprNode.App(f, a) =>
-        let f_w = whnf(f, depth, top, addrs);
-        apply(f_w, a, depth, top, addrs),
+        let f_w = whnf(f, top, addrs);
+        apply(f_w, a, top, addrs),
       KExprNode.Const(idx, lvls) =>
-        const_dispatch(e, idx, lvls, store(ListNode.Nil), depth, top, addrs),
+        const_dispatch(e, idx, lvls, store(ListNode.Nil), top, addrs),
       KExprNode.Let(_, val, body) =>
         let next = expr_subst1(body, val, 0);
-        whnf(next, depth, top, addrs),
+        whnf(next, top, addrs),
       KExprNode.Proj(tidx, fidx, inner) =>
-        let inner_whnf = whnf(inner, depth, top, addrs);
+        let inner_whnf = whnf(inner, top, addrs);
         let inner_pair = collect_spine(inner_whnf);
         match inner_pair {
           (inner_head, inner_args) =>
@@ -212,7 +209,7 @@ def whnf := ⟦
             -- Pushes Fin.val inside Decidable.rec minors; allows iota.
             let fvd_pair = try_reduce_fin_val_decidable_rec(tidx, fidx, inner_head, inner_args, addrs);
             match fvd_pair {
-              (1, rewritten) => whnf(rewritten, depth, top, addrs),
+              (1, rewritten) => whnf(rewritten, top, addrs),
               (0, _) =>
                 match load(inner_head) {
                   KExprNode.Const(cidx, _) =>
@@ -220,7 +217,7 @@ def whnf := ⟦
                     match cci {
                       KConstantInfo.Ctor(_, _, _, _, nparams, _, _) =>
                         let field = list_lookup_or_nil(inner_args, nparams + fidx);
-                        whnf(field, depth, top, addrs),
+                        whnf(field, top, addrs),
                       _ =>
                         store(KExprNode.Proj(tidx, fidx, inner_whnf)),
                     },
@@ -240,8 +237,7 @@ def whnf := ⟦
   fn try_iota(lvls: List‹&KLevel›, spine: List‹KExpr›,
               num_lvls: G, num_params: G, num_indices: G,
               num_motives: G, num_minors: G,
-              rules: List‹KRecRule›, k_flag: G, depth: G,
-              top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) -> (G, KExpr) {
+              rules: List‹KRecRule›, k_flag: G, top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) -> (G, KExpr) {
     let major_idx = num_params + num_motives + num_minors + num_indices;
     let spine_len = list_length(spine);
     let major_lt = u32_less_than(major_idx, spine_len);
@@ -252,7 +248,7 @@ def whnf := ⟦
         match lvls_len - num_lvls {
           0 =>
             try_iota_with_major(lvls, spine, num_params, num_motives, num_minors,
-                                major_idx, rules, k_flag, depth, top, addrs),
+                                major_idx, rules, k_flag, top, addrs),
           _ => (0, store(KExprNode.BVar(0))),
         },
     }
@@ -346,13 +342,12 @@ def whnf := ⟦
   fn try_iota_with_major(lvls: List‹&KLevel›, spine: List‹KExpr›,
                          num_params: G, num_motives: G, num_minors: G,
                          major_idx: G, rules: List‹KRecRule›, k_flag: G,
-                         depth: G,
                          top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) -> (G, KExpr) {
     -- Mirror: src/ix/kernel/whnf.rs:1824-1869 try_reduce_nat_succ_linear_rec.
     -- Fast path: `Nat.rec _ base (λ _ ih => succ ih) (Lit n)` → `base + n`.
     -- O(1) instead of O(n) iota expansion of literal succ chain.
     let lin = try_nat_linear_rec(spine, num_params, num_motives, num_minors,
-                                  major_idx, depth, top, addrs);
+                                  major_idx, top, addrs);
     match lin {
       (1, r) => (1, r),
       (0, _) =>
@@ -363,8 +358,7 @@ def whnf := ⟦
     -- Mirror: src/ix/kernel/whnf.rs:1315-1380 synth_ctor_when_k.
     let major = match k_flag {
       1 =>
-        let synth = try_synth_k_ctor(raw_major, num_params, rules,
-                                     depth, top, addrs);
+        let synth = try_synth_k_ctor(raw_major, num_params, rules, top, addrs);
         match synth {
           (1, ctor_app) => ctor_app,
           (0, _) => raw_major,
@@ -376,7 +370,7 @@ def whnf := ⟦
     -- chain of `lit` intermediate literals. Mirror whnf.rs:904-907,1113-1143
     -- cleanup_nat_offset_major.
     let major_clean1 = cleanup_nat_offset_major(major, addrs);
-    let major_whnf_raw = whnf(major_clean1, depth, top, addrs);
+    let major_whnf_raw = whnf(major_clean1, top, addrs);
     let major_clean2 = cleanup_nat_offset_major(major_whnf_raw, addrs);
     -- Coerce Nat / Str literals to ctor chain so iota fires
     -- (mirror whnf.rs:929-946 nat, whnf.rs:953-960 string).
@@ -419,12 +413,12 @@ def whnf := ⟦
               _ =>
                 -- Not a Ctor; fall through to struct-eta-iota.
                 try_struct_eta_iota(spine, num_params, num_motives, num_minors,
-                                    major_idx, rules, lvls, depth, top, addrs),
+                                    major_idx, rules, lvls, top, addrs),
             },
           _ =>
             -- head not a Const; fall through to struct-eta-iota.
             try_struct_eta_iota(spine, num_params, num_motives, num_minors,
-                                major_idx, rules, lvls, depth, top, addrs),
+                                major_idx, rules, lvls, top, addrs),
         },
     },
     }
@@ -436,24 +430,24 @@ def whnf := ⟦
   -- (0, _) on miss.
   fn try_nat_linear_rec(spine: List‹KExpr›, num_params: G, num_motives: G,
                         num_minors: G, major_idx: G,
-                        depth: G, top: List‹&KConstantInfo›,
+                        top: List‹&KConstantInfo›,
                         addrs: List‹[G; 32]›) -> (G, KExpr) {
     match u32_less_than(num_minors, 2) {
       1 => (0, store(KExprNode.BVar(0))),
       0 =>
         let raw_major = list_lookup(spine, major_idx);
-        let major_w = whnf(raw_major, depth, top, addrs);
+        let major_w = whnf(raw_major, top, addrs);
         match try_extract_nat(major_w, addrs) {
           (0, _) => (0, store(KExprNode.BVar(0))),
           (1, n_klimbs) =>
             let base_idx = num_params + num_motives;
             let raw_step = list_lookup(spine, base_idx + 1);
-            let step_w = whnf(raw_step, depth, top, addrs);
+            let step_w = whnf(raw_step, top, addrs);
             match is_nat_succ_ih_step(step_w, addrs) {
               0 => (0, store(KExprNode.BVar(0))),
               1 =>
                 let raw_base = list_lookup(spine, base_idx);
-                let base_w = whnf(raw_base, depth, top, addrs);
+                let base_w = whnf(raw_base, top, addrs);
                 match try_extract_nat(base_w, addrs) {
                   (0, _) => (0, store(KExprNode.BVar(0))),
                   (1, b_klimbs) =>
@@ -505,8 +499,7 @@ def whnf := ⟦
   fn try_struct_eta_iota(spine: List‹KExpr›,
                          num_params: G, num_motives: G, num_minors: G,
                          major_idx: G, rules: List‹KRecRule›,
-                         lvls: List‹&KLevel›, depth: G,
-                         top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) -> (G, KExpr) {
+                         lvls: List‹&KLevel›, top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) -> (G, KExpr) {
     let n_rules = list_length(rules);
     match n_rules {
       1 =>
@@ -528,8 +521,8 @@ def whnf := ⟦
                               0 =>
                                 let major = list_lookup(spine, major_idx);
                                 -- Prop guard: refuse if major's type is Prop.
-                                let major_ty = k_infer(major, depth, top, addrs);
-                                let prop_p = is_prop_type(major_ty, depth, top, addrs);
+                                let major_ty = k_infer(major, top, addrs);
+                                let prop_p = is_prop_type(major_ty, top, addrs);
                                 match prop_p {
                                   1 => (0, store(KExprNode.BVar(0))),
                                   0 =>
@@ -566,17 +559,15 @@ def whnf := ⟦
   -- For both: locate q (last arg), whnf it, expect head Const that's
   -- Quot(_, _, Ctor) (= Quot.mk). Extract `a` (last arg of Quot.mk's
   -- spine), apply to f or m.
-  fn try_quot_iota(kind: QuotKind, spine: List‹KExpr›, depth: G,
-                   top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) -> (G, KExpr) {
+  fn try_quot_iota(kind: QuotKind, spine: List‹KExpr›, top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) -> (G, KExpr) {
     match kind {
-      QuotKind.Lift => try_quot_lift(spine, depth, top, addrs),
-      QuotKind.Ind => try_quot_ind(spine, depth, top, addrs),
+      QuotKind.Lift => try_quot_lift(spine, top, addrs),
+      QuotKind.Ind => try_quot_ind(spine, top, addrs),
       _ => (0, store(KExprNode.BVar(0))),
     }
   }
 
-  fn try_quot_lift(spine: List‹KExpr›, depth: G,
-                   top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) -> (G, KExpr) {
+  fn try_quot_lift(spine: List‹KExpr›, top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) -> (G, KExpr) {
     let n = list_length(spine);
     let lt6 = u32_less_than(n, 6);
     match lt6 {
@@ -584,7 +575,7 @@ def whnf := ⟦
       0 =>
         let f = list_lookup(spine, 3);
         let q = list_lookup(spine, 5);
-        let a_opt = quot_extract_arg(q, depth, top, addrs);
+        let a_opt = quot_extract_arg(q, top, addrs);
         match a_opt {
           (1, a) =>
             let post = list_drop(spine, 6);
@@ -595,8 +586,7 @@ def whnf := ⟦
     }
   }
 
-  fn try_quot_ind(spine: List‹KExpr›, depth: G,
-                  top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) -> (G, KExpr) {
+  fn try_quot_ind(spine: List‹KExpr›, top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) -> (G, KExpr) {
     let n = list_length(spine);
     let lt5 = u32_less_than(n, 5);
     match lt5 {
@@ -604,7 +594,7 @@ def whnf := ⟦
       0 =>
         let m = list_lookup(spine, 3);
         let q = list_lookup(spine, 4);
-        let a_opt = quot_extract_arg(q, depth, top, addrs);
+        let a_opt = quot_extract_arg(q, top, addrs);
         match a_opt {
           (1, a) =>
             let post = list_drop(spine, 5);
@@ -617,9 +607,9 @@ def whnf := ⟦
 
   -- WHNF q; if q reduces to `App-spine(Const(Quot.mk), [α, r, a])`,
   -- return (1, a). Else (0, _).
-  fn quot_extract_arg(q: KExpr, depth: G, top: List‹&KConstantInfo›,
+  fn quot_extract_arg(q: KExpr, top: List‹&KConstantInfo›,
                       addrs: List‹[G; 32]›) -> (G, KExpr) {
-    let q_whnf = whnf(q, depth, top, addrs);
+    let q_whnf = whnf(q, top, addrs);
     let pair = collect_spine(q_whnf);
     match pair {
       (head, args) =>
@@ -666,8 +656,7 @@ def whnf := ⟦
   -- recursor's lvls or spine), then verifies the synthesized ctor's type
   -- is def-eq with major's type.
   fn try_synth_k_ctor(raw_major: KExpr, num_params: G,
-                      rules: List‹KRecRule›, depth: G,
-                      top: List‹&KConstantInfo›,
+                      rules: List‹KRecRule›, top: List‹&KConstantInfo›,
                       addrs: List‹[G; 32]›) -> (G, KExpr) {
     match load(rules) {
       ListNode.Nil => (0, store(KExprNode.BVar(0))),
@@ -685,8 +674,8 @@ def whnf := ⟦
                       0 => (0, store(KExprNode.BVar(0))),
                       _ =>
                         let first_ctor = list_lookup(ctor_indices, 0);
-                        let major_ty = k_infer(raw_major, depth, top, addrs);
-                        let major_ty_w = whnf(major_ty, depth, top, addrs);
+                        let major_ty = k_infer(raw_major, top, addrs);
+                        let major_ty_w = whnf(major_ty, top, addrs);
                         match collect_spine(major_ty_w) {
                           (ty_head, ty_args) =>
                             match load(ty_head) {
@@ -697,8 +686,8 @@ def whnf := ⟦
                                     let params = list_take(ty_args, num_params);
                                     let ctor_app = apply_spine(ctor_head, params);
                                     -- Verify: ctor's inferred type def-eq major's type.
-                                    let ctor_ty = k_infer(ctor_app, depth, top, addrs);
-                                    match k_is_def_eq(major_ty_w, ctor_ty, depth, top, addrs) {
+                                    let ctor_ty = k_infer(ctor_app, top, addrs);
+                                    match k_is_def_eq(major_ty_w, ctor_ty, top, addrs) {
                                       1 => (1, ctor_app),
                                       0 => (0, store(KExprNode.BVar(0))),
                                     },

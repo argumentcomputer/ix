@@ -79,6 +79,29 @@ def subst := ⟦
   }
 
   -- ============================================================================
+  -- next_fvar
+  --
+  -- Returns `0` if `e` has no `FVar`, otherwise `i + 1` where `i` is the
+  -- maximum `FVar` index in `e`. Used to mint a fresh `FVar` id that
+  -- doesn't collide with any existing `FVar` in the expression.
+  -- ============================================================================
+  fn next_fvar(e: KExpr) -> G {
+    match load(e) {
+      KExprNode.FVar(i, _) => i + 1,
+      KExprNode.BVar(_) => 0,
+      KExprNode.Srt(_) => 0,
+      KExprNode.Const(_, _) => 0,
+      KExprNode.Lit(_) => 0,
+      KExprNode.App(f, a) => lbr_max(next_fvar(f), next_fvar(a)),
+      KExprNode.Lam(ty, body) => lbr_max(next_fvar(ty), next_fvar(body)),
+      KExprNode.Forall(ty, body) => lbr_max(next_fvar(ty), next_fvar(body)),
+      KExprNode.Let(ty, val, body) =>
+        lbr_max(lbr_max(next_fvar(ty), next_fvar(val)), next_fvar(body)),
+      KExprNode.Proj(_, _, e1) => next_fvar(e1),
+    }
+  }
+
+  -- ============================================================================
   -- expr_lift
   --
   -- Shift `BVar(i)` → `BVar(i + shift)` when `i ≥ cutoff`. Recursion bumps

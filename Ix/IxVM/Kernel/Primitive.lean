@@ -1315,7 +1315,7 @@ def primitive := ⟦
   -- address and the unreduced spine, fold a Nat primitive op when both
   -- required args are literals. Returns (1, reduced) on hit, (0, _) on miss.
   fn try_nat_dispatch(head_addr: [G; 32], spine: List‹KExpr›,
-                      depth: G, top: List‹&KConstantInfo›,
+                      top: List‹&KConstantInfo›,
                       addrs: List‹[G; 32]›) -> (G, KExpr) {
     let spine_len = list_length(spine);
     let is_pred = address_eq(head_addr, nat_pred_addr());
@@ -1327,7 +1327,7 @@ def primitive := ⟦
         match u32_less_than(spine_len, 1) {
           1 => (0, store(KExprNode.BVar(0))),
           0 =>
-            let a0_w = whnf(list_lookup(spine, 0), depth, top, addrs);
+            let a0_w = whnf(list_lookup(spine, 0), top, addrs);
             match try_extract_nat(a0_w, addrs) {
               (1, na) =>
                 let post = list_drop(spine, 1);
@@ -1341,7 +1341,7 @@ def primitive := ⟦
             match u32_less_than(spine_len, 1) {
               1 => (0, store(KExprNode.BVar(0))),
               0 =>
-                let a0_w = whnf(list_lookup(spine, 0), depth, top, addrs);
+                let a0_w = whnf(list_lookup(spine, 0), top, addrs);
                 match try_extract_nat(a0_w, addrs) {
                   (1, na) =>
                     let post = list_drop(spine, 1);
@@ -1354,8 +1354,8 @@ def primitive := ⟦
             match u32_less_than(spine_len, 2) {
               1 => (0, store(KExprNode.BVar(0))),
               0 =>
-                let a0_w = whnf(list_lookup(spine, 0), depth, top, addrs);
-                let a1_w = whnf(list_lookup(spine, 1), depth, top, addrs);
+                let a0_w = whnf(list_lookup(spine, 0), top, addrs);
+                let a1_w = whnf(list_lookup(spine, 1), top, addrs);
                 let pa = try_extract_nat(a0_w, addrs);
                 let pb = try_extract_nat(a1_w, addrs);
                 match pa {
@@ -1475,27 +1475,26 @@ def primitive := ⟦
   -- Mirror: src/ix/kernel/whnf.rs:2546-2579 fn try_reduce_bitvec_to_nat.
   -- `BitVec.toNat width (BitVec.ofNat width' n)` → `Lit(Nat (n mod 2^width))`.
   -- Width must be ≤ 2^24 to bound klimbs_pow cost.
-  fn try_reduce_bit_vec_to_nat(spine: List‹KExpr›, depth: G,
-                                top: List‹&KConstantInfo›,
+  fn try_reduce_bit_vec_to_nat(spine: List‹KExpr›, top: List‹&KConstantInfo›,
                                 addrs: List‹[G; 32]›) -> (G, KExpr) {
     match u32_less_than(list_length(spine), 2) {
       1 => (0, store(KExprNode.BVar(0))),
       0 =>
         let width_e = list_lookup(spine, 0);
         let val_e = list_lookup(spine, 1);
-        let val_w = whnf(val_e, depth, top, addrs);
+        let val_w = whnf(val_e, top, addrs);
         -- Mirror: src/ix/kernel/whnf.rs:2581-2602 bitvec_of_nat_args.
         -- Accepts both `BitVec.ofNat(W, N)` and `OfNat.ofNat(BitVec W, N)`.
         let pair = bitvec_of_nat_args(val_w, addrs);
         match pair {
           (0, _, _) => (0, store(KExprNode.BVar(0))),
           (1, val_width, n_e) =>
-            let n_w = whnf(n_e, depth, top, addrs);
+            let n_w = whnf(n_e, top, addrs);
             let np = try_extract_nat(n_w, addrs);
             match np {
               (0, _) => (0, store(KExprNode.BVar(0))),
               (1, n_klimbs) =>
-                let width_w = whnf(val_width, depth, top, addrs);
+                let width_w = whnf(val_width, top, addrs);
                 let wp = try_extract_nat(width_w, addrs);
                 match wp {
                   (0, _) => (0, store(KExprNode.BVar(0))),
@@ -1564,8 +1563,7 @@ def primitive := ⟦
   -- Mirror: src/ix/kernel/whnf.rs:2465-2506 fn try_reduce_bitvec_ult.
   -- `BitVec.ult width lhs rhs` → `Bool.true/false`. Both sides converted
   -- to nat via bit_vec_to_nat, then compared with `<` (= Nat.ble (lhs+1) rhs).
-  fn try_reduce_bit_vec_ult(spine: List‹KExpr›, depth: G,
-                             top: List‹&KConstantInfo›,
+  fn try_reduce_bit_vec_ult(spine: List‹KExpr›, top: List‹&KConstantInfo›,
                              addrs: List‹[G; 32]›) -> (G, KExpr) {
     match u32_less_than(list_length(spine), 3) {
       1 => (0, store(KExprNode.BVar(0))),
@@ -1574,8 +1572,8 @@ def primitive := ⟦
         let lhs_e = list_lookup(spine, 1);
         let rhs_e = list_lookup(spine, 2);
         -- Build BitVec.toNat width lhs / rhs and reduce.
-        let lhs_pair = bv_to_nat_via(width_e, lhs_e, depth, top, addrs);
-        let rhs_pair = bv_to_nat_via(width_e, rhs_e, depth, top, addrs);
+        let lhs_pair = bv_to_nat_via(width_e, lhs_e, top, addrs);
+        let rhs_pair = bv_to_nat_via(width_e, rhs_e, top, addrs);
         match lhs_pair {
           (0, _) => (0, store(KExprNode.BVar(0))),
           (1, lhs_n) =>
@@ -1592,12 +1590,11 @@ def primitive := ⟦
 
   -- Helper: invoke bit_vec_to_nat reduction on (width, val) pair, return
   -- extracted nat KLimbs. Returns (1, klimbs) or (0, _).
-  fn bv_to_nat_via(width_e: KExpr, val_e: KExpr, depth: G,
-                    top: List‹&KConstantInfo›,
+  fn bv_to_nat_via(width_e: KExpr, val_e: KExpr, top: List‹&KConstantInfo›,
                     addrs: List‹[G; 32]›) -> (G, KLimbs) {
     let spine = store(ListNode.Cons(width_e,
       store(ListNode.Cons(val_e, store(ListNode.Nil)))));
-    let r = try_reduce_bit_vec_to_nat(spine, depth, top, addrs);
+    let r = try_reduce_bit_vec_to_nat(spine, top, addrs);
     match r {
       (0, _) => (0, store(ListNode.Nil)),
       (1, lit_e) =>
@@ -1614,19 +1611,18 @@ def primitive := ⟦
 
   -- Top-level bitvec dispatch: routes head_addr to the right reduction.
   fn try_bitvec_dispatch(head_addr: [G; 32], spine: List‹KExpr›,
-                          depth: G,
                           top: List‹&KConstantInfo›,
                           addrs: List‹[G; 32]›) -> (G, KExpr) {
     match address_eq(head_addr, bit_vec_to_nat_addr()) {
-      1 => try_reduce_bit_vec_to_nat(spine, depth, top, addrs),
+      1 => try_reduce_bit_vec_to_nat(spine, top, addrs),
       0 =>
         match address_eq(head_addr, bit_vec_ult_addr()) {
-          1 => try_reduce_bit_vec_ult(spine, depth, top, addrs),
+          1 => try_reduce_bit_vec_ult(spine, top, addrs),
           0 =>
             -- decide (LT.lt BitVec width a b) → bitvec_ult.
             -- Mirror: src/ix/kernel/whnf.rs:2455-2460.
             match address_eq(head_addr, decidable_decide_addr()) {
-              1 => try_reduce_decide_bitvec_lt(spine, depth, top, addrs),
+              1 => try_reduce_decide_bitvec_lt(spine, top, addrs),
               0 => (0, store(KExprNode.BVar(0))),
             },
         },
@@ -1635,8 +1631,7 @@ def primitive := ⟦
 
   -- `decide (LT.lt BitVec a b) inst` → if LT.lt's type arg is BitVec, reduce
   -- via bit_vec_ult. Mirror: src/ix/kernel/whnf.rs:2508-2529 fn try_reduce_bitvec_lt_prop.
-  fn try_reduce_decide_bitvec_lt(spine: List‹KExpr›, depth: G,
-                                  top: List‹&KConstantInfo›,
+  fn try_reduce_decide_bitvec_lt(spine: List‹KExpr›, top: List‹&KConstantInfo›,
                                   addrs: List‹[G; 32]›) -> (G, KExpr) {
     match u32_less_than(list_length(spine), 2) {
       1 => (0, store(KExprNode.BVar(0))),
@@ -1671,7 +1666,7 @@ def primitive := ⟦
                                         let inner_spine = store(ListNode.Cons(width,
                                           store(ListNode.Cons(lhs,
                                             store(ListNode.Cons(rhs, store(ListNode.Nil)))))));
-                                        try_reduce_bit_vec_ult(inner_spine, depth, top, addrs),
+                                        try_reduce_bit_vec_ult(inner_spine, top, addrs),
                                     },
                                 },
                               _ => (0, store(KExprNode.BVar(0))),
@@ -1693,7 +1688,6 @@ def primitive := ⟦
   --   • `SizeOf.sizeOf Unit/PUnit ...` → `Lit(Nat 1)`.
   --   • `PUnit.SizeOf.1 ...` → `Lit(Nat 1)`.
   fn try_reduce_native(head_addr: [G; 32], spine: List‹KExpr›,
-                       depth: G,
                        top: List‹&KConstantInfo›,
                        addrs: List‹[G; 32]›) -> (G, KExpr) {
     -- Nullary System.Platform.numBits
@@ -1721,7 +1715,7 @@ def primitive := ⟦
                           1 => (0, store(KExprNode.BVar(0))),
                           0 =>
                             let arg = list_lookup(spine, 0);
-                            let result = whnf(arg, depth, top, addrs);
+                            let result = whnf(arg, top, addrs);
                             match is_rb {
                               1 => check_native_bool(result, addrs),
                               0 => check_native_nat(result),
@@ -1833,7 +1827,6 @@ def primitive := ⟦
   fn try_reduce_decidable(head_addr: [G; 32], head_idx: G,
                           head_lvls: List‹&KLevel›,
                           spine: List‹KExpr›,
-                          depth: G,
                           top: List‹&KConstantInfo›,
                           addrs: List‹[G; 32]›) -> (G, KExpr) {
     let is_dec_le = address_eq(head_addr, nat_dec_le_addr());
@@ -1843,7 +1836,7 @@ def primitive := ⟦
     let is_int_dec_eq = address_eq(head_addr, int_dec_eq_addr());
     let is_int_dec_lt = address_eq(head_addr, int_dec_lt_addr());
     match is_int_dec_le + is_int_dec_eq + is_int_dec_lt {
-      1 => try_normalize_int_decidable(head_idx, head_lvls, spine, depth, top, addrs),
+      1 => try_normalize_int_decidable(head_idx, head_lvls, spine, top, addrs),
       _ =>
         match is_dec_le + is_dec_eq + is_dec_lt {
           0 => (0, store(KExprNode.BVar(0))),
@@ -1851,7 +1844,7 @@ def primitive := ⟦
             match u32_less_than(list_length(spine), 2) {
               1 => (0, store(KExprNode.BVar(0))),
               0 => decidable_dispatch(is_dec_le, is_dec_eq, is_dec_lt, head_idx, head_lvls,
-                                       spine, depth, top, addrs),
+                                       spine, top, addrs),
             },
         },
     }
@@ -1905,8 +1898,7 @@ def primitive := ⟦
   -- rebuild canonical form `App(Const(int_dec_*), int_of_nat n, int_neg_succ k, ...)`.
   -- Bails if both args already canonical (no normalization needed).
   fn try_normalize_int_decidable(head_idx: G, head_lvls: List‹&KLevel›,
-                                  spine: List‹KExpr›, depth: G,
-                                  top: List‹&KConstantInfo›,
+                                  spine: List‹KExpr›, top: List‹&KConstantInfo›,
                                   addrs: List‹[G; 32]›) -> (G, KExpr) {
     match u32_less_than(list_length(spine), 2) {
       1 => (0, store(KExprNode.BVar(0))),
@@ -1918,19 +1910,19 @@ def primitive := ⟦
             match try_extract_int(a1, addrs) {
               -- Both already canonical Int lits — no normalization needed.
               (1, _, _) => (0, store(KExprNode.BVar(0))),
-              _ => normalize_int_dec_rebuild(head_idx, head_lvls, spine, a0, a1, depth, top, addrs),
+              _ => normalize_int_dec_rebuild(head_idx, head_lvls, spine, a0, a1, top, addrs),
             },
-          _ => normalize_int_dec_rebuild(head_idx, head_lvls, spine, a0, a1, depth, top, addrs),
+          _ => normalize_int_dec_rebuild(head_idx, head_lvls, spine, a0, a1, top, addrs),
         },
     }
   }
 
   fn normalize_int_dec_rebuild(head_idx: G, head_lvls: List‹&KLevel›,
                                 spine: List‹KExpr›, a0: KExpr, a1: KExpr,
-                                depth: G, top: List‹&KConstantInfo›,
+                                top: List‹&KConstantInfo›,
                                 addrs: List‹[G; 32]›) -> (G, KExpr) {
-    let wa = whnf(a0, depth, top, addrs);
-    let wb = whnf(a1, depth, top, addrs);
+    let wa = whnf(a0, top, addrs);
+    let wb = whnf(a1, top, addrs);
     match try_extract_int(wa, addrs) {
       (1, sa, na) =>
         match try_extract_int(wb, addrs) {
@@ -1956,15 +1948,14 @@ def primitive := ⟦
 
   fn decidable_dispatch(is_dec_le: G, is_dec_eq: G, is_dec_lt: G,
                          head_idx: G, head_lvls: List‹&KLevel›,
-                         spine: List‹KExpr›, depth: G,
-                         top: List‹&KConstantInfo›,
+                         spine: List‹KExpr›, top: List‹&KConstantInfo›,
                          addrs: List‹[G; 32]›) -> (G, KExpr) {
     -- decLt n m → decLe (n+1) m: rewrite spine.
     match is_dec_lt {
       1 =>
         let n_e = list_lookup(spine, 0);
         let m_e = list_lookup(spine, 1);
-        let n_w = whnf(n_e, depth, top, addrs);
+        let n_w = whnf(n_e, top, addrs);
         let np = try_extract_nat(n_w, addrs);
         match np {
           (0, _) => (0, store(KExprNode.BVar(0))),
@@ -1987,19 +1978,18 @@ def primitive := ⟦
         },
       0 =>
         decidable_dispatch_le_eq(is_dec_le, is_dec_eq, head_idx, head_lvls,
-                                 spine, depth, top, addrs),
+                                 spine, top, addrs),
     }
   }
 
   fn decidable_dispatch_le_eq(is_dec_le: G, is_dec_eq: G,
                               head_idx: G, head_lvls: List‹&KLevel›,
-                              spine: List‹KExpr›, depth: G,
-                              top: List‹&KConstantInfo›,
+                              spine: List‹KExpr›, top: List‹&KConstantInfo›,
                               addrs: List‹[G; 32]›) -> (G, KExpr) {
     let n_e = list_lookup(spine, 0);
     let m_e = list_lookup(spine, 1);
-    let n_w = whnf(n_e, depth, top, addrs);
-    let m_w = whnf(m_e, depth, top, addrs);
+    let n_w = whnf(n_e, top, addrs);
+    let m_w = whnf(m_e, top, addrs);
     let np = try_extract_nat(n_w, addrs);
     let mp = try_extract_nat(m_w, addrs);
     match np {
@@ -2013,7 +2003,7 @@ def primitive := ⟦
               0 => klimbs_eq(n_kl, m_kl),
             };
             decidable_build_proof(is_dec_le, is_dec_eq, verdict, n_e, m_e,
-                                  head_idx, head_lvls, spine, depth, top, addrs),
+                                  head_idx, head_lvls, spine, top, addrs),
         },
     }
   }
@@ -2024,7 +2014,6 @@ def primitive := ⟦
                            n_e: KExpr, m_e: KExpr,
                            head_idx: G, head_lvls: List‹&KLevel›,
                            spine: List‹KExpr›,
-                           depth: G,
                            top: List‹&KConstantInfo›,
                            addrs: List‹[G; 32]›) -> (G, KExpr) {
     -- Build `Eq.refl.{1} Bool Bool.true_or_false`.
@@ -2079,7 +2068,7 @@ def primitive := ⟦
                         let p2 = store(KExprNode.App(p1, m_e));
                         let proof = store(KExprNode.App(p2, refl_proof));
                         decidable_finish(verdict, proof, head_idx, head_lvls,
-                                          spine, depth, top, addrs),
+                                          spine, top, addrs),
                     },
                 },
             },
@@ -2089,7 +2078,7 @@ def primitive := ⟦
 
   fn decidable_finish(verdict: G, proof: KExpr, head_idx: G,
                        head_lvls: List‹&KLevel›, spine: List‹KExpr›,
-                       depth: G, top: List‹&KConstantInfo›,
+                       top: List‹&KConstantInfo›,
                        addrs: List‹[G; 32]›) -> (G, KExpr) {
     let dec_addr = match verdict {
       1 => decidable_is_true_addr(),
@@ -2105,8 +2094,8 @@ def primitive := ⟦
         let head_const = store(KExprNode.Const(head_idx, head_lvls));
         let two_args = list_take(spine, 2);
         let call_expr = apply_spine(head_const, two_args);
-        let call_ty = k_infer(call_expr, depth, top, addrs);
-        let call_ty_w = whnf(call_ty, depth, top, addrs);
+        let call_ty = k_infer(call_expr, top, addrs);
+        let call_ty_w = whnf(call_ty, top, addrs);
         match collect_spine(call_ty_w) {
           (_, dec_args) =>
             -- Guard against malformed inferred type. Rust returns

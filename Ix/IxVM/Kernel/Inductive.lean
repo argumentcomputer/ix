@@ -167,7 +167,7 @@ def inductive_check := ⟦
                                   top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) {
     match load(ty) {
       KExprNode.Forall(dom, body) =>
-        let dom_level = k_ensure_sort(dom, depth, top, addrs);
+        let dom_level = k_ensure_sort(dom, top, addrs);
         let ok = level_leq(load(dom_level), ind_level);
         assert_eq!(ok, 1);
         let fid = depth;
@@ -245,7 +245,7 @@ def inductive_check := ⟦
     match expr_mentions_any_idx(dom, block_idxs) {
       0 => (),
       _ =>
-        let dom_w = whnf(dom, depth, top, addrs);
+        let dom_w = whnf(dom, top, addrs);
         match load(dom_w) {
           KExprNode.Forall(inner_dom, inner_body) =>
             assert_eq!(expr_mentions_any_idx(inner_dom, block_idxs), 0);
@@ -578,7 +578,7 @@ def inductive_check := ⟦
       _ =>
         match load(ty) {
           KExprNode.Forall(dom, body) =>
-            let lvl = k_ensure_sort(dom, depth, top, addrs);
+            let lvl = k_ensure_sort(dom, top, addrs);
             let is_data = 1 - level_equal(load(lvl), KLevel.Zero);
             let bvar_idx = n_fields - 1 - field_idx;
             let new_bvars = match is_data {
@@ -995,7 +995,7 @@ def inductive_check := ⟦
     match peel_leading_foralls(dom) {
       (doms, body) =>
         let inner_depth = depth + list_length(doms);
-        let body_w = whnf(body, inner_depth, top, addrs);
+        let body_w = whnf(body, top, addrs);
         match collect_spine(body_w) {
           (head, _) =>
             match load(head) {
@@ -1437,11 +1437,11 @@ def inductive_check := ⟦
         let dom = list_lookup(field_doms, field_idx);
         let dom_s1 = expr_lift(dom, n_fields - field_idx, 0);
         let dom_lifted = expr_lift(dom_s1, n_motives + n_minors, n_fields);
-        let dom_w = whnf(dom_lifted, depth, top, addrs);
+        let dom_w = whnf(dom_lifted, top, addrs);
         match peel_leading_foralls(dom_w) {
           (forall_doms, inner_body_raw) =>
             let n_xs = list_length(forall_doms);
-            let inner_body = whnf(inner_body_raw, depth + n_xs, top, addrs);
+            let inner_body = whnf(inner_body_raw, top, addrs);
             let inner_depth = body_depth + n_xs;
             let rec_const = store(KExprNode.Const(target_rec, rec_lvls_list));
             let with_params = build_apply_bvars_decreasing(rec_const, n_params, inner_depth - 1, 0);
@@ -1606,7 +1606,7 @@ def inductive_check := ⟦
                   KRecRule.Mk(c_ctor, c_nf, c_rhs) =>
                     assert_eq!(s_ctor, c_ctor);
                     assert_eq!(s_nf, c_nf);
-                    let eq = k_is_def_eq(s_rhs, c_rhs, 0, top, addrs);
+                    let eq = k_is_def_eq(s_rhs, c_rhs, top, addrs);
                     assert_eq!(eq, 1);
                     compare_rules(rs, rc, top, addrs),
                 },
@@ -1697,7 +1697,7 @@ def inductive_check := ⟦
                 let canonical_ty = build_rec_type(self_major, self_ind_ty, self_ctor_indices,
                                                    ind_n_params, self_n_indices, ind_lvls,
                                                    self_own_params, ind_idx, top, addrs);
-                let ty_eq = k_is_def_eq(ty, canonical_ty, 0, top, addrs);
+                let ty_eq = k_is_def_eq(ty, canonical_ty, top, addrs);
                 assert_eq!(ty_eq, 1);
                 -- Re-derive elim_level / univ_offset using self's data.
                 let result_level = get_result_sort_level(self_ind_ty, self_own_params + self_n_indices);
@@ -2290,11 +2290,11 @@ def inductive_check := ⟦
         let depth = minor_saved + n_fields + k;
         let dom = list_lookup(field_doms, field_idx);
         let dom_lifted = expr_lift(dom, (n_fields - field_idx) + k, 0);
-        let dom_w = whnf(dom_lifted, depth, top, addrs);
+        let dom_w = whnf(dom_lifted, top, addrs);
         match peel_leading_foralls(dom_w) {
           (forall_doms, inner_body_raw) =>
             let n_xs = list_length(forall_doms);
-            let inner_body = whnf(inner_body_raw, depth + n_xs, top, addrs);
+            let inner_body = whnf(inner_body_raw, top, addrs);
             let inner_depth = depth + n_xs;
             let motive_bvar = (inner_depth - 1) - (motive_base + mem_idx);
             let field_bvar = (inner_depth - 1) - (minor_saved + field_idx);
@@ -2384,7 +2384,7 @@ def inductive_check := ⟦
           KExprNode.Forall(da, ba) =>
             match load(tb) {
               KExprNode.Forall(db, bb) =>
-                let eq = k_is_def_eq(da, db, depth, top, addrs);
+                let eq = k_is_def_eq(da, db, top, addrs);
                 assert_eq!(eq, 1);
                 let depth2 = depth + 1;
                 check_param_agreement_go(ba, bb, n - 1, depth2, top, addrs),
