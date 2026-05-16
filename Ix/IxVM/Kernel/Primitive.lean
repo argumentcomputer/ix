@@ -874,8 +874,8 @@ def primitive := ⟦
   }
 
   -- Returns (remainder, quotient): remainder = x mod 256, quotient = x / 256.
-  -- `u64_mul` feeds this only small column sums (sums of bytes, < ~4096),
-  -- so the repeated subtraction terminates in a handful of steps.
+  -- Repeated subtraction — callers feed it small `x`, or call it only from
+  -- unconstrained code where the iteration cost is off-circuit.
   fn divmod_256(x: G, q: G) -> (G, G) {
     match u32_less_than(x, 256) {
       1 => (x, q),
@@ -883,130 +883,153 @@ def primitive := ⟦
     }
   }
 
-  -- u64×u64 → (lo: U64, hi: U64) via byte schoolbook. Each byte×byte
-  -- product is split into (low, high) bytes by the `u8_mul` gadget, so
-  -- every column is a sum of bytes (not products) and `divmod_256` only
-  -- carry-propagates small values.
+  -- Unconstrained witness generator: split `x` into its low byte `limb`
+  -- and the two bytes (clo, chi) of `x div 256`. Always invoked as
+  -- `#split_carry(...)`; the result is prover-provided and MUST be pinned
+  -- by the caller with u8 range checks + a reconstruction assert. The
+  -- division here is off-circuit (untraced), so its cost is irrelevant.
+  fn split_carry(x: G) -> (G, G, G) {
+    match divmod_256(x, 0) {
+      (limb, quot) =>
+        match divmod_256(quot, 0) {
+          (clo, chi) => (limb, clo, chi),
+        },
+    }
+  }
+
+  -- u64×u64 → (lo: U64, hi: U64) via byte schoolbook. Faithful port of the
+  -- `MulWitness`/`Product` reference: column k is the raw field sum
+  -- Σ_{i+j=k} a[i]*b[j]; each column accumulator `out` is decomposed by a
+  -- prover-provided (unconstrained) split into result byte + 16-bit carry,
+  -- then pinned by three u8 range checks (`u8_xor(_, 0)`) and the
+  -- reconstruction assert `out == limb + 256·clo + 65536·chi`. No `u8_mul`
+  -- gadget and no constrained division. Column accumulators are < 2^19, so
+  -- the decomposition into (limb, clo, chi) ∈ [0,256)³ is unique → sound.
   fn u64_mul(a: U64, b: U64) -> (U64, U64) {
     let [a0, a1, a2, a3, a4, a5, a6, a7] = a;
     let [b0, b1, b2, b3, b4, b5, b6, b7] = b;
-    let (l00, h00) = u8_mul(a0, b0);
-    let (l01, h01) = u8_mul(a0, b1);
-    let (l02, h02) = u8_mul(a0, b2);
-    let (l03, h03) = u8_mul(a0, b3);
-    let (l04, h04) = u8_mul(a0, b4);
-    let (l05, h05) = u8_mul(a0, b5);
-    let (l06, h06) = u8_mul(a0, b6);
-    let (l07, h07) = u8_mul(a0, b7);
-    let (l10, h10) = u8_mul(a1, b0);
-    let (l11, h11) = u8_mul(a1, b1);
-    let (l12, h12) = u8_mul(a1, b2);
-    let (l13, h13) = u8_mul(a1, b3);
-    let (l14, h14) = u8_mul(a1, b4);
-    let (l15, h15) = u8_mul(a1, b5);
-    let (l16, h16) = u8_mul(a1, b6);
-    let (l17, h17) = u8_mul(a1, b7);
-    let (l20, h20) = u8_mul(a2, b0);
-    let (l21, h21) = u8_mul(a2, b1);
-    let (l22, h22) = u8_mul(a2, b2);
-    let (l23, h23) = u8_mul(a2, b3);
-    let (l24, h24) = u8_mul(a2, b4);
-    let (l25, h25) = u8_mul(a2, b5);
-    let (l26, h26) = u8_mul(a2, b6);
-    let (l27, h27) = u8_mul(a2, b7);
-    let (l30, h30) = u8_mul(a3, b0);
-    let (l31, h31) = u8_mul(a3, b1);
-    let (l32, h32) = u8_mul(a3, b2);
-    let (l33, h33) = u8_mul(a3, b3);
-    let (l34, h34) = u8_mul(a3, b4);
-    let (l35, h35) = u8_mul(a3, b5);
-    let (l36, h36) = u8_mul(a3, b6);
-    let (l37, h37) = u8_mul(a3, b7);
-    let (l40, h40) = u8_mul(a4, b0);
-    let (l41, h41) = u8_mul(a4, b1);
-    let (l42, h42) = u8_mul(a4, b2);
-    let (l43, h43) = u8_mul(a4, b3);
-    let (l44, h44) = u8_mul(a4, b4);
-    let (l45, h45) = u8_mul(a4, b5);
-    let (l46, h46) = u8_mul(a4, b6);
-    let (l47, h47) = u8_mul(a4, b7);
-    let (l50, h50) = u8_mul(a5, b0);
-    let (l51, h51) = u8_mul(a5, b1);
-    let (l52, h52) = u8_mul(a5, b2);
-    let (l53, h53) = u8_mul(a5, b3);
-    let (l54, h54) = u8_mul(a5, b4);
-    let (l55, h55) = u8_mul(a5, b5);
-    let (l56, h56) = u8_mul(a5, b6);
-    let (l57, h57) = u8_mul(a5, b7);
-    let (l60, h60) = u8_mul(a6, b0);
-    let (l61, h61) = u8_mul(a6, b1);
-    let (l62, h62) = u8_mul(a6, b2);
-    let (l63, h63) = u8_mul(a6, b3);
-    let (l64, h64) = u8_mul(a6, b4);
-    let (l65, h65) = u8_mul(a6, b5);
-    let (l66, h66) = u8_mul(a6, b6);
-    let (l67, h67) = u8_mul(a6, b7);
-    let (l70, h70) = u8_mul(a7, b0);
-    let (l71, h71) = u8_mul(a7, b1);
-    let (l72, h72) = u8_mul(a7, b2);
-    let (l73, h73) = u8_mul(a7, b3);
-    let (l74, h74) = u8_mul(a7, b4);
-    let (l75, h75) = u8_mul(a7, b5);
-    let (l76, h76) = u8_mul(a7, b6);
-    let (l77, h77) = u8_mul(a7, b7);
-    -- Column k gathers low bytes of products with i+j=k and high bytes
-    -- of products with i+j=k-1.
-    let col0 = l00;
-    let col1 = l01 + l10 + h00;
-    let col2 = l02 + l11 + l20 + h01 + h10;
-    let col3 = l03 + l12 + l21 + l30 + h02 + h11 + h20;
-    let col4 = l04 + l13 + l22 + l31 + l40 + h03 + h12 + h21 + h30;
-    let col5 = l05 + l14 + l23 + l32 + l41 + l50 + h04 + h13 + h22 + h31 + h40;
-    let col6 = l06 + l15 + l24 + l33 + l42 + l51 + l60 + h05 + h14 + h23 + h32 + h41 + h50;
-    let col7 = l07 + l16 + l25 + l34 + l43 + l52 + l61 + l70 + h06 + h15 + h24 + h33 + h42 + h51 + h60;
-    let col8 = l17 + l26 + l35 + l44 + l53 + l62 + l71 + h07 + h16 + h25 + h34 + h43 + h52 + h61 + h70;
-    let col9 = l27 + l36 + l45 + l54 + l63 + l72 + h17 + h26 + h35 + h44 + h53 + h62 + h71;
-    let col10 = l37 + l46 + l55 + l64 + l73 + h27 + h36 + h45 + h54 + h63 + h72;
-    let col11 = l47 + l56 + l65 + l74 + h37 + h46 + h55 + h64 + h73;
-    let col12 = l57 + l66 + l75 + h47 + h56 + h65 + h74;
-    let col13 = l67 + l76 + h57 + h66 + h75;
-    let col14 = l77 + h67 + h76;
-    let col15 = h77;
-    match divmod_256(col0, 0) {
-      (r0, c1) =>
-        match divmod_256(col1 + c1, 0) {
-          (r1, c2) =>
-            match divmod_256(col2 + c2, 0) {
-              (r2, c3) =>
-                match divmod_256(col3 + c3, 0) {
-                  (r3, c4) =>
-                    match divmod_256(col4 + c4, 0) {
-                      (r4, c5) =>
-                        match divmod_256(col5 + c5, 0) {
-                          (r5, c6) =>
-                            match divmod_256(col6 + c6, 0) {
-                              (r6, c7) =>
-                                match divmod_256(col7 + c7, 0) {
-                                  (r7, c8) =>
-                                    match divmod_256(col8 + c8, 0) {
-                                      (r8, c9) =>
-                                        match divmod_256(col9 + c9, 0) {
-                                          (r9, c10) =>
-                                            match divmod_256(col10 + c10, 0) {
-                                              (r10, c11) =>
-                                                match divmod_256(col11 + c11, 0) {
-                                                  (r11, c12) =>
-                                                    match divmod_256(col12 + c12, 0) {
-                                                      (r12, c13) =>
-                                                        match divmod_256(col13 + c13, 0) {
-                                                          (r13, c14) =>
-                                                            match divmod_256(col14 + c14, 0) {
-                                                              (r14, c15) =>
-                                                                match divmod_256(col15 + c15, 0) {
-                                                                  (r15, _) =>
-                                                                    ([r0, r1, r2, r3, r4, r5, r6, r7],
-                                                                     [r8, r9, r10, r11, r12, r13, r14, r15]),
-                                                                },
+    let col0 = (a0 * b0);
+    let col1 = (a0 * b1) + (a1 * b0);
+    let col2 = (a0 * b2) + (a1 * b1) + (a2 * b0);
+    let col3 = (a0 * b3) + (a1 * b2) + (a2 * b1) + (a3 * b0);
+    let col4 = (a0 * b4) + (a1 * b3) + (a2 * b2) + (a3 * b1) + (a4 * b0);
+    let col5 = (a0 * b5) + (a1 * b4) + (a2 * b3) + (a3 * b2) + (a4 * b1) + (a5 * b0);
+    let col6 = (a0 * b6) + (a1 * b5) + (a2 * b4) + (a3 * b3) + (a4 * b2) + (a5 * b1) + (a6 * b0);
+    let col7 = (a0 * b7) + (a1 * b6) + (a2 * b5) + (a3 * b4) + (a4 * b3) + (a5 * b2) + (a6 * b1) + (a7 * b0);
+    let col8 = (a1 * b7) + (a2 * b6) + (a3 * b5) + (a4 * b4) + (a5 * b3) + (a6 * b2) + (a7 * b1);
+    let col9 = (a2 * b7) + (a3 * b6) + (a4 * b5) + (a5 * b4) + (a6 * b3) + (a7 * b2);
+    let col10 = (a3 * b7) + (a4 * b6) + (a5 * b5) + (a6 * b4) + (a7 * b3);
+    let col11 = (a4 * b7) + (a5 * b6) + (a6 * b5) + (a7 * b4);
+    let col12 = (a5 * b7) + (a6 * b6) + (a7 * b5);
+    let col13 = (a6 * b7) + (a7 * b6);
+    let col14 = (a7 * b7);
+    match #split_carry(col0) {
+      (rl0, rc0, rh0) =>
+        let r0 = u8_xor(rl0, 0);
+        let lo0 = u8_xor(rc0, 0);
+        let hi0 = u8_xor(rh0, 0);
+        assert_eq!(col0, r0 + (256 * lo0) + (65536 * hi0));
+        let out1 = col1 + lo0 + (256 * hi0);
+        match #split_carry(out1) {
+          (rl1, rc1, rh1) =>
+            let r1 = u8_xor(rl1, 0);
+            let lo1 = u8_xor(rc1, 0);
+            let hi1 = u8_xor(rh1, 0);
+            assert_eq!(out1, r1 + (256 * lo1) + (65536 * hi1));
+            let out2 = col2 + lo1 + (256 * hi1);
+            match #split_carry(out2) {
+              (rl2, rc2, rh2) =>
+                let r2 = u8_xor(rl2, 0);
+                let lo2 = u8_xor(rc2, 0);
+                let hi2 = u8_xor(rh2, 0);
+                assert_eq!(out2, r2 + (256 * lo2) + (65536 * hi2));
+                let out3 = col3 + lo2 + (256 * hi2);
+                match #split_carry(out3) {
+                  (rl3, rc3, rh3) =>
+                    let r3 = u8_xor(rl3, 0);
+                    let lo3 = u8_xor(rc3, 0);
+                    let hi3 = u8_xor(rh3, 0);
+                    assert_eq!(out3, r3 + (256 * lo3) + (65536 * hi3));
+                    let out4 = col4 + lo3 + (256 * hi3);
+                    match #split_carry(out4) {
+                      (rl4, rc4, rh4) =>
+                        let r4 = u8_xor(rl4, 0);
+                        let lo4 = u8_xor(rc4, 0);
+                        let hi4 = u8_xor(rh4, 0);
+                        assert_eq!(out4, r4 + (256 * lo4) + (65536 * hi4));
+                        let out5 = col5 + lo4 + (256 * hi4);
+                        match #split_carry(out5) {
+                          (rl5, rc5, rh5) =>
+                            let r5 = u8_xor(rl5, 0);
+                            let lo5 = u8_xor(rc5, 0);
+                            let hi5 = u8_xor(rh5, 0);
+                            assert_eq!(out5, r5 + (256 * lo5) + (65536 * hi5));
+                            let out6 = col6 + lo5 + (256 * hi5);
+                            match #split_carry(out6) {
+                              (rl6, rc6, rh6) =>
+                                let r6 = u8_xor(rl6, 0);
+                                let lo6 = u8_xor(rc6, 0);
+                                let hi6 = u8_xor(rh6, 0);
+                                assert_eq!(out6, r6 + (256 * lo6) + (65536 * hi6));
+                                let out7 = col7 + lo6 + (256 * hi6);
+                                match #split_carry(out7) {
+                                  (rl7, rc7, rh7) =>
+                                    let r7 = u8_xor(rl7, 0);
+                                    let lo7 = u8_xor(rc7, 0);
+                                    let hi7 = u8_xor(rh7, 0);
+                                    assert_eq!(out7, r7 + (256 * lo7) + (65536 * hi7));
+                                    let out8 = col8 + lo7 + (256 * hi7);
+                                    match #split_carry(out8) {
+                                      (rl8, rc8, rh8) =>
+                                        let r8 = u8_xor(rl8, 0);
+                                        let lo8 = u8_xor(rc8, 0);
+                                        let hi8 = u8_xor(rh8, 0);
+                                        assert_eq!(out8, r8 + (256 * lo8) + (65536 * hi8));
+                                        let out9 = col9 + lo8 + (256 * hi8);
+                                        match #split_carry(out9) {
+                                          (rl9, rc9, rh9) =>
+                                            let r9 = u8_xor(rl9, 0);
+                                            let lo9 = u8_xor(rc9, 0);
+                                            let hi9 = u8_xor(rh9, 0);
+                                            assert_eq!(out9, r9 + (256 * lo9) + (65536 * hi9));
+                                            let out10 = col10 + lo9 + (256 * hi9);
+                                            match #split_carry(out10) {
+                                              (rl10, rc10, rh10) =>
+                                                let r10 = u8_xor(rl10, 0);
+                                                let lo10 = u8_xor(rc10, 0);
+                                                let hi10 = u8_xor(rh10, 0);
+                                                assert_eq!(out10, r10 + (256 * lo10) + (65536 * hi10));
+                                                let out11 = col11 + lo10 + (256 * hi10);
+                                                match #split_carry(out11) {
+                                                  (rl11, rc11, rh11) =>
+                                                    let r11 = u8_xor(rl11, 0);
+                                                    let lo11 = u8_xor(rc11, 0);
+                                                    let hi11 = u8_xor(rh11, 0);
+                                                    assert_eq!(out11, r11 + (256 * lo11) + (65536 * hi11));
+                                                    let out12 = col12 + lo11 + (256 * hi11);
+                                                    match #split_carry(out12) {
+                                                      (rl12, rc12, rh12) =>
+                                                        let r12 = u8_xor(rl12, 0);
+                                                        let lo12 = u8_xor(rc12, 0);
+                                                        let hi12 = u8_xor(rh12, 0);
+                                                        assert_eq!(out12, r12 + (256 * lo12) + (65536 * hi12));
+                                                        let out13 = col13 + lo12 + (256 * hi12);
+                                                        match #split_carry(out13) {
+                                                          (rl13, rc13, rh13) =>
+                                                            let r13 = u8_xor(rl13, 0);
+                                                            let lo13 = u8_xor(rc13, 0);
+                                                            let hi13 = u8_xor(rh13, 0);
+                                                            assert_eq!(out13, r13 + (256 * lo13) + (65536 * hi13));
+                                                            let out14 = col14 + lo13 + (256 * hi13);
+                                                            match #split_carry(out14) {
+                                                              (rl14, rc14, rh14) =>
+                                                                let r14 = u8_xor(rl14, 0);
+                                                                let lo14 = u8_xor(rc14, 0);
+                                                                let hi14 = u8_xor(rh14, 0);
+                                                                assert_eq!(out14, r14 + (256 * lo14) + (65536 * hi14));
+                                                                let r15 = lo14 + (256 * hi14);
+                                                                ([r0, r1, r2, r3, r4, r5, r6, r7],
+                                                                 [r8, r9, r10, r11, r12, r13, r14, r15]),
                                                             },
                                                         },
                                                     },
