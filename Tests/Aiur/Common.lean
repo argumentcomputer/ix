@@ -66,9 +66,9 @@ def AiurTestEnv.interpTest (env : AiurTestEnv) (testCase : AiurTestCase)
   let inputs := Aiur.unflattenInputs env.decls testCase.input inputTypes
   let funcIdx g := env.compiled.getFuncIdx g.toName
   match Aiur.runFunction env.decls funcName inputs testCase.inputIOBuffer with
-  | .error e =>
+  | (.error e, _) =>
     test s!"Interpret succeeds for {label}: {e}" false
-  | .ok (output, state) =>
+  | (.ok output, state) =>
     let flat := Aiur.flattenValue env.decls funcIdx output
     let interpOutputTest := test s!"Interpret output matches for {label}"
       (flat == execOutput)

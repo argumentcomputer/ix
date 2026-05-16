@@ -35,32 +35,32 @@ private partial def natToHexGo (n : Nat) (acc : String) : String :=
 private def natToHex (n : Nat) : String :=
   if n == 0 then "0" else natToHexGo n ""
 
-partial def ppValue : Value → String
+partial def Value.pp : Value → String
   | .unit      => "()"
   | .field g   => toString g.val.toNat
-  | .tuple vs  => "(" ++ String.intercalate ", " (vs.toList.map ppValue) ++ ")"
-  | .array vs  => "[" ++ String.intercalate ", " (vs.toList.map ppValue) ++ "]"
+  | .tuple vs  => "(" ++ String.intercalate ", " (vs.toList.map Value.pp) ++ ")"
+  | .array vs  => "[" ++ String.intercalate ", " (vs.toList.map Value.pp) ++ "]"
   | .ctor g args =>
       let name := g.toName.toString
       if args.isEmpty then name
-      else name ++ "(" ++ String.intercalate ", " (args.toList.map ppValue) ++ ")"
+      else name ++ "(" ++ String.intercalate ", " (args.toList.map Value.pp) ++ ")"
   | .fn g        => "fn(" ++ g.toName.toString ++ ")"
   | .pointer _ n => "&0x" ++ natToHex n
 
-instance : ToString Value := ⟨ppValue⟩
+instance : ToString Value := ⟨Value.pp⟩
 
 /-- Pretty-print a `Value` while auto-dereferencing pointers up to `depth`
 levels. Used by the `dbg!` interpreter helper so users see structured
 content like `App(Const(3, []), BVar(0))` instead of opaque `&0x123`. -/
-partial def ppValueDeref (store : Store) (depth : Nat) : Value → String
+partial def Value.ppDeref (store : Store) (depth : Nat) : Value → String
   | .unit      => "()"
   | .field g   => toString g.val.toNat
-  | .tuple vs  => "(" ++ String.intercalate ", " (vs.toList.map (ppValueDeref store depth)) ++ ")"
-  | .array vs  => "[" ++ String.intercalate ", " (vs.toList.map (ppValueDeref store depth)) ++ "]"
+  | .tuple vs  => "(" ++ String.intercalate ", " (vs.toList.map (Value.ppDeref store depth)) ++ ")"
+  | .array vs  => "[" ++ String.intercalate ", " (vs.toList.map (Value.ppDeref store depth)) ++ "]"
   | .ctor g args =>
       let name := g.toName.toString
       if args.isEmpty then name
-      else name ++ "(" ++ String.intercalate ", " (args.toList.map (ppValueDeref store depth)) ++ ")"
+      else name ++ "(" ++ String.intercalate ", " (args.toList.map (Value.ppDeref store depth)) ++ ")"
   | .fn g        => "fn(" ++ g.toName.toString ++ ")"
   | .pointer _ n =>
       if depth == 0 then "&0x" ++ natToHex n
@@ -70,8 +70,8 @@ partial def ppValueDeref (store : Store) (depth : Nat) : Value → String
             -- Stored value is `Array Value`; for tagged enums it's
             -- typically `[ctor]` or `[tag, fields...]`. Recurse on each.
             match vs.toList with
-            | [v] => ppValueDeref store (depth - 1) v
-            | _   => "[" ++ String.intercalate ", " (vs.toList.map (ppValueDeref store (depth - 1))) ++ "]"
+            | [v] => Value.ppDeref store (depth - 1) v
+            | _   => "[" ++ String.intercalate ", " (vs.toList.map (Value.ppDeref store (depth - 1))) ++ "]"
         | none => "&0x" ++ natToHex n ++ "(unbound)"
 
 -- ---------------------------------------------------------------------------
@@ -130,6 +130,17 @@ instance : ToString Interrupt where
           s!"  in {g}({argStr})"
         msg ++ "\nCall stack:\n" ++ String.intercalate "\n" frames
 
+/-- Pretty-print an `Interrupt`, auto-dereferencing pointer values in
+the call stack (and the unexpected-return value) up to `depth` levels. -/
+def Interrupt.ppDeref (store : Store) (depth : Nat) : Interrupt → String
+  | .ret v           => s!"unexpected return: {Value.ppDeref store depth v}"
+  | .error msg []    => msg
+  | .error msg stack =>
+      let frames := stack.map fun (g, args) =>
+        let argStr := String.intercalate ", " (args.map (Value.ppDeref store depth))
+        s!"  in {g}({argStr})"
+      msg ++ "\nCall stack:\n" ++ String.intercalate "\n" frames
+
 -- ---------------------------------------------------------------------------
 -- Interpreter monad
 -- ---------------------------------------------------------------------------
@@ -139,7 +150,7 @@ structure InterpState where
   ioBuffer   : IOBuffer
   callCache  : Std.HashMap (Global × List Value) Value := {}
 
-abbrev InterpM := StateT InterpState (Except Interrupt)
+abbrev InterpM := ExceptT Interrupt (StateM InterpState)
 
 private def throwErr (msg : String) : InterpM α :=
   throw (.error msg [])
@@ -356,7 +367,7 @@ partial def interp (decls : Decls) (bindings : Bindings) : Term → InterpM Valu
       | some t =>
         let v ← interp decls bindings t
         let store ← getStore
-        dbg_trace s!"{label}: {ppValueDeref store 16 v}"
+        dbg_trace s!"{label}: {Value.ppDeref store 16 v}"
       interp decls bindings cont
   | .ioGetInfo key => do
       let keyGs ← expectFieldArray (← interp decls bindings key)
@@ -392,15 +403,18 @@ end
 
 def runFunction (decls : Decls) (funcName : Global) (inputs : List Value)
     (ioBuffer : IOBuffer := default) :
-    Except Interrupt (Value × InterpState) := do
-  let f ← match decls.getByKey funcName with
-    | some (.function f) => pure f
-    | _                  => throw (.error s!"Function not found: {funcName}" [])
-  if inputs.length != f.inputs.length then
-    throw (.error s!"runFunction: arity mismatch for {funcName}: \
-                    expected {f.inputs.length}, got {inputs.length}" [])
-  let bindings := f.inputs.map (·.1) |>.zip inputs
-  StateT.run (interp decls bindings f.body) { ioBuffer }
+    Except Interrupt Value × InterpState :=
+  let init : InterpState := { ioBuffer }
+  match decls.getByKey funcName with
+  | some (.function f) =>
+      if inputs.length != f.inputs.length then
+        (.error (.error s!"runFunction: arity mismatch for {funcName}: \
+                          expected {f.inputs.length}, got {inputs.length}" []), init)
+      else
+        let bindings := f.inputs.map (·.1) |>.zip inputs
+        StateT.run (ExceptT.run (interp decls bindings f.body)) init
+  | _ =>
+      (.error (.error s!"Function not found: {funcName}" []), init)
 
 end Aiur
 
