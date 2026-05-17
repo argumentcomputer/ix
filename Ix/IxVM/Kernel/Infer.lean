@@ -88,20 +88,16 @@ def infer := ⟦
       -- any FVar already appearing anywhere in the whole binder
       -- expression. Avoids collision with FVars carried by `ty` or
       -- already-opened inner binders.
-      KExprNode.Lam(ty, body) =>
+      KExprNode.Lam(ty, _) =>
         let _ = k_ensure_sort(ty, top, addrs);
-        let fid = next_fvar(e);
-        let fv = store(KExprNode.FVar(fid, ty));
-        let body_open = expr_subst1(body, fv, 0);
+        let body_open = expr_open(e);
         let body_ty_open = k_infer(body_open, top, addrs);
-        let body_ty = expr_close(body_ty_open, fid, 0);
+        let body_ty = expr_close(body_ty_open, next_fvar(e), 0);
         store(KExprNode.Forall(ty, body_ty)),
 
-      KExprNode.Forall(ty, body) =>
+      KExprNode.Forall(ty, _) =>
         let u1 = k_ensure_sort(ty, top, addrs);
-        let fid = next_fvar(e);
-        let fv = store(KExprNode.FVar(fid, ty));
-        let body_open = expr_subst1(body, fv, 0);
+        let body_open = expr_open(e);
         let u2 = k_ensure_sort(body_open, top, addrs);
         store(KExprNode.Srt(store(level_imax(load(u1), load(u2))))),
 

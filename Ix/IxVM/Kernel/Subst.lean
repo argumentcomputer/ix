@@ -102,6 +102,27 @@ def subst := ⟦
   }
 
   -- ============================================================================
+  -- expr_open
+  --
+  -- Open a binder. `outer` is a `Lam(ty, body)`, `Forall(ty, body)`,
+  -- or `Let(ty, _, body)`. Mints a fresh `FVar(fid, ty)` where
+  -- `fid = next_fvar(outer)` (one past every `FVar` already in `outer`,
+  -- so no collision), substitutes `BVar(0)` in `body` with that FVar
+  -- via `expr_subst1`, and returns the opened body.
+  -- ============================================================================
+  fn expr_open(outer: KExpr) -> KExpr {
+    let fid = next_fvar(outer);
+    match load(outer) {
+      KExprNode.Lam(ty, body) =>
+        expr_subst1(body, store(KExprNode.FVar(fid, ty)), 0),
+      KExprNode.Forall(ty, body) =>
+        expr_subst1(body, store(KExprNode.FVar(fid, ty)), 0),
+      KExprNode.Let(ty, _, body) =>
+        expr_subst1(body, store(KExprNode.FVar(fid, ty)), 0),
+    }
+  }
+
+  -- ============================================================================
   -- expr_lift
   --
   -- Shift `BVar(i)` → `BVar(i + shift)` when `i ≥ cutoff`. Recursion bumps
