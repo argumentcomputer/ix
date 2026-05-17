@@ -73,9 +73,9 @@ where
       | _ => IO.eprintln s!"{name}: function not found in decls"; return 1
     let inputs := Aiur.unflattenInputs decls testCase.input inputTypes
     match Aiur.runFunction decls funcName inputs testCase.inputIOBuffer with
-    | .error e =>
-      IO.eprintln s!"{name}: interpreter error:\n{e}"
+    | (.error e, s) =>
+      IO.eprintln s!"{name}: interpreter error:\n{e.ppDeref s.store 1 10}"
       return 1
-    | .ok (output, _state) =>
+    | (.ok output, _) =>
       IO.println s!"{name}: {output}"
       pure 0
