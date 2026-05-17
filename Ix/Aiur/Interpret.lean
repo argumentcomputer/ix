@@ -63,7 +63,7 @@ partial def Value.ppDeref (store : Store) (depth : Nat) : Value → String
       else name ++ "(" ++ String.intercalate ", " (args.toList.map (Value.ppDeref store depth)) ++ ")"
   | .fn g        => "fn(" ++ g.toName.toString ++ ")"
   | .pointer _ n =>
-      if depth == 0 then "&0x" ++ natToHex n
+      if depth == 0 then "..."
       else
         match store.getByIdx n with
         | some (vs, _) =>
@@ -130,16 +130,29 @@ instance : ToString Interrupt where
           s!"  in {g}({argStr})"
         msg ++ "\nCall stack:\n" ++ String.intercalate "\n" frames
 
-/-- Pretty-print an `Interrupt`, auto-dereferencing pointer values in
-the call stack (and the unexpected-return value) up to `depth` levels. -/
-def Interrupt.ppDeref (store : Store) (depth : Nat) : Interrupt → String
+/-- Pretty-print an `Interrupt`, auto-dereferencing pointer values up to
+`depth` pointer-follows, and showing at most `stackLimit` call-stack frames
+(starting from the innermost). -/
+def Interrupt.ppDeref (store : Store) (depth : Nat) (stackLimit : Nat) :
+    Interrupt → String
   | .ret v           => s!"unexpected return: {Value.ppDeref store depth v}"
   | .error msg []    => msg
   | .error msg stack =>
-      let frames := stack.map fun (g, args) =>
+      let total    := stack.length
+      let shown    := stack.take stackLimit
+      let rule     := String.ofList (List.replicate 80 '─')
+      let frames   := shown.zipIdx.map fun ((g, args), i) =>
         let argStr := String.intercalate ", " (args.map (Value.ppDeref store depth))
-        s!"  in {g}({argStr})"
-      msg ++ "\nCall stack:\n" ++ String.intercalate "\n" frames
+        let header := s!"─── #{i} " ++ g.toName.toString ++ " "
+        let pad    := String.ofList (List.replicate (max 1 (80 - header.length)) '─')
+        header ++ pad ++ s!"\n  {g}({argStr})"
+      let trailer  := if total > stackLimit
+                      then s!"\n... ({total - stackLimit} more frame(s) elided)"
+                      else ""
+      msg ++ s!"\nCall stack ({total} frames, #0 = innermost):\n"
+        ++ String.intercalate "\n" frames
+        ++ trailer
+        ++ "\n" ++ rule
 
 -- ---------------------------------------------------------------------------
 -- Interpreter monad
