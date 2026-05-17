@@ -9,8 +9,11 @@ public import Ix.IxVM.IxonSerialize
 public import Ix.IxVM.IxonDeserialize
 public import Ix.IxVM.Convert
 public import Ix.IxVM.KernelTypes
-public import Ix.IxVM.Kernel2.Primitive
 public import Ix.IxVM.Kernel2.Check
+public import Ix.IxVM.Kernel2.Inductive
+public import Ix.IxVM.Kernel2.Infer
+public import Ix.IxVM.Kernel2.Levels
+public import Ix.IxVM.Kernel2.Primitive
 public import Ix.IxVM.CheckHarness
 
 public section
@@ -40,8 +43,11 @@ def ixVM2 : Except Aiur.Global Aiur.Source.Toplevel := do
   let vm ← vm.merge IxVM.convert
   let vm ← vm.merge IxVM.ingress
   let vm ← vm.merge IxVM.kernelTypes
-  let vm ← vm.merge IxVM.primitive
   let vm ← vm.merge IxVM.check
+  let vm ← vm.merge IxVM.infer
+  let vm ← vm.merge IxVM.inductive_check
+  let vm ← vm.merge IxVM.levels
+  let vm ← vm.merge IxVM.primitive
   vm.merge entrypoints
 
 end IxVM2
