@@ -6,11 +6,13 @@
 //! - Content-addressed storage with sharing support
 //! - Cryptographic commitments for ZK proofs
 
+pub mod assumption_tree;
 pub mod comm;
 pub mod constant;
 pub mod env;
 pub mod error;
 pub mod expr;
+pub mod merkle;
 pub mod metadata;
 pub mod proof;
 pub mod serialize;
@@ -33,8 +35,8 @@ pub use metadata::{
   NameReverseIndex,
 };
 pub use proof::{
-  CheckClaim, Claim, EvalClaim, Proof, RevealClaim, RevealConstantInfo,
-  RevealConstructorInfo, RevealMutConstInfo, RevealRecursorRule,
+  Claim, Proof, RevealConstantInfo, RevealConstructorInfo, RevealMutConstInfo,
+  RevealRecursorRule,
 };
 pub use tag::{Tag0, Tag2, Tag4};
 pub use univ::Univ;
@@ -305,56 +307,65 @@ mod doc_examples {
 
   #[test]
   fn eval_claim_tag() {
-    // EvalClaim -> Tag4 { flag: 0xE, size: 4 } -> 0xE4
-    let claim = Claim::Evals(EvalClaim {
+    // Eval claim -> Tag4 { flag: 0xE, size: 3 } -> 0xE3 (single byte)
+    let claim = Claim::Eval {
       input: Address::hash(b"input"),
       output: Address::hash(b"output"),
-    });
+      assumptions: None,
+    };
     let mut buf = Vec::new();
     claim.put(&mut buf);
-    assert_eq!(buf[0], 0xE4, "EvalClaim should start with 0xE4");
-    assert_eq!(buf.len(), 1 + 64, "EvalClaim should be 1 + 2*32 = 65 bytes");
+    assert_eq!(buf[0], 0xE3, "Eval claim should start with 0xE3");
+    // 1 (tag) + 64 (addresses) + 1 (opt=None) = 66
+    assert_eq!(buf.len(), 1 + 64 + 1, "Eval claim no-asm = 66 bytes");
   }
 
   #[test]
   fn eval_proof_tag() {
-    // EvalProof -> Tag4 { flag: 0xE, size: 2 } -> 0xE2
+    // Eval proof -> Tag4 { flag: 0xF, size: 0 } -> 0xF0 (single byte)
     let proof = Proof::new(
-      Claim::Evals(EvalClaim {
+      Claim::Eval {
         input: Address::hash(b"input"),
         output: Address::hash(b"output"),
-      }),
+        assumptions: None,
+      },
       vec![1, 2, 3, 4],
     );
     let mut buf = Vec::new();
     proof.put(&mut buf);
-    assert_eq!(buf[0], 0xE2, "EvalProof should start with 0xE2");
-    // 1 (tag) + 64 (addresses) + 1 (len=4) + 4 (proof bytes) = 70
-    assert_eq!(buf.len(), 70, "EvalProof with 4 bytes should be 70 bytes");
-    assert_eq!(buf[65], 0x04, "proof.len should be 0x04");
-    assert_eq!(&buf[66..70], &[1, 2, 3, 4], "proof bytes should be [1,2,3,4]");
+    assert_eq!(buf[0], 0xF0, "Eval proof should start with 0xF0");
+    // 1 (tag) + 64 (addresses) + 1 (opt) + 1 (len=4) + 4 (proof) = 71
+    assert_eq!(buf.len(), 71, "Eval proof no-asm + 4 proof bytes = 71 bytes");
+    assert_eq!(buf[66], 0x04, "proof.len byte should be 0x04");
+    assert_eq!(&buf[67..71], &[1, 2, 3, 4], "proof bytes should be [1,2,3,4]");
   }
 
   #[test]
   fn check_claim_tag() {
-    // CheckClaim -> Tag4 { flag: 0xE, size: 3 } -> 0xE3
-    let claim = Claim::Checks(CheckClaim { value: Address::hash(b"value") });
+    // Check claim -> Tag4 { flag: 0xE, size: 4 } -> 0xE4
+    let claim = Claim::Check {
+      const_addr: Address::hash(b"value"),
+      assumptions: None,
+    };
     let mut buf = Vec::new();
     claim.put(&mut buf);
-    assert_eq!(buf[0], 0xE3, "CheckClaim should start with 0xE3");
-    assert_eq!(buf.len(), 1 + 32, "CheckClaim should be 1 + 1*32 = 33 bytes");
+    assert_eq!(buf[0], 0xE4, "Check claim should start with 0xE4");
+    assert_eq!(buf.len(), 1 + 32 + 1, "Check claim no-asm = 34 bytes");
   }
 
   #[test]
   fn check_proof_tag() {
-    // CheckProof -> Tag4 { flag: 0xE, size: 1 } -> 0xE1
+    // Check proof -> Tag4 { flag: 0xF, size: 1 } -> 0xF1
     let proof = Proof::new(
-      Claim::Checks(CheckClaim { value: Address::hash(b"value") }),
+      Claim::Check {
+        const_addr: Address::hash(b"value"),
+        assumptions: None,
+      },
       vec![5, 6, 7],
     );
     let mut buf = Vec::new();
     proof.put(&mut buf);
-    assert_eq!(buf[0], 0xE1, "CheckProof should start with 0xE1");
+    assert_eq!(buf[0], 0xF1, "Check proof should start with 0xF1");
   }
 
   // =========================================================================

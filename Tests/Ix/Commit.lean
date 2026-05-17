@@ -30,17 +30,17 @@ def commDeterminismTests : TestSeq :=
   -- Different payloads → different addresses
   ++ test "Different payloads produce different commit addresses"
     (Comm.commit (Comm.mk secret1 payload1) != Comm.commit (Comm.mk secret1 payload2))
-  -- Verify commitment format: tagged serialization starts with 0xE5 and is 65 bytes
-  ++ test "serCommTagged starts with 0xE5"
-    ((serCommTagged comm1).data[0]! == 0xE5)
+  -- Verify commitment format: tagged serialization starts with 0xE1 and is 65 bytes
+  ++ test "serCommTagged starts with 0xE1"
+    ((serCommTagged comm1).data[0]! == 0xE1)
   ++ test "serCommTagged is 65 bytes"
     ((serCommTagged comm1).size == 65)
 
 /-! ## Claim.commit tests -/
 
 def claimCommitTests : TestSeq :=
-  let evalClaim := Claim.eval payload1 payload2
-  let checkClaim := Claim.check payload1
+  let evalClaim := Claim.eval payload1 payload2 none
+  let checkClaim := Claim.check payload1 none
   let revealSafety := Claim.reveal payload1 (.defn none (some .safe) none none none)
   let revealKind := Claim.reveal payload1 (.defn (some .defn) none none none none)
   let revealBoth := Claim.reveal payload1 (.defn (some .defn) (some .safe) none none none)
@@ -167,13 +167,13 @@ def compileDefTests : TestSeq :=
 
 private def checkClaimSucceeds : Bool :=
   match Ix.Commit.checkClaim emptyCompileEnv [] simpleType simpleValue with
-  | .ok (.check _) => true
+  | .ok (.check _ _) => true
   | _ => false
 
 private def checkClaimMatchesCompileDef : Bool :=
   match Ix.Commit.compileDef emptyCompileEnv [] simpleType simpleValue,
         Ix.Commit.checkClaim emptyCompileEnv [] simpleType simpleValue with
-  | .ok (addr, _), .ok (.check claimAddr) => addr == claimAddr
+  | .ok (addr, _), .ok (.check claimAddr _) => addr == claimAddr
   | _, _ => false
 
 private def openConstantInfoDefn : Bool :=

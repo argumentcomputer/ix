@@ -235,6 +235,45 @@ def envSerializationUnitTests : TestSeq :=
   test "Comm env Lean==Rust" (envSerializationMatches commRaw) ++
   test "Blob+Comm env Lean==Rust" (envSerializationMatches blobCommRaw)
 
+/-! ## Canonical env merkle root: Lean vs. Rust agreement -/
+
+def envMerkleRootMatches (raw : RawEnv) : Bool :=
+  let env := raw.toEnv
+  raw.merkleRoot == rsEnvMerkleRoot env
+
+/-- Both pure-Lean and Rust FFI agree on the merkle root over the env's
+    consts addresses. Distinct tests for various const-set shapes. -/
+def envMerkleRootUnitTests : TestSeq :=
+  -- Empty env: no root.
+  let emptyRaw : RawEnv :=
+    { consts := #[], named := #[], blobs := #[], comms := #[] }
+  -- Single-const env.
+  let constAddr := Address.blake3 (ByteArray.mk #[42])
+  let oneConst : Constant :=
+    { info := .axio { isUnsafe := false, lvls := 0, typ := .sort 0 },
+      sharing := #[], refs := #[], univs := #[] }
+  let singleRaw : RawEnv :=
+    { consts := #[{ addr := constAddr, const := oneConst }],
+      named := #[], blobs := #[], comms := #[] }
+  -- Two-const env, inserted in different orders to check sort invariance.
+  let addrA := Address.blake3 "a".toUTF8
+  let addrB := Address.blake3 "b".toUTF8
+  let raw_ab : RawEnv :=
+    { consts := #[{ addr := addrA, const := oneConst },
+                  { addr := addrB, const := oneConst }],
+      named := #[], blobs := #[], comms := #[] }
+  let raw_ba : RawEnv :=
+    { consts := #[{ addr := addrB, const := oneConst },
+                  { addr := addrA, const := oneConst }],
+      named := #[], blobs := #[], comms := #[] }
+  test "empty env merkle root is none" (emptyRaw.merkleRoot == none) ++
+  test "empty env: Lean==Rust" (envMerkleRootMatches emptyRaw) ++
+  test "single const: Lean==Rust" (envMerkleRootMatches singleRaw) ++
+  test "two consts (a,b): Lean==Rust" (envMerkleRootMatches raw_ab) ++
+  test "two consts (b,a): Lean==Rust" (envMerkleRootMatches raw_ba) ++
+  test "(a,b) and (b,a) same root"
+    (raw_ab.merkleRoot == raw_ba.merkleRoot)
+
 /-! ## Test Suite (property-based) -/
 
 public def Tests.Ixon.suite : List TestSeq := [
@@ -242,6 +281,8 @@ public def Tests.Ixon.suite : List TestSeq := [
   envUnitTests,
   -- Env serialization comparison unit tests
   envSerializationUnitTests,
+  -- Env merkle root agreement (Lean vs. Rust FFI)
+  envMerkleRootUnitTests,
   -- Pure Lean serde roundtrips
   checkIO "Univ serde roundtrips" (∀ u : Univ, univSerde u),
   checkIO "Expr serde roundtrips" (∀ e : Expr, exprSerde e),

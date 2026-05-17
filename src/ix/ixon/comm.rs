@@ -7,12 +7,12 @@ use crate::ix::address::Address;
 
 use super::tag::Tag4;
 
-/// Tag4 variant for Commitment (flag=0xE, size=5).
-pub const VARIANT: u64 = 5;
+/// Tag4 variant for Commitment (flag=0xE, size=1).
+pub const VARIANT: u64 = 1;
 
 /// A cryptographic commitment.
 ///
-/// The commitment is computed as `blake3(Tag4{0xE,5} || secret || payload)` where:
+/// The commitment is computed as `blake3(Tag4{0xE,1} || secret || payload)` where:
 /// - `secret` is the address of a random blinding factor (stored in blobs)
 /// - `payload` is the address of the committed constant
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -51,25 +51,25 @@ impl Comm {
     Ok(Comm { secret, payload })
   }
 
-  /// Serialize with Tag4{0xE, 5} header.
+  /// Serialize with Tag4{0xE, 1} header.
   pub fn put_tagged(&self, buf: &mut Vec<u8>) {
     Tag4::new(0xE, VARIANT).put(buf);
     self.put(buf);
   }
 
-  /// Deserialize with Tag4{0xE, 5} header.
+  /// Deserialize with Tag4{0xE, 1} header.
   pub fn get_tagged(buf: &mut &[u8]) -> Result<Self, String> {
     let tag = Tag4::get(buf)?;
     if tag.flag != 0xE || tag.size != VARIANT {
       return Err(format!(
-        "Comm::get_tagged: expected Tag4{{0xE, 5}}, got Tag4{{{}, {}}}",
+        "Comm::get_tagged: expected Tag4{{0xE, 1}}, got Tag4{{{}, {}}}",
         tag.flag, tag.size
       ));
     }
     Self::get(buf)
   }
 
-  /// Serialize with tag and compute content address: `blake3(0xE5 + secret + payload)`.
+  /// Serialize with tag and compute content address: `blake3(0xE1 + secret + payload)`.
   pub fn commit(&self) -> Address {
     let mut buf = Vec::new();
     self.put_tagged(&mut buf);
@@ -133,7 +133,7 @@ mod tests {
     let comm = Comm::new(Address::hash(b"a"), Address::hash(b"b"));
     let mut buf = Vec::new();
     comm.put_tagged(&mut buf);
-    assert_eq!(buf[0], 0xE5, "Comm tagged should start with 0xE5");
+    assert_eq!(buf[0], 0xE1, "Comm tagged should start with 0xE1");
   }
 
   #[test]

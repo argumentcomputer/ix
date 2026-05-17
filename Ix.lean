@@ -12,6 +12,8 @@ public import Ix.CompileM
 public import Ix.DecompileM
 public import Ix.KernelCheck
 public import Ix.Claim
+public import Ix.Merkle
+public import Ix.AssumptionTree
 public import Ix.Commit
 public import Ix.Benchmark.Bench
 public import Ix.Aiur

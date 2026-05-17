@@ -3,6 +3,8 @@ import Tests.ByteArray
 import Tests.Ix.Ixon
 import Tests.Ix.IxVM
 import Tests.Ix.Claim
+import Tests.Ix.Merkle
+import Tests.Ix.AssumptionTree
 import Tests.Ix.Commit
 import Tests.Ix.Compile
 import Tests.Ix.Compile.ValidateAux
@@ -37,6 +39,8 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("byte-array", Tests.ByteArray.suite),
   ("ixon", Tests.Ixon.suite),
   ("claim", Tests.Claim.suite),
+  ("merkle", Tests.Merkle.suite),
+  ("assumption-tree", Tests.AssumptionTree.suite),
   ("commit", Tests.Commit.suite),
   ("canon", [Tests.CanonM.suite]),
   ("keccak", Tests.Keccak.suite),

@@ -8,6 +8,7 @@ use crate::ix::env::Name;
 use crate::ix::ixon::comm::Comm;
 use crate::ix::ixon::constant::Constant as IxonConstant;
 use crate::ix::ixon::env::{Env as IxonEnv, Named as IxonNamed};
+use crate::ix::ixon::merkle::merkle_root_canonical;
 use crate::ix::ixon::metadata::ConstantMeta;
 use crate::lean::{
   LeanIxName, LeanIxonComm, LeanIxonConstant, LeanIxonConstantMeta,
@@ -387,6 +388,29 @@ pub extern "C" fn rs_ser_env(
   env.put(&mut buf).expect("Env serialization failed");
 
   LeanByteArray::from_bytes(&buf)
+}
+
+// =============================================================================
+// rs_env_merkle_root: Compute the canonical merkle root over an env's
+// `consts` addresses. Used by the Lean side to verify env identity
+// without re-parsing serialized bytes.
+//
+// Returns 32 bytes for non-empty const sets, empty bytes for empty.
+// =============================================================================
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_env_merkle_root(
+  obj: LeanIxonRawEnv<LeanBorrowed<'_>>,
+) -> LeanByteArray<LeanOwned> {
+  let decoded = obj.decode();
+  let env = decoded_to_ixon_env(&decoded);
+  let mut addrs: Vec<Address> =
+    env.consts.iter().map(|e| e.key().clone()).collect();
+  addrs.sort_unstable();
+  match merkle_root_canonical(&addrs) {
+    Some(root) => LeanByteArray::from_bytes(root.as_bytes()),
+    None => LeanByteArray::from_bytes(&[]),
+  }
 }
 
 // =============================================================================

@@ -1,6 +1,8 @@
 //! Environment for storing Ixon data.
 
 use dashmap::DashMap;
+use rustc_hash::FxHashSet;
+use std::collections::VecDeque;
 
 use crate::ix::address::Address;
 use crate::ix::env::Name;
@@ -167,6 +169,39 @@ impl Env {
   pub fn comm_count(&self) -> usize {
     self.comms.len()
   }
+
+  /// BFS-collect all addresses transitively reachable from `root` via
+  /// the `Constant.refs` field. The returned set includes `root` itself.
+  ///
+  /// Addresses that are referenced but not present in `self.consts` are
+  /// still added to the set (so verifiers see external assumptions)
+  /// but we cannot recurse into them.
+  pub fn bfs_refs(&self, root: &Address) -> FxHashSet<Address> {
+    let mut visited: FxHashSet<Address> = FxHashSet::default();
+    let mut queue: VecDeque<Address> = VecDeque::new();
+    visited.insert(root.clone());
+    queue.push_back(root.clone());
+    while let Some(addr) = queue.pop_front() {
+      if let Some(entry) = self.consts.get(&addr) {
+        for r in &entry.value().refs {
+          if visited.insert(r.clone()) {
+            queue.push_back(r.clone());
+          }
+        }
+      }
+    }
+    visited
+  }
+
+  /// Transitive dep addresses of `root`, excluding `root` itself. Sorted
+  /// lex-ascending for canonical use (e.g., feeding `merkle_root_canonical`).
+  pub fn transitive_deps_excl(&self, root: &Address) -> Vec<Address> {
+    let mut set = self.bfs_refs(root);
+    set.remove(root);
+    let mut v: Vec<Address> = set.into_iter().collect();
+    v.sort_unstable();
+    v
+  }
 }
 
 impl Clone for Env {
@@ -323,5 +358,117 @@ mod tests {
     // Same content produces same address
     let addr3 = env.store_blob(vec![1, 2, 3]);
     assert_eq!(addr1, addr3);
+  }
+
+  /// Build a constant with the given refs (for BFS tests).
+  fn const_with_refs(refs: Vec<Address>) -> Constant {
+    Constant::with_tables(
+      ConstantInfo::Axio(Axiom {
+        is_unsafe: false,
+        lvls: 0,
+        typ: Arc::new(Expr::Sort(0)),
+      }),
+      Vec::new(),
+      refs,
+      Vec::new(),
+    )
+  }
+
+  #[test]
+  fn bfs_refs_singleton_no_deps() {
+    let env = Env::new();
+    let a = Address::hash(b"a");
+    env.store_const(a.clone(), const_with_refs(vec![]));
+    let visited = env.bfs_refs(&a);
+    assert_eq!(visited.len(), 1);
+    assert!(visited.contains(&a));
+  }
+
+  #[test]
+  fn bfs_refs_transitive() {
+    // a -> b -> c, a -> d
+    let env = Env::new();
+    let a = Address::hash(b"a");
+    let b = Address::hash(b"b");
+    let c = Address::hash(b"c");
+    let d = Address::hash(b"d");
+    env.store_const(a.clone(), const_with_refs(vec![b.clone(), d.clone()]));
+    env.store_const(b.clone(), const_with_refs(vec![c.clone()]));
+    env.store_const(c.clone(), const_with_refs(vec![]));
+    env.store_const(d.clone(), const_with_refs(vec![]));
+    let visited = env.bfs_refs(&a);
+    assert_eq!(visited.len(), 4);
+    assert!(visited.contains(&a));
+    assert!(visited.contains(&b));
+    assert!(visited.contains(&c));
+    assert!(visited.contains(&d));
+  }
+
+  #[test]
+  fn bfs_refs_cycle_terminates() {
+    // a -> b -> a (cyclic, should not infinite-loop)
+    let env = Env::new();
+    let a = Address::hash(b"a");
+    let b = Address::hash(b"b");
+    env.store_const(a.clone(), const_with_refs(vec![b.clone()]));
+    env.store_const(b.clone(), const_with_refs(vec![a.clone()]));
+    let visited = env.bfs_refs(&a);
+    assert_eq!(visited.len(), 2);
+  }
+
+  #[test]
+  fn bfs_refs_includes_external_addresses() {
+    // a -> b, where b is referenced but not stored in env. We still
+    // surface b in the visited set so callers see the external dep.
+    let env = Env::new();
+    let a = Address::hash(b"a");
+    let b = Address::hash(b"b-external");
+    env.store_const(a.clone(), const_with_refs(vec![b.clone()]));
+    let visited = env.bfs_refs(&a);
+    assert!(visited.contains(&a));
+    assert!(visited.contains(&b));
+  }
+
+  #[test]
+  fn transitive_deps_excl_excludes_root() {
+    // a -> b -> c
+    let env = Env::new();
+    let a = Address::hash(b"a");
+    let b = Address::hash(b"b");
+    let c = Address::hash(b"c");
+    env.store_const(a.clone(), const_with_refs(vec![b.clone()]));
+    env.store_const(b.clone(), const_with_refs(vec![c.clone()]));
+    env.store_const(c.clone(), const_with_refs(vec![]));
+    let deps = env.transitive_deps_excl(&a);
+    assert!(!deps.contains(&a));
+    assert!(deps.contains(&b));
+    assert!(deps.contains(&c));
+    assert_eq!(deps.len(), 2);
+  }
+
+  #[test]
+  fn transitive_deps_excl_is_sorted() {
+    let env = Env::new();
+    let a = Address::hash(b"a");
+    // Use multiple deps; the returned Vec should be in sorted order
+    // regardless of how the BFS visited them.
+    let mut refs: Vec<Address> = (0..16)
+      .map(|i| Address::hash(format!("dep-{i}").as_bytes()))
+      .collect();
+    env.store_const(a.clone(), const_with_refs(refs.clone()));
+    for r in &refs {
+      env.store_const(r.clone(), const_with_refs(vec![]));
+    }
+    refs.sort_unstable();
+    let deps = env.transitive_deps_excl(&a);
+    assert_eq!(deps, refs);
+  }
+
+  #[test]
+  fn transitive_deps_excl_empty_for_root_with_no_refs() {
+    let env = Env::new();
+    let a = Address::hash(b"a");
+    env.store_const(a.clone(), const_with_refs(vec![]));
+    assert!(env.transitive_deps_excl(&a).is_empty());
   }
 }

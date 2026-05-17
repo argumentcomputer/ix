@@ -1089,6 +1089,7 @@ pub fn get_named_indexed(
 
 use super::comm::Comm;
 use super::env::Env;
+use super::merkle::{merkle_root_canonical, zero_address};
 
 impl Env {
   /// Tag4 flag for Env (0xE), variant 0.
@@ -1119,6 +1120,22 @@ impl Env {
     Tag4::new(Self::FLAG, 0).put(buf);
 
     // ─────────────────────────────────────────────────────────────────────
+    // Canonical merkle root over consts.keys()
+    //
+    // Hoisted before section 1 so we can sort const_addrs once and reuse
+    // it for section 2 below. Always 32 bytes (non-optional) — empty
+    // const sets serialize as `zero_address()` (a fixed sentinel that
+    // cannot collide with any non-empty canonical root since
+    // `merkle_root_canonical` always returns a Blake3 hash for n>=1).
+    // Verifiers recompute on deserialize and reject mismatches.
+    // ─────────────────────────────────────────────────────────────────────
+    let mut const_addrs: Vec<Address> =
+      self.consts.iter().map(|e| e.key().clone()).collect();
+    const_addrs.par_sort_unstable();
+    let root = merkle_root_canonical(&const_addrs).unwrap_or_else(zero_address);
+    put_address(&root, buf);
+
+    // ─────────────────────────────────────────────────────────────────────
     // Section 1: Blobs (Address -> bytes)
     // ─────────────────────────────────────────────────────────────────────
     let sec_start = std::time::Instant::now();
@@ -1147,14 +1164,14 @@ impl Env {
 
     // ─────────────────────────────────────────────────────────────────────
     // Section 2: Consts (Address -> Constant)
+    //
+    // Reuses the already-collected+sorted `const_addrs` from the merkle
+    // root computation above.
     // ─────────────────────────────────────────────────────────────────────
     let sec_start = std::time::Instant::now();
     if !quiet {
       eprintln!("[Env::put] section 2/5 consts: {} entries", self.consts.len(),);
     }
-    let mut const_addrs: Vec<Address> =
-      self.consts.iter().map(|e| e.key().clone()).collect();
-    const_addrs.par_sort_unstable();
     if !quiet {
       eprintln!(
         "[Env::put] section 2/5 consts: collected+sorted in {:.1}s, \
@@ -1315,6 +1332,11 @@ impl Env {
       ));
     }
 
+    // Canonical merkle root (fixed 32 bytes). For empty const sets the
+    // stored value is `zero_address()`. Verified against the
+    // recomputed value at the end of deserialization.
+    let stored_root = get_address(buf)?;
+
     let env = Env::new();
 
     // Section 1: Blobs
@@ -1380,6 +1402,22 @@ impl Env {
       env.comms.insert(addr, comm);
     }
 
+    // Verify the stored merkle root matches what we'd compute from
+    // env.consts. Empty const set → expected = zero_address().
+    // Rejects any tampering with the header.
+    let mut const_addrs: Vec<Address> =
+      env.consts.iter().map(|e| e.key().clone()).collect();
+    const_addrs.sort_unstable();
+    let computed_root =
+      merkle_root_canonical(&const_addrs).unwrap_or_else(zero_address);
+    if computed_root != stored_root {
+      return Err(format!(
+        "Env::get: merkle root mismatch (stored={}, computed={})",
+        stored_root.hex(),
+        computed_root.hex(),
+      ));
+    }
+
     Ok(env)
   }
 
@@ -1396,8 +1434,15 @@ impl Env {
   ) -> Result<(usize, usize, usize, usize, usize, usize), String> {
     let mut buf = Vec::new();
 
-    // Header
+    // Header + merkle root (matches Env::put layout; root is always
+    // 32 bytes, with `zero_address()` as the empty-env sentinel).
     Tag4::new(Self::FLAG, 0).put(&mut buf);
+    let mut const_addrs: Vec<Address> =
+      self.consts.iter().map(|e| e.key().clone()).collect();
+    const_addrs.sort_unstable();
+    let root =
+      merkle_root_canonical(&const_addrs).unwrap_or_else(zero_address);
+    put_address(&root, &mut buf);
     let header_size = buf.len();
 
     // Section 1: Blobs
@@ -1793,5 +1838,105 @@ mod tests {
       let env = gen_env(&mut g);
       assert!(env_roundtrip(&env), "Env roundtrip failed");
     }
+  }
+
+  // ---------- Env merkle root tests ----------
+
+  fn defn_const(refs: Vec<Address>) -> Constant {
+    use crate::ix::env::DefinitionSafety;
+    use crate::ix::ixon::constant::{DefKind, Definition};
+    Constant::with_tables(
+      ConstantInfo::Defn(Definition {
+        kind: DefKind::Definition,
+        safety: DefinitionSafety::Safe,
+        lvls: 0,
+        typ: Expr::sort(0),
+        value: Expr::var(0),
+      }),
+      Vec::new(),
+      refs,
+      Vec::new(),
+    )
+  }
+
+  /// Extract the stored merkle root from a serialized env. The Tag4
+  /// header byte (`0xE0` for env) is followed by exactly 32 bytes of
+  /// root (no opt-tag).
+  fn parse_stored_root(buf: &[u8]) -> Vec<u8> {
+    assert_eq!(buf[0], 0xE0, "env header byte should be 0xE0");
+    buf[1..33].to_vec()
+  }
+
+  #[test]
+  fn env_root_empty_env_is_zero_address() {
+    use crate::ix::ixon::merkle::zero_address;
+    let env = Env::new();
+    let mut buf = Vec::new();
+    env.put(&mut buf).unwrap();
+    let root = parse_stored_root(&buf);
+    assert_eq!(
+      root,
+      zero_address().as_bytes().to_vec(),
+      "empty env root should be zero_address sentinel"
+    );
+  }
+
+  #[test]
+  fn env_root_present_when_consts_nonempty() {
+    use crate::ix::ixon::merkle::zero_address;
+    let env = Env::new();
+    env.store_const(Address::hash(b"a"), defn_const(vec![]));
+    let mut buf = Vec::new();
+    env.put(&mut buf).unwrap();
+    let root = parse_stored_root(&buf);
+    // Non-empty env root must NOT be the zero sentinel.
+    assert_ne!(root, zero_address().as_bytes().to_vec());
+  }
+
+  #[test]
+  fn env_root_invariant_under_insertion_order() {
+    let env1 = Env::new();
+    let env2 = Env::new();
+    let a = Address::hash(b"a");
+    let b = Address::hash(b"b");
+    let c = Address::hash(b"c");
+    env1.store_const(a.clone(), defn_const(vec![]));
+    env1.store_const(b.clone(), defn_const(vec![]));
+    env1.store_const(c.clone(), defn_const(vec![]));
+    env2.store_const(c, defn_const(vec![]));
+    env2.store_const(b, defn_const(vec![]));
+    env2.store_const(a, defn_const(vec![]));
+
+    let mut buf1 = Vec::new();
+    let mut buf2 = Vec::new();
+    env1.put(&mut buf1).unwrap();
+    env2.put(&mut buf2).unwrap();
+
+    assert_eq!(parse_stored_root(&buf1), parse_stored_root(&buf2));
+  }
+
+  #[test]
+  fn env_root_changes_with_extra_const() {
+    let env = Env::new();
+    env.store_const(Address::hash(b"a"), defn_const(vec![]));
+    let mut buf1 = Vec::new();
+    env.put(&mut buf1).unwrap();
+    env.store_const(Address::hash(b"b"), defn_const(vec![]));
+    let mut buf2 = Vec::new();
+    env.put(&mut buf2).unwrap();
+
+    assert_ne!(parse_stored_root(&buf1), parse_stored_root(&buf2));
+  }
+
+  #[test]
+  fn env_root_mismatch_rejected() {
+    let env = Env::new();
+    env.store_const(Address::hash(b"a"), defn_const(vec![]));
+    let mut buf = Vec::new();
+    env.put(&mut buf).unwrap();
+    // Tamper with a byte in the root (offset 1..33).
+    buf[10] ^= 0xFF;
+    let res = Env::get(&mut buf.as_slice());
+    assert!(res.is_err(), "tampered root should be rejected");
   }
 }
