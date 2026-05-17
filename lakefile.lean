@@ -94,6 +94,10 @@ lean_exe kernel where
   root := `Kernel
   supportInterpreter := true
 
+lean_exe kernel2 where
+  root := `Kernel2
+  supportInterpreter := true
+
 end Tests
 
 section Benchmarks

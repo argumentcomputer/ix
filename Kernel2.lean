@@ -2,7 +2,7 @@ import Ix.Meta
 import Ix.Aiur.Protocol
 import Ix.Aiur.Statistics
 import Ix.Aiur.Interpret
-import Ix.IxVM
+import Ix.IxVM2
 import Tests.Ix.IxVM
 import Tests.Aiur.Common
 
@@ -16,7 +16,7 @@ def main (args : List String) : IO UInt32 := do
   let env ← get_env!
   let dbg := args.contains "--dbg"
   let args := args.filter (· != "--dbg")
-  let toplevel ← match IxVM.ixVM with
+  let toplevel ← match IxVM2.ixVM2 with
     | .error e => IO.eprintln s!"Toplevel merging failed: {e}"; return 1
     | .ok t => pure t
   let run ← if dbg then
@@ -77,7 +77,7 @@ where
     let inputs := Aiur.unflattenInputs decls testCase.input inputTypes
     match Aiur.runFunction decls funcName inputs testCase.inputIOBuffer with
     | (.error e, s) =>
-      IO.eprintln s!"{name}: interpreter error:\n{e.ppDeref s.store 1 20}"
+      IO.eprintln s!"{name}: interpreter error:\n{e.ppDeref s.store 1 10}"
       return 1
     | (.ok output, _) =>
       IO.println s!"{name}: {output}"
