@@ -253,7 +253,7 @@ partial def interp (decls : Decls) (bindings : Bindings) : Term → InterpM Valu
       match cases.findSome? fun (p, body) =>
         matchPattern store p v |>.map (·, body) with
       | some (bs, body) => interp decls (bs ++ bindings) body
-      | none            => throwErr "match: non-exhaustive patterns"
+      | none            => throwErr s!"match: cannot match {v.ppDeref store 1}"
   | .app g args _ => do
       let vs ← args.mapM (interp decls bindings)
       match tryLocalLookup g bindings with

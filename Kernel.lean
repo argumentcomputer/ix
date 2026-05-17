@@ -20,6 +20,9 @@ def main (args : List String) : IO UInt32 := do
     | .error e => IO.eprintln s!"Toplevel merging failed: {e}"; return 1
     | .ok t => pure t
   let run ← if dbg then
+      match toplevel.compile with
+        | .error e => IO.eprintln s!"Compilation failed: {e}"; return 1
+        | .ok _ => pure ()
       let decls ← match toplevel.mkDecls with
         | .error e => IO.eprintln s!"mkDecls failed: {e}"; return 1
         | .ok d => pure d

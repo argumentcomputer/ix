@@ -275,7 +275,7 @@ def check := ⟦
             let _ = check_ctor_return_type(ty, num_params, ind_n_indices, num_fields,
                                            induct_idx, ind_num_lvls);
             let ind_level = get_result_sort_level(ind_ty, ind_n_params + ind_n_indices);
-            let _ = check_field_universes(ty, num_params, ind_level, 0, top, addrs);
+            let _ = check_field_universes(ty, num_params, ind_level, top, addrs);
             let _ = check_positivity(ty, num_params, induct_idx, 0, top, addrs);
             (),
         },
