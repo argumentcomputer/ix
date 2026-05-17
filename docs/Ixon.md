@@ -825,11 +825,31 @@ count (Tag0)
 [Address (32 bytes) + len (Tag0) + bytes]*
 ```
 
-**Section 2: Constants** (Address → Constant)
+**Section 2: Constants** (Address → length-prefixed Constant bytes)
 ```
 count (Tag0)
-[Address (32 bytes) + Constant]*
+[Address (32 bytes) + len (Tag0) + Constant bytes (Tag4-bounded)]*
 ```
+
+The Tag0 length sidecar is a **section-level** framing byte: it is not
+part of the constant's content-addressed bytes. The address is
+computed as `blake3` over only the Tag4 constant body. This layout
+lets a lazy loader slice each constant directly into a
+[`LazyConstant`](../src/ix/ixon/lazy.rs) without parsing its Tag4
+envelope, deferring full deserialization until first access. The
+materialized `Constant` is cached so subsequent accesses are free.
+
+### Anonymous-only loading
+
+`Env::get_anon` (`src/ix/ixon/serialize.rs`) is a sibling of
+`Env::get` that loads only the anonymous sections — header, blobs,
+consts — and parses-and-drops the metadata sections (names, named,
+comms). The returned `Env` has empty `named`/`names`/`comms` and is
+suitable for anon-mode kernel workflows that never consult metadata.
+Steady-state memory for a Mathlib-scale env drops from ~3-4 GB
+(structured + metadata) to ~1 GB (lazy bytes only).
+
+Exposed to Lean via `rs_de_env_anon` (`Ix.Ixon.rsDeEnvAnon`).
 
 **Section 3: Names** (Address → NameComponent, topologically sorted)
 ```

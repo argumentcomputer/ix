@@ -424,11 +424,14 @@ pub extern "C" fn rs_compile_phases(
       .env
       .consts
       .iter()
-      .map(|e| (e.key().clone(), e.value().clone()))
+      .filter_map(|e| {
+        let c = e.value().get().ok()?;
+        Some((e.key().clone(), c))
+      })
       .collect();
     let consts_arr = LeanArray::alloc(consts.len());
     for (i, (addr, constant)) in consts.iter().enumerate() {
-      consts_arr.set(i, build_raw_const(addr, constant));
+      consts_arr.set(i, build_raw_const(addr, constant.as_ref()));
     }
 
     let named: Vec<_> = compile_stt
@@ -517,11 +520,14 @@ pub extern "C" fn rs_compile_env_to_ixon(
       .env
       .consts
       .iter()
-      .map(|e| (e.key().clone(), e.value().clone()))
+      .filter_map(|e| {
+        let c = e.value().get().ok()?;
+        Some((e.key().clone(), c))
+      })
       .collect();
     let consts_arr = LeanArray::alloc(consts.len());
     for (i, (addr, constant)) in consts.iter().enumerate() {
-      consts_arr.set(i, build_raw_const(addr, constant));
+      consts_arr.set(i, build_raw_const(addr, constant.as_ref()));
     }
 
     let named: Vec<_> = compile_stt

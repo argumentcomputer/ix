@@ -186,6 +186,13 @@ impl MetaDisplay for () {
 
 /// Controls metadata behavior for all zero kernel types.
 pub trait KernelMode: 'static + Clone + Debug + Send + Sync {
+  /// `true` iff this mode carries metadata. Enables compile-time
+  /// pruning: code paths gated by `if M::HAS_META { … }` are
+  /// monomorphized into the dead-branch-eliminated form for the Anon
+  /// implementation. Use this to guard metadata lookups so they don't
+  /// execute in Anon mode.
+  const HAS_META: bool;
+
   /// A metadata field: stores `T` in Meta mode, erased to `()` in Anon mode.
   type MField<T: MetaHash + MetaDisplay + PartialEq + Clone + Debug + Hash + Send + Sync>:
     MetaHash + MetaDisplay + PartialEq + Clone + Debug + Hash + Send + Sync;
@@ -211,6 +218,8 @@ pub type Meta = ZMode<true>;
 pub type Anon = ZMode<false>;
 
 impl KernelMode for ZMode<true> {
+  const HAS_META: bool = true;
+
   type MField<
     T: MetaHash + MetaDisplay + PartialEq + Clone + Debug + Hash + Send + Sync,
   > = T;
@@ -229,6 +238,8 @@ impl KernelMode for ZMode<true> {
 }
 
 impl KernelMode for ZMode<false> {
+  const HAS_META: bool = false;
+
   type MField<
     T: MetaHash + MetaDisplay + PartialEq + Clone + Debug + Hash + Send + Sync,
   > = ();

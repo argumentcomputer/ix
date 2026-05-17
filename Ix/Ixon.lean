@@ -1730,12 +1730,20 @@ def putEnv (env : Env) : PutM Unit := do
     putTag0 ⟨bytes.size.toUInt64⟩
     putBytes bytes
 
-  -- Section 2: Consts (Address -> Constant)
+  -- Section 2: Consts (Address -> Tag0-length-prefixed Tag4 constant bytes)
+  --
+  -- The Tag0 length sidecar is added at the env-section level so a lazy
+  -- loader can slice each constant without parsing its Tag4 envelope.
+  -- The length is NOT part of the content-addressed bytes: the address
+  -- is `Address.hash` over the Tag4 constant body alone (which is
+  -- exactly what `serConstant` produces).
   let consts := env.consts.toList.toArray.qsort fun a b => (compare a.1 b.1).isLT
   putTag0 ⟨consts.size.toUInt64⟩
   for (addr, constant) in consts do
     Serialize.put addr
-    putConstant constant
+    let bytes := serConstant constant
+    putTag0 ⟨bytes.size.toUInt64⟩
+    putBytes bytes
 
   -- Section 3: Names (Address -> Name component)
   -- Topologically sorted so parents come before children, with ties broken by address
@@ -1795,12 +1803,17 @@ def getEnv : GetM Env := do
     let bytes ← getBytes len.toNat
     env := { env with blobs := env.blobs.insert addr bytes }
 
-  -- Section 2: Consts
+  -- Section 2: Consts (length-prefixed; see putEnv for rationale)
   let numConsts := (← getTag0).size
   for _ in [:numConsts.toNat] do
     let addr ← Serialize.get
-    let constant ← getConstant
-    env := { env with consts := env.consts.insert addr constant }
+    let len := (← getTag0).size
+    let bytes ← getBytes len.toNat
+    match deConstant bytes with
+    | .ok constant =>
+      env := { env with consts := env.consts.insert addr constant }
+    | .error e =>
+      throw s!"Env.get: bad constant bytes for addr {reprStr (toString addr)}: {e}"
 
   -- Section 3: Names (build lookup table AND reverse index)
   let numNames := (← getTag0).size
@@ -1935,6 +1948,18 @@ opaque rsDeEnvFFI : @& ByteArray → Except String RawEnv
 /-- Deserialize bytes to an Ixon.Env using Rust. -/
 def rsDeEnv (bytes : ByteArray) : Except String Env :=
   return (← rsDeEnvFFI bytes).toEnv
+
+/-- Anonymous-only deserialization: keep blobs + consts, parse-and-drop
+    names/named/comms. Returns a `RawEnv` whose `named`/`names`/`comms`
+    arrays are empty. -/
+@[extern "rs_de_env_anon"]
+opaque rsDeEnvAnonFFI : @& ByteArray → Except String RawEnv
+
+/-- Anonymous-only `rsDeEnv`. The returned `Env` has empty
+    `named`/`names`/`comms` (and `addrToName`) and is suitable for
+    anon-mode kernel workflows. -/
+def rsDeEnvAnon (bytes : ByteArray) : Except String Env :=
+  return (← rsDeEnvAnonFFI bytes).toEnv
 
 /-! ## Canonical merkle root over consts -/
 

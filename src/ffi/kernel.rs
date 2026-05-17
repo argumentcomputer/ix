@@ -74,7 +74,11 @@ use crate::ix::kernel::ingress::{
 };
 #[cfg(feature = "test-ffi")]
 use crate::ix::kernel::ingress::{ixon_ingress, lean_ingress};
-use crate::ix::kernel::mode::Meta;
+use crate::ix::kernel::anon_env::AnonEnv;
+use crate::ix::kernel::id::KId;
+use crate::ix::kernel::ingress::ixon_ingress;
+use crate::ix::kernel::mode::{Anon, Meta};
+use crate::lean::LeanIxAddress;
 use crate::ix::kernel::tc::TypeChecker;
 
 unsafe extern "C" {
@@ -690,6 +694,134 @@ pub extern "C" fn rs_kernel_check_ixon(
       log.count()
     );
   }
+
+  build_result_array(&results)
+}
+
+/// FFI: anonymous-mode type-check by address.
+///
+/// Lean signature:
+/// ```lean
+/// @[extern "rs_kernel_check_consts_anon"]
+/// opaque rsCheckConstsAnonFFI :
+///     @& String →           -- .ixe path
+///     @& Array Ix.Address → -- addresses to check
+///     @& Bool →             -- quiet
+///     IO (Array (Option CheckError))
+/// ```
+///
+/// Loads the `.ixe`, builds a `KEnv<Anon>` via `ixon_ingress::<Anon>`,
+/// and runs `TypeChecker<Anon>::check_const` for each requested
+/// address. All metadata fields (`KConst<Anon>::name`,
+/// `level_params`, binder names, mdata) are erased to `()` at the
+/// type level, so the kernel's typechecking logic cannot read
+/// metadata even if ingress consulted it.
+///
+/// The address surface (not name) makes the anon path's entry
+/// independent of Lean.Name → Address resolution — verifiers that
+/// only have content addresses (e.g., zkPCC claim subjects) can
+/// invoke this directly without metadata.
+///
+/// Results come back in input order, paired by the caller with
+/// `addrs[i]`.
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_kernel_check_consts_anon(
+  env_path: LeanString<LeanBorrowed<'_>>,
+  addrs: LeanArray<LeanBorrowed<'_>>,
+  quiet: LeanBool<LeanBorrowed<'_>>,
+) -> LeanIOResult<LeanOwned> {
+  let total_start = Instant::now();
+  let _quiet = quiet.to_bool();
+  let path = env_path.to_string();
+  let addrs_vec: Vec<Address> = LeanIxAddress::decode_array(addrs);
+
+  // Load env
+  let t0 = Instant::now();
+  let bytes = match std::fs::read(&path) {
+    Ok(b) => b,
+    Err(e) => {
+      return LeanIOResult::error_string(&format!(
+        "rs_kernel_check_consts_anon: failed to read {path}: {e}"
+      ));
+    },
+  };
+  eprintln!(
+    "[rs_kernel_check_anon] read env:   {:>8.1?} ({} bytes)",
+    t0.elapsed(),
+    bytes.len()
+  );
+
+  let t1 = Instant::now();
+  let mut slice: &[u8] = &bytes;
+  let ixon_env = match IxonEnv::get(&mut slice) {
+    Ok(env) => env,
+    Err(e) => {
+      return LeanIOResult::error_string(&format!(
+        "rs_kernel_check_consts_anon: failed to deserialize {path}: {e}"
+      ));
+    },
+  };
+  drop(bytes);
+  eprintln!(
+    "[rs_kernel_check_anon] deserialize:{:>8.1?} ({} consts)",
+    t1.elapsed(),
+    ixon_env.const_count()
+  );
+
+  // Build KEnv<Anon> via ingress. Note: ixon_ingress consults named/
+  // names internally to enumerate work items, but the resulting
+  // KEnv<Anon> has `()` for every metadata field — the kernel's
+  // typechecking logic structurally cannot read metadata.
+  let t2 = Instant::now();
+  let _anon_env_view = AnonEnv::from_env(&ixon_env);
+  let (mut kenv, _intern) = match ixon_ingress::<Anon>(&ixon_env) {
+    Ok(pair) => pair,
+    Err(e) => {
+      return build_uniform_error(
+        addrs_vec.len(),
+        &format!("[anon ingress] {e}"),
+      );
+    },
+  };
+  eprintln!("[rs_kernel_check_anon] anon ingress:{:>8.1?}", t2.elapsed());
+
+  // Per-address check
+  let t3 = Instant::now();
+  let total = addrs_vec.len();
+  let mut results: Vec<CheckRes> = Vec::with_capacity(total);
+  for (i, addr) in addrs_vec.iter().enumerate() {
+    let kid = KId::<Anon>::new(addr.clone(), ());
+    if !kenv.consts.contains_key(&kid) {
+      results.push(Err((
+        ErrKind::Compile,
+        format!("[anon] no kernel const at {}", addr.hex()),
+      )));
+      continue;
+    }
+    let mut tc = TypeChecker::<Anon>::new(&mut kenv);
+    let r = tc.check_const(&kid);
+    let label = format!("[{}/{}] {}", i + 1, total, addr.hex());
+    match r {
+      Ok(()) => {
+        eprintln!("{label} ok");
+        results.push(Ok(()));
+      },
+      Err(e) => {
+        let msg = format!("{e:?}");
+        eprintln!("{label} FAIL: {msg}");
+        results.push(Err((ErrKind::Kernel, msg)));
+      },
+    }
+  }
+  eprintln!(
+    "[rs_kernel_check_anon] checks:     {:>8.1?} ({} addrs)",
+    t3.elapsed(),
+    total
+  );
+  eprintln!(
+    "[rs_kernel_check_anon] total:      {:>8.1?}",
+    total_start.elapsed()
+  );
 
   build_result_array(&results)
 }

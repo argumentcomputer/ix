@@ -2466,7 +2466,7 @@ extern "C" fn rs_compile_validate_aux(
       stt: &crate::ix::compile::CompileState,
       addr: &crate::ix::address::Address,
     ) -> String {
-      match stt.env.get_const(addr).map(|c| c.info) {
+      match stt.env.get_const(addr).map(|c| c.info.clone()) {
         Some(crate::ix::ixon::constant::ConstantInfo::RPrj(p)) => {
           format!("RPrj(idx={}, block={:.12})", p.idx, p.block.hex())
         },
@@ -2597,7 +2597,7 @@ extern "C" fn rs_compile_validate_aux(
         }
       }
 
-      let proj = match stt.env.get_const(addr).map(|c| c.info) {
+      let proj = match stt.env.get_const(addr).map(|c| c.info.clone()) {
         Some(crate::ix::ixon::constant::ConstantInfo::RPrj(p)) => p,
         _ => return None,
       };
@@ -2614,7 +2614,7 @@ extern "C" fn rs_compile_validate_aux(
             .iter()
             .chain(stt.name_to_addr.iter())
             .filter_map(|entry| {
-              match stt.env.get_const(entry.value()).map(|c| c.info) {
+              match stt.env.get_const(entry.value()).map(|c| c.info.clone()) {
                 Some(crate::ix::ixon::constant::ConstantInfo::RPrj(p))
                   if p.block == proj.block && p.idx == idx =>
                 {

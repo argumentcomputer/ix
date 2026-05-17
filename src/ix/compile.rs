@@ -4402,7 +4402,7 @@ mod tests {
     // Check the constant was stored
     let cnst = stt.env.get_const(&addr);
     assert!(cnst.is_some());
-    match cnst.unwrap() {
+    match cnst.unwrap().as_ref() {
       Constant { info: ConstantInfo::Defn(d), .. } => {
         // Value should be a Rec(0) since it's self-referential in a single-element block
         match d.value.as_ref() {

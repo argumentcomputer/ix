@@ -12,6 +12,7 @@ pub mod constant;
 pub mod env;
 pub mod error;
 pub mod expr;
+pub mod lazy;
 pub mod merkle;
 pub mod metadata;
 pub mod proof;
@@ -30,6 +31,7 @@ pub use constant::{
 pub use env::{Env, Named};
 pub use error::{CompileError, DecompileError, SerializeError};
 pub use expr::Expr;
+pub use lazy::LazyConstant;
 pub use metadata::{
   ConstantMeta, DataValue, ExprMeta, ExprMetaData, KVMap, NameIndex,
   NameReverseIndex,

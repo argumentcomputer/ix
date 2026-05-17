@@ -64,14 +64,23 @@ pub fn build_eval_claim(
 ///
 /// Returns `None` if the env has an empty const set (no subject root
 /// can be formed).
+///
+/// Materializes every constant to inspect its `ConstantInfo` variant.
+/// This forces a full env walk; callers that already hold structured
+/// constants are unaffected, but a freshly-loaded lazy env will pay
+/// the parse cost here.
 pub fn build_check_env_claim(env: &Env) -> Option<Claim> {
   let root = env_merkle_root(env)?;
   let mut axioms: Vec<Address> = env
     .consts
     .iter()
-    .filter_map(|e| match &e.value().info {
-      ConstantInfo::Axio(_) => Some(e.key().clone()),
-      _ => None,
+    .filter_map(|e| {
+      let lazy = e.value();
+      let c = lazy.get().ok()?;
+      match &c.info {
+        ConstantInfo::Axio(_) => Some(e.key().clone()),
+        _ => None,
+      }
     })
     .collect();
   axioms.sort_unstable();

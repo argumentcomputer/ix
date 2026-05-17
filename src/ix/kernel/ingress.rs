@@ -3673,7 +3673,7 @@ fn ixon_ingress_inner<M: KernelMode>(
       ConstantMetaInfo::Indc { .. }
       | ConstantMetaInfo::Ctor { .. }
       | ConstantMetaInfo::Rec { .. } => {
-        if let Some(c) = ixon_env.consts.get(&named.addr) {
+        if let Some(c) = ixon_env.get_const(&named.addr) {
           match &c.info {
             IxonCI::IPrj(_)
             | IxonCI::CPrj(_)
@@ -3687,7 +3687,7 @@ fn ixon_ingress_inner<M: KernelMode>(
         }
       },
       ConstantMetaInfo::Def { .. } => {
-        if let Some(c) = ixon_env.consts.get(&named.addr) {
+        if let Some(c) = ixon_env.get_const(&named.addr) {
           match &c.info {
             IxonCI::DPrj(_) => {},
             _ => {
@@ -3922,7 +3922,13 @@ fn validate_no_reserved_marker_addresses(
         entry.key().hex()
       ));
     }
-    for (idx, addr) in entry.value().refs.iter().enumerate() {
+    let constant = entry.value().get().map_err(|e| {
+      format!(
+        "validate_no_reserved_marker_addresses: cannot materialize {}: {e}",
+        entry.key().hex()
+      )
+    })?;
+    for (idx, addr) in constant.refs.iter().enumerate() {
       if let Some(marker) = reserved_marker_name(addr) {
         return Err(format!(
           "reserved kernel marker address {marker} ({}) used in refs[{idx}] of Ixon constant {}",

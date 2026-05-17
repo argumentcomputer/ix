@@ -3,12 +3,14 @@
 use dashmap::DashMap;
 use rustc_hash::FxHashSet;
 use std::collections::VecDeque;
+use std::sync::Arc;
 
 use crate::ix::address::Address;
 use crate::ix::env::Name;
 
 use super::comm::Comm;
 use super::constant::Constant;
+use super::lazy::LazyConstant;
 use super::metadata::ConstantMeta;
 
 /// A named constant with metadata.
@@ -62,15 +64,18 @@ pub struct AuxLayout {
 /// The Ixon environment.
 ///
 /// Contains five maps:
-/// - `consts`: Alpha-invariant constants indexed by content hash
+/// - `consts`: Alpha-invariant constants indexed by content hash,
+///   stored lazily as serialized bytes ([`LazyConstant`]) and
+///   materialized on demand.
 /// - `named`: Named references with metadata and mutual context
 /// - `blobs`: Raw data (strings, nats, files)
 /// - `names`: Hash-consed Lean.Name components (Address -> Name)
 /// - `comms`: Cryptographic commitments (secrets)
 #[derive(Debug, Default)]
 pub struct Env {
-  /// Alpha-invariant constants: Address -> Constant
-  pub consts: DashMap<Address, Constant>,
+  /// Alpha-invariant constants: Address -> LazyConstant (raw bytes +
+  /// optional materialized cache; see [`LazyConstant`]).
+  pub consts: DashMap<Address, LazyConstant>,
   /// Named references: Name -> (constant address, metadata, ctx)
   pub named: DashMap<Name, Named>,
   /// Raw data blobs: Address -> bytes
@@ -104,15 +109,41 @@ impl Env {
     self.blobs.get(addr).map(|r| r.clone())
   }
 
-  /// Store a constant and return its content address.
-  /// Note: The actual hashing/serialization is done elsewhere.
+  /// Store a structured constant under `addr`.
+  ///
+  /// Serializes the constant once and pre-populates the
+  /// [`LazyConstant`] cache so subsequent `Env::put` is a memcpy and
+  /// the first `get_const` call is free.
   pub fn store_const(&self, addr: Address, constant: Constant) {
-    self.consts.insert(addr, constant);
+    self.consts.insert(addr, LazyConstant::from_constant(constant));
   }
 
-  /// Get a constant by address.
-  pub fn get_const(&self, addr: &Address) -> Option<Constant> {
-    self.consts.get(addr).map(|r| r.clone())
+  /// Store an already-serialized constant under `addr` (lazy load path).
+  /// `bytes` must be exactly what `Constant::put` produced for `addr`.
+  pub fn store_const_lazy(&self, addr: Address, bytes: Arc<[u8]>) {
+    self.consts.insert(addr, LazyConstant::from_bytes(bytes));
+  }
+
+  /// Get a constant by address, materializing on demand.
+  ///
+  /// Returns `None` if the address is not present or materialization
+  /// fails (e.g., corrupt bytes). Use [`Self::try_get_const`] to
+  /// inspect materialization errors.
+  pub fn get_const(&self, addr: &Address) -> Option<Arc<Constant>> {
+    self.consts.get(addr).and_then(|r| r.value().get().ok())
+  }
+
+  /// Get a constant by address, returning materialization errors.
+  pub fn try_get_const(
+    &self,
+    addr: &Address,
+  ) -> Option<Result<Arc<Constant>, String>> {
+    self.consts.get(addr).map(|r| r.value().get())
+  }
+
+  /// Get the raw serialized bytes of a constant without materializing it.
+  pub fn get_const_bytes(&self, addr: &Address) -> Option<Arc<[u8]>> {
+    self.consts.get(addr).map(|r| Arc::from(r.value().raw_bytes()))
   }
 
   /// Register a named constant.
@@ -176,16 +207,27 @@ impl Env {
   /// Addresses that are referenced but not present in `self.consts` are
   /// still added to the set (so verifiers see external assumptions)
   /// but we cannot recurse into them.
+  ///
+  /// Visited constants are materialized via [`LazyConstant::get`];
+  /// subsequent BFS passes over the same closure are free.
   pub fn bfs_refs(&self, root: &Address) -> FxHashSet<Address> {
     let mut visited: FxHashSet<Address> = FxHashSet::default();
     let mut queue: VecDeque<Address> = VecDeque::new();
     visited.insert(root.clone());
     queue.push_back(root.clone());
     while let Some(addr) = queue.pop_front() {
-      if let Some(entry) = self.consts.get(&addr) {
-        for r in &entry.value().refs {
+      // Materialize the constant just long enough to read its refs.
+      // Drop the DashMap guard before recursing so concurrent BFS
+      // calls don't deadlock on the same shard.
+      let refs: Option<Vec<Address>> = self
+        .consts
+        .get(&addr)
+        .and_then(|r| r.value().get().ok())
+        .map(|c| c.refs.clone());
+      if let Some(rs) = refs {
+        for r in rs {
           if visited.insert(r.clone()) {
-            queue.push_back(r.clone());
+            queue.push_back(r);
           }
         }
       }
@@ -273,7 +315,7 @@ mod tests {
     let addr = Address::hash(b"test-constant");
     env.store_const(addr.clone(), constant.clone());
     let got = env.get_const(&addr).unwrap();
-    assert_eq!(got, constant);
+    assert_eq!(*got, constant);
   }
 
   #[test]
@@ -470,5 +512,45 @@ mod tests {
     let a = Address::hash(b"a");
     env.store_const(a.clone(), const_with_refs(vec![]));
     assert!(env.transitive_deps_excl(&a).is_empty());
+  }
+
+  /// Round-trips an env through serialize → deserialize so the
+  /// deserialized side holds purely lazy entries, then asserts that
+  /// only constants reachable from `seed` get materialized after a
+  /// `transitive_deps_excl(seed)` walk.
+  #[test]
+  fn lazy_sparsity_only_materializes_closure() {
+    // Build a small env: a→b→c, and an independent d.
+    let env = Env::new();
+    let a = Address::hash(b"a");
+    let b = Address::hash(b"b");
+    let c = Address::hash(b"c");
+    let d = Address::hash(b"d");
+    env.store_const(a.clone(), const_with_refs(vec![b.clone()]));
+    env.store_const(b.clone(), const_with_refs(vec![c.clone()]));
+    env.store_const(c.clone(), const_with_refs(vec![]));
+    env.store_const(d.clone(), const_with_refs(vec![]));
+
+    // Serialize → deserialize so all entries start unmaterialized.
+    let mut buf = Vec::new();
+    env.put(&mut buf).unwrap();
+    let loaded = Env::get(&mut buf.as_slice()).unwrap();
+    for entry in loaded.consts.iter() {
+      assert!(
+        !entry.value().is_materialized(),
+        "freshly-loaded entry {:?} should not be materialized",
+        entry.key()
+      );
+    }
+
+    // Walk closure of `a`. {a, b, c} get materialized; `d` does not.
+    let _ = loaded.transitive_deps_excl(&a);
+    assert!(loaded.consts.get(&a).unwrap().value().is_materialized());
+    assert!(loaded.consts.get(&b).unwrap().value().is_materialized());
+    assert!(loaded.consts.get(&c).unwrap().value().is_materialized());
+    assert!(
+      !loaded.consts.get(&d).unwrap().value().is_materialized(),
+      "`d` outside `a`'s closure should stay lazy"
+    );
   }
 }

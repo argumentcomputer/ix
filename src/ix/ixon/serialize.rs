@@ -1184,7 +1184,13 @@ impl Env {
     for addr in &const_addrs {
       if let Some(entry) = self.consts.get(addr) {
         put_address(addr, buf);
-        entry.value().put(buf);
+        // Length-prefix sidecar (Tag0) so lazy loaders can slice each
+        // constant without parsing its Tag4 envelope. The length is
+        // NOT part of the content-addressed bytes — `Address::hash` is
+        // computed only over `raw_bytes()`.
+        let bytes = entry.value().raw_bytes();
+        Tag0::new(bytes.len() as u64).put(buf);
+        buf.extend_from_slice(bytes);
       }
     }
     if !quiet {
@@ -1356,12 +1362,21 @@ impl Env {
       env.blobs.insert(addr, bytes.to_vec());
     }
 
-    // Section 2: Consts
+    // Section 2: Consts (lazy: read length prefix, slice bytes, defer parse)
     let num_consts = get_u64(buf)?;
     for _ in 0..num_consts {
       let addr = get_address(buf)?;
-      let constant = Constant::get(buf)?;
-      env.consts.insert(addr, constant);
+      let len = Tag0::get(buf)?.size as usize;
+      if buf.len() < len {
+        return Err(format!(
+          "Env::get: need {} bytes for constant, have {}",
+          len,
+          buf.len()
+        ));
+      }
+      let (bytes, rest) = buf.split_at(len);
+      *buf = rest;
+      env.store_const_lazy(addr, bytes.into());
     }
 
     // Section 3: Names (build lookup table and reverse index for metadata)
@@ -1421,6 +1436,130 @@ impl Env {
     Ok(env)
   }
 
+  /// Anonymous-only deserialization: read the header + blobs +
+  /// consts sections, parse-and-discard the metadata sections
+  /// (names / named / comms).
+  ///
+  /// Returns an `Env` with populated `consts` (lazy) and `blobs`, and
+  /// **empty** `named` / `names` / `comms`. The merkle-root header is
+  /// re-verified against the recomputed root over `consts.keys()`,
+  /// exactly as in [`Env::get`].
+  ///
+  /// Why "parse and discard"? Sections 3-5 lack a section-level length
+  /// prefix today (only section 2 has one), so we can't byte-skip
+  /// them without parsing. Parsing into local scopes that drop on
+  /// return still wins us the steady-state memory: the returned `Env`
+  /// is metadata-free, and the temporary lookup tables / parsed
+  /// metadata values are reclaimed before this function returns.
+  ///
+  /// Used by the anon-mode kernel path so a verifier holding only
+  /// content addresses doesn't pay the long-term cost of metadata
+  /// sections it will never consult.
+  pub fn get_anon(buf: &mut &[u8]) -> Result<Self, String> {
+    // Header (same as Env::get)
+    let tag = Tag4::get(buf)?;
+    if tag.flag != Self::FLAG {
+      return Err(format!(
+        "Env::get_anon: expected flag 0x{:X}, got 0x{:X}",
+        Self::FLAG,
+        tag.flag
+      ));
+    }
+    if tag.size != 0 {
+      return Err(format!(
+        "Env::get_anon: expected Env variant 0, got {}",
+        tag.size
+      ));
+    }
+    let stored_root = get_address(buf)?;
+
+    let env = Env::new();
+
+    // Section 1: Blobs (kept)
+    let num_blobs = get_u64(buf)?;
+    for _ in 0..num_blobs {
+      let addr = get_address(buf)?;
+      let len = get_u64(buf)? as usize;
+      if buf.len() < len {
+        return Err(format!(
+          "Env::get_anon: need {} bytes for blob, have {}",
+          len,
+          buf.len()
+        ));
+      }
+      let (bytes, rest) = buf.split_at(len);
+      *buf = rest;
+      env.blobs.insert(addr, bytes.to_vec());
+    }
+
+    // Section 2: Consts (kept, lazy)
+    let num_consts = get_u64(buf)?;
+    for _ in 0..num_consts {
+      let addr = get_address(buf)?;
+      let len = Tag0::get(buf)?.size as usize;
+      if buf.len() < len {
+        return Err(format!(
+          "Env::get_anon: need {} bytes for constant, have {}",
+          len,
+          buf.len()
+        ));
+      }
+      let (bytes, rest) = buf.split_at(len);
+      *buf = rest;
+      env.store_const_lazy(addr, bytes.into());
+    }
+
+    // Section 3: Names — parse and DISCARD. We still need a populated
+    // `names_lookup` and `name_reverse_index` so section 4's indexed
+    // metadata parses correctly, but both go out of scope before
+    // returning so the steady-state `Env` carries no name data.
+    let num_names = get_u64(buf)?;
+    let mut names_lookup: FxHashMap<Address, Name> = FxHashMap::default();
+    let mut name_reverse_index: NameReverseIndex =
+      Vec::with_capacity(num_names as usize + 1);
+    let anon_addr = Address::from_blake3_hash(*Name::anon().get_hash());
+    names_lookup.insert(anon_addr, Name::anon());
+    for _ in 0..num_names {
+      let addr = get_address(buf)?;
+      let name = get_name_component(buf, &names_lookup)?;
+      name_reverse_index.push(addr.clone());
+      names_lookup.insert(addr, name);
+    }
+
+    // Section 4: Named — parse and DISCARD.
+    let num_named = get_u64(buf)?;
+    for _ in 0..num_named {
+      let _name_addr = get_address(buf)?;
+      let _named = get_named_indexed(buf, &name_reverse_index)?;
+    }
+
+    // Section 5: Comms — parse and DISCARD.
+    let num_comms = get_u64(buf)?;
+    for _ in 0..num_comms {
+      let _addr = get_address(buf)?;
+      let _comm = Comm::get(buf)?;
+    }
+
+    drop(names_lookup);
+    drop(name_reverse_index);
+
+    // Verify merkle root over loaded consts.
+    let mut const_addrs: Vec<Address> =
+      env.consts.iter().map(|e| e.key().clone()).collect();
+    const_addrs.sort_unstable();
+    let computed_root =
+      merkle_root_canonical(&const_addrs).unwrap_or_else(zero_address);
+    if computed_root != stored_root {
+      return Err(format!(
+        "Env::get_anon: merkle root mismatch (stored={}, computed={})",
+        stored_root.hex(),
+        computed_root.hex(),
+      ));
+    }
+
+    Ok(env)
+  }
+
   /// Calculate the serialized size of an Env.
   pub fn serialized_size(&self) -> Result<usize, String> {
     let mut buf = Vec::new();
@@ -1454,12 +1593,14 @@ impl Env {
     }
     let blobs_size = buf.len() - header_size;
 
-    // Section 2: Consts
+    // Section 2: Consts (length-prefixed)
     let before_consts = buf.len();
     put_u64(self.consts.len() as u64, &mut buf);
     for entry in self.consts.iter() {
       put_address(entry.key(), &mut buf);
-      entry.value().put(&mut buf);
+      let bytes = entry.value().raw_bytes();
+      Tag0::new(bytes.len() as u64).put(&mut buf);
+      buf.extend_from_slice(bytes);
     }
     let consts_size = buf.len() - before_consts;
 
@@ -1691,7 +1832,7 @@ mod tests {
       let mut buf = Vec::new();
       constant.put(&mut buf);
       let addr = Address::hash(&buf);
-      env.consts.insert(addr.clone(), constant);
+      env.store_const(addr.clone(), constant);
 
       // Create a named entry for this constant
       if !names.is_empty() {
@@ -1701,7 +1842,7 @@ mod tests {
         let original = if bool::arbitrary(g) {
           let orig_addr = Address::arbitrary(g);
           // Store the original constant too so the env is self-consistent.
-          env.consts.insert(orig_addr.clone(), gen_constant(g));
+          env.store_const(orig_addr.clone(), gen_constant(g));
           Some((orig_addr, ConstantMeta::default()))
         } else {
           None
@@ -1938,5 +2079,83 @@ mod tests {
     buf[10] ^= 0xFF;
     let res = Env::get(&mut buf.as_slice());
     assert!(res.is_err(), "tampered root should be rejected");
+  }
+
+  // ---------------------------------------------------------------------------
+  // Env::get_anon — anonymous-only deserialization
+  // ---------------------------------------------------------------------------
+
+  #[test]
+  fn get_anon_keeps_consts_drops_metadata() {
+    use crate::ix::ixon::env::Named;
+    let env = Env::new();
+    let a = Address::hash(b"a");
+    let b = Address::hash(b"b");
+    env.store_const(a.clone(), defn_const(vec![]));
+    env.store_const(b.clone(), defn_const(vec![a.clone()]));
+    // Populate metadata sections so we can verify they get dropped.
+    let blob_addr = env.store_blob(b"hello world".to_vec());
+    env.register_name(Name::str(Name::anon(), "MyConst".to_string()),
+      Named::with_addr(a.clone()));
+
+    let mut buf = Vec::new();
+    env.put(&mut buf).unwrap();
+    let loaded = Env::get_anon(&mut buf.as_slice()).unwrap();
+
+    // Anonymous sections preserved
+    assert_eq!(loaded.const_count(), 2);
+    assert!(loaded.consts.get(&a).is_some());
+    assert!(loaded.consts.get(&b).is_some());
+    assert_eq!(loaded.get_blob(&blob_addr), Some(b"hello world".to_vec()));
+
+    // Metadata sections empty
+    assert_eq!(loaded.named_count(), 0, "named should be empty after get_anon");
+    assert_eq!(loaded.name_count(), 0, "names should be empty after get_anon");
+    assert_eq!(loaded.comm_count(), 0, "comms should be empty after get_anon");
+  }
+
+  #[test]
+  fn get_anon_merkle_root_verified() {
+    let env = Env::new();
+    env.store_const(Address::hash(b"x"), defn_const(vec![]));
+    let mut buf = Vec::new();
+    env.put(&mut buf).unwrap();
+    // Tamper with the root.
+    buf[10] ^= 0xFF;
+    let res = Env::get_anon(&mut buf.as_slice());
+    assert!(res.is_err(), "get_anon must reject tampered root");
+  }
+
+  #[test]
+  fn get_anon_empty_env_roundtrip() {
+    let env = Env::new();
+    let mut buf = Vec::new();
+    env.put(&mut buf).unwrap();
+    let loaded = Env::get_anon(&mut buf.as_slice()).unwrap();
+    assert_eq!(loaded.const_count(), 0);
+    assert_eq!(loaded.named_count(), 0);
+  }
+
+  #[test]
+  fn get_anon_consts_match_get() {
+    // Build an env, serialize, then load via both get and get_anon.
+    // The `consts` map should agree (same addresses, same Constant
+    // when materialized).
+    let env = Env::new();
+    for i in 0..5u8 {
+      let addr = Address::hash(&[i]);
+      env.store_const(addr, defn_const(vec![]));
+    }
+    let mut buf = Vec::new();
+    env.put(&mut buf).unwrap();
+    let full = Env::get(&mut buf.as_slice()).unwrap();
+    let anon = Env::get_anon(&mut buf.as_slice()).unwrap();
+    assert_eq!(full.const_count(), anon.const_count());
+    for entry in full.consts.iter() {
+      let addr = entry.key();
+      let from_full = full.get_const(addr).unwrap();
+      let from_anon = anon.get_const(addr).unwrap();
+      assert_eq!(*from_full, *from_anon);
+    }
   }
 }

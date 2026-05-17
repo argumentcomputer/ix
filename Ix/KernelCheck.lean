@@ -14,6 +14,7 @@
 module
 public import Lean.Data.Name
 public import Lean.Declaration
+public import Ix.Address
 
 public section
 
@@ -114,6 +115,32 @@ opaque rsCheckIxonFFI :
     `check-ixon` CLI to support `--ns` filtering without rebuilding Lean. -/
 @[extern "rs_kernel_ixon_names"]
 opaque rsIxonNamesFFI : @& String → IO (Array Lean.Name)
+
+/-- FFI: anonymous-mode type-check by address.
+
+    Loads the `.ixe` file at the given path, ingresses every constant into a
+    `KEnv<Anon>` (with all metadata fields erased to `()` at the type level),
+    then runs the kernel typechecker on each requested address.
+
+    The address-based surface (no Lean.Name input) reflects what the anon
+    kernel actually consumes: structural, content-addressed identities with
+    no Lean-side names. Useful for zkPCC verifiers that hold only claim
+    addresses, and for tests that want to assert metadata-free typechecking.
+
+    Implemented in `src/ffi/kernel.rs::rs_kernel_check_consts_anon`. The
+    kernel's typechecking logic structurally cannot read metadata when
+    running in `Anon` mode — every `M::MField<T>` is `()`.
+
+    Note: today's `ixon_ingress` still consults `Env::named`/`Env::names`
+    internally to enumerate work items, even in Anon mode. The resulting
+    kernel state has no metadata, so the typechecking step is anon, but
+    full ingress-level metadata isolation is a follow-up. -/
+@[extern "rs_kernel_check_consts_anon"]
+opaque rsCheckConstsAnonFFI :
+    @& String →                  -- .ixe path
+    @& Array Address →           -- addresses to type-check
+    @& Bool →                    -- quiet
+    IO (Array (Option CheckError))
 
 end Ix.KernelCheck
 

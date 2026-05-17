@@ -334,13 +334,19 @@ pub fn decoded_to_ixon_env(decoded: &DecodedRawEnv) -> IxonEnv {
 }
 
 /// Convert a Rust IxonEnv to a DecodedRawEnv.
+///
+/// Forces materialization of every constant — callers operating on a
+/// freshly-loaded lazy env pay the parse cost here.
 pub fn ixon_env_to_decoded(env: &IxonEnv) -> DecodedRawEnv {
   let consts = env
     .consts
     .iter()
-    .map(|e| DecodedRawConst {
-      addr: e.key().clone(),
-      constant: e.value().clone(),
+    .filter_map(|e| {
+      let c = e.value().get().ok()?;
+      Some(DecodedRawConst {
+        addr: e.key().clone(),
+        constant: (*c).clone(),
+      })
     })
     .collect();
   let named = env
@@ -432,6 +438,32 @@ pub extern "C" fn rs_de_env(
     },
     Err(e) => {
       let msg = format!("rs_de_env: {}", e);
+      LeanExcept::error_string(&msg)
+    },
+  }
+}
+
+/// FFI: Anonymous-only deserialization (`Env::get_anon`).
+///
+/// Reads the header + blobs + consts sections; parses and discards
+/// the metadata sections (names / named / comms). The returned
+/// `RawEnv` has empty `named`, `names`, `comms` arrays. Useful for
+/// anon-mode kernel callers that want to avoid the steady-state
+/// memory cost of metadata that they will never consult.
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_de_env_anon(
+  obj: LeanByteArray<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  let data = obj.as_bytes();
+  let mut slice: &[u8] = data;
+  match IxonEnv::get_anon(&mut slice) {
+    Ok(env) => {
+      let decoded = ixon_env_to_decoded(&env);
+      let raw_env = LeanIxonRawEnv::build(&decoded);
+      LeanExcept::ok(raw_env)
+    },
+    Err(e) => {
+      let msg = format!("rs_de_env_anon: {}", e);
       LeanExcept::error_string(&msg)
     },
   }
