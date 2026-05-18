@@ -1571,6 +1571,159 @@ impl Env {
     Ok(env)
   }
 
+  /// Memory-mapped sibling of [`Env::get_anon`]. Opens the `.ixe`
+  /// file with `mmap`, parses the header + section layout, and stores
+  /// every Section-2 constant as a [`LazyConstant`] window into the
+  /// mapping. No heap copy of constant bytes — the OS page cache is
+  /// the source of truth, paged in on demand.
+  ///
+  /// The returned `Env` carries an internal `Arc<Mmap>` (via each
+  /// `LazyConstant`'s [`super::lazy::BytesSource::Mmap`] variant), so
+  /// the mapping stays alive as long as any consumer holds the env or
+  /// any clone of a `LazyConstant` from it.
+  ///
+  /// Sections 1 (blobs), 3 (names), 4 (named), and 5 (comms) are
+  /// handled the same way as `get_anon`: blobs are heap-copied (they
+  /// are small and consumed eagerly), names and named are
+  /// parse-and-discard (with hints harvested into `env.anon_hints`),
+  /// comms are skipped.
+  ///
+  /// On Linux, the kernel's adaptive readahead handles the linear
+  /// scan during section parsing efficiently; subsequent random
+  /// access from worker kernel-check threads pages in as needed.
+  pub fn get_anon_mmap(path: &std::path::Path) -> Result<Self, String> {
+    let file = std::fs::File::open(path).map_err(|e| {
+      format!("Env::get_anon_mmap: open {}: {e}", path.display())
+    })?;
+    // SAFETY: We treat the mapping as read-only and never alias it
+    // mutably. Other processes truncating or replacing the file while
+    // it is mapped would invalidate our slices; that is a contract
+    // the caller is expected to honor (don't modify the .ixe
+    // underfoot).
+    let mmap = unsafe {
+      memmap2::Mmap::map(&file).map_err(|e| {
+        format!("Env::get_anon_mmap: mmap {}: {e}", path.display())
+      })?
+    };
+    let mmap = Arc::new(mmap);
+
+    // `buf` is a moving cursor over `mmap[..]`. We compute byte
+    // offsets via `mmap.len() - buf.len()` so we can record per-const
+    // (offset, len) windows for `LazyConstant::from_mmap_slice`.
+    let mmap_full: &[u8] = &mmap[..];
+    let mut buf: &[u8] = mmap_full;
+
+    // Header (same shape as Env::get_anon)
+    let tag = Tag4::get(&mut buf)?;
+    if tag.flag != Self::FLAG {
+      return Err(format!(
+        "Env::get_anon_mmap: expected flag 0x{:X}, got 0x{:X}",
+        Self::FLAG,
+        tag.flag
+      ));
+    }
+    if tag.size != 0 {
+      return Err(format!(
+        "Env::get_anon_mmap: expected Env variant 0, got {}",
+        tag.size
+      ));
+    }
+    let stored_root = get_address(&mut buf)?;
+
+    let mut env = Env::new();
+
+    // Section 1: Blobs (heap-copied; small, eagerly consumed)
+    let num_blobs = get_u64(&mut buf)?;
+    for _ in 0..num_blobs {
+      let addr = get_address(&mut buf)?;
+      let len = get_u64(&mut buf)? as usize;
+      if buf.len() < len {
+        return Err(format!(
+          "Env::get_anon_mmap: need {} bytes for blob, have {}",
+          len,
+          buf.len()
+        ));
+      }
+      let (bytes, rest) = buf.split_at(len);
+      buf = rest;
+      env.blobs.insert(addr, bytes.to_vec());
+    }
+
+    // Section 2: Consts (mmap-backed lazy windows)
+    let num_consts = get_u64(&mut buf)?;
+    for _ in 0..num_consts {
+      let addr = get_address(&mut buf)?;
+      let len = Tag0::get(&mut buf)?.size as usize;
+      if buf.len() < len {
+        return Err(format!(
+          "Env::get_anon_mmap: need {} bytes for constant, have {}",
+          len,
+          buf.len()
+        ));
+      }
+      // `buf` is a suffix of `mmap_full`; the constant's bytes start
+      // at the current cursor and span `len` bytes.
+      let offset = mmap_full.len() - buf.len();
+      env.store_const_lazy_mmap(addr, Arc::clone(&mmap), offset, len);
+      buf = &buf[len..];
+    }
+
+    // Section 3: Names — parse and DISCARD (needed transiently so
+    // section 4's indexed metadata can be decoded).
+    let num_names = get_u64(&mut buf)?;
+    let mut names_lookup: FxHashMap<Address, Name> = FxHashMap::default();
+    let mut name_reverse_index: NameReverseIndex =
+      Vec::with_capacity(num_names as usize + 1);
+    let anon_addr = Address::from_blake3_hash(*Name::anon().get_hash());
+    names_lookup.insert(anon_addr, Name::anon());
+    for _ in 0..num_names {
+      let addr = get_address(&mut buf)?;
+      let name = get_name_component(&mut buf, &names_lookup)?;
+      name_reverse_index.push(addr.clone());
+      names_lookup.insert(addr, name);
+    }
+
+    // Section 4: Named — harvest `ReducibilityHints` from `Def`
+    // entries into `env.anon_hints`; discard the rest. See `get_anon`
+    // for the rationale.
+    let num_named = get_u64(&mut buf)?;
+    for _ in 0..num_named {
+      let _name_addr = get_address(&mut buf)?;
+      let named = get_named_indexed(&mut buf, &name_reverse_index)?;
+      if let super::metadata::ConstantMetaInfo::Def { hints, .. } =
+        &named.meta.info
+      {
+        env.anon_hints.insert(named.addr.clone(), *hints);
+      }
+    }
+
+    // Section 5: Comms — parse and DISCARD.
+    let num_comms = get_u64(&mut buf)?;
+    for _ in 0..num_comms {
+      let _addr = get_address(&mut buf)?;
+      let _comm = Comm::get(&mut buf)?;
+    }
+
+    drop(names_lookup);
+    drop(name_reverse_index);
+
+    // Verify merkle root over loaded consts (same as get_anon).
+    let mut const_addrs: Vec<Address> =
+      env.consts.iter().map(|e| e.key().clone()).collect();
+    const_addrs.sort_unstable();
+    let computed_root =
+      merkle_root_canonical(&const_addrs).unwrap_or_else(zero_address);
+    if computed_root != stored_root {
+      return Err(format!(
+        "Env::get_anon_mmap: merkle root mismatch (stored={}, computed={})",
+        stored_root.hex(),
+        computed_root.hex(),
+      ));
+    }
+
+    Ok(env)
+  }
+
   /// Calculate the serialized size of an Env.
   pub fn serialized_size(&self) -> Result<usize, String> {
     let mut buf = Vec::new();

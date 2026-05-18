@@ -139,6 +139,22 @@ impl Env {
     self.consts.insert(addr, LazyConstant::from_bytes(bytes));
   }
 
+  /// Store a constant as a window into a memory-mapped `.ixe` file.
+  /// `(mmap, offset, len)` must reference exactly what `Constant::put`
+  /// produced for `addr`. Used by [`Env::get_anon_mmap`] to avoid
+  /// heap-copying on-disk bytes — the OS page cache backs the slice.
+  pub fn store_const_lazy_mmap(
+    &self,
+    addr: Address,
+    mmap: Arc<memmap2::Mmap>,
+    offset: usize,
+    len: usize,
+  ) {
+    self
+      .consts
+      .insert(addr, LazyConstant::from_mmap_slice(mmap, offset, len));
+  }
+
   /// Get a constant by address, materializing on demand.
   ///
   /// Returns `None` if the address is not present or materialization
@@ -538,8 +554,16 @@ mod tests {
 
   /// Round-trips an env through serialize → deserialize so the
   /// deserialized side holds purely lazy entries, then asserts that
-  /// only constants reachable from `seed` get materialized after a
-  /// `transitive_deps_excl(seed)` walk.
+  /// a `transitive_deps_excl(seed)` walk only touches constants
+  /// reachable from `seed` (correctness of the BFS).
+  ///
+  /// Lazy-loaded `LazyConstant`s no longer cache materialized values
+  /// (see `src/ix/ixon/lazy.rs` "Cache policy" docs), so we can't
+  /// observe materialization via `is_materialized()` after a walk —
+  /// that observable was always-false. Instead we assert the BFS
+  /// returns exactly the closure, and that `is_materialized()` stays
+  /// false everywhere (proving the load path doesn't accidentally
+  /// pre-populate the cache).
   #[test]
   fn lazy_sparsity_only_materializes_closure() {
     // Build a small env: a→b→c, and an independent d.
@@ -553,7 +577,7 @@ mod tests {
     env.store_const(c.clone(), const_with_refs(vec![]));
     env.store_const(d.clone(), const_with_refs(vec![]));
 
-    // Serialize → deserialize so all entries start unmaterialized.
+    // Serialize → deserialize so all entries are lazy-from-bytes.
     let mut buf = Vec::new();
     env.put(&mut buf).unwrap();
     let loaded = Env::get(&mut buf.as_slice()).unwrap();
@@ -565,14 +589,24 @@ mod tests {
       );
     }
 
-    // Walk closure of `a`. {a, b, c} get materialized; `d` does not.
-    let _ = loaded.transitive_deps_excl(&a);
-    assert!(loaded.consts.get(&a).unwrap().value().is_materialized());
-    assert!(loaded.consts.get(&b).unwrap().value().is_materialized());
-    assert!(loaded.consts.get(&c).unwrap().value().is_materialized());
-    assert!(
-      !loaded.consts.get(&d).unwrap().value().is_materialized(),
-      "`d` outside `a`'s closure should stay lazy"
-    );
+    // BFS the closure of `a`; should hit {a, b, c} but not `d`.
+    let deps = loaded.transitive_deps_excl(&a);
+    let dep_set: FxHashSet<Address> = deps.iter().cloned().collect();
+    assert!(dep_set.contains(&b), "`b` reachable from `a`");
+    assert!(dep_set.contains(&c), "`c` reachable from `a` via `b`");
+    assert!(!dep_set.contains(&d), "`d` should not be in `a`'s closure");
+    assert!(!dep_set.contains(&a), "deps_excl excludes the seed");
+
+    // Even after the BFS, no entries should report as materialized:
+    // lazy-loaded `LazyConstant`s parse fresh on each `get()` and
+    // don't cache (env-side caching is what kept mathlib's RSS at
+    // ~30GB; the cache-free policy is what made `--anon` viable).
+    for entry in loaded.consts.iter() {
+      assert!(
+        !entry.value().is_materialized(),
+        "entry {:?} should remain unmaterialized after BFS",
+        entry.key()
+      );
+    }
   }
 }

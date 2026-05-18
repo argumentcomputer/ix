@@ -1287,6 +1287,7 @@ fn build_anon_work(
 ) -> Result<(Vec<AnonWorkItem>, Vec<Address>), String> {
   use crate::ix::ixon::constant::ConstantInfo as CI;
   use crate::ix::ixon::constant::MutConst as MC;
+  use crate::ix::ixon::lazy::ConstVariantTag as Tag;
 
   let mut work: Vec<AnonWorkItem> = Vec::new();
   let mut addrs: Vec<Address> = Vec::new();
@@ -1296,18 +1297,48 @@ fn build_anon_work(
     env.consts.iter().map(|e| e.key().clone()).collect();
   keys.sort_unstable();
 
+  // Dispatch on the outer Tag4 byte via `peek_variant` — no body
+  // parse, no allocation. Only `Muts` blocks require a full
+  // materialization (to enumerate members for projection-address
+  // computation); the resulting `Arc<Constant>` drops at the end of
+  // that match arm. Standalones (Defn/Recr/Axio/Quot, ~95% of the
+  // env) and projection skips don't even touch the body.
+  //
+  // Before this change, every constant was fully materialized here
+  // and (worse) pinned forever in `LazyConstant.cache`'s OnceLock.
+  // For mathlib that pinned ~30 GB of parsed `Arc<Expr>` trees in
+  // the shared `Arc<IxonEnv>` before kernel checking even started.
+  // The cache-free `LazyConstant` policy + this peek path keep
+  // env-side memory bounded to "bytes (mmap'd) + per-const headers".
   for addr in keys {
     let lc = env.consts.get(&addr).ok_or_else(|| {
       format!("build_anon_work: missing const at {}", addr.hex())
     })?;
-    let constant = lc.value().get().map_err(|e| {
-      format!("build_anon_work: materialize {}: {e}", addr.hex())
+    let tag = lc.value().peek_variant().map_err(|e| {
+      format!("build_anon_work: peek_variant {}: {e}", addr.hex())
     })?;
-    match &constant.info {
-      CI::IPrj(_) | CI::CPrj(_) | CI::RPrj(_) | CI::DPrj(_) => {
+    match tag {
+      Tag::IPrj | Tag::CPrj | Tag::RPrj | Tag::DPrj => {
         // Skip; covered by parent block.
       },
-      CI::Muts(members) => {
+      Tag::Defn | Tag::Recr | Tag::Axio | Tag::Quot => {
+        let result_idx = addrs.len();
+        addrs.push(addr.clone());
+        work.push(AnonWorkItem::Standalone { result_idx, addr: addr.clone() });
+      },
+      Tag::Muts => {
+        // Materialize once to enumerate members; the `Arc<Constant>`
+        // drops at the end of this arm — no cache retention.
+        let constant = lc.value().get().map_err(|e| {
+          format!("build_anon_work: materialize Muts {}: {e}", addr.hex())
+        })?;
+        let CI::Muts(members) = &constant.info else {
+          return Err(format!(
+            "build_anon_work: Tag::Muts but ConstantInfo is {:?} at {}",
+            constant.info.variant(),
+            addr.hex()
+          ));
+        };
         // Compute kernel-checkable targets deterministically. Each
         // member contributes its projection address; inductive members
         // contribute one CPrj per constructor.
@@ -1334,11 +1365,6 @@ fn build_anon_work(
           (addrs.len()..addrs.len() + targets.len()).collect();
         addrs.extend(targets);
         work.push(AnonWorkItem::Block { primary_addr, result_idxs });
-      },
-      CI::Defn(_) | CI::Recr(_) | CI::Axio(_) | CI::Quot(_) => {
-        let result_idx = addrs.len();
-        addrs.push(addr.clone());
-        work.push(AnonWorkItem::Standalone { result_idx, addr: addr.clone() });
       },
     }
   }
@@ -1516,34 +1542,22 @@ pub extern "C" fn rs_kernel_check_anon(
   let fail_out_path =
     if fail_out_path.is_empty() { None } else { Some(fail_out_path) };
 
-  let t0 = Instant::now();
-  let bytes = match std::fs::read(&path) {
-    Ok(b) => b,
-    Err(e) => {
-      return LeanIOResult::error_string(&format!(
-        "rs_kernel_check_anon: failed to read {path}: {e}"
-      ));
-    },
-  };
-  eprintln!(
-    "[rs_kernel_check_anon] read env:    {:>8.1?} ({} bytes)",
-    t0.elapsed(),
-    bytes.len()
-  );
-
+  // mmap the .ixe directly. Section 2 consts become zero-copy windows
+  // into the mapping (`LazyConstant::from_mmap_slice`), avoiding the
+  // ~3 GB heap copy that `std::fs::read` would impose on mathlib.
+  // Sections 3-4 (names + named) are still parse-and-discard, but
+  // their decoded forms drop before `get_anon_mmap` returns.
   let t1 = Instant::now();
-  let mut slice: &[u8] = &bytes;
-  let ixon_env = match IxonEnv::get_anon(&mut slice) {
+  let ixon_env = match IxonEnv::get_anon_mmap(std::path::Path::new(&path)) {
     Ok(env) => env,
     Err(e) => {
       return LeanIOResult::error_string(&format!(
-        "rs_kernel_check_anon: failed to deserialize {path}: {e}"
+        "rs_kernel_check_anon: failed to mmap+deserialize {path}: {e}"
       ));
     },
   };
-  drop(bytes);
   eprintln!(
-    "[rs_kernel_check_anon] deserialize: {:>8.1?} ({} consts; \
+    "[rs_kernel_check_anon] mmap+parse:  {:>8.1?} ({} consts; \
      named={} names={} comms={})",
     t1.elapsed(),
     ixon_env.const_count(),
