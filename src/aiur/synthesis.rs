@@ -109,6 +109,7 @@ impl AiurSystem {
     AiurSystem { system, key, toplevel }
   }
 
+  #[tracing::instrument(level = "info", skip_all, name = "aiur/prove")]
   pub fn prove(
     &self,
     fri_parameters: FriParameters,
@@ -116,14 +117,20 @@ impl AiurSystem {
     input: &[G],
     io_buffer: &mut IOBuffer,
   ) -> (Vec<G>, Proof) {
+    tracing_texray::examine_current();
+
+    // Execute the Aiur bytecode.
+    let _g = tracing::info_span!("aiur/execute").entered();
     // Execute the Aiur bytecode. The prover assumes inputs are valid; any
     // execution error here is a programmer bug, so we unwrap.
     let (query_record, output) = self
       .toplevel
       .execute(fun_idx, input.to_vec(), io_buffer)
       .expect("Aiur execution failed during prove");
+    drop(_g);
 
     // Build the `SystemWitness`
+    let _g = tracing::info_span!("aiur/witness").entered();
     let functions =
       (0..self.toplevel.functions.len()).into_par_iter().filter_map(|idx| {
         if self.toplevel.functions[idx].constrained {
@@ -155,6 +162,7 @@ impl AiurSystem {
     drop(query_record); // Early drop to free memory.
     let (traces, lookups) = witness_data.into_iter().unzip();
     let witness = SystemWitness { traces, lookups };
+    drop(_g);
 
     // Construct the claim.
     let mut claim = vec![function_channel(), G::from_usize(fun_idx)];
