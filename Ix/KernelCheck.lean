@@ -112,34 +112,29 @@ opaque rsCheckIxonFFI :
     IO (Array (Option CheckError))
 
 /-- FFI: list checkable names from a serialized Ixon env file. Used by the
-    `check-ixon` CLI to support `--ns` filtering without rebuilding Lean. -/
+    `ix check` CLI to support `--ns` filtering without rebuilding Lean. -/
 @[extern "rs_kernel_ixon_names"]
 opaque rsIxonNamesFFI : @& String → IO (Array Lean.Name)
 
-/-- FFI: anonymous-mode type-check by address.
+/-- FFI: metadata-free anonymous-mode type-check of an entire `.ixe`.
 
-    Loads the `.ixe` file at the given path, ingresses every constant into a
-    `KEnv<Anon>` (with all metadata fields erased to `()` at the type level),
-    then runs the kernel typechecker on each requested address.
+    Loads the env via `IxonEnv::get_anon` (which discards the
+    `named`/`names`/`comms` sections during deserialization), enumerates
+    every kernel-checkable target by iterating `consts` (skipping
+    projection constants — they're covered by their parent Muts block
+    work item, with projection addresses reconstructed deterministically
+    via `Constant::commit`), and runs `TypeChecker<Anon>::check_const`
+    on each. The kernel's typechecking logic structurally cannot read
+    metadata: every `M::MField<T>` is `()` in Anon mode.
 
-    The address-based surface (no Lean.Name input) reflects what the anon
-    kernel actually consumes: structural, content-addressed identities with
-    no Lean-side names. Useful for zkPCC verifiers that hold only claim
-    addresses, and for tests that want to assert metadata-free typechecking.
-
-    Implemented in `src/ffi/kernel.rs::rs_kernel_check_consts_anon`. The
-    kernel's typechecking logic structurally cannot read metadata when
-    running in `Anon` mode — every `M::MField<T>` is `()`.
-
-    Note: today's `ixon_ingress` still consults `Env::named`/`Env::names`
-    internally to enumerate work items, even in Anon mode. The resulting
-    kernel state has no metadata, so the typechecking step is anon, but
-    full ingress-level metadata isolation is a follow-up. -/
-@[extern "rs_kernel_check_consts_anon"]
-opaque rsCheckConstsAnonFFI :
+    `fail_out` is a streaming failure log path; pass `""` to disable.
+    Progress labels use `@<hex>` instead of Lean names — the kernel
+    operates on addresses only. -/
+@[extern "rs_kernel_check_anon"]
+opaque rsCheckAnonFFI :
     @& String →                  -- .ixe path
-    @& Array Address →           -- addresses to type-check
     @& Bool →                    -- quiet
+    @& String →                  -- fail-out path ("" = none)
     IO (Array (Option CheckError))
 
 end Ix.KernelCheck

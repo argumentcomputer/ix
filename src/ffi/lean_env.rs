@@ -3897,9 +3897,9 @@ fn analyze_const_size(stt: &crate::ix::compile::CompileState, name_str: &str) {
     },
   };
 
-  // Get the constant
-  let constant = match stt.env.consts.get(&addr) {
-    Some(c) => c.clone(),
+  // Get the constant (materialize from the lazy entry).
+  let constant = match stt.env.get_const(&addr) {
+    Some(c) => c,
     None => {
       println!("\n=== Size analysis for {} ===", name_str);
       println!("  Constant data not found at address");
@@ -3915,7 +3915,7 @@ fn analyze_const_size(stt: &crate::ix::compile::CompileState, name_str: &str) {
   let dep_addrs = stt.env.transitive_deps_excl(&addr);
   let mut dep_breakdowns: Vec<(String, ConstSizeBreakdown)> = Vec::new();
   for dep_addr in dep_addrs {
-    let Some(dep_const) = stt.env.consts.get(&dep_addr) else {
+    let Some(dep_const) = stt.env.get_const(&dep_addr) else {
       continue;
     };
     // Get the name for this dependency (scan named entries)

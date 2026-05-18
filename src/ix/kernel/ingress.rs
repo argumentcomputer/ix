@@ -776,20 +776,22 @@ fn ingress_expr<M: KernelMode>(
               )
               .ok_or_else(|| format!("invalid Ref index {ref_idx}"))?
               .clone();
-            let name = match node {
-              ExprMetaData::Ref { name: name_addr } => {
-                resolve_name(name_addr, ctx.names)
-              },
-              _ => {
-                return Err(format!(
+            // Meta mode: walk the arena to find the Ref's Lean name.
+            // Anon mode: the closure is never invoked — no arena walk,
+            // no name construction, no resolve_name call.
+            let name_field: M::MField<Name> =
+              M::meta_field_try::<Name, _, String>(|| match node {
+                ExprMetaData::Ref { name: name_addr } => {
+                  Ok(resolve_name(name_addr, ctx.names))
+                },
+                _ => Err(format!(
                   "Ref at index {ref_idx} (addr {}) has no metadata name (node={node:?})",
                   &addr.hex()[..8]
-                ));
-              },
-            };
+                )),
+              })?;
             let univs =
               ingress_univ_args(univ_idxs, ctx, intern, univ_cache, stats)?;
-            let id = KId::new(addr, M::meta_field(name));
+            let id = KId::new(addr, name_field);
             let hash = KExpr::<M>::cnst_hash(&id, &univs, &mdata);
             values.push(timed_intern_or_build(
               intern,
@@ -1123,19 +1125,24 @@ fn ingress_expr<M: KernelMode>(
                 format!("invalid Prj type ref index {type_ref_idx}")
               })?
               .clone();
-            let (struct_name, child_arena) = match node {
-              ExprMetaData::Prj { struct_name: addr, child } => {
-                (resolve_name(addr, ctx.names), *child)
-              },
-              _ => {
-                return Err(format!(
+            // The arena holds both the struct name and the child arena
+            // pointer (needed for the projected value's metadata walk).
+            // Meta mode reads both; Anon mode skips the entire arena
+            // touch — no name, no child-arena indexing.
+            let mut child_arena: u64 = 0;
+            let struct_name_field: M::MField<Name> =
+              M::meta_field_try::<Name, _, String>(|| match node {
+                ExprMetaData::Prj { struct_name: addr, child } => {
+                  child_arena = *child;
+                  Ok(resolve_name(addr, ctx.names))
+                },
+                _ => Err(format!(
                   "Prj at ref index {type_ref_idx} (addr {}) has no metadata name (node={node:?})",
                   &type_addr.hex()[..8]
-                ));
-              },
-            };
+                )),
+              })?;
             stack.push(ExprFrame::PrjDone {
-              type_id: KId::new(type_addr, M::meta_field(struct_name)),
+              type_id: KId::new(type_addr, struct_name_field),
               field_idx: *field_idx,
               mdata,
             });
@@ -1368,6 +1375,17 @@ fn ingress_defn<M: KernelMode>(
   block: KId<M>,
   intern: &mut InternTable<M>,
   stats: &mut ConvertStats,
+  // Anon callers compute `mut_ctx` structurally from sibling
+  // projection addresses; passing `Some(_)` skips the metadata-derived
+  // `build_mut_ctx` call. Meta callers pass `None`.
+  mut_ctx_override: Option<Vec<KId<M>>>,
+  // Anon callers may supply `Some(hints)` to override the default
+  // `Regular(0)` fall-through when the .ixe carries `Env::anon_hints`
+  // (harvested by `Env::get_anon` from the otherwise-discarded Named
+  // metadata). Meta callers pass `None` and pull hints from
+  // `meta.info` like usual. The override only takes effect when
+  // `meta.info` is not `Def` (i.e. anon path with empty meta).
+  hints_override: Option<ReducibilityHints>,
 ) -> Result<Vec<(KId<M>, KConst<M>)>, String> {
   let mut cache: ExprCache<M> = FxHashMap::default();
   let mut univ_cache: UnivCache<M> = FxHashMap::default();
@@ -1395,17 +1413,21 @@ fn ingress_defn<M: KernelMode>(
         &DEFAULT_ARENA,
         0,
         0,
-        ReducibilityHints::Regular(0),
+        hints_override.unwrap_or(ReducibilityHints::Regular(0)),
         def.safety,
         vec![],
       ),
     };
 
+  let mut_ctx = match mut_ctx_override {
+    Some(m) => m,
+    None => build_mut_ctx(meta, names, name_to_addr)?,
+  };
   let ctx = Ctx {
     sharing,
     refs,
     univs,
-    mut_ctx: build_mut_ctx(meta, names, name_to_addr)?,
+    mut_ctx,
     arena,
     names,
     lvls: level_params.clone(),
@@ -1473,6 +1495,9 @@ fn ingress_recursor<M: KernelMode>(
   block: KId<M>,
   intern: &mut InternTable<M>,
   stats: &mut ConvertStats,
+  // Anon callers compute `mut_ctx` structurally; Meta callers pass
+  // `None` to fall back to the metadata-derived `build_mut_ctx`.
+  mut_ctx_override: Option<Vec<KId<M>>>,
 ) -> Result<Vec<(KId<M>, KConst<M>)>, String> {
   let mut cache: ExprCache<M> = FxHashMap::default();
   let mut univ_cache: UnivCache<M> = FxHashMap::default();
@@ -1497,11 +1522,15 @@ fn ingress_recursor<M: KernelMode>(
       _ => (vec![], &DEFAULT_ARENA, 0, vec![], vec![], vec![]),
     };
 
+  let mut_ctx = match mut_ctx_override {
+    Some(m) => m,
+    None => build_mut_ctx(meta, names, name_to_addr)?,
+  };
   let ctx = Ctx {
     sharing,
     refs,
     univs,
-    mut_ctx: build_mut_ctx(meta, names, name_to_addr)?,
+    mut_ctx,
     arena,
     names,
     lvls: level_params.clone(),
@@ -1609,6 +1638,8 @@ fn ingress_standalone<M: KernelMode>(
       self_id,
       intern,
       stats,
+      None,
+      None,
     ),
 
     IxonCI::Axio(ax) => {
@@ -1720,6 +1751,7 @@ fn ingress_standalone<M: KernelMode>(
       self_id,
       intern,
       stats,
+      None,
     ),
 
     // Projections and Muts are handled in ingress_muts_block
@@ -1987,6 +2019,7 @@ fn ingress_muts_block<M: KernelMode>(
           block_id.clone(),
           intern,
           stats,
+          None,
         )?);
       },
       IxonMutConst::Defn(def) => {
@@ -2003,6 +2036,8 @@ fn ingress_muts_block<M: KernelMode>(
           block_id.clone(),
           intern,
           stats,
+          None,
+          None,
         )?);
       },
     }
@@ -3563,7 +3598,10 @@ pub fn ixon_ingress_owned<M: KernelMode>(
 
 fn drop_ixon_env(ixon_env: IxonEnv, quiet: bool) {
   let total_start = Instant::now();
-  let IxonEnv { consts, named, blobs, names, comms } = ixon_env;
+  // `anon_hints` is a small FxHashMap (one entry per Def from the .ixe's
+  // Named metadata); dropping it inline alongside the bookkeeping below
+  // is negligible compared to the DashMap dropdance.
+  let IxonEnv { consts, named, blobs, names, comms, anon_hints: _ } = ixon_env;
   let consts_len = consts.len();
   let named_len = named.len();
   let names_len = names.len();
@@ -3950,6 +3988,488 @@ fn validate_no_reserved_marker_addresses(
   }
 
   Ok(())
+}
+
+// ============================================================================
+// Anonymous-mode ingress
+// ============================================================================
+//
+// Companion to the Meta-mode ingress above. Uses only `Constant` data —
+// never reads `ConstantMeta`, `Env::named`, `Env::names`, or any other
+// metadata. Projection addresses are reconstructed deterministically from
+// `(block, idx, [cidx])` via `Constant::commit`, which agrees with the
+// addresses stored in `env.consts` (the compiler produces these same
+// projection constants).
+//
+// Intended for use with environments loaded via `Env::get_anon`, which
+// discards `named`/`names`/`comms` sections. The helpers below do not
+// depend on those sections being empty — they simply never consult them.
+
+use crate::ix::ixon::constant::{
+  ConstructorProj, DefinitionProj, InductiveProj, RecursorProj,
+};
+use crate::ix::kernel::mode::Anon;
+
+/// Deterministic IPrj content address for member `idx` of `block`.
+pub fn anon_indc_proj_addr(block: &Address, idx: u64) -> Address {
+  Constant::new(IxonCI::IPrj(InductiveProj { idx, block: block.clone() }))
+    .commit()
+    .0
+}
+
+/// Deterministic DPrj content address for member `idx` of `block`.
+pub fn anon_defn_proj_addr(block: &Address, idx: u64) -> Address {
+  Constant::new(IxonCI::DPrj(DefinitionProj { idx, block: block.clone() }))
+    .commit()
+    .0
+}
+
+/// Deterministic RPrj content address for member `idx` of `block`.
+pub fn anon_recr_proj_addr(block: &Address, idx: u64) -> Address {
+  Constant::new(IxonCI::RPrj(RecursorProj { idx, block: block.clone() }))
+    .commit()
+    .0
+}
+
+/// Deterministic CPrj content address for ctor `(idx, cidx)` of `block`.
+pub fn anon_ctor_proj_addr(block: &Address, idx: u64, cidx: u64) -> Address {
+  Constant::new(IxonCI::CPrj(ConstructorProj {
+    idx,
+    cidx,
+    block: block.clone(),
+  }))
+  .commit()
+  .0
+}
+
+/// Compute deterministic ctor projection addresses for every constructor of
+/// an inductive member at position `indc_idx` in a block at `block_addr`.
+fn anon_ctor_addrs(
+  block_addr: &Address,
+  indc_idx: u64,
+  ind: &crate::ix::ixon::constant::Inductive,
+) -> Vec<Address> {
+  (0..ind.ctors.len() as u64)
+    .map(|cidx| anon_ctor_proj_addr(block_addr, indc_idx, cidx))
+    .collect()
+}
+
+/// Anon ingress for a single standalone (non-mutual) constant.
+///
+/// For `Defn` and `Recr` we pass an explicit `mut_ctx_override = [self_id]`
+/// to support self-recursive standalones that use `Expr::Rec(0, univs)` to
+/// refer to themselves. (Singleton-unwrapped self-recursive defs are emitted
+/// by the compiler as standalones, with their self-reference encoded as
+/// `Rec(0)` — same as a one-member mutual block would have used.) Without
+/// the override, `ingress_defn`/`ingress_recursor` falls back to
+/// `build_mut_ctx` on the empty meta, yielding an empty `mut_ctx` and
+/// "invalid Rec index 0" errors.
+///
+/// `Axio` and `Quot` cannot have `Rec`-references so we route them through
+/// `ingress_standalone` unchanged. Projections / `Muts` belong to a block
+/// and are not valid as standalone entries.
+fn ingress_anon_standalone(
+  kenv: &mut KEnv<Anon>,
+  anon_env: &IxonEnv,
+  addr: &Address,
+  constant: &Constant,
+) -> Result<KId<Anon>, String> {
+  let empty_meta = ConstantMeta::default();
+  let empty_names: FxHashMap<Address, Name> = FxHashMap::default();
+  let empty_n2a: FxHashMap<Name, Address> = FxHashMap::default();
+  let mut convert_stats = ConvertStats::new(false);
+  let self_id: KId<Anon> = KId::new(addr.clone(), ());
+  let hints_override = anon_env.anon_hints.get(addr).copied();
+
+  let entries = match &constant.info {
+    IxonCI::Defn(def) => ingress_defn::<Anon>(
+      def,
+      self_id.clone(),
+      &empty_meta,
+      anon_env,
+      &empty_names,
+      &empty_n2a,
+      &constant.sharing,
+      &constant.refs,
+      &constant.univs,
+      self_id.clone(),
+      &mut kenv.intern,
+      &mut convert_stats,
+      Some(vec![self_id.clone()]),
+      hints_override,
+    )?,
+    IxonCI::Recr(rec) => ingress_recursor::<Anon>(
+      rec,
+      self_id.clone(),
+      &empty_meta,
+      anon_env,
+      &empty_names,
+      &empty_n2a,
+      &constant.sharing,
+      &constant.refs,
+      &constant.univs,
+      self_id.clone(),
+      &mut kenv.intern,
+      &mut convert_stats,
+      Some(vec![self_id.clone()]),
+    )?,
+    _ => ingress_standalone::<Anon>(
+      &Name::anon(),
+      addr,
+      constant,
+      &empty_meta,
+      anon_env,
+      &empty_names,
+      &empty_n2a,
+      &mut kenv.intern,
+      &mut convert_stats,
+    )?,
+  };
+  insert_standalone_entries(kenv, entries);
+  Ok(self_id)
+}
+
+/// Anon ingress for a mutual inductive member. Parallel to
+/// `ingress_muts_inductive` but takes ctor projection addresses **directly**
+/// (caller computes via `anon_ctor_addrs`) and a pre-computed `mut_ctx`
+/// (sibling KIds for `Expr::Rec` resolution) instead of going through
+/// metadata. Uses `DEFAULT_ARENA` + `type_root=0` + empty level-params
+/// for the inductive and every ctor.
+#[allow(clippy::too_many_arguments)]
+fn ingress_anon_inductive(
+  ind: &crate::ix::ixon::constant::Inductive,
+  self_id: &KId<Anon>,
+  anon_env: &IxonEnv,
+  block_constant: &Constant,
+  block_id: KId<Anon>,
+  member_idx: u64,
+  ctor_addrs: &[Address],
+  mut_ctx: &[KId<Anon>],
+  intern: &mut InternTable<Anon>,
+  stats: &mut ConvertStats,
+) -> Result<Vec<(KId<Anon>, KConst<Anon>)>, String> {
+  if ctor_addrs.len() != ind.ctors.len() {
+    return Err(format!(
+      "ingress_anon_inductive: ctor_addrs.len()={} but ind.ctors.len()={}",
+      ctor_addrs.len(),
+      ind.ctors.len()
+    ));
+  }
+
+  let empty_names: FxHashMap<Address, Name> = FxHashMap::default();
+  let level_params: Vec<Name> = Vec::new();
+  let mut cache: ExprCache<Anon> = FxHashMap::default();
+  let mut univ_cache: UnivCache<Anon> = FxHashMap::default();
+  let ctx = Ctx::<Anon> {
+    sharing: &block_constant.sharing,
+    refs: &block_constant.refs,
+    univs: &block_constant.univs,
+    mut_ctx: mut_ctx.to_vec(),
+    arena: &DEFAULT_ARENA,
+    names: &empty_names,
+    lvls: level_params.clone(),
+    synth_counter: Cell::new(0),
+  };
+
+  let typ = ingress_expr(
+    &ind.typ,
+    0,
+    &ctx,
+    intern,
+    anon_env,
+    &mut cache,
+    &mut univ_cache,
+    stats,
+  )?;
+
+  let ctor_ids: Vec<KId<Anon>> = ctor_addrs
+    .iter()
+    .map(|a| KId::<Anon>::new(a.clone(), ()))
+    .collect();
+
+  let mut results = vec![(
+    self_id.clone(),
+    KConst::Indc {
+      name: (),
+      level_params: (),
+      lvls: ind.lvls,
+      params: ind.params,
+      indices: ind.indices,
+      is_rec: ind.recr,
+      is_refl: ind.refl,
+      is_unsafe: ind.is_unsafe,
+      nested: ind.nested,
+      block: block_id,
+      member_idx,
+      ty: typ,
+      ctors: ctor_ids.clone(),
+      lean_all: (),
+    },
+  )];
+
+  for (cidx, ctor) in ind.ctors.iter().enumerate() {
+    stats.record_cache_clear(&cache);
+    cache.clear();
+    let ctor_id = ctor_ids[cidx].clone();
+    let ctor_ctx = Ctx::<Anon> {
+      sharing: &block_constant.sharing,
+      refs: &block_constant.refs,
+      univs: &block_constant.univs,
+      mut_ctx: mut_ctx.to_vec(),
+      arena: &DEFAULT_ARENA,
+      names: &empty_names,
+      lvls: Vec::new(),
+      synth_counter: Cell::new(0),
+    };
+    let mut ctor_univ_cache: UnivCache<Anon> = FxHashMap::default();
+
+    let ctor_typ = ingress_expr(
+      &ctor.typ,
+      0,
+      &ctor_ctx,
+      intern,
+      anon_env,
+      &mut cache,
+      &mut ctor_univ_cache,
+      stats,
+    )?;
+
+    results.push((
+      ctor_id,
+      KConst::Ctor {
+        name: (),
+        level_params: (),
+        is_unsafe: ctor.is_unsafe,
+        lvls: ctor.lvls,
+        induct: self_id.clone(),
+        cidx: ctor.cidx,
+        params: ctor.params,
+        fields: ctor.fields,
+        ty: ctor_typ,
+      },
+    ));
+  }
+
+  Ok(results)
+}
+
+/// Anon ingress for an entire Muts block: ingresses every member (and
+/// every constructor of every inductive member) under its deterministic
+/// projection address. Verifies that each computed address exists in
+/// `anon_env.consts` — missing → error (corrupted .ixe).
+///
+/// Returns the KIds in member order. The first KId is the block's
+/// "primary" — `check_const` on it relies on the kernel's block
+/// coordination (`check_const_member` etc.) to check all members in one
+/// pass.
+pub fn ingress_anon_block(
+  kenv: &mut KEnv<Anon>,
+  anon_env: &IxonEnv,
+  block_constant: &Constant,
+  block_addr: &Address,
+) -> Result<Vec<KId<Anon>>, String> {
+  let IxonCI::Muts(members) = &block_constant.info else {
+    return Err(format!(
+      "ingress_anon_block: addr {} is not a Muts block (got variant {:?})",
+      block_addr.hex(),
+      block_constant.info.variant()
+    ));
+  };
+
+  let block_id = KId::<Anon>::new(block_addr.clone(), ());
+  let mut convert_stats = ConvertStats::new(false);
+  let empty_meta = ConstantMeta::default();
+  let empty_names: FxHashMap<Address, Name> = FxHashMap::default();
+  let empty_n2a: FxHashMap<Name, Address> = FxHashMap::default();
+
+  // Compute mut_ctx for the entire block: one KId per member, addressed
+  // by its projection variant. Threaded through every member's ingress
+  // so `Expr::Rec(idx)` resolves to a sibling correctly.
+  let mut_ctx: Vec<KId<Anon>> = members
+    .iter()
+    .enumerate()
+    .map(|(i, m)| {
+      let i = i as u64;
+      let addr = match m {
+        IxonMutConst::Defn(_) => anon_defn_proj_addr(block_addr, i),
+        IxonMutConst::Indc(_) => anon_indc_proj_addr(block_addr, i),
+        IxonMutConst::Recr(_) => anon_recr_proj_addr(block_addr, i),
+      };
+      KId::<Anon>::new(addr, ())
+    })
+    .collect();
+
+  let mut all_entries: Vec<(KId<Anon>, KConst<Anon>)> = Vec::new();
+  let mut member_kids: Vec<KId<Anon>> = Vec::with_capacity(members.len());
+
+  for (i, member) in members.iter().enumerate() {
+    let idx = i as u64;
+    match member {
+      IxonMutConst::Defn(def) => {
+        let proj_addr = anon_defn_proj_addr(block_addr, idx);
+        if !anon_env.consts.contains_key(&proj_addr) {
+          return Err(format!(
+            "ingress_anon_block: computed DPrj address {} not present in env (block {} idx {})",
+            proj_addr.hex(),
+            block_addr.hex(),
+            idx
+          ));
+        }
+        let self_id = KId::<Anon>::new(proj_addr.clone(), ());
+        member_kids.push(self_id.clone());
+        let hints_override = anon_env.anon_hints.get(&proj_addr).copied();
+
+        let entries = ingress_defn::<Anon>(
+          def,
+          self_id,
+          &empty_meta,
+          anon_env,
+          &empty_names,
+          &empty_n2a,
+          &block_constant.sharing,
+          &block_constant.refs,
+          &block_constant.univs,
+          block_id.clone(),
+          &mut kenv.intern,
+          &mut convert_stats,
+          Some(mut_ctx.clone()),
+          hints_override,
+        )?;
+        all_entries.extend(entries);
+      },
+      IxonMutConst::Recr(rec) => {
+        let proj_addr = anon_recr_proj_addr(block_addr, idx);
+        if !anon_env.consts.contains_key(&proj_addr) {
+          return Err(format!(
+            "ingress_anon_block: computed RPrj address {} not present in env (block {} idx {})",
+            proj_addr.hex(),
+            block_addr.hex(),
+            idx
+          ));
+        }
+        let self_id = KId::<Anon>::new(proj_addr.clone(), ());
+        member_kids.push(self_id.clone());
+
+        let entries = ingress_recursor::<Anon>(
+          rec,
+          self_id,
+          &empty_meta,
+          anon_env,
+          &empty_names,
+          &empty_n2a,
+          &block_constant.sharing,
+          &block_constant.refs,
+          &block_constant.univs,
+          block_id.clone(),
+          &mut kenv.intern,
+          &mut convert_stats,
+          Some(mut_ctx.clone()),
+        )?;
+        all_entries.extend(entries);
+      },
+      IxonMutConst::Indc(ind) => {
+        let proj_addr = anon_indc_proj_addr(block_addr, idx);
+        if !anon_env.consts.contains_key(&proj_addr) {
+          return Err(format!(
+            "ingress_anon_block: computed IPrj address {} not present in env (block {} idx {})",
+            proj_addr.hex(),
+            block_addr.hex(),
+            idx
+          ));
+        }
+        let self_id = KId::<Anon>::new(proj_addr.clone(), ());
+        member_kids.push(self_id.clone());
+
+        let ctor_addrs = anon_ctor_addrs(block_addr, idx, ind);
+        // Verify ctor addresses too — catches corruption early.
+        for (cidx, c_addr) in ctor_addrs.iter().enumerate() {
+          if !anon_env.consts.contains_key(c_addr) {
+            return Err(format!(
+              "ingress_anon_block: computed CPrj address {} not present in env (block {} idx {} cidx {})",
+              c_addr.hex(),
+              block_addr.hex(),
+              idx,
+              cidx
+            ));
+          }
+        }
+
+        let entries = ingress_anon_inductive(
+          ind,
+          &self_id,
+          anon_env,
+          block_constant,
+          block_id.clone(),
+          idx,
+          &ctor_addrs,
+          &mut_ctx,
+          &mut kenv.intern,
+          &mut convert_stats,
+        )?;
+        all_entries.extend(entries);
+      },
+    }
+  }
+
+  insert_muts_entries(kenv, all_entries);
+  Ok(member_kids)
+}
+
+/// Anon shallow ingress for a single address — used by the lazy fault
+/// path in `TypeChecker` (`LazyAnonIngress`). For projections, fetches
+/// the parent block and ingresses the relevant member (or the full
+/// inductive when a constructor is requested). For standalones, ingresses
+/// directly. Errors if asked about a Muts block address (not a valid
+/// kernel KId target) or an absent address.
+pub fn ingress_anon_addr_shallow(
+  kenv: &mut KEnv<Anon>,
+  anon_env: &IxonEnv,
+  addr: &Address,
+) -> Result<bool, String> {
+  let Some(constant) = anon_env.get_const(addr) else {
+    return Ok(false);
+  };
+
+  // Extract the parent block address if this is a projection. The
+  // kernel sometimes asks for the block's KId directly (block
+  // coordination during mutual recursion) — in that case we ingress
+  // the block at its own address.
+  let block_addr: Option<Address> = match &constant.info {
+    IxonCI::DPrj(p) => Some(p.block.clone()),
+    IxonCI::IPrj(p) => Some(p.block.clone()),
+    IxonCI::RPrj(p) => Some(p.block.clone()),
+    IxonCI::CPrj(p) => Some(p.block.clone()),
+    IxonCI::Muts(_) => Some(addr.clone()),
+    _ => None,
+  };
+
+  if let Some(block_addr) = block_addr {
+    // Block dedup: `insert_muts_entries` always stores the block under
+    // `KId<Anon>(block_addr, ())` in `kenv.blocks`. A prior fault on any
+    // projection of this block populated all members in `kenv.consts`;
+    // re-ingressing would be wasted work and leaves heap-allocator
+    // fragmentation that doesn't return to the OS. The
+    // `LazyAnonIngress::faulted_addrs` set in `tc.rs` only dedupes at the
+    // projection-address level, so distinct sibling projections of the
+    // same block each fault separately and reach here.
+    let block_kid = KId::<Anon>::new(block_addr.clone(), ());
+    if kenv.blocks.contains_key(&block_kid) {
+      return Ok(true);
+    }
+    let block_const = anon_env.get_const(&block_addr).ok_or_else(|| {
+      format!(
+        "ingress_anon_addr_shallow: block {} (parent of {}) absent",
+        block_addr.hex(),
+        addr.hex()
+      )
+    })?;
+    ingress_anon_block(kenv, anon_env, &block_const, &block_addr)?;
+    return Ok(true);
+  }
+
+  // Standalone (Defn/Recr/Axio/Quot).
+  ingress_anon_standalone(kenv, anon_env, addr, &constant)?;
+  Ok(true)
 }
 
 #[cfg(test)]
@@ -4535,5 +5055,88 @@ mod tests {
     let (name_map, addr_map) = build_ingress_lookups(&ie);
     assert_eq!(name_map.get(&nat_addr), Some(&nat_name));
     assert_eq!(addr_map.get(&list_name), Some(&list_addr));
+  }
+
+  // ---- Anon-mode determinism ----
+
+  #[test]
+  fn anon_proj_addrs_are_deterministic() {
+    let block = Address::hash(b"test-block-deterministic");
+    // Same inputs → same outputs.
+    assert_eq!(
+      anon_defn_proj_addr(&block, 0),
+      anon_defn_proj_addr(&block, 0)
+    );
+    assert_eq!(
+      anon_indc_proj_addr(&block, 1),
+      anon_indc_proj_addr(&block, 1)
+    );
+    assert_eq!(
+      anon_recr_proj_addr(&block, 2),
+      anon_recr_proj_addr(&block, 2)
+    );
+    assert_eq!(
+      anon_ctor_proj_addr(&block, 3, 4),
+      anon_ctor_proj_addr(&block, 3, 4)
+    );
+    // Different inputs → different outputs (catches accidental aliasing).
+    assert_ne!(
+      anon_defn_proj_addr(&block, 0),
+      anon_defn_proj_addr(&block, 1)
+    );
+    assert_ne!(
+      anon_defn_proj_addr(&block, 0),
+      anon_indc_proj_addr(&block, 0)
+    );
+    assert_ne!(
+      anon_ctor_proj_addr(&block, 0, 0),
+      anon_ctor_proj_addr(&block, 0, 1)
+    );
+    assert_ne!(
+      anon_ctor_proj_addr(&block, 0, 0),
+      anon_ctor_proj_addr(&block, 1, 0)
+    );
+  }
+
+  #[test]
+  fn anon_proj_addr_matches_constant_commit() {
+    // The helper must agree with the explicit `Constant::commit` over
+    // the synthesized projection — that's the contract the rest of the
+    // anon pipeline depends on (verifying the computed address against
+    // the address actually stored in `env.consts`).
+    use crate::ix::ixon::constant::{
+      Constant, ConstantInfo, ConstructorProj, DefinitionProj,
+      InductiveProj, RecursorProj,
+    };
+    let b = Address::hash(b"another-block");
+    let (defn_addr, _) =
+      Constant::new(ConstantInfo::DPrj(DefinitionProj {
+        idx: 5,
+        block: b.clone(),
+      }))
+      .commit();
+    assert_eq!(defn_addr, anon_defn_proj_addr(&b, 5));
+    let (indc_addr, _) =
+      Constant::new(ConstantInfo::IPrj(InductiveProj {
+        idx: 7,
+        block: b.clone(),
+      }))
+      .commit();
+    assert_eq!(indc_addr, anon_indc_proj_addr(&b, 7));
+    let (recr_addr, _) =
+      Constant::new(ConstantInfo::RPrj(RecursorProj {
+        idx: 9,
+        block: b.clone(),
+      }))
+      .commit();
+    assert_eq!(recr_addr, anon_recr_proj_addr(&b, 9));
+    let (ctor_addr, _) =
+      Constant::new(ConstantInfo::CPrj(ConstructorProj {
+        idx: 2,
+        cidx: 3,
+        block: b.clone(),
+      }))
+      .commit();
+    assert_eq!(ctor_addr, anon_ctor_proj_addr(&b, 2, 3));
   }
 }

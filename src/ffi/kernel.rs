@@ -74,11 +74,12 @@ use crate::ix::kernel::ingress::{
 };
 #[cfg(feature = "test-ffi")]
 use crate::ix::kernel::ingress::{ixon_ingress, lean_ingress};
-use crate::ix::kernel::anon_env::AnonEnv;
 use crate::ix::kernel::id::KId;
-use crate::ix::kernel::ingress::ixon_ingress;
-use crate::ix::kernel::mode::{Anon, Meta};
-use crate::lean::LeanIxAddress;
+use crate::ix::kernel::ingress::{
+  anon_ctor_proj_addr, anon_defn_proj_addr, anon_indc_proj_addr,
+  anon_recr_proj_addr,
+};
+use crate::ix::kernel::mode::{Anon, CheckDupLevelParams, KernelMode, Meta};
 use crate::ix::kernel::tc::TypeChecker;
 
 unsafe extern "C" {
@@ -318,7 +319,7 @@ pub extern "C" fn rs_kernel_check_consts(
   // ---------------------------------------------------------------------
   // Deep recursor expansions push the Rust stack. A dedicated thread with a
   // large stack matches the old ix_old pattern.
-  let results = match run_checks_on_large_stack(
+  let results = match run_checks_on_large_stack::<Meta>(
     Arc::clone(&ixon_env),
     lookups,
     names_vec.clone(),
@@ -421,7 +422,7 @@ pub extern "C" fn rs_kernel_check_malformed_rec_rule_ixon(
     t2.elapsed()
   );
 
-  let kid = crate::ix::kernel::id::KId::new(rec_addr, rec_name);
+  let kid = KId::new(rec_addr, rec_name);
   let result = {
     let mut tc = TypeChecker::new(&mut kenv);
     match tc.check_const(&kid) {
@@ -441,9 +442,14 @@ fn poison_second_rec_rule_returns_first_minor(
     .lookup_name(rec_name)
     .ok_or_else(|| format!("{}: missing Named entry", rec_name.pretty()))?;
   let rec_addr = named.addr.clone();
-  let mut rec_constant = ixon_env.get_const(&rec_addr).ok_or_else(|| {
+  // Materialize then clone out of the Arc — we mutate the constant
+  // in-place to poison a recursor rule before storing it back.
+  let rec_arc = ixon_env.get_const(&rec_addr).ok_or_else(|| {
     format!("{}: missing constant {}", rec_name.pretty(), rec_addr.hex())
   })?;
+  let mut rec_constant: crate::ix::ixon::constant::Constant =
+    (*rec_arc).clone();
+  drop(rec_arc);
 
   match &mut rec_constant.info {
     IxonCI::Recr(rec) => {
@@ -471,14 +477,16 @@ fn poison_second_rec_rule_returns_first_minor(
     },
     IxonCI::RPrj(proj) => {
       let block_addr = proj.block.clone();
-      let mut block_constant =
-        ixon_env.get_const(&block_addr).ok_or_else(|| {
-          format!(
-            "{}: recursor projection points at missing block {}",
-            rec_name.pretty(),
-            block_addr.hex()
-          )
-        })?;
+      let block_arc = ixon_env.get_const(&block_addr).ok_or_else(|| {
+        format!(
+          "{}: recursor projection points at missing block {}",
+          rec_name.pretty(),
+          block_addr.hex()
+        )
+      })?;
+      let mut block_constant: crate::ix::ixon::constant::Constant =
+        (*block_arc).clone();
+      drop(block_arc);
       match &mut block_constant.info {
         IxonCI::Muts(members) => {
           let idx = usize::try_from(proj.idx).map_err(|_e| {
@@ -659,7 +667,7 @@ pub extern "C" fn rs_kernel_check_ixon(
 
   let total = names_vec.len();
   let t3 = Instant::now();
-  let results = match run_checks_on_large_stack(
+  let results = match run_checks_on_large_stack::<Meta>(
     ixon_env,
     lookups,
     names_vec,
@@ -694,134 +702,6 @@ pub extern "C" fn rs_kernel_check_ixon(
       log.count()
     );
   }
-
-  build_result_array(&results)
-}
-
-/// FFI: anonymous-mode type-check by address.
-///
-/// Lean signature:
-/// ```lean
-/// @[extern "rs_kernel_check_consts_anon"]
-/// opaque rsCheckConstsAnonFFI :
-///     @& String →           -- .ixe path
-///     @& Array Ix.Address → -- addresses to check
-///     @& Bool →             -- quiet
-///     IO (Array (Option CheckError))
-/// ```
-///
-/// Loads the `.ixe`, builds a `KEnv<Anon>` via `ixon_ingress::<Anon>`,
-/// and runs `TypeChecker<Anon>::check_const` for each requested
-/// address. All metadata fields (`KConst<Anon>::name`,
-/// `level_params`, binder names, mdata) are erased to `()` at the
-/// type level, so the kernel's typechecking logic cannot read
-/// metadata even if ingress consulted it.
-///
-/// The address surface (not name) makes the anon path's entry
-/// independent of Lean.Name → Address resolution — verifiers that
-/// only have content addresses (e.g., zkPCC claim subjects) can
-/// invoke this directly without metadata.
-///
-/// Results come back in input order, paired by the caller with
-/// `addrs[i]`.
-#[unsafe(no_mangle)]
-pub extern "C" fn rs_kernel_check_consts_anon(
-  env_path: LeanString<LeanBorrowed<'_>>,
-  addrs: LeanArray<LeanBorrowed<'_>>,
-  quiet: LeanBool<LeanBorrowed<'_>>,
-) -> LeanIOResult<LeanOwned> {
-  let total_start = Instant::now();
-  let _quiet = quiet.to_bool();
-  let path = env_path.to_string();
-  let addrs_vec: Vec<Address> = LeanIxAddress::decode_array(addrs);
-
-  // Load env
-  let t0 = Instant::now();
-  let bytes = match std::fs::read(&path) {
-    Ok(b) => b,
-    Err(e) => {
-      return LeanIOResult::error_string(&format!(
-        "rs_kernel_check_consts_anon: failed to read {path}: {e}"
-      ));
-    },
-  };
-  eprintln!(
-    "[rs_kernel_check_anon] read env:   {:>8.1?} ({} bytes)",
-    t0.elapsed(),
-    bytes.len()
-  );
-
-  let t1 = Instant::now();
-  let mut slice: &[u8] = &bytes;
-  let ixon_env = match IxonEnv::get(&mut slice) {
-    Ok(env) => env,
-    Err(e) => {
-      return LeanIOResult::error_string(&format!(
-        "rs_kernel_check_consts_anon: failed to deserialize {path}: {e}"
-      ));
-    },
-  };
-  drop(bytes);
-  eprintln!(
-    "[rs_kernel_check_anon] deserialize:{:>8.1?} ({} consts)",
-    t1.elapsed(),
-    ixon_env.const_count()
-  );
-
-  // Build KEnv<Anon> via ingress. Note: ixon_ingress consults named/
-  // names internally to enumerate work items, but the resulting
-  // KEnv<Anon> has `()` for every metadata field — the kernel's
-  // typechecking logic structurally cannot read metadata.
-  let t2 = Instant::now();
-  let _anon_env_view = AnonEnv::from_env(&ixon_env);
-  let (mut kenv, _intern) = match ixon_ingress::<Anon>(&ixon_env) {
-    Ok(pair) => pair,
-    Err(e) => {
-      return build_uniform_error(
-        addrs_vec.len(),
-        &format!("[anon ingress] {e}"),
-      );
-    },
-  };
-  eprintln!("[rs_kernel_check_anon] anon ingress:{:>8.1?}", t2.elapsed());
-
-  // Per-address check
-  let t3 = Instant::now();
-  let total = addrs_vec.len();
-  let mut results: Vec<CheckRes> = Vec::with_capacity(total);
-  for (i, addr) in addrs_vec.iter().enumerate() {
-    let kid = KId::<Anon>::new(addr.clone(), ());
-    if !kenv.consts.contains_key(&kid) {
-      results.push(Err((
-        ErrKind::Compile,
-        format!("[anon] no kernel const at {}", addr.hex()),
-      )));
-      continue;
-    }
-    let mut tc = TypeChecker::<Anon>::new(&mut kenv);
-    let r = tc.check_const(&kid);
-    let label = format!("[{}/{}] {}", i + 1, total, addr.hex());
-    match r {
-      Ok(()) => {
-        eprintln!("{label} ok");
-        results.push(Ok(()));
-      },
-      Err(e) => {
-        let msg = format!("{e:?}");
-        eprintln!("{label} FAIL: {msg}");
-        results.push(Err((ErrKind::Kernel, msg)));
-      },
-    }
-  }
-  eprintln!(
-    "[rs_kernel_check_anon] checks:     {:>8.1?} ({} addrs)",
-    t3.elapsed(),
-    total
-  );
-  eprintln!(
-    "[rs_kernel_check_anon] total:      {:>8.1?}",
-    total_start.elapsed()
-  );
 
   build_result_array(&results)
 }
@@ -1104,7 +984,7 @@ fn check_schedule_block_addr(
   }
 }
 
-fn run_checks_on_large_stack(
+fn run_checks_on_large_stack<M: KernelMode>(
   ixon_env: Arc<IxonEnv>,
   lookups: Arc<IxonIngressLookups>,
   names: Vec<Name>,
@@ -1112,7 +992,10 @@ fn run_checks_on_large_stack(
   ungrounded: FxHashMap<Name, String>,
   quiet: bool,
   failure_log: Option<Arc<FailureLog>>,
-) -> Result<Vec<CheckRes>, String> {
+) -> Result<Vec<CheckRes>, String>
+where
+  M::MField<Vec<Name>>: CheckDupLevelParams,
+{
   if names.is_empty() {
     eprintln!("[rs_kernel_check] checking 0 constants...");
     return Ok(Vec::new());
@@ -1131,7 +1014,7 @@ fn run_checks_on_large_stack(
 
   let worker_count = resolve_kernel_check_workers(work.len(), quiet);
   if worker_count == 1 {
-    return run_checks_serial_on_large_stack(
+    return run_checks_serial_on_large_stack::<M>(
       ixon_env,
       lookups,
       names,
@@ -1143,7 +1026,7 @@ fn run_checks_on_large_stack(
     );
   }
 
-  run_checks_parallel_on_large_stacks(
+  run_checks_parallel_on_large_stacks::<M>(
     ixon_env,
     lookups,
     names,
@@ -1156,7 +1039,7 @@ fn run_checks_on_large_stack(
   )
 }
 
-fn run_checks_serial_on_large_stack(
+fn run_checks_serial_on_large_stack<M: KernelMode>(
   ixon_env: Arc<IxonEnv>,
   lookups: Arc<IxonIngressLookups>,
   names: Vec<Name>,
@@ -1165,11 +1048,14 @@ fn run_checks_serial_on_large_stack(
   work: Vec<CheckWorkItem>,
   quiet: bool,
   failure_log: Option<Arc<FailureLog>>,
-) -> Result<Vec<CheckRes>, String> {
+) -> Result<Vec<CheckRes>, String>
+where
+  M::MField<Vec<Name>>: CheckDupLevelParams,
+{
   thread::Builder::new()
     .stack_size(KERNEL_CHECK_STACK_SIZE)
     .spawn(move || {
-      check_consts_loop(
+      check_consts_loop::<M>(
         ixon_env,
         lookups,
         names,
@@ -1188,7 +1074,7 @@ fn run_checks_serial_on_large_stack(
 // All by-value arguments below are immediately wrapped in `Arc` for sharing
 // with worker threads — clippy can't see that, so suppress the lint.
 #[allow(clippy::needless_pass_by_value)]
-fn run_checks_parallel_on_large_stacks(
+fn run_checks_parallel_on_large_stacks<M: KernelMode>(
   ixon_env: Arc<IxonEnv>,
   lookups: Arc<IxonIngressLookups>,
   names: Vec<Name>,
@@ -1198,7 +1084,10 @@ fn run_checks_parallel_on_large_stacks(
   quiet: bool,
   worker_count: usize,
   failure_log: Option<Arc<FailureLog>>,
-) -> Result<Vec<CheckRes>, String> {
+) -> Result<Vec<CheckRes>, String>
+where
+  M::MField<Vec<Name>>: CheckDupLevelParams,
+{
   let total = names.len();
   let work_total = work.len();
   eprintln!(
@@ -1234,7 +1123,7 @@ fn run_checks_parallel_on_large_stacks(
       .name(format!("ix-kernel-check-{worker_idx}"))
       .stack_size(KERNEL_CHECK_STACK_SIZE)
       .spawn(move || {
-        let mut kenv = KEnv::<Meta>::new();
+        let mut kenv = KEnv::<M>::new();
         let clear_every = kernel_check_clear_every();
         let mut checks_since_clear = clear_every;
         let diag_threshold = kernel_check_diag_threshold();
@@ -1361,6 +1250,377 @@ fn resolve_kernel_check_workers_from(
     return 1;
   }
   if total == 0 { 1 } else { available_parallelism.max(1).min(total) }
+}
+
+// ============================================================================
+// Anon-mode parallel runner
+// ============================================================================
+//
+// Companion to `run_checks_parallel_on_large_stacks` for the metadata-free
+// anon path. Iterates `env.consts` exactly once to enumerate work items
+// (block or standalone), then dispatches to workers each running
+// `TypeChecker::<Anon>::new_with_lazy_anon` against its own `KEnv<Anon>`.
+// The lazy ingress mechanism (in `tc.rs`) handles cross-block faults
+// without consulting metadata.
+
+#[derive(Clone, Debug)]
+enum AnonWorkItem {
+  /// A standalone (non-mutual, non-projection) constant.
+  Standalone { result_idx: usize, addr: Address },
+  /// A Muts block. `primary_addr` is the first member's projection address;
+  /// `result_idxs` enumerates every kernel-checkable target produced by
+  /// the block (each member's projection + each ctor's CPrj of inductive
+  /// members), all sharing the same check result via the kernel's
+  /// block coordination.
+  Block {
+    primary_addr: Address,
+    result_idxs: Vec<usize>,
+  },
+}
+
+/// One pass over `env.consts`: enumerate work items + the kernel-checkable
+/// target addresses (one per result slot). Skips projection constants
+/// (covered by their parent block) and Muts addresses themselves
+/// (blocks aren't kernel KIds).
+fn build_anon_work(
+  env: &IxonEnv,
+) -> Result<(Vec<AnonWorkItem>, Vec<Address>), String> {
+  use crate::ix::ixon::constant::ConstantInfo as CI;
+  use crate::ix::ixon::constant::MutConst as MC;
+
+  let mut work: Vec<AnonWorkItem> = Vec::new();
+  let mut addrs: Vec<Address> = Vec::new();
+
+  // Sort keys for deterministic ordering across runs.
+  let mut keys: Vec<Address> =
+    env.consts.iter().map(|e| e.key().clone()).collect();
+  keys.sort_unstable();
+
+  for addr in keys {
+    let lc = env.consts.get(&addr).ok_or_else(|| {
+      format!("build_anon_work: missing const at {}", addr.hex())
+    })?;
+    let constant = lc.value().get().map_err(|e| {
+      format!("build_anon_work: materialize {}: {e}", addr.hex())
+    })?;
+    match &constant.info {
+      CI::IPrj(_) | CI::CPrj(_) | CI::RPrj(_) | CI::DPrj(_) => {
+        // Skip; covered by parent block.
+      },
+      CI::Muts(members) => {
+        // Compute kernel-checkable targets deterministically. Each
+        // member contributes its projection address; inductive members
+        // contribute one CPrj per constructor.
+        let mut targets: Vec<Address> = Vec::new();
+        for (i, member) in members.iter().enumerate() {
+          let i = i as u64;
+          let member_addr = match member {
+            MC::Defn(_) => anon_defn_proj_addr(&addr, i),
+            MC::Indc(_) => anon_indc_proj_addr(&addr, i),
+            MC::Recr(_) => anon_recr_proj_addr(&addr, i),
+          };
+          targets.push(member_addr);
+          if let MC::Indc(ind) = member {
+            for cidx in 0..ind.ctors.len() as u64 {
+              targets.push(anon_ctor_proj_addr(&addr, i, cidx));
+            }
+          }
+        }
+        if targets.is_empty() {
+          continue;
+        }
+        let primary_addr = targets[0].clone();
+        let result_idxs: Vec<usize> =
+          (addrs.len()..addrs.len() + targets.len()).collect();
+        addrs.extend(targets);
+        work.push(AnonWorkItem::Block { primary_addr, result_idxs });
+      },
+      CI::Defn(_) | CI::Recr(_) | CI::Axio(_) | CI::Quot(_) => {
+        let result_idx = addrs.len();
+        addrs.push(addr.clone());
+        work.push(AnonWorkItem::Standalone { result_idx, addr: addr.clone() });
+      },
+    }
+  }
+
+  Ok((work, addrs))
+}
+
+#[allow(clippy::needless_pass_by_value)]
+fn run_anon_checks_parallel(
+  env: Arc<IxonEnv>,
+  work: Vec<AnonWorkItem>,
+  addrs: Vec<Address>,
+  quiet: bool,
+  failure_log: Option<Arc<FailureLog>>,
+) -> Result<Vec<CheckRes>, String> {
+  let total = addrs.len();
+  let work_total = work.len();
+  let worker_count = resolve_kernel_check_workers(work_total, quiet);
+  eprintln!(
+    "[rs_kernel_check_anon] checking {work_total} work item(s) for {total} consts with {worker_count} worker(s)..."
+  );
+
+  let work = Arc::new(work);
+  let addrs = Arc::new(addrs);
+  let next_index = Arc::new(AtomicUsize::new(0));
+  let results: Arc<Vec<OnceLock<CheckRes>>> =
+    Arc::new((0..total).map(|_| OnceLock::new()).collect());
+  let progress =
+    Arc::new(ParallelProgress::new(work_total, worker_count, quiet));
+  let mut reporter = ParallelProgress::spawn_reporter(Arc::clone(&progress));
+
+  let mut handles: Vec<thread::JoinHandle<()>> =
+    Vec::with_capacity(worker_count);
+  for worker_idx in 0..worker_count {
+    let env = Arc::clone(&env);
+    let work = Arc::clone(&work);
+    let addrs = Arc::clone(&addrs);
+    let next_index = Arc::clone(&next_index);
+    let results = Arc::clone(&results);
+    let progress_worker = Arc::clone(&progress);
+    let failure_log_worker = failure_log.clone();
+
+    let handle = match thread::Builder::new()
+      .name(format!("ix-kernel-check-anon-{worker_idx}"))
+      .stack_size(KERNEL_CHECK_STACK_SIZE)
+      .spawn(move || {
+        let mut kenv = KEnv::<Anon>::new();
+        let clear_every = kernel_check_clear_every();
+        let mut checks_since_clear = clear_every;
+        loop {
+          let work_idx = next_index.fetch_add(1, Ordering::Relaxed);
+          if work_idx >= work_total {
+            break;
+          }
+          let item = &work[work_idx];
+          if checks_since_clear >= clear_every {
+            kenv.clear_releasing_memory();
+            checks_since_clear = 0;
+          }
+          let (primary_addr, result_idxs): (Address, Vec<usize>) = match item {
+            AnonWorkItem::Standalone { result_idx, addr } => {
+              (addr.clone(), vec![*result_idx])
+            },
+            AnonWorkItem::Block { primary_addr, result_idxs } => {
+              (primary_addr.clone(), result_idxs.clone())
+            },
+          };
+          let display = format!("@{}", &primary_addr.hex()[..16]);
+          let prefix = format!("  [{}/{work_total}] {display}", work_idx + 1);
+          progress_worker.begin(worker_idx, &prefix);
+
+          let tc_start = Instant::now();
+          let kid = KId::<Anon>::new(primary_addr.clone(), ());
+          let check_res = {
+            let mut tc =
+              TypeChecker::<Anon>::new_with_lazy_anon(&mut kenv, &env);
+            tc.check_const(&kid)
+          };
+          let elapsed = tc_start.elapsed();
+          let result: CheckRes = match check_res {
+            Ok(()) => Ok(()),
+            Err(e) => Err((ErrKind::Kernel, format!("{e}"))),
+          };
+
+          let outcome = CheckOutcome {
+            progress_index: work_idx,
+            progress_total: work_total,
+            display: display.clone(),
+            should_pass: true,
+            result: result.clone(),
+            status: CheckStatus::Checked,
+            elapsed: Some(elapsed),
+            peak: None,
+          };
+          progress_worker.finish(worker_idx, &outcome);
+
+          for &result_idx in &result_idxs {
+            let _ = results[result_idx].set(result.clone());
+            if let (Some(log), Err((_, msg))) =
+              (failure_log_worker.as_ref(), result.as_ref())
+            {
+              let label = format!("@{}", &addrs[result_idx].hex()[..16]);
+              log.record(&label, msg);
+            }
+          }
+          checks_since_clear += 1;
+        }
+      }) {
+      Ok(h) => h,
+      Err(e) => {
+        progress.stop_reporter();
+        if let Some(r) = reporter.take() {
+          let _ = r.join();
+        }
+        for h in handles {
+          let _ = h.join();
+        }
+        return Err(format!("spawn anon worker: {e}"));
+      },
+    };
+    handles.push(handle);
+  }
+
+  let mut panicked = false;
+  for h in handles {
+    if h.join().is_err() {
+      panicked = true;
+    }
+  }
+  progress.stop_reporter();
+  if let Some(r) = reporter {
+    let _ = r.join();
+  }
+  progress.log_mem_summary();
+  if panicked {
+    return Err("anon worker panicked".to_string());
+  }
+
+  let mut ordered: Vec<CheckRes> = Vec::with_capacity(total);
+  for i in 0..total {
+    match results[i].get() {
+      Some(r) => ordered.push(r.clone()),
+      None => {
+        return Err(format!("anon worker missed result idx {i}"));
+      },
+    }
+  }
+  Ok(ordered)
+}
+
+/// FFI: typecheck every kernel-checkable constant in a `.ixe` using the
+/// metadata-free anon kernel.
+///
+/// - Loads the env via `IxonEnv::get_anon` (discards `named` / `names` /
+///   `comms` sections during deserialization).
+/// - Enumerates work items by walking `env.consts` once and skipping
+///   projection constants (`IPrj`/`CPrj`/`RPrj`/`DPrj`); Muts blocks
+///   become block work items whose member + ctor projection addresses
+///   are reconstructed deterministically via `Constant::commit`.
+/// - Workers each get their own `KEnv<Anon>` and a
+///   `LazyAnonIngress`-backed `TypeChecker<Anon>`. Deep refs fault in
+///   lazily via the anon-mode shallow ingress (`ingress_anon_addr_shallow`).
+/// - Returns `Array (Option CheckError)`, one slot per kernel-checkable
+///   address discovered during enumeration.
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_kernel_check_anon(
+  env_path: LeanString<LeanBorrowed<'_>>,
+  quiet: LeanBool<LeanBorrowed<'_>>,
+  fail_out: LeanString<LeanBorrowed<'_>>,
+) -> LeanIOResult<LeanOwned> {
+  let total_start = Instant::now();
+  let quiet = quiet.to_bool();
+  let path = env_path.to_string();
+  let fail_out_path = fail_out.to_string();
+  let fail_out_path =
+    if fail_out_path.is_empty() { None } else { Some(fail_out_path) };
+
+  let t0 = Instant::now();
+  let bytes = match std::fs::read(&path) {
+    Ok(b) => b,
+    Err(e) => {
+      return LeanIOResult::error_string(&format!(
+        "rs_kernel_check_anon: failed to read {path}: {e}"
+      ));
+    },
+  };
+  eprintln!(
+    "[rs_kernel_check_anon] read env:    {:>8.1?} ({} bytes)",
+    t0.elapsed(),
+    bytes.len()
+  );
+
+  let t1 = Instant::now();
+  let mut slice: &[u8] = &bytes;
+  let ixon_env = match IxonEnv::get_anon(&mut slice) {
+    Ok(env) => env,
+    Err(e) => {
+      return LeanIOResult::error_string(&format!(
+        "rs_kernel_check_anon: failed to deserialize {path}: {e}"
+      ));
+    },
+  };
+  drop(bytes);
+  eprintln!(
+    "[rs_kernel_check_anon] deserialize: {:>8.1?} ({} consts; \
+     named={} names={} comms={})",
+    t1.elapsed(),
+    ixon_env.const_count(),
+    ixon_env.named_count(),
+    ixon_env.name_count(),
+    ixon_env.comm_count(),
+  );
+
+  let t2 = Instant::now();
+  let (work, addrs) = match build_anon_work(&ixon_env) {
+    Ok(pair) => pair,
+    Err(e) => {
+      return LeanIOResult::error_string(&format!(
+        "rs_kernel_check_anon: build_anon_work: {e}"
+      ));
+    },
+  };
+  eprintln!(
+    "[rs_kernel_check_anon] build work:  {:>8.1?} ({} items, {} targets)",
+    t2.elapsed(),
+    work.len(),
+    addrs.len()
+  );
+
+  let failure_log: Option<Arc<FailureLog>> = match fail_out_path.as_deref() {
+    None => None,
+    Some(out_path) => match FailureLog::open(out_path, &path, addrs.len()) {
+      Ok(log) => {
+        eprintln!("[rs_kernel_check_anon] streaming failures to {out_path}");
+        Some(Arc::new(log))
+      },
+      Err(e) => {
+        return LeanIOResult::error_string(&format!(
+          "rs_kernel_check_anon: failed to open fail-out file {out_path}: {e}"
+        ));
+      },
+    },
+  };
+
+  let total = addrs.len();
+  let t3 = Instant::now();
+  let ixon_env_arc = Arc::new(ixon_env);
+  let results = match run_anon_checks_parallel(
+    ixon_env_arc,
+    work,
+    addrs,
+    quiet,
+    failure_log.clone(),
+  ) {
+    Ok(r) => r,
+    Err(msg) => {
+      if let Some(log) = failure_log.as_ref() {
+        log.finalize();
+      }
+      return build_uniform_error(total, &format!("[thread] {msg}"));
+    },
+  };
+
+  let passed = results.iter().filter(|r| r.is_ok()).count();
+  let failed = results.iter().filter(|r| r.is_err()).count();
+  eprintln!(
+    "[rs_kernel_check_anon] {passed}/{total} passed, {failed} failed ({:.1?})",
+    t3.elapsed()
+  );
+  eprintln!(
+    "[rs_kernel_check_anon] total:       {:>8.1?}",
+    total_start.elapsed()
+  );
+  if let Some(log) = failure_log.as_ref() {
+    log.finalize();
+    eprintln!(
+      "[rs_kernel_check_anon] streamed {} failure(s) to fail-out",
+      log.count()
+    );
+  }
+
+  build_result_array(&results)
 }
 
 #[cfg(test)]
@@ -1492,8 +1752,8 @@ fn kernel_check_mem_stats_enabled() -> bool {
 /// pushed any single cache past `threshold` entries, or when this block
 /// set a new per-worker peak. Used only with `IX_KERNEL_CHECK_DIAG=1`.
 #[allow(clippy::too_many_arguments)]
-fn log_block_diag_if_big(
-  kenv: &KEnv<Meta>,
+fn log_block_diag_if_big<M: KernelMode>(
+  kenv: &KEnv<M>,
   worker_idx: usize,
   work_idx: usize,
   work_total: usize,
@@ -1618,7 +1878,7 @@ impl CheckOutcome {
   }
 }
 
-fn check_one_const<F>(
+fn check_one_const<M: KernelMode, F>(
   i: usize,
   progress_index: usize,
   progress_total: usize,
@@ -1627,15 +1887,29 @@ fn check_one_const<F>(
   names: &[Name],
   expect_pass: &[bool],
   ungrounded: &FxHashMap<Name, String>,
-  kenv: &mut KEnv<Meta>,
+  kenv: &mut KEnv<M>,
   mut before_kernel_check: F,
 ) -> CheckOutcome
 where
   F: FnMut(&str),
+  M::MField<Vec<Name>>: CheckDupLevelParams,
 {
   let name = &names[i];
   let should_pass = expect_pass.get(i).copied().unwrap_or(true);
-  let display = name.pretty();
+  // In anon mode, surface the content address in the per-constant log
+  // line — the kernel itself doesn't see names. We still accept names
+  // as input (and resolve them via `ixon_env.named` at the FFI
+  // scheduling layer), so the user's identifier is preserved in the
+  // CLI surface; only the kernel-visible progress label switches to a
+  // hash. Falls back to the name if the address lookup fails.
+  let display = if M::HAS_META {
+    name.pretty()
+  } else {
+    match ixon_env.lookup_name(name) {
+      Some(named) => format!("@{}", &named.addr.hex()[..16]),
+      None => name.pretty(),
+    }
+  };
 
   if let Some(msg) = ungrounded.get(name) {
     return CheckOutcome {
@@ -1706,7 +1980,7 @@ where
 // function body — clippy flags the by-value receivers, but transferring
 // ownership keeps the call sites simpler.
 #[allow(clippy::needless_pass_by_value)]
-fn check_consts_loop(
+fn check_consts_loop<M: KernelMode>(
   ixon_env: Arc<IxonEnv>,
   lookups: Arc<IxonIngressLookups>,
   names: Vec<Name>,
@@ -1715,7 +1989,10 @@ fn check_consts_loop(
   work: Vec<CheckWorkItem>,
   quiet: bool,
   failure_log: Option<Arc<FailureLog>>,
-) -> Vec<CheckRes> {
+) -> Vec<CheckRes>
+where
+  M::MField<Vec<Name>>: CheckDupLevelParams,
+{
   let total = names.len();
   let work_total = work.len();
   let mut results: Vec<Option<CheckRes>> = vec![None; total];
@@ -1724,7 +2001,7 @@ fn check_consts_loop(
   // Terminal width is only needed for ephemeral clearing in quiet mode. In
   // verbose mode we never rewrite, so the value is ignored.
   let mut progress = Progress::new(quiet);
-  let mut kenv = KEnv::<Meta>::new();
+  let mut kenv = KEnv::<M>::new();
   let clear_every = kernel_check_clear_every();
   let mut checks_since_clear = clear_every;
 
@@ -2238,8 +2515,8 @@ fn term_cols_stderr() -> usize {
 /// Format a `TcError` for user-facing Lean-side display. For the two cases we
 /// hit most often we emit a human-tuned multi-line message; everything else
 /// falls through to `Debug`.
-fn format_tc_error(
-  e: &TcError<Meta>,
+fn format_tc_error<M: KernelMode>(
+  e: &TcError<M>,
   ixon_env: &IxonEnv,
   lookups: &IxonIngressLookups,
 ) -> String {
@@ -2249,6 +2526,12 @@ fn format_tc_error(
     },
     TcError::FunExpected { .. } => "FunExpected".to_string(),
     TcError::UnknownConst(addr) => {
+      // Address-only label in anon mode: the kernel itself doesn't
+      // know names, so error messages from the anon path shouldn't
+      // either.
+      if !M::HAS_META {
+        return format!("unknown constant ({:.12})", addr.hex());
+      }
       let name = lookups.name_for_addr(addr).map_or_else(
         || {
           if ixon_env.consts.contains_key(addr) {

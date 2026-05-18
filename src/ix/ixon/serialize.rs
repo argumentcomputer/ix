@@ -1473,7 +1473,7 @@ impl Env {
     }
     let stored_root = get_address(buf)?;
 
-    let env = Env::new();
+    let mut env = Env::new();
 
     // Section 1: Blobs (kept)
     let num_blobs = get_u64(buf)?;
@@ -1526,11 +1526,22 @@ impl Env {
       names_lookup.insert(addr, name);
     }
 
-    // Section 4: Named — parse and DISCARD.
+    // Section 4: Named — parse and mostly discard, but harvest
+    // `ReducibilityHints` from each `Def` variant into `env.anon_hints`.
+    // Hints are performance advice (lazy-delta tiebreak); the kernel's
+    // anon-mode correctness model is preserved either way. Without
+    // them, every Definition is forced to `Regular(0)` and the kernel
+    // can chew through `MAX_WHNF_FUEL` on definitions Lean would have
+    // marked `Abbrev`/`Regular(h)`.
     let num_named = get_u64(buf)?;
     for _ in 0..num_named {
       let _name_addr = get_address(buf)?;
-      let _named = get_named_indexed(buf, &name_reverse_index)?;
+      let named = get_named_indexed(buf, &name_reverse_index)?;
+      if let super::metadata::ConstantMetaInfo::Def { hints, .. } =
+        &named.meta.info
+      {
+        env.anon_hints.insert(named.addr.clone(), *hints);
+      }
     }
 
     // Section 5: Comms — parse and DISCARD.

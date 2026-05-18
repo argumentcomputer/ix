@@ -1,12 +1,12 @@
 //! Environment for storing Ixon data.
 
 use dashmap::DashMap;
-use rustc_hash::FxHashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 use std::collections::VecDeque;
 use std::sync::Arc;
 
 use crate::ix::address::Address;
-use crate::ix::env::Name;
+use crate::ix::env::{Name, ReducibilityHints};
 
 use super::comm::Comm;
 use super::constant::Constant;
@@ -84,6 +84,20 @@ pub struct Env {
   pub names: DashMap<Address, Name>,
   /// Cryptographic commitments: commitment Address -> Comm
   pub comms: DashMap<Address, Comm>,
+  /// Reducibility hints sidecar harvested by [`Env::get_anon`] from the
+  /// otherwise-discarded Named section. Keyed by the constant's
+  /// projection/standalone address (i.e. `Named.addr` — the address the
+  /// kernel sees, **not** the name-hash address). Empty for envs loaded
+  /// via [`Env::get`] / [`Env::new`] / `store_*`; meta-mode ingress
+  /// pulls hints directly from `Named.meta` and ignores this field.
+  ///
+  /// Anon-mode ingress passes these hints through to
+  /// `ingress_defn` so the kernel's lazy-delta tiebreak
+  /// (`def_eq::def_rank_id`) sees realistic heights instead of the
+  /// constant `Regular(0)` fallback. Hints are performance advice —
+  /// supplying them in anon mode does not relax the kernel's
+  /// metadata-free correctness model.
+  pub anon_hints: FxHashMap<Address, ReducibilityHints>,
 }
 
 impl Env {
@@ -94,6 +108,7 @@ impl Env {
       blobs: DashMap::new(),
       names: DashMap::new(),
       comms: DashMap::new(),
+      anon_hints: FxHashMap::default(),
     }
   }
 
@@ -273,7 +288,14 @@ impl Clone for Env {
       comms.insert(entry.key().clone(), entry.value().clone());
     }
 
-    Env { consts, named, blobs, names, comms }
+    Env {
+      consts,
+      named,
+      blobs,
+      names,
+      comms,
+      anon_hints: self.anon_hints.clone(),
+    }
   }
 }
 

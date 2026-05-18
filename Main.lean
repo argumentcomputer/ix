@@ -1,7 +1,6 @@
 --import Ix.Cli.ProveCmd
 --import Ix.Cli.StoreCmd
 import Ix.Cli.CheckCmd
-import Ix.Cli.CheckIxonCmd
 import Ix.Cli.CompileCmd
 import Ix.Cli.IngressCmd
 import Ix.Cli.ValidateCmd
@@ -21,7 +20,6 @@ def ixCmd : Cli.Cmd := `[Cli|
     --storeCmd;
     compileCmd;
     checkCmd;
-    checkIxonCmd;
     ingressCmd;
     validateCmd;
     serveCmd;
