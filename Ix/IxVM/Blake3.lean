@@ -42,7 +42,7 @@ def blake3 := ⟦
 
   fn blake3(input: ByteStream) -> [[G; 4]; 8] {
     let IV = [[103, 230, 9, 106], [133, 174, 103, 187], [114, 243, 110, 60], [58, 245, 79, 165], [127, 82, 14, 81], [140, 104, 5, 155], [171, 217, 131, 31], [25, 205, 224, 91]];
-    blake3_compress_layer(load(blake3_compress_chunks(input, [[0; 4]; 16], 0, 0, [0; 8], IV, store(Layer.Nil))))
+    blake3_compress_layer(load(blake3_compress_chunks(input, store(ListNode.Nil), 0, 0, [0; 8], IV, store(Layer.Nil))))
   }
 
   fn blake3_next_layer(layer: Layer, digest: [[G; 4]; 8], root: G) -> (MaybeDigest, Layer) {
@@ -86,9 +86,123 @@ def blake3 := ⟦
     }
   }
 
+  -- Hot chunk loop. The 64-byte block buffer is NOT threaded here as a
+  -- `[[G; 4]; 16]` value — that cost 64 columns of `inputSize` plus a +64-aux
+  -- `assign_block_value` call on every row. Instead bytes accumulate into a
+  -- reverse-ordered linked list (`byte_acc`); each hot row is a single `store`.
   fn blake3_compress_chunks(
     input: ByteStream,
-    block_buffer: [[G; 4]; 16],
+    byte_acc: ByteStream,
+    block_index: G,
+    chunk_index: G,
+    chunk_count: U64,
+    block_digest: [[G; 4]; 8],
+    layer: &Layer
+  ) -> &Layer {
+    match load(input) {
+      -- Input exhausted: hand off to the cold finalize circuit.
+      ListNode.Nil =>
+        blake3_finish(byte_acc, block_index, chunk_index, chunk_count, block_digest, layer),
+      ListNode.Cons(head, input) =>
+        let byte_acc = store(ListNode.Cons(head, byte_acc));
+        match block_index {
+          63 => blake3_compress_block(input, byte_acc, chunk_index, chunk_count, block_digest, layer),
+          _ => blake3_compress_chunks(input, byte_acc, block_index + 1, chunk_index + 1, chunk_count, block_digest, layer),
+        },
+    }
+  }
+
+  -- Materializes a 64-byte accumulator list into a `[[G; 4]; 16]` block. The
+  -- list is reverse-ordered (head = most recently appended byte = position 63).
+  -- 64 unrolled `load`s, one circuit row per call — keeps the 64-wide buffer
+  -- out of the hot loop and out of `inputSize`.
+  fn bytes_to_block(byte_acc: ByteStream) -> [[G; 4]; 16] {
+    let ListNode.Cons(b63, l) = load(byte_acc);
+    let ListNode.Cons(b62, l) = load(l);
+    let ListNode.Cons(b61, l) = load(l);
+    let ListNode.Cons(b60, l) = load(l);
+    let ListNode.Cons(b59, l) = load(l);
+    let ListNode.Cons(b58, l) = load(l);
+    let ListNode.Cons(b57, l) = load(l);
+    let ListNode.Cons(b56, l) = load(l);
+    let ListNode.Cons(b55, l) = load(l);
+    let ListNode.Cons(b54, l) = load(l);
+    let ListNode.Cons(b53, l) = load(l);
+    let ListNode.Cons(b52, l) = load(l);
+    let ListNode.Cons(b51, l) = load(l);
+    let ListNode.Cons(b50, l) = load(l);
+    let ListNode.Cons(b49, l) = load(l);
+    let ListNode.Cons(b48, l) = load(l);
+    let ListNode.Cons(b47, l) = load(l);
+    let ListNode.Cons(b46, l) = load(l);
+    let ListNode.Cons(b45, l) = load(l);
+    let ListNode.Cons(b44, l) = load(l);
+    let ListNode.Cons(b43, l) = load(l);
+    let ListNode.Cons(b42, l) = load(l);
+    let ListNode.Cons(b41, l) = load(l);
+    let ListNode.Cons(b40, l) = load(l);
+    let ListNode.Cons(b39, l) = load(l);
+    let ListNode.Cons(b38, l) = load(l);
+    let ListNode.Cons(b37, l) = load(l);
+    let ListNode.Cons(b36, l) = load(l);
+    let ListNode.Cons(b35, l) = load(l);
+    let ListNode.Cons(b34, l) = load(l);
+    let ListNode.Cons(b33, l) = load(l);
+    let ListNode.Cons(b32, l) = load(l);
+    let ListNode.Cons(b31, l) = load(l);
+    let ListNode.Cons(b30, l) = load(l);
+    let ListNode.Cons(b29, l) = load(l);
+    let ListNode.Cons(b28, l) = load(l);
+    let ListNode.Cons(b27, l) = load(l);
+    let ListNode.Cons(b26, l) = load(l);
+    let ListNode.Cons(b25, l) = load(l);
+    let ListNode.Cons(b24, l) = load(l);
+    let ListNode.Cons(b23, l) = load(l);
+    let ListNode.Cons(b22, l) = load(l);
+    let ListNode.Cons(b21, l) = load(l);
+    let ListNode.Cons(b20, l) = load(l);
+    let ListNode.Cons(b19, l) = load(l);
+    let ListNode.Cons(b18, l) = load(l);
+    let ListNode.Cons(b17, l) = load(l);
+    let ListNode.Cons(b16, l) = load(l);
+    let ListNode.Cons(b15, l) = load(l);
+    let ListNode.Cons(b14, l) = load(l);
+    let ListNode.Cons(b13, l) = load(l);
+    let ListNode.Cons(b12, l) = load(l);
+    let ListNode.Cons(b11, l) = load(l);
+    let ListNode.Cons(b10, l) = load(l);
+    let ListNode.Cons(b9, l) = load(l);
+    let ListNode.Cons(b8, l) = load(l);
+    let ListNode.Cons(b7, l) = load(l);
+    let ListNode.Cons(b6, l) = load(l);
+    let ListNode.Cons(b5, l) = load(l);
+    let ListNode.Cons(b4, l) = load(l);
+    let ListNode.Cons(b3, l) = load(l);
+    let ListNode.Cons(b2, l) = load(l);
+    let ListNode.Cons(b1, l) = load(l);
+    let ListNode.Cons(b0, _) = load(l);
+    [
+      [b0, b1, b2, b3], [b4, b5, b6, b7], [b8, b9, b10, b11], [b12, b13, b14, b15],
+      [b16, b17, b18, b19], [b20, b21, b22, b23], [b24, b25, b26, b27], [b28, b29, b30, b31],
+      [b32, b33, b34, b35], [b36, b37, b38, b39], [b40, b41, b42, b43], [b44, b45, b46, b47],
+      [b48, b49, b50, b51], [b52, b53, b54, b55], [b56, b57, b58, b59], [b60, b61, b62, b63]
+    ]
+  }
+
+  -- Prepends `n` zero bytes to a partial block accumulator so it can be fed to
+  -- `bytes_to_block`. Cold: only the trailing partial block of a hash uses it.
+  fn pad_block(acc: ByteStream, n: G) -> ByteStream {
+    match n {
+      0 => acc,
+      _ => pad_block(store(ListNode.Cons(0, acc)), n - 1),
+    }
+  }
+
+  -- Cold finalize circuit for `blake3_compress_chunks`: input is exhausted, so
+  -- emit the trailing layer node. Quarantines the `blake3_compress` call and
+  -- the partial-block materialization out of the hot chunk loop.
+  fn blake3_finish(
+    byte_acc: ByteStream,
     block_index: G,
     chunk_index: G,
     chunk_count: U64,
@@ -97,54 +211,29 @@ def blake3 := ⟦
   ) -> &Layer {
     let CHUNK_START = 1;
     let CHUNK_END = 2;
-    let PARENT = 4;
     let ROOT = 8;
-    let input_node = load(input);
-    match (input_node, block_index, chunk_index) {
-      (ListNode.Nil, 0, 0) =>
+    match (block_index, chunk_index) {
+      (0, 0) =>
         match chunk_count {
           [0, 0, 0, 0, 0, 0, 0, 0] =>
             let flags = ROOT + CHUNK_START + CHUNK_END;
-            store(Layer.Push(layer, blake3_compress(block_digest, block_buffer, chunk_count, 0, flags))),
+            store(Layer.Push(layer, blake3_compress(block_digest, [[0; 4]; 16], chunk_count, 0, flags))),
           _ => layer,
         },
-
-      (ListNode.Nil, 0, _) => store(Layer.Push(layer, block_digest)),
-
-      (ListNode.Nil, _, _) =>
+      (0, _) => store(Layer.Push(layer, block_digest)),
+      (_, _) =>
         let flags = CHUNK_END + u64_is_zero(chunk_count) * ROOT + eq_zero(chunk_index - block_index) * CHUNK_START;
-        store(Layer.Push(layer, blake3_compress(block_digest, block_buffer, chunk_count, block_index, flags))),
-
-      (ListNode.Cons(head, input), 63, _) =>
-        -- Block full: assign the last byte, then hand the completed buffer to
-        -- the cold `blake3_compress_block` circuit. Keeps the `blake3_compress`
-        -- call (+32 aux output) and the flag/store machinery out of this hot
-        -- circuit's width — those columns would be trash on the ~91% of rows
-        -- that hit the buffer-fill arm below.
-        let block_buffer = assign_block_value(block_buffer, block_index, head);
-        blake3_compress_block(input, block_buffer, chunk_index, chunk_count, block_digest, layer),
-
-      (ListNode.Cons(head, input), _, _) =>
-        let block_buffer = assign_block_value(block_buffer, block_index, head);
-        blake3_compress_chunks(
-            input,
-            block_buffer,
-            block_index + 1,
-            chunk_index + 1,
-            chunk_count,
-            block_digest,
-            layer
-        ),
+        let block = bytes_to_block(pad_block(byte_acc, 64 - block_index));
+        store(Layer.Push(layer, blake3_compress(block_digest, block, chunk_count, block_index, flags))),
     }
   }
 
   -- Cold continuation of `blake3_compress_chunks`: runs once per filled 64-byte
-  -- block (~1.8% of chunk-loop rows). Quarantines the `blake3_compress` call
-  -- (+32 aux), `relaxed_u64_succ`, `store` and flag helpers into their own
-  -- circuit so they do not widen the hot buffer-fill circuit.
+  -- block. Materializes the byte accumulator, runs `blake3_compress`, pushes the
+  -- digest, and resets the accumulator for the next block.
   fn blake3_compress_block(
     input: ByteStream,
-    block_buffer: [[G; 4]; 16],
+    byte_acc: ByteStream,
     chunk_index: G,
     chunk_count: U64,
     block_digest: [[G; 4]; 8],
@@ -153,20 +242,20 @@ def blake3 := ⟦
     let CHUNK_START = 1;
     let CHUNK_END = 2;
     let ROOT = 8;
-    let empty_buffer = [[0; 4]; 16];
+    let block = bytes_to_block(byte_acc);
     match chunk_index {
       1023 =>
         let flags = ROOT * list_is_empty(input) * u64_is_zero(chunk_count) + CHUNK_END;
         let IV = [[103, 230, 9, 106], [133, 174, 103, 187], [114, 243, 110, 60], [58, 245, 79, 165], [127, 82, 14, 81], [140, 104, 5, 155], [171, 217, 131, 31], [25, 205, 224, 91]];
-        let layer = store(Layer.Push(layer, blake3_compress(block_digest, block_buffer, chunk_count, 64, flags)));
-        blake3_compress_chunks(input, empty_buffer, 0, 0, relaxed_u64_succ(chunk_count), IV, layer),
+        let layer = store(Layer.Push(layer, blake3_compress(block_digest, block, chunk_count, 64, flags)));
+        blake3_compress_chunks(input, store(ListNode.Nil), 0, 0, relaxed_u64_succ(chunk_count), IV, layer),
       _ =>
         let chunk_end_flag = list_is_empty(input) * CHUNK_END;
         let root_flag = list_is_empty(input) * u64_is_zero(chunk_count) * ROOT;
         let chunk_start_flag = eq_zero(chunk_index - 63) * CHUNK_START;
         let flags = chunk_end_flag + root_flag + chunk_start_flag;
-        let block_digest = blake3_compress(block_digest, block_buffer, chunk_count, 64, flags);
-        blake3_compress_chunks(input, empty_buffer, 0, chunk_index + 1, chunk_count, block_digest, layer),
+        let block_digest = blake3_compress(block_digest, block, chunk_count, 64, flags);
+        blake3_compress_chunks(input, store(ListNode.Nil), 0, chunk_index + 1, chunk_count, block_digest, layer),
     }
   }
 
@@ -376,75 +465,6 @@ def blake3 := ⟦
       u32_xor(state[6], state[14]),
       u32_xor(state[7], state[15])
     ]
-  }
-
-  fn assign_block_value(block: [[G; 4]; 16], idx: G, val: G) -> [[G; 4]; 16] {
-    match idx {
-      0 => set(block, 0, set(block[0], 0, val)),
-      1 => set(block, 0, set(block[0], 1, val)),
-      2 => set(block, 0, set(block[0], 2, val)),
-      3 => set(block, 0, set(block[0], 3, val)),
-      4 => set(block, 1, set(block[1], 0, val)),
-      5 => set(block, 1, set(block[1], 1, val)),
-      6 => set(block, 1, set(block[1], 2, val)),
-      7 => set(block, 1, set(block[1], 3, val)),
-      8 => set(block, 2, set(block[2], 0, val)),
-      9 => set(block, 2, set(block[2], 1, val)),
-      10 => set(block, 2, set(block[2], 2, val)),
-      11 => set(block, 2, set(block[2], 3, val)),
-      12 => set(block, 3, set(block[3], 0, val)),
-      13 => set(block, 3, set(block[3], 1, val)),
-      14 => set(block, 3, set(block[3], 2, val)),
-      15 => set(block, 3, set(block[3], 3, val)),
-      16 => set(block, 4, set(block[4], 0, val)),
-      17 => set(block, 4, set(block[4], 1, val)),
-      18 => set(block, 4, set(block[4], 2, val)),
-      19 => set(block, 4, set(block[4], 3, val)),
-      20 => set(block, 5, set(block[5], 0, val)),
-      21 => set(block, 5, set(block[5], 1, val)),
-      22 => set(block, 5, set(block[5], 2, val)),
-      23 => set(block, 5, set(block[5], 3, val)),
-      24 => set(block, 6, set(block[6], 0, val)),
-      25 => set(block, 6, set(block[6], 1, val)),
-      26 => set(block, 6, set(block[6], 2, val)),
-      27 => set(block, 6, set(block[6], 3, val)),
-      28 => set(block, 7, set(block[7], 0, val)),
-      29 => set(block, 7, set(block[7], 1, val)),
-      30 => set(block, 7, set(block[7], 2, val)),
-      31 => set(block, 7, set(block[7], 3, val)),
-      32 => set(block, 8, set(block[8], 0, val)),
-      33 => set(block, 8, set(block[8], 1, val)),
-      34 => set(block, 8, set(block[8], 2, val)),
-      35 => set(block, 8, set(block[8], 3, val)),
-      36 => set(block, 9, set(block[9], 0, val)),
-      37 => set(block, 9, set(block[9], 1, val)),
-      38 => set(block, 9, set(block[9], 2, val)),
-      39 => set(block, 9, set(block[9], 3, val)),
-      40 => set(block, 10, set(block[10], 0, val)),
-      41 => set(block, 10, set(block[10], 1, val)),
-      42 => set(block, 10, set(block[10], 2, val)),
-      43 => set(block, 10, set(block[10], 3, val)),
-      44 => set(block, 11, set(block[11], 0, val)),
-      45 => set(block, 11, set(block[11], 1, val)),
-      46 => set(block, 11, set(block[11], 2, val)),
-      47 => set(block, 11, set(block[11], 3, val)),
-      48 => set(block, 12, set(block[12], 0, val)),
-      49 => set(block, 12, set(block[12], 1, val)),
-      50 => set(block, 12, set(block[12], 2, val)),
-      51 => set(block, 12, set(block[12], 3, val)),
-      52 => set(block, 13, set(block[13], 0, val)),
-      53 => set(block, 13, set(block[13], 1, val)),
-      54 => set(block, 13, set(block[13], 2, val)),
-      55 => set(block, 13, set(block[13], 3, val)),
-      56 => set(block, 14, set(block[14], 0, val)),
-      57 => set(block, 14, set(block[14], 1, val)),
-      58 => set(block, 14, set(block[14], 2, val)),
-      59 => set(block, 14, set(block[14], 3, val)),
-      60 => set(block, 15, set(block[15], 0, val)),
-      61 => set(block, 15, set(block[15], 1, val)),
-      62 => set(block, 15, set(block[15], 2, val)),
-      63 => set(block, 15, set(block[15], 3, val)),
-    }
   }
 ⟧
 
