@@ -1,5 +1,5 @@
 use multi_stark::{
-  p3_field::{Field, PrimeField64},
+  p3_field::PrimeField64,
   prover::Proof,
   types::{CommitmentParameters, FriParameters},
 };
@@ -87,7 +87,9 @@ extern "C" fn rs_aiur_system_verify(
 }
 
 /// `Bytecode.Toplevel.execute`: runs execution only (no proof) and returns
-/// `Except String (Array G × (Array G × Array (Array G × IOKeyInfo)) × Array Nat)`.
+/// `Except String (Array G × (Array G × Array (Array G × IOKeyInfo)) × Array (Nat × Nat))`.
+/// The trailing `Array (Nat × Nat)` is one `(uniqueRows, totalHits)` pair per
+/// function circuit followed by one per memory size.
 /// On execution failure (e.g. assertion mismatch from a typechecker
 /// rejecting a constant), returns `Except.error msg` instead of panicking
 /// — letting Lean test runners (`KernelArena.lean`) classify failures.
@@ -112,31 +114,45 @@ extern "C" fn rs_aiur_toplevel_execute(
     Err(err) => return LeanExcept::error_string(&err.to_string()),
   };
 
-  // Build query counts: one per function, then one per memory size
-  let mut query_counts: Vec<usize> = Vec::with_capacity(
+  // Build per-circuit (unique_rows, total_hits) pairs:
+  // one per function, then one per memory size. `unique_rows` is the trace
+  // height (number of distinct queries); `total_hits` is the sum of
+  // multiplicities (how often those rows were hit).
+  let mut query_counts: Vec<(usize, usize)> = Vec::with_capacity(
     query_record.function_queries.len() + toplevel.memory_sizes.len(),
   );
+  let summarize = |q: &crate::aiur::execute::QueryMap| -> (usize, usize) {
+    let mut rows = 0usize;
+    let mut hits = 0usize;
+    for (_, res) in q.iter() {
+      let m = usize::try_from(res.multiplicity.as_canonical_u64())
+        .expect("multiplicity exceeds usize");
+      if m != 0 {
+        rows += 1;
+        hits += m;
+      }
+    }
+    (rows, hits)
+  };
   for queries in &query_record.function_queries {
-    let count =
-      queries.iter().filter(|(_, res)| !res.multiplicity.is_zero()).count();
-    query_counts.push(count);
+    query_counts.push(summarize(queries));
   }
   for size in &toplevel.memory_sizes {
-    let count = query_record.memory_queries.get(size).map_or(0, |q| {
-      q.iter().filter(|(_, res)| !res.multiplicity.is_zero()).count()
-    });
-    query_counts.push(count);
+    let pair = query_record.memory_queries.get(size).map_or((0, 0), summarize);
+    query_counts.push(pair);
   }
   let lean_query_counts = {
     let arr = LeanArray::alloc(query_counts.len());
-    for (i, &count) in query_counts.iter().enumerate() {
-      arr.set(i, LeanOwned::box_usize(count));
+    for (i, &(rows, hits)) in query_counts.iter().enumerate() {
+      let pair =
+        LeanProd::new(LeanOwned::box_usize(rows), LeanOwned::box_usize(hits));
+      arr.set(i, pair);
     }
     arr
   };
 
   let lean_io = build_lean_io_buffer(&io_buffer);
-  // (Array G, (Array G × Array (Array G × IOKeyInfo), Array Nat))
+  // (Array G, (Array G × Array (Array G × IOKeyInfo), Array (Nat × Nat)))
   let io_counts = LeanProd::new(lean_io, lean_query_counts);
   let result = LeanProd::new(build_g_array(&output), io_counts);
   LeanExcept::ok(result)

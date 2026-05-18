@@ -56,16 +56,18 @@ namespace Bytecode.Toplevel
 private opaque execute' : @& Bytecode.Toplevel →
   @& Bytecode.FunIdx → @& Array G → (ioData : @& Array G) →
   (ioMap : @& Array (Array G × IOKeyInfo)) →
-    Except String (Array G × (Array G × Array (Array G × IOKeyInfo)) × Array Nat)
+    Except String (Array G × (Array G × Array (Array G × IOKeyInfo)) × Array (Nat × Nat))
 
 /-- Executes the bytecode function `funIdx` with the given `args` and `ioBuffer`,
 returning the raw output of the function, the updated `IOBuffer`, and an array
-of query counts (one per function circuit, then one per memory size). Returns
-`Except.error msg` when execution fails (e.g. `assert_eq!` mismatch from a
-typechecker rejecting a constant), so callers can recover instead of crashing. -/
+of per-circuit `(uniqueRows, totalHits)` pairs (one per function circuit, then
+one per memory size). `uniqueRows` is the trace height; `totalHits` is the sum
+of query multiplicities. Returns `Except.error msg` when execution fails
+(e.g. `assert_eq!` mismatch from a typechecker rejecting a constant), so
+callers can recover instead of crashing. -/
 def execute (toplevel : @& Bytecode.Toplevel)
   (funIdx : @& Bytecode.FunIdx) (args : @& Array G) (ioBuffer : IOBuffer) :
-    Except String (Array G × IOBuffer × Array Nat) :=
+    Except String (Array G × IOBuffer × Array (Nat × Nat)) :=
   let ioData := ioBuffer.data
   let ioMap := ioBuffer.map
   match execute' toplevel funIdx args ioData ioMap.toArray with
