@@ -42,7 +42,7 @@ def blake3 := ⟦
 
   fn blake3(input: ByteStream) -> [[G; 4]; 8] {
     let IV = [[103, 230, 9, 106], [133, 174, 103, 187], [114, 243, 110, 60], [58, 245, 79, 165], [127, 82, 14, 81], [140, 104, 5, 155], [171, 217, 131, 31], [25, 205, 224, 91]];
-    blake3_compress_layer(blake3_compress_chunks(input, [[0; 4]; 16], 0, 0, [0; 8], IV, Layer.Nil))
+    blake3_compress_layer(load(blake3_compress_chunks(input, [[0; 4]; 16], 0, 0, [0; 8], IV, store(Layer.Nil))))
   }
 
   fn blake3_next_layer(layer: Layer, digest: [[G; 4]; 8], root: G) -> (MaybeDigest, Layer) {
@@ -93,8 +93,8 @@ def blake3 := ⟦
     chunk_index: G,
     chunk_count: U64,
     block_digest: [[G; 4]; 8],
-    layer: Layer
-  ) -> Layer {
+    layer: &Layer
+  ) -> &Layer {
     let CHUNK_START = 1;
     let CHUNK_END = 2;
     let PARENT = 4;
@@ -105,15 +105,15 @@ def blake3 := ⟦
         match chunk_count {
           [0, 0, 0, 0, 0, 0, 0, 0] =>
             let flags = ROOT + CHUNK_START + CHUNK_END;
-            Layer.Push(store(layer), blake3_compress(block_digest, block_buffer, chunk_count, 0, flags)),
+            store(Layer.Push(layer, blake3_compress(block_digest, block_buffer, chunk_count, 0, flags))),
           _ => layer,
         },
 
-      (ListNode.Nil, 0, _) => Layer.Push(store(layer), block_digest),
+      (ListNode.Nil, 0, _) => store(Layer.Push(layer, block_digest)),
 
       (ListNode.Nil, _, _) =>
         let flags = CHUNK_END + u64_is_zero(chunk_count) * ROOT + eq_zero(chunk_index - block_index) * CHUNK_START;
-        Layer.Push(store(layer), blake3_compress(block_digest, block_buffer, chunk_count, block_index, flags)),
+        store(Layer.Push(layer, blake3_compress(block_digest, block_buffer, chunk_count, block_index, flags))),
 
       (ListNode.Cons(head, input), 63, _) =>
         -- Block full: assign the last byte, then hand the completed buffer to
@@ -148,8 +148,8 @@ def blake3 := ⟦
     chunk_index: G,
     chunk_count: U64,
     block_digest: [[G; 4]; 8],
-    layer: Layer
-  ) -> Layer {
+    layer: &Layer
+  ) -> &Layer {
     let CHUNK_START = 1;
     let CHUNK_END = 2;
     let ROOT = 8;
@@ -158,7 +158,7 @@ def blake3 := ⟦
       1023 =>
         let flags = ROOT * list_is_empty(input) * u64_is_zero(chunk_count) + CHUNK_END;
         let IV = [[103, 230, 9, 106], [133, 174, 103, 187], [114, 243, 110, 60], [58, 245, 79, 165], [127, 82, 14, 81], [140, 104, 5, 155], [171, 217, 131, 31], [25, 205, 224, 91]];
-        let layer = Layer.Push(store(layer), blake3_compress(block_digest, block_buffer, chunk_count, 64, flags));
+        let layer = store(Layer.Push(layer, blake3_compress(block_digest, block_buffer, chunk_count, 64, flags)));
         blake3_compress_chunks(input, empty_buffer, 0, 0, relaxed_u64_succ(chunk_count), IV, layer),
       _ =>
         let chunk_end_flag = list_is_empty(input) * CHUNK_END;
