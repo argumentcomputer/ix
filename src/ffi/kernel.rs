@@ -1406,7 +1406,7 @@ fn run_anon_checks_parallel(
               (primary_addr.clone(), result_idxs.clone())
             },
           };
-          let display = format!("@{}", &primary_addr.hex()[..16]);
+          let display = format!("@{}", primary_addr.hex());
           let prefix = format!("  [{}/{work_total}] {display}", work_idx + 1);
           progress_worker.begin(worker_idx, &prefix);
 
@@ -1440,7 +1440,7 @@ fn run_anon_checks_parallel(
             if let (Some(log), Err((_, msg))) =
               (failure_log_worker.as_ref(), result.as_ref())
             {
-              let label = format!("@{}", &addrs[result_idx].hex()[..16]);
+              let label = format!("@{}", addrs[result_idx].hex());
               log.record(&label, msg);
             }
           }
@@ -1906,7 +1906,7 @@ where
     name.pretty()
   } else {
     match ixon_env.lookup_name(name) {
-      Some(named) => format!("@{}", &named.addr.hex()[..16]),
+      Some(named) => format!("@{}", named.addr.hex()),
       None => name.pretty(),
     }
   };

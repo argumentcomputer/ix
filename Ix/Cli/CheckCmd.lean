@@ -30,6 +30,7 @@ public import Ix.Common
 public import Ix.KernelCheck
 public import Ix.Meta
 public import Ix.Cli.ValidateCmd
+public import Std.Internal.UV.System
 
 public section
 
@@ -217,6 +218,17 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
       return 1
   let envPath := pathArg.as! String
 
+  -- `--workers N` is plumbed through the existing
+  -- `IX_KERNEL_CHECK_WORKERS` env var that `resolve_kernel_check_workers`
+  -- (`src/ffi/kernel.rs`) reads. Setting `1` forces a single-threaded
+  -- runner, useful for isolating per-worker memory usage and timing.
+  if let some flag := p.flag? "workers" then
+    let n := flag.as! Nat
+    if n == 0 then
+      p.printError "error: --workers must be > 0"
+      return 1
+    Std.Internal.UV.System.osSetenv "IX_KERNEL_CHECK_WORKERS" (toString n)
+
   let anon := p.flag? "anon" |>.isSome
   if anon then
     let hasConsts := p.flag? "consts" |>.isSome
@@ -242,6 +254,7 @@ def checkCmd : Cli.Cmd := `[Cli|
     consts        : String; "Comma-separated EXACT constant names to seed (meta mode only)"
     "consts-file" : String; "Path to a file with one constant name per line (meta mode only)"
     "fail-out"    : String; "Write failing constants to this path (consumable by --consts-file)"
+    workers       : Nat;    "Number of parallel kernel-check workers; 1 disables parallelism (default: available_parallelism). Plumbs via IX_KERNEL_CHECK_WORKERS env var."
     verbose;                "Log every constant on its own line (default: quiet)"
 
   ARGS:
