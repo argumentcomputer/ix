@@ -115,37 +115,14 @@ def blake3 := ⟦
         let flags = CHUNK_END + u64_is_zero(chunk_count) * ROOT + eq_zero(chunk_index - block_index) * CHUNK_START;
         Layer.Push(store(layer), blake3_compress(block_digest, block_buffer, chunk_count, block_index, flags)),
 
-      (ListNode.Cons(head, input), 63, 1023) =>
-        let flags = ROOT * list_is_empty(input) * u64_is_zero(chunk_count) + CHUNK_END;
-        let block_buffer = assign_block_value(block_buffer, block_index, head);
-        let IV = [[103, 230, 9, 106], [133, 174, 103, 187], [114, 243, 110, 60], [58, 245, 79, 165], [127, 82, 14, 81], [140, 104, 5, 155], [171, 217, 131, 31], [25, 205, 224, 91]];
-        let empty_buffer = [[0; 4]; 16];
-        let layer = Layer.Push(store(layer), blake3_compress(block_digest, block_buffer, chunk_count, 64, flags));
-        blake3_compress_chunks(input, empty_buffer, 0, 0, relaxed_u64_succ(chunk_count), IV, layer),
-
       (ListNode.Cons(head, input), 63, _) =>
+        -- Block full: assign the last byte, then hand the completed buffer to
+        -- the cold `blake3_compress_block` circuit. Keeps the `blake3_compress`
+        -- call (+32 aux output) and the flag/store machinery out of this hot
+        -- circuit's width — those columns would be trash on the ~91% of rows
+        -- that hit the buffer-fill arm below.
         let block_buffer = assign_block_value(block_buffer, block_index, head);
-        let chunk_end_flag = list_is_empty(input) * CHUNK_END;
-        let root_flag = list_is_empty(input) * u64_is_zero(chunk_count) * ROOT;
-        let chunk_start_flag = eq_zero(chunk_index - block_index) * CHUNK_START;
-        let flags = chunk_end_flag + root_flag + chunk_start_flag;
-        let block_digest = blake3_compress(
-            block_digest,
-            block_buffer,
-            chunk_count,
-            64,
-            flags
-        );
-        let empty_buffer = [[0; 4]; 16];
-        blake3_compress_chunks(
-            input,
-            empty_buffer,
-            0,
-            chunk_index + 1,
-            chunk_count,
-            block_digest,
-            layer
-        ),
+        blake3_compress_block(input, block_buffer, chunk_index, chunk_count, block_digest, layer),
 
       (ListNode.Cons(head, input), _, _) =>
         let block_buffer = assign_block_value(block_buffer, block_index, head);
@@ -158,6 +135,38 @@ def blake3 := ⟦
             block_digest,
             layer
         ),
+    }
+  }
+
+  -- Cold continuation of `blake3_compress_chunks`: runs once per filled 64-byte
+  -- block (~1.8% of chunk-loop rows). Quarantines the `blake3_compress` call
+  -- (+32 aux), `relaxed_u64_succ`, `store` and flag helpers into their own
+  -- circuit so they do not widen the hot buffer-fill circuit.
+  fn blake3_compress_block(
+    input: ByteStream,
+    block_buffer: [[G; 4]; 16],
+    chunk_index: G,
+    chunk_count: U64,
+    block_digest: [[G; 4]; 8],
+    layer: Layer
+  ) -> Layer {
+    let CHUNK_START = 1;
+    let CHUNK_END = 2;
+    let ROOT = 8;
+    let empty_buffer = [[0; 4]; 16];
+    match chunk_index {
+      1023 =>
+        let flags = ROOT * list_is_empty(input) * u64_is_zero(chunk_count) + CHUNK_END;
+        let IV = [[103, 230, 9, 106], [133, 174, 103, 187], [114, 243, 110, 60], [58, 245, 79, 165], [127, 82, 14, 81], [140, 104, 5, 155], [171, 217, 131, 31], [25, 205, 224, 91]];
+        let layer = Layer.Push(store(layer), blake3_compress(block_digest, block_buffer, chunk_count, 64, flags));
+        blake3_compress_chunks(input, empty_buffer, 0, 0, relaxed_u64_succ(chunk_count), IV, layer),
+      _ =>
+        let chunk_end_flag = list_is_empty(input) * CHUNK_END;
+        let root_flag = list_is_empty(input) * u64_is_zero(chunk_count) * ROOT;
+        let chunk_start_flag = eq_zero(chunk_index - 63) * CHUNK_START;
+        let flags = chunk_end_flag + root_flag + chunk_start_flag;
+        let block_digest = blake3_compress(block_digest, block_buffer, chunk_count, 64, flags);
+        blake3_compress_chunks(input, empty_buffer, 0, chunk_index + 1, chunk_count, block_digest, layer),
     }
   }
 
