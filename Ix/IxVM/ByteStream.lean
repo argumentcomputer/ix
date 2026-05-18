@@ -43,12 +43,6 @@ def byteStream := ⟦
     }
   }
 
-  -- Reconstructs a byte from its bits in little-endian.
-  fn u8_recompose(bits: U64) -> G {
-    let [b0, b1, b2, b3, b4, b5, b6, b7] = bits;
-    b0 + 2 * b1 + 4 * b2 + 8 * b3 + 16 * b4 + 32 * b5 + 64 * b6 + 128 * b7
-  }
-
   fn u32_add(a: [G; 4], b: [G; 4]) -> [G; 4] {
     let [a0, a1, a2, a3] = a;
     let [b0, b1, b2, b3] = b;
