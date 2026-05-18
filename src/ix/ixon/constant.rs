@@ -251,6 +251,62 @@ impl Constant {
   }
 }
 
+// ============================================================================
+// Canonical projection-address helpers
+// ============================================================================
+//
+// The compile and ingress pipelines independently derive projection
+// addresses for members of a mutual block — each member's
+// `D/I/R/CPrj` wrapper has a deterministic content hash that becomes
+// the kernel's lookup key. Centralizing the wrapper construction +
+// `.commit().0` here keeps all callers in lock-step: drift between
+// the compile-side address (what gets stored in `env.consts`) and
+// the kernel-side address (what `LazyAnonIngress` looks up) is the
+// kind of bug that surfaces only on full-env runs and is painful to
+// diagnose.
+
+/// Deterministic `DPrj` content address for member `idx` of `block`.
+pub fn defn_proj_address(idx: u64, block: &Address) -> Address {
+  defn_proj_constant(idx, block.clone()).commit().0
+}
+
+/// Deterministic `IPrj` content address for member `idx` of `block`.
+pub fn indc_proj_address(idx: u64, block: &Address) -> Address {
+  indc_proj_constant(idx, block.clone()).commit().0
+}
+
+/// Deterministic `RPrj` content address for member `idx` of `block`.
+pub fn recr_proj_address(idx: u64, block: &Address) -> Address {
+  recr_proj_constant(idx, block.clone()).commit().0
+}
+
+/// Deterministic `CPrj` content address for ctor `(idx, cidx)` of `block`.
+pub fn ctor_proj_address(idx: u64, cidx: u64, block: &Address) -> Address {
+  ctor_proj_constant(idx, cidx, block.clone()).commit().0
+}
+
+/// Canonical `DPrj` `Constant` for member `idx` of `block`. Use this
+/// (rather than ad-hoc `Constant::new(ConstantInfo::DPrj { ... })`)
+/// so all callers share one construction path.
+pub fn defn_proj_constant(idx: u64, block: Address) -> Constant {
+  Constant::new(ConstantInfo::DPrj(DefinitionProj { idx, block }))
+}
+
+/// Canonical `IPrj` `Constant` for member `idx` of `block`.
+pub fn indc_proj_constant(idx: u64, block: Address) -> Constant {
+  Constant::new(ConstantInfo::IPrj(InductiveProj { idx, block }))
+}
+
+/// Canonical `RPrj` `Constant` for member `idx` of `block`.
+pub fn recr_proj_constant(idx: u64, block: Address) -> Constant {
+  Constant::new(ConstantInfo::RPrj(RecursorProj { idx, block }))
+}
+
+/// Canonical `CPrj` `Constant` for ctor `(idx, cidx)` of `block`.
+pub fn ctor_proj_constant(idx: u64, cidx: u64, block: Address) -> Constant {
+  Constant::new(ConstantInfo::CPrj(ConstructorProj { idx, cidx, block }))
+}
+
 #[cfg(test)]
 pub mod tests {
   use super::*;

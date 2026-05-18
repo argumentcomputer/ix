@@ -336,19 +336,24 @@ pub fn decoded_to_ixon_env(decoded: &DecodedRawEnv) -> IxonEnv {
 /// Convert a Rust IxonEnv to a DecodedRawEnv.
 ///
 /// Forces materialization of every constant — callers operating on a
-/// freshly-loaded lazy env pay the parse cost here.
-pub fn ixon_env_to_decoded(env: &IxonEnv) -> DecodedRawEnv {
-  let consts = env
-    .consts
-    .iter()
-    .filter_map(|e| {
-      let c = e.value().get().ok()?;
-      Some(DecodedRawConst {
-        addr: e.key().clone(),
-        constant: (*c).clone(),
-      })
-    })
-    .collect();
+/// freshly-loaded lazy env pay the parse cost here. Returns `Err`
+/// on the first const that fails to materialize (corrupt bytes,
+/// trailing data, etc.); silently dropping such entries would leave
+/// the Lean caller with no signal of the lost data.
+pub fn ixon_env_to_decoded(env: &IxonEnv) -> Result<DecodedRawEnv, String> {
+  let mut consts: Vec<DecodedRawConst> = Vec::with_capacity(env.consts.len());
+  for e in env.consts.iter() {
+    let c = e.value().get().map_err(|err| {
+      format!(
+        "ixon_env_to_decoded: failed to materialize const {}: {err}",
+        e.key().hex()
+      )
+    })?;
+    consts.push(DecodedRawConst {
+      addr: e.key().clone(),
+      constant: (*c).clone(),
+    });
+  }
   let named = env
     .named
     .iter()
@@ -376,7 +381,7 @@ pub fn ixon_env_to_decoded(env: &IxonEnv) -> DecodedRawEnv {
       name: e.value().clone(),
     })
     .collect();
-  DecodedRawEnv { consts, named, blobs, comms, names }
+  Ok(DecodedRawEnv { consts, named, blobs, comms, names })
 }
 
 // =============================================================================
@@ -431,10 +436,12 @@ pub extern "C" fn rs_de_env(
   let data = obj.as_bytes();
   let mut slice: &[u8] = data;
   match IxonEnv::get(&mut slice) {
-    Ok(env) => {
-      let decoded = ixon_env_to_decoded(&env);
-      let raw_env = LeanIxonRawEnv::build(&decoded);
-      LeanExcept::ok(raw_env)
+    Ok(env) => match ixon_env_to_decoded(&env) {
+      Ok(decoded) => {
+        let raw_env = LeanIxonRawEnv::build(&decoded);
+        LeanExcept::ok(raw_env)
+      },
+      Err(e) => LeanExcept::error_string(&format!("rs_de_env: {e}")),
     },
     Err(e) => {
       let msg = format!("rs_de_env: {}", e);
@@ -457,10 +464,12 @@ pub extern "C" fn rs_de_env_anon(
   let data = obj.as_bytes();
   let mut slice: &[u8] = data;
   match IxonEnv::get_anon(&mut slice) {
-    Ok(env) => {
-      let decoded = ixon_env_to_decoded(&env);
-      let raw_env = LeanIxonRawEnv::build(&decoded);
-      LeanExcept::ok(raw_env)
+    Ok(env) => match ixon_env_to_decoded(&env) {
+      Ok(decoded) => {
+        let raw_env = LeanIxonRawEnv::build(&decoded);
+        LeanExcept::ok(raw_env)
+      },
+      Err(e) => LeanExcept::error_string(&format!("rs_de_env_anon: {e}")),
     },
     Err(e) => {
       let msg = format!("rs_de_env_anon: {}", e);

@@ -1364,7 +1364,7 @@ impl Env {
 
     // Section 2: Consts (lazy: read length prefix, slice bytes, defer parse)
     let num_consts = get_u64(buf)?;
-    for _ in 0..num_consts {
+    for i in 0..num_consts {
       let addr = get_address(buf)?;
       let len = Tag0::get(buf)?.size as usize;
       if buf.len() < len {
@@ -1376,6 +1376,20 @@ impl Env {
       }
       let (bytes, rest) = buf.split_at(len);
       *buf = rest;
+      // Per-entry integrity: hash the bytes and compare with the
+      // stored address. The env-level merkle root over `consts.keys()`
+      // catches missing/extra entries but not byte-tampering of a
+      // constant whose key is intact; without this check, corruption
+      // would slip past `Env::get` and surface much later as a
+      // misleading parse error inside `LazyConstant::get`.
+      let computed = Address::hash(bytes);
+      if computed != addr {
+        return Err(format!(
+          "Env::get: const at idx {i} bytes hash to {} but stored under {}",
+          computed.hex(),
+          addr.hex()
+        ));
+      }
       env.store_const_lazy(addr, bytes.into());
     }
 
@@ -1494,7 +1508,7 @@ impl Env {
 
     // Section 2: Consts (kept, lazy)
     let num_consts = get_u64(buf)?;
-    for _ in 0..num_consts {
+    for i in 0..num_consts {
       let addr = get_address(buf)?;
       let len = Tag0::get(buf)?.size as usize;
       if buf.len() < len {
@@ -1506,6 +1520,14 @@ impl Env {
       }
       let (bytes, rest) = buf.split_at(len);
       *buf = rest;
+      let computed = Address::hash(bytes);
+      if computed != addr {
+        return Err(format!(
+          "Env::get_anon: const at idx {i} bytes hash to {} but stored under {}",
+          computed.hex(),
+          addr.hex()
+        ));
+      }
       env.store_const_lazy(addr, bytes.into());
     }
 
@@ -1651,7 +1673,7 @@ impl Env {
 
     // Section 2: Consts (mmap-backed lazy windows)
     let num_consts = get_u64(&mut buf)?;
-    for _ in 0..num_consts {
+    for i in 0..num_consts {
       let addr = get_address(&mut buf)?;
       let len = Tag0::get(&mut buf)?.size as usize;
       if buf.len() < len {
@@ -1664,6 +1686,15 @@ impl Env {
       // `buf` is a suffix of `mmap_full`; the constant's bytes start
       // at the current cursor and span `len` bytes.
       let offset = mmap_full.len() - buf.len();
+      let bytes = &mmap_full[offset..offset + len];
+      let computed = Address::hash(bytes);
+      if computed != addr {
+        return Err(format!(
+          "Env::get_anon_mmap: const at idx {i} bytes hash to {} but stored under {}",
+          computed.hex(),
+          addr.hex()
+        ));
+      }
       env.store_const_lazy_mmap(addr, Arc::clone(&mmap), offset, len);
       buf = &buf[len..];
     }
@@ -2004,9 +2035,14 @@ mod tests {
         let meta = ConstantMeta::default();
         // Sometimes generate a Named.original to exercise that serialization path.
         let original = if bool::arbitrary(g) {
-          let orig_addr = Address::arbitrary(g);
-          // Store the original constant too so the env is self-consistent.
-          env.store_const(orig_addr.clone(), gen_constant(g));
+          // Store the original constant under its true content address —
+          // `Env::get` verifies `Address::hash(bytes) == addr` per entry,
+          // so a random `Address::arbitrary` would be rejected on load.
+          let orig_constant = gen_constant(g);
+          let mut orig_buf = Vec::new();
+          orig_constant.put(&mut orig_buf);
+          let orig_addr = Address::hash(&orig_buf);
+          env.store_const(orig_addr.clone(), orig_constant);
           Some((orig_addr, ConstantMeta::default()))
         } else {
           None
@@ -2148,13 +2184,17 @@ mod tests {
   // ---------- Env merkle root tests ----------
 
   fn defn_const(refs: Vec<Address>) -> Constant {
+    defn_const_discriminator(refs, 0)
+  }
+
+  fn defn_const_discriminator(refs: Vec<Address>, lvls: u64) -> Constant {
     use crate::ix::env::DefinitionSafety;
     use crate::ix::ixon::constant::{DefKind, Definition};
     Constant::with_tables(
       ConstantInfo::Defn(Definition {
         kind: DefKind::Definition,
         safety: DefinitionSafety::Safe,
-        lvls: 0,
+        lvls,
         typ: Expr::sort(0),
         value: Expr::var(0),
       }),
@@ -2162,6 +2202,16 @@ mod tests {
       refs,
       Vec::new(),
     )
+  }
+
+  /// Store `c` at its true content address; returns the address.
+  /// Tests that serialize+deserialize through `Env::put`/`Env::get`
+  /// must use canonical addresses because the load path verifies
+  /// `Address::hash(bytes) == addr` per entry.
+  fn store_canonical(env: &Env, c: Constant) -> Address {
+    let (addr, _) = c.commit();
+    env.store_const(addr.clone(), c);
+    addr
   }
 
   /// Extract the stored merkle root from a serialized env. The Tag4
@@ -2245,6 +2295,81 @@ mod tests {
     assert!(res.is_err(), "tampered root should be rejected");
   }
 
+  /// Flip a byte inside the first const's payload bytes (not its
+  /// stored address): merkle still validates over `consts.keys()`, so
+  /// the per-entry `Address::hash(bytes) == addr` check is what must
+  /// reject this corruption. Without that check, `Env::get` would
+  /// succeed and the failure would surface much later inside
+  /// `LazyConstant::get` with a misleading parse error.
+  ///
+  /// Header layout for an env with empty blobs and one const:
+  ///   [0]      Tag4 (0xE0)
+  ///   [1..33)  merkle root (32 bytes)
+  ///   [33]     Section 1 (blobs) count = 0 (Tag0)
+  ///   [34]     Section 2 (consts) count = 1 (Tag0)
+  ///   [35..67) const address (32 bytes)
+  ///   [67]     Tag0 length of const bytes
+  ///   [68..]   const bytes (target for tampering)
+  #[test]
+  fn env_const_bytes_tampering_rejected_by_get() {
+    let env = Env::new();
+    env.store_const(Address::hash(b"a"), defn_const(vec![]));
+    let mut buf = Vec::new();
+    env.put(&mut buf).unwrap();
+    // Flip a byte well inside the const payload.
+    let off = 68 + 3;
+    assert!(off < buf.len(), "expected const bytes at offset {off}");
+    buf[off] ^= 0xFF;
+    let res = Env::get(&mut buf.as_slice());
+    let err = res.expect_err("tampered const bytes should be rejected");
+    assert!(
+      err.contains("bytes hash to") && err.contains("but stored under"),
+      "expected per-entry verify error, got: {err}"
+    );
+  }
+
+  #[test]
+  fn env_const_bytes_tampering_rejected_by_get_anon() {
+    let env = Env::new();
+    env.store_const(Address::hash(b"a"), defn_const(vec![]));
+    let mut buf = Vec::new();
+    env.put(&mut buf).unwrap();
+    let off = 68 + 3;
+    assert!(off < buf.len());
+    buf[off] ^= 0xFF;
+    let res = Env::get_anon(&mut buf.as_slice());
+    let err = res.expect_err("tampered const bytes should be rejected");
+    assert!(
+      err.contains("bytes hash to") && err.contains("but stored under"),
+      "expected per-entry verify error, got: {err}"
+    );
+  }
+
+  #[test]
+  fn env_const_bytes_tampering_rejected_by_get_anon_mmap() {
+    use std::io::Write;
+    let env = Env::new();
+    env.store_const(Address::hash(b"a"), defn_const(vec![]));
+    let mut buf = Vec::new();
+    env.put(&mut buf).unwrap();
+    let off = 68 + 3;
+    assert!(off < buf.len());
+    buf[off] ^= 0xFF;
+    // mmap requires a real file
+    let tmp = std::env::temp_dir().join("ix_env_tamper_mmap_test.ixe");
+    {
+      let mut f = std::fs::File::create(&tmp).unwrap();
+      f.write_all(&buf).unwrap();
+    }
+    let res = Env::get_anon_mmap(&tmp);
+    let err = res.expect_err("tampered const bytes should be rejected");
+    assert!(
+      err.contains("bytes hash to") && err.contains("but stored under"),
+      "expected per-entry verify error, got: {err}"
+    );
+    std::fs::remove_file(&tmp).ok();
+  }
+
   // ---------------------------------------------------------------------------
   // Env::get_anon — anonymous-only deserialization
   // ---------------------------------------------------------------------------
@@ -2253,10 +2378,11 @@ mod tests {
   fn get_anon_keeps_consts_drops_metadata() {
     use crate::ix::ixon::env::Named;
     let env = Env::new();
-    let a = Address::hash(b"a");
-    let b = Address::hash(b"b");
-    env.store_const(a.clone(), defn_const(vec![]));
-    env.store_const(b.clone(), defn_const(vec![a.clone()]));
+    // Round-trip tests must use canonical addresses (see store_canonical
+    // helper); `Env::get`/`get_anon` reject entries whose bytes don't
+    // hash to their stored address.
+    let a = store_canonical(&env, defn_const(vec![]));
+    let b = store_canonical(&env, defn_const(vec![a.clone()]));
     // Populate metadata sections so we can verify they get dropped.
     let blob_addr = env.store_blob(b"hello world".to_vec());
     env.register_name(Name::str(Name::anon(), "MyConst".to_string()),
@@ -2281,7 +2407,7 @@ mod tests {
   #[test]
   fn get_anon_merkle_root_verified() {
     let env = Env::new();
-    env.store_const(Address::hash(b"x"), defn_const(vec![]));
+    store_canonical(&env, defn_const(vec![]));
     let mut buf = Vec::new();
     env.put(&mut buf).unwrap();
     // Tamper with the root.
@@ -2304,11 +2430,12 @@ mod tests {
   fn get_anon_consts_match_get() {
     // Build an env, serialize, then load via both get and get_anon.
     // The `consts` map should agree (same addresses, same Constant
-    // when materialized).
+    // when materialized). Use a discriminator per const so they're
+    // content-distinct (otherwise 5 identical Defns would collapse
+    // to one entry).
     let env = Env::new();
     for i in 0..5u8 {
-      let addr = Address::hash(&[i]);
-      env.store_const(addr, defn_const(vec![]));
+      store_canonical(&env, defn_const_discriminator(vec![], u64::from(i)));
     }
     let mut buf = Vec::new();
     env.put(&mut buf).unwrap();

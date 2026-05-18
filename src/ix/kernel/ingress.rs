@@ -4005,41 +4005,63 @@ fn validate_no_reserved_marker_addresses(
 // discards `named`/`names`/`comms` sections. The helpers below do not
 // depend on those sections being empty — they simply never consult them.
 
-use crate::ix::ixon::constant::{
-  ConstructorProj, DefinitionProj, InductiveProj, RecursorProj,
-};
 use crate::ix::kernel::mode::Anon;
 
+/// Verify that a projection address computed from a block's structure
+/// is actually present in the env's consts. Wrapped here so the four
+/// dispatch arms in `ingress_anon_block` (DPrj/RPrj/IPrj/CPrj) all
+/// produce the same error format.
+fn verify_proj_addr_in_env(
+  kind: &'static str,
+  proj_addr: &Address,
+  block_addr: &Address,
+  member_idx: u64,
+  ctor_idx: Option<u64>,
+  anon_env: &IxonEnv,
+) -> Result<(), String> {
+  if anon_env.consts.contains_key(proj_addr) {
+    return Ok(());
+  }
+  match ctor_idx {
+    None => Err(format!(
+      "ingress_anon_block: computed {kind} address {} not present in env (block {} idx {})",
+      proj_addr.hex(),
+      block_addr.hex(),
+      member_idx
+    )),
+    Some(cidx) => Err(format!(
+      "ingress_anon_block: computed {kind} address {} not present in env (block {} idx {} cidx {})",
+      proj_addr.hex(),
+      block_addr.hex(),
+      member_idx,
+      cidx
+    )),
+  }
+}
+
 /// Deterministic IPrj content address for member `idx` of `block`.
+///
+/// Thin re-export of `crate::ix::ixon::constant::indc_proj_address` —
+/// the canonical projection-address helper used by both compile and
+/// ingress paths. Keep the `anon_` alias so existing call sites read
+/// naturally in the anon-mode pipeline.
 pub fn anon_indc_proj_addr(block: &Address, idx: u64) -> Address {
-  Constant::new(IxonCI::IPrj(InductiveProj { idx, block: block.clone() }))
-    .commit()
-    .0
+  crate::ix::ixon::constant::indc_proj_address(idx, block)
 }
 
 /// Deterministic DPrj content address for member `idx` of `block`.
 pub fn anon_defn_proj_addr(block: &Address, idx: u64) -> Address {
-  Constant::new(IxonCI::DPrj(DefinitionProj { idx, block: block.clone() }))
-    .commit()
-    .0
+  crate::ix::ixon::constant::defn_proj_address(idx, block)
 }
 
 /// Deterministic RPrj content address for member `idx` of `block`.
 pub fn anon_recr_proj_addr(block: &Address, idx: u64) -> Address {
-  Constant::new(IxonCI::RPrj(RecursorProj { idx, block: block.clone() }))
-    .commit()
-    .0
+  crate::ix::ixon::constant::recr_proj_address(idx, block)
 }
 
 /// Deterministic CPrj content address for ctor `(idx, cidx)` of `block`.
 pub fn anon_ctor_proj_addr(block: &Address, idx: u64, cidx: u64) -> Address {
-  Constant::new(IxonCI::CPrj(ConstructorProj {
-    idx,
-    cidx,
-    block: block.clone(),
-  }))
-  .commit()
-  .0
+  crate::ix::ixon::constant::ctor_proj_address(idx, cidx, block)
 }
 
 /// Compute deterministic ctor projection addresses for every constructor of
@@ -4307,14 +4329,9 @@ pub fn ingress_anon_block(
     match member {
       IxonMutConst::Defn(def) => {
         let proj_addr = anon_defn_proj_addr(block_addr, idx);
-        if !anon_env.consts.contains_key(&proj_addr) {
-          return Err(format!(
-            "ingress_anon_block: computed DPrj address {} not present in env (block {} idx {})",
-            proj_addr.hex(),
-            block_addr.hex(),
-            idx
-          ));
-        }
+        verify_proj_addr_in_env(
+          "DPrj", &proj_addr, block_addr, idx, None, anon_env,
+        )?;
         let self_id = KId::<Anon>::new(proj_addr.clone(), ());
         member_kids.push(self_id.clone());
         let hints_override = anon_env.anon_hints.get(&proj_addr).copied();
@@ -4339,14 +4356,9 @@ pub fn ingress_anon_block(
       },
       IxonMutConst::Recr(rec) => {
         let proj_addr = anon_recr_proj_addr(block_addr, idx);
-        if !anon_env.consts.contains_key(&proj_addr) {
-          return Err(format!(
-            "ingress_anon_block: computed RPrj address {} not present in env (block {} idx {})",
-            proj_addr.hex(),
-            block_addr.hex(),
-            idx
-          ));
-        }
+        verify_proj_addr_in_env(
+          "RPrj", &proj_addr, block_addr, idx, None, anon_env,
+        )?;
         let self_id = KId::<Anon>::new(proj_addr.clone(), ());
         member_kids.push(self_id.clone());
 
@@ -4369,29 +4381,23 @@ pub fn ingress_anon_block(
       },
       IxonMutConst::Indc(ind) => {
         let proj_addr = anon_indc_proj_addr(block_addr, idx);
-        if !anon_env.consts.contains_key(&proj_addr) {
-          return Err(format!(
-            "ingress_anon_block: computed IPrj address {} not present in env (block {} idx {})",
-            proj_addr.hex(),
-            block_addr.hex(),
-            idx
-          ));
-        }
+        verify_proj_addr_in_env(
+          "IPrj", &proj_addr, block_addr, idx, None, anon_env,
+        )?;
         let self_id = KId::<Anon>::new(proj_addr.clone(), ());
         member_kids.push(self_id.clone());
 
         let ctor_addrs = anon_ctor_addrs(block_addr, idx, ind);
         // Verify ctor addresses too — catches corruption early.
         for (cidx, c_addr) in ctor_addrs.iter().enumerate() {
-          if !anon_env.consts.contains_key(c_addr) {
-            return Err(format!(
-              "ingress_anon_block: computed CPrj address {} not present in env (block {} idx {} cidx {})",
-              c_addr.hex(),
-              block_addr.hex(),
-              idx,
-              cidx
-            ));
-          }
+          verify_proj_addr_in_env(
+            "CPrj",
+            c_addr,
+            block_addr,
+            idx,
+            Some(cidx as u64),
+            anon_env,
+          )?;
         }
 
         let entries = ingress_anon_inductive(

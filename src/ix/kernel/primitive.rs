@@ -558,6 +558,117 @@ impl PrimAddrs {
     }
   }
 
+  /// `(lean_name, canonical_address_hex)` table from `Self::new()`,
+  /// in the same order as `Tests/Ix/Kernel/BuildPrimitives.lean`'s
+  /// `kernelPrimitives` array. Used by the regen-parity test
+  /// (`testPrimitivesParity`) to detect drift between hardcoded
+  /// addresses and freshly-compiled ones: if any future
+  /// compile/serialize change touches a primitive's content hash,
+  /// the parity test fails with a printable diff before the
+  /// breakage propagates to downstream consumers.
+  ///
+  /// Keep entries in lock-step with `kernelPrimitives` (same names,
+  /// same order). The `eager_reduce` entry is intentionally a
+  /// synthetic kernel marker — not the compiled Lean content hash —
+  /// because the real `eagerReduce` canonicalizes to the same
+  /// address as `id`; see the comment on the field in `new()`.
+  pub fn lean_parity_table() -> Vec<(&'static str, String)> {
+    let p = Self::new();
+    vec![
+      ("Nat", p.nat.hex()),
+      ("Nat.zero", p.nat_zero.hex()),
+      ("Nat.succ", p.nat_succ.hex()),
+      ("Nat.add", p.nat_add.hex()),
+      ("Nat.pred", p.nat_pred.hex()),
+      ("Nat.sub", p.nat_sub.hex()),
+      ("Nat.mul", p.nat_mul.hex()),
+      ("Nat.pow", p.nat_pow.hex()),
+      ("Nat.gcd", p.nat_gcd.hex()),
+      ("Nat.mod", p.nat_mod.hex()),
+      ("Nat.div", p.nat_div.hex()),
+      ("Nat.bitwise", p.nat_bitwise.hex()),
+      ("Nat.beq", p.nat_beq.hex()),
+      ("Nat.ble", p.nat_ble.hex()),
+      ("Nat.land", p.nat_land.hex()),
+      ("Nat.lor", p.nat_lor.hex()),
+      ("Nat.xor", p.nat_xor.hex()),
+      ("Nat.shiftLeft", p.nat_shift_left.hex()),
+      ("Nat.shiftRight", p.nat_shift_right.hex()),
+      ("Bool", p.bool_type.hex()),
+      ("Bool.true", p.bool_true.hex()),
+      ("Bool.false", p.bool_false.hex()),
+      ("String", p.string.hex()),
+      ("String.mk", p.string_mk.hex()),
+      ("Char", p.char_type.hex()),
+      ("Char.mk", p.char_mk.hex()),
+      ("Char.ofNat", p.char_of_nat.hex()),
+      ("String.ofList", p.string_of_list.hex()),
+      ("List", p.list.hex()),
+      ("List.nil", p.list_nil.hex()),
+      ("List.cons", p.list_cons.hex()),
+      ("Eq", p.eq.hex()),
+      ("Eq.refl", p.eq_refl.hex()),
+      ("Quot", p.quot_type.hex()),
+      ("Quot.mk", p.quot_ctor.hex()),
+      ("Quot.lift", p.quot_lift.hex()),
+      ("Quot.ind", p.quot_ind.hex()),
+      ("Lean.reduceBool", p.reduce_bool.hex()),
+      ("Lean.reduceNat", p.reduce_nat.hex()),
+      ("eagerReduce", p.eager_reduce.hex()),
+      ("System.Platform.numBits", p.system_platform_num_bits.hex()),
+      ("System.Platform.getNumBits", p.system_platform_get_num_bits.hex()),
+      ("Subtype.val", p.subtype_val.hex()),
+      ("String.toByteArray", p.string_to_byte_array.hex()),
+      ("ByteArray.empty", p.byte_array_empty.hex()),
+      ("Nat.decLe", p.nat_dec_le.hex()),
+      ("Nat.decEq", p.nat_dec_eq.hex()),
+      ("Nat.decLt", p.nat_dec_lt.hex()),
+      ("Decidable.rec", p.decidable_rec.hex()),
+      ("Decidable.isTrue", p.decidable_is_true.hex()),
+      ("Decidable.isFalse", p.decidable_is_false.hex()),
+      ("Nat.le_of_ble_eq_true", p.nat_le_of_ble_eq_true.hex()),
+      ("Nat.not_le_of_not_ble_eq_true", p.nat_not_le_of_not_ble_eq_true.hex()),
+      ("Nat.eq_of_beq_eq_true", p.nat_eq_of_beq_eq_true.hex()),
+      ("Nat.ne_of_beq_eq_false", p.nat_ne_of_beq_eq_false.hex()),
+      ("Fin", p.fin.hex()),
+      ("Bool.noConfusion", p.bool_no_confusion.hex()),
+      ("Int", p.int.hex()),
+      ("Int.ofNat", p.int_of_nat.hex()),
+      ("Int.negSucc", p.int_neg_succ.hex()),
+      ("Int.add", p.int_add.hex()),
+      ("Int.sub", p.int_sub.hex()),
+      ("Int.mul", p.int_mul.hex()),
+      ("Int.neg", p.int_neg.hex()),
+      ("Int.emod", p.int_emod.hex()),
+      ("Int.ediv", p.int_ediv.hex()),
+      ("Int.bmod", p.int_bmod.hex()),
+      ("Int.bdiv", p.int_bdiv.hex()),
+      ("Int.natAbs", p.int_nat_abs.hex()),
+      ("Int.pow", p.int_pow.hex()),
+      ("Int.decEq", p.int_dec_eq.hex()),
+      ("Int.decLe", p.int_dec_le.hex()),
+      ("Int.decLt", p.int_dec_lt.hex()),
+      ("PUnit", p.punit.hex()),
+      ("PProd", p.pprod.hex()),
+      ("PProd.mk", p.pprod_mk.hex()),
+      ("Nat.rec", p.nat_rec.hex()),
+      ("Nat.casesOn", p.nat_cases_on.hex()),
+      ("BitVec", p.bit_vec.hex()),
+      ("BitVec.toNat", p.bit_vec_to_nat.hex()),
+      ("BitVec.ofNat", p.bit_vec_of_nat.hex()),
+      ("BitVec.ult", p.bit_vec_ult.hex()),
+      ("Decidable.decide", p.decidable_decide.hex()),
+      ("LT.lt", p.lt_lt.hex()),
+      ("OfNat.ofNat", p.of_nat_of_nat.hex()),
+      ("Unit", p.unit.hex()),
+      ("PUnit._sizeOf_1", p.punit_size_of_1.hex()),
+      ("SizeOf.sizeOf", p.size_of_size_of.hex()),
+      ("String.back", p.string_back.hex()),
+      ("String.Legacy.back", p.string_legacy_back.hex()),
+      ("String.utf8ByteSize", p.string_utf8_byte_size.hex()),
+    ]
+  }
+
   /// LEON content-hash addresses, hardcoded from
   /// `ConstantInfo::get_hash()` applied to each primitive's original
   /// (pre-compile) Lean declaration. Used by `Primitives::from_env_orig`

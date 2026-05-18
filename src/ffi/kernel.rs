@@ -42,7 +42,7 @@ use rustc_hash::FxHashMap;
 
 use lean_ffi::object::{
   LeanArray, LeanBool, LeanBorrowed, LeanIOResult, LeanList, LeanOption,
-  LeanOwned, LeanRef, LeanString,
+  LeanOwned, LeanProd, LeanRef, LeanString,
 };
 
 use crate::lean::LeanIxCheckError;
@@ -116,7 +116,7 @@ const KERNEL_EXCEPTION_TAG: u8 = 0;
 const COMPILE_ERROR_TAG: u8 = 1;
 
 /// Streaming writer for the `--fail-out` file used by `lake exe ix
-/// check-ixon`.
+/// check`.
 ///
 /// The previous implementation buffered all failures in Lean and dumped them
 /// once at the very end of the run, which meant a long-running full-env
@@ -141,7 +141,7 @@ impl FailureLog {
   /// `# seeds`), and return a handle ready to record per-failure entries.
   fn open(path: &str, env_path: &str, seeds: usize) -> std::io::Result<Self> {
     let mut file = File::create(path)?;
-    writeln!(file, "# ix check-ixon failures")?;
+    writeln!(file, "# ix check failures")?;
     writeln!(file, "# env: {env_path}")?;
     writeln!(file, "# seeds: {seeds}")?;
     writeln!(file)?;
@@ -731,6 +731,29 @@ pub extern "C" fn rs_kernel_ixon_names(
   };
   let names = all_checkable_ixon_names(&ixon_env);
   LeanIOResult::ok(build_lean_name_array(&names))
+}
+
+/// FFI: expose the canonical primitive `(lean_name, hex_address)`
+/// table from `PrimAddrs::new()` to the Lean test suite.
+///
+/// Used by `testPrimitivesParity`
+/// (`Tests/Ix/Kernel/BuildPrimitives.lean`) to detect drift between
+/// the hardcoded `PrimAddrs::new()` addresses and the freshly
+/// compiled addresses produced by `rsCompileEnvFFI`. Any future
+/// compile/serialize change that touches a primitive's content hash
+/// will fail this test with a diff before the breakage propagates
+/// to downstream consumers (Aiur, kernel primitive resolution).
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_prim_addrs_canonical() -> LeanIOResult<LeanOwned> {
+  let table = crate::ix::kernel::primitive::PrimAddrs::lean_parity_table();
+  let arr = LeanArray::alloc(table.len());
+  for (i, (name, hex)) in table.iter().enumerate() {
+    let name_obj: LeanOwned = LeanString::new(name).into();
+    let hex_obj: LeanOwned = LeanString::new(hex).into();
+    let pair: LeanOwned = LeanProd::new(name_obj, hex_obj).into();
+    arr.set(i, pair);
+  }
+  LeanIOResult::ok(arr)
 }
 
 fn all_checkable_ixon_names(ixon_env: &IxonEnv) -> Vec<Name> {
@@ -1432,7 +1455,7 @@ fn run_anon_checks_parallel(
               (primary_addr.clone(), result_idxs.clone())
             },
           };
-          let display = format!("@{}", primary_addr.hex());
+          let display = format!("#{}", primary_addr.hex());
           let prefix = format!("  [{}/{work_total}] {display}", work_idx + 1);
           progress_worker.begin(worker_idx, &prefix);
 
@@ -1466,7 +1489,7 @@ fn run_anon_checks_parallel(
             if let (Some(log), Err((_, msg))) =
               (failure_log_worker.as_ref(), result.as_ref())
             {
-              let label = format!("@{}", addrs[result_idx].hex());
+              let label = format!("#{}", addrs[result_idx].hex());
               log.record(&label, msg);
             }
           }
@@ -1598,6 +1621,9 @@ pub extern "C" fn rs_kernel_check_anon(
   };
 
   let total = addrs.len();
+  // Keep our own copy for the per-slot `(hex, result)` FFI return;
+  // the runner clones internally for worker dispatch.
+  let addrs_for_return = addrs.clone();
   let t3 = Instant::now();
   let ixon_env_arc = Arc::new(ixon_env);
   let results = match run_anon_checks_parallel(
@@ -1634,7 +1660,7 @@ pub extern "C" fn rs_kernel_check_anon(
     );
   }
 
-  build_result_array(&results)
+  build_anon_result_array(&addrs_for_return, &results)
 }
 
 #[cfg(test)]
@@ -1920,7 +1946,7 @@ where
     name.pretty()
   } else {
     match ixon_env.lookup_name(name) {
-      Some(named) => format!("@{}", named.addr.hex()),
+      Some(named) => format!("#{}", named.addr.hex()),
       None => name.pretty(),
     }
   };
@@ -2593,6 +2619,33 @@ fn build_result_array(results: &[CheckRes]) -> LeanIOResult<LeanOwned> {
   let arr = LeanArray::alloc(results.len());
   for (i, result) in results.iter().enumerate() {
     arr.set(i, build_option_result(result));
+  }
+  LeanIOResult::ok(arr)
+}
+
+/// Build an `IO (Array (String × Option CheckError))` from Rust
+/// `(address, result)` pairs.
+///
+/// Used by `rs_kernel_check_anon` to return per-result content
+/// addresses alongside the check outcome — the anon CLI has no
+/// Lean-side name to associate with each result slot, so the
+/// `#<hex>` address label has to come back through the FFI to keep
+/// `--fail-out` and `[check]` summary lines content-addressed.
+fn build_anon_result_array(
+  addrs: &[Address],
+  results: &[CheckRes],
+) -> LeanIOResult<LeanOwned> {
+  debug_assert_eq!(
+    addrs.len(),
+    results.len(),
+    "build_anon_result_array: addrs/results length mismatch"
+  );
+  let arr = LeanArray::alloc(results.len());
+  for (i, result) in results.iter().enumerate() {
+    let hex: LeanOwned = LeanString::new(&addrs[i].hex()).into();
+    let res_obj = build_option_result(result);
+    let pair: LeanOwned = LeanProd::new(hex, res_obj).into();
+    arr.set(i, pair);
   }
   LeanIOResult::ok(arr)
 }

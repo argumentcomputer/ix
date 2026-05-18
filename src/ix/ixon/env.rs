@@ -440,18 +440,39 @@ mod tests {
     assert_eq!(addr1, addr3);
   }
 
-  /// Build a constant with the given refs (for BFS tests).
+  /// Build a constant with the given refs (for BFS tests). `discriminator`
+  /// is folded into `lvls` so callers can produce content-distinct
+  /// constants when the same ref-set would otherwise collide (e.g.
+  /// two independent leaf nodes both with empty refs).
   fn const_with_refs(refs: Vec<Address>) -> Constant {
+    const_with_refs_discriminator(refs, 0)
+  }
+
+  fn const_with_refs_discriminator(
+    refs: Vec<Address>,
+    discriminator: u64,
+  ) -> Constant {
     Constant::with_tables(
       ConstantInfo::Axio(Axiom {
         is_unsafe: false,
-        lvls: 0,
+        lvls: discriminator,
         typ: Arc::new(Expr::Sort(0)),
       }),
       Vec::new(),
       refs,
       Vec::new(),
     )
+  }
+
+  /// Store a constant at its true content address and return that
+  /// address. Use this instead of `store_const(Address::hash(b"a"),
+  /// ...)` for tests that round-trip through `Env::put`/`Env::get`;
+  /// the load path verifies `Address::hash(bytes) == addr` per
+  /// entry, so fake keys are rejected.
+  fn store_canonical(env: &Env, c: Constant) -> Address {
+    let (addr, _) = c.commit();
+    env.store_const(addr.clone(), c);
+    addr
   }
 
   #[test]
@@ -566,16 +587,18 @@ mod tests {
   /// pre-populate the cache).
   #[test]
   fn lazy_sparsity_only_materializes_closure() {
-    // Build a small env: a→b→c, and an independent d.
+    // Build a small env: a→b→c, and an independent d. Each const is
+    // stored at its true content address (round-trip through `put`+`get`
+    // verifies `Address::hash(bytes) == addr`). The `d` discriminator
+    // avoids a content-hash collision with `c` (both have empty refs).
     let env = Env::new();
-    let a = Address::hash(b"a");
-    let b = Address::hash(b"b");
-    let c = Address::hash(b"c");
-    let d = Address::hash(b"d");
-    env.store_const(a.clone(), const_with_refs(vec![b.clone()]));
-    env.store_const(b.clone(), const_with_refs(vec![c.clone()]));
-    env.store_const(c.clone(), const_with_refs(vec![]));
-    env.store_const(d.clone(), const_with_refs(vec![]));
+    let c = store_canonical(&env, const_with_refs(vec![]));
+    let b = store_canonical(&env, const_with_refs(vec![c.clone()]));
+    let a = store_canonical(&env, const_with_refs(vec![b.clone()]));
+    let d = store_canonical(
+      &env,
+      const_with_refs_discriminator(vec![], 1),
+    );
 
     // Serialize → deserialize so all entries are lazy-from-bytes.
     let mut buf = Vec::new();

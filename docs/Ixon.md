@@ -881,7 +881,7 @@ fits in single-byte tags (sizes 0..=7 per flag).
 
 | Size | Byte | Type | Payload |
 |------|------|------|---------|
-| 0 | `0xE0` | Environment | opt-tagged merkle root + sections |
+| 0 | `0xE0` | Environment | bare 32-byte merkle root + 5 sections |
 | 1 | `0xE1` | Commitment | 2 addr: secret, payload |
 | 2 | `0xE2` | AssumptionTree | recursive merkle-tree body (see below) |
 | 3 | `0xE3` | Eval claim | 2 addr (input, output) + opt assumptions |
@@ -931,15 +931,24 @@ pub enum Claim {
 A serializable merkle tree over `Address` leaves, used to recover the
 leaf set committed to by a conditional claim's `assumptions` root.
 
+The body has **three** variants — leaves, internal nodes, and an
+explicit `Padding` sentinel that the canonical builder inserts at
+odd-count levels so the byte-tree matches `merkle_root_canonical`'s
+zero-mixing shape (a `Padding` hashes to `zero_address()`).
+
 ```
 [Tag4(0xE, 2) = 0xE2] [body]
 
 body recursive:
   Leaf(addr):   [0x00] [addr:32]
-  Node(l, r):   [0x01] [body l] [body r]
+  Padding:      [0x01]
+  Node(l, r):   [0x02] [body l] [body r]
 ```
 
-Size: `34N - 1` bytes for N leaves + 1 byte top-level tag.
+Size is shape-dependent: each `Leaf` is 33 bytes, each `Padding` is
+1 byte, each `Node` is 1 byte plus its children, and the top-level
+`Tag4` adds 1 byte. For example, `N = 1` ⇒ 34 bytes; `N = 2` ⇒ 68
+bytes; `N = 3` (padded to 4) ⇒ 104 bytes.
 
 ### Commitment Hashing
 

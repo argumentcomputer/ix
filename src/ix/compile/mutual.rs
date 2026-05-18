@@ -34,8 +34,8 @@ use crate::ix::env::{
 use crate::ix::ixon::{
   CompileError,
   constant::{
-    Constant, ConstantInfo, ConstructorProj, DefKind, DefinitionProj,
-    InductiveProj, MutConst as IxonMutConst, RecursorProj,
+    Constant, DefKind, MutConst as IxonMutConst, ctor_proj_constant,
+    defn_proj_constant, indc_proj_constant, recr_proj_constant,
   },
   env::Named,
   metadata::{ConstantMeta, ConstantMetaInfo},
@@ -285,10 +285,7 @@ pub(crate) fn compile_aux_block_with_rename(
         match cnst {
           MutConst::Indc(ind) => {
             // Inductive projection
-            let indc_proj = Constant::new(ConstantInfo::IPrj(InductiveProj {
-              idx,
-              block: block_addr.clone(),
-            }));
+            let indc_proj = indc_proj_constant(idx, block_addr.clone());
             let proj_addr = content_address(&indc_proj);
             stt.env.store_const(proj_addr.clone(), indc_proj);
             stt
@@ -307,11 +304,7 @@ pub(crate) fn compile_aux_block_with_rename(
               let ctor_meta =
                 all_metas.get(&ctor.cnst.name).cloned().unwrap_or_default();
               let ctor_proj =
-                Constant::new(ConstantInfo::CPrj(ConstructorProj {
-                  idx,
-                  cidx: cidx as u64,
-                  block: block_addr.clone(),
-                }));
+                ctor_proj_constant(idx, cidx as u64, block_addr.clone());
               let ctor_addr = content_address(&ctor_proj);
               stt.env.store_const(ctor_addr.clone(), ctor_proj);
               stt.env.register_name(
@@ -326,10 +319,7 @@ pub(crate) fn compile_aux_block_with_rename(
             }
           },
           MutConst::Recr(_) => {
-            let proj = Constant::new(ConstantInfo::RPrj(RecursorProj {
-              idx,
-              block: block_addr.clone(),
-            }));
+            let proj = recr_proj_constant(idx, block_addr.clone());
             let proj_addr = content_address(&proj);
             stt.env.store_const(proj_addr.clone(), proj);
             stt
@@ -340,10 +330,7 @@ pub(crate) fn compile_aux_block_with_rename(
             pending_names.push(n);
           },
           MutConst::Defn(_) => {
-            let proj = Constant::new(ConstantInfo::DPrj(DefinitionProj {
-              idx,
-              block: block_addr.clone(),
-            }));
+            let proj = defn_proj_constant(idx, block_addr.clone());
             let proj_addr = content_address(&proj);
             stt.env.store_const(proj_addr.clone(), proj);
             stt

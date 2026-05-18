@@ -28,9 +28,10 @@ use crate::{
   ix::ixon::{
     CompileError, Tag0,
     constant::{
-      Axiom, Constant, ConstantInfo, Constructor, ConstructorProj, Definition,
-      DefinitionProj, Inductive, InductiveProj, MutConst as IxonMutConst,
-      Quotient, Recursor, RecursorProj, RecursorRule,
+      Axiom, Constant, ConstantInfo, Constructor, Definition, Inductive,
+      MutConst as IxonMutConst, Quotient, Recursor, RecursorRule,
+      ctor_proj_constant, defn_proj_constant, indc_proj_constant,
+      recr_proj_constant,
     },
     env::{Env as IxonEnv, Named},
     expr::Expr,
@@ -3658,18 +3659,10 @@ fn compile_mutual(
       let meta = all_metas.get(&n).cloned().unwrap_or_default();
 
       let proj = match cnst {
-        MutConst::Defn(_) => {
-          Constant::new(ConstantInfo::DPrj(DefinitionProj {
-            idx,
-            block: block_addr.clone(),
-          }))
-        },
+        MutConst::Defn(_) => defn_proj_constant(idx, block_addr.clone()),
         MutConst::Indc(ind) => {
           // Inductive projection
-          let indc_proj = Constant::new(ConstantInfo::IPrj(InductiveProj {
-            idx,
-            block: block_addr.clone(),
-          }));
+          let indc_proj = indc_proj_constant(idx, block_addr.clone());
           let mut proj_bytes = Vec::new();
           indc_proj.put(&mut proj_bytes);
           let proj_addr = Address::hash(&proj_bytes);
@@ -3689,11 +3682,7 @@ fn compile_mutual(
             let ctor_meta =
               all_metas.get(&ctor.cnst.name).cloned().unwrap_or_default();
             let ctor_proj =
-              Constant::new(ConstantInfo::CPrj(ConstructorProj {
-                idx,
-                cidx: cidx as u64,
-                block: block_addr.clone(),
-              }));
+              ctor_proj_constant(idx, cidx as u64, block_addr.clone());
             let mut ctor_bytes = Vec::new();
             ctor_proj.put(&mut ctor_bytes);
             let ctor_addr = Address::hash(&ctor_bytes);
@@ -3711,10 +3700,7 @@ fn compile_mutual(
 
           continue;
         },
-        MutConst::Recr(_) => Constant::new(ConstantInfo::RPrj(RecursorProj {
-          idx,
-          block: block_addr.clone(),
-        })),
+        MutConst::Recr(_) => recr_proj_constant(idx, block_addr.clone()),
       };
 
       let mut proj_bytes = Vec::new();

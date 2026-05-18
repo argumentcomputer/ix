@@ -146,10 +146,14 @@ private def runCheckAnon (envPath : String) (p : Cli.Parsed) : IO UInt32 := do
 
   let mut passed := 0
   let mut failures : Array (String × String) := #[]
-  for i in [:results.size] do
-    match results[i]! with
+  for (hex, res) in results do
+    match res with
     | none => passed := passed + 1
-    | some err => failures := failures.push (s!"#{i}", err.message)
+    -- Label with the full content address (`#<hex>`) to match the
+    -- Rust-side progress / fail-out output. Pre-#48 we emitted
+    -- `#{i}` (result index), which made the CLI summary unjoinable
+    -- with the fail-out file's `#<hex>` entries.
+    | some err => failures := failures.push (s!"#{hex}", err.message)
 
   IO.println s!"[check] checked {results.size} constants in {elapsed.formatMs}"
   IO.println s!"[check] {passed}/{results.size} passed"
