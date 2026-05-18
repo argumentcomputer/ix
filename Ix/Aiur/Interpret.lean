@@ -350,6 +350,14 @@ partial def interp (decls : Decls) (bindings : Bindings) : Term → InterpM Valu
           let overflow : Value := .field (if x >= 256 then 1 else 0)
           return .tuple #[sum, overflow]
       | _, _ => throwErr "u8Add: expected field values"
+  | .u8Mul t1 t2 => do
+      match (← interp decls bindings t1), (← interp decls bindings t2) with
+      | .field a, .field b =>
+          let x  := a.val.toUInt8.toNat * b.val.toUInt8.toNat
+          let lo : Value := .field (G.ofUInt8 x.toUInt8)
+          let hi : Value := .field (G.ofUInt8 (x / 256).toUInt8)
+          return .tuple #[lo, hi]
+      | _, _ => throwErr "u8Mul: expected field values"
   | .u8Sub t1 t2 => do
       match (← interp decls bindings t1), (← interp decls bindings t2) with
       | .field a, .field b =>

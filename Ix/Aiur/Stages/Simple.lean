@@ -74,6 +74,7 @@ inductive Term : Type where
   | u8ShiftRight (typ : Typ) (escapes : Bool) (a : Term) : Term
   | u8Xor (typ : Typ) (escapes : Bool) (a : Term) (b : Term) : Term
   | u8Add (typ : Typ) (escapes : Bool) (a : Term) (b : Term) : Term
+  | u8Mul (typ : Typ) (escapes : Bool) (a : Term) (b : Term) : Term
   | u8Sub (typ : Typ) (escapes : Bool) (a : Term) (b : Term) : Term
   | u8And (typ : Typ) (escapes : Bool) (a : Term) (b : Term) : Term
   | u8Or (typ : Typ) (escapes : Bool) (a : Term) (b : Term) : Term
@@ -93,7 +94,7 @@ def Term.typ : Term → Typ
   | .assertEq t _ _ _ _ | .ioGetInfo t _ _ | .ioSetInfo t _ _ _ _ _
   | .ioRead t _ _ _ | .ioWrite t _ _ _
   | .u8BitDecomposition t _ _ | .u8ShiftLeft t _ _ | .u8ShiftRight t _ _
-  | .u8Xor t _ _ _ | .u8Add t _ _ _ | .u8Sub t _ _ _
+  | .u8Xor t _ _ _ | .u8Add t _ _ _ | .u8Mul t _ _ _ | .u8Sub t _ _ _
   | .u8And t _ _ _ | .u8Or t _ _ _ | .u8LessThan t _ _ _ | .u32LessThan t _ _ _
   | .debug t _ _ _ _ => t
 
@@ -108,7 +109,7 @@ def Term.escapes : Term → Bool
   | .assertEq _ e _ _ _ | .ioGetInfo _ e _ | .ioSetInfo _ e _ _ _ _
   | .ioRead _ e _ _ | .ioWrite _ e _ _
   | .u8BitDecomposition _ e _ | .u8ShiftLeft _ e _ | .u8ShiftRight _ e _
-  | .u8Xor _ e _ _ | .u8Add _ e _ _ | .u8Sub _ e _ _
+  | .u8Xor _ e _ _ | .u8Add _ e _ _ | .u8Mul _ e _ _ | .u8Sub _ e _ _
   | .u8And _ e _ _ | .u8Or _ e _ _ | .u8LessThan _ e _ _ | .u32LessThan _ e _ _
   | .debug _ e _ _ _ => e
 

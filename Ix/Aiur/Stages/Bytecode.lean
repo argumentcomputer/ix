@@ -37,6 +37,7 @@ inductive Op
   | u8ShiftRight : ValIdx → Op
   | u8Xor : ValIdx → ValIdx → Op
   | u8Add : ValIdx → ValIdx → Op
+  | u8Mul : ValIdx → ValIdx → Op
   | u8Sub : ValIdx → ValIdx → Op
   | u8And : ValIdx → ValIdx → Op
   | u8Or : ValIdx → ValIdx → Op

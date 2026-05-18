@@ -29,6 +29,7 @@ namespace IxVMPrim
 public theorem nat_add_lit : 100 + 200 = 300 := rfl
 public theorem nat_sub_lit : 1000 - 250 = 750 := rfl
 public theorem nat_mul_lit : Nat.mul 6 7 = 42 := rfl
+public theorem nat_mul_big : Nat.mul 1000000 1000000 = 1000000000000 := rfl
 public theorem nat_div_lit : Nat.div 100 7 = 14 := rfl
 public theorem nat_mod_lit : Nat.mod 100 7 = 2 := rfl
 public theorem nat_succ_lit : Nat.succ 41 = 42 := rfl
@@ -111,6 +112,7 @@ private def kernelCheckNames : List String := [
   "Nat.sub_le_of_le_add",
   -- Primitive reduction theorems (`IxVMPrim`)
   "IxVMPrim.nat_add_lit", "IxVMPrim.nat_sub_lit", "IxVMPrim.nat_mul_lit",
+  "IxVMPrim.nat_mul_big",
   "IxVMPrim.nat_div_lit", "IxVMPrim.nat_mod_lit", "IxVMPrim.nat_succ_lit",
   "IxVMPrim.nat_pred_lit", "IxVMPrim.nat_gcd_lit",
   "IxVMPrim.nat_land_lit", "IxVMPrim.nat_lor_lit", "IxVMPrim.nat_xor_lit",

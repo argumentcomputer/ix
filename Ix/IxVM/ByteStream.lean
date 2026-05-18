@@ -96,8 +96,9 @@ def byteStream := ⟦
     }
   }
 
-  -- `u64` addition with carry propagation (little-endian bytes)
-  fn u64_add(a: U64, b: U64) -> U64 {
+  -- `u64` addition with carry propagation (little-endian bytes).
+  -- Returns the sum together with the final carry-out.
+  fn u64_add(a: U64, b: U64) -> (U64, G) {
     let [a0, a1, a2, a3, a4, a5, a6, a7] = a;
     let [b0, b1, b2, b3, b4, b5, b6, b7] = b;
     let (s0, c1) = u8_add(a0, b0);
@@ -119,9 +120,10 @@ def byteStream := ⟦
     let (t6, o6) = u8_add(a6, b6);
     let (s6, c6a) = u8_add(t6, c6);
     let c7 = o6 + c6a;
-    let (t7, _) = u8_add(a7, b7);
-    let (s7, _) = u8_add(t7, c7);
-    [s0, s1, s2, s3, s4, s5, s6, s7]
+    let (t7, o7) = u8_add(a7, b7);
+    let (s7, c7a) = u8_add(t7, c7);
+    let final_carry = o7 + c7a;
+    ([s0, s1, s2, s3, s4, s5, s6, s7], final_carry)
   }
 
   -- `u64` subtraction via repeated decrement (correct for small b)
