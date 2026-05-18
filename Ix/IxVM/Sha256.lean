@@ -679,25 +679,27 @@ def sha256 := ⟦
       let e_2_bits = u8_bit_decomposition(acc[4][1]);
       let e_3_bits = u8_bit_decomposition(acc[4][0]);
 
+      -- Each rotated/shifted byte is the weighted sum of 8 bits. Written
+      -- inline: it is pure arithmetic, so it costs no aux column or lookup.
       let e_rotr6 = [
-        u8_recompose([e_3_bits[6], e_3_bits[7], e_0_bits[0], e_0_bits[1], e_0_bits[2], e_0_bits[3], e_0_bits[4], e_0_bits[5]]),
-        u8_recompose([e_2_bits[6], e_2_bits[7], e_3_bits[0], e_3_bits[1], e_3_bits[2], e_3_bits[3], e_3_bits[4], e_3_bits[5]]),
-        u8_recompose([e_1_bits[6], e_1_bits[7], e_2_bits[0], e_2_bits[1], e_2_bits[2], e_2_bits[3], e_2_bits[4], e_2_bits[5]]),
-        u8_recompose([e_0_bits[6], e_0_bits[7], e_1_bits[0], e_1_bits[1], e_1_bits[2], e_1_bits[3], e_1_bits[4], e_1_bits[5]])
+        e_3_bits[6] + 2 * e_3_bits[7] + 4 * e_0_bits[0] + 8 * e_0_bits[1] + 16 * e_0_bits[2] + 32 * e_0_bits[3] + 64 * e_0_bits[4] + 128 * e_0_bits[5],
+        e_2_bits[6] + 2 * e_2_bits[7] + 4 * e_3_bits[0] + 8 * e_3_bits[1] + 16 * e_3_bits[2] + 32 * e_3_bits[3] + 64 * e_3_bits[4] + 128 * e_3_bits[5],
+        e_1_bits[6] + 2 * e_1_bits[7] + 4 * e_2_bits[0] + 8 * e_2_bits[1] + 16 * e_2_bits[2] + 32 * e_2_bits[3] + 64 * e_2_bits[4] + 128 * e_2_bits[5],
+        e_0_bits[6] + 2 * e_0_bits[7] + 4 * e_1_bits[0] + 8 * e_1_bits[1] + 16 * e_1_bits[2] + 32 * e_1_bits[3] + 64 * e_1_bits[4] + 128 * e_1_bits[5]
       ];
 
       let e_rotr11 = [
-        u8_recompose([e_0_bits[3], e_0_bits[4], e_0_bits[5], e_0_bits[6], e_0_bits[7], e_1_bits[0], e_1_bits[1], e_1_bits[2]]),
-        u8_recompose([e_3_bits[3], e_3_bits[4], e_3_bits[5], e_3_bits[6], e_3_bits[7], e_0_bits[0], e_0_bits[1], e_0_bits[2]]),
-        u8_recompose([e_2_bits[3], e_2_bits[4], e_2_bits[5], e_2_bits[6], e_2_bits[7], e_3_bits[0], e_3_bits[1], e_3_bits[2]]),
-        u8_recompose([e_1_bits[3], e_1_bits[4], e_1_bits[5], e_1_bits[6], e_1_bits[7], e_2_bits[0], e_2_bits[1], e_2_bits[2]])
+        e_0_bits[3] + 2 * e_0_bits[4] + 4 * e_0_bits[5] + 8 * e_0_bits[6] + 16 * e_0_bits[7] + 32 * e_1_bits[0] + 64 * e_1_bits[1] + 128 * e_1_bits[2],
+        e_3_bits[3] + 2 * e_3_bits[4] + 4 * e_3_bits[5] + 8 * e_3_bits[6] + 16 * e_3_bits[7] + 32 * e_0_bits[0] + 64 * e_0_bits[1] + 128 * e_0_bits[2],
+        e_2_bits[3] + 2 * e_2_bits[4] + 4 * e_2_bits[5] + 8 * e_2_bits[6] + 16 * e_2_bits[7] + 32 * e_3_bits[0] + 64 * e_3_bits[1] + 128 * e_3_bits[2],
+        e_1_bits[3] + 2 * e_1_bits[4] + 4 * e_1_bits[5] + 8 * e_1_bits[6] + 16 * e_1_bits[7] + 32 * e_2_bits[0] + 64 * e_2_bits[1] + 128 * e_2_bits[2]
       ];
 
       let e_rotr25 = [
-        u8_recompose([e_2_bits[1], e_2_bits[2], e_2_bits[3], e_2_bits[4], e_2_bits[5], e_2_bits[6], e_2_bits[7], e_3_bits[0]]),
-        u8_recompose([e_1_bits[1], e_1_bits[2], e_1_bits[3], e_1_bits[4], e_1_bits[5], e_1_bits[6], e_1_bits[7], e_2_bits[0]]),
-        u8_recompose([e_0_bits[1], e_0_bits[2], e_0_bits[3], e_0_bits[4], e_0_bits[5], e_0_bits[6], e_0_bits[7], e_1_bits[0]]),
-        u8_recompose([e_3_bits[1], e_3_bits[2], e_3_bits[3], e_3_bits[4], e_3_bits[5], e_3_bits[6], e_3_bits[7], e_0_bits[0]])
+        e_2_bits[1] + 2 * e_2_bits[2] + 4 * e_2_bits[3] + 8 * e_2_bits[4] + 16 * e_2_bits[5] + 32 * e_2_bits[6] + 64 * e_2_bits[7] + 128 * e_3_bits[0],
+        e_1_bits[1] + 2 * e_1_bits[2] + 4 * e_1_bits[3] + 8 * e_1_bits[4] + 16 * e_1_bits[5] + 32 * e_1_bits[6] + 64 * e_1_bits[7] + 128 * e_2_bits[0],
+        e_0_bits[1] + 2 * e_0_bits[2] + 4 * e_0_bits[3] + 8 * e_0_bits[4] + 16 * e_0_bits[5] + 32 * e_0_bits[6] + 64 * e_0_bits[7] + 128 * e_1_bits[0],
+        e_3_bits[1] + 2 * e_3_bits[2] + 4 * e_3_bits[3] + 8 * e_3_bits[4] + 16 * e_3_bits[5] + 32 * e_3_bits[6] + 64 * e_3_bits[7] + 128 * e_0_bits[0]
       ];
 
       let e_not = [255 - acc[4][0], 255 - acc[4][1], 255 - acc[4][2], 255 - acc[4][3]];
@@ -712,24 +714,24 @@ def sha256 := ⟦
       let a_3_bits = u8_bit_decomposition(acc[0][0]);
 
       let a_rotr2 = [
-        u8_recompose([a_3_bits[2], a_3_bits[3], a_3_bits[4], a_3_bits[5], a_3_bits[6], a_3_bits[7], a_0_bits[0], a_0_bits[1]]),
-        u8_recompose([a_2_bits[2], a_2_bits[3], a_2_bits[4], a_2_bits[5], a_2_bits[6], a_2_bits[7], a_3_bits[0], a_3_bits[1]]),
-        u8_recompose([a_1_bits[2], a_1_bits[3], a_1_bits[4], a_1_bits[5], a_1_bits[6], a_1_bits[7], a_2_bits[0], a_2_bits[1]]),
-        u8_recompose([a_0_bits[2], a_0_bits[3], a_0_bits[4], a_0_bits[5], a_0_bits[6], a_0_bits[7], a_1_bits[0], a_1_bits[1]])
+        a_3_bits[2] + 2 * a_3_bits[3] + 4 * a_3_bits[4] + 8 * a_3_bits[5] + 16 * a_3_bits[6] + 32 * a_3_bits[7] + 64 * a_0_bits[0] + 128 * a_0_bits[1],
+        a_2_bits[2] + 2 * a_2_bits[3] + 4 * a_2_bits[4] + 8 * a_2_bits[5] + 16 * a_2_bits[6] + 32 * a_2_bits[7] + 64 * a_3_bits[0] + 128 * a_3_bits[1],
+        a_1_bits[2] + 2 * a_1_bits[3] + 4 * a_1_bits[4] + 8 * a_1_bits[5] + 16 * a_1_bits[6] + 32 * a_1_bits[7] + 64 * a_2_bits[0] + 128 * a_2_bits[1],
+        a_0_bits[2] + 2 * a_0_bits[3] + 4 * a_0_bits[4] + 8 * a_0_bits[5] + 16 * a_0_bits[6] + 32 * a_0_bits[7] + 64 * a_1_bits[0] + 128 * a_1_bits[1]
       ];
 
       let a_rotr13 = [
-        u8_recompose([a_0_bits[5], a_0_bits[6], a_0_bits[7], a_1_bits[0], a_1_bits[1], a_1_bits[2], a_1_bits[3], a_1_bits[4]]),
-        u8_recompose([a_3_bits[5], a_3_bits[6], a_3_bits[7], a_0_bits[0], a_0_bits[1], a_0_bits[2], a_0_bits[3], a_0_bits[4]]),
-        u8_recompose([a_2_bits[5], a_2_bits[6], a_2_bits[7], a_3_bits[0], a_3_bits[1], a_3_bits[2], a_3_bits[3], a_3_bits[4]]),
-        u8_recompose([a_1_bits[5], a_1_bits[6], a_1_bits[7], a_2_bits[0], a_2_bits[1], a_2_bits[2], a_2_bits[3], a_2_bits[4]])
+        a_0_bits[5] + 2 * a_0_bits[6] + 4 * a_0_bits[7] + 8 * a_1_bits[0] + 16 * a_1_bits[1] + 32 * a_1_bits[2] + 64 * a_1_bits[3] + 128 * a_1_bits[4],
+        a_3_bits[5] + 2 * a_3_bits[6] + 4 * a_3_bits[7] + 8 * a_0_bits[0] + 16 * a_0_bits[1] + 32 * a_0_bits[2] + 64 * a_0_bits[3] + 128 * a_0_bits[4],
+        a_2_bits[5] + 2 * a_2_bits[6] + 4 * a_2_bits[7] + 8 * a_3_bits[0] + 16 * a_3_bits[1] + 32 * a_3_bits[2] + 64 * a_3_bits[3] + 128 * a_3_bits[4],
+        a_1_bits[5] + 2 * a_1_bits[6] + 4 * a_1_bits[7] + 8 * a_2_bits[0] + 16 * a_2_bits[1] + 32 * a_2_bits[2] + 64 * a_2_bits[3] + 128 * a_2_bits[4]
       ];
 
       let a_rotr22 = [
-        u8_recompose([a_1_bits[6], a_1_bits[7], a_2_bits[0], a_2_bits[1], a_2_bits[2], a_2_bits[3], a_2_bits[4], a_2_bits[5]]),
-        u8_recompose([a_0_bits[6], a_0_bits[7], a_1_bits[0], a_1_bits[1], a_1_bits[2], a_1_bits[3], a_1_bits[4], a_1_bits[5]]),
-        u8_recompose([a_3_bits[6], a_3_bits[7], a_0_bits[0], a_0_bits[1], a_0_bits[2], a_0_bits[3], a_0_bits[4], a_0_bits[5]]),
-        u8_recompose([a_2_bits[6], a_2_bits[7], a_3_bits[0], a_3_bits[1], a_3_bits[2], a_3_bits[3], a_3_bits[4], a_3_bits[5]])
+        a_1_bits[6] + 2 * a_1_bits[7] + 4 * a_2_bits[0] + 8 * a_2_bits[1] + 16 * a_2_bits[2] + 32 * a_2_bits[3] + 64 * a_2_bits[4] + 128 * a_2_bits[5],
+        a_0_bits[6] + 2 * a_0_bits[7] + 4 * a_1_bits[0] + 8 * a_1_bits[1] + 16 * a_1_bits[2] + 32 * a_1_bits[3] + 64 * a_1_bits[4] + 128 * a_1_bits[5],
+        a_3_bits[6] + 2 * a_3_bits[7] + 4 * a_0_bits[0] + 8 * a_0_bits[1] + 16 * a_0_bits[2] + 32 * a_0_bits[3] + 64 * a_0_bits[4] + 128 * a_0_bits[5],
+        a_2_bits[6] + 2 * a_2_bits[7] + 4 * a_3_bits[0] + 8 * a_3_bits[1] + 16 * a_3_bits[2] + 32 * a_3_bits[3] + 64 * a_3_bits[4] + 128 * a_3_bits[5]
       ];
 
       let s0 = u32_xor(a_rotr2, u32_xor(a_rotr13, a_rotr22));
@@ -759,24 +761,24 @@ def sha256 := ⟦
     let [«W_i-15_b3_0», «W_i-15_b3_1», «W_i-15_b3_2», «W_i-15_b3_3», «W_i-15_b3_4», «W_i-15_b3_5», «W_i-15_b3_6», «W_i-15_b3_7»] = u8_bit_decomposition(«W_i-15_b3»);
 
     let «W_i-15_rotr7» = [
-      u8_recompose([«W_i-15_b3_7», «W_i-15_b0_0», «W_i-15_b0_1», «W_i-15_b0_2», «W_i-15_b0_3», «W_i-15_b0_4», «W_i-15_b0_5», «W_i-15_b0_6»]),
-      u8_recompose([«W_i-15_b2_7», «W_i-15_b3_0», «W_i-15_b3_1», «W_i-15_b3_2», «W_i-15_b3_3», «W_i-15_b3_4», «W_i-15_b3_5», «W_i-15_b3_6»]),
-      u8_recompose([«W_i-15_b1_7», «W_i-15_b2_0», «W_i-15_b2_1», «W_i-15_b2_2», «W_i-15_b2_3», «W_i-15_b2_4», «W_i-15_b2_5», «W_i-15_b2_6»]),
-      u8_recompose([«W_i-15_b0_7», «W_i-15_b1_0», «W_i-15_b1_1», «W_i-15_b1_2», «W_i-15_b1_3», «W_i-15_b1_4», «W_i-15_b1_5», «W_i-15_b1_6»])
+      «W_i-15_b3_7» + 2 * «W_i-15_b0_0» + 4 * «W_i-15_b0_1» + 8 * «W_i-15_b0_2» + 16 * «W_i-15_b0_3» + 32 * «W_i-15_b0_4» + 64 * «W_i-15_b0_5» + 128 * «W_i-15_b0_6»,
+      «W_i-15_b2_7» + 2 * «W_i-15_b3_0» + 4 * «W_i-15_b3_1» + 8 * «W_i-15_b3_2» + 16 * «W_i-15_b3_3» + 32 * «W_i-15_b3_4» + 64 * «W_i-15_b3_5» + 128 * «W_i-15_b3_6»,
+      «W_i-15_b1_7» + 2 * «W_i-15_b2_0» + 4 * «W_i-15_b2_1» + 8 * «W_i-15_b2_2» + 16 * «W_i-15_b2_3» + 32 * «W_i-15_b2_4» + 64 * «W_i-15_b2_5» + 128 * «W_i-15_b2_6»,
+      «W_i-15_b0_7» + 2 * «W_i-15_b1_0» + 4 * «W_i-15_b1_1» + 8 * «W_i-15_b1_2» + 16 * «W_i-15_b1_3» + 32 * «W_i-15_b1_4» + 64 * «W_i-15_b1_5» + 128 * «W_i-15_b1_6»
     ];
 
     let «W_i-15_rotr18» = [
-      u8_recompose([«W_i-15_b1_2», «W_i-15_b1_3», «W_i-15_b1_4», «W_i-15_b1_5», «W_i-15_b1_6», «W_i-15_b1_7», «W_i-15_b2_0», «W_i-15_b2_1»]),
-      u8_recompose([«W_i-15_b0_2», «W_i-15_b0_3», «W_i-15_b0_4», «W_i-15_b0_5», «W_i-15_b0_6», «W_i-15_b0_7», «W_i-15_b1_0», «W_i-15_b1_1»]),
-      u8_recompose([«W_i-15_b3_2», «W_i-15_b3_3», «W_i-15_b3_4», «W_i-15_b3_5», «W_i-15_b3_6», «W_i-15_b3_7», «W_i-15_b0_0», «W_i-15_b0_1»]),
-      u8_recompose([«W_i-15_b2_2», «W_i-15_b2_3», «W_i-15_b2_4», «W_i-15_b2_5», «W_i-15_b2_6», «W_i-15_b2_7», «W_i-15_b3_0», «W_i-15_b3_1»])
+      «W_i-15_b1_2» + 2 * «W_i-15_b1_3» + 4 * «W_i-15_b1_4» + 8 * «W_i-15_b1_5» + 16 * «W_i-15_b1_6» + 32 * «W_i-15_b1_7» + 64 * «W_i-15_b2_0» + 128 * «W_i-15_b2_1»,
+      «W_i-15_b0_2» + 2 * «W_i-15_b0_3» + 4 * «W_i-15_b0_4» + 8 * «W_i-15_b0_5» + 16 * «W_i-15_b0_6» + 32 * «W_i-15_b0_7» + 64 * «W_i-15_b1_0» + 128 * «W_i-15_b1_1»,
+      «W_i-15_b3_2» + 2 * «W_i-15_b3_3» + 4 * «W_i-15_b3_4» + 8 * «W_i-15_b3_5» + 16 * «W_i-15_b3_6» + 32 * «W_i-15_b3_7» + 64 * «W_i-15_b0_0» + 128 * «W_i-15_b0_1»,
+      «W_i-15_b2_2» + 2 * «W_i-15_b2_3» + 4 * «W_i-15_b2_4» + 8 * «W_i-15_b2_5» + 16 * «W_i-15_b2_6» + 32 * «W_i-15_b2_7» + 64 * «W_i-15_b3_0» + 128 * «W_i-15_b3_1»
     ];
 
     let «W_i-15_shr3» = [
-      u8_recompose([«W_i-15_b3_3», «W_i-15_b3_4», «W_i-15_b3_5», «W_i-15_b3_6», «W_i-15_b3_7», 0,             0,             0]),
-      u8_recompose([«W_i-15_b2_3», «W_i-15_b2_4», «W_i-15_b2_5», «W_i-15_b2_6», «W_i-15_b2_7», «W_i-15_b3_0», «W_i-15_b3_1», «W_i-15_b3_2»]),
-      u8_recompose([«W_i-15_b1_3», «W_i-15_b1_4», «W_i-15_b1_5», «W_i-15_b1_6», «W_i-15_b1_7», «W_i-15_b2_0», «W_i-15_b2_1», «W_i-15_b2_2»]),
-      u8_recompose([«W_i-15_b0_3», «W_i-15_b0_4», «W_i-15_b0_5», «W_i-15_b0_6», «W_i-15_b0_7», «W_i-15_b1_0», «W_i-15_b1_1», «W_i-15_b1_2»])
+      «W_i-15_b3_3» + 2 * «W_i-15_b3_4» + 4 * «W_i-15_b3_5» + 8 * «W_i-15_b3_6» + 16 * «W_i-15_b3_7»,
+      «W_i-15_b2_3» + 2 * «W_i-15_b2_4» + 4 * «W_i-15_b2_5» + 8 * «W_i-15_b2_6» + 16 * «W_i-15_b2_7» + 32 * «W_i-15_b3_0» + 64 * «W_i-15_b3_1» + 128 * «W_i-15_b3_2»,
+      «W_i-15_b1_3» + 2 * «W_i-15_b1_4» + 4 * «W_i-15_b1_5» + 8 * «W_i-15_b1_6» + 16 * «W_i-15_b1_7» + 32 * «W_i-15_b2_0» + 64 * «W_i-15_b2_1» + 128 * «W_i-15_b2_2»,
+      «W_i-15_b0_3» + 2 * «W_i-15_b0_4» + 4 * «W_i-15_b0_5» + 8 * «W_i-15_b0_6» + 16 * «W_i-15_b0_7» + 32 * «W_i-15_b1_0» + 64 * «W_i-15_b1_1» + 128 * «W_i-15_b1_2»
     ];
 
     let [«W_i-2_b3», «W_i-2_b2», «W_i-2_b1», «W_i-2_b0»] = «W_i-2»;
@@ -786,24 +788,24 @@ def sha256 := ⟦
     let [«W_i-2_b3_0», «W_i-2_b3_1», «W_i-2_b3_2», «W_i-2_b3_3», «W_i-2_b3_4», «W_i-2_b3_5», «W_i-2_b3_6», «W_i-2_b3_7»] = u8_bit_decomposition(«W_i-2_b3»);
 
     let «W_i-2_rotr17» = [
-      u8_recompose([«W_i-2_b1_1», «W_i-2_b1_2», «W_i-2_b1_3», «W_i-2_b1_4», «W_i-2_b1_5», «W_i-2_b1_6», «W_i-2_b1_7», «W_i-2_b2_0»]),
-      u8_recompose([«W_i-2_b0_1», «W_i-2_b0_2», «W_i-2_b0_3», «W_i-2_b0_4», «W_i-2_b0_5», «W_i-2_b0_6», «W_i-2_b0_7», «W_i-2_b1_0»]),
-      u8_recompose([«W_i-2_b3_1», «W_i-2_b3_2», «W_i-2_b3_3», «W_i-2_b3_4», «W_i-2_b3_5», «W_i-2_b3_6», «W_i-2_b3_7», «W_i-2_b0_0»]),
-      u8_recompose([«W_i-2_b2_1», «W_i-2_b2_2», «W_i-2_b2_3», «W_i-2_b2_4», «W_i-2_b2_5», «W_i-2_b2_6», «W_i-2_b2_7», «W_i-2_b3_0»])
+      «W_i-2_b1_1» + 2 * «W_i-2_b1_2» + 4 * «W_i-2_b1_3» + 8 * «W_i-2_b1_4» + 16 * «W_i-2_b1_5» + 32 * «W_i-2_b1_6» + 64 * «W_i-2_b1_7» + 128 * «W_i-2_b2_0»,
+      «W_i-2_b0_1» + 2 * «W_i-2_b0_2» + 4 * «W_i-2_b0_3» + 8 * «W_i-2_b0_4» + 16 * «W_i-2_b0_5» + 32 * «W_i-2_b0_6» + 64 * «W_i-2_b0_7» + 128 * «W_i-2_b1_0»,
+      «W_i-2_b3_1» + 2 * «W_i-2_b3_2» + 4 * «W_i-2_b3_3» + 8 * «W_i-2_b3_4» + 16 * «W_i-2_b3_5» + 32 * «W_i-2_b3_6» + 64 * «W_i-2_b3_7» + 128 * «W_i-2_b0_0»,
+      «W_i-2_b2_1» + 2 * «W_i-2_b2_2» + 4 * «W_i-2_b2_3» + 8 * «W_i-2_b2_4» + 16 * «W_i-2_b2_5» + 32 * «W_i-2_b2_6» + 64 * «W_i-2_b2_7» + 128 * «W_i-2_b3_0»
     ];
 
     let «W_i-2_rotr19» = [
-      u8_recompose([«W_i-2_b1_3», «W_i-2_b1_4», «W_i-2_b1_5», «W_i-2_b1_6», «W_i-2_b1_7», «W_i-2_b2_0», «W_i-2_b2_1», «W_i-2_b2_2»]),
-      u8_recompose([«W_i-2_b0_3», «W_i-2_b0_4», «W_i-2_b0_5», «W_i-2_b0_6», «W_i-2_b0_7», «W_i-2_b1_0», «W_i-2_b1_1», «W_i-2_b1_2»]),
-      u8_recompose([«W_i-2_b3_3», «W_i-2_b3_4», «W_i-2_b3_5», «W_i-2_b3_6», «W_i-2_b3_7», «W_i-2_b0_0», «W_i-2_b0_1», «W_i-2_b0_2»]),
-      u8_recompose([«W_i-2_b2_3», «W_i-2_b2_4», «W_i-2_b2_5», «W_i-2_b2_6», «W_i-2_b2_7», «W_i-2_b3_0», «W_i-2_b3_1», «W_i-2_b3_2»])
+      «W_i-2_b1_3» + 2 * «W_i-2_b1_4» + 4 * «W_i-2_b1_5» + 8 * «W_i-2_b1_6» + 16 * «W_i-2_b1_7» + 32 * «W_i-2_b2_0» + 64 * «W_i-2_b2_1» + 128 * «W_i-2_b2_2»,
+      «W_i-2_b0_3» + 2 * «W_i-2_b0_4» + 4 * «W_i-2_b0_5» + 8 * «W_i-2_b0_6» + 16 * «W_i-2_b0_7» + 32 * «W_i-2_b1_0» + 64 * «W_i-2_b1_1» + 128 * «W_i-2_b1_2»,
+      «W_i-2_b3_3» + 2 * «W_i-2_b3_4» + 4 * «W_i-2_b3_5» + 8 * «W_i-2_b3_6» + 16 * «W_i-2_b3_7» + 32 * «W_i-2_b0_0» + 64 * «W_i-2_b0_1» + 128 * «W_i-2_b0_2»,
+      «W_i-2_b2_3» + 2 * «W_i-2_b2_4» + 4 * «W_i-2_b2_5» + 8 * «W_i-2_b2_6» + 16 * «W_i-2_b2_7» + 32 * «W_i-2_b3_0» + 64 * «W_i-2_b3_1» + 128 * «W_i-2_b3_2»
     ];
 
     let «W_i-2_shr10» = [
-      u8_recompose([0; 8]),
-      u8_recompose([«W_i-2_b3_2», «W_i-2_b3_3», «W_i-2_b3_4», «W_i-2_b3_5», «W_i-2_b3_6», «W_i-2_b3_7», 0,            0]),
-      u8_recompose([«W_i-2_b2_2», «W_i-2_b2_3», «W_i-2_b2_4», «W_i-2_b2_5», «W_i-2_b2_6», «W_i-2_b2_7», «W_i-2_b3_0», «W_i-2_b3_1»]),
-      u8_recompose([«W_i-2_b1_2», «W_i-2_b1_3», «W_i-2_b1_4», «W_i-2_b1_5», «W_i-2_b1_6», «W_i-2_b1_7», «W_i-2_b2_0», «W_i-2_b2_1»])
+      0,
+      «W_i-2_b3_2» + 2 * «W_i-2_b3_3» + 4 * «W_i-2_b3_4» + 8 * «W_i-2_b3_5» + 16 * «W_i-2_b3_6» + 32 * «W_i-2_b3_7»,
+      «W_i-2_b2_2» + 2 * «W_i-2_b2_3» + 4 * «W_i-2_b2_4» + 8 * «W_i-2_b2_5» + 16 * «W_i-2_b2_6» + 32 * «W_i-2_b2_7» + 64 * «W_i-2_b3_0» + 128 * «W_i-2_b3_1»,
+      «W_i-2_b1_2» + 2 * «W_i-2_b1_3» + 4 * «W_i-2_b1_4» + 8 * «W_i-2_b1_5» + 16 * «W_i-2_b1_6» + 32 * «W_i-2_b1_7» + 64 * «W_i-2_b2_0» + 128 * «W_i-2_b2_1»
     ];
 
     let «W_i_s0» = u32_xor(«W_i-15_rotr7», u32_xor(«W_i-15_rotr18», «W_i-15_shr3»));

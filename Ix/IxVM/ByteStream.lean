@@ -43,12 +43,6 @@ def byteStream := ⟦
     }
   }
 
-  -- Reconstructs a byte from its bits in little-endian.
-  fn u8_recompose(bits: U64) -> G {
-    let [b0, b1, b2, b3, b4, b5, b6, b7] = bits;
-    b0 + 2 * b1 + 4 * b2 + 8 * b3 + 16 * b4 + 32 * b5 + 64 * b6 + 128 * b7
-  }
-
   fn u32_add(a: [G; 4], b: [G; 4]) -> [G; 4] {
     let [a0, a1, a2, a3] = a;
     let [b0, b1, b2, b3] = b;
@@ -59,12 +53,15 @@ def byteStream := ⟦
     -- Byte 1
     let (sum1, overflow1) = u8_add(a1, b1);
     let (sum1_with_carry, carry1a) = u8_add(sum1, carry1);
-    let carry2 = u8_xor(overflow1, carry1a);
+    -- `overflow1` and `carry1a` cannot both be 1: a carry out of `a1 + b1`
+    -- forces `sum1 <= 254`, so `sum1 + carry1` cannot carry. Combining them is
+    -- a field add, not a u8 xor — no aux column, no lookup.
+    let carry2 = overflow1 + carry1a;
 
     -- Byte 2
     let (sum2, overflow2) = u8_add(a2, b2);
     let (sum2_with_carry, carry2a) = u8_add(sum2, carry2);
-    let carry3 = u8_xor(overflow2, carry2a);
+    let carry3 = overflow2 + carry2a;
 
     -- Byte 3
     let (sum3, _x) = u8_add(a3, b3);
@@ -106,22 +103,22 @@ def byteStream := ⟦
     let (s0, c1) = u8_add(a0, b0);
     let (t1, o1) = u8_add(a1, b1);
     let (s1, c1a) = u8_add(t1, c1);
-    let c2 = u8_xor(o1, c1a);
+    let c2 = o1 + c1a;
     let (t2, o2) = u8_add(a2, b2);
     let (s2, c2a) = u8_add(t2, c2);
-    let c3 = u8_xor(o2, c2a);
+    let c3 = o2 + c2a;
     let (t3, o3) = u8_add(a3, b3);
     let (s3, c3a) = u8_add(t3, c3);
-    let c4 = u8_xor(o3, c3a);
+    let c4 = o3 + c3a;
     let (t4, o4) = u8_add(a4, b4);
     let (s4, c4a) = u8_add(t4, c4);
-    let c5 = u8_xor(o4, c4a);
+    let c5 = o4 + c4a;
     let (t5, o5) = u8_add(a5, b5);
     let (s5, c5a) = u8_add(t5, c5);
-    let c6 = u8_xor(o5, c5a);
+    let c6 = o5 + c5a;
     let (t6, o6) = u8_add(a6, b6);
     let (s6, c6a) = u8_add(t6, c6);
-    let c7 = u8_xor(o6, c6a);
+    let c7 = o6 + c6a;
     let (t7, _) = u8_add(a7, b7);
     let (s7, _) = u8_add(t7, c7);
     [s0, s1, s2, s3, s4, s5, s6, s7]
@@ -180,7 +177,7 @@ def byteStream := ⟦
     -- Byte 1
     let (sum1, overflow1) = u8_add(u64[6], bs[0]);
     let (sum1_with_carry, carry1a) = u8_add(sum1, carry1);
-    let carry2 = u8_xor(overflow1, carry1a);
+    let carry2 = overflow1 + carry1a;
 
     -- Other bytes
     let (sum2, carry3) = u8_add(u64[5], carry2);
@@ -200,12 +197,12 @@ def byteStream := ⟦
     -- Byte 1
     let (sum1, overflow1) = u8_add(a[2], b[2]);
     let (sum1_with_carry, carry1a) = u8_add(sum1, carry1);
-    let carry2 = u8_xor(overflow1, carry1a);
+    let carry2 = overflow1 + carry1a;
 
     -- Byte 2
     let (sum2, overflow2) = u8_add(a[1], b[1]);
     let (sum2_with_carry, carry2a) = u8_add(sum2, carry2);
-    let carry3 = u8_xor(overflow2, carry2a);
+    let carry3 = overflow2 + carry2a;
 
     -- Byte 3
     let (sum3, _x) = u8_add(a[0], b[0]);
