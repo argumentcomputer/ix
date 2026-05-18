@@ -279,7 +279,7 @@ mod tests {
   #[test]
   fn canonical_single_leaf() {
     let a = addr(b"only");
-    let t = AssumptionTree::canonical(&[a.clone()]).unwrap();
+    let t = AssumptionTree::canonical(std::slice::from_ref(&a)).unwrap();
     assert_eq!(t, AssumptionTree::Leaf(a));
   }
 
@@ -322,7 +322,7 @@ mod tests {
   #[test]
   fn canonical_root_matches_merkle_root_canonical_single() {
     let a = addr(b"only");
-    let t = AssumptionTree::canonical(&[a.clone()]).unwrap();
+    let t = AssumptionTree::canonical(std::slice::from_ref(&a)).unwrap();
     assert_eq!(Some(t.root()), merkle_root_canonical(&[a]));
   }
 
@@ -353,8 +353,8 @@ mod tests {
   fn join_root_matches_merkle_join() {
     let a = addr(b"a");
     let b = addr(b"b");
-    let l = AssumptionTree::canonical(&[a.clone()]).unwrap();
-    let r = AssumptionTree::canonical(&[b.clone()]).unwrap();
+    let l = AssumptionTree::canonical(std::slice::from_ref(&a)).unwrap();
+    let r = AssumptionTree::canonical(std::slice::from_ref(&b)).unwrap();
     let joined = AssumptionTree::join(l.clone(), r.clone());
     assert_eq!(joined.root(), merkle_join(&l.root(), &r.root()));
   }
@@ -390,7 +390,7 @@ mod tests {
   #[test]
   fn merkle_proof_single_leaf_empty_path() {
     let a = addr(b"only");
-    let t = AssumptionTree::canonical(&[a.clone()]).unwrap();
+    let t = AssumptionTree::canonical(std::slice::from_ref(&a)).unwrap();
     let path = t.merkle_proof(&a).unwrap();
     assert!(path.is_empty());
     assert!(verify_merkle_proof(&t.root(), &a, &path));
@@ -430,7 +430,7 @@ mod tests {
     let b = addr(b"b");
     let c = addr(b"c");
     let left = AssumptionTree::canonical(&[a.clone(), b.clone()]).unwrap();
-    let right = AssumptionTree::canonical(&[c.clone()]).unwrap();
+    let right = AssumptionTree::canonical(std::slice::from_ref(&c)).unwrap();
     let joined = AssumptionTree::join(left, right);
     for leaf in [a, b, c] {
       let path = joined.merkle_proof(&leaf).expect("leaf present in join");
@@ -497,14 +497,14 @@ mod tests {
   #[test]
   fn serde_rejects_wrong_tag() {
     // Tag4(0xE, 3) = Eval claim, not AssumptionTree.
-    let bytes = vec![0xE3, 0x00, 0x00];
+    let bytes = [0xE3, 0x00, 0x00];
     assert!(AssumptionTree::get(&mut &bytes[..]).is_err());
   }
 
   #[test]
   fn serde_rejects_invalid_body_tag() {
     // 0xE2 outer + 0x99 invalid body tag
-    let bytes = vec![0xE2, 0x99];
+    let bytes = [0xE2, 0x99];
     assert!(AssumptionTree::get(&mut &bytes[..]).is_err());
   }
 }

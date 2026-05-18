@@ -211,7 +211,7 @@ mod tests {
   #[test]
   fn canonical_single() {
     let a = addr(b"only");
-    let root = merkle_root_canonical(&[a.clone()]).unwrap();
+    let root = merkle_root_canonical(std::slice::from_ref(&a)).unwrap();
     assert_eq!(root, leaf_hash(&a));
   }
 
@@ -238,7 +238,7 @@ mod tests {
   fn canonical_distinguishes() {
     let a = addr(b"a");
     let b = addr(b"b");
-    let r1 = merkle_root_canonical(&[a.clone()]).unwrap();
+    let r1 = merkle_root_canonical(std::slice::from_ref(&a)).unwrap();
     let r2 = merkle_root_canonical(&[a, b]).unwrap();
     assert_ne!(r1, r2);
   }
@@ -293,7 +293,7 @@ mod tests {
     let b = addr(b"b");
     let c = addr(b"c");
     let left = merkle_root_canonical(&[a.clone(), b.clone()]).unwrap();
-    let right = merkle_root_canonical(&[c.clone()]).unwrap();
+    let right = merkle_root_canonical(std::slice::from_ref(&c)).unwrap();
     let joined = merkle_join(&left, &right);
     let canonical = merkle_root_canonical(&[a, b, c]).unwrap();
     assert_ne!(joined, canonical);
@@ -331,8 +331,8 @@ mod tests {
   #[test]
   fn proof_single_leaf() {
     let a = addr(b"only");
-    let root = merkle_root_canonical(&[a.clone()]).unwrap();
-    let path = merkle_proof_canonical(&[a.clone()], &a).unwrap();
+    let root = merkle_root_canonical(std::slice::from_ref(&a)).unwrap();
+    let path = merkle_proof_canonical(std::slice::from_ref(&a), &a).unwrap();
     assert!(path.is_empty());
     assert!(verify_merkle_proof(&root, &a, &path));
   }
