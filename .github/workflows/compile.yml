@@ -45,6 +45,8 @@ jobs:
     runs-on: warp-ubuntu-latest-x64-32x
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       # Restore cached `ix` binary
       - uses: actions/cache/restore@v5
         with:
@@ -90,10 +92,36 @@ jobs:
             }
           }
           EOF
+      # Rebase file-size and constants thresholds on toolchain bumps:
+      # sample only the metrics recorded since lean-toolchain last changed.
+      - name: Compute sample size for stepping measures
+        id: thresholds
+        run: |
+          last_bump=$(git log -1 --format=%H -- lean-toolchain)
+          sample=$(git rev-list --count "${last_bump}..HEAD")
+          [ "$sample" -gt 64 ] && sample=64
+          echo "sample=$sample" | tee -a "$GITHUB_OUTPUT"
       # Deploy benchmark results to https://bencher.dev/console/projects/ix/plots
       - uses: bencherdev/bencher@main
       - name: Track benchmarks
         run: |
+          # On a lean-toolchain bump (sample=0), omit file-size and constants
+          # thresholds entirely so the step change lands without an alert.
+          # --thresholds-reset deletes their models for this run; they're
+          # recreated on the next commit when sample >= 1.
+          sample="${{ steps.thresholds.outputs.sample }}"
+          step_thresholds=()
+          if [ "$sample" -gt 0 ]; then
+            for m in file-size constants; do
+              step_thresholds+=(
+                --threshold-measure "$m"
+                --threshold-test percentage
+                --threshold-max-sample-size "$sample"
+                --threshold-upper-boundary 0.10
+                --threshold-lower-boundary _
+              )
+            done
+          fi
           bencher run \
             --project ix \
             --token '${{ secrets.BENCHER_API_TOKEN }}' \
@@ -112,15 +140,6 @@ jobs:
             --threshold-max-sample-size 64 \
             --threshold-upper-boundary _ \
             --threshold-lower-boundary 0.05 \
-            --threshold-measure file-size \
-            --threshold-test percentage \
-            --threshold-max-sample-size 64 \
-            --threshold-upper-boundary 0.10 \
-            --threshold-lower-boundary _ \
-            --threshold-measure constants \
-            --threshold-test percentage \
-            --threshold-max-sample-size 64 \
-            --threshold-upper-boundary 0.10 \
-            --threshold-lower-boundary _ \
+            "${step_thresholds[@]}" \
             --thresholds-reset \
             --file benchmark.json
