@@ -255,5 +255,6 @@ pub(crate) fn decode_toplevel(
     functions_obj.as_array().map(|o| decode_function(o.as_ctor()));
   let memory_sizes =
     memory_sizes_obj.as_array().map(|x| lean_unbox_nat_as_usize(&x));
-  Toplevel { functions, memory_sizes }
+  let filtered_functions = functions.iter().map(|f| f.split()).collect();
+  Toplevel { functions, memory_sizes, filtered_functions }
 }

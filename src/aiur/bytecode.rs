@@ -1,9 +1,13 @@
+use rustc_hash::FxHashMap;
+
 use crate::FxIndexMap;
 
 use super::G;
 
 pub struct Toplevel {
   pub(crate) functions: Vec<Function>,
+  #[allow(dead_code)]
+  pub(crate) filtered_functions: Vec<FxHashMap<String, Function>>,
   pub(crate) memory_sizes: Vec<usize>,
 }
 

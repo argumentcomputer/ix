@@ -3,6 +3,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use crate::FxIndexMap;
 
 use super::bytecode::{Block, Ctrl, Function};
+use super::layout::compute_layout;
 
 impl Function {
   pub fn return_groups(&self) -> FxHashSet<String> {
@@ -25,6 +26,16 @@ impl Function {
     })
   }
 
+  /// Renumber selectors in traversal order and recompute the circuit layout.
+  /// Intended for functions produced by `filter_group`, whose selector indices
+  /// and layout are inherited from the original (pre-filter) function.
+  fn fix(mut self) -> Self {
+    let mut counter: usize = 0;
+    fix_block_sel(&mut self.body, &mut counter);
+    self.layout = compute_layout(&self);
+    self
+  }
+
   pub fn split(&self) -> FxHashMap<String, Function> {
     self
       .return_groups()
@@ -33,7 +44,7 @@ impl Function {
         let filtered = self.filter_group(&group).unwrap_or_else(|| {
           panic!("function contains an unreachable group: {group}")
         });
-        (group, filtered)
+        (group, filtered.fix())
       })
       .collect()
   }
@@ -90,6 +101,36 @@ fn filter_ctrl(ctrl: &Ctrl, target: &str) -> Option<Ctrl> {
           Box::new(new_cont),
         ))
       }
+    },
+  }
+}
+
+fn fix_block_sel(block: &mut Block, counter: &mut usize) {
+  fix_ctrl_sel(&mut block.ctrl, counter);
+}
+
+fn fix_ctrl_sel(ctrl: &mut Ctrl, counter: &mut usize) {
+  match ctrl {
+    Ctrl::Return(sel, _, _) | Ctrl::Yield(sel, _) => {
+      *sel = *counter;
+      *counter += 1;
+    },
+    Ctrl::Match(_, cases, default) => {
+      for branch in cases.values_mut() {
+        fix_block_sel(branch, counter);
+      }
+      if let Some(branch) = default {
+        fix_block_sel(branch, counter);
+      }
+    },
+    Ctrl::MatchContinue(_, cases, default, _, _, _, cont) => {
+      for branch in cases.values_mut() {
+        fix_block_sel(branch, counter);
+      }
+      if let Some(branch) = default {
+        fix_block_sel(branch, counter);
+      }
+      fix_block_sel(cont, counter);
     },
   }
 }

@@ -2,6 +2,7 @@ pub mod bytecode;
 pub mod constraints;
 pub mod execute;
 pub mod gadgets;
+pub mod layout;
 pub mod memory;
 pub mod split;
 pub mod synthesis;
