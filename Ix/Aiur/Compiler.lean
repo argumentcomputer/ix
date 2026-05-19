@@ -68,7 +68,7 @@ def Bytecode.Ctrl.collectConstrainedCallees (c : Bytecode.Ctrl) :
       | some block => branchCallees ++ block.collectConstrainedCallees
       | none => branchCallees
     withDefault ++ continuation.collectConstrainedCallees
-  | .return _ _ | .yield _ _ => #[]
+  | .return _ _ _ | .yield _ _ => #[]
 termination_by (sizeOf c, 0)
 decreasing_by
   all_goals first

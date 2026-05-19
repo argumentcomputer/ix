@@ -31,7 +31,7 @@ mutual
     | .match v branches def_ =>
       .match v (branches.attach.map fun ⟨(g, b), _⟩ => (g, skeletonBlock b))
         (match def_ with | none => none | some b => some (skeletonBlock b))
-    | .return s vs => .return s vs
+    | .return s g vs => .return s g vs
     | .yield s vs => .yield s vs
     | .matchContinue v branches def_ outputSize sharedAux sharedLookups cont =>
       .matchContinue v (branches.attach.map fun ⟨(g, b), _⟩ => (g, skeletonBlock b))
@@ -107,7 +107,7 @@ mutual
     | .match v branches def_ =>
       .match v (branches.attach.map fun ⟨(g, b), _⟩ => (g, rewriteBlock f b))
         (match def_ with | none => none | some b => some (rewriteBlock f b))
-    | .return s vs => .return s vs
+    | .return s g vs => .return s g vs
     | .yield s vs => .yield s vs
     | .matchContinue v branches def_ outputSize sharedAux sharedLookups cont =>
       .matchContinue v (branches.attach.map fun ⟨(g, b), _⟩ => (g, rewriteBlock f b))

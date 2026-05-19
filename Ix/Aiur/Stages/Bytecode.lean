@@ -49,7 +49,7 @@ inductive Op
 mutual
   inductive Ctrl where
     | match : ValIdx → Array (G × Block) → Option Block → Ctrl
-    | return : SelIdx → Array ValIdx → Ctrl
+    | return : SelIdx → (group : String) → Array ValIdx → Ctrl
     | yield : SelIdx → Array ValIdx → Ctrl
     | matchContinue : ValIdx → Array (G × Block) → Option Block
         → (outputSize : Nat) → (sharedAuxiliaries : Nat) → (sharedLookups : Nat)

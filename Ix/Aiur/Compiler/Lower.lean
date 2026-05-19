@@ -94,6 +94,7 @@ structure CompilerState where
   ops : Array Bytecode.Op
   selIdx : Bytecode.SelIdx
   degrees : Array Nat
+  currentReturnGroup : String := ""
   deriving Inhabited
 
 abbrev CompileM := EStateM String CompilerState
@@ -447,8 +448,12 @@ def Concrete.Term.compile
     let data ← toIndex layoutMap bindings data
     modify fun stt => { stt with ops := stt.ops.push (.ioWrite data) }
     ret.compile returnTyp layoutMap bindings yieldCtrl
-  | .retGroup _ _ _ inner =>
-    inner.compile returnTyp layoutMap bindings yieldCtrl
+  | .retGroup _ _ name inner => do
+    let oldGroup := (← get).currentReturnGroup
+    modify fun s => { s with currentReturnGroup := name }
+    let blk ← inner.compile returnTyp layoutMap bindings yieldCtrl
+    modify fun s => { s with currentReturnGroup := oldGroup }
+    pure blk
   | .match _ _ scrut cases defaultOpt => do
     let idxs := bindings[scrut]?.getD #[0]
     let ops ← extractOps
@@ -468,7 +473,7 @@ def Concrete.Term.compile
     set state
     let ops := state.ops
     let id := state.selIdx
-    pure ({ ops, ctrl := .return (id - 1) idxs } : Bytecode.Block)
+    pure ({ ops, ctrl := .return (id - 1) state.currentReturnGroup idxs } : Bytecode.Block)
   | _ => do
     let idxs ← toIndex layoutMap bindings term
     let state ← get
@@ -477,7 +482,8 @@ def Concrete.Term.compile
     let ops := state.ops
     let id := state.selIdx
     let ctrl : Bytecode.Ctrl :=
-      if yieldCtrl && !term.escapes then .yield (id - 1) idxs else .return (id - 1) idxs
+      if yieldCtrl && !term.escapes then .yield (id - 1) idxs
+      else .return (id - 1) state.currentReturnGroup idxs
     pure ({ ops, ctrl } : Bytecode.Block)
 termination_by (sizeOf term, 0)
 decreasing_by
@@ -545,7 +551,8 @@ def Concrete.Function.compile (layoutMap : LayoutMap) (f : Concrete.Function) :
         | .ok len => pure len
       let indices := Array.range' valIdx len
       pure (valIdx + len, bindings.insert arg indices)
-  let state := { valIdx, selIdx := 0, ops := #[], degrees := Array.replicate valIdx 1 }
+  let state := { valIdx, selIdx := 0, ops := #[], degrees := Array.replicate valIdx 1,
+                  currentReturnGroup := "" }
   match f.body.compile f.output layoutMap bindings |>.run state with
   | .error e _ => throw e
   | .ok body _ =>
