@@ -16,10 +16,14 @@
 //!   *without* storing it. Callers (typically kernel ingress) consume
 //!   the returned `Arc<Constant>` immediately to build a `KConst` in
 //!   the worker's `KEnv`, then drop it. The `KEnv` is the only
-//!   long-lived materialization; it is cleared between work items by
-//!   `clear_releasing_memory()`. This keeps env-level memory bounded
-//!   to "bytes + mmap header" regardless of how much of the env the
-//!   workers eventually visit.
+//!   long-lived materialization layer; it is reset periodically by
+//!   `clear_releasing_memory()` — every `clear_every` work items
+//!   (see `kernel_check_clear_every`, default 1 but tunable via
+//!   `IX_KERNEL_CHECK_CLEAR_EVERY`). The result is that env-level
+//!   memory stays bounded to "bytes + mmap header" regardless of
+//!   how much of the env the workers eventually visit; the only
+//!   meaningful working set is the union of currently-checking
+//!   work items' ingress closures.
 //!
 //! Invariants:
 //! - `raw_bytes()` returns exactly what `Constant::put` produces and

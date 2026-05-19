@@ -1189,7 +1189,18 @@ where
           }
           let result = outcome.result.clone();
           for &result_idx in &item.aliases {
-            let _ = results[result_idx].set(result.clone());
+            // Each result slot should be written exactly once. The
+            // work-item dedup in `dedup_by_primary` ensures we
+            // never schedule the same alias twice. If this fires,
+            // a future build_check_work refactor has broken that
+            // invariant — surface it instead of silently dropping
+            // the second result.
+            if results[result_idx].set(result.clone()).is_err() {
+              debug_assert!(
+                false,
+                "meta work-item dedup invariant: result slot {result_idx} set twice"
+              );
+            }
             // Stream this seed's failure to the fail-out file (if any) as
             // soon as it's known, so a long full-env run grows the file
             // incrementally instead of dropping everything at the end.
@@ -1485,7 +1496,18 @@ fn run_anon_checks_parallel(
           progress_worker.finish(worker_idx, &outcome);
 
           for &result_idx in &result_idxs {
-            let _ = results[result_idx].set(result.clone());
+            // Each result slot is written exactly once across the
+            // entire run. `build_anon_work` assigns disjoint
+            // `result_idxs` per work item; if this assertion fires,
+            // that invariant has been broken (likely by a future
+            // dedup refactor) and we'd silently drop the second
+            // write rather than expose the bug.
+            if results[result_idx].set(result.clone()).is_err() {
+              debug_assert!(
+                false,
+                "anon work-item dedup invariant: result slot {result_idx} set twice"
+              );
+            }
             if let (Some(log), Err((_, msg))) =
               (failure_log_worker.as_ref(), result.as_ref())
             {

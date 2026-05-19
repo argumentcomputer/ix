@@ -102,9 +102,15 @@ private def selectNamesIxon (allNames : Array Lean.Name)
   | some s =>
     let exactSet : Std.HashSet Lean.Name :=
       s.exacts.foldl (fun acc n => acc.insert n) (Std.HashSet.emptyWithCapacity s.exacts.length)
+    -- O(|allNames|) build-up to O(1)-per-check; the previous
+    -- `allNames.contains n` was O(|allNames|) per missing-name check,
+    -- which at mathlib scale (~700k env × thousands of seed names)
+    -- could spend seconds on the preflight alone.
+    let allNamesSet : Std.HashSet Lean.Name :=
+      allNames.foldl (fun acc n => acc.insert n) (Std.HashSet.emptyWithCapacity allNames.size)
     let mut missing : Array Lean.Name := #[]
     for n in s.exacts do
-      if !allNames.contains n then
+      if !allNamesSet.contains n then
         missing := missing.push n
     if !missing.isEmpty then
       IO.println s!"[check] warning: {missing.size}/{s.exacts.length} exact name(s) not in env:"

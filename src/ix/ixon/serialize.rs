@@ -1617,16 +1617,47 @@ impl Env {
     let file = std::fs::File::open(path).map_err(|e| {
       format!("Env::get_anon_mmap: open {}: {e}", path.display())
     })?;
+    // Capture the file size at open so we can validate the mapping
+    // covers the bytes we believe we're parsing. The kernel will
+    // happily map MAP_PRIVATE with a smaller size than we expect (if
+    // the file was truncated between `open` and `mmap`); without
+    // this check our cursor-vs-len bounds tests in the section
+    // parsers would still catch most mismatches, but anyone reading
+    // past the truncation point through a `LazyConstant` window
+    // later would SIGBUS with no diagnostic. If `metadata()` fails
+    // we proceed without the check — better to attempt the mmap
+    // than to fail open on a transient stat error.
+    //
+    // Caveat: this is a snapshot at-open. If the file is replaced
+    // (rather than truncated in-place) while we hold the mmap, our
+    // pages remain valid (mmap pins the inode). If it's truncated
+    // in-place, subsequent page faults beyond the new EOF SIGBUS;
+    // we accept that as a contract violation (don't rewrite the
+    // .ixe underneath a running check) and document it.
+    let expected_len = file
+      .metadata()
+      .ok()
+      .map(|m| m.len() as usize);
     // SAFETY: We treat the mapping as read-only and never alias it
     // mutably. Other processes truncating or replacing the file while
     // it is mapped would invalidate our slices; that is a contract
     // the caller is expected to honor (don't modify the .ixe
-    // underfoot).
+    // underfoot). See the `expected_len` check below for the
+    // open-time size sanity guard.
     let mmap = unsafe {
       memmap2::Mmap::map(&file).map_err(|e| {
         format!("Env::get_anon_mmap: mmap {}: {e}", path.display())
       })?
     };
+    if let Some(expected) = expected_len
+      && mmap.len() != expected
+    {
+      return Err(format!(
+        "Env::get_anon_mmap: file size changed under us \
+         (stat={expected} bytes, mmap={} bytes); refuse to load",
+        mmap.len()
+      ));
+    }
     let mmap = Arc::new(mmap);
 
     // `buf` is a moving cursor over `mmap[..]`. We compute byte
@@ -2448,5 +2479,51 @@ mod tests {
       let from_anon = anon.get_const(addr).unwrap();
       assert_eq!(*from_full, *from_anon);
     }
+  }
+
+  /// Lock in the mmap inode-retention invariant: after `get_anon_mmap`
+  /// opens and maps the file, removing the path from the filesystem
+  /// MUST NOT invalidate the mapping. On Linux this works because
+  /// `unlink` only decrements the directory link count; the inode
+  /// stays alive while any open fd or mmap reference exists, and
+  /// `MAP_PRIVATE` keeps its pages.
+  ///
+  /// This is the invariant our SIGBUS analysis relies on. A future
+  /// change that, say, switched to `mmap_anonymous` or copied bytes
+  /// into a tmpfile would break this — making the test fail loudly
+  /// instead of letting workers SIGBUS in production.
+  #[test]
+  fn get_anon_mmap_survives_file_unlink() {
+    let env = Env::new();
+    let a = store_canonical(&env, defn_const(vec![]));
+    let b = store_canonical(&env, defn_const_discriminator(vec![], 1));
+    let mut buf = Vec::new();
+    env.put(&mut buf).unwrap();
+
+    let tmp = std::env::temp_dir().join("ix_get_anon_mmap_unlink_test.ixe");
+    {
+      use std::io::Write;
+      let mut f = std::fs::File::create(&tmp).unwrap();
+      f.write_all(&buf).unwrap();
+    }
+
+    let mmap_env = Env::get_anon_mmap(&tmp)
+      .expect("open should succeed before unlink");
+    // Materializing once before unlink makes sure we have known-good
+    // baseline behavior; the real test is materializing AFTER unlink.
+    let pre_a = mmap_env.get_const(&a).expect("pre-unlink fetch of `a`");
+
+    std::fs::remove_file(&tmp).expect("unlink should succeed");
+
+    // After unlink, the mmap'd pages must still be readable. We
+    // didn't yet touch `b`'s bytes — if they hadn't been faulted in
+    // before, the OS still pages them from the now-unlinked inode
+    // because we hold a clone of `Arc<Mmap>` (via the env's
+    // `LazyConstant`s).
+    let post_a = mmap_env.get_const(&a).expect("post-unlink fetch of `a`");
+    let post_b = mmap_env.get_const(&b).expect("post-unlink fetch of `b`");
+
+    assert_eq!(pre_a, post_a, "`a` content should be stable across unlink");
+    assert_ne!(post_a, post_b, "discriminators should still differentiate");
   }
 }

@@ -99,15 +99,6 @@ impl<'a> AnonEnv<'a> {
     v
   }
 
-  /// **Escape hatch.** Returns the underlying `IxonEnv`. The anon
-  /// kernel must never call this; it exists solely for adapter code
-  /// that bridges to legacy APIs taking `&IxonEnv` for their
-  /// `consts`/`blobs` access. Adapters carry the responsibility to
-  /// not consult metadata sections.
-  #[allow(dead_code)]
-  pub(crate) fn as_ixon_env_unchecked(&self) -> &'a IxonEnv {
-    self.inner
-  }
 }
 
 #[cfg(test)]
