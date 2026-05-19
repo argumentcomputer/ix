@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use multi_stark::{
   lookup::LookupAir,
   p3_air::{Air, AirBuilder, BaseAir},
@@ -71,7 +73,7 @@ where
 }
 
 enum CircuitType {
-  Function { idx: usize, group: String },
+  Function { idx: usize, group: Arc<str> },
   Memory { width: usize },
   Bytes1,
   Bytes2,
@@ -85,8 +87,8 @@ impl AiurSystem {
     let toplevel_ref = &toplevel;
     let function_circuits =
       (0..toplevel_ref.functions.len()).flat_map(move |i| {
-        let groups: Vec<String> = if toplevel_ref.functions[i].constrained {
-          let mut gs: Vec<String> =
+        let groups: Vec<Arc<str>> = if toplevel_ref.functions[i].constrained {
+          let mut gs: Vec<Arc<str>> =
             toplevel_ref.filtered_functions[i].keys().cloned().collect();
           gs.sort();
           gs
@@ -142,8 +144,9 @@ impl AiurSystem {
     let _g = tracing::info_span!("aiur/witness").entered();
     let functions: Vec<CircuitType> = (0..self.toplevel.functions.len())
       .flat_map(|idx| {
-        let groups: Vec<String> = if self.toplevel.functions[idx].constrained {
-          let mut gs: Vec<String> =
+        let groups: Vec<Arc<str>> = if self.toplevel.functions[idx].constrained
+        {
+          let mut gs: Vec<Arc<str>> =
             self.toplevel.filtered_functions[idx].keys().cloned().collect();
           gs.sort();
           gs

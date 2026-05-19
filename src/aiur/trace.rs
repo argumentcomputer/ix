@@ -89,7 +89,7 @@ impl Toplevel {
     let queries = unfiltered_queries
       .iter()
       .filter(|(_, res)| {
-        !res.multiplicity.is_zero() && res.return_group == group
+        !res.multiplicity.is_zero() && res.return_group.as_ref() == group
       })
       .collect::<Vec<_>>();
     let height_no_padding = queries.len();

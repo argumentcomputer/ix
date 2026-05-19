@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::FxIndexMap;
@@ -6,7 +8,7 @@ use super::bytecode::{Block, Ctrl, Function};
 use super::layout::compute_layout;
 
 impl Function {
-  pub fn return_groups(&self) -> FxHashSet<String> {
+  pub fn return_groups(&self) -> FxHashSet<Arc<str>> {
     let mut groups = FxHashSet::default();
     collect_block(&self.body, &mut groups);
     groups
@@ -36,7 +38,7 @@ impl Function {
     self
   }
 
-  pub fn split(&self) -> FxHashMap<String, Function> {
+  pub fn split(&self) -> FxHashMap<Arc<str>, Function> {
     self
       .return_groups()
       .into_iter()
@@ -58,7 +60,7 @@ fn filter_block(block: &Block, target: &str) -> Option<Block> {
 fn filter_ctrl(ctrl: &Ctrl, target: &str) -> Option<Ctrl> {
   match ctrl {
     Ctrl::Return(sel, group, vs) => {
-      if group == target {
+      if group.as_ref() == target {
         Some(Ctrl::Return(*sel, group.clone(), vs.clone()))
       } else {
         None
@@ -148,11 +150,11 @@ fn filter_cases(
   new_cases
 }
 
-fn collect_block(block: &Block, groups: &mut FxHashSet<String>) {
+fn collect_block(block: &Block, groups: &mut FxHashSet<Arc<str>>) {
   collect_ctrl(&block.ctrl, groups);
 }
 
-fn collect_ctrl(ctrl: &Ctrl, groups: &mut FxHashSet<String>) {
+fn collect_ctrl(ctrl: &Ctrl, groups: &mut FxHashSet<Arc<str>>) {
   match ctrl {
     Ctrl::Return(_, group, _) => {
       groups.insert(group.clone());

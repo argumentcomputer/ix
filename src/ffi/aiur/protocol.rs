@@ -136,28 +136,25 @@ extern "C" fn rs_aiur_toplevel_execute(
 
   // Per-function array of `(group, width, unique_rows, total_hits)` quadruples,
   // one per split. Queries within a function are partitioned by return group.
-  let function_stats: Vec<Vec<(String, usize, usize, usize)>> = (0..toplevel
-    .functions
-    .len())
+  let function_stats: Vec<Vec<(std::sync::Arc<str>, usize, usize, usize)>> = (0
+    ..toplevel.functions.len())
     .map(|i| {
       let queries = &query_record.function_queries[i];
-      let mut stats: Vec<(String, usize, usize, usize)> = toplevel
+      let mut stats: Vec<(std::sync::Arc<str>, usize, usize, usize)> = toplevel
         .filtered_functions[i]
         .iter()
         .map(|(group, func)| {
           let (rows, hits) = queries
             .iter()
-            .filter(|(_, res)| res.return_group == *group)
+            .filter(|(_, res)| res.return_group.as_ref() == group.as_ref())
             .fold((0usize, 0usize), |(r, h), (_, res)| {
               let m = usize::try_from(res.multiplicity.as_canonical_u64())
                 .expect("multiplicity exceeds usize");
               if m != 0 { (r + 1, h + m) } else { (r, h) }
             });
           let l = func.layout;
-          let width = l.input_size
-            + l.selectors
-            + l.auxiliaries
-            + 4 * (1 + l.lookups);
+          let width =
+            l.input_size + l.selectors + l.auxiliaries + 4 * (1 + l.lookups);
           (group.clone(), width, rows, hits)
         })
         .collect();
@@ -181,7 +178,7 @@ extern "C" fn rs_aiur_toplevel_execute(
       for (j, (group, width, rows, hits)) in per_fn.iter().enumerate() {
         // (String × Nat × Nat × Nat) — right-nested pair encoding
         let quad = LeanProd::new(
-          LeanString::new(group),
+          LeanString::new(group.as_ref()),
           LeanProd::new(
             LeanOwned::box_usize(*width),
             LeanProd::new(

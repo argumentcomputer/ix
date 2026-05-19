@@ -1,6 +1,7 @@
 use multi_stark::p3_field::{PrimeCharacteristicRing, PrimeField64};
 use rustc_hash::FxHashMap;
 use std::collections::hash_map::Entry;
+use std::sync::Arc;
 
 use crate::{
   FxIndexMap,
@@ -18,7 +19,7 @@ use crate::{
 pub struct QueryResult {
   pub(crate) output: Vec<G>,
   pub(crate) multiplicity: G,
-  pub(crate) return_group: String,
+  pub(crate) return_group: Arc<str>,
 }
 
 pub type QueryMap = FxIndexMap<Vec<G>, QueryResult>;
@@ -257,7 +258,7 @@ impl Function {
             let result = QueryResult {
               output: vec![ptr],
               multiplicity: G::from_bool(!unconstrained),
-              return_group: String::new(),
+              return_group: Arc::from(""),
             };
             memory_queries.insert(values, result);
             map.push(ptr);
