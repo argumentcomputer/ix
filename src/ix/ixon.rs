@@ -345,10 +345,8 @@ mod doc_examples {
   #[test]
   fn check_claim_tag() {
     // Check claim -> Tag4 { flag: 0xE, size: 4 } -> 0xE4
-    let claim = Claim::Check {
-      const_addr: Address::hash(b"value"),
-      assumptions: None,
-    };
+    let claim =
+      Claim::Check { const_addr: Address::hash(b"value"), assumptions: None };
     let mut buf = Vec::new();
     claim.put(&mut buf);
     assert_eq!(buf[0], 0xE4, "Check claim should start with 0xE4");
@@ -359,10 +357,7 @@ mod doc_examples {
   fn check_proof_tag() {
     // Check proof -> Tag4 { flag: 0xF, size: 1 } -> 0xF1
     let proof = Proof::new(
-      Claim::Check {
-        const_addr: Address::hash(b"value"),
-        assumptions: None,
-      },
+      Claim::Check { const_addr: Address::hash(b"value"), assumptions: None },
       vec![5, 6, 7],
     );
     let mut buf = Vec::new();

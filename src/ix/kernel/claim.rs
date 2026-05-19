@@ -43,11 +43,7 @@ pub fn build_check_claim(env: &Env, const_addr: Address) -> Claim {
 /// Assumptions = canonical merkle root over `transitive_deps(input) ∪
 /// transitive_deps(output) \ {input, output}`. `None` if that set is
 /// empty.
-pub fn build_eval_claim(
-  env: &Env,
-  input: Address,
-  output: Address,
-) -> Claim {
+pub fn build_eval_claim(env: &Env, input: Address, output: Address) -> Claim {
   let mut set: FxHashSet<Address> =
     env.transitive_deps_excl(&input).into_iter().collect();
   set.extend(env.transitive_deps_excl(&output));
@@ -97,7 +93,7 @@ mod tests {
   use super::*;
   use crate::ix::env::DefinitionSafety;
   use crate::ix::ixon::constant::{
-    Axiom, Constant, DefKind, Definition, ConstantInfo,
+    Axiom, Constant, ConstantInfo, DefKind, Definition,
   };
   use crate::ix::ixon::expr::Expr;
   use crate::ix::ixon::merkle::leaf_hash;

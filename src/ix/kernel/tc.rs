@@ -234,7 +234,6 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     tc
   }
 
-
   pub fn try_get_const(
     &mut self,
     id: &KId<M>,
@@ -1002,10 +1001,8 @@ impl<'a> TypeChecker<'a, super::mode::Anon> {
       let _ = env.set_prims(prims);
     }
     let mut tc = Self::new(env);
-    tc.lazy_anon = Some(LazyAnonIngress {
-      anon_env,
-      faulted_addrs: FxHashSet::default(),
-    });
+    tc.lazy_anon =
+      Some(LazyAnonIngress { anon_env, faulted_addrs: FxHashSet::default() });
     tc
   }
 }

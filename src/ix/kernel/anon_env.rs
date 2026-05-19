@@ -98,7 +98,6 @@ impl<'a> AnonEnv<'a> {
     v.sort_unstable();
     v
   }
-
 }
 
 #[cfg(test)]

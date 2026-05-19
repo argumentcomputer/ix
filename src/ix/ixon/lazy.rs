@@ -123,15 +123,8 @@ impl LazyConstant {
   ///
   /// Used by `Env::get_anon_mmap` to avoid heap-copying the on-disk
   /// byte stream — the OS page cache is the source of truth.
-  pub fn from_mmap_slice(
-    mmap: Arc<Mmap>,
-    offset: usize,
-    len: usize,
-  ) -> Self {
-    LazyConstant {
-      bytes: BytesSource::Mmap { mmap, offset, len },
-      cache: None,
-    }
+  pub fn from_mmap_slice(mmap: Arc<Mmap>, offset: usize, len: usize) -> Self {
+    LazyConstant { bytes: BytesSource::Mmap { mmap, offset, len }, cache: None }
   }
 
   /// Construct from a structured `Constant` (the in-memory build path,

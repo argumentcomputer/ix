@@ -151,7 +151,8 @@ pub fn merkle_proof_canonical(
   let mut path: MerklePath = Vec::new();
   while level.len() > 1 {
     let sibling_idx = pos ^ 1;
-    let sibling = level.get(sibling_idx).cloned().unwrap_or_else(|| zero.clone());
+    let sibling =
+      level.get(sibling_idx).cloned().unwrap_or_else(|| zero.clone());
     let is_left = pos & 1 == 1;
     path.push((sibling, is_left));
     // Build next level.
@@ -228,8 +229,7 @@ mod tests {
   fn canonical_dedup() {
     let a = addr(b"a");
     let b = addr(b"b");
-    let r1 =
-      merkle_root_canonical(&[a.clone(), a.clone(), b.clone()]).unwrap();
+    let r1 = merkle_root_canonical(&[a.clone(), a.clone(), b.clone()]).unwrap();
     let r2 = merkle_root_canonical(&[a, b]).unwrap();
     assert_eq!(r1, r2);
   }

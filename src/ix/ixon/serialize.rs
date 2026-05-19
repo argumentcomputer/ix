@@ -1634,10 +1634,7 @@ impl Env {
     // in-place, subsequent page faults beyond the new EOF SIGBUS;
     // we accept that as a contract violation (don't rewrite the
     // .ixe underneath a running check) and document it.
-    let expected_len = file
-      .metadata()
-      .ok()
-      .map(|m| m.len() as usize);
+    let expected_len = file.metadata().ok().map(|m| m.len() as usize);
     // SAFETY: We treat the mapping as read-only and never alias it
     // mutably. Other processes truncating or replacing the file while
     // it is mapped would invalidate our slices; that is a contract
@@ -1805,8 +1802,7 @@ impl Env {
     let mut const_addrs: Vec<Address> =
       self.consts.iter().map(|e| e.key().clone()).collect();
     const_addrs.sort_unstable();
-    let root =
-      merkle_root_canonical(&const_addrs).unwrap_or_else(zero_address);
+    let root = merkle_root_canonical(&const_addrs).unwrap_or_else(zero_address);
     put_address(&root, &mut buf);
     let header_size = buf.len();
 
@@ -2416,8 +2412,10 @@ mod tests {
     let b = store_canonical(&env, defn_const(vec![a.clone()]));
     // Populate metadata sections so we can verify they get dropped.
     let blob_addr = env.store_blob(b"hello world".to_vec());
-    env.register_name(Name::str(Name::anon(), "MyConst".to_string()),
-      Named::with_addr(a.clone()));
+    env.register_name(
+      Name::str(Name::anon(), "MyConst".to_string()),
+      Named::with_addr(a.clone()),
+    );
 
     let mut buf = Vec::new();
     env.put(&mut buf).unwrap();
@@ -2507,8 +2505,8 @@ mod tests {
       f.write_all(&buf).unwrap();
     }
 
-    let mmap_env = Env::get_anon_mmap(&tmp)
-      .expect("open should succeed before unlink");
+    let mmap_env =
+      Env::get_anon_mmap(&tmp).expect("open should succeed before unlink");
     // Materializing once before unlink makes sure we have known-good
     // baseline behavior; the real test is materializing AFTER unlink.
     let pre_a = mmap_env.get_const(&a).expect("pre-unlink fetch of `a`");

@@ -1808,12 +1808,7 @@ fn decompile_const(
   let current_const = name.pretty();
 
   match cnst.as_ref() {
-    Constant {
-      info: ConstantInfo::Defn(def),
-      sharing,
-      refs,
-      univs,
-    } => {
+    Constant { info: ConstantInfo::Defn(def), sharing, refs, univs } => {
       let mut cache = BlockCache {
         sharing: sharing.clone(),
         refs: refs.clone(),
@@ -1823,17 +1818,11 @@ fn decompile_const(
         ..Default::default()
       };
       cache.load_meta_extensions(&named.meta);
-      let info =
-        decompile_definition(def, &named.meta, &mut cache, stt, dstt)?;
+      let info = decompile_definition(def, &named.meta, &mut cache, stt, dstt)?;
       dstt.env.insert(name.clone(), info);
     },
 
-    Constant {
-      info: ConstantInfo::Recr(rec),
-      sharing,
-      refs,
-      univs,
-    } => {
+    Constant { info: ConstantInfo::Recr(rec), sharing, refs, univs } => {
       let mut cache = BlockCache {
         sharing: sharing.clone(),
         refs: refs.clone(),
@@ -1852,12 +1841,7 @@ fn decompile_const(
       dstt.env.insert(name.clone(), info);
     },
 
-    Constant {
-      info: ConstantInfo::Axio(ax),
-      sharing,
-      refs,
-      univs,
-    } => {
+    Constant { info: ConstantInfo::Axio(ax), sharing, refs, univs } => {
       let mut cache = BlockCache {
         sharing: sharing.clone(),
         refs: refs.clone(),
@@ -1873,12 +1857,7 @@ fn decompile_const(
       dstt.env.insert(name.clone(), info);
     },
 
-    Constant {
-      info: ConstantInfo::Quot(quot),
-      sharing,
-      refs,
-      univs,
-    } => {
+    Constant { info: ConstantInfo::Quot(quot), sharing, refs, univs } => {
       let mut cache = BlockCache {
         sharing: sharing.clone(),
         refs: refs.clone(),

@@ -154,11 +154,7 @@ pub enum RevealConstantInfo {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Claim {
   /// `input` evaluates to `output`, optionally modulo `assumptions`.
-  Eval {
-    input: Address,
-    output: Address,
-    assumptions: Option<Address>,
-  },
+  Eval { input: Address, output: Address, assumptions: Option<Address> },
   /// The constant at `const_addr` is well-typed, optionally modulo
   /// `assumptions`.
   Check { const_addr: Address, assumptions: Option<Address> },
@@ -1037,9 +1033,9 @@ impl Claim {
         let const_addr = get_address(buf)?;
         Ok(Claim::Contains { tree, const_addr })
       },
-      x => Err(format!(
-        "Claim::get: invalid claim variant {x} under flag 0xE",
-      )),
+      x => {
+        Err(format!("Claim::get: invalid claim variant {x} under flag 0xE",))
+      },
     }
   }
 
@@ -1140,9 +1136,11 @@ impl Proof {
         let const_addr = get_address(buf)?;
         Claim::Contains { tree, const_addr }
       },
-      x => return Err(format!(
-        "Proof::get: invalid proof variant {x} under flag 0xF"
-      )),
+      x => {
+        return Err(format!(
+          "Proof::get: invalid proof variant {x} under flag 0xF"
+        ));
+      },
     };
 
     // Opaque ZK proof bytes
@@ -1493,10 +1491,8 @@ mod tests {
 
   #[test]
   fn test_check_claim_no_asm_roundtrip() {
-    let claim = Claim::Check {
-      const_addr: Address::hash(b"value"),
-      assumptions: None,
-    };
+    let claim =
+      Claim::Check { const_addr: Address::hash(b"value"), assumptions: None };
     assert!(claim_roundtrip(&claim));
   }
 
@@ -1552,10 +1548,7 @@ mod tests {
   #[test]
   fn test_check_proof_roundtrip() {
     let proof = Proof::new(
-      Claim::Check {
-        const_addr: Address::hash(b"value"),
-        assumptions: None,
-      },
+      Claim::Check { const_addr: Address::hash(b"value"), assumptions: None },
       vec![5, 6, 7, 8, 9],
     );
     assert!(proof_roundtrip(&proof));
@@ -1564,10 +1557,7 @@ mod tests {
   #[test]
   fn test_check_env_proof_roundtrip() {
     let proof = Proof::new(
-      Claim::CheckEnv {
-        root: Address::hash(b"env-root"),
-        assumptions: None,
-      },
+      Claim::CheckEnv { root: Address::hash(b"env-root"), assumptions: None },
       vec![0x11, 0x22],
     );
     assert!(proof_roundtrip(&proof));
@@ -1673,11 +1663,7 @@ mod tests {
 
     let cases: Vec<(Claim, u64)> = vec![
       (
-        Claim::Eval {
-          input: a.clone(),
-          output: b.clone(),
-          assumptions: None,
-        },
+        Claim::Eval { input: a.clone(), output: b.clone(), assumptions: None },
         VARIANT_EVAL_CLAIM,
       ),
       (
@@ -1688,11 +1674,11 @@ mod tests {
         Claim::CheckEnv { root: a.clone(), assumptions: None },
         VARIANT_CHECK_ENV_CLAIM,
       ),
-      (Claim::Reveal { comm: a.clone(), info: reveal_info }, VARIANT_REVEAL_CLAIM),
       (
-        Claim::Contains { tree: a, const_addr: b },
-        VARIANT_CONTAINS_CLAIM,
+        Claim::Reveal { comm: a.clone(), info: reveal_info },
+        VARIANT_REVEAL_CLAIM,
       ),
+      (Claim::Contains { tree: a, const_addr: b }, VARIANT_CONTAINS_CLAIM),
     ];
 
     for (claim, expected_size) in cases {
@@ -1716,11 +1702,7 @@ mod tests {
 
     let cases: Vec<(Claim, u64)> = vec![
       (
-        Claim::Eval {
-          input: a.clone(),
-          output: b.clone(),
-          assumptions: None,
-        },
+        Claim::Eval { input: a.clone(), output: b.clone(), assumptions: None },
         VARIANT_EVAL_PROOF,
       ),
       (
@@ -1731,11 +1713,11 @@ mod tests {
         Claim::CheckEnv { root: a.clone(), assumptions: None },
         VARIANT_CHECK_ENV_PROOF,
       ),
-      (Claim::Reveal { comm: a.clone(), info: reveal_info }, VARIANT_REVEAL_PROOF),
       (
-        Claim::Contains { tree: a, const_addr: b },
-        VARIANT_CONTAINS_PROOF,
+        Claim::Reveal { comm: a.clone(), info: reveal_info },
+        VARIANT_REVEAL_PROOF,
       ),
+      (Claim::Contains { tree: a, const_addr: b }, VARIANT_CONTAINS_PROOF),
     ];
 
     for (claim, expected_size) in cases {
@@ -1782,11 +1764,8 @@ mod tests {
       "Eval with-asm = 98 bytes"
     );
     assert_eq!(
-      claim_bytes(&Claim::Check {
-        const_addr: a.clone(),
-        assumptions: None
-      })
-      .len(),
+      claim_bytes(&Claim::Check { const_addr: a.clone(), assumptions: None })
+        .len(),
       1 + 32 + 1,
       "Check no-asm = 34 bytes"
     );
@@ -1800,11 +1779,8 @@ mod tests {
       "Check with-asm = 66 bytes"
     );
     assert_eq!(
-      claim_bytes(&Claim::CheckEnv {
-        root: a.clone(),
-        assumptions: None
-      })
-      .len(),
+      claim_bytes(&Claim::CheckEnv { root: a.clone(), assumptions: None })
+        .len(),
       1 + 32 + 1,
       "CheckEnv no-asm = 34 bytes"
     );
@@ -1830,26 +1806,13 @@ mod tests {
 
     let cases: Vec<(Claim, u8)> = vec![
       (
-        Claim::Eval {
-          input: a.clone(),
-          output: b.clone(),
-          assumptions: None,
-        },
+        Claim::Eval { input: a.clone(), output: b.clone(), assumptions: None },
         0xE3,
       ),
-      (
-        Claim::Check { const_addr: a.clone(), assumptions: None },
-        0xE4,
-      ),
-      (
-        Claim::CheckEnv { root: a.clone(), assumptions: None },
-        0xE5,
-      ),
+      (Claim::Check { const_addr: a.clone(), assumptions: None }, 0xE4),
+      (Claim::CheckEnv { root: a.clone(), assumptions: None }, 0xE5),
       (Claim::Reveal { comm: a.clone(), info: reveal_info }, 0xE6),
-      (
-        Claim::Contains { tree: a, const_addr: b },
-        0xE7,
-      ),
+      (Claim::Contains { tree: a, const_addr: b }, 0xE7),
     ];
     for (claim, expected_byte) in cases {
       let bytes = claim_bytes(&claim);
@@ -1870,21 +1833,11 @@ mod tests {
     };
     let cases: Vec<(Claim, u8)> = vec![
       (
-        Claim::Eval {
-          input: a.clone(),
-          output: b.clone(),
-          assumptions: None,
-        },
+        Claim::Eval { input: a.clone(), output: b.clone(), assumptions: None },
         0xF0,
       ),
-      (
-        Claim::Check { const_addr: a.clone(), assumptions: None },
-        0xF1,
-      ),
-      (
-        Claim::CheckEnv { root: a.clone(), assumptions: None },
-        0xF2,
-      ),
+      (Claim::Check { const_addr: a.clone(), assumptions: None }, 0xF1),
+      (Claim::CheckEnv { root: a.clone(), assumptions: None }, 0xF2),
       (Claim::Reveal { comm: a.clone(), info: reveal_info }, 0xF3),
       (Claim::Contains { tree: a, const_addr: b }, 0xF4),
     ];

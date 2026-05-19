@@ -38,9 +38,7 @@
 
 use crate::ix::address::Address;
 
-use super::merkle::{
-  MerklePath, leaf_hash, node_hash, zero_address,
-};
+use super::merkle::{MerklePath, leaf_hash, node_hash, zero_address};
 use super::proof::{FLAG_CLAIM, VARIANT_ASSUMPTION_TREE};
 use super::tag::Tag4;
 
@@ -149,11 +147,7 @@ impl AssumptionTree {
   /// order expected by `verify_merkle_proof`.
   pub fn merkle_proof(&self, target: &Address) -> Option<MerklePath> {
     let mut path: MerklePath = Vec::new();
-    if self.search_path(target, &mut path) {
-      Some(path)
-    } else {
-      None
-    }
+    if self.search_path(target, &mut path) { Some(path) } else { None }
   }
 
   /// Recursive helper: if `target` is in this subtree, push the sibling
@@ -220,7 +214,8 @@ impl AssumptionTree {
   }
 
   fn get_body(buf: &mut &[u8]) -> Result<Self, String> {
-    let (tag, rest) = buf.split_first().ok_or("AssumptionTree: EOF reading body tag")?;
+    let (tag, rest) =
+      buf.split_first().ok_or("AssumptionTree: EOF reading body tag")?;
     *buf = rest;
     match *tag {
       BODY_LEAF => {
@@ -260,10 +255,10 @@ impl AssumptionTree {
 
 #[cfg(test)]
 mod tests {
-  use super::*;
   use super::super::merkle::{
     merkle_join, merkle_root_canonical, verify_merkle_proof,
   };
+  use super::*;
 
   fn addr(seed: &[u8]) -> Address {
     Address::hash(seed)
@@ -329,9 +324,8 @@ mod tests {
   #[test]
   fn canonical_root_matches_merkle_root_canonical_pairs() {
     for n in 2..=10 {
-      let leaves: Vec<Address> = (0..n)
-        .map(|i| addr(format!("leaf-{i}").as_bytes()))
-        .collect();
+      let leaves: Vec<Address> =
+        (0..n).map(|i| addr(format!("leaf-{i}").as_bytes())).collect();
       let t = AssumptionTree::canonical(&leaves).unwrap();
       assert_eq!(
         Some(t.root()),
@@ -345,7 +339,8 @@ mod tests {
   fn canonical_root_dedups_like_primitive() {
     let a = addr(b"a");
     let b = addr(b"b");
-    let t = AssumptionTree::canonical(&[a.clone(), a.clone(), b.clone()]).unwrap();
+    let t =
+      AssumptionTree::canonical(&[a.clone(), a.clone(), b.clone()]).unwrap();
     assert_eq!(Some(t.root()), merkle_root_canonical(&[a, b]));
   }
 
@@ -378,7 +373,8 @@ mod tests {
     let b = addr(b"b");
     let c = addr(b"c");
     let absent = addr(b"absent");
-    let t = AssumptionTree::canonical(&[a.clone(), b.clone(), c.clone()]).unwrap();
+    let t =
+      AssumptionTree::canonical(&[a.clone(), b.clone(), c.clone()]).unwrap();
     assert!(t.contains(&a));
     assert!(t.contains(&b));
     assert!(t.contains(&c));
@@ -399,9 +395,8 @@ mod tests {
   #[test]
   fn merkle_proof_roundtrip_all_leaves() {
     for n in 1..=8 {
-      let leaves: Vec<Address> = (0..n)
-        .map(|i| addr(format!("leaf-{i}").as_bytes()))
-        .collect();
+      let leaves: Vec<Address> =
+        (0..n).map(|i| addr(format!("leaf-{i}").as_bytes())).collect();
       let t = AssumptionTree::canonical(&leaves).unwrap();
       let root = t.root();
       for leaf in t.leaves() {
@@ -483,9 +478,8 @@ mod tests {
   #[test]
   fn serde_roundtrip_canonical_trees() {
     for n in 1..=10 {
-      let leaves: Vec<Address> = (0..n)
-        .map(|i| addr(format!("leaf-{i}").as_bytes()))
-        .collect();
+      let leaves: Vec<Address> =
+        (0..n).map(|i| addr(format!("leaf-{i}").as_bytes())).collect();
       let t = AssumptionTree::canonical(&leaves).unwrap();
       let bytes = t.ser();
       let parsed = AssumptionTree::get(&mut &bytes[..]).unwrap();

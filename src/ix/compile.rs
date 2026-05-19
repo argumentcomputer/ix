@@ -3592,19 +3592,13 @@ fn compile_mutual(
       stt.env.store_const(addr.clone(), standalone_constant);
       stt.block_stats.insert(
         name.clone(),
-        BlockSizeStats {
-          hash_consed_size,
-          serialized_size,
-          const_count: 1,
-        },
+        BlockSizeStats { hash_consed_size, serialized_size, const_count: 1 },
       );
       for class in &sorted_classes {
         for cnst in class {
           let n = cnst.name();
           let meta = all_metas.get(&n).cloned().unwrap_or_default();
-          stt
-            .env
-            .register_name(n.clone(), Named::new(addr.clone(), meta));
+          stt.env.register_name(n.clone(), Named::new(addr.clone(), meta));
           stt.name_to_addr.insert(n.clone(), addr.clone());
         }
       }

@@ -150,9 +150,7 @@ impl Env {
     offset: usize,
     len: usize,
   ) {
-    self
-      .consts
-      .insert(addr, LazyConstant::from_mmap_slice(mmap, offset, len));
+    self.consts.insert(addr, LazyConstant::from_mmap_slice(mmap, offset, len));
   }
 
   /// Get a constant by address, materializing on demand.
@@ -553,9 +551,8 @@ mod tests {
     let a = Address::hash(b"a");
     // Use multiple deps; the returned Vec should be in sorted order
     // regardless of how the BFS visited them.
-    let mut refs: Vec<Address> = (0..16)
-      .map(|i| Address::hash(format!("dep-{i}").as_bytes()))
-      .collect();
+    let mut refs: Vec<Address> =
+      (0..16).map(|i| Address::hash(format!("dep-{i}").as_bytes())).collect();
     env.store_const(a.clone(), const_with_refs(refs.clone()));
     for r in &refs {
       env.store_const(r.clone(), const_with_refs(vec![]));
@@ -595,10 +592,7 @@ mod tests {
     let c = store_canonical(&env, const_with_refs(vec![]));
     let b = store_canonical(&env, const_with_refs(vec![c.clone()]));
     let a = store_canonical(&env, const_with_refs(vec![b.clone()]));
-    let d = store_canonical(
-      &env,
-      const_with_refs_discriminator(vec![], 1),
-    );
+    let d = store_canonical(&env, const_with_refs_discriminator(vec![], 1));
 
     // Serialize → deserialize so all entries are lazy-from-bytes.
     let mut buf = Vec::new();

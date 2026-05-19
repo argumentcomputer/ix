@@ -68,17 +68,17 @@ use crate::ix::ixon::metadata::ConstantMetaInfo;
 use crate::ix::kernel::egress::{ixon_egress, lean_egress};
 use crate::ix::kernel::env::KEnv;
 use crate::ix::kernel::error::TcError;
+use crate::ix::kernel::id::KId;
 use crate::ix::kernel::ingress::{
   IxonIngressLookups, build_ixon_ingress_lookups,
   ingress_const_shallow_into_kenv_with_lookups, ixon_ingress_owned,
 };
-#[cfg(feature = "test-ffi")]
-use crate::ix::kernel::ingress::{ixon_ingress, lean_ingress};
-use crate::ix::kernel::id::KId;
 use crate::ix::kernel::ingress::{
   anon_ctor_proj_addr, anon_defn_proj_addr, anon_indc_proj_addr,
   anon_recr_proj_addr,
 };
+#[cfg(feature = "test-ffi")]
+use crate::ix::kernel::ingress::{ixon_ingress, lean_ingress};
 use crate::ix::kernel::mode::{Anon, CheckDupLevelParams, KernelMode, Meta};
 use crate::ix::kernel::tc::TypeChecker;
 
@@ -1306,10 +1306,7 @@ enum AnonWorkItem {
   /// the block (each member's projection + each ctor's CPrj of inductive
   /// members), all sharing the same check result via the kernel's
   /// block coordination.
-  Block {
-    primary_addr: Address,
-    result_idxs: Vec<usize>,
-  },
+  Block { primary_addr: Address, result_idxs: Vec<usize> },
 }
 
 /// One pass over `env.consts`: enumerate work items + the kernel-checkable

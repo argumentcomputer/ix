@@ -779,16 +779,19 @@ fn ingress_expr<M: KernelMode>(
             // Meta mode: walk the arena to find the Ref's Lean name.
             // Anon mode: the closure is never invoked — no arena walk,
             // no name construction, no resolve_name call.
-            let name_field: M::MField<Name> =
-              M::meta_field_try::<Name, _, String>(|| match node {
-                ExprMetaData::Ref { name: name_addr } => {
-                  Ok(resolve_name(name_addr, ctx.names))
-                },
-                _ => Err(format!(
-                  "Ref at index {ref_idx} (addr {}) has no metadata name (node={node:?})",
-                  &addr.hex()[..8]
-                )),
-              })?;
+            let name_field: M::MField<Name> = M::meta_field_try::<
+              Name,
+              _,
+              String,
+            >(|| match node {
+              ExprMetaData::Ref { name: name_addr } => {
+                Ok(resolve_name(name_addr, ctx.names))
+              },
+              _ => Err(format!(
+                "Ref at index {ref_idx} (addr {}) has no metadata name (node={node:?})",
+                &addr.hex()[..8]
+              )),
+            })?;
             let univs =
               ingress_univ_args(univ_idxs, ctx, intern, univ_cache, stats)?;
             let id = KId::new(addr, name_field);
@@ -1130,17 +1133,23 @@ fn ingress_expr<M: KernelMode>(
             // Meta mode reads both; Anon mode skips the entire arena
             // touch — no name, no child-arena indexing.
             let mut child_arena: u64 = 0;
-            let struct_name_field: M::MField<Name> =
-              M::meta_field_try::<Name, _, String>(|| match node {
-                ExprMetaData::Prj { struct_name: addr, child } => {
-                  child_arena = *child;
-                  Ok(resolve_name(addr, ctx.names))
-                },
-                _ => Err(format!(
-                  "Prj at ref index {type_ref_idx} (addr {}) has no metadata name (node={node:?})",
-                  &type_addr.hex()[..8]
-                )),
-              })?;
+            let struct_name_field: M::MField<Name> = M::meta_field_try::<
+              Name,
+              _,
+              String,
+            >(
+              || match node
+            {
+              ExprMetaData::Prj { struct_name: addr, child } => {
+                child_arena = *child;
+                Ok(resolve_name(addr, ctx.names))
+              },
+              _ => Err(format!(
+                "Prj at ref index {type_ref_idx} (addr {}) has no metadata name (node={node:?})",
+                &type_addr.hex()[..8]
+              )),
+            }
+            )?;
             stack.push(ExprFrame::PrjDone {
               type_id: KId::new(type_addr, struct_name_field),
               field_idx: *field_idx,
@@ -4204,10 +4213,8 @@ fn ingress_anon_inductive(
     stats,
   )?;
 
-  let ctor_ids: Vec<KId<Anon>> = ctor_addrs
-    .iter()
-    .map(|a| KId::<Anon>::new(a.clone(), ()))
-    .collect();
+  let ctor_ids: Vec<KId<Anon>> =
+    ctor_addrs.iter().map(|a| KId::<Anon>::new(a.clone(), ())).collect();
 
   let mut results = vec![(
     self_id.clone(),
@@ -5069,31 +5076,16 @@ mod tests {
   fn anon_proj_addrs_are_deterministic() {
     let block = Address::hash(b"test-block-deterministic");
     // Same inputs → same outputs.
-    assert_eq!(
-      anon_defn_proj_addr(&block, 0),
-      anon_defn_proj_addr(&block, 0)
-    );
-    assert_eq!(
-      anon_indc_proj_addr(&block, 1),
-      anon_indc_proj_addr(&block, 1)
-    );
-    assert_eq!(
-      anon_recr_proj_addr(&block, 2),
-      anon_recr_proj_addr(&block, 2)
-    );
+    assert_eq!(anon_defn_proj_addr(&block, 0), anon_defn_proj_addr(&block, 0));
+    assert_eq!(anon_indc_proj_addr(&block, 1), anon_indc_proj_addr(&block, 1));
+    assert_eq!(anon_recr_proj_addr(&block, 2), anon_recr_proj_addr(&block, 2));
     assert_eq!(
       anon_ctor_proj_addr(&block, 3, 4),
       anon_ctor_proj_addr(&block, 3, 4)
     );
     // Different inputs → different outputs (catches accidental aliasing).
-    assert_ne!(
-      anon_defn_proj_addr(&block, 0),
-      anon_defn_proj_addr(&block, 1)
-    );
-    assert_ne!(
-      anon_defn_proj_addr(&block, 0),
-      anon_indc_proj_addr(&block, 0)
-    );
+    assert_ne!(anon_defn_proj_addr(&block, 0), anon_defn_proj_addr(&block, 1));
+    assert_ne!(anon_defn_proj_addr(&block, 0), anon_indc_proj_addr(&block, 0));
     assert_ne!(
       anon_ctor_proj_addr(&block, 0, 0),
       anon_ctor_proj_addr(&block, 0, 1)
@@ -5111,38 +5103,34 @@ mod tests {
     // anon pipeline depends on (verifying the computed address against
     // the address actually stored in `env.consts`).
     use crate::ix::ixon::constant::{
-      Constant, ConstantInfo, ConstructorProj, DefinitionProj,
-      InductiveProj, RecursorProj,
+      Constant, ConstantInfo, ConstructorProj, DefinitionProj, InductiveProj,
+      RecursorProj,
     };
     let b = Address::hash(b"another-block");
-    let (defn_addr, _) =
-      Constant::new(ConstantInfo::DPrj(DefinitionProj {
-        idx: 5,
-        block: b.clone(),
-      }))
-      .commit();
+    let (defn_addr, _) = Constant::new(ConstantInfo::DPrj(DefinitionProj {
+      idx: 5,
+      block: b.clone(),
+    }))
+    .commit();
     assert_eq!(defn_addr, anon_defn_proj_addr(&b, 5));
-    let (indc_addr, _) =
-      Constant::new(ConstantInfo::IPrj(InductiveProj {
-        idx: 7,
-        block: b.clone(),
-      }))
-      .commit();
+    let (indc_addr, _) = Constant::new(ConstantInfo::IPrj(InductiveProj {
+      idx: 7,
+      block: b.clone(),
+    }))
+    .commit();
     assert_eq!(indc_addr, anon_indc_proj_addr(&b, 7));
-    let (recr_addr, _) =
-      Constant::new(ConstantInfo::RPrj(RecursorProj {
-        idx: 9,
-        block: b.clone(),
-      }))
-      .commit();
+    let (recr_addr, _) = Constant::new(ConstantInfo::RPrj(RecursorProj {
+      idx: 9,
+      block: b.clone(),
+    }))
+    .commit();
     assert_eq!(recr_addr, anon_recr_proj_addr(&b, 9));
-    let (ctor_addr, _) =
-      Constant::new(ConstantInfo::CPrj(ConstructorProj {
-        idx: 2,
-        cidx: 3,
-        block: b.clone(),
-      }))
-      .commit();
+    let (ctor_addr, _) = Constant::new(ConstantInfo::CPrj(ConstructorProj {
+      idx: 2,
+      cidx: 3,
+      block: b.clone(),
+    }))
+    .commit();
     assert_eq!(ctor_addr, anon_ctor_proj_addr(&b, 2, 3));
   }
 }

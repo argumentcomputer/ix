@@ -349,10 +349,8 @@ pub fn ixon_env_to_decoded(env: &IxonEnv) -> Result<DecodedRawEnv, String> {
         e.key().hex()
       )
     })?;
-    consts.push(DecodedRawConst {
-      addr: e.key().clone(),
-      constant: (*c).clone(),
-    });
+    consts
+      .push(DecodedRawConst { addr: e.key().clone(), constant: (*c).clone() });
   }
   let named = env
     .named

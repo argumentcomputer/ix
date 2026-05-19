@@ -211,11 +211,9 @@ pub(crate) fn compile_aux_block_with_rename(
         block_univs,
         Some(&name_str),
       ),
-      IxonMutConst::Recr(rec) => apply_sharing_to_recursor_with_stats(
-        rec,
-        block_refs,
-        block_univs,
-      ),
+      IxonMutConst::Recr(rec) => {
+        apply_sharing_to_recursor_with_stats(rec, block_refs, block_univs)
+      },
       IxonMutConst::Indc(_) => unreachable!(),
     };
     let standalone_addr = content_address(&result.constant);
@@ -226,10 +224,9 @@ pub(crate) fn compile_aux_block_with_rename(
       let canon_n = cnst.name();
       let n = resolve_name(&canon_n);
       let meta = all_metas.remove(&canon_n).unwrap_or_default();
-      stt.env.register_name(
-        n.clone(),
-        Named::new(standalone_addr.clone(), meta),
-      );
+      stt
+        .env
+        .register_name(n.clone(), Named::new(standalone_addr.clone(), meta));
       stt.aux_name_to_addr.insert(n.clone(), standalone_addr.clone());
       stt.aux_gen_extra_names.insert(n.clone());
       pending_names.push(n);
