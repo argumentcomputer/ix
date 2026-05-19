@@ -1,10 +1,11 @@
 module
 public import Ix.Aiur.Compiler
+public import Ix.Aiur.Semantics.BytecodeFfi
 
 /-!
 Circuit statistics for Aiur executions.
 
-Given a `CompiledToplevel` and the per-circuit `(uniqueRows, totalHits)` pairs
+Given a `CompiledToplevel` and the per-circuit `QueryCount`s
 returned by `execute`, computes per-circuit width, height (the unique-row
 count), cache hits (sum of multiplicities), and the FFT cost
 (width × height × log2(height)) for every constrained function and memory
@@ -38,7 +39,7 @@ def fftCost (w h : Nat) : Float :=
     let hf := h.toFloat
     wf * hf * (max hf 2.0).log2
 
-def computeStats (compiled : CompiledToplevel) (queryCounts : Array (Nat × Nat)) :
+def computeStats (compiled : CompiledToplevel) (queryCounts : Array QueryCount) :
     ExecutionStats :=
   let t := compiled.bytecode
   -- Invert nameMap to get FunIdx → String
@@ -50,15 +51,17 @@ def computeStats (compiled : CompiledToplevel) (queryCounts : Array (Nat × Nat)
     for i in [:nAllFuns] do
       if t.functions[i]!.constrained then
         let w := t.functions[i]!.layout.totalWidth
-        let (h, totalMults) := queryCounts[i]!
-        let hits := totalMults - h
+        let qc := queryCounts[i]!
+        let h := qc.uniqueRows
+        let hits := qc.totalHits - qc.uniqueRows
         let name := reverseMap[i]?.getD s!"<fn {i}>"
         acc := acc.push { name, width := w, height := h, cacheHits := hits, fftCost := fftCost w h : CircuitStats }
     acc
   let memoryCircuits := t.memorySizes.mapIdx fun i size =>
     let w := size + 11
-    let (h, totalMults) := queryCounts[nAllFuns + i]!
-    let hits := totalMults - h
+    let qc := queryCounts[nAllFuns + i]!
+    let h := qc.uniqueRows
+    let hits := qc.totalHits - qc.uniqueRows
     { name := s!"memory[{size}]",
       width := w, height := h, cacheHits := hits, fftCost := fftCost w h : CircuitStats }
   let circuits := (functionCircuits ++ memoryCircuits).qsort (·.fftCost > ·.fftCost)

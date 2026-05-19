@@ -50,6 +50,15 @@ instance : BEq IOBuffer where
 -- via `Std.HashMap.beq_iff_equiv` + `Std.HashMap.Equiv.{refl,symm,trans}`,
 -- bypassing the need for `LawfulBEq` on the outer `IOBuffer`.
 
+/-- Per-circuit query counts for one circuit (one per function circuit, then
+one per memory size). `uniqueRows` is the trace height; `totalHits` is the sum
+of query multiplicities. The difference `totalHits - uniqueRows` is the number
+of cache hits. -/
+structure QueryCount where
+  uniqueRows : Nat
+  totalHits : Nat
+  deriving Inhabited
+
 namespace Bytecode.Toplevel
 
 @[extern "rs_aiur_toplevel_execute"]
@@ -60,20 +69,19 @@ private opaque execute' : @& Bytecode.Toplevel →
 
 /-- Executes the bytecode function `funIdx` with the given `args` and `ioBuffer`,
 returning the raw output of the function, the updated `IOBuffer`, and an array
-of per-circuit `(uniqueRows, totalHits)` pairs (one per function circuit, then
-one per memory size). `uniqueRows` is the trace height; `totalHits` is the sum
-of query multiplicities. Returns `Except.error msg` when execution fails
-(e.g. `assert_eq!` mismatch from a typechecker rejecting a constant), so
+of per-circuit `QueryCount`s. Returns `Except.error msg` when execution
+fails (e.g. `assert_eq!` mismatch from a typechecker rejecting a constant), so
 callers can recover instead of crashing. -/
 def execute (toplevel : @& Bytecode.Toplevel)
   (funIdx : @& Bytecode.FunIdx) (args : @& Array G) (ioBuffer : IOBuffer) :
-    Except String (Array G × IOBuffer × Array (Nat × Nat)) :=
+    Except String (Array G × IOBuffer × Array QueryCount) :=
   let ioData := ioBuffer.data
   let ioMap := ioBuffer.map
   match execute' toplevel funIdx args ioData ioMap.toArray with
   | .error e => .error e
   | .ok (output, (ioData, ioMap), queryCounts) =>
     let ioMap := ioMap.foldl (fun acc (k, v) => acc.insert k v) ∅
+    let queryCounts := queryCounts.map fun (uniqueRows, totalHits) => { uniqueRows, totalHits }
     .ok (output, ⟨ioData, ioMap⟩, queryCounts)
 
 end Bytecode.Toplevel
