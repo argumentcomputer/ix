@@ -299,6 +299,7 @@ def toIndex
       | some sub => do pure (some (← toIndex layoutMap bindings sub))
     modify fun stt => { stt with ops := stt.ops.push (.debug label term) }
     toIndex layoutMap bindings ret
+  | .retGroup _ _ _ inner => toIndex layoutMap bindings inner
 termination_by (sizeOf term, 0)
 decreasing_by
   all_goals first
@@ -446,6 +447,8 @@ def Concrete.Term.compile
     let data ← toIndex layoutMap bindings data
     modify fun stt => { stt with ops := stt.ops.push (.ioWrite data) }
     ret.compile returnTyp layoutMap bindings yieldCtrl
+  | .retGroup _ _ _ inner =>
+    inner.compile returnTyp layoutMap bindings yieldCtrl
   | .match _ _ scrut cases defaultOpt => do
     let idxs := bindings[scrut]?.getD #[0]
     let ops ← extractOps

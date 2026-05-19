@@ -790,7 +790,9 @@ def inferTerm (t : Term) : CheckM Typed.Term := match t with
       | some sub => do pure (some (← inferTerm sub))
     let ret' ← inferTerm ret
     pure (Typed.Term.debug ret'.typ ret'.escapes label term' ret')
-  | .retGroup _ inner => inferTerm inner
+  | .retGroup name inner => do
+    let inner' ← inferTerm inner
+    pure (Typed.Term.retGroup inner'.typ inner'.escapes name inner')
 termination_by (sizeOf t, 0)
 decreasing_by
   all_goals first
@@ -918,6 +920,8 @@ def zonkTypedTerm (t : Typed.Term) : CheckM Typed.Term := match t with
         | none => pure none
         | some sub => do pure (some (← zonkTypedTerm sub))
       pure (.debug (← zonkTyp τ) e label t' (← zonkTypedTerm r))
+  | .retGroup τ e name inner => do
+      pure (.retGroup (← zonkTyp τ) e name (← zonkTypedTerm inner))
 termination_by sizeOf t
 decreasing_by
   all_goals first

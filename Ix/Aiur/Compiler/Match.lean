@@ -389,6 +389,7 @@ def typedToSimple : Term → Simple.Term
   | .debug τ e l t r =>
     let t' := match t with | none => none | some sub => some (typedToSimple sub)
     .debug τ e l t' (typedToSimple r)
+  | .retGroup τ e name inner => .retGroup τ e name (typedToSimple inner)
 termination_by t => sizeOf t
 decreasing_by all_goals first | decreasing_tactic | grind
 
