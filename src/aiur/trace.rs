@@ -203,7 +203,7 @@ impl Ctrl {
     io_buffer: &IOBuffer,
   ) -> PopulateResult {
     match self {
-      Ctrl::Return(sel, _) => {
+      Ctrl::Return(sel, _, _) => {
         slice.selectors[*sel] = G::ONE;
         let lookup = function_lookup(
           -context.multiplicity,

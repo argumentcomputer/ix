@@ -480,7 +480,7 @@ impl Function {
           map.extend(yielded);
           push_block_exec_entries!(cont.block);
         },
-        ExecEntry::Ctrl(Ctrl::Return(_, output)) => {
+        ExecEntry::Ctrl(Ctrl::Return(_, _, output)) => {
           // Register the query.
           let input_size = toplevel.functions[fun_idx].layout.input_size;
           let args = map[..input_size].to_vec();

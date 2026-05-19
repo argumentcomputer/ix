@@ -169,10 +169,11 @@ fn decode_ctrl(ctor: LeanCtor<LeanBorrowed<'_>>) -> Ctrl {
       Ctrl::Match(val_idx, cases, default)
     },
     1 => {
-      let [sel_idx_obj, _group_obj, val_idxs_obj] = ctor.objs::<3>();
+      let [sel_idx_obj, group_obj, val_idxs_obj] = ctor.objs::<3>();
       let sel_idx = lean_unbox_nat_as_usize(&sel_idx_obj);
+      let group = group_obj.as_string().to_string();
       let val_idxs = decode_vec_val_idx(val_idxs_obj);
-      Ctrl::Return(sel_idx, val_idxs)
+      Ctrl::Return(sel_idx, group, val_idxs)
     },
     2 => {
       let [sel_idx_obj, val_idxs_obj] = ctor.objs::<2>();

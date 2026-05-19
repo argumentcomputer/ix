@@ -63,7 +63,7 @@ pub enum Op {
 
 pub enum Ctrl {
   Match(ValIdx, FxIndexMap<G, Block>, Option<Box<Block>>),
-  Return(SelIdx, Vec<ValIdx>),
+  Return(SelIdx, String, Vec<ValIdx>),
   Yield(SelIdx, Vec<ValIdx>),
   MatchContinue(
     ValIdx,

@@ -172,7 +172,7 @@ impl Block {
   /// be double-counted.
   fn get_block_selector(&self, state: &ConstraintState) -> Expr {
     match &self.ctrl {
-      Ctrl::Return(sel, _) | Ctrl::Yield(sel, _) => {
+      Ctrl::Return(sel, _, _) | Ctrl::Yield(sel, _) => {
         var(state.selector_index(*sel))
       },
       Ctrl::Match(_, cases, def) | Ctrl::MatchContinue(_, cases, def, ..) => {
@@ -234,7 +234,7 @@ impl Ctrl {
   #[allow(clippy::needless_pass_by_value)]
   fn collect_constraints(&self, sel: Expr, state: &mut ConstraintState) {
     match self {
-      Ctrl::Return(_, values) => {
+      Ctrl::Return(_, _, values) => {
         // channel and function index
         let mut args = vec![
           sel.clone() * function_channel(),
