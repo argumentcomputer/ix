@@ -790,6 +790,7 @@ def inferTerm (t : Term) : CheckM Typed.Term := match t with
       | some sub => do pure (some (← inferTerm sub))
     let ret' ← inferTerm ret
     pure (Typed.Term.debug ret'.typ ret'.escapes label term' ret')
+  | .retGroup _ inner => inferTerm inner
 termination_by (sizeOf t, 0)
 decreasing_by
   all_goals first

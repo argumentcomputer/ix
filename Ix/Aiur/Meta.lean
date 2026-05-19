@@ -180,6 +180,7 @@ syntax "u8_or" "(" aiur_trm ", " aiur_trm ")"                               : ai
 syntax "u8_less_than" "(" aiur_trm ", " aiur_trm ")"                        : aiur_trm
 syntax "u32_less_than" "(" aiur_trm ", " aiur_trm ")"                       : aiur_trm
 syntax "dbg!" "(" str (", " aiur_trm)? ")" ";" (aiur_trm)?                  : aiur_trm
+syntax "#[" "return_group" "(" ident ")" "]" aiur_trm                       : aiur_trm
 
 syntax aiur_trm "[" "@" noWs ident "]"                                                              : aiur_trm
 syntax "set" "(" aiur_trm ", " "@" noWs ident ", " aiur_trm ")"                                     : aiur_trm
@@ -310,6 +311,8 @@ partial def elabTrm : ElabStxCat `aiur_trm
       | none => mkAppOptM ``Option.none #[some (mkConst ``Source.Term)]
       | some t => mkAppM ``Option.some #[← elabTrm t]
     mkAppM ``Source.Term.debug #[mkStrLit label.getString, t, ← elabRet ret]
+  | `(aiur_trm| #[return_group($name:ident)] $t:aiur_trm) => do
+    mkAppM ``Source.Term.retGroup #[mkStrLit name.getId.toString, ← elabTrm t]
   -- Template function calls: explicit type args are dropped (inferred)
   | `(aiur_trm| $f:ident‹$_:aiur_typ $[, $_:aiur_typ]*›()) => do
     let g ← mkAppM ``Global.mk #[toExpr f.getId]
@@ -511,6 +514,9 @@ where
       let t' ← t.mapM $ replaceToken old new
       let ret' ← ret.mapM $ replaceToken old new
       `(aiur_trm| dbg!($label $[, $t']?); $[$ret']?)
+    | `(aiur_trm| #[return_group($name:ident)] $t:aiur_trm) => do
+      let t ← replaceToken old new t
+      `(aiur_trm| #[return_group($name)] $t)
     | `(aiur_trm| fold($i .. $j, $init, |$acc, @$v| $body)) => do
       let init ← replaceToken old new init
       -- Don't conflict with shadowing tokens.

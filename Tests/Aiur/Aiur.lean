@@ -705,6 +705,26 @@ def toplevel := ⟦
     let (x, y) = ntm_tuple(a);
     x + y
   }
+  -- Return-group annotation: ignored by compiler/typechecker, must pass through
+  -- to inner term. Match with distinct group labels per arm.
+  pub fn match_return_groups(x: G) -> G {
+    match x {
+      0 =>
+        #[return_group(zero)]
+        100,
+      1 =>
+        #[return_group(one)]
+        x + 200,
+      2 =>
+        #[return_group(two_squared)]
+        x * x * x,
+      _ =>
+        #[return_group(default)]
+        #[return_group(nested)]
+        x + 1,
+    }
+  }
+
   pub fn non_tail_match() -> G {
     -- Basic, early return, sequential, nested, const mul
     let r1 = ntm_basic(0) + ntm_basic(5);
@@ -884,6 +904,16 @@ def aiurTestCases : List AiurTestCase := [
 
     -- Non-tail match: all patterns in one proof
     .noIO `non_tail_match #[] #[2281],
+
+    -- Return-group annotation: passthrough across match arms
+    { AiurTestCase.noIO `match_return_groups #[0] #[100]
+        with label := "match_return_groups(0)" },
+    { AiurTestCase.noIO `match_return_groups #[1] #[201]
+        with label := "match_return_groups(1)" },
+    { AiurTestCase.noIO `match_return_groups #[2] #[8]
+        with label := "match_return_groups(2)" },
+    { AiurTestCase.noIO `match_return_groups #[7] #[8]
+        with label := "match_return_groups(7)" },
   ]
 
 end
