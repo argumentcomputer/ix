@@ -53,7 +53,7 @@ def infer := ⟦
   -- the constant's declared type is fetched.
   -- ============================================================================
   fn k_infer(e: KExpr, types: List‹KExpr›,
-             top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) -> KExpr {
+             top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
     match load(e) {
       KExprNode.BVar(i) => types_lookup(types, i),
 
@@ -150,7 +150,7 @@ def infer := ⟦
   }
 
   fn k_ensure_sort(e: KExpr, types: List‹KExpr›,
-                   top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) -> &KLevel {
+                   top: List‹&KConstantInfo›, addrs: List‹Addr›) -> &KLevel {
     let ty = k_infer(e, types, top, addrs);
     -- Mirror: src/ix/kernel/infer.rs:454-478 syntactic Sort fast-path.
     match load(ty) {
@@ -169,7 +169,7 @@ def infer := ⟦
   -- Mirror: src/ix/kernel/infer.rs App-arg / Let-val pattern. Infer e's
   -- type and compare against expected via k_is_def_eq. Mismatch panics.
   fn k_check(e: KExpr, expected: KExpr, types: List‹KExpr›,
-             top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) {
+             top: List‹&KConstantInfo›, addrs: List‹Addr›) {
     let inferred = k_infer(e, types, top, addrs);
     let eq = k_is_def_eq(inferred, expected, types, top, addrs);
     assert_eq!(eq, 1);
@@ -235,7 +235,7 @@ def infer := ⟦
   fn peel_field_loop(ty: KExpr, target_field: G, current: G,
                      struct_idx: G, val: KExpr, is_prop: G,
                      types: List‹KExpr›, top: List‹&KConstantInfo›,
-                     addrs: List‹[G; 32]›) -> KExpr {
+                     addrs: List‹Addr›) -> KExpr {
     match load(ty) {
       KExprNode.Forall(dom, body) =>
         match target_field - current {
@@ -259,7 +259,7 @@ def infer := ⟦
   fn check_no_dep_data_field_if_prop(is_prop: G, dom: KExpr, body: KExpr,
                                        types: List‹KExpr›,
                                        top: List‹&KConstantInfo›,
-                                       addrs: List‹[G; 32]›) {
+                                       addrs: List‹Addr›) {
     match is_prop {
       0 => (),
       _ =>
@@ -276,7 +276,7 @@ def infer := ⟦
 
   -- Peel `n` Foralls, calling `whnf` on each step. Returns the whnf'd body.
   fn peel_n_alls_whnf(e: KExpr, n: G, types: List‹KExpr›,
-                      top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) -> KExpr {
+                      top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
     match n {
       0 => whnf(e, types, top, addrs),
       _ =>
@@ -294,7 +294,7 @@ def infer := ⟦
   -- result sort = Zero).
   fn is_inductive_prop(ind_ty: KExpr, lvls: List‹&KLevel›, n_skip: G,
                        types: List‹KExpr›, top: List‹&KConstantInfo›,
-                       addrs: List‹[G; 32]›) -> G {
+                       addrs: List‹Addr›) -> G {
     let ind_ty_inst = expr_inst_levels(ind_ty, lvls);
     let result = peel_n_alls_whnf(ind_ty_inst, n_skip, types, top, addrs);
     match load(result) {
@@ -307,7 +307,7 @@ def infer := ⟦
   -- projecting a field from a Prop-typed structure, the field MUST itself
   -- live in Prop. Otherwise projection violates proof irrelevance.
   fn check_prop_field_if_prop(is_prop: G, dom: KExpr, types: List‹KExpr›,
-                               top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) {
+                               top: List‹&KConstantInfo›, addrs: List‹Addr›) {
     match is_prop {
       0 => (),
       _ =>
@@ -320,19 +320,19 @@ def infer := ⟦
   -- Address-keyed literal-type lookup.
   -- Walks `addrs` to find the kernel position of Nat / String. Builds
   -- `Const(idx, [])` for the type of `Lit(Nat _)` / `Lit(Str _)`.
-  fn nat_const_type(addrs: List‹[G; 32]›) -> KExpr {
+  fn nat_const_type(addrs: List‹Addr›) -> KExpr {
     let idx = find_addr_idx(nat_addr(), addrs, 0);
     store(KExprNode.Const(idx, store(ListNode.Nil)))
   }
 
-  fn str_const_type(addrs: List‹[G; 32]›) -> KExpr {
+  fn str_const_type(addrs: List‹Addr›) -> KExpr {
     let idx = find_addr_idx(str_addr(), addrs, 0);
     store(KExprNode.Const(idx, store(ListNode.Nil)))
   }
 
   -- Find the position of `target` in `addrs`. Panics (no Nil arm) if
   -- not present — caller (literal typing) requires it.
-  fn find_addr_idx(target: [G; 32], addrs: List‹[G; 32]›, i: G) -> G {
+  fn find_addr_idx(target: Addr, addrs: List‹Addr›, i: G) -> G {
     match load(addrs) {
       ListNode.Cons(a, rest) =>
         match address_eq(target, a) {

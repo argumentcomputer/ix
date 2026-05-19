@@ -41,7 +41,7 @@ This file implements the essential phases:
    primitive Nat op slot in `prims` and the spine carries `Lit(Nat(_))`
    args, fold to the literal result.
 
-`addrs: List‹[G; 32]›` carries primitive positional indices threaded from
+`addrs: List‹Addr›` carries primitive positional indices threaded from
 ingress (slot mapping in `Primitive.lean`).
 -/
 
@@ -83,7 +83,7 @@ def whnf := ⟦
   -- ============================================================================
 
   fn whnf_apply_beta(spine: List‹KExpr›, lam: KExpr, types: List‹KExpr›,
-                     top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) -> KExpr {
+                     top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
     match load(spine) {
       ListNode.Nil => lam,
       ListNode.Cons(a, rest) =>
@@ -93,7 +93,7 @@ def whnf := ⟦
   }
 
   fn whnf_with_spine(head: KExpr, spine: List‹KExpr›, types: List‹KExpr›,
-                     top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) -> KExpr {
+                     top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
     match load(head) {
       KExprNode.App(f, a) =>
         -- Head is itself App-spine (post-beta result). Collect its spine
@@ -214,7 +214,7 @@ def whnf := ⟦
   -- fails to produce a proof — the caller guarantees termination, so a
   -- soundness-preserving early abort is unnecessary.
   fn whnf(e: KExpr, types: List‹KExpr›,
-          top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) -> KExpr {
+          top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
     -- Fast path: trivial whnf normal forms. Srt / Lit / Lam / Forall / BVar
     -- never reduce — skip collect_spine + dispatch.
     match load(e) {
@@ -238,7 +238,7 @@ def whnf := ⟦
               num_lvls: G, num_params: G, num_indices: G,
               num_motives: G, num_minors: G,
               rules: List‹KRecRule›, k_flag: G, types: List‹KExpr›,
-              top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) -> (G, KExpr) {
+              top: List‹&KConstantInfo›, addrs: List‹Addr›) -> (G, KExpr) {
     let major_idx = num_params + num_motives + num_minors + num_indices;
     let spine_len = list_length(spine);
     let major_lt = u32_less_than(major_idx, spine_len);
@@ -259,7 +259,7 @@ def whnf := ⟦
   -- If `e` is `Nat.add base lit` with lit > 0, return one-layer-exposed
   -- `Nat.succ pred` where pred = base if lit == 1, else `Nat.add base (lit-1)`.
   -- Else returns `e` unchanged. Skips Nat literals (already evaluable).
-  fn cleanup_nat_offset_major(e: KExpr, addrs: List‹[G; 32]›) -> KExpr {
+  fn cleanup_nat_offset_major(e: KExpr, addrs: List‹Addr›) -> KExpr {
     match load(e) {
       KExprNode.Lit(_) => e,
       _ =>
@@ -285,7 +285,7 @@ def whnf := ⟦
   -- If head is Const(nat_add) and args has length 2 and args[1] is Lit Nat,
   -- return (1, base, limbs). Else (0, _, _).
   fn try_match_nat_add(head: KExpr, args: List‹KExpr›,
-                       addrs: List‹[G; 32]›) -> (G, KExpr, KLimbs) {
+                       addrs: List‹Addr›) -> (G, KExpr, KLimbs) {
     match load(head) {
       KExprNode.Const(idx, _) =>
         let head_addr = list_lookup(addrs, idx);
@@ -313,7 +313,7 @@ def whnf := ⟦
 
   -- Build `Nat.succ pred` where pred = base if lit==1, else `Nat.add base (lit-1)`.
   fn build_succ_offset(base: KExpr, lit: KLimbs,
-                       addrs: List‹[G; 32]›) -> KExpr {
+                       addrs: List‹Addr›) -> KExpr {
     let succ_pair = find_addr_idx_safe(nat_succ_addr(), addrs, 0);
     match succ_pair {
       (0, _) => store(KExprNode.App(base, base)), -- impossible: Nat.succ must be in env
@@ -344,7 +344,7 @@ def whnf := ⟦
                          num_params: G, num_motives: G, num_minors: G,
                          major_idx: G, rules: List‹KRecRule›, k_flag: G,
                          types: List‹KExpr›,
-                         top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) -> (G, KExpr) {
+                         top: List‹&KConstantInfo›, addrs: List‹Addr›) -> (G, KExpr) {
     -- Mirror: src/ix/kernel/whnf.rs:1824-1869 try_reduce_nat_succ_linear_rec.
     -- Fast path: `Nat.rec _ base (λ _ ih => succ ih) (Lit n)` → `base + n`.
     -- O(1) instead of O(n) iota expansion of literal succ chain.
@@ -434,7 +434,7 @@ def whnf := ⟦
   fn try_nat_linear_rec(spine: List‹KExpr›, num_params: G, num_motives: G,
                         num_minors: G, major_idx: G,
                         types: List‹KExpr›, top: List‹&KConstantInfo›,
-                        addrs: List‹[G; 32]›) -> (G, KExpr) {
+                        addrs: List‹Addr›) -> (G, KExpr) {
     match u32_less_than(num_minors, 2) {
       1 => (0, store(KExprNode.BVar(0))),
       0 =>
@@ -463,7 +463,7 @@ def whnf := ⟦
   }
 
   -- 1 iff `step` whnf-shape is `λ _ (λ _ (Nat.succ #0))`.
-  fn is_nat_succ_ih_step(step: KExpr, addrs: List‹[G; 32]›) -> G {
+  fn is_nat_succ_ih_step(step: KExpr, addrs: List‹Addr›) -> G {
     match load(step) {
       KExprNode.Lam(_, body1) =>
         match load(body1) {
@@ -503,7 +503,7 @@ def whnf := ⟦
                          num_params: G, num_motives: G, num_minors: G,
                          major_idx: G, rules: List‹KRecRule›,
                          lvls: List‹&KLevel›, types: List‹KExpr›,
-                         top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) -> (G, KExpr) {
+                         top: List‹&KConstantInfo›, addrs: List‹Addr›) -> (G, KExpr) {
     let n_rules = list_length(rules);
     match n_rules {
       1 =>
@@ -564,7 +564,7 @@ def whnf := ⟦
   -- Quot(_, _, Ctor) (= Quot.mk). Extract `a` (last arg of Quot.mk's
   -- spine), apply to f or m.
   fn try_quot_iota(kind: QuotKind, spine: List‹KExpr›, types: List‹KExpr›,
-                   top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) -> (G, KExpr) {
+                   top: List‹&KConstantInfo›, addrs: List‹Addr›) -> (G, KExpr) {
     match kind {
       QuotKind.Lift => try_quot_lift(spine, types, top, addrs),
       QuotKind.Ind => try_quot_ind(spine, types, top, addrs),
@@ -573,7 +573,7 @@ def whnf := ⟦
   }
 
   fn try_quot_lift(spine: List‹KExpr›, types: List‹KExpr›,
-                   top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) -> (G, KExpr) {
+                   top: List‹&KConstantInfo›, addrs: List‹Addr›) -> (G, KExpr) {
     let n = list_length(spine);
     let lt6 = u32_less_than(n, 6);
     match lt6 {
@@ -593,7 +593,7 @@ def whnf := ⟦
   }
 
   fn try_quot_ind(spine: List‹KExpr›, types: List‹KExpr›,
-                  top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) -> (G, KExpr) {
+                  top: List‹&KConstantInfo›, addrs: List‹Addr›) -> (G, KExpr) {
     let n = list_length(spine);
     let lt5 = u32_less_than(n, 5);
     match lt5 {
@@ -615,7 +615,7 @@ def whnf := ⟦
   -- WHNF q; if q reduces to `App-spine(Const(Quot.mk), [α, r, a])`,
   -- return (1, a). Else (0, _).
   fn quot_extract_arg(q: KExpr, types: List‹KExpr›, top: List‹&KConstantInfo›,
-                      addrs: List‹[G; 32]›) -> (G, KExpr) {
+                      addrs: List‹Addr›) -> (G, KExpr) {
     let q_whnf = whnf(q, types, top, addrs);
     let pair = collect_spine(q_whnf);
     match pair {
@@ -665,7 +665,7 @@ def whnf := ⟦
   fn try_synth_k_ctor(raw_major: KExpr, num_params: G,
                       rules: List‹KRecRule›, types: List‹KExpr›,
                       top: List‹&KConstantInfo›,
-                      addrs: List‹[G; 32]›) -> (G, KExpr) {
+                      addrs: List‹Addr›) -> (G, KExpr) {
     match load(rules) {
       ListNode.Nil => (0, store(KExprNode.BVar(0))),
       ListNode.Cons(rule, _) =>

@@ -250,7 +250,7 @@ def ixonDeserialize := ⟦
   -- Address deserialization (32 bytes)
   -- ============================================================================
 
-  fn get_address(stream: ByteStream) -> ([G; 32], ByteStream) {
+  fn get_address(stream: ByteStream) -> (Addr, ByteStream) {
     let (b0, s) = read_byte(stream);
     let (b1, s) = read_byte(s);
     let (b2, s) = read_byte(s);
@@ -283,8 +283,8 @@ def ixonDeserialize := ⟦
     let (b29, s) = read_byte(s);
     let (b30, s) = read_byte(s);
     let (b31, s) = read_byte(s);
-    ([b0, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15,
-      b16, b17, b18, b19, b20, b21, b22, b23, b24, b25, b26, b27, b28, b29, b30, b31], s)
+    (store([b0, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15,
+      b16, b17, b18, b19, b20, b21, b22, b23, b24, b25, b26, b27, b28, b29, b30, b31]), s)
   }
 
   -- ============================================================================
@@ -313,7 +313,7 @@ def ixonDeserialize := ⟦
     }
   }
 
-  fn get_address_list(stream: ByteStream, count: [G; 8]) -> (List‹[G; 32]›, ByteStream) {
+  fn get_address_list(stream: ByteStream, count: [G; 8]) -> (List‹Addr›, ByteStream) {
     let is_zero = u64_is_zero(count);
     match is_zero {
       1 => (store(ListNode.Nil), stream),
@@ -333,7 +333,7 @@ def ixonDeserialize := ⟦
     get_expr_list(s, len)
   }
 
-  fn get_refs(stream: ByteStream) -> (List‹[G; 32]›, ByteStream) {
+  fn get_refs(stream: ByteStream) -> (List‹Addr›, ByteStream) {
     let (len, s) = get_tag0(stream);
     get_address_list(s, len)
   }

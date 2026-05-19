@@ -182,7 +182,7 @@ def check := ⟦
   -- Mirror: src/ix/kernel/check.rs:678-720 fn check_eq_type.
   -- Asserts the Eq inductive in `top` has 1 universe param, 2 params, and
   -- exactly one ctor whose address matches `eq_refl_addr()`.
-  fn check_eq_type(top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) {
+  fn check_eq_type(top: List‹&KConstantInfo›, addrs: List‹Addr›) {
     let eq_idx = find_addr_idx(eq_addr(), addrs, 0);
     let eq_ci = load(list_lookup(top, eq_idx));
     match eq_ci {
@@ -200,7 +200,7 @@ def check := ⟦
   -- ============================================================================
   -- check_const: dispatch per KConstantInfo variant.
   -- ============================================================================
-  fn check_const(ci: KConstantInfo, pos: G, top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) {
+  fn check_const(ci: KConstantInfo, pos: G, top: List‹&KConstantInfo›, addrs: List‹Addr›) {
     let _ = validate_const_well_scoped(ci, top);
     let u = is_unsafe_ci(ci);
     match ci {
@@ -295,8 +295,8 @@ def check := ⟦
   -- Mirror: src/ix/kernel/check.rs:606-675 fn check_quot.
   -- Validates quot variant consistency: address ↔ kind match, universe
   -- param count, and at-least-N forall binders for the type.
-  fn check_quot(self_addr: [G; 32], kind: QuotKind, num_lvls: G, ty: KExpr,
-                 top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) {
+  fn check_quot(self_addr: Addr, kind: QuotKind, num_lvls: G, ty: KExpr,
+                 top: List‹&KConstantInfo›, addrs: List‹Addr›) {
     -- Address ↔ kind consistency + per-variant (lvls, foralls) expectations.
     -- Type/Ctor/Ind = 1 lvl; Lift = 2 lvls.
     -- Foralls: Type=2, Ctor=3, Lift=6, Ind=5.
@@ -337,13 +337,13 @@ def check := ⟦
     }
   }
 
-  fn check_all(consts: List‹&KConstantInfo›, top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) {
+  fn check_all(consts: List‹&KConstantInfo›, top: List‹&KConstantInfo›, addrs: List‹Addr›) {
     let _ = check_canonical_block_sort(top);
     check_all_iter(consts, top, addrs, 0)
   }
 
   fn check_all_iter(consts: List‹&KConstantInfo›, top: List‹&KConstantInfo›,
-                    addrs: List‹[G; 32]›, pos: G) {
+                    addrs: List‹Addr›, pos: G) {
     match load(consts) {
       ListNode.Nil => (),
       ListNode.Cons(&ci, rest) =>

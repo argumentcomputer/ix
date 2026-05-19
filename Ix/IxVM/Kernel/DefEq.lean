@@ -38,7 +38,7 @@ def defEq := ⟦
   -- 1 = def-eq, 0 = not.
   -- ============================================================================
   fn k_is_def_eq(a: KExpr, b: KExpr, types: List‹KExpr›,
-                 top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) -> G {
+                 top: List‹&KConstantInfo›, addrs: List‹Addr›) -> G {
     -- Tier 1: pointer equality short-circuit.
     match ptr_val(a) - ptr_val(b) {
       0 => 1,
@@ -106,7 +106,7 @@ def defEq := ⟦
 
   -- Mirror: src/ix/kernel/def_eq.rs:801-818 fn try_proof_irrel.
   fn try_proof_irrel(a: KExpr, b: KExpr, types: List‹KExpr›,
-                     top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) -> G {
+                     top: List‹&KConstantInfo›, addrs: List‹Addr›) -> G {
     let a_ty = k_infer(a, types, top, addrs);
     match is_prop_type(a_ty, types, top, addrs) {
       0 => 0,
@@ -118,7 +118,7 @@ def defEq := ⟦
 
   -- Returns 1 iff `whnf(infer(ty))` is `Sort 0`.
   fn is_prop_type(ty: KExpr, types: List‹KExpr›,
-                  top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) -> G {
+                  top: List‹&KConstantInfo›, addrs: List‹Addr›) -> G {
     let sort = k_infer(ty, types, top, addrs);
     let sort_w = whnf(sort, types, top, addrs);
     match load(sort_w) {
@@ -133,7 +133,7 @@ def defEq := ⟦
 
   -- Mirror: src/ix/kernel/def_eq.rs:858-905 fn try_unit_like_eq.
   fn try_unit_like(a: KExpr, b: KExpr, types: List‹KExpr›,
-                   top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) -> G {
+                   top: List‹&KConstantInfo›, addrs: List‹Addr›) -> G {
     let ta = k_infer(a, types, top, addrs);
     let ta_w = whnf(ta, types, top, addrs);
     match is_unit_like_type(ta_w, top) {
@@ -181,7 +181,7 @@ def defEq := ⟦
   -- Mirror: src/ix/kernel/def_eq.rs:1007-1018 try_string_lit_expansion,
   -- attempted in both directions.
   fn try_string_lit_pair(a: KExpr, b: KExpr, types: List‹KExpr›,
-                         top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) -> G {
+                         top: List‹&KConstantInfo›, addrs: List‹Addr›) -> G {
     match try_string_lit_one(a, b, types, top, addrs) {
       1 => 1,
       0 => try_string_lit_one(b, a, types, top, addrs),
@@ -189,7 +189,7 @@ def defEq := ⟦
   }
 
   fn try_string_lit_one(t: KExpr, s: KExpr, types: List‹KExpr›,
-                        top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) -> G {
+                        top: List‹&KConstantInfo›, addrs: List‹Addr›) -> G {
     match load(t) {
       KExprNode.Lit(lit) =>
         match lit {
@@ -205,7 +205,7 @@ def defEq := ⟦
   }
 
   -- Mirror: src/ix/kernel/def_eq.rs:920-926 fn is_nat_zero.
-  fn is_nat_zero(e: KExpr, addrs: List‹[G; 32]›) -> G {
+  fn is_nat_zero(e: KExpr, addrs: List‹Addr›) -> G {
     match load(e) {
       KExprNode.Lit(lit) =>
         match lit {
@@ -221,7 +221,7 @@ def defEq := ⟦
   -- Mirror: src/ix/kernel/def_eq.rs:930-948 fn nat_succ_of.
   -- `Lit(n)` n>0 → (1, Lit(n-1)). `App(Const(Nat.succ), arg)` → (1, arg).
   -- Else (0, _).
-  fn nat_succ_of(e: KExpr, addrs: List‹[G; 32]›) -> (G, KExpr) {
+  fn nat_succ_of(e: KExpr, addrs: List‹Addr›) -> (G, KExpr) {
     match load(e) {
       KExprNode.Lit(lit) =>
         match lit {
@@ -250,7 +250,7 @@ def defEq := ⟦
   -- zero, both succ-headed, or both literals); `eq` is the verdict.
   fn try_def_eq_nat(a: KExpr, b: KExpr, types: List‹KExpr›,
                      top: List‹&KConstantInfo›,
-                     addrs: List‹[G; 32]›) -> (G, G) {
+                     addrs: List‹Addr›) -> (G, G) {
     let za = is_nat_zero(a, addrs);
     let zb = is_nat_zero(b, addrs);
     match za * zb {
@@ -273,7 +273,7 @@ def defEq := ⟦
   -- (non-rec, 0 indices, 1 ctor), and field-by-field `Proj(induct, i, t)
   -- ≡ s_args[num_params + i]`.
   fn try_eta_struct(t: KExpr, s: KExpr, types: List‹KExpr›,
-                    top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) -> G {
+                    top: List‹&KConstantInfo›, addrs: List‹Addr›) -> G {
     match collect_spine(s) {
       (s_head, s_args) =>
         match load(s_head) {
@@ -309,7 +309,7 @@ def defEq := ⟦
                             t: KExpr, s_args: List‹KExpr›, i: G,
                             types: List‹KExpr›,
                             top: List‹&KConstantInfo›,
-                            addrs: List‹[G; 32]›) -> G {
+                            addrs: List‹Addr›) -> G {
     match num_fields - i {
       0 => 1,
       _ =>
@@ -330,7 +330,7 @@ def defEq := ⟦
   -- Every non-Lam `a` paired with Lam `b` falls through to symmetric eta
   -- expansion (try_eta_expand swap), to accept `λx. axiom x ≡ axiom`.
   fn k_is_def_eq_struct(a: KExpr, b: KExpr, types: List‹KExpr›,
-                        top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) -> G {
+                        top: List‹&KConstantInfo›, addrs: List‹Addr›) -> G {
     match load(a) {
       KExprNode.Srt(la) =>
         match load(b) {
@@ -451,7 +451,7 @@ def defEq := ⟦
   -- ============================================================================
   fn try_eta_expand(ty_a: KExpr, body_a: KExpr, b: KExpr,
                     types: List‹KExpr›,
-                    top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) -> G {
+                    top: List‹&KConstantInfo›, addrs: List‹Addr›) -> G {
     let b_lifted = expr_lift(b, 1, 0);
     let bvar0 = store(KExprNode.BVar(0));
     let b_app = store(KExprNode.App(b_lifted, bvar0));
@@ -495,7 +495,7 @@ def defEq := ⟦
   -- through to the regular WHNF-based pipeline.
   -- ============================================================================
   fn try_lazy_delta_app(a: KExpr, b: KExpr, types: List‹KExpr›,
-                        top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) -> G {
+                        top: List‹&KConstantInfo›, addrs: List‹Addr›) -> G {
     match collect_spine(a) {
       (ah, aa) =>
         match collect_spine(b) {
@@ -528,7 +528,7 @@ def defEq := ⟦
 
   fn is_def_eq_arg_list(aa: List‹KExpr›, bb: List‹KExpr›,
                         types: List‹KExpr›, top: List‹&KConstantInfo›,
-                        addrs: List‹[G; 32]›) -> G {
+                        addrs: List‹Addr›) -> G {
     match load(aa) {
       ListNode.Nil =>
         match load(bb) {
@@ -622,7 +622,7 @@ def defEq := ⟦
   }
 
   fn lazy_delta_loop(a: KExpr, b: KExpr, fuel: G, types: List‹KExpr›,
-                     top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) -> (G, G) {
+                     top: List‹&KConstantInfo›, addrs: List‹Addr›) -> (G, G) {
     match fuel {
       0 => (0, 0),
       _ =>
@@ -673,7 +673,7 @@ def defEq := ⟦
   fn try_const_app_congruence(ai: G, al: List‹&KLevel›, aa: List‹KExpr›,
                               bi: G, bl: List‹&KLevel›, bb: List‹KExpr›,
                               types: List‹KExpr›, top: List‹&KConstantInfo›,
-                              addrs: List‹[G; 32]›) -> G {
+                              addrs: List‹Addr›) -> G {
     match ai - bi {
       0 =>
         match k_is_def_eq_levels(al, bl) {
@@ -692,7 +692,7 @@ def defEq := ⟦
 
   fn lazy_delta_step_const_const(ai: G, bi: G, a: KExpr, b: KExpr, fuel: G,
                                  types: List‹KExpr›, top: List‹&KConstantInfo›,
-                                 addrs: List‹[G; 32]›) -> (G, G) {
+                                 addrs: List‹Addr›) -> (G, G) {
     let ae = is_delta_eligible(ai, top);
     let be = is_delta_eligible(bi, top);
     match ae {
@@ -728,7 +728,7 @@ def defEq := ⟦
   -- else unfold a.
   fn lazy_delta_step_a_const(ai: G, a: KExpr, b: KExpr, fuel: G,
                               types: List‹KExpr›, top: List‹&KConstantInfo›,
-                              addrs: List‹[G; 32]›) -> (G, G) {
+                              addrs: List‹Addr›) -> (G, G) {
     match is_delta_eligible(ai, top) {
       0 => (0, 0),
       1 =>
@@ -746,7 +746,7 @@ def defEq := ⟦
   -- Mirror Rust def_eq.rs:1446-1453 (!a_delta && b_delta branch).
   fn lazy_delta_step_b_const(bi: G, a: KExpr, b: KExpr, fuel: G,
                               types: List‹KExpr›, top: List‹&KConstantInfo›,
-                              addrs: List‹[G; 32]›) -> (G, G) {
+                              addrs: List‹Addr›) -> (G, G) {
     match is_delta_eligible(bi, top) {
       0 => (0, 0),
       1 =>
@@ -761,7 +761,7 @@ def defEq := ⟦
   }
 
   fn unfold_a_and_loop(a: KExpr, b: KExpr, fuel: G, types: List‹KExpr›,
-                       top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) -> (G, G) {
+                       top: List‹&KConstantInfo›, addrs: List‹Addr›) -> (G, G) {
     match delta_unfold(a, top) {
       (1, a2) =>
         let aw = whnf(a2, types, top, addrs);
@@ -771,7 +771,7 @@ def defEq := ⟦
   }
 
   fn unfold_b_and_loop(a: KExpr, b: KExpr, fuel: G, types: List‹KExpr›,
-                       top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) -> (G, G) {
+                       top: List‹&KConstantInfo›, addrs: List‹Addr›) -> (G, G) {
     match delta_unfold(b, top) {
       (1, b2) =>
         let bw = whnf(b2, types, top, addrs);
@@ -781,7 +781,7 @@ def defEq := ⟦
   }
 
   fn unfold_both_and_loop(a: KExpr, b: KExpr, fuel: G, types: List‹KExpr›,
-                          top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) -> (G, G) {
+                          top: List‹&KConstantInfo›, addrs: List‹Addr›) -> (G, G) {
     match delta_unfold(a, top) {
       (1, a2) =>
         match delta_unfold(b, top) {

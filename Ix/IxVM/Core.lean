@@ -18,6 +18,11 @@ def core := ⟦
     None
   }
 
+  -- Interned 32-element address (blake3 content hash). Aiur `store`
+  -- content-dedups structurally-equal arrays to one canonical pointer,
+  -- so address equality reduces to pointer subtraction.
+  type Addr = &[G; 32]
+
   fn list_length‹T›(list: List‹T›) -> G {
     match load(list) {
       ListNode.Nil => 0,
