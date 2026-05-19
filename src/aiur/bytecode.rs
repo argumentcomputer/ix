@@ -28,11 +28,13 @@ impl FunctionLayout {
   }
 }
 
+#[derive(Clone)]
 pub struct Block {
   pub(crate) ops: Vec<Op>,
   pub(crate) ctrl: Ctrl,
 }
 
+#[derive(Clone)]
 pub enum Op {
   Const(G),
   Add(ValIdx, ValIdx),
@@ -61,6 +63,7 @@ pub enum Op {
   Debug(String, Option<Vec<ValIdx>>),
 }
 
+#[derive(Clone)]
 pub enum Ctrl {
   Match(ValIdx, FxIndexMap<G, Block>, Option<Box<Block>>),
   Return(SelIdx, String, Vec<ValIdx>),
