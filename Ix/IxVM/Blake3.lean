@@ -267,12 +267,49 @@ def blake3 := ⟦
     x: [G; 4],
     y: [G; 4]
   ) -> [[G; 4]; 4] {
-    let a = u32_add(u32_add(a, b), x);
-    let [d0, d1, d2, d3] = u32_xor(d, a);
+    -- a = (a + b) + x
+    let (r1_0, r1_c1) = u8_add(a[0], b[0]);
+    let (r1_s1, r1_o1) = u8_add(a[1], b[1]);
+    let (r1_1, r1_c1a) = u8_add(r1_s1, r1_c1);
+    let r1_c2 = r1_o1 + r1_c1a;
+    let (r1_s2, r1_o2) = u8_add(a[2], b[2]);
+    let (r1_2, r1_c2a) = u8_add(r1_s2, r1_c2);
+    let r1_c3 = r1_o2 + r1_c2a;
+    let (r1_s3, _z) = u8_add(a[3], b[3]);
+    let (r1_3, _z) = u8_add(r1_s3, r1_c3);
+    let (a0, r2_c1) = u8_add(r1_0, x[0]);
+    let (r2_s1, r2_o1) = u8_add(r1_1, x[1]);
+    let (a1, r2_c1a) = u8_add(r2_s1, r2_c1);
+    let r2_c2 = r2_o1 + r2_c1a;
+    let (r2_s2, r2_o2) = u8_add(r1_2, x[2]);
+    let (a2, r2_c2a) = u8_add(r2_s2, r2_c2);
+    let r2_c3 = r2_o2 + r2_c2a;
+    let (r2_s3, _z) = u8_add(r1_3, x[3]);
+    let (a3, _z) = u8_add(r2_s3, r2_c3);
+    let a = [a0, a1, a2, a3];
+
+    let d0 = u8_xor(d[0], a[0]);
+    let d1 = u8_xor(d[1], a[1]);
+    let d2 = u8_xor(d[2], a[2]);
+    let d3 = u8_xor(d[3], a[3]);
     let d = [d2, d3, d0, d1]; -- Right-rotated 16
 
-    let c = u32_add(c, d);
-    let [b0, b1, b2, b3] = u32_xor(b, c);
+    -- c = c + d
+    let (nc0, r3_c1) = u8_add(c[0], d[0]);
+    let (r3_s1, r3_o1) = u8_add(c[1], d[1]);
+    let (nc1, r3_c1a) = u8_add(r3_s1, r3_c1);
+    let r3_c2 = r3_o1 + r3_c1a;
+    let (r3_s2, r3_o2) = u8_add(c[2], d[2]);
+    let (nc2, r3_c2a) = u8_add(r3_s2, r3_c2);
+    let r3_c3 = r3_o2 + r3_c2a;
+    let (r3_s3, _z) = u8_add(c[3], d[3]);
+    let (nc3, _z) = u8_add(r3_s3, r3_c3);
+    let c = [nc0, nc1, nc2, nc3];
+
+    let b0 = u8_xor(b[0], c[0]);
+    let b1 = u8_xor(b[1], c[1]);
+    let b2 = u8_xor(b[2], c[2]);
+    let b3 = u8_xor(b[3], c[3]);
     let [b00, b01, b02, b03, b04, b05, b06, b07] = u8_bit_decomposition(b0);
     let [b10, b11, b12, b13, b14, b15, b16, b17] = u8_bit_decomposition(b1);
     let [b20, b21, b22, b23, b24, b25, b26, b27] = u8_bit_decomposition(b2);
@@ -285,12 +322,49 @@ def blake3 := ⟦
     let b3 = b04 + 2 * b05 + 4 * b06 + 8 * b07 + 16 * b10 + 32 * b11 + 64 * b12 + 128 * b13;
     let b = [b0, b1, b2, b3]; -- Right-rotated 12
 
-    let a = u32_add(u32_add(a, b), y);
-    let [d0, d1, d2, d3] = u32_xor(d, a);
+    -- a = (a + b) + y
+    let (r4_0, r4_c1) = u8_add(a[0], b[0]);
+    let (r4_s1, r4_o1) = u8_add(a[1], b[1]);
+    let (r4_1, r4_c1a) = u8_add(r4_s1, r4_c1);
+    let r4_c2 = r4_o1 + r4_c1a;
+    let (r4_s2, r4_o2) = u8_add(a[2], b[2]);
+    let (r4_2, r4_c2a) = u8_add(r4_s2, r4_c2);
+    let r4_c3 = r4_o2 + r4_c2a;
+    let (r4_s3, _z) = u8_add(a[3], b[3]);
+    let (r4_3, _z) = u8_add(r4_s3, r4_c3);
+    let (a0, r5_c1) = u8_add(r4_0, y[0]);
+    let (r5_s1, r5_o1) = u8_add(r4_1, y[1]);
+    let (a1, r5_c1a) = u8_add(r5_s1, r5_c1);
+    let r5_c2 = r5_o1 + r5_c1a;
+    let (r5_s2, r5_o2) = u8_add(r4_2, y[2]);
+    let (a2, r5_c2a) = u8_add(r5_s2, r5_c2);
+    let r5_c3 = r5_o2 + r5_c2a;
+    let (r5_s3, _z) = u8_add(r4_3, y[3]);
+    let (a3, _z) = u8_add(r5_s3, r5_c3);
+    let a = [a0, a1, a2, a3];
+
+    let d0 = u8_xor(d[0], a[0]);
+    let d1 = u8_xor(d[1], a[1]);
+    let d2 = u8_xor(d[2], a[2]);
+    let d3 = u8_xor(d[3], a[3]);
     let d = [d1, d2, d3, d0]; -- Right-rotated 8
 
-    let c = u32_add(c, d);
-    let [b0, b1, b2, b3] = u32_xor(b, c);
+    -- c = c + d
+    let (nc0, r6_c1) = u8_add(c[0], d[0]);
+    let (r6_s1, r6_o1) = u8_add(c[1], d[1]);
+    let (nc1, r6_c1a) = u8_add(r6_s1, r6_c1);
+    let r6_c2 = r6_o1 + r6_c1a;
+    let (r6_s2, r6_o2) = u8_add(c[2], d[2]);
+    let (nc2, r6_c2a) = u8_add(r6_s2, r6_c2);
+    let r6_c3 = r6_o2 + r6_c2a;
+    let (r6_s3, _z) = u8_add(c[3], d[3]);
+    let (nc3, _z) = u8_add(r6_s3, r6_c3);
+    let c = [nc0, nc1, nc2, nc3];
+
+    let b0 = u8_xor(b[0], c[0]);
+    let b1 = u8_xor(b[1], c[1]);
+    let b2 = u8_xor(b[2], c[2]);
+    let b3 = u8_xor(b[3], c[3]);
     let [b00, b01, b02, b03, b04, b05, b06, b07] = u8_bit_decomposition(b0);
     let [b10, b11, b12, b13, b14, b15, b16, b17] = u8_bit_decomposition(b1);
     let [b20, b21, b22, b23, b24, b25, b26, b27] = u8_bit_decomposition(b2);
