@@ -50,10 +50,11 @@ def entrypoints := ⟦
   -- in `k_consts`/`addrs` so the target's own `whnf`/`infer` can
   -- resolve `Const` refs; the IOBuffer payload doesn't shrink.
   pub fn kernel_check_test(target_addr: [G; 32], check_deps: G) {
-    let (k_consts, addrs) = ingress_with_primitives(target_addr);
+    let target = store(target_addr);
+    let (k_consts, addrs) = ingress_with_primitives(target);
     match check_deps {
       0 =>
-        let target_pos = find_addr_idx(target_addr, addrs, 0);
+        let target_pos = find_addr_idx(target, addrs, 0);
         let ci = load(list_lookup(k_consts, target_pos));
         check_const(ci, target_pos, k_consts, addrs),
       _ => check_all(k_consts, k_consts, addrs),

@@ -714,7 +714,7 @@ def canonicalCheck := ⟦
 
   -- Build ctx (list of kernel positions) for all consts in `top` whose
   -- block_addr equals `target`. Walks `top` once with a position counter.
-  fn block_members_of(target: [G; 32], top: List‹&KConstantInfo›,
+  fn block_members_of(target: Addr, top: List‹&KConstantInfo›,
                        all_top: List‹&KConstantInfo›, pos: G) -> List‹G› {
     match load(top) {
       ListNode.Nil => store(ListNode.Nil),
@@ -735,27 +735,27 @@ def canonicalCheck := ⟦
   --   Rec    → block_addr of the parent of its first rule's ctor.
   --   Other  → [0;32] (not part of a Muts block).
   fn check_canonical_block_sort(top: List‹&KConstantInfo›) {
-    check_canonical_block_sort_walk(top, [0; 32], store(ListNode.Nil), 0, top)
+    check_canonical_block_sort_walk(top, store([0; 32]), store(ListNode.Nil), 0, top)
   }
 
-  fn kconst_block_addr(ci: KConstantInfo, top: List‹&KConstantInfo›) -> [G; 32] {
+  fn kconst_block_addr(ci: KConstantInfo, top: List‹&KConstantInfo›) -> Addr {
     match ci {
       KConstantInfo.Induct(_, _, _, _, _, _, _, _, _, ba) => ba,
       KConstantInfo.Ctor(_, _, induct_idx, _, _, _, _) =>
         let ind_ci = load(list_lookup(top, induct_idx));
         match ind_ci {
           KConstantInfo.Induct(_, _, _, _, _, _, _, _, _, ba) => ba,
-          _ => [0; 32],
+          _ => store([0; 32]),
         },
       KConstantInfo.Rec(_, _, _, _, _, _, _, _, _, ba) => ba,
-      _ => [0; 32],
+      _ => store([0; 32]),
     }
   }
 
   -- Walk top, group consecutive consts sharing a non-zero block_addr,
   -- and validate each block via iterative refinement.
   fn check_canonical_block_sort_walk(consts: List‹&KConstantInfo›,
-                                     cur_ba: [G; 32],
+                                     cur_ba: Addr,
                                      cur_members: List‹G›,
                                      pos: G,
                                      top: List‹&KConstantInfo›) {
@@ -775,16 +775,16 @@ def canonicalCheck := ⟦
     }
   }
 
-  fn init_block_members(ba: [G; 32], pos: G) -> List‹G› {
-    match address_eq(ba, [0; 32]) {
+  fn init_block_members(ba: Addr, pos: G) -> List‹G› {
+    match address_eq(ba, store([0; 32])) {
       1 => store(ListNode.Nil),
       0 => store(ListNode.Cons(pos, store(ListNode.Nil))),
     }
   }
 
-  fn validate_block_if_nonzero(ba: [G; 32], members: List‹G›,
+  fn validate_block_if_nonzero(ba: Addr, members: List‹G›,
                                 top: List‹&KConstantInfo›) {
-    match address_eq(ba, [0; 32]) {
+    match address_eq(ba, store([0; 32])) {
       1 => (),
       0 =>
         match list_length(members) {

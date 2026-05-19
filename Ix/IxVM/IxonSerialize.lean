@@ -171,39 +171,40 @@ def ixonSerialize := ⟦
   }
 
   -- Write a 32-byte address
-  fn put_address(a: [G; 32], rest: ByteStream) -> ByteStream {
-    let list31 = store(ListNode.Cons(a[31], rest));
-    let list30 = store(ListNode.Cons(a[30], list31));
-    let list29 = store(ListNode.Cons(a[29], list30));
-    let list28 = store(ListNode.Cons(a[28], list29));
-    let list27 = store(ListNode.Cons(a[27], list28));
-    let list26 = store(ListNode.Cons(a[26], list27));
-    let list25 = store(ListNode.Cons(a[25], list26));
-    let list24 = store(ListNode.Cons(a[24], list25));
-    let list23 = store(ListNode.Cons(a[23], list24));
-    let list22 = store(ListNode.Cons(a[22], list23));
-    let list21 = store(ListNode.Cons(a[21], list22));
-    let list20 = store(ListNode.Cons(a[20], list21));
-    let list19 = store(ListNode.Cons(a[19], list20));
-    let list18 = store(ListNode.Cons(a[18], list19));
-    let list17 = store(ListNode.Cons(a[17], list18));
-    let list16 = store(ListNode.Cons(a[16], list17));
-    let list15 = store(ListNode.Cons(a[15], list16));
-    let list14 = store(ListNode.Cons(a[14], list15));
-    let list13 = store(ListNode.Cons(a[13], list14));
-    let list12 = store(ListNode.Cons(a[12], list13));
-    let list11 = store(ListNode.Cons(a[11], list12));
-    let list10 = store(ListNode.Cons(a[10], list11));
-    let list9 = store(ListNode.Cons(a[9], list10));
-    let list8 = store(ListNode.Cons(a[8], list9));
-    let list7 = store(ListNode.Cons(a[7], list8));
-    let list6 = store(ListNode.Cons(a[6], list7));
-    let list5 = store(ListNode.Cons(a[5], list6));
-    let list4 = store(ListNode.Cons(a[4], list5));
-    let list3 = store(ListNode.Cons(a[3], list4));
-    let list2 = store(ListNode.Cons(a[2], list3));
-    let list1 = store(ListNode.Cons(a[1], list2));
-    store(ListNode.Cons(a[0], list1))
+  fn put_address(a: Addr, rest: ByteStream) -> ByteStream {
+    let arr = load(a);
+    let list31 = store(ListNode.Cons(arr[31], rest));
+    let list30 = store(ListNode.Cons(arr[30], list31));
+    let list29 = store(ListNode.Cons(arr[29], list30));
+    let list28 = store(ListNode.Cons(arr[28], list29));
+    let list27 = store(ListNode.Cons(arr[27], list28));
+    let list26 = store(ListNode.Cons(arr[26], list27));
+    let list25 = store(ListNode.Cons(arr[25], list26));
+    let list24 = store(ListNode.Cons(arr[24], list25));
+    let list23 = store(ListNode.Cons(arr[23], list24));
+    let list22 = store(ListNode.Cons(arr[22], list23));
+    let list21 = store(ListNode.Cons(arr[21], list22));
+    let list20 = store(ListNode.Cons(arr[20], list21));
+    let list19 = store(ListNode.Cons(arr[19], list20));
+    let list18 = store(ListNode.Cons(arr[18], list19));
+    let list17 = store(ListNode.Cons(arr[17], list18));
+    let list16 = store(ListNode.Cons(arr[16], list17));
+    let list15 = store(ListNode.Cons(arr[15], list16));
+    let list14 = store(ListNode.Cons(arr[14], list15));
+    let list13 = store(ListNode.Cons(arr[13], list14));
+    let list12 = store(ListNode.Cons(arr[12], list13));
+    let list11 = store(ListNode.Cons(arr[11], list12));
+    let list10 = store(ListNode.Cons(arr[10], list11));
+    let list9 = store(ListNode.Cons(arr[9], list10));
+    let list8 = store(ListNode.Cons(arr[8], list9));
+    let list7 = store(ListNode.Cons(arr[7], list8));
+    let list6 = store(ListNode.Cons(arr[6], list7));
+    let list5 = store(ListNode.Cons(arr[5], list6));
+    let list4 = store(ListNode.Cons(arr[4], list5));
+    let list3 = store(ListNode.Cons(arr[3], list4));
+    let list2 = store(ListNode.Cons(arr[2], list3));
+    let list1 = store(ListNode.Cons(arr[1], list2));
+    store(ListNode.Cons(arr[0], list1))
   }
 
   -- Pack DefKind (2 bits) and DefinitionSafety (2 bits) into a single byte
@@ -289,7 +290,7 @@ def ixonSerialize := ⟦
     }
   }
 
-  fn put_address_list(list: List‹[G; 32]›, rest: ByteStream) -> ByteStream {
+  fn put_address_list(list: List‹Addr›, rest: ByteStream) -> ByteStream {
     match load(list) {
       ListNode.Nil => rest,
       ListNode.Cons(addr, rest_list) =>
@@ -465,7 +466,7 @@ def ixonSerialize := ⟦
     put_tag0(len, put_expr_list(list, rest))
   }
 
-  fn put_refs(list: List‹[G; 32]›, rest: ByteStream) -> ByteStream {
+  fn put_refs(list: List‹Addr›, rest: ByteStream) -> ByteStream {
     let len = list_length_u64(list);
     put_tag0(len, put_address_list(list, rest))
   }
