@@ -39,8 +39,9 @@ def fftCost (w h : Nat) : Float :=
     let hf := h.toFloat
     wf * hf * (max hf 2.0).log2
 
-def computeStats (compiled : CompiledToplevel) (queryCounts : Array QueryCount) :
-    ExecutionStats :=
+def computeStats (compiled : CompiledToplevel)
+    (functionStats : Array (Array (String × Nat × Nat × Nat)))
+    (memoryCounts : Array (Nat × Nat)) : ExecutionStats :=
   let t := compiled.bytecode
   -- Invert nameMap to get FunIdx → String
   let reverseMap := compiled.nameMap.fold (init := (∅ : Std.HashMap Bytecode.FunIdx String))
@@ -50,18 +51,22 @@ def computeStats (compiled : CompiledToplevel) (queryCounts : Array QueryCount) 
     let mut acc := #[]
     for i in [:nAllFuns] do
       if t.functions[i]!.constrained then
-        let w := t.functions[i]!.layout.totalWidth
-        let qc := queryCounts[i]!
-        let h := qc.uniqueRows
-        let hits := qc.totalHits - qc.uniqueRows
-        let name := reverseMap[i]?.getD s!"<fn {i}>"
-        acc := acc.push { name, width := w, height := h, cacheHits := hits, fftCost := fftCost w h : CircuitStats }
+        let baseName := reverseMap[i]?.getD s!"<fn {i}>"
+        for quad in functionStats[i]! do
+          let group := quad.1
+          let w := quad.2.1
+          let h := quad.2.2.1
+          let totalHits := quad.2.2.2
+          let hits := totalHits - h
+          let name := if group.isEmpty then baseName else s!"{baseName} [{group}]"
+          acc := acc.push { name, width := w, height := h, cacheHits := hits, fftCost := fftCost w h : CircuitStats }
     acc
   let memoryCircuits := t.memorySizes.mapIdx fun i size =>
     let w := size + 11
-    let qc := queryCounts[nAllFuns + i]!
-    let h := qc.uniqueRows
-    let hits := qc.totalHits - qc.uniqueRows
+    let pair := memoryCounts[i]!
+    let h := pair.1
+    let totalHits := pair.2
+    let hits := totalHits - h
     { name := s!"memory[{size}]",
       width := w, height := h, cacheHits := hits, fftCost := fftCost w h : CircuitStats }
   let circuits := (functionCircuits ++ memoryCircuits).qsort (·.fftCost > ·.fftCost)

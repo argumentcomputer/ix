@@ -110,8 +110,11 @@ impl Toplevel {
   pub fn build_constraints(
     &self,
     function_index: usize,
+    group: &str,
   ) -> (Constraints, Vec<Lookup<Expr>>) {
-    let function = &self.functions[function_index];
+    let function = self.filtered_functions[function_index]
+      .get(group)
+      .expect("Missing filtered function for group");
     let constraints = Constraints {
       zeros: vec![],
       selectors: 0..0,

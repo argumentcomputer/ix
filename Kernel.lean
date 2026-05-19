@@ -59,7 +59,7 @@ where
       if ioBuffer != testCase.expectedIOBuffer then
         IO.eprintln s!"{name}: IOBuffer mismatch"
         return 1
-      let stats := Aiur.computeStats compiled queryCounts
+      let stats := Aiur.computeStats compiled queryCounts.1 queryCounts.2
       Aiur.printStats stats
       pure 0
   interpCheck decls name env : IO UInt32 := do

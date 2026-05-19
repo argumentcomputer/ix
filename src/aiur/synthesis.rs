@@ -71,7 +71,7 @@ where
 }
 
 enum CircuitType {
-  Function { idx: usize },
+  Function { idx: usize, group: String },
   Memory { width: usize },
   Bytes1,
   Bytes2,
@@ -82,14 +82,23 @@ impl AiurSystem {
     toplevel: Toplevel,
     commitment_parameters: CommitmentParameters,
   ) -> Self {
-    let function_circuits = (0..toplevel.functions.len()).filter_map(|i| {
-      if !toplevel.functions[i].constrained {
-        None
-      } else {
-        let (constraints, lookups) = toplevel.build_constraints(i);
-        Some(LookupAir::new(AiurCircuit::Function(constraints), lookups))
-      }
-    });
+    let toplevel_ref = &toplevel;
+    let function_circuits =
+      (0..toplevel_ref.functions.len()).flat_map(move |i| {
+        let groups: Vec<String> = if toplevel_ref.functions[i].constrained {
+          let mut gs: Vec<String> =
+            toplevel_ref.filtered_functions[i].keys().cloned().collect();
+          gs.sort();
+          gs
+        } else {
+          vec![]
+        };
+        groups.into_iter().map(move |group| {
+          let (constraints, lookups) =
+            toplevel_ref.build_constraints(i, &group);
+          LookupAir::new(AiurCircuit::Function(constraints), lookups)
+        })
+      });
     let memory_circuits = toplevel.memory_sizes.iter().map(|&width| {
       let (memory, lookups) = Memory::build(width);
       LookupAir::new(AiurCircuit::Memory(memory), lookups)
@@ -131,14 +140,22 @@ impl AiurSystem {
 
     // Build the `SystemWitness`
     let _g = tracing::info_span!("aiur/witness").entered();
-    let functions =
-      (0..self.toplevel.functions.len()).into_par_iter().filter_map(|idx| {
-        if self.toplevel.functions[idx].constrained {
-          Some(CircuitType::Function { idx })
+    let functions: Vec<CircuitType> = (0..self.toplevel.functions.len())
+      .flat_map(|idx| {
+        let groups: Vec<String> = if self.toplevel.functions[idx].constrained {
+          let mut gs: Vec<String> =
+            self.toplevel.filtered_functions[idx].keys().cloned().collect();
+          gs.sort();
+          gs
         } else {
-          None
-        }
-      });
+          vec![]
+        };
+        groups
+          .into_iter()
+          .map(move |group| CircuitType::Function { idx, group })
+      })
+      .collect();
+    let functions = functions.into_par_iter();
     let memories = self
       .toplevel
       .memory_sizes
@@ -149,8 +166,8 @@ impl AiurSystem {
       .chain(memories)
       .chain(gadgets)
       .map(|circuit_type| match circuit_type {
-        CircuitType::Function { idx } => {
-          self.toplevel.witness_data(idx, &query_record, io_buffer)
+        CircuitType::Function { idx, group } => {
+          self.toplevel.witness_data(idx, &group, &query_record, io_buffer)
         },
         CircuitType::Memory { width } => {
           Memory::witness_data(width, &query_record)

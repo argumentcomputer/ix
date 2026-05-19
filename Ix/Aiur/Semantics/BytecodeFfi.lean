@@ -61,27 +61,38 @@ structure QueryCount where
 
 namespace Bytecode.Toplevel
 
+/-- Per-function execution stats. One entry per split (return group), sorted
+by group name. Each quadruple is `(group, totalWidth, uniqueRows, totalHits)`. -/
+abbrev FunctionStats := Array (Array (String × Nat × Nat × Nat))
+
+/-- Per-memory-size `(uniqueRows, totalHits)` pairs. -/
+abbrev MemoryCounts := Array (Nat × Nat)
+
+/-- Query counts shipped back from the Rust executor: per-function split stats
+plus per-memory pairs. -/
+abbrev QueryCounts := FunctionStats × MemoryCounts
+
 @[extern "rs_aiur_toplevel_execute"]
 private opaque execute' : @& Bytecode.Toplevel →
   @& Bytecode.FunIdx → @& Array G → (ioData : @& Array G) →
   (ioMap : @& Array (Array G × IOKeyInfo)) →
-    Except String (Array G × (Array G × Array (Array G × IOKeyInfo)) × Array (Nat × Nat))
+    Except String (Array G × (Array G × Array (Array G × IOKeyInfo)) × QueryCounts)
 
 /-- Executes the bytecode function `funIdx` with the given `args` and `ioBuffer`,
-returning the raw output of the function, the updated `IOBuffer`, and an array
-of per-circuit `QueryCount`s. Returns `Except.error msg` when execution
-fails (e.g. `assert_eq!` mismatch from a typechecker rejecting a constant), so
-callers can recover instead of crashing. -/
+returning the raw output of the function, the updated `IOBuffer`, and a
+`QueryCounts` (per-function split stats + per-memory `(uniqueRows, totalHits)`
+pairs). Returns `Except.error msg` when execution fails (e.g. `assert_eq!`
+mismatch from a typechecker rejecting a constant), so callers can recover
+instead of crashing. -/
 def execute (toplevel : @& Bytecode.Toplevel)
   (funIdx : @& Bytecode.FunIdx) (args : @& Array G) (ioBuffer : IOBuffer) :
-    Except String (Array G × IOBuffer × Array QueryCount) :=
+    Except String (Array G × IOBuffer × QueryCounts) :=
   let ioData := ioBuffer.data
   let ioMap := ioBuffer.map
   match execute' toplevel funIdx args ioData ioMap.toArray with
   | .error e => .error e
   | .ok (output, (ioData, ioMap), queryCounts) =>
     let ioMap := ioMap.foldl (fun acc (k, v) => acc.insert k v) ∅
-    let queryCounts := queryCounts.map fun (uniqueRows, totalHits) => { uniqueRows, totalHits }
     .ok (output, ⟨ioData, ioMap⟩, queryCounts)
 
 end Bytecode.Toplevel
