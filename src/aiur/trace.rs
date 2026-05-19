@@ -20,9 +20,9 @@ use crate::{
     gadgets::{bytes1::Bytes1, bytes2::Bytes2},
     memory::Memory,
     u8_add_channel, u8_and_channel, u8_bit_decomposition_channel,
-    u8_less_than_channel, u8_or_channel, u8_range_check_channel,
-    u8_shift_left_channel, u8_shift_right_channel, u8_sub_channel,
-    u8_xor_channel,
+    u8_less_than_channel, u8_mul_channel, u8_or_channel,
+    u8_range_check_channel, u8_shift_left_channel, u8_shift_right_channel,
+    u8_sub_channel, u8_xor_channel,
   },
 };
 
@@ -424,6 +424,17 @@ impl Op {
         slice.push_auxiliary(index, r);
         slice.push_auxiliary(index, o);
         let lookup_args = vec![u8_add_channel(), i, j, r, o];
+        slice.push_lookup(index, Lookup::push(G::ONE, lookup_args));
+      },
+      Op::U8Mul(i, j) => {
+        let (i, _) = map[*i];
+        let (j, _) = map[*j];
+        let (lo, hi) = Bytes2::mul(&i, &j);
+        map.push((lo, 1));
+        map.push((hi, 1));
+        slice.push_auxiliary(index, lo);
+        slice.push_auxiliary(index, hi);
+        let lookup_args = vec![u8_mul_channel(), i, j, lo, hi];
         slice.push_lookup(index, Lookup::push(G::ONE, lookup_args));
       },
       Op::U8Sub(i, j) => {

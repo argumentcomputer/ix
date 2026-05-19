@@ -107,25 +107,29 @@ fn decode_op(ctor: LeanCtor<LeanBorrowed<'_>>) -> Op {
     },
     18 => {
       let [i, j] = ctor.objs::<2>().map(|x| lean_unbox_nat_as_usize(&x));
-      Op::U8Sub(i, j)
+      Op::U8Mul(i, j)
     },
     19 => {
       let [i, j] = ctor.objs::<2>().map(|x| lean_unbox_nat_as_usize(&x));
-      Op::U8And(i, j)
+      Op::U8Sub(i, j)
     },
     20 => {
       let [i, j] = ctor.objs::<2>().map(|x| lean_unbox_nat_as_usize(&x));
-      Op::U8Or(i, j)
+      Op::U8And(i, j)
     },
     21 => {
       let [i, j] = ctor.objs::<2>().map(|x| lean_unbox_nat_as_usize(&x));
-      Op::U8LessThan(i, j)
+      Op::U8Or(i, j)
     },
     22 => {
       let [i, j] = ctor.objs::<2>().map(|x| lean_unbox_nat_as_usize(&x));
-      Op::U32LessThan(i, j)
+      Op::U8LessThan(i, j)
     },
     23 => {
+      let [i, j] = ctor.objs::<2>().map(|x| lean_unbox_nat_as_usize(&x));
+      Op::U32LessThan(i, j)
+    },
+    24 => {
       let [label_obj, idxs_obj] = ctor.objs::<2>();
       let label = label_obj.as_string().to_string();
       let idxs = if idxs_obj.is_scalar() {

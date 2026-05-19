@@ -325,6 +325,9 @@ def termToConcrete
   | .u8Add τ e a b => do
       pure (.u8Add (← typToConcrete mono τ) e
                    (← termToConcrete mono a) (← termToConcrete mono b))
+  | .u8Mul τ e a b => do
+      pure (.u8Mul (← typToConcrete mono τ) e
+                   (← termToConcrete mono a) (← termToConcrete mono b))
   | .u8Sub τ e a b => do
       pure (.u8Sub (← typToConcrete mono τ) e
                    (← termToConcrete mono a) (← termToConcrete mono b))
@@ -521,6 +524,8 @@ def rewriteTypedTerm (decls : Typed.Decls)
       (rewriteTypedTerm decls subst mono a) (rewriteTypedTerm decls subst mono b)
   | .u8Add τ e a b => .u8Add (rewriteTyp subst mono τ) e
       (rewriteTypedTerm decls subst mono a) (rewriteTypedTerm decls subst mono b)
+  | .u8Mul τ e a b => .u8Mul (rewriteTyp subst mono τ) e
+      (rewriteTypedTerm decls subst mono a) (rewriteTypedTerm decls subst mono b)
   | .u8Sub τ e a b => .u8Sub (rewriteTyp subst mono τ) e
       (rewriteTypedTerm decls subst mono a) (rewriteTypedTerm decls subst mono b)
   | .u8And τ e a b => .u8And (rewriteTyp subst mono τ) e
@@ -597,7 +602,7 @@ def collectInTypedTerm (seen : Std.HashSet (Global × Array Typ)) :
     let seen := tArgs.foldl collectInTyp seen
     args.attach.foldl (fun s ⟨a, _⟩ => collectInTypedTerm s a) seen
   | .add τ _ a b | .sub τ _ a b | .mul τ _ a b
-  | .u8Xor τ _ a b | .u8Add τ _ a b | .u8Sub τ _ a b
+  | .u8Xor τ _ a b | .u8Add τ _ a b | .u8Mul τ _ a b | .u8Sub τ _ a b
   | .u8And τ _ a b | .u8Or τ _ a b
   | .u8LessThan τ _ a b | .u32LessThan τ _ a b =>
     collectInTypedTerm (collectInTypedTerm (collectInTyp seen τ) a) b
@@ -659,7 +664,7 @@ def collectCalls (decls : Typed.Decls)
     let seen := collectCalls decls seen scrut
     bs.attach.foldl (fun s ⟨(_, b), _⟩ => collectCalls decls s b) seen
   | .add _ _ a b | .sub _ _ a b | .mul _ _ a b
-  | .u8Xor _ _ a b | .u8Add _ _ a b | .u8Sub _ _ a b
+  | .u8Xor _ _ a b | .u8Add _ _ a b | .u8Mul _ _ a b | .u8Sub _ _ a b
   | .u8And _ _ a b | .u8Or _ _ a b
   | .u8LessThan _ _ a b | .u32LessThan _ _ a b =>
     collectCalls decls (collectCalls decls seen a) b
@@ -748,6 +753,8 @@ def substInTypedTerm (subst : Global → Option Typ) : Typed.Term → Typed.Term
   | .u8Xor τ e a b => .u8Xor (Typ.instantiate subst τ) e
       (substInTypedTerm subst a) (substInTypedTerm subst b)
   | .u8Add τ e a b => .u8Add (Typ.instantiate subst τ) e
+      (substInTypedTerm subst a) (substInTypedTerm subst b)
+  | .u8Mul τ e a b => .u8Mul (Typ.instantiate subst τ) e
       (substInTypedTerm subst a) (substInTypedTerm subst b)
   | .u8Sub τ e a b => .u8Sub (Typ.instantiate subst τ) e
       (substInTypedTerm subst a) (substInTypedTerm subst b)

@@ -375,6 +375,7 @@ def toplevel : Source.Toplevel := ⟦
 
   -- u8 op single-call wrappers
   pub fn u8_sub_function(i: G, j: G) -> (G, G) { u8_sub(i, j) }
+  pub fn u8_mul_function(i: G, j: G) -> (G, G) { u8_mul(i, j) }
   pub fn u8_less_than_function(i: G, j: G) -> G { u8_less_than(i, j) }
   pub fn u8_and_function(i: G, j: G) -> G { u8_and(i, j) }
   pub fn u8_or_function(i: G, j: G) -> G { u8_or(i, j) }
@@ -1188,6 +1189,8 @@ def tests : TestSeq :=
   runAgreement "assert_eq_trivial" "assert_eq_trivial" [] ++
   runAgreement "store_and_load(42)" "store_and_load" [42] ++
   runAgreement "u8_sub_function(45,131)" "u8_sub_function" [45, 131] ++
+  runAgreement "u8_mul_function(45,131)" "u8_mul_function" [45, 131] ++
+  runAgreement "u8_mul_function(255,255)" "u8_mul_function" [255, 255] ++
   runAgreement "u8_less_than_function(45,131)" "u8_less_than_function" [45, 131] ++
   runAgreement "u8_less_than_function(131,45)" "u8_less_than_function" [131, 45] ++
   runAgreement "u8_and_function(45,131)" "u8_and_function" [45, 131] ++

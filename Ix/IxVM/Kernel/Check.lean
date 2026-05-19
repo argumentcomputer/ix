@@ -59,11 +59,7 @@ def check := ⟦
       KExprNode.Srt(_) => 1,
       KExprNode.Const(idx, _) =>
         let ci = load(list_lookup(top, idx));
-        let u = is_unsafe_ci(ci);
-        match u {
-          0 => 1,
-          1 => 0,
-        },
+        1 - is_unsafe_ci(ci),
       KExprNode.App(f, a) =>
         safe_refs_only(f, top) * safe_refs_only(a, top),
       KExprNode.Lam(t, b) =>

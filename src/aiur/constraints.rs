@@ -18,9 +18,9 @@ use crate::{
       bytes2::{Bytes2, Bytes2Op},
     },
     memory_channel, u8_add_channel, u8_and_channel,
-    u8_bit_decomposition_channel, u8_less_than_channel, u8_or_channel,
-    u8_range_check_channel, u8_shift_left_channel, u8_shift_right_channel,
-    u8_sub_channel, u8_xor_channel,
+    u8_bit_decomposition_channel, u8_less_than_channel, u8_mul_channel,
+    u8_or_channel, u8_range_check_channel, u8_shift_left_channel,
+    u8_shift_right_channel, u8_sub_channel, u8_xor_channel,
   },
 };
 
@@ -489,6 +489,14 @@ impl Op {
         *j,
         &Bytes2Op::Add,
         u8_add_channel(),
+        sel.clone(),
+        state,
+      ),
+      Op::U8Mul(i, j) => bytes2_constraints(
+        *i,
+        *j,
+        &Bytes2Op::Mul,
+        u8_mul_channel(),
         sel.clone(),
         state,
       ),

@@ -14,6 +14,7 @@ pub mod byte_array;
 pub mod iroh;
 pub mod keccak;
 pub mod lean_env;
+pub mod texray;
 pub mod unsigned;
 
 // Modular FFI structure

@@ -52,6 +52,7 @@ pub enum Op {
   U8ShiftRight(ValIdx),
   U8Xor(ValIdx, ValIdx),
   U8Add(ValIdx, ValIdx),
+  U8Mul(ValIdx, ValIdx),
   U8Sub(ValIdx, ValIdx),
   U8And(ValIdx, ValIdx),
   U8Or(ValIdx, ValIdx),

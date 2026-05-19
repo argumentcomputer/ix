@@ -330,6 +330,10 @@ def toplevel := ⟦
     u8_sub(i, j)
   }
 
+  pub fn u8_mul_function(i: G, j: G) -> (G, G) {
+    u8_mul(i, j)
+  }
+
   pub fn u8_less_than_function(i: G, j: G) -> G {
     u8_less_than(i, j)
   }
@@ -848,6 +852,7 @@ def aiurTestCases : List AiurTestCase := [
     .noIO `shr_shr_shl_decompose #[87] #[0, 1, 0, 1, 0, 1, 0, 0],
     .noIO `u8_add_xor #[45, 131] #[219, 0, 49, 1],
     .noIO `u8_sub_function #[45, 131] #[170, 1],
+    .noIO `u8_mul_function #[45, 131] #[7, 23],
     .noIO `u8_less_than_function #[45, 131] #[1],
     .noIO `u8_and_function #[45, 131] #[1],
     .noIO `u8_or_function #[45, 131] #[175],

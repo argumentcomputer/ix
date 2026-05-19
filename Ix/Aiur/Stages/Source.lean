@@ -382,6 +382,7 @@ inductive Term
   | u8ShiftRight : Term → Term
   | u8Xor : Term → Term → Term
   | u8Add : Term → Term → Term
+  | u8Mul : Term → Term → Term
   | u8Sub : Term → Term → Term
   | u8And : Term → Term → Term
   | u8Or : Term → Term → Term
