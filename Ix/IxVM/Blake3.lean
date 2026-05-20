@@ -42,7 +42,7 @@ def blake3 := ⟦
 
   fn blake3(input: ByteStream) -> [[G; 4]; 8] {
     let IV = [[103, 230, 9, 106], [133, 174, 103, 187], [114, 243, 110, 60], [58, 245, 79, 165], [127, 82, 14, 81], [140, 104, 5, 155], [171, 217, 131, 31], [25, 205, 224, 91]];
-    blake3_compress_layer(load(blake3_compress_chunks(input, store(ListNode.Nil), 0, 0, [0; 8], IV, store(Layer.Nil))))
+    blake3_compress_layer(load(blake3_compress_chunks(input, store(ListNode.Nil), 0, 0, store([0; 8]), store(IV), store(Layer.Nil))))
   }
 
   fn blake3_next_layer(layer: Layer, digest: [[G; 4]; 8], root: G) -> (MaybeDigest, Layer) {
@@ -95,8 +95,8 @@ def blake3 := ⟦
     byte_acc: ByteStream,
     block_index: G,
     chunk_index: G,
-    chunk_count: U64,
-    block_digest: [[G; 4]; 8],
+    chunk_count: &U64,
+    block_digest: &[[G; 4]; 8],
     layer: &Layer
   ) -> &Layer {
     match load(input) {
@@ -205,8 +205,8 @@ def blake3 := ⟦
     byte_acc: ByteStream,
     block_index: G,
     chunk_index: G,
-    chunk_count: U64,
-    block_digest: [[G; 4]; 8],
+    chunk_count: &U64,
+    block_digest: &[[G; 4]; 8],
     layer: &Layer
   ) -> &Layer {
     let CHUNK_START = 1;
@@ -214,17 +214,17 @@ def blake3 := ⟦
     let ROOT = 8;
     match (block_index, chunk_index) {
       (0, 0) =>
-        match chunk_count {
+        match load(chunk_count) {
           [0, 0, 0, 0, 0, 0, 0, 0] =>
             let flags = ROOT + CHUNK_START + CHUNK_END;
-            store(Layer.Push(layer, blake3_compress(block_digest, [[0; 4]; 16], chunk_count, 0, flags))),
+            store(Layer.Push(layer, blake3_compress(load(block_digest), [[0; 4]; 16], load(chunk_count), 0, flags))),
           _ => layer,
         },
-      (0, _) => store(Layer.Push(layer, block_digest)),
+      (0, _) => store(Layer.Push(layer, load(block_digest))),
       (_, _) =>
-        let flags = CHUNK_END + u64_is_zero(chunk_count) * ROOT + eq_zero(chunk_index - block_index) * CHUNK_START;
+        let flags = CHUNK_END + u64_is_zero(load(chunk_count)) * ROOT + eq_zero(chunk_index - block_index) * CHUNK_START;
         let block = bytes_to_block(pad_block(byte_acc, 64 - block_index));
-        store(Layer.Push(layer, blake3_compress(block_digest, block, chunk_count, block_index, flags))),
+        store(Layer.Push(layer, blake3_compress(load(block_digest), block, load(chunk_count), block_index, flags))),
     }
   }
 
@@ -235,8 +235,8 @@ def blake3 := ⟦
     input: ByteStream,
     byte_acc: ByteStream,
     chunk_index: G,
-    chunk_count: U64,
-    block_digest: [[G; 4]; 8],
+    chunk_count: &U64,
+    block_digest: &[[G; 4]; 8],
     layer: &Layer
   ) -> &Layer {
     let CHUNK_START = 1;
@@ -245,17 +245,17 @@ def blake3 := ⟦
     let block = bytes_to_block(byte_acc);
     match chunk_index {
       1023 =>
-        let flags = ROOT * list_is_empty(input) * u64_is_zero(chunk_count) + CHUNK_END;
+        let flags = ROOT * list_is_empty(input) * u64_is_zero(load(chunk_count)) + CHUNK_END;
         let IV = [[103, 230, 9, 106], [133, 174, 103, 187], [114, 243, 110, 60], [58, 245, 79, 165], [127, 82, 14, 81], [140, 104, 5, 155], [171, 217, 131, 31], [25, 205, 224, 91]];
-        let layer = store(Layer.Push(layer, blake3_compress(block_digest, block, chunk_count, 64, flags)));
-        blake3_compress_chunks(input, store(ListNode.Nil), 0, 0, relaxed_u64_succ(chunk_count), IV, layer),
+        let layer = store(Layer.Push(layer, blake3_compress(load(block_digest), block, load(chunk_count), 64, flags)));
+        blake3_compress_chunks(input, store(ListNode.Nil), 0, 0, store(relaxed_u64_succ(load(chunk_count))), store(IV), layer),
       _ =>
         let chunk_end_flag = list_is_empty(input) * CHUNK_END;
-        let root_flag = list_is_empty(input) * u64_is_zero(chunk_count) * ROOT;
+        let root_flag = list_is_empty(input) * u64_is_zero(load(chunk_count)) * ROOT;
         let chunk_start_flag = eq_zero(chunk_index - 63) * CHUNK_START;
         let flags = chunk_end_flag + root_flag + chunk_start_flag;
-        let block_digest = blake3_compress(block_digest, block, chunk_count, 64, flags);
-        blake3_compress_chunks(input, store(ListNode.Nil), 0, chunk_index + 1, chunk_count, block_digest, layer),
+        let block_digest = blake3_compress(load(block_digest), block, load(chunk_count), 64, flags);
+        blake3_compress_chunks(input, store(ListNode.Nil), 0, chunk_index + 1, chunk_count, store(block_digest), layer),
     }
   }
 
@@ -267,12 +267,49 @@ def blake3 := ⟦
     x: [G; 4],
     y: [G; 4]
   ) -> [[G; 4]; 4] {
-    let a = u32_add(u32_add(a, b), x);
-    let [d0, d1, d2, d3] = u32_xor(d, a);
+    -- a = (a + b) + x
+    let (r1_0, r1_c1) = u8_add(a[0], b[0]);
+    let (r1_s1, r1_o1) = u8_add(a[1], b[1]);
+    let (r1_1, r1_c1a) = u8_add(r1_s1, r1_c1);
+    let r1_c2 = r1_o1 + r1_c1a;
+    let (r1_s2, r1_o2) = u8_add(a[2], b[2]);
+    let (r1_2, r1_c2a) = u8_add(r1_s2, r1_c2);
+    let r1_c3 = r1_o2 + r1_c2a;
+    let (r1_s3, _z) = u8_add(a[3], b[3]);
+    let (r1_3, _z) = u8_add(r1_s3, r1_c3);
+    let (a0, r2_c1) = u8_add(r1_0, x[0]);
+    let (r2_s1, r2_o1) = u8_add(r1_1, x[1]);
+    let (a1, r2_c1a) = u8_add(r2_s1, r2_c1);
+    let r2_c2 = r2_o1 + r2_c1a;
+    let (r2_s2, r2_o2) = u8_add(r1_2, x[2]);
+    let (a2, r2_c2a) = u8_add(r2_s2, r2_c2);
+    let r2_c3 = r2_o2 + r2_c2a;
+    let (r2_s3, _z) = u8_add(r1_3, x[3]);
+    let (a3, _z) = u8_add(r2_s3, r2_c3);
+    let a = [a0, a1, a2, a3];
+
+    let d0 = u8_xor(d[0], a[0]);
+    let d1 = u8_xor(d[1], a[1]);
+    let d2 = u8_xor(d[2], a[2]);
+    let d3 = u8_xor(d[3], a[3]);
     let d = [d2, d3, d0, d1]; -- Right-rotated 16
 
-    let c = u32_add(c, d);
-    let [b0, b1, b2, b3] = u32_xor(b, c);
+    -- c = c + d
+    let (nc0, r3_c1) = u8_add(c[0], d[0]);
+    let (r3_s1, r3_o1) = u8_add(c[1], d[1]);
+    let (nc1, r3_c1a) = u8_add(r3_s1, r3_c1);
+    let r3_c2 = r3_o1 + r3_c1a;
+    let (r3_s2, r3_o2) = u8_add(c[2], d[2]);
+    let (nc2, r3_c2a) = u8_add(r3_s2, r3_c2);
+    let r3_c3 = r3_o2 + r3_c2a;
+    let (r3_s3, _z) = u8_add(c[3], d[3]);
+    let (nc3, _z) = u8_add(r3_s3, r3_c3);
+    let c = [nc0, nc1, nc2, nc3];
+
+    let b0 = u8_xor(b[0], c[0]);
+    let b1 = u8_xor(b[1], c[1]);
+    let b2 = u8_xor(b[2], c[2]);
+    let b3 = u8_xor(b[3], c[3]);
     let [b00, b01, b02, b03, b04, b05, b06, b07] = u8_bit_decomposition(b0);
     let [b10, b11, b12, b13, b14, b15, b16, b17] = u8_bit_decomposition(b1);
     let [b20, b21, b22, b23, b24, b25, b26, b27] = u8_bit_decomposition(b2);
@@ -285,12 +322,49 @@ def blake3 := ⟦
     let b3 = b04 + 2 * b05 + 4 * b06 + 8 * b07 + 16 * b10 + 32 * b11 + 64 * b12 + 128 * b13;
     let b = [b0, b1, b2, b3]; -- Right-rotated 12
 
-    let a = u32_add(u32_add(a, b), y);
-    let [d0, d1, d2, d3] = u32_xor(d, a);
+    -- a = (a + b) + y
+    let (r4_0, r4_c1) = u8_add(a[0], b[0]);
+    let (r4_s1, r4_o1) = u8_add(a[1], b[1]);
+    let (r4_1, r4_c1a) = u8_add(r4_s1, r4_c1);
+    let r4_c2 = r4_o1 + r4_c1a;
+    let (r4_s2, r4_o2) = u8_add(a[2], b[2]);
+    let (r4_2, r4_c2a) = u8_add(r4_s2, r4_c2);
+    let r4_c3 = r4_o2 + r4_c2a;
+    let (r4_s3, _z) = u8_add(a[3], b[3]);
+    let (r4_3, _z) = u8_add(r4_s3, r4_c3);
+    let (a0, r5_c1) = u8_add(r4_0, y[0]);
+    let (r5_s1, r5_o1) = u8_add(r4_1, y[1]);
+    let (a1, r5_c1a) = u8_add(r5_s1, r5_c1);
+    let r5_c2 = r5_o1 + r5_c1a;
+    let (r5_s2, r5_o2) = u8_add(r4_2, y[2]);
+    let (a2, r5_c2a) = u8_add(r5_s2, r5_c2);
+    let r5_c3 = r5_o2 + r5_c2a;
+    let (r5_s3, _z) = u8_add(r4_3, y[3]);
+    let (a3, _z) = u8_add(r5_s3, r5_c3);
+    let a = [a0, a1, a2, a3];
+
+    let d0 = u8_xor(d[0], a[0]);
+    let d1 = u8_xor(d[1], a[1]);
+    let d2 = u8_xor(d[2], a[2]);
+    let d3 = u8_xor(d[3], a[3]);
     let d = [d1, d2, d3, d0]; -- Right-rotated 8
 
-    let c = u32_add(c, d);
-    let [b0, b1, b2, b3] = u32_xor(b, c);
+    -- c = c + d
+    let (nc0, r6_c1) = u8_add(c[0], d[0]);
+    let (r6_s1, r6_o1) = u8_add(c[1], d[1]);
+    let (nc1, r6_c1a) = u8_add(r6_s1, r6_c1);
+    let r6_c2 = r6_o1 + r6_c1a;
+    let (r6_s2, r6_o2) = u8_add(c[2], d[2]);
+    let (nc2, r6_c2a) = u8_add(r6_s2, r6_c2);
+    let r6_c3 = r6_o2 + r6_c2a;
+    let (r6_s3, _z) = u8_add(c[3], d[3]);
+    let (nc3, _z) = u8_add(r6_s3, r6_c3);
+    let c = [nc0, nc1, nc2, nc3];
+
+    let b0 = u8_xor(b[0], c[0]);
+    let b1 = u8_xor(b[1], c[1]);
+    let b2 = u8_xor(b[2], c[2]);
+    let b3 = u8_xor(b[3], c[3]);
     let [b00, b01, b02, b03, b04, b05, b06, b07] = u8_bit_decomposition(b0);
     let [b10, b11, b12, b13, b14, b15, b16, b17] = u8_bit_decomposition(b1);
     let [b20, b21, b22, b23, b24, b25, b26, b27] = u8_bit_decomposition(b2);
@@ -380,26 +454,6 @@ def blake3 := ⟦
     state
   }
 
-  fn blake3_compress_inner_perm(state: [[G; 4]; 32]) -> [[G; 4]; 32] {
-    let new_state = set(state, 16, state[18]);
-    let new_state = set(new_state, 17, state[22]);
-    let new_state = set(new_state, 18, state[19]);
-    let new_state = set(new_state, 19, state[26]);
-    let new_state = set(new_state, 20, state[23]);
-    let new_state = set(new_state, 21, state[16]);
-    let new_state = set(new_state, 22, state[20]);
-    let new_state = set(new_state, 23, state[29]);
-    let new_state = set(new_state, 24, state[17]);
-    let new_state = set(new_state, 25, state[27]);
-    let new_state = set(new_state, 26, state[28]);
-    let new_state = set(new_state, 27, state[21]);
-    let new_state = set(new_state, 28, state[25]);
-    let new_state = set(new_state, 29, state[30]);
-    let new_state = set(new_state, 30, state[31]);
-    let new_state = set(new_state, 31, state[24]);
-    new_state
-  }
-
   -- TODO:
   -- `block_words` could be two arguments of type [[G; 4]; 8]
   fn blake3_compress(
@@ -432,40 +486,136 @@ def blake3 := ⟦
 
     -- Round 0
     let state = blake3_compress_inner_j(state);
-    let state = blake3_compress_inner_perm(state);
+    let new_state = set(state, 16, state[18]);
+    let new_state = set(new_state, 17, state[22]);
+    let new_state = set(new_state, 18, state[19]);
+    let new_state = set(new_state, 19, state[26]);
+    let new_state = set(new_state, 20, state[23]);
+    let new_state = set(new_state, 21, state[16]);
+    let new_state = set(new_state, 22, state[20]);
+    let new_state = set(new_state, 23, state[29]);
+    let new_state = set(new_state, 24, state[17]);
+    let new_state = set(new_state, 25, state[27]);
+    let new_state = set(new_state, 26, state[28]);
+    let new_state = set(new_state, 27, state[21]);
+    let new_state = set(new_state, 28, state[25]);
+    let new_state = set(new_state, 29, state[30]);
+    let new_state = set(new_state, 30, state[31]);
+    let new_state = set(new_state, 31, state[24]);
+    let state = new_state;
 
     -- Round 1
     let state = blake3_compress_inner_j(state);
-    let state = blake3_compress_inner_perm(state);
+    let new_state = set(state, 16, state[18]);
+    let new_state = set(new_state, 17, state[22]);
+    let new_state = set(new_state, 18, state[19]);
+    let new_state = set(new_state, 19, state[26]);
+    let new_state = set(new_state, 20, state[23]);
+    let new_state = set(new_state, 21, state[16]);
+    let new_state = set(new_state, 22, state[20]);
+    let new_state = set(new_state, 23, state[29]);
+    let new_state = set(new_state, 24, state[17]);
+    let new_state = set(new_state, 25, state[27]);
+    let new_state = set(new_state, 26, state[28]);
+    let new_state = set(new_state, 27, state[21]);
+    let new_state = set(new_state, 28, state[25]);
+    let new_state = set(new_state, 29, state[30]);
+    let new_state = set(new_state, 30, state[31]);
+    let new_state = set(new_state, 31, state[24]);
+    let state = new_state;
 
     -- Round 2
     let state = blake3_compress_inner_j(state);
-    let state = blake3_compress_inner_perm(state);
+    let new_state = set(state, 16, state[18]);
+    let new_state = set(new_state, 17, state[22]);
+    let new_state = set(new_state, 18, state[19]);
+    let new_state = set(new_state, 19, state[26]);
+    let new_state = set(new_state, 20, state[23]);
+    let new_state = set(new_state, 21, state[16]);
+    let new_state = set(new_state, 22, state[20]);
+    let new_state = set(new_state, 23, state[29]);
+    let new_state = set(new_state, 24, state[17]);
+    let new_state = set(new_state, 25, state[27]);
+    let new_state = set(new_state, 26, state[28]);
+    let new_state = set(new_state, 27, state[21]);
+    let new_state = set(new_state, 28, state[25]);
+    let new_state = set(new_state, 29, state[30]);
+    let new_state = set(new_state, 30, state[31]);
+    let new_state = set(new_state, 31, state[24]);
+    let state = new_state;
 
     -- Round 3
     let state = blake3_compress_inner_j(state);
-    let state = blake3_compress_inner_perm(state);
+    let new_state = set(state, 16, state[18]);
+    let new_state = set(new_state, 17, state[22]);
+    let new_state = set(new_state, 18, state[19]);
+    let new_state = set(new_state, 19, state[26]);
+    let new_state = set(new_state, 20, state[23]);
+    let new_state = set(new_state, 21, state[16]);
+    let new_state = set(new_state, 22, state[20]);
+    let new_state = set(new_state, 23, state[29]);
+    let new_state = set(new_state, 24, state[17]);
+    let new_state = set(new_state, 25, state[27]);
+    let new_state = set(new_state, 26, state[28]);
+    let new_state = set(new_state, 27, state[21]);
+    let new_state = set(new_state, 28, state[25]);
+    let new_state = set(new_state, 29, state[30]);
+    let new_state = set(new_state, 30, state[31]);
+    let new_state = set(new_state, 31, state[24]);
+    let state = new_state;
 
     -- Round 4
     let state = blake3_compress_inner_j(state);
-    let state = blake3_compress_inner_perm(state);
+    let new_state = set(state, 16, state[18]);
+    let new_state = set(new_state, 17, state[22]);
+    let new_state = set(new_state, 18, state[19]);
+    let new_state = set(new_state, 19, state[26]);
+    let new_state = set(new_state, 20, state[23]);
+    let new_state = set(new_state, 21, state[16]);
+    let new_state = set(new_state, 22, state[20]);
+    let new_state = set(new_state, 23, state[29]);
+    let new_state = set(new_state, 24, state[17]);
+    let new_state = set(new_state, 25, state[27]);
+    let new_state = set(new_state, 26, state[28]);
+    let new_state = set(new_state, 27, state[21]);
+    let new_state = set(new_state, 28, state[25]);
+    let new_state = set(new_state, 29, state[30]);
+    let new_state = set(new_state, 30, state[31]);
+    let new_state = set(new_state, 31, state[24]);
+    let state = new_state;
 
     -- Round 5
     let state = blake3_compress_inner_j(state);
-    let state = blake3_compress_inner_perm(state);
+    let new_state = set(state, 16, state[18]);
+    let new_state = set(new_state, 17, state[22]);
+    let new_state = set(new_state, 18, state[19]);
+    let new_state = set(new_state, 19, state[26]);
+    let new_state = set(new_state, 20, state[23]);
+    let new_state = set(new_state, 21, state[16]);
+    let new_state = set(new_state, 22, state[20]);
+    let new_state = set(new_state, 23, state[29]);
+    let new_state = set(new_state, 24, state[17]);
+    let new_state = set(new_state, 25, state[27]);
+    let new_state = set(new_state, 26, state[28]);
+    let new_state = set(new_state, 27, state[21]);
+    let new_state = set(new_state, 28, state[25]);
+    let new_state = set(new_state, 29, state[30]);
+    let new_state = set(new_state, 30, state[31]);
+    let new_state = set(new_state, 31, state[24]);
+    let state = new_state;
 
     -- Round 6
     let state = blake3_compress_inner_j(state);
 
     [
-      u32_xor(state[0], state[8]),
-      u32_xor(state[1], state[9]),
-      u32_xor(state[2], state[10]),
-      u32_xor(state[3], state[11]),
-      u32_xor(state[4], state[12]),
-      u32_xor(state[5], state[13]),
-      u32_xor(state[6], state[14]),
-      u32_xor(state[7], state[15])
+      [u8_xor(state[0][0], state[8][0]), u8_xor(state[0][1], state[8][1]), u8_xor(state[0][2], state[8][2]), u8_xor(state[0][3], state[8][3])],
+      [u8_xor(state[1][0], state[9][0]), u8_xor(state[1][1], state[9][1]), u8_xor(state[1][2], state[9][2]), u8_xor(state[1][3], state[9][3])],
+      [u8_xor(state[2][0], state[10][0]), u8_xor(state[2][1], state[10][1]), u8_xor(state[2][2], state[10][2]), u8_xor(state[2][3], state[10][3])],
+      [u8_xor(state[3][0], state[11][0]), u8_xor(state[3][1], state[11][1]), u8_xor(state[3][2], state[11][2]), u8_xor(state[3][3], state[11][3])],
+      [u8_xor(state[4][0], state[12][0]), u8_xor(state[4][1], state[12][1]), u8_xor(state[4][2], state[12][2]), u8_xor(state[4][3], state[12][3])],
+      [u8_xor(state[5][0], state[13][0]), u8_xor(state[5][1], state[13][1]), u8_xor(state[5][2], state[13][2]), u8_xor(state[5][3], state[13][3])],
+      [u8_xor(state[6][0], state[14][0]), u8_xor(state[6][1], state[14][1]), u8_xor(state[6][2], state[14][2]), u8_xor(state[6][3], state[14][3])],
+      [u8_xor(state[7][0], state[15][0]), u8_xor(state[7][1], state[15][1]), u8_xor(state[7][2], state[15][2]), u8_xor(state[7][3], state[15][3])]
     ]
   }
 ⟧
