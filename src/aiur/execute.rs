@@ -429,6 +429,22 @@ impl Function {
             }
           }
         },
+        ExecEntry::Op(Op::U8ChainRotr7(i, j)) => {
+          if unconstrained {
+            let (o0, o1, o2) = Bytes2::chain_rotr7(&map[*i], &map[*j]);
+            map.extend([o0, o1, o2]);
+          } else {
+            bytes2_execute(*i, *j, &Bytes2Op::ChainRotr7, &mut map, record);
+          }
+        },
+        ExecEntry::Op(Op::U8ChainRotr4(i, j)) => {
+          if unconstrained {
+            let (o0, o1, o2) = Bytes2::chain_rotr4(&map[*i], &map[*j]);
+            map.extend([o0, o1, o2]);
+          } else {
+            bytes2_execute(*i, *j, &Bytes2Op::ChainRotr4, &mut map, record);
+          }
+        },
         ExecEntry::Op(Op::Debug(label, idxs)) => match idxs {
           None => println!("{label}"),
           Some(idxs) => {

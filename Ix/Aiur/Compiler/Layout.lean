@@ -186,6 +186,7 @@ def opLayout : Bytecode.Op → LayoutM Unit
   | .u8ShiftLeft _ | .u8ShiftRight _ | .u8Xor .. | .u8And .. | .u8Or .. => do
     pushDegree 1; bumpAuxiliaries; bumpLookups
   | .u8Add .. | .u8Mul .. | .u8Sub .. => do pushDegrees #[1, 1]; bumpAuxiliaries 2; bumpLookups
+  | .u8ChainRotr7 .. | .u8ChainRotr4 .. => do pushDegrees #[1, 1, 1]; bumpAuxiliaries 3; bumpLookups
   | .u8LessThan .. => do pushDegree 1; bumpAuxiliaries; bumpLookups
   | .u32LessThan .. => do pushDegree 1; bumpAuxiliaries 12; bumpLookups 6
   | .debug .. => pure ()
