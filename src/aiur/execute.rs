@@ -356,12 +356,15 @@ impl Function {
           }
         },
         ExecEntry::Op(Op::U8Add(i, j)) => {
+          // The add gadget yields only the low byte; the carry is derived
+          // and pushed separately so the op still produces `(low, carry)`.
+          let (_r, o) = Bytes2::add(&map[*i], &map[*j]);
           if unconstrained {
-            let (r, o) = Bytes2::add(&map[*i], &map[*j]);
-            map.extend([r, o]);
+            map.push(Bytes2::add(&map[*i], &map[*j]).0);
           } else {
             bytes2_execute(*i, *j, &Bytes2Op::Add, &mut map, record);
           }
+          map.push(o);
         },
         ExecEntry::Op(Op::U8Mul(i, j)) => {
           if unconstrained {

@@ -4,7 +4,7 @@ use multi_stark::{
   p3_air::{Air, AirBuilder, BaseAir, WindowAccess},
   p3_field::{Field, PrimeCharacteristicRing},
 };
-use std::{array, ops::Range};
+use std::{array, ops::Range, sync::LazyLock};
 
 use crate::{
   FxIndexMap,
@@ -27,6 +27,10 @@ use crate::{
 
 type Expr = SymbolicExpression<G>;
 type Degree = u8;
+
+/// `256⁻¹` in the Goldilocks field. The field inversion is expensive, so it is
+/// computed once and reused by the byte carry-chain constraints.
+static INV_256: LazyLock<G> = LazyLock::new(|| G::from_u64(256).inverse());
 
 /// Holds data for a function circuit.
 pub struct Constraints {
@@ -485,14 +489,28 @@ impl Op {
         sel.clone(),
         state,
       ),
-      Op::U8Add(i, j) => bytes2_constraints(
-        *i,
-        *j,
-        &Bytes2Op::Add,
-        u8_add_channel(),
-        sel.clone(),
-        state,
-      ),
+      Op::U8Add(i, j) => {
+        // The add lookup pins only the low byte `z = (x + y) mod 256`. The
+        // carry is then `c = (x + y - z) / 256`, a compound expression that
+        // needs no auxiliary column or lookup output.
+        let (x, x_deg) = state.map[*i].clone();
+        let (y, y_deg) = state.map[*j].clone();
+        let z = state.next_auxiliary();
+        let lookup = state.next_lookup();
+        combine_lookup_args(
+          lookup,
+          vec![
+            sel.clone() * u8_add_channel(),
+            sel.clone() * x.clone(),
+            sel.clone() * y.clone(),
+            sel.clone() * z.clone(),
+          ],
+        );
+        lookup.multiplicity += sel.clone();
+        let carry = (x + y - z.clone()) * *INV_256;
+        state.map.push((z, 1));
+        state.map.push((carry, x_deg.max(y_deg).max(1)));
+      },
       Op::U8Mul(i, j) => bytes2_constraints(
         *i,
         *j,
@@ -593,11 +611,10 @@ impl Op {
         state.constraints.zeros.push(sel.clone() * (b - recompose(&z_bytes)));
 
         // Carry chain: a + c + 1 = b + carry * 2^32
-        let base_inv = G::from_u64(256).inverse();
         let mut carry = Expr::ONE; // initial carry = 1 for strict less-than
         for k in 0..4 {
           let sum = x_bytes[k].clone() + y_bytes[k].clone() + carry;
-          carry = (sum - z_bytes[k].clone()) * base_inv;
+          carry = (sum - z_bytes[k].clone()) * *INV_256;
           state
             .constraints
             .zeros

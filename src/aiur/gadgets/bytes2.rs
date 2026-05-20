@@ -30,8 +30,8 @@ const TRACE_WIDTH: usize = 10;
 /// - first raw byte value
 /// - second raw byte value
 /// - xor result
-/// - add result
-/// - add overflow
+/// - add result (low byte only; the carry is derived in-circuit as
+///   `(x + y - z) / 256`, so it needs no column or lookup)
 /// - sub result
 /// - sub underflow
 /// - and result
@@ -45,7 +45,7 @@ const TRACE_WIDTH: usize = 10;
 /// - chain_rotr4 output 0 (`i >> 4 + j << 4`)
 /// - chain_rotr4 output 1 (`j >> 4`)
 /// - chain_rotr4 output 2 (`i << 4`)
-const PREPROCESSED_TRACE_WIDTH: usize = 18;
+const PREPROCESSED_TRACE_WIDTH: usize = 17;
 
 /// AIR implementer for arity 2 byte-related lookups.
 pub(crate) struct Bytes2;
@@ -80,10 +80,8 @@ impl BaseAir<G> for Bytes2 {
         // Xor
         trace_values.push(G::from_u8(i ^ j));
 
-        // Overflowing add
-        let (r, o) = i.overflowing_add(j);
-        trace_values.push(G::from_u8(r));
-        trace_values.push(G::from_bool(o));
+        // Add low byte (carry derived in-circuit, no column)
+        trace_values.push(G::from_u8(i.wrapping_add(j)));
 
         // Overflowing sub
         let (r, u) = i.overflowing_sub(j);
@@ -131,8 +129,12 @@ impl AiurGadget for Bytes2 {
 
   fn output_size(&self, op: &Bytes2Op) -> usize {
     match op {
-      Bytes2Op::Xor | Bytes2Op::And | Bytes2Op::Or | Bytes2Op::LessThan => 1,
-      Bytes2Op::Add | Bytes2Op::Sub | Bytes2Op::Mul => 2,
+      Bytes2Op::Xor
+      | Bytes2Op::And
+      | Bytes2Op::Or
+      | Bytes2Op::LessThan
+      | Bytes2Op::Add => 1,
+      Bytes2Op::Sub | Bytes2Op::Mul => 2,
       Bytes2Op::ChainRotr7 | Bytes2Op::ChainRotr4 => 3,
     }
   }
@@ -152,8 +154,8 @@ impl AiurGadget for Bytes2 {
       },
       Bytes2Op::Add => {
         record.bytes2_queries.bump_add(i, j);
-        let (r, o) = Self::add(i, j);
-        vec![r, o]
+        let (r, _o) = Self::add(i, j);
+        vec![r]
       },
       Bytes2Op::Mul => {
         record.bytes2_queries.bump_mul(i, j);
@@ -220,20 +222,19 @@ impl AiurGadget for Bytes2 {
     let j = preprocessed_var(1);
     let xor = preprocessed_var(2);
     let add_r = preprocessed_var(3);
-    let add_o = preprocessed_var(4);
-    let sub_r = preprocessed_var(5);
-    let sub_u = preprocessed_var(6);
-    let and = preprocessed_var(7);
-    let or = preprocessed_var(8);
-    let less_than = preprocessed_var(9);
-    let mul_lo = preprocessed_var(10);
-    let mul_hi = preprocessed_var(11);
-    let chain_rotr7_o0 = preprocessed_var(12);
-    let chain_rotr7_o1 = preprocessed_var(13);
-    let chain_rotr7_o2 = preprocessed_var(14);
-    let chain_rotr4_o0 = preprocessed_var(15);
-    let chain_rotr4_o1 = preprocessed_var(16);
-    let chain_rotr4_o2 = preprocessed_var(17);
+    let sub_r = preprocessed_var(4);
+    let sub_u = preprocessed_var(5);
+    let and = preprocessed_var(6);
+    let or = preprocessed_var(7);
+    let less_than = preprocessed_var(8);
+    let mul_lo = preprocessed_var(9);
+    let mul_hi = preprocessed_var(10);
+    let chain_rotr7_o0 = preprocessed_var(11);
+    let chain_rotr7_o1 = preprocessed_var(12);
+    let chain_rotr7_o2 = preprocessed_var(13);
+    let chain_rotr4_o0 = preprocessed_var(14);
+    let chain_rotr4_o1 = preprocessed_var(15);
+    let chain_rotr4_o2 = preprocessed_var(16);
 
     let pull_xor = Lookup::pull(
       xor_multiplicity,
@@ -242,7 +243,7 @@ impl AiurGadget for Bytes2 {
 
     let pull_add = Lookup::pull(
       add_multiplicity,
-      vec![add_channel, i.clone(), j.clone(), add_r, add_o],
+      vec![add_channel, i.clone(), j.clone(), add_r],
     );
 
     let pull_sub = Lookup::pull(
@@ -373,9 +374,9 @@ impl AiurGadget for Bytes2 {
           row_lookups[0] =
             Lookup::pull(xor, vec![xor_channel, i, j, Self::xor(&i, &j)]);
 
-          // Pull add.
-          let (r, o) = Self::add(&i, &j);
-          row_lookups[1] = Lookup::pull(add, vec![add_channel, i, j, r, o]);
+          // Pull add (low byte only; carry derived in-circuit).
+          let (r, _o) = Self::add(&i, &j);
+          row_lookups[1] = Lookup::pull(add, vec![add_channel, i, j, r]);
 
           // Pull sub.
           let (r, u) = Self::sub(&i, &j);

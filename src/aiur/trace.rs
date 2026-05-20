@@ -419,12 +419,14 @@ impl Op {
       Op::U8Add(i, j) => {
         let (i, _) = map[*i];
         let (j, _) = map[*j];
+        // Only the low byte `r` is witnessed (one auxiliary + the add lookup).
+        // The carry `o` is a derived value, pushed to the map for downstream
+        // ops but not materialized as a column.
         let (r, o) = Bytes2::add(&i, &j);
         map.push((r, 1));
         map.push((o, 1));
         slice.push_auxiliary(index, r);
-        slice.push_auxiliary(index, o);
-        let lookup_args = vec![u8_add_channel(), i, j, r, o];
+        let lookup_args = vec![u8_add_channel(), i, j, r];
         slice.push_lookup(index, Lookup::push(G::ONE, lookup_args));
       },
       Op::U8Mul(i, j) => {
