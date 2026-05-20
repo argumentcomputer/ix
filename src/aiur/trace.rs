@@ -77,19 +77,17 @@ impl Toplevel {
   pub fn witness_data(
     &self,
     function_index: usize,
-    group: &str,
+    group: usize,
     query_record: &QueryRecord,
     io_buffer: &IOBuffer,
   ) -> (RowMajorMatrix<G>, Vec<Vec<Lookup<G>>>) {
-    let func = self.filtered_functions[function_index]
-      .get(group)
-      .expect("Missing filtered function for group");
+    let func = &self.filtered_functions[function_index][group];
     let width = func.width();
     let unfiltered_queries = &query_record.function_queries[function_index];
     let queries = unfiltered_queries
       .iter()
       .filter(|(_, res)| {
-        !res.multiplicity.is_zero() && res.return_group.as_ref() == group
+        !res.multiplicity.is_zero() && res.return_group == group
       })
       .collect::<Vec<_>>();
     let height_no_padding = queries.len();

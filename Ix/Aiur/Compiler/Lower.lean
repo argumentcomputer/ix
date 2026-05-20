@@ -94,7 +94,15 @@ structure CompilerState where
   ops : Array Bytecode.Op
   selIdx : Bytecode.SelIdx
   degrees : Array Nat
-  currentReturnGroup : String := ""
+  /-- Top of the `#[return_group(…)]` annotation stack — the display name
+  whose index will tag every `Ctrl.return` emitted inside its scope. The
+  index is looked up (or allocated) lazily at emit time. -/
+  currentReturnGroupName : String := ""
+  /-- Group display names allocated so far; position `i` is the name for
+  group index `i`. -/
+  groupNames : Array String := #[]
+  /-- Inverse of `groupNames`: maps name → allocated index. -/
+  groupNameMap : Std.HashMap String USize := {}
   deriving Inhabited
 
 abbrev CompileM := EStateM String CompilerState
@@ -122,6 +130,20 @@ def pushOp (op : Bytecode.Op) (size : Nat := 1) : CompileM (Array Bytecode.ValId
 
 def extractOps : CompileM (Array Bytecode.Op) :=
   modifyGet fun s => (s.ops, {s with ops := #[]})
+
+/-- Look up the `USize` index for the current return-group name, allocating
+fresh storage in `groupNames`/`groupNameMap` on first encounter. -/
+def allocCurrentGroup : CompileM USize := do
+  let st ← get
+  let name := st.currentReturnGroupName
+  match st.groupNameMap[name]? with
+  | some idx => pure idx
+  | none =>
+    let idx : USize := USize.ofNat st.groupNames.size
+    modify fun s => { s with
+      groupNameMap := s.groupNameMap.insert name idx
+      groupNames := s.groupNames.push name }
+    pure idx
 
 open Concrete in
 mutual
@@ -449,10 +471,10 @@ def Concrete.Term.compile
     modify fun stt => { stt with ops := stt.ops.push (.ioWrite data) }
     ret.compile returnTyp layoutMap bindings yieldCtrl
   | .retGroup _ _ name inner => do
-    let oldGroup := (← get).currentReturnGroup
-    modify fun s => { s with currentReturnGroup := name }
+    let oldGroup := (← get).currentReturnGroupName
+    modify fun s => { s with currentReturnGroupName := name }
     let blk ← inner.compile returnTyp layoutMap bindings yieldCtrl
-    modify fun s => { s with currentReturnGroup := oldGroup }
+    modify fun s => { s with currentReturnGroupName := oldGroup }
     pure blk
   | .match _ _ scrut cases defaultOpt => do
     let idxs := bindings[scrut]?.getD #[0]
@@ -468,14 +490,16 @@ def Concrete.Term.compile
     pure ({ ops, ctrl } : Bytecode.Block)
   | .ret _ _ term => do
     let idxs ← toIndex layoutMap bindings term
+    let groupIdx ← allocCurrentGroup
     let state ← get
     let state := { state with selIdx := state.selIdx + 1 }
     set state
     let ops := state.ops
     let id := state.selIdx
-    pure ({ ops, ctrl := .return (id - 1) state.currentReturnGroup idxs } : Bytecode.Block)
+    pure ({ ops, ctrl := .return (id - 1) groupIdx idxs } : Bytecode.Block)
   | _ => do
     let idxs ← toIndex layoutMap bindings term
+    let groupIdx ← allocCurrentGroup
     let state ← get
     let state := { state with selIdx := state.selIdx + 1 }
     set state
@@ -483,7 +507,7 @@ def Concrete.Term.compile
     let id := state.selIdx
     let ctrl : Bytecode.Ctrl :=
       if yieldCtrl && !term.escapes then .yield (id - 1) idxs
-      else .return (id - 1) state.currentReturnGroup idxs
+      else .return (id - 1) groupIdx idxs
     pure ({ ops, ctrl } : Bytecode.Block)
 termination_by (sizeOf term, 0)
 decreasing_by
@@ -538,9 +562,11 @@ decreasing_by all_goals first | decreasing_tactic | grind
 
 end
 
-/-- Lower a full concrete function to bytecode. -/
+/-- Lower a full concrete function to bytecode. Returns the body, layout
+state, and the per-function `groupNames` table (position `i` is the display
+name for group index `i`). -/
 def Concrete.Function.compile (layoutMap : LayoutMap) (f : Concrete.Function) :
-    Except String (Bytecode.Block × Bytecode.LayoutMState) := do
+    Except String (Bytecode.Block × Bytecode.LayoutMState × Array String) := do
   let (_inputSize, _outputSize) ← match layoutMap[f.name]? with
     | some (.function layout) => pure (layout.inputSize, layout.outputSize)
     | _ => throw s!"`{f.name}` should be a function"
@@ -551,16 +577,16 @@ def Concrete.Function.compile (layoutMap : LayoutMap) (f : Concrete.Function) :
         | .ok len => pure len
       let indices := Array.range' valIdx len
       pure (valIdx + len, bindings.insert arg indices)
-  let state := { valIdx, selIdx := 0, ops := #[], degrees := Array.replicate valIdx 1,
-                  currentReturnGroup := "" }
+  let state : CompilerState := { valIdx, selIdx := 0, ops := #[],
+                                  degrees := Array.replicate valIdx 1 }
   match f.body.compile f.output layoutMap bindings |>.run state with
   | .error e _ => throw e
-  | .ok body _ =>
+  | .ok body finalState =>
     let (_, layoutMState) := Bytecode.blockLayout body |>.run (.new valIdx)
     let layoutMState := { layoutMState with functionLayout :=
       { layoutMState.functionLayout with
         lookups := layoutMState.functionLayout.lookups + 1 } }
-    pure (body, layoutMState)
+    pure (body, layoutMState, finalState.groupNames)
 
 def Concrete.Decls.toBytecode (decls : Concrete.Decls) :
     Except String (Bytecode.Toplevel × Std.HashMap Global Bytecode.FunIdx) := do
@@ -569,9 +595,12 @@ def Concrete.Decls.toBytecode (decls : Concrete.Decls) :
   let (functions, memSizes, nameMap) ← decls.foldlM (init := (#[], initMemSizes, {}))
     fun acc@(functions, memSizes, nameMap) (_, decl) => match decl with
       | .function function => do
-        let (body, layoutMState) ← function.compile layout
+        let (body, layoutMState, groupNames) ← function.compile layout
         let nameMap := nameMap.insert function.name functions.size
-        let function := ⟨body, layoutMState.functionLayout, function.entry, false⟩
+        let groupNames := if groupNames.isEmpty then #[""] else groupNames
+        let function : Bytecode.Function :=
+          { body, layout := layoutMState.functionLayout,
+            groupNames, entry := function.entry, constrained := false }
         let memSizes := layoutMState.memSizes.fold (·.insert ·) memSizes
         pure (functions.push function, memSizes, nameMap)
       | _ => pure acc

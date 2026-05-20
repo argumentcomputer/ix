@@ -61,9 +61,11 @@ structure QueryCount where
 
 namespace Bytecode.Toplevel
 
-/-- Per-function execution stats. One entry per split (return group), sorted
-by group name. Each quadruple is `(group, totalWidth, uniqueRows, totalHits)`. -/
-abbrev FunctionStats := Array (Array (String × Nat × Nat × Nat))
+/-- Per-function execution stats. One entry per split (return group), keyed
+by group index. Each quadruple is
+`(groupIdx, totalWidth, uniqueRows, totalHits)`. The display name is looked
+up via `Function.groupNames[groupIdx]`. -/
+abbrev FunctionStats := Array (Array (Nat × Nat × Nat × Nat))
 
 /-- Per-memory-size `(uniqueRows, totalHits)` pairs. -/
 abbrev MemoryCounts := Array (Nat × Nat)

@@ -6,11 +6,11 @@ public import Ix.Aiur.Compiler.Layout
 Return-group splitting for Aiur bytecode.
 
 Each `Bytecode.Function` may carry multiple `Ctrl.return` sites tagged with
-distinct group names. `Function.split` carves the function into one filtered
-sub-function per group — control-flow paths that cannot reach a `return` of
-the target group are pruned. The result is a sorted array of
-`(groupName, filteredFunction)` pairs with selectors renumbered in
-traversal order and `FunctionLayout` recomputed.
+distinct `USize` group indices. `Function.split` carves the function into one
+filtered sub-function per index — control-flow paths that cannot reach a
+`return` of the target group are pruned. The result is positional: index
+`i` in the output equals the group index `i` in the function's
+`groupNames` table.
 -/
 
 public section
@@ -26,44 +26,6 @@ private theorem Block.sizeOf_ctrl_lt_split (b : Block) :
   rcases b with ⟨ops, ctrl⟩
   show sizeOf ctrl < 1 + sizeOf ops + sizeOf ctrl
   omega
-
-/-! ## Collect return-group names -/
-
-mutual
-def Ctrl.collectGroups (c : Ctrl) : Array String := match c with
-  | .return _ g _ => #[g]
-  | .yield .. => #[]
-  | .match _ cases default? =>
-    let branchGroups := cases.attach.foldl (init := #[]) fun acc ⟨(_, blk), _⟩ =>
-      acc ++ Block.collectGroups blk
-    match default? with
-    | some blk => branchGroups ++ Block.collectGroups blk
-    | none => branchGroups
-  | .matchContinue _ cases default? _ _ _ continuation =>
-    let branchGroups := cases.attach.foldl (init := #[]) fun acc ⟨(_, blk), _⟩ =>
-      acc ++ Block.collectGroups blk
-    let withDefault := match default? with
-      | some blk => branchGroups ++ Block.collectGroups blk
-      | none => branchGroups
-    withDefault ++ Block.collectGroups continuation
-termination_by (sizeOf c, 0)
-decreasing_by
-  all_goals first
-    | decreasing_tactic
-    | (have := Array.sizeOf_lt_of_mem ‹_ ∈ _›; grind)
-    | grind
-
-def Block.collectGroups (b : Block) : Array String := Ctrl.collectGroups b.ctrl
-termination_by (sizeOf b, 1)
-decreasing_by
-  all_goals first
-    | decreasing_tactic
-    | (apply Prod.Lex.left; exact Block.sizeOf_ctrl_lt_split _)
-end
-
-def Function.returnGroups (f : Function) : Std.HashSet String :=
-  (Block.collectGroups f.body).foldl (init := ({} : Std.HashSet String))
-    fun acc g => acc.insert g
 
 /-! ## Filter control-flow tree by target group
 
@@ -86,7 +48,7 @@ def Ctrl.mkMatchContinue (scrut : ValIdx) (cases : Array (G × Block))
   if cases.isEmpty && default?.isNone then none
   else some (.matchContinue scrut cases default? outputSize sharedAux sharedLookups cont)
 
-def Ctrl.filterGroup (target : String) : Ctrl → Option Ctrl
+def Ctrl.filterGroup (target : USize) : Ctrl → Option Ctrl
   | .return sel g vs => if g = target then some (.return sel g vs) else none
   | .yield sel vs => some (.yield sel vs)
   | .match scrut cases default? =>
@@ -120,7 +82,7 @@ decreasing_by
     | (have := Block.sizeOf_ctrl_lt_split ‹Block›; grind)
     | grind
 
-def Block.filterGroup (target : String) (b : Block) : Option Block :=
+def Block.filterGroup (target : USize) (b : Block) : Option Block :=
   (Ctrl.filterGroup target b.ctrl).map ({ b with ctrl := · })
 
 /-! ## Renumber selectors in traversal order -/
@@ -190,17 +152,19 @@ def Function.fix (f : Function) : Function :=
 
 /-! ## Top-level split -/
 
-/-- Carve `f` into one filtered sub-function per return group. Result is sorted
-by group name. Panics if a discovered group has no reachable path (cannot
-happen for well-formed bytecode). -/
-def Function.split (f : Function) : Array (String × Function) :=
-  let groups := f.returnGroups.toArray.qsort fun a b => decide (a < b)
-  groups.map fun g =>
-    match Block.filterGroup g f.body with
-    | none => panic! s!"function contains an unreachable group: {g}"
+/-- Carve `f` into one filtered sub-function per group index in
+`f.groupNames`. Position `i` in the result equals group index `i`. Panics
+if a stored group index has no reachable `Return` site (should not happen
+for well-formed bytecode produced by `Concrete.Function.compile`). -/
+def Function.split (f : Function) : Array Function :=
+  (Array.range f.groupNames.size).map fun i =>
+    let target : USize := USize.ofNat i
+    match Block.filterGroup target f.body with
+    | none =>
+      panic! s!"function contains an unreachable group: {f.groupNames[i]!}"
     | some body =>
       let filtered : Function := { f with body }
-      (g, filtered.fix)
+      filtered.fix
 
 /-- Populate `t.filteredFunctions` by splitting every function. Idempotent —
 overwrites any existing entries. Should run after `deduplicate` and

@@ -40,7 +40,7 @@ def fftCost (w h : Nat) : Float :=
     wf * hf * (max hf 2.0).log2
 
 def computeStats (compiled : CompiledToplevel)
-    (functionStats : Array (Array (String × Nat × Nat × Nat)))
+    (functionStats : Array (Array (Nat × Nat × Nat × Nat)))
     (memoryCounts : Array (Nat × Nat)) : ExecutionStats :=
   let t := compiled.bytecode
   -- Invert nameMap to get FunIdx → String
@@ -52,12 +52,14 @@ def computeStats (compiled : CompiledToplevel)
     for i in [:nAllFuns] do
       if t.functions[i]!.constrained then
         let baseName := reverseMap[i]?.getD s!"<fn {i}>"
+        let groupNames := t.functions[i]!.groupNames
         for quad in functionStats[i]! do
-          let group := quad.1
+          let groupIdx := quad.1
           let w := quad.2.1
           let h := quad.2.2.1
           let totalHits := quad.2.2.2
           let hits := totalHits - h
+          let group := groupNames[groupIdx]?.getD ""
           let name := if group.isEmpty then baseName else s!"{baseName} [{group}]"
           acc := acc.push { name, width := w, height := h, cacheHits := hits, fftCost := fftCost w h : CircuitStats }
     acc

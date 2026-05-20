@@ -8,7 +8,7 @@ use std::sync::LazyLock;
 
 use lean_ffi::object::{
   ExternalClass, LeanArray, LeanBorrowed, LeanByteArray, LeanExcept,
-  LeanExternal, LeanNat, LeanOwned, LeanProd, LeanRef, LeanString,
+  LeanExternal, LeanNat, LeanOwned, LeanProd, LeanRef,
 };
 
 use crate::{
@@ -88,9 +88,10 @@ extern "C" fn rs_aiur_system_verify(
 
 /// `Bytecode.Toplevel.execute`: runs execution only (no proof) and returns
 /// `Except String (Array G × (Array G × Array (Array G × IOKeyInfo))
-///   × (Array (Array (String × Nat × Nat × Nat)) × Array (Nat × Nat)))`.
+///   × (Array (Array (Nat × Nat × Nat × Nat)) × Array (Nat × Nat)))`.
 /// The function side is per-function array of per-split
-/// `(group, width, uniqueRows, totalHits)` quadruples. The memory side is
+/// `(groupIdx, width, uniqueRows, totalHits)` quadruples (display names are
+/// looked up Lean-side via `Function.groupNames`). The memory side is
 /// per-memory-size `(uniqueRows, totalHits)` pairs.
 /// On execution failure (e.g. assertion mismatch from a typechecker
 /// rejecting a constant), returns `Except.error msg` instead of panicking
@@ -134,34 +135,33 @@ extern "C" fn rs_aiur_toplevel_execute(
     (rows, hits)
   };
 
-  // Per-function array of `(group, width, unique_rows, total_hits)` quadruples,
-  // one per split. Queries within a function are partitioned by return group.
-  let function_stats: Vec<Vec<(std::sync::Arc<str>, usize, usize, usize)>> = (0
-    ..toplevel.functions.len())
-    .map(|i| {
-      let queries = &query_record.function_queries[i];
-      let mut stats: Vec<(std::sync::Arc<str>, usize, usize, usize)> = toplevel
-        .filtered_functions[i]
-        .iter()
-        .map(|(group, func)| {
-          let (rows, hits) = queries
-            .iter()
-            .filter(|(_, res)| res.return_group.as_ref() == group.as_ref())
-            .fold((0usize, 0usize), |(r, h), (_, res)| {
-              let m = usize::try_from(res.multiplicity.as_canonical_u64())
-                .expect("multiplicity exceeds usize");
-              if m != 0 { (r + 1, h + m) } else { (r, h) }
-            });
-          let l = func.layout;
-          let width =
-            l.input_size + l.selectors + l.auxiliaries + 4 * (1 + l.lookups);
-          (group.clone(), width, rows, hits)
-        })
-        .collect();
-      stats.sort_by(|a, b| a.0.cmp(&b.0));
-      stats
-    })
-    .collect();
+  // Per-function array of `(group_idx, width, unique_rows, total_hits)`
+  // quadruples — one entry per split, in group-index order. Queries within
+  // a function are partitioned by `QueryResult.return_group`.
+  let function_stats: Vec<Vec<(usize, usize, usize, usize)>> =
+    (0..toplevel.functions.len())
+      .map(|i| {
+        let queries = &query_record.function_queries[i];
+        toplevel.filtered_functions[i]
+          .iter()
+          .enumerate()
+          .map(|(group_idx, func)| {
+            let (rows, hits) = queries
+              .iter()
+              .filter(|(_, res)| res.return_group == group_idx)
+              .fold((0usize, 0usize), |(r, h), (_, res)| {
+                let m = usize::try_from(res.multiplicity.as_canonical_u64())
+                  .expect("multiplicity exceeds usize");
+                if m != 0 { (r + 1, h + m) } else { (r, h) }
+              });
+            let l = func.layout;
+            let width =
+              l.input_size + l.selectors + l.auxiliaries + 4 * (1 + l.lookups);
+            (group_idx, width, rows, hits)
+          })
+          .collect()
+      })
+      .collect();
 
   let memory_counts: Vec<(usize, usize)> = toplevel
     .memory_sizes
@@ -175,10 +175,10 @@ extern "C" fn rs_aiur_toplevel_execute(
     let outer = LeanArray::alloc(function_stats.len());
     for (i, per_fn) in function_stats.iter().enumerate() {
       let inner = LeanArray::alloc(per_fn.len());
-      for (j, (group, width, rows, hits)) in per_fn.iter().enumerate() {
-        // (String × Nat × Nat × Nat) — right-nested pair encoding
+      for (j, (group_idx, width, rows, hits)) in per_fn.iter().enumerate() {
+        // (Nat × Nat × Nat × Nat) — right-nested pair encoding
         let quad = LeanProd::new(
-          LeanString::new(group.as_ref()),
+          LeanOwned::box_usize(*group_idx),
           LeanProd::new(
             LeanOwned::box_usize(*width),
             LeanProd::new(
@@ -207,7 +207,7 @@ extern "C" fn rs_aiur_toplevel_execute(
 
   let lean_io = build_lean_io_buffer(&io_buffer);
   // (Array G, (Array G × Array (Array G × IOKeyInfo),
-  //   Array (Array (String × Nat × Nat × Nat)) × Array (Nat × Nat)))
+  //   Array (Array (Nat × Nat × Nat × Nat)) × Array (Nat × Nat)))
   let io_counts = LeanProd::new(lean_io, lean_query_counts);
   let result = LeanProd::new(build_g_array(&output), io_counts);
   LeanExcept::ok(result)

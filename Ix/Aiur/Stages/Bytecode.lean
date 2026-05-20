@@ -49,7 +49,7 @@ inductive Op
 mutual
   inductive Ctrl where
     | match : ValIdx → Array (G × Block) → Option Block → Ctrl
-    | return : SelIdx → (group : String) → Array ValIdx → Ctrl
+    | return : SelIdx → (group : USize) → Array ValIdx → Ctrl
     | yield : SelIdx → Array ValIdx → Ctrl
     | matchContinue : ValIdx → Array (G × Block) → Option Block
         → (outputSize : Nat) → (sharedAuxiliaries : Nat) → (sharedLookups : Nat)
@@ -84,16 +84,21 @@ def FunctionLayout.totalWidth (l : FunctionLayout) : Nat :=
 structure Function where
   body : Block
   layout: FunctionLayout
+  /-- Display names for the return groups used in `body`. Position `i` in the
+  array maps to the `USize` group index `i` carried by `Ctrl.return`. Defaults
+  to the singleton `#[""]` so functions with no `#[return_group(…)]`
+  annotations have a single unnamed group at index `0`. -/
+  groupNames : Array String := #[""]
   entry : Bool
   constrained : Bool
   deriving Inhabited, Repr
 
 structure Toplevel where
   functions : Array Function
-  /-- Per-function split by return group: one entry per `functions[i]`, each a
-  sorted array of `(groupName, filteredFunction)` pairs. Populated by
+  /-- Per-function split by return group: position in the inner array equals
+  the `USize` group index used by `Ctrl.return`. Populated by
   `Toplevel.computeFiltered` after `deduplicate` + `needsCircuit`. -/
-  filteredFunctions : Array (Array (String × Function)) := #[]
+  filteredFunctions : Array (Array Function) := #[]
   memorySizes : Array Nat
   deriving Repr
 

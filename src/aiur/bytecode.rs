@@ -1,14 +1,12 @@
-use std::sync::Arc;
-
-use rustc_hash::FxHashMap;
-
 use crate::FxIndexMap;
 
 use super::G;
 
 pub struct Toplevel {
   pub(crate) functions: Vec<Function>,
-  pub(crate) filtered_functions: Vec<FxHashMap<Arc<str>, Function>>,
+  /// Per-function split by return-group index: outer index = `FunIdx`, inner
+  /// index = the `usize` group index carried by `Ctrl::Return`.
+  pub(crate) filtered_functions: Vec<Vec<Function>>,
   pub(crate) memory_sizes: Vec<usize>,
 }
 
@@ -68,7 +66,7 @@ pub enum Op {
 
 pub enum Ctrl {
   Match(ValIdx, FxIndexMap<G, Block>, Option<Box<Block>>),
-  Return(SelIdx, Arc<str>, Vec<ValIdx>),
+  Return(SelIdx, usize, Vec<ValIdx>),
   Yield(SelIdx, Vec<ValIdx>),
   MatchContinue(
     ValIdx,

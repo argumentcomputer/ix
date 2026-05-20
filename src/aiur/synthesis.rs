@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use multi_stark::{
   lookup::LookupAir,
   p3_air::{Air, AirBuilder, BaseAir},
@@ -73,7 +71,7 @@ where
 }
 
 enum CircuitType {
-  Function { idx: usize, group: Arc<str> },
+  Function { idx: usize, group: usize },
   Memory { width: usize },
   Bytes1,
   Bytes2,
@@ -87,17 +85,13 @@ impl AiurSystem {
     let toplevel_ref = &toplevel;
     let function_circuits =
       (0..toplevel_ref.functions.len()).flat_map(move |i| {
-        let groups: Vec<Arc<str>> = if toplevel_ref.functions[i].constrained {
-          let mut gs: Vec<Arc<str>> =
-            toplevel_ref.filtered_functions[i].keys().cloned().collect();
-          gs.sort();
-          gs
+        let group_count = if toplevel_ref.functions[i].constrained {
+          toplevel_ref.filtered_functions[i].len()
         } else {
-          vec![]
+          0
         };
-        groups.into_iter().map(move |group| {
-          let (constraints, lookups) =
-            toplevel_ref.build_constraints(i, &group);
+        (0..group_count).map(move |group| {
+          let (constraints, lookups) = toplevel_ref.build_constraints(i, group);
           LookupAir::new(AiurCircuit::Function(constraints), lookups)
         })
       });
@@ -144,18 +138,12 @@ impl AiurSystem {
     let _g = tracing::info_span!("aiur/witness").entered();
     let functions: Vec<CircuitType> = (0..self.toplevel.functions.len())
       .flat_map(|idx| {
-        let groups: Vec<Arc<str>> = if self.toplevel.functions[idx].constrained
-        {
-          let mut gs: Vec<Arc<str>> =
-            self.toplevel.filtered_functions[idx].keys().cloned().collect();
-          gs.sort();
-          gs
+        let group_count = if self.toplevel.functions[idx].constrained {
+          self.toplevel.filtered_functions[idx].len()
         } else {
-          vec![]
+          0
         };
-        groups
-          .into_iter()
-          .map(move |group| CircuitType::Function { idx, group })
+        (0..group_count).map(move |group| CircuitType::Function { idx, group })
       })
       .collect();
     let functions = functions.into_par_iter();
@@ -170,7 +158,7 @@ impl AiurSystem {
       .chain(gadgets)
       .map(|circuit_type| match circuit_type {
         CircuitType::Function { idx, group } => {
-          self.toplevel.witness_data(idx, &group, &query_record, io_buffer)
+          self.toplevel.witness_data(idx, group, &query_record, io_buffer)
         },
         CircuitType::Memory { width } => {
           Memory::witness_data(width, &query_record)
