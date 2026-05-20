@@ -252,6 +252,18 @@ def evalOp (t : Bytecode.Toplevel) (fuel : Nat) (op : Op) (st : EvalState) :
     let prod := x.val.toUInt8.toNat * y.val.toUInt8.toNat
     let st1 := pushMap st (G.ofUInt8 prod.toUInt8)
     pure (pushMap st1 (G.ofUInt8 (prod / 256).toUInt8))
+  | .u8ChainRotr7 a b => do
+    let x ← readIdx st a; let y ← readIdx st b
+    let i := x.val.toUInt8; let j := y.val.toUInt8
+    let st1 := pushMap st (G.ofUInt8 ((i >>> 7) + (j <<< 1)))
+    let st2 := pushMap st1 (G.ofUInt8 (j >>> 7))
+    pure (pushMap st2 (G.ofUInt8 (i <<< 1)))
+  | .u8ChainRotr4 a b => do
+    let x ← readIdx st a; let y ← readIdx st b
+    let i := x.val.toUInt8; let j := y.val.toUInt8
+    let st1 := pushMap st (G.ofUInt8 ((i >>> 4) + (j <<< 4)))
+    let st2 := pushMap st1 (G.ofUInt8 (j >>> 4))
+    pure (pushMap st2 (G.ofUInt8 (i <<< 4)))
   | .u8Sub a b => do
     let x ← readIdx st a; let y ← readIdx st b
     let i := x.val.toUInt8; let j := y.val.toUInt8

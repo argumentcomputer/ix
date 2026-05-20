@@ -379,6 +379,17 @@ def toplevel : Source.Toplevel := ⟦
   pub fn u8_less_than_function(i: G, j: G) -> G { u8_less_than(i, j) }
   pub fn u8_and_function(i: G, j: G) -> G { u8_and(i, j) }
   pub fn u8_or_function(i: G, j: G) -> G { u8_or(i, j) }
+  pub fn u8_chain_rotr7_function(i: G, j: G) -> (G, G, G) { u8_chain_rotr7(i, j) }
+  pub fn u8_chain_rotr4_function(i: G, j: G) -> (G, G, G) { u8_chain_rotr4(i, j) }
+
+  -- Full u32 right-rotation by 7, built by chaining the partial gadget over
+  -- adjacent little-endian byte pairs (2 lookups + 2 free field adds).
+  pub fn u32_rotr7(b: [G; 4]) -> [G; 4] {
+    let [b0, b1, b2, b3] = b;
+    let (a0, a1, a2) = u8_chain_rotr7(b0, b1);
+    let (c0, c1, c2) = u8_chain_rotr7(b2, b3);
+    [a0, a1 + c2, c0, c1 + a2]
+  }
 
   -- u32 less-than wrapper (named to match Aiur)
   pub fn u32_less_than_function(x: G, y: G) -> G { u32_less_than(x, y) }
@@ -1195,6 +1206,12 @@ def tests : TestSeq :=
   runAgreement "u8_less_than_function(131,45)" "u8_less_than_function" [131, 45] ++
   runAgreement "u8_and_function(45,131)" "u8_and_function" [45, 131] ++
   runAgreement "u8_or_function(45,131)" "u8_or_function" [45, 131] ++
+  runAgreement "u8_chain_rotr7_function(45,131)" "u8_chain_rotr7_function" [45, 131] ++
+  runAgreement "u8_chain_rotr7_function(0,255)" "u8_chain_rotr7_function" [0, 255] ++
+  runAgreement "u8_chain_rotr4_function(45,131)" "u8_chain_rotr4_function" [45, 131] ++
+  runAgreement "u8_chain_rotr4_function(255,255)" "u8_chain_rotr4_function" [255, 255] ++
+  runAgreement "u32_rotr7(45,131,200,17)" "u32_rotr7"
+    [.array #[45, 131, 200, 17]] ++
   runAgreement "u32_less_than_function(300,500)" "u32_less_than_function" [300, 500] ++
   runAgreement "u32_less_than_function(500,300)" "u32_less_than_function" [500, 300] ++
   runAgreement "u32_less_than_function(500,500)" "u32_less_than_function" [500, 500] ++

@@ -388,6 +388,8 @@ inductive Term
   | u8Or : Term → Term → Term
   | u8LessThan : Term → Term → Term
   | u32LessThan : Term → Term → Term
+  | u8ChainRotr7 : Term → Term → Term
+  | u8ChainRotr4 : Term → Term → Term
   | debug : String → Option Term → Term → Term
   deriving Repr, BEq, Hashable, Inhabited
 
