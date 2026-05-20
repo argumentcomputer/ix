@@ -185,15 +185,16 @@ def opLayout : Bytecode.Op → LayoutM Unit
   | .u8BitDecomposition _ => do pushDegrees $ .replicate 8 1; bumpAuxiliaries 8; bumpLookups
   | .u8ShiftLeft _ | .u8ShiftRight _ | .u8Xor .. | .u8And .. | .u8Or .. => do
     pushDegree 1; bumpAuxiliaries; bumpLookups
-  | .u8Add a b => do
-    -- Low byte `z` is the only auxiliary; the carry `(a + b - z)/256` is a
-    -- compound expression of degree `max(deg a, deg b, 1)`.
+  | .u8Add a b | .u8Sub a b => do
+    -- Low byte `z` is the only auxiliary; the carry/borrow is a compound
+    -- expression of degree `max(deg a, deg b, 1)` (add: `(a+b-z)/256`,
+    -- sub: `(z+b-a)/256`).
     let aDegree ← getDegree a
     let bDegree ← getDegree b
     pushDegree 1
     pushDegree ((aDegree.max bDegree).max 1)
     bumpAuxiliaries; bumpLookups
-  | .u8Mul .. | .u8Sub .. => do pushDegrees #[1, 1]; bumpAuxiliaries 2; bumpLookups
+  | .u8Mul .. => do pushDegrees #[1, 1]; bumpAuxiliaries 2; bumpLookups
   | .u8ChainRotr7 .. | .u8ChainRotr4 .. => do pushDegrees #[1, 1, 1]; bumpAuxiliaries 3; bumpLookups
   | .u8LessThan .. => do pushDegree 1; bumpAuxiliaries; bumpLookups
   | .u32LessThan .. => do pushDegree 1; bumpAuxiliaries 12; bumpLookups 6

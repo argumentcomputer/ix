@@ -519,14 +519,28 @@ impl Op {
         sel.clone(),
         state,
       ),
-      Op::U8Sub(i, j) => bytes2_constraints(
-        *i,
-        *j,
-        &Bytes2Op::Sub,
-        u8_sub_channel(),
-        sel.clone(),
-        state,
-      ),
+      Op::U8Sub(i, j) => {
+        // The sub lookup pins only the low byte `z = (x - y) mod 256`. Since
+        // `z + y = x (mod 256)`, the borrow is `c = (z + y - x) / 256`, a
+        // compound expression that needs no auxiliary column or lookup output.
+        let (x, x_deg) = state.map[*i].clone();
+        let (y, y_deg) = state.map[*j].clone();
+        let z = state.next_auxiliary();
+        let lookup = state.next_lookup();
+        combine_lookup_args(
+          lookup,
+          vec![
+            sel.clone() * u8_sub_channel(),
+            sel.clone() * x.clone(),
+            sel.clone() * y.clone(),
+            sel.clone() * z.clone(),
+          ],
+        );
+        lookup.multiplicity += sel.clone();
+        let borrow = (z.clone() + y - x) * *INV_256;
+        state.map.push((z, 1));
+        state.map.push((borrow, x_deg.max(y_deg).max(1)));
+      },
       Op::U8And(i, j) => bytes2_constraints(
         *i,
         *j,

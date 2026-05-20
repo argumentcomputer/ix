@@ -375,12 +375,15 @@ impl Function {
           }
         },
         ExecEntry::Op(Op::U8Sub(i, j)) => {
+          // The sub gadget yields only the low byte; the borrow is derived
+          // and pushed separately so the op still produces `(low, borrow)`.
+          let (_r, u) = Bytes2::sub(&map[*i], &map[*j]);
           if unconstrained {
-            let (r, u) = Bytes2::sub(&map[*i], &map[*j]);
-            map.extend([r, u]);
+            map.push(Bytes2::sub(&map[*i], &map[*j]).0);
           } else {
             bytes2_execute(*i, *j, &Bytes2Op::Sub, &mut map, record);
           }
+          map.push(u);
         },
         ExecEntry::Op(Op::U8And(i, j)) => {
           if unconstrained {

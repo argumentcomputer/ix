@@ -443,12 +443,14 @@ impl Op {
       Op::U8Sub(i, j) => {
         let (i, _) = map[*i];
         let (j, _) = map[*j];
+        // Only the low byte `r` is witnessed (one auxiliary + the sub lookup).
+        // The borrow `u` is derived, pushed to the map for downstream ops but
+        // not materialized as a column.
         let (r, u) = Bytes2::sub(&i, &j);
         map.push((r, 1));
         map.push((u, 1));
         slice.push_auxiliary(index, r);
-        slice.push_auxiliary(index, u);
-        let lookup_args = vec![u8_sub_channel(), i, j, r, u];
+        let lookup_args = vec![u8_sub_channel(), i, j, r];
         slice.push_lookup(index, Lookup::push(G::ONE, lookup_args));
       },
       Op::U8And(i, j) => {
