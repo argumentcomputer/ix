@@ -310,17 +310,12 @@ def blake3 := ⟦
     let b1 = u8_xor(b[1], c[1]);
     let b2 = u8_xor(b[2], c[2]);
     let b3 = u8_xor(b[3], c[3]);
-    let [b00, b01, b02, b03, b04, b05, b06, b07] = u8_bit_decomposition(b0);
-    let [b10, b11, b12, b13, b14, b15, b16, b17] = u8_bit_decomposition(b1);
-    let [b20, b21, b22, b23, b24, b25, b26, b27] = u8_bit_decomposition(b2);
-    let [b30, b31, b32, b33, b34, b35, b36, b37] = u8_bit_decomposition(b3);
-    -- Each rotated byte is the weighted sum of 8 bits. Written inline: it is
-    -- pure arithmetic, so it costs no aux column or lookup.
-    let b0 = b14 + 2 * b15 + 4 * b16 + 8 * b17 + 16 * b20 + 32 * b21 + 64 * b22 + 128 * b23;
-    let b1 = b24 + 2 * b25 + 4 * b26 + 8 * b27 + 16 * b30 + 32 * b31 + 64 * b32 + 128 * b33;
-    let b2 = b34 + 2 * b35 + 4 * b36 + 8 * b37 + 16 * b00 + 32 * b01 + 64 * b02 + 128 * b03;
-    let b3 = b04 + 2 * b05 + 4 * b06 + 8 * b07 + 16 * b10 + 32 * b11 + 64 * b12 + 128 * b13;
-    let b = [b0, b1, b2, b3]; -- Right-rotated 12
+    -- Right-rotated 12 = rotr8 (byte move) ∘ rotr4 (chained gadget).
+    -- rotr8 of [b0,b1,b2,b3] is [b1,b2,b3,b0]; rotr4 over that pairs (b1,b2)
+    -- and (b3,b0). Two gadget lookups + two free field adds.
+    let (e0, e1, e2) = u8_chain_rotr4(b1, b2);
+    let (f0, f1, f2) = u8_chain_rotr4(b3, b0);
+    let b = [e0, e1 + f2, f0, f1 + e2]; -- Right-rotated 12
 
     -- a = (a + b) + y
     let (r4_0, r4_c1) = u8_add(a[0], b[0]);
@@ -365,15 +360,11 @@ def blake3 := ⟦
     let b1 = u8_xor(b[1], c[1]);
     let b2 = u8_xor(b[2], c[2]);
     let b3 = u8_xor(b[3], c[3]);
-    let [b00, b01, b02, b03, b04, b05, b06, b07] = u8_bit_decomposition(b0);
-    let [b10, b11, b12, b13, b14, b15, b16, b17] = u8_bit_decomposition(b1);
-    let [b20, b21, b22, b23, b24, b25, b26, b27] = u8_bit_decomposition(b2);
-    let [b30, b31, b32, b33, b34, b35, b36, b37] = u8_bit_decomposition(b3);
-    let b0 = b07 + 2 * b10 + 4 * b11 + 8 * b12 + 16 * b13 + 32 * b14 + 64 * b15 + 128 * b16;
-    let b1 = b17 + 2 * b20 + 4 * b21 + 8 * b22 + 16 * b23 + 32 * b24 + 64 * b25 + 128 * b26;
-    let b2 = b27 + 2 * b30 + 4 * b31 + 8 * b32 + 16 * b33 + 32 * b34 + 64 * b35 + 128 * b36;
-    let b3 = b37 + 2 * b00 + 4 * b01 + 8 * b02 + 16 * b03 + 32 * b04 + 64 * b05 + 128 * b06;
-    let b = [b0, b1, b2, b3]; -- Right-rotated 7
+    -- Right-rotated 7 via the chained gadget: pairs (b0,b1) and (b2,b3),
+    -- two lookups + two free field adds.
+    let (g0, g1, g2) = u8_chain_rotr7(b0, b1);
+    let (h0, h1, h2) = u8_chain_rotr7(b2, b3);
+    let b = [g0, g1 + h2, h0, h1 + g2]; -- Right-rotated 7
 
     [a, b, c, d]
   }
