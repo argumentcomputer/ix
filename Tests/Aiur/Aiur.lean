@@ -705,6 +705,25 @@ def toplevel := ⟦
     let (x, y) = ntm_tuple(a);
     x + y
   }
+  -- Return-group annotation with two arms sharing a group + one unannotated
+  -- arm (default `""` group). Exercises per-group multi-row witnesses: the
+  -- `even` and `odd` circuits each get 2 return sites, the `""` circuit 1.
+  fn shared_return_groups(x: G) -> G {
+    match x {
+      0 => #[return_group(even)] x + 100,
+      1 => #[return_group(odd)] x + 200,
+      2 => #[return_group(even)] x * 10,
+      3 => #[return_group(odd)] x * 100,
+      _ => x + 1,
+    }
+  }
+  -- Aggregate one call per arm so the STARK proves every group circuit with
+  -- the right multiplicities in a single test case.
+  pub fn shared_return_groups_all() -> G {
+    shared_return_groups(0) + shared_return_groups(1)
+    + shared_return_groups(2) + shared_return_groups(3)
+    + shared_return_groups(7)
+  }
   -- Return-group annotation: ignored by compiler/typechecker, must pass through
   -- to inner term. Match with distinct group labels per arm.
   pub fn match_return_groups(x: G) -> G {
@@ -914,6 +933,10 @@ def aiurTestCases : List AiurTestCase := [
         with label := "match_return_groups(2)" },
     { AiurTestCase.noIO `match_return_groups #[7] #[8]
         with label := "match_return_groups(7)" },
+
+    -- Shared-group + unannotated arm packed into a single STARK run:
+    -- 100 + 201 + 20 + 300 + 8 = 629.
+    .noIO `shared_return_groups_all #[] #[629],
   ]
 
 end

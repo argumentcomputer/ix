@@ -8,7 +8,6 @@ use super::G;
 
 pub struct Toplevel {
   pub(crate) functions: Vec<Function>,
-  #[allow(dead_code)]
   pub(crate) filtered_functions: Vec<FxHashMap<Arc<str>, Function>>,
   pub(crate) memory_sizes: Vec<usize>,
 }
@@ -34,13 +33,11 @@ impl FunctionLayout {
   }
 }
 
-#[derive(Clone)]
 pub struct Block {
   pub(crate) ops: Vec<Op>,
   pub(crate) ctrl: Ctrl,
 }
 
-#[derive(Clone)]
 pub enum Op {
   Const(G),
   Add(ValIdx, ValIdx),
@@ -69,7 +66,6 @@ pub enum Op {
   Debug(String, Option<Vec<ValIdx>>),
 }
 
-#[derive(Clone)]
 pub enum Ctrl {
   Match(ValIdx, FxIndexMap<G, Block>, Option<Box<Block>>),
   Return(SelIdx, Arc<str>, Vec<ValIdx>),

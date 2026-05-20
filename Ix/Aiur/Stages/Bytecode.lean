@@ -90,6 +90,10 @@ structure Function where
 
 structure Toplevel where
   functions : Array Function
+  /-- Per-function split by return group: one entry per `functions[i]`, each a
+  sorted array of `(groupName, filteredFunction)` pairs. Populated by
+  `Toplevel.computeFiltered` after `deduplicate` + `needsCircuit`. -/
+  filteredFunctions : Array (Array (String × Function)) := #[]
   memorySizes : Array Nat
   deriving Repr
 

@@ -1020,6 +1020,25 @@ def toplevel : Source.Toplevel := ⟦
     r1 + r2 + r3 + r4 + r5 + r6 + r7 + r8 + r9 + r10
     + r11 + r12 + r13 + r14 + r15 + r16 + r17 + r18 + r19 + r20
   }
+
+  -- Return-group annotation: two arms share `even`, two share `odd`, one
+  -- arm is unannotated (default `""` group). Source.Eval treats the
+  -- annotation as identity; Bytecode.Eval must agree on every input.
+  fn shared_return_groups(x: G) -> G {
+    match x {
+      0 => #[return_group(even)] x + 100,
+      1 => #[return_group(odd)] x + 200,
+      2 => #[return_group(even)] x * 10,
+      3 => #[return_group(odd)] x * 100,
+      _ => x + 1,
+    }
+  }
+  -- One entry point hitting every arm in a single run.
+  pub fn shared_return_groups_all() -> G {
+    shared_return_groups(0) + shared_return_groups(1)
+    + shared_return_groups(2) + shared_return_groups(3)
+    + shared_return_groups(7)
+  }
 ⟧
 
 /-- Generic helper: run both evaluators on `entryName` with `inputs` as
@@ -1263,7 +1282,9 @@ def tests : TestSeq :=
   runAgreement "fibonacci(6)" "fibonacci" [6] ++
   -- End-to-end non-tail match entry aggregating many ntm_* helpers
   runAgreement "ntm_recursive_test" "ntm_recursive_test" [] ++
-  runAgreement "non_tail_match" "non_tail_match" []
+  runAgreement "non_tail_match" "non_tail_match" [] ++
+  -- Shared-group + unannotated arm: aggregate over every arm in one call.
+  runAgreement "shared_return_groups_all" "shared_return_groups_all" []
 
 end AiurTests.Cross
 
