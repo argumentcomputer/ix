@@ -78,7 +78,7 @@ structure FunctionLayout where
 def FunctionLayout.width (l : FunctionLayout) : Nat :=
   l.inputSize + l.selectors + l.auxiliaries
 
-abbrev goldilocksExtensionDegree : Nat := 4
+abbrev goldilocksExtensionDegree : Nat := 2
 
 def FunctionLayout.totalWidth (l : FunctionLayout) : Nat :=
   l.width + goldilocksExtensionDegree * (1 + l.lookups)
