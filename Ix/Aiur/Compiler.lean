@@ -3,6 +3,7 @@ public import Ix.Aiur.Compiler.Lower
 public import Ix.Aiur.Compiler.Dedup
 public import Ix.Aiur.Compiler.Concretize
 public import Ix.Aiur.Compiler.Simple
+public import Ix.Aiur.Compiler.Split
 
 /-!
 Aiur compiler pipeline: type-check, simplify, concretize, lower, deduplicate.
@@ -68,7 +69,7 @@ def Bytecode.Ctrl.collectConstrainedCallees (c : Bytecode.Ctrl) :
       | some block => branchCallees ++ block.collectConstrainedCallees
       | none => branchCallees
     withDefault ++ continuation.collectConstrainedCallees
-  | .return _ _ | .yield _ _ => #[]
+  | .return _ _ _ | .yield _ _ => #[]
 termination_by (sizeOf c, 0)
 decreasing_by
   all_goals first
@@ -117,9 +118,10 @@ def Source.Toplevel.compile (t : Source.Toplevel) : Except String CompiledToplev
   let (bytecodeRaw, preNameMap) ← concDecls.toBytecode
   let (bytecodeDedup, remap) := bytecodeRaw.deduplicate
   let needs := bytecodeDedup.needsCircuit
-  let bytecode := { bytecodeDedup with
+  let bytecodeConstrained : Bytecode.Toplevel := { bytecodeDedup with
     functions := bytecodeDedup.functions.mapIdx fun i f =>
       { f with constrained := needs[i]! } }
+  let bytecode := bytecodeConstrained.computeFiltered
   let nameMap := preNameMap.fold (init := (∅ : Std.HashMap Global Bytecode.FunIdx))
     fun acc name idx => acc.insert name (remap idx)
   pure (CompiledToplevel.mk t bytecode nameMap)

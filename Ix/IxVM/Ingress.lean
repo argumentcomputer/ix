@@ -33,25 +33,32 @@ def ingress := ⟦
 
   -- Compare two 32-byte addresses for equality
   fn address_eq(a: Addr, b: Addr) -> G {
-    let [a0, a1, a2, a3, a4, a5, a6, a7,
-         a8, a9, a10, a11, a12, a13, a14, a15,
-         a16, a17, a18, a19, a20, a21, a22, a23,
-         a24, a25, a26, a27, a28, a29, a30, a31] = load(a);
-    let [b0, b1, b2, b3, b4, b5, b6, b7,
-         b8, b9, b10, b11, b12, b13, b14, b15,
-         b16, b17, b18, b19, b20, b21, b22, b23,
-         b24, b25, b26, b27, b28, b29, b30, b31] = load(b);
-    match [a0 - b0, a1 - b1, a2 - b2, a3 - b3,
-           a4 - b4, a5 - b5, a6 - b6, a7 - b7,
-           a8 - b8, a9 - b9, a10 - b10, a11 - b11,
-           a12 - b12, a13 - b13, a14 - b14, a15 - b15,
-           a16 - b16, a17 - b17, a18 - b18, a19 - b19,
-           a20 - b20, a21 - b21, a22 - b22, a23 - b23,
-           a24 - b24, a25 - b25, a26 - b26, a27 - b27,
-           a28 - b28, a29 - b29, a30 - b30, a31 - b31] {
-      [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] => 1,
-      _ => 0,
+    match ptr_val(a) - ptr_val(b) {
+      0 =>
+        #[return_group(fast_path)]
+        1,
+      _ =>
+        #[return_group(slow_path)]
+        let [a0, a1, a2, a3, a4, a5, a6, a7,
+             a8, a9, a10, a11, a12, a13, a14, a15,
+             a16, a17, a18, a19, a20, a21, a22, a23,
+             a24, a25, a26, a27, a28, a29, a30, a31] = load(a);
+        let [b0, b1, b2, b3, b4, b5, b6, b7,
+             b8, b9, b10, b11, b12, b13, b14, b15,
+             b16, b17, b18, b19, b20, b21, b22, b23,
+             b24, b25, b26, b27, b28, b29, b30, b31] = load(b);
+        match [a0 - b0, a1 - b1, a2 - b2, a3 - b3,
+               a4 - b4, a5 - b5, a6 - b6, a7 - b7,
+               a8 - b8, a9 - b9, a10 - b10, a11 - b11,
+               a12 - b12, a13 - b13, a14 - b14, a15 - b15,
+               a16 - b16, a17 - b17, a18 - b18, a19 - b19,
+               a20 - b20, a21 - b21, a22 - b22, a23 - b23,
+               a24 - b24, a25 - b25, a26 - b26, a27 - b27,
+               a28 - b28, a29 - b29, a30 - b30, a31 - b31] {
+          [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+           0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] => 1,
+          _ => 0,
+        },
     }
   }
 

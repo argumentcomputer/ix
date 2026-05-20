@@ -474,6 +474,7 @@ def interp (decls : Decls) (fuel : Nat) (bindings : Bindings)
               { st'.ioBuffer with data := st'.ioBuffer.data ++ dataGs } }
             interp decls fuel bindings ret st''
         | _ => .error (.typeMismatch "ioWrite")
+  | .retGroup _ inner => interp decls fuel bindings inner st
 termination_by (fuel, 2, sizeOf t)
 decreasing_by
   all_goals first

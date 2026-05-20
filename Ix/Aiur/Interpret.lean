@@ -419,6 +419,7 @@ partial def interp (decls : Decls) (bindings : Bindings) : Term → InterpM Valu
       let dataGs ← expectFieldArray (← interp decls bindings data)
       modifyIOBuffer fun io => { io with data := io.data ++ dataGs }
       interp decls bindings ret
+  | .retGroup _ inner => interp decls bindings inner
 
 end
 

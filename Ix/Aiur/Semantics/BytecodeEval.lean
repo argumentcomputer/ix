@@ -301,7 +301,7 @@ decreasing_by
 def evalCtrl (t : Bytecode.Toplevel) (fuel : Nat)
     (ctrl : Ctrl) (st : EvalState) : Except BytecodeError (Array G × EvalState) :=
   match ctrl with
-  | .return _ outs =>
+  | .return _ _ outs =>
     match readIdxs st outs with
     | .error e => .error e
     | .ok gs   => .ok (gs, st)

@@ -349,6 +349,8 @@ def termToConcrete
         | none => pure none
         | some sub => do pure (some (← termToConcrete mono sub))
       pure (.debug (← typToConcrete mono τ) e l t' (← termToConcrete mono r))
+  | .retGroup τ e name inner => do
+      pure (.retGroup (← typToConcrete mono τ) e name (← termToConcrete mono inner))
 termination_by t => sizeOf t
 decreasing_by
   all_goals first
@@ -541,6 +543,8 @@ def rewriteTypedTerm (decls : Typed.Decls)
       | none => none
       | some sub => some (rewriteTypedTerm decls subst mono sub)
     .debug (rewriteTyp subst mono τ) e l t' (rewriteTypedTerm decls subst mono r)
+  | .retGroup τ e name inner =>
+    .retGroup (rewriteTyp subst mono τ) e name (rewriteTypedTerm decls subst mono inner)
 termination_by t => sizeOf t
 decreasing_by
   all_goals first
@@ -625,6 +629,7 @@ def collectInTypedTerm (seen : Std.HashSet (Global × Array Typ)) :
     let seen := collectInTyp seen τ
     let seen := match t with | some t => collectInTypedTerm seen t | none => seen
     collectInTypedTerm seen r
+  | .retGroup τ _ _ inner => collectInTypedTerm (collectInTyp seen τ) inner
 termination_by t => sizeOf t
 decreasing_by
   all_goals first
@@ -683,6 +688,7 @@ def collectCalls (decls : Typed.Decls)
   | .debug _ _ _ t r =>
     let seen := match t with | some t => collectCalls decls seen t | none => seen
     collectCalls decls seen r
+  | .retGroup _ _ _ inner => collectCalls decls seen inner
 termination_by t => sizeOf t
 decreasing_by
   all_goals first
@@ -771,6 +777,8 @@ def substInTypedTerm (subst : Global → Option Typ) : Typed.Term → Typed.Term
       | none => none
       | some sub => some (substInTypedTerm subst sub)
     .debug (Typ.instantiate subst τ) e l t' (substInTypedTerm subst r)
+  | .retGroup τ e name inner =>
+    .retGroup (Typ.instantiate subst τ) e name (substInTypedTerm subst inner)
 termination_by t => sizeOf t
 decreasing_by
   all_goals first

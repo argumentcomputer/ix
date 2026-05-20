@@ -20,5 +20,6 @@ public import Ix.Aiur.Compiler.Concretize
 public import Ix.Aiur.Compiler.Layout
 public import Ix.Aiur.Compiler.Lower
 public import Ix.Aiur.Compiler.Dedup
+public import Ix.Aiur.Compiler.Split
 public import Ix.Aiur.Compiler
 public import Ix.Aiur.Statistics

@@ -234,8 +234,18 @@ lean_ffi::lean_inductive! {
 
   // --- Aiur types ---
 
-  LeanAiurToplevel [ { num_obj: 2 } ];
-  LeanAiurFunction [ { num_obj: 2, num_8: 2 } ];
+  LeanAiurToplevel [ { num_obj: 3 } ];
+  LeanAiurFunction [ { num_obj: 3, num_8: 2 } ];
+
+  // `Bytecode.Ctrl` — `return` carries a `USize` group index as a scalar
+  // ctor field. Declared so `get_usize(0)` is bounds-checked against
+  // `num_usize: 1` rather than reaching into raw memory.
+  LeanAiurCtrl [
+    { num_obj: 3 },                           // tag 0: match
+    { num_obj: 2, num_usize: 1 },             // tag 1: return
+    { num_obj: 2 },                           // tag 2: yield
+    { num_obj: 7 },                           // tag 3: matchContinue
+  ];
 
   // --- Block / comparison types ---
 

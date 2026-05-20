@@ -57,6 +57,7 @@ inductive Term : Type where
   | u8LessThan (typ : Typ) (escapes : Bool) (a : Term) (b : Term) : Term
   | u32LessThan (typ : Typ) (escapes : Bool) (a : Term) (b : Term) : Term
   | debug (typ : Typ) (escapes : Bool) (label : String) (t : Option Term) (r : Term) : Term
+  | retGroup (typ : Typ) (escapes : Bool) (name : String) (inner : Term) : Term
   deriving Repr, Inhabited
 
 /-- Get the type annotation, regardless of constructor. -/
@@ -72,7 +73,7 @@ def Term.typ : Term → Typ
   | .u8BitDecomposition t _ _ | .u8ShiftLeft t _ _ | .u8ShiftRight t _ _
   | .u8Xor t _ _ _ | .u8Add t _ _ _ | .u8Mul t _ _ _ | .u8Sub t _ _ _
   | .u8And t _ _ _ | .u8Or t _ _ _ | .u8LessThan t _ _ _ | .u32LessThan t _ _ _
-  | .debug t _ _ _ _ => t
+  | .debug t _ _ _ _ | .retGroup t _ _ _ => t
 
 /-- Get the escapes flag. -/
 def Term.escapes : Term → Bool
@@ -87,7 +88,7 @@ def Term.escapes : Term → Bool
   | .u8BitDecomposition _ e _ | .u8ShiftLeft _ e _ | .u8ShiftRight _ e _
   | .u8Xor _ e _ _ | .u8Add _ e _ _ | .u8Mul _ e _ _ | .u8Sub _ e _ _
   | .u8And _ e _ _ | .u8Or _ e _ _ | .u8LessThan _ e _ _ | .u32LessThan _ e _ _
-  | .debug _ e _ _ _ => e
+  | .debug _ e _ _ _ | .retGroup _ e _ _ => e
 
 structure Function where
   name : Global

@@ -18,6 +18,7 @@ use crate::{
 pub struct QueryResult {
   pub(crate) output: Vec<G>,
   pub(crate) multiplicity: G,
+  pub(crate) return_group: usize,
 }
 
 pub type QueryMap = FxIndexMap<Vec<G>, QueryResult>;
@@ -256,6 +257,7 @@ impl Function {
             let result = QueryResult {
               output: vec![ptr],
               multiplicity: G::from_bool(!unconstrained),
+              return_group: 0,
             };
             memory_queries.insert(values, result);
             map.push(ptr);
@@ -480,7 +482,7 @@ impl Function {
           map.extend(yielded);
           push_block_exec_entries!(cont.block);
         },
-        ExecEntry::Ctrl(Ctrl::Return(_, output)) => {
+        ExecEntry::Ctrl(Ctrl::Return(_, group, output)) => {
           // Register the query.
           let input_size = toplevel.functions[fun_idx].layout.input_size;
           let args = map[..input_size].to_vec();
@@ -488,6 +490,7 @@ impl Function {
           let result = QueryResult {
             output: output.clone(),
             multiplicity: G::from_bool(!unconstrained),
+            return_group: *group,
           };
           record.function_queries[fun_idx].insert(args, result);
           if let Some(CallerState {

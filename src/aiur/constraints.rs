@@ -110,8 +110,9 @@ impl Toplevel {
   pub fn build_constraints(
     &self,
     function_index: usize,
+    group: usize,
   ) -> (Constraints, Vec<Lookup<Expr>>) {
-    let function = &self.functions[function_index];
+    let function = &self.filtered_functions[function_index][group];
     let constraints = Constraints {
       zeros: vec![],
       selectors: 0..0,
@@ -172,7 +173,7 @@ impl Block {
   /// be double-counted.
   fn get_block_selector(&self, state: &ConstraintState) -> Expr {
     match &self.ctrl {
-      Ctrl::Return(sel, _) | Ctrl::Yield(sel, _) => {
+      Ctrl::Return(sel, _, _) | Ctrl::Yield(sel, _) => {
         var(state.selector_index(*sel))
       },
       Ctrl::Match(_, cases, def) | Ctrl::MatchContinue(_, cases, def, ..) => {
@@ -234,7 +235,7 @@ impl Ctrl {
   #[allow(clippy::needless_pass_by_value)]
   fn collect_constraints(&self, sel: Expr, state: &mut ConstraintState) {
     match self {
-      Ctrl::Return(_, values) => {
+      Ctrl::Return(_, _, values) => {
         // channel and function index
         let mut args = vec![
           sel.clone() * function_channel(),

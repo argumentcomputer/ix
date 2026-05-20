@@ -2,7 +2,7 @@ use multi_stark::p3_field::PrimeCharacteristicRing;
 
 use lean_ffi::object::{LeanBorrowed, LeanCtor, LeanRef};
 
-use crate::lean::LeanAiurFunction;
+use crate::lean::{LeanAiurCtrl, LeanAiurFunction};
 
 use crate::{
   FxIndexMap,
@@ -152,13 +152,18 @@ fn decode_g_block_pair(ctor: LeanCtor<LeanBorrowed<'_>>) -> (G, Block) {
 }
 
 fn decode_ctrl(ctor: LeanCtor<LeanBorrowed<'_>>) -> Ctrl {
-  match ctor.tag() {
+  let typed = LeanAiurCtrl::from_ctor(ctor);
+  match typed.as_ctor().tag() {
     0 => {
-      let [val_idx_obj, cases_obj, default_obj] = ctor.objs::<3>();
+      let val_idx_obj = typed.get_obj(0);
+      let cases_obj = typed.get_obj(1);
+      let default_obj = typed.get_obj(2);
       let val_idx = lean_unbox_nat_as_usize(&val_idx_obj);
-      let vec_cases =
-        cases_obj.as_array().map(|o| decode_g_block_pair(o.as_ctor()));
-      let cases = FxIndexMap::from_iter(vec_cases);
+      let cases: FxIndexMap<G, Block> = cases_obj
+        .as_array()
+        .map(|o| decode_g_block_pair(o.as_ctor()))
+        .into_iter()
+        .collect();
       let default = if default_obj.is_scalar() {
         None
       } else {
@@ -169,31 +174,37 @@ fn decode_ctrl(ctor: LeanCtor<LeanBorrowed<'_>>) -> Ctrl {
       Ctrl::Match(val_idx, cases, default)
     },
     1 => {
-      let [sel_idx_obj, val_idxs_obj] = ctor.objs::<2>();
+      // `Ctrl.return : SelIdx → USize → Array ValIdx → Ctrl` — `sel_idx` and
+      // `val_idxs` are boxed; `group` is a `USize` scalar field declared
+      // via `num_usize: 1` in `LeanAiurCtrl`.
+      let sel_idx_obj = typed.get_obj(0);
+      let val_idxs_obj = typed.get_obj(1);
       let sel_idx = lean_unbox_nat_as_usize(&sel_idx_obj);
+      let group = typed.get_usize(0);
       let val_idxs = decode_vec_val_idx(val_idxs_obj);
-      Ctrl::Return(sel_idx, val_idxs)
+      Ctrl::Return(sel_idx, group, val_idxs)
     },
     2 => {
-      let [sel_idx_obj, val_idxs_obj] = ctor.objs::<2>();
+      let sel_idx_obj = typed.get_obj(0);
+      let val_idxs_obj = typed.get_obj(1);
       let sel_idx = lean_unbox_nat_as_usize(&sel_idx_obj);
       let val_idxs = decode_vec_val_idx(val_idxs_obj);
       Ctrl::Yield(sel_idx, val_idxs)
     },
     3 => {
-      let [
-        val_idx_obj,
-        cases_obj,
-        default_obj,
-        output_size_obj,
-        shared_aux_obj,
-        shared_lookups_obj,
-        cont_obj,
-      ] = ctor.objs::<7>();
+      let val_idx_obj = typed.get_obj(0);
+      let cases_obj = typed.get_obj(1);
+      let default_obj = typed.get_obj(2);
+      let output_size_obj = typed.get_obj(3);
+      let shared_aux_obj = typed.get_obj(4);
+      let shared_lookups_obj = typed.get_obj(5);
+      let cont_obj = typed.get_obj(6);
       let val_idx = lean_unbox_nat_as_usize(&val_idx_obj);
-      let vec_cases =
-        cases_obj.as_array().map(|o| decode_g_block_pair(o.as_ctor()));
-      let cases = FxIndexMap::from_iter(vec_cases);
+      let cases: FxIndexMap<G, Block> = cases_obj
+        .as_array()
+        .map(|o| decode_g_block_pair(o.as_ctor()))
+        .into_iter()
+        .collect();
       let default = if default_obj.is_scalar() {
         None
       } else {
@@ -237,6 +248,10 @@ fn decode_function_layout(ctor: LeanCtor<LeanBorrowed<'_>>) -> FunctionLayout {
 }
 
 fn decode_function(ctor: LeanCtor<LeanBorrowed<'_>>) -> Function {
+  // Lean `Bytecode.Function` has 3 boxed fields (body, layout, groupNames)
+  // and 2 scalar booleans (entry, constrained). The `groupNames` slot is the
+  // display table for return-group indices and is only consumed Lean-side
+  // (via `Statistics.computeStats`), so the Rust decoder skips it.
   let ctor = LeanAiurFunction::from_ctor(ctor);
   let body = decode_block(ctor.get_obj(0).as_ctor());
   let layout = decode_function_layout(ctor.get_obj(1).as_ctor());
@@ -249,10 +264,16 @@ pub(crate) fn decode_toplevel(
   obj: &LeanAiurToplevel<impl LeanRef>,
 ) -> Toplevel {
   let ctor = obj.as_ctor();
-  let [functions_obj, memory_sizes_obj] = ctor.objs::<2>();
-  let functions =
+  let [functions_obj, filtered_functions_obj, memory_sizes_obj] =
+    ctor.objs::<3>();
+  let functions: Vec<Function> =
     functions_obj.as_array().map(|o| decode_function(o.as_ctor()));
+  // `filteredFunctions : Array (Array Function)` — positional by group index.
+  let filtered_functions: Vec<Vec<Function>> =
+    filtered_functions_obj.as_array().map(|inner_obj| {
+      inner_obj.as_array().map(|fn_obj| decode_function(fn_obj.as_ctor()))
+    });
   let memory_sizes =
     memory_sizes_obj.as_array().map(|x| lean_unbox_nat_as_usize(&x));
-  Toplevel { functions, memory_sizes }
+  Toplevel { functions, memory_sizes, filtered_functions }
 }

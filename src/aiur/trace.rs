@@ -77,15 +77,18 @@ impl Toplevel {
   pub fn witness_data(
     &self,
     function_index: usize,
+    group: usize,
     query_record: &QueryRecord,
     io_buffer: &IOBuffer,
   ) -> (RowMajorMatrix<G>, Vec<Vec<Lookup<G>>>) {
-    let func = &self.functions[function_index];
+    let func = &self.filtered_functions[function_index][group];
     let width = func.width();
     let unfiltered_queries = &query_record.function_queries[function_index];
     let queries = unfiltered_queries
       .iter()
-      .filter(|(_, res)| !res.multiplicity.is_zero())
+      .filter(|(_, res)| {
+        !res.multiplicity.is_zero() && res.return_group == group
+      })
       .collect::<Vec<_>>();
     let height_no_padding = queries.len();
     let height = height_no_padding.next_power_of_two();
@@ -203,7 +206,7 @@ impl Ctrl {
     io_buffer: &IOBuffer,
   ) -> PopulateResult {
     match self {
-      Ctrl::Return(sel, _) => {
+      Ctrl::Return(sel, _, _) => {
         slice.selectors[*sel] = G::ONE;
         let lookup = function_lookup(
           -context.multiplicity,

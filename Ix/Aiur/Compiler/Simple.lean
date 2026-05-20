@@ -108,6 +108,9 @@ def simplifyTypedTerm (decls : Source.Decls) : Term → Except CheckError Term
       let a' ← simplifyTypedTerm decls a
       let b' ← simplifyTypedTerm decls b
       pure (.u32LessThan τ e a' b')
+  | .retGroup τ e name inner => do
+      let inner' ← simplifyTypedTerm decls inner
+      pure (.retGroup τ e name inner')
   | t => pure t
 termination_by t => sizeOf t
 decreasing_by

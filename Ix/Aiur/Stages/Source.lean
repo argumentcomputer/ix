@@ -389,6 +389,7 @@ inductive Term
   | u8LessThan : Term → Term → Term
   | u32LessThan : Term → Term → Term
   | debug : String → Option Term → Term → Term
+  | retGroup : String → Term → Term
   deriving Repr, BEq, Hashable, Inhabited
 
 end Source
