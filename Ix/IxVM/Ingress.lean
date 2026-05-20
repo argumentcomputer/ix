@@ -1156,22 +1156,36 @@ def ingress := ⟦
                   ConstantInfo.Recr(recr) =>
                     let ref_idxs = build_ref_idxs_mapped(refs, all_addrs, pos_map);
                     let lit_blobs = build_lit_blobs(refs, all_addrs);
-                    let nrules = recr_rule_count(recr);
-                    let block_addr = find_matching_block_addr(refs, all_addrs, nrules);
-                    let block_const = load_verified_constant(block_addr);
-                    match block_const {
-                      Constant.Mk(block_info, _, _, _) =>
-                        match block_info {
-                          ConstantInfo.Muts(members) =>
-                            let recur_idxs = store(ListNode.Cons(pos, store(ListNode.Nil)));
-                            let bs = lookup_block_start(block_addr, block_addrs, block_starts);
-                            let rule_ctor_idxs = build_rule_ctor_idxs(members, bs, 0);
-                            let ctx = ConvertCtx.Mk(sharing, ref_idxs, recur_idxs, lit_blobs, univs);
-                            let input = ConvertInput.Mk(ctx, ConvertKind.CKRecr(recr, rule_ctor_idxs, block_addr));
-                            store(ListNode.Cons(store(input),
-                              build_convert_inputs_walk(rest, rest_addrs, all_addrs, pos_map, canon_addrs, block_addrs, block_starts, pos + 1, seen_mptrs))),
+                    -- Resolve the recursor's inductive via typ-based lookup:
+                    -- peel n_skip foralls of `recr.typ` to reach the major's
+                    -- type, take its head, lookup `refs[head_ref_idx]`. The
+                    -- ctor-count heuristic in `find_matching_block_addr` picks
+                    -- the wrong block when multiple in-scope inductives share
+                    -- the same ctor count.
+                    let rule_ctor_idxs = build_aux_recr_ctor_idxs(
+                      recr, refs, sharing, all_addrs, block_addrs, block_starts);
+                    let n_skip = match recr {
+                      Recursor.Mk(_, _, _, params, indices, motives, minors, _, _) =>
+                        ((flatten_u64(params) + flatten_u64(motives))
+                          + flatten_u64(minors)) + flatten_u64(indices),
+                    };
+                    let typ = match recr {
+                      Recursor.Mk(_, _, _, _, _, _, _, &typ, _) => typ,
+                    };
+                    let ind_addr = rec_typ_to_inductive_addr(typ, n_skip, refs, sharing);
+                    let ind_const = load_verified_constant(ind_addr);
+                    let block_addr = match ind_const {
+                      Constant.Mk(info, _, _, _) =>
+                        match info {
+                          ConstantInfo.IPrj(prj) =>
+                            match prj { InductiveProj.Mk(_, ba) => ba, },
                         },
-                    },
+                    };
+                    let recur_idxs = store(ListNode.Cons(pos, store(ListNode.Nil)));
+                    let ctx = ConvertCtx.Mk(sharing, ref_idxs, recur_idxs, lit_blobs, univs);
+                    let input = ConvertInput.Mk(ctx, ConvertKind.CKRecr(recr, rule_ctor_idxs, block_addr));
+                    store(ListNode.Cons(store(input),
+                      build_convert_inputs_walk(rest, rest_addrs, all_addrs, pos_map, canon_addrs, block_addrs, block_starts, pos + 1, seen_mptrs))),
                 },
             },
         },
