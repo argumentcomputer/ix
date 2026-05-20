@@ -196,7 +196,8 @@ def deduplicate_newFunctions (functions : Array Function) (classes : Array Nat)
       if can then
         let entry := deduplicate_class_entry functions classes cls
         let body := rewriteBlock remapFn f.body
-        acc.push { body, layout := f.layout, entry, constrained := false }
+        acc.push { body, layout := f.layout, groupNames := f.groupNames,
+                   entry, constrained := false }
       else acc)
     #[]
 

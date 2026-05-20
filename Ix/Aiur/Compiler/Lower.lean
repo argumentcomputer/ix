@@ -530,7 +530,10 @@ def Concrete.addCase
     | .field g => do
       let initState ← get
       let term ← term.compile returnTyp layoutMap bindings yieldCtrl
-      set { initState with selIdx := (← get).selIdx }
+      let cur ← get
+      set { initState with selIdx := cur.selIdx,
+                            groupNames := cur.groupNames,
+                            groupNameMap := cur.groupNameMap }
       pure (cases.push (g, term), defaultBlock)
     | .ref global pats => do
       let (index, offsets) ← match layoutMap[global]? with
@@ -549,12 +552,18 @@ def Concrete.addCase
           acc.insert patLocal slice
       let initState ← get
       let term ← term.compile returnTyp layoutMap ptrBindings yieldCtrl
-      set { initState with selIdx := (← get).selIdx }
+      let cur ← get
+      set { initState with selIdx := cur.selIdx,
+                            groupNames := cur.groupNames,
+                            groupNameMap := cur.groupNameMap }
       pure (cases.push (.ofNat index, term), defaultBlock)
     | .wildcard => do
       let initState ← get
       let term ← term.compile returnTyp layoutMap bindings yieldCtrl
-      set { initState with selIdx := (← get).selIdx }
+      let cur ← get
+      set { initState with selIdx := cur.selIdx,
+                            groupNames := cur.groupNames,
+                            groupNameMap := cur.groupNameMap }
       pure (cases, .some term)
     | _ => throw "addCase: unsupported pattern in concrete lower"
 termination_by _ pair => (sizeOf pair.snd, 1)
