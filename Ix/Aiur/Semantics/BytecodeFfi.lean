@@ -50,42 +50,53 @@ instance : BEq IOBuffer where
 -- via `Std.HashMap.beq_iff_equiv` + `Std.HashMap.Equiv.{refl,symm,trans}`,
 -- bypassing the need for `LawfulBEq` on the outer `IOBuffer`.
 
-/-- Per-circuit query counts for one circuit (one per function circuit, then
-one per memory size). `uniqueRows` is the trace height; `totalHits` is the sum
-of query multiplicities. The difference `totalHits - uniqueRows` is the number
-of cache hits. -/
-structure QueryCount where
-  uniqueRows : Nat
-  totalHits : Nat
-  deriving Inhabited
-
 namespace Bytecode.Toplevel
 
-/-- Per-function execution stats. One entry per split (return group), keyed
-by group index. Each quadruple is
-`(groupIdx, totalWidth, uniqueRows, totalHits)`. The display name is looked
-up via `Function.groupNames[groupIdx]`. -/
-abbrev FunctionStats := Array (Array (Nat × Nat × Nat × Nat))
+/-- Per-split execution stats for one return-group of one function.
+`groupIdx` keys the corresponding entry in `Function.groupNames`. -/
+structure GroupStats where
+  groupIdx : Nat
+  totalWidth : Nat
+  uniqueRows : Nat
+  totalHits : Nat
+  deriving Inhabited, Repr
 
-/-- Per-memory-size `(uniqueRows, totalHits)` pairs. -/
-abbrev MemoryCounts := Array (Nat × Nat)
+/-- Per-memory-size counts. `uniqueRows` is the trace height; `totalHits`
+is the sum of multiplicities. `totalHits - uniqueRows` is the cache-hit
+count. -/
+structure MemoryCount where
+  uniqueRows : Nat
+  totalHits : Nat
+  deriving Inhabited, Repr
 
-/-- Query counts shipped back from the Rust executor: per-function split stats
-plus per-memory pairs. -/
-abbrev QueryCounts := FunctionStats × MemoryCounts
+/-- Per-function execution stats. Outer index is `FunIdx`; inner index is
+the `USize` group index used by `Ctrl.return`. -/
+abbrev FunctionStats := Array (Array GroupStats)
 
+/-- Per-memory-size counts, parallel to `Toplevel.memorySizes`. -/
+abbrev MemoryCounts := Array MemoryCount
+
+/-- Query counts shipped back from the Rust executor. -/
+structure QueryCounts where
+  functionStats : FunctionStats
+  memoryCounts : MemoryCounts
+  deriving Inhabited
+
+/-- Raw FFI tuple shape — kept tuple-flat so the Rust side can build it
+without declaring matching Lean structure ctors. `execute` wraps the
+result in the structured `QueryCounts` immediately. -/
 @[extern "rs_aiur_toplevel_execute"]
 private opaque execute' : @& Bytecode.Toplevel →
   @& Bytecode.FunIdx → @& Array G → (ioData : @& Array G) →
   (ioMap : @& Array (Array G × IOKeyInfo)) →
-    Except String (Array G × (Array G × Array (Array G × IOKeyInfo)) × QueryCounts)
+    Except String (Array G × (Array G × Array (Array G × IOKeyInfo))
+      × (Array (Array (Nat × Nat × Nat × Nat)) × Array (Nat × Nat)))
 
 /-- Executes the bytecode function `funIdx` with the given `args` and `ioBuffer`,
 returning the raw output of the function, the updated `IOBuffer`, and a
-`QueryCounts` (per-function split stats + per-memory `(uniqueRows, totalHits)`
-pairs). Returns `Except.error msg` when execution fails (e.g. `assert_eq!`
-mismatch from a typechecker rejecting a constant), so callers can recover
-instead of crashing. -/
+`QueryCounts`. Returns `Except.error msg` when execution fails (e.g.
+`assert_eq!` mismatch from a typechecker rejecting a constant), so callers
+can recover instead of crashing. -/
 def execute (toplevel : @& Bytecode.Toplevel)
   (funIdx : @& Bytecode.FunIdx) (args : @& Array G) (ioBuffer : IOBuffer) :
     Except String (Array G × IOBuffer × QueryCounts) :=
@@ -93,9 +104,15 @@ def execute (toplevel : @& Bytecode.Toplevel)
   let ioMap := ioBuffer.map
   match execute' toplevel funIdx args ioData ioMap.toArray with
   | .error e => .error e
-  | .ok (output, (ioData, ioMap), queryCounts) =>
+  | .ok (output, (ioData, ioMap), rawFn, rawMem) =>
     let ioMap := ioMap.foldl (fun acc (k, v) => acc.insert k v) ∅
-    .ok (output, ⟨ioData, ioMap⟩, queryCounts)
+    let functionStats : FunctionStats := rawFn.map fun perFn =>
+      perFn.map fun quad =>
+        { groupIdx := quad.1, totalWidth := quad.2.1,
+          uniqueRows := quad.2.2.1, totalHits := quad.2.2.2 }
+    let memoryCounts : MemoryCounts := rawMem.map fun pair =>
+      { uniqueRows := pair.1, totalHits := pair.2 }
+    .ok (output, ⟨ioData, ioMap⟩, { functionStats, memoryCounts })
 
 end Bytecode.Toplevel
 

@@ -39,9 +39,8 @@ def fftCost (w h : Nat) : Float :=
     let hf := h.toFloat
     wf * hf * (max hf 2.0).log2
 
-def computeStats (compiled : CompiledToplevel)
-    (functionStats : Array (Array (Nat × Nat × Nat × Nat)))
-    (memoryCounts : Array (Nat × Nat)) : ExecutionStats :=
+def computeStats (compiled : CompiledToplevel) (qc : Bytecode.Toplevel.QueryCounts) :
+    ExecutionStats :=
   let t := compiled.bytecode
   -- Invert nameMap to get FunIdx → String
   let reverseMap := compiled.nameMap.fold (init := (∅ : Std.HashMap Bytecode.FunIdx String))
@@ -53,24 +52,20 @@ def computeStats (compiled : CompiledToplevel)
       if t.functions[i]!.constrained then
         let baseName := reverseMap[i]?.getD s!"<fn {i}>"
         let groupNames := t.functions[i]!.groupNames
-        for quad in functionStats[i]! do
-          let groupIdx := quad.1
-          let w := quad.2.1
-          let h := quad.2.2.1
-          let totalHits := quad.2.2.2
-          let hits := totalHits - h
-          let group := groupNames[groupIdx]?.getD ""
+        for gs in qc.functionStats[i]! do
+          let group := groupNames[gs.groupIdx]?.getD ""
           let name := if group.isEmpty then baseName else s!"{baseName} [{group}]"
-          acc := acc.push { name, width := w, height := h, cacheHits := hits, fftCost := fftCost w h : CircuitStats }
+          let hits := gs.totalHits - gs.uniqueRows
+          acc := acc.push
+            { name, width := gs.totalWidth, height := gs.uniqueRows,
+              cacheHits := hits, fftCost := fftCost gs.totalWidth gs.uniqueRows : CircuitStats }
     acc
   let memoryCircuits := t.memorySizes.mapIdx fun i size =>
     let w := size + 11
-    let pair := memoryCounts[i]!
-    let h := pair.1
-    let totalHits := pair.2
-    let hits := totalHits - h
-    { name := s!"memory[{size}]",
-      width := w, height := h, cacheHits := hits, fftCost := fftCost w h : CircuitStats }
+    let mc := qc.memoryCounts[i]!
+    let hits := mc.totalHits - mc.uniqueRows
+    { name := s!"memory[{size}]", width := w, height := mc.uniqueRows,
+      cacheHits := hits, fftCost := fftCost w mc.uniqueRows : CircuitStats }
   let circuits := (functionCircuits ++ memoryCircuits).qsort (·.fftCost > ·.fftCost)
   let totalFftCost := circuits.foldl (· + ·.fftCost) 0.0
   let totalUncachedFftCost := circuits.foldl (fun acc cs => acc + fftCost cs.width (cs.height + cs.cacheHits)) 0.0
