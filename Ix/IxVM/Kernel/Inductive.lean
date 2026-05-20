@@ -147,7 +147,7 @@ def inductive_check := ⟦
   -- `k_ensure_sort` + `level_leq`.
   fn check_field_universes(ctor_ty: KExpr, n_params: G, ind_level: KLevel,
                            types: List‹KExpr›,
-                           top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) {
+                           top: List‹&KConstantInfo›, addrs: List‹Addr›) {
     -- Skip if inductive is Prop.
     match ind_level {
       KLevel.Zero => (),
@@ -157,7 +157,7 @@ def inductive_check := ⟦
 
   fn check_field_universes_skip_params(ctor_ty: KExpr, n_params: G, ind_level: KLevel,
                                         types: List‹KExpr›,
-                                        top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) {
+                                        top: List‹&KConstantInfo›, addrs: List‹Addr›) {
     match n_params {
       0 => check_field_universes_inner(ctor_ty, ind_level, types, top, addrs),
       _ =>
@@ -171,7 +171,7 @@ def inductive_check := ⟦
 
   fn check_field_universes_inner(ty: KExpr, ind_level: KLevel,
                                   types: List‹KExpr›,
-                                  top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) {
+                                  top: List‹&KConstantInfo›, addrs: List‹Addr›) {
     match load(ty) {
       KExprNode.Forall(dom, body) =>
         let dom_level = k_ensure_sort(dom, types, top, addrs);
@@ -192,7 +192,7 @@ def inductive_check := ⟦
   -- handled by augment_block_idxs walking ctor bodies recursively.
   fn check_positivity(ctor_ty: KExpr, n_params: G, ind_idx: G,
                       types: List‹KExpr›,
-                      top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) {
+                      top: List‹&KConstantInfo›, addrs: List‹Addr›) {
     let pair = peel_n_foralls_with_types(ctor_ty, n_params, types);
     match pair {
       (body, types_after) =>
@@ -229,7 +229,7 @@ def inductive_check := ⟦
 
   fn check_positivity_fields(ty: KExpr, block_idxs: List‹G›,
                              types: List‹KExpr›,
-                             top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) {
+                             top: List‹&KConstantInfo›, addrs: List‹Addr›) {
     match load(ty) {
       KExprNode.Forall(dom, body) =>
         let _ = check_positivity_aug(dom, block_idxs, types, top, addrs);
@@ -245,7 +245,7 @@ def inductive_check := ⟦
   -- classify them as block / nested / non-inductive.
   fn check_positivity_aug(dom: KExpr, block_idxs: List‹G›,
                            types: List‹KExpr›,
-                           top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) {
+                           top: List‹&KConstantInfo›, addrs: List‹Addr›) {
     match expr_mentions_any_idx(dom, block_idxs) {
       0 => (),
       _ =>
@@ -387,12 +387,12 @@ def inductive_check := ⟦
   -- Augment block_idxs with the indices of all Inducts in `top` that share
   -- `ext_block_addr` (so the ext Induct's own block becomes part of the
   -- positivity context).
-  fn augment_block_idxs(block_idxs: List‹G›, ext_block_addr: [G; 32],
+  fn augment_block_idxs(block_idxs: List‹G›, ext_block_addr: Addr,
                          top: List‹&KConstantInfo›) -> List‹G› {
     augment_walk(block_idxs, ext_block_addr, top, 0)
   }
 
-  fn augment_walk(block_idxs: List‹G›, ext_block_addr: [G; 32],
+  fn augment_walk(block_idxs: List‹G›, ext_block_addr: Addr,
                    consts: List‹&KConstantInfo›, idx: G) -> List‹G› {
     match load(consts) {
       ListNode.Nil => block_idxs,
@@ -400,7 +400,7 @@ def inductive_check := ⟦
         match ci {
           KConstantInfo.Induct(_, _, _, _, _, _, _, _, _, ba) =>
             let same = address_eq(ba, ext_block_addr);
-            let nonzero = 1 - address_eq(ext_block_addr, [0; 32]);
+            let nonzero = 1 - address_eq(ext_block_addr, store([0; 32]));
             let already = list_contains_g(block_idxs, idx);
             let add = same * nonzero * (1 - already);
             match add {
@@ -425,7 +425,7 @@ def inductive_check := ⟦
   -- transitively when augmented. Sound for direct nested cases.
   fn check_ctors_positivity(ctor_indices: List‹G›, args: List‹KExpr›,
                             aug: List‹G›, top: List‹&KConstantInfo›,
-                            addrs: List‹[G; 32]›) {
+                            addrs: List‹Addr›) {
     match load(ctor_indices) {
       ListNode.Nil => (),
       ListNode.Cons(ctor_idx, rest) =>
@@ -445,7 +445,7 @@ def inductive_check := ⟦
 
   fn check_positivity_fields_aug(ty: KExpr, aug: List‹G›,
                                   types: List‹KExpr›,
-                                  top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) {
+                                  top: List‹&KConstantInfo›, addrs: List‹Addr›) {
     match load(ty) {
       KExprNode.Forall(dom, body) =>
         let _ = check_positivity_aug(dom, aug, types, top, addrs);
@@ -519,7 +519,7 @@ def inductive_check := ⟦
   fn is_large_eliminator(result_level: KLevel,
                          ctor_indices: List‹G›,
                          top: List‹&KConstantInfo›,
-                         addrs: List‹[G; 32]›) -> G {
+                         addrs: List‹Addr›) -> G {
     let nz = level_is_not_zero(result_level);
     match nz {
       1 => 1,
@@ -552,7 +552,7 @@ def inductive_check := ⟦
   -- args. If all do → large eliminator.
   fn check_large_prop_ctor(ty: KExpr, n_params: G, n_fields: G,
                            types: List‹KExpr›, top: List‹&KConstantInfo›,
-                           addrs: List‹[G; 32]›) -> G {
+                           addrs: List‹Addr›) -> G {
     match n_params {
       0 =>
         check_large_walk_fields(ty, n_fields, 0, types, top, addrs,
@@ -572,7 +572,7 @@ def inductive_check := ⟦
   -- args and verify every data BVar appears.
   fn check_large_walk_fields(ty: KExpr, n_fields: G, field_idx: G,
                               types: List‹KExpr›, top: List‹&KConstantInfo›,
-                              addrs: List‹[G; 32]›,
+                              addrs: List‹Addr›,
                               data_bvars: List‹G›) -> G {
     match n_fields - field_idx {
       0 =>
@@ -832,7 +832,7 @@ def inductive_check := ⟦
                           flat_own_params: List‹G›,
                           n_rec_params: G, n_motives: G, prev_minors: G,
                           motive_base: G,
-                          top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) -> KExpr {
+                          top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
     let ctor_ty_inst = expr_inst_levels(ctor_ty, occurrence_us);
     let minor_saved = n_rec_params + n_motives + prev_minors;
     -- Peel ctor's own_params. For non-aux: n_own_params == n_rec_params, all
@@ -913,7 +913,7 @@ def inductive_check := ⟦
                           doms_acc: List‹KExpr›, rec_acc: List‹G›,
                           rec_mem_acc: List‹G›,
                           types: List‹KExpr›,
-                          top: List‹&KConstantInfo›, addrs: List‹[G; 32]›,
+                          top: List‹&KConstantInfo›, addrs: List‹Addr›,
                           fidx: G) -> (List‹KExpr›, List‹G›, List‹G›, KExpr) {
     match load(ty) {
       KExprNode.Forall(dom, body) =>
@@ -941,7 +941,7 @@ def inductive_check := ⟦
     let ci = load(list_lookup(top, ind_idx));
     match ci {
       KConstantInfo.Induct(_, _, _, _, _, _, _, _, _, block_addr) =>
-        match address_eq(block_addr, [0; 32]) {
+        match address_eq(block_addr, store([0; 32])) {
           1 => store(ListNode.Cons(ind_idx, store(ListNode.Nil))),
           0 => collect_block_members(block_addr, top, 0),
         },
@@ -949,7 +949,7 @@ def inductive_check := ⟦
     }
   }
 
-  fn collect_block_members(block_addr: [G; 32],
+  fn collect_block_members(block_addr: Addr,
                            consts: List‹&KConstantInfo›, idx: G) -> List‹G› {
     match load(consts) {
       ListNode.Nil => store(ListNode.Nil),
@@ -972,7 +972,7 @@ def inductive_check := ⟦
     let i_ci = load(list_lookup(top, ind_idx));
     match i_ci {
       KConstantInfo.Induct(_, _, _, _, _, _, _, _, _, ind_ba) =>
-        match address_eq(ind_ba, [0; 32]) {
+        match address_eq(ind_ba, store([0; 32])) {
           1 => 0,
           0 =>
             let other_ci = load(list_lookup(top, idx));
@@ -995,7 +995,7 @@ def inductive_check := ⟦
   -- the Rust kernel's whnf inside `is_rec_field`.
   fn is_rec_field(dom: KExpr, block_member_idxs: List‹G›,
                    types: List‹KExpr›, top: List‹&KConstantInfo›,
-                   addrs: List‹[G; 32]›) -> (G, G) {
+                   addrs: List‹Addr›) -> (G, G) {
     match peel_leading_foralls(dom) {
       (doms, body) =>
         let inner_types = list_concat(list_reverse(doms), types);
@@ -1125,7 +1125,7 @@ def inductive_check := ⟦
                       flat_own_params: List‹G›,
                       n_rec_params: G, n_motives: G,
                       motive_base: G,
-                      top: List‹&KConstantInfo›, addrs: List‹[G; 32]›,
+                      top: List‹&KConstantInfo›, addrs: List‹Addr›,
                       prev_minors: G) -> List‹KExpr› {
     match load(ctor_indices) {
       ListNode.Nil => store(ListNode.Nil),
@@ -1202,7 +1202,7 @@ def inductive_check := ⟦
                       flat_idxs: List‹G›, flat_own_params: List‹G›,
                       n_rec_params: G, n_motives: G,
                       ind_lvls: G, univ_offset: G, motive_base: G,
-                      top: List‹&KConstantInfo›, addrs: List‹[G; 32]›,
+                      top: List‹&KConstantInfo›, addrs: List‹Addr›,
                       prev_minors: G) -> List‹KExpr› {
     match load(flat) {
       ListNode.Nil => store(ListNode.Nil),
@@ -1256,7 +1256,7 @@ def inductive_check := ⟦
                     n_params: G, n_indices: G, ind_lvls: G,
                     self_own_params: G,
                     primary_ind_idx: G,
-                    top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) -> KExpr {
+                    top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
     let result_level = get_result_sort_level(ind_ty, self_own_params + n_indices);
     let is_large = is_large_eliminator(result_level, ctor_indices, top, addrs);
     let elim_level = match is_large {
@@ -1349,7 +1349,7 @@ def inductive_check := ⟦
                     flat_idxs: List‹G›, flat_own_params: List‹G›,
                     is_aux: G, spec_params: List‹KExpr›,
                     occurrence_us: List‹&KLevel›,
-                    top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) -> KExpr {
+                    top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
     let rec_lvls_list = build_rec_lvls(ind_lvls + univ_offset, 0);
     let ctor_ty_inst = expr_inst_levels(ctor_ty, occurrence_us);
     -- Peel n_params Foralls without substitution. Field doms collected
@@ -1430,7 +1430,7 @@ def inductive_check := ⟦
                peer_recs: List‹G›, flat_own_params: List‹G›,
                n_params: G, n_motives: G, n_minors: G, n_fields: G,
                rec_lvls_list: List‹&KLevel›, types: List‹KExpr›,
-               top: List‹&KConstantInfo›, addrs: List‹[G; 32]›, k: G) -> KExpr {
+               top: List‹&KConstantInfo›, addrs: List‹Addr›, k: G) -> KExpr {
     match load(rec_indices) {
       ListNode.Nil => head,
       ListNode.Cons(field_idx, rest) =>
@@ -1526,7 +1526,7 @@ def inductive_check := ⟦
   -- block_addr (so aux Recs in the same block resolve before sibling-namespace
   -- Recs of the same external Indc). Linear scan; returns 0 (never a valid
   -- Rec) if not found.
-  fn find_rec_for_ind(target_ind_idx: G, rec_block: [G; 32],
+  fn find_rec_for_ind(target_ind_idx: G, rec_block: Addr,
                       top: List‹&KConstantInfo›) -> G {
     let in_block = find_rec_for_ind_walk(target_ind_idx, rec_block, 1, top, top, 0);
     match in_block {
@@ -1535,7 +1535,7 @@ def inductive_check := ⟦
     }
   }
 
-  fn find_rec_for_ind_walk(target_ind_idx: G, rec_block: [G; 32],
+  fn find_rec_for_ind_walk(target_ind_idx: G, rec_block: Addr,
                            require_block: G,
                            consts: List‹&KConstantInfo›,
                            top: List‹&KConstantInfo›, idx: G) -> G {
@@ -1562,7 +1562,7 @@ def inductive_check := ⟦
   }
 
   -- Build peer_recs[i] = rec_idx for flat_idxs[i], scoped to `rec_block`.
-  fn build_peer_recs(flat_idxs: List‹G›, rec_block: [G; 32],
+  fn build_peer_recs(flat_idxs: List‹G›, rec_block: Addr,
                      top: List‹&KConstantInfo›) -> List‹G› {
     match load(flat_idxs) {
       ListNode.Nil => store(ListNode.Nil),
@@ -1596,7 +1596,7 @@ def inductive_check := ⟦
   }
 
   fn compare_rules(stored: List‹KRecRule›, canonical: List‹KRecRule›,
-                   top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) {
+                   top: List‹&KConstantInfo›, addrs: List‹Addr›) {
     match load(stored) {
       ListNode.Nil =>
         match load(canonical) {
@@ -1680,7 +1680,7 @@ def inductive_check := ⟦
   }
 
   fn check_recursor_member(rec_idx: G, ci_rec: KConstantInfo,
-                           top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) {
+                           top: List‹&KConstantInfo›, addrs: List‹Addr›) {
     match ci_rec {
       KConstantInfo.Rec(_, ty, n_p, n_i, n_mot, n_min, rules, k_flag, _, rec_block) =>
         -- For aux recursors (Tree.rec_1 etc), the "primary" inductive is the
@@ -1863,9 +1863,9 @@ def inductive_check := ⟦
   -- Walk recs in `rec_block`; pick the first one whose major's `nested > 0`
   -- (= the original Indc whose ctors carry nested occurrences). Returns
   -- (found, ind_idx); on `found = 0` callers fall back to `self_major`.
-  fn resolve_primary_ind_for_rec(self_major: G, rec_block: [G; 32],
+  fn resolve_primary_ind_for_rec(self_major: G, rec_block: Addr,
                                   top: List‹&KConstantInfo›) -> G {
-    match address_eq(rec_block, [0; 32]) {
+    match address_eq(rec_block, store([0; 32])) {
       1 => self_major,
       0 =>
         let p = scan_primary_in_rec_block(rec_block, top, top, 0);
@@ -1876,7 +1876,7 @@ def inductive_check := ⟦
     }
   }
 
-  fn scan_primary_in_rec_block(rec_block: [G; 32],
+  fn scan_primary_in_rec_block(rec_block: Addr,
                                consts: List‹&KConstantInfo›,
                                top: List‹&KConstantInfo›, idx: G) -> (G, G) {
     match load(consts) {
@@ -1931,7 +1931,7 @@ def inductive_check := ⟦
     let ci = load(list_lookup(top, ci_idx));
     match ci {
       KConstantInfo.Induct(_, _, _, _, _, _, _, _, this_nested, this_block_addr) =>
-        match address_eq(this_block_addr, [0; 32]) {
+        match address_eq(this_block_addr, store([0; 32])) {
           1 => 0,
           0 =>
             match this_nested {
@@ -1945,7 +1945,7 @@ def inductive_check := ⟦
 
   -- Returns 1 iff some Inductive in `top` shares `target_block` AND has
   -- nested > 0 (i.e., it's an original in a nested-emitting block).
-  fn block_has_some_nested(target_block: [G; 32],
+  fn block_has_some_nested(target_block: Addr,
                            consts: List‹&KConstantInfo›, idx: G) -> G {
     match load(consts) {
       ListNode.Nil => 0,
@@ -2247,7 +2247,7 @@ def inductive_check := ⟦
                     flat_idxs: List‹G›, flat_own_params: List‹G›,
                     is_aux: G, spec_params: List‹KExpr›,
                     occurrence_us: List‹&KLevel›,
-                    top: List‹&KConstantInfo›, addrs: List‹[G; 32]›,
+                    top: List‹&KConstantInfo›, addrs: List‹Addr›,
                     ctor_pos: G) -> List‹KRecRule› {
     match load(ctor_indices) {
       ListNode.Nil => store(ListNode.Nil),
@@ -2285,7 +2285,7 @@ def inductive_check := ⟦
                    flat_own_params: List‹G›,
                    motive_base: G, n_fields: G,
                    minor_saved: G, types: List‹KExpr›,
-                   top: List‹&KConstantInfo›, addrs: List‹[G; 32]›,
+                   top: List‹&KConstantInfo›, addrs: List‹Addr›,
                    k: G) -> List‹KExpr› {
     match load(rec_indices) {
       ListNode.Nil => store(ListNode.Nil),
@@ -2326,10 +2326,10 @@ def inductive_check := ⟦
   -- Solo (block_addr = [0;32]) is no-op.
   fn check_block_peer_param_agreement(self_pos: G, self_ty: KExpr,
                                       self_n_params: G, self_n_indices: G,
-                                      block_addr: [G; 32],
+                                      block_addr: Addr,
                                       top: List‹&KConstantInfo›,
-                                      addrs: List‹[G; 32]›) {
-    match address_eq(block_addr, [0; 32]) {
+                                      addrs: List‹Addr›) {
+    match address_eq(block_addr, store([0; 32])) {
       1 => (),
       0 => peer_param_loop(self_pos, self_ty, self_n_params, self_n_indices,
                            block_addr, top, top, addrs, 0),
@@ -2338,10 +2338,10 @@ def inductive_check := ⟦
 
   fn peer_param_loop(self_pos: G, self_ty: KExpr,
                      self_n_params: G, self_n_indices: G,
-                     block_addr: [G; 32],
+                     block_addr: Addr,
                      consts: List‹&KConstantInfo›,
                      top: List‹&KConstantInfo›,
-                     addrs: List‹[G; 32]›, idx: G) {
+                     addrs: List‹Addr›, idx: G) {
     match load(consts) {
       ListNode.Nil => (),
       ListNode.Cons(&ci, rest) =>
@@ -2376,13 +2376,13 @@ def inductive_check := ⟦
   -- Walk first n Foralls of both types asserting domain def-eq under the
   -- accumulated param-binder context.
   fn check_param_agreement(ta: KExpr, tb: KExpr, n: G,
-                           top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) {
+                           top: List‹&KConstantInfo›, addrs: List‹Addr›) {
     check_param_agreement_go(ta, tb, n, store(ListNode.Nil), top, addrs)
   }
 
   fn check_param_agreement_go(ta: KExpr, tb: KExpr, n: G,
                               types: List‹KExpr›,
-                              top: List‹&KConstantInfo›, addrs: List‹[G; 32]›) {
+                              top: List‹&KConstantInfo›, addrs: List‹Addr›) {
     match n {
       0 => (),
       _ =>

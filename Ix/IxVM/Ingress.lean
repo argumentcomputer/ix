@@ -8,8 +8,9 @@ namespace IxVM
 
 def ingress := ⟦
   -- Load a constant from IOBuffer by address, verify blake3, deserialize
-  fn load_verified_constant(addr: [G; 32]) -> Constant {
-    let (idx, len) = io_get_info(addr);
+  fn load_verified_constant(addr: Addr) -> Constant {
+    let raw = load(addr);
+    let (idx, len) = io_get_info(raw);
     let bytes = #read_byte_stream(idx, len);
     let h = blake3(bytes);
     assert_eq!(
@@ -23,7 +24,7 @@ def ingress := ⟦
         h[6][0], h[6][1], h[6][2], h[6][3],
         h[7][0], h[7][1], h[7][2], h[7][3]
       ],
-      addr
+      raw
     );
     let (constant, rest) = get_constant(bytes);
     assert_eq!(load(rest), ListNode.Nil);
@@ -31,15 +32,15 @@ def ingress := ⟦
   }
 
   -- Compare two 32-byte addresses for equality
-  fn address_eq(a: [G; 32], b: [G; 32]) -> G {
+  fn address_eq(a: Addr, b: Addr) -> G {
     let [a0, a1, a2, a3, a4, a5, a6, a7,
          a8, a9, a10, a11, a12, a13, a14, a15,
          a16, a17, a18, a19, a20, a21, a22, a23,
-         a24, a25, a26, a27, a28, a29, a30, a31] = a;
+         a24, a25, a26, a27, a28, a29, a30, a31] = load(a);
     let [b0, b1, b2, b3, b4, b5, b6, b7,
          b8, b9, b10, b11, b12, b13, b14, b15,
          b16, b17, b18, b19, b20, b21, b22, b23,
-         b24, b25, b26, b27, b28, b29, b30, b31] = b;
+         b24, b25, b26, b27, b28, b29, b30, b31] = load(b);
     match [a0 - b0, a1 - b1, a2 - b2, a3 - b3,
            a4 - b4, a5 - b5, a6 - b6, a7 - b7,
            a8 - b8, a9 - b9, a10 - b10, a11 - b11,
@@ -61,11 +62,11 @@ def ingress := ⟦
   --   1 + h       = Regular(h)
   --   0xFFFFFFFF  = Abbrev
   -- If absent (no entry under suffixed key), defaults to 1 (Regular(0)).
-  fn load_constant_hint(addr: [G; 32]) -> G {
+  fn load_constant_hint(addr: Addr) -> G {
     let [a0, a1, a2, a3, a4, a5, a6, a7,
          a8, a9, a10, a11, a12, a13, a14, a15,
          a16, a17, a18, a19, a20, a21, a22, a23,
-         a24, a25, a26, a27, a28, a29, a30, a31] = addr;
+         a24, a25, a26, a27, a28, a29, a30, a31] = load(addr);
     let key = [a0, a1, a2, a3, a4, a5, a6, a7,
                a8, a9, a10, a11, a12, a13, a14, a15,
                a16, a17, a18, a19, a20, a21, a22, a23,
@@ -85,11 +86,11 @@ def ingress := ⟦
   -- Load a blob from IOBuffer by address, verify blake3, return raw bytes.
   -- Blobs are stored under key `addr ++ [0]` (suffix tag 0 = referenced
   -- data) so they don't collide with constants stored at bare `addr`.
-  fn load_verified_blob(addr: [G; 32]) -> ByteStream {
+  fn load_verified_blob(addr: Addr) -> ByteStream {
     let [a0, a1, a2, a3, a4, a5, a6, a7,
          a8, a9, a10, a11, a12, a13, a14, a15,
          a16, a17, a18, a19, a20, a21, a22, a23,
-         a24, a25, a26, a27, a28, a29, a30, a31] = addr;
+         a24, a25, a26, a27, a28, a29, a30, a31] = load(addr);
     let blob_key = [a0, a1, a2, a3, a4, a5, a6, a7,
                     a8, a9, a10, a11, a12, a13, a14, a15,
                     a16, a17, a18, a19, a20, a21, a22, a23,
@@ -108,7 +109,7 @@ def ingress := ⟦
         h[6][0], h[6][1], h[6][2], h[6][3],
         h[7][0], h[7][1], h[7][2], h[7][3]
       ],
-      addr
+      load(addr)
     );
     bytes
   }
@@ -116,7 +117,7 @@ def ingress := ⟦
   -- Build lit_blobs by loading and verifying each blob on demand.
   -- A ref is a blob if it's not in all_addrs (the constant address list).
   -- For constant refs, returns an empty ByteStream (never read by conversion).
-  fn build_lit_blobs(refs: List‹[G; 32]›, all_addrs: List‹[G; 32]›) -> List‹ByteStream› {
+  fn build_lit_blobs(refs: List‹Addr›, all_addrs: List‹Addr›) -> List‹ByteStream› {
     match load(refs) {
       ListNode.Nil => store(ListNode.Nil),
       ListNode.Cons(addr, rest) =>
@@ -133,14 +134,14 @@ def ingress := ⟦
 
   -- Check if an address is a blob: it's a blob if it's NOT in the constant address list.
   -- Blob addresses and constant addresses are different by design (different hash preimage structures).
-  fn is_blob(addr: [G; 32], all_addrs: List‹[G; 32]›) -> G {
+  fn is_blob(addr: Addr, all_addrs: List‹Addr›) -> G {
     let found = address_in_list(addr, all_addrs);
     1 - found
   }
 
   -- Extract the Muts block address from a projection ConstantInfo.
   -- Returns [0; 32] for non-projection constants.
-  fn get_proj_block_addr(info: ConstantInfo) -> [G; 32] {
+  fn get_proj_block_addr(info: ConstantInfo) -> Addr {
     match info {
       ConstantInfo.IPrj(prj) =>
         match prj { InductiveProj.Mk(_, addr) => addr, },
@@ -150,20 +151,20 @@ def ingress := ⟦
         match prj { RecursorProj.Mk(_, addr) => addr, },
       ConstantInfo.DPrj(prj) =>
         match prj { DefinitionProj.Mk(_, addr) => addr, },
-      ConstantInfo.Defn(_) => [0; 32],
-      ConstantInfo.Recr(_) => [0; 32],
-      ConstantInfo.Axio(_) => [0; 32],
-      ConstantInfo.Quot(_) => [0; 32],
-      ConstantInfo.Muts(_) => [0; 32],
+      ConstantInfo.Defn(_) => store([0; 32]),
+      ConstantInfo.Recr(_) => store([0; 32]),
+      ConstantInfo.Axio(_) => store([0; 32]),
+      ConstantInfo.Quot(_) => store([0; 32]),
+      ConstantInfo.Muts(_) => store([0; 32]),
     }
   }
 
   -- Find the Muts block address by scanning a constant's refs for any
   -- projection constant (IPrj, CPrj, RPrj, DPrj). Used for standalone
   -- recursors to locate their inductive's block.
-  fn find_block_addr_from_refs(refs: List‹[G; 32]›, all_addrs: List‹[G; 32]›) -> [G; 32] {
+  fn find_block_addr_from_refs(refs: List‹Addr›, all_addrs: List‹Addr›) -> Addr {
     match load(refs) {
-      ListNode.Nil => [0; 32],
+      ListNode.Nil => store([0; 32]),
       ListNode.Cons(addr, rest) =>
         let blob = is_blob(addr, all_addrs);
         match blob {
@@ -221,9 +222,9 @@ def ingress := ⟦
 
   -- Find the correct block address for a standalone recursor by matching
   -- the number of recursor rules to the number of constructors in the block.
-  fn find_matching_block_addr(refs: List‹[G; 32]›, all_addrs: List‹[G; 32]›, nrules: G) -> [G; 32] {
+  fn find_matching_block_addr(refs: List‹Addr›, all_addrs: List‹Addr›, nrules: G) -> Addr {
     match load(refs) {
-      ListNode.Nil => [0; 32],
+      ListNode.Nil => store([0; 32]),
       ListNode.Cons(addr, rest) =>
         let blob = is_blob(addr, all_addrs);
         match blob {
@@ -306,7 +307,7 @@ def ingress := ⟦
   }
 
   -- Look up the kernel position for an address using parallel lists.
-  fn lookup_addr_pos(target: [G; 32], all_addrs: List‹[G; 32]›, pos_map: List‹G›) -> G {
+  fn lookup_addr_pos(target: Addr, all_addrs: List‹Addr›, pos_map: List‹G›) -> G {
     match load(all_addrs) {
       ListNode.Nil => 0,
       ListNode.Cons(addr, rest_addrs) =>
@@ -322,7 +323,7 @@ def ingress := ⟦
   }
 
   -- Find the start position of a block by its block address.
-  fn lookup_block_start(target: [G; 32], block_addrs: List‹[G; 32]›, block_starts: List‹G›) -> G {
+  fn lookup_block_start(target: Addr, block_addrs: List‹Addr›, block_starts: List‹G›) -> G {
     match load(block_addrs) {
       ListNode.Nil => 0,
       ListNode.Cons(addr, rest_addrs) =>
@@ -420,19 +421,19 @@ def ingress := ⟦
 
   fn compute_layout(
     consts: List‹&Constant›,
-    addrs: List‹[G; 32]›,
+    addrs: List‹Addr›,
     pos: G
-  ) -> (List‹[G; 32]›, List‹G›, G) {
+  ) -> (List‹Addr›, List‹G›, G) {
     compute_layout_walk(consts, addrs, pos, store(ListNode.Nil), store(ListNode.Nil))
   }
 
   fn compute_layout_walk(
     consts: List‹&Constant›,
-    addrs: List‹[G; 32]›,
+    addrs: List‹Addr›,
     pos: G,
     seen_mptrs: List‹G›,
     seen_poses: List‹G›
-  ) -> (List‹[G; 32]›, List‹G›, G) {
+  ) -> (List‹Addr›, List‹G›, G) {
     match load(consts) {
       ListNode.Nil => (store(ListNode.Nil), store(ListNode.Nil), pos),
       ListNode.Cons(&c, rest_consts) =>
@@ -502,8 +503,8 @@ def ingress := ⟦
 
   fn build_pos_map(
     consts: List‹&Constant›,
-    addrs: List‹[G; 32]›,
-    block_addrs: List‹[G; 32]›,
+    addrs: List‹Addr›,
+    block_addrs: List‹Addr›,
     block_starts: List‹G›,
     pos: G
   ) -> List‹G› {
@@ -513,8 +514,8 @@ def ingress := ⟦
 
   fn build_pos_map_walk(
     consts: List‹&Constant›,
-    addrs: List‹[G; 32]›,
-    block_addrs: List‹[G; 32]›,
+    addrs: List‹Addr›,
+    block_addrs: List‹Addr›,
     block_starts: List‹G›,
     pos: G,
     seen_mptrs: List‹G›,
@@ -625,7 +626,7 @@ def ingress := ⟦
   -- Ref index building using position map
   -- ============================================================================
 
-  fn build_ref_idxs_mapped(refs: List‹[G; 32]›, all_addrs: List‹[G; 32]›, pos_map: List‹G›) -> List‹G› {
+  fn build_ref_idxs_mapped(refs: List‹Addr›, all_addrs: List‹Addr›, pos_map: List‹G›) -> List‹G› {
     match load(refs) {
       ListNode.Nil => store(ListNode.Nil),
       ListNode.Cons(addr, rest) =>
@@ -716,8 +717,8 @@ def ingress := ⟦
   -- this, two distinct wrapper addrs produce Inductives with structurally
   -- different 10th fields — defeating store-Ptr equality).
   fn find_canon_addr_for_mptr(mptr: G, seen_mptrs: List‹G›,
-                               seen_addrs: List‹[G; 32]›,
-                               default_addr: [G; 32]) -> [G; 32] {
+                               seen_addrs: List‹Addr›,
+                               default_addr: Addr) -> Addr {
     match load(seen_mptrs) {
       ListNode.Nil => default_addr,
       ListNode.Cons(s, rest_m) =>
@@ -731,9 +732,9 @@ def ingress := ⟦
     }
   }
 
-  fn canonicalize_addr_map_walk(addrs: List‹[G; 32]›, consts: List‹&Constant›,
+  fn canonicalize_addr_map_walk(addrs: List‹Addr›, consts: List‹&Constant›,
                                  seen_mptrs: List‹G›,
-                                 seen_addrs: List‹[G; 32]›) -> List‹[G; 32]› {
+                                 seen_addrs: List‹Addr›) -> List‹Addr› {
     match load(addrs) {
       ListNode.Nil => store(ListNode.Nil),
       ListNode.Cons(addr, rest_a) =>
@@ -758,12 +759,12 @@ def ingress := ⟦
     }
   }
 
-  fn canonicalize_addr_map(addrs: List‹[G; 32]›, consts: List‹&Constant›) -> List‹[G; 32]› {
+  fn canonicalize_addr_map(addrs: List‹Addr›, consts: List‹&Constant›) -> List‹Addr› {
     canonicalize_addr_map_walk(addrs, consts, store(ListNode.Nil), store(ListNode.Nil))
   }
 
-  fn lookup_canon_addr(target: [G; 32], all_addrs: List‹[G; 32]›,
-                        canon_addrs: List‹[G; 32]›) -> [G; 32] {
+  fn lookup_canon_addr(target: Addr, all_addrs: List‹Addr›,
+                        canon_addrs: List‹Addr›) -> Addr {
     match load(all_addrs) {
       ListNode.Nil => target,
       ListNode.Cons(addr, rest_a) =>
@@ -876,17 +877,17 @@ def ingress := ⟦
   -- then takes the next forall's domain (major's type), peels the App-spine,
   -- and reads the head Ref's address from the recursor's `refs` list.
   -- Returns `[0;32]` if the head isn't a Ref (e.g. mutual self-rec via Rec).
-  fn rec_typ_to_inductive_addr(typ: Expr, n_skip: G, refs: List‹[G; 32]›,
-                                sharing: List‹&Expr›) -> [G; 32] {
+  fn rec_typ_to_inductive_addr(typ: Expr, n_skip: G, refs: List‹Addr›,
+                                sharing: List‹&Expr›) -> Addr {
     let after_skip = peel_n_alls_expr(typ, n_skip, sharing);
     match after_skip {
       Expr.All(major_ty_ref, _) =>
         let head = collect_app_spine_expr_head(load(major_ty_ref), sharing);
         match head {
           Expr.Ref(ref_idx_bytes, _) => list_lookup(refs, flatten_u64(ref_idx_bytes)),
-          _ => [0; 32],
+          _ => store([0; 32]),
         },
-      _ => [0; 32],
+      _ => store([0; 32]),
     }
   }
 
@@ -899,10 +900,10 @@ def ingress := ⟦
   -- when multiple in-scope inductives share the same number of ctors).
   fn build_aux_recr_ctor_idxs(
     recr: Recursor,
-    refs: List‹[G; 32]›,
+    refs: List‹Addr›,
     sharing: List‹&Expr›,
-    all_addrs: List‹[G; 32]›,
-    block_addrs: List‹[G; 32]›,
+    all_addrs: List‹Addr›,
+    block_addrs: List‹Addr›,
     block_starts: List‹G›
   ) -> List‹G› {
     match recr {
@@ -974,11 +975,11 @@ def ingress := ⟦
     members: List‹MutConst›,
     block_start: G,
     member_idx: G,
-    refs: List‹[G; 32]›,
-    all_addrs: List‹[G; 32]›,
-    block_addrs: List‹[G; 32]›,
+    refs: List‹Addr›,
+    all_addrs: List‹Addr›,
+    block_addrs: List‹Addr›,
     block_starts: List‹G›,
-    block_addr: [G; 32]
+    block_addr: Addr
   ) -> List‹&ConvertInput› {
     match mc {
       MutConst.Indc(ind) =>
@@ -1028,11 +1029,11 @@ def ingress := ⟦
     all_members: List‹MutConst›,
     block_start: G,
     member_idx: G,
-    refs: List‹[G; 32]›,
-    all_addrs: List‹[G; 32]›,
-    block_addrs: List‹[G; 32]›,
+    refs: List‹Addr›,
+    all_addrs: List‹Addr›,
+    block_addrs: List‹Addr›,
     block_starts: List‹G›,
-    block_addr: [G; 32]
+    block_addr: Addr
   ) -> List‹&ConvertInput› {
     match load(members) {
       ListNode.Nil => store(ListNode.Nil),
@@ -1050,7 +1051,7 @@ def ingress := ⟦
   -- Projections are skipped (handled via block expansion).
   -- Standalone constants are converted directly.
   -- Unpack head + tail of an addrs list (parallel walker for build_convert_inputs).
-  fn unpack_head_addr(addrs: List‹[G; 32]›) -> ([G; 32], List‹[G; 32]›) {
+  fn unpack_head_addr(addrs: List‹Addr›) -> (Addr, List‹Addr›) {
     match load(addrs) {
       ListNode.Cons(a, r) => (a, r),
     }
@@ -1058,11 +1059,11 @@ def ingress := ⟦
 
   fn build_convert_inputs(
     consts: List‹&Constant›,
-    cur_addrs: List‹[G; 32]›,
-    all_addrs: List‹[G; 32]›,
+    cur_addrs: List‹Addr›,
+    all_addrs: List‹Addr›,
     pos_map: List‹G›,
-    canon_addrs: List‹[G; 32]›,
-    block_addrs: List‹[G; 32]›,
+    canon_addrs: List‹Addr›,
+    block_addrs: List‹Addr›,
     block_starts: List‹G›,
     pos: G
   ) -> List‹&ConvertInput› {
@@ -1073,11 +1074,11 @@ def ingress := ⟦
 
   fn build_convert_inputs_walk(
     consts: List‹&Constant›,
-    cur_addrs: List‹[G; 32]›,
-    all_addrs: List‹[G; 32]›,
+    cur_addrs: List‹Addr›,
+    all_addrs: List‹Addr›,
     pos_map: List‹G›,
-    canon_addrs: List‹[G; 32]›,
-    block_addrs: List‹[G; 32]›,
+    canon_addrs: List‹Addr›,
+    block_addrs: List‹Addr›,
     block_starts: List‹G›,
     pos: G,
     seen_mptrs: List‹G›
@@ -1134,7 +1135,7 @@ def ingress := ⟦
                     let lit_blobs = build_lit_blobs(refs, all_addrs);
                     let recur_idxs = store(ListNode.Cons(pos, store(ListNode.Nil)));
                     let ctx = ConvertCtx.Mk(sharing, ref_idxs, recur_idxs, lit_blobs, univs);
-                    let hint = load_constant_hint(head_addr);
+                    let hint = #load_constant_hint(head_addr);
                     let input = ConvertInput.Mk(ctx, ConvertKind.CKDefn(defn, hint));
                     store(ListNode.Cons(store(input),
                       build_convert_inputs_walk(rest, rest_addrs, all_addrs, pos_map, canon_addrs, block_addrs, block_starts, pos + 1, seen_mptrs))),
@@ -1182,7 +1183,7 @@ def ingress := ⟦
   -- ============================================================================
 
   -- Check if an address is already in a list
-  fn address_in_list(addr: [G; 32], list: List‹[G; 32]›) -> G {
+  fn address_in_list(addr: Addr, list: List‹Addr›) -> G {
     match load(list) {
       ListNode.Nil => 0,
       ListNode.Cons(a, rest) =>
@@ -1201,11 +1202,11 @@ def ingress := ⟦
   -- For projection constants (IPrj, CPrj, RPrj, DPrj), also follows the
   -- Muts block's refs so that all dependencies of block members are loaded.
   fn load_with_deps(
-    addr: [G; 32],
-    worklist: List‹[G; 32]›,
-    visited_addrs: List‹[G; 32]›,
+    addr: Addr,
+    worklist: List‹Addr›,
+    visited_addrs: List‹Addr›,
     visited_consts: List‹&Constant›
-  ) -> (List‹[G; 32]›, List‹&Constant›) {
+  ) -> (List‹Addr›, List‹&Constant›) {
     let already = address_in_list(addr, visited_addrs);
     match already {
       1 =>
@@ -1218,7 +1219,7 @@ def ingress := ⟦
         -- Check if this address has constant data in IOBuffer.
         -- io_get_info is unconstrained; the prover provides (0, 0) for blob addresses.
         -- Soundness: if the prover lies and skips a real constant, type checking will fail.
-        let (_, len) = io_get_info(addr);
+        let (_, len) = io_get_info(load(addr));
         match len {
           0 =>
             -- Blob address: skip (blob values are loaded on demand in build_lit_blobs)
@@ -1234,7 +1235,7 @@ def ingress := ⟦
             match constant {
               Constant.Mk(info, _, refs, _) =>
                 let block_addr = get_proj_block_addr(info);
-                match address_eq(block_addr, [0; 32]) {
+                match address_eq(block_addr, store([0; 32])) {
                   1 =>
                     let combined_refs = list_concat(refs, store(ListNode.Nil));
                     let next_worklist = list_concat(combined_refs, worklist);
@@ -1262,7 +1263,7 @@ def ingress := ⟦
 
   -- Transitively loads all dependencies of the target constant from IOBuffer,
   -- verifies blake3 hashes then converts to kernel types.
-  fn ingress(target_addr: [G; 32]) -> List‹&KConstantInfo› {
+  fn ingress(target_addr: Addr) -> List‹&KConstantInfo› {
     let (all_addrs, all_consts) = load_with_deps(
       target_addr, store(ListNode.Nil), store(ListNode.Nil), store(ListNode.Nil));
     let (block_addrs, block_starts, _total) = compute_layout(all_consts, all_addrs, 0);
@@ -1273,15 +1274,15 @@ def ingress := ⟦
     convert_all(inputs)
   }
 
-  -- Build a List‹[G; 32]› parallel to k_consts: addrs[i] = blake3 address
+  -- Build a List‹Addr› parallel to k_consts: addrs[i] = blake3 address
   -- of the kernel const at position i. Walks (all_addrs, pos_map) and for
   -- each kernel position emits the addr that resolves to it.
   -- Address-keyed dispatch: primitives compared by address, not by
   -- precomputed positional index.
   fn build_addrs_aligned(i: G, total: G,
-                         all_addrs: List‹[G; 32]›,
+                         all_addrs: List‹Addr›,
                          all_consts: List‹&Constant›,
-                         pos_map: List‹G›) -> List‹[G; 32]› {
+                         pos_map: List‹G›) -> List‹Addr› {
     match i - total {
       0 => store(ListNode.Nil),
       _ =>
@@ -1310,11 +1311,11 @@ def ingress := ⟦
   -- Per-member primitive addrs (e.g. `nat_addr`) live on IPrj entries;
   -- the parent Muts block has the BLOCK content-hash, not the member's.
   -- So we prefer the IPrj-derived addr at a shared pos.
-  fn find_prj_addr_at_pos(target: G, all_addrs: List‹[G; 32]›,
+  fn find_prj_addr_at_pos(target: G, all_addrs: List‹Addr›,
                            all_consts: List‹&Constant›,
-                           pos_map: List‹G›) -> (G, [G; 32]) {
+                           pos_map: List‹G›) -> (G, Addr) {
     match load(all_addrs) {
-      ListNode.Nil => (0, [0; 32]),
+      ListNode.Nil => (0, store([0; 32])),
       ListNode.Cons(addr, rest_a) =>
         match load(all_consts) {
           ListNode.Cons(c, rest_c) =>
@@ -1332,14 +1333,14 @@ def ingress := ⟦
   }
 
   -- Find the address in all_addrs whose pos_map entry equals `target`.
-  -- Returns all-zero `[G; 32]` if not found — happens for kernel
+  -- Returns all-zero `Addr` if not found — happens for kernel
   -- positions that are only reached via within-block peer refs
   -- (Expr.Rec) and never loaded as a standalone ref. Primitive
   -- dispatch via `address_eq` against hardcoded non-zero addresses
   -- treats zero-addr as "no primitive here", falling through.
-  fn find_addr_at_pos(target: G, all_addrs: List‹[G; 32]›, pos_map: List‹G›) -> [G; 32] {
+  fn find_addr_at_pos(target: G, all_addrs: List‹Addr›, pos_map: List‹G›) -> Addr {
     match load(all_addrs) {
-      ListNode.Nil => [0; 32],
+      ListNode.Nil => store([0; 32]),
       ListNode.Cons(addr, rest_addrs) =>
         match load(pos_map) {
           ListNode.Cons(pos, rest_pos) =>
@@ -1352,9 +1353,9 @@ def ingress := ⟦
   }
 
   -- Wrapper: prefer Prj-derived addr at shared pos, fall back to any.
-  fn find_best_addr_at_pos(target: G, all_addrs: List‹[G; 32]›,
+  fn find_best_addr_at_pos(target: G, all_addrs: List‹Addr›,
                             all_consts: List‹&Constant›,
-                            pos_map: List‹G›) -> [G; 32] {
+                            pos_map: List‹G›) -> Addr {
     match find_prj_addr_at_pos(target, all_addrs, all_consts, pos_map) {
       (1, addr) => addr,
       (0, _) => find_addr_at_pos(target, all_addrs, pos_map),
@@ -1372,9 +1373,9 @@ def ingress := ⟦
   -- input (idx, block_addr, cidx) is either taken from a `load_verified_*`
   -- result or a deterministic loop counter, so the resulting addresses
   -- are derived from already-trusted data.
-  fn build_ctor_overrides(all_consts: List‹&Constant›, all_addrs: List‹[G; 32]›,
-                          block_addrs: List‹[G; 32]›, block_starts: List‹G›)
-                          -> List‹(G, [G; 32])› {
+  fn build_ctor_overrides(all_consts: List‹&Constant›, all_addrs: List‹Addr›,
+                          block_addrs: List‹Addr›, block_starts: List‹G›)
+                          -> List‹(G, Addr)› {
     match load(all_consts) {
       ListNode.Nil => store(ListNode.Nil),
       ListNode.Cons(&c, rest_c) =>
@@ -1436,9 +1437,9 @@ def ingress := ⟦
     }
   }
 
-  fn build_ctor_pairs_computed(idx: [G; 8], block: [G; 32],
+  fn build_ctor_pairs_computed(idx: [G; 8], block: Addr,
                                 base_pos: G, n_ctors: G, cidx: G)
-                                -> List‹(G, [G; 32])› {
+                                -> List‹(G, Addr)› {
     match n_ctors - cidx {
       0 => store(ListNode.Nil),
       _ =>
@@ -1453,7 +1454,7 @@ def ingress := ⟦
   -- compile uses, serializing it in-Aiur, and hashing. No external trust
   -- needed — every input is derived from a `load_verified_*` result or a
   -- loop counter.
-  fn cprj_content_addr(idx: [G; 8], cidx: G, block: [G; 32]) -> [G; 32] {
+  fn cprj_content_addr(idx: [G; 8], cidx: G, block: Addr) -> Addr {
     let prj = ConstructorProj.Mk(idx, [cidx, 0, 0, 0, 0, 0, 0, 0], block);
     let info = ConstantInfo.CPrj(prj);
     let cnst = Constant.Mk(info, store(ListNode.Nil),
@@ -1461,23 +1462,23 @@ def ingress := ⟦
                                   store(ListNode.Nil));
     let bytes = put_constant(cnst, store(ListNode.Nil));
     let h = blake3(bytes);
-    [h[0][0], h[0][1], h[0][2], h[0][3],
+    store([h[0][0], h[0][1], h[0][2], h[0][3],
      h[1][0], h[1][1], h[1][2], h[1][3],
      h[2][0], h[2][1], h[2][2], h[2][3],
      h[3][0], h[3][1], h[3][2], h[3][3],
      h[4][0], h[4][1], h[4][2], h[4][3],
      h[5][0], h[5][1], h[5][2], h[5][3],
      h[6][0], h[6][1], h[6][2], h[6][3],
-     h[7][0], h[7][1], h[7][2], h[7][3]]
+     h[7][0], h[7][1], h[7][2], h[7][3]])
   }
 
 
   -- Walk addrs at increasing positions; if an override exists for the
   -- current position, replace the entry. Lets us inject ctor addresses
   -- into the per-position address list without restructuring the rest.
-  fn apply_ctor_overrides(addrs: List‹[G; 32]›,
-                          overrides: List‹(G, [G; 32])›, pos: G)
-                          -> List‹[G; 32]› {
+  fn apply_ctor_overrides(addrs: List‹Addr›,
+                          overrides: List‹(G, Addr)›, pos: G)
+                          -> List‹Addr› {
     match load(addrs) {
       ListNode.Nil => store(ListNode.Nil),
       ListNode.Cons(addr, rest) =>
@@ -1487,8 +1488,8 @@ def ingress := ⟦
     }
   }
 
-  fn lookup_override(overrides: List‹(G, [G; 32])›, pos: G,
-                     default: [G; 32]) -> [G; 32] {
+  fn lookup_override(overrides: List‹(G, Addr)›, pos: G,
+                     default: Addr) -> Addr {
     match load(overrides) {
       ListNode.Nil => default,
       ListNode.Cons(p, rest) =>
@@ -1502,7 +1503,7 @@ def ingress := ⟦
     }
   }
 
-  fn ingress_with_primitives(target_addr: [G; 32]) -> (List‹&KConstantInfo›, List‹[G; 32]›) {
+  fn ingress_with_primitives(target_addr: Addr) -> (List‹&KConstantInfo›, List‹Addr›) {
     let (all_addrs, all_consts) = load_with_deps(
       target_addr, store(ListNode.Nil), store(ListNode.Nil), store(ListNode.Nil));
     let (block_addrs, block_starts, total) = compute_layout(all_consts, all_addrs, 0);
@@ -1543,7 +1544,7 @@ def ingress := ⟦
   -- target's transitive closure already loads a real primitive, that
   -- entry appears earlier in `addrs` and `find_addr_idx_safe` returns
   -- its true position; the stub is only consulted otherwise.
-  fn synthetic_primitive_entries() -> (List‹&KConstantInfo›, List‹[G; 32]›) {
+  fn synthetic_primitive_entries() -> (List‹&KConstantInfo›, List‹Addr›) {
     let addrs = synthetic_primitive_addrs();
     let stub_ty = store(KExprNode.Srt(store(KLevel.Zero)));
     let stub = store(KConstantInfo.Axiom(0, stub_ty, 0));
@@ -1551,7 +1552,7 @@ def ingress := ⟦
     (consts, addrs)
   }
 
-  fn synthetic_primitive_addrs() -> List‹[G; 32]› {
+  fn synthetic_primitive_addrs() -> List‹Addr› {
     store(ListNode.Cons(quot_type_addr(),
     store(ListNode.Cons(quot_ctor_addr(),
     store(ListNode.Cons(quot_lift_addr(),
@@ -1624,7 +1625,7 @@ def ingress := ⟦
     store(ListNode.Nil)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
   }
 
-  fn list_addr_length(xs: List‹[G; 32]›) -> G {
+  fn list_addr_length(xs: List‹Addr›) -> G {
     match load(xs) {
       ListNode.Nil => 0,
       ListNode.Cons(_, rest) => list_addr_length(rest) + 1,

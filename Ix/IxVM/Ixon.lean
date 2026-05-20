@@ -90,22 +90,22 @@ def ixon := ⟦
 
   -- InductiveProj: (idx, block_address)
   enum InductiveProj {
-    Mk([G; 8], [G; 32])
+    Mk([G; 8], Addr)
   }
 
   -- ConstructorProj: (idx, cidx, block_address)
   enum ConstructorProj {
-    Mk([G; 8], [G; 8], [G; 32])
+    Mk([G; 8], [G; 8], Addr)
   }
 
   -- RecursorProj: (idx, block_address)
   enum RecursorProj {
-    Mk([G; 8], [G; 32])
+    Mk([G; 8], Addr)
   }
 
   -- DefinitionProj: (idx, block_address)
   enum DefinitionProj {
-    Mk([G; 8], [G; 32])
+    Mk([G; 8], Addr)
   }
 
   -- MutConst: constants within a mutual block
@@ -130,12 +130,12 @@ def ixon := ⟦
 
   -- Constant: (info, sharing, refs, univs)
   enum Constant {
-    Mk(ConstantInfo, List‹&Expr›, List‹[G; 32]›, List‹&Univ›)
+    Mk(ConstantInfo, List‹&Expr›, List‹Addr›, List‹&Univ›)
   }
 
   -- Blob: decoded literal value associated with a content address
   enum BlobEntry {
-    Mk([G; 32], [G; 8])
+    Mk(Addr, [G; 8])
   }
 
 ⟧

@@ -38,8 +38,8 @@ def convert := ⟦
     CKDefn(Definition, G),
     CKAxio(Axiom),
     CKQuot(Quotient),
-    CKRecr(Recursor, List‹G›, [G; 32]),
-    CKIndc(Inductive, List‹G›, [G; 32]),
+    CKRecr(Recursor, List‹G›, Addr),
+    CKIndc(Inductive, List‹G›, Addr),
     CKCtor(Constructor, G)
   }
 
@@ -281,7 +281,7 @@ def convert := ⟦
   }
 
   fn convert_recursor(r: Recursor, ctx: ConvertCtx, rule_ctor_idxs: List‹G›,
-                      block_addr: [G; 32]) -> KConstantInfo {
+                      block_addr: Addr) -> KConstantInfo {
     match r {
       Recursor.Mk(k, is_unsafe, lvls, params, indices, motives, minors, &typ, rules) =>
         let ktyp = ctx_convert_expr(typ, ctx);
@@ -294,7 +294,7 @@ def convert := ⟦
   }
 
   fn convert_inductive(ind: Inductive, ctx: ConvertCtx, ctor_idxs: List‹G›,
-                       block_addr: [G; 32]) -> KConstantInfo {
+                       block_addr: Addr) -> KConstantInfo {
     match ind {
       Inductive.Mk(is_rec, is_refl, is_unsafe, lvls, params, indices, nested, &typ, _) =>
         let ktyp = ctx_convert_expr(typ, ctx);

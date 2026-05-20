@@ -123,9 +123,9 @@ def kernelTypes := ⟦
     Thm(G, KExpr, KExpr),
     Opaque(G, KExpr, KExpr, G),
     Quot(G, KExpr, QuotKind),
-    Induct(G, KExpr, G, G, List‹G›, G, G, G, G, [G; 32]),
+    Induct(G, KExpr, G, G, List‹G›, G, G, G, G, Addr),
     Ctor(G, KExpr, G, G, G, G, G),
-    Rec(G, KExpr, G, G, G, G, List‹KRecRule›, G, G, [G; 32])
+    Rec(G, KExpr, G, G, G, G, List‹KRecRule›, G, G, Addr)
   }
 
 ⟧
