@@ -74,7 +74,7 @@ where
     let inputs := Aiur.unflattenInputs decls testCase.input inputTypes
     match Aiur.runFunction decls funcName inputs testCase.inputIOBuffer with
     | (.error e, s) =>
-      IO.eprintln s!"{name}: interpreter error:\n{e.ppDeref s.store 1 10}"
+      IO.eprintln s!"{name}: interpreter error:\n{e.ppDeref s.store 1 20}"
       return 1
     | (.ok output, _) =>
       IO.println s!"{name}: {output}"

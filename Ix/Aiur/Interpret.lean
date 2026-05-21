@@ -139,19 +139,25 @@ def Interrupt.ppDeref (store : Store) (depth : Nat) (stackLimit : Nat) :
   | .error msg []    => msg
   | .error msg stack =>
       let total    := stack.length
-      let shown    := stack.take stackLimit
+      -- Frames are prepended as the error unwinds upward (see `:: stack` in
+      -- the call handler), so `stack` runs oldest→most-recent. Keep the most
+      -- recent `stackLimit` frames and print them with the most recent (#0,
+      -- where the error fired) LAST; older frames are the ones truncated.
+      let shown    := (stack.reverse.take stackLimit).reverse
+      let n        := shown.length
       let rule     := String.ofList (List.replicate 80 '─')
       let frames   := shown.zipIdx.map fun ((g, args), i) =>
+        let idx    := n - 1 - i
         let argStr := String.intercalate ", " (args.map (Value.ppDeref store depth))
-        let header := s!"─── #{i} " ++ g.toName.toString ++ " "
+        let header := s!"─── #{idx} " ++ g.toName.toString ++ " "
         let pad    := String.ofList (List.replicate (max 1 (80 - header.length)) '─')
         header ++ pad ++ s!"\n  {g}({argStr})"
-      let trailer  := if total > stackLimit
-                      then s!"\n... ({total - stackLimit} more frame(s) elided)"
+      let elided   := if total > stackLimit
+                      then s!"... ({total - stackLimit} more frame(s) elided)\n"
                       else ""
-      msg ++ s!"\nCall stack ({total} frames, #0 = innermost):\n"
+      msg ++ s!"\nCall stack ({total} frames, #0 = most recent):\n"
+        ++ elided
         ++ String.intercalate "\n" frames
-        ++ trailer
         ++ "\n" ++ rule
 
 -- ---------------------------------------------------------------------------
