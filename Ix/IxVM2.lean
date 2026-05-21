@@ -14,6 +14,8 @@ public import Ix.IxVM.Kernel2.Inductive
 public import Ix.IxVM.Kernel2.Infer
 public import Ix.IxVM.Kernel2.Levels
 public import Ix.IxVM.Kernel2.Primitive
+public import Ix.IxVM.Kernel2.Subst
+public import Ix.IxVM.Kernel2.Whnf
 public import Ix.IxVM.CheckHarness
 
 public section
@@ -48,6 +50,8 @@ def ixVM2 : Except Aiur.Global Aiur.Source.Toplevel := do
   let vm ← vm.merge IxVM.inductive_check
   let vm ← vm.merge IxVM.levels
   let vm ← vm.merge IxVM.primitive
+  let vm ← vm.merge IxVM.subst
+  let vm ← vm.merge IxVM.whnf
   vm.merge entrypoints
 
 end IxVM2

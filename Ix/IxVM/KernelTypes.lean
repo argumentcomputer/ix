@@ -45,7 +45,11 @@ def kernelTypes := ⟦
     Forall(KExpr, KExpr),
     Let(KExpr, KExpr, KExpr),
     Lit(KLiteral),
-    Proj(G, G, KExpr)
+    Proj(G, G, KExpr),
+    -- Free variable: an index identifying it, plus its type. Used by the
+    -- alternative kernel to carry binder types locally instead of threading
+    -- a `types` context (cf. `k_infer` / `k_ensure_eq` in Kernel2).
+    FVar(G, KExpr)
   }
 
   type KExpr = &KExprNode
