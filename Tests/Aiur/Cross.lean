@@ -409,6 +409,15 @@ def toplevel : Source.Toplevel := ⟦
   pub fn u8_lits() -> (G, G, G) {
     (to_field(0u8), to_field(127u8), to_field(255u8))
   }
+  -- Pattern-matching directly on a U8 scrutinee with byte-literal patterns.
+  pub fn classify_byte(a: G) -> G {
+    let (x, _) = u8_range_check(a, a);
+    match x {
+      0u8 => 100,
+      255u8 => 200,
+      _ => 7,
+    }
+  }
 
   -- EqZero degree-tracking regression
   pub fn eq_zero_degree_desync(x: G) -> G {
@@ -1231,6 +1240,9 @@ def tests : TestSeq :=
   runAgreement "range_check_id(0,255)" "range_check_id" [0, 255] ++
   runAgreement "u8_lit_xor(45)" "u8_lit_xor" [45] ++
   runAgreement "u8_lits" "u8_lits" [] ++
+  runAgreement "classify_byte(0)" "classify_byte" [0] ++
+  runAgreement "classify_byte(255)" "classify_byte" [255] ++
+  runAgreement "classify_byte(42)" "classify_byte" [42] ++
   runAgreement "u32_less_than_function(300,500)" "u32_less_than_function" [300, 500] ++
   runAgreement "u32_less_than_function(500,300)" "u32_less_than_function" [500, 300] ++
   runAgreement "u32_less_than_function(500,500)" "u32_less_than_function" [500, 500] ++

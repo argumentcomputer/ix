@@ -449,8 +449,10 @@ def checkPatternAux (pat : Pattern) (typ : Typ) : CheckM (List (Local × Typ)) :
   | .var var => pure [(var, typ)]
   | .wildcard => pure []
   | .field _ =>
+    -- A numeric-literal pattern matches both `field` and `u8` scrutinees: a
+    -- `u8` is a field element, so comparing it against a byte constant is sound.
     match typ with
-    | .field => pure []
+    | .field | .u8 => pure []
     | _ => throw $ .incompatiblePattern pat typ
   | .tuple pats =>
     match typ with
