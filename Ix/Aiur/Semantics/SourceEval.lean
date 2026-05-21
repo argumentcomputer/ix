@@ -431,6 +431,22 @@ def interp (decls : Decls) (fuel : Nat) (bindings : Bindings)
       combineFieldsResult (fun a b => .field (if a.val.toUInt32 < b.val.toUInt32 then 1 else 0))
         (interp decls fuel bindings t1 st)
         (fun st1 => interp decls fuel bindings t2 st1)
+  | .u8RangeCheck t1 t2 =>
+      match interp decls fuel bindings t1 st with
+      | .error e => .error e
+      | .ok (v1, st1) =>
+        match interp decls fuel bindings t2 st1 with
+        | .error e => .error e
+        | .ok (v2, st2) =>
+          match v1, v2 with
+          | .field a, .field b =>
+            if a.val < 256 && b.val < 256 then
+              .ok (.tuple #[.field a, .field b], st2)
+            else .error (.typeMismatch "u8RangeCheck")
+          | _, _ => .error (.typeMismatch "u8RangeCheck")
+  -- `toField` / `u8FromFieldUnsafe` are erased coercions: value unchanged.
+  | .toField t | .u8FromFieldUnsafe t => interp decls fuel bindings t st
+  | .u8Lit n => .ok (.field (G.ofNat n), st)
   | .debug _ _ ret => interp decls fuel bindings ret st
   | .ioGetInfo key =>
       match interp decls fuel bindings key st with

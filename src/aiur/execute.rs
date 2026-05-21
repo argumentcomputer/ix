@@ -95,6 +95,7 @@ pub enum ExecError {
   PointerTooLarge(u64),
   IndexTooLarge(u64),
   U32OutOfRange(u64),
+  U8RangeCheckFailed(u64),
   AssertEqLengthMismatch { lhs: usize, rhs: usize },
   AssertEqMismatch { lhs: u64, rhs: u64 },
   MatchNoCase(u64),
@@ -118,6 +119,9 @@ impl std::fmt::Display for ExecError {
       Self::PointerTooLarge(p) => write!(f, "pointer {p} too large for usize"),
       Self::IndexTooLarge(i) => write!(f, "index {i} too large for usize"),
       Self::U32OutOfRange(v) => write!(f, "value {v} out of u32 range"),
+      Self::U8RangeCheckFailed(v) => {
+        write!(f, "value {v} out of u8 range [0, 256)")
+      },
       Self::AssertEqLengthMismatch { lhs, rhs } => {
         write!(f, "assert_eq length mismatch: lhs={lhs}, rhs={rhs}")
       },
@@ -449,6 +453,21 @@ impl Function {
             map.extend([o0, o1, o2]);
           } else {
             bytes2_execute(*i, *j, &Bytes2Op::ChainRotr4, &mut map, record);
+          }
+        },
+        ExecEntry::Op(Op::U8RangeCheck(i, j)) => {
+          // No `map.push`: the two `u8` outputs alias the inputs `i`, `j`.
+          // Records a range-check query so the byte-chip lookup is satisfied.
+          if !unconstrained {
+            let (vi, vj) = (map[*i], map[*j]);
+            let (bi, bj) = (vi.as_canonical_u64(), vj.as_canonical_u64());
+            if bi >= 256 {
+              return Err(ExecError::U8RangeCheckFailed(bi));
+            }
+            if bj >= 256 {
+              return Err(ExecError::U8RangeCheckFailed(bj));
+            }
+            record.bytes2_queries.bump_range_check(&vi, &vj);
           }
         },
         ExecEntry::Op(Op::Debug(label, idxs)) => match idxs {

@@ -400,6 +400,15 @@ partial def interp (decls : Decls) (bindings : Bindings) : Term → InterpM Valu
       | .field a, .field b =>
           return .field (if a.val.toUInt32 < b.val.toUInt32 then 1 else 0)
       | _, _ => throwErr "u32LessThan: expected field values"
+  | .u8RangeCheck t1 t2 => do
+      match (← interp decls bindings t1), (← interp decls bindings t2) with
+      | .field a, .field b =>
+          if a.val < 256 && b.val < 256 then return .tuple #[.field a, .field b]
+          else throwErr "u8RangeCheck: value out of range [0, 256)"
+      | _, _ => throwErr "u8RangeCheck: expected field values"
+  -- `toField` / `u8FromFieldUnsafe` are erased coercions: value unchanged.
+  | .toField t | .u8FromFieldUnsafe t => interp decls bindings t
+  | .u8Lit n => return .field (G.ofNat n)
   | .debug label optT cont => do
       match optT with
       | none   => dbg_trace s!"{label}"

@@ -50,6 +50,9 @@ def typToConcrete (mono : Std.HashMap (Global × Array Typ) Global) :
     Typ → Except ConcretizeError Concrete.Typ
   | .unit => pure .unit
   | .field => pure .field
+  -- `u8` is erased here: same representation as `field`, distinction no longer
+  -- needed past type-checking.
+  | .u8 => pure .field
   | .tuple ts => do
       pure (.tuple (← ts.attach.mapM fun ⟨t, _⟩ => typToConcrete mono t))
   | .array t n => do pure (.array (← typToConcrete mono t) n)
@@ -77,6 +80,7 @@ termination_by t => sizeOf t
 
 def Typ.toFlatName : Typ → String
   | .field => "G"
+  | .u8 => "U8"
   | .unit => "Unit"
   | Typ.ref g => g.toName.toString (escape := false)
   | .pointer t => "Ptr_" ++ t.toFlatName
@@ -93,6 +97,7 @@ decreasing_by all_goals first | decreasing_tactic | grind
 
 def Typ.appendNameLimbs (g : Global) : Typ → Global
   | .field => g.pushNamespace "G"
+  | .u8 => g.pushNamespace "U8"
   | .unit => g.pushNamespace "Unit"
   | Typ.ref g' =>
     let rec pushAll (g : Global) : Lean.Name → Global
@@ -349,6 +354,12 @@ def termToConcrete
   | .u32LessThan τ e a b => do
       pure (.u32LessThan (← typToConcrete mono τ) e
                          (← termToConcrete mono a) (← termToConcrete mono b))
+  | .u8RangeCheck τ e a b => do
+      pure (.u8RangeCheck (← typToConcrete mono τ) e
+                          (← termToConcrete mono a) (← termToConcrete mono b))
+  -- `toField` / `u8FromFieldUnsafe` are erased coercions: `u8` and `field`
+  -- share a representation, so we drop the wrapper and keep the inner term.
+  | .toField _ _ a | .u8FromFieldUnsafe _ _ a => termToConcrete mono a
   | .debug τ e l t r => do
       -- Inline the Option.mapM case-split so termination sees the sub-Term.
       let t' ← match t with
@@ -546,6 +557,12 @@ def rewriteTypedTerm (decls : Typed.Decls)
       (rewriteTypedTerm decls subst mono a) (rewriteTypedTerm decls subst mono b)
   | .u32LessThan τ e a b => .u32LessThan (rewriteTyp subst mono τ) e
       (rewriteTypedTerm decls subst mono a) (rewriteTypedTerm decls subst mono b)
+  | .u8RangeCheck τ e a b => .u8RangeCheck (rewriteTyp subst mono τ) e
+      (rewriteTypedTerm decls subst mono a) (rewriteTypedTerm decls subst mono b)
+  | .toField τ e a => .toField (rewriteTyp subst mono τ) e
+      (rewriteTypedTerm decls subst mono a)
+  | .u8FromFieldUnsafe τ e a => .u8FromFieldUnsafe (rewriteTyp subst mono τ) e
+      (rewriteTypedTerm decls subst mono a)
   | .debug τ e l t r =>
     let t' := match t with
       | none => none
@@ -613,11 +630,12 @@ def collectInTypedTerm (seen : Std.HashSet (Global × Array Typ)) :
     args.attach.foldl (fun s ⟨a, _⟩ => collectInTypedTerm s a) seen
   | .add τ _ a b | .sub τ _ a b | .mul τ _ a b
   | .u8Xor τ _ a b | .u8Add τ _ a b | .u8Mul τ _ a b | .u8Sub τ _ a b
-  | .u8ChainRotr7 τ _ a b | .u8ChainRotr4 τ _ a b
+  | .u8ChainRotr7 τ _ a b | .u8ChainRotr4 τ _ a b | .u8RangeCheck τ _ a b
   | .u8And τ _ a b | .u8Or τ _ a b
   | .u8LessThan τ _ a b | .u32LessThan τ _ a b =>
     collectInTypedTerm (collectInTypedTerm (collectInTyp seen τ) a) b
-  | .eqZero τ _ a | .store τ _ a | .load τ _ a | .ptrVal τ _ a
+  | .eqZero τ _ a | .store τ _ a | .load τ _ a | .ptrVal τ _ a | .toField τ _ a
+  | .u8FromFieldUnsafe τ _ a
   | .u8BitDecomposition τ _ a | .u8ShiftLeft τ _ a | .u8ShiftRight τ _ a
   | .ioGetInfo τ _ a => collectInTypedTerm (collectInTyp seen τ) a
   | .proj τ _ a _ | .get τ _ a _ | .slice τ _ a _ _ =>
@@ -676,11 +694,12 @@ def collectCalls (decls : Typed.Decls)
     bs.attach.foldl (fun s ⟨(_, b), _⟩ => collectCalls decls s b) seen
   | .add _ _ a b | .sub _ _ a b | .mul _ _ a b
   | .u8Xor _ _ a b | .u8Add _ _ a b | .u8Mul _ _ a b | .u8Sub _ _ a b
-  | .u8ChainRotr7 _ _ a b | .u8ChainRotr4 _ _ a b
+  | .u8ChainRotr7 _ _ a b | .u8ChainRotr4 _ _ a b | .u8RangeCheck _ _ a b
   | .u8And _ _ a b | .u8Or _ _ a b
   | .u8LessThan _ _ a b | .u32LessThan _ _ a b =>
     collectCalls decls (collectCalls decls seen a) b
-  | .eqZero _ _ a | .store _ _ a | .load _ _ a | .ptrVal _ _ a
+  | .eqZero _ _ a | .store _ _ a | .load _ _ a | .ptrVal _ _ a | .toField _ _ a
+  | .u8FromFieldUnsafe _ _ a
   | .u8BitDecomposition _ _ a | .u8ShiftLeft _ _ a | .u8ShiftRight _ _ a
   | .ioGetInfo _ _ a => collectCalls decls seen a
   | .proj _ _ a _ | .get _ _ a _ | .slice _ _ a _ _ => collectCalls decls seen a
@@ -782,6 +801,11 @@ def substInTypedTerm (subst : Global → Option Typ) : Typed.Term → Typed.Term
       (substInTypedTerm subst a) (substInTypedTerm subst b)
   | .u32LessThan τ e a b => .u32LessThan (Typ.instantiate subst τ) e
       (substInTypedTerm subst a) (substInTypedTerm subst b)
+  | .u8RangeCheck τ e a b => .u8RangeCheck (Typ.instantiate subst τ) e
+      (substInTypedTerm subst a) (substInTypedTerm subst b)
+  | .toField τ e a => .toField (Typ.instantiate subst τ) e (substInTypedTerm subst a)
+  | .u8FromFieldUnsafe τ e a =>
+    .u8FromFieldUnsafe (Typ.instantiate subst τ) e (substInTypedTerm subst a)
   | .debug τ e l t r =>
     let t' := match t with
       | none => none

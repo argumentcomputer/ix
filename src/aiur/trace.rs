@@ -545,6 +545,17 @@ impl Op {
         let result = G::from_bool(a_u32 < b_u32);
         map.push((result, 1));
       },
+      Op::U8RangeCheck(i, j) => {
+        // No `map.push`: the `u8` outputs alias the inputs. Just require the
+        // `(i, j)` pair from the byte-chip range-check table.
+        slice.push_lookup(
+          index,
+          Lookup::push(
+            G::ONE,
+            vec![u8_range_check_channel(), map[*i].0, map[*j].0],
+          ),
+        );
+      },
       Op::AssertEq(..) | Op::IOSetInfo(..) | Op::IOWrite(_) | Op::Debug(..) => {
       },
     }

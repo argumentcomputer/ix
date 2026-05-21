@@ -46,6 +46,10 @@ inductive Op
   | u8ChainRotr7 : ValIdx → ValIdx → Op
   | u8ChainRotr4 : ValIdx → ValIdx → Op
   | debug : String → Option (Array ValIdx) → Op
+  /-- Range-check the two values into `[0, 256)` via the byte chip. Produces no
+  new values: it is a pure side-effect (lookup), and its `u8` results alias the
+  two inputs. Kept last so its FFI tag (27) doesn't shift the others. -/
+  | u8RangeCheck : ValIdx → ValIdx → Op
   deriving Repr, BEq, Hashable
 
 mutual
