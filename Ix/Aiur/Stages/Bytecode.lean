@@ -43,6 +43,8 @@ inductive Op
   | u8Or : ValIdx → ValIdx → Op
   | u8LessThan : ValIdx → ValIdx → Op
   | u32LessThan : ValIdx → ValIdx → Op
+  | u8ChainRotr7 : ValIdx → ValIdx → Op
+  | u8ChainRotr4 : ValIdx → ValIdx → Op
   | debug : String → Option (Array ValIdx) → Op
   deriving Repr, BEq, Hashable
 
@@ -76,7 +78,7 @@ structure FunctionLayout where
 def FunctionLayout.width (l : FunctionLayout) : Nat :=
   l.inputSize + l.selectors + l.auxiliaries
 
-abbrev goldilocksExtensionDegree : Nat := 4
+abbrev goldilocksExtensionDegree : Nat := 2
 
 def FunctionLayout.totalWidth (l : FunctionLayout) : Nat :=
   l.width + goldilocksExtensionDegree * (1 + l.lookups)

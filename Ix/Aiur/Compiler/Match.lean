@@ -381,6 +381,8 @@ def typedToSimple : Term → Simple.Term
   | .u8Xor τ e a b => .u8Xor τ e (typedToSimple a) (typedToSimple b)
   | .u8Add τ e a b => .u8Add τ e (typedToSimple a) (typedToSimple b)
   | .u8Mul τ e a b => .u8Mul τ e (typedToSimple a) (typedToSimple b)
+  | .u8ChainRotr7 τ e a b => .u8ChainRotr7 τ e (typedToSimple a) (typedToSimple b)
+  | .u8ChainRotr4 τ e a b => .u8ChainRotr4 τ e (typedToSimple a) (typedToSimple b)
   | .u8Sub τ e a b => .u8Sub τ e (typedToSimple a) (typedToSimple b)
   | .u8And τ e a b => .u8And τ e (typedToSimple a) (typedToSimple b)
   | .u8Or τ e a b => .u8Or τ e (typedToSimple a) (typedToSimple b)

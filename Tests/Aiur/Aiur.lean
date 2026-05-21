@@ -346,6 +346,23 @@ def toplevel := ⟦
     u8_or(i, j)
   }
 
+  pub fn u8_chain_rotr7_function(i: G, j: G) -> (G, G, G) {
+    u8_chain_rotr7(i, j)
+  }
+
+  pub fn u8_chain_rotr4_function(i: G, j: G) -> (G, G, G) {
+    u8_chain_rotr4(i, j)
+  }
+
+  -- Full u32 right-rotation by 7, built by chaining the partial gadget over
+  -- adjacent little-endian byte pairs (2 lookups + 2 free field adds).
+  pub fn u32_rotr7(b: [G; 4]) -> [G; 4] {
+    let [b0, b1, b2, b3] = b;
+    let (a0, a1, a2) = u8_chain_rotr7(b0, b1);
+    let (c0, c1, c2) = u8_chain_rotr7(b2, b3);
+    [a0, a1 + c2, c0, c1 + a2]
+  }
+
   ---------------------------------------------------------------------------
   -- u32 comparison
   ---------------------------------------------------------------------------
@@ -856,6 +873,9 @@ def aiurTestCases : List AiurTestCase := [
     .noIO `u8_less_than_function #[45, 131] #[1],
     .noIO `u8_and_function #[45, 131] #[1],
     .noIO `u8_or_function #[45, 131] #[175],
+    .noIO `u8_chain_rotr7_function #[45, 131] #[6, 1, 90],
+    .noIO `u8_chain_rotr4_function #[45, 131] #[50, 8, 208],
+    .noIO `u32_rotr7 #[45, 131, 200, 17] #[6, 145, 35, 90],
 
     -- u32 comparison: a < b, a > b, a = b
     { AiurTestCase.noIO `u32_less_than_function #[300, 500] #[1]

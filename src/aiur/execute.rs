@@ -356,12 +356,15 @@ impl Function {
           }
         },
         ExecEntry::Op(Op::U8Add(i, j)) => {
+          // The add gadget yields only the low byte; the carry is derived
+          // and pushed separately so the op still produces `(low, carry)`.
+          let (_r, o) = Bytes2::add(&map[*i], &map[*j]);
           if unconstrained {
-            let (r, o) = Bytes2::add(&map[*i], &map[*j]);
-            map.extend([r, o]);
+            map.push(Bytes2::add(&map[*i], &map[*j]).0);
           } else {
             bytes2_execute(*i, *j, &Bytes2Op::Add, &mut map, record);
           }
+          map.push(o);
         },
         ExecEntry::Op(Op::U8Mul(i, j)) => {
           if unconstrained {
@@ -372,12 +375,15 @@ impl Function {
           }
         },
         ExecEntry::Op(Op::U8Sub(i, j)) => {
+          // The sub gadget yields only the low byte; the borrow is derived
+          // and pushed separately so the op still produces `(low, borrow)`.
+          let (_r, u) = Bytes2::sub(&map[*i], &map[*j]);
           if unconstrained {
-            let (r, u) = Bytes2::sub(&map[*i], &map[*j]);
-            map.extend([r, u]);
+            map.push(Bytes2::sub(&map[*i], &map[*j]).0);
           } else {
             bytes2_execute(*i, *j, &Bytes2Op::Sub, &mut map, record);
           }
+          map.push(u);
         },
         ExecEntry::Op(Op::U8And(i, j)) => {
           if unconstrained {
@@ -427,6 +433,22 @@ impl Function {
                 .bytes2_queries
                 .bump_range_check(&G::from_u8(i), &G::from_u8(j));
             }
+          }
+        },
+        ExecEntry::Op(Op::U8ChainRotr7(i, j)) => {
+          if unconstrained {
+            let (o0, o1, o2) = Bytes2::chain_rotr7(&map[*i], &map[*j]);
+            map.extend([o0, o1, o2]);
+          } else {
+            bytes2_execute(*i, *j, &Bytes2Op::ChainRotr7, &mut map, record);
+          }
+        },
+        ExecEntry::Op(Op::U8ChainRotr4(i, j)) => {
+          if unconstrained {
+            let (o0, o1, o2) = Bytes2::chain_rotr4(&map[*i], &map[*j]);
+            map.extend([o0, o1, o2]);
+          } else {
+            bytes2_execute(*i, *j, &Bytes2Op::ChainRotr4, &mut map, record);
           }
         },
         ExecEntry::Op(Op::Debug(label, idxs)) => match idxs {
