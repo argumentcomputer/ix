@@ -48,6 +48,7 @@ inductive CheckError
   | unconstrainedConstructor : Global → CheckError
   | infiniteType : Nat → Typ → CheckError
   | unresolvedMVar : Nat → CheckError
+  | u8LitOutOfRange : Nat → CheckError
   deriving Repr
 
 instance : ToString CheckError where
@@ -59,6 +60,7 @@ open Source
 def Typ.instantiate (subst : Global → Option Typ) : Typ → Typ
   | .unit => .unit
   | .field => .field
+  | .u8 => .u8
   | .tuple ts => .tuple (ts.attach.map (fun ⟨t, _⟩ => Typ.instantiate subst t))
   | .array t n => .array (Typ.instantiate subst t) n
   | .pointer t => .pointer (Typ.instantiate subst t)
@@ -83,6 +85,7 @@ def expandTypeMBound : Nat → Std.HashSet Global → Array TypeAlias →
     Typ → StateT (Std.HashMap Global Typ) (Except CheckError) Typ
   | _, _, _, .unit => pure .unit
   | _, _, _, .field => pure .field
+  | _, _, _, .u8 => pure .u8
   | bound, visited, tops, .pointer t => do
     pure $ .pointer (← expandTypeMBound bound visited tops t)
   | bound, visited, tops, .function inputs output => do
@@ -307,7 +310,7 @@ def unifyTypBound : Nat → Typ → Typ → CheckM Bool
       if a == b then pure true else do bindMVar a (.mvar b); pure true
     | .mvar a, _ => do bindMVar a t2; pure true
     | _, .mvar b => do bindMVar b t1; pure true
-    | .unit, .unit | .field, .field => pure true
+    | .unit, .unit | .field, .field | .u8, .u8 => pure true
     | .tuple ts1, .tuple ts2 =>
       if ts1.size != ts2.size then pure false else
         ts1.zip ts2 |>.allM fun (x, y) => unifyTypBound bound x y
@@ -330,6 +333,7 @@ available proxy for `sizeOf` in `unifyTyp`'s bound. -/
 def Typ.nodeCount : Typ → Nat
   | .unit        => 1
   | .field       => 1
+  | .u8          => 1
   | .mvar _      => 1
   | .ref _       => 1
   | .pointer t   => 1 + Typ.nodeCount t
@@ -711,54 +715,73 @@ def inferTerm (t : Term) : CheckM Typed.Term := match t with
     let b' ← checkNoEscape b .field
     pure (Typed.Term.mul .field false a' b')
   | .u8ShiftLeft a => do
-    let a' ← checkNoEscape a .field
-    pure (Typed.Term.u8ShiftLeft .field false a')
+    let a' ← checkNoEscape a .u8
+    pure (Typed.Term.u8ShiftLeft .u8 false a')
   | .u8ShiftRight a => do
-    let a' ← checkNoEscape a .field
-    pure (Typed.Term.u8ShiftRight .field false a')
+    let a' ← checkNoEscape a .u8
+    pure (Typed.Term.u8ShiftRight .u8 false a')
   | .u8BitDecomposition a => do
-    let a' ← checkNoEscape a .field
+    -- Bits are 0/1 values, kept as plain `field`.
+    let a' ← checkNoEscape a .u8
     pure (Typed.Term.u8BitDecomposition (.array .field 8) false a')
   | .u8Xor a b => do
-    let a' ← checkNoEscape a .field
-    let b' ← checkNoEscape b .field
-    pure (Typed.Term.u8Xor .field false a' b')
+    let a' ← checkNoEscape a .u8
+    let b' ← checkNoEscape b .u8
+    pure (Typed.Term.u8Xor .u8 false a' b')
   | .u8And a b => do
-    let a' ← checkNoEscape a .field
-    let b' ← checkNoEscape b .field
-    pure (Typed.Term.u8And .field false a' b')
+    let a' ← checkNoEscape a .u8
+    let b' ← checkNoEscape b .u8
+    pure (Typed.Term.u8And .u8 false a' b')
   | .u8Or a b => do
-    let a' ← checkNoEscape a .field
-    let b' ← checkNoEscape b .field
-    pure (Typed.Term.u8Or .field false a' b')
+    let a' ← checkNoEscape a .u8
+    let b' ← checkNoEscape b .u8
+    pure (Typed.Term.u8Or .u8 false a' b')
   | .u8Add a b => do
-    let a' ← checkNoEscape a .field
-    let b' ← checkNoEscape b .field
-    pure (Typed.Term.u8Add (.tuple #[.field, .field]) false a' b')
+    -- Low byte and the 0/1 carry are both `u8` (the carry is provably in range:
+    -- the add lookup forces the inputs to be bytes, so `carry ∈ {0, 1}`).
+    let a' ← checkNoEscape a .u8
+    let b' ← checkNoEscape b .u8
+    pure (Typed.Term.u8Add (.tuple #[.u8, .u8]) false a' b')
   | .u8Mul a b => do
-    let a' ← checkNoEscape a .field
-    let b' ← checkNoEscape b .field
-    pure (Typed.Term.u8Mul (.tuple #[.field, .field]) false a' b')
+    -- Both low and high bytes are `u8`.
+    let a' ← checkNoEscape a .u8
+    let b' ← checkNoEscape b .u8
+    pure (Typed.Term.u8Mul (.tuple #[.u8, .u8]) false a' b')
   | .u8ChainRotr7 a b => do
-    let a' ← checkNoEscape a .field
-    let b' ← checkNoEscape b .field
-    pure (Typed.Term.u8ChainRotr7 (.tuple #[.field, .field, .field]) false a' b')
+    let a' ← checkNoEscape a .u8
+    let b' ← checkNoEscape b .u8
+    pure (Typed.Term.u8ChainRotr7 (.tuple #[.u8, .u8, .u8]) false a' b')
   | .u8ChainRotr4 a b => do
-    let a' ← checkNoEscape a .field
-    let b' ← checkNoEscape b .field
-    pure (Typed.Term.u8ChainRotr4 (.tuple #[.field, .field, .field]) false a' b')
+    let a' ← checkNoEscape a .u8
+    let b' ← checkNoEscape b .u8
+    pure (Typed.Term.u8ChainRotr4 (.tuple #[.u8, .u8, .u8]) false a' b')
   | .u8Sub a b => do
-    let a' ← checkNoEscape a .field
-    let b' ← checkNoEscape b .field
-    pure (Typed.Term.u8Sub (.tuple #[.field, .field]) false a' b')
+    -- Low byte and the 0/1 borrow are both `u8` (same range argument as add).
+    let a' ← checkNoEscape a .u8
+    let b' ← checkNoEscape b .u8
+    pure (Typed.Term.u8Sub (.tuple #[.u8, .u8]) false a' b')
   | .u8LessThan a b => do
-    let a' ← checkNoEscape a .field
-    let b' ← checkNoEscape b .field
+    -- Result is a 0/1 flag (`field`).
+    let a' ← checkNoEscape a .u8
+    let b' ← checkNoEscape b .u8
     pure (Typed.Term.u8LessThan .field false a' b')
   | .u32LessThan a b => do
     let a' ← checkNoEscape a .field
     let b' ← checkNoEscape b .field
     pure (Typed.Term.u32LessThan .field false a' b')
+  | .u8Lit n => do
+    if n ≥ 256 then throw (.u8LitOutOfRange n)
+    pure (Typed.Term.field .u8 false (G.ofNat n))
+  | .u8RangeCheck a b => do
+    let a' ← checkNoEscape a .field
+    let b' ← checkNoEscape b .field
+    pure (Typed.Term.u8RangeCheck (.tuple #[.u8, .u8]) false a' b')
+  | .toField a => do
+    let a' ← checkNoEscape a .u8
+    pure (Typed.Term.toField .field false a')
+  | .u8FromFieldUnsafe a => do
+    let a' ← checkNoEscape a .field
+    pure (Typed.Term.u8FromFieldUnsafe .u8 false a')
   | .ioGetInfo key => do
     let key' ← inferNoEscape key
     match ← walkTyp key'.typ with
@@ -922,6 +945,11 @@ def zonkTypedTerm (t : Typed.Term) : CheckM Typed.Term := match t with
       pure (.u8LessThan (← zonkTyp τ) e (← zonkTypedTerm a) (← zonkTypedTerm b))
   | .u32LessThan τ e a b => do
       pure (.u32LessThan (← zonkTyp τ) e (← zonkTypedTerm a) (← zonkTypedTerm b))
+  | .u8RangeCheck τ e a b => do
+      pure (.u8RangeCheck (← zonkTyp τ) e (← zonkTypedTerm a) (← zonkTypedTerm b))
+  | .toField τ e a => do pure (.toField (← zonkTyp τ) e (← zonkTypedTerm a))
+  | .u8FromFieldUnsafe τ e a => do
+      pure (.u8FromFieldUnsafe (← zonkTyp τ) e (← zonkTypedTerm a))
   | .debug τ e label t r => do
       let t' ← match t with
         | none => pure none

@@ -108,6 +108,16 @@ def simplifyTypedTerm (decls : Source.Decls) : Term → Except CheckError Term
       let a' ← simplifyTypedTerm decls a
       let b' ← simplifyTypedTerm decls b
       pure (.u32LessThan τ e a' b')
+  | .u8RangeCheck τ e a b => do
+      let a' ← simplifyTypedTerm decls a
+      let b' ← simplifyTypedTerm decls b
+      pure (.u8RangeCheck τ e a' b')
+  | .toField τ e a => do
+      let a' ← simplifyTypedTerm decls a
+      pure (.toField τ e a')
+  | .u8FromFieldUnsafe τ e a => do
+      let a' ← simplifyTypedTerm decls a
+      pure (.u8FromFieldUnsafe τ e a')
   | t => pure t
 termination_by t => sizeOf t
 decreasing_by

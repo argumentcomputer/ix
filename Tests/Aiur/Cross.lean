@@ -57,8 +57,8 @@ def toplevel : Source.Toplevel := ⟦
   pub fn call_helper(x: G) -> G { helper(x) + 1 }
 
   -- u8 / u32 ops
-  pub fn xor_bytes(a: G, b: G) -> G { u8_xor(a, b) }
-  pub fn add8(a: G, b: G) -> (G, G) { u8_add(a, b) }
+  pub fn xor_bytes(a: U8, b: U8) -> U8 { u8_xor(a, b) }
+  pub fn add8(a: U8, b: U8) -> (U8, U8) { u8_add(a, b) }
   pub fn lt32(a: G, b: G) -> G { u32_less_than(a, b) }
 
   -- Slice / set
@@ -269,7 +269,7 @@ def toplevel : Source.Toplevel := ⟦
   }
 
   -- u8 shifts + bit decomposition chain
-  pub fn shr_shr_shl_decompose(byte: G) -> [G; 8] {
+  pub fn shr_shr_shl_decompose(byte: U8) -> [G; 8] {
     let s1 = u8_shift_right(byte);
     let s2 = u8_shift_right(s1);
     let s3 = u8_shift_left(s2);
@@ -277,7 +277,7 @@ def toplevel : Source.Toplevel := ⟦
   }
 
   -- u8_add and u8_xor combined
-  pub fn u8_add_xor(i: G, j: G) -> ((G, G), (G, G)) {
+  pub fn u8_add_xor(i: U8, j: U8) -> ((U8, U8), (U8, U8)) {
     let xor = u8_xor(i, j);
     (u8_add(xor, i), u8_add(xor, j))
   }
@@ -374,25 +374,41 @@ def toplevel : Source.Toplevel := ⟦
   }
 
   -- u8 op single-call wrappers
-  pub fn u8_sub_function(i: G, j: G) -> (G, G) { u8_sub(i, j) }
-  pub fn u8_mul_function(i: G, j: G) -> (G, G) { u8_mul(i, j) }
-  pub fn u8_less_than_function(i: G, j: G) -> G { u8_less_than(i, j) }
-  pub fn u8_and_function(i: G, j: G) -> G { u8_and(i, j) }
-  pub fn u8_or_function(i: G, j: G) -> G { u8_or(i, j) }
-  pub fn u8_chain_rotr7_function(i: G, j: G) -> (G, G, G) { u8_chain_rotr7(i, j) }
-  pub fn u8_chain_rotr4_function(i: G, j: G) -> (G, G, G) { u8_chain_rotr4(i, j) }
+  pub fn u8_sub_function(i: U8, j: U8) -> (U8, U8) { u8_sub(i, j) }
+  pub fn u8_mul_function(i: U8, j: U8) -> (U8, U8) { u8_mul(i, j) }
+  pub fn u8_less_than_function(i: U8, j: U8) -> G { u8_less_than(i, j) }
+  pub fn u8_and_function(i: U8, j: U8) -> U8 { u8_and(i, j) }
+  pub fn u8_or_function(i: U8, j: U8) -> U8 { u8_or(i, j) }
+  pub fn u8_chain_rotr7_function(i: U8, j: U8) -> (U8, U8, U8) { u8_chain_rotr7(i, j) }
+  pub fn u8_chain_rotr4_function(i: U8, j: U8) -> (U8, U8, U8) { u8_chain_rotr4(i, j) }
 
   -- Full u32 right-rotation by 7, built by chaining the partial gadget over
   -- adjacent little-endian byte pairs (2 lookups + 2 free field adds).
-  pub fn u32_rotr7(b: [G; 4]) -> [G; 4] {
+  pub fn u32_rotr7(b: [U8; 4]) -> [U8; 4] {
     let [b0, b1, b2, b3] = b;
     let (a0, a1, a2) = u8_chain_rotr7(b0, b1);
     let (c0, c1, c2) = u8_chain_rotr7(b2, b3);
-    [a0, a1 + c2, c0, c1 + a2]
+    -- The two combined parts occupy disjoint bit positions, so their sum never
+    -- overflows a byte: add cheaply as `G`, then reinterpret as `U8`.
+    [a0, u8_from_field_unsafe(to_field(a1) + to_field(c2)), c0,
+     u8_from_field_unsafe(to_field(c1) + to_field(a2))]
   }
 
   -- u32 less-than wrapper (named to match Aiur)
   pub fn u32_less_than_function(x: G, y: G) -> G { u32_less_than(x, y) }
+
+  -- u8 range-check / to_field / literal exercises
+  pub fn range_check_id(a: G, b: G) -> (G, G) {
+    let (x, y) = u8_range_check(a, b);
+    (to_field(x), to_field(y))
+  }
+  pub fn u8_lit_xor(a: G) -> G {
+    let (x, _) = u8_range_check(a, a);
+    to_field(u8_xor(x, 200u8))
+  }
+  pub fn u8_lits() -> (G, G, G) {
+    (to_field(0u8), to_field(127u8), to_field(255u8))
+  }
 
   -- EqZero degree-tracking regression
   pub fn eq_zero_degree_desync(x: G) -> G {
@@ -439,8 +455,7 @@ def toplevel : Source.Toplevel := ⟦
     }
   }
 
-  -- Nested type aliases
-  type U8 = G
+  -- Nested type aliases (`U8` is now a builtin type, not an alias)
   type U16 = (U8, U8)
   type U32 = (U16, U16)
   type U64 = [U8; 8]
@@ -1212,6 +1227,10 @@ def tests : TestSeq :=
   runAgreement "u8_chain_rotr4_function(255,255)" "u8_chain_rotr4_function" [255, 255] ++
   runAgreement "u32_rotr7(45,131,200,17)" "u32_rotr7"
     [.array #[45, 131, 200, 17]] ++
+  runAgreement "range_check_id(45,200)" "range_check_id" [45, 200] ++
+  runAgreement "range_check_id(0,255)" "range_check_id" [0, 255] ++
+  runAgreement "u8_lit_xor(45)" "u8_lit_xor" [45] ++
+  runAgreement "u8_lits" "u8_lits" [] ++
   runAgreement "u32_less_than_function(300,500)" "u32_less_than_function" [300, 500] ++
   runAgreement "u32_less_than_function(500,300)" "u32_less_than_function" [500, 300] ++
   runAgreement "u32_less_than_function(500,500)" "u32_less_than_function" [500, 500] ++

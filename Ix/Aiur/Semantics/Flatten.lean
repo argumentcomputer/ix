@@ -132,6 +132,7 @@ def typFlatSizeBound (decls : Source.Decls) : Nat → HashSet Global → Typ →
   | 0, _, _ => 0
   | _+1, _, .unit => 0
   | _+1, _, .field => 1
+  | _+1, _, .u8 => 1
   | _+1, _, .pointer _ => 1
   | _+1, _, .function _ _ => 1
   | bound+1, visited, .tuple ts =>
@@ -282,6 +283,7 @@ def unflattenValueBound (decls : Source.Decls) (gs : Array G) :
   | 0, _, _ => (.unit, 0)
   | _+1, _, .unit => (.unit, 0)
   | _+1, offset, .field => (.field (gs.getD offset 0), 1)
+  | _+1, offset, .u8 => (.field (gs.getD offset 0), 1)
   | _+1, offset, .pointer t =>
       let w := typFlatSize decls {} t
       (.pointer w (gs.getD offset 0).val.toNat, 1)
