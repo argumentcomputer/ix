@@ -42,6 +42,7 @@ syntax ("." noWs)? ident                                        : aiur_pattern
 syntax "_"                                                      : aiur_pattern
 syntax ident "(" aiur_pattern (", " aiur_pattern)* ")"        : aiur_pattern
 syntax num                                                      : aiur_pattern
+syntax:max num "u8"                                             : aiur_pattern
 syntax "(" aiur_pattern (", " aiur_pattern)* ")"              : aiur_pattern
 syntax "[" aiur_pattern (", " aiur_pattern)* "]"              : aiur_pattern
 syntax aiur_pattern "|" aiur_pattern                          : aiur_pattern
@@ -107,6 +108,9 @@ partial def elabPattern : ElabStxCat `aiur_pattern
     | _ => throw $ .error i "Illegal pattern name"
   | `(aiur_pattern| _) => pure $ mkConst ``Pattern.wildcard
   | `(aiur_pattern| $n:num) => do mkAppM ``Pattern.field #[← elabG n]
+  -- `Nu8` byte-literal pattern: same `Pattern.field` value, kept for clarity
+  -- when matching a `U8` scrutinee.
+  | `(aiur_pattern| $n:num u8) => do mkAppM ``Pattern.field #[← elabG n]
   | `(aiur_pattern| ($p:aiur_pattern $[, $ps:aiur_pattern]*)) => do
     mkAppM ``Pattern.tuple #[← elabList p ps elabPattern ``Pattern true]
   | `(aiur_pattern| [$p:aiur_pattern $[, $ps:aiur_pattern]*]) => do
