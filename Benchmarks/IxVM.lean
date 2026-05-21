@@ -29,8 +29,8 @@ def main : IO Unit := do
   let aiurSystem := Aiur.AiurSystem.build compiled.bytecode commitmentParameters
 
   let env ← get_env!
-  let ixonEnv ← IxVM.CheckHarness.loadIxonEnv ``Nat.add_comm env
-  let (ioBuffer, n) := IxVM.CheckHarness.buildSerdeIOBuffer ixonEnv
+  let ixonEnv ← IxVM.ClaimHarness.loadIxonEnv ``Nat.add_comm env
+  let (ioBuffer, n) := IxVM.ClaimHarness.buildSerdeIOBuffer ixonEnv
 
   let _ ← bgroup "IxVM benchmarks" { oneShot := true } do
     throughput (.Elements n.toUInt64 "consts")

@@ -1,10 +1,11 @@
 module
 
 public import Ix.Meta
-public import Ix.IxVM.CheckHarness
+public import Ix.AssumptionTree
+public import Ix.IxVM.ClaimHarness
 public import Tests.Aiur.Common
 
-open IxVM.CheckHarness
+open IxVM.ClaimHarness
 
 /-! # Aiur kernel test fixtures
 
@@ -18,7 +19,8 @@ Test-purpose declarations exercised by the `ixvm` test runner. Layout:
   * `serdeNatAddComm` — Ixon serialize/deserialize round-trip via the
     `ixon_serde_test` Aiur entrypoint.
   * `kernelCheck` / `kernelChecks` — single-constant and curated-list
-    runners against the `kernel_check_test` Aiur entrypoint.
+    runners against the `verify_claim` Aiur entrypoint, driving a
+    `Ix.Claim.check addr none` claim.
 -/
 
 /-! ## Primitive reduction theorems -/
@@ -91,16 +93,17 @@ public def serdeNatAddComm (env : Lean.Environment) : IO AiurTestCase := do
          expectedIOBuffer := ioBuffer
          interpret := false, executionOnly := true }
 
-/-- Build a `kernel_check_test` invocation for `name` with full
-    transitive checking (`check_deps = 1`). -/
+/-- Build a `verify_claim` invocation for `name` driving the claim
+    `Ix.Claim.check addr none` — fully transitive typecheck of the
+    target's closure. -/
 public def kernelCheck (name : Lean.Name) (env : Lean.Environment) :
     IO AiurTestCase := do
   let ixonEnv ← loadIxonEnv name env
-  let ioBuffer := buildKernelCheckIOBuffer ixonEnv
-  let targetAddrBytes := kernelCheckTarget name ixonEnv
-  pure { functionName := `kernel_check_test, label := s!"Kernel check {name}"
-         input := targetAddrBytes.push 1, inputIOBuffer := ioBuffer
-         expectedIOBuffer := ioBuffer
+  let target ← lookupAddr ixonEnv name
+  let witness ← IO.ofExcept <| buildClaimWitness ixonEnv (Ix.Claim.check target none)
+  pure { functionName := witness.funcName, label := s!"Kernel check {name}"
+         input := witness.input, inputIOBuffer := witness.inputIOBuffer
+         expectedIOBuffer := witness.inputIOBuffer
          interpret := false, executionOnly := true }
 
 /-- Names listed as strings to dodge name-quotation parser issues with
@@ -137,3 +140,134 @@ private def nameOfString (str : String) : Lean.Name :=
 
 public def kernelChecks (env : Lean.Environment) : IO (List AiurTestCase) :=
   kernelCheckNames.map nameOfString |>.mapM (kernelCheck · env)
+
+/-! ## Claim variant smoke tests
+
+Each builds an `AiurTestCase` exercising one of the non-`Check-None`
+arms of `verify_claim`. All seven tests share a single Ixon env
+built once over `{Nat.zero, Nat.add_comm}` — `Nat.zero` for its
+small CPrj + Muts (the `Nat` block), `Nat.add_comm` for its Defn
+theorems. Loading once instead of per-test cuts Lean→Ixon compile
+work by ~6×. -/
+
+/-- Wrap a `ClaimWitness` as an execution-only `AiurTestCase`. -/
+private def asTestCase (label : String) (witness : ClaimWitness) : AiurTestCase :=
+  { functionName := witness.funcName, label
+    input := witness.input, inputIOBuffer := witness.inputIOBuffer
+    expectedIOBuffer := witness.inputIOBuffer
+    interpret := false, executionOnly := true }
+
+/-- Locate the first constant in `env.consts` whose `ConstantInfo`
+    satisfies `pred`, or fail with `IO.userError`. -/
+private def findConstWithOrThrow (ixonEnv : Ixon.Env) (label : String)
+    (pred : Ixon.ConstantInfo → Bool) : IO (Address × Ixon.ConstantInfo) := do
+  for (addr, c) in ixonEnv.consts do
+    if pred c.info then return (addr, c.info)
+  throw <| IO.userError s!"no {label} const found in shared smoke env"
+
+/-- Single-entry HashMap for one `(root, tree)` pairing. -/
+private def singletonTrees (tree : Ix.AssumptionTree) :
+    Std.HashMap Address Ix.AssumptionTree :=
+  ({} : Std.HashMap _ _).insert tree.root tree
+
+/-- `Check` claim with `assumptions = some tree.root` covering every
+    transitive dep — kernel ends up checking only the subject. -/
+public def claimCheckWithAsm (ixonEnv : Ixon.Env) : IO AiurTestCase := do
+  let target ← lookupAddr ixonEnv ``Nat.zero
+  let closure := closureFrom ixonEnv target
+  let depLeaves : Array Address :=
+    closure.fold (init := #[]) fun acc a =>
+      if a == target then acc else acc.push a
+  let some tree := Ix.AssumptionTree.canonical depLeaves
+    | throw <| IO.userError "deps unexpectedly empty for Nat.zero"
+  let witness ← IO.ofExcept <| buildClaimWitness ixonEnv
+    (Ix.Claim.check target (some tree.root)) (singletonTrees tree)
+  pure (asTestCase "Claim Check with-asm (Nat.zero)" witness)
+
+/-- `Contains` claim against a synthetic 3-leaf merkle tree. -/
+public def claimContains : IO AiurTestCase := do
+  let a : Address := ⟨⟨Array.replicate 32 0x11⟩⟩
+  let b : Address := ⟨⟨Array.replicate 32 0x22⟩⟩
+  let c : Address := ⟨⟨Array.replicate 32 0x33⟩⟩
+  let some tree := Ix.AssumptionTree.canonical #[a, b, c]
+    | throw <| IO.userError "Contains tree build failed"
+  let witness ← IO.ofExcept <| buildClaimWitness ({} : Ixon.Env)
+    (Ix.Claim.contains tree.root b) (singletonTrees tree)
+  pure (asTestCase "Claim Contains (synthetic 3-leaf)" witness)
+
+/-- `CheckEnv` claim over the shared smoke env. -/
+public def claimCheckEnv (ixonEnv : Ixon.Env) : IO AiurTestCase := do
+  let some tree := envCanonicalTree ixonEnv
+    | throw <| IO.userError "envCanonicalTree empty"
+  let witness ← IO.ofExcept <| buildClaimWitness ixonEnv
+    (Ix.Claim.checkEnv tree.root none) (singletonTrees tree)
+  pure (asTestCase "Claim CheckEnv (shared smoke env)" witness)
+
+/-- `Reveal` Defn with `kind` + `safety` only — exercises the
+    enum-tag compare path with no Expr hashing. -/
+public def claimRevealDefnFields (ixonEnv : Ixon.Env) : IO AiurTestCase := do
+  let (comm, info) ← findConstWithOrThrow ixonEnv "Defn"
+    fun ci => match ci with | .defn _ => true | _ => false
+  let .defn d := info
+    | throw <| IO.userError "findConstWith returned non-Defn"
+  let revealInfo : Ix.RevealConstantInfo :=
+    .defn (some d.kind) (some d.safety) none none none
+  let witness ← IO.ofExcept <| buildClaimWitness ixonEnv (Ix.Claim.reveal comm revealInfo)
+  pure (asTestCase "Claim Reveal Defn (kind+safety)" witness)
+
+/-- `Reveal` CPrj — projection idx, cidx, block fields. -/
+public def claimRevealCPrj (ixonEnv : Ixon.Env) : IO AiurTestCase := do
+  let (comm, info) ← findConstWithOrThrow ixonEnv "CPrj"
+    fun ci => match ci with | .cPrj _ => true | _ => false
+  let .cPrj p := info
+    | throw <| IO.userError "findConstWith returned non-CPrj"
+  let revealInfo : Ix.RevealConstantInfo :=
+    .cPrj (some p.idx) (some p.cidx) (some p.block)
+  let witness ← IO.ofExcept <| buildClaimWitness ixonEnv (Ix.Claim.reveal comm revealInfo)
+  pure (asTestCase "Claim Reveal CPrj (all fields)" witness)
+
+/-- `Reveal` Defn `typ` via content-hash binding — exercises the
+    Aiur `expr_addr` path against `blake3(putExpr d.typ)` on Lean. -/
+public def claimRevealDefnExpr (ixonEnv : Ixon.Env) : IO AiurTestCase := do
+  let (comm, info) ← findConstWithOrThrow ixonEnv "Defn"
+    fun ci => match ci with | .defn _ => true | _ => false
+  let .defn d := info
+    | throw <| IO.userError "findConstWith returned non-Defn"
+  let typAddr := Address.blake3 (Ixon.runPut (Ixon.putExpr d.typ))
+  let revealInfo : Ix.RevealConstantInfo :=
+    .defn none none none (some typAddr) none
+  let witness ← IO.ofExcept <| buildClaimWitness ixonEnv (Ix.Claim.reveal comm revealInfo)
+  pure (asTestCase "Claim Reveal Defn (typ Expr addr)" witness)
+
+/-- `Reveal` Muts — first component, one variant-appropriate
+    field set. -/
+public def claimRevealMuts (ixonEnv : Ixon.Env) : IO AiurTestCase := do
+  let (comm, info) ← findConstWithOrThrow ixonEnv "Muts"
+    fun ci => match ci with | .muts _ => true | _ => false
+  let .muts components := info
+    | throw <| IO.userError "findConstWith returned non-Muts"
+  let some firstMc := components[0]?
+    | throw <| IO.userError "Muts components empty"
+  let revealMc : Ix.RevealMutConstInfo := match firstMc with
+    | .defn d => .defn (some d.kind) (some d.safety) none none none
+    | .indc i => .indc (some i.recr) (some i.refl) (some i.isUnsafe)
+                       none none none none none none
+    | .recr r => .recr (some r.k) (some r.isUnsafe) none none none none none
+                       none none
+  let revealInfo : Ix.RevealConstantInfo := .muts #[(0, revealMc)]
+  let witness ← IO.ofExcept <| buildClaimWitness ixonEnv (Ix.Claim.reveal comm revealInfo)
+  pure (asTestCase "Claim Reveal Muts (first component)" witness)
+
+/-- All claim-variant smoke tests packaged for the `ixvm` runner.
+    Builds the shared Ixon env once and threads it through every
+    test. -/
+public def claimSmokeTests (env : Lean.Environment) : IO (List AiurTestCase) := do
+  let ixonEnv ← loadSharedIxonEnv #[``Nat.zero, ``Nat.add_comm] env
+  let t1 ← claimCheckWithAsm ixonEnv
+  let t2 ← claimContains
+  let t3 ← claimCheckEnv ixonEnv
+  let t4 ← claimRevealDefnFields ixonEnv
+  let t5 ← claimRevealCPrj ixonEnv
+  let t6 ← claimRevealDefnExpr ixonEnv
+  let t7 ← claimRevealMuts ixonEnv
+  pure [t1, t2, t3, t4, t5, t6, t7]

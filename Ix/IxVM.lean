@@ -18,7 +18,8 @@ public import Ix.IxVM.Kernel.DefEq
 public import Ix.IxVM.Kernel.Inductive
 public import Ix.IxVM.Kernel.CanonicalCheck
 public import Ix.IxVM.Kernel.Check
-public import Ix.IxVM.CheckHarness
+public import Ix.IxVM.Kernel.Claim
+public import Ix.IxVM.ClaimHarness
 
 public section
 
@@ -39,25 +40,6 @@ def entrypoints := ⟦
         let bytes2 = put_constant(const, store(ListNode.Nil));
         assert_eq!(bytes, bytes2);
         ixon_serde_test(n_minus_1),
-    }
-  }
-
-  -- `check_deps` controls whether transitive dependencies are
-  -- typechecked along with the target. When 1, runs `check_all`
-  -- (current behavior). When 0, runs `check_const` only on the target
-  -- — saving the per-dep `validate_const_well_scoped`, `k_check`,
-  -- recursor canonical-build, positivity, etc. Deps still need to be
-  -- in `k_consts`/`addrs` so the target's own `whnf`/`infer` can
-  -- resolve `Const` refs; the IOBuffer payload doesn't shrink.
-  pub fn kernel_check_test(target_addr: [G; 32], check_deps: G) {
-    let target = store(target_addr);
-    let (k_consts, addrs) = ingress_with_primitives(target);
-    match check_deps {
-      0 =>
-        let target_pos = find_addr_idx(target, addrs, 0);
-        let ci = load(list_lookup(k_consts, target_pos));
-        check_const(ci, target_pos, k_consts, addrs),
-      _ => check_all(k_consts, k_consts, addrs),
     }
   }
 
@@ -187,6 +169,7 @@ def ixVM : Except Aiur.Global Aiur.Source.Toplevel := do
   let vm ← vm.merge inductive_check
   let vm ← vm.merge canonicalCheck
   let vm ← vm.merge check
+  let vm ← vm.merge claim
   vm.merge entrypoints
 
 end IxVM

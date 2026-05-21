@@ -95,7 +95,9 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
     let kernelUnitTests := .exec `kernel_unit_tests
     let serdeNatAddCommTest ← serdeNatAddComm env
     let kernelChecks ← kernelChecks env
-    let aiurTests := [kernelUnitTests, serdeNatAddCommTest] ++ kernelChecks
+    let claimSmokes ← claimSmokeTests env
+    let aiurTests := [kernelUnitTests, serdeNatAddCommTest]
+                     ++ kernelChecks ++ claimSmokes
     -- The arena suite shares the compiled toplevel with the AiurTestCase
     -- runs above; build it once here and weave the resulting TestSeq in
     -- alongside `mkAiurTests`'s output.
