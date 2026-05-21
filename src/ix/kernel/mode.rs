@@ -186,6 +186,13 @@ impl MetaDisplay for () {
 
 /// Controls metadata behavior for all zero kernel types.
 pub trait KernelMode: 'static + Clone + Debug + Send + Sync {
+  /// `true` iff this mode carries metadata. Enables compile-time
+  /// pruning: code paths gated by `if M::HAS_META { … }` are
+  /// monomorphized into the dead-branch-eliminated form for the Anon
+  /// implementation. Use this to guard metadata lookups so they don't
+  /// execute in Anon mode.
+  const HAS_META: bool;
+
   /// A metadata field: stores `T` in Meta mode, erased to `()` in Anon mode.
   type MField<T: MetaHash + MetaDisplay + PartialEq + Clone + Debug + Hash + Send + Sync>:
     MetaHash + MetaDisplay + PartialEq + Clone + Debug + Hash + Send + Sync;
@@ -196,6 +203,29 @@ pub trait KernelMode: 'static + Clone + Debug + Send + Sync {
   >(
     val: T,
   ) -> Self::MField<T>;
+
+  /// Build a metadata field from a closure. Meta runs the closure to
+  /// produce the wrapped value; Anon discards the closure unevaluated
+  /// and returns `()`. The fallible counterpart is `meta_field_try`.
+  ///
+  /// Use this at metadata-extraction sites in mode-generic code: the
+  /// closure body — including arena walks, name resolution, and any
+  /// other work that only matters in Meta mode — is skipped entirely
+  /// when `M = Anon`, with no `Name::anon`-style placeholder
+  /// construction at the call site.
+  fn meta_field_with<T, F>(f: F) -> Self::MField<T>
+  where
+    T: MetaHash + MetaDisplay + PartialEq + Clone + Debug + Hash + Send + Sync,
+    F: FnOnce() -> T;
+
+  /// Fallible variant of `meta_field_with`. Meta runs the closure (and
+  /// may return its `Err`); Anon discards the closure and returns
+  /// `Ok(())`. Use for sites where missing metadata is a Meta-mode
+  /// error but a no-op in Anon mode.
+  fn meta_field_try<T, F, E>(f: F) -> Result<Self::MField<T>, E>
+  where
+    T: MetaHash + MetaDisplay + PartialEq + Clone + Debug + Hash + Send + Sync,
+    F: FnOnce() -> Result<T, E>;
 
   /// Extract a name from a metadata field when running in Meta mode.
   fn meta_name(field: &Self::MField<Name>) -> Option<Name>;
@@ -211,6 +241,8 @@ pub type Meta = ZMode<true>;
 pub type Anon = ZMode<false>;
 
 impl KernelMode for ZMode<true> {
+  const HAS_META: bool = true;
+
   type MField<
     T: MetaHash + MetaDisplay + PartialEq + Clone + Debug + Hash + Send + Sync,
   > = T;
@@ -223,12 +255,30 @@ impl KernelMode for ZMode<true> {
     val
   }
 
+  fn meta_field_with<T, F>(f: F) -> T
+  where
+    T: MetaHash + MetaDisplay + PartialEq + Clone + Debug + Hash + Send + Sync,
+    F: FnOnce() -> T,
+  {
+    f()
+  }
+
+  fn meta_field_try<T, F, E>(f: F) -> Result<T, E>
+  where
+    T: MetaHash + MetaDisplay + PartialEq + Clone + Debug + Hash + Send + Sync,
+    F: FnOnce() -> Result<T, E>,
+  {
+    f()
+  }
+
   fn meta_name(field: &Name) -> Option<Name> {
     Some(field.clone())
   }
 }
 
 impl KernelMode for ZMode<false> {
+  const HAS_META: bool = false;
+
   type MField<
     T: MetaHash + MetaDisplay + PartialEq + Clone + Debug + Hash + Send + Sync,
   > = ();
@@ -238,6 +288,24 @@ impl KernelMode for ZMode<false> {
   >(
     _val: T,
   ) {
+  }
+
+  fn meta_field_with<T, F>(_f: F)
+  where
+    T: MetaHash + MetaDisplay + PartialEq + Clone + Debug + Hash + Send + Sync,
+    F: FnOnce() -> T,
+  {
+    // Anon: closure never invoked — the metadata extraction work it
+    // would have performed (arena walk, name resolution, etc.) is
+    // entirely skipped.
+  }
+
+  fn meta_field_try<T, F, E>(_f: F) -> Result<(), E>
+  where
+    T: MetaHash + MetaDisplay + PartialEq + Clone + Debug + Hash + Send + Sync,
+    F: FnOnce() -> Result<T, E>,
+  {
+    Ok(())
   }
 
   fn meta_name(_field: &()) -> Option<Name> {

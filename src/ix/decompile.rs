@@ -160,11 +160,11 @@ fn read_string(
   })
 }
 
-/// Read a Constant from the const store.
+/// Read a Constant from the const store, materializing the lazy entry.
 fn read_const(
   addr: &Address,
   stt: &CompileState,
-) -> Result<Constant, DecompileError> {
+) -> Result<Arc<Constant>, DecompileError> {
   stt.env.get_const(addr).ok_or(DecompileError::MissingAddress(addr.clone()))
 }
 
@@ -1807,13 +1807,8 @@ fn decompile_const(
   let ctx = all_to_ctx(&all_names);
   let current_const = name.pretty();
 
-  match cnst {
-    Constant {
-      info: ConstantInfo::Defn(def),
-      ref sharing,
-      ref refs,
-      ref univs,
-    } => {
+  match cnst.as_ref() {
+    Constant { info: ConstantInfo::Defn(def), sharing, refs, univs } => {
       let mut cache = BlockCache {
         sharing: sharing.clone(),
         refs: refs.clone(),
@@ -1823,17 +1818,11 @@ fn decompile_const(
         ..Default::default()
       };
       cache.load_meta_extensions(&named.meta);
-      let info =
-        decompile_definition(&def, &named.meta, &mut cache, stt, dstt)?;
+      let info = decompile_definition(def, &named.meta, &mut cache, stt, dstt)?;
       dstt.env.insert(name.clone(), info);
     },
 
-    Constant {
-      info: ConstantInfo::Recr(rec),
-      ref sharing,
-      ref refs,
-      ref univs,
-    } => {
+    Constant { info: ConstantInfo::Recr(rec), sharing, refs, univs } => {
       let mut cache = BlockCache {
         sharing: sharing.clone(),
         refs: refs.clone(),
@@ -1848,16 +1837,11 @@ fn decompile_const(
       // `CallSiteEntry::Collapsed.sharing_idx` from the intended
       // `meta_sharing` slot.
       cache.load_meta_extensions(&named.meta);
-      let info = decompile_recursor(&rec, &named.meta, &mut cache, stt, dstt)?;
+      let info = decompile_recursor(rec, &named.meta, &mut cache, stt, dstt)?;
       dstt.env.insert(name.clone(), info);
     },
 
-    Constant {
-      info: ConstantInfo::Axio(ax),
-      ref sharing,
-      ref refs,
-      ref univs,
-    } => {
+    Constant { info: ConstantInfo::Axio(ax), sharing, refs, univs } => {
       let mut cache = BlockCache {
         sharing: sharing.clone(),
         refs: refs.clone(),
@@ -1869,16 +1853,11 @@ fn decompile_const(
       // Axioms have only a type (no body), so no surgery today — but
       // load extensions for consistency with the other branches.
       cache.load_meta_extensions(&named.meta);
-      let info = decompile_axiom(&ax, &named.meta, &mut cache, stt, dstt)?;
+      let info = decompile_axiom(ax, &named.meta, &mut cache, stt, dstt)?;
       dstt.env.insert(name.clone(), info);
     },
 
-    Constant {
-      info: ConstantInfo::Quot(quot),
-      ref sharing,
-      ref refs,
-      ref univs,
-    } => {
+    Constant { info: ConstantInfo::Quot(quot), sharing, refs, univs } => {
       let mut cache = BlockCache {
         sharing: sharing.clone(),
         refs: refs.clone(),
@@ -1890,7 +1869,7 @@ fn decompile_const(
       // Quotient types have only a type signature — same story as
       // axioms. Load extensions for consistency.
       cache.load_meta_extensions(&named.meta);
-      let info = decompile_quotient(&quot, &named.meta, &mut cache, stt, dstt)?;
+      let info = decompile_quotient(quot, &named.meta, &mut cache, stt, dstt)?;
       dstt.env.insert(name.clone(), info);
     },
 
@@ -3129,50 +3108,44 @@ fn decompile_named_const(
 
       // Projections - get the block and decompile
       ConstantInfo::DPrj(proj) => {
-        if let Some(Constant {
-          info: ConstantInfo::Muts(mutuals),
-          ref sharing,
-          ref refs,
-          ref univs,
-        }) = stt.env.get_const(&proj.block)
-        {
-          decompile_projection(
-            name, named, &cnst, &mutuals, sharing, refs, univs, stt, dstt,
-          )
-        } else {
-          Err(DecompileError::MissingAddress(proj.block.clone()))
+        match stt.env.get_const(&proj.block).as_deref() {
+          Some(Constant {
+            info: ConstantInfo::Muts(mutuals),
+            sharing,
+            refs,
+            univs,
+          }) => decompile_projection(
+            name, named, &cnst, mutuals, sharing, refs, univs, stt, dstt,
+          ),
+          _ => Err(DecompileError::MissingAddress(proj.block.clone())),
         }
       },
 
       ConstantInfo::IPrj(proj) => {
-        if let Some(Constant {
-          info: ConstantInfo::Muts(mutuals),
-          ref sharing,
-          ref refs,
-          ref univs,
-        }) = stt.env.get_const(&proj.block)
-        {
-          decompile_projection(
-            name, named, &cnst, &mutuals, sharing, refs, univs, stt, dstt,
-          )
-        } else {
-          Err(DecompileError::MissingAddress(proj.block.clone()))
+        match stt.env.get_const(&proj.block).as_deref() {
+          Some(Constant {
+            info: ConstantInfo::Muts(mutuals),
+            sharing,
+            refs,
+            univs,
+          }) => decompile_projection(
+            name, named, &cnst, mutuals, sharing, refs, univs, stt, dstt,
+          ),
+          _ => Err(DecompileError::MissingAddress(proj.block.clone())),
         }
       },
 
       ConstantInfo::RPrj(proj) => {
-        if let Some(Constant {
-          info: ConstantInfo::Muts(mutuals),
-          ref sharing,
-          ref refs,
-          ref univs,
-        }) = stt.env.get_const(&proj.block)
-        {
-          decompile_projection(
-            name, named, &cnst, &mutuals, sharing, refs, univs, stt, dstt,
-          )
-        } else {
-          Err(DecompileError::MissingAddress(proj.block.clone()))
+        match stt.env.get_const(&proj.block).as_deref() {
+          Some(Constant {
+            info: ConstantInfo::Muts(mutuals),
+            sharing,
+            refs,
+            univs,
+          }) => decompile_projection(
+            name, named, &cnst, mutuals, sharing, refs, univs, stt, dstt,
+          ),
+          _ => Err(DecompileError::MissingAddress(proj.block.clone())),
         }
       },
 

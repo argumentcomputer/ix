@@ -152,21 +152,24 @@ def commitDef (compileEnv : CompileM.CompileEnv) (leanEnv : Lean.Environment)
 -- Build claims
 -- ============================================================================
 
-/-- Build an evaluation claim from input and output expressions.
-    Compiles both expressions to get their content addresses. -/
+/-- Build an unconditional evaluation claim from input and output
+    expressions. Compiles both to get their content addresses. The
+    `assumptions` field is `none`; higher-level builders can compute
+    transitive-dep assumptions when available. -/
 def evalClaim (compileEnv : CompileM.CompileEnv)
     (lvls : List Lean.Name) (input output type : Lean.Expr)
     : Except String Claim := do
   let (inputAddr, compileEnv') ← compileDef compileEnv lvls type input
   let (outputAddr, _) ← compileDef compileEnv' lvls type output
-  return .eval inputAddr outputAddr
+  return .eval inputAddr outputAddr none
 
-/-- Build a check claim: asserts that the compiled definition is well-typed. -/
+/-- Build an unconditional check claim: asserts that the compiled
+    definition is well-typed. -/
 def checkClaim (compileEnv : CompileM.CompileEnv)
     (lvls : List Lean.Name) (type value : Lean.Expr)
     : Except String Claim := do
   let (addr, _) ← compileDef compileEnv lvls type value
-  return .check addr
+  return .check addr none
 
 /-- Build a reveal claim from a commitment address and revealed field info. -/
 def revealClaim (comm : Address) (info : RevealConstantInfo) : Claim :=

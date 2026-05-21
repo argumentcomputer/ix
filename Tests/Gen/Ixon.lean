@@ -443,9 +443,14 @@ def genIxName : Nat → Gen Ix.Name
         pure (Ix.Name.mkNat parent n))
     ] (pure Ix.Name.mkAnon)
 
-/-- Generate a RawConst -/
-def genRawConst : Gen RawConst :=
-  RawConst.mk <$> genAddress <*> genConstant
+/-- Generate a RawConst whose `addr` is the canonical content hash of
+    `const`. The Rust loader (`Env::get`) verifies
+    `Address::hash(serConstant c) == addr` on load (added by the
+    address-tampering defense in the anon-mode work), so generated
+    pairs with arbitrary addresses are now rejected. -/
+def genRawConst : Gen RawConst := do
+  let c ← genConstant
+  pure { addr := Address.blake3 (serConstant c), const := c }
 
 /-- Generate a RawNamed with empty metadata (matching Rust test generator).
     Metadata addresses must reference valid names in env.names for indexed serialization. -/

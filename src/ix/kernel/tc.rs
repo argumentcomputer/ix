@@ -22,6 +22,7 @@ use super::expr::{ExprData, FVarId, KExpr};
 use super::id::KId;
 use super::ingress::{
   IxonIngressLookups, ingress_addr_shallow_into_kenv_with_lookups,
+  ingress_anon_addr_shallow,
 };
 use super::lctx::LocalDecl;
 use super::level::{KUniv, UnivData};
@@ -90,6 +91,16 @@ pub struct LazyIxonIngress<'a> {
   faulted_addrs: FxHashSet<Address>,
 }
 
+/// Lazy on-demand ingress for the anon kernel. Faults a missing
+/// constant into the worker's `KEnv<Anon>` using only `Constant` data —
+/// no metadata access. Intended for use with envs loaded via
+/// `Env::get_anon` (which discards metadata sections), but the
+/// implementation never consults those sections regardless.
+pub struct LazyAnonIngress<'a> {
+  anon_env: &'a IxonEnv,
+  faulted_addrs: FxHashSet<Address>,
+}
+
 /// Thread-local type-checking handle. Cheap to create — only allocates empty
 /// vectors and counters. Kernel state lives in the borrowed worker `KEnv`.
 pub struct TypeChecker<'a, M: KernelMode> {
@@ -98,6 +109,11 @@ pub struct TypeChecker<'a, M: KernelMode> {
   /// Optional read-only Ixon source used to fault constants into `env` when
   /// typechecking discovers a missing address.
   lazy_ixon: Option<LazyIxonIngress<'a>>,
+  /// Optional metadata-free lazy ingress (anon mode). Mutually exclusive with
+  /// `lazy_ixon` — `new_with_lazy_anon` constructs Anon-mode checkers; the
+  /// `lazy_ingress_addr` dispatcher uses whichever is set. The anon path
+  /// never reads `Env::named`/`Env::names`.
+  lazy_anon: Option<LazyAnonIngress<'a>>,
   /// Primitive constant KIds. Copied from `env.prims()` at construction;
   /// overridable for tests via `tc.prims = custom`.
   pub prims: Primitives<M>,
@@ -175,6 +191,7 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     TypeChecker {
       env,
       lazy_ixon: None,
+      lazy_anon: None,
       prims,
       ctx: Vec::new(),
       let_vals: Vec::new(),
@@ -224,7 +241,7 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     if let Some(c) = self.env.get(id) {
       return Ok(Some(c));
     }
-    let lazy_enabled = self.lazy_ixon.is_some();
+    let lazy_enabled = self.lazy_ixon.is_some() || self.lazy_anon.is_some();
     self.lazy_ingress_addr(&id.addr)?;
     match self.env.get(id) {
       Some(c) => Ok(Some(c)),
@@ -255,6 +272,28 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
   }
 
   fn lazy_ingress_addr(&mut self, addr: &Address) -> Result<(), TcError<M>> {
+    // Anon-mode lazy path. The `lazy_anon` field is only ever set by
+    // `TypeChecker::<Anon>::new_with_lazy_anon` (defined in a non-generic
+    // impl block below), so its presence is a compile-time witness that
+    // `M = Anon`. The transmute below relies on this invariant.
+    if let Some(lazy) = self.lazy_anon.as_mut() {
+      if !lazy.faulted_addrs.insert(addr.clone()) {
+        return Ok(());
+      }
+      // SAFETY: `lazy_anon` is only set by the `M = Anon` constructor,
+      // so this cast is the identity when reached. `KEnv<Anon>` and
+      // `KEnv<M>` have the same layout iff `M == Anon`; both
+      // `KernelMode` impls (`ZMode<true>`, `ZMode<false>`) are layout-
+      // compatible per-field only when `M` matches. The invariant holds.
+      let env_anon: &mut KEnv<super::mode::Anon> = unsafe {
+        &mut *(self.env as *mut KEnv<M>).cast::<KEnv<super::mode::Anon>>()
+      };
+      return ingress_anon_addr_shallow(env_anon, lazy.anon_env, addr)
+        .map(|_| ())
+        .map_err(|msg| {
+          TcError::Other(format!("lazy anon ingress {}: {msg}", addr.hex()))
+        });
+    }
     let Some(lazy) = self.lazy_ixon.as_mut() else {
       return Ok(());
     };
@@ -932,6 +971,39 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     for (key, count) in entries.into_iter().take(25) {
       eprintln!("  {count:>8}  {key}");
     }
+  }
+}
+
+// -----------------------------------------------------------------------
+// Anon-only constructors
+// -----------------------------------------------------------------------
+//
+// `new_with_lazy_anon` lives here so the `M = Anon` constraint is enforced
+// at compile time. The dispatcher in `lazy_ingress_addr` relies on this:
+// `lazy_anon` being `Some` is a witness that `M = Anon`, which makes the
+// `&mut KEnv<M>` → `&mut KEnv<Anon>` cast a no-op transmute.
+
+impl<'a> TypeChecker<'a, super::mode::Anon> {
+  /// Construct an anon-mode typechecker with lazy on-demand ingress.
+  /// `anon_env` is expected to come from `Env::get_anon` (or otherwise
+  /// have empty metadata maps). The dispatcher in `lazy_ingress_addr`
+  /// never consults metadata regardless.
+  ///
+  /// Primitives are resolved by address only — `Primitives::from_addr_names`
+  /// receives a closure that always returns `None`, so the
+  /// `M::MField<Name>` slot ends up as `()` (always, in Anon mode).
+  pub fn new_with_lazy_anon(
+    env: &'a mut KEnv<super::mode::Anon>,
+    anon_env: &'a IxonEnv,
+  ) -> Self {
+    if !env.has_prims() {
+      let prims = Primitives::from_addr_names(|_addr| None);
+      let _ = env.set_prims(prims);
+    }
+    let mut tc = Self::new(env);
+    tc.lazy_anon =
+      Some(LazyAnonIngress { anon_env, faulted_addrs: FxHashSet::default() });
+    tc
   }
 }
 

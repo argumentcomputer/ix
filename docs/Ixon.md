@@ -91,8 +91,8 @@ Used for expressions, constants, and environment/proof structures. Header byte f
 | 0xB | Expr | Share | Share vector index |
 | 0xC | Constant | Muts | Entry count |
 | 0xD | Constant | Non-Muts | Variant (0-7) |
-| 0xE | Env/Proof | Env/Claim/Proof/Comm | Variant (0-7) |
-| 0xF | - | Reserved | - |
+| 0xE | Env/Claim | Env/Comm/AssumptionTree/Claim | Variant (0-7) |
+| 0xF | Proof | ZK proofs | Variant (0-4); 5-7 reserved |
 
 ```rust
 pub struct Tag4 {
@@ -795,13 +795,29 @@ Names are topologically sorted in the environment so parents are serialized befo
 
 ### Environment Serialization
 
-The environment serializes in 5 sections with a version header:
+Serialized environments are stored on disk with the **`.ixe`** file
+extension (e.g., `compilemathlib.ixe`). The `ix compile` CLI produces
+these files; the default output name is the lowercased input file stem
+plus `.ixe`. See `src/ix/ixon/serialize.rs::Env::put` for the
+byte-level layout.
+
+The .ixe layout is a Tag4(0xE, 0) header byte followed by a 32-byte
+canonical merkle root and then 5 sections:
 
 ```
-Header: Tag4 { flag: 0xE, size: VERSION }
+Header:  Tag4 { flag: 0xE, size: 0 }    -- one byte (0xE0)
+Root:    32 bytes                       -- canonical merkle root over
+                                          consts.keys(); for empty
+                                          const sets this is the
+                                          fixed `zero_address`
+                                          sentinel.
 ```
 
-Current version is 2 (supports zstd compression after header).
+The root is mandatory (non-optional): every env has a unique canonical
+identity recoverable from its file. Two envs with the same const set
+produce byte-identical roots regardless of construction order.
+Deserialization recomputes the root from `consts` and rejects any
+mismatch as tampered.
 
 **Section 1: Blobs** (Address → raw bytes)
 ```
@@ -809,11 +825,31 @@ count (Tag0)
 [Address (32 bytes) + len (Tag0) + bytes]*
 ```
 
-**Section 2: Constants** (Address → Constant)
+**Section 2: Constants** (Address → length-prefixed Constant bytes)
 ```
 count (Tag0)
-[Address (32 bytes) + Constant]*
+[Address (32 bytes) + len (Tag0) + Constant bytes (Tag4-bounded)]*
 ```
+
+The Tag0 length sidecar is a **section-level** framing byte: it is not
+part of the constant's content-addressed bytes. The address is
+computed as `blake3` over only the Tag4 constant body. This layout
+lets a lazy loader slice each constant directly into a
+[`LazyConstant`](../src/ix/ixon/lazy.rs) without parsing its Tag4
+envelope, deferring full deserialization until first access. The
+materialized `Constant` is cached so subsequent accesses are free.
+
+### Anonymous-only loading
+
+`Env::get_anon` (`src/ix/ixon/serialize.rs`) is a sibling of
+`Env::get` that loads only the anonymous sections — header, blobs,
+consts — and parses-and-drops the metadata sections (names, named,
+comms). The returned `Env` has empty `named`/`names`/`comms` and is
+suitable for anon-mode kernel workflows that never consult metadata.
+Steady-state memory for a Mathlib-scale env drops from ~3-4 GB
+(structured + metadata) to ~1 GB (lazy bytes only).
+
+Exposed to Lean via `rs_de_env_anon` (`Ix.Ixon.rsDeEnvAnon`).
 
 **Section 3: Names** (Address → NameComponent, topologically sorted)
 ```
@@ -837,53 +873,88 @@ count (Tag0)
 
 ## Proofs and Claims
 
-Claims, proofs, commitments, and environments share Tag4 flag 0xE.
+Envs, commitments, the AssumptionTree data type, and all claims share
+Tag4 flag 0xE. Proofs (opaque ZK bytes) share Tag4 flag 0xF. Everything
+fits in single-byte tags (sizes 0..=7 per flag).
 
-### Tag4 0xE Variant Layout
+### Tag4 0xE Variant Layout (Env + Comm + AssumptionTree + Claims)
 
 | Size | Byte | Type | Payload |
 |------|------|------|---------|
-| 0 | `0xE0` | Environment | sections |
-| 1 | `0xE1` | CheckProof | 1 addr + proof bytes |
-| 2 | `0xE2` | EvalProof | 2 addr + proof bytes |
-| 3 | `0xE3` | CheckClaim | 1 addr |
-| 4 | `0xE4` | EvalClaim | 2 addr: input, output |
-| 5 | `0xE5` | Commitment | 2 addr: secret, payload |
-| 6 | `0xE6` | RevealClaim | 1 addr + RevealConstantInfo |
-| 7 | `0xE7` | RevealProof | 1 addr + RevealConstantInfo + proof bytes |
+| 0 | `0xE0` | Environment | bare 32-byte merkle root + 5 sections |
+| 1 | `0xE1` | Commitment | 2 addr: secret, payload |
+| 2 | `0xE2` | AssumptionTree | recursive merkle-tree body (see below) |
+| 3 | `0xE3` | Eval claim | 2 addr (input, output) + opt assumptions |
+| 4 | `0xE4` | Check claim | 1 addr (const) + opt assumptions |
+| 5 | `0xE5` | CheckEnv claim | 1 addr (env root) + opt assumptions |
+| 6 | `0xE6` | Reveal claim | 1 addr (comm) + RevealConstantInfo |
+| 7 | `0xE7` | Contains claim | 2 addr (tree, const) |
+
+`opt assumptions` encoding: 1 byte `0x00` for `None`, or `0x01` followed
+by 32 bytes for `Some(merkle_root)`.
+
+### Tag4 0xF Variant Layout (Proofs)
+
+| Size | Byte | Type | Payload |
+|------|------|------|---------|
+| 0 | `0xF0` | Eval proof | claim payload + Tag0 length + opaque ZK bytes |
+| 1 | `0xF1` | Check proof | claim payload + Tag0 length + opaque ZK bytes |
+| 2 | `0xF2` | CheckEnv proof | claim payload + Tag0 length + opaque ZK bytes |
+| 3 | `0xF3` | Reveal proof | claim payload + Tag0 length + opaque ZK bytes |
+| 4 | `0xF4` | Contains proof | claim payload + Tag0 length + opaque ZK bytes |
+
+Proof bytes are uniform opaque ZK proofs — witness data (e.g., merkle
+paths for Contains) is prover-side scratch consumed by the ZK circuit
+and NOT transmitted on the wire.
 
 ### Claim Types
 
 ```rust
-/// Evaluation claim: the constant at `input` evaluates to the constant at `output`.
-pub struct EvalClaim {
-    pub input: Address,   // Input constant address
-    pub output: Address,  // Output constant address
-}
-
-/// Type-checking claim: the constant at `value` is well-typed.
-pub struct CheckClaim {
-    pub value: Address,   // Value constant address
-}
-
-/// Selective revelation of fields of a committed constant.
-pub struct RevealClaim {
-    pub comm: Address,              // Commitment address
-    pub info: RevealConstantInfo,   // Revealed field information
-}
-
 pub enum Claim {
-    Evals(EvalClaim),
-    Checks(CheckClaim),
-    Reveals(RevealClaim),
+    /// `input` evaluates to `output`, optionally modulo `assumptions`.
+    Eval { input: Address, output: Address, assumptions: Option<Address> },
+    /// The constant at `const_addr` is well-typed, optionally modulo
+    /// `assumptions`.
+    Check { const_addr: Address, assumptions: Option<Address> },
+    /// Every constant in the env merkle-rooted at `root` is well-typed,
+    /// optionally modulo `assumptions` (typically the env's axiom leaves).
+    CheckEnv { root: Address, assumptions: Option<Address> },
+    /// Selective field revelation of a committed constant.
+    Reveal { comm: Address, info: RevealConstantInfo },
+    /// `const_addr` is a leaf in the merkle tree rooted at `tree`.
+    Contains { tree: Address, const_addr: Address },
 }
 ```
+
+### AssumptionTree
+
+A serializable merkle tree over `Address` leaves, used to recover the
+leaf set committed to by a conditional claim's `assumptions` root.
+
+The body has **three** variants — leaves, internal nodes, and an
+explicit `Padding` sentinel that the canonical builder inserts at
+odd-count levels so the byte-tree matches `merkle_root_canonical`'s
+zero-mixing shape (a `Padding` hashes to `zero_address()`).
+
+```
+[Tag4(0xE, 2) = 0xE2] [body]
+
+body recursive:
+  Leaf(addr):   [0x00] [addr:32]
+  Padding:      [0x01]
+  Node(l, r):   [0x02] [body l] [body r]
+```
+
+Size is shape-dependent: each `Leaf` is 33 bytes, each `Padding` is
+1 byte, each `Node` is 1 byte plus its children, and the top-level
+`Tag4` adds 1 byte. For example, `N = 1` ⇒ 34 bytes; `N = 2` ⇒ 68
+bytes; `N = 3` (padded to 4) ⇒ 104 bytes.
 
 ### Commitment Hashing
 
-Commitments are serialized with Tag4(0xE, 5) and hashed with blake3:
+Commitments are serialized with Tag4(0xE, 1) and hashed with blake3:
 ```
-commitment_address = blake3(0xE5 + secret_address + payload_address)
+commitment_address = blake3(0xE1 + secret_address + payload_address)
 ```
 
 The payload address is always the transparent hash of the constant, regardless of the secret.
@@ -891,54 +962,67 @@ Two commitments to the same constant share the same payload address.
 
 ### RevealConstantInfo Format
 
-RevealClaim allows selective revelation of constant metadata fields (kind, safety, idx, etc.)
-without opening the full commitment. Serialization: `variant (1 byte) + field_mask (Tag0) + field values...`
+The Reveal claim allows selective revelation of constant metadata fields
+(kind, safety, idx, etc.) without opening the full commitment.
+Serialization: `variant (1 byte) + field_mask (Tag0) + field values...`
 
-The field_mask uses Tag0 encoding (1 byte for masks < 128). Fields are serialized in mask bit order.
-Expression fields are revealed as `Address = blake3(serialized Expr bytes)`.
+The field_mask uses Tag0 encoding (1 byte for masks < 128). Fields are
+serialized in mask bit order. Expression fields are revealed as `Address
+= blake3(serialized Expr bytes)`.
 
 ### Proof Structure
 
 ```rust
 pub struct Proof {
     pub claim: Claim,     // The claim being proven
-    pub proof: Vec<u8>,   // Opaque proof data (e.g., ZK proof bytes)
+    pub proof: Vec<u8>,   // Opaque ZK proof bytes (uniform across variants)
 }
 ```
 
 ### Serialization Examples
 
-**EvalClaim** (0xE4, 2 addresses):
+**Eval claim** (0xE3, 2 addresses + opt assumptions byte):
 ```
-E4                    -- Tag4 { flag: 0xE, size: 4 } (EvalClaim)
+E3                    -- Tag4 { flag: 0xE, size: 3 } (Eval)
 [32 bytes]            -- input address
 [32 bytes]            -- output address
+00                    -- assumptions = None (or 01 + [32 bytes] for Some)
 ```
 
-**EvalProof** (0xE2, 2 addresses + proof):
+**Eval proof** (0xF0, claim payload + opaque ZK bytes):
 ```
-E2                    -- Tag4 { flag: 0xE, size: 2 } (EvalProof)
+F0                    -- Tag4 { flag: 0xF, size: 0 } (Eval proof)
 [32 bytes]            -- input address
 [32 bytes]            -- output address
+00                    -- assumptions = None
 04                    -- proof.len = 4 (Tag0)
-01 02 03 04           -- proof bytes
+01 02 03 04           -- opaque ZK proof bytes
 ```
 
-**CheckClaim** (0xE3, 1 address):
+**Check claim** (0xE4, 1 address + opt assumptions byte):
 ```
-E3                    -- Tag4 { flag: 0xE, size: 3 } (CheckClaim)
-[32 bytes]            -- value address
+E4                    -- Tag4 { flag: 0xE, size: 4 } (Check)
+[32 bytes]            -- const address
+00                    -- assumptions = None
 ```
 
-**RevealClaim** — reveal that a committed Definition has `safety = Safe`:
+**Reveal claim** — reveal that a committed Definition has `safety = Safe`:
 ```
-E6                    -- Tag4 { flag: 0xE, size: 6 } (RevealClaim)
+E6                    -- Tag4 { flag: 0xE, size: 6 } (Reveal)
 [32 bytes]            -- comm_addr
 00                    -- variant: Definition
 02                    -- mask: bit 1 (safety) [Tag0]
 01                    -- DefinitionSafety::Safe
 ```
 Total: 36 bytes.
+
+**Contains claim** (0xE7, 2 addresses):
+```
+E7                    -- Tag4 { flag: 0xE, size: 7 } (Contains)
+[32 bytes]            -- tree (merkle root)
+[32 bytes]            -- const address (asserted leaf)
+```
+Total: 65 bytes.
 
 ---
 
@@ -1288,7 +1372,7 @@ same constant share the same payload address (canonicity). The secret provides b
 
 Commitments enable:
 - **Whole-constant hiding** via `Comm` (hides everything including metadata)
-- **Selective revelation** via `RevealClaim` (proves specific field values about a committed constant)
+- **Selective revelation** via `Claim::Reveal` (proves specific field values about a committed constant)
 - **Expression-level blinding** via `Expr.ref <comm_addr>` within expression trees
 - **Verifiable computation** on committed data (the ZK circuit opens commitments privately)
 

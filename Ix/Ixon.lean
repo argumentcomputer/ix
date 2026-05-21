@@ -11,6 +11,7 @@ module
 public import Ix.Address
 public import Ix.Common
 public import Ix.Environment
+public import Ix.Merkle
 
 public section
 
@@ -1419,12 +1420,12 @@ instance : Serialize Comm where
 def serComm (c : Comm) : ByteArray := runPut (putComm c)
 def deComm (bytes : ByteArray) : Except String Comm := runGet getComm bytes
 
-/-- Serialize Comm with Tag4{0xE, 5} header. -/
+/-- Serialize Comm with Tag4{0xE, 1} header. -/
 def putCommTagged (c : Comm) : PutM Unit := do
-  putTag4 ⟨0xE, 5⟩
+  putTag4 ⟨0xE, 1⟩
   putComm c
 
-/-- Serialize Comm with Tag4{0xE, 5} header to bytes. -/
+/-- Serialize Comm with Tag4{0xE, 1} header to bytes. -/
 def serCommTagged (c : Comm) : ByteArray := runPut (putCommTagged c)
 
 /-- Compute commitment address: blake3(Tag4{0xE,5} + secret + payload). -/
@@ -1712,6 +1713,15 @@ def putEnv (env : Env) : PutM Unit := do
   -- Header: Tag4 with flag=0xE, size=0 (Env variant)
   putTag4 ⟨FLAG, 0⟩
 
+  -- Canonical merkle root over consts addresses (matches Rust Env::put).
+  -- Always 32 bytes: for empty const sets, the sentinel
+  -- `Ix.Merkle.zeroAddress` is used (cannot collide with any non-empty
+  -- canonical root, which is always a Blake3 hash).
+  let constAddrs : Array Address :=
+    (env.consts.toList.toArray.map (·.1))
+  let root := (Ix.Merkle.merkleRootCanonical constAddrs).getD Ix.Merkle.zeroAddress
+  Serialize.put root
+
   -- Section 1: Blobs (Address -> bytes)
   let blobs := env.blobs.toList.toArray.qsort fun a b => (compare a.1 b.1).isLT
   putTag0 ⟨blobs.size.toUInt64⟩
@@ -1720,12 +1730,20 @@ def putEnv (env : Env) : PutM Unit := do
     putTag0 ⟨bytes.size.toUInt64⟩
     putBytes bytes
 
-  -- Section 2: Consts (Address -> Constant)
+  -- Section 2: Consts (Address -> Tag0-length-prefixed Tag4 constant bytes)
+  --
+  -- The Tag0 length sidecar is added at the env-section level so a lazy
+  -- loader can slice each constant without parsing its Tag4 envelope.
+  -- The length is NOT part of the content-addressed bytes: the address
+  -- is `Address.hash` over the Tag4 constant body alone (which is
+  -- exactly what `serConstant` produces).
   let consts := env.consts.toList.toArray.qsort fun a b => (compare a.1 b.1).isLT
   putTag0 ⟨consts.size.toUInt64⟩
   for (addr, constant) in consts do
     Serialize.put addr
-    putConstant constant
+    let bytes := serConstant constant
+    putTag0 ⟨bytes.size.toUInt64⟩
+    putBytes bytes
 
   -- Section 3: Names (Address -> Name component)
   -- Topologically sorted so parents come before children, with ties broken by address
@@ -1770,6 +1788,11 @@ def getEnv : GetM Env := do
   if tag.size != 0 then
     throw s!"Env.get: expected Env variant 0, got {tag.size}"
 
+  -- Canonical merkle root (fixed 32 bytes). For empty const sets the
+  -- stored value is `Ix.Merkle.zeroAddress`. Verified at end against
+  -- the recomputed root.
+  let storedRoot : Address ← Serialize.get
+
   let mut env : Env := {}
 
   -- Section 1: Blobs
@@ -1780,12 +1803,17 @@ def getEnv : GetM Env := do
     let bytes ← getBytes len.toNat
     env := { env with blobs := env.blobs.insert addr bytes }
 
-  -- Section 2: Consts
+  -- Section 2: Consts (length-prefixed; see putEnv for rationale)
   let numConsts := (← getTag0).size
   for _ in [:numConsts.toNat] do
     let addr ← Serialize.get
-    let constant ← getConstant
-    env := { env with consts := env.consts.insert addr constant }
+    let len := (← getTag0).size
+    let bytes ← getBytes len.toNat
+    match deConstant bytes with
+    | .ok constant =>
+      env := { env with consts := env.consts.insert addr constant }
+    | .error e =>
+      throw s!"Env.get: bad constant bytes for addr {reprStr (toString addr)}: {e}"
 
   -- Section 3: Names (build lookup table AND reverse index)
   let numNames := (← getTag0).size
@@ -1830,6 +1858,15 @@ def getEnv : GetM Env := do
     let addr ← Serialize.get (α := Address)
     let comm ← getComm
     env := { env with comms := env.comms.insert addr comm }
+
+  -- Verify the stored merkle root against the recomputed value. Empty
+  -- const set → expected = zeroAddress.
+  let constAddrs : Array Address :=
+    (env.consts.toList.toArray.map (·.1))
+  let computedRoot :=
+    (Ix.Merkle.merkleRootCanonical constAddrs).getD Ix.Merkle.zeroAddress
+  if computedRoot != storedRoot then
+    throw "Env.get: merkle root mismatch"
 
   pure env
 
@@ -1911,6 +1948,48 @@ opaque rsDeEnvFFI : @& ByteArray → Except String RawEnv
 /-- Deserialize bytes to an Ixon.Env using Rust. -/
 def rsDeEnv (bytes : ByteArray) : Except String Env :=
   return (← rsDeEnvFFI bytes).toEnv
+
+/-- Anonymous-only deserialization: keep blobs + consts, parse-and-drop
+    names/named/comms. Returns a `RawEnv` whose `named`/`names`/`comms`
+    arrays are empty. -/
+@[extern "rs_de_env_anon"]
+opaque rsDeEnvAnonFFI : @& ByteArray → Except String RawEnv
+
+/-- Anonymous-only `rsDeEnv`. The returned `Env` has empty
+    `named`/`names`/`comms` (and `addrToName`) and is suitable for
+    anon-mode kernel workflows. -/
+def rsDeEnvAnon (bytes : ByteArray) : Except String Env :=
+  return (← rsDeEnvAnonFFI bytes).toEnv
+
+/-! ## Canonical merkle root over consts -/
+
+@[extern "rs_env_merkle_root"]
+opaque rsEnvMerkleRootFFI : @& RawEnv → ByteArray
+
+/--
+Compute the canonical merkle root over an Ixon env's `consts.keys()` via
+the Rust implementation. Returns `none` for an empty const set, otherwise
+the 32-byte root wrapped in `some`.
+
+The same value is stored in the env's on-disk Tag4 header (see
+`Env::put`/`Env::get` in `src/ix/ixon/serialize.rs`).
+-/
+def rsEnvMerkleRoot (env : Env) : Option Address :=
+  let bytes := rsEnvMerkleRootFFI env.toRawEnv
+  if bytes.size == 0 then none
+  else if bytes.size == 32 then some ⟨bytes⟩
+  else none
+
+/--
+Pure-Lean canonical merkle root over a `RawEnv`'s consts addresses.
+Used as a cross-check against the Rust FFI: both should agree.
+-/
+def RawEnv.merkleRoot (env : RawEnv) : Option Address :=
+  Ix.Merkle.merkleRootCanonical (env.consts.map (·.addr))
+
+/-- Pure-Lean canonical merkle root for an `Env`. -/
+def Env.merkleRoot (env : Env) : Option Address :=
+  env.toRawEnv.merkleRoot
 
 end Ixon
 

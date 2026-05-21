@@ -15,28 +15,7 @@ use super::constant::DefKind;
 use super::tag::{Tag0, Tag4};
 
 // ============================================================================
-// Core claim/proof types
-// ============================================================================
-
-/// An evaluation claim: asserts that the constant at `input` evaluates to the
-/// constant at `output`.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct EvalClaim {
-  /// Address of the input constant
-  pub input: Address,
-  /// Address of the output constant
-  pub output: Address,
-}
-
-/// A type-checking claim: asserts that the constant at `value` is well-typed.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct CheckClaim {
-  /// Address of the value constant
-  pub value: Address,
-}
-
-// ============================================================================
-// RevealClaim types
+// Reveal info types (per-variant selective-field structures)
 // ============================================================================
 
 /// Revealed fields of a Constructor within an Inductive.
@@ -147,28 +126,46 @@ pub enum RevealConstantInfo {
   },
 }
 
-/// A reveal claim: selective revelation of fields of a committed constant.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct RevealClaim {
-  /// Address of the commitment
-  pub comm: Address,
-  /// Revealed field information
-  pub info: RevealConstantInfo,
-}
-
 // ============================================================================
-// Claim and Proof enums
+// Claim and Proof types
 // ============================================================================
 
 /// A claim that can be proven.
+///
+/// Four families:
+///
+/// - **Typechecking claims** (`Eval`, `Check`, `CheckEnv`): assert that a
+///   constant evaluates, a constant is well-typed, or every constant in
+///   an env is well-typed. Each carries `assumptions: Option<Address>`:
+///   - `None` → unconditional (constructive proof, no axioms).
+///   - `Some(root)` → conditional on every leaf in the merkle tree
+///     rooted at `root` being a well-typed constant.
+/// - **Reveal**: selective field revelation of a committed constant.
+///   Orthogonal to typechecking; carries no assumptions.
+/// - **Contains**: structural membership claim — `const_addr` is a leaf
+///   in the merkle tree rooted at `tree`. Used by the aggregation
+///   circuit to discharge a leaf from a conditional claim's assumption
+///   set. Carries no assumptions itself.
+///
+/// The `assumptions` root may be any merkle tree (canonical sorted+
+/// padded via `merkle_root_canonical`, or free-form via `merkle_join`)
+/// with `Address` leaves. Verifiers recover the leaf set via the
+/// `AssumptionTree` serialization when free-form.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Claim {
-  /// Evaluation claim
-  Evals(EvalClaim),
-  /// Type-checking claim
-  Checks(CheckClaim),
-  /// Reveal claim (selective field revelation)
-  Reveals(RevealClaim),
+  /// `input` evaluates to `output`, optionally modulo `assumptions`.
+  Eval { input: Address, output: Address, assumptions: Option<Address> },
+  /// The constant at `const_addr` is well-typed, optionally modulo
+  /// `assumptions`.
+  Check { const_addr: Address, assumptions: Option<Address> },
+  /// Every constant in the env merkle-rooted at `root` is well-typed,
+  /// optionally modulo `assumptions` (typically the env's axiom
+  /// leaves).
+  CheckEnv { root: Address, assumptions: Option<Address> },
+  /// Selective field revelation of a committed constant.
+  Reveal { comm: Address, info: RevealConstantInfo },
+  /// `const_addr` is a leaf in the merkle tree rooted at `tree`.
+  Contains { tree: Address, const_addr: Address },
 }
 
 /// A proof of a claim.
@@ -181,28 +178,55 @@ pub struct Proof {
 }
 
 // ============================================================================
-// Tag4 variant layout for flag 0xE
+// Tag4 variant layout for flags 0xE (data + claims) and 0xF (proofs)
 // ============================================================================
 
-/// Tag4 flag for claims, proofs, commitments, and environment (0xE).
-/// Size field encodes variant:
-/// - 0: Environment (Env)
-/// - 1: CheckProof (proof of CheckClaim)
-/// - 2: EvalProof (proof of EvalClaim)
-/// - 3: CheckClaim (no proof)
-/// - 4: EvalClaim (no proof)
-/// - 5: Commitment
-/// - 6: RevealClaim
-/// - 7: RevealProof
-pub const FLAG: u8 = 0xE;
+/// Tag4 flag for envs, commitments, AssumptionTree, and claims (0xE).
+///
+/// All variants under 0xE fit in single-byte tags (`0xE0`–`0xE7`).
+/// Matches the `Variant (0-7)` constraint documented in `docs/Ixon.md`.
+///
+/// - 0: Env (on-disk env serialization)
+/// - 1: Comm (commitment, handled in `comm.rs`)
+/// - 2: AssumptionTree (recursive merkle-tree data, see `assumption_tree.rs`)
+/// - 3: Eval claim
+/// - 4: Check claim
+/// - 5: CheckEnv claim
+/// - 6: Reveal claim
+/// - 7: Contains claim
+pub const FLAG_CLAIM: u8 = 0xE;
 
-const VARIANT_CHECK_PROOF: u64 = 1;
-const VARIANT_EVAL_PROOF: u64 = 2;
-const VARIANT_CHECK_CLAIM: u64 = 3;
-const VARIANT_EVAL_CLAIM: u64 = 4;
-// VARIANT 5 = Comm (handled in comm.rs)
-const VARIANT_REVEAL_CLAIM: u64 = 6;
-const VARIANT_REVEAL_PROOF: u64 = 7;
+pub const VARIANT_ENV: u64 = 0;
+// VARIANT 1 = Comm (handled in comm.rs)
+pub const VARIANT_ASSUMPTION_TREE: u64 = 2;
+pub const VARIANT_EVAL_CLAIM: u64 = 3;
+pub const VARIANT_CHECK_CLAIM: u64 = 4;
+pub const VARIANT_CHECK_ENV_CLAIM: u64 = 5;
+pub const VARIANT_REVEAL_CLAIM: u64 = 6;
+pub const VARIANT_CONTAINS_CLAIM: u64 = 7;
+
+/// Tag4 flag for ZK proofs (0xF). All variants in single-byte tags
+/// (`0xF0`–`0xF4`). Slots 5-7 reserved for future proof variants.
+///
+/// Proof bytes are uniform opaque ZK proofs — witness data (e.g.,
+/// merkle paths for Contains) is prover-side scratch consumed by the
+/// ZK circuit and NOT transmitted on the wire.
+///
+/// - 0: Eval proof
+/// - 1: Check proof
+/// - 2: CheckEnv proof
+/// - 3: Reveal proof
+/// - 4: Contains proof
+pub const FLAG_PROOF: u8 = 0xF;
+
+pub const VARIANT_EVAL_PROOF: u64 = 0;
+pub const VARIANT_CHECK_PROOF: u64 = 1;
+pub const VARIANT_CHECK_ENV_PROOF: u64 = 2;
+pub const VARIANT_REVEAL_PROOF: u64 = 3;
+pub const VARIANT_CONTAINS_PROOF: u64 = 4;
+
+// Backwards-compatibility re-export: many call sites refer to FLAG.
+pub const FLAG: u8 = FLAG_CLAIM;
 
 // ============================================================================
 // Serialization helpers
@@ -921,54 +945,97 @@ impl RevealConstantInfo {
 // Claim serialization
 // ============================================================================
 
+/// Helper: write an `Option<Address>` as `[0x00]` (None) or
+/// `[0x01][addr:32]` (Some). Single byte for absence avoids a 33-byte
+/// gap when assumptions are absent.
+fn put_opt_addr(opt: &Option<Address>, buf: &mut Vec<u8>) {
+  match opt {
+    None => buf.push(0x00),
+    Some(addr) => {
+      buf.push(0x01);
+      buf.extend_from_slice(addr.as_bytes());
+    },
+  }
+}
+
+fn get_opt_addr(buf: &mut &[u8]) -> Result<Option<Address>, String> {
+  match get_u8(buf)? {
+    0x00 => Ok(None),
+    0x01 => Ok(Some(get_address(buf)?)),
+    b => Err(format!("get_opt_addr: invalid tag 0x{:02X}", b)),
+  }
+}
+
 impl Claim {
   pub fn put(&self, buf: &mut Vec<u8>) {
     match self {
-      Claim::Evals(eval) => {
-        Tag4::new(FLAG, VARIANT_EVAL_CLAIM).put(buf);
-        buf.extend_from_slice(eval.input.as_bytes());
-        buf.extend_from_slice(eval.output.as_bytes());
+      Claim::Eval { input, output, assumptions } => {
+        Tag4::new(FLAG_CLAIM, VARIANT_EVAL_CLAIM).put(buf);
+        buf.extend_from_slice(input.as_bytes());
+        buf.extend_from_slice(output.as_bytes());
+        put_opt_addr(assumptions, buf);
       },
-      Claim::Checks(check) => {
-        Tag4::new(FLAG, VARIANT_CHECK_CLAIM).put(buf);
-        buf.extend_from_slice(check.value.as_bytes());
+      Claim::Check { const_addr, assumptions } => {
+        Tag4::new(FLAG_CLAIM, VARIANT_CHECK_CLAIM).put(buf);
+        buf.extend_from_slice(const_addr.as_bytes());
+        put_opt_addr(assumptions, buf);
       },
-      Claim::Reveals(reveal) => {
-        Tag4::new(FLAG, VARIANT_REVEAL_CLAIM).put(buf);
-        buf.extend_from_slice(reveal.comm.as_bytes());
-        reveal.info.put(buf);
+      Claim::CheckEnv { root, assumptions } => {
+        Tag4::new(FLAG_CLAIM, VARIANT_CHECK_ENV_CLAIM).put(buf);
+        buf.extend_from_slice(root.as_bytes());
+        put_opt_addr(assumptions, buf);
+      },
+      Claim::Reveal { comm, info } => {
+        Tag4::new(FLAG_CLAIM, VARIANT_REVEAL_CLAIM).put(buf);
+        buf.extend_from_slice(comm.as_bytes());
+        info.put(buf);
+      },
+      Claim::Contains { tree, const_addr } => {
+        Tag4::new(FLAG_CLAIM, VARIANT_CONTAINS_CLAIM).put(buf);
+        buf.extend_from_slice(tree.as_bytes());
+        buf.extend_from_slice(const_addr.as_bytes());
       },
     }
   }
 
   pub fn get(buf: &mut &[u8]) -> Result<Self, String> {
     let tag = Tag4::get(buf)?;
-    if tag.flag != FLAG {
+    if tag.flag != FLAG_CLAIM {
       return Err(format!(
         "Claim::get: expected flag 0x{:X}, got 0x{:X}",
-        FLAG, tag.flag
+        FLAG_CLAIM, tag.flag
       ));
     }
-
     match tag.size {
       VARIANT_EVAL_CLAIM => {
         let input = get_address(buf)?;
         let output = get_address(buf)?;
-        Ok(Claim::Evals(EvalClaim { input, output }))
+        let assumptions = get_opt_addr(buf)?;
+        Ok(Claim::Eval { input, output, assumptions })
       },
       VARIANT_CHECK_CLAIM => {
-        let value = get_address(buf)?;
-        Ok(Claim::Checks(CheckClaim { value }))
+        let const_addr = get_address(buf)?;
+        let assumptions = get_opt_addr(buf)?;
+        Ok(Claim::Check { const_addr, assumptions })
+      },
+      VARIANT_CHECK_ENV_CLAIM => {
+        let root = get_address(buf)?;
+        let assumptions = get_opt_addr(buf)?;
+        Ok(Claim::CheckEnv { root, assumptions })
       },
       VARIANT_REVEAL_CLAIM => {
         let comm = get_address(buf)?;
         let info = RevealConstantInfo::get(buf)?;
-        Ok(Claim::Reveals(RevealClaim { comm, info }))
+        Ok(Claim::Reveal { comm, info })
       },
-      VARIANT_EVAL_PROOF | VARIANT_CHECK_PROOF | VARIANT_REVEAL_PROOF => Err(
-        format!("Claim::get: got Proof variant {}, use Proof::get", tag.size),
-      ),
-      x => Err(format!("Claim::get: invalid variant {x}")),
+      VARIANT_CONTAINS_CLAIM => {
+        let tree = get_address(buf)?;
+        let const_addr = get_address(buf)?;
+        Ok(Claim::Contains { tree, const_addr })
+      },
+      x => {
+        Err(format!("Claim::get: invalid claim variant {x} under flag 0xE",))
+      },
     }
   }
 
@@ -978,6 +1045,17 @@ impl Claim {
     self.put(&mut buf);
     let addr = Address::hash(&buf);
     (addr, buf)
+  }
+
+  /// Map a claim to its corresponding proof variant size (under flag 0xF).
+  pub fn proof_variant_size(&self) -> u64 {
+    match self {
+      Claim::Eval { .. } => VARIANT_EVAL_PROOF,
+      Claim::Check { .. } => VARIANT_CHECK_PROOF,
+      Claim::CheckEnv { .. } => VARIANT_CHECK_ENV_PROOF,
+      Claim::Reveal { .. } => VARIANT_REVEAL_PROOF,
+      Claim::Contains { .. } => VARIANT_CONTAINS_PROOF,
+    }
   }
 }
 
@@ -991,61 +1069,81 @@ impl Proof {
   }
 
   pub fn put(&self, buf: &mut Vec<u8>) {
+    let proof_size = self.claim.proof_variant_size();
+    // Proofs live under flag 0xF; claim payload is the same body as the
+    // matching Claim variant.
+    Tag4::new(FLAG_PROOF, proof_size).put(buf);
     match &self.claim {
-      Claim::Evals(eval) => {
-        Tag4::new(FLAG, VARIANT_EVAL_PROOF).put(buf);
-        buf.extend_from_slice(eval.input.as_bytes());
-        buf.extend_from_slice(eval.output.as_bytes());
+      Claim::Eval { input, output, assumptions } => {
+        buf.extend_from_slice(input.as_bytes());
+        buf.extend_from_slice(output.as_bytes());
+        put_opt_addr(assumptions, buf);
       },
-      Claim::Checks(check) => {
-        Tag4::new(FLAG, VARIANT_CHECK_PROOF).put(buf);
-        buf.extend_from_slice(check.value.as_bytes());
+      Claim::Check { const_addr, assumptions } => {
+        buf.extend_from_slice(const_addr.as_bytes());
+        put_opt_addr(assumptions, buf);
       },
-      Claim::Reveals(reveal) => {
-        Tag4::new(FLAG, VARIANT_REVEAL_PROOF).put(buf);
-        buf.extend_from_slice(reveal.comm.as_bytes());
-        reveal.info.put(buf);
+      Claim::CheckEnv { root, assumptions } => {
+        buf.extend_from_slice(root.as_bytes());
+        put_opt_addr(assumptions, buf);
+      },
+      Claim::Reveal { comm, info } => {
+        buf.extend_from_slice(comm.as_bytes());
+        info.put(buf);
+      },
+      Claim::Contains { tree, const_addr } => {
+        buf.extend_from_slice(tree.as_bytes());
+        buf.extend_from_slice(const_addr.as_bytes());
       },
     }
-    // Proof bytes: length prefix + data
+    // Opaque ZK proof bytes: length prefix + data
     Tag0::new(self.proof.len() as u64).put(buf);
     buf.extend_from_slice(&self.proof);
   }
 
   pub fn get(buf: &mut &[u8]) -> Result<Self, String> {
     let tag = Tag4::get(buf)?;
-    if tag.flag != FLAG {
+    if tag.flag != FLAG_PROOF {
       return Err(format!(
         "Proof::get: expected flag 0x{:X}, got 0x{:X}",
-        FLAG, tag.flag
+        FLAG_PROOF, tag.flag
       ));
     }
-
     let claim = match tag.size {
       VARIANT_EVAL_PROOF => {
         let input = get_address(buf)?;
         let output = get_address(buf)?;
-        Claim::Evals(EvalClaim { input, output })
+        let assumptions = get_opt_addr(buf)?;
+        Claim::Eval { input, output, assumptions }
       },
       VARIANT_CHECK_PROOF => {
-        let value = get_address(buf)?;
-        Claim::Checks(CheckClaim { value })
+        let const_addr = get_address(buf)?;
+        let assumptions = get_opt_addr(buf)?;
+        Claim::Check { const_addr, assumptions }
+      },
+      VARIANT_CHECK_ENV_PROOF => {
+        let root = get_address(buf)?;
+        let assumptions = get_opt_addr(buf)?;
+        Claim::CheckEnv { root, assumptions }
       },
       VARIANT_REVEAL_PROOF => {
         let comm = get_address(buf)?;
         let info = RevealConstantInfo::get(buf)?;
-        Claim::Reveals(RevealClaim { comm, info })
+        Claim::Reveal { comm, info }
       },
-      VARIANT_EVAL_CLAIM | VARIANT_CHECK_CLAIM | VARIANT_REVEAL_CLAIM => {
+      VARIANT_CONTAINS_PROOF => {
+        let tree = get_address(buf)?;
+        let const_addr = get_address(buf)?;
+        Claim::Contains { tree, const_addr }
+      },
+      x => {
         return Err(format!(
-          "Proof::get: got Claim variant {}, use Claim::get",
-          tag.size
+          "Proof::get: invalid proof variant {x} under flag 0xF"
         ));
       },
-      x => return Err(format!("Proof::get: invalid variant {x}")),
     };
 
-    // Proof bytes
+    // Opaque ZK proof bytes
     let len = usize::try_from(Tag0::get(buf)?.size)
       .map_err(|_e| "Proof::get: Tag0 size overflows usize".to_string())?;
     if buf.len() < len {
@@ -1080,18 +1178,6 @@ mod tests {
   use quickcheck::{Arbitrary, Gen};
 
   // ========== Arbitrary impls ==========
-
-  impl Arbitrary for EvalClaim {
-    fn arbitrary(g: &mut Gen) -> Self {
-      EvalClaim { input: Address::arbitrary(g), output: Address::arbitrary(g) }
-    }
-  }
-
-  impl Arbitrary for CheckClaim {
-    fn arbitrary(g: &mut Gen) -> Self {
-      CheckClaim { value: Address::arbitrary(g) }
-    }
-  }
 
   impl Arbitrary for RevealConstructorInfo {
     fn arbitrary(g: &mut Gen) -> Self {
@@ -1285,21 +1371,30 @@ mod tests {
     }
   }
 
-  impl Arbitrary for RevealClaim {
-    fn arbitrary(g: &mut Gen) -> Self {
-      RevealClaim {
-        comm: Address::arbitrary(g),
-        info: RevealConstantInfo::arbitrary(g),
-      }
-    }
-  }
-
   impl Arbitrary for Claim {
     fn arbitrary(g: &mut Gen) -> Self {
-      match u8::arbitrary(g) % 3 {
-        0 => Claim::Evals(EvalClaim::arbitrary(g)),
-        1 => Claim::Checks(CheckClaim::arbitrary(g)),
-        _ => Claim::Reveals(RevealClaim::arbitrary(g)),
+      match u8::arbitrary(g) % 5 {
+        0 => Claim::Eval {
+          input: Address::arbitrary(g),
+          output: Address::arbitrary(g),
+          assumptions: gen_opt_addr(g),
+        },
+        1 => Claim::Check {
+          const_addr: Address::arbitrary(g),
+          assumptions: gen_opt_addr(g),
+        },
+        2 => Claim::CheckEnv {
+          root: Address::arbitrary(g),
+          assumptions: gen_opt_addr(g),
+        },
+        3 => Claim::Reveal {
+          comm: Address::arbitrary(g),
+          info: RevealConstantInfo::arbitrary(g),
+        },
+        _ => Claim::Contains {
+          tree: Address::arbitrary(g),
+          const_addr: Address::arbitrary(g),
+        },
       }
     }
   }
@@ -1372,28 +1467,79 @@ mod tests {
 
   // ========== Manual roundtrip tests ==========
 
+  // ---------- Per-variant claim roundtrips ----------
+
   #[test]
-  fn test_eval_claim_roundtrip() {
-    let claim = Claim::Evals(EvalClaim {
+  fn test_eval_claim_no_asm_roundtrip() {
+    let claim = Claim::Eval {
       input: Address::hash(b"input"),
       output: Address::hash(b"output"),
-    });
+      assumptions: None,
+    };
     assert!(claim_roundtrip(&claim));
   }
 
   #[test]
-  fn test_check_claim_roundtrip() {
-    let claim = Claim::Checks(CheckClaim { value: Address::hash(b"value") });
+  fn test_eval_claim_with_asm_roundtrip() {
+    let claim = Claim::Eval {
+      input: Address::hash(b"input"),
+      output: Address::hash(b"output"),
+      assumptions: Some(Address::hash(b"asm")),
+    };
     assert!(claim_roundtrip(&claim));
   }
+
+  #[test]
+  fn test_check_claim_no_asm_roundtrip() {
+    let claim =
+      Claim::Check { const_addr: Address::hash(b"value"), assumptions: None };
+    assert!(claim_roundtrip(&claim));
+  }
+
+  #[test]
+  fn test_check_claim_with_asm_roundtrip() {
+    let claim = Claim::Check {
+      const_addr: Address::hash(b"value"),
+      assumptions: Some(Address::hash(b"asm")),
+    };
+    assert!(claim_roundtrip(&claim));
+  }
+
+  #[test]
+  fn test_check_env_claim_no_asm_roundtrip() {
+    let claim =
+      Claim::CheckEnv { root: Address::hash(b"env-root"), assumptions: None };
+    assert!(claim_roundtrip(&claim));
+  }
+
+  #[test]
+  fn test_check_env_claim_with_asm_roundtrip() {
+    let claim = Claim::CheckEnv {
+      root: Address::hash(b"env-root"),
+      assumptions: Some(Address::hash(b"asm")),
+    };
+    assert!(claim_roundtrip(&claim));
+  }
+
+  #[test]
+  fn test_contains_claim_roundtrip() {
+    let claim = Claim::Contains {
+      tree: Address::hash(b"tree-root"),
+      const_addr: Address::hash(b"member"),
+    };
+    assert!(claim_roundtrip(&claim));
+  }
+
+  // ---------- Per-variant proof roundtrips ----------
 
   #[test]
   fn test_eval_proof_roundtrip() {
     let proof = Proof::new(
-      Claim::Evals(EvalClaim {
+      Claim::Eval {
         input: Address::hash(b"input"),
         output: Address::hash(b"output"),
-      }),
+        assumptions: None,
+      },
       vec![1, 2, 3, 4],
     );
     assert!(proof_roundtrip(&proof));
@@ -1402,8 +1548,41 @@ mod tests {
   #[test]
   fn test_check_proof_roundtrip() {
     let proof = Proof::new(
-      Claim::Checks(CheckClaim { value: Address::hash(b"value") }),
+      Claim::Check { const_addr: Address::hash(b"value"), assumptions: None },
       vec![5, 6, 7, 8, 9],
+    );
+    assert!(proof_roundtrip(&proof));
+  }
+
+  #[test]
+  fn test_check_env_proof_roundtrip() {
+    let proof = Proof::new(
+      Claim::CheckEnv { root: Address::hash(b"env-root"), assumptions: None },
+      vec![0x11, 0x22],
+    );
+    assert!(proof_roundtrip(&proof));
+  }
+
+  #[test]
+  fn test_check_proof_with_asm_roundtrip() {
+    let proof = Proof::new(
+      Claim::Check {
+        const_addr: Address::hash(b"const"),
+        assumptions: Some(Address::hash(b"asm")),
+      },
+      vec![0xAA, 0xBB, 0xCC],
+    );
+    assert!(proof_roundtrip(&proof));
+  }
+
+  #[test]
+  fn test_contains_proof_roundtrip() {
+    let proof = Proof::new(
+      Claim::Contains {
+        tree: Address::hash(b"tree-root"),
+        const_addr: Address::hash(b"member"),
+      },
+      vec![0xDE, 0xAD, 0xBE, 0xEF],
     );
     assert!(proof_roundtrip(&proof));
   }
@@ -1411,10 +1590,11 @@ mod tests {
   #[test]
   fn test_empty_proof_data() {
     let proof = Proof::new(
-      Claim::Evals(EvalClaim {
+      Claim::Eval {
         input: Address::hash(b"c"),
         output: Address::hash(b"d"),
-      }),
+        assumptions: None,
+      },
       vec![],
     );
     assert!(proof_roundtrip(&proof));
@@ -1422,7 +1602,7 @@ mod tests {
 
   #[test]
   fn test_reveal_claim_roundtrip() {
-    let claim = Claim::Reveals(RevealClaim {
+    let claim = Claim::Reveal {
       comm: Address::hash(b"comm"),
       info: RevealConstantInfo::Defn {
         kind: Some(DefKind::Definition),
@@ -1431,110 +1611,251 @@ mod tests {
         typ: None,
         value: None,
       },
-    });
+    };
     assert!(claim_roundtrip(&claim));
   }
 
   #[test]
   fn test_reveal_proof_roundtrip() {
     let proof = Proof::new(
-      Claim::Reveals(RevealClaim {
+      Claim::Reveal {
         comm: Address::hash(b"comm"),
         info: RevealConstantInfo::Axio {
           is_unsafe: Some(false),
           lvls: None,
           typ: Some(Address::hash(b"typ")),
         },
-      }),
+      },
       vec![0xAB, 0xCD],
     );
     assert!(proof_roundtrip(&proof));
   }
 
-  // ========== Tag byte tests ==========
+  // ---------- Tag4 flag/size dispatch ----------
 
-  #[test]
-  fn test_claim_tags() {
-    // EvalClaim should be 0xE4
-    let eval_claim = Claim::Evals(EvalClaim {
-      input: Address::hash(b"a"),
-      output: Address::hash(b"b"),
-    });
-    let mut buf = Vec::new();
-    eval_claim.put(&mut buf);
-    assert_eq!(buf[0], 0xE4);
+  fn parse_tag(bytes: &[u8]) -> Tag4 {
+    Tag4::get(&mut &bytes[..]).unwrap()
+  }
 
-    // CheckClaim should be 0xE3
-    let check_claim = Claim::Checks(CheckClaim { value: Address::hash(b"a") });
+  fn claim_tag(claim: &Claim) -> Tag4 {
     let mut buf = Vec::new();
-    check_claim.put(&mut buf);
-    assert_eq!(buf[0], 0xE3);
+    claim.put(&mut buf);
+    parse_tag(&buf)
+  }
 
-    // RevealClaim should be 0xE6
-    let reveal_claim = Claim::Reveals(RevealClaim {
-      comm: Address::hash(b"a"),
-      info: RevealConstantInfo::Defn {
-        kind: None,
-        safety: None,
-        lvls: None,
-        typ: None,
-        value: None,
-      },
-    });
+  fn proof_tag(proof: &Proof) -> Tag4 {
     let mut buf = Vec::new();
-    reveal_claim.put(&mut buf);
-    assert_eq!(buf[0], 0xE6);
+    proof.put(&mut buf);
+    parse_tag(&buf)
   }
 
   #[test]
-  fn test_proof_tags() {
-    // EvalProof should be 0xE2
-    let eval_proof = Proof::new(
-      Claim::Evals(EvalClaim {
-        input: Address::hash(b"a"),
-        output: Address::hash(b"b"),
-      }),
-      vec![1, 2, 3],
-    );
-    let mut buf = Vec::new();
-    eval_proof.put(&mut buf);
-    assert_eq!(buf[0], 0xE2);
+  fn test_claim_tag_flag_and_size() {
+    let a = Address::hash(b"a");
+    let b = Address::hash(b"b");
+    let reveal_info = RevealConstantInfo::Defn {
+      kind: None,
+      safety: None,
+      lvls: None,
+      typ: None,
+      value: None,
+    };
 
-    // CheckProof should be 0xE1
-    let check_proof = Proof::new(
-      Claim::Checks(CheckClaim { value: Address::hash(b"a") }),
-      vec![4, 5, 6],
-    );
-    let mut buf = Vec::new();
-    check_proof.put(&mut buf);
-    assert_eq!(buf[0], 0xE1);
+    let cases: Vec<(Claim, u64)> = vec![
+      (
+        Claim::Eval { input: a.clone(), output: b.clone(), assumptions: None },
+        VARIANT_EVAL_CLAIM,
+      ),
+      (
+        Claim::Check { const_addr: a.clone(), assumptions: None },
+        VARIANT_CHECK_CLAIM,
+      ),
+      (
+        Claim::CheckEnv { root: a.clone(), assumptions: None },
+        VARIANT_CHECK_ENV_CLAIM,
+      ),
+      (
+        Claim::Reveal { comm: a.clone(), info: reveal_info },
+        VARIANT_REVEAL_CLAIM,
+      ),
+      (Claim::Contains { tree: a, const_addr: b }, VARIANT_CONTAINS_CLAIM),
+    ];
 
-    // RevealProof should be 0xE7
-    let reveal_proof = Proof::new(
-      Claim::Reveals(RevealClaim {
-        comm: Address::hash(b"a"),
-        info: RevealConstantInfo::Defn {
-          kind: None,
-          safety: None,
-          lvls: None,
-          typ: None,
-          value: None,
-        },
-      }),
-      vec![7, 8],
-    );
+    for (claim, expected_size) in cases {
+      let tag = claim_tag(&claim);
+      assert_eq!(tag.flag, FLAG_CLAIM, "claim must use flag 0xE");
+      assert_eq!(tag.size, expected_size);
+    }
+  }
+
+  #[test]
+  fn test_proof_tag_flag_and_size() {
+    let a = Address::hash(b"a");
+    let b = Address::hash(b"b");
+    let reveal_info = RevealConstantInfo::Defn {
+      kind: None,
+      safety: None,
+      lvls: None,
+      typ: None,
+      value: None,
+    };
+
+    let cases: Vec<(Claim, u64)> = vec![
+      (
+        Claim::Eval { input: a.clone(), output: b.clone(), assumptions: None },
+        VARIANT_EVAL_PROOF,
+      ),
+      (
+        Claim::Check { const_addr: a.clone(), assumptions: None },
+        VARIANT_CHECK_PROOF,
+      ),
+      (
+        Claim::CheckEnv { root: a.clone(), assumptions: None },
+        VARIANT_CHECK_ENV_PROOF,
+      ),
+      (
+        Claim::Reveal { comm: a.clone(), info: reveal_info },
+        VARIANT_REVEAL_PROOF,
+      ),
+      (Claim::Contains { tree: a, const_addr: b }, VARIANT_CONTAINS_PROOF),
+    ];
+
+    for (claim, expected_size) in cases {
+      let proof = Proof::new(claim, vec![0]);
+      let tag = proof_tag(&proof);
+      assert_eq!(tag.flag, FLAG_PROOF, "proof must use flag 0xF");
+      assert_eq!(tag.size, expected_size);
+    }
+  }
+
+  // ---------- Per-variant payload byte lengths ----------
+
+  fn claim_bytes(claim: &Claim) -> Vec<u8> {
     let mut buf = Vec::new();
-    reveal_proof.put(&mut buf);
-    assert_eq!(buf[0], 0xE7);
+    claim.put(&mut buf);
+    buf
+  }
+
+  #[test]
+  fn test_claim_byte_lengths() {
+    let a = Address::hash(b"a");
+    let b = Address::hash(b"b");
+    let asm = Address::hash(b"asm");
+
+    // Single-byte Tag4 + payload + 1 opt byte (+ 32 if Some).
+    assert_eq!(
+      claim_bytes(&Claim::Eval {
+        input: a.clone(),
+        output: b.clone(),
+        assumptions: None
+      })
+      .len(),
+      1 + 64 + 1,
+      "Eval no-asm = 66 bytes"
+    );
+    assert_eq!(
+      claim_bytes(&Claim::Eval {
+        input: a.clone(),
+        output: b.clone(),
+        assumptions: Some(asm.clone())
+      })
+      .len(),
+      1 + 64 + 1 + 32,
+      "Eval with-asm = 98 bytes"
+    );
+    assert_eq!(
+      claim_bytes(&Claim::Check { const_addr: a.clone(), assumptions: None })
+        .len(),
+      1 + 32 + 1,
+      "Check no-asm = 34 bytes"
+    );
+    assert_eq!(
+      claim_bytes(&Claim::Check {
+        const_addr: a.clone(),
+        assumptions: Some(asm.clone())
+      })
+      .len(),
+      1 + 32 + 1 + 32,
+      "Check with-asm = 66 bytes"
+    );
+    assert_eq!(
+      claim_bytes(&Claim::CheckEnv { root: a.clone(), assumptions: None })
+        .len(),
+      1 + 32 + 1,
+      "CheckEnv no-asm = 34 bytes"
+    );
+    assert_eq!(
+      claim_bytes(&Claim::Contains { tree: a, const_addr: b }).len(),
+      1 + 64,
+      "Contains = 65 bytes"
+    );
+  }
+
+  #[test]
+  fn test_claim_first_byte() {
+    // Single-byte Tag4 encoding: size 0-7 fits in one byte (0xE0..0xE7).
+    let a = Address::hash(b"a");
+    let b = Address::hash(b"b");
+    let reveal_info = RevealConstantInfo::Defn {
+      kind: None,
+      safety: None,
+      lvls: None,
+      typ: None,
+      value: None,
+    };
+
+    let cases: Vec<(Claim, u8)> = vec![
+      (
+        Claim::Eval { input: a.clone(), output: b.clone(), assumptions: None },
+        0xE3,
+      ),
+      (Claim::Check { const_addr: a.clone(), assumptions: None }, 0xE4),
+      (Claim::CheckEnv { root: a.clone(), assumptions: None }, 0xE5),
+      (Claim::Reveal { comm: a.clone(), info: reveal_info }, 0xE6),
+      (Claim::Contains { tree: a, const_addr: b }, 0xE7),
+    ];
+    for (claim, expected_byte) in cases {
+      let bytes = claim_bytes(&claim);
+      assert_eq!(bytes[0], expected_byte);
+    }
+  }
+
+  #[test]
+  fn test_proof_first_byte() {
+    let a = Address::hash(b"a");
+    let b = Address::hash(b"b");
+    let reveal_info = RevealConstantInfo::Defn {
+      kind: None,
+      safety: None,
+      lvls: None,
+      typ: None,
+      value: None,
+    };
+    let cases: Vec<(Claim, u8)> = vec![
+      (
+        Claim::Eval { input: a.clone(), output: b.clone(), assumptions: None },
+        0xF0,
+      ),
+      (Claim::Check { const_addr: a.clone(), assumptions: None }, 0xF1),
+      (Claim::CheckEnv { root: a.clone(), assumptions: None }, 0xF2),
+      (Claim::Reveal { comm: a.clone(), info: reveal_info }, 0xF3),
+      (Claim::Contains { tree: a, const_addr: b }, 0xF4),
+    ];
+    for (claim, expected_byte) in cases {
+      let mut buf = Vec::new();
+      Proof::new(claim, vec![]).put(&mut buf);
+      assert_eq!(buf[0], expected_byte);
+    }
   }
 
   // ========== Bitmask encoding tests from plan examples ==========
 
+  // Reveal claim is variant 6 (single-byte tag 0xE6).
+
   #[test]
   fn test_reveal_defn_safety() {
-    // Plan example: Reveal that a committed Definition has safety = Safe
     // 0xE6 <32 bytes comm> 0x00 0x02 0x01
-    let claim = Claim::Reveals(RevealClaim {
+    let claim = Claim::Reveal {
       comm: Address::hash(b"test_comm"),
       info: RevealConstantInfo::Defn {
         kind: None,
@@ -1543,12 +1864,12 @@ mod tests {
         typ: None,
         value: None,
       },
-    });
+    };
     let mut buf = Vec::new();
     claim.put(&mut buf);
-    assert_eq!(buf[0], 0xE6); // Tag4: RevealClaim
+    assert_eq!(buf[0], 0xE6); // Tag4: flag=0xE, size=6 (Reveal claim)
     // buf[1..33] = comm_addr (32 bytes)
-    assert_eq!(buf[33], 0x00); // variant: Definition
+    assert_eq!(buf[33], 0x00); // RevealConstantInfo variant: Definition
     assert_eq!(buf[34], 0x02); // mask: bit 1 (safety)
     assert_eq!(buf[35], 0x01); // DefinitionSafety::Safe
     assert_eq!(buf.len(), 36); // Total: 1 + 32 + 1 + 1 + 1 = 36 bytes
@@ -1556,10 +1877,9 @@ mod tests {
 
   #[test]
   fn test_reveal_defn_typ() {
-    // Plan example: Reveal a committed Definition's type expression
     // 0xE6 <32 bytes comm> 0x00 0x08 <32 bytes typ>
     let typ_addr = Address::hash(b"serialized typ expr");
-    let claim = Claim::Reveals(RevealClaim {
+    let claim = Claim::Reveal {
       comm: Address::hash(b"test_comm"),
       info: RevealConstantInfo::Defn {
         kind: None,
@@ -1568,11 +1888,11 @@ mod tests {
         typ: Some(typ_addr),
         value: None,
       },
-    });
+    };
     let mut buf = Vec::new();
     claim.put(&mut buf);
-    assert_eq!(buf[0], 0xE6); // Tag4: RevealClaim
-    assert_eq!(buf[33], 0x00); // variant: Definition
+    assert_eq!(buf[0], 0xE6);
+    assert_eq!(buf[33], 0x00); // RevealConstantInfo variant: Definition
     assert_eq!(buf[34], 0x08); // mask: bit 3 (typ)
     // buf[35..67] = typ address (32 bytes)
     assert_eq!(buf.len(), 67); // Total: 1 + 32 + 1 + 1 + 32 = 67 bytes
@@ -1580,9 +1900,8 @@ mod tests {
 
   #[test]
   fn test_reveal_muts_component_safety() {
-    // Plan example: Reveal a Muts component's safety
     // 0xE6 <32 comm> 0x08 0x01 0x01 0x02 0x00 0x02 0x01
-    let claim = Claim::Reveals(RevealClaim {
+    let claim = Claim::Reveal {
       comm: Address::hash(b"test_comm"),
       info: RevealConstantInfo::Muts {
         components: vec![(
@@ -1596,11 +1915,11 @@ mod tests {
           },
         )],
       },
-    });
+    };
     let mut buf = Vec::new();
     claim.put(&mut buf);
-    assert_eq!(buf[0], 0xE6); // Tag4: RevealClaim
-    assert_eq!(buf[33], 0x08); // variant: Muts
+    assert_eq!(buf[0], 0xE6);
+    assert_eq!(buf[33], 0x08); // RevealConstantInfo variant: Muts
     assert_eq!(buf[34], 0x01); // mask: bit 0 (components)
     assert_eq!(buf[35], 0x01); // Tag0: 1 component revealed
     assert_eq!(buf[36], 0x02); // Tag0: component index 2

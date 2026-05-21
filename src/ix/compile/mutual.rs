@@ -34,8 +34,8 @@ use crate::ix::env::{
 use crate::ix::ixon::{
   CompileError,
   constant::{
-    Constant, ConstantInfo, ConstructorProj, DefKind, DefinitionProj,
-    InductiveProj, MutConst as IxonMutConst, RecursorProj,
+    Constant, DefKind, MutConst as IxonMutConst, ctor_proj_constant,
+    defn_proj_constant, indc_proj_constant, recr_proj_constant,
   },
   env::Named,
   metadata::{ConstantMeta, ConstantMetaInfo},
@@ -190,6 +190,62 @@ pub(crate) fn compile_aux_block_with_rename(
   let block_refs: Vec<Address> = cache.refs.iter().cloned().collect();
   let block_univs: Vec<Arc<Univ>> = cache.univs.iter().cloned().collect();
   let name_str = aux_consts[0].name().pretty();
+
+  // Singleton non-inductive aux blocks: emit as a standalone
+  // `Defn`/`Recr` Constant instead of `Muts(vec![one])`. Same
+  // rationale as `compile_mutual` in `compile.rs` — `Expr::Rec(0, …)`
+  // resolves correctly against a single-member block, so the wrapper
+  // is pure overhead. See that file for the detailed comment.
+  if ixon_mutuals.len() == 1
+    && !matches!(&ixon_mutuals[0], IxonMutConst::Indc(_))
+  {
+    use crate::ix::compile::{
+      apply_sharing_to_definition_with_stats,
+      apply_sharing_to_recursor_with_stats,
+    };
+    let single = ixon_mutuals.pop().unwrap();
+    let result = match single {
+      IxonMutConst::Defn(def) => apply_sharing_to_definition_with_stats(
+        def,
+        block_refs,
+        block_univs,
+        Some(&name_str),
+      ),
+      IxonMutConst::Recr(rec) => {
+        apply_sharing_to_recursor_with_stats(rec, block_refs, block_univs)
+      },
+      IxonMutConst::Indc(_) => unreachable!(),
+    };
+    let standalone_addr = content_address(&result.constant);
+    stt.env.store_const(standalone_addr.clone(), result.constant);
+
+    let mut pending_names: Vec<Name> = Vec::new();
+    for cnst in &sorted_classes[0] {
+      let canon_n = cnst.name();
+      let n = resolve_name(&canon_n);
+      let meta = all_metas.remove(&canon_n).unwrap_or_default();
+      stt
+        .env
+        .register_name(n.clone(), Named::new(standalone_addr.clone(), meta));
+      stt.aux_name_to_addr.insert(n.clone(), standalone_addr.clone());
+      stt.aux_gen_extra_names.insert(n.clone());
+      pending_names.push(n);
+    }
+    if !pending_names.is_empty() {
+      stt.aux_gen_pending.lock().unwrap().extend(pending_names);
+    }
+    // Ingress all registered aux constants into the kernel environment.
+    for cnst in aux_consts {
+      aux_gen::expr_utils::ensure_in_kenv(
+        &cnst.name(),
+        lean_env.as_ref(),
+        stt,
+        kctx,
+      );
+    }
+    return Ok(());
+  }
+
   let compiled = compile_mutual_block(
     ixon_mutuals,
     block_refs,
@@ -203,24 +259,19 @@ pub(crate) fn compile_aux_block_with_rename(
   // Collect names for batched pending-queue push (one lock acquisition).
   let mut pending_names: Vec<Name> = Vec::new();
 
-  let singleton = sorted_classes.len() == 1
-    && !aux_consts.iter().any(|c| matches!(c, MutConst::Indc(_)));
-
-  if singleton {
-    // Single non-inductive class: register directly with block_addr.
-    for cnst in &sorted_classes[0] {
-      let canon_n = cnst.name();
-      let n = resolve_name(&canon_n);
-      // Meta was keyed by canonical name during compile; transfer to
-      // source name at lookup but preserve the meta payload.
-      let meta = all_metas.remove(&canon_n).unwrap_or_default();
-      stt.env.register_name(n.clone(), Named::new(block_addr.clone(), meta));
-      stt.aux_name_to_addr.insert(n.clone(), block_addr.clone());
-      stt.aux_gen_extra_names.insert(n.clone());
-      pending_names.push(n);
-    }
-  } else {
-    // Multi-class or inductive: create projections per member.
+  // Always create projection constants for every member, even when the
+  // block alpha-collapses to a single non-inductive class. The earlier
+  // singleton-collapse optimization (registering the source name
+  // directly at `block_addr` with no separate projection) saved one
+  // constant per block, but created a structural anomaly: a Muts block
+  // whose member had no corresponding projection in `env.consts`. That
+  // anomaly broke address-based anon ingress, which deterministically
+  // rebuilds projection addresses and expects them present. Always
+  // emitting projections keeps the env structurally uniform: every
+  // kernel-checkable member has its own projection address in
+  // `env.consts`. The cost is one extra Constant per singleton block —
+  // negligible at mathlib scale.
+  {
     for (idx, class) in sorted_classes.iter().enumerate() {
       let idx = idx as u64;
       for cnst in class {
@@ -231,10 +282,7 @@ pub(crate) fn compile_aux_block_with_rename(
         match cnst {
           MutConst::Indc(ind) => {
             // Inductive projection
-            let indc_proj = Constant::new(ConstantInfo::IPrj(InductiveProj {
-              idx,
-              block: block_addr.clone(),
-            }));
+            let indc_proj = indc_proj_constant(idx, block_addr.clone());
             let proj_addr = content_address(&indc_proj);
             stt.env.store_const(proj_addr.clone(), indc_proj);
             stt
@@ -253,11 +301,7 @@ pub(crate) fn compile_aux_block_with_rename(
               let ctor_meta =
                 all_metas.get(&ctor.cnst.name).cloned().unwrap_or_default();
               let ctor_proj =
-                Constant::new(ConstantInfo::CPrj(ConstructorProj {
-                  idx,
-                  cidx: cidx as u64,
-                  block: block_addr.clone(),
-                }));
+                ctor_proj_constant(idx, cidx as u64, block_addr.clone());
               let ctor_addr = content_address(&ctor_proj);
               stt.env.store_const(ctor_addr.clone(), ctor_proj);
               stt.env.register_name(
@@ -272,10 +316,7 @@ pub(crate) fn compile_aux_block_with_rename(
             }
           },
           MutConst::Recr(_) => {
-            let proj = Constant::new(ConstantInfo::RPrj(RecursorProj {
-              idx,
-              block: block_addr.clone(),
-            }));
+            let proj = recr_proj_constant(idx, block_addr.clone());
             let proj_addr = content_address(&proj);
             stt.env.store_const(proj_addr.clone(), proj);
             stt
@@ -286,10 +327,7 @@ pub(crate) fn compile_aux_block_with_rename(
             pending_names.push(n);
           },
           MutConst::Defn(_) => {
-            let proj = Constant::new(ConstantInfo::DPrj(DefinitionProj {
-              idx,
-              block: block_addr.clone(),
-            }));
+            let proj = defn_proj_constant(idx, block_addr.clone());
             let proj_addr = content_address(&proj);
             stt.env.store_const(proj_addr.clone(), proj);
             stt

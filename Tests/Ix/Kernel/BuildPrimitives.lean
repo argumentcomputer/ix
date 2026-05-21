@@ -181,6 +181,80 @@ def testBuildPrimitives : TestSeq :=
     return (missing.isEmpty, found, missing.size, msg)
   ) .done
 
-def suite : List TestSeq := [testBuildPrimitives]
+/-- FFI: expose `PrimAddrs::new()` from Rust as
+    `(lean_name, hex_address)` pairs in the same order as
+    `kernelPrimitives` below. Used to detect drift between hardcoded
+    addresses and what `rsCompileEnvFFI` would produce today. -/
+@[extern "rs_prim_addrs_canonical"]
+opaque rsPrimAddrsCanonicalFFI : IO (Array (String × String))
+
+/-- Parity check: every primitive's content address as stored in
+    Rust's `PrimAddrs::new()` must match the address produced by
+    compiling that primitive's Lean declaration through the live
+    `rsCompileEnvFFI` pipeline. A mismatch means someone changed the
+    compile/serialize logic in a way that altered a primitive's
+    content hash — Aiur and downstream kernel primitive resolution
+    will silently break if `PrimAddrs::new()` isn't updated.
+
+    On failure: re-run `lake test --ignored
+    rust-kernel-build-primitives` to dump the fresh table, then
+    paste over `PrimAddrs::new` in `src/ix/kernel/primitive.rs`
+    (plus update `PrimAddrs::lean_parity_table` keeps lock-step).
+
+    Exception: `eagerReduce` is a synthetic kernel marker whose
+    PrimAddrs value (`0xff…3`) intentionally diverges from its
+    compiled content hash (which collides with `id`). Skip the check
+    for it. -/
+def testPrimitivesParity : TestSeq :=
+  .individualIO "primitive address parity (PrimAddrs vs live compile)" none (do
+    -- Reuse the same Lean → Ixon compile pipeline as testBuildPrimitives.
+    let leanEnv ← get_env!
+    let roots := kernelPrimitives.map parseNameToLean
+    let needed := collectDeps leanEnv roots
+    let filtered := leanEnv.constants.toList.filter fun (name, _) =>
+      needed.contains name
+    let rawEnv ← Ix.CompileM.rsCompileEnvFFI filtered
+    let env : Ixon.Env := rawEnv.toEnv
+
+    let hardcoded ← rsPrimAddrsCanonicalFFI
+    let lookup : Std.HashMap String String :=
+      hardcoded.foldl (init := {}) fun m (n, h) => m.insert n h
+
+    let mut mismatches : Array String := #[]
+    let mut missing : Array String := #[]
+    for primName in kernelPrimitives do
+      -- The synthetic eagerReduce marker is intentionally unequal to
+      -- the compiled `id` hash; skip parity for it.
+      if primName == "eagerReduce" then continue
+      let ixName := parseIxName primName
+      match env.named[ixName]? with
+      | none =>
+        missing := missing.push primName
+      | some named =>
+        let computed := toString named.addr
+        match lookup[primName]? with
+        | none =>
+          mismatches := mismatches.push s!"{primName}: missing from PrimAddrs::lean_parity_table"
+        | some hardcoded_hex =>
+          if computed != hardcoded_hex then
+            mismatches := mismatches.push
+              s!"{primName}: live={computed} PrimAddrs={hardcoded_hex}"
+
+    if !missing.isEmpty then
+      IO.eprintln s!"primitive parity: {missing.size} primitive(s) missing from compiled env:"
+      for n in missing do IO.eprintln s!"  {n}"
+    if !mismatches.isEmpty then
+      IO.eprintln s!"primitive parity: {mismatches.size} address mismatch(es):"
+      for m in mismatches do IO.eprintln s!"  {m}"
+      IO.eprintln "Regenerate via `lake test --ignored rust-kernel-build-primitives` and paste into src/ix/kernel/primitive.rs (PrimAddrs::new + lean_parity_table)."
+
+    let total_problems := missing.size + mismatches.size
+    let msg : Option String :=
+      if total_problems == 0 then none
+      else some s!"{mismatches.size} mismatch(es), {missing.size} missing"
+    return (total_problems == 0, kernelPrimitives.size - total_problems, total_problems, msg)
+  ) .done
+
+def suite : List TestSeq := [testBuildPrimitives, testPrimitivesParity]
 
 end Tests.Ix.Kernel.BuildPrimitives

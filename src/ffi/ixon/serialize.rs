@@ -107,7 +107,9 @@ pub extern "C" fn rs_eq_env_serialization(
     return false;
   }
   for rc in &decoded.consts {
-    match rust_env.consts.get(&rc.addr) {
+    // Materialize the lazy entry to compare structured `Constant` values.
+    let stored = rust_env.get_const(&rc.addr);
+    match stored {
       Some(c) if *c == rc.constant => {},
       Some(_) => {
         if debug {

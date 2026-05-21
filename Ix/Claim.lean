@@ -121,11 +121,30 @@ inductive RevealConstantInfo where
   | muts (components : Array (UInt64 × RevealMutConstInfo))
   deriving BEq, Repr, Inhabited
 
-/-- A claim that can be proven. -/
+/--
+A claim that can be proven.
+
+Five variants in three families:
+
+- **Typechecking claims** (`eval`, `check`, `checkEnv`): assert that a
+  constant evaluates, a constant is well-typed, or every constant in an
+  env is well-typed. Each carries `assumptions : Option Address`:
+  - `none` → unconditional.
+  - `some root` → conditional on every leaf in the merkle tree rooted
+    at `root` being well-typed.
+- **`reveal`**: selective field revelation of a committed constant.
+  Carries no assumptions (orthogonal to typechecking).
+- **`contains`**: structural membership claim — `const` is a leaf in
+  the merkle tree rooted at `tree`. Used by aggregation to discharge
+  leaves from a conditional claim's assumption set. Carries no
+  assumptions.
+-/
 inductive Claim where
-  | eval (input : Address) (output : Address)
-  | check (value : Address)
-  | reveal (comm : Address) (info : RevealConstantInfo)
+  | eval     (input output : Address) (assumptions : Option Address)
+  | check    (const : Address) (assumptions : Option Address)
+  | checkEnv (root : Address) (assumptions : Option Address)
+  | reveal   (comm : Address) (info : RevealConstantInfo)
+  | contains (tree : Address) (const : Address)
   deriving BEq, Repr, Inhabited
 
 -- ============================================================================
@@ -439,36 +458,97 @@ end RevealConstantInfo
 
 namespace Claim
 
+-- Tag4 size dispatch (mirrors src/ix/ixon/proof.rs).
+-- Flag 0xE holds Env, Comm, AssumptionTree, and claims (single-byte tags).
+-- Flag 0xF holds proofs (single-byte tags).
+
+def FLAG_CLAIM : UInt8 := 0xE
+def FLAG_PROOF : UInt8 := 0xF
+
+def VARIANT_ENV              : UInt64 := 0
+-- VARIANT 1 = Comm (handled in Ix.Ixon)
+def VARIANT_ASSUMPTION_TREE  : UInt64 := 2
+def VARIANT_EVAL_CLAIM       : UInt64 := 3
+def VARIANT_CHECK_CLAIM      : UInt64 := 4
+def VARIANT_CHECK_ENV_CLAIM  : UInt64 := 5
+def VARIANT_REVEAL_CLAIM     : UInt64 := 6
+def VARIANT_CONTAINS_CLAIM   : UInt64 := 7
+
+def VARIANT_EVAL_PROOF       : UInt64 := 0
+def VARIANT_CHECK_PROOF      : UInt64 := 1
+def VARIANT_CHECK_ENV_PROOF  : UInt64 := 2
+def VARIANT_REVEAL_PROOF     : UInt64 := 3
+def VARIANT_CONTAINS_PROOF   : UInt64 := 4
+
+/-- Encode an `Option Address` as `[0x00]` (none) or `[0x01][addr:32]`
+    (some). Mirrors `put_opt_addr` in src/ix/ixon/proof.rs. -/
+def putOptAddr : Option Address → PutM Unit
+  | none => putU8 0x00
+  | some a => do putU8 0x01; Serialize.put a
+
+def getOptAddr : GetM (Option Address) := do
+  let b ← getU8
+  if b == 0x00 then return none
+  else if b == 0x01 then return some (← Serialize.get)
+  else throw s!"getOptAddr: invalid tag {b}"
+
 def put : Claim → PutM Unit
-  | .eval input output => do
-    putTag4 ⟨0xE, 4⟩
+  | .eval input output assumptions => do
+    putTag4 ⟨FLAG_CLAIM, VARIANT_EVAL_CLAIM⟩
     Serialize.put input
     Serialize.put output
-  | .check value => do
-    putTag4 ⟨0xE, 3⟩
-    Serialize.put value
+    putOptAddr assumptions
+  | .check const assumptions => do
+    putTag4 ⟨FLAG_CLAIM, VARIANT_CHECK_CLAIM⟩
+    Serialize.put const
+    putOptAddr assumptions
+  | .checkEnv root assumptions => do
+    putTag4 ⟨FLAG_CLAIM, VARIANT_CHECK_ENV_CLAIM⟩
+    Serialize.put root
+    putOptAddr assumptions
   | .reveal comm info => do
-    putTag4 ⟨0xE, 6⟩
+    putTag4 ⟨FLAG_CLAIM, VARIANT_REVEAL_CLAIM⟩
     Serialize.put comm
     RevealConstantInfo.put info
+  | .contains tree const => do
+    putTag4 ⟨FLAG_CLAIM, VARIANT_CONTAINS_CLAIM⟩
+    Serialize.put tree
+    Serialize.put const
 
 def get : GetM Claim := do
   let tag ← getTag4
-  if tag.flag != 0xE then throw s!"Claim.get: expected flag 0xE, got {tag.flag}"
-  match tag.size with
-  | 4 => return .eval (← Serialize.get) (← Serialize.get)
-  | 3 => return .check (← Serialize.get)
-  | 6 => return .reveal (← Serialize.get) (← RevealConstantInfo.get)
-  | n => throw s!"Claim.get: invalid variant {n}"
+  if tag.flag != FLAG_CLAIM then
+    throw s!"Claim.get: expected flag 0xE, got {tag.flag}"
+  if tag.size == VARIANT_EVAL_CLAIM then
+    let input ← Serialize.get
+    let output ← Serialize.get
+    let asm ← getOptAddr
+    return .eval input output asm
+  else if tag.size == VARIANT_CHECK_CLAIM then
+    let const ← Serialize.get
+    let asm ← getOptAddr
+    return .check const asm
+  else if tag.size == VARIANT_CHECK_ENV_CLAIM then
+    let root ← Serialize.get
+    let asm ← getOptAddr
+    return .checkEnv root asm
+  else if tag.size == VARIANT_REVEAL_CLAIM then
+    return .reveal (← Serialize.get) (← RevealConstantInfo.get)
+  else if tag.size == VARIANT_CONTAINS_CLAIM then
+    return .contains (← Serialize.get) (← Serialize.get)
+  else
+    throw s!"Claim.get: invalid claim variant {tag.size}"
 
 def ser (c : Claim) : ByteArray := runPut (put c)
 def commit (c : Claim) : Address := Address.blake3 (ser c)
 
 instance : ToString Claim where
   toString c := match c with
-    | .eval i o => s!"EvalClaim({i}, {o})"
-    | .check v => s!"CheckClaim({v})"
-    | .reveal comm info => s!"RevealClaim({comm}, {repr info})"
+    | .eval i o asm => s!"Eval({i}, {o}, {asm})"
+    | .check v asm => s!"Check({v}, {asm})"
+    | .checkEnv r asm => s!"CheckEnv({r}, {asm})"
+    | .reveal comm info => s!"Reveal({comm}, {repr info})"
+    | .contains t c => s!"Contains({t}, {c})"
 
 end Claim
 

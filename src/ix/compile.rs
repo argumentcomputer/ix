@@ -28,9 +28,10 @@ use crate::{
   ix::ixon::{
     CompileError, Tag0,
     constant::{
-      Axiom, Constant, ConstantInfo, Constructor, ConstructorProj, Definition,
-      DefinitionProj, Inductive, InductiveProj, MutConst as IxonMutConst,
-      Quotient, Recursor, RecursorProj, RecursorRule,
+      Axiom, Constant, ConstantInfo, Constructor, Definition, Inductive,
+      MutConst as IxonMutConst, Quotient, Recursor, RecursorRule,
+      ctor_proj_constant, defn_proj_constant, indc_proj_constant,
+      recr_proj_constant,
     },
     env::{Env as IxonEnv, Named},
     expr::Expr,
@@ -3553,6 +3554,66 @@ fn compile_mutual(
   let univs: Vec<Arc<Univ>> = cache.univs.iter().cloned().collect();
   let const_count = ixon_mutuals.len();
   let name_str = name.pretty();
+
+  // Singleton non-inductive: emit as a standalone `Defn`/`Recr`
+  // Constant instead of wrapping in `Muts(vec![one])`. Self-reference
+  // inside the body still uses `Expr::Rec(0, …)`, which the kernel
+  // resolves the same way for a single-member block. Eliminating the
+  // wrapper keeps the env structurally uniform (no degenerate Muts
+  // wrappers, no extra projection constants) and matches what
+  // `compile_single_def` produces for a non-mutual Lean Defn.
+  //
+  // Inductives are never unwrapped — their projection scheme requires
+  // the block.
+  if ixon_mutuals.len() == 1
+    && !matches!(&ixon_mutuals[0], IxonMutConst::Indc(_))
+  {
+    let single = ixon_mutuals.pop().unwrap();
+    let result = match single {
+      IxonMutConst::Defn(def) => apply_sharing_to_definition_with_stats(
+        def,
+        refs,
+        univs,
+        Some(&name_str),
+      ),
+      IxonMutConst::Recr(rec) => {
+        apply_sharing_to_recursor_with_stats(rec, refs, univs)
+      },
+      IxonMutConst::Indc(_) => unreachable!(),
+    };
+    let standalone_constant = result.constant;
+    let hash_consed_size = result.hash_consed_size;
+    let mut bytes = Vec::new();
+    standalone_constant.put(&mut bytes);
+    let serialized_size = bytes.len();
+    let addr = Address::hash(&bytes);
+
+    if aux {
+      stt.env.store_const(addr.clone(), standalone_constant);
+      stt.block_stats.insert(
+        name.clone(),
+        BlockSizeStats { hash_consed_size, serialized_size, const_count: 1 },
+      );
+      for class in &sorted_classes {
+        for cnst in class {
+          let n = cnst.name();
+          let meta = all_metas.get(&n).cloned().unwrap_or_default();
+          stt.env.register_name(n.clone(), Named::new(addr.clone(), meta));
+          stt.name_to_addr.insert(n.clone(), addr.clone());
+        }
+      }
+    } else {
+      for class in &sorted_classes {
+        for cnst in class {
+          let n = cnst.name();
+          let meta = all_metas.get(&n).cloned().unwrap_or_default();
+          stt.promote_aux(&n, addr.clone(), meta)?;
+        }
+      }
+    }
+    return Ok(addr);
+  }
+
   let compiled =
     compile_mutual_block(ixon_mutuals, refs, univs, Some(&name_str));
   let block_addr = compiled.addr.clone();
@@ -3592,18 +3653,10 @@ fn compile_mutual(
       let meta = all_metas.get(&n).cloned().unwrap_or_default();
 
       let proj = match cnst {
-        MutConst::Defn(_) => {
-          Constant::new(ConstantInfo::DPrj(DefinitionProj {
-            idx,
-            block: block_addr.clone(),
-          }))
-        },
+        MutConst::Defn(_) => defn_proj_constant(idx, block_addr.clone()),
         MutConst::Indc(ind) => {
           // Inductive projection
-          let indc_proj = Constant::new(ConstantInfo::IPrj(InductiveProj {
-            idx,
-            block: block_addr.clone(),
-          }));
+          let indc_proj = indc_proj_constant(idx, block_addr.clone());
           let mut proj_bytes = Vec::new();
           indc_proj.put(&mut proj_bytes);
           let proj_addr = Address::hash(&proj_bytes);
@@ -3623,11 +3676,7 @@ fn compile_mutual(
             let ctor_meta =
               all_metas.get(&ctor.cnst.name).cloned().unwrap_or_default();
             let ctor_proj =
-              Constant::new(ConstantInfo::CPrj(ConstructorProj {
-                idx,
-                cidx: cidx as u64,
-                block: block_addr.clone(),
-              }));
+              ctor_proj_constant(idx, cidx as u64, block_addr.clone());
             let mut ctor_bytes = Vec::new();
             ctor_proj.put(&mut ctor_bytes);
             let ctor_addr = Address::hash(&ctor_bytes);
@@ -3645,10 +3694,7 @@ fn compile_mutual(
 
           continue;
         },
-        MutConst::Recr(_) => Constant::new(ConstantInfo::RPrj(RecursorProj {
-          idx,
-          block: block_addr.clone(),
-        })),
+        MutConst::Recr(_) => recr_proj_constant(idx, block_addr.clone()),
       };
 
       let mut proj_bytes = Vec::new();
@@ -4402,7 +4448,7 @@ mod tests {
     // Check the constant was stored
     let cnst = stt.env.get_const(&addr);
     assert!(cnst.is_some());
-    match cnst.unwrap() {
+    match cnst.unwrap().as_ref() {
       Constant { info: ConstantInfo::Defn(d), .. } => {
         // Value should be a Rec(0) since it's self-referential in a single-element block
         match d.value.as_ref() {
@@ -4594,17 +4640,15 @@ mod tests {
       "alpha-equivalent mutual defs should have same projection address"
     );
 
-    // Verify the block exists and has exactly 1 equivalence class
-    assert!(!stt.blocks.is_empty(), "Expected at least one block entry");
-    for entry in stt.blocks.iter() {
-      let classes = entry.value();
-      assert_eq!(
-        classes.len(),
-        1,
-        "alpha-equivalent class should produce 1 class, got {}",
-        classes.len()
-      );
-    }
+    // Alpha-equivalent mutual defs collapse to a singleton non-inductive
+    // class, which the compiler now unwraps to a standalone `Defn`
+    // Constant (no Muts wrapper, no block entry). Both Lean names
+    // point to the same standalone address (asserted above); no Ixon
+    // block is created.
+    assert!(
+      stt.blocks.is_empty(),
+      "singleton-unwrapped mutual should have no block entry"
+    );
   }
 
   /// Test that alpha-equivalent defs in a mutual block with a non-equivalent
@@ -5706,8 +5750,13 @@ mod tests {
     // Compile
     let stt = compile_env(&lean_env).expect("compile_env failed");
 
-    // Should have a mutual block
-    assert!(!stt.blocks.is_empty(), "Expected at least one mutual block");
+    // f and g are alpha-equivalent (both `λ x => other x` with the same
+    // type) so they collapse to a singleton non-inductive class. The
+    // compiler unwraps this to a standalone Defn — no Ixon block entry.
+    assert!(
+      stt.blocks.is_empty(),
+      "singleton-unwrapped mutual should have no block entry"
+    );
 
     // Decompile
     let dstt = decompile_env(&stt).expect("decompile_env failed");

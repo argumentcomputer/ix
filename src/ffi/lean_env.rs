@@ -2466,7 +2466,7 @@ extern "C" fn rs_compile_validate_aux(
       stt: &crate::ix::compile::CompileState,
       addr: &crate::ix::address::Address,
     ) -> String {
-      match stt.env.get_const(addr).map(|c| c.info) {
+      match stt.env.get_const(addr).map(|c| c.info.clone()) {
         Some(crate::ix::ixon::constant::ConstantInfo::RPrj(p)) => {
           format!("RPrj(idx={}, block={:.12})", p.idx, p.block.hex())
         },
@@ -2597,7 +2597,7 @@ extern "C" fn rs_compile_validate_aux(
         }
       }
 
-      let proj = match stt.env.get_const(addr).map(|c| c.info) {
+      let proj = match stt.env.get_const(addr).map(|c| c.info.clone()) {
         Some(crate::ix::ixon::constant::ConstantInfo::RPrj(p)) => p,
         _ => return None,
       };
@@ -2614,7 +2614,7 @@ extern "C" fn rs_compile_validate_aux(
             .iter()
             .chain(stt.name_to_addr.iter())
             .filter_map(|entry| {
-              match stt.env.get_const(entry.value()).map(|c| c.info) {
+              match stt.env.get_const(entry.value()).map(|c| c.info.clone()) {
                 Some(crate::ix::ixon::constant::ConstantInfo::RPrj(p))
                   if p.block == proj.block && p.idx == idx =>
                 {
@@ -3881,9 +3881,6 @@ impl ConstSizeBreakdown {
 #[cfg(feature = "test-ffi")]
 /// Analyze the serialized size of a constant and its transitive dependencies.
 fn analyze_const_size(stt: &crate::ix::compile::CompileState, name_str: &str) {
-  use crate::ix::address::Address;
-  use std::collections::{HashSet, VecDeque};
-
   // Build a global name index for metadata serialization
   let name_index = build_name_index(stt);
 
@@ -3900,9 +3897,9 @@ fn analyze_const_size(stt: &crate::ix::compile::CompileState, name_str: &str) {
     },
   };
 
-  // Get the constant
-  let constant = match stt.env.consts.get(&addr) {
-    Some(c) => c.clone(),
+  // Get the constant (materialize from the lazy entry).
+  let constant = match stt.env.get_const(&addr) {
+    Some(c) => c,
     None => {
       println!("\n=== Size analysis for {} ===", name_str);
       println!("  Constant data not found at address");
@@ -3914,53 +3911,34 @@ fn analyze_const_size(stt: &crate::ix::compile::CompileState, name_str: &str) {
   let direct_breakdown =
     compute_const_size_breakdown(&constant, &name, stt, &name_index);
 
-  // BFS to collect all transitive dependencies
-  let mut visited: HashSet<Address> = HashSet::new();
-  let mut queue: VecDeque<Address> = VecDeque::new();
+  // Reuse the shared transitive-closure walker on Env.
+  let dep_addrs = stt.env.transitive_deps_excl(&addr);
   let mut dep_breakdowns: Vec<(String, ConstSizeBreakdown)> = Vec::new();
+  for dep_addr in dep_addrs {
+    let Some(dep_const) = stt.env.get_const(&dep_addr) else {
+      continue;
+    };
+    // Get the name for this dependency (scan named entries)
+    let dep_name_opt: Option<Name> = stt
+      .env
+      .named
+      .iter()
+      .find(|e| e.value().addr == dep_addr)
+      .map(|e| e.key().clone());
+    let dep_name_str = dep_name_opt
+      .as_ref()
+      .map_or_else(|| format!("{:.12}", dep_addr.hex()), |n| n.pretty());
 
-  // Start with the constant's refs
-  visited.insert(addr.clone());
-  for dep_addr in &constant.refs {
-    if !visited.contains(dep_addr) {
-      queue.push_back(dep_addr.clone());
-      visited.insert(dep_addr.clone());
-    }
-  }
-
-  // BFS through all transitive dependencies
-  while let Some(dep_addr) = queue.pop_front() {
-    if let Some(dep_const) = stt.env.consts.get(&dep_addr) {
-      // Get the name for this dependency (scan named entries)
-      let dep_name_opt: Option<Name> = stt
-        .env
-        .named
-        .iter()
-        .find(|e| e.value().addr == dep_addr)
-        .map(|e| e.key().clone());
-      let dep_name_str = dep_name_opt
-        .as_ref()
-        .map_or_else(|| format!("{:.12}", dep_addr.hex()), |n| n.pretty());
-
-      let breakdown = if let Some(ref dep_name) = dep_name_opt {
-        compute_const_size_breakdown(&dep_const, dep_name, stt, &name_index)
-      } else {
-        ConstSizeBreakdown {
-          alpha_size: serialized_const_size(&dep_const),
-          meta_size: 0,
-        }
-      };
-
-      dep_breakdowns.push((dep_name_str, breakdown));
-
-      // Add this constant's refs to the queue
-      for ref_addr in &dep_const.refs {
-        if !visited.contains(ref_addr) {
-          queue.push_back(ref_addr.clone());
-          visited.insert(ref_addr.clone());
-        }
+    let breakdown = if let Some(ref dep_name) = dep_name_opt {
+      compute_const_size_breakdown(&dep_const, dep_name, stt, &name_index)
+    } else {
+      ConstSizeBreakdown {
+        alpha_size: serialized_const_size(&dep_const),
+        meta_size: 0,
       }
-    }
+    };
+
+    dep_breakdowns.push((dep_name_str, breakdown));
   }
 
   // Sort by total size descending

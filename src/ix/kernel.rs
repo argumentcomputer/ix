@@ -1,5 +1,7 @@
+pub mod anon_env;
 pub mod canonical_check;
 pub mod check;
+pub mod claim;
 pub mod congruence;
 pub mod constant;
 pub mod def_eq;

@@ -85,11 +85,15 @@ def genRevealConstantInfo : Gen RevealConstantInfo :=
       <$> genSmallArray (Prod.mk <$> genUInt64Small <*> genRevealMutConstInfo)),
   ]
 
+def genOptAddress : Gen (Option Address) := genOptional genAddress
+
 def genClaim : Gen Claim :=
   frequency [
-    (10, Claim.eval <$> genAddress <*> genAddress),
-    (10, Claim.check <$> genAddress),
-    (10, Claim.reveal <$> genAddress <*> genRevealConstantInfo),
+    (10, Claim.eval     <$> genAddress <*> genAddress <*> genOptAddress),
+    (10, Claim.check    <$> genAddress <*> genOptAddress),
+    (10, Claim.checkEnv <$> genAddress <*> genOptAddress),
+    (10, Claim.reveal   <$> genAddress <*> genRevealConstantInfo),
+    (10, Claim.contains <$> genAddress <*> genAddress),
   ]
 
 /-! ## Shrinkable instances -/
@@ -118,9 +122,14 @@ instance : Shrinkable RevealConstantInfo where
 
 instance : Shrinkable Claim where
   shrink
-    | .check _ => []
-    | .eval input _ => [.check input]
-    | .reveal comm info => (.reveal comm <$> Shrinkable.shrink info) ++ [.check comm]
+    | .check _ none => []
+    | .checkEnv _ none => []
+    | .check c (some _) => [.check c none]
+    | .checkEnv r (some _) => [.checkEnv r none]
+    | .eval input _ _ => [.check input none]
+    | .reveal comm info =>
+      (.reveal comm <$> Shrinkable.shrink info) ++ [.check comm none]
+    | .contains t _ => [.checkEnv t none]
 
 /-! ## SampleableExt instances -/
 

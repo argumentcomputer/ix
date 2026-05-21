@@ -137,7 +137,10 @@ def serdeTests : TestSeq :=
   -- Empty RawEnv. Only data construction happens eagerly; FFI is deferred
   -- inside `mkSerdeRoundtripTest`.
   let empty : RawEnv := { consts := #[], named := #[], blobs := #[], comms := #[] }
-  -- RawEnv with data (include name entries for all referenced addresses)
+  -- RawEnv with data. The const's `addr` must be the canonical content
+  -- hash (`Address.blake3 (serConstant c)`) — the Rust loader verifies
+  -- `Address::hash(bytes) == addr` on load. Blobs and comms don't carry
+  -- a content-hash invariant, so `testAddr` is fine there.
   let testAddr := Address.blake3 (ByteArray.mk #[1, 2, 3])
   let testExpr : Expr := .sort 0
   let testDef : Definition := {
@@ -147,21 +150,24 @@ def serdeTests : TestSeq :=
   let testConst : Constant := {
     info := .defn testDef, sharing := #[], refs := #[], univs := #[]
   }
-  let testRawConst : RawConst := { addr := testAddr, const := testConst }
+  let testConstAddr := Address.blake3 (serConstant testConst)
+  let testRawConst : RawConst := { addr := testConstAddr, const := testConst }
   let testComm : Comm := { secret := testAddr, payload := testAddr }
   let testRawComm : RawComm := { addr := testAddr, comm := testComm }
   let testRawBlob : RawBlob := { addr := testAddr, bytes := ByteArray.mk #[1, 2, 3] }
   let testName := Ix.Name.mkStr Ix.Name.mkAnon "test"
   let testRawNamed : RawNamed := {
-    name := testName, addr := testAddr, constMeta := .empty
+    name := testName, addr := testConstAddr, constMeta := .empty
   }
   let testNameEntry : RawNameEntry := { addr := testAddr, name := testName }
+  let testConstNameEntry : RawNameEntry :=
+    { addr := testConstAddr, name := Ix.Name.mkStr Ix.Name.mkAnon "testConst" }
   let withData : RawEnv := {
     consts := #[testRawConst],
     named := #[testRawNamed],
     blobs := #[testRawBlob],
     comms := #[testRawComm],
-    names := #[testNameEntry]
+    names := #[testNameEntry, testConstNameEntry]
   }
   mkSerdeRoundtripTest "serde empty RawEnv" empty ++
   mkSerdeRoundtripTest "serde RawEnv with data" withData
@@ -190,15 +196,23 @@ private def genSerdeRawEnv : Gen RawEnv := do
   let pickAddr : Gen Address := do
     let idx ← Gen.choose Nat 0 (pool.size - 1)
     pure pool[idx]!.1
-  -- Name entries for every address in the pool
-  let names : Array RawNameEntry := pool.map fun (addr, name) => { addr, name }
-  -- Consts: pool addresses, empty refs/sharing/univs (no extra address lookups)
+  -- Consts: derive addr from content (`Env::get` verifies
+  -- `Address::hash(bytes) == addr` on load). Each canonical address
+  -- gets its own name entry appended to the names table so the serde
+  -- pipeline can resolve it.
   let numConsts ← Gen.choose Nat 0 3
   let mut consts : Array RawConst := #[]
-  for _ in [:numConsts] do
-    let addr ← pickAddr
+  let mut constNames : Array RawNameEntry := #[]
+  for i in [:numConsts] do
     let info ← genSimpleConstantInfo
-    consts := consts.push { addr, const := { info, sharing := #[], refs := #[], univs := #[] } }
+    let c : Constant := { info, sharing := #[], refs := #[], univs := #[] }
+    let addr := Address.blake3 (serConstant c)
+    consts := consts.push { addr, const := c }
+    constNames := constNames.push
+      { addr, name := Ix.Name.mkNat Ix.Name.mkAnon (poolSize + i) }
+  -- Name entries for every address in the pool + every canonical const addr
+  let names : Array RawNameEntry :=
+    (pool.map fun (addr, name) => { addr, name }) ++ constNames
   -- Named: pool addresses with empty metadata
   let numNamed ← Gen.choose Nat 0 3
   let mut named : Array RawNamed := #[]

@@ -8,6 +8,7 @@ use crate::ix::env::Name;
 use crate::ix::ixon::comm::Comm;
 use crate::ix::ixon::constant::Constant as IxonConstant;
 use crate::ix::ixon::env::{Env as IxonEnv, Named as IxonNamed};
+use crate::ix::ixon::merkle::merkle_root_canonical;
 use crate::ix::ixon::metadata::ConstantMeta;
 use crate::lean::{
   LeanIxName, LeanIxonComm, LeanIxonConstant, LeanIxonConstantMeta,
@@ -333,15 +334,24 @@ pub fn decoded_to_ixon_env(decoded: &DecodedRawEnv) -> IxonEnv {
 }
 
 /// Convert a Rust IxonEnv to a DecodedRawEnv.
-pub fn ixon_env_to_decoded(env: &IxonEnv) -> DecodedRawEnv {
-  let consts = env
-    .consts
-    .iter()
-    .map(|e| DecodedRawConst {
-      addr: e.key().clone(),
-      constant: e.value().clone(),
-    })
-    .collect();
+///
+/// Forces materialization of every constant — callers operating on a
+/// freshly-loaded lazy env pay the parse cost here. Returns `Err`
+/// on the first const that fails to materialize (corrupt bytes,
+/// trailing data, etc.); silently dropping such entries would leave
+/// the Lean caller with no signal of the lost data.
+pub fn ixon_env_to_decoded(env: &IxonEnv) -> Result<DecodedRawEnv, String> {
+  let mut consts: Vec<DecodedRawConst> = Vec::with_capacity(env.consts.len());
+  for e in env.consts.iter() {
+    let c = e.value().get().map_err(|err| {
+      format!(
+        "ixon_env_to_decoded: failed to materialize const {}: {err}",
+        e.key().hex()
+      )
+    })?;
+    consts
+      .push(DecodedRawConst { addr: e.key().clone(), constant: (*c).clone() });
+  }
   let named = env
     .named
     .iter()
@@ -369,7 +379,7 @@ pub fn ixon_env_to_decoded(env: &IxonEnv) -> DecodedRawEnv {
       name: e.value().clone(),
     })
     .collect();
-  DecodedRawEnv { consts, named, blobs, comms, names }
+  Ok(DecodedRawEnv { consts, named, blobs, comms, names })
 }
 
 // =============================================================================
@@ -390,6 +400,29 @@ pub extern "C" fn rs_ser_env(
 }
 
 // =============================================================================
+// rs_env_merkle_root: Compute the canonical merkle root over an env's
+// `consts` addresses. Used by the Lean side to verify env identity
+// without re-parsing serialized bytes.
+//
+// Returns 32 bytes for non-empty const sets, empty bytes for empty.
+// =============================================================================
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_env_merkle_root(
+  obj: LeanIxonRawEnv<LeanBorrowed<'_>>,
+) -> LeanByteArray<LeanOwned> {
+  let decoded = obj.decode();
+  let env = decoded_to_ixon_env(&decoded);
+  let mut addrs: Vec<Address> =
+    env.consts.iter().map(|e| e.key().clone()).collect();
+  addrs.sort_unstable();
+  match merkle_root_canonical(&addrs) {
+    Some(root) => LeanByteArray::from_bytes(root.as_bytes()),
+    None => LeanByteArray::from_bytes(&[]),
+  }
+}
+
+// =============================================================================
 // rs_de_env: Deserialize bytes to an Ixon.RawEnv
 // =============================================================================
 
@@ -401,13 +434,43 @@ pub extern "C" fn rs_de_env(
   let data = obj.as_bytes();
   let mut slice: &[u8] = data;
   match IxonEnv::get(&mut slice) {
-    Ok(env) => {
-      let decoded = ixon_env_to_decoded(&env);
-      let raw_env = LeanIxonRawEnv::build(&decoded);
-      LeanExcept::ok(raw_env)
+    Ok(env) => match ixon_env_to_decoded(&env) {
+      Ok(decoded) => {
+        let raw_env = LeanIxonRawEnv::build(&decoded);
+        LeanExcept::ok(raw_env)
+      },
+      Err(e) => LeanExcept::error_string(&format!("rs_de_env: {e}")),
     },
     Err(e) => {
       let msg = format!("rs_de_env: {}", e);
+      LeanExcept::error_string(&msg)
+    },
+  }
+}
+
+/// FFI: Anonymous-only deserialization (`Env::get_anon`).
+///
+/// Reads the header + blobs + consts sections; parses and discards
+/// the metadata sections (names / named / comms). The returned
+/// `RawEnv` has empty `named`, `names`, `comms` arrays. Useful for
+/// anon-mode kernel callers that want to avoid the steady-state
+/// memory cost of metadata that they will never consult.
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_de_env_anon(
+  obj: LeanByteArray<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  let data = obj.as_bytes();
+  let mut slice: &[u8] = data;
+  match IxonEnv::get_anon(&mut slice) {
+    Ok(env) => match ixon_env_to_decoded(&env) {
+      Ok(decoded) => {
+        let raw_env = LeanIxonRawEnv::build(&decoded);
+        LeanExcept::ok(raw_env)
+      },
+      Err(e) => LeanExcept::error_string(&format!("rs_de_env_anon: {e}")),
+    },
+    Err(e) => {
+      let msg = format!("rs_de_env_anon: {}", e);
       LeanExcept::error_string(&msg)
     },
   }

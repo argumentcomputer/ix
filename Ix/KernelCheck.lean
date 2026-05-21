@@ -14,6 +14,7 @@
 module
 public import Lean.Data.Name
 public import Lean.Declaration
+public import Ix.Address
 
 public section
 
@@ -111,9 +112,35 @@ opaque rsCheckIxonFFI :
     IO (Array (Option CheckError))
 
 /-- FFI: list checkable names from a serialized Ixon env file. Used by the
-    `check-ixon` CLI to support `--ns` filtering without rebuilding Lean. -/
+    `ix check` CLI to support `--ns` filtering without rebuilding Lean. -/
 @[extern "rs_kernel_ixon_names"]
 opaque rsIxonNamesFFI : @& String → IO (Array Lean.Name)
+
+/-- FFI: metadata-free anonymous-mode type-check of an entire `.ixe`.
+
+    Loads the env via `IxonEnv::get_anon_mmap` (which mmaps the file
+    and discards the `named`/`names`/`comms` sections during
+    deserialization), enumerates every kernel-checkable target by
+    iterating `consts` (skipping projection constants — they're
+    covered by their parent Muts block work item, with projection
+    addresses reconstructed deterministically via `Constant::commit`),
+    and runs `TypeChecker<Anon>::check_const` on each. The kernel's
+    typechecking logic structurally cannot read metadata: every
+    `M::MField<T>` is `()` in Anon mode.
+
+    `fail_out` is a streaming failure log path; pass `""` to disable.
+
+    Returns an array of `(hex_address, Option CheckError)` pairs — one
+    per kernel-checkable target. The kernel has no name to associate
+    with each slot, so the address travels back so the Lean CLI can
+    print `#<hex>` failure labels matching the Rust progress and
+    fail-out output. -/
+@[extern "rs_kernel_check_anon"]
+opaque rsCheckAnonFFI :
+    @& String →                          -- .ixe path
+    @& Bool →                            -- quiet
+    @& String →                          -- fail-out path ("" = none)
+    IO (Array (String × Option CheckError))
 
 end Ix.KernelCheck
 
