@@ -24,20 +24,20 @@ def main : IO Unit := do
     | throw (IO.userError "Merging failed")
   let .ok compiled := toplevel.compile
     | throw (IO.userError "Compilation failed")
-  let some funIdx := compiled.getFuncIdx `kernel_check_test
-    | throw (IO.userError "Aiur function not found")
+  let some funIdx := compiled.getFuncIdx `verify_claim
+    | throw (IO.userError "verify_claim entrypoint missing")
   let aiurSystem := Aiur.AiurSystem.build compiled.bytecode commitmentParameters
 
   let env ← get_env!
-  let ixonEnv ← IxVM.CheckHarness.loadIxonEnv ``Nat.add_comm env
-  let ioBuffer := IxVM.CheckHarness.buildKernelCheckIOBuffer ixonEnv
-  let targetAddrBytes := IxVM.CheckHarness.kernelCheckTarget ``Nat.add_comm ixonEnv
-  -- check_deps=1 here: bench full transitive checking.
-  let input := targetAddrBytes.push 1
+  let ixonEnv ← IxVM.ClaimHarness.loadIxonEnv ``Nat.add_comm env
+  let target ← IxVM.ClaimHarness.lookupAddr ixonEnv ``Nat.add_comm
+  -- `assumptions = none` = full transitive typecheck.
+  let witness ← IO.ofExcept <| IxVM.ClaimHarness.buildClaimWitness ixonEnv
+    (Ix.Claim.check target none)
 
   let _ ← bgroup "Kernel typechecking" { oneShot := true } do
     throughput (.Elements ixonEnv.consts.size.toUInt64 "consts")
     bench "check Nat.add_comm"
-      (aiurSystem.prove friParameters funIdx input)
-      ioBuffer
+      (aiurSystem.prove friParameters funIdx witness.input)
+      witness.inputIOBuffer
   return

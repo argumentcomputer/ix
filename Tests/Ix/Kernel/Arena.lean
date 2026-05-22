@@ -1,12 +1,18 @@
 /-
   Drives the Aiur kernel through every lean-kernel-arena tutorial
   fixture (`Tests.Ix.Kernel.TutorialDefs` + `NatReduction`) using the
-  shared `IxVM.ixVM` toplevel + `kernel_check_test` entrypoint.
+  shared `IxVM.ixVM` toplevel + `dbg_check_const` entrypoint.
 
   Each fixture's outcome is classified against the test case's expected
   outcome (good must typecheck; bad must be rejected via Aiur execution
   error, where the error originates from an `assert_eq!` failure inside
   the Aiur kernel source).
+
+  `dbg_check_const` is a DEBUG entrypoint, not a claim — it
+  type-checks only the target and trusts transitive deps. Arena uses
+  it for the per-fixture speed advantage (shared deps would otherwise
+  be revalidated N times). Verifier policy must never accept this
+  funcidx as a production claim.
 
   Skips:
   - test cases registered via `bad_raw_consts` (decls live in
@@ -22,7 +28,7 @@ import Ix.Meta
 import Ix.Aiur.Protocol
 import Ix.Aiur.Compiler
 import Ix.IxVM
-import Ix.IxVM.CheckHarness
+import Ix.IxVM.ClaimHarness
 import Tests.Aiur.Common
 import Tests.Ix.Kernel.TutorialMeta
 import Tests.Ix.Kernel.TutorialDefs
@@ -31,7 +37,7 @@ import LSpec
 
 open LSpec
 open Tests.Ix.Kernel.TutorialMeta
-open IxVM.CheckHarness
+open IxVM.ClaimHarness
 
 namespace Tests.Ix.Kernel.Arena
 
@@ -75,7 +81,7 @@ private def collectChecks (env : Lean.Environment) : Array ArenaCheck := Id.run 
       out := out.push { name := n, expectPass := pass }
   return out
 
-/-- Build the `kernel_check_test` input for `name` against the shared
+/-- Build the `dbg_check_const` input for `name` against the shared
     `ixonEnv`. Returns `error` when `compile_env` filtered the
     constant (no Ixon address) — caller treats that as a skip. -/
 private def buildInput (ixonEnv : Ixon.Env) (name : Lean.Name) :
@@ -83,21 +89,19 @@ private def buildInput (ixonEnv : Ixon.Env) (name : Lean.Name) :
   match ixonEnv.getAddr? (Ix.Name.fromLeanName name) with
   | none => .error "ungrounded by compile_env"
   | some addr =>
-    let ioBuffer := buildKernelCheckIOBufferFor ixonEnv addr
-    let targetAddrBytes : Array Aiur.G := addr.hash.data.map .ofUInt8
-    -- check_deps=0: only the target const is type-checked. Each fixture
-    -- runs in isolation; we don't need to revalidate every transitive
-    -- dep N times.
-    .ok (targetAddrBytes.push 0, ioBuffer)
+    -- Subject-only check via `dbg_check_const`. Each fixture runs in
+    -- isolation; we don't revalidate transitive deps N times.
+    let witness := buildDbgCheckConst ixonEnv addr
+    .ok (witness.input, witness.inputIOBuffer)
 
 /-- Run the arena suite against `compiled` (already-compiled Aiur
     `IxVM.ixVM` toplevel) using a single shared Ixon env. Returns one
     `TestSeq` entry per fixture. -/
 def arenaTests (env : Lean.Environment)
     (compiled : Aiur.CompiledToplevel) : IO TestSeq := do
-  let funIdx ← match compiled.getFuncIdx `kernel_check_test with
+  let funIdx ← match compiled.getFuncIdx `dbg_check_const with
     | some i => pure i
-    | none => throw <| IO.userError "kernel_check_test entrypoint missing"
+    | none => throw <| IO.userError "dbg_check_const entrypoint missing"
   let checks := collectChecks env
   let ixonEnv ← loadSharedIxonEnv (checks.map (·.name)) env
   let mut tests : TestSeq := .done
