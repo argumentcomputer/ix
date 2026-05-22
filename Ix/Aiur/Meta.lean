@@ -654,45 +654,59 @@ def elabFunction : ElabStxCat `aiur_function
   | `(aiur_function| $[pub%$e]? fn $i:ident() $[-> $ty:aiur_typ]? {$t:aiur_trm}) => do
     let g ← mkAppM ``Global.mk #[toExpr i.getId]
     let bindType ← mkAppM ``Prod #[mkConst ``Local, mkConst ``Typ]
-    let e := elabEntryBool e
-    mkAppM ``Source.Function.mk
-      #[g, ← elabEmptyList ``String, ← mkListLit bindType [],
-        ← elabRetTyp ty, ← elabTrm t, e]
+    let inputs ← mkListLit bindType []
+    let output ← elabRetTyp ty
+    let body ← elabTrm t
+    mkMonoFun e g inputs output body
   | `(aiur_function| $[pub%$e]? fn $i:ident($b:aiur_bind $[, $bs:aiur_bind]*)
         $[-> $ty:aiur_typ]? {$t:aiur_trm}) => do
     let g ← mkAppM ``Global.mk #[toExpr i.getId]
     let bindType ← mkAppM ``Prod #[mkConst ``Local, mkConst ``Typ]
-    let e := elabEntryBool e
-    mkAppM ``Source.Function.mk
-      #[g, ← elabEmptyList ``String,
-        ← elabListCore b bs elabBind bindType,
-        ← elabRetTyp ty, ← elabTrm t, e]
+    let inputs ← elabListCore b bs elabBind bindType
+    let output ← elabRetTyp ty
+    let body ← elabTrm t
+    mkMonoFun e g inputs output body
   | `(aiur_function| fn $i:ident‹$p:ident $[, $ps:ident]*›()
         $[-> $ty:aiur_typ]? {$t:aiur_trm}) => do
     let g ← mkAppM ``Global.mk #[toExpr i.getId]
     let (_, paramsExpr) ← elabTypeParams p ps
     let bindType ← mkAppM ``Prod #[mkConst ``Local, mkConst ``Typ]
-    mkAppM ``Source.Function.mk
+    mkAppM ``Source.Function.poly
       #[g, paramsExpr, ← mkListLit bindType [],
-        ← elabRetTyp ty, ← elabTrm t, mkConst ``Bool.false]
+        ← elabRetTyp ty, ← elabTrm t]
   | `(aiur_function| fn $i:ident‹$p:ident $[, $ps:ident]*›
         ($b:aiur_bind $[, $bs:aiur_bind]*)
         $[-> $ty:aiur_typ]? {$t:aiur_trm}) => do
     let g ← mkAppM ``Global.mk #[toExpr i.getId]
     let (_, paramsExpr) ← elabTypeParams p ps
     let bindType ← mkAppM ``Prod #[mkConst ``Local, mkConst ``Typ]
-    mkAppM ``Source.Function.mk
+    mkAppM ``Source.Function.poly
       #[g, paramsExpr,
         ← elabListCore b bs elabBind bindType,
-        ← elabRetTyp ty, ← elabTrm t, mkConst ``Bool.false]
+        ← elabRetTyp ty, ← elabTrm t]
   | stx => throw $ .error stx "Invalid syntax for function"
 where
-  elabEntryBool : Option Syntax → Expr
-    | none => mkConst ``Bool.false
-    | some _ => mkConst ``Bool.true
   elabRetTyp : Option (TSyntax `aiur_typ) → TermElabM Expr
     | none => pure $ mkConst ``Typ.unit
     | some typ => elabTyp typ
+  /-- Build a monomorphic `Source.Function`. If `pubKw?` is `some _`
+  (public/entry function), require a `sigPointerFree` proof: signatures
+  with `.pointer` types are rejected with a Meta-level error. -/
+  mkMonoFun (pubKw? : Option Syntax) (name inputs output body : Expr) :
+      TermElabM Expr := do
+    match pubKw? with
+    | none =>
+      mkAppM ``Source.Function.monoNonEntry #[name, inputs, output, body]
+    | some kw =>
+      let sigExpr ← mkAppM ``Source.sigPointerFree #[inputs, output]
+      let propExpr ← mkAppM ``Eq #[sigExpr, mkConst ``Bool.true]
+      let proof ←
+        try
+          Lean.Meta.mkDecideProof propExpr
+        catch _ =>
+          throw $ .error kw
+            "Public (entry) function signatures cannot contain pointer types"
+      mkAppM ``Source.Function.monoEntry #[name, inputs, output, body, proof]
 
 declare_syntax_cat       aiur_declaration
 syntax aiur_function   : aiur_declaration
