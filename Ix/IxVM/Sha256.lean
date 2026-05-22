@@ -41,7 +41,7 @@ def sha256 := ⟦
       [0x1f, 0x83, 0xd9, 0xab],
       [0x5b, 0xe0, 0xcd, 0x19]
     ];
-    sha256_aux(stream, [0; 8], state)
+    sha256_aux(stream, [0u8; 8], state)
   }
 
   fn sha256_aux(stream: ByteStream, len_be: U64, state: [[G; 4]; 8]) -> [[G; 4]; 8] {

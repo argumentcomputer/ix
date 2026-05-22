@@ -400,7 +400,7 @@ def inductive_check := ⟦
         match ci {
           KConstantInfo.Induct(_, _, _, _, _, _, _, _, _, ba) =>
             let same = address_eq(ba, ext_block_addr);
-            let nonzero = 1 - address_eq(ext_block_addr, store([0; 32]));
+            let nonzero = 1 - address_eq(ext_block_addr, store([0u8; 32]));
             let already = list_contains_g(block_idxs, idx);
             let add = same * nonzero * (1 - already);
             match add {
@@ -941,7 +941,7 @@ def inductive_check := ⟦
     let ci = load(list_lookup(top, ind_idx));
     match ci {
       KConstantInfo.Induct(_, _, _, _, _, _, _, _, _, block_addr) =>
-        match address_eq(block_addr, store([0; 32])) {
+        match address_eq(block_addr, store([0u8; 32])) {
           1 => store(ListNode.Cons(ind_idx, store(ListNode.Nil))),
           0 => collect_block_members(block_addr, top, 0),
         },
@@ -972,7 +972,7 @@ def inductive_check := ⟦
     let i_ci = load(list_lookup(top, ind_idx));
     match i_ci {
       KConstantInfo.Induct(_, _, _, _, _, _, _, _, _, ind_ba) =>
-        match address_eq(ind_ba, store([0; 32])) {
+        match address_eq(ind_ba, store([0u8; 32])) {
           1 => 0,
           0 =>
             let other_ci = load(list_lookup(top, idx));
@@ -1865,7 +1865,7 @@ def inductive_check := ⟦
   -- (found, ind_idx); on `found = 0` callers fall back to `self_major`.
   fn resolve_primary_ind_for_rec(self_major: G, rec_block: Addr,
                                   top: List‹&KConstantInfo›) -> G {
-    match address_eq(rec_block, store([0; 32])) {
+    match address_eq(rec_block, store([0u8; 32])) {
       1 => self_major,
       0 =>
         let p = scan_primary_in_rec_block(rec_block, top, top, 0);
@@ -1931,7 +1931,7 @@ def inductive_check := ⟦
     let ci = load(list_lookup(top, ci_idx));
     match ci {
       KConstantInfo.Induct(_, _, _, _, _, _, _, _, this_nested, this_block_addr) =>
-        match address_eq(this_block_addr, store([0; 32])) {
+        match address_eq(this_block_addr, store([0u8; 32])) {
           1 => 0,
           0 =>
             match this_nested {
@@ -2329,7 +2329,7 @@ def inductive_check := ⟦
                                       block_addr: Addr,
                                       top: List‹&KConstantInfo›,
                                       addrs: List‹Addr›) {
-    match address_eq(block_addr, store([0; 32])) {
+    match address_eq(block_addr, store([0u8; 32])) {
       1 => (),
       0 => peer_param_loop(self_pos, self_ty, self_n_params, self_n_indices,
                            block_addr, top, top, addrs, 0),

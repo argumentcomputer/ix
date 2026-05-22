@@ -341,7 +341,7 @@ def levels := ⟦
         match load(b) {
           ListNode.Nil => 0,
           ListNode.Cons(bb, rb) =>
-            match ba - bb {
+            match to_field(ba) - to_field(bb) {
               0 => bytestream_eq(ra, rb),
               _ => 0,
             },

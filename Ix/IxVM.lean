@@ -49,7 +49,7 @@ def entrypoints := ⟦
   -- recursor canonical-build, positivity, etc. Deps still need to be
   -- in `k_consts`/`addrs` so the target's own `whnf`/`infer` can
   -- resolve `Const` refs; the IOBuffer payload doesn't shrink.
-  pub fn kernel_check_test(target_addr: [G; 32], check_deps: G) {
+  pub fn kernel_check_test(target_addr: [U8; 32], check_deps: G) {
     let target = store(target_addr);
     let (k_consts, addrs) = ingress_with_primitives(target);
     match check_deps {

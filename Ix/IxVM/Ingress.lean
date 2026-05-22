@@ -41,14 +41,22 @@ def ingress := ⟦
          b8, b9, b10, b11, b12, b13, b14, b15,
          b16, b17, b18, b19, b20, b21, b22, b23,
          b24, b25, b26, b27, b28, b29, b30, b31] = load(b);
-    match [a0 - b0, a1 - b1, a2 - b2, a3 - b3,
-           a4 - b4, a5 - b5, a6 - b6, a7 - b7,
-           a8 - b8, a9 - b9, a10 - b10, a11 - b11,
-           a12 - b12, a13 - b13, a14 - b14, a15 - b15,
-           a16 - b16, a17 - b17, a18 - b18, a19 - b19,
-           a20 - b20, a21 - b21, a22 - b22, a23 - b23,
-           a24 - b24, a25 - b25, a26 - b26, a27 - b27,
-           a28 - b28, a29 - b29, a30 - b30, a31 - b31] {
+    match [to_field(a0) - to_field(b0), to_field(a1) - to_field(b1),
+           to_field(a2) - to_field(b2), to_field(a3) - to_field(b3),
+           to_field(a4) - to_field(b4), to_field(a5) - to_field(b5),
+           to_field(a6) - to_field(b6), to_field(a7) - to_field(b7),
+           to_field(a8) - to_field(b8), to_field(a9) - to_field(b9),
+           to_field(a10) - to_field(b10), to_field(a11) - to_field(b11),
+           to_field(a12) - to_field(b12), to_field(a13) - to_field(b13),
+           to_field(a14) - to_field(b14), to_field(a15) - to_field(b15),
+           to_field(a16) - to_field(b16), to_field(a17) - to_field(b17),
+           to_field(a18) - to_field(b18), to_field(a19) - to_field(b19),
+           to_field(a20) - to_field(b20), to_field(a21) - to_field(b21),
+           to_field(a22) - to_field(b22), to_field(a23) - to_field(b23),
+           to_field(a24) - to_field(b24), to_field(a25) - to_field(b25),
+           to_field(a26) - to_field(b26), to_field(a27) - to_field(b27),
+           to_field(a28) - to_field(b28), to_field(a29) - to_field(b29),
+           to_field(a30) - to_field(b30), to_field(a31) - to_field(b31)] {
       [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] => 1,
       _ => 0,
@@ -70,14 +78,14 @@ def ingress := ⟦
     let key = [a0, a1, a2, a3, a4, a5, a6, a7,
                a8, a9, a10, a11, a12, a13, a14, a15,
                a16, a17, a18, a19, a20, a21, a22, a23,
-               a24, a25, a26, a27, a28, a29, a30, a31, 1];
+               a24, a25, a26, a27, a28, a29, a30, a31, 1u8];
     let (idx, len) = io_get_info(key);
     match len {
       0 => 1,
       _ =>
         let bytes = #read_byte_stream(idx, len);
         match load(bytes) {
-          ListNode.Cons(b, _) => b,
+          ListNode.Cons(b, _) => to_field(b),
           ListNode.Nil => 1,
         },
     }
@@ -94,7 +102,7 @@ def ingress := ⟦
     let blob_key = [a0, a1, a2, a3, a4, a5, a6, a7,
                     a8, a9, a10, a11, a12, a13, a14, a15,
                     a16, a17, a18, a19, a20, a21, a22, a23,
-                    a24, a25, a26, a27, a28, a29, a30, a31, 0];
+                    a24, a25, a26, a27, a28, a29, a30, a31, 0u8];
     let (idx, len) = io_get_info(blob_key);
     let bytes = #read_byte_stream(idx, len);
     let h = blake3(bytes);
@@ -140,7 +148,7 @@ def ingress := ⟦
   }
 
   -- Extract the Muts block address from a projection ConstantInfo.
-  -- Returns [0; 32] for non-projection constants.
+  -- Returns [0u8; 32] for non-projection constants.
   fn get_proj_block_addr(info: ConstantInfo) -> Addr {
     match info {
       ConstantInfo.IPrj(prj) =>
@@ -151,11 +159,11 @@ def ingress := ⟦
         match prj { RecursorProj.Mk(_, addr) => addr, },
       ConstantInfo.DPrj(prj) =>
         match prj { DefinitionProj.Mk(_, addr) => addr, },
-      ConstantInfo.Defn(_) => store([0; 32]),
-      ConstantInfo.Recr(_) => store([0; 32]),
-      ConstantInfo.Axio(_) => store([0; 32]),
-      ConstantInfo.Quot(_) => store([0; 32]),
-      ConstantInfo.Muts(_) => store([0; 32]),
+      ConstantInfo.Defn(_) => store([0u8; 32]),
+      ConstantInfo.Recr(_) => store([0u8; 32]),
+      ConstantInfo.Axio(_) => store([0u8; 32]),
+      ConstantInfo.Quot(_) => store([0u8; 32]),
+      ConstantInfo.Muts(_) => store([0u8; 32]),
     }
   }
 
@@ -164,7 +172,7 @@ def ingress := ⟦
   -- recursors to locate their inductive's block.
   fn find_block_addr_from_refs(refs: List‹Addr›, all_addrs: List‹Addr›) -> Addr {
     match load(refs) {
-      ListNode.Nil => store([0; 32]),
+      ListNode.Nil => store([0u8; 32]),
       ListNode.Cons(addr, rest) =>
         let blob = is_blob(addr, all_addrs);
         match blob {
@@ -224,7 +232,7 @@ def ingress := ⟦
   -- the number of recursor rules to the number of constructors in the block.
   fn find_matching_block_addr(refs: List‹Addr›, all_addrs: List‹Addr›, nrules: G) -> Addr {
     match load(refs) {
-      ListNode.Nil => store([0; 32]),
+      ListNode.Nil => store([0u8; 32]),
       ListNode.Cons(addr, rest) =>
         let blob = is_blob(addr, all_addrs);
         match blob {
@@ -885,9 +893,9 @@ def ingress := ⟦
         let head = collect_app_spine_expr_head(load(major_ty_ref), sharing);
         match head {
           Expr.Ref(ref_idx_bytes, _) => list_lookup(refs, flatten_u64(ref_idx_bytes)),
-          _ => store([0; 32]),
+          _ => store([0u8; 32]),
         },
-      _ => store([0; 32]),
+      _ => store([0u8; 32]),
     }
   }
 
@@ -1249,7 +1257,7 @@ def ingress := ⟦
             match constant {
               Constant.Mk(info, _, refs, _) =>
                 let block_addr = get_proj_block_addr(info);
-                match address_eq(block_addr, store([0; 32])) {
+                match address_eq(block_addr, store([0u8; 32])) {
                   1 =>
                     let combined_refs = list_concat(refs, store(ListNode.Nil));
                     let next_worklist = list_concat(combined_refs, worklist);
@@ -1329,7 +1337,7 @@ def ingress := ⟦
                            all_consts: List‹&Constant›,
                            pos_map: List‹G›) -> (G, Addr) {
     match load(all_addrs) {
-      ListNode.Nil => (0, store([0; 32])),
+      ListNode.Nil => (0, store([0u8; 32])),
       ListNode.Cons(addr, rest_a) =>
         match load(all_consts) {
           ListNode.Cons(c, rest_c) =>
@@ -1354,7 +1362,7 @@ def ingress := ⟦
   -- treats zero-addr as "no primitive here", falling through.
   fn find_addr_at_pos(target: G, all_addrs: List‹Addr›, pos_map: List‹G›) -> Addr {
     match load(all_addrs) {
-      ListNode.Nil => store([0; 32]),
+      ListNode.Nil => store([0u8; 32]),
       ListNode.Cons(addr, rest_addrs) =>
         match load(pos_map) {
           ListNode.Cons(pos, rest_pos) =>
@@ -1451,7 +1459,7 @@ def ingress := ⟦
     }
   }
 
-  fn build_ctor_pairs_computed(idx: [G; 8], block: Addr,
+  fn build_ctor_pairs_computed(idx: U64, block: Addr,
                                 base_pos: G, n_ctors: G, cidx: G)
                                 -> List‹(G, Addr)› {
     match n_ctors - cidx {
@@ -1468,8 +1476,8 @@ def ingress := ⟦
   -- compile uses, serializing it in-Aiur, and hashing. No external trust
   -- needed — every input is derived from a `load_verified_*` result or a
   -- loop counter.
-  fn cprj_content_addr(idx: [G; 8], cidx: G, block: Addr) -> Addr {
-    let prj = ConstructorProj.Mk(idx, [cidx, 0, 0, 0, 0, 0, 0, 0], block);
+  fn cprj_content_addr(idx: U64, cidx: G, block: Addr) -> Addr {
+    let prj = ConstructorProj.Mk(idx, [u8_from_field_unsafe(cidx), 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], block);
     let info = ConstantInfo.CPrj(prj);
     let cnst = Constant.Mk(info, store(ListNode.Nil),
                                   store(ListNode.Nil),

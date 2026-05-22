@@ -10,17 +10,17 @@ def ixonDeserialize := ⟦
   -- Byte reading primitives
   -- ============================================================================
 
-  fn read_byte(stream: ByteStream) -> (G, ByteStream) {
+  fn read_byte(stream: ByteStream) -> (U8, ByteStream) {
     match load(stream) {
       ListNode.Cons(byte, rest) => (byte, rest),
-      ListNode.Nil => (0, store(ListNode.Nil)),
+      ListNode.Nil => (0u8, store(ListNode.Nil)),
     }
   }
 
   -- Read num_bytes little-endian bytes into a u64
-  fn get_u64_le(stream: ByteStream, num_bytes: G) -> ([G; 8], ByteStream) {
+  fn get_u64_le(stream: ByteStream, num_bytes: G) -> (U64, ByteStream) {
     match num_bytes {
-      0 => ([0; 8], stream),
+      0 => ([0u8; 8], stream),
       _ =>
         let (byte, s) = read_byte(stream);
         let (rest_bytes, s2) = get_u64_le(s, num_bytes - 1);
@@ -34,14 +34,14 @@ def ixonDeserialize := ⟦
   -- ============================================================================
 
   -- Tag0: [large:1][size:7]
-  fn get_tag0(stream: ByteStream) -> ([G; 8], ByteStream) {
+  fn get_tag0(stream: ByteStream) -> (U64, ByteStream) {
     let (byte, s) = read_byte(stream);
     let bits = u8_bit_decomposition(byte);
     let [b0, b1, b2, b3, b4, b5, b6, b7] = bits;
     let small_size = b0 + 2 * b1 + 4 * b2 + 8 * b3 + 16 * b4 + 32 * b5 + 64 * b6;
     match b7 {
       0 =>
-        ([small_size, 0, 0, 0, 0, 0, 0, 0], s),
+        ([u8_from_field_unsafe(small_size), 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], s),
       _ =>
         let num_bytes = small_size + 1;
         get_u64_le(s, num_bytes),
@@ -49,7 +49,7 @@ def ixonDeserialize := ⟦
   }
 
   -- Tag2: [flag:2][large:1][size:5]
-  fn get_tag2(stream: ByteStream) -> ((G, [G; 8]), ByteStream) {
+  fn get_tag2(stream: ByteStream) -> ((G, U64), ByteStream) {
     let (byte, s) = read_byte(stream);
     let bits = u8_bit_decomposition(byte);
     let [b0, b1, b2, b3, b4, b5, b6, b7] = bits;
@@ -57,7 +57,7 @@ def ixonDeserialize := ⟦
     let small_size = b0 + 2 * b1 + 4 * b2 + 8 * b3 + 16 * b4;
     match b5 {
       0 =>
-        ((flag, [small_size, 0, 0, 0, 0, 0, 0, 0]), s),
+        ((flag, [u8_from_field_unsafe(small_size), 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]), s),
       _ =>
         let num_bytes = small_size + 1;
         let (size, s2) = get_u64_le(s, num_bytes);
@@ -66,7 +66,7 @@ def ixonDeserialize := ⟦
   }
 
   -- Tag4: [flag:4][large:1][size:3]
-  fn get_tag4(stream: ByteStream) -> ((G, [G; 8]), ByteStream) {
+  fn get_tag4(stream: ByteStream) -> ((G, U64), ByteStream) {
     let (byte, s) = read_byte(stream);
     let bits = u8_bit_decomposition(byte);
     let [b0, b1, b2, b3, b4, b5, b6, b7] = bits;
@@ -74,7 +74,7 @@ def ixonDeserialize := ⟦
     let small_size = b0 + 2 * b1 + 4 * b2;
     match b3 {
       0 =>
-        ((flag, [small_size, 0, 0, 0, 0, 0, 0, 0]), s),
+        ((flag, [u8_from_field_unsafe(small_size), 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]), s),
       _ =>
         let num_bytes = small_size + 1;
         let (size, s2) = get_u64_le(s, num_bytes);
@@ -86,7 +86,7 @@ def ixonDeserialize := ⟦
   -- U64 list deserialization
   -- ============================================================================
 
-  fn get_u64_list(stream: ByteStream, count: [G; 8]) -> (List‹U64›, ByteStream) {
+  fn get_u64_list(stream: ByteStream, count: U64) -> (List‹U64›, ByteStream) {
     let is_zero = u64_is_zero(count);
     match is_zero {
       1 => (store(ListNode.Nil), stream),
@@ -102,7 +102,7 @@ def ixonDeserialize := ⟦
   -- ============================================================================
 
   -- App telescope: read count args, wrapping func in App nodes
-  fn get_app_telescope(func: Expr, stream: ByteStream, count: [G; 8]) -> (Expr, ByteStream) {
+  fn get_app_telescope(func: Expr, stream: ByteStream, count: U64) -> (Expr, ByteStream) {
     let is_zero = u64_is_zero(count);
     match is_zero {
       1 => (func, stream),
@@ -114,7 +114,7 @@ def ixonDeserialize := ⟦
   }
 
   -- Lam telescope: read count types then body, wrap as nested Lams
-  fn get_lam_telescope(stream: ByteStream, count: [G; 8]) -> (Expr, ByteStream) {
+  fn get_lam_telescope(stream: ByteStream, count: U64) -> (Expr, ByteStream) {
     let is_zero = u64_is_zero(count);
     match is_zero {
       1 =>
@@ -129,7 +129,7 @@ def ixonDeserialize := ⟦
   }
 
   -- All telescope: read count types then body, wrap as nested Alls
-  fn get_all_telescope(stream: ByteStream, count: [G; 8]) -> (Expr, ByteStream) {
+  fn get_all_telescope(stream: ByteStream, count: U64) -> (Expr, ByteStream) {
     let is_zero = u64_is_zero(count);
     match is_zero {
       1 =>
@@ -205,7 +205,7 @@ def ixonDeserialize := ⟦
   -- ============================================================================
 
   -- Build a chain of Succ constructors around a base universe
-  fn build_succ_chain(base: Univ, count: [G; 8]) -> Univ {
+  fn build_succ_chain(base: Univ, count: U64) -> Univ {
     let is_zero = u64_is_zero(count);
     match is_zero {
       1 => base,
@@ -283,15 +283,24 @@ def ixonDeserialize := ⟦
     let (b29, s) = read_byte(s);
     let (b30, s) = read_byte(s);
     let (b31, s) = read_byte(s);
-    (store([b0, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15,
-      b16, b17, b18, b19, b20, b21, b22, b23, b24, b25, b26, b27, b28, b29, b30, b31]), s)
+    (store([b0, b1, b2,
+      b3, b4, b5,
+      b6, b7, b8,
+      b9, b10, b11,
+      b12, b13, b14,
+      b15, b16, b17,
+      b18, b19, b20,
+      b21, b22, b23,
+      b24, b25, b26,
+      b27, b28, b29,
+      b30, b31]), s)
   }
 
   -- ============================================================================
   -- List deserialization
   -- ============================================================================
 
-  fn get_expr_list(stream: ByteStream, count: [G; 8]) -> (List‹&Expr›, ByteStream) {
+  fn get_expr_list(stream: ByteStream, count: U64) -> (List‹&Expr›, ByteStream) {
     let is_zero = u64_is_zero(count);
     match is_zero {
       1 => (store(ListNode.Nil), stream),
@@ -302,7 +311,7 @@ def ixonDeserialize := ⟦
     }
   }
 
-  fn get_univ_list(stream: ByteStream, count: [G; 8]) -> (List‹&Univ›, ByteStream) {
+  fn get_univ_list(stream: ByteStream, count: U64) -> (List‹&Univ›, ByteStream) {
     let is_zero = u64_is_zero(count);
     match is_zero {
       1 => (store(ListNode.Nil), stream),
@@ -313,7 +322,7 @@ def ixonDeserialize := ⟦
     }
   }
 
-  fn get_address_list(stream: ByteStream, count: [G; 8]) -> (List‹Addr›, ByteStream) {
+  fn get_address_list(stream: ByteStream, count: U64) -> (List‹Addr›, ByteStream) {
     let is_zero = u64_is_zero(count);
     match is_zero {
       1 => (store(ListNode.Nil), stream),
@@ -351,7 +360,7 @@ def ixonDeserialize := ⟦
   -- Encoding: kind * 4 + safety
   -- kind: Definition=0, Opaque=1, Theorem=2
   -- safety: Unsafe=0, Safe=1, Partial=2
-  fn unpack_def_kind_safety(byte: G) -> (DefKind, DefinitionSafety) {
+  fn unpack_def_kind_safety(byte: U8) -> (DefKind, DefinitionSafety) {
     match byte {
       0 => (DefKind.Definition, DefinitionSafety.Unsafe),
       1 => (DefKind.Definition, DefinitionSafety.Safe),
@@ -382,7 +391,7 @@ def ixonDeserialize := ⟦
     (RecursorRule.Mk(fields, store(rhs)), s2)
   }
 
-  fn get_recursor_rule_list(stream: ByteStream, count: [G; 8]) -> (List‹RecursorRule›, ByteStream) {
+  fn get_recursor_rule_list(stream: ByteStream, count: U64) -> (List‹RecursorRule›, ByteStream) {
     let is_zero = u64_is_zero(count);
     match is_zero {
       1 => (store(ListNode.Nil), stream),
@@ -416,11 +425,11 @@ def ixonDeserialize := ⟦
     let (is_unsafe, s) = read_byte(stream);
     let (lvls, s2) = get_tag0(s);
     let (typ, s3) = get_expr(s2);
-    (Axiom.Mk(is_unsafe, lvls, store(typ)), s3)
+    (Axiom.Mk(to_field(is_unsafe), lvls, store(typ)), s3)
   }
 
   -- QuotKind: byte(0=Typ, 1=Ctor, 2=Lift, 3=Ind)
-  fn get_quot_kind(byte: G) -> QuotKind {
+  fn get_quot_kind(byte: U8) -> QuotKind {
     match byte {
       0 => QuotKind.Typ,
       1 => QuotKind.Ctor,
@@ -447,10 +456,10 @@ def ixonDeserialize := ⟦
     let (params, s4) = get_tag0(s3);
     let (fields, s5) = get_tag0(s4);
     let (typ, s6) = get_expr(s5);
-    (Constructor.Mk(is_unsafe, lvls, cidx, params, fields, store(typ)), s6)
+    (Constructor.Mk(to_field(is_unsafe), lvls, cidx, params, fields, store(typ)), s6)
   }
 
-  fn get_constructor_list(stream: ByteStream, count: [G; 8]) -> (List‹Constructor›, ByteStream) {
+  fn get_constructor_list(stream: ByteStream, count: U64) -> (List‹Constructor›, ByteStream) {
     let is_zero = u64_is_zero(count);
     match is_zero {
       1 => (store(ListNode.Nil), stream),
@@ -532,7 +541,7 @@ def ixonDeserialize := ⟦
     }
   }
 
-  fn get_mut_const_list(stream: ByteStream, count: [G; 8]) -> (List‹MutConst›, ByteStream) {
+  fn get_mut_const_list(stream: ByteStream, count: U64) -> (List‹MutConst›, ByteStream) {
     let is_zero = u64_is_zero(count);
     match is_zero {
       1 => (store(ListNode.Nil), stream),
@@ -578,7 +587,7 @@ def ixonDeserialize := ⟦
   }
 
   -- Parse ConstantInfo from flag (0xC for Muts, 0xD for non-Muts) and size
-  fn get_constant_info(flag: G, size: [G; 8], stream: ByteStream) -> (ConstantInfo, ByteStream) {
+  fn get_constant_info(flag: G, size: U64, stream: ByteStream) -> (ConstantInfo, ByteStream) {
     match flag {
       -- Muts: flag=0xC, size is the entry count
       0xC =>
@@ -586,7 +595,7 @@ def ixonDeserialize := ⟦
         (ConstantInfo.Muts(mutuals), s),
       -- Non-Muts: flag=0xD, size[0] is the variant number
       0xD =>
-        get_constant_info_by_variant(size[0], stream),
+        get_constant_info_by_variant(to_field(size[0]), stream),
     }
   }
 
