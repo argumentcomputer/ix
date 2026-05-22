@@ -409,6 +409,17 @@ partial def interp (decls : Decls) (bindings : Bindings) : Term → InterpM Valu
   -- `toField` / `u8FromFieldUnsafe` are erased coercions: value unchanged.
   | .toField t | .u8FromFieldUnsafe t => interp decls bindings t
   | .u8Lit n => return .field (G.ofNat n)
+  | .u32FromField t => do
+      match (← interp decls bindings t) with
+      | .field g =>
+          if g.val < 4294967296 then
+            let x := g.val.toUInt32
+            return .array #[.field (G.ofUInt8 x.toUInt8),
+                            .field (G.ofUInt8 (x >>> 8).toUInt8),
+                            .field (G.ofUInt8 (x >>> 16).toUInt8),
+                            .field (G.ofUInt8 (x >>> 24).toUInt8)]
+          else throwErr "u32_from_field: value exceeds 32 bits"
+      | _ => throwErr "u32_from_field: expected field value"
   | .debug label optT cont => do
       match optT with
       | none   => dbg_trace s!"{label}"

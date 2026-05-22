@@ -287,6 +287,16 @@ def evalOp (t : Bytecode.Toplevel) (fuel : Nat) (op : Op) (st : EvalState) :
     -- outside `[0, 256)` (exactly what the byte-chip lookup enforces).
     let x ← readIdx st a; let y ← readIdx st b
     if x.val < 256 && y.val < 256 then .ok st else .error .u8RangeCheckFailed
+  | .u32FromField a => do
+    -- 4 little-endian bytes; fails if the value exceeds 32 bits.
+    let x ← readIdx st a
+    if x.val < 4294967296 then
+      let v := x.val.toUInt32
+      let st1 := pushMap st (G.ofUInt8 v.toUInt8)
+      let st2 := pushMap st1 (G.ofUInt8 (v >>> 8).toUInt8)
+      let st3 := pushMap st2 (G.ofUInt8 (v >>> 16).toUInt8)
+      pure (pushMap st3 (G.ofUInt8 (v >>> 24).toUInt8))
+    else .error .u8RangeCheckFailed
   | .debug _ _ => .ok st
 termination_by (fuel, sizeOf op, 0)
 decreasing_by all_goals first | decreasing_tactic | omega

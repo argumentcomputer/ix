@@ -306,6 +306,9 @@ def toIndex
     let j ← expectIdx layoutMap bindings j
     modify fun stt => { stt with ops := stt.ops.push (.u8RangeCheck i j) }
     pure #[i, j]
+  | .u32FromField _ _ a => do
+    let x ← expectIdx layoutMap bindings a
+    pushOp (.u32FromField x) 4
   | .debug _ _ label term ret => do
     let term ← match term with
       | none => pure none

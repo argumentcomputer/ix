@@ -597,6 +597,36 @@ impl Op {
         );
         lookup.multiplicity += sel.clone();
       },
+      Op::U32FromField(x) => {
+        // Witness 4 little-endian bytes, pin recomposition, range-check pairs.
+        let x_expr = state.map[*x].0.clone();
+        let b0 = state.next_auxiliary();
+        let b1 = state.next_auxiliary();
+        let b2 = state.next_auxiliary();
+        let b3 = state.next_auxiliary();
+        state.map.push((b0.clone(), 1));
+        state.map.push((b1.clone(), 1));
+        state.map.push((b2.clone(), 1));
+        state.map.push((b3.clone(), 1));
+        let recomp = b0.clone()
+          + b1.clone() * G::from_u64(256)
+          + b2.clone() * G::from_u64(65536)
+          + b3.clone() * G::from_u64(16777216);
+        state.constraints.zeros.push(sel.clone() * (x_expr - recomp));
+        let rc = u8_range_check_channel();
+        let lookup = state.next_lookup();
+        combine_lookup_args(
+          lookup,
+          vec![sel.clone() * rc, sel.clone() * b0, sel.clone() * b1],
+        );
+        lookup.multiplicity += sel.clone();
+        let lookup = state.next_lookup();
+        combine_lookup_args(
+          lookup,
+          vec![sel.clone() * rc, sel.clone() * b2, sel.clone() * b3],
+        );
+        lookup.multiplicity += sel.clone();
+      },
       Op::U32LessThan(x_idx, y_idx) => {
         // u32 less-than via addition carry chain.
         //

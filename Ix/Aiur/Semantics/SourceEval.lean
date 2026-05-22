@@ -447,6 +447,20 @@ def interp (decls : Decls) (fuel : Nat) (bindings : Bindings)
   -- `toField` / `u8FromFieldUnsafe` are erased coercions: value unchanged.
   | .toField t | .u8FromFieldUnsafe t => interp decls fuel bindings t st
   | .u8Lit n => .ok (.field (G.ofNat n), st)
+  | .u32FromField t =>
+      match interp decls fuel bindings t st with
+      | .error e => .error e
+      | .ok (v, st') =>
+        match v with
+        | .field g =>
+          if g.val < 4294967296 then
+            let x := g.val.toUInt32
+            .ok (.array #[.field (G.ofUInt8 x.toUInt8),
+                          .field (G.ofUInt8 (x >>> 8).toUInt8),
+                          .field (G.ofUInt8 (x >>> 16).toUInt8),
+                          .field (G.ofUInt8 (x >>> 24).toUInt8)], st')
+          else .error (.typeMismatch "u32FromField")
+        | _ => .error (.typeMismatch "u32FromField")
   | .debug _ _ ret => interp decls fuel bindings ret st
   | .ioGetInfo key =>
       match interp decls fuel bindings key st with

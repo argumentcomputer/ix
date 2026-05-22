@@ -556,6 +556,31 @@ impl Op {
           ),
         );
       },
+      Op::U32FromField(x) => {
+        let x_u32 = u32::try_from(map[*x].0.as_canonical_u64())
+          .expect("u32_from_field input exceeds 32 bits");
+        let bytes = x_u32.to_le_bytes();
+        for &b in &bytes {
+          let g = G::from_u8(b);
+          map.push((g, 1));
+          slice.push_auxiliary(index, g);
+        }
+        let rc = u8_range_check_channel();
+        slice.push_lookup(
+          index,
+          Lookup::push(
+            G::ONE,
+            vec![rc, G::from_u8(bytes[0]), G::from_u8(bytes[1])],
+          ),
+        );
+        slice.push_lookup(
+          index,
+          Lookup::push(
+            G::ONE,
+            vec![rc, G::from_u8(bytes[2]), G::from_u8(bytes[3])],
+          ),
+        );
+      },
       Op::AssertEq(..) | Op::IOSetInfo(..) | Op::IOWrite(_) | Op::Debug(..) => {
       },
     }

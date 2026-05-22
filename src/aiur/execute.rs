@@ -470,6 +470,24 @@ impl Function {
             record.bytes2_queries.bump_range_check(&vi, &vj);
           }
         },
+        ExecEntry::Op(Op::U32FromField(x_idx)) => {
+          let x_val = map[*x_idx].as_canonical_u64();
+          let x_u32 =
+            u32::try_from(x_val).ok().ok_or(ExecError::U32OutOfRange(x_val))?;
+          let bytes = x_u32.to_le_bytes();
+          map.push(G::from_u8(bytes[0]));
+          map.push(G::from_u8(bytes[1]));
+          map.push(G::from_u8(bytes[2]));
+          map.push(G::from_u8(bytes[3]));
+          if !unconstrained {
+            record
+              .bytes2_queries
+              .bump_range_check(&G::from_u8(bytes[0]), &G::from_u8(bytes[1]));
+            record
+              .bytes2_queries
+              .bump_range_check(&G::from_u8(bytes[2]), &G::from_u8(bytes[3]));
+          }
+        },
         ExecEntry::Op(Op::Debug(label, idxs)) => match idxs {
           None => println!("{label}"),
           Some(idxs) => {

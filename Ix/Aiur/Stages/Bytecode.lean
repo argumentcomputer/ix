@@ -50,6 +50,10 @@ inductive Op
   new values: it is a pure side-effect (lookup), and its `u8` results alias the
   two inputs. Kept last so its FFI tag (27) doesn't shift the others. -/
   | u8RangeCheck : ValIdx → ValIdx → Op
+  /-- Decompose a field value into 4 little-endian range-checked bytes. Produces
+  4 new values; pinned by `x = b0 + b1·256 + b2·256² + b3·256³` + 2 byte-chip
+  range checks. FFI tag 28. -/
+  | u32FromField : ValIdx → Op
   deriving Repr, BEq, Hashable
 
 mutual

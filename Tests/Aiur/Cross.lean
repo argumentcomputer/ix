@@ -409,6 +409,11 @@ def toplevel : Source.Toplevel := ⟦
   pub fn u8_lits() -> (G, G, G) {
     (to_field(0u8), to_field(127u8), to_field(255u8))
   }
+  -- u32_from_field: decompose a field into 4 little-endian range-checked bytes.
+  pub fn u32_from_field_fn(x: G) -> (G, G, G, G) {
+    let [b0, b1, b2, b3] = u32_from_field(x);
+    (to_field(b0), to_field(b1), to_field(b2), to_field(b3))
+  }
   -- Pattern-matching directly on a U8 scrutinee with byte-literal patterns.
   pub fn classify_byte(a: G) -> G {
     let (x, _) = u8_range_check(a, a);
@@ -1243,6 +1248,9 @@ def tests : TestSeq :=
   runAgreement "classify_byte(0)" "classify_byte" [0] ++
   runAgreement "classify_byte(255)" "classify_byte" [255] ++
   runAgreement "classify_byte(42)" "classify_byte" [42] ++
+  runAgreement "u32_from_field_fn(0x04030201)" "u32_from_field_fn" [67305985] ++
+  runAgreement "u32_from_field_fn(0)" "u32_from_field_fn" [0] ++
+  runAgreement "u32_from_field_fn(0xFFFFFFFF)" "u32_from_field_fn" [4294967295] ++
   runAgreement "u32_less_than_function(300,500)" "u32_less_than_function" [300, 500] ++
   runAgreement "u32_less_than_function(500,300)" "u32_less_than_function" [500, 300] ++
   runAgreement "u32_less_than_function(500,500)" "u32_less_than_function" [500, 500] ++

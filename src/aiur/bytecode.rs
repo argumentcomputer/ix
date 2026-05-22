@@ -64,6 +64,9 @@ pub enum Op {
   /// Range-check two values into `[0, 256)` via the byte chip. Produces no new
   /// values: its `u8` results alias the two inputs (cf. `AssertEq`).
   U8RangeCheck(ValIdx, ValIdx),
+  /// Decompose a value into 4 little-endian range-checked bytes, pinned by
+  /// `x = b0 + b1*256 + b2*65536 + b3*16777216`.
+  U32FromField(ValIdx),
 }
 
 pub enum Ctrl {

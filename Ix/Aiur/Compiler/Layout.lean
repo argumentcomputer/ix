@@ -200,6 +200,8 @@ def opLayout : Bytecode.Op → LayoutM Unit
   | .u32LessThan .. => do pushDegree 1; bumpAuxiliaries 12; bumpLookups 6
   -- Pure range-check lookup: no output columns/degrees, just one lookup.
   | .u8RangeCheck .. => bumpLookups
+  -- 4 byte outputs + 2 byte-chip range checks (recomposition is a constraint).
+  | .u32FromField _ => do pushDegrees #[1, 1, 1, 1]; bumpAuxiliaries 4; bumpLookups 2
   | .debug .. => pure ()
 
 /-- Termination helper for blockLayout's Block/Ctrl traversal. -/

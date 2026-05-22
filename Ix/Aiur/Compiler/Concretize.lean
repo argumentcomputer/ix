@@ -360,6 +360,8 @@ def termToConcrete
   -- `toField` / `u8FromFieldUnsafe` are erased coercions: `u8` and `field`
   -- share a representation, so we drop the wrapper and keep the inner term.
   | .toField _ _ a | .u8FromFieldUnsafe _ _ a => termToConcrete mono a
+  | .u32FromField τ e a => do
+      pure (.u32FromField (← typToConcrete mono τ) e (← termToConcrete mono a))
   | .debug τ e l t r => do
       -- Inline the Option.mapM case-split so termination sees the sub-Term.
       let t' ← match t with
@@ -563,6 +565,8 @@ def rewriteTypedTerm (decls : Typed.Decls)
       (rewriteTypedTerm decls subst mono a)
   | .u8FromFieldUnsafe τ e a => .u8FromFieldUnsafe (rewriteTyp subst mono τ) e
       (rewriteTypedTerm decls subst mono a)
+  | .u32FromField τ e a => .u32FromField (rewriteTyp subst mono τ) e
+      (rewriteTypedTerm decls subst mono a)
   | .debug τ e l t r =>
     let t' := match t with
       | none => none
@@ -635,7 +639,7 @@ def collectInTypedTerm (seen : Std.HashSet (Global × Array Typ)) :
   | .u8LessThan τ _ a b | .u32LessThan τ _ a b =>
     collectInTypedTerm (collectInTypedTerm (collectInTyp seen τ) a) b
   | .eqZero τ _ a | .store τ _ a | .load τ _ a | .ptrVal τ _ a | .toField τ _ a
-  | .u8FromFieldUnsafe τ _ a
+  | .u8FromFieldUnsafe τ _ a | .u32FromField τ _ a
   | .u8BitDecomposition τ _ a | .u8ShiftLeft τ _ a | .u8ShiftRight τ _ a
   | .ioGetInfo τ _ a => collectInTypedTerm (collectInTyp seen τ) a
   | .proj τ _ a _ | .get τ _ a _ | .slice τ _ a _ _ =>
@@ -699,7 +703,7 @@ def collectCalls (decls : Typed.Decls)
   | .u8LessThan _ _ a b | .u32LessThan _ _ a b =>
     collectCalls decls (collectCalls decls seen a) b
   | .eqZero _ _ a | .store _ _ a | .load _ _ a | .ptrVal _ _ a | .toField _ _ a
-  | .u8FromFieldUnsafe _ _ a
+  | .u8FromFieldUnsafe _ _ a | .u32FromField _ _ a
   | .u8BitDecomposition _ _ a | .u8ShiftLeft _ _ a | .u8ShiftRight _ _ a
   | .ioGetInfo _ _ a => collectCalls decls seen a
   | .proj _ _ a _ | .get _ _ a _ | .slice _ _ a _ _ => collectCalls decls seen a
@@ -806,6 +810,8 @@ def substInTypedTerm (subst : Global → Option Typ) : Typed.Term → Typed.Term
   | .toField τ e a => .toField (Typ.instantiate subst τ) e (substInTypedTerm subst a)
   | .u8FromFieldUnsafe τ e a =>
     .u8FromFieldUnsafe (Typ.instantiate subst τ) e (substInTypedTerm subst a)
+  | .u32FromField τ e a =>
+    .u32FromField (Typ.instantiate subst τ) e (substInTypedTerm subst a)
   | .debug τ e l t r =>
     let t' := match t with
       | none => none

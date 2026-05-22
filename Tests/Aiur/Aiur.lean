@@ -384,6 +384,10 @@ def toplevel := ⟦
     let (x, _) = u8_range_check(a, a);
     to_field(u8_xor(x, 200u8))
   }
+  pub fn u32_from_field_fn(x: G) -> (G, G, G, G) {
+    let [b0, b1, b2, b3] = u32_from_field(x);
+    (to_field(b0), to_field(b1), to_field(b2), to_field(b3))
+  }
 
   ---------------------------------------------------------------------------
   -- Fold/iteration
@@ -896,6 +900,8 @@ def aiurTestCases : List AiurTestCase := [
     .noIO `range_check_id #[45, 200] #[45, 200],
     .noIO `range_check_id #[0, 255] #[0, 255],
     .noIO `u8_lit_xor #[45] #[229],
+    .noIO `u32_from_field_fn #[67305985] #[1, 2, 3, 4],
+    .noIO `u32_from_field_fn #[4294967295] #[255, 255, 255, 255],
 
     -- u32 comparison: a < b, a > b, a = b
     { AiurTestCase.noIO `u32_less_than_function #[300, 500] #[1]

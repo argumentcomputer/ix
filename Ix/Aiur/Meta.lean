@@ -190,6 +190,7 @@ syntax "u32_less_than" "(" aiur_trm ", " aiur_trm ")"                       : ai
 syntax "u8_range_check" "(" aiur_trm ", " aiur_trm ")"                      : aiur_trm
 syntax "to_field" "(" aiur_trm ")"                                          : aiur_trm
 syntax "u8_from_field_unsafe" "(" aiur_trm ")"                              : aiur_trm
+syntax "u32_from_field" "(" aiur_trm ")"                                    : aiur_trm
 syntax:max num "u8"                                                         : aiur_trm
 syntax "dbg!" "(" str (", " aiur_trm)? ")" ";" (aiur_trm)?                  : aiur_trm
 
@@ -327,6 +328,8 @@ partial def elabTrm : ElabStxCat `aiur_trm
     mkAppM ``Source.Term.toField #[← elabTrm a]
   | `(aiur_trm| u8_from_field_unsafe($a:aiur_trm)) => do
     mkAppM ``Source.Term.u8FromFieldUnsafe #[← elabTrm a]
+  | `(aiur_trm| u32_from_field($a:aiur_trm)) => do
+    mkAppM ``Source.Term.u32FromField #[← elabTrm a]
   | `(aiur_trm| $n:num u8) => do
     mkAppM ``Source.Term.u8Lit #[mkNatLit n.getNat]
   | `(aiur_trm| dbg!($label:str $[, $t:aiur_trm]?); $[$ret:aiur_trm]?) => do
@@ -549,6 +552,9 @@ where
     | `(aiur_trm| u8_from_field_unsafe($a:aiur_trm)) => do
       let a ← replaceToken old new a
       `(aiur_trm| u8_from_field_unsafe($a))
+    | `(aiur_trm| u32_from_field($a:aiur_trm)) => do
+      let a ← replaceToken old new a
+      `(aiur_trm| u32_from_field($a))
     | `(aiur_trm| dbg!($label:str $[, $t:aiur_trm]?); $[$ret:aiur_trm]?) => do
       let t' ← t.mapM $ replaceToken old new
       let ret' ← ret.mapM $ replaceToken old new

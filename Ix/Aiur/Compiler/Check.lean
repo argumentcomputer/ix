@@ -784,6 +784,9 @@ def inferTerm (t : Term) : CheckM Typed.Term := match t with
   | .u8FromFieldUnsafe a => do
     let a' ← checkNoEscape a .field
     pure (Typed.Term.u8FromFieldUnsafe .u8 false a')
+  | .u32FromField a => do
+    let a' ← checkNoEscape a .field
+    pure (Typed.Term.u32FromField (.array .u8 4) false a')
   | .ioGetInfo key => do
     let key' ← inferNoEscape key
     match ← walkTyp key'.typ with
@@ -952,6 +955,8 @@ def zonkTypedTerm (t : Typed.Term) : CheckM Typed.Term := match t with
   | .toField τ e a => do pure (.toField (← zonkTyp τ) e (← zonkTypedTerm a))
   | .u8FromFieldUnsafe τ e a => do
       pure (.u8FromFieldUnsafe (← zonkTyp τ) e (← zonkTypedTerm a))
+  | .u32FromField τ e a => do
+      pure (.u32FromField (← zonkTyp τ) e (← zonkTypedTerm a))
   | .debug τ e label t r => do
       let t' ← match t with
         | none => pure none

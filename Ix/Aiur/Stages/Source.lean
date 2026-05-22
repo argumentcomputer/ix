@@ -412,6 +412,10 @@ inductive Term
   asserts the value is already in `[0, 256)` (e.g. a sum of bytes known not to
   overflow). Cheaper than `u8_range_check` since it adds no lookup. -/
   | u8FromFieldUnsafe : Term → Term
+  /-- Decompose a field element into its 4 little-endian range-checked bytes
+  `[b0, b1, b2, b3]` such that `x = b0 + b1·256 + b2·256² + b3·256³`. Fails if
+  `x` does not fit in 32 bits. -/
+  | u32FromField : Term → Term
   | debug : String → Option Term → Term → Term
   deriving Repr, BEq, Hashable, Inhabited
 

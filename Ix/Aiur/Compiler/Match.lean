@@ -391,6 +391,7 @@ def typedToSimple : Term → Simple.Term
   | .u8RangeCheck τ e a b => .u8RangeCheck τ e (typedToSimple a) (typedToSimple b)
   | .toField τ e a => .toField τ e (typedToSimple a)
   | .u8FromFieldUnsafe τ e a => .u8FromFieldUnsafe τ e (typedToSimple a)
+  | .u32FromField τ e a => .u32FromField τ e (typedToSimple a)
   | .debug τ e l t r =>
     let t' := match t with | none => none | some sub => some (typedToSimple sub)
     .debug τ e l t' (typedToSimple r)
