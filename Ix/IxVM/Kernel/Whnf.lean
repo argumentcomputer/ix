@@ -241,7 +241,7 @@ def whnf := ⟦
               top: List‹&KConstantInfo›, addrs: List‹Addr›) -> (G, KExpr) {
     let major_idx = num_params + num_motives + num_minors + num_indices;
     let spine_len = list_length(spine);
-    let major_lt = u32_less_than(major_idx, spine_len);
+    let major_lt = u32_less_than_wrapper(major_idx, spine_len);
     match major_lt {
       0 => (0, store(KExprNode.BVar(0))),
       1 =>
@@ -388,12 +388,12 @@ def whnf := ⟦
             match ctor_ci {
               KConstantInfo.Ctor(_, _, _, cidx, _, ctor_nfields, _) =>
                 let rules_len = list_length(rules);
-                let cidx_in_range = u32_less_than(cidx, rules_len);
+                let cidx_in_range = u32_less_than_wrapper(cidx, rules_len);
                 match cidx_in_range {
                   0 => (0, store(KExprNode.BVar(0))),
                   1 =>
                     let ctor_args_len = list_length(ctor_args);
-                    let too_few_fields = u32_less_than(ctor_args_len, ctor_nfields);
+                    let too_few_fields = u32_less_than_wrapper(ctor_args_len, ctor_nfields);
                     match too_few_fields {
                       1 => (0, store(KExprNode.BVar(0))),
                       0 =>
@@ -435,7 +435,7 @@ def whnf := ⟦
                         num_minors: G, major_idx: G,
                         types: List‹KExpr›, top: List‹&KConstantInfo›,
                         addrs: List‹Addr›) -> (G, KExpr) {
-    match u32_less_than(num_minors, 2) {
+    match u32_less_than_wrapper(num_minors, 2) {
       1 => (0, store(KExprNode.BVar(0))),
       0 =>
         let raw_major = list_lookup(spine, major_idx);
@@ -575,7 +575,7 @@ def whnf := ⟦
   fn try_quot_lift(spine: List‹KExpr›, types: List‹KExpr›,
                    top: List‹&KConstantInfo›, addrs: List‹Addr›) -> (G, KExpr) {
     let n = list_length(spine);
-    let lt6 = u32_less_than(n, 6);
+    let lt6 = u32_less_than_wrapper(n, 6);
     match lt6 {
       1 => (0, store(KExprNode.BVar(0))),
       0 =>
@@ -595,7 +595,7 @@ def whnf := ⟦
   fn try_quot_ind(spine: List‹KExpr›, types: List‹KExpr›,
                   top: List‹&KConstantInfo›, addrs: List‹Addr›) -> (G, KExpr) {
     let n = list_length(spine);
-    let lt5 = u32_less_than(n, 5);
+    let lt5 = u32_less_than_wrapper(n, 5);
     match lt5 {
       1 => (0, store(KExprNode.BVar(0))),
       0 =>

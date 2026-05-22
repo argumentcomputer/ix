@@ -697,7 +697,7 @@ def inductive_check := ⟦
       0 => store(KExprNode.BVar((n_rec_params - 1) - j)),
       _ =>
         let len = list_length(spec_params);
-        let lt = u32_less_than(j, len);
+        let lt = u32_less_than_wrapper(j, len);
         match lt {
           1 => list_lookup(spec_params, j),
           _ => store(KExprNode.BVar((n_rec_params - 1) - j)),
@@ -748,7 +748,7 @@ def inductive_check := ⟦
       0 => store(KExprNode.BVar((depth - 1) - j)),
       _ =>
         let len = list_length(spec_params);
-        let lt = u32_less_than(j, len);
+        let lt = u32_less_than_wrapper(j, len);
         match lt {
           1 =>
             let sp = list_lookup(spec_params, j);
@@ -2025,7 +2025,7 @@ def inductive_check := ⟦
                     match ci {
                       KConstantInfo.Induct(_, _, ext_n_params, _, _, _, _, _, _, _) =>
                         let n_args = list_length(args);
-                        match u32_less_than(n_args, ext_n_params) {
+                        match u32_less_than_wrapper(n_args, ext_n_params) {
                           1 => store(ListNode.Nil),
                           0 =>
                             let param_args = list_take(args, ext_n_params);

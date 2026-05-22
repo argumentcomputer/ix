@@ -708,10 +708,10 @@ def defEq := ⟦
           1 =>
             let ar = delta_rank(ai, top);
             let br = delta_rank(bi, top);
-            match u32_less_than(br, ar) {
+            match u32_less_than_wrapper(br, ar) {
               1 => unfold_a_and_loop(a, b, fuel, types, top, addrs),
               0 =>
-                match u32_less_than(ar, br) {
+                match u32_less_than_wrapper(ar, br) {
                   1 => unfold_b_and_loop(a, b, fuel, types, top, addrs),
                   0 => unfold_both_and_loop(a, b, fuel, types, top, addrs),
                 },

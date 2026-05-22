@@ -10,6 +10,11 @@ def byteStream := ⟦
 
   type U64 = [U8; 8]
 
+  -- Plain function wrapper around the `u32_less_than` op.
+  fn u32_less_than_wrapper(a: G, b: G) -> G {
+    u32_less_than(a, b)
+  }
+
   fn read_byte_stream(idx: G, len: G) -> ByteStream {
     match len {
       0 => store(ListNode.Nil),

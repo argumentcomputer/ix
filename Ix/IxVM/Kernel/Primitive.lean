@@ -875,7 +875,7 @@ def primitive := ⟦
   -- `#split_u32` unconstrained witness generators, so the O(x/256)
   -- iteration cost is off-circuit (untraced).
   fn divmod_256(x: G, q: G) -> (G, G) {
-    match u32_less_than(x, 256) {
+    match u32_less_than_wrapper(x, 256) {
       1 => (x, q),
       0 => divmod_256(x - 256, q + 1),
     }
@@ -1321,7 +1321,7 @@ def primitive := ⟦
       1 =>
         -- Mirror: whnf.rs:1789-1822 try_reduce_nat_succ_iter. Single arg;
         -- whnf, fold to Lit(n+1) on hit.
-        match u32_less_than(spine_len, 1) {
+        match u32_less_than_wrapper(spine_len, 1) {
           1 => (0, store(KExprNode.BVar(0))),
           0 =>
             let a0_w = whnf(list_lookup(spine, 0), types, top, addrs);
@@ -1335,7 +1335,7 @@ def primitive := ⟦
       0 =>
         match is_pred {
           1 =>
-            match u32_less_than(spine_len, 1) {
+            match u32_less_than_wrapper(spine_len, 1) {
               1 => (0, store(KExprNode.BVar(0))),
               0 =>
                 let a0_w = whnf(list_lookup(spine, 0), types, top, addrs);
@@ -1348,7 +1348,7 @@ def primitive := ⟦
             },
           0 =>
             -- Binary ops: require 2 args.
-            match u32_less_than(spine_len, 2) {
+            match u32_less_than_wrapper(spine_len, 2) {
               1 => (0, store(KExprNode.BVar(0))),
               0 =>
                 let a0_w = whnf(list_lookup(spine, 0), types, top, addrs);
@@ -1475,7 +1475,7 @@ def primitive := ⟦
   fn try_reduce_bit_vec_to_nat(spine: List‹KExpr›, types: List‹KExpr›,
                                 top: List‹&KConstantInfo›,
                                 addrs: List‹Addr›) -> (G, KExpr) {
-    match u32_less_than(list_length(spine), 2) {
+    match u32_less_than_wrapper(list_length(spine), 2) {
       1 => (0, store(KExprNode.BVar(0))),
       0 =>
         let width_e = list_lookup(spine, 0);
@@ -1530,7 +1530,7 @@ def primitive := ⟦
                 match address_eq(head_addr, of_nat_addr) {
                   0 => (0, store(KExprNode.BVar(0)), store(KExprNode.BVar(0))),
                   1 =>
-                    match u32_less_than(list_length(args), 2) {
+                    match u32_less_than_wrapper(list_length(args), 2) {
                       1 => (0, store(KExprNode.BVar(0)), store(KExprNode.BVar(0))),
                       0 =>
                         let ty_arg = list_lookup(args, 0);
@@ -1564,7 +1564,7 @@ def primitive := ⟦
   fn try_reduce_bit_vec_ult(spine: List‹KExpr›, types: List‹KExpr›,
                              top: List‹&KConstantInfo›,
                              addrs: List‹Addr›) -> (G, KExpr) {
-    match u32_less_than(list_length(spine), 3) {
+    match u32_less_than_wrapper(list_length(spine), 3) {
       1 => (0, store(KExprNode.BVar(0))),
       0 =>
         let width_e = list_lookup(spine, 0);
@@ -1635,7 +1635,7 @@ def primitive := ⟦
   fn try_reduce_decide_bitvec_lt(spine: List‹KExpr›, types: List‹KExpr›,
                                   top: List‹&KConstantInfo›,
                                   addrs: List‹Addr›) -> (G, KExpr) {
-    match u32_less_than(list_length(spine), 2) {
+    match u32_less_than_wrapper(list_length(spine), 2) {
       1 => (0, store(KExprNode.BVar(0))),
       0 =>
         let prop = list_lookup(spine, 0);
@@ -1647,7 +1647,7 @@ def primitive := ⟦
                 match address_eq(lt_addr, lt_lt_addr()) {
                   0 => (0, store(KExprNode.BVar(0))),
                   1 =>
-                    match u32_less_than(list_length(lt_args), 4) {
+                    match u32_less_than_wrapper(list_length(lt_args), 4) {
                       1 => (0, store(KExprNode.BVar(0))),
                       0 =>
                         let ty_arg = list_lookup(lt_args, 0);
@@ -1659,7 +1659,7 @@ def primitive := ⟦
                                 match address_eq(ty_addr, bit_vec_addr()) {
                                   0 => (0, store(KExprNode.BVar(0))),
                                   1 =>
-                                    match u32_less_than(list_length(ty_args), 1) {
+                                    match u32_less_than_wrapper(list_length(ty_args), 1) {
                                       1 => (0, store(KExprNode.BVar(0))),
                                       0 =>
                                         let width = list_lookup(ty_args, 0);
@@ -1714,7 +1714,7 @@ def primitive := ⟦
                     match is_rb + is_rn {
                       0 => (0, store(KExprNode.BVar(0))),
                       _ =>
-                        match u32_less_than(list_length(spine), 1) {
+                        match u32_less_than_wrapper(list_length(spine), 1) {
                           1 => (0, store(KExprNode.BVar(0))),
                           0 =>
                             let arg = list_lookup(spine, 0);
@@ -1745,7 +1745,7 @@ def primitive := ⟦
   -- Spine: [A, P, val_arg]. If val_arg's spine head = getNumBits, return 64.
   fn try_reduce_subtype_val(spine: List‹KExpr›,
                             addrs: List‹Addr›) -> (G, KExpr) {
-    match u32_less_than(list_length(spine), 3) {
+    match u32_less_than_wrapper(list_length(spine), 3) {
       1 => (0, store(KExprNode.BVar(0))),
       0 =>
         let val_arg = list_lookup(spine, 2);
@@ -1767,7 +1767,7 @@ def primitive := ⟦
   -- size_of_size_of Unit/PUnit ... → 1. First arg is the type.
   fn try_reduce_size_of_unit(spine: List‹KExpr›,
                              addrs: List‹Addr›) -> (G, KExpr) {
-    match u32_less_than(list_length(spine), 1) {
+    match u32_less_than_wrapper(list_length(spine), 1) {
       1 => (0, store(KExprNode.BVar(0))),
       0 =>
         let ty_arg = list_lookup(spine, 0);
@@ -1845,7 +1845,7 @@ def primitive := ⟦
         match is_dec_le + is_dec_eq + is_dec_lt {
           0 => (0, store(KExprNode.BVar(0))),
           _ =>
-            match u32_less_than(list_length(spine), 2) {
+            match u32_less_than_wrapper(list_length(spine), 2) {
               1 => (0, store(KExprNode.BVar(0))),
               0 => decidable_dispatch(is_dec_le, is_dec_eq, is_dec_lt, head_idx, head_lvls,
                                        spine, types, top, addrs),
@@ -1905,7 +1905,7 @@ def primitive := ⟦
                                   spine: List‹KExpr›, types: List‹KExpr›,
                                   top: List‹&KConstantInfo›,
                                   addrs: List‹Addr›) -> (G, KExpr) {
-    match u32_less_than(list_length(spine), 2) {
+    match u32_less_than_wrapper(list_length(spine), 2) {
       1 => (0, store(KExprNode.BVar(0))),
       0 =>
         let a0 = list_lookup(spine, 0);
@@ -2109,7 +2109,7 @@ def primitive := ⟦
             -- Guard against malformed inferred type. Rust returns
             -- `Ok(None)` when the spine is empty; Aiur bails to (0, _)
             -- so caller falls through to delta unfolding.
-            match u32_less_than(list_length(dec_args), 1) {
+            match u32_less_than_wrapper(list_length(dec_args), 1) {
               1 => (0, store(KExprNode.BVar(0))),
               0 =>
                 let prop = list_lookup(dec_args, 0);
@@ -2131,7 +2131,7 @@ def primitive := ⟦
   fn try_str_dispatch(head_addr: Addr, spine: List‹KExpr›,
                       addrs: List‹Addr›) -> (G, KExpr) {
     let spine_len = list_length(spine);
-    let lt1 = u32_less_than(spine_len, 1);
+    let lt1 = u32_less_than_wrapper(spine_len, 1);
     match lt1 {
       1 => (0, store(KExprNode.BVar(0))),
       0 =>
@@ -2369,7 +2369,7 @@ def primitive := ⟦
       KConstantInfo.Defn(_, _, value, _, _) =>
         match projection_definition_info(value, 0) {
           (1, arity, struct_idx, field, struct_arg_idx) =>
-            match u32_less_than(list_length(spine), arity) {
+            match u32_less_than_wrapper(list_length(spine), arity) {
               1 => (0, store(KExprNode.BVar(0))),
               0 =>
                 let target_arg = list_lookup(spine, struct_arg_idx);
@@ -2404,7 +2404,7 @@ def primitive := ⟦
                 match address_eq(rec_addr_, decidable_rec_addr()) {
                   0 => (0, store(KExprNode.BVar(0))),
                   1 =>
-                    match u32_less_than(list_length(args), 5) {
+                    match u32_less_than_wrapper(list_length(args), 5) {
                       1 => (0, store(KExprNode.BVar(0))),
                       0 =>
                         let a0 = list_lookup(args, 0);
@@ -2462,7 +2462,7 @@ def primitive := ⟦
       KExprNode.Proj(struct_idx, field, projected) =>
         match load(projected) {
           KExprNode.BVar(i) =>
-            match u32_less_than(i, arity) {
+            match u32_less_than_wrapper(i, arity) {
               1 => (1, arity, struct_idx, field, (arity - 1) - i),
               _ => (0, 0, 0, 0, 0),
             },

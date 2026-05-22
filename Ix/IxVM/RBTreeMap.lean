@@ -12,6 +12,11 @@ def rbTreeMap := ⟦
     Nil
   }
 
+  -- Plain function wrapper around the `u32_less_than` op.
+  fn u32_less_than_wrapper(a: G, b: G) -> G {
+    u32_less_than(a, b)
+  }
+
   -- Okasaki-style balance: fixes red-red violations after insertion
   fn rbtree_map_balance(color: G, key: G, value: G, left: RBTreeMap, right: RBTreeMap) -> RBTreeMap {
     match (color, left, right) {
@@ -46,11 +51,11 @@ def rbTreeMap := ⟦
       RBTreeMap.Nil =>
         RBTreeMap.Node(0, key, value, store(RBTreeMap.Nil), store(RBTreeMap.Nil)),
       RBTreeMap.Node(color, k, v, &left, &right) =>
-        let lt = u32_less_than(key, k);
+        let lt = u32_less_than_wrapper(key, k);
         match lt {
           1 => rbtree_map_balance(color, k, v, rbtree_map_ins(key, value, left), right),
           _ =>
-            let gt = u32_less_than(k, key);
+            let gt = u32_less_than_wrapper(k, key);
             match gt {
               1 => rbtree_map_balance(color, k, v, left, rbtree_map_ins(key, value, right)),
               _ => RBTreeMap.Node(color, key, value, store(left), store(right)),
@@ -72,11 +77,11 @@ def rbTreeMap := ⟦
   fn rbtree_map_lookup(key: G, tree: RBTreeMap) -> G {
     match tree {
       RBTreeMap.Node(_, k, v, &left, &right) =>
-        let lt = u32_less_than(key, k);
+        let lt = u32_less_than_wrapper(key, k);
         match lt {
           1 => rbtree_map_lookup(key, left),
           _ =>
-            let gt = u32_less_than(k, key);
+            let gt = u32_less_than_wrapper(k, key);
             match gt {
               1 => rbtree_map_lookup(key, right),
               _ => v,

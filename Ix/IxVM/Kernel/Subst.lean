@@ -64,7 +64,7 @@ def subst := ⟦
   }
 
   fn lbr_max(a: G, b: G) -> G {
-    match u32_less_than(a, b) {
+    match u32_less_than_wrapper(a, b) {
       1 => b,
       0 => a,
     }
@@ -92,7 +92,7 @@ def subst := ⟦
       0 => e,
       _ =>
         let l = expr_lbr(e);
-        match u32_less_than(cutoff, l) {
+        match u32_less_than_wrapper(cutoff, l) {
           0 => e,
           1 => expr_lift_walk(e, shift, cutoff),
         },
@@ -102,7 +102,7 @@ def subst := ⟦
   fn expr_lift_walk(e: KExpr, shift: G, cutoff: G) -> KExpr {
     match load(e) {
       KExprNode.BVar(i) =>
-        let lt = u32_less_than(i, cutoff);
+        let lt = u32_less_than_wrapper(i, cutoff);
         match lt {
           1 => e,
           0 => store(KExprNode.BVar(i + shift)),
@@ -146,7 +146,7 @@ def subst := ⟦
     -- Fast path: when `expr_lbr(e) <= depth`, no BVar at or above depth
     -- exists in `e`, so the substitution is a no-op.
     let l = expr_lbr(e);
-    match u32_less_than(depth, l) {
+    match u32_less_than_wrapper(depth, l) {
       0 => e,
       1 => expr_inst1_walk(e, arg, depth),
     }
@@ -155,7 +155,7 @@ def subst := ⟦
   fn expr_inst1_walk(e: KExpr, arg: KExpr, depth: G) -> KExpr {
     match load(e) {
       KExprNode.BVar(i) =>
-        let lt = u32_less_than(i, depth);
+        let lt = u32_less_than_wrapper(i, depth);
         match lt {
           1 => e,
           0 =>

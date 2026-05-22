@@ -29,7 +29,7 @@ def canonicalCheck := ⟦
     match a - b {
       0 => 1,
       _ =>
-        match u32_less_than(a, b) {
+        match u32_less_than_wrapper(a, b) {
           1 => 0,
           0 => 2,
         },

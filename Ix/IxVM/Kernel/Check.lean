@@ -99,7 +99,7 @@ def check := ⟦
         let _ = validate_univ_params_seen(a, bound);
         validate_univ_params_seen(b, bound),
       KLevel.Param(i) =>
-        assert_eq!(u32_less_than(i, bound), 1);
+        assert_eq!(u32_less_than_wrapper(i, bound), 1);
         (),
     }
   }
@@ -120,7 +120,7 @@ def check := ⟦
                                 top: List‹&KConstantInfo›) {
     match load(e) {
       KExprNode.BVar(i) =>
-        assert_eq!(u32_less_than(i, depth), 1);
+        assert_eq!(u32_less_than_wrapper(i, depth), 1);
         (),
       KExprNode.Srt(&l) => validate_univ_params_seen(l, bound),
       KExprNode.Const(idx, lvls) =>
