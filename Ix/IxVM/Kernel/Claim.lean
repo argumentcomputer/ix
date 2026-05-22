@@ -440,7 +440,7 @@ def claim := ⟦
   -- equality, deserialize, assert no trailing data.
   fn load_verified_claim(digest: [U8; 32]) -> Claim {
     let (idx, len) = io_get_info(0, digest);
-    let bytes = #read_byte_stream(idx, len);
+    let bytes = #read_byte_stream(0, idx, len);
     let h = blake3(bytes);
     assert_eq!(
       [
@@ -781,7 +781,7 @@ def claim := ⟦
   fn load_assumption_tree(root: Addr) -> List‹Addr› {
     let raw = load(root);
     let (idx, len) = io_get_info(0, raw);
-    let bytes = #read_byte_stream(idx, len);
+    let bytes = #read_byte_stream(0, idx, len);
     let (tag, s) = get_tag4(bytes);
     let (flag, size) = tag;
     assert_eq!(flag, 0xE);
