@@ -360,22 +360,28 @@ impl Op {
         let lookup = Memory::lookup(G::ONE, G::from_usize(*size), ptr, values);
         slice.push_lookup(index, lookup);
       },
-      Op::IOGetInfo(key) => {
+      Op::IOGetInfo(channel, key) => {
+        let channel = map[*channel].0;
         let key = key.iter().map(|a| map[*a].0).collect::<Vec<_>>();
         let IOKeyInfo { idx, len } =
-          io_buffer.get_info(&key).expect("Invalid IO key");
+          io_buffer.get_info(channel, &key).expect("Invalid IO key");
         for f in [G::from_usize(*idx), G::from_usize(*len)] {
           map.push((f, 1));
           slice.push_auxiliary(index, f);
         }
       },
-      Op::IORead(idx, len) => {
+      Op::IORead(channel, idx, len) => {
+        let channel = map[*channel].0;
         let idx = map[*idx]
           .0
           .as_canonical_u64()
           .try_into()
           .expect("Index is too big for an usize");
-        for &f in io_buffer.read(idx, *len).expect("IO read out of bounds") {
+        let data = io_buffer
+          .read(channel, idx, *len)
+          .expect("IO read out of bounds")
+          .to_vec();
+        for f in data {
           map.push((f, 1));
           slice.push_auxiliary(index, f);
         }
@@ -556,8 +562,10 @@ impl Op {
           ),
         );
       },
-      Op::AssertEq(..) | Op::IOSetInfo(..) | Op::IOWrite(_) | Op::Debug(..) => {
-      },
+      Op::AssertEq(..)
+      | Op::IOSetInfo(..)
+      | Op::IOWrite(..)
+      | Op::Debug(..) => {},
     }
   }
 }

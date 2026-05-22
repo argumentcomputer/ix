@@ -50,36 +50,50 @@ pub(crate) struct IOKeyInfo {
 }
 
 pub struct IOBuffer {
-  pub(crate) data: Vec<G>,
-  pub(crate) map: FxHashMap<Vec<G>, IOKeyInfo>,
+  /// Per-channel data arenas. `idx` slots into `data[&channel]`.
+  pub(crate) data: FxHashMap<G, Vec<G>>,
+  /// Channel-keyed info map; same `key` on different channels resolves
+  /// to distinct `IOKeyInfo`.
+  pub(crate) map: FxHashMap<(G, Vec<G>), IOKeyInfo>,
 }
 
 impl IOBuffer {
   #[inline]
-  pub(crate) fn get_info(&self, key: &[G]) -> Result<&IOKeyInfo, ExecError> {
-    self.map.get(key).ok_or(ExecError::InvalidIOKey)
+  pub(crate) fn get_info(
+    &self,
+    channel: G,
+    key: &[G],
+  ) -> Result<&IOKeyInfo, ExecError> {
+    self.map.get(&(channel, key.to_vec())).ok_or(ExecError::InvalidIOKey)
   }
   fn set_info(
     &mut self,
+    channel: G,
     key: Vec<G>,
     idx: usize,
     len: usize,
   ) -> Result<(), ExecError> {
-    let Entry::Vacant(e) = self.map.entry(key) else {
+    let Entry::Vacant(e) = self.map.entry((channel, key)) else {
       return Err(ExecError::IOMappingAlreadySet);
     };
     e.insert(IOKeyInfo { idx, len });
     Ok(())
   }
   #[inline]
-  pub(crate) fn read(&self, idx: usize, len: usize) -> Result<&[G], ExecError> {
-    self
-      .data
+  pub(crate) fn read(
+    &self,
+    channel: G,
+    idx: usize,
+    len: usize,
+  ) -> Result<&[G], ExecError> {
+    let empty: &[G] = &[];
+    let arena = self.data.get(&channel).map_or(empty, |v| v.as_slice());
+    arena
       .get(idx..idx.saturating_add(len))
       .ok_or(ExecError::IOReadOutOfBounds { idx, len })
   }
-  fn write(&mut self, data: impl Iterator<Item = G>) {
-    self.data.extend(data)
+  fn write(&mut self, channel: G, data: impl Iterator<Item = G>) {
+    self.data.entry(channel).or_default().extend(data)
   }
 }
 
@@ -301,30 +315,34 @@ impl Function {
             }
           }
         },
-        ExecEntry::Op(Op::IOGetInfo(key)) => {
+        ExecEntry::Op(Op::IOGetInfo(channel, key)) => {
+          let channel = map[*channel];
           let key = key.iter().map(|v| map[*v]).collect::<Vec<_>>();
-          let IOKeyInfo { idx, len } = io_buffer.get_info(&key)?;
+          let IOKeyInfo { idx, len } = io_buffer.get_info(channel, &key)?;
           map.push(G::from_usize(*idx));
           map.push(G::from_usize(*len));
         },
-        ExecEntry::Op(Op::IOSetInfo(key, idx, len)) => {
+        ExecEntry::Op(Op::IOSetInfo(channel, key, idx, len)) => {
+          let channel = map[*channel];
           let key = key.iter().map(|v| map[*v]).collect::<Vec<_>>();
           let get = |x: &usize| {
             let v = map[*x].as_canonical_u64();
             usize::try_from(v).ok().ok_or(ExecError::IndexTooLarge(v))
           };
-          io_buffer.set_info(key, get(idx)?, get(len)?)?;
+          io_buffer.set_info(channel, key, get(idx)?, get(len)?)?;
         },
-        ExecEntry::Op(Op::IORead(idx, len)) => {
+        ExecEntry::Op(Op::IORead(channel, idx, len)) => {
+          let channel = map[*channel];
           let idx_val = map[*idx].as_canonical_u64();
           let idx = usize::try_from(idx_val)
             .ok()
             .ok_or(ExecError::IndexTooLarge(idx_val))?;
-          let data = io_buffer.read(idx, *len)?;
+          let data = io_buffer.read(channel, idx, *len)?.to_vec();
           map.extend(data);
         },
-        ExecEntry::Op(Op::IOWrite(data)) => {
-          io_buffer.write(data.iter().map(|v| map[*v]))
+        ExecEntry::Op(Op::IOWrite(channel, data)) => {
+          let channel = map[*channel];
+          io_buffer.write(channel, data.iter().map(|v| map[*v]))
         },
         ExecEntry::Op(Op::U8BitDecomposition(byte)) => {
           if unconstrained {

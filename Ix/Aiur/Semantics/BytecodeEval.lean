@@ -200,33 +200,39 @@ def evalOp (t : Bytecode.Toplevel) (fuel : Nat) (op : Op) (st : EvalState) :
     let aGs ← readIdxs st as
     let bGs ← readIdxs st bs
     if aGs == bGs then .ok st else .error .assertFailed
-  | .ioGetInfo keyIdxs => do
+  | .ioGetInfo channelIdx keyIdxs => do
+    let channelG ← readIdx st channelIdx
     let keyGs ← readIdxs st keyIdxs
-    match st.ioBuffer.map[keyGs]? with
+    match st.ioBuffer.map[(channelG, keyGs)]? with
     | some info =>
       let st1 := pushMap st (.ofNat info.idx)
       pure (pushMap st1 (.ofNat info.len))
     | none => .error .ioKeyNotFound
-  | .ioSetInfo keyIdxs idxIdx lenIdx => do
+  | .ioSetInfo channelIdx keyIdxs idxIdx lenIdx => do
+    let channelG ← readIdx st channelIdx
     let keyGs ← readIdxs st keyIdxs
     let iG ← readIdx st idxIdx
     let lG ← readIdx st lenIdx
-    if st.ioBuffer.map.contains keyGs then
+    if st.ioBuffer.map.contains (channelG, keyGs) then
       .error .ioKeyAlreadySet
     else
       let info : IOKeyInfo := ⟨iG.val.toNat, lG.val.toNat⟩
-      let newMap := st.ioBuffer.map.insert keyGs info
+      let newMap := st.ioBuffer.map.insert (channelG, keyGs) info
       pure (setIoBuffer st { st.ioBuffer with map := newMap })
-  | .ioRead idxIdx len => do
+  | .ioRead channelIdx idxIdx len => do
+    let channelG ← readIdx st channelIdx
     let iG ← readIdx st idxIdx
     let start := iG.val.toNat
-    if start + len > st.ioBuffer.data.size then
+    let arena := st.ioBuffer.data.getD channelG #[]
+    if start + len > arena.size then
       .error .ioReadOoB
     else
-      pure (appendMap st (st.ioBuffer.data.extract start (start + len)))
-  | .ioWrite dataIdxs => do
+      pure (appendMap st (arena.extract start (start + len)))
+  | .ioWrite channelIdx dataIdxs => do
+    let channelG ← readIdx st channelIdx
     let dataGs ← readIdxs st dataIdxs
-    let newData := st.ioBuffer.data ++ dataGs
+    let arena := st.ioBuffer.data.getD channelG #[]
+    let newData := st.ioBuffer.data.insert channelG (arena ++ dataGs)
     pure (setIoBuffer st { st.ioBuffer with data := newData })
   | .u8BitDecomposition idx => do
     let g ← readIdx st idx

@@ -44,10 +44,7 @@ def sha256Bench : IO $ Array BenchReport := do
             let data := Array.range dataSize |>.map
               -- Add `idx` so every preimage is different and avoids memoization.
               fun i => Aiur.G.ofUInt8 (i + idx).toUInt8
-            let ioKeyInfo := ⟨ioBuffer.data.size, dataSize⟩
-            { ioBuffer with
-                data := ioBuffer.data ++ data
-                map := ioBuffer.map.insert #[.ofNat idx] ioKeyInfo }
+            ioBuffer.extend 0 #[.ofNat idx] data
         throughput (.ElementsAndBytes numHashes.toUInt64 (dataSize * numHashes).toUInt64 "hashes")
         bench s!"dataSize={dataSize} numHashes={numHashes}"
           (aiurSystem.prove friParameters funIdx #[Aiur.G.ofNat numHashes]) ioBuffer

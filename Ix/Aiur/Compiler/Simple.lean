@@ -90,16 +90,18 @@ def simplifyTypedTerm (decls : Source.Decls) : Term → Except CheckError Term
       let b' ← simplifyTypedTerm decls b
       let r' ← simplifyTypedTerm decls r
       pure (.assertEq τ e a' b' r')
-  | .ioSetInfo τ e k i l r => do
+  | .ioSetInfo τ e c k i l r => do
+      let c' ← simplifyTypedTerm decls c
       let k' ← simplifyTypedTerm decls k
       let i' ← simplifyTypedTerm decls i
       let l' ← simplifyTypedTerm decls l
       let r' ← simplifyTypedTerm decls r
-      pure (.ioSetInfo τ e k' i' l' r')
-  | .ioWrite τ e d r => do
+      pure (.ioSetInfo τ e c' k' i' l' r')
+  | .ioWrite τ e c d r => do
+      let c' ← simplifyTypedTerm decls c
       let d' ← simplifyTypedTerm decls d
       let r' ← simplifyTypedTerm decls r
-      pure (.ioWrite τ e d' r')
+      pure (.ioWrite τ e c' d' r')
   | .u8LessThan τ e a b => do
       let a' ← simplifyTypedTerm decls a
       let b' ← simplifyTypedTerm decls b

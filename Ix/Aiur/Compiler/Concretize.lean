@@ -309,15 +309,21 @@ def termToConcrete
   | .assertEq τ e a b r => do
       pure (.assertEq (← typToConcrete mono τ) e
                       (← termToConcrete mono a) (← termToConcrete mono b) (← termToConcrete mono r))
-  | .ioGetInfo τ e k => do pure (.ioGetInfo (← typToConcrete mono τ) e (← termToConcrete mono k))
-  | .ioSetInfo τ e k i l r => do
+  | .ioGetInfo τ e c k => do
+      pure (.ioGetInfo (← typToConcrete mono τ) e
+                       (← termToConcrete mono c) (← termToConcrete mono k))
+  | .ioSetInfo τ e c k i l r => do
       pure (.ioSetInfo (← typToConcrete mono τ) e
-                       (← termToConcrete mono k) (← termToConcrete mono i)
+                       (← termToConcrete mono c) (← termToConcrete mono k)
+                       (← termToConcrete mono i)
                        (← termToConcrete mono l) (← termToConcrete mono r))
-  | .ioRead τ e i n => do pure (.ioRead (← typToConcrete mono τ) e (← termToConcrete mono i) n)
-  | .ioWrite τ e d r => do
+  | .ioRead τ e c i n => do
+      pure (.ioRead (← typToConcrete mono τ) e
+                    (← termToConcrete mono c) (← termToConcrete mono i) n)
+  | .ioWrite τ e c d r => do
       pure (.ioWrite (← typToConcrete mono τ) e
-                     (← termToConcrete mono d) (← termToConcrete mono r))
+                     (← termToConcrete mono c) (← termToConcrete mono d)
+                     (← termToConcrete mono r))
   | .u8BitDecomposition τ e a => do
       pure (.u8BitDecomposition (← typToConcrete mono τ) e (← termToConcrete mono a))
   | .u8ShiftLeft τ e a => do
@@ -521,16 +527,21 @@ def rewriteTypedTerm (decls : Typed.Decls)
     .assertEq (rewriteTyp subst mono τ) e
               (rewriteTypedTerm decls subst mono a) (rewriteTypedTerm decls subst mono b)
               (rewriteTypedTerm decls subst mono r)
-  | .ioGetInfo τ e k =>
-    .ioGetInfo (rewriteTyp subst mono τ) e (rewriteTypedTerm decls subst mono k)
-  | .ioSetInfo τ e k i l r =>
+  | .ioGetInfo τ e c k =>
+    .ioGetInfo (rewriteTyp subst mono τ) e
+      (rewriteTypedTerm decls subst mono c) (rewriteTypedTerm decls subst mono k)
+  | .ioSetInfo τ e c k i l r =>
     .ioSetInfo (rewriteTyp subst mono τ) e
-      (rewriteTypedTerm decls subst mono k) (rewriteTypedTerm decls subst mono i)
+      (rewriteTypedTerm decls subst mono c) (rewriteTypedTerm decls subst mono k)
+      (rewriteTypedTerm decls subst mono i)
       (rewriteTypedTerm decls subst mono l) (rewriteTypedTerm decls subst mono r)
-  | .ioRead τ e i n => .ioRead (rewriteTyp subst mono τ) e (rewriteTypedTerm decls subst mono i) n
-  | .ioWrite τ e d r =>
+  | .ioRead τ e c i n =>
+    .ioRead (rewriteTyp subst mono τ) e
+      (rewriteTypedTerm decls subst mono c) (rewriteTypedTerm decls subst mono i) n
+  | .ioWrite τ e c d r =>
     .ioWrite (rewriteTyp subst mono τ) e
-             (rewriteTypedTerm decls subst mono d) (rewriteTypedTerm decls subst mono r)
+             (rewriteTypedTerm decls subst mono c) (rewriteTypedTerm decls subst mono d)
+             (rewriteTypedTerm decls subst mono r)
   | .u8BitDecomposition τ e a =>
     .u8BitDecomposition (rewriteTyp subst mono τ) e (rewriteTypedTerm decls subst mono a)
   | .u8ShiftLeft τ e a =>
@@ -636,20 +647,26 @@ def collectInTypedTerm (seen : Std.HashSet (Global × Array Typ)) :
     collectInTypedTerm (collectInTypedTerm (collectInTyp seen τ) a) b
   | .eqZero τ _ a | .store τ _ a | .load τ _ a | .ptrVal τ _ a | .toField τ _ a
   | .u8FromFieldUnsafe τ _ a
-  | .u8BitDecomposition τ _ a | .u8ShiftLeft τ _ a | .u8ShiftRight τ _ a
-  | .ioGetInfo τ _ a => collectInTypedTerm (collectInTyp seen τ) a
+  | .u8BitDecomposition τ _ a | .u8ShiftLeft τ _ a | .u8ShiftRight τ _ a =>
+    collectInTypedTerm (collectInTyp seen τ) a
+  | .ioGetInfo τ _ c k =>
+    collectInTypedTerm (collectInTypedTerm (collectInTyp seen τ) c) k
   | .proj τ _ a _ | .get τ _ a _ | .slice τ _ a _ _ =>
     collectInTypedTerm (collectInTyp seen τ) a
   | .set τ _ a _ v => collectInTypedTerm (collectInTypedTerm (collectInTyp seen τ) a) v
   | .assertEq τ _ a b r =>
     collectInTypedTerm
       (collectInTypedTerm (collectInTypedTerm (collectInTyp seen τ) a) b) r
-  | .ioSetInfo τ _ k i l r =>
+  | .ioSetInfo τ _ c k i l r =>
     collectInTypedTerm
       (collectInTypedTerm
-        (collectInTypedTerm (collectInTypedTerm (collectInTyp seen τ) k) i) l) r
-  | .ioRead τ _ i _ => collectInTypedTerm (collectInTyp seen τ) i
-  | .ioWrite τ _ d r => collectInTypedTerm (collectInTypedTerm (collectInTyp seen τ) d) r
+        (collectInTypedTerm
+          (collectInTypedTerm (collectInTypedTerm (collectInTyp seen τ) c) k) i) l) r
+  | .ioRead τ _ c i _ =>
+    collectInTypedTerm (collectInTypedTerm (collectInTyp seen τ) c) i
+  | .ioWrite τ _ c d r =>
+    collectInTypedTerm
+      (collectInTypedTerm (collectInTypedTerm (collectInTyp seen τ) c) d) r
   | .debug τ _ _ t r =>
     let seen := collectInTyp seen τ
     let seen := match t with | some t => collectInTypedTerm seen t | none => seen
@@ -700,17 +717,22 @@ def collectCalls (decls : Typed.Decls)
     collectCalls decls (collectCalls decls seen a) b
   | .eqZero _ _ a | .store _ _ a | .load _ _ a | .ptrVal _ _ a | .toField _ _ a
   | .u8FromFieldUnsafe _ _ a
-  | .u8BitDecomposition _ _ a | .u8ShiftLeft _ _ a | .u8ShiftRight _ _ a
-  | .ioGetInfo _ _ a => collectCalls decls seen a
+  | .u8BitDecomposition _ _ a | .u8ShiftLeft _ _ a | .u8ShiftRight _ _ a =>
+    collectCalls decls seen a
+  | .ioGetInfo _ _ c k =>
+    collectCalls decls (collectCalls decls seen c) k
   | .proj _ _ a _ | .get _ _ a _ | .slice _ _ a _ _ => collectCalls decls seen a
   | .set _ _ a _ v => collectCalls decls (collectCalls decls seen a) v
   | .assertEq _ _ a b r =>
     collectCalls decls (collectCalls decls (collectCalls decls seen a) b) r
-  | .ioSetInfo _ _ k i l r =>
+  | .ioSetInfo _ _ c k i l r =>
     collectCalls decls
-      (collectCalls decls (collectCalls decls (collectCalls decls seen k) i) l) r
-  | .ioRead _ _ i _ => collectCalls decls seen i
-  | .ioWrite _ _ d r => collectCalls decls (collectCalls decls seen d) r
+      (collectCalls decls
+        (collectCalls decls
+          (collectCalls decls (collectCalls decls seen c) k) i) l) r
+  | .ioRead _ _ c i _ => collectCalls decls (collectCalls decls seen c) i
+  | .ioWrite _ _ c d r =>
+    collectCalls decls (collectCalls decls (collectCalls decls seen c) d) r
   | .debug _ _ _ t r =>
     let seen := match t with | some t => collectCalls decls seen t | none => seen
     collectCalls decls seen r
@@ -767,14 +789,19 @@ def substInTypedTerm (subst : Global → Option Typ) : Typed.Term → Typed.Term
   | .assertEq τ e a b r =>
     .assertEq (Typ.instantiate subst τ) e (substInTypedTerm subst a)
               (substInTypedTerm subst b) (substInTypedTerm subst r)
-  | .ioGetInfo τ e k => .ioGetInfo (Typ.instantiate subst τ) e (substInTypedTerm subst k)
-  | .ioSetInfo τ e k i l r =>
+  | .ioGetInfo τ e c k =>
+    .ioGetInfo (Typ.instantiate subst τ) e
+      (substInTypedTerm subst c) (substInTypedTerm subst k)
+  | .ioSetInfo τ e c k i l r =>
     .ioSetInfo (Typ.instantiate subst τ) e
-      (substInTypedTerm subst k) (substInTypedTerm subst i)
+      (substInTypedTerm subst c) (substInTypedTerm subst k)
+      (substInTypedTerm subst i)
       (substInTypedTerm subst l) (substInTypedTerm subst r)
-  | .ioRead τ e i n => .ioRead (Typ.instantiate subst τ) e (substInTypedTerm subst i) n
-  | .ioWrite τ e d r => .ioWrite (Typ.instantiate subst τ) e
-      (substInTypedTerm subst d) (substInTypedTerm subst r)
+  | .ioRead τ e c i n =>
+    .ioRead (Typ.instantiate subst τ) e
+      (substInTypedTerm subst c) (substInTypedTerm subst i) n
+  | .ioWrite τ e c d r => .ioWrite (Typ.instantiate subst τ) e
+      (substInTypedTerm subst c) (substInTypedTerm subst d) (substInTypedTerm subst r)
   | .u8BitDecomposition τ e a =>
     .u8BitDecomposition (Typ.instantiate subst τ) e (substInTypedTerm subst a)
   | .u8ShiftLeft τ e a =>

@@ -304,11 +304,17 @@ def toplevel := ⟦
   ---------------------------------------------------------------------------
   -- IO
   ---------------------------------------------------------------------------
+  -- Exercises channel disambiguation: same key #[0] on channels 0 and 1
+  -- resolves to distinct (idx, len) and arenas. Reads from each, writes
+  -- the concatenation back to channel 2, and registers `[1]` on channel 0.
   pub fn read_write_io() {
-    let (idx, len) = io_get_info([0]);
-    let xs: [G; 4] = io_read(idx, 4);
-    io_write(xs);
-    io_set_info([1], idx, len + 4);
+    let (idx_a, len_a) = io_get_info(0, [0]);
+    let (idx_b, _len_b) = io_get_info(1, [0]);
+    let xs: [G; 4] = io_read(0, idx_a, 4);
+    let ys: [G; 4] = io_read(1, idx_b, 4);
+    io_write(2, xs);
+    io_write(2, ys);
+    io_set_info(0, [1], idx_a, len_a + 4);
   }
 
   ---------------------------------------------------------------------------
@@ -877,8 +883,15 @@ def aiurTestCases : List AiurTestCase := [
 
     -- IO
     { functionName := `read_write_io
-      inputIOBuffer := ⟨#[1, 2, 3, 4], .ofList [(#[0], ⟨0, 4⟩)]⟩
-      expectedIOBuffer := ⟨#[1, 2, 3, 4, 1, 2, 3, 4], .ofList [(#[0], ⟨0, 4⟩), (#[1], ⟨0, 8⟩)]⟩ },
+      inputIOBuffer :=
+        ⟨.ofList [(0, #[1, 2, 3, 4]), (1, #[5, 6, 7, 8])],
+         .ofList [((0, #[0]), ⟨0, 4⟩), ((1, #[0]), ⟨0, 4⟩)]⟩
+      expectedIOBuffer :=
+        ⟨.ofList [(0, #[1, 2, 3, 4]),
+                  (1, #[5, 6, 7, 8]),
+                  (2, #[1, 2, 3, 4, 5, 6, 7, 8])],
+         .ofList [((0, #[0]), ⟨0, 4⟩), ((1, #[0]), ⟨0, 4⟩),
+                  ((0, #[1]), ⟨0, 8⟩)]⟩ },
 
     -- Byte operations
     .noIO `shr_shr_shl_decompose #[87] #[0, 1, 0, 1, 0, 1, 0, 0],

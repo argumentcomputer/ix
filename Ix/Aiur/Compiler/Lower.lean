@@ -256,21 +256,25 @@ def toIndex
     let b ← toIndex layoutMap bindings b
     modify fun stt => { stt with ops := stt.ops.push (.assertEq a b) }
     toIndex layoutMap bindings ret
-  | .ioGetInfo _ _ key => do
+  | .ioGetInfo _ _ channel key => do
+    let channel ← expectIdx layoutMap bindings channel
     let key ← toIndex layoutMap bindings key
-    pushOp (.ioGetInfo key) 2
-  | .ioSetInfo _ _ key idx len ret => do
+    pushOp (.ioGetInfo channel key) 2
+  | .ioSetInfo _ _ channel key idx len ret => do
+    let channel ← expectIdx layoutMap bindings channel
     let key ← toIndex layoutMap bindings key
     let idx ← expectIdx layoutMap bindings idx
     let len ← expectIdx layoutMap bindings len
-    modify fun stt => { stt with ops := stt.ops.push (.ioSetInfo key idx len) }
+    modify fun stt => { stt with ops := stt.ops.push (.ioSetInfo channel key idx len) }
     toIndex layoutMap bindings ret
-  | .ioRead _ _ idx len => do
+  | .ioRead _ _ channel idx len => do
+    let channel ← expectIdx layoutMap bindings channel
     let idx ← expectIdx layoutMap bindings idx
-    pushOp (.ioRead idx len) len
-  | .ioWrite _ _ data ret => do
+    pushOp (.ioRead channel idx len) len
+  | .ioWrite _ _ channel data ret => do
+    let channel ← expectIdx layoutMap bindings channel
     let data ← toIndex layoutMap bindings data
-    modify fun stt => { stt with ops := stt.ops.push (.ioWrite data) }
+    modify fun stt => { stt with ops := stt.ops.push (.ioWrite channel data) }
     toIndex layoutMap bindings ret
   | .u8BitDecomposition _ _ byte => do
     let byte ← expectIdx layoutMap bindings byte
@@ -449,15 +453,17 @@ def Concrete.Term.compile
     let b ← toIndex layoutMap bindings b
     modify fun stt => { stt with ops := stt.ops.push (.assertEq a b) }
     ret.compile returnTyp layoutMap bindings yieldCtrl
-  | .ioSetInfo _ _ key idx len ret => do
+  | .ioSetInfo _ _ channel key idx len ret => do
+    let channel ← toIndex layoutMap bindings channel
     let key ← toIndex layoutMap bindings key
     let idx ← toIndex layoutMap bindings idx
     let len ← toIndex layoutMap bindings len
-    modify fun stt => { stt with ops := stt.ops.push (.ioSetInfo key idx[0]! len[0]!) }
+    modify fun stt => { stt with ops := stt.ops.push (.ioSetInfo channel[0]! key idx[0]! len[0]!) }
     ret.compile returnTyp layoutMap bindings yieldCtrl
-  | .ioWrite _ _ data ret => do
+  | .ioWrite _ _ channel data ret => do
+    let channel ← toIndex layoutMap bindings channel
     let data ← toIndex layoutMap bindings data
-    modify fun stt => { stt with ops := stt.ops.push (.ioWrite data) }
+    modify fun stt => { stt with ops := stt.ops.push (.ioWrite channel[0]! data) }
     ret.compile returnTyp layoutMap bindings yieldCtrl
   | .match _ _ scrut cases defaultOpt => do
     let idxs := bindings[scrut]?.getD #[0]

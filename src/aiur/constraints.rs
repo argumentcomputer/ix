@@ -452,11 +452,11 @@ impl Op {
           state.constraints.zeros.push(sel.clone() * (x.clone() - y.clone()));
         }
       },
-      Op::IOGetInfo(_) => (0..2).for_each(|_| {
+      Op::IOGetInfo(_, _) => (0..2).for_each(|_| {
         let col = state.next_auxiliary();
         state.map.push((col, 1));
       }),
-      Op::IORead(_, len) => (0..*len).for_each(|_| {
+      Op::IORead(_, _, len) => (0..*len).for_each(|_| {
         let col = state.next_auxiliary();
         state.map.push((col, 1));
       }),
@@ -677,7 +677,7 @@ impl Op {
         let output = Expr::ONE - carry;
         state.map.push((output, 1));
       },
-      Op::IOSetInfo(..) | Op::IOWrite(_) | Op::Debug(..) => (),
+      Op::IOSetInfo(..) | Op::IOWrite(..) | Op::Debug(..) => (),
     }
   }
 }

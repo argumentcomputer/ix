@@ -10,8 +10,8 @@ def ingress := ⟦
   -- Load a constant from IOBuffer by address, verify blake3, deserialize
   fn load_verified_constant(addr: Addr) -> Constant {
     let raw = load(addr);
-    let (idx, len) = io_get_info(raw);
-    let bytes = #read_byte_stream(idx, len);
+    let (idx, len) = io_get_info(0, raw);
+    let bytes = #read_byte_stream(0, idx, len);
     let h = blake3(bytes);
     assert_eq!(
       [
@@ -63,48 +63,26 @@ def ingress := ⟦
     }
   }
 
-  -- Load reducibility hint G for a Defn at `addr`. Stored under suffixed
-  -- key `addr ++ [1]` (suffix tag 1 = metadata-tier). Encoding (mirror
-  -- Lean.ReducibilityHints):
+  -- Load reducibility hint G for a Defn at `addr`. Lives on channel 2.
+  -- Encoding (mirror Lean.ReducibilityHints):
   --   0           = Opaque
   --   1 + h       = Regular(h)
   --   0xFFFFFFFF  = Abbrev
-  -- If absent (no entry under suffixed key), defaults to 1 (Regular(0)).
+  -- Caller MUST only invoke this for Defn addrs; the harness only seeds
+  -- channel 2 for defns. A missing key aborts execution (correct).
   fn load_constant_hint(addr: Addr) -> G {
-    let [a0, a1, a2, a3, a4, a5, a6, a7,
-         a8, a9, a10, a11, a12, a13, a14, a15,
-         a16, a17, a18, a19, a20, a21, a22, a23,
-         a24, a25, a26, a27, a28, a29, a30, a31] = load(addr);
-    let key = [a0, a1, a2, a3, a4, a5, a6, a7,
-               a8, a9, a10, a11, a12, a13, a14, a15,
-               a16, a17, a18, a19, a20, a21, a22, a23,
-               a24, a25, a26, a27, a28, a29, a30, a31, 1u8];
-    let (idx, len) = io_get_info(key);
-    match len {
-      0 => 1,
-      _ =>
-        let bytes = #read_byte_stream(idx, len);
-        match load(bytes) {
-          ListNode.Cons(b, _) => to_field(b),
-          ListNode.Nil => 1,
-        },
+    let (idx, len) = io_get_info(2, load(addr));
+    let bytes = #read_byte_stream(2, idx, len);
+    match load(bytes) {
+      ListNode.Cons(b, _) => to_field(b),
     }
   }
 
   -- Load a blob from IOBuffer by address, verify blake3, return raw bytes.
-  -- Blobs are stored under key `addr ++ [0]` (suffix tag 0 = referenced
-  -- data) so they don't collide with constants stored at bare `addr`.
+  -- Blobs live on channel 1; constants live on channel 0 with the same key.
   fn load_verified_blob(addr: Addr) -> ByteStream {
-    let [a0, a1, a2, a3, a4, a5, a6, a7,
-         a8, a9, a10, a11, a12, a13, a14, a15,
-         a16, a17, a18, a19, a20, a21, a22, a23,
-         a24, a25, a26, a27, a28, a29, a30, a31] = load(addr);
-    let blob_key = [a0, a1, a2, a3, a4, a5, a6, a7,
-                    a8, a9, a10, a11, a12, a13, a14, a15,
-                    a16, a17, a18, a19, a20, a21, a22, a23,
-                    a24, a25, a26, a27, a28, a29, a30, a31, 0u8];
-    let (idx, len) = io_get_info(blob_key);
-    let bytes = #read_byte_stream(idx, len);
+    let (idx, len) = io_get_info(1, load(addr));
+    let bytes = #read_byte_stream(1, idx, len);
     let h = blake3(bytes);
     assert_eq!(
       [
@@ -148,7 +126,7 @@ def ingress := ⟦
   }
 
   -- Extract the Muts block address from a projection ConstantInfo.
-  -- Returns [0u8; 32] for non-projection constants.
+  -- Returns [0; 32] for non-projection constants.
   fn get_proj_block_addr(info: ConstantInfo) -> Addr {
     match info {
       ConstantInfo.IPrj(prj) =>
@@ -1241,7 +1219,7 @@ def ingress := ⟦
         -- Check if this address has constant data in IOBuffer.
         -- io_get_info is unconstrained; the prover provides (0, 0) for blob addresses.
         -- Soundness: if the prover lies and skips a real constant, type checking will fail.
-        let (_, len) = io_get_info(load(addr));
+        let (_, len) = io_get_info(0, load(addr));
         match len {
           0 =>
             -- Blob address: skip (blob values are loaded on demand in build_lit_blobs)

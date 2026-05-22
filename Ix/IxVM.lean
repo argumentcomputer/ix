@@ -33,7 +33,7 @@ def entrypoints := ⟦
       0 => (),
       _ =>
         let n_minus_1 = n - 1;
-        let (idx, len) = io_get_info([n_minus_1]);
+        let (idx, len) = io_get_info(0, [n_minus_1]);
         let bytes = #read_byte_stream(idx, len);
         let (const, rest) = get_constant(bytes);
         assert_eq!(load(rest), ListNode.Nil);
@@ -140,7 +140,7 @@ def entrypoints := ⟦
       0 => (),
       _ =>
         let n_minus_1 = n - 1;
-        let (idx, len) = io_get_info([n_minus_1]);
+        let (idx, len) = io_get_info(0, [n_minus_1]);
         let bytes = #read_byte_stream(idx, len);
         let (const, rest) = get_constant(bytes);
         assert_eq!(load(rest), ListNode.Nil);

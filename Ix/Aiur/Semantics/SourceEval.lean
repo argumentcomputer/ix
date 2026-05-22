@@ -448,22 +448,28 @@ def interp (decls : Decls) (fuel : Nat) (bindings : Bindings)
   | .toField t | .u8FromFieldUnsafe t => interp decls fuel bindings t st
   | .u8Lit n => .ok (.field (G.ofNat n), st)
   | .debug _ _ ret => interp decls fuel bindings ret st
-  | .ioGetInfo key =>
-      match interp decls fuel bindings key st with
+  | .ioGetInfo channel key =>
+      match interp decls fuel bindings channel st with
+      | .error e => .error e
+      | .ok (vc, stc) =>
+      match interp decls fuel bindings key stc with
       | .error e => .error e
       | .ok (v, st') =>
-        match v with
-        | .array vs =>
+        match vc, v with
+        | .field channelG, .array vs =>
           match expectFieldArray vs with
           | none      => .error (.typeMismatch "ioGetInfo key")
           | some keyGs =>
-            match st'.ioBuffer.map[keyGs]? with
+            match st'.ioBuffer.map[(channelG, keyGs)]? with
             | some info =>
               .ok (.tuple #[.field (.ofNat info.idx), .field (.ofNat info.len)], st')
             | none => .error .ioKeyNotFound
-        | _ => .error (.typeMismatch "ioGetInfo")
-  | .ioSetInfo key idx len ret =>
-      match interp decls fuel bindings key st with
+        | _, _ => .error (.typeMismatch "ioGetInfo")
+  | .ioSetInfo channel key idx len ret =>
+      match interp decls fuel bindings channel st with
+      | .error e => .error e
+      | .ok (vc, stc) =>
+      match interp decls fuel bindings key stc with
       | .error e => .error e
       | .ok (vk, stk) =>
       match interp decls fuel bindings idx stk with
@@ -472,42 +478,50 @@ def interp (decls : Decls) (fuel : Nat) (bindings : Bindings)
       match interp decls fuel bindings len sti with
       | .error e => .error e
       | .ok (vl, stl) =>
-        match vk, vi, vl with
-        | .array vs, .field iG, .field lG =>
+        match vc, vk, vi, vl with
+        | .field channelG, .array vs, .field iG, .field lG =>
           match expectFieldArray vs with
           | none       => .error (.typeMismatch "ioSetInfo key")
           | some keyGs =>
-            if stl.ioBuffer.map.contains keyGs then
+            if stl.ioBuffer.map.contains (channelG, keyGs) then
               .error .ioKeyAlreadySet
             else
               let info : IOKeyInfo := ⟨iG.val.toNat, lG.val.toNat⟩
               let st' := { stl with ioBuffer :=
-                { stl.ioBuffer with map := stl.ioBuffer.map.insert keyGs info } }
+                { stl.ioBuffer with map := stl.ioBuffer.map.insert (channelG, keyGs) info } }
               interp decls fuel bindings ret st'
-        | _, _, _ => .error (.typeMismatch "ioSetInfo")
-  | .ioRead idx len =>
-      match interp decls fuel bindings idx st with
+        | _, _, _, _ => .error (.typeMismatch "ioSetInfo")
+  | .ioRead channel idx len =>
+      match interp decls fuel bindings channel st with
+      | .error e => .error e
+      | .ok (vc, stc) =>
+      match interp decls fuel bindings idx stc with
       | .error e => .error e
       | .ok (v, st') =>
-        match v with
-        | .field g =>
+        match vc, v with
+        | .field channelG, .field g =>
           let start := g.val.toNat
-          if start + len > st'.ioBuffer.data.size then .error .ioReadOoB
-          else .ok (.array (st'.ioBuffer.data.extract start (start + len) |>.map .field), st')
-        | _ => .error (.typeMismatch "ioRead")
-  | .ioWrite data ret =>
-      match interp decls fuel bindings data st with
+          let arena := st'.ioBuffer.data.getD channelG #[]
+          if start + len > arena.size then .error .ioReadOoB
+          else .ok (.array (arena.extract start (start + len) |>.map .field), st')
+        | _, _ => .error (.typeMismatch "ioRead")
+  | .ioWrite channel data ret =>
+      match interp decls fuel bindings channel st with
+      | .error e => .error e
+      | .ok (vc, stc) =>
+      match interp decls fuel bindings data stc with
       | .error e => .error e
       | .ok (v, st') =>
-        match v with
-        | .array vs =>
+        match vc, v with
+        | .field channelG, .array vs =>
           match expectFieldArray vs with
           | none       => .error (.typeMismatch "ioWrite")
           | some dataGs =>
+            let arena := st'.ioBuffer.data.getD channelG #[]
             let st'' := { st' with ioBuffer :=
-              { st'.ioBuffer with data := st'.ioBuffer.data ++ dataGs } }
+              { st'.ioBuffer with data := st'.ioBuffer.data.insert channelG (arena ++ dataGs) } }
             interp decls fuel bindings ret st''
-        | _ => .error (.typeMismatch "ioWrite")
+        | _, _ => .error (.typeMismatch "ioWrite")
 termination_by (fuel, 2, sizeOf t)
 decreasing_by
   all_goals first

@@ -15,7 +15,7 @@ def byteStream := ⟦
       0 => store(ListNode.Nil),
       _ =>
         let tail = read_byte_stream(idx + 1, len - 1);
-        let [byte] = io_read(idx, 1);
+        let [byte] = io_read(0, idx, 1);
         store(ListNode.Cons(u8_from_field_unsafe(byte), tail)),
     }
   }
