@@ -81,7 +81,7 @@ def convert := ⟦
   -- Reads 8 bytes per limb, zero-padding the last limb if needed.
   -- Strips trailing zero limbs for canonical form.
   fn bytes_to_limbs(bytes: ByteStream) -> KLimbs {
-    let limb = bytes_to_u64_limb(bytes, [0; 8], 0);
+    let limb = bytes_to_u64_limb(bytes, [0u8; 8], 0);
     let rest_bytes = skip_bytes(bytes, 8);
     match limb {
       -- If this limb is zero and there are no more bytes, return Nil
@@ -101,7 +101,7 @@ def convert := ⟦
   }
 
   -- Read up to 8 bytes into a U64 (LE), zero-padding.
-  fn bytes_to_u64_limb(bytes: ByteStream, acc: [G; 8], pos: G) -> [G; 8] {
+  fn bytes_to_u64_limb(bytes: ByteStream, acc: U64, pos: G) -> U64 {
     match pos {
       8 => acc,
       _ =>

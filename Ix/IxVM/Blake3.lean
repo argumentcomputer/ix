@@ -8,7 +8,7 @@ namespace IxVM
 def blake3 := ⟦
   /- # Test entrypoints -/
 
-  pub fn blake3_test() -> [[G; 4]; 8] {
+  pub fn blake3_test() -> [[U8; 4]; 8] {
     let (idx, len) = io_get_info([0]);
     let byte_stream = #read_byte_stream(idx, len);
     blake3(byte_stream)
@@ -31,21 +31,21 @@ def blake3 := ⟦
   /- # Implementation -/
 
   enum Layer {
-    Push(&Layer, [[G; 4]; 8]),
+    Push(&Layer, [[U8; 4]; 8]),
     Nil
   }
 
   enum MaybeDigest {
     None,
-    Some([[G; 4]; 8])
+    Some([[U8; 4]; 8])
   }
 
-  fn blake3(input: ByteStream) -> [[G; 4]; 8] {
-    let IV = [[103, 230, 9, 106], [133, 174, 103, 187], [114, 243, 110, 60], [58, 245, 79, 165], [127, 82, 14, 81], [140, 104, 5, 155], [171, 217, 131, 31], [25, 205, 224, 91]];
-    blake3_compress_layer(load(blake3_compress_chunks(input, store(ListNode.Nil), 0, 0, store([0; 8]), store(IV), store(Layer.Nil))))
+  fn blake3(input: ByteStream) -> [[U8; 4]; 8] {
+    let IV = [[103u8, 230u8, 9u8, 106u8], [133u8, 174u8, 103u8, 187u8], [114u8, 243u8, 110u8, 60u8], [58u8, 245u8, 79u8, 165u8], [127u8, 82u8, 14u8, 81u8], [140u8, 104u8, 5u8, 155u8], [171u8, 217u8, 131u8, 31u8], [25u8, 205u8, 224u8, 91u8]];
+    blake3_compress_layer(load(blake3_compress_chunks(input, store(ListNode.Nil), 0, 0, store([0u8; 8]), store(IV), store(Layer.Nil))))
   }
 
-  fn blake3_next_layer(layer: Layer, digest: [[G; 4]; 8], root: G) -> (MaybeDigest, Layer) {
+  fn blake3_next_layer(layer: Layer, digest: [[U8; 4]; 8], root: G) -> (MaybeDigest, Layer) {
     match layer {
       Layer.Nil => (MaybeDigest.Some(digest), Layer.Nil),
       Layer.Push(layer, other) =>
@@ -55,25 +55,25 @@ def blake3 := ⟦
           MaybeDigest.Some(last) =>
             let PARENT = 4;
             let ROOT = 8;
-            let IV = [[103, 230, 9, 106], [133, 174, 103, 187], [114, 243, 110, 60], [58, 245, 79, 165], [127, 82, 14, 81], [140, 104, 5, 155], [171, 217, 131, 31], [25, 205, 224, 91]];
+            let IV = [[103u8, 230u8, 9u8, 106u8], [133u8, 174u8, 103u8, 187u8], [114u8, 243u8, 110u8, 60u8], [58u8, 245u8, 79u8, 165u8], [127u8, 82u8, 14u8, 81u8], [140u8, 104u8, 5u8, 155u8], [171u8, 217u8, 131u8, 31u8], [25u8, 205u8, 224u8, 91u8]];
             let [x0, x1, x2, x3, x4, x5, x6, x7] = last;
             let [x8, x9, x10, x11, x12, x13, x14, x15] = digest;
             let blocks = [x0, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15];
             match new_layer {
               Layer.Nil =>
                 let flags = PARENT + ROOT * root;
-                let digest = blake3_compress(IV, blocks, [0; 8], 64, flags);
+                let digest = blake3_compress(IV, blocks, [0u8; 8], 64, flags);
                 (MaybeDigest.None, Layer.Push(store(new_layer), digest)),
               _ =>
                 let flags = PARENT;
-                let digest = blake3_compress(IV, blocks, [0; 8], 64, flags);
+                let digest = blake3_compress(IV, blocks, [0u8; 8], 64, flags);
                 (MaybeDigest.None, Layer.Push(store(new_layer), digest)),
             },
         },
     }
   }
 
-  fn blake3_compress_layer(layer: Layer) -> [[G; 4]; 8] {
+  fn blake3_compress_layer(layer: Layer) -> [[U8; 4]; 8] {
     let Layer.Push(rest, digest) = layer;
     match load(rest) {
       Layer.Nil => digest,
@@ -87,7 +87,7 @@ def blake3 := ⟦
   }
 
   -- Hot chunk loop. The 64-byte block buffer is NOT threaded here as a
-  -- `[[G; 4]; 16]` value — that cost 64 columns of `inputSize` plus a +64-aux
+  -- `[[U8; 4]; 16]` value — that cost 64 columns of `inputSize` plus a +64-aux
   -- `assign_block_value` call on every row. Instead bytes accumulate into a
   -- reverse-ordered linked list (`byte_acc`); each hot row is a single `store`.
   fn blake3_compress_chunks(
@@ -96,7 +96,7 @@ def blake3 := ⟦
     block_index: G,
     chunk_index: G,
     chunk_count: &U64,
-    block_digest: &[[G; 4]; 8],
+    block_digest: &[[U8; 4]; 8],
     layer: &Layer
   ) -> &Layer {
     match load(input) {
@@ -112,11 +112,11 @@ def blake3 := ⟦
     }
   }
 
-  -- Materializes a 64-byte accumulator list into a `[[G; 4]; 16]` block. The
+  -- Materializes a 64-byte accumulator list into a `[[U8; 4]; 16]` block. The
   -- list is reverse-ordered (head = most recently appended byte = position 63).
   -- 64 unrolled `load`s, one circuit row per call — keeps the 64-wide buffer
   -- out of the hot loop and out of `inputSize`.
-  fn bytes_to_block(byte_acc: ByteStream) -> [[G; 4]; 16] {
+  fn bytes_to_block(byte_acc: ByteStream) -> [[U8; 4]; 16] {
     let ListNode.Cons(b63, l) = load(byte_acc);
     let ListNode.Cons(b62, l) = load(l);
     let ListNode.Cons(b61, l) = load(l);
@@ -194,7 +194,7 @@ def blake3 := ⟦
   fn pad_block(acc: ByteStream, n: G) -> ByteStream {
     match n {
       0 => acc,
-      _ => pad_block(store(ListNode.Cons(0, acc)), n - 1),
+      _ => pad_block(store(ListNode.Cons(0u8, acc)), n - 1),
     }
   }
 
@@ -206,7 +206,7 @@ def blake3 := ⟦
     block_index: G,
     chunk_index: G,
     chunk_count: &U64,
-    block_digest: &[[G; 4]; 8],
+    block_digest: &[[U8; 4]; 8],
     layer: &Layer
   ) -> &Layer {
     let CHUNK_START = 1;
@@ -217,7 +217,7 @@ def blake3 := ⟦
         match load(chunk_count) {
           [0, 0, 0, 0, 0, 0, 0, 0] =>
             let flags = ROOT + CHUNK_START + CHUNK_END;
-            store(Layer.Push(layer, blake3_compress(load(block_digest), [[0; 4]; 16], load(chunk_count), 0, flags))),
+            store(Layer.Push(layer, blake3_compress(load(block_digest), [[0u8; 4]; 16], load(chunk_count), 0, flags))),
           _ => layer,
         },
       (0, _) => store(Layer.Push(layer, load(block_digest))),
@@ -236,7 +236,7 @@ def blake3 := ⟦
     byte_acc: ByteStream,
     chunk_index: G,
     chunk_count: &U64,
-    block_digest: &[[G; 4]; 8],
+    block_digest: &[[U8; 4]; 8],
     layer: &Layer
   ) -> &Layer {
     let CHUNK_START = 1;
@@ -246,7 +246,7 @@ def blake3 := ⟦
     match chunk_index {
       1023 =>
         let flags = ROOT * list_is_empty(input) * u64_is_zero(load(chunk_count)) + CHUNK_END;
-        let IV = [[103, 230, 9, 106], [133, 174, 103, 187], [114, 243, 110, 60], [58, 245, 79, 165], [127, 82, 14, 81], [140, 104, 5, 155], [171, 217, 131, 31], [25, 205, 224, 91]];
+        let IV = [[103u8, 230u8, 9u8, 106u8], [133u8, 174u8, 103u8, 187u8], [114u8, 243u8, 110u8, 60u8], [58u8, 245u8, 79u8, 165u8], [127u8, 82u8, 14u8, 81u8], [140u8, 104u8, 5u8, 155u8], [171u8, 217u8, 131u8, 31u8], [25u8, 205u8, 224u8, 91u8]];
         let layer = store(Layer.Push(layer, blake3_compress(load(block_digest), block, load(chunk_count), 64, flags)));
         blake3_compress_chunks(input, store(ListNode.Nil), 0, 0, store(relaxed_u64_succ(load(chunk_count))), store(IV), layer),
       _ =>
@@ -260,30 +260,30 @@ def blake3 := ⟦
   }
 
   fn blake3_g_function(
-    a: [G; 4],
-    b: [G; 4],
-    c: [G; 4],
-    d: [G; 4],
-    x: [G; 4],
-    y: [G; 4]
-  ) -> [[G; 4]; 4] {
+    a: [U8; 4],
+    b: [U8; 4],
+    c: [U8; 4],
+    d: [U8; 4],
+    x: [U8; 4],
+    y: [U8; 4]
+  ) -> [[U8; 4]; 4] {
     -- a = (a + b) + x
     let (r1_0, r1_c1) = u8_add(a[0], b[0]);
     let (r1_s1, r1_o1) = u8_add(a[1], b[1]);
     let (r1_1, r1_c1a) = u8_add(r1_s1, r1_c1);
-    let r1_c2 = r1_o1 + r1_c1a;
+    let r1_c2 = u8_from_field_unsafe(to_field(r1_o1) + to_field(r1_c1a));
     let (r1_s2, r1_o2) = u8_add(a[2], b[2]);
     let (r1_2, r1_c2a) = u8_add(r1_s2, r1_c2);
-    let r1_c3 = r1_o2 + r1_c2a;
+    let r1_c3 = u8_from_field_unsafe(to_field(r1_o2) + to_field(r1_c2a));
     let (r1_s3, _z) = u8_add(a[3], b[3]);
     let (r1_3, _z) = u8_add(r1_s3, r1_c3);
     let (a0, r2_c1) = u8_add(r1_0, x[0]);
     let (r2_s1, r2_o1) = u8_add(r1_1, x[1]);
     let (a1, r2_c1a) = u8_add(r2_s1, r2_c1);
-    let r2_c2 = r2_o1 + r2_c1a;
+    let r2_c2 = u8_from_field_unsafe(to_field(r2_o1) + to_field(r2_c1a));
     let (r2_s2, r2_o2) = u8_add(r1_2, x[2]);
     let (a2, r2_c2a) = u8_add(r2_s2, r2_c2);
-    let r2_c3 = r2_o2 + r2_c2a;
+    let r2_c3 = u8_from_field_unsafe(to_field(r2_o2) + to_field(r2_c2a));
     let (r2_s3, _z) = u8_add(r1_3, x[3]);
     let (a3, _z) = u8_add(r2_s3, r2_c3);
     let a = [a0, a1, a2, a3];
@@ -298,10 +298,10 @@ def blake3 := ⟦
     let (nc0, r3_c1) = u8_add(c[0], d[0]);
     let (r3_s1, r3_o1) = u8_add(c[1], d[1]);
     let (nc1, r3_c1a) = u8_add(r3_s1, r3_c1);
-    let r3_c2 = r3_o1 + r3_c1a;
+    let r3_c2 = u8_from_field_unsafe(to_field(r3_o1) + to_field(r3_c1a));
     let (r3_s2, r3_o2) = u8_add(c[2], d[2]);
     let (nc2, r3_c2a) = u8_add(r3_s2, r3_c2);
-    let r3_c3 = r3_o2 + r3_c2a;
+    let r3_c3 = u8_from_field_unsafe(to_field(r3_o2) + to_field(r3_c2a));
     let (r3_s3, _z) = u8_add(c[3], d[3]);
     let (nc3, _z) = u8_add(r3_s3, r3_c3);
     let c = [nc0, nc1, nc2, nc3];
@@ -315,25 +315,27 @@ def blake3 := ⟦
     -- and (b3,b0). Two gadget lookups + two free field adds.
     let (e0, e1, e2) = u8_chain_rotr4(b1, b2);
     let (f0, f1, f2) = u8_chain_rotr4(b3, b0);
-    let b = [e0, e1 + f2, f0, f1 + e2]; -- Right-rotated 12
+    -- Combined parts occupy disjoint bit positions: sum is a byte, add as `G`.
+    let b = [e0, u8_from_field_unsafe(to_field(e1) + to_field(f2)), f0,
+             u8_from_field_unsafe(to_field(f1) + to_field(e2))]; -- Right-rotated 12
 
     -- a = (a + b) + y
     let (r4_0, r4_c1) = u8_add(a[0], b[0]);
     let (r4_s1, r4_o1) = u8_add(a[1], b[1]);
     let (r4_1, r4_c1a) = u8_add(r4_s1, r4_c1);
-    let r4_c2 = r4_o1 + r4_c1a;
+    let r4_c2 = u8_from_field_unsafe(to_field(r4_o1) + to_field(r4_c1a));
     let (r4_s2, r4_o2) = u8_add(a[2], b[2]);
     let (r4_2, r4_c2a) = u8_add(r4_s2, r4_c2);
-    let r4_c3 = r4_o2 + r4_c2a;
+    let r4_c3 = u8_from_field_unsafe(to_field(r4_o2) + to_field(r4_c2a));
     let (r4_s3, _z) = u8_add(a[3], b[3]);
     let (r4_3, _z) = u8_add(r4_s3, r4_c3);
     let (a0, r5_c1) = u8_add(r4_0, y[0]);
     let (r5_s1, r5_o1) = u8_add(r4_1, y[1]);
     let (a1, r5_c1a) = u8_add(r5_s1, r5_c1);
-    let r5_c2 = r5_o1 + r5_c1a;
+    let r5_c2 = u8_from_field_unsafe(to_field(r5_o1) + to_field(r5_c1a));
     let (r5_s2, r5_o2) = u8_add(r4_2, y[2]);
     let (a2, r5_c2a) = u8_add(r5_s2, r5_c2);
-    let r5_c3 = r5_o2 + r5_c2a;
+    let r5_c3 = u8_from_field_unsafe(to_field(r5_o2) + to_field(r5_c2a));
     let (r5_s3, _z) = u8_add(r4_3, y[3]);
     let (a3, _z) = u8_add(r5_s3, r5_c3);
     let a = [a0, a1, a2, a3];
@@ -348,10 +350,10 @@ def blake3 := ⟦
     let (nc0, r6_c1) = u8_add(c[0], d[0]);
     let (r6_s1, r6_o1) = u8_add(c[1], d[1]);
     let (nc1, r6_c1a) = u8_add(r6_s1, r6_c1);
-    let r6_c2 = r6_o1 + r6_c1a;
+    let r6_c2 = u8_from_field_unsafe(to_field(r6_o1) + to_field(r6_c1a));
     let (r6_s2, r6_o2) = u8_add(c[2], d[2]);
     let (nc2, r6_c2a) = u8_add(r6_s2, r6_c2);
-    let r6_c3 = r6_o2 + r6_c2a;
+    let r6_c3 = u8_from_field_unsafe(to_field(r6_o2) + to_field(r6_c2a));
     let (r6_s3, _z) = u8_add(c[3], d[3]);
     let (nc3, _z) = u8_add(r6_s3, r6_c3);
     let c = [nc0, nc1, nc2, nc3];
@@ -364,12 +366,13 @@ def blake3 := ⟦
     -- two lookups + two free field adds.
     let (g0, g1, g2) = u8_chain_rotr7(b0, b1);
     let (h0, h1, h2) = u8_chain_rotr7(b2, b3);
-    let b = [g0, g1 + h2, h0, h1 + g2]; -- Right-rotated 7
+    let b = [g0, u8_from_field_unsafe(to_field(g1) + to_field(h2)), h0,
+             u8_from_field_unsafe(to_field(h1) + to_field(g2))]; -- Right-rotated 7
 
     [a, b, c, d]
   }
 
-  fn blake3_compress_inner_j(state: [[G; 4]; 32]) -> [[G; 4]; 32] {
+  fn blake3_compress_inner_j(state: [[U8; 4]; 32]) -> [[U8; 4]; 32] {
     -- Round 0
     let [a, b, c, d] = blake3_g_function(
       state[0], state[4], state[8], state[12], state[16], state[17]
@@ -446,25 +449,26 @@ def blake3 := ⟦
   }
 
   -- TODO:
-  -- `block_words` could be two arguments of type [[G; 4]; 8]
+  -- `block_words` could be two arguments of type [[U8; 4]; 8]
   fn blake3_compress(
-    chaining_value: [[G; 4]; 8],
-    block_words: [[G; 4]; 16],
+    chaining_value: [[U8; 4]; 8],
+    block_words: [[U8; 4]; 16],
     counter: U64,
     block_len: G,
     flags: G
-  ) -> [[G; 4]; 8] {
-    let IV0 = [103, 230,   9, 106];
-    let IV1 = [133, 174, 103, 187];
-    let IV2 = [114, 243, 110,  60];
-    let IV3 = [ 58, 245,  79, 165];
+  ) -> [[U8; 4]; 8] {
+    let IV0 = [103u8, 230u8,   9u8, 106u8];
+    let IV1 = [133u8, 174u8, 103u8, 187u8];
+    let IV2 = [114u8, 243u8, 110u8,  60u8];
+    let IV3 = [ 58u8, 245u8,  79u8, 165u8];
 
     let counter_low = counter[0 .. 4];
     let counter_high = counter[4 .. 8];
 
-    let block_len_u32 = [block_len, 0, 0, 0];
-    let flags_u32 = [flags, 0, 0, 0];
-    let state: [[G; 4]; 32] = [
+    -- `block_len` and `flags` are small (< 256); pack as the low byte.
+    let block_len_u32 = [u8_from_field_unsafe(block_len), 0u8, 0u8, 0u8];
+    let flags_u32 = [u8_from_field_unsafe(flags), 0u8, 0u8, 0u8];
+    let state: [[U8; 4]; 32] = [
       chaining_value[0], chaining_value[1], chaining_value[2], chaining_value[3],
       chaining_value[4], chaining_value[5], chaining_value[6], chaining_value[7],
                     IV0,               IV1,               IV2,               IV3,

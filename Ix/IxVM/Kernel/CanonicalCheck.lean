@@ -415,14 +415,14 @@ def canonicalCheck := ⟦
     let [a0, a1, a2, a3, a4, a5, a6, a7] = a;
     let [b0, b1, b2, b3, b4, b5, b6, b7] = b;
     -- Most significant byte first.
-    ord_then(ord_cmp_g(a7, b7),
-      ord_then(ord_cmp_g(a6, b6),
-        ord_then(ord_cmp_g(a5, b5),
-          ord_then(ord_cmp_g(a4, b4),
-            ord_then(ord_cmp_g(a3, b3),
-              ord_then(ord_cmp_g(a2, b2),
-                ord_then(ord_cmp_g(a1, b1),
-                  ord_cmp_g(a0, b0))))))))
+    ord_then(ord_cmp_g(to_field(a7), to_field(b7)),
+      ord_then(ord_cmp_g(to_field(a6), to_field(b6)),
+        ord_then(ord_cmp_g(to_field(a5), to_field(b5)),
+          ord_then(ord_cmp_g(to_field(a4), to_field(b4)),
+            ord_then(ord_cmp_g(to_field(a3), to_field(b3)),
+              ord_then(ord_cmp_g(to_field(a2), to_field(b2)),
+                ord_then(ord_cmp_g(to_field(a1), to_field(b1)),
+                  ord_cmp_g(to_field(a0), to_field(b0)))))))))
   }
 
   fn compare_byte_stream(x: ByteStream, y: ByteStream) -> G {
@@ -436,7 +436,7 @@ def canonicalCheck := ⟦
         match load(y) {
           ListNode.Nil => 2,
           ListNode.Cons(yh, yt) =>
-            ord_then(ord_cmp_g(xh, yh), compare_byte_stream(xt, yt)),
+            ord_then(ord_cmp_g(to_field(xh), to_field(yh)), compare_byte_stream(xt, yt)),
         },
     }
   }
@@ -735,7 +735,7 @@ def canonicalCheck := ⟦
   --   Rec    → block_addr of the parent of its first rule's ctor.
   --   Other  → [0;32] (not part of a Muts block).
   fn check_canonical_block_sort(top: List‹&KConstantInfo›) {
-    check_canonical_block_sort_walk(top, store([0; 32]), store(ListNode.Nil), 0, top)
+    check_canonical_block_sort_walk(top, store([0u8; 32]), store(ListNode.Nil), 0, top)
   }
 
   fn kconst_block_addr(ci: KConstantInfo, top: List‹&KConstantInfo›) -> Addr {
@@ -745,10 +745,10 @@ def canonicalCheck := ⟦
         let ind_ci = load(list_lookup(top, induct_idx));
         match ind_ci {
           KConstantInfo.Induct(_, _, _, _, _, _, _, _, _, ba) => ba,
-          _ => store([0; 32]),
+          _ => store([0u8; 32]),
         },
       KConstantInfo.Rec(_, _, _, _, _, _, _, _, _, ba) => ba,
-      _ => store([0; 32]),
+      _ => store([0u8; 32]),
     }
   }
 
@@ -776,7 +776,7 @@ def canonicalCheck := ⟦
   }
 
   fn init_block_members(ba: Addr, pos: G) -> List‹G› {
-    match address_eq(ba, store([0; 32])) {
+    match address_eq(ba, store([0u8; 32])) {
       1 => store(ListNode.Nil),
       0 => store(ListNode.Cons(pos, store(ListNode.Nil))),
     }
@@ -784,7 +784,7 @@ def canonicalCheck := ⟦
 
   fn validate_block_if_nonzero(ba: Addr, members: List‹G›,
                                 top: List‹&KConstantInfo›) {
-    match address_eq(ba, store([0; 32])) {
+    match address_eq(ba, store([0u8; 32])) {
       1 => (),
       0 =>
         match list_length(members) {
