@@ -28,27 +28,34 @@ public section
 namespace MultiStark
 
 def keccak := ⟦
-  -- A 64-bit Keccak lane: 8 little-endian bytes.
-  type Lane = [U8; 8]
+  -- A 64-bit Keccak lane: a pointer to 8 little-endian bytes. Storing lanes
+  -- behind a pointer keeps the state (and every lane-passing function) one
+  -- column wide instead of eight.
+  type Lane = &[U8; 8]
 
   -- ==========================================================================
   -- Lane bit-logic (byte-wise u8 gadgets).
   -- ==========================================================================
 
   fn xor8(a: Lane, b: Lane) -> Lane {
-    [u8_xor(a[0], b[0]), u8_xor(a[1], b[1]), u8_xor(a[2], b[2]), u8_xor(a[3], b[3]),
-     u8_xor(a[4], b[4]), u8_xor(a[5], b[5]), u8_xor(a[6], b[6]), u8_xor(a[7], b[7])]
+    let x = load(a);
+    let y = load(b);
+    store([u8_xor(x[0], y[0]), u8_xor(x[1], y[1]), u8_xor(x[2], y[2]), u8_xor(x[3], y[3]),
+           u8_xor(x[4], y[4]), u8_xor(x[5], y[5]), u8_xor(x[6], y[6]), u8_xor(x[7], y[7])])
   }
 
   fn and8(a: Lane, b: Lane) -> Lane {
-    [u8_and(a[0], b[0]), u8_and(a[1], b[1]), u8_and(a[2], b[2]), u8_and(a[3], b[3]),
-     u8_and(a[4], b[4]), u8_and(a[5], b[5]), u8_and(a[6], b[6]), u8_and(a[7], b[7])]
+    let x = load(a);
+    let y = load(b);
+    store([u8_and(x[0], y[0]), u8_and(x[1], y[1]), u8_and(x[2], y[2]), u8_and(x[3], y[3]),
+           u8_and(x[4], y[4]), u8_and(x[5], y[5]), u8_and(x[6], y[6]), u8_and(x[7], y[7])])
   }
 
   -- Bitwise NOT via XOR with 0xFF (keeps the byte `u8`-typed).
   fn not8(a: Lane) -> Lane {
-    [u8_xor(a[0], 255u8), u8_xor(a[1], 255u8), u8_xor(a[2], 255u8), u8_xor(a[3], 255u8),
-     u8_xor(a[4], 255u8), u8_xor(a[5], 255u8), u8_xor(a[6], 255u8), u8_xor(a[7], 255u8)]
+    let x = load(a);
+    store([u8_xor(x[0], 255u8), u8_xor(x[1], 255u8), u8_xor(x[2], 255u8), u8_xor(x[3], 255u8),
+           u8_xor(x[4], 255u8), u8_xor(x[5], 255u8), u8_xor(x[6], 255u8), u8_xor(x[7], 255u8)])
   }
 
   -- ==========================================================================
@@ -65,14 +72,15 @@ def keccak := ⟦
 
   -- Lane → 64 bits, index z = 8*byte + bit, LSB first.
   fn lane_bits(l: Lane) -> List‹G› {
-    cons8(u8_bit_decomposition(l[0]),
-    cons8(u8_bit_decomposition(l[1]),
-    cons8(u8_bit_decomposition(l[2]),
-    cons8(u8_bit_decomposition(l[3]),
-    cons8(u8_bit_decomposition(l[4]),
-    cons8(u8_bit_decomposition(l[5]),
-    cons8(u8_bit_decomposition(l[6]),
-    cons8(u8_bit_decomposition(l[7]), store(ListNode.Nil)))))))))
+    let v = load(l);
+    cons8(u8_bit_decomposition(v[0]),
+    cons8(u8_bit_decomposition(v[1]),
+    cons8(u8_bit_decomposition(v[2]),
+    cons8(u8_bit_decomposition(v[3]),
+    cons8(u8_bit_decomposition(v[4]),
+    cons8(u8_bit_decomposition(v[5]),
+    cons8(u8_bit_decomposition(v[6]),
+    cons8(u8_bit_decomposition(v[7]), store(ListNode.Nil)))))))))
   }
 
   -- x mod 64 for x in [0, 127]: drop the 64-bit (bit 6).
@@ -101,8 +109,8 @@ def keccak := ⟦
   }
 
   fn lane_from_bits(bs: List‹G›) -> Lane {
-    [byte_from_bits(bs, 0), byte_from_bits(bs, 8), byte_from_bits(bs, 16), byte_from_bits(bs, 24),
-     byte_from_bits(bs, 32), byte_from_bits(bs, 40), byte_from_bits(bs, 48), byte_from_bits(bs, 56)]
+    store([byte_from_bits(bs, 0), byte_from_bits(bs, 8), byte_from_bits(bs, 16), byte_from_bits(bs, 24),
+           byte_from_bits(bs, 32), byte_from_bits(bs, 40), byte_from_bits(bs, 48), byte_from_bits(bs, 56)])
   }
 
   -- Build the rotated bit list: output position p (0..63) takes source
@@ -209,30 +217,30 @@ def keccak := ⟦
   -- array `get`, which needs a literal index) so it can be indexed at runtime.
   fn rc_lane(i: G) -> Lane {
     match i {
-      0  => [0x01u8, 0u8,    0u8, 0u8,    0u8, 0u8, 0u8, 0u8   ],
-      1  => [0x82u8, 0x80u8, 0u8, 0u8,    0u8, 0u8, 0u8, 0u8   ],
-      2  => [0x8au8, 0x80u8, 0u8, 0u8,    0u8, 0u8, 0u8, 0x80u8],
-      3  => [0x00u8, 0x80u8, 0u8, 0x80u8, 0u8, 0u8, 0u8, 0x80u8],
-      4  => [0x8bu8, 0x80u8, 0u8, 0u8,    0u8, 0u8, 0u8, 0u8   ],
-      5  => [0x01u8, 0u8,    0u8, 0x80u8, 0u8, 0u8, 0u8, 0u8   ],
-      6  => [0x81u8, 0x80u8, 0u8, 0x80u8, 0u8, 0u8, 0u8, 0x80u8],
-      7  => [0x09u8, 0x80u8, 0u8, 0u8,    0u8, 0u8, 0u8, 0x80u8],
-      8  => [0x8au8, 0u8,    0u8, 0u8,    0u8, 0u8, 0u8, 0u8   ],
-      9  => [0x88u8, 0u8,    0u8, 0u8,    0u8, 0u8, 0u8, 0u8   ],
-      10 => [0x09u8, 0x80u8, 0u8, 0x80u8, 0u8, 0u8, 0u8, 0u8   ],
-      11 => [0x0au8, 0u8,    0u8, 0x80u8, 0u8, 0u8, 0u8, 0u8   ],
-      12 => [0x8bu8, 0x80u8, 0u8, 0x80u8, 0u8, 0u8, 0u8, 0u8   ],
-      13 => [0x8bu8, 0u8,    0u8, 0u8,    0u8, 0u8, 0u8, 0x80u8],
-      14 => [0x89u8, 0x80u8, 0u8, 0u8,    0u8, 0u8, 0u8, 0x80u8],
-      15 => [0x03u8, 0x80u8, 0u8, 0u8,    0u8, 0u8, 0u8, 0x80u8],
-      16 => [0x02u8, 0x80u8, 0u8, 0u8,    0u8, 0u8, 0u8, 0x80u8],
-      17 => [0x80u8, 0u8,    0u8, 0u8,    0u8, 0u8, 0u8, 0x80u8],
-      18 => [0x0au8, 0x80u8, 0u8, 0u8,    0u8, 0u8, 0u8, 0u8   ],
-      19 => [0x0au8, 0u8,    0u8, 0x80u8, 0u8, 0u8, 0u8, 0x80u8],
-      20 => [0x81u8, 0x80u8, 0u8, 0x80u8, 0u8, 0u8, 0u8, 0x80u8],
-      21 => [0x80u8, 0x80u8, 0u8, 0u8,    0u8, 0u8, 0u8, 0x80u8],
-      22 => [0x01u8, 0u8,    0u8, 0x80u8, 0u8, 0u8, 0u8, 0u8   ],
-      _  => [0x08u8, 0x80u8, 0u8, 0x80u8, 0u8, 0u8, 0u8, 0x80u8],
+      0  => store([0x01u8, 0u8,    0u8, 0u8,    0u8, 0u8, 0u8, 0u8   ]),
+      1  => store([0x82u8, 0x80u8, 0u8, 0u8,    0u8, 0u8, 0u8, 0u8   ]),
+      2  => store([0x8au8, 0x80u8, 0u8, 0u8,    0u8, 0u8, 0u8, 0x80u8]),
+      3  => store([0x00u8, 0x80u8, 0u8, 0x80u8, 0u8, 0u8, 0u8, 0x80u8]),
+      4  => store([0x8bu8, 0x80u8, 0u8, 0u8,    0u8, 0u8, 0u8, 0u8   ]),
+      5  => store([0x01u8, 0u8,    0u8, 0x80u8, 0u8, 0u8, 0u8, 0u8   ]),
+      6  => store([0x81u8, 0x80u8, 0u8, 0x80u8, 0u8, 0u8, 0u8, 0x80u8]),
+      7  => store([0x09u8, 0x80u8, 0u8, 0u8,    0u8, 0u8, 0u8, 0x80u8]),
+      8  => store([0x8au8, 0u8,    0u8, 0u8,    0u8, 0u8, 0u8, 0u8   ]),
+      9  => store([0x88u8, 0u8,    0u8, 0u8,    0u8, 0u8, 0u8, 0u8   ]),
+      10 => store([0x09u8, 0x80u8, 0u8, 0x80u8, 0u8, 0u8, 0u8, 0u8   ]),
+      11 => store([0x0au8, 0u8,    0u8, 0x80u8, 0u8, 0u8, 0u8, 0u8   ]),
+      12 => store([0x8bu8, 0x80u8, 0u8, 0x80u8, 0u8, 0u8, 0u8, 0u8   ]),
+      13 => store([0x8bu8, 0u8,    0u8, 0u8,    0u8, 0u8, 0u8, 0x80u8]),
+      14 => store([0x89u8, 0x80u8, 0u8, 0u8,    0u8, 0u8, 0u8, 0x80u8]),
+      15 => store([0x03u8, 0x80u8, 0u8, 0u8,    0u8, 0u8, 0u8, 0x80u8]),
+      16 => store([0x02u8, 0x80u8, 0u8, 0u8,    0u8, 0u8, 0u8, 0x80u8]),
+      17 => store([0x80u8, 0u8,    0u8, 0u8,    0u8, 0u8, 0u8, 0x80u8]),
+      18 => store([0x0au8, 0x80u8, 0u8, 0u8,    0u8, 0u8, 0u8, 0u8   ]),
+      19 => store([0x0au8, 0u8,    0u8, 0x80u8, 0u8, 0u8, 0u8, 0x80u8]),
+      20 => store([0x81u8, 0x80u8, 0u8, 0x80u8, 0u8, 0u8, 0u8, 0x80u8]),
+      21 => store([0x80u8, 0x80u8, 0u8, 0u8,    0u8, 0u8, 0u8, 0x80u8]),
+      22 => store([0x01u8, 0u8,    0u8, 0x80u8, 0u8, 0u8, 0u8, 0u8   ]),
+      _  => store([0x08u8, 0x80u8, 0u8, 0x80u8, 0u8, 0u8, 0u8, 0x80u8]),
     }
   }
 
@@ -293,7 +301,7 @@ def keccak := ⟦
     let &ListNode.Cons(r5, t5) = t4;
     let &ListNode.Cons(r6, t6) = t5;
     let &ListNode.Cons(r7, _) = t6;
-    [r0, r1, r2, r3, r4, r5, r6, r7]
+    store([r0, r1, r2, r3, r4, r5, r6, r7])
   }
 
   -- XOR one 136-byte rate block into the first 17 lanes, then permute.
@@ -324,19 +332,20 @@ def keccak := ⟦
   }
 
   -- keccak-256: absorb the byte stream into the zero state, then squeeze the
-  -- first 32 bytes (lanes 0..3) as the digest (4 little-endian byte lanes).
-  fn keccak256(bytes: ByteStream) -> [Lane; 4] {
-    let z = [0u8; 8];
+  -- first 32 bytes (lanes 0..3). Lanes are `load`ed back to inline bytes so the
+  -- digest is a plain `[[U8; 8]; 4]`.
+  fn keccak256(bytes: ByteStream) -> [[U8; 8]; 4] {
+    let z = store([0u8; 8]);
     let init = [z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z];
     let s = absorb_blocks(bytes, init);
-    [s[0], s[1], s[2], s[3]]
+    [load(s[0]), load(s[1]), load(s[2]), load(s[3])]
   }
 
   -- ==========================================================================
   -- Test entrypoint: hash the IO-channel bytes (key [0]) and return 32 bytes.
   -- ==========================================================================
 
-  pub fn keccak256_test() -> [Lane; 4] {
+  pub fn keccak256_test() -> [[U8; 8]; 4] {
     let (idx, len) = io_get_info([0]);
     let bytes = #read_byte_stream(idx, len);
     keccak256(bytes)
