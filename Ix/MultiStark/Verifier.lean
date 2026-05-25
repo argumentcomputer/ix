@@ -47,24 +47,10 @@ public section
 namespace MultiStark
 
 def verifier := ⟦
-  -- Interpret a raw little-endian `u64` limb as a Goldilocks field element. The
-  -- field add/mul reduce mod p, so a non-canonical zero (the on-wire repr can be
-  -- `p = 0xFFFFFFFF00000001`, not `0`) maps to the field zero.
-  fn u64_to_field(b: U64) -> G {
-    to_field(b[0])
-      + 0x100 * to_field(b[1])
-      + 0x10000 * to_field(b[2])
-      + 0x1000000 * to_field(b[3])
-      + 0x100000000 * to_field(b[4])
-      + 0x10000000000 * to_field(b[5])
-      + 0x1000000000000 * to_field(b[6])
-      + 0x100000000000000 * to_field(b[7])
-  }
-
-  -- An on-wire extension element (`ExtVal = GoldilocksExt2`) is two raw `u64`
-  -- limbs. It is zero iff both limbs reduce to the field zero (mod p).
+  -- An extension element `[c0, c1]` (`= c0 + c1·X`) is zero iff both Goldilocks
+  -- coefficients are zero. (`read_ext` already reduced the limbs mod p.)
   fn ext_is_zero(e: Ext) -> G {
-    eq_zero(u64_to_field(e[0])) * eq_zero(u64_to_field(e[1]))
+    eq_zero(e[0]) * eq_zero(e[1])
   }
 
   -- 1 iff the LAST element of the accumulator list is the zero extension
