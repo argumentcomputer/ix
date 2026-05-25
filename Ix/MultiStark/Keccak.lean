@@ -33,6 +33,10 @@ def keccak := ⟦
   -- column wide instead of eight.
   type Lane = &[U8; 8]
 
+  -- The keccak-f state: a pointer to the 5×5 = 25 lanes. Passed behind a
+  -- pointer too, so state-threading functions stay one column wide.
+  type State = &[Lane; 25]
+
   -- ==========================================================================
   -- Lane bit-logic (byte-wise u8 gadgets).
   -- ==========================================================================
@@ -133,7 +137,8 @@ def keccak := ⟦
   -- keccak-f[1600]: 24 rounds of θ ρ π χ ι.
   -- ==========================================================================
 
-  fn keccak_round(s: [Lane; 25], rc: Lane) -> [Lane; 25] {
+  fn keccak_round(sp: State, rc: Lane) -> State {
+    let s = load(sp);
     -- θ: column parities and the D correction.
     let c0 = xor8(xor8(xor8(xor8(s[0], s[5]), s[10]), s[15]), s[20]);
     let c1 = xor8(xor8(xor8(xor8(s[1], s[6]), s[11]), s[16]), s[21]);
@@ -209,8 +214,8 @@ def keccak := ⟦
     let e24 = xor8(b24, and8(not8(b20), b21));
     -- ι: add round constant to lane (0,0).
     let f0 = xor8(e0, rc);
-    [f0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14,
-     e15, e16, e17, e18, e19, e20, e21, e22, e23, e24]
+    store([f0, e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14,
+           e15, e16, e17, e18, e19, e20, e21, e22, e23, e24])
   }
 
   -- Round constant for round `i` (little-endian byte lane). A match (not an
@@ -247,7 +252,7 @@ def keccak := ⟦
   -- Apply the last `n` keccak-f rounds recursively (round index 24 - n), so
   -- each round is its own call frame rather than 24 inlined copies (`fold`),
   -- keeping the circuit narrow. `keccak_f_fold(s, 24)` is the full permutation.
-  fn keccak_f_fold(s: [Lane; 25], n: G) -> [Lane; 25] {
+  fn keccak_f_fold(s: State, n: G) -> State {
     match n {
       0 => s,
       _ => keccak_f_fold(keccak_round(s, rc_lane(24 - n)), n - 1),
@@ -305,8 +310,9 @@ def keccak := ⟦
   }
 
   -- XOR one 136-byte rate block into the first 17 lanes, then permute.
-  fn absorb_one(state: [Lane; 25], rate: ByteStream) -> [Lane; 25] {
-    let s = [
+  fn absorb_one(sp: State, rate: ByteStream) -> State {
+    let state = load(sp);
+    let s = store([
       xor8(state[0],  rate_lane(rate, 0)),   xor8(state[1],  rate_lane(rate, 8)),
       xor8(state[2],  rate_lane(rate, 16)),  xor8(state[3],  rate_lane(rate, 24)),
       xor8(state[4],  rate_lane(rate, 32)),  xor8(state[5],  rate_lane(rate, 40)),
@@ -317,12 +323,12 @@ def keccak := ⟦
       xor8(state[14], rate_lane(rate, 112)), xor8(state[15], rate_lane(rate, 120)),
       xor8(state[16], rate_lane(rate, 128)),
       state[17], state[18], state[19], state[20], state[21], state[22], state[23], state[24]
-    ];
+    ]);
     keccak_f_fold(s, 24)
   }
 
   -- Absorb every rate block of the (padded) message into the state.
-  fn absorb_blocks(stream: ByteStream, state: [Lane; 25]) -> [Lane; 25] {
+  fn absorb_blocks(stream: ByteStream, state: State) -> State {
     let (block, rest, full) = read_block(stream, 0);
     let st2 = absorb_one(state, block);
     match full {
@@ -336,8 +342,9 @@ def keccak := ⟦
   -- digest is a plain `[[U8; 8]; 4]`.
   fn keccak256(bytes: ByteStream) -> [[U8; 8]; 4] {
     let z = store([0u8; 8]);
-    let init = [z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z];
-    let s = absorb_blocks(bytes, init);
+    let init = store([z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z]);
+    let sp = absorb_blocks(bytes, init);
+    let s = load(sp);
     [load(s[0]), load(s[1]), load(s[2]), load(s[3])]
   }
 

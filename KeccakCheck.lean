@@ -1,6 +1,7 @@
 import Ix.MultiStark.Keccak
 import Ix.Aiur.Compiler
 import Ix.Aiur.Protocol
+import Ix.Aiur.Statistics
 import Ix.Keccak
 
 open Aiur
@@ -36,3 +37,12 @@ def main : IO Unit := do
     | .ok got =>
       let tag := if got == expected then "MATCH   " else "MISMATCH"
       IO.println s!"  [{inp.size}B] {tag}  aiur={toHex got}  ref={toHex expected}"
+  -- Circuit statistics for one representative hash (272 bytes = 3 blocks).
+  let statInput := ByteArray.mk (Array.range 272 |>.map (fun n => UInt8.ofNat (n % 251)))
+  let idx := compiled.getFuncIdx `keccak256_test |>.get!
+  let io : IOBuffer := (default : IOBuffer).extend #[Aiur.G.ofNat 0] (statInput.data.map .ofUInt8)
+  match compiled.bytecode.execute idx #[] io with
+  | .error e => IO.println s!"stats exec err: {e}"
+  | .ok (_, _, queryCounts) =>
+    IO.println s!"\n── keccak256 circuit statistics ({statInput.size}-byte input, 3 blocks) ──"
+    Aiur.printStats (Aiur.computeStats compiled queryCounts)
