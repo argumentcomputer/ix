@@ -205,35 +205,45 @@ def keccak := ⟦
      e15, e16, e17, e18, e19, e20, e21, e22, e23, e24]
   }
 
-  fn keccak_f(s: [Lane; 25]) -> [Lane; 25] {
-    -- 24 round constants as little-endian byte lanes.
-    let rcs = [
-      [0x01u8, 0u8,    0u8, 0u8,    0u8, 0u8, 0u8, 0u8   ],
-      [0x82u8, 0x80u8, 0u8, 0u8,    0u8, 0u8, 0u8, 0u8   ],
-      [0x8au8, 0x80u8, 0u8, 0u8,    0u8, 0u8, 0u8, 0x80u8],
-      [0x00u8, 0x80u8, 0u8, 0x80u8, 0u8, 0u8, 0u8, 0x80u8],
-      [0x8bu8, 0x80u8, 0u8, 0u8,    0u8, 0u8, 0u8, 0u8   ],
-      [0x01u8, 0u8,    0u8, 0x80u8, 0u8, 0u8, 0u8, 0u8   ],
-      [0x81u8, 0x80u8, 0u8, 0x80u8, 0u8, 0u8, 0u8, 0x80u8],
-      [0x09u8, 0x80u8, 0u8, 0u8,    0u8, 0u8, 0u8, 0x80u8],
-      [0x8au8, 0u8,    0u8, 0u8,    0u8, 0u8, 0u8, 0u8   ],
-      [0x88u8, 0u8,    0u8, 0u8,    0u8, 0u8, 0u8, 0u8   ],
-      [0x09u8, 0x80u8, 0u8, 0x80u8, 0u8, 0u8, 0u8, 0u8   ],
-      [0x0au8, 0u8,    0u8, 0x80u8, 0u8, 0u8, 0u8, 0u8   ],
-      [0x8bu8, 0x80u8, 0u8, 0x80u8, 0u8, 0u8, 0u8, 0u8   ],
-      [0x8bu8, 0u8,    0u8, 0u8,    0u8, 0u8, 0u8, 0x80u8],
-      [0x89u8, 0x80u8, 0u8, 0u8,    0u8, 0u8, 0u8, 0x80u8],
-      [0x03u8, 0x80u8, 0u8, 0u8,    0u8, 0u8, 0u8, 0x80u8],
-      [0x02u8, 0x80u8, 0u8, 0u8,    0u8, 0u8, 0u8, 0x80u8],
-      [0x80u8, 0u8,    0u8, 0u8,    0u8, 0u8, 0u8, 0x80u8],
-      [0x0au8, 0x80u8, 0u8, 0u8,    0u8, 0u8, 0u8, 0u8   ],
-      [0x0au8, 0u8,    0u8, 0x80u8, 0u8, 0u8, 0u8, 0x80u8],
-      [0x81u8, 0x80u8, 0u8, 0x80u8, 0u8, 0u8, 0u8, 0x80u8],
-      [0x80u8, 0x80u8, 0u8, 0u8,    0u8, 0u8, 0u8, 0x80u8],
-      [0x01u8, 0u8,    0u8, 0x80u8, 0u8, 0u8, 0u8, 0u8   ],
-      [0x08u8, 0x80u8, 0u8, 0x80u8, 0u8, 0u8, 0u8, 0x80u8]
-    ];
-    fold(0..24, s, |acc, @i| keccak_round(acc, rcs[@i]))
+  -- Round constant for round `i` (little-endian byte lane). A match (not an
+  -- array `get`, which needs a literal index) so it can be indexed at runtime.
+  fn rc_lane(i: G) -> Lane {
+    match i {
+      0  => [0x01u8, 0u8,    0u8, 0u8,    0u8, 0u8, 0u8, 0u8   ],
+      1  => [0x82u8, 0x80u8, 0u8, 0u8,    0u8, 0u8, 0u8, 0u8   ],
+      2  => [0x8au8, 0x80u8, 0u8, 0u8,    0u8, 0u8, 0u8, 0x80u8],
+      3  => [0x00u8, 0x80u8, 0u8, 0x80u8, 0u8, 0u8, 0u8, 0x80u8],
+      4  => [0x8bu8, 0x80u8, 0u8, 0u8,    0u8, 0u8, 0u8, 0u8   ],
+      5  => [0x01u8, 0u8,    0u8, 0x80u8, 0u8, 0u8, 0u8, 0u8   ],
+      6  => [0x81u8, 0x80u8, 0u8, 0x80u8, 0u8, 0u8, 0u8, 0x80u8],
+      7  => [0x09u8, 0x80u8, 0u8, 0u8,    0u8, 0u8, 0u8, 0x80u8],
+      8  => [0x8au8, 0u8,    0u8, 0u8,    0u8, 0u8, 0u8, 0u8   ],
+      9  => [0x88u8, 0u8,    0u8, 0u8,    0u8, 0u8, 0u8, 0u8   ],
+      10 => [0x09u8, 0x80u8, 0u8, 0x80u8, 0u8, 0u8, 0u8, 0u8   ],
+      11 => [0x0au8, 0u8,    0u8, 0x80u8, 0u8, 0u8, 0u8, 0u8   ],
+      12 => [0x8bu8, 0x80u8, 0u8, 0x80u8, 0u8, 0u8, 0u8, 0u8   ],
+      13 => [0x8bu8, 0u8,    0u8, 0u8,    0u8, 0u8, 0u8, 0x80u8],
+      14 => [0x89u8, 0x80u8, 0u8, 0u8,    0u8, 0u8, 0u8, 0x80u8],
+      15 => [0x03u8, 0x80u8, 0u8, 0u8,    0u8, 0u8, 0u8, 0x80u8],
+      16 => [0x02u8, 0x80u8, 0u8, 0u8,    0u8, 0u8, 0u8, 0x80u8],
+      17 => [0x80u8, 0u8,    0u8, 0u8,    0u8, 0u8, 0u8, 0x80u8],
+      18 => [0x0au8, 0x80u8, 0u8, 0u8,    0u8, 0u8, 0u8, 0u8   ],
+      19 => [0x0au8, 0u8,    0u8, 0x80u8, 0u8, 0u8, 0u8, 0x80u8],
+      20 => [0x81u8, 0x80u8, 0u8, 0x80u8, 0u8, 0u8, 0u8, 0x80u8],
+      21 => [0x80u8, 0x80u8, 0u8, 0u8,    0u8, 0u8, 0u8, 0x80u8],
+      22 => [0x01u8, 0u8,    0u8, 0x80u8, 0u8, 0u8, 0u8, 0u8   ],
+      _  => [0x08u8, 0x80u8, 0u8, 0x80u8, 0u8, 0u8, 0u8, 0x80u8],
+    }
+  }
+
+  -- Apply the last `n` keccak-f rounds recursively (round index 24 - n), so
+  -- each round is its own call frame rather than 24 inlined copies (`fold`),
+  -- keeping the circuit narrow. `keccak_f_fold(s, 24)` is the full permutation.
+  fn keccak_f_fold(s: [Lane; 25], n: G) -> [Lane; 25] {
+    match n {
+      0 => s,
+      _ => keccak_f_fold(keccak_round(s, rc_lane(24 - n)), n - 1),
+    }
   }
 
   -- ==========================================================================
@@ -300,7 +310,7 @@ def keccak := ⟦
       xor8(state[16], rate_lane(rate, 128)),
       state[17], state[18], state[19], state[20], state[21], state[22], state[23], state[24]
     ];
-    keccak_f(s)
+    keccak_f_fold(s, 24)
   }
 
   -- Absorb every rate block of the (padded) message into the state.
