@@ -4,6 +4,8 @@ public import Ix.IxVM.Core
 public import Ix.IxVM.ByteStream
 public import Ix.MultiStark.Deserialize
 public import Ix.MultiStark.Keccak
+public import Ix.MultiStark.Pcs
+public import Ix.MultiStark.Verifier
 
 /-!
 # Multi-STARK proof verifier (Aiur)
@@ -31,9 +33,10 @@ def entrypoints := ⟦
   pub fn verify_multi_stark_proof(digest: [[U8; 8]; 4]) {
     let (idx, len) = io_get_info([0]);
     let bytes = #read_byte_stream(idx, len);
-    let (_proof, rest) = read_proof(bytes);
+    let (proof, rest) = read_proof(bytes);
     assert_eq!(load(rest), ListNode.Nil);
     assert_eq!(keccak256(bytes), digest);
+    assert_eq!(verify(proof), 1);
     ()
   }
 ⟧
@@ -45,6 +48,8 @@ def multiStark : Except Aiur.Global Aiur.Source.Toplevel := do
   let t ← IxVM.core.merge IxVM.byteStream
   let t ← t.merge deserialize
   let t ← t.merge keccak
+  let t ← t.merge pcs
+  let t ← t.merge verifier
   t.merge entrypoints
 
 end MultiStark
