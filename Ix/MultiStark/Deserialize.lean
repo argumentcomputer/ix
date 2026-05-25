@@ -36,8 +36,10 @@ def deserialize := ⟦
   -- non-canonical `u64`, kept here as the 8 little-endian bytes (`U64`).
   -- ==========================================================================
 
-  -- `ExtVal = BinomialExtensionField<Goldilocks, 2>` -> `[u64; 2]`.
-  type Ext = [U64; 2]
+  -- `ExtVal = BinomialExtensionField<Goldilocks, 2> = 𝔽_p[X]/(X² - 7)`, stored
+  -- as its two Goldilocks coefficients `[c0, c1]` (= `c0 + c1·X`). On the wire
+  -- each is a raw `u64` limb; `read_ext` reduces it into a field element.
+  type Ext = [G; 2]
 
   -- A Merkle digest: `[u64; DIGEST_ELEMS]` with `DIGEST_ELEMS = 4`.
   type Digest = [U64; 4]
@@ -136,11 +138,36 @@ def deserialize := ⟦
     (flatten_u64(val), s)
   }
 
-  -- `ExtVal` -> `[u64; 2]`, no length prefix.
+  -- Interpret a raw little-endian `u64` limb as a Goldilocks field element. The
+  -- field add/mul reduce mod p, so a non-canonical wire repr (e.g. `0` shipped
+  -- as `p = 0xFFFFFFFF00000001`) maps to the canonical field element.
+  fn limb_to_field(b: U64) -> G {
+    to_field(b[0])
+      + 0x100 * to_field(b[1])
+      + 0x10000 * to_field(b[2])
+      + 0x1000000 * to_field(b[3])
+      + 0x100000000 * to_field(b[4])
+      + 0x10000000000 * to_field(b[5])
+      + 0x1000000000000 * to_field(b[6])
+      + 0x100000000000000 * to_field(b[7])
+  }
+
+  -- `ExtVal` -> two `u64` limbs (no length prefix), reduced to field coefficients.
   fn read_ext(stream: ByteStream) -> (Ext, ByteStream) {
     let (a, s0) = read_u64(stream);
     let (b, s1) = read_u64(s0);
-    ([a, b], s1)
+    ([limb_to_field(a), limb_to_field(b)], s1)
+  }
+
+  -- Extension-field addition: componentwise.
+  fn ext_add(a: Ext, b: Ext) -> Ext {
+    [a[0] + b[0], a[1] + b[1]]
+  }
+
+  -- Extension-field multiplication in 𝔽_p[X]/(X² - 7):
+  --   (a0 + a1·X)(b0 + b1·X) = (a0·b0 + 7·a1·b1) + (a0·b1 + a1·b0)·X.
+  fn ext_mul(a: Ext, b: Ext) -> Ext {
+    [a[0] * b[0] + 7 * (a[1] * b[1]), a[0] * b[1] + a[1] * b[0]]
   }
 
   -- Merkle digest -> `[u64; 4]`, no length prefix.
