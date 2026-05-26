@@ -26,10 +26,11 @@ pub struct AiurSystem {
   toplevel: Toplevel,
   // perhaps remove the key from the system in verifier only mode?
   key: ProverKey,
-  system: System<AiurCircuit>,
+  pub(crate) system: System<AiurCircuit>,
 }
 
-enum AiurCircuit {
+#[derive(serde::Serialize, serde::Deserialize)]
+pub(crate) enum AiurCircuit {
   Function(Constraints),
   Memory(Memory),
   Bytes1,

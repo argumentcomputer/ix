@@ -13,7 +13,7 @@ itertools = "0.14.0"
 indexmap = { version = "2", features = ["rayon"] }
 lean-ffi = { git = "https://github.com/argumentcomputer/lean-ffi", rev = "cc98ebf67bf453ac3827cb767f78b13ea674dd6a" }
 mimalloc = { version = "0.1", default-features = false }
-multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "9ecab51d553445c0cc7b571af00a76b8a83a6f8c" }
+multi-stark = { path = "multi-stark" }
 num-bigint = "0.4.6"
 rayon = "1"
 rustc-hash = "2"
@@ -31,8 +31,8 @@ getrandom = { version = "0.3", optional = true }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-texray = { git = "https://github.com/argumentcomputer/tracing-texray", rev = "8ce04e3422cd48e68ef47fab95dba7d06b8c368c" }
-bincode = { version = "2.0.1", optional = true }
-serde = { version = "1.0.219", features = ["derive"], optional = true }
+bincode = { version = "2.0.1" }
+serde = { version = "1.0.219", features = ["derive"] }
 
 [dev-dependencies]
 quickcheck = "1.0.3"
@@ -43,7 +43,7 @@ quickcheck_macros = "1.0.0"
 default = []
 parallel = ["multi-stark/parallel"]
 test-ffi = []
-net = ["bytes", "tokio", "iroh", "iroh-base", "n0-error", "getrandom", "bincode", "serde" ]
+net = ["bytes", "tokio", "iroh", "iroh-base", "n0-error", "getrandom" ]
 
 [profile.dev]
 panic = "abort"
