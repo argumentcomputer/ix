@@ -197,6 +197,7 @@ pub fn verify_merkle_proof(
 mod tests {
   use super::*;
   use quickcheck::{Arbitrary, Gen};
+  use quickcheck_macros::quickcheck;
 
   fn addr(seed: &[u8]) -> Address {
     Address::hash(seed)
