@@ -1,0 +1,40 @@
+[package]
+name = "ix-kernel"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+bignat = { workspace = true }
+blake3 = { workspace = true }
+dashmap = { workspace = true }
+indexmap = { workspace = true }
+ix-common = { workspace = true }
+ixon = { workspace = true }
+itertools = { workspace = true }
+log = { workspace = true }
+num-bigint = { workspace = true }
+rustc-hash = { workspace = true }
+
+[target.'cfg(not(target_arch = "riscv64"))'.dependencies]
+dashmap = { workspace = true, features = ["rayon"] }
+rayon = { workspace = true }
+
+[dev-dependencies]
+# `examples/perf_check.rs` initializes a logger so the `KEnv::Drop` perf
+# summary (emitted via `log::info!` when `IX_PERF_COUNTERS=1`) actually
+# reaches stderr. Dev-only — production builds never pull this in.
+env_logger = "0.11"
+quickcheck = { workspace = true }
+quickcheck_macros = { workspace = true }
+
+# Native rerun of the SP1/Zisk guest `check_const` loop. The zkVM build
+# disables `IX_*` env vars (`src/lib.rs::env_var_os`), so the perf-counter
+# / fuel summary in `src/perf.rs` is only observable through this binary.
+# See the example's module doc for the intended workflow.
+[[example]]
+name = "perf_check"
+path = "examples/perf_check.rs"
+
+[lints]
+workspace = true

@@ -1,0 +1,20 @@
+[package]
+name = "aiur"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+indexmap = { workspace = true }
+multi-stark = { workspace = true }
+rayon = { workspace = true }
+rustc-hash = { workspace = true }
+tracing = { workspace = true }
+tracing-texray = { workspace = true }
+
+[features]
+default = []
+parallel = ["multi-stark/parallel"]
+
+[lints]
+workspace = true
