@@ -581,6 +581,22 @@ impl Op {
         sel.clone(),
         state,
       ),
+      Op::U8RangeCheck(i, j) => {
+        // Pure range-check lookup: no output columns (the `u8` results alias
+        // the inputs), just require `(i, j)` from the byte chip.
+        let x = state.map[*i].0.clone();
+        let y = state.map[*j].0.clone();
+        let lookup = state.next_lookup();
+        combine_lookup_args(
+          lookup,
+          vec![
+            sel.clone() * u8_range_check_channel(),
+            sel.clone() * x,
+            sel.clone() * y,
+          ],
+        );
+        lookup.multiplicity += sel.clone();
+      },
       Op::U32LessThan(x_idx, y_idx) => {
         // u32 less-than via addition carry chain.
         //

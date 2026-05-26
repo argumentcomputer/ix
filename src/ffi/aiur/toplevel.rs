@@ -148,6 +148,10 @@ fn decode_op(ctor: LeanCtor<LeanBorrowed<'_>>) -> Op {
       };
       Op::Debug(label, idxs)
     },
+    27 => {
+      let [i, j] = ctor.objs::<2>().map(|x| lean_unbox_nat_as_usize(&x));
+      Op::U8RangeCheck(i, j)
+    },
     _ => unreachable!(),
   }
 }

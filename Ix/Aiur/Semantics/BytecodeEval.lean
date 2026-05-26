@@ -39,6 +39,7 @@ inductive BytecodeError
   | ioReadOoB
   | callOutputSizeMismatch
   | unreachableAfterLayout
+  | u8RangeCheckFailed
   deriving Repr, Inhabited
 
 /-- Width-bucketed memory, matching Rust's `QueryRecord.memory_queries`.
@@ -281,6 +282,11 @@ def evalOp (t : Bytecode.Toplevel) (fuel : Nat) (op : Op) (st : EvalState) :
   | .u32LessThan a b => do
     let x ← readIdx st a; let y ← readIdx st b
     pure (pushMap st (if x.val.toUInt32 < y.val.toUInt32 then 1 else 0))
+  | .u8RangeCheck a b => do
+    -- No value pushed: the `u8` results alias the inputs. Fails if either is
+    -- outside `[0, 256)` (exactly what the byte-chip lookup enforces).
+    let x ← readIdx st a; let y ← readIdx st b
+    if x.val < 256 && y.val < 256 then .ok st else .error .u8RangeCheckFailed
   | .debug _ _ => .ok st
 termination_by (fuel, sizeOf op, 0)
 decreasing_by all_goals first | decreasing_tactic | omega

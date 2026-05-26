@@ -143,7 +143,7 @@ def claim := ⟦
       0 => (Option.None, stream),
       _ =>
         let (b, s) = read_byte(stream);
-        (Option.Some(b), s),
+        (Option.Some(to_field(b)), s),
     }
   }
 
@@ -438,7 +438,7 @@ def claim := ⟦
   -- Load + verify a claim from the IOBuffer at key=`digest`. Mirrors
   -- `load_verified_constant`: read bytes, recompute blake3, assert
   -- equality, deserialize, assert no trailing data.
-  fn load_verified_claim(digest: [G; 32]) -> Claim {
+  fn load_verified_claim(digest: [U8; 32]) -> Claim {
     let (idx, len) = io_get_info(digest);
     let bytes = #read_byte_stream(idx, len);
     let h = blake3(bytes);
@@ -727,7 +727,7 @@ def claim := ⟦
   -- ============================================================================
   fn leaf_hash(addr: Addr) -> Addr {
     let tail = put_address(addr, store(ListNode.Nil));
-    let bytes = store(ListNode.Cons(0, tail));
+    let bytes = store(ListNode.Cons(0u8, tail));
     let h = blake3(bytes);
     store([
       h[0][0], h[0][1], h[0][2], h[0][3],
@@ -743,7 +743,7 @@ def claim := ⟦
 
   fn node_hash(l: Addr, r: Addr) -> Addr {
     let tail = put_address(l, put_address(r, store(ListNode.Nil)));
-    let bytes = store(ListNode.Cons(1, tail));
+    let bytes = store(ListNode.Cons(1u8, tail));
     let h = blake3(bytes);
     store([
       h[0][0], h[0][1], h[0][2], h[0][3],
@@ -769,7 +769,7 @@ def claim := ⟦
         let h = leaf_hash(addr);
         (h, store(ListNode.Cons(addr, store(ListNode.Nil))), s2),
       1 =>
-        (store([0; 32]), store(ListNode.Nil), s),
+        (store([0u8; 32]), store(ListNode.Nil), s),
       2 =>
         let (lh, ll, s2) = parse_atree_body(s);
         let (rh, rl, s3) = parse_atree_body(s2);
@@ -785,7 +785,7 @@ def claim := ⟦
     let (tag, s) = get_tag4(bytes);
     let (flag, size) = tag;
     assert_eq!(flag, 0xE);
-    assert_eq!(size[0], 2);
+    assert_eq!(to_field(size[0]), 2);
     let (computed_root, leaves, rest) = parse_atree_body(s);
     assert_eq!(load(rest), ListNode.Nil);
     let computed_arr = load(computed_root);
@@ -999,7 +999,7 @@ def claim := ⟦
   -- Public input: 32-G blake3 digest of `Claim.ser claim`. Flow
   -- mirrors `load_verified_constant`: hash-verified bytes deserialize
   -- into a typed `Claim`, then dispatch.
-  pub fn verify_claim(claim_digest: [G; 32]) {
+  pub fn verify_claim(claim_digest: [U8; 32]) {
     let claim = load_verified_claim(claim_digest);
     match claim {
       Claim.Eval(input, output, asm) => run_eval(input, output, asm),
@@ -1016,7 +1016,7 @@ def claim := ⟦
   -- kernel --debug-fast`. Verifier policy must reject this funcidx
   -- as a production claim.
   -- ============================================================================
-  pub fn dbg_check_const(target_addr: [G; 32]) {
+  pub fn dbg_check_const(target_addr: [U8; 32]) {
     let target = store(target_addr);
     let (k_consts, addrs) = ingress_with_primitives(target);
     let target_pos = find_addr_idx(target, addrs, 0);

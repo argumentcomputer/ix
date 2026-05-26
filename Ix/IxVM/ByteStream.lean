@@ -6,9 +6,9 @@ public section
 namespace IxVM
 
 def byteStream := ⟦
-  type ByteStream = List‹G›
+  type ByteStream = List‹U8›
 
-  type U64 = [G; 8]
+  type U64 = [U8; 8]
 
   fn read_byte_stream(idx: G, len: G) -> ByteStream {
     match len {
@@ -16,23 +16,23 @@ def byteStream := ⟦
       _ =>
         let tail = read_byte_stream(idx + 1, len - 1);
         let [byte] = io_read(idx, 1);
-        store(ListNode.Cons(byte, tail)),
+        store(ListNode.Cons(u8_from_field_unsafe(byte), tail)),
     }
   }
 
   -- Count bytes needed to represent a u64.
   -- Important: this implementation differs from the Lean and Rust ones, returning
   -- 1 for [0; 8] instead of 0.
-  fn u64_byte_count(x: U64) -> G {
+  fn u64_byte_count(x: U64) -> U8 {
     match x {
-      [_, 0, 0, 0, 0, 0, 0, 0] => 1,
-      [_, _, 0, 0, 0, 0, 0, 0] => 2,
-      [_, _, _, 0, 0, 0, 0, 0] => 3,
-      [_, _, _, _, 0, 0, 0, 0] => 4,
-      [_, _, _, _, _, 0, 0, 0] => 5,
-      [_, _, _, _, _, _, 0, 0] => 6,
-      [_, _, _, _, _, _, _, 0] => 7,
-      _ => 8,
+      [_, 0, 0, 0, 0, 0, 0, 0] => 1u8,
+      [_, _, 0, 0, 0, 0, 0, 0] => 2u8,
+      [_, _, _, 0, 0, 0, 0, 0] => 3u8,
+      [_, _, _, _, 0, 0, 0, 0] => 4u8,
+      [_, _, _, _, _, 0, 0, 0] => 5u8,
+      [_, _, _, _, _, _, 0, 0] => 6u8,
+      [_, _, _, _, _, _, _, 0] => 7u8,
+      _ => 8u8,
     }
   }
 
@@ -43,7 +43,7 @@ def byteStream := ⟦
     }
   }
 
-  fn u32_add(a: [G; 4], b: [G; 4]) -> [G; 4] {
+  fn u32_add(a: [U8; 4], b: [U8; 4]) -> [U8; 4] {
     let [a0, a1, a2, a3] = a;
     let [b0, b1, b2, b3] = b;
 
@@ -55,13 +55,13 @@ def byteStream := ⟦
     let (sum1_with_carry, carry1a) = u8_add(sum1, carry1);
     -- `overflow1` and `carry1a` cannot both be 1: a carry out of `a1 + b1`
     -- forces `sum1 <= 254`, so `sum1 + carry1` cannot carry. Combining them is
-    -- a field add, not a u8 xor — no aux column, no lookup.
-    let carry2 = overflow1 + carry1a;
+    -- a cheap field add (no lookup); the sum is 0/1, reinterpreted as `u8`.
+    let carry2 = u8_from_field_unsafe(to_field(overflow1) + to_field(carry1a));
 
     -- Byte 2
     let (sum2, overflow2) = u8_add(a2, b2);
     let (sum2_with_carry, carry2a) = u8_add(sum2, carry2);
-    let carry3 = overflow2 + carry2a;
+    let carry3 = u8_from_field_unsafe(to_field(overflow2) + to_field(carry2a));
 
     -- Byte 3
     let (sum3, _x) = u8_add(a3, b3);
@@ -70,7 +70,7 @@ def byteStream := ⟦
     [sum0, sum1_with_carry, sum2_with_carry, sum3_with_carry]
   }
 
-  fn u32_xor(a: [G; 4], b: [G; 4]) -> [G; 4] {
+  fn u32_xor(a: [U8; 4], b: [U8; 4]) -> [U8; 4] {
     let c0 = u8_xor(a[0], b[0]);
     let c1 = u8_xor(a[1], b[1]);
     let c2 = u8_xor(a[2], b[2]);
@@ -78,7 +78,7 @@ def byteStream := ⟦
     [c0, c1, c2, c3]
   }
 
-  fn u32_and(a: [G; 4], b: [G; 4]) -> [G; 4] {
+  fn u32_and(a: [U8; 4], b: [U8; 4]) -> [U8; 4] {
     let c0 = u8_and(a[0], b[0]);
     let c1 = u8_and(a[1], b[1]);
     let c2 = u8_and(a[2], b[2]);
@@ -90,7 +90,10 @@ def byteStream := ⟦
   fn u64_eq(a: U64, b: U64) -> G {
     let [a0, a1, a2, a3, a4, a5, a6, a7] = a;
     let [b0, b1, b2, b3, b4, b5, b6, b7] = b;
-    match [a0 - b0, a1 - b1, a2 - b2, a3 - b3, a4 - b4, a5 - b5, a6 - b6, a7 - b7] {
+    match [to_field(a0) - to_field(b0), to_field(a1) - to_field(b1),
+           to_field(a2) - to_field(b2), to_field(a3) - to_field(b3),
+           to_field(a4) - to_field(b4), to_field(a5) - to_field(b5),
+           to_field(a6) - to_field(b6), to_field(a7) - to_field(b7)] {
       [0, 0, 0, 0, 0, 0, 0, 0] => 1,
       _ => 0,
     }
@@ -98,31 +101,31 @@ def byteStream := ⟦
 
   -- `u64` addition with carry propagation (little-endian bytes).
   -- Returns the sum together with the final carry-out.
-  fn u64_add(a: U64, b: U64) -> (U64, G) {
+  fn u64_add(a: U64, b: U64) -> (U64, U8) {
     let [a0, a1, a2, a3, a4, a5, a6, a7] = a;
     let [b0, b1, b2, b3, b4, b5, b6, b7] = b;
     let (s0, c1) = u8_add(a0, b0);
     let (t1, o1) = u8_add(a1, b1);
     let (s1, c1a) = u8_add(t1, c1);
-    let c2 = o1 + c1a;
+    let c2 = u8_from_field_unsafe(to_field(o1) + to_field(c1a));
     let (t2, o2) = u8_add(a2, b2);
     let (s2, c2a) = u8_add(t2, c2);
-    let c3 = o2 + c2a;
+    let c3 = u8_from_field_unsafe(to_field(o2) + to_field(c2a));
     let (t3, o3) = u8_add(a3, b3);
     let (s3, c3a) = u8_add(t3, c3);
-    let c4 = o3 + c3a;
+    let c4 = u8_from_field_unsafe(to_field(o3) + to_field(c3a));
     let (t4, o4) = u8_add(a4, b4);
     let (s4, c4a) = u8_add(t4, c4);
-    let c5 = o4 + c4a;
+    let c5 = u8_from_field_unsafe(to_field(o4) + to_field(c4a));
     let (t5, o5) = u8_add(a5, b5);
     let (s5, c5a) = u8_add(t5, c5);
-    let c6 = o5 + c5a;
+    let c6 = u8_from_field_unsafe(to_field(o5) + to_field(c5a));
     let (t6, o6) = u8_add(a6, b6);
     let (s6, c6a) = u8_add(t6, c6);
-    let c7 = o6 + c6a;
+    let c7 = u8_from_field_unsafe(to_field(o6) + to_field(c6a));
     let (t7, o7) = u8_add(a7, b7);
     let (s7, c7a) = u8_add(t7, c7);
-    let final_carry = o7 + c7a;
+    let final_carry = u8_from_field_unsafe(to_field(o7) + to_field(c7a));
     ([s0, s1, s2, s3, s4, s5, s6, s7], final_carry)
   }
 
@@ -145,6 +148,8 @@ def byteStream := ⟦
   -- little-endian bytes. If that's not the case, this implementation has UB.
   fn relaxed_u64_succ(bytes: U64) -> U64 {
     let [b0, b1, b2, b3, b4, b5, b6, b7] = bytes;
+    -- Incrementing a byte known to be `< 255` cannot overflow, so add as a
+    -- cheap `G` and reinterpret (no `u8_add` lookup).
     match b0 {
       255 => match b1 {
         255 => match b2 {
@@ -153,33 +158,33 @@ def byteStream := ⟦
               255 => match b5 {
                 255 => match b6 {
                   255 => match b7 {
-                    255 => [0, 0, 0, 0, 0, 0, 0, 0],
-                    _ => [0, 0, 0, 0, 0, 0, 0, b7 + 1],
+                    255 => [0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
+                    _ => [0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, u8_from_field_unsafe(to_field(b7) + 1)],
                   },
-                  _ => [0, 0, 0, 0, 0, 0, b6 + 1, b7],
+                  _ => [0u8, 0u8, 0u8, 0u8, 0u8, 0u8, u8_from_field_unsafe(to_field(b6) + 1), b7],
                 },
-                _ => [0, 0, 0, 0, 0, b5 + 1, b6, b7],
+                _ => [0u8, 0u8, 0u8, 0u8, 0u8, u8_from_field_unsafe(to_field(b5) + 1), b6, b7],
               },
-              _ => [0, 0, 0, 0, b4 + 1, b5, b6, b7],
+              _ => [0u8, 0u8, 0u8, 0u8, u8_from_field_unsafe(to_field(b4) + 1), b5, b6, b7],
             },
-            _ => [0, 0, 0, b3 + 1, b4, b5, b6, b7],
+            _ => [0u8, 0u8, 0u8, u8_from_field_unsafe(to_field(b3) + 1), b4, b5, b6, b7],
           },
-          _ => [0, 0, b2 + 1, b3, b4, b5, b6, b7],
+          _ => [0u8, 0u8, u8_from_field_unsafe(to_field(b2) + 1), b3, b4, b5, b6, b7],
         },
-        _ => [0, b1 + 1, b2, b3, b4, b5, b6, b7],
+        _ => [0u8, u8_from_field_unsafe(to_field(b1) + 1), b2, b3, b4, b5, b6, b7],
       },
-      _ => [b0 + 1, b1, b2, b3, b4, b5, b6, b7],
+      _ => [u8_from_field_unsafe(to_field(b0) + 1), b1, b2, b3, b4, b5, b6, b7],
     }
   }
 
-  fn relaxed_u64_be_add_2_bytes(u64: U64, bs: [G; 2]) -> U64 {
+  fn relaxed_u64_be_add_2_bytes(u64: U64, bs: [U8; 2]) -> U64 {
     -- Byte 0, no initial carry
     let (sum0, carry1) = u8_add(u64[7], bs[1]);
 
     -- Byte 1
     let (sum1, overflow1) = u8_add(u64[6], bs[0]);
     let (sum1_with_carry, carry1a) = u8_add(sum1, carry1);
-    let carry2 = overflow1 + carry1a;
+    let carry2 = u8_from_field_unsafe(to_field(overflow1) + to_field(carry1a));
 
     -- Other bytes
     let (sum2, carry3) = u8_add(u64[5], carry2);
@@ -192,19 +197,19 @@ def byteStream := ⟦
     [sum7, sum6, sum5, sum4, sum3, sum2, sum1, sum0]
   }
 
-  fn u32_be_add(a: [G; 4], b: [G; 4]) -> [G; 4] {
+  fn u32_be_add(a: [U8; 4], b: [U8; 4]) -> [U8; 4] {
     -- Byte 0, no initial carry
     let (sum0, carry1) = u8_add(a[3], b[3]);
 
     -- Byte 1
     let (sum1, overflow1) = u8_add(a[2], b[2]);
     let (sum1_with_carry, carry1a) = u8_add(sum1, carry1);
-    let carry2 = overflow1 + carry1a;
+    let carry2 = u8_from_field_unsafe(to_field(overflow1) + to_field(carry1a));
 
     -- Byte 2
     let (sum2, overflow2) = u8_add(a[1], b[1]);
     let (sum2_with_carry, carry2a) = u8_add(sum2, carry2);
-    let carry3 = overflow2 + carry2a;
+    let carry3 = u8_from_field_unsafe(to_field(overflow2) + to_field(carry2a));
 
     -- Byte 3
     let (sum3, _x) = u8_add(a[0], b[0]);
@@ -217,6 +222,8 @@ def byteStream := ⟦
   -- little-endian bytes. If that's not the case, this implementation has UB.
   fn relaxed_u64_pred(bytes: U64) -> U64 {
     let [b0, b1, b2, b3, b4, b5, b6, b7] = bytes;
+    -- Decrementing a byte known to be `> 0` cannot underflow, so subtract as a
+    -- cheap `G` and reinterpret (no `u8_sub` lookup).
     match b0 {
       0 => match b1 {
         0 => match b2 {
@@ -225,33 +232,34 @@ def byteStream := ⟦
               0 => match b5 {
                 0 => match b6 {
                   0 => match b7 {
-                    0 => [0, 0, 0, 0, 0, 0, 0, 0],
-                    _ => [255, 255, 255, 255, 255, 255, 255, b7 - 1],
+                    0 => [0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
+                    _ => [255u8, 255u8, 255u8, 255u8, 255u8, 255u8, 255u8, u8_from_field_unsafe(to_field(b7) - 1)],
                   },
-                  _ => [255, 255, 255, 255, 255, 255, b6 - 1, b7],
+                  _ => [255u8, 255u8, 255u8, 255u8, 255u8, 255u8, u8_from_field_unsafe(to_field(b6) - 1), b7],
                 },
-                _ => [255, 255, 255, 255, 255, b5 - 1, b6, b7],
+                _ => [255u8, 255u8, 255u8, 255u8, 255u8, u8_from_field_unsafe(to_field(b5) - 1), b6, b7],
               },
-              _ => [255, 255, 255, 255, b4 - 1, b5, b6, b7],
+              _ => [255u8, 255u8, 255u8, 255u8, u8_from_field_unsafe(to_field(b4) - 1), b5, b6, b7],
             },
-            _ => [255, 255, 255, b3 - 1, b4, b5, b6, b7],
+            _ => [255u8, 255u8, 255u8, u8_from_field_unsafe(to_field(b3) - 1), b4, b5, b6, b7],
           },
-          _ => [255, 255, b2 - 1, b3, b4, b5, b6, b7],
+          _ => [255u8, 255u8, u8_from_field_unsafe(to_field(b2) - 1), b3, b4, b5, b6, b7],
         },
-        _ => [255, b1 - 1, b2, b3, b4, b5, b6, b7],
+        _ => [255u8, u8_from_field_unsafe(to_field(b1) - 1), b2, b3, b4, b5, b6, b7],
       },
-      _ => [b0 - 1, b1, b2, b3, b4, b5, b6, b7],
+      _ => [u8_from_field_unsafe(to_field(b0) - 1), b1, b2, b3, b4, b5, b6, b7],
     }
   }
 
-  -- Flatten a [G; 8] (U64 little-endian bytes) into a single G via
+  -- Flatten a [U8; 8] (U64 little-endian bytes) into a single G via
   -- b0 + 256 * b1 + ... + 256^6 * b6. The most significant byte (b7) must be zero;
   -- this is enforced by assert_eq!, limiting the range to 7 bytes (< 2^56).
-  fn flatten_u64(x: [G; 8]) -> G {
+  fn flatten_u64(x: [U8; 8]) -> G {
     let [b0, b1, b2, b3, b4, b5, b6, b7] = x;
-    assert_eq!(b7, 0);
-    b0 + 0x100 * b1 + 0x10000 * b2 + 0x1000000 * b3
-      + 0x100000000 * b4 + 0x10000000000 * b5 + 0x1000000000000 * b6
+    assert_eq!(to_field(b7), 0);
+    to_field(b0) + 0x100 * to_field(b1) + 0x10000 * to_field(b2)
+      + 0x1000000 * to_field(b3) + 0x100000000 * to_field(b4)
+      + 0x10000000000 * to_field(b5) + 0x1000000000000 * to_field(b6)
   }
 ⟧
 

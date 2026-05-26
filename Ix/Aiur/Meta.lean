@@ -28,6 +28,7 @@ abbrev ElabStxCat name := TSyntax name → TermElabM Expr
 
 declare_syntax_cat                               aiur_typ
 syntax "G"                                     : aiur_typ
+syntax "U8"                                    : aiur_typ
 syntax "(" aiur_typ (", " aiur_typ)* ")"     : aiur_typ
 syntax "[" aiur_typ "; " num "]"              : aiur_typ
 syntax "&" aiur_typ                           : aiur_typ
@@ -41,6 +42,7 @@ syntax ("." noWs)? ident                                        : aiur_pattern
 syntax "_"                                                      : aiur_pattern
 syntax ident "(" aiur_pattern (", " aiur_pattern)* ")"        : aiur_pattern
 syntax num                                                      : aiur_pattern
+syntax:max num "u8"                                             : aiur_pattern
 syntax "(" aiur_pattern (", " aiur_pattern)* ")"              : aiur_pattern
 syntax "[" aiur_pattern (", " aiur_pattern)* "]"              : aiur_pattern
 syntax aiur_pattern "|" aiur_pattern                          : aiur_pattern
@@ -71,6 +73,7 @@ def elabG (n : TSyntax `num) : TermElabM Expr :=
 
 partial def elabTyp : ElabStxCat `aiur_typ
   | `(aiur_typ| G) => pure $ mkConst ``Typ.field
+  | `(aiur_typ| U8) => pure $ mkConst ``Typ.u8
   | `(aiur_typ| ($t:aiur_typ $[, $ts:aiur_typ]*)) => do
     mkAppM ``Typ.tuple #[← elabList t ts elabTyp ``Typ true]
   | `(aiur_typ| [$t:aiur_typ; $n:num]) => do
@@ -105,6 +108,9 @@ partial def elabPattern : ElabStxCat `aiur_pattern
     | _ => throw $ .error i "Illegal pattern name"
   | `(aiur_pattern| _) => pure $ mkConst ``Pattern.wildcard
   | `(aiur_pattern| $n:num) => do mkAppM ``Pattern.field #[← elabG n]
+  -- `Nu8` byte-literal pattern: same `Pattern.field` value, kept for clarity
+  -- when matching a `U8` scrutinee.
+  | `(aiur_pattern| $n:num u8) => do mkAppM ``Pattern.field #[← elabG n]
   | `(aiur_pattern| ($p:aiur_pattern $[, $ps:aiur_pattern]*)) => do
     mkAppM ``Pattern.tuple #[← elabList p ps elabPattern ``Pattern true]
   | `(aiur_pattern| [$p:aiur_pattern $[, $ps:aiur_pattern]*]) => do
@@ -181,6 +187,10 @@ syntax "u8_and" "(" aiur_trm ", " aiur_trm ")"                              : ai
 syntax "u8_or" "(" aiur_trm ", " aiur_trm ")"                               : aiur_trm
 syntax "u8_less_than" "(" aiur_trm ", " aiur_trm ")"                        : aiur_trm
 syntax "u32_less_than" "(" aiur_trm ", " aiur_trm ")"                       : aiur_trm
+syntax "u8_range_check" "(" aiur_trm ", " aiur_trm ")"                      : aiur_trm
+syntax "to_field" "(" aiur_trm ")"                                          : aiur_trm
+syntax "u8_from_field_unsafe" "(" aiur_trm ")"                              : aiur_trm
+syntax:max num "u8"                                                         : aiur_trm
 syntax "dbg!" "(" str (", " aiur_trm)? ")" ";" (aiur_trm)?                  : aiur_trm
 
 syntax aiur_trm "[" "@" noWs ident "]"                                                              : aiur_trm
@@ -311,6 +321,14 @@ partial def elabTrm : ElabStxCat `aiur_trm
     mkAppM ``Source.Term.u8LessThan #[← elabTrm i, ← elabTrm j]
   | `(aiur_trm| u32_less_than($i:aiur_trm, $j:aiur_trm)) => do
     mkAppM ``Source.Term.u32LessThan #[← elabTrm i, ← elabTrm j]
+  | `(aiur_trm| u8_range_check($i:aiur_trm, $j:aiur_trm)) => do
+    mkAppM ``Source.Term.u8RangeCheck #[← elabTrm i, ← elabTrm j]
+  | `(aiur_trm| to_field($a:aiur_trm)) => do
+    mkAppM ``Source.Term.toField #[← elabTrm a]
+  | `(aiur_trm| u8_from_field_unsafe($a:aiur_trm)) => do
+    mkAppM ``Source.Term.u8FromFieldUnsafe #[← elabTrm a]
+  | `(aiur_trm| $n:num u8) => do
+    mkAppM ``Source.Term.u8Lit #[mkNatLit n.getNat]
   | `(aiur_trm| dbg!($label:str $[, $t:aiur_trm]?); $[$ret:aiur_trm]?) => do
     let t ← match t with
       | none => mkAppOptM ``Option.none #[some (mkConst ``Source.Term)]
@@ -521,6 +539,16 @@ where
       let i ← replaceToken old new i
       let j ← replaceToken old new j
       `(aiur_trm| u32_less_than($i, $j))
+    | `(aiur_trm| u8_range_check($i:aiur_trm, $j:aiur_trm)) => do
+      let i ← replaceToken old new i
+      let j ← replaceToken old new j
+      `(aiur_trm| u8_range_check($i, $j))
+    | `(aiur_trm| to_field($a:aiur_trm)) => do
+      let a ← replaceToken old new a
+      `(aiur_trm| to_field($a))
+    | `(aiur_trm| u8_from_field_unsafe($a:aiur_trm)) => do
+      let a ← replaceToken old new a
+      `(aiur_trm| u8_from_field_unsafe($a))
     | `(aiur_trm| dbg!($label:str $[, $t:aiur_trm]?); $[$ret:aiur_trm]?) => do
       let t' ← t.mapM $ replaceToken old new
       let ret' ← ret.mapM $ replaceToken old new

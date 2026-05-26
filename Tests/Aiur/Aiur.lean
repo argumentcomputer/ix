@@ -105,10 +105,10 @@ def toplevel := ⟦
   -- and carry chains in the shared auxiliary columns, testing that the
   -- polynomial constraints (decomposition + carry boolean) are properly gated.
   ---------------------------------------------------------------------------
-  pub fn match_gadget_ops(i: G, j: G) -> (G, G, G) {
+  pub fn match_gadget_ops(i: U8, j: U8) -> (U8, U8, G) {
     match 0 {
-      0 => (u8_shift_right(i), u8_xor(i, j), u32_less_than(i, j)),
-      1 => (u8_shift_right(i), u8_xor(i, j), u32_less_than(j, i)),
+      0 => (u8_shift_right(i), u8_xor(i, j), u32_less_than(to_field(i), to_field(j))),
+      1 => (u8_shift_right(i), u8_xor(i, j), u32_less_than(to_field(j), to_field(i))),
     }
   }
 
@@ -119,7 +119,7 @@ def toplevel := ⟦
   -- bytes2_constraints for the multi-output case. u8_bit_decomposition has
   -- output_size=8, testing it for bytes1_constraints.
   ---------------------------------------------------------------------------
-  pub fn match_gadget_ops_multi(i: G, j: G) -> ((G, G), [G; 8]) {
+  pub fn match_gadget_ops_multi(i: U8, j: U8) -> ((U8, U8), [G; 8]) {
     match 0 {
       0 => (u8_add(i, j), u8_bit_decomposition(i)),
       1 => (u8_add(i, j), u8_bit_decomposition(i)),
@@ -314,53 +314,56 @@ def toplevel := ⟦
   ---------------------------------------------------------------------------
   -- Byte operations
   ---------------------------------------------------------------------------
-  pub fn shr_shr_shl_decompose(byte: G) -> [G; 8] {
+  pub fn shr_shr_shl_decompose(byte: U8) -> [G; 8] {
     let byte_shr = u8_shift_right(byte);
     let byte_shr_shr = u8_shift_right(byte_shr);
     let byte_shr_shr_shl = u8_shift_left(byte_shr_shr);
     u8_bit_decomposition(byte_shr_shr_shl)
   }
 
-  pub fn u8_add_xor(i: G, j: G) -> ((G, G), (G, G)) {
+  pub fn u8_add_xor(i: U8, j: U8) -> ((U8, U8), (U8, U8)) {
     let i_xor_j = u8_xor(i, j);
     (u8_add(i_xor_j, i), u8_add(i_xor_j, j))
   }
 
-  pub fn u8_sub_function(i: G, j: G) -> (G, G) {
+  pub fn u8_sub_function(i: U8, j: U8) -> (U8, U8) {
     u8_sub(i, j)
   }
 
-  pub fn u8_mul_function(i: G, j: G) -> (G, G) {
+  pub fn u8_mul_function(i: U8, j: U8) -> (U8, U8) {
     u8_mul(i, j)
   }
 
-  pub fn u8_less_than_function(i: G, j: G) -> G {
+  pub fn u8_less_than_function(i: U8, j: U8) -> G {
     u8_less_than(i, j)
   }
 
-  pub fn u8_and_function(i: G, j: G) -> G {
+  pub fn u8_and_function(i: U8, j: U8) -> U8 {
     u8_and(i, j)
   }
 
-  pub fn u8_or_function(i: G, j: G) -> G {
+  pub fn u8_or_function(i: U8, j: U8) -> U8 {
     u8_or(i, j)
   }
 
-  pub fn u8_chain_rotr7_function(i: G, j: G) -> (G, G, G) {
+  pub fn u8_chain_rotr7_function(i: U8, j: U8) -> (U8, U8, U8) {
     u8_chain_rotr7(i, j)
   }
 
-  pub fn u8_chain_rotr4_function(i: G, j: G) -> (G, G, G) {
+  pub fn u8_chain_rotr4_function(i: U8, j: U8) -> (U8, U8, U8) {
     u8_chain_rotr4(i, j)
   }
 
   -- Full u32 right-rotation by 7, built by chaining the partial gadget over
   -- adjacent little-endian byte pairs (2 lookups + 2 free field adds).
-  pub fn u32_rotr7(b: [G; 4]) -> [G; 4] {
+  pub fn u32_rotr7(b: [U8; 4]) -> [U8; 4] {
     let [b0, b1, b2, b3] = b;
     let (a0, a1, a2) = u8_chain_rotr7(b0, b1);
     let (c0, c1, c2) = u8_chain_rotr7(b2, b3);
-    [a0, a1 + c2, c0, c1 + a2]
+    -- The two combined parts occupy disjoint bit positions, so their sum never
+    -- overflows a byte: add cheaply as `G`, then reinterpret as `U8`.
+    [a0, u8_from_field_unsafe(to_field(a1) + to_field(c2)), c0,
+     u8_from_field_unsafe(to_field(c1) + to_field(a2))]
   }
 
   ---------------------------------------------------------------------------
@@ -368,6 +371,18 @@ def toplevel := ⟦
   ---------------------------------------------------------------------------
   pub fn u32_less_than_function(x: G, y: G) -> G {
     u32_less_than(x, y)
+  }
+
+  ---------------------------------------------------------------------------
+  -- u8 range-check / to_field / literal
+  ---------------------------------------------------------------------------
+  pub fn range_check_id(a: G, b: G) -> (G, G) {
+    let (x, y) = u8_range_check(a, b);
+    (to_field(x), to_field(y))
+  }
+  pub fn u8_lit_xor(a: G) -> G {
+    let (x, _) = u8_range_check(a, a);
+    to_field(u8_xor(x, 200u8))
   }
 
   ---------------------------------------------------------------------------
@@ -384,7 +399,7 @@ def toplevel := ⟦
   ---------------------------------------------------------------------------
   -- Type aliases: basic, nested, in patterns
   ---------------------------------------------------------------------------
-  type U8 = G
+  -- `U8` is now a builtin type, not an alias.
   type U16 = (U8, U8)
   type U32 = (U16, U16)
   type U64 = [U8; 8]
@@ -876,6 +891,11 @@ def aiurTestCases : List AiurTestCase := [
     .noIO `u8_chain_rotr7_function #[45, 131] #[6, 1, 90],
     .noIO `u8_chain_rotr4_function #[45, 131] #[50, 8, 208],
     .noIO `u32_rotr7 #[45, 131, 200, 17] #[6, 145, 35, 90],
+
+    -- u8 range-check / to_field / literal (exercises the U8RangeCheck circuit op)
+    .noIO `range_check_id #[45, 200] #[45, 200],
+    .noIO `range_check_id #[0, 255] #[0, 255],
+    .noIO `u8_lit_xor #[45] #[229],
 
     -- u32 comparison: a < b, a > b, a = b
     { AiurTestCase.noIO `u32_less_than_function #[300, 500] #[1]

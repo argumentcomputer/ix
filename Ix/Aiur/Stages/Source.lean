@@ -58,6 +58,10 @@ def Global.popNamespace (global : Global) : Option (String × Global) :=
 inductive Typ where
   | unit
   | field
+  /-- A field element known to be range-checked into `[0, 256)`. Same runtime
+  representation as `field`; the distinction is erased after type-checking
+  (`Concretize` collapses `u8` to `field`). -/
+  | u8
   | tuple : Array Typ → Typ
   | array : Typ → Nat → Typ
   | pointer : Typ → Typ
@@ -93,6 +97,7 @@ and `List Typ` positions via `sizeOf` termination. -/
 def beq : Typ → Typ → Bool
   | .unit, .unit => true
   | .field, .field => true
+  | .u8, .u8 => true
   | .tuple ts, .tuple ts' =>
     if hsz : ts.size = ts'.size then
       (List.finRange ts.size).all fun i =>
@@ -129,10 +134,12 @@ theorem beq_refl (a : Typ) : beq a a = true := by
       (fun as => ∀ (i : Nat) (h : i < as.size), beq (as[i]'h) (as[i]'h) = true)
       (fun ts => beq.listBeqAux ts ts = true ∧
                  ∀ (i : Nat) (h : i < ts.length), beq (ts[i]'h) (ts[i]'h) = true)
-      ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ a
+      ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ a
   -- case .unit
   · unfold beq; rfl
   -- case .field
+  · unfold beq; rfl
+  -- case .u8
   · unfold beq; rfl
   -- case .tuple ts ih
   · intro ts ih
@@ -206,11 +213,14 @@ theorem eq_of_beq {a b : Typ} (h : beq a b = true) : a = b := by
       (fun ts => (∀ (ts' : List Typ), beq.listBeqAux ts ts' = true → ts = ts') ∧
                  (∀ (i : Nat) (h : i < ts.length) (t' : Typ),
                     beq (ts[i]'h) t' = true → (ts[i]'h) = t'))
-      ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ a
+      ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ a
   -- case .unit
   · intro b h
     cases b <;> (unfold beq at h; first | rfl | cases h)
   -- case .field
+  · intro b h
+    cases b <;> (unfold beq at h; first | rfl | cases h)
+  -- case .u8
   · intro b h
     cases b <;> (unfold beq at h; first | rfl | cases h)
   -- case .tuple ts ih
@@ -390,6 +400,18 @@ inductive Term
   | u32LessThan : Term → Term → Term
   | u8ChainRotr7 : Term → Term → Term
   | u8ChainRotr4 : Term → Term → Term
+  /-- A `U8` literal in `[0, 256)`. Lowered to a plain field constant of type
+  `u8` (no range-check lookup, since the value is statically in range). -/
+  | u8Lit : Nat → Term
+  /-- Range-check two field elements into `[0, 256)`, producing two `u8`s.
+  Pairs because the byte chip already takes two elements per lookup row. -/
+  | u8RangeCheck : Term → Term → Term
+  /-- Forget that a `u8` was range-checked, recovering the underlying `G`. -/
+  | toField : Term → Term
+  /-- Reinterpret a `G` as a `u8` *without* a range check. Unsafe: the caller
+  asserts the value is already in `[0, 256)` (e.g. a sum of bytes known not to
+  overflow). Cheaper than `u8_range_check` since it adds no lookup. -/
+  | u8FromFieldUnsafe : Term → Term
   | debug : String → Option Term → Term → Term
   deriving Repr, BEq, Hashable, Inhabited
 

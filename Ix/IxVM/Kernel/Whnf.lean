@@ -318,7 +318,7 @@ def whnf := ⟦
     match succ_pair {
       (0, _) => store(KExprNode.App(base, base)), -- impossible: Nat.succ must be in env
       (1, succ_idx) =>
-        let one = store(ListNode.Cons([1, 0, 0, 0, 0, 0, 0, 0], store(ListNode.Nil)));
+        let one = store(ListNode.Cons([1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], store(ListNode.Nil)));
         let lit_minus_one = klimbs_sub(lit, one);
         let pred_lit_norm = klimbs_normalize(lit_minus_one);
         let succ_const = store(KExprNode.Const(succ_idx, store(ListNode.Nil)));
