@@ -4,7 +4,7 @@
 //! are derived from the first 6 hex characters of the Blake3 hash. This provides
 //! deterministic addressing: identical content always maps to the same path.
 
-use crate::ix::address::Address;
+use ix_common::address::Address;
 use std::env;
 use std::fs;
 use std::io;

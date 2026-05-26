@@ -36,6 +36,23 @@ impl Address {
     self.hash.as_bytes()
   }
 
+  /// Flatten a slice of addresses into a `[u8; 32 * N]` byte blob.
+  pub fn pack(addrs: &[Address]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(addrs.len() * 32);
+    for a in addrs {
+      out.extend_from_slice(a.as_bytes());
+    }
+    out
+  }
+
+  /// Iterate addresses out of a flat `[u8; 32 * N]` byte blob. Trailing
+  /// bytes shorter than 32 are silently dropped (via `chunks_exact`).
+  pub fn unpack(bytes: &[u8]) -> impl Iterator<Item = Address> + '_ {
+    bytes
+      .chunks_exact(32)
+      .map(|c| Address::from_slice(c).expect("malformed address chunk"))
+  }
+
   /// Build a deterministic, collision-resistant `Name` for this address:
   /// `Ix._#.<hex>`. Mirrors Lean-side `Ix.Address.toUniqueName`.
   ///
@@ -43,8 +60,8 @@ impl Address {
   /// name that can't collide with any Lean-originated name (e.g. for
   /// scratch `KEnv` entries that should not participate in the
   /// `name_to_addr` / `aux_name_to_addr` namespace).
-  pub fn to_unique_name(&self) -> crate::ix::env::Name {
-    use crate::ix::env::Name;
+  pub fn to_unique_name(&self) -> crate::env::Name {
+    use crate::env::Name;
     Name::str(
       Name::str(Name::str(Name::anon(), "Ix".to_string()), "_#".to_string()),
       self.hex(),
@@ -53,8 +70,8 @@ impl Address {
 
   /// Inverse of `to_unique_name`. Returns `Some(Address)` iff `name` has
   /// shape `Ix._#.<hex>` with valid 64-char hex; otherwise `None`.
-  pub fn from_unique_name(name: &crate::ix::env::Name) -> Option<Self> {
-    use crate::ix::env::NameData;
+  pub fn from_unique_name(name: &crate::env::Name) -> Option<Self> {
+    use crate::env::NameData;
     let (parent, hex) = match name.as_data() {
       NameData::Str(parent, s, _) => (parent.clone(), s.clone()),
       _ => return None,
@@ -79,11 +96,8 @@ impl Address {
   /// Used by `compile/mutual.rs` to register each mutual block under a
   /// Muts-tagged meta so kernel ingress can discover and process it via
   /// `ingress_muts_block`.
-  pub fn muts_name(
-    &self,
-    first_member: &crate::ix::env::Name,
-  ) -> crate::ix::env::Name {
-    use crate::ix::env::{Name, NameData};
+  pub fn muts_name(&self, first_member: &crate::env::Name) -> crate::env::Name {
+    use crate::env::{Name, NameData};
     let base = Name::str(Name::str(Name::anon(), "Ix".to_string()), self.hex());
     // Append each component of `first_member` to the base, preserving
     // numeric vs string parts.
@@ -127,8 +141,8 @@ impl StdHash for Address {
   }
 }
 
-#[cfg(test)]
-pub mod tests {
+#[cfg(any(test, feature = "quickcheck"))]
+pub mod arbitrary {
   use super::*;
   use quickcheck::{Arbitrary, Gen};
 

@@ -14,15 +14,15 @@ use dashmap::DashMap;
 use rayon::prelude::*;
 use rustc_hash::FxHashSet;
 
-use crate::ix::address::Address;
-use crate::ix::compile::{
+use crate::compile::{
   BlockCache, CompileOptions, CompileState, compile_const, compile_const_no_aux,
 };
-use crate::ix::condense::compute_sccs;
-use crate::ix::env::{Env as LeanEnv, Name};
-use crate::ix::graph::{NameSet, build_ref_graph};
-use crate::ix::ground::ground_consts;
-use crate::ix::ixon::CompileError;
+use crate::condense::compute_sccs;
+use crate::graph::{NameSet, build_ref_graph};
+use crate::ground::ground_consts;
+use ix_common::address::Address;
+use ix_common::env::{Env as LeanEnv, Name};
+use ixon::CompileError;
 
 // ===========================================================================
 // Progress + diagnostic logging
@@ -150,8 +150,7 @@ pub fn compile_env_with_options(
 
   // Filter ungrounded names from the ref graph before SCC computation so
   // condensed blocks only contain constants we can actually compile.
-  let grounded_out_refs: crate::ix::graph::RefMap = if ungrounded_map.is_empty()
-  {
+  let grounded_out_refs: crate::graph::RefMap = if ungrounded_map.is_empty() {
     graph.out_refs
   } else {
     graph
@@ -455,7 +454,7 @@ pub fn compile_env_with_options(
     // Spawn worker threads
     for _ in 0..num_threads {
       s.spawn(move || {
-        let mut worker_kctx = crate::ix::compile::KernelCtx::new();
+        let mut worker_kctx = crate::compile::KernelCtx::new();
         loop {
           // Try to get work from the ready queue
           let work = {
@@ -742,7 +741,7 @@ pub fn compile_env_with_options(
 
               // Check for slow blocks
               let elapsed = block_start.elapsed();
-              if *crate::ix::compile::IX_TIMING && elapsed.as_secs_f32() > 1.0 {
+              if *crate::compile::IX_TIMING && elapsed.as_secs_f32() > 1.0 {
                 let cc_time = _cc_start.elapsed().as_secs_f32();
                 eprintln!(
                   "Slow block {:?} ({} consts): {:.2}s path={} cc={:.2}s",
@@ -956,7 +955,7 @@ fn aux_gen_seed_names() -> Vec<Name> {
 /// references; we resolve each referenced name back to its own SCC-rep via
 /// `condensed.low_links`.
 fn precompile_aux_gen_prereqs(
-  condensed: &crate::ix::condense::CondensedBlocks,
+  condensed: &crate::condense::CondensedBlocks,
   lean_env: &Arc<LeanEnv>,
   stt: &CompileState,
 ) -> Result<(), CompileError> {
@@ -1011,7 +1010,7 @@ fn precompile_aux_gen_prereqs(
 
   // Compile each SCC in dep-first order, moving compiled names to
   // `aux_name_to_addr` so later SCCs can resolve their Const refs.
-  let mut prereq_kctx = crate::ix::compile::KernelCtx::new();
+  let mut prereq_kctx = crate::compile::KernelCtx::new();
   for rep in order {
     if stt.aux_name_to_addr.contains_key(&rep) {
       continue; // Already compiled (e.g., via a prior prereq run).

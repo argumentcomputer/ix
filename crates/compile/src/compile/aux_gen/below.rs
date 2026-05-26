@@ -8,12 +8,12 @@
 //!
 //! Follows `refs/lean4/src/Lean/Meta/Constructions/BRecOn.lean:59-108`.
 
-use crate::ix::compile::nat_conv::{nat_to_usize, try_nat_to_usize};
-use crate::ix::env::{
+use crate::compile::nat_conv::{nat_to_usize, try_nat_to_usize};
+use ix_common::env::{
   BinderInfo, ConstantInfo, ConstructorVal, Env as LeanEnv, Expr as LeanExpr,
   ExprData, InductiveVal, Level, LevelData, Name, RecursorVal,
 };
-use crate::ix::ixon::CompileError;
+use ixon::CompileError;
 
 use super::expr_utils::{
   LocalDecl, decompose_apps, find_motive_fvar, forall_telescope, fresh_fvar,
@@ -38,7 +38,7 @@ pub(super) fn aux_rec_suffix_idx(aux_rec_name: &Name) -> Option<usize> {
 /// A generated `.below` constant — either a definition (Type-level)
 /// or an inductive (Prop-level).
 #[derive(Clone)]
-pub(crate) enum BelowConstant {
+pub enum BelowConstant {
   /// Type-level `.below`: a reducible definition using `.rec` + PProd.
   Def(BelowDef),
   /// Prop-level `.below`: an inductive type with constructors.
@@ -53,7 +53,7 @@ pub(crate) enum BelowConstant {
 /// type or value references an unsafe constant — for unsafe inductives this
 /// always triggers because `.below` mentions the parent inductive's `.rec`.
 #[derive(Clone)]
-pub(crate) struct BelowDef {
+pub struct BelowDef {
   pub name: Name,
   pub level_params: Vec<Name>,
   pub typ: LeanExpr,
@@ -63,7 +63,7 @@ pub(crate) struct BelowDef {
 
 /// A generated `.below` inductive (Prop-level case).
 #[derive(Clone)]
-pub(crate) struct BelowIndc {
+pub struct BelowIndc {
   pub name: Name,
   pub level_params: Vec<Name>,
   pub n_params: usize,
@@ -87,7 +87,7 @@ pub(crate) struct BelowIndc {
 
 /// A constructor for a Prop-level `.below` inductive.
 #[derive(Clone)]
-pub(crate) struct BelowCtor {
+pub struct BelowCtor {
   pub name: Name,
   pub typ: LeanExpr,
   pub n_params: usize,
@@ -107,13 +107,13 @@ pub(crate) struct BelowCtor {
 /// Note: `is_prop` is distinct from `is_large`. A Prop inductive with single
 /// constructors and all-Prop fields gets large elimination (`drec`), but Lean
 /// still generates `.below` as an inductive via `IndPredBelow`.
-pub(crate) fn generate_below_constants(
+pub fn generate_below_constants(
   sorted_classes: &[Vec<Name>],
   canonical_recs: &[(Name, RecursorVal)],
   lean_env: &LeanEnv,
   is_prop: bool,
-  stt: &crate::ix::compile::CompileState,
-  kctx: &mut crate::ix::compile::KernelCtx,
+  stt: &crate::compile::CompileState,
+  kctx: &mut crate::compile::KernelCtx,
 ) -> Result<Vec<BelowConstant>, CompileError> {
   let n_classes = sorted_classes.len();
   if n_classes == 0 || canonical_recs.is_empty() {
@@ -262,7 +262,7 @@ pub(crate) fn generate_below_constants(
 /// Build a single `.below` definition for a Type-level inductive.
 ///
 /// The `.below` definition's value is:
-/// ```
+/// ```text
 /// λ {params} {motives} (indices) (major),
 ///   I.rec.{succ(rlvl), lvls...} params
 ///     (λ (indices) (major), Sort rlvl)     -- for each motive
@@ -276,8 +276,8 @@ fn build_below_def(
   lean_env: &LeanEnv,
   n_classes: usize,
   canonical_recs: &[(Name, RecursorVal)],
-  stt: &crate::ix::compile::CompileState,
-  kctx: &mut crate::ix::compile::KernelCtx,
+  stt: &crate::compile::CompileState,
+  kctx: &mut crate::compile::KernelCtx,
 ) -> Result<BelowDef, CompileError> {
   let n_params = try_nat_to_usize(&rec_val.num_params)?;
   let n_motives = try_nat_to_usize(&rec_val.num_motives)?;
@@ -475,8 +475,8 @@ fn build_below_value(
   rlvl: &Level,
   _n_classes: usize,
   _canonical_recs: &[(Name, RecursorVal)],
-  stt: &crate::ix::compile::CompileState,
-  kctx: &mut crate::ix::compile::KernelCtx,
+  stt: &crate::compile::CompileState,
+  kctx: &mut crate::compile::KernelCtx,
 ) -> Result<LeanExpr, CompileError> {
   let n_params = try_nat_to_usize(&rec_val.num_params)?;
   let n_motives = try_nat_to_usize(&rec_val.num_motives)?;
@@ -1687,10 +1687,10 @@ fn mk_imax_aux(l1: &Level, l2: &Level) -> Level {
 /// Uses raw `Level::succ` / `Level::max` to faithfully preserve the kernel's
 /// level structure — no distribution of Succ over Max, no subsumption.
 pub(super) fn kuniv_to_level(
-  u: &crate::ix::kernel::level::KUniv<crate::ix::kernel::mode::Meta>,
+  u: &ix_kernel::level::KUniv<ix_kernel::mode::Meta>,
   param_names: &[Name],
 ) -> Level {
-  use crate::ix::kernel::level::UnivData;
+  use ix_kernel::level::UnivData;
   match u.data() {
     UnivData::Zero(_) => Level::zero(),
     UnivData::Succ(inner, _) => Level::succ(kuniv_to_level(inner, param_names)),
@@ -1774,7 +1774,7 @@ pub(super) fn mk_punit_unit(lvl: &Level) -> LeanExpr {
 /// Used when extracting motive domains from the recursor type for Prop-level
 /// `.below` inductives. The recursor may have large elimination (extra `u`
 /// param), but `.below` motives always target Prop.
-pub(crate) fn replace_result_sort_with_prop(expr: &LeanExpr) -> LeanExpr {
+pub fn replace_result_sort_with_prop(expr: &LeanExpr) -> LeanExpr {
   match expr.as_data() {
     ExprData::ForallE(name, dom, body, bi, _) => LeanExpr::all(
       name.clone(),

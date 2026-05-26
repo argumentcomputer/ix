@@ -3,10 +3,10 @@
 #[cfg(test)]
 mod tests {
 
-  use crate::ix::env::ReducibilityHints;
-  use crate::ix::kernel::env::KEnv;
-  use crate::ix::kernel::mode::Meta;
-  use crate::ix::kernel::testing::*;
+  use crate::env::KEnv;
+  use crate::mode::Meta;
+  use crate::testing::*;
+  use ix_common::env::ReducibilityHints;
 
   // ==========================================================================
   // Batch 1: Basic definitions (Tutorial.lean lines 16–60)

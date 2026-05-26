@@ -2,18 +2,18 @@
 //!
 //! Includes: DataValue, KVMap, ExprMetaData, ExprMetaArena, ConstantMeta, Named, Comm
 
-use crate::ix::address::Address;
-use crate::ix::env::BinderInfo;
-use crate::ix::ixon::Comm;
-use crate::ix::ixon::env::Named;
-use crate::ix::ixon::metadata::{
-  ConstantMeta, ConstantMetaInfo, DataValue as IxonDataValue, ExprMeta,
-  ExprMetaData, KVMap,
-};
 use crate::lean::{
   LeanIxReducibilityHints, LeanIxonComm, LeanIxonConstantMeta,
   LeanIxonDataValue, LeanIxonExprMetaArena, LeanIxonExprMetaData,
   LeanIxonNamed,
+};
+use ix_common::address::Address;
+use ix_common::env::BinderInfo;
+use ixon::Comm;
+use ixon::env::Named;
+use ixon::metadata::{
+  ConstantMeta, ConstantMetaInfo, DataValue as IxonDataValue, ExprMeta,
+  ExprMetaData, KVMap,
 };
 use lean_ffi::object::{
   LeanArray, LeanBorrowed, LeanOption, LeanOwned, LeanProd, LeanRef,

@@ -7,22 +7,19 @@ use multi_stark::{
 use std::{array, ops::Range, sync::LazyLock};
 
 use crate::{
-  FxIndexMap,
-  aiur::{
-    G,
-    bytecode::{Block, Ctrl, Function, FunctionLayout, Op, Toplevel, ValIdx},
-    function_channel,
-    gadgets::{
-      AiurGadget,
-      bytes1::{Bytes1, Bytes1Op},
-      bytes2::{Bytes2, Bytes2Op},
-    },
-    memory_channel, u8_add_channel, u8_and_channel,
-    u8_bit_decomposition_channel, u8_chain_rotr4_channel,
-    u8_chain_rotr7_channel, u8_less_than_channel, u8_mul_channel,
-    u8_or_channel, u8_range_check_channel, u8_shift_left_channel,
-    u8_shift_right_channel, u8_sub_channel, u8_xor_channel,
+  FxIndexMap, G,
+  bytecode::{Block, Ctrl, Function, FunctionLayout, Op, Toplevel, ValIdx},
+  function_channel,
+  gadgets::{
+    AiurGadget,
+    bytes1::{Bytes1, Bytes1Op},
+    bytes2::{Bytes2, Bytes2Op},
   },
+  memory_channel, u8_add_channel, u8_and_channel, u8_bit_decomposition_channel,
+  u8_chain_rotr4_channel, u8_chain_rotr7_channel, u8_less_than_channel,
+  u8_mul_channel, u8_or_channel, u8_range_check_channel,
+  u8_shift_left_channel, u8_shift_right_channel, u8_sub_channel,
+  u8_xor_channel,
 };
 
 type Expr = SymbolicExpression<G>;

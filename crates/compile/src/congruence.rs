@@ -14,8 +14,8 @@
 
 pub mod perm;
 
-use crate::ix::env::{ConstantInfo, Expr, ExprData, Level, LevelData, Literal};
-use lean_ffi::nat::Nat;
+use bignat::Nat;
+use ix_common::env::{ConstantInfo, Expr, ExprData, Level, LevelData, Literal};
 
 /// Check that two Lean levels are equal modulo the same simplifications
 /// `Level::max_smart` / `Level::imax_smart` perform.
@@ -334,7 +334,7 @@ pub fn const_alpha_eq(
 // =========================================================================
 
 /// Strip Mdata wrappers from an expression.
-pub(crate) fn strip_mdata(e: &Expr) -> &Expr {
+pub fn strip_mdata(e: &Expr) -> &Expr {
   let mut cur = e;
   while let ExprData::Mdata(_, inner, _) = cur.as_data() {
     cur = inner;
@@ -342,11 +342,7 @@ pub(crate) fn strip_mdata(e: &Expr) -> &Expr {
   cur
 }
 
-pub(crate) fn check_nat_eq(
-  a: &Nat,
-  b: &Nat,
-  field: &str,
-) -> Result<(), String> {
+pub fn check_nat_eq(a: &Nat, b: &Nat, field: &str) -> Result<(), String> {
   let av = a.to_u64().unwrap_or(u64::MAX);
   let bv = b.to_u64().unwrap_or(u64::MAX);
   if av != bv {
@@ -411,7 +407,7 @@ mod tests {
   //! `Level::imax_smart` (see `src/ix/env.rs:340-404`), so they double
   //! as a contract test for those constructors.
   use super::*;
-  use crate::ix::env::Name;
+  use ix_common::env::Name;
   fn p(s: &str) -> Level {
     Level::param(Name::str(Name::anon(), s.to_string()))
   }

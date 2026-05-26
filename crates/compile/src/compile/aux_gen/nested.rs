@@ -14,26 +14,26 @@
 //! - Spec_params are built in FVar space during detection, then abstracted back
 //!   to BVars for the returned `CompileFlatMember`.
 
+use bignat::Nat;
 use blake3::Hash;
-use lean_ffi::nat::Nat;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::expr_utils::{
   LocalDecl, batch_abstract, decompose_apps, forall_telescope,
   instantiate_pi_params, instantiate1, mk_forall, subst_levels,
 };
-use crate::ix::compile::nat_conv::{nat_to_u64, nat_to_usize};
-use crate::ix::env::{
+use crate::compile::nat_conv::{nat_to_u64, nat_to_usize};
+use ix_common::env::{
   ConstantInfo, Env as LeanEnv, Expr as LeanExpr, ExprData, Level, Name,
 };
-use crate::ix::ixon::CompileError;
+use ixon::CompileError;
 
 /// A member of the flat block (original inductive or nested auxiliary).
 ///
 /// Spec_params use BVars relative to the block's parameter context:
 /// `BVar(0)` = innermost (last) param, `BVar(n_params-1)` = outermost (first).
 #[derive(Clone)]
-pub(crate) struct CompileFlatMember {
+pub struct CompileFlatMember {
   pub name: Name,
   pub spec_params: Vec<LeanExpr>,
   pub occurrence_level_args: Vec<Level>,
@@ -51,7 +51,7 @@ pub(crate) struct CompileFlatMember {
 /// Matches the C++ kernel's `elim_nested_inductive_result`: auxiliary types
 /// like `_nested.Array_1` replace `Array (Part α β)` so that the recursor
 /// generator can treat all members uniformly.
-pub(crate) struct ExpandedBlock {
+pub struct ExpandedBlock {
   /// All types in the expanded block: originals first, then auxiliaries.
   pub types: Vec<ExpandedMember>,
   /// `aux_name → nested_expr`: the original nested application with block
@@ -82,7 +82,7 @@ pub(crate) struct ExpandedBlock {
 /// All members share the same `level_params` and `n_params` — auxiliaries
 /// have the block's parameters, not the external inductive's own parameters.
 #[derive(Clone)]
-pub(crate) struct ExpandedMember {
+pub struct ExpandedMember {
   /// Inductive name: original name for originals, `_nested.ExtInd_N` for
   /// auxiliaries (scoped under `all[0]`).
   pub name: Name,
@@ -101,7 +101,7 @@ pub(crate) struct ExpandedMember {
 
 /// A constructor in the expanded block.
 #[derive(Clone)]
-pub(crate) struct ExpandedCtor {
+pub struct ExpandedCtor {
   /// Constructor name: for auxiliaries, prefixed with aux name.
   pub name: Name,
   /// Constructor type with nested refs replaced by aux const applications.
@@ -424,7 +424,7 @@ impl<'a> ExpandCtx<'a> {
 ///
 /// Matches the C++ kernel's `elim_nested_inductive_fn::operator()()` at
 /// `refs/lean4/src/kernel/inductive.cpp:1045-1077`.
-pub(crate) fn expand_nested_block(
+pub fn expand_nested_block(
   ordered_originals: &[Name],
   lean_env: &LeanEnv,
   alias_to_rep: &FxHashMap<Name, Name>,
@@ -612,9 +612,9 @@ pub(crate) fn expand_nested_block(
 /// appear in user-visible env: `RestoreCtx` converts them back to
 /// `ExtInd spec_params` expressions during recursor emission. So renaming
 /// them by canonical index is purely an internal-labeling change.
-pub(crate) fn sort_aux_by_partition_refinement(
+pub fn sort_aux_by_partition_refinement(
   expanded: &mut ExpandedBlock,
-  stt: &crate::ix::compile::CompileState,
+  stt: &crate::compile::CompileState,
 ) -> Result<Vec<usize>, CompileError> {
   let n_originals = expanded.n_originals;
   let n_total = expanded.types.len();
@@ -629,9 +629,9 @@ pub(crate) fn sort_aux_by_partition_refinement(
   // fixed positional MutRef, so alpha-equivalent originals collapse to the same
   // aux signature. If any referenced original is unresolved, compare_expr now
   // errors instead of falling back to namespace-sensitive name hashes.
-  use crate::ix::compile::{BlockCache, sort_consts};
-  use crate::ix::env::{ConstantVal, ConstructorVal, InductiveVal};
-  use crate::ix::mutual::{Ind, MutConst};
+  use crate::compile::{BlockCache, sort_consts};
+  use crate::mutual::{Ind, MutConst};
+  use ix_common::env::{ConstantVal, ConstructorVal, InductiveVal};
 
   let level_params = expanded.level_params.clone();
 
@@ -780,7 +780,7 @@ pub(crate) fn sort_aux_by_partition_refinement(
   let nested_prefix = {
     let first_aux_name = &expanded.types[n_originals].name;
     match first_aux_name.as_data() {
-      crate::ix::env::NameData::Str(prefix, _, _) => prefix.clone(),
+      ix_common::env::NameData::Str(prefix, _, _) => prefix.clone(),
       _ => {
         return Err(CompileError::InvalidMutualBlock {
           reason: format!(
@@ -806,7 +806,7 @@ pub(crate) fn sort_aux_by_partition_refinement(
 
     // Extract the "<Ext>" identifier from old suffix.
     let ext_name = match old_name.as_data() {
-      crate::ix::env::NameData::Str(_, suffix, _) => {
+      ix_common::env::NameData::Str(_, suffix, _) => {
         // Old suffix is "<Ext>_<old_j+1>" — strip the trailing "_<N>".
         let s: &str = suffix.as_ref();
         // Find the last underscore — everything before is "<Ext>".
@@ -940,7 +940,7 @@ pub(crate) fn sort_aux_by_partition_refinement(
 ///
 /// `original_all` is the source-order Lean `InductiveVal.all` list —
 /// not alpha-collapsed representatives, and not canonical-aux-sorted.
-pub(crate) fn source_aux_order(
+pub fn source_aux_order(
   original_all: &[Name],
   lean_env: &LeanEnv,
 ) -> Result<Vec<(Name, Vec<LeanExpr>)>, CompileError> {
@@ -954,7 +954,7 @@ pub(crate) fn source_aux_order(
 
 /// Like [`source_aux_order`], but also reports the source mutual-block member
 /// whose constructor walk first discovered each auxiliary.
-pub(crate) fn source_aux_order_with_owner(
+pub fn source_aux_order_with_owner(
   original_all: &[Name],
   lean_env: &LeanEnv,
 ) -> Result<Vec<(Name, Name, Vec<LeanExpr>)>, CompileError> {
@@ -990,7 +990,7 @@ fn source_aux_order_from_expanded(
 /// source auxes whose spec_params reference inductives that belong to
 /// a different SCC block — those auxes are handled by that block's
 /// compilation, not ours.
-pub(crate) const PERM_OUT_OF_SCC: usize = usize::MAX;
+pub const PERM_OUT_OF_SCC: usize = usize::MAX;
 
 /// Compute the permutation mapping Lean-source aux-walk positions to
 /// canonical aux positions. Returns `perm: Vec<usize>`
@@ -1024,11 +1024,11 @@ pub(crate) const PERM_OUT_OF_SCC: usize = usize::MAX;
 /// Returns an error if some canonical aux has no matching source. This
 /// shouldn't happen because canonical members are always a subset (via
 /// dedup) of what a full source walk would find.
-pub(crate) fn compute_aux_perm(
+pub fn compute_aux_perm(
   expanded: &ExpandedBlock,
   original_all: &[Name],
   lean_env: &LeanEnv,
-  stt: &crate::ix::compile::CompileState,
+  stt: &crate::compile::CompileState,
   orig_to_canon_names: &std::collections::HashMap<Name, Name>,
 ) -> Result<Vec<usize>, CompileError> {
   let n_originals = expanded.n_originals;
@@ -1208,12 +1208,12 @@ pub(crate) fn compute_aux_perm(
 fn aux_spec_eq(
   canon: &LeanExpr,
   src: &LeanExpr,
-  stt: &crate::ix::compile::CompileState,
+  stt: &crate::compile::CompileState,
   source_to_canon_fvar: &FxHashMap<Name, Name>,
   cache: &mut FxHashMap<(Hash, Hash), bool>,
 ) -> bool {
-  let canon = crate::ix::congruence::strip_mdata(canon);
-  let src = crate::ix::congruence::strip_mdata(src);
+  let canon = crate::congruence::strip_mdata(canon);
+  let src = crate::congruence::strip_mdata(src);
 
   let key = (*canon.get_hash(), *src.get_hash());
   if let Some(cached) = cache.get(&key) {
@@ -1226,7 +1226,7 @@ fn aux_spec_eq(
       source_to_canon_fvar.get(b).map_or(a == b, |expected| a == expected)
     },
     (ExprData::Sort(a, _), ExprData::Sort(b, _)) => {
-      crate::ix::congruence::level_alpha_eq(a, b).is_ok()
+      crate::congruence::level_alpha_eq(a, b).is_ok()
     },
     (
       ExprData::Const(a_name, a_lvls, _),
@@ -1236,7 +1236,7 @@ fn aux_spec_eq(
         || a_lvls
           .iter()
           .zip(b_lvls.iter())
-          .any(|(a, b)| crate::ix::congruence::level_alpha_eq(a, b).is_err())
+          .any(|(a, b)| crate::congruence::level_alpha_eq(a, b).is_err())
       {
         return false;
       }
@@ -1669,7 +1669,7 @@ struct FvarFlatMember {
 /// caught by checking for non-param FVars in the detected spec_params.
 ///
 /// Ported from the kernel's `build_flat_block` (`src/ix/kernel/inductive.rs:364-475`).
-pub(crate) fn build_compile_flat_block(
+pub fn build_compile_flat_block(
   ordered_originals: &[Name],
   lean_env: &LeanEnv,
 ) -> Result<Vec<CompileFlatMember>, CompileError> {
@@ -1680,7 +1680,7 @@ pub(crate) fn build_compile_flat_block(
 /// environment first for all lookups. Used by the expand/restore path
 /// to scan expanded constructor types (where nested refs are already
 /// replaced with auxiliary const applications).
-pub(crate) fn build_compile_flat_block_with_overlay(
+pub fn build_compile_flat_block_with_overlay(
   ordered_originals: &[Name],
   lean_env: &LeanEnv,
   overlay: Option<&LeanEnv>,
@@ -1905,7 +1905,7 @@ fn abstract_spec_params_to_bvars(
 /// This function computes the pointwise max of `occurrence_level_args` across
 /// all auxiliaries with the same `name`, then updates all of them.
 fn maximize_occurrence_levels(flat: &mut [FvarFlatMember], n_originals: usize) {
-  use crate::ix::env::LevelData;
+  use ix_common::env::LevelData;
   use rustc_hash::FxHashMap;
 
   // Group auxiliary members by external inductive name.
@@ -2080,10 +2080,10 @@ fn try_detect_nested_fvar(
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::ix::env::{
+  use bignat::Nat;
+  use ix_common::env::{
     AxiomVal, ConstantVal, InductiveVal, Level as LL, Name,
   };
-  use lean_ffi::nat::Nat;
 
   fn mk_name_for(s: &str) -> Name {
     let mut n = Name::anon();
@@ -2134,7 +2134,7 @@ mod tests {
       mk_name_for("x"),
       sort0(),
       LeanExpr::cnst(mk_name_for("Target"), vec![]),
-      crate::ix::env::BinderInfo::Default,
+      ix_common::env::BinderInfo::Default,
     );
     assert!(expr_mentions_any_name(&e, &names_of([mk_name_for("Target")])));
   }
@@ -2219,7 +2219,7 @@ mod tests {
       mk_name_for("x"),
       sort0(),
       LeanExpr::bvar(Nat::from(0u64)),
-      crate::ix::env::BinderInfo::Default,
+      ix_common::env::BinderInfo::Default,
     );
     assert!(!has_invalid_spec_ref(&e, &[]));
   }
@@ -2231,7 +2231,7 @@ mod tests {
       mk_name_for("x"),
       sort0(),
       LeanExpr::fvar(unknown),
-      crate::ix::env::BinderInfo::Default,
+      ix_common::env::BinderInfo::Default,
     );
     assert!(has_invalid_spec_ref(&e, &[]));
   }
@@ -2285,7 +2285,7 @@ mod tests {
             mk_name_for("_"),
             LeanExpr::cnst(nat_name.clone(), vec![]),
             LeanExpr::cnst(nat_name.clone(), vec![]),
-            crate::ix::env::BinderInfo::Default,
+            ix_common::env::BinderInfo::Default,
           ),
         },
         is_unsafe: false,

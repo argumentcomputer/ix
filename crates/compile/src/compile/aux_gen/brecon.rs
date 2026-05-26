@@ -8,13 +8,13 @@
 //!   `.brecOn.go` uses PProd-wrapped motives; `.brecOn` projects first component.
 //!   Reference: `refs/lean4/src/Lean/Meta/Constructions/BRecOn.lean:191-308`
 
-use crate::ix::compile::nat_conv::try_nat_to_usize;
-use crate::ix::env::{
+use crate::compile::nat_conv::try_nat_to_usize;
+use bignat::Nat;
+use ix_common::env::{
   BinderInfo, ConstantInfo, Env as LeanEnv, Expr as LeanExpr, ExprData,
   InductiveVal, Level, LevelData, Name, RecursorVal,
 };
-use crate::ix::ixon::CompileError;
-use lean_ffi::nat::Nat;
+use ixon::CompileError;
 
 use super::below::{
   BelowConstant, mk_level_succ, mk_pprod, mk_pprod_mk, mk_punit_unit,
@@ -44,7 +44,7 @@ use rustc_hash::FxHashMap;
 ///   `.brecOn.eq`. `.go` and `.brecOn` are always `Defn`; `.eq` is `Thm`
 ///   (safe) or unsafe `Defn` with `hints := .opaque`.
 #[derive(Clone)]
-pub(crate) struct BRecOnDef {
+pub struct BRecOnDef {
   pub name: Name,
   pub level_params: Vec<Name>,
   pub typ: LeanExpr,
@@ -59,14 +59,14 @@ pub(crate) struct BRecOnDef {
 /// from Phase 1 and the `.below` constants from Phase 2.
 /// `is_prop` determines whether to generate Prop-level (single theorem) or
 /// Type-level (`.brecOn.go` + `.brecOn`) forms.
-pub(crate) fn generate_brecon_constants(
+pub fn generate_brecon_constants(
   sorted_classes: &[Vec<Name>],
   canonical_recs: &[(Name, RecursorVal)],
   below_consts: &[BelowConstant],
   lean_env: &LeanEnv,
   is_prop: bool,
-  stt: &crate::ix::compile::CompileState,
-  kctx: &mut crate::ix::compile::KernelCtx,
+  stt: &crate::compile::CompileState,
+  kctx: &mut crate::compile::KernelCtx,
 ) -> Result<Vec<BRecOnDef>, CompileError> {
   let n_classes = sorted_classes.len();
   if n_classes == 0 || canonical_recs.is_empty() || below_consts.is_empty() {
@@ -623,8 +623,8 @@ fn build_type_brecon_fvar(
   below_names: &[Name],
   lean_env: &LeanEnv,
   n_classes: usize,
-  stt: &crate::ix::compile::CompileState,
-  kctx: &mut crate::ix::compile::KernelCtx,
+  stt: &crate::compile::CompileState,
+  kctx: &mut crate::compile::KernelCtx,
 ) -> Result<Vec<BRecOnDef>, CompileError> {
   // canon_kenv is populated by `populate_canon_kenv_with_below` in
   // aux_gen.rs between Phase 2 and Phase 3. It contains PUnit, PProd,
@@ -1076,16 +1076,15 @@ fn build_type_brecon_fvar(
     },
   ];
 
-  if let Some((eq_typ, eq_val)) = eq_result {
-    results.push(BRecOnDef {
-      name: eq_name,
-      level_params: rec_level_params.clone(),
-      typ: eq_typ,
-      value: eq_val,
-      is_unsafe,
-      is_prop: false,
-    });
-  }
+  let (eq_typ, eq_val) = eq_result;
+  results.push(BRecOnDef {
+    name: eq_name,
+    level_params: rec_level_params.clone(),
+    typ: eq_typ,
+    value: eq_val,
+    is_unsafe,
+    is_prop: false,
+  });
 
   Ok(results)
 }
@@ -1441,18 +1440,14 @@ fn build_type_brecon_eq_fvar(
   // `Eq` and `HEq` binders in `motive_wrapped` and
   // `build_minor_via_cases_sim`'s remaining list.
   rec_level_params: &[Name],
-  stt: &crate::ix::compile::CompileState,
-  kctx: &mut crate::ix::compile::KernelCtx,
-) -> Option<(LeanExpr, LeanExpr)> {
-  // .brecOn.eq requires Eq and Eq.refl as constants. In the full pipeline,
-  // aux_gen is only called when the original Lean environment has these
-  // constants, so this always succeeds. But in minimal test environments
-  // (e.g., unit tests with synthetic inductives), Eq may not exist.
-  // Return None in that case — matching the old BVar code's behavior.
-  //
-  // TODO: Accept a lean_env parameter and check lean_env.get("Eq").is_some()
-  // for a more principled guard. For now, we always generate .eq since the
-  // real pipeline guarantees Eq exists.
+  stt: &crate::compile::CompileState,
+  kctx: &mut crate::compile::KernelCtx,
+) -> (LeanExpr, LeanExpr) {
+  // .brecOn.eq requires Eq and Eq.refl as constants. The real pipeline only
+  // calls aux_gen when the original Lean environment has these, so this
+  // always succeeds. If a future minimal-test caller needs to opt out (e.g.
+  // a synthetic inductive without Eq), reintroduce an `Option` return or
+  // gate via a `lean_env.get("Eq").is_some()` check.
   let _ = n_minors;
 
   let _n_motives = motive_fvars.len();
@@ -1577,7 +1572,7 @@ fn build_type_brecon_eq_fvar(
       kctx,
     );
     if let Some(eq_value) = eq_value_opt {
-      return Some((eq_type, eq_value));
+      return (eq_type, eq_value);
     }
     // Fall through to the simple path if the indexed construction
     // couldn't be completed (e.g., missing ctor info).
@@ -1717,7 +1712,7 @@ fn build_type_brecon_eq_fvar(
 
   let eq_value = mk_lambda(eq_val, all_decls);
 
-  Some((eq_type, eq_value))
+  (eq_type, eq_value)
 }
 
 // =========================================================================
@@ -1785,8 +1780,8 @@ fn build_indexed_eq_value(
   // `Eq` and `HEq` binders (matching Lean's `mkEqAndProof` in
   // `refs/lean4/src/Lean/Meta/Tactic/Cases.lean:30-37`).
   rec_level_params: &[Name],
-  stt: &crate::ix::compile::CompileState,
-  kctx: &mut crate::ix::compile::KernelCtx,
+  stt: &crate::compile::CompileState,
+  kctx: &mut crate::compile::KernelCtx,
 ) -> Option<LeanExpr> {
   let n_indices = index_decls.len();
   let outer_major = &major_fvars[0];

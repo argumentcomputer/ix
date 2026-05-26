@@ -2,12 +2,10 @@
 
 use std::sync::Arc;
 
-use crate::ix::ixon::expr::Expr as IxonExpr;
-use crate::ix::ixon::serialize::put_expr;
-use crate::ix::ixon::sharing::{
-  analyze_block, build_sharing_vec, decide_sharing,
-};
 use crate::lean::LeanIxonExpr;
+use ixon::expr::Expr as IxonExpr;
+use ixon::serialize::put_expr;
+use ixon::sharing::{analyze_block, build_sharing_vec, decide_sharing};
 use lean_ffi::object::{LeanArray, LeanBorrowed, LeanByteArray, LeanOwned};
 
 /// FFI: Debug sharing analysis - print usage counts for subterms with usage >= 2.
@@ -23,7 +21,7 @@ pub extern "C" fn rs_debug_sharing_analysis(
 
   let (info_map, _ptr_to_hash, topo_order) = analyze_block(&exprs, false);
   let effective_sizes =
-    crate::ix::ixon::sharing::compute_effective_sizes(&info_map, &topo_order);
+    ixon::sharing::compute_effective_sizes(&info_map, &topo_order);
 
   println!("[Rust] Found {} unique subterms", info_map.len());
 

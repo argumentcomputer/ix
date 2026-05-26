@@ -225,6 +225,7 @@ impl Tag0 {
 mod tests {
   use super::*;
   use quickcheck::{Arbitrary, Gen};
+  use quickcheck_macros::quickcheck;
 
   // ============================================================================
   // Arbitrary implementations

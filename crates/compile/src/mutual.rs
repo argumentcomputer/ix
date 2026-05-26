@@ -5,15 +5,14 @@
 //! [`ctx_to_all`] / [`all_to_ctx`] functions convert between ordered name
 //! vectors and index maps.
 
-use lean_ffi::nat::Nat;
+use bignat::Nat;
 
-use crate::{
-  ix::env::{
-    ConstructorVal, DefinitionSafety, DefinitionVal, Expr, InductiveVal, Name,
-    OpaqueVal, RecursorVal, ReducibilityHints, TheoremVal,
-  },
-  ix::ixon::constant::DefKind,
+use ix_common::env::{
+  ConstructorVal, DefinitionSafety, DefinitionVal, Expr, InductiveVal, Name,
+  OpaqueVal, RecursorVal, ReducibilityHints, TheoremVal,
 };
+
+use ixon::constant::DefKind;
 
 use rustc_hash::FxHashMap;
 
@@ -195,7 +194,7 @@ impl MutConst {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::ix::env::{ConstantVal, Level};
+  use ix_common::env::{ConstantVal, Level};
 
   fn n(s: &str) -> Name {
     Name::str(Name::anon(), s.to_string())

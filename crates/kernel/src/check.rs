@@ -1,13 +1,12 @@
 //! Constant checking dispatch.
 
-use std::sync::LazyLock;
 use std::time::{Duration, Instant};
 
 use rustc_hash::FxHashSet;
 
-use crate::ix::address::Address;
-use crate::ix::env::{DefinitionSafety, QuotKind};
-use crate::ix::ixon::constant::DefKind;
+use ix_common::address::Address;
+use ix_common::env::{DefinitionSafety, QuotKind};
+use ixon::constant::DefKind;
 
 use super::constant::KConst;
 use super::env::Addr;
@@ -26,14 +25,20 @@ use super::tc::TypeChecker;
 /// `IX_DECL_DIFF=1` we dump `val_ty` / `ty` and their whnf forms to
 /// pinpoint which sub-expression is stuck \u2014 sister tool to
 /// `IX_APP_DIFF` in `infer.rs`.
-static IX_DECL_DIFF: LazyLock<bool> =
-  LazyLock::new(|| std::env::var("IX_DECL_DIFF").is_ok());
+#[cfg(not(target_arch = "riscv64"))]
+static IX_DECL_DIFF: crate::EnvFlag =
+  crate::EnvFlag::new(|| crate::env_var("IX_DECL_DIFF").is_ok());
+#[cfg(target_arch = "riscv64")]
+static IX_DECL_DIFF: crate::EnvFlag = crate::EnvFlag::new(|| false);
 
 /// Per-phase timing for `Defn` checks. Set `IX_PHASE_TIMING=1` to see where a
 /// slow constant spends its time. Noisy — gate on a single constant via focus
 /// mode so only one line is printed.
-static IX_PHASE_TIMING: LazyLock<bool> =
-  LazyLock::new(|| std::env::var("IX_PHASE_TIMING").is_ok());
+#[cfg(not(target_arch = "riscv64"))]
+static IX_PHASE_TIMING: crate::EnvFlag =
+  crate::EnvFlag::new(|| crate::env_var("IX_PHASE_TIMING").is_ok());
+#[cfg(target_arch = "riscv64")]
+static IX_PHASE_TIMING: crate::EnvFlag = crate::EnvFlag::new(|| false);
 
 #[derive(Clone, Copy, Debug, Default)]
 struct ValidationTiming {
@@ -67,7 +72,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   /// Type-check a single constant. Clears per-constant caches first.
   pub fn check_const(&mut self, id: &KId<M>) -> Result<(), TcError<M>>
   where
-    M::MField<Vec<crate::ix::env::Name>>: CheckDupLevelParams,
+    M::MField<Vec<ix_common::env::Name>>: CheckDupLevelParams,
   {
     let c = self.get_const(id)?;
     if let Some(block) = self.coordinated_block_for(&c)? {
@@ -84,7 +89,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
 
   fn check_const_member_fresh(&mut self, id: &KId<M>) -> Result<(), TcError<M>>
   where
-    M::MField<Vec<crate::ix::env::Name>>: CheckDupLevelParams,
+    M::MField<Vec<ix_common::env::Name>>: CheckDupLevelParams,
   {
     self.reset();
     self.begin_const(id);
@@ -99,7 +104,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     c: &KConst<M>,
   ) -> Result<(), TcError<M>>
   where
-    M::MField<Vec<crate::ix::env::Name>>: CheckDupLevelParams,
+    M::MField<Vec<ix_common::env::Name>>: CheckDupLevelParams,
   {
     let phase_timing = *IX_PHASE_TIMING;
     let overall = if phase_timing { Some(Instant::now()) } else { None };
@@ -154,16 +159,16 @@ impl<M: KernelMode> TypeChecker<'_, M> {
             // (delta, iota, native, ...) is missing for convergence.
             let val_ty_whnf = self.whnf(&val_ty);
             let ty_whnf = self.whnf(ty);
-            eprintln!("[decl diff] DeclTypeMismatch");
-            eprintln!("  val_ty:      {val_ty}");
-            eprintln!("  ty:          {ty}");
+            log::info!("[decl diff] DeclTypeMismatch");
+            log::info!("  val_ty:      {val_ty}");
+            log::info!("  ty:          {ty}");
             match &val_ty_whnf {
-              Ok(w) => eprintln!("  val_ty whnf: {w}"),
-              Err(e) => eprintln!("  val_ty whnf: ERR {e}"),
+              Ok(w) => log::info!("  val_ty whnf: {w}"),
+              Err(e) => log::info!("  val_ty whnf: ERR {e}"),
             }
             match &ty_whnf {
-              Ok(w) => eprintln!("  ty     whnf: {w}"),
-              Err(e) => eprintln!("  ty     whnf: ERR {e}"),
+              Ok(w) => log::info!("  ty     whnf: {w}"),
+              Err(e) => log::info!("  ty     whnf: ERR {e}"),
             }
           }
           return Err(TcError::DeclTypeMismatch);
@@ -187,7 +192,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         if let Some(t0) = overall
           && self.phase_timing_label_matches(id)
         {
-          eprintln!(
+          log::info!(
             "[phase] {} total={:>8.1?} dup_lvls={:>8.1?} validate={:>8.1?} validate_ty={:>8.1?} validate_val={:>8.1?} validate_rules={:>8.1?} validate_univ={:>8.1?} infer_ty={:>8.1?} infer_val={:>8.1?} def_eq={:>8.1?} safety={:>8.1?} safety_ty={:>8.1?} safety_val={:>8.1?}",
             id,
             t0.elapsed(),
@@ -335,7 +340,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     requested: &KId<M>,
   ) -> Result<(), TcError<M>>
   where
-    M::MField<Vec<crate::ix::env::Name>>: CheckDupLevelParams,
+    M::MField<Vec<ix_common::env::Name>>: CheckDupLevelParams,
   {
     let phase_timing = *IX_PHASE_TIMING;
     let overall = if phase_timing { Some(Instant::now()) } else { None };
@@ -390,7 +395,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     if let Some(t0) = overall
       && self.phase_timing_label_matches(block)
     {
-      eprintln!(
+      log::info!(
         "[phase-block] {} kind={:?} members={} total={:>8.1?} get_members={:>8.1?} prevalidate={:>8.1?} validate_ty={:>8.1?} validate_val={:>8.1?} validate_rules={:>8.1?} validate_univ={:>8.1?} classify={:>8.1?} body={:>8.1?}",
         block,
         kind,
@@ -479,7 +484,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   }
 
   fn phase_timing_label_matches(&self, id: &KId<M>) -> bool {
-    match std::env::var("IX_KERNEL_DEBUG_CONST") {
+    match crate::env_var("IX_KERNEL_DEBUG_CONST") {
       Ok(filter) if filter.is_empty() => true,
       Ok(filter) => {
         id.to_string().contains(&filter)
@@ -867,9 +872,9 @@ mod tests {
   use super::super::level::KUniv;
   use super::super::mode::Anon;
   use super::super::tc::TypeChecker;
-  use crate::ix::address::Address;
-  use crate::ix::env::{DefinitionSafety, ReducibilityHints};
-  use crate::ix::ixon::constant::DefKind;
+  use ix_common::address::Address;
+  use ix_common::env::{DefinitionSafety, ReducibilityHints};
+  use ixon::constant::DefKind;
 
   #[test]
   fn profile_sink_records_delta_edge_and_fuel() {
@@ -1139,13 +1144,13 @@ mod tests {
 
   #[test]
   fn check_duplicate_level_params_rejected() {
-    use crate::ix::kernel::mode::Meta;
+    use crate::mode::Meta;
     type ME = KExpr<Meta>;
     type MU = KUniv<Meta>;
 
     let mut env = KEnv::<Meta>::new();
     let dup_name =
-      crate::ix::env::Name::str(crate::ix::env::Name::anon(), "u".into());
+      ix_common::env::Name::str(ix_common::env::Name::anon(), "u".into());
     let id = KId::new(mk_addr("T"), dup_name.clone());
     env.insert(
       id.clone(),

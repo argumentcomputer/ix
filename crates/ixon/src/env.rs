@@ -1,17 +1,17 @@
 //! Environment for storing Ixon data.
 
-use dashmap::DashMap;
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::collections::VecDeque;
 use std::sync::Arc;
 
-use crate::ix::address::Address;
-use crate::ix::env::{Name, ReducibilityHints};
+use ix_common::address::Address;
+use ix_common::env::{Name, ReducibilityHints};
 
 use super::comm::Comm;
 use super::constant::Constant;
 use super::lazy::LazyConstant;
-use super::metadata::ConstantMeta;
+use super::map::IxonMap;
+use super::metadata::{ConstantMeta, ConstantMetaInfo};
 
 /// A named constant with metadata.
 #[derive(Clone, Debug)]
@@ -43,7 +43,7 @@ impl Named {
 /// correctly permute source-order aux motives/minors into canonical
 /// positions. Both arrays have one entry per source-walk-discovered aux.
 ///
-/// This lives in `ixon::env` (not `compile::surgery`, where it originated)
+/// This lives in `ixon::env` (not `ix_compile::surgery`, where it originated)
 /// so it can be persisted into the serialized Ixon environment as a
 /// side-table on [`Env::aux_layouts`]. The surgery layer re-exports it.
 ///
@@ -75,15 +75,15 @@ pub struct AuxLayout {
 pub struct Env {
   /// Alpha-invariant constants: Address -> LazyConstant (raw bytes +
   /// optional materialized cache; see [`LazyConstant`]).
-  pub consts: DashMap<Address, LazyConstant>,
+  pub consts: IxonMap<Address, LazyConstant>,
   /// Named references: Name -> (constant address, metadata, ctx)
-  pub named: DashMap<Name, Named>,
+  pub named: IxonMap<Name, Named>,
   /// Raw data blobs: Address -> bytes
-  pub blobs: DashMap<Address, Vec<u8>>,
+  pub blobs: IxonMap<Address, Vec<u8>>,
   /// Hash-consed Lean.Name components: Address -> Name
-  pub names: DashMap<Address, Name>,
+  pub names: IxonMap<Address, Name>,
   /// Cryptographic commitments: commitment Address -> Comm
-  pub comms: DashMap<Address, Comm>,
+  pub comms: IxonMap<Address, Comm>,
   /// Reducibility hints sidecar harvested by [`Env::get_anon`] from the
   /// otherwise-discarded Named section. Keyed by the constant's
   /// projection/standalone address (i.e. `Named.addr` — the address the
@@ -103,16 +103,22 @@ pub struct Env {
 impl Env {
   pub fn new() -> Self {
     Env {
-      consts: DashMap::new(),
-      named: DashMap::new(),
-      blobs: DashMap::new(),
-      names: DashMap::new(),
-      comms: DashMap::new(),
+      consts: IxonMap::new(),
+      named: IxonMap::new(),
+      blobs: IxonMap::new(),
+      names: IxonMap::new(),
+      comms: IxonMap::new(),
       anon_hints: FxHashMap::default(),
     }
   }
 
   /// Store a blob and return its content address.
+  ///
+  /// Host-only because `IxonMap` is `DashMap` here (interior-mutable `&self`
+  /// inserts). On `riscv64` `IxonMap` is `FxHashMap`, which requires `&mut`;
+  /// the guest builds `Env` via `Env::get` deserialization and doesn't need
+  /// the store helpers.
+  #[cfg(not(target_arch = "riscv64"))]
   pub fn store_blob(&self, bytes: Vec<u8>) -> Address {
     let addr = Address::hash(&bytes);
     self.blobs.insert(addr.clone(), bytes);
@@ -129,12 +135,17 @@ impl Env {
   /// Serializes the constant once and pre-populates the
   /// [`LazyConstant`] cache so subsequent `Env::put` is a memcpy and
   /// the first `get_const` call is free.
+  ///
+  /// Host-only — see `store_blob`.
+  #[cfg(not(target_arch = "riscv64"))]
   pub fn store_const(&self, addr: Address, constant: Constant) {
     self.consts.insert(addr, LazyConstant::from_constant(constant));
   }
 
   /// Store an already-serialized constant under `addr` (lazy load path).
   /// `bytes` must be exactly what `Constant::put` produced for `addr`.
+  /// Host-only — see `store_blob`.
+  #[cfg(not(target_arch = "riscv64"))]
   pub fn store_const_lazy(&self, addr: Address, bytes: Arc<[u8]>) {
     self.consts.insert(addr, LazyConstant::from_bytes(bytes));
   }
@@ -143,6 +154,8 @@ impl Env {
   /// `(mmap, offset, len)` must reference exactly what `Constant::put`
   /// produced for `addr`. Used by [`Env::get_anon_mmap`] to avoid
   /// heap-copying on-disk bytes — the OS page cache backs the slice.
+  /// Host-only — see `store_blob`.
+  #[cfg(not(target_arch = "riscv64"))]
   pub fn store_const_lazy_mmap(
     &self,
     addr: Address,
@@ -175,7 +188,8 @@ impl Env {
     self.consts.get(addr).map(|r| Arc::from(r.value().raw_bytes()))
   }
 
-  /// Register a named constant.
+  /// Register a named constant. Host-only — see `store_blob`.
+  #[cfg(not(target_arch = "riscv64"))]
   pub fn register_name(&self, name: Name, named: Named) {
     self.named.insert(name, named);
   }
@@ -185,7 +199,8 @@ impl Env {
     self.named.get(name).map(|r| r.clone())
   }
 
-  /// Store a hash-consed name component.
+  /// Store a hash-consed name component. Host-only — see `store_blob`.
+  #[cfg(not(target_arch = "riscv64"))]
   pub fn store_name(&self, addr: Address, name: Name) {
     self.names.insert(addr, name);
   }
@@ -195,7 +210,8 @@ impl Env {
     self.names.get(addr).map(|r| r.clone())
   }
 
-  /// Store a commitment.
+  /// Store a commitment. Host-only — see `store_blob`.
+  #[cfg(not(target_arch = "riscv64"))]
   pub fn store_comm(&self, addr: Address, comm: Comm) {
     self.comms.insert(addr, comm);
   }
@@ -213,6 +229,20 @@ impl Env {
   /// Number of named entries.
   pub fn named_count(&self) -> usize {
     self.named.len()
+  }
+
+  /// Addresses of the named constants the kernel typechecker would
+  /// iterate via `check_const` — every entry in `env.named` minus the
+  /// `Muts` mutual-block pointers (which aren't standalone checkables).
+  /// Matches `crates/ffi/src/kernel.rs::all_checkable_ixon_names` but
+  /// returns addresses rather than names and skips the sort.
+  pub fn checkable_addrs(&self) -> Vec<Address> {
+    self
+      .named
+      .iter()
+      .filter(|e| !matches!(e.value().meta.info, ConstantMetaInfo::Muts { .. }))
+      .map(|e| e.value().addr.clone())
+      .collect()
   }
 
   /// Number of hash-consed name components.
@@ -276,28 +306,31 @@ impl Env {
 }
 
 impl Clone for Env {
+  // `mut` is only needed on `riscv64` where `IxonMap` wraps `FxHashMap` and
+  // `insert` takes `&mut self`; on host `DashMap::insert` takes `&self`.
+  #[cfg_attr(not(target_arch = "riscv64"), allow(unused_mut))]
   fn clone(&self) -> Self {
-    let consts = DashMap::new();
+    let mut consts = IxonMap::new();
     for entry in self.consts.iter() {
       consts.insert(entry.key().clone(), entry.value().clone());
     }
 
-    let named = DashMap::new();
+    let mut named = IxonMap::new();
     for entry in self.named.iter() {
       named.insert(entry.key().clone(), entry.value().clone());
     }
 
-    let blobs = DashMap::new();
+    let mut blobs = IxonMap::new();
     for entry in self.blobs.iter() {
       blobs.insert(entry.key().clone(), entry.value().clone());
     }
 
-    let names = DashMap::new();
+    let mut names = IxonMap::new();
     for entry in self.names.iter() {
       names.insert(entry.key().clone(), entry.value().clone());
     }
 
-    let comms = DashMap::new();
+    let mut comms = IxonMap::new();
     for entry in self.comms.iter() {
       comms.insert(entry.key().clone(), entry.value().clone());
     }
@@ -316,9 +349,9 @@ impl Clone for Env {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::ix::env::Name;
-  use crate::ix::ixon::constant::{Axiom, Constant, ConstantInfo};
-  use crate::ix::ixon::expr::Expr;
+  use crate::constant::{Axiom, Constant, ConstantInfo};
+  use crate::expr::Expr;
+  use ix_common::env::Name;
   use std::sync::Arc;
 
   fn n(s: &str) -> Name {

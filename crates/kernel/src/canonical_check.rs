@@ -38,7 +38,7 @@ use std::cmp::Ordering;
 
 use rustc_hash::FxHashMap;
 
-use crate::ix::address::Address;
+use ix_common::address::Address;
 
 use super::constant::{KConst, RecRule};
 use super::error::TcError;
@@ -47,7 +47,7 @@ use super::id::KId;
 use super::level::{KUniv, UnivData};
 use super::mode::KernelMode;
 
-pub use crate::ix::strong_ordering::SOrd;
+pub use ix_common::strong_ordering::SOrd;
 
 // ===========================================================================
 // KMutCtx — block-local address → class-index map
@@ -415,11 +415,11 @@ fn compare_krecr<M: KernelMode>(
 /// alpha-collapse on the canonical IXON form, which doesn't include
 /// hints (and treats safety as a separate sidecar in practice).
 fn compare_kdefn<M: KernelMode>(
-  x_kind: crate::ix::ixon::constant::DefKind,
+  x_kind: ixon::constant::DefKind,
   x_lvls: u64,
   x_ty: &KExpr<M>,
   x_val: &KExpr<M>,
-  y_kind: crate::ix::ixon::constant::DefKind,
+  y_kind: ixon::constant::DefKind,
   y_lvls: u64,
   y_ty: &KExpr<M>,
   y_val: &KExpr<M>,
@@ -826,10 +826,10 @@ pub fn validate_canonical_block_single_pass<M: KernelMode>(
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::ix::address::Address;
-  use crate::ix::env::{BinderInfo, Name};
-  use crate::ix::env::{DefinitionSafety, ReducibilityHints};
-  use crate::ix::ixon::constant::DefKind;
+  use ix_common::address::Address;
+  use ix_common::env::{BinderInfo, Name};
+  use ix_common::env::{DefinitionSafety, ReducibilityHints};
+  use ixon::constant::DefKind;
 
   use super::super::expr::KExpr;
   use super::super::level::KUniv;

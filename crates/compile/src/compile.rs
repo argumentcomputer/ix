@@ -13,36 +13,38 @@ use std::{
   sync::{Arc, atomic::Ordering as AtomicOrdering},
 };
 
-use lean_ffi::nat::Nat;
+use bignat::Nat;
+
+use ix_common::address::Address;
+use ix_common::env::{
+  AxiomVal, BinderInfo, ConstantInfo as LeanConstantInfo, ConstructorVal,
+  DataValue as LeanDataValue, Env as LeanEnv, Expr as LeanExpr, ExprData,
+  InductiveVal, Level, LevelData, Literal, Name, NameData, QuotVal,
+  RecursorRule as LeanRecursorRule, SourceInfo as LeanSourceInfo,
+  Substring as LeanSubstring, Syntax as LeanSyntax, SyntaxPreresolved,
+};
+use ix_common::strong_ordering::SOrd;
+
+use ixon::{
+  CompileError, Tag0,
+  constant::{
+    Axiom, Constant, ConstantInfo, Constructor, Definition, Inductive,
+    MutConst as IxonMutConst, Quotient, Recursor, RecursorRule,
+    ctor_proj_constant, defn_proj_constant, indc_proj_constant,
+    recr_proj_constant,
+  },
+  env::{Env as IxonEnv, Named},
+  expr::Expr,
+  metadata::{
+    ConstantMeta, ConstantMetaInfo, DataValue, ExprMeta, ExprMetaData, KVMap,
+  },
+  sharing::{self, analyze_block, build_sharing_vec, decide_sharing},
+  univ::Univ,
+};
 
 use crate::{
-  ix::address::Address,
-  ix::env::{
-    AxiomVal, BinderInfo, ConstantInfo as LeanConstantInfo, ConstructorVal,
-    DataValue as LeanDataValue, Env as LeanEnv, Expr as LeanExpr, ExprData,
-    InductiveVal, Level, LevelData, Literal, Name, NameData, QuotVal,
-    RecursorRule as LeanRecursorRule, SourceInfo as LeanSourceInfo,
-    Substring as LeanSubstring, Syntax as LeanSyntax, SyntaxPreresolved,
-  },
-  ix::graph::NameSet,
-  ix::ixon::{
-    CompileError, Tag0,
-    constant::{
-      Axiom, Constant, ConstantInfo, Constructor, Definition, Inductive,
-      MutConst as IxonMutConst, Quotient, Recursor, RecursorRule,
-      ctor_proj_constant, defn_proj_constant, indc_proj_constant,
-      recr_proj_constant,
-    },
-    env::{Env as IxonEnv, Named},
-    expr::Expr,
-    metadata::{
-      ConstantMeta, ConstantMetaInfo, DataValue, ExprMeta, ExprMetaData, KVMap,
-    },
-    sharing::{self, analyze_block, build_sharing_vec, decide_sharing},
-    univ::Univ,
-  },
-  ix::mutual::{Def, Ind, MutConst, MutCtx, Rec, ctx_to_all},
-  ix::strong_ordering::SOrd,
+  graph::NameSet,
+  mutual::{Def, Ind, MutConst, MutCtx, Rec, ctx_to_all},
 };
 
 /// Whether to track hash-consed sizes during compilation.
@@ -87,7 +89,7 @@ pub struct KernelCtx {
   /// etc.) with aux-substituted types at `resolve_lean_name_addr`-derived
   /// addresses that may shift as alpha-collapse reassigns addresses over
   /// the course of compilation.
-  pub kenv: crate::ix::kernel::env::KEnv<crate::ix::kernel::mode::Meta>,
+  pub kenv: ix_kernel::env::KEnv<ix_kernel::mode::Meta>,
 }
 
 impl Default for KernelCtx {
@@ -98,7 +100,7 @@ impl Default for KernelCtx {
 
 impl KernelCtx {
   pub fn new() -> Self {
-    KernelCtx { kenv: crate::ix::kernel::env::KEnv::new() }
+    KernelCtx { kenv: ix_kernel::env::KEnv::new() }
   }
 }
 
@@ -442,7 +444,7 @@ fn compile_univ_indices(
 
 fn univ_sort_key(univ: &Arc<Univ>) -> Vec<u8> {
   let mut buf = Vec::new();
-  crate::ix::ixon::univ::put_univ(univ, &mut buf);
+  ixon::univ::put_univ(univ, &mut buf);
   buf
 }
 
@@ -540,7 +542,7 @@ fn collect_expr_tables(
   Ok(())
 }
 
-pub(crate) fn preseed_expr_tables(
+pub fn preseed_expr_tables(
   exprs: &[(&LeanExpr, &[Name])],
   mut_ctx: &MutCtx,
   cache: &mut BlockCache,
@@ -582,7 +584,7 @@ pub(crate) fn preseed_expr_tables(
   Ok(())
 }
 
-pub(crate) fn collect_mut_const_exprs<'a>(
+pub fn collect_mut_const_exprs<'a>(
   cnst: &'a MutConst,
   exprs: &mut Vec<(&'a LeanExpr, &'a [Name])>,
 ) {
@@ -621,7 +623,7 @@ pub fn compile_expr(
   cache: &mut BlockCache,
   stt: &CompileState,
 ) -> Result<Arc<Expr>, CompileError> {
-  use crate::ix::ixon::metadata::CallSiteEntry;
+  use ixon::metadata::CallSiteEntry;
 
   // Stack-based iterative compilation to avoid stack overflow
   enum Frame {
@@ -774,7 +776,7 @@ pub fn compile_expr(
               let compiling_is_aux_regen = cache
                 .compiling
                 .as_ref()
-                .is_some_and(crate::ix::decompile::is_aux_gen_suffix);
+                .is_some_and(crate::decompile::is_aux_gen_suffix);
               if !compiling_is_aux_regen {
                 if let Some(plan) = stt.call_site_plans.get(name)
                   && !plan.is_identity()
@@ -1461,11 +1463,11 @@ fn compile_data_value(dv: &LeanDataValue, stt: &CompileState) -> DataValue {
       // Serialize Int and store as blob
       let mut bytes = Vec::new();
       match i {
-        crate::ix::env::Int::OfNat(n) => {
+        ix_common::env::Int::OfNat(n) => {
           bytes.push(0);
           bytes.extend_from_slice(&n.to_le_bytes());
         },
-        crate::ix::env::Int::NegSucc(n) => {
+        ix_common::env::Int::NegSucc(n) => {
           bytes.push(1);
           bytes.extend_from_slice(&n.to_le_bytes());
         },
@@ -1671,16 +1673,16 @@ fn apply_sharing(exprs: Vec<Arc<Expr>>) -> (Vec<Arc<Expr>>, Vec<Arc<Expr>>) {
 }
 
 /// Result of applying sharing to a singleton constant.
-pub(crate) struct SingletonSharingResult {
+pub struct SingletonSharingResult {
   /// The compiled Constant
-  pub(crate) constant: Constant,
+  pub constant: Constant,
   /// Hash-consed size of expressions
-  pub(crate) hash_consed_size: usize,
+  pub hash_consed_size: usize,
 }
 
 /// Apply sharing to a Definition and return a Constant with stats.
 #[allow(clippy::needless_pass_by_value)]
-pub(crate) fn apply_sharing_to_definition_with_stats(
+pub fn apply_sharing_to_definition_with_stats(
   def: Definition,
   refs: Vec<Address>,
   univs: Vec<Arc<Univ>>,
@@ -1704,7 +1706,7 @@ pub(crate) fn apply_sharing_to_definition_with_stats(
 
 /// Apply sharing to an Axiom and return a Constant with stats.
 #[allow(clippy::needless_pass_by_value)]
-pub(crate) fn apply_sharing_to_axiom_with_stats(
+pub fn apply_sharing_to_axiom_with_stats(
   ax: Axiom,
   refs: Vec<Address>,
   univs: Vec<Arc<Univ>>,
@@ -1722,7 +1724,7 @@ pub(crate) fn apply_sharing_to_axiom_with_stats(
 
 /// Apply sharing to a Quotient and return a Constant with stats.
 #[allow(clippy::needless_pass_by_value)]
-pub(crate) fn apply_sharing_to_quotient_with_stats(
+pub fn apply_sharing_to_quotient_with_stats(
   quot: Quotient,
   refs: Vec<Address>,
   univs: Vec<Arc<Univ>>,
@@ -1743,7 +1745,7 @@ pub(crate) fn apply_sharing_to_quotient_with_stats(
 }
 
 /// Apply sharing to a Recursor and return a Constant with stats.
-pub(crate) fn apply_sharing_to_recursor_with_stats(
+pub fn apply_sharing_to_recursor_with_stats(
   rec: Recursor,
   refs: Vec<Address>,
   univs: Vec<Arc<Univ>>,
@@ -1780,15 +1782,15 @@ pub(crate) fn apply_sharing_to_recursor_with_stats(
 }
 
 /// Result of applying sharing to a mutual block.
-pub(crate) struct MutualBlockSharingResult {
+pub struct MutualBlockSharingResult {
   /// The compiled Constant
-  pub(crate) constant: Constant,
+  pub constant: Constant,
   /// Hash-consed size of all expressions in the block
-  pub(crate) hash_consed_size: usize,
+  pub hash_consed_size: usize,
 }
 
 /// Apply sharing to a mutual block and return a Constant with stats.
-pub(crate) fn apply_sharing_to_mutual_block(
+pub fn apply_sharing_to_mutual_block(
   mut_consts: Vec<IxonMutConst>,
   refs: Vec<Address>,
   univs: Vec<Arc<Univ>>,
@@ -1960,7 +1962,7 @@ enum MutConstKind {
 
 /// Compile a Definition.
 /// Arena persists across type + value within a constant.
-pub(crate) fn compile_definition(
+pub fn compile_definition(
   def: &Def,
   mut_ctx: &MutCtx,
   cache: &mut BlockCache,
@@ -2031,7 +2033,7 @@ fn compile_recursor_rule(
 
 /// Compile a Recursor.
 /// Arena grows across type and all rule RHS expressions.
-pub(crate) fn compile_recursor(
+pub fn compile_recursor(
   rec: &Rec,
   mut_ctx: &MutCtx,
   cache: &mut BlockCache,
@@ -2158,7 +2160,7 @@ fn compile_constructor(
 /// The inductive type gets its own arena. Each constructor gets its own arena
 /// via compile_constructor. No CtorMeta duplication — ConstantMeta::Indc only
 /// stores constructor name addresses.
-pub(crate) fn compile_inductive(
+pub fn compile_inductive(
   ind: &Ind,
   mut_ctx: &MutCtx,
   cache: &mut BlockCache,
@@ -2315,20 +2317,20 @@ fn compile_quotient(
 // ===========================================================================
 
 /// Result of compiling a mutual block.
-pub(crate) struct CompiledMutualBlock {
+pub struct CompiledMutualBlock {
   /// The compiled Constant
-  pub(crate) constant: Constant,
+  pub constant: Constant,
   /// Content-addressed hash
-  pub(crate) addr: Address,
+  pub addr: Address,
   /// Hash-consed size (theoretical minimum with perfect DAG sharing)
-  pub(crate) hash_consed_size: usize,
+  pub hash_consed_size: usize,
   /// Serialized size (actual bytes)
-  pub(crate) serialized_size: usize,
+  pub serialized_size: usize,
 }
 
 /// Compile a mutual block with block-level sharing.
 /// Returns the Constant, its content-addressed hash, and size statistics.
-pub(crate) fn compile_mutual_block(
+pub fn compile_mutual_block(
   mut_consts: Vec<IxonMutConst>,
   refs: Vec<Address>,
   univs: Vec<Arc<Univ>>,
@@ -3890,18 +3892,18 @@ fn compile_mutual(
     .map(|r| r.clone())
 }
 
-pub(crate) mod aux_gen;
+pub mod aux_gen;
 mod env;
-pub(crate) mod mutual;
-pub(crate) mod nat_conv;
-pub(crate) mod surgery;
+pub mod mutual;
+pub mod nat_conv;
+pub mod surgery;
 pub use env::{compile_env, compile_env_with_options};
 
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::ix::env::{BinderInfo, Expr as LeanExpr, Level};
-  use crate::ix::ixon::metadata::CallSiteEntry;
+  use ix_common::env::{BinderInfo, Expr as LeanExpr, Level};
+  use ixon::metadata::CallSiteEntry;
 
   #[test]
   fn test_compile_univ_zero() {
@@ -4314,7 +4316,7 @@ mod tests {
 
   #[test]
   fn test_compile_axiom() {
-    use crate::ix::env::{AxiomVal, ConstantVal};
+    use ix_common::env::{AxiomVal, ConstantVal};
 
     // Create a simple axiom: axiom myAxiom : Type
     let name = Name::str(Name::anon(), "myAxiom".to_string());
@@ -4348,7 +4350,7 @@ mod tests {
 
   #[test]
   fn test_compile_simple_def() {
-    use crate::ix::env::{
+    use ix_common::env::{
       ConstantVal, DefinitionSafety, DefinitionVal, ReducibilityHints,
     };
 
@@ -4402,11 +4404,11 @@ mod tests {
 
   #[test]
   fn test_compile_self_referential_def() {
-    use crate::ix::env::{
+    use ix_common::env::{
       ConstantInfo as LeanConstantInfo, ConstantVal, DefinitionSafety,
       DefinitionVal, Env as LeanEnv, ReducibilityHints,
     };
-    use crate::ix::ixon::constant::ConstantInfo;
+    use ixon::constant::ConstantInfo;
 
     // Create a self-referential definition (like a recursive function placeholder)
     // def myDef : Type := myDef  (this is silly but tests the mutual handling)
@@ -4462,7 +4464,7 @@ mod tests {
 
   #[test]
   fn test_compile_env_single_axiom() {
-    use crate::ix::env::{AxiomVal, ConstantVal};
+    use ix_common::env::{AxiomVal, ConstantVal};
 
     // Create a minimal environment with just one axiom
     let name = Name::str(Name::anon(), "myAxiom".to_string());
@@ -4484,7 +4486,7 @@ mod tests {
 
   #[test]
   fn test_compile_env_two_independent_axioms() {
-    use crate::ix::env::{AxiomVal, ConstantVal};
+    use ix_common::env::{AxiomVal, ConstantVal};
 
     let name1 = Name::str(Name::anon(), "axiom1".to_string());
     let name2 = Name::str(Name::anon(), "axiom2".to_string());
@@ -4528,7 +4530,7 @@ mod tests {
 
   #[test]
   fn test_compile_env_def_referencing_axiom() {
-    use crate::ix::env::{
+    use ix_common::env::{
       AxiomVal, ConstantVal, DefinitionSafety, DefinitionVal, ReducibilityHints,
     };
 
@@ -4578,7 +4580,7 @@ mod tests {
   /// to the single representative in the Muts array.
   #[test]
   fn test_compile_mutual_alpha_equivalent_defs() {
-    use crate::ix::env::{
+    use ix_common::env::{
       ConstantVal, DefinitionSafety, DefinitionVal, ReducibilityHints,
     };
 
@@ -4656,7 +4658,7 @@ mod tests {
   /// with projections indexing correctly into the array.
   #[test]
   fn test_compile_mutual_alpha_equiv_with_different_third() {
-    use crate::ix::env::{
+    use ix_common::env::{
       ConstantVal, DefinitionSafety, DefinitionVal, ReducibilityHints,
     };
 
@@ -4765,8 +4767,8 @@ mod tests {
 
   #[test]
   fn test_mutual_block_roundtrip() {
-    use crate::ix::env::DefinitionSafety;
-    use crate::ix::ixon::constant::{DefKind, Definition};
+    use ix_common::env::DefinitionSafety;
+    use ixon::constant::{DefKind, Definition};
 
     // Create a mutual block and verify it roundtrips through serialization
     let sort0 = Expr::sort(0);
@@ -4836,7 +4838,7 @@ mod tests {
 
   #[test]
   fn test_definition_with_sharing() {
-    use crate::ix::ixon::constant::{DefKind, Definition};
+    use ixon::constant::{DefKind, Definition};
 
     // Create a definition where typ and value share structure
     let sort0 = Expr::sort(0);
@@ -4857,7 +4859,7 @@ mod tests {
     // Create constant with sharing at Constant level
     let def = Definition {
       kind: DefKind::Definition,
-      safety: crate::ix::env::DefinitionSafety::Safe,
+      safety: ix_common::env::DefinitionSafety::Safe,
       lvls: 0,
       typ: rewritten[0].clone(),
       value: rewritten[1].clone(),
@@ -4880,7 +4882,7 @@ mod tests {
 
   #[test]
   fn test_axiom_with_sharing() {
-    use crate::ix::ixon::constant::Axiom;
+    use ixon::constant::Axiom;
 
     // Axiom with repeated subterms in its type
     let sort0 = Expr::sort(0);
@@ -4915,7 +4917,7 @@ mod tests {
 
   #[test]
   fn test_recursor_with_sharing() {
-    use crate::ix::ixon::constant::{Recursor, RecursorRule};
+    use ixon::constant::{Recursor, RecursorRule};
 
     // Recursor with shared subterms across typ and rules
     let sort0 = Expr::sort(0);
@@ -4981,7 +4983,7 @@ mod tests {
 
   #[test]
   fn test_inductive_with_sharing() {
-    use crate::ix::ixon::constant::{Constructor, Inductive};
+    use ixon::constant::{Constructor, Inductive};
 
     // Inductive with shared subterms across type and constructors
     let sort0 = Expr::sort(0);
@@ -5091,8 +5093,8 @@ mod tests {
 
   #[test]
   fn test_roundtrip_axiom() {
-    use crate::ix::decompile::decompile_env;
-    use crate::ix::env::{AxiomVal, ConstantVal};
+    use crate::decompile::decompile_env;
+    use ix_common::env::{AxiomVal, ConstantVal};
 
     // Create an axiom: axiom myAxiom : Type
     let name = Name::str(Name::anon(), "myAxiom".to_string());
@@ -5125,8 +5127,8 @@ mod tests {
 
   #[test]
   fn test_roundtrip_axiom_with_level_params() {
-    use crate::ix::decompile::decompile_env;
-    use crate::ix::env::{AxiomVal, ConstantVal, Env as LeanEnv};
+    use crate::decompile::decompile_env;
+    use ix_common::env::{AxiomVal, ConstantVal, Env as LeanEnv};
 
     // Create an axiom with universe params: axiom myAxiom.{u, v} : Sort (max u v)
     let name = Name::str(Name::anon(), "myAxiom".to_string());
@@ -5168,8 +5170,8 @@ mod tests {
 
   #[test]
   fn test_roundtrip_definition() {
-    use crate::ix::decompile::decompile_env;
-    use crate::ix::env::{
+    use crate::decompile::decompile_env;
+    use ix_common::env::{
       ConstantVal, DefinitionSafety, DefinitionVal, ReducibilityHints,
     };
 
@@ -5180,13 +5182,13 @@ mod tests {
       Name::str(Name::anon(), "x".to_string()),
       type1.clone(),
       type1.clone(),
-      crate::ix::env::BinderInfo::Default,
+      ix_common::env::BinderInfo::Default,
     );
     let value = LeanExpr::lam(
       Name::str(Name::anon(), "x".to_string()),
       type1,
       LeanExpr::bvar(Nat::from(0u64)),
-      crate::ix::env::BinderInfo::Default,
+      ix_common::env::BinderInfo::Default,
     );
     let def = DefinitionVal {
       cnst: ConstantVal { name: name.clone(), level_params: vec![], typ },
@@ -5221,8 +5223,8 @@ mod tests {
 
   #[test]
   fn test_roundtrip_def_referencing_axiom() {
-    use crate::ix::decompile::decompile_env;
-    use crate::ix::env::{
+    use crate::decompile::decompile_env;
+    use ix_common::env::{
       AxiomVal, ConstantVal, DefinitionSafety, DefinitionVal, Env as LeanEnv,
       ReducibilityHints,
     };
@@ -5278,8 +5280,8 @@ mod tests {
 
   #[test]
   fn test_roundtrip_quotient() {
-    use crate::ix::decompile::decompile_env;
-    use crate::ix::env::{ConstantVal, Env as LeanEnv, QuotKind, QuotVal};
+    use crate::decompile::decompile_env;
+    use ix_common::env::{ConstantVal, Env as LeanEnv, QuotKind, QuotVal};
 
     // Create quotient constants
     let quot_name = Name::str(Name::anon(), "Quot".to_string());
@@ -5298,9 +5300,9 @@ mod tests {
         Name::anon(),
         LeanExpr::bvar(Nat::from(1u64)),
         prop.clone(),
-        crate::ix::env::BinderInfo::Default,
+        ix_common::env::BinderInfo::Default,
       ),
-      crate::ix::env::BinderInfo::Default,
+      ix_common::env::BinderInfo::Default,
     );
     let typ = LeanExpr::all(
       alpha,
@@ -5309,9 +5311,9 @@ mod tests {
         Name::anon(),
         rel_type,
         sort_u.clone(),
-        crate::ix::env::BinderInfo::Default,
+        ix_common::env::BinderInfo::Default,
       ),
-      crate::ix::env::BinderInfo::Default,
+      ix_common::env::BinderInfo::Default,
     );
 
     let quot = QuotVal {
@@ -5348,8 +5350,8 @@ mod tests {
 
   #[test]
   fn test_roundtrip_theorem() {
-    use crate::ix::decompile::decompile_env;
-    use crate::ix::env::{ConstantVal, Env as LeanEnv, TheoremVal};
+    use crate::decompile::decompile_env;
+    use ix_common::env::{ConstantVal, Env as LeanEnv, TheoremVal};
 
     // Create a theorem: theorem trivial : True := True.intro
     let name = Name::str(Name::anon(), "trivial".to_string());
@@ -5389,8 +5391,8 @@ mod tests {
 
   #[test]
   fn test_roundtrip_opaque() {
-    use crate::ix::decompile::decompile_env;
-    use crate::ix::env::{ConstantVal, Env as LeanEnv, OpaqueVal};
+    use crate::decompile::decompile_env;
+    use ix_common::env::{ConstantVal, Env as LeanEnv, OpaqueVal};
 
     // Create an opaque: opaque secret : Nat := 42
     let name = Name::str(Name::anon(), "secret".to_string());
@@ -5431,8 +5433,8 @@ mod tests {
 
   #[test]
   fn test_roundtrip_multiple_constants() {
-    use crate::ix::decompile::decompile_env;
-    use crate::ix::env::{
+    use crate::decompile::decompile_env;
+    use ix_common::env::{
       AxiomVal, ConstantVal, DefinitionSafety, DefinitionVal, Env as LeanEnv,
       ReducibilityHints, TheoremVal,
     };
@@ -5506,8 +5508,8 @@ mod tests {
 
   #[test]
   fn test_roundtrip_inductive_simple() {
-    use crate::ix::decompile::decompile_env;
-    use crate::ix::env::{
+    use crate::decompile::decompile_env;
+    use ix_common::env::{
       ConstantVal, ConstructorVal, Env as LeanEnv, InductiveVal,
     };
 
@@ -5589,8 +5591,8 @@ mod tests {
 
   #[test]
   fn test_roundtrip_inductive_with_multiple_ctors() {
-    use crate::ix::decompile::decompile_env;
-    use crate::ix::env::{
+    use crate::decompile::decompile_env;
+    use ix_common::env::{
       ConstantVal, ConstructorVal, Env as LeanEnv, InductiveVal,
     };
 
@@ -5673,8 +5675,8 @@ mod tests {
 
   #[test]
   fn test_roundtrip_mutual_definitions() {
-    use crate::ix::decompile::decompile_env;
-    use crate::ix::env::{
+    use crate::decompile::decompile_env;
+    use ix_common::env::{
       ConstantVal, DefinitionSafety, DefinitionVal, Env as LeanEnv,
       ReducibilityHints,
     };
@@ -5690,7 +5692,7 @@ mod tests {
       Name::anon(),
       type0.clone(),
       type0.clone(),
-      crate::ix::env::BinderInfo::Default,
+      ix_common::env::BinderInfo::Default,
     );
 
     // f := fun x => g x
@@ -5701,7 +5703,7 @@ mod tests {
         LeanExpr::cnst(g_name.clone(), vec![]),
         LeanExpr::bvar(Nat::from(0u64)),
       ),
-      crate::ix::env::BinderInfo::Default,
+      ix_common::env::BinderInfo::Default,
     );
 
     // g := fun x => f x
@@ -5712,7 +5714,7 @@ mod tests {
         LeanExpr::cnst(f_name.clone(), vec![]),
         LeanExpr::bvar(Nat::from(0u64)),
       ),
-      crate::ix::env::BinderInfo::Default,
+      ix_common::env::BinderInfo::Default,
     );
 
     // Mutual block: both reference each other
@@ -5784,8 +5786,8 @@ mod tests {
 
   #[test]
   fn test_roundtrip_mutual_inductives() {
-    use crate::ix::decompile::decompile_env;
-    use crate::ix::env::{
+    use crate::decompile::decompile_env;
+    use ix_common::env::{
       ConstantVal, ConstructorVal, Env as LeanEnv, InductiveVal,
     };
 
@@ -5855,7 +5857,7 @@ mod tests {
       Name::anon(),
       odd_type.clone(),
       even_type.clone(),
-      crate::ix::env::BinderInfo::Default,
+      ix_common::env::BinderInfo::Default,
     );
 
     let even_succ_ctor = ConstructorVal {
@@ -5876,7 +5878,7 @@ mod tests {
       Name::anon(),
       even_type.clone(),
       odd_type.clone(),
-      crate::ix::env::BinderInfo::Default,
+      ix_common::env::BinderInfo::Default,
     );
 
     let odd_succ_ctor = ConstructorVal {
@@ -5942,8 +5944,8 @@ mod tests {
 
   #[test]
   fn test_roundtrip_inductive_with_recursor() {
-    use crate::ix::decompile::decompile_env;
-    use crate::ix::env::{ConstantVal, InductiveVal, RecursorVal};
+    use crate::decompile::decompile_env;
+    use ix_common::env::{ConstantVal, InductiveVal, RecursorVal};
 
     // Create Empty type with recursor (no constructors)
     // inductive Empty : Type
@@ -5976,7 +5978,7 @@ mod tests {
       Name::anon(),
       empty_type.clone(),
       LeanExpr::sort(Level::param(u.clone())),
-      crate::ix::env::BinderInfo::Default,
+      ix_common::env::BinderInfo::Default,
     );
     let rec_type = LeanExpr::all(
       Name::str(Name::anon(), "motive".to_string()),
@@ -5988,9 +5990,9 @@ mod tests {
           LeanExpr::bvar(Nat::from(1u64)),
           LeanExpr::bvar(Nat::from(0u64)),
         ),
-        crate::ix::env::BinderInfo::Default,
+        ix_common::env::BinderInfo::Default,
       ),
-      crate::ix::env::BinderInfo::Implicit,
+      ix_common::env::BinderInfo::Implicit,
     );
 
     let recursor = RecursorVal {

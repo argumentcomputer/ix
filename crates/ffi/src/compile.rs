@@ -9,44 +9,44 @@
 
 use std::sync::Arc;
 
-use crate::ix::address::Address;
-use crate::ix::compile::{
-  CompileOptions, CompileState, compile_env_with_options,
-};
-use crate::ix::condense::compute_sccs;
-use crate::ix::decompile::decompile_env;
-use crate::ix::env::Name;
-use crate::ix::graph::build_ref_graph;
-use crate::ix::ixon::constant::Constant as IxonConstant;
-#[cfg(feature = "test-ffi")]
-use crate::ix::ixon::constant::ConstantInfo;
-#[cfg(feature = "test-ffi")]
-use crate::ix::ixon::expr::Expr as IxonExpr;
-use crate::ix::ixon::{Comm, ConstantMeta};
 use crate::lean::{
   LeanIxBlock, LeanIxCompileError, LeanIxCompilePhases, LeanIxCondensedBlocks,
   LeanIxConstantInfo, LeanIxDecompileError, LeanIxName, LeanIxRawEnvironment,
   LeanIxSerializeError, LeanIxonRawBlob, LeanIxonRawComm, LeanIxonRawConst,
   LeanIxonRawEnv, LeanIxonRawNameEntry, LeanIxonRawNamed,
 };
-use lean_ffi::nat::Nat;
+use ix_common::address::Address;
+use ix_common::env::Name;
+use ix_compile::compile::{
+  CompileOptions, CompileState, compile_env_with_options,
+};
+use ix_compile::condense::compute_sccs;
+use ix_compile::decompile::decompile_env;
+use ix_compile::graph::build_ref_graph;
+use ixon::constant::Constant as IxonConstant;
+#[cfg(feature = "test-ffi")]
+use ixon::constant::ConstantInfo;
+#[cfg(feature = "test-ffi")]
+use ixon::expr::Expr as IxonExpr;
+use ixon::{Comm, ConstantMeta};
 use lean_ffi::object::LeanIOResult;
+use lean_ffi::object::LeanNat;
 use lean_ffi::object::{
   LeanArray, LeanBorrowed, LeanByteArray, LeanExcept, LeanList, LeanOwned,
   LeanProd, LeanRef, LeanString,
 };
 
-use crate::ffi::builder::LeanBuildCache;
-use crate::ffi::ixon::env::decoded_to_ixon_env;
-use crate::ffi::lean_env::decode_env;
+use crate::builder::LeanBuildCache;
 use crate::lean::LeanIxAddress;
+use crate::lean_env::decode_env;
+use crate::lean_ixon::env::decoded_to_ixon_env;
 
 #[cfg(feature = "test-ffi")]
-use crate::ffi::lean_env::{GlobalCache, decode_name};
-#[cfg(feature = "test-ffi")]
-use crate::ix::ixon::serialize::put_expr;
-#[cfg(feature = "test-ffi")]
 use crate::lean::{LeanIxBlockCompareDetail, LeanIxBlockCompareResult};
+#[cfg(feature = "test-ffi")]
+use crate::lean_env::{GlobalCache, decode_name};
+#[cfg(feature = "test-ffi")]
+use ixon::serialize::put_expr;
 #[cfg(feature = "test-ffi")]
 use std::collections::HashMap;
 
@@ -1002,17 +1002,17 @@ extern "C" fn rs_get_pre_sharing_exprs(
       let mut exprs = Vec::new();
       for mc in muts {
         match mc {
-          crate::ix::ixon::constant::MutConst::Defn(def) => {
+          ixon::constant::MutConst::Defn(def) => {
             exprs.push(def.typ.clone());
             exprs.push(def.value.clone());
           },
-          crate::ix::ixon::constant::MutConst::Indc(ind) => {
+          ixon::constant::MutConst::Indc(ind) => {
             exprs.push(ind.typ.clone());
             for ctor in &ind.ctors {
               exprs.push(ctor.typ.clone());
             }
           },
-          crate::ix::ixon::constant::MutConst::Recr(rec) => {
+          ixon::constant::MutConst::Recr(rec) => {
             exprs.push(rec.typ.clone());
             for rule in &rec.rules {
               exprs.push(rule.rhs.clone());
@@ -1091,13 +1091,9 @@ extern "C" fn rs_get_pre_sharing_exprs_len(
       let mut count = 0;
       for mc in muts {
         match mc {
-          crate::ix::ixon::constant::MutConst::Defn(_) => count += 2,
-          crate::ix::ixon::constant::MutConst::Indc(ind) => {
-            count += 1 + ind.ctors.len()
-          },
-          crate::ix::ixon::constant::MutConst::Recr(rec) => {
-            count += 1 + rec.rules.len()
-          },
+          ixon::constant::MutConst::Defn(_) => count += 2,
+          ixon::constant::MutConst::Indc(ind) => count += 1 + ind.ctors.len(),
+          ixon::constant::MutConst::Recr(rec) => count += 1 + rec.rules.len(),
         }
       }
       count
@@ -1155,7 +1151,7 @@ extern "C" fn rs_get_compiled_const_count(
 // Error type FFI builders
 // =============================================================================
 
-use crate::ix::ixon::error::{CompileError, DecompileError, SerializeError};
+use ixon::error::{CompileError, DecompileError, SerializeError};
 
 impl LeanIxSerializeError<LeanOwned> {
   /// Build a Lean Ixon.SerializeError from a Rust SerializeError.
@@ -1244,7 +1240,7 @@ impl<R: LeanRef> LeanIxSerializeError<R> {
       },
       5 => SerializeError::AddressError,
       6 => {
-        let max = Nat::from_obj(&self.get_obj(0))
+        let max = LeanNat::to_nat(&self.get_obj(0))
           .to_u64()
           .and_then(|x| usize::try_from(x).ok())
           .unwrap_or(0);
@@ -1335,7 +1331,7 @@ impl<R: LeanRef> LeanIxDecompileError<R> {
   pub fn decode(&self) -> DecompileError {
     match self.as_ctor().tag() {
       0 => {
-        let refs_len = Nat::from_obj(&self.get_obj(0))
+        let refs_len = LeanNat::to_nat(&self.get_obj(0))
           .to_u64()
           .and_then(|x| usize::try_from(x).ok())
           .unwrap_or(0);
@@ -1344,7 +1340,7 @@ impl<R: LeanRef> LeanIxDecompileError<R> {
         DecompileError::InvalidRefIndex { idx, refs_len, constant }
       },
       1 => {
-        let univs_len = Nat::from_obj(&self.get_obj(0))
+        let univs_len = LeanNat::to_nat(&self.get_obj(0))
           .to_u64()
           .and_then(|x| usize::try_from(x).ok())
           .unwrap_or(0);
@@ -1353,7 +1349,7 @@ impl<R: LeanRef> LeanIxDecompileError<R> {
         DecompileError::InvalidUnivIndex { idx, univs_len, constant }
       },
       2 => {
-        let max = Nat::from_obj(&self.get_obj(0))
+        let max = LeanNat::to_nat(&self.get_obj(0))
           .to_u64()
           .and_then(|x| usize::try_from(x).ok())
           .unwrap_or(0);
@@ -1362,7 +1358,7 @@ impl<R: LeanRef> LeanIxDecompileError<R> {
         DecompileError::InvalidShareIndex { idx, max, constant }
       },
       3 => {
-        let ctx_size = Nat::from_obj(&self.get_obj(0))
+        let ctx_size = LeanNat::to_nat(&self.get_obj(0))
           .to_u64()
           .and_then(|x| usize::try_from(x).ok())
           .unwrap_or(0);
@@ -1371,7 +1367,7 @@ impl<R: LeanRef> LeanIxDecompileError<R> {
         DecompileError::InvalidRecIndex { idx, ctx_size, constant }
       },
       4 => {
-        let max = Nat::from_obj(&self.get_obj(0))
+        let max = LeanNat::to_nat(&self.get_obj(0))
           .to_u64()
           .and_then(|x| usize::try_from(x).ok())
           .unwrap_or(0);

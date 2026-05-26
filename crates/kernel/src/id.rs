@@ -1,8 +1,8 @@
 use std::fmt;
 use std::hash::{Hash, Hasher};
 
-use crate::ix::address::Address;
-use crate::ix::env::Name;
+use ix_common::address::Address;
+use ix_common::env::Name;
 
 use super::mode::{KernelMode, MetaDisplay, MetaHash};
 

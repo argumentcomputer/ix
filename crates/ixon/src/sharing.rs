@@ -1060,7 +1060,7 @@ mod tests {
 
   #[test]
   fn test_roundtrip_with_sharing() {
-    use crate::ix::ixon::serialize::{get_expr, put_expr};
+    use crate::serialize::{get_expr, put_expr};
 
     // Create a simple expression with potential sharing
     let var0 = Expr::var(0);

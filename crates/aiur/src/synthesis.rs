@@ -12,7 +12,7 @@ use rayon::iter::{
   IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
 };
 
-use crate::aiur::{
+use crate::{
   G,
   bytecode::{FunIdx, Toplevel},
   constraints::Constraints,

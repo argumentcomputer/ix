@@ -5,13 +5,13 @@
 
 use std::sync::Arc;
 
-use crate::ix::address::Address;
-use crate::ix::ixon::serialize::put_expr;
-use crate::ix::ixon::sharing::hash_expr;
-use crate::ix::ixon::univ::put_univ;
 use crate::lean::{
   LeanIxAddress, LeanIxonConstant, LeanIxonExpr, LeanIxonRawEnv, LeanIxonUniv,
 };
+use ix_common::address::Address;
+use ixon::serialize::put_expr;
+use ixon::sharing::hash_expr;
+use ixon::univ::put_univ;
 use lean_ffi::object::{LeanBorrowed, LeanByteArray, LeanOwned};
 
 /// Check if Lean's computed hash matches Rust's computed hash.
@@ -77,7 +77,7 @@ pub extern "C" fn rs_eq_env_serialization(
   raw_env_obj: LeanIxonRawEnv<LeanBorrowed<'_>>,
   bytes_obj: LeanByteArray<LeanBorrowed<'_>>,
 ) -> bool {
-  use crate::ix::ixon::env::Env;
+  use ixon::env::Env;
 
   let debug = std::env::var("IX_DEBUG_SERDE").is_ok();
   let decoded = raw_env_obj.decode();
@@ -246,7 +246,7 @@ pub extern "C" fn rs_eq_env_serialization(
 extern "C" fn rs_env_serde_roundtrip(
   lean_bytes_obj: LeanByteArray<LeanOwned>,
 ) -> bool {
-  use crate::ix::ixon::env::Env;
+  use ixon::env::Env;
 
   // Get bytes from Lean ByteArray
   let lean_bytes = lean_bytes_obj.as_bytes().to_vec();
@@ -294,7 +294,7 @@ extern "C" fn rs_env_serde_roundtrip(
 extern "C" fn rs_env_serde_check(
   lean_bytes_obj: LeanByteArray<LeanOwned>,
 ) -> bool {
-  use crate::ix::ixon::env::Env;
+  use ixon::env::Env;
 
   // Get bytes from Lean ByteArray
   let lean_bytes = lean_bytes_obj.as_bytes().to_vec();

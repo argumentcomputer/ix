@@ -13,6 +13,7 @@ pub mod env;
 pub mod error;
 pub mod expr;
 pub mod lazy;
+pub mod map;
 pub mod merkle;
 pub mod metadata;
 pub mod proof;
@@ -86,7 +87,7 @@ pub mod tests {
 #[cfg(test)]
 mod doc_examples {
   use super::*;
-  use crate::ix::address::Address;
+  use ix_common::address::Address;
 
   // =========================================================================
   // Tag4 examples (docs section "Tag4 (4-bit flag)")
@@ -373,8 +374,8 @@ mod doc_examples {
   fn definition_packed_kind_safety() {
     // DefKind::Definition = 0, DefinitionSafety::Safe = 1
     // Packed: (0 << 2) | 1 = 0x01
-    use crate::ix::env::DefinitionSafety;
     use constant::{DefKind, Definition};
+    use ix_common::env::DefinitionSafety;
 
     let def = Definition {
       kind: DefKind::Definition,
@@ -392,8 +393,8 @@ mod doc_examples {
   fn definition_opaque_unsafe() {
     // DefKind::Opaque = 1, DefinitionSafety::Unsafe = 0
     // Packed: (1 << 2) | 0 = 0x04
-    use crate::ix::env::DefinitionSafety;
     use constant::{DefKind, Definition};
+    use ix_common::env::DefinitionSafety;
 
     let def = Definition {
       kind: DefKind::Opaque,
@@ -411,8 +412,8 @@ mod doc_examples {
   fn definition_theorem_partial() {
     // DefKind::Theorem = 2, DefinitionSafety::Partial = 2
     // Packed: (2 << 2) | 2 = 0x0A
-    use crate::ix::env::DefinitionSafety;
     use constant::{DefKind, Definition};
+    use ix_common::env::DefinitionSafety;
 
     let def = Definition {
       kind: DefKind::Theorem,
@@ -433,8 +434,8 @@ mod doc_examples {
   #[test]
   fn constant_defn_tag() {
     // Constant with Defn -> Tag4 { flag: 0xD, size: 0 } -> 0xD0
-    use crate::ix::env::DefinitionSafety;
     use constant::{Constant, ConstantInfo, DefKind, Definition};
+    use ix_common::env::DefinitionSafety;
 
     let constant = Constant::new(ConstantInfo::Defn(Definition {
       kind: DefKind::Definition,
@@ -451,8 +452,8 @@ mod doc_examples {
   #[test]
   fn constant_muts_tag() {
     // Muts with 3 entries -> Tag4 { flag: 0xC, size: 3 } -> 0xC3
-    use crate::ix::env::DefinitionSafety;
     use constant::{Constant, ConstantInfo, DefKind, Definition, MutConst};
+    use ix_common::env::DefinitionSafety;
 
     let def = Definition {
       kind: DefKind::Definition,

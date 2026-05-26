@@ -3,11 +3,11 @@
 #[cfg(test)]
 mod tests {
 
-  use crate::ix::env::{Name, ReducibilityHints};
-  use crate::ix::kernel::constant::{KConst, RecRule};
-  use crate::ix::kernel::env::KEnv;
-  use crate::ix::kernel::mode::Meta;
-  use crate::ix::kernel::testing::*;
+  use crate::constant::{KConst, RecRule};
+  use crate::env::KEnv;
+  use crate::mode::Meta;
+  use crate::testing::*;
+  use ix_common::env::{Name, ReducibilityHints};
 
   // ==========================================================================
   // Batch 3: Bad inductives (Tutorial.lean lines 247–610)

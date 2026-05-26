@@ -6,20 +6,20 @@
 
 use std::sync::Arc;
 
-use crate::ix::ixon::constant::{
-  Axiom as IxonAxiom, Constant as IxonConstant,
-  ConstantInfo as IxonConstantInfo, Constructor as IxonConstructor,
-  ConstructorProj, DefKind, Definition as IxonDefinition, DefinitionProj,
-  Inductive as IxonInductive, InductiveProj, MutConst,
-  Quotient as IxonQuotient, Recursor as IxonRecursor, RecursorProj,
-  RecursorRule as IxonRecursorRule,
-};
 use crate::lean::{
   LeanIxAddress, LeanIxonAxiom, LeanIxonConstant, LeanIxonConstantInfo,
   LeanIxonConstructor, LeanIxonConstructorProj, LeanIxonDefinition,
   LeanIxonDefinitionProj, LeanIxonExpr, LeanIxonInductive,
   LeanIxonInductiveProj, LeanIxonMutConst, LeanIxonQuotient, LeanIxonRecursor,
   LeanIxonRecursorProj, LeanIxonRecursorRule, LeanIxonUniv,
+};
+use ixon::constant::{
+  Axiom as IxonAxiom, Constant as IxonConstant,
+  ConstantInfo as IxonConstantInfo, Constructor as IxonConstructor,
+  ConstructorProj, DefKind, Definition as IxonDefinition, DefinitionProj,
+  Inductive as IxonInductive, InductiveProj, MutConst,
+  Quotient as IxonQuotient, Recursor as IxonRecursor, RecursorProj,
+  RecursorRule as IxonRecursorRule,
 };
 #[cfg(feature = "test-ffi")]
 use lean_ffi::object::LeanBorrowed;
@@ -47,9 +47,9 @@ impl LeanIxonDefinition<LeanOwned> {
     };
     ctor.set_num_8(0, kind_val);
     let safety_val: u8 = match def.safety {
-      crate::ix::env::DefinitionSafety::Unsafe => 0,
-      crate::ix::env::DefinitionSafety::Safe => 1,
-      crate::ix::env::DefinitionSafety::Partial => 2,
+      ix_common::env::DefinitionSafety::Unsafe => 0,
+      ix_common::env::DefinitionSafety::Safe => 1,
+      ix_common::env::DefinitionSafety::Partial => 2,
     };
     ctor.set_num_8(1, safety_val);
     ctor
@@ -75,9 +75,9 @@ impl<R: LeanRef> LeanIxonDefinition<R> {
     };
     let safety_val = self.get_num_8(1);
     let safety = match safety_val {
-      0 => crate::ix::env::DefinitionSafety::Unsafe,
-      1 => crate::ix::env::DefinitionSafety::Safe,
-      2 => crate::ix::env::DefinitionSafety::Partial,
+      0 => ix_common::env::DefinitionSafety::Unsafe,
+      1 => ix_common::env::DefinitionSafety::Safe,
+      2 => ix_common::env::DefinitionSafety::Partial,
       _ => panic!("Invalid DefinitionSafety: {}", safety_val),
     };
     IxonDefinition { kind, safety, lvls, typ, value }
@@ -210,10 +210,10 @@ impl LeanIxonQuotient<LeanOwned> {
     ctor.set_obj(0, typ_obj);
     ctor.set_num_64(0, quot.lvls);
     let kind_val: u8 = match quot.kind {
-      crate::ix::env::QuotKind::Type => 0,
-      crate::ix::env::QuotKind::Ctor => 1,
-      crate::ix::env::QuotKind::Lift => 2,
-      crate::ix::env::QuotKind::Ind => 3,
+      ix_common::env::QuotKind::Type => 0,
+      ix_common::env::QuotKind::Ctor => 1,
+      ix_common::env::QuotKind::Lift => 2,
+      ix_common::env::QuotKind::Ind => 3,
     };
     ctor.set_num_8(0, kind_val);
     ctor
@@ -229,10 +229,10 @@ impl<R: LeanRef> LeanIxonQuotient<R> {
     let lvls = self.get_num_64(0);
     let kind_val = self.get_num_8(0);
     let kind = match kind_val {
-      0 => crate::ix::env::QuotKind::Type,
-      1 => crate::ix::env::QuotKind::Ctor,
-      2 => crate::ix::env::QuotKind::Lift,
-      3 => crate::ix::env::QuotKind::Ind,
+      0 => ix_common::env::QuotKind::Type,
+      1 => ix_common::env::QuotKind::Ctor,
+      2 => ix_common::env::QuotKind::Lift,
+      3 => ix_common::env::QuotKind::Ind,
       _ => panic!("Invalid QuotKind: {}", kind_val),
     };
     IxonQuotient { kind, lvls, typ }

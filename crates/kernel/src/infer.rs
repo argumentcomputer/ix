@@ -1,7 +1,5 @@
 //! Type inference.
 
-use std::sync::LazyLock;
-
 use super::constant::KConst;
 use super::error::{TcError, u64_to_usize};
 use super::expr::{ExprData, KExpr};
@@ -18,23 +16,23 @@ use super::tc::{TypeChecker, collect_app_spine};
 /// drowning normal `FAIL` lines. Set `IX_APP_DIFF=1` when investigating
 /// why a specific `a_ty` and `dom` don't match after reduction. Pairs
 /// with the `a_ty` / `dom` pair already printed by the error display.
-static IX_APP_DIFF: LazyLock<bool> =
-  LazyLock::new(|| std::env::var("IX_APP_DIFF").is_ok());
+static IX_APP_DIFF: crate::EnvFlag =
+  crate::EnvFlag::new(|| crate::env_var("IX_APP_DIFF").is_ok());
 
 /// Dump the full function/type/argument context when App inference fails
 /// because the inferred function type is not a forall. Off by default: these
 /// terms can be enormous in mathlib and hide the constant-level failure line.
 /// Set `IX_INFER_APP_FORALL_DUMP=1`, optionally with
 /// `IX_KERNEL_DEBUG_CONST=<substring>`, for targeted debugging.
-static IX_INFER_APP_FORALL_DUMP: LazyLock<bool> =
-  LazyLock::new(|| std::env::var("IX_INFER_APP_FORALL_DUMP").is_ok());
+static IX_INFER_APP_FORALL_DUMP: crate::EnvFlag =
+  crate::EnvFlag::new(|| crate::env_var("IX_INFER_APP_FORALL_DUMP").is_ok());
 
 /// When set, log every 100K `infer` entries (total, across cache hits
 /// and real calls). A check using millions of infer calls points to a
 /// bloated term or a mis-firing cache. Pairs with `IX_DEF_EQ_COUNT_LOG`
 /// / `IX_WHNF_COUNT_LOG` for a full picture of per-check hotspots.
-static IX_INFER_COUNT_LOG: LazyLock<bool> =
-  LazyLock::new(|| std::env::var("IX_INFER_COUNT_LOG").is_ok());
+static IX_INFER_COUNT_LOG: crate::EnvFlag =
+  crate::EnvFlag::new(|| crate::env_var("IX_INFER_COUNT_LOG").is_ok());
 
 static INFER_COUNT: std::sync::atomic::AtomicUsize =
   std::sync::atomic::AtomicUsize::new(0);
@@ -44,7 +42,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     if *IX_INFER_COUNT_LOG {
       let n = INFER_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
       if n.is_multiple_of(100_000) && n > 0 {
-        eprintln!("[infer] count={n}");
+        log::info!("[infer] count={n}");
       }
     }
     let infer_only = self.infer_only;
@@ -113,27 +111,27 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         let f_ty = self.infer(f)?;
         let (dom, cod) = self.ensure_forall(&f_ty).inspect_err(|_err| {
           if *IX_INFER_APP_FORALL_DUMP && self.debug_label_matches_env() {
-            eprintln!("[infer App] ensure_forall FAILED");
-            eprintln!(
+            log::info!("[infer App] ensure_forall FAILED");
+            log::info!(
               "  const: {}",
               self.debug_label.as_deref().unwrap_or("<unknown>")
             );
-            eprintln!("  f:    {f}");
-            eprintln!("  f_ty: {f_ty}");
-            eprintln!("  f_ty addr: {:?}", f_ty.addr());
-            eprintln!("  a:    {a}");
+            log::info!("  f:    {f}");
+            log::info!("  f_ty: {f_ty}");
+            log::info!("  f_ty addr: {:?}", f_ty.addr());
+            log::info!("  a:    {a}");
             if let ExprData::App(ff, fa, _) = f.data() {
-              eprintln!("  ff:    {ff}");
-              eprintln!("  ff addr: {:?}", ff.addr());
+              log::info!("  ff:    {ff}");
+              log::info!("  ff addr: {:?}", ff.addr());
               if let Ok(ff_ty) = self.infer(ff) {
-                eprintln!("  ff_ty: {ff_ty}");
-                eprintln!("  ff_ty addr: {:?}", ff_ty.addr());
+                log::info!("  ff_ty: {ff_ty}");
+                log::info!("  ff_ty addr: {:?}", ff_ty.addr());
                 if let Ok((dom2, cod2)) = self.ensure_forall(&ff_ty) {
-                  eprintln!("  ff_ty dom: {dom2}");
-                  eprintln!("  ff_ty cod: {cod2}");
+                  log::info!("  ff_ty dom: {dom2}");
+                  log::info!("  ff_ty cod: {cod2}");
                 }
               }
-              eprintln!("  fa:    {fa}");
+              log::info!("  fa:    {fa}");
             }
           }
         })?;
@@ -156,31 +154,31 @@ impl<M: KernelMode> TypeChecker<'_, M> {
               // strategy.
               let a_whnf = self.whnf(&a_ty);
               let d_whnf = self.whnf(&dom);
-              let depth = std::env::var("IX_APP_DIFF_DEPTH")
+              let depth = crate::env_var("IX_APP_DIFF_DEPTH")
                 .ok()
                 .and_then(|s| s.parse::<usize>().ok())
                 .unwrap_or(2);
-              eprintln!(
+              log::info!(
                 "[app diff] AppTypeMismatch at depth={}",
                 self.ctx.len()
               );
-              eprintln!("  f:          {}", compact_expr(f));
-              eprintln!("  a:          {}", compact_expr(a));
-              eprintln!("  a_ty:       {}", compact_expr_deep(&a_ty, depth));
-              eprintln!("  dom:        {}", compact_expr_deep(&dom, depth));
-              eprintln!("  a_ty data:  {:?}", a_ty.data());
-              eprintln!("  dom data:   {:?}", dom.data());
+              log::info!("  f:          {}", compact_expr(f));
+              log::info!("  a:          {}", compact_expr(a));
+              log::info!("  a_ty:       {}", compact_expr_deep(&a_ty, depth));
+              log::info!("  dom:        {}", compact_expr_deep(&dom, depth));
+              log::info!("  a_ty data:  {:?}", a_ty.data());
+              log::info!("  dom data:   {:?}", dom.data());
               match &a_whnf {
                 Ok(w) => {
-                  eprintln!("  a_ty whnf:  {}", compact_expr_deep(w, depth))
+                  log::info!("  a_ty whnf:  {}", compact_expr_deep(w, depth))
                 },
-                Err(e) => eprintln!("  a_ty whnf:  ERR {e}"),
+                Err(e) => log::info!("  a_ty whnf:  ERR {e}"),
               }
               match &d_whnf {
                 Ok(w) => {
-                  eprintln!("  dom  whnf:  {}", compact_expr_deep(w, depth))
+                  log::info!("  dom  whnf:  {}", compact_expr_deep(w, depth))
                 },
-                Err(e) => eprintln!("  dom  whnf:  ERR {e}"),
+                Err(e) => log::info!("  dom  whnf:  ERR {e}"),
               }
             }
             return Err(TcError::AppTypeMismatch {
@@ -229,8 +227,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
           abstract_fvars(&mut self.env.intern, &body_ty, &[fv_id]);
         self.lctx.truncate(saved);
         self.intern(KExpr::all(
-          M::meta_field(crate::ix::env::Name::anon()),
-          M::meta_field(crate::ix::env::BinderInfo::Default),
+          M::meta_field(ix_common::env::Name::anon()),
+          M::meta_field(ix_common::env::BinderInfo::Default),
           ty.clone(),
           abstracted,
         ))
@@ -242,15 +240,15 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         let saved = self.lctx.len();
         let fv_id = self.fresh_fvar_id();
         let fv = self.intern(KExpr::fvar(fv_id, name.clone()));
-        if std::env::var("IX_FVAR_TRACE").is_ok() {
-          eprintln!(
+        if crate::env_var("IX_FVAR_TRACE").is_ok() {
+          log::info!(
             "[fvar All push] fv={fv_id} ty.addr={:?} ty.lbr={} ctx_len_before_push={} body.lbr={}",
             ty.addr(),
             ty.lbr(),
             self.ctx.len(),
             body.lbr(),
           );
-          eprintln!("    ty data: {:?}", ty.data());
+          log::info!("    ty data: {:?}", ty.data());
         }
         self.lctx.push(
           fv_id,
@@ -316,8 +314,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         self.infer_proj(&struct_id, *field, val, &val_ty)?
       },
 
-      ExprData::Nat(..) => self.infer_nat_type()?,
-      ExprData::Str(..) => self.infer_str_type()?,
+      ExprData::Nat(..) => self.infer_nat_type(),
+      ExprData::Str(..) => self.infer_str_type(),
     };
 
     if !infer_only {
@@ -477,12 +475,12 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     }
   }
 
-  fn infer_nat_type(&mut self) -> Result<KExpr<M>, TcError<M>> {
-    Ok(self.intern(KExpr::cnst(self.prims.nat.clone(), Box::new([]))))
+  fn infer_nat_type(&mut self) -> KExpr<M> {
+    self.intern(KExpr::cnst(self.prims.nat.clone(), Box::new([])))
   }
 
-  fn infer_str_type(&mut self) -> Result<KExpr<M>, TcError<M>> {
-    Ok(self.intern(KExpr::cnst(self.prims.string.clone(), Box::new([]))))
+  fn infer_str_type(&mut self) -> KExpr<M> {
+    self.intern(KExpr::cnst(self.prims.string.clone(), Box::new([])))
   }
 
   fn inductive_app_is_prop(
@@ -614,10 +612,10 @@ mod tests {
   use super::super::level::KUniv;
   use super::super::mode::Anon;
   use super::super::tc::TypeChecker;
-  use crate::ix::address::Address;
-  use crate::ix::env::{DefinitionSafety, ReducibilityHints};
-  use crate::ix::ixon::constant::DefKind;
-  use lean_ffi::nat::Nat;
+  use bignat::Nat;
+  use ix_common::address::Address;
+  use ix_common::env::{DefinitionSafety, ReducibilityHints};
+  use ixon::constant::DefKind;
 
   type AE = KExpr<Anon>;
   type AU = KUniv<Anon>;

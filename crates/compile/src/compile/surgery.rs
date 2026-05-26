@@ -23,12 +23,12 @@ use std::sync::Arc;
 
 use rustc_hash::FxHashMap;
 
-use crate::ix::env::{
+use ix_common::env::{
   ConstantInfo as LeanConstantInfo, ConstructorVal, Env as LeanEnv,
   Expr as LeanExpr, ExprData, Level, Name, NameData, RecursorVal,
 };
-use crate::ix::ixon::error::CompileError;
-use crate::ix::ixon::expr::Expr as IxonExpr;
+use ixon::error::CompileError;
+use ixon::expr::Expr as IxonExpr;
 
 use super::{
   aux_gen::expr_utils::{
@@ -151,7 +151,7 @@ impl BRecOnCallSitePlan {
   }
 }
 
-pub(crate) fn rec_name_to_brecon_name(name: &Name) -> Option<Name> {
+pub fn rec_name_to_brecon_name(name: &Name) -> Option<Name> {
   match name.as_data() {
     NameData::Str(parent, s, _) if s == "rec" => {
       Some(Name::str(parent.clone(), "brecOn".to_string()))
@@ -163,7 +163,7 @@ pub(crate) fn rec_name_to_brecon_name(name: &Name) -> Option<Name> {
   }
 }
 
-pub(crate) fn rec_name_to_below_name(name: &Name) -> Option<Name> {
+pub fn rec_name_to_below_name(name: &Name) -> Option<Name> {
   match name.as_data() {
     NameData::Str(parent, s, _) if s == "rec" => {
       Some(Name::str(parent.clone(), "below".to_string()))
@@ -182,7 +182,7 @@ pub(crate) fn rec_name_to_below_name(name: &Name) -> Option<Name> {
 /// Collect a Lean App telescope: peel App nodes to get `(head, [a1, ..., aN])`.
 ///
 /// Arguments are returned in application order (leftmost first).
-pub(crate) fn collect_lean_telescope<'a>(
+pub fn collect_lean_telescope<'a>(
   e: &'a LeanExpr,
 ) -> (&'a LeanExpr, Vec<&'a LeanExpr>) {
   let mut args: Vec<&'a LeanExpr> = Vec::new();
@@ -199,7 +199,7 @@ pub(crate) fn collect_lean_telescope<'a>(
 ///
 /// Arguments are returned in application order (leftmost first).
 #[allow(dead_code)]
-pub(crate) fn collect_ixon_telescope(
+pub fn collect_ixon_telescope(
   e: &Arc<IxonExpr>,
 ) -> (Arc<IxonExpr>, Vec<Arc<IxonExpr>>) {
   let mut args: Vec<Arc<IxonExpr>> = Vec::new();
@@ -237,14 +237,14 @@ pub(crate) fn collect_ixon_telescope(
 /// its own plan). We skip generating a plan for a phantom `X.rec`
 /// itself, since that belongs to the block owning `X`.
 ///
-/// The [`AuxLayout`] type is re-exported from `crate::ix::ixon::env` so it
+/// The [`AuxLayout`] type is re-exported from `ixon::env` so it
 /// can live in the Ixon env side-table and survive serialization — see the
-/// doc on [`crate::ix::ixon::env::AuxLayout`] for the canonical definition.
-pub(crate) use crate::ix::ixon::env::AuxLayout;
+/// doc on [`ixon::env::AuxLayout`] for the canonical definition.
+pub use ixon::env::AuxLayout;
 
 const PERM_OUT_OF_SCC: usize = usize::MAX;
 
-pub(crate) fn compute_call_site_plans(
+pub fn compute_call_site_plans(
   sorted_classes: &[Vec<Name>],
   original_all: &[Name],
   lean_env: &LeanEnv,
@@ -706,7 +706,7 @@ pub(crate) fn compute_call_site_plans(
 /// recursor call then goes through the normal call-site surgery for its own
 /// SCC.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn adapt_split_minor(
+pub fn adapt_split_minor(
   rec_name: &Name,
   rec_levels: &[Level],
   plan: &CallSitePlan,
@@ -1115,8 +1115,8 @@ fn dump_plan_state(
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::ix::env::{ConstantVal, ConstructorVal, InductiveVal};
-  use lean_ffi::nat::Nat;
+  use bignat::Nat;
+  use ix_common::env::{ConstantVal, ConstructorVal, InductiveVal};
 
   fn n(s: &str) -> Name {
     Name::str(Name::anon(), s.to_string())
@@ -1208,8 +1208,8 @@ mod tests {
   fn build_test_env(
     names: &[&str],
     ctor_counts: &[usize],
-  ) -> crate::ix::env::Env {
-    let mut env = crate::ix::env::Env::default();
+  ) -> ix_common::env::Env {
+    let mut env = ix_common::env::Env::default();
     let all: Vec<Name> = names.iter().map(|s| n(s)).collect();
 
     for (i, &name_str) in names.iter().enumerate() {
@@ -1398,7 +1398,7 @@ mod tests {
     ctor_counts: &[usize],
     aux_motives: usize,
     aux_minors: usize,
-  ) -> crate::ix::env::Env {
+  ) -> ix_common::env::Env {
     let mut env = build_test_env(names, ctor_counts);
     // Overwrite each inductive's recursor with inflated motive/minor counts.
     let total_motives = (names.len() + aux_motives) as u64;

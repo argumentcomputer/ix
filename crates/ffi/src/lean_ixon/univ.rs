@@ -2,8 +2,8 @@
 
 use std::sync::Arc;
 
-use crate::ix::ixon::univ::Univ;
 use crate::lean::LeanIxonUniv;
+use ixon::univ::Univ;
 use lean_ffi::object::{LeanArray, LeanBorrowed, LeanOwned, LeanRef};
 
 impl LeanIxonUniv<LeanOwned> {

@@ -3,9 +3,9 @@
 //! Provides convenience constructors for `KExpr<Meta>`, `KUniv<Meta>`, `KId<Meta>`,
 //! and `KConst<Meta>` to reduce boilerplate in hand-built test environments.
 
-use crate::ix::address::Address;
-use crate::ix::env::{BinderInfo, DefinitionSafety, Name, ReducibilityHints};
-use crate::ix::ixon::constant::DefKind;
+use ix_common::address::Address;
+use ix_common::env::{BinderInfo, DefinitionSafety, Name, ReducibilityHints};
+use ixon::constant::DefKind;
 
 use super::constant::KConst;
 use super::env::KEnv;

@@ -15,23 +15,24 @@ use std::sync::Arc;
 
 use rustc_hash::FxHashMap;
 
-use lean_ffi::nat::Nat;
+use bignat::Nat;
 
-use crate::ix::address::Address;
-use crate::ix::compile::aux_gen::below::BelowIndc;
-use crate::ix::compile::aux_gen::brecon::BRecOnDef;
-use crate::ix::compile::aux_gen::recursor;
-use crate::ix::compile::aux_gen::{self, PatchedConstant};
-use crate::ix::compile::{
+use crate::compile::aux_gen::below::BelowIndc;
+use crate::compile::aux_gen::brecon::BRecOnDef;
+use crate::compile::aux_gen::recursor;
+use crate::compile::aux_gen::{self, PatchedConstant};
+use crate::compile::{
   BlockCache, CompileState, collect_mut_const_exprs, compile_definition,
   compile_inductive, compile_mutual_block, compile_name, compile_recursor,
   preseed_expr_tables, sort_consts,
 };
-use crate::ix::env::{
+use crate::mutual::{Def, Ind, MutConst};
+use ix_common::address::Address;
+use ix_common::env::{
   ConstantInfo as LeanConstantInfo, ConstantVal, ConstructorVal,
   DefinitionSafety, Env as LeanEnv, Name, ReducibilityHints,
 };
-use crate::ix::ixon::{
+use ixon::{
   CompileError,
   constant::{
     Constant, DefKind, MutConst as IxonMutConst, ctor_proj_constant,
@@ -41,7 +42,6 @@ use crate::ix::ixon::{
   metadata::{ConstantMeta, ConstantMetaInfo},
   univ::Univ,
 };
-use crate::ix::mutual::{Def, Ind, MutConst};
 
 // ===========================================================================
 // compile_aux_block
@@ -57,11 +57,11 @@ use crate::ix::mutual::{Def, Ind, MutConst};
 /// `stt.name_to_addr`) so they don't interfere with the scheduler's
 /// dependency tracking. The scheduler's promotion path in `env.rs` moves
 /// them to `name_to_addr` when the block is processed.
-pub(crate) fn compile_aux_block(
+pub fn compile_aux_block(
   aux_consts: &[MutConst],
   lean_env: &Arc<LeanEnv>,
   stt: &CompileState,
-  kctx: &mut crate::ix::compile::KernelCtx,
+  kctx: &mut crate::compile::KernelCtx,
 ) -> Result<(), CompileError> {
   compile_aux_block_with_rename(aux_consts, lean_env, stt, kctx, None, None)
 }
@@ -95,16 +95,16 @@ pub(crate) fn compile_aux_block(
 /// Without this reorder, `sort_consts` on recursors picks an independent
 /// canonical permutation that diverges from the inductive block's layout.
 /// See `docs/ix_canonicity.md` §6.2 and the rationale in
-/// `kernel::inductive::populate_recursor_rules_from_block`.
+/// `ix_kernel::inductive::populate_recursor_rules_from_block`.
 ///
 /// The class ordering produced by `sort_consts` is preserved as a
 /// stable tiebreak: classes that map to `u64::MAX` (no key entry) keep
 /// their `sort_consts` relative position at the tail.
-pub(crate) fn compile_aux_block_with_rename(
+pub fn compile_aux_block_with_rename(
   aux_consts: &[MutConst],
   lean_env: &Arc<LeanEnv>,
   stt: &CompileState,
-  kctx: &mut crate::ix::compile::KernelCtx,
+  kctx: &mut crate::compile::KernelCtx,
   name_rename: Option<&FxHashMap<Name, Name>>,
   class_order_key: Option<&dyn Fn(&MutConst) -> u64>,
 ) -> Result<(), CompileError> {
@@ -199,7 +199,7 @@ pub(crate) fn compile_aux_block_with_rename(
   if ixon_mutuals.len() == 1
     && !matches!(&ixon_mutuals[0], IxonMutConst::Indc(_))
   {
-    use crate::ix::compile::{
+    use crate::compile::{
       apply_sharing_to_definition_with_stats,
       apply_sharing_to_recursor_with_stats,
     };
@@ -508,13 +508,13 @@ fn content_address(constant: &Constant) -> Address {
 ///
 /// Only runs for inductive blocks. Non-inductive mutual blocks return
 /// immediately.
-pub(crate) fn generate_and_compile_aux_recursors(
+pub fn generate_and_compile_aux_recursors(
   cs: &[MutConst],
   class_names: &[Vec<Name>],
   lean_env: &Arc<LeanEnv>,
   stt: &CompileState,
-  kctx: &mut crate::ix::compile::KernelCtx,
-) -> Result<Option<crate::ix::compile::surgery::AuxLayout>, CompileError> {
+  kctx: &mut crate::compile::KernelCtx,
+) -> Result<Option<crate::compile::surgery::AuxLayout>, CompileError> {
   // Guard: aux_gen canonical generation only runs for blocks containing
   // inductives. Non-inductive blocks (plain defs, recursor-only SCCs,
   // etc.) have no canonical auxiliaries to generate.
@@ -603,7 +603,7 @@ pub(crate) fn generate_and_compile_aux_recursors(
   // `original_all` (= `source_all` above) is hoisted to the enclosing
   // scope so the aux-name rename map construction below can reuse it.
   let original_all: Vec<Name> = source_all;
-  let mut aux_layout: Option<crate::ix::compile::surgery::AuxLayout> = None;
+  let mut aux_layout: Option<crate::compile::surgery::AuxLayout> = None;
   if !original_all.is_empty()
     && let Some(perm) = aux_out.perm.clone()
     && !perm.is_empty()
@@ -639,7 +639,7 @@ pub(crate) fn generate_and_compile_aux_recursors(
       });
     }
     aux_layout =
-      Some(crate::ix::compile::surgery::AuxLayout { perm, source_ctor_counts });
+      Some(crate::compile::surgery::AuxLayout { perm, source_ctor_counts });
   }
 
   // NOTE: Historically, a canonical→source rename map was built here
@@ -889,7 +889,7 @@ pub(crate) fn generate_and_compile_aux_recursors(
   // blocks). See the aux_gen.rs module docs for the full rationale.
 
   let total = aux_total_start.elapsed();
-  if *crate::ix::compile::IX_TIMING && total.as_secs_f32() > 0.5 {
+  if *crate::compile::IX_TIMING && total.as_secs_f32() > 0.5 {
     eprintln!(
       "[aux_gen] {:?} total={:.2}s gen={:.2}s rec={:.2}s cases={:.2}s recOn={:.2}s below={:.2}s belowRec={:.2}s brecon={:.2}s patches={}",
       block_label,
@@ -939,7 +939,7 @@ fn below_indc_to_mut_const(
     .collect();
 
   MutConst::Indc(Ind {
-    ind: crate::ix::env::InductiveVal {
+    ind: ix_common::env::InductiveVal {
       cnst: ConstantVal {
         name: bi.name.clone(),
         level_params: bi.level_params.clone(),
@@ -1054,7 +1054,7 @@ fn compile_below_recursors(
   below_indcs: &[MutConst],
   lean_env: &Arc<LeanEnv>,
   stt: &CompileState,
-  kctx: &mut crate::ix::compile::KernelCtx,
+  kctx: &mut crate::compile::KernelCtx,
 ) -> Result<(), CompileError> {
   // Build a small overlay with just the .below inductives + ctors.
   // These don't exist in the original lean_env, but generate_canonical_recursors

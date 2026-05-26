@@ -15,7 +15,7 @@
 
 use std::sync::LazyLock;
 
-use crate::ix::address::Address;
+use ix_common::address::Address;
 
 use super::env::KEnv;
 use super::id::KId;
@@ -1006,7 +1006,7 @@ impl<M: KernelMode> Primitives<M> {
   /// `@<hex>` fallbacks.
   pub fn from_addr_names<F>(mut name_for_addr: F) -> Self
   where
-    F: FnMut(&Address) -> Option<crate::ix::env::Name>,
+    F: FnMut(&Address) -> Option<ix_common::env::Name>,
   {
     Self::from_addrs_with(&PrimAddrs::new(), |addr| {
       name_for_addr(addr)
@@ -1036,16 +1036,16 @@ impl<M: KernelMode> Primitives<M> {
     let mut r = |addr: &Address| -> KId<M> {
       resolve(addr).unwrap_or_else(|| {
         let hex = addr.hex();
-        let name = crate::ix::env::Name::str(
-          crate::ix::env::Name::anon(),
+        let name = ix_common::env::Name::str(
+          ix_common::env::Name::anon(),
           format!("@{}", &hex[..8]),
         );
         KId::new(addr.clone(), M::meta_field(name))
       })
     };
     let marker = |addr: &Address, marker_name: &str| -> KId<M> {
-      let name = crate::ix::env::Name::str(
-        crate::ix::env::Name::anon(),
+      let name = ix_common::env::Name::str(
+        ix_common::env::Name::anon(),
         format!("@{marker_name}"),
       );
       KId::new(addr.clone(), M::meta_field(name))
@@ -1158,12 +1158,12 @@ mod tests {
   use std::collections::HashMap;
 
   use super::*;
-  use crate::ix::env::Name;
-  use crate::ix::kernel::constant::KConst;
-  use crate::ix::kernel::expr::KExpr;
-  use crate::ix::kernel::id::KId;
-  use crate::ix::kernel::level::KUniv;
-  use crate::ix::kernel::mode::Anon;
+  use crate::constant::KConst;
+  use crate::expr::KExpr;
+  use crate::id::KId;
+  use crate::level::KUniv;
+  use crate::mode::Anon;
+  use ix_common::env::Name;
 
   /// Collect every (field_name, addr) pair from `PrimAddrs` via reflection
   /// over a macro invocation at the caller — done here by an inline array.
@@ -1360,7 +1360,7 @@ mod tests {
     // With an empty env, every `r(&a.*)` lookup misses and produces a
     // synthetic `@<hex prefix>` KId. Confirm construction succeeds and
     // yields recognizable synthetic names (in Meta mode).
-    let env = KEnv::<crate::ix::kernel::mode::Meta>::new();
+    let env = KEnv::<crate::mode::Meta>::new();
     let p = Primitives::from_env(&env);
     // The fallback name is `@<first 8 hex chars>`, a string part under an
     // anonymous Name. Verify the `nat` field lives at the expected
@@ -1398,7 +1398,7 @@ mod tests {
   #[test]
   fn primitives_from_env_orig_uses_orig_addrs() {
     // from_env_orig uses PrimAddrs::new_orig (LEON addrs), not new().
-    let env = KEnv::<crate::ix::kernel::mode::Meta>::new();
+    let env = KEnv::<crate::mode::Meta>::new();
     let p = Primitives::from_env_orig(&env);
     let orig = PrimAddrs::new_orig();
     let canon = PrimAddrs::new();
@@ -1413,7 +1413,7 @@ mod tests {
     // Check that the synthetic fallback name has the `@<8hex>` shape for
     // an address that doesn't exist in the env. Uses Meta mode so the
     // name metadata is observable.
-    let env = KEnv::<crate::ix::kernel::mode::Meta>::new();
+    let env = KEnv::<crate::mode::Meta>::new();
     let p = Primitives::from_env_orig(&env);
     // Name of `p.nat` should be `@<first 8 hex of nat_orig addr>`.
     let orig = PrimAddrs::new_orig();

@@ -2,15 +2,15 @@
 
 use rustc_hash::FxHashMap;
 
-use crate::ix::env::{ConstantInfo, Name};
 use crate::lean::{
   LeanIxConstantInfo, LeanIxEnvironment, LeanIxName, LeanIxRawEnvironment,
 };
+use ix_common::env::{ConstantInfo, Name};
 use lean_ffi::object::{
   LeanArray, LeanBorrowed, LeanCtor, LeanOwned, LeanProd, LeanRef,
 };
 
-use crate::ffi::builder::LeanBuildCache;
+use crate::builder::LeanBuildCache;
 
 // =============================================================================
 // HashMap Building
@@ -140,7 +140,7 @@ impl LeanIxRawEnvironment<LeanOwned> {
   /// so we return just the array, not a structure containing it.
   pub fn build(
     cache: &mut LeanBuildCache,
-    consts: &crate::ix::env::Env,
+    consts: &ix_common::env::Env,
   ) -> Self {
     // Build consts array: Array (Name × ConstantInfo)
     let consts_arr = LeanArray::alloc(consts.len());
@@ -242,7 +242,7 @@ pub extern "C" fn rs_roundtrip_ix_environment(
   env_ptr: LeanIxEnvironment<LeanBorrowed<'_>>,
 ) -> LeanIxRawEnvironment<LeanOwned> {
   let decoded = env_ptr.decode();
-  let env: crate::ix::env::Env = decoded.into_iter().collect();
+  let env: ix_common::env::Env = decoded.into_iter().collect();
   let mut cache = LeanBuildCache::with_capacity(env.len());
   LeanIxRawEnvironment::build(&mut cache, &env)
 }

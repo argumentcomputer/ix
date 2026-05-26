@@ -6,13 +6,11 @@
 //! WHNF, type inference, def-eq, and constant checking are in separate modules
 //! that add `impl TypeChecker` blocks.
 
-use std::sync::LazyLock;
-
 use rustc_hash::FxHashMap;
 use rustc_hash::FxHashSet;
 
-use crate::ix::address::Address;
-use crate::ix::ixon::env::Env as IxonEnv;
+use ix_common::address::Address;
+use ixon::env::Env as IxonEnv;
 
 use super::constant::{KConst, RecRule};
 use super::env::{Addr, KEnv};
@@ -58,15 +56,15 @@ pub const MAX_DEF_EQ_DEPTH: u32 = 2_000;
 /// for bisecting suspected loops.
 pub const MAX_REC_FUEL: u64 = 10_000_000;
 
-static IX_MAX_REC_FUEL: LazyLock<Option<u64>> = LazyLock::new(|| {
-  std::env::var("IX_MAX_REC_FUEL").ok().and_then(|s| s.parse().ok())
+static IX_MAX_REC_FUEL: crate::EnvOptU64 = crate::EnvOptU64::new(|| {
+  crate::env_var("IX_MAX_REC_FUEL").ok().and_then(|s| s.parse().ok())
 });
 
-static IX_HOT_MISSES: LazyLock<bool> =
-  LazyLock::new(|| std::env::var("IX_HOT_MISSES").is_ok());
+static IX_HOT_MISSES: crate::EnvFlag =
+  crate::EnvFlag::new(|| crate::env_var("IX_HOT_MISSES").is_ok());
 
-static IX_HOT_MISS_CTX: LazyLock<bool> =
-  LazyLock::new(|| std::env::var("IX_HOT_MISS_CTX").is_ok());
+static IX_HOT_MISS_CTX: crate::EnvFlag =
+  crate::EnvFlag::new(|| crate::env_var("IX_HOT_MISS_CTX").is_ok());
 
 pub fn max_rec_fuel() -> u64 {
   (*IX_MAX_REC_FUEL).unwrap_or(MAX_REC_FUEL)
@@ -538,8 +536,8 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
   /// the binder scope.
   pub fn open_binder(
     &mut self,
-    name: M::MField<crate::ix::env::Name>,
-    bi: M::MField<crate::ix::env::BinderInfo>,
+    name: M::MField<ix_common::env::Name>,
+    bi: M::MField<ix_common::env::BinderInfo>,
     ty: KExpr<M>,
     body: &KExpr<M>,
   ) -> (KExpr<M>, FVarId) {
@@ -559,8 +557,8 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     ty: KExpr<M>,
     body: &KExpr<M>,
   ) -> (KExpr<M>, FVarId) {
-    let name = M::meta_field(crate::ix::env::Name::anon());
-    let bi = M::meta_field(crate::ix::env::BinderInfo::Default);
+    let name = M::meta_field(ix_common::env::Name::anon());
+    let bi = M::meta_field(ix_common::env::BinderInfo::Default);
     self.open_binder(name, bi, ty, body)
   }
 
@@ -569,8 +567,8 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
   /// abstract_fvars / structural identity comparisons).
   pub fn open_binder_with_fv(
     &mut self,
-    name: M::MField<crate::ix::env::Name>,
-    bi: M::MField<crate::ix::env::BinderInfo>,
+    name: M::MField<ix_common::env::Name>,
+    bi: M::MField<ix_common::env::BinderInfo>,
     ty: KExpr<M>,
     body: &KExpr<M>,
   ) -> (KExpr<M>, KExpr<M>, FVarId) {
@@ -588,8 +586,8 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     ty: KExpr<M>,
     body: &KExpr<M>,
   ) -> (KExpr<M>, KExpr<M>, FVarId) {
-    let name = M::meta_field(crate::ix::env::Name::anon());
-    let bi = M::meta_field(crate::ix::env::BinderInfo::Default);
+    let name = M::meta_field(ix_common::env::Name::anon());
+    let bi = M::meta_field(ix_common::env::BinderInfo::Default);
     self.open_binder_with_fv(name, bi, ty, body)
   }
 
@@ -599,7 +597,7 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
   /// for downstream WHNF zeta-reduction).
   pub fn open_let(
     &mut self,
-    name: M::MField<crate::ix::env::Name>,
+    name: M::MField<ix_common::env::Name>,
     ty: KExpr<M>,
     val: KExpr<M>,
     body: &KExpr<M>,
@@ -617,8 +615,8 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
   /// later or in parallel). Returns the fvar id and the interned fvar
   /// expression.
   pub fn push_fvar_decl_anon(&mut self, ty: KExpr<M>) -> (FVarId, KExpr<M>) {
-    let name = M::meta_field(crate::ix::env::Name::anon());
-    let bi = M::meta_field(crate::ix::env::BinderInfo::Default);
+    let name = M::meta_field(ix_common::env::Name::anon());
+    let bi = M::meta_field(ix_common::env::BinderInfo::Default);
     let fv_id = self.fresh_fvar_id();
     let fv = self.intern(KExpr::fvar(fv_id, name.clone()));
     self.lctx.push(fv_id, LocalDecl::CDecl { name, bi, ty });
@@ -852,7 +850,7 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
   }
 
   pub fn debug_label_matches_env(&self) -> bool {
-    match std::env::var("IX_KERNEL_DEBUG_CONST") {
+    match crate::env_var("IX_KERNEL_DEBUG_CONST") {
       Ok(filter) if filter.is_empty() => true,
       Ok(filter) => {
         self.debug_label.as_ref().is_some_and(|label| label.contains(&filter))
@@ -865,10 +863,10 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
   #[inline]
   pub fn tick(&mut self) -> Result<(), TcError<M>> {
     if self.rec_fuel == 0 {
-      if std::env::var("IX_REC_FUEL_DUMP").is_ok()
+      if crate::env_var("IX_REC_FUEL_DUMP").is_ok()
         && self.debug_label_matches_env()
       {
-        eprintln!(
+        log::info!(
           "[rec fuel] exhausted const={} depth={} def_eq_depth={} infer_only={} native_reduce={} eager_reduce={}",
           self.debug_label.as_deref().unwrap_or("<unknown>"),
           self.depth(),
@@ -878,7 +876,7 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
           self.eager_reduce
         );
         self.dump_hot_misses();
-        eprintln!("{}", std::backtrace::Backtrace::force_capture());
+        log::info!("{}", std::backtrace::Backtrace::force_capture());
       }
       return Err(TcError::MaxRecFuel);
     }
@@ -1013,9 +1011,9 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     }
     let mut entries: Vec<_> = self.hot_misses.iter().collect();
     entries.sort_unstable_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
-    eprintln!("[hot misses] top {}:", entries.len().min(25));
+    log::info!("[hot misses] top {}:", entries.len().min(25));
     for (key, count) in entries.into_iter().take(25) {
-      eprintln!("  {count:>8}  {key}");
+      log::info!("  {count:>8}  {key}");
     }
   }
 }
@@ -1165,8 +1163,8 @@ mod tests {
     apps, cnst, mk_addr, mk_id, mk_name, pi, sort0, sort1, uzero, var,
   };
   use super::*;
-  use crate::ix::address::Address;
-  use crate::ix::kernel::mode::Meta;
+  use crate::mode::Meta;
+  use ix_common::address::Address;
 
   fn new_tc() -> TypeChecker<'static, Meta> {
     let env = Box::leak(Box::new(KEnv::<Meta>::new()));
@@ -1682,7 +1680,7 @@ mod tests {
     // Deep embedding: λ x. app target (var 0)
     let e = KExpr::<Meta>::lam(
       mk_name("x"),
-      crate::ix::env::BinderInfo::Default,
+      ix_common::env::BinderInfo::Default,
       sort0(),
       KExpr::app(target, var(0)),
     );

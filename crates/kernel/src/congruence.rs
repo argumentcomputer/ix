@@ -3,8 +3,8 @@
 //! Validates that Ixon ingress in Anon mode produces structurally correct
 //! constants by comparing the Lean `ConstantInfo` against the loaded `KConst<Anon>`.
 
-use crate::ix::address::Address;
-use crate::ix::env::{self as lean, ConstantInfo as LeanCI, Literal, Name};
+use ix_common::address::Address;
+use ix_common::env::{self as lean, ConstantInfo as LeanCI, Literal, Name};
 
 use super::constant::KConst;
 use super::expr::{ExprData, KExpr};
@@ -17,7 +17,7 @@ pub struct NameResolver {
 }
 
 impl NameResolver {
-  pub fn from_ixon_env(ixon_env: &crate::ix::ixon::env::Env) -> Self {
+  pub fn from_ixon_env(ixon_env: &ixon::env::Env) -> Self {
     let mut map = rustc_hash::FxHashMap::default();
     for entry in ixon_env.named.iter() {
       map.insert(entry.key().clone(), entry.value().addr.clone());
@@ -364,22 +364,22 @@ fn zero_const_tag<M: super::mode::KernelMode>(c: &KConst<M>) -> &'static str {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::ix::address::Address;
-  use crate::ix::env::{
+  use crate::constant::KConst;
+  use crate::id::KId;
+  use crate::mode::Anon;
+  use ix_common::address::Address;
+  use ix_common::env::{
     self, AxiomVal, BinderInfo, ConstantVal, ConstructorVal, DefinitionSafety,
     DefinitionVal, InductiveVal, Level as LL, Name, OpaqueVal, QuotKind,
     QuotVal, RecursorRule as LeanRule, RecursorVal, ReducibilityHints,
     TheoremVal,
   };
-  use crate::ix::ixon::env::{Env as IxonEnv, Named};
-  use crate::ix::kernel::constant::KConst;
-  use crate::ix::kernel::id::KId;
-  use crate::ix::kernel::mode::Anon;
+  use ixon::env::{Env as IxonEnv, Named};
 
   /// `Nat` from a u64 via the public `From<u64>` impl.
   /// (The `Nat` type itself is a private re-export in `env.rs`.)
-  fn n(x: u64) -> lean_ffi::nat::Nat {
-    lean_ffi::nat::Nat::from(x)
+  fn n(x: u64) -> bignat::Nat {
+    bignat::Nat::from(x)
   }
 
   // ---- test helpers ----
@@ -725,7 +725,7 @@ mod tests {
     let kc = KConst::<Anon>::Defn {
       name: (),
       level_params: (),
-      kind: crate::ix::ixon::constant::DefKind::Definition,
+      kind: ixon::constant::DefKind::Definition,
       safety: DefinitionSafety::Safe,
       hints: ReducibilityHints::Opaque,
       lvls: 0,
@@ -768,7 +768,7 @@ mod tests {
     let kc = KConst::<Anon>::Defn {
       name: (),
       level_params: (),
-      kind: crate::ix::ixon::constant::DefKind::Definition,
+      kind: ixon::constant::DefKind::Definition,
       safety: DefinitionSafety::Safe,
       hints: ReducibilityHints::Opaque,
       lvls: 0,
@@ -969,7 +969,7 @@ mod tests {
     let k = KConst::<Anon>::Defn {
       name: (),
       level_params: (),
-      kind: crate::ix::ixon::constant::DefKind::Theorem,
+      kind: ixon::constant::DefKind::Theorem,
       safety: DefinitionSafety::Safe,
       hints: ReducibilityHints::Opaque,
       lvls: 0,

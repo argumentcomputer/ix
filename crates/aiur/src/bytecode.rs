@@ -3,23 +3,23 @@ use crate::FxIndexMap;
 use super::G;
 
 pub struct Toplevel {
-  pub(crate) functions: Vec<Function>,
-  pub(crate) memory_sizes: Vec<usize>,
+  pub functions: Vec<Function>,
+  pub memory_sizes: Vec<usize>,
 }
 
 pub struct Function {
-  pub(crate) body: Block,
-  pub(crate) layout: FunctionLayout,
-  pub(crate) entry: bool,
-  pub(crate) constrained: bool,
+  pub body: Block,
+  pub layout: FunctionLayout,
+  pub entry: bool,
+  pub constrained: bool,
 }
 
 #[derive(Clone, Copy)]
 pub struct FunctionLayout {
-  pub(crate) input_size: usize,
-  pub(crate) selectors: usize,
-  pub(crate) auxiliaries: usize,
-  pub(crate) lookups: usize,
+  pub input_size: usize,
+  pub selectors: usize,
+  pub auxiliaries: usize,
+  pub lookups: usize,
 }
 
 impl FunctionLayout {
@@ -29,8 +29,8 @@ impl FunctionLayout {
 }
 
 pub struct Block {
-  pub(crate) ops: Vec<Op>,
-  pub(crate) ctrl: Ctrl,
+  pub ops: Vec<Op>,
+  pub ctrl: Ctrl,
 }
 
 pub enum Op {

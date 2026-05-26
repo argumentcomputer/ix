@@ -11,16 +11,14 @@
 //! Key difference from C++: we use FVar-based intermediate computation
 //! (see `expr_utils.rs`) then abstract back into de Bruijn binder chains.
 
-use crate::ix::compile::nat_conv::{
-  nat_to_u64, nat_to_usize, try_nat_to_usize,
-};
-use crate::ix::env::{
+use crate::compile::nat_conv::{nat_to_u64, nat_to_usize, try_nat_to_usize};
+use bignat::Nat;
+use ix_common::env::{
   BinderInfo, ConstantInfo, ConstantVal, ConstructorVal, Env as LeanEnv,
   Expr as LeanExpr, ExprData, InductiveVal, Level, Name, NameData,
   RecursorRule, RecursorVal,
 };
-use crate::ix::ixon::CompileError;
-use lean_ffi::nat::Nat;
+use ixon::CompileError;
 
 use super::expr_utils::{
   LocalDecl, decompose_apps, fresh_fvar, instantiate_spec_with_fvars,
@@ -45,7 +43,7 @@ use super::expr_utils::{
 ///
 /// The caller is responsible for applying `RestoreCtx::restore` to the
 /// output to replace auxiliary const references with original nested apps.
-pub(crate) fn generate_recursors_from_expanded(
+pub fn generate_recursors_from_expanded(
   sorted_classes: &[Vec<Name>],
   expanded: &super::nested::ExpandedBlock,
   // `source_of_canonical[canonical_i]` = Lean source-walk index `source_j`
@@ -57,8 +55,8 @@ pub(crate) fn generate_recursors_from_expanded(
   // no nested-aux hash-sort permutation.
   source_of_canonical: Option<&[usize]>,
   lean_env: &LeanEnv,
-  stt: &crate::ix::compile::CompileState,
-  kctx: &mut crate::ix::compile::KernelCtx,
+  stt: &crate::compile::CompileState,
+  kctx: &mut crate::compile::KernelCtx,
 ) -> Result<(Vec<(Name, RecursorVal)>, bool), CompileError> {
   if expanded.types.is_empty() {
     return Ok((vec![], false));
@@ -292,11 +290,11 @@ struct FlatInfo {
 /// directly and pass the appropriate `KernelCtx` — this wrapper is kept
 /// only so unit tests don't have to plumb one through.
 #[cfg(test)]
-pub(crate) fn generate_canonical_recursors(
+pub fn generate_canonical_recursors(
   sorted_classes: &[Vec<Name>],
   lean_env: &LeanEnv,
-  stt: &crate::ix::compile::CompileState,
-  kctx: &mut crate::ix::compile::KernelCtx,
+  stt: &crate::compile::CompileState,
+  kctx: &mut crate::compile::KernelCtx,
 ) -> Result<(Vec<(Name, RecursorVal)>, bool), CompileError> {
   generate_canonical_recursors_with_overlay(
     sorted_classes,
@@ -342,7 +340,7 @@ pub(crate) fn generate_canonical_recursors(
 fn reorder_flat_by_layout(
   flat: Vec<super::nested::CompileFlatMember>,
   n_classes: usize,
-  layout: &crate::ix::ixon::env::AuxLayout,
+  layout: &ixon::env::AuxLayout,
 ) -> Result<
   Vec<super::nested::CompileFlatMember>,
   (Vec<super::nested::CompileFlatMember>, String),
@@ -434,13 +432,13 @@ fn reorder_flat_by_layout(
   Ok(primary)
 }
 
-pub(crate) fn generate_canonical_recursors_with_overlay(
+pub fn generate_canonical_recursors_with_overlay(
   sorted_classes: &[Vec<Name>],
   lean_env: &LeanEnv,
   overlay: Option<&LeanEnv>,
   pre_flat: Option<Vec<super::nested::CompileFlatMember>>,
-  stt: &crate::ix::compile::CompileState,
-  kctx: &mut crate::ix::compile::KernelCtx,
+  stt: &crate::compile::CompileState,
+  kctx: &mut crate::compile::KernelCtx,
 ) -> Result<(Vec<(Name, RecursorVal)>, bool), CompileError> {
   generate_canonical_recursors_with_layout(
     sorted_classes,
@@ -455,20 +453,20 @@ pub(crate) fn generate_canonical_recursors_with_overlay(
 }
 
 /// Like [`generate_canonical_recursors_with_overlay`] but accepts an
-/// optional [`crate::ix::ixon::env::AuxLayout`] that reorders the aux
+/// optional [`ixon::env::AuxLayout`] that reorders the aux
 /// section of the flat block per its `perm` before recursor generation.
 ///
 /// This is the hook decompile uses to pin its canonical layout to
 /// compile's first-run result. With `aux_layout = None`, falls back to
 /// the discovery order produced by `build_compile_flat_block_with_overlay`.
-pub(crate) fn generate_canonical_recursors_with_layout(
+pub fn generate_canonical_recursors_with_layout(
   sorted_classes: &[Vec<Name>],
   lean_env: &LeanEnv,
   overlay: Option<&LeanEnv>,
   pre_flat: Option<Vec<super::nested::CompileFlatMember>>,
-  stt: &crate::ix::compile::CompileState,
-  kctx: &mut crate::ix::compile::KernelCtx,
-  aux_layout: Option<&crate::ix::ixon::env::AuxLayout>,
+  stt: &crate::compile::CompileState,
+  kctx: &mut crate::compile::KernelCtx,
+  aux_layout: Option<&ixon::env::AuxLayout>,
   // Optional Lean-source index per canonical aux position, used for
   // emitting `all0.rec_{source_j + 1}` names directly. If provided
   // alongside `aux_layout`, both must agree (this parameter takes
@@ -950,8 +948,8 @@ fn build_rec_type(
   rec_level_params: &[Name],
   lean_env: &LeanEnv,
   overlay: Option<&LeanEnv>,
-  stt: &crate::ix::compile::CompileState,
-  kctx: &mut crate::ix::compile::KernelCtx,
+  stt: &crate::compile::CompileState,
+  kctx: &mut crate::compile::KernelCtx,
   nested_rewrite: Option<&mut NestedRewriteCtx>,
 ) -> LeanExpr {
   let env_get = |name: &Name| -> Option<ConstantInfo> {
@@ -1350,8 +1348,8 @@ fn build_minor_type(
   motive_fvars: &[LeanExpr],
   ind_univs: &[Level],
   rec_level_params: &[Name],
-  stt: &crate::ix::compile::CompileState,
-  kctx: &mut crate::ix::compile::KernelCtx,
+  stt: &crate::compile::CompileState,
+  kctx: &mut crate::compile::KernelCtx,
   // Shared scratch for nested-aux level rewrites across every ctor in
   // the block. `None` when the block doesn't need any rewriting.
   nested_rewrite: Option<&mut NestedRewriteCtx>,
@@ -1631,8 +1629,8 @@ fn build_rec_rules(
   // Lean-source-indexed aux naming (see caller doc). `None` falls back
   // to `canonical_i + 1`.
   source_of_canonical: Option<&[usize]>,
-  stt: &crate::ix::compile::CompileState,
-  kctx: &mut crate::ix::compile::KernelCtx,
+  stt: &crate::compile::CompileState,
+  kctx: &mut crate::compile::KernelCtx,
   nested_rewrite: Option<&mut NestedRewriteCtx>,
 ) -> Result<Vec<RecursorRule>, CompileError> {
   let _ = n_classes; // Kept for signature parity with `build_rec_type`.
@@ -2002,7 +2000,7 @@ fn build_rule_ih_fvar(
 /// Lean's `appendAfter`: append a suffix string to a Name.
 ///
 /// Matches `Init/Meta/Defs.lean:317-320`:
-/// ```
+/// ```text
 /// def appendAfter (n : Name) (suffix : String) : Name :=
 ///   n.modifyBase fun
 ///     | str p s => Name.mkStr p (s ++ suffix)
@@ -2096,7 +2094,7 @@ fn find_rec_target(
   param_fvars: &[LeanExpr],
   n_params: usize,
   scope: &mut super::expr_utils::TcScope<'_>,
-  _stt: &crate::ix::compile::CompileState,
+  _stt: &crate::compile::CompileState,
 ) -> Option<usize> {
   // Phase 1: syntactic peel + match.
   let mut ty = dom.clone();
@@ -2330,15 +2328,15 @@ fn compute_is_large_and_k(
   n_classes: usize,
   n_params: usize,
   lean_env: &LeanEnv,
-  stt: &crate::ix::compile::CompileState,
-  kctx: &mut crate::ix::compile::KernelCtx,
+  stt: &crate::compile::CompileState,
+  kctx: &mut crate::compile::KernelCtx,
 ) -> Result<(bool, bool, bool), CompileError> {
-  use crate::ix::kernel::constant::KConst;
-  use crate::ix::kernel::id::KId;
-  use crate::ix::kernel::ingress::{
+  use ix_kernel::constant::KConst;
+  use ix_kernel::id::KId;
+  use ix_kernel::ingress::{
     lean_expr_to_zexpr_with_kenv, resolve_lean_name_addr,
   };
-  use crate::ix::kernel::mode::Meta;
+  use ix_kernel::mode::Meta;
 
   let n2a = Some(&stt.name_to_addr);
   let aux_n2a = Some(&stt.aux_name_to_addr);
@@ -2351,7 +2349,7 @@ fn compute_is_large_and_k(
     u64,
     u64,
     Vec<KId<Meta>>,
-    crate::ix::kernel::expr::KExpr<Meta>,
+    ix_kernel::expr::KExpr<Meta>,
     bool,
   )> = Vec::new();
 
@@ -2459,7 +2457,7 @@ fn compute_is_large_and_k(
   let first_n_indices = ind_infos[0].2;
 
   // Use the TC for the appropriate context.
-  let mut tc = crate::ix::kernel::tc::TypeChecker::new(&mut kctx.kenv);
+  let mut tc = ix_kernel::tc::TypeChecker::new(&mut kctx.kenv);
 
   // Compute the WHNF-reduced result sort level via the kernel. This peels
   // params+indices with whnf at each step — crucial for inductives whose
@@ -2533,7 +2531,7 @@ fn compute_is_large_and_k(
     && is_prop;
 
   let _cilk_elapsed = _cilk_start.elapsed();
-  if *crate::ix::compile::IX_TIMING && _cilk_elapsed.as_secs_f32() > 0.1 {
+  if *crate::compile::IX_TIMING && _cilk_elapsed.as_secs_f32() > 0.1 {
     eprintln!(
       "[compute_is_large_and_k] {:?} total={:.3}s ingress={:.3}s n_classes={} kenv_size={}",
       classes[0].ind.cnst.name.pretty(),
@@ -2553,8 +2551,8 @@ fn compute_is_large_and_k(
 fn ingress_target_type_deps(
   target_ty: &LeanExpr,
   lean_env: &LeanEnv,
-  stt: &crate::ix::compile::CompileState,
-  kctx: &mut crate::ix::compile::KernelCtx,
+  stt: &crate::compile::CompileState,
+  kctx: &mut crate::compile::KernelCtx,
 ) {
   let mut seen = rustc_hash::FxHashSet::default();
   let mut queue = Vec::new();
@@ -2578,8 +2576,8 @@ fn ingress_field_deps(
   class: &FlatInfo,
   _lvl_params: &[Name],
   lean_env: &LeanEnv,
-  stt: &crate::ix::compile::CompileState,
-  kctx: &mut crate::ix::compile::KernelCtx,
+  stt: &crate::compile::CompileState,
+  kctx: &mut crate::compile::KernelCtx,
 ) {
   let mut seen = rustc_hash::FxHashSet::default();
   let mut queue: Vec<Name> = Vec::new();
@@ -2603,8 +2601,8 @@ fn ingress_aux_gen_dep(
   name: &Name,
   ci: &ConstantInfo,
   lean_env: &LeanEnv,
-  stt: &crate::ix::compile::CompileState,
-  kctx: &mut crate::ix::compile::KernelCtx,
+  stt: &crate::compile::CompileState,
+  kctx: &mut crate::compile::KernelCtx,
   queue: &mut Vec<Name>,
 ) {
   match ci {
@@ -2653,15 +2651,15 @@ fn ingress_type_stub(
   name: &Name,
   typ: &LeanExpr,
   level_params: &[Name],
-  stt: &crate::ix::compile::CompileState,
-  kctx: &mut crate::ix::compile::KernelCtx,
+  stt: &crate::compile::CompileState,
+  kctx: &mut crate::compile::KernelCtx,
 ) {
-  use crate::ix::kernel::constant::KConst;
-  use crate::ix::kernel::id::KId;
-  use crate::ix::kernel::ingress::{
+  use ix_kernel::constant::KConst;
+  use ix_kernel::id::KId;
+  use ix_kernel::ingress::{
     lean_expr_to_zexpr_with_kenv, resolve_lean_name_addr,
   };
-  use crate::ix::kernel::mode::Meta;
+  use ix_kernel::mode::Meta;
 
   let n2a = Some(&stt.name_to_addr);
   let aux_n2a = Some(&stt.aux_name_to_addr);
@@ -2733,9 +2731,9 @@ fn collect_const_refs(expr: &LeanExpr, out: &mut Vec<Name>) {
 /// referenced by that same comment for the historical record.
 #[allow(dead_code)]
 fn peek_result_sort(
-  ty: &crate::ix::kernel::expr::KExpr<crate::ix::kernel::mode::Meta>,
-) -> Option<crate::ix::kernel::level::KUniv<crate::ix::kernel::mode::Meta>> {
-  use crate::ix::kernel::expr::ExprData as ZED;
+  ty: &ix_kernel::expr::KExpr<ix_kernel::mode::Meta>,
+) -> Option<ix_kernel::level::KUniv<ix_kernel::mode::Meta>> {
+  use ix_kernel::expr::ExprData as ZED;
   let mut cur = ty.clone();
   loop {
     match cur.data() {
@@ -2749,7 +2747,7 @@ fn peek_result_sort(
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::ix::compile::aux_gen::below::{
+  use crate::compile::aux_gen::below::{
     BelowConstant, generate_below_constants,
   };
 
@@ -2877,7 +2875,7 @@ mod tests {
   }
 
   fn insert_aux_stub_def(env: &mut LeanEnv, ind: &Name, suffix: &str) -> Name {
-    use crate::ix::env::{DefinitionSafety, DefinitionVal, ReducibilityHints};
+    use ix_common::env::{DefinitionSafety, DefinitionVal, ReducibilityHints};
 
     let def_name = Name::str(ind.clone(), suffix.into());
     env.insert(
@@ -3477,8 +3475,8 @@ mod tests {
     env.insert(ctor_name, ConstantInfo::CtorInfo(ctor));
 
     let classes = vec![vec![ind_name]];
-    let tmp_stt = crate::ix::compile::CompileState::default();
-    let mut kctx = crate::ix::compile::KernelCtx::new();
+    let tmp_stt = crate::compile::CompileState::default();
+    let mut kctx = crate::compile::KernelCtx::new();
     let (result, _is_prop) =
       generate_canonical_recursors(&classes, &env, &tmp_stt, &mut kctx)
         .unwrap();
@@ -3503,8 +3501,8 @@ mod tests {
   #[test]
   fn test_aux_gen_alpha_collapse() {
     let (env, a, b) = build_alpha_collapse_env();
-    let stt = crate::ix::compile::CompileState::default();
-    let mut kctx = crate::ix::compile::KernelCtx::new();
+    let stt = crate::compile::CompileState::default();
+    let mut kctx = crate::compile::KernelCtx::new();
 
     // After sort_consts collapse, A≅B → 1 class.
     let classes = vec![vec![a.clone(), b.clone()]];
@@ -3563,12 +3561,12 @@ mod tests {
 
   #[test]
   fn test_alpha_collapse_sort_consts_groups_inductives() {
-    use crate::ix::compile::{BlockCache, mk_indc, sort_consts};
-    use crate::ix::env::ConstantInfo as LeanCI;
-    use crate::ix::mutual::MutConst;
+    use crate::compile::{BlockCache, mk_indc, sort_consts};
+    use crate::mutual::MutConst;
+    use ix_common::env::ConstantInfo as LeanCI;
 
     let (env, a, b) = build_alpha_collapse_env();
-    let stt = crate::ix::compile::CompileState::default();
+    let stt = crate::compile::CompileState::default();
     let mut cache = BlockCache::default();
 
     let mut cs = Vec::new();
@@ -3594,7 +3592,7 @@ mod tests {
 
   #[test]
   fn test_alpha_collapse_compile_env_addresses_inductives_and_ctors() {
-    use crate::ix::compile::env::compile_env;
+    use crate::compile::env::compile_env;
 
     let (env, a, b) = build_alpha_collapse_env();
     let lean_env = std::sync::Arc::new(env);
@@ -3617,7 +3615,7 @@ mod tests {
 
   #[test]
   fn test_alpha_collapse_aux_gen_aliases_primary_aux_to_rep() {
-    use crate::ix::compile::aux_gen::{self, PatchedConstant};
+    use crate::compile::aux_gen::{self, PatchedConstant};
 
     let (mut env, a, b) = build_alpha_collapse_env();
     let all = vec![a.clone(), b.clone()];
@@ -3633,8 +3631,8 @@ mod tests {
     let a_brecon = insert_aux_stub_def(&mut env, &a, "brecOn");
     let b_brecon = insert_aux_stub_def(&mut env, &b, "brecOn");
 
-    let stt = crate::ix::compile::CompileState::default();
-    let mut kctx = crate::ix::compile::KernelCtx::new();
+    let stt = crate::compile::CompileState::default();
+    let mut kctx = crate::compile::KernelCtx::new();
     let out = aux_gen::generate_aux_patches(
       &[vec![a.clone(), b.clone()]],
       &all,
@@ -3675,8 +3673,8 @@ mod tests {
   #[test]
   fn test_aux_gen_alpha_collapse_3() {
     let (env, a, b, c) = build_alpha_collapse_3_env();
-    let stt = crate::ix::compile::CompileState::default();
-    let mut kctx = crate::ix::compile::KernelCtx::new();
+    let stt = crate::compile::CompileState::default();
+    let mut kctx = crate::compile::KernelCtx::new();
 
     // All 3 collapse into 1 class.
     let classes = vec![vec![a.clone(), b.clone(), c.clone()]];
@@ -3710,8 +3708,8 @@ mod tests {
   #[test]
   fn test_aux_gen_over_merge_alpha_collapse() {
     let (env, a, b, c) = build_over_merge_alpha_collapse_env();
-    let stt = crate::ix::compile::CompileState::default();
-    let mut kctx = crate::ix::compile::KernelCtx::new();
+    let stt = crate::compile::CompileState::default();
+    let mut kctx = crate::compile::KernelCtx::new();
 
     // A≅B collapse into 1 class, C is a separate class → 2 classes.
     let classes = vec![vec![a.clone(), b.clone()], vec![c.clone()]];
@@ -3767,8 +3765,8 @@ mod tests {
   #[test]
   fn test_aux_gen_over_merge() {
     let (env, a, b, c) = build_over_merge_env();
-    let stt = crate::ix::compile::CompileState::default();
-    let mut kctx = crate::ix::compile::KernelCtx::new();
+    let stt = crate::compile::CompileState::default();
+    let mut kctx = crate::compile::KernelCtx::new();
 
     // No alpha-collapse: A≠B (B has 2 fields), A≠C, B≠C → 3 classes.
     let classes = vec![vec![a.clone()], vec![b.clone()], vec![c.clone()]];
@@ -3810,8 +3808,8 @@ mod tests {
   #[test]
   fn test_aux_gen_below_indc_prop() {
     let (env, a, b) = build_alpha_collapse_env();
-    let stt = crate::ix::compile::CompileState::default();
-    let mut kctx = crate::ix::compile::KernelCtx::new();
+    let stt = crate::compile::CompileState::default();
+    let mut kctx = crate::compile::KernelCtx::new();
 
     let classes = vec![vec![a.clone(), b.clone()]];
     let (recs, is_prop) =
@@ -3846,8 +3844,8 @@ mod tests {
   #[test]
   fn test_aux_gen_below_def_type() {
     let (env, t) = build_type_nat_env();
-    let stt = crate::ix::compile::CompileState::default();
-    let mut kctx = crate::ix::compile::KernelCtx::new();
+    let stt = crate::compile::CompileState::default();
+    let mut kctx = crate::compile::KernelCtx::new();
 
     let classes = vec![vec![t.clone()]];
     let (recs, is_prop) =
@@ -3888,8 +3886,8 @@ mod tests {
   #[test]
   fn test_aux_gen_is_prop_vs_is_large() {
     let (env, p) = build_prop_drec_env();
-    let stt = crate::ix::compile::CompileState::default();
-    let mut kctx = crate::ix::compile::KernelCtx::new();
+    let stt = crate::compile::CompileState::default();
+    let mut kctx = crate::compile::KernelCtx::new();
 
     let classes = vec![vec![p.clone()]];
     let (recs, is_prop) =
@@ -3933,7 +3931,7 @@ mod tests {
   #[ignore]
   #[test]
   fn test_aux_gen_compile_roundtrip() {
-    use crate::ix::compile::env::compile_env;
+    use crate::compile::env::compile_env;
     use std::sync::Arc;
 
     let (mut env, a, b) = build_alpha_collapse_env();
@@ -3986,18 +3984,18 @@ mod tests {
   /// Type-level brecOn: Nat-like T generates .brecOn.go + .brecOn (no .eq without Eq in env).
   #[test]
   fn test_brecon_type_level() {
-    use crate::ix::compile::aux_gen::below::generate_below_constants;
-    use crate::ix::compile::aux_gen::brecon::generate_brecon_constants;
+    use crate::compile::aux_gen::below::generate_below_constants;
+    use crate::compile::aux_gen::brecon::generate_brecon_constants;
 
     let (env, t) = build_type_nat_env();
-    let stt = crate::ix::compile::CompileState::default();
-    let mut kctx = crate::ix::compile::KernelCtx::new();
+    let stt = crate::compile::CompileState::default();
+    let mut kctx = crate::compile::KernelCtx::new();
     // Ingress prelude (PUnit, PProd) and the inductive into the kenv
     // so TcScope can resolve them during brecOn sort-level inference.
-    crate::ix::compile::aux_gen::expr_utils::ensure_prelude_in_kenv_of(
+    crate::compile::aux_gen::expr_utils::ensure_prelude_in_kenv_of(
       &stt, &mut kctx,
     );
-    crate::ix::compile::aux_gen::expr_utils::ensure_in_kenv_of(
+    crate::compile::aux_gen::expr_utils::ensure_in_kenv_of(
       &t, &env, &stt, &mut kctx,
     );
 
@@ -4012,7 +4010,7 @@ mod tests {
     assert_eq!(below.len(), 1);
 
     // Populate kenv with .below types for brecOn generation.
-    crate::ix::compile::aux_gen::populate_canon_kenv_with_below(
+    crate::compile::aux_gen::populate_canon_kenv_with_below(
       &below,
       &classes,
       &std::sync::Arc::new(env.clone()),
@@ -4046,12 +4044,12 @@ mod tests {
   /// Prop-level brecOn: alpha-collapse A/B generates single .brecOn per class.
   #[test]
   fn test_brecon_prop_alpha_collapse() {
-    use crate::ix::compile::aux_gen::below::generate_below_constants;
-    use crate::ix::compile::aux_gen::brecon::generate_brecon_constants;
+    use crate::compile::aux_gen::below::generate_below_constants;
+    use crate::compile::aux_gen::brecon::generate_brecon_constants;
 
     let (env, a, b) = build_alpha_collapse_env();
-    let stt = crate::ix::compile::CompileState::default();
-    let mut kctx = crate::ix::compile::KernelCtx::new();
+    let stt = crate::compile::CompileState::default();
+    let mut kctx = crate::compile::KernelCtx::new();
 
     let classes = vec![vec![a.clone(), b.clone()]];
     let (recs, is_prop) =
@@ -4081,8 +4079,8 @@ mod tests {
   /// Non-recursive inductives should NOT generate brecOn.
   #[test]
   fn test_brecon_skipped_for_non_recursive() {
-    use crate::ix::compile::aux_gen::below::generate_below_constants;
-    use crate::ix::compile::aux_gen::brecon::generate_brecon_constants;
+    use crate::compile::aux_gen::below::generate_below_constants;
+    use crate::compile::aux_gen::brecon::generate_brecon_constants;
 
     // Build a simple non-recursive inductive: Unit | unit : Unit
     let unit = n("Unit");
@@ -4122,8 +4120,8 @@ mod tests {
       }),
     );
 
-    let stt = crate::ix::compile::CompileState::default();
-    let mut kctx = crate::ix::compile::KernelCtx::new();
+    let stt = crate::compile::CompileState::default();
+    let mut kctx = crate::compile::KernelCtx::new();
     let classes = vec![vec![unit]];
     let (recs, is_prop) =
       generate_canonical_recursors(&classes, &env, &stt, &mut kctx).unwrap();
@@ -4150,7 +4148,7 @@ mod tests {
   /// with real Lean environments that include .below and .brecOn constants.
   #[test]
   fn test_brecon_type_compile_roundtrip() {
-    use crate::ix::compile::env::compile_env;
+    use crate::compile::env::compile_env;
     use std::sync::Arc;
 
     let (mut env, t) = build_type_nat_env();

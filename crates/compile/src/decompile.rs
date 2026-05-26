@@ -9,35 +9,37 @@
 #![allow(clippy::map_err_ignore)]
 #![allow(clippy::match_same_arms)]
 
-use lean_ffi::nat::Nat;
+use bignat::Nat;
+
+use ix_common::address::Address;
+use ix_common::env::{
+  AxiomVal, BinderInfo, ConstantInfo as LeanConstantInfo, ConstantVal,
+  ConstructorVal, DataValue as LeanDataValue, DefinitionSafety, DefinitionVal,
+  Env as LeanEnv, Expr as LeanExpr, InductiveVal, Int, Level, Literal, Name,
+  OpaqueVal, QuotVal, RecursorRule as LeanRecursorRule, RecursorVal,
+  ReducibilityHints, SourceInfo, Substring, Syntax, SyntaxPreresolved,
+  TheoremVal,
+};
+
+use ixon::{
+  DecompileError, Tag0,
+  constant::{
+    Axiom, Constant, ConstantInfo, Constructor, DefKind, Definition,
+    DefinitionProj, Inductive, InductiveProj, MutConst, Quotient, Recursor,
+    RecursorProj,
+  },
+  env::Named,
+  expr::Expr,
+  metadata::{
+    CallSiteEntry, ConstantMeta, ConstantMetaInfo, DataValue, ExprMeta,
+    ExprMetaData, KVMap,
+  },
+  univ::Univ,
+};
 
 use crate::{
-  ix::address::Address,
-  ix::compile::CompileState,
-  ix::env::{
-    AxiomVal, BinderInfo, ConstantInfo as LeanConstantInfo, ConstantVal,
-    ConstructorVal, DataValue as LeanDataValue, DefinitionSafety,
-    DefinitionVal, Env as LeanEnv, Expr as LeanExpr, InductiveVal, Int, Level,
-    Literal, Name, OpaqueVal, QuotVal, RecursorRule as LeanRecursorRule,
-    RecursorVal, ReducibilityHints, SourceInfo, Substring, Syntax,
-    SyntaxPreresolved, TheoremVal,
-  },
-  ix::ixon::{
-    DecompileError, Tag0,
-    constant::{
-      Axiom, Constant, ConstantInfo, Constructor, DefKind, Definition,
-      DefinitionProj, Inductive, InductiveProj, MutConst, Quotient, Recursor,
-      RecursorProj,
-    },
-    env::Named,
-    expr::Expr,
-    metadata::{
-      CallSiteEntry, ConstantMeta, ConstantMetaInfo, DataValue, ExprMeta,
-      ExprMetaData, KVMap,
-    },
-    univ::Univ,
-  },
-  ix::mutual::{Def, Ind, MutConst as LeanMutConst, MutCtx, all_to_ctx},
+  compile::CompileState,
+  mutual::{Def, Ind, MutConst as LeanMutConst, MutCtx, all_to_ctx},
 };
 use dashmap::DashMap;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
@@ -1913,14 +1915,14 @@ enum AuxKind {
 /// we're going to regenerate anyway should never have its call-sites
 /// surgered, since the regenerated body is emitted in canonical order
 /// by construction.
-pub(crate) fn is_aux_gen_suffix(name: &Name) -> bool {
+pub fn is_aux_gen_suffix(name: &Name) -> bool {
   classify_aux_gen(name).is_some()
 }
 
 /// Classify an aux_gen constant by suffix, returning (kind, root_inductive).
 /// The root inductive is the base inductive the auxiliary is derived from.
 fn classify_aux_gen(name: &Name) -> Option<(AuxKind, Name)> {
-  use crate::ix::env::NameData;
+  use ix_common::env::NameData;
   let s1 = name.last_str()?;
   let p1 = match name.as_data() {
     NameData::Str(parent, _, _) => parent.clone(),
@@ -2015,7 +2017,7 @@ fn def_safety(is_unsafe: bool) -> DefinitionSafety {
 /// `mkDefinitionValInferringUnsafe`, which always flips to `Unsafe` when the
 /// parent inductive is unsafe (the value references the parent's `.rec`).
 fn below_def_to_lean(
-  def: &crate::ix::compile::aux_gen::below::BelowDef,
+  def: &crate::compile::aux_gen::below::BelowDef,
 ) -> LeanConstantInfo {
   LeanConstantInfo::DefnInfo(DefinitionVal {
     cnst: ConstantVal {
@@ -2036,7 +2038,7 @@ fn below_def_to_lean(
 /// branch of `IndPredBelow`). The constructor `is_unsafe` matches the
 /// enclosing inductive — the kernel rejects mixed safety within an inductive.
 fn below_indc_to_lean(
-  indc: &crate::ix::compile::aux_gen::below::BelowIndc,
+  indc: &crate::compile::aux_gen::below::BelowIndc,
   all_below_names: &[Name],
 ) -> (InductiveVal, Vec<ConstructorVal>) {
   let ctor_names: Vec<Name> =
@@ -2096,7 +2098,7 @@ fn below_indc_to_lean(
 /// (`Lean/Environment.lean:2797`), which replaces a theorem with an unsafe
 /// definition whenever `env.hasUnsafe` fires on the type or value.
 fn brecon_def_to_lean(
-  def: &crate::ix::compile::aux_gen::brecon::BRecOnDef,
+  def: &crate::compile::aux_gen::brecon::BRecOnDef,
 ) -> LeanConstantInfo {
   let cnst = ConstantVal {
     name: def.name.clone(),
@@ -2408,11 +2410,11 @@ fn roundtrip_block(
   stt: &CompileState,
   dstt: &DecompileState,
 ) -> Result<FxHashMap<Name, LeanConstantInfo>, DecompileError> {
-  use crate::ix::compile::{
+  use crate::compile::{
     BlockCache as CompileBlockCache, compile_definition, compile_inductive,
     compile_mutual_block, compile_recursor, sort_consts,
   };
-  use crate::ix::mutual::ctx_to_all;
+  use crate::mutual::ctx_to_all;
 
   let mut results: FxHashMap<Name, LeanConstantInfo> = FxHashMap::default();
   if consts.is_empty() {
@@ -2507,7 +2509,7 @@ fn roundtrip_block(
     // Singleton: compile as bare constant (no Muts wrapper).
     let result = match &ixon_mutuals[0] {
       MutConst::Defn(def) => {
-        crate::ix::compile::apply_sharing_to_definition_with_stats(
+        crate::compile::apply_sharing_to_definition_with_stats(
           def.clone(),
           block_refs,
           block_univs,
@@ -2515,7 +2517,7 @@ fn roundtrip_block(
         )
       },
       MutConst::Recr(rec) => {
-        crate::ix::compile::apply_sharing_to_recursor_with_stats(
+        crate::compile::apply_sharing_to_recursor_with_stats(
           rec.clone(),
           block_refs,
           block_univs,
@@ -3182,7 +3184,7 @@ fn decompile_named_const(
 /// Idempotent: if `stt.aux_perms` already has an entry for the name, we
 /// leave it alone (compile-in-progress stt wins over rehydrated copy).
 fn rehydrate_aux_perms_from_env(stt: &CompileState) {
-  use crate::ix::ixon::metadata::ConstantMetaInfo;
+  use ixon::metadata::ConstantMetaInfo;
 
   let mut n_muts = 0usize;
   let mut n_muts_with_layout = 0usize;
@@ -3294,7 +3296,7 @@ fn block_mut_consts_from_env(
 #[derive(Clone)]
 struct StoredPlanBlock {
   class_names: Vec<Vec<Name>>,
-  aux_layout: Option<crate::ix::ixon::env::AuxLayout>,
+  aux_layout: Option<ixon::env::AuxLayout>,
   flat_names: Vec<Name>,
 }
 
@@ -3390,7 +3392,7 @@ fn fallback_plan_blocks_from_sort(
   env: &LeanEnv,
   stt: &CompileState,
 ) -> Result<Vec<StoredPlanBlock>, DecompileError> {
-  use crate::ix::compile::{BlockCache as CompileBlockCache, sort_consts};
+  use crate::compile::{BlockCache as CompileBlockCache, sort_consts};
 
   let cs = block_mut_consts_from_env(all_names, env)?;
   if cs.is_empty() {
@@ -3422,7 +3424,7 @@ fn install_decompile_call_site_plans(
   env: &LeanEnv,
   stt: &CompileState,
 ) -> Result<(), DecompileError> {
-  use crate::ix::compile::{aux_gen, surgery};
+  use crate::compile::{aux_gen, surgery};
 
   if all_names.is_empty() {
     return Ok(());
@@ -3502,11 +3504,11 @@ fn decompile_block_aux_gen(
   all_names: &[Name],
   aux_members: &[(AuxKind, Name)],
   env: &mut LeanEnv,
-  kctx: &mut crate::ix::compile::KernelCtx,
+  kctx: &mut crate::compile::KernelCtx,
   stt: &CompileState,
   dstt: &DecompileState,
 ) -> Vec<(Name, DecompileError)> {
-  use crate::ix::compile::aux_gen::{
+  use crate::compile::aux_gen::{
     below::{BelowConstant, generate_below_constants},
     brecon::generate_brecon_constants,
     cases_on::generate_cases_on,
@@ -3541,7 +3543,7 @@ fn decompile_block_aux_gen(
 
   // Ingress transitive dependencies from constructor field types.
   {
-    use crate::ix::graph::get_constant_info_references;
+    use crate::graph::get_constant_info_references;
     for ind_name in all_names {
       if let Some(ci) = env.get(ind_name) {
         for ref_name in get_constant_info_references(ci) {
@@ -3587,7 +3589,7 @@ fn decompile_block_aux_gen(
   //
   // See `docs/ix_canonicity.md` §9.3 / §17.2 for the canonicity
   // commitment this upholds.
-  let aux_layout_for_block: Option<crate::ix::ixon::env::AuxLayout> = None;
+  let aux_layout_for_block: Option<ixon::env::AuxLayout> = None;
 
   let (canonical_recs, is_prop) = if needs_rec
     || needs_rec_on
@@ -3596,7 +3598,7 @@ fn decompile_block_aux_gen(
     || needs_below_rec
     || needs_brecon
   {
-    match crate::ix::compile::aux_gen::recursor::generate_canonical_recursors_with_layout(
+    match crate::compile::aux_gen::recursor::generate_canonical_recursors_with_layout(
       &classes, env, None, None, stt, kctx,
       aux_layout_for_block.as_ref(),
       None, // source_of_canonical derived from aux_layout inside _with_layout
@@ -3697,7 +3699,7 @@ fn decompile_block_aux_gen(
 
     for co_name in &cases_on_members {
       let ind_name = match co_name.as_data() {
-        crate::ix::env::NameData::Str(parent, _, _) => parent.clone(),
+        ix_common::env::NameData::Str(parent, _, _) => parent.clone(),
         _ => continue,
       };
       let rec_name = Name::str(ind_name.clone(), "rec".to_string());
@@ -3768,7 +3770,7 @@ fn decompile_block_aux_gen(
 
   // Phase 1c: Generate .recOn definitions (arg-reordered .rec wrapper).
   if needs_rec_on {
-    use crate::ix::compile::aux_gen::rec_on::generate_rec_on;
+    use crate::compile::aux_gen::rec_on::generate_rec_on;
 
     let rec_on_members: Vec<&Name> = aux_members
       .iter()
@@ -3778,7 +3780,7 @@ fn decompile_block_aux_gen(
 
     for ro_name in &rec_on_members {
       let ind_name = match ro_name.as_data() {
-        crate::ix::env::NameData::Str(parent, _, _) => parent.clone(),
+        ix_common::env::NameData::Str(parent, _, _) => parent.clone(),
         _ => continue,
       };
       let rec_name = Name::str(ind_name, "rec".to_string());
@@ -4233,8 +4235,7 @@ fn decompile_block_aux_gen(
   if let Some(orig) = orig_env {
     for (name, generated_ci) in &generated_consts {
       if let Some(orig_ci) = orig.get(name)
-        && let Err(e) =
-          crate::ix::congruence::const_alpha_eq(generated_ci, orig_ci)
+        && let Err(e) = crate::congruence::const_alpha_eq(generated_ci, orig_ci)
       {
         aux_gen_errors.push((
           name.clone(),
@@ -4262,10 +4263,10 @@ fn decompile_block_aux_gen(
 pub fn decompile_env(
   stt: &CompileState,
 ) -> Result<DecompileState, DecompileError> {
-  use crate::ix::compile::KernelCtx;
-  use crate::ix::compile::aux_gen::expr_utils;
-  use crate::ix::condense::compute_sccs;
-  use crate::ix::graph::{NameSet, RefMap, get_constant_info_references};
+  use crate::compile::KernelCtx;
+  use crate::compile::aux_gen::expr_utils;
+  use crate::condense::compute_sccs;
+  use crate::graph::{NameSet, RefMap, get_constant_info_references};
 
   let dstt = DecompileState::default();
 
@@ -4660,8 +4661,8 @@ pub fn check_decompile(
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::ix::compile::compile_name;
-  use crate::ix::env::Level;
+  use crate::compile::compile_name;
+  use ix_common::env::Level;
 
   /// Register a Name in `stt.env.names` so `decompile_name` can resolve it.
   /// Mirrors `compile_name` (content-address the name, insert into names map).
@@ -4674,7 +4675,7 @@ mod tests {
   fn lean_telescope(e: &LeanExpr) -> (LeanExpr, Vec<LeanExpr>) {
     let mut args = Vec::new();
     let mut cur = e.clone();
-    while let crate::ix::env::ExprData::App(f, a, _) = cur.as_data() {
+    while let ix_common::env::ExprData::App(f, a, _) = cur.as_data() {
       args.push(a.clone());
       cur = f.clone();
     }
@@ -4685,7 +4686,7 @@ mod tests {
   /// Pull the bvar index out of a Lean expr, or None if it isn't a bvar.
   fn bvar_idx(e: &LeanExpr) -> Option<u64> {
     match e.as_data() {
-      crate::ix::env::ExprData::Bvar(n, _) => n.to_u64(),
+      ix_common::env::ExprData::Bvar(n, _) => n.to_u64(),
       _ => None,
     }
   }
@@ -4773,7 +4774,7 @@ mod tests {
     // The reconstructed spine should be in *source* order: Var 10, 11, 12.
     let (head_lean, args) = lean_telescope(&decompiled);
     match head_lean.as_data() {
-      crate::ix::env::ExprData::Const(name, _, _) => {
+      ix_common::env::ExprData::Const(name, _, _) => {
         assert_eq!(*name, head_name, "head const name mismatch");
       },
       other => panic!("expected Const head, got {other:?}"),
@@ -4872,7 +4873,7 @@ mod tests {
     // Expected source-order spine: App(App(head, motive_ref), major).
     let (head_lean, args) = lean_telescope(&decompiled);
     match head_lean.as_data() {
-      crate::ix::env::ExprData::Const(name, _, _) => {
+      ix_common::env::ExprData::Const(name, _, _) => {
         assert_eq!(*name, head_name);
       },
       other => panic!("expected head Const, got {other:?}"),
@@ -4885,7 +4886,7 @@ mod tests {
     // args[0] is the collapsed motive — must be Const(target), NOT the
     // decoy lambda from sharing[0].
     match args[0].as_data() {
-      crate::ix::env::ExprData::Const(name, _, _) => {
+      ix_common::env::ExprData::Const(name, _, _) => {
         assert_eq!(
           *name, target_name,
           "args[0] is the Collapsed motive and must resolve via \
@@ -4921,9 +4922,9 @@ mod tests {
   // -------------------------------------------------------------------------
   #[test]
   fn test_projection_decompile_loads_meta_extensions() {
-    use crate::ix::address::Address;
-    use crate::ix::env::DefinitionSafety;
-    use crate::ix::ixon::constant::{
+    use ix_common::address::Address;
+    use ix_common::env::DefinitionSafety;
+    use ixon::constant::{
       DefKind, Definition, DefinitionProj, MutConst as IxMutConst,
     };
 
@@ -5041,7 +5042,7 @@ mod tests {
       LeanConstantInfo::DefnInfo(dv) => {
         let (head_lean, args) = lean_telescope(&dv.value);
         match head_lean.as_data() {
-          crate::ix::env::ExprData::Const(name, _, _) => {
+          ix_common::env::ExprData::Const(name, _, _) => {
             assert_eq!(
               *name, head_name,
               "CallSite head should decode as `head`"
@@ -5051,7 +5052,7 @@ mod tests {
         }
         assert_eq!(args.len(), 2, "CallSite had 2 entries -> 2 app args");
         match args[0].as_data() {
-          crate::ix::env::ExprData::Const(name, _, _) => {
+          ix_common::env::ExprData::Const(name, _, _) => {
             assert_eq!(
               *name, target_name,
               "Collapsed arg must resolve via loaded meta_sharing[0]"

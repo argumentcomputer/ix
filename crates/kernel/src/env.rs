@@ -11,7 +11,7 @@ use std::collections::BTreeSet;
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::cell::OnceCell;
 
-use crate::ix::address::Address;
+use ix_common::address::Address;
 
 use super::constant::{KConst, RecRule};
 use super::error::TcError;
@@ -375,7 +375,7 @@ impl<M: KernelMode> Drop for KEnv<M> {
     if super::perf::enabled() {
       let summary = self.perf.summary();
       if !summary.is_empty() {
-        eprint!("{summary}");
+        log::info!("{summary}");
       }
     }
   }
@@ -619,7 +619,7 @@ mod tests {
   use super::super::mode::Anon;
   use super::super::primitive::PrimAddrs;
   use super::*;
-  use crate::ix::address::Address;
+  use ix_common::address::Address;
 
   fn mk_addr(s: &str) -> Address {
     Address::hash(s.as_bytes())

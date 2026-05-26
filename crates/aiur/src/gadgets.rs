@@ -6,7 +6,7 @@ use multi_stark::{
   p3_matrix::dense::RowMajorMatrix,
 };
 
-use crate::aiur::{G, execute::QueryRecord};
+use crate::{G, execute::QueryRecord};
 
 /// A trait representing a generic Aiur gadget.
 ///

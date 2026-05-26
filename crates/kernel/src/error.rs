@@ -2,7 +2,7 @@
 
 use std::cmp::Ordering;
 
-use crate::ix::address::Address;
+use ix_common::address::Address;
 
 use super::expr::KExpr;
 use super::mode::KernelMode;

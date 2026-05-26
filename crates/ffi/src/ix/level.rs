@@ -8,11 +8,11 @@
 //! - Tag 4: param (n : Name) (hash : Address)
 //! - Tag 5: mvar (n : Name) (hash : Address)
 
-use crate::ix::env::{Level, LevelData};
 use crate::lean::{LeanIxLevel, LeanIxName};
+use ix_common::env::{Level, LevelData};
 use lean_ffi::object::{LeanArray, LeanBorrowed, LeanOwned, LeanRef};
 
-use crate::ffi::builder::LeanBuildCache;
+use crate::builder::LeanBuildCache;
 use crate::lean::LeanIxAddress;
 
 impl LeanIxLevel<LeanOwned> {

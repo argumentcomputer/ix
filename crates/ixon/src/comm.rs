@@ -3,7 +3,7 @@
 #![allow(clippy::map_err_ignore)]
 #![allow(clippy::needless_pass_by_value)]
 
-use crate::ix::address::Address;
+use ix_common::address::Address;
 
 use super::tag::Tag4;
 
@@ -81,6 +81,7 @@ impl Comm {
 mod tests {
   use super::*;
   use quickcheck::Arbitrary;
+  use quickcheck_macros::quickcheck;
 
   impl Arbitrary for Comm {
     fn arbitrary(g: &mut quickcheck::Gen) -> Self {

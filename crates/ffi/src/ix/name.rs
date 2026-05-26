@@ -5,14 +5,14 @@
 //! - Tag 1: str (parent : Name) (s : String) (hash : Address)
 //! - Tag 2: num (parent : Name) (i : Nat) (hash : Address)
 
-use crate::ix::env::{Name, NameData};
 use crate::lean::LeanIxName;
-use lean_ffi::nat::Nat;
+use ix_common::env::{Name, NameData};
+use lean_ffi::object::LeanNat;
 use lean_ffi::object::{
   LeanArray, LeanBorrowed, LeanOwned, LeanRef, LeanString,
 };
 
-use crate::ffi::builder::LeanBuildCache;
+use crate::builder::LeanBuildCache;
 use crate::lean::LeanIxAddress;
 
 impl LeanIxName<LeanOwned> {
@@ -41,7 +41,7 @@ impl LeanIxName<LeanOwned> {
       },
       NameData::Num(parent, n, h) => {
         let parent_obj = Self::build(cache, parent);
-        let n_obj = Nat::to_lean(n);
+        let n_obj = LeanNat::from_nat(n);
         let ctor = LeanIxName::alloc(2);
         ctor.set_obj(0, parent_obj);
         ctor.set_obj(1, n_obj);
@@ -85,7 +85,7 @@ impl<R: LeanRef> LeanIxName<R> {
       2 => {
         // num: parent, i, hash
         let parent = LeanIxName(ctor.get(0)).decode();
-        let i = Nat::from_obj(&ctor.get(1));
+        let i = LeanNat::to_nat(&ctor.get(1));
         Name::num(parent, i)
       },
       _ => panic!("Invalid Ix.Name tag: {}", ctor.tag()),

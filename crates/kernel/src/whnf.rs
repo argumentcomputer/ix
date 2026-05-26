@@ -6,22 +6,22 @@ use std::sync::LazyLock;
 
 use rustc_hash::FxHashSet;
 
-use crate::ix::address::Address;
-use crate::ix::ixon::constant::DefKind;
+use ix_common::address::Address;
+use ixon::constant::DefKind;
 
 /// When set, emit a `[iota stuck]` line whenever `try_iota` can't resolve
 /// its major premise to a constructor. Set `IX_IOTA_STUCK=1` to activate
 /// and optionally pass a substring filter (e.g. `IX_IOTA_STUCK=Poly.rec`)
 /// to suppress recursor-unrelated noise.
-static IX_IOTA_STUCK: LazyLock<Option<String>> =
-  LazyLock::new(|| std::env::var("IX_IOTA_STUCK").ok());
+static IX_IOTA_STUCK: crate::EnvString =
+  crate::EnvString::new(|| crate::env_var("IX_IOTA_STUCK").ok());
 
 /// When set, log total `nat_to_constructor` calls every 100k. Lets us see
 /// whether a given check is doing runaway Nat iota expansion (signalling
 /// a `Nat.rec motive base step N` whose step unconditionally forces `ih`
 /// \u2014 the pattern the old 2^20 threshold guarded against).
-static IX_NAT_EXPAND_LOG: LazyLock<bool> =
-  LazyLock::new(|| std::env::var("IX_NAT_EXPAND_LOG").is_ok());
+static IX_NAT_EXPAND_LOG: crate::EnvFlag =
+  crate::EnvFlag::new(|| crate::env_var("IX_NAT_EXPAND_LOG").is_ok());
 
 /// Global counter for `nat_to_constructor` calls. Read lazily via
 /// `IX_NAT_EXPAND_LOG`. `fetch_add(_, Relaxed)` is a near-free no-op when
@@ -29,34 +29,34 @@ static IX_NAT_EXPAND_LOG: LazyLock<bool> =
 static NAT_EXPAND_COUNT: std::sync::atomic::AtomicUsize =
   std::sync::atomic::AtomicUsize::new(0);
 
-static IX_NAT_IOTA_TRACE: LazyLock<bool> =
-  LazyLock::new(|| std::env::var("IX_NAT_IOTA_TRACE").is_ok());
+static IX_NAT_IOTA_TRACE: crate::EnvFlag =
+  crate::EnvFlag::new(|| crate::env_var("IX_NAT_IOTA_TRACE").is_ok());
 
 static NAT_IOTA_TRACE_COUNT: std::sync::atomic::AtomicUsize =
   std::sync::atomic::AtomicUsize::new(0);
 
-static IX_NAT_LINEAR_REC_TRACE: LazyLock<bool> =
-  LazyLock::new(|| std::env::var("IX_NAT_LINEAR_REC_TRACE").is_ok());
+static IX_NAT_LINEAR_REC_TRACE: crate::EnvFlag =
+  crate::EnvFlag::new(|| crate::env_var("IX_NAT_LINEAR_REC_TRACE").is_ok());
 
 static NAT_LINEAR_REC_TRACE_COUNT: std::sync::atomic::AtomicUsize =
   std::sync::atomic::AtomicUsize::new(0);
 
 /// When set, log every 1M whnf entries. A check using tens of millions
 /// of whnf calls on a single constant is deep in pathological territory.
-static IX_WHNF_COUNT_LOG: LazyLock<bool> =
-  LazyLock::new(|| std::env::var("IX_WHNF_COUNT_LOG").is_ok());
+static IX_WHNF_COUNT_LOG: crate::EnvFlag =
+  crate::EnvFlag::new(|| crate::env_var("IX_WHNF_COUNT_LOG").is_ok());
 
 static WHNF_COUNT: std::sync::atomic::AtomicUsize =
   std::sync::atomic::AtomicUsize::new(0);
 
-static IX_DELTA_TRACE: LazyLock<Option<String>> =
-  LazyLock::new(|| std::env::var("IX_DELTA_TRACE").ok());
+static IX_DELTA_TRACE: crate::EnvString =
+  crate::EnvString::new(|| crate::env_var("IX_DELTA_TRACE").ok());
 
-static IX_PROJ_TRACE: LazyLock<Option<String>> =
-  LazyLock::new(|| std::env::var("IX_PROJ_TRACE").ok());
+static IX_PROJ_TRACE: crate::EnvString =
+  crate::EnvString::new(|| crate::env_var("IX_PROJ_TRACE").ok());
 
-static IX_NAT_TRACE: LazyLock<Option<String>> =
-  LazyLock::new(|| std::env::var("IX_NAT_TRACE").ok());
+static IX_NAT_TRACE: crate::EnvString =
+  crate::EnvString::new(|| crate::env_var("IX_NAT_TRACE").ok());
 
 const NAT_REDUCER_OPEN_ARG_REC_FUEL: u64 = 4096;
 
@@ -69,7 +69,7 @@ use super::mode::KernelMode;
 use super::subst::{simul_subst, subst, subst_no_intern};
 use super::tc::{IotaInfo, MAX_WHNF_FUEL, TypeChecker, collect_app_spine};
 
-use lean_ffi::nat::Nat;
+use bignat::Nat;
 
 /// Reduction policy for structural WHNF.
 ///
@@ -116,14 +116,14 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     original: &KExpr<M>,
     current: &KExpr<M>,
   ) {
-    if std::env::var("IX_WHNF_FUEL_DUMP").is_err()
+    if crate::env_var("IX_WHNF_FUEL_DUMP").is_err()
       || !self.debug_label_matches_env()
     {
       return;
     }
     let (orig_head, orig_args) = collect_app_spine(original);
     let (cur_head, cur_args) = collect_app_spine(current);
-    eprintln!(
+    log::info!(
       "[whnf fuel] {phase} const={} depth={} original_head={} original_args={} current_head={} current_args={}",
       self.debug_label.as_deref().unwrap_or("<unknown>"),
       self.depth(),
@@ -132,8 +132,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       cur_head,
       cur_args.len()
     );
-    eprintln!("  original: {original}");
-    eprintln!("  current:  {current}");
+    log::info!("  original: {original}");
+    log::info!("  current:  {current}");
   }
 
   fn dump_delta_trace(&self, id: &KId<M>, arity: usize, e: &KExpr<M>) {
@@ -147,7 +147,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     if !filter.is_empty() && !id_s.contains(filter) {
       return;
     }
-    eprintln!(
+    log::info!(
       "[delta] const={} depth={} head={} args={arity} expr={}",
       self.debug_label.as_deref().unwrap_or("<unknown>"),
       self.depth(),
@@ -176,7 +176,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     }
     let (head, args) = collect_app_spine(wval);
     match result {
-      Some(result) => eprintln!(
+      Some(result) => log::info!(
         "[proj] const={} depth={} proj={} field={} struct_head={} struct_args={} ctor_params={:?} result={}",
         self.debug_label.as_deref().unwrap_or("<unknown>"),
         self.depth(),
@@ -187,7 +187,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         ctor_params,
         result
       ),
-      None => eprintln!(
+      None => log::info!(
         "[proj] const={} depth={} proj={} field={} struct_head={} struct_args={} ctor_params={:?} result=<stuck>",
         self.debug_label.as_deref().unwrap_or("<unknown>"),
         self.depth(),
@@ -212,7 +212,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     if !filter.is_empty() && !head_s.contains(filter) {
       return;
     }
-    eprintln!(
+    log::info!(
       "[nat] const={} depth={} phase={} head={} args={} expr={}",
       self.debug_label.as_deref().unwrap_or("<unknown>"),
       self.depth(),
@@ -236,7 +236,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     if *IX_WHNF_COUNT_LOG {
       let n = WHNF_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
       if n.is_multiple_of(100_000) && n > 0 {
-        eprintln!("[whnf] count={n}");
+        log::info!("[whnf] count={n}");
       }
     }
     // Quick exit for non-reducing forms.
@@ -323,7 +323,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       }
 
       // String literal primitives such as `String.back ""`.
-      if let Some(reduced) = self.try_reduce_string(&cur)? {
+      if let Some(reduced) = self.try_reduce_string(&cur) {
         cur = reduced;
         continue;
       }
@@ -721,7 +721,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       }
 
       // String literal primitives.
-      if let Some(reduced) = self.try_reduce_string(&cur)? {
+      if let Some(reduced) = self.try_reduce_string(&cur) {
         cur = reduced;
         continue;
       }
@@ -934,7 +934,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         let n = NAT_IOTA_TRACE_COUNT
           .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         if n < 32 {
-          eprintln!(
+          log::info!(
             "[nat_iota_trace] rec={} major_bits={} spine={} major_idx={}",
             rec_id,
             val.0.bits(),
@@ -978,9 +978,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     if !is_ctor && let Some(filter) = IX_IOTA_STUCK.as_ref() {
       let rec_name = format!("{rec_id}");
       if filter.is_empty() || rec_name.contains(filter) {
-        eprintln!("[iota stuck] rec={rec_name}");
-        eprintln!("[iota stuck]   major:      {major}");
-        eprintln!("[iota stuck]   major whnf: {major_whnf}");
+        log::info!("[iota stuck] rec={rec_name}");
+        log::info!("[iota stuck]   major:      {major}");
+        log::info!("[iota stuck]   major whnf: {major_whnf}");
       }
     }
 
@@ -1672,7 +1672,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       let n =
         NAT_EXPAND_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
       if n.is_multiple_of(10_000) {
-        eprintln!("[nat_to_constructor] count={n} val_bits={}", val.0.bits());
+        log::info!("[nat_to_constructor] count={n} val_bits={}", val.0.bits());
       }
     }
     if val.0 == BigUint::ZERO {
@@ -1842,7 +1842,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
       if n < 8 {
         let step_whnf = self.whnf(step)?;
-        eprintln!(
+        log::info!(
           "[nat_linear_rec] major_bits={} base_idx={} step_idx={} spine={} step_whnf={}",
           parts.major.0.bits(),
           parts.base_idx,
@@ -2756,46 +2756,43 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   // String primitive reduction
   // -----------------------------------------------------------------------
 
-  pub(super) fn try_reduce_string(
-    &mut self,
-    e: &KExpr<M>,
-  ) -> Result<Option<KExpr<M>>, TcError<M>> {
+  pub(super) fn try_reduce_string(&mut self, e: &KExpr<M>) -> Option<KExpr<M>> {
     let (head, args) = collect_app_spine(e);
     if args.len() != 1 {
-      return Ok(None);
+      return None;
     }
     let ExprData::Const(id, _, _) = head.data() else {
-      return Ok(None);
+      return None;
     };
     let is_back = id.addr == self.prims.string_back.addr
       || id.addr == self.prims.string_legacy_back.addr;
     let is_utf8_byte_size = id.addr == self.prims.string_utf8_byte_size.addr;
     let is_to_byte_array = id.addr == self.prims.string_to_byte_array.addr;
     if !is_back && !is_utf8_byte_size && !is_to_byte_array {
-      return Ok(None);
+      return None;
     }
 
     let s = match args[0].data() {
       ExprData::Str(s, _, _) => s,
-      _ => return Ok(None),
+      _ => return None,
     };
     if is_utf8_byte_size {
       let n = Nat::from(s.len() as u64);
       let addr = Address::hash(&n.to_le_bytes());
-      return Ok(Some(self.intern(KExpr::nat(n, addr))));
+      return Some(self.intern(KExpr::nat(n, addr)));
     }
     if is_to_byte_array {
       if s.is_empty() {
-        return Ok(Some(self.intern(KExpr::cnst(
+        return Some(self.intern(KExpr::cnst(
           self.prims.byte_array_empty.clone(),
           Box::new([]),
-        ))));
+        )));
       }
-      return Ok(None);
+      return None;
     }
 
     let codepoint = s.chars().last().map_or(65u32, u32::from);
-    Ok(Some(self.char_of_nat_expr(u64::from(codepoint))))
+    Some(self.char_of_nat_expr(u64::from(codepoint)))
   }
 
   fn char_of_nat_expr(&mut self, n: u64) -> KExpr<M> {
@@ -3027,9 +3024,9 @@ mod tests {
   use super::super::primitive::Primitives;
   use super::super::tc::TypeChecker;
   use super::*;
-  use crate::ix::address::Address;
-  use crate::ix::env::{DefinitionSafety, ReducibilityHints};
-  use crate::ix::ixon::constant::DefKind;
+  use ix_common::address::Address;
+  use ix_common::env::{DefinitionSafety, ReducibilityHints};
+  use ixon::constant::DefKind;
 
   type AE = KExpr<Anon>;
   type AU = KUniv<Anon>;
@@ -4151,7 +4148,7 @@ mod tests {
       },
       ExprData::App(..) => {
         // Might be Nat.succ chain — that's also acceptable
-        eprintln!("Nat.rec result is App chain (not folded to literal)");
+        log::info!("Nat.rec result is App chain (not folded to literal)");
       },
       other => panic!("unexpected Nat.rec result: {:?}", other),
     }

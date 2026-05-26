@@ -1,18 +1,18 @@
 //! Ix.DataValue, Ix.Syntax, Ix.SourceInfo build/decode/roundtrip FFI.
 
-use crate::ix::env::{
-  DataValue, Int, Name, SourceInfo, Substring, Syntax, SyntaxPreresolved,
-};
 use crate::lean::{
   LeanIxDataValue, LeanIxInt, LeanIxName, LeanIxSourceInfo, LeanIxSubstring,
   LeanIxSyntax, LeanIxSyntaxPreresolved,
 };
-use lean_ffi::nat::Nat;
+use ix_common::env::{
+  DataValue, Int, Name, SourceInfo, Substring, Syntax, SyntaxPreresolved,
+};
 #[cfg(feature = "test-ffi")]
 use lean_ffi::object::LeanBorrowed;
+use lean_ffi::object::LeanNat;
 use lean_ffi::object::{LeanArray, LeanOwned, LeanProd, LeanRef, LeanString};
 
-use crate::ffi::builder::LeanBuildCache;
+use crate::builder::LeanBuildCache;
 
 impl LeanIxInt<LeanOwned> {
   /// Build a Ix.Int (ofNat or negSucc).
@@ -20,12 +20,12 @@ impl LeanIxInt<LeanOwned> {
     match int {
       Int::OfNat(n) => {
         let ctor = LeanIxInt::alloc(0);
-        ctor.set_obj(0, Nat::to_lean(n));
+        ctor.set_obj(0, LeanNat::from_nat(n));
         ctor
       },
       Int::NegSucc(n) => {
         let ctor = LeanIxInt::alloc(1);
-        ctor.set_obj(0, Nat::to_lean(n));
+        ctor.set_obj(0, LeanNat::from_nat(n));
         ctor
       },
     }
@@ -37,7 +37,7 @@ impl<R: LeanRef> LeanIxInt<R> {
   /// Ix.Int: ofNat (tag 0, 1 field) | negSucc (tag 1, 1 field)
   pub fn decode(&self) -> Int {
     let ctor = self.as_ctor();
-    let nat = Nat::from_obj(&ctor.get(0));
+    let nat = LeanNat::to_nat(&ctor.get(0));
     match ctor.tag() {
       0 => Int::OfNat(nat),
       1 => Int::NegSucc(nat),
@@ -51,8 +51,8 @@ impl LeanIxSubstring<LeanOwned> {
   pub fn build(ss: &Substring) -> Self {
     let ctor = LeanIxSubstring::alloc(0);
     ctor.set_obj(0, LeanString::new(ss.str.as_str()));
-    ctor.set_obj(1, Nat::to_lean(&ss.start_pos));
-    ctor.set_obj(2, Nat::to_lean(&ss.stop_pos));
+    ctor.set_obj(1, LeanNat::from_nat(&ss.start_pos));
+    ctor.set_obj(2, LeanNat::from_nat(&ss.stop_pos));
     ctor
   }
 }
@@ -63,8 +63,8 @@ impl<R: LeanRef> LeanIxSubstring<R> {
     let ctor = self.as_ctor();
     Substring {
       str: ctor.get(0).as_string().to_string(),
-      start_pos: Nat::from_obj(&ctor.get(1)),
-      stop_pos: Nat::from_obj(&ctor.get(2)),
+      start_pos: LeanNat::to_nat(&ctor.get(1)),
+      stop_pos: LeanNat::to_nat(&ctor.get(2)),
     }
   }
 }
@@ -77,16 +77,16 @@ impl LeanIxSourceInfo<LeanOwned> {
       SourceInfo::Original(leading, pos, trailing, end_pos) => {
         let ctor = LeanIxSourceInfo::alloc(0);
         ctor.set_obj(0, LeanIxSubstring::build(leading));
-        ctor.set_obj(1, Nat::to_lean(pos));
+        ctor.set_obj(1, LeanNat::from_nat(pos));
         ctor.set_obj(2, LeanIxSubstring::build(trailing));
-        ctor.set_obj(3, Nat::to_lean(end_pos));
+        ctor.set_obj(3, LeanNat::from_nat(end_pos));
         ctor
       },
       // | synthetic (pos : Nat) (endPos : Nat) (canonical : Bool) -- tag 1
       SourceInfo::Synthetic(pos, end_pos, canonical) => {
         let ctor = LeanIxSourceInfo::alloc(1);
-        ctor.set_obj(0, Nat::to_lean(pos));
-        ctor.set_obj(1, Nat::to_lean(end_pos));
+        ctor.set_obj(0, LeanNat::from_nat(pos));
+        ctor.set_obj(1, LeanNat::from_nat(end_pos));
         ctor.set_num_8(0, u8::from(*canonical));
         ctor
       },
@@ -108,9 +108,9 @@ impl<R: LeanRef> LeanIxSourceInfo<R> {
         // original
         SourceInfo::Original(
           LeanIxSubstring(ctor.get(0)).decode(),
-          Nat::from_obj(&ctor.get(1)),
+          LeanNat::to_nat(&ctor.get(1)),
           LeanIxSubstring(ctor.get(2)).decode(),
-          Nat::from_obj(&ctor.get(3)),
+          LeanNat::to_nat(&ctor.get(3)),
         )
       },
       1 => {
@@ -118,8 +118,8 @@ impl<R: LeanRef> LeanIxSourceInfo<R> {
         let canonical = self.get_num_8(0) != 0;
 
         SourceInfo::Synthetic(
-          Nat::from_obj(&self.get_obj(0)),
-          Nat::from_obj(&self.get_obj(1)),
+          LeanNat::to_nat(&self.get_obj(0)),
+          LeanNat::to_nat(&self.get_obj(1)),
           canonical,
         )
       },
@@ -298,7 +298,7 @@ impl LeanIxDataValue<LeanOwned> {
       },
       DataValue::OfNat(n) => {
         let ctor = LeanIxDataValue::alloc(3);
-        ctor.set_obj(0, Nat::to_lean(n));
+        ctor.set_obj(0, LeanNat::from_nat(n));
         ctor
       },
       DataValue::OfInt(i) => {
@@ -351,13 +351,13 @@ impl<R: LeanRef> LeanIxDataValue<R> {
       },
       3 => {
         // ofNat: 1 object field
-        DataValue::OfNat(Nat::from_obj(&ctor.get(0)))
+        DataValue::OfNat(LeanNat::to_nat(&ctor.get(0)))
       },
       4 => {
         // ofInt: 1 object field
         let inner = ctor.get(0);
         let inner_ctor = inner.as_ctor();
-        let nat = Nat::from_obj(&inner_ctor.get(0));
+        let nat = LeanNat::to_nat(&inner_ctor.get(0));
         match inner_ctor.tag() {
           0 => DataValue::OfInt(Int::OfNat(nat)),
           1 => DataValue::OfInt(Int::NegSucc(nat)),

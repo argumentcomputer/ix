@@ -2,14 +2,16 @@
 
 use std::collections::HashMap;
 
-use crate::ix::compile::{BlockCache, CompileState, compile_env, compile_expr};
-use crate::ix::env::Name;
-use crate::ix::ixon::serialize::put_expr;
-use crate::ix::mutual::MutCtx;
 use crate::lean::{LeanIxBlockCompareDetail, LeanIxBlockCompareResult};
+use ix_common::env::Name;
+use ix_compile::compile::{
+  BlockCache, CompileState, compile_env, compile_expr,
+};
+use ix_compile::mutual::MutCtx;
+use ixon::serialize::put_expr;
 use lean_ffi::object::{LeanBorrowed, LeanByteArray, LeanList, LeanOwned};
 
-use crate::ffi::lean_env::{
+use crate::lean_env::{
   Cache as LeanCache, GlobalCache, decode_expr, decode_name,
 };
 
@@ -195,7 +197,7 @@ pub unsafe extern "C" fn rs_free_compiled_env(ptr: *mut RustBlockEnv) {
 pub extern "C" fn rs_build_compiled_env(
   env_consts_ptr: LeanList<LeanBorrowed<'_>>,
 ) -> *mut RustBlockEnv {
-  use crate::ffi::lean_env::decode_env;
+  use crate::lean_env::decode_env;
 
   // Decode Lean environment
   let rust_env = decode_env(env_consts_ptr);

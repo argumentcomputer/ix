@@ -7,20 +7,20 @@ use rayon::iter::{
 };
 use rustc_hash::FxHashMap;
 
-use crate::ix::env::{
+use bignat::Nat;
+use ix_common::env::{
   self, AxiomVal, ConstantInfo as LeanCI, ConstantVal, ConstructorVal,
   DefinitionVal, InductiveVal, Name, OpaqueVal, QuotVal,
   RecursorRule as LeanRecRule, RecursorVal, TheoremVal,
 };
-use crate::ix::ixon::constant::DefKind;
-use lean_ffi::nat::Nat;
+use ixon::constant::DefKind;
 
-use super::constant::KConst;
-use super::env::KEnv;
-use super::expr::{ExprData, KExpr, MData};
-use super::id::KId;
-use super::level::{KUniv, UnivData};
-use super::mode::Meta;
+use ix_kernel::constant::KConst;
+use ix_kernel::env::KEnv;
+use ix_kernel::expr::{ExprData, KExpr, MData};
+use ix_kernel::id::KId;
+use ix_kernel::level::{KUniv, UnivData};
+use ix_kernel::mode::Meta;
 
 /// Convert a zero kernel universe to a Lean level.
 fn egress_level(u: &KUniv<Meta>, level_params: &[Name]) -> env::Level {
@@ -53,7 +53,7 @@ fn egress_levels(
 }
 
 /// Expression egress cache, keyed by content hash.
-type Cache = FxHashMap<super::env::Addr, env::Expr>;
+type Cache = FxHashMap<ix_kernel::env::Addr, env::Expr>;
 
 /// Convert a zero kernel expression to a Lean expression.
 fn egress_expr(
@@ -343,23 +343,23 @@ use std::sync::Arc;
 
 use indexmap::IndexSet;
 
-use crate::ix::address::Address;
-use crate::ix::compile::{
+use crate::compile::{
   apply_sharing_to_axiom_with_stats, apply_sharing_to_definition_with_stats,
   apply_sharing_to_mutual_block, apply_sharing_to_quotient_with_stats,
   apply_sharing_to_recursor_with_stats,
 };
-use crate::ix::ixon::constant::{
+use ix_common::address::Address;
+use ixon::constant::{
   Axiom as IxonAxiom, Constant as IxonConstant, ConstantInfo as IxonCI,
   Constructor as IxonConstructor, ConstructorProj,
   Definition as IxonDefinition, DefinitionProj, Inductive as IxonInductive,
   InductiveProj, MutConst as IxonMutConst, Quotient as IxonQuotient,
   Recursor as IxonRecursor, RecursorProj, RecursorRule as IxonRecursorRule,
 };
-use crate::ix::ixon::env::{Env as IxonEnv, Named};
-use crate::ix::ixon::expr::Expr as IxonExpr;
-use crate::ix::ixon::metadata::ConstantMetaInfo;
-use crate::ix::ixon::univ::Univ as IxonUniv;
+use ixon::env::{Env as IxonEnv, Named};
+use ixon::expr::Expr as IxonExpr;
+use ixon::metadata::ConstantMetaInfo;
+use ixon::univ::Univ as IxonUniv;
 
 /// Per-constant (or per-block) working context accumulated while converting
 /// kernel expressions back to Ixon. Mirrors `BlockCache.refs` / `univs` on
@@ -1256,14 +1256,17 @@ pub fn ixon_egress(
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::ix::address::Address;
-  use crate::ix::env::{
+  use ix_common::address::Address;
+  use ix_common::env::{
     BinderInfo, DefinitionSafety, ExprData as LeanExprData, Literal, QuotKind,
     ReducibilityHints,
   };
-  use crate::ix::kernel::constant::RecRule;
-  use crate::ix::kernel::expr::KExpr;
-  use crate::ix::kernel::id::KId;
+  use ix_kernel::constant::{KConst, RecRule};
+  use ix_kernel::env::KEnv;
+  use ix_kernel::expr::KExpr;
+  use ix_kernel::id::KId;
+  use ix_kernel::level::KUniv;
+  use ix_kernel::mode::Meta;
 
   fn mk_name(s: &str) -> Name {
     let mut n = Name::anon();

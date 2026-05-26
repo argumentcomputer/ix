@@ -9,7 +9,7 @@ use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::collections::hash_map::Entry;
 
-use crate::ix::env::{ConstantInfo, Env, Expr, ExprData, Name};
+use ix_common::env::{ConstantInfo, Env, Expr, ExprData, Name};
 
 /// A set of [`Name`]s, used to represent the neighbors of a node in the reference graph.
 pub type NameSet = FxHashSet<Name>;
@@ -97,9 +97,7 @@ pub fn build_ref_graph(env: &Env) -> RefGraph {
   RefGraph { out_refs, in_refs }
 }
 
-pub(crate) fn get_constant_info_references(
-  constant_info: &ConstantInfo,
-) -> NameSet {
+pub fn get_constant_info_references(constant_info: &ConstantInfo) -> NameSet {
   let cache = &mut FxHashMap::default();
   match constant_info {
     ConstantInfo::AxiomInfo(val) => get_expr_references(&val.cnst.typ, cache),
@@ -179,8 +177,8 @@ fn get_expr_references<'a>(
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::ix::env::*;
-  use lean_ffi::nat::Nat;
+  use bignat::Nat;
+  use ix_common::env::*;
 
   fn n(s: &str) -> Name {
     Name::str(Name::anon(), s.to_string())

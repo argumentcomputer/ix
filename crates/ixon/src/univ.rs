@@ -162,8 +162,9 @@ pub fn get_univ(buf: &mut &[u8]) -> Result<Arc<Univ>, String> {
 #[cfg(test)]
 pub mod tests {
   use super::*;
-  use crate::ix::ixon::tests::{gen_range, next_case};
+  use crate::tests::{gen_range, next_case};
   use quickcheck::{Arbitrary, Gen};
+  use quickcheck_macros::quickcheck;
   use std::ptr;
 
   #[derive(Clone, Copy)]

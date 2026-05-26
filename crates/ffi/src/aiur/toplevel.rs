@@ -4,16 +4,13 @@ use lean_ffi::object::{LeanBorrowed, LeanCtor, LeanRef};
 
 use crate::lean::LeanAiurFunction;
 
-use crate::{
-  FxIndexMap,
-  aiur::{
-    G,
-    bytecode::{Block, Ctrl, Function, FunctionLayout, Op, Toplevel, ValIdx},
-  },
-  lean::LeanAiurToplevel,
+use crate::lean::LeanAiurToplevel;
+use aiur::{
+  FxIndexMap, G,
+  bytecode::{Block, Ctrl, Function, FunctionLayout, Op, Toplevel, ValIdx},
 };
 
-use crate::ffi::aiur::{lean_unbox_g, lean_unbox_nat_as_usize};
+use crate::aiur::{lean_unbox_g, lean_unbox_nat_as_usize};
 
 fn decode_vec_val_idx(obj: LeanBorrowed<'_>) -> Vec<ValIdx> {
   obj.as_array().map(|x| lean_unbox_nat_as_usize(&x))

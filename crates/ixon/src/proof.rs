@@ -8,8 +8,8 @@
 //! order. This enables revealing specific fields of a committed constant without
 //! exposing the full structure.
 
-use crate::ix::address::Address;
-use crate::ix::env::{DefinitionSafety, QuotKind};
+use ix_common::address::Address;
+use ix_common::env::{DefinitionSafety, QuotKind};
 
 use super::constant::DefKind;
 use super::tag::{Tag0, Tag4};
@@ -1176,6 +1176,7 @@ impl Proof {
 mod tests {
   use super::*;
   use quickcheck::{Arbitrary, Gen};
+  use quickcheck_macros::quickcheck;
 
   // ========== Arbitrary impls ==========
 

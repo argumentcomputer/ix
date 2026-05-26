@@ -3,12 +3,12 @@
 #[cfg(test)]
 mod tests {
 
-  use crate::ix::env::{Name, ReducibilityHints};
-  use crate::ix::kernel::constant::KConst;
-  use crate::ix::kernel::constant::RecRule;
-  use crate::ix::kernel::env::KEnv;
-  use crate::ix::kernel::mode::Meta;
-  use crate::ix::kernel::testing::*;
+  use crate::constant::KConst;
+  use crate::constant::RecRule;
+  use crate::env::KEnv;
+  use crate::mode::Meta;
+  use crate::testing::*;
+  use ix_common::env::{Name, ReducibilityHints};
 
   // ==========================================================================
   // Batch 5: Peano arithmetic (Tutorial.lean lines 127–153)
@@ -985,8 +985,8 @@ mod tests {
     // The zero kernel's infer_nat_type uses prims.nat to construct the type.
     // We use N as our Nat, so we need prims.nat = mk_id("N").
     // aNatLit : N := NatVal(0)
-    use crate::ix::address::Address;
-    use lean_ffi::nat::Nat;
+    use bignat::Nat;
+    use ix_common::address::Address;
     let nat_0 = ME::nat(Nat::from(0u64), Address::hash(b"natval_0"));
     let (id, c) =
       mk_defn("aNatLit", 0, vec![], nat(), nat_0, ReducibilityHints::Opaque);
@@ -1005,8 +1005,8 @@ mod tests {
     let mut env = nat_env();
     let nat = || cnst("N", &[]);
 
-    use crate::ix::address::Address;
-    use lean_ffi::nat::Nat;
+    use bignat::Nat;
+    use ix_common::address::Address;
 
     let nat_3 = ME::nat(Nat::from(3u64), Address::hash(b"natval_3"));
     let succ_succ_succ_zero = app(
@@ -1214,11 +1214,11 @@ mod tests {
     //   mk_case fst snd = app(app(var(2), var(1)), var(0))
     let rule_rhs = ME::lam(
       mk_name("α"),
-      crate::ix::env::BinderInfo::Implicit,
+      ix_common::env::BinderInfo::Implicit,
       sort(usucc(param(0))),
       ME::lam(
         mk_name("β"),
-        crate::ix::env::BinderInfo::Implicit,
+        ix_common::env::BinderInfo::Implicit,
         sort(usucc(param(1))),
         nlam(
           "motive",
@@ -1468,7 +1468,7 @@ mod tests {
     let mut env = KEnv::<Meta>::new();
     add_eq_inductive(&mut env);
 
-    use crate::ix::env::QuotKind;
+    use ix_common::env::QuotKind;
 
     // Quot.{u} : {α : Sort u} → (α → α → Prop) → Sort u
     // depth 1 (inside α): α = var(0)
@@ -1627,9 +1627,7 @@ mod tests {
     env
   }
 
-  fn quot_prims(
-    env: &KEnv<Meta>,
-  ) -> crate::ix::kernel::primitive::Primitives<Meta> {
+  fn quot_prims(env: &KEnv<Meta>) -> crate::primitive::Primitives<Meta> {
     let mut prims = test_prims(env);
     prims.quot_type = mk_id("Quot");
     prims.quot_ctor = mk_id("Quot.mk");

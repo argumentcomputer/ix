@@ -4,9 +4,7 @@
 //! constraints, return types) and generates canonical recursors following
 //! lean4lean's constructive approach, then compares with provided recursors.
 
-use std::sync::LazyLock;
-
-use crate::ix::address::Address;
+use ix_common::address::Address;
 
 use super::constant::KConst;
 use super::env::{GeneratedRecursor, RecursorAuxOrder};
@@ -23,14 +21,14 @@ use super::tc::{TypeChecker, collect_app_spine, expr_mentions_any_addr};
 /// regime or a mutual block with near-identical peers triggers a fresh diff,
 /// turning a normal compile into a wall of stderr. Set `IX_TYPE_DIFF=1` to
 /// enable when investigating a specific mismatch.
-static IX_TYPE_DIFF: LazyLock<bool> =
-  LazyLock::new(|| std::env::var("IX_TYPE_DIFF").is_ok());
+static IX_TYPE_DIFF: crate::EnvFlag =
+  crate::EnvFlag::new(|| crate::env_var("IX_TYPE_DIFF").is_ok());
 
 /// Emit nested-aux recursor ordering/selection diagnostics for names whose
 /// display form starts with the configured prefix. Example:
 /// `IX_RECURSOR_DUMP=Lean.Doc.Block`.
-static IX_RECURSOR_DUMP: LazyLock<Option<String>> = LazyLock::new(|| {
-  std::env::var("IX_RECURSOR_DUMP").ok().filter(|s| !s.is_empty())
+static IX_RECURSOR_DUMP: crate::EnvString = crate::EnvString::new(|| {
+  crate::env_var("IX_RECURSOR_DUMP").ok().filter(|s| !s.is_empty())
 });
 
 /// A member of the "flat" mutual block used for recursor generation.
@@ -496,7 +494,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     n_rec_params: u64,
     univ_offset: u64,
   ) -> Result<Vec<FlatBlockMember<M>>, TcError<M>> {
-    let anon = || M::meta_field(crate::ix::env::Name::anon());
+    let anon = || M::meta_field(ix_common::env::Name::anon());
     let all_block_addrs: Vec<Address> =
       block_inds.iter().map(|id| id.addr.clone()).collect();
 
@@ -919,7 +917,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         continue;
       }
 
-      let anon = || M::meta_field(crate::ix::env::Name::anon());
+      let anon = || M::meta_field(ix_common::env::Name::anon());
       let mut result = self.env.intern.intern_expr(KExpr::cnst(
         aux_ids[idx].clone(),
         block_us.to_vec().into_boxed_slice(),
@@ -954,8 +952,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     n_block_params: u64,
   ) -> Result<
     Vec<(
-      M::MField<crate::ix::env::Name>,
-      M::MField<crate::ix::env::BinderInfo>,
+      M::MField<ix_common::env::Name>,
+      M::MField<ix_common::env::BinderInfo>,
       KExpr<M>,
     )>,
     TcError<M>,
@@ -994,8 +992,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     &mut self,
     body: KExpr<M>,
     binders: &[(
-      M::MField<crate::ix::env::Name>,
-      M::MField<crate::ix::env::BinderInfo>,
+      M::MField<ix_common::env::Name>,
+      M::MField<ix_common::env::BinderInfo>,
       KExpr<M>,
     )],
   ) -> KExpr<M> {
@@ -1045,13 +1043,11 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     aux: &[FlatBlockMember<M>],
     n_block_params: u64,
     block_us: &[KUniv<M>],
-    all0_name: Option<&crate::ix::env::Name>,
+    all0_name: Option<&ix_common::env::Name>,
     block_first_id: Option<&KId<M>>,
   ) -> Result<Vec<usize>, TcError<M>> {
-    use crate::ix::env::Name;
-    use crate::ix::kernel::canonical_check::{
-      KMutCtx, sort_kconsts_with_seed_key,
-    };
+    use crate::canonical_check::{KMutCtx, sort_kconsts_with_seed_key};
+    use ix_common::env::Name;
     use rustc_hash::FxHashMap;
 
     // Build synthetic Indc + Ctor views for each aux.
@@ -1071,7 +1067,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     // the block's first inductive is unavailable, the wrap is empty (a no-op).
     let block_param_binders: Vec<(
       M::MField<Name>,
-      M::MField<crate::ix::env::BinderInfo>,
+      M::MField<ix_common::env::BinderInfo>,
       KExpr<M>,
     )> = match block_first_id {
       Some(id) if n_block_params > 0 => {
@@ -1309,7 +1305,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     });
 
     if dump_canonical {
-      eprintln!(
+      log::info!(
         "[canonical_aux_order.dump] all0={:?} n_aux={} n_block_params={}",
         all0_name.map(Name::pretty),
         pairs.len(),
@@ -1317,7 +1313,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       );
       for (i, (kid, kconst)) in pairs.iter().enumerate() {
         let seed = aux_seed_names.get(i).cloned().unwrap_or_else(Name::anon);
-        eprintln!(
+        log::info!(
           "  pre-sort[{}] addr={} seed={} member_id_addr={}",
           i,
           &kid.addr.hex()[..8],
@@ -1325,12 +1321,12 @@ impl<M: KernelMode> TypeChecker<'_, M> {
           &aux[i].id.addr.hex()[..8]
         );
         if let KConst::Indc { ty, ctors, .. } = kconst {
-          eprintln!("    indc.ty={ty}");
+          log::info!("    indc.ty={ty}");
           for (ci, ctor_kid) in ctors.iter().enumerate() {
             if let Some(KConst::Ctor { ty, .. }) =
               all_ctor_lookup.get(&ctor_kid.addr)
             {
-              eprintln!("    ctor[{ci}].ty={ty}");
+              log::info!("    ctor[{ci}].ty={ty}");
             }
           }
         }
@@ -1349,10 +1345,10 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     )?;
 
     if dump_canonical {
-      eprintln!("[canonical_aux_order.dump] post-sort classes:");
+      log::info!("[canonical_aux_order.dump] post-sort classes:");
       for (ci, class) in classes.iter().enumerate() {
         for (mi, (kid, _)) in class.iter().enumerate() {
-          eprintln!("  class[{ci}][{mi}] addr={}", &kid.addr.hex()[..8]);
+          log::info!("  class[{ci}][{mi}] addr={}", &kid.addr.hex()[..8]);
         }
       }
     }
@@ -1411,7 +1407,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     if !self.recursor_dump_matches_block(block_id, flat) {
       return;
     }
-    eprintln!(
+    log::info!(
       "[recursor.dump] {label} flat aux order for {block_id}: originals={} aux={}",
       n_originals,
       flat.len().saturating_sub(n_originals)
@@ -1419,9 +1415,11 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     for (aux_i, member) in flat.iter().skip(n_originals).enumerate() {
       let spec =
         member.spec_params.iter().map(|e| format!("{e}")).collect::<Vec<_>>();
-      eprintln!(
+      log::info!(
         "  aux[{aux_i:2}] id={} own_params={} indices={} spec={spec:?}",
-        member.id, member.own_params, member.n_indices
+        member.id,
+        member.own_params,
+        member.n_indices
       );
     }
   }
@@ -1532,18 +1530,18 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     failed_gen_major: Option<&KExpr<M>>,
     failed_stored_major: Option<&KExpr<M>>,
   ) {
-    eprintln!(
+    log::info!(
       "[recursor.align] FAIL ind_block={ind_block_id} rec_block={rec_block_id} \
 peers={} flat={} rec_ids={} failed_gi={failed_gi}",
       generated_snapshot.len(),
       flat.len(),
       rec_ids.len()
     );
-    eprintln!(
+    log::info!(
       "  failed gen major: {}",
       Self::major_domain_signature_text(failed_gen_major)
     );
-    eprintln!(
+    log::info!(
       "  failed stored major: {}",
       Self::major_domain_signature_text(failed_stored_major)
     );
@@ -1573,18 +1571,18 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
         None => None,
       };
       let mark = if gi == failed_gi { "!!" } else { "  " };
-      eprintln!(
+      log::info!(
         "  {mark} peer[{gi:2}] flat.id={} target={}… aux={} ind={}…",
         flat[gi].id,
         &target_addr.hex()[..8],
         flat[gi].is_aux,
         &gen_rec.ind_addr.hex()[..8]
       );
-      eprintln!(
+      log::info!(
         "       gen   : {}",
         Self::major_domain_signature_text(gen_major.as_ref())
       );
-      eprintln!(
+      log::info!(
         "       sto   : {} (rid={})",
         Self::major_domain_signature_text(stored_major.as_ref()),
         rid
@@ -1603,9 +1601,9 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
       return Ok(false);
     }
     if depth > 80 {
-      eprintln!("[rule rhs diff] first diff {path}: recursion limit");
-      eprintln!("  gen: {lhs}");
-      eprintln!("  sto: {rhs}");
+      log::info!("[rule rhs diff] first diff {path}: recursion limit");
+      log::info!("  gen: {lhs}");
+      log::info!("  sto: {rhs}");
       return Ok(true);
     }
 
@@ -1621,9 +1619,9 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
         ExprData::All(_, _, rty, rbody, _),
       ) => {
         if !self.is_def_eq(lty, rty)? {
-          eprintln!("[rule rhs diff] first diff {path}.dom");
-          eprintln!("  gen: {lty}");
-          eprintln!("  sto: {rty}");
+          log::info!("[rule rhs diff] first diff {path}.dom");
+          log::info!("  gen: {lty}");
+          log::info!("  sto: {rty}");
           return Ok(true);
         }
         let saved = self.lctx.len();
@@ -1651,9 +1649,9 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
         self.dump_rule_rhs_first_diff(la, ra, &format!("{path}.arg"), depth + 1)
       },
       _ => {
-        eprintln!("[rule rhs diff] first diff {path}");
-        eprintln!("  gen: {lw}");
-        eprintln!("  sto: {rw}");
+        log::info!("[rule rhs diff] first diff {path}");
+        log::info!("  gen: {lw}");
+        log::info!("  sto: {rw}");
         Ok(true)
       },
     }
@@ -2028,7 +2026,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
         }
         for (i, u) in us.iter().enumerate() {
           let expected =
-            KUniv::param(i as u64, M::meta_field(crate::ix::env::Name::anon()));
+            KUniv::param(i as u64, M::meta_field(ix_common::env::Name::anon()));
           if !univ_eq(u, &expected) {
             self.lctx.truncate(saved);
             return Err(TcError::Other(format!(
@@ -2258,7 +2256,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
     let is_large = self.is_large_eliminator(&result_level, &ind_infos)?;
     let univ_offset: u64 = if is_large { 1 } else { 0 };
     let elim_level = if is_large {
-      KUniv::param(0, M::meta_field(crate::ix::env::Name::anon()))
+      KUniv::param(0, M::meta_field(ix_common::env::Name::anon()))
     } else {
       KUniv::zero()
     };
@@ -2295,7 +2293,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
         block_first_id.as_ref(),
       )?;
       if self.recursor_dump_matches_block(block_id, &flat) {
-        eprintln!("[recursor.dump] canonical_order={canonical_order:?}");
+        log::info!("[recursor.dump] canonical_order={canonical_order:?}");
       }
       // Apply the permutation produced by sort_consts: each canonical
       // class index k maps to one representative aux from the original
@@ -2395,7 +2393,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
       let n_motives = flat.len() as u64;
       let n_minors: u64 = flat.iter().map(|m| m.ctors.len() as u64).sum();
       let prefix_skip = n_params + n_motives + n_minors;
-      eprintln!(
+      log::info!(
         "[recursor.dump] generated recursors for {block_id}: count={} prefix_skip={prefix_skip}",
         generated.len()
       );
@@ -2405,7 +2403,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
           prefix_skip,
           &g.ind_addr,
         )?;
-        eprintln!(
+        log::info!(
           "  gen[{gi:2}] ind_addr={} {}",
           &g.ind_addr.hex()[..8],
           Self::major_domain_signature_text(major.as_ref())
@@ -2482,8 +2480,8 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
     elim_level: &KUniv<M>,
     _univ_offset: u64,
   ) -> Result<KExpr<M>, TcError<M>> {
-    let anon = || M::meta_field(crate::ix::env::Name::anon());
-    let bi_default = || M::meta_field(crate::ix::env::BinderInfo::Default);
+    let anon = || M::meta_field(ix_common::env::Name::anon());
+    let bi_default = || M::meta_field(ix_common::env::BinderInfo::Default);
 
     // Get inductive type and instantiate with occurrence universe args
     // (concrete for auxiliaries, same as ind_us for originals).
@@ -2616,8 +2614,8 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
       },
     };
     let (ctor_ty_raw, _ctor_lvls) = ctor;
-    let anon = || M::meta_field(crate::ix::env::Name::anon());
-    let bi_default = || M::meta_field(crate::ix::env::BinderInfo::Default);
+    let anon = || M::meta_field(ix_common::env::Name::anon());
+    let bi_default = || M::meta_field(ix_common::env::BinderInfo::Default);
     let saved = self.lctx.len();
 
     // Instantiate ctor type with occurrence universe args (concrete for output).
@@ -2829,8 +2827,8 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
     field_domains: &[KExpr<M>],
     block_addrs: &[Address],
   ) -> Result<KExpr<M>, TcError<M>> {
-    let anon = || M::meta_field(crate::ix::env::Name::anon());
-    let bi_default = || M::meta_field(crate::ix::env::BinderInfo::Default);
+    let anon = || M::meta_field(ix_common::env::Name::anon());
+    let bi_default = || M::meta_field(ix_common::env::BinderInfo::Default);
 
     // Lift the field domain from its original depth (minor_saved + field_idx)
     // to the current depth (minor_saved + n_fields + k).
@@ -3043,8 +3041,8 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
     let n_indices = u64_to_usize::<M>(ind_infos[di].2)?;
     let block_addrs: Vec<Address> =
       block_inds.iter().map(|id| id.addr.clone()).collect();
-    let anon = || M::meta_field(crate::ix::env::Name::anon());
-    let bi_default = || M::meta_field(crate::ix::env::BinderInfo::Default);
+    let anon = || M::meta_field(ix_common::env::Name::anon());
+    let bi_default = || M::meta_field(ix_common::env::BinderInfo::Default);
 
     // Collect all binder domains in order: params, motives, minors, indices, major
     let mut domains: Vec<KExpr<M>> = Vec::new();
@@ -3212,7 +3210,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
   fn mk_ind_univs(&mut self, ind_lvls: u64, offset: u64) -> Box<[KUniv<M>]> {
     (0..ind_lvls)
       .map(|i| {
-        KUniv::param(i + offset, M::meta_field(crate::ix::env::Name::anon()))
+        KUniv::param(i + offset, M::meta_field(ix_common::env::Name::anon()))
       })
       .collect::<Vec<_>>()
       .into_iter()
@@ -3584,8 +3582,8 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
     is_large: bool,
     _univ_offset: u64,
   ) -> Result<KExpr<M>, TcError<M>> {
-    let anon = || M::meta_field(crate::ix::env::Name::anon());
-    let bi_default = || M::meta_field(crate::ix::env::BinderInfo::Default);
+    let anon = || M::meta_field(ix_common::env::Name::anon());
+    let bi_default = || M::meta_field(ix_common::env::BinderInfo::Default);
 
     let ctor_ty_raw = match self.get_const(ctor_id)? {
       KConst::Ctor { ty, .. } => ty.clone(),
@@ -3852,8 +3850,8 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
     is_large: bool,
     dom: &KExpr<M>,
   ) -> Result<KExpr<M>, TcError<M>> {
-    let anon = || M::meta_field(crate::ix::env::Name::anon());
-    let bi_default = || M::meta_field(crate::ix::env::BinderInfo::Default);
+    let anon = || M::meta_field(ix_common::env::Name::anon());
+    let bi_default = || M::meta_field(ix_common::env::BinderInfo::Default);
 
     let target_n_params = u64_to_usize::<M>(flat[target_bi].own_params)?;
 
@@ -3872,7 +3870,7 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
       },
     };
     let rec_lvls: Box<[KUniv<M>]> = (0..peer_rec_lvls)
-      .map(|i| KUniv::param(i, M::meta_field(crate::ix::env::Name::anon())))
+      .map(|i| KUniv::param(i, M::meta_field(ix_common::env::Name::anon())))
       .collect();
 
     // Peel foralls from the domain to detect wrapping.
@@ -4218,15 +4216,17 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
       .or_else(|| generated.iter().position(|g| g.ind_addr == ind_id.addr));
 
     if self.recursor_dump_matches_id(id) {
-      eprintln!(
+      log::info!(
         "[recursor.dump] check {} rec_block={} resolved_block={} stored_pos={stored_pos:?} selected_idx={selected_idx:?}",
-        id, rec_block, resolved_block
+        id,
+        rec_block,
+        resolved_block
       );
-      eprintln!(
+      log::info!(
         "[recursor.dump] stored major: {}",
         Self::major_domain_signature_text(stored_major.as_ref())
       );
-      eprintln!("[recursor.dump] signature_matches={signature_matches:?}");
+      log::info!("[recursor.dump] signature_matches={signature_matches:?}");
       for (gi, g) in generated.iter().enumerate() {
         if g.ind_addr != ind_id.addr {
           continue;
@@ -4236,7 +4236,7 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
           prefix_skip,
           &g.ind_addr,
         )?;
-        eprintln!(
+        log::info!(
           "  cand[{gi:2}] {}",
           Self::major_domain_signature_text(major.as_ref())
         );
@@ -4289,11 +4289,11 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
                     } else {
                       "idx/major"
                     };
-                    eprintln!(
+                    log::info!(
                       "[type diff] binder {bi} ({label}) DIFFERS (p={params} m={motives} min={minors})"
                     );
-                    eprintln!("  gen: {gd}");
-                    eprintln!("  sto: {sd}");
+                    log::info!("  gen: {gd}");
+                    log::info!("  sto: {sd}");
                     break;
                   }
                   let _ = self.push_fvar_decl_anon(gd.clone());
@@ -4302,9 +4302,9 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
                   bi += 1;
                 },
                 _ => {
-                  eprintln!("[type diff] return differs at {bi}");
-                  eprintln!("  gen: {gc}");
-                  eprintln!("  sto: {sc}");
+                  log::info!("[type diff] return differs at {bi}");
+                  log::info!("  gen: {gc}");
+                  log::info!("  sto: {sc}");
                   break;
                 },
               }
@@ -4380,12 +4380,12 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
                 "rhs",
                 0,
               );
-              eprintln!(
+              log::info!(
                 "[rule rhs diff] rule {ri} RHS mismatch (fields={})",
                 gen_rule.fields
               );
-              eprintln!("  gen: {}", gen_rule.rhs);
-              eprintln!("  sto: {}", stored_rule.rhs);
+              log::info!("  gen: {}", gen_rule.rhs);
+              log::info!("  sto: {}", stored_rule.rhs);
             }
             return Err(TcError::Other(format!(
               "check_recursor: rule {ri} RHS mismatch"
@@ -4505,7 +4505,7 @@ mod tests {
   use super::super::level::KUniv;
   use super::super::mode::Anon;
   use super::super::tc::TypeChecker;
-  use crate::ix::address::Address;
+  use ix_common::address::Address;
 
   type AE = KExpr<Anon>;
   type AU = KUniv<Anon>;

@@ -9,8 +9,8 @@
 
 use std::sync::Arc;
 
-use crate::ix::address::Address;
-use crate::ix::env::{DefinitionSafety, QuotKind};
+use ix_common::address::Address;
+use ix_common::env::{DefinitionSafety, QuotKind};
 
 use super::constant::{
   Axiom, Constant, ConstantInfo, Constructor, ConstructorProj, DefKind,
@@ -18,6 +18,7 @@ use super::constant::{
   Recursor, RecursorProj, RecursorRule,
 };
 use super::expr::Expr;
+use super::metadata::IxonByteSerde;
 use super::tag::{Tag0, Tag4};
 use super::univ::{Univ, get_univ, put_univ};
 
@@ -425,28 +426,26 @@ impl DefKind {
   }
 }
 
-impl DefinitionSafety {
-  fn to_u8(self) -> u8 {
-    match self {
-      Self::Unsafe => 0,
-      Self::Safe => 1,
-      Self::Partial => 2,
-    }
+fn definition_safety_to_u8(s: DefinitionSafety) -> u8 {
+  match s {
+    DefinitionSafety::Unsafe => 0,
+    DefinitionSafety::Safe => 1,
+    DefinitionSafety::Partial => 2,
   }
+}
 
-  fn from_u8(x: u8) -> Result<Self, String> {
-    match x {
-      0 => Ok(Self::Unsafe),
-      1 => Ok(Self::Safe),
-      2 => Ok(Self::Partial),
-      x => Err(format!("DefinitionSafety::from_u8: invalid {x}")),
-    }
+fn definition_safety_from_u8(x: u8) -> Result<DefinitionSafety, String> {
+  match x {
+    0 => Ok(DefinitionSafety::Unsafe),
+    1 => Ok(DefinitionSafety::Safe),
+    2 => Ok(DefinitionSafety::Partial),
+    x => Err(format!("DefinitionSafety::from_u8: invalid {x}")),
   }
 }
 
 /// Pack DefKind (2 bits) and DefinitionSafety (2 bits) into a single byte.
 fn pack_def_kind_safety(kind: DefKind, safety: DefinitionSafety) -> u8 {
-  (kind.to_u8() << 2) | safety.to_u8()
+  (kind.to_u8() << 2) | definition_safety_to_u8(safety)
 }
 
 /// Unpack DefKind and DefinitionSafety from a single byte.
@@ -454,12 +453,12 @@ fn unpack_def_kind_safety(
   b: u8,
 ) -> Result<(DefKind, DefinitionSafety), String> {
   let kind = DefKind::from_u8(b >> 2)?;
-  let safety = DefinitionSafety::from_u8(b & 0x3)?;
+  let safety = definition_safety_from_u8(b & 0x3)?;
   Ok((kind, safety))
 }
 
-impl QuotKind {
-  pub fn put_ser(&self, buf: &mut Vec<u8>) {
+impl IxonByteSerde for QuotKind {
+  fn put_ser(&self, buf: &mut Vec<u8>) {
     match self {
       Self::Type => put_u8(0, buf),
       Self::Ctor => put_u8(1, buf),
@@ -468,7 +467,7 @@ impl QuotKind {
     }
   }
 
-  pub fn get_ser(buf: &mut &[u8]) -> Result<Self, String> {
+  fn get_ser(buf: &mut &[u8]) -> Result<Self, String> {
     match get_u8(buf)? {
       0 => Ok(Self::Type),
       1 => Ok(Self::Ctor),
@@ -870,8 +869,8 @@ impl Constant {
 // Name serialization
 // ============================================================================
 
-use crate::ix::env::{Name, NameData};
-use lean_ffi::nat::Nat;
+use bignat::Nat;
+use ix_common::env::{Name, NameData};
 use rustc_hash::FxHashMap;
 
 /// Serialize a Name to bytes (full recursive serialization, for standalone use).
@@ -1109,6 +1108,7 @@ impl Env {
   /// insertion orders), and DashMap iteration order is shard-dependent.
   /// Sorting the keys is the minimum work to guarantee that.
   pub fn put(&self, buf: &mut Vec<u8>) -> Result<(), String> {
+    #[cfg(not(target_arch = "riscv64"))]
     use rayon::slice::ParallelSliceMut;
 
     // Chatty per-section logging gated on IX_QUIET=1 (disables) so we can
@@ -1131,7 +1131,10 @@ impl Env {
     // ─────────────────────────────────────────────────────────────────────
     let mut const_addrs: Vec<Address> =
       self.consts.iter().map(|e| e.key().clone()).collect();
+    #[cfg(not(target_arch = "riscv64"))]
     const_addrs.par_sort_unstable();
+    #[cfg(target_arch = "riscv64")]
+    const_addrs.sort_unstable();
     let root = merkle_root_canonical(&const_addrs).unwrap_or_else(zero_address);
     put_address(&root, buf);
 
@@ -1144,7 +1147,10 @@ impl Env {
     }
     let mut blob_addrs: Vec<Address> =
       self.blobs.iter().map(|e| e.key().clone()).collect();
+    #[cfg(not(target_arch = "riscv64"))]
     blob_addrs.par_sort_unstable();
+    #[cfg(target_arch = "riscv64")]
+    blob_addrs.sort_unstable();
     put_u64(blob_addrs.len() as u64, buf);
     for addr in &blob_addrs {
       if let Some(entry) = self.blobs.get(addr) {
@@ -1260,7 +1266,12 @@ impl Env {
     // Sort by the cached name hash bytes (same key used by every existing
     // Section 4 ordering guarantee). `par_sort_unstable_by` uses rayon to
     // parallelize the compare across all cores.
+    #[cfg(not(target_arch = "riscv64"))]
     named_keys.par_sort_unstable_by(|a, b| {
+      a.get_hash().as_bytes().cmp(b.get_hash().as_bytes())
+    });
+    #[cfg(target_arch = "riscv64")]
+    named_keys.sort_unstable_by(|a, b| {
       a.get_hash().as_bytes().cmp(b.get_hash().as_bytes())
     });
     if !quiet {
@@ -1297,7 +1308,10 @@ impl Env {
     }
     let mut comm_addrs: Vec<Address> =
       self.comms.iter().map(|e| e.key().clone()).collect();
+    #[cfg(not(target_arch = "riscv64"))]
     comm_addrs.par_sort_unstable();
+    #[cfg(target_arch = "riscv64")]
+    comm_addrs.sort_unstable();
     put_u64(comm_addrs.len() as u64, buf);
     for addr in &comm_addrs {
       if let Some(entry) = self.comms.get(addr) {
@@ -1343,7 +1357,8 @@ impl Env {
     // recomputed value at the end of deserialization.
     let stored_root = get_address(buf)?;
 
-    let env = Env::new();
+    #[cfg_attr(not(target_arch = "riscv64"), allow(unused_mut))]
+    let mut env = Env::new();
 
     // Section 1: Blobs
     let num_blobs = get_u64(buf)?;
@@ -1390,7 +1405,9 @@ impl Env {
           addr.hex()
         ));
       }
-      env.store_const_lazy(addr, bytes.into());
+      env
+        .consts
+        .insert(addr, crate::lazy::LazyConstant::from_bytes(bytes.into()));
     }
 
     // Section 3: Names (build lookup table and reverse index for metadata)
@@ -1528,7 +1545,9 @@ impl Env {
           addr.hex()
         ));
       }
-      env.store_const_lazy(addr, bytes.into());
+      env
+        .consts
+        .insert(addr, crate::lazy::LazyConstant::from_bytes(bytes.into()));
     }
 
     // Section 3: Names — parse and DISCARD. We still need a populated
@@ -1613,6 +1632,7 @@ impl Env {
   /// On Linux, the kernel's adaptive readahead handles the linear
   /// scan during section parsing efficiently; subsequent random
   /// access from worker kernel-check threads pages in as needed.
+  #[cfg(not(target_arch = "riscv64"))]
   pub fn get_anon_mmap(path: &std::path::Path) -> Result<Self, String> {
     let file = std::fs::File::open(path).map_err(|e| {
       format!("Env::get_anon_mmap: open {}: {e}", path.display())
@@ -1723,7 +1743,14 @@ impl Env {
           addr.hex()
         ));
       }
-      env.store_const_lazy_mmap(addr, Arc::clone(&mmap), offset, len);
+      env.consts.insert(
+        addr,
+        crate::lazy::LazyConstant::from_mmap_slice(
+          Arc::clone(&mmap),
+          offset,
+          len,
+        ),
+      );
       buf = &buf[len..];
     }
 
@@ -1882,8 +1909,9 @@ impl Env {
 /// Mathlib because 4.7M shard-lock acquisitions dominate vs the one-time
 /// ~150 MB tuple-clone allocation.
 fn topological_sort_names(
-  names: &dashmap::DashMap<Address, Name>,
+  names: &crate::map::IxonMap<Address, Name>,
 ) -> Vec<(Address, Name)> {
+  #[cfg(not(target_arch = "riscv64"))]
   use rayon::slice::ParallelSliceMut;
   use rustc_hash::FxHashSet;
 
@@ -1922,7 +1950,10 @@ fn topological_sort_names(
   // during DFS). Parallel sort uses rayon over address bytes.
   let mut sorted_entries: Vec<(Address, Name)> =
     names.iter().map(|e| (e.key().clone(), e.value().clone())).collect();
+  #[cfg(not(target_arch = "riscv64"))]
   sorted_entries.par_sort_unstable_by(|a, b| a.0.cmp(&b.0));
+  #[cfg(target_arch = "riscv64")]
+  sorted_entries.sort_unstable_by(|a, b| a.0.cmp(&b.0));
   for (_, name) in &sorted_entries {
     visit(name, &mut visited, &mut result);
   }
@@ -1933,9 +1964,10 @@ fn topological_sort_names(
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::ix::ixon::constant::tests::gen_constant;
-  use crate::ix::ixon::tests::gen_range;
+  use crate::constant::tests::gen_constant;
+  use crate::tests::gen_range;
   use quickcheck::{Arbitrary, Gen};
+  use quickcheck_macros::quickcheck;
 
   #[quickcheck]
   fn prop_pack_bools_roundtrip(x: Vec<bool>) -> bool {
@@ -2215,8 +2247,8 @@ mod tests {
   }
 
   fn defn_const_discriminator(refs: Vec<Address>, lvls: u64) -> Constant {
-    use crate::ix::env::DefinitionSafety;
-    use crate::ix::ixon::constant::{DefKind, Definition};
+    use ix_common::env::DefinitionSafety;
+    use crate::constant::{DefKind, Definition};
     Constant::with_tables(
       ConstantInfo::Defn(Definition {
         kind: DefKind::Definition,
@@ -2251,7 +2283,7 @@ mod tests {
 
   #[test]
   fn env_root_empty_env_is_zero_address() {
-    use crate::ix::ixon::merkle::zero_address;
+    use crate::merkle::zero_address;
     let env = Env::new();
     let mut buf = Vec::new();
     env.put(&mut buf).unwrap();
@@ -2265,7 +2297,7 @@ mod tests {
 
   #[test]
   fn env_root_present_when_consts_nonempty() {
-    use crate::ix::ixon::merkle::zero_address;
+    use crate::merkle::zero_address;
     let env = Env::new();
     env.store_const(Address::hash(b"a"), defn_const(vec![]));
     let mut buf = Vec::new();
@@ -2403,7 +2435,7 @@ mod tests {
 
   #[test]
   fn get_anon_keeps_consts_drops_metadata() {
-    use crate::ix::ixon::env::Named;
+    use crate::env::Named;
     let env = Env::new();
     // Round-trip tests must use canonical addresses (see store_canonical
     // helper); `Env::get`/`get_anon` reject entries whose bytes don't

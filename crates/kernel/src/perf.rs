@@ -27,11 +27,10 @@
 //! atomic op.
 
 use std::fmt;
-use std::sync::LazyLock;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-static PERF_ENABLED: LazyLock<bool> =
-  LazyLock::new(|| std::env::var_os("IX_PERF_COUNTERS").is_some());
+static PERF_ENABLED: crate::EnvFlag =
+  crate::EnvFlag::new(|| crate::env_var_os("IX_PERF_COUNTERS").is_some());
 
 /// Returns `true` iff `IX_PERF_COUNTERS` is set in the environment at the
 /// time this is first read. The result is cached for the lifetime of the

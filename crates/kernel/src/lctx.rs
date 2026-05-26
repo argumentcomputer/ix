@@ -20,7 +20,7 @@
 
 use rustc_hash::FxHashMap;
 
-use crate::ix::env::{BinderInfo, Name};
+use ix_common::env::{BinderInfo, Name};
 
 use super::env::InternTable;
 use super::expr::{ExprData, FVarId, KExpr};
@@ -254,8 +254,8 @@ pub fn is_fvar<M: KernelMode>(e: &KExpr<M>) -> bool {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::ix::kernel::level::KUniv;
-  use crate::ix::kernel::mode::Anon;
+  use crate::level::KUniv;
+  use crate::mode::Anon;
 
   type AE = KExpr<Anon>;
   type AU = KUniv<Anon>;

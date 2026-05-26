@@ -13,7 +13,7 @@
 use std::fmt::{self, Debug};
 use std::hash::Hash;
 
-use crate::ix::env::{BinderInfo, DataValue, Name, NameData};
+use ix_common::env::{BinderInfo, DataValue, Name, NameData};
 
 /// Serialize a metadata value into a `blake3::Hasher`.
 /// The `()` impl is a no-op, so erased metadata contributes nothing.
@@ -44,7 +44,7 @@ impl MetaHash for BinderInfo {
 
 impl MetaHash for DataValue {
   fn meta_hash(&self, hasher: &mut blake3::Hasher) {
-    crate::ix::env::hash_data_value(self, hasher);
+    ix_common::env::hash_data_value(self, hasher);
   }
 }
 

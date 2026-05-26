@@ -65,18 +65,15 @@
 //! - `InductInfo`, `CtorInfo`, `AxiomInfo`, `QuotInfo` — pass-through
 //!   (no permutation needed).
 
-use lean_ffi::nat::Nat;
+use bignat::Nat;
 use rustc_hash::FxHashMap;
 
-use crate::ix::compile::aux_gen::expr_utils::{
-  forall_telescope, lambda_telescope,
+use ix_common::address::Address;
+use ix_common::env::{
+  ConstantInfo, ConstantVal, Expr, ExprData, Name, RecursorRule, RecursorVal,
 };
-use crate::ix::{
-  address::Address,
-  env::{
-    ConstantInfo, ConstantVal, Expr, ExprData, Name, RecursorRule, RecursorVal,
-  },
-};
+
+use crate::compile::aux_gen::expr_utils::{forall_telescope, lambda_telescope};
 
 use super::{check_nat_eq, expr_alpha_eq, level_alpha_eq, strip_mdata};
 
@@ -352,7 +349,7 @@ impl PermCtx {
 /// counterparts. Built once per binder telescope, passed by shared
 /// reference into the alpha-eq walk.
 #[derive(Default, Clone)]
-pub(crate) struct Corr {
+pub struct Corr {
   fvar_map: FxHashMap<Name, Name>,
   fvar_alts: FxHashMap<Name, Vec<Name>>,
   punit_motive_gen: Vec<Name>,
@@ -538,7 +535,7 @@ fn classify_defn_shape(name: &Name) -> DefnShape {
 /// Collect up to `n` trailing `Str` segments of `name`, from leaf
 /// outward. `Num` segments or `Anonymous` terminate collection early.
 fn collect_name_tail_strs(name: &Name, n: usize) -> Vec<String> {
-  use crate::ix::env::NameData;
+  use ix_common::env::NameData;
   let mut out: Vec<String> = Vec::with_capacity(n);
   let mut cur = name.clone();
   for _ in 0..n {
@@ -1273,8 +1270,8 @@ fn n_canonical_minors_of(ctx: &PermCtx) -> usize {
 fn add_motive_alts(
   corr: &mut Corr,
   ctx: &PermCtx,
-  orig_decls: &[crate::ix::compile::aux_gen::expr_utils::LocalDecl],
-  gen_decls: &[crate::ix::compile::aux_gen::expr_utils::LocalDecl],
+  orig_decls: &[crate::compile::aux_gen::expr_utils::LocalDecl],
+  gen_decls: &[crate::compile::aux_gen::expr_utils::LocalDecl],
 ) {
   let n_params = ctx.n_params;
   let n_source_motives = ctx.n_source_motives();
@@ -1353,7 +1350,7 @@ fn is_motive_app(e: &Expr, motives: &[Name]) -> bool {
 /// - `LetE` / `Proj` / `Mdata`: recurse; `Mdata` is stripped before
 ///   matching so it's essentially a no-op.
 /// - `Sort`, `Lit`: compare literally.
-pub(crate) fn expr_alpha_eq_ctx(
+pub fn expr_alpha_eq_ctx(
   g: &Expr,
   orig: &Expr,
   ctx: &PermCtx,
@@ -1800,9 +1797,8 @@ fn peel_all_lambdas(
   expr: &Expr,
   prefix: &str,
   min_count: usize,
-) -> (Vec<Expr>, Vec<crate::ix::compile::aux_gen::expr_utils::LocalDecl>, Expr)
-{
-  use crate::ix::compile::aux_gen::expr_utils::LocalDecl;
+) -> (Vec<Expr>, Vec<crate::compile::aux_gen::expr_utils::LocalDecl>, Expr) {
+  use crate::compile::aux_gen::expr_utils::LocalDecl;
 
   let (mut fvars, mut decls, mut body): (Vec<Expr>, Vec<LocalDecl>, Expr) =
     if min_count == 0 {

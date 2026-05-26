@@ -1,6 +1,6 @@
 //! Custom error types for Ixon serialization and compilation.
 
-use crate::ix::address::Address;
+use ix_common::address::Address;
 
 /// Errors during serialization/deserialization.
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -5,11 +5,10 @@
 
 use rustc_hash::FxHashMap;
 
-use crate::{
-  FxIndexSet,
-  ix::env::Name,
-  ix::graph::{NameSet, RefMap},
-};
+use ix_common::FxIndexSet;
+use ix_common::env::Name;
+
+use crate::graph::{NameSet, RefMap};
 
 /// The condensation of a reference graph into strongly connected components.
 pub struct CondensedBlocks {

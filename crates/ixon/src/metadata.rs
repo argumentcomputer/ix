@@ -12,8 +12,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::ix::address::Address;
-use crate::ix::env::{self, BinderInfo, Name, ReducibilityHints};
+use ix_common::address::Address;
+use ix_common::env::{self, BinderInfo, Name, ReducibilityHints};
 
 use super::env::AuxLayout;
 use super::expr::Expr;
@@ -330,7 +330,7 @@ pub fn resolve_kvmap(
         },
         DataValue::OfNat(a) => {
           let bytes = ixon_env.get_blob(a)?;
-          env::DataValue::OfNat(lean_ffi::nat::Nat::from_le_bytes(&bytes))
+          env::DataValue::OfNat(bignat::Nat::from_le_bytes(&bytes))
         },
         DataValue::OfInt(a) => {
           let bytes = ixon_env.get_blob(a)?;
@@ -389,8 +389,8 @@ fn deser_addr(buf: &mut &[u8]) -> Option<Address> {
 fn deser_int(bytes: &[u8]) -> Option<env::Int> {
   let (&tag, rest) = bytes.split_first()?;
   match tag {
-    0 => Some(env::Int::OfNat(lean_ffi::nat::Nat::from_le_bytes(rest))),
-    1 => Some(env::Int::NegSucc(lean_ffi::nat::Nat::from_le_bytes(rest))),
+    0 => Some(env::Int::OfNat(bignat::Nat::from_le_bytes(rest))),
+    1 => Some(env::Int::NegSucc(bignat::Nat::from_le_bytes(rest))),
     _ => None,
   }
 }
@@ -401,8 +401,8 @@ fn deser_substring(
 ) -> Option<env::Substring> {
   let str_addr = deser_addr(buf)?;
   let s = String::from_utf8(ixon_env.get_blob(&str_addr)?).ok()?;
-  let start_pos = lean_ffi::nat::Nat::from(deser_tag0(buf)?);
-  let stop_pos = lean_ffi::nat::Nat::from(deser_tag0(buf)?);
+  let start_pos = bignat::Nat::from(deser_tag0(buf)?);
+  let stop_pos = bignat::Nat::from(deser_tag0(buf)?);
   Some(env::Substring { str: s, start_pos, stop_pos })
 }
 
@@ -413,9 +413,9 @@ fn deser_source_info(
   match deser_u8(buf)? {
     0 => {
       let leading = deser_substring(buf, ixon_env)?;
-      let leading_pos = lean_ffi::nat::Nat::from(deser_tag0(buf)?);
+      let leading_pos = bignat::Nat::from(deser_tag0(buf)?);
       let trailing = deser_substring(buf, ixon_env)?;
-      let trailing_pos = lean_ffi::nat::Nat::from(deser_tag0(buf)?);
+      let trailing_pos = bignat::Nat::from(deser_tag0(buf)?);
       Some(env::SourceInfo::Original(
         leading,
         leading_pos,
@@ -424,8 +424,8 @@ fn deser_source_info(
       ))
     },
     1 => {
-      let start = lean_ffi::nat::Nat::from(deser_tag0(buf)?);
-      let end = lean_ffi::nat::Nat::from(deser_tag0(buf)?);
+      let start = bignat::Nat::from(deser_tag0(buf)?);
+      let end = bignat::Nat::from(deser_tag0(buf)?);
       let canonical = deser_u8(buf)? != 0;
       Some(env::SourceInfo::Synthetic(start, end, canonical))
     },
@@ -560,8 +560,15 @@ pub(super) fn get_vec_len(buf: &mut &[u8]) -> Result<usize, String> {
 // BinderInfo and ReducibilityHints serialization
 // ===========================================================================
 
-impl BinderInfo {
-  pub fn put(&self, buf: &mut Vec<u8>) {
+/// Extension trait for serializing/deserializing small env-side enums whose
+/// types live in `ix-types` (so we can't define inherent impls here).
+pub trait IxonByteSerde: Sized {
+  fn put_ser(&self, buf: &mut Vec<u8>);
+  fn get_ser(buf: &mut &[u8]) -> Result<Self, String>;
+}
+
+impl IxonByteSerde for BinderInfo {
+  fn put_ser(&self, buf: &mut Vec<u8>) {
     match self {
       Self::Default => put_u8(0, buf),
       Self::Implicit => put_u8(1, buf),
@@ -570,7 +577,7 @@ impl BinderInfo {
     }
   }
 
-  pub fn get_ser(buf: &mut &[u8]) -> Result<Self, String> {
+  fn get_ser(buf: &mut &[u8]) -> Result<Self, String> {
     match get_u8(buf)? {
       0 => Ok(Self::Default),
       1 => Ok(Self::Implicit),
@@ -581,8 +588,8 @@ impl BinderInfo {
   }
 }
 
-impl ReducibilityHints {
-  pub fn put(&self, buf: &mut Vec<u8>) {
+impl IxonByteSerde for ReducibilityHints {
+  fn put_ser(&self, buf: &mut Vec<u8>) {
     match self {
       Self::Opaque => put_u8(0, buf),
       Self::Abbrev => put_u8(1, buf),
@@ -593,7 +600,7 @@ impl ReducibilityHints {
     }
   }
 
-  pub fn get_ser(buf: &mut &[u8]) -> Result<Self, String> {
+  fn get_ser(buf: &mut &[u8]) -> Result<Self, String> {
     match get_u8(buf)? {
       0 => Ok(Self::Opaque),
       1 => Ok(Self::Abbrev),
@@ -1004,7 +1011,7 @@ impl ConstantMetaInfo {
         put_u8(0, buf);
         put_idx(name, idx, buf)?;
         put_idx_vec(lvls, idx, buf)?;
-        hints.put(buf);
+        hints.put_ser(buf);
         put_idx_vec(all, idx, buf)?;
         put_idx_vec(ctx, idx, buf)?;
         arena.put_indexed(idx, buf)?;
@@ -1182,28 +1189,6 @@ impl ConstantMetaInfo {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use quickcheck::{Arbitrary, Gen};
-
-  impl Arbitrary for BinderInfo {
-    fn arbitrary(g: &mut Gen) -> Self {
-      match u8::arbitrary(g) % 4 {
-        0 => Self::Default,
-        1 => Self::Implicit,
-        2 => Self::StrictImplicit,
-        _ => Self::InstImplicit,
-      }
-    }
-  }
-
-  impl Arbitrary for ReducibilityHints {
-    fn arbitrary(g: &mut Gen) -> Self {
-      match u8::arbitrary(g) % 3 {
-        0 => Self::Opaque,
-        1 => Self::Abbrev,
-        _ => Self::Regular(u32::arbitrary(g)),
-      }
-    }
-  }
 
   #[test]
   fn test_binder_info_roundtrip() {
@@ -1214,7 +1199,7 @@ mod tests {
       BinderInfo::InstImplicit,
     ] {
       let mut buf = Vec::new();
-      bi.put(&mut buf);
+      bi.put_ser(&mut buf);
       assert_eq!(BinderInfo::get_ser(&mut buf.as_slice()).unwrap(), bi);
     }
   }
@@ -1227,7 +1212,7 @@ mod tests {
       ReducibilityHints::Regular(42),
     ] {
       let mut buf = Vec::new();
-      h.put(&mut buf);
+      h.put_ser(&mut buf);
       assert_eq!(ReducibilityHints::get_ser(&mut buf.as_slice()).unwrap(), h);
     }
   }

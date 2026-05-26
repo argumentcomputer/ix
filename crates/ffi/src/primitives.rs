@@ -4,6 +4,7 @@
 //! (ix-specific types not covered by the lean-ffi test suite).
 
 use lean_ffi::nat::Nat;
+use lean_ffi::object::LeanNat;
 #[cfg(feature = "test-ffi")]
 use lean_ffi::object::{LeanArray, LeanCtor, LeanOwned};
 use lean_ffi::object::{LeanBorrowed, LeanRef};
@@ -34,8 +35,8 @@ fn build_assoc_list_nat_nat(pairs: &[(Nat, Nat)]) -> LeanOwned {
   let mut list = LeanOwned::box_usize(0); // nil
   for (k, v) in pairs.iter().rev() {
     let cons = LeanCtor::alloc(1, 3, 0); // AssocList.cons
-    cons.set(0, Nat::to_lean(k));
-    cons.set(1, Nat::to_lean(v));
+    cons.set(0, LeanNat::from_nat(k));
+    cons.set(1, LeanNat::from_nat(v));
     cons.set(2, list);
     list = cons.into();
   }
@@ -53,7 +54,7 @@ pub extern "C" fn rs_roundtrip_dhashmap_raw_nat_nat(
   }
 
   let raw_ctor = raw_ptr.as_ctor();
-  let size = Nat::from_obj(&raw_ctor.get(0));
+  let size = LeanNat::to_nat(&raw_ctor.get(0));
   let buckets = raw_ctor.get(1).as_array();
 
   // Decode and rebuild buckets
@@ -85,15 +86,15 @@ pub extern "C" fn rs_roundtrip_dhashmap_raw_nat_nat(
 
     let old_bucket = new_buckets.get(bucket_idx).to_owned_ref();
     let new_bucket = LeanCtor::alloc(1, 3, 0);
-    new_bucket.set(0, Nat::to_lean(k));
-    new_bucket.set(1, Nat::to_lean(v));
+    new_bucket.set(0, LeanNat::from_nat(k));
+    new_bucket.set(1, LeanNat::from_nat(v));
     new_bucket.set(2, old_bucket);
     new_buckets.set(bucket_idx, new_bucket);
   }
 
   // Build Raw
   let raw = LeanCtor::alloc(0, 2, 0);
-  raw.set(0, Nat::to_lean(&size));
+  raw.set(0, LeanNat::from_nat(&size));
   raw.set(1, new_buckets);
   raw.into()
 }
@@ -119,7 +120,7 @@ pub extern "C" fn rs_roundtrip_hashmap_nat_nat(
   map_ptr: LeanCtor<LeanBorrowed<'_>>,
 ) -> LeanOwned {
   // Due to unboxing, map_ptr points directly to Raw
-  let size = Nat::from_obj(&map_ptr.get(0));
+  let size = LeanNat::to_nat(&map_ptr.get(0));
   let buckets = map_ptr.get(1).as_array();
 
   // Decode buckets (Array of AssocLists)
@@ -160,8 +161,8 @@ pub extern "C" fn rs_roundtrip_hashmap_nat_nat(
 
     // Build AssocList.cons key value tail (tag 1, 3 fields)
     let new_bucket = LeanCtor::alloc(1, 3, 0);
-    new_bucket.set(0, Nat::to_lean(k));
-    new_bucket.set(1, Nat::to_lean(v));
+    new_bucket.set(0, LeanNat::from_nat(k));
+    new_bucket.set(1, LeanNat::from_nat(v));
     new_bucket.set(2, old_bucket);
     new_buckets.set(bucket_idx, new_bucket);
   }
@@ -169,7 +170,7 @@ pub extern "C" fn rs_roundtrip_hashmap_nat_nat(
   // Build Raw (ctor 0, 2 fields: size, buckets)
   // Due to unboxing, this IS the HashMap
   let raw = LeanCtor::alloc(0, 2, 0);
-  raw.set(0, Nat::to_lean(&size));
+  raw.set(0, LeanNat::from_nat(&size));
   raw.set(1, new_buckets);
   raw.into()
 }
@@ -188,7 +189,7 @@ pub fn decode_assoc_list_nat_nat(obj: LeanBorrowed<'_>) -> Vec<(Nat, Nat)> {
     let key = ctor.get(0);
     let val = ctor.get(1);
     let next = ctor.get(2).as_raw();
-    result.push((Nat::from_obj(&key), Nat::from_obj(&val)));
+    result.push((LeanNat::to_nat(&key), LeanNat::to_nat(&val)));
     current = unsafe { LeanBorrowed::from_raw(next) };
   }
 

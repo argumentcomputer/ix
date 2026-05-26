@@ -2,7 +2,7 @@
 //!
 //! Provides functions to walk Lean object pointers and decode them into
 //! the Rust `Name`, `Level`, `Expr`, and `ConstantInfo` types defined in
-//! `crate::ix::env`. Used by the compilation pipeline to read the Lean
+//! `ix_common::env`. Used by the compilation pipeline to read the Lean
 //! environment before transforming it to Ixon format.
 //!
 //! Uses a two-level cache (`GlobalCache` + `LocalCache`) to avoid redundant
@@ -17,11 +17,12 @@ use rayon::prelude::*;
 
 use rustc_hash::FxHashMap;
 
-use crate::ix::compile::{CompileOptions, compile_env_with_options};
-use crate::ix::decompile::{check_decompile, decompile_env};
+use ix_compile::compile::{CompileOptions, compile_env_with_options};
+use ix_compile::decompile::{check_decompile, decompile_env};
 use std::sync::Arc;
 
 use lean_ffi::nat::Nat;
+use lean_ffi::object::LeanNat;
 use lean_ffi::object::{
   LeanArray, LeanBorrowed, LeanList, LeanRef, LeanShared,
 };
@@ -35,7 +36,7 @@ use crate::lean::{
   LeanIxSyntaxPreresolved, LeanIxTheoremVal,
 };
 
-use crate::ix::env::{
+use ix_common::env::{
   AxiomVal, BinderInfo, ConstantInfo, ConstantVal, ConstructorVal, DataValue,
   DefinitionSafety, DefinitionVal, Env, Expr, InductiveVal, Int, Level,
   Literal, Name, OpaqueVal, QuotKind, QuotVal, RecursorRule, RecursorVal,
@@ -55,7 +56,7 @@ const PARALLEL_THRESHOLD: usize = 100;
 /// generated recursor is intentionally canonical rather than source-identical.
 fn primary_addresses_collapse(
   all: &[Name],
-  stt: &crate::ix::compile::CompileState,
+  stt: &ix_compile::compile::CompileState,
 ) -> bool {
   let mut seen = rustc_hash::FxHashSet::default();
   for name in all {
@@ -72,12 +73,12 @@ fn primary_addresses_collapse(
 fn build_aux_perm_ctx(
   all: &[Name],
   env: &Env,
-  stt: &crate::ix::compile::CompileState,
+  stt: &ix_compile::compile::CompileState,
   perm: &[usize],
-) -> Option<crate::ix::congruence::perm::PermCtx> {
-  use crate::ix::compile::aux_gen;
-  use crate::ix::congruence::perm::{PermCtx, RecHeadInfo, RecHeadKind};
-  use crate::ix::env::{ConstantInfo as LeanCI, ExprData};
+) -> Option<ix_compile::congruence::perm::PermCtx> {
+  use ix_common::env::{ConstantInfo as LeanCI, ExprData};
+  use ix_compile::compile::aux_gen;
+  use ix_compile::congruence::perm::{PermCtx, RecHeadInfo, RecHeadKind};
 
   let first = all.first()?;
   let n_params = match env.get(first) {
@@ -162,7 +163,7 @@ fn build_aux_perm_ctx(
     );
   }
 
-  let mut const_addr: FxHashMap<Name, crate::ix::address::Address> =
+  let mut const_addr: FxHashMap<Name, ix_common::address::Address> =
     FxHashMap::default();
   let mut add_addr = |name: &Name| {
     if let Some(addr) = stt.resolve_addr(name) {
@@ -194,8 +195,8 @@ fn build_aux_perm_ctx(
 
   fn collect_const_addrs(
     e: &Expr,
-    stt: &crate::ix::compile::CompileState,
-    out: &mut FxHashMap<Name, crate::ix::address::Address>,
+    stt: &ix_compile::compile::CompileState,
+    out: &mut FxHashMap<Name, ix_common::address::Address>,
   ) {
     match e.as_data() {
       ExprData::Const(n, _, _) => {
@@ -261,13 +262,13 @@ fn build_aux_perm_ctx(
 fn build_collapse_const_map(
   all: &[Name],
   env: &Env,
-  stt: &crate::ix::compile::CompileState,
+  stt: &ix_compile::compile::CompileState,
 ) -> FxHashMap<Name, Name> {
-  use crate::ix::env::ConstantInfo as LeanCI;
+  use ix_common::env::ConstantInfo as LeanCI;
   let mut map: FxHashMap<Name, Name> = FxHashMap::default();
   // Group primary members by canonical address; the first member with a
   // given address is the representative.
-  let mut rep_by_addr: FxHashMap<crate::ix::address::Address, &Name> =
+  let mut rep_by_addr: FxHashMap<ix_common::address::Address, &Name> =
     FxHashMap::default();
   for member in all {
     let Some(addr) = stt.resolve_addr(member) else {
@@ -323,21 +324,21 @@ fn build_collapse_const_map(
 #[derive(Clone)]
 struct AuxCompareEntry {
   generated: ConstantInfo,
-  ctx: Option<crate::ix::congruence::perm::PermCtx>,
+  ctx: Option<ix_compile::congruence::perm::PermCtx>,
 }
 
 fn aux_patch_to_lean_ci(
-  patch: &crate::ix::compile::aux_gen::PatchedConstant,
-) -> Option<ConstantInfo> {
-  use crate::ix::env::{
+  patch: &ix_compile::compile::aux_gen::PatchedConstant,
+) -> ConstantInfo {
+  use ix_common::env::{
     ConstantInfo as LeanCI, ConstantVal as LeanCV, DefinitionVal, InductiveVal,
   };
-  Some(match patch {
-    crate::ix::compile::aux_gen::PatchedConstant::Rec(r) => {
+  match patch {
+    ix_compile::compile::aux_gen::PatchedConstant::Rec(r) => {
       LeanCI::RecInfo(r.clone())
     },
-    crate::ix::compile::aux_gen::PatchedConstant::CasesOn(d)
-    | crate::ix::compile::aux_gen::PatchedConstant::RecOn(d) => {
+    ix_compile::compile::aux_gen::PatchedConstant::CasesOn(d)
+    | ix_compile::compile::aux_gen::PatchedConstant::RecOn(d) => {
       LeanCI::DefnInfo(DefinitionVal {
         cnst: LeanCV {
           name: d.name.clone(),
@@ -350,7 +351,7 @@ fn aux_patch_to_lean_ci(
         all: vec![],
       })
     },
-    crate::ix::compile::aux_gen::PatchedConstant::BelowDef(d) => {
+    ix_compile::compile::aux_gen::PatchedConstant::BelowDef(d) => {
       LeanCI::DefnInfo(DefinitionVal {
         cnst: LeanCV {
           name: d.name.clone(),
@@ -363,7 +364,7 @@ fn aux_patch_to_lean_ci(
         all: vec![],
       })
     },
-    crate::ix::compile::aux_gen::PatchedConstant::BRecOn(d) => {
+    ix_compile::compile::aux_gen::PatchedConstant::BRecOn(d) => {
       LeanCI::DefnInfo(DefinitionVal {
         cnst: LeanCV {
           name: d.name.clone(),
@@ -376,7 +377,7 @@ fn aux_patch_to_lean_ci(
         all: vec![],
       })
     },
-    crate::ix::compile::aux_gen::PatchedConstant::BelowIndc(bi) => {
+    ix_compile::compile::aux_gen::PatchedConstant::BelowIndc(bi) => {
       LeanCI::InductInfo(InductiveVal {
         cnst: LeanCV {
           name: bi.name.clone(),
@@ -393,7 +394,7 @@ fn aux_patch_to_lean_ci(
         is_reflexive: bi.is_reflexive,
       })
     },
-  })
+  }
 }
 
 fn aux_congruence_result(
@@ -402,8 +403,8 @@ fn aux_congruence_result(
   original: &ConstantInfo,
   entry: Option<&AuxCompareEntry>,
 ) -> Result<(), String> {
-  use crate::ix::congruence::const_alpha_eq;
-  use crate::ix::congruence::perm::const_alpha_eq_with_perm;
+  use ix_compile::congruence::const_alpha_eq;
+  use ix_compile::congruence::perm::const_alpha_eq_with_perm;
   if let Ok(()) = const_alpha_eq(decompiled, original) {
     return Ok(());
   }
@@ -478,11 +479,11 @@ fn aux_congruence_result(
 
 fn build_aux_compare_contexts(
   env: &Arc<Env>,
-  stt: &crate::ix::compile::CompileState,
+  stt: &ix_compile::compile::CompileState,
 ) -> FxHashMap<Name, AuxCompareEntry> {
-  use crate::ix::compile::KernelCtx;
-  use crate::ix::compile::aux_gen::{self, expr_utils};
-  use crate::ix::env::ConstantInfo as LeanCI;
+  use ix_common::env::ConstantInfo as LeanCI;
+  use ix_compile::compile::KernelCtx;
+  use ix_compile::compile::aux_gen::{self, expr_utils};
   use rustc_hash::FxHashSet;
 
   let mut by_name = FxHashMap::default();
@@ -523,12 +524,11 @@ fn build_aux_compare_contexts(
       None
     };
     for (patch_name, patch) in aux_out.patches.iter() {
-      if let Some(generated) = aux_patch_to_lean_ci(patch) {
-        by_name.insert(
-          patch_name.clone(),
-          AuxCompareEntry { generated, ctx: ctx.clone() },
-        );
-      }
+      let generated = aux_patch_to_lean_ci(patch);
+      by_name.insert(
+        patch_name.clone(),
+        AuxCompareEntry { generated, ctx: ctx.clone() },
+      );
     }
   }
   by_name
@@ -610,7 +610,7 @@ pub fn decode_name(obj: LeanBorrowed<'_>, global: &GlobalCache) -> Name {
     let pos = n.get_obj(1);
     match n.as_ctor().tag() {
       1 => Name::str(pre, pos.as_string().to_string()),
-      2 => Name::num(pre, Nat::from_obj(&pos)),
+      2 => Name::num(pre, LeanNat::to_nat(&pos)),
       tag => unreachable!("Invalid Lean.Name tag: {tag}"),
     }
   };
@@ -668,8 +668,8 @@ fn decode_level(obj: LeanBorrowed<'_>, cache: &mut Cache<'_>) -> Level {
 fn decode_substring(obj: LeanBorrowed<'_>) -> Substring {
   let s = LeanIxSubstring::from_ctor(obj.as_ctor());
   let str = s.get_obj(0).as_string().to_string();
-  let start_pos = Nat::from_obj(&s.get_obj(1));
-  let stop_pos = Nat::from_obj(&s.get_obj(2));
+  let start_pos = LeanNat::to_nat(&s.get_obj(1));
+  let stop_pos = LeanNat::to_nat(&s.get_obj(2));
   Substring { str, start_pos, stop_pos }
 }
 
@@ -681,14 +681,14 @@ fn decode_source_info(obj: LeanBorrowed<'_>) -> SourceInfo {
   match si.as_ctor().tag() {
     0 => {
       let leading = decode_substring(si.get_obj(0));
-      let pos = Nat::from_obj(&si.get_obj(1));
+      let pos = LeanNat::to_nat(&si.get_obj(1));
       let trailing = decode_substring(si.get_obj(2));
-      let end_pos = Nat::from_obj(&si.get_obj(3));
+      let end_pos = LeanNat::to_nat(&si.get_obj(3));
       SourceInfo::Original(leading, pos, trailing, end_pos)
     },
     1 => {
-      let pos = Nat::from_obj(&si.get_obj(0));
-      let end_pos = Nat::from_obj(&si.get_obj(1));
+      let pos = LeanNat::to_nat(&si.get_obj(0));
+      let end_pos = LeanNat::to_nat(&si.get_obj(1));
       let canonical = si.get_num_8(0) != 0;
       SourceInfo::Synthetic(pos, end_pos, canonical)
     },
@@ -768,10 +768,10 @@ fn decode_name_data_value(
     0 => DataValue::OfString(dv.get_obj(0).as_string().to_string()),
     1 => DataValue::OfBool(dv.get_num_8(0) != 0),
     2 => DataValue::OfName(decode_name(dv.get_obj(0), cache.global)),
-    3 => DataValue::OfNat(Nat::from_obj(&dv.get_obj(0))),
+    3 => DataValue::OfNat(LeanNat::to_nat(&dv.get_obj(0))),
     4 => {
       let i = LeanIxInt::from_ctor(dv.get_obj(0).as_ctor());
-      let nat = Nat::from_obj(&i.get_obj(0));
+      let nat = LeanNat::to_nat(&i.get_obj(0));
       let int = match i.as_ctor().tag() {
         0 => Int::OfNat(nat),
         1 => Int::NegSucc(nat),
@@ -799,7 +799,7 @@ pub fn decode_expr(obj: LeanBorrowed<'_>, cache: &mut Cache<'_>) -> Expr {
     _ => unreachable!("Invalid Lean.BinderInfo tag: {b}"),
   };
   let expr = match e.as_ctor().tag() {
-    0 => Expr::bvar(Nat::from_obj(&e.get_obj(0))),
+    0 => Expr::bvar(LeanNat::to_nat(&e.get_obj(0))),
     1 => Expr::fvar(decode_name(e.get_obj(0), cache.global)),
     2 => Expr::mvar(decode_name(e.get_obj(0), cache.global)),
     3 => Expr::sort(decode_level(e.get_obj(0), cache)),
@@ -842,7 +842,7 @@ pub fn decode_expr(obj: LeanBorrowed<'_>, cache: &mut Cache<'_>) -> Expr {
       let lit = LeanIxLiteral::from_ctor(e.get_obj(0).as_ctor());
       let inner = lit.get_obj(0);
       match lit.as_ctor().tag() {
-        0 => Expr::lit(Literal::NatVal(Nat::from_obj(&inner))),
+        0 => Expr::lit(Literal::NatVal(LeanNat::to_nat(&inner))),
         1 => Expr::lit(Literal::StrVal(inner.as_string().to_string())),
         tag => unreachable!("Invalid Lean.Literal tag: {tag}"),
       }
@@ -857,7 +857,7 @@ pub fn decode_expr(obj: LeanBorrowed<'_>, cache: &mut Cache<'_>) -> Expr {
     },
     11 => {
       let typ_name = decode_name(e.get_obj(0), cache.global);
-      let idx = Nat::from_obj(&e.get_obj(1));
+      let idx = LeanNat::to_nat(&e.get_obj(1));
       let struct_expr = decode_expr(e.get_obj(2), cache);
       Expr::proj(typ_name, idx, struct_expr)
     },
@@ -873,7 +873,7 @@ fn decode_recursor_rule(
 ) -> RecursorRule {
   let r = LeanIxRecursorRule::from_ctor(obj.as_ctor());
   let ctor_name = decode_name(r.get_obj(0), cache.global);
-  let n_fields = Nat::from_obj(&r.get_obj(1));
+  let n_fields = LeanNat::to_nat(&r.get_obj(1));
   let rhs = decode_expr(r.get_obj(2), cache);
   RecursorRule { ctor: ctor_name, n_fields, rhs }
 }
@@ -980,8 +980,8 @@ pub fn decode_constant_info(
     5 => {
       let inner = LeanIxInductiveVal::from_ctor(inner_obj.as_ctor());
       let constant_val = decode_constant_val(inner.get_obj(0), cache);
-      let num_params = Nat::from_obj(&inner.get_obj(1));
-      let num_indices = Nat::from_obj(&inner.get_obj(2));
+      let num_params = LeanNat::to_nat(&inner.get_obj(1));
+      let num_indices = LeanNat::to_nat(&inner.get_obj(2));
       let all: Vec<_> = collect_list_borrowed(inner.get_obj(3).as_list())
         .into_iter()
         .map(|o| decode_name(o, cache.global))
@@ -990,7 +990,7 @@ pub fn decode_constant_info(
         .into_iter()
         .map(|o| decode_name(o, cache.global))
         .collect();
-      let num_nested = Nat::from_obj(&inner.get_obj(5));
+      let num_nested = LeanNat::to_nat(&inner.get_obj(5));
       let is_rec = inner.get_num_8(0) != 0;
       let is_unsafe = inner.get_num_8(1) != 0;
       let is_reflexive = inner.get_num_8(2) != 0;
@@ -1010,9 +1010,9 @@ pub fn decode_constant_info(
       let inner = LeanIxConstructorVal::from_ctor(inner_obj.as_ctor());
       let constant_val = decode_constant_val(inner.get_obj(0), cache);
       let induct = decode_name(inner.get_obj(1), cache.global);
-      let cidx = Nat::from_obj(&inner.get_obj(2));
-      let num_params = Nat::from_obj(&inner.get_obj(3));
-      let num_fields = Nat::from_obj(&inner.get_obj(4));
+      let cidx = LeanNat::to_nat(&inner.get_obj(2));
+      let num_params = LeanNat::to_nat(&inner.get_obj(3));
+      let num_fields = LeanNat::to_nat(&inner.get_obj(4));
       let is_unsafe = inner.get_num_8(0) != 0;
       ConstantInfo::CtorInfo(ConstructorVal {
         cnst: constant_val,
@@ -1030,10 +1030,10 @@ pub fn decode_constant_info(
         .into_iter()
         .map(|o| decode_name(o, cache.global))
         .collect();
-      let num_params = Nat::from_obj(&inner.get_obj(2));
-      let num_indices = Nat::from_obj(&inner.get_obj(3));
-      let num_motives = Nat::from_obj(&inner.get_obj(4));
-      let num_minors = Nat::from_obj(&inner.get_obj(5));
+      let num_params = LeanNat::to_nat(&inner.get_obj(2));
+      let num_indices = LeanNat::to_nat(&inner.get_obj(3));
+      let num_motives = LeanNat::to_nat(&inner.get_obj(4));
+      let num_minors = LeanNat::to_nat(&inner.get_obj(5));
       let rules: Vec<_> = collect_list_borrowed(inner.get_obj(6).as_list())
         .into_iter()
         .map(|o| decode_recursor_rule(o, cache))
@@ -1117,11 +1117,11 @@ extern "C" fn rs_tmp_decode_const_map(
   obj: LeanList<LeanBorrowed<'_>>,
 ) -> usize {
   // Enable hash-consed size tracking for debugging
-  crate::ix::compile::TRACK_HASH_CONSED_SIZE
+  ix_compile::compile::TRACK_HASH_CONSED_SIZE
     .store(true, std::sync::atomic::Ordering::Relaxed);
 
   // Enable verbose sharing analysis for debugging pathological blocks
-  crate::ix::compile::ANALYZE_SHARING
+  ix_compile::compile::ANALYZE_SHARING
     .store(false, std::sync::atomic::Ordering::Relaxed);
 
   let env = decode_env(obj);
@@ -1150,12 +1150,12 @@ extern "C" fn rs_tmp_decode_const_map(
   // Phase 1b: Aux_gen congruence (full env)
   eprintln!("[rust-compile] Phase 1b: Checking aux_gen congruence...");
   {
-    use crate::ix::compile::aux_gen::{self, PatchedConstant, expr_utils};
-    use crate::ix::congruence::const_alpha_eq;
-    use crate::ix::env::{
+    use ix_common::env::{
       ConstantInfo as LeanCI, ConstantVal as LeanCV, DefinitionSafety,
       DefinitionVal, InductiveVal, ReducibilityHints,
     };
+    use ix_compile::compile::aux_gen::{self, PatchedConstant, expr_utils};
+    use ix_compile::congruence::const_alpha_eq;
     use rustc_hash::{FxHashMap, FxHashSet};
 
     // Build per-block PermCtx for the permutation-aware comparator.
@@ -1165,11 +1165,11 @@ extern "C" fn rs_tmp_decode_const_map(
     fn build_perm_ctx_1b(
       all: &[Name],
       env: &Env,
-      stt: &crate::ix::compile::CompileState,
+      stt: &ix_compile::compile::CompileState,
       perm: &[usize],
-    ) -> Option<crate::ix::congruence::perm::PermCtx> {
-      use crate::ix::congruence::perm::{PermCtx, RecHeadInfo, RecHeadKind};
-      use crate::ix::env::{ConstantInfo as LeanCI, ExprData};
+    ) -> Option<ix_compile::congruence::perm::PermCtx> {
+      use ix_common::env::{ConstantInfo as LeanCI, ExprData};
+      use ix_compile::congruence::perm::{PermCtx, RecHeadInfo, RecHeadKind};
 
       let first = all.first()?;
       let n_params = match env.get(first) {
@@ -1257,7 +1257,7 @@ extern "C" fn rs_tmp_decode_const_map(
         );
       }
 
-      let mut const_addr: FxHashMap<Name, crate::ix::address::Address> =
+      let mut const_addr: FxHashMap<Name, ix_common::address::Address> =
         FxHashMap::default();
       let mut add_addr = |name: &Name| {
         if let Some(addr) = stt.resolve_addr(name) {
@@ -1290,8 +1290,8 @@ extern "C" fn rs_tmp_decode_const_map(
       }
       fn collect_const_addrs(
         e: &Expr,
-        stt: &crate::ix::compile::CompileState,
-        out: &mut FxHashMap<Name, crate::ix::address::Address>,
+        stt: &ix_compile::compile::CompileState,
+        out: &mut FxHashMap<Name, ix_common::address::Address>,
       ) {
         match e.as_data() {
           ExprData::Const(n, _, _) => {
@@ -1377,7 +1377,7 @@ extern "C" fn rs_tmp_decode_const_map(
         continue;
       }
 
-      let mut local_kctx = crate::ix::compile::KernelCtx::new();
+      let mut local_kctx = ix_compile::compile::KernelCtx::new();
       expr_utils::ensure_prelude_in_kenv_of(&stt, &mut local_kctx);
       let orig_aux_out = match aux_gen::generate_aux_patches(
         &original_classes,
@@ -1405,7 +1405,7 @@ extern "C" fn rs_tmp_decode_const_map(
       // `rs_compile_validate_aux`) for the full builder; the
       // `#[cfg(feature = "test-ffi")]` Phase 1b path here uses a
       // local copy with the same logic.
-      let perm_ctx_1b: Option<crate::ix::congruence::perm::PermCtx> =
+      let perm_ctx_1b: Option<ix_compile::congruence::perm::PermCtx> =
         if let Some(perm) = &orig_aux_out.perm
           && !perm.is_empty()
         {
@@ -1475,7 +1475,7 @@ extern "C" fn rs_tmp_decode_const_map(
         };
         let orig_ci: &LeanCI = orig_ci_ref;
         let eq_result = match &perm_ctx_1b {
-          Some(ctx) => crate::ix::congruence::perm::const_alpha_eq_with_perm(
+          Some(ctx) => ix_compile::congruence::perm::const_alpha_eq_with_perm(
             &gen_ci, orig_ci, ctx,
           ),
           None => const_alpha_eq(&gen_ci, orig_ci),
@@ -1598,9 +1598,9 @@ extern "C" fn rs_tmp_decode_const_map(
   eprintln!("[rust-compile] Phase 6: Deserializing and re-decompiling...");
   let t4 = std::time::Instant::now();
   let mut buf: &[u8] = &serialized;
-  match crate::ix::ixon::env::Env::get(&mut buf) {
+  match ixon::env::Env::get(&mut buf) {
     Ok(fresh_env) => {
-      let fresh_stt = crate::ix::compile::CompileState {
+      let fresh_stt = ix_compile::compile::CompileState {
         env: fresh_env,
         ..Default::default()
       };
@@ -1690,7 +1690,7 @@ impl PhaseResult {
 extern "C" fn rs_compile_validate_aux(
   obj: LeanList<LeanBorrowed<'_>>,
 ) -> usize {
-  use crate::ix::congruence::const_alpha_eq;
+  use ix_compile::congruence::const_alpha_eq;
   use rustc_hash::FxHashSet;
 
   let t_total = std::time::Instant::now();
@@ -1796,10 +1796,10 @@ extern "C" fn rs_compile_validate_aux(
   let mut p2 = PhaseResult::new("2. Aux_gen congruence");
   println!("{VALIDATE_PREFIX} phase 2: checking aux_gen congruence...");
   {
-    use crate::ix::compile::aux_gen::{self, PatchedConstant, expr_utils};
-    use crate::ix::compile::{KernelCtx, mk_indc};
-    use crate::ix::env::ConstantInfo as LeanCI;
-    use crate::ix::mutual::MutConst;
+    use ix_common::env::ConstantInfo as LeanCI;
+    use ix_compile::compile::aux_gen::{self, PatchedConstant, expr_utils};
+    use ix_compile::compile::{KernelCtx, mk_indc};
+    use ix_compile::mutual::MutConst;
 
     // Ephemeral kernel context for original-structure congruence testing.
     // Shared across all blocks (accumulates inductives incrementally).
@@ -1867,7 +1867,7 @@ extern "C" fn rs_compile_validate_aux(
     // introducing races (even though individual DashMap inserts are safe,
     // a reader may observe a partially-ingressed kctx and fail).
     {
-      use crate::ix::graph::get_constant_info_references;
+      use ix_compile::graph::get_constant_info_references;
       // Step A (serial): enumerate the transitive-closure of names to
       // ingress. BFS walking the env hashmap is cheap — the per-node cost
       // is a lookup and a ref-walk, dwarfed by Step B's actual ingress.
@@ -1913,18 +1913,18 @@ extern "C" fn rs_compile_validate_aux(
 
     // Build a `PermCtx` for the block: the congruence comparator uses
     // it to walk gen vs orig in lockstep with permutation awareness.
-    // See `crate::ix::congruence::perm` for details.
+    // See `ix_compile::congruence::perm` for details.
     //
     // `n_primary = all.len()` because Phase 2 uses singleton classes
     // (one class per original, no alpha-collapse at the primary level).
     fn build_perm_ctx(
       all: &[Name],
       env: &Env,
-      stt: &crate::ix::compile::CompileState,
+      stt: &ix_compile::compile::CompileState,
       perm: &[usize],
-    ) -> Option<crate::ix::congruence::perm::PermCtx> {
-      use crate::ix::congruence::perm::{PermCtx, RecHeadInfo};
-      use crate::ix::env::ConstantInfo as LeanCI;
+    ) -> Option<ix_compile::congruence::perm::PermCtx> {
+      use ix_common::env::ConstantInfo as LeanCI;
+      use ix_compile::congruence::perm::{PermCtx, RecHeadInfo};
       use rustc_hash::FxHashMap;
 
       let first = all.first()?;
@@ -1968,7 +1968,7 @@ extern "C" fn rs_compile_validate_aux(
       // - Aux     `.below_N` (kind = Below) — `{first}.below_{N}`
       // - Primary `.brecOn`/.go/.eq (kind = BRecOn)
       // - Aux     `.brecOn_N`/.go/.eq (kind = BRecOn)
-      use crate::ix::congruence::perm::RecHeadKind;
+      use ix_compile::congruence::perm::RecHeadKind;
       let n_motives = n_primary + source_aux_ctor_counts.len();
       let n_minors: usize = primary_ctor_counts.iter().sum::<usize>()
         + source_aux_ctor_counts.iter().sum::<usize>();
@@ -2049,7 +2049,7 @@ extern "C" fn rs_compile_validate_aux(
       // operate on collapsed blocks pick up the rewrites automatically.
       // (Built below at the PermCtx construction site so `env`/`stt`
       // borrows don't conflict with the const_addr-collecting closure.)
-      let mut const_addr: FxHashMap<Name, crate::ix::address::Address> =
+      let mut const_addr: FxHashMap<Name, ix_common::address::Address> =
         FxHashMap::default();
       let mut add_addr = |name: &Name| {
         if let Some(addr) = stt.resolve_addr(name) {
@@ -2084,10 +2084,10 @@ extern "C" fn rs_compile_validate_aux(
       }
       fn collect_const_addrs(
         e: &Expr,
-        stt: &crate::ix::compile::CompileState,
-        out: &mut FxHashMap<Name, crate::ix::address::Address>,
+        stt: &ix_compile::compile::CompileState,
+        out: &mut FxHashMap<Name, ix_common::address::Address>,
       ) {
-        use crate::ix::env::ExprData;
+        use ix_common::env::ExprData;
         match e.as_data() {
           ExprData::Const(n, _, _) => {
             if let Some(addr) = stt.resolve_addr(n) {
@@ -2145,12 +2145,12 @@ extern "C" fn rs_compile_validate_aux(
     }
 
     // Helper to wrap a patch as a Lean `ConstantInfo` for alpha-eq.
-    fn patch_to_lean_ci(patch: &PatchedConstant) -> Option<ConstantInfo> {
-      use crate::ix::env::{
+    fn patch_to_lean_ci(patch: &PatchedConstant) -> ConstantInfo {
+      use ix_common::env::{
         ConstantInfo as LeanCI, ConstantVal as LeanCV, DefinitionSafety,
         DefinitionVal, InductiveVal, ReducibilityHints,
       };
-      Some(match patch {
+      match patch {
         PatchedConstant::Rec(r) => LeanCI::RecInfo(r.clone()),
         PatchedConstant::CasesOn(d) | PatchedConstant::RecOn(d) => {
           LeanCI::DefnInfo(DefinitionVal {
@@ -2202,7 +2202,7 @@ extern "C" fn rs_compile_validate_aux(
           is_unsafe: false,
           is_reflexive: bi.is_reflexive,
         }),
-      })
+      }
     }
 
     // Diagnostic dump printed per-thread on alpha-eq failure. Writes go
@@ -2215,7 +2215,7 @@ extern "C" fn rs_compile_validate_aux(
       orig_ci: &ConstantInfo,
       err: &str,
     ) {
-      use crate::ix::env::{Expr, ExprData as ED};
+      use ix_common::env::{Expr, ExprData as ED};
 
       fn extract_sort(e: &Expr, depth: usize) -> String {
         match e.as_data() {
@@ -2268,7 +2268,7 @@ extern "C" fn rs_compile_validate_aux(
         // Build a PermCtx for this block once. When the block has no
         // nested auxes (`perm == None` or empty), we pass `None` and
         // fall through to plain `const_alpha_eq`.
-        let perm_ctx: Option<crate::ix::congruence::perm::PermCtx> =
+        let perm_ctx: Option<ix_compile::congruence::perm::PermCtx> =
           if let Some(p) = &orig_aux_out.perm
             && !p.is_empty()
           {
@@ -2282,16 +2282,18 @@ extern "C" fn rs_compile_validate_aux(
         let mut result = BlockResult::default();
         let mut dumped = 0usize;
         for (patch_name, patch) in orig_patches.iter() {
-          let Some(gen_ci) = patch_to_lean_ci(patch) else { continue };
+          let gen_ci = patch_to_lean_ci(patch);
           let Some(orig_ci_ref) = env.get(patch_name) else {
             continue; // Synthetic name — no Lean original.
           };
           let orig_ci: &LeanCI = orig_ci_ref;
 
           let eq_result = match &perm_ctx {
-            Some(ctx) => crate::ix::congruence::perm::const_alpha_eq_with_perm(
-              &gen_ci, orig_ci, ctx,
-            ),
+            Some(ctx) => {
+              ix_compile::congruence::perm::const_alpha_eq_with_perm(
+                &gen_ci, orig_ci, ctx,
+              )
+            },
             None => const_alpha_eq(&gen_ci, orig_ci),
           };
 
@@ -2333,7 +2335,7 @@ extern "C" fn rs_compile_validate_aux(
   // Precompute canonical addresses: any orig_addr that matches another Named
   // entry's canonical addr is in consts legitimately (not an ephemeral leak).
   // The gather itself parallelizes cleanly over the DashMap.
-  let canonical_addrs: FxHashSet<crate::ix::address::Address> =
+  let canonical_addrs: FxHashSet<ix_common::address::Address> =
     stt.env.named.par_iter().map(|e| e.value().addr.clone()).collect();
 
   // Parallel scan over named DashMap. Each check is read-only against
@@ -2463,17 +2465,17 @@ extern "C" fn rs_compile_validate_aux(
     }
 
     fn describe_addr(
-      stt: &crate::ix::compile::CompileState,
-      addr: &crate::ix::address::Address,
+      stt: &ix_compile::compile::CompileState,
+      addr: &ix_common::address::Address,
     ) -> String {
       match stt.env.get_const(addr).map(|c| c.info.clone()) {
-        Some(crate::ix::ixon::constant::ConstantInfo::RPrj(p)) => {
+        Some(ixon::constant::ConstantInfo::RPrj(p)) => {
           format!("RPrj(idx={}, block={:.12})", p.idx, p.block.hex())
         },
-        Some(crate::ix::ixon::constant::ConstantInfo::IPrj(p)) => {
+        Some(ixon::constant::ConstantInfo::IPrj(p)) => {
           format!("IPrj(idx={}, block={:.12})", p.idx, p.block.hex())
         },
-        Some(crate::ix::ixon::constant::ConstantInfo::CPrj(p)) => {
+        Some(ixon::constant::ConstantInfo::CPrj(p)) => {
           format!(
             "CPrj(idx={}, cidx={}, block={:.12})",
             p.idx,
@@ -2487,14 +2489,14 @@ extern "C" fn rs_compile_validate_aux(
     }
 
     fn describe_rprj_block(
-      stt: &crate::ix::compile::CompileState,
-      addr: &crate::ix::address::Address,
+      stt: &ix_compile::compile::CompileState,
+      addr: &ix_common::address::Address,
     ) -> Option<String> {
       fn expand_shares_expr(
-        expr: &Arc<crate::ix::ixon::expr::Expr>,
-        sharing: &[Arc<crate::ix::ixon::expr::Expr>],
-      ) -> Arc<crate::ix::ixon::expr::Expr> {
-        use crate::ix::ixon::expr::Expr;
+        expr: &Arc<ixon::expr::Expr>,
+        sharing: &[Arc<ixon::expr::Expr>],
+      ) -> Arc<ixon::expr::Expr> {
+        use ixon::expr::Expr;
         match expr.as_ref() {
           Expr::Share(idx) => sharing.get(*idx as usize).map_or_else(
             || expr.clone(),
@@ -2528,10 +2530,10 @@ extern "C" fn rs_compile_validate_aux(
       }
 
       fn expand_shares_member(
-        member: &crate::ix::ixon::constant::MutConst,
-        sharing: &[Arc<crate::ix::ixon::expr::Expr>],
-      ) -> crate::ix::ixon::constant::MutConst {
-        use crate::ix::ixon::constant::{MutConst, RecursorRule};
+        member: &ixon::constant::MutConst,
+        sharing: &[Arc<ixon::expr::Expr>],
+      ) -> ixon::constant::MutConst {
+        use ixon::constant::{MutConst, RecursorRule};
         match member {
           MutConst::Defn(def) => {
             let mut def = def.clone();
@@ -2563,18 +2565,18 @@ extern "C" fn rs_compile_validate_aux(
         }
       }
 
-      fn expr_hash_prefix(expr: &Arc<crate::ix::ixon::expr::Expr>) -> String {
+      fn expr_hash_prefix(expr: &Arc<ixon::expr::Expr>) -> String {
         let mut buf = Vec::new();
-        crate::ix::ixon::serialize::put_expr(expr, &mut buf);
-        let h = crate::ix::address::Address::hash(&buf);
+        ixon::serialize::put_expr(expr, &mut buf);
+        let h = ix_common::address::Address::hash(&buf);
         format!("{}:{}", buf.len(), &h.hex()[..12])
       }
 
       fn member_parts_summary(
-        member: &crate::ix::ixon::constant::MutConst,
-        sharing: &[Arc<crate::ix::ixon::expr::Expr>],
+        member: &ixon::constant::MutConst,
+        sharing: &[Arc<ixon::expr::Expr>],
       ) -> String {
-        use crate::ix::ixon::constant::MutConst;
+        use ixon::constant::MutConst;
         let expanded = expand_shares_member(member, sharing);
         match expanded {
           MutConst::Defn(def) => {
@@ -2598,12 +2600,12 @@ extern "C" fn rs_compile_validate_aux(
       }
 
       let proj = match stt.env.get_const(addr).map(|c| c.info.clone()) {
-        Some(crate::ix::ixon::constant::ConstantInfo::RPrj(p)) => p,
+        Some(ixon::constant::ConstantInfo::RPrj(p)) => p,
         _ => return None,
       };
       let block = stt.env.get_const(&proj.block)?;
       let member_count_for_names = match &block.info {
-        crate::ix::ixon::constant::ConstantInfo::Muts(ms) => ms.len(),
+        ixon::constant::ConstantInfo::Muts(ms) => ms.len(),
         _ => 0,
       };
       let proj_names: Vec<String> = (0..member_count_for_names)
@@ -2615,17 +2617,17 @@ extern "C" fn rs_compile_validate_aux(
             .chain(stt.name_to_addr.iter())
             .filter_map(|entry| {
               match stt.env.get_const(entry.value()).map(|c| c.info.clone()) {
-                Some(crate::ix::ixon::constant::ConstantInfo::RPrj(p))
+                Some(ixon::constant::ConstantInfo::RPrj(p))
                   if p.block == proj.block && p.idx == idx =>
                 {
                   Some(entry.key().pretty())
                 },
-                Some(crate::ix::ixon::constant::ConstantInfo::IPrj(p))
+                Some(ixon::constant::ConstantInfo::IPrj(p))
                   if p.block == proj.block && p.idx == idx =>
                 {
                   Some(entry.key().pretty())
                 },
-                Some(crate::ix::ixon::constant::ConstantInfo::DPrj(p))
+                Some(ixon::constant::ConstantInfo::DPrj(p))
                   if p.block == proj.block && p.idx == idx =>
                 {
                   Some(entry.key().pretty())
@@ -2659,22 +2661,22 @@ extern "C" fn rs_compile_validate_aux(
         })
         .collect();
       let (members, per_member_hashes) = match &block.info {
-        crate::ix::ixon::constant::ConstantInfo::Muts(ms) => {
+        ixon::constant::ConstantInfo::Muts(ms) => {
           let per: Vec<String> = ms
             .iter()
             .map(|m| {
               // Compute a per-member byte hash for quick diffing.
               let mut buf = Vec::new();
               m.put(&mut buf);
-              let h = crate::ix::address::Address::hash(&buf);
+              let h = ix_common::address::Address::hash(&buf);
               let expanded = expand_shares_member(m, &block.sharing);
               let mut expanded_buf = Vec::new();
               expanded.put(&mut expanded_buf);
-              let expanded_h = crate::ix::address::Address::hash(&expanded_buf);
+              let expanded_h = ix_common::address::Address::hash(&expanded_buf);
               let tag = match m {
-                crate::ix::ixon::constant::MutConst::Defn(_) => "Defn",
-                crate::ix::ixon::constant::MutConst::Indc(_) => "Indc",
-                crate::ix::ixon::constant::MutConst::Recr(_) => "Recr",
+                ixon::constant::MutConst::Defn(_) => "Defn",
+                ixon::constant::MutConst::Indc(_) => "Indc",
+                ixon::constant::MutConst::Recr(_) => "Recr",
               };
               let parts = member_parts_summary(m, &block.sharing);
               format!(
@@ -3563,7 +3565,7 @@ extern "C" fn rs_compile_validate_aux(
     // ends before we drop it.
     let fresh_env = {
       let mut buf: &[u8] = &serialized;
-      match crate::ix::ixon::env::Env::get(&mut buf) {
+      match ixon::env::Env::get(&mut buf) {
         Ok(fe) => Some(fe),
         Err(e) => {
           p7.record_fail(format!("deserialize FAILED: {e}"));
@@ -3576,7 +3578,7 @@ extern "C" fn rs_compile_validate_aux(
 
     match fresh_env {
       Some(fresh_env) => {
-        let fresh_stt = crate::ix::compile::CompileState {
+        let fresh_stt = ix_compile::compile::CompileState {
           env: fresh_env,
           ..Default::default()
         };
@@ -3672,7 +3674,7 @@ extern "C" fn rs_compile_validate_aux(
           (None, None) => true,
           _ => false,
         };
-        let aux_eq_result = if crate::ix::decompile::is_aux_gen_suffix(name)
+        let aux_eq_result = if ix_compile::decompile::is_aux_gen_suffix(name)
           && !(type_ok && val_ok)
         {
           Some(aux_congruence_result(
@@ -3738,8 +3740,8 @@ extern "C" fn rs_compile_validate_aux(
   // ══════════════════════════════════════════════════════════════════════
   let mut p8 = PhaseResult::new("8. Nested detection");
   {
-    use crate::ix::compile::aux_gen::nested::build_compile_flat_block;
-    use crate::ix::env::ConstantInfo;
+    use ix_common::env::ConstantInfo;
+    use ix_compile::compile::aux_gen::nested::build_compile_flat_block;
 
     /// Build a dotted Lean name from a dot-separated string.
     /// Numeric components (e.g. the `0` in `_private.Foo.0.Bar`) are
@@ -3880,7 +3882,8 @@ impl ConstSizeBreakdown {
 
 #[cfg(feature = "test-ffi")]
 /// Analyze the serialized size of a constant and its transitive dependencies.
-fn analyze_const_size(stt: &crate::ix::compile::CompileState, name_str: &str) {
+fn analyze_const_size(stt: &ix_compile::compile::CompileState, name_str: &str) {
+
   // Build a global name index for metadata serialization
   let name_index = build_name_index(stt);
 
@@ -4013,10 +4016,10 @@ fn analyze_const_size(stt: &crate::ix::compile::CompileState, name_str: &str) {
 /// Build a name index for metadata serialization.
 #[cfg(feature = "test-ffi")]
 fn build_name_index(
-  stt: &crate::ix::compile::CompileState,
-) -> crate::ix::ixon::metadata::NameIndex {
-  use crate::ix::address::Address;
-  use crate::ix::ixon::metadata::NameIndex;
+  stt: &ix_compile::compile::CompileState,
+) -> ixon::metadata::NameIndex {
+  use ix_common::address::Address;
+  use ixon::metadata::NameIndex;
 
   let mut idx = NameIndex::new();
   let mut counter: u64 = 0;
@@ -4037,10 +4040,10 @@ fn build_name_index(
 /// Compute size breakdown for a constant (alpha-invariant vs metadata).
 #[cfg(feature = "test-ffi")]
 fn compute_const_size_breakdown(
-  constant: &crate::ix::ixon::constant::Constant,
+  constant: &ixon::constant::Constant,
   name: &Name,
-  stt: &crate::ix::compile::CompileState,
-  name_index: &crate::ix::ixon::metadata::NameIndex,
+  stt: &ix_compile::compile::CompileState,
+  name_index: &ixon::metadata::NameIndex,
 ) -> ConstSizeBreakdown {
   // Alpha-invariant size
   let alpha_size = serialized_const_size(constant);
@@ -4058,8 +4061,8 @@ fn compute_const_size_breakdown(
 /// Compute the serialized size of constant metadata.
 #[cfg(feature = "test-ffi")]
 fn serialized_meta_size(
-  meta: &crate::ix::ixon::metadata::ConstantMeta,
-  name_index: &crate::ix::ixon::metadata::NameIndex,
+  meta: &ixon::metadata::ConstantMeta,
+  name_index: &ixon::metadata::NameIndex,
 ) -> usize {
   let mut buf = Vec::new();
   meta
@@ -4088,9 +4091,7 @@ pub fn parse_name(s: &str) -> Name {
 
 /// Compute the serialized size of a constant.
 #[cfg(feature = "test-ffi")]
-fn serialized_const_size(
-  constant: &crate::ix::ixon::constant::Constant,
-) -> usize {
+fn serialized_const_size(constant: &ixon::constant::Constant) -> usize {
   let mut buf = Vec::new();
   constant.put(&mut buf);
   buf.len()
@@ -4098,11 +4099,11 @@ fn serialized_const_size(
 
 /// Analyze block size statistics: hash-consing vs serialization.
 #[cfg(feature = "test-ffi")]
-fn analyze_block_size_stats(stt: &crate::ix::compile::CompileState) {
-  use crate::ix::compile::BlockSizeStats;
+fn analyze_block_size_stats(stt: &ix_compile::compile::CompileState) {
+  use ix_compile::compile::BlockSizeStats;
 
   // Check if hash-consed size tracking was enabled
-  let tracking_enabled = crate::ix::compile::TRACK_HASH_CONSED_SIZE
+  let tracking_enabled = ix_compile::compile::TRACK_HASH_CONSED_SIZE
     .load(std::sync::atomic::Ordering::Relaxed);
   if !tracking_enabled {
     println!("\n=== Block Size Analysis ===");

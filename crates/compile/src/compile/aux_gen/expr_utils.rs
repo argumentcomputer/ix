@@ -9,14 +9,14 @@
 
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use crate::ix::address::Address;
-use crate::ix::compile::nat_conv::{nat_to_u64, nat_to_usize};
-use crate::ix::env::{
+use crate::compile::nat_conv::{nat_to_u64, nat_to_usize};
+use bignat::Nat;
+use ix_common::address::Address;
+use ix_common::env::{
   BinderInfo, Expr as LeanExpr, ExprData, Level, LevelData, Name,
 };
-use crate::ix::kernel::ingress::{lean_level_to_kuniv, resolve_lean_name_addr};
-use crate::ix::kernel::mode::Meta;
-use lean_ffi::nat::Nat;
+use ix_kernel::ingress::{lean_level_to_kuniv, resolve_lean_name_addr};
+use ix_kernel::mode::Meta;
 
 // =========================================================================
 // FVar infrastructure
@@ -28,7 +28,7 @@ use lean_ffi::nat::Nat;
 /// FVar space. The `fvar_name` is a unique identifier; `binder_name` is
 /// the cosmetic name that appears in the final forall/lambda chain.
 #[derive(Clone)]
-pub(crate) struct LocalDecl {
+pub struct LocalDecl {
   pub fvar_name: Name,
   pub binder_name: Name,
   pub domain: LeanExpr,
@@ -36,7 +36,7 @@ pub(crate) struct LocalDecl {
 }
 
 /// Create a fresh FVar with a unique name derived from `prefix` and `idx`.
-pub(crate) fn fresh_fvar(prefix: &str, idx: usize) -> (Name, LeanExpr) {
+pub fn fresh_fvar(prefix: &str, idx: usize) -> (Name, LeanExpr) {
   let name = Name::str(Name::anon(), format!("_{}_{}", prefix, idx));
   let fvar = LeanExpr::fvar(name.clone());
   (name, fvar)
@@ -119,13 +119,13 @@ pub(super) struct IndRecInfo {
 /// loop body and terminates peeling, potentially yielding a shorter
 /// `indices` vec than Lean's stored `num_indices`.
 pub(super) fn decompose_inductive_type(
-  ind: &crate::ix::env::InductiveVal,
+  ind: &ix_common::env::InductiveVal,
   ind_univs: &[Level],
   param_fvars: &[LocalDecl],
-  stt: &crate::ix::compile::CompileState,
-  kctx: &mut crate::ix::compile::KernelCtx,
-) -> Result<IndRecInfo, crate::ix::ixon::CompileError> {
-  use crate::ix::ixon::CompileError;
+  stt: &crate::compile::CompileState,
+  kctx: &mut crate::compile::KernelCtx,
+) -> Result<IndRecInfo, ixon::CompileError> {
+  use ixon::CompileError;
 
   let n_params = param_fvars.len();
   let ty = subst_levels(&ind.cnst.typ, &ind.cnst.level_params, ind_univs);
@@ -274,7 +274,7 @@ pub(super) fn decompose_inductive_type(
 /// position MUST verify `decls.len() == n` before indexing — otherwise
 /// a surprising input shape becomes a panic. Prefer
 /// [`forall_telescope_exact`] when a precise arity is required.
-pub(crate) fn forall_telescope(
+pub fn forall_telescope(
   expr: &LeanExpr,
   n: usize,
   prefix: &str,
@@ -322,10 +322,7 @@ pub(super) fn forall_telescope_exact(
   start_idx: usize,
   context: &str,
   what: &str,
-) -> Result<
-  (Vec<LeanExpr>, Vec<LocalDecl>, LeanExpr),
-  crate::ix::ixon::CompileError,
-> {
+) -> Result<(Vec<LeanExpr>, Vec<LocalDecl>, LeanExpr), ixon::CompileError> {
   let (fvars, decls, body) = forall_telescope(expr, n, prefix, start_idx);
   if decls.len() != n {
     // Include enough context to pinpoint the shape problem: every peeled
@@ -337,7 +334,7 @@ pub(super) fn forall_telescope_exact(
         format!("{}:{}", d.binder_name.pretty(), describe_expr_head(&d.domain))
       })
       .collect();
-    return Err(crate::ix::ixon::CompileError::UnsupportedExpr {
+    return Err(ixon::CompileError::UnsupportedExpr {
       desc: format!(
         "{context}: expected {n} leading foralls ({what}), got {actual}. \
          Peeled binders (name:domain_kind): [{binders}]. \
@@ -447,7 +444,7 @@ pub(super) fn mk_forall(body: LeanExpr, binders: &[LocalDecl]) -> LeanExpr {
 /// Build a lambda chain by batch-abstracting all FVars in a single pass.
 ///
 /// Same semantics as `mk_forall` but produces `λ (x : T), body`.
-pub(crate) fn mk_lambda(body: LeanExpr, binders: &[LocalDecl]) -> LeanExpr {
+pub fn mk_lambda(body: LeanExpr, binders: &[LocalDecl]) -> LeanExpr {
   mk_binder_chain(body, binders, BinderKind::Lambda)
 }
 
@@ -601,10 +598,7 @@ pub(super) fn batch_abstract(
 ///
 /// `instantiate1` is used when peeling forall binders during recursor
 /// construction (matching Lean C++ and lean4lean).
-pub(crate) fn instantiate1(
-  body: &LeanExpr,
-  replacement: &LeanExpr,
-) -> LeanExpr {
+pub fn instantiate1(body: &LeanExpr, replacement: &LeanExpr) -> LeanExpr {
   instantiate1_at(body, replacement, 0)
 }
 
@@ -862,7 +856,7 @@ pub(super) fn shift_vars(
 // =========================================================================
 
 /// Substitute universe parameters in expressions.
-pub(crate) fn subst_levels(
+pub fn subst_levels(
   expr: &LeanExpr,
   params: &[Name],
   univs: &[Level],
@@ -1259,7 +1253,7 @@ impl<'a> RestoreState<'a> {
 }
 
 /// Open lambda binders into FVars (matching forall_telescope but for lambdas).
-pub(crate) fn lambda_telescope(
+pub fn lambda_telescope(
   expr: &LeanExpr,
   n: usize,
   prefix: &str,
@@ -1490,7 +1484,7 @@ pub(super) fn mk_const(name: &Name, univs: &[Level]) -> LeanExpr {
 ///
 /// Called by the kernel's `mk_local_decl` during inductive processing
 /// to ensure parameter/field types are clean before entering the local context.
-pub(crate) fn consume_type_annotations(e: &LeanExpr) -> LeanExpr {
+pub fn consume_type_annotations(e: &LeanExpr) -> LeanExpr {
   let (head, args) = decompose_apps(e);
   if let ExprData::Const(name, _, _) = head.as_data() {
     let n = name.pretty();
@@ -1507,7 +1501,7 @@ pub(crate) fn consume_type_annotations(e: &LeanExpr) -> LeanExpr {
 }
 
 /// Decompose an application spine: `f a1 a2 ... an` -> `(f, [a1, ..., an])`.
-pub(crate) fn decompose_apps(expr: &LeanExpr) -> (LeanExpr, Vec<LeanExpr>) {
+pub fn decompose_apps(expr: &LeanExpr) -> (LeanExpr, Vec<LeanExpr>) {
   let mut args = Vec::new();
   let mut cur = expr.clone();
   while let ExprData::App(f, a, _) = cur.as_data() {
@@ -1724,14 +1718,14 @@ pub(super) fn find_motive_fvar(
 /// ```
 /// Ensure PUnit and PProd are in the given kenv for kernel type inference.
 /// Accepts `kctx` so callers can choose which KernelCtx to populate.
-pub(crate) fn ensure_prelude_in_kenv_of(
-  stt: &crate::ix::compile::CompileState,
-  kctx: &mut crate::ix::compile::KernelCtx,
+pub fn ensure_prelude_in_kenv_of(
+  stt: &crate::compile::CompileState,
+  kctx: &mut crate::compile::KernelCtx,
 ) {
-  use crate::ix::kernel::constant::KConst;
-  use crate::ix::kernel::expr::KExpr;
-  use crate::ix::kernel::id::KId;
-  use crate::ix::kernel::level::KUniv;
+  use ix_kernel::constant::KConst;
+  use ix_kernel::expr::KExpr;
+  use ix_kernel::id::KId;
+  use ix_kernel::level::KUniv;
 
   let n2a = Some(&stt.name_to_addr);
   let aux_n2a = Some(&stt.aux_name_to_addr);
@@ -1950,17 +1944,15 @@ pub(crate) fn ensure_prelude_in_kenv_of(
 ///   requires the parent).
 fn ensure_in_kenv_of_inner_env(
   name: &Name,
-  lean_env: &crate::ix::env::Env,
-  stt: &crate::ix::compile::CompileState,
-  kenv: &mut crate::ix::kernel::env::KEnv<Meta>,
+  lean_env: &ix_common::env::Env,
+  stt: &crate::compile::CompileState,
+  kenv: &mut ix_kernel::env::KEnv<Meta>,
   replace_axio_stub: bool,
 ) {
-  use crate::ix::env::{ConstantInfo as LCI, DefinitionSafety};
-  use crate::ix::kernel::constant::KConst;
-  use crate::ix::kernel::id::KId;
-  use crate::ix::kernel::ingress::{
-    lean_expr_to_zexpr_cached, param_names_hash,
-  };
+  use ix_common::env::{ConstantInfo as LCI, DefinitionSafety};
+  use ix_kernel::constant::KConst;
+  use ix_kernel::id::KId;
+  use ix_kernel::ingress::{lean_expr_to_zexpr_cached, param_names_hash};
 
   let n2a = Some(&stt.name_to_addr);
   let aux_n2a = Some(&stt.aux_name_to_addr);
@@ -1982,10 +1974,10 @@ fn ensure_in_kenv_of_inner_env(
   // Helper: convert a LeanExpr to KExpr with the given level param names,
   // using the KEnv's persistent ingress cache. Callers are top-level, so
   // we start with an empty binder-name stack.
-  let to_z = |expr: &crate::ix::env::Expr,
+  let to_z = |expr: &ix_common::env::Expr,
               lp: &[Name],
-              kenv: &mut crate::ix::kernel::env::KEnv<Meta>|
-   -> crate::ix::kernel::expr::KExpr<Meta> {
+              kenv: &mut ix_kernel::env::KEnv<Meta>|
+   -> ix_kernel::expr::KExpr<Meta> {
     let pn_h = param_names_hash(lp);
     let mut binder_names: Vec<Name> = Vec::new();
     lean_expr_to_zexpr_cached(
@@ -2059,7 +2051,7 @@ fn ensure_in_kenv_of_inner_env(
         KConst::Defn {
           name: name.clone(),
           level_params: lp.clone(),
-          kind: crate::ix::ixon::constant::DefKind::Definition,
+          kind: ixon::constant::DefKind::Definition,
           safety: d.safety,
           hints: d.hints,
           lvls: lp.len() as u64,
@@ -2079,9 +2071,9 @@ fn ensure_in_kenv_of_inner_env(
         KConst::Defn {
           name: name.clone(),
           level_params: lp.clone(),
-          kind: crate::ix::ixon::constant::DefKind::Theorem,
+          kind: ixon::constant::DefKind::Theorem,
           safety: DefinitionSafety::Safe,
-          hints: crate::ix::env::ReducibilityHints::Opaque,
+          hints: ix_common::env::ReducibilityHints::Opaque,
           lvls: lp.len() as u64,
           ty,
           val,
@@ -2099,9 +2091,9 @@ fn ensure_in_kenv_of_inner_env(
         KConst::Defn {
           name: name.clone(),
           level_params: lp.clone(),
-          kind: crate::ix::ixon::constant::DefKind::Opaque,
+          kind: ixon::constant::DefKind::Opaque,
           safety: DefinitionSafety::Safe,
-          hints: crate::ix::env::ReducibilityHints::Opaque,
+          hints: ix_common::env::ReducibilityHints::Opaque,
           lvls: lp.len() as u64,
           ty,
           val,
@@ -2157,9 +2149,9 @@ fn ensure_in_kenv_of_inner_env(
 
 fn ensure_in_kenv_of_inner(
   name: &Name,
-  lean_env: &crate::ix::env::Env,
-  stt: &crate::ix::compile::CompileState,
-  kctx: &mut crate::ix::compile::KernelCtx,
+  lean_env: &ix_common::env::Env,
+  stt: &crate::compile::CompileState,
+  kctx: &mut crate::compile::KernelCtx,
   replace_axio_stub: bool,
 ) {
   ensure_in_kenv_of_inner_env(
@@ -2171,11 +2163,11 @@ fn ensure_in_kenv_of_inner(
   );
 }
 
-pub(crate) fn ensure_in_kenv_of(
+pub fn ensure_in_kenv_of(
   name: &Name,
-  lean_env: &crate::ix::env::Env,
-  stt: &crate::ix::compile::CompileState,
-  kctx: &mut crate::ix::compile::KernelCtx,
+  lean_env: &ix_common::env::Env,
+  stt: &crate::compile::CompileState,
+  kctx: &mut crate::compile::KernelCtx,
 ) {
   ensure_in_kenv_of_inner(name, lean_env, stt, kctx, false);
 }
@@ -2183,30 +2175,30 @@ pub(crate) fn ensure_in_kenv_of(
 /// Like [`ensure_in_kenv_of`], but upgrades an existing type-only `Axio`
 /// stub into the real constant. This is required before WHNF paths that must
 /// unfold reducible definitions or inspect inductive/ctor metadata.
-pub(crate) fn ensure_full_in_kenv_of(
+pub fn ensure_full_in_kenv_of(
   name: &Name,
-  lean_env: &crate::ix::env::Env,
-  stt: &crate::ix::compile::CompileState,
-  kctx: &mut crate::ix::compile::KernelCtx,
+  lean_env: &ix_common::env::Env,
+  stt: &crate::compile::CompileState,
+  kctx: &mut crate::compile::KernelCtx,
 ) {
   ensure_in_kenv_of_inner(name, lean_env, stt, kctx, true);
 }
 
 fn ensure_full_in_tc_env(
   name: &Name,
-  lean_env: &crate::ix::env::Env,
-  stt: &crate::ix::compile::CompileState,
-  kenv: &mut crate::ix::kernel::env::KEnv<Meta>,
+  lean_env: &ix_common::env::Env,
+  stt: &crate::compile::CompileState,
+  kenv: &mut ix_kernel::env::KEnv<Meta>,
 ) {
   ensure_in_kenv_of_inner_env(name, lean_env, stt, kenv, true);
 }
 
 /// Convenience wrapper: ingress into the **original** kenv (`stt.kctx`).
-pub(crate) fn ensure_in_kenv(
+pub fn ensure_in_kenv(
   name: &Name,
-  lean_env: &crate::ix::env::Env,
-  stt: &crate::ix::compile::CompileState,
-  kctx: &mut crate::ix::compile::KernelCtx,
+  lean_env: &ix_common::env::Env,
+  stt: &crate::compile::CompileState,
+  kctx: &mut crate::compile::KernelCtx,
 ) {
   ensure_in_kenv_of(name, lean_env, stt, kctx);
 }
@@ -2224,8 +2216,8 @@ pub(super) struct TcScope<'a> {
   fvar_levels: FxHashMap<Name, usize>,
   base_depth: usize,
   param_names: &'a [Name],
-  stt: &'a crate::ix::compile::CompileState,
-  tc: crate::ix::kernel::tc::TypeChecker<'a, Meta>,
+  stt: &'a crate::compile::CompileState,
+  tc: ix_kernel::tc::TypeChecker<'a, Meta>,
   /// How many extra locals are currently pushed above base_depth.
   extra_locals: usize,
 }
@@ -2235,8 +2227,8 @@ impl<'a> TcScope<'a> {
   pub(super) fn new(
     outer_fvar_ctx: &[LocalDecl],
     param_names: &'a [Name],
-    stt: &'a crate::ix::compile::CompileState,
-    kctx: &'a mut crate::ix::compile::KernelCtx,
+    stt: &'a crate::compile::CompileState,
+    kctx: &'a mut crate::compile::KernelCtx,
   ) -> Self {
     let fvar_levels: FxHashMap<Name, usize> = outer_fvar_ctx
       .iter()
@@ -2244,7 +2236,7 @@ impl<'a> TcScope<'a> {
       .map(|(i, decl)| (decl.fvar_name.clone(), i))
       .collect();
 
-    let mut tc = crate::ix::kernel::tc::TypeChecker::new(&mut kctx.kenv);
+    let mut tc = ix_kernel::tc::TypeChecker::new(&mut kctx.kenv);
     tc.infer_only = true;
 
     // Push outer FVar types once.
@@ -2347,9 +2339,9 @@ impl<'a> TcScope<'a> {
   fn get_level_error(
     &self,
     ty: &LeanExpr,
-    kexpr: &crate::ix::kernel::expr::KExpr<Meta>,
-    e: &crate::ix::kernel::error::TcError<Meta>,
-  ) -> crate::ix::ixon::CompileError {
+    kexpr: &ix_kernel::expr::KExpr<Meta>,
+    e: &ix_kernel::error::TcError<Meta>,
+  ) -> ixon::CompileError {
     eprintln!("[TcScope::get_level] FAILED");
     eprintln!("  lean_expr: {}", ty.pretty());
     eprintln!("  kexpr:     {kexpr}");
@@ -2361,10 +2353,10 @@ impl<'a> TcScope<'a> {
       self.extra_locals
     );
     // Dump kenv entries for constants referenced in the expression.
-    let mut stack: Vec<&crate::ix::kernel::expr::KExpr<Meta>> = vec![kexpr];
+    let mut stack: Vec<&ix_kernel::expr::KExpr<Meta>> = vec![kexpr];
     let mut seen_ids = std::collections::HashSet::new();
     while let Some(expr) = stack.pop() {
-      use crate::ix::kernel::expr::ExprData as ZED;
+      use ix_kernel::expr::ExprData as ZED;
       match expr.data() {
         ZED::Const(id, us, _) => {
           if seen_ids.insert(id.clone()) {
@@ -2391,7 +2383,7 @@ impl<'a> TcScope<'a> {
         _ => {},
       }
     }
-    crate::ix::ixon::CompileError::UnsupportedExpr {
+    ixon::CompileError::UnsupportedExpr {
       desc: format!(
         "TcScope::get_level({}): tc.infer failed: {e}",
         ty.pretty()
@@ -2412,7 +2404,7 @@ impl<'a> TcScope<'a> {
   pub(super) fn get_level(
     &mut self,
     ty: &LeanExpr,
-  ) -> Result<Level, crate::ix::ixon::CompileError> {
+  ) -> Result<Level, ixon::CompileError> {
     // Fast path: read Sort level from stored type (matching Lean's
     // inferAppType which peels foralls without substituting term args).
     // Sort levels use level params, not BVars, so the level is correct
@@ -2432,14 +2424,14 @@ impl<'a> TcScope<'a> {
     let inferred = loop {
       match self.tc.infer(&kexpr) {
         Ok(inferred) => break inferred,
-        Err(crate::ix::kernel::error::TcError::UnknownConst(addr))
+        Err(ix_kernel::error::TcError::UnknownConst(addr))
           if faulted_addrs.insert(addr.clone())
             && self.fault_in_addr(&addr) => {},
         Err(e) => return Err(self.get_level_error(ty, &kexpr, &e)),
       }
     };
     let ku = self.tc.ensure_sort(&inferred).map_err(|e| {
-      crate::ix::ixon::CompileError::UnsupportedExpr {
+      ixon::CompileError::UnsupportedExpr {
         desc: format!("TcScope::get_level: ensure_sort failed: {e}"),
       }
     })?;
@@ -2463,7 +2455,7 @@ impl<'a> TcScope<'a> {
   /// Check if a Level is guaranteed non-zero. Matches Lean's `is_not_zero`:
   /// true for Succ(_), Param, Max(a,b) where either is not-zero.
   fn is_not_zero_level(l: &Level) -> bool {
-    use crate::ix::env::LevelData;
+    use ix_common::env::LevelData;
     match l.as_data() {
       LevelData::Succ(_, _) => true,
       LevelData::Max(a, b, _) => {
@@ -2484,8 +2476,8 @@ impl<'a> TcScope<'a> {
   /// application, not enough foralls, result isn't Sort, or the constant
   /// isn't found in the kernel env).
   fn try_infer_app_sort_level(&self, ty: &LeanExpr) -> Option<Level> {
-    use crate::ix::env::ExprData;
-    use crate::ix::kernel::expr::ExprData as ZED;
+    use ix_common::env::ExprData;
+    use ix_kernel::expr::ExprData as ZED;
 
     // Decompose into head constant + args.
     let (head, args) = decompose_apps(ty);
@@ -2498,7 +2490,7 @@ impl<'a> TcScope<'a> {
     let n2a = Some(&self.stt.name_to_addr);
     let aux_n2a = Some(&self.stt.aux_name_to_addr);
     let addr = resolve_lean_name_addr(name, n2a, aux_n2a);
-    let kid = crate::ix::kernel::id::KId::new(addr, name.clone());
+    let kid = ix_kernel::id::KId::new(addr, name.clone());
     let kconst = self.tc.env.get(&kid)?;
     let kty = kconst.ty();
 
@@ -2535,10 +2527,10 @@ impl<'a> TcScope<'a> {
   /// the concrete levels from a Const's level args.
   fn kuniv_to_level_with_const_levels(
     &self,
-    u: &crate::ix::kernel::level::KUniv<Meta>,
+    u: &ix_kernel::level::KUniv<Meta>,
     const_levels: &[Level],
   ) -> Level {
-    use crate::ix::kernel::level::UnivData;
+    use ix_kernel::level::UnivData;
     match u.data() {
       UnivData::Zero(_) => Level::zero(),
       UnivData::Succ(inner, _) => {
@@ -2681,13 +2673,13 @@ impl<'a> TcScope<'a> {
 /// `Mdata` layers carried by the kernel expression are re-wrapped around
 /// the result in original order — matching `egress_expr`.
 pub(super) fn kexpr_to_lean(
-  expr: &crate::ix::kernel::expr::KExpr<Meta>,
+  expr: &ix_kernel::expr::KExpr<Meta>,
   outer_depth: usize,
   fvar_levels: &FxHashMap<Name, usize>,
   local_depth: usize,
   param_names: &[Name],
 ) -> LeanExpr {
-  use crate::ix::kernel::expr::ExprData as KED;
+  use ix_kernel::expr::ExprData as KED;
 
   // Reverse `fvar_levels` lazily via linear search — the FVar context is
   // small in practice (a handful of param/motive/minor/index binders),
@@ -2772,11 +2764,11 @@ pub(super) fn kexpr_to_lean(
       kexpr_to_lean(val, outer_depth, fvar_levels, local_depth, param_names),
     ),
     KED::Nat(n, _, _) => {
-      use crate::ix::env::Literal;
+      use ix_common::env::Literal;
       LeanExpr::lit(Literal::NatVal(n.clone()))
     },
     KED::Str(s, _, _) => {
-      use crate::ix::env::Literal;
+      use ix_common::env::Literal;
       LeanExpr::lit(Literal::StrVal(s.clone()))
     },
   };
@@ -2805,8 +2797,8 @@ fn collect_lean_source_name_hints(
   fvar_levels: &FxHashMap<Name, usize>,
   depth: usize,
   param_names: &[Name],
-  stt: &crate::ix::compile::CompileState,
-  out: &mut FxHashMap<crate::ix::kernel::env::Addr, LeanExpr>,
+  stt: &crate::compile::CompileState,
+  out: &mut FxHashMap<ix_kernel::env::Addr, LeanExpr>,
 ) {
   if source_name_hint_candidate(source) && !expr_has_bvar(source) {
     let key =
@@ -2909,8 +2901,8 @@ fn restore_lean_source_name_hints(
   fvar_levels: &FxHashMap<Name, usize>,
   depth: usize,
   param_names: &[Name],
-  stt: &crate::ix::compile::CompileState,
-  hints: &FxHashMap<crate::ix::kernel::env::Addr, LeanExpr>,
+  stt: &crate::compile::CompileState,
+  hints: &FxHashMap<ix_kernel::env::Addr, LeanExpr>,
 ) -> LeanExpr {
   if source_name_hint_candidate(generated) && !expr_has_bvar(generated) {
     let key = to_kexpr_static(generated, fvar_levels, depth, param_names, stt)
@@ -3061,7 +3053,7 @@ fn expr_has_bvar(expr: &LeanExpr) -> bool {
 fn restore_source_names_same_content(
   generated: &LeanExpr,
   source: &LeanExpr,
-  stt: &crate::ix::compile::CompileState,
+  stt: &crate::compile::CompileState,
 ) -> LeanExpr {
   let source = strip_mdata_ref(source);
 
@@ -3077,7 +3069,7 @@ fn restore_source_names_same_content(
 fn restore_source_names_same_content_inner(
   generated: &LeanExpr,
   source: &LeanExpr,
-  stt: &crate::ix::compile::CompileState,
+  stt: &crate::compile::CompileState,
 ) -> LeanExpr {
   match (generated.as_data(), source.as_data()) {
     (
@@ -3146,7 +3138,7 @@ fn strip_mdata_ref(mut expr: &LeanExpr) -> &LeanExpr {
 fn same_resolved_name_addr(
   a: &Name,
   b: &Name,
-  stt: &crate::ix::compile::CompileState,
+  stt: &crate::compile::CompileState,
 ) -> bool {
   if a == b {
     return true;
@@ -3167,13 +3159,13 @@ fn to_kexpr_static(
   fvar_levels: &FxHashMap<Name, usize>,
   ctx_depth: usize,
   param_names: &[Name],
-  stt: &crate::ix::compile::CompileState,
-) -> crate::ix::kernel::expr::KExpr<Meta> {
+  stt: &crate::compile::CompileState,
+) -> ix_kernel::expr::KExpr<Meta> {
   let n2a = Some(&stt.name_to_addr);
   let aux_n2a = Some(&stt.aux_name_to_addr);
-  use crate::ix::kernel::expr::KExpr;
-  use crate::ix::kernel::id::KId;
-  use crate::ix::kernel::level::KUniv;
+  use ix_kernel::expr::KExpr;
+  use ix_kernel::id::KId;
+  use ix_kernel::level::KUniv;
 
   match expr.as_data() {
     ExprData::Fvar(fname, _) => {
@@ -3225,7 +3217,7 @@ fn to_kexpr_static(
       KExpr::prj(zid, nat_to_u64(idx), ke)
     },
     ExprData::Lit(lit, _) => {
-      use crate::ix::env::Literal;
+      use ix_common::env::Literal;
       match lit {
         Literal::NatVal(n) => {
           let addr = Address::hash(&nat_to_u64(n).to_le_bytes());
@@ -3277,7 +3269,7 @@ fn collect_lean_const_refs(expr: &LeanExpr, out: &mut FxHashSet<Name>) {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::ix::env::BinderInfo;
+  use ix_common::env::BinderInfo;
 
   fn mk_name_for(s: &str) -> Name {
     let mut n = Name::anon();
@@ -3654,7 +3646,7 @@ mod tests {
   fn consume_type_annotations_strips_known_wrappers() {
     // `outParam α` reduces to `α`. We use a stub inductive name that the
     // function recognizes.
-    use crate::ix::env::BinderInfo;
+    use ix_common::env::BinderInfo;
     let inner = sort0();
     let wrapped = LeanExpr::app(
       LeanExpr::cnst(mk_name_for("outParam"), vec![]),

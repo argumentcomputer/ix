@@ -3,23 +3,23 @@
 //! Provides full decode/build cycle for RawEnv and its component types:
 //! RawConst, RawNamed, RawBlob, RawComm.
 
-use crate::ix::address::Address;
-use crate::ix::env::Name;
-use crate::ix::ixon::comm::Comm;
-use crate::ix::ixon::constant::Constant as IxonConstant;
-use crate::ix::ixon::env::{Env as IxonEnv, Named as IxonNamed};
-use crate::ix::ixon::merkle::merkle_root_canonical;
-use crate::ix::ixon::metadata::ConstantMeta;
 use crate::lean::{
   LeanIxName, LeanIxonComm, LeanIxonConstant, LeanIxonConstantMeta,
   LeanIxonRawBlob, LeanIxonRawComm, LeanIxonRawConst, LeanIxonRawEnv,
   LeanIxonRawNameEntry, LeanIxonRawNamed,
 };
+use ix_common::address::Address;
+use ix_common::env::Name;
+use ixon::comm::Comm;
+use ixon::constant::Constant as IxonConstant;
+use ixon::env::{Env as IxonEnv, Named as IxonNamed};
+use ixon::merkle::merkle_root_canonical;
+use ixon::metadata::ConstantMeta;
 use lean_ffi::object::{
   LeanArray, LeanBorrowed, LeanByteArray, LeanExcept, LeanOwned, LeanRef,
 };
 
-use crate::ffi::builder::LeanBuildCache;
+use crate::builder::LeanBuildCache;
 use crate::lean::LeanIxAddress;
 
 // =============================================================================

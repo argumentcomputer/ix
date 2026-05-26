@@ -2,21 +2,21 @@
 
 use std::sync::Arc;
 
-use crate::ix::condense::compute_sccs;
-use crate::ix::graph::build_ref_graph;
 use crate::lean::LeanIxCondensedBlocks;
+use ix_compile::condense::compute_sccs;
+use ix_compile::graph::build_ref_graph;
 use lean_ffi::object::{
   LeanArray, LeanBorrowed, LeanIOResult, LeanList, LeanOwned, LeanProd,
 };
 
-use crate::ffi::builder::LeanBuildCache;
-use crate::ffi::lean_env::decode_env;
+use crate::builder::LeanBuildCache;
 use crate::lean::LeanIxName;
+use crate::lean_env::decode_env;
 
 /// Build an Array (Ix.Name × Array Ix.Name) from a RefMap.
 pub fn build_ref_graph_array(
   cache: &mut LeanBuildCache,
-  refs: &crate::ix::graph::RefMap,
+  refs: &ix_compile::graph::RefMap,
 ) -> LeanArray<LeanOwned> {
   let arr = LeanArray::alloc(refs.len());
   for (i, (name, ref_set)) in refs.iter().enumerate() {
@@ -38,7 +38,7 @@ impl LeanIxCondensedBlocks<LeanOwned> {
   /// Build a RustCondensedBlocks structure.
   pub fn build(
     cache: &mut LeanBuildCache,
-    condensed: &crate::ix::condense::CondensedBlocks,
+    condensed: &ix_compile::condense::CondensedBlocks,
   ) -> Self {
     // Build lowLinks: Array (Ix.Name × Ix.Name)
     let low_links_arr = LeanArray::alloc(condensed.low_links.len());

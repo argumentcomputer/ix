@@ -6,7 +6,7 @@ use multi_stark::{
   p3_matrix::dense::RowMajorMatrix,
 };
 
-use crate::aiur::{
+use crate::{
   G, execute::QueryRecord, gadgets::AiurGadget, u8_bit_decomposition_channel,
   u8_shift_left_channel, u8_shift_right_channel,
 };

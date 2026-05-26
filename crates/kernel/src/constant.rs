@@ -3,8 +3,8 @@
 //! Each variant carries structural fields plus metadata fields
 //! (`name`, `level_params`, `lean_all`) for roundtrip fidelity in Meta mode.
 
-use crate::ix::env::{DefinitionSafety, Name, QuotKind, ReducibilityHints};
-use crate::ix::ixon::constant::DefKind;
+use ix_common::env::{DefinitionSafety, Name, QuotKind, ReducibilityHints};
+use ixon::constant::DefKind;
 
 use super::expr::KExpr;
 use super::id::KId;
@@ -153,9 +153,9 @@ mod tests {
   use super::super::level::KUniv;
   use super::super::mode::Anon;
   use super::*;
-  use crate::ix::address::Address;
-  use crate::ix::env::{DefinitionSafety, QuotKind, ReducibilityHints};
-  use crate::ix::ixon::constant::DefKind;
+  use ix_common::address::Address;
+  use ix_common::env::{DefinitionSafety, QuotKind, ReducibilityHints};
+  use ixon::constant::DefKind;
 
   fn sort0() -> KExpr<Anon> {
     KExpr::sort(KUniv::zero())

@@ -36,7 +36,7 @@
 //! `leaves()` clean (it returns only real leaves, not the synthetic
 //! padding addresses).
 
-use crate::ix::address::Address;
+use ix_common::address::Address;
 
 use super::merkle::{MerklePath, leaf_hash, node_hash, zero_address};
 use super::proof::{FLAG_CLAIM, VARIANT_ASSUMPTION_TREE};

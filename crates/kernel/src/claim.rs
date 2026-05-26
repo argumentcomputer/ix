@@ -12,11 +12,11 @@
 
 use rustc_hash::FxHashSet;
 
-use crate::ix::address::Address;
-use crate::ix::ixon::constant::ConstantInfo;
-use crate::ix::ixon::env::Env;
-use crate::ix::ixon::merkle::merkle_root_canonical;
-use crate::ix::ixon::proof::Claim;
+use ix_common::address::Address;
+use ixon::constant::ConstantInfo;
+use ixon::env::Env;
+use ixon::merkle::merkle_root_canonical;
+use ixon::proof::Claim;
 
 /// Canonical merkle root over the env's `consts.keys()`. Also called
 /// from the env serializer. Returns `None` for an empty const set.
@@ -91,12 +91,12 @@ pub fn build_check_env_claim(env: &Env) -> Option<Claim> {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::ix::env::DefinitionSafety;
-  use crate::ix::ixon::constant::{
+  use ix_common::env::DefinitionSafety;
+  use ixon::constant::{
     Axiom, Constant, ConstantInfo, DefKind, Definition,
   };
-  use crate::ix::ixon::expr::Expr;
-  use crate::ix::ixon::merkle::leaf_hash;
+  use ixon::expr::Expr;
+  use ixon::merkle::leaf_hash;
   use std::sync::Arc;
 
   fn axiom_const(refs: Vec<Address>) -> Constant {

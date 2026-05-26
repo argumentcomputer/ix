@@ -14,7 +14,7 @@ use std::{
   sync::Arc,
 };
 
-use lean_ffi::nat::Nat;
+use bignat::Nat;
 use rustc_hash::FxHashMap;
 
 // -- Name tags ----------------------------------------------------------------
@@ -1464,3 +1464,51 @@ impl ConstantInfo {
 
 /// The Lean kernel environment: a map from names to their constant declarations.
 pub type Env = FxHashMap<Name, ConstantInfo>;
+
+#[cfg(any(test, feature = "quickcheck"))]
+pub mod arbitrary {
+  use super::*;
+  use quickcheck::{Arbitrary, Gen};
+
+  impl Arbitrary for DefinitionSafety {
+    fn arbitrary(g: &mut Gen) -> Self {
+      match u8::arbitrary(g) % 3 {
+        0 => DefinitionSafety::Unsafe,
+        1 => DefinitionSafety::Safe,
+        _ => DefinitionSafety::Partial,
+      }
+    }
+  }
+
+  impl Arbitrary for QuotKind {
+    fn arbitrary(g: &mut Gen) -> Self {
+      match u8::arbitrary(g) % 4 {
+        0 => QuotKind::Type,
+        1 => QuotKind::Ctor,
+        2 => QuotKind::Lift,
+        _ => QuotKind::Ind,
+      }
+    }
+  }
+
+  impl Arbitrary for BinderInfo {
+    fn arbitrary(g: &mut Gen) -> Self {
+      match u8::arbitrary(g) % 4 {
+        0 => Self::Default,
+        1 => Self::Implicit,
+        2 => Self::StrictImplicit,
+        _ => Self::InstImplicit,
+      }
+    }
+  }
+
+  impl Arbitrary for ReducibilityHints {
+    fn arbitrary(g: &mut Gen) -> Self {
+      match u8::arbitrary(g) % 3 {
+        0 => Self::Opaque,
+        1 => Self::Abbrev,
+        _ => Self::Regular(u32::arbitrary(g)),
+      }
+    }
+  }
+}

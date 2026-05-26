@@ -145,10 +145,11 @@ impl Expr {
 #[cfg(test)]
 pub mod tests {
   use super::*;
-  use crate::ix::ixon::constant::Constant;
-  use crate::ix::ixon::serialize::{get_expr, put_expr};
-  use crate::ix::ixon::tests::gen_range;
+  use crate::constant::Constant;
+  use crate::serialize::{get_expr, put_expr};
+  use crate::tests::gen_range;
   use quickcheck::{Arbitrary, Gen};
+  use quickcheck_macros::quickcheck;
   use std::ptr;
 
   #[derive(Clone, Copy)]
@@ -169,7 +170,7 @@ pub mod tests {
 
   /// Generate an arbitrary Expr using pointer-tree technique (no stack overflow)
   pub fn arbitrary_expr(g: &mut Gen) -> Arc<Expr> {
-    use crate::ix::ixon::tests::next_case;
+    use crate::tests::next_case;
 
     let mut root = Expr::Var(0);
     let mut stack = vec![&mut root as *mut Expr];

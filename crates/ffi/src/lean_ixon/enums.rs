@@ -1,10 +1,10 @@
 //! Ixon enum types: DefKind, DefinitionSafety, QuotKind build/decode/roundtrip FFI.
 
-use crate::ix::env::{DefinitionSafety, QuotKind};
-use crate::ix::ixon::constant::DefKind;
 use crate::lean::{
   LeanIxonDefKind, LeanIxonDefinitionSafety, LeanIxonQuotKind,
 };
+use ix_common::env::{DefinitionSafety, QuotKind};
+use ixon::constant::DefKind;
 #[cfg(feature = "test-ffi")]
 use lean_ffi::object::LeanBorrowed;
 use lean_ffi::object::{LeanOwned, LeanRef};

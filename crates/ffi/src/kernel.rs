@@ -37,7 +37,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use lean_ffi::include::lean_object;
-use lean_ffi::nat::Nat;
+use lean_ffi::object::LeanNat;
 use rustc_hash::FxHashMap;
 
 use lean_ffi::object::{
@@ -48,40 +48,36 @@ use lean_ffi::object::{
 use crate::lean::LeanIxCheckError;
 
 #[cfg(feature = "test-ffi")]
-use crate::ffi::lean_env::{GlobalCache, decode_name};
-use crate::ffi::lean_env::{decode_env, decode_name_array};
-use crate::ix::address::Address;
-use crate::ix::compile::{
+use crate::lean_env::{GlobalCache, decode_name};
+use crate::lean_env::{decode_env, decode_name_array};
+use ix_common::address::Address;
+use ix_common::env::{Name, NameData};
+use ix_compile::compile::{
   CompileOptions, CompileState, compile_env_with_options,
 };
 #[cfg(feature = "test-ffi")]
-use crate::ix::decompile::decompile_env;
-use crate::ix::env::{Name, NameData};
-use crate::ix::ixon::constant::ConstantInfo as IxonCI;
+use ix_compile::decompile::decompile_env;
 #[cfg(feature = "test-ffi")]
-use crate::ix::ixon::constant::MutConst as IxonMutConst;
-use crate::ix::ixon::env::Env as IxonEnv;
-#[cfg(feature = "test-ffi")]
-use crate::ix::ixon::expr::Expr as IxonExpr;
-use crate::ix::ixon::metadata::ConstantMetaInfo;
-#[cfg(feature = "test-ffi")]
-use crate::ix::kernel::egress::{ixon_egress, lean_egress};
-use crate::ix::kernel::env::KEnv;
-use crate::ix::kernel::error::TcError;
-use crate::ix::kernel::id::KId;
-use crate::ix::kernel::ingress::{
+use ix_compile::kernel_egress::{ixon_egress, lean_egress};
+use ix_kernel::env::KEnv;
+use ix_kernel::error::TcError;
+use ix_kernel::id::KId;
+use ix_kernel::ingress::{
   IxonIngressLookups, build_ixon_ingress_lookups,
   ingress_const_shallow_into_kenv_with_lookups, ixon_ingress_owned,
 };
-use crate::ix::kernel::ingress::{
-  anon_ctor_proj_addr, anon_defn_proj_addr, anon_indc_proj_addr,
-  anon_recr_proj_addr,
-};
 #[cfg(feature = "test-ffi")]
-use crate::ix::kernel::ingress::{ixon_ingress, lean_ingress};
-use crate::ix::kernel::mode::{Anon, CheckDupLevelParams, KernelMode, Meta};
-use crate::ix::kernel::tc::TypeChecker;
-use crate::ix::profile::{BlockProfile, ProfileBuilder, ProfileSink};
+use ix_kernel::ingress::{ixon_ingress, lean_ingress};
+use ix_kernel::mode::{Anon, CheckDupLevelParams, KernelMode, Meta};
+use ix_kernel::profile::{BlockProfile, ProfileBuilder, ProfileSink};
+use ix_kernel::tc::TypeChecker;
+use ixon::constant::ConstantInfo as IxonCI;
+#[cfg(feature = "test-ffi")]
+use ixon::constant::MutConst as IxonMutConst;
+use ixon::env::Env as IxonEnv;
+#[cfg(feature = "test-ffi")]
+use ixon::expr::Expr as IxonExpr;
+use ixon::metadata::ConstantMetaInfo;
 
 unsafe extern "C" {
   fn lean_name_mk_string(
@@ -448,7 +444,7 @@ fn poison_second_rec_rule_returns_first_minor(
   let rec_arc = ixon_env.get_const(&rec_addr).ok_or_else(|| {
     format!("{}: missing constant {}", rec_name.pretty(), rec_addr.hex())
   })?;
-  let mut rec_constant: crate::ix::ixon::constant::Constant =
+  let mut rec_constant: ixon::constant::Constant =
     (*rec_arc).clone();
   drop(rec_arc);
 
@@ -485,7 +481,7 @@ fn poison_second_rec_rule_returns_first_minor(
           block_addr.hex()
         )
       })?;
-      let mut block_constant: crate::ix::ixon::constant::Constant =
+      let mut block_constant: ixon::constant::Constant =
         (*block_arc).clone();
       drop(block_arc);
       match &mut block_constant.info {
@@ -533,7 +529,7 @@ fn poison_second_rec_rule_returns_first_minor(
 
 #[cfg(feature = "test-ffi")]
 fn poison_recursor_rule_payload(
-  rec: &mut crate::ix::ixon::constant::Recursor,
+  rec: &mut ixon::constant::Recursor,
 ) -> Result<(), String> {
   if rec.rules.len() < 2 {
     return Err(format!(
@@ -746,7 +742,7 @@ pub extern "C" fn rs_kernel_ixon_names(
 /// to downstream consumers (Aiur, kernel primitive resolution).
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_prim_addrs_canonical() -> LeanIOResult<LeanOwned> {
-  let table = crate::ix::kernel::primitive::PrimAddrs::lean_parity_table();
+  let table = ix_kernel::primitive::PrimAddrs::lean_parity_table();
   let arr = LeanArray::alloc(table.len());
   for (i, (name, hex)) in table.iter().enumerate() {
     let name_obj: LeanOwned = LeanString::new(name).into();
@@ -792,7 +788,7 @@ fn build_lean_name(name: &Name) -> LeanOwned {
     },
     NameData::Num(parent, n, _) => {
       let parent = build_lean_name(parent);
-      let part = Nat::to_lean(n);
+      let part = LeanNat::from_nat(n);
       unsafe {
         LeanOwned::from_raw(lean_name_mk_numeral(
           parent.into_raw(),
@@ -1298,6 +1294,11 @@ fn resolve_kernel_check_workers_from(
 // The lazy ingress mechanism (in `tc.rs`) handles cross-block faults
 // without consulting metadata.
 
+/// FFI-side anon work item with per-target result-slot indices.
+///
+/// Wraps [`ix_kernel::anon_work::AnonWorkItem`] with the index
+/// mapping the parallel runner needs to write per-target results
+/// into a flat `OnceLock<CheckRes>` vector for the FFI return ABI.
 #[derive(Clone, Debug)]
 enum AnonWorkItem {
   /// A standalone (non-mutual, non-projection) constant.
@@ -1314,93 +1315,34 @@ enum AnonWorkItem {
 /// target addresses (one per result slot). Skips projection constants
 /// (covered by their parent block) and Muts addresses themselves
 /// (blocks aren't kernel KIds).
+///
+/// Delegates the enumeration to
+/// [`ix_kernel::anon_work::build_anon_work`] (shared with the
+/// SP1/Zisk guests) and layers the FFI's per-target result-slot
+/// bookkeeping on top.
 fn build_anon_work(
   env: &IxonEnv,
 ) -> Result<(Vec<AnonWorkItem>, Vec<Address>), String> {
-  use crate::ix::ixon::constant::ConstantInfo as CI;
-  use crate::ix::ixon::constant::MutConst as MC;
-  use crate::ix::ixon::lazy::ConstVariantTag as Tag;
+  use ix_kernel::anon_work::AnonWorkItem as KItem;
 
-  let mut work: Vec<AnonWorkItem> = Vec::new();
+  let kernel_work = ix_kernel::anon_work::build_anon_work(env)?;
+  let mut work: Vec<AnonWorkItem> = Vec::with_capacity(kernel_work.len());
   let mut addrs: Vec<Address> = Vec::new();
-
-  // Sort keys for deterministic ordering across runs.
-  let mut keys: Vec<Address> =
-    env.consts.iter().map(|e| e.key().clone()).collect();
-  keys.sort_unstable();
-
-  // Dispatch on the outer Tag4 byte via `peek_variant` — no body
-  // parse, no allocation. Only `Muts` blocks require a full
-  // materialization (to enumerate members for projection-address
-  // computation); the resulting `Arc<Constant>` drops at the end of
-  // that match arm. Standalones (Defn/Recr/Axio/Quot, ~95% of the
-  // env) and projection skips don't even touch the body.
-  //
-  // Before this change, every constant was fully materialized here
-  // and (worse) pinned forever in `LazyConstant.cache`'s OnceLock.
-  // For mathlib that pinned ~30 GB of parsed `Arc<Expr>` trees in
-  // the shared `Arc<IxonEnv>` before kernel checking even started.
-  // The cache-free `LazyConstant` policy + this peek path keep
-  // env-side memory bounded to "bytes (mmap'd) + per-const headers".
-  for addr in keys {
-    let lc = env.consts.get(&addr).ok_or_else(|| {
-      format!("build_anon_work: missing const at {}", addr.hex())
-    })?;
-    let tag = lc.value().peek_variant().map_err(|e| {
-      format!("build_anon_work: peek_variant {}: {e}", addr.hex())
-    })?;
-    match tag {
-      Tag::IPrj | Tag::CPrj | Tag::RPrj | Tag::DPrj => {
-        // Skip; covered by parent block.
-      },
-      Tag::Defn | Tag::Recr | Tag::Axio | Tag::Quot => {
+  for item in kernel_work {
+    match item {
+      KItem::Standalone { addr } => {
         let result_idx = addrs.len();
         addrs.push(addr.clone());
-        work.push(AnonWorkItem::Standalone { result_idx, addr: addr.clone() });
+        work.push(AnonWorkItem::Standalone { result_idx, addr });
       },
-      Tag::Muts => {
-        // Materialize once to enumerate members; the `Arc<Constant>`
-        // drops at the end of this arm — no cache retention.
-        let constant = lc.value().get().map_err(|e| {
-          format!("build_anon_work: materialize Muts {}: {e}", addr.hex())
-        })?;
-        let CI::Muts(members) = &constant.info else {
-          return Err(format!(
-            "build_anon_work: Tag::Muts but ConstantInfo is {:?} at {}",
-            constant.info.variant(),
-            addr.hex()
-          ));
-        };
-        // Compute kernel-checkable targets deterministically. Each
-        // member contributes its projection address; inductive members
-        // contribute one CPrj per constructor.
-        let mut targets: Vec<Address> = Vec::new();
-        for (i, member) in members.iter().enumerate() {
-          let i = i as u64;
-          let member_addr = match member {
-            MC::Defn(_) => anon_defn_proj_addr(&addr, i),
-            MC::Indc(_) => anon_indc_proj_addr(&addr, i),
-            MC::Recr(_) => anon_recr_proj_addr(&addr, i),
-          };
-          targets.push(member_addr);
-          if let MC::Indc(ind) = member {
-            for cidx in 0..ind.ctors.len() as u64 {
-              targets.push(anon_ctor_proj_addr(&addr, i, cidx));
-            }
-          }
-        }
-        if targets.is_empty() {
-          continue;
-        }
-        let primary_addr = targets[0].clone();
-        let result_idxs: Vec<usize> =
-          (addrs.len()..addrs.len() + targets.len()).collect();
+      KItem::Block { primary, targets } => {
+        let start = addrs.len();
+        let result_idxs: Vec<usize> = (start..start + targets.len()).collect();
         addrs.extend(targets);
-        work.push(AnonWorkItem::Block { primary_addr, result_idxs });
+        work.push(AnonWorkItem::Block { primary_addr: primary, result_idxs });
       },
     }
   }
-
   Ok((work, addrs))
 }
 
@@ -3072,7 +3014,7 @@ pub extern "C" fn rs_kernel_roundtrip(
   // Build a plain Lean `Env` from decompile's DashMap for the standard
   // compare_envs / find_diff flow.
   let t5 = Instant::now();
-  let mut decompiled_env = crate::ix::env::Env::default();
+  let mut decompiled_env = ix_common::env::Env::default();
   for entry in dstt.env.iter() {
     decompiled_env.insert(entry.key().clone(), entry.value().clone());
   }
@@ -3108,10 +3050,10 @@ pub extern "C" fn rs_kernel_roundtrip(
 /// manageable.
 #[cfg(feature = "test-ffi")]
 fn compare_envs(
-  original: &crate::ix::env::Env,
-  egressed: &crate::ix::env::Env,
+  original: &ix_common::env::Env,
+  egressed: &ix_common::env::Env,
 ) -> (Vec<String>, usize, usize) {
-  use crate::ix::env::ConstantInfo as LCI;
+  use ix_common::env::ConstantInfo as LCI;
 
   let total = original.len();
   let mut errors: Vec<String> = Vec::new();
@@ -3181,11 +3123,11 @@ fn compare_envs(
 /// Returns a path-annotated description of where the mismatch is.
 #[cfg(feature = "test-ffi")]
 fn find_diff(
-  a: &crate::ix::env::Expr,
-  b: &crate::ix::env::Expr,
+  a: &ix_common::env::Expr,
+  b: &ix_common::env::Expr,
   path: &str,
 ) -> String {
-  use crate::ix::env::ExprData;
+  use ix_common::env::ExprData;
 
   if a.get_hash() == b.get_hash() {
     return format!("{path}: hashes match (ok)");
@@ -3281,7 +3223,7 @@ fn find_diff(
         let mut val_diffs = Vec::new();
         for (i, ((n1, v1), (_, v2))) in kvs1.iter().zip(kvs2.iter()).enumerate()
         {
-          use crate::ix::env::hash_data_value;
+          use ix_common::env::hash_data_value;
           let mut h1 = blake3::Hasher::new();
           let mut h2 = blake3::Hasher::new();
           hash_data_value(v1, &mut h1);

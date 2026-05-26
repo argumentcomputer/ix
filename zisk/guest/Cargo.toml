@@ -1,0 +1,58 @@
+[package]
+name = "zisk-guest"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ixon = { path = "../../crates/ixon" }
+ix-kernel = { path = "../../crates/kernel" }
+ix-common = { path = "../../crates/common" }
+# Drop every `log::*!` macro call (info / debug / trace / warn / error) from
+# the guest binary at compile time. The kernel emits diagnostic info via
+# `log::info!` — none of it is reachable from a Zisk guest (no stderr) and
+# the formatting machinery was ~45-55 % of cycles in the profile.
+log = { version = "0.4", features = ["max_level_off"] }
+# argumentcomputer/zisk fork — `blake3-precompile-v0.17` exposes the Blake3
+# compression precompile via `ziskos::zisklib::blake3`, plus a `name = "blake3"`
+# drop-in crate at `ziskos/blake3/` which the `[patch.crates-io]` below routes
+# every `blake3::Hasher` / `blake3::hash` call through.
+#
+# `default-features = false` drops `user-hints`, which pulls in
+# `zisk-common → proofman → blake3`. Once `blake3` is patched to the
+# precompile shim (which itself depends on `ziskos`), `user-hints` makes the
+# dep graph cyclic.
+#
+# Default bump allocator (`ziskos/entrypoint/src/alloc/bump.rs`). TLSF
+# was tried — `zisk-embedded-tlfs-alloc` — to let
+# `kenv.clear_releasing_memory()` actually return memory to the
+# allocator for envs whose cumulative bump high-water mark would exceed
+# 512 MB guest RAM. Profiling on String.append showed TLSF
+# `alloc`+`dealloc` at ~36 % of total cost (879k alloc/dealloc pairs for
+# 306 constants); bump is significantly cheaper per cycle. The
+# trade-off: bump's high-water mark grows monotonically, so envs
+# requiring memory recycling (>~500 constants empirically) hit the RAM
+# wall. Init still doesn't fit on either allocator (MT-trace shmem
+# ceiling, not allocator pressure).
+ziskos = { git = "https://github.com/argumentcomputer/zisk.git", branch = "blake3-precompile-v0.17", default-features = false }
+
+# Redirect every `blake3::*` use across the kernel dep tree to the
+# precompile-backed shim that ships in the Zisk fork. Scoped to the guest
+# workspace so host builds keep using upstream blake3.
+#
+# Once the new `ziskos/blake3/` crate is pushed to
+# `argumentcomputer/zisk@blake3-precompile-v0.17`, replace with:
+#
+#   [patch.crates-io]
+#   blake3 = { git = "https://github.com/argumentcomputer/zisk.git",
+#              branch = "blake3-precompile-v0.17" }
+#
+# and drop the `[patch."...zisk.git"]` block below. Both ziskos and blake3
+# will then resolve to the same git source automatically.
+[patch.crates-io]
+blake3 = { path = "/home/ubuntu/zisk-blake3/ziskos/blake3" }
+
+# Local-test only: pin `ziskos` to the same checkout the shim's `path = "../entrypoint"`
+# resolves into, so the guest and the shim share one ziskos instance (otherwise
+# each registers `#[global_allocator]` and the link fails).
+[patch."https://github.com/argumentcomputer/zisk.git"]
+ziskos = { path = "/home/ubuntu/zisk-blake3/ziskos/entrypoint" }

@@ -10,8 +10,8 @@
 //!
 //! Follows `refs/lean4/src/library/constructions/cases_on.cpp`.
 
-use crate::ix::compile::aux_gen::AuxDef;
-use crate::ix::env::{
+use crate::compile::aux_gen::AuxDef;
+use ix_common::env::{
   BinderInfo, ConstantInfo, Env as LeanEnv, Expr as LeanExpr, ExprData, Level,
   Name, RecursorVal,
 };
@@ -53,7 +53,7 @@ fn mk_pi_unit(e: &LeanExpr, unit: &LeanExpr) -> LeanExpr {
 /// Uses FVar-based construction: opens the rec type into FVars, builds
 /// casesOn type and value using FVar references, then abstracts with
 /// mk_forall/mk_lambda.
-pub(crate) fn generate_cases_on(
+pub fn generate_cases_on(
   name: &Name,
   rec_val: &RecursorVal,
   lean_env: &LeanEnv,
@@ -65,7 +65,7 @@ pub(crate) fn generate_cases_on(
 
   // Extract target inductive name from "A.casesOn" → "A"
   let target_ind = match name.as_data() {
-    crate::ix::env::NameData::Str(parent, s, _) if s == "casesOn" => {
+    ix_common::env::NameData::Str(parent, s, _) if s == "casesOn" => {
       parent.clone()
     },
     _ => return None,
@@ -370,8 +370,8 @@ fn get_minor_name(
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::ix::env::{BinderInfo, ConstantVal, InductiveVal, Literal};
-  use lean_ffi::nat::Nat;
+  use bignat::Nat;
+  use ix_common::env::{BinderInfo, ConstantVal, InductiveVal, Literal};
 
   fn mk_name_for(s: &str) -> Name {
     let mut n = Name::anon();

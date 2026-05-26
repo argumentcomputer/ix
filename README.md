@@ -204,6 +204,153 @@ Compiler performance benchmarks are tracked at https://bencher.dev/console/proje
 
 **Rust tests:** `cargo test` or `cargo nextest run`
 
+### Proving under SP1
+
+The Ix kernel typechecker has an SP1 guest at `sp1/guest/` driven by a host at
+`sp1/host/`. The workflow is two steps: first compile a Lean program to a `.ixe`
+serialized `Ixon.Env`, then feed that file to the SP1 host to either execute or
+prove the typecheck.
+
+**Nix users only:** enter the SP1 dev shell first to pick up `cargo-prove` and
+the succinct Rust toolchain:
+
+```
+nix develop .#sp1
+```
+
+Non-Nix users: install the SP1 toolchain manually per the
+[SP1 docs](https://docs.succinct.xyz/docs/sp1/getting-started/install).
+
+1. **Compile a `.ixe` from a Lean file.** Pass `--path` to the Lean source,
+   `--root` to slice the environment to the transitive closure of one constant,
+   and `--out` for the output path. For example, to compile
+   `Nat.add_comm` from the benchmark file:
+
+   ```
+   lake exe ix compile --path Benchmarks/CheckNatAddComm.lean \
+                       --root Nat.add_comm \
+                       --out nataddcomm.ixe
+   ```
+
+   Omitting `--root` emits the entire environment; omitting `--out` defaults to
+   the lowercased input stem plus `.ixe` (e.g. `checknataddcomm.ixe`).
+
+2. **Execute or prove under SP1.** From `sp1/host/`, run the host with `--ixe`
+   pointing at the file produced above:
+
+   ```
+   cd sp1/host
+   # Execute the kernel typecheck in the SP1 VM (no proof), prints failures + cycles
+   RUST_LOG=info cargo run --release -- --execute --ixe ../../nataddcomm.ixe
+   # Generate and verify a compressed SP1 proof of the same typecheck (CPU)
+   RUST_LOG=info cargo run --release -- --ixe ../../nataddcomm.ixe
+   ```
+
+   With no `--ixe`, the host runs against an empty `Ixon.Env`.
+
+   **Kernel modes.** The default is Anon mode (metadata-erased kernel with
+   lazy on-demand ingress — matches Aiur's `kernel_check_test` semantics).
+   Pass `--meta` to run Meta mode (preserves names + dup-level-param check;
+   eager full-env ingress). Both prove the same structural typecheck; Meta
+   is strictly more constrained but slightly more expensive in cycles.
+
+   **GPU proving.** Build with the `cuda` feature and set `SP1_PROVER=cuda`
+   at runtime:
+
+   ```
+   SP1_PROVER=cuda RUST_LOG=info cargo run --release --features cuda -- \
+     --ixe ../../nataddcomm.ixe
+   ```
+
+   See the [SP1 CUDA docs](https://docs.succinct.xyz/docs/sp1/generating-proofs/hardware-acceleration/cuda)
+   for prerequisites (Docker + an NVIDIA GPU with CUDA 12+).
+
+### Proving under Zisk
+
+The Ix kernel typechecker also has a Zisk guest at `zisk/guest/` driven by a
+host at `zisk/host/`. The workflow mirrors the SP1 one — first compile a Lean
+program to a `.ixe`, then feed it to the Zisk host to either execute or prove
+the typecheck.
+
+**Nix users only:** enter the Zisk dev shell first to pick up `cargo-zisk`,
+`ziskemu`, and the RISC-V toolchain needed to build the guest:
+
+```
+nix develop .#zisk
+```
+
+Non-Nix users: install Zisk manually per the
+[Zisk install docs](https://0xpolygonhermez.github.io/zisk/getting_started/installation.html).
+
+1. **Compile a `.ixe` from a Lean file.** Same as for SP1:
+
+   ```
+   lake exe ix compile --path Benchmarks/CheckNatAddComm.lean \
+                       --root Nat.add_comm \
+                       --out nataddcomm.ixe
+   ```
+
+2. **Execute or prove under Zisk.** From `zisk/`, run the host with `--ixe`:
+
+   ```
+   cd zisk
+   # Execute the kernel typecheck in the Zisk VM (no proof), prints cycles
+   RUST_LOG=info cargo run --release -- --execute --ixe ../nataddcomm.ixe
+   # Run the constraint checker without generating a proof
+   RUST_LOG=info cargo run --release -- --verify-constraints --ixe ../nataddcomm.ixe
+   # Generate and verify a VadcopFinal proof of the same typecheck (CPU)
+   RUST_LOG=info cargo run --release -- --ixe ../nataddcomm.ixe
+   ```
+
+   With no `--ixe`, the host runs against an empty `Ixon.Env`. The host's
+   `build.rs` invokes `zisk_sdk::build_program("../guest")`, so `cargo run`
+   transparently rebuilds the guest ELF whenever its sources change.
+
+   **Kernel modes.** Same `--meta` flag as the SP1 host (default is Anon
+   with lazy on-demand ingress; `--meta` switches to Meta with eager
+   full-env ingress).
+
+   **GPU proving.** Pass `--gpu` at runtime — Zisk's prover backend ships
+   with CUDA support by default (the `cpu-only` Cargo feature is opt-out
+   and is not set here):
+
+   ```
+   RUST_LOG=info cargo run --release -- --gpu --ixe ../nataddcomm.ixe
+   ```
+
+   Requires a CUDA-capable GPU and the matching CUDA runtime libraries
+   visible to the linker (`LD_LIBRARY_PATH`). The Nix `.#zisk` shell wires
+   these up automatically; for non-Nix setups follow the
+   [Zisk install docs](https://0xpolygonhermez.github.io/zisk/getting_started/installation.html).
+
+   **Memlock limit.** Zisk's assembly emulator `mmap`s ROM with `MAP_LOCKED`
+   and needs a memlock limit well above typical distro defaults (often 8 MB).
+   Symptom: `mmap(rom) errno=11=Resource temporarily unavailable` followed by
+   `Shmem creation … failed with exit status: 255` during
+   `STARTING_ASM_MICROSERVICES`. Raise it for the current shell (needs sudo
+   to lift the hard cap):
+
+   ```
+   sudo prlimit --memlock=unlimited:unlimited --pid $$
+   ulimit -l   # confirm: prints 'unlimited'
+   ```
+
+   For a persistent fix, raise `memlock` system-wide via your distro's PAM
+   limits and re-login.
+
+   **Heap cap.** The Zisk zkVM has a hard 512 MB RAM cap
+   ([`RAM_SIZE`](https://github.com/0xPolygonHermez/zisk/blob/v0.17.0/core/src/mem.rs#L111)),
+   of which ~510 MB is usable heap, and isn't configurable without
+   rebuilding the proving setup. Envs whose deserialized in-memory
+   representation exceeds that won't fit (full `TutorialDefs.lean` pulls in
+   Lean stdlib + Batteries + LSpec, around 1 GB resident). For bigger envs,
+   prefer the SP1 backend (default 24 GB runtime cap
+   [`DEFAULT_MEMORY_LIMIT`](https://github.com/succinctlabs/sp1/blob/v6.2.0/crates/core/executor/src/opts.rs#L25),
+   configurable via `MEMORY_LIMIT` env var up to a ~1 TB JIT ceiling
+   [`MAX_JIT_LOG_ADDR`](https://github.com/succinctlabs/sp1/blob/v6.2.0/crates/primitives/src/consts.rs#L11)),
+   or shrink the env via `--root <const>` to take the transitive closure of
+   a single constant.
+
 ### Nix
 
 #### Prerequisites

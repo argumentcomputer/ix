@@ -14,18 +14,18 @@
 //! - Tag 10: mdata (data : Array (Name × DataValue)) (expr : Expr) (hash : Address)
 //! - Tag 11: proj (typeName : Name) (idx : Nat) (struct : Expr) (hash : Address)
 
-use crate::ffi::builder::LeanBuildCache;
-use crate::ix::env::{
-  BinderInfo, DataValue, Expr, ExprData, Level, Literal, Name,
-};
+use crate::builder::LeanBuildCache;
 use crate::lean::LeanIxAddress;
 use crate::lean::{
   LeanIxBinderInfo, LeanIxDataValue, LeanIxExpr, LeanIxLevel, LeanIxLiteral,
   LeanIxName,
 };
-use lean_ffi::nat::Nat;
+use ix_common::env::{
+  BinderInfo, DataValue, Expr, ExprData, Level, Literal, Name,
+};
 #[cfg(feature = "test-ffi")]
 use lean_ffi::object::LeanBorrowed;
+use lean_ffi::object::LeanNat;
 use lean_ffi::object::{LeanOwned, LeanRef, LeanString};
 
 impl LeanIxExpr<LeanOwned> {
@@ -40,7 +40,7 @@ impl LeanIxExpr<LeanOwned> {
     let result = match expr.as_data() {
       ExprData::Bvar(idx, h) => {
         let ctor = LeanIxExpr::alloc(0);
-        ctor.set_obj(0, Nat::to_lean(idx));
+        ctor.set_obj(0, LeanNat::from_nat(idx));
         ctor.set_obj(1, LeanIxAddress::build_from_hash(h));
         ctor
       },
@@ -139,7 +139,7 @@ impl LeanIxExpr<LeanOwned> {
       },
       ExprData::Proj(type_name, idx, struct_expr, h) => {
         let name_obj = LeanIxName::build(cache, type_name);
-        let idx_obj = Nat::to_lean(idx);
+        let idx_obj = LeanNat::from_nat(idx);
         let struct_obj = Self::build(cache, struct_expr);
         let ctor = LeanIxExpr::alloc(11);
         ctor.set_obj(0, name_obj);
@@ -162,7 +162,7 @@ impl<R: LeanRef> LeanIxExpr<R> {
     match ctor.tag() {
       0 => {
         // bvar
-        let idx = Nat::from_obj(&ctor.get(0));
+        let idx = LeanNat::to_nat(&ctor.get(0));
         Expr::bvar(idx)
       },
       1 => {
@@ -247,7 +247,7 @@ impl<R: LeanRef> LeanIxExpr<R> {
       11 => {
         // proj: typeName, idx, struct, hash
         let type_name = LeanIxName(ctor.get(0)).decode();
-        let idx = Nat::from_obj(&ctor.get(1));
+        let idx = LeanNat::to_nat(&ctor.get(1));
         let struct_expr = LeanIxExpr(ctor.get(2)).decode();
 
         Expr::proj(type_name, idx, struct_expr)
@@ -263,7 +263,7 @@ impl LeanIxLiteral<LeanOwned> {
     match lit {
       Literal::NatVal(n) => {
         let ctor = LeanIxLiteral::alloc(0);
-        ctor.set_obj(0, Nat::to_lean(n));
+        ctor.set_obj(0, LeanNat::from_nat(n));
         ctor
       },
       Literal::StrVal(s) => {
@@ -282,7 +282,7 @@ impl<R: LeanRef> LeanIxLiteral<R> {
     match ctor.tag() {
       0 => {
         // natVal
-        let nat = Nat::from_obj(&ctor.get(0));
+        let nat = LeanNat::to_nat(&ctor.get(0));
         Literal::NatVal(nat)
       },
       1 => {

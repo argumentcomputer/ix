@@ -7,8 +7,8 @@
 //! the FVar/declaration arrays, then close back with mk_forall/mk_lambda.
 //! Follows `refs/lean4/src/Lean/Meta/Constructions/RecOn.lean`.
 
-use crate::ix::compile::aux_gen::AuxDef;
-use crate::ix::env::{Level, Name, RecursorVal};
+use crate::compile::aux_gen::AuxDef;
+use ix_common::env::{Level, Name, RecursorVal};
 
 use super::expr_utils::{
   forall_telescope, mk_app_n, mk_const, mk_forall, mk_lambda,
@@ -17,10 +17,7 @@ use super::expr_utils::{
 /// Generate a `.recOn` definition from a canonical `.rec`.
 ///
 /// Returns `None` if the recursor type cannot be decomposed.
-pub(crate) fn generate_rec_on(
-  name: &Name,
-  rec_val: &RecursorVal,
-) -> Option<AuxDef> {
+pub fn generate_rec_on(name: &Name, rec_val: &RecursorVal) -> Option<AuxDef> {
   let n_params = rec_val.num_params.to_u64()? as usize;
   let n_motives = rec_val.num_motives.to_u64()? as usize;
   let n_minors = rec_val.num_minors.to_u64()? as usize;
@@ -79,8 +76,8 @@ pub(crate) fn generate_rec_on(
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::ix::env::{BinderInfo, ConstantVal, Expr as LeanExpr, ExprData};
-  use lean_ffi::nat::Nat;
+  use bignat::Nat;
+  use ix_common::env::{BinderInfo, ConstantVal, Expr as LeanExpr, ExprData};
 
   fn mk_name(s: &str) -> Name {
     Name::str(Name::anon(), s.to_string())

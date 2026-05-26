@@ -1,0 +1,10 @@
+[package]
+name = "sp1-guest"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ixon = { path = "../../crates/ixon" }
+ix-kernel = { path = "../../crates/kernel" }
+ix-common = { path = "../../crates/common" }
+sp1-zkvm = "6.2.0"

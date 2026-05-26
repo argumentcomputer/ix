@@ -3,28 +3,25 @@ use rustc_hash::FxHashMap;
 use std::collections::hash_map::Entry;
 
 use crate::{
-  FxIndexMap,
-  aiur::{
-    G,
-    bytecode::{Block, Ctrl, FunIdx, Function, Op, Toplevel},
-    gadgets::{
-      AiurGadget,
-      bytes1::{Bytes1, Bytes1Op, Bytes1Queries},
-      bytes2::{Bytes2, Bytes2Op, Bytes2Queries},
-    },
+  FxIndexMap, G,
+  bytecode::{Block, Ctrl, FunIdx, Function, Op, Toplevel},
+  gadgets::{
+    AiurGadget,
+    bytes1::{Bytes1, Bytes1Op, Bytes1Queries},
+    bytes2::{Bytes2, Bytes2Op, Bytes2Queries},
   },
 };
 
 pub struct QueryResult {
   pub(crate) output: Vec<G>,
-  pub(crate) multiplicity: G,
+  pub multiplicity: G,
 }
 
 pub type QueryMap = FxIndexMap<Vec<G>, QueryResult>;
 
 pub struct QueryRecord {
-  pub(crate) function_queries: Vec<QueryMap>,
-  pub(crate) memory_queries: FxIndexMap<usize, QueryMap>,
+  pub function_queries: Vec<QueryMap>,
+  pub memory_queries: FxIndexMap<usize, QueryMap>,
   pub(crate) bytes1_queries: Bytes1Queries,
   pub(crate) bytes2_queries: Bytes2Queries,
 }
@@ -44,9 +41,9 @@ impl QueryRecord {
   }
 }
 
-pub(crate) struct IOKeyInfo {
-  pub(crate) idx: usize,
-  pub(crate) len: usize,
+pub struct IOKeyInfo {
+  pub idx: usize,
+  pub len: usize,
 }
 
 pub struct IOBuffer {

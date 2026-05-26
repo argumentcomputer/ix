@@ -74,28 +74,28 @@
 //! - `.sparseCasesOn`, `.sparseCasesOnEq`
 //! - `.casesOnSameCtor`, `.casesOnSameCtorHet`
 
-pub(crate) mod below;
-pub(crate) mod brecon;
-pub(crate) mod cases_on;
-pub(crate) mod expr_utils;
-pub(crate) mod nested;
-pub(crate) mod rec_on;
-pub(crate) mod recursor;
+pub mod below;
+pub mod brecon;
+pub mod cases_on;
+pub mod expr_utils;
+pub mod nested;
+pub mod rec_on;
+pub mod recursor;
 
 use std::sync::Arc;
 
 use rustc_hash::FxHashMap;
 
-use crate::ix::compile::CompileState;
-use crate::ix::env::{
+use crate::compile::CompileState;
+use ix_common::env::{
   ConstantVal, Env as LeanEnv, Expr as LeanExpr, Name, RecursorRule,
   RecursorVal,
 };
-use crate::ix::ixon::CompileError;
+use ixon::CompileError;
 
 /// A regenerated constant ready for compilation.
 #[derive(Clone)]
-pub(crate) enum PatchedConstant {
+pub enum PatchedConstant {
   /// A regenerated `.rec` recursor.
   Rec(RecursorVal),
   /// A regenerated `.recOn` definition (arg-reordered `.rec` wrapper).
@@ -118,7 +118,7 @@ pub(crate) enum PatchedConstant {
 /// flips to `Unsafe` whenever the type or value mentions any unsafe constant —
 /// and every auxiliary references its parent inductive.
 #[derive(Clone)]
-pub(crate) struct AuxDef {
+pub struct AuxDef {
   pub name: Name,
   pub level_params: Vec<Name>,
   pub typ: LeanExpr,
@@ -134,7 +134,7 @@ pub(crate) struct AuxDef {
 /// (to canonicalize Lean-source-order originals before structural
 /// comparison).
 #[derive(Clone, Default)]
-pub(crate) struct AuxPatchesOutput {
+pub struct AuxPatchesOutput {
   /// The regenerated canonical-layout constants, keyed by their
   /// Lean-visible source-indexed name (e.g. `A.rec`, `A.below_2`).
   pub patches: FxHashMap<Name, PatchedConstant>,
@@ -185,12 +185,12 @@ pub(crate) struct AuxPatchesOutput {
 /// `InductiveVal.all` of any block member). It determines the canonical
 /// `<all0>.rec_N` naming and the source-aux walk used to compute the
 /// hash-sort permutation.
-pub(crate) fn generate_aux_patches(
+pub fn generate_aux_patches(
   sorted_classes: &[Vec<Name>],
   original_all: &[Name],
   lean_env: &Arc<LeanEnv>,
   stt: &CompileState,
-  kctx: &mut crate::ix::compile::KernelCtx,
+  kctx: &mut crate::compile::KernelCtx,
 ) -> Result<AuxPatchesOutput, CompileError> {
   let mut patches: FxHashMap<Name, PatchedConstant> = FxHashMap::default();
   let mut aliases: FxHashMap<Name, Name> = FxHashMap::default();
@@ -257,8 +257,8 @@ pub(crate) fn generate_aux_patches(
   let metadata_has_nested = original_all.iter().any(|name| {
     matches!(
       lean_env.get(name),
-      Some(crate::ix::env::ConstantInfo::InductInfo(v))
-        if crate::ix::compile::nat_conv::nat_to_usize(&v.num_nested) > 0
+      Some(ix_common::env::ConstantInfo::InductInfo(v))
+        if crate::compile::nat_conv::nat_to_usize(&v.num_nested) > 0
     )
   });
   let (canonical_recs, is_prop) = if metadata_has_nested
@@ -529,7 +529,7 @@ pub(crate) fn generate_aux_patches(
   for (rec_name, rec_val) in canonical_recs.iter().take(n_classes) {
     // Build casesOn name: rec_name is "I.rec", casesOn name is "I.casesOn"
     let ind_name = match rec_name.as_data() {
-      crate::ix::env::NameData::Str(parent, _, _) => parent.clone(),
+      ix_common::env::NameData::Str(parent, _, _) => parent.clone(),
       _ => continue,
     };
     let cases_on_name = Name::str(ind_name, "casesOn".to_string());
@@ -549,7 +549,7 @@ pub(crate) fn generate_aux_patches(
   // types (unlike below_N/brecOn_N which ARE generated via BRecOn.lean).
   for (rec_name, rec_val) in canonical_recs.iter().take(n_classes) {
     let ind_name = match rec_name.as_data() {
-      crate::ix::env::NameData::Str(parent, _, _) => parent.clone(),
+      ix_common::env::NameData::Str(parent, _, _) => parent.clone(),
       _ => continue,
     };
     let rec_on_name = Name::str(ind_name, "recOn".to_string());
@@ -650,7 +650,7 @@ pub(crate) fn generate_aux_patches(
           .and_then(|c| c.first())
           .map(|n| n.pretty())
           .unwrap_or_default();
-        if *crate::ix::compile::IX_TIMING
+        if *crate::compile::IX_TIMING
           && _below_elapsed.as_secs_f32() + _brecon_elapsed.as_secs_f32() > 0.3
         {
           eprintln!(
@@ -669,7 +669,7 @@ pub(crate) fn generate_aux_patches(
     .and_then(|c| c.first())
     .map(|n| n.pretty())
     .unwrap_or_default();
-  if *crate::ix::compile::IX_TIMING && _p1_elapsed.as_secs_f32() > 0.5 {
+  if *crate::compile::IX_TIMING && _p1_elapsed.as_secs_f32() > 0.5 {
     eprintln!(
       "[gen_patches] {:?} recGen={:.2}s patches={}",
       _gen_label,
@@ -721,13 +721,13 @@ pub(crate) fn generate_aux_patches(
             )
           {
             let rep_ctors = match lean_env.get(rep) {
-              Some(crate::ix::env::ConstantInfo::InductInfo(v)) => {
+              Some(ix_common::env::ConstantInfo::InductInfo(v)) => {
                 v.ctors.clone()
               },
               _ => vec![],
             };
             let alias_ctors = match lean_env.get(alias) {
-              Some(crate::ix::env::ConstantInfo::InductInfo(v)) => {
+              Some(ix_common::env::ConstantInfo::InductInfo(v)) => {
                 v.ctors.clone()
               },
               _ => vec![],
@@ -896,7 +896,7 @@ pub(crate) fn generate_aux_patches(
 /// This distinguishes `.below` auxiliaries from coincidental name collisions
 /// like structure field accessors (e.g., `NewDecl.below : NewDecl → LocalDecl`).
 fn is_below_shaped(typ: &LeanExpr) -> bool {
-  use crate::ix::env::ExprData;
+  use ix_common::env::ExprData;
   let mut cur = typ;
   loop {
     match cur.as_data() {
@@ -914,16 +914,16 @@ fn is_below_shaped(typ: &LeanExpr) -> bool {
 /// and may differ from the originals in `lean_env`. The canonical TC
 /// (`stt.canon_tc`) uses `canon_kenv` exclusively, so it sees the
 /// correct types for PProd(motive, I.below ...) inference.
-pub(crate) fn populate_canon_kenv_with_below(
+pub fn populate_canon_kenv_with_below(
   below_consts: &[below::BelowConstant],
   sorted_classes: &[Vec<Name>],
-  lean_env: &crate::ix::env::Env,
+  lean_env: &ix_common::env::Env,
   stt: &CompileState,
-  kctx: &mut crate::ix::compile::KernelCtx,
+  kctx: &mut crate::compile::KernelCtx,
 ) {
-  use crate::ix::kernel::constant::KConst;
-  use crate::ix::kernel::id::KId;
-  use crate::ix::kernel::ingress::{
+  use ix_kernel::constant::KConst;
+  use ix_kernel::id::KId;
+  use ix_kernel::ingress::{
     lean_expr_to_zexpr_with_kenv, resolve_lean_name_addr,
   };
 
@@ -965,9 +965,9 @@ pub(crate) fn populate_canon_kenv_with_below(
           KConst::Defn {
             name: d.name.clone(),
             level_params: d.level_params.clone(),
-            kind: crate::ix::ixon::constant::DefKind::Definition,
-            safety: crate::ix::env::DefinitionSafety::Safe,
-            hints: crate::ix::env::ReducibilityHints::Abbrev,
+            kind: ixon::constant::DefKind::Definition,
+            safety: ix_common::env::DefinitionSafety::Safe,
+            hints: ix_common::env::ReducibilityHints::Abbrev,
             lvls: d.level_params.len() as u64,
             ty: ty_z,
             val: val_z,

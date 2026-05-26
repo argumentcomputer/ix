@@ -6,7 +6,7 @@ use multi_stark::{
   p3_matrix::dense::RowMajorMatrix,
 };
 
-use crate::aiur::{
+use crate::{
   G, execute::QueryRecord, gadgets::AiurGadget, u8_add_channel, u8_and_channel,
   u8_chain_rotr4_channel, u8_chain_rotr7_channel, u8_less_than_channel,
   u8_mul_channel, u8_or_channel, u8_range_check_channel, u8_sub_channel,

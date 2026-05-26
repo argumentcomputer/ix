@@ -17,11 +17,12 @@ use std::thread;
 
 use lean_ffi::LeanShared;
 use lean_ffi::nat::Nat;
+use lean_ffi::object::LeanNat;
 use lean_ffi::object::{
   LeanArray, LeanBorrowed, LeanList, LeanOwned, LeanRef, LeanString,
 };
 
-use crate::ffi::builder::LeanBuildCache;
+use crate::builder::LeanBuildCache;
 use crate::lean::{LeanIxExpr, LeanIxLevel, LeanIxName};
 
 // =============================================================================
@@ -92,7 +93,7 @@ pub extern "C" fn rs_refcount_deep_borrow_expr(
       _ => 1,
     }
   }
-  Nat::from(count_nodes(&expr)).to_lean().into()
+  LeanNat::from_nat(&Nat::from(count_nodes(&expr))).into()
 }
 
 // =============================================================================
@@ -109,7 +110,7 @@ pub extern "C" fn rs_refcount_owned_array_drop(
   for i in 0..count {
     let _ = LeanIxName(arr.get(i)).decode();
   }
-  Nat::from(count as u64).to_lean().into()
+  LeanNat::from_nat(&Nat::from(count as u64)).into()
 }
 
 /// Take an owned List of Exprs, consume and count.
@@ -122,7 +123,7 @@ pub extern "C" fn rs_refcount_owned_list_drop(
     let _ = LeanIxExpr(elem).decode();
     count += 1;
   }
-  Nat::from(count).to_lean().into()
+  LeanNat::from_nat(&Nat::from(count)).into()
 }
 
 // =============================================================================
@@ -140,7 +141,8 @@ pub extern "C" fn rs_refcount_clone_and_compare(
   let decoded1 = owned1.decode();
   let decoded2 = owned2.decode();
   // owned1 and owned2 both dropped → two lean_dec calls
-  Nat::from(if decoded1 == decoded2 { 1u64 } else { 0u64 }).to_lean().into()
+  LeanNat::from_nat(&Nat::from(if decoded1 == decoded2 { 1u64 } else { 0u64 }))
+    .into()
 }
 
 // =============================================================================
@@ -180,7 +182,7 @@ pub extern "C" fn rs_refcount_nested_borrow(
     let _level = LeanIxLevel(pair.get(1)).decode();
     count += 1;
   }
-  Nat::from(count).to_lean().into()
+  LeanNat::from_nat(&Nat::from(count)).into()
 }
 
 // =============================================================================
@@ -313,7 +315,7 @@ pub extern "C" fn rs_mt_parallel_decode_names(
     .collect();
 
   let total: u64 = handles.into_iter().map(|h| h.join().unwrap()).sum();
-  Nat::from(total).to_lean().into()
+  LeanNat::from_nat(&Nat::from(total)).into()
 }
 
 /// Mark an array of Ix.Exprs as MT, decode in parallel from N threads.
@@ -352,7 +354,7 @@ pub extern "C" fn rs_mt_parallel_decode_exprs(
     .collect();
 
   let total: u64 = handles.into_iter().map(|h| h.join().unwrap()).sum();
-  Nat::from(total).to_lean().into()
+  LeanNat::from_nat(&Nat::from(total)).into()
 }
 
 /// Parallel roundtrip: mark array of Names as MT, each thread decodes
@@ -364,7 +366,7 @@ pub extern "C" fn rs_mt_parallel_roundtrip_names(
   arr: LeanArray<LeanBorrowed<'_>>,
   n_threads: usize,
 ) -> LeanArray<LeanOwned> {
-  use crate::ix::env::Name;
+  use ix_common::env::Name;
 
   let shared = LeanShared::new(arr.inner().to_owned_ref());
   let len = arr.len();
@@ -428,5 +430,5 @@ pub extern "C" fn rs_mt_shared_expr_stress(
     .collect();
 
   let total: u64 = handles.into_iter().map(|h| h.join().unwrap()).sum();
-  Nat::from(total).to_lean().into()
+  LeanNat::from_nat(&Nat::from(total)).into()
 }

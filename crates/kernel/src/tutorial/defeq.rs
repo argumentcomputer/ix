@@ -3,11 +3,11 @@
 #[cfg(test)]
 mod tests {
 
-  use crate::ix::env::Name;
-  use crate::ix::kernel::constant::{KConst, RecRule};
-  use crate::ix::kernel::env::KEnv;
-  use crate::ix::kernel::mode::Meta;
-  use crate::ix::kernel::testing::*;
+  use crate::constant::{KConst, RecRule};
+  use crate::env::KEnv;
+  use crate::mode::Meta;
+  use crate::testing::*;
+  use ix_common::env::Name;
 
   // ==========================================================================
   // Batch 4: Proof irrelevance and eta (Tutorial.lean lines 953–1013)
@@ -50,7 +50,7 @@ mod tests {
       vec![],
       ty,
       val,
-      crate::ix::env::ReducibilityHints::Abbrev,
+      ix_common::env::ReducibilityHints::Abbrev,
     );
     env.insert(id.clone(), c);
     check_accepts(&mut env, &id);
@@ -811,7 +811,7 @@ mod tests {
     // Value: fun α r a h p => Eq.refl p  (BOGUS — claims reduction happened)
     let val = ME::lam(
       mk_name("α"),
-      crate::ix::env::BinderInfo::Implicit,
+      ix_common::env::BinderInfo::Implicit,
       sort1(),
       nlam(
         "r",
@@ -1069,11 +1069,11 @@ mod tests {
     let minor_r = app(app(var(0), var(1)), eq_refl_r);
     let rule_rhs = ME::lam(
       mk_name("α"),
-      crate::ix::env::BinderInfo::Implicit,
+      ix_common::env::BinderInfo::Implicit,
       sort(param(1)),
       ME::lam(
         mk_name("a"),
-        crate::ix::env::BinderInfo::Implicit,
+        ix_common::env::BinderInfo::Implicit,
         var(0),
         nlam("motive", motive_ty_r, nlam("refl", minor_r, var(0))),
       ),
@@ -1396,7 +1396,7 @@ mod tests {
       vec![],
       ty,
       val,
-      crate::ix::env::ReducibilityHints::Opaque,
+      ix_common::env::ReducibilityHints::Opaque,
     );
     env.insert(id.clone(), c);
     check_rejects(&mut env, &id);
@@ -1499,7 +1499,7 @@ mod tests {
       vec![],
       ty,
       val,
-      crate::ix::env::ReducibilityHints::Opaque,
+      ix_common::env::ReducibilityHints::Opaque,
     );
     env.insert(id.clone(), c);
     check_rejects(&mut env, &id);
@@ -1523,11 +1523,11 @@ mod tests {
     // fun {a} {b} (h : And a b) => .proj And 0 h
     let val = ME::lam(
       mk_name("a"),
-      crate::ix::env::BinderInfo::Implicit,
+      ix_common::env::BinderInfo::Implicit,
       sort0(),
       ME::lam(
         mk_name("b"),
-        crate::ix::env::BinderInfo::Implicit,
+        ix_common::env::BinderInfo::Implicit,
         sort0(),
         nlam("h", and_ab, ME::prj(mk_id("And"), 0, var(0))),
       ),
@@ -1539,7 +1539,7 @@ mod tests {
       vec![],
       ty,
       val,
-      crate::ix::env::ReducibilityHints::Abbrev,
+      ix_common::env::ReducibilityHints::Abbrev,
     );
     env.insert(id.clone(), c);
     check_accepts(&mut env, &id);
@@ -1554,11 +1554,11 @@ mod tests {
 
     let val = ME::lam(
       mk_name("a"),
-      crate::ix::env::BinderInfo::Implicit,
+      ix_common::env::BinderInfo::Implicit,
       sort0(),
       ME::lam(
         mk_name("b"),
-        crate::ix::env::BinderInfo::Implicit,
+        ix_common::env::BinderInfo::Implicit,
         sort0(),
         nlam("h", and_ab, ME::prj(mk_id("And"), 1, var(0))),
       ),
@@ -1570,7 +1570,7 @@ mod tests {
       vec![],
       ty,
       val,
-      crate::ix::env::ReducibilityHints::Abbrev,
+      ix_common::env::ReducibilityHints::Abbrev,
     );
     env.insert(id.clone(), c);
     check_accepts(&mut env, &id);
@@ -1903,7 +1903,7 @@ mod tests {
       vec![],
       ty,
       val,
-      crate::ix::env::ReducibilityHints::Opaque,
+      ix_common::env::ReducibilityHints::Opaque,
     );
     env.insert(id.clone(), c);
     id
@@ -2071,7 +2071,7 @@ mod tests {
       vec![],
       ty,
       val,
-      crate::ix::env::ReducibilityHints::Opaque,
+      ix_common::env::ReducibilityHints::Opaque,
     );
     env.insert(id.clone(), c);
     check_rejects(&mut env, &id);
@@ -2279,7 +2279,7 @@ mod tests {
       vec![],
       ty,
       val,
-      crate::ix::env::ReducibilityHints::Opaque,
+      ix_common::env::ReducibilityHints::Opaque,
     );
     env.insert(id.clone(), c);
     check_rejects(&mut env, &id);

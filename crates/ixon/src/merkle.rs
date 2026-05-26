@@ -30,7 +30,7 @@
 //! introduces CVE-2012-2459-style malleability where two distinct leaf
 //! lists can produce the same root.
 
-use crate::ix::address::Address;
+use ix_common::address::Address;
 
 /// Domain-separation prefix for leaf hashes.
 pub const LEAF_DOMAIN: u8 = 0x00;

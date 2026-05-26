@@ -6,9 +6,12 @@ pub mod memory;
 pub mod synthesis;
 pub mod trace;
 
+use indexmap::IndexMap;
 use multi_stark::p3_field::PrimeCharacteristicRing;
+use rustc_hash::FxBuildHasher;
 
 pub type G = multi_stark::p3_goldilocks::Goldilocks;
+pub type FxIndexMap<K, V> = IndexMap<K, V, FxBuildHasher>;
 
 #[inline]
 pub const fn function_channel() -> G {

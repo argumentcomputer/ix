@@ -9,14 +9,13 @@ use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::collections::hash_map::Entry;
 
-use lean_ffi::nat::Nat;
+use bignat::Nat;
 
-use crate::{
-  ix::env::{
-    ConstantInfo, Env, Expr, ExprData, InductiveVal, Level, LevelData, Name,
-  },
-  ix::graph::RefMap,
+use ix_common::env::{
+  ConstantInfo, Env, Expr, ExprData, InductiveVal, Level, LevelData, Name,
 };
+
+use crate::graph::RefMap;
 
 /// Reason a constant failed groundedness checking.
 ///
@@ -235,8 +234,8 @@ fn ground_level(
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::ix::env::*;
-  use crate::ix::graph::build_ref_graph;
+  use crate::graph::build_ref_graph;
+  use ix_common::env::*;
 
   fn n(s: &str) -> Name {
     Name::str(Name::anon(), s.to_string())

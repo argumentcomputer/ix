@@ -10,8 +10,8 @@
 
 use std::sync::Arc;
 
-use crate::ix::address::Address;
-use crate::ix::env::{DefinitionSafety, QuotKind};
+use ix_common::address::Address;
+use ix_common::env::{DefinitionSafety, QuotKind};
 
 use super::expr::Expr;
 use super::univ::Univ;
@@ -310,10 +310,11 @@ pub fn ctor_proj_constant(idx: u64, cidx: u64, block: Address) -> Constant {
 #[cfg(test)]
 pub mod tests {
   use super::*;
-  use crate::ix::env::{DefinitionSafety, QuotKind};
-  use crate::ix::ixon::expr::tests::arbitrary_expr;
-  use crate::ix::ixon::tests::gen_range;
+  use crate::expr::tests::arbitrary_expr;
+  use crate::tests::gen_range;
+  use ix_common::env::{DefinitionSafety, QuotKind};
   use quickcheck::{Arbitrary, Gen};
+  use quickcheck_macros::quickcheck;
 
   impl Arbitrary for DefKind {
     fn arbitrary(g: &mut Gen) -> Self {
@@ -321,27 +322,6 @@ pub mod tests {
         0 => DefKind::Definition,
         1 => DefKind::Opaque,
         _ => DefKind::Theorem,
-      }
-    }
-  }
-
-  impl Arbitrary for DefinitionSafety {
-    fn arbitrary(g: &mut Gen) -> Self {
-      match u8::arbitrary(g) % 3 {
-        0 => DefinitionSafety::Unsafe,
-        1 => DefinitionSafety::Safe,
-        _ => DefinitionSafety::Partial,
-      }
-    }
-  }
-
-  impl Arbitrary for QuotKind {
-    fn arbitrary(g: &mut Gen) -> Self {
-      match u8::arbitrary(g) % 4 {
-        0 => QuotKind::Type,
-        1 => QuotKind::Ctor,
-        2 => QuotKind::Lift,
-        _ => QuotKind::Ind,
       }
     }
   }
@@ -355,7 +335,7 @@ pub mod tests {
   }
 
   pub fn gen_univs(g: &mut Gen) -> Vec<Arc<Univ>> {
-    use crate::ix::ixon::univ::tests::arbitrary_univ;
+    use crate::univ::tests::arbitrary_univ;
     (0..gen_range(g, 0..4)).map(|_| arbitrary_univ(g)).collect()
   }
 

@@ -37,7 +37,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::Arc;
 
-use crate::ix::env::{Name, UIMAX, UMAX, UPARAM, USUCC, UZERO};
+use ix_common::env::{Name, UIMAX, UMAX, UPARAM, USUCC, UZERO};
 
 use super::env::Addr;
 use super::mode::{KernelMode, MetaDisplay};
@@ -708,7 +708,7 @@ pub fn univ_geq<M: KernelMode>(u: &KUniv<M>, v: &KUniv<M>) -> bool {
 mod tests {
   use super::super::mode::{Anon, Meta};
   use super::*;
-  use crate::ix::env::Name;
+  use ix_common::env::Name;
 
   type MU = KUniv<Meta>;
   type AU = KUniv<Anon>;

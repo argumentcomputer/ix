@@ -2,8 +2,8 @@
 
 use std::sync::Arc;
 
-use crate::ix::ixon::expr::Expr as IxonExpr;
 use crate::lean::LeanIxonExpr;
+use ixon::expr::Expr as IxonExpr;
 use lean_ffi::object::{LeanArray, LeanBorrowed, LeanOwned, LeanRef};
 
 /// Decode Array UInt64 from Lean.

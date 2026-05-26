@@ -45,7 +45,7 @@ use std::sync::Arc;
 
 use memmap2::Mmap;
 
-use crate::ix::address::Address;
+use ix_common::address::Address;
 
 use super::constant::{Constant, ConstantInfo};
 
@@ -246,9 +246,9 @@ impl Eq for LazyConstant {}
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::ix::env::DefinitionSafety;
-  use crate::ix::ixon::constant::{Axiom, ConstantInfo, DefKind, Definition};
-  use crate::ix::ixon::expr::Expr;
+  use crate::constant::{Axiom, ConstantInfo, DefKind, Definition};
+  use crate::expr::Expr;
+  use ix_common::env::DefinitionSafety;
 
   fn axiom_constant() -> Constant {
     Constant::new(ConstantInfo::Axio(Axiom {
@@ -391,7 +391,7 @@ mod tests {
   /// roundtrip it through `Constant::put`/`Constant::get` for the
   /// `peek_variant` Muts test.
   fn muts_constant() -> Constant {
-    use crate::ix::ixon::constant::{ConstantInfo, MutConst};
+    use crate::constant::{ConstantInfo, MutConst};
     let m1 = MutConst::Defn(Definition {
       kind: DefKind::Definition,
       safety: DefinitionSafety::Safe,
@@ -431,8 +431,8 @@ mod tests {
 
   #[test]
   fn peek_variant_quot() {
-    use crate::ix::env::QuotKind;
-    use crate::ix::ixon::constant::{ConstantInfo, Quotient};
+    use crate::constant::{ConstantInfo, Quotient};
+    use ix_common::env::QuotKind;
     let q = Constant::new(ConstantInfo::Quot(Quotient {
       kind: QuotKind::Type,
       lvls: 1,
@@ -443,7 +443,7 @@ mod tests {
 
   #[test]
   fn peek_variant_dprj() {
-    use crate::ix::ixon::constant::{ConstantInfo, DefinitionProj};
+    use crate::constant::{ConstantInfo, DefinitionProj};
     let p = Constant::new(ConstantInfo::DPrj(DefinitionProj {
       idx: 0,
       block: Address::hash(b"some-block"),
@@ -453,7 +453,7 @@ mod tests {
 
   #[test]
   fn peek_variant_iprj() {
-    use crate::ix::ixon::constant::{ConstantInfo, InductiveProj};
+    use crate::constant::{ConstantInfo, InductiveProj};
     let p = Constant::new(ConstantInfo::IPrj(InductiveProj {
       idx: 0,
       block: Address::hash(b"some-block"),
@@ -463,7 +463,7 @@ mod tests {
 
   #[test]
   fn peek_variant_rprj() {
-    use crate::ix::ixon::constant::{ConstantInfo, RecursorProj};
+    use crate::constant::{ConstantInfo, RecursorProj};
     let p = Constant::new(ConstantInfo::RPrj(RecursorProj {
       idx: 0,
       block: Address::hash(b"some-block"),
@@ -473,7 +473,7 @@ mod tests {
 
   #[test]
   fn peek_variant_cprj() {
-    use crate::ix::ixon::constant::{ConstantInfo, ConstructorProj};
+    use crate::constant::{ConstantInfo, ConstructorProj};
     let p = Constant::new(ConstantInfo::CPrj(ConstructorProj {
       idx: 0,
       cidx: 0,

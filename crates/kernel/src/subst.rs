@@ -11,8 +11,6 @@
 //! uses a `PtrMap Expr Expr` for the same reason (see
 //! `refs/lean4lean/Lean4Lean/Expr.lean:14`).
 
-use std::sync::LazyLock;
-
 use rustc_hash::FxHashMap;
 
 use super::env::{Addr, InternTable};
@@ -25,8 +23,8 @@ use super::mode::KernelMode;
 /// seconds per infer call likely has substs dominating. The counter
 /// only fires for the top-level `subst` entry, so recursive sub-calls
 /// don't inflate the number.
-static IX_SUBST_COUNT_LOG: LazyLock<bool> =
-  LazyLock::new(|| std::env::var("IX_SUBST_COUNT_LOG").is_ok());
+static IX_SUBST_COUNT_LOG: crate::EnvFlag =
+  crate::EnvFlag::new(|| crate::env_var("IX_SUBST_COUNT_LOG").is_ok());
 
 static SUBST_COUNT: std::sync::atomic::AtomicUsize =
   std::sync::atomic::AtomicUsize::new(0);
@@ -53,7 +51,7 @@ pub fn subst<M: KernelMode>(
   if *IX_SUBST_COUNT_LOG && depth == 0 {
     let n = SUBST_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     if n.is_multiple_of(100_000) && n > 0 {
-      eprintln!("[subst] count={n}");
+      log::info!("[subst] count={n}");
     }
   }
   // Fast path: no loose bound vars at or below `depth` means nothing to
@@ -281,7 +279,7 @@ fn simul_subst_cached<M: KernelMode>(
         cache.insert(key, r.clone());
         return r;
       } else if i >= depth + n {
-        KExpr::var(i - n, M::meta_field(crate::ix::env::Name::anon()))
+        KExpr::var(i - n, M::meta_field(ix_common::env::Name::anon()))
       } else {
         let r = body.clone();
         cache.insert(key, r.clone());
@@ -661,7 +659,7 @@ fn instantiate_rev_cached<M: KernelMode>(
         return r;
       } else if i >= depth + n {
         // Free variable above the instantiated range: shift down by `n`.
-        KExpr::var(i - n, M::meta_field(crate::ix::env::Name::anon()))
+        KExpr::var(i - n, M::meta_field(ix_common::env::Name::anon()))
       } else {
         // i < depth: bound by an inner binder we walked under; unchanged.
         let r = body.clone();
@@ -780,7 +778,7 @@ fn abstract_fvars_cached<M: KernelMode>(
       // pass through unchanged (they belong to outer abstractions).
       if let Some(&p) = pos.get(id) {
         let new_var =
-          KExpr::var(depth + p, M::meta_field(crate::ix::env::Name::anon()));
+          KExpr::var(depth + p, M::meta_field(ix_common::env::Name::anon()));
         let interned = env.intern_expr(new_var);
         cache.insert(key, interned.clone());
         return interned;
@@ -874,11 +872,11 @@ impl<M: KernelMode> ExprData<M> {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::ix::address::Address;
-  use crate::ix::kernel::id::KId;
-  use crate::ix::kernel::level::KUniv;
-  use crate::ix::kernel::mode::Anon;
-  use lean_ffi::nat::Nat;
+  use crate::id::KId;
+  use crate::level::KUniv;
+  use crate::mode::Anon;
+  use bignat::Nat;
+  use ix_common::address::Address;
 
   type AE = KExpr<Anon>;
 

@@ -24,9 +24,9 @@ use rustc_hash::FxHashSet;
 use std::collections::VecDeque;
 use std::sync::Arc;
 
-use crate::ix::address::Address;
-use crate::ix::ixon::constant::Constant;
-use crate::ix::ixon::env::Env as IxonEnv;
+use ix_common::address::Address;
+use ixon::constant::Constant;
+use ixon::env::Env as IxonEnv;
 
 /// Anonymous-only view over an `IxonEnv`.
 #[derive(Clone, Copy, Debug)]
@@ -103,10 +103,10 @@ impl<'a> AnonEnv<'a> {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::ix::env::Name;
-  use crate::ix::ixon::constant::{Axiom, ConstantInfo};
-  use crate::ix::ixon::env::Named;
-  use crate::ix::ixon::expr::Expr;
+  use ix_common::env::Name;
+  use ixon::constant::{Axiom, ConstantInfo};
+  use ixon::env::Named;
+  use ixon::expr::Expr;
 
   fn axiom_const_with_refs(refs: Vec<Address>) -> Constant {
     Constant::with_tables(

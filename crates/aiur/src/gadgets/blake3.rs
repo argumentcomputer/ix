@@ -14,7 +14,7 @@ use multi_stark::{
     p3_matrix::dense::RowMajorMatrix,
 };
 
-use crate::aiur::{
+use crate::{
     G,
     execute::QueryRecord,
     gadgets::{

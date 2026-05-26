@@ -10,23 +10,23 @@
 //! - Tag 6: ctorInfo (v : ConstructorVal)
 //! - Tag 7: recInfo (v : RecursorVal)
 
-use crate::ix::env::{
-  AxiomVal, ConstantInfo, ConstantVal, ConstructorVal, DefinitionSafety,
-  DefinitionVal, InductiveVal, Name, OpaqueVal, QuotKind, QuotVal,
-  RecursorRule, RecursorVal, ReducibilityHints, TheoremVal,
-};
 use crate::lean::{
   LeanIxAxiomVal, LeanIxConstantInfo, LeanIxConstantVal, LeanIxConstructorVal,
   LeanIxDefinitionVal, LeanIxExpr, LeanIxInductiveVal, LeanIxName,
   LeanIxOpaqueVal, LeanIxQuotVal, LeanIxRecursorRule, LeanIxRecursorVal,
   LeanIxReducibilityHints, LeanIxTheoremVal,
 };
-use lean_ffi::nat::Nat;
+use ix_common::env::{
+  AxiomVal, ConstantInfo, ConstantVal, ConstructorVal, DefinitionSafety,
+  DefinitionVal, InductiveVal, Name, OpaqueVal, QuotKind, QuotVal,
+  RecursorRule, RecursorVal, ReducibilityHints, TheoremVal,
+};
 #[cfg(feature = "test-ffi")]
 use lean_ffi::object::LeanBorrowed;
+use lean_ffi::object::LeanNat;
 use lean_ffi::object::{LeanArray, LeanOwned, LeanRef};
 
-use crate::ffi::builder::LeanBuildCache;
+use crate::builder::LeanBuildCache;
 
 // =============================================================================
 // ConstantVal
@@ -121,7 +121,7 @@ impl<R: LeanRef> LeanIxRecursorRule<R> {
     let ctor = self.as_ctor();
     RecursorRule {
       ctor: LeanIxName(ctor.get(0)).decode(),
-      n_fields: Nat::from_obj(&ctor.get(1)),
+      n_fields: LeanNat::to_nat(&ctor.get(1)),
       rhs: LeanIxExpr(ctor.get(2)).decode(),
     }
   }
@@ -141,7 +141,7 @@ impl LeanIxRecursorRule<LeanOwned> {
     for (i, rule) in rules.iter().enumerate() {
       // RecursorRule = { ctor : Name, nFields : Nat, rhs : Expr }
       let ctor_obj = LeanIxName::build(cache, &rule.ctor);
-      let n_fields_obj = Nat::to_lean(&rule.n_fields);
+      let n_fields_obj = LeanNat::from_nat(&rule.n_fields);
       let rhs_obj = LeanIxExpr::build(cache, &rule.rhs);
 
       let rule_obj = LeanIxRecursorRule::alloc(0);
@@ -253,11 +253,11 @@ impl LeanIxConstantInfo<LeanOwned> {
       ConstantInfo::InductInfo(v) => {
         // InductiveVal = { cnst, numParams, numIndices, all, ctors, numNested, isRec, isUnsafe, isReflexive }
         let cnst_obj = LeanIxConstantVal::build(cache, &v.cnst);
-        let num_params_obj = Nat::to_lean(&v.num_params);
-        let num_indices_obj = Nat::to_lean(&v.num_indices);
+        let num_params_obj = LeanNat::from_nat(&v.num_params);
+        let num_indices_obj = LeanNat::from_nat(&v.num_indices);
         let all_obj = LeanIxName::build_array(cache, &v.all);
         let ctors_obj = LeanIxName::build_array(cache, &v.ctors);
-        let num_nested_obj = Nat::to_lean(&v.num_nested);
+        let num_nested_obj = LeanNat::from_nat(&v.num_nested);
 
         // 6 object fields, 3 scalar bytes for bools
         let induct_val = LeanIxInductiveVal::alloc(0);
@@ -280,9 +280,9 @@ impl LeanIxConstantInfo<LeanOwned> {
         // ConstructorVal = { cnst, induct, cidx, numParams, numFields, isUnsafe }
         let cnst_obj = LeanIxConstantVal::build(cache, &v.cnst);
         let induct_obj = LeanIxName::build(cache, &v.induct);
-        let cidx_obj = Nat::to_lean(&v.cidx);
-        let num_params_obj = Nat::to_lean(&v.num_params);
-        let num_fields_obj = Nat::to_lean(&v.num_fields);
+        let cidx_obj = LeanNat::from_nat(&v.cidx);
+        let num_params_obj = LeanNat::from_nat(&v.num_params);
+        let num_fields_obj = LeanNat::from_nat(&v.num_fields);
 
         // 5 object fields, 1 scalar byte for bool
         let ctor_val = LeanIxConstructorVal::alloc(0);
@@ -302,10 +302,10 @@ impl LeanIxConstantInfo<LeanOwned> {
         // RecursorVal = { cnst, all, numParams, numIndices, numMotives, numMinors, rules, k, isUnsafe }
         let cnst_obj = LeanIxConstantVal::build(cache, &v.cnst);
         let all_obj = LeanIxName::build_array(cache, &v.all);
-        let num_params_obj = Nat::to_lean(&v.num_params);
-        let num_indices_obj = Nat::to_lean(&v.num_indices);
-        let num_motives_obj = Nat::to_lean(&v.num_motives);
-        let num_minors_obj = Nat::to_lean(&v.num_minors);
+        let num_params_obj = LeanNat::from_nat(&v.num_params);
+        let num_indices_obj = LeanNat::from_nat(&v.num_indices);
+        let num_motives_obj = LeanNat::from_nat(&v.num_motives);
+        let num_minors_obj = LeanNat::from_nat(&v.num_minors);
         let rules_obj = LeanIxRecursorRule::build_array(cache, &v.rules);
 
         // 7 object fields, 2 scalar bytes for bools
@@ -404,11 +404,11 @@ impl<R: LeanRef> LeanIxConstantInfo<R> {
 
         ConstantInfo::InductInfo(InductiveVal {
           cnst: LeanIxConstantVal(inner_val.get_obj(0)).decode(),
-          num_params: Nat::from_obj(&inner_val.get_obj(1)),
-          num_indices: Nat::from_obj(&inner_val.get_obj(2)),
+          num_params: LeanNat::to_nat(&inner_val.get_obj(1)),
+          num_indices: LeanNat::to_nat(&inner_val.get_obj(2)),
           all: LeanIxName::decode_array(inner_val.get_obj(3).as_array()),
           ctors: LeanIxName::decode_array(inner_val.get_obj(4).as_array()),
-          num_nested: Nat::from_obj(&inner_val.get_obj(5)),
+          num_nested: LeanNat::to_nat(&inner_val.get_obj(5)),
           is_rec,
           is_unsafe,
           is_reflexive,
@@ -421,9 +421,9 @@ impl<R: LeanRef> LeanIxConstantInfo<R> {
         ConstantInfo::CtorInfo(ConstructorVal {
           cnst: LeanIxConstantVal(inner_val.get_obj(0)).decode(),
           induct: LeanIxName(inner_val.get_obj(1)).decode(),
-          cidx: Nat::from_obj(&inner_val.get_obj(2)),
-          num_params: Nat::from_obj(&inner_val.get_obj(3)),
-          num_fields: Nat::from_obj(&inner_val.get_obj(4)),
+          cidx: LeanNat::to_nat(&inner_val.get_obj(2)),
+          num_params: LeanNat::to_nat(&inner_val.get_obj(3)),
+          num_fields: LeanNat::to_nat(&inner_val.get_obj(4)),
           is_unsafe,
         })
       },
@@ -440,10 +440,10 @@ impl<R: LeanRef> LeanIxConstantInfo<R> {
         ConstantInfo::RecInfo(RecursorVal {
           cnst: LeanIxConstantVal(inner_val.get_obj(0)).decode(),
           all: LeanIxName::decode_array(inner_val.get_obj(1).as_array()),
-          num_params: Nat::from_obj(&inner_val.get_obj(2)),
-          num_indices: Nat::from_obj(&inner_val.get_obj(3)),
-          num_motives: Nat::from_obj(&inner_val.get_obj(4)),
-          num_minors: Nat::from_obj(&inner_val.get_obj(5)),
+          num_params: LeanNat::to_nat(&inner_val.get_obj(2)),
+          num_indices: LeanNat::to_nat(&inner_val.get_obj(3)),
+          num_motives: LeanNat::to_nat(&inner_val.get_obj(4)),
+          num_minors: LeanNat::to_nat(&inner_val.get_obj(5)),
           rules,
           k,
           is_unsafe,

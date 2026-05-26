@@ -7,9 +7,7 @@
 //! 4. Iterative lazy delta with same-head-spine optimization
 //! 5. Full WHNF, structural comparison, eta, struct eta
 
-use std::sync::LazyLock;
-
-use crate::ix::ixon::constant::DefKind;
+use ixon::constant::DefKind;
 
 use super::constant::KConst;
 use super::env::Addr;
@@ -29,28 +27,28 @@ use super::tc::{
 /// to watch all `Int.bmod`-involving comparisons). Prints `[deq] a <?> b`
 /// before entering `is_def_eq_inner`, then the boolean outcome. Useful for
 /// pinning down which sub-expression of an App-spine is stuck.
-static IX_DEF_EQ_TRACE: LazyLock<Option<String>> =
-  LazyLock::new(|| std::env::var("IX_DEF_EQ_TRACE").ok());
+static IX_DEF_EQ_TRACE: crate::EnvString =
+  crate::EnvString::new(|| crate::env_var("IX_DEF_EQ_TRACE").ok());
 
 /// Global perf counter: total `is_def_eq` entries across all checks.
 /// When `IX_DEF_EQ_COUNT_LOG=1`, logs every 1M calls. Useful for
 /// detecting checks that explode into millions of recursive
 /// comparisons \u2014 a signal that some caching optimization is
 /// mis-firing or some reduction is looping.
-static IX_DEF_EQ_COUNT_LOG: LazyLock<bool> =
-  LazyLock::new(|| std::env::var("IX_DEF_EQ_COUNT_LOG").is_ok());
+static IX_DEF_EQ_COUNT_LOG: crate::EnvFlag =
+  crate::EnvFlag::new(|| crate::env_var("IX_DEF_EQ_COUNT_LOG").is_ok());
 
 /// Dump the expression pair when `is_def_eq` hits its recursion/fuel guard.
 /// The optional env var value is used as a substring filter over the two head
 /// constants; an empty value dumps every guard hit.
-static IX_DEF_EQ_MAX_DUMP: LazyLock<Option<String>> =
-  LazyLock::new(|| std::env::var("IX_DEF_EQ_MAX_DUMP").ok());
+static IX_DEF_EQ_MAX_DUMP: crate::EnvString =
+  crate::EnvString::new(|| crate::env_var("IX_DEF_EQ_MAX_DUMP").ok());
 
-static IX_ETA_TRACE: LazyLock<Option<String>> =
-  LazyLock::new(|| std::env::var("IX_ETA_TRACE").ok());
+static IX_ETA_TRACE: crate::EnvString =
+  crate::EnvString::new(|| crate::env_var("IX_ETA_TRACE").ok());
 
-static IX_PROJ_DELTA_TRACE: LazyLock<Option<String>> =
-  LazyLock::new(|| std::env::var("IX_PROJ_DELTA_TRACE").ok());
+static IX_PROJ_DELTA_TRACE: crate::EnvString =
+  crate::EnvString::new(|| crate::env_var("IX_PROJ_DELTA_TRACE").ok());
 
 static DEF_EQ_COUNT: std::sync::atomic::AtomicUsize =
   std::sync::atomic::AtomicUsize::new(0);
@@ -65,7 +63,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     if *IX_DEF_EQ_COUNT_LOG {
       let n = DEF_EQ_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
       if n.is_multiple_of(100_000) && n > 0 {
-        eprintln!("[is_def_eq] count={n}");
+        log::info!("[is_def_eq] count={n}");
       }
     }
     if a.ptr_eq(b) {
@@ -87,12 +85,12 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       let a_hit = head_const_name(a).is_some_and(|n| n.contains(prefix));
       let b_hit = head_const_name(b).is_some_and(|n| n.contains(prefix));
       if a_hit || b_hit {
-        eprintln!(
+        log::info!(
           "[deq] depth={} a={}",
           self.def_eq_depth,
           compact_def_eq_expr(a)
         );
-        eprintln!(
+        log::info!(
           "[deq] depth={} b={}",
           self.def_eq_depth,
           compact_def_eq_expr(b)
@@ -120,8 +118,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     // per method call. Any true result moves the originals into `add_equiv`
     // before returning.
     let eq_ctx = self.def_eq_ctx_key(a, b);
-    let a_key: crate::ix::kernel::equiv::EqKey = (a.hash_key(), eq_ctx);
-    let b_key: crate::ix::kernel::equiv::EqKey = (b.hash_key(), eq_ctx);
+    let a_key: crate::equiv::EqKey = (a.hash_key(), eq_ctx);
+    let b_key: crate::equiv::EqKey = (b.hash_key(), eq_ctx);
 
     if self.equiv_manager.is_equiv(&a_key, &b_key) {
       return Ok(true);
@@ -211,7 +209,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
 
     let ok = result?;
     if trace_active {
-      eprintln!(
+      log::info!(
         "[deq] depth={} -> {} ({})",
         self.def_eq_depth,
         ok,
@@ -220,8 +218,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       // On FAIL, also dump the full a/b that failed (post-Tier-1 quick).
       // Lets us see what the def-eq engine actually compared.
       if !ok {
-        eprintln!("[deq fail] depth={} a-full: {a}", self.def_eq_depth);
-        eprintln!("[deq fail] depth={} b-full: {b}", self.def_eq_depth);
+        log::info!("[deq fail] depth={} a-full: {a}", self.def_eq_depth);
+        log::info!("[deq fail] depth={} b-full: {b}", self.def_eq_depth);
       }
       self.def_eq_trace_depth = self.def_eq_trace_depth.saturating_sub(1);
     }
@@ -496,9 +494,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     }
 
     if self.def_eq_trace_depth > 0 {
-      eprintln!("[deq tier4 break] depth={}", self.def_eq_depth);
-      eprintln!("  wa: {wa}");
-      eprintln!("  wb: {wb}");
+      log::info!("[deq tier4 break] depth={}", self.def_eq_depth);
+      log::info!("  wa: {wa}");
+      log::info!("  wb: {wb}");
     }
 
     // Tier 4b: post-delta congruence checks (lean4lean isDefEqConst/Fvar/Proj)
@@ -539,15 +537,15 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     // Tier 5 final-fail trace: when IX_DEF_EQ_TIER5_DUMP is set and the
     // pair's head names contain the configured substring, dump the
     // post-whnfCore wa/wb. This is where lazy-delta + Tier 4c gave up.
-    if let Ok(prefix) = std::env::var("IX_DEF_EQ_TIER5_DUMP")
+    if let Ok(prefix) = crate::env_var("IX_DEF_EQ_TIER5_DUMP")
       && let Ok(false) = result.as_ref()
     {
       let a_match = head_const_name(&wa).is_some_and(|n| n.contains(&prefix));
       let b_match = head_const_name(&wb).is_some_and(|n| n.contains(&prefix));
       if prefix.is_empty() || a_match || b_match {
-        eprintln!("[deq tier5 fail] depth={}", self.def_eq_depth);
-        eprintln!("  wa: {wa}");
-        eprintln!("  wb: {wb}");
+        log::info!("[deq tier5 fail] depth={}", self.def_eq_depth);
+        log::info!("  wa: {wa}");
+        log::info!("  wb: {wb}");
       }
     }
 
@@ -807,7 +805,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       Ok(ty) => ty,
       Err(_) => return Ok(false),
     };
-    if !self.is_prop_type(&a_ty)? {
+    if !self.is_prop_type(&a_ty) {
       return Ok(false);
     }
     let b_ty = match self.with_infer_only(|tc| tc.infer(b)) {
@@ -826,14 +824,11 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   /// the inner chain are propagated as `Ok(false)` (treating ill-typed
   /// metadata as non-prop), matching the previous behaviour of
   /// `try_proof_irrel`.
-  pub(crate) fn is_prop_type(
-    &mut self,
-    ty: &KExpr<M>,
-  ) -> Result<bool, TcError<M>> {
+  pub(crate) fn is_prop_type(&mut self, ty: &KExpr<M>) -> bool {
     let cache_key = (ty.hash_key(), self.ctx_addr_for_lbr(ty.lbr()));
     if let Some(&cached) = self.env.is_prop_cache.get(&cache_key) {
       self.env.perf.record_is_prop_hit();
-      return Ok(cached);
+      return cached;
     }
     self.env.perf.record_is_prop_miss();
     self.record_hot_miss("is-prop", ty);
@@ -852,7 +847,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       Err(_) => false,
     };
     self.env.is_prop_cache.insert(cache_key, result);
-    Ok(result)
+    result
   }
 
   /// Unit-like type: non-recursive, 0 indices, 1 ctor with 0 fields.
@@ -933,8 +928,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         if v.0 == num_bigint::BigUint::ZERO {
           return None;
         }
-        let pred = lean_ffi::nat::Nat(&v.0 - num_bigint::BigUint::from(1u64));
-        let pred_addr = crate::ix::address::Address::hash(&pred.to_le_bytes());
+        let pred = bignat::Nat(&v.0 - num_bigint::BigUint::from(1u64));
+        let pred_addr = ix_common::address::Address::hash(&pred.to_le_bytes());
         Some(self.env.intern.intern_expr(KExpr::nat(pred, pred_addr)))
       },
       ExprData::App(f, arg, _) => match f.data() {
@@ -1047,8 +1042,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     // Build list right-to-left: foldr
     let mut list = nil;
     for c in s.chars().rev() {
-      let nat_val = lean_ffi::nat::Nat::from(c as u64);
-      let nat_addr = crate::ix::address::Address::hash(&nat_val.to_le_bytes());
+      let nat_val = bignat::Nat::from(c as u64);
+      let nat_addr = ix_common::address::Address::hash(&nat_val.to_le_bytes());
       let nat_lit = self.intern(KExpr::nat(nat_val, nat_addr));
       let char_val = self.intern(KExpr::app(char_of_nat.clone(), nat_lit));
       let partial = self.intern(KExpr::app(cons.clone(), char_val));
@@ -1093,7 +1088,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     // Wrap s as λ(ty). s #0
     let s_lifted = lift(&mut self.env.intern, s, 1, 0);
     let v0 =
-      self.intern(KExpr::var(0, M::meta_field(crate::ix::env::Name::anon())));
+      self.intern(KExpr::var(0, M::meta_field(ix_common::env::Name::anon())));
     let body = self.intern(KExpr::app(s_lifted, v0));
     let s_lam = self.intern(KExpr::lam(name, bi, ty, body));
     self.is_def_eq(t, &s_lam)
@@ -1307,7 +1302,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   /// Check if a constant has Regular reducibility hints (not Abbrev or Opaque).
   /// Used to guard the same-head-spine optimization (lean4lean: dt.hints.isRegular).
   fn is_regular(&mut self, id: &KId<M>) -> Result<bool, TcError<M>> {
-    use crate::ix::env::ReducibilityHints;
+    use ix_common::env::ReducibilityHints;
     Ok(matches!(
       self.try_get_const(id)?,
       Some(KConst::Defn { hints: ReducibilityHints::Regular(_), .. })
@@ -1329,7 +1324,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   /// - `Regular(h)` → `(1, h)` (ordered by height within the class)
   /// - `Abbrev` → `(2, 0)` (strictly greater than every `Regular(h)`)
   fn def_rank_id(&mut self, id: &KId<M>) -> Result<(u8, u32), TcError<M>> {
-    use crate::ix::env::ReducibilityHints;
+    use ix_common::env::ReducibilityHints;
     Ok(match self.try_get_const(id)? {
       Some(KConst::Defn { kind, hints, .. }) => match kind {
         DefKind::Opaque | DefKind::Theorem => (0, 0),
@@ -1522,7 +1517,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     if !filter.is_empty() && !id_s.contains(filter) {
       return;
     }
-    eprintln!(
+    log::info!(
       "[proj-delta] const={} depth={} phase={} proj={}.{} a={} b={}",
       self.debug_label.as_deref().unwrap_or("<unknown>"),
       self.def_eq_depth,
@@ -1566,7 +1561,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     if !filter.is_empty() && !id_s.contains(filter) {
       return;
     }
-    eprintln!(
+    log::info!(
       "[eta] const={} depth={} reason={} id={} idx={} a={} b={}",
       self.debug_label.as_deref().unwrap_or("<unknown>"),
       self.def_eq_depth,
@@ -1696,17 +1691,21 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     {
       return;
     }
-    eprintln!(
+    log::info!(
       "[deq max] {kind} depth={} a_head={} b_head={} wa_head={} wb_head={}",
-      self.def_eq_depth, a_head, b_head, wa_head, wb_head
+      self.def_eq_depth,
+      a_head,
+      b_head,
+      wa_head,
+      wb_head
     );
-    eprintln!("  a:  {a}");
-    eprintln!("  b:  {b}");
+    log::info!("  a:  {a}");
+    log::info!("  b:  {b}");
     if let Some(wa) = wa {
-      eprintln!("  wa: {wa}");
+      log::info!("  wa: {wa}");
     }
     if let Some(wb) = wb {
-      eprintln!("  wb: {wb}");
+      log::info!("  wb: {wb}");
     }
   }
 
@@ -1725,7 +1724,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     {
       return;
     }
-    eprintln!(
+    log::info!(
       "[deq max] rec-fuel depth={} a={} b={}",
       self.def_eq_depth,
       compact_def_eq_expr(a),
@@ -1744,9 +1743,9 @@ mod tests {
   use super::super::level::KUniv;
   use super::super::mode::{Anon, Meta};
   use super::super::tc::TypeChecker;
-  use crate::ix::address::Address;
-  use crate::ix::env::{DataValue, DefinitionSafety, Name, ReducibilityHints};
-  use crate::ix::ixon::constant::DefKind;
+  use ix_common::address::Address;
+  use ix_common::env::{DataValue, DefinitionSafety, Name, ReducibilityHints};
+  use ixon::constant::DefKind;
 
   type AE = KExpr<Anon>;
   type ME = KExpr<Meta>;

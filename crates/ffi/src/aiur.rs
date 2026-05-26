@@ -3,7 +3,7 @@ use multi_stark::p3_field::integers::QuotientMap;
 pub mod protocol;
 pub mod toplevel;
 
-use crate::aiur::G;
+use aiur::G;
 use lean_ffi::object::LeanRef;
 
 #[inline]

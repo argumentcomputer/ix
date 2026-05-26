@@ -6,10 +6,12 @@
 //! to avoid stack overflow on deeply nested expressions.
 
 use std::cell::Cell;
+#[cfg(not(target_arch = "riscv64"))]
 use std::hash::{BuildHasher, Hash};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+#[cfg(not(target_arch = "riscv64"))]
 use rayon::iter::{
   IntoParallelIterator, IntoParallelRefIterator, ParallelIterator,
 };
@@ -17,22 +19,27 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use dashmap::DashMap;
 
-use crate::ix::address::Address;
-use crate::ix::env::{
-  BinderInfo, ConstantInfo as LeanCI, DefinitionSafety, Env as LeanEnv, Name,
-  ReducibilityHints,
+use crate::env::Addr;
+use bignat::Nat;
+use ix_common::address::Address;
+#[cfg(not(target_arch = "riscv64"))]
+use ix_common::env::ConstantInfo as LeanCI;
+#[cfg(not(target_arch = "riscv64"))]
+use ix_common::env::DefinitionSafety;
+#[cfg(not(target_arch = "riscv64"))]
+use ix_common::env::Env as LeanEnv;
+use ix_common::env::{BinderInfo, Name, ReducibilityHints};
+#[cfg(not(target_arch = "riscv64"))]
+use ixon::constant::DefKind;
+use ixon::constant::{
+  Constant, ConstantInfo as IxonCI, MutConst as IxonMutConst,
 };
-use crate::ix::ixon::constant::{
-  Constant, ConstantInfo as IxonCI, DefKind, MutConst as IxonMutConst,
-};
-use crate::ix::ixon::env::Env as IxonEnv;
-use crate::ix::ixon::expr::Expr as IxonExpr;
-use crate::ix::ixon::metadata::{
+use ixon::env::Env as IxonEnv;
+use ixon::expr::Expr as IxonExpr;
+use ixon::metadata::{
   ConstantMeta, ConstantMetaInfo, ExprMeta, ExprMetaData, resolve_kvmap,
 };
-use crate::ix::ixon::univ::Univ as IxonUniv;
-use crate::ix::kernel::env::Addr;
-use lean_ffi::nat::Nat;
+use ixon::univ::Univ as IxonUniv;
 
 use super::constant::{KConst, RecRule};
 use super::env::{InternTable, KEnv};
@@ -1372,7 +1379,7 @@ fn ingress_expr<M: KernelMode>(
 
 #[allow(clippy::too_many_arguments)]
 fn ingress_defn<M: KernelMode>(
-  def: &crate::ix::ixon::constant::Definition,
+  def: &ixon::constant::Definition,
   self_id: KId<M>,
   meta: &ConstantMeta,
   ixon_env: &IxonEnv,
@@ -1492,7 +1499,7 @@ fn ingress_defn<M: KernelMode>(
 
 #[allow(clippy::too_many_arguments)]
 fn ingress_recursor<M: KernelMode>(
-  rec: &crate::ix::ixon::constant::Recursor,
+  rec: &ixon::constant::Recursor,
   self_id: KId<M>,
   meta: &ConstantMeta,
   ixon_env: &IxonEnv,
@@ -1778,7 +1785,7 @@ fn ingress_standalone<M: KernelMode>(
 
 #[allow(clippy::too_many_arguments)]
 fn ingress_muts_inductive<M: KernelMode>(
-  ind: &crate::ix::ixon::constant::Inductive,
+  ind: &ixon::constant::Inductive,
   self_id: &KId<M>,
   meta: &ConstantMeta,
   ixon_env: &IxonEnv,
@@ -2085,9 +2092,11 @@ fn ingress_muts_block<M: KernelMode>(
     let resolve_ctor = |cid: &KId<M>| -> Option<KConst<M>> {
       results_ref.iter().find(|(rid, _)| rid == cid).map(|(_, c)| c.clone())
     };
-    crate::ix::kernel::canonical_check::validate_canonical_block_single_pass::<
-      M,
-    >(entry_addr, &indcs, &resolve_ctor)
+    crate::canonical_check::validate_canonical_block_single_pass::<M>(
+      entry_addr,
+      &indcs,
+      &resolve_ctor,
+    )
     .map_err(|e| format!("{e}"))?;
   }
 
@@ -2098,7 +2107,7 @@ fn ingress_muts_block<M: KernelMode>(
 // Lightweight LeanExpr → KExpr ingress (compile-side)
 // ============================================================================
 
-use crate::ix::env::{
+use ix_common::env::{
   Expr as LeanExpr, ExprData as LeanExprData, Level, LevelData,
 };
 
@@ -2483,7 +2492,7 @@ fn lean_expr_to_zexpr_raw(
       KExpr::prj_mdata(zid, idx.to_u64().unwrap_or(0), e_k, mdata_layers)
     },
     LeanExprData::Lit(lit, _) => {
-      use crate::ix::env::Literal;
+      use ix_common::env::Literal;
       match lit {
         Literal::NatVal(n) => {
           // Address must match the Ixon-side blob address for this Nat,
@@ -2659,6 +2668,7 @@ pub fn ingress_compiled_names(
 /// Returns `None` for variants without a mutual block (Axio, Quot, Ctor, Rec).
 /// Ctors/Recs have their own `induct`/`all` but the block identity comes
 /// from the inductive, which is what's on the map anyway.
+#[cfg(not(target_arch = "riscv64"))]
 fn lean_constant_all(ci: &LeanCI) -> Option<&Vec<Name>> {
   match ci {
     LeanCI::DefnInfo(v) => Some(&v.all),
@@ -2672,6 +2682,7 @@ fn lean_constant_all(ci: &LeanCI) -> Option<&Vec<Name>> {
 
 /// Look up position of `name` in its mutual `all` list, returning 0 for
 /// non-mutuals or constants not found in their own `all`.
+#[cfg(not(target_arch = "riscv64"))]
 fn lean_member_idx(name: &Name, all: Option<&Vec<Name>>) -> u64 {
   all.and_then(|a| a.iter().position(|n| n == name)).map_or(0, |i| i as u64)
 }
@@ -2691,6 +2702,7 @@ fn lean_member_idx(name: &Name, all: Option<&Vec<Name>>) -> u64 {
 /// (dangling refs, partial envs) fall through to `lean_name_to_addr` as a
 /// best-effort — those cases produce mismatched addresses and will surface
 /// as `UnknownConst` in the type checker rather than silently succeeding.
+#[cfg(not(target_arch = "riscv64"))]
 pub fn build_leon_addr_map(lean_env: &LeanEnv) -> DashMap<Name, Address> {
   // Build in parallel. Each shard's write lock is contended only when
   // distinct names happen to hash into the same shard — with 64 default
@@ -2719,6 +2731,7 @@ pub fn build_leon_addr_map(lean_env: &LeanEnv) -> DashMap<Name, Address> {
 /// well-formed Lean env should never trigger it. Callers that need
 /// strict resolution (e.g. "does this name exist?") should check
 /// `n2a.contains_key` directly.
+#[cfg(not(target_arch = "riscv64"))]
 fn leon_addr_of(name: &Name, n2a: &DashMap<Name, Address>) -> Address {
   n2a.get(name).map_or_else(|| lean_name_to_addr(name), |e| e.value().clone())
 }
@@ -2726,6 +2739,7 @@ fn leon_addr_of(name: &Name, n2a: &DashMap<Name, Address>) -> Address {
 /// Build the `block` KId for a constant's mutual block. For singletons
 /// (no `all` or `all` length 1), the block id is the constant's own KId.
 /// For mutuals, it's the representative (first name in `all`).
+#[cfg(not(target_arch = "riscv64"))]
 fn lean_block_id(
   self_name: &Name,
   all: Option<&Vec<Name>>,
@@ -2736,6 +2750,7 @@ fn lean_block_id(
 }
 
 /// Build the `lean_all` KId list in Meta mode.
+#[cfg(not(target_arch = "riscv64"))]
 fn lean_all_ids(all: &[Name], n2a: &DashMap<Name, Address>) -> Vec<KId<Meta>> {
   all.iter().map(|n| KId::new(leon_addr_of(n, n2a), n.clone())).collect()
 }
@@ -2744,6 +2759,7 @@ fn lean_all_ids(all: &[Name], n2a: &DashMap<Name, Address>) -> Vec<KId<Meta>> {
 /// `lean_expr_to_zexpr_with_kenv` with the `n2a` map so inner `Const`
 /// references resolve to LEON addresses (same scheme used for the KId
 /// addresses in this constant's own fields).
+#[cfg(not(target_arch = "riscv64"))]
 fn lean_const_to_kconst(
   self_name: &Name,
   ci: &LeanCI,
@@ -2754,7 +2770,7 @@ fn lean_const_to_kconst(
   // LEON addressing so `Const` refs inside expressions resolve to the same
   // addresses we're using for KId keys — any KId we construct here and any
   // Const-ref we ingress agree on where they point.
-  let mut expr_to_k = |e: &crate::ix::env::Expr, pn: &[Name]| -> KExpr<Meta> {
+  let mut expr_to_k = |e: &ix_common::env::Expr, pn: &[Name]| -> KExpr<Meta> {
     lean_expr_to_zexpr_with_kenv(e, pn, kenv, Some(n2a), None)
   };
 
@@ -2937,9 +2953,10 @@ fn lean_const_to_kconst(
 /// **Meta-only**: the existing `lean_expr_to_zexpr_*` family is Meta-mode
 /// only, so this helper is Meta-mode only by extension. Generalizing to
 /// `Anon` would require generalizing `lean_expr_to_zexpr_raw` too.
+#[cfg(not(target_arch = "riscv64"))]
 pub fn lean_ingress(lean_env: &LeanEnv) -> KEnv<Meta> {
   use std::time::Instant;
-  let quiet = std::env::var("IX_QUIET").is_ok();
+  let quiet = crate::env_var("IX_QUIET").is_ok();
   let mut kenv = KEnv::<Meta>::new_with_recursor_aux_order(
     super::env::RecursorAuxOrder::Source,
   );
@@ -2952,7 +2969,7 @@ pub fn lean_ingress(lean_env: &LeanEnv) -> KEnv<Meta> {
   let t = Instant::now();
   let n2a = build_leon_addr_map(lean_env);
   if !quiet {
-    eprintln!(
+    log::info!(
       "[lean_ingress]   build_leon_addr_map: {:.2}s ({} names)",
       t.elapsed().as_secs_f32(),
       n2a.len()
@@ -2967,7 +2984,7 @@ pub fn lean_ingress(lean_env: &LeanEnv) -> KEnv<Meta> {
     kenv.insert(kid, kc);
   }
   if !quiet {
-    eprintln!(
+    log::info!(
       "[lean_ingress]   pass 1 (serial ingress): {:.2}s",
       t.elapsed().as_secs_f32()
     );
@@ -3048,7 +3065,7 @@ pub fn lean_ingress(lean_env: &LeanEnv) -> KEnv<Meta> {
     kenv.blocks.insert(block_id, members);
   }
   if !quiet {
-    eprintln!(
+    log::info!(
       "[lean_ingress]   phase A (block seed): {:.2}s",
       t.elapsed().as_secs_f32()
     );
@@ -3082,7 +3099,7 @@ pub fn lean_ingress(lean_env: &LeanEnv) -> KEnv<Meta> {
     }
   }
   if !quiet {
-    eprintln!(
+    log::info!(
       "[lean_ingress]   phase B (ctor/rec append): {:.2}s",
       t.elapsed().as_secs_f32()
     );
@@ -3097,8 +3114,7 @@ pub fn lean_ingress(lean_env: &LeanEnv) -> KEnv<Meta> {
   // Returns `Err` only if `prims()` has already been called on this
   // KEnv — fresh `KEnv::new()` above guarantees that hasn't happened,
   // so we ignore the Result.
-  let _ = kenv
-    .set_prims(crate::ix::kernel::primitive::Primitives::from_env_orig(&kenv));
+  let _ = kenv.set_prims(crate::primitive::Primitives::from_env_orig(&kenv));
 
   kenv
 }
@@ -3458,6 +3474,7 @@ fn timed_drop_ns<T>(value: T) -> u64 {
 /// (atomic refcount; the last decrementer destroys exactly once), and none
 /// of the value types have custom `Drop` impls — so this is a pure
 /// parallelisation of the existing teardown.
+#[cfg(not(target_arch = "riscv64"))]
 fn timed_drop_dashmap_par<K, V, S>(map: DashMap<K, V, S>) -> u64
 where
   K: Eq + Hash + Send,
@@ -3475,6 +3492,7 @@ where
 /// a `Vec<(K, V)>` first (a cheap O(n) sequential pass that just moves owned
 /// pairs) and then `into_par_iter().for_each(drop)` on the Vec, letting
 /// rayon distribute the actual destructor work.
+#[cfg(not(target_arch = "riscv64"))]
 fn timed_drop_fxmap_par<K: Send, V: Send>(map: FxHashMap<K, V>) -> u64 {
   let start = Instant::now();
   let entries: Vec<(K, V)> = map.into_iter().collect();
@@ -3484,14 +3502,30 @@ fn timed_drop_fxmap_par<K: Send, V: Send>(map: FxHashMap<K, V>) -> u64 {
 
 /// Opt-out for the parallel drop path: set `IX_SEQ_IXON_DROP=1` to fall back
 /// to single-threaded `drop` for measurement comparisons.
+#[cfg(not(target_arch = "riscv64"))]
 fn seq_ixon_drop_enabled() -> bool {
-  std::env::var_os("IX_SEQ_IXON_DROP").is_some()
+  crate::env_var_os("IX_SEQ_IXON_DROP").is_some()
 }
 
+#[cfg(not(target_arch = "riscv64"))]
 fn ingress_convert_stats_enabled() -> bool {
-  std::env::var_os("IX_INGRESS_CONVERT_STATS").is_some()
+  crate::env_var_os("IX_INGRESS_CONVERT_STATS").is_some()
+}
+#[cfg(target_arch = "riscv64")]
+fn ingress_convert_stats_enabled() -> bool {
+  false
 }
 
+#[cfg(target_arch = "riscv64")]
+fn drop_ingress_lookups(
+  _names: FxHashMap<Address, Name>,
+  _name_to_addr: FxHashMap<Name, Address>,
+  _quiet: bool,
+) {
+  // Auto-dropped at end of scope.
+}
+
+#[cfg(not(target_arch = "riscv64"))]
 fn drop_ingress_lookups(
   names: FxHashMap<Address, Name>,
   name_to_addr: FxHashMap<Name, Address>,
@@ -3500,7 +3534,10 @@ fn drop_ingress_lookups(
   let total_start = Instant::now();
   let names_len = names.len();
   let name_to_addr_len = name_to_addr.len();
+  #[cfg(not(target_arch = "riscv64"))]
   let sequential = seq_ixon_drop_enabled();
+  #[cfg(target_arch = "riscv64")]
+  let sequential = true;
 
   // Drop the two lookup tables in series; each one fully utilises the rayon
   // pool internally via `timed_drop_fxmap_par`. Running them in parallel via
@@ -3512,20 +3549,29 @@ fn drop_ingress_lookups(
       name_to_addr_ns: timed_drop_ns(name_to_addr),
     }
   } else {
-    LookupDropTiming {
-      names_ns: timed_drop_fxmap_par(names),
-      name_to_addr_ns: timed_drop_fxmap_par(name_to_addr),
+    #[cfg(not(target_arch = "riscv64"))]
+    {
+      LookupDropTiming {
+        names_ns: timed_drop_fxmap_par(names),
+        name_to_addr_ns: timed_drop_fxmap_par(name_to_addr),
+      }
     }
+    #[cfg(target_arch = "riscv64")]
+    unreachable!()
   };
 
   let total_ns = elapsed_ns(total_start);
   if !quiet {
-    eprintln!(
+    #[cfg(not(target_arch = "riscv64"))]
+    let threads = rayon::current_num_threads();
+    #[cfg(target_arch = "riscv64")]
+    let threads = 1;
+    log::info!(
       "[ixon_ingress] drop lookups: {:.2}s {} threads={} \
        (names {:.2}s/{} name_to_addr {:.2}s/{})",
       seconds(total_ns),
       if sequential { "sequential" } else { "parallel" },
-      rayon::current_num_threads(),
+      threads,
       seconds(timing.names_ns),
       names_len,
       seconds(timing.name_to_addr_ns),
@@ -3540,17 +3586,25 @@ fn insert_standalone_entries<M: KernelMode>(
 ) -> IngressInsertTiming {
   let mut timing = IngressInsertTiming::default();
 
+  #[cfg(not(target_arch = "riscv64"))]
   let phase_start = Instant::now();
   for (id, _) in &entries {
     zenv.blocks.entry(id.clone()).or_default().push(id.clone());
   }
-  timing.blocks_ns = elapsed_ns(phase_start);
+  #[cfg(not(target_arch = "riscv64"))]
+  {
+    timing.blocks_ns = elapsed_ns(phase_start);
+  }
 
+  #[cfg(not(target_arch = "riscv64"))]
   let phase_start = Instant::now();
   for (id, zc) in entries {
     zenv.insert(id, zc);
   }
-  timing.consts_ns = elapsed_ns(phase_start);
+  #[cfg(not(target_arch = "riscv64"))]
+  {
+    timing.consts_ns = elapsed_ns(phase_start);
+  }
 
   timing
 }
@@ -3561,6 +3615,7 @@ fn insert_muts_entries<M: KernelMode>(
 ) -> IngressInsertTiming {
   let mut timing = IngressInsertTiming::default();
 
+  #[cfg(not(target_arch = "riscv64"))]
   let phase_start = Instant::now();
   let block_id = entries.first().and_then(|(_, zc)| match zc {
     KConst::Defn { block, .. }
@@ -3573,13 +3628,20 @@ fn insert_muts_entries<M: KernelMode>(
   if let Some(bid) = block_id {
     zenv.blocks.insert(bid, member_ids);
   }
-  timing.blocks_ns = elapsed_ns(phase_start);
+  #[cfg(not(target_arch = "riscv64"))]
+  {
+    timing.blocks_ns = elapsed_ns(phase_start);
+  }
 
+  #[cfg(not(target_arch = "riscv64"))]
   let phase_start = Instant::now();
   for (id, zc) in entries {
     zenv.insert(id, zc);
   }
-  timing.consts_ns = elapsed_ns(phase_start);
+  #[cfg(not(target_arch = "riscv64"))]
+  {
+    timing.consts_ns = elapsed_ns(phase_start);
+  }
 
   timing
 }
@@ -3599,12 +3661,18 @@ pub fn ixon_ingress<M: KernelMode>(
 pub fn ixon_ingress_owned<M: KernelMode>(
   ixon_env: IxonEnv,
 ) -> Result<(KEnv<M>, InternTable<M>), String> {
-  let quiet = std::env::var_os("IX_QUIET").is_some();
+  let quiet = crate::env_var_os("IX_QUIET").is_some();
   let result = ixon_ingress_inner(&ixon_env);
   drop_ixon_env(ixon_env, quiet);
   result
 }
 
+#[cfg(target_arch = "riscv64")]
+fn drop_ixon_env(_ixon_env: IxonEnv, _quiet: bool) {
+  // Auto-dropped at end of scope.
+}
+
+#[cfg(not(target_arch = "riscv64"))]
 fn drop_ixon_env(ixon_env: IxonEnv, quiet: bool) {
   let total_start = Instant::now();
   // `anon_hints` is a small FxHashMap (one entry per Def from the .ixe's
@@ -3623,7 +3691,10 @@ fn drop_ixon_env(ixon_env: IxonEnv, quiet: bool) {
   // which is single-threaded internally and dominates the total. Doing one
   // map at a time, fully parallel within, gives clean per-map timing and
   // saturates the rayon pool on the work that actually matters.
+  #[cfg(not(target_arch = "riscv64"))]
   let sequential = seq_ixon_drop_enabled();
+  #[cfg(target_arch = "riscv64")]
+  let sequential = true;
   let timing = if sequential {
     IxonDropTiming {
       consts_ns: timed_drop_ns(consts),
@@ -3633,23 +3704,32 @@ fn drop_ixon_env(ixon_env: IxonEnv, quiet: bool) {
       comms_ns: timed_drop_ns(comms),
     }
   } else {
-    IxonDropTiming {
-      consts_ns: timed_drop_dashmap_par(consts),
-      named_ns: timed_drop_dashmap_par(named),
-      names_ns: timed_drop_dashmap_par(names),
-      blobs_ns: timed_drop_dashmap_par(blobs),
-      comms_ns: timed_drop_dashmap_par(comms),
+    #[cfg(not(target_arch = "riscv64"))]
+    {
+      IxonDropTiming {
+        consts_ns: timed_drop_dashmap_par(consts),
+        named_ns: timed_drop_dashmap_par(named),
+        names_ns: timed_drop_dashmap_par(names),
+        blobs_ns: timed_drop_dashmap_par(blobs),
+        comms_ns: timed_drop_dashmap_par(comms),
+      }
     }
+    #[cfg(target_arch = "riscv64")]
+    unreachable!()
   };
 
   let total_ns = elapsed_ns(total_start);
   if !quiet {
-    eprintln!(
+    #[cfg(not(target_arch = "riscv64"))]
+    let threads = rayon::current_num_threads();
+    #[cfg(target_arch = "riscv64")]
+    let threads = 1;
+    log::info!(
       "[ixon_ingress] drop ixon_env: {:.2}s {} threads={} \
        (consts {:.2}s/{} named {:.2}s/{} names {:.2}s/{} blobs {:.2}s/{} comms {:.2}s/{})",
       seconds(total_ns),
       if sequential { "sequential" } else { "parallel" },
-      rayon::current_num_threads(),
+      threads,
       seconds(timing.consts_ns),
       consts_len,
       seconds(timing.named_ns),
@@ -3667,22 +3747,23 @@ fn drop_ixon_env(ixon_env: IxonEnv, quiet: bool) {
 fn ixon_ingress_inner<M: KernelMode>(
   ixon_env: &IxonEnv,
 ) -> Result<(KEnv<M>, InternTable<M>), String> {
-  let quiet = std::env::var_os("IX_QUIET").is_some();
+  #[cfg(not(target_arch = "riscv64"))]
   let total_start = Instant::now();
 
+  #[cfg(not(target_arch = "riscv64"))]
   let phase_start = Instant::now();
   validate_no_reserved_marker_addresses(ixon_env)?;
-  if !quiet {
-    eprintln!(
-      "[ixon_ingress] validate_reserved: {:.2}s",
-      phase_start.elapsed().as_secs_f32()
-    );
-  }
+  #[cfg(not(target_arch = "riscv64"))]
+  log::info!(
+    "[ixon_ingress] validate_reserved: {:.2}s",
+    phase_start.elapsed().as_secs_f32()
+  );
 
   let mut intern = InternTable::new();
 
   // Build the address → Lean-name lookup and the Lean-name → projection-
   // address lookup. See `build_ingress_lookups` for the role each plays.
+  #[cfg(not(target_arch = "riscv64"))]
   let phase_start = Instant::now();
   let mut names: FxHashMap<Address, Name> = FxHashMap::default();
   for entry in ixon_env.names.iter() {
@@ -3692,18 +3773,18 @@ fn ixon_ingress_inner<M: KernelMode>(
   for entry in ixon_env.named.iter() {
     name_to_addr.insert(entry.key().clone(), entry.value().addr.clone());
   }
-  if !quiet {
-    eprintln!(
-      "[ixon_ingress] build lookups: {:.2}s ({} names, {} named)",
-      phase_start.elapsed().as_secs_f32(),
-      names.len(),
-      name_to_addr.len()
-    );
-  }
+  #[cfg(not(target_arch = "riscv64"))]
+  log::info!(
+    "[ixon_ingress] build lookups: {:.2}s ({} names, {} named)",
+    phase_start.elapsed().as_secs_f32(),
+    names.len(),
+    name_to_addr.len()
+  );
 
   // Partition named entries into work items without cloning the `Named`
   // metadata payloads. Each worker resolves its current Named entry just
   // before conversion.
+  #[cfg(not(target_arch = "riscv64"))]
   let phase_start = Instant::now();
   let mut work_items: Vec<IngressWorkItem> = Vec::new();
   let mut standalone_count = 0usize;
@@ -3750,17 +3831,17 @@ fn ixon_ingress_inner<M: KernelMode>(
       },
     }
   }
-  if !quiet {
-    eprintln!(
-      "[ixon_ingress] partition work: {:.2}s ({} standalone, {} muts)",
-      phase_start.elapsed().as_secs_f32(),
-      standalone_count,
-      muts_count
-    );
-  }
+  #[cfg(not(target_arch = "riscv64"))]
+  log::info!(
+    "[ixon_ingress] partition work: {:.2}s ({} standalone, {} muts)",
+    phase_start.elapsed().as_secs_f32(),
+    standalone_count,
+    muts_count
+  );
 
   // Convert each standalone constant or Muts block sequentially into the
   // single-threaded KEnv.
+  #[cfg(not(target_arch = "riscv64"))]
   let phase_start = Instant::now();
   let convert_stats_enabled = ingress_convert_stats_enabled();
   let mut zenv: KEnv<M> = KEnv::new();
@@ -3771,26 +3852,38 @@ fn ixon_ingress_inner<M: KernelMode>(
     match work_item {
       IngressWorkItem::Standalone(const_name) => {
         timing.standalone_items += 1;
+        #[cfg(not(target_arch = "riscv64"))]
         let lookup_start = Instant::now();
         let named = ixon_env
           .lookup_name(&const_name)
           .ok_or_else(|| format!("{const_name}: missing Named entry"))?;
-        timing.lookup_ns += elapsed_ns(lookup_start);
+        #[cfg(not(target_arch = "riscv64"))]
+        {
+          timing.lookup_ns += elapsed_ns(lookup_start);
+        }
 
+        #[cfg(not(target_arch = "riscv64"))]
         let const_start = Instant::now();
         let constant = match ixon_env.get_const(&named.addr) {
           Some(c) => {
-            timing.const_get_ns += elapsed_ns(const_start);
+            #[cfg(not(target_arch = "riscv64"))]
+            {
+              timing.const_get_ns += elapsed_ns(const_start);
+            }
             c
           },
           None => {
-            timing.const_get_ns += elapsed_ns(const_start);
+            #[cfg(not(target_arch = "riscv64"))]
+            {
+              timing.const_get_ns += elapsed_ns(const_start);
+            }
             timing.missing_consts += 1;
             timing.convert_stats = convert_stats;
             stream = stream.merge(&timing);
             continue;
           },
         };
+        #[cfg(not(target_arch = "riscv64"))]
         let convert_start = Instant::now();
         let entries = ingress_standalone(
           &const_name,
@@ -3804,22 +3897,33 @@ fn ixon_ingress_inner<M: KernelMode>(
           &mut convert_stats,
         )
         .map_err(|e| format!("{const_name}: {e}"))?;
-        timing.convert_ns += elapsed_ns(convert_start);
+        #[cfg(not(target_arch = "riscv64"))]
+        {
+          timing.convert_ns += elapsed_ns(convert_start);
+        }
         timing.output_consts += entries.len() as u64;
 
+        #[cfg(not(target_arch = "riscv64"))]
         let insert_start = Instant::now();
         let insert_timing = insert_standalone_entries(&mut zenv, entries);
-        timing.insert_ns += elapsed_ns(insert_start);
+        #[cfg(not(target_arch = "riscv64"))]
+        {
+          timing.insert_ns += elapsed_ns(insert_start);
+        }
         timing.insert_blocks_ns += insert_timing.blocks_ns;
         timing.insert_consts_ns += insert_timing.consts_ns;
       },
       IngressWorkItem::Muts(entry_name) => {
         timing.muts_items += 1;
+        #[cfg(not(target_arch = "riscv64"))]
         let lookup_start = Instant::now();
         let named = ixon_env
           .lookup_name(&entry_name)
           .ok_or_else(|| format!("{entry_name}: missing Named entry"))?;
-        timing.lookup_ns += elapsed_ns(lookup_start);
+        #[cfg(not(target_arch = "riscv64"))]
+        {
+          timing.lookup_ns += elapsed_ns(lookup_start);
+        }
 
         let all = match &named.meta.info {
           ConstantMetaInfo::Muts { all, .. } => all,
@@ -3829,6 +3933,7 @@ fn ixon_ingress_inner<M: KernelMode>(
             continue;
           },
         };
+        #[cfg(not(target_arch = "riscv64"))]
         let convert_start = Instant::now();
         let entries = ingress_muts_block(
           &entry_name,
@@ -3841,12 +3946,19 @@ fn ixon_ingress_inner<M: KernelMode>(
           &mut convert_stats,
         )
         .map_err(|e| format!("{entry_name}: {e}"))?;
-        timing.convert_ns += elapsed_ns(convert_start);
+        #[cfg(not(target_arch = "riscv64"))]
+        {
+          timing.convert_ns += elapsed_ns(convert_start);
+        }
         timing.output_consts += entries.len() as u64;
 
+        #[cfg(not(target_arch = "riscv64"))]
         let insert_start = Instant::now();
         let insert_timing = insert_muts_entries(&mut zenv, entries);
-        timing.insert_ns += elapsed_ns(insert_start);
+        #[cfg(not(target_arch = "riscv64"))]
+        {
+          timing.insert_ns += elapsed_ns(insert_start);
+        }
         timing.insert_blocks_ns += insert_timing.blocks_ns;
         timing.insert_consts_ns += insert_timing.consts_ns;
       },
@@ -3854,107 +3966,110 @@ fn ixon_ingress_inner<M: KernelMode>(
     timing.convert_stats = convert_stats;
     stream = stream.merge(&timing);
   }
-  if !quiet {
-    eprintln!(
-      "[ixon_ingress] stream ingress+insert: {:.2}s",
-      phase_start.elapsed().as_secs_f32()
+  #[cfg(not(target_arch = "riscv64"))]
+  log::info!(
+    "[ixon_ingress] stream ingress+insert: {:.2}s",
+    phase_start.elapsed().as_secs_f32()
+  );
+  #[cfg(not(target_arch = "riscv64"))]
+  log::info!(
+    "[ixon_ingress]   stream detail (worker-sum): lookup {:.2}s, const_get {:.2}s, convert {:.2}s, insert {:.2}s (blocks {:.2}s, consts {:.2}s), work {} standalone/{} muts, output {} consts, missing {}",
+    seconds(stream.lookup_ns),
+    seconds(stream.const_get_ns),
+    seconds(stream.convert_ns),
+    seconds(stream.insert_ns),
+    seconds(stream.insert_blocks_ns),
+    seconds(stream.insert_consts_ns),
+    stream.standalone_items,
+    stream.muts_items,
+    stream.output_consts,
+    stream.missing_consts
+  );
+  #[cfg(not(target_arch = "riscv64"))]
+  let cs = &stream.convert_stats;
+  #[cfg(not(target_arch = "riscv64"))]
+  if cs.enabled {
+    let cache_lookups = cs.expr_cache_hits + cs.expr_cache_misses;
+    log::info!(
+      "[ixon_ingress]   convert cache: roots {} process {} hits {} misses {} hit {:.1}% inserts {} peak {} clears {} cleared {} shares {}",
+      cs.expr_roots,
+      cs.expr_process,
+      cs.expr_cache_hits,
+      cs.expr_cache_misses,
+      percent(cs.expr_cache_hits, cache_lookups),
+      cs.expr_cache_inserts,
+      cs.expr_cache_peak,
+      cs.expr_cache_clears,
+      cs.expr_cache_entries_cleared,
+      cs.share_expansions
     );
-    eprintln!(
-      "[ixon_ingress]   stream detail (worker-sum): lookup {:.2}s, const_get {:.2}s, convert {:.2}s, insert {:.2}s (blocks {:.2}s, consts {:.2}s), work {} standalone/{} muts, output {} consts, missing {}",
-      seconds(stream.lookup_ns),
-      seconds(stream.const_get_ns),
-      seconds(stream.convert_ns),
-      seconds(stream.insert_ns),
-      seconds(stream.insert_blocks_ns),
-      seconds(stream.insert_consts_ns),
-      stream.standalone_items,
-      stream.muts_items,
-      stream.output_consts,
-      stream.missing_consts
+    log::info!(
+      "[ixon_ingress]   convert nodes: sort {} var {} ref {} rec {} app {} lam {} all {} let {} prj {} str {} nat {} callsites {} args {}",
+      cs.sort_nodes,
+      cs.var_nodes,
+      cs.ref_nodes,
+      cs.rec_nodes,
+      cs.app_nodes,
+      cs.lam_nodes,
+      cs.all_nodes,
+      cs.let_nodes,
+      cs.prj_nodes,
+      cs.str_nodes,
+      cs.nat_nodes,
+      cs.callsites,
+      cs.callsite_args
     );
-    let cs = &stream.convert_stats;
-    if cs.enabled {
-      let cache_lookups = cs.expr_cache_hits + cs.expr_cache_misses;
-      eprintln!(
-        "[ixon_ingress]   convert cache: roots {} process {} hits {} misses {} hit {:.1}% inserts {} peak {} clears {} cleared {} shares {}",
-        cs.expr_roots,
-        cs.expr_process,
-        cs.expr_cache_hits,
-        cs.expr_cache_misses,
-        percent(cs.expr_cache_hits, cache_lookups),
-        cs.expr_cache_inserts,
-        cs.expr_cache_peak,
-        cs.expr_cache_clears,
-        cs.expr_cache_entries_cleared,
-        cs.share_expansions
-      );
-      eprintln!(
-        "[ixon_ingress]   convert nodes: sort {} var {} ref {} rec {} app {} lam {} all {} let {} prj {} str {} nat {} callsites {} args {}",
-        cs.sort_nodes,
-        cs.var_nodes,
-        cs.ref_nodes,
-        cs.rec_nodes,
-        cs.app_nodes,
-        cs.lam_nodes,
-        cs.all_nodes,
-        cs.let_nodes,
-        cs.prj_nodes,
-        cs.str_nodes,
-        cs.nat_nodes,
-        cs.callsites,
-        cs.callsite_args
-      );
-      eprintln!(
-        "[ixon_ingress]   convert metadata/univ: mdata_nodes {} mdata_kv_maps {} univ_roots {} univ_cache_hits {} univ_cache_misses {} univ_hit {:.1}% univ_cache_peak {} univ_process {} univ_interns {}",
-        cs.mdata_nodes,
-        cs.mdata_kv_maps,
-        cs.univ_roots,
-        cs.univ_cache_hits,
-        cs.univ_cache_misses,
-        percent(cs.univ_cache_hits, cs.univ_cache_hits + cs.univ_cache_misses),
-        cs.univ_cache_peak,
-        cs.univ_process,
-        cs.univ_interns
-      );
-      let ie_lookups = cs.intern_expr_calls;
-      let iu_lookups = cs.intern_univ_calls;
-      eprintln!(
-        "[ixon_ingress]   convert timing (worker-sum): \
-         resolve_kvmap {:.2}s/{} arena_walk {:.2}s \
-         intern_expr {:.2}s/{} (get_hits {:.1}%) \
-         intern_univ {:.2}s/{} (get_hits {:.1}%) \
-         expr_cache lookup {:.2}s / insert {:.2}s \
-         get_blob {:.2}s/{} \
-         kexpr_construct {:.2}s/{} \
-         process_arm {:.2}s continuation_arms {:.2}s",
-        seconds(cs.resolve_kvmap_ns),
-        cs.resolve_kvmap_calls,
-        seconds(cs.arena_walk_ns),
-        seconds(cs.intern_expr_ns),
-        cs.intern_expr_calls,
-        percent(cs.intern_expr_get_hits, ie_lookups),
-        seconds(cs.intern_univ_ns),
-        cs.intern_univ_calls,
-        percent(cs.intern_univ_get_hits, iu_lookups),
-        seconds(cs.expr_cache_lookup_ns),
-        seconds(cs.expr_cache_insert_ns),
-        seconds(cs.get_blob_ns),
-        cs.get_blob_calls,
-        seconds(cs.kexpr_construct_ns),
-        cs.kexpr_construct_calls,
-        seconds(cs.process_arm_ns),
-        seconds(cs.continuation_arms_ns)
-      );
-    }
-    eprintln!(
-      "[ixon_ingress] complete: {:.2}s ({} consts, {} blocks)",
-      total_start.elapsed().as_secs_f32(),
-      zenv.len(),
-      zenv.blocks.len()
+    log::info!(
+      "[ixon_ingress]   convert metadata/univ: mdata_nodes {} mdata_kv_maps {} univ_roots {} univ_cache_hits {} univ_cache_misses {} univ_hit {:.1}% univ_cache_peak {} univ_process {} univ_interns {}",
+      cs.mdata_nodes,
+      cs.mdata_kv_maps,
+      cs.univ_roots,
+      cs.univ_cache_hits,
+      cs.univ_cache_misses,
+      percent(cs.univ_cache_hits, cs.univ_cache_hits + cs.univ_cache_misses),
+      cs.univ_cache_peak,
+      cs.univ_process,
+      cs.univ_interns
+    );
+    let ie_lookups = cs.intern_expr_calls;
+    let iu_lookups = cs.intern_univ_calls;
+    log::info!(
+      "[ixon_ingress]   convert timing (worker-sum): \
+       resolve_kvmap {:.2}s/{} arena_walk {:.2}s \
+       intern_expr {:.2}s/{} (get_hits {:.1}%) \
+       intern_univ {:.2}s/{} (get_hits {:.1}%) \
+       expr_cache lookup {:.2}s / insert {:.2}s \
+       get_blob {:.2}s/{} \
+       kexpr_construct {:.2}s/{} \
+       process_arm {:.2}s continuation_arms {:.2}s",
+      seconds(cs.resolve_kvmap_ns),
+      cs.resolve_kvmap_calls,
+      seconds(cs.arena_walk_ns),
+      seconds(cs.intern_expr_ns),
+      cs.intern_expr_calls,
+      percent(cs.intern_expr_get_hits, ie_lookups),
+      seconds(cs.intern_univ_ns),
+      cs.intern_univ_calls,
+      percent(cs.intern_univ_get_hits, iu_lookups),
+      seconds(cs.expr_cache_lookup_ns),
+      seconds(cs.expr_cache_insert_ns),
+      seconds(cs.get_blob_ns),
+      cs.get_blob_calls,
+      seconds(cs.kexpr_construct_ns),
+      cs.kexpr_construct_calls,
+      seconds(cs.process_arm_ns),
+      seconds(cs.continuation_arms_ns)
     );
   }
+  #[cfg(not(target_arch = "riscv64"))]
+  log::info!(
+    "[ixon_ingress] complete: {:.2}s ({} consts, {} blocks)",
+    total_start.elapsed().as_secs_f32(),
+    zenv.len(),
+    zenv.blocks.len()
+  );
 
-  drop_ingress_lookups(names, name_to_addr, quiet);
+  drop_ingress_lookups(names, name_to_addr, false);
 
   Ok((zenv, intern))
 }
@@ -4014,7 +4129,7 @@ fn validate_no_reserved_marker_addresses(
 // discards `named`/`names`/`comms` sections. The helpers below do not
 // depend on those sections being empty — they simply never consult them.
 
-use crate::ix::kernel::mode::Anon;
+use crate::mode::Anon;
 
 /// Verify that a projection address computed from a block's structure
 /// is actually present in the env's consts. Wrapped here so the four
@@ -4050,27 +4165,27 @@ fn verify_proj_addr_in_env(
 
 /// Deterministic IPrj content address for member `idx` of `block`.
 ///
-/// Thin re-export of `crate::ix::ixon::constant::indc_proj_address` —
+/// Thin re-export of `ixon::constant::indc_proj_address` —
 /// the canonical projection-address helper used by both compile and
 /// ingress paths. Keep the `anon_` alias so existing call sites read
 /// naturally in the anon-mode pipeline.
 pub fn anon_indc_proj_addr(block: &Address, idx: u64) -> Address {
-  crate::ix::ixon::constant::indc_proj_address(idx, block)
+  ixon::constant::indc_proj_address(idx, block)
 }
 
 /// Deterministic DPrj content address for member `idx` of `block`.
 pub fn anon_defn_proj_addr(block: &Address, idx: u64) -> Address {
-  crate::ix::ixon::constant::defn_proj_address(idx, block)
+  ixon::constant::defn_proj_address(idx, block)
 }
 
 /// Deterministic RPrj content address for member `idx` of `block`.
 pub fn anon_recr_proj_addr(block: &Address, idx: u64) -> Address {
-  crate::ix::ixon::constant::recr_proj_address(idx, block)
+  ixon::constant::recr_proj_address(idx, block)
 }
 
 /// Deterministic CPrj content address for ctor `(idx, cidx)` of `block`.
 pub fn anon_ctor_proj_addr(block: &Address, idx: u64, cidx: u64) -> Address {
-  crate::ix::ixon::constant::ctor_proj_address(idx, cidx, block)
+  ixon::constant::ctor_proj_address(idx, cidx, block)
 }
 
 /// Compute deterministic ctor projection addresses for every constructor of
@@ -4078,7 +4193,7 @@ pub fn anon_ctor_proj_addr(block: &Address, idx: u64, cidx: u64) -> Address {
 fn anon_ctor_addrs(
   block_addr: &Address,
   indc_idx: u64,
-  ind: &crate::ix::ixon::constant::Inductive,
+  ind: &ixon::constant::Inductive,
 ) -> Vec<Address> {
   (0..ind.ctors.len() as u64)
     .map(|cidx| anon_ctor_proj_addr(block_addr, indc_idx, cidx))
@@ -4168,7 +4283,7 @@ fn ingress_anon_standalone(
 /// for the inductive and every ctor.
 #[allow(clippy::too_many_arguments)]
 fn ingress_anon_inductive(
-  ind: &crate::ix::ixon::constant::Inductive,
+  ind: &ixon::constant::Inductive,
   self_id: &KId<Anon>,
   anon_env: &IxonEnv,
   block_constant: &Constant,
@@ -4488,10 +4603,10 @@ pub fn ingress_anon_addr_shallow(
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::ix::env::{self, BinderInfo};
-  use crate::ix::ixon::metadata::CallSiteEntry;
-  use crate::ix::kernel::expr::ExprData;
-  use crate::ix::kernel::level::UnivData;
+  use crate::expr::ExprData;
+  use crate::level::UnivData;
+  use ix_common::env::{self, BinderInfo};
+  use ixon::metadata::CallSiteEntry;
 
   fn mk_name(s: &str) -> Name {
     let mut n = Name::anon();
@@ -4646,10 +4761,10 @@ mod tests {
   #[test]
   fn ixon_ingress_rejects_reserved_marker_named_addr() {
     let env = IxonEnv::new();
-    let marker = crate::ix::kernel::primitive::PrimAddrs::new().eager_reduce;
+    let marker = crate::primitive::PrimAddrs::new().eager_reduce;
     env.register_name(
       mk_name("Evil.marker"),
-      crate::ix::ixon::env::Named::with_addr(marker),
+      ixon::env::Named::with_addr(marker),
     );
 
     let err = match ixon_ingress::<Meta>(&env) {
@@ -4663,15 +4778,13 @@ mod tests {
   #[test]
   fn ixon_ingress_rejects_reserved_marker_refs() {
     let env = IxonEnv::new();
-    let marker = crate::ix::kernel::primitive::PrimAddrs::new().eager_reduce;
+    let marker = crate::primitive::PrimAddrs::new().eager_reduce;
     let constant = Constant::with_tables(
-      crate::ix::ixon::constant::ConstantInfo::Axio(
-        crate::ix::ixon::constant::Axiom {
-          is_unsafe: false,
-          lvls: 0,
-          typ: IxonExpr::sort(0),
-        },
-      ),
+      ixon::constant::ConstantInfo::Axio(ixon::constant::Axiom {
+        is_unsafe: false,
+        lvls: 0,
+        typ: IxonExpr::sort(0),
+      }),
       vec![],
       vec![marker],
       vec![],
@@ -5062,7 +5175,7 @@ mod tests {
     let list_addr = Address::hash(b"arbitrary");
     ie.named.insert(
       list_name.clone(),
-      crate::ix::ixon::env::Named::with_addr(list_addr.clone()),
+      ixon::env::Named::with_addr(list_addr.clone()),
     );
 
     let (name_map, addr_map) = build_ingress_lookups(&ie);
@@ -5102,7 +5215,7 @@ mod tests {
     // the synthesized projection — that's the contract the rest of the
     // anon pipeline depends on (verifying the computed address against
     // the address actually stored in `env.consts`).
-    use crate::ix::ixon::constant::{
+    use ixon::constant::{
       Constant, ConstantInfo, ConstructorProj, DefinitionProj, InductiveProj,
       RecursorProj,
     };

@@ -2,8 +2,8 @@
 //!
 //! Address = { hash : ByteArray } - ByteArray wrapper for blake3 Hash
 
-use crate::ix::address::Address;
 use crate::lean::LeanIxAddress;
+use ix_common::address::Address;
 use lean_ffi::object::{LeanArray, LeanBorrowed, LeanByteArray, LeanOwned};
 
 impl LeanIxAddress<LeanOwned> {
