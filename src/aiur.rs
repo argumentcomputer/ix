@@ -6,6 +6,7 @@ pub mod memory;
 pub mod querymap;
 pub mod synthesis;
 pub mod trace;
+pub mod vk_codec;
 
 use multi_stark::p3_field::PrimeCharacteristicRing;
 

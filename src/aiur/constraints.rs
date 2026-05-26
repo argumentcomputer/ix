@@ -33,6 +33,7 @@ type Degree = u8;
 static INV_256: LazyLock<G> = LazyLock::new(|| G::from_u64(256).inverse());
 
 /// Holds data for a function circuit.
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct Constraints {
   pub zeros: Vec<Expr>,
   pub selectors: Range<usize>,
