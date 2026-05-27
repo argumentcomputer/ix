@@ -49,6 +49,7 @@ inductive CheckError
   | infiniteType : Nat → Typ → CheckError
   | unresolvedMVar : Nat → CheckError
   | u8LitOutOfRange : Nat → CheckError
+  | entryHasPointer : Global → CheckError
   deriving Repr
 
 instance : ToString CheckError where
@@ -178,7 +179,15 @@ def Source.Toplevel.mkDecls (toplevel : Source.Toplevel) : Except CheckError Sou
       let typ' ← expandTyp typ
       pure (loc, typ')
     let output' ← expandTyp function.output
-    let function' := { function with inputs := inputs', output := output' }
+    let function' : Source.Function ←
+      match hEntry : function.entry with
+      | true =>
+        if hSig : sigPointerFree inputs' output' = true then
+          pure { function with inputs := inputs', output := output', entryPointerFree := Or.inl hSig }
+        else
+          throw $ .entryHasPointer function.name
+      | false =>
+        pure { function with inputs := inputs', output := output', entryPointerFree := Or.inr hEntry }
     decls := decls.insert function.name (.function function')
 
   for dataType in toplevel.dataTypes do

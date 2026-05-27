@@ -332,6 +332,23 @@ theorem eq_of_beq {a b : Typ} (h : beq a b = true) : a = b := by
         have hk : k < tl.length := by simp [List.length] at h; omega
         exact ihTl.2 k hk t' hb
 
+/-- Does `t` contain any `.pointer` subterm? Used to forbid pointer types in
+the signatures of `entry = true` (public) functions. -/
+def hasPointer : Typ → Bool
+  | .unit | .field | .u8 | .ref _ | .mvar _ => false
+  | .pointer _ => true
+  | .tuple ts => ts.attach.any fun ⟨t, _⟩ => hasPointer t
+  | .array t _ => hasPointer t
+  | .app _ args => args.attach.any fun ⟨t, _⟩ => hasPointer t
+  | .function ins out =>
+    hasPointer out || ins.attach.any fun ⟨t, _⟩ => hasPointer t
+termination_by t => sizeOf t
+decreasing_by
+  all_goals first
+    | decreasing_tactic
+    | (have := Array.sizeOf_lt_of_mem ‹_ ∈ _›; grind)
+    | (have := List.sizeOf_lt_of_mem ‹_ ∈ _›; grind)
+
 end Typ
 
 instance : BEq Typ := ⟨Typ.beq⟩
@@ -436,6 +453,11 @@ structure TypeAlias where
 
 namespace Source
 
+/-- `true` iff none of `inputs` nor `output` contain a `.pointer` subterm.
+Used to enforce that public entry functions expose no pointer-typed values. -/
+def sigPointerFree (inputs : List (Local × Typ)) (output : Typ) : Bool :=
+  !output.hasPointer && inputs.all (fun ⟨_, t⟩ => !t.hasPointer)
+
 structure Function where
   name : Global
   params : List String
@@ -443,7 +465,43 @@ structure Function where
   output : Typ
   body : Term
   entry : Bool
-  deriving Repr, Inhabited
+  /-- Polymorphic public entry points are forbidden by construction:
+  either the function is monomorphic (`params = []`) or not public
+  (`entry = false`). -/
+  entryMonomorphic : params = [] ∨ entry = false := by
+    first | exact Or.inl rfl | exact Or.inr rfl
+  /-- Public entry points cannot expose pointer-typed values: either the
+  signature is pointer-free or the function is not public (`entry = false`). -/
+  entryPointerFree : sigPointerFree inputs output = true ∨ entry = false := by
+    first | exact Or.inl rfl | exact Or.inr rfl
+  deriving Repr
+
+instance : Inhabited Function where
+  default :=
+    { name := default, params := [], inputs := default, output := default,
+      body := default, entry := default,
+      entryMonomorphic := Or.inl rfl,
+      entryPointerFree := Or.inr rfl }
+
+/-- Smart constructor for non-entry monomorphic functions. -/
+def Function.monoNonEntry (name : Global) (inputs : List (Local × Typ))
+    (output : Typ) (body : Term) : Function :=
+  { name, params := [], inputs, output, body, entry := false,
+    entryMonomorphic := Or.inl rfl, entryPointerFree := Or.inr rfl }
+
+/-- Smart constructor for public entry functions. Requires a proof that the
+signature contains no pointer types. -/
+def Function.monoEntry (name : Global) (inputs : List (Local × Typ))
+    (output : Typ) (body : Term)
+    (h : sigPointerFree inputs output = true) : Function :=
+  { name, params := [], inputs, output, body, entry := true,
+    entryMonomorphic := Or.inl rfl, entryPointerFree := Or.inl h }
+
+/-- Smart constructor for polymorphic functions (`entry = false` forced). -/
+def Function.poly (name : Global) (params : List String) (inputs : List (Local × Typ))
+    (output : Typ) (body : Term) : Function :=
+  { name, params, inputs, output, body, entry := false,
+    entryMonomorphic := Or.inr rfl, entryPointerFree := Or.inr rfl }
 
 structure Toplevel where
   dataTypes : Array DataType
