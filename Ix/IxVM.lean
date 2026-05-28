@@ -3,6 +3,7 @@ public import Ix.Aiur.Meta
 public import Ix.IxVM.Core
 public import Ix.IxVM.ByteStream
 public import Ix.IxVM.Blake3
+public import Ix.IxVM.RBTreeMap
 public import Ix.IxVM.Ingress
 public import Ix.IxVM.Ixon
 public import Ix.IxVM.IxonSerialize
@@ -160,6 +161,7 @@ def entrypoints := ⟦
 def ixVM : Except Aiur.Global Aiur.Source.Toplevel := do
   let vm ← core.merge byteStream
   let vm ← vm.merge blake3
+  let vm ← vm.merge rbTreeMap
   let vm ← vm.merge ixon
   let vm ← vm.merge ixonSerialize
   let vm ← vm.merge ixonDeserialize

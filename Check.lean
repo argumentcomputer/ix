@@ -22,6 +22,7 @@ def kernelCmd : Cli.Cmd := `[Cli|
     interp;                 "Use the Aiur interpreter (richer per-execution error diagnostics) instead of the compiled bytecode runner."
     "keep-going";           "Continue past failures and report them at the end instead of halting on the first."
     "ixe"       : String;   "Path to a serialized `.ixe` env. When set, the binary reads the env from disk instead of using the compiled-in Lean env."
+    "claim"     : String;   "32-byte hex address of a persisted `Ix.Claim` in `~/.ix/store/`. When set, runs the `verify_claim` entrypoint once over the claim's witness against the `--ixe` env (single execution, skips per-const iteration)."
     "stats-out" : String;   "Redirect the per-circuit statistics dump to this file (only used when exactly one constant is targeted)."
 
   ARGS:

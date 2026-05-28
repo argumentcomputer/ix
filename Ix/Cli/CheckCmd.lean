@@ -24,12 +24,14 @@ public import Ix.Aiur.Compiler
 public import Ix.Aiur.Interpret
 public import Ix.Aiur.Protocol
 public import Ix.Aiur.Statistics
+public import Ix.AssumptionTree
 public import Ix.Claim
 public import Ix.Common
 public import Ix.IxVM
 public import Ix.IxVM.ClaimHarness
 public import Ix.Ixon
 public import Ix.Meta
+public import Ix.Store
 
 public section
 
@@ -42,6 +44,42 @@ private def parseName (arg : String) : Lean.Name :=
     fun acc s => match s.toNat? with
       | some n => Lean.Name.mkNum acc n
       | none   => Lean.Name.mkStr acc s
+
+private def addrOfHex! (label : String) (s : String) : IO Address := do
+  match Address.fromString s with
+  | some a => pure a
+  | none =>
+    throw <| IO.userError
+      s!"error: {label}: expected 64-char hex (32-byte address), got {s.length}-char {s}"
+
+/-- Load a persisted claim from the content-addressed store and resolve
+    every tree root it references. Mirrors `Ix/Cli/ProveCmd.lean`. -/
+private def loadClaimAndTrees (claimHex : String) :
+    IO (Ix.Claim × Std.HashMap Address Ix.AssumptionTree) := do
+  let claimAddr ← addrOfHex! "claim" claimHex
+  let claimBytes ← StoreIO.toIO (Store.read claimAddr)
+  let claim ← IO.ofExcept (Ixon.runGet Ix.Claim.get claimBytes)
+  let computed := Address.blake3 (Ix.Claim.ser claim)
+  if computed != claimAddr then
+    throw <| IO.userError
+      s!"error: claim bytes at {claimAddr} re-hash to {computed}"
+  let treeRoots : Array Address := match claim with
+    | .check _ (some r)        => #[r]
+    | .eval _ _ (some r)       => #[r]
+    | .checkEnv root none      => #[root]
+    | .checkEnv root (some r)  => #[root, r]
+    | .contains tree _         => #[tree]
+    | _                        => #[]
+  let mut trees : Std.HashMap Address Ix.AssumptionTree := {}
+  for r in treeRoots do
+    let tbytes ← StoreIO.toIO (Store.read r)
+    let tree ← match Ix.AssumptionTree.de tbytes with
+      | .error e => throw <| IO.userError s!"error: tree at {r}: deserialize failed: {e}"
+      | .ok t => pure t
+    if tree.root != r then
+      throw <| IO.userError s!"error: tree stored at {r} has merkle root {tree.root}"
+    trees := trees.insert r tree
+  return (claim, trees)
 
 /-- Reverse of `Ix.Name.fromLeanName`. Drops the per-node hash. -/
 partial def ixNameToLeanName : Ix.Name → Lean.Name
@@ -116,8 +154,10 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
     (p.flag? "stats-out").map (·.as! String)
   let ixePath : Option String :=
     (p.flag? "ixe").map (·.as! String)
+  let claimHex : Option String :=
+    (p.flag? "claim").map (·.as! String)
   let names := (p.variableArgsAs! String).toList
-  let printStats := names.length == 1
+  let printStats := names.length == 1 || claimHex.isSome
 
   let toplevel ← match IxVM.ixVM with
     | .error e => IO.eprintln s!"Toplevel merging failed: {e}"; return 1
@@ -145,7 +185,14 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
       | .ok env => pure env
     IO.println s!"Loaded {path}: {ixonEnv.namedCount} named, \
       {ixonEnv.constCount} consts, {ixonEnv.blobCount} blobs"
-    if names.isEmpty then
+    if let some hex := claimHex then
+      let (claim, trees) ← loadClaimAndTrees hex
+      let witness ← IO.ofExcept <|
+        IxVM.ClaimHarness.buildClaimWitness ixonEnv claim trees
+      let label := s!"claim {hex}"
+      if (← runOne witness label) ≠ 0 then
+        failures := failures.push label
+    else if names.isEmpty then
       let sorted := ixonEnv.named.toArray.qsort
         (fun a b => toString a.1 < toString b.1)
       for (ixName, named) in sorted do
@@ -170,6 +217,8 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
             failures := failures.push label
             if !keepGoing then break
   | none =>
+    if claimHex.isSome then
+      IO.eprintln "error: --claim requires --ixe <path>"; return 1
     let env ← get_env!
     let buildOne (name : Lean.Name) : IO IxVM.ClaimHarness.ClaimWitness := do
       let ixonEnv ← IxVM.ClaimHarness.loadIxonEnv name env
@@ -215,6 +264,7 @@ def checkCmd : Cli.Cmd := `[Cli|
     interp;                 "Use the Aiur interpreter (richer per-execution error diagnostics) instead of the compiled bytecode runner."
     "keep-going";           "Continue past failures and report them at the end instead of halting on the first."
     "ixe"       : String;   "Path to a serialized `.ixe` env. When set, the binary reads the env from disk instead of using the compiled-in Lean env."
+    "claim"     : String;   "32-byte hex address of a persisted `Ix.Claim` in `~/.ix/store/`. When set, runs the `verify_claim` entrypoint once over the claim's witness against the `--ixe` env (single execution, skips per-const iteration)."
     "stats-out" : String;   "Redirect the per-circuit statistics dump to this file (only used when exactly one constant is targeted)."
 
   ARGS:
