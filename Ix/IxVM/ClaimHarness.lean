@@ -118,7 +118,7 @@ partial def closureFrom (env : Ixon.Env) (target : Address) : Std.HashSet Addres
 def buildSerdeIOBuffer (ixonEnv : Ixon.Env) : Aiur.IOBuffer × Nat :=
   ixonEnv.consts.valuesIter.fold (init := (default, 0)) fun (ioBuffer, i) c =>
     let (_, bytes) := Ixon.Serialize.put c |>.run default
-    (ioBuffer.extend #[.ofNat i] (bytes.data.map .ofUInt8), i + 1)
+    (ioBuffer.extend 0 #[.ofNat i] (bytes.data.map .ofUInt8), i + 1)
 
 /-- Encode a `Lean.ReducibilityHints` as a single `G` per the convention
     Aiur's `load_constant_hint` decodes (opaque → 0, abbrev → 0xFFFFFFFF,
@@ -129,16 +129,18 @@ private def hintToG : Lean.ReducibilityHints → Aiur.G
   | .regular n => .ofNat (min (1 + n.toNat) 0xFFFFFFFE)
 
 /-- Insert all per-address entries for `addr`s satisfying `keep` into
-    `ioBuffer`, following the IOBuffer convention:
+    `ioBuffer`. Each address kind lives on its own channel; the key is
+    always the 32-G blake3 hash, with no disambiguating suffix.
 
-    | key                    | value          | meaning |
-    |------------------------|----------------|---------|
-    | `addr` (32 G)          | const bytes    | primary data; empty value = `addr` is a blob |
-    | `addr ++ [0]` (33 G)   | raw blob bytes | referenced data (verified by Aiur via blake3) |
-    | `addr ++ [1]` (33 G)   | single G       | Defn `ReducibilityHints` encoding |
+    | channel | key (32 G) | value          | meaning |
+    |---------|------------|----------------|---------|
+    | 0       | `addr`     | const bytes    | constant data (empty marker = `addr` is a blob) |
+    | 1       | `addr`     | raw blob bytes | referenced data (verified by Aiur via blake3) |
+    | 2       | `addr`     | single G       | Defn `ReducibilityHints` encoding |
 
-    Suffix tags use `Array.push` (O(1) amortized) rather than prefix
-    `++ Array` (O(n) allocation). -/
+    Blob addrs also get an empty entry on channel 0 so the kernel's
+    constant-vs-blob detection (`io_get_info(0, addr) ⇒ len=0`) still
+    works without a separate query path. -/
 def addEntries (ixonEnv : Ixon.Env) (keep : Address → Bool)
     (ioBuffer : Aiur.IOBuffer) : Aiur.IOBuffer := Id.run do
   let mut ioBuffer := ioBuffer
@@ -146,19 +148,18 @@ def addEntries (ixonEnv : Ixon.Env) (keep : Address → Bool)
     if !keep addr then continue
     let (_, bytes) := Ixon.Serialize.put c |>.run default
     let key : Array Aiur.G := addr.hash.data.map .ofUInt8
-    ioBuffer := ioBuffer.extend key (bytes.data.map .ofUInt8)
+    ioBuffer := ioBuffer.extend 0 key (bytes.data.map .ofUInt8)
   for (addr, rawBytes) in ixonEnv.blobs do
     if !keep addr then continue
-    let hashKey : Array Aiur.G := addr.hash.data.map .ofUInt8
-    ioBuffer := ioBuffer.extend (hashKey.push 0)
-      (rawBytes.data.map fun b => .ofNat b.toNat)
-    ioBuffer := ioBuffer.extend hashKey #[]
+    let key : Array Aiur.G := addr.hash.data.map .ofUInt8
+    ioBuffer := ioBuffer.extend 1 key (rawBytes.data.map fun b => .ofNat b.toNat)
+    ioBuffer := ioBuffer.extend 0 key #[]
   for (_, named) in ixonEnv.named do
     if !keep named.addr then continue
     match named.constMeta with
     | .defn _ _ hints _ _ _ _ _ =>
-      let hashKey : Array Aiur.G := named.addr.hash.data.map .ofUInt8
-      ioBuffer := ioBuffer.extend (hashKey.push 1) #[hintToG hints]
+      let key : Array Aiur.G := named.addr.hash.data.map .ofUInt8
+      ioBuffer := ioBuffer.extend 2 key #[hintToG hints]
     | _ => pure ()
   return ioBuffer
 
@@ -190,7 +191,7 @@ private def seedTreeAt (root : Address)
   match trees.get? root with
   | some tree =>
     let bytes := Ix.AssumptionTree.ser tree
-    .ok (ioBuffer.extend (addrKey tree.root) (bytes.data.map .ofUInt8))
+    .ok (ioBuffer.extend 0 (addrKey tree.root) (bytes.data.map .ofUInt8))
   | none => .error s!"no assumption tree supplied for root {root}"
 
 /-- Build the witness for `verify_claim` against `claim`.
@@ -221,7 +222,7 @@ def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
   let claimBytes := Ix.Claim.ser claim
   let digestKey := addrKey (Address.blake3 claimBytes)
   let mut ioBuffer : Aiur.IOBuffer := default
-  ioBuffer := ioBuffer.extend digestKey (claimBytes.data.map .ofUInt8)
+  ioBuffer := ioBuffer.extend 0 digestKey (claimBytes.data.map .ofUInt8)
   let seedAsm asm buf := match asm with
     | some r => seedTreeAt r trees buf
     | none => .ok buf

@@ -178,9 +178,9 @@ def opLayout : Bytecode.Op → LayoutM Unit
     pushDegrees $ .replicate size 1
     bumpAuxiliaries size; bumpLookups; addMemSize size
   | .assertEq .. => pure ()
-  | .ioGetInfo _ => do pushDegrees #[1, 1]; bumpAuxiliaries 2
+  | .ioGetInfo _ _ => do pushDegrees #[1, 1]; bumpAuxiliaries 2
   | .ioSetInfo .. => pure ()
-  | .ioRead _ len => do pushDegrees $ .replicate len 1; bumpAuxiliaries len
+  | .ioRead _ _ len => do pushDegrees $ .replicate len 1; bumpAuxiliaries len
   | .ioWrite .. => pure ()
   | .u8BitDecomposition _ => do pushDegrees $ .replicate 8 1; bumpAuxiliaries 8; bumpLookups
   | .u8ShiftLeft _ | .u8ShiftRight _ | .u8Xor .. | .u8And .. | .u8Or .. => do

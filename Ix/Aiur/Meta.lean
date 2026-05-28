@@ -169,11 +169,11 @@ syntax "load" "(" aiur_trm ")"                                               : a
 syntax "ptr_val" "(" aiur_trm ")"                                            : aiur_trm
 syntax "assert_eq!" "(" aiur_trm ", " aiur_trm ")" ";" (aiur_trm)?         : aiur_trm
 syntax aiur_trm ": " aiur_typ                                               : aiur_trm
-syntax "io_get_info" "(" aiur_trm ")"                                        : aiur_trm
-syntax "io_set_info" "(" aiur_trm ", " aiur_trm ", " aiur_trm ")" ";"
+syntax "io_get_info" "(" aiur_trm ", " aiur_trm ")"                          : aiur_trm
+syntax "io_set_info" "(" aiur_trm ", " aiur_trm ", " aiur_trm ", " aiur_trm ")" ";"
        (aiur_trm)?                                                           : aiur_trm
-syntax "io_read" "(" aiur_trm ", " num ")"                                   : aiur_trm
-syntax "io_write" "(" aiur_trm ")" ";" (aiur_trm)?                          : aiur_trm
+syntax "io_read" "(" aiur_trm ", " aiur_trm ", " num ")"                    : aiur_trm
+syntax "io_write" "(" aiur_trm ", " aiur_trm ")" ";" (aiur_trm)?            : aiur_trm
 syntax "u8_bit_decomposition" "(" aiur_trm ")"                               : aiur_trm
 syntax "u8_shift_left" "(" aiur_trm ")"                                      : aiur_trm
 syntax "u8_shift_right" "(" aiur_trm ")"                                     : aiur_trm
@@ -286,15 +286,15 @@ partial def elabTrm : ElabStxCat `aiur_trm
     mkAppM ``Source.Term.assertEq #[← elabTrm a, ← elabTrm b, ← elabRet ret]
   | `(aiur_trm| $v:aiur_trm : $t:aiur_typ) => do
     mkAppM ``Source.Term.ann #[← elabTyp t, ← elabTrm v]
-  | `(aiur_trm| io_get_info($key:aiur_trm)) => do
-    mkAppM ``Source.Term.ioGetInfo #[← elabTrm key]
-  | `(aiur_trm| io_set_info($key:aiur_trm, $idx:aiur_trm, $len:aiur_trm); $[$ret:aiur_trm]?) => do
+  | `(aiur_trm| io_get_info($ch:aiur_trm, $key:aiur_trm)) => do
+    mkAppM ``Source.Term.ioGetInfo #[← elabTrm ch, ← elabTrm key]
+  | `(aiur_trm| io_set_info($ch:aiur_trm, $key:aiur_trm, $idx:aiur_trm, $len:aiur_trm); $[$ret:aiur_trm]?) => do
     mkAppM ``Source.Term.ioSetInfo
-      #[← elabTrm key, ← elabTrm idx, ← elabTrm len, ← elabRet ret]
-  | `(aiur_trm| io_read($idx:aiur_trm, $len:num)) => do
-    mkAppM ``Source.Term.ioRead #[← elabTrm idx, mkNatLit len.getNat]
-  | `(aiur_trm| io_write($data:aiur_trm); $[$ret:aiur_trm]?) => do
-    mkAppM ``Source.Term.ioWrite #[← elabTrm data, ← elabRet ret]
+      #[← elabTrm ch, ← elabTrm key, ← elabTrm idx, ← elabTrm len, ← elabRet ret]
+  | `(aiur_trm| io_read($ch:aiur_trm, $idx:aiur_trm, $len:num)) => do
+    mkAppM ``Source.Term.ioRead #[← elabTrm ch, ← elabTrm idx, mkNatLit len.getNat]
+  | `(aiur_trm| io_write($ch:aiur_trm, $data:aiur_trm); $[$ret:aiur_trm]?) => do
+    mkAppM ``Source.Term.ioWrite #[← elabTrm ch, ← elabTrm data, ← elabRet ret]
   | `(aiur_trm| u8_bit_decomposition($byte:aiur_trm)) => do
     mkAppM ``Source.Term.u8BitDecomposition #[← elabTrm byte]
   | `(aiur_trm| u8_shift_left($byte:aiur_trm)) => do
@@ -474,22 +474,26 @@ where
     | `(aiur_trm| $v:aiur_trm : $t:aiur_typ) => do
       let v ← replaceToken old new v
       `(aiur_trm| $v : $t)
-    | `(aiur_trm| io_get_info($key:aiur_trm)) => do
+    | `(aiur_trm| io_get_info($ch:aiur_trm, $key:aiur_trm)) => do
+      let ch ← replaceToken old new ch
       let key ← replaceToken old new key
-      `(aiur_trm| io_get_info($key))
-    | `(aiur_trm| io_set_info($key:aiur_trm, $idx:aiur_trm, $len:aiur_trm); $[$ret:aiur_trm]?) => do
+      `(aiur_trm| io_get_info($ch, $key))
+    | `(aiur_trm| io_set_info($ch:aiur_trm, $key:aiur_trm, $idx:aiur_trm, $len:aiur_trm); $[$ret:aiur_trm]?) => do
+      let ch ← replaceToken old new ch
       let key ← replaceToken old new key
       let idx ← replaceToken old new idx
       let len ← replaceToken old new len
       let ret' ← ret.mapM $ replaceToken old new
-      `(aiur_trm| io_set_info($key, $idx, $len); $[$ret']?)
-    | `(aiur_trm| io_read($idx:aiur_trm, $len:num)) => do
+      `(aiur_trm| io_set_info($ch, $key, $idx, $len); $[$ret']?)
+    | `(aiur_trm| io_read($ch:aiur_trm, $idx:aiur_trm, $len:num)) => do
+      let ch ← replaceToken old new ch
       let idx ← replaceToken old new idx
-      `(aiur_trm| io_read($idx, $len))
-    | `(aiur_trm| io_write($data:aiur_trm); $[$ret:aiur_trm]?) => do
+      `(aiur_trm| io_read($ch, $idx, $len))
+    | `(aiur_trm| io_write($ch:aiur_trm, $data:aiur_trm); $[$ret:aiur_trm]?) => do
+      let ch ← replaceToken old new ch
       let data ← replaceToken old new data
       let ret' ← ret.mapM $ replaceToken old new
-      `(aiur_trm| io_write($data); $[$ret']?)
+      `(aiur_trm| io_write($ch, $data); $[$ret']?)
     | `(aiur_trm| u8_bit_decomposition($byte:aiur_trm)) => do
       let byte ← replaceToken old new byte
       `(aiur_trm| u8_bit_decomposition($byte))

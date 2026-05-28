@@ -29,20 +29,28 @@ instance : LawfulBEq IOKeyInfo where
   rfl {a} := by simp [BEq.beq]
 
 structure IOBuffer where
-  data : Array G
-  map : Std.HashMap (Array G) IOKeyInfo
+  /-- Per-channel data arenas. `idx` slots into `data[channel]`. -/
+  data : Std.HashMap G (Array G)
+  /-- Channel-keyed info map. Same `key` on different channels resolves
+  to distinct `IOKeyInfo`. -/
+  map : Std.HashMap (G × Array G) IOKeyInfo
   deriving Inhabited
 
-def IOBuffer.extend (ioBuffer : IOBuffer) (key data : Array G) : IOBuffer :=
-  let idx := ioBuffer.data.size
+/-- Append `data` to the `channel` arena and register `key → (idx, len)`
+on the same channel. -/
+def IOBuffer.extend (ioBuffer : IOBuffer) (channel : G) (key data : Array G) :
+    IOBuffer :=
+  let arena := ioBuffer.data.getD channel #[]
+  let idx := arena.size
   let len := data.size
   { ioBuffer with
-    data := ioBuffer.data ++ data
-    map := ioBuffer.map.insert key { idx, len } }
+    data := ioBuffer.data.insert channel (arena ++ data)
+    map := ioBuffer.map.insert (channel, key) { idx, len } }
 
 instance : BEq IOBuffer where
   beq x y :=
-    x.data == y.data && @BEq.beq _ Std.HashMap.instBEq x.map y.map
+    @BEq.beq _ Std.HashMap.instBEq x.data y.data &&
+    @BEq.beq _ Std.HashMap.instBEq x.map y.map
 
 -- A `LawfulBEq IOBuffer` instance is not provided here. The reflexivity/
 -- symmetry/transitivity facts needed downstream (`IOBuffer.equiv_refl`,
@@ -63,9 +71,12 @@ namespace Bytecode.Toplevel
 
 @[extern "rs_aiur_toplevel_execute"]
 private opaque execute' : @& Bytecode.Toplevel →
-  @& Bytecode.FunIdx → @& Array G → (ioData : @& Array G) →
-  (ioMap : @& Array (Array G × IOKeyInfo)) →
-    Except String (Array G × (Array G × Array (Array G × IOKeyInfo)) × Array (Nat × Nat))
+  @& Bytecode.FunIdx → @& Array G →
+  (ioData : @& Array (G × Array G)) →
+  (ioMap : @& Array ((G × Array G) × IOKeyInfo)) →
+    Except String (Array G ×
+      (Array (G × Array G) × Array ((G × Array G) × IOKeyInfo)) ×
+      Array (Nat × Nat))
 
 /-- Executes the bytecode function `funIdx` with the given `args` and `ioBuffer`,
 returning the raw output of the function, the updated `IOBuffer`, and an array
@@ -75,11 +86,12 @@ callers can recover instead of crashing. -/
 def execute (toplevel : @& Bytecode.Toplevel)
   (funIdx : @& Bytecode.FunIdx) (args : @& Array G) (ioBuffer : IOBuffer) :
     Except String (Array G × IOBuffer × Array QueryCount) :=
-  let ioData := ioBuffer.data
-  let ioMap := ioBuffer.map
-  match execute' toplevel funIdx args ioData ioMap.toArray with
+  let ioData := ioBuffer.data.toArray
+  let ioMap := ioBuffer.map.toArray
+  match execute' toplevel funIdx args ioData ioMap with
   | .error e => .error e
   | .ok (output, (ioData, ioMap), queryCounts) =>
+    let ioData := ioData.foldl (fun acc (k, v) => acc.insert k v) ∅
     let ioMap := ioMap.foldl (fun acc (k, v) => acc.insert k v) ∅
     let queryCounts := queryCounts.map fun (uniqueRows, totalHits) => { uniqueRows, totalHits }
     .ok (output, ⟨ioData, ioMap⟩, queryCounts)

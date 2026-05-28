@@ -204,23 +204,37 @@ fn decode_io_buffer(
   io_data_arr: &LeanArray<LeanBorrowed<'_>>,
   io_map_arr: &LeanArray<LeanBorrowed<'_>>,
 ) -> IOBuffer {
-  let data = io_data_arr.map(|x| lean_unbox_g(&x));
+  let data = decode_io_buffer_data(io_data_arr);
   let map = decode_io_buffer_map(io_map_arr);
   IOBuffer { data, map }
 }
 
-/// Build a Lean `Array G × Array (Array G × IOKeyInfo)` from an `IOBuffer`.
+/// Build a Lean
+/// `Array (G × Array G) × Array ((G × Array G) × IOKeyInfo)` from an
+/// `IOBuffer`. The first array enumerates per-channel data arenas;
+/// the second is the channel-keyed info map.
 fn build_lean_io_buffer(io_buffer: &IOBuffer) -> LeanOwned {
-  let lean_io_data = build_g_array(&io_buffer.data);
+  let lean_io_data = {
+    let arr = LeanArray::alloc(io_buffer.data.len());
+    for (i, (channel, arena)) in io_buffer.data.iter().enumerate() {
+      let channel_box = LeanOwned::box_u64(channel.as_canonical_u64());
+      let arena_arr = build_g_array(arena);
+      let elt = LeanProd::new(channel_box, arena_arr);
+      arr.set(i, elt);
+    }
+    arr
+  };
   let lean_io_map = {
     let arr = LeanArray::alloc(io_buffer.map.len());
-    for (i, (key, info)) in io_buffer.map.iter().enumerate() {
+    for (i, ((channel, key), info)) in io_buffer.map.iter().enumerate() {
+      let channel_box = LeanOwned::box_u64(channel.as_canonical_u64());
       let key_arr = build_g_array(key);
+      let channel_key = LeanProd::new(channel_box, key_arr);
       let key_info = LeanProd::new(
         LeanOwned::box_usize(info.idx),
         LeanOwned::box_usize(info.len),
       );
-      let map_elt = LeanProd::new(key_arr, key_info);
+      let map_elt = LeanProd::new(channel_key, key_info);
       arr.set(i, map_elt);
     }
     arr
@@ -252,19 +266,34 @@ fn decode_fri_parameters(
   }
 }
 
+fn decode_io_buffer_data(
+  arr: &LeanArray<LeanBorrowed<'_>>,
+) -> FxHashMap<G, Vec<G>> {
+  let mut data = FxHashMap::with_capacity_and_hasher(arr.len(), FxBuildHasher);
+  for elt in arr.iter() {
+    let pair = elt.as_ctor();
+    let channel = lean_unbox_g(&pair.get(0));
+    let arena = pair.get(1).as_array().map(|x| lean_unbox_g(&x));
+    data.insert(channel, arena);
+  }
+  data
+}
+
 fn decode_io_buffer_map(
   arr: &LeanArray<LeanBorrowed<'_>>,
-) -> FxHashMap<Vec<G>, IOKeyInfo> {
+) -> FxHashMap<(G, Vec<G>), IOKeyInfo> {
   let mut map = FxHashMap::with_capacity_and_hasher(arr.len(), FxBuildHasher);
   for elt in arr.iter() {
     let pair = elt.as_ctor();
-    let key = pair.get(0).as_array().map(|x| lean_unbox_g(&x));
+    let channel_key = pair.get(0).as_ctor();
+    let channel = lean_unbox_g(&channel_key.get(0));
+    let key = channel_key.get(1).as_array().map(|x| lean_unbox_g(&x));
     let info_ctor = pair.get(1).as_ctor();
     let info = IOKeyInfo {
       idx: lean_unbox_nat_as_usize(&info_ctor.get(0)),
       len: lean_unbox_nat_as_usize(&info_ctor.get(1)),
     };
-    map.insert(key, info);
+    map.insert((channel, key), info);
   }
   map
 }

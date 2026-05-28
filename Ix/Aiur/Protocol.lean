@@ -49,9 +49,10 @@ opaque build : @&Bytecode.Toplevel → @&CommitmentParameters → AiurSystem
 
 @[extern "rs_aiur_system_prove"]
 private opaque prove' : @& AiurSystem → @& FriParameters →
-  @& Bytecode.FunIdx → @& Array G → (ioData : @& Array G) →
-  (ioMap : @& Array (Array G × IOKeyInfo)) →
-    Array G × Proof × Array G × Array (Array G × IOKeyInfo)
+  @& Bytecode.FunIdx → @& Array G →
+  (ioData : @& Array (G × Array G)) →
+  (ioMap : @& Array ((G × Array G) × IOKeyInfo)) →
+    Array G × Proof × Array (G × Array G) × Array ((G × Array G) × IOKeyInfo)
 
 /-- Executes the bytecode function `funIdx` with the given `args` and `ioBuffer`,
 then generates a proof of the computation. Returns the claim
@@ -60,10 +61,11 @@ updated `IOBuffer`. -/
 def prove (system : @& AiurSystem) (friParameters : @& FriParameters)
   (funIdx : @& Bytecode.FunIdx) (args : @& Array G) (ioBuffer : IOBuffer) :
     Array G × Proof × IOBuffer :=
-  let ioData := ioBuffer.data
-  let ioMap := ioBuffer.map
+  let ioData := ioBuffer.data.toArray
+  let ioMap := ioBuffer.map.toArray
   let (claim, proof, ioData, ioMap) := prove' system friParameters funIdx args
-    ioData ioMap.toArray
+    ioData ioMap
+  let ioData := ioData.foldl (fun acc (k, v) => acc.insert k v) ∅
   let ioMap := ioMap.foldl (fun acc (k, v) => acc.insert k v) ∅
   (claim, proof, ⟨ioData, ioMap⟩)
 

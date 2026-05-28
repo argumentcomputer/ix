@@ -400,10 +400,10 @@ inductive Term
   | ptrVal : Term → Term
   | ann : Typ → Term → Term
   | assertEq : Term → Term → (ret : Term) → Term
-  | ioGetInfo : (key : Term) → Term
-  | ioSetInfo : (key : Term) → (idx : Term) → (len : Term) → (ret : Term) → Term
-  | ioRead : (idx : Term) → (len : Nat) → Term
-  | ioWrite : (data : Term) → (ret : Term) → Term
+  | ioGetInfo : (channel : Term) → (key : Term) → Term
+  | ioSetInfo : (channel : Term) → (key : Term) → (idx : Term) → (len : Term) → (ret : Term) → Term
+  | ioRead : (channel : Term) → (idx : Term) → (len : Nat) → Term
+  | ioWrite : (channel : Term) → (data : Term) → (ret : Term) → Term
   | u8BitDecomposition : Term → Term
   | u8ShiftLeft : Term → Term
   | u8ShiftRight : Term → Term

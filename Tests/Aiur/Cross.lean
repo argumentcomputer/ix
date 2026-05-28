@@ -68,7 +68,7 @@ def toplevel : Source.Toplevel := ⟦
   -- Assertions / IO / pointer ops
   pub fn assert_same(x: G, y: G) -> G { assert_eq!(x, y); x }
   pub fn io_roundtrip(x: G) -> [G; 1] {
-    io_write([x]); io_read(0, 1)
+    io_write(0, [x]); io_read(0, 0, 1)
   }
   pub fn ptr_index(x: G) -> G {
     let p = store(x);
@@ -261,11 +261,17 @@ def toplevel : Source.Toplevel := ⟦
   }
 
   -- Full IO: get_info + read + write + set_info
+  -- Exercises channel disambiguation: same key #[0] on channels 0 and 1
+  -- resolves to distinct (idx, len) and arenas. Reads from each, writes
+  -- the concatenation back to channel 2, and registers `[1]` on channel 0.
   pub fn read_write_io() {
-    let (idx, len) = io_get_info([0]);
-    let xs: [G; 4] = io_read(idx, 4);
-    io_write(xs);
-    io_set_info([1], idx, len + 4);
+    let (idx_a, len_a) = io_get_info(0, [0]);
+    let (idx_b, _len_b) = io_get_info(1, [0]);
+    let xs: [G; 4] = io_read(0, idx_a, 4);
+    let ys: [G; 4] = io_read(1, idx_b, 4);
+    io_write(2, xs);
+    io_write(2, ys);
+    io_set_info(0, [1], idx_a, len_a + 4);
   }
 
   -- u8 shifts + bit decomposition chain
@@ -1280,7 +1286,8 @@ def tests : TestSeq :=
   runAgreement "ntm_large(5)" "ntm_large" [5] ++
   runAgreement "ntm_shape_let" "ntm_shape_let" [] ++
   runAgreement "read_write_io" "read_write_io" []
-    (io := { data := #[1, 2, 3, 4], map := .ofList [(#[0], ⟨0, 4⟩)] }) ++
+    (io := { data := .ofList [(0, #[1, 2, 3, 4]), (1, #[5, 6, 7, 8])],
+             map := .ofList [((0, #[0]), ⟨0, 4⟩), ((1, #[0]), ⟨0, 4⟩)] }) ++
   runAgreement "template_basic" "template_basic" [] ++
   runAgreement "template_unwrap_some" "template_unwrap_some" [] ++
   runAgreement "template_unwrap_none" "template_unwrap_none" [] ++

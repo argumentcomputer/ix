@@ -793,13 +793,15 @@ def inferTerm (t : Term) : CheckM Typed.Term := match t with
   | .u8FromFieldUnsafe a => do
     let a' ← checkNoEscape a .field
     pure (Typed.Term.u8FromFieldUnsafe .u8 false a')
-  | .ioGetInfo key => do
+  | .ioGetInfo channel key => do
+    let channel' ← checkNoEscape channel .field
     let key' ← inferNoEscape key
     match ← walkTyp key'.typ with
     | .array .. =>
-      pure (Typed.Term.ioGetInfo (.tuple #[.field, .field]) false key')
+      pure (Typed.Term.ioGetInfo (.tuple #[.field, .field]) false channel' key')
     | typ' => throw $ .notAnArray typ'
-  | .ioSetInfo key idx len ret => do
+  | .ioSetInfo channel key idx len ret => do
+    let channel' ← checkNoEscape channel .field
     let key' ← inferNoEscape key
     match ← walkTyp key'.typ with
     | .array keyEltTyp _ =>
@@ -807,19 +809,21 @@ def inferTerm (t : Term) : CheckM Typed.Term := match t with
       let idx' ← checkNoEscape idx .field
       let len' ← checkNoEscape len .field
       let ret' ← inferTerm ret
-      pure (Typed.Term.ioSetInfo ret'.typ ret'.escapes key' idx' len' ret')
+      pure (Typed.Term.ioSetInfo ret'.typ ret'.escapes channel' key' idx' len' ret')
     | typ' => throw $ .notAnArray typ'
-  | .ioRead idx len => do
+  | .ioRead channel idx len => do
     if len = 0 then throw .emptyArray
+    let channel' ← checkNoEscape channel .field
     let idx' ← checkNoEscape idx .field
-    pure (Typed.Term.ioRead (.array .field len) false idx' len)
-  | .ioWrite data ret => do
+    pure (Typed.Term.ioRead (.array .field len) false channel' idx' len)
+  | .ioWrite channel data ret => do
+    let channel' ← checkNoEscape channel .field
     let data' ← inferNoEscape data
     match ← walkTyp data'.typ with
     | .array dataEltTyp _ =>
       unless ← unifyTyp dataEltTyp .field do throw $ .typeMismatch .field dataEltTyp
       let ret' ← inferTerm ret
-      pure (Typed.Term.ioWrite ret'.typ ret'.escapes data' ret')
+      pure (Typed.Term.ioWrite ret'.typ ret'.escapes channel' data' ret')
     | typ' => throw $ .notAnArray typ'
   | .assertEq a b ret => do
     let a' ← inferNoEscape a
@@ -934,12 +938,15 @@ def zonkTypedTerm (t : Typed.Term) : CheckM Typed.Term := match t with
   | .ptrVal τ e a => do pure (.ptrVal (← zonkTyp τ) e (← zonkTypedTerm a))
   | .assertEq τ e a b r => do
       pure (.assertEq (← zonkTyp τ) e (← zonkTypedTerm a) (← zonkTypedTerm b) (← zonkTypedTerm r))
-  | .ioGetInfo τ e k => do pure (.ioGetInfo (← zonkTyp τ) e (← zonkTypedTerm k))
-  | .ioSetInfo τ e k i l r => do
-      pure (.ioSetInfo (← zonkTyp τ) e (← zonkTypedTerm k) (← zonkTypedTerm i)
-                       (← zonkTypedTerm l) (← zonkTypedTerm r))
-  | .ioRead τ e i n => do pure (.ioRead (← zonkTyp τ) e (← zonkTypedTerm i) n)
-  | .ioWrite τ e d r => do pure (.ioWrite (← zonkTyp τ) e (← zonkTypedTerm d) (← zonkTypedTerm r))
+  | .ioGetInfo τ e c k => do
+      pure (.ioGetInfo (← zonkTyp τ) e (← zonkTypedTerm c) (← zonkTypedTerm k))
+  | .ioSetInfo τ e c k i l r => do
+      pure (.ioSetInfo (← zonkTyp τ) e (← zonkTypedTerm c) (← zonkTypedTerm k)
+                       (← zonkTypedTerm i) (← zonkTypedTerm l) (← zonkTypedTerm r))
+  | .ioRead τ e c i n => do
+      pure (.ioRead (← zonkTyp τ) e (← zonkTypedTerm c) (← zonkTypedTerm i) n)
+  | .ioWrite τ e c d r => do
+      pure (.ioWrite (← zonkTyp τ) e (← zonkTypedTerm c) (← zonkTypedTerm d) (← zonkTypedTerm r))
   | .u8BitDecomposition τ e a => do
       pure (.u8BitDecomposition (← zonkTyp τ) e (← zonkTypedTerm a))
   | .u8ShiftLeft τ e a => do pure (.u8ShiftLeft (← zonkTyp τ) e (← zonkTypedTerm a))

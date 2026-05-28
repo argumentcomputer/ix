@@ -417,34 +417,41 @@ partial def interp (decls : Decls) (bindings : Bindings) : Term → InterpM Valu
         let store ← getStore
         dbg_trace s!"{label}: {Value.ppDeref store 16 v}"
       interp decls bindings cont
-  | .ioGetInfo key => do
+  | .ioGetInfo channel key => do
+      let channelG ← expectField (← interp decls bindings channel)
       let keyGs ← expectFieldArray (← interp decls bindings key)
       let io ← getIOBuffer
-      match io.map[keyGs]? with
+      match io.map[(channelG, keyGs)]? with
       | some info =>
         return .tuple #[.field (.ofNat info.idx), .field (.ofNat info.len)]
       | none => throwErr s!"ioGetInfo: key not found"
-  | .ioSetInfo key idx len ret => do
+  | .ioSetInfo channel key idx len ret => do
+      let channelG ← expectField (← interp decls bindings channel)
       let keyGs ← expectFieldArray (← interp decls bindings key)
       let idxVal ← expectField (← interp decls bindings idx)
       let lenVal ← expectField (← interp decls bindings len)
       let io ← getIOBuffer
-      if io.map.contains keyGs then
+      if io.map.contains (channelG, keyGs) then
         throwErr s!"ioSetInfo: key already set"
       let info : IOKeyInfo := ⟨idxVal.val.toNat, lenVal.val.toNat⟩
-      modifyIOBuffer fun io => { io with map := io.map.insert keyGs info }
+      modifyIOBuffer fun io => { io with map := io.map.insert (channelG, keyGs) info }
       interp decls bindings ret
-  | .ioRead idx len => do
+  | .ioRead channel idx len => do
+      let channelG ← expectField (← interp decls bindings channel)
       let idxVal ← expectField (← interp decls bindings idx)
       let io ← getIOBuffer
+      let arena := io.data.getD channelG #[]
       let start := idxVal.val.toNat
-      if start + len > io.data.size then
+      if start + len > arena.size then
         throwErr s!"ioRead: out-of-bounds read at {start} for length {len} \
-                   (buffer size {io.data.size})"
-      return .array (io.data.extract start (start + len) |>.map .field)
-  | .ioWrite data ret => do
+                   (channel {channelG.val}, arena size {arena.size})"
+      return .array (arena.extract start (start + len) |>.map .field)
+  | .ioWrite channel data ret => do
+      let channelG ← expectField (← interp decls bindings channel)
       let dataGs ← expectFieldArray (← interp decls bindings data)
-      modifyIOBuffer fun io => { io with data := io.data ++ dataGs }
+      modifyIOBuffer fun io =>
+        let arena := io.data.getD channelG #[]
+        { io with data := io.data.insert channelG (arena ++ dataGs) }
       interp decls bindings ret
 
 end

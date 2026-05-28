@@ -9,8 +9,8 @@ def sha256 := ⟦
   /- # Test entrypoints -/
 
   pub fn sha256_test() -> [[U8; 4]; 8] {
-    let (idx, len) = io_get_info([0]);
-    let byte_stream = #read_byte_stream(idx, len);
+    let (idx, len) = io_get_info(0, [0]);
+    let byte_stream = #read_byte_stream(0, idx, len);
     sha256(byte_stream)
   }
 
@@ -19,8 +19,8 @@ def sha256 := ⟦
   pub fn sha256_bench(num_hashes: G) -> G {
     let num_hashes_pred = num_hashes - 1;
     let key = [num_hashes_pred];
-    let (idx, len) = io_get_info(key);
-    let byte_stream = #read_byte_stream(idx, len);
+    let (idx, len) = io_get_info(0, key);
+    let byte_stream = #read_byte_stream(0, idx, len);
     let _ = sha256(byte_stream);
     match num_hashes_pred {
       0 => 0,

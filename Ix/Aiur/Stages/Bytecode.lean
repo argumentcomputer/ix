@@ -28,10 +28,10 @@ inductive Op
   | store : Array ValIdx → Op
   | load : (size : Nat) → ValIdx → Op
   | assertEq : Array ValIdx → Array ValIdx → Op
-  | ioGetInfo : Array ValIdx → Op
-  | ioSetInfo : Array ValIdx → ValIdx → ValIdx → Op
-  | ioRead : ValIdx → Nat → Op
-  | ioWrite : Array ValIdx → Op
+  | ioGetInfo : ValIdx → Array ValIdx → Op
+  | ioSetInfo : ValIdx → Array ValIdx → ValIdx → ValIdx → Op
+  | ioRead : ValIdx → ValIdx → Nat → Op
+  | ioWrite : ValIdx → Array ValIdx → Op
   | u8BitDecomposition : ValIdx → Op
   | u8ShiftLeft : ValIdx → Op
   | u8ShiftRight : ValIdx → Op

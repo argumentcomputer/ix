@@ -66,24 +66,29 @@ fn decode_op(ctor: LeanCtor<LeanBorrowed<'_>>) -> Op {
       Op::AssertEq(decode_vec_val_idx(a), decode_vec_val_idx(b))
     },
     9 => {
-      let [key] = ctor.objs::<1>();
-      Op::IOGetInfo(decode_vec_val_idx(key))
+      let [channel, key] = ctor.objs::<2>();
+      Op::IOGetInfo(lean_unbox_nat_as_usize(&channel), decode_vec_val_idx(key))
     },
     10 => {
-      let [key, idx, len] = ctor.objs::<3>();
+      let [channel, key, idx, len] = ctor.objs::<4>();
       Op::IOSetInfo(
+        lean_unbox_nat_as_usize(&channel),
         decode_vec_val_idx(key),
         lean_unbox_nat_as_usize(&idx),
         lean_unbox_nat_as_usize(&len),
       )
     },
     11 => {
-      let [idx, len] = ctor.objs::<2>();
-      Op::IORead(lean_unbox_nat_as_usize(&idx), lean_unbox_nat_as_usize(&len))
+      let [channel, idx, len] = ctor.objs::<3>();
+      Op::IORead(
+        lean_unbox_nat_as_usize(&channel),
+        lean_unbox_nat_as_usize(&idx),
+        lean_unbox_nat_as_usize(&len),
+      )
     },
     12 => {
-      let [data] = ctor.objs::<1>();
-      Op::IOWrite(decode_vec_val_idx(data))
+      let [channel, data] = ctor.objs::<2>();
+      Op::IOWrite(lean_unbox_nat_as_usize(&channel), decode_vec_val_idx(data))
     },
     13 => {
       let [byte] = ctor.objs::<1>();

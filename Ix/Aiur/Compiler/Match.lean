@@ -370,11 +370,12 @@ def typedToSimple : Term → Simple.Term
   | .load τ e a => .load τ e (typedToSimple a)
   | .ptrVal τ e a => .ptrVal τ e (typedToSimple a)
   | .assertEq τ e a b r => .assertEq τ e (typedToSimple a) (typedToSimple b) (typedToSimple r)
-  | .ioGetInfo τ e k => .ioGetInfo τ e (typedToSimple k)
-  | .ioSetInfo τ e k i l r =>
-    .ioSetInfo τ e (typedToSimple k) (typedToSimple i) (typedToSimple l) (typedToSimple r)
-  | .ioRead τ e i n => .ioRead τ e (typedToSimple i) n
-  | .ioWrite τ e d r => .ioWrite τ e (typedToSimple d) (typedToSimple r)
+  | .ioGetInfo τ e c k => .ioGetInfo τ e (typedToSimple c) (typedToSimple k)
+  | .ioSetInfo τ e c k i l r =>
+    .ioSetInfo τ e (typedToSimple c) (typedToSimple k) (typedToSimple i)
+      (typedToSimple l) (typedToSimple r)
+  | .ioRead τ e c i n => .ioRead τ e (typedToSimple c) (typedToSimple i) n
+  | .ioWrite τ e c d r => .ioWrite τ e (typedToSimple c) (typedToSimple d) (typedToSimple r)
   | .u8BitDecomposition τ e a => .u8BitDecomposition τ e (typedToSimple a)
   | .u8ShiftLeft τ e a => .u8ShiftLeft τ e (typedToSimple a)
   | .u8ShiftRight τ e a => .u8ShiftRight τ e (typedToSimple a)
