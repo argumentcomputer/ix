@@ -57,6 +57,19 @@ extern "C" fn rs_aiur_proof_of_bytes(
   LeanExternal::alloc(&AIUR_PROOF_CLASS, proof)
 }
 
+/// `Aiur.AiurSystem.vkBytes : @& AiurSystem → ByteArray`
+///
+/// Serializes the verifying key (`System<AiurCircuit>`) — see
+/// `crate::aiur::vk_codec`.
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_system_vk_bytes(
+  system: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
+) -> LeanByteArray<LeanOwned> {
+  let bytes = crate::aiur::vk_codec::aiur_system_to_bytes(system.get())
+    .expect("VK serialization error");
+  LeanByteArray::from_bytes(&bytes)
+}
+
 /// `AiurSystem.build : @&Bytecode.Toplevel → @&CommitmentParameters → AiurSystem`
 #[unsafe(no_mangle)]
 extern "C" fn rs_aiur_system_build(

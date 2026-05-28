@@ -82,11 +82,21 @@ def main : IO UInt32 := do
   IO.println s!"  serialized proof: {proofBytes.size} bytes  (~{blocks} keccak-f blocks)"
   let digest := Keccak.hash proofBytes
   IO.println s!"  keccak256(proof) = {toHex digest}"
-  -- Public input: the 32 digest bytes (grouped by the entrypoint into [[U8;8];4]).
   let digestInput : Array Aiur.G := digest.data.map .ofUInt8
-  -- IO hint under key [0]: the proof byte stream the verifier reads.
   let proofGs : Array Aiur.G := proofBytes.data.map .ofUInt8
-  let verifierIO : IOBuffer := (default : IOBuffer).extend #[Aiur.G.ofNat 0] proofGs
+
+  -- Verifying key (`System<AiurCircuit>`) bytes + its keccak-256 digest.
+  let vkBytes := facSystem.vkBytes
+  IO.println s!"  verifying key: {vkBytes.size} bytes  (~{(vkBytes.size + 1) / 136 + 1} keccak-f blocks)"
+  let sysDigest := Keccak.hash vkBytes
+  IO.println s!"  keccak256(vk)    = {toHex sysDigest}"
+  let sysDigestInput : Array Aiur.G := sysDigest.data.map .ofUInt8
+  let vkGs : Array Aiur.G := vkBytes.data.map .ofUInt8
+
+  -- Public input = proof digest ++ vk digest; IO hints: proof at [0], vk at [1].
+  let input : Array Aiur.G := digestInput ++ sysDigestInput
+  let verifierIO : IOBuffer :=
+    ((default : IOBuffer).extend #[Aiur.G.ofNat 0] proofGs).extend #[Aiur.G.ofNat 1] vkGs
 
   -- ── 4. recursive verifier system ─────────────────────────────────────────
   let vTop ← match MultiStark.multiStark with
@@ -97,15 +107,16 @@ def main : IO UInt32 := do
     | some i => pure i
     | none => IO.eprintln "verify_multi_stark_proof entrypoint not found"; return 1
 
-  -- ── 5. run the verifier: deserialize + recompute keccak256, assert == digest
-  IO.println "running verifier (deserialize + keccak256 over the proof bytes)…"
-  match vCompiled.bytecode.execute vIdx digestInput verifierIO with
-  | .error e => IO.eprintln s!"✗ verifier rejected the proof: {e}"; return 1
+  -- ── 5. run the verifier: deserialize proof + vk, recompute keccak digests,
+  --       reconstruct the System<AiurCircuit>, run structural checks ──────────
+  IO.println "running verifier (proof + verifying-key deserialize + keccak binding)…"
+  match vCompiled.bytecode.execute vIdx input verifierIO with
+  | .error e => IO.eprintln s!"✗ verifier rejected: {e}"; return 1
   | .ok (_, _, queryCounts) =>
-    IO.println "✓ verifier accepted: deserialized OK and keccak256(bytes) == digest"
-    -- ── 6. negative test: a tampered digest must be rejected ────────────────
-    let badDigest := digestInput.set! 0 (Aiur.G.ofNat ((digest.data[0]!.toNat + 1) % 256))
-    match vCompiled.bytecode.execute vIdx badDigest verifierIO with
+    IO.println "✓ verifier accepted: proof + vk deserialized, both keccak digests match"
+    -- ── 6. negative test: a tampered proof digest must be rejected ──────────
+    let badInput := input.set! 0 (Aiur.G.ofNat ((digest.data[0]!.toNat + 1) % 256))
+    match vCompiled.bytecode.execute vIdx badInput verifierIO with
     | .error _ => IO.println "✓ tampered digest correctly rejected (assert_eq failed)"
     | .ok _ => IO.eprintln "✗ tampered digest was NOT rejected"; return 1
     -- ── 7. circuit statistics ───────────────────────────────────────────────
