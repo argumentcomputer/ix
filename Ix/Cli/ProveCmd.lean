@@ -1,25 +1,36 @@
 /-
-  `ix prove <claim-hex> <ixe-path>`: read a persisted claim from the
-  content-addressed store at `~/.ix/store/<claim-hex>`, load the env
-  from a serialized `.ixe` on disk, build the kernel witness via
-  `IxVM.ClaimHarness.buildClaimWitness`, run the Aiur backend's
-  `prove`, wrap the resulting opaque proof bytes into an `Ixon.Proof`
-  (alongside the claim), and persist the wrapper back to the store.
-  Prints the resulting proof blake3 hex on stdout.
+  `ix prove`: generate a STARK proof against an `Ix.Claim`. Mirrors
+  the CLI shape of `ix check`:
 
-  The Ixon.Proof wrapper carries the claim, so `ix verify` only
-  needs the proof hex.
+      ix prove Nat.add_comm                            # compiled-in Lean env
+      ix prove --ixe arena.ixe Foo.bar                 # from .ixe, named target
+      ix prove --ixe arena.ixe                         # iterate every named const
+      ix prove --ixe arena.ixe --claim <hex>           # against a persisted claim
 
-  MVP supports `Check addr none` only — other claim variants either
-  need tree resolution (deferred) or different witness shapes.
+  Each invocation runs the same `verify_claim` Aiur witness that
+  `ix check` does, then drives Aiur's `prove` over it and persists
+  the result as an `Ixon.Proof` wrapper (claim + opaque proof
+  bytes). Prints the resulting proof blake3 hex on stdout — feed
+  that to `ix verify <proof-hex>`.
+
+  Per-claim mode (`--claim`) loads the claim from the store and
+  resolves every referenced assumption / env / contains tree
+  (build trees with `ix tree canonical` / `ix tree env`).
+
+  Per-name mode builds a default `Claim.check addr none` and
+  persists the claim alongside the proof so `ix verify` can stand
+  alone with just the proof hex.
+
+  Driven by the shared `Ix.Cli.CheckCmd.forEachClaim`: the only
+  prove-specific surface is `runOne = proveOne aiurSystem compiled`.
 -/
 module
 public import Cli
-public import Ix.Address
+public import Std.Internal.UV.System
 public import Ix.Aiur.Compiler
 public import Ix.Aiur.Protocol
-public import Ix.AssumptionTree
 public import Ix.Claim
+public import Ix.Cli.CheckCmd
 public import Ix.Common
 public import Ix.IxVM
 public import Ix.IxVM.ClaimHarness
@@ -28,17 +39,9 @@ public import Ix.Store
 
 public section
 
-open System (FilePath)
 open IxVM.ClaimHarness
 
 namespace Ix.Cli.ProveCmd
-
-private def addrOfHex! (label : String) (s : String) : IO Address := do
-  match Address.fromString s with
-  | some a => pure a
-  | none =>
-    throw <| IO.userError
-      s!"error: {label}: expected 64-char hex (32-byte address), got {s.length}-char {s}"
 
 /-- Canonical aiur params shared between prove and verify. Matches
     `Tests.Aiur.Common`. Until these become flags / commit to the
@@ -55,65 +58,35 @@ private def friParameters : Aiur.FriParameters := {
   queryProofOfWorkBits := 0
 }
 
-def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
-  let some claimArg := p.positionalArg? "claim"
-    | p.printError "error: must specify <claim-hex>"; return 1
-  let some ixeArg := p.positionalArg? "ixe"
-    | p.printError "error: must specify <ixe-path>"; return 1
-  let claimAddr ← addrOfHex! "claim" (claimArg.as! String)
-  let ixePath := ixeArg.as! String
-
-  -- 1. Load + decode claim from the content-addressed store.
-  let claimBytes ← StoreIO.toIO (Store.read claimAddr)
-  let claim ← IO.ofExcept (Ixon.runGet Ix.Claim.get claimBytes)
-  -- Sanity-check the digest is internally consistent.
-  let computed := Address.blake3 (Ix.Claim.ser claim)
-  if computed != claimAddr then
-    IO.eprintln s!"error: claim bytes at {claimAddr} re-hash to {computed}"
-    return 1
-
-  -- 2. Load env from .ixe.
-  let envBytes ← IO.FS.readBinFile ixePath
-  let ixonEnv ← match Ixon.rsDeEnv envBytes with
-    | .error e =>
-      IO.eprintln s!"error: failed to deserialize {ixePath}: {e}"; return 1
-    | .ok env => pure env
-
-  -- NOTE(big envs): `Claim.checkEnv` over the full arena env
-  -- (~980 consts) currently exhausts proving memory. The CLI shape
-  -- is correct — the IxVM kernel / prover need work before
-  -- unconditional CheckEnv on large envs is feasible. Speed-up
-  -- path for callers in the meantime: conditional proofs, i.e.
-  -- build an asm tree (via `ix tree canonical <addr,addr,...>`)
-  -- over constants the prover assumes are well-typed, then pass
-  -- `--asm <asm_root>` to the claim so the kernel skips
-  -- `check_const` on those leaves.
-
-  -- 3. Resolve assumption / env / contains trees from the store.
-  --    Every tree root referenced by the claim must already be
-  --    persisted (build with `ix tree canonical`).
-  let treeRoots : Array Address := match claim with
-    | .check _ (some r)            => #[r]
-    | .eval _ _ (some r)           => #[r]
-    | .checkEnv root none          => #[root]
-    | .checkEnv root (some r)      => #[root, r]
-    | .contains tree _             => #[tree]
-    | _                            => #[]
-  let mut trees : Std.HashMap Address Ix.AssumptionTree := {}
-  for r in treeRoots do
-    let tbytes ← StoreIO.toIO (Store.read r)
-    let tree ← match Ix.AssumptionTree.de tbytes with
-      | .error e =>
-        IO.eprintln s!"error: tree at {r}: deserialize failed: {e}"
-        return 1
-      | .ok t => pure t
-    -- Sanity-check the stored bytes correspond to the claimed root.
-    if tree.root != r then
-      IO.eprintln s!"error: tree stored at {r} has merkle root {tree.root}"
+/-- Run Aiur prove for one (claim, witness) pair, wrap into an
+    `Ixon.Proof`, persist claim + wrapper, and print the resulting
+    proof hex. Plugs into `Ix.Cli.CheckCmd.forEachClaim`. -/
+def proveOne (aiurSystem : Aiur.AiurSystem)
+    (compiled : Aiur.CompiledToplevel)
+    (claim : Ix.Claim)
+    (witness : IxVM.ClaimHarness.ClaimWitness)
+    (label : String) : IO UInt32 := do
+  IO.println s!"Proving {label}"
+  (← IO.getStdout).flush
+  let funIdx ← match compiled.getFuncIdx witness.funcName with
+    | some i => pure i
+    | none =>
+      IO.eprintln s!"{label}: entrypoint `{witness.funcName}` missing from compiled toplevel"
       return 1
-    trees := trees.insert r tree
+  let _ ← StoreIO.toIO (Store.write (Ix.Claim.ser claim))
+  let (_aiurClaim, proof, _outIO) :=
+    aiurSystem.prove friParameters funIdx witness.input witness.inputIOBuffer
+  let wrapper : Ixon.Proof := { claim, proof := proof.toBytes }
+  let proofAddr ← StoreIO.toIO (Store.write (Ixon.Proof.ser wrapper))
+  IO.println (toString proofAddr)
+  return 0
 
-  -- 4. Build Aiur backend with the verifying (non-fast) loaders.
+def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
+  Std.Internal.UV.System.osSetenv "IX_QUIET" "1"
+  let keepGoing := p.hasFlag "keep-going"
+  let ixePath : Option String := (p.flag? "ixe").map (·.as! String)
+  let claimHex : Option String := (p.flag? "claim").map (·.as! String)
+  let names := (p.variableArgsAs! String).toList
   let toplevel ← match IxVM.ixVM with
     | .error e => IO.eprintln s!"toplevel merging failed: {e}"; return 1
     | .ok t => pure t
@@ -121,37 +94,23 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
     | .error e => IO.eprintln s!"compilation failed: {e}"; return 1
     | .ok c => pure c
   let aiurSystem := Aiur.AiurSystem.build compiled.bytecode commitmentParameters
-
-  -- 5. Build the per-claim witness against the loaded env.
-  let witness ← IO.ofExcept <| buildClaimWitness ixonEnv claim trees
-  let funIdx ← match compiled.getFuncIdx witness.funcName with
-    | some i => pure i
-    | none =>
-      IO.eprintln s!"error: entrypoint `{witness.funcName}` missing from compiled toplevel"
-      return 1
-
-  -- 6. Prove.
-  let (_aiurClaim, proof, _outIO) :=
-    aiurSystem.prove friParameters funIdx witness.input witness.inputIOBuffer
-
-  -- 7. Wrap + persist. `Ixon.Proof.ser` blake3 is the proof address
-  -- returned to the user. The wrapper carries the claim, so
-  -- `ix verify` only needs the proof hex.
-  let wrapper : Ixon.Proof := { claim, proof := proof.toBytes }
-  let proofAddr ← StoreIO.toIO (Store.write (Ixon.Proof.ser wrapper))
-  IO.println (toString proofAddr)
-  return 0
+  Ix.Cli.CheckCmd.forEachClaim ixePath claimHex names keepGoing "prove"
+    (proveOne aiurSystem compiled)
 
 end Ix.Cli.ProveCmd
 
 open Ix.Cli.ProveCmd in
 def proveCmd : Cli.Cmd := `[Cli|
   prove VIA runProveCmd;
-  "Generate a STARK proof for a persisted claim against a `.ixe`"
+  "Generate a STARK proof for an `Ix.Claim` (mirrors `ix check`'s CLI shape)"
+
+  FLAGS:
+    "keep-going";       "Continue past failures and report them at the end instead of halting on the first."
+    "ixe"   : String;   "Path to a serialized `.ixe` env. When set, the binary reads the env from disk instead of using the compiled-in Lean env."
+    "claim" : String;   "32-byte hex address of a persisted `Ix.Claim` in `~/.ix/store/`. When set, proves the persisted claim against the `--ixe` env (single proof, skips per-const iteration)."
 
   ARGS:
-    claim : String; "32-byte hex address of the persisted claim in `~/.ix/store/`."
-    ixe   : String; "Path to a serialized Ixon env (`.ixe`) carrying the claim's referenced constants."
+    ...names : String; "Fully-qualified Lean.Name(s) to prove. With none, iterate every named constant in the env (sorted)."
 ]
 
 end

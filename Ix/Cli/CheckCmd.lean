@@ -39,13 +39,13 @@ open IxVM.ClaimHarness
 
 namespace Ix.Cli.CheckCmd
 
-private def parseName (arg : String) : Lean.Name :=
+def parseName (arg : String) : Lean.Name :=
   arg.splitOn "." |>.foldl (init := .anonymous)
     fun acc s => match s.toNat? with
       | some n => Lean.Name.mkNum acc n
       | none   => Lean.Name.mkStr acc s
 
-private def addrOfHex! (label : String) (s : String) : IO Address := do
+def addrOfHex! (label : String) (s : String) : IO Address := do
   match Address.fromString s with
   | some a => pure a
   | none =>
@@ -53,8 +53,9 @@ private def addrOfHex! (label : String) (s : String) : IO Address := do
       s!"error: {label}: expected 64-char hex (32-byte address), got {s.length}-char {s}"
 
 /-- Load a persisted claim from the content-addressed store and resolve
-    every tree root it references. Mirrors `Ix/Cli/ProveCmd.lean`. -/
-private def loadClaimAndTrees (claimHex : String) :
+    every tree root it references. Shared between `ix check --claim`
+    and `ix prove --claim`. -/
+def loadClaimAndTrees (claimHex : String) :
     IO (Ix.Claim × Std.HashMap Address Ix.AssumptionTree) := do
   let claimAddr ← addrOfHex! "claim" claimHex
   let claimBytes ← StoreIO.toIO (Store.read claimAddr)
@@ -144,37 +145,20 @@ def runInterp (decls : Aiur.Source.Decls)
     IO.println s!"{label}: {output}"
     pure 0
 
-def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
-  -- Always silence the Rust-side `[compile_env]` progress logs. The
-  -- per-name labels + stats are signal enough at this layer.
-  Std.Internal.UV.System.osSetenv "IX_QUIET" "1"
-  let interp := p.hasFlag "interp"
-  let keepGoing := p.hasFlag "keep-going"
-  let statsOut : Option String :=
-    (p.flag? "stats-out").map (·.as! String)
-  let ixePath : Option String :=
-    (p.flag? "ixe").map (·.as! String)
-  let claimHex : Option String :=
-    (p.flag? "claim").map (·.as! String)
-  let names := (p.variableArgsAs! String).toList
-  let printStats := names.length == 1 || claimHex.isSome
+/-- Shared driver for `ix check` / `ix prove`. Loads either a `.ixe`
+    env (with optional `--claim` over a persisted claim, or per-name
+    iteration) or the compiled-in Lean env (per-name iteration only),
+    constructs each `(Claim, Witness, label)` triple, and dispatches
+    to `runOne`. Accumulates failures + prints a `[logTag]` summary.
 
-  let toplevel ← match IxVM.ixVM with
-    | .error e => IO.eprintln s!"Toplevel merging failed: {e}"; return 1
-    | .ok t => pure t
-
-  let runOne : IxVM.ClaimHarness.ClaimWitness → String → IO UInt32 ←
-    if interp then do
-      let decls ← match toplevel.mkDecls with
-        | .error e => IO.eprintln s!"mkDecls failed: {e}"; return 1
-        | .ok d => pure d
-      pure (runInterp decls)
-    else do
-      let compiled ← match toplevel.compile with
-        | .error e => IO.eprintln s!"Compilation failed: {e}"; return 1
-        | .ok c => pure c
-      pure (runCompiled compiled printStats statsOut)
-
+    `runOne` ignores `Claim` for `ix check` (the witness encodes the
+    claim digest in its IO buffer); `ix prove` uses it to persist
+    the claim alongside the proof wrapper. -/
+def forEachClaim
+    (ixePath : Option String) (claimHex : Option String) (names : List String)
+    (keepGoing : Bool) (logTag : String)
+    (runOne : Ix.Claim → IxVM.ClaimHarness.ClaimWitness → String → IO UInt32)
+    : IO UInt32 := do
   let mut failures : Array String := #[]
   match ixePath with
   | some path =>
@@ -190,7 +174,7 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
       let witness ← IO.ofExcept <|
         IxVM.ClaimHarness.buildClaimWitness ixonEnv claim trees
       let label := s!"claim {hex}"
-      if (← runOne witness label) ≠ 0 then
+      if (← runOne claim witness label) ≠ 0 then
         failures := failures.push label
     else if names.isEmpty then
       let sorted := ixonEnv.named.toArray.qsort
@@ -198,8 +182,9 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
       for (ixName, named) in sorted do
         let leanName := ixNameToLeanName ixName
         let label := toString leanName
+        let claim := Ix.Claim.check named.addr none
         let witness ← mkWitness named.addr ixonEnv
-        if (← runOne witness label) ≠ 0 then
+        if (← runOne claim witness label) ≠ 0 then
           failures := failures.push label
           if !keepGoing then break
     else
@@ -212,25 +197,29 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
           if !keepGoing then break
         | some addr =>
           let label := toString name
+          let claim := Ix.Claim.check addr none
           let witness ← mkWitness addr ixonEnv
-          if (← runOne witness label) ≠ 0 then
+          if (← runOne claim witness label) ≠ 0 then
             failures := failures.push label
             if !keepGoing then break
   | none =>
     if claimHex.isSome then
       IO.eprintln "error: --claim requires --ixe <path>"; return 1
     let env ← get_env!
-    let buildOne (name : Lean.Name) : IO IxVM.ClaimHarness.ClaimWitness := do
+    let buildOne (name : Lean.Name) :
+        IO (Ix.Claim × IxVM.ClaimHarness.ClaimWitness) := do
       let ixonEnv ← IxVM.ClaimHarness.loadIxonEnv name env
       let addr ← IxVM.ClaimHarness.lookupAddr ixonEnv name
-      mkWitness addr ixonEnv
+      let claim := Ix.Claim.check addr none
+      let witness ← mkWitness addr ixonEnv
+      pure (claim, witness)
     if names.isEmpty then
       let sorted := env.constants.toList.toArray.qsort
         (fun a b => toString a.1 < toString b.1)
       for (name, _) in sorted do
         let label := toString name
-        let witness ← buildOne name
-        if (← runOne witness label) ≠ 0 then
+        let (claim, witness) ← buildOne name
+        if (← runOne claim witness label) ≠ 0 then
           failures := failures.push label
           if !keepGoing then break
     else
@@ -242,16 +231,47 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
           if !keepGoing then break
           else continue
         let label := toString name
-        let witness ← buildOne name
-        if (← runOne witness label) ≠ 0 then
+        let (claim, witness) ← buildOne name
+        if (← runOne claim witness label) ≠ 0 then
           failures := failures.push label
           if !keepGoing then break
 
   if failures.isEmpty then pure 0
   else
-    IO.eprintln s!"[check] {failures.size} failure(s):"
+    IO.eprintln s!"[{logTag}] {failures.size} failure(s):"
     for n in failures do IO.eprintln s!"  {n}"
     pure 1
+
+def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
+  -- Always silence the Rust-side `[compile_env]` progress logs. The
+  -- per-name labels + stats are signal enough at this layer.
+  Std.Internal.UV.System.osSetenv "IX_QUIET" "1"
+  let interp := p.hasFlag "interp"
+  let keepGoing := p.hasFlag "keep-going"
+  let statsOut : Option String :=
+    (p.flag? "stats-out").map (·.as! String)
+  let ixePath : Option String :=
+    (p.flag? "ixe").map (·.as! String)
+  let claimHex : Option String :=
+    (p.flag? "claim").map (·.as! String)
+  let names := (p.variableArgsAs! String).toList
+  let printStats := names.length == 1 || claimHex.isSome
+  let toplevel ← match IxVM.ixVM with
+    | .error e => IO.eprintln s!"Toplevel merging failed: {e}"; return 1
+    | .ok t => pure t
+  let runOne : IxVM.ClaimHarness.ClaimWitness → String → IO UInt32 ←
+    if interp then do
+      let decls ← match toplevel.mkDecls with
+        | .error e => IO.eprintln s!"mkDecls failed: {e}"; return 1
+        | .ok d => pure d
+      pure (runInterp decls)
+    else do
+      let compiled ← match toplevel.compile with
+        | .error e => IO.eprintln s!"Compilation failed: {e}"; return 1
+        | .ok c => pure c
+      pure (runCompiled compiled printStats statsOut)
+  forEachClaim ixePath claimHex names keepGoing "check"
+    (fun _ w l => runOne w l)
 
 end Ix.Cli.CheckCmd
 
