@@ -7,7 +7,7 @@ public section
 namespace IxVM
 
 def ingress := ⟦
-  -- Load a constant from IOBuffer by address, verify blake3, deserialize
+  -- Load a constant from IOBuffer by address, verify blake3, deserialize.
   fn load_verified_constant(addr: Addr) -> Constant {
     let raw = load(addr);
     let (idx, len) = io_get_info(0, raw);
@@ -29,6 +29,28 @@ def ingress := ⟦
     let (constant, rest) = get_constant(bytes);
     assert_eq!(load(rest), ListNode.Nil);
     constant
+  }
+
+  -- Load a blob from IOBuffer by address, verify blake3, return raw bytes.
+  -- Blobs live on channel 1; constants live on channel 0 with the same key.
+  fn load_verified_blob(addr: Addr) -> ByteStream {
+    let (idx, len) = io_get_info(1, load(addr));
+    let bytes = #read_byte_stream(1, idx, len);
+    let h = blake3(bytes);
+    assert_eq!(
+      [
+        h[0][0], h[0][1], h[0][2], h[0][3],
+        h[1][0], h[1][1], h[1][2], h[1][3],
+        h[2][0], h[2][1], h[2][2], h[2][3],
+        h[3][0], h[3][1], h[3][2], h[3][3],
+        h[4][0], h[4][1], h[4][2], h[4][3],
+        h[5][0], h[5][1], h[5][2], h[5][3],
+        h[6][0], h[6][1], h[6][2], h[6][3],
+        h[7][0], h[7][1], h[7][2], h[7][3]
+      ],
+      load(addr)
+    );
+    bytes
   }
 
   -- Compare two 32-byte addresses for equality
@@ -76,28 +98,6 @@ def ingress := ⟦
     match load(bytes) {
       ListNode.Cons(b, _) => to_field(b),
     }
-  }
-
-  -- Load a blob from IOBuffer by address, verify blake3, return raw bytes.
-  -- Blobs live on channel 1; constants live on channel 0 with the same key.
-  fn load_verified_blob(addr: Addr) -> ByteStream {
-    let (idx, len) = io_get_info(1, load(addr));
-    let bytes = #read_byte_stream(1, idx, len);
-    let h = blake3(bytes);
-    assert_eq!(
-      [
-        h[0][0], h[0][1], h[0][2], h[0][3],
-        h[1][0], h[1][1], h[1][2], h[1][3],
-        h[2][0], h[2][1], h[2][2], h[2][3],
-        h[3][0], h[3][1], h[3][2], h[3][3],
-        h[4][0], h[4][1], h[4][2], h[4][3],
-        h[5][0], h[5][1], h[5][2], h[5][3],
-        h[6][0], h[6][1], h[6][2], h[6][3],
-        h[7][0], h[7][1], h[7][2], h[7][3]
-      ],
-      load(addr)
-    );
-    bytes
   }
 
   -- Build lit_blobs by loading and verifying each blob on demand.

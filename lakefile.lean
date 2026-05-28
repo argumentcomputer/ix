@@ -90,8 +90,12 @@ lean_exe IxTests where
   supportInterpreter := true
   moreLinkObjs := #[ix_rs_test]
 
-lean_exe kernel where
-  root := `Kernel
+lean_exe check where
+  root := `Check
+  supportInterpreter := true
+
+lean_exe «arena-exclude» where
+  root := `Tests.Ix.Kernel.ArenaExclude
   supportInterpreter := true
 
 end Tests

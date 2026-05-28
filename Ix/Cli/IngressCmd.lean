@@ -45,8 +45,8 @@ opaque rsKernelIngressFFI :
     @& List (Lean.Name × Lean.ConstantInfo) → IO USize
 
 def runIngressCmd (p : Cli.Parsed) : IO UInt32 := do
-  let some path := p.flag? "path"
-    | p.printError "error: must specify --path"
+  let some path := p.positionalArg? "path"
+    | p.printError "error: must specify <path> to a Lean source file"
       return 1
   let pathStr := path.as! String
 
@@ -76,8 +76,8 @@ def ingressCmd : Cli.Cmd := `[Cli|
   ingress VIA runIngressCmd;
   "Ingress a Lean file's env through the Ix kernel pipeline (compile + ingress only, no typecheck) for performance analysis"
 
-  FLAGS:
-    path : String; "Path to file whose env should be ingressed"
+  ARGS:
+    path : String; "Path to the Lean source file whose env should be ingressed."
 ]
 
 end
