@@ -31,7 +31,7 @@ def entrypoints := ⟦
   -- deserialize into a `Proof` object (asserting the whole stream was consumed),
   -- then recompute keccak-256 over the same bytes and assert it equals `digest`
   -- — binding the IO-fed bytes to the public commitment.
-  pub fn verify_multi_stark_proof(digest: [[U8; 8]; 4], system_digest: [[U8; 8]; 4]) {
+  pub fn verify_multi_stark_proof(digest: [[U8; 8]; 4], system_digest: [[U8; 8]; 4], claims_digest: [[U8; 8]; 4]) {
     -- Proof from IO key [0]: deserialize, assert fully consumed, and bind the
     -- bytes to the public keccak-256 `digest`.
     let (idx, len) = io_get_info([0]);
@@ -44,17 +44,22 @@ def entrypoints := ⟦
     let (sidx, slen) = io_get_info([1]);
     let sbytes = #read_byte_stream(sidx, slen);
     assert_eq!(keccak256(sbytes), system_digest);
-    let (_sys, srest) = read_system(sbytes);
+    let (sys, srest) = read_system(sbytes);
     assert_eq!(load(srest), ListNode.Nil);
-    -- Structural + accumulator + Fiat-Shamir checks.
+    -- Public claims (`&[&[Val]]`) from IO key [2]: bind the bytes to the public
+    -- keccak-256 `claims_digest`, then deserialize. Binding them as a public
+    -- input is what makes the lookup argument sound (a prover cannot choose
+    -- claims adaptively).
+    let (cidx, clen) = io_get_info([2]);
+    let cbytes = #read_byte_stream(cidx, clen);
+    assert_eq!(keccak256(cbytes), claims_digest);
+    let (claims, crest) = read_claims(cbytes);
+    assert_eq!(load(crest), ListNode.Nil);
+    -- Structural + accumulator + PCS checks.
     assert_eq!(verify(proof), 1);
-    -- Step 5 (out-of-domain composition/quotient check) is fully implemented in
-    -- `ood_verify(_sys, proof)` (`Ix/MultiStark/Verifier.lean`). It is NOT asserted
-    -- here yet because it consumes the Fiat-Shamir challenge ζ, and the current
-    -- `fiat_shamir` is not prover-faithful (it does not observe the preprocessed
-    -- commitment or the claims, and does no rejection sampling), so the ζ it
-    -- derives differs from the prover's. Enabling a sound OOD check is gated on
-    -- that Fiat-Shamir milestone; `ood_verify` is ready to wire in once it lands.
+    -- Step 3 + 5: prover-faithful Fiat-Shamir replay and the out-of-domain
+    -- composition/quotient check, `composition(ζ)·inv_vanishing(ζ) == quotient(ζ)`.
+    assert_eq!(ood_verify(sys, proof, claims), 1);
     ()
   }
 ⟧

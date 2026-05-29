@@ -31,27 +31,29 @@ The Rust verifier runs these steps:
   (the circuit count) and it is non-zero.
 * Step 2: accumulator balance — the last `intermediate_accumulator` is the zero
   extension element.
-* Step 3: the Fiat-Shamir challenger replay structure (`fiat_shamir`).
-* Step 4: the PCS check, via the accept-stub `pcs_verify`.
+* Step 3: the Fiat-Shamir challenger replay (`fiat_shamir`). Prover-faithful:
+  observes the verifying key's preprocessed commitment, the stage_1 commitment,
+  the trace heights, and the public claims (in that order), then samples and
+  re-observes the lookup/fingerprint challenges, observes stage_2, samples α,
+  observes the quotient commitment, and samples ζ — matching
+  `verify_multiple_claims` byte-for-byte.
 * Step 5: the out-of-domain composition/quotient check (`ood_verify`). For each
   circuit it recomputes `composition(ζ)` by replaying the AIR constraint folder
   (`VerifierConstraintFolder` + `LookupAir::eval`) over the deserialized
   symbolic system and the opened values, recomputes `quotient(ζ)` from the
   opened quotient chunks (barycentric `zps` weights over the split quotient
   domains), and asserts `composition(ζ) · inv_vanishing(ζ) == quotient(ζ)`.
+  Validated end-to-end against a real factorial proof (`RecursiveVerifier.lean`):
+  the verifier accepts the honest proof and rejects a tampered claim.
 
 ### Stubbed / TODO
-* `fiat_shamir` is structurally complete but **not prover-faithful**: it does
-  not observe the preprocessed commitment or the public claims, and does no
-  rejection sampling, so the challenges (in particular ζ) it derives diverge
-  from the prover's whenever the system has preprocessed circuits or claims.
-  Because `ood_verify` consumes ζ, it can only pass end-to-end once Fiat-Shamir
-  is made faithful — that is the remaining milestone. `ood_verify` is therefore
-  implemented and unit-tested (`ood_quotient_test`) but not yet asserted in the
-  entrypoint (see `Ix/MultiStark.lean`).
-* The PCS opening proof (`pcs_verify`) is still an accept-stub.
-  With the PCS stubbed and Fiat-Shamir not yet faithful, this verifier is a
-  **structural** verifier, not yet sound.
+* `fiat_shamir` does no rejection sampling: a sampled 8-byte limb in the band
+  `[p, 2⁶⁴)` (probability ≈ 2⁻³²) is reduced mod p instead of being rejected
+  and resampled. For small proofs no sample lands in the band, but honest
+  rejection sampling is needed for full generality.
+* The PCS opening proof (`pcs_verify`) is still an accept-stub. With the PCS
+  stubbed, this verifier checks every algebraic relation except FRI proximity,
+  so it is not yet fully sound.
 -/
 
 public section
@@ -166,29 +168,75 @@ def verifier := ⟦
     (c0, c1, i1, o1)
   }
 
+  -- Append (observe) 8 little-endian bytes of `b` at the END of the challenger
+  -- input buffer. The transcript is held front-to-back (front = first observed =
+  -- first hashed, matching `keccak256`'s absorption order), so an observation
+  -- appends — `b8_onto` PREPENDS, hence the `list_concat`.
+  fn snoc_b8(input: ByteStream, b: [U8; 8]) -> ByteStream {
+    list_concat(input, b8_onto(b, store(ListNode.Nil)))
+  }
+  -- Append (observe) a commitment (`MerkleCap`) at the end of the buffer.
+  fn snoc_cap(input: ByteStream, cap: MerkleCap) -> ByteStream {
+    list_concat(input, cap_onto(cap, store(ListNode.Nil)))
+  }
+
+  -- Append a claim's values (each `Val` as 8 LE bytes) onto `tail`, in order.
+  fn claim_vals_onto(vals: List‹U64›, tail: ByteStream) -> ByteStream {
+    match load(vals) {
+      ListNode.Nil => tail,
+      ListNode.Cons(v, rest) => b8_onto(v, claim_vals_onto(rest, tail)),
+    }
+  }
+  -- Append every claim's values (`challenger.observe_slice(claim)` per claim).
+  fn claims_onto(claims: List‹List‹U64››, tail: ByteStream) -> ByteStream {
+    match load(claims) {
+      ListNode.Nil => tail,
+      ListNode.Cons(c, rest) => claim_vals_onto(c, claims_onto(rest, tail)),
+    }
+  }
+
+  -- The preprocessed commitment cap from the verifying key, or an empty cap
+  -- (observes nothing) when there is none.
+  fn opt_commit_cap(commit: OptCommit) -> MerkleCap {
+    match commit {
+      OptCommit.NoCommit => store(ListNode.Nil),
+      OptCommit.SomeCommit(c) => c,
+    }
+  }
+
   -- Replay the verifier transcript and derive the four challenges
   -- `(lookup, fingerprint, alpha, zeta)`. Mirrors `verify_multiple_claims`'s
-  -- challenger sequence. SIMPLIFICATIONS (TODO): the preprocessed commitment
-  -- (from the verifying key) and the claims are not observed yet, and no
-  -- rejection sampling is done — so the values are not yet prover-faithful when
-  -- the system has preprocessed circuits / claims. The structure is exact.
-  fn fiat_shamir(s1: MerkleCap, s2: MerkleCap, q: MerkleCap, lds: List‹U8›)
-      -> (Ext, Ext, Ext, Ext) {
-    -- observe stage_1 commitment, then the trace heights (log_degrees)
-    let input = cap_onto(s1, store(ListNode.Nil));
+  -- challenger sequence exactly:
+  --   observe preprocessed_commit (if any) → stage_1 → log_degrees → claims;
+  --   sample lookup, observe it; sample fingerprint, observe it;
+  --   observe stage_2; sample α; observe quotient; sample ζ.
+  -- `observe` clears the challenger's output buffer, and every sample here is
+  -- preceded by an observe, so each `ch_sample_ext` re-flushes from an empty
+  -- output (hence the `store(ListNode.Nil)` output argument each time).
+  -- NOTE: the ~2⁻³² rejection band (a sampled 8-byte limb ≥ p) is still not
+  -- handled (`ch_sample8` reduces mod p); for small proofs no sample lands in
+  -- the band, but honest rejection sampling remains a TODO for full generality.
+  fn fiat_shamir(prep: MerkleCap, s1: MerkleCap, s2: MerkleCap, q: MerkleCap,
+      lds: List‹U8›, claims: List‹List‹U64››) -> (Ext, Ext, Ext, Ext) {
+    -- Initial transcript, front-to-back: prep, stage_1, log_degrees, claims.
+    -- Built inner-to-outer with the prepend helpers so the result is in
+    -- forward (observation) order.
+    let input = claims_onto(claims, store(ListNode.Nil));
     let input = log_degrees_onto(lds, input);
-    -- sample lookup challenge, then observe it back
+    let input = cap_onto(s1, input);
+    let input = cap_onto(prep, input);
+    -- sample lookup challenge, then observe it back (append)
     let (l0, l1, input, _ol) = ch_sample_ext(input, store(ListNode.Nil));
-    let input = b8_onto(l0, b8_onto(l1, input));
+    let input = snoc_b8(snoc_b8(input, l0), l1);
     -- sample fingerprint challenge, then observe it back
     let (f0, f1, input, _of) = ch_sample_ext(input, store(ListNode.Nil));
-    let input = b8_onto(f0, b8_onto(f1, input));
+    let input = snoc_b8(snoc_b8(input, f0), f1);
     -- observe stage_2 commitment
-    let input = cap_onto(s2, input);
+    let input = snoc_cap(input, s2);
     -- sample constraint challenge α (not observed)
     let (a0, a1, input, _oa) = ch_sample_ext(input, store(ListNode.Nil));
     -- observe quotient commitment
-    let input = cap_onto(q, input);
+    let input = snoc_cap(input, q);
     -- sample out-of-domain point ζ
     let (z0, z1, _input, _oz) = ch_sample_ext(input, store(ListNode.Nil));
     ([limb_to_field(l0), limb_to_field(l1)],
@@ -295,13 +343,15 @@ def verifier := ⟦
     1
   }
 
-  -- Structural + accumulator + Fiat-Shamir verification of a deserialized proof.
+  -- Structural + accumulator + PCS checks of a deserialized proof (steps 1, 2,
+  -- 4). Fiat-Shamir (step 3) and the OOD check (step 5) live in `ood_verify`,
+  -- which needs the verifying key and the claims.
   --
   -- Returns 1 on success; `assert_eq!` aborts the (proof) execution on any
   -- failed check, exactly as the Rust verifier returns `Err`.
   fn verify(proof: Proof) -> G {
     match proof {
-      Proof.Mk(commitments, accs, log_degrees, opening,
+      Proof.Mk(_commitments, accs, _log_degrees, opening,
                _quotient, _preprocessed, stage_1, stage_2) =>
         -- Step 1 (shape, system-independent): the per-round opened-value lists
         -- and the accumulator list all have the same length = the circuit count.
@@ -314,16 +364,8 @@ def verifier := ⟦
         -- Step 2: accumulator balance — the last accumulator must be zero.
         assert_eq!(last_acc_is_zero(accs), 1);
 
-        -- Step 3: Fiat-Shamir challenger replay → (lookup, fingerprint, α, ζ).
-        -- Derived here; consumed by the OOD check (step 5, still TODO).
-        let Commitments.Mk(s1, s2, q) = commitments;
-        let _challenges = fiat_shamir(s1, s2, q, log_degrees);
-
         -- Step 4: PCS opening proof (stubbed — accepts; see Pcs.lean).
         let _pcs = pcs_verify(opening);
-
-        -- Step 5 (OOD composition/quotient check) is TODO — it needs the
-        -- per-circuit AIR constraint folder and evaluation-domain arithmetic.
         1,
     }
   }
@@ -653,19 +695,66 @@ def verifier := ⟦
     }
   }
 
-  -- Step 5 entrypoint: derive the challenges via Fiat-Shamir, then run the OOD
-  -- composition/quotient check for every circuit. Returns 1 on success (any
-  -- mismatch aborts via `assert_eq!`).
-  fn ood_verify(sys: Sys, proof: Proof) -> G {
-    let Sys.Mk(_params, circuits, _commit, prep_indices) = sys;
+  -- The fingerprint of one claim's values: `Σ vᵢ · fch^i` (each `vᵢ` lifted from
+  -- its raw u64 limb to an extension element). Mirrors `lookup::fingerprint`.
+  fn fingerprint_vals(fch: Ext, vals: List‹U64›) -> Ext {
+    match load(vals) {
+      ListNode.Nil => [0, 0],
+      ListNode.Cons(v, rest) =>
+        ext_add([limb_to_field(v), 0], ext_mul(fch, fingerprint_vals(fch, rest))),
+    }
+  }
+
+  -- The initial lookup accumulator built from the public claims:
+  -- `acc = Σ_claims 1 / (lookup_challenge + fingerprint(fingerprint_challenge, claim))`
+  -- (Rust `verify_multiple_claims`, lines 227-232). Empty claim list → zero.
+  fn claims_acc(acc: Ext, claims: List‹List‹U64››, lch: Ext, fch: Ext) -> Ext {
+    match load(claims) {
+      ListNode.Nil => acc,
+      ListNode.Cons(c, rest) =>
+        let msg = ext_add(lch, fingerprint_vals(fch, c));
+        claims_acc(ext_add(acc, ext_inverse(msg)), rest, lch, fch),
+    }
+  }
+
+  -- Step 3 + 5: derive the challenges via the (prover-faithful) Fiat-Shamir
+  -- replay over the verifying key's preprocessed commitment + the proof
+  -- commitments + log_degrees + claims, seed the lookup accumulator from the
+  -- claims, then run the OOD composition/quotient check for every circuit.
+  -- Returns 1 on success (any mismatch aborts via `assert_eq!`).
+  fn ood_verify(sys: Sys, proof: Proof, claims: List‹List‹U64››) -> G {
+    let Sys.Mk(_params, circuits, commit, prep_indices) = sys;
     match proof {
       Proof.Mk(commitments, accs, log_degrees, _opening,
                q_opened, prep_opt, stage1, stage2) =>
         let Commitments.Mk(s1c, s2c, qc) = commitments;
-        let (lch, fch, alpha, zeta) = fiat_shamir(s1c, s2c, qc, log_degrees);
+        let prep_cap = opt_commit_cap(commit);
+        let (lch, fch, alpha, zeta) = fiat_shamir(prep_cap, s1c, s2c, qc, log_degrees, claims);
+        let acc0 = claims_acc([0, 0], claims, lch, fch);
         ood_loop(circuits, prep_indices, log_degrees, accs, stage1, stage2,
-                 prep_opt, q_opened, 0, [0, 0], 0, lch, fch, alpha, zeta),
+                 prep_opt, q_opened, 0, acc0, 0, lch, fch, alpha, zeta),
     }
+  }
+
+  -- Read the public claims from the verifier's IO channel. Wire format (set by
+  -- the prover-side harness): u64 `num_claims`, then per claim a u64 `num_vals`
+  -- followed by `num_vals` raw `u64` `Val`s (8 LE bytes each, canonical < p).
+  fn read_claims(stream: ByteStream) -> (List‹List‹U64››, ByteStream) {
+    let (n, s) = read_count(stream);
+    read_claims_n(s, n)
+  }
+  fn read_claims_n(stream: ByteStream, n: G) -> (List‹List‹U64››, ByteStream) {
+    match n {
+      0 => (store(ListNode.Nil), stream),
+      _ =>
+        let (c, s) = read_one_claim(stream);
+        let (rest, s2) = read_claims_n(s, n - 1);
+        (store(ListNode.Cons(c, rest)), s2),
+    }
+  }
+  fn read_one_claim(stream: ByteStream) -> (List‹U64›, ByteStream) {
+    let (m, s) = read_count(stream);
+    read_u64_vec_n(s, m)
   }
 
   -- Self-test for the quotient-domain math: the chunk vanishing polynomial is
