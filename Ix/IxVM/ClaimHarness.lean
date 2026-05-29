@@ -40,11 +40,6 @@ The harness handles every step the Aiur side cannot:
    (b) the 32-G public input (`claim_digest`), and (c) the populated
    IOBuffer.
 
-5. **Debug witnesses**: `buildDbgCheckConst` builds the non-claim
-   `dbg_check_const` invocation (subject-only check, transitive
-   deps trusted). Used by the arena suite and
-   `lake exe kernel --debug-fast`.
-
 The serde primitive `buildSerdeIOBuffer` survives here because the
 benchmark/test entrypoint `ixon_serde_test` shares the same IOBuffer
 plumbing — its inputs are still indexed integers rather than blake3
@@ -253,13 +248,15 @@ def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
 def envCanonicalTree (env : Ixon.Env) : Option Ix.AssumptionTree :=
   Ix.AssumptionTree.canonical (env.consts.keys.toArray)
 
-/-- Build the witness for the debug `dbg_check_const` Aiur entrypoint.
-    *Not a claim*: subject-only check, transitive deps trusted. Used by
-    the arena suite and `lake exe kernel --debug-fast`. -/
-def buildDbgCheckConst (env : Ixon.Env) (target : Address) : ClaimWitness :=
+/-- Build the witness for the `verify_const` Aiur entrypoint.
+    Subject-only typecheck — transitive deps are trusted, not
+    re-verified. Not a claim path (no claim-digest discipline). Used
+    by `Tests/Ix/Kernel/Arena.lean::arenaTests` where each arena
+    fixture's own well-typedness is the only signal needed. -/
+def buildVerifyConst (env : Ixon.Env) (target : Address) : ClaimWitness :=
   let closure := closureFrom env target
   let ioBuffer := addEntries env closure.contains default
-  { funcName := `dbg_check_const
+  { funcName := `verify_const
     input := addrKey target, inputIOBuffer := ioBuffer }
 
 end IxVM.ClaimHarness

@@ -6,14 +6,14 @@ public section
 namespace IxVM
 
 def rbTreeMap := ⟦
-  enum RBTreeMap {
+  enum RBTreeMap‹V› {
     -- Color {0: red, 1: black}, key, value, left, right
-    Node(G, G, G, &RBTreeMap, &RBTreeMap),
+    Node(G, G, V, &RBTreeMap‹V›, &RBTreeMap‹V›),
     Nil
   }
 
   -- Okasaki-style balance: fixes red-red violations after insertion
-  fn rbtree_map_balance(color: G, key: G, value: G, left: RBTreeMap, right: RBTreeMap) -> RBTreeMap {
+  fn rbtree_map_balance‹V›(color: G, key: G, value: V, left: RBTreeMap‹V›, right: RBTreeMap‹V›) -> RBTreeMap‹V› {
     match (color, left, right) {
       -- Case 1: left child red, left-left grandchild red
       (1, RBTreeMap.Node(0, yk, yv, &RBTreeMap.Node(0, xk, xv, a, b), c), d) =>
@@ -41,7 +41,7 @@ def rbTreeMap := ⟦
   }
 
   -- Internal insert (new nodes are red)
-  fn rbtree_map_ins(key: G, value: G, tree: RBTreeMap) -> RBTreeMap {
+  fn rbtree_map_ins‹V›(key: G, value: V, tree: RBTreeMap‹V›) -> RBTreeMap‹V› {
     match tree {
       RBTreeMap.Nil =>
         RBTreeMap.Node(0, key, value, store(RBTreeMap.Nil), store(RBTreeMap.Nil)),
@@ -60,7 +60,7 @@ def rbTreeMap := ⟦
   }
 
   -- Public insert: inserts key-value pair, enforces black root
-  fn rbtree_map_insert(key: G, value: G, tree: RBTreeMap) -> RBTreeMap {
+  fn rbtree_map_insert‹V›(key: G, value: V, tree: RBTreeMap‹V›) -> RBTreeMap‹V› {
     let result = rbtree_map_ins(key, value, tree);
     match result {
       RBTreeMap.Node(_, k, v, left, right) => RBTreeMap.Node(1, k, v, left, right),
@@ -68,8 +68,9 @@ def rbTreeMap := ⟦
   }
 
   -- Lookup: returns the value associated with the key.
-  -- Fails if the key is not found (no Nil case).
-  fn rbtree_map_lookup(key: G, tree: RBTreeMap) -> G {
+  -- Panics if the key is not found (no Nil case) — tightest circuit
+  -- when callers know the key is present by construction.
+  fn rbtree_map_lookup‹V›(key: G, tree: RBTreeMap‹V›) -> V {
     match tree {
       RBTreeMap.Node(_, k, v, &left, &right) =>
         let lt = u32_less_than(key, k);
@@ -79,6 +80,26 @@ def rbTreeMap := ⟦
             let gt = u32_less_than(k, key);
             match gt {
               1 => rbtree_map_lookup(key, right),
+              _ => v,
+            },
+        },
+    }
+  }
+
+  -- Lookup with default: returns the value if found, else `default`.
+  -- Use when the caller can't statically guarantee key presence
+  -- (e.g. `find_addr_idx_safe`).
+  fn rbtree_map_lookup_or_default‹V›(key: G, tree: RBTreeMap‹V›, default: V) -> V {
+    match tree {
+      RBTreeMap.Nil => default,
+      RBTreeMap.Node(_, k, v, &left, &right) =>
+        let lt = u32_less_than(key, k);
+        match lt {
+          1 => rbtree_map_lookup_or_default(key, left, default),
+          _ =>
+            let gt = u32_less_than(k, key);
+            match gt {
+              1 => rbtree_map_lookup_or_default(key, right, default),
               _ => v,
             },
         },
