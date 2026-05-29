@@ -5,6 +5,7 @@ public import Ix.IxVM.ByteStream
 public import Ix.MultiStark.Deserialize
 public import Ix.MultiStark.Keccak
 public import Ix.MultiStark.Pcs
+public import Ix.MultiStark.SystemDeserialize
 
 /-!
 # Multi-STARK verifier (Aiur)
@@ -30,15 +31,26 @@ The Rust verifier runs these steps:
   (the circuit count) and it is non-zero.
 * Step 2: accumulator balance — the last `intermediate_accumulator` is the zero
   extension element.
+* Step 3: the Fiat-Shamir challenger replay structure (`fiat_shamir`).
 * Step 4: the PCS check, via the accept-stub `pcs_verify`.
+* Step 5: the out-of-domain composition/quotient check (`ood_verify`). For each
+  circuit it recomputes `composition(ζ)` by replaying the AIR constraint folder
+  (`VerifierConstraintFolder` + `LookupAir::eval`) over the deserialized
+  symbolic system and the opened values, recomputes `quotient(ζ)` from the
+  opened quotient chunks (barycentric `zps` weights over the split quotient
+  domains), and asserts `composition(ζ) · inv_vanishing(ζ) == quotient(ζ)`.
 
 ### Stubbed / TODO
-* Steps 3 and 5 need extension-field (`GoldilocksExt2`) arithmetic, evaluation
-  domains (vanishing polynomials, subgroup generators), the Keccak Fiat-Shamir
-  challenger (`SerializingChallenger64<HashChallenger<u8, Keccak256Hash, 32>>`,
-  which our `keccak256` can drive), and the per-circuit AIR constraint folder.
-  None of that infrastructure exists in Aiur yet, so these steps are left as the
-  next milestone. With the PCS stubbed and steps 3/5 absent, this verifier is a
+* `fiat_shamir` is structurally complete but **not prover-faithful**: it does
+  not observe the preprocessed commitment or the public claims, and does no
+  rejection sampling, so the challenges (in particular ζ) it derives diverge
+  from the prover's whenever the system has preprocessed circuits or claims.
+  Because `ood_verify` consumes ζ, it can only pass end-to-end once Fiat-Shamir
+  is made faithful — that is the remaining milestone. `ood_verify` is therefore
+  implemented and unit-tested (`ood_quotient_test`) but not yet asserted in the
+  entrypoint (see `Ix/MultiStark.lean`).
+* The PCS opening proof (`pcs_verify`) is still an accept-stub.
+  With the PCS stubbed and Fiat-Shamir not yet faithful, this verifier is a
   **structural** verifier, not yet sound.
 -/
 
@@ -324,6 +336,351 @@ def verifier := ⟦
     let prod = ext_mul(a, ext_inverse(a));
     assert_eq!(prod[0], 1);
     assert_eq!(prod[1], 0);
+    1
+  }
+
+  -- ==========================================================================
+  -- Step 5: out-of-domain (OOD) evaluation.
+  --
+  -- Mirrors the per-circuit loop in `verifier.rs::verify_multiple_claims`
+  -- (lines 329-434). For each circuit it recomputes the composition polynomial
+  -- `composition(ζ)` from the opened values by replaying the AIR constraint
+  -- folder (`VerifierConstraintFolder` + `LookupAir::eval`), recomputes the
+  -- quotient `quotient(ζ)` from the opened quotient chunks via the barycentric
+  -- weights `zps`, and asserts
+  --   composition(ζ) · inv_vanishing(ζ) == quotient(ζ).
+  --
+  -- The challenges (lookup, fingerprint, α, ζ) come from `fiat_shamir` above.
+  -- As with `fiat_shamir`, claims are not observed; this assumes the no-claims
+  -- case, so the running lookup accumulator starts at the zero extension
+  -- element (`acc` in Rust = ExtVal::ZERO).
+  -- ==========================================================================
+
+  -- One Horner fold step of the constraint folder: `acc := acc·α + x`
+  -- (`VerifierConstraintFolder::assert_zero` / `assert_zero_ext`).
+  fn ood_fold(acc: Ext, alpha: Ext, x: Ext) -> Ext {
+    ext_add(ext_mul(acc, alpha), x)
+  }
+
+  -- Reconstruct an extension element from its two opened base coordinates,
+  -- `from_ext_basis([c0, c1]) = c0 + c1·X` (the ExtVal basis is `[1, X]`).
+  fn from_ext_basis(c0: Ext, c1: Ext) -> Ext {
+    ext_add(c0, ext_mul(c1, [0, 1]))
+  }
+
+  -- A stage-2 / quotient opened row arrives as `stage_2_width·2` extension
+  -- coordinates; fold consecutive pairs back into `stage_2_width` extension
+  -- elements (Rust: `chunks_exact(2).map(from_ext_basis)`).
+  fn reconstruct_ext_row(raw: List‹Ext›) -> List‹Ext› {
+    match load(raw) {
+      ListNode.Nil => store(ListNode.Nil),
+      ListNode.Cons(c0, t1) =>
+        let ListNode.Cons(c1, t2) = load(t1);
+        store(ListNode.Cons(from_ext_basis(c0, c1), reconstruct_ext_row(t2))),
+    }
+  }
+
+  -- Evaluate a symbolic AIR expression at the opened point (Rust:
+  -- `SymbolicExpression::interpret`). Function-circuit `zeros` and lookup
+  -- args/multiplicities only ever reference `Main`/`Preprocessed` entries
+  -- (offset 0) and constants; the other entries never appear here.
+  fn eval_sym(e: SymExpr, main: List‹Ext›, prep: List‹Ext›) -> Ext {
+    match e {
+      SymExpr.Var(entry, idx) =>
+        match entry {
+          SysEntry.Main(_o) => list_lookup(main, idx),
+          SysEntry.Preprocessed(_o) => list_lookup(prep, idx),
+          SysEntry.Stage2(_o) => [0, 0],
+          SysEntry.Public => [0, 0],
+          SysEntry.Stage2Public => [0, 0],
+          SysEntry.Challenge => [0, 0],
+        },
+      SymExpr.IsFirstRow => [0, 0],
+      SymExpr.IsLastRow => [0, 0],
+      SymExpr.IsTransition => [0, 0],
+      SymExpr.Const(c) => [c, 0],
+      SymExpr.Add(x, y, _d) => ext_add(eval_sym(load(x), main, prep), eval_sym(load(y), main, prep)),
+      SymExpr.Sub(x, y, _d) => ext_sub(eval_sym(load(x), main, prep), eval_sym(load(y), main, prep)),
+      SymExpr.Neg(x, _d) => ext_neg(eval_sym(load(x), main, prep)),
+      SymExpr.Mul(x, y, _d) => ext_mul(eval_sym(load(x), main, prep), eval_sym(load(y), main, prep)),
+    }
+  }
+
+  -- `fingerprint(r, args) = Σ argᵢ·rⁱ` (Horner over the reversed argument list,
+  -- `lookup.rs::fingerprint`).
+  fn fingerprint_ext(r: Ext, args: List‹SymExpr›, main: List‹Ext›, prep: List‹Ext›) -> Ext {
+    match load(args) {
+      ListNode.Nil => [0, 0],
+      ListNode.Cons(a, rest) =>
+        ext_add(eval_sym(a, main, prep), ext_mul(r, fingerprint_ext(r, rest, main, prep))),
+    }
+  }
+
+  -- Fold the inner-AIR `zeros` constraints (Function circuit): each is asserted
+  -- zero on the main (stage-1) row, with no preprocessed row.
+  fn fold_zeros(acc: Ext, alpha: Ext, zeros: List‹SymExpr›, main: List‹Ext›) -> Ext {
+    match load(zeros) {
+      ListNode.Nil => acc,
+      ListNode.Cons(z, rest) =>
+        fold_zeros(ood_fold(acc, alpha, eval_sym(z, main, store(ListNode.Nil))), alpha, rest, main),
+    }
+  }
+
+  -- Fold the selector boolean checks (Function circuit): `assert_bool(row[s])`
+  -- = `assert_zero(s·(s-1))` for `s` in the selector range `[idx, idx+count)`.
+  fn fold_sel_bools(acc: Ext, alpha: Ext, main: List‹Ext›, idx: G, count: G) -> Ext {
+    match count {
+      0 => acc,
+      _ =>
+        let x = list_lookup(main, idx);
+        let bc = ext_mul(x, ext_sub(x, [1, 0]));
+        fold_sel_bools(ood_fold(acc, alpha, bc), alpha, main, idx + 1, count - 1),
+    }
+  }
+
+  -- Fold the per-lookup constraints (`LookupAir::eval`): for lookup `k`,
+  -- `assert_one_ext(messageₖ · minvₖ)` = `assert_zero_ext(messageₖ·minvₖ - 1)`,
+  -- where `minvₖ = stage_2_row[1+k]` and
+  -- `messageₖ = lookup_challenge + fingerprint(fingerprint_challenge, argsₖ)`.
+  -- Simultaneously builds `acc_expr = stage_2_row[0] + Σ multiplicityₖ·minvₖ`.
+  -- Returns `(folder_acc, acc_expr)`.
+  fn fold_lookups(acc: Ext, alpha: Ext, lookups: List‹SysLookup›, k: G,
+      main: List‹Ext›, prep: List‹Ext›, s2row: List‹Ext›,
+      lch: Ext, fch: Ext, acc_expr: Ext) -> (Ext, Ext) {
+    match load(lookups) {
+      ListNode.Nil => (acc, acc_expr),
+      ListNode.Cons(lk, rest) =>
+        let SysLookup.Mk(mult_e, args) = lk;
+        let minv = list_lookup(s2row, k + 1);
+        let mult = eval_sym(mult_e, main, prep);
+        let fp = fingerprint_ext(fch, args, main, prep);
+        let message = ext_add(lch, fp);
+        let c = ext_sub(ext_mul(message, minv), [1, 0]);
+        let acc = ood_fold(acc, alpha, c);
+        let acc_expr = ext_add(acc_expr, ext_mul(mult, minv));
+        fold_lookups(acc, alpha, rest, k + 1, main, prep, s2row, lch, fch, acc_expr),
+    }
+  }
+
+  -- The composition polynomial `composition(ζ)` for one circuit: replays the
+  -- inner-AIR constraints (per air kind) followed by the lookup-argument
+  -- constraints, folding each with `α` exactly as `LookupAir::eval` drives the
+  -- verifier folder. `accp`/`naccp` are the current/next lookup accumulators.
+  fn ood_composition(air: SysAir, lookups: List‹SysLookup›,
+      main: List‹Ext›, main_next: List‹Ext›, s2row: List‹Ext›, s2next: List‹Ext›,
+      prep: List‹Ext›, isf: Ext, isl: Ext, ist: Ext,
+      lch: Ext, fch: Ext, accp: Ext, naccp: Ext, alpha: Ext) -> Ext {
+    -- inner-AIR constraints first, then hand the accumulator to the lookup tail
+    -- (split so each `match air` arm ends in a tail call — Aiur forbids
+    -- non-tail matches).
+    match air {
+      SysAir.Function(c) =>
+        let SysConstraints.Mk(zeros, ss, se, _w) = c;
+        let acc = fold_zeros([0, 0], alpha, zeros, main);
+        let acc = fold_sel_bools(acc, alpha, main, ss, se - ss);
+        ood_comp_tail(acc, lookups, main, prep, s2row, s2next, isf, isl, ist, lch, fch, accp, naccp, alpha),
+      SysAir.Memory(m) =>
+        let SysMemory.Mk(_w) = m;
+        -- `Memory::eval`: is_real = col 1, ptr = col 2 (current and next row).
+        let is_real = list_lookup(main, 1);
+        let ptr = list_lookup(main, 2);
+        let is_real_next = list_lookup(main_next, 1);
+        let ptr_next = list_lookup(main_next, 2);
+        -- assert_bool(is_real)
+        let acc = ood_fold([0, 0], alpha, ext_mul(is_real, ext_sub(is_real, [1, 0])));
+        -- is_real_transition = is_real_next · is_transition
+        let irt = ext_mul(is_real_next, ist);
+        -- when(irt).assert_one(is_real) = irt·(is_real - 1)
+        let acc = ood_fold(acc, alpha, ext_mul(irt, ext_sub(is_real, [1, 0])));
+        -- when(irt).assert_eq(ptr+1, ptr_next) = irt·(ptr + 1 - ptr_next)
+        let acc = ood_fold(acc, alpha, ext_mul(irt, ext_sub(ext_add(ptr, [1, 0]), ptr_next)));
+        ood_comp_tail(acc, lookups, main, prep, s2row, s2next, isf, isl, ist, lch, fch, accp, naccp, alpha),
+      SysAir.Bytes1 =>
+        ood_comp_tail([0, 0], lookups, main, prep, s2row, s2next, isf, isl, ist, lch, fch, accp, naccp, alpha),
+      SysAir.Bytes2 =>
+        ood_comp_tail([0, 0], lookups, main, prep, s2row, s2next, isf, isl, ist, lch, fch, accp, naccp, alpha),
+    }
+  }
+
+  -- Tail of `ood_composition`: fold the lookup-argument constraints onto the
+  -- inner-AIR accumulator, then the three accumulator boundary constraints.
+  fn ood_comp_tail(acc: Ext, lookups: List‹SysLookup›, main: List‹Ext›, prep: List‹Ext›,
+      s2row: List‹Ext›, s2next: List‹Ext›, isf: Ext, isl: Ext, ist: Ext,
+      lch: Ext, fch: Ext, accp: Ext, naccp: Ext, alpha: Ext) -> Ext {
+    let (acc, acc_expr) =
+      fold_lookups(acc, alpha, lookups, 0, main, prep, s2row, lch, fch, list_lookup(s2row, 0));
+    let acc_col = list_lookup(s2row, 0);
+    let next_acc_col = list_lookup(s2next, 0);
+    -- when_first_row: acc_col = accp
+    let acc = ood_fold(acc, alpha, ext_mul(isf, ext_sub(acc_col, accp)));
+    -- when_transition: acc_expr = next_acc_col
+    let acc = ood_fold(acc, alpha, ext_mul(ist, ext_sub(acc_expr, next_acc_col)));
+    -- when_last_row: acc_expr = naccp
+    ood_fold(acc, alpha, ext_mul(isl, ext_sub(acc_expr, naccp)))
+  }
+
+  -- ==========================================================================
+  -- Quotient evaluation from the opened quotient chunks.
+  --
+  -- The trace domain is the order-2^L subgroup H (shift = 1). The quotient
+  -- domain is the disjoint coset `7·H'` of size `2^(L+log_qd)` (7 = Goldilocks
+  -- GENERATOR), split into `qd = 2^log_qd` chunk domains `Dⱼ` of size `2^L`,
+  -- shift `7·g_q^j` where `g_q = two_adic_gen(L + log_qd)`. Then
+  --   quotient(ζ) = Σⱼ zpsⱼ · from_ext_basis(chunkⱼ),
+  --   zpsⱼ = Πₖ≠ⱼ Z_{Dₖ}(ζ) / Z_{Dₖ}(first_point(Dⱼ)),
+  -- with `Z_{Dₖ}(x) = (x · shift_k⁻¹)^(2^L) - 1`.
+  -- ==========================================================================
+
+  -- base-field power `base^e` (e small: the chunk index, < qd).
+  fn g_pow(base: G, e: G) -> G {
+    match e {
+      0 => 1,
+      _ => base * g_pow(base, e - 1),
+    }
+  }
+
+  -- `Z_{Dⱼ}(x) = (x · shift_j⁻¹)^(2^L) - 1`, evaluated at extension point `x`.
+  fn vanish_chunk(x: Ext, l: G, shiftinv: G) -> Ext {
+    ext_sub(ext_exp_pow2(ext_mul(x, [shiftinv, 0]), l), [1, 0])
+  }
+
+  -- `zpsₜ = Πⱼ≠ₜ Z_{Dⱼ}(ζ) / Z_{Dⱼ}(shift_t)`. Iterates j over `[jidx, jidx+rem)`.
+  fn zps_prod(acc: Ext, zeta: Ext, l: G, g_q: G, shift_t: G, jidx: G, rem: G, t: G) -> Ext {
+    match rem {
+      0 => acc,
+      _ =>
+        let shiftinv = g_inverse(7 * g_pow(g_q, jidx));
+        -- skip the j = t factor (the chunk's own domain); branch in tail
+        -- position so the inner match is not a non-tail match.
+        match eq_zero(jidx - t) {
+          1 => zps_prod(acc, zeta, l, g_q, shift_t, jidx + 1, rem - 1, t),
+          _ =>
+            let factor = ext_mul(vanish_chunk(zeta, l, shiftinv),
+                                 ext_inverse(vanish_chunk([shift_t, 0], l, shiftinv)));
+            zps_prod(ext_mul(acc, factor), zeta, l, g_q, shift_t, jidx + 1, rem - 1, t),
+        },
+    }
+  }
+
+  -- `quotient(ζ) = Σₜ zpsₜ · from_ext_basis(chunkₜ)`, iterating the `qd` chunks
+  -- (`q_opened[idx][0] = [c0, c1]`).
+  fn quotient_sum(acc: Ext, zeta: Ext, l: G, qd: G, g_q: G,
+      q_opened: OpenedRound, idx: G, rem: G, t: G) -> Ext {
+    match rem {
+      0 => acc,
+      _ =>
+        let shift_t = 7 * g_pow(g_q, t);
+        let zps_t = zps_prod([1, 0], zeta, l, g_q, shift_t, 0, qd, t);
+        let ch = list_lookup(q_opened, idx);
+        let row = list_lookup(ch, 0);
+        let qv = from_ext_basis(list_lookup(row, 0), list_lookup(row, 1));
+        quotient_sum(ext_add(acc, ext_mul(zps_t, qv)), zeta, l, qd, g_q,
+                     q_opened, idx + 1, rem - 1, t + 1),
+    }
+  }
+
+  -- `quotient_degree = (max(md, 2) - 1).next_power_of_two()` and its log2.
+  -- Tabulated for `max_constraint_degree ≤ 17` (covers all current circuits);
+  -- larger degrees fall through to the `_` arm.
+  fn quotient_degree_of(md: G) -> G {
+    match md {
+      0 => 1, 1 => 1, 2 => 1,
+      3 => 2,
+      4 => 4, 5 => 4,
+      6 => 8, 7 => 8, 8 => 8, 9 => 8,
+      10 => 16, 11 => 16, 12 => 16, 13 => 16, 14 => 16, 15 => 16, 16 => 16, 17 => 16,
+      _ => 32,
+    }
+  }
+  fn log_qd_of(md: G) -> G {
+    match md {
+      0 => 0, 1 => 0, 2 => 0,
+      3 => 1,
+      4 => 2, 5 => 2,
+      6 => 3, 7 => 3, 8 => 3, 9 => 3,
+      10 => 4, 11 => 4, 12 => 4, 13 => 4, 14 => 4, 15 => 4, 16 => 4, 17 => 4,
+      _ => 5,
+    }
+  }
+
+  -- The preprocessed opened row at ζ for circuit `i`, or `Nil` if the circuit
+  -- has no preprocessed trace (`preprocessed_indices[i] = None`).
+  fn ood_prep_row(prep_opt: PreprocessedOpt, oi: OptIdx) -> List‹Ext› {
+    match oi {
+      OptIdx.NoIdx => store(ListNode.Nil),
+      OptIdx.SomeIdx(j) =>
+        match prep_opt {
+          PreprocessedOpt.NoPreprocessed => store(ListNode.Nil),
+          PreprocessedOpt.SomePreprocessed(round) =>
+            let pr = list_lookup(round, j);
+            list_lookup(pr, 0),
+        },
+    }
+  }
+
+  -- Per-circuit OOD loop: for each circuit, recompute composition(ζ) and
+  -- quotient(ζ) and assert `composition · inv_vanishing == quotient`. Threads
+  -- the running lookup accumulator `accp` and the quotient-chunk offset `lastq`.
+  fn ood_loop(circuits: List‹SysCircuit›, prep_indices: List‹OptIdx›,
+      log_degrees: List‹U8›, accs: List‹Ext›,
+      stage1: OpenedRound, stage2: OpenedRound, prep_opt: PreprocessedOpt,
+      q_opened: OpenedRound, i: G, accp: Ext, lastq: G,
+      lch: Ext, fch: Ext, alpha: Ext, zeta: Ext) -> G {
+    match load(circuits) {
+      ListNode.Nil => 1,
+      ListNode.Cons(circ, rest) =>
+        let SysCircuit.Mk(lair, _cc, md, _ph, _pw, _w1, _w2) = circ;
+        let SysLookupAir.Mk(air, lookups) = lair;
+        let l = to_field(list_lookup(log_degrees, i));
+        let qd = quotient_degree_of(md);
+        let log_qd = log_qd_of(md);
+        let naccp = list_lookup(accs, i);
+        let s1 = list_lookup(stage1, i);
+        let main = list_lookup(s1, 0);
+        let main_next = list_lookup(s1, 1);
+        let s2 = list_lookup(stage2, i);
+        let s2row = reconstruct_ext_row(list_lookup(s2, 0));
+        let s2next = reconstruct_ext_row(list_lookup(s2, 1));
+        let prep = ood_prep_row(prep_opt, list_lookup(prep_indices, i));
+        let (isf, isl, ist, invv) = trace_selectors(zeta, l);
+        let comp = ood_composition(air, lookups, main, main_next, s2row, s2next,
+                                   prep, isf, isl, ist, lch, fch, accp, naccp, alpha);
+        let g_q = two_adic_gen(l + log_qd);
+        let quot = quotient_sum([0, 0], zeta, l, qd, g_q, q_opened, lastq, qd, 0);
+        assert_eq!(ext_mul(comp, invv), quot);
+        ood_loop(rest, prep_indices, log_degrees, accs, stage1, stage2, prep_opt,
+                 q_opened, i + 1, naccp, lastq + qd, lch, fch, alpha, zeta),
+    }
+  }
+
+  -- Step 5 entrypoint: derive the challenges via Fiat-Shamir, then run the OOD
+  -- composition/quotient check for every circuit. Returns 1 on success (any
+  -- mismatch aborts via `assert_eq!`).
+  fn ood_verify(sys: Sys, proof: Proof) -> G {
+    let Sys.Mk(_params, circuits, _commit, prep_indices) = sys;
+    match proof {
+      Proof.Mk(commitments, accs, log_degrees, _opening,
+               q_opened, prep_opt, stage1, stage2) =>
+        let Commitments.Mk(s1c, s2c, qc) = commitments;
+        let (lch, fch, alpha, zeta) = fiat_shamir(s1c, s2c, qc, log_degrees);
+        ood_loop(circuits, prep_indices, log_degrees, accs, stage1, stage2,
+                 prep_opt, q_opened, 0, [0, 0], 0, lch, fch, alpha, zeta),
+    }
+  }
+
+  -- Self-test for the quotient-domain math: the chunk vanishing polynomial is
+  -- zero at the chunk's own first point, and `from_ext_basis` reassembles a
+  -- known extension element.
+  pub fn ood_quotient_test() -> G {
+    -- L = 1, log_qd = 1 → g_q = two_adic_gen(2); chunk 0 has shift 7.
+    let sinv0 = g_inverse(7);
+    let z = vanish_chunk([7, 0], 1, sinv0);
+    assert_eq!(z[0], 0);
+    assert_eq!(z[1], 0);
+    -- from_ext_basis([2,3], [5,7]) = [2,3] + [5,7]·X = [2 + 7·7, 3 + 5] = [51, 8].
+    let fb = from_ext_basis([2, 3], [5, 7]);
+    assert_eq!(fb[0], 51);
+    assert_eq!(fb[1], 8);
     1
   }
 ⟧
