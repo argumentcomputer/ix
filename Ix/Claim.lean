@@ -554,4 +554,89 @@ end Claim
 
 end Ix
 
+-- ============================================================================
+-- Ixon.Proof — wraps a Claim with its opaque ZK proof bytes.
+-- Mirrors `src/ix/ixon/proof.rs:173`. Lives under flag 0xF (vs claims
+-- under 0xE) so the first serialized byte alone disambiguates kind.
+-- ============================================================================
+
+namespace Ixon
+
+structure Proof where
+  claim : Ix.Claim
+  proof : ByteArray
+  deriving Inhabited
+
+namespace Proof
+
+/-- The proof-variant size matching this claim, used as the Tag4 size
+    field under `FLAG_PROOF = 0xF`. -/
+def variantOf : Ix.Claim → UInt64
+  | .eval _ _ _     => Ix.Claim.VARIANT_EVAL_PROOF
+  | .check _ _      => Ix.Claim.VARIANT_CHECK_PROOF
+  | .checkEnv _ _   => Ix.Claim.VARIANT_CHECK_ENV_PROOF
+  | .reveal _ _     => Ix.Claim.VARIANT_REVEAL_PROOF
+  | .contains _ _   => Ix.Claim.VARIANT_CONTAINS_PROOF
+
+def put (p : Proof) : PutM Unit := do
+  putTag4 ⟨Ix.Claim.FLAG_PROOF, variantOf p.claim⟩
+  match p.claim with
+  | .eval input output asm => do
+    Serialize.put input
+    Serialize.put output
+    Ix.Claim.putOptAddr asm
+  | .check addr asm => do
+    Serialize.put addr
+    Ix.Claim.putOptAddr asm
+  | .checkEnv root asm => do
+    Serialize.put root
+    Ix.Claim.putOptAddr asm
+  | .reveal comm info => do
+    Serialize.put comm
+    Ix.RevealConstantInfo.put info
+  | .contains tree target => do
+    Serialize.put tree
+    Serialize.put target
+  putTag0 ⟨p.proof.size.toUInt64⟩
+  putBytes p.proof
+
+def get : GetM Proof := do
+  let tag ← getTag4
+  if tag.flag != Ix.Claim.FLAG_PROOF then
+    throw s!"Ixon.Proof.get: expected flag 0xF, got {tag.flag}"
+  let claim : Ix.Claim ←
+    if tag.size == Ix.Claim.VARIANT_EVAL_PROOF then do
+      let input ← Serialize.get
+      let output ← Serialize.get
+      let asm ← Ix.Claim.getOptAddr
+      pure (.eval input output asm)
+    else if tag.size == Ix.Claim.VARIANT_CHECK_PROOF then do
+      let addr ← Serialize.get
+      let asm ← Ix.Claim.getOptAddr
+      pure (.check addr asm)
+    else if tag.size == Ix.Claim.VARIANT_CHECK_ENV_PROOF then do
+      let root ← Serialize.get
+      let asm ← Ix.Claim.getOptAddr
+      pure (.checkEnv root asm)
+    else if tag.size == Ix.Claim.VARIANT_REVEAL_PROOF then do
+      let comm ← Serialize.get
+      let info ← Ix.RevealConstantInfo.get
+      pure (.reveal comm info)
+    else if tag.size == Ix.Claim.VARIANT_CONTAINS_PROOF then do
+      let tree ← Serialize.get
+      let target ← Serialize.get
+      pure (.contains tree target)
+    else
+      throw s!"Ixon.Proof.get: invalid proof variant {tag.size}"
+  let lenTag ← getTag0
+  let bytes ← getBytes lenTag.size.toNat
+  pure { claim, proof := bytes }
+
+def ser (p : Proof) : ByteArray := runPut (put p)
+def de (bytes : ByteArray) : Except String Proof := runGet get bytes
+
+end Proof
+
+end Ixon
+
 end

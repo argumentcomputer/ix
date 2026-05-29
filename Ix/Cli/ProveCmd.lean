@@ -1,107 +1,116 @@
--- module
---
--- public section
---
---import Cli
---import Ix.Cronos
---import Ix.Common
---import Ix.CompileM
---import Ix.Store
---import Ix.Address
---import Ix.Meta
---import Lean
---
---open Ix.Compile
---
-----❯ ix prove IxTest.lean "id'"
-----typechecking:
-----id' (A : Type) (x : A) : A
-----claim: #bbd740022aa44acd553c52e156807a5571428220a926377fe3c57d63b06a99f4 : #ba33b735b743386477f7a0e6802c67d388c165cab0e34b04880b50270205f265 @ #0000000000000000000000000000000000000000000000000000000000000000
---def runProveCheck
---  (env: Lean.Environment)
---  (constInfo: Lean.ConstantInfo)
---  (commit: Bool)
---  : IO UInt32
---  := do
---  let constSort <- runMeta (Lean.Meta.inferType constInfo.type) env
---  let signature <- runMeta (Lean.PrettyPrinter.ppSignature constInfo.name) env
---  IO.println "typechecking:"
---  IO.println signature.fmt.pretty
---  let ((claim, _, _), _stt) <-
---    (checkClaim constInfo.name constInfo.type constSort constInfo.levelParams commit).runIO env
---  IO.println $ s!"claim: {claim}"
---  -- TODO: prove
---  return 0
---
---def mkConst' (constName : Lean.Name) : Lean.MetaM Lean.Expr := do
---  return Lean.mkConst constName (← (← Lean.getConstInfo constName).levelParams.mapM fun _ => Lean.Meta.mkFreshLevelMVar)
---
-----ix prove IxTest.lean "id'" --eval=Nat,one
-----evaluating:
-----id' (A : Type) (x : A) : A
-----id' Nat one
-----  ~> 1
-----  : Nat
-----  @ []
-----claim: #88ba2a7b099ce94a030eef202dc26ee3d9eb088057830049b926c7e88044bba1 ~> #d5ea7e6e7a3ee02780ba254a0becfe1fe712436a5a30832095ab71f7c64e25cd : #41ba41a9691e8167a387046f736a82ce0ec1601e7fb996c58d5930887c4b7764 @ #0000000000000000000000000000000000000000000000000000000000000000
---def runProveEval
---  (env: Lean.Environment)
---  (constInfo: Lean.ConstantInfo)
---  (args: Array String)
---  (commit: Bool)
---  : IO UInt32
---  := do
---  let signature <- runMeta (Lean.PrettyPrinter.ppSignature constInfo.name) env
---  let args : Array Lean.Expr <- args.mapM $ fun a => do
---    let argInfo <- match env.constants.find? a.toName with
---      | some c => runMeta (mkConst' c.name) env
---      | none => throw $ IO.userError s!"unknown constant {a.toName}"
---  let (lvls, input, output, type, sort) <-
---    runMeta (metaMakeEvalClaim constInfo.name (args.toList)) env
---  IO.println "evaluating:"
---  IO.println signature.fmt.pretty
---  let inputPretty <- runMeta (Lean.Meta.ppExpr input) env
---  let outputPretty <- runMeta (Lean.Meta.ppExpr output) env
---  let typePretty <- runMeta (Lean.Meta.ppExpr type) env
---  IO.println s!"{inputPretty}"
---  IO.println s!"  ~> {outputPretty}"
---  IO.println s!"  : {typePretty}"
---  IO.println s!"  @ {repr lvls}"
---  let ((claim, _, _), _stt) <- (evalClaim lvls input output type sort commit).runIO env
---  IO.println $ s!"claim: {claim}"
---  -- TODO: prove
---  return 0
---
---
---
---def runProve (p: Cli.Parsed): IO UInt32 := do
---  let input : String       := p.positionalArg! "input" |>.as! String
---  let const : String       := p.positionalArg! "const" |>.as! String
---  StoreIO.toIO Store.ensureStoreDir
---  let path := ⟨input⟩
---  Lean.setLibsPaths input
---  let env ← Lean.runFrontend (← IO.FS.readFile path) path
---  let constInfo <- match env.constants.find? const.toName with
---    | some c => pure c
---    | none => throw $ IO.userError s!"unknown constant {const.toName}"
---  let commit := p.hasFlag "commit"
---  if let some evalArgs := p.flag? "eval"
---  then runProveEval env constInfo (evalArgs.as! (Array String)) commit
---  else runProveCheck env constInfo commit
---  return 0
---
---
---def proveCmd : Cli.Cmd := `[Cli|
---  prove VIA runProve;
---  "Generates a ZK proof of a given Lean constant"
---
---  FLAGS:
---    cron, "cronos"   : String; "enable Cronos timings"
---    eval, "eval"     : Array String; "prove evaluation with arguments"
---
---  ARGS:
---   input  : String; "Source file input"
---   const  : String; "constant name"
---]
---
--- end
+/-
+  `ix prove`: generate a STARK proof against an `Ix.Claim`. Mirrors
+  the CLI shape of `ix check`:
+
+      ix prove Nat.add_comm                            # compiled-in Lean env
+      ix prove --ixe arena.ixe Foo.bar                 # from .ixe, named target
+      ix prove --ixe arena.ixe                         # iterate every named const
+      ix prove --ixe arena.ixe --claim <hex>           # against a persisted claim
+
+  Each invocation runs the same `verify_claim` Aiur witness that
+  `ix check` does, then drives Aiur's `prove` over it and persists
+  the result as an `Ixon.Proof` wrapper (claim + opaque proof
+  bytes). Prints the resulting proof blake3 hex on stdout — feed
+  that to `ix verify <proof-hex>`.
+
+  Per-claim mode (`--claim`) loads the claim from the store and
+  resolves every referenced assumption / env / contains tree
+  (build trees with `ix tree canonical` / `ix tree env`).
+
+  Per-name mode builds a default `Claim.check addr none` and
+  persists the claim alongside the proof so `ix verify` can stand
+  alone with just the proof hex.
+
+  Driven by the shared `Ix.Cli.CheckCmd.forEachClaim`: the only
+  prove-specific surface is `runOne = proveOne aiurSystem compiled`.
+-/
+module
+public import Cli
+public import Std.Internal.UV.System
+public import Ix.Aiur.Compiler
+public import Ix.Aiur.Protocol
+public import Ix.Claim
+public import Ix.Cli.CheckCmd
+public import Ix.Common
+public import Ix.IxVM
+public import Ix.IxVM.ClaimHarness
+public import Ix.Ixon
+public import Ix.Store
+
+public section
+
+open IxVM.ClaimHarness
+
+namespace Ix.Cli.ProveCmd
+
+/-- Canonical aiur params shared between prove and verify. Matches
+    `Tests.Aiur.Common`. Until these become flags / commit to the
+    proof header, they MUST stay in sync between `prove` and
+    `verify`. -/
+private def commitmentParameters : Aiur.CommitmentParameters :=
+  { logBlowup := 1, capHeight := 0 }
+
+private def friParameters : Aiur.FriParameters := {
+  logFinalPolyLen := 0
+  maxLogArity := 1
+  numQueries := 100
+  commitProofOfWorkBits := 20
+  queryProofOfWorkBits := 0
+}
+
+/-- Run Aiur prove for one (claim, witness) pair, wrap into an
+    `Ixon.Proof`, persist claim + wrapper, and print the resulting
+    proof hex. Plugs into `Ix.Cli.CheckCmd.forEachClaim`. -/
+def proveOne (aiurSystem : Aiur.AiurSystem)
+    (compiled : Aiur.CompiledToplevel)
+    (claim : Ix.Claim)
+    (witness : IxVM.ClaimHarness.ClaimWitness)
+    (label : String) : IO UInt32 := do
+  IO.println s!"Proving {label}"
+  (← IO.getStdout).flush
+  let funIdx ← match compiled.getFuncIdx witness.funcName with
+    | some i => pure i
+    | none =>
+      IO.eprintln s!"{label}: entrypoint `{witness.funcName}` missing from compiled toplevel"
+      return 1
+  let _ ← StoreIO.toIO (Store.write (Ix.Claim.ser claim))
+  let (_aiurClaim, proof, _outIO) :=
+    aiurSystem.prove friParameters funIdx witness.input witness.inputIOBuffer
+  let wrapper : Ixon.Proof := { claim, proof := proof.toBytes }
+  let proofAddr ← StoreIO.toIO (Store.write (Ixon.Proof.ser wrapper))
+  IO.println (toString proofAddr)
+  return 0
+
+def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
+  Std.Internal.UV.System.osSetenv "IX_QUIET" "1"
+  let keepGoing := p.hasFlag "keep-going"
+  let ixePath : Option String := (p.flag? "ixe").map (·.as! String)
+  let claimHex : Option String := (p.flag? "claim").map (·.as! String)
+  let names := (p.variableArgsAs! String).toList
+  let toplevel ← match IxVM.ixVM with
+    | .error e => IO.eprintln s!"toplevel merging failed: {e}"; return 1
+    | .ok t => pure t
+  let compiled ← match toplevel.compile with
+    | .error e => IO.eprintln s!"compilation failed: {e}"; return 1
+    | .ok c => pure c
+  let aiurSystem := Aiur.AiurSystem.build compiled.bytecode commitmentParameters
+  Ix.Cli.CheckCmd.forEachClaim ixePath claimHex names keepGoing "prove"
+    (proveOne aiurSystem compiled)
+
+end Ix.Cli.ProveCmd
+
+open Ix.Cli.ProveCmd in
+def proveCmd : Cli.Cmd := `[Cli|
+  prove VIA runProveCmd;
+  "Generate a STARK proof for an `Ix.Claim` (mirrors `ix check`'s CLI shape)"
+
+  FLAGS:
+    "keep-going";       "Continue past failures and report them at the end instead of halting on the first."
+    "ixe"   : String;   "Path to a serialized `.ixe` env. When set, the binary reads the env from disk instead of using the compiled-in Lean env."
+    "claim" : String;   "32-byte hex address of a persisted `Ix.Claim` in `~/.ix/store/`. When set, proves the persisted claim against the `--ixe` env (single proof, skips per-const iteration)."
+
+  ARGS:
+    ...names : String; "Fully-qualified Lean.Name(s) to prove. With none, iterate every named constant in the env (sorted)."
+]
+
+end

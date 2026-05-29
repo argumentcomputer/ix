@@ -96,8 +96,8 @@ def parsePrefixes (s : String) : List Lean.Name :=
     if trimmed.isEmpty then none else some trimmed.toName
 
 def runValidateCmd (p : Cli.Parsed) : IO UInt32 := do
-  let some path := p.flag? "path"
-    | p.printError "error: must specify --path"
+  let some path := p.positionalArg? "path"
+    | p.printError "error: must specify <path> to a Lean source file"
       return 1
   let pathStr := path.as! String
 
@@ -143,8 +143,10 @@ def validateCmd : Cli.Cmd := `[Cli|
   "Validate a Lean file through the full compile → decompile → roundtrip pipeline"
 
   FLAGS:
-    path : String; "Path to file whose env should be validated"
     ns   : String; "Comma-separated Lean name prefixes to filter on (e.g. 'Aesop,SetTheory.PGame'). When set, only seeds matching any prefix are validated; transitive deps are pulled in automatically."
+
+  ARGS:
+    path : String; "Path to the Lean source file whose env should be validated."
 ]
 
 end
