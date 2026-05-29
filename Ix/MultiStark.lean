@@ -46,8 +46,15 @@ def entrypoints := ⟦
     assert_eq!(keccak256(sbytes), system_digest);
     let (_sys, srest) = read_system(sbytes);
     assert_eq!(load(srest), ListNode.Nil);
-    -- Structural + accumulator + Fiat-Shamir checks (OOD will use `_sys`).
+    -- Structural + accumulator + Fiat-Shamir checks.
     assert_eq!(verify(proof), 1);
+    -- Step 5 (out-of-domain composition/quotient check) is fully implemented in
+    -- `ood_verify(_sys, proof)` (`Ix/MultiStark/Verifier.lean`). It is NOT asserted
+    -- here yet because it consumes the Fiat-Shamir challenge ζ, and the current
+    -- `fiat_shamir` is not prover-faithful (it does not observe the preprocessed
+    -- commitment or the claims, and does no rejection sampling), so the ζ it
+    -- derives differs from the prover's. Enabling a sound OOD check is gated on
+    -- that Fiat-Shamir milestone; `ood_verify` is ready to wire in once it lands.
     ()
   }
 ⟧
