@@ -3,6 +3,7 @@ public import Ix.Aiur.Meta
 public import Ix.IxVM.Core
 public import Ix.IxVM.ByteStream
 public import Ix.IxVM.Blake3
+public import Ix.IxVM.RBTreeMap
 public import Ix.IxVM.Ingress
 public import Ix.IxVM.Ixon
 public import Ix.IxVM.IxonSerialize
@@ -151,9 +152,16 @@ def entrypoints := ⟦
   }
 ⟧
 
+/-- Build the IxVM Aiur toplevel. The byte loaders inside `ingress`
+    recompute blake3 over every IOBuffer read and assert the digest
+    matches the address key — required for `verify_claim`'s soundness.
+    `verify_const` (the arena-test subject-only entrypoint) goes
+    through the same loaders since the IxVM kernel only has one
+    storage convention. -/
 def ixVM : Except Aiur.Global Aiur.Source.Toplevel := do
   let vm ← core.merge byteStream
   let vm ← vm.merge blake3
+  let vm ← vm.merge rbTreeMap
   let vm ← vm.merge ixon
   let vm ← vm.merge ixonSerialize
   let vm ← vm.merge ixonDeserialize

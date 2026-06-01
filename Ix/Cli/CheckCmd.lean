@@ -1,274 +1,294 @@
 /-
-  `ix check <path>`: typecheck a serialized `.ixe` environment through
-  the Ix Rust kernel. Path is positional and required.
+  `ix check`: execute the IxVM Aiur kernel over a Lean or `.ixe`
+  environment, one constant at a time. Mirrors what `lake exe check` does.
+  The Rust kernel typechecker that used to live under this name is now `ix check-rs`.
 
-  Two kernel modes:
+  Usage shape:
 
-  - Default (Meta): kernel runs with metadata fields populated (Lean.Name,
-    binder info, mdata). Supports `--ns` / `--consts` / `--consts-file`
-    for seed filtering and `--fail-out` for bisect-loop workflows.
-  - `--anon` (metadata-free): the env is loaded via `Env::get_anon` —
-    `named`/`names`/`comms` sections are discarded at load time, never
-    reaching the kernel. Every kernel-checkable address (every constant
-    except Muts blocks and projections — projections are covered by
-    their parent block) is checked. The kernel's typechecking logic
-    structurally cannot read metadata (`M::MField<T>` is `()` in Anon
-    mode); progress labels are `@<hex>` addresses, not names.
+      ix check Nat.add_comm                            # from compiled-in Lean env
+      ix check --ixe arena.ixe foo bar baz             # from .ixe, named targets
+      ix check --ixe arena.ixe                         # iterate every named const
+      ix check --interp Nat.add_comm                   # Aiur interpreter (richer errors)
+      ix check --stats-out STATS Nat.add_comm          # redirect per-circuit stats
 
-    `--anon` is incompatible with `--ns` / `--consts` / `--consts-file`:
-    the anon path checks everything in the env. Add `--addrs <hex,…>`
-    in the future if address-based filtering is needed.
-
-  Direct Lean → kernel typechecking (compile-and-check from source) is
-  available via the `rsCheckConstsFFI` API for tests
-  (`Tests/Ix/Kernel/Tutorial.lean`, `Tests/Ix/Kernel/CheckEnv.lean`).
-  Use `ix compile <file>` first, then `ix check <output.ixe>`.
+  Stats print when exactly one constant is targeted. Multi-target +
+  whole-env iteration both suppress stats so the log stays usable.
+  `IX_QUIET=1` is set unconditionally; the Rust-side `[compile_env]`
+  scheduler noise adds nothing at this layer.
 -/
 module
 public import Cli
-public import Ix.Common
-public import Ix.KernelCheck
-public import Ix.Meta
-public import Ix.Cli.ValidateCmd
 public import Std.Internal.UV.System
+public import Ix.Address
+public import Ix.Aiur.Compiler
+public import Ix.Aiur.Interpret
+public import Ix.Aiur.Protocol
+public import Ix.Aiur.Statistics
+public import Ix.AssumptionTree
+public import Ix.Claim
+public import Ix.Common
+public import Ix.IxVM
+public import Ix.IxVM.ClaimHarness
+public import Ix.Ixon
+public import Ix.Meta
+public import Ix.Store
 
 public section
 
-open System (FilePath)
-open Ix.KernelCheck
+open IxVM.ClaimHarness
 
 namespace Ix.Cli.CheckCmd
 
-/-- Combined seed selector: prefixes (`--ns`) ∪ exact names
-    (`--consts`, `--consts-file`). Meta-mode only. -/
-private structure SeedSpec where
-  prefixes : List Lean.Name := []
-  exacts   : List Lean.Name := []
+def parseName (arg : String) : Lean.Name :=
+  arg.splitOn "." |>.foldl (init := .anonymous)
+    fun acc s => match s.toNat? with
+      | some n => Lean.Name.mkNum acc n
+      | none   => Lean.Name.mkStr acc s
 
-private def SeedSpec.isEmpty (s : SeedSpec) : Bool :=
-  s.prefixes.isEmpty && s.exacts.isEmpty
+def addrOfHex! (label : String) (s : String) : IO Address := do
+  match Address.fromString s with
+  | some a => pure a
+  | none =>
+    throw <| IO.userError
+      s!"error: {label}: expected 64-char hex (32-byte address), got {s.length}-char {s}"
 
-/-- Read one constant name per line from `path`. Blank lines and lines
-    starting with `#` (after trimming) are ignored. -/
-private def readNamesFile (path : String) : IO (List Lean.Name) := do
-  let content ← IO.FS.readFile path
-  let lines := content.splitOn "\n"
-  let names : List Lean.Name := lines.filterMap fun raw =>
-    let cs := raw.toList.dropWhile Char.isWhitespace
-    let trimmed := String.ofList (cs.reverse.dropWhile Char.isWhitespace).reverse
-    if trimmed.isEmpty || trimmed.startsWith "#" then none
-    else some trimmed.toName
-  pure names
+/-- Load a persisted claim from the content-addressed store and resolve
+    every tree root it references. Shared between `ix check --claim`
+    and `ix prove --claim`. -/
+def loadClaimAndTrees (claimHex : String) :
+    IO (Ix.Claim × Std.HashMap Address Ix.AssumptionTree) := do
+  let claimAddr ← addrOfHex! "claim" claimHex
+  let claimBytes ← StoreIO.toIO (Store.read claimAddr)
+  let claim ← IO.ofExcept (Ixon.runGet Ix.Claim.get claimBytes)
+  let computed := Address.blake3 (Ix.Claim.ser claim)
+  if computed != claimAddr then
+    throw <| IO.userError
+      s!"error: claim bytes at {claimAddr} re-hash to {computed}"
+  let treeRoots : Array Address := match claim with
+    | .check _ (some r)        => #[r]
+    | .eval _ _ (some r)       => #[r]
+    | .checkEnv root none      => #[root]
+    | .checkEnv root (some r)  => #[root, r]
+    | .contains tree _         => #[tree]
+    | _                        => #[]
+  let mut trees : Std.HashMap Address Ix.AssumptionTree := {}
+  for r in treeRoots do
+    let tbytes ← StoreIO.toIO (Store.read r)
+    let tree ← match Ix.AssumptionTree.de tbytes with
+      | .error e => throw <| IO.userError s!"error: tree at {r}: deserialize failed: {e}"
+      | .ok t => pure t
+    if tree.root != r then
+      throw <| IO.userError s!"error: tree stored at {r} has merkle root {tree.root}"
+    trees := trees.insert r tree
+  return (claim, trees)
 
-/-- Build a `SeedSpec` from `--ns`, `--consts`, and `--consts-file`. -/
-private def resolveSeedSpec (p : Cli.Parsed) : IO (Option SeedSpec) := do
-  let nsFlag     := p.flag? "ns"
-  let constsFlag := p.flag? "consts"
-  let fileFlag   := p.flag? "consts-file"
-  if nsFlag.isNone && constsFlag.isNone && fileFlag.isNone then
-    return none
-  let mut prefixes : List Lean.Name := []
-  let mut exacts   : List Lean.Name := []
-  if let some flag := nsFlag then
-    let raw := flag.as! String
-    prefixes := parsePrefixes raw
-    if prefixes.isEmpty then
-      IO.println s!"[check] warning: --ns '{raw}' parsed to empty list"
-  if let some flag := constsFlag then
-    let raw := flag.as! String
-    let parsed := parsePrefixes raw
-    if parsed.isEmpty then
-      IO.println s!"[check] warning: --consts '{raw}' parsed to empty list"
-    exacts := exacts ++ parsed
-  if let some flag := fileFlag then
-    let path := flag.as! String
-    let parsed ← readNamesFile path
-    if parsed.isEmpty then
-      IO.println s!"[check] warning: --consts-file '{path}' yielded zero names"
-    else
-      IO.println s!"[check] --consts-file '{path}': read {parsed.length} name(s)"
-    exacts := exacts ++ parsed
-  let spec : SeedSpec := { prefixes, exacts }
-  if spec.isEmpty then
-    IO.println "[check] warning: filter flags supplied but parsed to empty selection; checking full env"
-    return none
-  return some spec
+/-- Reverse of `Ix.Name.fromLeanName`. Drops the per-node hash. -/
+partial def ixNameToLeanName : Ix.Name → Lean.Name
+  | .anonymous _ => .anonymous
+  | .str p s _ => .str (ixNameToLeanName p) s
+  | .num p n _ => .num (ixNameToLeanName p) n
 
-/-- Filter an `.ixe`'s checkable names down to the seed spec. -/
-private def selectNamesIxon (allNames : Array Lean.Name)
-    (spec : Option SeedSpec) : IO (Array Lean.Name) := do
-  match spec with
-  | none => pure allNames
-  | some s =>
-    let exactSet : Std.HashSet Lean.Name :=
-      s.exacts.foldl (fun acc n => acc.insert n) (Std.HashSet.emptyWithCapacity s.exacts.length)
-    -- O(|allNames|) build-up to O(1)-per-check; the previous
-    -- `allNames.contains n` was O(|allNames|) per missing-name check,
-    -- which at mathlib scale (~700k env × thousands of seed names)
-    -- could spend seconds on the preflight alone.
-    let allNamesSet : Std.HashSet Lean.Name :=
-      allNames.foldl (fun acc n => acc.insert n) (Std.HashSet.emptyWithCapacity allNames.size)
-    let mut missing : Array Lean.Name := #[]
-    for n in s.exacts do
-      if !allNamesSet.contains n then
-        missing := missing.push n
-    if !missing.isEmpty then
-      IO.println s!"[check] warning: {missing.size}/{s.exacts.length} exact name(s) not in env:"
-      let shown := min 20 missing.size
-      for n in missing[:shown] do
-        IO.println s!"  - {n}"
-      if missing.size > 20 then
-        IO.println s!"  … ({missing.size - 20} more not shown)"
-    let seeds := allNames.filter fun n =>
-      exactSet.contains n || s.prefixes.any (·.isPrefixOf n)
-    IO.println s!"[check] filter: {s.prefixes.length} prefix(es), {s.exacts.length} exact(s) → {seeds.size} seed constants"
-    pure seeds
+/-- Build a `ClaimWitness` for the `verify_claim` entrypoint against
+    `Ix.Claim.check addr none` (full transitive typecheck of the
+    target's closure). -/
+def mkWitness (addr : Address) (ixonEnv : Ixon.Env) :
+    IO IxVM.ClaimHarness.ClaimWitness := do
+  IO.ofExcept <|
+    IxVM.ClaimHarness.buildClaimWitness ixonEnv (Ix.Claim.check addr none)
 
-/-- Print up to `limit` failures, then a summary line if truncated. -/
-private def reportFailures (failures : Array (String × String))
-    (limit : Nat := 30) : IO Unit := do
-  if failures.isEmpty then return
-  IO.println s!"[check] {failures.size} failure(s):"
-  let shown := min limit failures.size
-  for (label, msg) in failures[:shown] do
-    IO.println s!"  ✗ {label}: {msg}"
-  if failures.size > limit then
-    IO.println s!"  … ({failures.size - limit} more failures suppressed)"
+/-- Compute + emit per-circuit stats. With `statsOut = none` prints to
+    stdout; with `some path` redirects stdout to the file for the
+    duration of `printStats` so the terminal stays clean. -/
+def emitStats (compiled : Aiur.CompiledToplevel)
+    (queryCounts : Array Aiur.QueryCount)
+    (statsOut : Option String) : IO Unit := do
+  let stats := Aiur.computeStats compiled queryCounts
+  match statsOut with
+  | none => Aiur.printStats stats
+  | some path => do
+    let handle ← IO.FS.Handle.mk path .write
+    let stream := IO.FS.Stream.ofHandle handle
+    let old ← IO.setStdout stream
+    try Aiur.printStats stats
+    finally let _ ← IO.setStdout old
 
-/-- Anon-mode runner: dispatch to `rsCheckAnonFFI`. The Rust side checks
-    every kernel-checkable address in the env and streams failures to
-    `failOutPath` (when nonempty). -/
-private def runCheckAnon (envPath : String) (p : Cli.Parsed) : IO UInt32 := do
-  let verbose := p.flag? "verbose" |>.isSome
-  let failOutPath : String :=
-    match p.flag? "fail-out" with
-    | some flag => flag.as! String
-    | none      => ""
-
-  IO.println s!"Running Ix kernel check (anon mode) on {envPath}"
-  let start ← IO.monoMsNow
-  let results ← rsCheckAnonFFI envPath (!verbose) failOutPath
-  let elapsed := (← IO.monoMsNow) - start
-
-  let mut passed := 0
-  let mut failures : Array (String × String) := #[]
-  for (hex, res) in results do
-    match res with
-    | none => passed := passed + 1
-    -- Label with the full content address (`#<hex>`) to match the
-    -- Rust-side progress / fail-out output. Pre-#48 we emitted
-    -- `#{i}` (result index), which made the CLI summary unjoinable
-    -- with the fail-out file's `#<hex>` entries.
-    | some err => failures := failures.push (s!"#{hex}", err.message)
-
-  IO.println s!"[check] checked {results.size} constants in {elapsed.formatMs}"
-  IO.println s!"[check] {passed}/{results.size} passed"
-  reportFailures failures
-
-  if !failOutPath.isEmpty then
-    IO.println s!"[check] streamed {failures.size} failure(s) to {failOutPath}"
-
-  IO.println s!"##check## {elapsed} {passed} {failures.size} {results.size}"
-  return if failures.isEmpty then 0 else 1
-
-/-- Meta-mode runner: dispatch to `rsCheckIxonFFI` with seed filtering. -/
-private def runCheckMeta (envPath : String) (p : Cli.Parsed) : IO UInt32 := do
-  let verbose := p.flag? "verbose" |>.isSome
-  IO.println s!"Running Ix kernel check (meta mode) on {envPath}"
-  let spec ← resolveSeedSpec p
-
-  let seedNames ←
-    match spec with
-    | some s =>
-        if s.prefixes.isEmpty && !s.exacts.isEmpty then
-          IO.println s!"[check] exact-only filter: {s.exacts.length} name(s); skipping full env name preflight"
-          pure s.exacts.toArray
-        else
-          let namesInEnv ← rsIxonNamesFFI envPath
-          IO.println s!"Total checkable names in env: {namesInEnv.size}"
-          selectNamesIxon namesInEnv spec
-    | none =>
-        let namesInEnv ← rsIxonNamesFFI envPath
-        IO.println s!"Total checkable names in env: {namesInEnv.size}"
-        pure namesInEnv
-  if spec.isSome && seedNames.isEmpty then
-    IO.println "[check] error: filter resolved to zero constants; refusing to run full-env check"
+/-- Run a single witness through the compiled Aiur bytecode. -/
+def runCompiled (compiled : Aiur.CompiledToplevel) (printStats : Bool)
+    (statsOut : Option String) (witness : IxVM.ClaimHarness.ClaimWitness)
+    (label : String) : IO UInt32 := do
+  IO.println s!"Typechecking {label}"
+  (← IO.getStdout).flush
+  let funIdx := compiled.getFuncIdx witness.funcName |>.get!
+  match compiled.bytecode.execute funIdx witness.input witness.inputIOBuffer with
+  | .error e =>
+    IO.eprintln s!"{label}: Aiur execution error: {e}"
     return 1
-  IO.println s!"[check] checking {seedNames.size} seed constant(s)"
+  | .ok (_output, _ioBuffer, queryCounts) =>
+    if printStats then emitStats compiled queryCounts statsOut
+    pure 0
 
-  let expectPass : Array Bool := Array.replicate seedNames.size true
-  let failOutPath : String :=
-    match p.flag? "fail-out" with
-    | some flag => flag.as! String
-    | none      => ""
-  let start ← IO.monoMsNow
-  let results ← rsCheckIxonFFI envPath seedNames expectPass (!verbose) failOutPath
-  let elapsed := (← IO.monoMsNow) - start
+/-- Run a single witness through the Aiur interpreter (richer errors). -/
+def runInterp (decls : Aiur.Source.Decls)
+    (witness : IxVM.ClaimHarness.ClaimWitness) (label : String) : IO UInt32 := do
+  IO.println s!"Interpreting {label}"
+  (← IO.getStdout).flush
+  let funcName := Aiur.Global.mk witness.funcName
+  let inputTypes ← match decls.getByKey funcName with
+    | some (.function f) => pure $ f.inputs.map (·.2)
+    | _ => IO.eprintln s!"{label}: function not found in decls"; return 1
+  let inputs := Aiur.unflattenInputs decls witness.input inputTypes
+  match Aiur.runFunction decls funcName inputs witness.inputIOBuffer with
+  | (.error e, s) =>
+    IO.eprintln s!"{label}: interpreter error:\n{e.ppDeref s.store 1 10}"
+    return 1
+  | (.ok output, _) =>
+    IO.println s!"{label}: {output}"
+    pure 0
 
-  let mut passed := 0
-  let mut failures : Array (String × String) := #[]
-  for i in [:seedNames.size] do
-    match results[i]! with
-    | none => passed := passed + 1
-    | some err => failures := failures.push (toString seedNames[i]!, err.message)
+/-- Shared driver for `ix check` / `ix prove`. Loads either a `.ixe`
+    env (with optional `--claim` over a persisted claim, or per-name
+    iteration) or the compiled-in Lean env (per-name iteration only),
+    constructs each `(Claim, Witness, label)` triple, and dispatches
+    to `runOne`. Accumulates failures + prints a `[logTag]` summary.
 
-  IO.println s!"[check] checked {seedNames.size} constants in {elapsed.formatMs}"
-  IO.println s!"[check] {passed}/{seedNames.size} passed"
-  reportFailures failures
+    `runOne` ignores `Claim` for `ix check` (the witness encodes the
+    claim digest in its IO buffer); `ix prove` uses it to persist
+    the claim alongside the proof wrapper. -/
+def forEachClaim
+    (ixePath : Option String) (claimHex : Option String) (names : List String)
+    (keepGoing : Bool) (logTag : String)
+    (runOne : Ix.Claim → IxVM.ClaimHarness.ClaimWitness → String → IO UInt32)
+    : IO UInt32 := do
+  let mut failures : Array String := #[]
+  match ixePath with
+  | some path =>
+    let bytes ← IO.FS.readBinFile path
+    let ixonEnv ← match Ixon.rsDeEnv bytes with
+      | .error e =>
+        IO.eprintln s!"Failed to deserialize {path}: {e}"; return 1
+      | .ok env => pure env
+    IO.println s!"Loaded {path}: {ixonEnv.namedCount} named, \
+      {ixonEnv.constCount} consts, {ixonEnv.blobCount} blobs"
+    if let some hex := claimHex then
+      let (claim, trees) ← loadClaimAndTrees hex
+      let witness ← IO.ofExcept <|
+        IxVM.ClaimHarness.buildClaimWitness ixonEnv claim trees
+      let label := s!"claim {hex}"
+      if (← runOne claim witness label) ≠ 0 then
+        failures := failures.push label
+    else if names.isEmpty then
+      let sorted := ixonEnv.named.toArray.qsort
+        (fun a b => toString a.1 < toString b.1)
+      for (ixName, named) in sorted do
+        let leanName := ixNameToLeanName ixName
+        let label := toString leanName
+        let claim := Ix.Claim.check named.addr none
+        let witness ← mkWitness named.addr ixonEnv
+        if (← runOne claim witness label) ≠ 0 then
+          failures := failures.push label
+          if !keepGoing then break
+    else
+      for arg in names do
+        let name := parseName arg
+        match ixonEnv.getAddr? (Ix.Name.fromLeanName name) with
+        | none =>
+          IO.eprintln s!"{name} not found in {path}"
+          failures := failures.push (toString name)
+          if !keepGoing then break
+        | some addr =>
+          let label := toString name
+          let claim := Ix.Claim.check addr none
+          let witness ← mkWitness addr ixonEnv
+          if (← runOne claim witness label) ≠ 0 then
+            failures := failures.push label
+            if !keepGoing then break
+  | none =>
+    if claimHex.isSome then
+      IO.eprintln "error: --claim requires --ixe <path>"; return 1
+    let env ← get_env!
+    let buildOne (name : Lean.Name) :
+        IO (Ix.Claim × IxVM.ClaimHarness.ClaimWitness) := do
+      let ixonEnv ← IxVM.ClaimHarness.loadIxonEnv name env
+      let addr ← IxVM.ClaimHarness.lookupAddr ixonEnv name
+      let claim := Ix.Claim.check addr none
+      let witness ← mkWitness addr ixonEnv
+      pure (claim, witness)
+    if names.isEmpty then
+      let sorted := env.constants.toList.toArray.qsort
+        (fun a b => toString a.1 < toString b.1)
+      for (name, _) in sorted do
+        let label := toString name
+        let (claim, witness) ← buildOne name
+        if (← runOne claim witness label) ≠ 0 then
+          failures := failures.push label
+          if !keepGoing then break
+    else
+      for arg in names do
+        let name := parseName arg
+        if !env.constants.contains name then
+          IO.eprintln s!"{name} not found"
+          failures := failures.push (toString name)
+          if !keepGoing then break
+          else continue
+        let label := toString name
+        let (claim, witness) ← buildOne name
+        if (← runOne claim witness label) ≠ 0 then
+          failures := failures.push label
+          if !keepGoing then break
 
-  if !failOutPath.isEmpty then
-    IO.println s!"[check] streamed {failures.size} failure(s) to {failOutPath}"
-
-  IO.println s!"##check## {elapsed} {passed} {failures.size} {seedNames.size}"
-  return if failures.isEmpty then 0 else 1
+  if failures.isEmpty then pure 0
+  else
+    IO.eprintln s!"[{logTag}] {failures.size} failure(s):"
+    for n in failures do IO.eprintln s!"  {n}"
+    pure 1
 
 def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
-  let some pathArg := p.positionalArg? "path"
-    | p.printError "error: must specify <path> to a .ixe file"
-      return 1
-  let envPath := pathArg.as! String
-
-  -- `--workers N` is plumbed through the existing
-  -- `IX_KERNEL_CHECK_WORKERS` env var that `resolve_kernel_check_workers`
-  -- (`src/ffi/kernel.rs`) reads. Setting `1` forces a single-threaded
-  -- runner, useful for isolating per-worker memory usage and timing.
-  if let some flag := p.flag? "workers" then
-    let n := flag.as! Nat
-    if n == 0 then
-      p.printError "error: --workers must be > 0"
-      return 1
-    Std.Internal.UV.System.osSetenv "IX_KERNEL_CHECK_WORKERS" (toString n)
-
-  let anon := p.flag? "anon" |>.isSome
-  if anon then
-    let hasConsts := p.flag? "consts" |>.isSome
-    let hasNs := p.flag? "ns" |>.isSome
-    let hasConstsFile := p.flag? "consts-file" |>.isSome
-    if hasConsts || hasNs || hasConstsFile then
-      p.printError "error: --anon checks the entire env; --consts/--ns/--consts-file are unsupported"
-      return 1
-    runCheckAnon envPath p
-  else
-    runCheckMeta envPath p
+  -- Always silence the Rust-side `[compile_env]` progress logs. The
+  -- per-name labels + stats are signal enough at this layer.
+  Std.Internal.UV.System.osSetenv "IX_QUIET" "1"
+  let interp := p.hasFlag "interp"
+  let keepGoing := p.hasFlag "keep-going"
+  let statsOut : Option String :=
+    (p.flag? "stats-out").map (·.as! String)
+  let ixePath : Option String :=
+    (p.flag? "ixe").map (·.as! String)
+  let claimHex : Option String :=
+    (p.flag? "claim").map (·.as! String)
+  let names := (p.variableArgsAs! String).toList
+  let printStats := names.length == 1 || claimHex.isSome
+  let toplevel ← match IxVM.ixVM with
+    | .error e => IO.eprintln s!"Toplevel merging failed: {e}"; return 1
+    | .ok t => pure t
+  let runOne : IxVM.ClaimHarness.ClaimWitness → String → IO UInt32 ←
+    if interp then do
+      let decls ← match toplevel.mkDecls with
+        | .error e => IO.eprintln s!"mkDecls failed: {e}"; return 1
+        | .ok d => pure d
+      pure (runInterp decls)
+    else do
+      let compiled ← match toplevel.compile with
+        | .error e => IO.eprintln s!"Compilation failed: {e}"; return 1
+        | .ok c => pure c
+      pure (runCompiled compiled printStats statsOut)
+  forEachClaim ixePath claimHex names keepGoing "check"
+    (fun _ w l => runOne w l)
 
 end Ix.Cli.CheckCmd
 
 open Ix.Cli.CheckCmd in
 def checkCmd : Cli.Cmd := `[Cli|
   check VIA runCheckCmd;
-  "Typecheck a serialized Ixon environment through the Ix Rust kernel"
+  "Typecheck Lean / `.ixe` constants through the IxVM Aiur kernel"
 
   FLAGS:
-    anon;                   "Run the kernel in anon mode (no metadata read from .ixe)"
-    ns            : String; "Comma-separated Lean.Name prefixes to filter on (meta mode only)"
-    consts        : String; "Comma-separated EXACT constant names to seed (meta mode only)"
-    "consts-file" : String; "Path to a file with one constant name per line (meta mode only)"
-    "fail-out"    : String; "Write failing constants to this path (consumable by --consts-file)"
-    workers       : Nat;    "Number of parallel kernel-check workers; 1 disables parallelism (default: available_parallelism). Plumbs via IX_KERNEL_CHECK_WORKERS env var."
-    verbose;                "Log every constant on its own line (default: quiet)"
+    interp;                 "Use the Aiur interpreter (richer per-execution error diagnostics) instead of the compiled bytecode runner."
+    "keep-going";           "Continue past failures and report them at the end instead of halting on the first."
+    "ixe"       : String;   "Path to a serialized `.ixe` env. When set, the binary reads the env from disk instead of using the compiled-in Lean env."
+    "claim"     : String;   "32-byte hex address of a persisted `Ix.Claim` in `~/.ix/store/`. When set, runs the `verify_claim` entrypoint once over the claim's witness against the `--ixe` env (single execution, skips per-const iteration)."
+    "stats-out" : String;   "Redirect the per-circuit statistics dump to this file (only used when exactly one constant is targeted)."
 
   ARGS:
-    path : String; "Path to a serialized .ixe environment"
+    ...names : String; "Fully-qualified Lean.Name(s) to check. With none, iterate every named constant in the env (sorted)."
 ]
 
 end

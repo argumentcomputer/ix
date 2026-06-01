@@ -57,6 +57,14 @@ def write (bytes: ByteArray) : StoreIO Address := do
   let _ <- IO.toEIO .ioError (IO.FS.writeBinFile path bytes)
   return addr
 
+/-- Persist `bytes` keyed by an explicit caller-supplied address. Used
+    for content whose canonical key isn't `blake3(bytes)` — e.g.
+    `AssumptionTree` blobs that key by merkle root, not by their Ixon
+    byte-serialization hash. -/
+def writeAt (addr: Address) (bytes: ByteArray) : StoreIO Unit := do
+  let path <- storePath addr
+  IO.toEIO .ioError (IO.FS.writeBinFile path bytes)
+
 def read (a: Address) : StoreIO ByteArray := do
   let path <- storePath a
   IO.toEIO .ioError (IO.FS.readBinFile path)

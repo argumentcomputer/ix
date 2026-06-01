@@ -1011,12 +1011,16 @@ def claim := ⟦
   }
 
   -- ============================================================================
-  -- dbg_check_const: NON-CLAIM debug entrypoint. Subject-only check,
-  -- transitive deps trusted. Used by the arena suite and `lake exe
-  -- kernel --debug-fast`. Verifier policy must reject this funcidx
-  -- as a production claim.
+  -- verify_const: subject-only typecheck entrypoint. Checks the
+  -- constant at `target_addr` in isolation; transitive deps are
+  -- trusted (not re-verified). NOT a claim path — the public
+  -- `verify_claim` is the only entrypoint that goes through the
+  -- claim-digest discipline. Used by the in-Lean arena test runner
+  -- (`Tests/Ix/Kernel/Arena.lean::arenaTests`) where each fixture
+  -- is a self-contained decl whose own well-typedness is the only
+  -- thing the test cares about.
   -- ============================================================================
-  pub fn dbg_check_const(target_addr: [U8; 32]) {
+  pub fn verify_const(target_addr: [U8; 32]) {
     let target = store(target_addr);
     let (k_consts, addrs) = ingress_with_primitives(target);
     let target_pos = find_addr_idx(target, addrs, 0);
