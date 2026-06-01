@@ -136,14 +136,14 @@ def convert := ⟦
   }
 
   fn convert_expr(
-    e: Expr,
+    e: &Expr,
     sharing: List‹&Expr›,
     ref_idxs: List‹G›,
     recur_idxs: List‹G›,
     lit_blobs: List‹ByteStream›,
     univs: List‹&Univ›
   ) -> KExpr {
-    match e {
+    match load(e) {
       Expr.Srt(univ_idx) =>
         let u = load(list_lookup_u64(univs, univ_idx));
         store(KExprNode.Srt(store(convert_univ(u)))),
@@ -161,7 +161,7 @@ def convert := ⟦
         let levels = convert_univ_idxs(univ_idxs, univs);
         store(KExprNode.Const(const_idx, levels)),
 
-      Expr.Prj(type_ref_idx, field_idx, &inner) =>
+      Expr.Prj(type_ref_idx, field_idx, inner) =>
         let type_idx = list_lookup(ref_idxs, flatten_u64(type_ref_idx));
         store(KExprNode.Proj(
           type_idx,
@@ -177,34 +177,33 @@ def convert := ⟦
         let limbs = bytes_to_limbs(bs);
         store(KExprNode.Lit(KLiteral.Nat(limbs))),
 
-      Expr.App(&f, &a) =>
+      Expr.App(f, a) =>
         store(KExprNode.App(
           convert_expr(f, sharing, ref_idxs, recur_idxs, lit_blobs, univs),
           convert_expr(a, sharing, ref_idxs, recur_idxs, lit_blobs, univs))),
 
-      Expr.Lam(&ty, &body) =>
+      Expr.Lam(ty, body) =>
         store(KExprNode.Lam(
           convert_expr(ty, sharing, ref_idxs, recur_idxs, lit_blobs, univs),
           convert_expr(body, sharing, ref_idxs, recur_idxs, lit_blobs, univs))),
 
-      Expr.All(&ty, &body) =>
+      Expr.All(ty, body) =>
         store(KExprNode.Forall(
           convert_expr(ty, sharing, ref_idxs, recur_idxs, lit_blobs, univs),
           convert_expr(body, sharing, ref_idxs, recur_idxs, lit_blobs, univs))),
 
-      Expr.Let(_, &ty, &val, &body) =>
+      Expr.Let(_, ty, val, body) =>
         store(KExprNode.Let(
           convert_expr(ty, sharing, ref_idxs, recur_idxs, lit_blobs, univs),
           convert_expr(val, sharing, ref_idxs, recur_idxs, lit_blobs, univs),
           convert_expr(body, sharing, ref_idxs, recur_idxs, lit_blobs, univs))),
 
       Expr.Share(idx) =>
-        let shared = load(list_lookup_u64(sharing, idx));
-        convert_expr(shared, sharing, ref_idxs, recur_idxs, lit_blobs, univs),
+        convert_expr(list_lookup_u64(sharing, idx), sharing, ref_idxs, recur_idxs, lit_blobs, univs),
     }
   }
 
-  fn ctx_convert_expr(e: Expr, ctx: ConvertCtx) -> KExpr {
+  fn ctx_convert_expr(e: &Expr, ctx: ConvertCtx) -> KExpr {
     match ctx {
       ConvertCtx.Mk(sharing, ref_idxs, recur_idxs, lit_blobs, univs) =>
         convert_expr(e, sharing, ref_idxs, recur_idxs, lit_blobs, univs),
@@ -226,7 +225,7 @@ def convert := ⟦
       ListNode.Nil => store(ListNode.Nil),
       ListNode.Cons(rule, rest_rules) =>
         match rule {
-          RecursorRule.Mk(nfields, &rhs) =>
+          RecursorRule.Mk(nfields, rhs) =>
             match load(rule_ctor_idxs) {
               ListNode.Cons(ctor_idx, rest_ctor_idxs) =>
                 let krhs = ctx_convert_expr(rhs, ctx);
@@ -245,7 +244,7 @@ def convert := ⟦
 
   fn convert_definition(d: Definition, ctx: ConvertCtx, hint: G) -> KConstantInfo {
     match d {
-      Definition.Mk(kind, safety, lvls, &typ, &value) =>
+      Definition.Mk(kind, safety, lvls, typ, value) =>
         let ktyp = ctx_convert_expr(typ, ctx);
         let kval = ctx_convert_expr(value, ctx);
         match kind {
@@ -266,7 +265,7 @@ def convert := ⟦
 
   fn convert_axiom(a: Axiom, ctx: ConvertCtx) -> KConstantInfo {
     match a {
-      Axiom.Mk(is_unsafe, lvls, &typ) =>
+      Axiom.Mk(is_unsafe, lvls, typ) =>
         let ktyp = ctx_convert_expr(typ, ctx);
         KConstantInfo.Axiom(flatten_u64(lvls), ktyp, is_unsafe),
     }
@@ -274,7 +273,7 @@ def convert := ⟦
 
   fn convert_quotient(q: Quotient, ctx: ConvertCtx) -> KConstantInfo {
     match q {
-      Quotient.Mk(kind, lvls, &typ) =>
+      Quotient.Mk(kind, lvls, typ) =>
         let ktyp = ctx_convert_expr(typ, ctx);
         KConstantInfo.Quot(flatten_u64(lvls), ktyp, kind),
     }
@@ -283,7 +282,7 @@ def convert := ⟦
   fn convert_recursor(r: Recursor, ctx: ConvertCtx, rule_ctor_idxs: List‹G›,
                       block_addr: Addr) -> KConstantInfo {
     match r {
-      Recursor.Mk(k, is_unsafe, lvls, params, indices, motives, minors, &typ, rules) =>
+      Recursor.Mk(k, is_unsafe, lvls, params, indices, motives, minors, typ, rules) =>
         let ktyp = ctx_convert_expr(typ, ctx);
         let krules = convert_rules(rules, rule_ctor_idxs, ctx);
         KConstantInfo.Rec(
@@ -296,7 +295,7 @@ def convert := ⟦
   fn convert_inductive(ind: Inductive, ctx: ConvertCtx, ctor_idxs: List‹G›,
                        block_addr: Addr) -> KConstantInfo {
     match ind {
-      Inductive.Mk(is_rec, is_refl, is_unsafe, lvls, params, indices, nested, &typ, _) =>
+      Inductive.Mk(is_rec, is_refl, is_unsafe, lvls, params, indices, nested, typ, _) =>
         let ktyp = ctx_convert_expr(typ, ctx);
         KConstantInfo.Induct(
           flatten_u64(lvls), ktyp, flatten_u64(params), flatten_u64(indices),
@@ -306,7 +305,7 @@ def convert := ⟦
 
   fn convert_constructor(c: Constructor, ctx: ConvertCtx, induct_idx: G) -> KConstantInfo {
     match c {
-      Constructor.Mk(is_unsafe, lvls, cidx, params, fields, &typ) =>
+      Constructor.Mk(is_unsafe, lvls, cidx, params, fields, typ) =>
         let ktyp = ctx_convert_expr(typ, ctx);
         KConstantInfo.Ctor(
           flatten_u64(lvls), ktyp, induct_idx, flatten_u64(cidx),

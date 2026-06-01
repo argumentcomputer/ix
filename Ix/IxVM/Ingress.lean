@@ -103,37 +103,32 @@ def ingress := ⟦
   -- Build lit_blobs by loading and verifying each blob on demand.
   -- A ref is a blob if it's not in all_addrs (the constant address list).
   -- For constant refs, returns an empty ByteStream (never read by conversion).
-  fn build_lit_blobs(refs: List‹Addr›, addr_set: RBTreeMap‹G›) -> List‹ByteStream› {
+  fn build_lit_blobs(refs: List‹Addr›, addr_pos_map: &RBTreeMap‹G›) -> List‹ByteStream› {
     match load(refs) {
       ListNode.Nil => store(ListNode.Nil),
       ListNode.Cons(addr, rest) =>
-        let blob = is_blob(addr, addr_set);
+        let blob = is_blob(addr, addr_pos_map);
         match blob {
           1 =>
             let bs = load_verified_blob(addr);
-            store(ListNode.Cons(bs, build_lit_blobs(rest, addr_set))),
+            store(ListNode.Cons(bs, build_lit_blobs(rest, addr_pos_map))),
           0 =>
-            store(ListNode.Cons(store(ListNode.Nil), build_lit_blobs(rest, addr_set))),
+            store(ListNode.Cons(store(ListNode.Nil), build_lit_blobs(rest, addr_pos_map))),
         },
     }
   }
 
-  -- Check if an address is a blob: it's a blob if it's NOT in the constant address set.
-  -- Blob addresses and constant addresses are different by design (different hash preimage structures).
-  -- O(log N) tree lookup replaces the prior O(N) linear scan.
-  fn is_blob(addr: Addr, addr_set: RBTreeMap‹G›) -> G {
-    1 - rbtree_map_lookup_or_default(ptr_val(addr), addr_set, 0)
-  }
-
-  -- Build a set of all constant addresses (RBTreeMap keyed by ptr_val(addr)
-  -- → 1). Used by `is_blob` and any other membership check that needs
-  -- O(log N) rather than O(N) linear scan.
-  fn build_addr_set(addrs: List‹Addr›) -> RBTreeMap‹G› {
-    match load(addrs) {
-      ListNode.Nil => RBTreeMap.Nil,
-      ListNode.Cons(a, rest) =>
-        let rest_set = build_addr_set(rest);
-        rbtree_map_insert(ptr_val(a), 1, rest_set),
+  -- Check if an address is a blob: it's a blob iff it's NOT a constant,
+  -- i.e. absent from `addr_pos_map` (which is keyed by every constant
+  -- address — see `build_addr_pos_map`). Membership only; the stored
+  -- position value (pos+1 ≥ 1) is irrelevant here, only "present vs 0".
+  -- Blob addresses and constant addresses are different by design
+  -- (different hash preimage structures). O(log N) tree lookup.
+  fn is_blob(addr: Addr, addr_pos_map: &RBTreeMap‹G›) -> G {
+    let hit = rbtree_map_lookup_or_default(ptr_val(addr), load(addr_pos_map), 0);
+    match hit {
+      0 => 1,
+      _ => 0,
     }
   }
 
@@ -154,105 +149,6 @@ def ingress := ⟦
       ConstantInfo.Axio(_) => store([0u8; 32]),
       ConstantInfo.Quot(_) => store([0u8; 32]),
       ConstantInfo.Muts(_) => store([0u8; 32]),
-    }
-  }
-
-  -- Find the Muts block address by scanning a constant's refs for any
-  -- projection constant (IPrj, CPrj, RPrj, DPrj). Used for standalone
-  -- recursors to locate their inductive's block.
-  fn find_block_addr_from_refs(refs: List‹Addr›, addr_set: RBTreeMap‹G›) -> Addr {
-    match load(refs) {
-      ListNode.Nil => store([0u8; 32]),
-      ListNode.Cons(addr, rest) =>
-        let blob = is_blob(addr, addr_set);
-        match blob {
-          1 => find_block_addr_from_refs(rest, addr_set),
-          0 =>
-            let c = load_verified_constant(addr);
-            match c {
-              Constant.Mk(info, _, _, _) =>
-                match info {
-                  ConstantInfo.IPrj(prj) =>
-                    match prj { InductiveProj.Mk(_, block_addr) => block_addr, },
-                  ConstantInfo.CPrj(prj) =>
-                    match prj { ConstructorProj.Mk(_, _, block_addr) => block_addr, },
-                  ConstantInfo.RPrj(prj) =>
-                    match prj { RecursorProj.Mk(_, block_addr) => block_addr, },
-                  ConstantInfo.DPrj(prj) =>
-                    match prj { DefinitionProj.Mk(_, block_addr) => block_addr, },
-                  _ => find_block_addr_from_refs(rest, addr_set),
-                },
-            },
-        },
-    }
-  }
-
-  fn recr_rule_count(recr: Recursor) -> G {
-    match recr {
-      Recursor.Mk(_, _, _, _, _, _, _, _, rules) =>
-        count_recr_rules(rules),
-    }
-  }
-
-  -- Count recursor rules
-  fn count_recr_rules(rules: List‹RecursorRule›) -> G {
-    match load(rules) {
-      ListNode.Nil => 0,
-      ListNode.Cons(_, rest) => count_recr_rules(rest) + 1,
-    }
-  }
-
-  -- Count constructors in a Muts block's first inductive
-  fn count_block_ctors(members: List‹MutConst›) -> G {
-    match load(members) {
-      ListNode.Nil => 0,
-      ListNode.Cons(mc, rest) =>
-        match mc {
-          MutConst.Indc(ind) =>
-            match ind {
-              Inductive.Mk(_, _, _, _, _, _, _, _, ctors) =>
-                list_length(ctors),
-            },
-          _ => count_block_ctors(rest),
-        },
-    }
-  }
-
-  -- Find the correct block address for a standalone recursor by matching
-  -- the number of recursor rules to the number of constructors in the block.
-  fn find_matching_block_addr(refs: List‹Addr›, addr_set: RBTreeMap‹G›, nrules: G) -> Addr {
-    match load(refs) {
-      ListNode.Nil => store([0u8; 32]),
-      ListNode.Cons(addr, rest) =>
-        let blob = is_blob(addr, addr_set);
-        match blob {
-          1 => find_matching_block_addr(rest, addr_set, nrules),
-          0 =>
-            let c = load_verified_constant(addr);
-            match c {
-              Constant.Mk(info, _, _, _) =>
-                match info {
-                  ConstantInfo.IPrj(prj) =>
-                    match prj {
-                      InductiveProj.Mk(_, block_addr) =>
-                        let bc = load_verified_constant(block_addr);
-                        match bc {
-                          Constant.Mk(bi, _, _, _) =>
-                            match bi {
-                              ConstantInfo.Muts(members) =>
-                                let nctors = count_block_ctors(members);
-                                match nctors - nrules {
-                                  0 => block_addr,
-                                  _ => find_matching_block_addr(rest, addr_set, nrules),
-                                },
-                              _ => find_matching_block_addr(rest, addr_set, nrules),
-                            },
-                        },
-                    },
-                  _ => find_matching_block_addr(rest, addr_set, nrules),
-                },
-            },
-        },
     }
   }
 
@@ -304,8 +200,28 @@ def ingress := ⟦
     }
   }
 
-  -- Look up the kernel position for an address using parallel lists.
-  fn lookup_addr_pos(target: Addr, all_addrs: List‹Addr›, pos_map: List‹G›) -> G {
+  -- Look up the kernel position for an address. Fast path: a ptr_val hit
+  -- in the interned `addr_pos_map` (values stored as pos+1, so 0 = absent).
+  -- Sound because ptr_val equality ⟹ content equality (the POSITIVE
+  -- direction; see the invariant on `build_addr_pos_map`). On a miss — a
+  -- de-interned pointer, or a genuine non-constant such as a blob ref —
+  -- fall back to the content-based `address_eq` scan, which returns 0 when
+  -- truly absent. Honest provers always intern, so the fallback adds ~0
+  -- rows to the honest trace; the hot path is the O(log N) tree lookup.
+  fn lookup_addr_pos(target: Addr, addr_pos_map: &RBTreeMap‹G›,
+                     all_addrs: List‹Addr›, pos_map: List‹G›) -> G {
+    let hit = rbtree_map_lookup_or_default(ptr_val(target), load(addr_pos_map), 0);
+    match hit {
+      0 => lookup_addr_pos_linear(target, all_addrs, pos_map),
+      _ => hit - 1,
+    }
+  }
+
+  -- Content-based fallback for `lookup_addr_pos`: O(N) parallel-list scan
+  -- via `address_eq` (full 32-byte compare, sound under de-intern).
+  -- Returns 0 if absent. Structurally identical to `lookup_block_start`;
+  -- Aiur merges the two into one circuit.
+  fn lookup_addr_pos_linear(target: Addr, all_addrs: List‹Addr›, pos_map: List‹G›) -> G {
     match load(all_addrs) {
       ListNode.Nil => 0,
       ListNode.Cons(addr, rest_addrs) =>
@@ -314,8 +230,38 @@ def ingress := ⟦
             let eq = address_eq(target, addr);
             match eq {
               1 => pos,
-              0 => lookup_addr_pos(target, rest_addrs, rest_pos),
+              0 => lookup_addr_pos_linear(target, rest_addrs, rest_pos),
             },
+        },
+    }
+  }
+
+  -- Build the `ptr_val(addr) → (pos+1)` map keyed by every constant
+  -- address. Serves two roles: `lookup_addr_pos`'s fast path (returns the
+  -- kernel position) and `is_blob`'s membership test (present ⟺ constant).
+  -- pos+1 so the lookup default 0 unambiguously means "absent". Head is
+  -- inserted last (recurse first), so on any duplicate ptr_val the head
+  -- wins — matching the linear scan's first-match.
+  --
+  -- ptr_val-key SOUNDNESS INVARIANT: a pointer maps to exactly one stored
+  -- value (memory consistency), so ptr_val collision across DISTINCT
+  -- contents is impossible — distinct addresses can never be conflated.
+  -- A malicious prover's only freedom is de-interning (one content stored
+  -- at several pointers), which makes a present key read as ABSENT. So a
+  -- ptr_val-keyed map is sound ONLY where a false "absent" is conservative.
+  -- `is_blob` is fine: a de-interned constant reads as a blob, content-bound
+  -- and harmless. `lookup_addr_pos` is NOT fine on its own — a miss yields a
+  -- usable position — so it falls back to the content-based `address_eq`
+  -- scan on miss. Each Addr is also blake3-bound to its content and the
+  -- checkEnv claim merkle-commits the address set.
+  fn build_addr_pos_map(all_addrs: List‹Addr›, pos_map: List‹G›) -> RBTreeMap‹G› {
+    match load(all_addrs) {
+      ListNode.Nil => RBTreeMap.Nil,
+      ListNode.Cons(addr, rest_addrs) =>
+        match load(pos_map) {
+          ListNode.Cons(pos, rest_pos) =>
+            rbtree_map_insert(ptr_val(addr), pos + 1,
+              build_addr_pos_map(rest_addrs, rest_pos)),
         },
     }
   }
@@ -624,12 +570,13 @@ def ingress := ⟦
   -- Ref index building using position map
   -- ============================================================================
 
-  fn build_ref_idxs_mapped(refs: List‹Addr›, all_addrs: List‹Addr›, pos_map: List‹G›) -> List‹G› {
+  fn build_ref_idxs_mapped(refs: List‹Addr›, addr_pos_map: &RBTreeMap‹G›,
+                           all_addrs: List‹Addr›, pos_map: List‹G›) -> List‹G› {
     match load(refs) {
       ListNode.Nil => store(ListNode.Nil),
       ListNode.Cons(addr, rest) =>
-        let pos = lookup_addr_pos(addr, all_addrs, pos_map);
-        store(ListNode.Cons(pos, build_ref_idxs_mapped(rest, all_addrs, pos_map))),
+        let pos = lookup_addr_pos(addr, addr_pos_map, all_addrs, pos_map);
+        store(ListNode.Cons(pos, build_ref_idxs_mapped(rest, addr_pos_map, all_addrs, pos_map))),
     }
   }
 
@@ -1059,14 +1006,15 @@ def ingress := ⟦
     consts: List‹&Constant›,
     cur_addrs: List‹Addr›,
     all_addrs: List‹Addr›,
-    addr_set: RBTreeMap‹G›,
     pos_map: List‹G›,
     canon_addrs: List‹Addr›,
     block_addrs: List‹Addr›,
     block_starts: List‹G›,
     pos: G
   ) -> List‹&ConvertInput› {
-    build_convert_inputs_walk(consts, cur_addrs, all_addrs, addr_set, pos_map,
+    -- Built once here; threaded as the fast-path index for `lookup_addr_pos`.
+    let addr_pos_map = store(build_addr_pos_map(all_addrs, pos_map));
+    build_convert_inputs_walk(consts, cur_addrs, all_addrs, addr_pos_map, pos_map,
                               canon_addrs, block_addrs, block_starts, pos,
                               store(ListNode.Nil))
   }
@@ -1075,7 +1023,7 @@ def ingress := ⟦
     consts: List‹&Constant›,
     cur_addrs: List‹Addr›,
     all_addrs: List‹Addr›,
-    addr_set: RBTreeMap‹G›,
+    addr_pos_map: &RBTreeMap‹G›,
     pos_map: List‹G›,
     canon_addrs: List‹Addr›,
     block_addrs: List‹Addr›,
@@ -1102,7 +1050,7 @@ def ingress := ⟦
                         -- Duplicate Muts: skip emission (canonical Muts already
                         -- emitted). Don't advance pos. Refs to this wrapper
                         -- resolve to canonical pos via pos_map dedup.
-                        build_convert_inputs_walk(rest, rest_addrs, all_addrs, addr_set, pos_map,
+                        build_convert_inputs_walk(rest, rest_addrs, all_addrs, addr_pos_map, pos_map,
                           canon_addrs, block_addrs, block_starts, pos, seen_mptrs),
                       0 =>
                         let new_seen = match mptr {
@@ -1110,52 +1058,52 @@ def ingress := ⟦
                           _ => store(ListNode.Cons(mptr, seen_mptrs)),
                         };
                         let size = block_kernel_size(members);
-                        let canon_block_start = lookup_addr_pos(head_addr, all_addrs, pos_map);
+                        let canon_block_start = lookup_addr_pos(head_addr, addr_pos_map, all_addrs, pos_map);
                         let canon_addr = lookup_canon_addr(head_addr, all_addrs, canon_addrs);
-                        let ref_idxs = build_ref_idxs_mapped(refs, all_addrs, pos_map);
-                        let lit_blobs = build_lit_blobs(refs, addr_set);
+                        let ref_idxs = build_ref_idxs_mapped(refs, addr_pos_map, all_addrs, pos_map);
+                        let lit_blobs = build_lit_blobs(refs, addr_pos_map);
                         let recur_idxs = build_recur_idxs(members, canon_block_start, 0);
                         let ctx = ConvertCtx.Mk(sharing, ref_idxs, recur_idxs, lit_blobs, univs);
                         let expanded = expand_members(members, ctx, members, canon_block_start, 0,
                           refs, all_addrs, block_addrs, block_starts, canon_addr);
-                        let more = build_convert_inputs_walk(rest, rest_addrs, all_addrs, addr_set, pos_map,
+                        let more = build_convert_inputs_walk(rest, rest_addrs, all_addrs, addr_pos_map, pos_map,
                           canon_addrs, block_addrs, block_starts, pos + size, new_seen);
                         list_concat(expanded, more),
                     },
                   ConstantInfo.IPrj(_) =>
-                    build_convert_inputs_walk(rest, rest_addrs, all_addrs, addr_set, pos_map, canon_addrs, block_addrs, block_starts, pos, seen_mptrs),
+                    build_convert_inputs_walk(rest, rest_addrs, all_addrs, addr_pos_map, pos_map, canon_addrs, block_addrs, block_starts, pos, seen_mptrs),
                   ConstantInfo.CPrj(_) =>
-                    build_convert_inputs_walk(rest, rest_addrs, all_addrs, addr_set, pos_map, canon_addrs, block_addrs, block_starts, pos, seen_mptrs),
+                    build_convert_inputs_walk(rest, rest_addrs, all_addrs, addr_pos_map, pos_map, canon_addrs, block_addrs, block_starts, pos, seen_mptrs),
                   ConstantInfo.RPrj(_) =>
-                    build_convert_inputs_walk(rest, rest_addrs, all_addrs, addr_set, pos_map, canon_addrs, block_addrs, block_starts, pos, seen_mptrs),
+                    build_convert_inputs_walk(rest, rest_addrs, all_addrs, addr_pos_map, pos_map, canon_addrs, block_addrs, block_starts, pos, seen_mptrs),
                   ConstantInfo.DPrj(_) =>
-                    build_convert_inputs_walk(rest, rest_addrs, all_addrs, addr_set, pos_map, canon_addrs, block_addrs, block_starts, pos, seen_mptrs),
+                    build_convert_inputs_walk(rest, rest_addrs, all_addrs, addr_pos_map, pos_map, canon_addrs, block_addrs, block_starts, pos, seen_mptrs),
                   ConstantInfo.Defn(defn) =>
-                    let ref_idxs = build_ref_idxs_mapped(refs, all_addrs, pos_map);
-                    let lit_blobs = build_lit_blobs(refs, addr_set);
+                    let ref_idxs = build_ref_idxs_mapped(refs, addr_pos_map, all_addrs, pos_map);
+                    let lit_blobs = build_lit_blobs(refs, addr_pos_map);
                     let recur_idxs = store(ListNode.Cons(pos, store(ListNode.Nil)));
                     let ctx = ConvertCtx.Mk(sharing, ref_idxs, recur_idxs, lit_blobs, univs);
                     let hint = #load_constant_hint(head_addr);
                     let input = ConvertInput.Mk(ctx, ConvertKind.CKDefn(defn, hint));
                     store(ListNode.Cons(store(input),
-                      build_convert_inputs_walk(rest, rest_addrs, all_addrs, addr_set, pos_map, canon_addrs, block_addrs, block_starts, pos + 1, seen_mptrs))),
+                      build_convert_inputs_walk(rest, rest_addrs, all_addrs, addr_pos_map, pos_map, canon_addrs, block_addrs, block_starts, pos + 1, seen_mptrs))),
                   ConstantInfo.Axio(axio) =>
-                    let ref_idxs = build_ref_idxs_mapped(refs, all_addrs, pos_map);
-                    let lit_blobs = build_lit_blobs(refs, addr_set);
+                    let ref_idxs = build_ref_idxs_mapped(refs, addr_pos_map, all_addrs, pos_map);
+                    let lit_blobs = build_lit_blobs(refs, addr_pos_map);
                     let ctx = ConvertCtx.Mk(sharing, ref_idxs, store(ListNode.Nil), lit_blobs, univs);
                     let input = ConvertInput.Mk(ctx, ConvertKind.CKAxio(axio));
                     store(ListNode.Cons(store(input),
-                      build_convert_inputs_walk(rest, rest_addrs, all_addrs, addr_set, pos_map, canon_addrs, block_addrs, block_starts, pos + 1, seen_mptrs))),
+                      build_convert_inputs_walk(rest, rest_addrs, all_addrs, addr_pos_map, pos_map, canon_addrs, block_addrs, block_starts, pos + 1, seen_mptrs))),
                   ConstantInfo.Quot(quot) =>
-                    let ref_idxs = build_ref_idxs_mapped(refs, all_addrs, pos_map);
-                    let lit_blobs = build_lit_blobs(refs, addr_set);
+                    let ref_idxs = build_ref_idxs_mapped(refs, addr_pos_map, all_addrs, pos_map);
+                    let lit_blobs = build_lit_blobs(refs, addr_pos_map);
                     let ctx = ConvertCtx.Mk(sharing, ref_idxs, store(ListNode.Nil), lit_blobs, univs);
                     let input = ConvertInput.Mk(ctx, ConvertKind.CKQuot(quot));
                     store(ListNode.Cons(store(input),
-                      build_convert_inputs_walk(rest, rest_addrs, all_addrs, addr_set, pos_map, canon_addrs, block_addrs, block_starts, pos + 1, seen_mptrs))),
+                      build_convert_inputs_walk(rest, rest_addrs, all_addrs, addr_pos_map, pos_map, canon_addrs, block_addrs, block_starts, pos + 1, seen_mptrs))),
                   ConstantInfo.Recr(recr) =>
-                    let ref_idxs = build_ref_idxs_mapped(refs, all_addrs, pos_map);
-                    let lit_blobs = build_lit_blobs(refs, addr_set);
+                    let ref_idxs = build_ref_idxs_mapped(refs, addr_pos_map, all_addrs, pos_map);
+                    let lit_blobs = build_lit_blobs(refs, addr_pos_map);
                     -- Resolve the recursor's inductive via typ-based lookup:
                     -- peel n_skip foralls of `recr.typ` to reach the major's
                     -- type, take its head, lookup `refs[head_ref_idx]`. The
@@ -1185,7 +1133,7 @@ def ingress := ⟦
                     let ctx = ConvertCtx.Mk(sharing, ref_idxs, recur_idxs, lit_blobs, univs);
                     let input = ConvertInput.Mk(ctx, ConvertKind.CKRecr(recr, rule_ctor_idxs, block_addr));
                     store(ListNode.Cons(store(input),
-                      build_convert_inputs_walk(rest, rest_addrs, all_addrs, addr_set, pos_map, canon_addrs, block_addrs, block_starts, pos + 1, seen_mptrs))),
+                      build_convert_inputs_walk(rest, rest_addrs, all_addrs, addr_pos_map, pos_map, canon_addrs, block_addrs, block_starts, pos + 1, seen_mptrs))),
                 },
             },
         },
@@ -1282,12 +1230,11 @@ def ingress := ⟦
   fn ingress(target_addr: Addr) -> List‹&KConstantInfo› {
     let (all_addrs, all_consts) = load_with_deps(
       target_addr, store(ListNode.Nil), store(ListNode.Nil), store(ListNode.Nil), RBTreeMap.Nil);
-    let addr_set = build_addr_set(all_addrs);
     let (block_addrs, block_starts, _total) = compute_layout(all_consts, all_addrs, 0);
     let pos_map_naive = build_pos_map(all_consts, all_addrs, block_addrs, block_starts, 0);
     let pos_map = canonicalize_pos_map(all_consts, pos_map_naive);
     let canon_addrs = canonicalize_addr_map(all_addrs, all_consts);
-    let inputs = build_convert_inputs(all_consts, all_addrs, all_addrs, addr_set, pos_map, canon_addrs, block_addrs, block_starts, 0);
+    let inputs = build_convert_inputs(all_consts, all_addrs, all_addrs, pos_map, canon_addrs, block_addrs, block_starts, 0);
     convert_all(inputs)
   }
 
@@ -1597,14 +1544,13 @@ def ingress := ⟦
   fn ingress_with_primitives(target_addr: Addr) -> (List‹&KConstantInfo›, List‹Addr›) {
     let (all_addrs, all_consts) = load_with_deps(
       target_addr, store(ListNode.Nil), store(ListNode.Nil), store(ListNode.Nil), RBTreeMap.Nil);
-    let addr_set = build_addr_set(all_addrs);
     let (block_addrs, block_starts, total) = compute_layout(all_consts, all_addrs, 0);
     let pos_map_naive = build_pos_map(all_consts, all_addrs, block_addrs, block_starts, 0);
     -- Canonicalize duplicate Muts wrappers (same members-Ptr) so refs
     -- converge AND emitted KConstantInfos share content via store dedup.
     let pos_map = canonicalize_pos_map(all_consts, pos_map_naive);
     let canon_addrs = canonicalize_addr_map(all_addrs, all_consts);
-    let inputs = build_convert_inputs(all_consts, all_addrs, all_addrs, addr_set, pos_map, canon_addrs, block_addrs, block_starts, 0);
+    let inputs = build_convert_inputs(all_consts, all_addrs, all_addrs, pos_map, canon_addrs, block_addrs, block_starts, 0);
     let k_consts = convert_all(inputs);
     -- Build the pos→Addr tree via two O(N) passes (non-PRJ then PRJ
     -- overwrites at shared positions). Replaces the prior O(N²)
