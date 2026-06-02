@@ -1544,6 +1544,27 @@ def ingress := ⟦
   fn ingress_with_primitives(target_addr: Addr) -> (List‹&KConstantInfo›, List‹Addr›) {
     let (all_addrs, all_consts) = load_with_deps(
       target_addr, store(ListNode.Nil), store(ListNode.Nil), store(ListNode.Nil), RBTreeMap.Nil);
+    finish_ingress(all_addrs, all_consts)
+  }
+
+  -- Ingress the UNION closure of all env leaves in a single pass. One
+  -- `load_with_deps` over leaves[0] as target with the remaining leaves as
+  -- the initial worklist loads every leaf + its transitive deps; then the
+  -- shared `finish_ingress` pipeline runs ONCE over the union, rather than
+  -- being re-run per leaf as CheckEnv previously did.
+  fn ingress_env(leaves: List‹Addr›) -> (List‹&KConstantInfo›, List‹Addr›) {
+    match load(leaves) {
+      ListNode.Nil => synthetic_primitive_entries(),
+      ListNode.Cons(first, rest) =>
+        let (all_addrs, all_consts) = load_with_deps(
+          first, rest, store(ListNode.Nil), store(ListNode.Nil), RBTreeMap.Nil);
+        finish_ingress(all_addrs, all_consts),
+    }
+  }
+
+  -- Shared post-load pipeline: layout, conversion, addr table, primitives.
+  fn finish_ingress(all_addrs: List‹Addr›, all_consts: List‹&Constant›)
+                    -> (List‹&KConstantInfo›, List‹Addr›) {
     let (block_addrs, block_starts, total) = compute_layout(all_consts, all_addrs, 0);
     let pos_map_naive = build_pos_map(all_consts, all_addrs, block_addrs, block_starts, 0);
     -- Canonicalize duplicate Muts wrappers (same members-Ptr) so refs
