@@ -54,6 +54,13 @@ def infer := ⟦
   -- ============================================================================
   fn k_infer(e: KExpr, types: List‹KExpr›,
              top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
+    -- Closed terms don't depend on the local context: collapse it so the
+    -- same closed subterm under different binder depths shares a memo key.
+    let lbr = expr_lbr(e);
+    let types = match lbr {
+      0 => store(ListNode.Nil),
+      _ => types,
+    };
     match load(e) {
       KExprNode.BVar(i) => types_lookup(types, i),
 

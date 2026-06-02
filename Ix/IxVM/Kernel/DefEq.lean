@@ -39,6 +39,14 @@ def defEq := ⟦
   -- ============================================================================
   fn k_is_def_eq(a: KExpr, b: KExpr, types: List‹KExpr›,
                  top: List‹&KConstantInfo›, addrs: List‹Addr›) -> G {
+    -- When both sides are closed, the context can't affect the result;
+    -- collapse it so closed comparisons share a memo key across contexts.
+    -- `expr_lbr >= 0`, so the sum is 0 iff both sides are closed.
+    let lbr = expr_lbr(a) + expr_lbr(b);
+    let types = match lbr {
+      0 => store(ListNode.Nil),
+      _ => types,
+    };
     -- Tier 1: pointer equality short-circuit.
     match ptr_val(a) - ptr_val(b) {
       0 => 1,

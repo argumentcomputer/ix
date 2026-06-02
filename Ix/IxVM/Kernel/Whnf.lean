@@ -224,9 +224,17 @@ def whnf := ⟦
       KExprNode.Forall(_, _) => e,
       KExprNode.BVar(_) => e,
       _ =>
-        let pair = collect_spine(e);
-        match pair {
-          (head, spine) => whnf_with_spine(head, spine, types, top, addrs),
+        -- Closed-term context normalization: when `e` has no loose BVars,
+        -- whnf's result cannot depend on `types` (every spine major is
+        -- closed, so the `k_infer`/`is_prop_type` calls in the struct-iota
+        -- path never hit a BVar). Pass `Nil` so the same closed term whnf'd
+        -- under different contexts shares one memo key
+        -- `(head, spine, Nil, top, addrs)` -> cache hits. Open `e` keeps its
+        -- real context. Sound: a closed term reduces only to closed terms.
+        let (head, spine) = collect_spine(e);
+        match expr_lbr(e) {
+          0 => whnf_with_spine(head, spine, store(ListNode.Nil), top, addrs),
+          _ => whnf_with_spine(head, spine, types, top, addrs),
         },
     }
   }
