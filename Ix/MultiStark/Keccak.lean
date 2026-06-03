@@ -348,21 +348,7 @@ def keccak := ⟦
     [load(s[0]), load(s[1]), load(s[2]), load(s[3])]
   }
 
-  -- ==========================================================================
-  -- Test entrypoint: hash the IO-channel bytes (key [0]) and return 32 bytes.
-  -- ==========================================================================
-
-  pub fn keccak256_test() -> [[U8; 8]; 4] {
-    let (idx, len) = io_get_info([0]);
-    let bytes = #read_byte_stream(idx, len);
-    keccak256(bytes)
-  }
 ⟧
-
-/-- Standalone keccak-256 toplevel: `core` + `byteStream` + the implementation. -/
-def keccakToplevel : Except Aiur.Global Aiur.Source.Toplevel := do
-  let t ← IxVM.core.merge IxVM.byteStream
-  t.merge keccak
 
 end MultiStark
 

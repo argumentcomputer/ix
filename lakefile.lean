@@ -102,10 +102,6 @@ lean_exe «recursive-verifier» where
   root := `RecursiveVerifier
   supportInterpreter := true
 
-lean_exe «keccak-check» where
-  root := `KeccakCheck
-  supportInterpreter := true
-
 end Tests
 
 section Benchmarks
