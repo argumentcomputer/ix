@@ -134,6 +134,9 @@ def main : IO UInt32 := do
   match vCompiled.bytecode.execute (vCompiled.getFuncIdx `pcs_merkle_test).get! #[] default with
   | .error e => IO.eprintln s!"✗ pcs_merkle_test FAILED — {e}"; return 1
   | .ok _ => IO.println "✓ pcs_merkle_test: Merkle verify_batch matches reference (root + tamper)"
+  match vCompiled.bytecode.execute (vCompiled.getFuncIdx `sample_bits_test).get! #[] default with
+  | .error e => IO.eprintln s!"✗ sample_bits_test FAILED — {e}"; return 1
+  | .ok _ => IO.println "✓ sample_bits_test: challenger sample_bits matches reference"
   let vIdx ← match vCompiled.getFuncIdx `verify_multi_stark_proof with
     | some i => pure i
     | none => IO.eprintln "verify_multi_stark_proof entrypoint not found"; return 1
