@@ -132,6 +132,122 @@ def pcs := ⟦
   }
 
   -- ==========================================================================
+  -- Merkle MMCS `verify_batch` (binary tree, DIGEST_ELEMS = 4).
+  --
+  -- Ports `multi-stark/Plonky3/merkle-tree/src/mmcs.rs::verify_batch` for the
+  -- binary (N = 2) case. All committed matrices have power-of-two heights, so a
+  -- matrix's height is `2^log_height`. The opened rows arrive in matrix order;
+  -- `lhs` is the matching list of per-matrix log-heights. The query `index` is
+  -- threaded as a bit list (LSB first = leaf→root path) to avoid field division.
+  --
+  -- The leaf hash joins all matrices at the maximum log-height. Walking down,
+  -- each level folds with one proof sibling (ordered by the path bit), then —
+  -- if any matrix lives at the new log-height — injects that matrix group's leaf
+  -- hash via a second compression (this consumes no proof sibling), exactly as
+  -- the Rust loop's `next_height_openings_digest` injection.
+  -- ==========================================================================
+
+  -- 1 iff two digests are equal (compared as field elements; hash outputs are
+  -- canonical so this is exact).
+  fn digest_eq(a: Digest, b: Digest) -> G {
+    eq_zero(limb_to_field(a[0]) - limb_to_field(b[0])) *
+    eq_zero(limb_to_field(a[1]) - limb_to_field(b[1])) *
+    eq_zero(limb_to_field(a[2]) - limb_to_field(b[2])) *
+    eq_zero(limb_to_field(a[3]) - limb_to_field(b[3]))
+  }
+
+  -- Compress (current, sibling) in path order: path bit 0 ⇒ current is the left
+  -- child, bit 1 ⇒ current is the right child.
+  fn compress_ordered(bit: G, d: Digest, s: Digest) -> Digest {
+    match bit {
+      0 => mmcs_compress(d, s),
+      _ => mmcs_compress(s, d),
+    }
+  }
+
+  -- 1 iff some matrix has log-height `target`.
+  fn has_height(lhs: List‹G›, target: G) -> G {
+    match load(lhs) {
+      ListNode.Nil => 0,
+      ListNode.Cons(h, rest) =>
+        match eq_zero(h - target) {
+          1 => 1,
+          _ => has_height(rest, target),
+        },
+    }
+  }
+
+  -- Concatenate the opened rows of every matrix whose log-height is `target`
+  -- (in matrix order — the stable height-sort preserves it), for the joint leaf
+  -- hash `hash_iter_slices`.
+  fn concat_at(rows: List‹List‹U64››, lhs: List‹G›, target: G) -> List‹U64› {
+    match load(rows) {
+      ListNode.Nil => store(ListNode.Nil),
+      ListNode.Cons(r, rrest) =>
+        let &ListNode.Cons(lh, lrest) = lhs;
+        concat_at_step(eq_zero(lh - target), r, rrest, lrest, target),
+    }
+  }
+  fn concat_at_step(hit: G, r: List‹U64›, rrest: List‹List‹U64››,
+      lrest: List‹G›, target: G) -> List‹U64› {
+    match hit {
+      0 => concat_at(rrest, lrest, target),
+      _ => list_concat(r, concat_at(rrest, lrest, target)),
+    }
+  }
+
+  -- The joint leaf hash of all matrices at log-height `target`.
+  fn leaf_hash_at(rows: List‹List‹U64››, lhs: List‹G›, target: G) -> Digest {
+    pf_sponge_u64(concat_at(rows, lhs, target))
+  }
+
+  -- Inject the leaf hash of any matrices at log-height `lh` (if present) via a
+  -- second compression onto `d`.
+  fn inject_maybe(rows: List‹List‹U64››, lhs: List‹G›, lh: G, d: Digest) -> Digest {
+    match has_height(lhs, lh) {
+      0 => d,
+      _ => mmcs_compress(d, leaf_hash_at(rows, lhs, lh)),
+    }
+  }
+
+  -- Recompose remaining path bits (LSB first) into the cap index.
+  fn bits_to_num(bits: List‹G›) -> G {
+    match load(bits) {
+      ListNode.Nil => 0,
+      ListNode.Cons(b, rest) => b + 2 * bits_to_num(rest),
+    }
+  }
+
+  -- Walk the authentication path: one proof sibling per level (fold), with a
+  -- possible leaf injection at the new log-height `lh`. Returns the recomputed
+  -- root and the leftover cap index.
+  fn mmcs_fold(d: Digest, rows: List‹List‹U64››, lhs: List‹G›,
+      proof: List‹Digest›, ibits: List‹G›, lh: G) -> (Digest, G) {
+    match load(proof) {
+      ListNode.Nil => (d, bits_to_num(ibits)),
+      ListNode.Cons(s, prest) =>
+        let &ListNode.Cons(bit, brest) = ibits;
+        let d1 = compress_ordered(bit, d, s);
+        let d2 = inject_maybe(rows, lhs, lh, d1);
+        mmcs_fold(d2, rows, lhs, prest, brest, lh - 1),
+    }
+  }
+
+  -- Recompute the Merkle root from the opened rows + authentication path.
+  fn mmcs_root(rows: List‹List‹U64››, lhs: List‹G›, ibits: List‹G›,
+      proof: List‹Digest›, log_max: G) -> (Digest, G) {
+    let leaf = leaf_hash_at(rows, lhs, log_max);
+    mmcs_fold(leaf, rows, lhs, proof, ibits, log_max - 1)
+  }
+
+  -- 1 iff the recomputed root matches the commitment cap at the cap index.
+  fn mmcs_verify(cap: MerkleCap, rows: List‹List‹U64››, lhs: List‹G›,
+      ibits: List‹G›, proof: List‹Digest›, log_max: G) -> G {
+    let (root, capidx) = mmcs_root(rows, lhs, ibits, proof, log_max);
+    digest_eq(list_lookup(cap, capidx), root)
+  }
+
+  -- ==========================================================================
   -- PCS verification entry (STILL A STUB).
   -- Accepts any FRI opening proof. A real implementation will check query
   -- openings, Merkle paths (via `mmcs_*` above) and the FRI folding against the
@@ -184,6 +300,55 @@ def pcs := ⟦
                           [u64_of(5u8), u64_of(6u8), u64_of(7u8), u64_of(8u8)]);
     assert_eq!(assert_digest(c, 0xda1ef0642722b22e, 0x4851efdbdb2a2fd8,
                                 0x37e8ff900ea95d47, 0xa153eee7805376fb), 1);
+    1
+  }
+
+  -- Merkle `verify_batch` self-test against the `pcs_merkle_ref` reference: a
+  -- cap-height-0 tree over 3 matrices of heights 8/4/2 (log-heights 3/2/1),
+  -- opened at index 5 (path bits 1,0,1). Checks the recomputed root matches the
+  -- committed root and that the cap index is 0, then that a tampered opened row
+  -- yields a different (rejected) root.
+  pub fn pcs_merkle_test() -> G {
+    -- opened rows (matrix order): m0 row5, m1 row2, m2 row1.
+    let row0 = store(ListNode.Cons(u64_of(11u8), store(ListNode.Cons(u64_of(12u8), store(ListNode.Nil)))));
+    let row1 = store(ListNode.Cons(u64_of(107u8), store(ListNode.Cons(u64_of(108u8),
+                 store(ListNode.Cons(u64_of(109u8), store(ListNode.Nil)))))));
+    let row2 = store(ListNode.Cons(u64_of(202u8), store(ListNode.Nil)));
+    let rows = store(ListNode.Cons(row0, store(ListNode.Cons(row1,
+                 store(ListNode.Cons(row2, store(ListNode.Nil)))))));
+    -- log-heights and path bits (index 5 = 0b101, LSB first).
+    let lhs = store(ListNode.Cons(3, store(ListNode.Cons(2, store(ListNode.Cons(1, store(ListNode.Nil)))))));
+    let ibits = store(ListNode.Cons(1, store(ListNode.Cons(0, store(ListNode.Cons(1, store(ListNode.Nil)))))));
+    -- authentication path SIB0, SIB1, SIB2 (each a Digest = [U64; 4]).
+    let sib0 = [[9u8, 36u8, 179u8, 127u8, 205u8, 83u8, 105u8, 203u8],
+                [95u8, 229u8, 105u8, 223u8, 113u8, 55u8, 97u8, 122u8],
+                [135u8, 8u8, 65u8, 248u8, 163u8, 163u8, 68u8, 81u8],
+                [9u8, 11u8, 20u8, 209u8, 10u8, 168u8, 151u8, 125u8]];
+    let sib1 = [[227u8, 58u8, 255u8, 213u8, 77u8, 152u8, 42u8, 77u8],
+                [113u8, 86u8, 2u8, 151u8, 97u8, 63u8, 58u8, 45u8],
+                [228u8, 139u8, 228u8, 194u8, 182u8, 115u8, 107u8, 221u8],
+                [248u8, 16u8, 30u8, 93u8, 176u8, 36u8, 205u8, 88u8]];
+    let sib2 = [[236u8, 144u8, 115u8, 218u8, 140u8, 5u8, 86u8, 229u8],
+                [95u8, 186u8, 252u8, 175u8, 21u8, 247u8, 153u8, 25u8],
+                [113u8, 78u8, 92u8, 200u8, 212u8, 175u8, 247u8, 47u8],
+                [78u8, 145u8, 206u8, 54u8, 175u8, 155u8, 165u8, 206u8]];
+    let proof = store(ListNode.Cons(sib0, store(ListNode.Cons(sib1,
+                  store(ListNode.Cons(sib2, store(ListNode.Nil)))))));
+    let (root, capidx) = mmcs_root(rows, lhs, ibits, proof, 3);
+    assert_eq!(capidx, 0);
+    assert_eq!(assert_digest(root, 0x6211b9a1a116a006, 0x435ee98e1504880f,
+                                   0x900c7274b9a215f, 0xf6e3aaac5dcd90bd), 1);
+    -- tamper: perturb m0's first opened value → root must change.
+    let bad0 = store(ListNode.Cons(u64_of(99u8), store(ListNode.Cons(u64_of(12u8), store(ListNode.Nil)))));
+    let bad_rows = store(ListNode.Cons(bad0, store(ListNode.Cons(row1,
+                     store(ListNode.Cons(row2, store(ListNode.Nil)))))));
+    let cap = store(ListNode.Cons([[6u8, 160u8, 22u8, 161u8, 161u8, 185u8, 17u8, 98u8],
+                                   [15u8, 136u8, 4u8, 21u8, 142u8, 233u8, 94u8, 67u8],
+                                   [95u8, 33u8, 154u8, 75u8, 39u8, 199u8, 0u8, 9u8],
+                                   [189u8, 144u8, 205u8, 93u8, 172u8, 170u8, 227u8, 246u8]],
+                    store(ListNode.Nil)));
+    assert_eq!(mmcs_verify(cap, rows, lhs, ibits, proof, 3), 1);
+    assert_eq!(mmcs_verify(cap, bad_rows, lhs, ibits, proof, 3), 0);
     1
   }
 ⟧
