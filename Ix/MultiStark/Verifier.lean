@@ -168,6 +168,47 @@ def verifier := ⟦
     (c0, c1, i1, o1)
   }
 
+  -- `sample_bits(n)` (FRI query index). `SerializingChallenger64::sample_bits`
+  -- reads one 8-byte sample as a little-endian u64 and masks the low `n` bits.
+  -- We return the low `n` bits as a list (LSB first = the leaf→root Merkle/FRI
+  -- path), built from the 8 sampled bytes' bit decompositions (reusing keccak's
+  -- `cons8`), truncated to `n`.
+  fn sample8_bits(bytes: [U8; 8]) -> List‹G› {
+    cons8(u8_bit_decomposition(bytes[0]),
+    cons8(u8_bit_decomposition(bytes[1]),
+    cons8(u8_bit_decomposition(bytes[2]),
+    cons8(u8_bit_decomposition(bytes[3]),
+    cons8(u8_bit_decomposition(bytes[4]),
+    cons8(u8_bit_decomposition(bytes[5]),
+    cons8(u8_bit_decomposition(bytes[6]),
+    cons8(u8_bit_decomposition(bytes[7]), store(ListNode.Nil)))))))))
+  }
+  fn take_bits(bits: List‹G›, n: G) -> List‹G› {
+    match n {
+      0 => store(ListNode.Nil),
+      _ =>
+        let &ListNode.Cons(b, rest) = bits;
+        store(ListNode.Cons(b, take_bits(rest, n - 1))),
+    }
+  }
+  fn ch_sample_bits(input: ByteStream, output: ByteStream, n: G)
+      -> (List‹G›, ByteStream, ByteStream) {
+    let (bytes, i1, o1) = ch_sample8(input, output);
+    (take_bits(sample8_bits(bytes), n), i1, o1)
+  }
+
+  -- Self-test: `sample_bits(20)` after observing the single `Val`
+  -- `0x0102030405060708` (8 LE bytes) must equal the reference `799146`
+  -- (`pcs_challenger_ref` in `multi-stark/src/types.rs`).
+  pub fn sample_bits_test() -> G {
+    let input = store(ListNode.Cons(8u8, store(ListNode.Cons(7u8, store(ListNode.Cons(6u8,
+      store(ListNode.Cons(5u8, store(ListNode.Cons(4u8, store(ListNode.Cons(3u8,
+      store(ListNode.Cons(2u8, store(ListNode.Cons(1u8, store(ListNode.Nil)))))))))))))))));
+    let (bits, _i, _o) = ch_sample_bits(input, store(ListNode.Nil), 20);
+    assert_eq!(bits_to_num(bits), 799146);
+    1
+  }
+
   -- Append (observe) 8 little-endian bytes of `b` at the END of the challenger
   -- input buffer. The transcript is held front-to-back (front = first observed =
   -- first hashed, matching `keccak256`'s absorption order), so an observation
