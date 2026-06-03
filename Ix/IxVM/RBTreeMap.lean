@@ -12,31 +12,49 @@ def rbTreeMap := ⟦
     Nil
   }
 
-  -- Okasaki-style balance: fixes red-red violations after insertion
+  -- Okasaki-style balance: fixes red-red violations after insertion.
+  --
+  -- A violation can only occur under a BLACK parent (color 1); a red
+  -- parent never rebalances. The 4 rebalance cases are WIDE (they deref a
+  -- red grandchild and rebuild 3 nodes), so they're factored into the cold
+  -- `rbtree_map_balance_fix`. Aiur lays a function's width as the max over
+  -- match arms, so keeping the hot path (red parent / black parent with no
+  -- violation) here as a narrow color-dispatch keeps `balance` itself
+  -- narrow; the wide rebalance machinery only taxes the rows that actually
+  -- reach `_fix` (black parents).
   fn rbtree_map_balance‹V›(color: G, key: G, value: V, left: RBTreeMap‹V›, right: RBTreeMap‹V›) -> RBTreeMap‹V› {
-    match (color, left, right) {
+    match color {
+      1 => rbtree_map_balance_fix(key, value, left, right),
+      _ => RBTreeMap.Node(color, key, value, store(left), store(right)),
+    }
+  }
+
+  -- Cold path: parent is black (color 1). Match the 4 red-red grandchild
+  -- configurations; the fall-through is "black parent, no violation".
+  fn rbtree_map_balance_fix‹V›(key: G, value: V, left: RBTreeMap‹V›, right: RBTreeMap‹V›) -> RBTreeMap‹V› {
+    match (left, right) {
       -- Case 1: left child red, left-left grandchild red
-      (1, RBTreeMap.Node(0, yk, yv, &RBTreeMap.Node(0, xk, xv, a, b), c), d) =>
+      (RBTreeMap.Node(0, yk, yv, &RBTreeMap.Node(0, xk, xv, a, b), c), d) =>
         RBTreeMap.Node(0, yk, yv,
           store(RBTreeMap.Node(1, xk, xv, a, b)),
           store(RBTreeMap.Node(1, key, value, c, store(d)))),
       -- Case 2: left child red, left-right grandchild red
-      (1, RBTreeMap.Node(0, xk, xv, a, &RBTreeMap.Node(0, yk, yv, b, c)), d) =>
+      (RBTreeMap.Node(0, xk, xv, a, &RBTreeMap.Node(0, yk, yv, b, c)), d) =>
         RBTreeMap.Node(0, yk, yv,
           store(RBTreeMap.Node(1, xk, xv, a, b)),
           store(RBTreeMap.Node(1, key, value, c, store(d)))),
       -- Case 3: right child red, right-left grandchild red
-      (1, a, RBTreeMap.Node(0, zk, zv, &RBTreeMap.Node(0, yk, yv, b, c), d)) =>
+      (a, RBTreeMap.Node(0, zk, zv, &RBTreeMap.Node(0, yk, yv, b, c), d)) =>
         RBTreeMap.Node(0, yk, yv,
           store(RBTreeMap.Node(1, key, value, store(a), b)),
           store(RBTreeMap.Node(1, zk, zv, c, d))),
       -- Case 4: right child red, right-right grandchild red
-      (1, a, RBTreeMap.Node(0, yk, yv, b, &RBTreeMap.Node(0, zk, zv, c, d))) =>
+      (a, RBTreeMap.Node(0, yk, yv, b, &RBTreeMap.Node(0, zk, zv, c, d))) =>
         RBTreeMap.Node(0, yk, yv,
           store(RBTreeMap.Node(1, key, value, store(a), b)),
           store(RBTreeMap.Node(1, zk, zv, c, d))),
-      -- No violation
-      _ => RBTreeMap.Node(color, key, value, store(left), store(right)),
+      -- No violation (black parent)
+      _ => RBTreeMap.Node(1, key, value, store(left), store(right)),
     }
   }
 
@@ -50,10 +68,14 @@ def rbTreeMap := ⟦
         match lt {
           1 => rbtree_map_balance(color, k, v, rbtree_map_ins(key, value, left), right),
           _ =>
-            let gt = u32_less_than(k, key);
-            match gt {
-              1 => rbtree_map_balance(color, k, v, left, rbtree_map_ins(key, value, right)),
-              _ => RBTreeMap.Node(color, key, value, store(left), store(right)),
+            -- key not < k. Distinguish equal (overwrite) from greater
+            -- (recurse right) with a field subtraction instead of a second
+            -- u32_less_than (which would cost +12 aux / +6 lookups). Keys
+            -- are u32-range field elements, so `key - k == 0` iff equal.
+            let eq = key - k;
+            match eq {
+              0 => RBTreeMap.Node(color, key, value, store(left), store(right)),
+              _ => rbtree_map_balance(color, k, v, left, rbtree_map_ins(key, value, right)),
             },
         },
     }
@@ -77,10 +99,10 @@ def rbTreeMap := ⟦
         match lt {
           1 => rbtree_map_lookup(key, left),
           _ =>
-            let gt = u32_less_than(k, key);
-            match gt {
-              1 => rbtree_map_lookup(key, right),
-              _ => v,
+            let eq = key - k;
+            match eq {
+              0 => v,
+              _ => rbtree_map_lookup(key, right),
             },
         },
     }
@@ -97,10 +119,10 @@ def rbTreeMap := ⟦
         match lt {
           1 => rbtree_map_lookup_or_default(key, left, default),
           _ =>
-            let gt = u32_less_than(k, key);
-            match gt {
-              1 => rbtree_map_lookup_or_default(key, right, default),
-              _ => v,
+            let eq = key - k;
+            match eq {
+              0 => v,
+              _ => rbtree_map_lookup_or_default(key, right, default),
             },
         },
     }

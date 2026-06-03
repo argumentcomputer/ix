@@ -854,29 +854,21 @@ def claim := ⟦
     ()
   }
 
+  -- Ingress the union closure of all env leaves ONCE, then check every
+  -- constant in it (skipping assumption leaves) via the same
+  -- `check_all_skipping` path `run_check` uses. Structurally a
+  -- `run_check` over a closure that happens to be the whole env, so the
+  -- soundness rides on that existing pattern; the union order is verified by
+  -- the single `check_canonical_block_sort(top)` inside `check_all_skipping`
+  -- (a stronger global order than the per-leaf closures it replaces).
   fn run_check_env(env_root: Addr, asm: Option‹Addr›) {
     let env_leaves = load_assumption_tree(env_root);
-    let asm_leaves = match asm {
-      Option.None => store(ListNode.Nil),
-      Option.Some(asm_root) => load_assumption_tree(asm_root),
-    };
-    check_env_iter(env_leaves, asm_leaves)
-  }
-
-  fn check_env_iter(env_leaves: List‹Addr›, asm_leaves: List‹Addr›) {
-    match load(env_leaves) {
-      ListNode.Nil => (),
-      ListNode.Cons(leaf, rest) =>
-        match addr_in_list(leaf, asm_leaves) {
-          1 =>
-            check_env_iter(rest, asm_leaves),
-          _ =>
-            let (k_consts, addrs) = ingress_with_primitives(leaf);
-            let target_pos = find_addr_idx(leaf, addrs, 0);
-            let ci = load(list_lookup(k_consts, target_pos));
-            let _ = check_const(ci, target_pos, k_consts, addrs);
-            check_env_iter(rest, asm_leaves),
-        },
+    let (k_consts, addrs) = ingress_env(env_leaves);
+    match asm {
+      Option.None => check_all(k_consts, k_consts, addrs),
+      Option.Some(asm_root) =>
+        let asm_leaves = load_assumption_tree(asm_root);
+        check_all_skipping(k_consts, k_consts, addrs, asm_leaves),
     }
   }
 
