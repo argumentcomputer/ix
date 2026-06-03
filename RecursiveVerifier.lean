@@ -127,6 +127,10 @@ def main : IO UInt32 := do
     | .error e => IO.eprintln s!"verifier toplevel merge failed: {e}"; return 1
     | .ok t => pure t
   let (vCompiled, _vSystem) ← buildSystem "verifier" vTop
+  -- TEMP: validate the PCS keccak-MMCS sponge primitives.
+  match vCompiled.bytecode.execute (vCompiled.getFuncIdx `pcs_hash_test).get! #[] default with
+  | .error e => IO.eprintln s!"✗ pcs_hash_test FAILED — {e}"; return 1
+  | .ok _ => IO.println "✓ pcs_hash_test: keccak MMCS sponge/compress match reference"
   let vIdx ← match vCompiled.getFuncIdx `verify_multi_stark_proof with
     | some i => pure i
     | none => IO.eprintln "verify_multi_stark_proof entrypoint not found"; return 1
