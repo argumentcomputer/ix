@@ -552,6 +552,15 @@ def toplevel := ⟦
     x + 1
   }
 
+  -- Non-tail match whose scrutinee is a function call (`let x = match foo(bar) {...}`).
+  -- The scrutinee is hoisted into a fresh let by the match compiler; the
+  -- continuation must still reach `matchContinue`. ntm_helper(x) = x*x+1,
+  -- so a=0 -> 1 -> 100 -> 101.
+  fn ntm_match_on_call(a: G) -> G {
+    let x = match ntm_helper(a) { 1 => 100, 5 => 200, _ => a * a, };
+    x + 1
+  }
+
   -- Non-tail match with store/load in branches (lookup gating)
   fn ntm_store_load(a: G) -> G {
     let x = match a { 0 => load(store(42)), _ => load(store(a)), };
@@ -777,8 +786,10 @@ def toplevel := ⟦
     let r19 = ntm_recursive_test();
     -- Nested early return (yields 0, sum unchanged)
     let r20 = ntm_nested(0, 0);
+    -- Function-call scrutinee: 101 + 201 + 10 = 312
+    let r21 = ntm_match_on_call(0) + ntm_match_on_call(2) + ntm_match_on_call(3);
     r1 + r2 + r3 + r4 + r5 + r6 + r7 + r8 + r9 + r10
-    + r11 + r12 + r13 + r14 + r15 + r16 + r17 + r18 + r19 + r20
+    + r11 + r12 + r13 + r14 + r15 + r16 + r17 + r18 + r19 + r20 + r21
   }
 ⟧
 
@@ -935,8 +946,8 @@ def aiurTestCases : List AiurTestCase := [
     .noIO `template_pair #[] #[10, 20],
     .noIO `template_nested #[] #[7],
 
-    -- Non-tail match: all patterns in one proof
-    .noIO `non_tail_match #[] #[2281],
+    -- Non-tail match: all patterns in one proof (incl. function-call scrutinee)
+    .noIO `non_tail_match #[] #[2593],
   ]
 
 end
