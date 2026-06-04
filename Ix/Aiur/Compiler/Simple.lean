@@ -27,6 +27,24 @@ Only valid when it doesn't shadow any other binding. Public so proofs in other
 modules can cite the definition (e.g., via unfolding). -/
 abbrev tmpVar : Local := .idx 0
 
+/-- Build `let pat = v in b`, but first float any leading `let`s out of `v`:
+`let pat = (let w = e in rest) in b` ⤳ `let w = e in let pat = rest in b`.
+
+The match compiler hoists a non-variable `match` scrutinee into a `let`
+(`MatchCompiler.switch`), so `let x = match foo(bar) {..}` simplifies to
+`let x = (let w = foo(bar) in match w {..})`. That buries the `match` one
+`let` deep, where `Lower`'s non-tail-match detector (which only fires when a
+`match` is the *immediate* `letVar`/`letWild` RHS) can't see it. Floating the
+hoisted `let`s outward restores the invariant: the `match` becomes the direct
+RHS again. The hoisted `w`s are fresh match-compiler locals, so widening their
+scope over `b` cannot capture anything. -/
+def mkLetFloating (τ : Typ) (e : Bool) (pat : Pattern) (v b : Term) : Term :=
+  match v with
+  | .let τ' e' pat' v' rest => .let τ' e' pat' v' (mkLetFloating τ e pat rest b)
+  | _ => .let τ e pat v b
+termination_by sizeOf v
+decreasing_by decreasing_tactic
+
 /-- `simplifyTypedTerm` walks a typed term, producing a term of the same shape
 whose `match`es have been pre-compiled down to the decision-tree form, and whose
 `let`s bind only simple locals or wildcards. It operates in the `CheckError`
@@ -38,11 +56,11 @@ def simplifyTypedTerm (decls : Source.Decls) : Term → Except CheckError Term
   | .let τ e (.var x) v b => do
       let v' ← simplifyTypedTerm decls v
       let b' ← simplifyTypedTerm decls b
-      pure (.let τ e (.var x) v' b')
+      pure (mkLetFloating τ e (.var x) v' b')
   | .let τ e .wildcard v b => do
       let v' ← simplifyTypedTerm decls v
       let b' ← simplifyTypedTerm decls b
-      pure (.let τ e .wildcard v' b')
+      pure (mkLetFloating τ e .wildcard v' b')
   | .let τ e pat v b => do
       let v' ← simplifyTypedTerm decls v
       let b' ← simplifyTypedTerm decls b
@@ -52,7 +70,7 @@ def simplifyTypedTerm (decls : Source.Decls) : Term → Except CheckError Term
         match MatchCompiler.decisionToTyped b'.typ tmp.typ tree with
         | some rewrite => rewrite
         | none         => .match b'.typ b'.escapes tmp [(pat, b')]
-      pure (.let τ e (.var tmpVar) v' body)
+      pure (mkLetFloating τ e (.var tmpVar) v' body)
   | .match τ e scrut branches => do
       let scrut' ← simplifyTypedTerm decls scrut
       let branches' ← branches.attach.mapM fun pb =>

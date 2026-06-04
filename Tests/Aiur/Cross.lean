@@ -541,6 +541,15 @@ def toplevel : Source.Toplevel := ⟦
     x + 1
   }
 
+  -- Non-tail match whose scrutinee is a function call (`let x = match foo(bar) {...}`).
+  -- The scrutinee is hoisted into a fresh let by the match compiler; the
+  -- continuation must still reach `matchContinue`. ntm_helper(x) = x*x+1,
+  -- so a=0 -> 101, a=2 -> 201, a=3 -> 10.
+  fn ntm_match_on_call(a: G) -> G {
+    let x = match ntm_helper(a) { 1 => 100, 5 => 200, _ => a * a, };
+    x + 1
+  }
+
   -- Pre-branch constant multiplied in a branch (no default)
   pub fn ntm_const_mul(a: G) -> G {
     let c = 5;
@@ -1058,8 +1067,10 @@ def toplevel : Source.Toplevel := ⟦
     let r18 = ntm_refutable_let_in_match(0);
     let r19 = ntm_recursive_test();
     let r20 = ntm_nested(0, 0);
+    -- Function-call scrutinee: 101 + 201 + 10 = 312
+    let r21 = ntm_match_on_call(0) + ntm_match_on_call(2) + ntm_match_on_call(3);
     r1 + r2 + r3 + r4 + r5 + r6 + r7 + r8 + r9 + r10
-    + r11 + r12 + r13 + r14 + r15 + r16 + r17 + r18 + r19 + r20
+    + r11 + r12 + r13 + r14 + r15 + r16 + r17 + r18 + r19 + r20 + r21
   }
 ⟧
 
