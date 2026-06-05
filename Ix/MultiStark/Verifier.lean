@@ -221,6 +221,64 @@ def verifier := ⟦
     list_concat(input, cap_onto(cap, store(ListNode.Nil)))
   }
 
+  -- ==========================================================================
+  -- PCS challenger continuation (Phase 4): the post-ζ transcript that
+  -- `two_adic_pcs::verify` + `verify_fri` replay. Unlike `fiat_shamir` — where
+  -- every sample is followed by an observe (so each sample re-flushes from an
+  -- empty `output`) — the PCS phase has *consecutive* samples with no observe
+  -- between (the PCS batch challenge α, then immediately the FRI batch challenge
+  -- α). So both challenger buffers must be threaded: `output` carries the
+  -- leftover hash bytes from one sample into the next instead of re-flushing.
+  -- ==========================================================================
+
+  -- Observe one `Val` (8 LE bytes): append to `input`, CLEAR `output` (any
+  -- leftover sampled bytes are discarded), per `HashChallenger::observe`.
+  fn ch_observe_val(input: ByteStream, v: U64) -> (ByteStream, ByteStream) {
+    (snoc_b8(input, v), store(ListNode.Nil))
+  }
+
+  -- Sample a degree-2 extension element, threading BOTH challenger buffers so a
+  -- following consecutive sample continues from the same hash `output` stream
+  -- (no re-flush). Limbs are reduced mod p (`limb_to_field`); the ~2⁻³²
+  -- rejection band where a raw limb ≥ p is still unhandled (as in `fiat_shamir`).
+  fn pcs_sample_ext(input: ByteStream, output: ByteStream)
+      -> (Ext, ByteStream, ByteStream) {
+    let (c0, c1, i1, o1) = ch_sample_ext(input, output);
+    ([limb_to_field(c0), limb_to_field(c1)], i1, o1)
+  }
+
+  -- Self-test: replay the synthetic PCS challenger sequence from
+  -- `pcs_challenger4_ref` (multi-stark/src/types.rs) and check every sampled
+  -- challenge against the reference. Decisively exercises the two consecutive
+  -- ext samples (α_pcs then α_fri) sharing one hash `output` stream.
+  pub fn pcs_challenger4_test() -> G {
+    -- post-ζ input buffer = observe V0 then V1 (forward / observation order).
+    let v0 = [8u8, 7u8, 6u8, 5u8, 4u8, 3u8, 2u8, 1u8];     -- 0x0102030405060708
+    let v1 = [136u8, 119u8, 102u8, 85u8, 68u8, 51u8, 34u8, 17u8]; -- 0x1122334455667788
+    let input = snoc_b8(snoc_b8(store(ListNode.Nil), v0), v1);
+    -- α_pcs (output empty ⇒ flush), then α_fri (CONSECUTIVE ⇒ thread output).
+    let (apcs, input, o1) = pcs_sample_ext(input, store(ListNode.Nil));
+    let (afri, input, o2) = pcs_sample_ext(input, o1);
+    assert_eq!(apcs[0], 2882912772410685996);
+    assert_eq!(apcs[1], 910933442133595775);
+    assert_eq!(afri[0], 14440140149289897216);
+    assert_eq!(afri[1], 8092267645441512944);
+    -- observe commit (clears output), sample β.
+    let v2 = [239u8, 190u8, 173u8, 222u8, 0u8, 0u8, 0u8, 0u8]; -- 0x00000000deadbeef
+    let (input, _oc) = ch_observe_val(input, v2);
+    let (beta, input, _ob) = pcs_sample_ext(input, store(ListNode.Nil));
+    assert_eq!(beta[0], 10456048119516576995);
+    assert_eq!(beta[1], 3173538015651228593);
+    -- observe final_poly coeff + log_arity (each a Val), then sample the index.
+    let v3 = [4u8, 3u8, 2u8, 1u8, 13u8, 12u8, 11u8, 10u8]; -- 0x0a0b0c0d01020304
+    let v4 = [2u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8];     -- 0x0000000000000002
+    let (input, _o3) = ch_observe_val(input, v3);
+    let (input, _o4) = ch_observe_val(input, v4);
+    let (bits, _bi, _bo) = ch_sample_bits(input, store(ListNode.Nil), 20);
+    assert_eq!(bits_to_num(bits), 336138);
+    1
+  }
+
   -- Append a claim's values (each `Val` as 8 LE bytes) onto `tail`, in order.
   fn claim_vals_onto(vals: List‹U64›, tail: ByteStream) -> ByteStream {
     match load(vals) {
@@ -257,8 +315,12 @@ def verifier := ⟦
   -- NOTE: the ~2⁻³² rejection band (a sampled 8-byte limb ≥ p) is still not
   -- handled (`ch_sample8` reduces mod p); for small proofs no sample lands in
   -- the band, but honest rejection sampling remains a TODO for full generality.
+  -- Also returns the post-ζ challenger `input` buffer, which the PCS phase
+  -- (Phase 4+) continues observing into. The leftover `output` after the ζ
+  -- sample is discarded — the next challenger op is an observe (of the opened
+  -- values), which clears `output` anyway.
   fn fiat_shamir(prep: MerkleCap, s1: MerkleCap, s2: MerkleCap, q: MerkleCap,
-      lds: List‹U8›, claims: List‹List‹U64››) -> (Ext, Ext, Ext, Ext) {
+      lds: List‹U8›, claims: List‹List‹U64››) -> (Ext, Ext, Ext, Ext, ByteStream) {
     -- Initial transcript, front-to-back: prep, stage_1, log_degrees, claims.
     -- Built inner-to-outer with the prepend helpers so the result is in
     -- forward (observation) order.
@@ -278,12 +340,13 @@ def verifier := ⟦
     let (a0, a1, input, _oa) = ch_sample_ext(input, store(ListNode.Nil));
     -- observe quotient commitment
     let input = snoc_cap(input, q);
-    -- sample out-of-domain point ζ
-    let (z0, z1, _input, _oz) = ch_sample_ext(input, store(ListNode.Nil));
+    -- sample out-of-domain point ζ; keep the resulting `input` for the PCS phase
+    let (z0, z1, zinput, _oz) = ch_sample_ext(input, store(ListNode.Nil));
     ([limb_to_field(l0), limb_to_field(l1)],
      [limb_to_field(f0), limb_to_field(f1)],
      [limb_to_field(a0), limb_to_field(a1)],
-     [limb_to_field(z0), limb_to_field(z1)])
+     [limb_to_field(z0), limb_to_field(z1)],
+     zinput)
   }
 
   -- ==========================================================================
@@ -738,7 +801,7 @@ def verifier := ⟦
                q_opened, prep_opt, stage1, stage2) =>
         let Commitments.Mk(s1c, s2c, qc) = commitments;
         let prep_cap = opt_commit_cap(commit);
-        let (lch, fch, alpha, zeta) = fiat_shamir(prep_cap, s1c, s2c, qc, log_degrees, claims);
+        let (lch, fch, alpha, zeta, _post_zeta_input) = fiat_shamir(prep_cap, s1c, s2c, qc, log_degrees, claims);
         let acc0 = claims_acc([0, 0], claims, lch, fch);
         ood_loop(circuits, prep_indices, log_degrees, accs, stage1, stage2,
                  prep_opt, q_opened, 0, acc0, 0, lch, fch, alpha, zeta),
