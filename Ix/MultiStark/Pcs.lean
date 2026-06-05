@@ -248,6 +248,116 @@ def pcs := ⟦
   }
 
   -- ==========================================================================
+  -- FRI fold step (`TwoAdicFriFolding::fold_row`, arity-2 case).
+  --
+  -- `innerFri` uses `maxLogArity = 1`, so every FRI fold is binary. Ports
+  -- `fold_row` for `log_arity = 1`: given the sibling pair (e0, e1) of a node
+  -- and the round challenge β,
+  --   folded = (e0 + e1)/2 + β·(e0 − e1)/(2s),
+  --   s = g_{log_height+1}^{reverse_bits_len(index, log_height)}     (base field)
+  -- where `g_k = two_adic_gen(k)`. The index is threaded as its low-`log_height`
+  -- bit list (LSB first), matching `ch_sample_bits`; `reverse_bits_len` is then
+  -- just reversing that list.
+  -- ==========================================================================
+
+  -- Reverse a `G` (bit) list onto `acc`.
+  fn glist_rev(l: List‹G›, acc: List‹G›) -> List‹G› {
+    match load(l) {
+      ListNode.Nil => acc,
+      ListNode.Cons(b, rest) => glist_rev(rest, store(ListNode.Cons(b, acc))),
+    }
+  }
+
+  -- base^(Σ bits_i · 2^i), bits LSB-first (square-and-multiply over the bits).
+  fn exp_by_bits(base: G, bits: List‹G›) -> G {
+    match load(bits) {
+      ListNode.Nil => 1,
+      ListNode.Cons(b, rest) =>
+        let half = exp_by_bits(base * base, rest);
+        match b {
+          0 => half,
+          _ => base * half,
+        },
+    }
+  }
+
+  -- The arity-2 FRI fold. `index_bits` = the low `log_height` index bits, LSB
+  -- first (so `reverse_bits_len` = reversing the list).
+  fn fri_fold2(index_bits: List‹G›, log_height: G, beta: Ext, e0: Ext, e1: Ext) -> Ext {
+    let g = two_adic_gen(log_height + 1);
+    let s = exp_by_bits(g, glist_rev(index_bits, store(ListNode.Nil)));
+    let two_s = 2 * s;
+    let t1 = ext_div(ext_add(e0, e1), [2, 0]);
+    let t2 = ext_mul(beta, ext_div(ext_sub(e0, e1), [two_s, 0]));
+    ext_add(t1, t2)
+  }
+
+  -- Self-test: arity-2 fold at index 5, log_height 3 vs the `fri_fold_ref`
+  -- reference (computed by the real `TwoAdicFriFolding::fold_row`).
+  pub fn fri_fold_test() -> G {
+    let index_bits = store(ListNode.Cons(1, store(ListNode.Cons(0,
+                       store(ListNode.Cons(1, store(ListNode.Nil)))))));
+    let e0 = [0x1111111111111111, 0x2222222222222222];
+    let e1 = [0x3333333333333333, 0x4444444444444444];
+    let beta = [0x5555555555555555, 0x6666666666666666];
+    let folded = fri_fold2(index_bits, 3, beta, e0, e1);
+    assert_eq!(folded[0], 9349172584842537206);
+    assert_eq!(folded[1], 984486879173118962);
+    1
+  }
+
+  -- ==========================================================================
+  -- `open_input` reduced openings (`fri/verifier.rs::open_input` inner loop).
+  --
+  -- For a matrix opened at a point z with verifier domain point x, accumulate
+  -- over the matrix columns:
+  --   ro += alpha_pow · (p_z − p_x) · q ;  alpha_pow *= alpha,   q = 1/(z − x)
+  -- where p_x are the INPUT opened base values (from the query's batch opening,
+  -- authenticated by the input MMCS) and p_z the OOD opened ext values. The
+  -- query domain point is
+  --   x = GENERATOR(7) · two_adic_gen(log_height)^{reverse_bits_len(idx, log_height)}.
+  -- All extension arithmetic — no Merkle hashing here.
+  -- ==========================================================================
+
+  -- The base-field query domain point x. `index_bits` = low-`log_height` index
+  -- bits, LSB first (so reverse_bits_len = reversing the list).
+  fn ro_x(index_bits: List‹G›, log_height: G) -> G {
+    7 * exp_by_bits(two_adic_gen(log_height), glist_rev(index_bits, store(ListNode.Nil)))
+  }
+
+  -- Accumulate one matrix-point's column contributions. `q = 1/(z − x)`.
+  fn ro_fold(p_x: List‹G›, p_z: List‹Ext›, q: Ext, alpha: Ext, ro: Ext, ap: Ext)
+      -> (Ext, Ext) {
+    match load(p_x) {
+      ListNode.Nil => (ro, ap),
+      ListNode.Cons(px, pxr) =>
+        let &ListNode.Cons(pz, pzr) = p_z;
+        let term = ext_mul(ext_mul(ap, ext_sub(pz, [px, 0])), q);
+        ro_fold(pxr, pzr, q, alpha, ext_add(ro, term), ext_mul(ap, alpha)),
+    }
+  }
+
+  -- Self-test vs `ro_fold_ref`: x at index 5 / log_height 3, then accumulate
+  -- (p_z − p_x)/(z − x) over 3 columns with alpha powers.
+  pub fn ro_fold_test() -> G {
+    let index_bits = store(ListNode.Cons(1, store(ListNode.Cons(0,
+                       store(ListNode.Cons(1, store(ListNode.Nil)))))));
+    let x = ro_x(index_bits, 3);
+    assert_eq!(x, 117440512);
+    let z = [0x123456789a, 0xabcdef01];
+    let alpha = [0x1111111111111111, 0x2];
+    let p_x = store(ListNode.Cons(11, store(ListNode.Cons(22,
+                store(ListNode.Cons(33, store(ListNode.Nil)))))));
+    let p_z = store(ListNode.Cons([100, 1], store(ListNode.Cons([200, 2],
+                store(ListNode.Cons([300, 3], store(ListNode.Nil)))))));
+    let q = ext_inverse(ext_sub(z, [x, 0]));
+    let (ro, _ap) = ro_fold(p_x, p_z, q, alpha, [0, 0], [1, 0]);
+    assert_eq!(ro[0], 7130765474285082575);
+    assert_eq!(ro[1], 12254464995725315436);
+    1
+  }
+
+  -- ==========================================================================
   -- PCS verification entry (STILL A STUB).
   -- Accepts any FRI opening proof. A real implementation will check query
   -- openings, Merkle paths (via `mmcs_*` above) and the FRI folding against the
