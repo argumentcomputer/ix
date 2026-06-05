@@ -140,6 +140,12 @@ def main : IO UInt32 := do
   match vCompiled.bytecode.execute (vCompiled.getFuncIdx `pcs_challenger4_test).get! #[] default with
   | .error e => IO.eprintln s!"✗ pcs_challenger4_test FAILED — {e}"; return 1
   | .ok _ => IO.println "✓ pcs_challenger4_test: PCS challenger continuation (α_pcs/α_fri/β/index) matches reference"
+  match vCompiled.bytecode.execute (vCompiled.getFuncIdx `fri_fold_test).get! #[] default with
+  | .error e => IO.eprintln s!"✗ fri_fold_test FAILED — {e}"; return 1
+  | .ok _ => IO.println "✓ fri_fold_test: FRI arity-2 fold_row matches reference"
+  match vCompiled.bytecode.execute (vCompiled.getFuncIdx `ro_fold_test).get! #[] default with
+  | .error e => IO.eprintln s!"✗ ro_fold_test FAILED — {e}"; return 1
+  | .ok _ => IO.println "✓ ro_fold_test: open_input reduced-opening math matches reference"
   let vIdx ← match vCompiled.getFuncIdx `verify_multi_stark_proof with
     | some i => pure i
     | none => IO.eprintln "verify_multi_stark_proof entrypoint not found"; return 1
