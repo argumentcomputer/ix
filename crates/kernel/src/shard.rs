@@ -58,8 +58,8 @@ use std::collections::BinaryHeap;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::time::Instant;
 
-use crate::ix::address::Address;
-use crate::ix::profile::BlockProfile;
+use ix_common::address::Address;
+use crate::profile::BlockProfile;
 
 /// Recurse the two halves of a bisection in parallel (rayon) when the parent
 /// sub-problem is at least this large; below it the join overhead isn't worth
@@ -1308,7 +1308,7 @@ pub fn shard_esp(
   let mut manifest = ShardManifest::build(&profile, &shard_of, num_shards);
   for shard in &mut manifest.shards {
     shard.assumption_root =
-      crate::ix::ixon::merkle::merkle_root_canonical(&shard.foreign_blocks);
+      ixon::merkle::merkle_root_canonical(&shard.foreign_blocks);
   }
   if let Some(op) = out_path {
     std::fs::write(op, manifest.to_bytes())
@@ -1344,7 +1344,7 @@ pub fn shard_esp(
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::ix::profile::ProfileBuilder;
+  use crate::profile::ProfileBuilder;
 
   fn addr(byte: u8) -> Address {
     Address::from_slice(&[byte; 32]).unwrap()

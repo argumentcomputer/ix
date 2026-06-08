@@ -358,7 +358,7 @@ pub struct KEnv<M: KernelMode> {
   /// worker; `None` (the default) has zero overhead. Deliberately preserved
   /// across `clear`/`clear_releasing_memory` so recording survives scheduled
   /// block boundaries within a run.
-  pub profile_sink: Option<crate::ix::profile::ProfileSink>,
+  pub profile_sink: Option<crate::profile::ProfileSink>,
 }
 
 impl<M: KernelMode> Default for KEnv<M> {

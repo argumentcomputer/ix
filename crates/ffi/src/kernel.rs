@@ -1882,7 +1882,7 @@ pub extern "C" fn rs_shard_esp(
   let out = out_path.to_string();
   let out_opt = if out.is_empty() { None } else { Some(out.as_str()) };
   let balance = (balance_pct as f64) / 100.0;
-  match crate::ix::shard::shard_esp(
+  match ix_kernel::shard::shard_esp(
     &esp_path.to_string(),
     num_shards,
     balance,
