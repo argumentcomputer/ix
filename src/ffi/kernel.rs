@@ -1715,11 +1715,11 @@ fn profile_block_of(env: &IxonEnv, addr: &Address) -> Address {
 }
 
 /// Serialized byte length of a block constant (the ingress-cost / net weight).
+#[allow(clippy::cast_possible_truncation)] // clamped to u32::MAX above
 fn profile_block_size(env: &IxonEnv, block: &Address) -> u32 {
   env
     .get_const_bytes(block)
-    .map(|b| b.len().min(u32::MAX as usize) as u32)
-    .unwrap_or(0)
+    .map_or(0, |b| b.len().min(u32::MAX as usize) as u32)
 }
 
 /// Aggregate per-constant records into a block-level [`BlockProfile`]: map each
@@ -1753,7 +1753,8 @@ fn build_block_profile(env: &IxonEnv, merged: &ProfileSink) -> BlockProfile {
 
 /// Run the anon kernel over `work`, with per-worker profile recording, and
 /// return `(passed, failed, merged_sink)`.
-#[allow(clippy::needless_pass_by_value)]
+// `map_err_ignore`: the discarded `Arc`/`PoisonError` carry no useful context.
+#[allow(clippy::needless_pass_by_value, clippy::map_err_ignore)]
 fn run_anon_profile_parallel(
   env: Arc<IxonEnv>,
   work: Vec<AnonWorkItem>,
@@ -1926,6 +1927,7 @@ pub extern "C" fn rs_kernel_profile_anon(
 
 /// FFI: partition a `.ixesp` into `num_shards` shards and write a `.ixes`
 /// manifest. Prints a what-if report to stderr.
+#[allow(clippy::cast_precision_loss)] // balance_pct is a small percentage
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_shard_esp(
   esp_path: LeanString<LeanBorrowed<'_>>,

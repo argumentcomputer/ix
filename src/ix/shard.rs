@@ -37,6 +37,21 @@
 //! large environments (mathlib ≈ 631k blocks) partitioning in seconds. The
 //! partitioner is fully self-contained — no external partitioner dependency.
 
+// This module works throughout with `u32` block/vertex ids, `u64`/`u128` weights
+// (heartbeats, ingress bytes), and `f64` balance ratios. The narrowing/precision
+// casts between them are pervasive and intentional — envs are far below `u32`
+// limits and the balance arithmetic tolerates `f64` rounding — so the lossy-cast
+// lints are allowed module-wide rather than annotated at ~30 sites. The binary
+// manifest decoder maps decode failures to a single message (`map_err_ignore`),
+// and a few matching loops mutate the array they index (`needless_range_loop`).
+#![allow(
+  clippy::cast_possible_truncation,
+  clippy::cast_precision_loss,
+  clippy::cast_sign_loss,
+  clippy::map_err_ignore,
+  clippy::needless_range_loop
+)]
+
 use rustc_hash::FxHashSet;
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
@@ -131,7 +146,7 @@ impl Hypergraph {
       let mut pins = Vec::with_capacity(consumers.len() + 1);
       pins.push(p as u32); // home pin
       pins.extend_from_slice(consumers);
-      net_weight.push(profile.block(p as u32).serialized_size as u64);
+      net_weight.push(u64::from(profile.block(p as u32).serialized_size));
       net_pins.push(pins);
     }
     Hypergraph { vweight, net_weight, net_pins }
@@ -158,7 +173,7 @@ impl Hypergraph {
       }
       let lambda = seen.len() as u128;
       if lambda > 1 {
-        total += self.net_weight[i] as u128 * (lambda - 1);
+        total += u128::from(self.net_weight[i]) * (lambda - 1);
       }
     }
     total
@@ -179,9 +194,9 @@ impl Hypergraph {
     // block from skewing every split toward it once there are many shards. The
     // resulting heartbeat imbalance is accepted; the goal is `num_shards`
     // **non-empty** parallel shards with minimal cross-shard ingress.
-    let total_hb: u128 = self.vweight.iter().map(|&w| w as u128).sum();
+    let total_hb: u128 = self.vweight.iter().map(|&w| u128::from(w)).sum();
     let cap =
-      (total_hb / num_shards as u128).max(1).min(u64::MAX as u128) as u64;
+      (total_hb / num_shards as u128).max(1).min(u128::from(u64::MAX)) as u64;
     let sub = SubHyper::full(self, cap);
     // Atomic assignment buffer: independent subtrees own disjoint block sets, so
     // they can be partitioned on separate threads without their writes aliasing.
@@ -257,7 +272,7 @@ impl SubHyper {
   ) -> SubHyper {
     let n = vw.len();
     let mut bw: Vec<u64> = vw.iter().map(|&w| w.min(cap)).collect();
-    let total: u128 = bw.iter().map(|&w| w as u128).sum();
+    let total: u128 = bw.iter().map(|&w| u128::from(w)).sum();
     if total == 0 {
       bw = vec![1; n];
     }
@@ -354,8 +369,8 @@ fn rec_bisect(
   }
   // Allocate leaves ~proportional to heartbeat mass, clamped to [1, side size].
   // `lo`/`hi` are feasible (lo ≤ hi) because nl + nr ≥ k with nl, nr ≥ 1.
-  let wl: u128 = left.vw.iter().map(|&w| w as u128).sum();
-  let wr: u128 = right.vw.iter().map(|&w| w as u128).sum();
+  let wl: u128 = left.vw.iter().map(|&w| u128::from(w)).sum();
+  let wr: u128 = right.vw.iter().map(|&w| u128::from(w)).sum();
   let wsum = (wl + wr).max(1);
   let ideal = ((k as u128 * wl + wsum / 2) / wsum) as usize;
   let lo = 1.max(k.saturating_sub(nr));
@@ -415,7 +430,7 @@ impl PartitionProgress {
   fn leaf(&self) {
     let done = self.finalized.fetch_add(1, Ordering::Relaxed) + 1;
     let step = (self.total / 16).max(1);
-    if self.enabled && (done % step == 0 || done == self.total) {
+    if self.enabled && (done.is_multiple_of(step) || done == self.total) {
       eprintln!(
         "[shard] {}/{} shards finalized  ({:.1?} elapsed)",
         done,
@@ -459,8 +474,7 @@ fn bisect(sub: &SubHyper, epsilon: f64) -> Vec<u8> {
   let wmin = ((0.5 - epsilon) * total_bw as f64).floor() as u64;
 
   let levels = coarsen(sub);
-  let coarsest =
-    levels.last().map(|l| l.level()).unwrap_or_else(|| sub.level());
+  let coarsest = levels.last().map_or_else(|| sub.level(), |l| l.level());
   let side = initial_partition(coarsest, wmin, wmax);
   uncoarsen_refine(sub, &levels, side, wmin, wmax)
 }
@@ -586,7 +600,7 @@ impl NetState {
         cnt[i][side[v as usize] as usize] += 1;
       }
       if cnt[i][0] > 0 && cnt[i][1] > 0 {
-        cut += *w as u128;
+        cut += u128::from(*w);
       }
     }
     (NetState { cnt }, cut)
@@ -608,9 +622,9 @@ fn fm_gain(lv: Level<'_>, ns: &NetState, side: &[u8], v: usize) -> i128 {
     let ca = ns.cnt[ni as usize][a];
     let cb = ns.cnt[ni as usize][b];
     if cb >= 1 && ca == 1 {
-      g += *w as i128;
+      g += i128::from(*w);
     } else if cb == 0 && ca >= 2 {
-      g -= *w as i128;
+      g -= i128::from(*w);
     }
   }
   g
@@ -627,7 +641,13 @@ fn fm_gain(lv: Level<'_>, ns: &NetState, side: &[u8], v: usize) -> i128 {
 /// applied move are added as that move's neighbors. This bounds a pass at
 /// roughly `O(boundary + moves·degree)` rather than `O(V·degree)`, which is what
 /// makes full refinement affordable even on the finest (≈`V`-sized) level.
-fn fm_refine(lv: Level<'_>, side: &mut [u8], wmin: u64, wmax: u64, max_passes: u32) {
+fn fm_refine(
+  lv: Level<'_>,
+  side: &mut [u8],
+  wmin: u64,
+  wmax: u64,
+  max_passes: u32,
+) {
   let n = lv.num_vertices();
   if n <= 1 {
     return;
@@ -665,8 +685,8 @@ fn fm_refine(lv: Level<'_>, side: &mut [u8], wmin: u64, wmax: u64, max_passes: u
     }
     heap.clear();
     moves.clear();
-    queued.iter_mut().for_each(|q| *q = false);
-    locked.iter_mut().for_each(|l| *l = false);
+    queued.fill(false);
+    locked.fill(false);
     // Seed the cut frontier only (interior vertices have non-positive gain).
     for (i, (_, pins)) in lv.nets.iter().enumerate() {
       if pins.len() > FM_NET_CAP {
@@ -714,7 +734,7 @@ fn fm_refine(lv: Level<'_>, side: &mut [u8], wmin: u64, wmax: u64, max_passes: u
         if pins.len() > FM_NET_CAP {
           continue; // hub net: not tracked
         }
-        let wi = *w as i128;
+        let wi = i128::from(*w);
         let c0 = ns.cnt[nis][0];
         let c1 = ns.cnt[nis][1];
         let (d0, d1) = if a == 0 { (c0 - 1, c1 + 1) } else { (c0 + 1, c1 - 1) };
@@ -723,9 +743,9 @@ fn fm_refine(lv: Level<'_>, side: &mut [u8], wmin: u64, wmax: u64, max_passes: u
         let before_cut = c0 > 0 && c1 > 0;
         let after_cut = d0 > 0 && d1 > 0;
         if before_cut && !after_cut {
-          cut -= *w as u128;
+          cut -= u128::from(*w);
         } else if !before_cut && after_cut {
-          cut += *w as u128;
+          cut += u128::from(*w);
         }
         for &uu in pins {
           let u = uu as usize;
@@ -850,7 +870,7 @@ fn match_vertices(lv: Level<'_>, max_cluster: u64) -> (Vec<u32>, usize) {
     for &ni in &lv.vnets[v] {
       let (w, pins) = &lv.nets[ni as usize];
       let deg = pins.len();
-      if deg < 2 || deg > MATCH_NET_CAP {
+      if !(2..=MATCH_NET_CAP).contains(&deg) {
         continue; // singleton or hub: no clustering signal worth scanning
       }
       let contrib = w / (deg as u64 - 1);
@@ -922,8 +942,7 @@ fn contract(lv: Level<'_>, super_id: &[u32], next: usize) -> CoarseLevel {
   }
   let mut nets: Vec<(u64, Vec<u32>)> = Vec::with_capacity(lv.nets.len());
   for (w, pins) in lv.nets {
-    let mut cp: Vec<u32> =
-      pins.iter().map(|&p| super_id[p as usize]).collect();
+    let mut cp: Vec<u32> = pins.iter().map(|&p| super_id[p as usize]).collect();
     cp.sort_unstable();
     cp.dedup();
     if cp.len() >= 2 {
@@ -981,7 +1000,8 @@ fn initial_partition(lv: Level<'_>, wmin: u64, wmax: u64) -> Vec<u8> {
     if s0 == 0 || s0 == n {
       continue; // degenerate (one side empty) — never select
     }
-    let side0_bw: u64 = (0..n).filter(|&v| side[v] == 0).map(|v| lv.bw[v]).sum();
+    let side0_bw: u64 =
+      (0..n).filter(|&v| side[v] == 0).map(|v| lv.bw[v]).sum();
     let unbalanced = u8::from(side0_bw < wmin || side0_bw > wmax);
     let (_, cut) = NetState::new(lv, &side);
     let key = (unbalanced, cut);
@@ -991,9 +1011,8 @@ fn initial_partition(lv: Level<'_>, wmin: u64, wmax: u64) -> Vec<u8> {
   }
   // Fallback (no non-degenerate candidate — pathological): split by id so both
   // sides are non-empty and recursion can still realize every shard.
-  best.map(|(_, s)| s).unwrap_or_else(|| {
-    (0..n).map(|v| u8::from(v >= n / 2)).collect()
-  })
+  best
+    .map_or_else(|| (0..n).map(|v| u8::from(v >= n / 2)).collect(), |(_, s)| s)
 }
 
 /// Project the coarse partition down to the finest level, boundary-refining at
@@ -1097,13 +1116,13 @@ impl ShardManifest {
         members[s].iter().map(|&b| profile.block(b).heartbeats).sum();
       let own_size: u64 = members[s]
         .iter()
-        .map(|&b| profile.block(b).serialized_size as u64)
+        .map(|&b| u64::from(profile.block(b).serialized_size))
         .sum();
       let mut fb: Vec<u32> = foreign[s].iter().copied().collect();
       fb.sort_unstable();
       let cross_ingress: u64 =
-        fb.iter().map(|&p| profile.block(p).serialized_size as u64).sum();
-      total_cross += cross_ingress as u128;
+        fb.iter().map(|&p| u64::from(profile.block(p).serialized_size)).sum();
+      total_cross += u128::from(cross_ingress);
       let foreign_blocks: Vec<Address> =
         fb.iter().map(|&p| profile.block(p).addr.clone()).collect();
       shards.push(ShardInfo {
@@ -1134,7 +1153,7 @@ impl ShardManifest {
       .collect();
     let max = hbs.iter().copied().max().unwrap_or(0);
     let min = nonempty.iter().copied().min().unwrap_or(0);
-    let total: u128 = hbs.iter().map(|&h| h as u128).sum();
+    let total: u128 = hbs.iter().map(|&h| u128::from(h)).sum();
     let mean = if self.shards.is_empty() {
       0
     } else {

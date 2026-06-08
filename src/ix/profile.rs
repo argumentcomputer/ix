@@ -21,6 +21,10 @@
 //! `.ixesp` format is an explicit little-endian binary so it does not depend
 //! on the optional `serde`/`bincode` feature.
 
+// Block ids and counts are `u32` (envs are far below the limit); the binary
+// decoder maps decode failures to a single message. Both are intentional here.
+#![allow(clippy::cast_possible_truncation, clippy::map_err_ignore)]
+
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::ix::address::Address;
@@ -114,7 +118,7 @@ impl BlockProfile {
 
   /// Total heartbeats across all blocks.
   pub fn total_heartbeats(&self) -> u128 {
-    self.blocks.iter().map(|b| b.heartbeats as u128).sum()
+    self.blocks.iter().map(|b| u128::from(b.heartbeats)).sum()
   }
 
   /// Serialize to the `.ixesp` binary format.
