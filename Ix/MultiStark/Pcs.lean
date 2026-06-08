@@ -269,14 +269,15 @@ def pcs := ⟦
   }
 
   -- base^(Σ bits_i · 2^i), bits LSB-first (square-and-multiply over the bits).
-  fn exp_by_bits(base: G, bits: List‹G›) -> G {
+  -- `base` is a non-native Goldilocks element; `bits` is a native bit list.
+  fn exp_by_bits(base: [U8; 8], bits: List‹G›) -> [U8; 8] {
     match load(bits) {
-      ListNode.Nil => 1,
+      ListNode.Nil => gl_one(),
       ListNode.Cons(b, rest) =>
-        let half = exp_by_bits(base * base, rest);
+        let half = exp_by_bits(gl_sq(base), rest);
         match b {
           0 => half,
-          _ => base * half,
+          _ => gl_mul(base, half),
         },
     }
   }
@@ -286,10 +287,10 @@ def pcs := ⟦
   fn fri_fold2(index_bits: List‹G›, log_height: G, beta: Ext, e0: Ext, e1: Ext) -> Ext {
     let g = two_adic_gen(log_height + 1);
     let s = exp_by_bits(g, glist_rev(index_bits, store(ListNode.Nil)));
-    let two_s = 2 * s;
-    let t1 = ext_div(ext_add(e0, e1), [2, 0]);
-    let t2 = ext_mul(beta, ext_div(ext_sub(e0, e1), [two_s, 0]));
-    ext_add(t1, t2)
+    let two_s = gl_add(s, s);
+    let t1 = eg_div(eg_add(e0, e1), [gl_two(), gl_zero()]);
+    let t2 = eg_mul(beta, eg_div(eg_sub(e0, e1), [two_s, gl_zero()]));
+    eg_add(t1, t2)
   }
 
   -- Self-test: arity-2 fold at index 5, log_height 3 vs the `fri_fold_ref`
@@ -297,12 +298,15 @@ def pcs := ⟦
   pub fn fri_fold_test() -> G {
     let index_bits = store(ListNode.Cons(1, store(ListNode.Cons(0,
                        store(ListNode.Cons(1, store(ListNode.Nil)))))));
-    let e0 = [0x1111111111111111, 0x2222222222222222];
-    let e1 = [0x3333333333333333, 0x4444444444444444];
-    let beta = [0x5555555555555555, 0x6666666666666666];
+    let e0 = [[17u8, 17u8, 17u8, 17u8, 17u8, 17u8, 17u8, 17u8],
+              [34u8, 34u8, 34u8, 34u8, 34u8, 34u8, 34u8, 34u8]];
+    let e1 = [[51u8, 51u8, 51u8, 51u8, 51u8, 51u8, 51u8, 51u8],
+              [68u8, 68u8, 68u8, 68u8, 68u8, 68u8, 68u8, 68u8]];
+    let beta = [[85u8, 85u8, 85u8, 85u8, 85u8, 85u8, 85u8, 85u8],
+                [102u8, 102u8, 102u8, 102u8, 102u8, 102u8, 102u8, 102u8]];
     let folded = fri_fold2(index_bits, 3, beta, e0, e1);
-    assert_eq!(folded[0], 9349172584842537206);
-    assert_eq!(folded[1], 984486879173118962);
+    assert_eq!(limb_to_field(folded[0]), 9349172584842537206);
+    assert_eq!(limb_to_field(folded[1]), 984486879173118962);
     1
   }
 
@@ -321,19 +325,19 @@ def pcs := ⟦
 
   -- The base-field query domain point x. `index_bits` = low-`log_height` index
   -- bits, LSB first (so reverse_bits_len = reversing the list).
-  fn ro_x(index_bits: List‹G›, log_height: G) -> G {
-    7 * exp_by_bits(two_adic_gen(log_height), glist_rev(index_bits, store(ListNode.Nil)))
+  fn ro_x(index_bits: List‹G›, log_height: G) -> [U8; 8] {
+    gl_mul(gl_seven(), exp_by_bits(two_adic_gen(log_height), glist_rev(index_bits, store(ListNode.Nil))))
   }
 
   -- Accumulate one matrix-point's column contributions. `q = 1/(z − x)`.
-  fn ro_fold(p_x: List‹G›, p_z: List‹Ext›, q: Ext, alpha: Ext, ro: Ext, ap: Ext)
+  fn ro_fold(p_x: List‹[U8; 8]›, p_z: List‹Ext›, q: Ext, alpha: Ext, ro: Ext, ap: Ext)
       -> (Ext, Ext) {
     match load(p_x) {
       ListNode.Nil => (ro, ap),
       ListNode.Cons(px, pxr) =>
         let &ListNode.Cons(pz, pzr) = p_z;
-        let term = ext_mul(ext_mul(ap, ext_sub(pz, [px, 0])), q);
-        ro_fold(pxr, pzr, q, alpha, ext_add(ro, term), ext_mul(ap, alpha)),
+        let term = eg_mul(eg_mul(ap, eg_sub(pz, [px, gl_zero()])), q);
+        ro_fold(pxr, pzr, q, alpha, eg_add(ro, term), eg_mul(ap, alpha)),
     }
   }
 
@@ -343,17 +347,25 @@ def pcs := ⟦
     let index_bits = store(ListNode.Cons(1, store(ListNode.Cons(0,
                        store(ListNode.Cons(1, store(ListNode.Nil)))))));
     let x = ro_x(index_bits, 3);
-    assert_eq!(x, 117440512);
-    let z = [0x123456789a, 0xabcdef01];
-    let alpha = [0x1111111111111111, 0x2];
-    let p_x = store(ListNode.Cons(11, store(ListNode.Cons(22,
-                store(ListNode.Cons(33, store(ListNode.Nil)))))));
-    let p_z = store(ListNode.Cons([100, 1], store(ListNode.Cons([200, 2],
-                store(ListNode.Cons([300, 3], store(ListNode.Nil)))))));
-    let q = ext_inverse(ext_sub(z, [x, 0]));
-    let (ro, _ap) = ro_fold(p_x, p_z, q, alpha, [0, 0], [1, 0]);
-    assert_eq!(ro[0], 7130765474285082575);
-    assert_eq!(ro[1], 12254464995725315436);
+    assert_eq!(limb_to_field(x), 117440512);
+    let z = [[154u8, 120u8, 86u8, 52u8, 18u8, 0u8, 0u8, 0u8],
+             [1u8, 239u8, 205u8, 171u8, 0u8, 0u8, 0u8, 0u8]];
+    let alpha = [[17u8, 17u8, 17u8, 17u8, 17u8, 17u8, 17u8, 17u8],
+                 [2u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]];
+    let px0 = [11u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8];
+    let px1 = [22u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8];
+    let px2 = [33u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8];
+    let p_x = store(ListNode.Cons(px0, store(ListNode.Cons(px1,
+                store(ListNode.Cons(px2, store(ListNode.Nil)))))));
+    let pz0 = [[100u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], [1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]];
+    let pz1 = [[200u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], [2u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]];
+    let pz2 = [[44u8, 1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], [3u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]];
+    let p_z = store(ListNode.Cons(pz0, store(ListNode.Cons(pz1,
+                store(ListNode.Cons(pz2, store(ListNode.Nil)))))));
+    let q = eg_inverse(eg_sub(z, [x, gl_zero()]));
+    let (ro, _ap) = ro_fold(p_x, p_z, q, alpha, [gl_zero(), gl_zero()], [gl_one(), gl_zero()]);
+    assert_eq!(limb_to_field(ro[0]), 7130765474285082575);
+    assert_eq!(limb_to_field(ro[1]), 12254464995725315436);
     1
   }
 

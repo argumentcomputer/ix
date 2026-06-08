@@ -64,7 +64,7 @@ def verifier := ⟦
   -- An extension element `[c0, c1]` (`= c0 + c1·X`) is zero iff both Goldilocks
   -- coefficients are zero. (`read_ext` already reduced the limbs mod p.)
   fn ext_is_zero(e: Ext) -> G {
-    eq_zero(e[0]) * eq_zero(e[1])
+    gl_is_zero(e[0]) * gl_is_zero(e[1])
   }
 
   -- 1 iff the LAST element of the accumulator list is the zero extension
@@ -244,7 +244,7 @@ def verifier := ⟦
   fn pcs_sample_ext(input: ByteStream, output: ByteStream)
       -> (Ext, ByteStream, ByteStream) {
     let (c0, c1, i1, o1) = ch_sample_ext(input, output);
-    ([limb_to_field(c0), limb_to_field(c1)], i1, o1)
+    ([gl_reduce(c0), gl_reduce(c1)], i1, o1)
   }
 
   -- Self-test: replay the synthetic PCS challenger sequence from
@@ -259,16 +259,16 @@ def verifier := ⟦
     -- α_pcs (output empty ⇒ flush), then α_fri (CONSECUTIVE ⇒ thread output).
     let (apcs, input, o1) = pcs_sample_ext(input, store(ListNode.Nil));
     let (afri, input, o2) = pcs_sample_ext(input, o1);
-    assert_eq!(apcs[0], 2882912772410685996);
-    assert_eq!(apcs[1], 910933442133595775);
-    assert_eq!(afri[0], 14440140149289897216);
-    assert_eq!(afri[1], 8092267645441512944);
+    assert_eq!(limb_to_field(apcs[0]), 2882912772410685996);
+    assert_eq!(limb_to_field(apcs[1]), 910933442133595775);
+    assert_eq!(limb_to_field(afri[0]), 14440140149289897216);
+    assert_eq!(limb_to_field(afri[1]), 8092267645441512944);
     -- observe commit (clears output), sample β.
     let v2 = [239u8, 190u8, 173u8, 222u8, 0u8, 0u8, 0u8, 0u8]; -- 0x00000000deadbeef
     let (input, _oc) = ch_observe_val(input, v2);
     let (beta, input, _ob) = pcs_sample_ext(input, store(ListNode.Nil));
-    assert_eq!(beta[0], 10456048119516576995);
-    assert_eq!(beta[1], 3173538015651228593);
+    assert_eq!(limb_to_field(beta[0]), 10456048119516576995);
+    assert_eq!(limb_to_field(beta[1]), 3173538015651228593);
     -- observe final_poly coeff + log_arity (each a Val), then sample the index.
     let v3 = [4u8, 3u8, 2u8, 1u8, 13u8, 12u8, 11u8, 10u8]; -- 0x0a0b0c0d01020304
     let v4 = [2u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8];     -- 0x0000000000000002
@@ -342,10 +342,10 @@ def verifier := ⟦
     let input = snoc_cap(input, q);
     -- sample out-of-domain point ζ; keep the resulting `input` for the PCS phase
     let (z0, z1, zinput, _oz) = ch_sample_ext(input, store(ListNode.Nil));
-    ([limb_to_field(l0), limb_to_field(l1)],
-     [limb_to_field(f0), limb_to_field(f1)],
-     [limb_to_field(a0), limb_to_field(a1)],
-     [limb_to_field(z0), limb_to_field(z1)],
+    ([gl_reduce(l0), gl_reduce(l1)],
+     [gl_reduce(f0), gl_reduce(f1)],
+     [gl_reduce(a0), gl_reduce(a1)],
+     [gl_reduce(z0), gl_reduce(z1)],
      zinput)
   }
 
@@ -359,54 +359,54 @@ def verifier := ⟦
   fn ext_exp_pow2(e: Ext, k: G) -> Ext {
     match k {
       0 => e,
-      _ => ext_exp_pow2(ext_mul(e, e), k - 1),
+      _ => ext_exp_pow2(eg_mul(e, e), k - 1),
     }
   }
 
   -- `two_adic_generator(bits)` — a primitive 2^bits root of unity in Goldilocks
   -- (`Plonky3/goldilocks/src/goldilocks.rs::TWO_ADIC_GENERATORS`).
-  fn two_adic_gen(bits: G) -> G {
+  fn two_adic_gen(bits: G) -> [U8; 8] {
     match bits {
-      0  => 0x0000000000000001,
-      1  => 0xffffffff00000000,
-      2  => 0x0001000000000000,
-      3  => 0xfffffffeff000001,
-      4  => 0xefffffff00000001,
-      5  => 0x00003fffffffc000,
-      6  => 0x0000008000000000,
-      7  => 0xf80007ff08000001,
-      8  => 0xbf79143ce60ca966,
-      9  => 0x1905d02a5c411f4e,
-      10 => 0x9d8f2ad78bfed972,
-      11 => 0x0653b4801da1c8cf,
-      12 => 0xf2c35199959dfcb6,
-      13 => 0x1544ef2335d17997,
-      14 => 0xe0ee099310bba1e2,
-      15 => 0xf6b2cffe2306baac,
-      16 => 0x54df9630bf79450e,
-      17 => 0xabd0a6e8aa3d8a0e,
-      18 => 0x81281a7b05f9beac,
-      19 => 0xfbd41c6b8caa3302,
-      20 => 0x30ba2ecd5e93e76d,
-      21 => 0xf502aef532322654,
-      22 => 0x4b2a18ade67246b5,
-      23 => 0xea9d5a1336fbc98b,
-      24 => 0x86cdcc31c307e171,
-      25 => 0x4bbaf5976ecfefd8,
-      26 => 0xed41d05b78d6e286,
-      27 => 0x10d78dd8915a171d,
-      28 => 0x59049500004a4485,
-      29 => 0xdfa8c93ba46d2666,
-      30 => 0x7e9bd009b86a0845,
-      31 => 0x400a7f755588e659,
-      _  => 0x185629dcda58878c,
+      0  => [1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8],
+      1  => [0u8, 0u8, 0u8, 0u8, 255u8, 255u8, 255u8, 255u8],
+      2  => [0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 1u8, 0u8],
+      3  => [1u8, 0u8, 0u8, 255u8, 254u8, 255u8, 255u8, 255u8],
+      4  => [1u8, 0u8, 0u8, 0u8, 255u8, 255u8, 255u8, 239u8],
+      5  => [0u8, 192u8, 255u8, 255u8, 255u8, 63u8, 0u8, 0u8],
+      6  => [0u8, 0u8, 0u8, 0u8, 128u8, 0u8, 0u8, 0u8],
+      7  => [1u8, 0u8, 0u8, 8u8, 255u8, 7u8, 0u8, 248u8],
+      8  => [102u8, 169u8, 12u8, 230u8, 60u8, 20u8, 121u8, 191u8],
+      9  => [78u8, 31u8, 65u8, 92u8, 42u8, 208u8, 5u8, 25u8],
+      10 => [114u8, 217u8, 254u8, 139u8, 215u8, 42u8, 143u8, 157u8],
+      11 => [207u8, 200u8, 161u8, 29u8, 128u8, 180u8, 83u8, 6u8],
+      12 => [182u8, 252u8, 157u8, 149u8, 153u8, 81u8, 195u8, 242u8],
+      13 => [151u8, 121u8, 209u8, 53u8, 35u8, 239u8, 68u8, 21u8],
+      14 => [226u8, 161u8, 187u8, 16u8, 147u8, 9u8, 238u8, 224u8],
+      15 => [172u8, 186u8, 6u8, 35u8, 254u8, 207u8, 178u8, 246u8],
+      16 => [14u8, 69u8, 121u8, 191u8, 48u8, 150u8, 223u8, 84u8],
+      17 => [14u8, 138u8, 61u8, 170u8, 232u8, 166u8, 208u8, 171u8],
+      18 => [172u8, 190u8, 249u8, 5u8, 123u8, 26u8, 40u8, 129u8],
+      19 => [2u8, 51u8, 170u8, 140u8, 107u8, 28u8, 212u8, 251u8],
+      20 => [109u8, 231u8, 147u8, 94u8, 205u8, 46u8, 186u8, 48u8],
+      21 => [84u8, 38u8, 50u8, 50u8, 245u8, 174u8, 2u8, 245u8],
+      22 => [181u8, 70u8, 114u8, 230u8, 173u8, 24u8, 42u8, 75u8],
+      23 => [139u8, 201u8, 251u8, 54u8, 19u8, 90u8, 157u8, 234u8],
+      24 => [113u8, 225u8, 7u8, 195u8, 49u8, 204u8, 205u8, 134u8],
+      25 => [216u8, 239u8, 207u8, 110u8, 151u8, 245u8, 186u8, 75u8],
+      26 => [134u8, 226u8, 214u8, 120u8, 91u8, 208u8, 65u8, 237u8],
+      27 => [29u8, 23u8, 90u8, 145u8, 216u8, 141u8, 215u8, 16u8],
+      28 => [133u8, 68u8, 74u8, 0u8, 0u8, 149u8, 4u8, 89u8],
+      29 => [102u8, 38u8, 109u8, 164u8, 59u8, 201u8, 168u8, 223u8],
+      30 => [69u8, 8u8, 106u8, 184u8, 9u8, 208u8, 155u8, 126u8],
+      31 => [89u8, 230u8, 136u8, 85u8, 117u8, 127u8, 10u8, 64u8],
+      _  => [140u8, 135u8, 88u8, 218u8, 220u8, 41u8, 86u8, 24u8],
     }
   }
 
   -- Vanishing polynomial of the trace domain (shift = 1, size 2^L) at point ζ:
   -- `Z_H(ζ) = ζ^(2^L) - 1`.
   fn trace_vanishing(zeta: Ext, l: G) -> Ext {
-    ext_sub(ext_exp_pow2(zeta, l), [1, 0])
+    eg_sub(ext_exp_pow2(zeta, l), [gl_one(), gl_zero()])
   }
 
   -- Lagrange selectors at ζ for the trace domain (shift = 1), mirroring
@@ -418,11 +418,11 @@ def verifier := ⟦
   -- where g = two_adic_gen(L) is the subgroup generator.
   fn trace_selectors(zeta: Ext, l: G) -> (Ext, Ext, Ext, Ext) {
     let zh = trace_vanishing(zeta, l);
-    let ginv = g_inverse(two_adic_gen(l));
-    let is_first = ext_div(zh, ext_sub(zeta, [1, 0]));
-    let is_last = ext_div(zh, ext_sub(zeta, [ginv, 0]));
-    let is_trans = ext_sub(zeta, [ginv, 0]);
-    let inv_van = ext_inverse(zh);
+    let ginv = gl_inverse(two_adic_gen(l));
+    let is_first = eg_div(zh, eg_sub(zeta, [gl_one(), gl_zero()]));
+    let is_last = eg_div(zh, eg_sub(zeta, [ginv, gl_zero()]));
+    let is_trans = eg_sub(zeta, [ginv, gl_zero()]);
+    let inv_van = eg_inverse(zh);
     (is_first, is_last, is_trans, inv_van)
   }
 
@@ -473,13 +473,13 @@ def verifier := ⟦
   -- One Horner fold step of the constraint folder: `acc := acc·α + x`
   -- (`VerifierConstraintFolder::assert_zero` / `assert_zero_ext`).
   fn ood_fold(acc: Ext, alpha: Ext, x: Ext) -> Ext {
-    ext_add(ext_mul(acc, alpha), x)
+    eg_add(eg_mul(acc, alpha), x)
   }
 
   -- Reconstruct an extension element from its two opened base coordinates,
   -- `from_ext_basis([c0, c1]) = c0 + c1·X` (the ExtVal basis is `[1, X]`).
   fn from_ext_basis(c0: Ext, c1: Ext) -> Ext {
-    ext_add(c0, ext_mul(c1, [0, 1]))
+    eg_add(c0, eg_mul(c1, [gl_zero(), gl_one()]))
   }
 
   -- A stage-2 / quotient opened row arrives as `stage_2_width·2` extension
@@ -504,19 +504,19 @@ def verifier := ⟦
         match entry {
           SysEntry.Main(_o) => list_lookup(main, idx),
           SysEntry.Preprocessed(_o) => list_lookup(prep, idx),
-          SysEntry.Stage2(_o) => [0, 0],
-          SysEntry.Public => [0, 0],
-          SysEntry.Stage2Public => [0, 0],
-          SysEntry.Challenge => [0, 0],
+          SysEntry.Stage2(_o) => [gl_zero(), gl_zero()],
+          SysEntry.Public => [gl_zero(), gl_zero()],
+          SysEntry.Stage2Public => [gl_zero(), gl_zero()],
+          SysEntry.Challenge => [gl_zero(), gl_zero()],
         },
-      SymExpr.IsFirstRow => [0, 0],
-      SymExpr.IsLastRow => [0, 0],
-      SymExpr.IsTransition => [0, 0],
-      SymExpr.Const(c) => [c, 0],
-      SymExpr.Add(x, y, _d) => ext_add(eval_sym(load(x), main, prep), eval_sym(load(y), main, prep)),
-      SymExpr.Sub(x, y, _d) => ext_sub(eval_sym(load(x), main, prep), eval_sym(load(y), main, prep)),
-      SymExpr.Neg(x, _d) => ext_neg(eval_sym(load(x), main, prep)),
-      SymExpr.Mul(x, y, _d) => ext_mul(eval_sym(load(x), main, prep), eval_sym(load(y), main, prep)),
+      SymExpr.IsFirstRow => [gl_zero(), gl_zero()],
+      SymExpr.IsLastRow => [gl_zero(), gl_zero()],
+      SymExpr.IsTransition => [gl_zero(), gl_zero()],
+      SymExpr.Const(c) => [c, gl_zero()],
+      SymExpr.Add(x, y, _d) => eg_add(eval_sym(load(x), main, prep), eval_sym(load(y), main, prep)),
+      SymExpr.Sub(x, y, _d) => eg_sub(eval_sym(load(x), main, prep), eval_sym(load(y), main, prep)),
+      SymExpr.Neg(x, _d) => eg_neg(eval_sym(load(x), main, prep)),
+      SymExpr.Mul(x, y, _d) => eg_mul(eval_sym(load(x), main, prep), eval_sym(load(y), main, prep)),
     }
   }
 
@@ -524,9 +524,9 @@ def verifier := ⟦
   -- `lookup.rs::fingerprint`).
   fn fingerprint_ext(r: Ext, args: List‹SymExpr›, main: List‹Ext›, prep: List‹Ext›) -> Ext {
     match load(args) {
-      ListNode.Nil => [0, 0],
+      ListNode.Nil => [gl_zero(), gl_zero()],
       ListNode.Cons(a, rest) =>
-        ext_add(eval_sym(a, main, prep), ext_mul(r, fingerprint_ext(r, rest, main, prep))),
+        eg_add(eval_sym(a, main, prep), eg_mul(r, fingerprint_ext(r, rest, main, prep))),
     }
   }
 
@@ -547,7 +547,7 @@ def verifier := ⟦
       0 => acc,
       _ =>
         let x = list_lookup(main, idx);
-        let bc = ext_mul(x, ext_sub(x, [1, 0]));
+        let bc = eg_mul(x, eg_sub(x, [gl_one(), gl_zero()]));
         fold_sel_bools(ood_fold(acc, alpha, bc), alpha, main, idx + 1, count - 1),
     }
   }
@@ -568,10 +568,10 @@ def verifier := ⟦
         let minv = list_lookup(s2row, k + 1);
         let mult = eval_sym(mult_e, main, prep);
         let fp = fingerprint_ext(fch, args, main, prep);
-        let message = ext_add(lch, fp);
-        let c = ext_sub(ext_mul(message, minv), [1, 0]);
+        let message = eg_add(lch, fp);
+        let c = eg_sub(eg_mul(message, minv), [gl_one(), gl_zero()]);
         let acc = ood_fold(acc, alpha, c);
-        let acc_expr = ext_add(acc_expr, ext_mul(mult, minv));
+        let acc_expr = eg_add(acc_expr, eg_mul(mult, minv));
         fold_lookups(acc, alpha, rest, k + 1, main, prep, s2row, lch, fch, acc_expr),
     }
   }
@@ -590,7 +590,7 @@ def verifier := ⟦
     match air {
       SysAir.Function(c) =>
         let SysConstraints.Mk(zeros, ss, se, _w) = c;
-        let acc = fold_zeros([0, 0], alpha, zeros, main);
+        let acc = fold_zeros([gl_zero(), gl_zero()], alpha, zeros, main);
         let acc = fold_sel_bools(acc, alpha, main, ss, se - ss);
         ood_comp_tail(acc, lookups, main, prep, s2row, s2next, isf, isl, ist, lch, fch, accp, naccp, alpha),
       SysAir.Memory(m) =>
@@ -601,18 +601,18 @@ def verifier := ⟦
         let is_real_next = list_lookup(main_next, 1);
         let ptr_next = list_lookup(main_next, 2);
         -- assert_bool(is_real)
-        let acc = ood_fold([0, 0], alpha, ext_mul(is_real, ext_sub(is_real, [1, 0])));
+        let acc = ood_fold([gl_zero(), gl_zero()], alpha, eg_mul(is_real, eg_sub(is_real, [gl_one(), gl_zero()])));
         -- is_real_transition = is_real_next · is_transition
-        let irt = ext_mul(is_real_next, ist);
+        let irt = eg_mul(is_real_next, ist);
         -- when(irt).assert_one(is_real) = irt·(is_real - 1)
-        let acc = ood_fold(acc, alpha, ext_mul(irt, ext_sub(is_real, [1, 0])));
+        let acc = ood_fold(acc, alpha, eg_mul(irt, eg_sub(is_real, [gl_one(), gl_zero()])));
         -- when(irt).assert_eq(ptr+1, ptr_next) = irt·(ptr + 1 - ptr_next)
-        let acc = ood_fold(acc, alpha, ext_mul(irt, ext_sub(ext_add(ptr, [1, 0]), ptr_next)));
+        let acc = ood_fold(acc, alpha, eg_mul(irt, eg_sub(eg_add(ptr, [gl_one(), gl_zero()]), ptr_next)));
         ood_comp_tail(acc, lookups, main, prep, s2row, s2next, isf, isl, ist, lch, fch, accp, naccp, alpha),
       SysAir.Bytes1 =>
-        ood_comp_tail([0, 0], lookups, main, prep, s2row, s2next, isf, isl, ist, lch, fch, accp, naccp, alpha),
+        ood_comp_tail([gl_zero(), gl_zero()], lookups, main, prep, s2row, s2next, isf, isl, ist, lch, fch, accp, naccp, alpha),
       SysAir.Bytes2 =>
-        ood_comp_tail([0, 0], lookups, main, prep, s2row, s2next, isf, isl, ist, lch, fch, accp, naccp, alpha),
+        ood_comp_tail([gl_zero(), gl_zero()], lookups, main, prep, s2row, s2next, isf, isl, ist, lch, fch, accp, naccp, alpha),
     }
   }
 
@@ -626,11 +626,11 @@ def verifier := ⟦
     let acc_col = list_lookup(s2row, 0);
     let next_acc_col = list_lookup(s2next, 0);
     -- when_first_row: acc_col = accp
-    let acc = ood_fold(acc, alpha, ext_mul(isf, ext_sub(acc_col, accp)));
+    let acc = ood_fold(acc, alpha, eg_mul(isf, eg_sub(acc_col, accp)));
     -- when_transition: acc_expr = next_acc_col
-    let acc = ood_fold(acc, alpha, ext_mul(ist, ext_sub(acc_expr, next_acc_col)));
+    let acc = ood_fold(acc, alpha, eg_mul(ist, eg_sub(acc_expr, next_acc_col)));
     -- when_last_row: acc_expr = naccp
-    ood_fold(acc, alpha, ext_mul(isl, ext_sub(acc_expr, naccp)))
+    ood_fold(acc, alpha, eg_mul(isl, eg_sub(acc_expr, naccp)))
   }
 
   -- ==========================================================================
@@ -645,50 +645,51 @@ def verifier := ⟦
   -- with `Z_{Dₖ}(x) = (x · shift_k⁻¹)^(2^L) - 1`.
   -- ==========================================================================
 
-  -- base-field power `base^e` (e small: the chunk index, < qd).
-  fn g_pow(base: G, e: G) -> G {
+  -- base-field power `base^e` (e small: the chunk index, < qd). `base` is a
+  -- non-native Goldilocks element; `e` is a native loop counter.
+  fn g_pow(base: [U8; 8], e: G) -> [U8; 8] {
     match e {
-      0 => 1,
-      _ => base * g_pow(base, e - 1),
+      0 => gl_one(),
+      _ => gl_mul(base, g_pow(base, e - 1)),
     }
   }
 
   -- `Z_{Dⱼ}(x) = (x · shift_j⁻¹)^(2^L) - 1`, evaluated at extension point `x`.
-  fn vanish_chunk(x: Ext, l: G, shiftinv: G) -> Ext {
-    ext_sub(ext_exp_pow2(ext_mul(x, [shiftinv, 0]), l), [1, 0])
+  fn vanish_chunk(x: Ext, l: G, shiftinv: [U8; 8]) -> Ext {
+    eg_sub(ext_exp_pow2(eg_mul(x, [shiftinv, gl_zero()]), l), [gl_one(), gl_zero()])
   }
 
   -- `zpsₜ = Πⱼ≠ₜ Z_{Dⱼ}(ζ) / Z_{Dⱼ}(shift_t)`. Iterates j over `[jidx, jidx+rem)`.
-  fn zps_prod(acc: Ext, zeta: Ext, l: G, g_q: G, shift_t: G, jidx: G, rem: G, t: G) -> Ext {
+  fn zps_prod(acc: Ext, zeta: Ext, l: G, g_q: [U8; 8], shift_t: [U8; 8], jidx: G, rem: G, t: G) -> Ext {
     match rem {
       0 => acc,
       _ =>
-        let shiftinv = g_inverse(7 * g_pow(g_q, jidx));
+        let shiftinv = gl_inverse(gl_mul(gl_seven(), g_pow(g_q, jidx)));
         -- skip the j = t factor (the chunk's own domain); branch in tail
         -- position so the inner match is not a non-tail match.
         match eq_zero(jidx - t) {
           1 => zps_prod(acc, zeta, l, g_q, shift_t, jidx + 1, rem - 1, t),
           _ =>
-            let factor = ext_mul(vanish_chunk(zeta, l, shiftinv),
-                                 ext_inverse(vanish_chunk([shift_t, 0], l, shiftinv)));
-            zps_prod(ext_mul(acc, factor), zeta, l, g_q, shift_t, jidx + 1, rem - 1, t),
+            let factor = eg_mul(vanish_chunk(zeta, l, shiftinv),
+                                 eg_inverse(vanish_chunk([shift_t, gl_zero()], l, shiftinv)));
+            zps_prod(eg_mul(acc, factor), zeta, l, g_q, shift_t, jidx + 1, rem - 1, t),
         },
     }
   }
 
   -- `quotient(ζ) = Σₜ zpsₜ · from_ext_basis(chunkₜ)`, iterating the `qd` chunks
   -- (`q_opened[idx][0] = [c0, c1]`).
-  fn quotient_sum(acc: Ext, zeta: Ext, l: G, qd: G, g_q: G,
+  fn quotient_sum(acc: Ext, zeta: Ext, l: G, qd: G, g_q: [U8; 8],
       q_opened: OpenedRound, idx: G, rem: G, t: G) -> Ext {
     match rem {
       0 => acc,
       _ =>
-        let shift_t = 7 * g_pow(g_q, t);
-        let zps_t = zps_prod([1, 0], zeta, l, g_q, shift_t, 0, qd, t);
+        let shift_t = gl_mul(gl_seven(), g_pow(g_q, t));
+        let zps_t = zps_prod([gl_one(), gl_zero()], zeta, l, g_q, shift_t, 0, qd, t);
         let ch = list_lookup(q_opened, idx);
         let row = list_lookup(ch, 0);
         let qv = from_ext_basis(list_lookup(row, 0), list_lookup(row, 1));
-        quotient_sum(ext_add(acc, ext_mul(zps_t, qv)), zeta, l, qd, g_q,
+        quotient_sum(eg_add(acc, eg_mul(zps_t, qv)), zeta, l, qd, g_q,
                      q_opened, idx + 1, rem - 1, t + 1),
     }
   }
@@ -760,8 +761,8 @@ def verifier := ⟦
         let comp = ood_composition(air, lookups, main, main_next, s2row, s2next,
                                    prep, isf, isl, ist, lch, fch, accp, naccp, alpha);
         let g_q = two_adic_gen(l + log_qd);
-        let quot = quotient_sum([0, 0], zeta, l, qd, g_q, q_opened, lastq, qd, 0);
-        assert_eq!(ext_mul(comp, invv), quot);
+        let quot = quotient_sum([gl_zero(), gl_zero()], zeta, l, qd, g_q, q_opened, lastq, qd, 0);
+        assert_eq!(eg_eq(eg_mul(comp, invv), quot), 1);
         ood_loop(rest, prep_indices, log_degrees, accs, stage1, stage2, prep_opt,
                  q_opened, i + 1, naccp, lastq + qd, lch, fch, alpha, zeta),
     }
@@ -771,9 +772,9 @@ def verifier := ⟦
   -- its raw u64 limb to an extension element). Mirrors `lookup::fingerprint`.
   fn fingerprint_vals(fch: Ext, vals: List‹U64›) -> Ext {
     match load(vals) {
-      ListNode.Nil => [0, 0],
+      ListNode.Nil => [gl_zero(), gl_zero()],
       ListNode.Cons(v, rest) =>
-        ext_add([limb_to_field(v), 0], ext_mul(fch, fingerprint_vals(fch, rest))),
+        eg_add([gl_reduce(v), gl_zero()], eg_mul(fch, fingerprint_vals(fch, rest))),
     }
   }
 
@@ -784,8 +785,8 @@ def verifier := ⟦
     match load(claims) {
       ListNode.Nil => acc,
       ListNode.Cons(c, rest) =>
-        let msg = ext_add(lch, fingerprint_vals(fch, c));
-        claims_acc(ext_add(acc, ext_inverse(msg)), rest, lch, fch),
+        let msg = eg_add(lch, fingerprint_vals(fch, c));
+        claims_acc(eg_add(acc, eg_inverse(msg)), rest, lch, fch),
     }
   }
 
@@ -802,7 +803,7 @@ def verifier := ⟦
         let Commitments.Mk(s1c, s2c, qc) = commitments;
         let prep_cap = opt_commit_cap(commit);
         let (lch, fch, alpha, zeta, _post_zeta_input) = fiat_shamir(prep_cap, s1c, s2c, qc, log_degrees, claims);
-        let acc0 = claims_acc([0, 0], claims, lch, fch);
+        let acc0 = claims_acc([gl_zero(), gl_zero()], claims, lch, fch);
         ood_loop(circuits, prep_indices, log_degrees, accs, stage1, stage2,
                  prep_opt, q_opened, 0, acc0, 0, lch, fch, alpha, zeta),
     }

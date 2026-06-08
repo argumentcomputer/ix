@@ -50,7 +50,7 @@ def systemDeserialize := ⟦
     IsFirstRow,
     IsLastRow,
     IsTransition,
-    Const(G),
+    Const([U8; 8]),             -- a non-native Goldilocks constant (canonical LE bytes)
     Add(&SymExpr, &SymExpr, G),
     Sub(&SymExpr, &SymExpr, G),
     Neg(&SymExpr, G),
@@ -99,10 +99,11 @@ def systemDeserialize := ⟦
        + 0x1000000 * to_field(b3), s3)
   }
 
-  -- A raw `u64` Goldilocks value, reduced mod p (for `Constant`).
-  fn read_field(stream: ByteStream) -> (G, ByteStream) {
+  -- A raw `u64` Goldilocks constant, canonicalized into non-native Goldilocks
+  -- bytes (`gl_reduce`) so it can feed the byte-emulated composition arithmetic.
+  fn read_field(stream: ByteStream) -> ([U8; 8], ByteStream) {
     let (u, s) = read_u64(stream);
-    (limb_to_field(u), s)
+    (gl_reduce(u), s)
   }
 
   -- ==========================================================================

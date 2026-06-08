@@ -120,6 +120,33 @@ def goldilocks := ⟦
 
   fn gl_neg(a: Goldilocks) -> Goldilocks { gl_sub(gl_zero(), a) }
   fn gl_seven() -> Goldilocks { [7u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8] }
+  fn gl_two() -> Goldilocks { [2u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8] }
+
+  -- Canonicalize an arbitrary 8-byte value (possibly ≥ p, e.g. a raw hash limb
+  -- or a non-canonical wire encoding) to the canonical representative `< p`.
+  -- Any 8-byte value is `< 2⁶⁴ < 2p`, so one conditional subtraction of p
+  -- suffices (borrow = 1 iff x < p ⇒ already canonical).
+  fn gl_reduce(x: Goldilocks) -> Goldilocks {
+    let (xmp, borrow) = sub8(x, gl_p());
+    select8(borrow, x, xmp)
+  }
+
+  -- 1 iff `x` is the field zero (canonicalize first, then test all bytes zero).
+  -- The byte sum is `< 8·256 = 2048`, so `eq_zero` of the sum is field-agnostic.
+  fn gl_is_zero(x: Goldilocks) -> G {
+    let r = gl_reduce(x);
+    eq_zero(to_field(r[0]) + to_field(r[1]) + to_field(r[2]) + to_field(r[3])
+          + to_field(r[4]) + to_field(r[5]) + to_field(r[6]) + to_field(r[7]))
+  }
+
+  -- 1 iff two canonical Goldilocks values are equal (byte-exact). Inputs must be
+  -- canonical (`gl_*` outputs always are); each `to_field` difference is small.
+  fn gl_eq(a: Goldilocks, b: Goldilocks) -> G {
+    eq_zero(to_field(a[0]) - to_field(b[0])) * eq_zero(to_field(a[1]) - to_field(b[1]))
+      * eq_zero(to_field(a[2]) - to_field(b[2])) * eq_zero(to_field(a[3]) - to_field(b[3]))
+      * eq_zero(to_field(a[4]) - to_field(b[4])) * eq_zero(to_field(a[5]) - to_field(b[5]))
+      * eq_zero(to_field(a[6]) - to_field(b[6])) * eq_zero(to_field(a[7]) - to_field(b[7]))
+  }
 
   -- ==========================================================================
   -- Base field multiply (mod p): schoolbook 64×64 → 128-bit product, then the
@@ -262,6 +289,9 @@ def goldilocks := ⟦
   fn eg_sub(a: ExtGoldilocks, b: ExtGoldilocks) -> ExtGoldilocks {
     [gl_sub(a[0], b[0]), gl_sub(a[1], b[1])]
   }
+  fn eg_neg(a: ExtGoldilocks) -> ExtGoldilocks {
+    [gl_neg(a[0]), gl_neg(a[1])]
+  }
   -- (a0 + a1·X)(b0 + b1·X) = (a0·b0 + 7·a1·b1) + (a0·b1 + a1·b0)·X.
   fn eg_mul(a: ExtGoldilocks, b: ExtGoldilocks) -> ExtGoldilocks {
     [gl_add(gl_mul(a[0], b[0]), gl_mul(gl_seven(), gl_mul(a[1], b[1]))),
@@ -275,6 +305,10 @@ def goldilocks := ⟦
   }
   fn eg_div(a: ExtGoldilocks, b: ExtGoldilocks) -> ExtGoldilocks {
     eg_mul(a, eg_inverse(b))
+  }
+  -- 1 iff two extension elements are equal (both coordinates byte-exact).
+  fn eg_eq(a: ExtGoldilocks, b: ExtGoldilocks) -> G {
+    gl_eq(a[0], b[0]) * gl_eq(a[1], b[1])
   }
 
   -- ==========================================================================
