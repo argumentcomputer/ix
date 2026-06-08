@@ -87,6 +87,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     M::MField<Vec<crate::ix::env::Name>>: CheckDupLevelParams,
   {
     self.reset();
+    self.begin_const(id);
 
     let c = self.get_const(id)?;
     self.check_const_member(id, &c)
@@ -869,6 +870,57 @@ mod tests {
   use crate::ix::address::Address;
   use crate::ix::env::{DefinitionSafety, ReducibilityHints};
   use crate::ix::ixon::constant::DefKind;
+
+  #[test]
+  fn profile_sink_records_delta_edge_and_fuel() {
+    use crate::ix::kernel::mode::Meta;
+    use crate::ix::kernel::testing as t;
+    use crate::ix::profile::ProfileSink;
+
+    // g : Sort 2 := Sort 1 — a Definition, delta-reducible to Sort 1.
+    let (g_id, g) = t::mk_defn(
+      "g",
+      0,
+      vec![],
+      t::sort(t::usucc(t::usucc(t::uzero()))),
+      t::sort1(),
+      ReducibilityHints::Regular(5),
+    );
+    // f : g := Sort 0 — checking f must whnf (delta-unfold) g → Sort 1 to match
+    // infer(Sort 0) = Sort 1, so the recorder must capture the edge f→g.
+    let (f_id, f) = t::mk_defn(
+      "f",
+      0,
+      vec![],
+      t::cnst("g", &[]),
+      t::sort0(),
+      ReducibilityHints::Regular(5),
+    );
+
+    let mut env = KEnv::<Meta>::new();
+    env.insert(g_id.clone(), g);
+    env.insert(f_id.clone(), f);
+    env.profile_sink = Some(ProfileSink::new(true));
+
+    {
+      let mut tc = TypeChecker::new(&mut env);
+      tc.check_const(&g_id).unwrap();
+      tc.check_const(&f_id).unwrap();
+      tc.finish_constant_accounting(); // flush the last constant's record
+    }
+
+    let sink = env.profile_sink.as_ref().unwrap();
+    let f_rec = sink.records.get(&f_id.addr).expect("f should be recorded");
+    assert!(
+      f_rec.producers.contains(&g_id.addr),
+      "checking f must record a delta-unfold of g"
+    );
+    assert!(f_rec.fuel > 0, "checking f consumes heartbeats");
+    // g unfolds nothing of its own.
+    if let Some(g_rec) = sink.records.get(&g_id.addr) {
+      assert!(!g_rec.producers.contains(&g_id.addr));
+    }
+  }
 
   type AE = KExpr<Anon>;
   type AU = KUniv<Anon>;

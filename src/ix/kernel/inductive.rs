@@ -107,6 +107,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
 
     for member in members {
       self.reset();
+      self.begin_const(member);
       let c = self.get_const(member)?;
       self.validate_const_well_scoped(&c)?;
       match c {
@@ -130,6 +131,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
 
     for ind_id in &ind_ids {
       self.reset();
+      self.begin_const(ind_id);
       self.check_inductive_member(ind_id)?;
     }
     for ctor_id in &ctor_ids {
@@ -138,6 +140,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         _ => continue,
       };
       self.reset();
+      self.begin_const(ctor_id);
       self.check_ctor_against_inductive_member(ctor_id, &induct)?;
     }
     Ok(())
@@ -4040,6 +4043,7 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
   ) -> Result<(), TcError<M>> {
     for member in members {
       self.reset();
+      self.begin_const(member);
       let c = self.get_const(member)?;
       self.validate_const_well_scoped(&c)?;
       match c {
@@ -4057,6 +4061,7 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
 
     for member in members {
       self.reset();
+      self.begin_const(member);
       self.check_recursor_member(member)?;
     }
     Ok(())

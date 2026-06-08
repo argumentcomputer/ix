@@ -15,5 +15,7 @@ pub mod ground;
 pub mod ixon;
 pub mod kernel;
 pub mod mutual;
+pub mod profile;
+pub mod shard;
 pub mod store;
 pub mod strong_ordering;

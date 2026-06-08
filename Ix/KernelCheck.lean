@@ -142,6 +142,30 @@ opaque rsCheckAnonFFI :
     @& String →                          -- fail-out path ("" = none)
     IO (Array (String × Option CheckError))
 
+/-- FFI: profile a `.ixe` out of circuit, writing a `.ixesp` sidecar with
+    per-block heartbeats + the delta-unfold graph (the sharding cost model,
+    see `plans/sharding.md`). Runs the anon kernel over every checkable target.
+    `isolate` clears the kernel's reduction-memo caches between constants for
+    sound/faithful recording; `quiet` suppresses per-constant progress. -/
+@[extern "rs_kernel_profile_anon"]
+opaque rsProfileAnonFFI :
+    @& String →                          -- .ixe path
+    @& String →                          -- .ixesp output path
+    @& Bool →                            -- isolate caches
+    @& Bool →                            -- quiet
+    IO Unit
+
+/-- FFI: partition a `.ixesp` into `numShards` shards, writing a `.ixes`
+    manifest. `numShards` and `balancePct` are decimal strings (kept ABI-simple).
+    Empty `outPath` skips the manifest. Prints a what-if report to stderr. -/
+@[extern "rs_shard_esp"]
+opaque rsShardEspFFI :
+    @& String →                          -- .ixesp path
+    @& String →                          -- num_shards (N)
+    @& String →                          -- balance percent
+    @& String →                          -- .ixes output path ("" = skip)
+    IO Unit
+
 end Ix.KernelCheck
 
 end

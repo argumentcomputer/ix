@@ -352,6 +352,13 @@ pub struct KEnv<M: KernelMode> {
   /// `IX_PERF_COUNTERS=1`. When the env var is unset the counters are
   /// no-ops; when set, the totals are dumped from the `Drop` impl below.
   pub perf: PerfCounters,
+
+  /// Out-of-circuit profile recorder for sharding (see `plans/sharding.md`).
+  /// `Some` enables per-constant heartbeat + delta-unfold recording on this
+  /// worker; `None` (the default) has zero overhead. Deliberately preserved
+  /// across `clear`/`clear_releasing_memory` so recording survives scheduled
+  /// block boundaries within a run.
+  pub profile_sink: Option<crate::ix::profile::ProfileSink>,
 }
 
 impl<M: KernelMode> Default for KEnv<M> {
@@ -407,6 +414,7 @@ impl<M: KernelMode> KEnv<M> {
       block_check_results: FxHashMap::default(),
       next_fvar_id: 0,
       perf: PerfCounters::default(),
+      profile_sink: None,
     }
   }
 
@@ -579,6 +587,30 @@ impl<M: KernelMode> KEnv<M> {
     self.block_peer_agreement_cache = FxHashSet::default();
     self.block_check_results = FxHashMap::default();
     self.next_fvar_id = 0;
+  }
+
+  /// Clear only the reduction-memo caches (whnf / infer / def-eq / unfold /
+  /// is-prop). Structural caches (`consts`, `blocks`, `intern`, recursor
+  /// caches, `block_check_results`) and the profile sink are preserved.
+  ///
+  /// Used by the profile recorder's per-constant isolation mode: clearing the
+  /// cross-constant memo between constants forces every delta-unfold to
+  /// re-execute (sound delta recording) and makes recorded heartbeats reflect
+  /// the in-circuit cost, which has no cross-constant memoization. Clearing a
+  /// pure memo never affects correctness — only performance.
+  pub fn clear_reduction_caches(&mut self) {
+    self.whnf_cache.clear();
+    self.whnf_no_delta_cache.clear();
+    self.whnf_no_delta_cheap_cache.clear();
+    self.whnf_core_cache.clear();
+    self.whnf_core_cheap_cache.clear();
+    self.infer_cache.clear();
+    self.infer_only_cache.clear();
+    self.def_eq_cache.clear();
+    self.def_eq_cheap_cache.clear();
+    self.def_eq_failure.clear();
+    self.unfold_cache.clear();
+    self.is_prop_cache.clear();
   }
 }
 

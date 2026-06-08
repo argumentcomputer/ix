@@ -766,6 +766,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       && matches!(kind, DefKind::Definition | DefKind::Theorem)
     {
       self.dump_delta_trace(id, 0, e);
+      self.record_delta_target(id);
       let val = val.clone();
       let us: Vec<_> = us.to_vec();
       return Ok(Some(self.unfold_const_value(e, &val, &us)?));
@@ -792,6 +793,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         ..
       }) => {
         self.dump_delta_trace(id, args.len(), e);
+        self.record_delta_target(id);
         val.clone()
       },
       _ => return Ok(None),
