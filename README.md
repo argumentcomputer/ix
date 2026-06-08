@@ -323,20 +323,46 @@ Non-Nix users: install Zisk manually per the
    these up automatically; for non-Nix setups follow the
    [Zisk install docs](https://0xpolygonhermez.github.io/zisk/getting_started/installation.html).
 
-   **Memlock limit.** Zisk's assembly emulator `mmap`s ROM with `MAP_LOCKED`
-   and needs a memlock limit well above typical distro defaults (often 8 MB).
-   Symptom: `mmap(rom) errno=11=Resource temporarily unavailable` followed by
-   `Shmem creation … failed with exit status: 255` during
-   `STARTING_ASM_MICROSERVICES`. Raise it for the current shell (needs sudo
-   to lift the hard cap):
+   **Memlock limit (Linux).** Zisk's assembly emulator `mmap`s ROM and
+   trace buffers with `MAP_LOCKED`, so the per-process locked-memory
+   rlimit (`ulimit -l`) must be high enough to back the trace. Many
+   Linux distros default to a low memlock limit; the Linux kernel
+   itself sets non-privileged processes to `RAM / 8`, which is still
+   too small for larger envs. Symptom: `mmap(rom) errno=11=Resource
+   temporarily unavailable` followed by `Shmem creation … failed with
+   exit status: 255` during `STARTING_ASM_MICROSERVICES`.
+
+   *Per-shell (does not survive new logins or reboot):*
 
    ```
    sudo prlimit --memlock=unlimited:unlimited --pid $$
    ulimit -l   # confirm: prints 'unlimited'
    ```
 
-   For a persistent fix, raise `memlock` system-wide via your distro's PAM
-   limits and re-login.
+   *Persistent (recommended; both edits needed because `systemd` and
+   PAM apply rlimits on different paths — `DefaultLimitMEMLOCK` only
+   reaches services systemd spawns directly, interactive shells go
+   through PAM):*
+
+   ```
+   # 1. systemd-spawned services
+   sudo sed -i 's|^#DefaultLimitMEMLOCK=.*|DefaultLimitMEMLOCK=infinity|' \
+       /etc/systemd/system.conf
+
+   # 2. PAM session limits (applied to login shells, sudo, etc.)
+   sudo tee /etc/security/limits.d/99-memlock.conf >/dev/null <<'EOF'
+   *               soft    memlock         unlimited
+   *               hard    memlock         unlimited
+   EOF
+
+   # Apply: log out of every login shell and back in (no reboot needed).
+   # Verify in a new shell:
+   ulimit -l                              # → unlimited
+   cat /proc/$$/limits | grep "locked"    # → unlimited / unlimited
+   ```
+
+   Matches the Zisk
+   [installation docs](https://0xpolygonhermez.github.io/zisk/getting_started/installation.html).
 
    **Heap cap.** The Zisk zkVM has a hard 512 MB RAM cap
    ([`RAM_SIZE`](https://github.com/0xPolygonHermez/zisk/blob/v0.17.0/core/src/mem.rs#L111)),
@@ -350,6 +376,31 @@ Non-Nix users: install Zisk manually per the
    [`MAX_JIT_LOG_ADDR`](https://github.com/succinctlabs/sp1/blob/v6.2.0/crates/primitives/src/consts.rs#L11)),
    or shrink the env via `--root <const>` to take the transitive closure of
    a single constant.
+
+   **Host RAM cap (`--max-witness-stored`).** Distinct from the in-guest
+   heap cap above, the prover side (Zisk's `proofman`) holds in-flight
+   witness traces in host RAM during `CALCULATING_CONTRIBUTIONS`. Peak
+   host RAM per shard ≈ `N × avg-witness-size + fixed overhead`, where
+   `N` is the `max_witness_stored` setting. The Ix kernel typecheck
+   workload averages ~25 GB per witness on typical 200–300 kB anon-byte
+   shards.
+
+   The `zisk-host` CLI defaults to `--max-witness-stored 5` (Zisk's
+   built-in default is 10, tuned for larger-memory boxes). Override per
+   machine:
+
+   | Host RAM | `--max-witness-stored` | Notes                                                  |
+   | -------- | ---------------------- | ------------------------------------------------------ |
+   | ≤ 128 GB | `3`                    | Override down; consider smaller shards too             |
+   | 256 GB   | `5` (project default)  | Comfortable margin on the typical setup                |
+   | 512 GB   | `10` (Zisk default)    | Override up for maximum prover parallelism             |
+   | ≥ 1 TB   | `10` (Zisk default)    | Override up; default is conservative for this workload |
+
+   Lowering the cap roughly linearly bounds peak RAM but throttles
+   prover parallelism (~10–30 % slower in practice). Raise it if your
+   machine has more RAM headroom; lower it if you OOM during
+   `CALCULATING_CONTRIBUTIONS`. Not relevant for `--execute` or
+   `--verify-constraints` modes.
 
 ### Nix
 

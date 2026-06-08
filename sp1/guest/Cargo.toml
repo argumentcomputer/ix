@@ -7,4 +7,15 @@ edition = "2024"
 ixon = { path = "../../crates/ixon" }
 ix-kernel = { path = "../../crates/kernel" }
 ix-common = { path = "../../crates/common" }
-sp1-zkvm = "6.2.0"
+sp1-zkvm = { git = "https://github.com/argumentcomputer/sp1", branch = "blake3-precompile" }
+
+# Force blake3 to the patched copy that routes `compress_in_place` /
+# `compress_xof` through SP1's BLAKE3_COMPRESS precompile on the zkVM target.
+# The guest's transitive blake3 (via ix-kernel) would otherwise resolve to
+# the registry version because `sp1-build` doesn't extend the host workspace.
+#
+# Stays a local path because the patched blake3 fork hasn't been published to a
+# git remote (no argumentcomputer/blake3 repo exists yet). Switch to a
+# `git = ..., branch = "blake3-precompile"` ref once it's pushed.
+[patch.crates-io]
+blake3 = { path = "../../../blake3-sp1" }

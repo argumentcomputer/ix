@@ -1,30 +1,24 @@
 [workspace]
 members = ["host"]
-# `guest/` is built via `zisk_sdk::build_program` for the
-# riscv64ima-zisk-zkvm-elf target and only compiles under `cargo-zisk`;
-# excluded so host workspace ops don't pick it up.
-exclude = ["guest"]
+# `guest/` and `agg-guest/` are built via `zisk_sdk::build_program` for
+# the riscv64ima-zisk-zkvm-elf target and only compile under
+# `cargo-zisk`; excluded so host workspace ops don't pick them up.
+exclude = ["guest", "agg-guest"]
 resolver = "2"
 
 [workspace.dependencies]
-# argumentcomputer/zisk fork — `blake3-precompile-v0.17` adds a Blake3
-# compression precompile on top of upstream v0.17.0. The guest reaches the
-# precompile via the `ziskos::zisklib::blake3` one-shot or, transparently,
-# through the patched `blake3` crate (see `zisk/guest/Cargo.toml`).
-zisk-sdk = { git = "https://github.com/argumentcomputer/zisk.git", branch = "blake3-precompile-v0.17" }
-ziskos = { git = "https://github.com/argumentcomputer/zisk.git", branch = "blake3-precompile-v0.17" }
+# argumentcomputer/zisk fork — the `blake3-precompile` branch adds a Blake3
+# compression precompile on top of upstream Zisk v0.18.0 (proofman v0.18.0).
+# The guest reaches the precompile via `ziskos::zisklib::blake3` or,
+# transparently, through the `blake3` shim crate (see `zisk/guest/Cargo.toml`).
+zisk-sdk = { git = "https://github.com/argumentcomputer/zisk.git", branch = "blake3-precompile" }
+ziskos = { git = "https://github.com/argumentcomputer/zisk.git", branch = "blake3-precompile" }
 
 [profile.release]
 panic = "abort"
 
-# Local-iteration override: redirect the fork's git source at the
-# `~/zisk-blake3` checkout so edits there flow into the host build without
-# a push. Drop once you're done iterating on the fork.
-#
-# `zisk-sdk` is the host's only direct fork dep; its path deps
-# (`../prover-backend`, `../common`, ...) resolve to siblings within the
-# local clone, so a single patch entry pulls every transitively-used fork
-# crate from the local checkout. (ziskos is a guest-side crate — it's
-# patched in `guest/Cargo.toml`, not here.)
-[patch."https://github.com/argumentcomputer/zisk.git"]
-zisk-sdk = { path = "/home/ubuntu/zisk-blake3/sdk" }
+# No local-path patch: the host builds zisk-sdk directly from the
+# `blake3-precompile` branch above (now that v0.18.0 + the blake3 shim are
+# pushed). To iterate against a local checkout instead, re-add:
+#   [patch."https://github.com/argumentcomputer/zisk.git"]
+#   zisk-sdk = { path = "/home/ubuntu/zisk/sdk" }

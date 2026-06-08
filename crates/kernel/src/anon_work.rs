@@ -50,7 +50,14 @@ pub enum AnonWorkItem {
   /// A Muts block. Checking `primary` (the first member's projection
   /// address) drives the kernel's block coordination, which in turn
   /// typechecks every entry in `targets`. `targets[0] == primary`.
-  Block { primary: Address, targets: Vec<Address> },
+  /// `block_addr` is the block's own `env.consts` key (the `Tag::Muts`
+  /// entry) — distinct from the projection `targets`, and the address
+  /// other constants' `refs` use to reference the block. Carried so the
+  /// set of `consts` keys a checked item certifies ([`proven_targets`])
+  /// is in the same address space as `Constant.refs`.
+  ///
+  /// [`proven_targets`]: AnonWorkItem::proven_targets
+  Block { block_addr: Address, primary: Address, targets: Vec<Address> },
 }
 
 impl AnonWorkItem {
@@ -68,6 +75,30 @@ impl AnonWorkItem {
     match self {
       AnonWorkItem::Standalone { addr } => core::slice::from_ref(addr),
       AnonWorkItem::Block { targets, .. } => targets,
+    }
+  }
+
+  /// Every `env.consts` key this item certifies (proves) well-typed when
+  /// its `primary` is checked — the *proven targets*, in the same address
+  /// space as `Constant.refs`, so a dependency ref can be matched against
+  /// the union of `proven_targets()` over all checked items: refs in that
+  /// union are already certified, the rest are the claim's open assumptions
+  /// (resolved later against other proofs). Unlike
+  /// [`targets`](Self::targets) (the addresses the kernel actually walks),
+  /// a `Block`'s proven set also includes the block's own `consts` key:
+  /// for a `Standalone` it's just its address; for a `Block` it's
+  /// `block_addr` plus every projection target (members + ctors). The
+  /// union of `proven_targets()` over a full `build_anon_work` is exactly
+  /// `env.consts.keys()`.
+  pub fn proven_targets(&self) -> Vec<Address> {
+    match self {
+      AnonWorkItem::Standalone { addr } => vec![addr.clone()],
+      AnonWorkItem::Block { block_addr, targets, .. } => {
+        let mut v = Vec::with_capacity(1 + targets.len());
+        v.push(block_addr.clone());
+        v.extend(targets.iter().cloned());
+        v
+      },
     }
   }
 }
@@ -139,7 +170,7 @@ pub fn build_anon_work(env: &IxonEnv) -> Result<Vec<AnonWorkItem>, String> {
           continue;
         }
         let primary = targets[0].clone();
-        work.push(AnonWorkItem::Block { primary, targets });
+        work.push(AnonWorkItem::Block { block_addr: addr.clone(), primary, targets });
       },
     }
   }

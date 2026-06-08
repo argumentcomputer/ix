@@ -20,7 +20,13 @@ ix-kernel = { path = "../../crates/kernel" }
 # coarse-grain `ingress` / `check_const_loop` brackets in
 # `../guest/src/main.rs` and printed via `Display` in `src/main.rs` when
 # `--execute` is set. Negligible host-side cost when no markers are emitted.
-sp1-sdk = { version = "6.2.0", features = ["profiling"] }
+# `experimental` enables the fork's `WITHOUT_VK_VERIFICATION` bypass on the
+# host verifier (sp1-prover light-node path). Required because the guest hashes
+# via the BLAKE3_COMPRESS precompile, whose recursion shapes aren't in the
+# bundled `vk_map.bin` — without the bypass, prove/verify fails with
+# `vk not allowed` / `vk_root mismatch`. Drop once the production vk_map.bin is
+# regenerated with the new chip. `profiling` enables the executor cycle-tracker.
+sp1-sdk = { git = "https://github.com/argumentcomputer/sp1", branch = "blake3-precompile", features = ["profiling", "experimental"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 clap = { version = "4.0", features = ["derive"] }
 anyhow = "1"
@@ -34,7 +40,7 @@ human-repr = "1"
 bincode = "1.3"
 
 [build-dependencies]
-sp1-build = "6.2.0"
+sp1-build = { git = "https://github.com/argumentcomputer/sp1", branch = "blake3-precompile" }
 
 [features]
 cuda = ["sp1-sdk/cuda"]

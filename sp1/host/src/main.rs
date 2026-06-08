@@ -111,6 +111,18 @@ async fn main() -> Result<()> {
     let throughput =
       const_count as f64 / exec_duration.as_secs_f64().max(f64::EPSILON);
     println!("failures: {failures}");
+    // Conditional-claim public output (Anon mode): failures(4) +
+    // subject_root(32) + assumptions_root(32) + checked_count(4) + env_hash(32).
+    let o = output.as_slice();
+    if o.len() >= 104 {
+      let hex8 = |b: &[u8]| b.iter().take(8).map(|x| format!("{x:02x}")).collect::<String>();
+      let checked = u32::from_le_bytes(o[68..72].try_into().unwrap());
+      println!(
+        "claim: CheckEnv {{ subject={}…, assumptions={}… }} (checked={checked})",
+        hex8(&o[4..36]),
+        hex8(&o[36..68]),
+      );
+    }
     println!("cycles: {}", report.total_instruction_count());
     println!("constants: {const_count}");
     println!(

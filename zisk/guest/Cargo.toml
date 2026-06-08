@@ -33,26 +33,18 @@ log = { version = "0.4", features = ["max_level_off"] }
 # requiring memory recycling (>~500 constants empirically) hit the RAM
 # wall. Init still doesn't fit on either allocator (MT-trace shmem
 # ceiling, not allocator pressure).
-ziskos = { git = "https://github.com/argumentcomputer/zisk.git", branch = "blake3-precompile-v0.17", default-features = false }
+ziskos = { git = "https://github.com/argumentcomputer/zisk.git", branch = "blake3-precompile", default-features = false, features = ["zisk-embedded-dlmalloc-alloc"] }
 
 # Redirect every `blake3::*` use across the kernel dep tree to the
-# precompile-backed shim that ships in the Zisk fork. Scoped to the guest
+# precompile-backed `blake3` shim that ships in the Zisk fork
+# (`ziskos/blake3/`, package `name = "blake3"`). Scoped to the guest
 # workspace so host builds keep using upstream blake3.
 #
-# Once the new `ziskos/blake3/` crate is pushed to
-# `argumentcomputer/zisk@blake3-precompile-v0.17`, replace with:
-#
-#   [patch.crates-io]
-#   blake3 = { git = "https://github.com/argumentcomputer/zisk.git",
-#              branch = "blake3-precompile-v0.17" }
-#
-# and drop the `[patch."...zisk.git"]` block below. Both ziskos and blake3
-# will then resolve to the same git source automatically.
+# Both `blake3` (shim) and `ziskos` now resolve to the SAME git source
+# (`blake3-precompile` branch): the shim depends on `ziskos` via
+# `path = "../entrypoint"` within that checkout, and the guest's `ziskos`
+# above points at the same branch — so cargo unifies them into one `ziskos`
+# instance (single `#[global_allocator]`). No `[patch."...zisk.git"]`
+# override is needed now that the shim is published on the branch.
 [patch.crates-io]
-blake3 = { path = "/home/ubuntu/zisk-blake3/ziskos/blake3" }
-
-# Local-test only: pin `ziskos` to the same checkout the shim's `path = "../entrypoint"`
-# resolves into, so the guest and the shim share one ziskos instance (otherwise
-# each registers `#[global_allocator]` and the link fails).
-[patch."https://github.com/argumentcomputer/zisk.git"]
-ziskos = { path = "/home/ubuntu/zisk-blake3/ziskos/entrypoint" }
+blake3 = { git = "https://github.com/argumentcomputer/zisk.git", branch = "blake3-precompile", package = "blake3" }

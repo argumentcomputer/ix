@@ -1335,7 +1335,7 @@ fn build_anon_work(
         addrs.push(addr.clone());
         work.push(AnonWorkItem::Standalone { result_idx, addr });
       },
-      KItem::Block { primary, targets } => {
+      KItem::Block { primary, targets, .. } => {
         let start = addrs.len();
         let result_idxs: Vec<usize> = (start..start + targets.len()).collect();
         addrs.extend(targets);

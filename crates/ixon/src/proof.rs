@@ -144,7 +144,7 @@ pub enum RevealConstantInfo {
 ///   Orthogonal to typechecking; carries no assumptions.
 /// - **Contains**: structural membership claim — `const_addr` is a leaf
 ///   in the merkle tree rooted at `tree`. Used by the aggregation
-///   circuit to discharge a leaf from a conditional claim's assumption
+///   circuit to resolve a leaf from a conditional claim's assumption
 ///   set. Carries no assumptions itself.
 ///
 /// The `assumptions` root may be any merkle tree (canonical sorted+

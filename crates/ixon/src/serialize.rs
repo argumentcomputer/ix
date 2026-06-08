@@ -10,7 +10,7 @@
 use std::sync::Arc;
 
 use ix_common::address::Address;
-use ix_common::env::{DefinitionSafety, QuotKind};
+use ix_common::env::{DefinitionSafety, QuotKind, ReducibilityHints};
 
 use super::constant::{
   Axiom, Constant, ConstantInfo, Constructor, ConstructorProj, DefKind,
@@ -74,6 +74,24 @@ fn put_bytes(bytes: &[u8], buf: &mut Vec<u8>) {
 
 fn put_address(a: &Address, buf: &mut Vec<u8>) {
   put_bytes(a.as_bytes(), buf);
+}
+
+/// Read the optional trailing `anon_hints` section written by `Env::put`.
+/// No-op when no bytes remain after the comms section — backward-compatible
+/// with `.ixe` that have no hints or predate the section. Inserts into
+/// `env.anon_hints` (overwriting any value harvested from a Named section,
+/// with the identical value, so the order of harvest vs. section is moot).
+fn read_anon_hints_section(buf: &mut &[u8], env: &mut Env) -> Result<(), String> {
+  if buf.is_empty() {
+    return Ok(());
+  }
+  let n = get_u64(buf)?;
+  for _ in 0..n {
+    let addr = get_address(buf)?;
+    let hints = ReducibilityHints::get_ser(buf)?;
+    env.anon_hints.insert(addr, hints);
+  }
+  Ok(())
 }
 
 fn get_address(buf: &mut &[u8]) -> Result<Address, String> {
@@ -1325,6 +1343,29 @@ impl Env {
         sec_start.elapsed().as_secs_f64(),
         buf.len(),
       );
+    }
+
+    // Optional trailing section: anon_hints (Address -> ReducibilityHints).
+    // `get_anon` normally HARVESTS hints from the Named section; a closure
+    // sub-env (built for shard injection) DROPS that section, which would
+    // force the kernel to `Regular(0)` and add a def-eq overhead vs whole-env
+    // proving. Carrying the hints here lets the guest reproduce vanilla kernel
+    // behavior exactly. Written only when populated, so compiler-produced
+    // `.ixe` (empty map) are byte-identical to before; loaders read it only if
+    // bytes remain after comms. Hints are performance-only (the `Regular(0)`
+    // fallback is always correct), so this section is intentionally NOT covered
+    // by the consts merkle root.
+    if !self.anon_hints.is_empty() {
+      let mut hint_addrs: Vec<Address> = self.anon_hints.keys().cloned().collect();
+      hint_addrs.sort_unstable();
+      put_u64(hint_addrs.len() as u64, buf);
+      for addr in &hint_addrs {
+        put_address(addr, buf);
+        self.anon_hints[addr].put_ser(buf);
+      }
+    }
+
+    if !quiet {
       eprintln!(
         "[Env::put] ALL DONE: {} bytes in {:.1}s",
         buf.len(),
@@ -1447,6 +1488,9 @@ impl Env {
       let comm = Comm::get(buf)?;
       env.comms.insert(addr, comm);
     }
+
+    // Optional trailing anon_hints section (see `Env::put`).
+    read_anon_hints_section(buf, &mut env)?;
 
     // Verify the stored merkle root matches what we'd compute from
     // env.consts. Empty const set → expected = zero_address().
@@ -1591,6 +1635,11 @@ impl Env {
       let _addr = get_address(buf)?;
       let _comm = Comm::get(buf)?;
     }
+
+    // Optional trailing anon_hints section (see `Env::put`). For a closure
+    // sub-env this carries the hints the dropped Named section would have, so
+    // the kernel reproduces vanilla behavior with no def-eq overhead.
+    read_anon_hints_section(buf, &mut env)?;
 
     drop(names_lookup);
     drop(name_reverse_index);
@@ -1789,6 +1838,9 @@ impl Env {
       let _addr = get_address(&mut buf)?;
       let _comm = Comm::get(&mut buf)?;
     }
+
+    // Optional trailing anon_hints section (see `Env::put`).
+    read_anon_hints_section(&mut buf, &mut env)?;
 
     drop(names_lookup);
     drop(name_reverse_index);
