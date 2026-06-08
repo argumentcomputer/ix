@@ -2,6 +2,7 @@ module
 public import Ix.Aiur.Meta
 public import Ix.IxVM.Core
 public import Ix.IxVM.ByteStream
+public import Ix.MultiStark.Goldilocks
 public import Ix.MultiStark.Deserialize
 public import Ix.MultiStark.Keccak
 public import Ix.MultiStark.Pcs
@@ -69,6 +70,7 @@ def entrypoints := ⟦
 the keccak-256 implementation, and the entrypoint. -/
 def multiStark : Except Aiur.Global Aiur.Source.Toplevel := do
   let t ← IxVM.core.merge IxVM.byteStream
+  let t ← t.merge MultiStark.goldilocks
   let t ← t.merge deserialize
   let t ← t.merge keccak
   let t ← t.merge systemDeserialize

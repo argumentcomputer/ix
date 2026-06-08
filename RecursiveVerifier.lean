@@ -146,6 +146,16 @@ def main : IO UInt32 := do
   match vCompiled.bytecode.execute (vCompiled.getFuncIdx `ro_fold_test).get! #[] default with
   | .error e => IO.eprintln s!"✗ ro_fold_test FAILED — {e}"; return 1
   | .ok _ => IO.println "✓ ro_fold_test: open_input reduced-opening math matches reference"
+  -- TEMP: validate non-native Goldilocks byte-arithmetic (vs `gl_ops_ref`).
+  match vCompiled.bytecode.execute (vCompiled.getFuncIdx `gl_addsub_test).get! #[] default with
+  | .error e => IO.eprintln s!"✗ gl_addsub_test FAILED — {e}"; return 1
+  | .ok _ => IO.println "✓ gl_addsub_test: non-native Goldilocks add/sub match reference"
+  match vCompiled.bytecode.execute (vCompiled.getFuncIdx `gl_muldiv_test).get! #[] default with
+  | .error e => IO.eprintln s!"✗ gl_muldiv_test FAILED — {e}"; return 1
+  | .ok _ => IO.println "✓ gl_muldiv_test: non-native Goldilocks mul/inverse/div match reference"
+  match vCompiled.bytecode.execute (vCompiled.getFuncIdx `eg_ops_test).get! #[] default with
+  | .error e => IO.eprintln s!"✗ eg_ops_test FAILED — {e}"; return 1
+  | .ok _ => IO.println "✓ eg_ops_test: non-native ExtGoldilocks add/mul/inverse/div match reference"
   let vIdx ← match vCompiled.getFuncIdx `verify_multi_stark_proof with
     | some i => pure i
     | none => IO.eprintln "verify_multi_stark_proof entrypoint not found"; return 1
