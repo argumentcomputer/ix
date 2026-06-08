@@ -37,9 +37,11 @@ def deserialize := ⟦
   -- ==========================================================================
 
   -- `ExtVal = BinomialExtensionField<Goldilocks, 2> = 𝔽_p[X]/(X² - 7)`, stored
-  -- as its two Goldilocks coefficients `[c0, c1]` (= `c0 + c1·X`). On the wire
-  -- each is a raw `u64` limb; `read_ext` reduces it into a field element.
-  type Ext = [G; 2]
+  -- as its two Goldilocks coefficients `[c0, c1]` (= `c0 + c1·X`). Each coefficient
+  -- is a NON-NATIVE Goldilocks element (`[U8; 8]`, canonical LE bytes) so that the
+  -- composition-polynomial arithmetic is field-agnostic — it emulates Goldilocks
+  -- on bytes instead of using Aiur's native (outer) field. See `Goldilocks.lean`.
+  type Ext = [[U8; 8]; 2]
 
   -- A Merkle digest: `[u64; DIGEST_ELEMS]` with `DIGEST_ELEMS = 4`.
   type Digest = [U64; 4]
@@ -152,60 +154,15 @@ def deserialize := ⟦
       + 0x100000000000000 * to_field(b[7])
   }
 
-  -- `ExtVal` -> two `u64` limbs (no length prefix), reduced to field coefficients.
+  -- `ExtVal` -> two `u64` limbs (no length prefix), each canonicalized into a
+  -- non-native Goldilocks element (`gl_reduce` maps a non-canonical wire repr,
+  -- e.g. `0` shipped as `p`, to its canonical `< p` bytes).
   fn read_ext(stream: ByteStream) -> (Ext, ByteStream) {
     let (a, s0) = read_u64(stream);
     let (b, s1) = read_u64(s0);
-    ([limb_to_field(a), limb_to_field(b)], s1)
+    ([gl_reduce(a), gl_reduce(b)], s1)
   }
 
-  -- Extension-field addition: componentwise.
-  fn ext_add(a: Ext, b: Ext) -> Ext {
-    [a[0] + b[0], a[1] + b[1]]
-  }
-
-  -- Extension-field multiplication in 𝔽_p[X]/(X² - 7):
-  --   (a0 + a1·X)(b0 + b1·X) = (a0·b0 + 7·a1·b1) + (a0·b1 + a1·b0)·X.
-  fn ext_mul(a: Ext, b: Ext) -> Ext {
-    [a[0] * b[0] + 7 * (a[1] * b[1]), a[0] * b[1] + a[1] * b[0]]
-  }
-
-  fn ext_sub(a: Ext, b: Ext) -> Ext {
-    [a[0] - b[0], a[1] - b[1]]
-  }
-
-  fn ext_neg(a: Ext) -> Ext {
-    [0 - a[0], 0 - a[1]]
-  }
-
-  -- Goldilocks (base-field) inverse via Fermat: x^(p-2). Aiur has no field
-  -- division, so we exponentiate. p = 2^64 - 2^32 + 1, so
-  -- p - 2 = 2^64 - 2^32 - 1 — in binary: bit 32 is 0, every other bit is 1.
-  -- `g_run(acc, base, n)` applies n steps of `acc ← acc²·base` (a run of
-  -- set exponent bits). 31 ones, one zero, 32 ones reconstructs p-2.
-  fn g_run(acc: G, base: G, n: G) -> G {
-    match n {
-      0 => acc,
-      _ => g_run(acc * acc * base, base, n - 1),
-    }
-  }
-  fn g_inverse(x: G) -> G {
-    let acc = g_run(x, x, 30);   -- bits 63..33: 31 ones (initial acc=x is bit 63)
-    let acc = acc * acc;          -- bit 32: a single 0
-    g_run(acc, x, 32)             -- bits 31..0: 32 ones
-  }
-
-  -- Extension inverse in 𝔽_p[X]/(X² - 7). For a = a0 + a1·X the conjugate is
-  -- a0 - a1·X and the norm a·ā = a0² - 7·a1² ∈ 𝔽_p, so a⁻¹ = ā / norm.
-  fn ext_inverse(a: Ext) -> Ext {
-    let norm = a[0] * a[0] - 7 * (a[1] * a[1]);
-    let ninv = g_inverse(norm);
-    [a[0] * ninv, (0 - a[1]) * ninv]
-  }
-
-  fn ext_div(a: Ext, b: Ext) -> Ext {
-    ext_mul(a, ext_inverse(b))
-  }
 
   -- Merkle digest -> `[u64; 4]`, no length prefix.
   fn read_digest(stream: ByteStream) -> (Digest, ByteStream) {
