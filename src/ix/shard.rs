@@ -22,16 +22,20 @@
 //! **Recursive bisection.** Balanced min-cut bisection recursively splits the
 //! block hypergraph, allocating the `N`-shard budget between the two sides at
 //! each step (so any `N` works, not just powers of two); the bisection tree is
-//! the future proof-aggregation tree.
-//! Each bisection uses greedy graph-growing for a locality-aware initial cut
-//! followed by Fiduccia–Mattheyses (FM) refinement. On recursion we apply
-//! **cut-net splitting**: a net already cut at an upper level is restricted to
-//! its pins within each half so it is not recounted deeper.
+//! the future proof-aggregation tree. On recursion we apply **cut-net
+//! splitting**: a net already cut at an upper level is restricted to its pins
+//! within each half so it is not recounted deeper.
 //!
-//! Multilevel coarsening (a further quality boost) is intentionally left as a
-//! follow-up; the recursive bisection + FM here is fully self-contained (no
-//! external partitioner dependency) and ample for the ~100k-block environments
-//! this targets.
+//! **Multilevel coarsening.** Each individual bisection is solved with a
+//! multilevel V-cycle rather than flat local search: we *coarsen* the
+//! sub-hypergraph by repeatedly merging tightly-coupled blocks into
+//! supervertices (heavy-edge matching) until only a few hundred remain, decide
+//! the cut once on that tiny graph (greedy graph-growing + Fiduccia–Mattheyses
+//! to convergence), then *uncoarsen* — projecting the cut back down and
+//! boundary-refining with FM at each level. Deciding global structure on the
+//! small graph and only ever refining locally on the big ones is what keeps
+//! large environments (mathlib ≈ 631k blocks) partitioning in seconds. The
+//! partitioner is fully self-contained — no external partitioner dependency.
 
 use rustc_hash::FxHashSet;
 use std::cmp::Reverse;
@@ -48,15 +52,41 @@ use crate::ix::profile::BlockProfile;
 /// (atomic) assignment buffer never alias.
 const PARALLEL_THRESHOLD: usize = 4_000;
 
-/// Sub-problems larger than this skip Fiduccia–Mattheyses refinement entirely
-/// and rely on the greedy graph-growing cut alone. FM is ~O(V·d²) per pass, so
-/// on dense graphs (mathlib ≈ 20 edges/block) running it at the top of the
-/// recursion is the dominant cost; the few biggest cuts are coarse anyway.
-const FM_SKIP_VERTICES: usize = 50_000;
+/// Target vertex count for the coarsest graph in the multilevel V-cycle. We
+/// coarsen down to roughly this many supervertices, decide the global cut there
+/// (cheaply, at high quality), then uncoarsen and locally refine. Small enough
+/// that greedy + full FM on it is instant; large enough to still admit a
+/// balanced bisection.
+const COARSEST_TARGET: usize = 256;
 
-/// Vertex count below which FM runs to (capped) convergence; between this and
-/// [`FM_SKIP_VERTICES`] it runs a few passes only.
-const FM_FULL_VERTICES: usize = 10_000;
+/// Stop coarsening if a matching pass fails to shrink the graph by at least
+/// `1 − COARSEN_STALL_RATIO` (here 10%). Guards against spinning on graphs with
+/// few matchable pairs (very sparse or hub-dominated subs); [`bisect`] then
+/// falls back to refining whatever level was reached.
+const COARSEN_STALL_RATIO: f64 = 0.90;
+
+/// Nets larger than this are skipped when rating vertices for heavy-edge
+/// matching: a co-pin of an `m`-pin net earns only `weight/(m−1)` toward a
+/// match, so large nets carry negligible clustering signal while costing `O(m)`
+/// to scan. Keeping the matching rating near-linear bounds coarsening time.
+const MATCH_NET_CAP: usize = 100;
+
+/// FM passes per level during uncoarsening. The projected partition is already
+/// globally good, so a single boundary-refinement pass suffices to clean up each
+/// level's cut frontier (passes also stop early once one yields no improvement).
+const REFINE_PASSES: u32 = 1;
+
+/// Initial-partition restarts on the (tiny) coarsest graph: greedy graph-growing
+/// from this many diverse deterministic seeds, each FM-refined, keeping the
+/// lowest-cut result. Graph-growing from a single seed can "leak" across a thin
+/// bridge between two clusters; diverse seeds (one of which starts far from the
+/// bridge) recover the clean cut. Cheap — the coarsest graph is ≈
+/// [`COARSEST_TARGET`] vertices and this runs once per bisection.
+const INITIAL_RESTARTS: usize = 4;
+
+/// Bisections of at least this many vertices are logged by [`PartitionProgress`]
+/// (purely an observability threshold — a slow run should never look stuck).
+const PROGRESS_BISECT_LOG: usize = 50_000;
 
 /// Nets with more pins than this are "hubs" (e.g. a core lemma delta-unfolded by
 /// thousands of blocks). They are cut in essentially any balanced partition, so
@@ -163,6 +193,29 @@ impl Hypergraph {
   }
 }
 
+/// A borrowed, cut-relevant view of one hypergraph level — either a top-level
+/// [`SubHyper`] or a coarsened [`CoarseLevel`]. The greedy / FM machinery is
+/// written against this view so it runs unchanged at every level of the
+/// multilevel hierarchy. `Copy` (four slice references), so it is passed by
+/// value freely.
+#[derive(Clone, Copy)]
+struct Level<'a> {
+  /// vertex weights (heartbeats)
+  vw: &'a [u64],
+  /// balance weights (capped heartbeats)
+  bw: &'a [u64],
+  /// nets: (weight, pins)
+  nets: &'a [(u64, Vec<u32>)],
+  /// vertex -> incident net indices
+  vnets: &'a [Vec<u32>],
+}
+
+impl<'a> Level<'a> {
+  fn num_vertices(&self) -> usize {
+    self.vw.len()
+  }
+}
+
 /// A sub-hypergraph used during recursion, with vertices re-indexed locally and
 /// nets restricted (cut-net split) to the vertices it contains.
 struct SubHyper {
@@ -219,6 +272,11 @@ impl SubHyper {
 
   fn num_vertices(&self) -> usize {
     self.vw.len()
+  }
+
+  /// Borrow this sub-hypergraph as a [`Level`] for the greedy / FM machinery.
+  fn level(&self) -> Level<'_> {
+    Level { vw: &self.vw, bw: &self.bw, nets: &self.nets, vnets: &self.vnets }
   }
 
   /// Induce the sub-hypergraph on the local vertices selected by `keep`,
@@ -285,7 +343,9 @@ fn rec_bisect(
   let nl = left.num_vertices();
   let nr = right.num_vertices();
   if nl == 0 || nr == 0 {
-    // Degenerate split (shouldn't happen for |sub| ≥ 2): keep together.
+    // Degenerate split: `bisect` guarantees both sides non-empty for |sub| ≥ 2
+    // (its initial partition rejects empty-sided candidates), so this is a
+    // defensive backstop only — keep the subtree together as one shard.
     for &g in &sub.global {
       shard_of[g as usize].store(base, Ordering::Relaxed);
     }
@@ -340,7 +400,7 @@ impl PartitionProgress {
   /// Log a large bisection about to run (the slow steps). `&self` so it can be
   /// shared across the parallel recursion.
   fn bisecting(&self, n: usize, k: usize) {
-    if self.enabled && n >= FM_SKIP_VERTICES {
+    if self.enabled && n >= PROGRESS_BISECT_LOG {
       eprintln!(
         "[shard] bisecting {n} vertices → {k} shards  ({:.1?} elapsed, {}/{} shards done)",
         self.start.elapsed(),
@@ -377,7 +437,13 @@ impl PartitionProgress {
 }
 
 /// Bisect `sub` into two balanced parts minimizing cut weight. Returns a side
-/// (0/1) per local vertex. Greedy graph-growing initial partition + FM.
+/// (0/1) per local vertex.
+///
+/// Multilevel V-cycle: coarsen `sub` into a hierarchy, decide the cut on the
+/// tiny coarsest graph (greedy graph-growing + FM to convergence), then
+/// uncoarsen — projecting the cut back down and boundary-refining each level.
+/// When `sub` is small or won't coarsen, `levels` is empty and we partition it
+/// directly, so the worst case is never worse than a flat bisection.
 fn bisect(sub: &SubHyper, epsilon: f64) -> Vec<u8> {
   let n = sub.num_vertices();
   if n == 0 {
@@ -387,27 +453,24 @@ fn bisect(sub: &SubHyper, epsilon: f64) -> Vec<u8> {
     return vec![0];
   }
   let total_bw: u64 = sub.bw.iter().sum();
-  // Balance bounds for side weights.
+  // Balance bounds for side weights (invariant across levels — coarsening sums
+  // balance weight, so the total is preserved at every level).
   let wmax = ((0.5 + epsilon) * total_bw as f64).ceil() as u64;
   let wmin = ((0.5 - epsilon) * total_bw as f64).floor() as u64;
 
-  let mut side = greedy_grow(sub, total_bw);
-  fm_refine(sub, &mut side, wmin, wmax);
-  side
+  let levels = coarsen(sub);
+  let coarsest =
+    levels.last().map(|l| l.level()).unwrap_or_else(|| sub.level());
+  let side = initial_partition(coarsest, wmin, wmax);
+  uncoarsen_refine(sub, &levels, side, wmin, wmax)
 }
 
-/// Greedy graph-growing: start from the heaviest vertex and repeatedly absorb
-/// the boundary vertex most strongly connected (by net weight) to side 0 until
-/// side 0 reaches ~half the balance weight. Remaining vertices go to side 1.
-fn greedy_grow(sub: &SubHyper, total_bw: u64) -> Vec<u8> {
-  let n = sub.num_vertices();
+/// Greedy graph-growing: start from `seed` and repeatedly absorb the boundary
+/// vertex most strongly connected (by net weight) to side 0 until side 0 reaches
+/// ~half the balance weight. Remaining vertices go to side 1.
+fn greedy_grow(lv: Level<'_>, total_bw: u64, seed: usize) -> Vec<u8> {
+  let n = lv.num_vertices();
   let mut side = vec![1u8; n];
-  // Seed: heaviest vertex (deterministic; ties broken by lowest id).
-  let seed = (0..n)
-    .max_by(|&a, &b| {
-      sub.vw[a].cmp(&sub.vw[b]).then(Reverse(a).cmp(&Reverse(b)))
-    })
-    .unwrap();
 
   // connection[v] = total weight of nets that already touch side 0 and include v.
   let mut connection = vec![0u64; n];
@@ -415,7 +478,7 @@ fn greedy_grow(sub: &SubHyper, total_bw: u64) -> Vec<u8> {
   // Whether a net already contributes to side 0. A net bumps its pins exactly
   // once (on first connection), so growth is O(Σ net_size), not O(Σ net_size²)
   // — essential on dense graphs (and it also stops over-counting connection).
-  let mut net_touched = vec![false; sub.nets.len()];
+  let mut net_touched = vec![false; lv.nets.len()];
   let mut heap: BinaryHeap<(u64, Reverse<u32>)> = BinaryHeap::new();
   let mut side0_bw = 0u64;
   let target = total_bw / 2;
@@ -431,10 +494,10 @@ fn greedy_grow(sub: &SubHyper, total_bw: u64) -> Vec<u8> {
                  side0_bw: &mut u64| {
     side[v] = 0;
     in_side0[v] = true;
-    *side0_bw += sub.bw[v];
-    for &ni in &sub.vnets[v] {
+    *side0_bw += lv.bw[v];
+    for &ni in &lv.vnets[v] {
       let nis = ni as usize;
-      let (w, pins) = &sub.nets[nis];
+      let (w, pins) = &lv.nets[nis];
       // Skip hub nets, and nets already counted toward side 0.
       if pins.len() > FM_NET_CAP || net_touched[nis] {
         continue;
@@ -512,10 +575,10 @@ struct NetState {
 }
 
 impl NetState {
-  fn new(sub: &SubHyper, side: &[u8]) -> (NetState, u128) {
-    let mut cnt = vec![[0u32; 2]; sub.nets.len()];
+  fn new(lv: Level<'_>, side: &[u8]) -> (NetState, u128) {
+    let mut cnt = vec![[0u32; 2]; lv.nets.len()];
     let mut cut: u128 = 0;
-    for (i, (w, pins)) in sub.nets.iter().enumerate() {
+    for (i, (w, pins)) in lv.nets.iter().enumerate() {
       if pins.len() > FM_NET_CAP {
         continue; // hub net: invisible to FM (counts stay zero)
       }
@@ -533,12 +596,12 @@ impl NetState {
 /// FM gain of moving local vertex `v` from its side to the other.
 /// `+w` for each net where `v`'s side has exactly one pin (the move uncuts it);
 /// `−w` for each net fully on `v`'s side with ≥2 pins (the move newly cuts it).
-fn fm_gain(sub: &SubHyper, ns: &NetState, side: &[u8], v: usize) -> i128 {
+fn fm_gain(lv: Level<'_>, ns: &NetState, side: &[u8], v: usize) -> i128 {
   let a = side[v] as usize;
   let b = 1 - a;
   let mut g: i128 = 0;
-  for &ni in &sub.vnets[v] {
-    let (w, pins) = &sub.nets[ni as usize];
+  for &ni in &lv.vnets[v] {
+    let (w, pins) = &lv.nets[ni as usize];
     if pins.len() > FM_NET_CAP {
       continue; // hub net: ignored by FM
     }
@@ -553,48 +616,87 @@ fn fm_gain(sub: &SubHyper, ns: &NetState, side: &[u8], v: usize) -> i128 {
   g
 }
 
-/// Fiduccia–Mattheyses refinement: repeated passes, each moving every vertex at
-/// most once in decreasing-gain order subject to the balance window, tracking
-/// the lowest-cut prefix and rolling back to it. Stops when a pass yields no
-/// improvement.
-fn fm_refine(sub: &SubHyper, side: &mut [u8], wmin: u64, wmax: u64) {
-  let n = sub.num_vertices();
-  // Greedy-only above the skip threshold (FM is too slow on huge dense subs);
-  // a few passes in the middle band; full (capped) convergence when small.
-  if n <= 1 || n > FM_SKIP_VERTICES {
+/// Fiduccia–Mattheyses refinement (boundary variant): up to `max_passes` passes,
+/// each moving every vertex at most once in decreasing-gain order subject to the
+/// balance window, tracking the lowest-cut prefix and rolling back to it. Stops
+/// when a pass yields no improvement.
+///
+/// Only **boundary** vertices (incident to a cut net) are seeded into the gain
+/// heap: an interior vertex has non-positive gain (moving it can only newly-cut
+/// nets), so it never improves the cut; vertices exposed to the boundary by an
+/// applied move are added as that move's neighbors. This bounds a pass at
+/// roughly `O(boundary + moves·degree)` rather than `O(V·degree)`, which is what
+/// makes full refinement affordable even on the finest (≈`V`-sized) level.
+fn fm_refine(lv: Level<'_>, side: &mut [u8], wmin: u64, wmax: u64, max_passes: u32) {
+  let n = lv.num_vertices();
+  if n <= 1 {
     return;
   }
-  let budget = if n > FM_FULL_VERTICES { 3 } else { MAX_FM_PASSES };
+  // Contribution of one net (counts `ca` on the vertex's side, `cb` on the
+  // other, weight `w`) to the gain of moving that vertex: `+w` if it is the last
+  // pin on its side (the move uncuts the net), `−w` if its side is full with ≥2
+  // pins (the move newly cuts it), else 0.
+  let contrib = |ca: u32, cb: u32, w: i128| -> i128 {
+    if cb >= 1 && ca == 1 {
+      w
+    } else if cb == 0 && ca >= 2 {
+      -w
+    } else {
+      0
+    }
+  };
+  // Buffers reused across passes (no per-move allocation).
+  let mut gain = vec![0i128; n];
+  let mut queued = vec![false; n];
+  let mut locked = vec![false; n];
+  let mut heap: BinaryHeap<(i128, Reverse<u32>)> = BinaryHeap::new();
+  let mut moves: Vec<usize> = Vec::new();
   let mut pass = 0u32;
   loop {
-    let (mut ns, mut cut) = NetState::new(sub, side);
+    let (mut ns, mut cut) = NetState::new(lv, side);
     let mut side0_bw: u64 =
-      (0..n).filter(|&v| side[v] == 0).map(|v| sub.bw[v]).sum();
+      (0..n).filter(|&v| side[v] == 0).map(|v| lv.bw[v]).sum();
 
-    let mut heap: BinaryHeap<(i128, Reverse<u32>)> = BinaryHeap::new();
-    let mut cur_gain = vec![0i128; n];
-    for v in 0..n {
-      let g = fm_gain(sub, &ns, side, v);
-      cur_gain[v] = g;
-      heap.push((g, Reverse(v as u32)));
+    // Full gain initialization (O(pins), cheap) so the incremental neighbor
+    // updates below — which only adjust the changed net's contribution — stay
+    // exact for interior vertices that later reach the boundary.
+    for (v, g) in gain.iter_mut().enumerate() {
+      *g = fm_gain(lv, &ns, side, v);
+    }
+    heap.clear();
+    moves.clear();
+    queued.iter_mut().for_each(|q| *q = false);
+    locked.iter_mut().for_each(|l| *l = false);
+    // Seed the cut frontier only (interior vertices have non-positive gain).
+    for (i, (_, pins)) in lv.nets.iter().enumerate() {
+      if pins.len() > FM_NET_CAP {
+        continue; // hub net: invisible to FM
+      }
+      if ns.cnt[i][0] > 0 && ns.cnt[i][1] > 0 {
+        for &v in pins {
+          let v = v as usize;
+          if !queued[v] {
+            queued[v] = true;
+            heap.push((gain[v], Reverse(v as u32)));
+          }
+        }
+      }
     }
 
-    let mut locked = vec![false; n];
-    let mut moves: Vec<usize> = Vec::new();
     let mut best_cut = cut;
     let mut best_prefix = 0usize; // number of moves to keep
 
     while let Some((g, Reverse(v))) = heap.pop() {
       let v = v as usize;
-      if locked[v] || g != cur_gain[v] {
+      if locked[v] || g != gain[v] {
         continue; // stale entry
       }
       // Balance check: moving v shifts bw[v] across the cut.
       let (s0_after, ok) = if side[v] == 0 {
-        let s0 = side0_bw - sub.bw[v];
+        let s0 = side0_bw - lv.bw[v];
         (s0, s0 >= wmin)
       } else {
-        let s0 = side0_bw + sub.bw[v];
+        let s0 = side0_bw + lv.bw[v];
         (s0, s0 <= wmax)
       };
       if !ok {
@@ -602,49 +704,49 @@ fn fm_refine(sub: &SubHyper, side: &mut [u8], wmin: u64, wmax: u64) {
         locked[v] = true;
         continue;
       }
-      // Apply the move.
+      // Apply the move, updating the cut and the gains of co-pins incrementally:
+      // only this net's contribution to each pin changes, so a move costs
+      // O(Σ pins of v's nets), not O(Σ neighbour degrees).
       let a = side[v] as usize;
-      let b = 1 - a;
-      for &ni in &sub.vnets[v] {
-        let (w, pins) = &sub.nets[ni as usize];
+      for &ni in &lv.vnets[v] {
+        let nis = ni as usize;
+        let (w, pins) = &lv.nets[nis];
         if pins.len() > FM_NET_CAP {
-          continue; // hub net: not tracked, skip cnt update
+          continue; // hub net: not tracked
         }
-        let before = ns.cnt[ni as usize][0] > 0 && ns.cnt[ni as usize][1] > 0;
-        ns.cnt[ni as usize][a] -= 1;
-        ns.cnt[ni as usize][b] += 1;
-        let after = ns.cnt[ni as usize][0] > 0 && ns.cnt[ni as usize][1] > 0;
-        if before && !after {
+        let wi = *w as i128;
+        let c0 = ns.cnt[nis][0];
+        let c1 = ns.cnt[nis][1];
+        let (d0, d1) = if a == 0 { (c0 - 1, c1 + 1) } else { (c0 + 1, c1 - 1) };
+        ns.cnt[nis][0] = d0;
+        ns.cnt[nis][1] = d1;
+        let before_cut = c0 > 0 && c1 > 0;
+        let after_cut = d0 > 0 && d1 > 0;
+        if before_cut && !after_cut {
           cut -= *w as u128;
-        } else if !before && after {
+        } else if !before_cut && after_cut {
           cut += *w as u128;
         }
-      }
-      side[v] = b as u8;
-      side0_bw = s0_after;
-      locked[v] = true;
-      moves.push(v);
-
-      // Recompute gains of neighbors (and v's net co-pins).
-      let mut touched: FxHashSet<u32> = FxHashSet::default();
-      for &ni in &sub.vnets[v] {
-        let pins = &sub.nets[ni as usize].1;
-        if pins.len() > FM_NET_CAP {
-          continue; // hub net: ignored by FM
-        }
-        for &u in pins {
-          if !locked[u as usize] {
-            touched.insert(u);
+        for &uu in pins {
+          let u = uu as usize;
+          if u == v || locked[u] {
+            continue;
+          }
+          let su = side[u] as usize;
+          let (ca, cb) = if su == 0 { (c0, c1) } else { (c1, c0) };
+          let (ca2, cb2) = if su == 0 { (d0, d1) } else { (d1, d0) };
+          let delta = contrib(ca2, cb2, wi) - contrib(ca, cb, wi);
+          if delta != 0 {
+            gain[u] += delta;
+            queued[u] = true;
+            heap.push((gain[u], Reverse(uu)));
           }
         }
       }
-      for u in touched {
-        let ng = fm_gain(sub, &ns, side, u as usize);
-        if ng != cur_gain[u as usize] {
-          cur_gain[u as usize] = ng;
-          heap.push((ng, Reverse(u)));
-        }
-      }
+      side[v] = (1 - a) as u8;
+      side0_bw = s0_after;
+      locked[v] = true;
+      moves.push(v);
 
       if cut < best_cut {
         best_cut = cut;
@@ -658,10 +760,271 @@ fn fm_refine(sub: &SubHyper, side: &mut [u8], wmin: u64, wmax: u64) {
     }
 
     pass += 1;
-    if best_prefix == 0 || pass >= budget {
+    if best_prefix == 0 || pass >= max_passes {
       break; // converged, or hit the pass bound
     }
   }
+}
+
+// ============================================================================
+// Multilevel coarsening
+// ============================================================================
+
+/// One coarser level of a single bisection's multilevel hierarchy. Mirrors the
+/// cut-relevant fields of [`SubHyper`] (`vw`/`bw`/`nets`/`vnets`) plus the
+/// `match_map` that records, for each vertex of the *next-finer* level, which
+/// supervertex here it was merged into — the inverse map used to project a
+/// coarse partition back down during uncoarsening.
+struct CoarseLevel {
+  vw: Vec<u64>,
+  bw: Vec<u64>,
+  nets: Vec<(u64, Vec<u32>)>,
+  vnets: Vec<Vec<u32>>,
+  match_map: Vec<u32>,
+}
+
+impl CoarseLevel {
+  fn level(&self) -> Level<'_> {
+    Level { vw: &self.vw, bw: &self.bw, nets: &self.nets, vnets: &self.vnets }
+  }
+}
+
+/// Build the coarsening hierarchy for one bisection: `levels[0]` is the first
+/// contraction of `sub`, `levels.last()` is the coarsest graph (≈
+/// [`COARSEST_TARGET`] vertices). The finest level (`sub` itself) is *not*
+/// duplicated into the vector — it is supplied separately during uncoarsening.
+/// Returns an empty vector when `sub` is already small or can't be coarsened, in
+/// which case [`bisect`] partitions `sub` directly.
+fn coarsen(sub: &SubHyper) -> Vec<CoarseLevel> {
+  let total_bw: u64 = sub.bw.iter().sum();
+  // Cap a supervertex's balance weight so the coarsest graph keeps at least
+  // ~COARSEST_TARGET pieces and stays balanceable; never merge past it.
+  let max_cluster = (total_bw / COARSEST_TARGET as u64).max(1);
+  let mut levels: Vec<CoarseLevel> = Vec::new();
+  loop {
+    let cur: Level<'_> = match levels.last() {
+      Some(l) => l.level(),
+      None => sub.level(),
+    };
+    let n = cur.num_vertices();
+    if n <= COARSEST_TARGET {
+      break;
+    }
+    let (super_id, next) = match_vertices(cur, max_cluster);
+    if (next as f64) > COARSEN_STALL_RATIO * n as f64 {
+      break; // stalled: too few matchable pairs to make progress
+    }
+    let level = contract(cur, &super_id, next);
+    levels.push(level);
+    if next <= COARSEST_TARGET {
+      break;
+    }
+  }
+  levels
+}
+
+/// Heavy-edge matching pass: pair each still-unmatched vertex (visited in id
+/// order) with the unmatched neighbor it co-occurs with in the heaviest small
+/// nets, subject to the cluster-weight cap. A vertex with no such neighbor
+/// (delta-sparse, or only in hub nets) is instead paired with the next
+/// unmatched vertex — a cut-neutral merge (they share no tracked net) that keeps
+/// the graph shrinking ~2× per pass so coarsening reaches [`COARSEST_TARGET`]
+/// instead of stalling far above it (which would make the initial partition
+/// expensive). Returns `(super_id, num_super)` where `super_id[v]` is `v`'s
+/// supervertex in the next-coarser level. Deterministic — ties break to lowest
+/// id.
+fn match_vertices(lv: Level<'_>, max_cluster: u64) -> (Vec<u32>, usize) {
+  let n = lv.num_vertices();
+  let mut super_id = vec![u32::MAX; n];
+  let mut next: u32 = 0;
+  // Dense score accumulator, reset per vertex via the `touched` list.
+  let mut score = vec![0u64; n];
+  let mut touched: Vec<u32> = Vec::new();
+  // Forward cursor over still-unmatched vertices for the fallback pairing
+  // (advances monotonically → amortized O(n) over the whole pass).
+  let mut fb = 0usize;
+  for v in 0..n {
+    if super_id[v] != u32::MAX {
+      continue; // already claimed as an earlier vertex's partner
+    }
+    for &ni in &lv.vnets[v] {
+      let (w, pins) = &lv.nets[ni as usize];
+      let deg = pins.len();
+      if deg < 2 || deg > MATCH_NET_CAP {
+        continue; // singleton or hub: no clustering signal worth scanning
+      }
+      let contrib = w / (deg as u64 - 1);
+      if contrib == 0 {
+        continue;
+      }
+      for &u in pins {
+        let u = u as usize;
+        if u == v || super_id[u] != u32::MAX {
+          continue; // self, or already-matched vertex
+        }
+        if score[u] == 0 {
+          touched.push(u as u32);
+        }
+        score[u] = score[u].saturating_add(contrib);
+      }
+    }
+    // Pick the best-scoring partner that fits the cluster-weight cap. The
+    // explicit `u < best_u` tie-break makes the result independent of the
+    // (net/pin) iteration order.
+    let mut best_u = usize::MAX;
+    let mut best_score = 0u64;
+    for &ut in &touched {
+      let u = ut as usize;
+      let s = score[u];
+      let fits = lv.bw[v].saturating_add(lv.bw[u]) <= max_cluster;
+      if fits && (s > best_score || (s == best_score && u < best_u)) {
+        best_score = s;
+        best_u = u;
+      }
+    }
+    for &ut in &touched {
+      score[ut as usize] = 0;
+    }
+    touched.clear();
+    // Fallback: no heavy-edge partner — pair with the next unmatched vertex so
+    // coarsening keeps making progress. Cut-neutral (no shared tracked net).
+    // The cursor skips matched vertices and everything ≤ v (so never v itself).
+    if best_u == usize::MAX {
+      while fb < n && (super_id[fb] != u32::MAX || fb <= v) {
+        fb += 1;
+      }
+      if fb < n && lv.bw[v].saturating_add(lv.bw[fb]) <= max_cluster {
+        best_u = fb;
+      }
+    }
+    super_id[v] = next;
+    if best_u != usize::MAX {
+      super_id[best_u] = next; // matched pair shares a supervertex
+    }
+    next += 1;
+  }
+  (super_id, next as usize)
+}
+
+/// Contract `lv` by `super_id` (which maps each vertex to one of `next`
+/// supervertices) into the next coarser [`CoarseLevel`]. Supervertex weights are
+/// member sums; each net's pins are remapped, sorted, and deduplicated, and the
+/// net is dropped if it has fewer than two distinct coarse pins (it became
+/// internal to a supervertex). Net weights are preserved. `super_id` is stored
+/// as the level's `match_map` for the uncoarsening projection.
+fn contract(lv: Level<'_>, super_id: &[u32], next: usize) -> CoarseLevel {
+  let mut vw = vec![0u64; next];
+  let mut bw = vec![0u64; next];
+  for v in 0..lv.num_vertices() {
+    let s = super_id[v] as usize;
+    vw[s] = vw[s].saturating_add(lv.vw[v]);
+    bw[s] = bw[s].saturating_add(lv.bw[v]);
+  }
+  let mut nets: Vec<(u64, Vec<u32>)> = Vec::with_capacity(lv.nets.len());
+  for (w, pins) in lv.nets {
+    let mut cp: Vec<u32> =
+      pins.iter().map(|&p| super_id[p as usize]).collect();
+    cp.sort_unstable();
+    cp.dedup();
+    if cp.len() >= 2 {
+      nets.push((*w, cp));
+    }
+  }
+  let mut vnets = vec![Vec::new(); next];
+  for (i, (_, pins)) in nets.iter().enumerate() {
+    for &v in pins {
+      vnets[v as usize].push(i as u32);
+    }
+  }
+  CoarseLevel { vw, bw, nets, vnets, match_map: super_id.to_vec() }
+}
+
+/// Decide the bisection on the coarsest graph: greedy graph-growing for a
+/// locality-aware initial cut, then FM to (capped) convergence. The graph is
+/// tiny (≈[`COARSEST_TARGET`] vertices), so this is where we spend on quality —
+/// the *global* cut is decided here and only locally refined while uncoarsening.
+/// We restart from several diverse seeds (see [`INITIAL_RESTARTS`]) and keep the
+/// lowest-cut partition, which makes graph-growing robust to "leaking" across a
+/// thin bridge between two clusters.
+fn initial_partition(lv: Level<'_>, wmin: u64, wmax: u64) -> Vec<u8> {
+  let n = lv.num_vertices();
+  if n == 0 {
+    return Vec::new();
+  }
+  if n == 1 {
+    return vec![0];
+  }
+  let total_bw: u64 = lv.bw.iter().sum();
+  // Diverse deterministic seeds: the heaviest vertex plus points spread evenly
+  // across the id range (one tends to start far from any inter-cluster bridge).
+  let heaviest = (0..n)
+    .max_by(|&a, &b| lv.vw[a].cmp(&lv.vw[b]).then(Reverse(a).cmp(&Reverse(b))))
+    .unwrap();
+  let mut seeds = vec![heaviest];
+  for i in 0..INITIAL_RESTARTS {
+    let s = (i * n) / INITIAL_RESTARTS;
+    if !seeds.contains(&s) {
+      seeds.push(s);
+    }
+  }
+  // Select the lowest-cut candidate, but *only* among non-degenerate splits
+  // (both sides non-empty) and preferring those within the balance window. A
+  // graph-growing run seeded at a light vertex can sweep an entire sub onto one
+  // side (cut 0) when a single atomic block holds more than half the balance
+  // weight; such a split is both unbalanced and degenerate, and accepting it
+  // would leave a shard empty downstream. Key: (unbalanced?, cut), minimized.
+  let mut best: Option<((u8, u128), Vec<u8>)> = None;
+  for &seed in &seeds {
+    let mut side = greedy_grow(lv, total_bw, seed);
+    fm_refine(lv, &mut side, wmin, wmax, MAX_FM_PASSES);
+    let s0 = (0..n).filter(|&v| side[v] == 0).count();
+    if s0 == 0 || s0 == n {
+      continue; // degenerate (one side empty) — never select
+    }
+    let side0_bw: u64 = (0..n).filter(|&v| side[v] == 0).map(|v| lv.bw[v]).sum();
+    let unbalanced = u8::from(side0_bw < wmin || side0_bw > wmax);
+    let (_, cut) = NetState::new(lv, &side);
+    let key = (unbalanced, cut);
+    if best.as_ref().is_none_or(|(bk, _)| key < *bk) {
+      best = Some((key, side));
+    }
+  }
+  // Fallback (no non-degenerate candidate — pathological): split by id so both
+  // sides are non-empty and recursion can still realize every shard.
+  best.map(|(_, s)| s).unwrap_or_else(|| {
+    (0..n).map(|v| u8::from(v >= n / 2)).collect()
+  })
+}
+
+/// Project the coarse partition down to the finest level, boundary-refining at
+/// each step. `side` enters indexed by coarsest supervertex; each finer level
+/// inherits its supervertex's side (`side[fine] = coarse[match_map[fine]]`) and
+/// is FM-refined ([`REFINE_PASSES`] passes) to fix only its cut frontier. The
+/// returned `side` is indexed by `sub` vertex — the same contract a flat
+/// bisection returns.
+fn uncoarsen_refine(
+  sub: &SubHyper,
+  levels: &[CoarseLevel],
+  mut side: Vec<u8>,
+  wmin: u64,
+  wmax: u64,
+) -> Vec<u8> {
+  for i in (0..levels.len()).rev() {
+    // The level finer than `levels[i]` is `levels[i-1]`, or `sub` at the bottom.
+    let (finer_n, finer_lv) = if i == 0 {
+      (sub.num_vertices(), sub.level())
+    } else {
+      (levels[i - 1].vw.len(), levels[i - 1].level())
+    };
+    let mm = &levels[i].match_map; // finer vertex -> levels[i] supervertex
+    let mut finer_side = vec![0u8; finer_n];
+    for v in 0..finer_n {
+      finer_side[v] = side[mm[v] as usize];
+    }
+    fm_refine(finer_lv, &mut finer_side, wmin, wmax, REFINE_PASSES);
+    side = finer_side;
+  }
+  side
 }
 
 // ============================================================================
@@ -968,6 +1331,16 @@ mod tests {
     Address::from_slice(&[byte; 32]).unwrap()
   }
 
+  /// A distinct address for each `n` (more than the 256 `addr(u8)` affords),
+  /// for fixtures large enough to exercise the multilevel coarsening path.
+  /// Big-endian so that address-sort order (which fixes block ids) matches
+  /// numeric order, keeping cluster members id-contiguous in the fixtures below.
+  fn addr_u32(n: u32) -> Address {
+    let mut b = [0u8; 32];
+    b[..4].copy_from_slice(&n.to_be_bytes());
+    Address::from_slice(&b).unwrap()
+  }
+
   /// Two tight clusters {1,2,3} and {4,5,6} with heavy intra-cluster delta and a
   /// single thin cross edge. A good bisection cuts only the thin edge.
   fn two_clusters() -> BlockProfile {
@@ -1115,5 +1488,138 @@ mod tests {
 
     let _ = std::fs::remove_file(&prof);
     let _ = std::fs::remove_file(&shard);
+  }
+
+  #[test]
+  fn contract_sums_weights_and_drops_internal_nets() {
+    // 4 vertices, 3 nets. Merge {0,1}->super0 and {2,3}->super1.
+    let global = vec![0u32, 1, 2, 3];
+    let vw = vec![10u64, 20, 30, 40];
+    let nets = vec![
+      (100u64, vec![0u32, 1]), // becomes internal to super0 -> dropped
+      (200u64, vec![0u32, 2]), // crosses -> kept
+      (300u64, vec![2u32, 3]), // becomes internal to super1 -> dropped
+    ];
+    let sub = SubHyper::assemble(global, vw, nets, 1_000_000);
+    let super_id = vec![0u32, 0, 1, 1];
+    let cl = contract(sub.level(), &super_id, 2);
+
+    assert_eq!(cl.vw, vec![30, 70], "supervertex weights are member sums");
+    assert_eq!(cl.bw, vec![30, 70]);
+    assert_eq!(cl.match_map, super_id);
+    // Only the crossing net survives, with its weight preserved.
+    assert_eq!(cl.nets.len(), 1);
+    assert_eq!(cl.nets[0].0, 200);
+    assert_eq!(cl.nets[0].1, vec![0u32, 1]);
+    // vnets rebuilt to reference the surviving net.
+    assert_eq!(cl.vnets, vec![vec![0u32], vec![0u32]]);
+  }
+
+  #[test]
+  fn match_respects_cluster_weight_cap() {
+    // 0 and 1 share a heavy net; 2 is isolated. bw is each 10.
+    let sub = SubHyper::assemble(
+      vec![0u32, 1, 2],
+      vec![10u64, 10, 10],
+      vec![(100u64, vec![0u32, 1])],
+      1_000_000,
+    );
+    // Generous cap: 0 and 1 merge, 2 stays singleton -> 2 supervertices.
+    let (sid, k) = match_vertices(sub.level(), 100);
+    assert_eq!(sid[0], sid[1]);
+    assert_ne!(sid[0], sid[2]);
+    assert_eq!(k, 2);
+    // Cap below the combined weight (10+10=20): no merge -> 3 supervertices.
+    let (sid2, k2) = match_vertices(sub.level(), 19);
+    assert_ne!(sid2[0], sid2[1]);
+    assert_eq!(k2, 3);
+  }
+
+  /// Two tight clusters of `m` blocks each (intra-cluster delta cycles) joined by
+  /// a single thin cross edge — large enough (`2m > COARSEST_TARGET`) to drive
+  /// the full coarsen → uncoarsen path.
+  fn two_big_clusters(m: u32) -> BlockProfile {
+    let mut b = ProfileBuilder::new();
+    for i in 0..2 * m {
+      b.block(addr_u32(i + 1), 100, 1000, 1);
+    }
+    for i in 0..m {
+      // cluster A cycle over addrs 1..=m
+      b.delta_edge(addr_u32(1 + i), addr_u32(1 + (i + 1) % m));
+      // cluster B cycle over addrs m+1..=2m
+      b.delta_edge(addr_u32(1 + m + i), addr_u32(1 + m + (i + 1) % m));
+    }
+    // single thin cross edge: A_0 unfolds B_0
+    b.delta_edge(addr_u32(1), addr_u32(1 + m));
+    b.finish()
+  }
+
+  #[test]
+  fn multilevel_separates_large_clusters() {
+    // 1024 blocks: past the cap "dead-zone" (n < 2·COARSEST_TARGET), so heavy-
+    // edge matching contracts the graph across multiple levels.
+    let m = 512u32;
+    let p = two_big_clusters(m);
+    let h = Hypergraph::from_profile(&p);
+    let shard_of = h.partition(2, 0.10);
+
+    // Optimal cut is exactly the single cross net (size 1000). Any split that
+    // also breaks a cluster cycle would cut an intra net (also 1000), so this
+    // equality certifies clean cluster separation.
+    assert_eq!(h.connectivity_objective(&shard_of), 1000);
+
+    // Cluster coherence, mapping addresses to (sorted) block ids.
+    let id_of: std::collections::HashMap<Address, u32> = (0..p.num_blocks()
+      as u32)
+      .map(|i| (p.block(i).addr.clone(), i))
+      .collect();
+    let sid = |n: u32| shard_of[id_of[&addr_u32(n)] as usize];
+    let shard_a = sid(1);
+    let shard_b = sid(1 + m);
+    assert_ne!(shard_a, shard_b);
+    for i in 0..m {
+      assert_eq!(sid(1 + i), shard_a, "cluster A must be coherent");
+      assert_eq!(sid(1 + m + i), shard_b, "cluster B must be coherent");
+    }
+  }
+
+  #[test]
+  fn multilevel_partition_is_deterministic() {
+    // 360 blocks > COARSEST_TARGET, partitioned into 4 (exercises recursion +
+    // coarsening). The partition must be byte-for-byte reproducible.
+    let p = two_big_clusters(180);
+    let h = Hypergraph::from_profile(&p);
+    let a = h.partition(4, 0.10);
+    let b = h.partition(4, 0.10);
+    assert_eq!(a, b);
+  }
+
+  #[test]
+  fn multilevel_no_empty_shards_with_dominant_block() {
+    // One block far heavier than all others, among enough light blocks to drive
+    // coarsening. During recursion a sub can be dominated by the giant; a
+    // restart seeded at a light block then sweeps the whole sub onto one side
+    // (cut 0). The initial-partition selection must reject such degenerate
+    // candidates, or a shard ends up empty. (Regression guard.)
+    let mut b = ProfileBuilder::new();
+    let m = 800u32;
+    b.block(addr_u32(1), 5_000_000, 100, 1); // the giant
+    for i in 2..=m {
+      b.block(addr_u32(i), 1000, 100, 1);
+    }
+    for i in 1..m {
+      b.delta_edge(addr_u32(i), addr_u32(i + 1)); // a chain (incl. the giant)
+    }
+    let p = b.finish();
+    let h = Hypergraph::from_profile(&p);
+    for n in [16usize, 64, 200] {
+      let shard_of = h.partition(n, 0.05);
+      let mani = ShardManifest::build(&p, &shard_of, n);
+      assert_eq!(
+        mani.shards.iter().filter(|s| s.blocks.is_empty()).count(),
+        0,
+        "n={n}: every shard must be non-empty despite the dominant block"
+      );
+    }
   }
 }
