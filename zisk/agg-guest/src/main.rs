@@ -4,24 +4,49 @@
 //! committed claim (program vk + subject/assumptions roots) out of its
 //! exposed publics, **pins** the program vk to an allowed set (so a child can
 //! only be a real shard/agg proof, not an attacker's trivial program), and
-//! folds the subjects/assumptions with the same canonical merkle ops the leaf
-//! guest uses. The reused constants are thus *verified*, not trusted.
+//! combines the children's claims. The reused constants are thus *verified*,
+//! not trusted.
+//!
+//! Two combination modes, selected by the first stdin word:
+//!
+//! - **Mode 0 (join fold, legacy)**: subjects and assumptions are folded as
+//!   opaque roots with left-associative `merkle_join`. O(1) per child, but
+//!   assumptions are never discharged — a child's assumption survives to the
+//!   final root even when a sibling's subject proves it.
+//!
+//! - **Mode 1 (set discharge)**: the host supplies, per child, the *preimage
+//!   address lists* behind its subject and assumptions roots as untrusted
+//!   witness. The guest re-derives each list's canonical merkle root and
+//!   asserts it equals the child's committed root (so forged lists cannot
+//!   pass), then computes
+//!     `subject     = canonical( ∪ subjects )`
+//!     `assumptions = canonical( ∪ assumptions ∖ ∪ subjects )`
+//!   — every assumption proven by any sibling is **discharged** here, at the
+//!   lowest level of the aggregation tree where producer and consumer meet.
+//!   When the whole env is folded, the final assumptions root collapses to
+//!   the zero sentinel (no outstanding obligations): an *unconditional*
+//!   claim. Mode-1 outputs are canonical set commitments, so agg-of-agg
+//!   witness verification is uniform at every level.
 //!
 //! Input (bincode-framed via `ziskos::io::read`):
-//!   1. `u32` num_vks, then that many `Vec<u8>` (32-byte) ALLOWED program vks
+//!   1. `u32` mode (0 or 1).
+//!   2. `u32` num_vks, then that many `Vec<u8>` (32-byte) ALLOWED program vks
 //!      (e.g. [SHARD_VK] for a single-level fold; [SHARD_VK, AGG_VK] for
 //!      tree-fold). Committed so an external verifier checks them against the
 //!      real program vks.
-//!   2. `u32` num_proofs, then that many `Vec<u8>` proof blobs.
+//!   3. `u32` num_proofs, then that many `Vec<u8>` proof blobs.
+//!   4. Mode 1 only: per child, `Vec<u8>` packed subject addresses then
+//!      `Vec<u8>` packed assumption addresses (32 bytes each, any order —
+//!      the canonical root sorts and dedups).
 //!
 //! Output (committed, leaf-COMPATIBLE 112-byte layout so an aggregate is
 //! parseable exactly like a leaf — enabling agg-of-agg):
 //!   - [0..32)   blake3(allowed vks)   (id; the leaf's `env_hash` slot)
 //!   - [32..36)  num_proofs            (field_a)
-//!   - [36..40)  0                     (field_b)
+//!   - [36..40)  mode                  (field_b)
 //!   - [40..44)  0                     (failures)
-//!   - [44..76)  combined subject root (merkle_join of children's subjects)
-//!   - [76..108) combined assumptions root
+//!   - [44..76)  combined subject root
+//!   - [76..108) combined assumptions root (mode 1: post-discharge)
 //!   - [108..112) num_proofs           (checked_count)
 //!
 //! v0.18 proof word layout (as `&[u64]`):
@@ -37,7 +62,7 @@ extern crate alloc;
 use alloc::vec::Vec;
 
 use ix_common::address::Address;
-use ixon::merkle::{merkle_join, zero_address};
+use ixon::merkle::{merkle_join, merkle_root_canonical, zero_address};
 
 /// Reconstruct a 32-byte address committed at leaf-publics `slot_start`
 /// (8 consecutive u32 slots). `words` is the whole proof as u64 words; the
@@ -52,6 +77,10 @@ fn read_pub_addr(words: &[u64], slot_start: usize) -> Address {
 }
 
 fn main() {
+  // 0. Combination mode.
+  let mode: u32 = ziskos::io::read();
+  assert!(mode <= 1, "unknown aggregation mode {mode}");
+
   // 1. Allowed program vks.
   let num_vks: u32 = ziskos::io::read();
   let mut allowed: Vec<[u64; 4]> = Vec::with_capacity(num_vks as usize);
@@ -66,10 +95,10 @@ fn main() {
     allowed_bytes.extend_from_slice(&vk);
   }
 
-  // 2. Verify + bind each child proof.
+  // 2. Verify + bind each child proof, collecting its committed roots.
   let num_proofs: u32 = ziskos::io::read();
-  let mut subject: Option<Address> = None;
-  let mut assumptions: Option<Address> = None;
+  let mut child_roots: Vec<(Address, Address)> =
+    Vec::with_capacity(num_proofs as usize);
   for i in 0..num_proofs {
     let proof: Vec<u8> = ziskos::io::read();
     let valid = unsafe { ziskos::zisklib::verify_zisk_proof_c(proof.as_ptr(), proof.len()) };
@@ -91,24 +120,72 @@ fn main() {
     }
     let s = read_pub_addr(&words, 11);
     let a = read_pub_addr(&words, 19);
-    subject = Some(match subject {
-      None => s,
-      Some(p) => merkle_join(&p, &s),
-    });
-    assumptions = Some(match assumptions {
-      None => a,
-      Some(p) => merkle_join(&p, &a),
-    });
+    child_roots.push((s, a));
   }
 
-  let subject = subject.unwrap_or_else(zero_address);
-  let assumptions = assumptions.unwrap_or_else(zero_address);
+  // 3. Combine the children's claims.
+  let (subject, assumptions) = if mode == 0 {
+    // Join fold: opaque-root composition, no discharge.
+    let mut subject: Option<Address> = None;
+    let mut assumptions: Option<Address> = None;
+    for (s, a) in &child_roots {
+      subject = Some(match subject {
+        None => s.clone(),
+        Some(p) => merkle_join(&p, s),
+      });
+      assumptions = Some(match assumptions {
+        None => a.clone(),
+        Some(p) => merkle_join(&p, a),
+      });
+    }
+    (
+      subject.unwrap_or_else(zero_address),
+      assumptions.unwrap_or_else(zero_address),
+    )
+  } else {
+    // Set discharge: verify each child's witness preimages against its
+    // committed roots, then resolve assumptions against sibling subjects.
+    let mut subj_union: Vec<Address> = Vec::new();
+    let mut asm_union: Vec<Address> = Vec::new();
+    for (i, (s_root, a_root)) in child_roots.iter().enumerate() {
+      let s_blob: Vec<u8> = ziskos::io::read();
+      let a_blob: Vec<u8> = ziskos::io::read();
+      let s_list: Vec<Address> = Address::unpack(&s_blob).collect();
+      let a_list: Vec<Address> = Address::unpack(&a_blob).collect();
+      // The witness is untrusted: its canonical root must reproduce the
+      // root the (verified) child committed, or the lists are forged.
+      let s_check = merkle_root_canonical(&s_list).unwrap_or_else(zero_address);
+      if s_check != *s_root {
+        panic!("child {i}: subject witness does not match committed root");
+      }
+      let a_check = merkle_root_canonical(&a_list).unwrap_or_else(zero_address);
+      if a_check != *a_root {
+        panic!("child {i}: assumptions witness does not match committed root");
+      }
+      subj_union.extend(s_list);
+      asm_union.extend(a_list);
+    }
+    subj_union.sort_unstable();
+    subj_union.dedup();
+    asm_union.sort_unstable();
+    asm_union.dedup();
+    // Discharge: an assumption proven by any child's subject is resolved.
+    let outstanding: Vec<Address> = asm_union
+      .into_iter()
+      .filter(|a| subj_union.binary_search(a).is_err())
+      .collect();
+    (
+      merkle_root_canonical(&subj_union).unwrap_or_else(zero_address),
+      merkle_root_canonical(&outstanding).unwrap_or_else(zero_address),
+    )
+  };
+
   let vks_id = Address::hash(&allowed_bytes);
 
   // Leaf-compatible 112-byte layout (see module docs).
   ziskos::io::commit_slice(vks_id.as_bytes());
   ziskos::io::commit_slice(&num_proofs.to_le_bytes());
-  ziskos::io::commit_slice(&0u32.to_le_bytes());
+  ziskos::io::commit_slice(&mode.to_le_bytes());
   ziskos::io::commit_slice(&0u32.to_le_bytes());
   ziskos::io::commit_slice(subject.as_bytes());
   ziskos::io::commit_slice(assumptions.as_bytes());

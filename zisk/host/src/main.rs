@@ -58,6 +58,16 @@ struct Args {
   #[arg(long)]
   gpu: bool,
 
+  /// Use the Emulator executor instead of the default Assembly executor.
+  /// Assembly is the default: it is markedly faster at trace generation
+  /// (measured ~4-6x on EXECUTE, ~11x on COMPUTE_MINIMAL_TRACE) and is the
+  /// prerequisite for the hints stream. Pass `--emulator` to opt back into
+  /// the Emulator (e.g. to debug, or on a box without the memlock rlimit the
+  /// ASM executor's MAP_LOCKED mmaps require). See the multi-program
+  /// setup-ordering note on `build_client`.
+  #[arg(long)]
+  emulator: bool,
+
   /// Path to a `.ixe` file. Repeatable: pass `--ixe` multiple times to
   /// prove a batch of inputs in one warm process and aggregate them all
   /// into a single proof. If omitted entirely, one empty `IxonEnv` is
@@ -180,6 +190,26 @@ struct Args {
   /// coverage binding, discharge — stays self-consistent on the capped subset.
   #[arg(long)]
   limit_items: Option<usize>,
+
+  /// Dump the selected shard's guest stdin (range + closure sub-env +
+  /// check-list) to this file and exit, instead of executing/proving. Pairs
+  /// with `--shard-plan` (+ `--only-shard` to pick which shard) to produce an
+  /// `input.bin` for standalone profiling: `ziskemu -e <guest.elf> -i input.bin
+  /// -X -S` or `cargo-zisk run -i input.bin -p summary`.
+  #[arg(long)]
+  dump_input: Option<PathBuf>,
+
+  /// Check a single constant selected by its Lean NAME (e.g.
+  /// "ByteArray.utf8DecodeChar?_utf8EncodeChar_append"), with no manifest or
+  /// range plumbing: the name is resolved through the env's `named` metadata to
+  /// its ingress block, that block's work item becomes a one-item check-list,
+  /// and the guest receives only its closure sub-env. Composes with
+  /// `--execute` (cycles), plain prove (single leaf, subject-bound + verified),
+  /// and `--dump-input` (write the stdin for ziskemu profiling). Requires
+  /// exactly one `--ixe`. Note: a member of a mutual block selects the whole
+  /// block's work item (the kernel checks blocks atomically).
+  #[arg(long, conflicts_with_all = ["shard_plan", "only_shard", "store_dir"])]
+  only_const: Option<String>,
 
   /// Cap on resident witness traces during the prove phase, bounding
   /// peak host RAM per shard. Zisk's prover queues witnesses up to this
@@ -471,8 +501,18 @@ fn leaf_stdin(start: u32, end: u32, env_bytes: &[u8], check_list: &[u8]) -> Zisk
 /// Build the aggregation-guest stdin: the allowed program-vk set (count +
 /// 32-byte vks) the agg guest pins each child against, then the proof blobs
 /// (count + `Vec<u8>`s).
-fn agg_stdin(allowed_vks: &[Vec<u8>], proofs: &[Vec<u8>]) -> ZiskStdin {
+/// Build the agg guest's stdin. `witness = None` selects mode 0 (legacy join
+/// fold). `witness = Some(per-child (subject set, assumption set))` selects
+/// mode 1 (set discharge): the guest verifies each list's canonical root
+/// against the child's committed publics, then discharges assumptions proven
+/// by sibling subjects. Witness order must match `proofs` order.
+fn agg_stdin(
+  allowed_vks: &[Vec<u8>],
+  proofs: &[Vec<u8>],
+  witness: Option<&[(Vec<u8>, Vec<u8>)]>,
+) -> ZiskStdin {
   let stdin = ZiskStdin::new();
+  stdin.write(&u32::from(witness.is_some())); // mode
   stdin.write(&(allowed_vks.len() as u32));
   for vk in allowed_vks {
     stdin.write(vk);
@@ -481,7 +521,42 @@ fn agg_stdin(allowed_vks: &[Vec<u8>], proofs: &[Vec<u8>]) -> ZiskStdin {
   for bytes in proofs {
     stdin.write(bytes);
   }
+  if let Some(w) = witness {
+    assert_eq!(w.len(), proofs.len(), "witness/proof count mismatch");
+    for (s_blob, a_blob) in w {
+      stdin.write(s_blob);
+      stdin.write(a_blob);
+    }
+  }
   stdin
+}
+
+/// Mirror of the leaf guest's assumption rule (`zisk/guest/src/main.rs`): the
+/// direct `Constant.refs` of every checked target that are neither in the
+/// checked set nor data blobs — the constants the leaf *assumes* well-typed.
+/// Computed against the full env; the guest computes it against the injected
+/// sub-env, whose constants are byte-identical, so the sets agree. Returned
+/// sorted + deduped (a set; `merkle_root_canonical` is dedup-invariant).
+fn leaf_assumptions(
+  env: &IxonEnv,
+  targets: &[ix_common::address::Address],
+) -> Vec<ix_common::address::Address> {
+  let mut checked = targets.to_vec();
+  checked.sort_unstable();
+  checked.dedup();
+  let mut out = Vec::new();
+  for t in targets {
+    if let Some(c) = env.get_const(t) {
+      for r in &c.refs {
+        if checked.binary_search(r).is_err() && env.get_blob(r).is_none() {
+          out.push(r.clone());
+        }
+      }
+    }
+  }
+  out.sort_unstable();
+  out.dedup();
+  out
 }
 
 /// Extract a proof's 32-byte program vk: v0.18 lays the proof out as u64
@@ -883,15 +958,25 @@ fn check_input_coherence(label: &str, publics: &[ShardPublics], total: u32) -> R
   Ok(failures)
 }
 
-fn build_client(gpu: bool, max_witness_stored: Option<usize>) -> Result<EmbeddedClient> {
-  // Default executor (Emulator), NOT `ExecutorKind::Assembly`. Empirically
-  // Assembly + multi-program setup is broken: calling `client.setup`
-  // for a second program re-initializes the ASM microservices and
-  // leaves the first program's ROM histogram empty, so subsequent
-  // proves panic at `state-machines/rom/src/rom.rs:178` with
-  // "index out of bounds: len 0". The v0.18 upstream aggregation
-  // example (`~/zisk/examples/aggregation/host/src/main.rs`) also uses
-  // the default Emulator executor.
+fn build_client(
+  gpu: bool,
+  asm: bool,
+  max_witness_stored: Option<usize>,
+) -> Result<EmbeddedClient> {
+  // Executor choice. The default is the Assembly executor (`asm = true`,
+  // i.e. no `--emulator`): it is markedly faster at trace generation and is
+  // the prerequisite for the hints stream. It historically broke under our
+  // multi-program flow — calling `client.setup` for a second program
+  // re-initializes the ASM microservices and leaves the first program's ROM
+  // histogram empty, so a subsequent prove of the first program panics at
+  // `state-machines/rom/src/rom.rs:178` ("index out of bounds: len 0").
+  //
+  // The fix is ordering-based: never set up the agg program *before* the
+  // leaves are proven. The `--shard-plan` path already does this
+  // (`run_shard_plan` sets up AGG only after the leaf loop), and the upfront
+  // agg setup in `main` is gated to the Emulator (`--emulator`), with Assembly
+  // deferring it to after the leaf loop. Validated: a 2-shard multi-program
+  // prove that previously panicked now completes and verifies.
   //
   // `minimal_memory()` deliberately NOT enabled — per upstream CLI
   // docs ("Reduce memory footprint during proving at the cost of
@@ -903,6 +988,9 @@ fn build_client(gpu: bool, max_witness_stored: Option<usize>) -> Result<Embedded
   }
   let mut builder: EmbeddedClientBuilder =
     ProverClient::embedded().with_embedded_opts(opts);
+  if asm {
+    builder = builder.assembly();
+  }
   if gpu {
     builder = builder.gpu();
   }
@@ -913,22 +1001,142 @@ fn build_client(gpu: bool, max_witness_stored: Option<usize>) -> Result<Embedded
 /// (and the profiler) uses. For a Muts block the work item's `primary` is a
 /// member projection, whose `block` field is the block address; for a standalone
 /// constant the primary is the block. Mirrors the profiler's `profile_block_of`.
-fn work_block_addr(
+/// The ingress block of a constant address: a projection's `block`, else the
+/// address itself. Shared by [`work_block_addr`] and the `--only-const` lookup.
+fn block_of_addr(
   env: &IxonEnv,
-  item: &AnonWorkItem,
+  addr: &ix_common::address::Address,
 ) -> ix_common::address::Address {
   use ixon::constant::ConstantInfo as CI;
-  let primary = item.primary();
-  match env.get_const(primary) {
+  match env.get_const(addr) {
     Some(c) => match &c.info {
       CI::IPrj(p) => p.block.clone(),
       CI::CPrj(p) => p.block.clone(),
       CI::RPrj(p) => p.block.clone(),
       CI::DPrj(p) => p.block.clone(),
-      _ => primary.clone(),
+      _ => addr.clone(),
     },
-    None => primary.clone(),
+    None => addr.clone(),
   }
+}
+
+fn work_block_addr(
+  env: &IxonEnv,
+  item: &AnonWorkItem,
+) -> ix_common::address::Address {
+  block_of_addr(env, item.primary())
+}
+
+/// Check a single constant chosen by Lean NAME (the `--only-const` path).
+/// Resolve name → constant address via the env's `named` metadata, map to its
+/// ingress block's work item, and ship just that item: a one-element
+/// check-list + its closure sub-env. Honors `--dump-input` (write stdin for
+/// ziskemu), `--execute` (cycles), and plain prove (single leaf, subject-bound
+/// + verified). No aggregation — it's one leaf.
+async fn run_only_const(
+  client: &EmbeddedClient,
+  plan: &InputPlan,
+  name: &str,
+  args: &Args,
+) -> Result<()> {
+  use ix_common::address::Address;
+
+  // Resolve the Lean name → constant address via the full env's metadata
+  // (`get_anon` discards `named`, so load the full env just for the lookup).
+  let full =
+    IxonEnv::get(&mut &plan.env_bytes[..]).expect("invalid Ixon environment");
+  let target: Address = full
+    .named
+    .iter()
+    .find(|e| e.key().to_string() == name)
+    .map(|e| e.value().addr.clone())
+    .ok_or_else(|| anyhow::anyhow!("no constant named {name:?} in {}", plan.label))?;
+
+  // The name's work item is the one whose ingress block owns it — works for a
+  // standalone const (block == itself) and a member of a Muts block (block ==
+  // the mutual container, checked atomically).
+  let env =
+    IxonEnv::get_anon(&mut &plan.env_bytes[..]).expect("invalid Ixon environment");
+  let work = build_anon_work(&env).expect("build_anon_work");
+  let block = block_of_addr(&env, &target);
+  let item = work.iter().find(|w| work_block_addr(&env, w) == block).ok_or_else(
+    || {
+      anyhow::anyhow!(
+        "{name:?} resolved to block {}… but no work item covers it",
+        block.hex()[..16].to_string()
+      )
+    },
+  )?;
+
+  // One-item check-list + closure sub-env.
+  let check_list = Address::pack(&[item.primary().clone()]);
+  let roots: Vec<Address> = item.proven_targets();
+  let cover: Vec<[u8; 32]> = roots.iter().map(|a| *a.as_bytes()).collect();
+  let sub_env = build_sub_env(&env, &roots)?;
+  println!(
+    "only-const {name}: block {}… ({} target const(s)); closure sub-env {} vs whole env {} ({:.0}%)",
+    block.hex()[..16].to_string(),
+    roots.len(),
+    sub_env.len().human_count_bytes(),
+    plan.env_bytes.len().human_count_bytes(),
+    100.0 * sub_env.len() as f64 / plan.env_bytes.len().max(1) as f64,
+  );
+
+  // ---- Dump mode: write stdin for `ziskemu`/`cargo-zisk run -i`. ----
+  if let Some(dump) = &args.dump_input {
+    let stdin = leaf_stdin(0, 0, &sub_env, &check_list);
+    stdin.save(dump).map_err(|e| anyhow::anyhow!("save {}: {e}", dump.display()))?;
+    println!("dumped input → {}", dump.display());
+    return Ok(());
+  }
+
+  let stdin = leaf_stdin(0, 0, &sub_env, &check_list);
+
+  // ---- Execute mode: cycles only, no proof. ----
+  if args.execute {
+    let result = client.execute(&SHARD_PROGRAM, stdin).run()?.await?;
+    let mut buf = [0u8; SHARD_PUBLICS_LEN];
+    result.get_public_values_slice(&mut buf);
+    let publics = ShardPublics::decode(&buf);
+    println!("cycles: {}, failures: {}", result.get_execution_steps(), publics.failures);
+    if publics.failures > 0 {
+      bail!("kernel typecheck produced {} failure(s)", publics.failures);
+    }
+    return Ok(());
+  }
+
+  // ---- Prove mode: single leaf, bind subject to the env, verify. ----
+  let result = client.prove(&SHARD_PROGRAM, stdin).run()?.await?;
+  let mut buf = [0u8; SHARD_PUBLICS_LEN];
+  result.get_public_values_slice(&mut buf);
+  let publics = ShardPublics::decode(&buf);
+  let leaf_ms = result.get_proving_time();
+  let expected = subject_of_cover(&cover);
+  if *expected.as_bytes() != publics.subject_root {
+    bail!(
+      "committed subject {}… ≠ env-derived {}… — guest certified a different set",
+      Address::from_slice(&publics.subject_root)
+        .map(|a| a.hex()[..16].to_string())
+        .unwrap_or_default(),
+      expected.hex()[..16].to_string(),
+    );
+  }
+  let vstart = Instant::now();
+  result.verify()?;
+  println!(
+    "only-const {name}: failures={}, prove {:.2}s ({} steps), verify {:.3}s; \
+     subject bound ({}… over {} target(s))",
+    publics.failures,
+    leaf_ms as f64 / 1000.0,
+    result.get_execution_steps(),
+    vstart.elapsed().as_secs_f64(),
+    expected.hex()[..16].to_string(),
+    roots.len(),
+  );
+  if publics.failures > 0 {
+    bail!("kernel typecheck produced {} failure(s) (proof still verifies)", publics.failures);
+  }
+  Ok(())
 }
 
 /// Map each manifest shard to the work items whose ingress block it owns.
@@ -986,11 +1194,37 @@ fn group_work_by_manifest<'a>(
   Ok(groups)
 }
 
+/// Prune the manifest's bisection tree to the set of `present` (proven,
+/// non-empty) shard ids: drop leaves not present, and collapse any internal node
+/// that loses a child to its surviving child. Returns `None` if nothing remains.
+/// Lets the tree-aligned fold work even when some shards are empty or only a
+/// subset was proven.
+fn prune_tree(
+  node: &ix_kernel::shard::AggNode,
+  present: &std::collections::HashSet<u32>,
+) -> Option<ix_kernel::shard::AggNode> {
+  use ix_kernel::shard::AggNode;
+  match node {
+    AggNode::Leaf(id) => present.contains(id).then(|| AggNode::Leaf(*id)),
+    AggNode::Internal(l, r) => {
+      match (prune_tree(l, present), prune_tree(r, present)) {
+        (Some(a), Some(b)) => {
+          Some(AggNode::Internal(Box::new(a), Box::new(b)))
+        },
+        (Some(a), None) | (None, Some(a)) => Some(a),
+        (None, None) => None,
+      }
+    },
+  }
+}
+
 /// Prove a `.ixes` manifest partition: one closure-injected leaf proof per
 /// (non-empty) manifest shard, folded into a single aggregate whose committed
 /// subject is bound to the env. Honors `--execute` (per-shard VM cycles) and
 /// `--only-shard k` (prove just shard k). The agg program is set up lazily,
-/// only when more than one leaf is produced.
+/// only when more than one leaf is produced. When the manifest carries a
+/// bisection tree, the fold follows it (tree-aligned); otherwise a flat
+/// arity-fold is used.
 async fn run_shard_plan(
   client: &EmbeddedClient,
   plan: &InputPlan,
@@ -1000,7 +1234,7 @@ async fn run_shard_plan(
   use std::collections::HashSet;
 
   use ix_common::address::Address;
-  use ix_kernel::shard::ShardManifest;
+  use ix_kernel::shard::{agg_plan, FoldOp, ShardManifest};
 
   let env =
     IxonEnv::get_anon(&mut &plan.env_bytes[..]).expect("invalid Ixon environment");
@@ -1057,6 +1291,22 @@ async fn run_shard_plan(
     Ok((check_list, sub_env, cover))
   };
 
+  // ---- Dump mode: write the selected shard's guest stdin to a file (for
+  // standalone profiling with `ziskemu`/`cargo-zisk run -i`), then exit. ----
+  if let Some(dump) = &args.dump_input {
+    let (idx, g) = selected.first().expect("a selected shard");
+    let (check_list, sub_env, _cover) = build_inputs(g)?;
+    let stdin = leaf_stdin(0, 0, &sub_env, &check_list);
+    stdin.save(dump).map_err(|e| anyhow::anyhow!("save {}: {e}", dump.display()))?;
+    println!(
+      "dumped shard {idx} input ({} work items, sub-env {}) → {}",
+      g.len(),
+      sub_env.len().human_count_bytes(),
+      dump.display(),
+    );
+    return Ok(());
+  }
+
   // ---- Execute mode: run each shard in the VM for cycles (no proof). ----
   if args.execute {
     let mut total_steps = 0u64;
@@ -1087,6 +1337,16 @@ async fn run_shard_plan(
   // ---- Prove mode: one closure-injected leaf per shard. ----
   let mut leaf_proofs: Vec<Vec<u8>> = Vec::with_capacity(selected.len());
   let mut leaf_subjects: Vec<Address> = Vec::with_capacity(selected.len());
+  // Per-leaf claim preimages (sorted, deduped): the certified target set and
+  // the assumption set behind the leaf's committed roots. Supplied to the agg
+  // guest as discharge witness and mirrored host-side for the final binding.
+  let mut leaf_subject_sets: Vec<Vec<Address>> =
+    Vec::with_capacity(selected.len());
+  let mut leaf_assumption_sets: Vec<Vec<Address>> =
+    Vec::with_capacity(selected.len());
+  // Shard id (manifest index == bisection-tree leaf id) of each proven leaf, so
+  // the aggregation can fold along the manifest's bisection tree.
+  let mut leaf_ids: Vec<u32> = Vec::with_capacity(selected.len());
   let mut covered_union: HashSet<[u8; 32]> = HashSet::default();
   let mut total_leaf_ms = 0u64;
   let mut total_failures = 0u32;
@@ -1134,9 +1394,30 @@ async fn run_shard_plan(
         expected.hex()[..16].to_string(),
       );
     }
+    // Record the leaf's claim preimages and check the assumptions mirror NOW
+    // (a divergence would otherwise only surface as a witness-root panic deep
+    // inside the agg guest, after the leaf proving time is already spent).
+    let mut targets: Vec<Address> = cover
+      .iter()
+      .map(|b| Address::from_slice(b).expect("cover address"))
+      .collect();
+    let asm_set = leaf_assumptions(&env, &targets);
+    let asm_expected = ixon::merkle::merkle_root_canonical(&asm_set)
+      .unwrap_or_else(ixon::merkle::zero_address);
+    if *asm_expected.as_bytes() != publics.assumptions_root {
+      bail!(
+        "shard {idx}: committed assumptions root ≠ host mirror — the host's \
+         leaf_assumptions rule diverges from the guest's",
+      );
+    }
+    targets.sort_unstable();
+    targets.dedup();
+    leaf_subject_sets.push(targets);
+    leaf_assumption_sets.push(asm_set);
     covered_union.extend(cover.iter().copied());
     leaf_subjects.push(expected);
     leaf_proofs.push(blob);
+    leaf_ids.push(idx as u32);
     last_leaf_result = Some(result);
   }
   let leaf_wall = leaf_start.elapsed();
@@ -1152,9 +1433,15 @@ async fn run_shard_plan(
     }
   }
 
-  // ---- Aggregate: tree-fold the leaves, mirroring the merkle subject fold so
-  // the root's committed subject can be bound to the env. ----
+  // ---- Aggregate: fold the leaves, mirroring the merkle subject fold so the
+  // root's committed subject can be bound to the env. When the manifest carries
+  // a bisection tree, fold along it (pruned to the shards actually proven) so
+  // each cross-shard assumption discharges at the lowest common ancestor;
+  // otherwise fall back to the flat arity-fold. ----
   let arity = (args.agg_arity as usize).max(2);
+  let present_ids: HashSet<u32> = leaf_ids.iter().copied().collect();
+  let pruned_tree =
+    manifest.tree.as_ref().and_then(|t| prune_tree(t, &present_ids));
   let (final_size, agg_ms, verify_ms, root_committed, expected_final) =
     if leaf_proofs.len() == 1 {
       let leaf = last_leaf_result.expect("single leaf");
@@ -1163,6 +1450,121 @@ async fn run_shard_plan(
       leaf.verify()?;
       // Per-leaf binding above already pinned the subject; fold of 1 = itself.
       (final_size, 0u64, vstart.elapsed().as_millis() as u64, leaf_subjects[0].clone(), leaf_subjects[0].clone())
+    } else if let Some(tree) = pruned_tree {
+      // Tree-aligned fold: lower the bisection tree to an arity-bounded post-
+      // order plan and execute it. Each `Agg` folds whole subtrees, so coupled
+      // shards meet (and discharge their shared assumptions) as low as possible.
+      if shard_vk.is_empty() {
+        bail!("no shard vk available to pin the aggregation");
+      }
+      client.setup(&AGG_PROGRAM).run()?.await?;
+      let id_to_idx: std::collections::HashMap<u32, usize> =
+        leaf_ids.iter().copied().enumerate().map(|(i, id)| (id, i)).collect();
+      let plan = agg_plan(&tree, arity);
+      let agg_nodes = plan.iter().filter(|o| matches!(o, FoldOp::Agg(_))).count();
+      println!(
+        "  [agg] folding {} leaves along the bisection tree (arity {arity}, {agg_nodes} agg node(s))",
+        leaf_proofs.len(),
+      );
+      // One slot per plan entry, in post order (children precede parents).
+      // Each slot carries the node's proof plus its claim preimages — the
+      // certified subject SET and outstanding assumption SET (sorted+deduped)
+      // — which feed the next level's discharge witness and the host mirror.
+      let mut slot_proof: Vec<Vec<u8>> = Vec::with_capacity(plan.len());
+      let mut slot_subj: Vec<Vec<Address>> = Vec::with_capacity(plan.len());
+      let mut slot_asm: Vec<Vec<Address>> = Vec::with_capacity(plan.len());
+      let mut total_agg_ms = 0u64;
+      let mut root_result: Option<_> = None;
+      for op in &plan {
+        match op {
+          FoldOp::Leaf(id) => {
+            let i = id_to_idx[id]; // present by construction (tree pruned)
+            slot_proof.push(leaf_proofs[i].clone());
+            slot_subj.push(leaf_subject_sets[i].clone());
+            slot_asm.push(leaf_assumption_sets[i].clone());
+          },
+          FoldOp::Agg(children) => {
+            let proofs: Vec<Vec<u8>> =
+              children.iter().map(|&c| slot_proof[c].clone()).collect();
+            // Mode-1 witness: each child's subject/assumption preimages, in
+            // the same order as `proofs`. The guest verifies them against the
+            // children's committed roots, so they are untrusted inputs here.
+            let witness: Vec<(Vec<u8>, Vec<u8>)> = children
+              .iter()
+              .map(|&c| (Address::pack(&slot_subj[c]), Address::pack(&slot_asm[c])))
+              .collect();
+            let allowed = distinct_vks(&proofs);
+            let astart = Instant::now();
+            let result = client
+              .prove(&AGG_PROGRAM, agg_stdin(&allowed, &proofs, Some(&witness)))
+              .run()?
+              .await?;
+            total_agg_ms += result.get_proving_time();
+            // Host mirror of the guest's discharge: union the children's sets
+            // and resolve assumptions against the union subject.
+            let mut union_s: Vec<Address> = Vec::new();
+            let mut union_a: Vec<Address> = Vec::new();
+            for &c in children {
+              union_s.extend(slot_subj[c].iter().cloned());
+              union_a.extend(slot_asm[c].iter().cloned());
+            }
+            union_s.sort_unstable();
+            union_s.dedup();
+            union_a.sort_unstable();
+            union_a.dedup();
+            let outstanding: Vec<Address> = union_a
+              .into_iter()
+              .filter(|a| union_s.binary_search(a).is_err())
+              .collect();
+            println!(
+              "    agg {} → prove {:.2}s (wall {:.2}s); subjects {} assumptions {} → outstanding {}",
+              proofs.len(),
+              result.get_proving_time() as f64 / 1000.0,
+              astart.elapsed().as_secs_f64(),
+              union_s.len(),
+              children.iter().map(|&c| slot_asm[c].len()).sum::<usize>(),
+              outstanding.len(),
+            );
+            slot_proof.push(result.get_proof_bytes()?);
+            slot_subj.push(union_s);
+            slot_asm.push(outstanding);
+            root_result = Some(result);
+          },
+        }
+      }
+      let root = root_result.expect("tree fold produced a root agg");
+      let final_size = root.get_proof_bytes()?.len();
+      let mut fbuf = [0u8; SHARD_PUBLICS_LEN];
+      root.get_public_values_slice(&mut fbuf);
+      let fpub = ShardPublics::decode(&fbuf);
+      let committed = fpub.subject_root;
+      let vstart = Instant::now();
+      root.verify()?;
+      let committed_addr = Address::from_slice(&committed)
+        .unwrap_or_else(|_| ixon::merkle::zero_address());
+      // Mode-1 root subject = canonical merkle root over the UNION of certified
+      // targets — a set commitment, independent of fold shape.
+      let root_subj = slot_subj.last().expect("root subject set");
+      let expected = ixon::merkle::merkle_root_canonical(root_subj)
+        .unwrap_or_else(ixon::merkle::zero_address);
+      // Bind the root's outstanding-assumptions root to the host mirror, and
+      // report closure: an empty outstanding set means the aggregate claim is
+      // UNCONDITIONAL (every cross-shard obligation was discharged in-circuit).
+      let root_asm = slot_asm.last().expect("root assumption set");
+      let asm_expected = ixon::merkle::merkle_root_canonical(root_asm)
+        .unwrap_or_else(ixon::merkle::zero_address);
+      if *asm_expected.as_bytes() != fpub.assumptions_root {
+        bail!("aggregate assumptions root ≠ host mirror — discharge diverged");
+      }
+      if root_asm.is_empty() {
+        println!("  [agg] all assumptions discharged — final claim is unconditional");
+      } else {
+        println!(
+          "  [agg] {} outstanding assumption(s) remain (refs not proven by any folded shard)",
+          root_asm.len(),
+        );
+      }
+      (final_size, total_agg_ms, vstart.elapsed().as_millis() as u64, committed_addr, expected)
     } else {
       if shard_vk.is_empty() {
         bail!("no shard vk available to pin the aggregation");
@@ -1187,7 +1589,7 @@ async fn run_shard_plan(
           let allowed = distinct_vks(&cur_proofs[s..e]);
           let astart = Instant::now();
           let result =
-            client.prove(&AGG_PROGRAM, agg_stdin(&allowed, &cur_proofs[s..e])).run()?.await?;
+            client.prove(&AGG_PROGRAM, agg_stdin(&allowed, &cur_proofs[s..e], None)).run()?.await?;
           total_agg_ms += result.get_proving_time();
           println!(
             "    [{s}..{e}] {} proofs → prove {:.2}s (wall {:.2}s)",
@@ -1268,6 +1670,10 @@ async fn main() -> Result<()> {
   if args.shard_plan.is_some() && inputs.len() > 1 {
     bail!("--shard-plan requires exactly one --ixe input (the env the manifest was built for)");
   }
+  // `--only-const` selects a named constant from one env.
+  if args.only_const.is_some() && inputs.len() > 1 {
+    bail!("--only-const requires exactly one --ixe input");
+  }
 
   // ---- Plan every input up front (parse + shard). ----
   let print_plan = args.plan || args.shard_bytes.is_some();
@@ -1276,8 +1682,10 @@ async fn main() -> Result<()> {
     plans.push(plan_input(ixe.as_ref(), args.shard_consts, args.shard_bytes, print_plan)?);
   }
 
-  // `--only-shard` narrows the (single) input's shard list.
-  if let Some(only) = args.only_shard {
+  // `--only-shard` narrows the (single) input's shard list. Skip for the
+  // manifest path — there `--only-shard` selects a *manifest* shard and is
+  // handled inside `run_shard_plan`, not against the range-based plan here.
+  if let Some(only) = args.only_shard.filter(|_| args.shard_plan.is_none()) {
     let plan = &mut plans[0];
     let num = plan.shards.len();
     if only == 0 || only > num {
@@ -1308,17 +1716,25 @@ async fn main() -> Result<()> {
   let grand_target_count: usize = plans.iter().map(|p| p.target_count).sum();
   let total_leaves: usize = plans.iter().map(|p| p.shards.len()).sum();
 
-  let client = build_client(args.gpu, Some(args.max_witness_stored))?;
+  let client =
+    build_client(args.gpu, !args.emulator, Some(args.max_witness_stored))?;
   client.setup(&SHARD_PROGRAM).run()?.await?;
   // Skip agg-guest setup unless we'll produce more than one leaf proof.
   // The reuse path (store_dir) sets up the agg program itself (it folds a
   // different set of proofs); skip the normal-path setup for it here.
+  //
+  // Under the Assembly executor (the default) this upfront agg setup is
+  // *harmful*: it re-initializes the ASM microservices and clobbers SHARD's
+  // ROM histogram, so the subsequent leaf proves panic in `rom.rs`. We defer
+  // the agg setup to after the leaf loop (see the agg-fold below). Only the
+  // Emulator (`--emulator`) keeps the upfront setup — it has no microservice
+  // state to clobber.
   let need_agg = !args.execute
     && !args.verify_constraints
     && args.store_dir.is_none()
     && args.shard_plan.is_none()
     && total_leaves > 1;
-  if need_agg {
+  if need_agg && args.emulator {
     client.setup(&AGG_PROGRAM).run()?.await?;
   }
 
@@ -1329,6 +1745,12 @@ async fn main() -> Result<()> {
   // range-based execute/leaf paths below.
   if let Some(manifest_path) = &args.shard_plan {
     run_shard_plan(&client, &plans[0], manifest_path, &args).await?;
+    return Ok(());
+  }
+
+  // ---- Single named constant (no manifest/range). ----
+  if let Some(name) = &args.only_const {
+    run_only_const(&client, &plans[0], name, &args).await?;
     return Ok(());
   }
 
@@ -1690,7 +2112,7 @@ async fn main() -> Result<()> {
         let allowed = vec![shard_vk.clone()];
         let agg_start = Instant::now();
         let result =
-          client.prove(&AGG_PROGRAM, agg_stdin(&allowed, &fold)).run()?.await?;
+          client.prove(&AGG_PROGRAM, agg_stdin(&allowed, &fold, None)).run()?.await?;
         let agg_ms = result.get_proving_time();
         let final_size = result.get_proof_bytes()?.len();
         let mut fbuf = [0u8; SHARD_PUBLICS_LEN];
@@ -1837,6 +2259,14 @@ async fn main() -> Result<()> {
   // one proof remains.
   let arity: usize = args.agg_arity as usize;
   let (final_size, agg_steps, agg_ms, verify_ms) = if total_leaves > 1 {
+    // Under the Assembly executor (the default) the upfront agg setup in `main`
+    // was skipped (it would have clobbered SHARD's ROM histogram before the
+    // leaf proves). Now that every leaf is proven, set up the agg program here
+    // — the last `setup` before the agg proves, so the ASM microservices hold
+    // AGG's ROM. The Emulator already did this setup upfront.
+    if !args.emulator {
+      client.setup(&AGG_PROGRAM).run()?.await?;
+    }
     let mut current: Vec<Vec<u8>> = leaf_proof_bytes;
     let mut total_agg_steps: u64 = 0;
     let mut total_agg_ms: u64 = 0;
@@ -1858,7 +2288,7 @@ async fn main() -> Result<()> {
         // (SHARD_VK at the leaf level; AGG_VK at higher levels). The agg guest
         // pins each child to one of these and commits them.
         let allowed = distinct_vks(&current[s..e]);
-        let stdin = agg_stdin(&allowed, &current[s..e]);
+        let stdin = agg_stdin(&allowed, &current[s..e], None);
         let agg_start = Instant::now();
         let result = client.prove(&AGG_PROGRAM, stdin).run()?.await?;
         let ms = result.get_proving_time();
