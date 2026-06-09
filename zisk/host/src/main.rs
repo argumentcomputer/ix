@@ -1214,18 +1214,18 @@ async fn run_shard_plan(
       .any(|a| needed.contains(a.as_bytes()) && !novel_targets.contains(a.as_bytes()));
   }
   loop {
+    let included_subjects: HashSet<[u8; 32]> = stored
+      .iter()
+      .zip(&included)
+      .filter(|(_, inc)| **inc)
+      .flat_map(|(p, _)| p.subjects.iter().map(|a| *a.as_bytes()))
+      .collect();
     let open: HashSet<[u8; 32]> = stored
       .iter()
       .zip(&included)
       .filter(|(_, inc)| **inc)
       .flat_map(|(p, _)| p.assumptions.iter().map(|a| *a.as_bytes()))
-      .filter(|a| {
-        !novel_targets.contains(a)
-          && !stored
-            .iter()
-            .zip(&included)
-            .any(|(p, inc)| *inc && p.subjects.iter().any(|s| s.as_bytes() == a))
-      })
+      .filter(|a| !novel_targets.contains(a) && !included_subjects.contains(a))
       .collect();
     let mut grew = false;
     for (i, p) in stored.iter().enumerate() {
