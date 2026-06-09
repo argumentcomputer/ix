@@ -5,20 +5,21 @@
 //!
 //! Usage:
 //!   cargo run -p ix-kernel --release --example shard_plan -- <env.ixe> \
-//!       (--shards N | --max-cycles C) [--cycles-per-heartbeat K] [--out path]
+//!       [--shards N | --max-cycles C] [--ram-gb G] [--cycles-per-heartbeat K] [--out path]
 //!
-//!   --shards N             partition into exactly N shards.
-//!   --max-cycles C         size N to a per-shard guest-cycle budget instead
-//!                          (the leaf prover's trace size = what sets peak RAM).
-//!   --cycles-per-heartbeat K   heartbeat→cycle conversion (default 208000,
-//!                          measured on mergesort; recalibrate per env with one
+//! By DEFAULT (no flags) it sizes the shard count automatically from this
+//! machine's total RAM (`/proc/meminfo`): RAM → per-shard cycle cap (prover
+//! model `peak_RAM_GB ≈ 45 + 32 × cycles_billions`, ~78% of RAM) → cap ÷
+//! cycles-per-heartbeat → N from total heartbeats. So you just hand it the
+//! `.ixe`; no budget to pick.
+//!
+//!   --shards N             force exactly N shards (skip the estimate).
+//!   --max-cycles C         force a per-shard guest-cycle budget (skip RAM read).
+//!   --ram-gb G             override detected RAM (for what-if sizing).
+//!   --cycles-per-heartbeat K   heartbeat→cycle conversion (default 215000,
+//!                          measured across envs; recalibrate per env with one
 //!                          `--execute`: a shard's steps ÷ its heartbeats).
 //!   --out path             output .ixes (default <env>.ixes).
-//!
-//! Converting a host-RAM budget to --max-cycles (empirical single-leaf model on
-//! this prover: peak_RAM_GB ≈ 45 + 32 × cycles_billions):
-//!     max_cycles ≈ (target_peak_GB − 45) / 32 × 1e9
-//! e.g. a 256 GB box, ~195 GB safe target (≈50 GB headroom) → --max-cycles 4.5e9
 //!
 //! Profiles the env with the real kernel (single worker, cache-isolated so
 //! heartbeats reflect un-memoized in-circuit cost and every delta-unfold is
@@ -31,7 +32,9 @@ use ix_kernel::env::KEnv;
 use ix_kernel::id::KId;
 use ix_kernel::mode::Anon;
 use ix_kernel::profile::{BlockProfile, ProfileBuilder, ProfileSink};
-use ix_kernel::shard::{partition_for_cycle_cap, Hypergraph, ShardManifest};
+use ix_kernel::shard::{
+  cycle_cap_for_ram, partition_for_cycle_cap, Hypergraph, ShardManifest,
+};
 use ix_kernel::tc::TypeChecker;
 use ixon::constant::ConstantInfo as CI;
 use ixon::env::Env as IxonEnv;
@@ -68,14 +71,23 @@ fn parse_count(s: &str) -> u64 {
   v as u64
 }
 
+/// Total RAM in GiB from `/proc/meminfo` (`None` off-Linux / on parse failure).
+fn detect_ram_gb() -> Option<f64> {
+  let s = std::fs::read_to_string("/proc/meminfo").ok()?;
+  let line = s.lines().find(|l| l.starts_with("MemTotal:"))?;
+  let kb: f64 = line.split_whitespace().nth(1)?.parse().ok()?;
+  Some(kb / 1024.0 / 1024.0)
+}
+
 fn usage() -> ! {
   eprintln!(
-    "usage: shard_plan <env.ixe> (--shards N | --max-cycles C) \
-     [--cycles-per-heartbeat K] [--out path]"
+    "usage: shard_plan <env.ixe> [--shards N | --max-cycles C] \
+     [--ram-gb G] [--cycles-per-heartbeat K] [--out path]"
   );
   eprintln!(
-    "  --max-cycles is a per-shard guest-cycle budget; convert from RAM via \
-     max_cycles ~= (target_peak_GB - 45) / 32 * 1e9  (256 GB box -> ~4.5e9)."
+    "  default: size N automatically from this machine's RAM (/proc/meminfo).\n  \
+     --shards N forces a count; --max-cycles C forces a per-shard cycle budget;\n  \
+     --ram-gb G overrides detected RAM."
   );
   std::process::exit(1);
 }
@@ -93,6 +105,7 @@ fn main() {
   // sharding). Tiny envs run lower (~130–160k, cheap arithmetic); a couple of
   // mid envs run ~258k (heavy def-eq) — recalibrate those via --execute.
   let mut cyc_per_hb: u64 = 215_000;
+  let mut ram_gb: Option<f64> = None;
   let mut out: Option<String> = None;
   let mut i = 1;
   while i < args.len() {
@@ -108,6 +121,10 @@ fn main() {
       "--cycles-per-heartbeat" => {
         i += 1;
         cyc_per_hb = parse_count(args.get(i).unwrap_or(&String::new())).max(1);
+      },
+      "--ram-gb" => {
+        i += 1;
+        ram_gb = args.get(i).and_then(|s| s.parse::<f64>().ok());
       },
       "--out" => {
         i += 1;
@@ -126,8 +143,8 @@ fn main() {
     i += 1;
   }
   let Some(path) = path else { usage() };
-  if shards.is_some() == max_cycles.is_some() {
-    eprintln!("error: pass exactly one of --shards or --max-cycles");
+  if shards.is_some() && max_cycles.is_some() {
+    eprintln!("error: pass at most one of --shards / --max-cycles");
     usage();
   }
   let out = out.unwrap_or_else(|| format!("{path}.ixes"));
@@ -165,41 +182,66 @@ fn main() {
   }
   let profile: BlockProfile = builder.finish();
 
-  // ---- Choose the partition: explicit N, or sized to a cycle budget. ----
-  let (shard_of, n) = match (shards, max_cycles) {
-    (Some(n), None) => {
-      let h = Hypergraph::from_profile(&profile);
-      (h.partition(n, 0.05), n)
-    },
-    (None, Some(cap)) => {
-      let plan = partition_for_cycle_cap(&profile, cap, cyc_per_hb, 0.05);
-      let cyc = u128::from(plan.max_shard_heartbeats) * u128::from(cyc_per_hb);
-      let floor_cyc =
-        u128::from(plan.largest_block_heartbeats) * u128::from(cyc_per_hb);
-      eprintln!(
-        "budget: max_cycles={cap} → heartbeat_cap={} (@ {cyc_per_hb} cyc/hb) → N={}",
-        plan.heartbeat_cap, plan.num_shards,
-      );
-      eprintln!(
-        "  heaviest shard: {} hb (~{cyc} cycles); largest atomic block: {} hb (~{floor_cyc} cycles)",
-        plan.max_shard_heartbeats, plan.largest_block_heartbeats,
-      );
-      if plan.infeasible_atomic_floor {
+  // ---- Choose the partition. Default: size N from the machine's RAM (no
+  // budget needed). --shards N forces a count; --max-cycles C forces a budget.
+  let (shard_of, n) = if let Some(n) = shards {
+    let h = Hypergraph::from_profile(&profile);
+    (h.partition(n, 0.05), n)
+  } else {
+    // Per-shard cycle cap: explicit --max-cycles, else derived from RAM.
+    let cap = match max_cycles {
+      Some(c) => {
+        eprintln!("budget: --max-cycles {c}");
+        c
+      },
+      None => {
+        let ram = ram_gb.or_else(detect_ram_gb).unwrap_or_else(|| {
+          eprintln!("warning: could not read /proc/meminfo; assuming 256 GB (override with --ram-gb)");
+          256.0
+        });
+        let c = cycle_cap_for_ram(ram);
+        if c == 0 {
+          eprintln!(
+            "error: {ram:.0} GB RAM is below the ~45 GB prover base — nothing will \
+             prove on this machine."
+          );
+          std::process::exit(1);
+        }
         eprintln!(
-          "  WARNING: the largest atomic (mutual) block alone exceeds --max-cycles — \
-           NO shard count can fit it. Split that block upstream (Lean side), raise \
-           --max-cycles, or use a bigger box."
+          "auto: machine RAM {ram:.0} GB → per-shard cap ~{c} cycles \
+           (~78% RAM via prover model peak_GB≈45+32·Bcyc)"
         );
-      } else if plan.max_shard_heartbeats > plan.heartbeat_cap {
-        eprintln!(
-          "  note: heaviest shard still over cap at N={} (pinned by the atomic-block \
-           floor); more shards won't lower it.",
-          plan.num_shards,
-        );
-      }
-      (plan.shard_of, plan.num_shards)
-    },
-    _ => unreachable!("validated exactly one of --shards / --max-cycles above"),
+        c
+      },
+    };
+    let plan = partition_for_cycle_cap(&profile, cap, cyc_per_hb, 0.05);
+    let cyc = u128::from(plan.max_shard_heartbeats) * u128::from(cyc_per_hb);
+    let floor_cyc =
+      u128::from(plan.largest_block_heartbeats) * u128::from(cyc_per_hb);
+    eprintln!(
+      "  total heartbeats {} → heartbeat_cap {} (@ {cyc_per_hb} cyc/hb) → N={}",
+      profile.total_heartbeats(),
+      plan.heartbeat_cap,
+      plan.num_shards,
+    );
+    eprintln!(
+      "  heaviest shard: {} hb (~{cyc} cycles); largest atomic block: {} hb (~{floor_cyc} cycles)",
+      plan.max_shard_heartbeats, plan.largest_block_heartbeats,
+    );
+    if plan.infeasible_atomic_floor {
+      eprintln!(
+        "  WARNING: the largest atomic (mutual) block alone exceeds the cap — NO \
+         shard count can fit it. Split that block upstream (Lean side) or use a \
+         bigger box."
+      );
+    } else if plan.max_shard_heartbeats > plan.heartbeat_cap {
+      eprintln!(
+        "  note: heaviest shard still over cap at N={} (pinned by the atomic-block \
+         floor); more shards won't lower it.",
+        plan.num_shards,
+      );
+    }
+    (plan.shard_of, plan.num_shards)
   };
 
   // ---- Manifest. ----

@@ -1341,6 +1341,24 @@ pub fn shard_esp(
   ))
 }
 
+/// The per-shard cycle cap implied by a machine's total RAM — so callers can
+/// size shards straight from `MemTotal` without ever picking a budget. Inverts
+/// the measured single-leaf prover model on this setup
+/// (`peak_RAM_GB ≈ 45 + 32 × cycles_billions`) at ~78% of RAM (reserving the
+/// rest for the OS + run-to-run variance). Returns 0 when the box can't even
+/// hold the ~45 GB prover base (nothing will prove). Approximate by design —
+/// pair with [`partition_for_cycle_cap`] to get N.
+pub fn cycle_cap_for_ram(ram_gb: f64) -> u64 {
+  const BASE_GB: f64 = 45.0; // fixed prover witness/contribution buffers
+  const GB_PER_BCYCLE: f64 = 32.0; // RAM per billion guest cycles
+  const USABLE_FRAC: f64 = 0.78; // headroom for OS + variance
+  let headroom = ram_gb * USABLE_FRAC - BASE_GB;
+  if headroom <= 0.0 {
+    return 0;
+  }
+  (headroom / GB_PER_BCYCLE * 1e9) as u64
+}
+
 /// A partition sized to a per-shard Zisk **cycle** budget (rather than a fixed
 /// shard count). See [`partition_for_cycle_cap`].
 pub struct BudgetPlan {
