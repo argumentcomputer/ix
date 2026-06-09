@@ -792,7 +792,9 @@ def ingress := ⟦
   -- Deref Expr.Share via the constant's sharing list.
   fn deref_share(e: Expr, sharing: List‹&Expr›) -> Expr {
     match e {
-      Expr.Share(idx) => deref_share(load(list_lookup_u64(sharing, idx)), sharing),
+      Expr.Share(idx) =>
+        let ListNode.Cons(e, _) = load(list_drop(sharing, flatten_u64(idx)));
+        deref_share(load(e), sharing),
       _ => e,
     }
   }
