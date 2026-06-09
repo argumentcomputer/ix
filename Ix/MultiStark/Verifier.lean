@@ -434,7 +434,7 @@ def verifier := ⟦
   -- failed check, exactly as the Rust verifier returns `Err`.
   fn verify(proof: Proof) -> G {
     match proof {
-      Proof.Mk(_commitments, accs, _log_degrees, opening,
+      Proof.Mk(_commitments, accs, _log_degrees, _opening,
                _quotient, _preprocessed, stage_1, stage_2) =>
         -- Step 1 (shape, system-independent): the per-round opened-value lists
         -- and the accumulator list all have the same length = the circuit count.
@@ -446,9 +446,8 @@ def verifier := ⟦
 
         -- Step 2: accumulator balance — the last accumulator must be zero.
         assert_eq!(last_acc_is_zero(accs), 1);
-
-        -- Step 4: PCS opening proof (stubbed — accepts; see Pcs.lean).
-        let _pcs = pcs_verify(opening);
+        -- Step 4 (PCS/FRI) now runs inside `ood_verify`, which has the verifying
+        -- key, the challenger continuation, and the opened values it needs.
         1,
     }
   }
@@ -795,17 +794,27 @@ def verifier := ⟦
   -- commitments + log_degrees + claims, seed the lookup accumulator from the
   -- claims, then run the OOD composition/quotient check for every circuit.
   -- Returns 1 on success (any mismatch aborts via `assert_eq!`).
-  fn ood_verify(sys: Sys, proof: Proof, claims: List‹List‹U64››) -> G {
-    let Sys.Mk(_params, circuits, commit, prep_indices) = sys;
+  fn ood_verify(sys: Sys, proof: Proof, claims: List‹List‹U64››,
+      num_queries: G, commit_pow_bits: G) -> G {
+    -- `log_blowup` is part of the verifying key (CommitmentParameters); the FRI
+    -- `num_queries` / `commit_pow_bits` are protocol parameters (public inputs).
+    let Sys.Mk(params, circuits, commit, prep_indices) = sys;
+    let SysParams.Mk(log_blowup, _cap_height) = params;
     match proof {
-      Proof.Mk(commitments, accs, log_degrees, _opening,
+      Proof.Mk(commitments, accs, log_degrees, opening,
                q_opened, prep_opt, stage1, stage2) =>
         let Commitments.Mk(s1c, s2c, qc) = commitments;
         let prep_cap = opt_commit_cap(commit);
-        let (lch, fch, alpha, zeta, _post_zeta_input) = fiat_shamir(prep_cap, s1c, s2c, qc, log_degrees, claims);
+        let (lch, fch, alpha, zeta, post_zeta_input) = fiat_shamir(prep_cap, s1c, s2c, qc, log_degrees, claims);
         let acc0 = claims_acc([gl_zero(), gl_zero()], claims, lch, fch);
-        ood_loop(circuits, prep_indices, log_degrees, accs, stage1, stage2,
-                 prep_opt, q_opened, 0, acc0, 0, lch, fch, alpha, zeta),
+        -- Step 5: OOD composition/quotient identity for every circuit.
+        let _ood = ood_loop(circuits, prep_indices, log_degrees, accs, stage1, stage2,
+                 prep_opt, q_opened, 0, acc0, 0, lch, fch, alpha, zeta);
+        -- Step 4: FRI PCS proximity + opening consistency, continuing the same
+        -- Fiat-Shamir transcript past ζ (observe opened values → α, βs, query).
+        pcs_fri_verify(post_zeta_input, stage1, stage2, q_opened, prep_opt, opening,
+          s1c, s2c, qc, prep_cap, circuits, prep_indices, log_degrees, zeta,
+          list_length(circuits), log_blowup, num_queries, commit_pow_bits),
     }
   }
 
