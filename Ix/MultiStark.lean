@@ -32,7 +32,7 @@ def entrypoints := ⟦
   -- deserialize into a `Proof` object (asserting the whole stream was consumed),
   -- then recompute keccak-256 over the same bytes and assert it equals `digest`
   -- — binding the IO-fed bytes to the public commitment.
-  pub fn verify_multi_stark_proof(digest: [[U8; 8]; 4], system_digest: [[U8; 8]; 4], claims_digest: [[U8; 8]; 4]) {
+  pub fn verify_multi_stark_proof(digest: [[U8; 8]; 4], system_digest: [[U8; 8]; 4], claims_digest: [[U8; 8]; 4], num_queries: G, commit_pow_bits: G) {
     -- Proof from IO key [0]: deserialize, assert fully consumed, and bind the
     -- bytes to the public keccak-256 `digest`.
     let (idx, len) = io_get_info([0]);
@@ -60,7 +60,7 @@ def entrypoints := ⟦
     assert_eq!(verify(proof), 1);
     -- Step 3 + 5: prover-faithful Fiat-Shamir replay and the out-of-domain
     -- composition/quotient check, `composition(ζ)·inv_vanishing(ζ) == quotient(ζ)`.
-    assert_eq!(ood_verify(sys, proof, claims), 1);
+    assert_eq!(ood_verify(sys, proof, claims, num_queries, commit_pow_bits), 1);
     ()
   }
 ⟧

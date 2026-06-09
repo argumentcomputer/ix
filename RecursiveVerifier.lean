@@ -55,21 +55,27 @@ def factorialProgram : Source.Toplevel := ⟦
   }
 ⟧
 
+/-- A tractable subset of the production FRI config that still exercises every
+generalized verifier path: `numQueries := 2` drives the multi-query loop,
+`commitProofOfWorkBits := 8` drives the commit-phase proof-of-work grinding
+check (one per FRI round), and `log_blowup` is read from the verifying key (the
+verifier code is blowup-value-agnostic). The full production parameters
+(`logBlowup := 2`, `numQueries := 100`, `commitProofOfWorkBits := 20`) use the
+same code paths but make *proving* (large LDE + 2²⁰ grinding per round) too slow
+for this end-to-end harness; the verifier itself handles them unchanged. -/
+def recCommitParams : Aiur.CommitmentParameters :=
+  { logBlowup := 2, capHeight := 0 }
+def innerFri : FriParameters :=
+  { logFinalPolyLen := 0, maxLogArity := 1, numQueries := 3,
+    commitProofOfWorkBits := 20, queryProofOfWorkBits := 0 }
+
 /-- Compile a toplevel and build its proving system, or fail with a message. -/
 def buildSystem (label : String) (top : Source.Toplevel) :
     IO (CompiledToplevel × AiurSystem) := do
   let compiled ← match top.compile with
     | .error e => throw <| IO.userError s!"{label}: compilation failed: {e}"
     | .ok c => pure c
-  pure (compiled, AiurSystem.build compiled.bytecode commitmentParameters)
-
-/-- Minimal FRI parameters for the *inner* proof: keccak-256 over the serialized
-proof runs one keccak-f per 136 bytes, so we keep the proof small (≈ a few KB)
-to make the in-circuit hash tractable to execute. Security of the inner proof is
-irrelevant for this end-to-end test. -/
-def innerFri : FriParameters :=
-  { logFinalPolyLen := 0, maxLogArity := 1, numQueries := 1,
-    commitProofOfWorkBits := 0, queryProofOfWorkBits := 0 }
+  pure (compiled, AiurSystem.build compiled.bytecode recCommitParams)
 
 def main : IO UInt32 := do
   -- ── 1. factorial system ──────────────────────────────────────────────────
@@ -116,9 +122,11 @@ def main : IO UInt32 := do
   let claimsDigestInput : Array Aiur.G := claimsDigest.data.map .ofUInt8
   let claimGs : Array Aiur.G := claimBytes.data.map .ofUInt8
 
-  -- Public input = proof digest ++ vk digest ++ claims digest;
-  -- IO hints: proof at [0], vk at [1], claims at [2].
-  let input : Array Aiur.G := digestInput ++ sysDigestInput ++ claimsDigestInput
+  -- Public input = proof digest ++ vk digest ++ claims digest ++ FRI params
+  -- (num_queries, commit_pow_bits); IO hints: proof at [0], vk at [1], claims at [2].
+  let friParamInput : Array Aiur.G :=
+    #[Aiur.G.ofNat innerFri.numQueries, Aiur.G.ofNat innerFri.commitProofOfWorkBits]
+  let input : Array Aiur.G := digestInput ++ sysDigestInput ++ claimsDigestInput ++ friParamInput
   let verifierIO : IOBuffer :=
     (((default : IOBuffer).extend #[Aiur.G.ofNat 0] proofGs).extend #[Aiur.G.ofNat 1] vkGs).extend #[Aiur.G.ofNat 2] claimGs
 
@@ -181,7 +189,7 @@ def main : IO UInt32 := do
     let badClaimBytes := serializeClaims #[badClaim]
     let badClaimsDigest := Keccak.hash badClaimBytes
     let badClaimInput : Array Aiur.G :=
-      digestInput ++ sysDigestInput ++ (badClaimsDigest.data.map .ofUInt8)
+      digestInput ++ sysDigestInput ++ (badClaimsDigest.data.map .ofUInt8) ++ friParamInput
     let badClaimIO : IOBuffer :=
       (((default : IOBuffer).extend #[Aiur.G.ofNat 0] proofGs).extend #[Aiur.G.ofNat 1] vkGs).extend
         #[Aiur.G.ofNat 2] (badClaimBytes.data.map .ofUInt8)
