@@ -82,14 +82,32 @@ fn detect_ram_gb() -> Option<f64> {
 fn usage() -> ! {
   eprintln!(
     "usage: shard_plan <env.ixe> [--shards N | --max-cycles C] \
-     [--ram-gb G] [--cycles-per-heartbeat K] [--out path]"
+     [--ram-gb G] [--cycles-per-heartbeat K] [--store-dir dir] [--out path]"
   );
   eprintln!(
     "  default: size N automatically from this machine's RAM (/proc/meminfo).\n  \
      --shards N forces a count; --max-cycles C forces a per-shard cycle budget;\n  \
-     --ram-gb G overrides detected RAM."
+     --ram-gb G overrides detected RAM.\n  \
+     --store-dir dir: store-aware planning — work items whose targets are all\n  \
+     covered by the proof store are excluded (not profiled, not partitioned);\n  \
+     the manifest covers only NOVEL work. The prover resolves the covered\n  \
+     remainder by folding the store's proofs (zisk-host --store-dir)."
   );
   std::process::exit(1);
+}
+
+/// The proof store's covered-target set: the union of `proofs/*.cover`
+/// (packed 32-byte addresses), exactly as `zisk-host --store-dir` writes them.
+fn load_covered(dir: &str) -> std::collections::HashSet<Address> {
+  let pdir = std::path::Path::new(dir).join("proofs");
+  let mut covered = std::collections::HashSet::new();
+  for idx in 0.. {
+    let Ok(bytes) = std::fs::read(pdir.join(format!("{idx}.cover"))) else {
+      break;
+    };
+    covered.extend(Address::unpack(&bytes));
+  }
+  covered
 }
 
 fn main() {
@@ -107,6 +125,7 @@ fn main() {
   // mid envs run ~258k (heavy def-eq) — recalibrate those via --execute.
   let mut cyc_per_hb: u64 = 215_000;
   let mut ram_gb: Option<f64> = None;
+  let mut store_dir: Option<String> = None;
   let mut out: Option<String> = None;
   let mut i = 1;
   while i < args.len() {
@@ -129,6 +148,10 @@ fn main() {
       "--ram-gb" => {
         i += 1;
         ram_gb = args.get(i).and_then(|s| s.parse::<f64>().ok());
+      },
+      "--store-dir" => {
+        i += 1;
+        store_dir = args.get(i).cloned();
       },
       "--out" => {
         i += 1;
@@ -153,15 +176,44 @@ fn main() {
   }
   let out = out.unwrap_or_else(|| format!("{path}.ixes"));
 
+  // ---- Store-aware planning: drop work the store already covers. ----
+  // A work item is covered iff every target it would certify is in the store
+  // (the same rule the prover applies per shard). Covered items are not
+  // profiled (no point typechecking them again) and not partitioned — they're
+  // resolved at prove time by folding the store's proofs. Covered BLOCKS are
+  // also excluded from the hypergraph: a novel→covered delta edge is an
+  // assumption discharged at aggregation, not a cut to minimize.
+  let covered: std::collections::HashSet<Address> =
+    store_dir.as_deref().map(load_covered).unwrap_or_default();
+  let covered_item =
+    |item: &ix_kernel::anon_work::AnonWorkItem| -> bool {
+      !covered.is_empty()
+        && item.proven_targets().iter().all(|t| covered.contains(t))
+    };
+
   // ---- Profile: run the kernel, recording heartbeats + delta-unfold edges. ----
   let bytes = std::fs::read(&path).expect("read .ixe");
   let env = IxonEnv::get_anon(&mut &bytes[..]).expect("invalid Ixon environment");
   let work = build_anon_work(&env).expect("build_anon_work");
+  let (novel_work, covered_work): (Vec<_>, Vec<_>) =
+    work.iter().partition(|item| !covered_item(item));
+  // Blocks whose work item is covered — excluded from the hypergraph below.
+  let covered_blocks: std::collections::HashSet<Address> = covered_work
+    .iter()
+    .map(|item| block_of(&env, item.primary()))
+    .collect();
+  if novel_work.is_empty() {
+    eprintln!(
+      "nothing to plan: the store covers all {} work items",
+      work.len()
+    );
+    std::process::exit(0);
+  }
 
   let mut kenv = KEnv::<Anon>::new();
   kenv.profile_sink = Some(ProfileSink::new(true)); // isolate = sound recording
   let mut failures = 0usize;
-  for item in &work {
+  for item in &novel_work {
     let kid = KId::<Anon>::new(item.primary().clone(), ());
     let mut tc = TypeChecker::<Anon>::new_with_lazy_anon(&mut kenv, &env);
     if tc.check_const(&kid).is_err() {
@@ -179,6 +231,9 @@ fn main() {
     builder.block(cb.clone(), rec.fuel, cs, 1);
     for prod in &rec.producers {
       let pb = block_of(&env, prod);
+      if covered_blocks.contains(&pb) {
+        continue; // assumption against the store, not a partition edge
+      }
       let ps = block_size(&env, &pb);
       builder.block(pb.clone(), 0, ps, 0);
       builder.delta_edge(cb.clone(), pb);
@@ -270,8 +325,10 @@ fn main() {
   std::fs::write(&out, manifest.to_bytes()).expect("write .ixes manifest");
 
   eprintln!(
-    "profiled {} work items ({failures} failure(s)), {} blocks, {} delta edges → {} shards; wrote {out}",
-    work.len(),
+    "profiled {} novel work items ({} store-covered skipped, {failures} failure(s)), \
+     {} blocks, {} delta edges → {} shards; wrote {out}",
+    novel_work.len(),
+    covered_work.len(),
     profile.num_blocks(),
     profile.num_edges(),
     manifest.num_shards,

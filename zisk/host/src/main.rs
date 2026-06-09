@@ -1040,6 +1040,7 @@ fn group_work_by_manifest<'a>(
   env: &IxonEnv,
   work: &'a [AnonWorkItem],
   manifest: &ix_kernel::shard::ShardManifest,
+  covered_by_store: &std::collections::HashSet<[u8; 32]>,
 ) -> Result<Vec<Vec<&'a AnonWorkItem>>> {
   use std::collections::HashMap;
 
@@ -1067,13 +1068,22 @@ fn group_work_by_manifest<'a>(
     }
     groups.push(g);
   }
-  let uncovered = assigned.iter().filter(|a| !**a).count();
-  if uncovered > 0 {
+  // Every work item must be either assigned to a manifest shard or fully
+  // covered by the proof store (a store-aware manifest deliberately omits
+  // covered work; the prover resolves it by folding the store's proofs).
+  let unaccounted = work
+    .iter()
+    .enumerate()
+    .filter(|(i, w)| {
+      !assigned[*i]
+        && !w.proven_targets().iter().all(|t| covered_by_store.contains(t.as_bytes()))
+    })
+    .count();
+  if unaccounted > 0 {
     bail!(
-      "manifest covers only {} of {} work items ({uncovered} uncovered) — the \
-       manifest was built for a different or stale env; re-run `ix profile` + \
-       `ix shard` on this .ixe",
-      work.len() - uncovered,
+      "{unaccounted} of {} work items are neither in the manifest nor covered \
+       by the proof store — the manifest was built for a different or stale \
+       env (or a different store); re-run the planner on this .ixe",
       work.len(),
     );
   }
@@ -1130,7 +1140,21 @@ async fn run_shard_plan(
     .map_err(|e| anyhow::anyhow!("read manifest {}: {e}", manifest_path.display()))?;
   let manifest = ShardManifest::from_bytes(&mbytes)
     .map_err(|e| anyhow::anyhow!("parse manifest {}: {e}", manifest_path.display()))?;
-  let groups = group_work_by_manifest(&env, &work, &manifest)?;
+
+  // ---- Cross-run reuse store (loaded before grouping: a store-aware manifest
+  // omits covered work, which grouping accepts only when the store accounts
+  // for it). ----
+  let write_store = args.store_dir.is_some() && !args.no_reuse;
+  let stored: Vec<StoredProof> = match (&args.store_dir, args.no_reuse) {
+    (Some(dir), false) => load_proof_index(dir),
+    _ => Vec::new(),
+  };
+  let covered_by_store: HashSet<[u8; 32]> = stored
+    .iter()
+    .flat_map(|p| p.subjects.iter().map(|a| *a.as_bytes()))
+    .collect();
+
+  let groups = group_work_by_manifest(&env, &work, &manifest, &covered_by_store)?;
 
   // Select (manifest-index, items) to prove: every non-empty shard, or just the
   // one named by --only-shard.
@@ -1147,20 +1171,13 @@ async fn run_shard_plan(
     bail!("nothing to prove: selected manifest shard(s) are empty");
   }
 
-  // ---- Cross-run reuse: skip shards the store already covers. ----
-  // A shard is reused iff EVERY target it would certify is covered by some
-  // stored proof; the covering proofs are folded into the aggregate (verified
-  // in-circuit) in its place. Partially-covered shards are re-proven whole —
-  // the shard is the proof unit.
-  let write_store = args.store_dir.is_some() && !args.no_reuse;
-  let stored: Vec<StoredProof> = match (&args.store_dir, args.no_reuse) {
-    (Some(dir), false) => load_proof_index(dir),
-    _ => Vec::new(),
-  };
-  let covered_by_store: HashSet<[u8; 32]> = stored
-    .iter()
-    .flat_map(|p| p.subjects.iter().map(|a| *a.as_bytes()))
-    .collect();
+  // ---- Cross-run reuse: prove only what the store doesn't cover. ----
+  // A manifest shard is reused iff EVERY target it would certify is covered by
+  // stored proofs; partially-covered shards re-prove whole (the shard is the
+  // proof unit). Work the manifest omits entirely (store-aware planning) is
+  // covered by construction. Everything this run must certify but won't prove
+  // — reused shards plus unmanifested work — is resolved by folding the
+  // covering stored proofs, which the agg guest verifies in-circuit.
   let shard_targets = |g: &[&AnonWorkItem]| -> Vec<Address> {
     g.iter().flat_map(|w| w.proven_targets()).collect()
   };
@@ -1168,16 +1185,61 @@ async fn run_shard_plan(
     selected.iter().copied().partition(|(_, g)| {
       !shard_targets(g).iter().all(|t| covered_by_store.contains(t.as_bytes()))
     });
-  // Fold only the stored proofs that contribute to the reused shards' targets.
-  let reused_targets: HashSet<[u8; 32]> = reused
+  // Targets this run answers for: just the selected shard under --only-shard
+  // (a smoke test), otherwise the whole env's work set.
+  let needed: HashSet<[u8; 32]> = if args.only_shard.is_some() {
+    selected
+      .iter()
+      .flat_map(|(_, g)| shard_targets(g))
+      .map(|a| *a.as_bytes())
+      .collect()
+  } else {
+    work.iter().flat_map(|w| w.proven_targets()).map(|a| *a.as_bytes()).collect()
+  };
+  let novel_targets: HashSet<[u8; 32]> = novel
     .iter()
     .flat_map(|(_, g)| shard_targets(g))
     .map(|a| *a.as_bytes())
     .collect();
-  let covering: Vec<&StoredProof> = stored
-    .iter()
-    .filter(|p| p.subjects.iter().any(|a| reused_targets.contains(a.as_bytes())))
-    .collect();
+  // Seed: stored proofs contributing a needed target the novel shards won't
+  // certify. Fixpoint: an included proof's own assumptions may be covered by
+  // OTHER stored proofs (from the run that proved it) — fold those too, so a
+  // closed store yields an unconditional claim even cross-env. Terminates:
+  // every round includes at least one more proof or stops.
+  let mut included = vec![false; stored.len()];
+  for (i, p) in stored.iter().enumerate() {
+    included[i] = p
+      .subjects
+      .iter()
+      .any(|a| needed.contains(a.as_bytes()) && !novel_targets.contains(a.as_bytes()));
+  }
+  loop {
+    let open: HashSet<[u8; 32]> = stored
+      .iter()
+      .zip(&included)
+      .filter(|(_, inc)| **inc)
+      .flat_map(|(p, _)| p.assumptions.iter().map(|a| *a.as_bytes()))
+      .filter(|a| {
+        !novel_targets.contains(a)
+          && !stored
+            .iter()
+            .zip(&included)
+            .any(|(p, inc)| *inc && p.subjects.iter().any(|s| s.as_bytes() == a))
+      })
+      .collect();
+    let mut grew = false;
+    for (i, p) in stored.iter().enumerate() {
+      if !included[i] && p.subjects.iter().any(|s| open.contains(s.as_bytes())) {
+        included[i] = true;
+        grew = true;
+      }
+    }
+    if !grew {
+      break;
+    }
+  }
+  let covering: Vec<&StoredProof> =
+    stored.iter().zip(&included).filter(|(_, inc)| **inc).map(|(p, _)| p).collect();
 
   println!(
     "shard-plan {}: {} work items, manifest {} shard(s), cross-ingress total {}; \
