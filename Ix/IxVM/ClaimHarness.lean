@@ -242,6 +242,48 @@ def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
   return { funcName := `verify_claim
            input := digestKey, inputIOBuffer := ioBuffer }
 
+/-- Reconstruct a shard's `CheckEnv` claim, its reference closure, and the
+    assumption trees (env-root + optional frontier) — everything **except** the
+    IO buffer. Deterministic in `owned` (canonical trees sort addresses), so the
+    claim digest reproduces exactly what `prove`d — used to bind a proof to a
+    shard during verification, cheaply (no buffer serialization). -/
+def shardCheckEnvClaim (env : Ixon.Env) (owned : Array Address) :
+    Except String (Ix.Claim × Std.HashSet Address × Std.HashMap Address Ix.AssumptionTree) := do
+  let ownedSet : Std.HashSet Address := owned.foldl (·.insert ·) {}
+  let closure : Std.HashSet Address := Id.run do
+    let mut s : Std.HashSet Address := {}
+    for a in owned do
+      for x in (closureFrom env a).toArray do
+        s := s.insert x
+    return s
+  let frontier : Array Address :=
+    closure.toArray.filter (fun a => !ownedSet.contains a)
+  let some envTree := Ix.AssumptionTree.canonical closure.toArray
+    | .error "shardCheckEnvClaim: empty shard closure"
+  let asmTree? := Ix.AssumptionTree.canonical frontier
+  let claim := Ix.Claim.checkEnv envTree.root (asmTree?.map (·.root))
+  let mut trees : Std.HashMap Address Ix.AssumptionTree :=
+    ({} : Std.HashMap Address Ix.AssumptionTree).insert envTree.root envTree
+  match asmTree? with
+  | some asmTree => trees := trees.insert asmTree.root asmTree
+  | none => pure ()
+  pure (claim, closure, trees)
+
+def buildShardCheckEnvWitness (env : Ixon.Env) (owned : Array Address) :
+    Except String (Ix.Claim × ClaimWitness) := do
+  let (claim, closure, trees) ← shardCheckEnvClaim env owned
+  let claimBytes := Ix.Claim.ser claim
+  let digestKey := addrKey (Address.blake3 claimBytes)
+  let mut ioBuffer : Aiur.IOBuffer := default
+  ioBuffer := ioBuffer.extend 0 digestKey (claimBytes.data.map .ofUInt8)
+  -- Ship only the shard closure (consts + blobs + Defn hints).
+  ioBuffer := addEntries env closure.contains ioBuffer
+  -- Seed the env-root and (when present) frontier assumption trees.
+  for (root, _) in trees do
+    ioBuffer ← seedTreeAt root trees ioBuffer
+  return (claim, { funcName := `verify_claim
+                   input := digestKey, inputIOBuffer := ioBuffer })
+
 /-- Canonical merkle tree over every const address in `env`. Returns
     `none` for an empty env. Convenience for callers that want to
     issue a `CheckEnv` claim against the env's canonical merkle root. -/

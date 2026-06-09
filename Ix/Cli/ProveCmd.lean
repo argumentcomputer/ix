@@ -94,8 +94,14 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
     | .error e => IO.eprintln s!"compilation failed: {e}"; return 1
     | .ok c => pure c
   let aiurSystem := Aiur.AiurSystem.build compiled.bytecode commitmentParameters
-  Ix.Cli.CheckCmd.forEachClaim ixePath claimHex names keepGoing "prove"
-    (proveOne aiurSystem compiled)
+  let runOne := proveOne aiurSystem compiled
+  match ixePath, (p.flag? "ixes").map (·.as! String), (p.flag? "shard").map (·.as! Nat) with
+  | some ixe, some manifest, some k =>
+    Ix.Cli.CheckCmd.runShardCheckManifest manifest ixe k runOne
+  | some ixe, some manifest, none =>
+    Ix.Cli.CheckCmd.runShardManifestAll manifest ixe runOne
+  | _, _, _ =>
+    Ix.Cli.CheckCmd.forEachClaim ixePath claimHex names keepGoing "prove" runOne
 
 end Ix.Cli.ProveCmd
 
@@ -108,6 +114,8 @@ def proveCmd : Cli.Cmd := `[Cli|
     "keep-going";       "Continue past failures and report them at the end instead of halting on the first."
     "ixe"   : String;   "Path to a serialized `.ixe` env. When set, the binary reads the env from disk instead of using the compiled-in Lean env."
     "claim" : String;   "32-byte hex address of a persisted `Ix.Claim` in `~/.ix/store/`. When set, proves the persisted claim against the `--ixe` env (single proof, skips per-const iteration)."
+    "ixes"  : String;   "Path to a `.ixes` shard manifest (with --ixe). With --shard K: prove shard K. Without --shard: prove every shard in the partition."
+    "shard" : Nat;      "0-based shard index K (with --ixes and --ixe): prove that one shard's CheckEnv claim."
 
   ARGS:
     ...names : String; "Fully-qualified Lean.Name(s) to prove. With none, iterate every named constant in the env (sorted)."
