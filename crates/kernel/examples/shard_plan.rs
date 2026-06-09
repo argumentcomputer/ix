@@ -97,6 +97,7 @@ fn main() {
   let args: Vec<String> = std::env::args().collect();
   let mut path: Option<String> = None;
   let mut shards: Option<usize> = None;
+  let mut naive = false;
   let mut max_cycles: Option<u64> = None;
   // Default heartbeat→cycle ratio. Measured across 12 envs: large, shardable
   // envs (>20k hb) cluster at 194–208k whole-env; the per-shard ratio runs
@@ -110,6 +111,9 @@ fn main() {
   let mut i = 1;
   while i < args.len() {
     match args[i].as_str() {
+      "--naive" => {
+        naive = true;
+      },
       "--shards" => {
         i += 1;
         shards = Some(parse_count(args.get(i).unwrap_or(&String::new())) as usize);
@@ -184,9 +188,20 @@ fn main() {
 
   // ---- Choose the partition. Default: size N from the machine's RAM (no
   // budget needed). --shards N forces a count; --max-cycles C forces a budget.
-  let (shard_of, n) = if let Some(n) = shards {
+  let (shard_of, n, tree) = if let (true, Some(n)) = (naive, shards) {
+    // Naive baseline: group blocks into N contiguous (address-sorted) chunks,
+    // ignoring the delta graph — to isolate the value of smart grouping. No
+    // bisection tree (the prover falls back to a flat fold).
+    let nb = profile.num_blocks();
+    let chunk = nb.div_ceil(n.max(1)).max(1);
+    let shard_of: Vec<u32> =
+      (0..nb).map(|b| ((b / chunk).min(n - 1)) as u32).collect();
+    eprintln!("naive grouping into {n} contiguous block chunks");
+    (shard_of, n, None)
+  } else if let Some(n) = shards {
     let h = Hypergraph::from_profile(&profile);
-    (h.partition(n, 0.05), n)
+    let (so, t) = h.partition_with_tree(n, 0.05);
+    (so, n, Some(t))
   } else {
     // Per-shard cycle cap: explicit --max-cycles, else derived from RAM.
     let cap = match max_cycles {
@@ -241,11 +256,14 @@ fn main() {
         plan.num_shards,
       );
     }
-    (plan.shard_of, plan.num_shards)
+    (plan.shard_of, plan.num_shards, Some(plan.tree))
   };
 
   // ---- Manifest. ----
   let mut manifest = ShardManifest::build(&profile, &shard_of, n);
+  if let Some(t) = tree {
+    manifest = manifest.with_tree(t);
+  }
   for s in &mut manifest.shards {
     s.assumption_root = ixon::merkle::merkle_root_canonical(&s.foreign_blocks);
   }

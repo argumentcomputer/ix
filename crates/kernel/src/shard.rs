@@ -184,9 +184,23 @@ impl Hypergraph {
   /// the per-bisection balance tolerance (e.g. `0.05` for ±5%). `num_shards`
   /// need not be a power of two.
   pub fn partition(&self, num_shards: usize, epsilon: f64) -> Vec<u32> {
+    self.partition_with_tree(num_shards, epsilon).0
+  }
+
+  /// Like [`Self::partition`], but also returns the **bisection tree** — the
+  /// binary tree of min-cut splits whose leaves are the shard ids. Reusing this
+  /// as the proof-aggregation tree (rather than an arbitrary flat fold)
+  /// discharges each cross-shard assumption at the lowest common ancestor of the
+  /// shards that share it; the per-bisection min-cut means sibling subtrees have
+  /// the thinnest possible interface, so most discharge happens low in the tree.
+  pub fn partition_with_tree(
+    &self,
+    num_shards: usize,
+    epsilon: f64,
+  ) -> (Vec<u32>, AggNode) {
     let n = self.num_vertices();
     if num_shards <= 1 {
-      return vec![0u32; n]; // everything in shard 0
+      return (vec![0u32; n], AggNode::Leaf(0)); // everything in shard 0
     }
     // Cap each block's balance weight at the ideal per-shard heartbeats
     // (total / num_shards). This keeps balancing heartbeat-aware while a balanced
@@ -202,9 +216,147 @@ impl Hypergraph {
     // they can be partitioned on separate threads without their writes aliasing.
     let shard_of: Vec<AtomicU32> = (0..n).map(|_| AtomicU32::new(0)).collect();
     let prog = PartitionProgress::new(num_shards);
-    rec_bisect(&sub, num_shards, 0, epsilon, &shard_of, &prog);
+    let tree = rec_bisect(&sub, num_shards, 0, epsilon, &shard_of, &prog);
     prog.done();
-    shard_of.into_iter().map(AtomicU32::into_inner).collect()
+    let assignment = shard_of.into_iter().map(AtomicU32::into_inner).collect();
+    (assignment, tree)
+  }
+}
+
+// ============================================================================
+// Bisection / aggregation tree
+// ============================================================================
+
+/// The bisection tree produced by recursive min-cut partitioning: leaves are
+/// shard ids, internal nodes are the two halves of a min-cut split. Reused as
+/// the proof-aggregation tree so cross-shard assumptions discharge at the lowest
+/// common ancestor of the shards that share them (see module docs and
+/// [`agg_plan`]). Serialized into the `.ixes` manifest so the prover can fold
+/// along it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AggNode {
+  /// A single shard, identified by its id.
+  Leaf(u32),
+  /// A min-cut split into a left and right subtree.
+  Internal(Box<AggNode>, Box<AggNode>),
+}
+
+impl AggNode {
+  /// Number of shard leaves under this node.
+  pub fn num_leaves(&self) -> usize {
+    match self {
+      AggNode::Leaf(_) => 1,
+      AggNode::Internal(l, r) => l.num_leaves() + r.num_leaves(),
+    }
+  }
+
+  /// The smallest shard id under this node — its left-to-right position. Used to
+  /// keep aggregation children in shard order (so the subject merkle-fold stays
+  /// the left-associative order the agg guest reproduces).
+  pub fn min_leaf(&self) -> u32 {
+    match self {
+      AggNode::Leaf(id) => *id,
+      AggNode::Internal(l, _) => l.min_leaf(),
+    }
+  }
+
+  /// Preorder serialization: `0u8, id(4)` for a leaf; `1u8, <left>, <right>` for
+  /// an internal node.
+  fn put(&self, out: &mut Vec<u8>) {
+    match self {
+      AggNode::Leaf(id) => {
+        out.push(0);
+        out.extend_from_slice(&id.to_le_bytes());
+      },
+      AggNode::Internal(l, r) => {
+        out.push(1);
+        l.put(out);
+        r.put(out);
+      },
+    }
+  }
+
+  /// Inverse of [`Self::put`], reading from a cursor.
+  fn get(c: &mut Cur<'_>) -> Result<AggNode, String> {
+    match c.u8()? {
+      0 => Ok(AggNode::Leaf(c.u32()?)),
+      1 => {
+        let l = AggNode::get(c)?;
+        let r = AggNode::get(c)?;
+        Ok(AggNode::Internal(Box::new(l), Box::new(r)))
+      },
+      t => Err(format!("bad AggNode tag {t}")),
+    }
+  }
+}
+
+/// One step of an aggregation fold plan, in post order: every `Agg`'s child
+/// indices refer to *earlier* entries in the plan, and the last entry is the
+/// root. The prover materializes a slot per entry — `Leaf(id)` is shard `id`'s
+/// leaf proof; `Agg(children)` folds those slots' proofs in one agg call.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum FoldOp {
+  Leaf(u32),
+  Agg(Vec<usize>),
+}
+
+/// Lower the bisection tree to an arity-bounded fold plan. The binary tree is
+/// *collapsed* so each agg call folds up to `arity` whole subtrees (never
+/// splitting a subtree across calls), keeping the agg-proof count ~`N/(arity-1)`
+/// — a strict binary fold would be ~`N` agg proofs, dominating cost. Children of
+/// each agg are emitted in shard order so the subject merkle-fold matches the
+/// guest's left-associative join.
+pub fn agg_plan(tree: &AggNode, arity: usize) -> Vec<FoldOp> {
+  let arity = arity.max(2);
+  let mut ops: Vec<FoldOp> = Vec::new();
+  build_plan(tree, arity, &mut ops);
+  ops
+}
+
+/// Emit `node`'s plan entries; return the index of the entry representing it.
+fn build_plan(node: &AggNode, arity: usize, ops: &mut Vec<FoldOp>) -> usize {
+  match node {
+    AggNode::Leaf(id) => {
+      ops.push(FoldOp::Leaf(*id));
+      ops.len() - 1
+    },
+    AggNode::Internal(_, _) => {
+      // Collapse the binary subtree into up to `arity` child subtrees: start
+      // from the two halves and repeatedly split the *largest* still-internal
+      // frontier node until we have `arity` children or all are leaves. This
+      // keeps tightly-coupled siblings together while bounding the fan-in.
+      let mut frontier: Vec<&AggNode> = match node {
+        AggNode::Internal(l, r) => vec![l, r],
+        AggNode::Leaf(_) => unreachable!(),
+      };
+      loop {
+        if frontier.len() >= arity {
+          break;
+        }
+        // Index of the largest internal frontier node, if any.
+        let mut pick: Option<usize> = None;
+        let mut best = 0usize;
+        for (i, nd) in frontier.iter().enumerate() {
+          if let AggNode::Internal(_, _) = nd {
+            let ln = nd.num_leaves();
+            if pick.is_none() || ln > best {
+              pick = Some(i);
+              best = ln;
+            }
+          }
+        }
+        let Some(i) = pick else { break }; // all leaves: cannot expand further
+        let AggNode::Internal(l, r) = frontier.remove(i) else { unreachable!() };
+        frontier.push(l);
+        frontier.push(r);
+      }
+      // Shard order keeps the merkle subject-fold left-associative.
+      frontier.sort_by_key(|nd| nd.min_leaf());
+      let child_idxs: Vec<usize> =
+        frontier.iter().map(|c| build_plan(c, arity, ops)).collect();
+      ops.push(FoldOp::Agg(child_idxs));
+      ops.len() - 1
+    },
   }
 }
 
@@ -340,14 +492,14 @@ fn rec_bisect(
   epsilon: f64,
   shard_of: &[AtomicU32],
   prog: &PartitionProgress,
-) {
+) -> AggNode {
   if k <= 1 || sub.num_vertices() <= 1 {
     // A leaf (or a subtree with ≤1 vertex): everything here is one shard.
     for &g in &sub.global {
       shard_of[g as usize].store(base, Ordering::Relaxed);
     }
     prog.leaf();
-    return;
+    return AggNode::Leaf(base);
   }
   prog.bisecting(sub.num_vertices(), k);
   let side = bisect(sub, epsilon);
@@ -365,7 +517,7 @@ fn rec_bisect(
       shard_of[g as usize].store(base, Ordering::Relaxed);
     }
     prog.leaf();
-    return;
+    return AggNode::Leaf(base);
   }
   // Allocate leaves ~proportional to heartbeat mass, clamped to [1, side size].
   // `lo`/`hi` are feasible (lo ≤ hi) because nl + nr ≥ k with nl, nr ≥ 1.
@@ -379,16 +531,21 @@ fn rec_bisect(
   let rbase = base + k_left as u32;
   // The two halves are independent (disjoint blocks) — recurse them in parallel
   // when the work is large enough to amortize the join. The result is identical
-  // to serial execution (each subtree is deterministic).
-  if nl + nr >= PARALLEL_THRESHOLD {
+  // to serial execution (each subtree is deterministic). Each call returns its
+  // subtree's `AggNode`; the two combine into this node's binary split — the
+  // bisection tree mirrors the recursion exactly.
+  let (ln, rn) = if nl + nr >= PARALLEL_THRESHOLD {
     rayon::join(
       || rec_bisect(&left, k_left, base, epsilon, shard_of, prog),
       || rec_bisect(&right, k - k_left, rbase, epsilon, shard_of, prog),
-    );
+    )
   } else {
-    rec_bisect(&left, k_left, base, epsilon, shard_of, prog);
-    rec_bisect(&right, k - k_left, rbase, epsilon, shard_of, prog);
-  }
+    (
+      rec_bisect(&left, k_left, base, epsilon, shard_of, prog),
+      rec_bisect(&right, k - k_left, rbase, epsilon, shard_of, prog),
+    )
+  };
+  AggNode::Internal(Box::new(ln), Box::new(rn))
 }
 
 /// Progress reporter for [`Hypergraph::partition`]. The partitioner is silent
@@ -1082,6 +1239,10 @@ pub struct ShardManifest {
   pub shards: Vec<ShardInfo>,
   /// Total cross-shard ingress bytes (the km1 objective).
   pub total_cross_ingress: u128,
+  /// The bisection tree over the shard ids, for proof aggregation. `None` on
+  /// manifests written before this section existed (the prover then falls back
+  /// to a flat tree-fold). Set by [`Self::with_tree`].
+  pub tree: Option<AggNode>,
 }
 
 impl ShardManifest {
@@ -1139,7 +1300,16 @@ impl ShardManifest {
       num_shards: num_shards as u32,
       shards,
       total_cross_ingress: total_cross,
+      tree: None,
     }
+  }
+
+  /// Attach the bisection tree (from [`Hypergraph::partition_with_tree`]) for
+  /// tree-aligned aggregation.
+  #[must_use]
+  pub fn with_tree(mut self, tree: AggNode) -> Self {
+    self.tree = Some(tree);
+    self
   }
 
   /// A human-readable what-if summary line.
@@ -1203,6 +1373,16 @@ impl ShardManifest {
       put_addrs(&mut out, &sh.blocks);
       put_addrs(&mut out, &sh.foreign_blocks);
     }
+    // Trailing optional bisection-tree section: presence byte then preorder
+    // tree. Appended after the shards so older readers that stop at the shard
+    // count simply ignore it, and `from_bytes` treats end-of-input as `None`.
+    match &self.tree {
+      Some(t) => {
+        out.push(1);
+        t.put(&mut out);
+      },
+      None => out.push(0),
+    }
     out
   }
 
@@ -1233,10 +1413,18 @@ impl ShardManifest {
         assumption_root,
       });
     }
+    // Optional trailing tree section. Absent (end-of-input) on pre-tree
+    // manifests, or an explicit `0` presence byte.
+    let tree = if c.pos < c.buf.len() {
+      if c.u8()? == 1 { Some(AggNode::get(&mut c)?) } else { None }
+    } else {
+      None
+    };
     Ok(ShardManifest {
       num_shards: num_shards as u32,
       shards,
       total_cross_ingress,
+      tree,
     })
   }
 }
@@ -1304,8 +1492,9 @@ pub fn shard_esp(
   let profile = BlockProfile::from_bytes(&bytes)
     .map_err(|e| format!("parse {esp_path}: {e}"))?;
   let h = Hypergraph::from_profile(&profile);
-  let shard_of = h.partition(num_shards, balance);
-  let mut manifest = ShardManifest::build(&profile, &shard_of, num_shards);
+  let (shard_of, tree) = h.partition_with_tree(num_shards, balance);
+  let mut manifest =
+    ShardManifest::build(&profile, &shard_of, num_shards).with_tree(tree);
   for shard in &mut manifest.shards {
     shard.assumption_root =
       ixon::merkle::merkle_root_canonical(&shard.foreign_blocks);
@@ -1366,6 +1555,8 @@ pub struct BudgetPlan {
   pub num_shards: usize,
   /// Shard assignment per block id (as [`Hypergraph::partition`] returns).
   pub shard_of: Vec<u32>,
+  /// The bisection tree for the chosen partition, for tree-aligned aggregation.
+  pub tree: AggNode,
   /// Per-shard heartbeat cap derived from the cycle cap
   /// (`max_cycles / cycles_per_heartbeat`).
   pub heartbeat_cap: u64,
@@ -1436,7 +1627,7 @@ pub fn partition_for_cycle_cap(
 
   // Initial estimate from the average load; refine against the real partition.
   let mut n = ((total_hb / u128::from(hb_cap)).max(1) as usize).min(nblocks);
-  let mut shard_of = h.partition(n, epsilon);
+  let (mut shard_of, mut tree) = h.partition_with_tree(n, epsilon);
   let mut max_shard_hb = max_shard_hb_of(&shard_of, n);
 
   // Grow N until the heaviest shard fits the cap, or we hit the atomic-block
@@ -1452,7 +1643,9 @@ pub fn partition_for_cycle_cap(
     // partition each round converges to the *minimal* N that fits.
     let scaled = ((n as f64) * (max_shard_hb as f64 / hb_cap as f64)).ceil() as usize;
     n = scaled.max(n + 1).min(nblocks);
-    shard_of = h.partition(n, epsilon);
+    let (so, t) = h.partition_with_tree(n, epsilon);
+    shard_of = so;
+    tree = t;
     max_shard_hb = max_shard_hb_of(&shard_of, n);
     guard += 1;
   }
@@ -1460,6 +1653,7 @@ pub fn partition_for_cycle_cap(
   BudgetPlan {
     num_shards: n,
     shard_of,
+    tree,
     heartbeat_cap: hb_cap,
     max_shard_heartbeats: max_shard_hb,
     largest_block_heartbeats: largest_block,
@@ -1766,5 +1960,110 @@ mod tests {
         "n={n}: every shard must be non-empty despite the dominant block"
       );
     }
+  }
+
+  // ---- Bisection / aggregation tree ----
+
+  fn leaf(id: u32) -> AggNode {
+    AggNode::Leaf(id)
+  }
+  fn node(l: AggNode, r: AggNode) -> AggNode {
+    AggNode::Internal(Box::new(l), Box::new(r))
+  }
+
+  #[test]
+  fn partition_with_tree_leaves_match_shards() {
+    // 360 blocks → 4 shards. The tree's leaves must be exactly shard ids 0..4.
+    let p = two_big_clusters(180);
+    let h = Hypergraph::from_profile(&p);
+    let (shard_of, tree) = h.partition_with_tree(4, 0.10);
+    assert_eq!(tree.num_leaves(), 4);
+    let mut ids = Vec::new();
+    fn collect(n: &AggNode, out: &mut Vec<u32>) {
+      match n {
+        AggNode::Leaf(id) => out.push(*id),
+        AggNode::Internal(l, r) => {
+          collect(l, out);
+          collect(r, out);
+        },
+      }
+    }
+    collect(&tree, &mut ids);
+    ids.sort_unstable();
+    assert_eq!(ids, vec![0, 1, 2, 3]);
+    // Every shard id assigned to some block must appear as a leaf.
+    let used: std::collections::BTreeSet<u32> =
+      shard_of.iter().copied().collect();
+    assert!(used.iter().all(|s| ids.contains(s)));
+  }
+
+  #[test]
+  fn agg_plan_arity_and_coverage() {
+    // Balanced 8-leaf tree: ((0 1)(2 3)) ((4 5)(6 7)).
+    let t = node(
+      node(node(leaf(0), leaf(1)), node(leaf(2), leaf(3))),
+      node(node(leaf(4), leaf(5)), node(leaf(6), leaf(7))),
+    );
+    for arity in [2usize, 3, 4, 8] {
+      let plan = agg_plan(&t, arity);
+      // Every Agg has 2..=arity children; the last op is the root Agg.
+      let mut seen_leaves: Vec<u32> = Vec::new();
+      for op in &plan {
+        match op {
+          FoldOp::Leaf(id) => seen_leaves.push(*id),
+          FoldOp::Agg(ch) => {
+            assert!(ch.len() >= 2 && ch.len() <= arity, "arity {arity}: {ch:?}");
+            // children reference earlier entries (post order)
+            assert!(ch.iter().all(|&i| i < plan.len()));
+          },
+        }
+      }
+      assert!(matches!(plan.last(), Some(FoldOp::Agg(_))));
+      seen_leaves.sort_unstable();
+      assert_eq!(seen_leaves, (0..8).collect::<Vec<_>>(), "arity {arity}");
+    }
+  }
+
+  #[test]
+  fn agg_plan_children_in_shard_order() {
+    // Children of each agg must be emitted in increasing min-leaf order so the
+    // subject merkle-fold stays left-associative.
+    let t = node(node(leaf(0), leaf(1)), node(leaf(2), leaf(3)));
+    let plan = agg_plan(&t, 2);
+    // Root folds two subtrees; the left subtree's leaves precede the right's.
+    if let Some(FoldOp::Agg(ch)) = plan.last() {
+      // Map each child slot to its min leaf and assert ascending.
+      let mins: Vec<u32> = ch
+        .iter()
+        .map(|&i| match &plan[i] {
+          FoldOp::Leaf(id) => *id,
+          FoldOp::Agg(g) => g
+            .iter()
+            .map(|&j| if let FoldOp::Leaf(x) = &plan[j] { *x } else { u32::MAX })
+            .min()
+            .unwrap_or(u32::MAX),
+        })
+        .collect();
+      let mut sorted = mins.clone();
+      sorted.sort_unstable();
+      assert_eq!(mins, sorted);
+    } else {
+      panic!("root must be an Agg");
+    }
+  }
+
+  #[test]
+  fn manifest_tree_roundtrip() {
+    let p = two_clusters();
+    let h = Hypergraph::from_profile(&p);
+    let (shard_of, tree) = h.partition_with_tree(2, 0.10);
+    let m = ShardManifest::build(&p, &shard_of, 2).with_tree(tree.clone());
+    let bytes = m.to_bytes();
+    let q = ShardManifest::from_bytes(&bytes).unwrap();
+    assert_eq!(q.tree, Some(tree));
+    // A pre-tree manifest (tree = None) still roundtrips.
+    let m0 = ShardManifest::build(&p, &shard_of, 2);
+    let q0 = ShardManifest::from_bytes(&m0.to_bytes()).unwrap();
+    assert_eq!(q0.tree, None);
   }
 }
