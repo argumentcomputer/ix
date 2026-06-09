@@ -53,17 +53,23 @@ def ingress := ⟦
     bytes
   }
 
-  -- Compare two 32-byte addresses for equality
-  fn address_eq(a: Addr, b: Addr) -> G {
-    let [a0, a1, a2, a3, a4, a5, a6, a7,
+  -- Compare two 32-byte addresses for equality.
+  --
+  -- Cold path: limb 0 already matched, compare the remaining 31 limbs.
+  -- Factored into its own function so it forms a separate circuit whose height
+  -- is only the (rare) limb-0-match rows; Aiur charges a function's full width
+  -- on every one of its rows, so a nested match in `address_eq` would not save
+  -- anything — the split must be a function boundary.
+  fn address_eq_tail(a: Addr, b: Addr) -> G {
+    let [_, a1, a2, a3, a4, a5, a6, a7,
          a8, a9, a10, a11, a12, a13, a14, a15,
          a16, a17, a18, a19, a20, a21, a22, a23,
          a24, a25, a26, a27, a28, a29, a30, a31] = load(a);
-    let [b0, b1, b2, b3, b4, b5, b6, b7,
+    let [_, b1, b2, b3, b4, b5, b6, b7,
          b8, b9, b10, b11, b12, b13, b14, b15,
          b16, b17, b18, b19, b20, b21, b22, b23,
          b24, b25, b26, b27, b28, b29, b30, b31] = load(b);
-    match [to_field(a0) - to_field(b0), to_field(a1) - to_field(b1),
+    match [to_field(a1) - to_field(b1),
            to_field(a2) - to_field(b2), to_field(a3) - to_field(b3),
            to_field(a4) - to_field(b4), to_field(a5) - to_field(b5),
            to_field(a6) - to_field(b6), to_field(a7) - to_field(b7),
@@ -80,7 +86,20 @@ def ingress := ⟦
            to_field(a28) - to_field(b28), to_field(a29) - to_field(b29),
            to_field(a30) - to_field(b30), to_field(a31) - to_field(b31)] {
       [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] => 1,
+       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] => 1,
+      _ => 0,
+    }
+  }
+
+  -- Limb-0 prefilter: a single differing limb proves inequality, and almost
+  -- every comparison (the primitive-dispatch gauntlet in whnf) mismatches at
+  -- limb 0. Hot rows reject here at narrow width; only limb-0 matches pay the
+  -- wide `address_eq_tail` compare. Identical result to a full 32-limb compare.
+  fn address_eq(a: Addr, b: Addr) -> G {
+    let av = load(a);
+    let bv = load(b);
+    match to_field(av[0]) - to_field(bv[0]) {
+      0 => address_eq_tail(a, b),
       _ => 0,
     }
   }
