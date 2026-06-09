@@ -1341,6 +1341,109 @@ pub fn shard_esp(
   ))
 }
 
+/// A partition sized to a per-shard Zisk **cycle** budget (rather than a fixed
+/// shard count). See [`partition_for_cycle_cap`].
+pub struct BudgetPlan {
+  /// Chosen shard count.
+  pub num_shards: usize,
+  /// Shard assignment per block id (as [`Hypergraph::partition`] returns).
+  pub shard_of: Vec<u32>,
+  /// Per-shard heartbeat cap derived from the cycle cap
+  /// (`max_cycles / cycles_per_heartbeat`).
+  pub heartbeat_cap: u64,
+  /// Heaviest shard's heartbeats in the chosen partition.
+  pub max_shard_heartbeats: u64,
+  /// Largest single (atomic) block's heartbeats — the hard floor on
+  /// `max_shard_heartbeats` that no shard count can beat.
+  pub largest_block_heartbeats: u64,
+  /// True when the largest atomic block alone exceeds the cap: the budget is
+  /// infeasible by sharding (split that mutual block upstream, or raise the cap
+  /// / use a bigger box).
+  pub infeasible_atomic_floor: bool,
+}
+
+/// Size a partition to a per-shard **cycle** budget, then partition.
+///
+/// `max_cycles` is the ceiling on a single shard's in-circuit Zisk guest steps
+/// — the leaf prover's trace size, which is what sets peak prover RAM. Convert
+/// it from a host-RAM budget with the empirical single-leaf model measured on
+/// this prover:
+///
+/// ```text
+///   peak_RAM_GB ≈ 45 + 32 × cycles_billions
+///   ⇒ max_cycles ≈ (target_peak_GB − 45) / 32 × 1e9
+/// ```
+///
+/// e.g. a 256 GB box with a ~195 GB safe target (≈ 50 GB headroom for OS +
+/// run-to-run variance) → `(195 − 45) / 32 ≈ 4.7` → `max_cycles ≈ 4.5e9`.
+///
+/// `cycles_per_heartbeat` converts the planner's heartbeat balance metric to
+/// guest cycles. It is workload-dependent (≈ 208_000 measured on mergesort);
+/// recalibrate per environment with one `--execute`: a shard's reported steps ÷
+/// that shard's heartbeats.
+///
+/// Picks the smallest `N` whose heaviest shard fits `max_cycles /
+/// cycles_per_heartbeat`, growing `N` proportionally to any overshoot and
+/// re-partitioning (partitioning is milliseconds-to-seconds, negligible beside
+/// proving). Stops at the **atomic-block floor**: a mutual block cannot be
+/// split, so once the heaviest shard is pinned to the largest block, more shards
+/// only worsen balance — `infeasible_atomic_floor` then flags that the cap is
+/// unreachable and the block must be dealt with upstream.
+pub fn partition_for_cycle_cap(
+  profile: &BlockProfile,
+  max_cycles: u64,
+  cycles_per_heartbeat: u64,
+  epsilon: f64,
+) -> BudgetPlan {
+  let h = Hypergraph::from_profile(profile);
+  let hb_cap = (max_cycles / cycles_per_heartbeat.max(1)).max(1);
+  let largest_block =
+    profile.blocks().iter().map(|b| b.heartbeats).max().unwrap_or(0);
+  let total_hb = profile.total_heartbeats();
+  let nblocks = profile.num_blocks().max(1);
+
+  let max_shard_hb_of = |shard_of: &[u32], n: usize| -> u64 {
+    let mut sums = vec![0u64; n];
+    for (b, &s) in shard_of.iter().enumerate() {
+      sums[s as usize] =
+        sums[s as usize].saturating_add(profile.block(b as u32).heartbeats);
+    }
+    sums.into_iter().max().unwrap_or(0)
+  };
+
+  // Initial estimate from the average load; refine against the real partition.
+  let mut n = ((total_hb / u128::from(hb_cap)).max(1) as usize).min(nblocks);
+  let mut shard_of = h.partition(n, epsilon);
+  let mut max_shard_hb = max_shard_hb_of(&shard_of, n);
+
+  // Grow N until the heaviest shard fits the cap, or we hit the atomic-block
+  // floor / the block count. Proportional growth converges in a few re-cuts.
+  let mut guard = 0;
+  while max_shard_hb > hb_cap
+    && n < nblocks
+    && max_shard_hb > largest_block.saturating_mul(11) / 10
+    && guard < 24
+  {
+    // Next estimate: scale N by the overshoot ratio (so a 2× overshoot doubles
+    // N), but always advance by ≥1 to guarantee progress. Re-checking the real
+    // partition each round converges to the *minimal* N that fits.
+    let scaled = ((n as f64) * (max_shard_hb as f64 / hb_cap as f64)).ceil() as usize;
+    n = scaled.max(n + 1).min(nblocks);
+    shard_of = h.partition(n, epsilon);
+    max_shard_hb = max_shard_hb_of(&shard_of, n);
+    guard += 1;
+  }
+
+  BudgetPlan {
+    num_shards: n,
+    shard_of,
+    heartbeat_cap: hb_cap,
+    max_shard_heartbeats: max_shard_hb,
+    largest_block_heartbeats: largest_block,
+    infeasible_atomic_floor: largest_block > hb_cap,
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;

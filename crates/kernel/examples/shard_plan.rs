@@ -1,16 +1,29 @@
 //! Generate a `.ixes` sharding manifest from a `.ixe` env, out of circuit — a
 //! standalone equivalent of `ix profile` + `ix shard` that does NOT go through
 //! the Lean/FFI layer. Useful for producing a plan to feed the Zisk host's
-//! `--shard-plan`, and for testing/iterating the partitioner without a full
-//! Lean build.
+//! `--shard-plan`, and for iterating the partitioner without a full Lean build.
 //!
-//!   cargo run -p ix-kernel --release --example shard_plan -- <env.ixe> <N> [out.ixes]
+//! Usage:
+//!   cargo run -p ix-kernel --release --example shard_plan -- <env.ixe> \
+//!       (--shards N | --max-cycles C) [--cycles-per-heartbeat K] [--out path]
+//!
+//!   --shards N             partition into exactly N shards.
+//!   --max-cycles C         size N to a per-shard guest-cycle budget instead
+//!                          (the leaf prover's trace size = what sets peak RAM).
+//!   --cycles-per-heartbeat K   heartbeat→cycle conversion (default 208000,
+//!                          measured on mergesort; recalibrate per env with one
+//!                          `--execute`: a shard's steps ÷ its heartbeats).
+//!   --out path             output .ixes (default <env>.ixes).
+//!
+//! Converting a host-RAM budget to --max-cycles (empirical single-leaf model on
+//! this prover: peak_RAM_GB ≈ 45 + 32 × cycles_billions):
+//!     max_cycles ≈ (target_peak_GB − 45) / 32 × 1e9
+//! e.g. a 256 GB box, ~195 GB safe target (≈50 GB headroom) → --max-cycles 4.5e9
 //!
 //! Profiles the env with the real kernel (single worker, cache-isolated so
-//! heartbeats reflect the un-memoized in-circuit cost and every delta-unfold is
-//! recorded), aggregates per-constant records into a block-level profile,
-//! partitions into `N` shards (recursive balanced min-cut bisection minimizing
-//! cross-shard delta ingress), and writes the `.ixes` manifest.
+//! heartbeats reflect un-memoized in-circuit cost and every delta-unfold is
+//! recorded), aggregates per-constant records into a block profile, partitions,
+//! and writes the manifest.
 
 use ix_common::address::Address;
 use ix_kernel::anon_work::build_anon_work;
@@ -18,7 +31,7 @@ use ix_kernel::env::KEnv;
 use ix_kernel::id::KId;
 use ix_kernel::mode::Anon;
 use ix_kernel::profile::{BlockProfile, ProfileBuilder, ProfileSink};
-use ix_kernel::shard::{Hypergraph, ShardManifest};
+use ix_kernel::shard::{partition_for_cycle_cap, Hypergraph, ShardManifest};
 use ix_kernel::tc::TypeChecker;
 use ixon::constant::ConstantInfo as CI;
 use ixon::env::Env as IxonEnv;
@@ -42,21 +55,82 @@ fn block_size(env: &IxonEnv, block: &Address) -> u32 {
   env.get_const_bytes(block).map_or(0, |b| b.len().min(u32::MAX as usize) as u32)
 }
 
-fn main() {
-  let args: Vec<String> = std::env::args().collect();
-  if args.len() < 3 {
-    eprintln!("usage: shard_plan <env.ixe> <num_shards> [out.ixes]");
+/// Parse a count that may use float/scientific notation (e.g. `4.5e9`).
+fn parse_count(s: &str) -> u64 {
+  let v: f64 = s.parse().unwrap_or_else(|_| {
+    eprintln!("error: not a number: {s}");
+    std::process::exit(1);
+  });
+  if v < 0.0 {
+    eprintln!("error: must be non-negative: {s}");
     std::process::exit(1);
   }
-  let path = args[1].clone();
-  let num_shards: usize = args[2].parse().expect("num_shards must be a positive integer");
-  let out = args.get(3).cloned().unwrap_or_else(|| format!("{path}.ixes"));
+  v as u64
+}
 
+fn usage() -> ! {
+  eprintln!(
+    "usage: shard_plan <env.ixe> (--shards N | --max-cycles C) \
+     [--cycles-per-heartbeat K] [--out path]"
+  );
+  eprintln!(
+    "  --max-cycles is a per-shard guest-cycle budget; convert from RAM via \
+     max_cycles ~= (target_peak_GB - 45) / 32 * 1e9  (256 GB box -> ~4.5e9)."
+  );
+  std::process::exit(1);
+}
+
+fn main() {
+  // ---- Parse args. ----
+  let args: Vec<String> = std::env::args().collect();
+  let mut path: Option<String> = None;
+  let mut shards: Option<usize> = None;
+  let mut max_cycles: Option<u64> = None;
+  let mut cyc_per_hb: u64 = 208_000; // mergesort-calibrated default
+  let mut out: Option<String> = None;
+  let mut i = 1;
+  while i < args.len() {
+    match args[i].as_str() {
+      "--shards" => {
+        i += 1;
+        shards = Some(parse_count(args.get(i).unwrap_or(&String::new())) as usize);
+      },
+      "--max-cycles" => {
+        i += 1;
+        max_cycles = Some(parse_count(args.get(i).unwrap_or(&String::new())));
+      },
+      "--cycles-per-heartbeat" => {
+        i += 1;
+        cyc_per_hb = parse_count(args.get(i).unwrap_or(&String::new())).max(1);
+      },
+      "--out" => {
+        i += 1;
+        out = args.get(i).cloned();
+      },
+      s if s.starts_with("--") => {
+        eprintln!("error: unknown flag {s}");
+        usage();
+      },
+      s if path.is_none() => path = Some(s.to_string()),
+      s => {
+        eprintln!("error: unexpected argument {s}");
+        usage();
+      },
+    }
+    i += 1;
+  }
+  let Some(path) = path else { usage() };
+  if shards.is_some() == max_cycles.is_some() {
+    eprintln!("error: pass exactly one of --shards or --max-cycles");
+    usage();
+  }
+  let out = out.unwrap_or_else(|| format!("{path}.ixes"));
+
+  // ---- Profile: run the kernel, recording heartbeats + delta-unfold edges. ----
   let bytes = std::fs::read(&path).expect("read .ixe");
   let env = IxonEnv::get_anon(&mut &bytes[..]).expect("invalid Ixon environment");
   let work = build_anon_work(&env).expect("build_anon_work");
 
-  // ---- Profile: run the kernel, recording heartbeats + delta-unfold edges. ----
   let mut kenv = KEnv::<Anon>::new();
   kenv.profile_sink = Some(ProfileSink::new(true)); // isolate = sound recording
   let mut failures = 0usize;
@@ -66,8 +140,6 @@ fn main() {
     if tc.check_const(&kid).is_err() {
       failures += 1;
     }
-    // The TypeChecker is recreated per item, so flush the last constant's record
-    // explicitly (no trailing reset would otherwise do it).
     tc.finish_constant_accounting();
   }
   let sink = kenv.profile_sink.take().expect("profile sink");
@@ -87,10 +159,45 @@ fn main() {
   }
   let profile: BlockProfile = builder.finish();
 
-  // ---- Partition + manifest. ----
-  let h = Hypergraph::from_profile(&profile);
-  let shard_of = h.partition(num_shards, 0.05);
-  let mut manifest = ShardManifest::build(&profile, &shard_of, num_shards);
+  // ---- Choose the partition: explicit N, or sized to a cycle budget. ----
+  let (shard_of, n) = match (shards, max_cycles) {
+    (Some(n), None) => {
+      let h = Hypergraph::from_profile(&profile);
+      (h.partition(n, 0.05), n)
+    },
+    (None, Some(cap)) => {
+      let plan = partition_for_cycle_cap(&profile, cap, cyc_per_hb, 0.05);
+      let cyc = u128::from(plan.max_shard_heartbeats) * u128::from(cyc_per_hb);
+      let floor_cyc =
+        u128::from(plan.largest_block_heartbeats) * u128::from(cyc_per_hb);
+      eprintln!(
+        "budget: max_cycles={cap} → heartbeat_cap={} (@ {cyc_per_hb} cyc/hb) → N={}",
+        plan.heartbeat_cap, plan.num_shards,
+      );
+      eprintln!(
+        "  heaviest shard: {} hb (~{cyc} cycles); largest atomic block: {} hb (~{floor_cyc} cycles)",
+        plan.max_shard_heartbeats, plan.largest_block_heartbeats,
+      );
+      if plan.infeasible_atomic_floor {
+        eprintln!(
+          "  WARNING: the largest atomic (mutual) block alone exceeds --max-cycles — \
+           NO shard count can fit it. Split that block upstream (Lean side), raise \
+           --max-cycles, or use a bigger box."
+        );
+      } else if plan.max_shard_heartbeats > plan.heartbeat_cap {
+        eprintln!(
+          "  note: heaviest shard still over cap at N={} (pinned by the atomic-block \
+           floor); more shards won't lower it.",
+          plan.num_shards,
+        );
+      }
+      (plan.shard_of, plan.num_shards)
+    },
+    _ => unreachable!("validated exactly one of --shards / --max-cycles above"),
+  };
+
+  // ---- Manifest. ----
+  let mut manifest = ShardManifest::build(&profile, &shard_of, n);
   for s in &mut manifest.shards {
     s.assumption_root = ixon::merkle::merkle_root_canonical(&s.foreign_blocks);
   }
