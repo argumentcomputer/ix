@@ -240,6 +240,9 @@ struct ShardPublics {
   failures: u32,
   subject_root: [u8; 32],
   assumptions_root: [u8; 32],
+  /// Number of targets the guest certified. Decoded for layout completeness;
+  /// the host derives counts from the manifest/work sets instead.
+  #[allow(dead_code)]
   checked_count: u32,
 }
 
@@ -622,7 +625,7 @@ fn closure_addrs(
 
   let mut closure: HashSet<Address> = HashSet::default();
   let mut queue: VecDeque<Address> = VecDeque::new();
-  let mut push = |closure: &mut HashSet<Address>, q: &mut VecDeque<Address>, a: Address| {
+  let push = |closure: &mut HashSet<Address>, q: &mut VecDeque<Address>, a: Address| {
     if closure.insert(a.clone()) {
       q.push_back(a);
     }
@@ -728,14 +731,14 @@ fn plan_chunks_by_closure(
   let mut start = 0usize;
   let mut cur: HashSet<Address> = HashSet::default();
   let mut cur_bytes = 0usize;
-  for i in 0..items.len() {
-    let roots = items[i].proven_targets();
+  for (i, item) in items.iter().enumerate() {
+    let roots = item.proven_targets();
     let item_closure = closure_addrs(source, &roots);
     let item_alone: usize = item_closure.iter().map(|a| addr_bytes(source, a)).sum();
     if item_alone > budget {
       bail!(
         "work item {i} (primary {}…) closure is {} > budget {} — raise --shard-bytes",
-        &items[i].primary().hex()[..16],
+        &item.primary().hex()[..16],
         item_alone.human_count_bytes(),
         budget.human_count_bytes(),
       );
@@ -1063,7 +1066,7 @@ async fn run_only_const(
     || {
       anyhow::anyhow!(
         "{name:?} resolved to block {}… but no work item covers it",
-        block.hex()[..16].to_string()
+        &block.hex()[..16]
       )
     },
   )?;
@@ -1075,7 +1078,7 @@ async fn run_only_const(
   let sub_env = build_sub_env(&env, &roots)?;
   println!(
     "only-const {name}: block {}… ({} target const(s)); closure sub-env {} vs whole env {} ({:.0}%)",
-    block.hex()[..16].to_string(),
+    &block.hex()[..16],
     roots.len(),
     sub_env.len().human_count_bytes(),
     plan.env_bytes.len().human_count_bytes(),
@@ -1118,7 +1121,7 @@ async fn run_only_const(
       Address::from_slice(&publics.subject_root)
         .map(|a| a.hex()[..16].to_string())
         .unwrap_or_default(),
-      expected.hex()[..16].to_string(),
+      &expected.hex()[..16],
     );
   }
   let vstart = Instant::now();
@@ -1130,7 +1133,7 @@ async fn run_only_const(
     leaf_ms as f64 / 1000.0,
     result.get_execution_steps(),
     vstart.elapsed().as_secs_f64(),
-    expected.hex()[..16].to_string(),
+    &expected.hex()[..16],
     roots.len(),
   );
   if publics.failures > 0 {
@@ -1194,37 +1197,32 @@ fn group_work_by_manifest<'a>(
   Ok(groups)
 }
 
-/// Prune the manifest's bisection tree to the set of `present` (proven,
-/// non-empty) shard ids: drop leaves not present, and collapse any internal node
-/// that loses a child to its surviving child. Returns `None` if nothing remains.
-/// Lets the tree-aligned fold work even when some shards are empty or only a
-/// subset was proven.
-fn prune_tree(
-  node: &ix_kernel::shard::AggNode,
-  present: &std::collections::HashSet<u32>,
-) -> Option<ix_kernel::shard::AggNode> {
-  use ix_kernel::shard::AggNode;
-  match node {
-    AggNode::Leaf(id) => present.contains(id).then(|| AggNode::Leaf(*id)),
-    AggNode::Internal(l, r) => {
-      match (prune_tree(l, present), prune_tree(r, present)) {
-        (Some(a), Some(b)) => {
-          Some(AggNode::Internal(Box::new(a), Box::new(b)))
-        },
-        (Some(a), None) | (None, Some(a)) => Some(a),
-        (None, None) => None,
-      }
-    },
-  }
+/// Host mirror of the agg guest's mode-1 discharge: union the children's
+/// subject and assumption sets, then drop every assumption proven by the union
+/// subject. Returns `(union_subjects, outstanding_assumptions)`, both sorted
+/// and deduped. Must stay in lockstep with the guest (`zisk/agg-guest`).
+fn discharge(
+  subjects: &[&[ix_common::address::Address]],
+  assumptions: &[&[ix_common::address::Address]],
+) -> (Vec<ix_common::address::Address>, Vec<ix_common::address::Address>) {
+  let mut union_s: Vec<_> = subjects.concat();
+  let mut union_a: Vec<_> = assumptions.concat();
+  union_s.sort_unstable();
+  union_s.dedup();
+  union_a.sort_unstable();
+  union_a.dedup();
+  let outstanding =
+    union_a.into_iter().filter(|a| union_s.binary_search(a).is_err()).collect();
+  (union_s, outstanding)
 }
 
 /// Prove a `.ixes` manifest partition: one closure-injected leaf proof per
-/// (non-empty) manifest shard, folded into a single aggregate whose committed
-/// subject is bound to the env. Honors `--execute` (per-shard VM cycles) and
-/// `--only-shard k` (prove just shard k). The agg program is set up lazily,
-/// only when more than one leaf is produced. When the manifest carries a
-/// bisection tree, the fold follows it (tree-aligned); otherwise a flat
-/// arity-fold is used.
+/// (non-empty) manifest shard, folded along the manifest's bisection tree into
+/// a single aggregate whose committed subject is bound to the env. Honors
+/// `--execute` (per-shard VM cycles) and `--only-shard k` (prove just shard k).
+/// The agg program is set up lazily, only when more than one leaf is produced.
+/// Manifests without a bisection tree (written before it existed) are
+/// rejected when aggregation is needed — regenerate with the current planner.
 async fn run_shard_plan(
   client: &EmbeddedClient,
   plan: &InputPlan,
@@ -1281,8 +1279,14 @@ async fn run_shard_plan(
   }
 
   // Per-shard guest input: explicit primary check-list + closure-injected
-  // sub-env (ship only this shard's dependency closure, never the whole env).
-  let build_inputs = |g: &[&AnonWorkItem]| -> Result<(Vec<u8>, Vec<u8>, Vec<[u8; 32]>)> {
+  // sub-env (ship only this shard's dependency closure, never the whole env),
+  // plus the cover (target addresses) for the host-side claim bindings.
+  type LeafInputs = (
+    Vec<u8>,       // packed primary check-list
+    Vec<u8>,       // serialized closure sub-env
+    Vec<[u8; 32]>, // cover: certified target addresses
+  );
+  let build_inputs = |g: &[&AnonWorkItem]| -> Result<LeafInputs> {
     let primaries: Vec<Address> = g.iter().map(|w| w.primary().clone()).collect();
     let check_list = Address::pack(&primaries);
     let roots: Vec<Address> = g.iter().flat_map(|w| w.proven_targets()).collect();
@@ -1336,7 +1340,6 @@ async fn run_shard_plan(
 
   // ---- Prove mode: one closure-injected leaf per shard. ----
   let mut leaf_proofs: Vec<Vec<u8>> = Vec::with_capacity(selected.len());
-  let mut leaf_subjects: Vec<Address> = Vec::with_capacity(selected.len());
   // Per-leaf claim preimages (sorted, deduped): the certified target set and
   // the assumption set behind the leaf's committed roots. Supplied to the agg
   // guest as discharge witness and mirrored host-side for the final binding.
@@ -1383,7 +1386,12 @@ async fn run_shard_plan(
     // Bind each leaf: its committed subject must equal the env-derived merkle
     // root over the constants it certified. A guest that proved a different set
     // than the manifest assigned would commit a different root and fail here.
-    let expected = subject_of_cover(&cover);
+    let mut targets: Vec<Address> = cover
+      .iter()
+      .map(|b| Address::from_slice(b).expect("cover address"))
+      .collect();
+    let expected = ixon::merkle::merkle_root_canonical(&targets)
+      .unwrap_or_else(ixon::merkle::zero_address);
     if *expected.as_bytes() != publics.subject_root {
       bail!(
         "shard {idx}: committed subject {}… ≠ env-derived {}… — guest certified a \
@@ -1391,16 +1399,12 @@ async fn run_shard_plan(
         Address::from_slice(&publics.subject_root)
           .map(|a| a.hex()[..16].to_string())
           .unwrap_or_default(),
-        expected.hex()[..16].to_string(),
+        &expected.hex()[..16],
       );
     }
     // Record the leaf's claim preimages and check the assumptions mirror NOW
     // (a divergence would otherwise only surface as a witness-root panic deep
     // inside the agg guest, after the leaf proving time is already spent).
-    let mut targets: Vec<Address> = cover
-      .iter()
-      .map(|b| Address::from_slice(b).expect("cover address"))
-      .collect();
     let asm_set = leaf_assumptions(&env, &targets);
     let asm_expected = ixon::merkle::merkle_root_canonical(&asm_set)
       .unwrap_or_else(ixon::merkle::zero_address);
@@ -1415,7 +1419,6 @@ async fn run_shard_plan(
     leaf_subject_sets.push(targets);
     leaf_assumption_sets.push(asm_set);
     covered_union.extend(cover.iter().copied());
-    leaf_subjects.push(expected);
     leaf_proofs.push(blob);
     leaf_ids.push(idx as u32);
     last_leaf_result = Some(result);
@@ -1433,15 +1436,10 @@ async fn run_shard_plan(
     }
   }
 
-  // ---- Aggregate: fold the leaves, mirroring the merkle subject fold so the
-  // root's committed subject can be bound to the env. When the manifest carries
-  // a bisection tree, fold along it (pruned to the shards actually proven) so
-  // each cross-shard assumption discharges at the lowest common ancestor;
-  // otherwise fall back to the flat arity-fold. ----
+  // ---- Aggregate: fold the leaves along the manifest's bisection tree
+  // (pruned to the shards actually proven), so each cross-shard assumption
+  // discharges at the lowest common ancestor of the shards that share it. ----
   let arity = (args.agg_arity as usize).max(2);
-  let present_ids: HashSet<u32> = leaf_ids.iter().copied().collect();
-  let pruned_tree =
-    manifest.tree.as_ref().and_then(|t| prune_tree(t, &present_ids));
   let (final_size, agg_ms, verify_ms, root_committed, expected_final) =
     if leaf_proofs.len() == 1 {
       let leaf = last_leaf_result.expect("single leaf");
@@ -1449,11 +1447,20 @@ async fn run_shard_plan(
       let vstart = Instant::now();
       leaf.verify()?;
       // Per-leaf binding above already pinned the subject; fold of 1 = itself.
-      (final_size, 0u64, vstart.elapsed().as_millis() as u64, leaf_subjects[0].clone(), leaf_subjects[0].clone())
-    } else if let Some(tree) = pruned_tree {
-      // Tree-aligned fold: lower the bisection tree to an arity-bounded post-
-      // order plan and execute it. Each `Agg` folds whole subtrees, so coupled
-      // shards meet (and discharge their shared assumptions) as low as possible.
+      let subject = ixon::merkle::merkle_root_canonical(&leaf_subject_sets[0])
+        .unwrap_or_else(ixon::merkle::zero_address);
+      (final_size, 0u64, vstart.elapsed().as_millis() as u64, subject.clone(), subject)
+    } else {
+      let Some(full_tree) = &manifest.tree else {
+        bail!(
+          "manifest has no bisection tree (written by an older planner) — \
+           regenerate the .ixes with the current `shard_plan`"
+        );
+      };
+      let present: HashSet<u32> = leaf_ids.iter().copied().collect();
+      let tree = full_tree
+        .prune(&|id| present.contains(&id))
+        .expect("≥1 proven leaf is in the tree");
       if shard_vk.is_empty() {
         bail!("no shard vk available to pin the aggregation");
       }
@@ -1500,22 +1507,10 @@ async fn run_shard_plan(
               .run()?
               .await?;
             total_agg_ms += result.get_proving_time();
-            // Host mirror of the guest's discharge: union the children's sets
-            // and resolve assumptions against the union subject.
-            let mut union_s: Vec<Address> = Vec::new();
-            let mut union_a: Vec<Address> = Vec::new();
-            for &c in children {
-              union_s.extend(slot_subj[c].iter().cloned());
-              union_a.extend(slot_asm[c].iter().cloned());
-            }
-            union_s.sort_unstable();
-            union_s.dedup();
-            union_a.sort_unstable();
-            union_a.dedup();
-            let outstanding: Vec<Address> = union_a
-              .into_iter()
-              .filter(|a| union_s.binary_search(a).is_err())
-              .collect();
+            let (union_s, outstanding) = discharge(
+              &children.iter().map(|&c| slot_subj[c].as_slice()).collect::<Vec<_>>(),
+              &children.iter().map(|&c| slot_asm[c].as_slice()).collect::<Vec<_>>(),
+            );
             println!(
               "    agg {} → prove {:.2}s (wall {:.2}s); subjects {} assumptions {} → outstanding {}",
               proofs.len(),
@@ -1537,12 +1532,11 @@ async fn run_shard_plan(
       let mut fbuf = [0u8; SHARD_PUBLICS_LEN];
       root.get_public_values_slice(&mut fbuf);
       let fpub = ShardPublics::decode(&fbuf);
-      let committed = fpub.subject_root;
       let vstart = Instant::now();
       root.verify()?;
-      let committed_addr = Address::from_slice(&committed)
+      let committed_addr = Address::from_slice(&fpub.subject_root)
         .unwrap_or_else(|_| ixon::merkle::zero_address());
-      // Mode-1 root subject = canonical merkle root over the UNION of certified
+      // Root subject = canonical merkle root over the UNION of certified
       // targets — a set commitment, independent of fold shape.
       let root_subj = slot_subj.last().expect("root subject set");
       let expected = ixon::merkle::merkle_root_canonical(root_subj)
@@ -1565,58 +1559,6 @@ async fn run_shard_plan(
         );
       }
       (final_size, total_agg_ms, vstart.elapsed().as_millis() as u64, committed_addr, expected)
-    } else {
-      if shard_vk.is_empty() {
-        bail!("no shard vk available to pin the aggregation");
-      }
-      client.setup(&AGG_PROGRAM).run()?.await?;
-      let mut cur_proofs = leaf_proofs;
-      let mut cur_subjects = leaf_subjects;
-      let mut total_agg_ms = 0u64;
-      let mut level = 1usize;
-      let mut root_result: Option<_> = None;
-      while cur_proofs.len() > 1 {
-        let ranges = tree_partition(cur_proofs.len(), arity);
-        println!(
-          "  [agg L{level}] folding {} proofs into {} (arity {arity})",
-          cur_proofs.len(),
-          ranges.len(),
-        );
-        let mut next_proofs: Vec<Vec<u8>> = Vec::with_capacity(ranges.len());
-        let mut next_subjects: Vec<Address> = Vec::with_capacity(ranges.len());
-        let mut last_result = None;
-        for &(s, e) in &ranges {
-          let allowed = distinct_vks(&cur_proofs[s..e]);
-          let astart = Instant::now();
-          let result =
-            client.prove(&AGG_PROGRAM, agg_stdin(&allowed, &cur_proofs[s..e], None)).run()?.await?;
-          total_agg_ms += result.get_proving_time();
-          println!(
-            "    [{s}..{e}] {} proofs → prove {:.2}s (wall {:.2}s)",
-            e - s,
-            result.get_proving_time() as f64 / 1000.0,
-            astart.elapsed().as_secs_f64(),
-          );
-          next_proofs.push(result.get_proof_bytes()?);
-          // Mirror the guest's left-associative merkle_join over this chunk.
-          next_subjects.push(fold_subjects(&cur_subjects[s..e]));
-          last_result = Some(result);
-        }
-        cur_proofs = next_proofs;
-        cur_subjects = next_subjects;
-        root_result = last_result;
-        level += 1;
-      }
-      let root = root_result.expect("tree-fold produced a root");
-      let final_size = root.get_proof_bytes()?.len();
-      let mut fbuf = [0u8; SHARD_PUBLICS_LEN];
-      root.get_public_values_slice(&mut fbuf);
-      let committed = ShardPublics::decode(&fbuf).subject_root;
-      let vstart = Instant::now();
-      root.verify()?;
-      let committed_addr = Address::from_slice(&committed)
-        .unwrap_or_else(|_| ixon::merkle::zero_address());
-      (final_size, total_agg_ms, vstart.elapsed().as_millis() as u64, committed_addr, cur_subjects[0].clone())
     };
 
   // Bind the aggregate's committed subject to the env-derived fold.
@@ -1624,8 +1566,8 @@ async fn run_shard_plan(
     bail!(
       "subject-binding failed: aggregate commits {}… but the env requires {}… — \
        the folded proofs do not cover this env",
-      root_committed.hex()[..16].to_string(),
-      expected_final.hex()[..16].to_string(),
+      &root_committed.hex()[..16],
+      &expected_final.hex()[..16],
     );
   }
 
@@ -1638,7 +1580,7 @@ async fn run_shard_plan(
     agg_ms as f64 / 1000.0,
     final_size.human_count_bytes(),
     verify_ms as f64 / 1000.0,
-    expected_final.hex()[..16].to_string(),
+    &expected_final.hex()[..16],
     covered_union.len(),
   );
   if total_failures > 0 {

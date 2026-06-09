@@ -260,6 +260,21 @@ impl AggNode {
     }
   }
 
+  /// Prune to the leaves selected by `keep`: dropped leaves disappear and an
+  /// internal node that loses one child collapses to the survivor. Returns
+  /// `None` when nothing remains. Lets a prover fold along the tree even when
+  /// only a subset of shards was proven (empty shards, `--only-shard`).
+  pub fn prune(&self, keep: &impl Fn(u32) -> bool) -> Option<AggNode> {
+    match self {
+      AggNode::Leaf(id) => keep(*id).then_some(AggNode::Leaf(*id)),
+      AggNode::Internal(l, r) => match (l.prune(keep), r.prune(keep)) {
+        (Some(a), Some(b)) => Some(AggNode::Internal(Box::new(a), Box::new(b))),
+        (Some(a), None) | (None, Some(a)) => Some(a),
+        (None, None) => None,
+      },
+    }
+  }
+
   /// Preorder serialization: `0u8, id(4)` for a leaf; `1u8, <left>, <right>` for
   /// an internal node.
   fn put(&self, out: &mut Vec<u8>) {
@@ -320,33 +335,23 @@ fn build_plan(node: &AggNode, arity: usize, ops: &mut Vec<FoldOp>) -> usize {
       ops.push(FoldOp::Leaf(*id));
       ops.len() - 1
     },
-    AggNode::Internal(_, _) => {
+    AggNode::Internal(l, r) => {
       // Collapse the binary subtree into up to `arity` child subtrees: start
       // from the two halves and repeatedly split the *largest* still-internal
       // frontier node until we have `arity` children or all are leaves. This
       // keeps tightly-coupled siblings together while bounding the fan-in.
-      let mut frontier: Vec<&AggNode> = match node {
-        AggNode::Internal(l, r) => vec![l, r],
-        AggNode::Leaf(_) => unreachable!(),
-      };
-      loop {
-        if frontier.len() >= arity {
-          break;
-        }
-        // Index of the largest internal frontier node, if any.
-        let mut pick: Option<usize> = None;
-        let mut best = 0usize;
-        for (i, nd) in frontier.iter().enumerate() {
-          if let AggNode::Internal(_, _) = nd {
-            let ln = nd.num_leaves();
-            if pick.is_none() || ln > best {
-              pick = Some(i);
-              best = ln;
-            }
-          }
-        }
-        let Some(i) = pick else { break }; // all leaves: cannot expand further
-        let AggNode::Internal(l, r) = frontier.remove(i) else { unreachable!() };
+      let mut frontier: Vec<&AggNode> = vec![l, r];
+      while frontier.len() < arity {
+        let largest = frontier
+          .iter()
+          .enumerate()
+          .filter(|(_, nd)| matches!(nd, AggNode::Internal(_, _)))
+          .max_by_key(|(_, nd)| nd.num_leaves())
+          .map(|(i, _)| i);
+        let Some(i) = largest else { break }; // all leaves: cannot expand
+        let AggNode::Internal(l, r) = frontier.swap_remove(i) else {
+          unreachable!()
+        };
         frontier.push(l);
         frontier.push(r);
       }
@@ -2050,6 +2055,21 @@ mod tests {
     } else {
       panic!("root must be an Agg");
     }
+  }
+
+  #[test]
+  fn prune_collapses_and_preserves() {
+    // ((0 1)(2 3)): pruning leaf 1 collapses its parent to leaf 0; pruning a
+    // whole side collapses the root; keep-all is identity; keep-none is None.
+    let t = node(node(leaf(0), leaf(1)), node(leaf(2), leaf(3)));
+    assert_eq!(t.prune(&|_| true), Some(t.clone()));
+    assert_eq!(t.prune(&|_| false), None);
+    assert_eq!(
+      t.prune(&|id| id != 1),
+      Some(node(leaf(0), node(leaf(2), leaf(3))))
+    );
+    assert_eq!(t.prune(&|id| id >= 2), Some(node(leaf(2), leaf(3))));
+    assert_eq!(t.prune(&|id| id == 3), Some(leaf(3)));
   }
 
   #[test]
