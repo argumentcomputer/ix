@@ -160,6 +160,15 @@ pub struct TypeChecker<'a, M: KernelMode> {
   pub rec_fuel: u64,
   /// Optional diagnostic label for the current top-level constant.
   pub debug_label: Option<String>,
+
+  // -- Sharding profiler (see `plans/sharding.md`) --
+  /// Address of the constant currently being checked, used to attribute
+  /// recorded heartbeats and delta-unfold edges. `None` unless a `profile_sink`
+  /// is installed on `env`; set by `begin_const` after each per-constant reset.
+  pub(crate) cur_const: Option<Address>,
+  /// Addresses of constants whose bodies were delta-unfolded during the current
+  /// constant's check. Drained per constant by `record_current_fuel_used`.
+  pub(crate) delta_targets: FxHashSet<Address>,
   /// Gated miss sampler for fuel-exhaustion diagnostics. Populated only when
   /// `IX_HOT_MISSES=1`, keyed by a compact phase/head/lbr shape.
   hot_misses: FxHashMap<String, u64>,
@@ -208,6 +217,8 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
       def_eq_peak: 0,
       rec_fuel: max_rec_fuel(),
       debug_label: None,
+      cur_const: None,
+      delta_targets: FxHashSet::default(),
       hot_misses: FxHashMap::default(),
       ctx_addr_cache: FxHashMap::default(),
       lctx: super::lctx::LocalContext::new(),
@@ -821,6 +832,12 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     // Record fuel consumed by the *previous* constant check (if any) before
     // wiping it. `Drop` records the final check in a TypeChecker's lifetime.
     self.record_current_fuel_used();
+    // Per-constant cache isolation for sound/faithful profile recording: clear
+    // the cross-constant reduction memo so the next constant re-executes every
+    // delta-unfold and its heartbeats reflect in-circuit (un-memoized) cost.
+    if self.env.profile_sink.as_ref().is_some_and(|s| s.isolate) {
+      self.env.clear_reduction_caches();
+    }
     self.rec_fuel = max_rec_fuel();
     self.hot_misses.clear();
     // Reset the local context (it must always be empty between constants).
@@ -884,6 +901,35 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     let used = self.fuel_used();
     if used > 0 {
       self.env.perf.record_constant_fuel_used(used);
+    }
+    // Sharding profiler: flush the just-finished constant's heartbeats and
+    // delta-unfold edges. `delta_targets` is always drained (even when
+    // `cur_const` is unset) so producers never leak into the next constant.
+    if self.env.profile_sink.is_some() {
+      let producers = std::mem::take(&mut self.delta_targets);
+      if let Some(addr) = self.cur_const.take() {
+        let sink = self.env.profile_sink.as_mut().unwrap();
+        sink.record(addr, used, producers);
+      }
+    }
+  }
+
+  /// Sharding profiler: mark `id` as the constant now being checked, so its
+  /// heartbeats and delta-unfold edges are attributed correctly. No-op unless a
+  /// `profile_sink` is installed. Called right after each per-constant `reset`.
+  #[inline]
+  pub(crate) fn begin_const(&mut self, id: &KId<M>) {
+    if self.env.profile_sink.is_some() {
+      self.cur_const = Some(id.addr.clone());
+    }
+  }
+
+  /// Sharding profiler: record that the current constant delta-unfolds the body
+  /// of `id`. No-op unless a `profile_sink` is installed.
+  #[inline]
+  pub(crate) fn record_delta_target(&mut self, id: &KId<M>) {
+    if self.env.profile_sink.is_some() {
+      self.delta_targets.insert(id.addr.clone());
     }
   }
 

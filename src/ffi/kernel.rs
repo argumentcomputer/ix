@@ -81,6 +81,7 @@ use crate::ix::kernel::ingress::{
 use crate::ix::kernel::ingress::{ixon_ingress, lean_ingress};
 use crate::ix::kernel::mode::{Anon, CheckDupLevelParams, KernelMode, Meta};
 use crate::ix::kernel::tc::TypeChecker;
+use crate::ix::profile::{BlockProfile, ProfileBuilder, ProfileSink};
 
 unsafe extern "C" {
   fn lean_name_mk_string(
@@ -1680,6 +1681,277 @@ pub extern "C" fn rs_kernel_check_anon(
   }
 
   build_anon_result_array(&addrs_for_return, &results)
+}
+
+// ===========================================================================
+// Sharding profiler: run the anon kernel out of circuit over a `.ixe`,
+// recording per-block heartbeats + the delta-unfold graph into a `.ixesp`.
+// See `plans/sharding.md`.
+// ===========================================================================
+
+/// Summary returned by [`profile_anon_ixe`].
+pub struct ProfileStats {
+  pub targets: usize,
+  pub passed: usize,
+  pub failed: usize,
+  pub blocks: usize,
+  pub edges: usize,
+  pub bytes: usize,
+}
+
+/// Map a constant address to its *block* (ingress unit): the `block` address of
+/// a projection constant, otherwise the address itself.
+fn profile_block_of(env: &IxonEnv, addr: &Address) -> Address {
+  match env.get_const(addr) {
+    Some(c) => match &c.info {
+      IxonCI::IPrj(p) => p.block.clone(),
+      IxonCI::CPrj(p) => p.block.clone(),
+      IxonCI::RPrj(p) => p.block.clone(),
+      IxonCI::DPrj(p) => p.block.clone(),
+      _ => addr.clone(),
+    },
+    None => addr.clone(),
+  }
+}
+
+/// Serialized byte length of a block constant (the ingress-cost / net weight).
+#[allow(clippy::cast_possible_truncation)] // clamped to u32::MAX above
+fn profile_block_size(env: &IxonEnv, block: &Address) -> u32 {
+  env
+    .get_const_bytes(block)
+    .map_or(0, |b| b.len().min(u32::MAX as usize) as u32)
+}
+
+/// Aggregate per-constant records into a block-level [`BlockProfile`]: map each
+/// consumer/producer constant to its home block, attach serialized sizes, and
+/// accumulate heartbeats + delta edges.
+fn build_block_profile(env: &IxonEnv, merged: &ProfileSink) -> BlockProfile {
+  let mut builder = ProfileBuilder::new();
+  // addr -> (home block, block serialized size), memoized.
+  let mut cache: FxHashMap<Address, (Address, u32)> = FxHashMap::default();
+  let mut resolve = |a: &Address| -> (Address, u32) {
+    if let Some(v) = cache.get(a) {
+      return v.clone();
+    }
+    let block = profile_block_of(env, a);
+    let size = profile_block_size(env, &block);
+    let v = (block, size);
+    cache.insert(a.clone(), v.clone());
+    v
+  };
+  for (consumer, rec) in &merged.records {
+    let (cblock, csize) = resolve(consumer);
+    builder.block(cblock.clone(), rec.fuel, csize, 1);
+    for prod in &rec.producers {
+      let (pblock, psize) = resolve(prod);
+      builder.block(pblock.clone(), 0, psize, 0);
+      builder.delta_edge(cblock.clone(), pblock);
+    }
+  }
+  builder.finish()
+}
+
+/// Run the anon kernel over `work`, with per-worker profile recording, and
+/// return `(passed, failed, merged_sink)`.
+// `map_err_ignore`: the discarded `Arc`/`PoisonError` carry no useful context.
+#[allow(clippy::needless_pass_by_value, clippy::map_err_ignore)]
+fn run_anon_profile_parallel(
+  env: Arc<IxonEnv>,
+  work: Vec<AnonWorkItem>,
+  isolate: bool,
+  quiet: bool,
+) -> Result<(usize, usize, ProfileSink), String> {
+  let work_total = work.len();
+  let worker_count = resolve_kernel_check_workers(work_total, quiet);
+  eprintln!(
+    "[rs_kernel_profile] profiling {work_total} work item(s) with {worker_count} worker(s), isolate={isolate}..."
+  );
+  let work = Arc::new(work);
+  let next_index = Arc::new(AtomicUsize::new(0));
+  let passed = Arc::new(AtomicUsize::new(0));
+  let failed = Arc::new(AtomicUsize::new(0));
+  let sinks: Arc<Mutex<Vec<ProfileSink>>> = Arc::new(Mutex::new(Vec::new()));
+
+  let mut handles: Vec<thread::JoinHandle<()>> =
+    Vec::with_capacity(worker_count);
+  for worker_idx in 0..worker_count {
+    let env = Arc::clone(&env);
+    let work = Arc::clone(&work);
+    let next_index = Arc::clone(&next_index);
+    let passed = Arc::clone(&passed);
+    let failed = Arc::clone(&failed);
+    let sinks = Arc::clone(&sinks);
+    let handle = thread::Builder::new()
+      .name(format!("ix-kernel-profile-{worker_idx}"))
+      .stack_size(KERNEL_CHECK_STACK_SIZE)
+      .spawn(move || {
+        let mut kenv = KEnv::<Anon>::new();
+        kenv.profile_sink = Some(ProfileSink::new(isolate));
+        let clear_every = kernel_check_clear_every();
+        let mut checks_since_clear = clear_every;
+        loop {
+          let work_idx = next_index.fetch_add(1, Ordering::Relaxed);
+          if work_idx >= work_total {
+            break;
+          }
+          // `clear_releasing_memory` preserves `profile_sink`, so recording
+          // accumulates across scheduled-block boundaries.
+          if checks_since_clear >= clear_every {
+            kenv.clear_releasing_memory();
+            checks_since_clear = 0;
+          }
+          let primary_addr = match &work[work_idx] {
+            AnonWorkItem::Standalone { addr, .. } => addr.clone(),
+            AnonWorkItem::Block { primary_addr, .. } => primary_addr.clone(),
+          };
+          let kid = KId::<Anon>::new(primary_addr, ());
+          let res = {
+            let mut tc =
+              TypeChecker::<Anon>::new_with_lazy_anon(&mut kenv, &env);
+            let r = tc.check_const(&kid);
+            // The TypeChecker is recreated per work item, so the final
+            // constant's record would never be flushed by a trailing reset —
+            // flush it explicitly.
+            tc.finish_constant_accounting();
+            r
+          };
+          if res.is_ok() {
+            passed.fetch_add(1, Ordering::Relaxed);
+          } else {
+            failed.fetch_add(1, Ordering::Relaxed);
+          }
+          checks_since_clear += 1;
+        }
+        if let Some(sink) = kenv.profile_sink.take() {
+          sinks.lock().unwrap().push(sink);
+        }
+      })
+      .map_err(|e| format!("spawn profile worker: {e}"))?;
+    handles.push(handle);
+  }
+
+  let mut panicked = false;
+  for h in handles {
+    if h.join().is_err() {
+      panicked = true;
+    }
+  }
+  if panicked {
+    return Err("profile worker panicked".to_string());
+  }
+
+  let mut merged = ProfileSink::new(isolate);
+  let collected = Arc::try_unwrap(sinks)
+    .map_err(|_| "profile sinks still shared".to_string())?
+    .into_inner()
+    .map_err(|_| "profile sinks mutex poisoned".to_string())?;
+  for s in collected {
+    merged.merge(s);
+  }
+  Ok((passed.load(Ordering::Relaxed), failed.load(Ordering::Relaxed), merged))
+}
+
+/// Profile a `.ixe` out of circuit and write the `.ixesp` sidecar. Pure-Rust
+/// entry point (used by the FFI wrapper and Rust tests).
+pub fn profile_anon_ixe(
+  path: &str,
+  out: &str,
+  isolate: bool,
+  quiet: bool,
+) -> Result<ProfileStats, String> {
+  let load_start = Instant::now();
+  let ixon_env = IxonEnv::get_anon_mmap(std::path::Path::new(path))
+    .map_err(|e| format!("profile: mmap+deserialize {path}: {e}"))?;
+  eprintln!(
+    "[rs_kernel_profile] loaded {} consts in {:.1?}",
+    ixon_env.const_count(),
+    load_start.elapsed()
+  );
+  let (work, addrs) = build_anon_work(&ixon_env)?;
+  let targets = addrs.len();
+  let env_arc = Arc::new(ixon_env);
+  let run_start = Instant::now();
+  let (passed, failed, merged) =
+    run_anon_profile_parallel(Arc::clone(&env_arc), work, isolate, quiet)?;
+  eprintln!(
+    "[rs_kernel_profile] checked {passed}/{} ({} failed) in {:.1?}",
+    passed + failed,
+    failed,
+    run_start.elapsed()
+  );
+  let profile = build_block_profile(&env_arc, &merged);
+  let bytes = profile.to_bytes();
+  std::fs::write(out, &bytes).map_err(|e| format!("write {out}: {e}"))?;
+  eprintln!(
+    "[rs_kernel_profile] wrote {out}: {} blocks, {} delta edges, {} bytes",
+    profile.num_blocks(),
+    profile.num_edges(),
+    bytes.len()
+  );
+  Ok(ProfileStats {
+    targets,
+    passed,
+    failed,
+    blocks: profile.num_blocks(),
+    edges: profile.num_edges(),
+    bytes: bytes.len(),
+  })
+}
+
+/// FFI: profile a `.ixe` out of circuit and write a `.ixesp` sidecar.
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_kernel_profile_anon(
+  env_path: LeanString<LeanBorrowed<'_>>,
+  out_path: LeanString<LeanBorrowed<'_>>,
+  isolate: LeanBool<LeanBorrowed<'_>>,
+  quiet: LeanBool<LeanBorrowed<'_>>,
+) -> LeanIOResult<LeanOwned> {
+  match profile_anon_ixe(
+    &env_path.to_string(),
+    &out_path.to_string(),
+    isolate.to_bool(),
+    quiet.to_bool(),
+  ) {
+    Ok(s) => {
+      eprintln!(
+        "[rs_kernel_profile] done: {} targets, {} blocks, {} edges, {} failed",
+        s.targets, s.blocks, s.edges, s.failed
+      );
+      LeanIOResult::ok(LeanOwned::box_usize(0))
+    },
+    Err(e) => {
+      LeanIOResult::error_string(&format!("rs_kernel_profile_anon: {e}"))
+    },
+  }
+}
+
+/// FFI: partition a `.ixesp` into `num_shards` shards and write a `.ixes`
+/// manifest. Prints a what-if report to stderr.
+#[allow(clippy::cast_precision_loss)] // balance_pct is a small percentage
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_shard_esp(
+  esp_path: LeanString<LeanBorrowed<'_>>,
+  num_shards: LeanString<LeanBorrowed<'_>>,
+  balance_pct: LeanString<LeanBorrowed<'_>>,
+  out_path: LeanString<LeanBorrowed<'_>>,
+) -> LeanIOResult<LeanOwned> {
+  let num_shards = num_shards.to_string().parse::<usize>().unwrap_or(1);
+  let balance_pct = balance_pct.to_string().parse::<u64>().unwrap_or(5);
+  let out = out_path.to_string();
+  let out_opt = if out.is_empty() { None } else { Some(out.as_str()) };
+  let balance = (balance_pct as f64) / 100.0;
+  match crate::ix::shard::shard_esp(
+    &esp_path.to_string(),
+    num_shards,
+    balance,
+    out_opt,
+  ) {
+    Ok(report) => {
+      eprintln!("[rs_shard]\n{report}");
+      LeanIOResult::ok(LeanOwned::box_usize(0))
+    },
+    Err(e) => LeanIOResult::error_string(&format!("rs_shard_esp: {e}")),
+  }
 }
 
 #[cfg(test)]
