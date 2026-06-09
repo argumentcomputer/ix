@@ -86,7 +86,13 @@ fn main() {
   let mut path: Option<String> = None;
   let mut shards: Option<usize> = None;
   let mut max_cycles: Option<u64> = None;
-  let mut cyc_per_hb: u64 = 208_000; // mergesort-calibrated default
+  // Default heartbeat→cycle ratio. Measured across 12 envs: large, shardable
+  // envs (>20k hb) cluster at 194–208k whole-env; the per-shard ratio runs
+  // higher (less memoization) — mergesort's heaviest shard is ~216k. 215k is
+  // that per-shard value (the conservative end for the regime that needs
+  // sharding). Tiny envs run lower (~130–160k, cheap arithmetic); a couple of
+  // mid envs run ~258k (heavy def-eq) — recalibrate those via --execute.
+  let mut cyc_per_hb: u64 = 215_000;
   let mut out: Option<String> = None;
   let mut i = 1;
   while i < args.len() {

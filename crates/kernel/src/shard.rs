@@ -1378,9 +1378,14 @@ pub struct BudgetPlan {
 /// run-to-run variance) → `(195 − 45) / 32 ≈ 4.7` → `max_cycles ≈ 4.5e9`.
 ///
 /// `cycles_per_heartbeat` converts the planner's heartbeat balance metric to
-/// guest cycles. It is workload-dependent (≈ 208_000 measured on mergesort);
-/// recalibrate per environment with one `--execute`: a shard's reported steps ÷
-/// that shard's heartbeats.
+/// guest cycles. Measured across 12 envs: large shardable envs cluster at
+/// 194–208k whole-env, and the per-shard ratio runs ~5–8% higher (a shard
+/// memoizes less) — mergesort's heaviest shard is ≈ 216k, so ~215k is the
+/// conservative default for the regime that needs sharding. It is genuinely
+/// workload-dependent though (tiny arithmetic envs ~130–160k; heavy-def-eq envs
+/// like array/string-assoc ~258k), so recalibrate per environment with one
+/// `--execute`: a shard's reported steps ÷ that shard's heartbeats. The cycle
+/// cap's RAM headroom (target well under the wall) absorbs the residual error.
 ///
 /// Picks the smallest `N` whose heaviest shard fits `max_cycles /
 /// cycles_per_heartbeat`, growing `N` proportionally to any overshoot and
