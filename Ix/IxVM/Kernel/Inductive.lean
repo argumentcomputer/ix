@@ -32,7 +32,7 @@ def inductive_check := ⟦
                             n_params: G, n_indices: G, n_fields: G,
                             ind_idx: G, ind_num_lvls: G) {
     let body = peel_n_foralls(ctor_ty, n_params + n_fields);
-    let pair = collect_spine_simple(body);
+    let pair = collect_spine(body);
     match pair {
       (head, args) =>
         match load(head) {
@@ -57,21 +57,6 @@ def inductive_check := ⟦
           KExprNode.Forall(_, body) => peel_n_foralls(body, n - 1),
         },
     }
-  }
-
-  -- Walk a left-associative App chain, return (head, args-in-application-order).
-  -- Inlined to avoid Whnf import here (module ordering — Inductive precedes Whnf
-  -- in the dependency-first build order); identical to whnf.lean's collect_spine.
-  fn collect_spine_simple_go(e: KExpr, acc: List‹KExpr›) -> (KExpr, List‹KExpr›) {
-    match load(e) {
-      KExprNode.App(f, a) =>
-        collect_spine_simple_go(f, store(ListNode.Cons(a, acc))),
-      _ => (e, acc),
-    }
-  }
-
-  fn collect_spine_simple(e: KExpr) -> (KExpr, List‹KExpr›) {
-    collect_spine_simple_go(e, store(ListNode.Nil))
   }
 
   -- Each `lvls[i]` must be `Param(expected_start + i)` for i in 0..count.
@@ -256,7 +241,7 @@ def inductive_check := ⟦
             let types2 = store(ListNode.Cons(inner_dom, types));
             check_positivity_aug(inner_body, block_idxs, types2, top, addrs),
           _ =>
-            match collect_spine_simple(dom_w) {
+            match collect_spine(dom_w) {
               (head, args) =>
                 match load(head) {
                   KExprNode.Const(idx, _) =>
@@ -576,7 +561,7 @@ def inductive_check := ⟦
                               data_bvars: List‹G›) -> G {
     match n_fields - field_idx {
       0 =>
-        match collect_spine_simple(ty) {
+        match collect_spine(ty) {
           (_, args) => all_bvars_in_args(data_bvars, args),
         },
       _ =>
@@ -853,7 +838,7 @@ def inductive_check := ⟦
         let n_ihs = list_length(rec_indices);
         let n_binders = n_fields + n_ihs;
         let depth_now = minor_saved + n_binders;
-        let ret_pair = collect_spine_simple(ret_ty);
+        let ret_pair = collect_spine(ret_ty);
         match ret_pair {
           (_ret_head, ret_args) =>
             -- Drop n_own_params from ret to expose indices.
@@ -1000,7 +985,7 @@ def inductive_check := ⟦
       (doms, body) =>
         let inner_types = list_concat(list_reverse(doms), types);
         let body_w = whnf(body, inner_types, top, addrs);
-        match collect_spine_simple(body_w) {
+        match collect_spine(body_w) {
           (head, _) =>
             match load(head) {
               KExprNode.Const(idx, _) => find_member_local_idx(block_member_idxs, idx, 0),
@@ -1454,7 +1439,7 @@ def inductive_check := ⟦
               ((inner_depth - 1) - n_params), 0);
             let with_minors = build_apply_minors(with_motives, n_minors,
               (((inner_depth - 1) - n_params) - n_motives), 0);
-            match collect_spine_simple(inner_body) {
+            match collect_spine(inner_body) {
               (_dh, dargs) =>
                 let idx_args = list_drop(dargs, target_n_params);
                 let with_idx = apply_spine(with_minors, idx_args);
@@ -1512,7 +1497,7 @@ def inductive_check := ⟦
     let after_skip = peel_n_foralls(ty, skip);
     match load(after_skip) {
       KExprNode.Forall(major_ty, _) =>
-        match collect_spine_simple(major_ty) {
+        match collect_spine(major_ty) {
           (head, _) =>
             match load(head) {
               KExprNode.Const(idx, _) => idx,
@@ -2014,7 +1999,7 @@ def inductive_check := ⟦
                           -> List‹(G, List‹KExpr›, List‹&KLevel›)› {
     match peel_leading_foralls(dom) {
       (_doms, body) =>
-        match collect_spine_simple(body) {
+        match collect_spine(body) {
           (head, args) =>
             match load(head) {
               KExprNode.Const(idx, occ_us) =>
@@ -2304,7 +2289,7 @@ def inductive_check := ⟦
             let inner_depth = depth + n_xs;
             let motive_bvar = (inner_depth - 1) - (motive_base + mem_idx);
             let field_bvar = (inner_depth - 1) - (minor_saved + field_idx);
-            match collect_spine_simple(inner_body) {
+            match collect_spine(inner_body) {
               (_h, dom_args) =>
                 let idx_args = list_drop(dom_args, target_n_params);
                 let motive_ref = store(KExprNode.BVar(motive_bvar));

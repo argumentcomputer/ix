@@ -1511,7 +1511,7 @@ def primitive := ⟦
   -- Returns (1, width_e, n_e) if `e` is `BitVec.ofNat W N` or
   -- `OfNat.ofNat (BitVec W) N _inst`. Else (0, _, _).
   fn bitvec_of_nat_args(e: KExpr, addrs: List‹Addr›) -> (G, KExpr, KExpr) {
-    match collect_spine_simple(e) {
+    match collect_spine(e) {
       (head, args) =>
         match load(head) {
           KExprNode.Const(idx, _) =>
@@ -1534,7 +1534,7 @@ def primitive := ⟦
                       1 => (0, store(KExprNode.BVar(0)), store(KExprNode.BVar(0))),
                       0 =>
                         let ty_arg = list_lookup(args, 0);
-                        match collect_spine_simple(ty_arg) {
+                        match collect_spine(ty_arg) {
                           (ty_head, ty_args) =>
                             match load(ty_head) {
                               KExprNode.Const(ty_idx, _) =>
@@ -1639,7 +1639,7 @@ def primitive := ⟦
       1 => (0, store(KExprNode.BVar(0))),
       0 =>
         let prop = list_lookup(spine, 0);
-        match collect_spine_simple(prop) {
+        match collect_spine(prop) {
           (lt_head, lt_args) =>
             match load(lt_head) {
               KExprNode.Const(lt_idx, _) =>
@@ -1651,7 +1651,7 @@ def primitive := ⟦
                       1 => (0, store(KExprNode.BVar(0))),
                       0 =>
                         let ty_arg = list_lookup(lt_args, 0);
-                        match collect_spine_simple(ty_arg) {
+                        match collect_spine(ty_arg) {
                           (ty_head, ty_args) =>
                             match load(ty_head) {
                               KExprNode.Const(ty_idx, _) =>
@@ -1749,7 +1749,7 @@ def primitive := ⟦
       1 => (0, store(KExprNode.BVar(0))),
       0 =>
         let val_arg = list_lookup(spine, 2);
-        match collect_spine_simple(val_arg) {
+        match collect_spine(val_arg) {
           (head, _) =>
             match load(head) {
               KExprNode.Const(idx, _) =>
@@ -1771,7 +1771,7 @@ def primitive := ⟦
       1 => (0, store(KExprNode.BVar(0))),
       0 =>
         let ty_arg = list_lookup(spine, 0);
-        match collect_spine_simple(ty_arg) {
+        match collect_spine(ty_arg) {
           (head, _) =>
             match load(head) {
               KExprNode.Const(idx, _) =>

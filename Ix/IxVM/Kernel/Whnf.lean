@@ -46,21 +46,6 @@ ingress (slot mapping in `Primitive.lean`).
 -/
 
 def whnf := ⟦
-  -- ============================================================================
-  -- Spine collection
-  -- ============================================================================
-  fn collect_spine_go(e: KExpr, acc: List‹KExpr›) -> (KExpr, List‹KExpr›) {
-    match load(e) {
-      KExprNode.App(f, a) =>
-        collect_spine_go(f, store(ListNode.Cons(a, acc))),
-      _ => (e, acc),
-    }
-  }
-
-  fn collect_spine(e: KExpr) -> (KExpr, List‹KExpr›) {
-    collect_spine_go(e, store(ListNode.Nil))
-  }
-
   fn apply_spine(head: KExpr, spine: List‹KExpr›) -> KExpr {
     match load(spine) {
       ListNode.Nil => head,
