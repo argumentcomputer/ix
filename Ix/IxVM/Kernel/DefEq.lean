@@ -218,36 +218,66 @@ def defEq := ⟦
     }
   }
 
-  -- Mirror: src/ix/kernel/def_eq.rs:930-948 fn nat_succ_of.
-  -- `Lit(n)` n>0 → (1, Lit(n-1)). `App(Const(Nat.succ), arg)` → (1, arg).
-  -- Else (0, _).
-  fn nat_succ_of(e: KExpr, addrs: List‹Addr›) -> (G, KExpr) {
+
+  -- Decompose a WHNF'd Nat into `base + offset` where `base` is the
+  -- non-offset core and `offset` a KLimbs literal. Recognizes:
+  --   Lit n               -> (matched, 0-base, n)
+  --   Nat.succ e          -> base/offset of e, offset+1
+  --   Nat.add e (Lit m)   -> base/offset of e, offset+m
+  -- `matched=1` iff `e` is offset-shaped (succ/add/lit). The few succ layers
+  -- whnf exposes are peeled, but `Nat.add base (Lit m)` is read in O(1) — so a
+  -- `succ^k(x)` chain (which whnf leaves as `succ(Nat.add x (Lit k-1))`)
+  -- decomposes to `(x, k)` in O(1) instead of k unary steps.
+  fn nat_offset_of(e: KExpr, addrs: List‹Addr›) -> (G, KExpr, KLimbs) {
     match load(e) {
       KExprNode.Lit(lit) =>
         match lit {
-          KLiteral.Nat(limbs) =>
-            match klimbs_is_zero(limbs) {
-              1 => (0, store(KExprNode.BVar(0))),
-              0 => (1, mk_nat_lit(klimbs_dec(limbs))),
-            },
-          _ => (0, store(KExprNode.BVar(0))),
+          KLiteral.Nat(n) => (1, mk_nat_lit(store(ListNode.Nil)), n),
+          _ => (0, e, store(ListNode.Nil)),
         },
       KExprNode.App(f, a) =>
         match load(f) {
           KExprNode.Const(idx, _) =>
             match address_eq(list_lookup(addrs, idx), nat_succ_addr()) {
-              1 => (1, a),
-              0 => (0, store(KExprNode.BVar(0))),
+              1 =>
+                match nat_offset_of(a, addrs) {
+                  (_, base, o) => (1, base, klimbs_succ(o)),
+                },
+              0 => (0, e, store(ListNode.Nil)),
             },
-          _ => (0, store(KExprNode.BVar(0))),
+          KExprNode.App(g, x) =>
+            match load(g) {
+              KExprNode.Const(idx, _) =>
+                match address_eq(list_lookup(addrs, idx), nat_add_addr()) {
+                  1 =>
+                    match load(a) {
+                      KExprNode.Lit(alit) =>
+                        match alit {
+                          KLiteral.Nat(m) =>
+                            match nat_offset_of(x, addrs) {
+                              (1, base, o) => (1, base, klimbs_add(o, m)),
+                              (0, _, _) => (1, x, m),
+                            },
+                          _ => (0, e, store(ListNode.Nil)),
+                        },
+                      _ => (0, e, store(ListNode.Nil)),
+                    },
+                  0 => (0, e, store(ListNode.Nil)),
+                },
+              _ => (0, e, store(ListNode.Nil)),
+            },
+          _ => (0, e, store(ListNode.Nil)),
         },
-      _ => (0, store(KExprNode.BVar(0))),
+      _ => (0, e, store(ListNode.Nil)),
     }
   }
 
-  -- Mirror: src/ix/kernel/def_eq.rs:953-995 is_def_eq_nat / try_def_eq_offset.
-  -- Returns (matched, eq). `matched=1` iff both sides are nat-shaped (both
-  -- zero, both succ-headed, or both literals); `eq` is the verdict.
+  -- Mirror: src/ix/kernel/def_eq.rs:953-995 is_def_eq_nat / try_def_eq_offset,
+  -- generalized to offset form. Returns (matched, eq). Conservative: only
+  -- decides when both sides are offset-shaped with EQUAL offsets (then the
+  -- verdict is `base_a ≟ base_b`, sound because `+k` is injective); differing
+  -- offsets or non-offset shapes fall back (matched=0) to the generic path.
+  -- Collapses `succ^k(x) ≟ succ^k(x)` from k unary steps to one klimbs compare.
   fn try_def_eq_nat(a: KExpr, b: KExpr, types: List‹KExpr›,
                      top: List‹&KConstantInfo›,
                      addrs: List‹Addr›) -> (G, G) {
@@ -256,13 +286,19 @@ def defEq := ⟦
     match za * zb {
       1 => (1, 1),
       0 =>
-        match nat_succ_of(a, addrs) {
-          (1, ap) =>
-            match nat_succ_of(b, addrs) {
-              (1, bp) => (1, k_is_def_eq(ap, bp, types, top, addrs)),
-              _ => (0, 0),
+        match nat_offset_of(a, addrs) {
+          (ma, ba, oa) =>
+            match nat_offset_of(b, addrs) {
+              (mb, bb, ob) =>
+                match ma * mb {
+                  0 => (0, 0),
+                  _ =>
+                    match klimbs_eq(oa, ob) {
+                      0 => (0, 0),
+                      1 => (1, k_is_def_eq(ba, bb, types, top, addrs)),
+                    },
+                },
             },
-          _ => (0, 0),
         },
     }
   }

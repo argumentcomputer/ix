@@ -141,6 +141,44 @@ def whnf := ⟦
     }
   }
 
+  -- If `head` is `Nat.add` applied to exactly (non-literal base, nonzero Lit n),
+  -- return (1, `Nat.add base (Lit n)`) in canonical form so whnf leaves it stuck
+  -- as a compact offset instead of delta-unfolding it into succ^n(base). All
+  -- magnitudes stay KLimbs. `(0, _)` means "not this shape — proceed normally".
+  fn try_nat_offset_stuck(head: KExpr, spine: List‹KExpr›, types: List‹KExpr›,
+                          top: List‹&KConstantInfo›, addrs: List‹Addr›) -> (G, KExpr) {
+    let head_addr = nat_add_addr();
+    match load(head) {
+      KExprNode.Const(idx, _) =>
+        match address_eq(list_lookup(addrs, idx), head_addr) {
+          0 => (0, store(KExprNode.BVar(0))),
+          1 =>
+            match list_length(spine) {
+              2 =>
+                let a0_w = whnf(list_lookup(spine, 0), types, top, addrs);
+                let a1_w = whnf(list_lookup(spine, 1), types, top, addrs);
+                match try_extract_nat(a1_w, addrs) {
+                  (0, _) => (0, store(KExprNode.BVar(0))),
+                  (1, n) =>
+                    match klimbs_is_zero(n) {
+                      1 => (0, store(KExprNode.BVar(0))),
+                      0 =>
+                        match try_extract_nat(a0_w, addrs) {
+                          (1, _) => (0, store(KExprNode.BVar(0))),
+                          (0, _) =>
+                            (1, store(KExprNode.App(
+                                  store(KExprNode.App(head, a0_w)),
+                                  mk_nat_lit(n)))),
+                        },
+                    },
+                },
+              _ => (0, store(KExprNode.BVar(0))),
+            },
+        },
+      _ => (0, store(KExprNode.BVar(0))),
+    }
+  }
+
   -- Const-head WHNF dispatch, split out of `whnf_with_spine` (see its Const arm).
   -- `head` is the original `Const(idx, lvls)` KExpr, passed for the stuck
   -- `apply_spine(head, spine)` fallbacks.
@@ -201,8 +239,16 @@ def whnf := ⟦
                                 -- and `check_positivity_aug` misclassifies.
                                 match ci {
                                   KConstantInfo.Defn(_, _, value, _, _) =>
-                                    let body = expr_inst_levels(value, lvls);
-                                    whnf_with_spine(body, spine, types, top, addrs),
+                                    -- Keep `Nat.add base (Lit n)` (symbolic base)
+                                    -- stuck as a compact offset instead of
+                                    -- delta-unfolding into a succ^n tower. Pairs
+                                    -- with offset-aware def-eq.
+                                    match try_nat_offset_stuck(head, spine, types, top, addrs) {
+                                      (1, stuck) => stuck,
+                                      (0, _) =>
+                                        let body = expr_inst_levels(value, lvls);
+                                        whnf_with_spine(body, spine, types, top, addrs),
+                                    },
                                   KConstantInfo.Thm(_, _, _) => apply_spine(head, spine),
                                   _ => apply_spine(head, spine),
                                 },
