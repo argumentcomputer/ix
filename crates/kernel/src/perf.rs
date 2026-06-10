@@ -300,6 +300,56 @@ impl PerfCounters {
   }
 }
 
+// -- Reduction histograms (IX_REDUCE_HISTO) --------------------------------
+//
+// Per-constant counts of delta unfolds and iota (recursor) reductions,
+// process-global so a harness can run a single block and ask "which
+// constants did the kernel grind on?". Gated separately from the cache
+// counters because the DashMap entry bump is heavier than an atomic add.
+
+static REDUCE_HISTO_ENABLED: crate::EnvFlag =
+  crate::EnvFlag::new(|| crate::env_var_os("IX_REDUCE_HISTO").is_some());
+
+/// Returns `true` iff `IX_REDUCE_HISTO` is set in the environment.
+#[inline]
+pub fn reduce_histo_enabled() -> bool {
+  *REDUCE_HISTO_ENABLED
+}
+
+/// Delta-unfold counts keyed by the unfolded constant's address.
+pub static DELTA_HISTO: std::sync::LazyLock<
+  dashmap::DashMap<ix_common::address::Address, u64>,
+> = std::sync::LazyLock::new(dashmap::DashMap::new);
+
+/// Iota-reduction counts keyed by the recursor's address.
+pub static IOTA_HISTO: std::sync::LazyLock<
+  dashmap::DashMap<ix_common::address::Address, u64>,
+> = std::sync::LazyLock::new(dashmap::DashMap::new);
+
+/// Count of `Nat.succ` peels performed by `try_reduce_nat_succ_iter`.
+pub static NAT_SUCC_PEELS: AtomicU64 = AtomicU64::new(0);
+
+#[inline]
+pub fn record_delta_histo(addr: &ix_common::address::Address) {
+  if reduce_histo_enabled() {
+    *DELTA_HISTO.entry(addr.clone()).or_insert(0) += 1;
+  }
+}
+
+#[inline]
+pub fn record_iota_histo(addr: &ix_common::address::Address) {
+  if reduce_histo_enabled() {
+    *IOTA_HISTO.entry(addr.clone()).or_insert(0) += 1;
+  }
+}
+
+#[inline]
+pub fn record_nat_succ_peel() {
+  if reduce_histo_enabled() {
+    NAT_SUCC_PEELS.fetch_add(1, Ordering::Relaxed);
+  }
+}
+
 fn write_rate(
   out: &mut impl fmt::Write,
   label: &str,

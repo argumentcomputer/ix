@@ -926,6 +926,7 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
   /// of `id`. No-op unless a `profile_sink` is installed.
   #[inline]
   pub(crate) fn record_delta_target(&mut self, id: &KId<M>) {
+    crate::perf::record_delta_histo(&id.addr);
     if self.env.profile_sink.is_some() {
       self.delta_targets.insert(id.addr.clone());
     }

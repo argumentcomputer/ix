@@ -48,10 +48,10 @@ pub struct IOKeyInfo {
 
 pub struct IOBuffer {
   /// Per-channel data arenas. `idx` slots into `data[&channel]`.
-  pub(crate) data: FxHashMap<G, Vec<G>>,
+  pub data: FxHashMap<G, Vec<G>>,
   /// Channel-keyed info map; same `key` on different channels resolves
   /// to distinct `IOKeyInfo`.
-  pub(crate) map: FxHashMap<(G, Vec<G>), IOKeyInfo>,
+  pub map: FxHashMap<(G, Vec<G>), IOKeyInfo>,
 }
 
 impl IOBuffer {

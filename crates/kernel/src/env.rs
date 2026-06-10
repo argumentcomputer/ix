@@ -307,6 +307,14 @@ pub struct KEnv<M: KernelMode> {
   /// universe args). Mirrors lean4 C++ `m_unfold` cache. Cross-call sharing of
   /// universe-substituted bodies eliminates O(body) walks on every unfold.
   pub unfold_cache: FxHashMap<Addr, KExpr<M>>,
+  /// Memo of `try_reduce_nat_succ_iter` STUCK outcomes: succ-chain args
+  /// whose base never collapses to a literal. Keyed like `whnf_cache`
+  /// ((expr_hash, ctx_hash)). The succ-collapse loop runs its inner WHNF
+  /// in `NatSuccMode::Stuck`, which bypasses the WHNF caches, so without
+  /// this memo a stuck `Nat.succ^k(x)` chain is re-peeled from every
+  /// depth it is encountered at — O(k²) fuel for symbolic-plus-literal
+  /// Nat arithmetic (e.g. `x + 0xC0` in the UTF-8 codec proofs).
+  pub nat_succ_stuck: FxHashSet<(Addr, Addr)>,
   /// Ingress cache: LeanExpr → KExpr conversion results.
   /// Keyed by (expr_hash, param_names_hash) to account for different
   /// level param bindings producing different KExprs from the same LeanExpr.
@@ -405,6 +413,7 @@ impl<M: KernelMode> KEnv<M> {
       def_eq_cheap_cache: FxHashMap::default(),
       def_eq_failure: FxHashSet::default(),
       unfold_cache: FxHashMap::default(),
+      nat_succ_stuck: FxHashSet::default(),
       ingress_cache: FxHashMap::default(),
       is_prop_cache: FxHashMap::default(),
       recursor_cache: FxHashMap::default(),
@@ -519,6 +528,7 @@ impl<M: KernelMode> KEnv<M> {
     self.def_eq_cheap_cache.clear();
     self.def_eq_failure.clear();
     self.unfold_cache.clear();
+    self.nat_succ_stuck.clear();
     self.ingress_cache.clear();
     self.is_prop_cache.clear();
     self.recursor_cache.clear();
@@ -580,6 +590,7 @@ impl<M: KernelMode> KEnv<M> {
     self.def_eq_cheap_cache = FxHashMap::default();
     self.def_eq_failure = FxHashSet::default();
     self.unfold_cache = FxHashMap::default();
+    self.nat_succ_stuck = FxHashSet::default();
     self.ingress_cache = FxHashMap::default();
     self.is_prop_cache = FxHashMap::default();
     self.recursor_cache = FxHashMap::default();
@@ -610,6 +621,7 @@ impl<M: KernelMode> KEnv<M> {
     self.def_eq_cheap_cache.clear();
     self.def_eq_failure.clear();
     self.unfold_cache.clear();
+    self.nat_succ_stuck.clear();
     self.is_prop_cache.clear();
   }
 }
