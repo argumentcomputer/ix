@@ -141,18 +141,25 @@ def whnf := ⟦
     }
   }
 
-  -- If `head` is `Nat.add` applied to exactly (non-literal base, nonzero Lit n),
-  -- return (1, `Nat.add base (Lit n)`) in canonical form so whnf leaves it stuck
-  -- as a compact offset instead of delta-unfolding it into succ^n(base). All
-  -- magnitudes stay KLimbs. `(0, _)` means "not this shape — proceed normally".
+  -- If `head` is a Nat primitive (`Nat.add` / `Nat.div` / `Nat.mod`) applied to
+  -- exactly (non-literal base, literal second arg), return (1, the same op in
+  -- canonical form) so whnf leaves it STUCK instead of delta-unfolding it. This
+  -- stops `Nat.add x n` from materializing succ^n(x), and `Nat.div`/`Nat.mod x n`
+  -- (n ≥ 2) from expanding the division algorithm — both are irreducible for a
+  -- symbolic base, so the compact form IS the normal form. `Nat.shiftRight x k`
+  -- unfolds to k nested `Nat.div _ 2`, which now stay stuck. Thresholds: `add`
+  -- keeps any nonzero n; `div`/`mod` keep n ≥ 2 (so `x/1 = x`, `x/0 = 0` still
+  -- reduce). All magnitudes stay KLimbs. `(0, _)` = "not this shape".
   fn try_nat_offset_stuck(head: KExpr, spine: List‹KExpr›, types: List‹KExpr›,
                           top: List‹&KConstantInfo›, addrs: List‹Addr›) -> (G, KExpr) {
-    let head_addr = nat_add_addr();
     match load(head) {
       KExprNode.Const(idx, _) =>
-        match address_eq(list_lookup(addrs, idx), head_addr) {
+        let ca = list_lookup(addrs, idx);
+        let is_add = address_eq(ca, nat_add_addr());
+        let is_divmod = address_eq(ca, nat_div_addr()) + address_eq(ca, nat_mod_addr());
+        match is_add + is_divmod {
           0 => (0, store(KExprNode.BVar(0))),
-          1 =>
+          _ =>
             match list_length(spine) {
               2 =>
                 let a0_w = whnf(list_lookup(spine, 0), types, top, addrs);
@@ -160,8 +167,9 @@ def whnf := ⟦
                 match try_extract_nat(a1_w, addrs) {
                   (0, _) => (0, store(KExprNode.BVar(0))),
                   (1, n) =>
-                    match klimbs_is_zero(n) {
-                      1 => (0, store(KExprNode.BVar(0))),
+                    -- reject n=0 (all ops) and n=1 (div/mod only).
+                    let bad = klimbs_is_zero(n) + is_divmod * klimbs_is_zero(klimbs_dec(n));
+                    match bad {
                       0 =>
                         match try_extract_nat(a0_w, addrs) {
                           (1, _) => (0, store(KExprNode.BVar(0))),
@@ -170,6 +178,7 @@ def whnf := ⟦
                                   store(KExprNode.App(head, a0_w)),
                                   mk_nat_lit(n)))),
                         },
+                      _ => (0, store(KExprNode.BVar(0))),
                     },
                 },
               _ => (0, store(KExprNode.BVar(0))),
