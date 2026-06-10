@@ -12,14 +12,21 @@ public import Ix.MultiStark.Verifier
 /-!
 # Multi-STARK proof verifier (Aiur)
 
-A recursive-verifier scaffold that (a) deserializes a `multi_stark::prover::Proof`
-(`Ix/MultiStark/Deserialize.lean`) and (b) binds the received byte stream to a
-public digest: it recomputes `keccak256` (`Ix/MultiStark/Keccak.lean`, the hash
-multi-stark uses) over the bytes and asserts it equals the digest passed as
-public input.
+The recursive verifier. Its public statement is purely existential: *"there
+exists a valid multi-stark proof, under the FRI parameters given as public
+input, for the constraint system with this keccak-256 digest and these public
+claims."* The proof itself is **non-deterministic advice** (fed on IO key `[0]`,
+never hashed or otherwise bound as a public input): the Fiat-Shamir transcript
+replay plus the Merkle/OOD/FRI checks are exactly what make any accepted advice
+a valid proof — a hash binding of the proof bytes would add nothing to the
+statement, while costing one keccak-f per 136 bytes in-circuit.
 
-The remaining verification logic (FRI, Merkle, Fiat-Shamir) will hang off
-`read_proof`.
+The verifying key and claims, by contrast, ARE digest-bound (`system_digest`,
+`claims_digest`): they determine *what was proven*.
+
+Fixed protocol assumptions (our system): `queryProofOfWorkBits = 0`,
+`capHeight = 0`, `maxLogArity = 1`, `logFinalPolyLen = 0`. The variable FRI
+parameters (`num_queries`, `commit_pow_bits`, `log_blowup`) are public inputs.
 -/
 
 public section
@@ -27,19 +34,16 @@ public section
 namespace MultiStark
 
 def entrypoints := ⟦
-  -- Public input: the 32-byte keccak-256 digest of the proof, as 4 little-endian
-  -- byte lanes. Read the proof bytes non-deterministically from IO key `[0]`,
-  -- deserialize into a `Proof` object (asserting the whole stream was consumed),
-  -- then recompute keccak-256 over the same bytes and assert it equals `digest`
-  -- — binding the IO-fed bytes to the public commitment.
-  pub fn verify_multi_stark_proof(digest: [[U8; 8]; 4], system_digest: [[U8; 8]; 4], claims_digest: [[U8; 8]; 4], num_queries: G, commit_pow_bits: G) {
-    -- Proof from IO key [0]: deserialize, assert fully consumed, and bind the
-    -- bytes to the public keccak-256 `digest`.
+  -- Public inputs: the keccak-256 digests of the verifying key and the claims
+  -- (4 little-endian u64 lanes each) plus the variable FRI parameters. The
+  -- proof is pure non-deterministic advice on IO key `[0]` — see the module
+  -- docstring.
+  pub fn verify_multi_stark_proof(system_digest: [[U8; 8]; 4], claims_digest: [[U8; 8]; 4], num_queries: G, commit_pow_bits: G, log_blowup: G) {
+    -- Proof advice from IO key [0]: deserialize, assert fully consumed.
     let (idx, len) = io_get_info([0]);
     let bytes = #read_byte_stream(idx, len);
     let (proof, rest) = read_proof(bytes);
     assert_eq!(load(rest), ListNode.Nil);
-    assert_eq!(keccak256(bytes), digest);
     -- Verifying key (`System<AiurCircuit>`) from IO key [1]: bind the bytes to
     -- the public keccak-256 `system_digest`, then reconstruct the system.
     let (sidx, slen) = io_get_info([1]);
@@ -60,7 +64,7 @@ def entrypoints := ⟦
     assert_eq!(verify(proof), 1);
     -- Step 3 + 5: prover-faithful Fiat-Shamir replay and the out-of-domain
     -- composition/quotient check, `composition(ζ)·inv_vanishing(ζ) == quotient(ζ)`.
-    assert_eq!(ood_verify(sys, proof, claims, num_queries, commit_pow_bits), 1);
+    assert_eq!(ood_verify(sys, proof, claims, num_queries, commit_pow_bits, log_blowup), 1);
     ()
   }
 ⟧

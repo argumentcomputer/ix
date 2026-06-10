@@ -97,13 +97,10 @@ def main : IO UInt32 := do
   | .error e => IO.eprintln s!"inner proof failed to verify: {e}"; return 1
   | .ok _ => IO.println "✓ inner proof verifies"
 
-  -- ── 3. serialize proof, compute its keccak-256 digest (the public input) ──
+  -- ── 3. serialize the proof — pure non-deterministic advice (NOT hashed, not
+  --       a public input; the verifier's own checks are what bind it) ─────────
   let proofBytes := proof.toBytes
-  let blocks := (proofBytes.size + 1) / 136 + 1
-  IO.println s!"  serialized proof: {proofBytes.size} bytes  (~{blocks} keccak-f blocks)"
-  let digest := Keccak.hash proofBytes
-  IO.println s!"  keccak256(proof) = {toHex digest}"
-  let digestInput : Array Aiur.G := digest.data.map .ofUInt8
+  IO.println s!"  serialized proof: {proofBytes.size} bytes (advice, not digest-bound)"
   let proofGs : Array Aiur.G := proofBytes.data.map .ofUInt8
 
   -- Verifying key (`System<AiurCircuit>`) bytes + its keccak-256 digest.
@@ -122,11 +119,12 @@ def main : IO UInt32 := do
   let claimsDigestInput : Array Aiur.G := claimsDigest.data.map .ofUInt8
   let claimGs : Array Aiur.G := claimBytes.data.map .ofUInt8
 
-  -- Public input = proof digest ++ vk digest ++ claims digest ++ FRI params
-  -- (num_queries, commit_pow_bits); IO hints: proof at [0], vk at [1], claims at [2].
+  -- Public input = vk digest ++ claims digest ++ FRI params (num_queries,
+  -- commit_pow_bits, log_blowup); IO hints: proof at [0], vk at [1], claims at [2].
   let friParamInput : Array Aiur.G :=
-    #[Aiur.G.ofNat innerFri.numQueries, Aiur.G.ofNat innerFri.commitProofOfWorkBits]
-  let input : Array Aiur.G := digestInput ++ sysDigestInput ++ claimsDigestInput ++ friParamInput
+    #[Aiur.G.ofNat innerFri.numQueries, Aiur.G.ofNat innerFri.commitProofOfWorkBits,
+      Aiur.G.ofNat recCommitParams.logBlowup]
+  let input : Array Aiur.G := sysDigestInput ++ claimsDigestInput ++ friParamInput
   let verifierIO : IOBuffer :=
     (((default : IOBuffer).extend #[Aiur.G.ofNat 0] proofGs).extend #[Aiur.G.ofNat 1] vkGs).extend #[Aiur.G.ofNat 2] claimGs
 
@@ -168,18 +166,24 @@ def main : IO UInt32 := do
     | some i => pure i
     | none => IO.eprintln "verify_multi_stark_proof entrypoint not found"; return 1
 
-  -- ── 5. run the verifier: deserialize proof + vk, recompute keccak digests,
-  --       reconstruct the System<AiurCircuit>, run structural checks ──────────
-  IO.println "running verifier (proof + verifying-key deserialize + keccak binding)…"
+  -- ── 5. run the verifier: deserialize proof (advice) + vk, replay
+  --       Fiat-Shamir, run the OOD + FRI checks ─────────────────────────────
+  IO.println "running verifier (advice proof + vk digest binding + OOD + FRI)…"
   match vCompiled.bytecode.execute vIdx input verifierIO with
   | .error e => IO.eprintln s!"✗ verifier rejected: {e}"; return 1
   | .ok (_, _, queryCounts) =>
-    IO.println "✓ verifier accepted: proof + vk deserialized, both keccak digests match"
-    -- ── 6. negative test: a tampered proof digest must be rejected ──────────
-    let badInput := input.set! 0 (Aiur.G.ofNat ((digest.data[0]!.toNat + 1) % 256))
-    match vCompiled.bytecode.execute vIdx badInput verifierIO with
-    | .error _ => IO.println "✓ tampered digest correctly rejected (assert_eq failed)"
-    | .ok _ => IO.eprintln "✗ tampered digest was NOT rejected"; return 1
+    IO.println "✓ verifier accepted: vk digest bound, OOD + FRI checks pass"
+    -- ── 6. negative test: tampered proof ADVICE must be rejected by the
+    --        verification checks themselves (no digest binding any more) —
+    --        this isolates the Fiat-Shamir/Merkle/OOD/FRI rejection path.
+    --        Byte 0 is the first stage_1-commitment limb: it diverges the
+    --        replayed transcript from the one the proof was generated under.
+    let badProofGs := proofGs.set! 0 (Aiur.G.ofNat ((proofBytes.data[0]!.toNat + 1) % 256))
+    let badProofIO : IOBuffer :=
+      (((default : IOBuffer).extend #[Aiur.G.ofNat 0] badProofGs).extend #[Aiur.G.ofNat 1] vkGs).extend #[Aiur.G.ofNat 2] claimGs
+    match vCompiled.bytecode.execute vIdx input badProofIO with
+    | .error _ => IO.println "✓ tampered proof advice correctly rejected (verification checks)"
+    | .ok _ => IO.eprintln "✗ tampered proof advice was NOT rejected"; return 1
     -- ── 6b. negative test: a tampered CLAIM (with a matching keccak digest)
     --        must be rejected by the OOD / accumulator check. Changing the
     --        claim feeds a different value into Fiat-Shamir (→ different ζ) and
@@ -189,7 +193,7 @@ def main : IO UInt32 := do
     let badClaimBytes := serializeClaims #[badClaim]
     let badClaimsDigest := Keccak.hash badClaimBytes
     let badClaimInput : Array Aiur.G :=
-      digestInput ++ sysDigestInput ++ (badClaimsDigest.data.map .ofUInt8) ++ friParamInput
+      sysDigestInput ++ (badClaimsDigest.data.map .ofUInt8) ++ friParamInput
     let badClaimIO : IOBuffer :=
       (((default : IOBuffer).extend #[Aiur.G.ofNat 0] proofGs).extend #[Aiur.G.ofNat 1] vkGs).extend
         #[Aiur.G.ofNat 2] (badClaimBytes.data.map .ofUInt8)

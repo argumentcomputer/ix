@@ -47,10 +47,9 @@ The Rust verifier runs these steps:
   the verifier accepts the honest proof and rejects a tampered claim.
 
 ### Stubbed / TODO
-* `fiat_shamir` does no rejection sampling: a sampled 8-byte limb in the band
-  `[p, 2⁶⁴)` (probability ≈ 2⁻³²) is reduced mod p instead of being rejected
-  and resampled. For small proofs no sample lands in the band, but honest
-  rejection sampling is needed for full generality.
+* Base-field samples are rejection-sampled (`ch_sample_field`): a raw 8-byte
+  limb in the band `[p, 2⁶⁴)` (probability ≈ 2⁻³²) is discarded and redrawn,
+  consuming challenger bytes exactly as `SerializingChallenger64::sample` does.
 * The PCS opening proof (`pcs_verify`) is still an accept-stub. With the PCS
   stubbed, this verifier checks every algebraic relation except FRI proximity,
   so it is not yet fully sound.
@@ -157,14 +156,28 @@ def verifier := ⟦
     ([b0, b1, b2, b3, b4, b5, b6, b7], i7, o7)
   }
 
+  -- Sample one base-field element with REJECTION SAMPLING, mirroring
+  -- `SerializingChallenger64::sample`'s inner loop: draw 8 bytes as a LE u64
+  -- (the `log2_ceil(p) = 64` mask is a no-op for Goldilocks); if the raw value
+  -- is ≥ p (probability ≈ 2⁻³²), DISCARD it and draw the next 8 bytes — a
+  -- rejected draw consumes challenger bytes, shifting every later sample,
+  -- exactly as in the reference. `raw < p` ⟺ `sub8(raw, p)` borrows. The
+  -- accepted limb is canonical (< p) by construction.
+  fn ch_sample_field(input: ByteStream, output: ByteStream) -> ([U8; 8], ByteStream, ByteStream) {
+    let (raw, i1, o1) = ch_sample8(input, output);
+    let (_d, borrow) = sub8(raw, gl_p());
+    match borrow {
+      1 => (raw, i1, o1),
+      _ => ch_sample_field(i1, o1),
+    }
+  }
+
   -- Sample a degree-2 extension element: two base samples (`from_basis_*`),
-  -- returning their raw 8-byte LE limbs (so they can be re-observed) and the
-  -- threaded challenger. NOTE: the ~2⁻³² rejection band (limb ≥ p) is not
-  -- handled — `limb_to_field` reduces mod p instead. Honest rejection sampling
-  -- is a TODO for bit-exact agreement with the prover.
+  -- each rejection-sampled, returning their 8-byte LE limbs (canonical, but
+  -- also re-observable as raw bytes) and the threaded challenger.
   fn ch_sample_ext(input: ByteStream, output: ByteStream) -> ([U8; 8], [U8; 8], ByteStream, ByteStream) {
-    let (c0, i0, o0) = ch_sample8(input, output);
-    let (c1, i1, o1) = ch_sample8(i0, o0);
+    let (c0, i0, o0) = ch_sample_field(input, output);
+    let (c1, i1, o1) = ch_sample_field(i0, o0);
     (c0, c1, i1, o1)
   }
 
@@ -239,8 +252,8 @@ def verifier := ⟦
 
   -- Sample a degree-2 extension element, threading BOTH challenger buffers so a
   -- following consecutive sample continues from the same hash `output` stream
-  -- (no re-flush). Limbs are reduced mod p (`limb_to_field`); the ~2⁻³²
-  -- rejection band where a raw limb ≥ p is still unhandled (as in `fiat_shamir`).
+  -- (no re-flush). Limbs are rejection-sampled (`ch_sample_field`), so they are
+  -- canonical; the `gl_reduce` is a no-op kept for type/intent clarity.
   fn pcs_sample_ext(input: ByteStream, output: ByteStream)
       -> (Ext, ByteStream, ByteStream) {
     let (c0, c1, i1, o1) = ch_sample_ext(input, output);
@@ -312,9 +325,9 @@ def verifier := ⟦
   -- `observe` clears the challenger's output buffer, and every sample here is
   -- preceded by an observe, so each `ch_sample_ext` re-flushes from an empty
   -- output (hence the `store(ListNode.Nil)` output argument each time).
-  -- NOTE: the ~2⁻³² rejection band (a sampled 8-byte limb ≥ p) is still not
-  -- handled (`ch_sample8` reduces mod p); for small proofs no sample lands in
-  -- the band, but honest rejection sampling remains a TODO for full generality.
+  -- Every sample is rejection-sampled (`ch_sample_field` inside
+  -- `ch_sample_ext`), so a limb in the band `[p, 2⁶⁴)` is redrawn exactly as in
+  -- the reference challenger, and the limbs observed back are canonical.
   -- Also returns the post-ζ challenger `input` buffer, which the PCS phase
   -- (Phase 4+) continues observing into. The leftover `output` after the ζ
   -- sample is discarded — the next challenger op is an observe (of the opened
@@ -795,11 +808,13 @@ def verifier := ⟦
   -- claims, then run the OOD composition/quotient check for every circuit.
   -- Returns 1 on success (any mismatch aborts via `assert_eq!`).
   fn ood_verify(sys: Sys, proof: Proof, claims: List‹List‹U64››,
-      num_queries: G, commit_pow_bits: G) -> G {
-    -- `log_blowup` is part of the verifying key (CommitmentParameters); the FRI
-    -- `num_queries` / `commit_pow_bits` are protocol parameters (public inputs).
+      num_queries: G, commit_pow_bits: G, log_blowup_pub: G) -> G {
+    -- The FRI parameters (`num_queries`, `commit_pow_bits`, `log_blowup`) are
+    -- public inputs. `log_blowup` also lives in the (digest-bound) verifying
+    -- key's CommitmentParameters — assert the two agree.
     let Sys.Mk(params, circuits, commit, prep_indices) = sys;
     let SysParams.Mk(log_blowup, _cap_height) = params;
+    assert_eq!(eq_zero(log_blowup - log_blowup_pub), 1);
     match proof {
       Proof.Mk(commitments, accs, log_degrees, opening,
                q_opened, prep_opt, stage1, stage2) =>
