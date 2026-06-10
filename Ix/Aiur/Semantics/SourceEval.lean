@@ -175,9 +175,9 @@ def applyLocal (decls : Decls) (fuel : Nat) (v : Value) (args : List Value)
 termination_by (fuel, 1, 0)
 
 /-- Big-step evaluator on `Source.Term`. `fuel` is only consumed at function-call
-boundaries; the intra-body recursion here is structural. On a `.ret`, the return
-value escapes via a bespoke path that the caller unwraps — implemented here as
-a sentinel pattern in the `Except` result. -/
+boundaries; the intra-body recursion here is structural. NOTE: `.ret` does
+not yet escape non-tail contexts (no sentinel path is implemented) — see the
+known-divergence note on the `.ret` arm below. -/
 def interp (decls : Decls) (fuel : Nat) (bindings : Bindings)
     (t : Term) (st : EvalState) : EvalResult :=
   match t with
@@ -205,9 +205,14 @@ def interp (decls : Decls) (fuel : Nat) (bindings : Bindings)
       | .ok (vs, st') => .ok (.array vs, st')
   | .ann _ t => interp decls fuel bindings t st
   | .ret sub =>
-      -- Explicit returns only appear inside function bodies; the body recursion
-      -- here returns normally (the surrounding caller treats the full body value
-      -- as the return value).
+      -- KNOWN DIVERGENCE: a `.ret` in *non-tail* position (e.g. inside a
+      -- let-bound match branch) should escape the whole function — Rust
+      -- `execute.rs` and `BytecodeEval` (`BlockExit.returned`) truncate the
+      -- continuation — but this evaluator returns the value into the
+      -- enclosing continuation instead. Fixing it requires threading an
+      -- escape marker through every `interp` consumer. Until then,
+      -- differential tests against `BytecodeEval` will (correctly) flag
+      -- programs that early-return inside a non-tail match.
       interp decls fuel bindings sub st
   | .let p t1 t2 =>
       match interp decls fuel bindings t1 st with

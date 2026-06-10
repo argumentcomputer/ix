@@ -381,6 +381,20 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       ));
     }
 
+    // Lean's kernel requires the struct type to be *fully* applied
+    // (`args.size == nparams + nindices`, type_checker.cpp infer_proj);
+    // an under-/over-applied spine makes the parameter substitution below
+    // walk the wrong arguments.
+    if args.len() != num_params + num_indices {
+      return Err(TcError::Other(format!(
+        "projection: struct type expects {} args ({} params + {} indices), got {}",
+        num_params + num_indices,
+        num_params,
+        num_indices,
+        args.len()
+      )));
+    }
+
     // Check if the structure lives in Prop. Do this from the inductive
     // declaration's result sort instead of inferring the full applied value
     // type: projection-heavy proof terms otherwise re-infer every parameter

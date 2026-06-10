@@ -144,7 +144,11 @@ def defEq := ⟦
     }
   }
 
-  -- 1 iff ty is `Const(I, _) args` for non-rec 1-ctor 0-field inductive.
+  -- 1 iff ty is `Const(I, _) args` for non-rec 0-index 1-ctor 0-field
+  -- inductive. The `num_indices == 0` check is required for soundness:
+  -- an *indexed* singleton (e.g. `MyId : A -> Type`) is not unit-like —
+  -- treating it as such yields definitional UIP on Type-valued families
+  -- (mirror def_eq.rs:881, lean4lean TypeChecker.lean:648).
   fn is_unit_like_type(ty: KExpr, top: List‹&KConstantInfo›) -> G {
     match collect_spine_simple(ty) {
       (head, _) =>
@@ -152,18 +156,22 @@ def defEq := ⟦
           KExprNode.Const(idx, _) =>
             let ci = load(list_lookup(top, idx));
             match ci {
-              KConstantInfo.Induct(_, _, _, _, ctor_indices, is_rec, _, _, _, _) =>
+              KConstantInfo.Induct(_, _, _, num_indices, ctor_indices, is_rec, _, _, _, _) =>
                 match is_rec {
                   1 => 0,
                   0 =>
-                    match list_length(ctor_indices) {
-                      1 =>
-                        let ctor_idx = list_lookup(ctor_indices, 0);
-                        let ctor_ci = load(list_lookup(top, ctor_idx));
-                        match ctor_ci {
-                          KConstantInfo.Ctor(_, _, _, _, _, n_fields, _) =>
-                            match n_fields {
-                              0 => 1,
+                    match num_indices {
+                      0 =>
+                        match list_length(ctor_indices) {
+                          1 =>
+                            let ctor_idx = list_lookup(ctor_indices, 0);
+                            let ctor_ci = load(list_lookup(top, ctor_idx));
+                            match ctor_ci {
+                              KConstantInfo.Ctor(_, _, _, _, _, n_fields, _) =>
+                                match n_fields {
+                                  0 => 1,
+                                  _ => 0,
+                                },
                               _ => 0,
                             },
                           _ => 0,
@@ -290,9 +298,19 @@ def defEq := ⟦
                         match struct_like {
                           0 => 0,
                           1 =>
-                            compare_struct_fields(induct_idx, num_params,
-                                                   num_fields, t, s_args, 0,
-                                                   types, top, addrs),
+                            -- Types must be def-eq before the field loop
+                            -- (mirror def_eq.rs:1180-1197, lean4lean:515);
+                            -- otherwise S1.mk a ≡ S2.mk a can be accepted
+                            -- across distinct structures sharing field types.
+                            let s_ty = k_infer(s, types, top, addrs);
+                            let t_ty = k_infer(t, types, top, addrs);
+                            match k_is_def_eq(t_ty, s_ty, types, top, addrs) {
+                              0 => 0,
+                              1 =>
+                                compare_struct_fields(induct_idx, num_params,
+                                                       num_fields, t, s_args, 0,
+                                                       types, top, addrs),
+                            },
                         },
                       _ => 0,
                     },

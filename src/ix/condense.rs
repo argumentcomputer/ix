@@ -25,7 +25,11 @@ pub struct CondensedBlocks {
 /// Returns a map from each node to the set of nodes in its SCC.
 pub fn compute_sccs(refs: &RefMap) -> CondensedBlocks {
   fn neighbors(refs: &RefMap, n: &Name) -> Vec<Name> {
-    refs.get(n).unwrap().iter().cloned().collect()
+    // A name referenced but absent from the map (a dangling edge — two FFI
+    // entry points can hand us such graphs) is a node with no out-edges:
+    // it condenses to its own singleton SCC instead of panicking the
+    // process (`panic = "abort"`).
+    refs.get(n).map(|s| s.iter().cloned().collect()).unwrap_or_default()
   }
 
   struct Frame {
@@ -109,7 +113,9 @@ pub fn compute_sccs(refs: &RefMap) -> CondensedBlocks {
           let mut all_refs = NameSet::default();
           for node in &component {
             block_low_links.insert(node.clone(), v.clone());
-            for r in refs.get(node).unwrap() {
+            // Dangling nodes (in `component` via the tolerant `neighbors`
+            // above) have no entry in `refs` — and no out-edges.
+            for r in refs.get(node).into_iter().flatten() {
               if !component.contains(r) && refs.contains_key(r) {
                 all_refs.insert(r.clone());
               }

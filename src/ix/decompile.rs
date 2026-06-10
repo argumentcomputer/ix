@@ -559,7 +559,23 @@ pub fn decompile_expr(
     let mut args: Vec<Arc<Expr>> = Vec::new();
     let mut cur = expr.clone();
     loop {
+      // Fuel bounds one contiguous run of Share→Share hops (fresh per App
+      // layer, so DAG-style re-sharing of the same slot from many sites is
+      // unaffected). Within a run the next slot is fully determined by the
+      // current one, so revisiting any slot means looping forever; by
+      // pigeonhole an acyclic run makes at most `len` hops.
+      let mut share_fuel = cache.sharing.len().saturating_add(1);
       while let Expr::Share(share_idx) = cur.as_ref() {
+        if share_fuel == 0 {
+          return Err(DecompileError::BadConstantFormat {
+            msg: format!(
+              "cyclic sharing vector (chain exceeds {} entries) in '{}'",
+              cache.sharing.len(),
+              cache.current_const
+            ),
+          });
+        }
+        share_fuel -= 1;
         cur = cache
           .sharing
           .get(*share_idx as usize)
@@ -603,17 +619,37 @@ pub fn decompile_expr(
   while let Some(frame) = stack.pop() {
     match frame {
       Frame::Decompile(e, idx) => {
-        // Expand Share transparently with the SAME arena_idx
-        if let Expr::Share(share_idx) = e.as_ref() {
-          let shared_expr = cache
-            .sharing
-            .get(*share_idx as usize)
-            .ok_or_else(|| DecompileError::InvalidShareIndex {
-              idx: *share_idx,
-              max: cache.sharing.len(),
-              constant: cache.current_const.clone(),
-            })?
-            .clone();
+        // Expand Share transparently with the SAME arena_idx. Expansion is
+        // fuel-bounded inline (instead of re-pushing one frame per hop) so
+        // a cyclic sharing vector errors instead of looping forever. The
+        // fuel is per expansion run: each hop's successor is determined by
+        // the current slot, so a revisit within one run ⟺ a true cycle,
+        // while repeated references to the same slot from different
+        // expression positions each get fresh fuel.
+        if matches!(e.as_ref(), Expr::Share(_)) {
+          let mut shared_expr = e.clone();
+          let mut share_fuel = cache.sharing.len().saturating_add(1);
+          while let Expr::Share(share_idx) = shared_expr.as_ref() {
+            if share_fuel == 0 {
+              return Err(DecompileError::BadConstantFormat {
+                msg: format!(
+                  "cyclic sharing vector (chain exceeds {} entries) in '{}'",
+                  cache.sharing.len(),
+                  cache.current_const
+                ),
+              });
+            }
+            share_fuel -= 1;
+            shared_expr = cache
+              .sharing
+              .get(*share_idx as usize)
+              .ok_or_else(|| DecompileError::InvalidShareIndex {
+                idx: *share_idx,
+                max: cache.sharing.len(),
+                constant: cache.current_const.clone(),
+              })?
+              .clone();
+          }
           stack.push(Frame::Decompile(shared_expr, idx));
           continue;
         }
@@ -625,12 +661,25 @@ pub fn decompile_expr(
           continue;
         }
 
-        // Follow Mdata chain in arena, collecting mdata layers
+        // Follow Mdata chain in arena, collecting mdata layers.
+        // Fuel-bounded: an acyclic chain visits each arena node at most
+        // once, so a longer walk means the arena has a child-index cycle.
         let mut current_idx = idx;
         let mut mdata_layers: LeanMdata = Vec::new();
+        let mut mdata_fuel = arena.nodes.len().saturating_add(1);
         while let ExprMetaData::Mdata { mdata, child } =
           arena_lookup(arena, current_idx, &cache.current_const)?
         {
+          if mdata_fuel == 0 {
+            return Err(DecompileError::BadConstantFormat {
+              msg: format!(
+                "cyclic Mdata arena chain (exceeds {} nodes) in '{}'",
+                arena.nodes.len(),
+                cache.current_const
+              ),
+            });
+          }
+          mdata_fuel -= 1;
           for kvm in mdata {
             mdata_layers.push(decompile_kvmap(kvm, stt)?);
           }
@@ -1894,7 +1943,7 @@ fn decompile_const(
 
 /// Recognized aux_gen suffix kinds, ordered by dependency.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum AuxKind {
+pub(crate) enum AuxKind {
   Rec,
   RecOn,
   CasesOn,
@@ -1919,7 +1968,7 @@ pub(crate) fn is_aux_gen_suffix(name: &Name) -> bool {
 
 /// Classify an aux_gen constant by suffix, returning (kind, root_inductive).
 /// The root inductive is the base inductive the auxiliary is derived from.
-fn classify_aux_gen(name: &Name) -> Option<(AuxKind, Name)> {
+pub(crate) fn classify_aux_gen(name: &Name) -> Option<(AuxKind, Name)> {
   use crate::ix::env::NameData;
   let s1 = name.last_str()?;
   let p1 = match name.as_data() {
@@ -3313,13 +3362,16 @@ fn indc_source_all(name: &Name, stt: &CompileState) -> Option<Vec<Name>> {
   }
 }
 
-fn stored_plan_blocks_for_original_all(
-  original_all: &[Name],
-  stt: &CompileState,
-) -> Vec<StoredPlanBlock> {
-  let original_set: FxHashSet<Name> = original_all.iter().cloned().collect();
-  let mut candidates = Vec::new();
-  let mut seen: FxHashSet<Vec<Name>> = FxHashSet::default();
+/// Stored `Muts` call-site plans bucketed by their members' source block
+/// (`Indc.all`). Built once per decompile by [`build_muts_plan_index`]
+/// (one pass over `env.named`) and consulted per aux block — the per-block
+/// full-map rescan it replaces was O(blocks × named) at mathlib scale.
+type MutsPlanIndex = FxHashMap<Vec<Name>, Vec<StoredPlanBlock>>;
+
+fn build_muts_plan_index(stt: &CompileState) -> MutsPlanIndex {
+  let mut index: MutsPlanIndex = FxHashMap::default();
+  // Per-bucket dedup by flat member list, mirroring the old per-call `seen`.
+  let mut seen: FxHashSet<(Vec<Name>, Vec<Name>)> = FxHashSet::default();
 
   for muts_entry in stt.env.named.iter() {
     let ConstantMetaInfo::Muts { all, aux_layout } =
@@ -3346,27 +3398,44 @@ fn stored_plan_blocks_for_original_all(
     if !valid || flat_names.is_empty() {
       continue;
     }
-    if !flat_names.iter().all(|name| original_set.contains(name)) {
-      continue;
-    }
 
-    let same_source_all = flat_names.iter().any(|name| {
-      indc_source_all(name, stt)
-        .is_some_and(|source_all| source_all.as_slice() == original_all)
-    });
-    if !same_source_all {
-      continue;
+    // Bucket under each distinct member source block: the old per-call
+    // filter kept a candidate iff *any* member's `Indc.all` equalled the
+    // queried block, which is exactly bucket membership.
+    let mut source_alls: Vec<Vec<Name>> = Vec::new();
+    for name in &flat_names {
+      if let Some(sa) = indc_source_all(name, stt)
+        && !source_alls.contains(&sa)
+      {
+        source_alls.push(sa);
+      }
     }
-
-    if !seen.insert(flat_names.clone()) {
-      continue;
+    for sa in source_alls {
+      if !seen.insert((sa.clone(), flat_names.clone())) {
+        continue;
+      }
+      index.entry(sa).or_default().push(StoredPlanBlock {
+        class_names: class_names.clone(),
+        aux_layout: aux_layout.clone(),
+        flat_names: flat_names.clone(),
+      });
     }
-    candidates.push(StoredPlanBlock {
-      class_names,
-      aux_layout: aux_layout.clone(),
-      flat_names,
-    });
   }
+  index
+}
+
+fn stored_plan_blocks_for_original_all(
+  original_all: &[Name],
+  plan_index: &MutsPlanIndex,
+) -> Vec<StoredPlanBlock> {
+  let Some(bucket) = plan_index.get(original_all) else {
+    return Vec::new();
+  };
+  let original_set: FxHashSet<Name> = original_all.iter().cloned().collect();
+  let candidates: Vec<&StoredPlanBlock> = bucket
+    .iter()
+    .filter(|c| c.flat_names.iter().all(|name| original_set.contains(name)))
+    .collect();
 
   // Prefer persisted minimal SCCs. If a stale/full source block is present,
   // it is a strict superset of the minimal candidates and would recreate an
@@ -3381,7 +3450,7 @@ fn stored_plan_blocks_for_original_all(
           && other.flat_names.iter().all(|name| candidate_set.contains(name))
       })
     })
-    .cloned()
+    .map(|c| (*c).clone())
     .collect()
 }
 
@@ -3421,6 +3490,7 @@ fn install_decompile_call_site_plans(
   aux_members: &[(AuxKind, Name)],
   env: &LeanEnv,
   stt: &CompileState,
+  plan_index: &MutsPlanIndex,
 ) -> Result<(), DecompileError> {
   use crate::ix::compile::{aux_gen, surgery};
 
@@ -3429,7 +3499,8 @@ fn install_decompile_call_site_plans(
   }
 
   let original_all: Vec<Name> = all_names.to_vec();
-  let mut plan_blocks = stored_plan_blocks_for_original_all(&original_all, stt);
+  let mut plan_blocks =
+    stored_plan_blocks_for_original_all(&original_all, plan_index);
   if plan_blocks.is_empty() {
     plan_blocks = fallback_plan_blocks_from_sort(all_names, env, stt)?;
   }
@@ -3505,6 +3576,7 @@ fn decompile_block_aux_gen(
   kctx: &mut crate::ix::compile::KernelCtx,
   stt: &CompileState,
   dstt: &DecompileState,
+  plan_index: &MutsPlanIndex,
 ) -> Vec<(Name, DecompileError)> {
   use crate::ix::compile::aux_gen::{
     below::{BelowConstant, generate_below_constants},
@@ -3681,9 +3753,13 @@ fn decompile_block_aux_gen(
     dstt.env.entry(n.clone()).or_insert_with(|| ci.clone());
   }
 
-  if let Err(e) =
-    install_decompile_call_site_plans(all_names, aux_members, env, stt)
-  {
+  if let Err(e) = install_decompile_call_site_plans(
+    all_names,
+    aux_members,
+    env,
+    stt,
+    plan_index,
+  ) {
     aux_gen_errors.push((all_names[0].clone(), e));
   }
 
@@ -4398,6 +4474,10 @@ pub fn decompile_env(
   // for every block (still O(n) across all blocks combined).
   let mut ingressed: FxHashSet<Name> = FxHashSet::default();
 
+  // Stored call-site plan index: one O(named) pass here instead of a full
+  // `env.named` rescan per aux block inside the loop below.
+  let muts_plan_index = build_muts_plan_index(stt);
+
   // Progress tracking. Per-block progress logs (every `log_stride` blocks or
   // every 5 s) are opt-in via `IX_DECOMPILE_PROGRESS`; slow-block warnings
   // (any single block exceeding `slow_threshold`) are always emitted.
@@ -4448,6 +4528,7 @@ pub fn decompile_env(
       &mut kctx,
       stt,
       &dstt,
+      &muts_plan_index,
     );
     aux_gen_errors.extend(errors);
 

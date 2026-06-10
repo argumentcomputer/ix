@@ -277,17 +277,17 @@ impl ConstantMeta {
     // Extension tables: always present (put_indexed always writes them,
     // even when empty — three zero-length vectors).
     let sharing_len = get_vec_len(buf)?;
-    let mut meta_sharing = Vec::with_capacity(sharing_len);
+    let mut meta_sharing = Vec::with_capacity(capped(sharing_len, buf));
     for _ in 0..sharing_len {
       meta_sharing.push(get_expr(buf)?);
     }
     let refs_len = get_vec_len(buf)?;
-    let mut meta_refs = Vec::with_capacity(refs_len);
+    let mut meta_refs = Vec::with_capacity(capped(refs_len, buf));
     for _ in 0..refs_len {
       meta_refs.push(get_address_raw(buf)?);
     }
     let univs_len = get_vec_len(buf)?;
-    let mut meta_univs = Vec::with_capacity(univs_len);
+    let mut meta_univs = Vec::with_capacity(capped(univs_len, buf));
     for _ in 0..univs_len {
       meta_univs.push(get_univ(buf)?);
     }
@@ -344,7 +344,7 @@ pub fn resolve_kvmap(
           // rather than in `decompile.rs` (which depends on CompileState).
           let bytes = ixon_env.get_blob(a)?;
           let mut buf = bytes.as_slice();
-          let syn = deser_syntax(&mut buf, ixon_env)?;
+          let syn = deser_syntax(&mut buf, ixon_env, 0)?;
           env::DataValue::OfSyntax(Box::new(syn))
         },
       };
@@ -446,7 +446,7 @@ fn deser_preresolved(
     1 => {
       let name = ixon_env.get_name(&deser_addr(buf)?)?;
       let count = deser_tag0(buf)? as usize;
-      let mut fields = Vec::with_capacity(count);
+      let mut fields = Vec::with_capacity(capped(count, buf));
       for _ in 0..count {
         let addr = deser_addr(buf)?;
         fields.push(String::from_utf8(ixon_env.get_blob(&addr)?).ok()?);
@@ -457,19 +457,28 @@ fn deser_preresolved(
   }
 }
 
+/// Recursion guard for `deser_syntax`: syntax trees come from untrusted
+/// metadata bytes; without a bound a crafted blob of nested Node tags
+/// overflows the stack (a hard process abort under `panic = "abort"`).
+const MAX_SYNTAX_DEPTH: usize = 512;
+
 fn deser_syntax(
   buf: &mut &[u8],
   ixon_env: &super::env::Env,
+  depth: usize,
 ) -> Option<env::Syntax> {
+  if depth > MAX_SYNTAX_DEPTH {
+    return None;
+  }
   match deser_u8(buf)? {
     0 => Some(env::Syntax::Missing),
     1 => {
       let info = deser_source_info(buf, ixon_env)?;
       let kind = ixon_env.get_name(&deser_addr(buf)?)?;
       let arg_count = deser_tag0(buf)? as usize;
-      let mut args = Vec::with_capacity(arg_count);
+      let mut args = Vec::with_capacity(capped(arg_count, buf));
       for _ in 0..arg_count {
-        args.push(deser_syntax(buf, ixon_env)?);
+        args.push(deser_syntax(buf, ixon_env, depth + 1)?);
       }
       Some(env::Syntax::Node(info, kind, args))
     },
@@ -484,7 +493,7 @@ fn deser_syntax(
       let raw_val = deser_substring(buf, ixon_env)?;
       let val = ixon_env.get_name(&deser_addr(buf)?)?;
       let pr_count = deser_tag0(buf)? as usize;
-      let mut preresolved = Vec::with_capacity(pr_count);
+      let mut preresolved = Vec::with_capacity(capped(pr_count, buf));
       for _ in 0..pr_count {
         preresolved.push(deser_preresolved(buf, ixon_env)?);
       }
@@ -554,6 +563,15 @@ pub(super) fn put_vec_len(len: usize, buf: &mut Vec<u8>) {
 
 pub(super) fn get_vec_len(buf: &mut &[u8]) -> Result<usize, String> {
   Ok(Tag0::get(buf)?.size as usize)
+}
+
+/// Cap capacity for Vec allocation during deserialization. Counts come
+/// straight from untrusted bytes; each element consumes at least one byte,
+/// so a count larger than the remaining buffer is necessarily malformed —
+/// allocate at most `buf.len()` up front and let the element reads fail.
+#[inline]
+fn capped(len: usize, buf: &[u8]) -> usize {
+  len.min(buf.len())
 }
 
 // ===========================================================================
@@ -660,7 +678,7 @@ fn get_idx_vec(
   rev: &NameReverseIndex,
 ) -> Result<Vec<Address>, String> {
   let len = get_vec_len(buf)?;
-  let mut v = Vec::with_capacity(len);
+  let mut v = Vec::with_capacity(capped(len, buf));
   for _ in 0..len {
     v.push(get_idx(buf, rev)?);
   }
@@ -746,7 +764,7 @@ fn get_kvmap_indexed(
   rev: &NameReverseIndex,
 ) -> Result<KVMap, String> {
   let len = get_vec_len(buf)?;
-  let mut kvmap = Vec::with_capacity(len);
+  let mut kvmap = Vec::with_capacity(capped(len, buf));
   for _ in 0..len {
     kvmap.push((get_idx(buf, rev)?, DataValue::get_indexed(buf, rev)?));
   }
@@ -770,7 +788,7 @@ fn get_mdata_stack_indexed(
   rev: &NameReverseIndex,
 ) -> Result<Vec<KVMap>, String> {
   let len = get_vec_len(buf)?;
-  let mut mdata = Vec::with_capacity(len);
+  let mut mdata = Vec::with_capacity(capped(len, buf));
   for _ in 0..len {
     mdata.push(get_kvmap_indexed(buf, rev)?);
   }
@@ -908,7 +926,7 @@ impl ExprMetaData {
       10 => {
         let name = get_idx(buf, rev)?;
         let n_entries = get_vec_len(buf)?;
-        let mut entries = Vec::with_capacity(n_entries);
+        let mut entries = Vec::with_capacity(capped(n_entries, buf));
         for _ in 0..n_entries {
           let entry = match get_u8(buf)? {
             0 => {
@@ -955,7 +973,7 @@ impl ExprMeta {
     rev: &NameReverseIndex,
   ) -> Result<Self, String> {
     let len = get_vec_len(buf)?;
-    let mut nodes = Vec::with_capacity(len);
+    let mut nodes = Vec::with_capacity(capped(len, buf));
     for _ in 0..len {
       nodes.push(ExprMetaData::get_indexed(buf, rev)?);
     }
@@ -972,7 +990,7 @@ fn put_u64_vec(v: &[u64], buf: &mut Vec<u8>) {
 
 fn get_u64_vec(buf: &mut &[u8]) -> Result<Vec<u64>, String> {
   let len = get_vec_len(buf)?;
-  let mut v = Vec::with_capacity(len);
+  let mut v = Vec::with_capacity(capped(len, buf));
   for _ in 0..len {
     v.push(get_u64(buf)?);
   }
@@ -1147,7 +1165,7 @@ impl ConstantMetaInfo {
       }),
       6 => {
         let n = get_u64(buf)? as usize;
-        let mut all = Vec::with_capacity(n);
+        let mut all = Vec::with_capacity(capped(n, buf));
         for _ in 0..n {
           all.push(get_idx_vec(buf, rev)?);
         }
@@ -1155,12 +1173,13 @@ impl ConstantMetaInfo {
           0 => None,
           1 => {
             let n_perm = get_u64(buf)? as usize;
-            let mut perm = Vec::with_capacity(n_perm);
+            let mut perm = Vec::with_capacity(capped(n_perm, buf));
             for _ in 0..n_perm {
               perm.push(get_u64(buf)? as usize);
             }
             let n_counts = get_u64(buf)? as usize;
-            let mut source_ctor_counts = Vec::with_capacity(n_counts);
+            let mut source_ctor_counts =
+              Vec::with_capacity(capped(n_counts, buf));
             for _ in 0..n_counts {
               source_ctor_counts.push(get_u64(buf)? as usize);
             }

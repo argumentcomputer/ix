@@ -1711,6 +1711,13 @@ extern "C" fn rs_compile_validate_aux(
   // `stt` is `mut` so Phase 7 can `std::mem::take(&mut stt.env)` to extract
   // the Ixon env for serialization while freeing the rest of the state
   // (kctx, name_to_addr, etc.) before serialize allocates a 3 GB buffer.
+  //
+  // NOTE: both workspace profiles set `panic = "abort"` (unwinding across
+  // the `extern "C"` boundary is UB), so in normal builds a panic inside
+  // compile aborts the whole process *before* this `catch_unwind` can
+  // observe it — the panic arm below fires only in a custom
+  // `panic = "unwind"` debugging build. Do not rely on the validator
+  // surviving a compile panic in production.
   let mut stt =
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
       compile_env_with_options(&env, CompileOptions::default())

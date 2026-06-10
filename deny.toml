@@ -73,8 +73,8 @@ ignore = [
     "RUSTSEC-2024-0436", # `paste` crate is unmaintained
     "RUSTSEC-2023-0089", # `atomic-polyfill` crate is unmaintained
     "RUSTSEC-2025-0141", # `bincode` crate is unmaintained
-    "RUSTSEC-2026-0118", # `hickory-proto` Iroh vulnerability
-    "RUSTSEC-2026-0119", # `hickory-proto` Iroh vultnerability
+    { id = "RUSTSEC-2026-0118", reason = "hickory-proto vuln reachable only through the optional `net` (iroh) feature; the iroh stack is demo-grade and off the proving trust path. Re-check on every iroh bump and drop this once iroh ships a fixed hickory-proto." },
+    { id = "RUSTSEC-2026-0119", reason = "same exposure and exit condition as RUSTSEC-2026-0118" },
     #{ id = "RUSTSEC-0000-0000", reason = "you can specify a reason the advisory is ignored" },
     #"a-crate-that-is-yanked@0.1.1", # you can also ignore yanked crate versions if you wish
     #{ crate = "a-crate-that-is-yanked@0.1.1", reason = "you can specify why you are ignoring the yanked crate" },
@@ -232,16 +232,26 @@ skip-tree = [
 # https://embarkstudios.github.io/cargo-deny/checks/sources/cfg.html
 [sources]
 # Lint level for what to happen when a crate from a crate registry that is not
-# in the allow list is encountered
-unknown-registry = "warn"
+# in the allow list is encountered.
+# "deny" so an unreviewed registry or git source fails CI instead of warning —
+# the git deps below sit on the proving trust path (multi-stark is the STARK
+# backend), so silently picking up a new source is exactly what this check
+# exists to stop.
+unknown-registry = "deny"
 # Lint level for what to happen when a crate from a git repository that is not
 # in the allow list is encountered
-unknown-git = "warn"
+unknown-git = "deny"
 # List of URLs for allowed crate registries. Defaults to the crates.io index
 # if not specified. If it is specified but empty, no registries are allowed.
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-# List of URLs for allowed Git repositories
-allow-git = []
+# List of URLs for allowed Git repositories. Plonky3 is a transitive git
+# dependency of multi-stark (the STARK backend).
+allow-git = [
+    "https://github.com/argumentcomputer/lean-ffi",
+    "https://github.com/argumentcomputer/multi-stark.git",
+    "https://github.com/argumentcomputer/tracing-texray",
+    "https://github.com/Plonky3/Plonky3",
+]
 
 [sources.allow-org]
 # github.com organizations to allow git sources for

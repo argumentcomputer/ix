@@ -78,7 +78,9 @@ def AiurTestEnv.interpTest (env : AiurTestEnv) (testCase : AiurTestCase)
 
 def AiurTestEnv.runTestCase (env : AiurTestEnv) (testCase : AiurTestCase) : TestSeq :=
   let label := testCase.label
-  let funIdx := env.compiled.getFuncIdx testCase.functionName |>.get!
+  match env.compiled.getFuncIdx testCase.functionName with
+  | none => test s!"Function `{testCase.functionName}` exists for {label}" false
+  | some funIdx =>
   match env.compiled.bytecode.execute funIdx testCase.input testCase.inputIOBuffer with
   | .error e => test s!"Execute succeeds for {label}: {e}" false
   | .ok (execOutput, execIOBuffer, _queryCounts) =>
@@ -98,10 +100,34 @@ def AiurTestEnv.runTestCase (env : AiurTestEnv) (testCase : AiurTestCase) : Test
         (claim == Aiur.buildClaim funIdx testCase.input testCase.expectedOutput)
       let ioTest := test s!"IOBuffer matches for {label}"
         (ioBuffer == testCase.expectedIOBuffer)
-      let proof := .ofBytes proof.toBytes
-      let pvTest := withExceptOk s!"Prove/verify works for {label}"
-        (env.aiurSystem.verify friParameters claim proof) fun _ => .done
+      let pvTest := withExceptOk s!"Proof byte roundtrip decodes for {label}"
+        (Aiur.Proof.ofBytes proof.toBytes) fun proof =>
+          withExceptOk s!"Prove/verify works for {label}"
+            (env.aiurSystem.verify friParameters claim proof) fun _ => .done
+      -- Negative coverage: a verifier that accepts a mismatched claim or
+      -- tampered proof bytes is the classic zkVM soundness regression —
+      -- the honest-path checks above would ship it silently.
+      let wrongClaim := claim.set! 0 (claim.getD 0 (.ofNat 0) + (1 : Aiur.G))
+      let claimRejected : Bool :=
+        match env.aiurSystem.verify friParameters wrongClaim proof with
+        | .ok _ => false
+        | .error _ => true
+      let negClaimTest :=
+        test s!"Verify rejects mismatched claim for {label}" claimRejected
+      let tamperedBytes :=
+        let bs := proof.toBytes
+        bs.set! 0 (bs.get! 0 ^^^ 0x01)
+      let proofRejected : Bool :=
+        match Aiur.Proof.ofBytes tamperedBytes with
+        | .error _ => true -- refusing to decode is also a rejection
+        | .ok tampered =>
+          match env.aiurSystem.verify friParameters claim tampered with
+          | .ok _ => false
+          | .error _ => true
+      let negProofTest :=
+        test s!"Verify rejects tampered proof for {label}" proofRejected
       execTest ++ interpTest ++ claimTest ++ ioTest ++ pvTest
+        ++ negClaimTest ++ negProofTest
 
 def mkAiurTests (toplevelFn : Except Aiur.Global Aiur.Source.Toplevel)
     (cases : List AiurTestCase) : TestSeq :=

@@ -885,7 +885,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
           minors: u64_to_usize::<M>(minors)?,
           indices: u64_to_usize::<M>(indices)?,
           major_idx,
-          rules: rules.clone(),
+          // `rules` is already owned here (moved out of the KConst clone
+          // `try_get_const` returned) — do not clone it again.
+          rules,
           lvls,
         }
       },
@@ -1065,23 +1067,42 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   /// Nat literal iota can create a long chain of distinct predecessor terms.
   /// These terms are useful only while the current WHNF is executing; keeping
   /// each one in the global WHNF caches makes RSS linear in the literal.
+  /// Allocation-free spine probe: head expression and arg count without
+  /// materializing the spine. The transient-nat probes below run on
+  /// *every* whnf call **before** the cache lookup, so they must not
+  /// heap-allocate on the (overwhelmingly common) non-Nat-recursor path —
+  /// the previous implementation paid two `collect_app_spine` Vec
+  /// allocations plus a `KConst::Recr` clone per call, defeating the
+  /// cache on the hottest path in a full check.
+  fn spine_head_and_len(e: &KExpr<M>) -> (&KExpr<M>, usize) {
+    let mut cur = e;
+    let mut n = 0usize;
+    while let ExprData::App(f, _, _) = cur.data() {
+      n += 1;
+      cur = f;
+    }
+    (cur, n)
+  }
+
   fn is_transient_nat_literal_work(
     &mut self,
     e: &KExpr<M>,
   ) -> Result<bool, TcError<M>> {
-    if self.is_nat_literal_recursor_app(e)? {
-      return Ok(true);
-    }
-
-    let (head, args) = collect_app_spine(e);
+    let (head, nargs) = Self::spine_head_and_len(e);
     let ExprData::Const(id, _, _) = head.data() else {
       return Ok(false);
     };
-
-    if id.addr == self.prims.nat_succ.addr && args.len() == 1 {
-      return self.is_nat_literal_recursor_app(&args[0]);
+    if id.addr == self.prims.nat_rec.addr
+      || id.addr == self.prims.nat_cases_on.addr
+    {
+      return self.is_nat_literal_recursor_app(e);
     }
-
+    if id.addr == self.prims.nat_succ.addr
+      && nargs == 1
+      && let ExprData::App(_, arg, _) = e.data()
+    {
+      return self.is_nat_literal_recursor_app(arg);
+    }
     Ok(false)
   }
 
@@ -1089,7 +1110,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     &mut self,
     e: &KExpr<M>,
   ) -> Result<bool, TcError<M>> {
-    let (head, spine) = collect_app_spine(e);
+    // Cheap pre-filter first; only fall through to the allocating spine
+    // collection + recursor lookup when the head can actually match.
+    let (head, _) = Self::spine_head_and_len(e);
     let ExprData::Const(id, _, _) = head.data() else {
       return Ok(false);
     };
@@ -1104,6 +1127,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     else {
       return Ok(false);
     };
+    let (_, spine) = collect_app_spine(e);
     let major_idx = u64_to_usize::<M>(params + motives + minors + indices)?;
     Ok(
       spine
@@ -2885,6 +2909,15 @@ fn compute_nat_bin<M: KernelMode>(
   b: &Nat,
 ) -> Option<Nat> {
   use num_bigint::BigUint;
+  // Output-size cap for natively-computed results. `shiftLeft` and `pow`
+  // amplify a tiny term into a result exponentially larger than the input
+  // bytes (`Nat.shiftLeft 1 (1 << 40)` is a ~12-byte term demanding a
+  // ~128 GiB allocation). Refuse to materialize anything wider and leave
+  // the term stuck, exactly like the `pow` exponent guard below. 2^26 bits
+  // (8 MiB) keeps every `2^e, e ≤ ReducePowMaxExp` reduction the C++
+  // kernel performs while bounding the allocation an adversarial term can
+  // force.
+  const MAX_NAT_REDUCE_BITS: u64 = 1 << 26;
   let zero = BigUint::ZERO;
   let r = if *addr == p.nat_add.addr {
     &a.0 + &b.0
@@ -2901,7 +2934,14 @@ fn compute_nat_bin<M: KernelMode>(
     const REDUCE_POW_MAX_EXP: u64 = 1 << 24; // 16_777_216
     match b.to_u64() {
       #[allow(clippy::cast_possible_truncation)] // guarded: exp <= 2^24
-      Some(exp) if exp <= REDUCE_POW_MAX_EXP => a.0.pow(exp as u32),
+      Some(exp) if exp <= REDUCE_POW_MAX_EXP => {
+        // The exponent cap alone does not bound the *result*: a wide base
+        // with an allowed exponent still explodes (bits(a) * exp).
+        if a.0.bits().saturating_mul(exp) > MAX_NAT_REDUCE_BITS {
+          return None;
+        }
+        a.0.pow(exp as u32)
+      },
       _ => return None, // too large to compute
     }
   } else if *addr == p.nat_gcd.addr {
@@ -2913,8 +2953,15 @@ fn compute_nat_bin<M: KernelMode>(
   } else if *addr == p.nat_xor.addr {
     &a.0 ^ &b.0
   } else if *addr == p.nat_shift_left.addr {
-    let shift = usize::try_from(b.to_u64()?).ok()?;
-    &a.0 << shift
+    let shift = b.to_u64()?;
+    if a.0 == zero {
+      zero
+    } else if a.0.bits().saturating_add(shift) > MAX_NAT_REDUCE_BITS {
+      // Result has exactly bits(a) + shift bits — refuse to materialize.
+      return None;
+    } else {
+      &a.0 << usize::try_from(shift).ok()?
+    }
   } else if *addr == p.nat_shift_right.addr {
     let shift = usize::try_from(b.to_u64()?).ok()?;
     &a.0 >> shift

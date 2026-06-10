@@ -183,8 +183,17 @@ pub struct CachedExpr {
 pub struct BlockCache {
   /// Cache for compiled expressions (keyed by Lean hash address)
   pub exprs: FxHashMap<Address, CachedExpr>,
-  /// Cache for compiled universes (Level -> Univ conversion)
+  /// Cache for compiled universes (Level -> Univ conversion).
+  ///
+  /// `Param` levels compile to *positional* `Univ::var(idx)` against the
+  /// current constant's `univ_params` list, so entries are only valid for
+  /// the param list in `univ_cache_params` — `compile_univ` clears the
+  /// cache whenever the list changes. Without that, reusing one
+  /// `BlockCache` across constants with different level-param orders
+  /// silently rewrites universes (wrong `var` indices).
   pub univ_cache: FxHashMap<Level, Arc<Univ>>,
+  /// The `univ_params` list `univ_cache` entries were computed against.
+  pub univ_cache_params: Vec<Name>,
   /// Cache for expression comparisons
   pub cmps: FxHashMap<(Name, Name), Ordering>,
   /// Arena for expression metadata (append-only within a constant)
@@ -379,6 +388,13 @@ pub fn compile_univ(
   univ_params: &[Name],
   cache: &mut BlockCache,
 ) -> Result<Arc<Univ>, CompileError> {
+  // Cached `Param → var(idx)` translations are positional in
+  // `univ_params`; invalidate on any param-list change (see the field doc
+  // on `univ_cache`). Param lists are tiny, so the compare is cheap.
+  if cache.univ_cache_params.as_slice() != univ_params {
+    cache.univ_cache.clear();
+    cache.univ_cache_params = univ_params.to_vec();
+  }
   if let Some(cached) = cache.univ_cache.get(level) {
     return Ok(cached.clone());
   }
@@ -654,10 +670,19 @@ pub fn compile_expr(
 
   let mut stack: Vec<Frame> = vec![Frame::Compile(expr.clone())];
   let mut results: Vec<Arc<Expr>> = Vec::new();
+  // Set (to 1) by the surgery branches right after they push their head
+  // Const frame. LIFO guarantees that frame is the very next `Compile`
+  // popped, so this marks exactly the surgered heads — which are exempt
+  // from the bare-reference check in the Const arm below.
+  let mut surgery_heads_pending: usize = 0;
 
   while let Some(frame) = stack.pop() {
     match frame {
       Frame::Compile(e) => {
+        let is_surgery_head = surgery_heads_pending > 0;
+        if is_surgery_head {
+          surgery_heads_pending -= 1;
+        }
         let e_key = Address::from_blake3_hash(*e.get_hash());
         if let Some(cached) = cache.exprs.get(&e_key).cloned() {
           // O(1) cache hit: arena root already valid
@@ -682,6 +707,46 @@ pub fn compile_expr(
           },
 
           ExprData::Const(name, levels, _) => {
+            // Bare reference to a rewritten auxiliary (i.e. not the head
+            // of a surgered application): there are no arguments to
+            // permute, so the reference cannot be represented against the
+            // canonical layout — the same silent meaning change as an
+            // under-applied call. Aux-regen bodies are exempt (their
+            // references are canonical by construction), as are surgery
+            // heads (their args were just permuted by the App branch).
+            if !is_surgery_head
+              && (stt
+                .call_site_plans
+                .get(name)
+                .is_some_and(|p| !p.is_identity())
+                || stt
+                  .below_call_site_plans
+                  .get(name)
+                  .is_some_and(|p| !p.is_identity())
+                || stt
+                  .brec_on_call_site_plans
+                  .get(name)
+                  .is_some_and(|p| !p.is_identity()))
+            {
+              let compiling_is_aux_regen =
+                cache.compiling.as_ref().is_some_and(|n| {
+                  crate::ix::decompile::classify_aux_gen(n).is_some_and(
+                    |(_, root)| {
+                      stt.env.named.get(&root).is_some_and(|named| {
+                        matches!(named.meta.info, ConstantMetaInfo::Indc { .. })
+                      })
+                    },
+                  )
+                });
+              if !compiling_is_aux_regen {
+                return Err(CompileError::UnsupportedExpr {
+                  desc: format!(
+                    "bare reference to '{}', whose canonical layout permutes arguments; eta-expand the reference",
+                    name.pretty()
+                  ),
+                });
+              }
+            }
             let univ_indices =
               compile_univ_indices(levels, univ_params, cache)?;
             let name_addr = compile_name(name, stt);
@@ -771,10 +836,21 @@ pub fn compile_expr(
               // original's Ixon still lives in `stt.env.consts` and its
               // arena must be decompile-safe (decompile iterates all
               // constants).
-              let compiling_is_aux_regen = cache
-                .compiling
-                .as_ref()
-                .is_some_and(crate::ix::decompile::is_aux_gen_suffix);
+              // Tightening: the suffix alone misfires on *user* constants
+              // that merely look aux-like (e.g. a def in a non-inductive
+              // namespace named `rec_1`), silently disabling required
+              // surgery for them. A genuine AuxRegen name classifies to a
+              // root that is a compiled inductive — require that too.
+              let compiling_is_aux_regen =
+                cache.compiling.as_ref().is_some_and(|n| {
+                  crate::ix::decompile::classify_aux_gen(n).is_some_and(
+                    |(_, root)| {
+                      stt.env.named.get(&root).is_some_and(|named| {
+                        matches!(named.meta.info, ConstantMetaInfo::Indc { .. })
+                      })
+                    },
+                  )
+                });
               if !compiling_is_aux_regen {
                 if let Some(plan) = stt.call_site_plans.get(name)
                   && !plan.is_identity()
@@ -923,8 +999,23 @@ pub fn compile_expr(
                       stack.push(Frame::Compile(arg.clone()));
                     }
                     stack.push(Frame::Compile(head_expr.clone()));
+                    surgery_heads_pending += 1;
                     continue;
                   }
+                  // Under-applied (or bare) reference to an auxiliary
+                  // whose canonical layout permutes arguments: surgery
+                  // cannot reorder arguments that are not present, and
+                  // compiling the reference un-permuted silently changes
+                  // its meaning (the canonical constant expects canonical
+                  // argument order). Fail loudly instead.
+                  return Err(CompileError::UnsupportedExpr {
+                    desc: format!(
+                      "under-applied reference to '{}' ({} of {} required args) whose canonical layout permutes arguments; eta-expand the call site",
+                      name.pretty(),
+                      args.len(),
+                      expected_total
+                    ),
+                  });
                 }
                 if let Some(plan) = stt.below_call_site_plans.get(name)
                   && !plan.is_identity()
@@ -1024,8 +1115,20 @@ pub fn compile_expr(
                       stack.push(Frame::Compile(arg.clone()));
                     }
                     stack.push(Frame::Compile(head_expr.clone()));
+                    surgery_heads_pending += 1;
                     continue;
                   }
+                  // See the call_site_plans branch above: an un-permuted
+                  // compile of an under-applied reference silently changes
+                  // meaning. Fail loudly.
+                  return Err(CompileError::UnsupportedExpr {
+                    desc: format!(
+                      "under-applied reference to '{}' ({} of {} required args) whose canonical below-layout permutes arguments; eta-expand the call site",
+                      name.pretty(),
+                      args.len(),
+                      expected_total
+                    ),
+                  });
                 }
                 if let Some(plan) = stt.brec_on_call_site_plans.get(name)
                   && !plan.is_identity()
@@ -1155,8 +1258,20 @@ pub fn compile_expr(
                       stack.push(Frame::Compile(arg.clone()));
                     }
                     stack.push(Frame::Compile(head_expr.clone()));
+                    surgery_heads_pending += 1;
                     continue;
                   }
+                  // See the call_site_plans branch above: an un-permuted
+                  // compile of an under-applied reference silently changes
+                  // meaning. Fail loudly.
+                  return Err(CompileError::UnsupportedExpr {
+                    desc: format!(
+                      "under-applied reference to '{}' ({} of {} required args) whose canonical brecOn-layout permutes arguments; eta-expand the call site",
+                      name.pretty(),
+                      args.len(),
+                      expected_total
+                    ),
+                  });
                 }
               }
             }

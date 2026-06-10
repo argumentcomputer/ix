@@ -1,4 +1,13 @@
 # Creates a PR benchmark comment with a comparison to main
+#
+# SECURITY: this workflow builds and EXECUTES PR-branch code (which may come
+# from a fork). The job topology is load-bearing:
+#   - `benchmark` runs the untrusted code and must never hold credentials —
+#     no secrets, no token minting. Its only output is an uploaded artifact.
+#   - `comment` is the only privileged job (mints the GitHub App token). It
+#     runs on a fresh runner and executes no checked-out code, so untrusted
+#     build scripts can never observe the token.
+# Do not merge these jobs or move the token step into `benchmark`.
 name: Benchmark pull requests
 
 on:
@@ -30,9 +39,13 @@ jobs:
       - uses: actions/checkout@v6
       - name: Parse PR comment body
         id: bench-params
+        env:
+          # Passed via env (not inline interpolation) so comment text can
+          # never be evaluated as shell syntax.
+          COMMENT_BODY: ${{ github.event.comment.body }}
         run: |
           # Parse `issue_comment` body
-          printf '${{ github.event.comment.body }}' > comment.txt
+          printf '%s' "$COMMENT_BODY" > comment.txt
           BENCH_COMMAND=$(head -n 1 comment.txt | tr -d '\r')
           echo "$BENCH_COMMAND"
 
@@ -60,15 +73,17 @@ jobs:
         bench: ${{ fromJSON(needs.setup.outputs.benches) }}
     steps:
       - name: Set env vars
+        env:
+          ENV_VARS: ${{ needs.setup.outputs.env-vars }}
         run: |
           # Overrides default env vars with those specified in the `issue_comment` input if identically named
-          for var in ${{ needs.setup.outputs.env-vars }}
+          for var in $ENV_VARS
           do
             echo "$var" | tee -a $GITHUB_ENV
           done
       - uses: actions/checkout@v6
         # Get base branch of the PR
-      - uses: xt0rted/pull-request-comment-branch@v3
+      - uses: xt0rted/pull-request-comment-branch@e8b8daa837e8ea7331c0003c9c316a64c6d8b0b1 # v3
         id: comment-branch
       - name: Checkout base branch
         uses: actions/checkout@v6
@@ -76,7 +91,7 @@ jobs:
           ref: ${{ steps.comment-branch.outputs.base_sha }}
           path : ${{ github.workspace }}/base
       - name: Run `lake build` on base branch
-        uses: leanprover/lean-action@v1
+        uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9 # v1
         with:
           lake-package-directory: ${{ github.workspace }}/base
           test: false
@@ -94,7 +109,7 @@ jobs:
           path: ${{ github.workspace }}/pr
           ref: ${{ steps.comment-branch.outputs.head_sha }}
       - name: Run `lake build` on PR branch
-        uses: leanprover/lean-action@v1
+        uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9 # v1
         with:
           lake-package-directory: ${{ github.workspace }}/pr
           test: false
@@ -109,43 +124,74 @@ jobs:
         run: |
           BENCH_REPORT=1 lake exe ${{ matrix.bench }}
         working-directory: ${{ github.workspace }}/pr
-      - name: Get env for PR body
-        if: always()
-        run: |
-          SHORT_SHA_PR=$(git rev-parse --short HEAD)
-          REPO_URL=${{ github.server_url }}/${{ github.repository }}
-          echo "COMMIT_LINK=[\`$SHORT_SHA_PR\`]($REPO_URL/commit/${{ steps.comment-branch.outputs.head_sha }})" | tee -a $GITHUB_ENV
-          echo "WORKFLOW_LINK=[Workflow logs]($REPO_URL/actions/runs/${{ github.run_id }})" | tee -a $GITHUB_ENV
-        working-directory: ${{ github.workspace }}/pr
-      - name: Generate token to write PR comment
-        uses: actions/create-github-app-token@v3
-        if: always()
-        id: app-token
-        with:
-          app-id: ${{ secrets.TOKEN_APP_ID }}
-          private-key: ${{ secrets.TOKEN_APP_PRIVATE_KEY }}
       - name: Build benchmark comment body
         if: success()
         run: |
           {
-            echo '## Benchmark for `${{ matrix.bench }}` at ${{ env.COMMIT_LINK }}';
+            echo '## Benchmark for `${{ matrix.bench }}`';
             echo "";
             for file in .lake/benches/*/report.md; do
               [ -f "$file" ] && cat "$file" && echo ""
             done
-            echo "${{ env.WORKFLOW_LINK }}";
           } > ${{ github.workspace }}/comment-body.md
         working-directory: ${{ github.workspace }}/pr
-      - name: Comment on successful run
+      - name: Upload benchmark comment body
         if: success()
-        uses: peter-evans/create-or-update-comment@v5
+        uses: actions/upload-artifact@v4
+        with:
+          name: comment-body-${{ matrix.bench }}
+          path: ${{ github.workspace }}/comment-body.md
+
+  comment:
+    # Privileged job: mints the App token. Runs no checked-out code (see the
+    # header comment). `always()` so failures still produce a PR comment.
+    needs: [ setup, benchmark ]
+    if: always() && needs.setup.result == 'success'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        bench: ${{ fromJSON(needs.setup.outputs.benches) }}
+    steps:
+      - uses: xt0rted/pull-request-comment-branch@e8b8daa837e8ea7331c0003c9c316a64c6d8b0b1 # v3
+        id: comment-branch
+      - name: Get env for PR body
+        run: |
+          REPO_URL=${{ github.server_url }}/${{ github.repository }}
+          HEAD_SHA=${{ steps.comment-branch.outputs.head_sha }}
+          SHORT_SHA_PR=$(printf '%s' "$HEAD_SHA" | cut -c1-7)
+          echo "COMMIT_LINK=[\`$SHORT_SHA_PR\`]($REPO_URL/commit/$HEAD_SHA)" | tee -a $GITHUB_ENV
+          echo "WORKFLOW_LINK=[Workflow logs]($REPO_URL/actions/runs/${{ github.run_id }})" | tee -a $GITHUB_ENV
+      - name: Download benchmark comment body
+        id: download
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: comment-body-${{ matrix.bench }}
+      - name: Assemble comment body
+        if: steps.download.outcome == 'success'
+        run: |
+          {
+            echo '## Benchmark for `${{ matrix.bench }}` at ${{ env.COMMIT_LINK }}';
+            echo "";
+            cat comment-body.md;
+            echo "${{ env.WORKFLOW_LINK }}";
+          } > final-comment-body.md
+      - name: Generate token to write PR comment
+        uses: actions/create-github-app-token@v3
+        id: app-token
+        with:
+          app-id: ${{ secrets.TOKEN_APP_ID }}
+          private-key: ${{ secrets.TOKEN_APP_PRIVATE_KEY }}
+      - name: Comment on successful run
+        if: steps.download.outcome == 'success'
+        uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5
         with:
           token: ${{ steps.app-token.outputs.token }}
           issue-number: ${{ github.event.issue.number }}
-          body-path: 'comment-body.md'
+          body-path: 'final-comment-body.md'
       - name: Comment on failing run
-        if: failure()
-        uses: peter-evans/create-or-update-comment@v5
+        if: steps.download.outcome != 'success'
+        uses: peter-evans/create-or-update-comment@e8674b075228eee787fea43ef493e45ece1004c9 # v5
         with:
           token: ${{ steps.app-token.outputs.token }}
           issue-number: ${{ github.event.issue.number }}

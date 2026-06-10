@@ -47,14 +47,21 @@ extern "C" fn rs_aiur_proof_to_bytes(
   LeanByteArray::from_bytes(&bytes)
 }
 
-/// `Aiur.Proof.ofBytes : @& ByteArray → Proof`
+/// `Aiur.Proof.ofBytes : @& ByteArray → Except String Proof`
 #[unsafe(no_mangle)]
 extern "C" fn rs_aiur_proof_of_bytes(
   byte_array: LeanByteArray<LeanBorrowed<'_>>,
-) -> LeanExternal<Proof, LeanOwned> {
-  let proof =
-    Proof::from_bytes(byte_array.as_bytes()).expect("Deserialization error");
-  LeanExternal::alloc(&AIUR_PROOF_CLASS, proof)
+) -> LeanExcept<LeanOwned> {
+  // Proof bytes arrive inside a prover-supplied wrapper on the `ix verify`
+  // path: malformed bytes must surface as `Except.error`, never a panic —
+  // under `panic = "abort"` a panicking decode kills the whole process,
+  // and unwinding across `extern "C"` would be UB anyway.
+  match Proof::from_bytes(byte_array.as_bytes()) {
+    Ok(proof) => LeanExcept::ok(LeanExternal::alloc(&AIUR_PROOF_CLASS, proof)),
+    Err(err) => {
+      LeanExcept::error_string(&format!("malformed proof bytes: {err:?}"))
+    },
+  }
 }
 
 /// `AiurSystem.build : @&Bytecode.Toplevel → @&CommitmentParameters → AiurSystem`

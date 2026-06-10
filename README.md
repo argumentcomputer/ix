@@ -7,14 +7,15 @@
 -----------
 
 The Ix platform enables the compilation of [Lean
-4](https://github.com/leanprover/lean4) programs into zero-knowledge succinct
-non-interactive arguments of knowledge (zk-SNARKs). This allows the execution
-and typechecking of any Lean program to be verified by performing a
+4](https://github.com/leanprover/lean4) programs into succinct non-interactive
+arguments of knowledge (zk-SNARKs). The design goal is for the execution and
+typechecking of any Lean program to be verifiable by performing a
 sub-100-millisecond operation against an approximately 1 kilobyte certificate,
-regardless of the size of the original Lean program. In fact, the correctness of
-the entire [mathlib](https://github.com/leanprover-community/mathlib4) library
-of formal mathematics, containing around 2 million lines of code, may be
-compiled in this way into a single kilobyte sized cryptographic certificate.
+regardless of the size of the original Lean program — up to and including the
+correctness of the entire
+[mathlib](https://github.com/leanprover-community/mathlib4) library of formal
+mathematics, containing around 2 million lines of code. These figures are
+design targets, not yet measured properties of the current implementation.
 
 We call this technique zero-knowledge proof-carrying code or **zkPCC**, as an
 extension of the well-known [proof-carrying
@@ -31,6 +32,13 @@ Additionally, while in proof-carrying code an application must reveal the proof
 artifact that demonstrates some formal property to the user, in **zkPCC** this
 proof artifact may be kept private, which opens up new possibilities for economic
 transactions over proofs.
+
+> :warning: **The current proving backend is NOT zero-knowledge.** The pinned
+> multi-stark/Plonky3 configuration applies no blinding or masking, and FRI
+> query openings reveal witness rows — which can include private program
+> bytes, commitment secrets, and I/O buffer contents. Until ZK masking lands,
+> Ix produces *succinct* arguments without the *hiding* property: do not
+> publish proofs over programs or data you intend to keep private.
 
 > :warning: **This repository is a pre-alpha work in progress and should not be used for any purpose.**
 

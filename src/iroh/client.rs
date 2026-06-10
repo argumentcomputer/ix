@@ -9,10 +9,8 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, fmt};
 
-use crate::iroh::common::{Request, Response};
+use crate::iroh::common::{ALPN, Request, Response};
 
-// An example ALPN that we are using to communicate over the `Endpoint`
-const EXAMPLE_ALPN: &[u8] = b"n0/iroh/examples/magic/0";
 // Maximum number of characters to read from the server. Connection automatically closed if this is exceeded
 const READ_SIZE_LIMIT: usize = 100_000_000;
 
@@ -40,7 +38,7 @@ pub async fn connect(
         // The secret key is used to authenticate with other nodes. The PublicKey portion of this secret key is how we identify nodes, often referred to as the `node_id` in our codebase.
         .secret_key(secret_key)
         // Set the ALPN protocols this endpoint will accept on incoming connections
-        .alpns(vec![EXAMPLE_ALPN.to_vec()])
+        .alpns(vec![ALPN.to_vec()])
         // `RelayMode::Default` means that we will use the default relay servers to holepunch and relay.
         // Use `RelayMode::Custom` to pass in a `RelayMap` with custom relay urls.
         // Use `RelayMode::Disable` to disable holepunching and relaying over HTTPS
@@ -78,7 +76,7 @@ pub async fn connect(
 
   // Attempt to connect, over the given ALPN.
   // Returns a Quinn connection.
-  let conn = endpoint.connect(addr, EXAMPLE_ALPN).await?;
+  let conn = endpoint.connect(addr, ALPN).await?;
   info!("connected");
 
   // Use the Quinn API to send and recv content.
@@ -89,7 +87,29 @@ pub async fn connect(
   // Call `finish` to close the send side of the connection gracefully.
   send.finish().anyerr()?;
   let message = recv.read_to_end(READ_SIZE_LIMIT).await.anyerr()?;
-  let response = Response::from_bytes(&message);
+  // Untrusted bytes: a malformed response must surface as an error, not a
+  // panic (with `panic = "abort"` a panicking decode kills the process).
+  let response =
+    Response::from_bytes(&message).map_err(std::io::Error::other).anyerr()?;
+
+  // Content addressing is the only integrity this protocol has: a GET
+  // response is only valid if the fetched bytes actually hash to the
+  // address we asked for. The server is untrusted.
+  if let (Request::Get(get_request), Response::Get(get_response)) =
+    (&request, &response)
+    && !get_response.is_err
+  {
+    let got = blake3::hash(&get_response.bytes).to_hex().as_str().to_owned();
+    if got != get_request.hash {
+      conn.close(1u32.into(), b"content hash mismatch");
+      endpoint.close().await;
+      return Err(std::io::Error::other(format!(
+        "content hash mismatch: requested {} but bytes hash to {got}",
+        get_request.hash
+      )))
+      .anyerr();
+    }
+  }
 
   // Close the connection, then wait for the endpoint to flush.
   conn.close(0u32.into(), b"done");

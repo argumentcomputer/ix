@@ -1031,13 +1031,14 @@ pub fn put_aux_layout(layout: &AuxLayout, buf: &mut Vec<u8>) {
 
 /// Deserialize an `AuxLayout` side-table entry.
 pub fn get_aux_layout(buf: &mut &[u8]) -> Result<AuxLayout, String> {
-  let n_perm = get_u64(buf)? as usize;
-  let mut perm = Vec::with_capacity(n_perm);
+  let n_perm = get_u64(buf)?;
+  let mut perm = Vec::with_capacity(capped_capacity(n_perm, buf));
   for _ in 0..n_perm {
     perm.push(get_u64(buf)? as usize);
   }
-  let n_counts = get_u64(buf)? as usize;
-  let mut source_ctor_counts = Vec::with_capacity(n_counts);
+  let n_counts = get_u64(buf)?;
+  let mut source_ctor_counts =
+    Vec::with_capacity(capped_capacity(n_counts, buf));
   for _ in 0..n_counts {
     source_ctor_counts.push(get_u64(buf)? as usize);
   }
@@ -1359,6 +1360,18 @@ impl Env {
       }
       let (bytes, rest) = buf.split_at(len);
       *buf = rest;
+      // Per-entry integrity, mirroring the const check below. The kernel
+      // reads literal *values* out of blob bytes while hashing only the
+      // blob address, so an unverified blob lets tampered bytes change a
+      // literal inside a checked type without disturbing the merkle root.
+      let computed = Address::hash(bytes);
+      if computed != addr {
+        return Err(format!(
+          "Env::get: blob bytes hash to {} but stored under {}",
+          computed.hex(),
+          addr.hex()
+        ));
+      }
       env.blobs.insert(addr, bytes.to_vec());
     }
 
@@ -1397,7 +1410,7 @@ impl Env {
     let num_names = get_u64(buf)?;
     let mut names_lookup: FxHashMap<Address, Name> = FxHashMap::default();
     let mut name_reverse_index: NameReverseIndex =
-      Vec::with_capacity(num_names as usize + 1);
+      Vec::with_capacity(capped_capacity(num_names, buf) + 1);
     // Anonymous name is serialized first (index 0) — read it from the stream
     // along with all other names below. But pre-seed the lookup so name
     // reconstruction works for names whose parent is anonymous.
@@ -1503,6 +1516,14 @@ impl Env {
       }
       let (bytes, rest) = buf.split_at(len);
       *buf = rest;
+      let computed = Address::hash(bytes);
+      if computed != addr {
+        return Err(format!(
+          "Env::get_anon: blob bytes hash to {} but stored under {}",
+          computed.hex(),
+          addr.hex()
+        ));
+      }
       env.blobs.insert(addr, bytes.to_vec());
     }
 
@@ -1538,7 +1559,7 @@ impl Env {
     let num_names = get_u64(buf)?;
     let mut names_lookup: FxHashMap<Address, Name> = FxHashMap::default();
     let mut name_reverse_index: NameReverseIndex =
-      Vec::with_capacity(num_names as usize + 1);
+      Vec::with_capacity(capped_capacity(num_names, buf) + 1);
     let anon_addr = Address::from_blake3_hash(*Name::anon().get_hash());
     names_lookup.insert(anon_addr, Name::anon());
     for _ in 0..num_names {
@@ -1696,6 +1717,14 @@ impl Env {
       }
       let (bytes, rest) = buf.split_at(len);
       buf = rest;
+      let computed = Address::hash(bytes);
+      if computed != addr {
+        return Err(format!(
+          "Env::get_anon_mmap: blob bytes hash to {} but stored under {}",
+          computed.hex(),
+          addr.hex()
+        ));
+      }
       env.blobs.insert(addr, bytes.to_vec());
     }
 
@@ -1732,7 +1761,7 @@ impl Env {
     let num_names = get_u64(&mut buf)?;
     let mut names_lookup: FxHashMap<Address, Name> = FxHashMap::default();
     let mut name_reverse_index: NameReverseIndex =
-      Vec::with_capacity(num_names as usize + 1);
+      Vec::with_capacity(capped_capacity(num_names, buf) + 1);
     let anon_addr = Address::from_blake3_hash(*Name::anon().get_hash());
     names_lookup.insert(anon_addr, Name::anon());
     for _ in 0..num_names {

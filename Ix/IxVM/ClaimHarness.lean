@@ -85,13 +85,17 @@ def loadSharedIxonEnv (names : Array Lean.Name) (leanEnv : Lean.Environment) :
   let rawEnv ← Ix.CompileM.rsCompileEnvFFI deduped.toList
   pure rawEnv.toEnv
 
-/-- Walk the Constant ref-graph from `target` to compute the set of
-    addresses needed to type-check it. Mirrors Aiur's `load_with_deps`:
-    follow `Constant.refs` plus the projection's `block_addr` (the parent
-    Muts wrapper) for IPrj/CPrj/RPrj/DPrj. -/
-partial def closureFrom (env : Ixon.Env) (target : Address) : Std.HashSet Address := Id.run do
+/-- Walk the Constant ref-graph from every target to compute the set of
+    addresses needed to type-check them, with one shared visited set.
+    Mirrors Aiur's `load_with_deps`: follow `Constant.refs` plus the
+    projection's `block_addr` (the parent Muts wrapper) for
+    IPrj/CPrj/RPrj/DPrj. Unioning per-root closures instead would
+    re-traverse dependencies shared between roots once per root —
+    quadratic when the roots are a shard's owned constants over a
+    heavily-shared prelude. -/
+partial def closureFromAll (env : Ixon.Env) (targets : Array Address) : Std.HashSet Address := Id.run do
   let mut visited : Std.HashSet Address := {}
-  let mut worklist : Array Address := #[target]
+  let mut worklist : Array Address := targets
   while !worklist.isEmpty do
     let addr := worklist.back!
     worklist := worklist.pop
@@ -106,6 +110,9 @@ partial def closureFrom (env : Ixon.Env) (target : Address) : Std.HashSet Addres
     | .rPrj p | .dPrj p => worklist := worklist.push p.block
     | _ => pure ()
   return visited
+
+@[inline] def closureFrom (env : Ixon.Env) (target : Address) : Std.HashSet Address :=
+  closureFromAll env #[target]
 
 /-- Build the `ixon_serde_test` / `ixon_serde_blake3_bench` IOBuffer:
     one entry per const, keyed by its index. Returns the buffer and the
@@ -250,12 +257,9 @@ def buildClaimWitness (env : Ixon.Env) (claim : Ix.Claim)
 def shardCheckEnvClaim (env : Ixon.Env) (owned : Array Address) :
     Except String (Ix.Claim × Std.HashSet Address × Std.HashMap Address Ix.AssumptionTree) := do
   let ownedSet : Std.HashSet Address := owned.foldl (·.insert ·) {}
-  let closure : Std.HashSet Address := Id.run do
-    let mut s : Std.HashSet Address := {}
-    for a in owned do
-      for x in (closureFrom env a).toArray do
-        s := s.insert x
-    return s
+  -- One multi-root walk; per-owner closures re-traverse the shared
+  -- prelude once per owned constant (quadratic at shard scale).
+  let closure : Std.HashSet Address := closureFromAll env owned
   let frontier : Array Address :=
     closure.toArray.filter (fun a => !ownedSet.contains a)
   let some envTree := Ix.AssumptionTree.canonical closure.toArray

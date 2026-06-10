@@ -124,6 +124,15 @@ pub struct GeneratedRecursor<M: KernelMode> {
   pub ind_addr: Address,
   pub ty: KExpr<M>,
   pub rules: Vec<RecRule<M>>,
+  /// Canonical arity split (params, motives, minors, indices). A def-eq
+  /// check on `ty` only constrains the *sum* of leading binders; the iota
+  /// reducer (`whnf` major-index slicing) trusts the individual scalars,
+  /// so they must be validated against this canonical split, not just the
+  /// total. See `check_recursor_member`.
+  pub params: u64,
+  pub motives: u64,
+  pub minors: u64,
+  pub indices: u64,
 }
 
 /// Which nested-auxiliary order generated recursor validation should use.

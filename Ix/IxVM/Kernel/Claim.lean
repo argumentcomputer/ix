@@ -808,29 +808,52 @@ def claim := ⟦
   -- check_all variant that skips positions whose addr is in the
   -- supplied assumption-leaf list.
   -- ============================================================================
+  -- Membership map over the assumption leaves, keyed by ptr_val. Sound by
+  -- the same invariant as `build_addr_pos_map` (Ingress.lean): one pointer
+  -- maps to one content, so a ptr hit ⟹ the address IS a leaf (no false
+  -- skip); a de-interned pointer reads as absent, which here only means
+  -- the constant gets CHECKED instead of skipped — conservative. Honest
+  -- provers intern, so honest traces never miss. Replaces a per-constant
+  -- linear `addr_in_list` scan that cost O(closure × frontier) rows at
+  -- shard scale; this is O(F log F) to build + O(log F) per constant.
+  fn build_asm_leaf_map(leaves: List‹Addr›) -> RBTreeMap‹G› {
+    match load(leaves) {
+      ListNode.Nil => RBTreeMap.Nil,
+      ListNode.Cons(a, rest) =>
+        rbtree_map_insert(ptr_val(a), 1, build_asm_leaf_map(rest)),
+    }
+  }
+
   fn check_all_skipping(consts: List‹&KConstantInfo›,
                         top: List‹&KConstantInfo›,
                         addrs: List‹Addr›,
                         asm_leaves: List‹Addr›) {
     let _ = check_canonical_block_sort(top);
-    check_all_skipping_iter(consts, top, addrs, asm_leaves, 0)
+    let asm_map = store(build_asm_leaf_map(asm_leaves));
+    check_all_skipping_iter(consts, top, addrs, addrs, asm_map, 0)
   }
 
+  -- `cur_addrs` is the suffix of `addrs` aligned with `consts` — walked in
+  -- lockstep instead of `list_lookup(addrs, pos)`, which re-walks the list
+  -- prefix every iteration (quadratic in closure size on its own).
   fn check_all_skipping_iter(consts: List‹&KConstantInfo›,
                              top: List‹&KConstantInfo›,
                              addrs: List‹Addr›,
-                             asm_leaves: List‹Addr›,
+                             cur_addrs: List‹Addr›,
+                             asm_map: &RBTreeMap‹G›,
                              pos: G) {
     match load(consts) {
       ListNode.Nil => (),
       ListNode.Cons(&ci, rest) =>
-        let addr = list_lookup(addrs, pos);
-        match addr_in_list(addr, asm_leaves) {
-          1 =>
-            check_all_skipping_iter(rest, top, addrs, asm_leaves, pos + 1),
-          _ =>
-            let _ = check_const(ci, pos, top, addrs);
-            check_all_skipping_iter(rest, top, addrs, asm_leaves, pos + 1),
+        match load(cur_addrs) {
+          ListNode.Cons(addr, rest_addrs) =>
+            match rbtree_map_lookup_or_default(ptr_val(addr), load(asm_map), 0) {
+              0 =>
+                let _ = check_const(ci, pos, top, addrs);
+                check_all_skipping_iter(rest, top, addrs, rest_addrs, asm_map, pos + 1),
+              _ =>
+                check_all_skipping_iter(rest, top, addrs, rest_addrs, asm_map, pos + 1),
+            },
         },
     }
   }

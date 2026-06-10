@@ -188,6 +188,16 @@ impl Hypergraph {
     if num_shards <= 1 {
       return vec![0u32; n]; // everything in shard 0
     }
+    // Infeasible request: more shards than blocks. `rec_bisect`'s leaf
+    // allocation (`ideal.clamp(lo, hi)`) requires `k ≤ |sub|` and panics
+    // otherwise (`lo > hi`); shards cannot be smaller than one block, so
+    // cap the request at one-block-per-shard instead of aborting.
+    if num_shards > n {
+      eprintln!(
+        "[shard] requested {num_shards} shards for {n} blocks; producing {n} single-block shards"
+      );
+      return (0..n as u32).collect();
+    }
     // Cap each block's balance weight at the ideal per-shard heartbeats
     // (total / num_shards). This keeps balancing heartbeat-aware while a balanced
     // split is achievable (few shards), but stops a single oversized *atomic*
@@ -1066,9 +1076,15 @@ pub struct ShardInfo {
   /// Sum of `serialized_size` over `foreign_blocks` (this shard's share of the
   /// cross-shard ingress objective).
   pub cross_ingress: u64,
-  /// Sound assumption-tree root for this shard's conditional proof: the Merkle
-  /// root over the foreign part of the shard's static reference closure. `None`
-  /// until populated by the env-aware layer (the pure partitioner has no `Env`).
+  /// Assumption-tree root *candidate* for this shard's conditional proof.
+  ///
+  /// As populated by `shard_esp`, this is the Merkle root over
+  /// `foreign_blocks` — the **delta-tight** set the cost model observed —
+  /// NOT the foreign part of the shard's full static reference closure.
+  /// The sound static root required for proof generation needs the `.ixe`
+  /// env and is reconstructed by the env-aware layer (`plans/sharding.md`
+  /// §4); nothing on the proving path may consume this field as if it were
+  /// that root. `None` until populated.
   pub assumption_root: Option<Address>,
 }
 
@@ -1304,8 +1320,13 @@ pub fn shard_esp(
   let profile = BlockProfile::from_bytes(&bytes)
     .map_err(|e| format!("parse {esp_path}: {e}"))?;
   let h = Hypergraph::from_profile(&profile);
-  let shard_of = h.partition(num_shards, balance);
-  let mut manifest = ShardManifest::build(&profile, &shard_of, num_shards);
+  // Shards cannot be smaller than one block; an over-asked partition is
+  // capped (see `Hypergraph::partition`), so size the manifest by the
+  // effective count to avoid trailing empty shards.
+  let effective_shards = num_shards.min(profile.num_blocks()).max(1);
+  let shard_of = h.partition(effective_shards, balance);
+  let mut manifest =
+    ShardManifest::build(&profile, &shard_of, effective_shards);
   for shard in &mut manifest.shards {
     shard.assumption_root =
       crate::ix::ixon::merkle::merkle_root_canonical(&shard.foreign_blocks);
