@@ -141,6 +141,18 @@ private def nameOfString (str : String) : Lean.Name :=
 public def kernelChecks (env : Lean.Environment) : IO (List AiurTestCase) :=
   kernelCheckNames.map nameOfString |>.mapM (kernelCheck · env)
 
+/-- One end-to-end **prove → verify** of a real kernel `Check` claim — the
+    product's core path. Every other case in this suite is
+    `executionOnly`, so without this one the kernel program is never
+    *proven* and a certificate is never cryptographically *verified*
+    anywhere in the test suite: an unsoundness or breakage in
+    kernel-program proving would ship undetected. `HEq` keeps the closure
+    (and proving time) small. -/
+public def kernelProveCheck (env : Lean.Environment) : IO AiurTestCase := do
+  let tc ← kernelCheck `HEq env
+  pure { tc with label := s!"{tc.label} (prove+verify)"
+                 executionOnly := false }
+
 /-! ## Claim variant smoke tests
 
 Each builds an `AiurTestCase` exercising one of the non-`Check-None`

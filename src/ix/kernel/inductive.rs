@@ -2351,6 +2351,8 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
 
     // Generate recursor type for each ORIGINAL inductive (not auxiliaries).
     // The recursor type spans all flat block members (motives, minors).
+    let gen_motives = flat.len() as u64;
+    let gen_minors: u64 = flat.iter().map(|m| m.ctors.len() as u64).sum();
     let mut generated = Vec::new();
     for di in 0..n_originals {
       let rec_type = self.build_rec_type(
@@ -2368,6 +2370,10 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
         // Rules are populated later from the recursor block by
         // `populate_recursor_rules_from_block`.
         rules: vec![],
+        params: n_params,
+        motives: gen_motives,
+        minors: gen_minors,
+        indices: flat[di].n_indices,
       });
     }
 
@@ -2388,6 +2394,10 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
         // Rules are populated later from the recursor block by
         // `populate_recursor_rules_from_block`.
         rules: vec![],
+        params: n_params,
+        motives: gen_motives,
+        minors: gen_minors,
+        indices: flat[di].n_indices,
       });
     }
 
@@ -4243,77 +4253,111 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
       }
     }
 
-    let gen_rec = selected_idx.map(|i| &generated[i]);
+    // Resolve the matching canonical recursor by FULL type def-eq: try the
+    // selected candidate first, then every other signature match. Nested
+    // auxiliaries can contain several recursors with the same external
+    // major signature, and the positional/first-match selection above can
+    // pick the wrong peer. (This replaces a former `Canonical && motives>1`
+    // fallback to `check_recursor_coherence`, which skipped the type and
+    // rule comparison entirely — accepting a stored recursor whose type
+    // matched no canonical form. Acceptance now always requires a full
+    // type + rules match against a generated recursor.)
+    let mut candidate_order: Vec<usize> = Vec::new();
+    if let Some(i) = selected_idx {
+      candidate_order.push(i);
+    }
+    for &gi in &signature_matches {
+      if Some(gi) != selected_idx {
+        candidate_order.push(gi);
+      }
+    }
+    let mut matched_idx: Option<usize> = None;
+    for gi in candidate_order {
+      if self.is_def_eq(&generated[gi].ty, &ty)? {
+        matched_idx = Some(gi);
+        break;
+      }
+    }
+
+    if matched_idx.is_none()
+      && let Some(diff_idx) = selected_idx
+    {
+      // When `IX_TYPE_DIFF` is set, walk the binder chain to find the
+      // first divergent binder and print a readable gen/sto diff (against
+      // the originally selected candidate). Off by default: in
+      // alpha-collapse regimes or for mutual blocks with near-identical
+      // peers, every such mismatch ends up in `stt.ungrounded`
+      // (non-fatal), and printing them all drowns stderr under tens of
+      // thousands of lines. The walk only runs when the env var is set to
+      // keep the common path cheap.
+      //
+      // Uses `KExpr::Display` (Name.Pretty@shorthex for consts,
+      // `#idx` / `name` for vars, `(f a b …)` for spines, etc.) —
+      // the same formatter `TcError::AppTypeMismatch` uses — so the
+      // output format matches the rest of the kernel's diagnostic
+      // surface.
+      if *IX_TYPE_DIFF {
+        let mut gc = generated[diff_idx].ty.clone();
+        let mut sc = ty.clone();
+        let mut bi = 0u64;
+        loop {
+          match (gc.data(), sc.data()) {
+            (
+              ExprData::All(_, _, gd, gb, _),
+              ExprData::All(_, _, sd, sb, _),
+            ) => {
+              if !self.is_def_eq(gd, sd).unwrap_or(false) {
+                let label = if bi < params {
+                  "param"
+                } else if bi < params + motives {
+                  "motive"
+                } else if bi < params + motives + minors {
+                  "minor"
+                } else {
+                  "idx/major"
+                };
+                eprintln!(
+                  "[type diff] binder {bi} ({label}) DIFFERS (p={params} m={motives} min={minors})"
+                );
+                eprintln!("  gen: {gd}");
+                eprintln!("  sto: {sd}");
+                break;
+              }
+              let _ = self.push_fvar_decl_anon(gd.clone());
+              gc = gb.clone();
+              sc = sb.clone();
+              bi += 1;
+            },
+            _ => {
+              eprintln!("[type diff] return differs at {bi}");
+              eprintln!("  gen: {gc}");
+              eprintln!("  sto: {sc}");
+              break;
+            },
+          }
+        }
+        for _ in 0..bi {
+          self.lctx.truncate(self.lctx.len() - 1);
+        }
+      }
+      return Err(TcError::Other("check_recursor: type mismatch".into()));
+    }
+
+    let gen_rec = matched_idx.map(|i| &generated[i]);
     match gen_rec {
       Some(g) => {
-        if !self.is_def_eq(&g.ty, &ty)? {
-          let selected_by_signature =
-            selected_idx.is_some_and(|idx| signature_matches.contains(&idx));
-          if self.env.recursor_aux_order == RecursorAuxOrder::Canonical
-            && motives > 1
-            && selected_by_signature
-          {
-            return self.check_recursor_coherence(id);
-          }
-
-          // When `IX_TYPE_DIFF` is set, walk the binder chain to find the
-          // first divergent binder and print a readable gen/sto diff. Off
-          // by default: in alpha-collapse regimes or for mutual blocks
-          // with near-identical peers, every such mismatch ends up in
-          // `stt.ungrounded` (non-fatal), and printing them all drowns
-          // stderr under tens of thousands of lines. The walk only runs
-          // when the env var is set to keep the common path cheap.
-          //
-          // Uses `KExpr::Display` (Name.Pretty@shorthex for consts,
-          // `#idx` / `name` for vars, `(f a b …)` for spines, etc.) —
-          // the same formatter `TcError::AppTypeMismatch` uses — so the
-          // output format matches the rest of the kernel's diagnostic
-          // surface.
-          if *IX_TYPE_DIFF {
-            let mut gc = g.ty.clone();
-            let mut sc = ty.clone();
-            let mut bi = 0u64;
-            loop {
-              match (gc.data(), sc.data()) {
-                (
-                  ExprData::All(_, _, gd, gb, _),
-                  ExprData::All(_, _, sd, sb, _),
-                ) => {
-                  if !self.is_def_eq(gd, sd).unwrap_or(false) {
-                    let label = if bi < params {
-                      "param"
-                    } else if bi < params + motives {
-                      "motive"
-                    } else if bi < params + motives + minors {
-                      "minor"
-                    } else {
-                      "idx/major"
-                    };
-                    eprintln!(
-                      "[type diff] binder {bi} ({label}) DIFFERS (p={params} m={motives} min={minors})"
-                    );
-                    eprintln!("  gen: {gd}");
-                    eprintln!("  sto: {sd}");
-                    break;
-                  }
-                  let _ = self.push_fvar_decl_anon(gd.clone());
-                  gc = gb.clone();
-                  sc = sb.clone();
-                  bi += 1;
-                },
-                _ => {
-                  eprintln!("[type diff] return differs at {bi}");
-                  eprintln!("  gen: {gc}");
-                  eprintln!("  sto: {sc}");
-                  break;
-                },
-              }
-            }
-            for _ in 0..bi {
-              self.lctx.truncate(self.lctx.len() - 1);
-            }
-          }
-          return Err(TcError::Other("check_recursor: type mismatch".into()));
+        // The iota reducer slices the application spine using the stored
+        // scalar split (params/motives/minors/indices); the type def-eq
+        // above constrains only their *sum*, so a shifted split would
+        // still pass and make `whnf` apply the canonical RHS to the wrong
+        // argument list. Pin the stored scalars to the canonical split.
+        if (params, motives, minors, indices)
+          != (g.params, g.motives, g.minors, g.indices)
+        {
+          return Err(TcError::Other(format!(
+            "check_recursor: arity split mismatch: stored (p={params} m={motives} min={minors} i={indices}) vs canonical (p={} m={} min={} i={})",
+            g.params, g.motives, g.minors, g.indices
+          )));
         }
 
         let gen_rules = g.rules.clone();

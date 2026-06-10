@@ -140,40 +140,85 @@ fn get_expr_references<'a>(
   expr: &'a Expr,
   cache: &mut FxHashMap<&'a Expr, NameSet>,
 ) -> NameSet {
-  if let Some(cached) = cache.get(expr) {
-    return cached.clone();
+  // Iterative post-order walk: this runs on default-size rayon worker
+  // stacks, where structural recursion over mathlib-scale (or untrusted)
+  // terms can overflow — a hard process abort under `panic = "abort"`.
+  enum Walk<'a> {
+    Visit(&'a Expr),
+    Finish(&'a Expr),
   }
-  let name_set = match expr.as_data() {
-    ExprData::Const(name, ..) => NameSet::from_iter([name.clone()]),
-    ExprData::App(f, a, _) => {
-      let f_name_set = get_expr_references(f, cache);
-      let a_name_set = get_expr_references(a, cache);
-      merge_name_sets(f_name_set, a_name_set)
-    },
-    ExprData::Lam(_, typ, body, ..) | ExprData::ForallE(_, typ, body, ..) => {
-      let typ_name_set = get_expr_references(typ, cache);
-      let body_name_set = get_expr_references(body, cache);
-      merge_name_sets(typ_name_set, body_name_set)
-    },
-    ExprData::LetE(_, typ, value, body, ..) => {
-      let typ_name_set = get_expr_references(typ, cache);
-      let value_name_set = get_expr_references(value, cache);
-      let body_name_set = get_expr_references(body, cache);
-      merge_name_sets(
-        typ_name_set,
-        merge_name_sets(value_name_set, body_name_set),
-      )
-    },
-    ExprData::Mdata(_, expr, _) => get_expr_references(expr, cache),
-    ExprData::Proj(type_name, _, expr, _) => {
-      let mut name_set = get_expr_references(expr, cache);
-      name_set.insert(type_name.clone());
-      name_set
-    },
-    _ => NameSet::default(),
-  };
-  cache.insert(expr, name_set.clone());
-  name_set
+  let mut work: Vec<Walk<'a>> = vec![Walk::Visit(expr)];
+  let mut out: Vec<NameSet> = Vec::new();
+  while let Some(w) = work.pop() {
+    match w {
+      Walk::Visit(e) => {
+        if let Some(cached) = cache.get(e) {
+          out.push(cached.clone());
+          continue;
+        }
+        // Children are pushed in reverse so they complete left-to-right;
+        // `Finish` pops their sets right-to-left.
+        match e.as_data() {
+          ExprData::App(f, a, _) => {
+            work.push(Walk::Finish(e));
+            work.push(Walk::Visit(a));
+            work.push(Walk::Visit(f));
+          },
+          ExprData::Lam(_, typ, body, ..)
+          | ExprData::ForallE(_, typ, body, ..) => {
+            work.push(Walk::Finish(e));
+            work.push(Walk::Visit(body));
+            work.push(Walk::Visit(typ));
+          },
+          ExprData::LetE(_, typ, value, body, ..) => {
+            work.push(Walk::Finish(e));
+            work.push(Walk::Visit(body));
+            work.push(Walk::Visit(value));
+            work.push(Walk::Visit(typ));
+          },
+          ExprData::Mdata(_, inner, _) | ExprData::Proj(_, _, inner, _) => {
+            work.push(Walk::Finish(e));
+            work.push(Walk::Visit(inner));
+          },
+          ExprData::Const(name, ..) => {
+            let name_set = NameSet::from_iter([name.clone()]);
+            cache.insert(e, name_set.clone());
+            out.push(name_set);
+          },
+          _ => {
+            let name_set = NameSet::default();
+            cache.insert(e, name_set.clone());
+            out.push(name_set);
+          },
+        }
+      },
+      Walk::Finish(e) => {
+        let name_set = match e.as_data() {
+          ExprData::App(..) | ExprData::Lam(..) | ExprData::ForallE(..) => {
+            let right = out.pop().expect("walk: right child");
+            let left = out.pop().expect("walk: left child");
+            merge_name_sets(left, right)
+          },
+          ExprData::LetE(..) => {
+            let body = out.pop().expect("walk: let body");
+            let value = out.pop().expect("walk: let value");
+            let typ = out.pop().expect("walk: let type");
+            merge_name_sets(typ, merge_name_sets(value, body))
+          },
+          ExprData::Mdata(..) => out.pop().expect("walk: mdata inner"),
+          ExprData::Proj(type_name, ..) => {
+            let mut name_set = out.pop().expect("walk: proj inner");
+            name_set.insert(type_name.clone());
+            name_set
+          },
+          _ => unreachable!("leaves are finished at Visit"),
+        };
+        cache.insert(e, name_set.clone());
+        out.push(name_set);
+      },
+    }
+  }
+  out.pop().unwrap_or_default()
 }
 
 #[cfg(test)]

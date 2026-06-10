@@ -11,12 +11,16 @@ inductive StoreError
 | ioError (e: IO.Error)
 | ixonError (e: String)
 | noHome
+| corrupt (expected actual : Address)
 
 def storeErrorToIOError : StoreError -> IO.Error
 | .unknownAddress a => IO.Error.userError s!"unknown address {repr a}"
 | .ioError e => e
 | .ixonError e => IO.Error.userError s!"ixon error {e}"
 | .noHome => IO.Error.userError s!"no HOME environment variable"
+| .corrupt e a =>
+  IO.Error.userError
+    s!"store corruption: content stored under {repr e} hashes to {repr a}"
 
 abbrev StoreIO := EIO StoreError
 
@@ -65,9 +69,24 @@ def writeAt (addr: Address) (bytes: ByteArray) : StoreIO Unit := do
   let path <- storePath addr
   IO.toEIO .ioError (IO.FS.writeBinFile path bytes)
 
+/-- Raw read with NO integrity check. Only appropriate for `writeAt`-keyed
+    content whose key is not `blake3(bytes)` (e.g. assumption-tree blobs
+    keyed by merkle root) — callers of those must verify against their
+    domain-specific key. For `Store.write`-keyed content use
+    `readVerified`. -/
 def read (a: Address) : StoreIO ByteArray := do
   let path <- storePath a
   IO.toEIO .ioError (IO.FS.readBinFile path)
+
+/-- Read a blob written by `Store.write` (keyed by `blake3(bytes)`),
+    re-verifying the content hash. `~/.ix/store` is a plain directory with
+    no integrity protection of its own, so an unverified read lets on-disk
+    tampering feed the caller arbitrary bytes under a trusted address. -/
+def readVerified (a: Address) : StoreIO ByteArray := do
+  let bytes ← read a
+  let actual := Address.blake3 bytes
+  if actual == a then return bytes
+  else throw (.corrupt a actual)
 
 end Store
 

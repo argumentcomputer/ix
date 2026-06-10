@@ -122,6 +122,17 @@ def pushOp (op : Bytecode.Op) (size : Nat := 1) : CompileM (Array Bytecode.ValId
 def extractOps : CompileM (Array Bytecode.Op) :=
   modifyGet fun s => (s.ops, {s with ops := #[]})
 
+/-- Look up a local's value indices. A missing binding here is a compiler
+    bug (`Check` guarantees scoping); the old silent defaults (`#[0]`,
+    `#[]`) compiled such bugs into reads of arbitrary value slot 0 or
+    empty values — a miscompile of the *proven program* — instead of
+    failing loudly. -/
+def lookupBinding (bindings : Std.HashMap Local (Array Bytecode.ValIdx))
+    (x : Local) (who : String) : CompileM (Array Bytecode.ValIdx) :=
+  match bindings[x]? with
+  | some idxs => pure idxs
+  | none => throw s!"{who}: unbound local `{repr x}`"
+
 open Concrete in
 mutual
 
@@ -141,19 +152,22 @@ def toIndex
     let size ← match typSize layoutMap dstTyp with
       | .error e => throw e
       | .ok n => pure n
-    let ptrIdxs := bindings[src]?.getD #[0]
+    let ptrIdxs ← lookupBinding bindings src "letLoad"
     let loaded ← pushOp (.load size ptrIdxs[0]!) size
     toIndex layoutMap (bindings.insert dst loaded) bod
-  | .var _ _ name => pure (bindings[name]?.getD #[])
+  | .var _ _ name => lookupBinding bindings name "var"
   | .ref _ _ name => match layoutMap[name]? with
     | some (.function layout) => do
       pushOp (.const (.ofNat layout.index))
     | some (.constructor layout) => do
       let size := layout.size
-      let paddingOp := Bytecode.Op.const (.ofNat layout.index)
-      let index ← pushOp paddingOp
+      let index ← pushOp (.const (.ofNat layout.index))
       if index.size < size then
-        let padding := (← pushOp paddingOp)[0]!
+        -- Pad with zeros, matching the `.app` lowering and
+        -- `flattenValue`: padding with the tag value gives the same
+        -- logical value two flat representations, and `assertEq`/`store`
+        -- compare full arrays.
+        let padding := (← pushOp (.const (.ofNat 0)))[0]!
         pure $ index ++ Array.replicate (size - index.size) padding
       else
         pure index
@@ -381,7 +395,7 @@ def Concrete.Term.compile
       (Concrete.Term.match matchTyp valEscapes scrut cases defaultOpt).compile
         returnTyp layoutMap bindings yieldCtrl
     else
-      let idxs := bindings[scrut]?.getD #[0]
+      let idxs ← lookupBinding bindings scrut "letVar-match scrutinee"
       let ops ← extractOps
       let (matchCases, defaultBlock) ← cases.foldlM (init := (#[], .none))
         (Concrete.addCase layoutMap bindings returnTyp idxs (yieldCtrl := true))
@@ -410,7 +424,7 @@ def Concrete.Term.compile
       (Concrete.Term.match matchTyp valEscapes scrut cases defaultOpt).compile
         returnTyp layoutMap bindings yieldCtrl
     else
-      let idxs := bindings[scrut]?.getD #[0]
+      let idxs ← lookupBinding bindings scrut "letWild-match scrutinee"
       let ops ← extractOps
       let (matchCases, defaultBlock) ← cases.foldlM (init := (#[], .none))
         (Concrete.addCase layoutMap bindings returnTyp idxs (yieldCtrl := true))
@@ -441,7 +455,7 @@ def Concrete.Term.compile
     let size ← match typSize layoutMap dstTyp with
       | .error e => throw e
       | .ok n => pure n
-    let ptrIdxs := bindings[src]?.getD #[0]
+    let ptrIdxs ← lookupBinding bindings src "letLoad"
     let loaded ← pushOp (.load size ptrIdxs[0]!) size
     bod.compile returnTyp layoutMap (bindings.insert dst loaded) yieldCtrl
   | .debug _ _ label term ret => do
@@ -466,7 +480,7 @@ def Concrete.Term.compile
     modify fun stt => { stt with ops := stt.ops.push (.ioWrite channel[0]! data) }
     ret.compile returnTyp layoutMap bindings yieldCtrl
   | .match _ _ scrut cases defaultOpt => do
-    let idxs := bindings[scrut]?.getD #[0]
+    let idxs ← lookupBinding bindings scrut "match scrutinee"
     let ops ← extractOps
     let (bcCases, defaultBlock) ← cases.foldlM (init := (#[], .none))
       (Concrete.addCase layoutMap bindings returnTyp idxs yieldCtrl)

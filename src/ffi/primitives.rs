@@ -66,7 +66,7 @@ pub extern "C" fn rs_roundtrip_dhashmap_raw_nat_nat(
   }
 
   // Rebuild buckets
-  let new_buckets = LeanArray::alloc(num_buckets);
+  let mut new_buckets = LeanArray::alloc(num_buckets);
   let nil = LeanOwned::box_usize(0);
   for i in 0..num_buckets {
     new_buckets.set(i, nil.clone());
@@ -88,7 +88,10 @@ pub extern "C" fn rs_roundtrip_dhashmap_raw_nat_nat(
     new_bucket.set(0, Nat::to_lean(k));
     new_bucket.set(1, Nat::to_lean(v));
     new_bucket.set(2, old_bucket);
-    new_buckets.set(bucket_idx, new_bucket);
+    // `uset`, not `set`: `set` is a raw slot write that never releases the
+    // reference the slot held to the previous bucket list, leaking one
+    // cons cell per hash collision; `lean_array_uset` decrements it.
+    new_buckets = new_buckets.uset(bucket_idx, new_bucket);
   }
 
   // Build Raw

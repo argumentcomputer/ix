@@ -12,12 +12,19 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{EnvFilter, fmt};
 
-use crate::iroh::common::{GetResponse, PutResponse, Request, Response};
+use crate::iroh::common::{ALPN, GetResponse, PutResponse, Request, Response};
 
-// An example ALPN that we are using to communicate over the `Endpoint`
-const EXAMPLE_ALPN: &[u8] = b"n0/iroh/examples/magic/0";
 // Maximum number of characters to read from the client. Connection automatically closed if this is exceeded
 const READ_SIZE_LIMIT: usize = 100_000_000;
+// Maximum number of concurrently-served connections. Connections beyond
+// this are dropped at accept time so one set of slow/hostile peers cannot
+// grow server memory without bound (each stream may buffer up to
+// `READ_SIZE_LIMIT`).
+const MAX_CONNECTIONS: usize = 64;
+// Cap on total bytes pinned in the in-memory store. PUTs past this are
+// refused (fail-closed) rather than growing memory unboundedly; eviction
+// policy is left for the future file-backed store.
+const MAX_STORE_BYTES: usize = 1 << 30; // 1 GiB
 
 // Largely taken from https://github.com/n0-computer/iroh/blob/main/iroh/examples/listen.rs
 pub async fn serve() -> n0_error::Result<()> {
@@ -38,7 +45,7 @@ pub async fn serve() -> n0_error::Result<()> {
         // The secret key is used to authenticate with other nodes. The PublicKey portion of this secret key is how we identify nodes, often referred to as the `node_id` in our codebase.
         .secret_key(secret_key)
         // set the ALPN protocols this endpoint will accept on incoming connections
-        .alpns(vec![EXAMPLE_ALPN.to_vec()])
+        .alpns(vec![ALPN.to_vec()])
         // `RelayMode::Default` means that we will use the default relay servers to holepunch and relay.
         // Use `RelayMode::Custom` to pass in a `RelayMap` with custom relay urls.
         // Use `RelayMode::Disable` to disable holepunching and relaying over HTTPS
@@ -79,8 +86,13 @@ pub async fn serve() -> n0_error::Result<()> {
   // TODO: Switch to dashmap for performance or elsa/frozen map for safe append-only multithreading
   // TODO: Add a backing local file store rather than keeping data in-memory, and enable garbage
   // collection
-  let store: Arc<Mutex<BTreeMap<String, Vec<u8>>>> =
-    Arc::new(Mutex::new(BTreeMap::new()));
+  //
+  // The map holds pinned blobs; the usize tracks total resident bytes so
+  // PUTs can be refused once `MAX_STORE_BYTES` is reached.
+  let store: Arc<Mutex<(BTreeMap<String, Vec<u8>>, usize)>> =
+    Arc::new(Mutex::new((BTreeMap::new(), 0)));
+  // Bounds concurrently-served connections; see `MAX_CONNECTIONS`.
+  let conn_permits = Arc::new(tokio::sync::Semaphore::new(MAX_CONNECTIONS));
   // accept incoming connections, returns a normal QUIC connection
   while let Some(incoming) = endpoint.accept().await {
     let mut accepting = match incoming.accept() {
@@ -92,31 +104,66 @@ pub async fn serve() -> n0_error::Result<()> {
         continue;
       },
     };
-    let alpn = accepting.alpn().await?;
-    let conn = accepting.await?;
-    let endpoint_id = conn.remote_id();
-    info!(
-      "new connection from {endpoint_id} with ALPN {}",
-      String::from_utf8_lossy(&alpn),
-    );
+    let Ok(permit) = conn_permits.clone().try_acquire_owned() else {
+      warn!(
+        "connection limit ({MAX_CONNECTIONS}) reached, dropping incoming connection"
+      );
+      continue;
+    };
     let store_clone = store.clone();
-    // spawn a task to handle reading and writing off of the connection
+    // Spawn a task to handle the handshake plus reading and writing off of
+    // the connection. Everything per-peer lives inside the task: an
+    // `await?` in the accept loop lets a single failed or slow peer
+    // handshake shut down — or head-of-line-block — the whole server.
     tokio::spawn(async move {
+      let _permit = permit;
+      let alpn = accepting.alpn().await?;
+      let conn = accepting.await?;
+      let endpoint_id = conn.remote_id();
+      info!(
+        "new connection from {endpoint_id} with ALPN {}",
+        String::from_utf8_lossy(&alpn),
+      );
       // accept a bi-directional QUIC connection
       // use the `quinn` APIs to send and recv content
       let (mut send, mut recv) = conn.accept_bi().await.anyerr()?;
       debug!("accepted bi stream, waiting for data...");
       let message = recv.read_to_end(READ_SIZE_LIMIT).await.anyerr()?;
-      let request = Request::from_bytes(&message);
+      // Untrusted bytes: a malformed frame must only cost this connection,
+      // never panic (with `panic = "abort"` that would kill the node).
+      let request = match Request::from_bytes(&message) {
+        Ok(request) => request,
+        Err(err) => {
+          warn!("dropping connection from {endpoint_id}: {err}");
+          conn.close(1u32.into(), b"malformed request");
+          return n0_error::Ok(());
+        },
+      };
 
       let response: Response = match request {
         Request::Put(put_request) => {
           let hash =
             blake3::hash(&put_request.bytes).to_hex().as_str().to_owned();
-          store_clone.lock().unwrap().insert(hash.clone(), put_request.bytes);
-          println!("received PUT request for bytes with hash {hash}");
-          let message = format!("pinned hash {hash}\nat endpoint ID {me}");
-          Response::Put(PutResponse { is_err: false, message, hash })
+          let len = put_request.bytes.len();
+          let mut guard = store_clone.lock().unwrap();
+          let already_pinned = guard.0.contains_key(&hash);
+          if !already_pinned && guard.1.saturating_add(len) > MAX_STORE_BYTES {
+            let message = format!(
+              "error: store full ({} bytes pinned, cap {MAX_STORE_BYTES})",
+              guard.1
+            );
+            drop(guard);
+            Response::Put(PutResponse { is_err: true, message, hash })
+          } else {
+            if !already_pinned {
+              guard.1 += len;
+              guard.0.insert(hash.clone(), put_request.bytes);
+            }
+            drop(guard);
+            println!("received PUT request for bytes with hash {hash}");
+            let message = format!("pinned hash {hash}\nat endpoint ID {me}");
+            Response::Put(PutResponse { is_err: false, message, hash })
+          }
         },
         Request::Get(get_request) => {
           println!(
@@ -124,7 +171,7 @@ pub async fn serve() -> n0_error::Result<()> {
             get_request.hash
           );
           if let Some(bytes) =
-            store_clone.lock().unwrap().get(&get_request.hash)
+            store_clone.lock().unwrap().0.get(&get_request.hash)
           {
             let message =
               format!("retrieved bytes for hash {}", get_request.hash);

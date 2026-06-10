@@ -2485,13 +2485,14 @@ fn compute_is_large_and_k(
     })?;
 
   // Spec-level override: non-Prop inductives always get large elimination
-  // (Lean C++ `inductive.cpp:539-548`). Our kernel's `is_large_eliminator`
-  // only early-returns when the result level is *provably* non-zero; a
-  // Param universe that happens to be non-zero syntactically (e.g., u+1)
-  // falls through to the single-ctor check and can come back "small".
-  // Correct that here using the WHNF-reduced result level.
+  // (Lean C++ `inductive.cpp:539-548`) — where "non-Prop" means the result
+  // level `is_not_zero`, i.e. *provably* non-zero under every parameter
+  // assignment (`u+1`, `max(u,1)`, …). A bare `Param`/`Max`/`IMax` level
+  // that merely *might* be non-zero must NOT force large elimination: such
+  // an inductive can be instantiated at Prop, where unrestricted large
+  // elimination is unsound. `is_never_zero` is exactly Lean's `is_not_zero`.
   let is_large =
-    if !is_large && !result_kuniv.is_zero() { true } else { is_large };
+    if !is_large && result_kuniv.is_never_zero() { true } else { is_large };
 
   // Prop determination: use the WHNF-reduced kernel-derived level, not the
   // raw LeanExpr-syntactic path. For reducible-alias targets the syntactic

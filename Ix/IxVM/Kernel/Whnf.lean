@@ -193,8 +193,21 @@ def whnf := ⟦
                     let cci = load(list_lookup(top, cidx));
                     match cci {
                       KConstantInfo.Ctor(_, _, _, _, nparams, _, _) =>
-                        let field = list_lookup_or_nil(inner_args, nparams + fidx);
-                        whnf_with_spine(field, spine, types, top, addrs),
+                        -- Out-of-range projection (bad field index or
+                        -- under-applied ctor) must stay STUCK: the old
+                        -- `list_lookup_or_nil` default reduced it to
+                        -- BVar(0), inventing a term that exists nowhere
+                        -- in the input (mirror whnf.rs spine `.get`).
+                        let target = nparams + fidx;
+                        let len = list_length(inner_args);
+                        match u32_less_than(target, len) {
+                          1 =>
+                            let field = list_lookup(inner_args, target);
+                            whnf_with_spine(field, spine, types, top, addrs),
+                          _ =>
+                            let stuck = store(KExprNode.Proj(tidx, fidx, inner_whnf));
+                            apply_spine(stuck, spine),
+                        },
                       _ =>
                         let stuck = store(KExprNode.Proj(tidx, fidx, inner_whnf));
                         apply_spine(stuck, spine),

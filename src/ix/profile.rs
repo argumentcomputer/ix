@@ -159,7 +159,8 @@ impl BlockProfile {
       return Err(ProfileError::BadVersion(version));
     }
     let n = r.u32()? as usize;
-    let mut blocks = Vec::with_capacity(n);
+    // Each block entry consumes exactly 48 bytes (32 addr + 8 + 4 + 4).
+    let mut blocks = Vec::with_capacity(n.min(r.remaining() / 48));
     for _ in 0..n {
       let addr = Address::from_slice(r.take(32)?)
         .map_err(|_| ProfileError::Truncated)?;
@@ -174,11 +175,11 @@ impl BlockProfile {
       });
     }
     let num_edges = r.u64()? as usize;
-    let mut delta_row = Vec::with_capacity(n + 1);
+    let mut delta_row = Vec::with_capacity((n + 1).min(r.remaining() / 8 + 1));
     for _ in 0..n + 1 {
       delta_row.push(r.u64()? as usize);
     }
-    let mut delta_col = Vec::with_capacity(num_edges);
+    let mut delta_col = Vec::with_capacity(num_edges.min(r.remaining() / 4));
     for _ in 0..num_edges {
       delta_col.push(r.u32()?);
     }
@@ -245,6 +246,13 @@ impl<'a> Reader<'a> {
     let s = &self.buf[self.pos..end];
     self.pos = end;
     Ok(s)
+  }
+  /// Bytes left in the buffer. Used to cap `Vec` pre-allocations against
+  /// untrusted counts: a count whose elements cannot fit in the remaining
+  /// bytes is necessarily malformed, so allocating beyond it only serves
+  /// an attacker.
+  fn remaining(&self) -> usize {
+    self.buf.len() - self.pos
   }
   fn u32(&mut self) -> Result<u32, ProfileError> {
     Ok(u32::from_le_bytes(self.take(4)?.try_into().unwrap()))

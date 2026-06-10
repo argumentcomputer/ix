@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: leanprover/lean-action@v1
+      - uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9 # v1
         with:
           auto-config: false
           build: true
@@ -56,7 +56,7 @@ jobs:
       - if: matrix.bench == 'FC'
         run: echo "COMPILE_DIR=${{env.COMPILE_DIR}}FC" | tee -a $GITHUB_ENV
       # Download elan and fetch mathlib cache
-      - uses: leanprover/lean-action@v1
+      - uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9 # v1
         with:
           lake-package-directory: ${{ env.COMPILE_DIR }}
           auto-config: false
@@ -102,7 +102,9 @@ jobs:
           [ "$sample" -gt 64 ] && sample=64
           echo "sample=$sample" | tee -a "$GITHUB_OUTPUT"
       # Deploy benchmark results to https://bencher.dev/console/projects/ix/plots
-      - uses: bencherdev/bencher@main
+      # Pinned by SHA (v0.6.6): this step's environment later holds
+      # BENCHER_API_TOKEN, so it must not track a moving branch.
+      - uses: bencherdev/bencher@50fb1e138651a46d2fb704fab1adab38c181552e # v0.6.6
       - name: Track benchmarks
         run: |
           # On a lean-toolchain bump (sample=0), omit file-size and constants

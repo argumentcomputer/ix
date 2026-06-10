@@ -22,8 +22,12 @@ namespace Proof
 @[extern "rs_aiur_proof_to_bytes"]
 opaque toBytes : @& Proof → ByteArray
 
+/-- Deserialize proof bytes. The bytes come from an untrusted,
+    prover-supplied wrapper, so failure is an `Except.error` (the old
+    signature panicked inside the FFI, killing the process under
+    `panic = "abort"`). -/
 @[extern "rs_aiur_proof_of_bytes"]
-opaque ofBytes : @& ByteArray → Proof
+opaque ofBytes : @& ByteArray → Except String Proof
 
 end Proof
 

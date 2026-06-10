@@ -615,7 +615,23 @@ fn ingress_expr<M: KernelMode>(
         // `Share` is transparent and keeps the same arena root. Expand it
         // before cache/mdata work; the old path walked metadata for the Share
         // frame, discarded it, then reprocessed the shared expression.
+        //
+        // Fuel bound: the sharing vector comes from untrusted bytes, so a
+        // crafted cycle (`sharing[a] = Share(b)`, `sharing[b] = Share(a)`)
+        // would otherwise spin forever. The fuel covers one contiguous run
+        // of Share→Share hops (fresh per frame — re-sharing the same slot
+        // from many expression positions is fine); within a run each hop's
+        // successor is determined by the current slot, so a revisit ⟺ a
+        // true cycle, and by pigeonhole an acyclic run makes ≤ len hops.
+        let mut share_fuel = ctx.sharing.len().saturating_add(1);
         while let IxonExpr::Share(share_idx) = expr.as_ref() {
+          if share_fuel == 0 {
+            return Err(format!(
+              "Share chain exceeds sharing table length ({}) — cycle in sharing vector",
+              ctx.sharing.len()
+            ));
+          }
+          share_fuel -= 1;
           bump_convert_stat!(stats, share_expansions);
           expr =
             ctx
@@ -650,10 +666,17 @@ fn ingress_expr<M: KernelMode>(
           bump_convert_stat!(stats, expr_cache_misses);
         }
 
-        // Walk mdata chain in arena
+        // Walk mdata chain in arena.
+        //
+        // Fuel bound: the arena lives in the Named section, which is not
+        // content-addressed, so a self/back-referential `Mdata { child }`
+        // would otherwise loop forever while growing `mdata_layers`
+        // unboundedly. An acyclic chain visits each arena node at most
+        // once, so `len + 1` steps suffice.
         let arena_t0 = if stats.enabled { Some(Instant::now()) } else { None };
         let mut current_idx = arena_idx;
         let mut mdata_layers: Vec<MData> = Vec::new();
+        let mut mdata_fuel = ctx.arena.nodes.len().saturating_add(1);
         while let Some(ExprMetaData::Mdata { mdata, child }) =
           ctx.arena.nodes.get(
             usize::try_from(current_idx).map_err(|_e| {
@@ -661,6 +684,13 @@ fn ingress_expr<M: KernelMode>(
             })?,
           )
         {
+          if mdata_fuel == 0 {
+            return Err(format!(
+              "Mdata chain exceeds arena length ({}) — cycle in metadata arena",
+              ctx.arena.nodes.len()
+            ));
+          }
+          mdata_fuel -= 1;
           bump_convert_stat!(stats, mdata_nodes);
           bump_convert_stat!(stats, mdata_kv_maps, mdata.len());
           let kv_t0 = if stats.enabled { Some(Instant::now()) } else { None };
@@ -857,7 +887,17 @@ fn ingress_expr<M: KernelMode>(
               let mut canonical_args: Vec<Arc<IxonExpr>> = Vec::new();
               let mut cur = expr.clone();
               loop {
+                // Fuel-bounded like the main Share expansion above: the
+                // sharing vector is untrusted and may contain cycles.
+                let mut share_fuel = ctx.sharing.len().saturating_add(1);
                 while let IxonExpr::Share(share_idx) = cur.as_ref() {
+                  if share_fuel == 0 {
+                    return Err(format!(
+                      "Share chain exceeds sharing table length ({}) — cycle in sharing vector",
+                      ctx.sharing.len()
+                    ));
+                  }
+                  share_fuel -= 1;
                   cur = ctx
                     .sharing
                     .get(usize::try_from(*share_idx).map_err(|_e| {
@@ -876,7 +916,15 @@ fn ingress_expr<M: KernelMode>(
               }
               canonical_args.reverse();
               let mut head_ixon = cur;
+              let mut share_fuel = ctx.sharing.len().saturating_add(1);
               while let IxonExpr::Share(share_idx) = head_ixon.as_ref() {
+                if share_fuel == 0 {
+                  return Err(format!(
+                    "Share chain exceeds sharing table length ({}) — cycle in sharing vector",
+                    ctx.sharing.len()
+                  ));
+                }
+                share_fuel -= 1;
                 head_ixon = ctx
                   .sharing
                   .get(usize::try_from(*share_idx).map_err(|_e| {
@@ -3183,11 +3231,25 @@ fn insert_addr_aliases<M: KernelMode>(
   let Some(names) = lookups.names_for_addr(addr) else {
     return;
   };
-  let Some(template) = kenv
-    .consts
-    .iter()
-    .find_map(|(id, c)| if &id.addr == addr { Some(c.clone()) } else { None })
-  else {
+  // The const was almost always ingressed under one of this addr's names —
+  // probe those KIds directly (O(#names) hash lookups) instead of scanning
+  // the entire consts map, which made alias insertion O(env) per
+  // projection alias (quadratic over a full ingress).
+  let mut template: Option<KConst<M>> = None;
+  for name in names {
+    let id = KId::new(addr.clone(), M::meta_field(name.clone()));
+    if let Some(c) = kenv.get(&id) {
+      template = Some(c);
+      break;
+    }
+  }
+  // Fallback for a const ingressed under a name outside the alias list.
+  let Some(template) = template.or_else(|| {
+    kenv
+      .consts
+      .iter()
+      .find_map(|(id, c)| if &id.addr == addr { Some(c.clone()) } else { None })
+  }) else {
     return;
   };
   for name in names {
@@ -4422,6 +4484,34 @@ pub fn ingress_anon_block(
         all_entries.extend(entries);
       },
     }
+  }
+
+  // Canonicity validation for Indc-only blocks, mirroring
+  // `ingress_muts_block` (docs/ix_canonicity.md §6.0). The proven IxVM
+  // kernel and the Meta ingress both enforce canonical block order;
+  // without the same check here the anon re-checker (`rs_kernel_check_anon`)
+  // accepts envs the proven kernel rejects — a silent divergence between
+  // the two checkers.
+  let mut indcs: Vec<(KId<Anon>, &KConst<Anon>)> = Vec::new();
+  for (id, c) in &all_entries {
+    if matches!(c, KConst::Indc { .. }) {
+      indcs.push((id.clone(), c));
+    }
+  }
+  let all_primary_indc = !indcs.is_empty()
+    && indcs.len()
+      == members.iter().filter(|m| matches!(m, IxonMutConst::Indc(_))).count();
+  if all_primary_indc
+    && members.iter().all(|m| matches!(m, IxonMutConst::Indc(_)))
+  {
+    let entries_ref: &Vec<(KId<Anon>, KConst<Anon>)> = &all_entries;
+    let resolve_ctor = |cid: &KId<Anon>| -> Option<KConst<Anon>> {
+      entries_ref.iter().find(|(rid, _)| rid == cid).map(|(_, c)| c.clone())
+    };
+    crate::ix::kernel::canonical_check::validate_canonical_block_single_pass::<
+      Anon,
+    >(block_addr, &indcs, &resolve_ctor)
+    .map_err(|e| format!("{e}"))?;
   }
 
   insert_muts_entries(kenv, all_entries);

@@ -235,6 +235,21 @@ fn build_prop_brecon(
   let n_indices = try_nat_to_usize(&ind.num_indices)?;
   let ind_level_params = &ind.cnst.level_params;
 
+  // Prop-level *nested* blocks are not supported here: the recursor
+  // carries one motive per flat member (primaries + nested auxiliaries),
+  // but this Prop path derives `below` names for the `n_classes` primary
+  // classes only (aux `below_N` generation is skipped for Prop blocks) —
+  // indexing `below_names[j]` past `n_classes` would panic. Fail closed
+  // until Prop aux-below generation lands.
+  if n_motives > n_classes {
+    return Err(CompileError::UnsupportedExpr {
+      desc: format!(
+        "prop brecOn for '{}': nested Prop-level block has {n_motives} motives but only {n_classes} primary below classes; aux below_N generation for Prop blocks is not implemented",
+        ind.cnst.name.pretty()
+      ),
+    });
+  }
+
   // For Prop brecOn with large elimination (drec), substitute u -> Level::zero().
   // Invariant: generate_canonical_recursors always prepends the elimination level
   // as level_params[0] for large recursors (recursor.rs:192-194), so [0] is correct.

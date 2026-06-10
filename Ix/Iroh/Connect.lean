@@ -29,12 +29,16 @@ private opaque getBytes' : @& String → @& Array String → @& String → @& St
 def getBytes (nodeId : @& String) (addrs : @& Array String) (relayUrl : @& String) (hash : @& String) (writeToDisk : Bool): IO Unit := do
   match getBytes' nodeId addrs relayUrl hash with
   | .ok response =>
-    let string := String.fromUTF8! response.bytes
     if writeToDisk then
+      -- Write raw bytes: env/proof payloads are binary, and a String
+      -- round-trip would panic (`fromUTF8!`) or corrupt them.
       IO.println s!"Writing bytes to ./{response.hash}"
-      IO.FS.writeFile response.hash string
+      IO.FS.writeBinFile response.hash response.bytes
     else
-      IO.print string
+      match String.fromUTF8? response.bytes with
+      | some string => IO.print string
+      | none =>
+        IO.println s!"(binary response: {response.bytes.size} bytes — pass --write-to-disk to save it)"
   | .error e => throw (IO.userError e)
 
 end Iroh.Connect

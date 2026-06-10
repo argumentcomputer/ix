@@ -83,6 +83,11 @@ def proveOne (aiurSystem : Aiur.AiurSystem)
 
 def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
   Std.Internal.UV.System.osSetenv "IX_QUIET" "1"
+  -- The pinned multi-stark/Plonky3 backend has no witness blinding/masking
+  -- yet, so proofs are succinct but NOT hiding — a published proof can
+  -- reveal witness rows (private constants, commitment secrets, program
+  -- bytes). Warn until ZK masking lands.
+  IO.eprintln "warning: proofs are NOT zero-knowledge yet (no witness blinding/masking); do not publish proofs over private programs or data"
   let keepGoing := p.hasFlag "keep-going"
   let ixePath : Option String := (p.flag? "ixe").map (·.as! String)
   let claimHex : Option String := (p.flag? "claim").map (·.as! String)

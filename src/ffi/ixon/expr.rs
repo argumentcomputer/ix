@@ -22,97 +22,133 @@ fn decode_u64_array(obj: LeanArray<LeanBorrowed<'_>>) -> Vec<u64> {
 
 impl LeanIxonExpr<LeanOwned> {
   /// Build Ixon.Expr (12 constructors).
+  ///
+  /// Iterative post-order construction: expression trees can nest
+  /// arbitrarily deep (`.ixe`-derived data), and FFI entry points run on
+  /// default-size stacks where structural recursion overflows — a hard
+  /// process abort under `panic = "abort"`.
   pub fn build(expr: &IxonExpr) -> Self {
-    match expr {
-      IxonExpr::Sort(idx) => {
-        let ctor = LeanIxonExpr::alloc(0);
-        ctor.set_num_64(0, *idx);
-        ctor
-      },
-      IxonExpr::Var(idx) => {
-        let ctor = LeanIxonExpr::alloc(1);
-        ctor.set_num_64(0, *idx);
-        ctor
-      },
-      IxonExpr::Ref(ref_idx, univ_idxs) => {
-        let arr = LeanArray::alloc(univ_idxs.len());
-        for (i, idx) in univ_idxs.iter().enumerate() {
-          arr.set(i, LeanOwned::box_u64(*idx));
-        }
-        let ctor = LeanIxonExpr::alloc(2);
-        ctor.set_obj(0, arr);
-        ctor.set_num_64(0, *ref_idx);
-        ctor
-      },
-      IxonExpr::Rec(rec_idx, univ_idxs) => {
-        let arr = LeanArray::alloc(univ_idxs.len());
-        for (i, idx) in univ_idxs.iter().enumerate() {
-          arr.set(i, LeanOwned::box_u64(*idx));
-        }
-        let ctor = LeanIxonExpr::alloc(3);
-        ctor.set_obj(0, arr);
-        ctor.set_num_64(0, *rec_idx);
-        ctor
-      },
-      IxonExpr::Prj(type_ref_idx, field_idx, val) => {
-        let val_obj = Self::build(val);
-        let ctor = LeanIxonExpr::alloc(4);
-        ctor.set_obj(0, val_obj);
-        ctor.set_num_64(0, *type_ref_idx);
-        ctor.set_num_64(1, *field_idx);
-        ctor
-      },
-      IxonExpr::Str(ref_idx) => {
-        let ctor = LeanIxonExpr::alloc(5);
-        ctor.set_num_64(0, *ref_idx);
-        ctor
-      },
-      IxonExpr::Nat(ref_idx) => {
-        let ctor = LeanIxonExpr::alloc(6);
-        ctor.set_num_64(0, *ref_idx);
-        ctor
-      },
-      IxonExpr::App(fun, arg) => {
-        let fun_obj = Self::build(fun);
-        let arg_obj = Self::build(arg);
-        let ctor = LeanIxonExpr::alloc(7);
-        ctor.set_obj(0, fun_obj);
-        ctor.set_obj(1, arg_obj);
-        ctor
-      },
-      IxonExpr::Lam(ty, body) => {
-        let ty_obj = Self::build(ty);
-        let body_obj = Self::build(body);
-        let ctor = LeanIxonExpr::alloc(8);
-        ctor.set_obj(0, ty_obj);
-        ctor.set_obj(1, body_obj);
-        ctor
-      },
-      IxonExpr::All(ty, body) => {
-        let ty_obj = Self::build(ty);
-        let body_obj = Self::build(body);
-        let ctor = LeanIxonExpr::alloc(9);
-        ctor.set_obj(0, ty_obj);
-        ctor.set_obj(1, body_obj);
-        ctor
-      },
-      IxonExpr::Let(non_dep, ty, val, body) => {
-        let ty_obj = Self::build(ty);
-        let val_obj = Self::build(val);
-        let body_obj = Self::build(body);
-        let ctor = LeanIxonExpr::alloc(10);
-        ctor.set_obj(0, ty_obj);
-        ctor.set_obj(1, val_obj);
-        ctor.set_obj(2, body_obj);
-        ctor.set_num_8(0, u8::from(*non_dep));
-        ctor
-      },
-      IxonExpr::Share(idx) => {
-        let ctor = LeanIxonExpr::alloc(11);
-        ctor.set_num_64(0, *idx);
-        ctor
-      },
+    enum Walk<'a> {
+      Visit(&'a IxonExpr),
+      Assemble(&'a IxonExpr),
     }
+    let mut work: Vec<Walk<'_>> = vec![Walk::Visit(expr)];
+    let mut out: Vec<LeanIxonExpr<LeanOwned>> = Vec::new();
+    while let Some(w) = work.pop() {
+      match w {
+        Walk::Visit(e) => match e {
+          // Leaves: assemble immediately.
+          IxonExpr::Sort(idx) => {
+            let ctor = LeanIxonExpr::alloc(0);
+            ctor.set_num_64(0, *idx);
+            out.push(ctor);
+          },
+          IxonExpr::Var(idx) => {
+            let ctor = LeanIxonExpr::alloc(1);
+            ctor.set_num_64(0, *idx);
+            out.push(ctor);
+          },
+          IxonExpr::Ref(ref_idx, univ_idxs) => {
+            let arr = LeanArray::alloc(univ_idxs.len());
+            for (i, idx) in univ_idxs.iter().enumerate() {
+              arr.set(i, LeanOwned::box_u64(*idx));
+            }
+            let ctor = LeanIxonExpr::alloc(2);
+            ctor.set_obj(0, arr);
+            ctor.set_num_64(0, *ref_idx);
+            out.push(ctor);
+          },
+          IxonExpr::Rec(rec_idx, univ_idxs) => {
+            let arr = LeanArray::alloc(univ_idxs.len());
+            for (i, idx) in univ_idxs.iter().enumerate() {
+              arr.set(i, LeanOwned::box_u64(*idx));
+            }
+            let ctor = LeanIxonExpr::alloc(3);
+            ctor.set_obj(0, arr);
+            ctor.set_num_64(0, *rec_idx);
+            out.push(ctor);
+          },
+          IxonExpr::Str(ref_idx) => {
+            let ctor = LeanIxonExpr::alloc(5);
+            ctor.set_num_64(0, *ref_idx);
+            out.push(ctor);
+          },
+          IxonExpr::Nat(ref_idx) => {
+            let ctor = LeanIxonExpr::alloc(6);
+            ctor.set_num_64(0, *ref_idx);
+            out.push(ctor);
+          },
+          IxonExpr::Share(idx) => {
+            let ctor = LeanIxonExpr::alloc(11);
+            ctor.set_num_64(0, *idx);
+            out.push(ctor);
+          },
+          // Interior nodes: assemble after children. Children are pushed
+          // in reverse so they complete left-to-right; `Assemble` then
+          // pops them right-to-left.
+          IxonExpr::Prj(_, _, val) => {
+            work.push(Walk::Assemble(e));
+            work.push(Walk::Visit(val));
+          },
+          IxonExpr::App(fun, arg) => {
+            work.push(Walk::Assemble(e));
+            work.push(Walk::Visit(arg));
+            work.push(Walk::Visit(fun));
+          },
+          IxonExpr::Lam(ty, body) | IxonExpr::All(ty, body) => {
+            work.push(Walk::Assemble(e));
+            work.push(Walk::Visit(body));
+            work.push(Walk::Visit(ty));
+          },
+          IxonExpr::Let(_, ty, val, body) => {
+            work.push(Walk::Assemble(e));
+            work.push(Walk::Visit(body));
+            work.push(Walk::Visit(val));
+            work.push(Walk::Visit(ty));
+          },
+        },
+        Walk::Assemble(e) => match e {
+          IxonExpr::Prj(type_ref_idx, field_idx, _) => {
+            let val_obj = out.pop().expect("Prj child");
+            let ctor = LeanIxonExpr::alloc(4);
+            ctor.set_obj(0, val_obj);
+            ctor.set_num_64(0, *type_ref_idx);
+            ctor.set_num_64(1, *field_idx);
+            out.push(ctor);
+          },
+          IxonExpr::App(..) => {
+            let arg_obj = out.pop().expect("App arg");
+            let fun_obj = out.pop().expect("App fun");
+            let ctor = LeanIxonExpr::alloc(7);
+            ctor.set_obj(0, fun_obj);
+            ctor.set_obj(1, arg_obj);
+            out.push(ctor);
+          },
+          IxonExpr::Lam(..) | IxonExpr::All(..) => {
+            let body_obj = out.pop().expect("binder body");
+            let ty_obj = out.pop().expect("binder type");
+            let tag = if matches!(e, IxonExpr::Lam(..)) { 8 } else { 9 };
+            let ctor = LeanIxonExpr::alloc(tag);
+            ctor.set_obj(0, ty_obj);
+            ctor.set_obj(1, body_obj);
+            out.push(ctor);
+          },
+          IxonExpr::Let(non_dep, ..) => {
+            let body_obj = out.pop().expect("Let body");
+            let val_obj = out.pop().expect("Let val");
+            let ty_obj = out.pop().expect("Let type");
+            let ctor = LeanIxonExpr::alloc(10);
+            ctor.set_obj(0, ty_obj);
+            ctor.set_obj(1, val_obj);
+            ctor.set_obj(2, body_obj);
+            ctor.set_num_8(0, u8::from(*non_dep));
+            out.push(ctor);
+          },
+          _ => unreachable!("leaves are assembled at Visit"),
+        },
+      }
+    }
+    out.pop().expect("build: exactly one root")
   }
 
   /// Build an Array of Ixon.Expr.

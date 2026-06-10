@@ -584,12 +584,14 @@ def inferTerm (t : Term) : CheckM Typed.Term := match t with
   | .unit => pure (.unit .unit false)
   | .var x => do
     let ctx ← read
-    match (ctx.varTypes[x]?, x) with
-    | (some t, _) => pure (.var t false x)
-    | (none, Local.str localName) =>
-      let (typ, _) ← refLookup (Global.init localName)
-      pure (.var typ false x)
-    | (none, _) => throw $ .unboundLocal x
+    match ctx.varTypes[x]? with
+    | some t => pure (.var t false x)
+    -- No global-function fallback here: neither `SourceEval` nor `Lower`
+    -- implements one, so a program that typechecked via the fallback
+    -- would evaluate/compile to something else entirely (silent
+    -- miscompile). Unbound locals are errors; reference globals with
+    -- `.ref`.
+    | none => throw $ .unboundLocal x
   | .ref x => do
     let (typ, tArgs) ← refLookup x
     pure (.ref typ false x tArgs)

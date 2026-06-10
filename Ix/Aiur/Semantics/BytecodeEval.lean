@@ -98,6 +98,17 @@ def appendMap (st : EvalState) (gs : Array G) : EvalState :=
 def setIoBuffer (st : EvalState) (ioBuffer : IOBuffer) : EvalState :=
   { st with ioBuffer }
 
+/-- How a block terminated. Mirrors Rust `execute.rs`: a `Ctrl.return`
+    is a *function-level* return that propagates out of any enclosing
+    `matchContinue` (its continuation is skipped), while a `Ctrl.yield`
+    feeds the enclosing `matchContinue`'s merged outputs and resumes its
+    continuation. Conflating the two (the old evaluator treated a branch
+    `return` as a yield) silently diverges from the proven semantics. -/
+inductive BlockExit where
+  | returned
+  | yielded
+  deriving BEq
+
 /-! ## Termination helpers
 
 Lemmas proving that a `Block`'s sub-parts have strictly smaller `sizeOf`.
@@ -181,7 +192,10 @@ def evalOp (t : Bytecode.Toplevel) (fuel : Nat) (op : Op) (st : EvalState) :
         | fuel+1 =>
           match evalBlock t fuel f.body innerSt with
           | .error e => .error e
-          | .ok (outs, innerSt') =>
+          -- The function boundary absorbs the exit kind: a body that ends
+          -- in a (top-level) return and one whose outer matchContinue
+          -- continuation returns both just produce outputs here.
+          | .ok (_, outs, innerSt') =>
             if outs.size != outputSize then
               .error .callOutputSizeMismatch
             else
@@ -310,7 +324,8 @@ decreasing_by all_goals first | decreasing_tactic | omega
 
 /-- Evaluate a `Block`: run all ops, then dispatch on the control. -/
 def evalBlock (t : Bytecode.Toplevel) (fuel : Nat)
-    (b : Block) (st : EvalState) : Except BytecodeError (Array G × EvalState) :=
+    (b : Block) (st : EvalState) :
+    Except BytecodeError (BlockExit × Array G × EvalState) :=
   match runOps t fuel b.ops st 0 with
   | .error e => .error e
   | .ok st' => evalCtrl t fuel b.ctrl st'
@@ -323,16 +338,17 @@ decreasing_by
     | omega
 
 def evalCtrl (t : Bytecode.Toplevel) (fuel : Nat)
-    (ctrl : Ctrl) (st : EvalState) : Except BytecodeError (Array G × EvalState) :=
+    (ctrl : Ctrl) (st : EvalState) :
+    Except BytecodeError (BlockExit × Array G × EvalState) :=
   match ctrl with
   | .return _ outs =>
     match readIdxs st outs with
     | .error e => .error e
-    | .ok gs   => .ok (gs, st)
+    | .ok gs   => .ok (.returned, gs, st)
   | .yield _ outs =>
     match readIdxs st outs with
     | .error e => .error e
-    | .ok gs   => .ok (gs, st)
+    | .ok gs   => .ok (.yielded, gs, st)
   | .match scrutIdx cases defaultBlock =>
     match readIdx st scrutIdx with
     | .error e => .error e
@@ -344,7 +360,12 @@ def evalCtrl (t : Bytecode.Toplevel) (fuel : Nat)
     | .ok scrut =>
       match evalMatchArm t fuel cases defaultBlock scrut st with
       | .error e => .error e
-      | .ok (gs, st') =>
+      | .ok (.returned, gs, st') =>
+        -- A branch `return` is a function-level return: the continuation
+        -- is skipped entirely (Rust `execute.rs` truncates here). Keep the
+        -- branch's state — the function is done with it.
+        .ok (.returned, gs, st')
+      | .ok (.yielded, gs, st') =>
         -- The match acts as an atomic operation from the continuation's
         -- perspective: any values a case pushed onto `map` are local to the
         -- case and must not leak into the continuation's namespace. Restore
@@ -362,7 +383,7 @@ which lets `Array.sizeOf_get` discharge the termination goal when we call
 def evalMatchArm (t : Bytecode.Toplevel) (fuel : Nat)
     (cases : Array (G × Block)) (defaultBlock : Option Block)
     (scrut : G) (st : EvalState) (i : Nat := 0) :
-    Except BytecodeError (Array G × EvalState) :=
+    Except BytecodeError (BlockExit × Array G × EvalState) :=
   if h : i < cases.size then
     if cases[i].fst == scrut then evalBlock t fuel cases[i].snd st
     else evalMatchArm t fuel cases defaultBlock scrut st (i + 1)
@@ -383,7 +404,7 @@ decreasing_by
 /-- Dispatch on the optional default block at the end of a `.match` arm. -/
 def evalDefaultBlock (t : Bytecode.Toplevel) (fuel : Nat)
     (defaultBlock : Option Block) (st : EvalState) :
-    Except BytecodeError (Array G × EvalState) :=
+    Except BytecodeError (BlockExit × Array G × EvalState) :=
   match defaultBlock with
   | some block => evalBlock t fuel block st
   | none       => .error .unreachableAfterLayout
@@ -411,7 +432,7 @@ def runFunction (t : Bytecode.Toplevel) (funIdx : FunIdx) (args : Array G)
       let st : EvalState := { map := args, ioBuffer }
       match evalBlock t fuel f.body st with
       | .error e => .error e
-      | .ok (outs, st') => .ok (outs, st'.ioBuffer)
+      | .ok (_, outs, st') => .ok (outs, st'.ioBuffer)
   else .error (.invalidFunIdx funIdx)
 
 end Bytecode.Eval
