@@ -457,10 +457,29 @@ def whnf := ⟦
               1 =>
                 let raw_base = list_lookup(spine, base_idx);
                 let base_w = whnf(raw_base, types, top, addrs);
+                let post = list_drop(spine, major_idx + 1);
                 match try_extract_nat(base_w, addrs) {
-                  (0, _) => (0, store(KExprNode.BVar(0))),
+                  -- Symbolic base: collapse `Nat.rec base (succ-step) (Lit n)`
+                  -- to the offset primitive `Nat.add base (Lit n)` rather than
+                  -- materializing succ^n(base) via n iota steps. This keeps the
+                  -- value in the same compact `base + n` form a literal already
+                  -- has, so def-eq converges instead of descending n unary
+                  -- succ layers (the UTF-8 `x + 0xC0` pathology).
+                  (0, _) =>
+                    match klimbs_is_zero(n_klimbs) {
+                      1 => (1, apply_spine(base_w, post)),
+                      0 =>
+                        match find_addr_idx_safe(nat_add_addr(), addrs, 0) {
+                          (0, _) => (0, store(KExprNode.BVar(0))),
+                          (1, add_idx) =>
+                            let add_const = store(KExprNode.Const(add_idx, store(ListNode.Nil)));
+                            let off = store(KExprNode.App(
+                              store(KExprNode.App(add_const, base_w)),
+                              mk_nat_lit(n_klimbs)));
+                            (1, apply_spine(off, post)),
+                        },
+                    },
                   (1, b_klimbs) =>
-                    let post = list_drop(spine, major_idx + 1);
                     (1, apply_spine(mk_nat_lit(klimbs_add(b_klimbs, n_klimbs)), post)),
                 },
             },
