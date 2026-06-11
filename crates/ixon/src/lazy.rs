@@ -104,6 +104,15 @@ pub struct LazyConstant {
   /// this `None`; their `get()` parses fresh and does not store —
   /// see the module-level "Cache policy" docs.
   cache: Option<Arc<Constant>>,
+  /// Deferred address verification: when set (the `.ixe` load paths),
+  /// `get()` checks `Address::hash(bytes) == pending_addr` before
+  /// parsing. This moves the per-constant content-hash from env parse
+  /// time to first materialization, so constants that are shipped in a
+  /// closure but never forced by the typechecker are never hashed —
+  /// while everything the kernel CERTIFIES is still verified (checking
+  /// a constant forces its materialization). `None` for the
+  /// compile-side path, which owns the parsed value already.
+  pending_addr: Option<Address>,
 }
 
 impl LazyConstant {
@@ -114,7 +123,18 @@ impl LazyConstant {
   /// `Constant::put` produced for the address this entry is stored
   /// under. Use [`Self::verify_address`] for an explicit check.
   pub fn from_bytes(bytes: Arc<[u8]>) -> Self {
-    LazyConstant { bytes: BytesSource::Heap(bytes), cache: None }
+    LazyConstant { bytes: BytesSource::Heap(bytes), cache: None, pending_addr: None }
+  }
+
+  /// Like [`Self::from_bytes`], but with the address-binding check
+  /// deferred to first [`Self::get`]. Used by `Env::get_anon` so env
+  /// parse time does not pay one content hash per constant.
+  pub fn from_bytes_deferred(bytes: Arc<[u8]>, addr: Address) -> Self {
+    LazyConstant {
+      bytes: BytesSource::Heap(bytes),
+      cache: None,
+      pending_addr: Some(addr),
+    }
   }
 
   /// Construct from a memory-mapped window. The `Arc<Mmap>` keeps
@@ -124,7 +144,11 @@ impl LazyConstant {
   /// Used by `Env::get_anon_mmap` to avoid heap-copying the on-disk
   /// byte stream — the OS page cache is the source of truth.
   pub fn from_mmap_slice(mmap: Arc<Mmap>, offset: usize, len: usize) -> Self {
-    LazyConstant { bytes: BytesSource::Mmap { mmap, offset, len }, cache: None }
+    LazyConstant {
+      bytes: BytesSource::Mmap { mmap, offset, len },
+      cache: None,
+      pending_addr: None,
+    }
   }
 
   /// Construct from a structured `Constant` (the in-memory build path,
@@ -137,6 +161,7 @@ impl LazyConstant {
     LazyConstant {
       bytes: BytesSource::Heap(buf.into()),
       cache: Some(Arc::new(c)),
+      pending_addr: None,
     }
   }
 
@@ -150,6 +175,16 @@ impl LazyConstant {
   pub fn get(&self) -> Result<Arc<Constant>, String> {
     if let Some(c) = &self.cache {
       return Ok(c.clone());
+    }
+    if let Some(expected) = &self.pending_addr {
+      let computed = Address::hash(self.bytes.as_slice());
+      if computed != *expected {
+        return Err(format!(
+          "LazyConstant::get: bytes hash to {} but stored under {}",
+          computed.hex(),
+          expected.hex()
+        ));
+      }
     }
     let mut slice: &[u8] = self.bytes.as_slice();
     let parsed = Constant::get(&mut slice)
