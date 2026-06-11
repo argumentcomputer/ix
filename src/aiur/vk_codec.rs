@@ -32,7 +32,9 @@ fn serde_config() -> Configuration<LittleEndian, Fixint> {
 
 /// Serialize the verifying key `System<AiurCircuit>` (preprocessed traces are
 /// skipped — see the module docs).
-pub(crate) fn to_bytes(system: &System<AiurCircuit>) -> Result<Vec<u8>, String> {
+pub(crate) fn to_bytes(
+  system: &System<AiurCircuit>,
+) -> Result<Vec<u8>, String> {
   encode_to_vec(system, serde_config()).map_err(|e| e.to_string())
 }
 
@@ -42,13 +44,18 @@ pub(crate) fn from_bytes(bytes: &[u8]) -> Result<System<AiurCircuit>, String> {
   let (system, consumed) =
     decode_from_slice(bytes, serde_config()).map_err(|e| e.to_string())?;
   if consumed != bytes.len() {
-    return Err(format!("trailing data: consumed {consumed} of {}", bytes.len()));
+    return Err(format!(
+      "trailing data: consumed {consumed} of {}",
+      bytes.len()
+    ));
   }
   Ok(system)
 }
 
 /// Convenience: serialize the verifying key of a built [`AiurSystem`].
-pub(crate) fn aiur_system_to_bytes(sys: &AiurSystem) -> Result<Vec<u8>, String> {
+pub(crate) fn aiur_system_to_bytes(
+  sys: &AiurSystem,
+) -> Result<Vec<u8>, String> {
   to_bytes(&sys.system)
 }
 
@@ -137,7 +144,7 @@ impl<'a> R<'a> {
     Ok(u64::from_le_bytes(self.take(8)?.try_into().unwrap()))
   }
   fn usize(&mut self) -> Result<usize, String> {
-    Ok(self.u64()? as usize)
+    usize::try_from(self.u64()?).map_err(|e| format!("usize overflow: {e}"))
   }
   fn g(&mut self) -> Result<Val, String> {
     Ok(Val::from_u64(self.u64()?))
@@ -230,8 +237,7 @@ impl<'a> R<'a> {
     })
   }
   fn commitment(&mut self) -> Result<Commitment, String> {
-    let caps =
-      self.vec(|r| Ok([r.u64()?, r.u64()?, r.u64()?, r.u64()?]))?;
+    let caps = self.vec(|r| Ok([r.u64()?, r.u64()?, r.u64()?, r.u64()?]))?;
     Ok(Commitment::from(caps))
   }
   fn option<T>(
@@ -252,15 +258,17 @@ pub(crate) fn manual_deserialize(
   bytes: &[u8],
 ) -> Result<System<AiurCircuit>, String> {
   let mut r = R { buf: bytes, pos: 0 };
-  let commitment_parameters = CommitmentParameters {
-    log_blowup: r.usize()?,
-    cap_height: r.usize()?,
-  };
+  let commitment_parameters =
+    CommitmentParameters { log_blowup: r.usize()?, cap_height: r.usize()? };
   let circuits = r.vec(R::circuit)?;
   let preprocessed_commit = r.option(R::commitment)?;
   let preprocessed_indices = r.vec(|r| r.option(R::usize))?;
   if r.pos != bytes.len() {
-    return Err(format!("trailing data: consumed {} of {}", r.pos, bytes.len()));
+    return Err(format!(
+      "trailing data: consumed {} of {}",
+      r.pos,
+      bytes.len()
+    ));
   }
   Ok(System {
     commitment_parameters,
