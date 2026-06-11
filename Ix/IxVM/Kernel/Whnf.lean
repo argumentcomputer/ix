@@ -277,18 +277,24 @@ def whnf := ⟦
   fn whnf(e: KExpr, types: List‹KExpr›,
           top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
     -- Fast path: trivial whnf normal forms. Srt / Lit / Lam / Forall / BVar
-    -- never reduce — skip collect_spine + dispatch.
+    -- never reduce — skip collect_spine + dispatch (and the context trim).
     match load(e) {
       KExprNode.Srt(_) => e,
       KExprNode.Lit(_) => e,
       KExprNode.Lam(_, _) => e,
       KExprNode.Forall(_, _) => e,
       KExprNode.BVar(_) => e,
-      _ =>
-        let pair = collect_spine(e);
-        match pair {
-          (head, spine) => whnf_with_spine(head, spine, types, top, addrs),
-        },
+      -- Context-trimmed memo key (mirror Rust `whnf_key`): reduce on the
+      -- reachable suffix so a closed term shares its WHNF across binder depths.
+      _ => whnf_core(e, ctx_trim(types, expr_lbr(e)), top, addrs),
+    }
+  }
+
+  fn whnf_core(e: KExpr, types: List‹KExpr›,
+               top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
+    let pair = collect_spine(e);
+    match pair {
+      (head, spine) => whnf_with_spine(head, spine, types, top, addrs),
     }
   }
 

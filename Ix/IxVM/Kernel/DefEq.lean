@@ -42,13 +42,19 @@ def defEq := ⟦
     -- Tier 1: pointer equality short-circuit.
     match ptr_val(a) - ptr_val(b) {
       0 => 1,
-      _ =>
+      -- Context-trimmed memo key (mirror Rust `def_eq_ctx_key`): decide on the
+      -- suffix of `types` reachable from either side; closed pairs (lbr 0) key
+      -- to the empty context and share across binder depths.
+      _ => k_is_def_eq_core(a, b, ctx_trim(types, lbr_max(expr_lbr(a), expr_lbr(b))), top, addrs),
+    }
+  }
+
+  fn k_is_def_eq_core(a: KExpr, b: KExpr, types: List‹KExpr›,
+                      top: List‹&KConstantInfo›, addrs: List‹Addr›) -> G {
         -- Tier 1.5: lazy-delta app-congruence pre-WHNF. Mirror:
         -- src/ix/kernel/def_eq.rs:1262-1287 try_def_eq_app. When both
         -- sides share Const(idx, lvls) head with same arg count, recurse
-        -- on args directly — skips delta+beta of the def's body.
-        -- Sound: only accepts when args recursively def-eq; bails to
-        -- WHNF path otherwise.
+        -- on args directly. Sound: only accepts when args recursively def-eq.
         match try_lazy_delta_app(a, b, types, top, addrs) {
           1 => 1,
           0 =>
@@ -100,8 +106,7 @@ def defEq := ⟦
                 },
             },
         },
-        },
-    }
+        }
   }
 
   -- Mirror: src/ix/kernel/def_eq.rs:801-818 fn try_proof_irrel.
