@@ -16,7 +16,7 @@ public import Ix.MultiStark.Tests
 The recursive verifier. Its public statement is purely existential: *"there
 exists a valid multi-stark proof, under the FRI parameters given as public
 input, for the constraint system with this keccak-256 digest and these public
-claims."* The proof itself is **non-deterministic advice** (fed on IO key `[0]`,
+claims."* The proof itself is **non-deterministic advice** (fed on IO channel 0,
 never hashed or otherwise bound as a public input): the Fiat-Shamir transcript
 replay plus the Merkle/OOD/FRI checks are exactly what make any accepted advice
 a valid proof — a hash binding of the proof bytes would add nothing to the
@@ -37,27 +37,28 @@ namespace MultiStark
 def entrypoints := ⟦
   -- Public inputs: the keccak-256 digests of the verifying key and the claims
   -- (4 little-endian u64 lanes each) plus the variable FRI parameters. The
-  -- proof is pure non-deterministic advice on IO key `[0]` — see the module
-  -- docstring.
+  -- proof is pure non-deterministic advice on IO channel 0 — see the module
+  -- docstring. One stream per channel (0 = proof, 1 = vk, 2 = claims), each
+  -- registered under key `[0]` on its channel.
   pub fn verify_multi_stark_proof(system_digest: [[U8; 8]; 4], claims_digest: [[U8; 8]; 4], num_queries: G, commit_pow_bits: G, log_blowup: G) {
-    -- Proof advice from IO key [0]: deserialize, assert fully consumed.
-    let (idx, len) = io_get_info([0]);
-    let bytes = #read_byte_stream(idx, len);
+    -- Proof advice from IO channel 0: deserialize, assert fully consumed.
+    let (idx, len) = io_get_info(0, [0]);
+    let bytes = #read_byte_stream(0, idx, len);
     let (proof, rest) = read_proof(bytes);
     assert_eq!(load(rest), ListNode.Nil);
-    -- Verifying key (`System<AiurCircuit>`) from IO key [1]: bind the bytes to
-    -- the public keccak-256 `system_digest`, then reconstruct the system.
-    let (sidx, slen) = io_get_info([1]);
-    let sbytes = #read_byte_stream(sidx, slen);
+    -- Verifying key (`System<AiurCircuit>`) from IO channel 1: bind the bytes
+    -- to the public keccak-256 `system_digest`, then reconstruct the system.
+    let (sidx, slen) = io_get_info(1, [0]);
+    let sbytes = #read_byte_stream(1, sidx, slen);
     assert_eq!(keccak256(sbytes), system_digest);
     let (sys, srest) = read_system(sbytes);
     assert_eq!(load(srest), ListNode.Nil);
-    -- Public claims (`&[&[Val]]`) from IO key [2]: bind the bytes to the public
-    -- keccak-256 `claims_digest`, then deserialize. Binding them as a public
-    -- input is what makes the lookup argument sound (a prover cannot choose
-    -- claims adaptively).
-    let (cidx, clen) = io_get_info([2]);
-    let cbytes = #read_byte_stream(cidx, clen);
+    -- Public claims (`&[&[Val]]`) from IO channel 2: bind the bytes to the
+    -- public keccak-256 `claims_digest`, then deserialize. Binding them as a
+    -- public input is what makes the lookup argument sound (a prover cannot
+    -- choose claims adaptively).
+    let (cidx, clen) = io_get_info(2, [0]);
+    let cbytes = #read_byte_stream(2, cidx, clen);
     assert_eq!(keccak256(cbytes), claims_digest);
     let (claims, crest) = read_claims(cbytes);
     assert_eq!(load(crest), ListNode.Nil);
