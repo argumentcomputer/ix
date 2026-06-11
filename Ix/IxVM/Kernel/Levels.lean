@@ -57,142 +57,581 @@ def levels := ⟦
     }
   }
 
-  fn level_has_param(l: KLevel) -> G {
-    match l {
-      KLevel.Zero => 0,
-      KLevel.Param(_) => 1,
-      KLevel.Succ(&a) => level_has_param(a),
-      KLevel.Max(&a, &b) =>
-        let ha = level_has_param(a);
-        match ha {
-          1 => 1,
-          0 => level_has_param(b),
+  -- ============================================================================
+  -- Canonical level normalization (mirror: src/ix/kernel/level.rs
+  -- normalize_level / norm_level_eq / norm_level_le, itself a port of
+  -- Lean4Lean's Level.Normalize with the documented subsumption and
+  -- covers-split fixes).
+  --
+  -- Semantic level comparison via the recursive `Level.leq` with its
+  -- two-way param-substitution split per Max/IMax-with-param is
+  -- exponential in the number of params, and every branch materializes
+  -- freshly substituted levels (the Int16.instRxcHasSize_eq pathology:
+  -- 93% of the record was level_subst_reduce/level_leq rows).
+  -- Normalization is linear in the level size, `level_normalize` is
+  -- keyed on the level ALONE so each distinct level normalizes once per
+  -- run, and equality/leq on canonical forms is cheap.
+  --
+  -- Canonical form: a path-sorted list of entries `(path, const, vars)`
+  -- where `path` is the sorted list of param indices conditioning an
+  -- imax chain (all assumed >= 1 along that branch), `const` the max
+  -- constant contribution, `vars` the idx-sorted `(param, offset)`
+  -- contributions.
+  -- ============================================================================
+  enum NLVar {
+    Mk(G, G)
+  }
+
+  enum NLEntry {
+    Mk(List‹G›, G, List‹&NLVar›)
+  }
+
+  -- Lexicographic compare of sorted G-lists: 0 = eq, 1 = a < b, 2 = a > b.
+  fn glist_cmp(a: List‹G›, b: List‹G›) -> G {
+    match load(a) {
+      ListNode.Nil =>
+        match load(b) {
+          ListNode.Nil => 0,
+          ListNode.Cons(_, _) => 1,
         },
-      KLevel.IMax(&a, &b) =>
-        let hb = level_has_param(b);
-        match hb {
-          1 => 1,
-          0 => level_has_param(a),
+      ListNode.Cons(x, ar) =>
+        match load(b) {
+          ListNode.Nil => 2,
+          ListNode.Cons(y, br) =>
+            match u32_less_than(x, y) {
+              1 => 1,
+              0 =>
+                match u32_less_than(y, x) {
+                  1 => 2,
+                  0 => glist_cmp(ar, br),
+                },
+            },
         },
     }
   }
 
-  fn level_any_param(l: KLevel) -> G {
-    match l {
-      KLevel.Param(i) => i,
-      KLevel.Succ(&a) => level_any_param(a),
-      KLevel.Max(&a, &b) =>
-        let ha = level_has_param(a);
-        match ha {
-          1 => level_any_param(a),
-          0 => level_any_param(b),
+  -- Sorted-list subset test.
+  fn glist_subset(xs: List‹G›, ys: List‹G›) -> G {
+    match load(xs) {
+      ListNode.Nil => 1,
+      ListNode.Cons(x, xr) =>
+        match load(ys) {
+          ListNode.Nil => 0,
+          ListNode.Cons(y, yr) =>
+            match u32_less_than(x, y) {
+              1 => 0,
+              0 =>
+                match u32_less_than(y, x) {
+                  1 => glist_subset(xs, yr),
+                  0 => glist_subset(xr, yr),
+                },
+            },
         },
-      KLevel.IMax(&a, &b) =>
-        let hb = level_has_param(b);
-        match hb {
-          1 => level_any_param(b),
-          0 => level_any_param(a),
-        },
-      KLevel.Zero => 0,
     }
   }
 
-  fn level_subst_reduce(l: KLevel, p: G, repl: KLevel) -> KLevel {
-    match l {
-      KLevel.Zero => KLevel.Zero,
-      KLevel.Param(i) =>
-        match i - p {
-          0 => repl,
-          _ => KLevel.Param(i),
+  fn glist_eq_len(a: List‹G›, b: List‹G›) -> G {
+    match load(a) {
+      ListNode.Nil =>
+        match load(b) {
+          ListNode.Nil => 1,
+          ListNode.Cons(_, _) => 0,
         },
-      KLevel.Succ(&a) =>
-        KLevel.Succ(store(level_subst_reduce(a, p, repl))),
-      KLevel.Max(&a, &b) =>
-        level_max(level_subst_reduce(a, p, repl), level_subst_reduce(b, p, repl)),
-      KLevel.IMax(&a, &b) =>
-        level_imax(level_subst_reduce(a, p, repl), level_subst_reduce(b, p, repl)),
+      ListNode.Cons(_, ar) =>
+        match load(b) {
+          ListNode.Nil => 0,
+          ListNode.Cons(_, br) => glist_eq_len(ar, br),
+        },
     }
   }
 
-  fn level_leq(a: KLevel, b: KLevel) -> G {
-    match a {
-      KLevel.Zero => 1,
-      KLevel.Max(&a1, &a2) =>
-        level_leq(a1, b) * level_leq(a2, b),
-      KLevel.Succ(&a1) =>
-        match a1 {
-          KLevel.Max(&x, &y) =>
-            level_leq(KLevel.Succ(store(x)), b) * level_leq(KLevel.Succ(store(y)), b),
-          _ =>
-            match b {
-              KLevel.Succ(&b1) => level_leq(a1, b1),
-              KLevel.Max(&b1, &b2) =>
-                let r1 = level_leq(a, b1);
-                match r1 {
-                  1 => 1,
+  -- Insert into a sorted G-list. Returns (1, new_list) on insert,
+  -- (0, original) when already present. Mirrors level.rs ordered_insert.
+  fn glist_ordered_insert(x: G, l: List‹G›) -> (G, List‹G›) {
+    match load(l) {
+      ListNode.Nil => (1, store(ListNode.Cons(x, store(ListNode.Nil)))),
+      ListNode.Cons(h, r) =>
+        match u32_less_than(x, h) {
+          1 => (1, store(ListNode.Cons(x, l))),
+          0 =>
+            match u32_less_than(h, x) {
+              0 => (0, l),
+              1 =>
+                match glist_ordered_insert(x, r) {
+                  (f, r2) => (f, store(ListNode.Cons(h, r2))),
+                },
+            },
+        },
+    }
+  }
+
+  -- Insert (idx, k) into an idx-sorted var list; on duplicate idx keep
+  -- the max offset. Mirrors Node::add_var.
+  fn nlvars_add(vars: List‹&NLVar›, idx: G, k: G) -> List‹&NLVar› {
+    match load(vars) {
+      ListNode.Nil =>
+        store(ListNode.Cons(store(NLVar.Mk(idx, k)), store(ListNode.Nil))),
+      ListNode.Cons(v, rest) =>
+        match load(v) {
+          NLVar.Mk(vi, vo) =>
+            match u32_less_than(idx, vi) {
+              1 => store(ListNode.Cons(store(NLVar.Mk(idx, k)), vars)),
+              0 =>
+                match u32_less_than(vi, idx) {
+                  1 => store(ListNode.Cons(v, nlvars_add(rest, idx, k))),
                   0 =>
-                    let r2 = level_leq(a, b2);
-                    match r2 {
-                      1 => 1,
+                    match u32_less_than(vo, k) {
+                      1 => store(ListNode.Cons(store(NLVar.Mk(vi, k)), rest)),
+                      0 => vars,
+                    },
+                },
+            },
+        },
+    }
+  }
+
+  fn nlvars_eq(a: List‹&NLVar›, b: List‹&NLVar›) -> G {
+    match load(a) {
+      ListNode.Nil =>
+        match load(b) {
+          ListNode.Nil => 1,
+          ListNode.Cons(_, _) => 0,
+        },
+      ListNode.Cons(x, ar) =>
+        match load(b) {
+          ListNode.Nil => 0,
+          ListNode.Cons(y, br) =>
+            match load(x) {
+              NLVar.Mk(xi, xo) =>
+                match load(y) {
+                  NLVar.Mk(yi, yo) =>
+                    match xi - yi {
                       0 =>
-                        let bfull = KLevel.Max(store(b1), store(b2));
-                        let hp = level_has_param(bfull);
-                        match hp {
-                          0 => 0,
-                          _ =>
-                            let p = level_any_param(bfull);
-                            let sp = KLevel.Succ(store(KLevel.Param(p)));
-                            let a0 = level_subst_reduce(a, p, KLevel.Zero);
-                            let b0 = level_subst_reduce(bfull, p, KLevel.Zero);
-                            let a1s = level_subst_reduce(a, p, sp);
-                            let b1s = level_subst_reduce(bfull, p, sp);
-                            level_leq(a0, b0) * level_leq(a1s, b1s),
+                        match xo - yo {
+                          0 => nlvars_eq(ar, br),
+                          _ => 0,
+                        },
+                      _ => 0,
+                    },
+                },
+            },
+        },
+    }
+  }
+
+  fn nlvars_max_offset(vars: List‹&NLVar›) -> G {
+    match load(vars) {
+      ListNode.Nil => 0,
+      ListNode.Cons(v, rest) =>
+        match load(v) {
+          NLVar.Mk(_, vo) =>
+            let m = nlvars_max_offset(rest);
+            match u32_less_than(m, vo) {
+              1 => vo,
+              0 => m,
+            },
+        },
+    }
+  }
+
+  -- Keep x in xs unless ys has the same idx with offset >= x's.
+  -- Mirrors level.rs subsume_vars (sorted merge walk).
+  fn nlvars_subsume(xs: List‹&NLVar›, ys: List‹&NLVar›) -> List‹&NLVar› {
+    match load(xs) {
+      ListNode.Nil => xs,
+      ListNode.Cons(x, xr) =>
+        match load(ys) {
+          ListNode.Nil => xs,
+          ListNode.Cons(y, yr) =>
+            match load(x) {
+              NLVar.Mk(xi, xo) =>
+                match load(y) {
+                  NLVar.Mk(yi, yo) =>
+                    match u32_less_than(xi, yi) {
+                      1 => store(ListNode.Cons(x, nlvars_subsume(xr, ys))),
+                      0 =>
+                        match u32_less_than(yi, xi) {
+                          1 => nlvars_subsume(xs, yr),
+                          0 =>
+                            match u32_less_than(yo, xo) {
+                              1 => store(ListNode.Cons(x, nlvars_subsume(xr, yr))),
+                              0 => nlvars_subsume(xr, yr),
+                            },
                         },
                     },
                 },
-              _ => 0,
             },
-        },
-      KLevel.Param(i) =>
-        match b {
-          KLevel.Param(j) => eq_zero(i - j),
-          KLevel.Succ(&b1) => level_leq(a, b1),
-          KLevel.Max(&b1, &b2) =>
-            let r1 = level_leq(a, b1);
-            match r1 {
-              1 => 1,
-              0 => level_leq(a, b2),
-            },
-          KLevel.IMax(&b1, &b2) =>
-            let p = level_any_param(b2);
-            let sp = KLevel.Succ(store(KLevel.Param(p)));
-            let a0 = level_subst_reduce(a, p, KLevel.Zero);
-            let bfull = KLevel.IMax(store(b1), store(b2));
-            let b0 = level_subst_reduce(bfull, p, KLevel.Zero);
-            let a1s = level_subst_reduce(a, p, sp);
-            let b1s = level_subst_reduce(bfull, p, sp);
-            level_leq(a0, b0) * level_leq(a1s, b1s),
-          KLevel.Zero => 0,
-        },
-      KLevel.IMax(&a1, &a2) =>
-        let not_zero = level_is_not_zero(a2);
-        match not_zero {
-          1 => level_leq(a1, b) * level_leq(a2, b),
-          0 =>
-            let p = level_any_param(a2);
-            let sp = KLevel.Succ(store(KLevel.Param(p)));
-            let afull = KLevel.IMax(store(a1), store(a2));
-            let a0 = level_subst_reduce(afull, p, KLevel.Zero);
-            let b0 = level_subst_reduce(b, p, KLevel.Zero);
-            let a1s = level_subst_reduce(afull, p, sp);
-            let b1s = level_subst_reduce(b, p, sp);
-            level_leq(a0, b0) * level_leq(a1s, b1s),
         },
     }
   }
 
+  -- Max the constant contribution into the entry at `path` (path-sorted
+  -- insert). Mirrors norm_add_const incl. its skip rule: k = 0 never
+  -- contributes; k = 1 only at the empty path (along a non-empty path
+  -- all conditioning params are >= 1 so the branch value is >= 1 anyway).
+  fn nl_add_const(acc: List‹&NLEntry›, path: List‹G›, k: G) -> List‹&NLEntry› {
+    match k {
+      0 => acc,
+      1 =>
+        match load(path) {
+          ListNode.Nil => nl_add_const_go(acc, path, k),
+          ListNode.Cons(_, _) => acc,
+        },
+      _ => nl_add_const_go(acc, path, k),
+    }
+  }
+
+  fn nl_add_const_go(acc: List‹&NLEntry›, path: List‹G›, k: G) -> List‹&NLEntry› {
+    match load(acc) {
+      ListNode.Nil =>
+        store(ListNode.Cons(
+          store(NLEntry.Mk(path, k, store(ListNode.Nil))),
+          store(ListNode.Nil))),
+      ListNode.Cons(e, rest) =>
+        match load(e) {
+          NLEntry.Mk(ep, ec, ev) =>
+            match glist_cmp(path, ep) {
+              0 =>
+                match u32_less_than(ec, k) {
+                  1 => store(ListNode.Cons(store(NLEntry.Mk(ep, k, ev)), rest)),
+                  0 => acc,
+                },
+              1 =>
+                store(ListNode.Cons(
+                  store(NLEntry.Mk(path, k, store(ListNode.Nil))), acc)),
+              _ => store(ListNode.Cons(e, nl_add_const_go(rest, path, k))),
+            },
+        },
+    }
+  }
+
+  -- Add var (idx, k) to the entry at `path` (path-sorted insert).
+  fn nl_add_var(acc: List‹&NLEntry›, path: List‹G›, idx: G, k: G) -> List‹&NLEntry› {
+    match load(acc) {
+      ListNode.Nil =>
+        store(ListNode.Cons(
+          store(NLEntry.Mk(path, 0,
+            store(ListNode.Cons(store(NLVar.Mk(idx, k)), store(ListNode.Nil))))),
+          store(ListNode.Nil))),
+      ListNode.Cons(e, rest) =>
+        match load(e) {
+          NLEntry.Mk(ep, ec, ev) =>
+            match glist_cmp(path, ep) {
+              0 =>
+                store(ListNode.Cons(
+                  store(NLEntry.Mk(ep, ec, nlvars_add(ev, idx, k))), rest)),
+              1 =>
+                store(ListNode.Cons(
+                  store(NLEntry.Mk(path, 0,
+                    store(ListNode.Cons(store(NLVar.Mk(idx, k)), store(ListNode.Nil))))),
+                  acc)),
+              _ => store(ListNode.Cons(e, nl_add_var(rest, path, idx, k))),
+            },
+        },
+    }
+  }
+
+  -- Flatten a level into canonical form. `path` = imax conditioning chain
+  -- (sorted param idxs), `k` = accumulated Succ offset. Mirrors
+  -- normalize_aux; the IMax arm delegates to the dispatch (whose cases
+  -- replicate the aux IMax-shape cases verbatim, as in level.rs).
+  fn normalize_aux(l: KLevel, path: List‹G›, k: G,
+                   acc: List‹&NLEntry›) -> List‹&NLEntry› {
+    match l {
+      KLevel.Zero => nl_add_const(acc, path, k),
+      KLevel.Succ(&inner) => normalize_aux(inner, path, k + 1, acc),
+      KLevel.Max(&a, &b) =>
+        normalize_aux(b, path, k, normalize_aux(a, path, k, acc)),
+      KLevel.IMax(&u, &b) => normalize_imax_dispatch(u, b, path, k, acc),
+      KLevel.Param(idx) =>
+        match glist_ordered_insert(idx, path) {
+          (1, new_path) =>
+            nl_add_var(nl_add_const(acc, path, k), new_path, idx, k),
+          (0, _) =>
+            match k {
+              0 => acc,
+              _ => nl_add_var(acc, path, idx, k),
+            },
+        },
+    }
+  }
+
+  -- imax(a, b) by b's shape: zero kills the branch; succ is never-zero so
+  -- imax = max; max/imax distribute; param conditions the path.
+  fn normalize_imax_dispatch(a: KLevel, b: KLevel, path: List‹G›, k: G,
+                             acc: List‹&NLEntry›) -> List‹&NLEntry› {
+    match b {
+      KLevel.Zero => nl_add_const(acc, path, k),
+      KLevel.Succ(&v) =>
+        normalize_aux(v, path, k + 1, normalize_aux(a, path, k, acc)),
+      KLevel.Max(&v, &w) =>
+        -- imax(a, max(v, w)) = max(imax(a, v), imax(a, w))
+        normalize_imax_dispatch(a, w, path, k,
+          normalize_imax_dispatch(a, v, path, k, acc)),
+      KLevel.IMax(&v, &w) =>
+        -- imax(a, imax(v, w)) = max(imax(a, w), imax(v, w))
+        normalize_imax_dispatch(v, w, path, k,
+          normalize_imax_dispatch(a, w, path, k, acc)),
+      KLevel.Param(idx) =>
+        match glist_ordered_insert(idx, path) {
+          (1, new_path) =>
+            -- param(idx) = 0 branch: imax(a, 0) = 0, contributing k.
+            normalize_aux(a, new_path, k,
+              nl_add_var(nl_add_const(acc, path, k), new_path, idx, k)),
+          (0, _) =>
+            let acc2 = match k {
+              0 => acc,
+              _ => nl_add_var(acc, path, idx, k),
+            };
+            normalize_aux(a, path, k, acc2),
+        },
+    }
+  }
+
+  -- Phase 2 subsumption: drop contributions dominated by another entry
+  -- whose path is a subset (active whenever the dominated one is).
+  -- Each entry folds over the ORIGINAL (snapshot) list, mirroring the
+  -- Rust snapshot semantics. Callers seed `snapshot` with the same list
+  -- they pass as `rem`.
+  fn nl_subsumption_walk(rem: List‹&NLEntry›,
+                         snapshot: List‹&NLEntry›) -> List‹&NLEntry› {
+    match load(rem) {
+      ListNode.Nil => rem,
+      ListNode.Cons(e, rest) =>
+        store(ListNode.Cons(
+          nl_subsume_entry(e, snapshot),
+          nl_subsumption_walk(rest, snapshot))),
+    }
+  }
+
+  fn nl_subsume_entry(e: &NLEntry, snap: List‹&NLEntry›) -> &NLEntry {
+    match load(snap) {
+      ListNode.Nil => e,
+      ListNode.Cons(s, srest) =>
+        match load(e) {
+          NLEntry.Mk(p1, c1, v1) =>
+            match load(s) {
+              NLEntry.Mk(p2, c2, v2) =>
+                match glist_subset(p2, p1) {
+                  0 => nl_subsume_entry(e, srest),
+                  _ =>
+                    -- subset + equal length <=> p1 == p2 (self entry)
+                    let same = glist_eq_len(p1, p2);
+                    let c1n = match c1 {
+                      0 => 0,
+                      _ =>
+                        let or1 = match same {
+                          1 => 1,
+                          0 => u32_less_than(c2, c1),
+                        };
+                        let or2 = match load(v2) {
+                          ListNode.Nil => 1,
+                          ListNode.Cons(_, _) =>
+                            u32_less_than(nlvars_max_offset(v1) + 1, c1),
+                        };
+                        match or1 * or2 {
+                          0 => 0,
+                          _ => c1,
+                        },
+                    };
+                    let v1n = match same {
+                      1 => v1,
+                      0 =>
+                        match load(v2) {
+                          ListNode.Nil => v1,
+                          ListNode.Cons(_, _) => nlvars_subsume(v1, v2),
+                        },
+                    };
+                    nl_subsume_entry(store(NLEntry.Mk(p1, c1n, v1n)), srest),
+                },
+            },
+        },
+    }
+  }
+
+  fn nl_eq(a: List‹&NLEntry›, b: List‹&NLEntry›) -> G {
+    match load(a) {
+      ListNode.Nil =>
+        match load(b) {
+          ListNode.Nil => 1,
+          ListNode.Cons(_, _) => 0,
+        },
+      ListNode.Cons(x, ar) =>
+        match load(b) {
+          ListNode.Nil => 0,
+          ListNode.Cons(y, br) =>
+            match load(x) {
+              NLEntry.Mk(xp, xc, xv) =>
+                match load(y) {
+                  NLEntry.Mk(yp, yc, yv) =>
+                    match glist_cmp(xp, yp) {
+                      0 =>
+                        match xc - yc {
+                          0 =>
+                            match nlvars_eq(xv, yv) {
+                              1 => nl_eq(ar, br),
+                              0 => 0,
+                            },
+                          _ => 0,
+                        },
+                      _ => 0,
+                    },
+                },
+            },
+        },
+    }
+  }
+
+  -- Does some entry (p2, n2) in l2 with p2 SUBSET-OF p1 dominate the
+  -- constant c along every assignment activating p1? n2.const counts
+  -- unconditionally in that branch; each var (idx, off) counts as
+  -- >= off + 1 because idx IN p2 implies the param is >= 1 there.
+  -- Mirrors level.rs covers_const (the fixed, split-search version).
+  fn nl_covers_const(l2: List‹&NLEntry›, p1: List‹G›, c: G) -> G {
+    match load(l2) {
+      ListNode.Nil => 0,
+      ListNode.Cons(e, rest) =>
+        match load(e) {
+          NLEntry.Mk(p2, c2, v2) =>
+            match glist_subset(p2, p1) {
+              0 => nl_covers_const(rest, p1, c),
+              _ =>
+                let hit = match u32_less_than(c2, c) {
+                  0 => 1,
+                  1 => nlvars_any_offset_geq(v2, c),
+                };
+                match hit {
+                  1 => 1,
+                  0 => nl_covers_const(rest, p1, c),
+                },
+            },
+        },
+    }
+  }
+
+  -- Any var with offset + 1 >= c?
+  fn nlvars_any_offset_geq(vars: List‹&NLVar›, c: G) -> G {
+    match load(vars) {
+      ListNode.Nil => 0,
+      ListNode.Cons(v, rest) =>
+        match load(v) {
+          NLVar.Mk(_, vo) =>
+            match u32_less_than(vo + 1, c) {
+              0 => 1,
+              1 => nlvars_any_offset_geq(rest, c),
+            },
+        },
+    }
+  }
+
+  -- Does some entry (p2, n2) in l2 with p2 SUBSET-OF p1 contain a var
+  -- (w, off2) with off2 >= off? Mirrors level.rs covers_var.
+  fn nl_covers_var(l2: List‹&NLEntry›, p1: List‹G›, w: G, off: G) -> G {
+    match load(l2) {
+      ListNode.Nil => 0,
+      ListNode.Cons(e, rest) =>
+        match load(e) {
+          NLEntry.Mk(p2, _, v2) =>
+            match glist_subset(p2, p1) {
+              0 => nl_covers_var(rest, p1, w, off),
+              _ =>
+                match nlvars_dominates(v2, w, off) {
+                  1 => 1,
+                  0 => nl_covers_var(rest, p1, w, off),
+                },
+            },
+        },
+    }
+  }
+
+  fn nlvars_dominates(vars: List‹&NLVar›, w: G, off: G) -> G {
+    match load(vars) {
+      ListNode.Nil => 0,
+      ListNode.Cons(v, rest) =>
+        match load(v) {
+          NLVar.Mk(vi, vo) =>
+            match vi - w {
+              0 =>
+                match u32_less_than(vo, off) {
+                  0 => 1,
+                  1 => nlvars_dominates(rest, w, off),
+                },
+              _ => nlvars_dominates(rest, w, off),
+            },
+        },
+    }
+  }
+
+  -- Semantic l1 <= l2 on canonical forms: every entry's contribution in
+  -- its activation branch must be dominated by subset-path entries of l2.
+  -- Mirrors level.rs norm_level_le (with its covers split, sound where
+  -- Lean4Lean's single-entry search is incomplete).
+  fn nl_le(l1: List‹&NLEntry›, l2: List‹&NLEntry›) -> G {
+    match load(l1) {
+      ListNode.Nil => 1,
+      ListNode.Cons(e, rest) =>
+        match load(e) {
+          NLEntry.Mk(p1, c1, v1) =>
+            let c_ok = match c1 {
+              0 => 1,
+              _ => nl_covers_const(l2, p1, c1),
+            };
+            match c_ok {
+              0 => 0,
+              1 =>
+                match nl_le_vars(v1, l2, p1) {
+                  0 => 0,
+                  1 => nl_le(rest, l2),
+                },
+            },
+        },
+    }
+  }
+
+  fn nl_le_vars(vars: List‹&NLVar›, l2: List‹&NLEntry›, p1: List‹G›) -> G {
+    match load(vars) {
+      ListNode.Nil => 1,
+      ListNode.Cons(v, rest) =>
+        match load(v) {
+          NLVar.Mk(vi, vo) =>
+            match nl_covers_var(l2, p1, vi, vo) {
+              0 => 0,
+              1 => nl_le_vars(rest, l2, p1),
+            },
+        },
+    }
+  }
+
+  -- Keyed on the level alone: each distinct level normalizes once per run.
+  -- Seeded with the empty-path entry, mirroring normalize_level.
+  fn level_normalize(l: KLevel) -> List‹&NLEntry› {
+    let seed = store(ListNode.Cons(
+      store(NLEntry.Mk(store(ListNode.Nil), 0, store(ListNode.Nil))),
+      store(ListNode.Nil)));
+    let raw = normalize_aux(l, store(ListNode.Nil), 0, seed);
+    nl_subsumption_walk(raw, raw)
+  }
+
+  fn level_leq(a: KLevel, b: KLevel) -> G {
+    match level_eq(a, b) {
+      1 => 1,
+      0 =>
+        match a {
+          KLevel.Zero => 1,
+          _ => nl_le(level_normalize(a), level_normalize(b)),
+        },
+    }
+  }
+
+  -- Semantic level equality via canonical forms (mirror: level.rs
+  -- univ_eq). The previous leq(a,b)*leq(b,a) did a two-way
+  -- param-substitution split per Max/IMax-with-param -- exponential in
+  -- params and the dominant record cost on instance-heavy checks.
   fn level_equal(a: KLevel, b: KLevel) -> G {
-    level_leq(a, b) * level_leq(b, a)
+    match level_eq(a, b) {
+      1 => 1,
+      0 => nl_eq(level_normalize(a), level_normalize(b)),
+    }
   }
 
   fn level_max(a: KLevel, b: KLevel) -> KLevel {
