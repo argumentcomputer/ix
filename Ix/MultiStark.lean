@@ -8,6 +8,7 @@ public import Ix.MultiStark.Keccak
 public import Ix.MultiStark.Pcs
 public import Ix.MultiStark.SystemDeserialize
 public import Ix.MultiStark.Verifier
+public import Ix.MultiStark.Tests
 
 /-!
 # Multi-STARK proof verifier (Aiur)
@@ -81,6 +82,15 @@ def multiStark : Except Aiur.Global Aiur.Source.Toplevel := do
   let t ← t.merge pcs
   let t ← t.merge verifier
   t.merge entrypoints
+
+/-- The verifier toplevel PLUS its self-test entrypoints
+(`Ix/MultiStark/Tests.lean`). Kept separate from `multiStark` because every
+`pub fn` adds a circuit to the compiled system — the production verifier should
+not carry test-only width. Use this toplevel only to run the `*_test`
+entrypoints. -/
+def multiStarkTests : Except Aiur.Global Aiur.Source.Toplevel := do
+  let t ← multiStark
+  t.merge tests
 
 end MultiStark
 

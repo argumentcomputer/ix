@@ -303,23 +303,6 @@ def pcs := ⟦
     eg_add(t1, t2)
   }
 
-  -- Self-test: arity-2 fold at index 5, log_height 3 vs the `fri_fold_ref`
-  -- reference (computed by the real `TwoAdicFriFolding::fold_row`).
-  pub fn fri_fold_test() -> G {
-    let index_bits = store(ListNode.Cons(1, store(ListNode.Cons(0,
-                       store(ListNode.Cons(1, store(ListNode.Nil)))))));
-    let e0 = [[17u8, 17u8, 17u8, 17u8, 17u8, 17u8, 17u8, 17u8],
-              [34u8, 34u8, 34u8, 34u8, 34u8, 34u8, 34u8, 34u8]];
-    let e1 = [[51u8, 51u8, 51u8, 51u8, 51u8, 51u8, 51u8, 51u8],
-              [68u8, 68u8, 68u8, 68u8, 68u8, 68u8, 68u8, 68u8]];
-    let beta = [[85u8, 85u8, 85u8, 85u8, 85u8, 85u8, 85u8, 85u8],
-                [102u8, 102u8, 102u8, 102u8, 102u8, 102u8, 102u8, 102u8]];
-    let folded = fri_fold2(index_bits, 3, beta, e0, e1);
-    assert_eq!(limb_to_field(folded[0]), 9349172584842537206);
-    assert_eq!(limb_to_field(folded[1]), 984486879173118962);
-    1
-  }
-
   -- ==========================================================================
   -- `open_input` reduced openings (`fri/verifier.rs::open_input` inner loop).
   --
@@ -349,34 +332,6 @@ def pcs := ⟦
         let term = eg_mul(eg_mul(ap, eg_sub(pz, [px, gl_zero()])), q);
         ro_fold(pxr, pzr, q, alpha, eg_add(ro, term), eg_mul(ap, alpha)),
     }
-  }
-
-  -- Self-test vs `ro_fold_ref`: x at index 5 / log_height 3, then accumulate
-  -- (p_z − p_x)/(z − x) over 3 columns with alpha powers.
-  pub fn ro_fold_test() -> G {
-    let index_bits = store(ListNode.Cons(1, store(ListNode.Cons(0,
-                       store(ListNode.Cons(1, store(ListNode.Nil)))))));
-    let x = ro_x(index_bits, 3);
-    assert_eq!(limb_to_field(x), 117440512);
-    let z = [[154u8, 120u8, 86u8, 52u8, 18u8, 0u8, 0u8, 0u8],
-             [1u8, 239u8, 205u8, 171u8, 0u8, 0u8, 0u8, 0u8]];
-    let alpha = [[17u8, 17u8, 17u8, 17u8, 17u8, 17u8, 17u8, 17u8],
-                 [2u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]];
-    let px0 = [11u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8];
-    let px1 = [22u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8];
-    let px2 = [33u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8];
-    let p_x = store(ListNode.Cons(px0, store(ListNode.Cons(px1,
-                store(ListNode.Cons(px2, store(ListNode.Nil)))))));
-    let pz0 = [[100u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], [1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]];
-    let pz1 = [[200u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], [2u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]];
-    let pz2 = [[44u8, 1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], [3u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]];
-    let p_z = store(ListNode.Cons(pz0, store(ListNode.Cons(pz1,
-                store(ListNode.Cons(pz2, store(ListNode.Nil)))))));
-    let q = eg_inverse(eg_sub(z, [x, gl_zero()]));
-    let (ro, _ap) = ro_fold(p_x, p_z, q, alpha, [gl_zero(), gl_zero()], [gl_one(), gl_zero()]);
-    assert_eq!(limb_to_field(ro[0]), 7130765474285082575);
-    assert_eq!(limb_to_field(ro[1]), 12254464995725315436);
-    1
   }
 
   -- ==========================================================================
@@ -810,104 +765,6 @@ def pcs := ⟦
       num_circuits, log_blowup, log_gmax, betas, commit_phase_commits, final_poly, num_rounds)
   }
 
-  -- ==========================================================================
-  -- Self-test (validation): the keccak MMCS sponge/compression against
-  -- reference values from `multi-stark`'s own hasher (`pcs_ref_values`).
-  -- Compares each output lane mod p via `limb_to_field` (all reference lanes are
-  -- canonical, so this is exact).
-  -- ==========================================================================
-
-  -- A small single-byte value as a `U64` (8 LE bytes).
-  fn u64_of(b: U8) -> U64 {
-    [b, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]
-  }
-  -- `[i+1, i+2, …, n]` as a `List‹U64›`.
-  fn build_range(i: G, n: G) -> List‹U64› {
-    match n - i {
-      0 => store(ListNode.Nil),
-      _ => store(ListNode.Cons(u64_of(u8_from_field_unsafe(i + 1)), build_range(i + 1, n))),
-    }
-  }
-  fn assert_digest(d: Digest, e0: G, e1: G, e2: G, e3: G) -> G {
-    assert_eq!(limb_to_field(d[0]), e0);
-    assert_eq!(limb_to_field(d[1]), e1);
-    assert_eq!(limb_to_field(d[2]), e2);
-    assert_eq!(limb_to_field(d[3]), e3);
-    1
-  }
-  pub fn pcs_hash_test() -> G {
-    -- LEAF3: hash([1,2,3])
-    let d3 = mmcs_hash_row(build_range(0, 3));
-    assert_eq!(assert_digest(d3, 0xc55a6a1beaea9fec, 0xc8f0dbc4c59ec440,
-                                 0xacb1295de9bfe032, 0x445d569d3dfc9543), 1);
-    -- LEAF17: exactly one full block, no extra permute.
-    let d17 = mmcs_hash_row(build_range(0, 17));
-    assert_eq!(assert_digest(d17, 0x388da73622e8fdd5, 0xec687be9c50d2218,
-                                  0x528d145dfe6571af, 0xd2eb808dfba4703c), 1);
-    -- LEAF22: full block + 5-element partial (two permutes), >20 lanes.
-    let d22 = mmcs_hash_row(build_range(0, 22));
-    assert_eq!(assert_digest(d22, 520358013996801752, 12301199992631688477,
-      8732686820159480415, 10883226686987971725), 1);
-    -- LEAF20: full block + 3-element partial (two permutes).
-    let d20 = mmcs_hash_row(build_range(0, 20));
-    assert_eq!(assert_digest(d20, 0xec696847be88d358, 0x202861c67ff4cec8,
-                                  0x88e006a48aaa0661, 0xabaddb9d32ecd024), 1);
-    -- COMPRESS([1,2,3,4],[5,6,7,8])
-    let c = mmcs_compress([u64_of(1u8), u64_of(2u8), u64_of(3u8), u64_of(4u8)],
-                          [u64_of(5u8), u64_of(6u8), u64_of(7u8), u64_of(8u8)]);
-    assert_eq!(assert_digest(c, 0xda1ef0642722b22e, 0x4851efdbdb2a2fd8,
-                                0x37e8ff900ea95d47, 0xa153eee7805376fb), 1);
-    1
-  }
-
-  -- Merkle `verify_batch` self-test against the `pcs_merkle_ref` reference: a
-  -- cap-height-0 tree over 3 matrices of heights 8/4/2 (log-heights 3/2/1),
-  -- opened at index 5 (path bits 1,0,1). Checks the recomputed root matches the
-  -- committed root and that the cap index is 0, then that a tampered opened row
-  -- yields a different (rejected) root.
-  pub fn pcs_merkle_test() -> G {
-    -- opened rows (matrix order): m0 row5, m1 row2, m2 row1.
-    let row0 = store(ListNode.Cons(u64_of(11u8), store(ListNode.Cons(u64_of(12u8), store(ListNode.Nil)))));
-    let row1 = store(ListNode.Cons(u64_of(107u8), store(ListNode.Cons(u64_of(108u8),
-                 store(ListNode.Cons(u64_of(109u8), store(ListNode.Nil)))))));
-    let row2 = store(ListNode.Cons(u64_of(202u8), store(ListNode.Nil)));
-    let rows = store(ListNode.Cons(row0, store(ListNode.Cons(row1,
-                 store(ListNode.Cons(row2, store(ListNode.Nil)))))));
-    -- log-heights and path bits (index 5 = 0b101, LSB first).
-    let lhs = store(ListNode.Cons(3, store(ListNode.Cons(2, store(ListNode.Cons(1, store(ListNode.Nil)))))));
-    let ibits = store(ListNode.Cons(1, store(ListNode.Cons(0, store(ListNode.Cons(1, store(ListNode.Nil)))))));
-    -- authentication path SIB0, SIB1, SIB2 (each a Digest = [U64; 4]).
-    let sib0 = [[9u8, 36u8, 179u8, 127u8, 205u8, 83u8, 105u8, 203u8],
-                [95u8, 229u8, 105u8, 223u8, 113u8, 55u8, 97u8, 122u8],
-                [135u8, 8u8, 65u8, 248u8, 163u8, 163u8, 68u8, 81u8],
-                [9u8, 11u8, 20u8, 209u8, 10u8, 168u8, 151u8, 125u8]];
-    let sib1 = [[227u8, 58u8, 255u8, 213u8, 77u8, 152u8, 42u8, 77u8],
-                [113u8, 86u8, 2u8, 151u8, 97u8, 63u8, 58u8, 45u8],
-                [228u8, 139u8, 228u8, 194u8, 182u8, 115u8, 107u8, 221u8],
-                [248u8, 16u8, 30u8, 93u8, 176u8, 36u8, 205u8, 88u8]];
-    let sib2 = [[236u8, 144u8, 115u8, 218u8, 140u8, 5u8, 86u8, 229u8],
-                [95u8, 186u8, 252u8, 175u8, 21u8, 247u8, 153u8, 25u8],
-                [113u8, 78u8, 92u8, 200u8, 212u8, 175u8, 247u8, 47u8],
-                [78u8, 145u8, 206u8, 54u8, 175u8, 155u8, 165u8, 206u8]];
-    let proof = store(ListNode.Cons(sib0, store(ListNode.Cons(sib1,
-                  store(ListNode.Cons(sib2, store(ListNode.Nil)))))));
-    let (root, capidx) = mmcs_root(rows, lhs, ibits, proof, 3);
-    assert_eq!(capidx, 0);
-    assert_eq!(assert_digest(root, 0x6211b9a1a116a006, 0x435ee98e1504880f,
-                                   0x900c7274b9a215f, 0xf6e3aaac5dcd90bd), 1);
-    -- tamper: perturb m0's first opened value → root must change.
-    let bad0 = store(ListNode.Cons(u64_of(99u8), store(ListNode.Cons(u64_of(12u8), store(ListNode.Nil)))));
-    let bad_rows = store(ListNode.Cons(bad0, store(ListNode.Cons(row1,
-                     store(ListNode.Cons(row2, store(ListNode.Nil)))))));
-    let cap = store(ListNode.Cons([[6u8, 160u8, 22u8, 161u8, 161u8, 185u8, 17u8, 98u8],
-                                   [15u8, 136u8, 4u8, 21u8, 142u8, 233u8, 94u8, 67u8],
-                                   [95u8, 33u8, 154u8, 75u8, 39u8, 199u8, 0u8, 9u8],
-                                   [189u8, 144u8, 205u8, 93u8, 172u8, 170u8, 227u8, 246u8]],
-                    store(ListNode.Nil)));
-    assert_eq!(mmcs_verify(cap, rows, lhs, ibits, proof, 3), 1);
-    assert_eq!(mmcs_verify(cap, bad_rows, lhs, ibits, proof, 3), 0);
-    1
-  }
 ⟧
 
 end MultiStark
