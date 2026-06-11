@@ -223,7 +223,13 @@ def whnf := ⟦
           -- which would loop.
           (2, stuck) => stuck,
           (0, _) =>
-            let proj_def_pair = try_reduce_projection_definition(idx, spine, top);
+            -- gate on the idx-keyed proj-def classification (memoized per
+            -- constant): only real projection-definitions pay the
+            -- spine-keyed apply row
+            let proj_def_pair = match is_proj_def(idx, top) {
+              1 => try_reduce_projection_definition(idx, spine, top),
+              _ => (0, store(KExprNode.BVar(0))),
+            };
             match proj_def_pair {
               (1, reduced_pd) => whnf(reduced_pd, types, top, addrs),
               (0, _) =>

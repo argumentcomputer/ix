@@ -2626,23 +2626,54 @@ def primitive := ⟦
   -- Recognizes Defn-kind constants whose body is `λ x_1 ... x_n → Prj S i (BVar k)`
   -- and shortcuts the unfolding to a direct `Prj S i args[arity-1-k]`. Pure
   -- performance: standard delta+beta still produces same result.
-  fn try_reduce_projection_definition(head_idx: G, spine: List‹KExpr›,
-                                       top: List‹&KConstantInfo›) -> (G, KExpr) {
+  -- Whether the constant at `head_idx` is a projection-definition, and
+  -- its (arity, struct_idx, field, struct_arg_idx) when so. Keyed on the
+  -- INDEX alone (top is constant per run): one memo row per distinct
+  -- constant, where the previous spine-keyed probe paid a row per delta
+  -- candidate — 12.7M entries on the UTF-8 codec check, scaling 39x per
+  -- SInt width doubling (structure-bundle instances force projections
+  -- constantly).
+  fn proj_def_info_of(head_idx: G,
+                      top: List‹&KConstantInfo›) -> (G, G, G, G, G) {
     match load(list_lookup(top, head_idx)) {
       KConstantInfo.Defn(_, _, value, _, _) =>
-        match projection_definition_info(value, 0) {
-          (1, arity, struct_idx, field, struct_arg_idx) =>
-            match u32_less_than(list_length(spine), arity) {
-              1 => (0, store(KExprNode.BVar(0))),
-              0 =>
-                let target_arg = list_lookup(spine, struct_arg_idx);
-                let proj_expr = store(KExprNode.Proj(struct_idx, field, target_arg));
-                let post = list_drop(spine, arity);
-                (1, apply_spine(proj_expr, post)),
-            },
-          _ => (0, store(KExprNode.BVar(0))),
-        },
+        projection_definition_info(value, 0),
+      _ => (0, 0, 0, 0, 0),
+    }
+  }
+
+  -- Scalar gate for inline use (let-bound matches only support scalar
+  -- scrutinees): 1 iff the constant is a projection-definition.
+  fn is_proj_def(head_idx: G, top: List‹&KConstantInfo›) -> G {
+    match proj_def_info_of(head_idx, top) {
+      (1, _, _, _, _) => 1,
+      _ => 0,
+    }
+  }
+
+  -- The spine-keyed application, called ONLY when `is_proj_def` already
+  -- said yes (rare), so the per-delta-candidate row of the old
+  -- ungated form is gone.
+  fn try_reduce_projection_definition(head_idx: G, spine: List‹KExpr›,
+                                       top: List‹&KConstantInfo›) -> (G, KExpr) {
+    match proj_def_info_of(head_idx, top) {
+      (1, arity, struct_idx, field, struct_arg_idx) =>
+        proj_def_apply(arity, struct_idx, field, struct_arg_idx, spine),
       _ => (0, store(KExprNode.BVar(0))),
+    }
+  }
+
+  -- The spine-dependent application, reached only for ACTUAL
+  -- projection-definitions (rare).
+  fn proj_def_apply(arity: G, struct_idx: G, field: G, struct_arg_idx: G,
+                    spine: List‹KExpr›) -> (G, KExpr) {
+    match u32_less_than(list_length(spine), arity) {
+      1 => (0, store(KExprNode.BVar(0))),
+      0 =>
+        let target_arg = list_lookup(spine, struct_arg_idx);
+        let proj_expr = store(KExprNode.Proj(struct_idx, field, target_arg));
+        let post = list_drop(spine, arity);
+        (1, apply_spine(proj_expr, post)),
     }
   }
 
