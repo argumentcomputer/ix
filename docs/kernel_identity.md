@@ -107,10 +107,26 @@ this not by making collisions unlikely but by making them impossible —
 - A uid comes from a process-global sequential counter
   (`expr.rs::fresh_uid`), never from hashing input content. There is no
   function from term content to uid for an adversary to find collisions
-  in. Two `KExpr` values share a uid only if they are clones of one
-  construction event or the canonical node the intern table returned for
-  the same shallow key. `fresh_uid` aborts on counter exhaustion (which
-  would require >2^67 guest cycles) rather than wrap.
+  in — and no birthday bound either: uids are handed out once each, not
+  sampled from a space two terms could land in. Two `KExpr` values share
+  a uid only if they are clones of one construction event or the
+  canonical node the intern table returned for the same shallow key.
+  `fresh_uid` aborts on counter exhaustion (which would require >2^67
+  guest cycles) rather than wrap, and the only constructors that accept
+  a caller-supplied uid (`*_mdata_with_addr`) are private to `expr.rs`,
+  so no code outside the module can copy one node's uid into a
+  different structure.
+- **Between shards** (separate guest processes), uid collisions are
+  certain — every process counts from 1 — and harmless by design: a uid
+  is meaningless outside its process. Nothing serializes a uid (the
+  committed publics are blake3 addresses and Merkle roots; intern tables
+  and caches die with the process; manifests and the proof store carry
+  `Address`es only), so there is no channel through which shard A's
+  uid 42 could meet shard B's. All cross-shard identity — claims,
+  assumption resolution, proof reuse — lives in the Ixon `Address`
+  layer. Any future feature that wants to persist or ship a
+  reduction/intern cache MUST re-key it by content (e.g. Ixon
+  serialization hashes) first; see the boundary rule above.
 - The intern table is keyed by [`ExprKey`]/[`UnivKey`] — exact
   structural keys compared by full `Eq` (variant tag, child uids,
   complete 32-byte payload addresses; never truncated, never a digest).

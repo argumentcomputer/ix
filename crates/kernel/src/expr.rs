@@ -276,7 +276,7 @@ impl<M: KernelMode> KExpr<M> {
 
   /// Compute the content hash for [`KExpr::var_mdata`] without allocating.
   ///
-  pub fn var_mdata_with_addr(
+  fn var_mdata_with_addr(
     idx: u64,
     name: M::MField<Name>,
     mdata: M::MField<Vec<MData>>,
@@ -291,7 +291,7 @@ impl<M: KernelMode> KExpr<M> {
     Self::fvar_mdata(id, name, no_mdata::<M>())
   }
 
-  pub fn fvar_mdata_with_addr(
+  fn fvar_mdata_with_addr(
     id: FVarId,
     name: M::MField<Name>,
     mdata: M::MField<Vec<MData>>,
@@ -325,7 +325,7 @@ impl<M: KernelMode> KExpr<M> {
     Self::sort_mdata(u, no_mdata::<M>())
   }
 
-  pub fn sort_mdata_with_addr(
+  fn sort_mdata_with_addr(
     u: KUniv<M>,
     mdata: M::MField<Vec<MData>>,
     addr: Addr,
@@ -342,7 +342,7 @@ impl<M: KernelMode> KExpr<M> {
     Self::cnst_mdata(id, univs, no_mdata::<M>())
   }
 
-  pub fn cnst_mdata_with_addr(
+  fn cnst_mdata_with_addr(
     id: KId<M>,
     univs: Box<[KUniv<M>]>,
     mdata: M::MField<Vec<MData>>,
@@ -368,7 +368,7 @@ impl<M: KernelMode> KExpr<M> {
     Self::app_mdata(f, a, no_mdata::<M>())
   }
 
-  pub fn app_mdata_with_addr(
+  fn app_mdata_with_addr(
     f: KExpr<M>,
     a: KExpr<M>,
     mdata: M::MField<Vec<MData>>,
@@ -404,7 +404,7 @@ impl<M: KernelMode> KExpr<M> {
 
   /// Compute the content hash for [`KExpr::lam_mdata`].
   ///
-  pub fn lam_mdata_with_addr(
+  fn lam_mdata_with_addr(
     name: M::MField<Name>,
     bi: M::MField<BinderInfo>,
     ty: KExpr<M>,
@@ -442,7 +442,7 @@ impl<M: KernelMode> KExpr<M> {
     Self::all_mdata(name, bi, ty, body, no_mdata::<M>())
   }
 
-  pub fn all_mdata_with_addr(
+  fn all_mdata_with_addr(
     name: M::MField<Name>,
     bi: M::MField<BinderInfo>,
     ty: KExpr<M>,
@@ -481,7 +481,7 @@ impl<M: KernelMode> KExpr<M> {
     Self::let_mdata(name, ty, val, body, non_dep, no_mdata::<M>())
   }
 
-  pub fn let_mdata_with_addr(
+  fn let_mdata_with_addr(
     name: M::MField<Name>,
     ty: KExpr<M>,
     val: KExpr<M>,
@@ -516,7 +516,7 @@ impl<M: KernelMode> KExpr<M> {
     Self::prj_mdata(id, field, val, no_mdata::<M>())
   }
 
-  pub fn prj_mdata_with_addr(
+  fn prj_mdata_with_addr(
     id: KId<M>,
     field: u64,
     val: KExpr<M>,
@@ -542,7 +542,7 @@ impl<M: KernelMode> KExpr<M> {
     Self::nat_mdata(val, blob_addr, no_mdata::<M>())
   }
 
-  pub fn nat_mdata_with_addr(
+  fn nat_mdata_with_addr(
     val: Nat,
     blob_addr: Address,
     mdata: M::MField<Vec<MData>>,
@@ -568,7 +568,7 @@ impl<M: KernelMode> KExpr<M> {
     Self::str_mdata(val, blob_addr, no_mdata::<M>())
   }
 
-  pub fn str_mdata_with_addr(
+  fn str_mdata_with_addr(
     val: String,
     blob_addr: Address,
     mdata: M::MField<Vec<MData>>,
