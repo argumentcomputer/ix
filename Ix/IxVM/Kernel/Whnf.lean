@@ -211,6 +211,35 @@ def whnf := ⟦
     }
   }
 
+  -- The address-keyed primitive gauntlet: nat → str → bitvec → native →
+  -- decidable, in order. Returns (1, reduced) on the first family that matches
+  -- and reduces, else (0, _). Factored out so `prim_any_addr` can gate the
+  -- whole chain for non-primitive heads in one shot.
+  fn try_address_primitives(head_addr: Addr, idx: G, lvls: List‹&KLevel›,
+                            spine: List‹KExpr›, types: List‹KExpr›,
+                            top: List‹&KConstantInfo›, addrs: List‹Addr›) -> (G, KExpr) {
+    match try_nat_dispatch(head_addr, spine, types, top, addrs) {
+      (1, r) => (1, r),
+      (0, _) =>
+        match try_str_dispatch(head_addr, spine, addrs) {
+          (1, r) => (1, r),
+          (0, _) =>
+            match try_bitvec_dispatch(head_addr, spine, types, top, addrs) {
+              (1, r) => (1, r),
+              (0, _) =>
+                match try_reduce_native(head_addr, spine, types, top, addrs) {
+                  (1, r) => (1, r),
+                  (0, _) =>
+                    match try_reduce_decidable(head_addr, idx, lvls, spine, types, top, addrs) {
+                      (1, r) => (1, r),
+                      (0, _) => (0, store(KExprNode.BVar(0))),
+                    },
+                },
+            },
+        },
+    }
+  }
+
   -- Const-head WHNF dispatch, split out of `whnf_with_spine` (see its Const arm).
   -- `head` is the original `Const(idx, lvls)` KExpr, passed for the stuck
   -- `apply_spine(head, spine)` fallbacks.
@@ -235,61 +264,40 @@ def whnf := ⟦
           (0, _) => apply_spine(head, spine),
         },
       _ =>
-        let nat_pair = try_nat_dispatch(head_addr, spine, types, top, addrs);
-        match nat_pair {
+        -- Skip the address-primitive gauntlet for the common non-primitive
+        -- head: `prim_any_addr` (memoized per head address) is 1 only for the
+        -- ~43 ops the gauntlet recognizes, so a 0 means no `try_*` can match —
+        -- go straight to projection-definition / delta. Validated by a
+        -- differential assert (now removed) over the suite + heavy consts.
+        let addr_prim = match prim_any_addr(head_addr) {
+          1 => try_address_primitives(head_addr, idx, lvls, spine, types, top, addrs),
+          _ => (0, store(KExprNode.BVar(0))),
+        };
+        match addr_prim {
           (1, reduced) => whnf(reduced, types, top, addrs),
           (0, _) =>
-            let str_pair = try_str_dispatch(head_addr, spine, addrs);
-            match str_pair {
-              (1, reduced_s) => whnf(reduced_s, types, top, addrs),
-              (0, _) =>
-                let bv_pair = try_bitvec_dispatch(head_addr, spine, types, top, addrs);
-                match bv_pair {
-                  (1, reduced_b) => whnf(reduced_b, types, top, addrs),
+                let proj_def_pair = try_reduce_projection_definition(idx, spine, top);
+                match proj_def_pair {
+                  (1, reduced_pd) => whnf(reduced_pd, types, top, addrs),
                   (0, _) =>
-                    let nat_pair2 = try_reduce_native(head_addr, spine, types, top, addrs);
-                    match nat_pair2 {
-                      (1, reduced_n) => whnf(reduced_n, types, top, addrs),
-                      (0, _) =>
-                        let dec_pair = try_reduce_decidable(head_addr, idx, lvls, spine, types, top, addrs);
-                        match dec_pair {
-                          (1, reduced_d) => whnf(reduced_d, types, top, addrs),
+                    -- Mirror src/ix/kernel/whnf.rs:756-774 (`delta_unfold_one`):
+                    -- unfold any Defn regardless of `ReducibilityHints`.
+                    match ci {
+                      KConstantInfo.Defn(_, _, value, _, _) =>
+                        -- Keep `Nat.add base (Lit n)` (symbolic base) stuck as a
+                        -- compact offset instead of delta-unfolding into a
+                        -- succ^n tower. Pairs with offset-aware def-eq.
+                        match try_nat_offset_stuck(head, spine, types, top, addrs) {
+                          (1, stuck) => stuck,
                           (0, _) =>
-                            let proj_def_pair = try_reduce_projection_definition(idx, spine, top);
-                            match proj_def_pair {
-                              (1, reduced_pd) => whnf(reduced_pd, types, top, addrs),
-                              (0, _) =>
-                                -- Mirror src/ix/kernel/whnf.rs:756-774
-                                -- (`delta_unfold_one`): unfold any Defn
-                                -- regardless of `ReducibilityHints`. The
-                                -- hint is consulted by lazy-delta's
-                                -- `delta_rank` for def-eq priority, not
-                                -- as a gate on plain whnf delta. Without
-                                -- unfolding here, ctor field types
-                                -- written via opaque defs (e.g.
-                                -- `constType (n α) (n α)`) stay stuck
-                                -- and `check_positivity_aug` misclassifies.
-                                match ci {
-                                  KConstantInfo.Defn(_, _, value, _, _) =>
-                                    -- Keep `Nat.add base (Lit n)` (symbolic base)
-                                    -- stuck as a compact offset instead of
-                                    -- delta-unfolding into a succ^n tower. Pairs
-                                    -- with offset-aware def-eq.
-                                    match try_nat_offset_stuck(head, spine, types, top, addrs) {
-                                      (1, stuck) => stuck,
-                                      (0, _) =>
-                                        let body = expr_inst_levels(value, lvls);
-                                        whnf_with_spine(body, spine, types, top, addrs),
-                                    },
-                                  KConstantInfo.Thm(_, _, _) => apply_spine(head, spine),
-                                  _ => apply_spine(head, spine),
-                                },
-                            },
+                            let body = expr_inst_levels(value, lvls);
+                            whnf_with_spine(body, spine, types, top, addrs),
                         },
+                      KConstantInfo.Thm(_, _, _) => apply_spine(head, spine),
+                      _ => apply_spine(head, spine),
                     },
                 },
             },
-        },
     }
   }
 

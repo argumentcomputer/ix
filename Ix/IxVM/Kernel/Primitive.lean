@@ -1307,6 +1307,61 @@ def primitive := ⟦
     store(KExprNode.Lit(KLiteral.Nat(n)))
   }
 
+  -- 1 iff `head_addr` is one of the head-dispatched primitive ops checked by
+  -- `try_nat_dispatch` / `try_str_dispatch` / `try_bitvec_dispatch` /
+  -- `try_reduce_native` / `try_reduce_decidable`. These addresses are mutually
+  -- exclusive (a const has one content address), so the sum is 0 or 1.
+  -- Memoized on `head_addr` (a content pointer): computed once per distinct
+  -- const, vs the per-whnf gauntlet of 5 `try_*` calls. Lets `whnf_const_head`
+  -- skip the gauntlet for the common non-primitive head. MUST stay in sync
+  -- with the `address_eq(head_addr, …)` checks in those functions — a
+  -- differential `assert` guards that during development.
+  fn prim_any_addr(head_addr: Addr) -> G {
+    address_eq(head_addr, nat_add_addr())
+    + address_eq(head_addr, nat_sub_addr())
+    + address_eq(head_addr, nat_mul_addr())
+    + address_eq(head_addr, nat_div_addr())
+    + address_eq(head_addr, nat_mod_addr())
+    + address_eq(head_addr, nat_pow_addr())
+    + address_eq(head_addr, nat_gcd_addr())
+    + address_eq(head_addr, nat_land_addr())
+    + address_eq(head_addr, nat_lor_addr())
+    + address_eq(head_addr, nat_xor_addr())
+    + address_eq(head_addr, nat_shift_left_addr())
+    + address_eq(head_addr, nat_shift_right_addr())
+    + address_eq(head_addr, nat_succ_addr())
+    + address_eq(head_addr, nat_pred_addr())
+    + address_eq(head_addr, nat_beq_addr())
+    + address_eq(head_addr, nat_ble_addr())
+    + address_eq(head_addr, nat_dec_eq_addr())
+    + address_eq(head_addr, nat_dec_le_addr())
+    + address_eq(head_addr, nat_dec_lt_addr())
+    + address_eq(head_addr, bool_true_addr())
+    + address_eq(head_addr, bool_false_addr())
+    + address_eq(head_addr, int_of_nat_addr())
+    + address_eq(head_addr, int_neg_succ_addr())
+    + address_eq(head_addr, int_dec_eq_addr())
+    + address_eq(head_addr, int_dec_le_addr())
+    + address_eq(head_addr, int_dec_lt_addr())
+    + address_eq(head_addr, bit_vec_of_nat_addr())
+    + address_eq(head_addr, bit_vec_to_nat_addr())
+    + address_eq(head_addr, bit_vec_ult_addr())
+    + address_eq(head_addr, decidable_decide_addr())
+    + address_eq(head_addr, reduce_bool_addr())
+    + address_eq(head_addr, reduce_nat_addr())
+    + address_eq(head_addr, size_of_size_of_addr())
+    + address_eq(head_addr, string_back_addr())
+    + address_eq(head_addr, string_legacy_back_addr())
+    + address_eq(head_addr, string_to_byte_array_addr())
+    + address_eq(head_addr, subtype_val_addr())
+    + address_eq(head_addr, system_platform_get_num_bits_addr())
+    + address_eq(head_addr, system_platform_num_bits_addr())
+    + address_eq(head_addr, punit_addr())
+    + address_eq(head_addr, punit_size_of_1_addr())
+    + address_eq(head_addr, unit_addr())
+    + address_eq(head_addr, string_utf8_byte_size_addr())
+  }
+
   -- Mirror: src/ix/kernel/whnf.rs:500-700 Nat-on-literals dispatch.
   -- Address-keyed (no positional prims): given the head Const's blake3
   -- address and the unreduced spine, fold a Nat primitive op when both
