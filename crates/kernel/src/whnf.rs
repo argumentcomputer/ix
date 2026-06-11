@@ -118,7 +118,7 @@ struct NatRecLiteralParts<M: KernelMode> {
 /// reducer and skip everything for ordinary constants. Mirrors the IxVM
 /// `prim_family` dispatch memo.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum PrimFamily {
+pub enum PrimFamily {
   Native,
   BitVec,
   Nat,
@@ -128,7 +128,7 @@ pub(super) enum PrimFamily {
 }
 
 fn prim_family_uncached<M: KernelMode>(
-  p: &super::primitive::Primitives<M>,
+  p: &Primitives<M>,
   addr: &Address,
 ) -> PrimFamily {
   if *addr == p.nat_succ.addr
