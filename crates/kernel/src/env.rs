@@ -28,6 +28,13 @@ use super::primitive::Primitives;
 /// implies structural equality and cache keys built from uids cannot
 /// alias across intern-table clears (a stale key can only miss).
 ///
+/// This is KERNEL-INTERNAL identity for ephemeral in-memory nodes —
+/// distinct from the Ixon `Address` layer (blake3 over serialized
+/// content) that constants/blobs carry into claims, Merkle roots, and
+/// the proof store. Uids must never escape into a serialized artifact;
+/// see `docs/kernel_identity.md` for the boundary rule and the
+/// proof-carrying-code implications.
+///
 /// Earlier revisions stored the blake3 content hash of every node here,
 /// computed at construction: profiling on the Zisk guest put that hashing
 /// (`app_hash` + the blake3 wrapper) at ~20% of guest cycles on
