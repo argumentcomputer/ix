@@ -1673,12 +1673,12 @@ fn compact_def_eq_head<M: KernelMode>(e: &KExpr<M>) -> String {
 }
 
 fn short_def_eq_addr<M: KernelMode>(e: &KExpr<M>) -> String {
-  e.addr().to_hex().chars().take(12).collect()
+  format!("uid{}", e.addr())
 }
 
-/// Canonical ordering for cache keys: (min, max) by hash bytes.
+/// Canonical ordering for cache keys: (min, max) by uid.
 fn canonical_pair(a: Addr, b: Addr) -> (Addr, Addr) {
-  if a.as_bytes() <= b.as_bytes() { (a, b) } else { (b, a) }
+  if a <= b { (a, b) } else { (b, a) }
 }
 
 /// Extract head constant KId from expression or app spine.
@@ -1943,6 +1943,10 @@ mod tests {
     );
     let plain = ME::cnst(id, Box::new([]));
 
+    // Interning ignores mdata (the shallow Const key carries only the
+    // address + universe uids), so both collapse to one canonical node.
+    let tagged = tc.intern(tagged);
+    let plain = tc.intern(plain);
     assert_eq!(tagged.addr(), plain.addr());
     assert!(tc.is_def_eq(&tagged, &plain).unwrap());
   }

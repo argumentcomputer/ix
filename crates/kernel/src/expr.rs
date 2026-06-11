@@ -8,10 +8,7 @@ use std::sync::Arc;
 
 use bignat::Nat;
 use ix_common::address::Address;
-use ix_common::env::{
-  BinderInfo, DataValue, EALL, EAPP, EFVAR, ELAM, ELET, ENAT, EPRJ, EREF,
-  ESORT, ESTR, EVAR, Name,
-};
+use ix_common::env::{BinderInfo, DataValue, Name};
 
 use super::env::Addr;
 use super::id::KId;
@@ -138,8 +135,10 @@ impl<M: KernelMode> KExpr<M> {
     &self.info().mdata
   }
 
-  /// Content-addressed key for cache lookups. Returns the blake3 hash
-  /// by value — `Addr` is `Copy`, so this is a 32-byte memcpy.
+  /// Canonical identity key for cache lookups: the intern-assigned uid.
+  /// `Addr` is a plain `u64`, allocated process-globally and never reused,
+  /// so uid equality implies "same construction event or same intern-table
+  /// canonical value" — strictly, structural equality.
   pub fn hash_key(&self) -> Addr {
     *self.addr()
   }
@@ -148,25 +147,64 @@ impl<M: KernelMode> KExpr<M> {
     Arc::ptr_eq(&self.0, &other.0)
   }
 
-  /// Content-addressed equality with a layered fast path.
-  ///
-  /// 1. `ptr_eq` on the outer `KExpr` Arc — fires when both sides
-  ///    came through the [`InternTable`](super::env::InternTable).
-  /// 2. 32-byte Blake3 hash compare — sound on its own (collisions
-  ///    require an adversarial preimage attack), and a single AVX2
-  ///    cycle on modern x86. Earlier revisions interposed an
-  ///    `Arc::ptr_eq` fast path on a process-globally-interned `Addr`,
-  ///    but that intern table dominated RSS at mathlib scale; the
-  ///    pure-content compare keeps the same correctness with no
-  ///    process-global state.
+  /// Canonical-identity equality: `ptr_eq` or equal intern uid. Sound in
+  /// the affirmative (equal uid ⇒ structurally equal); INCOMPLETE in the
+  /// negative — two structurally equal expressions built without sharing
+  /// an [`InternTable`](super::env::InternTable) carry distinct uids.
+  /// Callers that need a definitive verdict use `==` (structural with this
+  /// as the fast path); callers where a false negative merely costs a
+  /// cache miss or a def-eq fallback use this directly.
   pub fn hash_eq(&self, other: &KExpr<M>) -> bool {
     self.ptr_eq(other) || self.addr() == other.addr()
+  }
+
+  /// Structural equality mirroring exactly what the intern identity
+  /// covers: display names, binder info, and mdata are NOT compared
+  /// (matching the historical content-hash semantics). Equal interned
+  /// subtrees prune at the uid fast path, so canonical-vs-canonical
+  /// comparison is O(1).
+  fn structural_eq(&self, other: &Self) -> bool {
+    if self.hash_eq(other) {
+      return true;
+    }
+    match (self.data(), other.data()) {
+      (ExprData::Var(i, _, _), ExprData::Var(j, _, _)) => i == j,
+      (ExprData::FVar(x, _, _), ExprData::FVar(y, _, _)) => x == y,
+      (ExprData::Sort(u, _), ExprData::Sort(v, _)) => u == v,
+      (ExprData::Const(id1, us1, _), ExprData::Const(id2, us2, _)) => {
+        id1.addr == id2.addr
+          && us1.len() == us2.len()
+          && us1.iter().zip(us2.iter()).all(|(a, b)| a == b)
+      },
+      (ExprData::App(f1, a1, _), ExprData::App(f2, a2, _)) => {
+        f1.structural_eq(f2) && a1.structural_eq(a2)
+      },
+      (ExprData::Lam(_, _, t1, b1, _), ExprData::Lam(_, _, t2, b2, _))
+      | (ExprData::All(_, _, t1, b1, _), ExprData::All(_, _, t2, b2, _)) => {
+        t1.structural_eq(t2) && b1.structural_eq(b2)
+      },
+      (
+        ExprData::Let(_, t1, v1, b1, nd1, _),
+        ExprData::Let(_, t2, v2, b2, nd2, _),
+      ) => {
+        nd1 == nd2
+          && t1.structural_eq(t2)
+          && v1.structural_eq(v2)
+          && b1.structural_eq(b2)
+      },
+      (ExprData::Prj(id1, f1, v1, _), ExprData::Prj(id2, f2, v2, _)) => {
+        id1.addr == id2.addr && f1 == f2 && v1.structural_eq(v2)
+      },
+      (ExprData::Nat(_, ba1, _), ExprData::Nat(_, ba2, _)) => ba1 == ba2,
+      (ExprData::Str(_, ba1, _), ExprData::Str(_, ba2, _)) => ba1 == ba2,
+      _ => false,
+    }
   }
 }
 
 impl<M: KernelMode> PartialEq for KExpr<M> {
   fn eq(&self, other: &Self) -> bool {
-    self.hash_eq(other)
+    self.structural_eq(other)
   }
 }
 
@@ -186,18 +224,33 @@ fn mk_info<M: KernelMode>(
   ExprInfo { addr, lbr, count_0, has_fvars, mdata }
 }
 
+/// Process-global uid allocator for expression/universe identity.
+///
+/// Every constructed node takes a fresh uid, so uid equality means "same
+/// construction event" — or, after [`InternTable`](super::env::InternTable)
+/// hash-consing, "same canonical value". Uids are NEVER reused (the counter
+/// is global, not per-table), so cache keys built from uids stay sound
+/// across intern-table clears: a stale key can only miss, never alias.
+///
+/// This replaces the per-node blake3 content hash: profiling on the Zisk
+/// guest put `app_hash` + the blake3 wrapper at ~20% of cycles on
+/// reduction-heavy constants, all of it spent computing identity that the
+/// intern table can assign in one atomic increment.
+static NEXT_UID: std::sync::atomic::AtomicU64 =
+  std::sync::atomic::AtomicU64::new(1);
+
+#[inline]
+pub(crate) fn fresh_uid() -> Addr {
+  NEXT_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
 // =============================================================================
-// Hash-first interning: each `*_mdata` constructor is split into a
-// hash-only function (no allocation) and a `*_mdata_with_addr` builder
-// that takes a precomputed canonical [`Addr`]. The plain `*_mdata` form is
-// kept as a convenience wrapper for callers that don't pre-check the
-// intern table.
-//
-// Hot-path callers in `ingress.rs` use the split form so they can ask
-// `InternTable::try_get_expr(&hash)` *before* paying the
-// blake3-hash + `intern_addr` + `Arc<ExprData>` allocation cost — a
-// significant win because >60% of constructed values are immediately
-// discarded for an existing canonical Arc on the intern table.
+// Constructors: each `*_mdata` form allocates a fresh uid; the
+// `*_mdata_with_addr` builders remain for the intern table and callers
+// that already hold a fresh uid. Structural identity (what used to be the
+// content hash) is decided by `InternTable`'s shallow keys — see
+// `env.rs::ExprKey` — which mirror what the historical hash functions
+// covered: names, binder info, and mdata are excluded.
 // =============================================================================
 
 impl<M: KernelMode> KExpr<M> {
@@ -207,20 +260,6 @@ impl<M: KernelMode> KExpr<M> {
 
   /// Compute the content hash for [`KExpr::var_mdata`] without allocating.
   ///
-  /// `name` is descriptive metadata only and intentionally NOT hashed —
-  /// two `Var(i)` nodes with different display names are content-equal,
-  /// keeping hash equality alpha-invariant even in `Meta` mode.
-  pub fn var_hash(
-    idx: u64,
-    _name: &M::MField<Name>,
-    _mdata: &M::MField<Vec<MData>>,
-  ) -> blake3::Hash {
-    let mut h = blake3::Hasher::new();
-    h.update(&[EVAR]);
-    h.update(&idx.to_le_bytes());
-    h.finalize()
-  }
-
   pub fn var_mdata_with_addr(
     idx: u64,
     name: M::MField<Name>,
@@ -234,21 +273,6 @@ impl<M: KernelMode> KExpr<M> {
 
   pub fn fvar(id: FVarId, name: M::MField<Name>) -> Self {
     Self::fvar_mdata(id, name, no_mdata::<M>())
-  }
-
-  /// Compute the content hash for [`KExpr::fvar_mdata`] without allocating.
-  /// Includes the [`FVarId`] so distinct fvars produce distinct hashes — the
-  /// soundness lever for keying caches by expression alone. `name` is
-  /// descriptive only and intentionally NOT hashed.
-  pub fn fvar_hash(
-    id: FVarId,
-    _name: &M::MField<Name>,
-    _mdata: &M::MField<Vec<MData>>,
-  ) -> blake3::Hash {
-    let mut h = blake3::Hasher::new();
-    h.update(&[EFVAR]);
-    h.update(&id.0.to_le_bytes());
-    h.finalize()
   }
 
   pub fn fvar_mdata_with_addr(
@@ -268,7 +292,7 @@ impl<M: KernelMode> KExpr<M> {
     name: M::MField<Name>,
     mdata: M::MField<Vec<MData>>,
   ) -> Self {
-    let addr = Self::fvar_hash(id, &name, &mdata);
+    let addr = fresh_uid();
     Self::fvar_mdata_with_addr(id, name, mdata, addr)
   }
 
@@ -277,22 +301,12 @@ impl<M: KernelMode> KExpr<M> {
     name: M::MField<Name>,
     mdata: M::MField<Vec<MData>>,
   ) -> Self {
-    let addr = Self::var_hash(idx, &name, &mdata);
+    let addr = fresh_uid();
     Self::var_mdata_with_addr(idx, name, mdata, addr)
   }
 
   pub fn sort(u: KUniv<M>) -> Self {
     Self::sort_mdata(u, no_mdata::<M>())
-  }
-
-  pub fn sort_hash(
-    u: &KUniv<M>,
-    _mdata: &M::MField<Vec<MData>>,
-  ) -> blake3::Hash {
-    let mut h = blake3::Hasher::new();
-    h.update(&[ESORT]);
-    h.update(u.addr().as_bytes());
-    h.finalize()
   }
 
   pub fn sort_mdata_with_addr(
@@ -304,30 +318,12 @@ impl<M: KernelMode> KExpr<M> {
   }
 
   pub fn sort_mdata(u: KUniv<M>, mdata: M::MField<Vec<MData>>) -> Self {
-    let addr = Self::sort_hash(&u, &mdata);
+    let addr = fresh_uid();
     Self::sort_mdata_with_addr(u, mdata, addr)
   }
 
   pub fn cnst(id: KId<M>, univs: Box<[KUniv<M>]>) -> Self {
     Self::cnst_mdata(id, univs, no_mdata::<M>())
-  }
-
-  /// `id.addr` is the constant's content-address — its identity. The
-  /// `id.name` field is display-only metadata, intentionally NOT hashed,
-  /// so two references to the same address with different display names
-  /// remain content-equal.
-  pub fn cnst_hash(
-    id: &KId<M>,
-    univs: &[KUniv<M>],
-    _mdata: &M::MField<Vec<MData>>,
-  ) -> blake3::Hash {
-    let mut h = blake3::Hasher::new();
-    h.update(&[EREF]);
-    h.update(id.addr.as_bytes());
-    for u in univs.iter() {
-      h.update(u.addr().as_bytes());
-    }
-    h.finalize()
   }
 
   pub fn cnst_mdata_with_addr(
@@ -348,24 +344,12 @@ impl<M: KernelMode> KExpr<M> {
     univs: Box<[KUniv<M>]>,
     mdata: M::MField<Vec<MData>>,
   ) -> Self {
-    let addr = Self::cnst_hash(&id, &univs, &mdata);
+    let addr = fresh_uid();
     Self::cnst_mdata_with_addr(id, univs, mdata, addr)
   }
 
   pub fn app(f: KExpr<M>, a: KExpr<M>) -> Self {
     Self::app_mdata(f, a, no_mdata::<M>())
-  }
-
-  pub fn app_hash(
-    f: &KExpr<M>,
-    a: &KExpr<M>,
-    _mdata: &M::MField<Vec<MData>>,
-  ) -> blake3::Hash {
-    let mut h = blake3::Hasher::new();
-    h.update(&[EAPP]);
-    h.update(f.addr().as_bytes());
-    h.update(a.addr().as_bytes());
-    h.finalize()
   }
 
   pub fn app_mdata_with_addr(
@@ -389,7 +373,7 @@ impl<M: KernelMode> KExpr<M> {
     a: KExpr<M>,
     mdata: M::MField<Vec<MData>>,
   ) -> Self {
-    let addr = Self::app_hash(&f, &a, &mdata);
+    let addr = fresh_uid();
     Self::app_mdata_with_addr(f, a, mdata, addr)
   }
 
@@ -404,25 +388,6 @@ impl<M: KernelMode> KExpr<M> {
 
   /// Compute the content hash for [`KExpr::lam_mdata`].
   ///
-  /// Binder `name` and `bi` are display/elaboration metadata only and are
-  /// intentionally NOT hashed. The kernel does not distinguish lambdas
-  /// that differ only in binder name or binder info; this keeps hash
-  /// equality structural and alpha-invariant in `Meta` mode (matching
-  /// `Anon` mode where these fields are erased).
-  pub fn lam_hash(
-    _name: &M::MField<Name>,
-    _bi: &M::MField<BinderInfo>,
-    ty: &KExpr<M>,
-    body: &KExpr<M>,
-    _mdata: &M::MField<Vec<MData>>,
-  ) -> blake3::Hash {
-    let mut h = blake3::Hasher::new();
-    h.update(&[ELAM]);
-    h.update(ty.addr().as_bytes());
-    h.update(body.addr().as_bytes());
-    h.finalize()
-  }
-
   pub fn lam_mdata_with_addr(
     name: M::MField<Name>,
     bi: M::MField<BinderInfo>,
@@ -448,7 +413,7 @@ impl<M: KernelMode> KExpr<M> {
     body: KExpr<M>,
     mdata: M::MField<Vec<MData>>,
   ) -> Self {
-    let addr = Self::lam_hash(&name, &bi, &ty, &body, &mdata);
+    let addr = fresh_uid();
     Self::lam_mdata_with_addr(name, bi, ty, body, mdata, addr)
   }
 
@@ -459,21 +424,6 @@ impl<M: KernelMode> KExpr<M> {
     body: KExpr<M>,
   ) -> Self {
     Self::all_mdata(name, bi, ty, body, no_mdata::<M>())
-  }
-
-  /// See [`KExpr::lam_hash`] — binder `name`/`bi` intentionally not hashed.
-  pub fn all_hash(
-    _name: &M::MField<Name>,
-    _bi: &M::MField<BinderInfo>,
-    ty: &KExpr<M>,
-    body: &KExpr<M>,
-    _mdata: &M::MField<Vec<MData>>,
-  ) -> blake3::Hash {
-    let mut h = blake3::Hasher::new();
-    h.update(&[EALL]);
-    h.update(ty.addr().as_bytes());
-    h.update(body.addr().as_bytes());
-    h.finalize()
   }
 
   pub fn all_mdata_with_addr(
@@ -501,7 +451,7 @@ impl<M: KernelMode> KExpr<M> {
     body: KExpr<M>,
     mdata: M::MField<Vec<MData>>,
   ) -> Self {
-    let addr = Self::all_hash(&name, &bi, &ty, &body, &mdata);
+    let addr = fresh_uid();
     Self::all_mdata_with_addr(name, bi, ty, body, mdata, addr)
   }
 
@@ -513,27 +463,6 @@ impl<M: KernelMode> KExpr<M> {
     non_dep: bool,
   ) -> Self {
     Self::let_mdata(name, ty, val, body, non_dep, no_mdata::<M>())
-  }
-
-  /// See [`KExpr::lam_hash`] — binder `name` is intentionally not hashed.
-  /// `non_dep` IS hashed: dropping it would intern two letEs that differ only
-  /// in `non_dep` to the same KExpr, and egress would then return whichever
-  /// `non_dep` was interned first, breaking Ixon roundtrip fidelity.
-  pub fn let_hash(
-    _name: &M::MField<Name>,
-    ty: &KExpr<M>,
-    val: &KExpr<M>,
-    body: &KExpr<M>,
-    non_dep: bool,
-    _mdata: &M::MField<Vec<MData>>,
-  ) -> blake3::Hash {
-    let mut h = blake3::Hasher::new();
-    h.update(&[ELET]);
-    h.update(ty.addr().as_bytes());
-    h.update(val.addr().as_bytes());
-    h.update(body.addr().as_bytes());
-    h.update(&[u8::from(non_dep)]);
-    h.finalize()
   }
 
   pub fn let_mdata_with_addr(
@@ -563,27 +492,12 @@ impl<M: KernelMode> KExpr<M> {
     non_dep: bool,
     mdata: M::MField<Vec<MData>>,
   ) -> Self {
-    let addr = Self::let_hash(&name, &ty, &val, &body, non_dep, &mdata);
+    let addr = fresh_uid();
     Self::let_mdata_with_addr(name, ty, val, body, non_dep, mdata, addr)
   }
 
   pub fn prj(id: KId<M>, field: u64, val: KExpr<M>) -> Self {
     Self::prj_mdata(id, field, val, no_mdata::<M>())
-  }
-
-  /// `id.name` is display-only metadata, intentionally NOT hashed.
-  pub fn prj_hash(
-    id: &KId<M>,
-    field: u64,
-    val: &KExpr<M>,
-    _mdata: &M::MField<Vec<MData>>,
-  ) -> blake3::Hash {
-    let mut h = blake3::Hasher::new();
-    h.update(&[EPRJ]);
-    h.update(id.addr.as_bytes());
-    h.update(&field.to_le_bytes());
-    h.update(val.addr().as_bytes());
-    h.finalize()
   }
 
   pub fn prj_mdata_with_addr(
@@ -604,22 +518,12 @@ impl<M: KernelMode> KExpr<M> {
     val: KExpr<M>,
     mdata: M::MField<Vec<MData>>,
   ) -> Self {
-    let addr = Self::prj_hash(&id, field, &val, &mdata);
+    let addr = fresh_uid();
     Self::prj_mdata_with_addr(id, field, val, mdata, addr)
   }
 
   pub fn nat(val: Nat, blob_addr: Address) -> Self {
     Self::nat_mdata(val, blob_addr, no_mdata::<M>())
-  }
-
-  pub fn nat_hash(
-    blob_addr: &Address,
-    _mdata: &M::MField<Vec<MData>>,
-  ) -> blake3::Hash {
-    let mut h = blake3::Hasher::new();
-    h.update(&[ENAT]);
-    h.update(blob_addr.as_bytes());
-    h.finalize()
   }
 
   pub fn nat_mdata_with_addr(
@@ -640,22 +544,12 @@ impl<M: KernelMode> KExpr<M> {
     blob_addr: Address,
     mdata: M::MField<Vec<MData>>,
   ) -> Self {
-    let addr = Self::nat_hash(&blob_addr, &mdata);
+    let addr = fresh_uid();
     Self::nat_mdata_with_addr(val, blob_addr, mdata, addr)
   }
 
   pub fn str(val: String, blob_addr: Address) -> Self {
     Self::str_mdata(val, blob_addr, no_mdata::<M>())
-  }
-
-  pub fn str_hash(
-    blob_addr: &Address,
-    _mdata: &M::MField<Vec<MData>>,
-  ) -> blake3::Hash {
-    let mut h = blake3::Hasher::new();
-    h.update(&[ESTR]);
-    h.update(blob_addr.as_bytes());
-    h.finalize()
   }
 
   pub fn str_mdata_with_addr(
@@ -676,7 +570,7 @@ impl<M: KernelMode> KExpr<M> {
     blob_addr: Address,
     mdata: M::MField<Vec<MData>>,
   ) -> Self {
-    let addr = Self::str_hash(&blob_addr, &mdata);
+    let addr = fresh_uid();
     Self::str_mdata_with_addr(val, blob_addr, mdata, addr)
   }
 }
@@ -826,7 +720,9 @@ mod tests {
 
   #[test]
   fn var_hash_deterministic() {
-    assert_eq!(AE::var(0, ()).addr(), AE::var(0, ()).addr());
+    // Identity is intern-assigned now: independently built nodes carry
+    // distinct uids but remain structurally equal (`==`).
+    assert_eq!(AE::var(0, ()), AE::var(0, ()));
   }
 
   #[test]
@@ -839,10 +735,7 @@ mod tests {
     // Binder names are descriptive metadata only — they do NOT contribute
     // to the content hash, so two `Var(0)` nodes with different display
     // names are content-equal. Keeps hash equality alpha-invariant.
-    assert_eq!(
-      ME::var(0, mk_name("x")).addr(),
-      ME::var(0, mk_name("y")).addr()
-    );
+    assert_eq!(ME::var(0, mk_name("x")), ME::var(0, mk_name("y")));
   }
 
   #[test]
@@ -867,7 +760,7 @@ mod tests {
     // their display names.
     let a = ME::cnst(KId::new(mk_addr("Nat"), mk_name("Nat")), Box::new([]));
     let b = ME::cnst(KId::new(mk_addr("Nat"), mk_name("Int")), Box::new([]));
-    assert_eq!(a.addr(), b.addr());
+    assert_eq!(a, b);
   }
 
   #[test]
@@ -894,7 +787,7 @@ mod tests {
     let a =
       ME::lam(mk_name("x"), BinderInfo::Default, ty.clone(), body.clone());
     let b = ME::lam(mk_name("y"), BinderInfo::Default, ty, body);
-    assert_eq!(a.addr(), b.addr());
+    assert_eq!(a, b);
   }
 
   #[test]
@@ -907,7 +800,7 @@ mod tests {
     let a =
       ME::lam(mk_name("x"), BinderInfo::Default, ty.clone(), body.clone());
     let b = ME::lam(mk_name("x"), BinderInfo::Implicit, ty, body);
-    assert_eq!(a.addr(), b.addr());
+    assert_eq!(a, b);
   }
 
   #[test]

@@ -501,7 +501,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     let mut flat: Vec<FlatBlockMember<M>> = Vec::new();
     // (ext_ind_addr, spec_params content hashes) for dedup.
     // Uses [u8; 32] blake3 digest for structural equality.
-    let mut aux_seen: Vec<(Address, Vec<[u8; 32]>)> = Vec::new();
+    let mut aux_seen: Vec<(Address, Vec<KExpr<M>>)> = Vec::new();
 
     // Seed with original block inductives.
     for ind_id in block_inds {
@@ -622,7 +622,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     dom: &KExpr<M>,
     block_addrs: &[Address],
     flat: &mut Vec<FlatBlockMember<M>>,
-    aux_seen: &mut Vec<(Address, Vec<[u8; 32]>)>,
+    aux_seen: &mut Vec<(Address, Vec<KExpr<M>>)>,
     univ_offset: u64,
     param_depth: usize, // depth at the param context (before field locals)
     n_rec_params: u64, // number of inductive parameters (valid Var refs in spec_params)
@@ -713,9 +713,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       }
 
       // Dedup: check if we've already seen this (ext_ind, spec_params) pair.
-      // Use blake3 content hash (addr) for structural dedup.
-      let spec_hashes: Vec<[u8; 32]> =
-        spec_params.iter().map(|e| *e.addr().as_bytes()).collect();
+      // Structural comparison (uid fast path + recursive fallback) so
+      // equal-but-separately-built spec params still collapse.
+      let spec_hashes: Vec<KExpr<M>> = spec_params.to_vec();
       if aux_seen.iter().any(|(a, s)| {
         *a == head_id.addr
           && s.len() == spec_hashes.len()
@@ -1106,10 +1106,10 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       h.update(&(source_idx as u64).to_le_bytes());
       h.update(member.id.addr.as_bytes());
       for sp in &member.spec_params {
-        h.update(sp.addr().as_bytes());
+        h.update(&sp.addr().to_le_bytes());
       }
       for u in member.occurrence_us.iter() {
-        h.update(u.addr().as_bytes());
+        h.update(&u.addr().to_le_bytes());
       }
       let aux_addr = Address::from_blake3_hash(h.finalize());
       let aux_id = KId::new(aux_addr.clone(), M::meta_field(seed_name.clone()));

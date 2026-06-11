@@ -1926,7 +1926,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     if self.env.nat_succ_stuck.contains(&entry_key) {
       return Ok(None);
     }
-    let mut visited: Vec<(super::env::Addr, super::env::Addr)> =
+    let mut visited: Vec<(super::env::Addr, super::env::CtxAddr)> =
       vec![entry_key];
     let mut offset = num_bigint::BigUint::from(1u64);
     let mut cur = arg.clone();
