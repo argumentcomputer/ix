@@ -18,6 +18,7 @@ use super::lctx::LocalDecl;
 use super::level::{KUniv, univ_eq};
 use super::mode::KernelMode;
 use super::subst::{instantiate_rev, lift};
+use super::whnf::PrimFamily;
 use super::tc::{
   MAX_DEF_EQ_DEPTH, MAX_WHNF_FUEL, TypeChecker, collect_app_spine,
 };
@@ -349,11 +350,17 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       // primitives entirely when either side has a free variable, unless
       // eagerReduce is active.
       let nat_ok = (!wa.has_fvars() && !wb.has_fvars()) || self.eager_reduce;
+      let fam_a = self.head_prim_family(&wa);
+      let fam_b = self.head_prim_family(&wb);
       if nat_ok {
-        if let Some(wa2) = self.try_reduce_nat(&wa)? {
+        if fam_a == PrimFamily::Nat
+          && let Some(wa2) = self.try_reduce_nat(&wa)?
+        {
           return self.is_def_eq(&wa2, &wb);
         }
-        if let Some(wb2) = self.try_reduce_nat(&wb)? {
+        if fam_b == PrimFamily::Nat
+          && let Some(wb2) = self.try_reduce_nat(&wb)?
+        {
           return self.is_def_eq(&wa, &wb2);
         }
       }
@@ -363,17 +370,25 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       // (lean4 `type_checker.cpp:986-991`, lean4lean `TypeChecker.lean:625-628`).
       // Ix-specific `try_reduce_decidable` runs after native to keep the
       // reference-aligned segment tight.
-      if let Some(wa2) = self.try_reduce_native(&wa)? {
+      if fam_a == PrimFamily::Native
+        && let Some(wa2) = self.try_reduce_native(&wa)?
+      {
         return self.is_def_eq(&wa2, &wb);
       }
-      if let Some(wb2) = self.try_reduce_native(&wb)? {
+      if fam_b == PrimFamily::Native
+        && let Some(wb2) = self.try_reduce_native(&wb)?
+      {
         return self.is_def_eq(&wa, &wb2);
       }
 
-      if let Some(wa2) = self.try_reduce_decidable(&wa)? {
+      if fam_a == PrimFamily::Decidable
+        && let Some(wa2) = self.try_reduce_decidable(&wa)?
+      {
         return self.is_def_eq(&wa2, &wb);
       }
-      if let Some(wb2) = self.try_reduce_decidable(&wb)? {
+      if fam_b == PrimFamily::Decidable
+        && let Some(wb2) = self.try_reduce_decidable(&wb)?
+      {
         return self.is_def_eq(&wa, &wb2);
       }
 

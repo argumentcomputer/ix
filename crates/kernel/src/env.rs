@@ -535,6 +535,12 @@ pub struct KEnv<M: KernelMode> {
   /// so every member of a bad block reports the same structured failure.
   pub block_check_results: FxHashMap<KId<M>, Result<(), TcError<M>>>,
 
+  /// Primitive-reducer family per head-constant address (see
+  /// `whnf.rs::PrimFamily`). Pure function of the address; memoized so
+  /// the WHNF loops classify each head with one map probe instead of a
+  /// ~30-address compare gauntlet across five recognizers.
+  pub prim_family_cache: FxHashMap<Address, super::whnf::PrimFamily>,
+
   /// Next free-variable id for checker-local binder openings.
   ///
   /// Type-checking caches live on `KEnv`, not on one `TypeChecker`, so FVar
@@ -609,6 +615,7 @@ impl<M: KernelMode> KEnv<M> {
       rec_majors_cache: FxHashMap::default(),
       block_peer_agreement_cache: FxHashSet::default(),
       block_check_results: FxHashMap::default(),
+      prim_family_cache: FxHashMap::default(),
       next_fvar_id: 0,
       perf: PerfCounters::default(),
       profile_sink: None,
@@ -725,6 +732,7 @@ impl<M: KernelMode> KEnv<M> {
     self.rec_majors_cache.clear();
     self.block_peer_agreement_cache.clear();
     self.block_check_results.clear();
+    self.prim_family_cache.clear();
     self.next_fvar_id = 0;
   }
 
@@ -787,6 +795,7 @@ impl<M: KernelMode> KEnv<M> {
     self.rec_majors_cache = FxHashMap::default();
     self.block_peer_agreement_cache = FxHashSet::default();
     self.block_check_results = FxHashMap::default();
+    self.prim_family_cache = FxHashMap::default();
     self.next_fvar_id = 0;
   }
 

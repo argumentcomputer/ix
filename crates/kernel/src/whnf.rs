@@ -110,6 +110,79 @@ struct NatRecLiteralParts<M: KernelMode> {
   major_idx: usize,
 }
 
+/// Which primitive-reducer family a head constant belongs to. The WHNF
+/// loops used to probe every reducer per iteration — each collecting its
+/// own app spine and running its own gauntlet of 32-byte address
+/// compares. Classifying the head ONCE (memoized per address in
+/// `KEnv::prim_family_cache`) lets an iteration call at most one family
+/// reducer and skip everything for ordinary constants. Mirrors the IxVM
+/// `prim_family` dispatch memo.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum PrimFamily {
+  Native,
+  BitVec,
+  Nat,
+  Decidable,
+  Str,
+  Other,
+}
+
+fn prim_family_uncached<M: KernelMode>(
+  p: &super::primitive::Primitives<M>,
+  addr: &Address,
+) -> PrimFamily {
+  if *addr == p.nat_succ.addr
+    || *addr == p.nat_add.addr
+    || *addr == p.nat_sub.addr
+    || *addr == p.nat_mul.addr
+    || *addr == p.nat_div.addr
+    || *addr == p.nat_mod.addr
+    || *addr == p.nat_pow.addr
+    || *addr == p.nat_gcd.addr
+    || *addr == p.nat_land.addr
+    || *addr == p.nat_lor.addr
+    || *addr == p.nat_xor.addr
+    || *addr == p.nat_shift_left.addr
+    || *addr == p.nat_shift_right.addr
+    || *addr == p.nat_beq.addr
+    || *addr == p.nat_ble.addr
+  {
+    return PrimFamily::Nat;
+  }
+  if *addr == p.nat_dec_le.addr
+    || *addr == p.nat_dec_eq.addr
+    || *addr == p.nat_dec_lt.addr
+    || *addr == p.int_dec_le.addr
+    || *addr == p.int_dec_eq.addr
+    || *addr == p.int_dec_lt.addr
+  {
+    return PrimFamily::Decidable;
+  }
+  if *addr == p.bit_vec_to_nat.addr
+    || *addr == p.bit_vec_ult.addr
+    || *addr == p.decidable_decide.addr
+  {
+    return PrimFamily::BitVec;
+  }
+  if *addr == p.punit_size_of_1.addr
+    || *addr == p.subtype_val.addr
+    || *addr == p.size_of_size_of.addr
+    || *addr == p.system_platform_num_bits.addr
+    || *addr == p.reduce_bool.addr
+    || *addr == p.reduce_nat.addr
+  {
+    return PrimFamily::Native;
+  }
+  if *addr == p.string_back.addr
+    || *addr == p.string_legacy_back.addr
+    || *addr == p.string_utf8_byte_size.addr
+    || *addr == p.string_to_byte_array.addr
+  {
+    return PrimFamily::Str;
+  }
+  PrimFamily::Other
+}
+
 impl<M: KernelMode> TypeChecker<'_, M> {
   fn dump_whnf_fuel(
     &self,
@@ -291,10 +364,17 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         break;
       }
 
-      // Native reduction: Lean.reduceBool, Lean.reduceNat, System.Platform.numBits
-      // (mirrors lean4 `type_checker.cpp:667-672` and lean4lean
-      // `TypeChecker.lean:438` — `reduce_native` runs before `reduce_nat`).
-      if let Some(reduced) = self.try_reduce_native(&cur)? {
+      // Primitive reduction, dispatched by memoized head family — the
+      // five recognizers below each collect their own spine and run their
+      // own address gauntlet, so probing all of them every iteration was
+      // a measurable tax on ordinary (Other-headed) terms. Semantics are
+      // unchanged: the families' head-address sets are disjoint, so at
+      // most one recognizer could fire anyway. Reference order preserved
+      // (native before nat: lean4 `type_checker.cpp:667-672`).
+      let family = self.head_prim_family(&cur);
+      if family == PrimFamily::Native
+        && let Some(reduced) = self.try_reduce_native(&cur)?
+      {
         cur = reduced;
         continue;
       }
@@ -302,7 +382,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       // BitVec definitions reduce through Nat comparisons. Keep this before
       // delta so small definitional facts such as `x < 0#w` collapse
       // without unfolding the full Fin-backed representation of BitVec.
-      if let Some(reduced) = self.try_reduce_bitvec(&cur)? {
+      if family == PrimFamily::BitVec
+        && let Some(reduced) = self.try_reduce_bitvec(&cur)?
+      {
         cur = reduced;
         continue;
       }
@@ -310,21 +392,26 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       // Nat primitive reduction in main WHNF loop (lean4lean TypeChecker.lean:439).
       // Must run BEFORE delta_unfold_one, so that Nat.sub/Nat.pow/etc. get
       // short-circuited before their bodies (which use Nat.rec) are exposed.
-      if let Some(reduced) =
-        self.try_reduce_nat_with_succ_mode(&cur, nat_succ_mode)?
+      if family == PrimFamily::Nat
+        && let Some(reduced) =
+          self.try_reduce_nat_with_succ_mode(&cur, nat_succ_mode)?
       {
         cur = reduced;
         continue;
       }
       // Nat decidability: Nat.decLe/decEq/decLt on literals → Decidable.isTrue/isFalse.
       // Must run BEFORE delta, so the body (which uses dite/Nat.rec) is never exposed.
-      if let Some(reduced) = self.try_reduce_decidable(&cur)? {
+      if family == PrimFamily::Decidable
+        && let Some(reduced) = self.try_reduce_decidable(&cur)?
+      {
         cur = reduced;
         continue;
       }
 
       // String literal primitives such as `String.back ""`.
-      if let Some(reduced) = self.try_reduce_string(&cur) {
+      if family == PrimFamily::Str
+        && let Some(reduced) = self.try_reduce_string(&cur)
+      {
         cur = reduced;
         continue;
       }
@@ -338,7 +425,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       // stay stuck.) Iota over such a major still works via
       // `cleanup_nat_offset_major`; def-eq decides offset pairs in
       // `try_def_eq_offset`. Mirrors IxVM 5dcab7f/f7cfe23.
-      if let Some(stuck) = self.try_nat_offset_stuck(&cur)? {
+      if family == PrimFamily::Nat
+        && let Some(stuck) = self.try_nat_offset_stuck(&cur)?
+      {
         cur = stuck;
         break;
       }
@@ -711,15 +800,23 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         continue;
       }
 
+      // Primitive reduction, dispatched by memoized head family (see the
+      // main WHNF loop) — family head sets are disjoint, so dispatching
+      // replaces probe-everything without changing semantics.
+      let family = self.head_prim_family(&cur);
+
       // BitVec.toNat/ult reductions are definitional wrappers around Nat.
-      if let Some(reduced) = self.try_reduce_bitvec(&cur)? {
+      if family == PrimFamily::BitVec
+        && let Some(reduced) = self.try_reduce_bitvec(&cur)?
+      {
         cur = reduced;
         continue;
       }
 
       // Nat primitive reduction
-      if let Some(reduced) =
-        self.try_reduce_nat_with_succ_mode(&cur, nat_succ_mode)?
+      if family == PrimFamily::Nat
+        && let Some(reduced) =
+          self.try_reduce_nat_with_succ_mode(&cur, nat_succ_mode)?
       {
         cur = reduced;
         continue;
@@ -730,13 +827,17 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       // `Subtype.val` and `String.toByteArray` are projection definitions;
       // once rewritten to `Prj`, the cheap primitive recognizers no longer
       // see the original head.
-      if let Some(reduced) = self.try_reduce_native(&cur)? {
+      if family == PrimFamily::Native
+        && let Some(reduced) = self.try_reduce_native(&cur)?
+      {
         cur = reduced;
         continue;
       }
 
       // String literal primitives.
-      if let Some(reduced) = self.try_reduce_string(&cur) {
+      if family == PrimFamily::Str
+        && let Some(reduced) = self.try_reduce_string(&cur)
+      {
         cur = reduced;
         continue;
       }
@@ -1817,6 +1918,26 @@ impl<M: KernelMode> TypeChecker<'_, M> {
   }
 
   /// Nat primitive reduction (add, sub, mul, div, mod, pow, gcd, bitwise, predicates).
+  /// Classify `e`'s head constant into a primitive-reducer family.
+  /// Allocation-free app-chain walk + per-address memo.
+  pub(super) fn head_prim_family(&mut self, e: &KExpr<M>) -> PrimFamily {
+    let mut cur = e;
+    loop {
+      match cur.data() {
+        ExprData::App(f, _, _) => cur = f,
+        ExprData::Const(id, _, _) => {
+          if let Some(&fam) = self.env.prim_family_cache.get(&id.addr) {
+            return fam;
+          }
+          let fam = prim_family_uncached(&self.prims, &id.addr);
+          self.env.prim_family_cache.insert(id.addr.clone(), fam);
+          return fam;
+        },
+        _ => return PrimFamily::Other,
+      }
+    }
+  }
+
   pub(super) fn try_reduce_nat(
     &mut self,
     e: &KExpr<M>,
