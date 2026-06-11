@@ -14,9 +14,9 @@ A standalone executable that exercises the Multi-STARK verifier scaffold
 
 1. Define a tiny Aiur toplevel with a `factorial` entrypoint.
 2. Prove `factorial(5) = 120` with the Multi-STARK backend.
-3. Serialize that proof (`Proof.toBytes`, bincode) and seed it on the IO
-   channel under key `[0]` — the hint the recursive verifier reads
-   non-deterministically via `#read_byte_stream`.
+3. Serialize that proof (`Proof.toBytes`, bincode) and seed it on IO
+   channel 0 (key `[0]`; vk on channel 1, claims on channel 2) — the hint the
+   recursive verifier reads non-deterministically via `#read_byte_stream`.
 4. Run the `verify_multi_stark_proof` entrypoint over that IO buffer and
    prove *its* execution, producing a recursive proof.
 
@@ -126,7 +126,7 @@ def main : IO UInt32 := do
       Aiur.G.ofNat recCommitParams.logBlowup]
   let input : Array Aiur.G := sysDigestInput ++ claimsDigestInput ++ friParamInput
   let verifierIO : IOBuffer :=
-    (((default : IOBuffer).extend #[Aiur.G.ofNat 0] proofGs).extend #[Aiur.G.ofNat 1] vkGs).extend #[Aiur.G.ofNat 2] claimGs
+    (((default : IOBuffer).extend 0 #[Aiur.G.ofNat 0] proofGs).extend 1 #[Aiur.G.ofNat 0] vkGs).extend 2 #[Aiur.G.ofNat 0] claimGs
 
   -- ── 4. recursive verifier system ─────────────────────────────────────────
   -- The PRODUCTION toplevel (no test circuits — every `pub fn` adds width).
@@ -175,7 +175,7 @@ def main : IO UInt32 := do
     --        replayed transcript from the one the proof was generated under.
     let badProofGs := proofGs.set! 0 (Aiur.G.ofNat ((proofBytes.data[0]!.toNat + 1) % 256))
     let badProofIO : IOBuffer :=
-      (((default : IOBuffer).extend #[Aiur.G.ofNat 0] badProofGs).extend #[Aiur.G.ofNat 1] vkGs).extend #[Aiur.G.ofNat 2] claimGs
+      (((default : IOBuffer).extend 0 #[Aiur.G.ofNat 0] badProofGs).extend 1 #[Aiur.G.ofNat 0] vkGs).extend 2 #[Aiur.G.ofNat 0] claimGs
     match vCompiled.bytecode.execute vIdx input badProofIO with
     | .error _ => IO.println "✓ tampered proof advice correctly rejected (verification checks)"
     | .ok _ => IO.eprintln "✗ tampered proof advice was NOT rejected"; return 1
@@ -190,8 +190,8 @@ def main : IO UInt32 := do
     let badClaimInput : Array Aiur.G :=
       sysDigestInput ++ (badClaimsDigest.data.map .ofUInt8) ++ friParamInput
     let badClaimIO : IOBuffer :=
-      (((default : IOBuffer).extend #[Aiur.G.ofNat 0] proofGs).extend #[Aiur.G.ofNat 1] vkGs).extend
-        #[Aiur.G.ofNat 2] (badClaimBytes.data.map .ofUInt8)
+      (((default : IOBuffer).extend 0 #[Aiur.G.ofNat 0] proofGs).extend 1 #[Aiur.G.ofNat 0] vkGs).extend
+        2 #[Aiur.G.ofNat 0] (badClaimBytes.data.map .ofUInt8)
     match vCompiled.bytecode.execute vIdx badClaimInput badClaimIO with
     | .error _ => IO.println "✓ tampered claim correctly rejected (OOD/accumulator mismatch)"
     | .ok _ => IO.eprintln "✗ tampered claim was NOT rejected"; return 1
