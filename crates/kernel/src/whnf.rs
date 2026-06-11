@@ -107,6 +107,7 @@ struct NatRecLiteralParts<M: KernelMode> {
   major: Nat,
   base_idx: usize,
   step_idx: usize,
+  major_idx: usize,
 }
 
 impl<M: KernelMode> TypeChecker<'_, M> {
@@ -326,6 +327,20 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       if let Some(reduced) = self.try_reduce_string(&cur) {
         cur = reduced;
         continue;
+      }
+
+      // Keep `Nat.add base (Lit n)` (symbolic base, n > 0) and
+      // `Nat.div/mod base (Lit k)` (k ≥ 2) STUCK as a compact offset instead
+      // of delta-unfolding: `Nat.add` would materialize succ^n(base) — O(n)
+      // substitution per layer — and `Nat.div/mod` would expand the division
+      // algorithm, even though both are irreducible for a symbolic base.
+      // (`Nat.shiftRight x k` unfolds to k nested `Nat.div _ 2`, which now
+      // stay stuck.) Iota over such a major still works via
+      // `cleanup_nat_offset_major`; def-eq decides offset pairs in
+      // `try_def_eq_offset`. Mirrors IxVM 5dcab7f/f7cfe23.
+      if let Some(stuck) = self.try_nat_offset_stuck(&cur)? {
+        cur = stuck;
+        break;
       }
 
       if let Some(unfolded) = self.delta_unfold_one(&cur)? {
@@ -1233,6 +1248,114 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     None
   }
 
+  /// If `e` is `Nat.add base (Lit n)` (n > 0) or `Nat.div/mod base (Lit k)`
+  /// (k ≥ 2) with a non-literal base, return the same operation in canonical
+  /// compact form so the WHNF loop can leave it stuck instead of
+  /// delta-unfolding. Thresholds keep `x + 0`, `x / 1`, `x / 0` (and mod)
+  /// reducing through the normal path. `None` means "not this shape —
+  /// proceed normally".
+  fn try_nat_offset_stuck(
+    &mut self,
+    e: &KExpr<M>,
+  ) -> Result<Option<KExpr<M>>, TcError<M>> {
+    // Allocation-free quick reject: this probe runs once per delta-unfold
+    // loop iteration, so don't collect a spine Vec unless the head constant
+    // is one of the three Nat primitives.
+    {
+      let mut cur = e;
+      loop {
+        match cur.data() {
+          ExprData::App(f, _, _) => cur = f,
+          ExprData::Const(id, _, _) => {
+            if id.addr != self.prims.nat_add.addr
+              && id.addr != self.prims.nat_div.addr
+              && id.addr != self.prims.nat_mod.addr
+            {
+              return Ok(None);
+            }
+            break;
+          },
+          _ => return Ok(None),
+        }
+      }
+    }
+    let (head, args) = collect_app_spine(e);
+    let ExprData::Const(id, _, _) = head.data() else {
+      return Ok(None);
+    };
+    let is_add = id.addr == self.prims.nat_add.addr;
+    let is_divmod = id.addr == self.prims.nat_div.addr
+      || id.addr == self.prims.nat_mod.addr;
+    if (!is_add && !is_divmod) || args.len() != 2 {
+      return Ok(None);
+    }
+    let Some(wb) = self.whnf_nat_reducer_arg(&args[1])? else {
+      return Ok(None);
+    };
+    let Some(n) = extract_nat_value(&wb, &self.prims) else {
+      return Ok(None);
+    };
+    if n.0 == num_bigint::BigUint::ZERO {
+      return Ok(None);
+    }
+    if is_divmod && n.0 == num_bigint::BigUint::from(1u64) {
+      return Ok(None);
+    }
+    let Some(wa) = self.whnf_nat_reducer_arg(&args[0])? else {
+      return Ok(None);
+    };
+    if extract_nat_value(&wa, &self.prims).is_some() {
+      // Both sides literal: this is closed arithmetic for `try_reduce_nat`,
+      // not a stuck offset.
+      return Ok(None);
+    }
+    let lit = self.nat_expr_from_value(n);
+    let inner = self.intern(KExpr::app(head.clone(), wa));
+    Ok(Some(self.intern(KExpr::app(inner, lit))))
+  }
+
+  /// Decompose a (whnf'd) Nat term into `(base, offset)` for offset-aware
+  /// def-eq: `Lit n` → `(None, n)`; `succ^j(Nat.add core (Lit m))` →
+  /// `(Some(core), j + m)` read in O(1) per layer via [`Self::nat_offset`]
+  /// instead of peeled one `is_def_eq` recursion level at a time.
+  /// `base = None` means the core is literal zero (the term IS a numeral).
+  /// `None` (the outer Option) means "not offset-shaped".
+  pub(super) fn nat_offset_decompose(
+    &mut self,
+    e: &KExpr<M>,
+  ) -> Result<Option<(Option<KExpr<M>>, Nat)>, TcError<M>> {
+    if let Some(v) = extract_nat_value(e, &self.prims) {
+      return Ok(Some((None, v)));
+    }
+    match self.nat_offset(e, 0)? {
+      Some((base, off)) if off.0 > num_bigint::BigUint::ZERO => {
+        if let Some(bv) = extract_nat_value(&base, &self.prims) {
+          Ok(Some((None, Nat(bv.0 + off.0))))
+        } else {
+          Ok(Some((Some(base), off)))
+        }
+      },
+      _ => Ok(None),
+    }
+  }
+
+  /// Rebuild `base + r` in the compact offset form used by
+  /// [`Self::try_nat_offset_stuck`].
+  pub(super) fn nat_offset_rebuild(
+    &mut self,
+    base: Option<KExpr<M>>,
+    r: Nat,
+  ) -> KExpr<M> {
+    match base {
+      None => self.nat_expr_from_value(r),
+      Some(b) if r.0 == num_bigint::BigUint::ZERO => b,
+      Some(b) => {
+        let lit = self.nat_expr_from_value(r);
+        self.mk_nat_add(b, lit)
+      },
+    }
+  }
+
   fn mk_nat_succ(&mut self, pred: KExpr<M>) -> KExpr<M> {
     let succ = KExpr::cnst(self.prims.nat_succ.clone(), Box::new([]));
     KExpr::app(succ, pred)
@@ -1885,7 +2008,20 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     let base = base.clone();
     let base_whnf = self.whnf(&base)?;
     let Some(base_val) = extract_nat_value(&base_whnf, &self.prims) else {
-      return Ok(None);
+      // Symbolic base: collapse `succ^offset(Nat.rec base succ-step (Lit n))`
+      // to the compact offset `Nat.add base (Lit (n + offset))` rather than
+      // declining into n iota steps that materialize succ^n(base). Keeps the
+      // value in the same `base + k` form a literal already has, so def-eq
+      // converges instead of descending n unary succ layers. Conservative:
+      // only when the recursor application carries no post-major arguments.
+      // Mirrors IxVM dbc4177.
+      if parts.spine.len() != parts.major_idx + 1 {
+        return Ok(None);
+      }
+      let total = Nat(&parts.major.0 + offset);
+      let lit = self.nat_expr_from_value(total);
+      let result = self.mk_nat_add(base_whnf, lit);
+      return Ok(Some(result));
     };
 
     let mut total = base_val.0;
@@ -1932,7 +2068,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     };
     let major = major.clone();
 
-    Ok(Some(NatRecLiteralParts { spine, major, base_idx, step_idx }))
+    Ok(Some(NatRecLiteralParts { spine, major, base_idx, step_idx, major_idx }))
   }
 
   fn is_nat_succ_ih_step(
@@ -3883,7 +4019,13 @@ mod tests {
   }
 
   #[test]
-  fn whnf_nat_add_symbolic_literal_rhs_exposes_succ() {
+  fn whnf_nat_add_symbolic_literal_rhs_stays_compact() {
+    // `Nat.add x (Lit 2)` with a symbolic base must stay STUCK in compact
+    // offset form (`try_nat_offset_stuck`) instead of delta-unfolding into
+    // `succ(succ(x))` — that tower is O(n) substitution per layer and the
+    // dominant cost on Nat-arithmetic proofs. Iota over such a major still
+    // works via `cleanup_nat_offset_major`; def-eq decides offset pairs in
+    // `try_def_eq_offset`.
     let mut env = nat_env();
     let empty = KEnv::new();
     let prims = Primitives::from_env(&empty);
@@ -3891,10 +4033,29 @@ mod tests {
 
     let mut tc = TypeChecker::new(&mut env);
     let add = AE::cnst(tc.prims.nat_add.clone(), Box::new([]));
-    let expr = app(app(add, var(0)), mk_nat(2));
+    let expr = app(app(add.clone(), var(0)), mk_nat(2));
     let result = tc.whnf(&expr).unwrap();
+    assert_eq!(result, app(app(add, var(0)), mk_nat(2)));
+  }
+
+  #[test]
+  fn def_eq_nat_offset_succ_tower_vs_compact_add() {
+    // `succ(succ(x))` ≡ `Nat.add x (Lit 2)` must be decided by the offset
+    // decomposition in `try_def_eq_offset` (equal offsets → compare bases),
+    // and `succ(x) ≟ Nat.add x (Lit 2)` must NOT be equal.
+    let mut env = nat_env();
+    let empty = KEnv::new();
+    let prims = Primitives::from_env(&empty);
+    insert_nat_add_model(&mut env, prims.nat_add.clone());
+
+    let mut tc = TypeChecker::new(&mut env);
+    let add = AE::cnst(tc.prims.nat_add.clone(), Box::new([]));
     let succ = AE::cnst(tc.prims.nat_succ.clone(), Box::new([]));
-    assert_eq!(result, app(succ.clone(), app(succ, var(0))));
+    let tower = app(succ.clone(), app(succ.clone(), var(0)));
+    let compact = app(app(add, var(0)), mk_nat(2));
+    assert!(tc.is_def_eq(&tower, &compact).unwrap());
+    let one = app(succ, var(0));
+    assert!(!tc.is_def_eq(&one, &compact).unwrap());
   }
 
   #[test]

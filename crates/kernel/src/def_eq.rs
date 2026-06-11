@@ -920,6 +920,26 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     }
   }
 
+  /// Allocation-free check that `e` could decompose to `base + offset`:
+  /// a Nat literal, `Nat.zero`/`Nat.succ`, or an app whose head constant is
+  /// `Nat.succ`/`Nat.add`. Walks the app chain by reference — no spine Vec.
+  fn nat_offset_candidate(&self, e: &KExpr<M>) -> bool {
+    let mut cur = e;
+    loop {
+      match cur.data() {
+        ExprData::Nat(..) => return true,
+        ExprData::Const(id, _, _) => {
+          let p = &self.prims;
+          return id.addr == p.nat_zero.addr
+            || id.addr == p.nat_succ.addr
+            || id.addr == p.nat_add.addr;
+        },
+        ExprData::App(f, _, _) => cur = f,
+        _ => return false,
+      }
+    }
+  }
+
   /// If expression is nat-succ, return the predecessor.
   /// Matches both `Nat(n+1)` → `Nat(n)` and `Nat.succ e` → `e`.
   fn nat_succ_of(&mut self, e: &KExpr<M>) -> Option<KExpr<M>> {
@@ -965,8 +985,16 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     }
   }
 
-  /// M2: Nat offset reduction for lazy delta loop (lean4lean isDefEqOffset).
-  /// Returns Some(true/false) if both are nat-zero or nat-succ, None otherwise.
+  /// M2: Nat offset reduction for lazy delta loop (lean4lean isDefEqOffset),
+  /// generalized to offset form: each side decomposes to `base + offset`
+  /// (`Lit n`, `succ` layers, and `Nat.add base (Lit m)` — the compact stuck
+  /// form WHNF now leaves — all read in O(1) per layer), the shared offset
+  /// is stripped in ONE step, and the remainders compare through full
+  /// def-eq. This collapses `succ^k(x) ≟ succ^k(x)` from k `is_def_eq`
+  /// recursion levels (which blew `MAX_DEF_EQ_DEPTH` for large k) to one.
+  /// Stripping is verdict-preserving: `+k` is definitionally injective, the
+  /// same semantics the previous one-succ-peel already relied on.
+  /// Non-offset shapes fall back (`None`) to the generic path unchanged.
   fn try_def_eq_offset(
     &mut self,
     a: &KExpr<M>,
@@ -981,12 +1009,27 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     if self.is_nat_zero(a) && self.is_nat_zero(b) {
       return Ok(Some(true));
     }
-    match (self.nat_succ_of(a), self.nat_succ_of(b)) {
-      (Some(a_pred), Some(b_pred)) => {
-        Ok(Some(self.is_def_eq(&a_pred, &b_pred)?))
-      },
-      _ => Ok(None),
+    // Allocation-free quick reject: decompose walks app spines, so only run
+    // it when both heads are plausibly offset-shaped (the old one-succ-peel
+    // rejected non-Nat shapes in O(1) off `e.data()` — keep that property).
+    if !self.nat_offset_candidate(a) || !self.nat_offset_candidate(b) {
+      return Ok(None);
     }
+    let Some((base_a, ka)) = self.nat_offset_decompose(a)? else {
+      return Ok(None);
+    };
+    let Some((base_b, kb)) = self.nat_offset_decompose(b)? else {
+      return Ok(None);
+    };
+    let k = ka.0.clone().min(kb.0.clone());
+    if k == num_bigint::BigUint::ZERO {
+      // No shared offset to strip (e.g. literal 0 vs offset-shaped): defer
+      // to the generic path, matching the previous conservative behavior.
+      return Ok(None);
+    }
+    let ra = self.nat_offset_rebuild(base_a, bignat::Nat(ka.0 - &k));
+    let rb = self.nat_offset_rebuild(base_b, bignat::Nat(kb.0 - &k));
+    Ok(Some(self.is_def_eq(&ra, &rb)?))
   }
 
   // -----------------------------------------------------------------------
