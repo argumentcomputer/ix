@@ -15,12 +15,165 @@ use crate::{
   },
 };
 
-pub struct QueryResult {
-  pub(crate) output: Vec<G>,
+/// Immutable view of one query entry.
+#[derive(Clone, Copy)]
+pub struct QueryRef<'a> {
+  pub(crate) output: &'a [G],
   pub(crate) multiplicity: G,
 }
 
-pub type QueryMap = FxIndexMap<Vec<G>, QueryResult>;
+/// Mutable view of one query entry: the output is fixed at insertion,
+/// only the multiplicity is bumped on memo hits.
+pub struct QueryRefMut<'a> {
+  pub(crate) output: &'a [G],
+  pub(crate) multiplicity: &'a mut G,
+}
+
+fn hash_g_slice(key: &[G]) -> u64 {
+  use std::hash::Hasher;
+  let mut h = rustc_hash::FxHasher::default();
+  for g in key {
+    h.write_u64(g.as_canonical_u64());
+  }
+  h.finish()
+}
+
+/// Append-only query store with a hash index.
+///
+/// Functionally the insertion-ordered map `args -> (output, multiplicity)`
+/// it replaces (`FxIndexMap<Vec<G>, QueryResult>`) — but every circuit has
+/// a FIXED key arity and output width, so keys and outputs live in flat
+/// `Vec<G>` arenas addressed by entry index, and the hash table holds only
+/// `u32` indices. This cuts per-entry overhead from ~130 B (two heap
+/// `Vec`s + IndexMap bucket + allocator metadata) to the raw field
+/// elements plus ~13 B of index. The record IS the proof witness, so
+/// entries cannot be dropped — only stored compactly; on kernel-heavy
+/// executions it is the dominant RAM consumer (billions of entries).
+///
+/// Entry index == insertion order; memory circuits use it as the pointer
+/// value, mirroring the old `IndexMap::get_index_of` semantics.
+pub struct QueryMap {
+  key_stride: usize,
+  /// Output width; inferred on first insert (not statically available in
+  /// `FunctionLayout`).
+  out_stride: usize,
+  keys: Vec<G>,
+  outs: Vec<G>,
+  mults: Vec<G>,
+  table: hashbrown::HashTable<u32>,
+}
+
+impl QueryMap {
+  pub fn new(key_stride: usize) -> Self {
+    Self {
+      key_stride,
+      out_stride: 0,
+      keys: Vec::new(),
+      outs: Vec::new(),
+      mults: Vec::new(),
+      table: hashbrown::HashTable::new(),
+    }
+  }
+
+  #[inline]
+  pub fn len(&self) -> usize {
+    self.mults.len()
+  }
+
+  #[inline]
+  pub fn is_empty(&self) -> bool {
+    self.mults.is_empty()
+  }
+
+  /// Total retained field elements (keys + outputs); used by the
+  /// `IX_AIUR_QUERY_STATS` RAM-attribution dump.
+  pub fn retained_elems(&self) -> usize {
+    self.keys.len() + self.outs.len()
+  }
+
+  #[inline]
+  fn key_at(&self, i: usize) -> &[G] {
+    &self.keys[i * self.key_stride..(i + 1) * self.key_stride]
+  }
+
+  #[inline]
+  fn out_at(&self, i: usize) -> &[G] {
+    &self.outs[i * self.out_stride..(i + 1) * self.out_stride]
+  }
+
+  pub fn get_index_of(&self, key: &[G]) -> Option<usize> {
+    debug_assert_eq!(key.len(), self.key_stride);
+    let hash = hash_g_slice(key);
+    self
+      .table
+      .find(hash, |&i| self.key_at(i as usize) == key)
+      .map(|&i| i as usize)
+  }
+
+  pub fn get(&self, key: &[G]) -> Option<QueryRef<'_>> {
+    let i = self.get_index_of(key)?;
+    Some(QueryRef { output: self.out_at(i), multiplicity: self.mults[i] })
+  }
+
+  pub fn get_mut(&mut self, key: &[G]) -> Option<QueryRefMut<'_>> {
+    let i = self.get_index_of(key)?;
+    let output = &self.outs[i * self.out_stride..(i + 1) * self.out_stride];
+    Some(QueryRefMut { output, multiplicity: &mut self.mults[i] })
+  }
+
+  /// Append a new entry. The key must not already be present: call sites
+  /// only insert on a confirmed miss, and a same-key re-entrant call
+  /// would loop forever before reaching its own insert.
+  pub fn insert(&mut self, key: &[G], output: &[G], multiplicity: G) {
+    debug_assert_eq!(key.len(), self.key_stride);
+    debug_assert!(self.get_index_of(key).is_none());
+    if self.mults.is_empty() {
+      self.out_stride = output.len();
+    } else {
+      debug_assert_eq!(output.len(), self.out_stride);
+    }
+    let hash = hash_g_slice(key);
+    let i = u32::try_from(self.mults.len()).expect("query map overflow");
+    self.keys.extend_from_slice(key);
+    self.outs.extend_from_slice(output);
+    self.mults.push(multiplicity);
+    let keys = &self.keys;
+    let stride = self.key_stride;
+    self.table.insert_unique(hash, i, |&j| {
+      let j = j as usize;
+      hash_g_slice(&keys[j * stride..(j + 1) * stride])
+    });
+  }
+
+  /// Entry at insertion index `i`: the key slice plus a mutable handle on
+  /// the multiplicity (memory `Load` bumps the pointed-to row's count).
+  pub fn get_index_mut(&mut self, i: usize) -> Option<(&[G], &mut G)> {
+    if i >= self.mults.len() {
+      return None;
+    }
+    let key = &self.keys[i * self.key_stride..(i + 1) * self.key_stride];
+    Some((key, &mut self.mults[i]))
+  }
+
+  pub fn get_index(&self, i: usize) -> Option<(&[G], QueryRef<'_>)> {
+    if i >= self.len() {
+      return None;
+    }
+    Some((
+      self.key_at(i),
+      QueryRef { output: self.out_at(i), multiplicity: self.mults[i] },
+    ))
+  }
+
+  pub fn iter(&self) -> impl Iterator<Item = (&[G], QueryRef<'_>)> {
+    (0..self.len()).map(|i| {
+      (
+        self.key_at(i),
+        QueryRef { output: self.out_at(i), multiplicity: self.mults[i] },
+      )
+    })
+  }
+}
 
 pub struct QueryRecord {
   pub(crate) function_queries: Vec<QueryMap>,
@@ -31,12 +184,15 @@ pub struct QueryRecord {
 
 impl QueryRecord {
   fn new(toplevel: &Toplevel) -> Self {
-    let function_queries =
-      toplevel.functions.iter().map(|_| QueryMap::default()).collect();
+    let function_queries = toplevel
+      .functions
+      .iter()
+      .map(|f| QueryMap::new(f.layout.input_size))
+      .collect();
     let memory_queries = toplevel
       .memory_sizes
       .iter()
-      .map(|width| (*width, QueryMap::default()))
+      .map(|width| (*width, QueryMap::new(*width)))
       .collect();
     let bytes1_queries = Bytes1Queries::new();
     let bytes2_queries = Bytes2Queries::new();
@@ -158,6 +314,40 @@ impl std::fmt::Display for ExecError {
 
 impl std::error::Error for ExecError {}
 
+/// Gated by `IX_AIUR_QUERY_STATS=1`: dump per-function query-map sizes
+/// during/after execution so RAM blowups can be attributed to specific
+/// Aiur functions (indices resolve to names via the Lean
+/// `CompiledToplevel`). Heaviest maps first, by retained G elements.
+static QUERY_STATS: std::sync::LazyLock<bool> = std::sync::LazyLock::new(
+  || std::env::var_os("IX_AIUR_QUERY_STATS").is_some(),
+);
+
+fn dump_query_stats(record: &QueryRecord, tag: &str) {
+  let mut rows: Vec<(usize, usize, usize)> = record
+    .function_queries
+    .iter()
+    .enumerate()
+    .map(|(i, m)| (i, m.len(), m.retained_elems()))
+    .filter(|(_, n, _)| *n > 0)
+    .collect();
+  rows.sort_by(|a, b| b.2.cmp(&a.2));
+  let total_entries: usize = rows.iter().map(|r| r.1).sum();
+  let total_elems: usize = rows.iter().map(|r| r.2).sum();
+  eprintln!(
+    "[aiur-stats {tag}] function_queries: {total_entries} entries, \
+     {total_elems} G-elems; top maps:"
+  );
+  for (i, n, e) in rows.iter().take(30) {
+    eprintln!("  fn{i:<4} entries={n:<12} g_elems={e}");
+  }
+  let mem: Vec<String> = record
+    .memory_queries
+    .iter()
+    .map(|(w, m)| format!("w{w}={}", m.len()))
+    .collect();
+  eprintln!("[aiur-stats {tag}] memory entries: {}", mem.join(" "));
+}
+
 impl Toplevel {
   pub fn execute(
     &self,
@@ -172,6 +362,9 @@ impl Toplevel {
     let function = &self.functions[fun_idx];
     let output =
       function.execute(fun_idx, args, self, &mut record, io_buffer)?;
+    if *QUERY_STATS {
+      dump_query_stats(&record, "final");
+    }
     Ok((record, output))
   }
 }
@@ -213,7 +406,14 @@ impl Function {
     }
     push_block_exec_entries!(&self.body);
     let mut unconstrained = false;
+    let mut stats_ops: u64 = 0;
     while let Some(exec_entry) = exec_entries_stack.pop() {
+      if *QUERY_STATS {
+        stats_ops += 1;
+        if stats_ops.is_multiple_of(1 << 31) {
+          dump_query_stats(record, &format!("ops={stats_ops}"));
+        }
+      }
       match exec_entry {
         ExecEntry::Op(Op::Const(c)) => map.push(*c),
         ExecEntry::Op(Op::Add(a, b)) => {
@@ -236,14 +436,14 @@ impl Function {
           map.push(G::from_bool(a == G::ZERO));
         },
         ExecEntry::Op(Op::Call(callee_idx, args, _, op_unconstrained)) => {
-          let args = args.iter().map(|i| map[*i]).collect();
+          let args: Vec<G> = args.iter().map(|i| map[*i]).collect();
           if let Some(result) =
             record.function_queries[*callee_idx].get_mut(&args)
           {
             if !unconstrained && !op_unconstrained {
-              result.multiplicity += G::ONE;
+              *result.multiplicity += G::ONE;
             }
-            map.extend(result.output.clone());
+            map.extend_from_slice(result.output);
           } else {
             let saved_map = std::mem::replace(&mut map, args);
             callers_states_stack.push(CallerState {
@@ -266,16 +466,16 @@ impl Function {
             .ok_or(ExecError::InvalidMemorySize(size))?;
           if let Some(result) = memory_queries.get_mut(&values) {
             if !unconstrained {
-              result.multiplicity += G::ONE;
+              *result.multiplicity += G::ONE;
             }
-            map.extend(&result.output);
+            map.extend_from_slice(result.output);
           } else {
             let ptr = G::from_usize(memory_queries.len());
-            let result = QueryResult {
-              output: vec![ptr],
-              multiplicity: G::from_bool(!unconstrained),
-            };
-            memory_queries.insert(values, result);
+            memory_queries.insert(
+              &values,
+              &[ptr],
+              G::from_bool(!unconstrained),
+            );
             map.push(ptr);
           }
         },
@@ -289,13 +489,13 @@ impl Function {
           let ptr_usize = usize::try_from(ptr_u64)
             .ok()
             .ok_or(ExecError::PointerTooLarge(ptr_u64))?;
-          let (args, result) = memory_queries
+          let (args, multiplicity) = memory_queries
             .get_index_mut(ptr_usize)
             .ok_or(ExecError::UnboundPointer { ptr: ptr_u64, size: *size })?;
           if !unconstrained {
-            result.multiplicity += G::ONE;
+            *multiplicity += G::ONE;
           }
-          map.extend(args);
+          map.extend_from_slice(args);
         },
         ExecEntry::Op(Op::AssertEq(xs, ys)) => {
           if xs.len() != ys.len() {
@@ -542,13 +742,12 @@ impl Function {
         ExecEntry::Ctrl(Ctrl::Return(_, output)) => {
           // Register the query.
           let input_size = toplevel.functions[fun_idx].layout.input_size;
-          let args = map[..input_size].to_vec();
           let output = output.iter().map(|i| map[*i]).collect::<Vec<_>>();
-          let result = QueryResult {
-            output: output.clone(),
-            multiplicity: G::from_bool(!unconstrained),
-          };
-          record.function_queries[fun_idx].insert(args, result);
+          record.function_queries[fun_idx].insert(
+            &map[..input_size],
+            &output,
+            G::from_bool(!unconstrained),
+          );
           if let Some(CallerState {
             fun_idx: caller_idx,
             map: caller_map,
