@@ -1228,24 +1228,18 @@ def primitive := ⟦
     }
   }
 
-  -- Convert a KLimbs n into a chain `App(Const(succ), App(Const(succ),
-  -- ... Const(zero)))` for n calls of succ. Used by nat-literal-to-ctor
-  -- coercion in iota.
-  fn klimbs_to_ctor_form(n: KLimbs, zero_idx: G, succ_idx: G) -> KExpr {
-    match load(n) {
-      ListNode.Nil =>
-        store(KExprNode.Const(zero_idx, store(ListNode.Nil))),
-      ListNode.Cons(_, _) =>
-        let dec = klimbs_dec(n);
-        let pred = klimbs_to_ctor_form(dec, zero_idx, succ_idx);
-        let succ_const = store(KExprNode.Const(succ_idx, store(ListNode.Nil)));
-        store(KExprNode.App(succ_const, pred)),
-    }
-  }
-
   -- If `e` is `Lit(Nat(klimbs))` and addrs contains both Nat.zero and
-  -- Nat.succ, expand to ctor chain. Else return `e` unchanged. Mirror:
-  -- src/ix/kernel/whnf.rs:929-946 nat_to_constructor.
+  -- Nat.succ, expose ONE constructor layer: `0 -> Const(zero)`,
+  -- `n -> App(Const(succ), Lit(n-1))`. Else return `e` unchanged. Mirror:
+  -- src/ix/kernel/whnf.rs nat_to_constructor (one level, matching lean4
+  -- inductive.h:91-93 and lean4lean Reduce.lean:70).
+  --
+  -- One level, NOT the full succ chain: iota only needs the outermost
+  -- ctor to fire, and the predecessor stays a compact literal that
+  -- downstream whnf/def_eq/extract hit via the Nat fast paths. A full
+  -- `succ^n(zero)` chain materialized n fresh nodes per expansion event
+  -- and made every traversal of the major O(n) with distinct memo keys
+  -- per depth.
   fn nat_lit_to_ctor_or_self(e: KExpr, addrs: List‹Addr›) -> KExpr {
     match load(e) {
       KExprNode.Lit(lit) =>
@@ -1256,7 +1250,15 @@ def primitive := ⟦
             match z {
               (1, zero_idx) =>
                 match s {
-                  (1, succ_idx) => klimbs_to_ctor_form(klimbs, zero_idx, succ_idx),
+                  (1, succ_idx) =>
+                    match load(klimbs) {
+                      ListNode.Nil =>
+                        store(KExprNode.Const(zero_idx, store(ListNode.Nil))),
+                      ListNode.Cons(_, _) =>
+                        let pred = store(KExprNode.Lit(KLiteral.Nat(klimbs_dec(klimbs))));
+                        let succ_const = store(KExprNode.Const(succ_idx, store(ListNode.Nil)));
+                        store(KExprNode.App(succ_const, pred)),
+                    },
                   _ => e,
                 },
               _ => e,
@@ -1307,59 +1309,232 @@ def primitive := ⟦
     store(KExprNode.Lit(KLiteral.Nat(n)))
   }
 
-  -- 1 iff `head_addr` is one of the head-dispatched primitive ops checked by
-  -- `try_nat_dispatch` / `try_str_dispatch` / `try_bitvec_dispatch` /
-  -- `try_reduce_native` / `try_reduce_decidable`. These addresses are mutually
-  -- exclusive (a const has one content address), so the sum is 0 or 1.
-  -- Memoized on `head_addr` (a content pointer): computed once per distinct
-  -- const, vs the per-whnf gauntlet of 5 `try_*` calls. Lets `whnf_const_head`
-  -- skip the gauntlet for the common non-primitive head. MUST stay in sync
-  -- with the `address_eq(head_addr, …)` checks in those functions — a
-  -- differential `assert` guards that during development.
-  fn prim_any_addr(head_addr: Addr) -> G {
-    address_eq(head_addr, nat_add_addr())
-    + address_eq(head_addr, nat_sub_addr())
-    + address_eq(head_addr, nat_mul_addr())
-    + address_eq(head_addr, nat_div_addr())
-    + address_eq(head_addr, nat_mod_addr())
-    + address_eq(head_addr, nat_pow_addr())
-    + address_eq(head_addr, nat_gcd_addr())
-    + address_eq(head_addr, nat_land_addr())
-    + address_eq(head_addr, nat_lor_addr())
-    + address_eq(head_addr, nat_xor_addr())
-    + address_eq(head_addr, nat_shift_left_addr())
-    + address_eq(head_addr, nat_shift_right_addr())
-    + address_eq(head_addr, nat_succ_addr())
-    + address_eq(head_addr, nat_pred_addr())
-    + address_eq(head_addr, nat_beq_addr())
-    + address_eq(head_addr, nat_ble_addr())
-    + address_eq(head_addr, nat_dec_eq_addr())
-    + address_eq(head_addr, nat_dec_le_addr())
-    + address_eq(head_addr, nat_dec_lt_addr())
-    + address_eq(head_addr, bool_true_addr())
-    + address_eq(head_addr, bool_false_addr())
-    + address_eq(head_addr, int_of_nat_addr())
-    + address_eq(head_addr, int_neg_succ_addr())
-    + address_eq(head_addr, int_dec_eq_addr())
-    + address_eq(head_addr, int_dec_le_addr())
-    + address_eq(head_addr, int_dec_lt_addr())
-    + address_eq(head_addr, bit_vec_of_nat_addr())
-    + address_eq(head_addr, bit_vec_to_nat_addr())
-    + address_eq(head_addr, bit_vec_ult_addr())
-    + address_eq(head_addr, decidable_decide_addr())
-    + address_eq(head_addr, reduce_bool_addr())
-    + address_eq(head_addr, reduce_nat_addr())
-    + address_eq(head_addr, size_of_size_of_addr())
-    + address_eq(head_addr, string_back_addr())
-    + address_eq(head_addr, string_legacy_back_addr())
-    + address_eq(head_addr, string_to_byte_array_addr())
-    + address_eq(head_addr, subtype_val_addr())
-    + address_eq(head_addr, system_platform_get_num_bits_addr())
-    + address_eq(head_addr, system_platform_num_bits_addr())
-    + address_eq(head_addr, punit_addr())
-    + address_eq(head_addr, punit_size_of_1_addr())
-    + address_eq(head_addr, unit_addr())
-    + address_eq(head_addr, string_utf8_byte_size_addr())
+  -- Build the compact stuck offset `Nat.add base (Lit n)` applied to `post`,
+  -- the canonical normal form for a symbolic-base Nat offset (paired with
+  -- offset-aware def-eq). n = 0 collapses to `base` directly. Shared by the
+  -- nat dispatch (symbolic add/div/mod kept stuck) and the linear-rec
+  -- collapse, keeping the offset construction out of those circuits' width.
+  fn mk_nat_offset_stuck(base_w: KExpr, n: KLimbs, post: List‹KExpr›,
+                         addrs: List‹Addr›) -> (G, KExpr) {
+    match klimbs_is_zero(n) {
+      1 => (1, apply_spine(base_w, post)),
+      0 =>
+        match find_addr_idx_safe(nat_add_addr(), addrs, 0) {
+          (0, _) => (0, store(KExprNode.BVar(0))),
+          (1, add_idx) =>
+            let add_const = store(KExprNode.Const(add_idx, store(ListNode.Nil)));
+            let off = store(KExprNode.App(
+              store(KExprNode.App(add_const, base_w)),
+              mk_nat_lit(n)));
+            (1, apply_spine(off, post)),
+        },
+    }
+  }
+
+  -- ============================================================================
+  -- Primitive-family classification
+  --
+  -- `prim_family(a)` maps a Const-head address to the one reducer family
+  -- that could possibly fire on it: 0 = none, 1 = nat (`try_nat_dispatch`),
+  -- 2 = str, 3 = bitvec, 4 = native, 5 = decidable. The family address
+  -- sets are mutually disjoint (verified against each reducer's
+  -- comparisons), so classification is unambiguous.
+  --
+  -- Keyed on the ADDRESS ALONE: one memo row per distinct constant
+  -- address in the whole run (~hundreds), and the inner `address_eq`
+  -- chains are likewise keyed `(a, prim)` so they collapse after the
+  -- first occurrence of each address. This replaces running every
+  -- reducer as a gauntlet from `whnf_const_head`, whose try_* keys
+  -- include the spine and context — 4-6 wide rows per Const-head whnf,
+  -- almost all guaranteed misses.
+  -- ============================================================================
+  fn prim_family(a: Addr) -> G {
+    match is_nat_prim_addr(a) {
+      1 => 1,
+      0 =>
+        match is_str_prim_addr(a) {
+          1 => 2,
+          0 =>
+            match is_bitvec_prim_addr(a) {
+              1 => 3,
+              0 =>
+                match is_native_prim_addr(a) {
+                  1 => 4,
+                  0 =>
+                    match is_decidable_prim_addr(a) {
+                      1 => 5,
+                      0 => 0,
+                    },
+                },
+            },
+        },
+    }
+  }
+
+  -- Addresses handled by `try_nat_dispatch`: succ/pred plus the binop
+  -- set of `try_nat_binop_addr`.
+  fn is_nat_prim_addr(a: Addr) -> G {
+    match address_eq(a, nat_succ_addr()) {
+      1 => 1,
+      0 =>
+      match address_eq(a, nat_pred_addr()) {
+        1 => 1,
+        0 =>
+        match address_eq(a, nat_add_addr()) {
+          1 => 1,
+          0 =>
+          match address_eq(a, nat_sub_addr()) {
+            1 => 1,
+            0 =>
+            match address_eq(a, nat_mul_addr()) {
+              1 => 1,
+              0 =>
+              match address_eq(a, nat_div_addr()) {
+                1 => 1,
+                0 =>
+                match address_eq(a, nat_mod_addr()) {
+                  1 => 1,
+                  0 =>
+                  match address_eq(a, nat_pow_addr()) {
+                    1 => 1,
+                    0 =>
+                    match address_eq(a, nat_gcd_addr()) {
+                      1 => 1,
+                      0 =>
+                      match address_eq(a, nat_beq_addr()) {
+                        1 => 1,
+                        0 =>
+                        match address_eq(a, nat_ble_addr()) {
+                          1 => 1,
+                          0 =>
+                          match address_eq(a, nat_land_addr()) {
+                            1 => 1,
+                            0 =>
+                            match address_eq(a, nat_lor_addr()) {
+                              1 => 1,
+                              0 =>
+                              match address_eq(a, nat_xor_addr()) {
+                                1 => 1,
+                                0 =>
+                                match address_eq(a, nat_shift_left_addr()) {
+                                  1 => 1,
+                                  0 =>
+                                  match address_eq(a, nat_shift_right_addr()) {
+                                    1 => 1,
+                                    0 =>
+                                    0,
+                                  },
+                                },
+                              },
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    }
+  }
+
+  -- Addresses handled by `try_str_dispatch`.
+  fn is_str_prim_addr(a: Addr) -> G {
+    match address_eq(a, string_utf8_byte_size_addr()) {
+      1 => 1,
+      0 =>
+      match address_eq(a, string_to_byte_array_addr()) {
+        1 => 1,
+        0 =>
+        match address_eq(a, string_back_addr()) {
+          1 => 1,
+          0 =>
+          match address_eq(a, string_legacy_back_addr()) {
+            1 => 1,
+            0 =>
+            0,
+          },
+        },
+      },
+    }
+  }
+
+  -- Addresses handled by `try_bitvec_dispatch`.
+  fn is_bitvec_prim_addr(a: Addr) -> G {
+    match address_eq(a, bit_vec_to_nat_addr()) {
+      1 => 1,
+      0 =>
+      match address_eq(a, bit_vec_ult_addr()) {
+        1 => 1,
+        0 =>
+        match address_eq(a, decidable_decide_addr()) {
+          1 => 1,
+          0 =>
+          0,
+        },
+      },
+    }
+  }
+
+  -- Addresses handled by `try_reduce_native`.
+  fn is_native_prim_addr(a: Addr) -> G {
+    match address_eq(a, reduce_bool_addr()) {
+      1 => 1,
+      0 =>
+      match address_eq(a, reduce_nat_addr()) {
+        1 => 1,
+        0 =>
+        match address_eq(a, subtype_val_addr()) {
+          1 => 1,
+          0 =>
+          match address_eq(a, size_of_size_of_addr()) {
+            1 => 1,
+            0 =>
+            match address_eq(a, punit_size_of_1_addr()) {
+              1 => 1,
+              0 =>
+              match address_eq(a, system_platform_num_bits_addr()) {
+                1 => 1,
+                0 =>
+                0,
+              },
+            },
+          },
+        },
+      },
+    }
+  }
+
+  -- Addresses handled by `try_reduce_decidable`.
+  fn is_decidable_prim_addr(a: Addr) -> G {
+    match address_eq(a, nat_dec_eq_addr()) {
+      1 => 1,
+      0 =>
+      match address_eq(a, nat_dec_lt_addr()) {
+        1 => 1,
+        0 =>
+        match address_eq(a, nat_dec_le_addr()) {
+          1 => 1,
+          0 =>
+          match address_eq(a, int_dec_eq_addr()) {
+            1 => 1,
+            0 =>
+            match address_eq(a, int_dec_lt_addr()) {
+              1 => 1,
+              0 =>
+              match address_eq(a, int_dec_le_addr()) {
+                1 => 1,
+                0 =>
+                0,
+              },
+            },
+          },
+        },
+      },
+    }
   }
 
   -- Mirror: src/ix/kernel/whnf.rs:500-700 Nat-on-literals dispatch.
@@ -1422,9 +1597,42 @@ def primitive := ⟦
                         },
                       _ => (0, store(KExprNode.BVar(0))),
                     },
-                  _ => (0, store(KExprNode.BVar(0))),
+                  _ =>
+                    -- Symbolic base: route to the cold offset-stuck check
+                    -- (separate circuit so its width only taxes actual
+                    -- symbolic-base events, not every literal binop row).
+                    match pb {
+                      (1, nb) =>
+                        try_nat_offset_dispatch(head_addr, a0_w, nb, spine, addrs),
+                      _ => (0, store(KExprNode.BVar(0))),
+                    },
                 },
             },
+        },
+    }
+  }
+
+  -- Cold path of try_nat_dispatch: a binary Nat op whose whnf'd base is
+  -- symbolic and whose second arg is `Lit nb`. For `Nat.add` (any nb) and
+  -- `Nat.div`/`Nat.mod` (nb >= 2) the term is irreducible: return verdict
+  -- 2 = "already stuck in compact offset form" so whnf keeps it instead of
+  -- delta-unfolding into a succ^nb tower / the division algorithm
+  -- (`x >>> k` = k nested `Nat.div _ 2`). Pairs with offset-aware def-eq.
+  fn try_nat_offset_dispatch(head_addr: Addr, a0_w: KExpr, nb: KLimbs,
+                             spine: List‹KExpr›, addrs: List‹Addr›) -> (G, KExpr) {
+    let is_add = address_eq(head_addr, nat_add_addr());
+    let is_divmod = address_eq(head_addr, nat_div_addr())
+      + address_eq(head_addr, nat_mod_addr());
+    let eligible =
+      is_add + is_divmod * (1 - klimbs_is_zero(nb))
+        * (1 - klimbs_is_zero(klimbs_dec(nb)));
+    match eligible {
+      0 => (0, store(KExprNode.BVar(0))),
+      _ =>
+        let post = list_drop(spine, 2);
+        match mk_nat_offset_stuck(a0_w, nb, post, addrs) {
+          (1, stuck) => (2, stuck),
+          (0, _) => (0, store(KExprNode.BVar(0))),
         },
     }
   }
