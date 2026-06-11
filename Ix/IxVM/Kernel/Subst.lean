@@ -238,6 +238,68 @@ def subst := ⟦
         store(KExprNode.Proj(tidx, fidx, expr_inst1(e1, arg, depth))),
     }
   }
+
+  -- ============================================================================
+  -- expr_inst_many — simultaneous substitution of `substs` for the `n` binders
+  -- at `depth` in ONE walk (mirror `src/ix/kernel/subst.rs::simul_subst`). Used
+  -- for multi-arg beta: `(λλλ. body) x y z` substitutes all three at once
+  -- instead of three separate `expr_inst1` re-walks of the body.
+  --
+  -- `substs` is innermost-first: `substs[0]` replaces `BVar(depth)`, …,
+  -- `substs[n-1]` replaces `BVar(depth+n-1)` (each lifted by `depth`); a free
+  -- `BVar(i ≥ depth+n)` shifts down by `n`. Same fast-path as `expr_inst1`.
+  -- ============================================================================
+  fn expr_inst_many(e: KExpr, substs: List‹KExpr›, depth: G) -> KExpr {
+    let l = expr_lbr(e);
+    match u32_less_than(depth, l) {
+      0 => e,
+      1 => expr_inst_many_walk(e, substs, depth),
+    }
+  }
+
+  -- Cold BVar arm of `expr_inst_many_walk`, split into its own circuit so the
+  -- hot App/Lam/… walk stays narrow (the `list_length` / `list_lookup` /
+  -- `expr_lift` machinery only charges the BVar rows). Mirror the hot/cold
+  -- split pattern used for `address_eq` / `whnf_with_spine`.
+  fn expr_inst_many_bvar(i: G, substs: List‹KExpr›, depth: G) -> KExpr {
+    match u32_less_than(i, depth) {
+      1 => store(KExprNode.BVar(i)),
+      0 =>
+        let n = list_length(substs);
+        match u32_less_than(i, depth + n) {
+          1 => expr_lift(list_lookup(substs, i - depth), depth, 0),
+          0 => store(KExprNode.BVar(i - n)),
+        },
+    }
+  }
+
+  fn expr_inst_many_walk(e: KExpr, substs: List‹KExpr›, depth: G) -> KExpr {
+    match load(e) {
+      KExprNode.BVar(i) => expr_inst_many_bvar(i, substs, depth),
+      KExprNode.Srt(l) => store(KExprNode.Srt(l)),
+      KExprNode.Const(idx, lvls) => store(KExprNode.Const(idx, lvls)),
+      KExprNode.App(f, a) =>
+        store(KExprNode.App(
+          expr_inst_many(f, substs, depth),
+          expr_inst_many(a, substs, depth))),
+      KExprNode.Lam(ty, body) =>
+        store(KExprNode.Lam(
+          expr_inst_many(ty, substs, depth),
+          expr_inst_many(body, substs, depth + 1))),
+      KExprNode.Forall(ty, body) =>
+        store(KExprNode.Forall(
+          expr_inst_many(ty, substs, depth),
+          expr_inst_many(body, substs, depth + 1))),
+      KExprNode.Let(ty, val, body) =>
+        store(KExprNode.Let(
+          expr_inst_many(ty, substs, depth),
+          expr_inst_many(val, substs, depth),
+          expr_inst_many(body, substs, depth + 1))),
+      KExprNode.Lit(lit) => store(KExprNode.Lit(lit)),
+      KExprNode.Proj(tidx, fidx, e1) =>
+        store(KExprNode.Proj(tidx, fidx, expr_inst_many(e1, substs, depth))),
+    }
+  }
 ⟧
 
 end IxVM

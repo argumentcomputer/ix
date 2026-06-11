@@ -57,9 +57,22 @@ def whnf := ⟦
   -- ============================================================================
   -- Beta
   -- ============================================================================
-  fn beta_step(lam: KExpr, arg: KExpr) -> KExpr {
+
+  -- Peel a beta telescope: consume one spine arg per leading `Lam` of `lam`,
+  -- accumulating the consumed args innermost-first in `acc` (prepend), until
+  -- the head is no longer a `Lam` or the spine is empty. Returns the deepest
+  -- body, the consumed args (innermost-first, ready for `expr_inst_many`), and
+  -- the unconsumed spine tail.
+  fn peel_beta(lam: KExpr, spine: List‹KExpr›, acc: List‹KExpr›)
+              -> (KExpr, List‹KExpr›, List‹KExpr›) {
     match load(lam) {
-      KExprNode.Lam(_, body) => expr_inst1(body, arg, 0),
+      KExprNode.Lam(_, body) =>
+        match load(spine) {
+          ListNode.Cons(a, rest) =>
+            peel_beta(body, rest, store(ListNode.Cons(a, acc))),
+          ListNode.Nil => (lam, acc, spine),
+        },
+      _ => (lam, acc, spine),
     }
   }
 
@@ -67,13 +80,23 @@ def whnf := ⟦
   -- WHNF main loop with `prims` for nat-primitive dispatch.
   -- ============================================================================
 
+  -- Multi-arg beta (mirror src/ix/kernel/whnf.rs:541-567): peel the whole
+  -- telescope and substitute all consumed args in ONE `expr_inst_many` walk,
+  -- instead of one `expr_inst1` re-walk of the body per arg. Single-arg betas
+  -- stay on the cheap `expr_inst1` path (no list overhead).
   fn whnf_apply_beta(spine: List‹KExpr›, lam: KExpr, types: List‹KExpr›,
                      top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
-    match load(spine) {
-      ListNode.Nil => lam,
-      ListNode.Cons(a, rest) =>
-        let next = beta_step(lam, a);
-        whnf_with_spine(next, rest, types, top, addrs),
+    match peel_beta(lam, spine, store(ListNode.Nil)) {
+      (deep, consumed, rest) =>
+        match list_length(consumed) {
+          0 => apply_spine(lam, spine),
+          1 =>
+            let body2 = expr_inst1(deep, list_lookup(consumed, 0), 0);
+            whnf_with_spine(body2, rest, types, top, addrs),
+          _ =>
+            let body2 = expr_inst_many(deep, consumed, 0);
+            whnf_with_spine(body2, rest, types, top, addrs),
+        },
     }
   }
 
