@@ -202,6 +202,14 @@ def subst := ⟦
     }
   }
 
+  -- Recursive walk. App children are guarded INLINE at the call site
+  -- (lbr check, then straight into the walk): a no-op subtree produces
+  -- NO query row at all, and a real-work child produces one walk row
+  -- instead of a dispatch row + a walk row — 35% of all expr_inst1
+  -- entries on instantiation-heavy checks were no-op dispatch rows.
+  -- `expr_lbr` is keyed on the child alone, so the guard memoizes
+  -- across arg/depth. App-arm only: guarding the binder arms too blew
+  -- the walk width 53 -> 141 and REGRESSED FFT +4%.
   fn expr_inst1_walk(e: KExpr, arg: KExpr, depth: G) -> KExpr {
     match load(e) {
       KExprNode.BVar(i) =>
@@ -214,12 +222,18 @@ def subst := ⟦
               _ => store(KExprNode.BVar(i - 1)),
             },
         },
-      KExprNode.Srt(l) => store(KExprNode.Srt(l)),
-      KExprNode.Const(idx, lvls) => store(KExprNode.Const(idx, lvls)),
+      KExprNode.Srt(_) => e,
+      KExprNode.Const(_, _) => e,
       KExprNode.App(f, a) =>
-        store(KExprNode.App(
-          expr_inst1(f, arg, depth),
-          expr_inst1(a, arg, depth))),
+        let f2 = match u32_less_than(depth, expr_lbr(f)) {
+          0 => f,
+          1 => expr_inst1_walk(f, arg, depth),
+        };
+        let a2 = match u32_less_than(depth, expr_lbr(a)) {
+          0 => a,
+          1 => expr_inst1_walk(a, arg, depth),
+        };
+        store(KExprNode.App(f2, a2)),
       KExprNode.Lam(ty, body) =>
         store(KExprNode.Lam(
           expr_inst1(ty, arg, depth),
@@ -233,7 +247,7 @@ def subst := ⟦
           expr_inst1(ty, arg, depth),
           expr_inst1(val, arg, depth),
           expr_inst1(body, arg, depth + 1))),
-      KExprNode.Lit(lit) => store(KExprNode.Lit(lit)),
+      KExprNode.Lit(_) => e,
       KExprNode.Proj(tidx, fidx, e1) =>
         store(KExprNode.Proj(tidx, fidx, expr_inst1(e1, arg, depth))),
     }
