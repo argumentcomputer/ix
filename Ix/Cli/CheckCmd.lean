@@ -45,6 +45,16 @@ def parseName (arg : String) : Lean.Name :=
       | some n => Lean.Name.mkNum acc n
       | none   => Lean.Name.mkStr acc s
 
+/-- Resolve a CLI name argument against the env. `parseName` can't rebuild
+    private names (`_private.M.0.foo`) — the marker/scope-index components
+    don't round-trip through naive dot-splitting. So if the parsed name
+    isn't present, fall back to matching the arg against each constant's
+    `toString` (the displayed form the user copied). -/
+def resolveName (env : Lean.Environment) (arg : String) : Option Lean.Name :=
+  let parsed := parseName arg
+  if env.constants.contains parsed then some parsed
+  else (env.constants.toList.find? (fun (k, _) => toString k == arg)).map (·.1)
+
 def addrOfHex! (label : String) (s : String) : IO Address := do
   match Address.fromString s with
   | some a => pure a
@@ -87,6 +97,16 @@ partial def ixNameToLeanName : Ix.Name → Lean.Name
   | .anonymous _ => .anonymous
   | .str p s _ => .str (ixNameToLeanName p) s
   | .num p n _ => .num (ixNameToLeanName p) n
+
+/-- Resolve a CLI name argument against a `.ixe` env's named map. Like
+    `resolveName` for the compiled-in env: `parseName` can't rebuild private
+    names, so when the direct lookup misses, fall back to matching the arg
+    against each named constant's displayed `toString`. -/
+def resolveIxeAddr (ixonEnv : Ixon.Env) (arg : String) : Option Address :=
+  match ixonEnv.getAddr? (Ix.Name.fromLeanName (parseName arg)) with
+  | some a => some a
+  | none =>
+    (ixonEnv.named.toList.find? (fun (k, _) => toString (ixNameToLeanName k) == arg)).map (·.2.addr)
 
 /-- Build a `ClaimWitness` for the `verify_claim` entrypoint against
     `Ix.Claim.check addr none` (full transitive typecheck of the
@@ -189,14 +209,13 @@ def forEachClaim
           if !keepGoing then break
     else
       for arg in names do
-        let name := parseName arg
-        match ixonEnv.getAddr? (Ix.Name.fromLeanName name) with
+        match resolveIxeAddr ixonEnv arg with
         | none =>
-          IO.eprintln s!"{name} not found in {path}"
-          failures := failures.push (toString name)
+          IO.eprintln s!"{arg} not found in {path}"
+          failures := failures.push arg
           if !keepGoing then break
         | some addr =>
-          let label := toString name
+          let label := arg
           let claim := Ix.Claim.check addr none
           let witness ← mkWitness addr ixonEnv
           if (← runOne claim witness label) ≠ 0 then
@@ -224,17 +243,18 @@ def forEachClaim
           if !keepGoing then break
     else
       for arg in names do
-        let name := parseName arg
-        if !env.constants.contains name then
-          IO.eprintln s!"{name} not found"
-          failures := failures.push (toString name)
+        match resolveName env arg with
+        | none =>
+          IO.eprintln s!"{arg} not found"
+          failures := failures.push arg
           if !keepGoing then break
           else continue
-        let label := toString name
-        let (claim, witness) ← buildOne name
-        if (← runOne claim witness label) ≠ 0 then
-          failures := failures.push label
-          if !keepGoing then break
+        | some name =>
+          let label := toString name
+          let (claim, witness) ← buildOne name
+          if (← runOne claim witness label) ≠ 0 then
+            failures := failures.push label
+            if !keepGoing then break
 
   if failures.isEmpty then pure 0
   else
