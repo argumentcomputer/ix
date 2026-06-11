@@ -96,6 +96,49 @@ outside the kernel) and is now structurally enforced by the type split:
 `CtxAddr` (blake3 digests for local-context cache keys, fed by uids,
 also internal-only).
 
+## Adversarial model: why uid identity cannot be cache-poisoned
+
+The natural worry about replacing blake3 with `u64` identity is hash
+collision: *if two subterms had the same internal hash, a def-eq/whnf
+cache hit could return a result for the wrong term.* The design avoids
+this not by making collisions unlikely but by making them impossible —
+**uids are assigned, not computed**:
+
+- A uid comes from a process-global sequential counter
+  (`expr.rs::fresh_uid`), never from hashing input content. There is no
+  function from term content to uid for an adversary to find collisions
+  in. Two `KExpr` values share a uid only if they are clones of one
+  construction event or the canonical node the intern table returned for
+  the same shallow key. `fresh_uid` aborts on counter exhaustion (which
+  would require >2^67 guest cycles) rather than wrap.
+- The intern table is keyed by [`ExprKey`]/[`UnivKey`] — exact
+  structural keys compared by full `Eq` (variant tag, child uids,
+  complete 32-byte payload addresses; never truncated, never a digest).
+  `FxHashMap` bucketing uses a weak hash, but a bucket collision only
+  causes an extra key comparison, not a wrong hit. Children in a key are
+  canonical by induction, so key equality ⇔ structural equality. Debug
+  builds assert structural equality on every intern hit.
+- Reduction caches key on `(uid, CtxAddr)`; a hit requires uid equality,
+  hence structural equality. `CtxAddr` (local-context digests) remains
+  blake3 — collision-resistant — fed with uid bytes.
+- An adversarial env cannot choose uids at all: deserialization never
+  produces a uid; every node built from input takes the next counter
+  value. Compared to the old scheme — where cache keys were blake3 over
+  attacker-chosen content, so an attacker could at least grind contents
+  to flood `FxHashMap` buckets of their choosing — sequential uids give
+  the adversary strictly *less* influence over key distribution.
+
+The one place adversarial content does enter identity is **literals**:
+`ExprKey::Nat/Str` and structural equality key on the blob `Address`
+(mirroring the old content hash, which also hashed only the address).
+That is sound only if an address is bound to its bytes — so all three
+env deserializers verify `Address::hash(bytes)` for every blob at load
+(the constants' equivalent check runs lazily at first materialization),
+and the literal arms of structural equality compare values as well as
+addresses as defense in depth. Residual exposure is limited to DoS
+(bucket flooding of maps keyed by attacker-chosen `Address`es slows the
+prover, which is spending its own cycles), not soundness.
+
 ## Future: sub-constant commitments
 
 If a feature ever needs cryptographic identity for **subterms** (e.g.

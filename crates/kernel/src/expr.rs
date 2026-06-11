@@ -195,8 +195,17 @@ impl<M: KernelMode> KExpr<M> {
       (ExprData::Prj(id1, f1, v1, _), ExprData::Prj(id2, f2, v2, _)) => {
         id1.addr == id2.addr && f1 == f2 && v1.structural_eq(v2)
       },
-      (ExprData::Nat(_, ba1, _), ExprData::Nat(_, ba2, _)) => ba1 == ba2,
-      (ExprData::Str(_, ba1, _), ExprData::Str(_, ba2, _)) => ba1 == ba2,
+      // Literals: the blob address IS the identity (mirroring the old
+      // content hash, which hashed only the address). The value conjunct
+      // is defense in depth: load-time blob verification makes it
+      // redundant, and if that invariant were ever violated it degrades
+      // to inequality — the conservative direction.
+      (ExprData::Nat(v1, ba1, _), ExprData::Nat(v2, ba2, _)) => {
+        ba1 == ba2 && v1 == v2
+      },
+      (ExprData::Str(v1, ba1, _), ExprData::Str(v2, ba2, _)) => {
+        ba1 == ba2 && v1 == v2
+      },
       _ => false,
     }
   }
@@ -241,7 +250,14 @@ static NEXT_UID: std::sync::atomic::AtomicU64 =
 
 #[inline]
 pub(crate) fn fresh_uid() -> Addr {
-  NEXT_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+  let uid = NEXT_UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+  // Uid exhaustion guard. Uids are ASSIGNED (sequential), never computed
+  // from content, so two distinct terms can only alias if the counter
+  // wraps — which would take centuries at nanosecond allocation rates
+  // (and >2^67 guest cycles in-circuit). Abort rather than reason about
+  // it: identity soundness must not rest on "probably won't happen".
+  assert!(uid < u64::MAX, "kernel uid counter exhausted");
+  uid
 }
 
 // =============================================================================

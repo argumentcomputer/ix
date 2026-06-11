@@ -1419,6 +1419,20 @@ impl Env {
       }
       let (bytes, rest) = buf.split_at(len);
       *buf = rest;
+      // Blob bytes are bound to their address HERE, eagerly: literal
+      // identity downstream (kernel `ExprKey::Nat`/`Str` interning,
+      // `Constant.refs` blob entries, assumption filtering) keys on the
+      // address, so an unverified blob would let an adversarial env bind
+      // wrong bytes to a content address. Blobs are a small fraction of
+      // env bytes; constants stay lazily verified (see LazyConstant).
+      let computed = Address::hash(bytes);
+      if computed != addr {
+        return Err(format!(
+          "Env::get: blob bytes hash to {} but stored under {}",
+          computed.hex(),
+          addr.hex()
+        ));
+      }
       env.blobs.insert(addr, bytes.to_vec());
     }
 
@@ -1568,6 +1582,20 @@ impl Env {
       }
       let (bytes, rest) = buf.split_at(len);
       *buf = rest;
+      // Blob bytes are bound to their address HERE, eagerly: literal
+      // identity downstream (kernel `ExprKey::Nat`/`Str` interning,
+      // `Constant.refs` blob entries, assumption filtering) keys on the
+      // address, so an unverified blob would let an adversarial env bind
+      // wrong bytes to a content address. Blobs are a small fraction of
+      // env bytes; constants stay lazily verified (see LazyConstant).
+      let computed = Address::hash(bytes);
+      if computed != addr {
+        return Err(format!(
+          "Env::get_anon: blob bytes hash to {} but stored under {}",
+          computed.hex(),
+          addr.hex()
+        ));
+      }
       env.blobs.insert(addr, bytes.to_vec());
     }
 
@@ -1768,6 +1796,20 @@ impl Env {
       }
       let (bytes, rest) = buf.split_at(len);
       buf = rest;
+      // Blob bytes are bound to their address HERE, eagerly: literal
+      // identity downstream (kernel `ExprKey::Nat`/`Str` interning,
+      // `Constant.refs` blob entries, assumption filtering) keys on the
+      // address, so an unverified blob would let an adversarial env bind
+      // wrong bytes to a content address. Blobs are a small fraction of
+      // env bytes; constants stay lazily verified (see LazyConstant).
+      let computed = Address::hash(bytes);
+      if computed != addr {
+        return Err(format!(
+          "Env::get_anon_mmap: blob bytes hash to {} but stored under {}",
+          computed.hex(),
+          addr.hex()
+        ));
+      }
       env.blobs.insert(addr, bytes.to_vec());
     }
 

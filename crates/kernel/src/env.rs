@@ -305,6 +305,12 @@ impl<M: KernelMode> InternTable<M> {
     };
     let key = expr_key(&e);
     if let Some(existing) = self.exprs.get(&key) {
+      // The shallow key (exact structural Eq over variant tag + child
+      // uids + payload — never a truncated or content-hashed key) plus
+      // canonical children make this hit structurally exact. Checked in
+      // debug builds; a violation here would be an interning bug, not
+      // an input an adversary can craft (uids are assigned, not hashed).
+      debug_assert!(existing == &e, "intern hit is not structurally equal");
       return existing.clone();
     }
     self.canon_exprs.insert(*e.addr());
