@@ -210,18 +210,6 @@ def verifier := ⟦
     (take_bits(sample8_bits(bytes), n), i1, o1)
   }
 
-  -- Self-test: `sample_bits(20)` after observing the single `Val`
-  -- `0x0102030405060708` (8 LE bytes) must equal the reference `799146`
-  -- (`pcs_challenger_ref` in `multi-stark/src/types.rs`).
-  pub fn sample_bits_test() -> G {
-    let input = store(ListNode.Cons(8u8, store(ListNode.Cons(7u8, store(ListNode.Cons(6u8,
-      store(ListNode.Cons(5u8, store(ListNode.Cons(4u8, store(ListNode.Cons(3u8,
-      store(ListNode.Cons(2u8, store(ListNode.Cons(1u8, store(ListNode.Nil)))))))))))))))));
-    let (bits, _i, _o) = ch_sample_bits(input, store(ListNode.Nil), 20);
-    assert_eq!(bits_to_num(bits), 799146);
-    1
-  }
-
   -- Append (observe) 8 little-endian bytes of `b` at the END of the challenger
   -- input buffer. The transcript is held front-to-back (front = first observed =
   -- first hashed, matching `keccak256`'s absorption order), so an observation
@@ -258,38 +246,6 @@ def verifier := ⟦
       -> (Ext, ByteStream, ByteStream) {
     let (c0, c1, i1, o1) = ch_sample_ext(input, output);
     ([gl_reduce(c0), gl_reduce(c1)], i1, o1)
-  }
-
-  -- Self-test: replay the synthetic PCS challenger sequence from
-  -- `pcs_challenger4_ref` (multi-stark/src/types.rs) and check every sampled
-  -- challenge against the reference. Decisively exercises the two consecutive
-  -- ext samples (α_pcs then α_fri) sharing one hash `output` stream.
-  pub fn pcs_challenger4_test() -> G {
-    -- post-ζ input buffer = observe V0 then V1 (forward / observation order).
-    let v0 = [8u8, 7u8, 6u8, 5u8, 4u8, 3u8, 2u8, 1u8];     -- 0x0102030405060708
-    let v1 = [136u8, 119u8, 102u8, 85u8, 68u8, 51u8, 34u8, 17u8]; -- 0x1122334455667788
-    let input = snoc_b8(snoc_b8(store(ListNode.Nil), v0), v1);
-    -- α_pcs (output empty ⇒ flush), then α_fri (CONSECUTIVE ⇒ thread output).
-    let (apcs, input, o1) = pcs_sample_ext(input, store(ListNode.Nil));
-    let (afri, input, o2) = pcs_sample_ext(input, o1);
-    assert_eq!(limb_to_field(apcs[0]), 2882912772410685996);
-    assert_eq!(limb_to_field(apcs[1]), 910933442133595775);
-    assert_eq!(limb_to_field(afri[0]), 14440140149289897216);
-    assert_eq!(limb_to_field(afri[1]), 8092267645441512944);
-    -- observe commit (clears output), sample β.
-    let v2 = [239u8, 190u8, 173u8, 222u8, 0u8, 0u8, 0u8, 0u8]; -- 0x00000000deadbeef
-    let (input, _oc) = ch_observe_val(input, v2);
-    let (beta, input, _ob) = pcs_sample_ext(input, store(ListNode.Nil));
-    assert_eq!(limb_to_field(beta[0]), 10456048119516576995);
-    assert_eq!(limb_to_field(beta[1]), 3173538015651228593);
-    -- observe final_poly coeff + log_arity (each a Val), then sample the index.
-    let v3 = [4u8, 3u8, 2u8, 1u8, 13u8, 12u8, 11u8, 10u8]; -- 0x0a0b0c0d01020304
-    let v4 = [2u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8];     -- 0x0000000000000002
-    let (input, _o3) = ch_observe_val(input, v3);
-    let (input, _o4) = ch_observe_val(input, v4);
-    let (bits, _bi, _bo) = ch_sample_bits(input, store(ListNode.Nil), 20);
-    assert_eq!(bits_to_num(bits), 336138);
-    1
   }
 
   -- Append a claim's values (each `Val` as 8 LE bytes) onto `tail`, in order.

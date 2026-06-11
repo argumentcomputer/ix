@@ -129,39 +129,34 @@ def main : IO UInt32 := do
     (((default : IOBuffer).extend #[Aiur.G.ofNat 0] proofGs).extend #[Aiur.G.ofNat 1] vkGs).extend #[Aiur.G.ofNat 2] claimGs
 
   -- ── 4. recursive verifier system ─────────────────────────────────────────
+  -- The PRODUCTION toplevel (no test circuits — every `pub fn` adds width).
   let vTop ← match MultiStark.multiStark with
     | .error e => IO.eprintln s!"verifier toplevel merge failed: {e}"; return 1
     | .ok t => pure t
   let (vCompiled, _vSystem) ← buildSystem "verifier" vTop
-  -- TEMP: validate the PCS keccak-MMCS sponge primitives + Merkle verify_batch.
-  match vCompiled.bytecode.execute (vCompiled.getFuncIdx `pcs_hash_test).get! #[] default with
-  | .error e => IO.eprintln s!"✗ pcs_hash_test FAILED — {e}"; return 1
-  | .ok _ => IO.println "✓ pcs_hash_test: keccak MMCS sponge/compress match reference"
-  match vCompiled.bytecode.execute (vCompiled.getFuncIdx `pcs_merkle_test).get! #[] default with
-  | .error e => IO.eprintln s!"✗ pcs_merkle_test FAILED — {e}"; return 1
-  | .ok _ => IO.println "✓ pcs_merkle_test: Merkle verify_batch matches reference (root + tamper)"
-  match vCompiled.bytecode.execute (vCompiled.getFuncIdx `sample_bits_test).get! #[] default with
-  | .error e => IO.eprintln s!"✗ sample_bits_test FAILED — {e}"; return 1
-  | .ok _ => IO.println "✓ sample_bits_test: challenger sample_bits matches reference"
-  match vCompiled.bytecode.execute (vCompiled.getFuncIdx `pcs_challenger4_test).get! #[] default with
-  | .error e => IO.eprintln s!"✗ pcs_challenger4_test FAILED — {e}"; return 1
-  | .ok _ => IO.println "✓ pcs_challenger4_test: PCS challenger continuation (α_pcs/α_fri/β/index) matches reference"
-  match vCompiled.bytecode.execute (vCompiled.getFuncIdx `fri_fold_test).get! #[] default with
-  | .error e => IO.eprintln s!"✗ fri_fold_test FAILED — {e}"; return 1
-  | .ok _ => IO.println "✓ fri_fold_test: FRI arity-2 fold_row matches reference"
-  match vCompiled.bytecode.execute (vCompiled.getFuncIdx `ro_fold_test).get! #[] default with
-  | .error e => IO.eprintln s!"✗ ro_fold_test FAILED — {e}"; return 1
-  | .ok _ => IO.println "✓ ro_fold_test: open_input reduced-opening math matches reference"
-  -- TEMP: validate non-native Goldilocks byte-arithmetic (vs `gl_ops_ref`).
-  match vCompiled.bytecode.execute (vCompiled.getFuncIdx `gl_addsub_test).get! #[] default with
-  | .error e => IO.eprintln s!"✗ gl_addsub_test FAILED — {e}"; return 1
-  | .ok _ => IO.println "✓ gl_addsub_test: non-native Goldilocks add/sub match reference"
-  match vCompiled.bytecode.execute (vCompiled.getFuncIdx `gl_muldiv_test).get! #[] default with
-  | .error e => IO.eprintln s!"✗ gl_muldiv_test FAILED — {e}"; return 1
-  | .ok _ => IO.println "✓ gl_muldiv_test: non-native Goldilocks mul/inverse/div match reference"
-  match vCompiled.bytecode.execute (vCompiled.getFuncIdx `eg_ops_test).get! #[] default with
-  | .error e => IO.eprintln s!"✗ eg_ops_test FAILED — {e}"; return 1
-  | .ok _ => IO.println "✓ eg_ops_test: non-native ExtGoldilocks add/mul/inverse/div match reference"
+  -- The TESTS toplevel: the verifier plus the `*_test` entrypoints. Compiled
+  -- separately so the test circuits never widen the production system; only the
+  -- bytecode is needed (tests are executed, never proven).
+  let tTop ← match MultiStark.multiStarkTests with
+    | .error e => IO.eprintln s!"tests toplevel merge failed: {e}"; return 1
+    | .ok t => pure t
+  let tCompiled ← match tTop.compile with
+    | .error e => throw <| IO.userError s!"verifier-tests: compilation failed: {e}"
+    | .ok c => pure c
+  let runTest (name : Lean.Name) (okMsg : String) : IO Bool := do
+    match tCompiled.bytecode.execute (tCompiled.getFuncIdx name).get! #[] default with
+    | .error e => IO.eprintln s!"✗ {name} FAILED — {e}"; pure false
+    | .ok _ => IO.println s!"✓ {okMsg}"; pure true
+  -- Validate the verifier's primitives against the Rust reference values.
+  if !(← runTest `pcs_hash_test "pcs_hash_test: keccak MMCS sponge/compress match reference") then return 1
+  if !(← runTest `pcs_merkle_test "pcs_merkle_test: Merkle verify_batch matches reference (root + tamper)") then return 1
+  if !(← runTest `sample_bits_test "sample_bits_test: challenger sample_bits matches reference") then return 1
+  if !(← runTest `pcs_challenger4_test "pcs_challenger4_test: PCS challenger continuation (α_pcs/α_fri/β/index) matches reference") then return 1
+  if !(← runTest `fri_fold_test "fri_fold_test: FRI arity-2 fold_row matches reference") then return 1
+  if !(← runTest `ro_fold_test "ro_fold_test: open_input reduced-opening math matches reference") then return 1
+  if !(← runTest `gl_addsub_test "gl_addsub_test: non-native Goldilocks add/sub match reference") then return 1
+  if !(← runTest `gl_muldiv_test "gl_muldiv_test: non-native Goldilocks mul/inverse/div match reference") then return 1
+  if !(← runTest `eg_ops_test "eg_ops_test: non-native ExtGoldilocks add/mul/inverse/div match reference") then return 1
   let vIdx ← match vCompiled.getFuncIdx `verify_multi_stark_proof with
     | some i => pure i
     | none => IO.eprintln "verify_multi_stark_proof entrypoint not found"; return 1
