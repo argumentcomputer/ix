@@ -31,6 +31,9 @@ structure ConstructorLayout where
   index : Nat
   size : Nat
   offsets : Array Nat
+  -- True when the parent datatype has a single constructor: no tag slot, so
+  -- construction omits the tag const and matches need no discrimination.
+  tagless : Bool
   deriving Inhabited
 
 inductive Layout
@@ -47,11 +50,12 @@ def Concrete.Decls.layoutMap (decls : Decls) : Except String LayoutMap := do
     | .dataType dataType => do
       let dataTypeSize ← dataType.size decls
       let layoutMap := layoutMap.insert dataType.name (.dataType dataTypeSize)
+      let tagless := dataType.constructors.length == 1
       let pass := fun (acc, index) constructor => do
         let offsets ← constructor.argTypes.foldlM (init := #[0]) fun offsets typ => do
           let typSyze ← typ.size decls
           pure $ offsets.push ((offsets[offsets.size - 1]?.getD 0) + typSyze)
-        let decl := .constructor { size := dataTypeSize, offsets, index }
+        let decl := .constructor { size := dataTypeSize, offsets, index, tagless }
         let name := dataType.name.pushNamespace constructor.nameHead
         pure (acc.insert name decl, index + 1)
       let (layoutMap, _) ← dataType.constructors.foldlM pass (layoutMap, 0)
@@ -150,13 +154,21 @@ def toIndex
       pushOp (.const (.ofNat layout.index))
     | some (.constructor layout) => do
       let size := layout.size
-      let paddingOp := Bytecode.Op.const (.ofNat layout.index)
-      let index ← pushOp paddingOp
-      if index.size < size then
-        let padding := (← pushOp paddingOp)[0]!
-        pure $ index ++ Array.replicate (size - index.size) padding
+      -- Tagless single-variant: no tag slot. A nullary ctor is then a width-0
+      -- (unit-like) value; with fields it pads up to `size` from empty.
+      if layout.tagless then
+        if size == 0 then pure #[]
+        else
+          let padding := (← pushOp (.const (.ofNat 0)))[0]!
+          pure $ Array.replicate size padding
       else
-        pure index
+        let paddingOp := Bytecode.Op.const (.ofNat layout.index)
+        let index ← pushOp paddingOp
+        if index.size < size then
+          let padding := (← pushOp paddingOp)[0]!
+          pure $ index ++ Array.replicate (size - index.size) padding
+        else
+          pure index
     | _ => throw s!"ref: layout missing for `{name}`"
   | .field _ _ g => pushOp (Bytecode.Op.const g)
   | .tuple _ _ terms | .array _ _ terms =>
@@ -186,7 +198,11 @@ def toIndex
       pushOp (.call layout.index args layout.outputSize unconstrained) layout.outputSize
     | some (.constructor layout) => do
       let size := layout.size
-      let index ← pushOp (.const (.ofNat layout.index))
+      -- Tagless single-variant: omit the tag const; args fill the layout from
+      -- offset 0, exactly like a tuple.
+      let index ←
+        if layout.tagless then pure #[]
+        else pushOp (.const (.ofNat layout.index))
       let index ← buildArgs layoutMap bindings args index
       if index.size < size then
         let padding := (← pushOp (.const (.ofNat 0)))[0]!
@@ -519,24 +535,30 @@ def Concrete.addCase
       set { initState with selIdx := (← get).selIdx }
       pure (cases.push (g, term), defaultBlock)
     | .ref global pats => do
-      let (index, offsets) ← match layoutMap[global]? with
-        | some (.function layout) => pure (layout.index, layout.offsets)
-        | some (.constructor layout) => pure (layout.index, layout.offsets)
+      let (index, offsets, tagless) ← match layoutMap[global]? with
+        | some (.function layout) => pure (layout.index, layout.offsets, false)
+        | some (.constructor layout) => pure (layout.index, layout.offsets, layout.tagless)
         | _ => throw s!"addCase: layout missing for `{global}`"
       -- Bind each sub-pattern `Local` to the corresponding slice of `idxs`.
-      -- `idxs[0]` is the tag; argument `i` occupies `idxs[1 + offsets[i] ..
-      -- 1 + offsets[i+1]]`.
+      -- A tagged layout reserves `idxs[0]` for the tag, so argument `i` occupies
+      -- `idxs[1 + offsets[i] .. 1 + offsets[i+1]]`. A tagless (single-variant)
+      -- layout has no tag slot, so the base is `0` — a tuple-identical layout.
+      let base := if tagless then 0 else 1
       let ptrBindings : Std.HashMap Local (Array Bytecode.ValIdx) :=
         (Array.range pats.size).foldl (init := bindings) fun acc i =>
-          let startOff := 1 + (offsets[i]?.getD 0)
-          let endOff := 1 + (offsets[i+1]?.getD startOff)
+          let startOff := base + (offsets[i]?.getD 0)
+          let endOff := base + (offsets[i+1]?.getD (offsets[i]?.getD 0))
           let slice := idxs.extract startOff endOff
           let patLocal := pats[i]?.getD (.idx 0)
           acc.insert patLocal slice
       let initState ← get
       let term ← term.compile returnTyp layoutMap ptrBindings yieldCtrl
       set { initState with selIdx := (← get).selIdx }
-      pure (cases.push (.ofNat index, term), defaultBlock)
+      -- Single-variant: emit the arm as the unconditional default. With no other
+      -- cases the `.match`/`.matchContinue` always falls through to it, so no tag
+      -- discrimination occurs (`idxs[0]` is a field, never a tag).
+      if tagless then pure (cases, .some term)
+      else pure (cases.push (.ofNat index, term), defaultBlock)
     | .wildcard => do
       let initState ← get
       let term ← term.compile returnTyp layoutMap bindings yieldCtrl
