@@ -2,8 +2,15 @@
 
 Port of the IxVM environment machine (`~/ix-aiur` commits `d0d3375`
 Phase A, `b4c4ea3` Phase B; `Ix/IxVM/Kernel/Whnf.lean:209-460`,
-`Subst.lean:352-400`) to `crates/kernel/src/whnf.rs`. Status: design —
-not implemented.
+`Subst.lean:352-400`) to `crates/kernel/src/whnf.rs`. Status:
+IMPLEMENTED — Phase A in `7825e0b` (machine loop in `whnf.rs`,
+`Clo`/`MEnv`/`clo_subst` in `subst.rs`), Phase B closure-iota in
+`acd0780` (`try_iota_clo`); guest cycle benchmarks pending. One
+deviation from §7: machine-native delta (the IxVM Phase C1.5 win)
+does not port at this layer — our machine lives inside `whnf_core`,
+which must stay delta-free for def-eq's lazy-delta unfold ordering,
+whereas the IxVM machine sits in a whnf that includes delta. Spanning
+`whnf`'s delta loop with closures is a separate, larger design.
 
 ## 1. Problem and evidence
 
