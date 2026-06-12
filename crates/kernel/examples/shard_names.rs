@@ -46,8 +46,7 @@ fn main() {
       s.blocks.len(),
       s.heartbeats
     );
-    let mut shown = 0;
-    for b in &s.blocks {
+    for (shown, b) in s.blocks.iter().enumerate() {
       let mut names = block2names.get(b).cloned().unwrap_or_default();
       names.sort();
       names.dedup();
@@ -58,7 +57,6 @@ fn main() {
           println!("  {}…  {}", &b.hex()[..16], names.join(", "));
         }
       }
-      shown += 1;
     }
     if s.blocks.len() > 12 {
       println!("  … and {} more block(s)", s.blocks.len() - 12);

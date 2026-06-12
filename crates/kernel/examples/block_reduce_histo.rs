@@ -86,12 +86,10 @@ fn main() {
 
   // Reverse-map addr → Lean name (named addrs are anon addrs here).
   let name_of = |addr: &Address| -> String {
-    full
-      .named
-      .iter()
-      .find(|e| e.value().addr == *addr)
-      .map(|e| e.key().to_string())
-      .unwrap_or_else(|| format!("<anon {}…>", &addr.hex()[..16]))
+    full.named.iter().find(|e| e.value().addr == *addr).map_or_else(
+      || format!("<anon {}…>", &addr.hex()[..16]),
+      |e| e.key().to_string(),
+    )
   };
 
   let dump = |label: &str, histo: &dashmap::DashMap<Address, u64>| {

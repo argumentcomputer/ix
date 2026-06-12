@@ -57,7 +57,7 @@ fn block_of(env: &IxonEnv, addr: &Address) -> Address {
 fn block_size(env: &IxonEnv, block: &Address) -> u32 {
   env
     .get_const_bytes(block)
-    .map_or(0, |b| b.len().min(u32::MAX as usize) as u32)
+    .map_or(0, |b| u32::try_from(b.len()).unwrap_or(u32::MAX))
 }
 
 /// Parse a count that may use float/scientific notation (e.g. `4.5e9`).
@@ -70,7 +70,11 @@ fn parse_count(s: &str) -> u64 {
     eprintln!("error: must be non-negative: {s}");
     std::process::exit(1);
   }
-  v as u64
+  #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+  // floor semantics intended; sign guarded by the non-negative exit above
+  {
+    v as u64
+  }
 }
 
 /// Total RAM in GiB from `/proc/meminfo` (`None` off-Linux / on parse failure).
@@ -137,8 +141,10 @@ fn main() {
       },
       "--shards" => {
         i += 1;
-        shards =
-          Some(parse_count(args.get(i).unwrap_or(&String::new())) as usize);
+        shards = Some(
+          usize::try_from(parse_count(args.get(i).unwrap_or(&String::new())))
+            .expect("shard count fits usize"),
+        );
       },
       "--max-cycles" => {
         i += 1;
@@ -250,8 +256,11 @@ fn main() {
     // bisection tree (the prover falls back to a flat fold).
     let nb = profile.num_blocks();
     let chunk = nb.div_ceil(n.max(1)).max(1);
-    let shard_of: Vec<u32> =
-      (0..nb).map(|b| ((b / chunk).min(n - 1)) as u32).collect();
+    let shard_of: Vec<u32> = (0..nb)
+      .map(|b| {
+        u32::try_from((b / chunk).min(n - 1)).expect("shard index fits u32")
+      })
+      .collect();
     eprintln!("naive grouping into {n} contiguous block chunks");
     (shard_of, n, None)
   } else if let Some(n) = shards {
