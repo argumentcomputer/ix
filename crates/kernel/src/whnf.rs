@@ -652,7 +652,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       // beta firing — Const-headed terms (e.g. literal recursor loops)
       // never pay the closure-wrap + readback overhead.
       if matches!(f.data(), ExprData::Lam(..)) {
-        cur = self.machine_whnf(f, &args, &mut fuel)?;
+        cur = self.machine_whnf(f, &args, &mut fuel, flags)?;
         continue;
       }
 
@@ -713,14 +713,12 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     head: KExpr<M>,
     args: &[KExpr<M>],
     fuel: &mut u32,
+    flags: WhnfFlags,
   ) -> Result<KExpr<M>, TcError<M>> {
     let mut head = head;
     let mut env: MEnv<M> = MEnv::empty();
-    let mut spine: Vec<Arc<Clo<M>>> = args
-      .iter()
-      .rev()
-      .map(|a| Arc::new(Clo::closed(a.clone())))
-      .collect();
+    let mut spine: Vec<Arc<Clo<M>>> =
+      args.iter().rev().map(|a| Arc::new(Clo::closed(a.clone()))).collect();
 
     loop {
       match head.data() {
@@ -748,9 +746,12 @@ impl<M: KernelMode> TypeChecker<'_, M> {
             }
             let ty2 = clo_subst(&mut self.env.intern, ty, &env, 0);
             let body2 = clo_subst(&mut self.env.intern, body, &env, 1);
-            return Ok(
-              self.intern(KExpr::lam(name.clone(), bi.clone(), ty2, body2)),
-            );
+            return Ok(self.intern(KExpr::lam(
+              name.clone(),
+              bi.clone(),
+              ty2,
+              body2,
+            )));
           }
         },
 
@@ -783,12 +784,43 @@ impl<M: KernelMode> TypeChecker<'_, M> {
           }
         },
 
+        // Closure-iota (Phase B; mirrors IxVM try_iota_c): a recursor
+        // head consumes the spine LAZILY. On the main ctor-rule path the
+        // rule RHS re-enters the machine with the params/motives/minors
+        // and post-major arguments as their ORIGINAL closures (plus the
+        // ctor's fields wrapped closed) — the rule's Lam-chain betas push
+        // them straight into an environment, so unselected minors
+        // (dropped match/Decidable branches) are never substituted and
+        // never read back. Anything off the main path misses to the
+        // plain readback exit, whose `try_iota` redoes the major's whnf
+        // against a warm cache. Gated like the eager path: cheap_rec
+        // mode never runs full iota from inside the machine.
+        ExprData::Const(id, us, _) => {
+          if !flags.cheap_rec {
+            let id = id.clone();
+            let us: Vec<KUniv<M>> = us.to_vec();
+            if let Some((rhs, new_spine)) =
+              self.try_iota_clo(&id, &us, &spine)?
+            {
+              if *fuel == 0 {
+                return Err(TcError::MaxRecDepth);
+              }
+              *fuel -= 1;
+              head = rhs;
+              env = MEnv::empty();
+              spine = new_spine;
+              continue;
+            }
+          }
+          let h = head.clone();
+          return Ok(self.machine_exit(h, &spine));
+        },
+
         // Stuck or dispatch-owned heads (no loose Vars of their own):
-        // exit; the outer loop applies iota / prim dispatch / LDecl zeta
+        // exit; the outer loop applies prim dispatch / LDecl zeta
         // exactly as before.
         ExprData::FVar(..)
         | ExprData::Sort(..)
-        | ExprData::Const(..)
         | ExprData::Nat(..)
         | ExprData::Str(..) => {
           let h = head.clone();
@@ -836,6 +868,133 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       cur = self.intern(KExpr::app(cur, a));
     }
     cur
+  }
+
+  /// Closure-spine iota for the machine's `Const` exit: the main
+  /// ctor-rule path of [`Self::try_iota_with_flags`], consuming the
+  /// machine spine lazily. Returns the level-instantiated rule RHS and
+  /// the machine spine to re-enter with — the params/motives/minors and
+  /// post-major arguments ride through as their original closures
+  /// (never read back; only the major materializes), the ctor's field
+  /// arguments are wrapped closed.
+  ///
+  /// Everything off the main path returns `None`, and the caller falls
+  /// back to the plain readback exit whose `try_iota` is complete:
+  /// - K recursors (nullary-ctor synthesis needs infer + def-eq),
+  /// - `Nat` literal majors (the transient-work discipline must keep
+  ///   literal succ-chains out of the interner and the whnf caches, and
+  ///   the linear-rec/offset shortcuts live on the plain path),
+  /// - `Str` literal majors (ctor coercion + re-whnf),
+  /// - struct-eta candidates and genuinely stuck majors.
+  ///
+  /// A miss costs one readback of the major closure; the plain path's
+  /// own whnf of that major then hits a warm cache.
+  fn try_iota_clo(
+    &mut self,
+    rec_id: &KId<M>,
+    rec_us: &[KUniv<M>],
+    spine: &[Arc<Clo<M>>],
+  ) -> Result<Option<(KExpr<M>, Vec<Arc<Clo<M>>>)>, TcError<M>> {
+    let recr = match self.try_get_const(rec_id)? {
+      Some(KConst::Recr {
+        k,
+        params,
+        motives,
+        minors,
+        indices,
+        rules,
+        lvls,
+        ..
+      }) => {
+        if k {
+          return Ok(None);
+        }
+        let major_idx = u64_to_usize::<M>(params + motives + minors + indices)?;
+        if spine.len() <= major_idx {
+          return Ok(None);
+        }
+        // H6: level params arity (lean4lean Reduce.lean:76).
+        if rec_us.len() as u64 != lvls {
+          return Ok(None);
+        }
+        IotaInfo {
+          k,
+          params: u64_to_usize::<M>(params)?,
+          motives: u64_to_usize::<M>(motives)?,
+          minors: u64_to_usize::<M>(minors)?,
+          indices: u64_to_usize::<M>(indices)?,
+          major_idx,
+          rules,
+          lvls,
+        }
+      },
+      _ => return Ok(None),
+    };
+
+    // Materialize ONLY the major. `spine` is nearest-LAST, so the i-th
+    // argument nearest-first sits at `spine[len - 1 - i]`.
+    let len = spine.len();
+    let major_clo = spine[len - 1 - recr.major_idx].clone();
+    let major = clo_readback(&mut self.env.intern, &major_clo);
+    // Mirror the eager path's pre- and post-whnf offset cleanups so
+    // `Nat.add base k` majors expose a `Nat.succ` layer here instead of
+    // missing to a second full attempt.
+    let major = match self.cleanup_nat_offset_major(&major)? {
+      Some(cleaned) => cleaned,
+      None => major,
+    };
+    let mut major_whnf = self.whnf(&major)?;
+    if matches!(major_whnf.data(), ExprData::Nat(..)) {
+      return Ok(None);
+    }
+    if let Some(cleaned) = self.cleanup_nat_offset_major(&major_whnf)? {
+      major_whnf = cleaned;
+    }
+    if matches!(major_whnf.data(), ExprData::Str(..)) {
+      return Ok(None);
+    }
+
+    let (ctor_head, ctor_args) = collect_app_spine(&major_whnf);
+    let ctor_id = match ctor_head.data() {
+      ExprData::Const(id, _, _) => id.clone(),
+      _ => return Ok(None),
+    };
+    let (cidx, ctor_fields) = match self.try_get_const(&ctor_id)? {
+      Some(KConst::Ctor { cidx, fields, .. }) => {
+        (u64_to_usize::<M>(cidx)?, u64_to_usize::<M>(fields)?)
+      },
+      _ => return Ok(None),
+    };
+    if cidx >= recr.rules.len() {
+      return Ok(None);
+    }
+    // H5: nfields ≤ major args (lean4lean Reduce.lean:75).
+    if ctor_fields > ctor_args.len() {
+      return Ok(None);
+    }
+
+    crate::perf::record_iota_histo(&rec_id.addr);
+    let rule = &recr.rules[cidx];
+    let rec_us_vec: Vec<_> = rec_us.to_vec();
+    let rhs = self.instantiate_univ_params(&rule.rhs, &rec_us_vec)?;
+
+    // New machine spine, nearest-LAST. Nearest-first the rule sees
+    // `pmm ++ ctor fields ++ post-major`; in machine order that is the
+    // post-major prefix of `spine` (indices below the major's slot),
+    // then the fields reversed, then the pmm suffix of `spine`. The
+    // index arguments between pmm and the major are dropped, as in the
+    // eager path.
+    let pmm_end = recr.params + recr.motives + recr.minors;
+    let field_start = ctor_args.len() - ctor_fields;
+    let post_len = len - 1 - recr.major_idx;
+    let mut new_spine: Vec<Arc<Clo<M>>> =
+      Vec::with_capacity(post_len + ctor_fields + pmm_end);
+    new_spine.extend_from_slice(&spine[..post_len]);
+    for arg in ctor_args[field_start..].iter().rev() {
+      new_spine.push(Arc::new(Clo::closed(arg.clone())));
+    }
+    new_spine.extend_from_slice(&spine[len - pmm_end..]);
+    Ok(Some((rhs, new_spine)))
   }
 
   /// WHNF without delta: whnf_core → proj-app → nat/native/string → quot.
@@ -3672,8 +3831,7 @@ mod tests {
     let body = AE::app(AE::var(1, ()), AE::var(0, ()));
     let lam2 = AE::lam((), (), sort0(), AE::lam((), (), sort0(), body));
     let app = AE::app(lam2, opaque.clone());
-    let expected =
-      AE::lam((), (), sort0(), AE::app(opaque, AE::var(0, ())));
+    let expected = AE::lam((), (), sort0(), AE::app(opaque, AE::var(0, ())));
     assert_eq!(tc.whnf(&app).unwrap(), expected);
   }
 
@@ -3700,6 +3858,98 @@ mod tests {
     let lam = AE::lam((), (), sort0(), body);
     let app = AE::app(lam, opaque.clone());
     assert_eq!(tc.whnf(&app).unwrap(), opaque);
+  }
+
+  #[test]
+  fn whnf_machine_closure_iota_via_beta() {
+    use super::super::constant::RecRule;
+    // A beta whose body is a recursor application: the machine's Const
+    // exit must take the closure-iota path (rule args ride through as
+    // closures) and produce the same result as the eager iota.
+    //
+    // Unit-like inductive `U` with one ctor `U.mk` (no params/fields)
+    // and recursor `U.rec : (motive) (minor) (major) → minor`.
+    let u_id = mk_id("Test.U");
+    let u_mk_id = mk_id("Test.U.mk");
+    let u_rec_id = mk_id("Test.U.rec");
+    let mut env = env_with_id();
+    env.insert(
+      u_id.clone(),
+      KConst::Indc {
+        name: (),
+        level_params: (),
+        lvls: 0,
+        params: 0,
+        indices: 0,
+        is_rec: true, // disable struct-eta so the ctor path is the only route
+        is_refl: false,
+        is_unsafe: false,
+        nested: 0,
+        block: u_id.clone(),
+        member_idx: 0,
+        ty: sort0(),
+        ctors: vec![u_mk_id.clone()],
+        lean_all: (),
+      },
+    );
+    env.insert(
+      u_mk_id.clone(),
+      KConst::Ctor {
+        name: (),
+        level_params: (),
+        is_unsafe: false,
+        lvls: 0,
+        induct: u_id.clone(),
+        cidx: 0,
+        params: 0,
+        fields: 0,
+        ty: AE::cnst(u_id.clone(), Box::new([])),
+      },
+    );
+    env.insert(
+      u_rec_id.clone(),
+      KConst::Recr {
+        name: (),
+        level_params: (),
+        k: false,
+        is_unsafe: false,
+        lvls: 0,
+        params: 0,
+        indices: 0,
+        motives: 1,
+        minors: 1,
+        block: u_id.clone(),
+        member_idx: 0,
+        ty: sort0(),
+        // rule rhs: λ motive minor. minor
+        rules: vec![RecRule {
+          ctor: (),
+          fields: 0,
+          rhs: AE::lam(
+            (),
+            (),
+            sort0(),
+            AE::lam((), (), sort0(), AE::var(0, ())),
+          ),
+        }],
+        lean_all: (),
+      },
+    );
+    let mut tc = TypeChecker::new(&mut env);
+    let rec = AE::cnst(u_rec_id, Box::new([]));
+    let mk = AE::cnst(u_mk_id, Box::new([]));
+    let opaque = AE::cnst(mk_id("opaque"), Box::new([]));
+    // (λ m. U.rec Sort0 m U.mk #2) opaque
+    //   → machine beta (m := opaque), Const(U.rec) exit → closure-iota
+    //   → minor = opaque, post-major arg #3 shifts to #2.
+    let body = AE::app(
+      AE::app(AE::app(AE::app(rec, sort0()), AE::var(0, ())), mk),
+      AE::var(3, ()),
+    );
+    let lam = AE::lam((), (), sort0(), body);
+    let app = AE::app(lam, opaque.clone());
+    let expected = AE::app(opaque, AE::var(2, ()));
+    assert_eq!(tc.whnf(&app).unwrap(), expected);
   }
 
   #[test]
