@@ -41,7 +41,7 @@ use ixon::metadata::{
 use ixon::univ::Univ as IxonUniv;
 
 use super::constant::{KConst, RecRule};
-use super::env::{InternTable, KEnv, CtxAddr};
+use super::env::{CtxAddr, InternTable, KEnv};
 use super::expr::{KExpr, MData};
 use super::id::KId;
 use super::level::KUniv;
@@ -282,18 +282,18 @@ fn timed_intern_univ<M: KernelMode>(
 #[inline]
 fn timed_intern_or_build<M: KernelMode>(
   intern: &mut InternTable<M>,
-  key: super::env::ExprKey,
+  key: &super::env::ExprKey,
   build: impl FnOnce() -> KExpr<M>,
   stats: &mut ConvertStats,
 ) -> KExpr<M> {
   if !stats.enabled {
-    if let Some(existing) = intern.try_get_expr(&key) {
+    if let Some(existing) = intern.try_get_expr(key) {
       return existing;
     }
     return intern.intern_expr(build());
   }
   let t0 = Instant::now();
-  if let Some(existing) = intern.try_get_expr(&key) {
+  if let Some(existing) = intern.try_get_expr(key) {
     stats.intern_expr_get_hits += 1;
     stats.intern_expr_calls += 1;
     stats.intern_expr_ns += elapsed_ns(t0);
@@ -702,7 +702,7 @@ fn ingress_expr<M: KernelMode>(
             let key = super::env::ExprKey::Var(*idx);
             values.push(timed_intern_or_build(
               intern,
-              key,
+              &key,
               || KExpr::var_mdata(*idx, name_field, mdata_field),
               stats,
             ));
@@ -712,7 +712,7 @@ fn ingress_expr<M: KernelMode>(
             let key = super::env::ExprKey::Var(*idx);
             values.push(timed_intern_or_build(
               intern,
-              key,
+              &key,
               || KExpr::var_mdata(*idx, name_field, mdata_field),
               stats,
             ));
@@ -749,7 +749,7 @@ fn ingress_expr<M: KernelMode>(
             let key = super::env::ExprKey::Sort(*zu.addr());
             values.push(timed_intern_or_build(
               intern,
-              key,
+              &key,
               || KExpr::sort_mdata(zu, mdata),
               stats,
             ));
@@ -792,7 +792,7 @@ fn ingress_expr<M: KernelMode>(
             );
             values.push(timed_intern_or_build(
               intern,
-              key,
+              &key,
               || KExpr::cnst_mdata(id, univs, mdata),
               stats,
             ));
@@ -816,7 +816,7 @@ fn ingress_expr<M: KernelMode>(
             );
             values.push(timed_intern_or_build(
               intern,
-              key,
+              &key,
               || KExpr::cnst_mdata(mid, univs, mdata),
               stats,
             ));
@@ -921,12 +921,12 @@ fn ingress_expr<M: KernelMode>(
                   let mdata_field: M::MField<Vec<MData>> =
                     M::meta_field(vec![]);
                   let key = super::env::ExprKey::Const(
-              id.addr.clone(),
-              univs.iter().map(|u| *u.addr()).collect(),
-            );
+                    id.addr.clone(),
+                    univs.iter().map(|u| *u.addr()).collect(),
+                  );
                   timed_intern_or_build(
                     intern,
-                    key,
+                    &key,
                     || KExpr::cnst_mdata(id, univs, mdata_field),
                     stats,
                   )
@@ -951,12 +951,12 @@ fn ingress_expr<M: KernelMode>(
                   let mdata_field: M::MField<Vec<MData>> =
                     M::meta_field(vec![]);
                   let key = super::env::ExprKey::Const(
-              mid.addr.clone(),
-              univs.iter().map(|u| *u.addr()).collect(),
-            );
+                    mid.addr.clone(),
+                    univs.iter().map(|u| *u.addr()).collect(),
+                  );
                   timed_intern_or_build(
                     intern,
-                    key,
+                    &key,
                     || KExpr::cnst_mdata(mid, univs, mdata_field),
                     stats,
                   )
@@ -1187,7 +1187,7 @@ fn ingress_expr<M: KernelMode>(
             let key = super::env::ExprKey::Str(blob_addr.clone());
             values.push(timed_intern_or_build(
               intern,
-              key,
+              &key,
               || KExpr::str_mdata(s, blob_addr, mdata),
               stats,
             ));
@@ -1214,7 +1214,7 @@ fn ingress_expr<M: KernelMode>(
             let key = super::env::ExprKey::Nat(blob_addr.clone());
             values.push(timed_intern_or_build(
               intern,
-              key,
+              &key,
               || KExpr::nat_mdata(n, blob_addr, mdata),
               stats,
             ));
@@ -1240,7 +1240,7 @@ fn ingress_expr<M: KernelMode>(
         let key = super::env::ExprKey::App(*f.addr(), *a.addr());
         values.push(timed_intern_or_build(
           intern,
-          key,
+          &key,
           || KExpr::app_mdata(f, a, mdata),
           stats,
         ));
@@ -1263,7 +1263,7 @@ fn ingress_expr<M: KernelMode>(
         let key = super::env::ExprKey::Lam(*ty.addr(), *body.addr());
         values.push(timed_intern_or_build(
           intern,
-          key,
+          &key,
           || KExpr::lam_mdata(name, bi, ty, body, mdata),
           stats,
         ));
@@ -1286,7 +1286,7 @@ fn ingress_expr<M: KernelMode>(
         let key = super::env::ExprKey::All(*ty.addr(), *body.addr());
         values.push(timed_intern_or_build(
           intern,
-          key,
+          &key,
           || KExpr::all_mdata(name, bi, ty, body, mdata),
           stats,
         ));
@@ -1308,10 +1308,11 @@ fn ingress_expr<M: KernelMode>(
         let body = values.pop().unwrap();
         let val = values.pop().unwrap();
         let ty = values.pop().unwrap();
-        let key = super::env::ExprKey::Let(*ty.addr(), *val.addr(), *body.addr(), nd);
+        let key =
+          super::env::ExprKey::Let(*ty.addr(), *val.addr(), *body.addr(), nd);
         values.push(timed_intern_or_build(
           intern,
-          key,
+          &key,
           || KExpr::let_mdata(name, ty, val, body, nd, mdata),
           stats,
         ));
@@ -1336,10 +1337,11 @@ fn ingress_expr<M: KernelMode>(
       ExprFrame::PrjDone { type_id, field_idx, mdata } => {
         let cont_t0 = if stats.enabled { Some(Instant::now()) } else { None };
         let s = values.pop().unwrap();
-        let key = super::env::ExprKey::Prj(type_id.addr.clone(), field_idx, *s.addr());
+        let key =
+          super::env::ExprKey::Prj(type_id.addr.clone(), field_idx, *s.addr());
         values.push(timed_intern_or_build(
           intern,
-          key,
+          &key,
           || KExpr::prj_mdata(type_id, field_idx, s, mdata),
           stats,
         ));

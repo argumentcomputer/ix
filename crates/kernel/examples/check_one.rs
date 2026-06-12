@@ -39,8 +39,10 @@ fn main() {
     .named
     .iter()
     .find(|e| e.key().pretty() == name || e.key().to_string() == name)
-    .map(|e| e.value().addr.clone())
-    .unwrap_or_else(|| panic!("no constant named {name:?} in {path}"));
+    .map_or_else(
+      || panic!("no constant named {name:?} in {path}"),
+      |e| e.value().addr.clone(),
+    );
   let block = match env.get_const(&addr).map(|c| c.info.clone()) {
     Some(CI::IPrj(p)) => p.block,
     Some(CI::CPrj(p)) => p.block,
@@ -50,17 +52,19 @@ fn main() {
   };
 
   let work = build_anon_work(&env).expect("build_anon_work");
-  let item = work
-    .iter()
-    .find(|it| *it.primary() == block)
-    .expect("work item for block");
+  let item =
+    work.iter().find(|it| *it.primary() == block).expect("work item for block");
 
   let mut kenv = KEnv::<Anon>::new();
   let mut tc = TypeChecker::<Anon>::new_with_lazy_anon(&mut kenv, &env);
   let kid = KId::<Anon>::new(item.primary().clone(), ());
   let t_check = Instant::now();
   let result = tc.check_const(&kid);
-  eprintln!("[check_one] check:   {:>8.2?}  result: {:?}", t_check.elapsed(), result.is_ok());
+  eprintln!(
+    "[check_one] check:   {:>8.2?}  result: {:?}",
+    t_check.elapsed(),
+    result.is_ok()
+  );
   if let Err(e) = result {
     eprintln!("[check_one] error: {e:?}");
     std::process::exit(1);

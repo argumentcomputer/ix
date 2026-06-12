@@ -715,7 +715,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       // Dedup: check if we've already seen this (ext_ind, spec_params) pair.
       // Structural comparison (uid fast path + recursive fallback) so
       // equal-but-separately-built spec params still collapse.
-      let spec_hashes: Vec<KExpr<M>> = spec_params.to_vec();
+      let spec_hashes: Vec<KExpr<M>> = spec_params.clone();
       if aux_seen.iter().any(|(a, s)| {
         *a == head_id.addr
           && s.len() == spec_hashes.len()
