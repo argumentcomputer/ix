@@ -94,8 +94,7 @@ fn main() {
       .unwrap_or_else(|| format!("<anon {}…>", &addr.hex()[..16]))
   };
 
-  let dump = |label: &str,
-              histo: &dashmap::DashMap<Address, u64>| {
+  let dump = |label: &str, histo: &dashmap::DashMap<Address, u64>| {
     let mut rows: Vec<(Address, u64)> =
       histo.iter().map(|e| (e.key().clone(), *e.value())).collect();
     rows.sort_by(|a, b| b.1.cmp(&a.1));

@@ -444,8 +444,7 @@ fn poison_second_rec_rule_returns_first_minor(
   let rec_arc = ixon_env.get_const(&rec_addr).ok_or_else(|| {
     format!("{}: missing constant {}", rec_name.pretty(), rec_addr.hex())
   })?;
-  let mut rec_constant: ixon::constant::Constant =
-    (*rec_arc).clone();
+  let mut rec_constant: ixon::constant::Constant = (*rec_arc).clone();
   drop(rec_arc);
 
   match &mut rec_constant.info {
@@ -481,8 +480,7 @@ fn poison_second_rec_rule_returns_first_minor(
           block_addr.hex()
         )
       })?;
-      let mut block_constant: ixon::constant::Constant =
-        (*block_arc).clone();
+      let mut block_constant: ixon::constant::Constant = (*block_arc).clone();
       drop(block_arc);
       match &mut block_constant.info {
         IxonCI::Muts(members) => {

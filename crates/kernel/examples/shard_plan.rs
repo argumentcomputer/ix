@@ -33,7 +33,7 @@ use ix_kernel::id::KId;
 use ix_kernel::mode::Anon;
 use ix_kernel::profile::{BlockProfile, ProfileBuilder, ProfileSink};
 use ix_kernel::shard::{
-  cycle_cap_for_ram, partition_for_cycle_cap, Hypergraph, ShardManifest,
+  Hypergraph, ShardManifest, cycle_cap_for_ram, partition_for_cycle_cap,
 };
 use ix_kernel::tc::TypeChecker;
 use ixon::constant::ConstantInfo as CI;
@@ -55,7 +55,9 @@ fn block_of(env: &IxonEnv, addr: &Address) -> Address {
 }
 
 fn block_size(env: &IxonEnv, block: &Address) -> u32 {
-  env.get_const_bytes(block).map_or(0, |b| b.len().min(u32::MAX as usize) as u32)
+  env
+    .get_const_bytes(block)
+    .map_or(0, |b| b.len().min(u32::MAX as usize) as u32)
 }
 
 /// Parse a count that may use float/scientific notation (e.g. `4.5e9`).
@@ -135,7 +137,8 @@ fn main() {
       },
       "--shards" => {
         i += 1;
-        shards = Some(parse_count(args.get(i).unwrap_or(&String::new())) as usize);
+        shards =
+          Some(parse_count(args.get(i).unwrap_or(&String::new())) as usize);
       },
       "--max-cycles" => {
         i += 1;
@@ -185,23 +188,21 @@ fn main() {
   // assumption discharged at aggregation, not a cut to minimize.
   let covered: std::collections::HashSet<Address> =
     store_dir.as_deref().map(load_covered).unwrap_or_default();
-  let covered_item =
-    |item: &ix_kernel::anon_work::AnonWorkItem| -> bool {
-      !covered.is_empty()
-        && item.proven_targets().iter().all(|t| covered.contains(t))
-    };
+  let covered_item = |item: &ix_kernel::anon_work::AnonWorkItem| -> bool {
+    !covered.is_empty()
+      && item.proven_targets().iter().all(|t| covered.contains(t))
+  };
 
   // ---- Profile: run the kernel, recording heartbeats + delta-unfold edges. ----
   let bytes = std::fs::read(&path).expect("read .ixe");
-  let env = IxonEnv::get_anon(&mut &bytes[..]).expect("invalid Ixon environment");
+  let env =
+    IxonEnv::get_anon(&mut &bytes[..]).expect("invalid Ixon environment");
   let work = build_anon_work(&env).expect("build_anon_work");
   let (novel_work, covered_work): (Vec<_>, Vec<_>) =
     work.iter().partition(|item| !covered_item(item));
   // Blocks whose work item is covered — excluded from the hypergraph below.
-  let covered_blocks: std::collections::HashSet<Address> = covered_work
-    .iter()
-    .map(|item| block_of(&env, item.primary()))
-    .collect();
+  let covered_blocks: std::collections::HashSet<Address> =
+    covered_work.iter().map(|item| block_of(&env, item.primary())).collect();
   if novel_work.is_empty() {
     eprintln!(
       "nothing to plan: the store covers all {} work items",

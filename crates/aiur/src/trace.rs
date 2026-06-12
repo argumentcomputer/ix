@@ -19,9 +19,8 @@ use crate::{
   memory::Memory,
   u8_add_channel, u8_and_channel, u8_bit_decomposition_channel,
   u8_chain_rotr4_channel, u8_chain_rotr7_channel, u8_less_than_channel,
-  u8_mul_channel, u8_or_channel, u8_range_check_channel,
-  u8_shift_left_channel, u8_shift_right_channel, u8_sub_channel,
-  u8_xor_channel,
+  u8_mul_channel, u8_or_channel, u8_range_check_channel, u8_shift_left_channel,
+  u8_shift_right_channel, u8_sub_channel, u8_xor_channel,
 };
 
 struct ColumnIndex {

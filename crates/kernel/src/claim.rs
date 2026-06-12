@@ -92,9 +92,7 @@ pub fn build_check_env_claim(env: &Env) -> Option<Claim> {
 mod tests {
   use super::*;
   use ix_common::env::DefinitionSafety;
-  use ixon::constant::{
-    Axiom, Constant, ConstantInfo, DefKind, Definition,
-  };
+  use ixon::constant::{Axiom, Constant, ConstantInfo, DefKind, Definition};
   use ixon::expr::Expr;
   use ixon::merkle::leaf_hash;
   use std::sync::Arc;

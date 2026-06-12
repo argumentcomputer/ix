@@ -29,7 +29,8 @@ fn main() {
   let idxs: Vec<usize> = a[3..].iter().filter_map(|s| s.parse().ok()).collect();
 
   let env = IxonEnv::get(&mut &std::fs::read(ixe).unwrap()[..]).expect("get");
-  let m = ShardManifest::from_bytes(&std::fs::read(ixes).unwrap()).expect("manifest");
+  let m =
+    ShardManifest::from_bytes(&std::fs::read(ixes).unwrap()).expect("manifest");
 
   // block address -> member def names (group named consts by their home block).
   let mut block2names: HashMap<Address, Vec<String>> = HashMap::new();
@@ -40,7 +41,11 @@ fn main() {
 
   for idx in idxs {
     let s = &m.shards[idx];
-    println!("\n=== shard {idx}: {} block(s), {} heartbeats ===", s.blocks.len(), s.heartbeats);
+    println!(
+      "\n=== shard {idx}: {} block(s), {} heartbeats ===",
+      s.blocks.len(),
+      s.heartbeats
+    );
     let mut shown = 0;
     for b in &s.blocks {
       let mut names = block2names.get(b).cloned().unwrap_or_default();

@@ -102,10 +102,7 @@ fn main() {
       .collect();
     members.sort();
     members.dedup();
-    eprintln!(
-      "\n  {hb} heartbeats — block {}…",
-      &addr.hex()[..16]
-    );
+    eprintln!("\n  {hb} heartbeats — block {}…", &addr.hex()[..16]);
     if let Some(n) = direct {
       eprintln!("    name: {n}");
     }
