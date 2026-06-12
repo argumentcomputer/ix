@@ -46,21 +46,6 @@ ingress (slot mapping in `Primitive.lean`).
 -/
 
 def whnf := ⟦
-  -- ============================================================================
-  -- Spine collection
-  -- ============================================================================
-  fn collect_spine_go(e: KExpr, acc: List‹KExpr›) -> (KExpr, List‹KExpr›) {
-    match load(e) {
-      KExprNode.App(f, a) =>
-        collect_spine_go(f, store(ListNode.Cons(a, acc))),
-      _ => (e, acc),
-    }
-  }
-
-  fn collect_spine(e: KExpr) -> (KExpr, List‹KExpr›) {
-    collect_spine_go(e, store(ListNode.Nil))
-  }
-
   fn apply_spine(head: KExpr, spine: List‹KExpr›) -> KExpr {
     match load(spine) {
       ListNode.Nil => head,
@@ -72,9 +57,22 @@ def whnf := ⟦
   -- ============================================================================
   -- Beta
   -- ============================================================================
-  fn beta_step(lam: KExpr, arg: KExpr) -> KExpr {
+
+  -- Peel a beta telescope: consume one spine arg per leading `Lam` of `lam`,
+  -- accumulating the consumed args innermost-first in `acc` (prepend), until
+  -- the head is no longer a `Lam` or the spine is empty. Returns the deepest
+  -- body, the consumed args (innermost-first, ready for `expr_inst_many`), and
+  -- the unconsumed spine tail.
+  fn peel_beta(lam: KExpr, spine: List‹KExpr›, acc: List‹KExpr›)
+              -> (KExpr, List‹KExpr›, List‹KExpr›) {
     match load(lam) {
-      KExprNode.Lam(_, body) => expr_inst1(body, arg, 0),
+      KExprNode.Lam(_, body) =>
+        match load(spine) {
+          ListNode.Cons(a, rest) =>
+            peel_beta(body, rest, store(ListNode.Cons(a, acc))),
+          ListNode.Nil => (lam, acc, spine),
+        },
+      _ => (lam, acc, spine),
     }
   }
 
@@ -82,13 +80,23 @@ def whnf := ⟦
   -- WHNF main loop with `prims` for nat-primitive dispatch.
   -- ============================================================================
 
+  -- Multi-arg beta (mirror src/ix/kernel/whnf.rs:541-567): peel the whole
+  -- telescope and substitute all consumed args in ONE `expr_inst_many` walk,
+  -- instead of one `expr_inst1` re-walk of the body per arg. Single-arg betas
+  -- stay on the cheap `expr_inst1` path (no list overhead).
   fn whnf_apply_beta(spine: List‹KExpr›, lam: KExpr, types: List‹KExpr›,
                      top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
-    match load(spine) {
-      ListNode.Nil => lam,
-      ListNode.Cons(a, rest) =>
-        let next = beta_step(lam, a);
-        whnf_with_spine(next, rest, types, top, addrs),
+    match peel_beta(lam, spine, store(ListNode.Nil)) {
+      (deep, consumed, rest) =>
+        match list_length(consumed) {
+          0 => apply_spine(lam, spine),
+          1 =>
+            let body2 = expr_inst1(deep, list_lookup(consumed, 0), 0);
+            whnf_with_spine(body2, rest, types, top, addrs),
+          _ =>
+            let body2 = expr_inst_many(deep, consumed, 0);
+            whnf_with_spine(body2, rest, types, top, addrs),
+        },
     }
   }
 
@@ -107,105 +115,189 @@ def whnf := ⟦
       KExprNode.Lam(ty, body) =>
         whnf_apply_beta(spine, head, types, top, addrs),
       KExprNode.Const(idx, lvls) =>
-        let head_addr = list_lookup(addrs, idx);
-        let ci = load(list_lookup(top, idx));
-        -- Recr / Quot heads can never match a primitive address (Nat ops,
-        -- Str ops, BitVec, native, decidable, proj-def all live as Ctor or
-        -- Defn). Skip the primitive dispatch chain for those.
-        match ci {
-          KConstantInfo.Rec(num_lvls, _, num_params, num_indices, num_motives, num_minors, rules, k_flag, _, _) =>
-            let iota = try_iota(lvls, spine, num_lvls, num_params, num_indices, num_motives, num_minors, rules, k_flag, types, top, addrs);
-            match iota {
-              (1, reduced2) => whnf(reduced2, types, top, addrs),
-              (0, _) => apply_spine(head, spine),
-            },
-          KConstantInfo.Quot(_, _, kind) =>
-            let qiota = try_quot_iota(kind, spine, types, top, addrs);
-            match qiota {
-              (1, reduced_q) => whnf(reduced_q, types, top, addrs),
-              (0, _) => apply_spine(head, spine),
-            },
-          _ =>
-            let nat_pair = try_nat_dispatch(head_addr, spine, types, top, addrs);
-            match nat_pair {
-              (1, reduced) => whnf(reduced, types, top, addrs),
-              (0, _) =>
-                let str_pair = try_str_dispatch(head_addr, spine, addrs);
-                match str_pair {
-                  (1, reduced_s) => whnf(reduced_s, types, top, addrs),
-                  (0, _) =>
-                    let bv_pair = try_bitvec_dispatch(head_addr, spine, types, top, addrs);
-                    match bv_pair {
-                      (1, reduced_b) => whnf(reduced_b, types, top, addrs),
-                      (0, _) =>
-                        let nat_pair2 = try_reduce_native(head_addr, spine, types, top, addrs);
-                        match nat_pair2 {
-                          (1, reduced_n) => whnf(reduced_n, types, top, addrs),
-                          (0, _) =>
-                            let dec_pair = try_reduce_decidable(head_addr, idx, lvls, spine, types, top, addrs);
-                            match dec_pair {
-                              (1, reduced_d) => whnf(reduced_d, types, top, addrs),
-                              (0, _) =>
-                                let proj_def_pair = try_reduce_projection_definition(idx, spine, top);
-                                match proj_def_pair {
-                                  (1, reduced_pd) => whnf(reduced_pd, types, top, addrs),
-                                  (0, _) =>
-                                    -- Mirror src/ix/kernel/whnf.rs:756-774
-                                    -- (`delta_unfold_one`): unfold any Defn
-                                    -- regardless of `ReducibilityHints`. The
-                                    -- hint is consulted by lazy-delta's
-                                    -- `delta_rank` for def-eq priority, not
-                                    -- as a gate on plain whnf delta. Without
-                                    -- unfolding here, ctor field types
-                                    -- written via opaque defs (e.g.
-                                    -- `constType (n α) (n α)`) stay stuck
-                                    -- and `check_positivity_aug` misclassifies.
-                                    match ci {
-                                      KConstantInfo.Defn(_, _, value, _, _) =>
-                                        let body = expr_inst_levels(value, lvls);
-                                        whnf_with_spine(body, spine, types, top, addrs),
-                                      KConstantInfo.Thm(_, _, _) => apply_spine(head, spine),
-                                      _ => apply_spine(head, spine),
-                                    },
-                                },
-                            },
-                        },
-                    },
-                },
-            },
-        },
+        -- Const-head reduction (delta / iota / quot / primitive dispatch) is the
+        -- widest arm by far. Factored into `whnf_const_head` so `whnf_with_spine`
+        -- stays narrow for the ~76% of reduction steps that are App/Lam/Proj —
+        -- Aiur charges a function's full width on every row, so the wide dispatch
+        -- only taxes the Const-head rows in its own circuit.
+        whnf_const_head(idx, lvls, head, spine, types, top, addrs),
       KExprNode.Let(_, val, body) =>
         let next = expr_inst1(body, val, 0);
         whnf_with_spine(next, spine, types, top, addrs),
       KExprNode.Proj(tidx, fidx, inner) =>
-        let inner_whnf = whnf(inner, types, top, addrs);
-        let inner_pair = collect_spine(inner_whnf);
-        match inner_pair {
-          (inner_head, inner_args) =>
-            -- Mirror: whnf.rs:1441-1500 try_reduce_fin_val_decidable_rec.
-            -- Pushes Fin.val inside Decidable.rec minors; allows iota.
-            let fvd_pair = try_reduce_fin_val_decidable_rec(tidx, fidx, inner_head, inner_args, addrs);
-            match fvd_pair {
-              (1, rewritten) => whnf_with_spine(rewritten, spine, types, top, addrs),
-              (0, _) =>
-                match load(inner_head) {
-                  KExprNode.Const(cidx, _) =>
-                    let cci = load(list_lookup(top, cidx));
-                    match cci {
-                      KConstantInfo.Ctor(_, _, _, _, nparams, _, _) =>
-                        let field = list_lookup_or_nil(inner_args, nparams + fidx);
-                        whnf_with_spine(field, spine, types, top, addrs),
-                      _ =>
-                        let stuck = store(KExprNode.Proj(tidx, fidx, inner_whnf));
-                        apply_spine(stuck, spine),
-                    },
+        -- Proj reduction (whnf the scrutinee, fin-val rewrite, ctor field pull)
+        -- is the next-widest arm. Factored out for the same reason as Const.
+        whnf_proj_head(tidx, fidx, inner, spine, types, top, addrs),
+      _ => apply_spine(head, spine),
+    }
+  }
+
+  -- Proj-head WHNF dispatch, split out of `whnf_with_spine` (see its Proj arm).
+  fn whnf_proj_head(tidx: G, fidx: G, inner: KExpr, spine: List‹KExpr›,
+                    types: List‹KExpr›, top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
+    let inner_whnf = whnf(inner, types, top, addrs);
+    let inner_pair = collect_spine(inner_whnf);
+    match inner_pair {
+      (inner_head, inner_args) =>
+        -- Mirror: whnf.rs:1441-1500 try_reduce_fin_val_decidable_rec.
+        -- Pushes Fin.val inside Decidable.rec minors; allows iota.
+        let fvd_pair = try_reduce_fin_val_decidable_rec(tidx, fidx, inner_head, inner_args, addrs);
+        match fvd_pair {
+          (1, rewritten) => whnf_with_spine(rewritten, spine, types, top, addrs),
+          (0, _) =>
+            match load(inner_head) {
+              KExprNode.Const(cidx, _) =>
+                let cci = load(list_lookup(top, cidx));
+                match cci {
+                  KConstantInfo.Ctor(_, _, _, _, nparams, _, _) =>
+                    let field = list_lookup_or_nil(inner_args, nparams + fidx);
+                    whnf_with_spine(field, spine, types, top, addrs),
                   _ =>
                     let stuck = store(KExprNode.Proj(tidx, fidx, inner_whnf));
                     apply_spine(stuck, spine),
                 },
+              _ =>
+                let stuck = store(KExprNode.Proj(tidx, fidx, inner_whnf));
+                apply_spine(stuck, spine),
             },
         },
-      _ => apply_spine(head, spine),
+    }
+  }
+
+  -- If `head` is a Nat primitive (`Nat.add` / `Nat.div` / `Nat.mod`) applied to
+  -- exactly (non-literal base, literal second arg), return (1, the same op in
+  -- canonical form) so whnf leaves it STUCK instead of delta-unfolding it. This
+  -- stops `Nat.add x n` from materializing succ^n(x), and `Nat.div`/`Nat.mod x n`
+  -- (n ≥ 2) from expanding the division algorithm — both are irreducible for a
+  -- symbolic base, so the compact form IS the normal form. `Nat.shiftRight x k`
+  -- unfolds to k nested `Nat.div _ 2`, which now stay stuck. Thresholds: `add`
+  -- keeps any nonzero n; `div`/`mod` keep n ≥ 2 (so `x/1 = x`, `x/0 = 0` still
+  -- reduce). All magnitudes stay KLimbs. `(0, _)` = "not this shape".
+  fn try_nat_offset_stuck(head: KExpr, spine: List‹KExpr›, types: List‹KExpr›,
+                          top: List‹&KConstantInfo›, addrs: List‹Addr›) -> (G, KExpr) {
+    match load(head) {
+      KExprNode.Const(idx, _) =>
+        let ca = list_lookup(addrs, idx);
+        let is_add = address_eq(ca, nat_add_addr());
+        let is_divmod = address_eq(ca, nat_div_addr()) + address_eq(ca, nat_mod_addr());
+        match is_add + is_divmod {
+          0 => (0, store(KExprNode.BVar(0))),
+          _ =>
+            match list_length(spine) {
+              2 =>
+                let a0_w = whnf(list_lookup(spine, 0), types, top, addrs);
+                let a1_w = whnf(list_lookup(spine, 1), types, top, addrs);
+                match try_extract_nat(a1_w, addrs) {
+                  (0, _) => (0, store(KExprNode.BVar(0))),
+                  (1, n) =>
+                    -- reject n=0 (all ops) and n=1 (div/mod only).
+                    let bad = klimbs_is_zero(n) + is_divmod * klimbs_is_zero(klimbs_dec(n));
+                    match bad {
+                      0 =>
+                        match try_extract_nat(a0_w, addrs) {
+                          (1, _) => (0, store(KExprNode.BVar(0))),
+                          (0, _) =>
+                            (1, store(KExprNode.App(
+                                  store(KExprNode.App(head, a0_w)),
+                                  mk_nat_lit(n)))),
+                        },
+                      _ => (0, store(KExprNode.BVar(0))),
+                    },
+                },
+              _ => (0, store(KExprNode.BVar(0))),
+            },
+        },
+      _ => (0, store(KExprNode.BVar(0))),
+    }
+  }
+
+  -- The address-keyed primitive gauntlet: nat → str → bitvec → native →
+  -- decidable, in order. Returns (1, reduced) on the first family that matches
+  -- and reduces, else (0, _). Factored out so `prim_any_addr` can gate the
+  -- whole chain for non-primitive heads in one shot.
+  fn try_address_primitives(head_addr: Addr, idx: G, lvls: List‹&KLevel›,
+                            spine: List‹KExpr›, types: List‹KExpr›,
+                            top: List‹&KConstantInfo›, addrs: List‹Addr›) -> (G, KExpr) {
+    match try_nat_dispatch(head_addr, spine, types, top, addrs) {
+      (1, r) => (1, r),
+      (0, _) =>
+        match try_str_dispatch(head_addr, spine, addrs) {
+          (1, r) => (1, r),
+          (0, _) =>
+            match try_bitvec_dispatch(head_addr, spine, types, top, addrs) {
+              (1, r) => (1, r),
+              (0, _) =>
+                match try_reduce_native(head_addr, spine, types, top, addrs) {
+                  (1, r) => (1, r),
+                  (0, _) =>
+                    match try_reduce_decidable(head_addr, idx, lvls, spine, types, top, addrs) {
+                      (1, r) => (1, r),
+                      (0, _) => (0, store(KExprNode.BVar(0))),
+                    },
+                },
+            },
+        },
+    }
+  }
+
+  -- Const-head WHNF dispatch, split out of `whnf_with_spine` (see its Const arm).
+  -- `head` is the original `Const(idx, lvls)` KExpr, passed for the stuck
+  -- `apply_spine(head, spine)` fallbacks.
+  fn whnf_const_head(idx: G, lvls: List‹&KLevel›, head: KExpr, spine: List‹KExpr›,
+                     types: List‹KExpr›, top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
+    let head_addr = list_lookup(addrs, idx);
+    let ci = load(list_lookup(top, idx));
+    -- Recr / Quot heads can never match a primitive address (Nat ops,
+    -- Str ops, BitVec, native, decidable, proj-def all live as Ctor or
+    -- Defn). Skip the primitive dispatch chain for those.
+    match ci {
+      KConstantInfo.Rec(num_lvls, _, num_params, num_indices, num_motives, num_minors, rules, k_flag, _, _) =>
+        let iota = try_iota(lvls, spine, num_lvls, num_params, num_indices, num_motives, num_minors, rules, k_flag, types, top, addrs);
+        match iota {
+          (1, reduced2) => whnf(reduced2, types, top, addrs),
+          (0, _) => apply_spine(head, spine),
+        },
+      KConstantInfo.Quot(_, _, kind) =>
+        let qiota = try_quot_iota(kind, spine, types, top, addrs);
+        match qiota {
+          (1, reduced_q) => whnf(reduced_q, types, top, addrs),
+          (0, _) => apply_spine(head, spine),
+        },
+      _ =>
+        -- Skip the address-primitive gauntlet for the common non-primitive
+        -- head: `prim_any_addr` (memoized per head address) is 1 only for the
+        -- ~43 ops the gauntlet recognizes, so a 0 means no `try_*` can match —
+        -- go straight to projection-definition / delta. Validated by a
+        -- differential assert (now removed) over the suite + heavy consts.
+        let addr_prim = match prim_any_addr(head_addr) {
+          1 => try_address_primitives(head_addr, idx, lvls, spine, types, top, addrs),
+          _ => (0, store(KExprNode.BVar(0))),
+        };
+        match addr_prim {
+          (1, reduced) => whnf(reduced, types, top, addrs),
+          (0, _) =>
+                let proj_def_pair = try_reduce_projection_definition(idx, spine, top);
+                match proj_def_pair {
+                  (1, reduced_pd) => whnf(reduced_pd, types, top, addrs),
+                  (0, _) =>
+                    -- Mirror src/ix/kernel/whnf.rs:756-774 (`delta_unfold_one`):
+                    -- unfold any Defn regardless of `ReducibilityHints`.
+                    match ci {
+                      KConstantInfo.Defn(_, _, value, _, _) =>
+                        -- Keep `Nat.add base (Lit n)` (symbolic base) stuck as a
+                        -- compact offset instead of delta-unfolding into a
+                        -- succ^n tower. Pairs with offset-aware def-eq.
+                        match try_nat_offset_stuck(head, spine, types, top, addrs) {
+                          (1, stuck) => stuck,
+                          (0, _) =>
+                            let body = expr_inst_levels(value, lvls);
+                            whnf_with_spine(body, spine, types, top, addrs),
+                        },
+                      KConstantInfo.Thm(_, _, _) => apply_spine(head, spine),
+                      _ => apply_spine(head, spine),
+                    },
+                },
+            },
     }
   }
 
@@ -216,18 +308,24 @@ def whnf := ⟦
   fn whnf(e: KExpr, types: List‹KExpr›,
           top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
     -- Fast path: trivial whnf normal forms. Srt / Lit / Lam / Forall / BVar
-    -- never reduce — skip collect_spine + dispatch.
+    -- never reduce — skip collect_spine + dispatch (and the context trim).
     match load(e) {
       KExprNode.Srt(_) => e,
       KExprNode.Lit(_) => e,
       KExprNode.Lam(_, _) => e,
       KExprNode.Forall(_, _) => e,
       KExprNode.BVar(_) => e,
-      _ =>
-        let pair = collect_spine(e);
-        match pair {
-          (head, spine) => whnf_with_spine(head, spine, types, top, addrs),
-        },
+      -- Context-trimmed memo key (mirror Rust `whnf_key`): reduce on the
+      -- reachable suffix so a closed term shares its WHNF across binder depths.
+      _ => whnf_core(e, ctx_trim(types, expr_lbr(e)), top, addrs),
+    }
+  }
+
+  fn whnf_core(e: KExpr, types: List‹KExpr›,
+               top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
+    let pair = collect_spine(e);
+    match pair {
+      (head, spine) => whnf_with_spine(head, spine, types, top, addrs),
     }
   }
 
@@ -451,10 +549,29 @@ def whnf := ⟦
               1 =>
                 let raw_base = list_lookup(spine, base_idx);
                 let base_w = whnf(raw_base, types, top, addrs);
+                let post = list_drop(spine, major_idx + 1);
                 match try_extract_nat(base_w, addrs) {
-                  (0, _) => (0, store(KExprNode.BVar(0))),
+                  -- Symbolic base: collapse `Nat.rec base (succ-step) (Lit n)`
+                  -- to the offset primitive `Nat.add base (Lit n)` rather than
+                  -- materializing succ^n(base) via n iota steps. This keeps the
+                  -- value in the same compact `base + n` form a literal already
+                  -- has, so def-eq converges instead of descending n unary
+                  -- succ layers (the UTF-8 `x + 0xC0` pathology).
+                  (0, _) =>
+                    match klimbs_is_zero(n_klimbs) {
+                      1 => (1, apply_spine(base_w, post)),
+                      0 =>
+                        match find_addr_idx_safe(nat_add_addr(), addrs, 0) {
+                          (0, _) => (0, store(KExprNode.BVar(0))),
+                          (1, add_idx) =>
+                            let add_const = store(KExprNode.Const(add_idx, store(ListNode.Nil)));
+                            let off = store(KExprNode.App(
+                              store(KExprNode.App(add_const, base_w)),
+                              mk_nat_lit(n_klimbs)));
+                            (1, apply_spine(off, post)),
+                        },
+                    },
                   (1, b_klimbs) =>
-                    let post = list_drop(spine, major_idx + 1);
                     (1, apply_spine(mk_nat_lit(klimbs_add(b_klimbs, n_klimbs)), post)),
                 },
             },

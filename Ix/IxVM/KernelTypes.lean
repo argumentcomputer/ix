@@ -50,6 +50,24 @@ def kernelTypes := ⟦
 
   type KExpr = &KExprNode
 
+  -- Collect an application spine: peel `App(f, a)` layers, returning the head
+  -- and the args in application order. The single shared definition for every
+  -- kernel caller (whnf, primitive, inductive_check, def_eq) — defined here in
+  -- `kernelTypes` so it precedes them all in the merge.
+  --
+  -- Non-tail (no accumulator): keyed on `e` alone, so Aiur memoization dedups
+  -- shared sub-spines across reductions. An accumulator would thread `acc`
+  -- through the memo key and block that sharing (tail recursion buys nothing in
+  -- Aiur — stack depth is free). `list_snoc` keeps order and is itself memoized.
+  fn collect_spine(e: KExpr) -> (KExpr, List‹KExpr›) {
+    match load(e) {
+      KExprNode.App(f, a) =>
+        let (head, args) = collect_spine(f);
+        (head, list_snoc(args, a)),
+      _ => (e, store(ListNode.Nil)),
+    }
+  }
+
   -- ============================================================================
   -- Values (NbE semantic domain)
   -- ============================================================================

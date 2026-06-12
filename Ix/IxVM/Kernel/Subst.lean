@@ -77,6 +77,56 @@ def subst := ⟦
     }
   }
 
+  fn lbr_min(a: G, b: G) -> G {
+    match u32_less_than(a, b) {
+      1 => a,
+      0 => b,
+    }
+  }
+
+  -- Number of leading `types` frames an expr with loose-bvar-range `base` can
+  -- reach. `BVar(i)` reads `types[i]`, and a kept frame's own stored type can
+  -- reference further-out frames, so expand `need` to the fixpoint that closes
+  -- over every kept frame's loose range. Mirror Rust `ctx_addr_for_lbr`
+  -- (tc.rs). Trimming `types` to this prefix canonicalizes the whnf/infer/
+  -- def-eq memo key: a closed expr (base 0) keys to the empty context and
+  -- shares across all binder depths. Memoized on (types, base).
+  fn ctx_reachable(types: List‹KExpr›, base: G) -> G {
+    let len = list_length(types);
+    ctx_reachable_fix(types, len, lbr_min(base, len))
+  }
+
+  fn ctx_reachable_fix(types: List‹KExpr›, len: G, need: G) -> G {
+    let scanned = lbr_min(ctx_reachable_scan(types, need, 0, need), len);
+    match u32_less_than(need, scanned) {
+      1 => ctx_reachable_fix(types, len, scanned),
+      0 => need,
+    }
+  }
+
+  fn ctx_reachable_scan(types: List‹KExpr›, limit: G, i: G, acc: G) -> G {
+    match u32_less_than(i, limit) {
+      0 => acc,
+      1 =>
+        let fi = (i + 1) + expr_lbr(list_lookup(types, i));
+        ctx_reachable_scan(types, limit, i + 1, lbr_max(acc, fi)),
+    }
+  }
+
+  -- Trim `types` to the suffix reachable from an expr with loose range `base`.
+  -- Fast paths skip the fixpoint: `base == 0` (closed) → empty context;
+  -- `base >= len` → nothing to trim. Only partially-open exprs pay the scan.
+  fn ctx_trim(types: List‹KExpr›, base: G) -> List‹KExpr› {
+    match base {
+      0 => store(ListNode.Nil),
+      _ =>
+        match u32_less_than(base, list_length(types)) {
+          0 => types,
+          1 => list_take(types, ctx_reachable(types, base)),
+        },
+    }
+  }
+
   -- ============================================================================
   -- expr_lift
   --
@@ -186,6 +236,68 @@ def subst := ⟦
       KExprNode.Lit(lit) => store(KExprNode.Lit(lit)),
       KExprNode.Proj(tidx, fidx, e1) =>
         store(KExprNode.Proj(tidx, fidx, expr_inst1(e1, arg, depth))),
+    }
+  }
+
+  -- ============================================================================
+  -- expr_inst_many — simultaneous substitution of `substs` for the `n` binders
+  -- at `depth` in ONE walk (mirror `src/ix/kernel/subst.rs::simul_subst`). Used
+  -- for multi-arg beta: `(λλλ. body) x y z` substitutes all three at once
+  -- instead of three separate `expr_inst1` re-walks of the body.
+  --
+  -- `substs` is innermost-first: `substs[0]` replaces `BVar(depth)`, …,
+  -- `substs[n-1]` replaces `BVar(depth+n-1)` (each lifted by `depth`); a free
+  -- `BVar(i ≥ depth+n)` shifts down by `n`. Same fast-path as `expr_inst1`.
+  -- ============================================================================
+  fn expr_inst_many(e: KExpr, substs: List‹KExpr›, depth: G) -> KExpr {
+    let l = expr_lbr(e);
+    match u32_less_than(depth, l) {
+      0 => e,
+      1 => expr_inst_many_walk(e, substs, depth),
+    }
+  }
+
+  -- Cold BVar arm of `expr_inst_many_walk`, split into its own circuit so the
+  -- hot App/Lam/… walk stays narrow (the `list_length` / `list_lookup` /
+  -- `expr_lift` machinery only charges the BVar rows). Mirror the hot/cold
+  -- split pattern used for `address_eq` / `whnf_with_spine`.
+  fn expr_inst_many_bvar(i: G, substs: List‹KExpr›, depth: G) -> KExpr {
+    match u32_less_than(i, depth) {
+      1 => store(KExprNode.BVar(i)),
+      0 =>
+        let n = list_length(substs);
+        match u32_less_than(i, depth + n) {
+          1 => expr_lift(list_lookup(substs, i - depth), depth, 0),
+          0 => store(KExprNode.BVar(i - n)),
+        },
+    }
+  }
+
+  fn expr_inst_many_walk(e: KExpr, substs: List‹KExpr›, depth: G) -> KExpr {
+    match load(e) {
+      KExprNode.BVar(i) => expr_inst_many_bvar(i, substs, depth),
+      KExprNode.Srt(l) => store(KExprNode.Srt(l)),
+      KExprNode.Const(idx, lvls) => store(KExprNode.Const(idx, lvls)),
+      KExprNode.App(f, a) =>
+        store(KExprNode.App(
+          expr_inst_many(f, substs, depth),
+          expr_inst_many(a, substs, depth))),
+      KExprNode.Lam(ty, body) =>
+        store(KExprNode.Lam(
+          expr_inst_many(ty, substs, depth),
+          expr_inst_many(body, substs, depth + 1))),
+      KExprNode.Forall(ty, body) =>
+        store(KExprNode.Forall(
+          expr_inst_many(ty, substs, depth),
+          expr_inst_many(body, substs, depth + 1))),
+      KExprNode.Let(ty, val, body) =>
+        store(KExprNode.Let(
+          expr_inst_many(ty, substs, depth),
+          expr_inst_many(val, substs, depth),
+          expr_inst_many(body, substs, depth + 1))),
+      KExprNode.Lit(lit) => store(KExprNode.Lit(lit)),
+      KExprNode.Proj(tidx, fidx, e1) =>
+        store(KExprNode.Proj(tidx, fidx, expr_inst_many(e1, substs, depth))),
     }
   }
 ⟧

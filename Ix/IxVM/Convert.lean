@@ -68,7 +68,9 @@ def convert := ⟦
     match load(idxs) {
       ListNode.Nil => store(ListNode.Nil),
       ListNode.Cons(idx, rest) =>
-        let u = load(list_lookup_u64(univs, idx));
+        -- universe indices are small; walk with a field index (cheap per-step
+        -- field sub) instead of `list_lookup_u64`'s per-step U64 predecessor.
+        let u = load(list_lookup(univs, flatten_u64(idx)));
         store(ListNode.Cons(store(convert_univ(u)), convert_univ_idxs(rest, univs))),
     }
   }
@@ -145,7 +147,9 @@ def convert := ⟦
   ) -> KExpr {
     match load(e) {
       Expr.Srt(univ_idx) =>
-        let u = load(list_lookup_u64(univs, univ_idx));
+        -- field-indexed walk (see `convert_univ_idxs`): avoids the per-step
+        -- U64 predecessor of `list_lookup_u64` on this hot universe lookup.
+        let u = load(list_lookup(univs, flatten_u64(univ_idx)));
         store(KExprNode.Srt(store(convert_univ(u)))),
 
       Expr.Var(idx) =>
@@ -199,7 +203,8 @@ def convert := ⟦
           convert_expr(body, sharing, ref_idxs, recur_idxs, lit_blobs, univs))),
 
       Expr.Share(idx) =>
-        convert_expr(list_lookup_u64(sharing, idx), sharing, ref_idxs, recur_idxs, lit_blobs, univs),
+        let ListNode.Cons(e, _) = load(list_drop(sharing, flatten_u64(idx)));
+        convert_expr(e, sharing, ref_idxs, recur_idxs, lit_blobs, univs),
     }
   }
 

@@ -52,8 +52,16 @@ def infer := ⟦
   -- Lvls placed at outermost; level-params instantiation handled where
   -- the constant's declared type is fetched.
   -- ============================================================================
+  -- Context-trimmed memo wrapper (mirror Rust `infer_key`): key inference on
+  -- the suffix of `types` reachable from `e`'s loose-bvar range, so a closed
+  -- subterm (`lbr == 0`) shares its inferred type across every binder depth.
   fn k_infer(e: KExpr, types: List‹KExpr›,
              top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
+    k_infer_core(e, ctx_trim(types, expr_lbr(e)), top, addrs)
+  }
+
+  fn k_infer_core(e: KExpr, types: List‹KExpr›,
+                  top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
     match load(e) {
       KExprNode.BVar(i) => types_lookup(types, i),
 

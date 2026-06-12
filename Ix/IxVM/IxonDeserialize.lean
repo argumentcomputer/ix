@@ -101,15 +101,17 @@ def ixonDeserialize := ⟦
   -- Expression deserialization
   -- ============================================================================
 
-  -- App telescope: read count args, wrapping func in App nodes
-  fn get_app_telescope(func: Expr, stream: ByteStream, count: U64) -> (Expr, ByteStream) {
+  -- App telescope: read count args, wrapping func in App nodes. `func` is passed
+  -- by pointer (loaded only at the base case) so the recursion doesn't carry the
+  -- wide `Expr` union by value on every row.
+  fn get_app_telescope(func: &Expr, stream: ByteStream, count: U64) -> (Expr, ByteStream) {
     let is_zero = u64_is_zero(count);
     match is_zero {
-      1 => (func, stream),
+      1 => (load(func), stream),
       0 =>
         let (arg, s) = get_expr(stream);
-        let app = Expr.App(store(func), store(arg));
-        get_app_telescope(app, s, relaxed_u64_pred(count)),
+        let app = Expr.App(func, store(arg));
+        get_app_telescope(store(app), s, relaxed_u64_pred(count)),
     }
   }
 
@@ -180,7 +182,7 @@ def ixonDeserialize := ⟦
       -- App: Tag4(0x7, count) + func + args...
       0x7 =>
         let (func, s2) = get_expr(s);
-        get_app_telescope(func, s2, size),
+        get_app_telescope(store(func), s2, size),
 
       -- Lam: Tag4(0x8, count) + types... + body
       0x8 => get_lam_telescope(s, size),
@@ -189,16 +191,22 @@ def ixonDeserialize := ⟦
       0x9 => get_all_telescope(s, size),
 
       -- Let: Tag4(0xA, non_dep) + expr(ty) + expr(val) + expr(body)
-      0xA =>
-        let (ty, s2) = get_expr(s);
-        let (val, s3) = get_expr(s2);
-        let (body, s4) = get_expr(s3);
-        (Expr.Let(size, store(ty), store(val), store(body)), s4),
+      0xA => get_expr_let(s, size),
 
       -- Share: Tag4(0xB, idx)
       0xB => (Expr.Share(size), s),
     }
   }
+
+  -- Let arm of get_expr, split out: three recursive `get_expr` calls make it the
+  -- widest (and a rare) arm, so inlined it taxes every get_expr row.
+  fn get_expr_let(s: ByteStream, size: U64) -> (Expr, ByteStream) {
+    let (ty, s2) = get_expr(s);
+    let (val, s3) = get_expr(s2);
+    let (body, s4) = get_expr(s3);
+    (Expr.Let(size, store(ty), store(val), store(body)), s4)
+  }
+
 
   -- ============================================================================
   -- Universe deserialization

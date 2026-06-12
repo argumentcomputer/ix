@@ -804,6 +804,43 @@ def claim := ⟦
     }
   }
 
+  -- Pack the first 4 address bytes (LE) into a u32 key for the skip-set rbtree.
+  --
+  -- Capped at 4 bytes because `RBTreeMap` orders keys with `u32_less_than`, a
+  -- 32-bit comparator gadget — a wider key (a single `G` could hold 7 bytes in
+  -- Goldilocks) would overflow it and corrupt the tree ordering. A 32-bit key
+  -- space means key collisions are possible (~N²/2^33 over N leaves), but they
+  -- are harmless: a collision makes `addr_in_set`'s confirming `address_eq`
+  -- fail, yielding a false negative (a frontier const gets rechecked) never a
+  -- false positive (a wrong skip). See `build_skip_set`.
+  fn addr_key(a: Addr) -> G {
+    let arr = load(a);
+    to_field(arr[0])
+      + to_field(arr[1]) * 256
+      + to_field(arr[2]) * 65536
+      + to_field(arr[3]) * 16777216
+  }
+
+  -- Build an O(log N) membership set from the assumption-leaf list, keyed on
+  -- `addr_key`. Key collisions overwrite — sound because the only consequence is
+  -- a missed skip (a frontier const gets rechecked, never wrongly trusted); the
+  -- confirming `address_eq` in `addr_in_set` rules out false positives.
+  fn build_skip_set(leaves: List‹Addr›, acc: RBTreeMap‹Addr›) -> RBTreeMap‹Addr› {
+    match load(leaves) {
+      ListNode.Nil => acc,
+      ListNode.Cons(a, rest) =>
+        build_skip_set(rest, rbtree_map_insert(addr_key(a), a, acc)),
+    }
+  }
+
+  -- Membership via one rbtree lookup (cheap u32 key compares) + one confirming
+  -- full `address_eq`, replacing the O(N) linear `addr_in_list` scan that
+  -- dominated address_eq cost on sharded checks.
+  fn addr_in_set(target: Addr, skip_set: RBTreeMap‹Addr›) -> G {
+    let found = rbtree_map_lookup_or_default(addr_key(target), skip_set, store([0u8; 32]));
+    address_eq(found, target)
+  }
+
   -- ============================================================================
   -- check_all variant that skips positions whose addr is in the
   -- supplied assumption-leaf list.
@@ -813,24 +850,27 @@ def claim := ⟦
                         addrs: List‹Addr›,
                         asm_leaves: List‹Addr›) {
     let _ = check_canonical_block_sort(top);
-    check_all_skipping_iter(consts, top, addrs, asm_leaves, 0)
+    -- Build the skip-set once (O(N log N)) instead of an O(N) linear scan per
+    -- checked const.
+    let skip_set = build_skip_set(asm_leaves, RBTreeMap.Nil);
+    check_all_skipping_iter(consts, top, addrs, skip_set, 0)
   }
 
   fn check_all_skipping_iter(consts: List‹&KConstantInfo›,
                              top: List‹&KConstantInfo›,
                              addrs: List‹Addr›,
-                             asm_leaves: List‹Addr›,
+                             skip_set: RBTreeMap‹Addr›,
                              pos: G) {
     match load(consts) {
       ListNode.Nil => (),
       ListNode.Cons(&ci, rest) =>
         let addr = list_lookup(addrs, pos);
-        match addr_in_list(addr, asm_leaves) {
+        match addr_in_set(addr, skip_set) {
           1 =>
-            check_all_skipping_iter(rest, top, addrs, asm_leaves, pos + 1),
+            check_all_skipping_iter(rest, top, addrs, skip_set, pos + 1),
           _ =>
             let _ = check_const(ci, pos, top, addrs);
-            check_all_skipping_iter(rest, top, addrs, asm_leaves, pos + 1),
+            check_all_skipping_iter(rest, top, addrs, skip_set, pos + 1),
         },
     }
   }
