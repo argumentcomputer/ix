@@ -2,7 +2,7 @@
 //!
 //! Multi-phase: whnf_core (beta, iota, zeta) → proj → nat → quot → delta.
 
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock};
 
 use rustc_hash::FxHashSet;
 
@@ -66,7 +66,9 @@ use super::expr::{ExprData, KExpr};
 use super::id::KId;
 use super::level::KUniv;
 use super::mode::KernelMode;
-use super::subst::{simul_subst, subst, subst_no_intern};
+use super::subst::{
+  Clo, MEnv, clo_readback, clo_subst, subst, subst_no_intern,
+};
 use super::tc::{IotaInfo, MAX_WHNF_FUEL, TypeChecker, collect_app_spine};
 
 use bignat::Nat;
@@ -642,31 +644,15 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       let (f0, args) = collect_app_spine(&cur);
       let f = self.whnf_core_with_flags(&f0, flags)?;
 
-      // Multi-arg beta
+      // Beta: enter the environment machine. Subsequent betas/zetas are
+      // O(1) environment pushes; substitution materializes only at the
+      // machine's exit, which re-enters this loop as the new `cur` (so
+      // ambient zeta / iota / prim dispatch see exactly what the old
+      // eager-substitution path produced). Entry is gated on an actual
+      // beta firing — Const-headed terms (e.g. literal recursor loops)
+      // never pay the closure-wrap + readback overhead.
       if matches!(f.data(), ExprData::Lam(..)) {
-        let mut body = f;
-        // Pre-size: at most one arg is consumed per outer Lam, capped by
-        // `args.len()`. Pre-sizing skips the first growth reallocation
-        // for non-trivial spines on this hot path.
-        let mut consumed_args = Vec::with_capacity(args.len());
-        while consumed_args.len() < args.len() {
-          if let ExprData::Lam(_, _, _, inner, _) = body.data() {
-            let inner = inner.clone();
-            consumed_args.push(args[consumed_args.len()].clone());
-            body = inner;
-          } else {
-            break;
-          }
-        }
-        let remaining_start = consumed_args.len();
-        if !consumed_args.is_empty() {
-          consumed_args.reverse();
-          body = simul_subst(&mut self.env.intern, &body, &consumed_args, 0);
-        }
-        for arg in &args[remaining_start..] {
-          body = self.intern(KExpr::app(body, arg.clone()));
-        }
-        cur = body;
+        cur = self.machine_whnf(f, &args, &mut fuel)?;
         continue;
       }
 
@@ -691,6 +677,165 @@ impl<M: KernelMode> TypeChecker<'_, M> {
 
       return Ok(cur);
     }
+  }
+
+  /// The WHNF environment machine (Krivine-style, structural fragment).
+  /// See `docs/env_machine_whnf.md`; mirrors the IxVM `mwhnf_spine`.
+  ///
+  /// Entered from the App arm of [`Self::whnf_core_with_flags_uncached`]
+  /// when a beta is about to fire: `head` is the already-whnf_core'd
+  /// `Lam`, `args` the plain argument spine nearest-first. Machine state
+  /// is `(head, env, spine)`: `head` a raw subterm of the program, `env`
+  /// the closure environment its loose `Var`s refer to, and `spine` the
+  /// pending argument closures used as a stack — NEAREST argument last.
+  ///
+  /// Transitions (each O(1), no substitution):
+  ///   `App(f, a)`         push `Clo{a, env}`; descend to `f`
+  ///   `Lam` + pending arg pop spine, push env (**beta**)
+  ///   `Let`               push `Clo{val, env}` (**zeta**)
+  ///   `Var(i)`, `i < n`   jump into `env[i]`'s closure
+  ///
+  /// Everything else EXITS: the head and remaining spine read back to a
+  /// plain expression (`clo_subst` — work proportional to what the
+  /// reduction actually consumes), and the caller's loop continues with
+  /// it. That exit contract keeps ambient let/LDecl zeta (the outer
+  /// Var/FVar arms), iota, projection reduction under the `flags` cheap
+  /// policy, and prim dispatch byte-identical to the eager path the
+  /// machine replaces.
+  ///
+  /// Fuel: beta and zeta charge the caller's budget — the same
+  /// one-substitution-event-per-tick granularity as the eager path.
+  /// The transitions between charges (App peels, var jumps) are bounded
+  /// by program structure reachable from the fueled pushes, so total
+  /// work stays fuel-bounded.
+  fn machine_whnf(
+    &mut self,
+    head: KExpr<M>,
+    args: &[KExpr<M>],
+    fuel: &mut u32,
+  ) -> Result<KExpr<M>, TcError<M>> {
+    let mut head = head;
+    let mut env: MEnv<M> = MEnv::empty();
+    let mut spine: Vec<Arc<Clo<M>>> = args
+      .iter()
+      .rev()
+      .map(|a| Arc::new(Clo::closed(a.clone())))
+      .collect();
+
+    loop {
+      match head.data() {
+        ExprData::App(f, a, _) => {
+          let c = Arc::new(Clo::new(a.clone(), env.clone()));
+          let f = f.clone();
+          spine.push(c);
+          head = f;
+        },
+
+        ExprData::Lam(name, bi, ty, body, _) => {
+          if let Some(c) = spine.pop() {
+            // Beta: O(1) environment push.
+            if *fuel == 0 {
+              return Err(TcError::MaxRecDepth);
+            }
+            *fuel -= 1;
+            let body = body.clone();
+            env = env.push(c);
+            head = body;
+          } else {
+            // Value. Read back under one binder.
+            if env.len() == 0 {
+              return Ok(head.clone());
+            }
+            let ty2 = clo_subst(&mut self.env.intern, ty, &env, 0);
+            let body2 = clo_subst(&mut self.env.intern, body, &env, 1);
+            return Ok(
+              self.intern(KExpr::lam(name.clone(), bi.clone(), ty2, body2)),
+            );
+          }
+        },
+
+        ExprData::Let(_, _, val, body, _, _) => {
+          // Zeta: O(1) environment push.
+          if *fuel == 0 {
+            return Err(TcError::MaxRecDepth);
+          }
+          *fuel -= 1;
+          let c = Arc::new(Clo::new(val.clone(), env.clone()));
+          let body = body.clone();
+          env = env.push(c);
+          head = body;
+        },
+
+        ExprData::Var(i, name, _) => {
+          let i = *i;
+          if i < env.len() {
+            // Machine-bound variable: jump into its closure. This is
+            // where laziness pays — the entry was never substituted.
+            let c = env.get(i).clone();
+            head = c.e.clone();
+            env = c.env.clone();
+          } else {
+            // Ambient variable: shift below the machine binders and
+            // exit stuck; the outer loop's Var arm handles legacy
+            // let-bound zeta on it.
+            let h = self.intern(KExpr::var(i - env.len(), name.clone()));
+            return Ok(self.machine_exit(h, &spine));
+          }
+        },
+
+        // Stuck or dispatch-owned heads (no loose Vars of their own):
+        // exit; the outer loop applies iota / prim dispatch / LDecl zeta
+        // exactly as before.
+        ExprData::FVar(..)
+        | ExprData::Sort(..)
+        | ExprData::Const(..)
+        | ExprData::Nat(..)
+        | ExprData::Str(..) => {
+          let h = head.clone();
+          return Ok(self.machine_exit(h, &spine));
+        },
+
+        // Pi value (or ill-typed Pi application): read back; outer loop
+        // returns it (spine empty) or leaves it stuck (non-empty), as
+        // the eager path did.
+        ExprData::All(name, bi, ty, body, _) => {
+          let h = if env.len() == 0 {
+            head.clone()
+          } else {
+            let ty2 = clo_subst(&mut self.env.intern, ty, &env, 0);
+            let body2 = clo_subst(&mut self.env.intern, body, &env, 1);
+            self.intern(KExpr::all(name.clone(), bi.clone(), ty2, body2))
+          };
+          return Ok(self.machine_exit(h, &spine));
+        },
+
+        // Projection: read the scrutinee back and exit; the outer loop
+        // reduces the projection under the caller's `flags` cheap/full
+        // policy (its Prj arm, or the App arm's head reduction when the
+        // spine is non-empty).
+        ExprData::Prj(id, field, val, _) => {
+          let h = if env.len() == 0 {
+            head.clone()
+          } else {
+            let val2 = clo_subst(&mut self.env.intern, val, &env, 0);
+            self.intern(KExpr::prj(id.clone(), *field, val2))
+          };
+          return Ok(self.machine_exit(h, &spine));
+        },
+      }
+    }
+  }
+
+  /// Read the machine's remaining spine back onto an exit head:
+  /// `h a₁ … aₙ` with each argument materialized via [`clo_readback`].
+  /// `spine` holds the nearest argument LAST.
+  fn machine_exit(&mut self, h: KExpr<M>, spine: &[Arc<Clo<M>>]) -> KExpr<M> {
+    let mut cur = h;
+    for c in spine.iter().rev() {
+      let a = clo_readback(&mut self.env.intern, c);
+      cur = self.intern(KExpr::app(cur, a));
+    }
+    cur
   }
 
   /// WHNF without delta: whnf_core → proj-app → nat/native/string → quot.
@@ -3499,6 +3644,75 @@ mod tests {
     let id_const = AE::cnst(mk_id("id"), Box::new([]));
     let app = AE::app(id_const, sort0());
     assert_eq!(tc.whnf(&app).unwrap(), sort0());
+  }
+
+  // ---- environment-machine readback paths ----
+
+  #[test]
+  fn whnf_machine_open_term_shift() {
+    let mut env = env_with_id();
+    let mut tc = TypeChecker::new(&mut env);
+    // (λ x. x #3) opaque → opaque #2: the ambient Var must shift down
+    // past the consumed machine binder during spine readback.
+    let opaque = AE::cnst(mk_id("opaque"), Box::new([]));
+    let body = AE::app(AE::var(0, ()), AE::var(3, ()));
+    let lam = AE::lam((), (), sort0(), body);
+    let app = AE::app(lam, opaque.clone());
+    let expected = AE::app(opaque, AE::var(2, ()));
+    assert_eq!(tc.whnf(&app).unwrap(), expected);
+  }
+
+  #[test]
+  fn whnf_machine_partial_app_value() {
+    let mut env = env_with_id();
+    let mut tc = TypeChecker::new(&mut env);
+    // (λ x y. x y) opaque → λ y. opaque y: Lam value exit reads the body
+    // back at binder depth 1.
+    let opaque = AE::cnst(mk_id("opaque"), Box::new([]));
+    let body = AE::app(AE::var(1, ()), AE::var(0, ()));
+    let lam2 = AE::lam((), (), sort0(), AE::lam((), (), sort0(), body));
+    let app = AE::app(lam2, opaque.clone());
+    let expected =
+      AE::lam((), (), sort0(), AE::app(opaque, AE::var(0, ())));
+    assert_eq!(tc.whnf(&app).unwrap(), expected);
+  }
+
+  #[test]
+  fn whnf_machine_env_entry_lifts_under_binder() {
+    let mut env = env_with_id();
+    let mut tc = TypeChecker::new(&mut env);
+    // (λ x y. x) #3 → λ y. #4: substituting an OPEN argument under the
+    // surviving binder must lift it (Var arm of clo_subst at depth 1).
+    let lam2 =
+      AE::lam((), (), sort0(), AE::lam((), (), sort0(), AE::var(1, ())));
+    let app = AE::app(lam2, AE::var(3, ()));
+    let expected = AE::lam((), (), sort0(), AE::var(4, ()));
+    assert_eq!(tc.whnf(&app).unwrap(), expected);
+  }
+
+  #[test]
+  fn whnf_machine_zeta_under_beta() {
+    let mut env = env_with_id();
+    let mut tc = TypeChecker::new(&mut env);
+    // (λ x. let z := x in z) opaque → opaque: machine zeta push.
+    let opaque = AE::cnst(mk_id("opaque"), Box::new([]));
+    let body = AE::let_((), sort0(), AE::var(0, ()), AE::var(0, ()), true);
+    let lam = AE::lam((), (), sort0(), body);
+    let app = AE::app(lam, opaque.clone());
+    assert_eq!(tc.whnf(&app).unwrap(), opaque);
+  }
+
+  #[test]
+  fn whnf_machine_chained_beta() {
+    let mut env = env_with_id();
+    let mut tc = TypeChecker::new(&mut env);
+    // ((λ x. x) (λ y. y)) opaque → opaque: the intermediate beta result
+    // is consumed by the next beta without materializing.
+    let inner = AE::lam((), (), sort0(), AE::var(0, ()));
+    let outer = AE::lam((), (), sort0(), AE::var(0, ()));
+    let opaque = AE::cnst(mk_id("opaque"), Box::new([]));
+    let app = AE::app(AE::app(outer, inner), opaque.clone());
+    assert_eq!(tc.whnf(&app).unwrap(), opaque);
   }
 
   #[test]

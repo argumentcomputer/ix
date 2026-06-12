@@ -24,7 +24,9 @@ ZISKEMU="$HOME/.zisk/bin/ziskemu"
 REV="$(git -C /home/ubuntu/ix rev-parse --short HEAD 2>/dev/null || echo unknown)$(git -C /home/ubuntu/ix diff --quiet 2>/dev/null || echo +dirty)"
 
 # Suite ordered smallest-first so failures surface fast.
-SUITE="${BENCH_ONLY:-stringappend natgcdcomm rbmap nataddcomm binsearch mergesort int16rxc int32rxc int64rxc vectorextract}"
+# natreclinear/natfoldsucc are the foldAdd-class sentinels for the
+# env-machine curried-sharing regression (docs/env_machine_whnf.md §9.1).
+SUITE="${BENCH_ONLY:-stringappend natreclinear natfoldsucc natgcdcomm rbmap nataddcomm binsearch mergesort int16rxc int32rxc int64rxc vectorextract}"
 
 input_path() {
   case "$1" in

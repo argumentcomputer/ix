@@ -111,6 +111,14 @@ pub struct InternTable<M: KernelMode> {
   /// because `lift` is invoked from inside `subst_cached`, and the two
   /// caches have different semantics, so they must not share entries.
   pub(crate) lift_scratch: FxHashMap<(Addr, u64), KExpr<M>>,
+  /// Pool of scratch maps for `clo_subst` per-call memoization, keyed by
+  /// `(addr, depth)`. A pool rather than a single buffer because
+  /// `clo_subst` re-enters itself through `clo_readback` of environment
+  /// entries (each readback substitutes under a *different* environment,
+  /// so the memo must not be shared between the nesting levels). Maps are
+  /// cleared and returned to the pool on exit, so allocations persist
+  /// across calls like the other scratches.
+  pub(crate) clo_scratch_pool: Vec<FxHashMap<(Addr, u64), KExpr<M>>>,
 }
 
 impl<M: KernelMode> Default for InternTable<M> {
@@ -165,6 +173,7 @@ impl<M: KernelMode> InternTable<M> {
       canon_univs: FxHashSet::default(),
       subst_scratch: FxHashMap::default(),
       lift_scratch: FxHashMap::default(),
+      clo_scratch_pool: Vec::new(),
     }
   }
 
@@ -726,6 +735,7 @@ impl<M: KernelMode> KEnv<M> {
     // intern.exprs cleanup above can actually drop ExprData allocations.
     self.intern.subst_scratch.clear();
     self.intern.lift_scratch.clear();
+    self.intern.clo_scratch_pool.clear();
     let _ = self.prims.take();
     self.whnf_cache.clear();
     self.whnf_no_delta_cache.clear();
