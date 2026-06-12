@@ -22,27 +22,69 @@ use super::mode::KernelMode;
 use super::perf::PerfCounters;
 use super::primitive::Primitives;
 
-/// Content-addressed Merkle hash. 32 bytes, `Copy`, no allocation.
+/// Canonical identity of an expression or universe node: the
+/// intern-assigned uid. Plain `u64`, allocated from a process-global
+/// counter (`expr.rs::fresh_uid`) and NEVER reused, so uid equality
+/// implies structural equality and cache keys built from uids cannot
+/// alias across intern-table clears (a stale key can only miss).
 ///
-/// Earlier revisions stored `Addr = Arc<blake3::Hash>` and threaded all
-/// constructions through a process-global `DashMap` intern table to dedup
-/// the inner allocation. On full-mathlib kernel-check runs that table grew
-/// to 100M+ entries (≈8+ GiB) and dominated RSS, even though the per-worker
-/// `KEnv` caches were correctly cleared per scheduled block. Switching to a
-/// `Copy` value drops the global intern, eliminates one allocation per
-/// `KExpr`/`KUniv` construction, and reduces per-`ExprData` overhead
-/// from `Arc<Hash>` (8-byte pointer + 16-byte heap header + 32-byte
-/// Hash) to a single in-place 32-byte field. Identity comparison falls
-/// back from `Arc::ptr_eq` (single pointer compare) to a 32-byte memcmp,
-/// which is a single AVX2 cycle on modern x86 and dominated by the
-/// surrounding kernel work.
-pub type Addr = blake3::Hash;
+/// This is KERNEL-INTERNAL identity for ephemeral in-memory nodes —
+/// distinct from the Ixon `Address` layer (blake3 over serialized
+/// content) that constants/blobs carry into claims, Merkle roots, and
+/// the proof store. Uids must never escape into a serialized artifact;
+/// see `docs/kernel_identity.md` for the boundary rule and the
+/// proof-carrying-code implications.
+///
+/// Earlier revisions stored the blake3 content hash of every node here,
+/// computed at construction: profiling on the Zisk guest put that hashing
+/// (`app_hash` + the blake3 wrapper) at ~20% of guest cycles on
+/// reduction-heavy constants. Identity is now assigned by the intern
+/// table from shallow structural keys ([`ExprKey`]/[`UnivKey`]) instead
+/// of computed from content.
+pub type Addr = u64;
+
+/// Key type for local-context hashing (`tc.rs::ctx_addr_for_lbr`) and
+/// other places that still need a collision-resistant digest over
+/// variable-length content. Per-node expression identity uses [`Addr`].
+pub type CtxAddr = blake3::Hash;
+
+/// Shallow structural key of an expression node: the variant tag plus the
+/// uids of its children and its semantic payload. Mirrors EXACTLY what the
+/// historical per-node content hash covered — display names, binder info,
+/// and mdata are excluded — so interning semantics are unchanged. Children
+/// are identified by uid: within one table, equal keys ⇔ structurally
+/// equal nodes (children canonical by induction).
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum ExprKey {
+  Var(u64),
+  FVar(u64),
+  Sort(Addr),
+  Const(Address, Box<[Addr]>),
+  App(Addr, Addr),
+  Lam(Addr, Addr),
+  All(Addr, Addr),
+  Let(Addr, Addr, Addr, bool),
+  Prj(Address, u64, Addr),
+  Nat(Address),
+  Str(Address),
+}
+
+/// Shallow structural key of a universe node. `Param` display names are
+/// excluded, mirroring the historical hash semantics.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum UnivKey {
+  Zero,
+  Succ(Addr),
+  Max(Addr, Addr),
+  IMax(Addr, Addr),
+  Param(u64),
+}
 
 /// Hash-consing intern table for expressions and universes.
 ///
-/// Single-threaded and owned by one `KEnv`. Guarantees pointer uniqueness
-/// by blake3 hash within that environment: `ptr(a) == ptr(b)` iff
-/// `hash(a) == hash(b)`.
+/// Single-threaded and owned by one `KEnv`. Guarantees uid/pointer
+/// uniqueness per shallow structural key within that environment:
+/// `ptr(a) == ptr(b)` iff `key(a) == key(b)` for interned values.
 ///
 /// Also owns reusable scratch buffers used by `subst`, `simul_subst`, and
 /// `lift` to memoize content-addressed sub-traversals within a single
@@ -52,8 +94,14 @@ pub type Addr = blake3::Hash;
 /// already passed for hash-consing eliminates the malloc/free churn while
 /// keeping the per-call invariant (caches are cleared on entry).
 pub struct InternTable<M: KernelMode> {
-  pub(crate) univs: FxHashMap<blake3::Hash, KUniv<M>>,
-  pub(crate) exprs: FxHashMap<blake3::Hash, KExpr<M>>,
+  pub(crate) univs: FxHashMap<UnivKey, KUniv<M>>,
+  pub(crate) exprs: FxHashMap<ExprKey, KExpr<M>>,
+  /// Uids of canonical (interned) nodes. `intern_expr`/`intern_univ`
+  /// short-circuit on members, and use it to detect non-canonical
+  /// children that must be canonicalized before the shallow key is
+  /// meaningful.
+  pub(crate) canon_exprs: FxHashSet<Addr>,
+  pub(crate) canon_univs: FxHashSet<Addr>,
   /// Scratch buffer for `subst` / `simul_subst` per-call memoization,
   /// keyed by `(addr, depth)`. Cleared on entry. Owned here so the
   /// allocation persists across calls.
@@ -63,6 +111,14 @@ pub struct InternTable<M: KernelMode> {
   /// because `lift` is invoked from inside `subst_cached`, and the two
   /// caches have different semantics, so they must not share entries.
   pub(crate) lift_scratch: FxHashMap<(Addr, u64), KExpr<M>>,
+  /// Pool of scratch maps for `clo_subst` per-call memoization, keyed by
+  /// `(addr, depth)`. A pool rather than a single buffer because
+  /// `clo_subst` re-enters itself through `clo_readback` of environment
+  /// entries (each readback substitutes under a *different* environment,
+  /// so the memo must not be shared between the nesting levels). Maps are
+  /// cleared and returned to the pool on exit, so allocations persist
+  /// across calls like the other scratches.
+  pub(crate) clo_scratch_pool: Vec<FxHashMap<(Addr, u64), KExpr<M>>>,
 }
 
 impl<M: KernelMode> Default for InternTable<M> {
@@ -71,50 +127,201 @@ impl<M: KernelMode> Default for InternTable<M> {
   }
 }
 
+/// Shallow structural key of an expression whose children are canonical.
+pub fn expr_key<M: KernelMode>(e: &KExpr<M>) -> ExprKey {
+  use super::expr::ExprData;
+  match e.data() {
+    ExprData::Var(i, _, _) => ExprKey::Var(*i),
+    ExprData::FVar(id, _, _) => ExprKey::FVar(id.0),
+    ExprData::Sort(u, _) => ExprKey::Sort(*u.addr()),
+    ExprData::Const(id, us, _) => {
+      ExprKey::Const(id.addr.clone(), us.iter().map(|u| *u.addr()).collect())
+    },
+    ExprData::App(f, a, _) => ExprKey::App(*f.addr(), *a.addr()),
+    ExprData::Lam(_, _, t, b, _) => ExprKey::Lam(*t.addr(), *b.addr()),
+    ExprData::All(_, _, t, b, _) => ExprKey::All(*t.addr(), *b.addr()),
+    ExprData::Let(_, t, v, b, nd, _) => {
+      ExprKey::Let(*t.addr(), *v.addr(), *b.addr(), *nd)
+    },
+    ExprData::Prj(id, f, v, _) => ExprKey::Prj(id.addr.clone(), *f, *v.addr()),
+    ExprData::Nat(_, ba, _) => ExprKey::Nat(ba.clone()),
+    ExprData::Str(_, ba, _) => ExprKey::Str(ba.clone()),
+  }
+}
+
+/// Shallow structural key of a universe whose children are canonical.
+pub fn univ_key<M: KernelMode>(u: &KUniv<M>) -> UnivKey {
+  use super::level::UnivData;
+  match u.data() {
+    UnivData::Zero(_) => UnivKey::Zero,
+    UnivData::Succ(inner, _) => UnivKey::Succ(*inner.addr()),
+    UnivData::Max(a, b, _) => UnivKey::Max(*a.addr(), *b.addr()),
+    UnivData::IMax(a, b, _) => UnivKey::IMax(*a.addr(), *b.addr()),
+    UnivData::Param(idx, _, _) => UnivKey::Param(*idx),
+  }
+}
+
 impl<M: KernelMode> InternTable<M> {
   pub fn new() -> Self {
     InternTable {
       univs: FxHashMap::default(),
       exprs: FxHashMap::default(),
+      canon_exprs: FxHashSet::default(),
+      canon_univs: FxHashSet::default(),
       subst_scratch: FxHashMap::default(),
       lift_scratch: FxHashMap::default(),
+      clo_scratch_pool: Vec::new(),
     }
   }
 
   /// Read-only fast path: return the canonical interned universe for
-  /// `hash` if already present. Used by instrumented callers that want
-  /// to record hit/miss separately; plain callers should use
-  /// `intern_univ`.
+  /// `key` if already present. The key must be built from CANONICAL
+  /// children (their uids). Plain callers should use `intern_univ`.
   #[inline]
-  pub fn try_get_univ(&self, hash: &blake3::Hash) -> Option<KUniv<M>> {
-    self.univs.get(hash).cloned()
+  pub fn try_get_univ(&self, key: &UnivKey) -> Option<KUniv<M>> {
+    self.univs.get(key).cloned()
   }
 
   /// Read-only fast path counterpart of `try_get_univ` for expressions.
   #[inline]
-  pub fn try_get_expr(&self, hash: &blake3::Hash) -> Option<KExpr<M>> {
-    self.exprs.get(hash).cloned()
+  pub fn try_get_expr(&self, key: &ExprKey) -> Option<KExpr<M>> {
+    self.exprs.get(key).cloned()
   }
 
-  /// Intern a universe: if one with the same hash exists, return the
-  /// existing Arc (ensuring pointer uniqueness). Otherwise insert and
-  /// return.
+  /// Intern a universe: returns the canonical value for its structural
+  /// identity, recursively canonicalizing children as needed so the
+  /// shallow key is meaningful.
   pub fn intern_univ(&mut self, u: KUniv<M>) -> KUniv<M> {
-    let key = *u.addr();
+    use super::level::UnivData;
+    if self.canon_univs.contains(u.addr()) {
+      return u;
+    }
+    // Canonicalize children first; rebuild only if any child changed.
+    let u = match u.data() {
+      UnivData::Succ(inner, _) => {
+        let ci = self.intern_univ(inner.clone());
+        if ci.ptr_eq(inner) {
+          u
+        } else {
+          KUniv::new(UnivData::Succ(ci, super::expr::fresh_uid()))
+        }
+      },
+      UnivData::Max(a, b, _) => {
+        let ca = self.intern_univ(a.clone());
+        let cb = self.intern_univ(b.clone());
+        if ca.ptr_eq(a) && cb.ptr_eq(b) {
+          u
+        } else {
+          KUniv::new(UnivData::Max(ca, cb, super::expr::fresh_uid()))
+        }
+      },
+      UnivData::IMax(a, b, _) => {
+        let ca = self.intern_univ(a.clone());
+        let cb = self.intern_univ(b.clone());
+        if ca.ptr_eq(a) && cb.ptr_eq(b) {
+          u
+        } else {
+          KUniv::new(UnivData::IMax(ca, cb, super::expr::fresh_uid()))
+        }
+      },
+      UnivData::Zero(_) | UnivData::Param(..) => u,
+    };
+    let key = univ_key(&u);
     if let Some(existing) = self.univs.get(&key) {
       return existing.clone();
     }
-    self.univs.entry(key).or_insert(u).clone()
+    self.canon_univs.insert(*u.addr());
+    self.univs.insert(key, u.clone());
+    u
   }
 
-  /// Intern an expression: same pointer-uniqueness guarantee as
-  /// `intern_univ`.
+  /// Intern an expression: returns the canonical value for its structural
+  /// identity. Children are canonicalized recursively when needed (a node
+  /// built outside the table has non-canonical children whose uids would
+  /// make the shallow key meaningless), preserving the historical
+  /// content-hash interning semantics.
   pub fn intern_expr(&mut self, e: KExpr<M>) -> KExpr<M> {
-    let key = *e.addr();
+    use super::expr::ExprData;
+    if self.canon_exprs.contains(e.addr()) {
+      return e;
+    }
+    let e = match e.data() {
+      ExprData::Sort(un, _) => {
+        let cu = self.intern_univ(un.clone());
+        if cu.ptr_eq(un) { e } else { KExpr::sort_mdata(cu, e.mdata().clone()) }
+      },
+      ExprData::Const(id, us, _) => {
+        let cus: Box<[KUniv<M>]> =
+          us.iter().map(|un| self.intern_univ(un.clone())).collect();
+        if cus.iter().zip(us.iter()).all(|(a, b)| a.ptr_eq(b)) {
+          e
+        } else {
+          KExpr::cnst_mdata(id.clone(), cus, e.mdata().clone())
+        }
+      },
+      ExprData::App(f, a, _) => {
+        let cf = self.intern_expr(f.clone());
+        let ca = self.intern_expr(a.clone());
+        if cf.ptr_eq(f) && ca.ptr_eq(a) {
+          e
+        } else {
+          KExpr::app_mdata(cf, ca, e.mdata().clone())
+        }
+      },
+      ExprData::Lam(n, bi, t, b, _) => {
+        let ct = self.intern_expr(t.clone());
+        let cb = self.intern_expr(b.clone());
+        if ct.ptr_eq(t) && cb.ptr_eq(b) {
+          e
+        } else {
+          KExpr::lam_mdata(n.clone(), bi.clone(), ct, cb, e.mdata().clone())
+        }
+      },
+      ExprData::All(n, bi, t, b, _) => {
+        let ct = self.intern_expr(t.clone());
+        let cb = self.intern_expr(b.clone());
+        if ct.ptr_eq(t) && cb.ptr_eq(b) {
+          e
+        } else {
+          KExpr::all_mdata(n.clone(), bi.clone(), ct, cb, e.mdata().clone())
+        }
+      },
+      ExprData::Let(n, t, v, b, nd, _) => {
+        let ct = self.intern_expr(t.clone());
+        let cv = self.intern_expr(v.clone());
+        let cb = self.intern_expr(b.clone());
+        if ct.ptr_eq(t) && cv.ptr_eq(v) && cb.ptr_eq(b) {
+          e
+        } else {
+          KExpr::let_mdata(n.clone(), ct, cv, cb, *nd, e.mdata().clone())
+        }
+      },
+      ExprData::Prj(id, f, v, _) => {
+        let cv = self.intern_expr(v.clone());
+        if cv.ptr_eq(v) {
+          e
+        } else {
+          KExpr::prj_mdata(id.clone(), *f, cv, e.mdata().clone())
+        }
+      },
+      ExprData::Var(..)
+      | ExprData::FVar(..)
+      | ExprData::Nat(..)
+      | ExprData::Str(..) => e,
+    };
+    let key = expr_key(&e);
     if let Some(existing) = self.exprs.get(&key) {
+      // The shallow key (exact structural Eq over variant tag + child
+      // uids + payload — never a truncated or content-hashed key) plus
+      // canonical children make this hit structurally exact. Checked in
+      // debug builds; a violation here would be an interning bug, not
+      // an input an adversary can craft (uids are assigned, not hashed).
+      debug_assert!(existing == &e, "intern hit is not structurally equal");
       return existing.clone();
     }
-    self.exprs.entry(key).or_insert(e).clone()
+    self.canon_exprs.insert(*e.addr());
+    self.exprs.insert(key, e.clone());
+    e
   }
 }
 
@@ -254,9 +461,9 @@ pub struct KEnv<M: KernelMode> {
   // than `Arc::as_ptr` pointers, avoiding the ABA problem where deallocated
   // pointers are reused by the allocator for semantically different expressions.
   /// WHNF cache (full, with delta): (expr_hash, ctx_hash)-keyed.
-  pub whnf_cache: FxHashMap<(Addr, Addr), KExpr<M>>,
+  pub whnf_cache: FxHashMap<(Addr, CtxAddr), KExpr<M>>,
   /// WHNF cache (no delta): (expr_hash, ctx_hash)-keyed.
-  pub whnf_no_delta_cache: FxHashMap<(Addr, Addr), KExpr<M>>,
+  pub whnf_no_delta_cache: FxHashMap<(Addr, CtxAddr), KExpr<M>>,
   /// Cheap-mode WHNF cache (no delta, DEF_EQ_CORE flags): same key shape as
   /// `whnf_no_delta_cache`, but populated by cheap-projection callers in the
   /// def-eq lazy-delta loop. Cheap output is NOT shared with full callers
@@ -265,41 +472,41 @@ pub struct KEnv<M: KernelMode> {
   /// gated to cheap-mode callers only — mirrors the `def_eq_cheap_cache`
   /// pattern. Without this, every iteration of the lazy-delta loop redoes
   /// `whnf_no_delta_for_def_eq` from scratch (mathlib hot path).
-  pub whnf_no_delta_cheap_cache: FxHashMap<(Addr, Addr), KExpr<M>>,
+  pub whnf_no_delta_cheap_cache: FxHashMap<(Addr, CtxAddr), KExpr<M>>,
   /// WHNF core cache: structural-only reduction (beta/iota/zeta/proj),
   /// no native primitives, no delta. Mirrors lean4lean's `whnfCoreCache`
   /// (refs/lean4lean/Lean4Lean/TypeChecker.lean:19) and lean4 C++'s
   /// `m_whnf_core`. Populated only when flags are FULL — cheap-projection
   /// results are not safe to share with full callers.
-  pub whnf_core_cache: FxHashMap<(Addr, Addr), KExpr<M>>,
+  pub whnf_core_cache: FxHashMap<(Addr, CtxAddr), KExpr<M>>,
   /// Cheap-mode WHNF core cache: same key shape as `whnf_core_cache`, but
   /// populated by cheap-projection callers (DEF_EQ_CORE flags) inside the
   /// def-eq lazy-delta loop. Same soundness reasoning as
   /// `whnf_no_delta_cheap_cache` — cheap output stays in its own pool so
   /// full callers always see a properly-reduced result.
-  pub whnf_core_cheap_cache: FxHashMap<(Addr, Addr), KExpr<M>>,
+  pub whnf_core_cheap_cache: FxHashMap<(Addr, CtxAddr), KExpr<M>>,
   /// Infer cache: keyed by (expr_hash, ctx_hash). Context-dependent.
   /// Populated only from full-mode `infer` (i.e. not from `with_infer_only`),
   /// so every cached result has passed the validation `infer_only` skips.
   /// Both modes read from this same cache — an `infer_only` lookup happily
   /// consumes a full-mode result since it's strictly stronger.
-  pub infer_cache: FxHashMap<(Addr, Addr), KExpr<M>>,
+  pub infer_cache: FxHashMap<(Addr, CtxAddr), KExpr<M>>,
   /// Infer-only cache: keyed like `infer_cache`, but populated only by
   /// `with_infer_only` synthesis and read only while infer-only is active.
   /// This keeps unchecked results out of the validated full-mode cache while
   /// still sharing repeated proof-irrelevance/projection probes.
-  pub infer_only_cache: FxHashMap<(Addr, Addr), KExpr<M>>,
+  pub infer_only_cache: FxHashMap<(Addr, CtxAddr), KExpr<M>>,
   /// Full def-eq cache: keyed by (expr_hash, expr_hash, ctx_hash).
   /// Context-dependent. Entries in this cache are valid for both full and
   /// cheap def-eq callers.
-  pub def_eq_cache: FxHashMap<(Addr, Addr, Addr), bool>,
+  pub def_eq_cache: FxHashMap<(Addr, Addr, CtxAddr), bool>,
   /// Cheap def-eq cache: same key as `def_eq_cache`, but only for comparisons
   /// performed inside cheap projection reductions. Cheap `false` can be a
   /// full-mode false negative, so those entries must not be visible to full
   /// callers.
-  pub def_eq_cheap_cache: FxHashMap<(Addr, Addr, Addr), bool>,
+  pub def_eq_cheap_cache: FxHashMap<(Addr, Addr, CtxAddr), bool>,
   /// Failed def-eq pairs in lazy delta: canonical ordering by hash.
-  pub def_eq_failure: FxHashSet<(Addr, Addr, Addr)>,
+  pub def_eq_failure: FxHashSet<(Addr, Addr, CtxAddr)>,
   /// Constant-instantiation cache: caches the result of
   /// `instantiate_univ_params(val, us)` for each `Const(id, us)` head encountered
   /// during delta unfolding. Keyed by the head expression's content hash, which
@@ -314,11 +521,11 @@ pub struct KEnv<M: KernelMode> {
   /// this memo a stuck `Nat.succ^k(x)` chain is re-peeled from every
   /// depth it is encountered at — O(k²) fuel for symbolic-plus-literal
   /// Nat arithmetic (e.g. `x + 0xC0` in the UTF-8 codec proofs).
-  pub nat_succ_stuck: FxHashSet<(Addr, Addr)>,
+  pub nat_succ_stuck: FxHashSet<(Addr, CtxAddr)>,
   /// Ingress cache: LeanExpr → KExpr conversion results.
   /// Keyed by (expr_hash, param_names_hash) to account for different
   /// level param bindings producing different KExprs from the same LeanExpr.
-  pub ingress_cache: FxHashMap<(Addr, Addr), KExpr<M>>,
+  pub ingress_cache: FxHashMap<(CtxAddr, CtxAddr), KExpr<M>>,
   /// "Is this type Prop?" cache, keyed by (type_hash, ctx_hash).
   ///
   /// `try_proof_irrel` is called on essentially every `is_def_eq`
@@ -330,7 +537,7 @@ pub struct KEnv<M: KernelMode> {
   /// proof-irrelevance probe skip those three calls. Empirically this
   /// is the dominant cost on mathlib proof-heavy blocks, where the same
   /// propositions are tested for equality thousands of times.
-  pub is_prop_cache: FxHashMap<(Addr, Addr), bool>,
+  pub is_prop_cache: FxHashMap<(Addr, CtxAddr), bool>,
   /// Generated recursors, keyed by inductive Muts block id.
   pub recursor_cache: FxHashMap<KId<M>, Vec<GeneratedRecursor<M>>>,
   /// Nested-auxiliary order expected by stored recursors in this environment.
@@ -346,6 +553,12 @@ pub struct KEnv<M: KernelMode> {
   /// Whole-block type-check results. Both successes and failures are cached,
   /// so every member of a bad block reports the same structured failure.
   pub block_check_results: FxHashMap<KId<M>, Result<(), TcError<M>>>,
+
+  /// Primitive-reducer family per head-constant address (see
+  /// `whnf.rs::PrimFamily`). Pure function of the address; memoized so
+  /// the WHNF loops classify each head with one map probe instead of a
+  /// ~30-address compare gauntlet across five recognizers.
+  pub prim_family_cache: FxHashMap<Address, super::whnf::PrimFamily>,
 
   /// Next free-variable id for checker-local binder openings.
   ///
@@ -421,6 +634,7 @@ impl<M: KernelMode> KEnv<M> {
       rec_majors_cache: FxHashMap::default(),
       block_peer_agreement_cache: FxHashSet::default(),
       block_check_results: FxHashMap::default(),
+      prim_family_cache: FxHashMap::default(),
       next_fvar_id: 0,
       perf: PerfCounters::default(),
       profile_sink: None,
@@ -511,11 +725,14 @@ impl<M: KernelMode> KEnv<M> {
     self.blocks.clear();
     self.intern.univs.clear();
     self.intern.exprs.clear();
+    self.intern.canon_exprs.clear();
+    self.intern.canon_univs.clear();
     // Scratch buffers retain entries from the most recent subst/lift call;
     // emptying them releases the KExpr Arc references they hold so the
     // intern.exprs cleanup above can actually drop ExprData allocations.
     self.intern.subst_scratch.clear();
     self.intern.lift_scratch.clear();
+    self.intern.clo_scratch_pool.clear();
     let _ = self.prims.take();
     self.whnf_cache.clear();
     self.whnf_no_delta_cache.clear();
@@ -535,6 +752,7 @@ impl<M: KernelMode> KEnv<M> {
     self.rec_majors_cache.clear();
     self.block_peer_agreement_cache.clear();
     self.block_check_results.clear();
+    self.prim_family_cache.clear();
     self.next_fvar_id = 0;
   }
 
@@ -597,6 +815,7 @@ impl<M: KernelMode> KEnv<M> {
     self.rec_majors_cache = FxHashMap::default();
     self.block_peer_agreement_cache = FxHashSet::default();
     self.block_check_results = FxHashMap::default();
+    self.prim_family_cache = FxHashMap::default();
     self.next_fvar_id = 0;
   }
 

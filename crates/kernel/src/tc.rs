@@ -13,7 +13,7 @@ use ix_common::address::Address;
 use ixon::env::Env as IxonEnv;
 
 use super::constant::{KConst, RecRule};
-use super::env::{Addr, KEnv};
+use super::env::{Addr, CtxAddr, KEnv};
 use super::equiv::EquivManager;
 use super::error::{TcError, u64_to_usize};
 use super::expr::{ExprData, FVarId, KExpr};
@@ -29,9 +29,9 @@ use super::primitive::Primitives;
 use super::subst::{instantiate_rev, lift};
 
 /// Content-addressed context identity for the empty context (no bindings).
-pub fn empty_ctx_addr() -> Addr {
+pub fn empty_ctx_addr() -> CtxAddr {
   use std::sync::LazyLock;
-  static ADDR: LazyLock<Addr> =
+  static ADDR: LazyLock<CtxAddr> =
     LazyLock::new(|| blake3::hash(b"ix.kernel.ctx.empty"));
   *ADDR
 }
@@ -126,9 +126,9 @@ pub struct TypeChecker<'a, M: KernelMode> {
   pub num_let_bindings: usize,
   /// Content-addressed context identity: a blake3 hash derived from the
   /// binding-type chain. Immune to the ABA pointer-reuse problem.
-  pub ctx_id: Addr,
+  pub ctx_id: CtxAddr,
   /// Stack of previous ctx_ids for O(1) pop.
-  ctx_id_stack: Vec<Addr>,
+  ctx_id_stack: Vec<CtxAddr>,
 
   // -- Thread-local optimization --
   /// Union-find for transitive def-eq caching (lean4lean EquivManager).
@@ -183,7 +183,7 @@ pub struct TypeChecker<'a, M: KernelMode> {
   /// equal in the suffix-relevant prefix (`ctx_id` content-addresses the
   /// full context). The cache lifetime is the `TypeChecker` (one per
   /// `check_const`), so it is automatically reclaimed.
-  ctx_addr_cache: FxHashMap<(Addr, u64), Addr>,
+  ctx_addr_cache: FxHashMap<(CtxAddr, u64), CtxAddr>,
 
   // -- Free-variable infrastructure --
   /// Local context for fvar-based binder opening. Some validation paths still
@@ -355,7 +355,7 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
   /// Sharing two distinct outer contexts that share a relevant suffix is the
   /// payoff: the same WHNF subterm can hit cache across them.
   #[inline]
-  pub fn whnf_key(&mut self, e: &KExpr<M>) -> (Addr, Addr) {
+  pub fn whnf_key(&mut self, e: &KExpr<M>) -> (Addr, CtxAddr) {
     (e.hash_key(), self.ctx_addr_for_lbr(e.lbr()))
   }
 
@@ -366,7 +366,7 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
   /// dependencies, so two equal open subterms can share an infer result across
   /// different outer binders when the relevant local suffix is identical.
   #[inline]
-  pub fn infer_key(&mut self, e: &KExpr<M>) -> (Addr, Addr) {
+  pub fn infer_key(&mut self, e: &KExpr<M>) -> (Addr, CtxAddr) {
     (e.hash_key(), self.ctx_addr_for_lbr(e.lbr()))
   }
 
@@ -378,11 +378,11 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
   /// expressions, so the relevant context is the suffix needed by the larger
   /// `lbr`.
   #[inline]
-  pub fn def_eq_ctx_key(&mut self, a: &KExpr<M>, b: &KExpr<M>) -> Addr {
+  pub fn def_eq_ctx_key(&mut self, a: &KExpr<M>, b: &KExpr<M>) -> CtxAddr {
     self.ctx_addr_for_lbr(a.lbr().max(b.lbr()))
   }
 
-  pub(crate) fn ctx_addr_for_lbr(&mut self, lbr: u64) -> Addr {
+  pub(crate) fn ctx_addr_for_lbr(&mut self, lbr: u64) -> CtxAddr {
     if lbr == 0 || self.ctx.is_empty() {
       return empty_ctx_addr();
     }
@@ -428,12 +428,12 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
         match &self.let_vals[i] {
           Some(val) => {
             h.update(b"let");
-            h.update(self.ctx[i].addr().as_bytes());
-            h.update(val.addr().as_bytes());
+            h.update(&self.ctx[i].addr().to_le_bytes());
+            h.update(&val.addr().to_le_bytes());
           },
           None => {
             h.update(b"local");
-            h.update(self.ctx[i].addr().as_bytes());
+            h.update(&self.ctx[i].addr().to_le_bytes());
           },
         }
       }
@@ -445,10 +445,13 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
   }
 
   /// Push a local variable type (lambda/forall binding, no let-value).
+  /// The type is interned first: ctx suffix hashing keys on uids, so a
+  /// canonical frame is what lets equal suffixes share cache entries.
   pub fn push_local(&mut self, ty: KExpr<M>) {
+    let ty = self.env.intern.intern_expr(ty);
     let mut h = blake3::Hasher::new();
     h.update(b"ctx.local");
-    h.update(ty.addr().as_bytes());
+    h.update(&ty.addr().to_le_bytes());
     h.update(self.ctx_id.as_bytes());
     self.ctx_id_stack.push(self.ctx_id);
     self.ctx_id = h.finalize();
@@ -459,10 +462,12 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
   /// Push a let-bound variable (type + value). WHNF will zeta-reduce references
   /// to this variable by substituting the value (lean4lean withExtendedLetCtx).
   pub fn push_let(&mut self, ty: KExpr<M>, val: KExpr<M>) {
+    let ty = self.env.intern.intern_expr(ty);
+    let val = self.env.intern.intern_expr(val);
     let mut h = blake3::Hasher::new();
     h.update(b"ctx.let");
-    h.update(ty.addr().as_bytes());
-    h.update(val.addr().as_bytes());
+    h.update(&ty.addr().to_le_bytes());
+    h.update(&val.addr().to_le_bytes());
     h.update(self.ctx_id.as_bytes());
     self.ctx_id_stack.push(self.ctx_id);
     self.ctx_id = h.finalize();
@@ -982,7 +987,7 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
       let ctx = self.ctx_addr_for_lbr(e.lbr());
       key.push_str(&format!(
         " ctx={} depth={}",
-        short_addr(&ctx),
+        short_ctx_addr(&ctx),
         self.depth()
       ));
     }
@@ -999,7 +1004,7 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
       let ctx = self.def_eq_ctx_key(a, b);
       key.push_str(&format!(
         " ctx={} depth={}",
-        short_addr(&ctx),
+        short_ctx_addr(&ctx),
         self.depth()
       ));
     }
@@ -1155,6 +1160,10 @@ fn hot_expr_shape<M: KernelMode>(e: &KExpr<M>) -> String {
 }
 
 fn short_addr(addr: &Addr) -> String {
+  format!("uid{addr}")
+}
+
+fn short_ctx_addr(addr: &CtxAddr) -> String {
   addr.to_hex().chars().take(12).collect()
 }
 
@@ -1259,13 +1268,19 @@ mod tests {
 
   #[test]
   fn ctx_id_same_pushes_yield_same_hash() {
-    let mut tc1 = new_tc();
-    let mut tc2 = new_tc();
-    tc1.push_local(sort0());
-    tc1.push_local(sort1());
+    // ctx hashing keys on intern uids, so the sharing property holds for
+    // checkers over the SAME env (which is also the cache-sharing scope).
+    let env: *mut KEnv<Meta> = Box::leak(Box::new(KEnv::<Meta>::new()));
+    let id1 = {
+      let mut tc1 = TypeChecker::new(unsafe { &mut *env });
+      tc1.push_local(sort0());
+      tc1.push_local(sort1());
+      tc1.ctx_id
+    };
+    let mut tc2 = TypeChecker::new(unsafe { &mut *env });
     tc2.push_local(sort0());
     tc2.push_local(sort1());
-    assert_eq!(tc1.ctx_id, tc2.ctx_id);
+    assert_eq!(id1, tc2.ctx_id);
   }
 
   #[test]
@@ -1354,19 +1369,22 @@ mod tests {
     // outer frame. A `var(0)` with lbr=1 should key only by the inner
     // suffix, so the two `whnf_key`s should match even though the outer
     // contexts (and hence ctx_ids) differ.
-    let mut tc1 = new_tc();
-    tc1.push_local(sort0()); // outer A
-    tc1.push_local(sort1()); // inner X
-
-    let mut tc2 = new_tc();
+    let env: *mut KEnv<Meta> = Box::leak(Box::new(KEnv::<Meta>::new()));
+    let e = var(0); // lbr = 1, depends only on innermost frame
+    let (h1, ctx1, outer1) = {
+      let mut tc1 = TypeChecker::new(unsafe { &mut *env });
+      tc1.push_local(sort0()); // outer A
+      tc1.push_local(sort1()); // inner X
+      let (h, c) = tc1.whnf_key(&e);
+      (h, c, tc1.ctx_id)
+    };
+    let mut tc2 = TypeChecker::new(unsafe { &mut *env });
     tc2.push_local(sort1()); // outer B (different from A)
     tc2.push_local(sort1()); // inner X (same as tc1's inner)
 
     // ctx_ids differ (different outer frames).
-    assert_ne!(tc1.ctx_id, tc2.ctx_id);
+    assert_ne!(outer1, tc2.ctx_id);
 
-    let e = var(0); // lbr = 1, depends only on innermost frame
-    let (h1, ctx1) = tc1.whnf_key(&e);
     let (h2, ctx2) = tc2.whnf_key(&e);
     assert_eq!(h1, h2);
     assert_eq!(

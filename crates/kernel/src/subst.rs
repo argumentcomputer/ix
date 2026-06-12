@@ -11,6 +11,9 @@
 //! uses a `PtrMap Expr Expr` for the same reason (see
 //! `refs/lean4lean/Lean4Lean/Expr.lean:14`).
 
+use std::cell::OnceCell;
+use std::sync::Arc;
+
 use rustc_hash::FxHashMap;
 
 use super::env::{Addr, InternTable};
@@ -484,6 +487,217 @@ fn lift_cached<M: KernelMode>(
   };
 
   let interned = env.intern_expr(result);
+  cache.insert(key, interned.clone());
+  interned
+}
+
+// ============================================================================
+// Closures for the WHNF environment machine (see `whnf.rs` machine loop and
+// `docs/env_machine_whnf.md`). Beta/zeta there are O(1) pushes onto an
+// `MEnv`; substitution happens only here, at machine exit points
+// ("readback"), and only for the parts of the term the reduction actually
+// hands to a plain-expression consumer.
+// ============================================================================
+
+/// Expression closed over a machine environment: `Clo { e, env }` denotes
+/// `e[Var(i) := env[i]]` for `i < env.len()`, with `Var(i)` for
+/// `i >= env.len()` shifting DOWN by `env.len()` into the ambient context.
+/// WHNF never reduces under binders, so environments never need lifting.
+pub(crate) struct Clo<M: KernelMode> {
+  pub(crate) e: KExpr<M>,
+  pub(crate) env: MEnv<M>,
+  /// Memoized depth-0 readback. Closures are shared (one env entry may be
+  /// referenced by many variables; spine args survive multiple machine
+  /// re-entries), and without a global content-addressed memo this is
+  /// what keeps each shared closure's substitution from re-running.
+  readback: OnceCell<KExpr<M>>,
+}
+
+impl<M: KernelMode> Clo<M> {
+  pub(crate) fn new(e: KExpr<M>, env: MEnv<M>) -> Self {
+    Clo { e, env, readback: OnceCell::new() }
+  }
+
+  /// Closure over the empty environment (a plain expression).
+  pub(crate) fn closed(e: KExpr<M>) -> Self {
+    Clo::new(e, MEnv::empty())
+  }
+}
+
+struct MEnvNode<M: KernelMode> {
+  head: Arc<Clo<M>>,
+  tail: MEnv<M>,
+}
+
+/// Persistent cons-list environment: O(1) push with structural sharing
+/// across the closures captured at each binder. `len` is carried on the
+/// handle — recomputing it per suffix was a measured cost on the IxVM
+/// port of this machine.
+pub(crate) struct MEnv<M: KernelMode> {
+  node: Option<Arc<MEnvNode<M>>>,
+  len: u64,
+}
+
+// Manual impl: `#[derive(Clone)]` would demand `M: Clone`.
+impl<M: KernelMode> Clone for MEnv<M> {
+  fn clone(&self) -> Self {
+    MEnv { node: self.node.clone(), len: self.len }
+  }
+}
+
+impl<M: KernelMode> MEnv<M> {
+  pub(crate) fn empty() -> Self {
+    MEnv { node: None, len: 0 }
+  }
+
+  pub(crate) fn len(&self) -> u64 {
+    self.len
+  }
+
+  pub(crate) fn push(&self, c: Arc<Clo<M>>) -> Self {
+    MEnv {
+      node: Some(Arc::new(MEnvNode { head: c, tail: self.clone() })),
+      len: self.len + 1,
+    }
+  }
+
+  /// O(i) cons-list walk; `i` must be `< self.len()`. Machine variable
+  /// lookups are typically near the front (recently pushed args).
+  pub(crate) fn get(&self, i: u64) -> &Arc<Clo<M>> {
+    let mut node = self.node.as_ref().expect("MEnv::get out of range");
+    let mut i = i;
+    while i > 0 {
+      node = node.tail.node.as_ref().expect("MEnv::get out of range");
+      i -= 1;
+    }
+    &node.head
+  }
+}
+
+/// Materialize a closure into a plain expression:
+/// `e[Var(i) := readback(env[i])]` for `i < env.len()`, `Var(j)` above
+/// shifted down by `env.len()`. Memoized per closure.
+pub(crate) fn clo_readback<M: KernelMode>(
+  intern: &mut InternTable<M>,
+  c: &Clo<M>,
+) -> KExpr<M> {
+  if c.env.len() == 0 {
+    return c.e.clone();
+  }
+  if let Some(v) = c.readback.get() {
+    return v.clone();
+  }
+  let v = clo_subst(intern, &c.e, &c.env, 0);
+  let _ = c.readback.set(v.clone());
+  v
+}
+
+/// Simultaneous environment substitution at binder depth `depth` — the
+/// machine's only substitution ("readback"). Var arm semantics:
+///   `i < depth`              → unchanged (locally bound)
+///   `depth <= i < depth + n` → `lift(readback(env[i - depth]), depth)`
+///   `i >= depth + n`         → `Var(i - n)`
+/// where `n = env.len()`. lbr-guarded at every node (a no-op subtree
+/// returns its original Arc), per-call memoized by `(uid, depth)`, and
+/// results interned — the same discipline as `subst`/`simul_subst`.
+///
+/// The memo scratch comes from a pool (`clo_scratch_pool`) rather than a
+/// single buffer because the Var arm re-enters `clo_subst` through
+/// `clo_readback` of environment entries, each under a *different*
+/// environment; nesting levels must not share memo entries.
+pub(crate) fn clo_subst<M: KernelMode>(
+  intern: &mut InternTable<M>,
+  e: &KExpr<M>,
+  env: &MEnv<M>,
+  depth: u64,
+) -> KExpr<M> {
+  if env.len() == 0 || e.lbr() <= depth {
+    return e.clone();
+  }
+  let mut cache = intern.clo_scratch_pool.pop().unwrap_or_default();
+  let result = clo_subst_cached(intern, e, env, depth, &mut cache);
+  cache.clear();
+  intern.clo_scratch_pool.push(cache);
+  result
+}
+
+fn clo_subst_cached<M: KernelMode>(
+  intern: &mut InternTable<M>,
+  e: &KExpr<M>,
+  env: &MEnv<M>,
+  depth: u64,
+  cache: &mut FxHashMap<(Addr, u64), KExpr<M>>,
+) -> KExpr<M> {
+  if e.lbr() <= depth {
+    return e.clone();
+  }
+
+  let key = (e.hash_key(), depth);
+  if let Some(cached) = cache.get(&key) {
+    return cached.clone();
+  }
+
+  let n = env.len();
+
+  let result = match e.data() {
+    ExprData::Var(i, name, _) => {
+      let i = *i;
+      if i < depth + n {
+        // `i < depth` is unreachable under the outer lbr guard, so this
+        // is an env hit: substitute the entry's readback, lifted over
+        // the local binders we are under.
+        let c = env.get(i - depth).clone();
+        let v = clo_readback(intern, &c);
+        let r = lift(intern, &v, depth, 0);
+        cache.insert(key, r.clone());
+        return r;
+      }
+      KExpr::var(i - n, name.clone())
+    },
+
+    ExprData::App(f, x, _) => {
+      let f2 = clo_subst_cached(intern, f, env, depth, cache);
+      let x2 = clo_subst_cached(intern, x, env, depth, cache);
+      KExpr::app(f2, x2)
+    },
+
+    ExprData::Lam(name, bi, ty, inner, _) => {
+      let ty2 = clo_subst_cached(intern, ty, env, depth, cache);
+      let inner2 = clo_subst_cached(intern, inner, env, depth + 1, cache);
+      KExpr::lam(name.clone(), bi.clone(), ty2, inner2)
+    },
+
+    ExprData::All(name, bi, ty, inner, _) => {
+      let ty2 = clo_subst_cached(intern, ty, env, depth, cache);
+      let inner2 = clo_subst_cached(intern, inner, env, depth + 1, cache);
+      KExpr::all(name.clone(), bi.clone(), ty2, inner2)
+    },
+
+    ExprData::Let(name, ty, val, inner, nd, _) => {
+      let ty2 = clo_subst_cached(intern, ty, env, depth, cache);
+      let val2 = clo_subst_cached(intern, val, env, depth, cache);
+      let inner2 = clo_subst_cached(intern, inner, env, depth + 1, cache);
+      KExpr::let_(name.clone(), ty2, val2, inner2, *nd)
+    },
+
+    ExprData::Prj(id, field, val, _) => {
+      let val2 = clo_subst_cached(intern, val, env, depth, cache);
+      KExpr::prj(id.clone(), *field, val2)
+    },
+
+    ExprData::FVar(..)
+    | ExprData::Sort(..)
+    | ExprData::Const(..)
+    | ExprData::Nat(..)
+    | ExprData::Str(..) => {
+      // Closed atoms — unreachable under the lbr guard; defensive.
+      let r = e.clone();
+      cache.insert(key, r.clone());
+      return r;
+    },
+  };
+
+  let interned = intern.intern_expr(result);
   cache.insert(key, interned.clone());
   interned
 }

@@ -36,5 +36,12 @@ quickcheck_macros = { workspace = true }
 name = "perf_check"
 path = "examples/perf_check.rs"
 
+# Native single-constant check (one work item via the lazy-anon path the
+# Zisk guest uses), so the `IX_*` instrumentation can target one expensive
+# constant without re-checking its whole env.
+[[example]]
+name = "check_one"
+path = "examples/check_one.rs"
+
 [lints]
 workspace = true

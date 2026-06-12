@@ -1419,6 +1419,20 @@ impl Env {
       }
       let (bytes, rest) = buf.split_at(len);
       *buf = rest;
+      // Blob bytes are bound to their address HERE, eagerly: literal
+      // identity downstream (kernel `ExprKey::Nat`/`Str` interning,
+      // `Constant.refs` blob entries, assumption filtering) keys on the
+      // address, so an unverified blob would let an adversarial env bind
+      // wrong bytes to a content address. Blobs are a small fraction of
+      // env bytes; constants stay lazily verified (see LazyConstant).
+      let computed = Address::hash(bytes);
+      if computed != addr {
+        return Err(format!(
+          "Env::get: blob bytes hash to {} but stored under {}",
+          computed.hex(),
+          addr.hex()
+        ));
+      }
       env.blobs.insert(addr, bytes.to_vec());
     }
 
@@ -1568,6 +1582,20 @@ impl Env {
       }
       let (bytes, rest) = buf.split_at(len);
       *buf = rest;
+      // Blob bytes are bound to their address HERE, eagerly: literal
+      // identity downstream (kernel `ExprKey::Nat`/`Str` interning,
+      // `Constant.refs` blob entries, assumption filtering) keys on the
+      // address, so an unverified blob would let an adversarial env bind
+      // wrong bytes to a content address. Blobs are a small fraction of
+      // env bytes; constants stay lazily verified (see LazyConstant).
+      let computed = Address::hash(bytes);
+      if computed != addr {
+        return Err(format!(
+          "Env::get_anon: blob bytes hash to {} but stored under {}",
+          computed.hex(),
+          addr.hex()
+        ));
+      }
       env.blobs.insert(addr, bytes.to_vec());
     }
 
@@ -1585,17 +1613,16 @@ impl Env {
       }
       let (bytes, rest) = buf.split_at(len);
       *buf = rest;
-      let computed = Address::hash(bytes);
-      if computed != addr {
-        return Err(format!(
-          "Env::get_anon: const at idx {i} bytes hash to {} but stored under {}",
-          computed.hex(),
-          addr.hex()
-        ));
-      }
-      env
-        .consts
-        .insert(addr, crate::lazy::LazyConstant::from_bytes(bytes.into()));
+      let _ = i;
+      // Address binding is verified lazily at first materialization
+      // (`LazyConstant::get`) instead of one content hash per constant
+      // here — constants shipped in a closure but never forced by the
+      // typechecker are never hashed, while everything the kernel
+      // certifies still gets verified on the way in.
+      env.consts.insert(
+        addr.clone(),
+        crate::lazy::LazyConstant::from_bytes_deferred(bytes.into(), addr),
+      );
     }
 
     // Section 3: Names — parse and DISCARD. We still need a populated
@@ -1769,6 +1796,20 @@ impl Env {
       }
       let (bytes, rest) = buf.split_at(len);
       buf = rest;
+      // Blob bytes are bound to their address HERE, eagerly: literal
+      // identity downstream (kernel `ExprKey::Nat`/`Str` interning,
+      // `Constant.refs` blob entries, assumption filtering) keys on the
+      // address, so an unverified blob would let an adversarial env bind
+      // wrong bytes to a content address. Blobs are a small fraction of
+      // env bytes; constants stay lazily verified (see LazyConstant).
+      let computed = Address::hash(bytes);
+      if computed != addr {
+        return Err(format!(
+          "Env::get_anon_mmap: blob bytes hash to {} but stored under {}",
+          computed.hex(),
+          addr.hex()
+        ));
+      }
       env.blobs.insert(addr, bytes.to_vec());
     }
 
@@ -2452,8 +2493,16 @@ mod tests {
     let off = 68 + 3;
     assert!(off < buf.len());
     buf[off] ^= 0xFF;
-    let res = Env::get_anon(&mut buf.as_slice());
-    let err = res.expect_err("tampered const bytes should be rejected");
+    // Address binding is verified lazily: parse succeeds, but the
+    // tampered constant is rejected at first materialization (which is
+    // what gates anything the kernel certifies).
+    let parsed = Env::get_anon(&mut buf.as_slice())
+      .expect("get_anon defers per-const verification");
+    let entry = parsed.consts.iter().next().expect("one const");
+    let err = entry
+      .value()
+      .get()
+      .expect_err("tampered const bytes should be rejected at get()");
     assert!(
       err.contains("bytes hash to") && err.contains("but stored under"),
       "expected per-entry verify error, got: {err}"

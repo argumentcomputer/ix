@@ -598,7 +598,7 @@ fn compact_head<M: KernelMode>(e: &KExpr<M>) -> String {
 }
 
 fn short_addr<M: KernelMode>(e: &KExpr<M>) -> String {
-  e.addr().to_hex().chars().take(12).collect()
+  format!("uid{}", e.addr())
 }
 
 #[cfg(test)]
