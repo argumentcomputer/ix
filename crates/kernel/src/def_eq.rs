@@ -18,10 +18,10 @@ use super::lctx::LocalDecl;
 use super::level::{KUniv, univ_eq};
 use super::mode::KernelMode;
 use super::subst::{instantiate_rev, lift};
-use super::whnf::PrimFamily;
 use super::tc::{
   MAX_DEF_EQ_DEPTH, MAX_WHNF_FUEL, TypeChecker, collect_app_spine,
 };
+use super::whnf::PrimFamily;
 
 /// When set, trace every `is_def_eq` call where one side's head constant
 /// starts with the prefix in `IX_DEF_EQ_TRACE` (e.g. `IX_DEF_EQ_TRACE=bmod`

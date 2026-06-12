@@ -1714,8 +1714,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       return Ok(None);
     };
     let is_add = id.addr == self.prims.nat_add.addr;
-    let is_divmod = id.addr == self.prims.nat_div.addr
-      || id.addr == self.prims.nat_mod.addr;
+    let is_divmod =
+      id.addr == self.prims.nat_div.addr || id.addr == self.prims.nat_mod.addr;
     if (!is_add && !is_divmod) || args.len() != 2 {
       return Ok(None);
     }

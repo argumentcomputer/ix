@@ -811,14 +811,20 @@ mod tests {
     // intern keys, which are mode-independent.
     let anon = AU::param(0, ());
     let meta = MU::param(0, mk_name("u"));
-    assert_eq!(super::super::env::univ_key(&anon), super::super::env::univ_key(&meta));
+    assert_eq!(
+      super::super::env::univ_key(&anon),
+      super::super::env::univ_key(&meta)
+    );
   }
 
   #[test]
   fn anon_vs_meta_anon_param_same() {
     let anon = AU::param(0, ());
     let meta = MU::param(0, Name::anon());
-    assert_eq!(super::super::env::univ_key(&anon), super::super::env::univ_key(&meta));
+    assert_eq!(
+      super::super::env::univ_key(&anon),
+      super::super::env::univ_key(&meta)
+    );
   }
 
   // ---- PartialEq ----

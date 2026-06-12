@@ -123,7 +123,11 @@ impl LazyConstant {
   /// `Constant::put` produced for the address this entry is stored
   /// under. Use [`Self::verify_address`] for an explicit check.
   pub fn from_bytes(bytes: Arc<[u8]>) -> Self {
-    LazyConstant { bytes: BytesSource::Heap(bytes), cache: None, pending_addr: None }
+    LazyConstant {
+      bytes: BytesSource::Heap(bytes),
+      cache: None,
+      pending_addr: None,
+    }
   }
 
   /// Like [`Self::from_bytes`], but with the address-binding check

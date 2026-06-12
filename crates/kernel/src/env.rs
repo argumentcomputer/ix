@@ -134,19 +134,16 @@ pub fn expr_key<M: KernelMode>(e: &KExpr<M>) -> ExprKey {
     ExprData::Var(i, _, _) => ExprKey::Var(*i),
     ExprData::FVar(id, _, _) => ExprKey::FVar(id.0),
     ExprData::Sort(u, _) => ExprKey::Sort(*u.addr()),
-    ExprData::Const(id, us, _) => ExprKey::Const(
-      id.addr.clone(),
-      us.iter().map(|u| *u.addr()).collect(),
-    ),
+    ExprData::Const(id, us, _) => {
+      ExprKey::Const(id.addr.clone(), us.iter().map(|u| *u.addr()).collect())
+    },
     ExprData::App(f, a, _) => ExprKey::App(*f.addr(), *a.addr()),
     ExprData::Lam(_, _, t, b, _) => ExprKey::Lam(*t.addr(), *b.addr()),
     ExprData::All(_, _, t, b, _) => ExprKey::All(*t.addr(), *b.addr()),
     ExprData::Let(_, t, v, b, nd, _) => {
       ExprKey::Let(*t.addr(), *v.addr(), *b.addr(), *nd)
     },
-    ExprData::Prj(id, f, v, _) => {
-      ExprKey::Prj(id.addr.clone(), *f, *v.addr())
-    },
+    ExprData::Prj(id, f, v, _) => ExprKey::Prj(id.addr.clone(), *f, *v.addr()),
     ExprData::Nat(_, ba, _) => ExprKey::Nat(ba.clone()),
     ExprData::Str(_, ba, _) => ExprKey::Str(ba.clone()),
   }
@@ -203,7 +200,11 @@ impl<M: KernelMode> InternTable<M> {
     let u = match u.data() {
       UnivData::Succ(inner, _) => {
         let ci = self.intern_univ(inner.clone());
-        if ci.ptr_eq(inner) { u } else { KUniv::new(UnivData::Succ(ci, super::expr::fresh_uid())) }
+        if ci.ptr_eq(inner) {
+          u
+        } else {
+          KUniv::new(UnivData::Succ(ci, super::expr::fresh_uid()))
+        }
       },
       UnivData::Max(a, b, _) => {
         let ca = self.intern_univ(a.clone());
@@ -247,11 +248,7 @@ impl<M: KernelMode> InternTable<M> {
     let e = match e.data() {
       ExprData::Sort(un, _) => {
         let cu = self.intern_univ(un.clone());
-        if cu.ptr_eq(un) {
-          e
-        } else {
-          KExpr::sort_mdata(cu, e.mdata().clone())
-        }
+        if cu.ptr_eq(un) { e } else { KExpr::sort_mdata(cu, e.mdata().clone()) }
       },
       ExprData::Const(id, us, _) => {
         let cus: Box<[KUniv<M>]> =
