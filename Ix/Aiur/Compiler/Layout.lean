@@ -69,7 +69,10 @@ def DataType.sizeBound (decls : Decls) : Nat → Std.HashSet Global → DataType
       let ctorSizes ← dt.constructors.mapM
         (Concrete.Constructor.sizeBound decls bound visited)
       let maxFields := ctorSizes.foldl max 0
-      pure (maxFields + 1)
+      -- Single-variant enums need no tag slot: the layout matches a plain
+      -- tuple of the sole constructor's fields.
+      if dt.constructors.length == 1 then pure maxFields
+      else pure (maxFields + 1)
 end
 
 /-- Outer interface: the recursion bound is `decls.size + 1`, which the

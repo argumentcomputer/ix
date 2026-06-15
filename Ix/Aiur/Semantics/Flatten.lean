@@ -149,14 +149,17 @@ def typFlatSizeBound (decls : Source.Decls) : Nat → HashSet Global → Typ →
         | _ => 0
   | _+1, _, .mvar _ => 0
 
-/-- Flat size of a datatype (max constructor size + 1 for the tag). -/
+/-- Flat size of a datatype (max constructor size + 1 for the tag; the `+ 1`
+is dropped for single-variant enums, which carry no tag). -/
 def dataTypeFlatSizeBound (decls : Source.Decls) : Nat → HashSet Global → DataType → Nat
   | 0, _, _ => 1
   | bound+1, visited, dt =>
       let ctorSizes := dt.constructors.map fun ctor =>
         ctor.argTypes.foldl (init := 0)
           (fun acc t => acc + typFlatSizeBound decls bound visited t)
-      ctorSizes.foldl max 0 + 1
+      -- Single-variant enums carry no tag slot (tuple-identical layout).
+      if dt.constructors.length == 1 then ctorSizes.foldl max 0
+      else ctorSizes.foldl max 0 + 1
 
 end
 
@@ -194,10 +197,14 @@ def flattenValue (decls : Decls) (funcIdx : Global → Option Nat) :
   | .ctor g args =>
       match decls.getByKey g with
       | some (.constructor dt ctor) =>
-          let ctorIndex := dt.constructors.findIdx? (· == ctor) |>.getD 0
           let dtSize := dataTypeFlatSize decls {} dt
           let argsFlat := args.attach.flatMap (fun ⟨v, _⟩ => flattenValue decls funcIdx v)
-          let flat := #[.ofNat ctorIndex] ++ argsFlat
+          -- Single-variant enums carry no tag slot (tuple-identical layout).
+          let flat :=
+            if dt.constructors.length == 1 then argsFlat
+            else
+              let ctorIndex := dt.constructors.findIdx? (· == ctor) |>.getD 0
+              #[.ofNat ctorIndex] ++ argsFlat
           let padding := dtSize - flat.size
           flat ++ Array.replicate padding 0
       | _ => args.attach.flatMap (fun ⟨v, _⟩ => flattenValue decls funcIdx v)
