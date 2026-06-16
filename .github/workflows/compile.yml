@@ -73,7 +73,7 @@ jobs:
         working-directory: ${{ env.COMPILE_DIR }}
       # Run the `ix` compiler over the input library env
       - name: Run ix compile
-        run: ix compile --path ${{ env.COMPILE_DIR }}/Compile${{ matrix.bench }}.lean 2>&1 | tee output.txt
+        run: ix compile ${{ env.COMPILE_DIR }}/Compile${{ matrix.bench }}.lean 2>&1 | tee output.txt
       # Parse the ##benchmark## line into Bencher Metric Format JSON
       - name: Generate benchmark JSON
         run: |
