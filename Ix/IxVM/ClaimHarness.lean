@@ -97,7 +97,7 @@ partial def closureFrom (env : Ixon.Env) (target : Address) : Std.HashSet Addres
     worklist := worklist.pop
     if visited.contains addr then continue
     visited := visited.insert addr
-    let some c := env.consts.get? addr | continue
+    let some c := env.getConst? addr | continue
     for r in c.refs do worklist := worklist.push r
     match c.info with
     | .iPrj p | .cPrj p => worklist := worklist.push p.block
@@ -111,8 +111,9 @@ partial def closureFrom (env : Ixon.Env) (target : Address) : Std.HashSet Addres
     one entry per const, keyed by its index. Returns the buffer and the
     count `n` (which the Aiur entrypoint receives as input). -/
 def buildSerdeIOBuffer (ixonEnv : Ixon.Env) : Aiur.IOBuffer × Nat :=
-  ixonEnv.consts.valuesIter.fold (init := (default, 0)) fun (ioBuffer, i) c =>
-    let (_, bytes) := Ixon.Serialize.put c |>.run default
+  ixonEnv.consts.valuesIter.fold (init := (default, 0)) fun (ioBuffer, i) lc =>
+    -- The lazy entry already holds the serialized bytes; no re-serialization.
+    let bytes := lc.rawBytes
     (ioBuffer.extend 0 #[.ofNat i] (bytes.data.map .ofUInt8), i + 1)
 
 /-- Encode a `Lean.ReducibilityHints` as a single `G` per the convention
@@ -139,9 +140,11 @@ private def hintToG : Lean.ReducibilityHints → Aiur.G
 def addEntries (ixonEnv : Ixon.Env) (keep : Address → Bool)
     (ioBuffer : Aiur.IOBuffer) : Aiur.IOBuffer := Id.run do
   let mut ioBuffer := ioBuffer
-  for (addr, c) in ixonEnv.consts do
+  for (addr, lc) in ixonEnv.consts do
     if !keep addr then continue
-    let (_, bytes) := Ixon.Serialize.put c |>.run default
+    -- The kernel re-hashes these bytes against the key, so feed the exact
+    -- serialized form the lazy entry holds — no materialization needed.
+    let bytes := lc.rawBytes
     let key : Array Aiur.G := addr.hash.data.map .ofUInt8
     ioBuffer := ioBuffer.extend 0 key (bytes.data.map .ofUInt8)
   for (addr, rawBytes) in ixonEnv.blobs do

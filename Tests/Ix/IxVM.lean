@@ -161,8 +161,9 @@ private def asTestCase (label : String) (witness : ClaimWitness) : AiurTestCase 
     satisfies `pred`, or fail with `IO.userError`. -/
 private def findConstWithOrThrow (ixonEnv : Ixon.Env) (label : String)
     (pred : Ixon.ConstantInfo → Bool) : IO (Address × Ixon.ConstantInfo) := do
-  for (addr, c) in ixonEnv.consts do
-    if pred c.info then return (addr, c.info)
+  for (addr, lc) in ixonEnv.consts do
+    if let some c := lc.get? then
+      if pred c.info then return (addr, c.info)
   throw <| IO.userError s!"no {label} const found in shared smoke env"
 
 /-- Single-entry HashMap for one `(root, tree)` pairing. -/

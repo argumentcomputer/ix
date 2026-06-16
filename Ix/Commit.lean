@@ -28,7 +28,8 @@ open Ixon (PutM runPut putConstant putExpr Comm)
 def mkCompileEnv (phases : Ix.CompileM.CompilePhases) : Ix.CompileM.CompileEnv :=
   { env := phases.rawEnv
   , nameToNamed := phases.compileEnv.named
-  , constants := phases.compileEnv.consts
+  , constants := phases.compileEnv.consts.fold (init := {})
+      fun m a lc => m.insert a (lc.get?.getD default)
   , blobs := phases.compileEnv.blobs
   , totalBytes := 0 }
 

@@ -1088,7 +1088,7 @@ pub fn get_named_indexed(
 // ============================================================================
 
 use super::comm::Comm;
-use super::env::Env;
+use super::env::{Env, LazyConstSlice, LazyIndex, LazyNamed};
 use super::merkle::{merkle_root_canonical, zero_address};
 
 impl Env {
@@ -1448,6 +1448,127 @@ impl Env {
     }
 
     Ok(env)
+  }
+
+  /// Parse an `.ixe` buffer into a metadata-light, **zero-copy** index for the
+  /// anon/lazy check path (see [`LazyIndex`]). Mirrors [`Env::get`]'s section
+  /// walk and reuses the same battle-tested parsers (so every metadata variant
+  /// — e.g. `CallSite` — is handled), but:
+  ///
+  /// - constants are recorded as `(addr, offset, len)` windows into `data`
+  ///   rather than copied/stored, and their bodies are never parsed here;
+  /// - the `names` table and each `Named`'s `ExprMetaArena` are parsed only to
+  ///   advance the cursor and are then dropped, keeping just `name → addr` and
+  ///   the per-`Defn` reducibility hint;
+  /// - `comms` are skipped entirely.
+  ///
+  /// `data` must be the whole buffer (offsets are relative to its start). The
+  /// env-level merkle root over const addresses is still re-verified.
+  pub fn parse_lazy_index(data: &[u8]) -> Result<LazyIndex, String> {
+    let mut buf: &[u8] = data;
+
+    // Header: Tag4 (flag/variant) + canonical merkle root.
+    let tag = Tag4::get(&mut buf)?;
+    if tag.flag != Self::FLAG {
+      return Err(format!(
+        "parse_lazy_index: expected flag 0x{:X}, got 0x{:X}",
+        Self::FLAG,
+        tag.flag
+      ));
+    }
+    if tag.size != 0 {
+      return Err(format!(
+        "parse_lazy_index: expected Env variant 0, got {}",
+        tag.size
+      ));
+    }
+    let stored_root = get_address(&mut buf)?;
+
+    let mut index = LazyIndex::default();
+
+    // Section 1: Blobs (copied — small, and the kernel ingests their bytes).
+    let num_blobs = get_u64(&mut buf)?;
+    for _ in 0..num_blobs {
+      let addr = get_address(&mut buf)?;
+      let len = get_u64(&mut buf)? as usize;
+      if buf.len() < len {
+        return Err(format!(
+          "parse_lazy_index: need {} bytes for blob, have {}",
+          len,
+          buf.len()
+        ));
+      }
+      let (bytes, rest) = buf.split_at(len);
+      buf = rest;
+      index.blobs.push((addr, bytes.to_vec()));
+    }
+
+    // Section 2: Consts — record offset windows, never parse the bodies.
+    let num_consts = get_u64(&mut buf)?;
+    for _ in 0..num_consts {
+      let addr = get_address(&mut buf)?;
+      let len = Tag0::get(&mut buf)?.size as usize;
+      // Position of the body within `data` = bytes consumed so far.
+      let offset = data.len() - buf.len();
+      if buf.len() < len {
+        return Err(format!(
+          "parse_lazy_index: need {} bytes for constant, have {}",
+          len,
+          buf.len()
+        ));
+      }
+      buf = &buf[len..];
+      index.consts.push(LazyConstSlice { addr, offset, len });
+    }
+
+    // Section 3: Names — parsed to build the index for metadata decoding, then
+    // dropped (the check never consults the name component table).
+    let num_names = get_u64(&mut buf)?;
+    let mut names_lookup: FxHashMap<Address, Name> = FxHashMap::default();
+    let mut name_reverse_index: NameReverseIndex =
+      Vec::with_capacity(num_names as usize + 1);
+    let anon_addr = Address::from_blake3_hash(*Name::anon().get_hash());
+    names_lookup.insert(anon_addr, Name::anon());
+    for _ in 0..num_names {
+      let addr = get_address(&mut buf)?;
+      let name = get_name_component(&mut buf, &names_lookup)?;
+      name_reverse_index.push(addr.clone());
+      names_lookup.insert(addr, name);
+    }
+
+    // Section 4: Named — keep `name → addr` and the Defn reducibility hint; the
+    // full ConstantMeta (arena, CallSite, ...) is parsed then discarded.
+    let num_named = get_u64(&mut buf)?;
+    for _ in 0..num_named {
+      let name_addr = get_address(&mut buf)?;
+      let named = get_named_indexed(&mut buf, &name_reverse_index)?;
+      let name = names_lookup.get(&name_addr).cloned().ok_or_else(|| {
+        format!("parse_lazy_index: missing name for addr {:?}", name_addr)
+      })?;
+      let hint = match &named.meta.info {
+        super::metadata::ConstantMetaInfo::Def { hints, .. } => Some(*hints),
+        _ => None,
+      };
+      index.named.push(LazyNamed { name, addr: named.addr, hint });
+    }
+
+    // Section 5 (comms) is skipped: not needed by the check path.
+
+    // Re-verify the merkle root over const addresses (header integrity).
+    let mut const_addrs: Vec<Address> =
+      index.consts.iter().map(|c| c.addr.clone()).collect();
+    const_addrs.sort_unstable();
+    let computed_root =
+      merkle_root_canonical(&const_addrs).unwrap_or_else(zero_address);
+    if computed_root != stored_root {
+      return Err(format!(
+        "parse_lazy_index: merkle root mismatch (stored={}, computed={})",
+        stored_root.hex(),
+        computed_root.hex(),
+      ));
+    }
+
+    Ok(index)
   }
 
   /// Anonymous-only deserialization: read the header + blobs +

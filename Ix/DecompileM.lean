@@ -712,7 +712,7 @@ def decompileProjection (cnst : Constant) (cMeta : ConstantMeta)
 def decompileOne (env : DecompileEnv) (ixonEnv : Ixon.Env)
     (_ixName : Ix.Name) (named : Ixon.Named)
     : Except String (Array (Ix.Name × Ix.ConstantInfo)) :=
-  match ixonEnv.consts.get? named.addr with
+  match ixonEnv.getConst? named.addr with
   | none => .ok #[]
   | some cnst =>
     let m : DecompileM (Array (Ix.Name × Ix.ConstantInfo)) :=
@@ -730,17 +730,17 @@ def decompileOne (env : DecompileEnv) (ixonEnv : Ixon.Env)
         let info ← decompileRecursor rec cnst named.constMeta
         pure #[(info.getCnst.name, info)]
       | .dPrj proj =>
-        match ixonEnv.consts.get? proj.block with
+        match ixonEnv.getConst? proj.block with
         | some { info := .muts mutuals, sharing, refs, univs } =>
           decompileProjection cnst named.constMeta mutuals sharing refs univs
         | _ => pure #[]
       | .iPrj proj =>
-        match ixonEnv.consts.get? proj.block with
+        match ixonEnv.getConst? proj.block with
         | some { info := .muts mutuals, sharing, refs, univs } =>
           decompileProjection cnst named.constMeta mutuals sharing refs univs
         | _ => pure #[]
       | .rPrj proj =>
-        match ixonEnv.consts.get? proj.block with
+        match ixonEnv.getConst? proj.block with
         | some { info := .muts mutuals, sharing, refs, univs } =>
           decompileProjection cnst named.constMeta mutuals sharing refs univs
         | _ => pure #[]

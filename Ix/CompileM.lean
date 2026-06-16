@@ -1615,7 +1615,8 @@ def compileEnv (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (dbg : Bool 
   let allBlobs := nameBlobs.fold (fun m k v => m.insert k v) compileEnv.blobs
 
   let ixonEnv : Ixon.Env := {
-    consts := compileEnv.constants
+    consts := compileEnv.constants.fold (init := {})
+      fun m a c => m.insert a (Ixon.LazyConstant.ofConstant c)
     named := compileEnv.nameToNamed
     blobs := allBlobs
     names := namesMap
@@ -1908,7 +1909,8 @@ def compileEnvParallel (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     IO.println s!"  [Lean Compile] Blobs: {blockBlobCount} from blocks, {nameBlobCount} from names, {overlapCount} overlap, {finalBlobCount} final"
 
   let ixonEnv : Ixon.Env := {
-    consts := constants
+    consts := constants.fold (init := {})
+      fun m a c => m.insert a (Ixon.LazyConstant.ofConstant c)
     named := nameToNamed
     blobs := allBlobs
     names := namesMap
