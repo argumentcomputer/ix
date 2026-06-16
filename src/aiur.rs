@@ -3,6 +3,7 @@ pub mod constraints;
 pub mod execute;
 pub mod gadgets;
 pub mod memory;
+pub mod querymap;
 pub mod synthesis;
 pub mod trace;
 
