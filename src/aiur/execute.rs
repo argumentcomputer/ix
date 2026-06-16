@@ -12,15 +12,9 @@ use crate::{
       bytes1::{Bytes1, Bytes1Op, Bytes1Queries},
       bytes2::{Bytes2, Bytes2Op, Bytes2Queries},
     },
+    querymap::QueryMap,
   },
 };
-
-pub struct QueryResult {
-  pub(crate) output: Vec<G>,
-  pub(crate) multiplicity: G,
-}
-
-pub type QueryMap = FxIndexMap<Vec<G>, QueryResult>;
 
 pub struct QueryRecord {
   pub(crate) function_queries: Vec<QueryMap>,
@@ -31,12 +25,15 @@ pub struct QueryRecord {
 
 impl QueryRecord {
   fn new(toplevel: &Toplevel) -> Self {
-    let function_queries =
-      toplevel.functions.iter().map(|_| QueryMap::default()).collect();
+    let function_queries = toplevel
+      .functions
+      .iter()
+      .map(|f| QueryMap::new(f.layout.input_size))
+      .collect();
     let memory_queries = toplevel
       .memory_sizes
       .iter()
-      .map(|width| (*width, QueryMap::default()))
+      .map(|width| (*width, QueryMap::new(*width)))
       .collect();
     let bytes1_queries = Bytes1Queries::new();
     let bytes2_queries = Bytes2Queries::new();
@@ -158,6 +155,41 @@ impl std::fmt::Display for ExecError {
 
 impl std::error::Error for ExecError {}
 
+/// Gated by `IX_AIUR_QUERY_STATS=1`: dump per-function query-map sizes
+/// during/after execution so RAM blowups can be attributed to specific
+/// Aiur functions (indices resolve to names via the Lean
+/// `CompiledToplevel`). Heaviest maps first, by retained G elements.
+static QUERY_STATS: std::sync::LazyLock<bool> =
+  std::sync::LazyLock::new(|| {
+    std::env::var_os("IX_AIUR_QUERY_STATS").is_some()
+  });
+
+fn dump_query_stats(record: &QueryRecord, tag: &str) {
+  let mut rows: Vec<(usize, usize, usize)> = record
+    .function_queries
+    .iter()
+    .enumerate()
+    .map(|(i, m)| (i, m.len(), m.retained_elems()))
+    .filter(|(_, n, _)| *n > 0)
+    .collect();
+  rows.sort_by(|a, b| b.2.cmp(&a.2));
+  let total_entries: usize = rows.iter().map(|r| r.1).sum();
+  let total_elems: usize = rows.iter().map(|r| r.2).sum();
+  eprintln!(
+    "[aiur-stats {tag}] function_queries: {total_entries} entries, \
+     {total_elems} G-elems; top maps:"
+  );
+  for (i, n, e) in rows.iter().take(30) {
+    eprintln!("  fn{i:<4} entries={n:<12} g_elems={e}");
+  }
+  let mem: Vec<String> = record
+    .memory_queries
+    .iter()
+    .map(|(w, m)| format!("w{w}={}", m.len()))
+    .collect();
+  eprintln!("[aiur-stats {tag}] memory entries: {}", mem.join(" "));
+}
+
 impl Toplevel {
   pub fn execute(
     &self,
@@ -172,6 +204,9 @@ impl Toplevel {
     let function = &self.functions[fun_idx];
     let output =
       function.execute(fun_idx, args, self, &mut record, io_buffer)?;
+    if *QUERY_STATS {
+      dump_query_stats(&record, "final");
+    }
     Ok((record, output))
   }
 }
@@ -213,7 +248,14 @@ impl Function {
     }
     push_block_exec_entries!(&self.body);
     let mut unconstrained = false;
+    let mut stats_ops: u64 = 0;
     while let Some(exec_entry) = exec_entries_stack.pop() {
+      if *QUERY_STATS {
+        stats_ops += 1;
+        if stats_ops.is_multiple_of(1 << 31) {
+          dump_query_stats(record, &format!("ops={stats_ops}"));
+        }
+      }
       match exec_entry {
         ExecEntry::Op(Op::Const(c)) => map.push(*c),
         ExecEntry::Op(Op::Add(a, b)) => {
@@ -236,14 +278,14 @@ impl Function {
           map.push(G::from_bool(a == G::ZERO));
         },
         ExecEntry::Op(Op::Call(callee_idx, args, _, op_unconstrained)) => {
-          let args = args.iter().map(|i| map[*i]).collect();
+          let args: Vec<G> = args.iter().map(|i| map[*i]).collect();
           if let Some(result) =
             record.function_queries[*callee_idx].get_mut(&args)
           {
             if !unconstrained && !op_unconstrained {
-              result.multiplicity += G::ONE;
+              *result.multiplicity += G::ONE;
             }
-            map.extend(result.output.clone());
+            map.extend_from_slice(result.output);
           } else {
             let saved_map = std::mem::replace(&mut map, args);
             callers_states_stack.push(CallerState {
@@ -266,16 +308,16 @@ impl Function {
             .ok_or(ExecError::InvalidMemorySize(size))?;
           if let Some(result) = memory_queries.get_mut(&values) {
             if !unconstrained {
-              result.multiplicity += G::ONE;
+              *result.multiplicity += G::ONE;
             }
-            map.extend(&result.output);
+            map.extend_from_slice(result.output);
           } else {
             let ptr = G::from_usize(memory_queries.len());
-            let result = QueryResult {
-              output: vec![ptr],
-              multiplicity: G::from_bool(!unconstrained),
-            };
-            memory_queries.insert(values, result);
+            memory_queries.insert(
+              &values,
+              &[ptr],
+              G::from_bool(!unconstrained),
+            );
             map.push(ptr);
           }
         },
@@ -289,13 +331,13 @@ impl Function {
           let ptr_usize = usize::try_from(ptr_u64)
             .ok()
             .ok_or(ExecError::PointerTooLarge(ptr_u64))?;
-          let (args, result) = memory_queries
+          let (args, multiplicity) = memory_queries
             .get_index_mut(ptr_usize)
             .ok_or(ExecError::UnboundPointer { ptr: ptr_u64, size: *size })?;
           if !unconstrained {
-            result.multiplicity += G::ONE;
+            *multiplicity += G::ONE;
           }
-          map.extend(args);
+          map.extend_from_slice(args);
         },
         ExecEntry::Op(Op::AssertEq(xs, ys)) => {
           if xs.len() != ys.len() {
@@ -542,13 +584,12 @@ impl Function {
         ExecEntry::Ctrl(Ctrl::Return(_, output)) => {
           // Register the query.
           let input_size = toplevel.functions[fun_idx].layout.input_size;
-          let args = map[..input_size].to_vec();
           let output = output.iter().map(|i| map[*i]).collect::<Vec<_>>();
-          let result = QueryResult {
-            output: output.clone(),
-            multiplicity: G::from_bool(!unconstrained),
-          };
-          record.function_queries[fun_idx].insert(args, result);
+          record.function_queries[fun_idx].insert(
+            &map[..input_size],
+            &output,
+            G::from_bool(!unconstrained),
+          );
           if let Some(CallerState {
             fun_idx: caller_idx,
             map: caller_map,

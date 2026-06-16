@@ -121,7 +121,7 @@ extern "C" fn rs_aiur_toplevel_execute(
   let mut query_counts: Vec<(usize, usize)> = Vec::with_capacity(
     query_record.function_queries.len() + toplevel.memory_sizes.len(),
   );
-  let summarize = |q: &crate::aiur::execute::QueryMap| -> (usize, usize) {
+  let summarize = |q: &crate::aiur::querymap::QueryMap| -> (usize, usize) {
     let mut rows = 0usize;
     let mut hits = 0usize;
     for (_, res) in q.iter() {

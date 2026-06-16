@@ -7,8 +7,7 @@ use multi_stark::{
 };
 use rayon::{
   iter::{
-    IndexedParallelIterator, IntoParallelRefIterator,
-    IntoParallelRefMutIterator, ParallelIterator,
+    IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator,
   },
   slice::ParallelSliceMut,
 };
@@ -69,10 +68,10 @@ impl Memory {
 
     rows_no_padding
       .par_chunks_mut(width)
-      .zip(queries.par_iter())
       .zip(lookups_no_padding.par_iter_mut())
       .enumerate()
-      .for_each(|(i, ((row, (values, result)), row_lookups))| {
+      .for_each(|(i, (row, row_lookups))| {
+        let (values, result) = queries.get_index(i).expect("index in range");
         row[0] = result.multiplicity;
         row[1] = G::ONE;
         row[2] = G::from_usize(i);
