@@ -111,7 +111,7 @@ impl Toplevel {
           function_index: G::from_usize(function_index),
           inputs,
           multiplicity: result.multiplicity,
-          output: &result.output,
+          output: result.output,
           query_record,
         };
         func.populate_row(index, slice, context, io_buffer);
@@ -321,7 +321,7 @@ impl Op {
             G::ONE,
             G::from_usize(*function_index),
             &inputs,
-            &result.output,
+            result.output,
           );
           slice.push_lookup(index, lookup);
         }

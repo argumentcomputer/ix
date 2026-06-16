@@ -159,9 +159,10 @@ impl std::error::Error for ExecError {}
 /// during/after execution so RAM blowups can be attributed to specific
 /// Aiur functions (indices resolve to names via the Lean
 /// `CompiledToplevel`). Heaviest maps first, by retained G elements.
-static QUERY_STATS: std::sync::LazyLock<bool> = std::sync::LazyLock::new(
-  || std::env::var_os("IX_AIUR_QUERY_STATS").is_some(),
-);
+static QUERY_STATS: std::sync::LazyLock<bool> =
+  std::sync::LazyLock::new(|| {
+    std::env::var_os("IX_AIUR_QUERY_STATS").is_some()
+  });
 
 fn dump_query_stats(record: &QueryRecord, tag: &str) {
   let mut rows: Vec<(usize, usize, usize)> = record

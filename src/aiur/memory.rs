@@ -7,8 +7,7 @@ use multi_stark::{
 };
 use rayon::{
   iter::{
-    IndexedParallelIterator,
-    IntoParallelRefMutIterator, ParallelIterator,
+    IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator,
   },
   slice::ParallelSliceMut,
 };
