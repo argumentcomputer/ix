@@ -1050,6 +1050,83 @@ def deExpr (bytes : ByteArray) : Except String Expr := runGet getExpr bytes
 def serConstant (c : Constant) : ByteArray := runPut (putConstant c)
 def deConstant (bytes : ByteArray) : Except String Constant := runGet getConstant bytes
 
+/-- Parse a `Constant` starting at byte offset `off` within `buf`, WITHOUT
+    copying out a sub-buffer. The window length bounds the constant, so any
+    bytes after it in `buf` are simply left unread (no trailing-bytes check).
+    Zero-copy apart from the small interior string/nat reads `getConstant`
+    performs regardless. -/
+def deConstantAt (buf : ByteArray) (off : Nat) : Except String Constant :=
+  match getConstant.run { idx := off, bytes := buf } with
+  | .ok a _ => .ok a
+  | .error e _ => .error e
+
+/-- Lazily-materialized constant: an offset window `(buf, off, len)` into a
+    shared backing `ByteArray` plus an optional pre-materialized `Constant`.
+    Mirrors the Rust kernel's `LazyConstant` (`src/ix/ixon/lazy.rs`) — the
+    `ofSlice` form is the analog of its window-into-a-shared-buffer
+    (`from_mmap_slice`) variant, except here the shared buffer is the resident
+    `.ixe` bytes rather than an mmap.
+
+    The lazy load path (`ofSlice`, used by `deEnvAnon`) points every constant
+    at a window into the *one* `.ixe` buffer already resident in memory — no
+    per-constant copy and no materialization. A freshly loaded env's
+    steady-state cost is therefore just that single buffer (plus tiny per-entry
+    offset records), which is what keeps loading e.g. `mathlib.ixe` from
+    blowing past 100 GB when only a small closure is actually checked. Constant
+    bodies are parsed on demand, and only for the closure that is visited.
+
+    The build/compile path (`ofConstant`) serializes once into its own buffer
+    and pre-populates `cache` so repeated `get`s during compilation are free. -/
+structure LazyConstant where
+  /-- Shared backing buffer. For `ofSlice` this is the whole `.ixe` buffer; for
+      `ofConstant` it is a standalone buffer holding just this constant's
+      serialized bytes. -/
+  buf : ByteArray
+  /-- Start offset of this constant's Tag4 body within `buf`. -/
+  off : Nat := 0
+  /-- Length of this constant's Tag4 body. -/
+  len : Nat
+  /-- Pre-materialized constant. `some` only for the build path; the lazy load
+      path leaves this `none` and parses the window fresh on each `get`. -/
+  cache : Option Constant := none
+  deriving Inhabited
+
+namespace LazyConstant
+
+/-- Build from a structured constant (build/compile path). Serializes once into
+    a standalone buffer and caches so `get` is free and `rawBytes` is ready. -/
+def ofConstant (c : Constant) : LazyConstant :=
+  let b := serConstant c
+  { buf := b, off := 0, len := b.size, cache := some c }
+
+/-- Build from an offset window into a shared buffer (zero-copy lazy load).
+    `buf[off:off+len]` must be exactly `serConstant`'s output for the address
+    this entry is stored under. -/
+def ofSlice (buf : ByteArray) (off len : Nat) : LazyConstant :=
+  { buf, off, len, cache := none }
+
+/-- Materialize the constant, surfacing parse errors. Returns the cached value
+    when present, otherwise parses the window in place (no copy). -/
+def get (lc : LazyConstant) : Except String Constant :=
+  match lc.cache with
+  | some c => .ok c
+  | none => deConstantAt lc.buf lc.off
+
+/-- Materialize the constant, discarding parse errors. -/
+def get? (lc : LazyConstant) : Option Constant :=
+  match lc.cache with
+  | some c => some c
+  | none => (deConstantAt lc.buf lc.off).toOption
+
+/-- Raw serialized bytes (the Tag4 constant body). Returns the backing buffer
+    directly when the window spans all of it (the standalone case), and only
+    copies out a sub-slice for a true window into a larger shared buffer. -/
+def rawBytes (lc : LazyConstant) : ByteArray :=
+  if lc.off == 0 && lc.len == lc.buf.size then lc.buf
+  else lc.buf.extract lc.off (lc.off + lc.len)
+
+end LazyConstant
+
 /-! ## Metadata Serialization -/
 
 /-- Type alias for name index (Address → u64). -/
@@ -1436,8 +1513,10 @@ def Comm.commit (c : Comm) : Address := Address.blake3 (serCommTagged c)
 /-- The Ixon environment, containing all compiled constants.
     Mirrors Rust's `ix::ixon::env::Env` structure. -/
 structure Env where
-  /-- Alpha-invariant constants: Address → Constant -/
-  consts : Std.HashMap Address Constant := {}
+  /-- Alpha-invariant constants: Address → lazily-materialized constant.
+      Stored as serialized bytes ([`LazyConstant`]) and parsed on demand so a
+      freshly loaded env only pays for the constants it actually touches. -/
+  consts : Std.HashMap Address LazyConstant := {}
   /-- Named references: Ix.Name → Named (includes address + metadata) -/
   named : Std.HashMap Ix.Name Named := {}
   /-- Raw data blobs: Address → bytes -/
@@ -1452,13 +1531,13 @@ structure Env where
 
 namespace Env
 
-/-- Store a constant at the given address. -/
+/-- Store a constant at the given address. Caches the materialized value. -/
 def storeConst (env : Env) (addr : Address) (const : Constant) : Env :=
-  { env with consts := env.consts.insert addr const }
+  { env with consts := env.consts.insert addr (LazyConstant.ofConstant const) }
 
-/-- Get a constant by address. -/
+/-- Get a constant by address, materializing on demand. -/
 def getConst? (env : Env) (addr : Address) : Option Constant :=
-  env.consts.get? addr
+  (env.consts.get? addr).bind LazyConstant.get?
 
 /-- Register a name with full Named metadata. -/
 def registerName (env : Env) (name : Ix.Name) (named : Named) : Env :=
@@ -1630,7 +1709,8 @@ namespace Env
 /-- Convert Env with HashMaps to RawEnv with Arrays for FFI.
     Includes the full names table for round-trip fidelity. -/
 def toRawEnv (env : Env) : RawEnv := {
-  consts := env.consts.toArray.map fun (addr, const) => { addr, const }
+  consts := env.consts.toArray.map fun (addr, lc) =>
+    { addr, const := lc.get?.getD default }
   named := env.named.toArray.map fun (name, n) => { name, addr := n.addr, constMeta := n.constMeta }
   blobs := env.blobs.toArray.map fun (addr, bytes) => { addr, bytes }
   comms := env.comms.toArray.map fun (addr, comm) => { addr, comm }
@@ -1739,9 +1819,11 @@ def putEnv (env : Env) : PutM Unit := do
   -- exactly what `serConstant` produces).
   let consts := env.consts.toList.toArray.qsort fun a b => (compare a.1 b.1).isLT
   putTag0 ⟨consts.size.toUInt64⟩
-  for (addr, constant) in consts do
+  for (addr, lc) in consts do
     Serialize.put addr
-    let bytes := serConstant constant
+    -- The lazy entry already holds exactly `serConstant`'s output, so write
+    -- its bytes directly — no re-materialization or re-serialization.
+    let bytes := lc.rawBytes
     putTag0 ⟨bytes.size.toUInt64⟩
     putBytes bytes
 
@@ -1779,7 +1861,11 @@ def putEnv (env : Env) : PutM Unit := do
     Serialize.put addr
     putComm comm
 
-/-- Deserialize an Env from bytes. -/
+/-- Deserialize an Env from bytes (pure Lean, full metadata). Used for
+    round-trip (`deEnv`) on small/in-memory envs. The lazy/anon `.ixe` check
+    path does **not** go through here — it uses the Rust parser via
+    `deEnvAnon` / `rsDeEnvLazyFFI`, which handles every metadata variant and
+    returns zero-copy constant windows. -/
 def getEnv : GetM Env := do
   -- Header
   let tag ← getTag4
@@ -1810,8 +1896,7 @@ def getEnv : GetM Env := do
     let len := (← getTag0).size
     let bytes ← getBytes len.toNat
     match deConstant bytes with
-    | .ok constant =>
-      env := { env with consts := env.consts.insert addr constant }
+    | .ok constant => env := env.storeConst addr constant
     | .error e =>
       throw s!"Env.get: bad constant bytes for addr {reprStr (toString addr)}: {e}"
 
@@ -1875,7 +1960,7 @@ end Env
 /-- Serialize an Env to bytes. -/
 def serEnv (env : Env) : ByteArray := runPut (Env.putEnv env)
 
-/-- Deserialize an Env from bytes. -/
+/-- Deserialize an Env from bytes (full metadata, pure Lean). -/
 def deEnv (bytes : ByteArray) : Except String Env := runGet Env.getEnv bytes
 
 /-- Compute section sizes for debugging. Returns (blobs, consts, names, named, comms). -/
@@ -1893,9 +1978,9 @@ def envSectionSizes (env : Env) : Nat × Nat × Nat × Nat × Nat := Id.run do
   let constsBytes := runPut do
     let consts := env.consts.toList.toArray.qsort fun a b => (compare a.1 b.1).isLT
     putTag0 ⟨consts.size.toUInt64⟩
-    for (addr, constant) in consts do
+    for (addr, lc) in consts do
       Serialize.put addr
-      putConstant constant
+      putBytes lc.rawBytes
 
   -- Names section
   let namesBytes := runPut do
@@ -1945,9 +2030,86 @@ def rsSerEnv (env : Env) : ByteArray :=
 @[extern "rs_de_env"]
 opaque rsDeEnvFFI : @& ByteArray → Except String RawEnv
 
-/-- Deserialize bytes to an Ixon.Env using Rust. -/
+/-- Deserialize bytes to an Ixon.Env using Rust (full, eager materialization). -/
 def rsDeEnv (bytes : ByteArray) : Except String Env :=
   return (← rsDeEnvFFI bytes).toEnv
+
+/-! ### Lazy/anon deserialization (zero-copy `.ixe` load for the check path)
+
+The Rust side (`rs_de_env_lazy`) parses the env once — reusing the proven
+parser, so every metadata variant (e.g. `CallSite`) is handled — and returns:
+constants as `(addr, offset, len)` windows into the buffer we pass in,
+`name → addr`, per-`Defn` reducibility hints, and copied blobs. We then
+reconstruct an `Env` whose constants are byte-window `LazyConstant`s over that
+*same* buffer, so no constant body is copied across the FFI boundary and only
+the checked closure is ever materialized. This is the Lean counterpart of the
+Rust kernel's anon load (`get_anon`): lazy + metadata-light. (The `.ixe` is
+held resident via `readBinFile` rather than mmap'd; see `get_anon_mmap` for the
+mmap variant the native kernel uses.) -/
+
+/-- A constant as an offset window `[offset, offset+len)` into the source buffer. -/
+structure RawConstSlice where
+  addr : Address
+  offset : UInt64
+  len : UInt64
+  deriving Inhabited
+
+/-- A named entry reduced to `name → addr` plus an encoded reducibility hint
+    (`hintKind`: 0 = none, 1 = opaque, 2 = abbrev, 3 = regular `hintVal`). -/
+structure RawNamedLite where
+  name : Ix.Name
+  addr : Address
+  hintKind : UInt64
+  hintVal : UInt64
+  deriving Inhabited
+
+/-- Metadata-light env returned by `rs_de_env_lazy`. -/
+structure RawEnvLazy where
+  consts : Array RawConstSlice
+  named : Array RawNamedLite
+  blobs : Array RawBlob
+  deriving Inhabited
+
+/-- Decode an encoded reducibility hint into the `ConstantMeta` the check path
+    expects: a stripped `.defn` carrying just the hint (so `addEntries` finds it
+    via `.defn _ _ hints …`), or `.empty` for non-`Defn` entries. -/
+def RawNamedLite.toConstMeta (n : RawNamedLite) : ConstantMeta :=
+  let mkDefn (h : Lean.ReducibilityHints) : ConstantMeta :=
+    .defn default #[] h #[] #[] {} 0 0
+  match n.hintKind with
+  | 1 => mkDefn .opaque
+  | 2 => mkDefn .abbrev
+  | 3 => mkDefn (.regular n.hintVal.toUInt32)
+  | _ => .empty
+
+/-- Reconstruct an `Env` from a `RawEnvLazy` and the original buffer `buf`.
+    Constants become `LazyConstant.ofSlice buf offset len` — zero-copy windows
+    that share `buf`. `buf` MUST be the exact buffer passed to `rs_de_env_lazy`
+    (offsets are relative to it). -/
+def RawEnvLazy.toEnv (raw : RawEnvLazy) (buf : ByteArray) : Env := Id.run do
+  let mut env : Env := {}
+  for ⟨addr, offset, len⟩ in raw.consts do
+    env := { env with
+      consts := env.consts.insert addr
+        (LazyConstant.ofSlice buf offset.toNat len.toNat) }
+  for n in raw.named do
+    env := env.registerName n.name { addr := n.addr, constMeta := n.toConstMeta }
+  for ⟨addr, bytes⟩ in raw.blobs do
+    env := { env with blobs := env.blobs.insert addr bytes }
+  return env
+
+@[extern "rs_de_env_lazy"]
+opaque rsDeEnvLazyFFI : @& ByteArray → Except String RawEnvLazy
+
+/-- Lazy, zero-copy, metadata-light deserialization for the Aiur check path.
+    Constants are byte-window `LazyConstant`s into `bytes` (parsed on demand,
+    only for the checked closure); binder metadata is dropped, keeping just
+    `name → addr` and per-`Defn` hints. The returned env borrows `bytes` — keep
+    it reachable (the windows hold references, so it stays alive automatically).
+    This is the Lean counterpart of the Rust kernel's anon load (`get_anon`):
+    lazy + metadata-light, over a resident buffer. -/
+def deEnvAnon (bytes : ByteArray) : Except String Env :=
+  return (← rsDeEnvLazyFFI bytes).toEnv bytes
 
 /-- Anonymous-only deserialization: keep blobs + consts, parse-and-drop
     names/named/comms. Returns a `RawEnv` whose `named`/`names`/`comms`

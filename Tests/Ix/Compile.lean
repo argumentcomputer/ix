@@ -93,8 +93,8 @@ def compareEnvResults
       if leanAddr == rustAddr then
         matching := matching + 1
       else
-        let leanBytes := leanEnv.consts.get? leanAddr |>.map Ixon.ser |>.getD default
-        let rustBytes := rustEnv.consts.get? rustAddr |>.map Ixon.ser |>.getD default
+        let leanBytes := leanEnv.getConst? leanAddr |>.map Ixon.ser |>.getD default
+        let rustBytes := rustEnv.getConst? rustAddr |>.map Ixon.ser |>.getD default
         mismatched := mismatched.push ⟨name, leanAddr, rustAddr, false, leanBytes, rustBytes⟩
       -- Check metadata regardless of addr match
       let leanMeta := leanNamed.constMeta.exprMetaByType

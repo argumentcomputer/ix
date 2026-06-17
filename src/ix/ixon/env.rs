@@ -61,6 +61,39 @@ pub struct AuxLayout {
   pub source_ctor_counts: Vec<usize>,
 }
 
+/// One constant in a [`LazyIndex`]: its content address plus the byte window
+/// `[offset, offset+len)` of its serialized Tag4 body within the source buffer.
+/// No bytes are copied — the consumer (the Lean lazy loader) slices its own
+/// copy of the buffer at these offsets.
+#[derive(Debug, Clone)]
+pub struct LazyConstSlice {
+  pub addr: Address,
+  pub offset: usize,
+  pub len: usize,
+}
+
+/// One named entry in a [`LazyIndex`]: just the `name → addr` mapping plus the
+/// per-`Defn` reducibility hint (the only metadata the typecheck circuit
+/// consumes). The heavy `ExprMetaArena` is parsed (to advance the cursor and
+/// handle every metadata variant, e.g. `CallSite`) but discarded.
+#[derive(Debug, Clone)]
+pub struct LazyNamed {
+  pub name: Name,
+  pub addr: Address,
+  pub hint: Option<ReducibilityHints>,
+}
+
+/// Result of [`Env::parse_lazy_index`]: a metadata-light, zero-copy view of an
+/// `.ixe` buffer suitable for the anon/lazy check path. Constants are byte
+/// windows (offsets), `named` is `name → addr` + hint, and `blobs` are copied
+/// (they are small and the kernel ingests their bytes directly).
+#[derive(Debug, Clone, Default)]
+pub struct LazyIndex {
+  pub consts: Vec<LazyConstSlice>,
+  pub named: Vec<LazyNamed>,
+  pub blobs: Vec<(Address, Vec<u8>)>,
+}
+
 /// The Ixon environment.
 ///
 /// Contains five maps:

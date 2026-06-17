@@ -183,7 +183,10 @@ def forEachClaim
   match ixePath with
   | some path =>
     let bytes ← IO.FS.readBinFile path
-    let ixonEnv ← match Ixon.rsDeEnv bytes with
+    -- Anon load: lazy zero-copy constants, binder metadata dropped. The Aiur
+    -- check circuit consumes only anonymous constants, blobs, and per-Defn
+    -- reducibility hints — mirrors the Rust kernel's `get_anon_mmap`.
+    let ixonEnv ← match Ixon.deEnvAnon bytes with
       | .error e =>
         IO.eprintln s!"Failed to deserialize {path}: {e}"; return 1
       | .ok env => pure env
@@ -331,7 +334,8 @@ private def blockAddrOf (addr : Address) (c : Ixon.Constant) : Address :=
 def ownedConstsForBlocks (ixonEnv : Ixon.Env) (blocks : Array Address) : Array Address := Id.run do
   let blockSet : Std.HashSet Address := blocks.foldl (·.insert ·) {}
   let mut o : Array Address := #[]
-  for (addr, c) in ixonEnv.consts do
+  for (addr, lc) in ixonEnv.consts do
+    let some c := lc.get? | continue
     if blockSet.contains (blockAddrOf addr c) then o := o.push addr
   return o
 
@@ -348,7 +352,7 @@ def loadEnvAndShards (manifestPath ixePath : String) :
     IO (Except String (Ixon.Env × Array (Array Address))) := do
   match parseIxesAllShards (← IO.FS.readBinFile manifestPath) with
   | .error e => return .error s!"manifest parse failed: {e}"
-  | .ok shards => match Ixon.rsDeEnv (← IO.FS.readBinFile ixePath) with
+  | .ok shards => match Ixon.deEnvAnon (← IO.FS.readBinFile ixePath) with
     | .error e => return .error s!"deserialize {ixePath} failed: {e}"
     | .ok env => return .ok (env, shards)
 
@@ -405,7 +409,8 @@ def shardsCover (ixonEnv : Ixon.Env) (shards : Array (Array Address)) : IO Bool 
   -- assign every const to a shard via its block; count + detect unowned.
   let mut counts : Array Nat := Array.replicate shards.size 0
   let mut unowned : Nat := 0
-  for (addr, c) in ixonEnv.consts do
+  for (addr, lc) in ixonEnv.consts do
+    let some c := lc.get? | continue
     match blockToShard.get? (blockAddrOf addr c) with
     | some k => counts := counts.modify k (· + 1)  -- total: no-op if out of range
     | none => unowned := unowned + 1

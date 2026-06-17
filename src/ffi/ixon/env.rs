@@ -4,16 +4,17 @@
 //! RawConst, RawNamed, RawBlob, RawComm.
 
 use crate::ix::address::Address;
-use crate::ix::env::Name;
+use crate::ix::env::{Name, ReducibilityHints};
 use crate::ix::ixon::comm::Comm;
 use crate::ix::ixon::constant::Constant as IxonConstant;
-use crate::ix::ixon::env::{Env as IxonEnv, Named as IxonNamed};
+use crate::ix::ixon::env::{Env as IxonEnv, LazyIndex, Named as IxonNamed};
 use crate::ix::ixon::merkle::merkle_root_canonical;
 use crate::ix::ixon::metadata::ConstantMeta;
 use crate::lean::{
   LeanIxName, LeanIxonComm, LeanIxonConstant, LeanIxonConstantMeta,
-  LeanIxonRawBlob, LeanIxonRawComm, LeanIxonRawConst, LeanIxonRawEnv,
-  LeanIxonRawNameEntry, LeanIxonRawNamed,
+  LeanIxonRawBlob, LeanIxonRawComm, LeanIxonRawConst, LeanIxonRawConstSlice,
+  LeanIxonRawEnv, LeanIxonRawEnvLazy, LeanIxonRawNameEntry, LeanIxonRawNamed,
+  LeanIxonRawNamedLite,
 };
 use lean_ffi::object::{
   LeanArray, LeanBorrowed, LeanByteArray, LeanExcept, LeanOwned, LeanRef,
@@ -473,5 +474,101 @@ pub extern "C" fn rs_de_env_anon(
       let msg = format!("rs_de_env_anon: {}", e);
       LeanExcept::error_string(&msg)
     },
+  }
+}
+
+// =============================================================================
+// rs_de_env_lazy: zero-copy, metadata-light deserialization for the Aiur
+// check path. Parses the env once in Rust (reusing the proven section parsers,
+// so every metadata variant — e.g. CallSite — is handled) and hands Lean only:
+//   - per-const (addr, offset, len) windows into the *same* buffer Lean passed
+//     in (no constant bytes copied across the boundary),
+//   - name -> addr,
+//   - per-Defn reducibility hints,
+//   - copied blobs.
+// Lean then stores byte-window `LazyConstant`s and materializes only the
+// closure it actually checks. See `Ix.Ixon.deEnvAnon`.
+// =============================================================================
+
+/// Encode an optional reducibility hint as `(kind, val)` for the FFI:
+/// `0` = none (not a Defn), `1` = Opaque, `2` = Abbrev, `3` = Regular(val).
+fn encode_hint(hint: &Option<ReducibilityHints>) -> (u64, u64) {
+  match hint {
+    None => (0, 0),
+    Some(ReducibilityHints::Opaque) => (1, 0),
+    Some(ReducibilityHints::Abbrev) => (2, 0),
+    Some(ReducibilityHints::Regular(n)) => (3, u64::from(*n)),
+  }
+}
+
+impl LeanIxonRawConstSlice<LeanOwned> {
+  /// Build `Ixon.RawConstSlice { addr, offset, len }`.
+  pub fn build(addr: &Address, offset: usize, len: usize) -> Self {
+    let ctor = LeanIxonRawConstSlice::alloc(0);
+    ctor.set_obj(0, LeanIxAddress::build(addr));
+    ctor.set_num_64(0, offset as u64);
+    ctor.set_num_64(1, len as u64);
+    ctor
+  }
+}
+
+impl LeanIxonRawNamedLite<LeanOwned> {
+  /// Build `Ixon.RawNamedLite { name, addr, hintKind, hintVal }`.
+  pub fn build(
+    cache: &mut LeanBuildCache,
+    name: &Name,
+    addr: &Address,
+    hint: &Option<ReducibilityHints>,
+  ) -> Self {
+    let (kind, val) = encode_hint(hint);
+    let ctor = LeanIxonRawNamedLite::alloc(0);
+    ctor.set_obj(0, LeanIxName::build(cache, name));
+    ctor.set_obj(1, LeanIxAddress::build(addr));
+    ctor.set_num_64(0, kind);
+    ctor.set_num_64(1, val);
+    ctor
+  }
+}
+
+/// Build a Lean `Ixon.RawEnvLazy` from a parsed [`LazyIndex`].
+fn build_raw_env_lazy(index: &LazyIndex) -> LeanIxonRawEnvLazy<LeanOwned> {
+  let mut cache = LeanBuildCache::new();
+
+  let consts_arr = LeanArray::alloc(index.consts.len());
+  for (i, c) in index.consts.iter().enumerate() {
+    consts_arr.set(i, LeanIxonRawConstSlice::build(&c.addr, c.offset, c.len));
+  }
+
+  let named_arr = LeanArray::alloc(index.named.len());
+  for (i, n) in index.named.iter().enumerate() {
+    named_arr.set(
+      i,
+      LeanIxonRawNamedLite::build(&mut cache, &n.name, &n.addr, &n.hint),
+    );
+  }
+
+  let blobs_arr = LeanArray::alloc(index.blobs.len());
+  for (i, (addr, bytes)) in index.blobs.iter().enumerate() {
+    blobs_arr.set(i, LeanIxonRawBlob::build_from_parts(addr, bytes));
+  }
+
+  let ctor = LeanIxonRawEnvLazy::alloc(0);
+  ctor.set_obj(0, consts_arr);
+  ctor.set_obj(1, named_arr);
+  ctor.set_obj(2, blobs_arr);
+  ctor
+}
+
+/// FFI: Deserialize ByteArray -> Except String Ixon.RawEnvLazy. Pure. The
+/// constants are returned as offset windows into the *input* buffer; the Lean
+/// side must reuse that same buffer when reconstructing the env.
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_de_env_lazy(
+  obj: LeanByteArray<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  let data = obj.as_bytes();
+  match crate::ix::ixon::env::Env::parse_lazy_index(data) {
+    Ok(index) => LeanExcept::ok(build_raw_env_lazy(&index)),
+    Err(e) => LeanExcept::error_string(&format!("rs_de_env_lazy: {e}")),
   }
 }
