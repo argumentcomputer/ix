@@ -7,6 +7,7 @@ public import Ix.Aiur.Goldilocks
 public import Ix.Aiur.Protocol
 public import Ix.Aiur.Compiler
 public import Ix.Aiur.Interpret
+public import Ix.Aiur.Statistics
 
 public section
 
@@ -21,6 +22,10 @@ structure AiurTestCase where
   expectedIOBuffer : Aiur.IOBuffer := default
   interpret : Bool := true
   executionOnly : Bool := false
+  /-- When set, asserts the total FFT cost equals this value (rounded to
+      `UInt64`). Pins per-circuit cost regressions: any kernel change that
+      shifts FFT cost forces a manual update to the expected value. -/
+  expectedFftCost : Option Nat := none
 
 def AiurTestCase.noIO (functionName : Lean.Name)
     (input expectedOutput : Array Aiur.G) : AiurTestCase :=
@@ -81,12 +86,19 @@ def AiurTestEnv.runTestCase (env : AiurTestEnv) (testCase : AiurTestCase) : Test
   let funIdx := env.compiled.getFuncIdx testCase.functionName |>.get!
   match env.compiled.bytecode.execute funIdx testCase.input testCase.inputIOBuffer with
   | .error e => test s!"Execute succeeds for {label}: {e}" false
-  | .ok (execOutput, execIOBuffer, _queryCounts) =>
+  | .ok (execOutput, execIOBuffer, queryCounts) =>
     let execOutputTest := test s!"Execute output matches for {label}"
       (execOutput == testCase.expectedOutput)
     let execIOTest := test s!"Execute IOBuffer matches for {label}"
       (execIOBuffer == testCase.expectedIOBuffer)
-    let execTest := execOutputTest ++ execIOTest
+    let fftTest := match testCase.expectedFftCost with
+      | none => .done
+      | some expected =>
+        let stats := Aiur.computeStats env.compiled queryCounts
+        let actual := stats.totalFftCost.round.toUInt64.toNat
+        test s!"FFT cost matches for {label}: expected {expected}, got {actual}"
+          (actual == expected)
+    let execTest := execOutputTest ++ execIOTest ++ fftTest
     let interpTest :=
       if testCase.interpret then env.interpTest testCase execOutput execIOBuffer
       else .done

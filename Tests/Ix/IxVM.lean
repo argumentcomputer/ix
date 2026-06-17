@@ -106,30 +106,61 @@ public def kernelCheck (name : Lean.Name) (env : Lean.Environment) :
          expectedIOBuffer := witness.inputIOBuffer
          interpret := false, executionOnly := true }
 
-/-- Names listed as strings to dodge name-quotation parser issues with
-    numeric components (e.g. `_private...0...`). -/
-private def kernelCheckNames : List String := [
+/-- Kernel-check targets paired with their expected total FFT cost
+    (rounded to `Nat`). Names listed as strings to dodge name-quotation
+    parser issues with numeric components (e.g. `_private...0...`).
+
+    The pinned cost makes any kernel change that shifts FFT cost cause a
+    test failure, forcing a manual bump here. Failures report the
+    observed cost in the message so it can be pasted back. -/
+private def kernelCheckEntries : List (String × Nat) := [
   -- Stdlib
-  "HEq", "HEq.rec", "Eq.rec",
-  "Nat", "Nat.add", "Nat.add_comm", "Nat.decEq", "Nat.decLe",
-  "Nat.sub_le_of_le_add",
+  ("HEq",                                                                1_716_582),
+  ("HEq.rec",                                                            2_692_988),
+  ("Eq.rec",                                                             2_575_400),
+  ("Nat",                                                                1_857_523),
+  ("Nat.add",                                                            13_343_000),
+  ("Nat.add_comm",                                                       56_084_908),
+  ("Nat.decEq",                                                          71_921_625),
+  ("Nat.decLe",                                                          209_641_496),
+  ("Nat.sub_le_of_le_add",                                               567_575_653),
+  -- Newly-unlocked targets (level_leq Géran normalize).
+  ("Trans.mk",                                                           2_911_629),
+  ("Array.append_assoc",                                                 3_938_574_533),
+  ("Vector.append",                                                      4_023_268_168),
   -- Primitive reduction theorems (`IxVMPrim`)
-  "IxVMPrim.nat_add_lit", "IxVMPrim.nat_sub_lit", "IxVMPrim.nat_mul_lit",
-  "IxVMPrim.nat_mul_big",
-  "IxVMPrim.nat_div_lit", "IxVMPrim.nat_mod_lit", "IxVMPrim.nat_succ_lit",
-  "IxVMPrim.nat_pred_lit", "IxVMPrim.nat_gcd_lit",
-  "IxVMPrim.nat_land_lit", "IxVMPrim.nat_lor_lit", "IxVMPrim.nat_xor_lit",
-  "IxVMPrim.nat_shl_lit", "IxVMPrim.nat_shr_lit",
-  "IxVMPrim.nat_beq_lit", "IxVMPrim.nat_ble_lit",
-  "IxVMPrim.nat_dec_le", "IxVMPrim.nat_dec_lt", "IxVMPrim.nat_dec_eq",
-  "IxVMPrim.str_size_lit", "IxVMPrim.bv_to_nat_lit",
+  ("IxVMPrim.nat_add_lit",                                               28_639_807),
+  ("IxVMPrim.nat_sub_lit",                                               34_436_244),
+  ("IxVMPrim.nat_mul_lit",                                               25_101_067),
+  ("IxVMPrim.nat_mul_big",                                               24_580_879),
+  ("IxVMPrim.nat_div_lit",                                               405_607_545),
+  ("IxVMPrim.nat_mod_lit",                                               414_695_549),
+  ("IxVMPrim.nat_succ_lit",                                              7_330_826),
+  ("IxVMPrim.nat_pred_lit",                                              14_804_098),
+  ("IxVMPrim.nat_gcd_lit",                                               665_518_356),
+  ("IxVMPrim.nat_land_lit",                                              1_138_665_214),
+  ("IxVMPrim.nat_lor_lit",                                               1_139_887_801),
+  ("IxVMPrim.nat_xor_lit",                                               1_149_371_965),
+  ("IxVMPrim.nat_shl_lit",                                               35_417_490),
+  ("IxVMPrim.nat_shr_lit",                                               411_128_901),
+  ("IxVMPrim.nat_beq_lit",                                               24_752_029),
+  ("IxVMPrim.nat_ble_lit",                                               23_016_526),
+  ("IxVMPrim.nat_dec_le",                                                216_661_883),
+  ("IxVMPrim.nat_dec_lt",                                                220_751_034),
+  ("IxVMPrim.nat_dec_eq",                                                86_118_842),
+  ("IxVMPrim.str_size_lit",                                              802_563_877),
+  ("IxVMPrim.bv_to_nat_lit",                                             635_780_327),
   -- Mutual block + multi-member recursors
-  "IxVMInd.Even", "IxVMInd.Odd", "IxVMInd.Even.rec", "IxVMInd.Odd.rec",
+  ("IxVMInd.Even",                                                       26_482_492),
+  ("IxVMInd.Odd",                                                        26_245_849),
+  ("IxVMInd.Even.rec",                                                   32_164_273),
+  ("IxVMInd.Odd.rec",                                                    32_163_380),
   -- Nested inductive + aux recursor (Tree.mk : List Tree → Tree)
-  "IxVMInd.Tree", "IxVMInd.Tree.rec",
+  ("IxVMInd.Tree",                                                       2_633_415),
+  ("IxVMInd.Tree.rec",                                                   4_858_321),
   -- Edge cases from prelude
-  "String.Internal.append",
-  "_private.Init.Prelude.0.Lean.extractMainModule._unsafe_rec"
+  ("String.Internal.append",                                             793_580_333),
+  ("_private.Init.Prelude.0.Lean.extractMainModule._unsafe_rec",         1_197_925_029),
 ]
 
 private def nameOfString (str : String) : Lean.Name :=
@@ -139,7 +170,9 @@ private def nameOfString (str : String) : Lean.Name :=
     | none   => .mkStr acc s
 
 public def kernelChecks (env : Lean.Environment) : IO (List AiurTestCase) :=
-  kernelCheckNames.map nameOfString |>.mapM (kernelCheck · env)
+  kernelCheckEntries.mapM fun (name, expected) => do
+    let tc ← kernelCheck (nameOfString name) env
+    pure { tc with expectedFftCost := some expected }
 
 /-! ## Claim variant smoke tests
 
