@@ -1,0 +1,82 @@
+name: Track benchmarks on bencher
+description: >-
+  Run `bencher run` for the `ix` project, windowing deterministic "stepping"
+  measures to commits since the last lean-toolchain bump (and dropping them on
+  the bump commit via --thresholds-reset, so a toolchain step lands without a
+  spurious alert). The calling job must check out with fetch-depth: 0.
+
+inputs:
+  testbed:
+    description: Bencher testbed name.
+    required: true
+  file:
+    description: Bencher Metric Format JSON file to upload.
+    required: true
+  key:
+    description: BENCHER_API_KEY (project-scoped `bencher_run_*` or user-scoped `bencher_user_*`).
+    required: true
+  github-token:
+    description: GITHUB_TOKEN, for the --github-actions comment.
+    required: true
+  always-thresholds:
+    description: >-
+      Raw `--threshold-measure …` flags for measures tracked on every commit
+      (non-stepping). Word-split, so keep each flag a single token.
+    required: false
+    default: ""
+  stepping-measures:
+    description: >-
+      Space-separated measure names that step on a toolchain bump (e.g.
+      "file-size constants" or "fft-cost"). Windowed to commits-since-bump and
+      omitted on the bump commit.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - uses: bencherdev/bencher@v0.6.7
+    - shell: bash
+      env:
+        BENCHER_KEY: ${{ inputs.key }}
+        GH_TOKEN: ${{ inputs.github-token }}
+        TESTBED: ${{ inputs.testbed }}
+        FILE: ${{ inputs.file }}
+        ALWAYS_THRESHOLDS: ${{ inputs.always-thresholds }}
+        STEPPING_MEASURES: ${{ inputs.stepping-measures }}
+      run: |
+        # Sample only commits since lean-toolchain last changed, so a stepping
+        # measure's baseline window never straddles a toolchain bump.
+        last_bump=$(git log -1 --format=%H -- lean-toolchain)
+        sample=$(git rev-list --count "${last_bump}..HEAD")
+        [ "$sample" -gt 64 ] && sample=64
+        echo "commits since last lean-toolchain bump (capped 64): $sample"
+        # On the bump commit (sample=0) omit the stepping measures entirely;
+        # --thresholds-reset then clears their models so the step doesn't alert.
+        # Between bumps these measures are deterministic, so pin them exactly
+        # (0% on both sides): any change in either direction is a real circuit
+        # or closure change, not noise, and should alert.
+        step_thresholds=()
+        if [ "$sample" -gt 0 ]; then
+          for m in $STEPPING_MEASURES; do
+            step_thresholds+=(
+              --threshold-measure "$m"
+              --threshold-test percentage
+              --threshold-max-sample-size "$sample"
+              --threshold-upper-boundary 0
+              --threshold-lower-boundary 0
+            )
+          done
+        fi
+        bencher run \
+          --project ix \
+          --key "$BENCHER_KEY" \
+          --branch "$GITHUB_REF_NAME" \
+          --hash "$GITHUB_SHA" \
+          --testbed "$TESTBED" \
+          --adapter json \
+          --github-actions "$GH_TOKEN" \
+          $ALWAYS_THRESHOLDS \
+          "${step_thresholds[@]}" \
+          --thresholds-reset \
+          --file "$FILE"

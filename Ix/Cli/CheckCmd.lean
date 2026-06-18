@@ -32,28 +32,14 @@ public import Ix.IxVM.ClaimHarness
 public import Ix.Ixon
 public import Ix.Meta
 public import Ix.Store
+public import Ix.Cli.NameResolve
 
 public section
 
 open IxVM.ClaimHarness
+open Ix.Cli.NameResolve
 
 namespace Ix.Cli.CheckCmd
-
-def parseName (arg : String) : Lean.Name :=
-  arg.splitOn "." |>.foldl (init := .anonymous)
-    fun acc s => match s.toNat? with
-      | some n => Lean.Name.mkNum acc n
-      | none   => Lean.Name.mkStr acc s
-
-/-- Resolve a CLI name argument against the env. `parseName` can't rebuild
-    private names (`_private.M.0.foo`) — the marker/scope-index components
-    don't round-trip through naive dot-splitting. So if the parsed name
-    isn't present, fall back to matching the arg against each constant's
-    `toString` (the displayed form the user copied). -/
-def resolveName (env : Lean.Environment) (arg : String) : Option Lean.Name :=
-  let parsed := parseName arg
-  if env.constants.contains parsed then some parsed
-  else (env.constants.toList.find? (fun (k, _) => toString k == arg)).map (·.1)
 
 def addrOfHex! (label : String) (s : String) : IO Address := do
   match Address.fromString s with
@@ -91,22 +77,6 @@ def loadClaimAndTrees (claimHex : String) :
       throw <| IO.userError s!"error: tree stored at {r} has merkle root {tree.root}"
     trees := trees.insert r tree
   return (claim, trees)
-
-/-- Reverse of `Ix.Name.fromLeanName`. Drops the per-node hash. -/
-partial def ixNameToLeanName : Ix.Name → Lean.Name
-  | .anonymous _ => .anonymous
-  | .str p s _ => .str (ixNameToLeanName p) s
-  | .num p n _ => .num (ixNameToLeanName p) n
-
-/-- Resolve a CLI name argument against a `.ixe` env's named map. Like
-    `resolveName` for the compiled-in env: `parseName` can't rebuild private
-    names, so when the direct lookup misses, fall back to matching the arg
-    against each named constant's displayed `toString`. -/
-def resolveIxeAddr (ixonEnv : Ixon.Env) (arg : String) : Option Address :=
-  match ixonEnv.getAddr? (Ix.Name.fromLeanName (parseName arg)) with
-  | some a => some a
-  | none =>
-    (ixonEnv.named.toList.find? (fun (k, _) => toString (ixNameToLeanName k) == arg)).map (·.2.addr)
 
 /-- Build a `ClaimWitness` for the `verify_claim` entrypoint against
     `Ix.Claim.check addr none` (full transitive typecheck of the
