@@ -12,7 +12,7 @@ name: Aiur benchmarks
 
 on:
   push:
-    branches: sb/aiur-ci-bench
+    branches: main
   workflow_dispatch:
 
 permissions:
