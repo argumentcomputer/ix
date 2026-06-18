@@ -175,6 +175,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "bincode"
+version = "3.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fd6a120d2e16b3e1b4a24bd70f23b12d3e16b81f113364a26935f8db7245452d"
+
+[[package]]
 name = "bincode_derive"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1725,7 +1731,7 @@ name = "ix_rs"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "bincode",
+ "bincode 3.0.0",
  "blake3",
  "bytes",
  "dashmap",
@@ -1959,7 +1965,7 @@ name = "multi-stark"
 version = "0.1.0"
 source = "git+https://github.com/argumentcomputer/multi-stark.git?rev=9ecab51d553445c0cc7b571af00a76b8a83a6f8c#9ecab51d553445c0cc7b571af00a76b8a83a6f8c"
 dependencies = [
- "bincode",
+ "bincode 2.0.1",
  "p3-air",
  "p3-challenger",
  "p3-commit",
@@ -3175,7 +3181,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3561,7 +3567,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "230a1b821ccbd75b185820a1f1ff7b14d21da1e442e22c0863ea5f08771a8874"
 dependencies = [
  "rustix",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
