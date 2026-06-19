@@ -5,9 +5,11 @@
   (`aiur/execute`, `aiur/witness`, `aiur/prove`) and each STARK proving
   stage (`stark/...`). After `init` installs the subscriber:
     * a one-line `[texray] <span>: <dur>  ── RAM Δ +X peak Y` is streamed
-      to stderr as each tracked span closes (when `streaming = true`);
-    * the full texray graph (with RAM block, Linux-only) prints when
-      `aiur/prove` exits.
+      to stderr as each tracked span closes (when `streaming = true`),
+      followed by a companion `[texray] <span> peak-rss-bytes=<N>
+      (<X.YZ MiB>)` line carrying the raw peak in bytes for programmatic
+      consumers (CI bench, grep);
+    * the full texray graph prints when `aiur/prove` exits.
 -/
 
 module

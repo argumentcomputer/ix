@@ -2,8 +2,10 @@
 //!
 //! With `streaming = true`, each tracked span (e.g. `aiur/execute`,
 //! `aiur/witness`, `aiur/prove`) emits a one-line `[texray] <name>: <dur>
-//!   ── RAM Δ +X peak Y` to stderr as it closes, and the full texray
-//! graph prints when the examined root span exits.
+//!   ── RAM Δ +X peak Y` to stderr as it closes, followed by a companion
+//! `[texray] <name> peak-rss-bytes=<N> (<X.YZ MiB>)` line (raw bytes for
+//! CI/grep). The full texray graph prints when the examined root span
+//! exits.
 
 use lean_ffi::object::{LeanBorrowed, LeanIOResult, LeanOwned, LeanString};
 use tracing_subscriber::{
@@ -22,8 +24,9 @@ use tracing_subscriber::{
 ///   everything, including upstream library spans.
 /// - `track_ram`: sample VmRSS/VmHWM per span. Linux-only; zeros elsewhere.
 /// - `streaming`: emit per-span `[texray] <name>: <dur>  ── RAM Δ +X peak Y`
-///   lines on stderr as each span closes. The texray graph prints either
-///   way when the examined root span exits.
+///   plus a `[texray] <name> peak-rss-bytes=<N> (<X.YZ MiB>)` companion on
+///   stderr as each span closes. The texray graph prints either way when
+///   the examined root span exits.
 #[unsafe(no_mangle)]
 extern "C" fn rs_texray_init(
   name_prefixes: LeanString<LeanBorrowed<'_>>,

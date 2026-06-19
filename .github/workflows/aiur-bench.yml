@@ -1,0 +1,259 @@
+name: Aiur benchmarks
+
+# One workflow, two benchmarks per library env, on every push to main:
+#   1. compile job — `ix compile` the Lean env to a `.ixe` (compile-throughput
+#                    metrics) and cache the `.ixe`.
+#   2. prove job   — restore that `.ixe` from the cache (no recompile) and
+#                    STARK-check selected constants over it via bench-typecheck
+#                    (Aiur execute + prove metrics).
+# The prove job reuses the exact `.ixe` the compile job built, so the compiler
+# runs once. Compile and prove report to separate bencher testbeds so each one's
+# `--thresholds-reset` only touches its own measures.
+
+on:
+  push:
+    branches: main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  checks: write
+
+env:
+  COMPILE_DIR: Benchmarks/Compile
+
+jobs:
+  # Build + stage the `ix` and `bench-typecheck` binaries once, then restore
+  # them on the (more expensive) matrix runners.
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      # Pinned Rust toolchain + cargo cache (~/.cargo + target/, via the action's
+      # built-in rust-cache), so `lake build`'s cargo step doesn't recompile the
+      # Plonky3/multi-stark deps from scratch on every run.
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      # `.cargo/config.toml` sets `-Ctarget-cpu=native`, and the binary is built
+      # once here (then only restored on the warp runners), so this build host's
+      # CPU fixes the instruction set baked in — incl. AVX-512, a big Plonky3
+      # speedup. Log it so a benchmark shift can be traced to a build-CPU change.
+      - name: Log build CPU
+        run: |
+          lscpu
+          grep -qw avx512f /proc/cpuinfo \
+            && echo "AVX-512F: present (compiled into the binary)" \
+            || echo "AVX-512F: absent"
+      - uses: leanprover/lean-action@v1
+        with:
+          auto-config: false
+          build: true
+          build-args: "ix --wfail -v"
+      - run: |
+          mkdir -p ~/.local/bin
+          echo | lake run install            # copies ix -> ~/.local/bin/ix
+          lake build bench-typecheck
+          cp .lake/build/bin/bench-typecheck ~/.local/bin/bench-typecheck
+          chmod +x ~/.local/bin/bench-typecheck
+      - uses: actions/cache/save@v5
+        with:
+          path: ~/.local/bin
+          key: aiur-bench-bins-${{ github.sha }}
+
+  # Compile each library env to a `.ixe` and track compile throughput. Caches
+  # the `.ixe` (keyed by sha + matrix job) for the prove job to consume.
+  compile:
+    needs: build
+    runs-on: warp-ubuntu-latest-x64-32x
+    strategy:
+      fail-fast: false
+      matrix:
+        bench: [InitStd, Lean, Mathlib, FLT] # Add FC if updated to latest Lean
+        include:
+          - bench: Mathlib
+            mathlib: true
+          - bench: FLT
+            cache_pkg: flt
+            mathlib: true
+          # - bench: FC
+          #   cache_pkg: formal_conjectures
+          #   mathlib: true
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/cache/restore@v5
+        with:
+          path: ~/.local/bin
+          key: aiur-bench-bins-${{ github.sha }}
+      - run: echo "$HOME/.local/bin" >> $GITHUB_PATH
+      # FC's library env lives in a sibling `${COMPILE_DIR}FC` package dir, so
+      # point COMPILE_DIR there for the FC matrix job.
+      # - if: matrix.bench == 'FC'
+      #   run: echo "COMPILE_DIR=${{ env.COMPILE_DIR }}FC" | tee -a $GITHUB_ENV
+      # Download elan; fetch the mathlib cache only for benches that import
+      # Mathlib (Mathlib, FLT) — InitStd/Lean would otherwise pull it for
+      # nothing, since the shared Benchmarks/Compile package depends on mathlib.
+      - uses: leanprover/lean-action@v1
+        with:
+          lake-package-directory: ${{ env.COMPILE_DIR }}
+          auto-config: false
+          use-github-cache: false
+          use-mathlib-cache: ${{ matrix.mathlib && 'true' || 'false' }}
+      # FLT and FC take a few minutes to rebuild, so cache their build artifacts.
+      - if: matrix.cache_pkg
+        uses: actions/cache@v5
+        with:
+          path: ${{ env.COMPILE_DIR }}/.lake/packages/${{ matrix.cache_pkg }}/.lake/build
+          key: ${{ matrix.cache_pkg }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles(format('{0}/lean-toolchain', env.COMPILE_DIR)) }}-${{ hashFiles(format('{0}/lake-manifest.json', env.COMPILE_DIR)) }}
+      # No `--wfail` here: formal-conjectures (FC) emits a copyright-notice
+      # warning that must not fail the build.
+      - run: lake build Compile${{ matrix.bench }}
+        working-directory: ${{ env.COMPILE_DIR }}
+      # Serialize the env to a `.ixe` and emit the `##benchmark##` line.
+      - name: Run ix compile
+        run: |
+          ix compile ${{ env.COMPILE_DIR }}/Compile${{ matrix.bench }}.lean \
+            --out ${{ matrix.bench }}.ixe 2>&1 | tee output.txt
+      # Cache the `.ixe` for the prove job (reused, never recompiled there).
+      # Only the matrix jobs the prove job consumes, to stay under the repo cache limit.
+      - if: matrix.bench == 'InitStd' || matrix.bench == 'Mathlib'
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ matrix.bench }}.ixe
+          key: aiur-ixe-${{ github.sha }}-${{ matrix.bench }}
+      - name: Generate compile benchmark JSON
+        run: |
+          line=$(grep '^##benchmark##' output.txt)
+          elapsed_s=$(echo "$line" | awk '{printf "%.3f", $2 / 1000}')
+          bytes=$(echo "$line" | awk '{print $3}')
+          constants=$(echo "$line" | awk '{print $4}')
+          throughput=$(echo "$line" | awk '{if ($2 > 0) printf "%.2f", $4 * 1000 / $2; else print 0}')
+          cat > benchmark.json <<EOF
+          {
+            "${{ matrix.bench }}": {
+              "compile-time": {"value": ${elapsed_s}},
+              "file-size": {"value": ${bytes}},
+              "throughput": {"value": ${throughput}},
+              "constants": {"value": ${constants}}
+            }
+          }
+          EOF
+      # Upload compile metrics. file-size/constants step on a toolchain bump, so
+      # they're the bump-windowed stepping measures; compile-time/throughput ride
+      # their normal 64-window (throughput's regression is a drop, hence its
+      # lower boundary).
+      - uses: ./.github/actions/bencher-track
+        with:
+          testbed: warp-ubuntu-x64-32x
+          file: benchmark.json
+          key: ${{ secrets.BENCHER_API_KEY }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          stepping-measures: file-size constants
+          always-thresholds: |
+            --threshold-measure compile-time --threshold-test percentage
+            --threshold-max-sample-size 64 --threshold-upper-boundary 0.05
+            --threshold-lower-boundary _
+            --threshold-measure throughput --threshold-test percentage
+            --threshold-max-sample-size 64 --threshold-upper-boundary _
+            --threshold-lower-boundary 0.05
+
+  # Restore each matrix job's `.ixe` from the cache and run the Aiur execute + prove
+  # benchmark over selected constants. No compiler run here.
+  prove:
+    needs: compile
+    runs-on: warp-ubuntu-latest-x64-32x
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - bench: InitStd
+            consts: Nat.add_comm Nat.sub_le_of_le_add String.append Array.append_assoc
+          - bench: Mathlib
+            consts: Nat.factorial Nat.Coprime Nat.Prime.two_le
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0   # full history for the toolchain-bump sample-size query
+      - uses: actions/cache/restore@v5
+        with:
+          path: ~/.local/bin
+          key: aiur-bench-bins-${{ github.sha }}
+      - run: echo "$HOME/.local/bin" >> $GITHUB_PATH
+      # Provision the toolchain so the bench-typecheck binary finds libleanshared
+      # (no package build). use-github-cache off: nothing to cache here, and
+      # parallel matrix jobs share a key and would race the cache save.
+      - uses: leanprover/lean-action@v1
+        with:
+          auto-config: false
+          build: false
+          use-github-cache: false
+      # Pull the `.ixe` the compile job built — do NOT recompile it here.
+      - uses: actions/cache/restore@v5
+        with:
+          path: ${{ matrix.bench }}.ixe
+          key: aiur-ixe-${{ github.sha }}-${{ matrix.bench }}
+          fail-on-cache-miss: true
+      # Run each constant in its own process so a clean failure or timeout drops
+      # only that constant from the report. NB: a constant heavy enough to OOM
+      # the runner host still cancels the whole job (an OOM SIGKILL of the host
+      # is uncatchable here), so every listed constant must fit in runner RAM.
+      # RAM is tracked via tracing-texray's machine-readable streaming lines
+      # (`[texray] <span> peak-rss-bytes=<N> (<X.YZ MiB>)`, emitted as each
+      # span closes): we parse the raw byte integer (awk's `$2+0` stops at
+      # the first non-digit, ignoring the parenthesized human suffix) and
+      # fold the max over spans in as `peak-rss` (bytes), the proving RSS
+      # high-water mark.
+      - name: Run Aiur typecheck benchmark
+        run: |
+          measure() {
+            local c="$1" rss
+            timeout 20m bench-typecheck --ixe ${{ matrix.bench }}.ixe "$c" \
+              --json "res-$c.json" --texray 2>"tx-$c.log" \
+              || echo "warning: $c failed (OOM/timeout); dropping it from this report"
+            rss=$(awk -F'peak-rss-bytes=' 'NF>1 && $2+0>max {max=$2+0} END {if (max>0) print max}' "tx-$c.log")
+            if [ -f "res-$c.json" ] && [ -n "$rss" ] && [ "$rss" -gt 0 ]; then
+              jq --argjson rss "$rss" 'map_values(. + {"peak-rss": $rss})' \
+                "res-$c.json" > "res-$c.json.tmp" && mv "res-$c.json.tmp" "res-$c.json" || true
+            fi
+          }
+          for c in ${{ matrix.consts }}; do measure "$c"; done
+          # Merge the per-constant results; if none produced anything, emit `{}`.
+          jq -s 'reduce .[] as $o ({}; . + $o)' res-*.json > results.json 2>/dev/null \
+            || echo '{}' > results.json
+          [ -s results.json ] || echo '{}' > results.json
+          # Wrap each metric value as { "value": v } for Bencher Metric Format.
+          # bench-typecheck already emits slug keys (constants, fft-cost,
+          # execute-time, prove-time, throughput = constants/prove-time); peak-rss
+          # is injected above.
+          jq '
+            map_values(to_entries | map({(.key): {value: .value}}) | add)
+          ' results.json > aiur.json
+          cat aiur.json
+      # Upload Aiur metrics. fft-cost and constants are deterministic and step on a
+      # toolchain bump (a different stdlib changes the constants' circuits and
+      # closure sizes), so they're the bump-windowed stepping measures — same
+      # treatment compile gives file-size/constants. prove-time/execute-time,
+      # peak-rss (texray's proving RSS high-water mark), and throughput
+      # (constants/prove-time, like compile's, where a drop is the regression)
+      # are noisy wall-clock and ride their normal 64-window.
+      - uses: ./.github/actions/bencher-track
+        with:
+          testbed: aiur-typecheck-x64-32x
+          file: aiur.json
+          key: ${{ secrets.BENCHER_API_KEY }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          stepping-measures: fft-cost constants
+          always-thresholds: |
+            --threshold-measure prove-time --threshold-test percentage
+            --threshold-max-sample-size 64 --threshold-upper-boundary 0.10
+            --threshold-lower-boundary _
+            --threshold-measure execute-time --threshold-test percentage
+            --threshold-max-sample-size 64 --threshold-upper-boundary 0.10
+            --threshold-lower-boundary _
+            --threshold-measure peak-rss --threshold-test percentage
+            --threshold-max-sample-size 64 --threshold-upper-boundary 0.10
+            --threshold-lower-boundary _
+            --threshold-measure throughput --threshold-test percentage
+            --threshold-max-sample-size 64 --threshold-upper-boundary _
+            --threshold-lower-boundary 0.10

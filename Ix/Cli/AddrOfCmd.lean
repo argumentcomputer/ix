@@ -17,16 +17,13 @@ public import Ix.Environment
 public import Ix.IxVM.ClaimHarness
 public import Ix.Ixon
 public import Ix.Meta
+public import Ix.Cli.NameResolve
 
 public section
 
-namespace Ix.Cli.AddrOfCmd
+open Ix.Cli.NameResolve
 
-private def parseName (arg : String) : Lean.Name :=
-  arg.splitOn "." |>.foldl (init := .anonymous)
-    fun acc s => match s.toNat? with
-      | some n => Lean.Name.mkNum acc n
-      | none   => Lean.Name.mkStr acc s
+namespace Ix.Cli.AddrOfCmd
 
 def runAddrOfCmd (p : Cli.Parsed) : IO UInt32 := do
   -- Suppress Rust-side `[compile_env]` scheduler noise; the only
@@ -34,7 +31,8 @@ def runAddrOfCmd (p : Cli.Parsed) : IO UInt32 := do
   Std.Internal.UV.System.osSetenv "IX_QUIET" "1"
   let some nameArg := p.positionalArg? "name"
     | p.printError "error: must specify <Lean.Name>"; return 1
-  let name := parseName (nameArg.as! String)
+  let argStr := nameArg.as! String
+  let name := parseName argStr
   let ixePath : Option String :=
     (p.flag? "ixe").map (·.as! String)
   match ixePath with
@@ -44,7 +42,7 @@ def runAddrOfCmd (p : Cli.Parsed) : IO UInt32 := do
       | .error e =>
         IO.eprintln s!"error: failed to deserialize {path}: {e}"; return 1
       | .ok env => pure env
-    match ixonEnv.getAddr? (Ix.Name.fromLeanName name) with
+    match resolveIxeAddr ixonEnv argStr with
     | none =>
       IO.eprintln s!"error: {name} not found in {path}"; return 1
     | some addr =>

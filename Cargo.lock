@@ -3886,7 +3886,7 @@ dependencies = [
 [[package]]
 name = "tracing-texray"
 version = "0.2.0"
-source = "git+https://github.com/argumentcomputer/tracing-texray?rev=8ce04e3422cd48e68ef47fab95dba7d06b8c368c#8ce04e3422cd48e68ef47fab95dba7d06b8c368c"
+source = "git+https://github.com/argumentcomputer/tracing-texray?rev=31d194dd1bc50458d26f77c89bb68f67e5d1c149#31d194dd1bc50458d26f77c89bb68f67e5d1c149"
 dependencies = [
  "loom",
  "parking_lot",
