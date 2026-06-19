@@ -31,7 +31,7 @@ n0-error = { version = "0.1", optional = true }
 getrandom = { version = "0.3", optional = true }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-tracing-texray = { git = "https://github.com/argumentcomputer/tracing-texray", rev = "c42fa4ef6232ba28ecf464882958a745d17c8a1a" }
+tracing-texray = { git = "https://github.com/argumentcomputer/tracing-texray", rev = "31d194dd1bc50458d26f77c89bb68f67e5d1c149" }
 bincode = { version = "2.0.1", optional = true }
 serde = { version = "1.0.219", features = ["derive"], optional = true }
 

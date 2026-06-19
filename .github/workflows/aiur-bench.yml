@@ -199,8 +199,10 @@ jobs:
       # the runner host still cancels the whole job (an OOM SIGKILL of the host
       # is uncatchable here), so every listed constant must fit in runner RAM.
       # RAM is tracked via tracing-texray's machine-readable streaming lines
-      # (`[texray] <span> peak-rss-bytes=<N>`, emitted as each span closes): the
-      # max over spans is folded in as `peakRss` (bytes), the proving RSS
+      # (`[texray] <span> peak-rss-bytes=<N> (<X.YZ MiB>)`, emitted as each
+      # span closes): we parse the raw byte integer (awk's `$2+0` stops at
+      # the first non-digit, ignoring the parenthesized human suffix) and
+      # fold the max over spans in as `peak-rss` (bytes), the proving RSS
       # high-water mark.
       - name: Run Aiur typecheck benchmark
         run: |
