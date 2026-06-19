@@ -745,31 +745,36 @@ def primitive := ⟦
   }
 
   -- Mirror: byte-wise u64_sub with explicit final borrow.
+  -- Per-byte: u_t = borrow(a_i - b_i); u_r = borrow((a_i + 256 - b_i) - br_in).
+  -- u_t = 1 ⇒ a_i + 256 - b_i ≥ 1 ⇒ subtracting br_in ∈ {0,1} cannot underflow
+  -- ⇒ u_r = 0. So `u_t` and `u_r` are mutually-exclusive 0/1 values; field `+`
+  -- substitutes for `g_or` (which charges +1 aux +1 lookup per call). See
+  -- [[reference_aiur_carry_add]].
   fn u64_sub_with_borrow(a: U64, b: U64) -> (U64, G) {
     let [a0, a1, a2, a3, a4, a5, a6, a7] = a;
     let [b0, b1, b2, b3, b4, b5, b6, b7] = b;
     let (r0, br1) = u8_sub(a0, b0);
     let (t1, u_t1) = u8_sub(a1, b1);
     let (r1, u_r1) = u8_sub(t1, br1);
-    let br2 = g_or(to_field(u_t1), to_field(u_r1));
+    let br2 = to_field(u_t1) + to_field(u_r1);
     let (t2, u_t2) = u8_sub(a2, b2);
     let (r2, u_r2) = u8_sub(t2, u8_from_field_unsafe(br2));
-    let br3 = g_or(to_field(u_t2), to_field(u_r2));
+    let br3 = to_field(u_t2) + to_field(u_r2);
     let (t3, u_t3) = u8_sub(a3, b3);
     let (r3, u_r3) = u8_sub(t3, u8_from_field_unsafe(br3));
-    let br4 = g_or(to_field(u_t3), to_field(u_r3));
+    let br4 = to_field(u_t3) + to_field(u_r3);
     let (t4, u_t4) = u8_sub(a4, b4);
     let (r4, u_r4) = u8_sub(t4, u8_from_field_unsafe(br4));
-    let br5 = g_or(to_field(u_t4), to_field(u_r4));
+    let br5 = to_field(u_t4) + to_field(u_r4);
     let (t5, u_t5) = u8_sub(a5, b5);
     let (r5, u_r5) = u8_sub(t5, u8_from_field_unsafe(br5));
-    let br6 = g_or(to_field(u_t5), to_field(u_r5));
+    let br6 = to_field(u_t5) + to_field(u_r5);
     let (t6, u_t6) = u8_sub(a6, b6);
     let (r6, u_r6) = u8_sub(t6, u8_from_field_unsafe(br6));
-    let br7 = g_or(to_field(u_t6), to_field(u_r6));
+    let br7 = to_field(u_t6) + to_field(u_r6);
     let (t7, u_t7) = u8_sub(a7, b7);
     let (r7, u_r7) = u8_sub(t7, u8_from_field_unsafe(br7));
-    let final_borrow = g_or(to_field(u_t7), to_field(u_r7));
+    let final_borrow = to_field(u_t7) + to_field(u_r7);
     ([r0, r1, r2, r3, r4, r5, r6, r7], final_borrow)
   }
 
