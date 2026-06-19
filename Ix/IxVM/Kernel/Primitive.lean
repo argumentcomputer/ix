@@ -1383,8 +1383,6 @@ def primitive := ⟦
     let is_succ = address_eq(head_addr, nat_succ_addr());
     match is_succ {
       1 =>
-        -- Mirror: whnf.rs:1789-1822 try_reduce_nat_succ_iter. Single arg;
-        -- whnf, fold to Lit(n+1) on hit.
         match u32_less_than(spine_len, 1) {
           1 => (0, store(KExprNode.BVar(0))),
           0 =>
@@ -1410,30 +1408,40 @@ def primitive := ⟦
                   _ => (0, store(KExprNode.BVar(0))),
                 },
             },
-          0 =>
-            -- Binary ops: require 2 args.
-            match u32_less_than(spine_len, 2) {
-              1 => (0, store(KExprNode.BVar(0))),
-              0 =>
-                let a0_w = whnf(list_lookup(spine, 0), types, top, addrs);
-                let a1_w = whnf(list_lookup(spine, 1), types, top, addrs);
-                let pa = try_extract_nat(a0_w, addrs);
-                let pb = try_extract_nat(a1_w, addrs);
-                match pa {
-                  (1, na) =>
-                    match pb {
-                      (1, nb) =>
-                        match try_nat_binop_addr(head_addr, na, nb, addrs) {
-                          (1, result) =>
-                            let post = list_drop(spine, 2);
-                            (1, apply_spine(result, post)),
-                          (0, _) => (0, store(KExprNode.BVar(0))),
-                        },
-                      _ => (0, store(KExprNode.BVar(0))),
-                    },
-                  _ => (0, store(KExprNode.BVar(0))),
+          0 => try_nat_binop_dispatch(head_addr, spine, spine_len, types, top, addrs),
+        },
+    }
+  }
+
+  -- Cold-extracted binop arm (mirror [[reference_aiur_hot_cold_split]]).
+  -- Binop dispatch is the widest arm of `try_nat_dispatch` (2× whnf + 2×
+  -- try_extract_nat + try_nat_binop_addr + apply_spine), so it pays
+  -- max-arm-width on every Nat.succ/Nat.pred row when inlined. Factored
+  -- here so its width only charges the rows that actually dispatch a
+  -- binop.
+  fn try_nat_binop_dispatch(head_addr: Addr, spine: List‹KExpr›, spine_len: G,
+                             types: List‹KExpr›, top: List‹&KConstantInfo›,
+                             addrs: List‹Addr›) -> (G, KExpr) {
+    match u32_less_than(spine_len, 2) {
+      1 => (0, store(KExprNode.BVar(0))),
+      0 =>
+        let a0_w = whnf(list_lookup(spine, 0), types, top, addrs);
+        let a1_w = whnf(list_lookup(spine, 1), types, top, addrs);
+        let pa = try_extract_nat(a0_w, addrs);
+        let pb = try_extract_nat(a1_w, addrs);
+        match pa {
+          (1, na) =>
+            match pb {
+              (1, nb) =>
+                match try_nat_binop_addr(head_addr, na, nb, addrs) {
+                  (1, result) =>
+                    let post = list_drop(spine, 2);
+                    (1, apply_spine(result, post)),
+                  (0, _) => (0, store(KExprNode.BVar(0))),
                 },
+              _ => (0, store(KExprNode.BVar(0))),
             },
+          _ => (0, store(KExprNode.BVar(0))),
         },
     }
   }
