@@ -185,6 +185,108 @@ def infer := ⟦
   }
 
   -- ============================================================================
+  -- k_infer_only: type-synthesis-only (mirror Rust `with_infer_only`).
+  -- Skips inner validations: App drops `k_check(a, dom)`; Lam drops
+  -- `k_ensure_sort(ty)`; Let drops val/ty checks. Distinct Aiur memo from
+  -- `k_infer` (parity with Rust's separate infer_cache / infer_only_cache).
+  -- Used at try_proof_irrel / is_prop_type / try_unit_like where only the
+  -- synthesized type is needed.
+  -- ============================================================================
+  fn k_infer_only(e: KExpr, types: List‹KExpr›,
+                  top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
+    k_infer_only_core(e, ctx_trim(types, expr_lbr(e)), top, addrs)
+  }
+
+  fn k_infer_only_core(e: KExpr, types: List‹KExpr›,
+                       top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
+    match load(e) {
+      KExprNode.BVar(i) => types_lookup(types, i),
+      KExprNode.Srt(l) =>
+        store(KExprNode.Srt(store(level_reduce(KLevel.Succ(l))))),
+      KExprNode.Const(idx, lvls) =>
+        let ci = load(list_lookup(top, idx));
+        let expected = const_num_lvls(ci);
+        let given = list_length(lvls);
+        assert_eq!(given, expected);
+        let ty = const_type_of(ci);
+        expr_inst_levels(ty, lvls),
+      KExprNode.App(f, a) =>
+        let f_ty = k_infer_only(f, types, top, addrs);
+        match load(f_ty) {
+          KExprNode.Forall(_, cod) => expr_inst1(cod, a, 0),
+          _ =>
+            let f_ty_whnf = whnf(f_ty, types, top, addrs);
+            let triple = ensure_forall_post_whnf(f_ty_whnf);
+            match triple {
+              (ok, _, cod) =>
+                assert_eq!(ok, 1);
+                expr_inst1(cod, a, 0),
+            },
+        },
+      KExprNode.Lam(ty, body) =>
+        let types2 = store(ListNode.Cons(ty, types));
+        let body_ty = k_infer_only(body, types2, top, addrs);
+        store(KExprNode.Forall(ty, body_ty)),
+      KExprNode.Forall(ty, body) =>
+        let u1 = k_ensure_sort_only(ty, types, top, addrs);
+        let types2 = store(ListNode.Cons(ty, types));
+        let u2 = k_ensure_sort_only(body, types2, top, addrs);
+        store(KExprNode.Srt(store(level_imax(load(u1), load(u2))))),
+      KExprNode.Let(_, val, body) =>
+        let body_substed = expr_inst1(body, val, 0);
+        k_infer_only(body_substed, types, top, addrs),
+      KExprNode.Lit(lit) =>
+        match lit {
+          KLiteral.Nat(_) => nat_const_type(addrs),
+          KLiteral.Str(_) => str_const_type(addrs),
+        },
+      KExprNode.Proj(tidx, fidx, e1) =>
+        let val_ty = k_infer_only(e1, types, top, addrs);
+        let wty = whnf(val_ty, types, top, addrs);
+        let pair = collect_spine(wty);
+        match pair {
+          (head, args) =>
+            match load(head) {
+              KExprNode.Const(idx, lvls) =>
+                assert_eq!(idx, tidx);
+                let ind_ci = load(list_lookup(top, idx));
+                match ind_ci {
+                  KConstantInfo.Induct(_, ind_ty, n_params, n_indices, ctor_indices, _, _, _, _, _) =>
+                    assert_eq!(list_length(ctor_indices), 1);
+                    let is_prop = is_inductive_prop(ind_ty, lvls, n_params + n_indices,
+                                                     types, top, addrs);
+                    let ctor_idx = list_lookup(ctor_indices, 0);
+                    let ctor_ci = load(list_lookup(top, ctor_idx));
+                    match ctor_ci {
+                      KConstantInfo.Ctor(_, ctor_ty, _, _, _, _, _) =>
+                        let ctor_ty_inst = expr_inst_levels(ctor_ty, lvls);
+                        let after_params = peel_params_subst(ctor_ty_inst, args, n_params);
+                        peel_field_loop(after_params, fidx, 0, tidx, e1, is_prop,
+                                        types, top, addrs),
+                    },
+                },
+            },
+        },
+    }
+  }
+
+  fn k_ensure_sort_only(e: KExpr, types: List‹KExpr›,
+                        top: List‹&KConstantInfo›, addrs: List‹Addr›) -> &KLevel {
+    let ty = k_infer_only(e, types, top, addrs);
+    match load(ty) {
+      KExprNode.Srt(l) => l,
+      _ =>
+        let ty_whnf = whnf(ty, types, top, addrs);
+        let pair = ensure_sort_post_whnf(ty_whnf);
+        match pair {
+          (ok, l) =>
+            assert_eq!(ok, 1);
+            l,
+        },
+    }
+  }
+
+  -- ============================================================================
   -- Helpers: extract const declared type, Nat/Str literal types.
   -- ============================================================================
   fn const_type_of(ci: KConstantInfo) -> KExpr {
