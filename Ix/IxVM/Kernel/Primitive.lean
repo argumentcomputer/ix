@@ -1293,19 +1293,25 @@ def primitive := ⟦
           1 => (1, store(ListNode.Nil)),
           0 => (0, store(ListNode.Nil)),
         },
-      KExprNode.App(f, a) =>
-        match load(f) {
-          KExprNode.Const(idx, _) =>
-            let head_addr_ = list_lookup(addrs, idx);
-            match address_eq(head_addr_, nat_succ_addr()) {
-              1 =>
-                match try_extract_nat(a, addrs) {
-                  (1, pred_limbs) => (1, klimbs_succ(pred_limbs)),
-                  _ => (0, store(ListNode.Nil)),
-                },
-              0 => (0, store(ListNode.Nil)),
+      KExprNode.App(f, a) => try_extract_nat_app(f, a, addrs),
+      _ => (0, store(ListNode.Nil)),
+    }
+  }
+
+  -- Cold-extracted App arm: list_lookup + address_eq + recursive
+  -- try_extract_nat + klimbs_succ is the widest arm; pulling it out lets
+  -- `try_extract_nat`'s main width drop to the leaf-arm width.
+  fn try_extract_nat_app(f: KExpr, a: KExpr, addrs: List‹Addr›) -> (G, KLimbs) {
+    match load(f) {
+      KExprNode.Const(idx, _) =>
+        let head_addr_ = list_lookup(addrs, idx);
+        match address_eq(head_addr_, nat_succ_addr()) {
+          1 =>
+            match try_extract_nat(a, addrs) {
+              (1, pred_limbs) => (1, klimbs_succ(pred_limbs)),
+              _ => (0, store(ListNode.Nil)),
             },
-          _ => (0, store(ListNode.Nil)),
+          0 => (0, store(ListNode.Nil)),
         },
       _ => (0, store(ListNode.Nil)),
     }
