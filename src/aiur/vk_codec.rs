@@ -4,30 +4,190 @@
 //! lookups + widths), the shared preprocessed commitment, the preprocessed
 //! index map, and the commitment parameters — i.e. everything in
 //! [`System<AiurCircuit>`] except the prover-only preprocessed traces (the
-//! large gadget tables in each `LookupAir.preprocessed`, which are
-//! `#[serde(skip)]`-ed and reconstructed/committed separately).
+//! large gadget tables in each `LookupAir.preprocessed`), which are
+//! reconstructed/committed separately and so are *not* serialized.
 //!
-//! This uses serde (`#[derive(Serialize, Deserialize)]` on `System`, `Circuit`,
-//! `LookupAir`, `Lookup`, `SymbolicExpression`, `SymbolicVariable`, `Entry`,
-//! `CommitmentParameters`, and the Ix `AiurCircuit`/`Constraints`/`Memory`)
-//! with the **same bincode config the proof uses**
-//! (`standard().with_little_endian().with_fixed_int_encoding()`), so the wire
-//! format matches `Proof`'s and can be re-implemented in Aiur the same way.
+//! This is a **hand-written, serde-free** codec. `multi-stark` does not derive
+//! `serde` on its types, and we do not want to fork it just to add the derives,
+//! so the encoder and decoder are written by hand against the public fields of
+//! `System`, `Circuit`, `LookupAir`, `Lookup`, `SymbolicExpression`,
+//! `SymbolicVariable`, `Entry`, `CommitmentParameters` and the Ix
+//! `AiurCircuit`/`Constraints`/`Memory`. The wire format mirrors the
+//! `bincode standard().little_endian().fixed_int` layout the proof uses, so the
+//! Aiur port (`Ix/MultiStark/SystemDeserialize.lean`) can read it the same way.
+//!
+//! Wire format:
+//!   enum tag : u32 (4 bytes LE)       Option : 1 byte (0 = None / 1 = Some)
+//!   usize / u64 : 8 bytes LE          Vec : u64 length, then elements
+//!   struct : fields in declaration order      Range<usize> : start, end (u64)
+//!   Goldilocks `G` : canonical u64, 8 bytes LE (the Lean side reduces mod p on
+//!                    read; canonical and raw representations agree there)
+//!   MerkleCap : Vec<[u64; 4]>         PhantomData : 0 bytes
+//!
+//! Goldilocks note: bincode/serde would write Goldilocks' *raw* internal `u64`,
+//! but that field is `pub(crate)` inside `p3_goldilocks` and unreachable here.
+//! We instead write `as_canonical_u64()` (the reduced value) and read it back
+//! with `from_u64`. The constants that appear in a verifying key are canonical,
+//! and the Lean reader reduces mod p regardless, so the two representations are
+//! interchangeable.
 
-// The codec is exercised by tests today and wired to the FFI / Aiur port next.
+// The codec is exercised by tests and wired to the FFI / Aiur port.
 #![allow(dead_code)]
 
-use bincode::{
-  config::{Configuration, Fixint, LittleEndian, standard},
-  serde::{decode_from_slice, encode_to_vec},
+use multi_stark::{
+  builder::symbolic::{Entry, SymbolicExpression, SymbolicVariable},
+  lookup::{Lookup, LookupAir},
+  p3_field::{PrimeCharacteristicRing, PrimeField64},
+  system::{Circuit, System},
+  types::{Commitment, CommitmentParameters, Val},
 };
-use multi_stark::system::System;
 
-use crate::aiur::synthesis::{AiurCircuit, AiurSystem};
+use crate::aiur::{
+  constraints::Constraints,
+  memory::Memory,
+  synthesis::{AiurCircuit, AiurSystem},
+};
 
-/// The bincode configuration shared with `multi_stark::prover::Proof`.
-fn serde_config() -> Configuration<LittleEndian, Fixint> {
-  standard().with_little_endian().with_fixed_int_encoding()
+type Expr = SymbolicExpression<Val>;
+
+// ════════════════════════════════════════════════════════════════════════════
+// Encoder — System<AiurCircuit> -> bytes
+// ════════════════════════════════════════════════════════════════════════════
+
+struct W {
+  buf: Vec<u8>,
+}
+
+impl W {
+  fn u8(&mut self, v: u8) {
+    self.buf.push(v);
+  }
+  fn u32(&mut self, v: u32) {
+    self.buf.extend_from_slice(&v.to_le_bytes());
+  }
+  fn u64(&mut self, v: u64) {
+    self.buf.extend_from_slice(&v.to_le_bytes());
+  }
+  fn usize(&mut self, v: usize) {
+    self.u64(v as u64);
+  }
+  fn g(&mut self, v: Val) {
+    // Goldilocks' raw repr is unreachable; the canonical value round-trips.
+    self.u64(v.as_canonical_u64());
+  }
+  fn entry(&mut self, e: &Entry) {
+    match *e {
+      Entry::Preprocessed { offset } => {
+        self.u32(0);
+        self.usize(offset);
+      },
+      Entry::Main { offset } => {
+        self.u32(1);
+        self.usize(offset);
+      },
+      Entry::Stage2 { offset } => {
+        self.u32(2);
+        self.usize(offset);
+      },
+      Entry::Public => self.u32(3),
+      Entry::Stage2Public => self.u32(4),
+      Entry::Challenge => self.u32(5),
+    }
+  }
+  fn expr(&mut self, e: &Expr) {
+    match e {
+      SymbolicExpression::Variable(v) => {
+        self.u32(0);
+        self.entry(&v.entry);
+        self.usize(v.index);
+      },
+      SymbolicExpression::IsFirstRow => self.u32(1),
+      SymbolicExpression::IsLastRow => self.u32(2),
+      SymbolicExpression::IsTransition => self.u32(3),
+      SymbolicExpression::Constant(c) => {
+        self.u32(4);
+        self.g(*c);
+      },
+      SymbolicExpression::Add { x, y, degree_multiple } => {
+        self.u32(5);
+        self.expr(x);
+        self.expr(y);
+        self.usize(*degree_multiple);
+      },
+      SymbolicExpression::Sub { x, y, degree_multiple } => {
+        self.u32(6);
+        self.expr(x);
+        self.expr(y);
+        self.usize(*degree_multiple);
+      },
+      SymbolicExpression::Neg { x, degree_multiple } => {
+        self.u32(7);
+        self.expr(x);
+        self.usize(*degree_multiple);
+      },
+      SymbolicExpression::Mul { x, y, degree_multiple } => {
+        self.u32(8);
+        self.expr(x);
+        self.expr(y);
+        self.usize(*degree_multiple);
+      },
+    }
+  }
+  fn vec<T>(&mut self, items: &[T], mut f: impl FnMut(&mut Self, &T)) {
+    self.usize(items.len());
+    for item in items {
+      f(self, item);
+    }
+  }
+  fn lookup(&mut self, l: &Lookup<Expr>) {
+    self.expr(&l.multiplicity);
+    self.vec(&l.args, Self::expr);
+  }
+  fn aircircuit(&mut self, c: &AiurCircuit) {
+    match c {
+      AiurCircuit::Function(Constraints { zeros, selectors, width }) => {
+        self.u32(0);
+        self.vec(zeros, Self::expr);
+        self.usize(selectors.start);
+        self.usize(selectors.end);
+        self.usize(*width);
+      },
+      AiurCircuit::Memory(Memory { width }) => {
+        self.u32(1);
+        self.usize(*width);
+      },
+      AiurCircuit::Bytes1 => self.u32(2),
+      AiurCircuit::Bytes2 => self.u32(3),
+    }
+  }
+  fn circuit(&mut self, c: &Circuit<AiurCircuit>) {
+    // LookupAir: inner_air, lookups (preprocessed is not serialized).
+    self.aircircuit(&c.air.inner_air);
+    self.vec(&c.air.lookups, Self::lookup);
+    self.usize(c.constraint_count);
+    self.usize(c.max_constraint_degree);
+    self.usize(c.preprocessed_height);
+    self.usize(c.preprocessed_width);
+    self.usize(c.stage_1_width);
+    self.usize(c.stage_2_width);
+  }
+  fn commitment(&mut self, c: &Commitment) {
+    // MerkleCap: Vec<[u64; 4]> digests (raw words, no field reduction).
+    self.vec(c.roots(), |w, digest: &[u64; 4]| {
+      for &word in digest {
+        w.u64(word);
+      }
+    });
+  }
+  fn option<T>(&mut self, o: &Option<T>, f: impl FnOnce(&mut Self, &T)) {
+    match o {
+      None => self.u8(0),
+      Some(v) => {
+        self.u8(1);
+        f(self, v);
+      },
+    }
+  }
 }
 
 /// Serialize the verifying key `System<AiurCircuit>` (preprocessed traces are
@@ -35,21 +195,15 @@ fn serde_config() -> Configuration<LittleEndian, Fixint> {
 pub(crate) fn to_bytes(
   system: &System<AiurCircuit>,
 ) -> Result<Vec<u8>, String> {
-  encode_to_vec(system, serde_config()).map_err(|e| e.to_string())
-}
-
-/// Deserialize a `System<AiurCircuit>` from [`to_bytes`] output, requiring that
-/// every byte is consumed.
-pub(crate) fn from_bytes(bytes: &[u8]) -> Result<System<AiurCircuit>, String> {
-  let (system, consumed) =
-    decode_from_slice(bytes, serde_config()).map_err(|e| e.to_string())?;
-  if consumed != bytes.len() {
-    return Err(format!(
-      "trailing data: consumed {consumed} of {}",
-      bytes.len()
-    ));
-  }
-  Ok(system)
+  let mut w = W { buf: Vec::new() };
+  w.usize(system.commitment_parameters.log_blowup);
+  w.usize(system.commitment_parameters.cap_height);
+  w.vec(&system.circuits, W::circuit);
+  w.option(&system.preprocessed_commit, W::commitment);
+  w.vec(&system.preprocessed_indices, |w, idx| {
+    w.option(idx, |w, &i| w.usize(i))
+  });
+  Ok(w.buf)
 }
 
 /// Convenience: serialize the verifying key of a built [`AiurSystem`].
@@ -59,65 +213,13 @@ pub(crate) fn aiur_system_to_bytes(
   to_bytes(&sys.system)
 }
 
-#[cfg(test)]
-mod tests {
-  use super::*;
-  use crate::aiur::gadgets::{AiurGadget, bytes1::Bytes1, bytes2::Bytes2};
-  use multi_stark::{lookup::LookupAir, types::CommitmentParameters};
-
-  /// Build a small real `System<AiurCircuit>` from the two byte gadgets and
-  /// check the verifying-key codec round-trips (re-encoding is byte-identical).
-  #[test]
-  fn system_vk_round_trips() {
-    let cp = CommitmentParameters { log_blowup: 1, cap_height: 0 };
-    let (system, _key) = System::new(
-      cp,
-      [
-        LookupAir::new(AiurCircuit::Bytes1, Bytes1.lookups()),
-        LookupAir::new(AiurCircuit::Bytes2, Bytes2.lookups()),
-      ],
-    );
-    let bytes = to_bytes(&system).expect("encode");
-    let back = from_bytes(&bytes).expect("decode");
-    let reencoded = to_bytes(&back).expect("re-encode");
-    assert_eq!(bytes, reencoded, "verifying-key codec round-trip mismatch");
-  }
-
-  #[test]
-  fn rejects_trailing_bytes() {
-    let cp = CommitmentParameters { log_blowup: 1, cap_height: 0 };
-    let (system, _key) =
-      System::new(cp, [LookupAir::new(AiurCircuit::Bytes1, Bytes1.lookups())]);
-    let mut bytes = to_bytes(&system).expect("encode");
-    bytes.push(0);
-    assert!(from_bytes(&bytes).is_err(), "should reject trailing data");
-  }
-}
-
 // ════════════════════════════════════════════════════════════════════════════
-// Manual deserializer — a hand-written reader matching the exact bincode bytes
-// `to_bytes` produces, decoding straight into the real `System<AiurCircuit>`.
-// This is the reference re-implemented in Aiur (the verifier reads its key from
-// this stream); `manual_matches_serde` proves it agrees with serde.
+// Decoder — bytes -> System<AiurCircuit>
 //
-// bincode `standard().little_endian().fixed_int` layout:
-//   enum tag : u32 (4 bytes LE)       Option : 1 byte (0 = None / 1 = Some)
-//   usize / u64 / G : 8 bytes LE      Vec : u64 length, then elements
-//   struct : fields in declaration order      Range<usize> : start, end (u64)
-//   MerkleCap : Vec<[u64; 4]>         PhantomData : 0 bytes
+// A hand-written reader matching the bytes `to_bytes` produces, decoding
+// straight into the real `System<AiurCircuit>`. This is the reference
+// re-implemented in Aiur (`Ix/MultiStark/SystemDeserialize.lean`).
 // ════════════════════════════════════════════════════════════════════════════
-
-use multi_stark::{
-  builder::symbolic::{Entry, SymbolicExpression, SymbolicVariable},
-  lookup::{Lookup, LookupAir},
-  p3_field::PrimeCharacteristicRing,
-  system::Circuit,
-  types::{Commitment, CommitmentParameters, Val},
-};
-
-use crate::aiur::{constraints::Constraints, memory::Memory};
-
-type Expr = SymbolicExpression<Val>;
 
 struct R<'a> {
   buf: &'a [u8],
@@ -220,7 +322,7 @@ impl<'a> R<'a> {
     })
   }
   fn circuit(&mut self) -> Result<Circuit<AiurCircuit>, String> {
-    // LookupAir: inner_air, lookups (preprocessed is `#[serde(skip)]` -> None).
+    // LookupAir: inner_air, lookups (preprocessed is prover-only -> None).
     let air = LookupAir {
       inner_air: self.aircircuit()?,
       lookups: self.vec(Self::lookup)?,
@@ -252,11 +354,9 @@ impl<'a> R<'a> {
   }
 }
 
-/// Hand-written deserializer of the verifying-key `System<AiurCircuit>`,
-/// matching serde/bincode byte-for-byte (the Aiur port mirrors this).
-pub(crate) fn manual_deserialize(
-  bytes: &[u8],
-) -> Result<System<AiurCircuit>, String> {
+/// Deserialize a `System<AiurCircuit>` from [`to_bytes`] output, requiring that
+/// every byte is consumed.
+pub(crate) fn from_bytes(bytes: &[u8]) -> Result<System<AiurCircuit>, String> {
   let mut r = R { buf: bytes, pos: 0 };
   let commitment_parameters =
     CommitmentParameters { log_blowup: r.usize()?, cap_height: r.usize()? };
@@ -279,15 +379,16 @@ pub(crate) fn manual_deserialize(
 }
 
 #[cfg(test)]
-mod manual_tests {
+mod tests {
   use super::*;
   use crate::aiur::gadgets::{AiurGadget, bytes1::Bytes1, bytes2::Bytes2};
   use multi_stark::{lookup::LookupAir, types::CommitmentParameters};
 
-  /// The manual deserializer agrees with serde: decoding serde's bytes and
-  /// re-encoding with serde reproduces them byte-for-byte.
+  /// Build a small real `System<AiurCircuit>` from the two byte gadgets and
+  /// check the verifying-key codec round-trips: decode(encode(x)) re-encodes to
+  /// the same bytes (a serialization fixpoint).
   #[test]
-  fn manual_matches_serde() {
+  fn system_vk_round_trips() {
     let cp = CommitmentParameters { log_blowup: 1, cap_height: 0 };
     let (system, _key) = System::new(
       cp,
@@ -296,19 +397,19 @@ mod manual_tests {
         LookupAir::new(AiurCircuit::Bytes2, Bytes2.lookups()),
       ],
     );
-    let bytes = to_bytes(&system).expect("serde encode");
-    let manual = manual_deserialize(&bytes).expect("manual decode");
-    let reencoded = to_bytes(&manual).expect("serde re-encode");
-    assert_eq!(bytes, reencoded, "manual deserializer disagrees with serde");
+    let bytes = to_bytes(&system).expect("encode");
+    let back = from_bytes(&bytes).expect("decode");
+    let reencoded = to_bytes(&back).expect("re-encode");
+    assert_eq!(bytes, reencoded, "verifying-key codec round-trip mismatch");
   }
 
   #[test]
-  fn manual_rejects_trailing() {
+  fn rejects_trailing_bytes() {
     let cp = CommitmentParameters { log_blowup: 1, cap_height: 0 };
     let (system, _key) =
-      System::new(cp, [LookupAir::new(AiurCircuit::Bytes2, Bytes2.lookups())]);
+      System::new(cp, [LookupAir::new(AiurCircuit::Bytes1, Bytes1.lookups())]);
     let mut bytes = to_bytes(&system).expect("encode");
     bytes.push(0);
-    assert!(manual_deserialize(&bytes).is_err());
+    assert!(from_bytes(&bytes).is_err(), "should reject trailing data");
   }
 }

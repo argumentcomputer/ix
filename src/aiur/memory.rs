@@ -14,7 +14,6 @@ use rayon::{
 
 use crate::aiur::{G, execute::QueryRecord, memory_channel};
 
-#[derive(serde::Serialize, serde::Deserialize)]
 pub struct Memory {
   pub(crate) width: usize,
 }

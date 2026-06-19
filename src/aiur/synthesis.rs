@@ -29,7 +29,6 @@ pub struct AiurSystem {
   pub(crate) system: System<AiurCircuit>,
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
 pub(crate) enum AiurCircuit {
   Function(Constraints),
   Memory(Memory),
