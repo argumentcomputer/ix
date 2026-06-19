@@ -56,11 +56,17 @@ def subst := ⟦
         lbr_max(expr_lbr(ty), lbr_dec(expr_lbr(body))),
       KExprNode.Forall(ty, body) =>
         lbr_max(expr_lbr(ty), lbr_dec(expr_lbr(body))),
-      KExprNode.Let(ty, val, body) =>
-        lbr_max(lbr_max(expr_lbr(ty), expr_lbr(val)),
-                lbr_dec(expr_lbr(body))),
+      KExprNode.Let(ty, val, body) => expr_lbr_let(ty, val, body),
       KExprNode.Proj(_, _, e1) => expr_lbr(e1),
     }
+  }
+
+  -- Cold-extracted Let arm: 3 recursive expr_lbr calls is the widest arm,
+  -- charged on every row of `expr_lbr` even though Let is rare in most
+  -- expressions. Its own circuit costs only the Let-arm rows.
+  fn expr_lbr_let(ty: KExpr, val: KExpr, body: KExpr) -> G {
+    lbr_max(lbr_max(expr_lbr(ty), expr_lbr(val)),
+            lbr_dec(expr_lbr(body)))
   }
 
   fn lbr_max(a: G, b: G) -> G {
