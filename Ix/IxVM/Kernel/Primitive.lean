@@ -732,7 +732,9 @@ def primitive := ⟦
                 let pair2 = u64_add(sum1, [u8_from_field_unsafe(carry), 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
                 match pair2 {
                   (sum2, carry2) =>
-                    let total_carry = g_or(to_field(carry1), to_field(carry2));
+                    -- carry1, carry2 mutually exclusive: carry1=1 ⇒ sum1 ≤
+                    -- 2^64-2 ⇒ sum1 + carry_in ≤ 2^64-1 ⇒ carry2=0.
+                    let total_carry = to_field(carry1) + to_field(carry2);
                     store(ListNode.Cons(sum2, klimbs_add_carry(ra, rb, total_carry))),
                 },
             },
@@ -819,7 +821,9 @@ def primitive := ⟦
                 let pair2 = u64_sub_with_borrow(sum1, [u8_from_field_unsafe(borrow), 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
                 match pair2 {
                   (sum2, br2) =>
-                    let total = g_or(br1, br2);
+                    -- br1, br2 mutually exclusive: br1=1 ⇒ sum1 ≥ 1 ⇒
+                    -- sum1 - borrow ≥ 0 ⇒ br2=0.
+                    let total = br1 + br2;
                     let rec_pair = klimbs_sub_borrow(ra, rb, total);
                     match rec_pair {
                       (rest_res, br_final) =>
