@@ -1249,16 +1249,23 @@ def primitive := ⟦
     }
   }
 
-  -- Convert a KLimbs n into a chain `App(Const(succ), App(Const(succ),
-  -- ... Const(zero)))` for n calls of succ. Used by nat-literal-to-ctor
-  -- coercion in iota.
+  -- Single-step Nat-literal → ctor coercion. Mirrors Rust
+  -- `nat_to_constructor` (src/ix/kernel/whnf.rs:1664-1687):
+  --   0   → `Const(Nat.zero)`
+  --   n+1 → `App(Const(Nat.succ), Lit(Nat(n-1)))`
+  -- The predecessor stays a `Lit`; the iota that asked for this expansion
+  -- only needs to see the head ctor. Subsequent matches re-trigger
+  -- expansion as needed. The previous body unfolded recursively into
+  -- `Nat.succ^n(Nat.zero)`, which OOM'd for large literals (the original
+  -- driver: per-step `klimbs_dec` memo growth, 4M+ entries seen on
+  -- `Init.Data.String.Decode.0.ByteArray.utf8DecodeChar?.assemble₂._proof_1`
+  -- before allocation failure).
   fn klimbs_to_ctor_form(n: KLimbs, zero_idx: G, succ_idx: G) -> KExpr {
     match load(n) {
       ListNode.Nil =>
         store(KExprNode.Const(zero_idx, store(ListNode.Nil))),
       ListNode.Cons(_, _) =>
-        let dec = klimbs_dec(n);
-        let pred = klimbs_to_ctor_form(dec, zero_idx, succ_idx);
+        let pred = mk_nat_lit(klimbs_normalize(klimbs_dec(n)));
         let succ_const = store(KExprNode.Const(succ_idx, store(ListNode.Nil)));
         store(KExprNode.App(succ_const, pred)),
     }
