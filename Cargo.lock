@@ -1565,7 +1565,7 @@ dependencies = [
  "hickory-resolver",
  "http",
  "ipnet",
- "iroh-base",
+ "iroh-base 0.97.0",
  "iroh-metrics",
  "iroh-relay",
  "n0-error",
@@ -1622,6 +1622,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "iroh-base"
+version = "0.98.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "738865784637830fb14204ebd3047922db83bc1816a59027af29579b9c27bd99"
+dependencies = [
+ "derive_more",
+ "n0-error",
+ "serde",
+ "url",
+]
+
+[[package]]
 name = "iroh-metrics"
 version = "0.38.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1666,7 +1678,7 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
- "iroh-base",
+ "iroh-base 0.97.0",
  "iroh-metrics",
  "lru",
  "n0-error",
@@ -1733,7 +1745,7 @@ dependencies = [
  "hashbrown 0.15.5",
  "indexmap",
  "iroh",
- "iroh-base",
+ "iroh-base 0.98.0",
  "itertools 0.14.0",
  "lean-ffi",
  "memmap2",
@@ -3175,7 +3187,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3561,7 +3573,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "230a1b821ccbd75b185820a1f1ff7b14d21da1e442e22c0863ea5f08771a8874"
 dependencies = [
  "rustix",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
