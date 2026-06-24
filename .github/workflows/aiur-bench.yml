@@ -28,7 +28,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       # Pinned Rust toolchain + cargo cache (~/.cargo + target/, via the action's
       # built-in rust-cache), so `lake build`'s cargo step doesn't recompile the
       # Plonky3/multi-stark deps from scratch on every run.
@@ -54,7 +54,7 @@ jobs:
           lake build bench-typecheck
           cp .lake/build/bin/bench-typecheck ~/.local/bin/bench-typecheck
           chmod +x ~/.local/bin/bench-typecheck
-      - uses: actions/cache/save@v5
+      - uses: actions/cache/save@v6
         with:
           path: ~/.local/bin
           key: aiur-bench-bins-${{ github.sha }}
@@ -78,10 +78,10 @@ jobs:
           #   cache_pkg: formal_conjectures
           #   mathlib: true
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: actions/cache/restore@v5
+      - uses: actions/cache/restore@v6
         with:
           path: ~/.local/bin
           key: aiur-bench-bins-${{ github.sha }}
@@ -101,7 +101,7 @@ jobs:
           use-mathlib-cache: ${{ matrix.mathlib && 'true' || 'false' }}
       # FLT and FC take a few minutes to rebuild, so cache their build artifacts.
       - if: matrix.cache_pkg
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ${{ env.COMPILE_DIR }}/.lake/packages/${{ matrix.cache_pkg }}/.lake/build
           key: ${{ matrix.cache_pkg }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles(format('{0}/lean-toolchain', env.COMPILE_DIR)) }}-${{ hashFiles(format('{0}/lake-manifest.json', env.COMPILE_DIR)) }}
@@ -117,7 +117,7 @@ jobs:
       # Cache the `.ixe` for the prove job (reused, never recompiled there).
       # Only the matrix jobs the prove job consumes, to stay under the repo cache limit.
       - if: matrix.bench == 'InitStd' || matrix.bench == 'Mathlib'
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@v6
         with:
           path: ${{ matrix.bench }}.ixe
           key: aiur-ixe-${{ github.sha }}-${{ matrix.bench }}
@@ -172,10 +172,10 @@ jobs:
           - bench: Mathlib
             consts: Nat.factorial Nat.Coprime Nat.Prime.two_le
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0   # full history for the toolchain-bump sample-size query
-      - uses: actions/cache/restore@v5
+      - uses: actions/cache/restore@v6
         with:
           path: ~/.local/bin
           key: aiur-bench-bins-${{ github.sha }}
@@ -189,7 +189,7 @@ jobs:
           build: false
           use-github-cache: false
       # Pull the `.ixe` the compile job built — do NOT recompile it here.
-      - uses: actions/cache/restore@v5
+      - uses: actions/cache/restore@v6
         with:
           path: ${{ matrix.bench }}.ixe
           key: aiur-ixe-${{ github.sha }}-${{ matrix.bench }}
