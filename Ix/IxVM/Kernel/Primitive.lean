@@ -1377,34 +1377,34 @@ def primitive := ⟦
         -- Mirror: whnf.rs:1789-1822 try_reduce_nat_succ_iter. Single arg;
         -- whnf, fold to Lit(n+1) on hit.
         match u32_less_than(spine_len, 1) {
-          1 => (0, store(KExprNode.BVar(0))),
+          1 => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
           0 =>
             let a0_w = whnf(list_lookup(spine, 0), types, top, addrs);
             match try_extract_nat(a0_w, addrs) {
               (1, na) =>
                 let post = list_drop(spine, 1);
                 (1, apply_spine(mk_nat_lit(klimbs_succ(na)), post)),
-              _ => (0, store(KExprNode.BVar(0))),
+              _ => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
             },
         },
       0 =>
         match is_pred {
           1 =>
             match u32_less_than(spine_len, 1) {
-              1 => (0, store(KExprNode.BVar(0))),
+              1 => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
               0 =>
                 let a0_w = whnf(list_lookup(spine, 0), types, top, addrs);
                 match try_extract_nat(a0_w, addrs) {
                   (1, na) =>
                     let post = list_drop(spine, 1);
                     (1, apply_spine(mk_nat_lit(klimbs_dec(na)), post)),
-                  _ => (0, store(KExprNode.BVar(0))),
+                  _ => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
                 },
             },
           0 =>
             -- Binary ops: require 2 args.
             match u32_less_than(spine_len, 2) {
-              1 => (0, store(KExprNode.BVar(0))),
+              1 => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
               0 =>
                 let a0_w = whnf(list_lookup(spine, 0), types, top, addrs);
                 let a1_w = whnf(list_lookup(spine, 1), types, top, addrs);
@@ -1418,11 +1418,11 @@ def primitive := ⟦
                           (1, result) =>
                             let post = list_drop(spine, 2);
                             (1, apply_spine(result, post)),
-                          (0, _) => (0, store(KExprNode.BVar(0))),
+                          (0, _) => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
                         },
-                      _ => (0, store(KExprNode.BVar(0))),
+                      _ => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
                     },
-                  _ => (0, store(KExprNode.BVar(0))),
+                  _ => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
                 },
             },
         },
@@ -1474,7 +1474,7 @@ def primitive := ⟦
                                               0 =>
                                                 match address_eq(head_addr, nat_ble_addr()) {
                                                   1 => (1, mk_bool(klimbs_le(a, b), addrs)),
-                                                  0 => (0, store(KExprNode.BVar(0))),
+                                                  0 => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
                                                 },
                                             },
                                         },
@@ -1531,7 +1531,7 @@ def primitive := ⟦
                                 top: List‹&KConstantInfo›,
                                 addrs: List‹Addr›) -> (G, KExpr) {
     match u32_less_than(list_length(spine), 2) {
-      1 => (0, store(KExprNode.BVar(0))),
+      1 => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
       0 =>
         let width_e = list_lookup(spine, 0);
         let val_e = list_lookup(spine, 1);
@@ -1540,17 +1540,17 @@ def primitive := ⟦
         -- Accepts both `BitVec.ofNat(W, N)` and `OfNat.ofNat(BitVec W, N)`.
         let pair = bitvec_of_nat_args(val_w, addrs);
         match pair {
-          (0, _, _) => (0, store(KExprNode.BVar(0))),
+          (0, _, _) => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
           (1, val_width, n_e) =>
             let n_w = whnf(n_e, types, top, addrs);
             let np = try_extract_nat(n_w, addrs);
             match np {
-              (0, _) => (0, store(KExprNode.BVar(0))),
+              (0, _) => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
               (1, n_klimbs) =>
                 let width_w = whnf(val_width, types, top, addrs);
                 let wp = try_extract_nat(width_w, addrs);
                 match wp {
-                  (0, _) => (0, store(KExprNode.BVar(0))),
+                  (0, _) => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
                   (1, w_klimbs) =>
                     let two = store(ListNode.Cons([2u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], store(ListNode.Nil)));
                     let modulus = klimbs_pow(two, w_klimbs);
@@ -1575,7 +1575,7 @@ def primitive := ⟦
               1 =>
                 match list_length(args) - 2 {
                   0 => (1, list_lookup(args, 0), list_lookup(args, 1)),
-                  _ => (0, store(KExprNode.BVar(0)), store(KExprNode.BVar(0))),
+                  _ => (0, store(KExprNode.BVar(0, kexpr_dummy())), store(KExprNode.BVar(0, kexpr_dummy()))),
                 },
               0 =>
                 let of_nat_addr = store([0x8fu8, 0xdcu8, 0x86u8, 0x9fu8, 0x7bu8, 0x7au8, 0xa2u8, 0xb7u8,
@@ -1583,10 +1583,10 @@ def primitive := ⟦
                                    0xe2u8, 0xd7u8, 0xc5u8, 0xd4u8, 0x2du8, 0xf1u8, 0xd4u8, 0xe2u8,
                                    0x39u8, 0x36u8, 0x90u8, 0xcfu8, 0xa8u8, 0x5eu8, 0x94u8, 0xd2u8]);
                 match address_eq(head_addr, of_nat_addr) {
-                  0 => (0, store(KExprNode.BVar(0)), store(KExprNode.BVar(0))),
+                  0 => (0, store(KExprNode.BVar(0, kexpr_dummy())), store(KExprNode.BVar(0, kexpr_dummy()))),
                   1 =>
                     match u32_less_than(list_length(args), 2) {
-                      1 => (0, store(KExprNode.BVar(0)), store(KExprNode.BVar(0))),
+                      1 => (0, store(KExprNode.BVar(0, kexpr_dummy())), store(KExprNode.BVar(0, kexpr_dummy()))),
                       0 =>
                         let ty_arg = list_lookup(args, 0);
                         match collect_spine(ty_arg) {
@@ -1595,20 +1595,20 @@ def primitive := ⟦
                               KExprNode.Const(ty_idx, _) =>
                                 let ty_addr = list_lookup(addrs, ty_idx);
                                 match address_eq(ty_addr, bit_vec_addr()) {
-                                  0 => (0, store(KExprNode.BVar(0)), store(KExprNode.BVar(0))),
+                                  0 => (0, store(KExprNode.BVar(0, kexpr_dummy())), store(KExprNode.BVar(0, kexpr_dummy()))),
                                   1 =>
                                     match list_length(ty_args) - 1 {
                                       0 => (1, list_lookup(ty_args, 0), list_lookup(args, 1)),
-                                      _ => (0, store(KExprNode.BVar(0)), store(KExprNode.BVar(0))),
+                                      _ => (0, store(KExprNode.BVar(0, kexpr_dummy())), store(KExprNode.BVar(0, kexpr_dummy()))),
                                     },
                                 },
-                              _ => (0, store(KExprNode.BVar(0)), store(KExprNode.BVar(0))),
+                              _ => (0, store(KExprNode.BVar(0, kexpr_dummy())), store(KExprNode.BVar(0, kexpr_dummy()))),
                             },
                         },
                     },
                 },
             },
-          _ => (0, store(KExprNode.BVar(0)), store(KExprNode.BVar(0))),
+          _ => (0, store(KExprNode.BVar(0, kexpr_dummy())), store(KExprNode.BVar(0, kexpr_dummy()))),
         },
     }
   }
@@ -1620,7 +1620,7 @@ def primitive := ⟦
                              top: List‹&KConstantInfo›,
                              addrs: List‹Addr›) -> (G, KExpr) {
     match u32_less_than(list_length(spine), 3) {
-      1 => (0, store(KExprNode.BVar(0))),
+      1 => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
       0 =>
         let width_e = list_lookup(spine, 0);
         let lhs_e = list_lookup(spine, 1);
@@ -1629,10 +1629,10 @@ def primitive := ⟦
         let lhs_pair = bv_to_nat_via(width_e, lhs_e, types, top, addrs);
         let rhs_pair = bv_to_nat_via(width_e, rhs_e, types, top, addrs);
         match lhs_pair {
-          (0, _) => (0, store(KExprNode.BVar(0))),
+          (0, _) => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
           (1, lhs_n) =>
             match rhs_pair {
-              (0, _) => (0, store(KExprNode.BVar(0))),
+              (0, _) => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
               (1, rhs_n) =>
                 -- lhs < rhs iff klimbs_le(lhs+1, rhs) iff !klimbs_le(rhs, lhs)
                 let r = 1 - klimbs_le(rhs_n, lhs_n);
@@ -1679,7 +1679,7 @@ def primitive := ⟦
             -- Mirror: src/ix/kernel/whnf.rs:2455-2460.
             match address_eq(head_addr, decidable_decide_addr()) {
               1 => try_reduce_decide_bitvec_lt(spine, types, top, addrs),
-              0 => (0, store(KExprNode.BVar(0))),
+              0 => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
             },
         },
     }
@@ -1691,7 +1691,7 @@ def primitive := ⟦
                                   top: List‹&KConstantInfo›,
                                   addrs: List‹Addr›) -> (G, KExpr) {
     match u32_less_than(list_length(spine), 2) {
-      1 => (0, store(KExprNode.BVar(0))),
+      1 => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
       0 =>
         let prop = list_lookup(spine, 0);
         match collect_spine(prop) {
@@ -1700,10 +1700,10 @@ def primitive := ⟦
               KExprNode.Const(lt_idx, _) =>
                 let lt_addr = list_lookup(addrs, lt_idx);
                 match address_eq(lt_addr, lt_lt_addr()) {
-                  0 => (0, store(KExprNode.BVar(0))),
+                  0 => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
                   1 =>
                     match u32_less_than(list_length(lt_args), 4) {
-                      1 => (0, store(KExprNode.BVar(0))),
+                      1 => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
                       0 =>
                         let ty_arg = list_lookup(lt_args, 0);
                         match collect_spine(ty_arg) {
@@ -1712,10 +1712,10 @@ def primitive := ⟦
                               KExprNode.Const(ty_idx, _) =>
                                 let ty_addr = list_lookup(addrs, ty_idx);
                                 match address_eq(ty_addr, bit_vec_addr()) {
-                                  0 => (0, store(KExprNode.BVar(0))),
+                                  0 => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
                                   1 =>
                                     match u32_less_than(list_length(ty_args), 1) {
-                                      1 => (0, store(KExprNode.BVar(0))),
+                                      1 => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
                                       0 =>
                                         let width = list_lookup(ty_args, 0);
                                         let lhs = list_lookup(lt_args, 2);
@@ -1726,12 +1726,12 @@ def primitive := ⟦
                                         try_reduce_bit_vec_ult(inner_spine, types, top, addrs),
                                     },
                                 },
-                              _ => (0, store(KExprNode.BVar(0))),
+                              _ => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
                             },
                         },
                     },
                 },
-              _ => (0, store(KExprNode.BVar(0))),
+              _ => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
             },
         },
     }
@@ -1767,10 +1767,10 @@ def primitive := ⟦
                     let is_rb = address_eq(head_addr, reduce_bool_addr());
                     let is_rn = address_eq(head_addr, reduce_nat_addr());
                     match is_rb + is_rn {
-                      0 => (0, store(KExprNode.BVar(0))),
+                      0 => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
                       _ =>
                         match u32_less_than(list_length(spine), 1) {
-                          1 => (0, store(KExprNode.BVar(0))),
+                          1 => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
                           0 =>
                             let arg = list_lookup(spine, 0);
                             let result = whnf(arg, types, top, addrs);
@@ -1801,7 +1801,7 @@ def primitive := ⟦
   fn try_reduce_subtype_val(spine: List‹KExpr›,
                             addrs: List‹Addr›) -> (G, KExpr) {
     match u32_less_than(list_length(spine), 3) {
-      1 => (0, store(KExprNode.BVar(0))),
+      1 => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
       0 =>
         let val_arg = list_lookup(spine, 2);
         match collect_spine(val_arg) {
@@ -1811,9 +1811,9 @@ def primitive := ⟦
                 let head_addr = list_lookup(addrs, idx);
                 match address_eq(head_addr, system_platform_get_num_bits_addr()) {
                   1 => (1, mk_nat_literal_64()),
-                  0 => (0, store(KExprNode.BVar(0))),
+                  0 => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
                 },
-              _ => (0, store(KExprNode.BVar(0))),
+              _ => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
             },
         },
     }
@@ -1823,7 +1823,7 @@ def primitive := ⟦
   fn try_reduce_size_of_unit(spine: List‹KExpr›,
                              addrs: List‹Addr›) -> (G, KExpr) {
     match u32_less_than(list_length(spine), 1) {
-      1 => (0, store(KExprNode.BVar(0))),
+      1 => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
       0 =>
         let ty_arg = list_lookup(spine, 0);
         match collect_spine(ty_arg) {
@@ -1834,10 +1834,10 @@ def primitive := ⟦
                 let is_unit = address_eq(head_addr, unit_addr());
                 let is_punit = address_eq(head_addr, punit_addr());
                 match is_unit + is_punit {
-                  0 => (0, store(KExprNode.BVar(0))),
+                  0 => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
                   _ => (1, mk_nat_one()),
                 },
-              _ => (0, store(KExprNode.BVar(0))),
+              _ => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
             },
         },
     }
@@ -1851,10 +1851,10 @@ def primitive := ⟦
         let is_t = address_eq(head_addr, bool_true_addr());
         let is_f = address_eq(head_addr, bool_false_addr());
         match is_t + is_f {
-          0 => (0, store(KExprNode.BVar(0))),
+          0 => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
           _ => (1, e),
         },
-      _ => (0, store(KExprNode.BVar(0))),
+      _ => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
     }
   }
 
@@ -1864,9 +1864,9 @@ def primitive := ⟦
       KExprNode.Lit(lit) =>
         match lit {
           KLiteral.Nat(_) => (1, e),
-          _ => (0, store(KExprNode.BVar(0))),
+          _ => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
         },
-      _ => (0, store(KExprNode.BVar(0))),
+      _ => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
     }
   }
 
@@ -1898,10 +1898,10 @@ def primitive := ⟦
       1 => try_normalize_int_decidable(head_idx, head_lvls, spine, types, top, addrs),
       _ =>
         match is_dec_le + is_dec_eq + is_dec_lt {
-          0 => (0, store(KExprNode.BVar(0))),
+          0 => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
           _ =>
             match u32_less_than(list_length(spine), 2) {
-              1 => (0, store(KExprNode.BVar(0))),
+              1 => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
               0 => decidable_dispatch(is_dec_le, is_dec_eq, is_dec_lt, head_idx, head_lvls,
                                        spine, types, top, addrs),
             },
@@ -1948,7 +1948,7 @@ def primitive := ⟦
       (1, idx) =>
         let head = store(KExprNode.Const(idx, store(ListNode.Nil)));
         (1, store(KExprNode.App(head, mk_nat_lit(limbs)))),
-      (0, _) => (0, store(KExprNode.BVar(0))),
+      (0, _) => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
     }
   }
 
@@ -1961,7 +1961,7 @@ def primitive := ⟦
                                   top: List‹&KConstantInfo›,
                                   addrs: List‹Addr›) -> (G, KExpr) {
     match u32_less_than(list_length(spine), 2) {
-      1 => (0, store(KExprNode.BVar(0))),
+      1 => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
       0 =>
         let a0 = list_lookup(spine, 0);
         let a1 = list_lookup(spine, 1);
@@ -1969,7 +1969,7 @@ def primitive := ⟦
           (1, _, _) =>
             match try_extract_int(a1, addrs) {
               -- Both already canonical Int lits — no normalization needed.
-              (1, _, _) => (0, store(KExprNode.BVar(0))),
+              (1, _, _) => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
               _ => normalize_int_dec_rebuild(head_idx, head_lvls, spine, a0, a1, types, top, addrs),
             },
           _ => normalize_int_dec_rebuild(head_idx, head_lvls, spine, a0, a1, types, top, addrs),
@@ -1996,13 +1996,13 @@ def primitive := ⟦
                     let r2 = store(KExprNode.App(r1, b_e));
                     let post = list_drop(spine, 2);
                     (1, apply_spine(r2, post)),
-                  _ => (0, store(KExprNode.BVar(0))),
+                  _ => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
                 },
-              _ => (0, store(KExprNode.BVar(0))),
+              _ => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
             },
-          _ => (0, store(KExprNode.BVar(0))),
+          _ => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
         },
-      _ => (0, store(KExprNode.BVar(0))),
+      _ => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
     }
   }
 
@@ -2019,7 +2019,7 @@ def primitive := ⟦
         let n_w = whnf(n_e, types, top, addrs);
         let np = try_extract_nat(n_w, addrs);
         match np {
-          (0, _) => (0, store(KExprNode.BVar(0))),
+          (0, _) => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
           (1, n_klimbs) =>
             let succ_n = klimbs_succ(n_klimbs);
             let succ_n_lit = mk_nat_lit(succ_n);
@@ -2027,7 +2027,7 @@ def primitive := ⟦
             -- Find dec_le_idx via address.
             let pair = find_addr_idx_safe(nat_dec_le_addr(), addrs, 0);
             match pair {
-              (0, _) => (0, store(KExprNode.BVar(0))),
+              (0, _) => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
               (1, dec_le_idx) =>
                 let head = store(KExprNode.Const(dec_le_idx, store(ListNode.Nil)));
                 let app1 = store(KExprNode.App(head, succ_n_lit));
@@ -2055,10 +2055,10 @@ def primitive := ⟦
     let np = try_extract_nat(n_w, addrs);
     let mp = try_extract_nat(m_w, addrs);
     match np {
-      (0, _) => (0, store(KExprNode.BVar(0))),
+      (0, _) => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
       (1, n_kl) =>
         match mp {
-          (0, _) => (0, store(KExprNode.BVar(0))),
+          (0, _) => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
           (1, m_kl) =>
             let verdict = match is_dec_le {
               1 => klimbs_le(n_kl, m_kl),
@@ -2082,18 +2082,18 @@ def primitive := ⟦
     -- Build `Eq.refl.{1} Bool Bool.true_or_false`.
     let eq_refl_pair = find_addr_idx_safe(eq_refl_addr(), addrs, 0);
     match eq_refl_pair {
-      (0, _) => (0, store(KExprNode.BVar(0))),
+      (0, _) => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
       (1, eq_refl_idx) =>
         let bool_pair = find_addr_idx_safe(bool_type_addr(), addrs, 0);
         match bool_pair {
-          (0, _) => (0, store(KExprNode.BVar(0))),
+          (0, _) => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
           (1, bool_idx) =>
             let bool_lit_pair = match verdict {
               1 => find_addr_idx_safe(bool_true_addr(), addrs, 0),
               0 => find_addr_idx_safe(bool_false_addr(), addrs, 0),
             };
             match bool_lit_pair {
-              (0, _) => (0, store(KExprNode.BVar(0))),
+              (0, _) => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
               (1, bool_lit_idx) =>
                 let one_lvl = store(KLevel.Succ(store(KLevel.Zero)));
                 let lvls = store(ListNode.Cons(one_lvl, store(ListNode.Nil)));
@@ -2118,13 +2118,13 @@ def primitive := ⟦
                 };
                 let proof_fn_pair = find_addr_idx_safe(proof_fn_addr, addrs, 0);
                 match proof_fn_pair {
-                  (0, _) => (0, store(KExprNode.BVar(0))),
+                  (0, _) => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
                   (1, proof_fn_idx) =>
                     -- Bail decLe-false: needs Bool.noConfusion proof not yet
                     -- exposed. Mirror Rust whnf.rs:2317-2322.
                     let bail = is_dec_le * (1 - verdict);
                     match bail {
-                      1 => (0, store(KExprNode.BVar(0))),
+                      1 => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
                       0 =>
                         let proof_const = store(KExprNode.Const(proof_fn_idx, store(ListNode.Nil)));
                         let p1 = store(KExprNode.App(proof_const, n_e));
@@ -2149,7 +2149,7 @@ def primitive := ⟦
     };
     let dec_pair = find_addr_idx_safe(dec_addr, addrs, 0);
     match dec_pair {
-      (0, _) => (0, store(KExprNode.BVar(0))),
+      (0, _) => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
       (1, dec_idx) =>
         -- Reconstruct head Const + first 2 spine args, k_infer to get
         -- `Decidable prop`, extract prop. Mirrors Rust producing the
@@ -2165,7 +2165,7 @@ def primitive := ⟦
             -- `Ok(None)` when the spine is empty; Aiur bails to (0, _)
             -- so caller falls through to delta unfolding.
             match u32_less_than(list_length(dec_args), 1) {
-              1 => (0, store(KExprNode.BVar(0))),
+              1 => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
               0 =>
                 let prop = list_lookup(dec_args, 0);
                 let dec_const = store(KExprNode.Const(dec_idx, store(ListNode.Nil)));
@@ -2188,7 +2188,7 @@ def primitive := ⟦
     let spine_len = list_length(spine);
     let lt1 = u32_less_than(spine_len, 1);
     match lt1 {
-      1 => (0, store(KExprNode.BVar(0))),
+      1 => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
       0 =>
         let a0 = list_lookup(spine, 0);
         match load(a0) {
@@ -2207,14 +2207,14 @@ def primitive := ⟦
                         let is_back = address_eq(head_addr, string_back_addr());
                         let is_legacy = address_eq(head_addr, string_legacy_back_addr());
                         match is_back + is_legacy {
-                          0 => (0, store(KExprNode.BVar(0))),
+                          0 => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
                           _ => try_str_back(bs, addrs),
                         },
                     },
                 },
-              _ => (0, store(KExprNode.BVar(0))),
+              _ => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
             },
-          _ => (0, store(KExprNode.BVar(0))),
+          _ => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
         },
     }
   }
@@ -2225,9 +2225,9 @@ def primitive := ⟦
       ListNode.Nil =>
         match find_addr_idx_safe(byte_array_empty_addr(), addrs, 0) {
           (1, idx) => (1, store(KExprNode.Const(idx, store(ListNode.Nil)))),
-          (0, _) => (0, store(KExprNode.BVar(0))),
+          (0, _) => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
         },
-      _ => (0, store(KExprNode.BVar(0))),
+      _ => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
     }
   }
 
@@ -2235,7 +2235,7 @@ def primitive := ⟦
   -- App(Const(char_of_nat), Lit(Nat(last_codepoint))). Empty → 65 ('A').
   fn try_str_back(bs: ByteStream, addrs: List‹Addr›) -> (G, KExpr) {
     match find_addr_idx_safe(char_of_nat_addr(), addrs, 0) {
-      (0, _) => (0, store(KExprNode.BVar(0))),
+      (0, _) => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
       (1, idx) =>
         let cp = utf8_last_codepoint(bs);
         let cp_limbs = klimbs_from_g(cp);
@@ -2346,19 +2346,19 @@ def primitive := ⟦
   -- Returns (1, expanded) when all required ctor addrs in `addrs`, else (0, _).
   fn str_lit_to_ctor(bs: ByteStream, addrs: List‹Addr›) -> (G, KExpr) {
     match find_addr_idx_safe(list_nil_addr(), addrs, 0) {
-      (0, _) => (0, store(KExprNode.BVar(0))),
+      (0, _) => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
       (1, nil_idx) =>
         match find_addr_idx_safe(list_cons_addr(), addrs, 0) {
-          (0, _) => (0, store(KExprNode.BVar(0))),
+          (0, _) => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
           (1, cons_idx) =>
             match find_addr_idx_safe(char_type_addr(), addrs, 0) {
-              (0, _) => (0, store(KExprNode.BVar(0))),
+              (0, _) => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
               (1, char_idx) =>
                 match find_addr_idx_safe(char_of_nat_addr(), addrs, 0) {
-                  (0, _) => (0, store(KExprNode.BVar(0))),
+                  (0, _) => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
                   (1, con_idx) =>
                     match find_addr_idx_safe(string_of_list_addr(), addrs, 0) {
-                      (0, _) => (0, store(KExprNode.BVar(0))),
+                      (0, _) => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
                       (1, str_idx) =>
                         let zero_lvl = store(KLevel.Zero);
                         let ulvls = store(ListNode.Cons(zero_lvl, store(ListNode.Nil)));
@@ -2425,16 +2425,16 @@ def primitive := ⟦
         match projection_definition_info(value, 0) {
           (1, arity, struct_idx, field, struct_arg_idx) =>
             match u32_less_than(list_length(spine), arity) {
-              1 => (0, store(KExprNode.BVar(0))),
+              1 => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
               0 =>
                 let target_arg = list_lookup(spine, struct_arg_idx);
                 let proj_expr = store(KExprNode.Proj(struct_idx, field, target_arg));
                 let post = list_drop(spine, arity);
                 (1, apply_spine(proj_expr, post)),
             },
-          _ => (0, store(KExprNode.BVar(0))),
+          _ => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
         },
-      _ => (0, store(KExprNode.BVar(0))),
+      _ => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
     }
   }
 
@@ -2449,7 +2449,7 @@ def primitive := ⟦
                                        addrs: List‹Addr›) -> (G, KExpr) {
     let tidx_addr = list_lookup(addrs, tidx);
     match address_eq(tidx_addr, fin_addr()) {
-      0 => (0, store(KExprNode.BVar(0))),
+      0 => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
       1 =>
         match field {
           0 =>
@@ -2457,10 +2457,10 @@ def primitive := ⟦
               KExprNode.Const(rec_idx, rec_us) =>
                 let rec_addr_ = list_lookup(addrs, rec_idx);
                 match address_eq(rec_addr_, decidable_rec_addr()) {
-                  0 => (0, store(KExprNode.BVar(0))),
+                  0 => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
                   1 =>
                     match u32_less_than(list_length(args), 5) {
-                      1 => (0, store(KExprNode.BVar(0))),
+                      1 => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
                       0 =>
                         let a0 = list_lookup(args, 0);
                         let a1 = list_lookup(args, 1);
@@ -2490,19 +2490,19 @@ def primitive := ⟦
                                         let r5 = store(KExprNode.App(r4, a4));
                                         let post = list_drop(args, 5);
                                         (1, apply_spine(r5, post)),
-                                      (0, _) => (0, store(KExprNode.BVar(0))),
+                                      (0, _) => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
                                     },
-                                  _ => (0, store(KExprNode.BVar(0))),
+                                  _ => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
                                 },
-                              _ => (0, store(KExprNode.BVar(0))),
+                              _ => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
                             },
-                          _ => (0, store(KExprNode.BVar(0))),
+                          _ => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
                         },
                     },
                 },
-              _ => (0, store(KExprNode.BVar(0))),
+              _ => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
             },
-          _ => (0, store(KExprNode.BVar(0))),
+          _ => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
         },
     }
   }
@@ -2516,7 +2516,7 @@ def primitive := ⟦
         projection_definition_info(body, arity + 1),
       KExprNode.Proj(struct_idx, field, projected) =>
         match load(projected) {
-          KExprNode.BVar(i) =>
+          KExprNode.BVar(i, _) =>
             match u32_less_than(i, arity) {
               1 => (1, arity, struct_idx, field, (arity - 1) - i),
               _ => (0, 0, 0, 0, 0),

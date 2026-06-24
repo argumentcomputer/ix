@@ -187,20 +187,20 @@ def canonicalCheck := ⟦
 
   fn compare_kexpr_node(x: KExprNode, y: KExprNode) -> G {
     match x {
-      KExprNode.BVar(xi) =>
+      KExprNode.BVar(xi, _) =>
         match y {
-          KExprNode.BVar(yi) => ord_cmp_g(xi, yi),
+          KExprNode.BVar(yi, _) => ord_cmp_g(xi, yi),
           _ => 0,
         },
       KExprNode.Srt(&xu) =>
         match y {
-          KExprNode.BVar(_) => 2,
+          KExprNode.BVar(_, _) => 2,
           KExprNode.Srt(&yu) => compare_kuniv(xu, yu),
           _ => 0,
         },
       KExprNode.Const(xid, xls) =>
         match y {
-          KExprNode.BVar(_) => 2,
+          KExprNode.BVar(_, _) => 2,
           KExprNode.Srt(_) => 2,
           KExprNode.Const(yid, yls) =>
             ord_then(ord_cmp_g(xid, yid), compare_kuniv_list(xls, yls)),
@@ -208,7 +208,7 @@ def canonicalCheck := ⟦
         },
       KExprNode.App(xf, xa) =>
         match y {
-          KExprNode.BVar(_) => 2,
+          KExprNode.BVar(_, _) => 2,
           KExprNode.Srt(_) => 2,
           KExprNode.Const(_, _) => 2,
           KExprNode.App(yf, ya) =>
@@ -217,7 +217,7 @@ def canonicalCheck := ⟦
         },
       KExprNode.Lam(xt, xb) =>
         match y {
-          KExprNode.BVar(_) => 2,
+          KExprNode.BVar(_, _) => 2,
           KExprNode.Srt(_) => 2,
           KExprNode.Const(_, _) => 2,
           KExprNode.App(_, _) => 2,
@@ -227,7 +227,7 @@ def canonicalCheck := ⟦
         },
       KExprNode.Forall(xt, xb) =>
         match y {
-          KExprNode.BVar(_) => 2,
+          KExprNode.BVar(_, _) => 2,
           KExprNode.Srt(_) => 2,
           KExprNode.Const(_, _) => 2,
           KExprNode.App(_, _) => 2,
@@ -238,7 +238,7 @@ def canonicalCheck := ⟦
         },
       KExprNode.Let(xt, xv, xb) =>
         match y {
-          KExprNode.BVar(_) => 2,
+          KExprNode.BVar(_, _) => 2,
           KExprNode.Srt(_) => 2,
           KExprNode.Const(_, _) => 2,
           KExprNode.App(_, _) => 2,
@@ -280,20 +280,20 @@ def canonicalCheck := ⟦
 
   fn compare_kexpr_node_ctx(x: KExprNode, y: KExprNode, ctx: List‹G›) -> (G, G) {
     match x {
-      KExprNode.BVar(xi) =>
+      KExprNode.BVar(xi, _) =>
         match y {
-          KExprNode.BVar(yi) => sord_of_g(ord_cmp_g(xi, yi)),
+          KExprNode.BVar(yi, _) => sord_of_g(ord_cmp_g(xi, yi)),
           _ => sord_lt_strong(),
         },
       KExprNode.Srt(&xu) =>
         match y {
-          KExprNode.BVar(_) => sord_gt_strong(),
+          KExprNode.BVar(_, _) => sord_gt_strong(),
           KExprNode.Srt(&yu) => sord_of_g(compare_kuniv(xu, yu)),
           _ => sord_lt_strong(),
         },
       KExprNode.Const(xid, xls) =>
         match y {
-          KExprNode.BVar(_) => sord_gt_strong(),
+          KExprNode.BVar(_, _) => sord_gt_strong(),
           KExprNode.Srt(_) => sord_gt_strong(),
           KExprNode.Const(yid, yls) =>
             sord_then(compare_kuniv_list_sord(xls, yls),
@@ -302,7 +302,7 @@ def canonicalCheck := ⟦
         },
       KExprNode.App(xf, xa) =>
         match y {
-          KExprNode.BVar(_) => sord_gt_strong(),
+          KExprNode.BVar(_, _) => sord_gt_strong(),
           KExprNode.Srt(_) => sord_gt_strong(),
           KExprNode.Const(_, _) => sord_gt_strong(),
           KExprNode.App(yf, ya) =>
@@ -312,7 +312,7 @@ def canonicalCheck := ⟦
         },
       KExprNode.Lam(xt, xb) =>
         match y {
-          KExprNode.BVar(_) => sord_gt_strong(),
+          KExprNode.BVar(_, _) => sord_gt_strong(),
           KExprNode.Srt(_) => sord_gt_strong(),
           KExprNode.Const(_, _) => sord_gt_strong(),
           KExprNode.App(_, _) => sord_gt_strong(),
@@ -323,7 +323,7 @@ def canonicalCheck := ⟦
         },
       KExprNode.Forall(xt, xb) =>
         match y {
-          KExprNode.BVar(_) => sord_gt_strong(),
+          KExprNode.BVar(_, _) => sord_gt_strong(),
           KExprNode.Srt(_) => sord_gt_strong(),
           KExprNode.Const(_, _) => sord_gt_strong(),
           KExprNode.App(_, _) => sord_gt_strong(),
@@ -335,7 +335,7 @@ def canonicalCheck := ⟦
         },
       KExprNode.Let(xt, xv, xb) =>
         match y {
-          KExprNode.BVar(_) => sord_gt_strong(),
+          KExprNode.BVar(_, _) => sord_gt_strong(),
           KExprNode.Srt(_) => sord_gt_strong(),
           KExprNode.Const(_, _) => sord_gt_strong(),
           KExprNode.App(_, _) => sord_gt_strong(),

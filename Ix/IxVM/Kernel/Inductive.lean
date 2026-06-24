@@ -97,7 +97,7 @@ def inductive_check := ⟦
         match load(args) {
           ListNode.Cons(arg, rest) =>
             match load(arg) {
-              KExprNode.BVar(j) =>
+              KExprNode.BVar(j, _) =>
                 assert_eq!(j, ((n_fields + n_params) - 1) - i);
                 let _ = assert_first_args_are_param_bvars(rest, n_params, n_fields, i + 1);
                 (),
@@ -320,7 +320,7 @@ def inductive_check := ⟦
 
   fn expr_mentions_any_idx(e: KExpr, idxs: List‹G›) -> G {
     match load(e) {
-      KExprNode.BVar(_) => 0,
+      KExprNode.BVar(_, _) => 0,
       KExprNode.Srt(_) => 0,
       KExprNode.Const(idx, _) => list_contains_g(idxs, idx),
       KExprNode.App(f, a) =>
@@ -443,7 +443,7 @@ def inductive_check := ⟦
   -- Returns 1 if `e` contains any Const(ind_idx, _), 0 otherwise.
   fn expr_mentions_idx(e: KExpr, ind_idx: G) -> G {
     match load(e) {
-      KExprNode.BVar(_) => 0,
+      KExprNode.BVar(_, _) => 0,
       KExprNode.Srt(_) => 0,
       KExprNode.Const(idx, _) =>
         match idx - ind_idx {
@@ -601,7 +601,7 @@ def inductive_check := ⟦
       ListNode.Nil => 0,
       ListNode.Cons(a, rest) =>
         match load(a) {
-          KExprNode.BVar(i) =>
+          KExprNode.BVar(i, _) =>
             match i - target {
               0 => 1,
               _ => args_contain_bvar(rest, target),
@@ -679,13 +679,13 @@ def inductive_check := ⟦
   fn subst_param_for(j: G, n_rec_params: G, is_aux: G,
                       spec_params: List‹KExpr›) -> KExpr {
     match is_aux {
-      0 => store(KExprNode.BVar((n_rec_params - 1) - j)),
+      0 => store(KExprNode.BVar((n_rec_params - 1) - j, kexpr_dummy())),
       _ =>
         let len = list_length(spec_params);
         let lt = u32_less_than(j, len);
         match lt {
           1 => list_lookup(spec_params, j),
-          _ => store(KExprNode.BVar((n_rec_params - 1) - j)),
+          _ => store(KExprNode.BVar((n_rec_params - 1) - j, kexpr_dummy())),
         },
     }
   }
@@ -730,7 +730,7 @@ def inductive_check := ⟦
   fn ctor_subst_param_for(j: G, depth: G, is_aux: G,
                            spec_params: List‹KExpr›) -> KExpr {
     match is_aux {
-      0 => store(KExprNode.BVar((depth - 1) - j)),
+      0 => store(KExprNode.BVar((depth - 1) - j, kexpr_dummy())),
       _ =>
         let len = list_length(spec_params);
         let lt = u32_less_than(j, len);
@@ -738,7 +738,7 @@ def inductive_check := ⟦
           1 =>
             let sp = list_lookup(spec_params, j);
             expr_lift(sp, depth, 0),
-          _ => store(KExprNode.BVar((depth - 1) - j)),
+          _ => store(KExprNode.BVar((depth - 1) - j, kexpr_dummy())),
         },
     }
   }
@@ -772,7 +772,7 @@ def inductive_check := ⟦
     match n_rec_params - j {
       0 => head,
       _ =>
-        let v = store(KExprNode.BVar(((n_rec_params - 1) - j) + depth));
+        let v = store(KExprNode.BVar(((n_rec_params - 1) - j) + depth, kexpr_dummy()));
         build_major_params(store(KExprNode.App(head, v)), n_rec_params, depth, j + 1),
     }
   }
@@ -784,7 +784,7 @@ def inductive_check := ⟦
     match n_indices - i {
       0 => head,
       _ =>
-        let v = store(KExprNode.BVar((n_indices - 1) - i));
+        let v = store(KExprNode.BVar((n_indices - 1) - i, kexpr_dummy()));
         build_major_indices(store(KExprNode.App(head, v)), n_indices, i + 1),
     }
   }
@@ -845,7 +845,7 @@ def inductive_check := ⟦
             let ret_indices = list_drop(ret_args, n_own_params);
             let ret_indices_lifted = list_lift_each(ret_indices, n_ihs, 0);
             let motive_var = (depth_now - 1) - (motive_base + self_mem_idx);
-            let motive_ref = store(KExprNode.BVar(motive_var));
+            let motive_ref = store(KExprNode.BVar(motive_var, kexpr_dummy()));
             let with_indices = apply_spine(motive_ref, ret_indices_lifted);
             let ctor_head = store(KExprNode.Const(ctor_idx, occurrence_us));
             -- For non-aux: apply n_rec_params recursor-param BVars.
@@ -883,7 +883,7 @@ def inductive_check := ⟦
       _ =>
         match load(ty) {
           KExprNode.Forall(_, body) =>
-            let p = store(KExprNode.BVar((depth - 1) - j));
+            let p = store(KExprNode.BVar((depth - 1) - j, kexpr_dummy()));
             let body_substed = expr_inst1(body, p, 0);
             peel_n_subst_at_depth(body_substed, n - 1, depth, j + 1),
         },
@@ -1028,7 +1028,7 @@ def inductive_check := ⟦
     match n_xs - i {
       0 => head,
       _ =>
-        let v = store(KExprNode.BVar((n_xs - 1) - i));
+        let v = store(KExprNode.BVar((n_xs - 1) - i, kexpr_dummy()));
         build_apply_xs(store(KExprNode.App(head, v)), n_xs, i + 1),
     }
   }
@@ -1048,7 +1048,7 @@ def inductive_check := ⟦
     match n - j {
       0 => head,
       _ =>
-        let v = store(KExprNode.BVar(start - j));
+        let v = store(KExprNode.BVar(start - j, kexpr_dummy()));
         build_apply_bvars_decreasing(store(KExprNode.App(head, v)), n, start, j + 1),
     }
   }
@@ -1058,7 +1058,7 @@ def inductive_check := ⟦
     match n_fields - i {
       0 => head,
       _ =>
-        let v = store(KExprNode.BVar((n_binders - 1) - i));
+        let v = store(KExprNode.BVar((n_binders - 1) - i, kexpr_dummy()));
         build_apply_field_bvars(store(KExprNode.App(head, v)), n_fields, n_binders, i + 1),
     }
   }
@@ -1096,7 +1096,7 @@ def inductive_check := ⟦
     match n_indices - i {
       0 => head,
       _ =>
-        let v = store(KExprNode.BVar(n_indices - i));
+        let v = store(KExprNode.BVar(n_indices - i, kexpr_dummy()));
         apply_indices_in_conclusion(store(KExprNode.App(head, v)), n_indices, i + 1),
     }
   }
@@ -1296,9 +1296,9 @@ def inductive_check := ⟦
 
             let depth_after_major = pre_major_depth + 1;
             let motive_var = (depth_after_major - 1) - (motive_base + self_mem_idx);
-            let motive_ref = store(KExprNode.BVar(motive_var));
+            let motive_ref = store(KExprNode.BVar(motive_var, kexpr_dummy()));
             let with_indices = apply_indices_in_conclusion(motive_ref, n_indices, 0);
-            let conclusion = store(KExprNode.App(with_indices, store(KExprNode.BVar(0))));
+            let conclusion = store(KExprNode.App(with_indices, store(KExprNode.BVar(0, kexpr_dummy()))));
 
             let with_major = store(KExprNode.Forall(major_ty, conclusion));
             let with_idx_foralls = wrap_foralls(with_major, index_doms);
@@ -1360,7 +1360,7 @@ def inductive_check := ⟦
         let body_depth = n_params + n_motives + n_minors + n_fields;
         -- minor_i at BVar(body_depth - 1 - (n_params + n_motives + ctor_minor_index))
         let minor_var = (body_depth - 1) - (n_params + n_motives + ctor_minor_index);
-        let minor_ref = store(KExprNode.BVar(minor_var));
+        let minor_ref = store(KExprNode.BVar(minor_var, kexpr_dummy()));
         -- Apply ctor fields: field j at BVar(n_fields - 1 - j)
         let with_fields = build_apply_field_bvars(minor_ref, n_fields, n_fields, 0);
         -- Apply IHs: for each rec field j, build IH using peer_recs[mem_idx]
@@ -1444,7 +1444,7 @@ def inductive_check := ⟦
                 let idx_args = list_drop(dargs, target_n_params);
                 let with_idx = apply_spine(with_minors, idx_args);
                 let field_base = ((n_fields - 1) - field_idx) + n_xs;
-                let field_ref = store(KExprNode.BVar(field_base));
+                let field_ref = store(KExprNode.BVar(field_base, kexpr_dummy()));
                 let field_app = build_apply_xs(field_ref, n_xs, 0);
                 let ih_inner = store(KExprNode.App(with_idx, field_app));
                 let ih = wrap_lams(ih_inner, forall_doms);
@@ -1462,7 +1462,7 @@ def inductive_check := ⟦
     match n_motives - i {
       0 => head,
       _ =>
-        let v = store(KExprNode.BVar(start - i));
+        let v = store(KExprNode.BVar(start - i, kexpr_dummy()));
         build_apply_motives(store(KExprNode.App(head, v)), n_motives, start, i + 1),
     }
   }
@@ -1471,7 +1471,7 @@ def inductive_check := ⟦
     match n_minors - i {
       0 => head,
       _ =>
-        let v = store(KExprNode.BVar(start - i));
+        let v = store(KExprNode.BVar(start - i, kexpr_dummy()));
         build_apply_minors(store(KExprNode.App(head, v)), n_minors, start, i + 1),
     }
   }
@@ -2292,9 +2292,9 @@ def inductive_check := ⟦
             match collect_spine(inner_body) {
               (_h, dom_args) =>
                 let idx_args = list_drop(dom_args, target_n_params);
-                let motive_ref = store(KExprNode.BVar(motive_bvar));
+                let motive_ref = store(KExprNode.BVar(motive_bvar, kexpr_dummy()));
                 let with_indices = apply_spine(motive_ref, idx_args);
-                let field_ref = store(KExprNode.BVar(field_bvar));
+                let field_ref = store(KExprNode.BVar(field_bvar, kexpr_dummy()));
                 let field_app = build_apply_xs(field_ref, n_xs, 0);
                 let ih_body = store(KExprNode.App(with_indices, field_app));
                 let ih_dom = wrap_foralls(ih_body, forall_doms);

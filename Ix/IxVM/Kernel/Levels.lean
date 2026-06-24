@@ -723,7 +723,7 @@ def levels := ⟦
 
   fn expr_inst_levels_walk(e: KExpr, params: List‹&KLevel›) -> KExpr {
     match load(e) {
-      KExprNode.BVar(i) => store(KExprNode.BVar(i)),
+      KExprNode.BVar(i, _) => store(KExprNode.BVar(i, kexpr_dummy())),
       KExprNode.Srt(&l) =>
         store(KExprNode.Srt(store(level_inst_params(l, params)))),
       KExprNode.Const(idx, lvls) =>

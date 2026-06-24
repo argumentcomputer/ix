@@ -55,7 +55,7 @@ def check := ⟦
   -- unsafe, 1 otherwise. Used only when the calling const is itself safe.
   fn safe_refs_only(e: KExpr, top: List‹&KConstantInfo›) -> G {
     match load(e) {
-      KExprNode.BVar(_) => 1,
+      KExprNode.BVar(_, _) => 1,
       KExprNode.Srt(_) => 1,
       KExprNode.Const(idx, _) =>
         let ci = load(list_lookup(top, idx));
@@ -119,7 +119,7 @@ def check := ⟦
   fn validate_expr_well_scoped(e: KExpr, depth: G, bound: G,
                                 top: List‹&KConstantInfo›) {
     match load(e) {
-      KExprNode.BVar(i) =>
+      KExprNode.BVar(i, _) =>
         assert_eq!(u32_less_than(i, depth), 1);
         (),
       KExprNode.Srt(&l) => validate_univ_params_seen(l, bound),

@@ -47,7 +47,10 @@ def subst := ⟦
   -- ============================================================================
   fn expr_lbr(e: KExpr) -> G {
     match load(e) {
-      KExprNode.BVar(i) => i + 1,
+      -- A typed BVar's loose range covers both its index and its annotation
+      -- (which is itself an expr in the same scope, possibly mentioning outer
+      -- binders). Mirror docs/ixvm-context-free-inference.org §subst-rules.
+      KExprNode.BVar(i, ty) => lbr_max(i + 1, expr_lbr(ty)),
       KExprNode.Srt(_) => 0,
       KExprNode.Const(_, _) => 0,
       KExprNode.Lit(_) => 0,
@@ -151,11 +154,16 @@ def subst := ⟦
 
   fn expr_lift_walk(e: KExpr, shift: G, cutoff: G) -> KExpr {
     match load(e) {
-      KExprNode.BVar(i) =>
-        let lt = u32_less_than(i, cutoff);
-        match lt {
-          1 => e,
-          0 => store(KExprNode.BVar(i + shift)),
+      -- Transport the annotation at the SAME cutoff as the BVar (a BVar is a
+      -- leaf — it introduces no binder, so its annotation lives at its own
+      -- scope, not cutoff+1). The outer `expr_lift` fast path already skipped
+      -- us when neither index nor annotation needs shifting (expr_lbr folds
+      -- the annotation's loose range), so here we always rebuild.
+      KExprNode.BVar(i, ty) =>
+        let ty2 = expr_lift(ty, shift, cutoff);
+        match u32_less_than(i, cutoff) {
+          1 => store(KExprNode.BVar(i, ty2)),
+          0 => store(KExprNode.BVar(i + shift, ty2)),
         },
       KExprNode.Srt(l) => store(KExprNode.Srt(l)),
       KExprNode.Const(idx, lvls) => store(KExprNode.Const(idx, lvls)),
@@ -204,14 +212,18 @@ def subst := ⟦
 
   fn expr_inst1_walk(e: KExpr, arg: KExpr, depth: G) -> KExpr {
     match load(e) {
-      KExprNode.BVar(i) =>
-        let lt = u32_less_than(i, depth);
-        match lt {
-          1 => e,
+      -- Transport the annotation at the SAME depth as the BVar. The `i == depth`
+      -- arm replaces the variable wholesale by `arg`, so the annotation is
+      -- discarded (no surviving variable to annotate); the surviving arms carry
+      -- `ty2 = inst1(ty, arg, depth)`. Mirror §subst-rules.
+      KExprNode.BVar(i, ty) =>
+        let ty2 = expr_inst1(ty, arg, depth);
+        match u32_less_than(i, depth) {
+          1 => store(KExprNode.BVar(i, ty2)),
           0 =>
             match i - depth {
               0 => expr_lift(arg, depth, 0),
-              _ => store(KExprNode.BVar(i - 1)),
+              _ => store(KExprNode.BVar(i - 1, ty2)),
             },
         },
       KExprNode.Srt(l) => store(KExprNode.Srt(l)),
@@ -261,21 +273,22 @@ def subst := ⟦
   -- hot App/Lam/… walk stays narrow (the `list_length` / `list_lookup` /
   -- `expr_lift` machinery only charges the BVar rows). Mirror the hot/cold
   -- split pattern used for `address_eq` / `whnf_with_spine`.
-  fn expr_inst_many_bvar(i: G, substs: List‹KExpr›, depth: G) -> KExpr {
+  fn expr_inst_many_bvar(i: G, ty: KExpr, substs: List‹KExpr›, depth: G) -> KExpr {
+    let ty2 = expr_inst_many(ty, substs, depth);
     match u32_less_than(i, depth) {
-      1 => store(KExprNode.BVar(i)),
+      1 => store(KExprNode.BVar(i, ty2)),
       0 =>
         let n = list_length(substs);
         match u32_less_than(i, depth + n) {
           1 => expr_lift(list_lookup(substs, i - depth), depth, 0),
-          0 => store(KExprNode.BVar(i - n)),
+          0 => store(KExprNode.BVar(i - n, ty2)),
         },
     }
   }
 
   fn expr_inst_many_walk(e: KExpr, substs: List‹KExpr›, depth: G) -> KExpr {
     match load(e) {
-      KExprNode.BVar(i) => expr_inst_many_bvar(i, substs, depth),
+      KExprNode.BVar(i, ty) => expr_inst_many_bvar(i, ty, substs, depth),
       KExprNode.Srt(l) => store(KExprNode.Srt(l)),
       KExprNode.Const(idx, lvls) => store(KExprNode.Const(idx, lvls)),
       KExprNode.App(f, a) =>

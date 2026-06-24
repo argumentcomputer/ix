@@ -380,9 +380,9 @@ def defEq := ⟦
           _ => 0,
         },
 
-      KExprNode.BVar(ia) =>
+      KExprNode.BVar(ia, _) =>
         match load(b) {
-          KExprNode.BVar(ib) =>
+          KExprNode.BVar(ib, _) =>
             match ia - ib {
               0 => 1,
               _ => 0,
@@ -494,7 +494,7 @@ def defEq := ⟦
                     types: List‹KExpr›,
                     top: List‹&KConstantInfo›, addrs: List‹Addr›) -> G {
     let b_lifted = expr_lift(b, 1, 0);
-    let bvar0 = store(KExprNode.BVar(0));
+    let bvar0 = store(KExprNode.BVar(0, kexpr_dummy()));
     let b_app = store(KExprNode.App(b_lifted, bvar0));
     let inner = store(ListNode.Cons(ty_a, types));
     k_is_def_eq(body_a, b_app, inner, top, addrs)

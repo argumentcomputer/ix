@@ -37,7 +37,7 @@ def kernelTypes := ⟦
   -- ============================================================================
 
   enum KExprNode {
-    BVar(G),
+    BVar(G, KExpr),
     Srt(&KLevel),
     Const(G, List‹&KLevel›),
     App(KExpr, KExpr),
@@ -49,6 +49,17 @@ def kernelTypes := ⟦
   }
 
   type KExpr = &KExprNode
+
+  -- Placeholder annotation for `BVar(idx, type)`. Used where a BVar's type
+  -- annotation is dead data: (a) the `(0, _)` None-sentinels returned from
+  -- `(G, KExpr)` helpers (never inferred), and (b) — transiently, during the
+  -- typed-BVar migration — any BVar construction whose real annotation is not
+  -- yet wired up. `Sort 0` is a closed, obviously-dead canonical constant, so
+  -- `expr_lbr`/`expr_lift`/`expr_inst1` treat it as inert. See
+  -- docs/ixvm-context-free-inference.org (Condition 2).
+  fn kexpr_dummy() -> KExpr {
+    store(KExprNode.Srt(store(KLevel.Zero)))
+  }
 
   -- Collect an application spine: peel `App(f, a)` layers, returning the head
   -- and the args in application order. The single shared definition for every

@@ -33,7 +33,7 @@ def infer := ⟦
   -- ============================================================================
   fn types_lookup(types: List‹KExpr›, i: G) -> KExpr {
     match load(types) {
-      ListNode.Nil => store(KExprNode.BVar(0)),
+      ListNode.Nil => store(KExprNode.BVar(0, kexpr_dummy())),
       ListNode.Cons(ty, rest) =>
         match i {
           0 => expr_lift(ty, 1, 0),
@@ -63,7 +63,7 @@ def infer := ⟦
   fn k_infer_core(e: KExpr, types: List‹KExpr›,
                   top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
     match load(e) {
-      KExprNode.BVar(i) => types_lookup(types, i),
+      KExprNode.BVar(i, _) => types_lookup(types, i),
 
       -- Normalize the constructed `Succ(l)` so callers see canonical
       -- forms (e.g. `Succ(IMax 0 1)` → `Succ(Succ Zero) = 2`). Without

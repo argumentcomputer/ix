@@ -153,7 +153,7 @@ def convert := ⟦
         store(KExprNode.Srt(store(convert_univ(u)))),
 
       Expr.Var(idx) =>
-        store(KExprNode.BVar(flatten_u64(idx))),
+        store(KExprNode.BVar(flatten_u64(idx), kexpr_dummy())),
 
       Expr.Ref(ref_idx, univ_idxs) =>
         let const_idx = list_lookup(ref_idxs, flatten_u64(ref_idx));

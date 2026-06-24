@@ -181,33 +181,33 @@ def whnf := ⟦
         let is_add = address_eq(ca, nat_add_addr());
         let is_divmod = address_eq(ca, nat_div_addr()) + address_eq(ca, nat_mod_addr());
         match is_add + is_divmod {
-          0 => (0, store(KExprNode.BVar(0))),
+          0 => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
           _ =>
             match list_length(spine) {
               2 =>
                 let a0_w = whnf(list_lookup(spine, 0), types, top, addrs);
                 let a1_w = whnf(list_lookup(spine, 1), types, top, addrs);
                 match try_extract_nat(a1_w, addrs) {
-                  (0, _) => (0, store(KExprNode.BVar(0))),
+                  (0, _) => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
                   (1, n) =>
                     -- reject n=0 (all ops) and n=1 (div/mod only).
                     let bad = klimbs_is_zero(n) + is_divmod * klimbs_is_zero(klimbs_dec(n));
                     match bad {
                       0 =>
                         match try_extract_nat(a0_w, addrs) {
-                          (1, _) => (0, store(KExprNode.BVar(0))),
+                          (1, _) => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
                           (0, _) =>
                             (1, store(KExprNode.App(
                                   store(KExprNode.App(head, a0_w)),
                                   mk_nat_lit(n)))),
                         },
-                      _ => (0, store(KExprNode.BVar(0))),
+                      _ => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
                     },
                 },
-              _ => (0, store(KExprNode.BVar(0))),
+              _ => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
             },
         },
-      _ => (0, store(KExprNode.BVar(0))),
+      _ => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
     }
   }
 
@@ -232,7 +232,7 @@ def whnf := ⟦
                   (0, _) =>
                     match try_reduce_decidable(head_addr, idx, lvls, spine, types, top, addrs) {
                       (1, r) => (1, r),
-                      (0, _) => (0, store(KExprNode.BVar(0))),
+                      (0, _) => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
                     },
                 },
             },
@@ -271,7 +271,7 @@ def whnf := ⟦
         -- differential assert (now removed) over the suite + heavy consts.
         let addr_prim = match prim_any_addr(head_addr) {
           1 => try_address_primitives(head_addr, idx, lvls, spine, types, top, addrs),
-          _ => (0, store(KExprNode.BVar(0))),
+          _ => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
         };
         match addr_prim {
           (1, reduced) => whnf(reduced, types, top, addrs),
@@ -314,7 +314,7 @@ def whnf := ⟦
       KExprNode.Lit(_) => e,
       KExprNode.Lam(_, _) => e,
       KExprNode.Forall(_, _) => e,
-      KExprNode.BVar(_) => e,
+      KExprNode.BVar(_, _) => e,
       -- Context-trimmed memo key (mirror Rust `whnf_key`): reduce on the
       -- reachable suffix so a closed term shares its WHNF across binder depths.
       _ => whnf_core(e, ctx_trim(types, expr_lbr(e)), top, addrs),
@@ -341,14 +341,14 @@ def whnf := ⟦
     let spine_len = list_length(spine);
     let major_lt = u32_less_than(major_idx, spine_len);
     match major_lt {
-      0 => (0, store(KExprNode.BVar(0))),
+      0 => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
       1 =>
         let lvls_len = list_length(lvls);
         match lvls_len - num_lvls {
           0 =>
             try_iota_with_major(lvls, spine, num_params, num_motives, num_minors,
                                 major_idx, rules, k_flag, types, top, addrs),
-          _ => (0, store(KExprNode.BVar(0))),
+          _ => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
         },
     }
   }
@@ -488,12 +488,12 @@ def whnf := ⟦
                 let rules_len = list_length(rules);
                 let cidx_in_range = u32_less_than(cidx, rules_len);
                 match cidx_in_range {
-                  0 => (0, store(KExprNode.BVar(0))),
+                  0 => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
                   1 =>
                     let ctor_args_len = list_length(ctor_args);
                     let too_few_fields = u32_less_than(ctor_args_len, ctor_nfields);
                     match too_few_fields {
-                      1 => (0, store(KExprNode.BVar(0))),
+                      1 => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
                       0 =>
                         let rule = list_lookup(rules, cidx);
                         match rule {
@@ -534,18 +534,18 @@ def whnf := ⟦
                         types: List‹KExpr›, top: List‹&KConstantInfo›,
                         addrs: List‹Addr›) -> (G, KExpr) {
     match u32_less_than(num_minors, 2) {
-      1 => (0, store(KExprNode.BVar(0))),
+      1 => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
       0 =>
         let raw_major = list_lookup(spine, major_idx);
         let major_w = whnf(raw_major, types, top, addrs);
         match try_extract_nat(major_w, addrs) {
-          (0, _) => (0, store(KExprNode.BVar(0))),
+          (0, _) => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
           (1, n_klimbs) =>
             let base_idx = num_params + num_motives;
             let raw_step = list_lookup(spine, base_idx + 1);
             let step_w = whnf(raw_step, types, top, addrs);
             match is_nat_succ_ih_step(step_w, addrs) {
-              0 => (0, store(KExprNode.BVar(0))),
+              0 => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
               1 =>
                 let raw_base = list_lookup(spine, base_idx);
                 let base_w = whnf(raw_base, types, top, addrs);
@@ -562,7 +562,7 @@ def whnf := ⟦
                       1 => (1, apply_spine(base_w, post)),
                       0 =>
                         match find_addr_idx_safe(nat_add_addr(), addrs, 0) {
-                          (0, _) => (0, store(KExprNode.BVar(0))),
+                          (0, _) => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
                           (1, add_idx) =>
                             let add_const = store(KExprNode.Const(add_idx, store(ListNode.Nil)));
                             let off = store(KExprNode.App(
@@ -596,7 +596,7 @@ def whnf := ⟦
                         match list_length(args) - 1 {
                           0 =>
                             match load(list_lookup(args, 0)) {
-                              KExprNode.BVar(i) => eq_zero(i),
+                              KExprNode.BVar(i, _) => eq_zero(i),
                               _ => 0,
                             },
                           _ => 0,
@@ -645,7 +645,7 @@ def whnf := ⟦
                                 let major_ty = k_infer(major, types, top, addrs);
                                 let prop_p = is_prop_type(major_ty, types, top, addrs);
                                 match prop_p {
-                                  1 => (0, store(KExprNode.BVar(0))),
+                                  1 => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
                                   0 =>
                                     let rhs_inst = expr_inst_levels(rhs, lvls);
                                     let pmm_end = (num_params + num_motives) + num_minors;
@@ -656,16 +656,16 @@ def whnf := ⟦
                                     let result = apply_spine(with_projs, post_major);
                                     (1, result),
                                 },
-                              _ => (0, store(KExprNode.BVar(0))),
+                              _ => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
                             },
-                          _ => (0, store(KExprNode.BVar(0))),
+                          _ => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
                         },
-                      _ => (0, store(KExprNode.BVar(0))),
+                      _ => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
                     },
                 },
             },
         },
-      _ => (0, store(KExprNode.BVar(0))),
+      _ => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
     }
   }
 
@@ -685,7 +685,7 @@ def whnf := ⟦
     match kind {
       QuotKind.Lift => try_quot_lift(spine, types, top, addrs),
       QuotKind.Ind => try_quot_ind(spine, types, top, addrs),
-      _ => (0, store(KExprNode.BVar(0))),
+      _ => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
     }
   }
 
@@ -694,7 +694,7 @@ def whnf := ⟦
     let n = list_length(spine);
     let lt6 = u32_less_than(n, 6);
     match lt6 {
-      1 => (0, store(KExprNode.BVar(0))),
+      1 => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
       0 =>
         let f = list_lookup(spine, 3);
         let q = list_lookup(spine, 5);
@@ -704,7 +704,7 @@ def whnf := ⟦
             let post = list_drop(spine, 6);
             let result = apply_spine(store(KExprNode.App(f, a)), post);
             (1, result),
-          (0, _) => (0, store(KExprNode.BVar(0))),
+          (0, _) => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
         },
     }
   }
@@ -714,7 +714,7 @@ def whnf := ⟦
     let n = list_length(spine);
     let lt5 = u32_less_than(n, 5);
     match lt5 {
-      1 => (0, store(KExprNode.BVar(0))),
+      1 => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
       0 =>
         let m = list_lookup(spine, 3);
         let q = list_lookup(spine, 4);
@@ -724,7 +724,7 @@ def whnf := ⟦
             let post = list_drop(spine, 5);
             let result = apply_spine(store(KExprNode.App(m, a)), post);
             (1, result),
-          (0, _) => (0, store(KExprNode.BVar(0))),
+          (0, _) => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
         },
     }
   }
@@ -752,13 +752,13 @@ def whnf := ⟦
                       0 =>
                         let a = list_lookup(args, 2);
                         (1, a),
-                      _ => (0, store(KExprNode.BVar(0))),
+                      _ => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
                     },
-                  _ => (0, store(KExprNode.BVar(0))),
+                  _ => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
                 },
-              _ => (0, store(KExprNode.BVar(0))),
+              _ => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
             },
-          _ => (0, store(KExprNode.BVar(0))),
+          _ => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
         },
     }
   }
@@ -784,7 +784,7 @@ def whnf := ⟦
                       top: List‹&KConstantInfo›,
                       addrs: List‹Addr›) -> (G, KExpr) {
     match load(rules) {
-      ListNode.Nil => (0, store(KExprNode.BVar(0))),
+      ListNode.Nil => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
       ListNode.Cons(rule, _) =>
         match rule {
           KRecRule.Mk(ctor_idx, _, _) =>
@@ -796,7 +796,7 @@ def whnf := ⟦
                   KConstantInfo.Induct(_, _, _, _, ctor_indices, _, _, _, _, _) =>
                     let n_ctors = list_length(ctor_indices);
                     match n_ctors {
-                      0 => (0, store(KExprNode.BVar(0))),
+                      0 => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
                       _ =>
                         let first_ctor = list_lookup(ctor_indices, 0);
                         let major_ty = k_infer(raw_major, types, top, addrs);
@@ -814,11 +814,11 @@ def whnf := ⟦
                                     let ctor_ty = k_infer(ctor_app, types, top, addrs);
                                     match k_is_def_eq(major_ty_w, ctor_ty, types, top, addrs) {
                                       1 => (1, ctor_app),
-                                      0 => (0, store(KExprNode.BVar(0))),
+                                      0 => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
                                     },
-                                  _ => (0, store(KExprNode.BVar(0))),
+                                  _ => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
                                 },
-                              _ => (0, store(KExprNode.BVar(0))),
+                              _ => (0, store(KExprNode.BVar(0, kexpr_dummy()))),
                             },
                         },
                     },
@@ -833,7 +833,7 @@ def whnf := ⟦
   -- ============================================================================
   fn list_lookup_or_nil(list: List‹KExpr›, idx: G) -> KExpr {
     match load(list) {
-      ListNode.Nil => store(KExprNode.BVar(0)),
+      ListNode.Nil => store(KExprNode.BVar(0, kexpr_dummy())),
       ListNode.Cons(v, rest) =>
         match idx {
           0 => v,
@@ -852,7 +852,7 @@ def whnf := ⟦
   fn ensure_forall_post_whnf(e: KExpr) -> (G, KExpr, KExpr) {
     match load(e) {
       KExprNode.Forall(ty, body) => (1, ty, body),
-      _ => (0, store(KExprNode.BVar(0)), store(KExprNode.BVar(0))),
+      _ => (0, store(KExprNode.BVar(0, kexpr_dummy())), store(KExprNode.BVar(0, kexpr_dummy()))),
     }
   }
 ⟧
