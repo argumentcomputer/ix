@@ -15,7 +15,7 @@ use rayon::{
 use crate::aiur::{G, execute::QueryRecord, memory_channel};
 
 pub struct Memory {
-  width: usize,
+  pub(crate) width: usize,
 }
 
 impl Memory {

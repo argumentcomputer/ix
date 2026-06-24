@@ -47,6 +47,10 @@ namespace AiurSystem
 @[extern "rs_aiur_system_build"]
 opaque build : @&Bytecode.Toplevel → @&CommitmentParameters → AiurSystem
 
+/-- Serialize the verifying key (`System<AiurCircuit>`) to bytes. -/
+@[extern "rs_aiur_system_vk_bytes"]
+opaque vkBytes : @& AiurSystem → ByteArray
+
 @[extern "rs_aiur_system_prove"]
 private opaque prove' : @& AiurSystem → @& FriParameters →
   @& Bytecode.FunIdx → @& Array G →
