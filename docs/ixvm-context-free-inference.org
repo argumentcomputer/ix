@@ -1,0 +1,769 @@
+#+title: IxVM Refactor Plan — Context-Free Inference via FVar Opening
+#+author: Ix team
+#+date: 2026-06-24
+#+startup: overview
+#+options: toc:3 num:t
+
+#+begin_quote
+Status: *design / RFC*. Pre-implementation. This document states a problem with
+IxVM's memoization, captures the proposed =FVar=-opening solution, and records the
+adversarial analysis (correctness, memoization, surface area, alternatives) so the
+team can decide. Nothing here is implemented yet.
+#+end_quote
+
+* TL;DR
+
+IxVM typechecks Lean-4 core terms inside the first-order Aiur zkDSL. Aiur turns every
+function call into a logUp lookup keyed on the *tuple of its argument pointers*, with
+multiplicities — so identical calls are memoized "for free." That memoization is the
+whole performance story of the VM.
+
+Today the three core kernel functions all thread a *local typing context*:
+
+#+begin_src
+k_infer    (e,    types, top, addrs) -> KExpr
+whnf       (e,    types, top, addrs) -> KExpr
+k_is_def_eq(a, b, types, top, addrs) -> G
+#+end_src
+
+=types : List‹KExpr›= is the list of binder types (innermost-first). =top= / =addrs=
+are *pinned* for an entire checking run, so the effective memo key is =(e_ptr,
+types_ptr)=. Because =types= changes with binder depth and path, *the same subterm
+re-infers under every context it appears in* — memoization is poisoned by the context.
+
+We want inference to have the shape =Expr -> Expr= (plus the pinned constants): a
+self-contained expression whose type depends on nothing else, so the memo key is the
+*expression pointer alone*.
+
+*The proposal* (originally sketched by Gabriel): add an =FVar(idx, type)= node. When we
+descend under a binder (=Lam=/=Forall=/=Let=) we replace its =BVar(0)= with a fresh
+=FVar=; when we return a term that must close over that binder we replace the =FVar=
+with a =BVar= and re-add the binding. The fresh index is computed *without a depth or
+context argument* as ~fvar_ceiling(e) = 1 + (max FVar index occurring in e)~, or =0= if
+none. Comparing two terms (def-eq) is the only place this needs care: there we open
+*both* sides with the *same* shared index ~k = max(fvar_ceiling(a), fvar_ceiling(b))~,
+i.e. compute the ceiling as if the pair were one term.
+
+*The verdict of this analysis:*
+- The scheme is *sound* for single-term inference, and *sound for def-eq under five
+  precise conditions* (C1–C5, [[#correctness]]) — independently re-derived by an
+  adversarial red-team that tried to break it with explicit term traces.
+- The cascade is real: once =k_infer= is context-free, =whnf= and =k_is_def_eq= lose
+  =types= too (whnf only ever threads =types= to feed nested infer/def-eq; its
+  reduction is purely syntactic).
+- This is *not speculative*: the Rust reference kernel (=src/ix/kernel/=) *already*
+  made this exact move — but with a global mutable =FVarId= counter, which Aiur cannot
+  use (a counter is non-deterministic input → it re-poisons the memo key). The
+  =fvar_ceiling= trick is precisely "the Rust design minus the counter," and it is
+  *better for Aiur sharing* than the counter would be.
+- Be honest about the payoff: the win is *architectural*, not a raw cache-hit-rate
+  increase ([[#memoization]]). For closed subterms it's a wash with the existing
+  =ctx_trim= mitigation; for some open subterms it shares slightly /less/. The real
+  prize is deleting the whole =ctx_trim= / =ctx_reachable= subsystem, dropping a
+  witness column from ~40 functions, and making =whnf= / =def_eq= context-free.
+- The deeper /why/: on Aiur, *every argument is cache surface and accumulators backfire*
+  ([[#cost-model]]). Fewer arguments ⇒ smaller key space ⇒ more sharing; tail recursion
+  buys nothing (all frames coexist in the trace). This refactor is one instance of that
+  principle — drop the =types= accumulator, make the term self-describing — and it is the
+  same reason IxVM normalizes by *substitution* rather than NbE (whose environment is an
+  accumulator that re-poisons the key).
+
+* Background: how Aiur memoizes, and why =types= hurts
+:PROPERTIES:
+:CUSTOM_ID: background
+:END:
+
+** The memo mechanism is argument-keyed logUp
+
+In Aiur a =Call= is a logUp into a per-callee =QueryMap= (=src/aiur/querymap.rs=). The
+key is the flat tuple of the call's *argument field elements*; the value is
+=(output, multiplicity)=. At execution (=src/aiur/execute.rs:280-301=) a call probes
+=function_queries[callee].get(&args)=: on a *hit* it bumps the multiplicity and reuses
+the stored output — *the callee does not re-execute*; on a *miss* it records a new row.
+
+Because =KExpr=, =List‹KExpr›=, =Addr=, etc. are content-addressed via =store= (Blake3
+deduped to a canonical pointer), structurally-equal values *are* the same field
+element. So "two calls share" ⟺ "their argument-pointer tuples are identical." Stack
+depth is free (no accumulator needed), which is why the kernel is written with
+non-tail recursion keyed on the natural arguments.
+
+** Aiur's cost model: arguments are cache surface, accumulators work against you
+:PROPERTIES:
+:CUSTOM_ID: cost-model
+:END:
+
+A principle that motivates this entire refactor — and that already shapes how the IxVM
+kernel is written — runs *opposite* to ordinary intuition about efficient code:
+
+#+begin_quote
+On a normal machine, a function with more arguments — threading transient state as
+*accumulators* — is usually /faster/: it avoids recomputation and lets the compiler reuse
+a single stack frame (tail calls). On Aiur the trade-offs invert. *Each argument widens
+the memo key*, so it enlarges the lookup "space" and makes collisions (cache hits) rarer:
+fewer arguments ⇒ more calls coincide ⇒ more sharing. And *tail recursion buys nothing* —
+every call frame is recorded in the execution trace; there is no frame popping or
+overwriting, all frames must coexist. So "stack depth is free" but "argument width is
+not": an accumulator that would /save/ work on a CPU instead *bloats the key and blocks
+sharing* on Aiur.
+#+end_quote
+
+This is not hypothetical; the kernel already encodes it. =collect_spine=
+(=KernelTypes.lean:56-69=) is written *without* an accumulator on purpose:
+
+#+begin_quote
+"Non-tail (no accumulator): keyed on =e= alone, so Aiur memoization dedups shared
+sub-spines across reductions. An accumulator would thread =acc= through the memo key and
+block that sharing (tail recursion buys nothing in Aiur — stack depth is free).
+=list_snoc= keeps order and is itself memoized."
+#+end_quote
+
+*Consequence for normalization strategy — why substitution, not NbE.* Through this lens,
+normalization-by-evaluation /is/ the "accumulate transient work in an argument"
+transformation: the *environment* is a lazy, suspended substitution carried beside the
+term, and actual normalization only happens at *quote* / readback. That environment is an
+accumulator — on Aiur it lands *in the memo key*, re-poisoning sharing at the value level
+(an NbE closure's identity is =(body, env)=, exactly the =(expr, context)= pair we are
+trying to escape). So NbE's usual advantage largely *evaporates* under Aiur's cost model,
+and can even invert: plain *substitution* recomputes more (worse on a CPU) but threads
+*no* accumulator, so each =whnf= / =infer= call keys on the bare expression and shares
+maximally (better on Aiur). NbE is thus "not really better, if at all" here — which is why
+IxVM normalizes by substitution and why the dead =KValNode= NbE substrate ([[#prior-art]])
+was never the right road.
+
+The =types= context is the *same* anti-pattern inside =infer= / =whnf= / =def-eq=: a
+transient side argument threaded through the recursion. *This whole refactor is one
+application of the cost-model principle — drop the accumulator argument, make the term
+self-describing so the work can be recomputed-and-memoized on the expression alone.* The
+=FVar= node is precisely the device that lets us remove the argument without losing what
+it carried: the binder's type rides /inside/ the term, not /beside/ it.
+
+** =types= is the poison; =ctx_trim= is the current antidote
+
+Since =top= / =addrs= are pinned, the live key for =k_infer= / =whnf= is
+=(e_ptr, types_ptr)=. =types= varies with binder depth and path, so the same =e=
+re-infers per context.
+
+There is already a mitigation. Each of the three entry points applies
+~ctx_trim(types, expr_lbr(e))~ (=Subst.lean:119-128=, called at =Infer.lean:58-61=,
+=Whnf.lean:320=, =DefEq.lean:48=). =ctx_trim= keeps only the suffix of =types= reachable
+from =e='s loose-bvar range, via the =ctx_reachable= fixpoint (=Subst.lean:94-114=,
+which closes over each kept frame's own loose range). Consequences:
+
+- A *closed* subterm (~expr_lbr(e) == 0~) trims to =Nil=, so it already keys to
+  =(e_ptr, Nil)= and is *already fully shared across all depths*. The fast path is the
+  ~base == 0 => Nil~ branch at =Subst.lean:121=.
+- An *open* subterm keys to =(e_ptr, trimmed_suffix_ptr)=, still carrying a
+  context-dependent pointer.
+
+So =ctx_trim= already solves the closed case. The proposal targets the residual: making
+*open* subterms self-contained, deleting =ctx_trim= entirely, and — the structural
+prize — letting =whnf= and =def_eq= shed =types= too.
+
+* The proposal: =FVar=-ceiling context-free inference
+:PROPERTIES:
+:CUSTOM_ID: proposal
+:END:
+
+** The node
+
+Add one constructor to =KExprNode= (=KernelTypes.lean:39=):
+
+#+begin_src
+FVar(idx: G, type: KExpr)
+#+end_src
+
+=infer(FVar(_, ty)) = ty= — immediate, context-free. The variable *carries its own
+type*, which is exactly why no context lookup is needed. (Dependent binders are fine:
+the carried =type= may itself mention *outer* =FVar=s.)
+
+*Invariant (FVAR-CLOSED):* an =FVar='s carried =type= is closed with respect to =BVar=s.
+This holds by construction because we open binders outermost-first, so by the time a
+binder's type is baked into an =FVar=, every variable it references is already an outer
+=FVar= or a =Const= — never a loose =BVar=. This invariant is what keeps the =Subst=
+primitives ([[#surface]]) trivial on the new node.
+
+** The fresh index: =fvar_ceiling=
+
+#+begin_src
+fvar_ceiling(e) =
+  | BVar(_)        => 0
+  | Srt/Const/Lit  => 0
+  | FVar(k, ty)    => max(k + 1, fvar_ceiling(ty))      -- see note
+  | App(f, a)      => max(fvar_ceiling(f), fvar_ceiling(a))
+  | Lam(ty, b)     => max(fvar_ceiling(ty), fvar_ceiling(b))   -- FVars are NOT bound by binders
+  | Forall(ty, b)  => max(fvar_ceiling(ty), fvar_ceiling(b))
+  | Let(ty, v, b)  => max(fvar_ceiling(ty), fvar_ceiling(v), fvar_ceiling(b))
+  | Proj(_, _, e1) => fvar_ceiling(e1)
+#+end_src
+
+A bottom-up fold, structurally identical to =expr_lbr= (=Subst.lean:48-64=) but tracking
+=FVar= indices instead of loose =BVar=s. It is memoized per node via =store=, so repeat
+calls on the same pointer are O(1).
+
+Note the =FVar= arm recurses into the carried =type=. In practice the type only mentions
+*strictly outer* =FVar=s (indices ≤ =k=), so the =max= collapses to =k + 1=; recursing
+is the *safe* spec and costs nothing under memoization. Treating =FVar= as ceiling =0=
+(ignoring its index) would be *unsound* — see condition [[#c3][C3]].
+
+Crucially, unlike a de-Bruijn *level* (= absolute binder depth), =fvar_ceiling= is a
+function of the term's *own structure*. It needs neither a threaded depth nor a context.
+That is the entire point — and the source of one subtlety (below).
+
+** Open and close
+
+*Open* (descend under a binder) reuses existing machinery. Opening the body of
+=Lam(ty, body)= with fresh index =k= is just:
+
+#+begin_src
+open(body, k, ty) := expr_inst1(body, FVar(k, ty), 0)
+#+end_src
+
+=expr_inst1= (=Subst.lean:195-240=) already substitutes =BVar(0)= and decrements deeper
+=BVar=s; since =FVar(k,ty)= has no loose =BVar=s, its internal =expr_lift= is a no-op.
+*No new code* beyond an =FVar= pass-through arm in =expr_inst1_walk=.
+
+*Close* (re-abstract a binder) is a *genuinely new* primitive — the de-Bruijn
+"abstraction" dual of =expr_inst1=:
+
+#+begin_src
+expr_close(e, k) :=   -- replace FVar(k, _) by BVar(0); lift loose BVar(i>=depth) by 1
+  walk e at depth d (starts 0):
+    FVar(j, ty)   => if j == k then BVar(d) else FVar(j, ty)
+    BVar(i)       => if i >= d then BVar(i + 1) else BVar(i)   -- ⚠ do not forget this
+    Lam(ty, b)    => Lam(close ty @ d, close b @ d+1)
+    Forall/Let/…  => recurse, bumping d under each binder
+    others        => structural recurse
+#+end_src
+
+#+begin_quote
+⚠ *Do not implement =expr_close= as the naïve "=FVar(k,_)= → =BVar(0)=" one-liner.* It
+must *also lift pre-existing loose =BVar(i ≥ depth)= by one*, exactly mirroring the Rust
+=abstract_fvars= (=src/ix/kernel/subst.rs:729=, with its cached walk at =:757= and the
+=abstract_fvars_lifts_loose_bvars= test at =:1057-1115=). Closing a body that already
+contains loose =BVar=s — which happens whenever an inferred type is itself open, e.g. a
+dependent =Pi= codomain — produces wrong indices without the lift. This is the single
+most error-prone line in the refactor.
+#+end_quote
+
+=expr_close= is memoizable on =(e, k)= like the other walks, with a =fvar_ceiling=-style
+fast path (skip when =k= does not occur and there are no loose bvars to lift).
+
+** Inference, rewritten arm by arm
+
+The binder arms of =k_infer_core= (=Infer.lean:104-120=) change from "push onto =types="
+to "open / infer / close." Sketch for the three binders:
+
+#+begin_src
+Lam(ty, body) =>
+  let _    = k_ensure_sort(ty)                 -- ty is closed-in-fvars already
+  let k    = fvar_ceiling(Lam(ty, body))       -- == fvar_ceiling over ty and body
+  let bodyT= k_infer(open(body, k, ty))        -- CONTEXT-FREE recursive call
+  store(Forall(ty, expr_close(bodyT, k)))
+
+Forall(ty, body) =>
+  let u1 = k_ensure_sort(ty)
+  let k  = fvar_ceiling(Forall(ty, body))
+  let u2 = k_ensure_sort(open(body, k, ty))
+  store(Srt(imax(u1, u2)))
+
+Let(ty, val, body) =>                           -- UNCHANGED: keep direct substitution
+  let _ = k_ensure_sort(ty)
+  let _ = k_check(val, ty)
+  k_infer(expr_inst1(body, val, 0))             -- zeta-substitute val, no fvar needed
+#+end_src
+
+- =BVar(i)= ⇒ *cannot occur in a fully-opened term*; =types_lookup= (=Infer.lean:34-45=)
+  and its lift chain become dead code.
+- =FVar(_, ty)= ⇒ new arm, returns =ty=.
+- =App=, =Const=, =Lit=, =Srt=, =Proj= ⇒ unchanged except they drop the =types= argument
+  from their recursive calls.
+- *=Let= stays a direct substitution* (=expr_inst1(body, val, 0)=, as today at
+  =Infer.lean:116-120=). We deliberately do *not* introduce let-bound =FVar=s. The Rust
+  kernel uses let-=FVar=s + a zeta-on-lookup in =whnf= (=whnf.rs:480=); replicating that
+  would re-introduce an =FVar→value= lookup keyed by id — exactly the context we are
+  deleting. Keeping =Let= as substitution means *only =Lam= / =Forall= ever mint
+  =FVar=s*, and =whnf= never needs an =FVar=-lookup arm.
+
+** Why the index can be computed with no context — and why "harmless collision" is true
+
+The user's key insight, restated precisely:
+
+#+begin_quote
+A de-Bruijn /level/ (absolute depth) would distinguish every binder but requires
+threading the depth — which has "almost the same issues as context" (the depth varies
+per occurrence and re-poisons the key). =fvar_ceiling= instead reads the index off the
+*term itself*: it equals =1 + (number of distinct outer binders currently live in this
+subterm)=. It is therefore a *compressed level* — it counts only the outer binders that
+are actually /used/ in the region.
+#+end_quote
+
+Consequence: if an outer binder is *unused* in some region, its =FVar= is absent there,
+so =fvar_ceiling= does not "see" it, and an inner binder may reuse its index. *This is
+harmless for single-term inference*: the colliding outer =FVar= literally does not occur
+in the region, so within that region the index unambiguously denotes the inner binder,
+and =expr_close(_, k)= abstracts exactly the intended one. Two =FVar=s with the same
+index never *coexist* in a single subterm.
+
+The invariant to keep in mind:
+
+#+begin_quote
+*INV.* In any subterm reached during a single inference, every live =FVar= index denotes
+a unique binder. Equivalently: two =FVar=s coexist in one subterm only if the
+earlier-allocated one is structurally present at the point where the later one is
+allocated — which forces =fvar_ceiling= to /bump/ past it.
+#+end_quote
+
+The *only* place INV can be violated is when we put *two independently-built terms*
+side by side and compare them — which is exactly def-eq.
+
+* The cascade: =whnf= and =def_eq= also become context-free
+:PROPERTIES:
+:CUSTOM_ID: cascade
+:END:
+
+** =whnf= threads =types= only to feed inference; its reduction is syntactic
+
+A full audit of =Whnf.lean= (every one of ~60 =types= tokens) classifies each use as:
+
+1. *pass-through* to a deeper =whnf=-family self-call, or
+2. *fed to* a nested =k_infer= / =is_prop_type= / =k_is_def_eq= — and there are *exactly
+   three* such sites: the struct-eta Prop-guard (=Whnf.lean:645-646=) and the K-target
+   ctor synthesis + def-eq verification (=Whnf.lean:802-815=), or
+3. *threaded into* the =Primitive.lean= dispatch chain (=:221/227/230/233=), which itself
+   only uses =types= to feed nested =whnf= / =k_infer= / =k_is_def_eq=.
+
+The decisive negative result: there is *no* =list_lookup(types, …)=, =list_length(types)=,
+or =load(types)= anywhere in =Whnf.lean= or =Primitive.lean=. *=whnf= never reads a
+=BVar='s type from the context.* β / δ / ι / ζ / proj / nat-primitive reduction is 100%
+syntactic. The only structural consumer of =types= is the memo-key canonicalizer
+=ctx_trim= at =Whnf.lean:320=, which the refactor deletes.
+
+Therefore, *once =k_infer= / =k_is_def_eq= are context-free, =whnf= trivially becomes
+=whnf(e) -> KExpr=*: drop =types= from the whole family (=whnf=, =whnf_core=,
+=whnf_with_spine=, =whnf_apply_beta=, =whnf_const_head=, =whnf_proj_head=, =try_iota*=,
+=try_nat_linear_rec=, =try_struct_eta_iota=, =try_synth_k_ctor=, =try_quot_*=,
+=quot_extract_arg=, =try_nat_offset_stuck=, =try_address_primitives=) and the
+=Primitive.lean= chain.
+
+#+begin_quote
+*Ordering constraint:* because =whnf:645-646= and =:802-815= call =k_infer= /
+=k_is_def_eq=, =whnf= cannot be made context-free /before/ them. There is no partial
+state where =whnf= is context-free but infer still needs =types=. *Cut over the
+mutually-recursive cluster =whnf= / =k_infer= / =k_is_def_eq= in one atomic change.*
+#+end_quote
+
+** =FVar= is an inert neutral head in =whnf=
+
+=FVar= reduces exactly like =BVar= (a stuck / neutral head). Two touch-points:
+
+1. *Fast path* (=Whnf.lean:312-321=): add ~FVar(_, _) => e~ next to the existing
+   ~BVar(_) => e~. (Without it, an =FVar=-headed spineless term needlessly falls to
+   =whnf_core=.)
+2. *=whnf_with_spine=* (=:105-132=): *no new arm needed*. =BVar= already falls into the
+   catch-all ~_ => apply_spine(head, spine)~ (=:131=); =FVar= lands there too, which is
+   correct — =FVar(k,ty) a b c= is a neutral application, treated identically to
+   =BVar(0) a b c=. =collect_spine= (=KernelTypes.lean:62-69=) already returns any
+   non-=App= node as a spine head, so =FVar= is a valid neutral head automatically.
+
+*No reduction rule may inspect =FVar='s payload.* =whnf= must stay type-agnostic (it
+never reads =BVar= types today; =FVar='s type is for /infer/, not /whnf/). After the
+refactor, =whnf= will routinely see =FVar=-bearing inputs (def-eq opens binder bodies
+before recursing, and those bodies flow into =whnf= as iota majors, β-args, proj
+scrutinees). An =FVar=-headed iota major takes the existing stuck path
+(=try_iota_with_major:519-523=), identical to a =BVar=-headed major today. The one place
+to confirm is the struct-eta Prop-guard at =:645=: it calls =k_infer(major)=, which under
+the new scheme is =infer(FVar(_,ty)) = ty= — immediate and correct.
+
+* Comparing two terms: joint opening (the crux)
+:PROPERTIES:
+:CUSTOM_ID: defeq
+:END:
+
+** The problem the user identified
+
+Independently opening each side breaks. Classic case: =fun x y => x= vs =fun x y => y=
+(de Bruijn =Lam(A, Lam(B, BVar 1))= vs =Lam(A, Lam(B, BVar 0))=), *not* def-eq. If each
+side picks its own =fvar_ceiling=, the two distinguished leaves can both land at index
+=0=; if =A= and =B= happen to be the same type (e.g. both =Nat=), the leaves compare
+*equal* and we *wrongly accept* — a soundness break.
+
+** The fix: shared joint index
+
+In every binder-introducing arm of def-eq, open *both* sides with the *same* fresh index:
+
+#+begin_src
+k = max(fvar_ceiling(a_node), fvar_ceiling(b_node))   -- "ceiling of the pair as one term"
+#+end_src
+
+and substitute *one shared* =FVar(k, ty_a)= into both bodies (=ty_a ≟ ty_b= has already
+been checked def-eq, so either type works; baking the *same* node into both sides makes
+the opened variables *pointer-equal*, so the structural =FVar=–=FVar= arm short-circuits
+on pointer equality — see [[#c4][C4]]). Trace of the failing case under joint opening:
+
+#+begin_src
+a = Lam(A, Lam(B, BVar 1)),  b = Lam(A, Lam(B, BVar 0))
+outer arm: k0 = max(ceiling(a_body), ceiling(b_body)) = max(0,0) = 0
+  a -> Lam(B, FVar(0,A))        -- BVar 1 under one binder := outer var
+  b -> Lam(B, BVar 0)           -- outer var unused on b's side
+inner arm: k1 = max(ceiling(Lam(B,FVar(0,A))), ceiling(Lam(B,BVar 0)))
+         = max(1, 0) = 1        -- ⬅ the max BUMPS because a still contains FVar(0)
+  a -> FVar(0, A)
+  b -> FVar(1, B)
+compare FVar(0,A) vs FVar(1,B): indices differ ⇒ NOT equal.   ✓ correct
+#+end_src
+
+The =max= is what saves us: side =a='s inner body /structurally contains/ =FVar(0)=, so
+=ceiling= bumps the inner index to =1=, separating it from the (unused-on-=b=) outer var.
+
+** Where comparison actually happens — *not "only def-eq's top arms"*
+
+The user's framing said "this only happens in def-eq." That is /almost/ right but
+understates the footprint. The shared-=max= rule must be applied at *every*
+binder-introducing site reachable during comparison, and several of them are not the
+obvious =Lam=–=Lam= arm:
+
+- =k_is_def_eq_struct= binder arms: =Lam=–=Lam= (=DefEq.lean:417-426=), =Forall=–=Forall=
+  (=:430-442=), =Let=–=Let= (=:444-461=).
+- =try_eta_expand= (=:493-501=) — opens a *single* eta binder on one side against a
+  synthesized =App(lift(b), var)=. The ceiling here *must* be taken jointly over
+  =body_a= /and/ the entire non-=Lam= operand =b=, or a baked =FVar= inside =b= can
+  alias the eta variable (a genuine false-positive — see [[#c1][C1]]).
+- =compare_struct_fields= (=:349-365=) builds =Proj(…)= against =s_args= and recurses
+  through =k_is_def_eq=.
+- Embedded inference/def-eq that meets two independently-built terms:
+  =try_proof_irrel= (=:113-121=, infers =a_ty= and =b_ty= separately then def-eqs them),
+  =try_unit_like= (=:140-149=), =k_check= (=Infer.lean:181-183=), and
+  =try_synth_k_ctor= (=Whnf.lean:802-816=). Each ultimately calls =k_is_def_eq=, so it is
+  covered *provided the joint-=max= discipline lives inside every def-eq binder arm* —
+  which is the point of stating it as an arm-level invariant, not a top-level one.
+
+* Correctness
+:PROPERTIES:
+:CUSTOM_ID: correctness
+:END:
+
+An adversarial red-team re-derived the def-eq analysis from the source (it did not trust
+the proposal) and attempted to break soundness with explicit =KExpr= traces across:
+unused-binder reuse, App-sibling index reset, the proof-irrelevance re-entry, eta across
+a binder with a baked outer =FVar=, =Let=–=Let= with differing values, and asymmetric
+depth + β-duplication. *Verdict: SOUND (no false positives) under conditions C1–C5
+below.* Every attack "survives" (correct verdict) once C1–C5 hold; the one attack that
+breaks without them is the eta case (C1).
+
+** Conditions for soundness & completeness
+
+*** C1 — joint =max= over the FULL closed nodes of BOTH sides, at EVERY binder arm
+:PROPERTIES:
+:CUSTOM_ID: c1
+:END:
+The shared index must be ~k = max(fvar_ceiling(a_node), fvar_ceiling(b_node))~ computed
+over the *entire closed binder nodes* before instantiation — including the binder type
+and, for the eta arm, the *whole non-=Lam= operand*. Taking the ceiling over only the
+open bodies (post-=inst1=), or only one side, yields a real *false positive* in the
+eta-with-baked-=FVar= case. Apply to =Lam=–=Lam=, =Forall=–=Forall=, =Let=–=Let=, *and*
+lambda-eta.
+
+*** C2 — =FVar=s are minted ONLY at binder arms (never by reduction)
+Free variables are introduced exclusively when infer/def-eq opens a binder, top-down,
+one per arm. =whnf= / β / ζ / ι / δ must *never* mint an =FVar=; they operate on de-Bruijn
+=BVar= binders and use the capture-avoiding =expr_inst1= / =expr_inst_many= / =expr_lift=,
+treating =FVar= as a closed leaf (=lbr 0=, never shifted). This prevents β-duplication of
+an =FVar=-bearing argument from being captured by an as-yet-unopened binder.
+
+*** C3 — faithful ceiling; =FVar(k,ty)= contributes =k+1= regardless of its type
+:PROPERTIES:
+:CUSTOM_ID: c3
+:END:
+=fvar_ceiling= must be computed over the exact subterm that still /structurally/ contains
+every baked-in =FVar=. The whole soundness argument rests on "the =max= bumps because the
+earlier =FVar= is present." Any optimization that *drops a baked =FVar= before the ceiling
+sees it* (an over-aggressive analogue of =ctx_trim=) would let the =max= under-shoot and
+reintroduce capture. In particular an =FVar= must never be treated as ceiling =0=.
+
+*** C4 — =FVar= equality is by INDEX (completeness, not soundness)
+:PROPERTIES:
+:CUSTOM_ID: c4
+:END:
+This is a *completeness* requirement. If def-eq compared =FVar='s carried *type*
+structurally, then two binders with def-eq-but-not-pointer-equal types (e.g.
+=λ(x:Id A a).x= vs =λ(x:Id A a').x= with =a ≟ a'=) would open to =FVar(k, Id A a)= vs
+=FVar(k, Id A a')=, compare *unequal*, and *reject a valid equality* — a liveness failure
+(a legitimate Lean proof fails to certify). *Resolution:* mint *one shared*
+=FVar(k, ty_a)= and substitute it into *both* bodies (the Rust pattern at
+=def_eq.rs= where a single =fv= is instantiated into =body1= and =body2=), so the opened
+variables are pointer-equal and the carried type never enters the comparison. This
+mirrors Rust's =fvar_hash= (=expr.rs:243-252=), which hashes the =FVarId= only and
+*intentionally excludes the type*. (Soundness — never wrongly /accept/ — does not depend
+on C4; only completeness does.)
+
+*** C5 — =expr_close= abstracts by INDEX only, and exactly
+=expr_close(bodyT, k)= replaces exactly the =FVar=s with index =k= (lifting loose
+=BVar=s, per the ⚠ above) and leaves other-indexed =FVar=s untouched. Combined with
+C1/C3 (which make =k= unique among live binders in =bodyT=), this prevents merging two
+distinct binders. It must *not* key on the carried type (consistent with C4).
+
+** Single-term inference
+
+Sound by INV ([[#proposal]]): two =FVar=s with the same index never coexist in one
+subterm, so =expr_close= always abstracts the intended binder, and =infer(FVar(_,ty))=ty=
+returns the right type. The red-team's proof-irrelevance trace (a jointly-opened subterm
+re-entering =k_infer=, which mints its /own/ single-term ceilings inside) confirms there
+is no clash: an inner =k_infer= either opens a binder that *encloses* the baked outer
+=FVar= (so its ceiling bumps past it) or one that does not (so the outer =FVar= is absent
+and cannot be confused). After =expr_close=, infer-internal =FVar=s are gone and the
+returned type mentions only the shared outer =FVar=s — identical to what the
+context-based version computes with =types = [outer types]=.
+
+** Completeness summary
+
+Soundness holds under C1–C3, C5. Completeness additionally needs C4 (shared single
+=FVar=). With all five, the scheme accepts exactly the def-eq pairs the current
+context-threaded kernel accepts.
+
+* Memoization analysis — the honest version
+:PROPERTIES:
+:CUSTOM_ID: memoization
+:END:
+
+#+begin_quote
+*Do not sell this refactor as "more sharing."* The sharing relationship with the
+existing =ctx_trim= is *incomparable*; the durable wins are *architectural*.
+#+end_quote
+
+** The index-vs-level subtlety
+
+=fvar_ceiling= is a *compressed de-Bruijn level*; =ctx_trim= keys on de-Bruijn *index* +
+trimmed context. Levels are invariant under adding *inner* binders but vary with *outer*
+depth; indices are the reverse. So:
+
+| Term shape                                                   | =ctx_trim= (index + trimmed ctx) | =FVar= (=fvar_ceiling=)            | Winner          |
+|--------------------------------------------------------------+----------------------------------+-----------------------------------+-----------------|
+| Closed subterm                                               | keys to =(e, Nil)= — full share  | keys to =(e)= — full share        | *wash*          |
+| Open subterm, identical reachable suffix, differing outer    | shares (suffix trimmed)          | shares /and/ is self-contained    | FVar ≥          |
+| *Same open subterm at different binder depths*               | *shares* (suffix identical)      | *does not share* (level differs)  | *ctx_trim*      |
+| Reused open leaf =BVar(0):ty= at many depths                 | 1 shared row                     | N depth-distinct rows, each O(1)  | ctx_trim (cheap)|
+
+The third/fourth rows are the user-relevant catch: the *same opened body reused at
+different depths* gets *different* compressed-level indices, so its opened forms are not
+pointer-equal and *do not share*, whereas =ctx_trim= (which discards the unreached outer
+prefix) *does* share them. The mitigation is that these lost-sharing leaves now infer in
+O(1) (=infer(FVar)=ty=), so it is "1 shared row → N cheap rows," a witness-entry
+*increase* under deep reuse — small, but real. Closed terms, which dominate, are a wash.
+
+** The unambiguous (architectural) wins
+
+1. *Delete the entire =ctx_trim= / =ctx_reachable= / =ctx_reachable_fix= /
+   =ctx_reachable_scan= family* (=Subst.lean:94-128=) and the =types_lookup= lift chain
+   (=Infer.lean:34-45=). The Rust mirror's comment calls this machinery a *dominant*
+   lookup overhead ("millions of cache probes per big mathlib block",
+   =src/ix/kernel/tc.rs:176-188,340-447=). In Aiur, every sub-call in that fixpoint
+   (=expr_lbr=, =list_lookup=, =list_take=, the fixpoint itself) is a real memoized
+   function = witness rows + lookup arity. Pure deletion of a hot sub-circuit family —
+   *the single biggest concrete saving, independent of any hit-rate argument.*
+2. *Drop the =types= column from ~40 mutually-recursive functions.* In Aiur every
+   parameter is a witness column *and* a field of every call's logUp fingerprint.
+   =List‹KExpr›= is one pointer = one field. Removing it is −1 column on ~40 function
+   AIRs and −1 field in every corresponding fingerprint. Small per call, permanent,
+   multiplied kernel-wide.
+3. *Self-contained expressions* — this is the /enabling/ change that lets =whnf= and
+   =k_is_def_eq= also go context-free ([[#cascade]]). That is the structural prize.
+
+** Why =fvar_ceiling= beats the counter (and is the only Aiur-viable option)
+
+The Rust kernel uses a *global monotonic =FVarId= counter* (=env.rs:421= =fresh_fvar_id=,
+reset per declaration at =:528/:589=). Aiur cannot: a mutable counter is *non-deterministic
+input* to a pure logUp-memoized function — the same closed subterm would get different
+ids in different runs / surrounding terms, which *re-poisons the memo key exactly like
+=types= does today*. =fvar_ceiling= is the *deterministic, counter-free* replacement:
+the fresh index is a pure function of the term, hence reproducible and context-free.
+
+A side benefit: =fvar_ceiling= also *shares strictly more than the counter would*. The
+counter gives every opened binder a globally-unique id, so even two structurally-identical
+bodies opened in sequence within one check never collide; the ceiling lets them collide
+when their opened forms coincide. So for Aiur, the user's ceiling is not just /necessary/
+(determinism) but /better/ (sharing) than the design the Rust kernel actually ships.
+
+** Type-baking is a wash (not a new regression)
+
+Baking =ty= into =FVar(k,ty)= means two occurrences under different *type pointers* don't
+share. But today's =ctx_trim= key already carries those same binder-type pointers in the
+trimmed =types= list (=ctx_reachable_scan= reads =list_lookup(types,i)=; Rust hashes
+=self.ctx[i].addr()=). So the discrimination is *identical* — it just moves from a side
+list into the leaf. For def-eq-but-not-structural types, *neither* scheme shares. Wash.
+
+* Prior art: the Rust reference kernel already did this
+:PROPERTIES:
+:CUSTOM_ID: prior-art
+:END:
+
+This is the strongest argument that the refactor is feasible: =src/ix/kernel/= *already*
+runs context-free inference over =FVar=s.
+
+- =expr.rs:57,73= — =FVarId(pub u64)=; =FVar(FVarId, Name, ExprInfo)=.
+- =expr.rs:240-252= — =fvar_hash= includes the =FVarId= so distinct fvars hash distinctly,
+  and *intentionally excludes* the name/type (the basis for [[#c4][C4]]).
+- =env.rs:348,421-426= — the =next_fvar_id : u64= counter and =fresh_fvar_id()=, reset per
+  declaration.
+- =lctx.rs:9-19= — "each fvar carries a unique =FVarId= embedded in its content hash …
+  the soundness lever that lets WHNF / infer / def-eq caches key by *expression alone*";
+  the module's "Stage C drops the legacy ctx / =ctx_addr_for_lbr= suffix-hash machinery."
+- =subst.rs:729-788= — =abstract_fvars=, the =expr_close= we must port (with its
+  loose-bvar lift and tests).
+
+So IxVM is *behind* its own Rust oracle here: the Lean/Aiur kernel still threads
+=types=/=ctx_trim= (the "legacy suffix-hash machinery" Rust is deleting). The refactor
+is a *port that converges the two designs*, swapping the counter for =fvar_ceiling=. The
+Rust kernel is also a ready-made *differential oracle* for testing ([[#testing]]).
+
+#+begin_quote
+Note: =KValNode= / =KVal= / =KValEnv= (=KernelTypes.lean:75-96=), including a value-level
+=FVar(G, KVal, List‹KVal›)=, is *dead code* — =grep -rln 'KVal' Ix/ Tests/ Benchmarks/=
+returns only =KernelTypes.lean=, with no =eval= / =quote= / =force= anywhere. It is *not*
+prior art for this refactor (an earlier analysis pass wrongly assumed it was used by
+=whnf=). Recommend deleting it or annotating it vestigial so it is not mistaken for a
+usable NbE substrate.
+#+end_quote
+
+* Surface area
+:PROPERTIES:
+:CUSTOM_ID: surface
+:END:
+
+** Functions that drop =types= (~40)
+
+Across =Infer.lean= (=k_infer=, =k_infer_core=, =k_ensure_sort=, =k_check=,
+=peel_field_loop=, =is_inductive_prop=, =peel_n_alls_whnf=, =check_*_if_prop=, …),
+=Whnf.lean= (the whole family listed in [[#cascade]]), =DefEq.lean= (=k_is_def_eq=,
+=k_is_def_eq_core=, =k_is_def_eq_struct=, =try_*=, =compare_struct_fields=,
+=lazy_delta_*=, …), and =Primitive.lean= (the dispatch chain). Mechanical: none read
+=types= structurally; they only thread it.
+
+** Exhaustive =KExprNode= matches that gain an =FVar= arm
+
+Every total match on =KExprNode= must add an arm:
+
+- =Subst.lean=: =expr_lbr= (=0= under FVAR-CLOSED), =expr_lift_walk=, =expr_inst1_walk=,
+  =expr_inst_many_walk= (all pass =FVar= through like =Const=, optionally recursing into
+  the carried type — a no-op under FVAR-CLOSED), plus the *new* =fvar_ceiling= and
+  =expr_close=.
+- =Levels.lean=: =expr_inst_levels= *must recurse into the =FVar='s carried type* to
+  instantiate universe params there, or stored fvar types go stale after level
+  instantiation.
+- =Infer.lean=: =k_infer_core= (=FVar= ⇒ return type).
+- =Whnf.lean=: fast path (=FVar => e=); =whnf_with_spine= needs *no* arm (catch-all).
+- =DefEq.lean=: =k_is_def_eq_struct= gains an =FVar=–=FVar= arm (pointer-eq / index
+  compare per [[#c4][C4]]); the binder arms switch to joint opening.
+- =Check.lean= / =CanonicalCheck.lean=: =CanonicalCheck= currently *asserts no =FVar=s*
+  in canonical terms — keep that assertion (it enforces that =FVar= never escapes the
+  kernel), and confirm opened terms never reach it.
+
+** New primitives
+
+=fvar_ceiling= and =expr_close= in =Subst.lean=, both memoized on the =KExpr= pointer
+(and =k= for =close=). ~200 lines incl. the =Subst=/=Levels= arms — localized, no
+downstream dependency, mergeable first.
+
+** =FVar= is internal-only — refuse it at the serialization boundary
+
+=FVar= is kernel-synthesized during opening and is always closed away (via =expr_close=)
+before any result is returned. It must *never* reach Ixon. So:
+
+- =IxonSerialize.lean= =put_expr=: add ~FVar(_) => panic "FVar cannot be serialized"~.
+- =IxonDeserialize.lean=: *no change* — the wire format gains no tag.
+- Add an egress/harness assertion that no =FVar= crosses the boundary.
+
+This keeps the wire format unchanged (no version bump) and shrinks the surface.
+
+* Alternatives considered
+:PROPERTIES:
+:CUSTOM_ID: alternatives
+:END:
+
+| Option                                  | Reaches expr-only key? | Aiur-deterministic? | Verdict                                                                                 |
+|-----------------------------------------+------------------------+---------------------+-----------------------------------------------------------------------------------------|
+| *A. =FVar= + =fvar_ceiling=* (proposal) | yes                    | yes                 | *Recommended.* Sound under C1–C5; only Aiur-viable way to expr-only keys.                |
+| B. True de-Bruijn *levels* for =FVar=   | yes                    | *no*                | Levels = absolute depth = a *top-down* quantity; computing it requires *threading depth*, which re-poisons the key exactly like =types=. Not computable by a bottom-up fold. Defeats the goal. |
+| C. =FVar= + global *counter* (Rust)     | yes                    | *no*                | The counter is non-deterministic input → unmemoizable in logUp. Also shares *less* than =fvar_ceiling=. This is what Rust does; Aiur cannot.    |
+| D. NbE over =KValNode=                   | partial                | yes                 | =KVal*= is dead code; from-scratch evaluator/quoter whose closures carry a captured =KValEnv= — an *accumulator → context back in the value key* (see [[#cost-model]]). NbE's CPU win evaporates on Aiur; highest cost, doesn't reach expr-only keys. |
+| E. Strengthen / hash-cons =ctx_trim=    | *no*                   | yes                 | Already near its ceiling (closed terms already share). Cannot make the key the *expr alone* — an open term always keys on a depth-varying context pointer. Useful only as a fallback. |
+| F. Co-de-Bruijn representation          | yes                    | yes                 | Its one good idea (variable carries its provenance/type) is *already* what =FVar(idx,type)= captures. A full rewrite of =KExprNode= + every =Subst= primitive + ingress for no extra memo benefit. |
+
+#+begin_quote
+*On "use true levels to avoid the joint-=max=" (a tempting suggestion):* it does not
+work here. A true level is the binder's absolute depth — a *top-down* property of a
+node's /ancestors/, which a bottom-up fold over the /subtree/ cannot compute. Getting it
+requires threading depth as an argument, and depth varies per occurrence → it re-poisons
+the memo key, defeating the entire refactor. =fvar_ceiling= is the closest /context-free/
+approximation to a level, and the red-team proved the joint-=max= makes it sound (C1–C5).
+The joint-=max= is the *necessary and sufficient* price for staying context-free.
+#+end_quote
+
+* Migration plan
+:PROPERTIES:
+:CUSTOM_ID: migration
+:END:
+
+Mirror the Rust kernel's staged plan (=lctx.rs= "Stage A/B/C"), keeping the Rust kernel
+as the behavioral oracle at each step.
+
+1. *Stage 0 — node + primitives (low risk, mergeable alone).* Add =FVar(G, KExpr)= to
+   =KExprNode=; implement =fvar_ceiling= and =expr_close= (with the loose-bvar lift and
+   tests ported from =subst.rs:1057-1115=); add =FVar= arms to all =Subst=/=Levels=
+   matches; keep the FVAR-CLOSED invariant. No behavior change yet (nothing mints
+   =FVar=s). Land with unit tests for =expr_close= ∘ =open= round-trips.
+2. *Stage 1 — atomic cluster cutover.* In *one* change, rewrite =k_infer= binder arms
+   (open/infer/close), =k_is_def_eq= binder arms (joint =max=, shared single =FVar=,
+   index-only =FVar= equality), and drop =types= from =k_infer= / =whnf= / =k_is_def_eq=
+   and all ~40 helpers and the =Primitive= chain. (The cluster is mutually recursive;
+   it cannot be split — see [[#cascade]].) Add the =whnf= fast-path =FVar= arm.
+3. *Stage 2 — delete the dead machinery.* Remove =ctx_trim=, =ctx_reachable*=,
+   =types_lookup= and its lift chain. Add the serialization refusal + egress assertion.
+   Optionally delete the vestigial =KVal*= enum.
+4. *Rust lockstep.* The Rust kernel already has the =FVar= infrastructure; align
+   signatures (it already does not thread a context). If desired, switch Rust from the
+   counter to a ceiling for cross-kernel parity — but that is optional and orthogonal.
+
+* Testing strategy
+:PROPERTIES:
+:CUSTOM_ID: testing
+:END:
+
+- *Differential oracle.* Run old (=types=-threaded) and new (=FVar=) kernels over the
+  existing test corpus + heavy mathlib blocks; assert *identical* verdicts for every
+  =k_infer= / =whnf= / =k_is_def_eq=. The Rust kernel is a second oracle.
+- *Soundness adversaria* (must reject): =fun (x y : Nat) => x= vs =fun (x y : Nat) => y=
+  (the equal-types trap); the eta-with-baked-=FVar= case (exercises [[#c1][C1]]);
+  asymmetric-depth pairs.
+- *Completeness adversaria* (must accept): α-equivalent terms; def-eq-but-not-structural
+  binder types =λ(x:Id A a).x= vs =λ(x:Id A a').x= with =a ≟ a'= (exercises [[#c4][C4]]);
+  η pairs; terms differing only in an unused binder.
+- *=FVar=-bearing reduction:* iota major / proj scrutinee that is =FVar=-headed under a
+  binder — confirm =whnf= takes the stuck path identically to the =BVar= case.
+- *Memoization metrics (be honest):* log memo keys before/after; confirm closed
+  subterms still share across depths, and *measure* the reused-open-leaf regression so
+  we know its real magnitude rather than assuming it away.
+
+* Open questions
+:PROPERTIES:
+:CUSTOM_ID: open-questions
+:END:
+
+1. *Reused-open-leaf regression — how big?* The compressed-level index breaks sharing for
+   the same open body at different depths ([[#memoization]]). Each lost-sharing infer is
+   O(1), but is the witness-row increase negligible or material on real proofs? Measure
+   before committing. (If material, is there a cheap canonicalization of =FVar= indices
+   per subterm that recovers some sharing without re-introducing depth?)
+2. *=fvar_ceiling= on the carried type.* Under FVAR-CLOSED the =max(k+1, ceiling(ty))=
+   collapses to =k+1=. Do we *enforce* FVAR-CLOSED (and assert it) and simplify the arm,
+   or keep the defensive =max=? (Leaning: enforce + assert; keep the =max= as the spec.)
+3. *=FVar= equality and content addressing.* Should =store= content-address =FVar= by
+   =(idx, type)= (natural) while def-eq compares *index only* (C4)? The shared-single-=FVar=
+   trick makes the two opened vars pointer-equal, so def-eq never compares two distinct
+   =FVar= pointers at the same index with different types — confirm this holds at *every*
+   arm (esp. =compare_struct_fields= and the embedded-infer paths) so we never need a
+   bespoke index-only comparator.
+4. *Keep the Rust counter or move Rust to ceiling?* Cross-kernel differential testing is
+   easiest if both use the same fresh-index policy. Is parity worth changing the Rust
+   kernel, or do we accept that the two kernels share /verdicts/ but not /memo structure/?
+5. *Should =CanonicalCheck= ever see =FVar=s?* Confirm opened terms never flow into the
+   canonical checker; if they can, decide whether to close-first or extend the checker.
