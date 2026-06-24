@@ -191,6 +191,43 @@ def infer := ⟦
   -- `k_infer` (parity with Rust's separate infer_cache / infer_only_cache).
   -- Used at try_proof_irrel / is_prop_type / try_unit_like where only the
   -- synthesized type is needed.
+  --
+  -- ## Safety invariant
+  --
+  -- `k_infer_only` is NOT safe to call on an arbitrary term — only on terms
+  -- already known to be well-typed (i.e., terms that would have passed
+  -- `k_infer`). The reason: our overall invariant is that evaluation only
+  -- happens after typechecking. `k_infer_only` evaluates types (e.g. the
+  -- substitution `B[a/x]` on an `App` arm) WITHOUT first checking that the
+  -- substituted-in argument `a` has the proper type (the dropped
+  -- `k_check(a, dom)`). On an untyped or ill-typed term, that substitution
+  -- can take us out of the well-typed fragment, after which subsequent
+  -- `whnf` / `def_eq` work is unsound.
+  --
+  -- The current call sites (`try_proof_irrel`, `is_prop_type`,
+  -- `try_unit_like`) honor this invariant because they hand `k_infer_only`
+  -- a term obtained by `whnf`-ing a well-typed input. `whnf` of a
+  -- well-typed term yields a structurally different but still well-typed
+  -- term, so the no-checks shortcut is sound there even though the result
+  -- term itself was never the direct subject of `k_infer`.
+  --
+  -- ## Future: shared memo via non-deterministic hint
+  --
+  -- `k_infer_only`'s separate memo (parity with Rust) means an `infer_only`
+  -- call cannot reuse an existing `k_infer` hit on the same input. A
+  -- planned improvement: at each `try_proof_irrel` / `try_unit_like` site,
+  -- the prover supplies a hint `enum Hint { None, KInfer, KInferOnly }`:
+  --   1. `None`         — term is not unit-like and not a proof; skip both
+  --                       and fall through to deep `def_eq`.
+  --   2. `KInfer`       — `k_infer`'s memo is a hit on this input; call
+  --                       `k_infer` (cheap, reuses the cached row) and
+  --                       check the result is a proof / unit-like.
+  --   3. `KInferOnly`   — `k_infer`'s memo would miss; call `k_infer_only`
+  --                       (cheaper than a fresh `k_infer`) and check.
+  -- Dispatching on the hint with a `match` lets us share `k_infer`'s memo
+  -- where available and fall back to `k_infer_only` only when the cheaper
+  -- path won't pay off, instead of unconditionally paying the parallel
+  -- `infer_only` memo cost.
   -- ============================================================================
   fn k_infer_only(e: KExpr, types: List‹KExpr›,
                   top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
