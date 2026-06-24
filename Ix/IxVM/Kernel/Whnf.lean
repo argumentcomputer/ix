@@ -317,7 +317,7 @@ def whnf := ⟦
       KExprNode.BVar(_, _) => e,
       -- Context-trimmed memo key (mirror Rust `whnf_key`): reduce on the
       -- reachable suffix so a closed term shares its WHNF across binder depths.
-      _ => whnf_core(e, ctx_trim(types, expr_lbr(e)), top, addrs),
+      _ => whnf_core(e, types, top, addrs),
     }
   }
 

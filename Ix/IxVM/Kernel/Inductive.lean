@@ -148,7 +148,7 @@ def inductive_check := ⟦
       _ =>
         match load(ctor_ty) {
           KExprNode.Forall(dom, body) =>
-            let types2 = store(ListNode.Cons(dom, types));
+            let types2 = types;
             check_field_universes_skip_params(body, n_params - 1, ind_level, types2, top, addrs),
         },
     }
@@ -162,7 +162,7 @@ def inductive_check := ⟦
         let dom_level = k_ensure_sort(dom, types, top, addrs);
         let ok = level_leq(load(dom_level), ind_level);
         assert_eq!(ok, 1);
-        let types2 = store(ListNode.Cons(dom, types));
+        let types2 = types;
         check_field_universes_inner(body, ind_level, types2, top, addrs),
       _ => (),
     }
@@ -205,7 +205,7 @@ def inductive_check := ⟦
       _ =>
         match load(e) {
           KExprNode.Forall(dom, body) =>
-            let types2 = store(ListNode.Cons(dom, types));
+            let types2 = types;
             peel_n_foralls_with_types(body, n - 1, types2),
           _ => (e, types),
         },
@@ -218,7 +218,7 @@ def inductive_check := ⟦
     match load(ty) {
       KExprNode.Forall(dom, body) =>
         let _ = check_positivity_aug(dom, block_idxs, types, top, addrs);
-        let types2 = store(ListNode.Cons(dom, types));
+        let types2 = types;
         check_positivity_fields(body, block_idxs, types2, top, addrs),
       _ => (),
     }
@@ -238,7 +238,7 @@ def inductive_check := ⟦
         match load(dom_w) {
           KExprNode.Forall(inner_dom, inner_body) =>
             assert_eq!(expr_mentions_any_idx(inner_dom, block_idxs), 0);
-            let types2 = store(ListNode.Cons(inner_dom, types));
+            let types2 = types;
             check_positivity_aug(inner_body, block_idxs, types2, top, addrs),
           _ =>
             match collect_spine(dom_w) {
@@ -434,7 +434,7 @@ def inductive_check := ⟦
     match load(ty) {
       KExprNode.Forall(dom, body) =>
         let _ = check_positivity_aug(dom, aug, types, top, addrs);
-        let types2 = store(ListNode.Cons(dom, types));
+        let types2 = types;
         check_positivity_fields_aug(body, aug, types2, top, addrs),
       _ => (),
     }
@@ -545,7 +545,7 @@ def inductive_check := ⟦
       _ =>
         match load(ty) {
           KExprNode.Forall(dom, body) =>
-            let inner = store(ListNode.Cons(dom, types));
+            let inner = types;
             check_large_prop_ctor(body, n_params - 1, n_fields, inner, top, addrs),
           _ => 0,
         },
@@ -574,7 +574,7 @@ def inductive_check := ⟦
               0 => data_bvars,
               _ => store(ListNode.Cons(bvar_idx, data_bvars)),
             };
-            let inner = store(ListNode.Cons(dom, types));
+            let inner = types;
             check_large_walk_fields(body, n_fields, field_idx + 1, inner, top, addrs,
                                      new_bvars),
           _ => 0,
@@ -904,7 +904,7 @@ def inductive_check := ⟦
       KExprNode.Forall(dom, body) =>
         let r = is_rec_field(dom, block_member_idxs, types, top, addrs);
         let new_doms = store(ListNode.Cons(dom, doms_acc));
-        let types2 = store(ListNode.Cons(dom, types));
+        let types2 = types;
         match r {
           (1, mem_idx) =>
             let new_rec = store(ListNode.Cons(fidx, rec_acc));
@@ -2407,7 +2407,7 @@ def inductive_check := ⟦
               KExprNode.Forall(db, bb) =>
                 let eq = k_is_def_eq(da, db, types, top, addrs);
                 assert_eq!(eq, 1);
-                let inner = store(ListNode.Cons(da, types));
+                let inner = types;
                 check_param_agreement_go(ba, bb, n - 1, inner, top, addrs),
             },
         },

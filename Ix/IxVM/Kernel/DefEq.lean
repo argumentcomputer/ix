@@ -45,7 +45,7 @@ def defEq := ⟦
       -- Context-trimmed memo key (mirror Rust `def_eq_ctx_key`): decide on the
       -- suffix of `types` reachable from either side; closed pairs (lbr 0) key
       -- to the empty context and share across binder depths.
-      _ => k_is_def_eq_core(a, b, ctx_trim(types, lbr_max(expr_lbr(a), expr_lbr(b))), top, addrs),
+      _ => k_is_def_eq_core(a, b, types, top, addrs),
     }
   }
 

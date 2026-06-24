@@ -57,7 +57,7 @@ def infer := ⟦
   -- subterm (`lbr == 0`) shares its inferred type across every binder depth.
   fn k_infer(e: KExpr, types: List‹KExpr›,
              top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
-    k_infer_core(e, ctx_trim(types, expr_lbr(e)), top, addrs)
+    k_infer_core(e, types, top, addrs)
   }
 
   fn k_infer_core(e: KExpr, types: List‹KExpr›,
