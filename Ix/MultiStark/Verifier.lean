@@ -43,8 +43,9 @@ The Rust verifier runs these steps:
   symbolic system and the opened values, recomputes `quotient(ζ)` from the
   opened quotient chunks (barycentric `zps` weights over the split quotient
   domains), and asserts `composition(ζ) · inv_vanishing(ζ) == quotient(ζ)`.
-  Validated end-to-end against a real factorial proof (`RecursiveVerifier.lean`):
-  the verifier accepts the honest proof and rejects a tampered claim.
+  Validated end-to-end against a real factorial proof (the `recursive-verifier`
+  test runner, `Tests/MultiStark.lean`): the verifier accepts the honest proof
+  and rejects a tampered claim.
 
 ### Stubbed / TODO
 * Base-field samples are rejection-sampled (`ch_sample_field`): a raw 8-byte

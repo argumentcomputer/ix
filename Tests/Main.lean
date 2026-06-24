@@ -24,6 +24,7 @@ import Tests.Ix.GraphM
 import Tests.Ix.CondenseM
 import Tests.FFI
 import Tests.Keccak
+import Tests.MultiStark
 import Tests.Cli
 import Tests.ShardMap
 import Ix.Common
@@ -113,6 +114,11 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
     match AiurTestEnv.build (pure IxVM.rbTreeMap) with
     | .error e => IO.eprintln s!"RBTreeMap setup failed: {e}"; return 1
     | .ok env => LSpec.lspecEachIO rbTreeMapTestCases fun tc => pure (env.runTestCase tc)),
+  -- Multi-STARK recursive verifier (formerly the `recursive-verifier` executable):
+  -- `multi-stark` runs the cheap primitive self-tests, `recursive-verifier` runs the
+  -- ~1.5 min factorial-prove → recursive-verify → reject-tampering pipeline.
+  ("multi-stark", Tests.MultiStark.selfTestSuite),
+  ("recursive-verifier", Tests.MultiStark.endToEndSuite),
   ("validate-aux", runCompileValidateAux env),
 ]
 

@@ -25,7 +25,7 @@ jobs:
       - name: Test Ix CLI
         run: lake test -- cli
       - name: Aiur tests
-        run: lake test -- --ignored aiur aiur-hashes ixvm
+        run: lake test -- --ignored aiur aiur-hashes ixvm multi-stark recursive-verifier
       - name: Check Lean versions match for Ix and compiler bench
         run: diff lean-toolchain Benchmarks/Compile/lean-toolchain
 

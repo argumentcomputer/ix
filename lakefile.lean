@@ -98,10 +98,6 @@ lean_exe «arena-exclude» where
   root := `Tests.Ix.Kernel.ArenaExclude
   supportInterpreter := true
 
-lean_exe «recursive-verifier» where
-  root := `RecursiveVerifier
-  supportInterpreter := true
-
 end Tests
 
 section Benchmarks
