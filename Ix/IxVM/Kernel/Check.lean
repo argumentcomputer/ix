@@ -116,11 +116,23 @@ def check := ⟦
   -- Mirror: src/ix/kernel/check.rs:494-570 fn validate_expr_well_scoped.
   -- Walks `e` checking `BVar(i) < depth`, Const universe-arity match, and
   -- recurses into universes via `validate_univ_params_seen`.
+  --
+  -- `wellFormed` extension (docs/ixvm-context-free-inference.org): also threads
+  -- the innermost-first binder-type context `types` and asserts every typed
+  -- BVar's annotation is the canonical occurrence-valid type. This is the ONE
+  -- pass that runs per constant body before inference; it makes the (possibly
+  -- adversarial) annotations trustworthy so context-free infer may rely on them.
+  -- `depth == list_length(types)` is kept explicit for the closedness check.
   fn validate_expr_well_scoped(e: KExpr, depth: G, bound: G,
-                                top: List‹&KConstantInfo›) {
+                                top: List‹&KConstantInfo›, types: List‹KExpr›) {
     match load(e) {
-      KExprNode.BVar(i, _) =>
+      KExprNode.BVar(i, ty) =>
+        -- (a) no loose bvars: every var resolves to an enclosing binder.
         assert_eq!(u32_less_than(i, depth), 1);
+        -- (b) canonical annotation: `ty` must be EXACTLY `lift(types[i], i+1, 0)`,
+        -- recomputed via the same `types_lookup` ingress/infer use. Pointer
+        -- (content-address) equality — no def_eq, structural only.
+        assert_eq!(ptr_val(ty), ptr_val(types_lookup(types, i)));
         (),
       KExprNode.Srt(&l) => validate_univ_params_seen(l, bound),
       KExprNode.Const(idx, lvls) =>
@@ -129,21 +141,21 @@ def check := ⟦
         assert_eq!(list_length(lvls), expected);
         validate_univ_params_list(lvls, bound),
       KExprNode.App(f, a) =>
-        let _ = validate_expr_well_scoped(f, depth, bound, top);
-        validate_expr_well_scoped(a, depth, bound, top),
+        let _ = validate_expr_well_scoped(f, depth, bound, top, types);
+        validate_expr_well_scoped(a, depth, bound, top, types),
       KExprNode.Lam(t, b) =>
-        let _ = validate_expr_well_scoped(t, depth, bound, top);
-        validate_expr_well_scoped(b, depth + 1, bound, top),
+        let _ = validate_expr_well_scoped(t, depth, bound, top, types);
+        validate_expr_well_scoped(b, depth + 1, bound, top, store(ListNode.Cons(t, types))),
       KExprNode.Forall(t, b) =>
-        let _ = validate_expr_well_scoped(t, depth, bound, top);
-        validate_expr_well_scoped(b, depth + 1, bound, top),
+        let _ = validate_expr_well_scoped(t, depth, bound, top, types);
+        validate_expr_well_scoped(b, depth + 1, bound, top, store(ListNode.Cons(t, types))),
       KExprNode.Let(t, v, b) =>
-        let _ = validate_expr_well_scoped(t, depth, bound, top);
-        let _ = validate_expr_well_scoped(v, depth, bound, top);
-        validate_expr_well_scoped(b, depth + 1, bound, top),
+        let _ = validate_expr_well_scoped(t, depth, bound, top, types);
+        let _ = validate_expr_well_scoped(v, depth, bound, top, types);
+        validate_expr_well_scoped(b, depth + 1, bound, top, store(ListNode.Cons(t, types))),
       KExprNode.Lit(_) => (),
       KExprNode.Proj(_, _, val) =>
-        validate_expr_well_scoped(val, depth, bound, top),
+        validate_expr_well_scoped(val, depth, bound, top, types),
     }
   }
 
@@ -152,14 +164,14 @@ def check := ⟦
   fn validate_const_well_scoped(ci: KConstantInfo, top: List‹&KConstantInfo›) {
     let bound = const_num_lvls(ci);
     let ty = const_type_of(ci);
-    let _ = validate_expr_well_scoped(ty, 0, bound, top);
+    let _ = validate_expr_well_scoped(ty, 0, bound, top, store(ListNode.Nil));
     match ci {
       KConstantInfo.Defn(_, _, val, _, _) =>
-        validate_expr_well_scoped(val, 0, bound, top),
+        validate_expr_well_scoped(val, 0, bound, top, store(ListNode.Nil)),
       KConstantInfo.Thm(_, _, val) =>
-        validate_expr_well_scoped(val, 0, bound, top),
+        validate_expr_well_scoped(val, 0, bound, top, store(ListNode.Nil)),
       KConstantInfo.Opaque(_, _, val, _) =>
-        validate_expr_well_scoped(val, 0, bound, top),
+        validate_expr_well_scoped(val, 0, bound, top, store(ListNode.Nil)),
       KConstantInfo.Rec(_, _, _, _, _, _, rules, _, _, _) =>
         validate_recr_rules(rules, bound, top),
       _ => (),
@@ -173,7 +185,7 @@ def check := ⟦
       ListNode.Cons(rule, rest) =>
         match rule {
           KRecRule.Mk(_, _, rhs) =>
-            let _ = validate_expr_well_scoped(rhs, 0, bound, top);
+            let _ = validate_expr_well_scoped(rhs, 0, bound, top, store(ListNode.Nil));
             validate_recr_rules(rest, bound, top),
         },
     }
