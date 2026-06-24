@@ -137,16 +137,16 @@ def ingress := ⟦
     }
   }
 
-  -- Check if an address is a blob: it's a blob iff it's NOT a constant,
-  -- i.e. absent from `addr_pos_map` (which is keyed by every constant
-  -- address — see `build_addr_pos_map`). Membership only; the stored
-  -- position value (pos+1 ≥ 1) is irrelevant here, only "present vs 0".
-  -- Blob addresses and constant addresses are different by design
-  -- (different hash preimage structures). O(log N) tree lookup.
+  -- Check if an address is a blob via the augmented `addr_pos_map`:
+  -- value == 0 (absent) → conservatively blob (the historical semantics;
+  -- sound because a content-bound blob load downstream re-verifies);
+  -- value == 4294967295 (SENTINEL) → known blob ref;
+  -- value > 0 and < SENTINEL (pos+1) → known const.
   fn is_blob(addr: Addr, addr_pos_map: &RBTreeMap‹G›) -> G {
     let hit = rbtree_map_lookup_or_default(ptr_val(addr), load(addr_pos_map), 0);
     match hit {
       0 => 1,
+      4294967295 => 1,
       _ => 0,
     }
   }
@@ -227,11 +227,27 @@ def ingress := ⟦
   -- fall back to the content-based `address_eq` scan, which returns 0 when
   -- truly absent. Honest provers always intern, so the fallback adds ~0
   -- rows to the honest trace; the hot path is the O(log N) tree lookup.
+  -- Single-map ptr_val lookup. After `build_addr_pos_map_aug`, the map
+  -- carries three classes of value for an address key:
+  --   * 0          → not registered (truly unknown OR de-interned const)
+  --   * SENTINEL   → known blob ref (= 4294967295, beyond any honest pos+1)
+  --   * pos+1      → known const at position `pos`
+  -- The blob class is populated once per ingress by walking every
+  -- constant's `refs` and inserting any non-const ref with SENTINEL.
+  -- Blob-ref lookups (the dominant non-const-ref traffic) now hit the
+  -- O(log N) probe and short-circuit to 0 without scanning.
+  --
+  -- ptr_val-key soundness: ptr equality → content equality (positive
+  -- direction, sound because Aiur's Store content-addresses by content).
+  -- Hit on either pos+1 or SENTINEL is sound by ptr equality. Miss falls
+  -- through to the content-based linear scan, which catches any
+  -- de-interned const at its true position.
   fn lookup_addr_pos(target: Addr, addr_pos_map: &RBTreeMap‹G›,
                      all_addrs: List‹Addr›, pos_map: List‹G›) -> G {
     let hit = rbtree_map_lookup_or_default(ptr_val(target), load(addr_pos_map), 0);
     match hit {
       0 => lookup_addr_pos_linear(target, all_addrs, pos_map),
+      4294967295 => 0,
       _ => hit - 1,
     }
   }
@@ -281,6 +297,45 @@ def ingress := ⟦
           ListNode.Cons(pos, rest_pos) =>
             rbtree_map_insert(ptr_val(addr), pos + 1,
               build_addr_pos_map(rest_addrs, rest_pos)),
+        },
+    }
+  }
+
+  -- Walk all constants' `refs`. For every ref whose ptr_val is NOT
+  -- already mapped to a const-position (= a true const-ref), insert it
+  -- with the BLOB sentinel `4294967295`. Result: every ref a const
+  -- carries is classified at build time; `lookup_addr_pos` short-circuits
+  -- O(N) linear scans on blob refs to O(log N) probes.
+  --
+  -- Duplicate refs across consts hit the existing entry on subsequent
+  -- inserts; the probe-before-insert prevents overwriting a const's
+  -- pos+1 entry. The walk is O(R log N) where R = total refs in the
+  -- shard's closure, N = #consts + #unique-blob-refs.
+  fn augment_with_blob_refs(consts: List‹&Constant›, m: RBTreeMap‹G›) -> RBTreeMap‹G› {
+    match load(consts) {
+      ListNode.Nil => m,
+      ListNode.Cons(&c, rest) =>
+        match c {
+          Constant.Mk(_, _, refs, _) =>
+            let m1 = insert_refs_as_blobs(refs, m);
+            augment_with_blob_refs(rest, m1),
+        },
+    }
+  }
+
+  fn insert_refs_as_blobs(refs: List‹Addr›, m: RBTreeMap‹G›) -> RBTreeMap‹G› {
+    match load(refs) {
+      ListNode.Nil => m,
+      ListNode.Cons(addr, rest) =>
+        let key = ptr_val(addr);
+        let hit = rbtree_map_lookup_or_default(key, m, 0);
+        match hit {
+          0 =>
+            -- Not yet registered: classify as blob ref via SENTINEL.
+            insert_refs_as_blobs(rest, rbtree_map_insert(key, 4294967295, m)),
+          _ =>
+            -- Already a const (pos+1) or already a blob (SENTINEL): leave alone.
+            insert_refs_as_blobs(rest, m),
         },
     }
   }
@@ -1034,7 +1089,12 @@ def ingress := ⟦
     pos: G
   ) -> List‹&ConvertInput› {
     -- Built once here; threaded as the fast-path index for `lookup_addr_pos`.
-    let addr_pos_map = store(build_addr_pos_map(all_addrs, pos_map));
+    -- The base map carries `pos+1` for each const; `augment_with_blob_refs`
+    -- then walks every const's `refs` and tags every previously-unregistered
+    -- ref with the BLOB sentinel (4294967295), so blob-ref lookups
+    -- short-circuit instead of falling through to the O(N) linear scan.
+    let base_map = build_addr_pos_map(all_addrs, pos_map);
+    let addr_pos_map = store(augment_with_blob_refs(consts, base_map));
     build_convert_inputs_walk(consts, cur_addrs, all_addrs, addr_pos_map, pos_map,
                               canon_addrs, block_addrs, block_starts, pos,
                               store(ListNode.Nil))
