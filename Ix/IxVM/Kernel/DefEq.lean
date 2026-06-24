@@ -420,7 +420,7 @@ def defEq := ⟦
             let ty_eq = k_is_def_eq(ty_a, ty_b, types, top, addrs);
             match ty_eq {
               1 =>
-                let inner = store(ListNode.Cons(ty_a, types));
+                let inner = types;
                 k_is_def_eq(body_a, body_b, inner, top, addrs),
               0 => 0,
             },
@@ -433,7 +433,7 @@ def defEq := ⟦
             let ty_eq = k_is_def_eq(ty_a, ty_b, types, top, addrs);
             match ty_eq {
               1 =>
-                let inner = store(ListNode.Cons(ty_a, types));
+                let inner = types;
                 k_is_def_eq(body_a, body_b, inner, top, addrs),
               0 => 0,
             },
@@ -450,7 +450,7 @@ def defEq := ⟦
                 let v_eq = k_is_def_eq(val_a, val_b, types, top, addrs);
                 match v_eq {
                   1 =>
-                    let inner = store(ListNode.Cons(ty_a, types));
+                    let inner = types;
                     k_is_def_eq(body_a, body_b, inner, top, addrs),
                   0 => 0,
                 },
@@ -494,10 +494,13 @@ def defEq := ⟦
                     types: List‹KExpr›,
                     top: List‹&KConstantInfo›, addrs: List‹Addr›) -> G {
     let b_lifted = expr_lift(b, 1, 0);
-    let bvar0 = store(KExprNode.BVar(0, kexpr_dummy()));
+    -- The fresh eta variable has type ty_a at depth 1 below its binder, so its
+    -- occurrence-valid annotation is lift(ty_a, 1, 0) (Condition 1: this BVar can
+    -- reach k_infer via the App-arg k_check, so the annotation must be real).
+    let bvar0 = store(KExprNode.BVar(0, expr_lift(ty_a, 1, 0)));
     let b_app = store(KExprNode.App(b_lifted, bvar0));
-    let inner = store(ListNode.Cons(ty_a, types));
-    k_is_def_eq(body_a, b_app, inner, top, addrs)
+    -- Context-free: the bodies are self-annotated; no context push needed.
+    k_is_def_eq(body_a, b_app, types, top, addrs)
   }
 
   -- ============================================================================

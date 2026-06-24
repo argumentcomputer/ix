@@ -63,7 +63,9 @@ def infer := ⟦
   fn k_infer_core(e: KExpr, types: List‹KExpr›,
                   top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
     match load(e) {
-      KExprNode.BVar(i, _) => types_lookup(types, i),
+      -- Context-free: read the type straight off the (wellFormed-validated)
+      -- annotation. `types` is now always empty and the lookup machinery dead.
+      KExprNode.BVar(_, ty) => ty,
 
       -- Normalize the constructed `Succ(l)` so callers see canonical
       -- forms (e.g. `Succ(IMax 0 1)` → `Succ(Succ Zero) = 2`). Without
@@ -103,13 +105,13 @@ def infer := ⟦
 
       KExprNode.Lam(ty, body) =>
         let _ = k_ensure_sort(ty, types, top, addrs);
-        let types2 = store(ListNode.Cons(ty, types));
+        let types2 = types;
         let body_ty = k_infer(body, types2, top, addrs);
         store(KExprNode.Forall(ty, body_ty)),
 
       KExprNode.Forall(ty, body) =>
         let u1 = k_ensure_sort(ty, types, top, addrs);
-        let types2 = store(ListNode.Cons(ty, types));
+        let types2 = types;
         let u2 = k_ensure_sort(body, types2, top, addrs);
         store(KExprNode.Srt(store(level_imax(load(u1), load(u2))))),
 

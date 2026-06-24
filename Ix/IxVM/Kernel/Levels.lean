@@ -723,7 +723,10 @@ def levels := ⟦
 
   fn expr_inst_levels_walk(e: KExpr, params: List‹&KLevel›) -> KExpr {
     match load(e) {
-      KExprNode.BVar(i, _) => store(KExprNode.BVar(i, kexpr_dummy())),
+      -- Preserve the annotation, instantiating universe params inside it too
+      -- (the type may mention level params). Rebuilds an existing BVar, so the
+      -- annotation must be transported, not dropped — once infer reads it.
+      KExprNode.BVar(i, ty) => store(KExprNode.BVar(i, expr_inst_levels(ty, params))),
       KExprNode.Srt(&l) =>
         store(KExprNode.Srt(store(level_inst_params(l, params)))),
       KExprNode.Const(idx, lvls) =>

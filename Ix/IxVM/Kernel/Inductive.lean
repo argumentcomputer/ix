@@ -1580,6 +1580,36 @@ def inductive_check := ⟦
     }
   }
 
+  -- Rebuild a CLOSED synthesized expr with canonical BVar annotations
+  -- (lift(types[i], i+1, 0) via types_lookup), pushing binder types as it
+  -- descends. The FIXING dual of validate_expr_well_scoped's CHECK and the
+  -- in-kernel twin of ingress's convert_expr. The recursor checker synthesizes
+  -- canonical recursor types/rules via de Bruijn surgery, leaving placeholder
+  -- BVar annotations; reannotating before def_eq makes their subterms infer
+  -- correctly (proof-irrelevance / Prop guards inside def_eq read the type).
+  fn reannotate(e: KExpr, types: List‹KExpr›) -> KExpr {
+    match load(e) {
+      KExprNode.BVar(i, _) => store(KExprNode.BVar(i, types_lookup(types, i))),
+      KExprNode.Srt(_) => e,
+      KExprNode.Const(_, _) => e,
+      KExprNode.Lit(_) => e,
+      KExprNode.App(f, a) =>
+        store(KExprNode.App(reannotate(f, types), reannotate(a, types))),
+      KExprNode.Lam(ty, body) =>
+        let kty = reannotate(ty, types);
+        store(KExprNode.Lam(kty, reannotate(body, store(ListNode.Cons(kty, types))))),
+      KExprNode.Forall(ty, body) =>
+        let kty = reannotate(ty, types);
+        store(KExprNode.Forall(kty, reannotate(body, store(ListNode.Cons(kty, types))))),
+      KExprNode.Let(ty, val, body) =>
+        let kty = reannotate(ty, types);
+        store(KExprNode.Let(kty, reannotate(val, types),
+                            reannotate(body, store(ListNode.Cons(kty, types))))),
+      KExprNode.Proj(t, f, e1) =>
+        store(KExprNode.Proj(t, f, reannotate(e1, types))),
+    }
+  }
+
   fn compare_rules(stored: List‹KRecRule›, canonical: List‹KRecRule›,
                    top: List‹&KConstantInfo›, addrs: List‹Addr›) {
     match load(stored) {
@@ -1596,7 +1626,7 @@ def inductive_check := ⟦
                   KRecRule.Mk(c_ctor, c_nf, c_rhs) =>
                     assert_eq!(s_ctor, c_ctor);
                     assert_eq!(s_nf, c_nf);
-                    let eq = k_is_def_eq(s_rhs, c_rhs, store(ListNode.Nil), top, addrs);
+                    let eq = k_is_def_eq(s_rhs, reannotate(c_rhs, store(ListNode.Nil)), store(ListNode.Nil), top, addrs);
                     assert_eq!(eq, 1);
                     compare_rules(rs, rc, top, addrs),
                 },
@@ -1687,7 +1717,7 @@ def inductive_check := ⟦
                 let canonical_ty = build_rec_type(self_major, self_ind_ty, self_ctor_indices,
                                                    ind_n_params, self_n_indices, ind_lvls,
                                                    self_own_params, ind_idx, top, addrs);
-                let ty_eq = k_is_def_eq(ty, canonical_ty, store(ListNode.Nil), top, addrs);
+                let ty_eq = k_is_def_eq(ty, reannotate(canonical_ty, store(ListNode.Nil)), store(ListNode.Nil), top, addrs);
                 assert_eq!(ty_eq, 1);
                 -- Re-derive elim_level / univ_offset using self's data.
                 let result_level = get_result_sort_level(self_ind_ty, self_own_params + self_n_indices);
