@@ -87,48 +87,11 @@ def subst := ⟦
     }
   }
 
-  -- Number of leading `types` frames an expr with loose-bvar-range `base` can
-  -- reach. `BVar(i)` reads `types[i]`, and a kept frame's own stored type can
-  -- reference further-out frames, so expand `need` to the fixpoint that closes
-  -- over every kept frame's loose range. Mirror Rust `ctx_addr_for_lbr`
-  -- (tc.rs). Trimming `types` to this prefix canonicalizes the whnf/infer/
-  -- def-eq memo key: a closed expr (base 0) keys to the empty context and
-  -- shares across all binder depths. Memoized on (types, base).
-  fn ctx_reachable(types: List‹KExpr›, base: G) -> G {
-    let len = list_length(types);
-    ctx_reachable_fix(types, len, lbr_min(base, len))
-  }
-
-  fn ctx_reachable_fix(types: List‹KExpr›, len: G, need: G) -> G {
-    let scanned = lbr_min(ctx_reachable_scan(types, need, 0, need), len);
-    match u32_less_than(need, scanned) {
-      1 => ctx_reachable_fix(types, len, scanned),
-      0 => need,
-    }
-  }
-
-  fn ctx_reachable_scan(types: List‹KExpr›, limit: G, i: G, acc: G) -> G {
-    match u32_less_than(i, limit) {
-      0 => acc,
-      1 =>
-        let fi = (i + 1) + expr_lbr(list_lookup(types, i));
-        ctx_reachable_scan(types, limit, i + 1, lbr_max(acc, fi)),
-    }
-  }
-
-  -- Trim `types` to the suffix reachable from an expr with loose range `base`.
-  -- Fast paths skip the fixpoint: `base == 0` (closed) → empty context;
-  -- `base >= len` → nothing to trim. Only partially-open exprs pay the scan.
-  fn ctx_trim(types: List‹KExpr›, base: G) -> List‹KExpr› {
-    match base {
-      0 => store(ListNode.Nil),
-      _ =>
-        match u32_less_than(base, list_length(types)) {
-          0 => types,
-          1 => list_take(types, ctx_reachable(types, base)),
-        },
-    }
-  }
+  -- (Removed: ctx_reachable / ctx_reachable_fix / ctx_reachable_scan / ctx_trim.
+  -- These trimmed the binder-type context to canonicalize the infer/whnf/def-eq
+  -- memo key. With typed BVars the kernel is context-free — `types` is always
+  -- empty — so the whole suffix-trimming subsystem is dead. See
+  -- docs/ixvm-context-free-inference.org.)
 
   -- ============================================================================
   -- expr_lift

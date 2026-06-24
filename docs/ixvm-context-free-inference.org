@@ -9,8 +9,16 @@ Status: *design / RFC*. Pre-implementation. This document states a problem with
 IxVM's memoization and proposes a fix: annotate each de Bruijn variable with its type so
 inference, WHNF, and definitional equality become *context-free* (=Expr -> Expr=). It
 records the adversarial soundness analysis (a substitution-preservation proof, an
-index-only-def-eq argument, and a full audit of where the one-shot validator must run) so
-the team can decide. Nothing here is implemented yet.
+index-only-def-eq argument, and a full audit of where the one-shot validator must run).
+
+*IMPLEMENTED* on branch =gb/typed-bvar= (Stages A–E below). The full =ixvm= kernel suite
+passes context-free (=lake test -- --ignored ixvm=, 303/303): =Nat.add_comm=, every
+primitive, decidability, and all recursors (incl. mutual =Even.rec=/=Odd.rec=)
+type-check. =types= is now empty on every path; the =ctx_trim= subsystem is deleted; the
+memo key is the expression pointer(s) alone. *Measured cost*: a modest FFT increase from
+annotation size (e.g. =Nat.add_comm= +3.5%, =Nat.decLe= +10%, =nat_div_lit= +11%; a few
+terms slightly negative) — confirming open question #1: the win is *architectural*, not a
+raw cost reduction (see [[#open-questions]]).
 
 An earlier draft of this document proposed a different mechanism ("FVar opening" — open
 binders into fresh free variables). That idea is *scrapped*; it survives only as a
@@ -625,10 +633,16 @@ size, bought back in simplicity and sharing.
 :END:
 
 1. *Annotation size — how bad?* Typed BVars replicate lifted types across occurrences and
-   nest them to context depth. Measure the node-count / trace-row blow-up on
-   dependent-heavy mathlib before committing. (Mitigations if material: intern aggressively;
-   or store a *compressed* annotation — e.g. only when the type isn't recomputable cheaply —
-   though that risks reintroducing context.)
+   nest them to context depth. *Measured* (gb/typed-bvar, full ixvm suite): a modest FFT
+   increase — HEq −0.1%, Nat ~0%, Nat.add +0.4%, Nat.add_comm +3.5%, Array.append_assoc
+   +2.6%, Even.rec +0.8%, and the variable-/recursion-dense terms most: Nat.decLe +10%,
+   nat_div_lit +11%, str_size_lit +7%. So the annotation cost dominates the (small)
+   sharing gain over the old =ctx_trim= (which already shared closed terms): the refactor
+   is an *architectural* win (context-free kernel, deleted =ctx_trim=, expr-pointer-only
+   memo key), not a raw FFT reduction. Mitigations if the increase matters: intern
+   annotations aggressively; or store a *compressed* annotation (only when the type isn't
+   cheaply recomputable) — at the risk of reintroducing context. The current design stores
+   the full lifted type verbatim.
 2. *Should =wellFormed= also =k_ensure_sort= binder types*, or is the existing in-inference
    =k_ensure_sort= sufficient? (Leaning: keep them separate — =wellFormed= checks annotation
    /canonicality/, inference checks binder /validity/; they compose.)
