@@ -1,0 +1,25 @@
+[package]
+name = "zisk-host"
+version = "0.1.0"
+edition = "2024"
+default-run = "zisk-host"
+
+[[bin]]
+name = "zisk-host"
+path = "src/main.rs"
+
+[dependencies]
+ixon = { path = "../../crates/ixon" }
+ix-common = { path = "../../crates/common" }
+# Used only to count work items for human-readable output via
+# `build_anon_work` — same enumeration the guest runs in-circuit.
+ix-kernel = { path = "../../crates/kernel" }
+zisk-sdk = { workspace = true }
+anyhow = "1"
+clap = { version = "4.0", features = ["derive"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+# Throughput formatting (e.g. `42.0 consts/s`).
+human-repr = "1"
+
+[build-dependencies]
+zisk-sdk = { workspace = true }

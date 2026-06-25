@@ -1,0 +1,21 @@
+[package]
+name = "zisk-agg-guest"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# Drop every `log::*!` macro from the guest binary at compile time —
+# matches the batch-guest; no log destination in zkVM context.
+log = { version = "0.4", features = ["max_level_off"] }
+# The in-guest STARK verifier + stdin/output primitives.
+ziskos = { git = "https://github.com/argumentcomputer/zisk.git", branch = "blake3-precompile", default-features = false }
+# For the in-circuit discharge: parse each verified child's committed claim
+# (subject/assumptions roots) from its publics and fold them with the same
+# canonical merkle ops the leaf guest uses (`merkle_join`, `Address`).
+ixon = { path = "../../crates/ixon" }
+ix-common = { path = "../../crates/common" }
+
+# Route `blake3` through the precompile shim (same as the batch-guest) so the
+# agg guest's merkle hashes match the leaf guest's exactly.
+[patch.crates-io]
+blake3 = { git = "https://github.com/argumentcomputer/zisk.git", branch = "blake3-precompile", package = "blake3" }

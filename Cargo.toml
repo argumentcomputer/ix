@@ -1,50 +1,17 @@
-[package]
-name = "ix_rs"
-version = "0.1.0"
-edition = "2024"
-
-[lib]
-crate-type = ["staticlib"]
-
-[dependencies]
-anyhow = "1"
-blake3 = "1.8.4"
-itertools = "0.14.0"
-indexmap = { version = "2", features = ["rayon"] }
-hashbrown = "0.15"
-lean-ffi = { git = "https://github.com/argumentcomputer/lean-ffi", rev = "cc98ebf67bf453ac3827cb767f78b13ea674dd6a" }
-mimalloc = { version = "0.1", default-features = false }
-multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "9ecab51d553445c0cc7b571af00a76b8a83a6f8c" }
-num-bigint = "0.4.6"
-rayon = "1"
-rustc-hash = "2"
-tiny-keccak = { version = "2", features = ["keccak"] }
-dashmap = { version = "6.1.0", features = ["rayon"] }
-memmap2 = "0.9"
-sha2 = "0.10"
-# Iroh dependencies
-bytes = { version = "1.10.1", optional = true }
-tokio = { version = "1.44.1", optional = true }
-iroh = { version = "0.97", optional = true }
-iroh-base = { version = "0.97", optional = true }
-n0-error = { version = "0.1", optional = true }
-getrandom = { version = "0.3", optional = true }
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-tracing-texray = { git = "https://github.com/argumentcomputer/tracing-texray", rev = "31d194dd1bc50458d26f77c89bb68f67e5d1c149" }
-bincode = { version = "2.0.1", optional = true }
-serde = { version = "1.0.219", features = ["derive"], optional = true }
-
-[dev-dependencies]
-quickcheck = "1.0.3"
-rand = "0.10.1"
-quickcheck_macros = "1.0.0"
-
-[features]
-default = []
-parallel = ["multi-stark/parallel"]
-test-ffi = []
-net = ["bytes", "tokio", "iroh", "iroh-base", "n0-error", "getrandom", "bincode", "serde" ]
+[workspace]
+members = [
+  "crates/aiur",
+  "crates/common",
+  "crates/compile",
+  "crates/ffi",
+  "crates/ixon",
+  "crates/kernel",
+]
+# `zisk/` and `sp1/` are their own Cargo workspaces (guest + host) built via
+# the respective zkVM toolchains; excluded so host workspace ops don't pick
+# them up.
+exclude = ["zisk", "sp1"]
+resolver = "2"
 
 [profile.dev]
 panic = "abort"
@@ -52,7 +19,46 @@ panic = "abort"
 [profile.release]
 panic = "abort"
 
-[lints.rust]
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+# Internal crates
+aiur = { path = "crates/aiur" }
+ix-common = { path = "crates/common" }
+ix-compile = { path = "crates/compile" }
+ixon = { path = "crates/ixon" }
+ix-kernel = { path = "crates/kernel" }
+
+# lean-ffi tree (lean-ffi crate + factored-out bignat sub-crate)
+bignat = { git = "https://github.com/argumentcomputer/lean-ffi.git", rev = "839b405de708b80504fda39abe1402114b4135a5" }
+lean-ffi = { git = "https://github.com/argumentcomputer/lean-ffi.git", rev = "839b405de708b80504fda39abe1402114b4135a5" }
+
+# External shared deps
+anyhow = "1"
+blake3 = "1.8.4"
+dashmap = "6.1.0"
+hashbrown = "0.15"
+indexmap = "2"
+itertools = "0.14.0"
+log = "0.4"
+memmap2 = "0.9"
+mimalloc = { version = "0.1", default-features = false }
+multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "9ecab51d553445c0cc7b571af00a76b8a83a6f8c" }
+num-bigint = "0.4.6"
+quickcheck = "1.0.3"
+quickcheck_macros = "1.0.0"
+rayon = "1"
+rustc-hash = "2"
+sha2 = "0.10"
+tiny-keccak = { version = "2", features = ["keccak"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-texray = { git = "https://github.com/argumentcomputer/tracing-texray", rev = "31d194dd1bc50458d26f77c89bb68f67e5d1c149" }
+
+[workspace.lints.rust]
 invalid_reference_casting = "warn"
 nonstandard_style = "warn"
 rust_2018_idioms = { level = "warn", priority = -1 }
@@ -61,7 +67,7 @@ unreachable_pub = "warn"
 unused_lifetimes = "warn"
 unused_qualifications = "warn"
 
-[lints.clippy]
+[workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
 cast_lossless = "warn"
 cast_possible_truncation = "warn"

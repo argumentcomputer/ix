@@ -96,17 +96,41 @@ def fetchMathlibCache (cwd : Option FilePath) : IO Unit := do
     if exitCode != 0 then
       throw $ IO.userError "lake exe cache get failed"
 
+/-- Walk up from `start` looking for `lake-manifest.json`. -/
+partial def findLakeRoot (start : FilePath) : IO (Option FilePath) := do
+  if ← (start / "lake-manifest.json").pathExists then
+    return some start
+  match start.parent with
+  | none => return none
+  | some p => if p == start then return none else findLakeRoot p
+
+/-- Walk up from `cur` collecting directory names until reaching `root`,
+yielding the path components between them (in top-down order). -/
+partial def collectRelParts (root cur : FilePath) (acc : List String) : Option (List String) :=
+  if cur == root then some acc
+  else match cur.fileName, cur.parent with
+    | some name, some par =>
+      if par == cur then none else collectRelParts root par (name :: acc)
+    | _, _ => none
+
 /-- Build the Lean module at the given file path using Lake.
 Also fetches Mathlib cache if the project depends on it. -/
 def buildFile (path : FilePath) : IO Unit := do
   let path ← IO.FS.realPath path
-  let some moduleName := path.fileStem
+  let some stem := path.fileStem
     | throw $ IO.userError s!"cannot determine module name from {path}"
-  fetchMathlibCache path.parent
+  let some parent := path.parent
+    | throw $ IO.userError s!"cannot determine parent of {path}"
+  let some root ← findLakeRoot parent
+    | throw $ IO.userError s!"no lake-manifest.json found at or above {parent}"
+  let some relParts := collectRelParts root parent []
+    | throw $ IO.userError s!"{path} is not under {root}"
+  let moduleName := ".".intercalate (relParts ++ [stem])
+  fetchMathlibCache root
   let child ← IO.Process.spawn {
     cmd := "lake"
     args := #["build", moduleName]
-    cwd := path.parent
+    cwd := root
     stdout := .inherit
     stderr := .inherit
   }

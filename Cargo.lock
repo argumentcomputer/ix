@@ -47,6 +47,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "aiur"
+version = "0.1.0"
+dependencies = [
+ "hashbrown 0.15.5",
+ "indexmap",
+ "multi-stark",
+ "num-bigint",
+ "rayon",
+ "rustc-hash",
+ "tracing",
+ "tracing-texray",
+]
+
+[[package]]
 name = "allocator-api2"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -59,6 +73,56 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "819e7219dbd41043ac279b19830f2efc897156490d7fd6ea916720117ee66311"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "anstream"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "824a212faf96e9acacdbd09febd34438f8f711fb84e09a8916013cd7815ca28d"
+dependencies = [
+ "anstyle",
+ "anstyle-parse",
+ "anstyle-query",
+ "anstyle-wincon",
+ "colorchoice",
+ "is_terminal_polyfill",
+ "utf8parse",
+]
+
+[[package]]
+name = "anstyle"
+version = "1.0.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "940b3a0ca603d1eade50a4846a2afffd5ef57a9feac2c0e2ec2e14f9ead76000"
+
+[[package]]
+name = "anstyle-parse"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "52ce7f38b242319f7cabaa6813055467063ecdc9d355bbb4ce0c68908cd8130e"
+dependencies = [
+ "utf8parse",
+]
+
+[[package]]
+name = "anstyle-query"
+version = "1.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
+dependencies = [
+ "windows-sys 0.60.2",
+]
+
+[[package]]
+name = "anstyle-wincon"
+version = "3.0.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
+dependencies = [
+ "anstyle",
+ "once_cell_polyfill",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -162,6 +226,14 @@ name = "base64ct"
 version = "1.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
+
+[[package]]
+name = "bignat"
+version = "0.1.0"
+source = "git+https://github.com/argumentcomputer/lean-ffi.git?rev=839b405de708b80504fda39abe1402114b4135a5#839b405de708b80504fda39abe1402114b4135a5"
+dependencies = [
+ "num-bigint",
+]
 
 [[package]]
 name = "bincode"
@@ -300,17 +372,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
-name = "chacha20"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6f8d983286843e49675a4b7a2d174efe136dc93a18d69130dd18198a6c167601"
-dependencies = [
- "cfg-if",
- "cpufeatures 0.3.0",
- "rand_core 0.10.1",
-]
-
-[[package]]
 name = "chrono"
 version = "0.4.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -351,6 +412,12 @@ checksum = "0fa961b519f0b462e3a3b4a34b64d119eeaca1d59af726fe450bbba07a9fc0a1"
 dependencies = [
  "thiserror",
 ]
+
+[[package]]
+name = "colorchoice"
+version = "1.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d07550c9036bf2ae0c684c4297d503f838287c83c53686d05370d0e139ae570"
 
 [[package]]
 name = "const-oid"
@@ -794,7 +861,10 @@ version = "0.11.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0621c04f2196ac3f488dd583365b9c09be011a4ab8b9f37248ffcc8f6198b56a"
 dependencies = [
+ "anstream",
+ "anstyle",
  "env_filter",
+ "jiff",
  "log",
 ]
 
@@ -1697,6 +1767,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "is_terminal_polyfill"
+version = "1.70.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a6cb138bb79a146c1bd460005623e142ef0181e3d0219cb493e02f7d08a35695"
+
+[[package]]
 name = "itertools"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1721,29 +1797,61 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
-name = "ix_rs"
+name = "ix-common"
+version = "0.1.0"
+dependencies = [
+ "bignat",
+ "blake3",
+ "indexmap",
+ "quickcheck",
+ "quickcheck_macros",
+ "rustc-hash",
+]
+
+[[package]]
+name = "ix-compile"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bignat",
+ "blake3",
+ "dashmap",
+ "indexmap",
+ "itertools 0.14.0",
+ "ix-common",
+ "ix-kernel",
+ "ixon",
+ "num-bigint",
+ "rayon",
+ "rustc-hash",
+ "sha2 0.10.9",
+]
+
+[[package]]
+name = "ix-ffi"
+version = "0.1.0"
+dependencies = [
+ "aiur",
+ "anyhow",
+ "bignat",
  "bincode",
  "blake3",
  "bytes",
  "dashmap",
  "getrandom 0.3.4",
- "hashbrown 0.15.5",
  "indexmap",
  "iroh",
  "iroh-base",
  "itertools 0.14.0",
+ "ix-common",
+ "ix-compile",
+ "ix-kernel",
+ "ixon",
  "lean-ffi",
- "memmap2",
  "mimalloc",
  "multi-stark",
  "n0-error",
  "num-bigint",
- "quickcheck",
- "quickcheck_macros",
- "rand 0.10.1",
  "rayon",
  "rustc-hash",
  "serde",
@@ -1753,6 +1861,69 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "tracing-texray",
+]
+
+[[package]]
+name = "ix-kernel"
+version = "0.1.0"
+dependencies = [
+ "bignat",
+ "blake3",
+ "dashmap",
+ "env_logger",
+ "indexmap",
+ "itertools 0.14.0",
+ "ix-common",
+ "ixon",
+ "log",
+ "num-bigint",
+ "quickcheck",
+ "quickcheck_macros",
+ "rayon",
+ "rustc-hash",
+]
+
+[[package]]
+name = "ixon"
+version = "0.1.0"
+dependencies = [
+ "bignat",
+ "blake3",
+ "dashmap",
+ "indexmap",
+ "ix-common",
+ "memmap2",
+ "num-bigint",
+ "quickcheck",
+ "quickcheck_macros",
+ "rayon",
+ "rustc-hash",
+ "sha2 0.10.9",
+ "tiny-keccak",
+]
+
+[[package]]
+name = "jiff"
+version = "0.2.24"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f00b5dbd620d61dfdcb6007c9c1f6054ebd75319f163d886a9055cec1155073d"
+dependencies = [
+ "jiff-static",
+ "log",
+ "portable-atomic",
+ "portable-atomic-util",
+ "serde_core",
+]
+
+[[package]]
+name = "jiff-static"
+version = "0.2.24"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e000de030ff8022ea1da3f466fbb0f3a809f5e51ed31f6dd931c35181ad8e6d7"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
@@ -1776,8 +1947,9 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 [[package]]
 name = "lean-ffi"
 version = "0.1.0"
-source = "git+https://github.com/argumentcomputer/lean-ffi?rev=cc98ebf67bf453ac3827cb767f78b13ea674dd6a#cc98ebf67bf453ac3827cb767f78b13ea674dd6a"
+source = "git+https://github.com/argumentcomputer/lean-ffi.git?rev=839b405de708b80504fda39abe1402114b4135a5#839b405de708b80504fda39abe1402114b4135a5"
 dependencies = [
+ "bignat",
  "bindgen",
  "cc",
  "num-bigint",
@@ -2360,6 +2532,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "once_cell_polyfill"
+version = "1.70.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
+
+[[package]]
 name = "opaque-debug"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2772,6 +2950,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "portable-atomic-util"
+version = "0.2.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c2a106d1259c23fac8e543272398ae0e3c0b8d33c88ed73d0cc71b0f1d902618"
+dependencies = [
+ "portable-atomic",
+]
+
+[[package]]
 name = "portmapper"
 version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3001,7 +3188,6 @@ version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d2e8e8bcc7961af1fdac401278c6a831614941f6164ee3bf4ce61b7edb162207"
 dependencies = [
- "chacha20",
  "getrandom 0.4.2",
  "rand_core 0.10.1",
 ]
@@ -3975,6 +4161,12 @@ name = "utf8_iter"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6c140620e7ffbb22c2dee59cafe6084a59b5ffc27a8859a5f0d494b5d52b6be"
+
+[[package]]
+name = "utf8parse"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
 name = "uuid"
