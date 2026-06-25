@@ -192,9 +192,7 @@ impl W {
 
 /// Serialize the verifying key `System<AiurCircuit>` (preprocessed traces are
 /// skipped — see the module docs).
-pub(crate) fn to_bytes(
-  system: &System<AiurCircuit>,
-) -> Result<Vec<u8>, String> {
+pub(crate) fn to_bytes(system: &System<AiurCircuit>) -> Vec<u8> {
   let mut w = W { buf: Vec::new() };
   w.usize(system.commitment_parameters.log_blowup);
   w.usize(system.commitment_parameters.cap_height);
@@ -203,12 +201,12 @@ pub(crate) fn to_bytes(
   w.vec(&system.preprocessed_indices, |w, idx| {
     w.option(idx, |w, &i| w.usize(i))
   });
-  Ok(w.buf)
+  w.buf
 }
 
 /// Convenience: serialize the verifying key of a built [`AiurSystem`].
 pub fn aiur_system_to_bytes(sys: &AiurSystem) -> Result<Vec<u8>, String> {
-  to_bytes(&sys.system)
+  Ok(to_bytes(&sys.system))
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -395,9 +393,9 @@ mod tests {
         LookupAir::new(AiurCircuit::Bytes2, Bytes2.lookups()),
       ],
     );
-    let bytes = to_bytes(&system).expect("encode");
+    let bytes = to_bytes(&system);
     let back = from_bytes(&bytes).expect("decode");
-    let reencoded = to_bytes(&back).expect("re-encode");
+    let reencoded = to_bytes(&back);
     assert_eq!(bytes, reencoded, "verifying-key codec round-trip mismatch");
   }
 
@@ -406,7 +404,7 @@ mod tests {
     let cp = CommitmentParameters { log_blowup: 1, cap_height: 0 };
     let (system, _key) =
       System::new(cp, [LookupAir::new(AiurCircuit::Bytes1, Bytes1.lookups())]);
-    let mut bytes = to_bytes(&system).expect("encode");
+    let mut bytes = to_bytes(&system);
     bytes.push(0);
     assert!(from_bytes(&bytes).is_err(), "should reject trailing data");
   }

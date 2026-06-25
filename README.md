@@ -401,9 +401,10 @@ Non-Nix users: install Zisk manually per the
    cached on disk (`CUDA_CACHE_MAXSIZE` above), so even a *fresh* process stays
    warm — the ~12 s figure above is a separate process from the cold run. So a
    single small one-off proof looks slow (it eats the cold-start); amortize by
-   batching, or just disregard it. Proving is stateful with no checkpointing —
-   if a run is killed it loses in-flight shard proofs and restarts from the
-   first shard.
+   batching, or just disregard it. By default proving is stateful with no
+   checkpointing — if a run is killed it loses in-flight shard proofs and
+   restarts from the first shard; use a proof store (`--store-dir`, see
+   *Sharding large environments* below) to make a sharded run resumable.
 
    ```
    RUST_LOG=info cargo run --release -- --gpu \
@@ -464,7 +465,9 @@ Non-Nix users: install Zisk manually per the
    or scope to a single constant with `--only-const <name>` (both backends),
    which resolves the name to its work item and ships only that constant's
    closure sub-env to the guest — so individual constants of a large env still
-   fit the cap.
+   fit the cap. To prove a large env in full under Zisk, shard it (see
+   *Sharding large environments* below): each shard ships only its own closure
+   sub-env, so the pieces fit the cap even when the whole env does not.
 
    **Host RAM cap (`--max-witness-stored`).** Distinct from the in-guest
    heap cap above, the prover side (Zisk's `proofman`) holds in-flight
@@ -493,6 +496,99 @@ Non-Nix users: install Zisk manually per the
    machine has more RAM headroom; lower it if you OOM during
    `CALCULATING_CONTRIBUTIONS`. Not relevant for `--execute` or
    `--verify-constraints` modes.
+
+3. **Sharding large environments.** A whole large env (e.g. all of
+   `Init`) does not fit a single Zisk proof: it overruns both the 512 MB
+   guest heap and, more bindingly, the prover's minimal-trace shared-memory
+   ceiling (64 GB per job on the assembly path). Sharding splits the env's
+   type-checking work into pieces that are proven independently — each
+   shipped with only its own dependency closure — and then folded into one
+   aggregate proof. This is a two-part workflow: produce a shard manifest
+   (a `.ixes` file), then prove it with `--shard-plan`.
+
+   **(a) Produce a shard manifest.** A manifest partitions the env's
+   per-constant work, balancing shards by real type-checking cost and
+   cutting where cross-shard dependencies are fewest. Two ways today:
+
+   - *Fixed shard count*, via the `ix` CLI. Profiling runs the kernel over
+     the env (slow) and writes a `.ixesp` cost map; sharding is instant
+     graph work on that map, so the shard count is cheap to re-tune without
+     re-profiling:
+
+     ```
+     # Profile once (slow): writes the .ixesp cost map.
+     lake exe ix profile init.ixe --out init.ixesp
+     # Cut into N shards (instant): writes the .ixes manifest. Re-run with a
+     # different N to re-tune — no re-profiling needed.
+     lake exe ix shard init.ixesp --shards 16 --out init.ixes
+     ```
+
+   - *Sized by a cycle or peak-RAM budget* (so you pick a resource limit
+     instead of a shard count). This currently lives in a kernel example
+     binary rather than the `ix` CLI; it profiles and shards in one step
+     (re-profiling on each run). With no flags it auto-sizes the shard count
+     from this machine's RAM (peak prover RAM ≈ `45 + 32 × cycles_billions`
+     GB, targeting ~78 % of total):
+
+     ```
+     # Auto-size N from this box's RAM; writes init.ixe.ixes.
+     cargo run -p ix-kernel --release --example shard_plan -- init.ixe
+     # Or force a per-shard guest-cycle budget / a RAM figure / a fixed count:
+     #   --max-cycles 4500000000   --ram-gb 256   --shards 16
+     ```
+
+   **(b) Prove the manifest.** Pass the `.ixes` to the host with
+   `--shard-plan` alongside the same `--ixe` it was built for. Each shard
+   becomes one leaf proof (built over only that shard's closure sub-env),
+   and the leaves fold up the manifest's bisection tree into a single root
+   proof:
+
+   ```
+   cd zisk
+   RUST_LOG=info cargo run --release -- --gpu \
+     --ixe ../init.ixe --shard-plan ../init.ixes
+   ```
+
+   **Resumable proving (`--store-dir`).** A proof store makes a sharded run
+   restartable and lets proofs be reused across runs and envs:
+
+   ```
+   RUST_LOG=info cargo run --release -- --gpu \
+     --ixe ../init.ixe --shard-plan ../init.ixes \
+     --store-dir ../init-store --require-closed
+   ```
+
+   - `--store-dir DIR`: each completed shard proof is banked to
+     `DIR/proofs/<n>.{proof,cover,asm}` as it finishes. **Re-run the same
+     command to resume** — shards already covered by the store are skipped
+     (not re-proven) and folded into the aggregate instead. Reuse is
+     trustless: a stored proof is re-verified in-circuit at aggregation,
+     never trusted by the host. Proofs are content-addressed, so a constant
+     proven in one env is reused in any other env that contains it.
+   - `--no-reuse`: ignore the store for this run (the "no sharing" baseline);
+     the existing store is neither read nor overwritten.
+   - `--require-closed`: error *before* proving unless every typing
+     dependency of every certified constant is either proven in this run or
+     already in the store — axioms are the only permitted residual. Turns
+     "result modulo axioms" from a printed hope into an enforced
+     precondition. Pairs with `--plan` for a no-prove check.
+
+   **Other shard modes and tuning flags.**
+
+   - *Static partitioning without a manifest:* `--shard-consts N` (N work
+     items per shard) or `--shard-bytes B` (pack contiguous items until
+     serialized bytes exceed `B`). Simpler, but not balanced by real
+     type-checking cost — `--shard-plan` is the performant path.
+   - `--plan`: print the planned partition and exit, no proving.
+   - `--execute`: run the shards in the VM only and print per-shard cycle
+     counts — use it to measure a shard's true cycle cost (e.g. to pick or
+     recalibrate a cycle budget) without proving.
+   - `--only-shard K`: prove just the 1-indexed shard `K` (skips
+     aggregation) for smoke-testing a single shard.
+   - `--dump-input FILE`: write one shard's guest stdin to `FILE` for
+     standalone profiling with `ziskemu` or `cargo-zisk`.
+   - `--agg-arity A` (default 16): how many child proofs each aggregation
+     step folds at once.
 
 ### Nix
 
