@@ -181,3 +181,146 @@ pub fn build_anon_work(env: &IxonEnv) -> Result<Vec<AnonWorkItem>, String> {
 
   Ok(work)
 }
+
+/// The full dependency-closure address set of `roots`: their transitive Expr
+/// `refs` PLUS each projection's structural `block: Address`. A refs-only walk
+/// misses the block — projections (IPrj/CPrj/RPrj/DPrj) point at their Muts
+/// block via a struct field, not the Expr ref table — so the kernel couldn't
+/// resolve the projection and would spuriously fail. The returned set includes
+/// constant AND referenced-blob addresses (external refs absent from `source`
+/// are included as addresses but have no bytes to copy).
+pub fn closure_addrs(
+  source: &IxonEnv,
+  roots: &[Address],
+) -> std::collections::HashSet<Address> {
+  use std::collections::{HashSet, VecDeque};
+
+  use ixon::constant::{ConstantInfo as CI, MutConst as MC};
+
+  let proj_block = |info: &CI| -> Option<Address> {
+    match info {
+      CI::IPrj(p) => Some(p.block.clone()),
+      CI::CPrj(p) => Some(p.block.clone()),
+      CI::RPrj(p) => Some(p.block.clone()),
+      CI::DPrj(p) => Some(p.block.clone()),
+      _ => None,
+    }
+  };
+
+  let mut closure: HashSet<Address> = HashSet::default();
+  let mut queue: VecDeque<Address> = VecDeque::new();
+  let push =
+    |closure: &mut HashSet<Address>, q: &mut VecDeque<Address>, a: Address| {
+      if closure.insert(a.clone()) {
+        q.push_back(a);
+      }
+    };
+  for r in roots {
+    push(&mut closure, &mut queue, r.clone());
+  }
+  while let Some(addr) = queue.pop_front() {
+    if let Some(c) = source.get_const(&addr) {
+      // 1. Expr-level refs.
+      for r in &c.refs {
+        push(&mut closure, &mut queue, r.clone());
+      }
+      // 2. A projection → its Muts block (structural, not in `refs`).
+      if let Some(b) = proj_block(&c.info) {
+        push(&mut closure, &mut queue, b);
+      }
+      // 3. A Muts block → ALL its member + constructor projection entries.
+      // Ingressing a block (`ingress_anon_block`) computes these projection
+      // addresses and requires them present, even when nothing references them
+      // directly via `refs`. Mirror `build_anon_work`'s enumeration so the
+      // sub-env carries them (else the guest fails with "computed CPrj address
+      // … not present in env").
+      if let CI::Muts(members) = &c.info {
+        for (i, m) in members.iter().enumerate() {
+          let i = i as u64;
+          let member_addr = match m {
+            MC::Defn(_) => anon_defn_proj_addr(&addr, i),
+            MC::Indc(_) => anon_indc_proj_addr(&addr, i),
+            MC::Recr(_) => anon_recr_proj_addr(&addr, i),
+          };
+          push(&mut closure, &mut queue, member_addr);
+          if let MC::Indc(ind) = m {
+            for cidx in 0..ind.ctors.len() as u64 {
+              push(
+                &mut closure,
+                &mut queue,
+                anon_ctor_proj_addr(&addr, i, cidx),
+              );
+            }
+          }
+        }
+      }
+    }
+  }
+  closure
+}
+
+/// Build a closure sub-env: serialize only the BFS dependency closure of
+/// `roots` (their transitive `Constant.refs` plus referenced literal blobs),
+/// copying each constant's GENUINE bytes via `store_const_lazy` so the guest's
+/// per-const integrity check (`hash(bytes) == addr`) and the env merkle root
+/// still hold. The guest decodes this instead of the whole env, so it pays only
+/// its closure's decode — essential for envs that don't fit the guest whole
+/// (Init, 184 MB doesn't fit the 512 MB Zisk guest). Empty `anon_hints` (no
+/// metadata section) is performance-only: ingress falls back to `Regular(0)`,
+/// so the typecheck result — and thus the committed claim — is unchanged.
+/// External refs (not in `source`) are omitted and remain open assumptions,
+/// exactly as in whole-env.
+///
+/// Host-only: builds an `Env` via the `store_*` helpers, which are gated to
+/// non-riscv64 (see `Env::store_blob`). The guest receives an already-built
+/// sub-env from the host and only enumerates it via `build_anon_work`.
+#[cfg(not(target_arch = "riscv64"))]
+pub fn build_sub_env(
+  source: &IxonEnv,
+  roots: &[Address],
+) -> Result<Vec<u8>, String> {
+  let closure = closure_addrs(source, roots);
+  let mut sub = IxonEnv::new();
+  for addr in &closure {
+    if let Some(bytes) = source.get_const_bytes(addr) {
+      sub.store_const_lazy(addr.clone(), bytes);
+    } else if let Some(blob) = source.get_blob(addr) {
+      sub.store_blob(blob);
+    }
+    // else: external ref absent from `source` — omit; stays an open assumption.
+    // Carry the constant's reducibility hint so the guest reproduces vanilla
+    // kernel behavior. `get_anon` normally harvests hints from the Named
+    // section, which this sub-env drops; without them the kernel forces
+    // `Regular(0)` and does extra def-eq work (the ~30% check overhead).
+    if let Some(h) = source.anon_hints.get(addr) {
+      sub.anon_hints.insert(addr.clone(), *h);
+    }
+  }
+  let mut buf = Vec::new();
+  sub.put(&mut buf).map_err(|e| format!("sub-env serialize: {e}"))?;
+  Ok(buf)
+}
+
+/// The ingress-block address that owns `addr`: a projection (IPrj/CPrj/RPrj/
+/// DPrj) maps to its Muts `block`; anything else is its own block. Used to map
+/// a resolved constant address to the `build_anon_work` item that covers it
+/// (standalone → itself; a mutual-block member → the whole block).
+pub fn block_of_addr(env: &IxonEnv, addr: &Address) -> Address {
+  use ixon::constant::ConstantInfo as CI;
+  match env.get_const(addr) {
+    Some(c) => match &c.info {
+      CI::IPrj(p) => p.block.clone(),
+      CI::CPrj(p) => p.block.clone(),
+      CI::RPrj(p) => p.block.clone(),
+      CI::DPrj(p) => p.block.clone(),
+      _ => addr.clone(),
+    },
+    None => addr.clone(),
+  }
+}
+
+/// The ingress-block address of a work item's `primary` — the key for matching
+/// a resolved target constant to the work item that covers it.
+pub fn work_block_addr(env: &IxonEnv, item: &AnonWorkItem) -> Address {
+  block_of_addr(env, item.primary())
+}

@@ -31,15 +31,17 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use clap::Parser;
 use human_repr::{HumanCount, HumanThroughput};
-use ix_kernel::anon_work::{build_anon_work, AnonWorkItem};
+use ix_kernel::anon_work::{
+  AnonWorkItem, block_of_addr, build_anon_work, build_sub_env, work_block_addr,
+};
 use ixon::env::Env as IxonEnv;
 use zisk_host::{AGG_PROGRAM, SHARD_PROGRAM};
 use zisk_sdk::{
-  EmbeddedClient, EmbeddedClientBuilder, EmbeddedOpts, ProverClient, VerboseMode,
-  VerifyConstraintsExtension, ZiskStdin,
+  EmbeddedClient, EmbeddedClientBuilder, EmbeddedOpts, ProverClient,
+  VerboseMode, VerifyConstraintsExtension, ZiskStdin,
 };
 
 #[derive(Parser, Debug)]
@@ -308,7 +310,9 @@ fn item_cost_bytes(env: &IxonEnv, item: &AnonWorkItem) -> usize {
   item
     .targets()
     .iter()
-    .filter_map(|addr| env.consts.get(addr).map(|lc| lc.value().raw_bytes().len()))
+    .filter_map(|addr| {
+      env.consts.get(addr).map(|lc| lc.value().raw_bytes().len())
+    })
     .sum()
 }
 
@@ -359,10 +363,12 @@ fn plan_input(
   shard_bytes: Option<usize>,
   print_plan: bool,
 ) -> Result<InputPlan> {
-  let label =
-    ixe.map(|p| p.display().to_string()).unwrap_or_else(|| "<empty env>".to_string());
+  let label = ixe
+    .map(|p| p.display().to_string())
+    .unwrap_or_else(|| "<empty env>".to_string());
   let env_bytes = load_env_bytes(ixe);
-  let env = IxonEnv::get_anon(&mut &env_bytes[..]).expect("invalid Ixon environment");
+  let env =
+    IxonEnv::get_anon(&mut &env_bytes[..]).expect("invalid Ixon environment");
   let work = build_anon_work(&env).expect("build_anon_work");
   let total: u32 = work.len().try_into().expect("work-item count fits in u32");
   let target_count: usize = work.iter().map(|item| item.targets().len()).sum();
@@ -436,7 +442,9 @@ fn load_proof_index(dir: &std::path::Path) -> Vec<StoredProof> {
     let Ok(blob) = fs::read(&pf) else { break };
     let Ok(cov) = fs::read(pdir.join(format!("{idx}.cover"))) else { break };
     let Ok(asm) = fs::read(pdir.join(format!("{idx}.asm"))) else {
-      println!("  store: skipping {idx}.proof (no .asm witness; re-prove to refresh)");
+      println!(
+        "  store: skipping {idx}.proof (no .asm witness; re-prove to refresh)"
+      );
       continue;
     };
     let mut subjects: Vec<Address> = Address::unpack(&cov).collect();
@@ -455,7 +463,12 @@ fn load_proof_index(dir: &std::path::Path) -> Vec<StoredProof> {
 /// `check_list` is a packed list of primary addresses (`Address::pack`) to
 /// check; empty means "range mode" (use `[start,end)`). A non-empty list puts
 /// the guest in reuse mode, checking only those work items.
-fn leaf_stdin(start: u32, end: u32, env_bytes: &[u8], check_list: &[u8]) -> ZiskStdin {
+fn leaf_stdin(
+  start: u32,
+  end: u32,
+  env_bytes: &[u8],
+  check_list: &[u8],
+) -> ZiskStdin {
   let stdin = ZiskStdin::new();
   let mut range_buf = [0u8; 8];
   range_buf[0..4].copy_from_slice(&start.to_le_bytes());
@@ -546,125 +559,6 @@ fn distinct_vks(proofs: &[Vec<u8>]) -> Vec<Vec<u8>> {
     }
   }
   out
-}
-
-/// Build a closure sub-env: serialize only the BFS dependency closure of
-/// `roots` (their transitive `Constant.refs` plus referenced literal blobs),
-/// copying each constant's GENUINE bytes via `store_const_lazy` so the guest's
-/// per-const integrity check (`hash(bytes) == addr`) and the env merkle root
-/// still hold. The guest decodes this instead of the whole env, so a shard
-/// pays only its closure's decode — essential for Init (184 MB doesn't fit the
-/// 512 MB guest whole). Empty `anon_hints` (no metadata section) is
-/// performance-only: ingress falls back to `Regular(0)`, so the typecheck
-/// result — and thus the committed claim — is unchanged. External refs (not in
-/// `source`) are omitted and remain open assumptions, exactly as in whole-env.
-/// The full dependency-closure address set of `roots`: their transitive Expr
-/// `refs` PLUS each projection's structural `block: Address`. A refs-only walk
-/// (`bfs_refs`) misses the block — projections (IPrj/CPrj/RPrj/DPrj) point at
-/// their Muts block via a struct field, not the Expr ref table — so the kernel
-/// couldn't resolve the projection and would spuriously fail. The returned set
-/// includes constant AND referenced-blob addresses (external refs absent from
-/// `source` are included as addresses but have no bytes to copy).
-fn closure_addrs(
-  source: &IxonEnv,
-  roots: &[ix_common::address::Address],
-) -> std::collections::HashSet<ix_common::address::Address> {
-  use std::collections::{HashSet, VecDeque};
-
-  use ix_common::address::Address;
-  use ix_kernel::ingress::{
-    anon_ctor_proj_addr, anon_defn_proj_addr, anon_indc_proj_addr,
-    anon_recr_proj_addr,
-  };
-  use ixon::constant::{ConstantInfo as CI, MutConst as MC};
-
-  let proj_block = |info: &CI| -> Option<Address> {
-    match info {
-      CI::IPrj(p) => Some(p.block.clone()),
-      CI::CPrj(p) => Some(p.block.clone()),
-      CI::RPrj(p) => Some(p.block.clone()),
-      CI::DPrj(p) => Some(p.block.clone()),
-      _ => None,
-    }
-  };
-
-  let mut closure: HashSet<Address> = HashSet::default();
-  let mut queue: VecDeque<Address> = VecDeque::new();
-  let push = |closure: &mut HashSet<Address>, q: &mut VecDeque<Address>, a: Address| {
-    if closure.insert(a.clone()) {
-      q.push_back(a);
-    }
-  };
-  for r in roots {
-    push(&mut closure, &mut queue, r.clone());
-  }
-  while let Some(addr) = queue.pop_front() {
-    if let Some(c) = source.get_const(&addr) {
-      // 1. Expr-level refs.
-      for r in &c.refs {
-        push(&mut closure, &mut queue, r.clone());
-      }
-      // 2. A projection → its Muts block (structural, not in `refs`).
-      if let Some(b) = proj_block(&c.info) {
-        push(&mut closure, &mut queue, b);
-      }
-      // 3. A Muts block → ALL its member + constructor projection entries.
-      // Ingressing a block (`ingress_anon_block`) computes these projection
-      // addresses and requires them present, even when nothing references them
-      // directly via `refs`. Mirror `build_anon_work`'s enumeration so the
-      // sub-env carries them (else the guest fails with "computed CPrj address
-      // … not present in env").
-      if let CI::Muts(members) = &c.info {
-        for (i, m) in members.iter().enumerate() {
-          let i = i as u64;
-          let member_addr = match m {
-            MC::Defn(_) => anon_defn_proj_addr(&addr, i),
-            MC::Indc(_) => anon_indc_proj_addr(&addr, i),
-            MC::Recr(_) => anon_recr_proj_addr(&addr, i),
-          };
-          push(&mut closure, &mut queue, member_addr);
-          if let MC::Indc(ind) = m {
-            for cidx in 0..ind.ctors.len() as u64 {
-              push(&mut closure, &mut queue, anon_ctor_proj_addr(&addr, i, cidx));
-            }
-          }
-        }
-      }
-    }
-  }
-  closure
-}
-
-/// Build a closure sub-env from a precomputed closure address set: copy each
-/// constant's GENUINE bytes (`store_const_lazy`) and referenced blobs, then
-/// serialize. Integrity (`hash(bytes) == addr`) and the env merkle root hold
-/// because the bytes are copied verbatim; empty `anon_hints` is performance-
-/// only (ingress falls back to `Regular(0)`), so the committed claim is
-/// unchanged. Essential for envs that don't fit the guest whole (Init, 184 MB).
-fn build_sub_env(
-  source: &IxonEnv,
-  roots: &[ix_common::address::Address],
-) -> Result<Vec<u8>> {
-  let closure = closure_addrs(source, roots);
-  let mut sub = IxonEnv::new();
-  for addr in &closure {
-    if let Some(bytes) = source.get_const_bytes(addr) {
-      sub.store_const_lazy(addr.clone(), bytes);
-    } else if let Some(blob) = source.get_blob(addr) {
-      sub.store_blob(blob);
-    }
-    // else: external ref absent from `source` — omit; stays an open assumption.
-    // Carry the constant's reducibility hint so the guest reproduces vanilla
-    // kernel behavior. `get_anon` normally harvests hints from the Named
-    // section, which this sub-env drops; without them the kernel forces
-    // `Regular(0)` and does extra def-eq work (the ~30% check overhead).
-    if let Some(h) = source.anon_hints.get(addr) {
-      sub.anon_hints.insert(addr.clone(), *h);
-    }
-  }
-  let mut buf = Vec::new();
-  sub.put(&mut buf).map_err(|e| anyhow::anyhow!("sub-env serialize: {e}"))?;
-  Ok(buf)
 }
 
 /// Core of the closure check, factored out for testing: given parsed inputs
@@ -785,9 +679,12 @@ fn check_inputs_closed(
 /// aggregate's committed subject can be checked against the env it should cover.
 fn subject_of_cover(cover: &[[u8; 32]]) -> ix_common::address::Address {
   use ix_common::address::Address;
-  let leaves: Vec<Address> =
-    cover.iter().map(|b| Address::from_slice(b).expect("cover address")).collect();
-  ixon::merkle::merkle_root_canonical(&leaves).unwrap_or_else(ixon::merkle::zero_address)
+  let leaves: Vec<Address> = cover
+    .iter()
+    .map(|b| Address::from_slice(b).expect("cover address"))
+    .collect();
+  ixon::merkle::merkle_root_canonical(&leaves)
+    .unwrap_or_else(ixon::merkle::zero_address)
 }
 
 /// Partition `n` items into chunks of at most `arity` each, avoiding
@@ -823,7 +720,11 @@ fn tree_partition(n: usize, arity: usize) -> Vec<(usize, usize)> {
 /// exactly, and failures are summed. Returns this input's failure count.
 /// (The agg guest can't yet parse leaf publics from the proof blob, so
 /// this is enforced here.)
-fn check_input_coherence(label: &str, publics: &[ShardPublics], total: u32) -> Result<u32> {
+fn check_input_coherence(
+  label: &str,
+  publics: &[ShardPublics],
+  total: u32,
+) -> Result<u32> {
   let env_hash = publics[0].env_hash;
   let mut failures: u32 = 0;
   let mut expected_start: u32 = 0;
@@ -888,36 +789,6 @@ fn build_client(
   builder.build()
 }
 
-/// The ingress *block* address a work item belongs to — the key the manifest
-/// (and the profiler) uses. For a Muts block the work item's `primary` is a
-/// member projection, whose `block` field is the block address; for a standalone
-/// constant the primary is the block. Mirrors the profiler's `profile_block_of`.
-/// The ingress block of a constant address: a projection's `block`, else the
-/// address itself. Shared by [`work_block_addr`] and the `--only-const` lookup.
-fn block_of_addr(
-  env: &IxonEnv,
-  addr: &ix_common::address::Address,
-) -> ix_common::address::Address {
-  use ixon::constant::ConstantInfo as CI;
-  match env.get_const(addr) {
-    Some(c) => match &c.info {
-      CI::IPrj(p) => p.block.clone(),
-      CI::CPrj(p) => p.block.clone(),
-      CI::RPrj(p) => p.block.clone(),
-      CI::DPrj(p) => p.block.clone(),
-      _ => addr.clone(),
-    },
-    None => addr.clone(),
-  }
-}
-
-fn work_block_addr(
-  env: &IxonEnv,
-  item: &AnonWorkItem,
-) -> ix_common::address::Address {
-  block_of_addr(env, item.primary())
-}
-
 /// Check a single constant chosen by Lean NAME (the `--only-const` path).
 /// Resolve name → constant address via the env's `named` metadata, map to its
 /// ingress block's work item, and ship just that item: a one-element
@@ -941,29 +812,32 @@ async fn run_only_const(
     .iter()
     .find(|e| e.key().to_string() == name)
     .map(|e| e.value().addr.clone())
-    .ok_or_else(|| anyhow::anyhow!("no constant named {name:?} in {}", plan.label))?;
+    .ok_or_else(|| {
+      anyhow::anyhow!("no constant named {name:?} in {}", plan.label)
+    })?;
 
   // The name's work item is the one whose ingress block owns it — works for a
   // standalone const (block == itself) and a member of a Muts block (block ==
   // the mutual container, checked atomically).
-  let env =
-    IxonEnv::get_anon(&mut &plan.env_bytes[..]).expect("invalid Ixon environment");
+  let env = IxonEnv::get_anon(&mut &plan.env_bytes[..])
+    .expect("invalid Ixon environment");
   let work = build_anon_work(&env).expect("build_anon_work");
   let block = block_of_addr(&env, &target);
-  let item = work.iter().find(|w| work_block_addr(&env, w) == block).ok_or_else(
-    || {
+  let item = work
+    .iter()
+    .find(|w| work_block_addr(&env, w) == block)
+    .ok_or_else(|| {
       anyhow::anyhow!(
         "{name:?} resolved to block {}… but no work item covers it",
         &block.hex()[..16]
       )
-    },
-  )?;
+    })?;
 
   // One-item check-list + closure sub-env.
   let check_list = Address::pack(&[item.primary().clone()]);
   let roots: Vec<Address> = item.proven_targets();
   let cover: Vec<[u8; 32]> = roots.iter().map(|a| *a.as_bytes()).collect();
-  let sub_env = build_sub_env(&env, &roots)?;
+  let sub_env = build_sub_env(&env, &roots).map_err(|e| anyhow::anyhow!(e))?;
   println!(
     "only-const {name}: block {}… ({} target const(s)); closure sub-env {} vs whole env {} ({:.0}%)",
     &block.hex()[..16],
@@ -976,7 +850,9 @@ async fn run_only_const(
   // ---- Dump mode: write stdin for `ziskemu`/`cargo-zisk run -i`. ----
   if let Some(dump) = &args.dump_input {
     let stdin = leaf_stdin(0, 0, &sub_env, &check_list);
-    stdin.save(dump).map_err(|e| anyhow::anyhow!("save {}: {e}", dump.display()))?;
+    stdin
+      .save(dump)
+      .map_err(|e| anyhow::anyhow!("save {}: {e}", dump.display()))?;
     println!("dumped input → {}", dump.display());
     return Ok(());
   }
@@ -989,7 +865,11 @@ async fn run_only_const(
     let mut buf = [0u8; SHARD_PUBLICS_LEN];
     result.get_public_values_slice(&mut buf);
     let publics = ShardPublics::decode(&buf);
-    println!("cycles: {}, failures: {}", result.get_execution_steps(), publics.failures);
+    println!(
+      "cycles: {}, failures: {}",
+      result.get_execution_steps(),
+      publics.failures
+    );
     if publics.failures > 0 {
       bail!("kernel typecheck produced {} failure(s)", publics.failures);
     }
@@ -1025,7 +905,10 @@ async fn run_only_const(
     roots.len(),
   );
   if publics.failures > 0 {
-    bail!("kernel typecheck produced {} failure(s) (proof still verifies)", publics.failures);
+    bail!(
+      "kernel typecheck produced {} failure(s) (proof still verifies)",
+      publics.failures
+    );
   }
   Ok(())
 }
@@ -1046,7 +929,8 @@ fn group_work_by_manifest<'a>(
 
   use ix_common::address::Address;
 
-  let mut by_primary: HashMap<Address, usize> = HashMap::with_capacity(work.len());
+  let mut by_primary: HashMap<Address, usize> =
+    HashMap::with_capacity(work.len());
   for (i, w) in work.iter().enumerate() {
     by_primary.insert(work_block_addr(env, w), i);
   }
@@ -1076,7 +960,10 @@ fn group_work_by_manifest<'a>(
     .enumerate()
     .filter(|(i, w)| {
       !assigned[*i]
-        && !w.proven_targets().iter().all(|t| covered_by_store.contains(t.as_bytes()))
+        && !w
+          .proven_targets()
+          .iter()
+          .all(|t| covered_by_store.contains(t.as_bytes()))
     })
     .count();
   if unaccounted > 0 {
@@ -1130,16 +1017,18 @@ async fn run_shard_plan(
   use std::collections::HashSet;
 
   use ix_common::address::Address;
-  use ix_kernel::shard::{agg_plan, FoldOp, ShardManifest};
+  use ix_kernel::shard::{FoldOp, ShardManifest, agg_plan};
 
-  let env =
-    IxonEnv::get_anon(&mut &plan.env_bytes[..]).expect("invalid Ixon environment");
+  let env = IxonEnv::get_anon(&mut &plan.env_bytes[..])
+    .expect("invalid Ixon environment");
   let work = build_anon_work(&env).expect("build_anon_work");
 
-  let mbytes = fs::read(manifest_path)
-    .map_err(|e| anyhow::anyhow!("read manifest {}: {e}", manifest_path.display()))?;
-  let manifest = ShardManifest::from_bytes(&mbytes)
-    .map_err(|e| anyhow::anyhow!("parse manifest {}: {e}", manifest_path.display()))?;
+  let mbytes = fs::read(manifest_path).map_err(|e| {
+    anyhow::anyhow!("read manifest {}: {e}", manifest_path.display())
+  })?;
+  let manifest = ShardManifest::from_bytes(&mbytes).map_err(|e| {
+    anyhow::anyhow!("parse manifest {}: {e}", manifest_path.display())
+  })?;
 
   // ---- Cross-run reuse store (loaded before grouping: a store-aware manifest
   // omits covered work, which grouping accepts only when the store accounts
@@ -1154,14 +1043,18 @@ async fn run_shard_plan(
     .flat_map(|p| p.subjects.iter().map(|a| *a.as_bytes()))
     .collect();
 
-  let groups = group_work_by_manifest(&env, &work, &manifest, &covered_by_store)?;
+  let groups =
+    group_work_by_manifest(&env, &work, &manifest, &covered_by_store)?;
 
   // Select (manifest-index, items) to prove: every non-empty shard, or just the
   // one named by --only-shard.
   let selected: Vec<(usize, &Vec<&AnonWorkItem>)> = match args.only_shard {
     Some(k) => {
       if k == 0 || k > groups.len() {
-        bail!("--only-shard {k} out of range; manifest has {} shard(s)", groups.len());
+        bail!(
+          "--only-shard {k} out of range; manifest has {} shard(s)",
+          groups.len()
+        );
       }
       vec![(k - 1, &groups[k - 1])]
     },
@@ -1194,7 +1087,11 @@ async fn run_shard_plan(
       .map(|a| *a.as_bytes())
       .collect()
   } else {
-    work.iter().flat_map(|w| w.proven_targets()).map(|a| *a.as_bytes()).collect()
+    work
+      .iter()
+      .flat_map(|w| w.proven_targets())
+      .map(|a| *a.as_bytes())
+      .collect()
   };
   let novel_targets: HashSet<[u8; 32]> = novel
     .iter()
@@ -1208,10 +1105,9 @@ async fn run_shard_plan(
   // every round includes at least one more proof or stops.
   let mut included = vec![false; stored.len()];
   for (i, p) in stored.iter().enumerate() {
-    included[i] = p
-      .subjects
-      .iter()
-      .any(|a| needed.contains(a.as_bytes()) && !novel_targets.contains(a.as_bytes()));
+    included[i] = p.subjects.iter().any(|a| {
+      needed.contains(a.as_bytes()) && !novel_targets.contains(a.as_bytes())
+    });
   }
   loop {
     let included_subjects: HashSet<[u8; 32]> = stored
@@ -1229,7 +1125,8 @@ async fn run_shard_plan(
       .collect();
     let mut grew = false;
     for (i, p) in stored.iter().enumerate() {
-      if !included[i] && p.subjects.iter().any(|s| open.contains(s.as_bytes())) {
+      if !included[i] && p.subjects.iter().any(|s| open.contains(s.as_bytes()))
+      {
         included[i] = true;
         grew = true;
       }
@@ -1238,8 +1135,12 @@ async fn run_shard_plan(
       break;
     }
   }
-  let covering: Vec<&StoredProof> =
-    stored.iter().zip(&included).filter(|(_, inc)| **inc).map(|(p, _)| p).collect();
+  let covering: Vec<&StoredProof> = stored
+    .iter()
+    .zip(&included)
+    .filter(|(_, inc)| **inc)
+    .map(|(p, _)| p)
+    .collect();
 
   println!(
     "shard-plan {}: {} work items, manifest {} shard(s), cross-ingress total {}; \
@@ -1254,7 +1155,8 @@ async fn run_shard_plan(
   );
   for &(idx, g) in &selected {
     let si = &manifest.shards[idx];
-    let status = if novel.iter().any(|&(i, _)| i == idx) { "novel " } else { "reused" };
+    let status =
+      if novel.iter().any(|&(i, _)| i == idx) { "novel " } else { "reused" };
     println!(
       "  shard {idx:>3} [{status}]: {:>5} work items  heartbeats={}  own={}  cross_ingress={}",
       g.len(),
@@ -1273,11 +1175,14 @@ async fn run_shard_plan(
     Vec<[u8; 32]>, // cover: certified target addresses
   );
   let build_inputs = |g: &[&AnonWorkItem]| -> Result<LeafInputs> {
-    let primaries: Vec<Address> = g.iter().map(|w| w.primary().clone()).collect();
+    let primaries: Vec<Address> =
+      g.iter().map(|w| w.primary().clone()).collect();
     let check_list = Address::pack(&primaries);
-    let roots: Vec<Address> = g.iter().flat_map(|w| w.proven_targets()).collect();
+    let roots: Vec<Address> =
+      g.iter().flat_map(|w| w.proven_targets()).collect();
     let cover: Vec<[u8; 32]> = roots.iter().map(|a| *a.as_bytes()).collect();
-    let sub_env = build_sub_env(&env, &roots)?;
+    let sub_env =
+      build_sub_env(&env, &roots).map_err(|e| anyhow::anyhow!(e))?;
     Ok((check_list, sub_env, cover))
   };
 
@@ -1287,7 +1192,9 @@ async fn run_shard_plan(
     let (idx, g) = selected.first().expect("a selected shard");
     let (check_list, sub_env, _cover) = build_inputs(g)?;
     let stdin = leaf_stdin(0, 0, &sub_env, &check_list);
-    stdin.save(dump).map_err(|e| anyhow::anyhow!("save {}: {e}", dump.display()))?;
+    stdin
+      .save(dump)
+      .map_err(|e| anyhow::anyhow!("save {}: {e}", dump.display()))?;
     println!(
       "dumped shard {idx} input ({} work items, sub-env {}) → {}",
       g.len(),
@@ -1425,11 +1332,16 @@ async fn run_shard_plan(
     covered_union.extend(p.subjects.iter().map(|a| *a.as_bytes()));
   }
   if args.only_shard.is_none() {
-    let grand: HashSet<[u8; 32]> =
-      work.iter().flat_map(|w| w.proven_targets()).map(|a| *a.as_bytes()).collect();
+    let grand: HashSet<[u8; 32]> = work
+      .iter()
+      .flat_map(|w| w.proven_targets())
+      .map(|a| *a.as_bytes())
+      .collect();
     let miss = grand.iter().filter(|t| !covered_union.contains(*t)).count();
     if miss > 0 {
-      bail!("coverage gap: {miss} env target(s) not covered by any folded proof");
+      bail!(
+        "coverage gap: {miss} env target(s) not covered by any folded proof"
+      );
     }
   }
 
@@ -1450,7 +1362,13 @@ async fn run_shard_plan(
       // Per-leaf binding above already pinned the subject; fold of 1 = itself.
       let subject = ixon::merkle::merkle_root_canonical(&leaf_subject_sets[0])
         .unwrap_or_else(ixon::merkle::zero_address);
-      (final_size, 0u64, vstart.elapsed().as_millis() as u64, subject.clone(), subject)
+      (
+        final_size,
+        0u64,
+        vstart.elapsed().as_millis() as u64,
+        subject.clone(),
+        subject,
+      )
     } else {
       // Slot-producing op list, in post order (children precede parents).
       // Each op yields one slot: the node's proof plus its claim preimages —
@@ -1543,7 +1461,9 @@ async fn run_shard_plan(
             // children's committed roots, so they are untrusted inputs here.
             let witness: Vec<(Vec<u8>, Vec<u8>)> = children
               .iter()
-              .map(|&c| (Address::pack(&slot_subj[c]), Address::pack(&slot_asm[c])))
+              .map(|&c| {
+                (Address::pack(&slot_subj[c]), Address::pack(&slot_asm[c]))
+              })
               .collect();
             let allowed = distinct_vks(&proofs);
             let astart = Instant::now();
@@ -1553,8 +1473,14 @@ async fn run_shard_plan(
               .await?;
             total_agg_ms += result.get_proving_time();
             let (union_s, outstanding) = discharge(
-              &children.iter().map(|&c| slot_subj[c].as_slice()).collect::<Vec<_>>(),
-              &children.iter().map(|&c| slot_asm[c].as_slice()).collect::<Vec<_>>(),
+              &children
+                .iter()
+                .map(|&c| slot_subj[c].as_slice())
+                .collect::<Vec<_>>(),
+              &children
+                .iter()
+                .map(|&c| slot_asm[c].as_slice())
+                .collect::<Vec<_>>(),
             );
             println!(
               "    agg {} → prove {:.2}s (wall {:.2}s); subjects {} assumptions {} → outstanding {}",
@@ -1596,14 +1522,22 @@ async fn run_shard_plan(
         bail!("aggregate assumptions root ≠ host mirror — discharge diverged");
       }
       if root_asm.is_empty() {
-        println!("  [agg] all assumptions discharged — final claim is unconditional");
+        println!(
+          "  [agg] all assumptions discharged — final claim is unconditional"
+        );
       } else {
         println!(
           "  [agg] {} outstanding assumption(s) remain (refs not proven by any folded shard)",
           root_asm.len(),
         );
       }
-      (final_size, total_agg_ms, vstart.elapsed().as_millis() as u64, committed_addr, expected)
+      (
+        final_size,
+        total_agg_ms,
+        vstart.elapsed().as_millis() as u64,
+        committed_addr,
+        expected,
+      )
     };
 
   // Bind the aggregate's committed subject to the env-derived fold.
@@ -1630,7 +1564,9 @@ async fn run_shard_plan(
     covered_union.len(),
   );
   if total_failures > 0 {
-    bail!("kernel typecheck produced {total_failures} failure(s) (proof still verifies)");
+    bail!(
+      "kernel typecheck produced {total_failures} failure(s) (proof still verifies)"
+    );
   }
   Ok(())
 }
@@ -1642,8 +1578,11 @@ async fn main() -> Result<()> {
   let args = Args::parse();
 
   // Collect inputs. No `--ixe` → a single empty env (back-compat).
-  let inputs: Vec<Option<PathBuf>> =
-    if args.ixe.is_empty() { vec![None] } else { args.ixe.iter().cloned().map(Some).collect() };
+  let inputs: Vec<Option<PathBuf>> = if args.ixe.is_empty() {
+    vec![None]
+  } else {
+    args.ixe.iter().cloned().map(Some).collect()
+  };
 
   // `--only-shard` and `--verify-constraints` are single-shard debug
   // tools; they don't compose with a multi-input batch.
@@ -1656,7 +1595,9 @@ async fn main() -> Result<()> {
   // `--shard-plan` is per-env: the manifest covers one specific env's full work
   // set, so a batch of inputs has no single manifest to apply.
   if args.shard_plan.is_some() && inputs.len() > 1 {
-    bail!("--shard-plan requires exactly one --ixe input (the env the manifest was built for)");
+    bail!(
+      "--shard-plan requires exactly one --ixe input (the env the manifest was built for)"
+    );
   }
   // `--only-const` selects a named constant from one env.
   if args.only_const.is_some() && inputs.len() > 1 {
@@ -1667,7 +1608,12 @@ async fn main() -> Result<()> {
   let print_plan = args.plan || args.shard_bytes.is_some();
   let mut plans: Vec<InputPlan> = Vec::with_capacity(inputs.len());
   for ixe in &inputs {
-    plans.push(plan_input(ixe.as_ref(), args.shard_consts, args.shard_bytes, print_plan)?);
+    plans.push(plan_input(
+      ixe.as_ref(),
+      args.shard_consts,
+      args.shard_bytes,
+      print_plan,
+    )?);
   }
 
   // `--only-shard` narrows the (single) input's shard list. Skip for the
@@ -1680,7 +1626,10 @@ async fn main() -> Result<()> {
       bail!("--only-shard {only} out of range; have {num} shard(s)");
     }
     let (s, e) = plan.shards[only - 1];
-    println!("only-shard: proving shard {only}/{num} of {} range [{s}, {e})", plan.label);
+    println!(
+      "only-shard: proving shard {only}/{num} of {} range [{s}, {e})",
+      plan.label
+    );
     plan.shards = vec![(s, e)];
   }
 
@@ -1800,7 +1749,10 @@ async fn main() -> Result<()> {
     // Guaranteed single input by the guard above.
     let plan = &plans[0];
     if plan.shards.len() != 1 {
-      bail!("--verify-constraints requires a single shard (got {})", plan.shards.len());
+      bail!(
+        "--verify-constraints requires a single shard (got {})",
+        plan.shards.len()
+      );
     }
     let (start, end) = plan.shards[0];
     let stdin = leaf_stdin(start, end, &plan.env_bytes, &[]);
@@ -1847,8 +1799,11 @@ async fn main() -> Result<()> {
       last_leaf_result = Some(result);
     }
     // Per-input coherence: this input's shards must tile its own env.
-    total_failures = total_failures
-      .saturating_add(check_input_coherence(&plan.label, &input_publics, plan.total)?);
+    total_failures = total_failures.saturating_add(check_input_coherence(
+      &plan.label,
+      &input_publics,
+      plan.total,
+    )?);
   }
   let leaf_phase_wall = leaf_phase_start.elapsed();
   let total_leaf_size: usize = leaf_proof_bytes.iter().map(Vec::len).sum();
@@ -1928,7 +1883,8 @@ async fn main() -> Result<()> {
     let verify_ms = verify_start.elapsed().as_millis() as u64;
     (final_size, total_agg_steps, total_agg_ms, verify_ms)
   } else {
-    let leaf = last_leaf_result.expect("single-leaf path must have a leaf result");
+    let leaf =
+      last_leaf_result.expect("single-leaf path must have a leaf result");
     let final_size = leaf.get_proof_bytes()?.len();
     let verify_start = Instant::now();
     leaf.verify()?;
@@ -1957,7 +1913,9 @@ async fn main() -> Result<()> {
   }
   println!("verify time: {:.3}s", (verify_ms as f64) / 1000.0);
   if total_failures > 0 {
-    bail!("kernel typecheck produced {total_failures} failure(s) (proof still verifies)");
+    bail!(
+      "kernel typecheck produced {total_failures} failure(s) (proof still verifies)"
+    );
   }
   Ok(())
 }

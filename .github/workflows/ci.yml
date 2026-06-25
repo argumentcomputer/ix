@@ -28,6 +28,15 @@ jobs:
         run: lake test -- --ignored aiur aiur-hashes ixvm multi-stark recursive-verifier
       - name: Check Lean versions match for Ix and compiler bench
         run: diff lean-toolchain Benchmarks/Compile/lean-toolchain
+      # Compile a tiny env once (ix is already built here) and hand it to the
+      # zkVM execute job via artifact, so that job stays Lean-free.
+      - name: Compile zkVM test fixture (minimal.ixe)
+        run: lake exe ix compile Tests/MinimalDefs.lean --out minimal.ixe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: minimal-ixe
+          path: minimal.ixe
+          if-no-files-found: error
 
   rust-test:
     runs-on: ubuntu-latest
@@ -55,3 +64,75 @@ jobs:
         uses: EmbarkStudios/cargo-deny-action@v2
         with:
           rust-version: ${{ env.RUST_VERSION }}
+
+  # Execute the kernel typecheck of the `minimal.ixe` fixture in the SP1 and
+  # Zisk VMs natively (no Nix): install the toolchains via sp1up / ziskup
+  # (prebuilt binaries), build the hosts, and run `--execute` (no proof, no
+  # GPU). The precompile-aware SP1 runner-binary is auto-built from the fork
+  # git dep by `sp1-core-executor-runner`'s build script — no manual override
+  # needed. Each host bails non-zero on any typecheck failure; we also assert
+  # the `failures: 0` line and exercise the `--only-const` closure-sub-env path
+  # (a constant present in the fixture) on both backends.
+  riscv-zkvm-execute:
+    name: RISC-V zkVM Execute
+    needs: lean-test
+    runs-on: warp-ubuntu-latest-x64-16x
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache-workspaces: |
+            sp1
+            zisk
+      # System deps for the zkVM backends. The first block is the ZisK book's
+      # full Ubuntu list (its prebuilt cargo-zisk and proofman's C++ link these:
+      # OpenMPI, OpenMP, GMP, nlohmann-json, nasm, secp256k1, …); pkg-config +
+      # libssl-dev are for SP1's host crates (openssl/bindgen). The Nix shells
+      # provided all this; a bare runner doesn't. Must precede the ziskup
+      # install, which runs cargo-zisk to set up the toolchain.
+      - name: Install system build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            xz-utils jq curl build-essential qemu-system libomp-dev libgmp-dev \
+            nlohmann-json3-dev protobuf-compiler uuid-dev libgrpc++-dev \
+            libsecp256k1-dev libsodium-dev libpqxx-dev nasm libopenmpi-dev \
+            openmpi-bin openmpi-common libclang-dev clang gcc-riscv64-unknown-elf \
+            pkg-config libssl-dev
+      - uses: actions/download-artifact@v4
+        with:
+          name: minimal-ixe
+      - name: Install SP1 toolchain (sp1up, latest)
+        run: |
+          curl -L https://sp1up.succinct.xyz | bash
+          ~/.sp1/bin/sp1up
+          echo "$HOME/.sp1/bin" >> "$GITHUB_PATH"
+      - name: Install Zisk toolchain (ziskup, latest)
+        # `--cpu` picks the CPU build (no GPU on the runner) and `--nokey` skips
+        # the proving/verify keys — together they avoid ziskup's interactive
+        # /dev/tty prompts, and execute needs no keys. `--prefix $HOME/.zisk`
+        # pins the install where cargo-zisk's ZiskPaths fallback looks (the
+        # runner sets XDG_CONFIG_HOME, which would otherwise relocate it).
+        run: |
+          curl -L https://raw.githubusercontent.com/0xPolygonHermez/zisk/main/ziskup/install.sh \
+            | bash -s -- --cpu --nokey -y --prefix "$HOME/.zisk"
+          echo "$HOME/.zisk/bin" >> "$GITHUB_PATH"
+      # `download-artifact` drops minimal.ixe in the repo root; both hosts run
+      # from their workspace dir, so the env is `../minimal.ixe`. Debug builds
+      # (no `--release`) keep host compile time down; the fixture is tiny so
+      # execution is fast regardless.
+      - name: SP1 — execute minimal.ixe (assert failures == 0)
+        run: |
+          cd sp1
+          cargo run --bin sp1-host -- --execute --ixe ../minimal.ixe | tee whole.txt
+          grep -qE "failures: 0\b" whole.txt
+          cargo run --bin sp1-host -- --execute --ixe ../minimal.ixe --only-const myReflEq | tee only.txt
+          grep -qE "failures: 0\b" only.txt
+      - name: Zisk — execute minimal.ixe (assert failures == 0)
+        run: |
+          cd zisk
+          ulimit -l unlimited 2>/dev/null || true
+          cargo run --bin zisk-host -- --execute --ixe ../minimal.ixe | tee whole.txt
+          grep -qE "failures: 0\b" whole.txt
+          cargo run --bin zisk-host -- --execute --ixe ../minimal.ixe --only-const myReflEq | tee only.txt
+          grep -qE "failures: 0\b" only.txt

@@ -34,8 +34,6 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   let pathStr := path.as! String
   let outPath : String :=
     (p.flag? "out").map (·.as! String) |>.getD (defaultOutPathFor pathStr)
-  let rootName? : Option Lean.Name :=
-    (p.flag? "root").map (·.as! String |>.toName)
 
   buildFile pathStr
   let leanEnv ← getFileEnv pathStr

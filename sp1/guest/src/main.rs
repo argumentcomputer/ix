@@ -1,9 +1,14 @@
 //! SP1 guest binary: prove that every kernel-checkable constant in a
 //! serialized Ixon environment typechecks under the Ix kernel.
 //!
-//! Input (two reads, in order):
+//! Input (three reads, in order):
 //!   1. `u8`: kernel mode flag (0 = Anon default, 1 = Meta) via `read::<u8>`.
 //!   2. `Vec<u8>`: Ixon-serialized environment via `read_vec`.
+//!   3. `Vec<u8>`: optional check-list — a packed set of primary addresses
+//!      (`Address::pack`) to check in Anon mode. Empty ⇒ whole env; non-empty
+//!      ⇒ check exactly those work items (the `--only-const` path, where the
+//!      host ships a closure sub-env plus the one targeted primary). Mirrors
+//!      the Zisk leaf guest's reuse-mode selection.
 //!
 //! Output (via `sp1_zkvm::io::commit_slice`, fixed 104-byte layout):
 //!   - `u32` failures (offset 0; 0 = all pass)
@@ -35,7 +40,7 @@
 sp1_zkvm::entrypoint!(main);
 
 use ix_common::address::Address;
-use ix_kernel::anon_work::build_anon_work;
+use ix_kernel::anon_work::{AnonWorkItem, build_anon_work};
 use ix_kernel::env::KEnv;
 use ix_kernel::id::KId;
 use ix_kernel::ingress::ixon_ingress_owned;
@@ -56,12 +61,24 @@ use ixon::metadata::ConstantMetaInfo;
 // `tc.check_const(kid)` call below in the same pair of `println!`s; pair
 // the output with `crates/kernel/examples/perf_check.rs` to map indices
 // to constant names.
-macro_rules! tic { ($name:expr) => { println!("cycle-tracker-report-start: {}", $name) } }
-macro_rules! toc { ($name:expr) => { println!("cycle-tracker-report-end: {}", $name) } }
+macro_rules! tic {
+  ($name:expr) => {
+    println!("cycle-tracker-report-start: {}", $name)
+  };
+}
+macro_rules! toc {
+  ($name:expr) => {
+    println!("cycle-tracker-report-end: {}", $name)
+  };
+}
 
 pub fn main() {
   let meta_mode: u8 = sp1_zkvm::io::read();
   let env_bytes: Vec<u8> = sp1_zkvm::io::read_vec();
+  // Optional check-list: a packed set of primary addresses to check (Anon
+  // mode). Empty ⇒ whole env. Ignored in Meta mode (the host forbids
+  // `--only-const` there).
+  let check_list: Vec<u8> = sp1_zkvm::io::read_vec();
   // `Address::hash` is blake3 via the precompile shim (same path the kernel
   // uses) — binds the proof to the exact env payload.
   let env_hash: [u8; 32] = *Address::hash(&env_bytes).as_bytes();
@@ -87,7 +104,9 @@ pub fn main() {
       env
         .named
         .iter()
-        .filter(|e| !matches!(e.value().meta.info, ConstantMetaInfo::Muts { .. }))
+        .filter(|e| {
+          !matches!(e.value().meta.info, ConstantMetaInfo::Muts { .. })
+        })
         .map(|e| KId::<Meta>::new(e.value().addr.clone(), e.key().clone())),
     );
 
@@ -126,12 +145,27 @@ pub fn main() {
     let work = build_anon_work(&env).expect("build_anon_work");
     toc!("build_anon_work");
 
+    // Empty check-list ⇒ whole env. Non-empty ⇒ check exactly the work items
+    // whose primary is in the set (the `--only-const` path). `Address` orders
+    // by raw bytes, so sort + binary_search is correct — mirrors the Zisk leaf
+    // guest's reuse-mode selection.
+    let items_to_check: Vec<&AnonWorkItem> = if check_list.is_empty() {
+      work.iter().collect()
+    } else {
+      let mut want: Vec<Address> = Address::unpack(&check_list).collect();
+      want.sort_unstable();
+      work
+        .iter()
+        .filter(|it| want.binary_search(it.primary()).is_ok())
+        .collect()
+    };
+
     let mut kenv = KEnv::<Anon>::new();
     let mut failures: u32 = 0;
     let mut checked_covered: Vec<Address> = Vec::new();
     tic!("check_const_loop");
     let mut tc = TypeChecker::<Anon>::new_with_lazy_anon(&mut kenv, &env);
-    for item in &work {
+    for item in &items_to_check {
       let kid = KId::<Anon>::new(item.primary().clone(), ());
       if tc.check_const(&kid).is_err() {
         failures = failures.saturating_add(1);

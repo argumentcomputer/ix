@@ -16,4 +16,4 @@ This project shadows the `formal-conjectures` project's Lean version, which is n
 
 First ensure the Lean version used to build Ix matches the `Benchmarks/CompileFC/lean-toolchain` version (check against `ix --version`). Then run
 
-`ix compile --path /path/to/CompileFC.lean`
+`ix compile /path/to/CompileFC.lean`

@@ -75,6 +75,7 @@ dependencies = [
 [[package]]
 name = "blake3"
 version = "1.8.5"
+source = "git+https://github.com/argumentcomputer/BLAKE3?branch=sp1#d36366f7badbff9be8e2522868dddd14561638f3"
 dependencies = [
  "arrayref",
  "arrayvec",
