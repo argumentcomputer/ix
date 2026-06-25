@@ -363,6 +363,9 @@ def termToConcrete
   | .u8RangeCheck τ e a b => do
       pure (.u8RangeCheck (← typToConcrete mono τ) e
                           (← termToConcrete mono a) (← termToConcrete mono b))
+  | .unconstrainedBigUintDivMod τ e a b => do
+      pure (.unconstrainedBigUintDivMod (← typToConcrete mono τ) e
+                                    (← termToConcrete mono a) (← termToConcrete mono b))
   -- `toField` / `u8FromFieldUnsafe` are erased coercions: `u8` and `field`
   -- share a representation, so we drop the wrapper and keep the inner term.
   | .toField _ _ a | .u8FromFieldUnsafe _ _ a => termToConcrete mono a
@@ -570,6 +573,8 @@ def rewriteTypedTerm (decls : Typed.Decls)
       (rewriteTypedTerm decls subst mono a) (rewriteTypedTerm decls subst mono b)
   | .u8RangeCheck τ e a b => .u8RangeCheck (rewriteTyp subst mono τ) e
       (rewriteTypedTerm decls subst mono a) (rewriteTypedTerm decls subst mono b)
+  | .unconstrainedBigUintDivMod τ e a b => .unconstrainedBigUintDivMod (rewriteTyp subst mono τ) e
+      (rewriteTypedTerm decls subst mono a) (rewriteTypedTerm decls subst mono b)
   | .toField τ e a => .toField (rewriteTyp subst mono τ) e
       (rewriteTypedTerm decls subst mono a)
   | .u8FromFieldUnsafe τ e a => .u8FromFieldUnsafe (rewriteTyp subst mono τ) e
@@ -642,6 +647,7 @@ def collectInTypedTerm (seen : Std.HashSet (Global × Array Typ)) :
   | .add τ _ a b | .sub τ _ a b | .mul τ _ a b
   | .u8Xor τ _ a b | .u8Add τ _ a b | .u8Mul τ _ a b | .u8Sub τ _ a b
   | .u8ChainRotr7 τ _ a b | .u8ChainRotr4 τ _ a b | .u8RangeCheck τ _ a b
+  | .unconstrainedBigUintDivMod τ _ a b
   | .u8And τ _ a b | .u8Or τ _ a b
   | .u8LessThan τ _ a b | .u32LessThan τ _ a b =>
     collectInTypedTerm (collectInTypedTerm (collectInTyp seen τ) a) b
@@ -712,6 +718,7 @@ def collectCalls (decls : Typed.Decls)
   | .add _ _ a b | .sub _ _ a b | .mul _ _ a b
   | .u8Xor _ _ a b | .u8Add _ _ a b | .u8Mul _ _ a b | .u8Sub _ _ a b
   | .u8ChainRotr7 _ _ a b | .u8ChainRotr4 _ _ a b | .u8RangeCheck _ _ a b
+  | .unconstrainedBigUintDivMod _ _ a b
   | .u8And _ _ a b | .u8Or _ _ a b
   | .u8LessThan _ _ a b | .u32LessThan _ _ a b =>
     collectCalls decls (collectCalls decls seen a) b
@@ -829,6 +836,8 @@ def substInTypedTerm (subst : Global → Option Typ) : Typed.Term → Typed.Term
   | .u32LessThan τ e a b => .u32LessThan (Typ.instantiate subst τ) e
       (substInTypedTerm subst a) (substInTypedTerm subst b)
   | .u8RangeCheck τ e a b => .u8RangeCheck (Typ.instantiate subst τ) e
+      (substInTypedTerm subst a) (substInTypedTerm subst b)
+  | .unconstrainedBigUintDivMod τ e a b => .unconstrainedBigUintDivMod (Typ.instantiate subst τ) e
       (substInTypedTerm subst a) (substInTypedTerm subst b)
   | .toField τ e a => .toField (Typ.instantiate subst τ) e (substInTypedTerm subst a)
   | .u8FromFieldUnsafe τ e a =>

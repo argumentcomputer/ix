@@ -107,6 +107,7 @@ pub enum ExecError {
   IndexTooLarge(u64),
   U32OutOfRange(u64),
   U8RangeCheckFailed(u64),
+  UnconstrainedBigUintDivModFailed(String),
   AssertEqLengthMismatch { lhs: usize, rhs: usize },
   AssertEqMismatch { lhs: u64, rhs: u64 },
   MatchNoCase(u64),
@@ -132,6 +133,9 @@ impl std::fmt::Display for ExecError {
       Self::U32OutOfRange(v) => write!(f, "value {v} out of u32 range"),
       Self::U8RangeCheckFailed(v) => {
         write!(f, "value {v} out of u8 range [0, 256)")
+      },
+      Self::UnconstrainedBigUintDivModFailed(msg) => {
+        write!(f, "unconstrained_big_uint_div_mod failed: {msg}")
       },
       Self::AssertEqLengthMismatch { lhs, rhs } => {
         write!(f, "assert_eq length mismatch: lhs={lhs}, rhs={rhs}")
@@ -530,6 +534,43 @@ impl Function {
             record.bytes2_queries.bump_range_check(&vi, &vj);
           }
         },
+        ExecEntry::Op(Op::UnconstrainedBigUintDivMod(a_idx, b_idx)) => {
+          // Unconstrained hint for klimbs-style LE byte division. Inputs are
+          // pointers to `List<U64>` (in memory[10]) values storing `a` and
+          // `b` as little-endian u64 limbs (each limb's 8 bytes are stored
+          // tag-then-bytes within memory[10] per the standard Aiur enum
+          // layout: `[tag, b0..b7, next_ptr]`). The op walks both lists,
+          // computes `q = a / b` and `r = a % b` via `num_bigint::BigUint`,
+          // and rebuilds the result lists in memory[10] with multiplicity 0
+          // (unconstrained). Returns the two new head pointers. The caller
+          // is responsible for verifying `q * b + r == a` and `r < b` in
+          // constrained code.
+          //
+          // The `memory[10]` channel is chosen because the standard Aiur
+          // layout for a tagged enum with a `(U64, &Self)` constructor is
+          // `tag(1) + U64(8) + ptr(1) = 10` G values.
+          let a_ptr = map[*a_idx];
+          let b_ptr = map[*b_idx];
+          let a_limbs = read_klimbs_u64(&record.memory_queries, a_ptr)
+            .map_err(ExecError::UnconstrainedBigUintDivModFailed)?;
+          let b_limbs = read_klimbs_u64(&record.memory_queries, b_ptr)
+            .map_err(ExecError::UnconstrainedBigUintDivModFailed)?;
+          let a_big = klimbs_u64_to_biguint(&a_limbs);
+          let b_big = klimbs_u64_to_biguint(&b_limbs);
+          let (q_big, r_big) = if b_big == num_bigint::BigUint::ZERO {
+            (num_bigint::BigUint::ZERO, a_big.clone())
+          } else {
+            (&a_big / &b_big, &a_big % &b_big)
+          };
+          let q_limbs = biguint_to_klimbs_u64(&q_big);
+          let r_limbs = biguint_to_klimbs_u64(&r_big);
+          let q_ptr = build_klimbs_u64(&mut record.memory_queries, &q_limbs)
+            .map_err(ExecError::UnconstrainedBigUintDivModFailed)?;
+          let r_ptr = build_klimbs_u64(&mut record.memory_queries, &r_limbs)
+            .map_err(ExecError::UnconstrainedBigUintDivModFailed)?;
+          map.push(q_ptr);
+          map.push(r_ptr);
+        },
         ExecEntry::Op(Op::Debug(label, idxs)) => match idxs {
           None => println!("{label}"),
           Some(idxs) => {
@@ -634,4 +675,123 @@ fn bytes2_execute(
   record: &mut QueryRecord,
 ) {
   map.extend(Bytes2.execute(op, &[map[i], map[j]], record));
+}
+
+/// Walk a `List<U64>` chain from `head_ptr` in `memory[10]`, returning the
+/// u64 limbs in head-first order. Each memory[10] entry is the standard Aiur
+/// tagged-enum layout: `[tag, byte0..byte7, next_ptr]`. `tag == 0` = Nil
+/// (terminator), `tag == 1` = Cons. Bytes are LE within the u64.
+fn read_klimbs_u64(
+  memory: &FxIndexMap<usize, QueryMap>,
+  head_ptr: G,
+) -> Result<Vec<u64>, String> {
+  let queries = memory.get(&10).ok_or_else(|| {
+    "memory[10] channel not registered (no List<U64> in program?)".to_string()
+  })?;
+  let mut limbs: Vec<u64> = Vec::new();
+  let mut ptr = head_ptr;
+  loop {
+    let ptr_u64 = ptr.as_canonical_u64();
+    let ptr_idx = usize::try_from(ptr_u64)
+      .map_err(|_e| format!("ptr {ptr_u64} too large for usize"))?;
+    let (key, _) = queries.get_index(ptr_idx).ok_or_else(|| {
+      format!("unbound ptr {ptr_u64} in memory[10] (walking List<U64>)")
+    })?;
+    let tag = key[0].as_canonical_u64();
+    // `enum ListNode { Cons, Nil }` in Ix/IxVM/Core.lean — Cons is the
+    // first variant (tag 0), Nil the second (tag 1).
+    if tag == 1 {
+      return Ok(limbs);
+    }
+    if tag != 0 {
+      return Err(format!(
+        "List<U64> walk: unexpected tag {tag} (expected 0=Cons, 1=Nil)"
+      ));
+    }
+    let mut limb_bytes = [0u8; 8];
+    for k in 0..8 {
+      let b = key[1 + k].as_canonical_u64();
+      if b >= 256 {
+        return Err(format!("limb byte {b} out of u8 range"));
+      }
+      limb_bytes[k] = u8::try_from(b).expect("range-checked above");
+    }
+    limbs.push(u64::from_le_bytes(limb_bytes));
+    ptr = key[9];
+  }
+}
+
+/// Treat `limbs` as a little-endian sequence of 64-bit limbs and convert to
+/// a `BigUint`. Aiur's `klimbs_normalize` strips trailing zero limbs but a
+/// non-normalized input still produces the correct value via `from_bytes_le`.
+fn klimbs_u64_to_biguint(limbs: &[u64]) -> num_bigint::BigUint {
+  let mut bytes: Vec<u8> = Vec::with_capacity(limbs.len() * 8);
+  for limb in limbs {
+    bytes.extend_from_slice(&limb.to_le_bytes());
+  }
+  num_bigint::BigUint::from_bytes_le(&bytes)
+}
+
+/// Convert a `BigUint` to LE-u64 limbs. The output is non-padded (trailing
+/// limbs that would all be zero are omitted), matching `klimbs_normalize`'s
+/// canonical form so the Aiur kernel's subsequent equality checks compare
+/// equal forms without round-trip discrepancies.
+fn biguint_to_klimbs_u64(n: &num_bigint::BigUint) -> Vec<u64> {
+  if n == &num_bigint::BigUint::ZERO {
+    return Vec::new();
+  }
+  let mut bytes = n.to_bytes_le();
+  while !bytes.len().is_multiple_of(8) {
+    bytes.push(0);
+  }
+  bytes
+    .chunks_exact(8)
+    .map(|c| {
+      let mut a = [0u8; 8];
+      a.copy_from_slice(c);
+      u64::from_le_bytes(a)
+    })
+    .collect()
+}
+
+/// Build a `List<U64>` chain in `memory[10]` from `limbs` (head-first order)
+/// and return the head pointer. Each entry is inserted with multiplicity 0
+/// (unconstrained); subsequent constrained `Load`s by the kernel will bump
+/// the multiplicity. Content-addressed via `QueryMap::get_mut`, so repeated
+/// identical sub-tails share storage.
+fn build_klimbs_u64(
+  memory: &mut FxIndexMap<usize, QueryMap>,
+  limbs: &[u64],
+) -> Result<G, String> {
+  let queries = memory.get_mut(&10).ok_or_else(|| {
+    "memory[10] channel not registered (no List<U64> in program?)".to_string()
+  })?;
+  // Find or insert the Nil ptr (tag = 1, padded payload all zero).
+  let nil_key: Vec<G> =
+    std::iter::once(G::ONE).chain((0..9).map(|_| G::ZERO)).collect();
+  let mut tail_ptr = if let Some(out) = queries.get_mut(&nil_key) {
+    out.output[0]
+  } else {
+    let ptr = G::from_usize(queries.len());
+    queries.insert(&nil_key, &[ptr], G::ZERO);
+    ptr
+  };
+  // Walk limbs in REVERSE so each Cons points at the previously-built tail.
+  for limb in limbs.iter().rev() {
+    let bytes = limb.to_le_bytes();
+    let mut key: Vec<G> = Vec::with_capacity(10);
+    key.push(G::ZERO); // Cons tag (first variant of ListNode‹U64›)
+    for b in &bytes {
+      key.push(G::from_u8(*b));
+    }
+    key.push(tail_ptr);
+    tail_ptr = if let Some(out) = queries.get_mut(&key) {
+      out.output[0]
+    } else {
+      let ptr = G::from_usize(queries.len());
+      queries.insert(&key, &[ptr], G::ZERO);
+      ptr
+    };
+  }
+  Ok(tail_ptr)
 }

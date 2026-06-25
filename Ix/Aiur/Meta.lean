@@ -188,6 +188,7 @@ syntax "u8_or" "(" aiur_trm ", " aiur_trm ")"                               : ai
 syntax "u8_less_than" "(" aiur_trm ", " aiur_trm ")"                        : aiur_trm
 syntax "u32_less_than" "(" aiur_trm ", " aiur_trm ")"                       : aiur_trm
 syntax "u8_range_check" "(" aiur_trm ", " aiur_trm ")"                      : aiur_trm
+syntax "unconstrained_big_uint_div_mod" "(" aiur_trm ", " aiur_trm ")"           : aiur_trm
 syntax "to_field" "(" aiur_trm ")"                                          : aiur_trm
 syntax "u8_from_field_unsafe" "(" aiur_trm ")"                              : aiur_trm
 syntax:max num "u8"                                                         : aiur_trm
@@ -323,6 +324,8 @@ partial def elabTrm : ElabStxCat `aiur_trm
     mkAppM ``Source.Term.u32LessThan #[← elabTrm i, ← elabTrm j]
   | `(aiur_trm| u8_range_check($i:aiur_trm, $j:aiur_trm)) => do
     mkAppM ``Source.Term.u8RangeCheck #[← elabTrm i, ← elabTrm j]
+  | `(aiur_trm| unconstrained_big_uint_div_mod($a:aiur_trm, $b:aiur_trm)) => do
+    mkAppM ``Source.Term.unconstrainedBigUintDivMod #[← elabTrm a, ← elabTrm b]
   | `(aiur_trm| to_field($a:aiur_trm)) => do
     mkAppM ``Source.Term.toField #[← elabTrm a]
   | `(aiur_trm| u8_from_field_unsafe($a:aiur_trm)) => do
@@ -547,6 +550,10 @@ where
       let i ← replaceToken old new i
       let j ← replaceToken old new j
       `(aiur_trm| u8_range_check($i, $j))
+    | `(aiur_trm| unconstrained_big_uint_div_mod($a:aiur_trm, $b:aiur_trm)) => do
+      let a ← replaceToken old new a
+      let b ← replaceToken old new b
+      `(aiur_trm| unconstrained_big_uint_div_mod($a, $b))
     | `(aiur_trm| to_field($a:aiur_trm)) => do
       let a ← replaceToken old new a
       `(aiur_trm| to_field($a))

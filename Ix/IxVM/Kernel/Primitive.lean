@@ -1108,20 +1108,32 @@ def primitive := ⟦
     }
   }
 
-  -- Mirror: BigUint::div_mod via repeated subtraction. Returns (quotient,
-  -- remainder). For divisor 0, follows Lean Nat semantics: a / 0 = 0,
-  -- a % 0 = a.
+  -- Unconstrained Aiur op `unconstrained_big_uint_div_mod(a, b) -> (q, r)`
+  -- pushes prover-supplied (q, r) into the trace map; no constraints emitted
+  -- by the op itself. Caller verifies `q*b + r == a` (under normalize) and
+  -- `r < b` when `b != 0`. For `b == 0` the op returns `(0, a)`; only the
+  -- `q*b + r == a` equality is required (which holds: `0*0 + a == a`).
+  --
+  -- Soundness on the prover-supplied bytes: every limb byte flows through
+  -- u8_mul inside `klimbs_mul(q, b)` and u8_add inside `klimbs_add(qb, r)`,
+  -- both of which push to the u8_range_check channel
+  -- (src/aiur/gadgets/bytes2.rs), so a byte > 255 fails the gadget's range
+  -- check. Trailing junk limbs that mul doesn't touch are caught by the
+  -- post-normalize equality below.
   fn klimbs_div_mod(a: KLimbs, b: KLimbs) -> (KLimbs, KLimbs) {
+    let (q, r) = unconstrained_big_uint_div_mod(a, b);
+    let qb = klimbs_mul(q, b);
+    let lhs = klimbs_normalize(klimbs_add(qb, r));
+    let rhs = klimbs_normalize(a);
+    assert_eq!(lhs, rhs);
     match klimbs_is_zero(b) {
-      1 => (store(ListNode.Nil), a),
-      0 => klimbs_div_mod_go(a, b, store(ListNode.Nil)),
-    }
-  }
-
-  fn klimbs_div_mod_go(a: KLimbs, b: KLimbs, q: KLimbs) -> (KLimbs, KLimbs) {
-    match klimbs_le(b, a) {
-      0 => (q, a),
-      1 => klimbs_div_mod_go(klimbs_sub(a, b), b, klimbs_succ(q)),
+      1 => (q, r),
+      0 =>
+        -- r < b iff (r + 1) ≤ b. One klimbs_le on klimbs_succ(r); cheapest
+        -- of the sound variants empirically (vs `le(r,b)∧¬eq(r,b)` or
+        -- `¬le(b,r)`).
+        assert_eq!(klimbs_le(klimbs_succ(r), b), 1);
+        (q, r),
     }
   }
 
