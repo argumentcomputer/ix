@@ -41,7 +41,15 @@ def getFileEnv (path : FilePath) : IO Environment := do
   if messages.hasErrors then
     throw $ IO.userError $ "\n\n".intercalate $
       (← messages.toList.mapM (·.toString)).map (String.trimAscii · |>.toString)
-  return env
+  -- Elaborate the file body too, so the env contains the file's own
+  -- definitions and not just its imports.
+  let env := env.setMainModule default
+  let s ← IO.processCommands inputCtx parserState (Command.mkState env messages)
+  let cmdMessages := s.commandState.messages
+  if cmdMessages.hasErrors then
+    throw $ IO.userError $ "\n\n".intercalate $
+      (← cmdMessages.toList.mapM (·.toString)).map (String.trimAscii · |>.toString)
+  return s.commandState.env
 
 /-- Captures the current module and its imports at compile time. -/
 elab "this_file!" : term => do
