@@ -27,7 +27,7 @@
 
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use crate::ix::address::Address;
+use ix_common::address::Address;
 
 /// Magic bytes at the head of every `.ixesp` file.
 const MAGIC: &[u8; 8] = b"IXESP\0\0\0";

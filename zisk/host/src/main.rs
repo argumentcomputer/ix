@@ -14,14 +14,18 @@
 //! RUST_LOG=info cargo run --release -- --execute --ixe ../nataddcomm.ixe
 //! RUST_LOG=info cargo run --release -- --gpu --ixe ../nataddcomm.ixe --ixe ../stringappend.ixe
 //! RUST_LOG=info cargo run --release -- --gpu --ixe ../init.ixe --shard-bytes 250000
+//! RUST_LOG=info cargo run --release -- --gpu --ixe ../mergesort.ixe --shard-plan ../mergesort.ixe.ixes
 //! ```
 //!
-//! `--shard-consts N` partitions each env's `build_anon_work` into
-//! ceil(total/N) shards by work-item count. `--shard-bytes B` partitions
-//! by cumulative serialized-AST cost. Sharding is applied per input. The
-//! pipeline ends in aggregation whenever more than one leaf proof is
-//! produced — whether from multiple shards of one env, multiple inputs,
-//! or both.
+//! `--shard-plan <manifest.ixes>` is the preferred partitioner: it proves the
+//! partition computed offline by `ix profile` + `ix shard` (the kernel
+//! profiler's real heartbeat cost model + delta-unfold graph cut). Each
+//! manifest shard becomes one closure-injected leaf proof, and the leaves fold
+//! into one aggregate. `--shard-consts N` / `--shard-bytes B` are the simpler
+//! no-profile fallbacks (partition `build_anon_work` by work-item count or by
+//! cumulative serialized-AST cost). Sharding is applied per input. The pipeline
+//! ends in aggregation whenever more than one leaf proof is produced — whether
+//! from multiple shards of one env, multiple inputs, or both.
 
 use std::fs;
 use std::path::PathBuf;
@@ -53,6 +57,16 @@ struct Args {
   /// Enable GPU-accelerated proving.
   #[arg(long)]
   gpu: bool,
+
+  /// Use the Emulator executor instead of the default Assembly executor.
+  /// Assembly is the default: it is markedly faster at trace generation
+  /// (measured ~4-6x on EXECUTE, ~11x on COMPUTE_MINIMAL_TRACE) and is the
+  /// prerequisite for the hints stream. Pass `--emulator` to opt back into
+  /// the Emulator (e.g. to debug, or on a box without the memlock rlimit the
+  /// ASM executor's MAP_LOCKED mmaps require). See the multi-program
+  /// setup-ordering note on `build_client`.
+  #[arg(long)]
+  emulator: bool,
 
   /// Path to a `.ixe` file. Repeatable: pass `--ixe` multiple times to
   /// prove a batch of inputs in one warm process and aggregate them all
@@ -90,6 +104,21 @@ struct Args {
   #[arg(long)]
   shard_bytes: Option<usize>,
 
+  /// Manifest-driven sharding: prove the partition in a `.ixes` manifest
+  /// produced offline by `ix profile <env.ixe>` then
+  /// `ix shard <env.ixesp> --shards N`. Each manifest shard becomes one
+  /// closure-injected leaf proof — its member blocks' work items, shipped with
+  /// only their dependency closure — and the leaves fold into one aggregate.
+  /// This is the performant path: the partition is balanced by the kernel
+  /// profiler's real per-block heartbeats and cut to minimize cross-shard
+  /// delta-unfold ingress, instead of the static `--shard-consts`/`--shard-bytes`
+  /// heuristics. Requires exactly one `--ixe` (the env the manifest was built
+  /// for); the manifest must cover that env's full work set. Composes with
+  /// `--execute` (per-shard cycles), `--only-shard`, and `--store-dir`
+  /// (cross-run proof reuse).
+  #[arg(long, conflicts_with_all = ["shard_consts", "shard_bytes"])]
+  shard_plan: Option<PathBuf>,
+
   /// Print the planned shard partition (range, items, bytes) for every
   /// input and exit. No setup, no execute, no prove. Useful for tuning
   /// `--shard-bytes`.
@@ -115,65 +144,26 @@ struct Args {
   #[arg(long)]
   only_shard: Option<usize>,
 
-  /// Design-A measurement: for the planned shards, report each shard's
-  /// `bfs_refs` dependency-closure size (consts + bytes) versus the full
-  /// env, plus the cross-shard duplication factor. Quantifies how much the
-  /// per-shard env-reload (whole-env decode + build_anon_work) could be
-  /// cut by shipping only each shard's closure. No setup/execute/prove.
-  #[arg(long)]
-  closure_stats: bool,
-
-  /// Design-C measurement: across all `--ixe` inputs, report how many
-  /// *proven* constants (build_anon_work `proven_targets`: block addr +
-  /// projections — the consts-key space the reuse store keys on) are
-  /// distinct vs re-checked. Because Ixon is content-addressed, a shared
-  /// constant has
-  /// an identical `Address` across envs, so the union = "prove each once"
-  /// and the sum = "what we prove today." The ratio is the cross-input
-  /// re-check redundancy a shared/committed base (Design C) would remove.
-  #[arg(long)]
-  overlap_stats: bool,
-
-  /// Cross-proof reuse store directory. When set (with `--execute`), the
-  /// host loads the set of already-proven primary addresses from
-  /// `<dir>/proven.bin`, checks only the NOVEL work items of each input
-  /// (skipping constants already in the store), and appends the newly
-  /// checked primaries back to the store. Demonstrates shards/proofs
-  /// avoiding re-checking shared constants. Content-addressed: a constant
-  /// has the same primary address across every env.
+  /// Cross-run proof store directory (requires `--shard-plan`). A manifest
+  /// shard whose certified targets are ALL already covered by stored proofs is
+  /// not re-proven: the covering stored proofs are folded into the aggregate
+  /// instead, where the agg guest VERIFIES them (vk-pinned, witness-checked)
+  /// — reuse by verification, never by trust. Freshly proven shards are
+  /// appended to the store (`proofs/<n>.{proof,cover,asm}`) as they complete,
+  /// so an interrupted run resumes where it left off. Content-addressed: a
+  /// constant has the same address across every env, so proofs are shared
+  /// between envs too.
   #[arg(long)]
   store_dir: Option<PathBuf>,
 
-  /// Disable cross-proof reuse for THIS run while keeping the same reuse/agg
-  /// code path. With `--store-dir`, treats the on-disk store as empty: every
-  /// work item is novel (0 reused), so the full env is proved + aggregated
-  /// from scratch — the "no sharing" baseline. The existing store is neither
-  /// consulted (no covering proofs folded) nor overwritten, so a populated
-  /// store survives for a back-to-back "with sharing" comparison.
+  /// Disable cross-run reuse for THIS run while keeping the same code path.
+  /// With `--store-dir`, treats the on-disk store as empty: every shard is
+  /// novel, the full env is proved + aggregated from scratch — the "no
+  /// sharing" baseline. The existing store is neither consulted nor
+  /// overwritten, so a populated store survives for a back-to-back
+  /// comparison.
   #[arg(long)]
   no_reuse: bool,
-
-  /// Closure injection (reuse path): ship each leaf guest only the BFS
-  /// dependency closure of its checked targets — the constants it certifies
-  /// plus their transitive `Constant.refs` and referenced literal blobs —
-  /// instead of the whole env. Essential for large envs (Init, 184 MB) that
-  /// don't fit the 512 MB guest whole; each shard then pays only its closure's
-  /// decode. The committed claim is identical, since subject/assumptions
-  /// depend only on the checked targets and their direct refs (all in the
-  /// closure). Costs host-side closure computation per shard.
-  #[arg(long)]
-  closure_inject: bool,
-
-  /// Topological schedule (reuse path): order novel work items bottom-up so a
-  /// constant's dependencies are proved before the constants that depend on
-  /// them, and within the ready set prove the most-depended-upon (foundational)
-  /// constants first. Banks heavily-shared constants into the reuse store
-  /// earliest, so every later shard's novel closure shrinks; combined with
-  /// `--limit-items N` it proves the highest-leverage core first. Reordering is
-  /// sound here because each shard ships an explicit primary list, not a
-  /// contiguous work-index range. Requires `--store-dir`; no effect otherwise.
-  #[arg(long)]
-  topo: bool,
 
   /// Require a fully closed environment modulo axioms: error BEFORE proving
   /// unless every typing dependency of every constant the batch will certify is
@@ -186,12 +176,25 @@ struct Args {
   #[arg(long)]
   require_closed: bool,
 
-  /// Testing knob (reuse path): cap each input to its first N novel work items
-  /// before sharding, so you can prove just a few shards of a huge env (e.g.
-  /// a couple of Init shards) end-to-end. Everything downstream — targets,
-  /// coverage binding, discharge — stays self-consistent on the capped subset.
+  /// Dump the selected shard's guest stdin (range + closure sub-env +
+  /// check-list) to this file and exit, instead of executing/proving. Pairs
+  /// with `--shard-plan` (+ `--only-shard` to pick which shard) to produce an
+  /// `input.bin` for standalone profiling: `ziskemu -e <guest.elf> -i input.bin
+  /// -X -S` or `cargo-zisk run -i input.bin -p summary`.
   #[arg(long)]
-  limit_items: Option<usize>,
+  dump_input: Option<PathBuf>,
+
+  /// Check a single constant selected by its Lean NAME (e.g.
+  /// "ByteArray.utf8DecodeChar?_utf8EncodeChar_append"), with no manifest or
+  /// range plumbing: the name is resolved through the env's `named` metadata to
+  /// its ingress block, that block's work item becomes a one-item check-list,
+  /// and the guest receives only its closure sub-env. Composes with
+  /// `--execute` (cycles), plain prove (single leaf, subject-bound + verified),
+  /// and `--dump-input` (write the stdin for ziskemu profiling). Requires
+  /// exactly one `--ixe`. Note: a member of a mutual block selects the whole
+  /// block's work item (the kernel checks blocks atomically).
+  #[arg(long, conflicts_with_all = ["shard_plan", "only_shard", "store_dir"])]
+  only_const: Option<String>,
 
   /// Cap on resident witness traces during the prove phase, bounding
   /// peak host RAM per shard. Zisk's prover queues witnesses up to this
@@ -222,6 +225,9 @@ struct ShardPublics {
   failures: u32,
   subject_root: [u8; 32],
   assumptions_root: [u8; 32],
+  /// Number of targets the guest certified. Decoded for layout completeness;
+  /// the host derives counts from the manifest/work sets instead.
+  #[allow(dead_code)]
   checked_count: u32,
 }
 
@@ -385,250 +391,61 @@ fn plan_input(
   Ok(InputPlan { label, env_bytes, shards, total, target_count })
 }
 
-/// Design-A measurement (no proving). For each input, plan shards and
-/// report each shard's `bfs_refs` dependency closure (the exact set of
-/// consts that shard would need shipped, vs the whole env it currently
-/// re-decodes), plus the cross-shard duplication factor.
-///
-/// - "current model decode" = N × full env (every shard decodes everything).
-/// - "Design A decode"       = Σ per-shard closure bytes (only what's touched).
-/// The ratio is the redundant-work multiplier this design removes.
-fn closure_report(
-  inputs: &[Option<PathBuf>],
-  shard_consts: u32,
-  shard_bytes: Option<usize>,
-) -> Result<()> {
-  use std::collections::HashSet;
-
-  use ix_common::address::Address;
-  use ix_kernel::anon_env::AnonEnv;
-
-  for ixe in inputs {
-    let label =
-      ixe.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| "<empty env>".to_string());
-    let env_bytes = load_env_bytes(ixe.as_ref());
-    let env = IxonEnv::get_anon(&mut &env_bytes[..]).expect("invalid Ixon environment");
-    let work = build_anon_work(&env).expect("build_anon_work");
-    let total: u32 = work.len().try_into().expect("work-item count fits in u32");
-    let shards = match shard_bytes {
-      Some(b) => plan_shards_by_cost(&work, &env, b)?,
-      None => plan_shards(total, shard_consts),
-    };
-
-    let view = AnonEnv::from_env(&env);
-    let full_consts = env.const_count();
-    let full_bytes: usize = env
-      .consts
-      .iter()
-      .filter_map(|e| env.get_const_bytes(e.key()).map(|b| b.len()))
-      .sum();
-
-    println!(
-      "input {label}: {full_consts} consts, full const-bytes {}, {} shard(s)",
-      full_bytes.human_count_bytes(),
-      shards.len(),
-    );
-
-    let mut sum_closure_bytes: usize = 0;
-    for (i, &(s, e)) in shards.iter().enumerate() {
-      let mut closure: HashSet<Address> = HashSet::default();
-      for item in &work[s as usize..e as usize] {
-        for t in item.targets() {
-          closure.extend(view.bfs_refs(t));
-        }
-      }
-      let cbytes: usize =
-        closure.iter().filter_map(|a| env.get_const_bytes(a).map(|b| b.len())).sum();
-      sum_closure_bytes += cbytes;
-      println!(
-        "  shard {:>2}/{:<2}: {:>5} consts in closure, {:>9} ({:>5.1}% of full env)",
-        i + 1,
-        shards.len(),
-        closure.len(),
-        cbytes.human_count_bytes(),
-        100.0 * cbytes as f64 / full_bytes.max(1) as f64,
-      );
-    }
-
-    let n = shards.len() as f64;
-    let dup = sum_closure_bytes as f64 / full_bytes.max(1) as f64;
-    println!(
-      "  => current model decodes {:.1}x full env ({} shards × whole env); \
-       Design A decodes {:.2}x (Σ closures). Redundant-decode cut: {:.1}x → {:.2}x.",
-      n,
-      shards.len(),
-      dup,
-      n,
-      dup,
-    );
-  }
-  Ok(())
+/// One stored leaf proof: the blob plus the claim preimages behind its
+/// committed roots — the certified target set (subject) and the assumption
+/// set, both sorted + deduped. The preimages are exactly what mode-1
+/// aggregation needs as discharge witness, so a stored proof folds like any
+/// other child: verified in-circuit, never trusted.
+struct StoredProof {
+  blob: Vec<u8>,
+  subjects: Vec<ix_common::address::Address>,
+  assumptions: Vec<ix_common::address::Address>,
 }
 
-/// Design-C measurement (no proving). Across all inputs, measure how many
-/// *checked* constants are distinct vs re-checked. Content-addressing means
-/// a shared constant has the same `Address` in every env, so:
-///   - union  = constants if each were proven exactly once,
-///   - sum    = constants proven today (re-checked per input that needs them),
-///   - shared-by-all = the universal base every input re-checks.
-/// The redundancy ratio (sum / union) is what a committed shared base removes.
-fn overlap_report(inputs: &[Option<PathBuf>]) -> Result<()> {
-  use std::collections::{HashMap, HashSet};
-
-  use ix_common::address::Address;
-
-  if inputs.len() < 2 {
-    bail!("--overlap-stats needs at least two --ixe inputs to compare");
-  }
-
-  // Per-input set of proven (certified) target addresses + global
-  // byte/frequency maps. Uses `proven_targets()` — the `consts`-key space
-  // the reuse store actually keys on (block addr + projections) — so this
-  // diagnostic matches what cross-proof reuse would skip, not just the
-  // kernel-walked `targets()`.
-  let mut per_input: Vec<(String, HashSet<Address>)> = Vec::with_capacity(inputs.len());
-  let mut bytes_of: HashMap<Address, usize> = HashMap::new();
-  let mut freq: HashMap<Address, u32> = HashMap::new();
-
-  for ixe in inputs {
-    let label =
-      ixe.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| "<empty env>".to_string());
-    let env_bytes = load_env_bytes(ixe.as_ref());
-    let env = IxonEnv::get_anon(&mut &env_bytes[..]).expect("invalid Ixon environment");
-    let work = build_anon_work(&env).expect("build_anon_work");
-    let mut targets: HashSet<Address> = HashSet::default();
-    for item in &work {
-      for t in &item.proven_targets() {
-        if targets.insert(t.clone()) {
-          bytes_of
-            .entry(t.clone())
-            .or_insert_with(|| env.get_const_bytes(t).map(|b| b.len()).unwrap_or(0));
-        }
-      }
-    }
-    for a in &targets {
-      *freq.entry(a.clone()).or_insert(0) += 1;
-    }
-    per_input.push((label, targets));
-  }
-
-  let n = per_input.len();
-  let union_count = freq.len();
-  let union_bytes: usize = freq.keys().map(|a| bytes_of[a]).sum();
-  let sum_count: usize = per_input.iter().map(|(_, s)| s.len()).sum();
-  let sum_bytes: usize =
-    per_input.iter().flat_map(|(_, s)| s.iter()).map(|a| bytes_of[a]).sum();
-  let shared_all_count = freq.values().filter(|&&c| c as usize == n).count();
-  let shared_all_bytes: usize =
-    freq.iter().filter(|&(_, &c)| c as usize == n).map(|(a, _)| bytes_of[a]).sum();
-
-  println!("overlap across {n} inputs (proven-constant targets):");
-  for (label, s) in &per_input {
-    let uniq = s.iter().filter(|a| freq[*a] == 1).count();
-    println!(
-      "  {label}: {} checked, {} unique-to-it, {} shared with others",
-      s.len(),
-      uniq,
-      s.len() - uniq,
-    );
-  }
-  println!(
-    "  union (prove-each-once):   {union_count} consts, {}",
-    union_bytes.human_count_bytes()
-  );
-  println!(
-    "  sum  (proven today):       {sum_count} consts, {}",
-    sum_bytes.human_count_bytes()
-  );
-  println!(
-    "  shared by ALL {n} inputs:   {shared_all_count} consts, {} (the universal re-checked base)",
-    shared_all_bytes.human_count_bytes()
-  );
-  println!(
-    "  => cross-input re-check redundancy: {:.2}x by count, {:.2}x by bytes. \
-     A committed shared base (Design C) collapses sum→union, saving {} re-checks.",
-    sum_count as f64 / union_count.max(1) as f64,
-    sum_bytes as f64 / union_bytes.max(1) as f64,
-    sum_count - union_count,
-  );
-  Ok(())
-}
-
-/// Load the cross-proof reuse store: the set of already-proven primary
-/// addresses (as raw 32-byte keys) from `<dir>/proven.bin`. Missing file →
-/// empty set.
-fn load_store(dir: &std::path::Path) -> std::collections::HashSet<[u8; 32]> {
-  use ix_common::address::Address;
-  let mut set = std::collections::HashSet::default();
-  if let Ok(bytes) = fs::read(dir.join("proven.bin")) {
-    for a in Address::unpack(&bytes) {
-      set.insert(*a.as_bytes());
-    }
-  }
-  set
-}
-
-/// Persist the reuse store (sorted, packed) to `<dir>/proven.bin`.
-fn save_store(dir: &std::path::Path, set: &std::collections::HashSet<[u8; 32]>) -> Result<()> {
-  fs::create_dir_all(dir)?;
-  let mut addrs: Vec<[u8; 32]> = set.iter().copied().collect();
-  addrs.sort_unstable();
-  let mut buf = Vec::with_capacity(addrs.len() * 32);
-  for a in &addrs {
-    buf.extend_from_slice(a);
-  }
-  fs::write(dir.join("proven.bin"), buf)?;
-  Ok(())
-}
-
-/// Append a leaf proof to the on-disk proof store: `proofs/<n>.proof` holds the
-/// blob, `proofs/<n>.cover` the packed 32-byte addresses it certifies. Reuse
-/// resolution pulls these back to *verify* (not trust) the reused constants.
+/// Append a leaf proof to the on-disk store: `proofs/<n>.proof` holds the
+/// blob, `<n>.cover` the packed certified target addresses, `<n>.asm` the
+/// packed assumption addresses. The proofs directory is the store's single
+/// source of truth — the covered set is derived from the `.cover` files.
 fn append_proof(
   dir: &std::path::Path,
   proof: &[u8],
-  covered: &[[u8; 32]],
+  covered: &[ix_common::address::Address],
+  assumptions: &[ix_common::address::Address],
 ) -> Result<()> {
+  use ix_common::address::Address;
   let pdir = dir.join("proofs");
   fs::create_dir_all(&pdir)?;
   let idx = (0..)
     .find(|n| !pdir.join(format!("{n}.proof")).exists())
     .expect("free proof index");
   fs::write(pdir.join(format!("{idx}.proof")), proof)?;
-  let mut cov = Vec::with_capacity(covered.len() * 32);
-  for a in covered {
-    cov.extend_from_slice(a);
-  }
-  fs::write(pdir.join(format!("{idx}.cover")), cov)?;
+  fs::write(pdir.join(format!("{idx}.cover")), Address::pack(covered))?;
+  fs::write(pdir.join(format!("{idx}.asm")), Address::pack(assumptions))?;
   Ok(())
 }
 
-/// Load the proof store: `(blob, covered-set)` per stored leaf proof.
-fn load_proof_index(
-  dir: &std::path::Path,
-) -> Vec<(Vec<u8>, std::collections::HashSet<[u8; 32]>)> {
+/// Load the proof store. Entries missing the `.asm` witness file (written by
+/// a pre-discharge host) are skipped with a note — without the assumption
+/// preimages they cannot be folded as mode-1 children.
+fn load_proof_index(dir: &std::path::Path) -> Vec<StoredProof> {
+  use ix_common::address::Address;
   let pdir = dir.join("proofs");
   let mut out = Vec::new();
-  let mut idx = 0usize;
-  loop {
+  for idx in 0.. {
     let pf = pdir.join(format!("{idx}.proof"));
-    if !pf.exists() {
-      break;
-    }
-    let blob = match fs::read(&pf) {
-      Ok(b) => b,
-      Err(_) => break,
+    let Ok(blob) = fs::read(&pf) else { break };
+    let Ok(cov) = fs::read(pdir.join(format!("{idx}.cover"))) else { break };
+    let Ok(asm) = fs::read(pdir.join(format!("{idx}.asm"))) else {
+      println!("  store: skipping {idx}.proof (no .asm witness; re-prove to refresh)");
+      continue;
     };
-    let mut cov: std::collections::HashSet<[u8; 32]> = std::collections::HashSet::default();
-    if let Ok(cb) = fs::read(pdir.join(format!("{idx}.cover"))) {
-      for chunk in cb.chunks_exact(32) {
-        let mut a = [0u8; 32];
-        a.copy_from_slice(chunk);
-        cov.insert(a);
-      }
-    }
-    out.push((blob, cov));
-    idx += 1;
+    let mut subjects: Vec<Address> = Address::unpack(&cov).collect();
+    subjects.sort_unstable();
+    subjects.dedup();
+    let mut assumptions: Vec<Address> = Address::unpack(&asm).collect();
+    assumptions.sort_unstable();
+    assumptions.dedup();
+    out.push(StoredProof { blob, subjects, assumptions });
   }
   out
 }
@@ -652,8 +469,18 @@ fn leaf_stdin(start: u32, end: u32, env_bytes: &[u8], check_list: &[u8]) -> Zisk
 /// Build the aggregation-guest stdin: the allowed program-vk set (count +
 /// 32-byte vks) the agg guest pins each child against, then the proof blobs
 /// (count + `Vec<u8>`s).
-fn agg_stdin(allowed_vks: &[Vec<u8>], proofs: &[Vec<u8>]) -> ZiskStdin {
+/// Build the agg guest's stdin. `witness = None` selects mode 0 (legacy join
+/// fold). `witness = Some(per-child (subject set, assumption set))` selects
+/// mode 1 (set discharge): the guest verifies each list's canonical root
+/// against the child's committed publics, then discharges assumptions proven
+/// by sibling subjects. Witness order must match `proofs` order.
+fn agg_stdin(
+  allowed_vks: &[Vec<u8>],
+  proofs: &[Vec<u8>],
+  witness: Option<&[(Vec<u8>, Vec<u8>)]>,
+) -> ZiskStdin {
   let stdin = ZiskStdin::new();
+  stdin.write(&u32::from(witness.is_some())); // mode
   stdin.write(&(allowed_vks.len() as u32));
   for vk in allowed_vks {
     stdin.write(vk);
@@ -662,7 +489,42 @@ fn agg_stdin(allowed_vks: &[Vec<u8>], proofs: &[Vec<u8>]) -> ZiskStdin {
   for bytes in proofs {
     stdin.write(bytes);
   }
+  if let Some(w) = witness {
+    assert_eq!(w.len(), proofs.len(), "witness/proof count mismatch");
+    for (s_blob, a_blob) in w {
+      stdin.write(s_blob);
+      stdin.write(a_blob);
+    }
+  }
   stdin
+}
+
+/// Mirror of the leaf guest's assumption rule (`zisk/guest/src/main.rs`): the
+/// direct `Constant.refs` of every checked target that are neither in the
+/// checked set nor data blobs — the constants the leaf *assumes* well-typed.
+/// Computed against the full env; the guest computes it against the injected
+/// sub-env, whose constants are byte-identical, so the sets agree. Returned
+/// sorted + deduped (a set; `merkle_root_canonical` is dedup-invariant).
+fn leaf_assumptions(
+  env: &IxonEnv,
+  targets: &[ix_common::address::Address],
+) -> Vec<ix_common::address::Address> {
+  let mut checked = targets.to_vec();
+  checked.sort_unstable();
+  checked.dedup();
+  let mut out = Vec::new();
+  for t in targets {
+    if let Some(c) = env.get_const(t) {
+      for r in &c.refs {
+        if checked.binary_search(r).is_err() && env.get_blob(r).is_none() {
+          out.push(r.clone());
+        }
+      }
+    }
+  }
+  out.sort_unstable();
+  out.dedup();
+  out
 }
 
 /// Extract a proof's 32-byte program vk: v0.18 lays the proof out as u64
@@ -728,7 +590,7 @@ fn closure_addrs(
 
   let mut closure: HashSet<Address> = HashSet::default();
   let mut queue: VecDeque<Address> = VecDeque::new();
-  let mut push = |closure: &mut HashSet<Address>, q: &mut VecDeque<Address>, a: Address| {
+  let push = |closure: &mut HashSet<Address>, q: &mut VecDeque<Address>, a: Address| {
     if closure.insert(a.clone()) {
       q.push_back(a);
     }
@@ -773,16 +635,6 @@ fn closure_addrs(
   closure
 }
 
-/// Serialized byte size of the constant or blob at `addr` in `source` (0 if
-/// external/absent) — the contribution `addr` makes to an injected sub-env.
-fn addr_bytes(source: &IxonEnv, addr: &ix_common::address::Address) -> usize {
-  source
-    .get_const_bytes(addr)
-    .map(|b| b.len())
-    .or_else(|| source.get_blob(addr).map(|b| b.len()))
-    .unwrap_or(0)
-}
-
 /// Build a closure sub-env from a precomputed closure address set: copy each
 /// constant's GENUINE bytes (`store_const_lazy`) and referenced blobs, then
 /// serialize. Integrity (`hash(bytes) == addr`) and the env merkle root hold
@@ -813,164 +665,6 @@ fn build_sub_env(
   let mut buf = Vec::new();
   sub.put(&mut buf).map_err(|e| anyhow::anyhow!("sub-env serialize: {e}"))?;
   Ok(buf)
-}
-
-/// Closure-aware shard packing for the reuse path: greedily group consecutive
-/// novel work items into contiguous `(start, end)` ranges whose UNION closure
-/// (what the guest decodes under closure injection) stays under `budget` bytes
-/// — the real constraint once closures are injected, vs. the whole env. Shared
-/// deps within a group are counted once, so items with overlapping closures
-/// pack tightly. Aborts if a single item's own closure exceeds `budget`.
-fn plan_chunks_by_closure(
-  source: &IxonEnv,
-  items: &[&AnonWorkItem],
-  budget: usize,
-) -> Result<Vec<(usize, usize)>> {
-  use std::collections::HashSet;
-
-  use ix_common::address::Address;
-
-  let mut ranges = Vec::new();
-  let mut start = 0usize;
-  let mut cur: HashSet<Address> = HashSet::default();
-  let mut cur_bytes = 0usize;
-  for i in 0..items.len() {
-    let roots = items[i].proven_targets();
-    let item_closure = closure_addrs(source, &roots);
-    let item_alone: usize = item_closure.iter().map(|a| addr_bytes(source, a)).sum();
-    if item_alone > budget {
-      bail!(
-        "work item {i} (primary {}…) closure is {} > budget {} — raise --shard-bytes",
-        &items[i].primary().hex()[..16],
-        item_alone.human_count_bytes(),
-        budget.human_count_bytes(),
-      );
-    }
-    let delta: usize =
-      item_closure.iter().filter(|a| !cur.contains(*a)).map(|a| addr_bytes(source, a)).sum();
-    if i > start && cur_bytes + delta > budget {
-      ranges.push((start, i));
-      start = i;
-      cur.clear();
-      cur.extend(item_closure.iter().cloned());
-      cur_bytes = item_alone;
-    } else {
-      for a in &item_closure {
-        if cur.insert(a.clone()) {
-          cur_bytes += addr_bytes(source, a);
-        }
-      }
-    }
-  }
-  if start < items.len() {
-    ranges.push((start, items.len()));
-  }
-  Ok(ranges)
-}
-
-/// Topologically order `items` bottom-up: a work item appears only after every
-/// item it depends on, and within the set whose dependencies are all already
-/// ordered (the Kahn "ready set") the most-depended-upon item goes first. The
-/// returned `Vec<usize>` indexes into `items`.
-///
-/// Why this order helps the reuse path: proving foundational, heavily-shared
-/// constants first banks them in the store earliest, so every later shard can
-/// *assume* them instead of re-shipping/re-checking them — driving the
-/// cross-shard closure duplication toward 1×. With `--limit-items N` it also
-/// means the first N proved are the highest-leverage core of the env.
-///
-/// Edges come straight from the constant DAG: item A depends on item B when
-/// some target A certifies (`proven_targets`) has a `Constant.refs` entry that
-/// B certifies. Refs to literal blobs (Nat/Str data) and refs outside `items`
-/// (already in the store, or external/axioms) carry no intra-set edge. The
-/// constant DAG is acyclic and mutual recursion is confined to a single Muts
-/// work item, so the item graph is a DAG; any residual unordered items
-/// (defensive — a cycle shouldn't arise) are appended in address order.
-///
-/// Iterative Kahn's algorithm — recursion would risk a stack overflow on
-/// Init's deep dependency chains (the kernel's own ingress is iterative for the
-/// same reason). The ready set is a `std::collections::BinaryHeap` keyed by
-/// (in-degree, then smallest address): the max-pop is exactly the priority we
-/// want and the address tiebreak keeps the schedule deterministic.
-fn topo_order_items(env: &IxonEnv, items: &[&AnonWorkItem]) -> Vec<usize> {
-  use std::cmp::Reverse;
-  use std::collections::{BinaryHeap, HashMap, HashSet};
-
-  use ix_common::address::Address;
-
-  let n = items.len();
-
-  // target address -> index of the item that certifies it.
-  let mut owner: HashMap<Address, usize> = HashMap::with_capacity(n * 2);
-  for (i, item) in items.iter().enumerate() {
-    for t in item.proven_targets() {
-      owner.insert(t, i);
-    }
-  }
-
-  // `remaining[i]` = count of i's dependencies not yet emitted; `dependents[j]`
-  // = items that depend on j; `in_degree[j]` = how many items depend on j (the
-  // ready-set priority — higher means more foundational).
-  let mut remaining: Vec<usize> = vec![0; n];
-  let mut dependents: Vec<Vec<usize>> = vec![Vec::new(); n];
-  let mut in_degree: Vec<u32> = vec![0; n];
-  for (i, item) in items.iter().enumerate() {
-    // Dedup deps so one edge isn't counted twice when several of i's targets
-    // reference the same dependency item.
-    let mut deps: HashSet<usize> = HashSet::default();
-    for t in item.proven_targets() {
-      let Some(c) = env.get_const(&t) else { continue };
-      for r in &c.refs {
-        if env.get_blob(r).is_some() {
-          continue; // literal data blob — not a typing dependency
-        }
-        if let Some(&j) = owner.get(r) {
-          if j != i {
-            deps.insert(j);
-          }
-        }
-      }
-    }
-    remaining[i] = deps.len();
-    for j in deps {
-      dependents[j].push(i);
-      in_degree[j] += 1;
-    }
-  }
-
-  // Max-heap key: highest in-degree first, then smallest primary address.
-  let key = |i: usize| (in_degree[i], Reverse(*items[i].primary().as_bytes()), i);
-  let mut ready: BinaryHeap<(u32, Reverse<[u8; 32]>, usize)> = BinaryHeap::new();
-  for i in 0..n {
-    if remaining[i] == 0 {
-      ready.push(key(i));
-    }
-  }
-
-  let mut order: Vec<usize> = Vec::with_capacity(n);
-  while let Some((_, _, i)) = ready.pop() {
-    order.push(i);
-    for &m in &dependents[i] {
-      remaining[m] -= 1;
-      if remaining[m] == 0 {
-        ready.push(key(m));
-      }
-    }
-  }
-
-  // Defensive: an unexpected cycle would leave items unemitted. Append them in
-  // deterministic address order so the schedule still covers every item.
-  if order.len() < n {
-    let mut seen = vec![false; n];
-    for &i in &order {
-      seen[i] = true;
-    }
-    let mut leftover: Vec<usize> = (0..n).filter(|&i| !seen[i]).collect();
-    leftover.sort_by_key(|&i| *items[i].primary().as_bytes());
-    order.extend(leftover);
-  }
-
-  order
 }
 
 /// Core of the closure check, factored out for testing: given parsed inputs
@@ -1096,20 +790,6 @@ fn subject_of_cover(cover: &[[u8; 32]]) -> ix_common::address::Address {
   ixon::merkle::merkle_root_canonical(&leaves).unwrap_or_else(ixon::merkle::zero_address)
 }
 
-/// Fold per-child subject roots with the same left-associative `merkle_join`
-/// the agg guest applies over its verified children (in fold order). A single
-/// child folds to itself (matching the leaf-direct case where no agg runs).
-fn fold_subjects(subjects: &[ix_common::address::Address]) -> ix_common::address::Address {
-  let mut acc: Option<ix_common::address::Address> = None;
-  for s in subjects {
-    acc = Some(match acc {
-      None => s.clone(),
-      Some(p) => ixon::merkle::merkle_join(&p, s),
-    });
-  }
-  acc.unwrap_or_else(ixon::merkle::zero_address)
-}
-
 /// Partition `n` items into chunks of at most `arity` each, avoiding
 /// any chunk of size exactly 1 (which would make agg-of-1 a no-op).
 /// When the trailing remainder is 1, it's merged into the previous
@@ -1169,15 +849,25 @@ fn check_input_coherence(label: &str, publics: &[ShardPublics], total: u32) -> R
   Ok(failures)
 }
 
-fn build_client(gpu: bool, max_witness_stored: Option<usize>) -> Result<EmbeddedClient> {
-  // Default executor (Emulator), NOT `ExecutorKind::Assembly`. Empirically
-  // Assembly + multi-program setup is broken: calling `client.setup`
-  // for a second program re-initializes the ASM microservices and
-  // leaves the first program's ROM histogram empty, so subsequent
-  // proves panic at `state-machines/rom/src/rom.rs:178` with
-  // "index out of bounds: len 0". The v0.18 upstream aggregation
-  // example (`~/zisk/examples/aggregation/host/src/main.rs`) also uses
-  // the default Emulator executor.
+fn build_client(
+  gpu: bool,
+  asm: bool,
+  max_witness_stored: Option<usize>,
+) -> Result<EmbeddedClient> {
+  // Executor choice. The default is the Assembly executor (`asm = true`,
+  // i.e. no `--emulator`): it is markedly faster at trace generation and is
+  // the prerequisite for the hints stream. It historically broke under our
+  // multi-program flow — calling `client.setup` for a second program
+  // re-initializes the ASM microservices and leaves the first program's ROM
+  // histogram empty, so a subsequent prove of the first program panics at
+  // `state-machines/rom/src/rom.rs:178` ("index out of bounds: len 0").
+  //
+  // The fix is ordering-based: never set up the agg program *before* the
+  // leaves are proven. The `--shard-plan` path already does this
+  // (`run_shard_plan` sets up AGG only after the leaf loop), and the upfront
+  // agg setup in `main` is gated to the Emulator (`--emulator`), with Assembly
+  // deferring it to after the leaf loop. Validated: a 2-shard multi-program
+  // prove that previously panicked now completes and verifies.
   //
   // `minimal_memory()` deliberately NOT enabled — per upstream CLI
   // docs ("Reduce memory footprint during proving at the cost of
@@ -1189,10 +879,760 @@ fn build_client(gpu: bool, max_witness_stored: Option<usize>) -> Result<Embedded
   }
   let mut builder: EmbeddedClientBuilder =
     ProverClient::embedded().with_embedded_opts(opts);
+  if asm {
+    builder = builder.assembly();
+  }
   if gpu {
     builder = builder.gpu();
   }
   builder.build()
+}
+
+/// The ingress *block* address a work item belongs to — the key the manifest
+/// (and the profiler) uses. For a Muts block the work item's `primary` is a
+/// member projection, whose `block` field is the block address; for a standalone
+/// constant the primary is the block. Mirrors the profiler's `profile_block_of`.
+/// The ingress block of a constant address: a projection's `block`, else the
+/// address itself. Shared by [`work_block_addr`] and the `--only-const` lookup.
+fn block_of_addr(
+  env: &IxonEnv,
+  addr: &ix_common::address::Address,
+) -> ix_common::address::Address {
+  use ixon::constant::ConstantInfo as CI;
+  match env.get_const(addr) {
+    Some(c) => match &c.info {
+      CI::IPrj(p) => p.block.clone(),
+      CI::CPrj(p) => p.block.clone(),
+      CI::RPrj(p) => p.block.clone(),
+      CI::DPrj(p) => p.block.clone(),
+      _ => addr.clone(),
+    },
+    None => addr.clone(),
+  }
+}
+
+fn work_block_addr(
+  env: &IxonEnv,
+  item: &AnonWorkItem,
+) -> ix_common::address::Address {
+  block_of_addr(env, item.primary())
+}
+
+/// Check a single constant chosen by Lean NAME (the `--only-const` path).
+/// Resolve name → constant address via the env's `named` metadata, map to its
+/// ingress block's work item, and ship just that item: a one-element
+/// check-list + its closure sub-env. Honors `--dump-input` (write stdin for
+/// ziskemu), `--execute` (cycles), and plain prove (single leaf, subject-bound
+/// + verified). No aggregation — it's one leaf.
+async fn run_only_const(
+  client: &EmbeddedClient,
+  plan: &InputPlan,
+  name: &str,
+  args: &Args,
+) -> Result<()> {
+  use ix_common::address::Address;
+
+  // Resolve the Lean name → constant address via the full env's metadata
+  // (`get_anon` discards `named`, so load the full env just for the lookup).
+  let full =
+    IxonEnv::get(&mut &plan.env_bytes[..]).expect("invalid Ixon environment");
+  let target: Address = full
+    .named
+    .iter()
+    .find(|e| e.key().to_string() == name)
+    .map(|e| e.value().addr.clone())
+    .ok_or_else(|| anyhow::anyhow!("no constant named {name:?} in {}", plan.label))?;
+
+  // The name's work item is the one whose ingress block owns it — works for a
+  // standalone const (block == itself) and a member of a Muts block (block ==
+  // the mutual container, checked atomically).
+  let env =
+    IxonEnv::get_anon(&mut &plan.env_bytes[..]).expect("invalid Ixon environment");
+  let work = build_anon_work(&env).expect("build_anon_work");
+  let block = block_of_addr(&env, &target);
+  let item = work.iter().find(|w| work_block_addr(&env, w) == block).ok_or_else(
+    || {
+      anyhow::anyhow!(
+        "{name:?} resolved to block {}… but no work item covers it",
+        &block.hex()[..16]
+      )
+    },
+  )?;
+
+  // One-item check-list + closure sub-env.
+  let check_list = Address::pack(&[item.primary().clone()]);
+  let roots: Vec<Address> = item.proven_targets();
+  let cover: Vec<[u8; 32]> = roots.iter().map(|a| *a.as_bytes()).collect();
+  let sub_env = build_sub_env(&env, &roots)?;
+  println!(
+    "only-const {name}: block {}… ({} target const(s)); closure sub-env {} vs whole env {} ({:.0}%)",
+    &block.hex()[..16],
+    roots.len(),
+    sub_env.len().human_count_bytes(),
+    plan.env_bytes.len().human_count_bytes(),
+    100.0 * sub_env.len() as f64 / plan.env_bytes.len().max(1) as f64,
+  );
+
+  // ---- Dump mode: write stdin for `ziskemu`/`cargo-zisk run -i`. ----
+  if let Some(dump) = &args.dump_input {
+    let stdin = leaf_stdin(0, 0, &sub_env, &check_list);
+    stdin.save(dump).map_err(|e| anyhow::anyhow!("save {}: {e}", dump.display()))?;
+    println!("dumped input → {}", dump.display());
+    return Ok(());
+  }
+
+  let stdin = leaf_stdin(0, 0, &sub_env, &check_list);
+
+  // ---- Execute mode: cycles only, no proof. ----
+  if args.execute {
+    let result = client.execute(&SHARD_PROGRAM, stdin).run()?.await?;
+    let mut buf = [0u8; SHARD_PUBLICS_LEN];
+    result.get_public_values_slice(&mut buf);
+    let publics = ShardPublics::decode(&buf);
+    println!("cycles: {}, failures: {}", result.get_execution_steps(), publics.failures);
+    if publics.failures > 0 {
+      bail!("kernel typecheck produced {} failure(s)", publics.failures);
+    }
+    return Ok(());
+  }
+
+  // ---- Prove mode: single leaf, bind subject to the env, verify. ----
+  let result = client.prove(&SHARD_PROGRAM, stdin).run()?.await?;
+  let mut buf = [0u8; SHARD_PUBLICS_LEN];
+  result.get_public_values_slice(&mut buf);
+  let publics = ShardPublics::decode(&buf);
+  let leaf_ms = result.get_proving_time();
+  let expected = subject_of_cover(&cover);
+  if *expected.as_bytes() != publics.subject_root {
+    bail!(
+      "committed subject {}… ≠ env-derived {}… — guest certified a different set",
+      Address::from_slice(&publics.subject_root)
+        .map(|a| a.hex()[..16].to_string())
+        .unwrap_or_default(),
+      &expected.hex()[..16],
+    );
+  }
+  let vstart = Instant::now();
+  result.verify()?;
+  println!(
+    "only-const {name}: failures={}, prove {:.2}s ({} steps), verify {:.3}s; \
+     subject bound ({}… over {} target(s))",
+    publics.failures,
+    leaf_ms as f64 / 1000.0,
+    result.get_execution_steps(),
+    vstart.elapsed().as_secs_f64(),
+    &expected.hex()[..16],
+    roots.len(),
+  );
+  if publics.failures > 0 {
+    bail!("kernel typecheck produced {} failure(s) (proof still verifies)", publics.failures);
+  }
+  Ok(())
+}
+
+/// Map each manifest shard to the work items whose ingress block it owns.
+/// Returns one `Vec<&AnonWorkItem>` per manifest shard (aligned to
+/// `manifest.shards`, possibly empty). A manifest "block" address is exactly a
+/// work item's block address ([`work_block_addr`]), so the map is 1:1. Errors if
+/// the manifest does not cover the env's full work set — a stale or mismatched
+/// manifest would otherwise silently drop constants from the aggregate.
+fn group_work_by_manifest<'a>(
+  env: &IxonEnv,
+  work: &'a [AnonWorkItem],
+  manifest: &ix_kernel::shard::ShardManifest,
+  covered_by_store: &std::collections::HashSet<[u8; 32]>,
+) -> Result<Vec<Vec<&'a AnonWorkItem>>> {
+  use std::collections::HashMap;
+
+  use ix_common::address::Address;
+
+  let mut by_primary: HashMap<Address, usize> = HashMap::with_capacity(work.len());
+  for (i, w) in work.iter().enumerate() {
+    by_primary.insert(work_block_addr(env, w), i);
+  }
+  let mut assigned = vec![false; work.len()];
+  let mut groups: Vec<Vec<&AnonWorkItem>> =
+    Vec::with_capacity(manifest.shards.len());
+  let mut unknown_blocks = 0usize;
+  for shard in &manifest.shards {
+    let mut g: Vec<&AnonWorkItem> = Vec::with_capacity(shard.blocks.len());
+    for b in &shard.blocks {
+      match by_primary.get(b) {
+        Some(&i) if !assigned[i] => {
+          assigned[i] = true;
+          g.push(&work[i]);
+        },
+        Some(_) => {}, // block listed twice across shards — keep the first
+        None => unknown_blocks += 1,
+      }
+    }
+    groups.push(g);
+  }
+  // Every work item must be either assigned to a manifest shard or fully
+  // covered by the proof store (a store-aware manifest deliberately omits
+  // covered work; the prover resolves it by folding the store's proofs).
+  let unaccounted = work
+    .iter()
+    .enumerate()
+    .filter(|(i, w)| {
+      !assigned[*i]
+        && !w.proven_targets().iter().all(|t| covered_by_store.contains(t.as_bytes()))
+    })
+    .count();
+  if unaccounted > 0 {
+    bail!(
+      "{unaccounted} of {} work items are neither in the manifest nor covered \
+       by the proof store — the manifest was built for a different or stale \
+       env (or a different store); re-run the planner on this .ixe",
+      work.len(),
+    );
+  }
+  if unknown_blocks > 0 {
+    println!(
+      "  note: {unknown_blocks} manifest block(s) have no work item in this env (ignored)"
+    );
+  }
+  Ok(groups)
+}
+
+/// Host mirror of the agg guest's mode-1 discharge: union the children's
+/// subject and assumption sets, then drop every assumption proven by the union
+/// subject. Returns `(union_subjects, outstanding_assumptions)`, both sorted
+/// and deduped. Must stay in lockstep with the guest (`zisk/agg-guest`).
+fn discharge(
+  subjects: &[&[ix_common::address::Address]],
+  assumptions: &[&[ix_common::address::Address]],
+) -> (Vec<ix_common::address::Address>, Vec<ix_common::address::Address>) {
+  let mut union_s: Vec<_> = subjects.concat();
+  let mut union_a: Vec<_> = assumptions.concat();
+  union_s.sort_unstable();
+  union_s.dedup();
+  union_a.sort_unstable();
+  union_a.dedup();
+  let outstanding =
+    union_a.into_iter().filter(|a| union_s.binary_search(a).is_err()).collect();
+  (union_s, outstanding)
+}
+
+/// Prove a `.ixes` manifest partition: one closure-injected leaf proof per
+/// (non-empty) manifest shard, folded along the manifest's bisection tree into
+/// a single aggregate whose committed subject is bound to the env. Honors
+/// `--execute` (per-shard VM cycles) and `--only-shard k` (prove just shard k).
+/// The agg program is set up lazily, only when more than one leaf is produced.
+/// Manifests without a bisection tree (written before it existed) are
+/// rejected when aggregation is needed — regenerate with the current planner.
+async fn run_shard_plan(
+  client: &EmbeddedClient,
+  plan: &InputPlan,
+  manifest_path: &std::path::Path,
+  args: &Args,
+) -> Result<()> {
+  use std::collections::HashSet;
+
+  use ix_common::address::Address;
+  use ix_kernel::shard::{agg_plan, FoldOp, ShardManifest};
+
+  let env =
+    IxonEnv::get_anon(&mut &plan.env_bytes[..]).expect("invalid Ixon environment");
+  let work = build_anon_work(&env).expect("build_anon_work");
+
+  let mbytes = fs::read(manifest_path)
+    .map_err(|e| anyhow::anyhow!("read manifest {}: {e}", manifest_path.display()))?;
+  let manifest = ShardManifest::from_bytes(&mbytes)
+    .map_err(|e| anyhow::anyhow!("parse manifest {}: {e}", manifest_path.display()))?;
+
+  // ---- Cross-run reuse store (loaded before grouping: a store-aware manifest
+  // omits covered work, which grouping accepts only when the store accounts
+  // for it). ----
+  let write_store = args.store_dir.is_some() && !args.no_reuse;
+  let stored: Vec<StoredProof> = match (&args.store_dir, args.no_reuse) {
+    (Some(dir), false) => load_proof_index(dir),
+    _ => Vec::new(),
+  };
+  let covered_by_store: HashSet<[u8; 32]> = stored
+    .iter()
+    .flat_map(|p| p.subjects.iter().map(|a| *a.as_bytes()))
+    .collect();
+
+  let groups = group_work_by_manifest(&env, &work, &manifest, &covered_by_store)?;
+
+  // Select (manifest-index, items) to prove: every non-empty shard, or just the
+  // one named by --only-shard.
+  let selected: Vec<(usize, &Vec<&AnonWorkItem>)> = match args.only_shard {
+    Some(k) => {
+      if k == 0 || k > groups.len() {
+        bail!("--only-shard {k} out of range; manifest has {} shard(s)", groups.len());
+      }
+      vec![(k - 1, &groups[k - 1])]
+    },
+    None => groups.iter().enumerate().filter(|(_, g)| !g.is_empty()).collect(),
+  };
+  if selected.iter().all(|(_, g)| g.is_empty()) {
+    bail!("nothing to prove: selected manifest shard(s) are empty");
+  }
+
+  // ---- Cross-run reuse: prove only what the store doesn't cover. ----
+  // A manifest shard is reused iff EVERY target it would certify is covered by
+  // stored proofs; partially-covered shards re-prove whole (the shard is the
+  // proof unit). Work the manifest omits entirely (store-aware planning) is
+  // covered by construction. Everything this run must certify but won't prove
+  // — reused shards plus unmanifested work — is resolved by folding the
+  // covering stored proofs, which the agg guest verifies in-circuit.
+  let shard_targets = |g: &[&AnonWorkItem]| -> Vec<Address> {
+    g.iter().flat_map(|w| w.proven_targets()).collect()
+  };
+  let (novel, reused): (Vec<_>, Vec<_>) =
+    selected.iter().copied().partition(|(_, g)| {
+      !shard_targets(g).iter().all(|t| covered_by_store.contains(t.as_bytes()))
+    });
+  // Targets this run answers for: just the selected shard under --only-shard
+  // (a smoke test), otherwise the whole env's work set.
+  let needed: HashSet<[u8; 32]> = if args.only_shard.is_some() {
+    selected
+      .iter()
+      .flat_map(|(_, g)| shard_targets(g))
+      .map(|a| *a.as_bytes())
+      .collect()
+  } else {
+    work.iter().flat_map(|w| w.proven_targets()).map(|a| *a.as_bytes()).collect()
+  };
+  let novel_targets: HashSet<[u8; 32]> = novel
+    .iter()
+    .flat_map(|(_, g)| shard_targets(g))
+    .map(|a| *a.as_bytes())
+    .collect();
+  // Seed: stored proofs contributing a needed target the novel shards won't
+  // certify. Fixpoint: an included proof's own assumptions may be covered by
+  // OTHER stored proofs (from the run that proved it) — fold those too, so a
+  // closed store yields an unconditional claim even cross-env. Terminates:
+  // every round includes at least one more proof or stops.
+  let mut included = vec![false; stored.len()];
+  for (i, p) in stored.iter().enumerate() {
+    included[i] = p
+      .subjects
+      .iter()
+      .any(|a| needed.contains(a.as_bytes()) && !novel_targets.contains(a.as_bytes()));
+  }
+  loop {
+    let included_subjects: HashSet<[u8; 32]> = stored
+      .iter()
+      .zip(&included)
+      .filter(|(_, inc)| **inc)
+      .flat_map(|(p, _)| p.subjects.iter().map(|a| *a.as_bytes()))
+      .collect();
+    let open: HashSet<[u8; 32]> = stored
+      .iter()
+      .zip(&included)
+      .filter(|(_, inc)| **inc)
+      .flat_map(|(p, _)| p.assumptions.iter().map(|a| *a.as_bytes()))
+      .filter(|a| !novel_targets.contains(a) && !included_subjects.contains(a))
+      .collect();
+    let mut grew = false;
+    for (i, p) in stored.iter().enumerate() {
+      if !included[i] && p.subjects.iter().any(|s| open.contains(s.as_bytes())) {
+        included[i] = true;
+        grew = true;
+      }
+    }
+    if !grew {
+      break;
+    }
+  }
+  let covering: Vec<&StoredProof> =
+    stored.iter().zip(&included).filter(|(_, inc)| **inc).map(|(p, _)| p).collect();
+
+  println!(
+    "shard-plan {}: {} work items, manifest {} shard(s), cross-ingress total {}; \
+     proving {} leaf(s), {} reused via {} stored proof(s)",
+    plan.label,
+    work.len(),
+    manifest.num_shards,
+    (manifest.total_cross_ingress as usize).human_count_bytes(),
+    novel.len(),
+    reused.len(),
+    covering.len(),
+  );
+  for &(idx, g) in &selected {
+    let si = &manifest.shards[idx];
+    let status = if novel.iter().any(|&(i, _)| i == idx) { "novel " } else { "reused" };
+    println!(
+      "  shard {idx:>3} [{status}]: {:>5} work items  heartbeats={}  own={}  cross_ingress={}",
+      g.len(),
+      si.heartbeats,
+      (si.own_size as usize).human_count_bytes(),
+      (si.cross_ingress as usize).human_count_bytes(),
+    );
+  }
+
+  // Per-shard guest input: explicit primary check-list + closure-injected
+  // sub-env (ship only this shard's dependency closure, never the whole env),
+  // plus the cover (target addresses) for the host-side claim bindings.
+  type LeafInputs = (
+    Vec<u8>,       // packed primary check-list
+    Vec<u8>,       // serialized closure sub-env
+    Vec<[u8; 32]>, // cover: certified target addresses
+  );
+  let build_inputs = |g: &[&AnonWorkItem]| -> Result<LeafInputs> {
+    let primaries: Vec<Address> = g.iter().map(|w| w.primary().clone()).collect();
+    let check_list = Address::pack(&primaries);
+    let roots: Vec<Address> = g.iter().flat_map(|w| w.proven_targets()).collect();
+    let cover: Vec<[u8; 32]> = roots.iter().map(|a| *a.as_bytes()).collect();
+    let sub_env = build_sub_env(&env, &roots)?;
+    Ok((check_list, sub_env, cover))
+  };
+
+  // ---- Dump mode: write the selected shard's guest stdin to a file (for
+  // standalone profiling with `ziskemu`/`cargo-zisk run -i`), then exit. ----
+  if let Some(dump) = &args.dump_input {
+    let (idx, g) = selected.first().expect("a selected shard");
+    let (check_list, sub_env, _cover) = build_inputs(g)?;
+    let stdin = leaf_stdin(0, 0, &sub_env, &check_list);
+    stdin.save(dump).map_err(|e| anyhow::anyhow!("save {}: {e}", dump.display()))?;
+    println!(
+      "dumped shard {idx} input ({} work items, sub-env {}) → {}",
+      g.len(),
+      sub_env.len().human_count_bytes(),
+      dump.display(),
+    );
+    return Ok(());
+  }
+
+  // ---- Execute mode: run each novel shard in the VM for cycles (no proof);
+  // store-covered shards have nothing to execute. ----
+  if args.execute {
+    let mut total_steps = 0u64;
+    let mut total_failures = 0u32;
+    for &(idx, g) in &novel {
+      let (check_list, sub_env, _cover) = build_inputs(g)?;
+      let stdin = leaf_stdin(0, 0, &sub_env, &check_list);
+      let result = client.execute(&SHARD_PROGRAM, stdin).run()?.await?;
+      let mut buf = [0u8; SHARD_PUBLICS_LEN];
+      result.get_public_values_slice(&mut buf);
+      let publics = ShardPublics::decode(&buf);
+      let cycles = result.get_execution_steps();
+      total_steps += cycles;
+      total_failures = total_failures.saturating_add(publics.failures);
+      println!(
+        "  [shard {idx}] {} work items, failures={}, cycles={cycles}",
+        g.len(),
+        publics.failures,
+      );
+    }
+    println!("total cycles: {total_steps}, failures: {total_failures}");
+    if total_failures > 0 {
+      bail!("kernel typecheck produced {total_failures} failure(s)");
+    }
+    return Ok(());
+  }
+
+  // ---- Prove mode: one closure-injected leaf per shard. ----
+  let mut leaf_proofs: Vec<Vec<u8>> = Vec::with_capacity(selected.len());
+  // Per-leaf claim preimages (sorted, deduped): the certified target set and
+  // the assumption set behind the leaf's committed roots. Supplied to the agg
+  // guest as discharge witness and mirrored host-side for the final binding.
+  let mut leaf_subject_sets: Vec<Vec<Address>> =
+    Vec::with_capacity(selected.len());
+  let mut leaf_assumption_sets: Vec<Vec<Address>> =
+    Vec::with_capacity(selected.len());
+  // Shard id (manifest index == bisection-tree leaf id) of each proven leaf, so
+  // the aggregation can fold along the manifest's bisection tree.
+  let mut leaf_ids: Vec<u32> = Vec::with_capacity(selected.len());
+  let mut covered_union: HashSet<[u8; 32]> = HashSet::default();
+  let mut total_leaf_ms = 0u64;
+  let mut total_failures = 0u32;
+  let mut last_leaf_result = None;
+  let leaf_start = Instant::now();
+  for &(idx, g) in &novel {
+    let (check_list, sub_env, cover) = build_inputs(g)?;
+    println!(
+      "  [shard {idx}] proving {} work items; closure sub-env {} vs whole env {} ({:.0}%)",
+      g.len(),
+      sub_env.len().human_count_bytes(),
+      plan.env_bytes.len().human_count_bytes(),
+      100.0 * sub_env.len() as f64 / plan.env_bytes.len().max(1) as f64,
+    );
+    let stdin = leaf_stdin(0, 0, &sub_env, &check_list);
+    let result = client.prove(&SHARD_PROGRAM, stdin).run()?.await?;
+    let mut buf = [0u8; SHARD_PUBLICS_LEN];
+    result.get_public_values_slice(&mut buf);
+    let publics = ShardPublics::decode(&buf);
+    total_failures = total_failures.saturating_add(publics.failures);
+    let leaf_ms = result.get_proving_time();
+    total_leaf_ms += leaf_ms;
+    let blob = result.get_proof_bytes()?;
+    println!(
+      "    failures={}, prove {:.2}s, {} steps",
+      publics.failures,
+      leaf_ms as f64 / 1000.0,
+      result.get_execution_steps(),
+    );
+    // Bind each leaf: its committed subject must equal the env-derived merkle
+    // root over the constants it certified. A guest that proved a different set
+    // than the manifest assigned would commit a different root and fail here.
+    let mut targets: Vec<Address> = cover
+      .iter()
+      .map(|b| Address::from_slice(b).expect("cover address"))
+      .collect();
+    let expected = ixon::merkle::merkle_root_canonical(&targets)
+      .unwrap_or_else(ixon::merkle::zero_address);
+    if *expected.as_bytes() != publics.subject_root {
+      bail!(
+        "shard {idx}: committed subject {}… ≠ env-derived {}… — guest certified a \
+         different set than the manifest assigned",
+        Address::from_slice(&publics.subject_root)
+          .map(|a| a.hex()[..16].to_string())
+          .unwrap_or_default(),
+        &expected.hex()[..16],
+      );
+    }
+    // Record the leaf's claim preimages and check the assumptions mirror NOW
+    // (a divergence would otherwise only surface as a witness-root panic deep
+    // inside the agg guest, after the leaf proving time is already spent).
+    let asm_set = leaf_assumptions(&env, &targets);
+    let asm_expected = ixon::merkle::merkle_root_canonical(&asm_set)
+      .unwrap_or_else(ixon::merkle::zero_address);
+    if *asm_expected.as_bytes() != publics.assumptions_root {
+      bail!(
+        "shard {idx}: committed assumptions root ≠ host mirror — the host's \
+         leaf_assumptions rule diverges from the guest's",
+      );
+    }
+    targets.sort_unstable();
+    targets.dedup();
+    // Bank the clean shard immediately: an interrupted run resumes with this
+    // shard reused instead of re-proven.
+    if write_store && publics.failures == 0 {
+      append_proof(
+        args.store_dir.as_ref().expect("write_store implies store_dir"),
+        &blob,
+        &targets,
+        &asm_set,
+      )?;
+    }
+    leaf_subject_sets.push(targets);
+    leaf_assumption_sets.push(asm_set);
+    covered_union.extend(cover.iter().copied());
+    leaf_proofs.push(blob);
+    leaf_ids.push(idx as u32);
+    last_leaf_result = Some(result);
+  }
+  let leaf_wall = leaf_start.elapsed();
+
+  // Full-env coverage: the union of all folded children — novel leaves plus
+  // covering stored proofs — must cover every work item's targets (skipped
+  // under --only-shard, which proves a single shard).
+  for p in &covering {
+    covered_union.extend(p.subjects.iter().map(|a| *a.as_bytes()));
+  }
+  if args.only_shard.is_none() {
+    let grand: HashSet<[u8; 32]> =
+      work.iter().flat_map(|w| w.proven_targets()).map(|a| *a.as_bytes()).collect();
+    let miss = grand.iter().filter(|t| !covered_union.contains(*t)).count();
+    if miss > 0 {
+      bail!("coverage gap: {miss} env target(s) not covered by any folded proof");
+    }
+  }
+
+  // ---- Aggregate: fold all children — novel leaves along the manifest's
+  // bisection tree (pruned to the shards proven this run), covering stored
+  // proofs as extra children of a synthesized tail fold — into one verified
+  // root. Mode-1 commitments are canonical SETS, so the fold shape never
+  // changes the final claim; the tree only places discharge at the lowest
+  // common ancestors. Stored proofs MUST pass through at least one agg call:
+  // that in-circuit verification is what makes reuse trustless. ----
+  let arity = (args.agg_arity as usize).max(2);
+  let (final_size, agg_ms, verify_ms, root_committed, expected_final) =
+    if leaf_proofs.len() == 1 && covering.is_empty() {
+      let leaf = last_leaf_result.expect("single leaf");
+      let final_size = leaf.get_proof_bytes()?.len();
+      let vstart = Instant::now();
+      leaf.verify()?;
+      // Per-leaf binding above already pinned the subject; fold of 1 = itself.
+      let subject = ixon::merkle::merkle_root_canonical(&leaf_subject_sets[0])
+        .unwrap_or_else(ixon::merkle::zero_address);
+      (final_size, 0u64, vstart.elapsed().as_millis() as u64, subject.clone(), subject)
+    } else {
+      // Slot-producing op list, in post order (children precede parents).
+      // Each op yields one slot: the node's proof plus its claim preimages —
+      // the certified subject SET and outstanding assumption SET (sorted +
+      // deduped) — feeding the next level's discharge witness + host mirror.
+      enum Op {
+        NovelLeaf(u32),
+        Stored(usize),
+        Agg(Vec<usize>),
+      }
+      let mut ops: Vec<Op> = Vec::new();
+      match leaf_ids.len() {
+        0 => {},
+        1 => ops.push(Op::NovelLeaf(leaf_ids[0])),
+        _ => {
+          let Some(full_tree) = &manifest.tree else {
+            bail!(
+              "manifest has no bisection tree (written by an older planner) — \
+               regenerate the .ixes with the current `shard_plan`"
+            );
+          };
+          let present: HashSet<u32> = leaf_ids.iter().copied().collect();
+          let tree = full_tree
+            .prune(&|id| present.contains(&id))
+            .expect("≥1 proven leaf is in the tree");
+          for op in agg_plan(&tree, arity) {
+            ops.push(match op {
+              FoldOp::Leaf(id) => Op::NovelLeaf(id),
+              FoldOp::Agg(c) => Op::Agg(c),
+            });
+          }
+        },
+      }
+      // The forest's roots so far (slot indices): the novel fold's root (if
+      // any) plus one slot per covering stored proof.
+      let mut current: Vec<usize> =
+        if ops.is_empty() { Vec::new() } else { vec![ops.len() - 1] };
+      for k in 0..covering.len() {
+        ops.push(Op::Stored(k));
+        current.push(ops.len() - 1);
+      }
+      // Tail fold: reduce the forest to ONE root, `arity` children per agg.
+      // Runs at least one agg whenever stored proofs are present (even a
+      // single stored proof folds through an agg-of-1 — nothing else this run
+      // verifies it).
+      let mut planned_aggs =
+        ops.iter().filter(|o| matches!(o, Op::Agg(_))).count();
+      while current.len() > 1 || planned_aggs == 0 {
+        let mut next = Vec::with_capacity(current.len().div_ceil(arity));
+        for chunk in current.chunks(arity) {
+          ops.push(Op::Agg(chunk.to_vec()));
+          planned_aggs += 1;
+          next.push(ops.len() - 1);
+        }
+        current = next;
+      }
+
+      client.setup(&AGG_PROGRAM).run()?.await?;
+      let id_to_idx: std::collections::HashMap<u32, usize> =
+        leaf_ids.iter().copied().enumerate().map(|(i, id)| (id, i)).collect();
+      println!(
+        "  [agg] folding {} novel leaf/leaves + {} stored proof(s) (arity {arity}, {planned_aggs} agg node(s))",
+        leaf_proofs.len(),
+        covering.len(),
+      );
+      let mut slot_proof: Vec<Vec<u8>> = Vec::with_capacity(ops.len());
+      let mut slot_subj: Vec<Vec<Address>> = Vec::with_capacity(ops.len());
+      let mut slot_asm: Vec<Vec<Address>> = Vec::with_capacity(ops.len());
+      let mut total_agg_ms = 0u64;
+      let mut root_result: Option<_> = None;
+      for op in &ops {
+        match op {
+          Op::NovelLeaf(id) => {
+            let i = id_to_idx[id]; // present by construction (tree pruned)
+            slot_proof.push(leaf_proofs[i].clone());
+            slot_subj.push(leaf_subject_sets[i].clone());
+            slot_asm.push(leaf_assumption_sets[i].clone());
+          },
+          Op::Stored(k) => {
+            let p = covering[*k];
+            slot_proof.push(p.blob.clone());
+            slot_subj.push(p.subjects.clone());
+            slot_asm.push(p.assumptions.clone());
+          },
+          Op::Agg(children) => {
+            let proofs: Vec<Vec<u8>> =
+              children.iter().map(|&c| slot_proof[c].clone()).collect();
+            // Mode-1 witness: each child's subject/assumption preimages, in
+            // the same order as `proofs`. The guest verifies them against the
+            // children's committed roots, so they are untrusted inputs here.
+            let witness: Vec<(Vec<u8>, Vec<u8>)> = children
+              .iter()
+              .map(|&c| (Address::pack(&slot_subj[c]), Address::pack(&slot_asm[c])))
+              .collect();
+            let allowed = distinct_vks(&proofs);
+            let astart = Instant::now();
+            let result = client
+              .prove(&AGG_PROGRAM, agg_stdin(&allowed, &proofs, Some(&witness)))
+              .run()?
+              .await?;
+            total_agg_ms += result.get_proving_time();
+            let (union_s, outstanding) = discharge(
+              &children.iter().map(|&c| slot_subj[c].as_slice()).collect::<Vec<_>>(),
+              &children.iter().map(|&c| slot_asm[c].as_slice()).collect::<Vec<_>>(),
+            );
+            println!(
+              "    agg {} → prove {:.2}s (wall {:.2}s); subjects {} assumptions {} → outstanding {}",
+              proofs.len(),
+              result.get_proving_time() as f64 / 1000.0,
+              astart.elapsed().as_secs_f64(),
+              union_s.len(),
+              children.iter().map(|&c| slot_asm[c].len()).sum::<usize>(),
+              outstanding.len(),
+            );
+            slot_proof.push(result.get_proof_bytes()?);
+            slot_subj.push(union_s);
+            slot_asm.push(outstanding);
+            root_result = Some(result);
+          },
+        }
+      }
+      let root = root_result.expect("tree fold produced a root agg");
+      let final_size = root.get_proof_bytes()?.len();
+      let mut fbuf = [0u8; SHARD_PUBLICS_LEN];
+      root.get_public_values_slice(&mut fbuf);
+      let fpub = ShardPublics::decode(&fbuf);
+      let vstart = Instant::now();
+      root.verify()?;
+      let committed_addr = Address::from_slice(&fpub.subject_root)
+        .unwrap_or_else(|_| ixon::merkle::zero_address());
+      // Root subject = canonical merkle root over the UNION of certified
+      // targets — a set commitment, independent of fold shape.
+      let root_subj = slot_subj.last().expect("root subject set");
+      let expected = ixon::merkle::merkle_root_canonical(root_subj)
+        .unwrap_or_else(ixon::merkle::zero_address);
+      // Bind the root's outstanding-assumptions root to the host mirror, and
+      // report closure: an empty outstanding set means the aggregate claim is
+      // UNCONDITIONAL (every cross-shard obligation was discharged in-circuit).
+      let root_asm = slot_asm.last().expect("root assumption set");
+      let asm_expected = ixon::merkle::merkle_root_canonical(root_asm)
+        .unwrap_or_else(ixon::merkle::zero_address);
+      if *asm_expected.as_bytes() != fpub.assumptions_root {
+        bail!("aggregate assumptions root ≠ host mirror — discharge diverged");
+      }
+      if root_asm.is_empty() {
+        println!("  [agg] all assumptions discharged — final claim is unconditional");
+      } else {
+        println!(
+          "  [agg] {} outstanding assumption(s) remain (refs not proven by any folded shard)",
+          root_asm.len(),
+        );
+      }
+      (final_size, total_agg_ms, vstart.elapsed().as_millis() as u64, committed_addr, expected)
+    };
+
+  // Bind the aggregate's committed subject to the env-derived fold.
+  if root_committed != expected_final {
+    bail!(
+      "subject-binding failed: aggregate commits {}… but the env requires {}… — \
+       the folded proofs do not cover this env",
+      &root_committed.hex()[..16],
+      &expected_final.hex()[..16],
+    );
+  }
+
+  println!(
+    "shard-plan done: {} novel leaf/leaves + {} stored ({:.2}s wall, {:.2}s sum) + agg {:.2}s → final proof {}; \
+     verify {:.3}s; subject bound to env ({}… over {} target(s))",
+    novel.len(),
+    covering.len(),
+    leaf_wall.as_secs_f64(),
+    total_leaf_ms as f64 / 1000.0,
+    agg_ms as f64 / 1000.0,
+    final_size.human_count_bytes(),
+    verify_ms as f64 / 1000.0,
+    &expected_final.hex()[..16],
+    covered_union.len(),
+  );
+  if total_failures > 0 {
+    bail!("kernel typecheck produced {total_failures} failure(s) (proof still verifies)");
+  }
+  Ok(())
 }
 
 #[tokio::main]
@@ -1205,17 +1645,6 @@ async fn main() -> Result<()> {
   let inputs: Vec<Option<PathBuf>> =
     if args.ixe.is_empty() { vec![None] } else { args.ixe.iter().cloned().map(Some).collect() };
 
-  // Design-A measurement: report per-shard dependency closures and exit.
-  // No prover setup, no execute, no prove.
-  if args.closure_stats {
-    closure_report(&inputs, args.shard_consts, args.shard_bytes)?;
-    return Ok(());
-  }
-  if args.overlap_stats {
-    overlap_report(&inputs)?;
-    return Ok(());
-  }
-
   // `--only-shard` and `--verify-constraints` are single-shard debug
   // tools; they don't compose with a multi-input batch.
   if inputs.len() > 1 && args.only_shard.is_some() {
@@ -1224,11 +1653,14 @@ async fn main() -> Result<()> {
   if inputs.len() > 1 && args.verify_constraints {
     bail!("--verify-constraints requires exactly one --ixe input");
   }
-  // `--topo` only takes effect on the reuse path (it reorders the novel work
-  // items shipped as explicit primary lists). Fail loud rather than silently
-  // ignoring it.
-  if args.topo && args.store_dir.is_none() {
-    bail!("--topo requires --store-dir (it schedules the reuse path's novel work items)");
+  // `--shard-plan` is per-env: the manifest covers one specific env's full work
+  // set, so a batch of inputs has no single manifest to apply.
+  if args.shard_plan.is_some() && inputs.len() > 1 {
+    bail!("--shard-plan requires exactly one --ixe input (the env the manifest was built for)");
+  }
+  // `--only-const` selects a named constant from one env.
+  if args.only_const.is_some() && inputs.len() > 1 {
+    bail!("--only-const requires exactly one --ixe input");
   }
 
   // ---- Plan every input up front (parse + shard). ----
@@ -1238,8 +1670,10 @@ async fn main() -> Result<()> {
     plans.push(plan_input(ixe.as_ref(), args.shard_consts, args.shard_bytes, print_plan)?);
   }
 
-  // `--only-shard` narrows the (single) input's shard list.
-  if let Some(only) = args.only_shard {
+  // `--only-shard` narrows the (single) input's shard list. Skip for the
+  // manifest path — there `--only-shard` selects a *manifest* shard and is
+  // handled inside `run_shard_plan`, not against the range-based plan here.
+  if let Some(only) = args.only_shard.filter(|_| args.shard_plan.is_none()) {
     let plan = &mut plans[0];
     let num = plan.shards.len();
     if only == 0 || only > num {
@@ -1250,15 +1684,27 @@ async fn main() -> Result<()> {
     plan.shards = vec![(s, e)];
   }
 
+  // The store composes with manifest-driven sharding only: shard granularity
+  // is the reuse unit, and the discharge fold is what verifies stored proofs.
+  if args.store_dir.is_some() && args.shard_plan.is_none() {
+    bail!("--store-dir requires --shard-plan (reuse is per manifest shard)");
+  }
+
   // Pre-flight closure gate: bail before any proving if the batch isn't a
   // closed env modulo axioms. Runs in `--plan` mode too, so `--plan
   // --require-closed` is a fast no-prove closure check.
   if args.require_closed {
-    let store = match (&args.store_dir, args.no_reuse) {
-      (Some(dir), false) => load_store(dir),
+    let covered = match (&args.store_dir, args.no_reuse) {
+      (Some(dir), false) => {
+        let mut set = std::collections::HashSet::default();
+        for p in load_proof_index(dir) {
+          set.extend(p.subjects.iter().map(|a| *a.as_bytes()));
+        }
+        set
+      },
       _ => std::collections::HashSet::default(),
     };
-    check_inputs_closed(&inputs, &store)?;
+    check_inputs_closed(&inputs, &covered)?;
   }
 
   if args.plan {
@@ -1270,412 +1716,39 @@ async fn main() -> Result<()> {
   let grand_target_count: usize = plans.iter().map(|p| p.target_count).sum();
   let total_leaves: usize = plans.iter().map(|p| p.shards.len()).sum();
 
-  let client = build_client(args.gpu, Some(args.max_witness_stored))?;
+  let client =
+    build_client(args.gpu, !args.emulator, Some(args.max_witness_stored))?;
   client.setup(&SHARD_PROGRAM).run()?.await?;
   // Skip agg-guest setup unless we'll produce more than one leaf proof.
-  // The reuse path (store_dir) sets up the agg program itself (it folds a
-  // different set of proofs); skip the normal-path setup for it here.
-  let need_agg =
-    !args.execute && !args.verify_constraints && args.store_dir.is_none() && total_leaves > 1;
-  if need_agg {
+  // The shard-plan path sets up the agg program itself, after its leaves.
+  //
+  // Under the Assembly executor (the default) this upfront agg setup is
+  // *harmful*: it re-initializes the ASM microservices and clobbers SHARD's
+  // ROM histogram, so the subsequent leaf proves panic in `rom.rs`. We defer
+  // the agg setup to after the leaf loop (see the agg-fold below). Only the
+  // Emulator (`--emulator`) keeps the upfront setup — it has no microservice
+  // state to clobber.
+  let need_agg = !args.execute
+    && !args.verify_constraints
+    && args.shard_plan.is_none()
+    && total_leaves > 1;
+  if need_agg && args.emulator {
     client.setup(&AGG_PROGRAM).run()?.await?;
   }
 
-  // ---- Cross-proof reuse (execute only): check only NOVEL constants. ----
-  //
-  // Load the proven-primaries store, and for each input check only the work
-  // items whose primary isn't already in the store. Constants proven by an
-  // earlier input/run are skipped (their well-typedness is an assumption
-  // resolved at the store layer). Content-addressing makes the primary the
-  // shared key across envs. After a clean run, the novel primaries are added
-  // to the store. Demonstrates shards/proofs avoiding re-checking shared
-  // constants.
-  if let Some(store_dir) = &args.store_dir {
-    use std::collections::HashSet;
+  // ---- Manifest-driven sharding (the offline profiler/partitioner plan). ----
+  // Prove the `.ixes` partition: one closure-injected leaf per manifest shard,
+  // folded into one aggregate. Sets up the agg program itself (lazily, only
+  // when >1 shard). Returns when done — does not fall through to the
+  // range-based execute/leaf paths below.
+  if let Some(manifest_path) = &args.shard_plan {
+    run_shard_plan(&client, &plans[0], manifest_path, &args).await?;
+    return Ok(());
+  }
 
-    use ix_common::address::Address;
-
-    // Reuse works in both modes: `--execute` checks novel constants in the VM;
-    // otherwise it PROVES only the novel constants (skipping ones already in
-    // the store) and folds the novel leaf proofs into one aggregate proof.
-    let prove_mode = !args.execute;
-    let chunk = if args.shard_consts > 0 { args.shard_consts as usize } else { 300 };
-    // `--shard-bytes B` selects closure-aware sizing (pack until a chunk's
-    // injected-closure bytes hit B), which only makes sense when injecting —
-    // so it implies closure injection. `--closure-inject` alone injects with
-    // the default count-based chunking. Either way the guest gets a sub-env.
-    let inject = args.closure_inject || args.shard_bytes.is_some();
-
-    // The store records certified TARGET addresses (not just primaries) so a
-    // novel constant's direct refs can be resolved against it. `--no-reuse`
-    // forces an empty store so every item is novel (the "no sharing" baseline)
-    // without touching the real one on disk.
-    let mut store =
-      if args.no_reuse { HashSet::default() } else { load_store(store_dir) };
-    let store_start = store.len();
-    let hx = |b: &[u8; 32]| {
-      Address::from_slice(b).map(|a| a.hex()[..16].to_string()).unwrap_or_default()
-    };
-
-    let mut grand_checked: u64 = 0;
-    let mut grand_reused: u64 = 0;
-    let mut total_steps: u64 = 0; // execute-mode cycles
-    let mut total_leaf_ms: u64 = 0; // prove-mode leaf proving time
-    let mut total_failures: u32 = 0;
-    let mut all_refs: HashSet<[u8; 32]> = HashSet::default();
-    // Novel leaf proofs produced this run (prove mode), folded + verified.
-    let mut leaf_proof_bytes: Vec<Vec<u8>> = Vec::new();
-    // The covered-target set behind each novel leaf, in the SAME order as
-    // `leaf_proof_bytes` — lets the host re-derive each child's expected
-    // subject root from the env for the final coverage-binding check.
-    let mut leaf_covers: Vec<Vec<[u8; 32]>> = Vec::new();
-    // Each novel leaf's COMMITTED subject root, captured at prove time (same
-    // order). Re-reading `get_public_values_slice` on a stored result yields
-    // zeros, so the single-leaf binding check reads from here.
-    let mut leaf_committed_subjects: Vec<[u8; 32]> = Vec::new();
-    // Every target address this run's aggregate must end up covering (novel +
-    // reused), to assert the final combined subject is complete over the env.
-    let mut grand_targets: HashSet<[u8; 32]> = HashSet::default();
-    let mut last_leaf_result = None;
-    // In-circuit resolution state: the store's EXISTING leaf proofs (loaded
-    // before we append this run's), the reused constants we must resolve by
-    // VERIFYING a covering store proof, and the shard program vk to pin.
-    let stored_leaves =
-      if prove_mode && !args.no_reuse { load_proof_index(store_dir) } else { Vec::new() };
-    let mut all_reused_covered: HashSet<[u8; 32]> = HashSet::default();
-    let mut shard_vk: Vec<u8> = Vec::new();
-
-    for plan in &plans {
-      let env =
-        IxonEnv::get_anon(&mut &plan.env_bytes[..]).expect("invalid Ixon environment");
-      let work = build_anon_work(&env).expect("build_anon_work");
-      // A work item is reused iff its primary is already certified.
-      let mut novel_items: Vec<&AnonWorkItem> =
-        work.iter().filter(|w| !store.contains(w.primary().as_bytes())).collect();
-      // Topological schedule: order novel items bottom-up (dependencies before
-      // dependents, foundational/most-depended-upon first) so heavily-shared
-      // constants are proved and banked first. Safe in the reuse path because
-      // each shard ships an explicit primary list, not a work-index range.
-      // Done before `--limit-items` so a capped run proves the leverage core.
-      if args.topo {
-        let order = topo_order_items(&env, &novel_items);
-        let reordered: Vec<&AnonWorkItem> =
-          order.into_iter().map(|i| novel_items[i]).collect();
-        novel_items = reordered;
-        println!("  [{}] topological schedule applied to {} novel items", plan.label, novel_items.len());
-      }
-      // Testing: cap to the first N novel items so a few shards of a huge env
-      // can be proved end-to-end without proving all 171 (Init).
-      if let Some(n) = args.limit_items {
-        novel_items.truncate(n);
-      }
-      let reused_items = work.len() - novel_items.len();
-      grand_reused += reused_items as u64;
-      if novel_items.is_empty() {
-        println!("  [{}] {} work items: all reused — skipped", plan.label, work.len());
-        continue;
-      }
-
-      // `consts`-key addresses this input newly certifies.
-      let mut novel_targets: HashSet<[u8; 32]> = HashSet::default();
-      for w in &novel_items {
-        for t in w.proven_targets() {
-          novel_targets.insert(*t.as_bytes());
-        }
-      }
-      grand_targets.extend(novel_targets.iter().copied());
-
-      // Reused work items' covered targets — these must be DISCHARGED by
-      // verifying a store proof that covers them (not trusted).
-      for w in work.iter().filter(|w| store.contains(w.primary().as_bytes())) {
-        for t in w.proven_targets() {
-          all_reused_covered.insert(*t.as_bytes());
-        }
-      }
-
-      // Dependency refs of the novel set; those not in the store / not certified
-      // now stay OPEN assumptions of the conditional `CheckEnv` claim. A
-      // `Constant.refs` entry can point at either another CONSTANT (a genuine
-      // typing obligation) or a literal DATA blob (the bytes behind an
-      // `Expr::Nat`/`Expr::Str` — e.g. the numbers 0, 1). Literals are
-      // well-typed by construction and content-addressing pins their bytes, so
-      // they are NOT assumptions; skip any ref that resolves to a blob.
-      let mut open_now = 0u64;
-      for w in &novel_items {
-        for t in w.proven_targets() {
-          if let Some(c) = env.get_const(&t) {
-            for r in &c.refs {
-              if env.get_blob(r).is_some() {
-                continue; // literal/data blob, not a typing assumption
-              }
-              let rb = r.as_bytes();
-              all_refs.insert(*rb);
-              if !store.contains(rb) && !novel_targets.contains(rb) {
-                open_now += 1;
-              }
-            }
-          }
-        }
-      }
-
-      // Chunk novel WORK ITEMS so each guest run stays under the ~512 MB wall.
-      // In prove mode each leaf proof is stored with the consts it certifies,
-      // so a future run can resolve them by verification.
-      let mut input_cycles: u64 = 0;
-      let mut input_leaf_ms: u64 = 0;
-      let mut input_failures: u32 = 0;
-      let mut first_subject = [0u8; 32];
-      let mut first_assumptions = [0u8; 32];
-      // Closure-aware sizing when `--shard-bytes` is set (pack until a chunk's
-      // injected-closure bytes hit the budget); otherwise fixed work-item count.
-      let chunk_ranges: Vec<(usize, usize)> = if let Some(b) = args.shard_bytes {
-        plan_chunks_by_closure(&env, &novel_items, b)?
-      } else {
-        (0..novel_items.len())
-          .step_by(chunk)
-          .map(|s| (s, (s + chunk).min(novel_items.len())))
-          .collect()
-      };
-      for (ci, &(cs, ce)) in chunk_ranges.iter().enumerate() {
-        let nc = &novel_items[cs..ce];
-        let primaries: Vec<Address> = nc.iter().map(|w| w.primary().clone()).collect();
-        let check_list = Address::pack(&primaries);
-        // Closure injection: ship the guest only this chunk's dependency
-        // closure, not the whole env. The committed claim is invariant —
-        // subject/assumptions depend only on the checked targets and their
-        // direct refs, all present in the closure — so this only shrinks the
-        // guest's decode, essential for envs that don't fit whole (Init).
-        let sub_env: Option<Vec<u8>> = if inject {
-          let roots: Vec<Address> = nc.iter().flat_map(|w| w.proven_targets()).collect();
-          Some(build_sub_env(&env, &roots)?)
-        } else {
-          None
-        };
-        if let Some(se) = &sub_env {
-          println!(
-            "  [shard {}] {} work items; closure sub-env {} vs whole env {} ({:.0}%)",
-            ci,
-            nc.len(),
-            se.len().human_count_bytes(),
-            plan.env_bytes.len().human_count_bytes(),
-            100.0 * se.len() as f64 / plan.env_bytes.len().max(1) as f64,
-          );
-        }
-        let env_slice: &[u8] = sub_env.as_deref().unwrap_or(&plan.env_bytes);
-        let stdin = leaf_stdin(0, 0, env_slice, &check_list);
-        let mut buf = [0u8; SHARD_PUBLICS_LEN];
-        // Targets this shard certifies — used by both the proof index and the
-        // per-shard store update below.
-        let chunk_covered: Vec<[u8; 32]> =
-          nc.iter().flat_map(|w| w.proven_targets()).map(|a| *a.as_bytes()).collect();
-        if prove_mode {
-          let result = client.prove(&SHARD_PROGRAM, stdin).run()?.await?;
-          result.get_public_values_slice(&mut buf);
-          input_leaf_ms += result.get_proving_time();
-          let blob = result.get_proof_bytes()?;
-          if shard_vk.is_empty() {
-            shard_vk = program_vk(&blob);
-          }
-          if !args.no_reuse {
-            append_proof(store_dir, &blob, &chunk_covered)?;
-          }
-          leaf_proof_bytes.push(blob);
-          leaf_covers.push(chunk_covered.clone());
-          let mut subj = [0u8; 32];
-          subj.copy_from_slice(&buf[44..76]);
-          leaf_committed_subjects.push(subj);
-          last_leaf_result = Some(result);
-        } else {
-          let result = client.execute(&SHARD_PROGRAM, stdin).run()?.await?;
-          result.get_public_values_slice(&mut buf);
-          input_cycles += result.get_execution_steps();
-        }
-        let publics = ShardPublics::decode(&buf);
-        input_failures = input_failures.saturating_add(publics.failures);
-        // Bank this shard's certified targets into the store IMMEDIATELY and
-        // persist, rather than waiting until the whole input (or batch) is
-        // done. So a re-run / resume skips already-proven shards and never
-        // redoes their work, and a later input sees this shard's constants as
-        // reused as soon as it lands. Gate on the shard verifying clean.
-        if !args.no_reuse && publics.failures == 0 {
-          for t in &chunk_covered {
-            store.insert(*t);
-          }
-          save_store(store_dir, &store)?;
-        }
-        if ci == 0 {
-          first_subject = publics.subject_root;
-          first_assumptions = publics.assumptions_root;
-        }
-      }
-      total_steps += input_cycles;
-      total_leaf_ms += input_leaf_ms;
-      total_failures = total_failures.saturating_add(input_failures);
-      grand_checked += novel_targets.len() as u64;
-      let n_chunks = chunk_ranges.len();
-      let work_note = if prove_mode {
-        format!("leaf-prove {:.2}s", (input_leaf_ms as f64) / 1000.0)
-      } else {
-        format!("cycles={input_cycles}")
-      };
-      println!(
-        "  [{}] {} items: {reused_items} reused, {} novel ({} targets) / {n_chunks} chunk(s); \
-         failures={input_failures}, {work_note}; open assumptions: {open_now}; \
-         claim[chunk0] CheckEnv{{ subject={}…, assumptions={}… }}",
-        plan.label,
-        work.len(),
-        novel_items.len(),
-        novel_targets.len(),
-        hx(&first_subject),
-        hx(&first_assumptions),
-      );
-      // Note: targets are banked per-shard above (immediately after each shard
-      // verifies clean), so there's no end-of-input insert here — a partially
-      // failed input still keeps its clean shards' constants in the store.
-    }
-    // Per-shard `save_store` already persisted every clean shard; this final
-    // write is a harmless backstop. `--no-reuse` is a read-only baseline and
-    // never persists (it would clobber the populated store the comparison run
-    // depends on).
-    if !args.no_reuse {
-      save_store(store_dir, &store)?;
-    }
-    let open: usize = all_refs.iter().filter(|r| !store.contains(*r)).count();
-    println!(
-      "reuse summary: {grand_reused} work items reused, {grand_checked} targets certified; \
-       store {store_start} → {} targets",
-      store.len(),
-    );
-    println!(
-      "open assumptions (refs not yet in store): {open} — resolve by proving their providers \
-       (e.g. init) into the store; residual = axioms",
-    );
-
-    if total_failures > 0 {
-      bail!("kernel typecheck produced {total_failures} failure(s)");
-    }
-
-    if prove_mode {
-      // ---- In-circuit resolution ----
-      // Verify (don't trust) the reused constants: pull the store's leaf proofs
-      // that cover them and fold them WITH this run's novel leaves. The agg
-      // guest verifies each, pins its program vk to SHARD_VK, and folds the
-      // claims — so the aggregate cryptographically attests the full env,
-      // reused parts included.
-      let covering: Vec<(Vec<u8>, std::collections::HashSet<[u8; 32]>)> = stored_leaves
-        .iter()
-        .filter(|(_, cov)| cov.iter().any(|a| all_reused_covered.contains(a)))
-        .map(|(blob, cov)| (blob.clone(), cov.clone()))
-        .collect();
-      let n_novel = leaf_proof_bytes.len();
-      let n_cover = covering.len();
-
-      // ---- Final soundness check: bind the aggregate's subject to the env ----
-      // The agg commits `subject = merkle_join`-fold of its children's subject
-      // roots (each read from a *verified* child proof). On its own that only
-      // attests "these verified shard proofs cover SOME constants". To pin
-      // *which* env, the host re-derives the expected per-child subject root
-      // FROM THE ENV (each child's `covered()` set → `merkle_root_canonical`),
-      // folds them in the same order, and (a) asserts every env target is
-      // covered by some folded child, then (b) checks the final proof's
-      // committed subject equals this env-derived root. A swapped-in
-      // verified-but-unrelated proof would change the committed root and fail.
-      grand_targets.extend(all_reused_covered.iter().copied());
-      let mut child_subjects: Vec<Address> = Vec::with_capacity(n_novel + n_cover);
-      let mut covered_union: HashSet<[u8; 32]> = HashSet::default();
-      for cov in &leaf_covers {
-        child_subjects.push(subject_of_cover(cov));
-        covered_union.extend(cov.iter().copied());
-      }
-      for (_, cov) in &covering {
-        let v: Vec<[u8; 32]> = cov.iter().copied().collect();
-        child_subjects.push(subject_of_cover(&v));
-        covered_union.extend(cov.iter().copied());
-      }
-      let expected_subject = fold_subjects(&child_subjects);
-      let expected_bytes = *expected_subject.as_bytes();
-      let uncovered =
-        grand_targets.iter().filter(|t| !covered_union.contains(*t)).count();
-      if uncovered > 0 {
-        bail!(
-          "coverage gap: {uncovered} env target(s) not covered by any folded proof — \
-           the aggregate would not attest the full env"
-        );
-      }
-
-      let mut fold = leaf_proof_bytes;
-      fold.extend(covering.into_iter().map(|(b, _)| b));
-      let total_fold = fold.len();
-
-      // Assert the final proof's committed subject root matches the env-derived
-      // fold. `committed` comes from the captured leaf publics (single-leaf) or
-      // the fresh agg result's publics (fold) — never a re-read of a stored
-      // result, which yields zeros.
-      let assert_subject_bound = |committed: [u8; 32]| -> Result<()> {
-        if committed != expected_bytes {
-          bail!(
-            "subject-binding failed: final proof commits subject {}… but the env \
-             requires {}… — the folded proofs do not cover this env",
-            hx(&committed),
-            hx(&expected_bytes),
-          );
-        }
-        Ok(())
-      };
-
-      if total_fold == 0 {
-        println!("nothing novel to prove (fully reused) — no proof generated");
-      } else if total_fold == 1 {
-        // One leaf, no reused-covering proof to fold in — verify it directly.
-        let leaf = last_leaf_result.expect("single leaf");
-        let final_size = leaf.get_proof_bytes()?.len();
-        let vstart = Instant::now();
-        leaf.verify()?;
-        assert_subject_bound(leaf_committed_subjects[0])?;
-        println!(
-          "resolved fold: 1 novel leaf + 0 reused-covering proofs; leaf-prove {:.2}s; \
-           final proof size {}; verify {:.3}s; subject bound to env ({}… over {} target(s))",
-          (total_leaf_ms as f64) / 1000.0,
-          final_size.human_count_bytes(),
-          vstart.elapsed().as_secs_f64(),
-          hx(&expected_bytes),
-          grand_targets.len(),
-        );
-      } else {
-        // Single-level fold over novel leaves + the reused-covering store
-        // proofs (all SHARD_VK), vk-pinned in-circuit.
-        if shard_vk.is_empty() {
-          bail!("no shard vk available to pin the aggregation");
-        }
-        client.setup(&AGG_PROGRAM).run()?.await?;
-        let allowed = vec![shard_vk.clone()];
-        let agg_start = Instant::now();
-        let result =
-          client.prove(&AGG_PROGRAM, agg_stdin(&allowed, &fold)).run()?.await?;
-        let agg_ms = result.get_proving_time();
-        let final_size = result.get_proof_bytes()?.len();
-        let mut fbuf = [0u8; SHARD_PUBLICS_LEN];
-        result.get_public_values_slice(&mut fbuf);
-        let agg_committed = ShardPublics::decode(&fbuf).subject_root;
-        let vstart = Instant::now();
-        result.verify()?;
-        assert_subject_bound(agg_committed)?;
-        println!(
-          "resolved fold: {n_novel} novel leaves + {n_cover} reused-covering proof(s) \
-           → 1 agg (each vk-pinned to SHARD_VK); leaf-prove {:.2}s + agg {:.2}s (wall {:.2}s); \
-           final proof size {}; verify {:.3}s; subject bound to env ({}… over {} target(s))",
-          (total_leaf_ms as f64) / 1000.0,
-          (agg_ms as f64) / 1000.0,
-          agg_start.elapsed().as_secs_f64(),
-          final_size.human_count_bytes(),
-          vstart.elapsed().as_secs_f64(),
-          hx(&expected_bytes),
-          grand_targets.len(),
-        );
-      }
-    } else {
-      println!("total cycles: {total_steps}");
-    }
+  // ---- Single named constant (no manifest/range). ----
+  if let Some(name) = &args.only_const {
+    run_only_const(&client, &plans[0], name, &args).await?;
     return Ok(());
   }
 
@@ -1798,6 +1871,14 @@ async fn main() -> Result<()> {
   // one proof remains.
   let arity: usize = args.agg_arity as usize;
   let (final_size, agg_steps, agg_ms, verify_ms) = if total_leaves > 1 {
+    // Under the Assembly executor (the default) the upfront agg setup in `main`
+    // was skipped (it would have clobbered SHARD's ROM histogram before the
+    // leaf proves). Now that every leaf is proven, set up the agg program here
+    // — the last `setup` before the agg proves, so the ASM microservices hold
+    // AGG's ROM. The Emulator already did this setup upfront.
+    if !args.emulator {
+      client.setup(&AGG_PROGRAM).run()?.await?;
+    }
     let mut current: Vec<Vec<u8>> = leaf_proof_bytes;
     let mut total_agg_steps: u64 = 0;
     let mut total_agg_ms: u64 = 0;
@@ -1819,7 +1900,7 @@ async fn main() -> Result<()> {
         // (SHARD_VK at the leaf level; AGG_VK at higher levels). The agg guest
         // pins each child to one of these and commits them.
         let allowed = distinct_vks(&current[s..e]);
-        let stdin = agg_stdin(&allowed, &current[s..e]);
+        let stdin = agg_stdin(&allowed, &current[s..e], None);
         let agg_start = Instant::now();
         let result = client.prove(&AGG_PROGRAM, stdin).run()?.await?;
         let ms = result.get_proving_time();
@@ -1882,174 +1963,14 @@ async fn main() -> Result<()> {
 }
 
 #[cfg(test)]
-mod topo_tests {
+mod closure_tests {
   use std::collections::{HashMap, HashSet};
 
   use ix_common::address::Address;
-  use ix_kernel::anon_work::{build_anon_work, AnonWorkItem};
+  use ix_kernel::anon_work::build_anon_work;
   use ixon::env::Env as IxonEnv;
 
-  use super::{addr_bytes, closure_addrs, find_missing_deps, topo_order_items};
-
-  /// Verify the topological schedule against a real env. Gated on
-  /// `IX_TEST_IXE` (a `.ixe` path) so CI without the fixture still passes:
-  ///   `IX_TEST_IXE=../nataddcomm.ixe cargo test -p zisk-host topo`
-  ///
-  /// Asserts the schedule (1) is a permutation of all items, and (2) places
-  /// every in-set, non-blob dependency strictly before the item that depends
-  /// on it — the invariant the reuse store relies on (a dep is banked before
-  /// its dependents are proved).
-  #[test]
-  fn topo_respects_dependencies() {
-    let Ok(path) = std::env::var("IX_TEST_IXE") else {
-      eprintln!("IX_TEST_IXE unset — skipping topo_respects_dependencies");
-      return;
-    };
-    let bytes = std::fs::read(&path).expect("read IX_TEST_IXE");
-    let env = IxonEnv::get_anon(&mut &bytes[..]).expect("get_anon");
-    let work = build_anon_work(&env).expect("build_anon_work");
-    let items: Vec<&AnonWorkItem> = work.iter().collect();
-
-    let order = topo_order_items(&env, &items);
-
-    // (1) exact permutation.
-    assert_eq!(order.len(), items.len(), "schedule drops/duplicates items");
-    let mut seen = vec![false; items.len()];
-    for &i in &order {
-      assert!(!seen[i], "item {i} scheduled twice");
-      seen[i] = true;
-    }
-
-    // rank[i] = position of item i in the schedule.
-    let mut rank = vec![0usize; items.len()];
-    for (r, &i) in order.iter().enumerate() {
-      rank[i] = r;
-    }
-
-    // owner: certified target address -> the item that certifies it.
-    let mut owner: HashMap<Address, usize> = HashMap::new();
-    for (i, it) in items.iter().enumerate() {
-      for t in it.proven_targets() {
-        owner.insert(t, i);
-      }
-    }
-
-    // (2) dependencies precede dependents.
-    let mut edges = 0usize;
-    for (i, it) in items.iter().enumerate() {
-      let mut deps: HashSet<usize> = HashSet::new();
-      for t in it.proven_targets() {
-        let Some(c) = env.get_const(&t) else { continue };
-        for r in &c.refs {
-          if env.get_blob(r).is_some() {
-            continue;
-          }
-          if let Some(&j) = owner.get(r) {
-            if j != i {
-              deps.insert(j);
-            }
-          }
-        }
-      }
-      for j in deps {
-        assert!(
-          rank[j] < rank[i],
-          "dependency item {j} (rank {}) not before dependent {i} (rank {})",
-          rank[j],
-          rank[i],
-        );
-        edges += 1;
-      }
-    }
-    eprintln!(
-      "topo_respects_dependencies: {} items, {} dependency edges verified",
-      items.len(),
-      edges,
-    );
-  }
-
-  /// Topo vs lexicographic ordering at equal shard sizes: measure the two
-  /// things topo actually changes within one env — the cross-shard assumption
-  /// edges (aggregation cut) and the total dependency-closure bytes shipped
-  /// (the re-loading duplication). Proving cycles are order-invariant (disjoint
-  /// partition), so they're not measured here. Gated on `IX_TEST_IXE`.
-  #[test]
-  fn topo_vs_nontopo_cut() {
-    let Ok(path) = std::env::var("IX_TEST_IXE") else {
-      eprintln!("IX_TEST_IXE unset — skipping topo_vs_nontopo_cut");
-      return;
-    };
-    let bytes = std::fs::read(&path).expect("read IX_TEST_IXE");
-    let env = IxonEnv::get_anon(&mut &bytes[..]).expect("get_anon");
-    let work = build_anon_work(&env).expect("build_anon_work");
-    let n = work.len();
-    let shards = 4usize;
-    let csize = n.div_ceil(shards).max(1);
-
-    // owner: certified target -> item index.
-    let mut owner: HashMap<Address, usize> = HashMap::new();
-    for (i, w) in work.iter().enumerate() {
-      for t in w.proven_targets() {
-        owner.insert(t, i);
-      }
-    }
-
-    // Whole-env closure bytes (the 1-shard baseline = no duplication).
-    let all_roots: Vec<Address> =
-      work.iter().flat_map(|w| w.proven_targets()).collect();
-    let whole: usize =
-      closure_addrs(&env, &all_roots).iter().map(|a| addr_bytes(&env, a)).sum();
-
-    let lex: Vec<usize> = (0..n).collect();
-    let items_ref: Vec<&AnonWorkItem> = work.iter().collect();
-    let topo = topo_order_items(&env, &items_ref);
-
-    eprintln!(
-      "\n=== {} : {n} items, {shards} shards (~{csize}/shard), whole-env closure {} ===",
-      path,
-      whole,
-    );
-    for (name, order) in [("lexicographic", &lex), ("topological  ", &topo)] {
-      let nchunks = n.div_ceil(csize);
-      let mut chunk_of = vec![0usize; n];
-      for (pos, &item) in order.iter().enumerate() {
-        chunk_of[item] = pos / csize;
-      }
-      let mut chunks: Vec<Vec<usize>> = vec![Vec::new(); nchunks];
-      for item in 0..n {
-        chunks[chunk_of[item]].push(item);
-      }
-
-      let mut cross = 0usize; // dependency edges crossing a shard boundary
-      let mut shipped = 0usize; // Σ per-shard closure bytes
-      for (cidx, items_in_chunk) in chunks.iter().enumerate() {
-        for &item in items_in_chunk {
-          for t in work[item].proven_targets() {
-            if let Some(c) = env.get_const(&t) {
-              for r in &c.refs {
-                if env.get_blob(r).is_some() {
-                  continue;
-                }
-                if let Some(&dep) = owner.get(r) {
-                  if chunk_of[dep] != cidx {
-                    cross += 1;
-                  }
-                }
-              }
-            }
-          }
-        }
-        let roots: Vec<Address> =
-          items_in_chunk.iter().flat_map(|&i| work[i].proven_targets()).collect();
-        shipped +=
-          closure_addrs(&env, &roots).iter().map(|a| addr_bytes(&env, a)).sum::<usize>();
-      }
-      let dup = shipped as f64 / whole.max(1) as f64;
-      eprintln!(
-        "  {name}: cross-shard assumption edges = {cross:>5} | closure shipped = {shipped:>9} bytes ({dup:.2}× whole)",
-      );
-    }
-  }
+  use super::find_missing_deps;
 
   /// A self-contained env is closed (no missing deps); removing a foundational
   /// work item from the certified set must make at least one dependent's ref

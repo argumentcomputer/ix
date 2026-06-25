@@ -878,9 +878,9 @@ mod tests {
 
   #[test]
   fn profile_sink_records_delta_edge_and_fuel() {
-    use crate::ix::kernel::mode::Meta;
-    use crate::ix::kernel::testing as t;
-    use crate::ix::profile::ProfileSink;
+    use crate::mode::Meta;
+    use crate::testing as t;
+    use crate::profile::ProfileSink;
 
     // g : Sort 2 := Sort 1 — a Definition, delta-reducible to Sort 1.
     let (g_id, g) = t::mk_defn(

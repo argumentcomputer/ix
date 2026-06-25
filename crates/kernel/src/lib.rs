@@ -155,7 +155,13 @@ pub mod primitive;
 // partitions that graph into balanced, low-cross-ingress shards. Ported here
 // from jcb/kernel-sharding (was the monolithic `crate::ix::{profile,shard}`):
 // `profile` must live in the kernel crate because `KEnv` holds a `ProfileSink`.
+//
+// `profile` is dependency-light (hash maps only) so it compiles for the zkVM
+// guest, where the `ProfileSink` field is simply always `None`. `shard` is the
+// host-only partitioner — it uses rayon + `std::time` (gated to the same
+// non-riscv targets that supply those deps), and the guest never partitions.
 pub mod profile;
+#[cfg(not(target_arch = "riscv64"))]
 pub mod shard;
 pub mod subst;
 pub mod tc;
