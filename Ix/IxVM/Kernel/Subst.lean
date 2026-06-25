@@ -180,13 +180,16 @@ def subst := ⟦
       -- discarded (no surviving variable to annotate); the surviving arms carry
       -- `ty2 = inst1(ty, arg, depth)`. Mirror §subst-rules.
       KExprNode.BVar(i, ty) =>
-        let ty2 = expr_inst1(ty, arg, depth);
         match u32_less_than(i, depth) {
-          1 => store(KExprNode.BVar(i, ty2)),
+          1 =>
+            let ty2 = expr_inst1(ty, arg, depth);
+            store(KExprNode.BVar(i, ty2)),
           0 =>
             match i - depth {
               0 => expr_lift(arg, depth, 0),
-              _ => store(KExprNode.BVar(i - 1, ty2)),
+              _ =>
+                let ty2 = expr_inst1(ty, arg, depth);
+                store(KExprNode.BVar(i - 1, ty2)),
             },
         },
       KExprNode.Srt(l) => store(KExprNode.Srt(l)),
