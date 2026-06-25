@@ -113,81 +113,110 @@ def check := ⟦
     }
   }
 
-  -- Mirror: src/ix/kernel/check.rs:494-570 fn validate_expr_well_scoped.
-  -- Walks `e` checking `BVar(i) < depth`, Const universe-arity match, and
-  -- recurses into universes via `validate_univ_params_seen`.
+  -- ============================================================================
+  -- correct_expr: the typed-BVar fill-in pass, which ALSO validates.
   --
-  -- `wellFormed` extension (docs/ixvm-context-free-inference.org): also threads
-  -- the innermost-first binder-type context `types` and asserts every typed
-  -- BVar's annotation is the canonical occurrence-valid type. This is the ONE
-  -- pass that runs per constant body before inference; it makes the (possibly
-  -- adversarial) annotations trustworthy so context-free infer may rely on them.
-  -- `depth == list_length(types)` is kept explicit for the closedness check.
-  fn validate_expr_well_scoped(e: KExpr, depth: G, bound: G,
-                                top: List‹&KConstantInfo›, types: List‹KExpr›) {
+  -- Ingress (convert_expr) leaves every BVar with a placeholder annotation, and
+  -- keeps the heavy Ixon→KExpr translation context-free so Aiur dedups shared
+  -- subterms. `correct_expr` is the single light walk that (a) rebuilds each
+  -- BVar with its canonical occurrence-valid type `lift(types[i], i+1, 0)` (via
+  -- `types_lookup`, the same form infer uses), AND (b) performs the well-scoped
+  -- validation that `validate_expr_well_scoped` used to do separately:
+  --   * no loose bvars (`BVar(i) < depth`),
+  --   * Const universe-arity match + universe-param bounds.
+  -- One walk, both jobs (per the design note: the corrector can validate too).
+  -- Mirror of src/ix/kernel/check.rs:494-570 (validation) fused with the
+  -- annotation fill-in (docs/ixvm-context-free-inference.org).
+  fn correct_expr(e: KExpr, types: List‹KExpr›, depth: G, bound: G,
+                  top: List‹&KConstantInfo›) -> KExpr {
     match load(e) {
-      KExprNode.BVar(i, ty) =>
-        -- (a) no loose bvars: every var resolves to an enclosing binder.
+      KExprNode.BVar(i, _) =>
         assert_eq!(u32_less_than(i, depth), 1);
-        -- (b) canonical annotation: `ty` must be EXACTLY `lift(types[i], i+1, 0)`,
-        -- recomputed via the same `types_lookup` ingress/infer use. Pointer
-        -- (content-address) equality — no def_eq, structural only.
-        assert_eq!(ptr_val(ty), ptr_val(types_lookup(types, i)));
-        (),
-      KExprNode.Srt(&l) => validate_univ_params_seen(l, bound),
+        store(KExprNode.BVar(i, types_lookup(types, i))),
+      KExprNode.Srt(&l) =>
+        let _ = validate_univ_params_seen(l, bound);
+        e,
       KExprNode.Const(idx, lvls) =>
         let ci = load(list_lookup(top, idx));
-        let expected = const_num_lvls(ci);
-        assert_eq!(list_length(lvls), expected);
-        validate_univ_params_list(lvls, bound),
+        assert_eq!(list_length(lvls), const_num_lvls(ci));
+        let _ = validate_univ_params_list(lvls, bound);
+        e,
       KExprNode.App(f, a) =>
-        let _ = validate_expr_well_scoped(f, depth, bound, top, types);
-        validate_expr_well_scoped(a, depth, bound, top, types),
+        store(KExprNode.App(correct_expr(f, types, depth, bound, top),
+                            correct_expr(a, types, depth, bound, top))),
       KExprNode.Lam(t, b) =>
-        let _ = validate_expr_well_scoped(t, depth, bound, top, types);
-        validate_expr_well_scoped(b, depth + 1, bound, top, store(ListNode.Cons(t, types))),
+        let kt = correct_expr(t, types, depth, bound, top);
+        store(KExprNode.Lam(kt,
+          correct_expr(b, store(ListNode.Cons(kt, types)), depth + 1, bound, top))),
       KExprNode.Forall(t, b) =>
-        let _ = validate_expr_well_scoped(t, depth, bound, top, types);
-        validate_expr_well_scoped(b, depth + 1, bound, top, store(ListNode.Cons(t, types))),
+        let kt = correct_expr(t, types, depth, bound, top);
+        store(KExprNode.Forall(kt,
+          correct_expr(b, store(ListNode.Cons(kt, types)), depth + 1, bound, top))),
       KExprNode.Let(t, v, b) =>
-        let _ = validate_expr_well_scoped(t, depth, bound, top, types);
-        let _ = validate_expr_well_scoped(v, depth, bound, top, types);
-        validate_expr_well_scoped(b, depth + 1, bound, top, store(ListNode.Cons(t, types))),
-      KExprNode.Lit(_) => (),
-      KExprNode.Proj(_, _, val) =>
-        validate_expr_well_scoped(val, depth, bound, top, types),
+        let kt = correct_expr(t, types, depth, bound, top);
+        let kv = correct_expr(v, types, depth, bound, top);
+        store(KExprNode.Let(kt, kv,
+          correct_expr(b, store(ListNode.Cons(kt, types)), depth + 1, bound, top))),
+      KExprNode.Lit(_) => e,
+      KExprNode.Proj(tidx, fidx, val) =>
+        store(KExprNode.Proj(tidx, fidx, correct_expr(val, types, depth, bound, top))),
     }
   }
 
-  -- Mirror: src/ix/kernel/check.rs:422-478 fn validate_const_well_scoped.
-  -- Validates type + variant-specific value/rules. Rec rules carry rhs each.
-  fn validate_const_well_scoped(ci: KConstantInfo, top: List‹&KConstantInfo›) {
-    let bound = const_num_lvls(ci);
-    let ty = const_type_of(ci);
-    let _ = validate_expr_well_scoped(ty, 0, bound, top, store(ListNode.Nil));
-    match ci {
-      KConstantInfo.Defn(_, _, val, _, _) =>
-        validate_expr_well_scoped(val, 0, bound, top, store(ListNode.Nil)),
-      KConstantInfo.Thm(_, _, val) =>
-        validate_expr_well_scoped(val, 0, bound, top, store(ListNode.Nil)),
-      KConstantInfo.Opaque(_, _, val, _) =>
-        validate_expr_well_scoped(val, 0, bound, top, store(ListNode.Nil)),
-      KConstantInfo.Rec(_, _, _, _, _, _, rules, _, _, _) =>
-        validate_recr_rules(rules, bound, top),
-      _ => (),
-    }
-  }
-
-  fn validate_recr_rules(rules: List‹KRecRule›, bound: G,
-                          top: List‹&KConstantInfo›) {
+  fn correct_rules(rules: List‹KRecRule›, bound: G,
+                   top: List‹&KConstantInfo›) -> List‹KRecRule› {
     match load(rules) {
-      ListNode.Nil => (),
+      ListNode.Nil => store(ListNode.Nil),
       ListNode.Cons(rule, rest) =>
         match rule {
-          KRecRule.Mk(_, _, rhs) =>
-            let _ = validate_expr_well_scoped(rhs, 0, bound, top, store(ListNode.Nil));
-            validate_recr_rules(rest, bound, top),
+          KRecRule.Mk(ctor, nf, rhs) =>
+            store(ListNode.Cons(
+              KRecRule.Mk(ctor, nf,
+                          correct_expr(rhs, store(ListNode.Nil), 0, bound, top)),
+              correct_rules(rest, bound, top))),
         },
+    }
+  }
+
+  -- Correct + validate one constant's type / value / rec-rule rhs. Const bodies
+  -- are closed, so the walk starts with the empty context (depth 0).
+  fn correct_const_info(ci: KConstantInfo, top: List‹&KConstantInfo›) -> KConstantInfo {
+    let bound = const_num_lvls(ci);
+    match ci {
+      KConstantInfo.Axiom(n, ty, u) =>
+        KConstantInfo.Axiom(n, correct_expr(ty, store(ListNode.Nil), 0, bound, top), u),
+      KConstantInfo.Defn(n, ty, val, s, h) =>
+        KConstantInfo.Defn(n, correct_expr(ty, store(ListNode.Nil), 0, bound, top),
+                           correct_expr(val, store(ListNode.Nil), 0, bound, top), s, h),
+      KConstantInfo.Thm(n, ty, val) =>
+        KConstantInfo.Thm(n, correct_expr(ty, store(ListNode.Nil), 0, bound, top),
+                          correct_expr(val, store(ListNode.Nil), 0, bound, top)),
+      KConstantInfo.Opaque(n, ty, val, u) =>
+        KConstantInfo.Opaque(n, correct_expr(ty, store(ListNode.Nil), 0, bound, top),
+                             correct_expr(val, store(ListNode.Nil), 0, bound, top), u),
+      KConstantInfo.Quot(n, ty, k) =>
+        KConstantInfo.Quot(n, correct_expr(ty, store(ListNode.Nil), 0, bound, top), k),
+      KConstantInfo.Induct(n, ty, np, ni, cis, r, rf, u, ne, ba) =>
+        KConstantInfo.Induct(n, correct_expr(ty, store(ListNode.Nil), 0, bound, top),
+                             np, ni, cis, r, rf, u, ne, ba),
+      KConstantInfo.Ctor(n, ty, ii, cidx, np, nf, u) =>
+        KConstantInfo.Ctor(n, correct_expr(ty, store(ListNode.Nil), 0, bound, top),
+                           ii, cidx, np, nf, u),
+      KConstantInfo.Rec(n, ty, np, ni, nm, nmin, rules, k, u, ba) =>
+        KConstantInfo.Rec(n, correct_expr(ty, store(ListNode.Nil), 0, bound, top),
+                          np, ni, nm, nmin, correct_rules(rules, bound, top), k, u, ba),
+    }
+  }
+
+  -- Correct + validate the WHOLE constant table once, before checking, so
+  -- context-free inference (which reads dep types out of `top`) sees correct
+  -- annotations everywhere. `top` is read only for Const universe-arity (the
+  -- num_lvls field is unaffected by correction, so the uncorrected table works).
+  fn correct_all(consts: List‹&KConstantInfo›, top: List‹&KConstantInfo›) -> List‹&KConstantInfo› {
+    match load(consts) {
+      ListNode.Nil => store(ListNode.Nil),
+      ListNode.Cons(&ci, rest) =>
+        store(ListNode.Cons(store(correct_const_info(ci, top)), correct_all(rest, top))),
     }
   }
 
@@ -213,7 +242,6 @@ def check := ⟦
   -- check_const: dispatch per KConstantInfo variant.
   -- ============================================================================
   fn check_const(ci: KConstantInfo, pos: G, top: List‹&KConstantInfo›, addrs: List‹Addr›) {
-    let _ = validate_const_well_scoped(ci, top);
     let u = is_unsafe_ci(ci);
     match ci {
       KConstantInfo.Axiom(_, ty, _) =>

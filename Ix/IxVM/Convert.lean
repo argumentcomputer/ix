@@ -137,20 +137,20 @@ def convert := ⟦
     }
   }
 
-  -- `types` is the innermost-first binder-type context threaded from each
-  -- Lam/Forall/Let we descend through (the same shape infer's `types` uses).
-  -- It is the single context-carrying argument of the whole kernel, and it
-  -- lives ONLY here at ingress (one pass per constant) — inference, whnf, and
-  -- def-eq read the BVar's type off the node instead. See
-  -- docs/ixvm-context-free-inference.org.
+  -- Context-FREE ingress translation: BVar gets a placeholder annotation
+  -- (`kexpr_dummy()` = Sort 0). The real occurrence-valid annotations are
+  -- filled in by a separate light corrective walk (`correct_all` →
+  -- `reannotate`) once per constant table, BEFORE checking. Keeping the heavy
+  -- Ixon→KExpr translation context-independent lets Aiur dedup shared subterms
+  -- (Expr.Share) instead of re-translating them per binder depth. See
+  -- docs/ixvm-context-free-inference.org (annotation-size / ingress cost).
   fn convert_expr(
     e: &Expr,
     sharing: List‹&Expr›,
     ref_idxs: List‹G›,
     recur_idxs: List‹G›,
     lit_blobs: List‹ByteStream›,
-    univs: List‹&Univ›,
-    types: List‹KExpr›
+    univs: List‹&Univ›
   ) -> KExpr {
     match load(e) {
       Expr.Srt(univ_idx) =>
@@ -159,12 +159,8 @@ def convert := ⟦
         let u = load(list_lookup(univs, flatten_u64(univ_idx)));
         store(KExprNode.Srt(store(convert_univ(u)))),
 
-      -- Annotate the BVar with its occurrence-valid type `lift(types[i], i+1, 0)`,
-      -- computed via the SAME `types_lookup` infer uses — so ingress, the
-      -- `wellFormed` validator, and (post-cutover) infer all agree structurally.
       Expr.Var(idx) =>
-        let i = flatten_u64(idx);
-        store(KExprNode.BVar(i, types_lookup(types, i))),
+        store(KExprNode.BVar(flatten_u64(idx), kexpr_dummy())),
 
       Expr.Ref(ref_idx, univ_idxs) =>
         let const_idx = list_lookup(ref_idxs, flatten_u64(ref_idx));
@@ -181,7 +177,7 @@ def convert := ⟦
         store(KExprNode.Proj(
           type_idx,
           flatten_u64(field_idx),
-          convert_expr(inner, sharing, ref_idxs, recur_idxs, lit_blobs, univs, types))),
+          convert_expr(inner, sharing, ref_idxs, recur_idxs, lit_blobs, univs))),
 
       Expr.Str(blob_ref_idx) =>
         let bs = list_lookup_u64(lit_blobs, blob_ref_idx);
@@ -194,42 +190,35 @@ def convert := ⟦
 
       Expr.App(f, a) =>
         store(KExprNode.App(
-          convert_expr(f, sharing, ref_idxs, recur_idxs, lit_blobs, univs, types),
-          convert_expr(a, sharing, ref_idxs, recur_idxs, lit_blobs, univs, types))),
+          convert_expr(f, sharing, ref_idxs, recur_idxs, lit_blobs, univs),
+          convert_expr(a, sharing, ref_idxs, recur_idxs, lit_blobs, univs))),
 
       Expr.Lam(ty, body) =>
-        let kty = convert_expr(ty, sharing, ref_idxs, recur_idxs, lit_blobs, univs, types);
-        let kbody = convert_expr(body, sharing, ref_idxs, recur_idxs, lit_blobs, univs,
-                                 store(ListNode.Cons(kty, types)));
-        store(KExprNode.Lam(kty, kbody)),
+        store(KExprNode.Lam(
+          convert_expr(ty, sharing, ref_idxs, recur_idxs, lit_blobs, univs),
+          convert_expr(body, sharing, ref_idxs, recur_idxs, lit_blobs, univs))),
 
       Expr.All(ty, body) =>
-        let kty = convert_expr(ty, sharing, ref_idxs, recur_idxs, lit_blobs, univs, types);
-        let kbody = convert_expr(body, sharing, ref_idxs, recur_idxs, lit_blobs, univs,
-                                 store(ListNode.Cons(kty, types)));
-        store(KExprNode.Forall(kty, kbody)),
+        store(KExprNode.Forall(
+          convert_expr(ty, sharing, ref_idxs, recur_idxs, lit_blobs, univs),
+          convert_expr(body, sharing, ref_idxs, recur_idxs, lit_blobs, univs))),
 
-      -- Let binds a variable of type `ty` in `body`, so push `ty` for the body.
-      -- (Infer later zeta-substitutes the value; the annotation uses the
-      -- declared type, consistent with what `wellFormed` recomputes.)
       Expr.Let(_, ty, val, body) =>
-        let kty = convert_expr(ty, sharing, ref_idxs, recur_idxs, lit_blobs, univs, types);
-        let kval = convert_expr(val, sharing, ref_idxs, recur_idxs, lit_blobs, univs, types);
-        let kbody = convert_expr(body, sharing, ref_idxs, recur_idxs, lit_blobs, univs,
-                                 store(ListNode.Cons(kty, types)));
-        store(KExprNode.Let(kty, kval, kbody)),
+        store(KExprNode.Let(
+          convert_expr(ty, sharing, ref_idxs, recur_idxs, lit_blobs, univs),
+          convert_expr(val, sharing, ref_idxs, recur_idxs, lit_blobs, univs),
+          convert_expr(body, sharing, ref_idxs, recur_idxs, lit_blobs, univs))),
 
       Expr.Share(idx) =>
         let ListNode.Cons(e, _) = load(list_drop(sharing, flatten_u64(idx)));
-        convert_expr(e, sharing, ref_idxs, recur_idxs, lit_blobs, univs, types),
+        convert_expr(e, sharing, ref_idxs, recur_idxs, lit_blobs, univs),
     }
   }
 
   fn ctx_convert_expr(e: &Expr, ctx: ConvertCtx) -> KExpr {
     match ctx {
-      -- Top-level constant bodies are closed: start with the empty context.
       ConvertCtx.Mk(sharing, ref_idxs, recur_idxs, lit_blobs, univs) =>
-        convert_expr(e, sharing, ref_idxs, recur_idxs, lit_blobs, univs, store(ListNode.Nil)),
+        convert_expr(e, sharing, ref_idxs, recur_idxs, lit_blobs, univs),
     }
   }
 

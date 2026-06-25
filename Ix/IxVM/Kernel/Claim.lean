@@ -880,6 +880,7 @@ def claim := ⟦
   -- ============================================================================
   fn run_check(const_addr: Addr, asm: Option‹Addr›) {
     let (k_consts, addrs) = ingress_with_primitives(const_addr);
+    let k_consts = correct_all(k_consts, k_consts);
     match asm {
       Option.None => check_all(k_consts, k_consts, addrs),
       Option.Some(asm_root) =>
@@ -904,6 +905,7 @@ def claim := ⟦
   fn run_check_env(env_root: Addr, asm: Option‹Addr›) {
     let env_leaves = load_assumption_tree(env_root);
     let (k_consts, addrs) = ingress_env(env_leaves);
+    let k_consts = correct_all(k_consts, k_consts);
     match asm {
       Option.None => check_all(k_consts, k_consts, addrs),
       Option.Some(asm_root) =>
@@ -1055,6 +1057,7 @@ def claim := ⟦
   pub fn verify_const(target_addr: [U8; 32]) {
     let target = store(target_addr);
     let (k_consts, addrs) = ingress_with_primitives(target);
+    let k_consts = correct_all(k_consts, k_consts);
     let target_pos = find_addr_idx(target, addrs, 0);
     let ci = load(list_lookup(k_consts, target_pos));
     check_const(ci, target_pos, k_consts, addrs)
