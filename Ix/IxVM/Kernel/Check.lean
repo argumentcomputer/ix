@@ -217,39 +217,39 @@ def check := ⟦
     let u = is_unsafe_ci(ci);
     match ci {
       KConstantInfo.Axiom(_, ty, _) =>
-        let _ = k_ensure_sort(ty, store(ListNode.Nil), top, addrs);
+        let _ = k_ensure_sort(ty, top, addrs);
         let _ = assert_safety(u, ty, top);
         (),
 
       KConstantInfo.Defn(_, ty, val, _, _) =>
-        let _ = k_ensure_sort(ty, store(ListNode.Nil), top, addrs);
+        let _ = k_ensure_sort(ty, top, addrs);
         let _ = assert_safety(u, ty, top);
         let _ = assert_safety(u, val, top);
-        let _ = k_check(val, ty, store(ListNode.Nil), top, addrs);
+        let _ = k_check(val, ty, top, addrs);
         (),
 
       KConstantInfo.Thm(_, ty, val) =>
         -- Mirror: src/ix/kernel/check.rs:135. Theorem type must be Sort 0.
-        let lvl = k_ensure_sort(ty, store(ListNode.Nil), top, addrs);
+        let lvl = k_ensure_sort(ty, top, addrs);
         assert_eq!(level_equal(load(lvl), KLevel.Zero), 1);
         let _ = assert_safety(u, ty, top);
         let _ = assert_safety(u, val, top);
-        let _ = k_check(val, ty, store(ListNode.Nil), top, addrs);
+        let _ = k_check(val, ty, top, addrs);
         (),
 
       KConstantInfo.Opaque(_, ty, val, is_unsafe) =>
-        let _ = k_ensure_sort(ty, store(ListNode.Nil), top, addrs);
+        let _ = k_ensure_sort(ty, top, addrs);
         let _ = assert_safety(u, ty, top);
         let _ = assert_safety(u, val, top);
         match is_unsafe {
           1 => (),
           0 =>
-            let _ = k_check(val, ty, store(ListNode.Nil), top, addrs);
+            let _ = k_check(val, ty, top, addrs);
             (),
         },
 
       KConstantInfo.Quot(num_lvls, ty, kind) =>
-        let _ = k_ensure_sort(ty, store(ListNode.Nil), top, addrs);
+        let _ = k_ensure_sort(ty, top, addrs);
         let _ = assert_safety(u, ty, top);
         -- Mirror: src/ix/kernel/check.rs:606-675 fn check_quot.
         -- Validate kind ↔ address consistency, universe-param count per
@@ -260,7 +260,7 @@ def check := ⟦
 
       KConstantInfo.Induct(_, ty, n_params, n_indices, ctor_indices,
                           is_rec, _, _, _, block_addr) =>
-        let _ = k_ensure_sort(ty, store(ListNode.Nil), top, addrs);
+        let _ = k_ensure_sort(ty, top, addrs);
         let _ = assert_safety(u, ty, top);
         let _ = check_block_peer_param_agreement(pos, ty, n_params, n_indices,
                                                   block_addr, top, addrs);
@@ -277,7 +277,7 @@ def check := ⟦
       -- Ctor cross-ref + return-type + field-universe + strict-positivity
       -- (positivity walks mutual + nested via derive_block_member_idxs).
       KConstantInfo.Ctor(_, ty, induct_idx, _, num_params, num_fields, _) =>
-        let _ = k_ensure_sort(ty, store(ListNode.Nil), top, addrs);
+        let _ = k_ensure_sort(ty, top, addrs);
         let _ = assert_safety(u, ty, top);
         let _ = check_ctor_against_inductive_member(pos, ci, top);
         let ind_ci = load(list_lookup(top, induct_idx));
@@ -291,13 +291,13 @@ def check := ⟦
                                            induct_idx, ind_num_lvls);
             let ind_level = get_result_sort_level(ind_ty, ind_n_params + ind_n_indices);
             let _ = check_field_universes(ty, num_params, ind_level,
-                                          store(ListNode.Nil), top, addrs);
-            let _ = check_positivity(ty, num_params, induct_idx, store(ListNode.Nil), top, addrs);
+                                          top, addrs);
+            let _ = check_positivity(ty, num_params, induct_idx, top, addrs);
             (),
         },
 
       KConstantInfo.Rec(_, ty, _, _, _, _, _, _, _, _) =>
-        let _ = k_ensure_sort(ty, store(ListNode.Nil), top, addrs);
+        let _ = k_ensure_sort(ty, top, addrs);
         let _ = assert_safety(u, ty, top);
         let _ = check_recursor_member(pos, ci, top, addrs);
         (),
