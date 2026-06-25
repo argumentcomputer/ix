@@ -732,7 +732,9 @@ def primitive := ⟦
                 let pair2 = u64_add(sum1, [u8_from_field_unsafe(carry), 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
                 match pair2 {
                   (sum2, carry2) =>
-                    let total_carry = g_or(to_field(carry1), to_field(carry2));
+                    -- carry1, carry2 mutually exclusive: carry1=1 ⇒ sum1 ≤
+                    -- 2^64-2 ⇒ sum1 + carry_in ≤ 2^64-1 ⇒ carry2=0.
+                    let total_carry = to_field(carry1) + to_field(carry2);
                     store(ListNode.Cons(sum2, klimbs_add_carry(ra, rb, total_carry))),
                 },
             },
@@ -745,31 +747,36 @@ def primitive := ⟦
   }
 
   -- Mirror: byte-wise u64_sub with explicit final borrow.
+  -- Per-byte: u_t = borrow(a_i - b_i); u_r = borrow((a_i + 256 - b_i) - br_in).
+  -- u_t = 1 ⇒ a_i + 256 - b_i ≥ 1 ⇒ subtracting br_in ∈ {0,1} cannot underflow
+  -- ⇒ u_r = 0. So `u_t` and `u_r` are mutually-exclusive 0/1 values; field `+`
+  -- substitutes for `g_or` (which charges +1 aux +1 lookup per call). See
+  -- [[reference_aiur_carry_add]].
   fn u64_sub_with_borrow(a: U64, b: U64) -> (U64, G) {
     let [a0, a1, a2, a3, a4, a5, a6, a7] = a;
     let [b0, b1, b2, b3, b4, b5, b6, b7] = b;
     let (r0, br1) = u8_sub(a0, b0);
     let (t1, u_t1) = u8_sub(a1, b1);
     let (r1, u_r1) = u8_sub(t1, br1);
-    let br2 = g_or(to_field(u_t1), to_field(u_r1));
+    let br2 = to_field(u_t1) + to_field(u_r1);
     let (t2, u_t2) = u8_sub(a2, b2);
     let (r2, u_r2) = u8_sub(t2, u8_from_field_unsafe(br2));
-    let br3 = g_or(to_field(u_t2), to_field(u_r2));
+    let br3 = to_field(u_t2) + to_field(u_r2);
     let (t3, u_t3) = u8_sub(a3, b3);
     let (r3, u_r3) = u8_sub(t3, u8_from_field_unsafe(br3));
-    let br4 = g_or(to_field(u_t3), to_field(u_r3));
+    let br4 = to_field(u_t3) + to_field(u_r3);
     let (t4, u_t4) = u8_sub(a4, b4);
     let (r4, u_r4) = u8_sub(t4, u8_from_field_unsafe(br4));
-    let br5 = g_or(to_field(u_t4), to_field(u_r4));
+    let br5 = to_field(u_t4) + to_field(u_r4);
     let (t5, u_t5) = u8_sub(a5, b5);
     let (r5, u_r5) = u8_sub(t5, u8_from_field_unsafe(br5));
-    let br6 = g_or(to_field(u_t5), to_field(u_r5));
+    let br6 = to_field(u_t5) + to_field(u_r5);
     let (t6, u_t6) = u8_sub(a6, b6);
     let (r6, u_r6) = u8_sub(t6, u8_from_field_unsafe(br6));
-    let br7 = g_or(to_field(u_t6), to_field(u_r6));
+    let br7 = to_field(u_t6) + to_field(u_r6);
     let (t7, u_t7) = u8_sub(a7, b7);
     let (r7, u_r7) = u8_sub(t7, u8_from_field_unsafe(br7));
-    let final_borrow = g_or(to_field(u_t7), to_field(u_r7));
+    let final_borrow = to_field(u_t7) + to_field(u_r7);
     ([r0, r1, r2, r3, r4, r5, r6, r7], final_borrow)
   }
 
@@ -814,7 +821,9 @@ def primitive := ⟦
                 let pair2 = u64_sub_with_borrow(sum1, [u8_from_field_unsafe(borrow), 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
                 match pair2 {
                   (sum2, br2) =>
-                    let total = g_or(br1, br2);
+                    -- br1, br2 mutually exclusive: br1=1 ⇒ sum1 ≥ 1 ⇒
+                    -- sum1 - borrow ≥ 0 ⇒ br2=0.
+                    let total = br1 + br2;
                     let rec_pair = klimbs_sub_borrow(ra, rb, total);
                     match rec_pair {
                       (rest_res, br_final) =>
@@ -1284,19 +1293,25 @@ def primitive := ⟦
           1 => (1, store(ListNode.Nil)),
           0 => (0, store(ListNode.Nil)),
         },
-      KExprNode.App(f, a) =>
-        match load(f) {
-          KExprNode.Const(idx, _) =>
-            let head_addr_ = list_lookup(addrs, idx);
-            match address_eq(head_addr_, nat_succ_addr()) {
-              1 =>
-                match try_extract_nat(a, addrs) {
-                  (1, pred_limbs) => (1, klimbs_succ(pred_limbs)),
-                  _ => (0, store(ListNode.Nil)),
-                },
-              0 => (0, store(ListNode.Nil)),
+      KExprNode.App(f, a) => try_extract_nat_app(f, a, addrs),
+      _ => (0, store(ListNode.Nil)),
+    }
+  }
+
+  -- Cold-extracted App arm: list_lookup + address_eq + recursive
+  -- try_extract_nat + klimbs_succ is the widest arm; pulling it out lets
+  -- `try_extract_nat`'s main width drop to the leaf-arm width.
+  fn try_extract_nat_app(f: KExpr, a: KExpr, addrs: List‹Addr›) -> (G, KLimbs) {
+    match load(f) {
+      KExprNode.Const(idx, _) =>
+        let head_addr_ = list_lookup(addrs, idx);
+        match address_eq(head_addr_, nat_succ_addr()) {
+          1 =>
+            match try_extract_nat(a, addrs) {
+              (1, pred_limbs) => (1, klimbs_succ(pred_limbs)),
+              _ => (0, store(ListNode.Nil)),
             },
-          _ => (0, store(ListNode.Nil)),
+          0 => (0, store(ListNode.Nil)),
         },
       _ => (0, store(ListNode.Nil)),
     }
@@ -1374,8 +1389,6 @@ def primitive := ⟦
     let is_succ = address_eq(head_addr, nat_succ_addr());
     match is_succ {
       1 =>
-        -- Mirror: whnf.rs:1789-1822 try_reduce_nat_succ_iter. Single arg;
-        -- whnf, fold to Lit(n+1) on hit.
         match u32_less_than(spine_len, 1) {
           1 => (0, store(KExprNode.BVar(0))),
           0 =>
@@ -1401,30 +1414,40 @@ def primitive := ⟦
                   _ => (0, store(KExprNode.BVar(0))),
                 },
             },
-          0 =>
-            -- Binary ops: require 2 args.
-            match u32_less_than(spine_len, 2) {
-              1 => (0, store(KExprNode.BVar(0))),
-              0 =>
-                let a0_w = whnf(list_lookup(spine, 0), types, top, addrs);
-                let a1_w = whnf(list_lookup(spine, 1), types, top, addrs);
-                let pa = try_extract_nat(a0_w, addrs);
-                let pb = try_extract_nat(a1_w, addrs);
-                match pa {
-                  (1, na) =>
-                    match pb {
-                      (1, nb) =>
-                        match try_nat_binop_addr(head_addr, na, nb, addrs) {
-                          (1, result) =>
-                            let post = list_drop(spine, 2);
-                            (1, apply_spine(result, post)),
-                          (0, _) => (0, store(KExprNode.BVar(0))),
-                        },
-                      _ => (0, store(KExprNode.BVar(0))),
-                    },
-                  _ => (0, store(KExprNode.BVar(0))),
+          0 => try_nat_binop_dispatch(head_addr, spine, spine_len, types, top, addrs),
+        },
+    }
+  }
+
+  -- Cold-extracted binop arm (mirror [[reference_aiur_hot_cold_split]]).
+  -- Binop dispatch is the widest arm of `try_nat_dispatch` (2× whnf + 2×
+  -- try_extract_nat + try_nat_binop_addr + apply_spine), so it pays
+  -- max-arm-width on every Nat.succ/Nat.pred row when inlined. Factored
+  -- here so its width only charges the rows that actually dispatch a
+  -- binop.
+  fn try_nat_binop_dispatch(head_addr: Addr, spine: List‹KExpr›, spine_len: G,
+                             types: List‹KExpr›, top: List‹&KConstantInfo›,
+                             addrs: List‹Addr›) -> (G, KExpr) {
+    match u32_less_than(spine_len, 2) {
+      1 => (0, store(KExprNode.BVar(0))),
+      0 =>
+        let a0_w = whnf(list_lookup(spine, 0), types, top, addrs);
+        let a1_w = whnf(list_lookup(spine, 1), types, top, addrs);
+        let pa = try_extract_nat(a0_w, addrs);
+        let pb = try_extract_nat(a1_w, addrs);
+        match pa {
+          (1, na) =>
+            match pb {
+              (1, nb) =>
+                match try_nat_binop_addr(head_addr, na, nb, addrs) {
+                  (1, result) =>
+                    let post = list_drop(spine, 2);
+                    (1, apply_spine(result, post)),
+                  (0, _) => (0, store(KExprNode.BVar(0))),
                 },
+              _ => (0, store(KExprNode.BVar(0))),
             },
+          _ => (0, store(KExprNode.BVar(0))),
         },
     }
   }

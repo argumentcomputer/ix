@@ -301,6 +301,141 @@ def whnf := ⟦
     }
   }
 
+  -- ============================================================================
+  -- whnf_nd: WHNF without delta-unfolding (`src/ix/kernel/whnf.rs::whnf_no_delta`).
+  --
+  -- Same dispatch tree as `whnf`, but `whnf_nd_const_head`'s `Defn` arm
+  -- returns the stuck application instead of unfolding. Beta / let zeta /
+  -- iota / proj / quot / primitives still fire — they don't require delta.
+  --
+  -- Used by def_eq's Tier 1d structural pre-check (Rust def_eq.rs:320-326):
+  -- many comparisons settle at no-delta whnf + ptr_eq or structural quick
+  -- comparison, avoiding the cascading delta-unfold work.
+  -- ============================================================================
+  fn whnf_nd(e: KExpr, types: List‹KExpr›,
+             top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
+    match load(e) {
+      KExprNode.Srt(_) => e,
+      KExprNode.Lit(_) => e,
+      KExprNode.Lam(_, _) => e,
+      KExprNode.Forall(_, _) => e,
+      KExprNode.BVar(_) => e,
+      _ => whnf_nd_core(e, ctx_trim(types, expr_lbr(e)), top, addrs),
+    }
+  }
+
+  fn whnf_nd_core(e: KExpr, types: List‹KExpr›,
+                  top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
+    let pair = collect_spine(e);
+    match pair {
+      (head, spine) => whnf_nd_with_spine(head, spine, types, top, addrs),
+    }
+  }
+
+  fn whnf_nd_with_spine(head: KExpr, spine: List‹KExpr›, types: List‹KExpr›,
+                         top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
+    match load(head) {
+      KExprNode.App(f, a) =>
+        match collect_spine(head) {
+          (inner_head, inner_spine) =>
+            whnf_nd_with_spine(inner_head, list_concat(inner_spine, spine), types, top, addrs),
+        },
+      KExprNode.Lam(ty, body) =>
+        whnf_nd_apply_beta(spine, head, types, top, addrs),
+      KExprNode.Const(idx, lvls) =>
+        whnf_nd_const_head(idx, lvls, head, spine, types, top, addrs),
+      KExprNode.Let(_, val, body) =>
+        let next = expr_inst1(body, val, 0);
+        whnf_nd_with_spine(next, spine, types, top, addrs),
+      KExprNode.Proj(tidx, fidx, inner) =>
+        whnf_nd_proj_head(tidx, fidx, inner, spine, types, top, addrs),
+      _ => apply_spine(head, spine),
+    }
+  }
+
+  fn whnf_nd_apply_beta(spine: List‹KExpr›, lam: KExpr, types: List‹KExpr›,
+                         top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
+    match peel_beta(lam, spine, store(ListNode.Nil)) {
+      (deep, consumed, rest) =>
+        match list_length(consumed) {
+          0 => apply_spine(lam, spine),
+          1 =>
+            let body2 = expr_inst1(deep, list_lookup(consumed, 0), 0);
+            whnf_nd_with_spine(body2, rest, types, top, addrs),
+          _ =>
+            let body2 = expr_inst_many(deep, consumed, 0);
+            whnf_nd_with_spine(body2, rest, types, top, addrs),
+        },
+    }
+  }
+
+  fn whnf_nd_proj_head(tidx: G, fidx: G, inner: KExpr, spine: List‹KExpr›,
+                        types: List‹KExpr›, top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
+    let inner_whnf = whnf_nd(inner, types, top, addrs);
+    let inner_pair = collect_spine(inner_whnf);
+    match inner_pair {
+      (inner_head, inner_args) =>
+        let fvd_pair = try_reduce_fin_val_decidable_rec(tidx, fidx, inner_head, inner_args, addrs);
+        match fvd_pair {
+          (1, rewritten) => whnf_nd_with_spine(rewritten, spine, types, top, addrs),
+          (0, _) =>
+            match load(inner_head) {
+              KExprNode.Const(cidx, _) =>
+                let cci = load(list_lookup(top, cidx));
+                match cci {
+                  KConstantInfo.Ctor(_, _, _, _, nparams, _, _) =>
+                    let field = list_lookup_or_nil(inner_args, nparams + fidx);
+                    whnf_nd_with_spine(field, spine, types, top, addrs),
+                  _ =>
+                    let stuck = store(KExprNode.Proj(tidx, fidx, inner_whnf));
+                    apply_spine(stuck, spine),
+                },
+              _ =>
+                let stuck = store(KExprNode.Proj(tidx, fidx, inner_whnf));
+                apply_spine(stuck, spine),
+            },
+        },
+    }
+  }
+
+  -- The difference from `whnf_const_head`: Defn arm returns stuck instead of
+  -- unfolding. Iota, quot, primitives, proj-defs still apply.
+  fn whnf_nd_const_head(idx: G, lvls: List‹&KLevel›, head: KExpr, spine: List‹KExpr›,
+                         types: List‹KExpr›, top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
+    let head_addr = list_lookup(addrs, idx);
+    let ci = load(list_lookup(top, idx));
+    match ci {
+      KConstantInfo.Rec(num_lvls, _, num_params, num_indices, num_motives, num_minors, rules, k_flag, _, _) =>
+        let iota = try_iota(lvls, spine, num_lvls, num_params, num_indices, num_motives, num_minors, rules, k_flag, types, top, addrs);
+        match iota {
+          (1, reduced2) => whnf_nd(reduced2, types, top, addrs),
+          (0, _) => apply_spine(head, spine),
+        },
+      KConstantInfo.Quot(_, _, kind) =>
+        let qiota = try_quot_iota(kind, spine, types, top, addrs);
+        match qiota {
+          (1, reduced_q) => whnf_nd(reduced_q, types, top, addrs),
+          (0, _) => apply_spine(head, spine),
+        },
+      _ =>
+        let addr_prim = match prim_any_addr(head_addr) {
+          1 => try_address_primitives(head_addr, idx, lvls, spine, types, top, addrs),
+          _ => (0, store(KExprNode.BVar(0))),
+        };
+        match addr_prim {
+          (1, reduced) => whnf_nd(reduced, types, top, addrs),
+          (0, _) =>
+            let proj_def_pair = try_reduce_projection_definition(idx, spine, top);
+            match proj_def_pair {
+              (1, reduced_pd) => whnf_nd(reduced_pd, types, top, addrs),
+              (0, _) =>
+                -- Defn / Thm / etc.: STUCK in no-delta mode. The whole point.
+                apply_spine(head, spine),
+            },
+        },
+    }
+  }
+
   -- No fuel limit (unlike Rust's `MAX_WHNF_FUEL = 10_000` in
   -- `src/ix/kernel/tc.rs`). In a zk prover context, divergent input simply
   -- fails to produce a proof — the caller guarantees termination, so a
@@ -641,7 +776,6 @@ def whnf := ⟦
                             match is_rec {
                               0 =>
                                 let major = list_lookup(spine, major_idx);
-                                -- Prop guard: refuse if major's type is Prop.
                                 let major_ty = k_infer(major, types, top, addrs);
                                 let prop_p = is_prop_type(major_ty, types, top, addrs);
                                 match prop_p {

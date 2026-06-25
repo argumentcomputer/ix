@@ -65,6 +65,19 @@ def defEq := ⟦
         match try_string_lit_pair(a, b, types, top, addrs) {
           1 => 1,
           0 =>
+            -- Tier 1d: no-delta whnf + structural shortcuts (mirror Rust
+            -- `whnf_no_delta_for_def_eq` + `quick_def_eq` + post-`try_def_eq_app`).
+            let aw_nd = whnf_nd(a, types, top, addrs);
+            let bw_nd = whnf_nd(b, types, top, addrs);
+            match ptr_val(aw_nd) - ptr_val(bw_nd) {
+              0 => 1,
+              _ =>
+                match k_is_def_eq_struct_safe(aw_nd, bw_nd, types, top, addrs) {
+                  1 => 1,
+                  0 =>
+                    match try_lazy_delta_app(aw_nd, bw_nd, types, top, addrs) {
+                      1 => 1,
+                      0 =>
             -- Tier 2: WHNF both sides.
             let aw = whnf(a, types, top, addrs);
             let bw = whnf(b, types, top, addrs);
@@ -105,18 +118,59 @@ def defEq := ⟦
                     },
                 },
             },
+                    },
+                },
+            },
         },
         }
+  }
+
+  -- Mirror Rust `def_eq.rs::quick_def_eq`. Sound on partially-whnf'd
+  -- (no-delta) inputs because the handled shapes (Sort/Lam/All) don't
+  -- depend on further reductions for their judgment. Returns 1 only
+  -- when DEFINITELY def-eq; 0 = fall through.
+  fn k_is_def_eq_struct_safe(a: KExpr, b: KExpr, types: List‹KExpr›,
+                              top: List‹&KConstantInfo›, addrs: List‹Addr›) -> G {
+    match load(a) {
+      KExprNode.Srt(la) =>
+        match load(b) {
+          KExprNode.Srt(lb) => level_equal(load(la), load(lb)),
+          _ => 0,
+        },
+      KExprNode.Lam(ty_a, body_a) =>
+        match load(b) {
+          KExprNode.Lam(ty_b, body_b) =>
+            match k_is_def_eq(ty_a, ty_b, types, top, addrs) {
+              1 =>
+                let inner = store(ListNode.Cons(ty_a, types));
+                k_is_def_eq(body_a, body_b, inner, top, addrs),
+              0 => 0,
+            },
+          _ => 0,
+        },
+      KExprNode.Forall(ty_a, body_a) =>
+        match load(b) {
+          KExprNode.Forall(ty_b, body_b) =>
+            match k_is_def_eq(ty_a, ty_b, types, top, addrs) {
+              1 =>
+                let inner = store(ListNode.Cons(ty_a, types));
+                k_is_def_eq(body_a, body_b, inner, top, addrs),
+              0 => 0,
+            },
+          _ => 0,
+        },
+      _ => 0,
+    }
   }
 
   -- Mirror: src/ix/kernel/def_eq.rs:801-818 fn try_proof_irrel.
   fn try_proof_irrel(a: KExpr, b: KExpr, types: List‹KExpr›,
                      top: List‹&KConstantInfo›, addrs: List‹Addr›) -> G {
-    let a_ty = k_infer(a, types, top, addrs);
+    let a_ty = k_infer_only(a, types, top, addrs);
     match is_prop_type(a_ty, types, top, addrs) {
       0 => 0,
       1 =>
-        let b_ty = k_infer(b, types, top, addrs);
+        let b_ty = k_infer_only(b, types, top, addrs);
         k_is_def_eq(a_ty, b_ty, types, top, addrs),
     }
   }
@@ -124,7 +178,7 @@ def defEq := ⟦
   -- Returns 1 iff `whnf(infer(ty))` is `Sort 0`.
   fn is_prop_type(ty: KExpr, types: List‹KExpr›,
                   top: List‹&KConstantInfo›, addrs: List‹Addr›) -> G {
-    let sort = k_infer(ty, types, top, addrs);
+    let sort = k_infer_only(ty, types, top, addrs);
     let sort_w = whnf(sort, types, top, addrs);
     match load(sort_w) {
       KExprNode.Srt(l) =>
@@ -139,12 +193,12 @@ def defEq := ⟦
   -- Mirror: src/ix/kernel/def_eq.rs:858-905 fn try_unit_like_eq.
   fn try_unit_like(a: KExpr, b: KExpr, types: List‹KExpr›,
                    top: List‹&KConstantInfo›, addrs: List‹Addr›) -> G {
-    let ta = k_infer(a, types, top, addrs);
+    let ta = k_infer_only(a, types, top, addrs);
     let ta_w = whnf(ta, types, top, addrs);
     match is_unit_like_type(ta_w, top) {
       0 => 0,
       1 =>
-        let tb = k_infer(b, types, top, addrs);
+        let tb = k_infer_only(b, types, top, addrs);
         k_is_def_eq(ta, tb, types, top, addrs),
     }
   }
