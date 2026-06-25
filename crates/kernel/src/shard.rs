@@ -58,8 +58,8 @@ use std::collections::BinaryHeap;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::time::Instant;
 
-use ix_common::address::Address;
 use crate::profile::BlockProfile;
+use ix_common::address::Address;
 
 /// Recurse the two halves of a bisection in parallel (rayon) when the parent
 /// sub-problem is at least this large; below it the join overhead isn't worth
@@ -1646,7 +1646,8 @@ pub fn partition_for_cycle_cap(
     // Next estimate: scale N by the overshoot ratio (so a 2× overshoot doubles
     // N), but always advance by ≥1 to guarantee progress. Re-checking the real
     // partition each round converges to the *minimal* N that fits.
-    let scaled = ((n as f64) * (max_shard_hb as f64 / hb_cap as f64)).ceil() as usize;
+    let scaled =
+      ((n as f64) * (max_shard_hb as f64 / hb_cap as f64)).ceil() as usize;
     n = scaled.max(n + 1).min(nblocks);
     let (so, t) = h.partition_with_tree(n, epsilon);
     shard_of = so;
@@ -2017,7 +2018,10 @@ mod tests {
         match op {
           FoldOp::Leaf(id) => seen_leaves.push(*id),
           FoldOp::Agg(ch) => {
-            assert!(ch.len() >= 2 && ch.len() <= arity, "arity {arity}: {ch:?}");
+            assert!(
+              ch.len() >= 2 && ch.len() <= arity,
+              "arity {arity}: {ch:?}"
+            );
             // children reference earlier entries (post order)
             assert!(ch.iter().all(|&i| i < plan.len()));
           },
@@ -2044,7 +2048,9 @@ mod tests {
           FoldOp::Leaf(id) => *id,
           FoldOp::Agg(g) => g
             .iter()
-            .map(|&j| if let FoldOp::Leaf(x) = &plan[j] { *x } else { u32::MAX })
+            .map(
+              |&j| if let FoldOp::Leaf(x) = &plan[j] { *x } else { u32::MAX },
+            )
             .min()
             .unwrap_or(u32::MAX),
         })

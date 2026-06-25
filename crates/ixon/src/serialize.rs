@@ -81,7 +81,10 @@ fn put_address(a: &Address, buf: &mut Vec<u8>) {
 /// with `.ixe` that have no hints or predate the section. Inserts into
 /// `env.anon_hints` (overwriting any value harvested from a Named section,
 /// with the identical value, so the order of harvest vs. section is moot).
-fn read_anon_hints_section(buf: &mut &[u8], env: &mut Env) -> Result<(), String> {
+fn read_anon_hints_section(
+  buf: &mut &[u8],
+  env: &mut Env,
+) -> Result<(), String> {
   if buf.is_empty() {
     return Ok(());
   }
@@ -1356,7 +1359,8 @@ impl Env {
     // fallback is always correct), so this section is intentionally NOT covered
     // by the consts merkle root.
     if !self.anon_hints.is_empty() {
-      let mut hint_addrs: Vec<Address> = self.anon_hints.keys().cloned().collect();
+      let mut hint_addrs: Vec<Address> =
+        self.anon_hints.keys().cloned().collect();
       hint_addrs.sort_unstable();
       put_u64(hint_addrs.len() as u64, buf);
       for addr in &hint_addrs {
@@ -2420,8 +2424,8 @@ mod tests {
   }
 
   fn defn_const_discriminator(refs: Vec<Address>, lvls: u64) -> Constant {
-    use ix_common::env::DefinitionSafety;
     use crate::constant::{DefKind, Definition};
+    use ix_common::env::DefinitionSafety;
     Constant::with_tables(
       ConstantInfo::Defn(Definition {
         kind: DefKind::Definition,

@@ -113,9 +113,9 @@ impl AnonWorkItem {
 /// address, or a Tag4 head byte that doesn't correspond to a known
 /// `ConstantInfo` variant).
 pub fn build_anon_work(env: &IxonEnv) -> Result<Vec<AnonWorkItem>, String> {
+  use ConstVariantTag as Tag;
   use ixon::constant::ConstantInfo as CI;
   use ixon::constant::MutConst as MC;
-  use ConstVariantTag as Tag;
 
   let mut work: Vec<AnonWorkItem> = Vec::new();
 
@@ -170,7 +170,11 @@ pub fn build_anon_work(env: &IxonEnv) -> Result<Vec<AnonWorkItem>, String> {
           continue;
         }
         let primary = targets[0].clone();
-        work.push(AnonWorkItem::Block { block_addr: addr.clone(), primary, targets });
+        work.push(AnonWorkItem::Block {
+          block_addr: addr.clone(),
+          primary,
+          targets,
+        });
       },
     }
   }

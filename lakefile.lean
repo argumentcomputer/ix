@@ -122,9 +122,6 @@ lean_exe «bench-typecheck» where
   root := `Benchmarks.Typecheck
   supportInterpreter := true
 
-lean_exe «bench-compile-init» where
-  root := `Benchmarks.CompileInit
-
 end Benchmarks
 
 section IxApplications

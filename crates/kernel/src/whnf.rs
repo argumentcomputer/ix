@@ -985,6 +985,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     }
 
     if is_ctor {
+      crate::perf::record_iota_histo(&rec_id.addr);
       let ctor_id = match ctor_head.data() {
         ExprData::Const(id, _, _) => id,
         _ => unreachable!(),
@@ -1792,6 +1793,18 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     &mut self,
     arg: &KExpr<M>,
   ) -> Result<Option<KExpr<M>>, TcError<M>> {
+    // Stuck-chain memo. The inner WHNF below runs in `NatSuccMode::Stuck`,
+    // which bypasses the WHNF caches, so without this memo a stuck
+    // `succ^k(x)` chain is re-peeled in full from every depth it is
+    // encountered at — O(k²) fuel for `x + literal` on a symbolic `x`.
+    // Every suffix of a stuck chain is itself stuck, so on the stuck exit
+    // all visited keys are recorded.
+    let entry_key = self.whnf_key(arg);
+    if self.env.nat_succ_stuck.contains(&entry_key) {
+      return Ok(None);
+    }
+    let mut visited: Vec<(super::env::Addr, super::env::Addr)> =
+      vec![entry_key];
     let mut offset = num_bigint::BigUint::from(1u64);
     let mut cur = arg.clone();
 
@@ -1814,11 +1827,24 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         && id.addr == self.prims.nat_succ.addr
         && args.len() == 1
       {
+        crate::perf::record_nat_succ_peel();
         offset += 1u64;
         cur = args[0].clone();
+        let cur_key = self.whnf_key(&cur);
+        if self.env.nat_succ_stuck.contains(&cur_key) {
+          // Known-stuck suffix: the whole chain above it is stuck too.
+          self.env.nat_succ_stuck.extend(visited);
+          return Ok(None);
+        }
+        visited.push(cur_key);
+        // The whnf'd form `succ(cur)` can also surface later as a
+        // succ-iter argument; record it alongside the raw chain.
+        let w_key = self.whnf_key(&w);
+        visited.push(w_key);
         continue;
       }
 
+      self.env.nat_succ_stuck.extend(visited);
       return Ok(None);
     }
   }

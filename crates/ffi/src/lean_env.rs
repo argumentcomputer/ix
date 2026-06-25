@@ -3883,7 +3883,6 @@ impl ConstSizeBreakdown {
 #[cfg(feature = "test-ffi")]
 /// Analyze the serialized size of a constant and its transitive dependencies.
 fn analyze_const_size(stt: &ix_compile::compile::CompileState, name_str: &str) {
-
   // Build a global name index for metadata serialization
   let name_index = build_name_index(stt);
 

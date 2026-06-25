@@ -16,12 +16,12 @@ pub mod byte_array;
 pub mod iroh;
 pub mod keccak;
 pub mod lean_env;
-pub mod texray;
 #[cfg(all(
   feature = "net",
   not(all(target_os = "macos", target_arch = "aarch64"))
 ))]
 pub mod lean_iroh;
+pub mod texray;
 pub mod unsigned;
 
 pub mod builder;
