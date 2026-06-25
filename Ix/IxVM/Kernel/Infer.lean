@@ -83,22 +83,18 @@ def infer := ⟦
         let ty = const_type_of(ci);
         expr_inst_levels(ty, lvls),
 
-      KExprNode.App(f, a) =>
-        let f_ty = k_infer(f, types, top, addrs);
-        -- Mirror: src/ix/kernel/infer.rs:454-478 peel_proj_forall syntactic fast-path.
-        match load(f_ty) {
-          KExprNode.Forall(dom, cod) =>
-            let _ = k_check(a, dom, types, top, addrs);
-            expr_inst1(cod, a, 0),
-          _ =>
-            let f_ty_whnf = whnf(f_ty, types, top, addrs);
-            let triple = ensure_forall_post_whnf(f_ty_whnf);
-            match triple {
-              (ok, dom, cod) =>
-                assert_eq!(ok, 1);
-                let _ = k_check(a, dom, types, top, addrs);
-                expr_inst1(cod, a, 0),
-            },
+      KExprNode.App(_, _) =>
+        -- App-spine fusion: collect the entire spine, infer the head once,
+        -- then peel its Forall telescope arg-by-arg using a single
+        -- `expr_inst_many` per step on the ORIGINAL dom (with a growing
+        -- innermost-first subs list) instead of N consecutive `expr_inst1`
+        -- rewalks of a residual cod. Saves O(N) intermediate stored exprs
+        -- on heavily-applied terms.
+        match collect_spine(e) {
+          (head, args) =>
+            let head_ty = k_infer(head, types, top, addrs);
+            k_infer_app_spine_loop(head_ty, args, store(ListNode.Nil),
+                                    types, top, addrs),
         },
 
       KExprNode.Lam(ty, body) =>
@@ -152,6 +148,46 @@ def infer := ⟦
                                         types, top, addrs),
                     },
                 },
+            },
+        },
+    }
+  }
+
+  -- Walk the head's Forall telescope arg-by-arg. `subs_rev` accumulates
+  -- substituted args INNERMOST-FIRST (so substs[0] = latest arg = the one
+  -- bound at BVar(0)). At each step we substitute prior args into the
+  -- current Forall's `dom` (one expr_inst_many walk of the ORIGINAL dom,
+  -- not a residual) for the check, then descend into `cod` with the
+  -- extended subs. At spine end, one final expr_inst_many on the remaining
+  -- `cod` yields the result type.
+  --
+  -- When `load(t)` isn't a Forall, materialise via whnf on the concretised
+  -- t (= prior subs applied to original t). Post-whnf dom/cod are in the
+  -- OUTER context, so we restart the descent with subs_rev = [a].
+  fn k_infer_app_spine_loop(t: KExpr, args: List‹KExpr›,
+                             subs_rev: List‹KExpr›,
+                             types: List‹KExpr›,
+                             top: List‹&KConstantInfo›,
+                             addrs: List‹Addr›) -> KExpr {
+    match load(args) {
+      ListNode.Nil => expr_inst_many(t, subs_rev, 0),
+      ListNode.Cons(a, rest) =>
+        match load(t) {
+          KExprNode.Forall(dom, cod) =>
+            let concrete_dom = expr_inst_many(dom, subs_rev, 0);
+            let _ = k_check(a, concrete_dom, types, top, addrs);
+            let new_subs = store(ListNode.Cons(a, subs_rev));
+            k_infer_app_spine_loop(cod, rest, new_subs, types, top, addrs),
+          _ =>
+            let t_concrete = expr_inst_many(t, subs_rev, 0);
+            let t_whnf = whnf(t_concrete, types, top, addrs);
+            let triple = ensure_forall_post_whnf(t_whnf);
+            match triple {
+              (ok, dom, cod) =>
+                assert_eq!(ok, 1);
+                let _ = k_check(a, dom, types, top, addrs);
+                let new_subs = store(ListNode.Cons(a, store(ListNode.Nil)));
+                k_infer_app_spine_loop(cod, rest, new_subs, types, top, addrs),
             },
         },
     }
