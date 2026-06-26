@@ -417,6 +417,13 @@ inductive Term
   | u32LessThan : Term → Term → Term
   | u8ChainRotr7 : Term → Term → Term
   | u8ChainRotr4 : Term → Term → Term
+  /-- Unconstrained LE byte-list division-modulo hint. Inputs are two
+  `List<U64>` (klimbs) values (LE limb order). Output is a tuple of two
+  fresh `List<U64>` values `(q, r)` with `q*b + r = a` and `0 ≤ r < b`
+  (when `b > 0`). Computed natively by the Aiur runtime via BigUint
+  div_rem; no constraints generated and no per-step memo growth. The
+  caller must verify `q*b + r == a` and `r < b` in constrained code. -/
+  | unconstrainedBigUintDivMod : (a : Term) → (b : Term) → Term
   /-- A `U8` literal in `[0, 256)`. Lowered to a plain field constant of type
   `u8` (no range-check lookup, since the value is statically in range). -/
   | u8Lit : Nat → Term

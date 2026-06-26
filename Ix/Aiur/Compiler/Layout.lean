@@ -203,6 +203,10 @@ def opLayout : Bytecode.Op → LayoutM Unit
   | .u32LessThan .. => do pushDegree 1; bumpAuxiliaries 12; bumpLookups 6
   -- Pure range-check lookup: no output columns/degrees, just one lookup.
   | .u8RangeCheck .. => bumpLookups
+  -- Unconstrained hint: two fresh auxiliary witness columns (q_ptr, r_ptr).
+  -- No constraint relation, no lookup. Mirrors `IORead` (aux only) — the Rust
+  -- `constraints.rs` pushes exactly 2 auxiliaries and emits no relation.
+  | .unconstrainedBigUintDivMod .. => do pushDegrees #[1, 1]; bumpAuxiliaries 2
   | .debug .. => pure ()
 
 /-- Termination helper for blockLayout's Block/Ctrl traversal. -/

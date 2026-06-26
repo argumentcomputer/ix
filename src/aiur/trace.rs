@@ -565,6 +565,7 @@ impl Op {
       Op::AssertEq(..)
       | Op::IOSetInfo(..)
       | Op::IOWrite(..)
+      | Op::UnconstrainedBigUintDivMod(..)
       | Op::Debug(..) => {},
     }
   }

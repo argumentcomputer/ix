@@ -64,6 +64,15 @@ pub enum Op {
   /// Range-check two values into `[0, 256)` via the byte chip. Produces no new
   /// values: its `u8` results alias the two inputs (cf. `AssertEq`).
   U8RangeCheck(ValIdx, ValIdx),
+  /// Unconstrained `BigUint` division-modulo hint. Inputs are two pointers
+  /// to `KLimbs` (= `List<U64>`) values storing the dividend `a` and divisor
+  /// `b` as little-endian u64 limb chains. Outputs two new pointers to
+  /// `KLimbs` values for the quotient `q` and remainder `r` such that
+  /// `q * b + r = a` with `0 ≤ r < b` (when `b > 0`). Computed natively by
+  /// the runtime via `num_bigint::BigUint::div_rem`; no in-circuit recursion
+  /// and no constraints generated. The caller is responsible for verifying
+  /// the relation in constrained code.
+  UnconstrainedBigUintDivMod(ValIdx, ValIdx),
 }
 
 pub enum Ctrl {

@@ -1108,20 +1108,32 @@ def primitive := ⟦
     }
   }
 
-  -- Mirror: BigUint::div_mod via repeated subtraction. Returns (quotient,
-  -- remainder). For divisor 0, follows Lean Nat semantics: a / 0 = 0,
-  -- a % 0 = a.
+  -- Unconstrained Aiur op `unconstrained_big_uint_div_mod(a, b) -> (q, r)`
+  -- pushes prover-supplied (q, r) into the trace map; no constraints emitted
+  -- by the op itself. Caller verifies `q*b + r == a` (under normalize) and
+  -- `r < b` when `b != 0`. For `b == 0` the op returns `(0, a)`; only the
+  -- `q*b + r == a` equality is required (which holds: `0*0 + a == a`).
+  --
+  -- Soundness on the prover-supplied bytes: every limb byte flows through
+  -- u8_mul inside `klimbs_mul(q, b)` and u8_add inside `klimbs_add(qb, r)`,
+  -- both of which push to the u8_range_check channel
+  -- (src/aiur/gadgets/bytes2.rs), so a byte > 255 fails the gadget's range
+  -- check. Trailing junk limbs that mul doesn't touch are caught by the
+  -- post-normalize equality below.
   fn klimbs_div_mod(a: KLimbs, b: KLimbs) -> (KLimbs, KLimbs) {
+    let (q, r) = unconstrained_big_uint_div_mod(a, b);
+    let qb = klimbs_mul(q, b);
+    let lhs = klimbs_normalize(klimbs_add(qb, r));
+    let rhs = klimbs_normalize(a);
+    assert_eq!(lhs, rhs);
     match klimbs_is_zero(b) {
-      1 => (store(ListNode.Nil), a),
-      0 => klimbs_div_mod_go(a, b, store(ListNode.Nil)),
-    }
-  }
-
-  fn klimbs_div_mod_go(a: KLimbs, b: KLimbs, q: KLimbs) -> (KLimbs, KLimbs) {
-    match klimbs_le(b, a) {
-      0 => (q, a),
-      1 => klimbs_div_mod_go(klimbs_sub(a, b), b, klimbs_succ(q)),
+      1 => (q, r),
+      0 =>
+        -- r < b iff (r + 1) ≤ b. One klimbs_le on klimbs_succ(r); cheapest
+        -- of the sound variants empirically (vs `le(r,b)∧¬eq(r,b)` or
+        -- `¬le(b,r)`).
+        assert_eq!(klimbs_le(klimbs_succ(r), b), 1);
+        (q, r),
     }
   }
 
@@ -1237,16 +1249,23 @@ def primitive := ⟦
     }
   }
 
-  -- Convert a KLimbs n into a chain `App(Const(succ), App(Const(succ),
-  -- ... Const(zero)))` for n calls of succ. Used by nat-literal-to-ctor
-  -- coercion in iota.
+  -- Single-step Nat-literal → ctor coercion. Mirrors Rust
+  -- `nat_to_constructor` (src/ix/kernel/whnf.rs:1664-1687):
+  --   0   → `Const(Nat.zero)`
+  --   n+1 → `App(Const(Nat.succ), Lit(Nat(n-1)))`
+  -- The predecessor stays a `Lit`; the iota that asked for this expansion
+  -- only needs to see the head ctor. Subsequent matches re-trigger
+  -- expansion as needed. The previous body unfolded recursively into
+  -- `Nat.succ^n(Nat.zero)`, which OOM'd for large literals (the original
+  -- driver: per-step `klimbs_dec` memo growth, 4M+ entries seen on
+  -- `Init.Data.String.Decode.0.ByteArray.utf8DecodeChar?.assemble₂._proof_1`
+  -- before allocation failure).
   fn klimbs_to_ctor_form(n: KLimbs, zero_idx: G, succ_idx: G) -> KExpr {
     match load(n) {
       ListNode.Nil =>
         store(KExprNode.Const(zero_idx, store(ListNode.Nil))),
       ListNode.Cons(_, _) =>
-        let dec = klimbs_dec(n);
-        let pred = klimbs_to_ctor_form(dec, zero_idx, succ_idx);
+        let pred = mk_nat_lit(klimbs_normalize(klimbs_dec(n)));
         let succ_const = store(KExprNode.Const(succ_idx, store(ListNode.Nil)));
         store(KExprNode.App(succ_const, pred)),
     }

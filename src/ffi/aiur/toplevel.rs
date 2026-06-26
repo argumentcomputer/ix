@@ -157,6 +157,10 @@ fn decode_op(ctor: LeanCtor<LeanBorrowed<'_>>) -> Op {
       let [i, j] = ctor.objs::<2>().map(|x| lean_unbox_nat_as_usize(&x));
       Op::U8RangeCheck(i, j)
     },
+    28 => {
+      let [i, j] = ctor.objs::<2>().map(|x| lean_unbox_nat_as_usize(&x));
+      Op::UnconstrainedBigUintDivMod(i, j)
+    },
     _ => unreachable!(),
   }
 }

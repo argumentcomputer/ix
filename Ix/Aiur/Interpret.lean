@@ -406,6 +406,17 @@ partial def interp (decls : Decls) (bindings : Bindings) : Term → InterpM Valu
           if a.val < 256 && b.val < 256 then return .tuple #[.field a, .field b]
           else throwErr "u8RangeCheck: value out of range [0, 256)"
       | _, _ => throwErr "u8RangeCheck: expected field values"
+  | .unconstrainedBigUintDivMod t1 t2 => do
+      -- TODO(unconstrainedBigUintDivMod): walk both List<U64> pointer chains via the
+      -- store to extract Vec<u8> bytes (LE), interpret as BigUints, compute
+      -- div_rem natively, build two fresh ListNode chains for q and r, and
+      -- return `.tuple #[.pointer w q_ptr, .pointer w r_ptr]`. The Rust
+      -- runtime (execute.rs) already does this; the Lean debug interpreter
+      -- doesn't yet have BigUint or klimbs helpers, so we surface an explicit
+      -- error rather than silently returning a wrong value.
+      let _ ← interp decls bindings t1
+      let _ ← interp decls bindings t2
+      throwErr "unconstrainedBigUintDivMod: not implemented in debug interpreter"
   -- `toField` / `u8FromFieldUnsafe` are erased coercions: value unchanged.
   | .toField t | .u8FromFieldUnsafe t => interp decls bindings t
   | .u8Lit n => return .field (G.ofNat n)

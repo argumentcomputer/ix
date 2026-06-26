@@ -52,11 +52,8 @@ def core := ⟦
   }
 
   fn list_lookup‹T›(list: List‹T›, idx: G) -> T {
-    let ListNode.Cons(v, rest) = load(list);
-    match idx {
-      0 => v,
-      _ => list_lookup(rest, idx - 1),
-    }
+    let ListNode.Cons(v, _) = load(list_drop(list, idx));
+    v
   }
 
   fn list_lookup_u64‹T›(list: List‹T›, idx: U64) -> T {

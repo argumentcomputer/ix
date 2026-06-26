@@ -787,6 +787,13 @@ def inferTerm (t : Term) : CheckM Typed.Term := match t with
     let a' ← checkNoEscape a .field
     let b' ← checkNoEscape b .field
     pure (Typed.Term.u8RangeCheck (.tuple #[.u8, .u8]) false a' b')
+  | .unconstrainedBigUintDivMod a b => do
+    -- Both inputs must be the same type (expected `List<U64>` at runtime,
+    -- but the type-checker is generic: any container will type-check, and
+    -- the runtime BigUint::div_rem will fault on a malformed shape).
+    let a' ← inferNoEscape a
+    let b' ← checkNoEscape b a'.typ
+    pure (Typed.Term.unconstrainedBigUintDivMod (.tuple #[a'.typ, a'.typ]) false a' b')
   | .toField a => do
     let a' ← checkNoEscape a .u8
     pure (Typed.Term.toField .field false a')
@@ -965,6 +972,8 @@ def zonkTypedTerm (t : Typed.Term) : CheckM Typed.Term := match t with
       pure (.u32LessThan (← zonkTyp τ) e (← zonkTypedTerm a) (← zonkTypedTerm b))
   | .u8RangeCheck τ e a b => do
       pure (.u8RangeCheck (← zonkTyp τ) e (← zonkTypedTerm a) (← zonkTypedTerm b))
+  | .unconstrainedBigUintDivMod τ e a b => do
+      pure (.unconstrainedBigUintDivMod (← zonkTyp τ) e (← zonkTypedTerm a) (← zonkTypedTerm b))
   | .toField τ e a => do pure (.toField (← zonkTyp τ) e (← zonkTypedTerm a))
   | .u8FromFieldUnsafe τ e a => do
       pure (.u8FromFieldUnsafe (← zonkTyp τ) e (← zonkTypedTerm a))

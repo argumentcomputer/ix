@@ -326,6 +326,13 @@ def toIndex
     let j ← expectIdx layoutMap bindings j
     modify fun stt => { stt with ops := stt.ops.push (.u8RangeCheck i j) }
     pure #[i, j]
+  | .unconstrainedBigUintDivMod _ _ a b => do
+    -- Unconstrained hint: runtime computes q,r via BigUint::div_rem and writes
+    -- two fresh pointers (q_ptr, r_ptr) into the witness columns. No constraint
+    -- relation is emitted; caller verifies `q*b + r == a` and `r < b` separately.
+    let a ← expectIdx layoutMap bindings a
+    let b ← expectIdx layoutMap bindings b
+    pushOp (.unconstrainedBigUintDivMod a b) 2
   | .debug _ _ label term ret => do
     let term ← match term with
       | none => pure none

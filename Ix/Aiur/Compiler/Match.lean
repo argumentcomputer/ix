@@ -390,6 +390,7 @@ def typedToSimple : Term → Simple.Term
   | .u8LessThan τ e a b => .u8LessThan τ e (typedToSimple a) (typedToSimple b)
   | .u32LessThan τ e a b => .u32LessThan τ e (typedToSimple a) (typedToSimple b)
   | .u8RangeCheck τ e a b => .u8RangeCheck τ e (typedToSimple a) (typedToSimple b)
+  | .unconstrainedBigUintDivMod τ e a b => .unconstrainedBigUintDivMod τ e (typedToSimple a) (typedToSimple b)
   | .toField τ e a => .toField τ e (typedToSimple a)
   | .u8FromFieldUnsafe τ e a => .u8FromFieldUnsafe τ e (typedToSimple a)
   | .debug τ e l t r =>

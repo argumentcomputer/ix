@@ -50,6 +50,12 @@ inductive Op
   new values: it is a pure side-effect (lookup), and its `u8` results alias the
   two inputs. Kept last so its FFI tag (27) doesn't shift the others. -/
   | u8RangeCheck : ValIdx → ValIdx → Op
+  /-- Unconstrained LE byte-list division-modulo hint. Inputs are pointers to
+  two `List<U64>` (klimbs) values. Produces 2 fresh pointer values
+  `(q_ptr, r_ptr)` to newly-built `List<U64>` values such that `q*b + r = a`
+  and `0 ≤ r < b` (when `b > 0`). No constraint relation emitted; caller
+  must verify in constrained code. -/
+  | unconstrainedBigUintDivMod : ValIdx → ValIdx → Op
   deriving Repr, BEq, Hashable
 
 mutual

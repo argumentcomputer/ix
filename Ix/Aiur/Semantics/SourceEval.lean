@@ -444,6 +444,19 @@ def interp (decls : Decls) (fuel : Nat) (bindings : Bindings)
               .ok (.tuple #[.field a, .field b], st2)
             else .error (.typeMismatch "u8RangeCheck")
           | _, _ => .error (.typeMismatch "u8RangeCheck")
+  | .unconstrainedBigUintDivMod t1 t2 =>
+      -- TODO(unconstrainedBigUintDivMod): walk both List<U64> pointer chains via the
+      -- store to extract Vec<u8> bytes (LE), compute BigUint div_rem, build two
+      -- fresh ListNode chains, and return `.tuple #[.pointer w q_ptr, .pointer w r_ptr]`.
+      -- The Rust runtime already does this; the reference semantics doesn't yet
+      -- have klimbs/BigUint helpers. Surfacing typeMismatch keeps the source
+      -- evaluator total without committing to a half-baked semantics.
+      match interp decls fuel bindings t1 st with
+      | .error e => .error e
+      | .ok (_, st1) =>
+        match interp decls fuel bindings t2 st1 with
+        | .error e => .error e
+        | .ok (_, _) => .error (.typeMismatch "unconstrainedBigUintDivMod")
   -- `toField` / `u8FromFieldUnsafe` are erased coercions: value unchanged.
   | .toField t | .u8FromFieldUnsafe t => interp decls fuel bindings t st
   | .u8Lit n => .ok (.field (G.ofNat n), st)

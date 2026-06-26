@@ -40,6 +40,7 @@ inductive BytecodeError
   | callOutputSizeMismatch
   | unreachableAfterLayout
   | u8RangeCheckFailed
+  | unconstrainedBigUintDivModUnsupported
   deriving Repr, Inhabited
 
 /-- Width-bucketed memory, matching Rust's `QueryRecord.memory_queries`.
@@ -293,6 +294,15 @@ def evalOp (t : Bytecode.Toplevel) (fuel : Nat) (op : Op) (st : EvalState) :
     -- outside `[0, 256)` (exactly what the byte-chip lookup enforces).
     let x ← readIdx st a; let y ← readIdx st b
     if x.val < 256 && y.val < 256 then .ok st else .error .u8RangeCheckFailed
+  | .unconstrainedBigUintDivMod a b => do
+    -- TODO(unconstrainedBigUintDivMod): walk the two pointer chains in `st.memory`
+    -- (List<U64> = ListNode of [U8;8]), extract LE bytes, compute BigUint
+    -- div_rem, build two fresh ListNode chains in `st.memory`, push their
+    -- pointer ValIdxs. The Rust runtime already does this end-to-end; the
+    -- reference evaluator doesn't yet have BigUint helpers, so we surface
+    -- an explicit error rather than silently producing wrong values.
+    let _ ← readIdx st a; let _ ← readIdx st b
+    .error .unconstrainedBigUintDivModUnsupported
   | .debug _ _ => .ok st
 termination_by (fuel, sizeOf op, 0)
 decreasing_by all_goals first | decreasing_tactic | omega
