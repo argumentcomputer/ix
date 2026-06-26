@@ -27,6 +27,7 @@ import Tests.Keccak
 import Tests.MultiStark
 import Tests.Cli
 import Tests.ShardMap
+import Tests.Ix.EnvBody
 import Ix.Common
 import Ix.Meta
 import Ix.IxVM
@@ -144,6 +145,10 @@ def main (args : List String) : IO UInt32 := do
     let primaryArgs := if runIgnored || includeIgnored then [] else filterArgs
     let primaryResult ← LSpec.lspecIO primarySuites primaryArgs
     if primaryResult != 0 then return primaryResult
+    -- getFileEnv body-inclusion regression guard (IO: loads a fixture file)
+    let envBodySeq ← Tests.Ix.EnvBody.suite
+    let envBodyResult ← LSpec.lspecIO (.ofList [("getfileenv-body", [envBodySeq])]) primaryArgs
+    if envBodyResult != 0 then return envBodyResult
 
   -- Run ignored tests when --ignored or --include-ignored is specified
   if runIgnored || includeIgnored then
