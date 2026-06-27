@@ -45,6 +45,35 @@ def blake3 := ⟦
     blake3_compress_layer(load(blake3_compress_chunks(input, store(ListNode.Nil), 0, 0, store([0u8; 8]), store(IV), store(Layer.Nil))))
   }
 
+  -- Flatten blake3's [[U8;4];8] output into the [U8;32] form every caller wants.
+  fn blake3_flat(input: ByteStream) -> [U8; 32] {
+    let h = blake3(input);
+    [h[0][0], h[0][1], h[0][2], h[0][3],
+     h[1][0], h[1][1], h[1][2], h[1][3],
+     h[2][0], h[2][1], h[2][2], h[2][3],
+     h[3][0], h[3][1], h[3][2], h[3][3],
+     h[4][0], h[4][1], h[4][2], h[4][3],
+     h[5][0], h[5][1], h[5][2], h[5][3],
+     h[6][0], h[6][1], h[6][2], h[6][3],
+     h[7][0], h[7][1], h[7][2], h[7][3]]
+  }
+
+  -- Hash `bytes` and assert the digest equals `expected`. Used by every
+  -- IOBuffer-load path that verifies the pre-image of a content-addressed
+  -- pointer matches the bytes the prover supplied.
+  fn verify_bytes_against(bytes: ByteStream, expected: [U8; 32]) {
+    assert_eq!(blake3_flat(bytes), expected);
+    ()
+  }
+
+  -- Hash `bytes` and intern the digest into the Store. Returned pointer is
+  -- the canonical content-addressed `Addr` shape (`&[U8;32]`). Used by every
+  -- site that synthesises an address from raw bytes (e.g. `expr_addr`,
+  -- `leaf_hash`, `node_hash`, `cprj_content_addr`).
+  fn bytes_to_addr(bytes: ByteStream) -> &[U8; 32] {
+    store(blake3_flat(bytes))
+  }
+
   fn blake3_next_layer(layer: Layer, digest: [[U8; 4]; 8], root: G) -> (MaybeDigest, Layer) {
     match layer {
       Layer.Nil => (MaybeDigest.Some(digest), Layer.Nil),
