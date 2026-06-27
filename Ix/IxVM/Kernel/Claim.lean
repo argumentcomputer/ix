@@ -438,8 +438,11 @@ def claim := ⟦
   -- Load + verify a claim from the IOBuffer at key=`digest`. Mirrors
   -- `load_verified_constant`: read bytes, recompute blake3, assert
   -- equality, deserialize, assert no trailing data.
+  -- Load + verify a claim from IOBuffer at `digest` (ch 0). Reads bytes,
+  -- recomputes blake3, asserts equality, deserialises.
   fn load_verified_claim(digest: [U8; 32]) -> Claim {
-    let bytes = load_payload_const(digest);
+    let (idx, len) = io_get_info(0, digest);
+    let bytes = #read_byte_stream(0, idx, len);
     let _ = verify_bytes_against(bytes, digest);
     let (claim, rest) = get_claim(bytes);
     assert_eq!(load(rest), ListNode.Nil);
@@ -736,7 +739,8 @@ def claim := ⟦
 
   fn load_assumption_tree(root: Addr) -> List‹Addr› {
     let raw = load(root);
-    let bytes = load_payload_const(raw);
+    let (idx, len) = io_get_info(1, raw);
+    let bytes = #read_byte_stream(1, idx, len);
     let (tag, s) = get_tag4(bytes);
     let (flag, size) = tag;
     assert_eq!(flag, 0xE);

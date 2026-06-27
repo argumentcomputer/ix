@@ -9,41 +9,58 @@ namespace IxVM
 def ingress := ⟦
   -- IOBuffer channel identifiers. See `ClaimHarness.lean` for the host-side
   -- counterpart that seeds these channels.
-  fn ch_const() -> G { 0 }
-  fn ch_blob() -> G { 1 }
-  fn ch_hint() -> G { 2 }
+  -- ============================================================================
+  -- IxVM IOBuffer interface
+  --
+  -- The host (Lean `IxVM.ClaimHarness`) seeds blake3-keyed payloads on six
+  -- channels; the kernel consumes them via `io_get_info` + `#read_byte_stream`.
+  -- One value shape per channel — no overloading, no in-band discriminators.
+  --
+  -- Tiered by access pattern (matches kernel runtime order):
+  --
+  --   Tier 1 — control input (one-per-run):
+  --     ch 0  claim wire bytes        key = blake3(claim_bytes)        value = claim bytes
+  --     ch 1  assumption tree bytes   key = tree.root                  value = tree bytes
+  --
+  --   Tier 2 — per-const data:
+  --     ch 2  constant wire bytes     key = const.addr                 value = const bytes
+  --     ch 3  Defn reducibility hint  key = defn.addr                  value = [hint_G]
+  --
+  --   Tier 3 — per-blob data:
+  --     ch 4  blob discriminator      key = addr                       value = [1=const,0=blob]
+  --     ch 5  blob raw bytes          key = blob.addr                  value = raw bytes
+  --
+  -- Soundness: every kernel-consumed byte stream is blake3-verified
+  -- against its key (ch 0/1/2/5). ch 3 hint is semantically optional
+  -- (controls WHNF heuristic only; def-eq is sound either way). ch 4
+  -- discriminator is sound by erasure-correctness: lying flips the
+  -- const/blob decision and the wrong-path load fails downstream.
+  --
+  -- Per-channel access patterns are inlined at each consumer (one site
+  -- per channel) so the dispatch never crosses a fn boundary — channel
+  -- choice doesn't add Aiur per-row width tax. Each `io_get_info` +
+  -- `#read_byte_stream` pair appears once at the producer call site.
+  -- Channel numbers MUST stay in sync with `Ix/IxVM/ClaimHarness.lean`.
+  -- ============================================================================
 
-  -- Read the raw bytes the prover seeded at `key` on `channel`.
-  -- Channels and keys are documented per call site; the helper exists
-  -- only to centralise the `io_get_info` + `#read_byte_stream` pair.
-  fn load_payload_const(key: [U8; 32]) -> ByteStream {
-    let (idx, len) = io_get_info(0, key);
-    #read_byte_stream(0, idx, len)
-  }
-  fn load_payload_blob(key: [U8; 32]) -> ByteStream {
-    let (idx, len) = io_get_info(1, key);
-    #read_byte_stream(1, idx, len)
-  }
-  fn load_payload_hint(key: [U8; 32]) -> ByteStream {
-    let (idx, len) = io_get_info(2, key);
-    #read_byte_stream(2, idx, len)
-  }
-
-  -- Load a constant from IOBuffer by address, verify blake3, deserialize.
+  -- Load a constant from IOBuffer by address (ch 2), verify blake3,
+  -- deserialize.
   fn load_verified_constant(addr: Addr) -> Constant {
     let raw = load(addr);
-    let bytes = load_payload_const(raw);
+    let (idx, len) = io_get_info(2, raw);
+    let bytes = #read_byte_stream(2, idx, len);
     let _ = verify_bytes_against(bytes, raw);
     let (constant, rest) = get_constant(bytes);
     assert_eq!(load(rest), ListNode.Nil);
     constant
   }
 
-  -- Load a blob from IOBuffer by address, verify blake3, return raw bytes.
-  -- Blobs live on channel 1; constants live on channel 0 with the same key.
+  -- Load a blob from IOBuffer by address (ch 5), verify blake3, return
+  -- raw bytes.
   fn load_verified_blob(addr: Addr) -> ByteStream {
     let raw = load(addr);
-    let bytes = load_payload_blob(raw);
+    let (idx, len) = io_get_info(5, raw);
+    let bytes = #read_byte_stream(5, idx, len);
     let _ = verify_bytes_against(bytes, raw);
     bytes
   }
@@ -99,15 +116,17 @@ def ingress := ⟦
     }
   }
 
-  -- Load reducibility hint G for a Defn at `addr`. Lives on channel 2.
-  -- Encoding (mirror Lean.ReducibilityHints):
+  -- Load reducibility hint G for a Defn at `addr` (ch 3). Encoding
+  -- mirrors `Lean.ReducibilityHints`:
   --   0           = Opaque
   --   1 + h       = Regular(h)
   --   0xFFFFFFFF  = Abbrev
-  -- Caller MUST only invoke this for Defn addrs; the harness only seeds
-  -- channel 2 for defns. A missing key aborts execution (correct).
+  -- Caller MUST only invoke this for Defn addrs; the harness only
+  -- seeds ch 3 for Defns. A missing key aborts execution (correct).
   fn load_constant_hint(addr: Addr) -> G {
-    let bytes = load_payload_hint(load(addr));
+    let raw = load(addr);
+    let (idx, len) = io_get_info(3, raw);
+    let bytes = #read_byte_stream(3, idx, len);
     match load(bytes) {
       ListNode.Cons(b, _) => to_field(b),
     }
@@ -1231,11 +1250,20 @@ def ingress := ⟦
             load_with_deps(next, rest, visited_addrs, visited_consts, visited_set),
         },
       _ =>
-        -- Check if this address has constant data in IOBuffer.
-        -- io_get_info is unconstrained; the prover provides (0, 0) for blob addresses.
-        -- Soundness: if the prover lies and skips a real constant, type checking will fail.
-        let (_, len) = io_get_info(0, load(addr));
-        match len {
+        -- Discriminator on ch 4: 1 = const, 0 = blob. The host
+        -- (`addEntries`) seeds exactly one byte per addr it ships.
+        -- Soundness via erasure-correctness: lying flips the const/blob
+        -- decision, and the wrong-path load fails downstream (a "blob"
+        -- const won't get its bytes ingressed → refs to it dangle →
+        -- typecheck fail; a "const" blob triggers a ch 2 read that
+        -- returns empty → blake3 verify against the non-empty addr
+        -- fails).
+        let (idx, len) = io_get_info(4, load(addr));
+        let kind_bytes = #read_byte_stream(4, idx, len);
+        let kind = match load(kind_bytes) {
+          ListNode.Cons(b, _) => to_field(b),
+        };
+        match kind {
           0 =>
             -- Blob address: skip (blob values are loaded on demand in build_lit_blobs)
             match load(worklist) {
