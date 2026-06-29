@@ -5,7 +5,7 @@ use multi_stark::{
   p3_matrix::dense::RowMajorMatrix,
   prover::Proof,
   system::{ProverKey, System, SystemWitness},
-  types::{CommitmentParameters, FriParameters, PcsError},
+  types::{CommitmentParameters, FriParameters, GoldilocksBlake3Config, PcsError},
   verifier::VerificationError,
 };
 use rayon::iter::{
@@ -22,11 +22,20 @@ use crate::{
   memory::Memory,
 };
 
+/// The concrete STARK configuration Aiur instantiates multi-stark with.
+pub type AiurConfig = GoldilocksBlake3Config;
+/// A proof under [`AiurConfig`].
+pub type AiurProof = Proof<AiurConfig>;
+
 pub struct AiurSystem {
   toplevel: Toplevel,
   // perhaps remove the key from the system in verifier only mode?
-  key: ProverKey,
-  pub(crate) system: System<AiurCircuit>,
+  key: ProverKey<AiurConfig>,
+  /// The parameters the system's config was built from, kept for the
+  /// verifying-key codec (the config itself doesn't expose them back).
+  pub(crate) commitment_parameters: CommitmentParameters,
+  pub(crate) fri_parameters: FriParameters,
+  pub(crate) system: System<AiurConfig, AiurCircuit>,
 }
 
 pub(crate) enum AiurCircuit {
@@ -81,6 +90,7 @@ impl AiurSystem {
   pub fn build(
     toplevel: Toplevel,
     commitment_parameters: CommitmentParameters,
+    fri_parameters: FriParameters,
   ) -> Self {
     let function_circuits = (0..toplevel.functions.len()).filter_map(|i| {
       if !toplevel.functions[i].constrained {
@@ -102,21 +112,21 @@ impl AiurSystem {
     ]
     .into_iter();
 
+    let config = AiurConfig::new(commitment_parameters, fri_parameters);
     let (system, key) = System::new(
-      commitment_parameters,
+      config,
       function_circuits.chain(memory_circuits).chain(gadget_circuits),
     );
-    AiurSystem { system, key, toplevel }
+    AiurSystem { system, key, toplevel, commitment_parameters, fri_parameters }
   }
 
   #[tracing::instrument(level = "info", skip_all, name = "aiur/prove")]
   pub fn prove(
     &self,
-    fri_parameters: FriParameters,
     fun_idx: FunIdx,
     input: &[G],
     io_buffer: &mut IOBuffer,
-  ) -> (Vec<G>, Proof) {
+  ) -> (Vec<G>, AiurProof) {
     tracing_texray::examine_current();
 
     // Execute the Aiur bytecode.
@@ -170,7 +180,7 @@ impl AiurSystem {
     claim.extend(output);
 
     // Finally prove.
-    let proof = self.system.prove(fri_parameters, &self.key, &claim, witness);
+    let proof = self.system.prove(&self.key, &claim, witness);
     (claim, proof)
   }
 
@@ -187,12 +197,11 @@ impl AiurSystem {
   #[tracing::instrument(level = "info", skip_all, name = "aiur/prove_ixvm")]
   pub fn prove_ixvm<F>(
     &self,
-    fri_parameters: FriParameters,
     fun_idx: FunIdx,
     input: &[G],
     io_buffer: &mut IOBuffer,
     executor: F,
-  ) -> (Vec<G>, Proof)
+  ) -> (Vec<G>, AiurProof)
   where
     F: FnOnce(
       &Toplevel,
@@ -246,17 +255,16 @@ impl AiurSystem {
     claim.extend(input);
     claim.extend(output);
 
-    let proof = self.system.prove(fri_parameters, &self.key, &claim, witness);
+    let proof = self.system.prove(&self.key, &claim, witness);
     (claim, proof)
   }
 
   #[inline]
   pub fn verify(
     &self,
-    fri_parameters: FriParameters,
     claim: &[G],
-    proof: &Proof,
+    proof: &AiurProof,
   ) -> Result<(), VerificationError<PcsError>> {
-    self.system.verify(fri_parameters, claim, proof)
+    self.system.verify(claim, proof)
   }
 }

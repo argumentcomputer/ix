@@ -6,37 +6,23 @@ public import Ix.MultiStark.Keccak
 /-!
 # PCS (FRI) verification
 
-`multi-stark/src/verifier.rs` calls `pcs.verify(coms_to_verify, opening_proof,
-&mut challenger)` — a `TwoAdicFriPcs` FRI verification: query openings, Merkle
-authentication paths, FRI folding consistency. This is the heaviest part of the
-verifier and is being ported here in stages.
+Ports `multi-stark/src/verifier.rs`'s `pcs.verify(...)` — a `TwoAdicFriPcs` FRI
+verification: Merkle `verify_batch` (binary tree, multi-height injection), the
+challenger continuation, the FRI fold chain (`open_input` / `verify_query`), and
+the final-polynomial check.
 
-## Stage 1 — Merkle (MMCS) hash primitives (this file, done + validated)
+## Merkle (MMCS) hash primitives
 
-The input/commit-phase commitments are `MerkleTreeMmcs` over the keccak hasher
-configured in `multi-stark/src/types.rs`:
+The input/commit-phase commitments are a `MerkleTreeMmcs` over Blake3
+(`multi-stark/src/types.rs`):
 
-* leaf hash  : `SerializingHasher<PaddingFreeSponge<KeccakF, 25, 17, 4>>`
-  — serialize each `Goldilocks` element to its canonical `u64`, then run a
-  padding-free **overwrite-mode** sponge (rate 17 lanes, capacity 8, output 4)
-  built on the keccak-f[1600] permutation (reused from `Keccak.lean`).
-* compression: `CompressionFunctionFromHasher<PaddingFreeSponge<…>, 2, 4>`
-  — hash the 8 lanes of two concatenated digests into a 4-lane digest.
+* leaf hash  : `SerializingHasher<Blake3>` — serialize each `Goldilocks` element
+  to its canonical 8 LE bytes, then `blake3` the row.
+* compression: `CompressionFunctionFromHasher<Blake3, 2, 32>` — `blake3(a || b)`
+  of two 32-byte child digests.
 
-`PaddingFreeSponge` differs from keccak-256 (`Keccak.lean`): no `10*1` padding,
-rate 17 *lanes* (not 136 bytes), and each input block **overwrites** the rate
-region (keccak-256 XORs). A full block triggers a permute; a final partial block
-permutes once iff it absorbed ≥1 element; an empty trailing block does not
-permute.
-
-Validated against `multi-stark`'s own hasher (see `pcs_hash_test`, reference
-values from the `pcs_ref_values` test in `multi-stark/src/types.rs`).
-
-## Stage 2+ — TODO
-
-Merkle `verify_batch` (binary tree, multi-height injection), challenger
-threading, the FRI fold chain (`open_input` / `verify_query`), and the final
-polynomial check. Until those land, `pcs_verify` remains an accept-stub.
+`Digest` is `[U64; 4]` = the 32 Blake3 output bytes (8-byte LE groups), so the
+deserialized caps round-trip unchanged. The Blake3 gadget is `Ix/IxVM/Blake3.lean`.
 -/
 
 public section
@@ -45,90 +31,59 @@ namespace MultiStark
 
 def pcs := ⟦
   -- ==========================================================================
-  -- PaddingFreeSponge<KeccakF, 25, 17, 4> in overwrite mode.
+  -- Blake3 MMCS hash primitives.
   --
-  -- Lanes are the keccak `Lane` type (`&[U8; 8]`, LE). A `U64` opened value is
-  -- (for an honest, canonical proof) exactly the 8 LE bytes of a lane, so a lane
-  -- is just `store(u64)`. The 25-lane keccak `State` and `keccak_f_fold` are
-  -- reused from `Keccak.lean`.
+  -- The input/commit-phase commitments are a `MerkleTreeMmcs` over Blake3:
+  --   leaf   = `blake3(serialized row bytes)`  (`SerializingHasher<Blake3>`)
+  --   2-to-1 = `blake3(a || b)`                (`CompressionFunctionFromHasher<Blake3, 2, 32>`)
+  -- A row's `Val`s are serialized as 8 LE bytes each (canonical `u64`). `Digest`
+  -- is `[U64; 4]` = the 32 blake3 output bytes (8-byte LE groups), so the
+  -- deserialized caps round-trip with zero change to the deserializer.
   -- ==========================================================================
 
-  -- Take one input element as the next rate lane, or keep the existing state
-  -- lane `dflt` when the input is exhausted. The flag is 1 iff an input element
-  -- was consumed (input is consumed front-to-back, so the per-block flags are a
-  -- run of 1s followed by 0s).
-  fn u64_pick(vals: List‹U64›, dflt: Lane) -> (Lane, List‹U64›, G) {
-    match load(vals) {
-      ListNode.Nil => (dflt, vals, 0),
-      ListNode.Cons(x, rest) => (store(x), rest, 1),
+  -- 8 LE bytes of a `U64` lane (`SerializingHasher`: a `Val` is 8 LE bytes).
+  fn b3_u64_onto(v: U64, tail: ByteStream) -> ByteStream {
+    store(ListNode.Cons(v[0], store(ListNode.Cons(v[1], store(ListNode.Cons(v[2],
+    store(ListNode.Cons(v[3], store(ListNode.Cons(v[4], store(ListNode.Cons(v[5],
+    store(ListNode.Cons(v[6], store(ListNode.Cons(v[7], tail))))))))))))))))
+  }
+  -- All lanes of a row, in order.
+  fn b3_row_onto(row: List‹U64›, tail: ByteStream) -> ByteStream {
+    match load(row) {
+      ListNode.Nil => tail,
+      ListNode.Cons(v, rest) => b3_u64_onto(v, b3_row_onto(rest, tail)),
     }
   }
-
-  -- Absorb the input lanes into the state, 17 (= RATE) at a time, overwriting
-  -- the rate region. After a FULL block of 17, permute and continue. A final
-  -- partial block (1..16 elements) permutes once; an exactly-empty trailing
-  -- block does not permute (matches `PaddingFreeSponge::hash_iter`).
-  fn pf_absorb(sp: State, vals: List‹U64›) -> State {
-    let old = load(sp);
-    let (l0,  v1,  f0)  = u64_pick(vals, old[0]);
-    let (l1,  v2,  _f1) = u64_pick(v1,  old[1]);
-    let (l2,  v3,  _f2) = u64_pick(v2,  old[2]);
-    let (l3,  v4,  _f3) = u64_pick(v3,  old[3]);
-    let (l4,  v5,  _f4) = u64_pick(v4,  old[4]);
-    let (l5,  v6,  _f5) = u64_pick(v5,  old[5]);
-    let (l6,  v7,  _f6) = u64_pick(v6,  old[6]);
-    let (l7,  v8,  _f7) = u64_pick(v7,  old[7]);
-    let (l8,  v9,  _f8) = u64_pick(v8,  old[8]);
-    let (l9,  v10, _f9) = u64_pick(v9,  old[9]);
-    let (l10, v11, _fa) = u64_pick(v10, old[10]);
-    let (l11, v12, _fb) = u64_pick(v11, old[11]);
-    let (l12, v13, _fc) = u64_pick(v12, old[12]);
-    let (l13, v14, _fd) = u64_pick(v13, old[13]);
-    let (l14, v15, _fe) = u64_pick(v14, old[14]);
-    let (l15, v16, _ff) = u64_pick(v15, old[15]);
-    let (l16, v17, f16) = u64_pick(v16, old[16]);
-    let sp2 = store([l0, l1, l2, l3, l4, l5, l6, l7, l8, l9, l10, l11, l12, l13,
-                     l14, l15, l16, old[17], old[18], old[19], old[20], old[21],
-                     old[22], old[23], old[24]]);
-    match f16 {
-      1 => pf_absorb(keccak_f_fold(sp2, 24), v17),
-      _ => match f0 {
-        0 => sp2,
-        _ => keccak_f_fold(sp2, 24),
-      },
-    }
+  -- A 4-byte blake3 output word.
+  fn b3_w4_onto(w: [U8; 4], tail: ByteStream) -> ByteStream {
+    store(ListNode.Cons(w[0], store(ListNode.Cons(w[1], store(ListNode.Cons(w[2],
+    store(ListNode.Cons(w[3], tail))))))))
+  }
+  -- The 32 bytes of a blake3 digest (`[[U8;4];8]`, word order = output order).
+  fn b3_flatten_onto(h: [[U8; 4]; 8], tail: ByteStream) -> ByteStream {
+    b3_w4_onto(h[0], b3_w4_onto(h[1], b3_w4_onto(h[2], b3_w4_onto(h[3],
+    b3_w4_onto(h[4], b3_w4_onto(h[5], b3_w4_onto(h[6], b3_w4_onto(h[7], tail))))))))
+  }
+  -- blake3 output `[[U8;4];8]` -> `Digest` `[U64;4]` (two words per LE lane).
+  fn b3_to_digest(h: [[U8; 4]; 8]) -> Digest {
+    [[h[0][0], h[0][1], h[0][2], h[0][3], h[1][0], h[1][1], h[1][2], h[1][3]],
+     [h[2][0], h[2][1], h[2][2], h[2][3], h[3][0], h[3][1], h[3][2], h[3][3]],
+     [h[4][0], h[4][1], h[4][2], h[4][3], h[5][0], h[5][1], h[5][2], h[5][3]],
+     [h[6][0], h[6][1], h[6][2], h[6][3], h[7][0], h[7][1], h[7][2], h[7][3]]]
+  }
+  -- The 32 bytes of a `Digest`.
+  fn b3_digest_bytes_onto(d: Digest, tail: ByteStream) -> ByteStream {
+    b3_u64_onto(d[0], b3_u64_onto(d[1], b3_u64_onto(d[2], b3_u64_onto(d[3], tail))))
   }
 
-  -- Hash a list of `u64` lanes (a serialized field-element row, or two
-  -- concatenated digests) into a 4-lane `Digest`.
-  fn pf_sponge_u64(vals: List‹U64›) -> Digest {
-    let z = store([0u8; 8]);
-    let init = store([z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z, z,
-                      z, z, z, z, z]);
-    let sp = pf_absorb(init, vals);
-    let s = load(sp);
-    [load(s[0]), load(s[1]), load(s[2]), load(s[3])]
-  }
-
-  -- The MMCS leaf hash of a single matrix row (`SerializingHasher` over the row
-  -- of canonical `u64`s). For a leaf joining several same-height matrices, the
-  -- rows are concatenated first (see `verify_batch`, future work).
+  -- The MMCS leaf hash of a row (`SerializingHasher<Blake3>`).
   fn mmcs_hash_row(row: List‹U64›) -> Digest {
-    pf_sponge_u64(row)
+    b3_to_digest(blake3(b3_row_onto(row, store(ListNode.Nil))))
   }
-
-  -- The MMCS 2-to-1 compression: hash the 8 lanes of two concatenated digests.
+  -- The MMCS 2-to-1 compression (`CompressionFunctionFromHasher<Blake3, 2, 32>`).
   fn mmcs_compress(a: Digest, b: Digest) -> Digest {
-    let t0 = store(ListNode.Nil);
-    let t1 = store(ListNode.Cons(b[3], t0));
-    let t2 = store(ListNode.Cons(b[2], t1));
-    let t3 = store(ListNode.Cons(b[1], t2));
-    let t4 = store(ListNode.Cons(b[0], t3));
-    let t5 = store(ListNode.Cons(a[3], t4));
-    let t6 = store(ListNode.Cons(a[2], t5));
-    let t7 = store(ListNode.Cons(a[1], t6));
-    let t8 = store(ListNode.Cons(a[0], t7));
-    pf_sponge_u64(t8)
+    b3_to_digest(blake3(b3_digest_bytes_onto(a,
+      b3_digest_bytes_onto(b, store(ListNode.Nil)))))
   }
 
   -- ==========================================================================
@@ -208,7 +163,8 @@ def pcs := ⟦
   }
   -- The joint leaf hash of all matrices at log-height `target`.
   fn leaf_hash_at(rows: List‹List‹U64››, lhs: List‹G›, target: G) -> Digest {
-    pf_sponge_u64(canon_lanes(concat_at(rows, lhs, target)))
+    -- The joint Blake3 leaf hash of all matrices at log-height `target`.
+    mmcs_hash_row(canon_lanes(concat_at(rows, lhs, target)))
   }
 
   -- Inject the leaf hash of any matrices at log-height `lh` (if present) via a

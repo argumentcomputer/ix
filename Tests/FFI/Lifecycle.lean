@@ -6,6 +6,7 @@ module
 
 public import LSpec
 public import Ix.Keccak
+public import Blake3.Rust
 public import Tests.Sha256
 public import Ix.Ixon
 public import Tests.Gen.Ixon
@@ -68,6 +69,50 @@ def keccakLargeInputTests : TestSeq :=
   -- Verify determinism on large input
   let result2 := Keccak.hash large
   test "Keccak large input deterministic" (result == result2)
+
+/-! ## Blake3 external object lifecycle tests -/
+
+/-- Basic hash lifecycle against the official BLAKE3 empty-input test vector. -/
+def blake3BasicTests : TestSeq :=
+  -- Official BLAKE3 vector: blake3("") = af1349b9f5f9a1a6…cae41f3262.
+  let expected : ByteArray := ⟨#[
+    175, 19, 73, 185, 245, 249, 161, 166, 160, 64, 77, 234, 54, 220, 201, 73,
+    155, 203, 37, 201, 173, 193, 18, 183, 204, 154, 147, 202, 228, 31, 50, 98
+  ]⟩
+  let emptyResult := (Blake3.Rust.hash ByteArray.empty).val
+  test "Blake3 empty matches official vector" (emptyResult == expected) ++
+  test "Blake3 empty produces 32 bytes" (emptyResult.size == 32) ++
+  -- Determinism: same input twice.
+  let input : ByteArray := ⟨#[1, 2, 3]⟩
+  test "Blake3 deterministic" ((Blake3.Rust.hash input).val == (Blake3.Rust.hash input).val)
+
+/-- Multi-update lifecycle: init → update × N → finalize. Creates N+1 external
+    `Hasher` objects (exercising the destructor path); must equal the one-shot hash. -/
+def blake3MultiUpdateTests : TestSeq :=
+  let combined : ByteArray := ⟨#[1, 2, 3, 4, 5, 6, 7, 8, 9]⟩
+  let singleHash := (Blake3.Rust.hash combined).val
+  let multiHash := Id.run do
+    let mut h := Blake3.Rust.Hasher.init ()
+    h := h.update ⟨#[1, 2, 3]⟩
+    h := h.update ⟨#[4, 5, 6]⟩
+    h := h.update ⟨#[7, 8, 9]⟩
+    return (h.finalizeWithLength 32).val
+  test "Blake3 multi-update == single" (singleHash == multiHash) ++
+  -- Many updates to stress the external object destructor.
+  let manyHash := Id.run do
+    let mut h := Blake3.Rust.Hasher.init ()
+    for i in [:20] do
+      h := h.update ⟨#[i.toUInt8]⟩
+    return (h.finalizeWithLength 32).val
+  let manyExpected := (Blake3.Rust.hash ⟨Array.range 20 |>.map Nat.toUInt8⟩).val
+  test "Blake3 many-update == single" (manyHash == manyExpected)
+
+/-- Large-input determinism, mirroring the Keccak large-input test. -/
+def blake3LargeInputTests : TestSeq :=
+  let large : ByteArray := ⟨Array.range 4096 |>.map Nat.toUInt8⟩
+  let result := (Blake3.Rust.hash large).val
+  test "Blake3 large input (4096 bytes)" (result.size == 32) ++
+  test "Blake3 large input deterministic" (result == (Blake3.Rust.hash large).val)
 
 /-! ## SHA256 hashing tests -/
 
@@ -275,6 +320,9 @@ public def suite : List TestSeq := [
   keccakBasicTests,
   keccakMultiUpdateTests,
   keccakLargeInputTests,
+  blake3BasicTests,
+  blake3MultiUpdateTests,
+  blake3LargeInputTests,
   sha256Tests,
   serdeTests,
   serdePropertyTest,

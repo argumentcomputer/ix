@@ -116,15 +116,15 @@ def main (args : List String) : IO UInt32 := do
   let facCompiled ← match program.compile with
     | .ok c => pure c
     | .error e => IO.eprintln s!"inner compile failed: {e}"; return 1
-  let facSystem := AiurSystem.build facCompiled.bytecode recCommitParams
+  let facSystem := AiurSystem.build facCompiled.bytecode recCommitParams innerFri
   let facIdx := facCompiled.getFuncIdx entry |>.get!
   IO.println s!"proving inner {entry}(5)…"
   TracingTexray.resetPeakTreeRss
   let it0 ← IO.monoNanosNow
-  let (claim, proof, _) := facSystem.prove innerFri facIdx #[Aiur.G.ofNat 5] default
+  let (claim, proof, _) := facSystem.prove facIdx #[Aiur.G.ofNat 5] default
   let proofBytes := proof.toBytes
   let it1 ← IO.monoNanosNow
-  let innerOk := facSystem.verify innerFri claim proof matches .ok _
+  let innerOk := facSystem.verify claim proof matches .ok _
   let it2 ← IO.monoNanosNow
   let innerPeak ← TracingTexray.peakTreeRssBytes
   IO.println s!"inner PROVE: {secs it0 it1} s, \
@@ -134,7 +134,7 @@ def main (args : List String) : IO UInt32 := do
     IO.eprintln "inner proof failed to verify"
     return 1
   -- Proof (advice, channel 0), vk (channel 1), claims (channel 2), plus the
-  -- Keccak-bound vk/claims digests and FRI params as public input.
+  -- Blake3-bound vk/claims digests and FRI params as public input.
   let claimBytes := MultiStark.serializeClaims #[claim]
   let (pubInput, io) := MultiStark.verifierInput proofBytes facSystem.vkBytes
     claimBytes recCommitParams innerFri
@@ -173,14 +173,14 @@ def main (args : List String) : IO UInt32 := do
       return 0
     -- PROVE the verifier execution (multi-stark): the recursion step itself.
     IO.println "\n=== PROVING the verifier (multi-stark) ==="
-    let vSystem := AiurSystem.build vCompiled.bytecode recCommitParams
+    let vSystem := AiurSystem.build vCompiled.bytecode recCommitParams innerFri
     TracingTexray.resetPeakTreeRss
     let t0 ← IO.monoNanosNow
-    let (vclaim, vproof, _) := vSystem.prove innerFri vIdx pubInput io
+    let (vclaim, vproof, _) := vSystem.prove vIdx pubInput io
     let nbytes := vproof.toBytes.size  -- force the (lazy, pure) prove to run
     let t1 ← IO.monoNanosNow
     let outerPeak ← TracingTexray.peakTreeRssBytes
-    let outerOk := vSystem.verify innerFri vclaim vproof matches .ok _
+    let outerOk := vSystem.verify vclaim vproof matches .ok _
     let t2 ← IO.monoNanosNow
     IO.println s!"verifier PROVE time: {secs t0 t1} s, proof {nbytes} bytes"
     IO.println s!"verifier proof VERIFY time: \

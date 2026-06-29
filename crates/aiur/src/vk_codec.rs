@@ -2,17 +2,18 @@
 //!
 //! The verifier needs the system's per-circuit AIR (symbolic constraints +
 //! lookups + widths), the shared preprocessed commitment, the preprocessed
-//! index map, and the commitment parameters — i.e. everything in
-//! [`System<AiurCircuit>`] except the prover-only preprocessed traces (the
-//! large gadget tables in each `LookupAir.preprocessed`), which are
-//! reconstructed/committed separately and so are *not* serialized.
+//! index map, and the commitment + FRI parameters (which seed the config's
+//! challenger) — i.e. everything in [`System<AiurCircuit>`] except the
+//! prover-only preprocessed traces (the large gadget tables in each
+//! `LookupAir.preprocessed`), which are reconstructed/committed separately
+//! and so are *not* serialized.
 //!
 //! This is a **hand-written, serde-free** codec. `multi-stark` does not derive
 //! `serde` on its types, and we do not want to fork it just to add the derives,
 //! so the encoder and decoder are written by hand against the public fields of
 //! `System`, `Circuit`, `LookupAir`, `Lookup`, `SymbolicExpression`,
-//! `SymbolicVariable`, `Entry`, `CommitmentParameters` and the Ix
-//! `AiurCircuit`/`Constraints`/`Memory`. The wire format mirrors the
+//! `SymbolicVariable`, `Entry`, `CommitmentParameters`, `FriParameters` and
+//! the Ix `AiurCircuit`/`Constraints`/`Memory`. The wire format mirrors the
 //! `bincode standard().little_endian().fixed_int` layout the proof uses, so the
 //! Aiur port (`Ix/MultiStark/SystemDeserialize.lean`) can read it the same way.
 //!
@@ -39,13 +40,13 @@ use multi_stark::{
   lookup::{Lookup, LookupAir},
   p3_field::{PrimeCharacteristicRing, PrimeField64},
   system::{Circuit, System},
-  types::{Commitment, CommitmentParameters, Val},
+  types::{Commitment, CommitmentParameters, FriParameters, Val},
 };
 
 use crate::{
   constraints::Constraints,
   memory::Memory,
-  synthesis::{AiurCircuit, AiurSystem},
+  synthesis::{AiurCircuit, AiurConfig, AiurSystem},
 };
 
 type Expr = SymbolicExpression<Val>;
@@ -160,7 +161,7 @@ impl W {
       AiurCircuit::Bytes2 => self.u32(3),
     }
   }
-  fn circuit(&mut self, c: &Circuit<AiurCircuit>) {
+  fn circuit(&mut self, c: &Circuit<AiurCircuit, Val>) {
     // LookupAir: inner_air, lookups (preprocessed is not serialized).
     self.aircircuit(&c.air.inner_air);
     self.vec(&c.air.lookups, Self::lookup);
@@ -172,10 +173,10 @@ impl W {
     self.usize(c.stage_2_width);
   }
   fn commitment(&mut self, c: &Commitment) {
-    // MerkleCap: Vec<[u64; 4]> digests (raw words, no field reduction).
-    self.vec(c.roots(), |w, digest: &[u64; 4]| {
-      for &word in digest {
-        w.u64(word);
+    // MerkleCap: Vec<[u8; 32]> Blake3 digests (raw bytes).
+    self.vec(c.roots(), |w, digest: &[u8; 32]| {
+      for &byte in digest {
+        w.u8(byte);
       }
     });
   }
@@ -191,11 +192,22 @@ impl W {
 }
 
 /// Serialize the verifying key `System<AiurCircuit>` (preprocessed traces are
-/// skipped — see the module docs).
-pub(crate) fn to_bytes(system: &System<AiurCircuit>) -> Vec<u8> {
+/// skipped — see the module docs). The config's construction parameters are
+/// passed alongside because [`AiurConfig`] doesn't expose them back; they are
+/// written first so the decoder can rebuild the config.
+pub(crate) fn to_bytes(
+  system: &System<AiurConfig, AiurCircuit>,
+  commitment_parameters: CommitmentParameters,
+  fri_parameters: FriParameters,
+) -> Vec<u8> {
   let mut w = W { buf: Vec::new() };
-  w.usize(system.commitment_parameters.log_blowup);
-  w.usize(system.commitment_parameters.cap_height);
+  w.usize(commitment_parameters.log_blowup);
+  w.usize(commitment_parameters.cap_height);
+  w.usize(fri_parameters.log_final_poly_len);
+  w.usize(fri_parameters.max_log_arity);
+  w.usize(fri_parameters.num_queries);
+  w.usize(fri_parameters.commit_proof_of_work_bits);
+  w.usize(fri_parameters.query_proof_of_work_bits);
   w.vec(&system.circuits, W::circuit);
   w.option(&system.preprocessed_commit, W::commitment);
   w.vec(&system.preprocessed_indices, |w, idx| {
@@ -206,7 +218,7 @@ pub(crate) fn to_bytes(system: &System<AiurCircuit>) -> Vec<u8> {
 
 /// Convenience: serialize the verifying key of a built [`AiurSystem`].
 pub fn aiur_system_to_bytes(sys: &AiurSystem) -> Result<Vec<u8>, String> {
-  Ok(to_bytes(&sys.system))
+  Ok(to_bytes(&sys.system, sys.commitment_parameters, sys.fri_parameters))
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -317,7 +329,7 @@ impl<'a> R<'a> {
       t => return Err(format!("bad AiurCircuit tag {t}")),
     })
   }
-  fn circuit(&mut self) -> Result<Circuit<AiurCircuit>, String> {
+  fn circuit(&mut self) -> Result<Circuit<AiurCircuit, Val>, String> {
     // LookupAir: inner_air, lookups (preprocessed is prover-only -> None).
     let air = LookupAir {
       inner_air: self.aircircuit()?,
@@ -335,7 +347,13 @@ impl<'a> R<'a> {
     })
   }
   fn commitment(&mut self) -> Result<Commitment, String> {
-    let caps = self.vec(|r| Ok([r.u64()?, r.u64()?, r.u64()?, r.u64()?]))?;
+    let caps = self.vec(|r| {
+      let mut d = [0u8; 32];
+      for b in d.iter_mut() {
+        *b = r.u8()?;
+      }
+      Ok(d)
+    })?;
     Ok(Commitment::from(caps))
   }
   fn option<T>(
@@ -351,11 +369,24 @@ impl<'a> R<'a> {
 }
 
 /// Deserialize a `System<AiurCircuit>` from [`to_bytes`] output, requiring that
-/// every byte is consumed.
-pub(crate) fn from_bytes(bytes: &[u8]) -> Result<System<AiurCircuit>, String> {
+/// every byte is consumed. Also returns the config's construction parameters,
+/// which the `System` itself doesn't expose.
+pub(crate) fn from_bytes(
+  bytes: &[u8],
+) -> Result<
+  (System<AiurConfig, AiurCircuit>, CommitmentParameters, FriParameters),
+  String,
+> {
   let mut r = R { buf: bytes, pos: 0 };
   let commitment_parameters =
     CommitmentParameters { log_blowup: r.usize()?, cap_height: r.usize()? };
+  let fri_parameters = FriParameters {
+    log_final_poly_len: r.usize()?,
+    max_log_arity: r.usize()?,
+    num_queries: r.usize()?,
+    commit_proof_of_work_bits: r.usize()?,
+    query_proof_of_work_bits: r.usize()?,
+  };
   let circuits = r.vec(R::circuit)?;
   let preprocessed_commit = r.option(R::commitment)?;
   let preprocessed_indices = r.vec(|r| r.option(R::usize))?;
@@ -366,12 +397,13 @@ pub(crate) fn from_bytes(bytes: &[u8]) -> Result<System<AiurCircuit>, String> {
       bytes.len()
     ));
   }
-  Ok(System {
-    commitment_parameters,
+  let system = System {
+    config: AiurConfig::new(commitment_parameters, fri_parameters),
     circuits,
     preprocessed_commit,
     preprocessed_indices,
-  })
+  };
+  Ok((system, commitment_parameters, fri_parameters))
 }
 
 #[cfg(test)]
@@ -380,31 +412,44 @@ mod tests {
   use crate::gadgets::{AiurGadget, bytes1::Bytes1, bytes2::Bytes2};
   use multi_stark::{lookup::LookupAir, types::CommitmentParameters};
 
+  fn test_parameters() -> (CommitmentParameters, FriParameters) {
+    let cp = CommitmentParameters { log_blowup: 1, cap_height: 0 };
+    let fp = FriParameters {
+      log_final_poly_len: 0,
+      max_log_arity: 1,
+      num_queries: 64,
+      commit_proof_of_work_bits: 0,
+      query_proof_of_work_bits: 0,
+    };
+    (cp, fp)
+  }
+
   /// Build a small real `System<AiurCircuit>` from the two byte gadgets and
   /// check the verifying-key codec round-trips: decode(encode(x)) re-encodes to
   /// the same bytes (a serialization fixpoint).
   #[test]
   fn system_vk_round_trips() {
-    let cp = CommitmentParameters { log_blowup: 1, cap_height: 0 };
+    let (cp, fp) = test_parameters();
     let (system, _key) = System::new(
-      cp,
+      AiurConfig::new(cp, fp),
       [
         LookupAir::new(AiurCircuit::Bytes1, Bytes1.lookups()),
         LookupAir::new(AiurCircuit::Bytes2, Bytes2.lookups()),
       ],
     );
-    let bytes = to_bytes(&system);
-    let back = from_bytes(&bytes).expect("decode");
-    let reencoded = to_bytes(&back);
+    let bytes = to_bytes(&system, cp, fp);
+    let (back, back_cp, back_fp) = from_bytes(&bytes).expect("decode");
+    let reencoded = to_bytes(&back, back_cp, back_fp);
     assert_eq!(bytes, reencoded, "verifying-key codec round-trip mismatch");
   }
 
   #[test]
   fn rejects_trailing_bytes() {
-    let cp = CommitmentParameters { log_blowup: 1, cap_height: 0 };
-    let (system, _key) =
-      System::new(cp, [LookupAir::new(AiurCircuit::Bytes1, Bytes1.lookups())]);
-    let mut bytes = to_bytes(&system);
+    let (cp, fp) = test_parameters();
+    let (system, _key) = System::new(AiurConfig::new(cp, fp), [
+      LookupAir::new(AiurCircuit::Bytes1, Bytes1.lookups()),
+    ]);
+    let mut bytes = to_bytes(&system, cp, fp);
     bytes.push(0);
     assert!(from_bytes(&bytes).is_err(), "should reject trailing data");
   }

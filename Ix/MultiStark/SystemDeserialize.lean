@@ -76,14 +76,22 @@ def systemDeserialize := ⟦
   -- preprocessed_width, stage_1_width, stage_2_width.
   enum SysCircuit { Mk(SysLookupAir, G, G, G, G, G, G) }
 
-  enum SysParams { Mk(G, G) }                            -- log_blowup, cap_height
+  -- log_blowup, cap_height, log_final_poly_len, max_log_arity, num_queries,
+  -- commit_proof_of_work_bits, query_proof_of_work_bits — the commitment + FRI
+  -- parameters the config (and its challenger seed) was built from.
+  enum SysParams { Mk(G, G, G, G, G, G, G) }
 
   -- `Option`s as dedicated non-generic enums (unambiguous constructors).
   enum OptCommit { NoCommit, SomeCommit(MerkleCap) }
   enum OptIdx { NoIdx, SomeIdx(G) }
 
-  -- commitment_parameters, circuits, preprocessed_commit, preprocessed_indices.
-  enum Sys { Mk(SysParams, List‹SysCircuit›, OptCommit, List‹OptIdx›) }
+  -- parameters, transcript limbs, circuits, preprocessed_commit,
+  -- preprocessed_indices. The transcript limbs are the raw u64 wire words the
+  -- challenger observes before any commitment — the 7 parameters (bound via
+  -- the challenger seed) followed by the system shape (`observe_shape`: the
+  -- circuit count, then 6 metadata words per circuit) — kept as limbs because
+  -- the Fiat-Shamir replay needs their little-endian bytes.
+  enum Sys { Mk(SysParams, List‹U64›, List‹SysCircuit›, OptCommit, List‹OptIdx›) }
 
   -- ==========================================================================
   -- Byte primitives specific to the VK format.
@@ -212,27 +220,39 @@ def systemDeserialize := ⟦
     (SysLookupAir.Mk(inner, lookups), s1)
   }
 
-  fn read_sys_circuit(stream: ByteStream) -> (SysCircuit, ByteStream) {
+  -- Besides the parsed circuit, also returns its 6 metadata words as raw u64
+  -- limbs — `observe_shape` feeds exactly these bytes into the challenger.
+  fn read_sys_circuit(stream: ByteStream) -> (SysCircuit, [U64; 6], ByteStream) {
     let (air, s) = read_sys_lookupair(stream);
-    let (cc, s1) = read_count(s);
-    let (md, s2) = read_count(s1);
-    let (ph, s3) = read_count(s2);
-    let (pw, s4) = read_count(s3);
-    let (w1, s5) = read_count(s4);
-    let (w2, s6) = read_count(s5);
-    (SysCircuit.Mk(air, cc, md, ph, pw, w1, w2), s6)
+    let (cc, s1) = read_u64(s);
+    let (md, s2) = read_u64(s1);
+    let (ph, s3) = read_u64(s2);
+    let (pw, s4) = read_u64(s3);
+    let (w1, s5) = read_u64(s4);
+    let (w2, s6) = read_u64(s5);
+    (SysCircuit.Mk(air, flatten_u64(cc), flatten_u64(md), flatten_u64(ph),
+                   flatten_u64(pw), flatten_u64(w1), flatten_u64(w2)),
+     [cc, md, ph, pw, w1, w2], s6)
   }
-  fn read_sys_circuits(stream: ByteStream) -> (List‹SysCircuit›, ByteStream) {
-    let (n, s) = read_count(stream);
-    read_sys_circuits_n(s, n)
+  fn cons_shape6(l: [U64; 6], tail: List‹U64›) -> List‹U64› {
+    store(ListNode.Cons(l[0], store(ListNode.Cons(l[1], store(ListNode.Cons(l[2],
+    store(ListNode.Cons(l[3], store(ListNode.Cons(l[4], store(ListNode.Cons(l[5],
+    tail))))))))))))
   }
-  fn read_sys_circuits_n(stream: ByteStream, n: G) -> (List‹SysCircuit›, ByteStream) {
+  -- Returns the circuits plus their shape limbs (`observe_shape` order: the
+  -- raw circuit-count word, then each circuit's 6 metadata words).
+  fn read_sys_circuits(stream: ByteStream) -> (List‹SysCircuit›, List‹U64›, ByteStream) {
+    let (nl, s) = read_u64(stream);
+    let (cs, limbs, s1) = read_sys_circuits_n(s, flatten_u64(nl));
+    (cs, store(ListNode.Cons(nl, limbs)), s1)
+  }
+  fn read_sys_circuits_n(stream: ByteStream, n: G) -> (List‹SysCircuit›, List‹U64›, ByteStream) {
     match n {
-      0 => (store(ListNode.Nil), stream),
+      0 => (store(ListNode.Nil), store(ListNode.Nil), stream),
       _ =>
-        let (x, s) = read_sys_circuit(stream);
-        let (rest, s2) = read_sys_circuits_n(s, n - 1);
-        (store(ListNode.Cons(x, rest)), s2),
+        let (x, xl, s) = read_sys_circuit(stream);
+        let (rest, lrest, s2) = read_sys_circuits_n(s, n - 1);
+        (store(ListNode.Cons(x, rest)), cons_shape6(xl, lrest), s2),
     }
   }
 
@@ -265,19 +285,32 @@ def systemDeserialize := ⟦
     }
   }
 
-  fn read_sys_params(stream: ByteStream) -> (SysParams, ByteStream) {
-    let (log_blowup, s) = read_count(stream);
-    let (cap_height, s1) = read_count(s);
-    (SysParams.Mk(log_blowup, cap_height), s1)
+  -- The 7 protocol parameters, both as field counts (for the verifier logic)
+  -- and as raw u64 limbs (their LE bytes seed the challenger).
+  fn read_sys_params(stream: ByteStream) -> (SysParams, List‹U64›, ByteStream) {
+    let (l0, s0) = read_u64(stream);
+    let (l1, s1) = read_u64(s0);
+    let (l2, s2) = read_u64(s1);
+    let (l3, s3) = read_u64(s2);
+    let (l4, s4) = read_u64(s3);
+    let (l5, s5) = read_u64(s4);
+    let (l6, s6) = read_u64(s5);
+    (SysParams.Mk(flatten_u64(l0), flatten_u64(l1), flatten_u64(l2),
+                  flatten_u64(l3), flatten_u64(l4), flatten_u64(l5),
+                  flatten_u64(l6)),
+     store(ListNode.Cons(l0, store(ListNode.Cons(l1, store(ListNode.Cons(l2,
+     store(ListNode.Cons(l3, store(ListNode.Cons(l4, store(ListNode.Cons(l5,
+     store(ListNode.Cons(l6, store(ListNode.Nil))))))))))))))),
+     s6)
   }
 
   -- Full `System<AiurCircuit>`.
   fn read_system(stream: ByteStream) -> (Sys, ByteStream) {
-    let (params, s) = read_sys_params(stream);
-    let (circuits, s1) = read_sys_circuits(s);
+    let (params, plimbs, s) = read_sys_params(stream);
+    let (circuits, climbs, s1) = read_sys_circuits(s);
     let (commit, s2) = read_opt_commit(s1);
     let (indices, s3) = read_opt_idx_list(s2);
-    (Sys.Mk(params, circuits, commit, indices), s3)
+    (Sys.Mk(params, list_concat(plimbs, climbs), circuits, commit, indices), s3)
   }
 ⟧
 
