@@ -45,14 +45,14 @@ instance : Nonempty AiurSystem := AiurSystemNonempty.property
 namespace AiurSystem
 
 @[extern "rs_aiur_system_build"]
-opaque build : @&Bytecode.Toplevel → @&CommitmentParameters → AiurSystem
+opaque build : @&Bytecode.Toplevel → @&CommitmentParameters → @&FriParameters → AiurSystem
 
 /-- Serialize the verifying key (`System<AiurCircuit>`) to bytes. -/
 @[extern "rs_aiur_system_vk_bytes"]
 opaque vkBytes : @& AiurSystem → ByteArray
 
 @[extern "rs_aiur_system_prove"]
-private opaque prove' : @& AiurSystem → @& FriParameters →
+private opaque prove' : @& AiurSystem →
   @& Bytecode.FunIdx → @& Array G →
   (ioData : @& Array (G × Array G)) →
   (ioMap : @& Array ((G × Array G) × IOKeyInfo)) →
@@ -62,19 +62,19 @@ private opaque prove' : @& AiurSystem → @& FriParameters →
 then generates a proof of the computation. Returns the claim
 (`#[functionChannel, funIdx] ++ args ++ output`), the `Proof`, and the
 updated `IOBuffer`. -/
-def prove (system : @& AiurSystem) (friParameters : @& FriParameters)
+def prove (system : @& AiurSystem)
   (funIdx : @& Bytecode.FunIdx) (args : @& Array G) (ioBuffer : IOBuffer) :
     Array G × Proof × IOBuffer :=
   let ioData := ioBuffer.data.toArray
   let ioMap := ioBuffer.map.toArray
-  let (claim, proof, ioData, ioMap) := prove' system friParameters funIdx args
+  let (claim, proof, ioData, ioMap) := prove' system funIdx args
     ioData ioMap
   let ioData := ioData.foldl (fun acc (k, v) => acc.insert k v) ∅
   let ioMap := ioMap.foldl (fun acc (k, v) => acc.insert k v) ∅
   (claim, proof, ⟨ioData, ioMap⟩)
 
 @[extern "rs_aiur_system_prove_ixvm"]
-private opaque proveIxVM' : @& AiurSystem → @& FriParameters →
+private opaque proveIxVM' : @& AiurSystem →
   @& Bytecode.FunIdx → @& Array G →
   (ioData : @& Array (G × Array G)) →
   (ioMap : @& Array ((G × Array G) × IOKeyInfo)) →
@@ -85,19 +85,19 @@ private opaque proveIxVM' : @& AiurSystem → @& FriParameters →
     of the bytecode interpreter. The resulting `Proof` is
     verification-compatible with one from `prove`. Only valid when
     `system.toplevel` is the IxVM kernel's bytecode. -/
-def proveIxVM (system : @& AiurSystem) (friParameters : @& FriParameters)
+def proveIxVM (system : @& AiurSystem)
   (funIdx : @& Bytecode.FunIdx) (args : @& Array G) (ioBuffer : IOBuffer) :
     Array G × Proof × IOBuffer :=
   let ioData := ioBuffer.data.toArray
   let ioMap := ioBuffer.map.toArray
-  let (claim, proof, ioData, ioMap) := proveIxVM' system friParameters funIdx args
+  let (claim, proof, ioData, ioMap) := proveIxVM' system funIdx args
     ioData ioMap
   let ioData := ioData.foldl (fun acc (k, v) => acc.insert k v) ∅
   let ioMap := ioMap.foldl (fun acc (k, v) => acc.insert k v) ∅
   (claim, proof, ⟨ioData, ioMap⟩)
 
 @[extern "rs_aiur_system_prove_addr_with_env"]
-private opaque proveAddrWithEnv' : @& AiurSystem → @& FriParameters →
+private opaque proveAddrWithEnv' : @& AiurSystem →
   @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray →
     Except String (ByteArray × Proof ×
       Array (G × Array G) × Array ((G × Array G) × IOKeyInfo))
@@ -106,10 +106,10 @@ private opaque proveAddrWithEnv' : @& AiurSystem → @& FriParameters →
     `(claimBytes, proof, ioBuffer)` — Rust serializes the
     reconstructed `Ix.Claim` via `ixon::Claim::put` so Lean can
     deserialize directly without re-running the closure walk. -/
-def proveAddrWithEnv (system : @& AiurSystem) (friParameters : @& FriParameters)
+def proveAddrWithEnv (system : @& AiurSystem)
   (funIdx : @& Bytecode.FunIdx) (envHandle : @& EnvHandle) (addrBytes : ByteArray) :
     Except String (ByteArray × Proof × IOBuffer) :=
-  match proveAddrWithEnv' system friParameters funIdx envHandle addrBytes with
+  match proveAddrWithEnv' system funIdx envHandle addrBytes with
   | .error e => .error e
   | .ok (claimBytes, proof, ioData, ioMap) =>
     let ioData := ioData.foldl (fun acc (k, v) => acc.insert k v) ∅
@@ -117,16 +117,16 @@ def proveAddrWithEnv (system : @& AiurSystem) (friParameters : @& FriParameters)
     .ok (claimBytes, proof, ⟨ioData, ioMap⟩)
 
 @[extern "rs_aiur_system_shard_prove_with_env"]
-private opaque shardProveWithEnv' : @& AiurSystem → @& FriParameters →
+private opaque shardProveWithEnv' : @& AiurSystem →
   @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray →
     Except String (ByteArray × Proof ×
       Array (G × Array G) × Array ((G × Array G) × IOKeyInfo))
 
 /-- Per-shard prove against a Rust-owned `EnvHandle`. -/
-def shardProveWithEnv (system : @& AiurSystem) (friParameters : @& FriParameters)
+def shardProveWithEnv (system : @& AiurSystem)
   (funIdx : @& Bytecode.FunIdx) (envHandle : @& EnvHandle) (ownedBlob : ByteArray) :
     Except String (ByteArray × Proof × IOBuffer) :=
-  match shardProveWithEnv' system friParameters funIdx envHandle ownedBlob with
+  match shardProveWithEnv' system funIdx envHandle ownedBlob with
   | .error e => .error e
   | .ok (claimBytes, proof, ioData, ioMap) =>
     let ioData := ioData.foldl (fun acc (k, v) => acc.insert k v) ∅
@@ -134,7 +134,7 @@ def shardProveWithEnv (system : @& AiurSystem) (friParameters : @& FriParameters
     .ok (claimBytes, proof, ⟨ioData, ioMap⟩)
 
 @[extern "rs_aiur_system_verify"]
-opaque verify : @& AiurSystem → @& FriParameters →
+opaque verify : @& AiurSystem →
   @& Array G → @& Proof → Except String Unit
 
 end AiurSystem

@@ -34,7 +34,7 @@ def blake3Bench : IO $ Array BenchReport := do
     | throw (IO.userError "Compilation failed")
   let some funIdx := compiled.getFuncIdx `blake3_bench
     | throw (IO.userError "Aiur function not found")
-  let aiurSystem := Aiur.AiurSystem.build compiled.bytecode commitmentParameters
+  let aiurSystem := Aiur.AiurSystem.build compiled.bytecode commitmentParameters friParameters
   bgroup "prove blake3" { oneShot := true, avgThroughput := true, report := true } do
     for dataSize in dataSizes do
       for numHashes in numHashesPerProof do
@@ -47,7 +47,7 @@ def blake3Bench : IO $ Array BenchReport := do
             ioBuffer.extend 0 #[.ofNat idx] data
         throughput (.ElementsAndBytes numHashes.toUInt64 (dataSize * numHashes).toUInt64 "hashes")
         bench s!"dataSize={dataSize} numHashes={numHashes}"
-          (aiurSystem.prove friParameters funIdx #[Aiur.G.ofNat numHashes]) ioBuffer
+          (aiurSystem.prove funIdx #[Aiur.G.ofNat numHashes]) ioBuffer
 
 def main : IO Unit := do
   let _ ← blake3Bench

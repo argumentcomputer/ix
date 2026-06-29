@@ -79,7 +79,7 @@ def proveOne (aiurSystem : Aiur.AiurSystem)
   -- via `proveIxVM` (used for non-`check addr none` `--claim hex`).
   let proof : Aiur.Proof ← match target, envHandle? with
     | .addr a, some envHandle =>
-      match aiurSystem.proveAddrWithEnv friParameters funIdx envHandle a.hash with
+      match aiurSystem.proveAddrWithEnv funIdx envHandle a.hash with
       | .error e =>
         IO.eprintln s!"{label}: proveAddrWithEnv error: {e}"
         return 1
@@ -87,14 +87,14 @@ def proveOne (aiurSystem : Aiur.AiurSystem)
     | .shard owned, some envHandle =>
       let mut blob := ByteArray.empty
       for x in owned do blob := blob ++ x.hash
-      match aiurSystem.shardProveWithEnv friParameters funIdx envHandle blob with
+      match aiurSystem.shardProveWithEnv funIdx envHandle blob with
       | .error e =>
         IO.eprintln s!"{label}: shardProveWithEnv error: {e}"
         return 1
       | .ok (_claimBytes, proof, _outIO) => pure proof
     | .leanW witness, _ =>
       let (_aiurClaim, proof, _outIO) :=
-        aiurSystem.proveIxVM friParameters funIdx witness.input witness.inputIOBuffer
+        aiurSystem.proveIxVM funIdx witness.input witness.inputIOBuffer
       pure proof
     | _, none =>
       IO.eprintln s!"{label}: internal: addr/shard target with no envHandle"
@@ -123,7 +123,7 @@ def runShardProveNative (manifestPath : String) (envHandle : Aiur.EnvHandle)
     IO.println s!"Proving {label}"
     (← IO.getStdout).flush
     let funIdx := compiled.getFuncIdx `verify_claim |>.get!
-    match aiurSystem.shardProveWithEnv friParameters funIdx envHandle blob with
+    match aiurSystem.shardProveWithEnv funIdx envHandle blob with
     | .error e =>
       IO.eprintln s!"{label}: shardProveWithEnv error: {e}"
       return 1
@@ -155,7 +155,7 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
   let compiled ← match toplevel.compile with
     | .error e => IO.eprintln s!"compilation failed: {e}"; return 1
     | .ok c => pure c
-  let aiurSystem := Aiur.AiurSystem.build compiled.bytecode commitmentParameters
+  let aiurSystem := Aiur.AiurSystem.build compiled.bytecode commitmentParameters friParameters
   let runOne := proveOne aiurSystem compiled
   match ixePath, (p.flag? "ixes").map (·.as! String), (p.flag? "shard").map (·.as! Nat) with
   | some ixe, some manifest, some k =>

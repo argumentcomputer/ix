@@ -63,7 +63,7 @@ def verifyOneProof (aiurSystem : Aiur.AiurSystem) (compiled : Aiur.CompiledTople
       return 1
   let input : Array Aiur.G := claimDigest.hash.data.map .ofUInt8
   let aiurClaim := Aiur.buildClaim funIdx input #[]
-  match aiurSystem.verify friParameters aiurClaim proof with
+  match aiurSystem.verify aiurClaim proof with
   | .ok () =>
     IO.println s!"ok: proof {proofAddr} verifies claim {claimDigest}"
     return 0
@@ -79,7 +79,7 @@ def buildBackend : IO (Except String (Aiur.AiurSystem × Aiur.CompiledToplevel))
   | .ok toplevel => match toplevel.compile with
     | .error e => return .error s!"compilation failed: {e}"
     | .ok compiled =>
-      return .ok (Aiur.AiurSystem.build compiled.bytecode commitmentParameters, compiled)
+      return .ok (Aiur.AiurSystem.build compiled.bytecode commitmentParameters friParameters, compiled)
 
 /-- Shard-aware verification (parity with `check`/`prove`):
     - `--shard K`, no proof: print shard K's reconstructed `CheckEnv` claim

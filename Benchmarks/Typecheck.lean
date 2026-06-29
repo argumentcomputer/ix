@@ -233,7 +233,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
   let entrypoint := if skipDeps then `verify_const else `verify_claim
   let some funIdx := compiled.getFuncIdx entrypoint
     | throw (IO.userError s!"{entrypoint} entrypoint missing")
-  let aiurSystem := Aiur.AiurSystem.build compiled.bytecode commitmentParameters
+  let aiurSystem := Aiur.AiurSystem.build compiled.bytecode commitmentParameters friParameters
 
   -- Load the serialized env lazily (the `ix check --ixe` path, #445): byte-window
   -- constants over the backing buffer, so only the checked closure is ever
@@ -347,11 +347,11 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
         if skipDeps then
           let witness := IxVM.ClaimHarness.buildVerifyConst ixonEnv addr
           let (claim, proof, ioBuf) :=
-            aiurSystem.proveIxVM friParameters funIdx witness.input witness.inputIOBuffer
+            aiurSystem.proveIxVM funIdx witness.input witness.inputIOBuffer
           (.ok (claim, proof, ioBuf) :
             Except String (Array Aiur.G × Aiur.Proof × Aiur.IOBuffer))
         else
-          match aiurSystem.proveAddrWithEnv friParameters funIdx envHandle addr.hash with
+          match aiurSystem.proveAddrWithEnv funIdx envHandle addr.hash with
           | .error e => .error e
           | .ok (claimBytes, proof, ioBuf) =>
             -- The envHandle path returns the SERIALIZED `Ix.Claim`; rebuild
@@ -369,7 +369,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
         let peak ← TracingTexray.peakTreeRssBytes
         let proofSize := (Aiur.Proof.toBytes proof).size
         let (verifyRes, verifySec) ← timed fun _ =>
-          aiurSystem.verify friParameters claim proof
+          aiurSystem.verify claim proof
         let verifySec? ← match verifyRes with
           | .ok () => pure (some verifySec)
           | .error e =>

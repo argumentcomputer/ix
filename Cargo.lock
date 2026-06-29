@@ -2074,10 +2074,11 @@ dependencies = [
 [[package]]
 name = "multi-stark"
 version = "0.1.0"
-source = "git+https://github.com/argumentcomputer/multi-stark.git?rev=9ecab51d553445c0cc7b571af00a76b8a83a6f8c#9ecab51d553445c0cc7b571af00a76b8a83a6f8c"
+source = "git+https://github.com/argumentcomputer/multi-stark.git?rev=75fcd1b2e9f2cdf19422892598d0f0d69fd82521#75fcd1b2e9f2cdf19422892598d0f0d69fd82521"
 dependencies = [
  "bincode",
  "p3-air",
+ "p3-blake3",
  "p3-challenger",
  "p3-commit",
  "p3-dft",
@@ -2499,6 +2500,16 @@ dependencies = [
  "p3-field",
  "p3-matrix",
  "tracing",
+]
+
+[[package]]
+name = "p3-blake3"
+version = "0.5.1"
+source = "git+https://github.com/Plonky3/Plonky3?rev=e9d75614dd6816f9b5dbb4413c69be63536efd64#e9d75614dd6816f9b5dbb4413c69be63536efd64"
+dependencies = [
+ "blake3",
+ "p3-symmetric",
+ "p3-util",
 ]
 
 [[package]]
