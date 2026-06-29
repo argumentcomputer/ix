@@ -1,4 +1,4 @@
-//! Out-of-circuit kernel profile (`.ixesp`) — the cost + delta-graph hints
+//! Out-of-circuit kernel profile (`.ixprof`) — the cost + delta-graph hints
 //! that drive the sharding strategy (see `plans/sharding.md`).
 //!
 //! A profile is computed by running the Rust kernel **out of circuit** over an
@@ -18,19 +18,105 @@
 //!
 //! The delta graph is stored in compressed-sparse-row (CSR) form keyed by
 //! stable block ids (assigned by sorting block addresses), and the on-disk
-//! `.ixesp` format is an explicit little-endian binary so it does not depend
+//! `.ixprof` format is an explicit little-endian binary so it does not depend
 //! on the optional `serde`/`bincode` feature.
 
 // Block ids and counts are `u32` (envs are far below the limit); the binary
 // decoder maps decode failures to a single message. Both are intentional here.
 #![allow(clippy::cast_possible_truncation, clippy::map_err_ignore)]
 
+#[cfg(not(target_os = "zkvm"))]
+use std::cell::Cell;
+
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use ix_common::address::Address;
 
-/// Magic bytes at the head of every `.ixesp` file.
-const MAGIC: &[u8; 8] = b"IXESP\0\0\0";
+// ─────────────────────────────────────────────────────────────────────────────
+// Per-constant operation counters (richer cost features than `heartbeats`).
+//
+// Heartbeats count kernel reduction *steps* but not the SIZE of the term each
+// step touches, so they mispredict in-circuit Zisk cycles ~3× for def-eq-dense
+// constants. These thread-local counters record the actual work volume —
+// substitution-node visits, whnf/def-eq calls — which tracks guest cycles far
+// more tightly, and `subst` feeds the planner's per-shard cost model. The
+// profiler runs one constant per worker thread, so a thread-local accumulator
+// captures one constant's totals with no arg threading through the
+// (free-function) hot paths. Always recorded on native targets (every
+// `ix profile` run needs them); compiled out entirely on the zkvm guest, which
+// never records, so the in-circuit kernel pays nothing.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// thread_local! needs threads — only declared off the (single-threaded,
+// no-std-ish) zkvm guest target, where every bump/take below compiles to a
+// no-op.
+#[cfg(not(target_os = "zkvm"))]
+thread_local! {
+  static SUBST_NODES: Cell<u64> = const { Cell::new(0) };
+  static WHNF_CALLS: Cell<u64> = const { Cell::new(0) };
+  static DEF_EQ_CALLS: Cell<u64> = const { Cell::new(0) };
+  static NAT_ARITH: Cell<u64> = const { Cell::new(0) };
+}
+
+/// Count one substitution-node visit (called per node in `instantiate_rev`).
+#[inline(always)]
+pub fn bump_subst_nodes() {
+  #[cfg(not(target_os = "zkvm"))]
+  SUBST_NODES.with(|c| c.set(c.get().wrapping_add(1)));
+}
+
+/// Count one `whnf` entry.
+#[inline(always)]
+pub fn bump_whnf() {
+  #[cfg(not(target_os = "zkvm"))]
+  WHNF_CALLS.with(|c| c.set(c.get().wrapping_add(1)));
+}
+
+/// Count one `is_def_eq` entry.
+#[inline(always)]
+pub fn bump_def_eq() {
+  #[cfg(not(target_os = "zkvm"))]
+  DEF_EQ_CALLS.with(|c| c.set(c.get().wrapping_add(1)));
+}
+
+/// Add `work` units of big-Nat arithmetic limb-work (called per native Nat
+/// binop in `compute_nat_bin`, weighted by operand limb sizes). Tracks the
+/// cost of the Aiur `klimbs_*`/`u64_*` arithmetic circuits, which scale with
+/// limb count and are invisible to the hb/subst/def_eq counters.
+#[inline(always)]
+pub fn bump_nat_arith(work: u64) {
+  #[cfg(not(target_os = "zkvm"))]
+  NAT_ARITH.with(|c| c.set(c.get().wrapping_add(work)));
+  #[cfg(target_os = "zkvm")]
+  let _ = work;
+}
+
+/// Richer per-constant cost features, recorded alongside `fuel`/heartbeats.
+#[derive(Default, Debug, Clone, Copy)]
+pub struct OpCounts {
+  pub subst_nodes: u64,
+  pub whnf_calls: u64,
+  pub def_eq_calls: u64,
+  pub nat_arith: u64,
+}
+
+/// Read and reset the thread-local op counters (call at each constant boundary).
+pub fn take_op_counts() -> OpCounts {
+  #[cfg(not(target_os = "zkvm"))]
+  {
+    OpCounts {
+      subst_nodes: SUBST_NODES.with(|c| c.replace(0)),
+      whnf_calls: WHNF_CALLS.with(|c| c.replace(0)),
+      def_eq_calls: DEF_EQ_CALLS.with(|c| c.replace(0)),
+      nat_arith: NAT_ARITH.with(|c| c.replace(0)),
+    }
+  }
+  #[cfg(target_os = "zkvm")]
+  OpCounts::default()
+}
+
+/// Magic bytes at the head of every `.ixprof` file.
+const MAGIC: &[u8; 8] = b"IXPROF\0\0";
 /// On-disk format version. Bump on any incompatible layout change.
 const VERSION: u32 = 1;
 
@@ -45,6 +131,10 @@ pub struct BlockEntry {
   pub serialized_size: u32,
   /// Number of constants in the block (1 for standalone constants).
   pub const_count: u32,
+  /// Substitution-node visits (`instantiate_rev`) checking this block — the
+  /// dominant reduction-volume cost driver. Recorded when profiled with op
+  /// counters enabled; 0 otherwise.
+  pub subst: u64,
 }
 
 /// A recorded kernel profile over an environment.
@@ -121,11 +211,11 @@ impl BlockProfile {
     self.blocks.iter().map(|b| u128::from(b.heartbeats)).sum()
   }
 
-  /// Serialize to the `.ixesp` binary format.
+  /// Serialize to the `.ixprof` binary format.
   pub fn to_bytes(&self) -> Vec<u8> {
     let n = self.blocks.len();
     let mut out = Vec::with_capacity(
-      8 + 4 + 4 + n * 48 + 8 + (n + 1) * 8 + self.delta_col.len() * 4,
+      8 + 4 + 4 + n * 56 + 8 + (n + 1) * 8 + self.delta_col.len() * 4,
     );
     out.extend_from_slice(MAGIC);
     out.extend_from_slice(&VERSION.to_le_bytes());
@@ -135,6 +225,7 @@ impl BlockProfile {
       out.extend_from_slice(&b.heartbeats.to_le_bytes());
       out.extend_from_slice(&b.serialized_size.to_le_bytes());
       out.extend_from_slice(&b.const_count.to_le_bytes());
+      out.extend_from_slice(&b.subst.to_le_bytes());
     }
     out.extend_from_slice(&(self.delta_col.len() as u64).to_le_bytes());
     // CSR row offsets (n+1 entries) as u64.
@@ -147,7 +238,7 @@ impl BlockProfile {
     out
   }
 
-  /// Deserialize from the `.ixesp` binary format.
+  /// Deserialize from the `.ixprof` binary format.
   pub fn from_bytes(bytes: &[u8]) -> Result<Self, ProfileError> {
     let mut r = Reader::new(bytes);
     let magic = r.take(8)?;
@@ -166,11 +257,13 @@ impl BlockProfile {
       let heartbeats = r.u64()?;
       let serialized_size = r.u32()?;
       let const_count = r.u32()?;
+      let subst = r.u64()?;
       blocks.push(BlockEntry {
         addr,
         heartbeats,
         serialized_size,
         const_count,
+        subst,
       });
     }
     let num_edges = r.u64()? as usize;
@@ -203,7 +296,7 @@ impl BlockProfile {
   }
 }
 
-/// Errors from decoding a `.ixesp` file.
+/// Errors from decoding a `.ixprof` file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProfileError {
   BadMagic,
@@ -215,12 +308,12 @@ pub enum ProfileError {
 impl std::fmt::Display for ProfileError {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
-      ProfileError::BadMagic => write!(f, "not an .ixesp file (bad magic)"),
+      ProfileError::BadMagic => write!(f, "not an .ixprof file (bad magic)"),
       ProfileError::BadVersion(v) => {
-        write!(f, "unsupported .ixesp version {v}")
+        write!(f, "unsupported .ixprof version {v}")
       },
-      ProfileError::Truncated => write!(f, "truncated .ixesp file"),
-      ProfileError::Corrupt => write!(f, "corrupt .ixesp file"),
+      ProfileError::Truncated => write!(f, "truncated .ixprof file"),
+      ProfileError::Corrupt => write!(f, "corrupt .ixprof file"),
     }
   }
 }
@@ -272,6 +365,7 @@ struct Accum {
   heartbeats: u64,
   serialized_size: u32,
   const_count: u32,
+  subst: u64,
   producers: FxHashSet<Address>,
 }
 
@@ -289,11 +383,13 @@ impl ProfileBuilder {
     heartbeats: u64,
     serialized_size: u32,
     const_count: u32,
+    subst: u64,
   ) {
     let e = self.blocks.entry(addr).or_default();
     e.heartbeats = e.heartbeats.saturating_add(heartbeats);
     e.serialized_size = serialized_size;
     e.const_count = e.const_count.saturating_add(const_count);
+    e.subst = e.subst.saturating_add(subst);
   }
 
   /// Record that `consumer` delta-unfolds the body of `producer`. Self-edges
@@ -329,6 +425,7 @@ impl ProfileBuilder {
         heartbeats: a.heartbeats,
         serialized_size: a.serialized_size,
         const_count: a.const_count,
+        subst: a.subst,
       });
       let mut prods: Vec<u32> = a.producers.iter().map(|p| id_of[p]).collect();
       prods.sort_unstable();
@@ -363,6 +460,10 @@ pub struct ConstRecord {
   pub fuel: u64,
   /// Constant addresses whose bodies were delta-unfolded during the check.
   pub producers: FxHashSet<Address>,
+  /// Richer cost features (substitution-node visits, whnf/def-eq calls),
+  /// recorded on every native profiling run; compiled out (all zero) on the
+  /// zkvm target.
+  pub ops: OpCounts,
 }
 
 impl ProfileSink {
@@ -370,17 +471,23 @@ impl ProfileSink {
     ProfileSink { isolate, records: FxHashMap::default() }
   }
 
-  /// Accumulate one constant's record (additive in fuel, set-union in
-  /// producers) so repeated flushes for the same constant combine correctly.
+  /// Accumulate one constant's record (additive in fuel + op counts, set-union
+  /// in producers) so repeated flushes for the same constant combine correctly.
   pub fn record(
     &mut self,
     consumer: Address,
     fuel: u64,
     producers: impl IntoIterator<Item = Address>,
+    ops: OpCounts,
   ) {
     let rec = self.records.entry(consumer).or_default();
     rec.fuel = rec.fuel.saturating_add(fuel);
     rec.producers.extend(producers);
+    rec.ops.subst_nodes = rec.ops.subst_nodes.saturating_add(ops.subst_nodes);
+    rec.ops.whnf_calls = rec.ops.whnf_calls.saturating_add(ops.whnf_calls);
+    rec.ops.def_eq_calls =
+      rec.ops.def_eq_calls.saturating_add(ops.def_eq_calls);
+    rec.ops.nat_arith = rec.ops.nat_arith.saturating_add(ops.nat_arith);
   }
 
   /// Merge another worker's sink into this one (order-independent).
@@ -389,6 +496,11 @@ impl ProfileSink {
       let e = self.records.entry(addr).or_default();
       e.fuel = e.fuel.saturating_add(rec.fuel);
       e.producers.extend(rec.producers);
+      e.ops.subst_nodes = e.ops.subst_nodes.saturating_add(rec.ops.subst_nodes);
+      e.ops.whnf_calls = e.ops.whnf_calls.saturating_add(rec.ops.whnf_calls);
+      e.ops.def_eq_calls =
+        e.ops.def_eq_calls.saturating_add(rec.ops.def_eq_calls);
+      e.ops.nat_arith = e.ops.nat_arith.saturating_add(rec.ops.nat_arith);
     }
   }
 }
@@ -404,9 +516,9 @@ mod tests {
   fn sample() -> BlockProfile {
     let mut b = ProfileBuilder::new();
     // Three blocks a<b<c by address ordering.
-    b.block(addr(1), 100, 10, 1);
-    b.block(addr(2), 200, 20, 3);
-    b.block(addr(3), 300, 30, 1);
+    b.block(addr(1), 100, 10, 1, 50);
+    b.block(addr(2), 200, 20, 3, 100);
+    b.block(addr(3), 300, 30, 1, 150);
     // a unfolds b and c; c unfolds b; self-edge ignored.
     b.delta_edge(addr(1), addr(2));
     b.delta_edge(addr(1), addr(3));
@@ -478,11 +590,11 @@ mod tests {
     // via separate builders merged conceptually; result must be identical.
     let mut b = ProfileBuilder::new();
     b.delta_edge(addr(3), addr(2));
-    b.block(addr(3), 300, 30, 1);
+    b.block(addr(3), 300, 30, 1, 150);
     b.delta_edge(addr(1), addr(3));
-    b.block(addr(2), 200, 20, 3);
+    b.block(addr(2), 200, 20, 3, 100);
     b.delta_edge(addr(1), addr(2));
-    b.block(addr(1), 100, 10, 1);
+    b.block(addr(1), 100, 10, 1, 50);
     b.delta_edge(addr(2), addr(2));
     assert_eq!(b.finish(), sample());
   }

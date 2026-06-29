@@ -1,7 +1,7 @@
 /-
   `ix profile <path.ixe>`: run the Ix kernel out of circuit over a serialized
   `.ixe` environment, recording per-block heartbeats and the delta-unfold graph
-  into a `.ixesp` sidecar. This is the cost model consumed by `ix shard`
+  into a `.ixprof` sidecar. This is the cost model consumed by `ix shard`
   (see `plans/sharding.md`).
 
   Recording defaults to *cache-isolated* mode: the kernel clears its
@@ -29,7 +29,11 @@ def runProfileCmd (p : Cli.Parsed) : IO UInt32 := do
   let outPath : String :=
     match p.flag? "out" with
     | some flag => flag.as! String
-    | none      => envPath ++ ".ixesp"
+    -- Default sidecar mirrors the env's base name: `init.ixe` → `init.ixprof`
+    -- (not `init.ixe.ixprof`); a non-`.ixe` path just gets `.ixprof` appended.
+    | none      =>
+      let base := if envPath.endsWith ".ixe" then envPath.dropRight 4 else envPath
+      base ++ ".ixprof"
   let isolate := !(p.flag? "keep-caches" |>.isSome)
   let quiet   := !(p.flag? "verbose" |>.isSome)
 
@@ -52,10 +56,10 @@ end Ix.Cli.ProfileCmd
 open Ix.Cli.ProfileCmd in
 def profileCmd : Cli.Cmd := `[Cli|
   "profile" VIA runProfileCmd;
-  "Profile a `.ixe` out of circuit → `.ixesp` (sharding cost + delta graph)"
+  "Profile a `.ixe` out of circuit → `.ixprof` (sharding cost + delta graph)"
 
   FLAGS:
-    out           : String; "Output .ixesp path (default: <path>.ixesp)"
+    out           : String; "Output .ixprof path (default: <env>.ixprof, e.g. init.ixe → init.ixprof)"
     "keep-caches";          "Keep cross-constant caches: faster, lower-fidelity, may under-record"
     workers       : Nat;    "Parallel kernel workers (default: available_parallelism). Plumbs IX_KERNEL_CHECK_WORKERS."
     verbose;                "Log every constant (default: quiet)"

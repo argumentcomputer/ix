@@ -6,7 +6,7 @@
 //! RUST_LOG=info cargo run --release -- --execute --ixe ../../minimal.ixe
 //! WITHOUT_VK_VERIFICATION=1 RUST_LOG=info cargo run --release  # prove (compressed)
 //! # prove a single constant out of a large env (Anon-only):
-//! WITHOUT_VK_VERIFICATION=1 RUST_LOG=info cargo run --release -- --ixe ../../init.ixe --only-const Nat.add_comm
+//! WITHOUT_VK_VERIFICATION=1 RUST_LOG=info cargo run --release -- --ixe ../../init.ixe --constant Nat.add_comm
 //! ```
 //!
 //! Proving (any non-`--execute` run) requires `WITHOUT_VK_VERIFICATION=1` in
@@ -55,12 +55,22 @@ struct Args {
 
   /// Check a single constant selected by its Lean NAME (e.g. "Nat.add_comm").
   /// The name resolves through the env's `named` metadata to its ingress
-  /// block's work item; the guest receives only that block's closure sub-env
-  /// plus a one-item check-list, so one constant can be proved out of a large
-  /// env without shipping (or typechecking) the whole thing. Anon-only
+  /// block; the guest receives only that block's closure sub-env, so one
+  /// constant can be proved out of a large env without shipping (or
+  /// typechecking) the whole thing. By default this is the **full-closure**
+  /// typecheck (the constant and its whole dependency closure, matching
+  /// `Ix.Claim.check addr none` / the Aiur `bench-typecheck --constant`); pass
+  /// `--skip-deps` for a subject-only check (deps trusted). Anon-only
   /// (incompatible with `--meta`). Requires `--ixe`.
   #[arg(long)]
-  only_const: Option<String>,
+  constant: Option<String>,
+
+  /// Modifies `--constant`: check only the named constant itself, trusting its
+  /// dependencies (subject-only), instead of re-checking its whole transitive
+  /// closure. Same flag/semantics as `zisk-host --skip-deps` and the Aiur
+  /// `bench-typecheck --skip-deps`.
+  #[arg(long, requires = "constant")]
+  skip_deps: bool,
 }
 
 fn load_env_bytes(ixe: Option<&PathBuf>) -> Vec<u8> {
@@ -102,16 +112,18 @@ fn count_checkable(env_bytes: &[u8], meta_mode: bool) -> usize {
   }
 }
 
-/// Resolve `--only-const <name>` to the guest inputs for that one constant:
-/// a closure sub-env and a one-item check-list selecting its work item. The
-/// name resolves through the full env's `named` metadata to a constant address,
-/// which maps to the `build_anon_work` item whose ingress block owns it
-/// (standalone → itself; a mutual-block member → the whole block, checked
-/// atomically). Returns `(sub_env_bytes, check_list, target_count)`. Anon-only
-/// — the work-item model doesn't apply to Meta's `env.named` walk.
-fn only_const_inputs(
+/// Resolve `--constant <name>` to the guest inputs for that one constant: its
+/// closure sub-env and a check-list. The name resolves through the full env's
+/// `named` metadata to a constant address, which maps to the `build_anon_work`
+/// item whose ingress block owns it (standalone → itself; a mutual-block member
+/// → the whole block, checked atomically). The check-list is the ENTIRE closure
+/// (full-closure typecheck) by default, or just the subject when `skip_deps` is
+/// set. Returns `(sub_env_bytes, check_list, checked_count)`. Anon-only — the
+/// work-item model doesn't apply to Meta's `env.named` walk.
+fn constant_inputs(
   full_env_bytes: &[u8],
   name: &str,
+  skip_deps: bool,
 ) -> Result<(Vec<u8>, Vec<u8>, usize)> {
   use ix_common::address::Address;
 
@@ -139,18 +151,33 @@ fn only_const_inputs(
       )
     })?;
 
-  let check_list = Address::pack(&[item.primary().clone()]);
   let roots: Vec<Address> = item.proven_targets();
   let sub_env = build_sub_env(&env, &roots).map_err(|e| anyhow::anyhow!(e))?;
+
+  // Check-list: full-closure by default (every work item in the sub-env), or
+  // subject-only under `--skip-deps` (just the named constant's primary).
+  let (check_list, checked) = if skip_deps {
+    (Address::pack(&[item.primary().clone()]), 1usize)
+  } else {
+    let env_sub =
+      IxonEnv::get_anon(&mut &sub_env[..]).expect("invalid sub-env");
+    let work_sub = build_anon_work(&env_sub).expect("build_anon_work sub");
+    let primaries: Vec<Address> =
+      work_sub.iter().map(|w| w.primary().clone()).collect();
+    let n = work_sub.len();
+    (Address::pack(&primaries), n)
+  };
   println!(
-    "only-const {name}: block {}… ({} target const(s)); closure sub-env {} vs whole env {} ({:.0}%)",
+    "constant {name}{}: block {}… ({} work item(s) checked, {} target const(s)); closure sub-env {} vs whole env {} ({:.0}%)",
+    if skip_deps { " [skip-deps]" } else { " [full-closure]" },
     &block.hex()[..16],
+    checked,
     roots.len(),
     sub_env.len().human_count_bytes(),
     full_env_bytes.len().human_count_bytes(),
     100.0 * sub_env.len() as f64 / full_env_bytes.len().max(1) as f64,
   );
-  Ok((sub_env, check_list, roots.len()))
+  Ok((sub_env, check_list, checked))
 }
 
 #[tokio::main]
@@ -160,14 +187,14 @@ async fn main() -> Result<()> {
   let args = Args::parse();
   let whole_env_bytes = load_env_bytes(args.ixe.as_ref());
 
-  // `--only-const` ships a closure sub-env + a one-item check-list (Anon only);
-  // otherwise the whole env ships with an empty check-list (= check everything).
+  // `--constant` ships a closure sub-env + a check-list (Anon only); otherwise
+  // the whole env ships with an empty check-list (= check everything).
   let (env_bytes, check_list, const_count) =
-    if let Some(name) = &args.only_const {
+    if let Some(name) = &args.constant {
       if args.meta {
-        bail!("--only-const is Anon-only and cannot be combined with --meta");
+        bail!("--constant is Anon-only and cannot be combined with --meta");
       }
-      only_const_inputs(&whole_env_bytes, name)?
+      constant_inputs(&whole_env_bytes, name, args.skip_deps)?
     } else {
       let cc = count_checkable(&whole_env_bytes, args.meta);
       (whole_env_bytes, Vec::new(), cc)
@@ -176,9 +203,9 @@ async fn main() -> Result<()> {
   // Three guest inputs, in order:
   //   1. 1-byte mode flag (0 = Anon / 1 = Meta).
   //   2. Serialized Ixon env (whole env, or a closure sub-env under
-  //      `--only-const`). Anon enumerates work in-guest via
+  //      `--constant`). Anon enumerates work in-guest via
   //      `ix_kernel::anon_work::build_anon_work`; Meta walks `env.named`.
-  //   3. Check-list of packed primary addresses (`--only-const`), or empty
+  //   3. Check-list of packed primary addresses (`--constant`), or empty
   //      to check every work item.
   let mut stdin = SP1Stdin::new();
   stdin.write::<u8>(&u8::from(args.meta));
@@ -223,8 +250,9 @@ async fn main() -> Result<()> {
     // counts (precompile usage; expected zero for the current guest), and
     // — when the SDK is built with the `profiling` feature — the
     // accumulated `cycle-tracker-report-*` totals emitted by the guest.
-    // Together with `crates/kernel/examples/perf_check.rs` (native cache /
-    // fuel counters), this is the entry point for profiling SP1 cycles.
+    // Together with the kernel's native perf counters
+    // (`crates/kernel/src/perf.rs`, `IX_PERF_COUNTERS=1`), this is the entry
+    // point for profiling SP1 cycles.
     println!("---- ExecutionReport ----");
     println!("{report}");
     if failures > 0 {

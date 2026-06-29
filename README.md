@@ -231,7 +231,7 @@ Non-Nix users: install the SP1 toolchain manually per the
    ```
 
    For a larger, realistic env compile one of the `Benchmarks/Compile`
-   targets, then scope proving to a single constant with `--only-const`
+   targets, then scope proving to a single constant with `--constant`
    (step 2):
 
    ```
@@ -248,8 +248,9 @@ Non-Nix users: install the SP1 toolchain manually per the
    # Generate and verify a compressed SP1 proof of the same typecheck (CPU)
    WITHOUT_VK_VERIFICATION=1 RUST_LOG=info cargo run --release -- --ixe ../../minimal.ixe
    # Prove a single constant out of a larger env (Anon-only): the host resolves
-   # the name to its work item and ships only that constant's closure sub-env.
-   WITHOUT_VK_VERIFICATION=1 RUST_LOG=info cargo run --release -- --ixe ../../init.ixe --only-const Nat.add_comm
+   # the name and ships only that constant's closure sub-env. Full-closure by
+   # default; add --skip-deps for a subject-only check (deps trusted).
+   WITHOUT_VK_VERIFICATION=1 RUST_LOG=info cargo run --release -- --ixe ../../init.ixe --constant Nat.add_comm
    ```
 
    With no `--ixe`, the host runs against an empty `Ixon.Env`.
@@ -353,10 +354,24 @@ Non-Nix users: install Zisk manually per the
    RUST_LOG=info cargo run --release -- --verify-constraints --ixe ../minimal.ixe
    # Generate and verify a VadcopFinal proof of the same typecheck (CPU)
    RUST_LOG=info cargo run --release -- --ixe ../minimal.ixe
-   # Prove a single constant out of a larger env: the host ships only that
-   # constant's closure sub-env to the guest.
-   RUST_LOG=info cargo run --release -- --ixe ../init.ixe --only-const Nat.add_comm
+   # Check a single named constant out of a larger env. The host resolves the
+   # name and ships only its closure sub-env (lazy fault-in, no whole-env load).
+   # By default this is the FULL-CLOSURE typecheck — the constant and its whole
+   # dependency closure (matching the Aiur `bench-typecheck --constant`).
+   # Composes with --execute (cycles only) and plain prove.
+   RUST_LOG=info cargo run --release -- --execute --ixe ../init.ixe --constant Nat.add_comm
+   RUST_LOG=info cargo run --release -- --ixe ../init.ixe --constant Nat.add_comm
+   # Add --skip-deps for a subject-only check (deps trusted, not re-checked):
+   RUST_LOG=info cargo run --release -- --execute --ixe ../init.ixe --constant Vector.extract_append --skip-deps
    ```
+
+   `--constant` / `--skip-deps` are the same flags the Aiur `bench-typecheck`
+   uses, so the two backends share one vocabulary. `--skip-deps` trusts
+   dependencies rather than re-checking them, so it is far cheaper than the
+   full-closure default — reserve it for constants too expensive to
+   full-closure-check that also can't be sharded (e.g. `Vector.extract_append`
+   over Init/Std). See [`docs/zisk-cycle-cost-model.md`](docs/zisk-cycle-cost-model.md)
+   for the measured cost models across constant shapes.
 
    With no `--ixe`, the host runs against an empty `Ixon.Env`. The host's
    `build.rs` invokes `zisk_sdk::build_program("../guest")`, so `cargo run`
@@ -462,10 +477,13 @@ Non-Nix users: install Zisk manually per the
    [`DEFAULT_MEMORY_LIMIT`](https://github.com/succinctlabs/sp1/blob/v6.2.0/crates/core/executor/src/opts.rs#L25),
    configurable via `MEMORY_LIMIT` env var up to a ~1 TB JIT ceiling
    [`MAX_JIT_LOG_ADDR`](https://github.com/succinctlabs/sp1/blob/v6.2.0/crates/primitives/src/consts.rs#L11)),
-   or scope to a single constant with `--only-const <name>` (both backends),
-   which resolves the name to its work item and ships only that constant's
-   closure sub-env to the guest — so individual constants of a large env still
-   fit the cap. To prove a large env in full under Zisk, shard it (see
+   or scope to a single constant with `--constant <name>` (all backends),
+   which resolves the name and ships only that constant's closure sub-env to the
+   guest. By default it re-checks the full dependency closure; add `--skip-deps`
+   to check it **subject-only** (dependencies trusted and lazily faulted in, not
+   re-typechecked) — so individual constants of a large env still fit the cap,
+   even ones whose full-closure typecheck would not. To prove a large env in
+   full under Zisk, shard it (see
    *Sharding large environments* below): each shard ships only its own closure
    sub-env, so the pieces fit the cap even when the whole env does not.
 
@@ -507,40 +525,34 @@ Non-Nix users: install Zisk manually per the
    (a `.ixes` file), then prove it with `--shard-plan`.
 
    **(a) Produce a shard manifest.** A manifest partitions the env's
-   per-constant work, balancing shards by real type-checking cost and
-   cutting where cross-shard dependencies are fewest. Two ways today:
+   per-constant work, packing shards to a resource cap by real
+   type-checking cost and cutting where cross-shard dependencies are fewest.
 
-   - *Fixed shard count*, via the `ix` CLI. Profiling runs the kernel over
-     the env (slow) and writes a `.ixesp` cost map; sharding is instant
-     graph work on that map, so the shard count is cheap to re-tune without
-     re-profiling:
+   Profiling runs the kernel over the env (slow) and writes a `.ixprof`
+   cost map; sharding is instant graph work on that map, so it is cheap to
+   re-tune without re-profiling. Both steps are `ix` CLI subcommands:
 
-     ```
-     # Profile once (slow): writes the .ixesp cost map.
-     lake exe ix profile init.ixe --out init.ixesp
-     # Cut into N shards (instant): writes the .ixes manifest. Re-run with a
-     # different N to re-tune — no re-profiling needed.
-     lake exe ix shard init.ixesp --shards 16 --out init.ixes
-     ```
+   ```
+   # Profile once (slow): init.ixe → init.ixprof (cost map + delta graph).
+   lake exe ix profile init.ixe
+   # Shard (instant): init.ixprof → init.ixes manifest. With no budget flags
+   # it bin-packs to the fewest shards that each fit this box's RAM (peak
+   # prover RAM ≈ `50 + 33 × cycles_billions` GB, targeting ~85 % of total).
+   lake exe ix shard init.ixprof
+   # Or pick a per-shard budget / a fixed count instead:
+   #   --max-ram 256   --max-cycles 4500000000   --shards 16
+   ```
 
-   - *Sized by a cycle or peak-RAM budget* (so you pick a resource limit
-     instead of a shard count). This currently lives in a kernel example
-     binary rather than the `ix` CLI; it profiles and shards in one step
-     (re-profiling on each run). With no flags it auto-sizes the shard count
-     from this machine's RAM (peak prover RAM ≈ `45 + 32 × cycles_billions`
-     GB, targeting ~78 % of total):
-
-     ```
-     # Auto-size N from this box's RAM; writes init.ixe.ixes.
-     cargo run -p ix-kernel --release --example shard_plan -- init.ixe
-     # Or force a per-shard guest-cycle budget / a RAM figure / a fixed count:
-     #   --max-cycles 4500000000   --ram-gb 256   --shards 16
-     ```
+   `ix shard` also reports the shard count, total predicted cycles, and a
+   prove-time estimate from the measured leaf model (`54 s + 158 s·Bsteps`
+   per shard). Sharded proving is sequential today, so the estimate assumes
+   one prover; `--parallelism N` divides the wall-clock for a future N-prover
+   setup (the sequential total is always shown alongside).
 
    **(b) Prove the manifest.** Pass the `.ixes` to the host with
    `--shard-plan` alongside the same `--ixe` it was built for. Each shard
    becomes one leaf proof (built over only that shard's closure sub-env),
-   and the leaves fold up the manifest's bisection tree into a single root
+   and the leaves fold up the manifest's aggregation tree into a single root
    proof:
 
    ```

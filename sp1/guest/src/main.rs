@@ -59,8 +59,8 @@ use ixon::metadata::ConstantMetaInfo;
 // boundaries. To get per-constant cycle attribution (e.g. for a one-off
 // "which `kid_NNN` dominates?" investigation), temporarily wrap the
 // `tc.check_const(kid)` call below in the same pair of `println!`s; pair
-// the output with `crates/kernel/examples/perf_check.rs` to map indices
-// to constant names.
+// the output with a native `check_const` run over the same anon-work order
+// to map indices to constant names.
 macro_rules! tic {
   ($name:expr) => {
     println!("cycle-tracker-report-start: {}", $name)

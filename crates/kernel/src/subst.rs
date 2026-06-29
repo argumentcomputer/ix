@@ -632,6 +632,10 @@ fn instantiate_rev_cached<M: KernelMode>(
   depth: u64,
   cache: &mut FxHashMap<(Addr, u64), KExpr<M>>,
 ) -> KExpr<M> {
+  // Profiler: count every substitution-node visit — the work-volume feature
+  // that `heartbeats` (step count) misses. Records out of circuit; the bump
+  // compiles out on the zkvm target.
+  crate::profile::bump_subst_nodes();
   // No loose bvars at or below `depth` means nothing to instantiate at
   // this subtree.
   if body.lbr() <= depth {

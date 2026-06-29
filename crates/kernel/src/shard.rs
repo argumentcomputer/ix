@@ -1,10 +1,33 @@
-//! Sharding: partition an environment's blocks into `N` shards that are
-//! balanced by heartbeats and minimize cross-shard delta-unfold ingress
-//! (see `plans/sharding.md`).
+//! Sharding: partition an environment's blocks into shards that minimize
+//! cross-shard delta-unfold ingress (see `plans/sharding.md`). Two driving
+//! modes share the same min-cut machinery:
+//!
+//! - **Fixed count** ([`Hypergraph::partition`], the `--shards N` CLI path):
+//!   recursive *balanced* min-cut bisection into exactly `N` shards — even
+//!   per-shard work, the bisection tree doubling as the aggregation tree.
+//! - **Cap / packing** ([`partition_for_cycle_cap`], the default and
+//!   `--max-cycles`/`--max-ram` paths): **bin-pack to the cap** — the fewest
+//!   shards that each stay under a per-shard cycle (hence prover-RAM) budget,
+//!   each filled as full as the dependency structure allows. This does *not*
+//!   balance: uniformity over-shards (every shard left partly empty), whereas
+//!   packing hits `≈⌈total/cap⌉` shards. It still uses a fine min-cut
+//!   pre-partition for a **cut-coherent order** so dependency overlap packs into
+//!   the same shard (overlap paid once, not re-ingressed per shard).
+//!
+//! **Why the order comes from min-cut.** Lean typecheck is reduction-dominated:
+//! across Init/Std/Mathlib (mathlib's 631k blocks included) own-bytes is only
+//! 2.6–7% of member cost, so on Zisk alone cross-ingress is a ≤3% cost term and a
+//! plain block-id order packs within ~2% of min-cut. min-cut still earns the
+//! default because the same `.ixprof`/`.ixes` also drives Aiur, where ingress is
+//! a first-order cost; because it stays robust if an ingress-heavy env flips that
+//! balance; and because it keeps each shard's injected closure small, which the
+//! 512 MB guest heap requires. A cheaper id/dfs order trades those properties for
+//! ~2% on Zisk only. The cap planner ([`partition_for_cycle_cap`]) is
+//! order-agnostic, so the order is a pluggable choice.
 //!
 //! ## Model
 //!
-//! We solve a **weighted hypergraph partitioning** problem under the
+//! Both modes view the env as a **weighted hypergraph** under the
 //! connectivity-1 (km1) metric:
 //!
 //! - **Vertices** are blocks, weighted by `heartbeats` (the balance metric).
@@ -58,7 +81,7 @@ use std::collections::BinaryHeap;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::time::Instant;
 
-use crate::profile::BlockProfile;
+use crate::profile::{BlockEntry, BlockProfile};
 use ix_common::address::Address;
 
 /// Recurse the two halves of a bisection in parallel (rayon) when the parent
@@ -116,10 +139,22 @@ const FM_NET_CAP: usize = 400;
 /// oscillation; passes normally converge well before this).
 const MAX_FM_PASSES: u32 = 10;
 
+/// Cap-sharding granularity: the fine min-cut pre-partition that supplies the
+/// **cut-coherent block order** for [`partition_for_cycle_cap`] is sized to
+/// roughly this many pieces per cap of work. Finer pieces let the greedy packer
+/// fill each shard closer to the cap and keep dependency-overlapping blocks in
+/// the same run (so cross-ingress only appears at the seams between coherent
+/// runs); the count is still bounded by the block count, so the pre-partition
+/// stays cheap.
+const PACK_PIECES_PER_CAP: u128 = 32;
+
 /// A weighted hypergraph derived from a [`BlockProfile`]. Vertex ids are block
 /// ids (identical to the profile's). Nets are stored with global pins.
 pub struct Hypergraph {
-  /// Vertex (block) weights = heartbeats.
+  /// Vertex (block) weights = predicted Zisk guest STEPS ([`block_step_cost`]:
+  /// reduction `heartbeats` + own ingress bytes), so the balanced partition
+  /// equalizes predicted per-shard *cycles* (the prover-RAM driver) rather than
+  /// heartbeats alone — which underweighted ingress-heavy shards.
   vweight: Vec<u64>,
   /// Net weights = serialized_size of the unfolded block.
   net_weight: Vec<u64>,
@@ -134,7 +169,7 @@ impl Hypergraph {
   pub fn from_profile(profile: &BlockProfile) -> Hypergraph {
     let n = profile.num_blocks();
     let vweight: Vec<u64> =
-      (0..n as u32).map(|i| profile.block(i).heartbeats).collect();
+      (0..n as u32).map(|i| block_step_cost(profile.block(i))).collect();
     let (row, col) = profile.consumers_csr();
     let mut net_weight = Vec::new();
     let mut net_pins = Vec::new();
@@ -1478,7 +1513,7 @@ impl<'a> Cur<'a> {
   }
 }
 
-/// Read a `.ixesp`, partition into `num_shards` shards, and emit a manifest with
+/// Read a `.ixprof`, partition into `num_shards` shards, and emit a manifest with
 /// per-shard cost metrics, foreign-block sets, and (delta-based) assumption
 /// roots. Optionally writes the manifest (`.ixes`). Returns a what-if report.
 ///
@@ -1490,6 +1525,7 @@ pub fn shard_esp(
   esp_path: &str,
   num_shards: usize,
   balance: f64,
+  parallelism: usize,
   out_path: Option<&str>,
 ) -> Result<String, String> {
   let bytes =
@@ -1525,32 +1561,223 @@ pub fn shard_esp(
     ""
   };
   Ok(format!(
-    "blocks={} delta_edges={} nets={}\n{}\nlargest_block_hb={}{}",
+    "blocks={} delta_edges={} nets={}\n{}\n{}\nlargest_block_hb={}{}",
     profile.num_blocks(),
     profile.num_edges(),
     h.num_nets(),
     manifest.summary(),
+    prove_report(&profile, &shard_of, &manifest, parallelism),
     max_block_hb,
     note,
   ))
 }
 
+/// Like [`shard_esp`] but sized to a per-shard Zisk **cycle** budget
+/// (`max_cycles`) rather than a fixed shard count: grows `N` until the heaviest
+/// splittable shard fits the budget (see [`partition_for_cycle_cap`]). Use
+/// [`cycle_cap_for_ram`] to derive `max_cycles` from a host-RAM target.
+pub fn shard_esp_cap(
+  esp_path: &str,
+  max_cycles: u64,
+  balance: f64,
+  parallelism: usize,
+  out_path: Option<&str>,
+) -> Result<String, String> {
+  let bytes =
+    std::fs::read(esp_path).map_err(|e| format!("read {esp_path}: {e}"))?;
+  let profile = BlockProfile::from_bytes(&bytes)
+    .map_err(|e| format!("parse {esp_path}: {e}"))?;
+  let plan = partition_for_cycle_cap(&profile, max_cycles, balance);
+  let mut manifest =
+    ShardManifest::build(&profile, &plan.shard_of, plan.num_shards)
+      .with_tree(plan.tree);
+  for shard in &mut manifest.shards {
+    shard.assumption_root =
+      ixon::merkle::merkle_root_canonical(&shard.foreign_blocks);
+  }
+  if let Some(op) = out_path {
+    std::fs::write(op, manifest.to_bytes())
+      .map_err(|e| format!("write {op}: {e}"))?;
+  }
+  let note = if plan.infeasible_atomic_floor {
+    "\n  [INFEASIBLE: a single atomic block exceeds the cap — split it upstream, raise the cap, or use a bigger box]"
+  } else {
+    ""
+  };
+  Ok(format!(
+    "blocks={} delta_edges={} max_cycles={} → {} shards (packed to cap)\n{}\n{}\nmax_shard_steps={} (cap {}, incl. floor {} + cross-ingress) largest_block_steps={}{}",
+    profile.num_blocks(),
+    profile.num_edges(),
+    max_cycles,
+    plan.num_shards,
+    manifest.summary(),
+    prove_report(&profile, &plan.shard_of, &manifest, parallelism),
+    plan.max_shard_steps,
+    max_cycles,
+    SHARD_STEP_FLOOR,
+    plan.largest_block_steps,
+    note,
+  ))
+}
+
+/// Calibrated Zisk guest-STEP cost model — the **single source of truth** for
+/// predicting a block's in-circuit step contribution: reduction work
+/// (`heartbeats` + substitution-node visits `subst`) plus a small ingress term
+/// (`serialized_size` bytes). These are **best-fit** coefficients (over 76
+/// Init/Std/Mathlib constants + 12 shards; the cycle model is `180M floor +
+/// 162k·hb + 4.3k·subst + 0.65k·bytes`, MAPE 9%). One definition, used
+/// everywhere: the `ix profile` breakdown, per-shard prediction, and the packer's
+/// cap test. No conservatism is baked into the coefficients — that would distort
+/// packing; the cap's safety margin is [`RAM_USABLE_FRAC`] in
+/// [`cycle_cap_for_ram`], reinforced by the model's own ~1.1× over-prediction.
+pub const STEPS_PER_HEARTBEAT: u64 = 162_339;
+pub const STEPS_PER_SUBST: u64 = 4_276;
+pub const STEPS_PER_INGRESS_BYTE: u64 = 652;
+/// Fixed per-shard (per-leaf) guest-STEP floor (the model intercept): proof/base
+/// setup plus the foreign-dependency ingress a shard re-pays.
+pub const SHARD_STEP_FLOOR: u64 = 180_000_000;
+
+/// Predicted Zisk guest STEPS contributed by a single block (reduction + its own
+/// ingress). The per-shard floor and any cross-shard re-ingress are added at the
+/// shard level, not here.
+pub fn block_step_cost(b: &BlockEntry) -> u64 {
+  STEPS_PER_HEARTBEAT
+    .saturating_mul(b.heartbeats)
+    .saturating_add(STEPS_PER_SUBST.saturating_mul(b.subst))
+    .saturating_add(
+      STEPS_PER_INGRESS_BYTE.saturating_mul(u64::from(b.serialized_size)),
+    )
+}
+
 /// The per-shard cycle cap implied by a machine's total RAM — so callers can
 /// size shards straight from `MemTotal` without ever picking a budget. Inverts
 /// the measured single-leaf prover model on this setup
-/// (`peak_RAM_GB ≈ 45 + 32 × cycles_billions`) at ~78% of RAM (reserving the
-/// rest for the OS + run-to-run variance). Returns 0 when the box can't even
-/// hold the ~45 GB prover base (nothing will prove). Approximate by design —
-/// pair with [`partition_for_cycle_cap`] to get N.
+/// (`peak_RAM_GiB ≈ 50 + 33 × steps_billions`, measured by a guarded 7-shard GPU
+/// prove sweep over 0.27–3.79e9-step Init shards, R²=0.99, `--max-witness-stored
+/// 5`) at [`RAM_USABLE_FRAC`] of RAM (reserving the rest for the OS, cross-shard
+/// re-ingress, and run-to-run variance). Returns 0 when the box can't even hold the ~50 GiB
+/// prover base (nothing will prove). Approximate by design — pair with
+/// [`partition_for_cycle_cap`] to get N. The earlier `45 + 32` model was
+/// optimistic on both base and slope (a 4.84e9-step shard it sized for a 200 GB
+/// target actually used ~225 GB).
+/// Measured prover-RAM model (the single source of truth, used by both
+/// [`cycle_cap_for_ram`] and [`ram_gib_for_steps`]): peak host RAM ≈
+/// `RAM_BASE_GIB + RAM_GIB_PER_BCYCLE × steps_billions` (at
+/// `--max-witness-stored 5`).
+pub const RAM_BASE_GIB: f64 = 50.0;
+pub const RAM_GIB_PER_BCYCLE: f64 = 33.0;
+/// Usable fraction of a host-RAM budget (headroom for OS + variance) — applied
+/// to whatever budget the caller gives (explicit `--max-ram`, or detected
+/// system RAM by default).
+pub const RAM_USABLE_FRAC: f64 = 0.85;
+
+/// Predicted peak prover RAM (GiB) for a leaf of `steps` guest STEPS.
+pub fn ram_gib_for_steps(steps: u64) -> f64 {
+  RAM_BASE_GIB + RAM_GIB_PER_BCYCLE * (steps as f64 / 1e9)
+}
+
 pub fn cycle_cap_for_ram(ram_gb: f64) -> u64 {
-  const BASE_GB: f64 = 45.0; // fixed prover witness/contribution buffers
-  const GB_PER_BCYCLE: f64 = 32.0; // RAM per billion guest cycles
-  const USABLE_FRAC: f64 = 0.78; // headroom for OS + variance
-  let headroom = ram_gb * USABLE_FRAC - BASE_GB;
+  let headroom = ram_gb * RAM_USABLE_FRAC - RAM_BASE_GIB;
   if headroom <= 0.0 {
     return 0;
   }
-  (headroom / GB_PER_BCYCLE * 1e9) as u64
+  (headroom / RAM_GIB_PER_BCYCLE * 1e9) as u64
+}
+
+/// Measured single-GPU **leaf prove time**: `≈ PROVE_SETUP_SECS +
+/// PROVE_SECS_PER_BCYCLE × steps_billions` per shard (RTX PRO 6000,
+/// `--max-witness-stored 5`). Aggregation adds a smaller per-fold term this model
+/// omits — minutes next to hours of leaf proving at large shard counts.
+pub const PROVE_SETUP_SECS: f64 = 54.0;
+pub const PROVE_SECS_PER_BCYCLE: f64 = 158.0;
+
+/// Predicted single-shard leaf prove time (seconds) for a leaf of `steps`.
+pub fn shard_prove_secs(steps: u64) -> f64 {
+  PROVE_SETUP_SECS + PROVE_SECS_PER_BCYCLE * (steps as f64 / 1e9)
+}
+
+/// Whole-workload prove-time estimate over a partition's per-shard step counts.
+pub struct ProveEstimate {
+  /// Σ predicted guest STEPS over all shards (incl. per-shard floor + ingress).
+  pub total_steps: u64,
+  /// Sum of per-shard leaf prove times — wall clock with a single prover.
+  pub seq_secs: f64,
+  /// Wall clock with `parallelism` provers; `seq_secs` at parallelism 1.
+  pub wall_secs: f64,
+  /// Provers assumed (≥1).
+  pub parallelism: usize,
+}
+
+/// Estimate whole-workload prove time from per-shard predicted STEPS. With
+/// `parallelism` provers the wall clock is bounded below by both an even split
+/// and the single slowest shard (a makespan can beat neither); for the
+/// near-uniform shards the packer produces the even split dominates.
+pub fn prove_estimate(
+  per_shard_steps: &[u64],
+  parallelism: usize,
+) -> ProveEstimate {
+  let p = parallelism.max(1);
+  let total_steps =
+    per_shard_steps.iter().fold(0u64, |a, &s| a.saturating_add(s));
+  let seq_secs: f64 =
+    per_shard_steps.iter().map(|&s| shard_prove_secs(s)).sum();
+  let max_secs =
+    per_shard_steps.iter().map(|&s| shard_prove_secs(s)).fold(0.0, f64::max);
+  let wall_secs = (seq_secs / p as f64).max(max_secs);
+  ProveEstimate { total_steps, seq_secs, wall_secs, parallelism: p }
+}
+
+/// Per-shard predicted full STEPS (floor + member step-cost + cross-ingress),
+/// indexed by shard id, from a built manifest and its block assignment.
+fn per_shard_steps(
+  profile: &BlockProfile,
+  shard_of: &[u32],
+  manifest: &ShardManifest,
+) -> Vec<u64> {
+  let mut steps = vec![0u64; manifest.shards.len()];
+  for (b, &s) in shard_of.iter().enumerate() {
+    steps[s as usize] = steps[s as usize]
+      .saturating_add(block_step_cost(profile.block(b as u32)));
+  }
+  for sh in &manifest.shards {
+    let i = sh.id as usize;
+    steps[i] = steps[i]
+      .saturating_add(SHARD_STEP_FLOOR)
+      .saturating_add(STEPS_PER_INGRESS_BYTE.saturating_mul(sh.cross_ingress));
+  }
+  steps
+}
+
+/// Human-readable duration for the prove-time report.
+fn fmt_duration(secs: f64) -> String {
+  if secs >= 3600.0 {
+    format!("{:.1}h", secs / 3600.0)
+  } else if secs >= 60.0 {
+    format!("{:.0}m", secs / 60.0)
+  } else {
+    format!("{secs:.0}s")
+  }
+}
+
+/// One-line prove-time report fragment shared by [`shard_esp`] and
+/// [`shard_esp_cap`]: total steps across all shards plus the wall-clock estimate
+/// at the requested `parallelism` (and the sequential baseline).
+fn prove_report(
+  profile: &BlockProfile,
+  shard_of: &[u32],
+  manifest: &ShardManifest,
+  parallelism: usize,
+) -> String {
+  let est =
+    prove_estimate(&per_shard_steps(profile, shard_of, manifest), parallelism);
+  format!(
+    "total_steps={} → prove est ~{} wall at parallelism={} (sequential ~{}); \
+     leaf model {PROVE_SETUP_SECS:.0}s + {PROVE_SECS_PER_BCYCLE:.0}s·Bsteps/shard, aggregation extra",
+    est.total_steps,
+    fmt_duration(est.wall_secs),
+    est.parallelism,
+    fmt_duration(est.seq_secs),
+  )
 }
 
 /// A partition sized to a per-shard Zisk **cycle** budget (rather than a fixed
@@ -1562,108 +1789,228 @@ pub struct BudgetPlan {
   pub shard_of: Vec<u32>,
   /// The bisection tree for the chosen partition, for tree-aligned aggregation.
   pub tree: AggNode,
-  /// Per-shard heartbeat cap derived from the cycle cap
-  /// (`max_cycles / cycles_per_heartbeat`).
-  pub heartbeat_cap: u64,
-  /// Heaviest shard's heartbeats in the chosen partition.
-  pub max_shard_heartbeats: u64,
-  /// Largest single (atomic) block's heartbeats — the hard floor on
-  /// `max_shard_heartbeats` that no shard count can beat.
-  pub largest_block_heartbeats: u64,
+  /// Per-shard predicted-STEPS cap: `max_cycles − SHARD_STEP_FLOOR` (the block
+  /// step-costs that may sum into one shard before the floor pushes it over
+  /// `max_cycles`).
+  pub step_cap: u64,
+  /// Heaviest shard's **full** predicted guest STEPS — `SHARD_STEP_FLOOR +
+  /// Σ block_step_cost + STEPS_PER_INGRESS_BYTE × cross_ingress_bytes`. The
+  /// packer keeps this `≤ max_cycles` (cross-ingress included), so it is the
+  /// tightest single number to compare against the cap / RAM budget.
+  pub max_shard_steps: u64,
+  /// Largest single (atomic) block's [`block_step_cost`] — the hard floor on
+  /// `max_shard_steps` that no shard count can beat.
+  pub largest_block_steps: u64,
   /// True when the largest atomic block alone exceeds the cap: the budget is
   /// infeasible by sharding (split that mutual block upstream, or raise the cap
   /// / use a bigger box).
   pub infeasible_atomic_floor: bool,
 }
 
-/// Size a partition to a per-shard **cycle** budget, then partition.
+/// Size a partition to a per-shard **cycle** (guest-STEP) budget by **bin-packing
+/// to the cap**, not by balancing into a fixed shard count.
 ///
 /// `max_cycles` is the ceiling on a single shard's in-circuit Zisk guest steps
-/// — the leaf prover's trace size, which is what sets peak prover RAM. Convert
-/// it from a host-RAM budget with the empirical single-leaf model measured on
-/// this prover:
+/// — the leaf prover's trace size, which is what sets peak prover RAM. Get it
+/// from a host-RAM budget with [`cycle_cap_for_ram`] (the measured prover model
+/// `peak_RAM_GiB ≈ 50 + 33 × steps_billions`).
 ///
-/// ```text
-///   peak_RAM_GB ≈ 45 + 32 × cycles_billions
-///   ⇒ max_cycles ≈ (target_peak_GB − 45) / 32 × 1e9
-/// ```
+/// **Why packing, not balancing.** A shard's predicted STEPS is
+/// `SHARD_STEP_FLOOR + Σ block_step_cost + STEPS_PER_INGRESS_BYTE ×
+/// cross_ingress_bytes` (member reduction + own ingress, plus the foreign
+/// dependencies it re-ingresses). The goal is the *fewest* shards that each stay
+/// under the cap — not uniform shards. Balancing into `N = ⌈total/cap⌉` and
+/// growing `N` whenever imbalance pushed the heaviest shard over the cap (the
+/// old approach) *over-sharded*: it spread work evenly, so every shard sat
+/// partially full and a single un-equalizable block forced extra shards. Packing
+/// instead fills each shard as close to the cap as the dependency structure
+/// allows and only opens a new shard when the next block won't fit — giving
+/// `⌈total/cap⌉` shards plus a small packing remainder, each maximally
+/// performant. Lumpy (a near-full shard beside a partial one) is fine.
 ///
-/// e.g. a 256 GB box with a ~195 GB safe target (≈ 50 GB headroom for OS +
-/// run-to-run variance) → `(195 − 45) / 32 ≈ 4.7` → `max_cycles ≈ 4.5e9`.
+/// **How dependency overlap is packed.** We first cut a *fine* min-cut partition
+/// ([`PACK_PIECES_PER_CAP`] pieces per cap) purely to obtain a **cut-coherent
+/// order**: a DFS of the bisection tree visits each tightly-coupled subtree
+/// before moving on, so dependency-overlapping blocks are contiguous. Greedy
+/// next-fit along that order therefore packs overlapping blocks into the same
+/// shard — keeping their shared dependencies in-shard so they are not re-paid as
+/// cross-ingress — and only the thin seams between coherent runs cross a shard
+/// boundary. The cap test includes the live cross-ingress, so a shard packed
+/// "to the cap" still executes under it.
 ///
-/// `cycles_per_heartbeat` converts the planner's heartbeat balance metric to
-/// guest cycles. Measured across 12 envs: large shardable envs cluster at
-/// 194–208k whole-env, and the per-shard ratio runs ~5–8% higher (a shard
-/// memoizes less) — mergesort's heaviest shard is ≈ 216k, so ~215k is the
-/// conservative default for the regime that needs sharding. It is genuinely
-/// workload-dependent though (tiny arithmetic envs ~130–160k; heavy-def-eq envs
-/// like array/string-assoc ~258k), so recalibrate per environment with one
-/// `--execute`: a shard's reported steps ÷ that shard's heartbeats. The cycle
-/// cap's RAM headroom (target well under the wall) absorbs the residual error.
-///
-/// Picks the smallest `N` whose heaviest shard fits `max_cycles /
-/// cycles_per_heartbeat`, growing `N` proportionally to any overshoot and
-/// re-partitioning (partitioning is milliseconds-to-seconds, negligible beside
-/// proving). Stops at the **atomic-block floor**: a mutual block cannot be
-/// split, so once the heaviest shard is pinned to the largest block, more shards
-/// only worsen balance — `infeasible_atomic_floor` then flags that the cap is
-/// unreachable and the block must be dealt with upstream.
+/// Flags `infeasible_atomic_floor` when one block alone (its floor + reduction +
+/// own + dependency ingress) exceeds the cap — it cannot be split, so the cap is
+/// unreachable by sharding (split that mutual block upstream, or use a bigger
+/// box). The block is still emitted in its own shard, best-effort.
 pub fn partition_for_cycle_cap(
   profile: &BlockProfile,
   max_cycles: u64,
-  cycles_per_heartbeat: u64,
   epsilon: f64,
 ) -> BudgetPlan {
-  let h = Hypergraph::from_profile(profile);
-  let hb_cap = (max_cycles / cycles_per_heartbeat.max(1)).max(1);
+  // Safety margin lives in `cycle_cap_for_ram` (`RAM_USABLE_FRAC` withholds 15%
+  // of the RAM budget) plus the model's own ~1.1× over-prediction — so the cap is
+  // applied directly, no extra factor.
+  let step_cap = max_cycles.saturating_sub(SHARD_STEP_FLOOR).max(1);
+  let nblocks = profile.num_blocks();
   let largest_block =
-    profile.blocks().iter().map(|b| b.heartbeats).max().unwrap_or(0);
-  let total_hb = profile.total_heartbeats();
-  let nblocks = profile.num_blocks().max(1);
+    profile.blocks().iter().map(block_step_cost).max().unwrap_or(0);
+  let size = |b: u32| u64::from(profile.block(b).serialized_size);
 
-  let max_shard_hb_of = |shard_of: &[u32], n: usize| -> u64 {
-    let mut sums = vec![0u64; n];
-    for (b, &s) in shard_of.iter().enumerate() {
-      sums[s as usize] =
-        sums[s as usize].saturating_add(profile.block(b as u32).heartbeats);
-    }
-    sums.into_iter().max().unwrap_or(0)
-  };
-
-  // Initial estimate from the average load; refine against the real partition.
-  let mut n = ((total_hb / u128::from(hb_cap)).max(1) as usize).min(nblocks);
-  let (mut shard_of, mut tree) = h.partition_with_tree(n, epsilon);
-  let mut max_shard_hb = max_shard_hb_of(&shard_of, n);
-
-  // Grow N until the heaviest shard fits the cap, or we hit the atomic-block
-  // floor / the block count. Proportional growth converges in a few re-cuts.
-  let mut guard = 0;
-  while max_shard_hb > hb_cap
-    && n < nblocks
-    && max_shard_hb > largest_block.saturating_mul(11) / 10
-    && guard < 24
-  {
-    // Next estimate: scale N by the overshoot ratio (so a 2× overshoot doubles
-    // N), but always advance by ≥1 to guarantee progress. Re-checking the real
-    // partition each round converges to the *minimal* N that fits.
-    let scaled =
-      ((n as f64) * (max_shard_hb as f64 / hb_cap as f64)).ceil() as usize;
-    n = scaled.max(n + 1).min(nblocks);
-    let (so, t) = h.partition_with_tree(n, epsilon);
-    shard_of = so;
-    tree = t;
-    max_shard_hb = max_shard_hb_of(&shard_of, n);
-    guard += 1;
+  if nblocks == 0 {
+    return BudgetPlan {
+      num_shards: 1,
+      shard_of: Vec::new(),
+      tree: AggNode::Leaf(0),
+      step_cap,
+      max_shard_steps: SHARD_STEP_FLOOR,
+      largest_block_steps: 0,
+      infeasible_atomic_floor: false,
+    };
   }
 
+  // 1. Cut-coherent block order. A fine min-cut pre-partition's bisection tree,
+  //    read in DFS order, lays tightly-coupled blocks contiguously so the packer
+  //    keeps dependency overlap within a shard. Sized to ~PACK_PIECES_PER_CAP
+  //    pieces per cap (bounded by the block count); when everything fits one cap
+  //    this collapses to a trivial order.
+  let total: u128 =
+    profile.blocks().iter().map(|b| u128::from(block_step_cost(b))).sum();
+  let pieces = ((total.saturating_mul(PACK_PIECES_PER_CAP))
+    / u128::from(step_cap)) as usize;
+  let n_fine = pieces.clamp(1, nblocks);
+  let order: Vec<u32> = if n_fine < 2 {
+    (0..nblocks as u32).collect()
+  } else {
+    let h = Hypergraph::from_profile(profile);
+    let (fine_of, fine_tree) = h.partition_with_tree(n_fine, epsilon);
+    let mut leaf_order = Vec::with_capacity(n_fine);
+    dfs_leaf_order(&fine_tree, &mut leaf_order);
+    let mut rank = vec![0u32; n_fine];
+    for (r, &sid) in leaf_order.iter().enumerate() {
+      rank[sid as usize] = r as u32;
+    }
+    let mut order: Vec<u32> = (0..nblocks as u32).collect();
+    order.sort_by_key(|&b| (rank[fine_of[b as usize] as usize], b));
+    order
+  };
+
+  // 2. Greedy next-fit packing to the cap, with live cross-ingress accounting.
+  //    A shard accumulates members until adding the next block would push its
+  //    full predicted STEPS over `max_cycles`, then a new shard opens. Foreign
+  //    dependency bytes (`foreign`) shrink when a later member is itself one of
+  //    the current shard's pending dependencies — exactly the overlap packing
+  //    saves.
+  let mut shard_of = vec![0u32; nblocks];
+  let mut members: FxHashSet<u32> = FxHashSet::default();
+  let mut foreign: FxHashSet<u32> = FxHashSet::default();
+  let mut seen: FxHashSet<u32> = FxHashSet::default();
+  let mut member_cost = 0u64;
+  let mut foreign_bytes = 0u64;
+  let mut cur = 0u32;
+  let mut max_shard_steps = 0u64;
+  let mut infeasible = false;
+  let predicted = |member_cost: u64, foreign_bytes: u64| -> u64 {
+    SHARD_STEP_FLOOR
+      .saturating_add(member_cost)
+      .saturating_add(STEPS_PER_INGRESS_BYTE.saturating_mul(foreign_bytes))
+  };
+
+  for (i, &b) in order.iter().enumerate() {
+    let bc = block_step_cost(profile.block(b));
+    // Foreign-byte delta if `b` joins the current shard: `b` itself drops out of
+    // foreign if a prior member depended on it; `b`'s own producers join unless
+    // already member/foreign.
+    seen.clear();
+    let mut added = 0u64;
+    for &p in profile.producers(b) {
+      if p != b
+        && !members.contains(&p)
+        && !foreign.contains(&p)
+        && seen.insert(p)
+      {
+        added = added.saturating_add(size(p));
+      }
+    }
+    let removed = if foreign.contains(&b) { size(b) } else { 0 };
+    let tent_fbytes =
+      foreign_bytes.saturating_add(added).saturating_sub(removed);
+    let tentative = predicted(member_cost.saturating_add(bc), tent_fbytes);
+
+    // Open a new shard when the current one is non-empty and `b` won't fit. The
+    // first block of a run always goes in (a lone over-cap block is flagged
+    // infeasible below, not split — it can't be).
+    if !members.is_empty() && tentative > max_cycles {
+      max_shard_steps =
+        max_shard_steps.max(predicted(member_cost, foreign_bytes));
+      cur += 1;
+      members.clear();
+      foreign.clear();
+      member_cost = 0;
+      foreign_bytes = 0;
+    }
+
+    // Commit `b` into the current shard.
+    if foreign.remove(&b) {
+      foreign_bytes = foreign_bytes.saturating_sub(size(b));
+    }
+    members.insert(b);
+    member_cost = member_cost.saturating_add(bc);
+    for &p in profile.producers(b) {
+      if p != b && !members.contains(&p) && foreign.insert(p) {
+        foreign_bytes = foreign_bytes.saturating_add(size(p));
+      }
+    }
+    shard_of[b as usize] = cur;
+    if members.len() == 1 && predicted(member_cost, foreign_bytes) > max_cycles
+    {
+      infeasible = true; // this block alone overflows the cap
+    }
+    if i == order.len() - 1 {
+      max_shard_steps =
+        max_shard_steps.max(predicted(member_cost, foreign_bytes));
+    }
+  }
+
+  let num_shards = (cur + 1) as usize;
+  // 3. Balanced aggregation tree over the shard sequence. Shards are numbered in
+  //    packing (cut-coherent) order, so adjacent ids are coupled — a balanced
+  //    binary tree over `0..num_shards` keeps coupled shards as siblings, so
+  //    cross-shard assumptions discharge low in the fold.
+  let tree = balanced_agg_tree(0, num_shards as u32);
+
   BudgetPlan {
-    num_shards: n,
+    num_shards,
     shard_of,
     tree,
-    heartbeat_cap: hb_cap,
-    max_shard_heartbeats: max_shard_hb,
-    largest_block_heartbeats: largest_block,
-    infeasible_atomic_floor: largest_block > hb_cap,
+    step_cap,
+    max_shard_steps,
+    largest_block_steps: largest_block,
+    infeasible_atomic_floor: infeasible,
+  }
+}
+
+/// Collect the leaf shard ids of an [`AggNode`] in left-to-right DFS order.
+fn dfs_leaf_order(node: &AggNode, out: &mut Vec<u32>) {
+  match node {
+    AggNode::Leaf(id) => out.push(*id),
+    AggNode::Internal(l, r) => {
+      dfs_leaf_order(l, out);
+      dfs_leaf_order(r, out);
+    },
+  }
+}
+
+/// A balanced binary [`AggNode`] over the contiguous shard-id range `lo..hi`.
+fn balanced_agg_tree(lo: u32, hi: u32) -> AggNode {
+  debug_assert!(hi > lo);
+  if hi - lo <= 1 {
+    AggNode::Leaf(lo)
+  } else {
+    let mid = lo + (hi - lo) / 2;
+    AggNode::Internal(
+      Box::new(balanced_agg_tree(lo, mid)),
+      Box::new(balanced_agg_tree(mid, hi)),
+    )
   }
 }
 
@@ -1691,7 +2038,7 @@ mod tests {
   fn two_clusters() -> BlockProfile {
     let mut b = ProfileBuilder::new();
     for i in 1..=6u8 {
-      b.block(addr(i), 100, 1000, 1);
+      b.block(addr(i), 100, 1000, 1, 0);
     }
     // intra cluster A
     b.delta_edge(addr(1), addr(2));
@@ -1750,7 +2097,7 @@ mod tests {
     for c in 0..4u8 {
       let base = c * 4 + 1;
       for k in 0..4u8 {
-        b.block(addr(base + k), 100, 500, 1);
+        b.block(addr(base + k), 100, 500, 1, 0);
       }
       b.delta_edge(addr(base), addr(base + 1));
       b.delta_edge(addr(base + 1), addr(base + 2));
@@ -1792,9 +2139,9 @@ mod tests {
     // non-empty (parallelism is the goal), even though heartbeat balance is
     // impossible.
     let mut b = ProfileBuilder::new();
-    b.block(addr(1), 30_000, 100, 1); // ~30x a light block
+    b.block(addr(1), 30_000, 100, 1, 0); // ~30x a light block
     for i in 2..=65u8 {
-      b.block(addr(i), 1000, 100, 1);
+      b.block(addr(i), 1000, 100, 1, 0);
     }
     for i in 2..=64u8 {
       b.delta_edge(addr(i), addr(i + 1));
@@ -1811,20 +2158,109 @@ mod tests {
     );
   }
 
+  /// Full predicted STEPS of a shard under a partition: floor + member step-cost
+  /// + cross-ingress (foreign producers' bytes). Mirrors the packer's cap test.
+  fn shard_predicted(p: &BlockProfile, shard_of: &[u32], s: u32) -> u64 {
+    let members: FxHashSet<u32> = (0..p.num_blocks() as u32)
+      .filter(|&b| shard_of[b as usize] == s)
+      .collect();
+    let member_cost: u64 =
+      members.iter().map(|&b| block_step_cost(p.block(b))).sum();
+    let mut foreign: FxHashSet<u32> = FxHashSet::default();
+    for &b in &members {
+      for &pr in p.producers(b) {
+        if !members.contains(&pr) {
+          foreign.insert(pr);
+        }
+      }
+    }
+    let foreign_bytes: u64 =
+      foreign.iter().map(|&pr| u64::from(p.block(pr).serialized_size)).sum();
+    SHARD_STEP_FLOOR + member_cost + STEPS_PER_INGRESS_BYTE * foreign_bytes
+  }
+
+  #[test]
+  fn cap_packs_to_minimal_shards_under_cap() {
+    // 40 blocks, each ≈162.339M steps (hb=1000), no ingress. With a 1e9 cap the
+    // floor is 180M, leaving room for 5 blocks/shard (5×162.339M = 811.7M ≤
+    // 820M; a 6th overflows). Packing should produce exactly ⌈40/5⌉ = 8 shards,
+    // each under the cap — no over-sharding from balancing.
+    let mut b = ProfileBuilder::new();
+    for i in 1..=40u8 {
+      b.block(addr(i), 1000, 0, 0, 0);
+    }
+    for i in 1..40u8 {
+      b.delta_edge(addr(i), addr(i + 1));
+    }
+    let p = b.finish();
+    let max_cycles = 1_000_000_000u64;
+    let plan = partition_for_cycle_cap(&p, max_cycles, 0.05);
+    assert_eq!(plan.num_shards, 8, "should pack to the minimal 8 shards");
+    assert!(!plan.infeasible_atomic_floor);
+    for s in 0..plan.num_shards as u32 {
+      let pred = shard_predicted(&p, &plan.shard_of, s);
+      assert!(
+        pred <= max_cycles,
+        "shard {s} predicted {pred} exceeds cap {max_cycles}"
+      );
+    }
+    assert!(plan.max_shard_steps <= max_cycles);
+    // Every block assigned to a real shard; tree leaves match the shard ids.
+    assert_eq!(plan.tree.num_leaves(), plan.num_shards);
+  }
+
+  #[test]
+  fn cap_cross_ingress_counts_against_the_cap() {
+    // Two blocks that each delta-unfold a heavy shared dependency `dep` (large
+    // serialized_size). If they land in different shards, BOTH re-ingress `dep`.
+    // The packer must keep them together (coherent order) so `dep` is paid once,
+    // and must count `dep`'s bytes when deciding the cap.
+    let mut b = ProfileBuilder::new();
+    b.block(addr(1), 10, 4_000_000, 0, 0); // dep: ~2.6e9 ingress steps if foreign
+    b.block(addr(2), 100, 0, 0, 0);
+    b.block(addr(3), 100, 0, 0, 0);
+    b.delta_edge(addr(2), addr(1)); // 2 unfolds dep
+    b.delta_edge(addr(3), addr(1)); // 3 unfolds dep
+    let p = b.finish();
+    // Cap large enough to hold everything in one shard.
+    let plan = partition_for_cycle_cap(&p, 10_000_000_000, 0.05);
+    for s in 0..plan.num_shards as u32 {
+      let pred = shard_predicted(&p, &plan.shard_of, s);
+      assert!(pred <= 10_000_000_000, "shard {s} over cap: {pred}");
+    }
+  }
+
+  #[test]
+  fn cap_flags_infeasible_atomic_block() {
+    // A single block whose own predicted STEPS exceed the cap cannot be split —
+    // it is emitted alone and the plan is flagged infeasible.
+    let mut b = ProfileBuilder::new();
+    b.block(addr(1), 100_000, 0, 0, 0); // ~16.2e9 steps, far over a 1e9 cap
+    b.block(addr(2), 100, 0, 0, 0);
+    let p = b.finish();
+    let plan = partition_for_cycle_cap(&p, 1_000_000_000, 0.05);
+    assert!(plan.infeasible_atomic_floor, "oversized atomic block must flag");
+  }
+
   #[test]
   fn shard_esp_file_roundtrip() {
-    // Exercise the CLI's shard path: write a .ixesp, run shard_esp, read back
+    // Exercise the CLI's shard path: write a .ixprof, run shard_esp, read back
     // the .ixes manifest.
     let p = two_clusters();
     let dir = std::env::temp_dir();
     let pid = std::process::id();
-    let prof = dir.join(format!("ix_shard_rt_{pid}.ixesp"));
+    let prof = dir.join(format!("ix_shard_rt_{pid}.ixprof"));
     let shard = dir.join(format!("ix_shard_rt_{pid}.ixes"));
     std::fs::write(&prof, p.to_bytes()).unwrap();
 
-    let report =
-      shard_esp(prof.to_str().unwrap(), 2, 0.10, Some(shard.to_str().unwrap()))
-        .unwrap();
+    let report = shard_esp(
+      prof.to_str().unwrap(),
+      2,
+      0.10,
+      1,
+      Some(shard.to_str().unwrap()),
+    )
+    .unwrap();
     assert!(report.contains("shards=2"), "report was: {report}");
 
     let m = ShardManifest::from_bytes(&std::fs::read(&shard).unwrap()).unwrap();
@@ -1886,7 +2322,7 @@ mod tests {
   fn two_big_clusters(m: u32) -> BlockProfile {
     let mut b = ProfileBuilder::new();
     for i in 0..2 * m {
-      b.block(addr_u32(i + 1), 100, 1000, 1);
+      b.block(addr_u32(i + 1), 100, 1000, 1, 0);
     }
     for i in 0..m {
       // cluster A cycle over addrs 1..=m
@@ -1948,9 +2384,9 @@ mod tests {
     // candidates, or a shard ends up empty. (Regression guard.)
     let mut b = ProfileBuilder::new();
     let m = 800u32;
-    b.block(addr_u32(1), 5_000_000, 100, 1); // the giant
+    b.block(addr_u32(1), 5_000_000, 100, 1, 0); // the giant
     for i in 2..=m {
-      b.block(addr_u32(i), 1000, 100, 1);
+      b.block(addr_u32(i), 1000, 100, 1, 0);
     }
     for i in 1..m {
       b.delta_edge(addr_u32(i), addr_u32(i + 1)); // a chain (incl. the giant)

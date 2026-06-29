@@ -108,7 +108,7 @@ struct Args {
 
   /// Manifest-driven sharding: prove the partition in a `.ixes` manifest
   /// produced offline by `ix profile <env.ixe>` then
-  /// `ix shard <env.ixesp> --shards N`. Each manifest shard becomes one
+  /// `ix shard <env.ixprof>`. Each manifest shard becomes one
   /// closure-injected leaf proof — its member blocks' work items, shipped with
   /// only their dependency closure — and the leaves fold into one aggregate.
   /// This is the performant path: the partition is balanced by the kernel
@@ -189,14 +189,25 @@ struct Args {
   /// Check a single constant selected by its Lean NAME (e.g.
   /// "ByteArray.utf8DecodeChar?_utf8EncodeChar_append"), with no manifest or
   /// range plumbing: the name is resolved through the env's `named` metadata to
-  /// its ingress block, that block's work item becomes a one-item check-list,
-  /// and the guest receives only its closure sub-env. Composes with
+  /// its ingress block, and the guest receives only its closure sub-env. By
+  /// default this is the **full-closure** typecheck — the constant *and* its
+  /// whole dependency closure are re-checked (matching `Ix.Claim.check addr
+  /// none`, the default of the Aiur `bench-typecheck --constant`). Pass
+  /// `--skip-deps` for a subject-only check (deps trusted). Composes with
   /// `--execute` (cycles), plain prove (single leaf, subject-bound + verified),
   /// and `--dump-input` (write the stdin for ziskemu profiling). Requires
   /// exactly one `--ixe`. Note: a member of a mutual block selects the whole
   /// block's work item (the kernel checks blocks atomically).
   #[arg(long, conflicts_with_all = ["shard_plan", "only_shard", "store_dir"])]
-  only_const: Option<String>,
+  constant: Option<String>,
+
+  /// Modifies `--constant`: check only the named constant itself, trusting its
+  /// dependencies (subject-only), instead of re-checking its whole transitive
+  /// closure. Reserved for constants too expensive to full-closure-check that
+  /// also can't be sharded. Same flag/semantics as the Aiur
+  /// `bench-typecheck --skip-deps`.
+  #[arg(long, requires = "constant")]
+  skip_deps: bool,
 
   /// Cap on resident witness traces during the prove phase, bounding
   /// peak host RAM per shard. Zisk's prover queues witnesses up to this
@@ -789,13 +800,14 @@ fn build_client(
   builder.build()
 }
 
-/// Check a single constant chosen by Lean NAME (the `--only-const` path).
+/// Check a single constant chosen by Lean NAME (the `--constant` path).
 /// Resolve name → constant address via the env's `named` metadata, map to its
-/// ingress block's work item, and ship just that item: a one-element
-/// check-list + its closure sub-env. Honors `--dump-input` (write stdin for
-/// ziskemu), `--execute` (cycles), and plain prove (single leaf, subject-bound
-/// + verified). No aggregation — it's one leaf.
-async fn run_only_const(
+/// ingress block's work item, and ship its closure sub-env. By default the
+/// check-list is the ENTIRE closure (full-closure typecheck); with
+/// `--skip-deps` it is just the subject (deps trusted). Honors `--dump-input`
+/// (write stdin for ziskemu), `--execute` (cycles), and plain prove (single
+/// leaf, subject-bound + verified). No aggregation — it's one leaf.
+async fn run_constant(
   client: &EmbeddedClient,
   plan: &InputPlan,
   name: &str,
@@ -833,14 +845,36 @@ async fn run_only_const(
       )
     })?;
 
-  // One-item check-list + closure sub-env.
-  let check_list = Address::pack(&[item.primary().clone()]);
+  // Closure sub-env (the named constant's transitive deps), faulted in lazily
+  // by the guest.
   let roots: Vec<Address> = item.proven_targets();
-  let cover: Vec<[u8; 32]> = roots.iter().map(|a| *a.as_bytes()).collect();
   let sub_env = build_sub_env(&env, &roots).map_err(|e| anyhow::anyhow!(e))?;
+
+  // Check-list: full-closure by default (every work item in the sub-env is
+  // re-checked, deps included), or subject-only under `--skip-deps` (just the
+  // named constant's primary; deps trusted).
+  let (check_list, cover, checked) = if args.skip_deps {
+    let cover: Vec<[u8; 32]> = roots.iter().map(|a| *a.as_bytes()).collect();
+    (Address::pack(&[item.primary().clone()]), cover, 1usize)
+  } else {
+    let env_sub =
+      IxonEnv::get_anon(&mut &sub_env[..]).expect("invalid sub-env");
+    let work_sub = build_anon_work(&env_sub).expect("build_anon_work sub");
+    let primaries: Vec<Address> =
+      work_sub.iter().map(|w| w.primary().clone()).collect();
+    let cover: Vec<[u8; 32]> = work_sub
+      .iter()
+      .flat_map(|w| w.proven_targets())
+      .map(|a| *a.as_bytes())
+      .collect();
+    let n = work_sub.len();
+    (Address::pack(&primaries), cover, n)
+  };
   println!(
-    "only-const {name}: block {}… ({} target const(s)); closure sub-env {} vs whole env {} ({:.0}%)",
+    "constant {name}{}: block {}… ({} work item(s) checked, {} target const(s)); closure sub-env {} vs whole env {} ({:.0}%)",
+    if args.skip_deps { " [skip-deps]" } else { " [full-closure]" },
     &block.hex()[..16],
+    checked,
     roots.len(),
     sub_env.len().human_count_bytes(),
     plan.env_bytes.len().human_count_bytes(),
@@ -895,7 +929,7 @@ async fn run_only_const(
   let vstart = Instant::now();
   result.verify()?;
   println!(
-    "only-const {name}: failures={}, prove {:.2}s ({} steps), verify {:.3}s; \
+    "constant {name}: failures={}, prove {:.2}s ({} steps), verify {:.3}s; \
      subject bound ({}… over {} target(s))",
     publics.failures,
     leaf_ms as f64 / 1000.0,
@@ -1599,9 +1633,9 @@ async fn main() -> Result<()> {
       "--shard-plan requires exactly one --ixe input (the env the manifest was built for)"
     );
   }
-  // `--only-const` selects a named constant from one env.
-  if args.only_const.is_some() && inputs.len() > 1 {
-    bail!("--only-const requires exactly one --ixe input");
+  // `--constant` selects a named constant from one env.
+  if args.constant.is_some() && inputs.len() > 1 {
+    bail!("--constant requires exactly one --ixe input");
   }
 
   // ---- Plan every input up front (parse + shard). ----
@@ -1696,8 +1730,8 @@ async fn main() -> Result<()> {
   }
 
   // ---- Single named constant (no manifest/range). ----
-  if let Some(name) = &args.only_const {
-    run_only_const(&client, &plans[0], name, &args).await?;
+  if let Some(name) = &args.constant {
+    run_constant(&client, &plans[0], name, &args).await?;
     return Ok(());
   }
 

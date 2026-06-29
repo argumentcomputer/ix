@@ -66,6 +66,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         log::info!("[is_def_eq] count={n}");
       }
     }
+    crate::profile::bump_def_eq();
     if a.ptr_eq(b) {
       return Ok(true);
     }

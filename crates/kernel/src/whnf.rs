@@ -239,6 +239,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         log::info!("[whnf] count={n}");
       }
     }
+    crate::profile::bump_whnf();
     // Quick exit for non-reducing forms.
     match e.data() {
       ExprData::Sort(..)
@@ -2909,6 +2910,27 @@ fn compute_nat_bin<M: KernelMode>(
 ) -> Option<Nat> {
   use num_bigint::BigUint;
   let zero = BigUint::ZERO;
+  // Profiling: charge big-Nat arithmetic limb-work to the `nat_arith` counter,
+  // which tracks the Aiur `klimbs_*`/`u64_*` circuits (cost ∝ operand limbs;
+  // ~quadratic for mul/div/mod/gcd, linear for add/sub/bitwise/shift). Invisible
+  // to hb/subst/def_eq, so it's the missing feature for FFT-cost prediction.
+  {
+    let la = (a.0.bits().max(1)).div_ceil(64);
+    let lb = (b.0.bits().max(1)).div_ceil(64);
+    let work = if *addr == p.nat_mul.addr
+      || *addr == p.nat_div.addr
+      || *addr == p.nat_mod.addr
+      || *addr == p.nat_gcd.addr
+    {
+      la.saturating_mul(lb)
+    } else if *addr == p.nat_pow.addr {
+      let lo = la.max(lb);
+      lo.saturating_mul(lo)
+    } else {
+      la.max(lb)
+    };
+    crate::profile::bump_nat_arith(work);
+  }
   let r = if *addr == p.nat_add.addr {
     &a.0 + &b.0
   } else if *addr == p.nat_sub.addr {

@@ -905,9 +905,12 @@ impl<'a, M: KernelMode> TypeChecker<'a, M> {
     // `cur_const` is unset) so producers never leak into the next constant.
     if self.env.profile_sink.is_some() {
       let producers = std::mem::take(&mut self.delta_targets);
+      // Always drain the op counters (even when `cur_const` is unset) so they
+      // never leak into the next constant, mirroring `delta_targets`.
+      let ops = crate::profile::take_op_counts();
       if let Some(addr) = self.cur_const.take() {
         let sink = self.env.profile_sink.as_mut().unwrap();
-        sink.record(addr, used, producers);
+        sink.record(addr, used, producers, ops);
       }
     }
   }

@@ -1625,7 +1625,7 @@ pub extern "C" fn rs_kernel_check_anon(
 
 // ===========================================================================
 // Sharding profiler: run the anon kernel out of circuit over a `.ixe`,
-// recording per-block heartbeats + the delta-unfold graph into a `.ixesp`.
+// recording per-block heartbeats + the delta-unfold graph into a `.ixprof`.
 // See `plans/sharding.md`.
 // ===========================================================================
 
@@ -1662,6 +1662,61 @@ fn profile_block_size(env: &IxonEnv, block: &Address) -> u32 {
     .map_or(0, |b| b.len().min(u32::MAX as usize) as u32)
 }
 
+/// Print the general-purpose cost breakdown for `ix profile` — the kernel-work
+/// metrics plus the predicted Zisk leaf cost/RAM (à la `cargo-zisk … -p summary`).
+// `steps as f64` is a display-only cast for `{:.2e}` formatting; precision loss
+// past 2⁵³ steps is irrelevant to a two-sig-fig estimate.
+#[allow(clippy::cast_precision_loss)]
+fn print_profile_summary(
+  env_path: &str,
+  sink: &ProfileSink,
+  profile: &BlockProfile,
+) {
+  use ix_kernel::shard::{
+    SHARD_STEP_FLOOR, STEPS_PER_HEARTBEAT, STEPS_PER_INGRESS_BYTE,
+    STEPS_PER_SUBST, block_step_cost, ram_gib_for_steps,
+  };
+  let (mut hb, mut subst, mut whnf, mut defeq, mut nat) =
+    (0u64, 0u64, 0u64, 0u64, 0u64);
+  for rec in sink.records.values() {
+    hb = hb.saturating_add(rec.fuel);
+    subst = subst.saturating_add(rec.ops.subst_nodes);
+    whnf = whnf.saturating_add(rec.ops.whnf_calls);
+    defeq = defeq.saturating_add(rec.ops.def_eq_calls);
+    nat = nat.saturating_add(rec.ops.nat_arith);
+  }
+  let ingress: u64 =
+    profile.blocks().iter().map(|b| u64::from(b.serialized_size)).sum();
+  let steps: u64 = profile
+    .blocks()
+    .iter()
+    .map(block_step_cost)
+    .fold(SHARD_STEP_FLOOR, u64::saturating_add);
+  let ram_gib = ram_gib_for_steps(steps);
+  let warn = if ram_gib > 250.0 {
+    "  → exceeds a 250 GiB box; shard it (ix shard --max-ram G)"
+  } else {
+    ""
+  };
+  eprintln!(
+    "\n── ix profile: {env_path} ──\n\
+     constants {}    blocks {}\n\n\
+     kernel work\n\
+     \u{20}\u{20}heartbeats     {hb:>14}\n\
+     \u{20}\u{20}subst nodes    {subst:>14}\n\
+     \u{20}\u{20}whnf calls     {whnf:>14}\n\
+     \u{20}\u{20}def-eq calls   {defeq:>14}\n\
+     \u{20}\u{20}nat-arith      {nat:>14}\n\
+     \u{20}\u{20}ingress bytes  {ingress:>14}\n\n\
+     predicted Zisk leaf  ({SHARD_STEP_FLOOR} + {STEPS_PER_HEARTBEAT}·hb + {STEPS_PER_SUBST}·subst + {STEPS_PER_INGRESS_BYTE}·bytes)\n\
+     \u{20}\u{20}cycles ≈ {:.2e}\n\
+     \u{20}\u{20}RAM    ≈ {ram_gib:.0} GiB{warn}",
+    sink.records.len(),
+    profile.num_blocks(),
+    steps as f64,
+  );
+}
+
 /// Aggregate per-constant records into a block-level [`BlockProfile`]: map each
 /// consumer/producer constant to its home block, attach serialized sizes, and
 /// accumulate heartbeats + delta edges.
@@ -1681,10 +1736,10 @@ fn build_block_profile(env: &IxonEnv, merged: &ProfileSink) -> BlockProfile {
   };
   for (consumer, rec) in &merged.records {
     let (cblock, csize) = resolve(consumer);
-    builder.block(cblock.clone(), rec.fuel, csize, 1);
+    builder.block(cblock.clone(), rec.fuel, csize, 1, rec.ops.subst_nodes);
     for prod in &rec.producers {
       let (pblock, psize) = resolve(prod);
-      builder.block(pblock.clone(), 0, psize, 0);
+      builder.block(pblock.clone(), 0, psize, 0, 0);
       builder.delta_edge(cblock.clone(), pblock);
     }
   }
@@ -1791,7 +1846,7 @@ fn run_anon_profile_parallel(
   Ok((passed.load(Ordering::Relaxed), failed.load(Ordering::Relaxed), merged))
 }
 
-/// Profile a `.ixe` out of circuit and write the `.ixesp` sidecar. Pure-Rust
+/// Profile a `.ixe` out of circuit and write the `.ixprof` sidecar. Pure-Rust
 /// entry point (used by the FFI wrapper and Rust tests).
 pub fn profile_anon_ixe(
   path: &str,
@@ -1820,6 +1875,7 @@ pub fn profile_anon_ixe(
     run_start.elapsed()
   );
   let profile = build_block_profile(&env_arc, &merged);
+  print_profile_summary(path, &merged, &profile);
   let bytes = profile.to_bytes();
   std::fs::write(out, &bytes).map_err(|e| format!("write {out}: {e}"))?;
   eprintln!(
@@ -1838,7 +1894,7 @@ pub fn profile_anon_ixe(
   })
 }
 
-/// FFI: profile a `.ixe` out of circuit and write a `.ixesp` sidecar.
+/// FFI: profile a `.ixe` out of circuit and write a `.ixprof` sidecar.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_kernel_profile_anon(
   env_path: LeanString<LeanBorrowed<'_>>,
@@ -1865,7 +1921,7 @@ pub extern "C" fn rs_kernel_profile_anon(
   }
 }
 
-/// FFI: partition a `.ixesp` into `num_shards` shards and write a `.ixes`
+/// FFI: partition a `.ixprof` into `num_shards` shards and write a `.ixes`
 /// manifest. Prints a what-if report to stderr.
 #[allow(clippy::cast_precision_loss)] // balance_pct is a small percentage
 #[unsafe(no_mangle)]
@@ -1873,10 +1929,13 @@ pub extern "C" fn rs_shard_esp(
   esp_path: LeanString<LeanBorrowed<'_>>,
   num_shards: LeanString<LeanBorrowed<'_>>,
   balance_pct: LeanString<LeanBorrowed<'_>>,
+  parallelism: LeanString<LeanBorrowed<'_>>,
   out_path: LeanString<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
   let num_shards = num_shards.to_string().parse::<usize>().unwrap_or(1);
   let balance_pct = balance_pct.to_string().parse::<u64>().unwrap_or(5);
+  let parallelism =
+    parallelism.to_string().parse::<usize>().unwrap_or(1).max(1);
   let out = out_path.to_string();
   let out_opt = if out.is_empty() { None } else { Some(out.as_str()) };
   let balance = (balance_pct as f64) / 100.0;
@@ -1884,6 +1943,7 @@ pub extern "C" fn rs_shard_esp(
     &esp_path.to_string(),
     num_shards,
     balance,
+    parallelism,
     out_opt,
   ) {
     Ok(report) => {
@@ -1891,6 +1951,74 @@ pub extern "C" fn rs_shard_esp(
       LeanIOResult::ok(LeanOwned::box_usize(0))
     },
     Err(e) => LeanIOResult::error_string(&format!("rs_shard_esp: {e}")),
+  }
+}
+
+/// Total system RAM in GiB from `/proc/meminfo` (Linux); `None` if unreadable.
+fn system_ram_gib() -> Option<f64> {
+  let s = std::fs::read_to_string("/proc/meminfo").ok()?;
+  let rest = s.lines().find_map(|l| l.strip_prefix("MemTotal:"))?;
+  let kib: f64 = rest.trim().trim_end_matches("kB").trim().parse().ok()?;
+  Some(kib / 1024.0 / 1024.0) // KiB → GiB
+}
+
+/// FFI: partition a `.ixprof` to a per-shard cycle/RAM budget and write a
+/// `.ixes` manifest. `max_cycles` is a guest-STEP cap; if `ram_gb` > 0 it is
+/// converted via the measured prover RAM model and overrides `max_cycles`. Pass
+/// "0" for both to default the budget to detected system RAM.
+#[allow(clippy::cast_precision_loss)]
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_shard_esp_cap(
+  esp_path: LeanString<LeanBorrowed<'_>>,
+  max_cycles: LeanString<LeanBorrowed<'_>>,
+  ram_gb: LeanString<LeanBorrowed<'_>>,
+  balance_pct: LeanString<LeanBorrowed<'_>>,
+  parallelism: LeanString<LeanBorrowed<'_>>,
+  out_path: LeanString<LeanBorrowed<'_>>,
+) -> LeanIOResult<LeanOwned> {
+  let mc = max_cycles.to_string().parse::<u64>().unwrap_or(0);
+  let mut ram = ram_gb.to_string().parse::<f64>().unwrap_or(0.0);
+  let parallelism =
+    parallelism.to_string().parse::<usize>().unwrap_or(1).max(1);
+  let balance =
+    (balance_pct.to_string().parse::<u64>().unwrap_or(5) as f64) / 100.0;
+  // No explicit cap → default the RAM budget to detected system RAM.
+  if mc == 0 && ram <= 0.0 {
+    match system_ram_gib() {
+      Some(g) => {
+        eprintln!(
+          "[rs_shard] no cap given; defaulting to detected system RAM: {g:.0} GiB"
+        );
+        ram = g;
+      },
+      None => {
+        return LeanIOResult::error_string(
+          "could not detect system RAM; pass --max-ram G or --max-cycles N",
+        );
+      },
+    }
+  }
+  let cap =
+    if ram > 0.0 { ix_kernel::shard::cycle_cap_for_ram(ram) } else { mc };
+  if cap == 0 {
+    return LeanIOResult::error_string(
+      "shard cap: RAM budget too small (must clear the ~50 GiB prover base)",
+    );
+  }
+  let out = out_path.to_string();
+  let out_opt = if out.is_empty() { None } else { Some(out.as_str()) };
+  match ix_kernel::shard::shard_esp_cap(
+    &esp_path.to_string(),
+    cap,
+    balance,
+    parallelism,
+    out_opt,
+  ) {
+    Ok(report) => {
+      eprintln!("[rs_shard]\n{report}");
+      LeanIOResult::ok(LeanOwned::box_usize(0))
+    },
+    Err(e) => LeanIOResult::error_string(&format!("rs_shard_esp_cap: {e}")),
   }
 }
 

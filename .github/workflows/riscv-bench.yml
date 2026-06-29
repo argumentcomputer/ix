@@ -1,0 +1,124 @@
+name: RISC-V bench
+
+# zkVM execute is ~10+ min (toolchain installs + host builds + emulation), so it
+# is kept off the per-PR path: this workflow runs only on pushes to main (and on
+# manual dispatch). It compiles the `minimal.ixe` fixture, then executes the
+# kernel typecheck of one constant in the SP1 and Zisk VMs — in parallel jobs.
+on:
+  push:
+    branches: main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Compile a tiny env once (ix is already built here) and hand it to the zkVM
+  # execute jobs via artifact, so those jobs stay Lean-free.
+  compile-fixture:
+    name: Compile zkVM fixture (minimal.ixe)
+    runs-on: warp-ubuntu-latest-x64-16x
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: leanprover/lean-action@v1
+        with:
+          build-args: "--wfail -v"
+      - name: Compile zkVM test fixture (minimal.ixe)
+        run: lake exe ix compile Tests/MinimalDefs.lean --out minimal.ixe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: minimal-ixe
+          path: minimal.ixe
+          if-no-files-found: error
+
+  # Execute the kernel typecheck of the `minimal.ixe` fixture natively (no Nix,
+  # no proof, no GPU). SP1 and Zisk run as independent jobs so they parallelize;
+  # each installs only its own toolchain via sp1up / ziskup (prebuilt binaries)
+  # and downloads the shared fixture. minimal.ixe carries the full Init closure,
+  # so we scope execution with `--constant myReflEq --skip-deps`: that
+  # subject-only-typechecks just the named constant, trusting its Init
+  # dependencies as Claim assumptions, instead of typechecking all of Init (which
+  # never finishes in the emulator). Each host bails non-zero on any typecheck
+  # failure; we also assert the `failures: 0` line.
+  #
+  # The apt list is the shared superset both backends need: the ZisK book's full
+  # Ubuntu list (its prebuilt cargo-zisk and proofman's C++ link OpenMPI, OpenMP,
+  # GMP, nlohmann-json, nasm, secp256k1, …) plus pkg-config + libssl-dev for
+  # SP1's host crates (openssl/bindgen). The Nix shells provided all this; a bare
+  # runner doesn't. Must precede the toolchain install (it runs cargo-zisk).
+  sp1-execute:
+    name: SP1 zkVM Execute
+    needs: compile-fixture
+    runs-on: warp-ubuntu-latest-x64-16x
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache-workspaces: sp1
+      - name: Install system build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            xz-utils jq curl build-essential qemu-system libomp-dev libgmp-dev \
+            nlohmann-json3-dev protobuf-compiler uuid-dev libgrpc++-dev \
+            libsecp256k1-dev libsodium-dev libpqxx-dev nasm libopenmpi-dev \
+            openmpi-bin openmpi-common libclang-dev clang gcc-riscv64-unknown-elf \
+            pkg-config libssl-dev
+      - uses: actions/download-artifact@v4
+        with:
+          name: minimal-ixe
+      - name: Install SP1 toolchain (sp1up, latest)
+        run: |
+          curl -L https://sp1up.succinct.xyz | bash
+          ~/.sp1/bin/sp1up
+          echo "$HOME/.sp1/bin" >> "$GITHUB_PATH"
+      # The precompile-aware SP1 runner-binary is auto-built from the fork git
+      # dep by `sp1-core-executor-runner`'s build script — no manual override.
+      - name: SP1 — execute minimal.ixe (assert failures == 0)
+        run: |
+          cd sp1
+          cargo run --bin sp1-host -- --execute --ixe ../minimal.ixe --constant myReflEq --skip-deps | tee only.txt
+          grep -qE "failures: 0\b" only.txt
+
+  zisk-execute:
+    name: Zisk zkVM Execute
+    needs: compile-fixture
+    runs-on: warp-ubuntu-latest-x64-16x
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache-workspaces: zisk
+      - name: Install system build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            xz-utils jq curl build-essential qemu-system libomp-dev libgmp-dev \
+            nlohmann-json3-dev protobuf-compiler uuid-dev libgrpc++-dev \
+            libsecp256k1-dev libsodium-dev libpqxx-dev nasm libopenmpi-dev \
+            openmpi-bin openmpi-common libclang-dev clang gcc-riscv64-unknown-elf \
+            pkg-config libssl-dev
+      - uses: actions/download-artifact@v4
+        with:
+          name: minimal-ixe
+      - name: Install Zisk toolchain (ziskup, latest)
+        # `--cpu` picks the CPU build (no GPU on the runner) and `--nokey` skips
+        # the proving/verify keys — together they avoid ziskup's interactive
+        # /dev/tty prompts, and execute needs no keys. `--prefix $HOME/.zisk`
+        # pins the install where cargo-zisk's ZiskPaths fallback looks (the
+        # runner sets XDG_CONFIG_HOME, which would otherwise relocate it).
+        run: |
+          curl -L https://raw.githubusercontent.com/0xPolygonHermez/zisk/main/ziskup/install.sh \
+            | bash -s -- --cpu --nokey -y --prefix "$HOME/.zisk"
+          echo "$HOME/.zisk/bin" >> "$GITHUB_PATH"
+      - name: Zisk — execute minimal.ixe (assert failures == 0)
+        run: |
+          cd zisk
+          ulimit -l unlimited 2>/dev/null || true
+          cargo run --bin zisk-host -- --execute --ixe ../minimal.ixe --constant myReflEq --skip-deps | tee only.txt
+          grep -qE "failures: 0\b" only.txt
