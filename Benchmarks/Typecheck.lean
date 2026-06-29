@@ -37,6 +37,7 @@ lake exe bench-typecheck --ixe <path> [names…] [flags]
   --texray       force the tracing-texray timeline + RAM breakdown on.
   --no-texray    force it off. Default: on iff `--json` was NOT given, so a
                  plain local run gets the breakdown while a JSON run stays quiet.
+  --execute-only stop after Phase 1 (FFT/exec metrics); skip the proving phase.
 ```
 
 For each constant the harness STARK-checks `Ix.Claim.check addr none` (the full
@@ -149,6 +150,8 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
   -- subject-only: check just the target (`verify_const`, trusting its deps)
   -- instead of re-checking the whole transitive closure (`verify_claim`).
   let subjectOnly := p.hasFlag "subject-only"
+  -- --execute-only: stop after Phase 1 (FFT/exec metrics), skip proving.
+  let executeOnly := p.hasFlag "execute-only"
   -- Default: trace iff we're not in JSON/bencher mode.
   let useTexray :=
     if p.hasFlag "texray" then true
@@ -216,6 +219,11 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
       IO.FS.writeFile path (Json.mkObj (results.map Result.toJsonEntry).toList).pretty
     | none => pure ()
 
+  if executeOnly then
+    writeJson (execed.map (·.1))
+    IO.println s!"── execute-only: skipped proving ({execed.size} constants) ──"
+    return 0
+
   -- Phase 2: prove cheap→expensive. Refine each entry with its prove-time as it
   -- lands. Install texray first so the prove spans (timeline + RAM Δ/peak) render.
   if useTexray then TracingTexray.init {}
@@ -252,6 +260,7 @@ def typecheckCmd : Cli.Cmd := `[Cli|
     "subject-only";       "Check only each target itself (verify_const, trusting its deps) instead of re-checking its whole transitive closure (verify_claim)."
     texray;               "Force the tracing-texray timeline + RAM breakdown on (per-prove spans on stderr)."
     "no-texray";          "Force the breakdown off. Default: on iff --json was not given."
+    "execute-only";       "Stop after Phase 1 (FFT/exec metrics); skip proving."
 
   ARGS:
     ...names : String;   "Fully-qualified constant name(s) to benchmark (e.g. `Nat.add_comm String.append`). Optional if `--manifest` is given."

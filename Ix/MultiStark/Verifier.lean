@@ -19,7 +19,7 @@ The Rust verifier runs these steps:
    column widths.
 2. **Accumulator balance** — the last intermediate accumulator is zero (all
    lookup pushes/pulls cancel).
-3. **Fiat-Shamir replay** — reconstruct the Keccak challenger: observe
+3. **Fiat-Shamir replay** — reconstruct the challenger: observe
    commitments / trace heights / claims, sample (lookup, fingerprint, α, ζ).
 4. **PCS verification** — FRI opening proofs (see `Ix/MultiStark/Pcs.lean`).
 5. **OOD evaluation** — recompute the composition polynomial at ζ and check
@@ -47,13 +47,14 @@ The Rust verifier runs these steps:
   test runner, `Tests/MultiStark.lean`): the verifier accepts the honest proof
   and rejects a tampered claim.
 
-### Stubbed / TODO
+* Step 4: the PCS/FRI opening proof (`pcs_fri_verify`, `Ix/MultiStark/Pcs.lean`)
+  — Merkle `verify_batch`, the challenger continuation, the FRI fold chain, and
+  the final-polynomial check.
+
+### Notes
 * Base-field samples are rejection-sampled (`ch_sample_field`): a raw 8-byte
   limb in the band `[p, 2⁶⁴)` (probability ≈ 2⁻³²) is discarded and redrawn,
   consuming challenger bytes exactly as `SerializingChallenger64::sample` does.
-* The PCS opening proof (`pcs_verify`) is still an accept-stub. With the PCS
-  stubbed, this verifier checks every algebraic relation except FRI proximity,
-  so it is not yet fully sound.
 -/
 
 public section
@@ -83,8 +84,8 @@ def verifier := ⟦
 
   -- ==========================================================================
   -- Fiat-Shamir challenger: `SerializingChallenger64<Val, HashChallenger<u8,
-  -- Keccak256Hash, 32>>`. The inner byte challenger keeps an `input` buffer; a
-  -- `sample` with empty `output` flushes (`input := output := keccak256(input)`)
+  -- Blake3, 32>>`. The inner byte challenger keeps an `input` buffer; a
+  -- `sample` with empty `output` flushes (`input := output := blake3(input)`)
   -- and pops bytes from the END of the hash output. The outer layer serializes
   -- field elements as 8 little-endian bytes and samples field elements as
   -- 8-byte little-endian u64s.
@@ -136,8 +137,11 @@ def verifier := ⟦
     match load(output) {
       ListNode.Cons(b, rest) => (b, input, rest),
       ListNode.Nil =>
-        let h = keccak256(input);
-        let fwd = digest_onto(h, store(ListNode.Nil));
+        -- `HashChallenger<u8, Blake3, 32>` flush: hash the `input` buffer with
+        -- blake3; `b3_flatten_onto` (Pcs.lean) gives the 32 output bytes, popped
+        -- from the END (rev), with the `input := output := hash` update.
+        let h = blake3(input);
+        let fwd = b3_flatten_onto(h, store(ListNode.Nil));
         let rev = rev_onto(fwd, store(ListNode.Nil));
         let &ListNode.Cons(b, rest) = rev;
         (b, fwd, rest),
@@ -182,11 +186,18 @@ def verifier := ⟦
     (c0, c1, i1, o1)
   }
 
+  -- Prepend the 8 elements of `d` onto `tail` (generic list helper).
+  fn cons8(d: [G; 8], tail: List‹G›) -> List‹G› {
+    store(ListNode.Cons(d[0], store(ListNode.Cons(d[1], store(ListNode.Cons(d[2],
+    store(ListNode.Cons(d[3], store(ListNode.Cons(d[4], store(ListNode.Cons(d[5],
+    store(ListNode.Cons(d[6], store(ListNode.Cons(d[7], tail))))))))))))))))
+  }
+
   -- `sample_bits(n)` (FRI query index). `SerializingChallenger64::sample_bits`
   -- reads one 8-byte sample as a little-endian u64 and masks the low `n` bits.
   -- We return the low `n` bits as a list (LSB first = the leaf→root Merkle/FRI
-  -- path), built from the 8 sampled bytes' bit decompositions (reusing keccak's
-  -- `cons8`), truncated to `n`.
+  -- path), built from the 8 sampled bytes' bit decompositions (via `cons8`),
+  -- truncated to `n`.
   fn sample8_bits(bytes: [U8; 8]) -> List‹G› {
     cons8(u8_bit_decomposition(bytes[0]),
     cons8(u8_bit_decomposition(bytes[1]),
@@ -213,7 +224,7 @@ def verifier := ⟦
 
   -- Append (observe) 8 little-endian bytes of `b` at the END of the challenger
   -- input buffer. The transcript is held front-to-back (front = first observed =
-  -- first hashed, matching `keccak256`'s absorption order), so an observation
+  -- first hashed, matching `blake3`'s absorption order), so an observation
   -- appends — `b8_onto` PREPENDS, hence the `list_concat`.
   fn snoc_b8(input: ByteStream, b: [U8; 8]) -> ByteStream {
     list_concat(input, b8_onto(b, store(ListNode.Nil)))
@@ -782,8 +793,6 @@ def verifier := ⟦
         -- Step 5: OOD composition/quotient identity for every circuit.
         let _ood = ood_loop(circuits, prep_indices, log_degrees, accs, stage1, stage2,
                  prep_opt, q_opened, 0, acc0, 0, lch, fch, alpha, zeta);
-        -- Step 4: FRI PCS proximity + opening consistency, continuing the same
-        -- Fiat-Shamir transcript past ζ (observe opened values → α, βs, query).
         pcs_fri_verify(post_zeta_input, stage1, stage2, q_opened, prep_opt, opening,
           s1c, s2c, qc, prep_cap, circuits, prep_indices, log_degrees, zeta,
           list_length(circuits), log_blowup, num_queries, commit_pow_bits),
