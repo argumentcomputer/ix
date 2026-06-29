@@ -1,0 +1,107 @@
+# Predicted vs actual Aiur FFT cost
+
+Cheap predictor `fft ≈ k₁·bytes·log₂bytes + k₂·subst·log₂subst + k₃·defeq·log₂defeq` (fit by `python -m benchstats aiur-predictor`, in-sample), evaluated per constant. `—` = no native profile (the `IxVM*` rows are test fixtures, not in any `.ixe`; a few Init/Lean constants weren't profiled). Generated from `../data/aiur/predicted_vs_actual.csv`.
+
+| constant | env | actual FFT | predicted FFT | pred/actual |
+|---|---|--:|--:|--:|
+| `HEq` | Init | 1,716,582 | — | — |
+| `Nat` | Init | 1,857,523 | 1,913,777 | 1.03× |
+| `Eq.rec` | Init | 2,575,400 | 2,618,644 | 1.02× |
+| `IxVMInd.Tree` | IxVM | 2,633,415 | — | — |
+| `HEq.rec` | Init | 2,692,988 | 2,818,184 | 1.05× |
+| `Trans.mk` | Init | 2,911,629 | 3,172,060 | 1.09× |
+| `Array.toList` | Init | 3,332,563 | 2,795,425 | 0.84× |
+| `Acc.rec` | Init | 3,505,064 | 3,557,025 | 1.01× |
+| `Std.Time.Month.Offset.ofNat` | Std | 3,607,673 | 3,001,879 | 0.83× |
+| `IxVMInd.Tree.rec` | IxVM | 4,858,321 | — | — |
+| `Sum.elim` | Init | 5,589,905 | 5,851,932 | 1.05× |
+| `Prod.map` | Init | 6,904,183 | 7,190,959 | 1.04× |
+| `Option.bind` | Init | 7,329,183 | 7,791,742 | 1.06× |
+| `IxVMPrim.nat_succ_lit` | IxVM | 7,330,826 | — | — |
+| `Except.bind` | Init | 7,667,869 | 8,723,770 | 1.14× |
+| `List.Sorted` | Mathlib | 9,578,666 | 7,173,089 | 0.75× |
+| `WellFounded.fix` | Init | 10,125,144 | 10,426,904 | 1.03× |
+| `Nat.add` | Init | 13,343,000 | 14,007,538 | 1.05× |
+| `IxVMPrim.nat_pred_lit` | IxVM | 14,804,098 | — | — |
+| `List.foldr` | Init | 18,579,757 | 18,544,657 | 1.00× |
+| `List.dropLast` | Init | 19,509,718 | 19,694,567 | 1.01× |
+| `List.range` | Init | 20,251,801 | 19,634,460 | 0.97× |
+| `List.zipWith` | Init | 20,439,088 | 20,370,498 | 1.00× |
+| `IxVMPrim.nat_ble_lit` | IxVM | 23,016,526 | — | — |
+| `IxVMPrim.nat_mul_big` | IxVM | 24,580,879 | — | — |
+| `IxVMPrim.nat_beq_lit` | IxVM | 24,752,029 | — | — |
+| `IxVMPrim.nat_mul_lit` | IxVM | 25,101,067 | — | — |
+| `List.filterMap` | Init | 25,335,779 | 25,841,377 | 1.02× |
+| `IxVMInd.Odd` | IxVM | 26,245,849 | — | — |
+| `IxVMInd.Even` | IxVM | 26,482,492 | — | — |
+| `IxVMPrim.nat_add_lit` | IxVM | 28,639,807 | — | — |
+| `Nat.choose` | Mathlib | 29,018,862 | 28,940,757 | 1.00× |
+| `IxVMInd.Odd.rec` | IxVM | 32,163,380 | — | — |
+| `IxVMInd.Even.rec` | IxVM | 32,164,273 | — | — |
+| `Nat.factorial` | Mathlib | 33,562,426 | 34,336,981 | 1.02× |
+| `Nat.fib` | Mathlib | 34,171,209 | 32,465,875 | 0.95× |
+| `IxVMPrim.nat_sub_lit` | IxVM | 34,436,244 | — | — |
+| `IxVMPrim.nat_shl_lit` | IxVM | 35,417,490 | — | — |
+| `List.foldlM` | Init | 39,202,740 | — | — |
+| `Int.add` | Init | 44,714,703 | 47,564,092 | 1.06× |
+| `BitVec.toFin` | Init | 50,437,466 | 46,021,725 | 0.91× |
+| `Nat.add_comm` | Init | 56,084,908 | 60,794,437 | 1.08× |
+| `UInt32.toNat` | Init | 59,331,806 | 53,727,232 | 0.91× |
+| `USize.toNat` | Init | 71,607,481 | 64,709,054 | 0.90× |
+| `Nat.decEq` | Init | 71,921,625 | 77,473,249 | 1.08× |
+| `IxVMPrim.nat_dec_eq` | IxVM | 86,118,842 | — | — |
+| `ByteSlice.ofByteArray` | Std | 107,574,377 | 98,677,420 | 0.92× |
+| `Nat.decLe` | Init | 209,641,496 | 211,779,321 | 1.01× |
+| `IxVMPrim.nat_dec_le` | IxVM | 216,661,883 | — | — |
+| `IxVMPrim.nat_dec_lt` | IxVM | 220,751,034 | — | — |
+| `Nat.strongRecOn` | Init | 273,068,854 | 271,198,826 | 0.99× |
+| `IxVMPrim.nat_div_lit` | IxVM | 405,607,545 | — | — |
+| `IxVMPrim.nat_shr_lit` | IxVM | 411,128,901 | — | — |
+| `IxVMPrim.nat_mod_lit` | IxVM | 414,695,549 | — | — |
+| `Int.emod` | Init | 422,940,733 | 455,184,097 | 1.08× |
+| `Int.ediv` | Init | 430,476,738 | 459,485,153 | 1.07× |
+| `Array.foldlM` | Init | 434,577,494 | — | — |
+| `Array.foldl` | Init | 449,323,126 | 442,489,492 | 0.98× |
+| `Array.filter` | Init | 464,818,232 | 461,196,360 | 0.99× |
+| `Nat.sub_le_of_le_add` | Init | 567,575,653 | 634,461,296 | 1.12× |
+| `BitVec.add` | Init | 617,113,462 | 672,758,257 | 1.09× |
+| `IxVMPrim.bv_to_nat_lit` | IxVM | 635,780,327 | — | — |
+| `Int.gcd` | Init | 657,502,637 | 735,498,708 | 1.12× |
+| `Nat.toDigits` | Init | 663,606,297 | 701,775,836 | 1.06× |
+| `IxVMPrim.nat_gcd_lit` | IxVM | 665,518,356 | — | — |
+| `Array.map` | Init | 734,574,964 | 776,415,628 | 1.06× |
+| `Array.zipWith` | Init | 736,658,636 | 777,748,639 | 1.06× |
+| `String.Internal.append` | Init | 793,580,333 | — | — |
+| `IxVMPrim.str_size_lit` | IxVM | 802,563,877 | — | — |
+| `Lean.Expr.replace` | Lean | 859,625,514 | — | — |
+| `Lean.Name.hash` | Init | 861,742,653 | 895,622,891 | 1.04× |
+| `BitVec.umod` | Init | 926,177,790 | 1,024,619,382 | 1.11× |
+| `Nat.repr` | Init | 966,452,765 | 1,015,475,836 | 1.05× |
+| `Int.repr` | Init | 993,792,541 | 1,032,652,579 | 1.04× |
+| `GCDMonoid.gcd` | Mathlib | 1,005,736,276 | 985,927,330 | 0.98× |
+| `String.intercalate` | Init | 1,089,240,518 | 1,146,173,038 | 1.05× |
+| `IxVMPrim.nat_land_lit` | IxVM | 1,138,665,214 | — | — |
+| `IxVMPrim.nat_lor_lit` | IxVM | 1,139,887,801 | — | — |
+| `IxVMPrim.nat_xor_lit` | IxVM | 1,149,371,965 | — | — |
+| `_private.Init.Prelude.0.Lean.extractMainModule._unsafe_rec` | Init | 1,197,925,029 | — | — |
+| `Char.toLower` | Init | 1,198,467,414 | 1,334,500,616 | 1.11× |
+| `Nat.Prime.two_le` | Mathlib | 1,504,045,298 | 1,554,338,678 | 1.03× |
+| `Nat.gcd_comm` | Init | 1,954,958,779 | 2,324,336,182 | 1.19× |
+| `Finset.prod` | Mathlib | 3,045,165,822 | 2,442,491,797 | 0.80× |
+| `Finset.sum` | Mathlib | 3,045,189,408 | 2,442,491,797 | 0.80× |
+| `Int.emod_emod_of_dvd` | Init | 3,856,852,693 | 4,688,687,459 | 1.22× |
+| `Array.append_assoc` | Init | 3,938,574,533 | 2,551,361,279 | 0.65× |
+| `Vector.append` | Init | 4,023,268,168 | 2,636,160,685 | 0.66× |
+| `Polynomial.eval` | Mathlib | 5,342,731,754 | 4,300,016,404 | 0.80× |
+| `Fin.foldl` | Init | 10,853,255,199 | 11,397,983,888 | 1.05× |
+| `List.mergeSort` | Init | 13,825,318,985 | 13,705,192,825 | 0.99× |
+| `Array.binSearch` | Init | 14,397,133,548 | 13,466,760,466 | 0.94× |
+| `Array.qsort` | Init | 15,781,689,533 | 15,413,615,828 | 0.98× |
+| `Array.qsortOrd` | Init | 15,841,062,472 | 15,447,012,613 | 0.98× |
+| `Multiset.sort` | Mathlib | 18,670,960,624 | 17,312,899,573 | 0.93× |
+| `String.split` | Init | 19,578,088,286 | 17,462,986,906 | 0.89× |
+| `Std.Time.Week.Offset.ofMilliseconds` | Std | 24,577,209,792 | 14,799,116,898 | 0.60× |
+| `Vector.extract_append` | Init | 61,830,646,478 | 26,830,910,000 | 0.43× |
+
+**Coverage:** 65 of 98 constants predicted (33 without a native profile). In-sample MAPE 9.3%.  
+Worst residuals are the documented structural outliers — `Vector.extract_append`, the append-proof family, and the big-Nat-arithmetic (`Std.Time.*`) family; see `aiur-fft-cost-model.md` §5.
