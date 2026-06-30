@@ -1,7 +1,7 @@
 # `!benchmark` PR command: run the curated constant set (Benchmarks/Vectors.csv)
 # through chosen prover backend(s) and post a main-vs-PR comparison table.
 #
-#   !benchmark [aiur] [zisk] [sp1 | all]  [execute|prove]
+#   !benchmark [aiur] [zisk] [sp1] [native | all]  [execute|prove]
 #   BENCH_ENVS=initStd,mathlib     # which compiled envs (default initStd)
 #   BENCH_FULL=1                   # run the full curated set, not the ~11 primary
 #   BENCH_TIER=cheap|heavy|all     # override the mode default (execute=all, prove=cheap)
@@ -18,12 +18,6 @@ name: Benchmark pull requests
 on:
   issue_comment:
     types: [created]
-  # TEST: temporary trigger so this workflow can be exercised from a PR branch.
-  # issue_comment only fires once the workflow is on the default branch, so a
-  # `!benchmark` comment can't test it pre-merge. On pull_request there is no
-  # comment, so the run uses the parser defaults (aiur / initStd / execute).
-  # Remove this trigger before merge.
-  pull_request:
 
 permissions:
   contents: read
@@ -38,12 +32,11 @@ jobs:
   setup:
     name: Parse !benchmark comment
     if: >-
-      github.event_name == 'pull_request' ||
-      (github.event.issue.pull_request &&
-       github.event.issue.state == 'open' &&
-       contains(github.event.comment.body, '!benchmark') &&
-       (github.event.comment.author_association == 'MEMBER' ||
-        github.event.comment.author_association == 'OWNER'))
+      github.event.issue.pull_request &&
+      github.event.issue.state == 'open' &&
+      contains(github.event.comment.body, '!benchmark') &&
+      (github.event.comment.author_association == 'MEMBER' ||
+       github.event.comment.author_association == 'OWNER')
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.parse.outputs.matrix }}
@@ -157,7 +150,7 @@ jobs:
       # zkVM cells additionally need the Rust toolchain + the backend's toolchain
       # and system deps (the shared composite install actions).
       - name: Set up zkVM Rust toolchain
-        if: matrix.cell.skip != 'true' && matrix.cell.backend != 'aiur'
+        if: matrix.cell.skip != 'true' && (matrix.cell.backend == 'zisk' || matrix.cell.backend == 'sp1')
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           cache-workspaces: ${{ matrix.cell.backend }}
@@ -167,6 +160,12 @@ jobs:
       - name: Install Zisk
         if: matrix.cell.skip != 'true' && matrix.cell.backend == 'zisk'
         uses: ./.github/actions/install-zisk
+      # native = whole-env `ix check --anon`; needs only GNU time (ix is built above).
+      - name: Install GNU time
+        if: matrix.cell.skip != 'true' && matrix.cell.backend == 'native'
+        run: |
+          sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt 2>/dev/null || true
+          sudo apt-get update && sudo apt-get install -y time
 
       # ---------- main side (cached by base SHA) ----------
       - name: Restore cached main results

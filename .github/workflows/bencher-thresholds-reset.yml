@@ -17,8 +17,9 @@ name: Bencher thresholds reset
 #     `bencher-thresholds-reset:<token>` label on the PR, whatever added it — so a
 #     Triage+ collaborator can queue a reset by applying the label directly, and
 #     cancel by removing it before merge. Naming convention: one label per token,
-#     `bencher-thresholds-reset:<token>` where <token> is `ix-compile`, `aiur`, or
-#     `all` (the merge step expands an `all` label into every workload). Labeling
+#     `bencher-thresholds-reset:<token>` where <token> is `ix-compile`, `aiur`,
+#     `zisk`, `sp1`, `native-check`, or `all` (the merge step expands an `all`
+#     label into every workload). Labeling
 #     requires Triage+, so PR authors from forks cannot self-queue a reset. The
 #     label shares the command/workflow name; the git tag it moves is the same
 #     stem with a dash: `bencher-thresholds-reset-<workload>`.
@@ -36,7 +37,7 @@ on:
         description: Workload baseline to reset
         required: true
         type: choice
-        options: [ix-compile, aiur, all]
+        options: [ix-compile, aiur, zisk, sp1, native-check, all]
       sha:
         description: "Commit to anchor to (default: HEAD)"
         required: false
@@ -65,7 +66,7 @@ jobs:
       MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
     steps:
       - run: |
-          valid="ix-compile aiur"
+          valid="ix-compile aiur zisk sp1 native-check"
           if [ "$EVENT" = workflow_dispatch ]; then
             # Reset the chosen workload(s) at the given commit; no PR scan.
             sha="${INPUT_SHA:-$HEAD_SHA}"
@@ -119,7 +120,7 @@ jobs:
       - run: |
           # Accepted command tokens — applied verbatim as labels (incl. `all`,
           # which the merge job expands into every workload).
-          accepted="ix-compile aiur all"
+          accepted="ix-compile aiur zisk sp1 native-check all"
           # Parse the workload token(s) after the command, lowercased.
           workloads=$(printf '%s' "$BODY" \
             | grep -oiE '!bencher-thresholds-reset[[:space:]]+[a-z0-9 -]+' \
@@ -142,5 +143,5 @@ jobs:
               --body "♻️ Baseline reset queued for:$ok — will anchor to the merge commit when this PR merges."
           else
             gh pr comment "$PR" --repo "$REPO" \
-              --body "⚠️ Reset command matched no known workload (expected \`ix-compile\`, \`aiur\`, or \`all\`). Nothing will reset on merge."
+              --body "⚠️ Reset command matched no known workload (expected \`ix-compile\`, \`aiur\`, \`zisk\`, \`sp1\`, \`native-check\`, or \`all\`). Nothing will reset on merge."
           fi

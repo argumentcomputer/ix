@@ -214,37 +214,20 @@ jobs:
       # fold the max over spans in as `peak-rss` (bytes), the proving RSS
       # high-water mark.
       - name: Run Aiur typecheck benchmark
+        env:
+          REUSE_IXE: "1"
         run: |
-          measure() {
-            local c="$1" rss
-            timeout 20m bench-typecheck --ixe ${{ matrix.bench }}.ixe "$c" \
-              --json "res-$c.json" --texray 2>"tx-$c.log" \
-              || echo "warning: $c failed (OOM/timeout); dropping it from this report"
-            rss=$(awk -F'peak-rss-bytes=' 'NF>1 && $2+0>max {max=$2+0} END {if (max>0) print max}' "tx-$c.log")
-            if [ -f "res-$c.json" ] && [ -n "$rss" ] && [ "$rss" -gt 0 ]; then
-              jq --argjson rss "$rss" 'map_values(. + {"peak-rss": $rss})' \
-                "res-$c.json" > "res-$c.json.tmp" && mv "res-$c.json.tmp" "res-$c.json" || true
-            fi
-          }
           # The primary subset's prove tier (cheap primaries) — heavy primaries are
-          # execute-only (a single-shard prove would OOM the runner).
+          # execute-only (a single-shard prove would OOM the runner). run.sh drives
+          # bench-typecheck per constant (per-constant peak-rss), same as the
+          # !benchmark PR path.
           benv="${{ matrix.bench }}"; benv="${benv,}"   # InitStd→initStd, Mathlib→mathlib
           python3 .github/scripts/bench.py manifest \
-            --csv Benchmarks/Vectors.csv --env "$benv" --mode prove --primary \
-            --out names.txt
+            --csv Benchmarks/Vectors.csv --env "$benv" --mode prove --primary --out names.txt
           echo "proving $(wc -l < names.txt) primary constants:"; cat names.txt
-          while IFS= read -r c; do [ -n "$c" ] && measure "$c"; done < names.txt
-          # Merge the per-constant results; if none produced anything, emit `{}`.
-          jq -s 'reduce .[] as $o ({}; . + $o)' res-*.json > results.json 2>/dev/null \
-            || echo '{}' > results.json
-          [ -s results.json ] || echo '{}' > results.json
-          # Wrap each metric value as { "value": v } for Bencher Metric Format.
-          # bench-typecheck already emits slug keys (constants, fft-cost,
-          # execute-time, prove-time, throughput = constants/prove-time); peak-rss
-          # is injected above.
-          jq '
-            map_values(to_entries | map({(.key): {value: .value}}) | add)
-          ' results.json > aiur.json
+          bash .github/scripts/run.sh . "${{ matrix.bench }}" aiur prove names.txt neutral.json
+          # Wrap neutral { name: { metric: v } } → Bencher Metric Format.
+          jq 'map_values(map_values({value: .}))' neutral.json > aiur.json
           cat aiur.json
       # Upload Aiur metrics. Every measure shares the per-workload baseline
       # window (data points since the aiur reset tag). constants is deterministic
@@ -294,13 +277,12 @@ jobs:
       fail-fast: false
       matrix:
         backend: [zisk, sp1]
-        include:
-          - bench: InitStd
+        bench: [InitStd, Mathlib]
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          fetch-tags: true   # bencher-track reads the baseline-reset tag
+          fetch-tags: true   # bencher-track reads the bencher-thresholds-reset tag
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           cache-workspaces: ${{ matrix.backend }}
@@ -379,7 +361,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          fetch-tags: true   # bencher-track reads the baseline-reset tag
+          fetch-tags: true   # bencher-track reads the bencher-thresholds-reset tag
       - uses: actions/cache/restore@v5
         with:
           path: ~/.local/bin
@@ -400,26 +382,16 @@ jobs:
           path: ${{ matrix.bench }}.ixe
           key: aiur-ixe-${{ github.sha }}-${{ matrix.bench }}
           fail-on-cache-miss: true
-      # `ix check --anon` checks every kernel-checkable address across
-      # available_parallelism workers and prints a machine-readable
-      # `##check## <elapsed_ms> <passed> <failures> <total>` line. ix check is a
-      # single multi-threaded process, so `/usr/bin/time -f '%M'` is the true peak RSS.
+      # run.sh native runs `ix check --anon` (whole env, parallel) and emits the
+      # neutral { <env>: { constants, check-time, throughput, peak-rss } } — same
+      # path as the !benchmark native backend.
       - name: Run native kernel check
+        env:
+          REUSE_IXE: "1"
         run: |
-          /usr/bin/time -f '%e %M' -o time.txt \
-            ix check ${{ matrix.bench }}.ixe --anon 2>&1 | tee out.txt
-          line=$(grep '^##check##' out.txt | tail -1)
-          elapsed_ms=$(echo "$line" | awk '{print $2}')
-          failures=$(echo "$line" | awk '{print $4}')
-          total=$(echo "$line" | awk '{print $5}')
-          [ "${failures:-1}" = 0 ] || { echo "kernel check reported ${failures:-?} failure(s)"; exit 1; }
-          rssk=$(awk 'NR==1{print $2}' time.txt); rss=$(( ${rssk:-0} * 1024 ))
-          check_s=$(awk -v e="$elapsed_ms" 'BEGIN{printf "%.3f", e/1000}')
-          tput=$(awk -v t="$total" -v e="$elapsed_ms" 'BEGIN{ if (e>0) printf "%.2f", t*1000/e; else print 0 }')
-          jq -n --arg n "${{ matrix.bench }}" --argjson c "$total" --argjson s "$check_s" \
-                --argjson tp "$tput" --argjson rss "$rss" \
-            '{($n): {constants:{value:$c}, "check-time":{value:$s}, throughput:{value:$tp}, "peak-rss":{value:$rss}}}' \
-            > bench.json
+          bash .github/scripts/run.sh . "${{ matrix.bench }}" native execute \
+            /dev/null neutral.json
+          jq 'map_values(map_values({value: .}))' neutral.json > bench.json
           cat bench.json
       # constants is deterministic → pinned (0/0); check-time / throughput /
       # peak-rss are noisy parallel wall-clock → percentage bounds.
