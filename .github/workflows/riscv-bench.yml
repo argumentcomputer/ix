@@ -6,7 +6,7 @@ name: RISC-V bench
 # kernel typecheck of one constant in the SP1 and Zisk VMs — in parallel jobs.
 on:
   push:
-    branches: main
+    branches: [main, ci-fixes]
   workflow_dispatch:
 
 permissions:
