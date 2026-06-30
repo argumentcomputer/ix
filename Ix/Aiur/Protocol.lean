@@ -73,6 +73,29 @@ def prove (system : @& AiurSystem) (friParameters : @& FriParameters)
   let ioMap := ioMap.foldl (fun acc (k, v) => acc.insert k v) ∅
   (claim, proof, ⟨ioData, ioMap⟩)
 
+@[extern "rs_aiur_system_prove_ixvm"]
+private opaque proveIxVM' : @& AiurSystem → @& FriParameters →
+  @& Bytecode.FunIdx → @& Array G →
+  (ioData : @& Array (G × Array G)) →
+  (ioMap : @& Array ((G × Array G) × IOKeyInfo)) →
+    Array G × Proof × Array (G × Array G) × Array ((G × Array G) × IOKeyInfo)
+
+/-- IxVM-native prove: same shape as `prove`, but routes execution
+    through the codegen'd Rust kernel (`execute_generated`) instead
+    of the bytecode interpreter. The resulting `Proof` is
+    verification-compatible with one from `prove`. Only valid when
+    `system.toplevel` is the IxVM kernel's bytecode. -/
+def proveIxVM (system : @& AiurSystem) (friParameters : @& FriParameters)
+  (funIdx : @& Bytecode.FunIdx) (args : @& Array G) (ioBuffer : IOBuffer) :
+    Array G × Proof × IOBuffer :=
+  let ioData := ioBuffer.data.toArray
+  let ioMap := ioBuffer.map.toArray
+  let (claim, proof, ioData, ioMap) := proveIxVM' system friParameters funIdx args
+    ioData ioMap
+  let ioData := ioData.foldl (fun acc (k, v) => acc.insert k v) ∅
+  let ioMap := ioMap.foldl (fun acc (k, v) => acc.insert k v) ∅
+  (claim, proof, ⟨ioData, ioMap⟩)
+
 @[extern "rs_aiur_system_verify"]
 opaque verify : @& AiurSystem → @& FriParameters →
   @& Array G → @& Proof → Except String Unit

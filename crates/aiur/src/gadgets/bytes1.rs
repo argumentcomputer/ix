@@ -25,9 +25,9 @@ const TRACE_WIDTH: usize = 3;
 const PREPROCESSED_TRACE_WIDTH: usize = 11;
 
 /// AIR implementer for arity 1 byte-related lookups.
-pub(crate) struct Bytes1;
+pub struct Bytes1;
 
-pub(crate) enum Bytes1Op {
+pub enum Bytes1Op {
   BitDecomposition,
   ShiftLeft,
   ShiftRight,
@@ -205,7 +205,7 @@ impl AiurGadget for Bytes1 {
 }
 
 /// Accumulator of queries performed against `Bytes1`.
-pub(crate) struct Bytes1Queries([[G; TRACE_WIDTH]; 256]);
+pub struct Bytes1Queries([[G; TRACE_WIDTH]; 256]);
 
 impl Bytes1Queries {
   #[inline]
@@ -233,18 +233,18 @@ impl Bytes1Queries {
 
 impl Bytes1 {
   #[inline]
-  pub(crate) fn bit_decompose(byte: &G) -> Vec<G> {
+  pub fn bit_decompose(byte: &G) -> Vec<G> {
     let byte_u64 = byte.as_canonical_u64();
     (0..8).map(|i| G::from_bool((byte_u64 >> i) & 1 == 1)).collect()
   }
 
   #[inline]
-  pub(crate) fn shift_left(byte: &G) -> G {
+  pub fn shift_left(byte: &G) -> G {
     G::from_u64((byte.as_canonical_u64() << 1) & 255)
   }
 
   #[inline]
-  pub(crate) fn shift_right(byte: &G) -> G {
+  pub fn shift_right(byte: &G) -> G {
     G::from_u64(byte.as_canonical_u64() >> 1)
   }
 }

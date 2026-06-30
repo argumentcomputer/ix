@@ -74,8 +74,11 @@ def proveOne (aiurSystem : Aiur.AiurSystem)
       IO.eprintln s!"{label}: entrypoint `{witness.funcName}` missing from compiled toplevel"
       return 1
   let _ ← StoreIO.toIO (Store.write (Ix.Claim.ser claim))
+  -- Native IxVM path: routes execution through the codegen'd Rust
+  -- kernel (`execute_generated`) instead of the bytecode interpreter.
+  -- Proof verification-compatible with the interpreter path.
   let (_aiurClaim, proof, _outIO) :=
-    aiurSystem.prove friParameters funIdx witness.input witness.inputIOBuffer
+    aiurSystem.proveIxVM friParameters funIdx witness.input witness.inputIOBuffer
   let wrapper : Ixon.Proof := { claim, proof := proof.toBytes }
   let proofAddr ← StoreIO.toIO (Store.write (Ixon.Proof.ser wrapper))
   IO.println (toString proofAddr)

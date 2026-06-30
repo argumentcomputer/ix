@@ -4,6 +4,7 @@ members = [
   "crates/common",
   "crates/compile",
   "crates/ffi",
+  "crates/ix",
   "crates/ixon",
   "crates/kernel",
 ]
@@ -27,6 +28,7 @@ license = "MIT OR Apache-2.0"
 [workspace.dependencies]
 # Internal crates
 aiur = { path = "crates/aiur" }
+ix = { path = "crates/ix" }
 ix-common = { path = "crates/common" }
 ix-compile = { path = "crates/compile" }
 ixon = { path = "crates/ixon" }

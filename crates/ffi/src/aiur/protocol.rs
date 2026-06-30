@@ -169,6 +169,75 @@ extern "C" fn rs_aiur_toplevel_execute(
   LeanExcept::ok(result)
 }
 
+/// `Bytecode.Toplevel.executeIxVM`: same shape as `rs_aiur_toplevel_execute`,
+/// but routes execution through the codegen'd IxVM Rust kernel
+/// (`ix::aiur_ixvm::execute_generated`) via the helper in
+/// `ix::aiur_ixvm_runner::execute_ixvm`. The resulting
+/// `QueryRecord` is byte-for-byte identical to the interpreter's
+/// (modulo standing codegen parity invariant).
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_toplevel_execute_ixvm(
+  toplevel: LeanAiurToplevel<LeanBorrowed<'_>>,
+  fun_idx: LeanNat<LeanBorrowed<'_>>,
+  args: LeanArray<LeanBorrowed<'_>>,
+  io_data_arr: LeanArray<LeanBorrowed<'_>>,
+  io_map_arr: LeanArray<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  let toplevel = decode_toplevel(&toplevel);
+  let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
+  let mut io_buffer = decode_io_buffer(&io_data_arr, &io_map_arr);
+
+  let (query_record, output) =
+    match ix::aiur_ixvm_runner::execute_ixvm(
+      &toplevel,
+      fun_idx,
+      args.map(|x| lean_unbox_g(&x)),
+      &mut io_buffer,
+    ) {
+      Ok(pair) => pair,
+      Err(err) => return LeanExcept::error_string(&err.to_string()),
+    };
+
+  // Same query-count summarisation as `rs_aiur_toplevel_execute`.
+  let mut query_counts: Vec<(usize, usize)> = Vec::with_capacity(
+    query_record.function_queries.len() + toplevel.memory_sizes.len(),
+  );
+  let summarize = |q: &aiur::querymap::QueryMap| -> (usize, usize) {
+    let mut rows = 0usize;
+    let mut hits = 0usize;
+    for (_, res) in q.iter() {
+      let m = usize::try_from(res.multiplicity.as_canonical_u64())
+        .expect("multiplicity exceeds usize");
+      if m != 0 {
+        rows += 1;
+        hits += m;
+      }
+    }
+    (rows, hits)
+  };
+  for queries in &query_record.function_queries {
+    query_counts.push(summarize(queries));
+  }
+  for size in &toplevel.memory_sizes {
+    let pair = query_record.memory_queries.get(size).map_or((0, 0), summarize);
+    query_counts.push(pair);
+  }
+  let lean_query_counts = {
+    let arr = LeanArray::alloc(query_counts.len());
+    for (i, &(rows, hits)) in query_counts.iter().enumerate() {
+      let pair =
+        LeanProd::new(LeanOwned::box_usize(rows), LeanOwned::box_usize(hits));
+      arr.set(i, pair);
+    }
+    arr
+  };
+
+  let lean_io = build_lean_io_buffer(&io_buffer);
+  let io_counts = LeanProd::new(lean_io, lean_query_counts);
+  let result = LeanProd::new(build_g_array(&output), io_counts);
+  LeanExcept::ok(result)
+}
+
 /// `AiurSystem.prove`: runs the prover and returns
 /// `Array G × Proof × Array G × Array (Array G × IOKeyInfo)`
 #[unsafe(no_mangle)]
@@ -194,6 +263,41 @@ extern "C" fn rs_aiur_system_prove(
   // Proof × Array G × Array (Array G × IOKeyInfo)
   let proof_io_tuple = LeanProd::new(lean_proof, lean_io);
   // Array G × Proof × Array G × Array (Array G × IOKeyInfo)
+  let result = LeanProd::new(build_g_array(&claim), proof_io_tuple);
+  result.into()
+}
+
+/// `AiurSystem.proveIxVM`: IxVM-native prove path. Same return shape
+/// as `rs_aiur_system_prove`, but routes execution through the
+/// codegen'd Rust kernel (`execute_generated`) via
+/// `AiurSystem::prove_ixvm`. The resulting `Proof` is verification-
+/// compatible with `rs_aiur_system_prove`.
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_system_prove_ixvm(
+  aiur_system_obj: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
+  fri_parameters: LeanAiurFriParameters<LeanBorrowed<'_>>,
+  fun_idx: LeanNat<LeanBorrowed<'_>>,
+  args: LeanArray<LeanBorrowed<'_>>,
+  io_data_arr: LeanArray<LeanBorrowed<'_>>,
+  io_map_arr: LeanArray<LeanBorrowed<'_>>,
+) -> LeanOwned {
+  let fri_parameters = decode_fri_parameters(&fri_parameters);
+  let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
+  let args = args.map(|x| lean_unbox_g(&x));
+  let mut io_buffer = decode_io_buffer(&io_data_arr, &io_map_arr);
+
+  let (claim, proof) = aiur_system_obj.get().prove_ixvm(
+    fri_parameters,
+    fun_idx,
+    &args,
+    &mut io_buffer,
+    ix::aiur_ixvm_runner::execute_ixvm,
+  );
+
+  let lean_proof: LeanOwned =
+    LeanExternal::alloc(&AIUR_PROOF_CLASS, proof).into();
+  let lean_io = build_lean_io_buffer(&io_buffer);
+  let proof_io_tuple = LeanProd::new(lean_proof, lean_io);
   let result = LeanProd::new(build_g_array(&claim), proof_io_tuple);
   result.into()
 }

@@ -12,8 +12,8 @@ pub struct QueryRef<'a> {
 /// Mutable view of one query entry: the output is fixed at insertion,
 /// only the multiplicity is bumped on memo hits.
 pub struct QueryRefMut<'a> {
-  pub(crate) output: &'a [G],
-  pub(crate) multiplicity: &'a mut G,
+  pub output: &'a [G],
+  pub multiplicity: &'a mut G,
 }
 
 fn hash_g_slice(key: &[G]) -> u64 {

@@ -15,6 +15,7 @@ blake3 = { workspace = true }
 dashmap = { workspace = true, features = ["rayon"] }
 indexmap = { workspace = true, features = ["rayon"] }
 itertools = { workspace = true }
+ix = { workspace = true }
 ix-common = { workspace = true }
 ix-compile = { workspace = true }
 ixon = { workspace = true }

@@ -96,6 +96,36 @@ def execute (toplevel : @& Bytecode.Toplevel)
     let queryCounts := queryCounts.map fun (uniqueRows, totalHits) => { uniqueRows, totalHits }
     .ok (output, ⟨ioData, ioMap⟩, queryCounts)
 
+@[extern "rs_aiur_toplevel_execute_ixvm"]
+private opaque executeIxVM' : @& Bytecode.Toplevel →
+  @& Bytecode.FunIdx → @& Array G →
+  (ioData : @& Array (G × Array G)) →
+  (ioMap : @& Array ((G × Array G) × IOKeyInfo)) →
+    Except String (Array G ×
+      (Array (G × Array G) × Array ((G × Array G) × IOKeyInfo)) ×
+      Array (Nat × Nat))
+
+/-- IxVM-native execution: same shape as `execute`, but routes the
+    function invocation through the codegen'd Rust kernel
+    (`crate::ix::aiur_ixvm::execute_generated`) instead of the
+    generic bytecode interpreter. The resulting `QueryRecord` is
+    byte-for-byte identical (modulo the standing codegen parity
+    invariant). Only valid when `toplevel` is the IxVM kernel's
+    `Bytecode.Toplevel` — other toplevels produce undefined results
+    because the generated function bodies are fixed at codegen time. -/
+def executeIxVM (toplevel : @& Bytecode.Toplevel)
+  (funIdx : @& Bytecode.FunIdx) (args : @& Array G) (ioBuffer : IOBuffer) :
+    Except String (Array G × IOBuffer × Array QueryCount) :=
+  let ioData := ioBuffer.data.toArray
+  let ioMap := ioBuffer.map.toArray
+  match executeIxVM' toplevel funIdx args ioData ioMap with
+  | .error e => .error e
+  | .ok (output, (ioData, ioMap), queryCounts) =>
+    let ioData := ioData.foldl (fun acc (k, v) => acc.insert k v) ∅
+    let ioMap := ioMap.foldl (fun acc (k, v) => acc.insert k v) ∅
+    let queryCounts := queryCounts.map fun (uniqueRows, totalHits) => { uniqueRows, totalHits }
+    .ok (output, ⟨ioData, ioMap⟩, queryCounts)
+
 end Bytecode.Toplevel
 
 end Aiur

@@ -102,16 +102,18 @@ def emitStats (compiled : Aiur.CompiledToplevel)
     try Aiur.printStats stats
     finally let _ ← IO.setStdout old
 
-/-- Run a single witness through the compiled Aiur bytecode. -/
+/-- Run a single witness through the codegen'd IxVM Rust kernel
+    (`Bytecode.Toplevel.executeIxVM`). The bytecode interpreter is
+    no longer reachable from `ix check`. -/
 def runCompiled (compiled : Aiur.CompiledToplevel) (printStats : Bool)
     (statsOut : Option String) (witness : IxVM.ClaimHarness.ClaimWitness)
     (label : String) : IO UInt32 := do
   IO.println s!"Typechecking {label}"
   (← IO.getStdout).flush
   let funIdx := compiled.getFuncIdx witness.funcName |>.get!
-  match compiled.bytecode.execute funIdx witness.input witness.inputIOBuffer with
+  match compiled.bytecode.executeIxVM funIdx witness.input witness.inputIOBuffer with
   | .error e =>
-    IO.eprintln s!"{label}: Aiur execution error: {e}"
+    IO.eprintln s!"{label}: IxVM-native Aiur execution error: {e}"
     return 1
   | .ok (_output, _ioBuffer, queryCounts) =>
     if printStats then emitStats compiled queryCounts statsOut
@@ -471,7 +473,7 @@ def checkCmd : Cli.Cmd := `[Cli|
   "Typecheck Lean / `.ixe` constants through the IxVM Aiur kernel"
 
   FLAGS:
-    interp;                 "Use the Aiur interpreter (richer per-execution error diagnostics) instead of the compiled bytecode runner."
+    interp;                 "Use the Aiur interpreter (richer per-execution error diagnostics) instead of the codegen'd IxVM Rust kernel."
     "keep-going";           "Continue past failures and report them at the end instead of halting on the first."
     "ixe"       : String;   "Path to a serialized `.ixe` env. When set, the binary reads the env from disk instead of using the compiled-in Lean env."
     "claim"     : String;   "32-byte hex address of a persisted `Ix.Claim` in `~/.ix/store/`. When set, runs the `verify_claim` entrypoint once over the claim's witness against the `--ixe` env (single execution, skips per-const iteration)."

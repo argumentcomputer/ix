@@ -48,9 +48,9 @@ const TRACE_WIDTH: usize = 10;
 const PREPROCESSED_TRACE_WIDTH: usize = 16;
 
 /// AIR implementer for arity 2 byte-related lookups.
-pub(crate) struct Bytes2;
+pub struct Bytes2;
 
-pub(crate) enum Bytes2Op {
+pub enum Bytes2Op {
   Xor,
   Add,
   Mul,
@@ -422,7 +422,7 @@ impl AiurGadget for Bytes2 {
 }
 
 /// Accumulator of queries performed against `Bytes2`.
-pub(crate) struct Bytes2Queries(Box<[[G; TRACE_WIDTH]]>);
+pub struct Bytes2Queries(Box<[[G; TRACE_WIDTH]]>);
 
 impl Bytes2Queries {
   #[inline]
@@ -454,7 +454,7 @@ impl Bytes2Queries {
     self.bump_multiplicity_for(i, j, 5)
   }
 
-  pub(crate) fn bump_range_check(&mut self, i: &G, j: &G) {
+  pub fn bump_range_check(&mut self, i: &G, j: &G) {
     self.bump_multiplicity_for(i, j, 6)
   }
 
@@ -480,14 +480,14 @@ impl Bytes2Queries {
 
 impl Bytes2 {
   #[inline]
-  pub(crate) fn xor(i: &G, j: &G) -> G {
+  pub fn xor(i: &G, j: &G) -> G {
     let i: u8 = i.as_canonical_u64().try_into().unwrap();
     let j: u8 = j.as_canonical_u64().try_into().unwrap();
     G::from_u8(i ^ j)
   }
 
   #[inline]
-  pub(crate) fn add(i: &G, j: &G) -> (G, G) {
+  pub fn add(i: &G, j: &G) -> (G, G) {
     let i: u8 = i.as_canonical_u64().try_into().unwrap();
     let j: u8 = j.as_canonical_u64().try_into().unwrap();
     let (r, o) = i.overflowing_add(j);
@@ -495,21 +495,21 @@ impl Bytes2 {
   }
 
   #[inline]
-  pub(crate) fn and(i: &G, j: &G) -> G {
+  pub fn and(i: &G, j: &G) -> G {
     let i: u8 = i.as_canonical_u64().try_into().unwrap();
     let j: u8 = j.as_canonical_u64().try_into().unwrap();
     G::from_u8(i & j)
   }
 
   #[inline]
-  pub(crate) fn or(i: &G, j: &G) -> G {
+  pub fn or(i: &G, j: &G) -> G {
     let i: u8 = i.as_canonical_u64().try_into().unwrap();
     let j: u8 = j.as_canonical_u64().try_into().unwrap();
     G::from_u8(i | j)
   }
 
   #[inline]
-  pub(crate) fn sub(i: &G, j: &G) -> (G, G) {
+  pub fn sub(i: &G, j: &G) -> (G, G) {
     let i: u8 = i.as_canonical_u64().try_into().unwrap();
     let j: u8 = j.as_canonical_u64().try_into().unwrap();
     let (r, u) = i.overflowing_sub(j);
@@ -517,7 +517,7 @@ impl Bytes2 {
   }
 
   #[inline]
-  pub(crate) fn less_than(i: &G, j: &G) -> G {
+  pub fn less_than(i: &G, j: &G) -> G {
     let i: u8 = i.as_canonical_u64().try_into().unwrap();
     let j: u8 = j.as_canonical_u64().try_into().unwrap();
     G::from_bool(i < j)
@@ -525,7 +525,7 @@ impl Bytes2 {
 
   /// `u8 * u8 -> (low byte, high byte)`. The product fits in 16 bits.
   #[inline]
-  pub(crate) fn mul(i: &G, j: &G) -> (G, G) {
+  pub fn mul(i: &G, j: &G) -> (G, G) {
     let i: u8 = i.as_canonical_u64().try_into().unwrap();
     let j: u8 = j.as_canonical_u64().try_into().unwrap();
     let p = u16::from(i) * u16::from(j);
@@ -540,7 +540,7 @@ impl Bytes2 {
   /// `[A0, A1+B2, B0, B1+A2]` for `A = chain_rotr7(b0,b1)`,
   /// `B = chain_rotr7(b2,b3)`.
   #[inline]
-  pub(crate) fn chain_rotr7_u8(i: u8, j: u8) -> (u8, u8, u8) {
+  pub fn chain_rotr7_u8(i: u8, j: u8) -> (u8, u8, u8) {
     ((i >> 7) + (j << 1), j >> 7, i << 1)
   }
 
@@ -548,12 +548,12 @@ impl Bytes2 {
   /// of little-endian bytes. Given adjacent bytes `i`, `j`, returns
   /// `(i>>4 + j<<4, j>>4, i<<4)` where shifts are taken mod 256.
   #[inline]
-  pub(crate) fn chain_rotr4_u8(i: u8, j: u8) -> (u8, u8, u8) {
+  pub fn chain_rotr4_u8(i: u8, j: u8) -> (u8, u8, u8) {
     ((i >> 4) + (j << 4), j >> 4, i << 4)
   }
 
   #[inline]
-  pub(crate) fn chain_rotr7(i: &G, j: &G) -> (G, G, G) {
+  pub fn chain_rotr7(i: &G, j: &G) -> (G, G, G) {
     let i: u8 = i.as_canonical_u64().try_into().unwrap();
     let j: u8 = j.as_canonical_u64().try_into().unwrap();
     let (o0, o1, o2) = Self::chain_rotr7_u8(i, j);
@@ -561,7 +561,7 @@ impl Bytes2 {
   }
 
   #[inline]
-  pub(crate) fn chain_rotr4(i: &G, j: &G) -> (G, G, G) {
+  pub fn chain_rotr4(i: &G, j: &G) -> (G, G, G) {
     let i: u8 = i.as_canonical_u64().try_into().unwrap();
     let j: u8 = j.as_canonical_u64().try_into().unwrap();
     let (o0, o1, o2) = Self::chain_rotr4_u8(i, j);
