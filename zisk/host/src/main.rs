@@ -208,18 +208,6 @@ struct Args {
   /// `bench-typecheck --skip-deps`.
   #[arg(long, requires = "constant")]
   skip_deps: bool,
-
-  /// Cap on resident witness traces during the prove phase, bounding
-  /// peak host RAM per shard. Zisk's prover queues witnesses up to this
-  /// count before committing them; peak RAM ≈ N × avg-witness-size +
-  /// fixed overheads. Zisk's built-in default is 10 (tuned for
-  /// large-memory boxes); we default to 5 here as a safer fit for
-  /// ~256 GB machines. Override up to 10 on bigger boxes for maximum
-  /// parallelism, or down to 3 on smaller ones. See the Zisk section
-  /// of the top-level README for a per-RAM recommendation table. Has
-  /// no effect on `--execute` / `--verify-constraints` modes.
-  #[arg(long, default_value_t = 5)]
-  max_witness_stored: usize,
 }
 
 /// 112-byte public output of one shard-guest proof.
@@ -764,7 +752,6 @@ fn check_input_coherence(
 fn build_client(
   gpu: bool,
   asm: bool,
-  max_witness_stored: Option<usize>,
 ) -> Result<EmbeddedClient> {
   // Executor choice. The default is the Assembly executor (`asm = true`,
   // i.e. no `--emulator`): it is markedly faster at trace generation and is
@@ -785,10 +772,8 @@ fn build_client(
   // docs ("Reduce memory footprint during proving at the cost of
   // speed"). We have ~94 GB of free GPU memory, so the speed
   // trade-off is the wrong direction for this hardware.
-  let mut opts = EmbeddedOpts::default();
-  if let Some(n) = max_witness_stored {
-    opts = opts.max_witness_stored(n);
-  }
+  // Zisk's default embedded opts (witness cap 10).
+  let opts = EmbeddedOpts::default();
   let mut builder: EmbeddedClientBuilder =
     ProverClient::embedded().with_embedded_opts(opts);
   if asm {
@@ -1700,7 +1685,7 @@ async fn main() -> Result<()> {
   let total_leaves: usize = plans.iter().map(|p| p.shards.len()).sum();
 
   let client =
-    build_client(args.gpu, !args.emulator, Some(args.max_witness_stored))?;
+    build_client(args.gpu, !args.emulator)?;
   client.setup(&SHARD_PROGRAM).run()?.await?;
   // Skip agg-guest setup unless we'll produce more than one leaf proof.
   // The shard-plan path sets up the agg program itself, after its leaves.

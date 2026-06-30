@@ -109,13 +109,12 @@ flags as the Aiur `bench-typecheck`.
 
 ## Prover RAM and prove time
 
-Measured proving 7 Init shards on GPU at `--max-witness-stored 5`, STEPS
-0.27–3.79e9:
+Measured proving 7 Init shards on GPU, STEPS 0.27–3.79e9:
 ```
 peak host RAM (GiB) ≈ 50 + 33·STEPS_billions     R² 0.99
 GPU prove time (s)  ≈ 54 + 158·STEPS_billions     R² 0.98   (~6.3M steps/s)
 ```
-RAM scales with `--max-witness-stored N` (this is N=5). Inverting the RAM model
+Inverting the RAM model
 at `RAM_USABLE_FRAC` = 0.85 gives a safe per-shard cap of **~3.6e9 steps** for a
 200 GiB target (`shard.rs:cycle_cap_for_ram`).
 
@@ -171,7 +170,7 @@ side.
 
 Applying the cost model to every Init constant's native profile (51,003 blocks /
 51,678 constants) vs a single-leaf cap: **~99.98% of Init typechecks on Zisk.**
-Exactly **12 constants** exceed a single 250 GiB leaf (`--max-witness-stored 5`)
+Exactly **12 constants** exceed a single 250 GiB leaf
 — all single atomic constants (un-shardable), `hb`-dominated. Listed by name
 (all are `_private` proof terms; private prefix elided):
 
@@ -190,7 +189,7 @@ Exactly **12 constants** exceed a single 250 GiB leaf (`--max-witness-stored 5`)
 | `Array.extract_append_extract._proof_1_1` | 13,226 | 4.7e9 |
 | `Char.ofOrdinal_ordinal` | 14,136 | 4.5e9 |
 
-Each has a workaround — lower `--max-witness-stored`, a bigger box, `--skip-deps`
+Each has a workaround — a bigger box, `--skip-deps`
 (subject-only), or upstream proof restructuring — so 12 is an upper bound on
 truly-stuck constants. At a 200 GiB cap the list grows to 16. Estimate uses the
 planner's `block_step_cost` model (`162,339·hb + 4,276·subst + 652·bytes`, the
@@ -311,8 +310,7 @@ native profiling run and compile out on the zkvm target.
   5–8%); the shard model is still n=12 and Init-derived, so the ~190M shard
   intercept is the term most likely to
   shift on Std/Mathlib — worth re-checking there.
-- RAM/prove-time models are for one GPU at `--max-witness-stored 5`; both scale
-  with that setting.
+- RAM/prove-time models are for one GPU.
 - Cycle counts are deterministic for a fixed guest ELF; the profiler counters
   compile out on the zkvm target, so the proven ELF is unaffected.
 - **Regimes have distinct coefficients and don't transfer.**

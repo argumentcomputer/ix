@@ -487,31 +487,14 @@ Non-Nix users: install Zisk manually per the
    *Sharding large environments* below): each shard ships only its own closure
    sub-env, so the pieces fit the cap even when the whole env does not.
 
-   **Host RAM cap (`--max-witness-stored`).** Distinct from the in-guest
-   heap cap above, the prover side (Zisk's `proofman`) holds in-flight
-   witness traces in host RAM during `CALCULATING_CONTRIBUTIONS`. Peak
-   host RAM per shard ≈ `fixed-overhead + N × avg-witness-size`, where
-   `N` is the `max_witness_stored` setting. With the Blake3f precompile the
-   Ix kernel typecheck workload measures roughly `40 GB + N × 16 GB` on
-   typical 200–300 kB anon-byte shards — e.g. `N = 10` peaks near 200 GB
-   (a `--shard-bytes 250000 --max-witness-stored 10` mergesort run completes
-   under a 200 GiB guard without tripping it). An earlier pre-Blake3f figure
-   of ~25 GB per witness is stale; the precompile shrank the witness.
-
-   The `zisk-host` CLI defaults to `--max-witness-stored 5` (Zisk's
-   built-in default is 10, tuned for larger-memory boxes). Override per
-   machine:
-
-   | Host RAM | `--max-witness-stored` | Notes                                                  |
-   | -------- | ---------------------- | ------------------------------------------------------ |
-   | ≤ 128 GB | `3`                    | Override down; consider smaller shards too             |
-   | 256 GB   | `5` (project default)  | Comfortable margin on the typical setup                |
-   | 512 GB   | `10` (Zisk default)    | Override up for maximum prover parallelism             |
-   | ≥ 1 TB   | `10` (Zisk default)    | Override up; default is conservative for this workload |
-
-   Lowering the cap roughly linearly bounds peak RAM but throttles
-   prover parallelism (~10–30 % slower in practice). Raise it if your
-   machine has more RAM headroom; lower it if you OOM during
+   **Host RAM during proving.** Distinct from the in-guest heap cap above,
+   the prover side (Zisk's `proofman`) holds in-flight witness traces in host
+   RAM during `CALCULATING_CONTRIBUTIONS`. The number of resident witnesses
+   (Zisk's `max_witness_stored`) is left at Zisk's built-in default of 10:
+   we measured that lowering it does not materially reduce peak host RAM or
+   prove time for the Ix kernel typecheck workload, so it is not exposed as a
+   knob. Peak host RAM per shard is instead governed by shard size — prove
+   smaller shards (`--shard-bytes`) if you OOM during
    `CALCULATING_CONTRIBUTIONS`. Not relevant for `--execute` or
    `--verify-constraints` modes.
 
