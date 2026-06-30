@@ -18,25 +18,34 @@ runtime. Useful standalone (per-constant timeline + RAM breakdown via
 tracing-texray) and as a machine source (neutral results JSON).
 
 ```
-lake exe bench-typecheck --ixe <path> [names…] [flags]
+lake exe bench-typecheck --ixe <path> [--constant <name>] [names…] [flags]
 
   --ixe <path>       serialized `Ixon.Env`, e.g. from `ix compile Foo.lean`
                      (writes `foo.ixe`). Required.
-  [names…]           zero or more fully-qualified constant names to benchmark,
+  --constant <name>  constant to benchmark, by fully-qualified Lean name. The
+                     canonical single-target flag, shared with the Zisk
+                     `zisk-host --constant`. Unions with names / manifest.
+  [names…]           zero or more additional constant names to benchmark,
                      e.g. `Nat.add_comm String.append`.
   --manifest <path>  additionally read names from a file: one per line, blank
                      lines and `#` comments ignored. Unions with [names…].
 
-  Names (from either source) resolve against the env's named map via
+  Names (from any source) resolve against the env's named map via
   `String.toName` plus a `toString` fallback (mirrors `ix check --ixe`), so
   numeric / private components round-trip (`Foo.0.Bar`, `_private.M.0.foo`).
-  Pass at least one name or a `--manifest`.
+  Pass at least one name via --constant, positional args, or --manifest.
 
+  --skip-deps    check only each target itself (verify_const, trusting its
+                 deps) instead of its whole transitive closure (verify_claim,
+                 the default). Same flag as `zisk-host --skip-deps`; reserved
+                 for targets too expensive to full-closure-check.
   --json <path>  write per-constant results JSON to <path>. Off by default:
                  normal CLI usage prints only the human-readable summary.
   --texray       force the tracing-texray timeline + RAM breakdown on.
   --no-texray    force it off. Default: on iff `--json` was NOT given, so a
                  plain local run gets the breakdown while a JSON run stays quiet.
+  --execute-only run only Phase 1 (constants / fft-cost / execute-time) and skip
+                 proving — the fast `execute`-mode signal.
 ```
 
 For each constant the harness STARK-checks `Ix.Claim.check addr none` (the full
@@ -130,7 +139,13 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
   let some ixeArg := p.flag? "ixe"
     | IO.eprintln "error: --ixe <path> is required"; return 1
   let ixePath := ixeArg.as! String
-  -- Names come from the variadic positional args and/or a `--manifest` file.
+  -- Names come from `--constant`, the variadic positional args, and/or a
+  -- `--manifest` file. `--constant` is the canonical single-target flag shared
+  -- with the Zisk `zisk-host --constant`; positional names and `--manifest`
+  -- remain for benchmarking many constants at once.
+  let constName : Array String := match p.flag? "constant" with
+    | some f => #[f.as! String]
+    | none => #[]
   let cliNames := p.variableArgsAs! String
   let fileNames ← match p.flag? "manifest" with
     | some f => pure (parseManifest (← IO.FS.readFile (f.as! String)))
@@ -139,16 +154,19 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
   let nameArgs := Id.run do
     let mut seen : Std.HashSet String := {}
     let mut acc : Array String := #[]
-    for n in cliNames ++ fileNames do
+    for n in constName ++ cliNames ++ fileNames do
       if !seen.contains n then seen := seen.insert n; acc := acc.push n
     return acc
   if nameArgs.isEmpty then
-    IO.eprintln "error: provide one or more constant names and/or --manifest <path>"
+    IO.eprintln "error: provide a constant via --constant, positional name(s), and/or --manifest <path>"
     return 1
   let jsonOut : Option String := (p.flag? "json").map (·.as! String)
-  -- subject-only: check just the target (`verify_const`, trusting its deps)
+  -- skip-deps: check just the target (`verify_const`, trusting its deps)
   -- instead of re-checking the whole transitive closure (`verify_claim`).
-  let subjectOnly := p.hasFlag "subject-only"
+  let skipDeps := p.hasFlag "skip-deps"
+  -- Execute-only: run just Phase 1 (constants / fft-cost / execute-time) and
+  -- skip the Phase 2 prove loop.
+  let executeOnly := p.hasFlag "execute-only"
   -- Default: trace iff we're not in JSON/bencher mode.
   let useTexray :=
     if p.hasFlag "texray" then true
@@ -160,7 +178,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
     | throw (IO.userError "Merging IxVM kernel failed")
   let .ok compiled := toplevel.compile
     | throw (IO.userError "Compilation of IxVM kernel failed")
-  let entrypoint := if subjectOnly then `verify_const else `verify_claim
+  let entrypoint := if skipDeps then `verify_const else `verify_claim
   let some funIdx := compiled.getFuncIdx entrypoint
     | throw (IO.userError s!"{entrypoint} entrypoint missing")
   let aiurSystem := Aiur.AiurSystem.build compiled.bytecode commitmentParameters
@@ -190,7 +208,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
 
   -- Phase 1: execute every constant (cheap, deterministic structural metrics).
   -- For full-closure check claims, use `checkAddrWithEnv` against the
-  -- shared `envHandle`. For `--subject-only` (`buildVerifyConst`), the
+  -- shared `envHandle`. For `--skip-deps` (`buildVerifyConst`), the
   -- witness is a small subject-only blob — keep Lean witness +
   -- `executeIxVM`.
   IO.println "── Phase 1: execute (witness generation) ──"
@@ -198,7 +216,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
   for (label, addr) in targets do
     try
       let (res, execSec) ← timed fun _ =>
-        if subjectOnly then
+        if skipDeps then
           let witness := IxVM.ClaimHarness.buildVerifyConst ixonEnv addr
           compiled.bytecode.executeIxVM funIdx witness.input witness.inputIOBuffer
         else
@@ -223,6 +241,15 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
       IO.FS.writeFile path (Json.mkObj (results.map Result.toJsonEntry).toList).pretty
     | none => pure ()
 
+  -- `--execute-only`: stop after Phase 1; the results JSON (if requested) is
+  -- already complete with the execute metrics.
+  if executeOnly then
+    writeJson (execed.map (·.1))
+    match jsonOut with
+    | some path => IO.println s!"wrote {execed.size} execute-only benchmarks to {path}"
+    | none => IO.println s!"executed {execed.size} constants (--execute-only); pass --json <path> to emit results"
+    return 0
+
   -- Phase 2: prove cheap→expensive. Refine each entry with its prove-time as it
   -- lands. Install texray first so the prove spans (timeline + RAM Δ/peak) render.
   if useTexray then TracingTexray.init {}
@@ -234,7 +261,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
     let (r, addr) := ordered[i]!
     try
       let (proveRes, proveSec) ← timed fun _ =>
-        if subjectOnly then
+        if skipDeps then
           let witness := IxVM.ClaimHarness.buildVerifyConst ixonEnv addr
           let (claim, proof, ioBuf) :=
             aiurSystem.proveIxVM friParameters funIdx witness.input witness.inputIOBuffer
@@ -270,9 +297,11 @@ def typecheckCmd : Cli.Cmd := `[Cli|
 
   FLAGS:
     "ixe"       : String; "Path to a serialized `Ixon.Env` (e.g. produced by `ix compile`). Required."
+    "constant"  : String; "Constant to benchmark, by fully-qualified Lean name. The canonical single-target flag (shared with `zisk-host --constant`). Unions with positional names / --manifest."
     "manifest"  : String; "Additionally read constant names from a file (one per line; `#` comments and blank lines ignored). Unions with the positional names."
     "json"      : String; "Write per-constant results JSON to this path. Off by default; normal CLI usage prints only the human-readable summary."
-    "subject-only";       "Check only each target itself (verify_const, trusting its deps) instead of re-checking its whole transitive closure (verify_claim)."
+    "skip-deps";          "Check only each target itself (verify_const, trusting its deps) instead of re-checking its whole transitive closure (verify_claim). Same flag as `zisk-host --skip-deps`."
+    "execute-only";       "Execute only (Phase 1: constants / fft-cost / execute-time) and skip proving. The fast per-PR `execute`-mode signal."
     texray;               "Force the tracing-texray timeline + RAM breakdown on (per-prove spans on stderr)."
     "no-texray";          "Force the breakdown off. Default: on iff --json was not given."
 
