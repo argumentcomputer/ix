@@ -1,0 +1,31 @@
+name: Install SP1
+description: >-
+  Install the system build deps and the SP1 zkVM toolchain (sp1up) needed to
+  build and run the SP1 host. Assumes a Rust toolchain is already set up.
+
+runs:
+  using: composite
+  steps:
+    # The shared zkVM apt superset (the ZisK book's full Ubuntu list — the
+    # prebuilt cargo tooling and proofman's C++ link OpenMPI/OpenMP/GMP/
+    # nlohmann-json/nasm/secp256k1/… — plus pkg-config + libssl-dev for SP1's
+    # host crates). The Nix shells provided this; a bare runner doesn't.
+    - name: Install system build deps
+      shell: bash
+      run: |
+        # Some warpbuild images ship an unreachable azure mirror that hangs
+        # `apt-get update`; drop it first (no-op elsewhere).
+        sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt 2>/dev/null || true
+        sudo apt-get update
+        sudo apt-get install -y \
+          xz-utils jq curl build-essential qemu-system libomp-dev libgmp-dev \
+          nlohmann-json3-dev protobuf-compiler uuid-dev libgrpc++-dev \
+          libsecp256k1-dev libsodium-dev libpqxx-dev nasm libopenmpi-dev \
+          openmpi-bin openmpi-common libclang-dev clang gcc-riscv64-unknown-elf \
+          pkg-config libssl-dev time
+    - name: Install SP1 toolchain (sp1up, latest)
+      shell: bash
+      run: |
+        curl -L https://sp1up.succinct.xyz | bash
+        ~/.sp1/bin/sp1up
+        echo "$HOME/.sp1/bin" >> "$GITHUB_PATH"
