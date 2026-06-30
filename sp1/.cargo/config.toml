@@ -1,0 +1,9 @@
+[build]
+rustflags = ["-C", "target-cpu=native"]
+
+# Wraps every binary with scripts/cuda-runner.sh, which cleans orphaned
+# sp1-gpu-server sockets and retries on the SP1 SDK's CUDA-init race.
+# Pass-through (no overhead, no retries) when SP1_PROVER != "cuda".
+# Path is relative to cwd; this expects cargo to be invoked from sp1/.
+[target.x86_64-unknown-linux-gnu]
+runner = "./scripts/cuda-runner.sh"

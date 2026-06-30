@@ -1,0 +1,51 @@
+[package]
+name = "ix-ffi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["lib", "staticlib"]
+
+[dependencies]
+aiur = { workspace = true }
+anyhow = { workspace = true }
+bignat = { workspace = true }
+blake3 = { workspace = true }
+dashmap = { workspace = true, features = ["rayon"] }
+indexmap = { workspace = true, features = ["rayon"] }
+itertools = { workspace = true }
+ix-common = { workspace = true }
+ix-compile = { workspace = true }
+ixon = { workspace = true }
+ix-kernel = { workspace = true }
+lean-ffi = { workspace = true }
+multi-stark = { workspace = true }
+mimalloc = { workspace = true }
+num-bigint = { workspace = true }
+rayon = { workspace = true }
+rustc-hash = { workspace = true }
+sha2 = { workspace = true }
+tiny-keccak = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tracing-texray = { workspace = true }
+
+# Iroh dependencies
+bytes = { version = "1.10.1", optional = true }
+tokio = { version = "1.44.1", optional = true }
+iroh = { version = "0.97", optional = true }
+iroh-base = { version = "0.97", optional = true }
+n0-error = { version = "0.1", optional = true }
+getrandom = { version = "0.3", optional = true }
+bincode = { version = "2.0.1", optional = true }
+serde = { version = "1.0.219", features = ["derive"], optional = true }
+
+[features]
+default = []
+parallel = ["aiur/parallel"]
+test-ffi = []
+net = ["bytes", "tokio", "iroh", "iroh-base", "n0-error", "getrandom", "bincode", "serde"]
+
+[lints]
+workspace = true

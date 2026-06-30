@@ -1,0 +1,6 @@
+[workspace]
+members = ["host"]
+# `guest/` is built via `sp1-build` for the RISC-V zkVM target and only
+# compiles under `cargo-prove`; excluded so host workspace ops don't pick it up.
+exclude = ["guest"]
+resolver = "2"

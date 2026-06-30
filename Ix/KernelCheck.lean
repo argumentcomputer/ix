@@ -142,7 +142,7 @@ opaque rsCheckAnonFFI :
     @& String →                          -- fail-out path ("" = none)
     IO (Array (String × Option CheckError))
 
-/-- FFI: profile a `.ixe` out of circuit, writing a `.ixesp` sidecar with
+/-- FFI: profile a `.ixe` out of circuit, writing a `.ixprof` sidecar with
     per-block heartbeats + the delta-unfold graph (the sharding cost model,
     see `plans/sharding.md`). Runs the anon kernel over every checkable target.
     `isolate` clears the kernel's reduction-memo caches between constants for
@@ -150,19 +150,34 @@ opaque rsCheckAnonFFI :
 @[extern "rs_kernel_profile_anon"]
 opaque rsProfileAnonFFI :
     @& String →                          -- .ixe path
-    @& String →                          -- .ixesp output path
+    @& String →                          -- .ixprof output path
     @& Bool →                            -- isolate caches
     @& Bool →                            -- quiet
     IO Unit
 
-/-- FFI: partition a `.ixesp` into `numShards` shards, writing a `.ixes`
+/-- FFI: partition a `.ixprof` into `numShards` shards, writing a `.ixes`
     manifest. `numShards` and `balancePct` are decimal strings (kept ABI-simple).
     Empty `outPath` skips the manifest. Prints a what-if report to stderr. -/
 @[extern "rs_shard_esp"]
 opaque rsShardEspFFI :
-    @& String →                          -- .ixesp path
+    @& String →                          -- .ixprof path
     @& String →                          -- num_shards (N)
     @& String →                          -- balance percent
+    @& String →                          -- parallelism (provers for prove-time est)
+    @& String →                          -- .ixes output path ("" = skip)
+    IO Unit
+
+/-- FFI: partition a `.ixprof` to a per-shard cycle/RAM budget, writing a
+    `.ixes` manifest. `maxCycles` is a guest-STEP cap; if `ramGb` > 0 it is
+    converted via the measured prover RAM model and overrides `maxCycles`. Pass
+    "0" for whichever is unused. Decimal strings (ABI-simple). -/
+@[extern "rs_shard_esp_cap"]
+opaque rsShardEspCapFFI :
+    @& String →                          -- .ixprof path
+    @& String →                          -- max_cycles ("0" = unset)
+    @& String →                          -- max_ram GiB ("0" = unset)
+    @& String →                          -- balance percent
+    @& String →                          -- parallelism (provers for prove-time est)
     @& String →                          -- .ixes output path ("" = skip)
     IO Unit
 

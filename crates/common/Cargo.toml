@@ -1,0 +1,22 @@
+[package]
+name = "ix-common"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+bignat = { workspace = true }
+blake3 = { workspace = true }
+indexmap = { workspace = true }
+quickcheck = { workspace = true, optional = true }
+rustc-hash = { workspace = true }
+
+[dev-dependencies]
+quickcheck = { workspace = true }
+quickcheck_macros = { workspace = true }
+
+[features]
+quickcheck = ["dep:quickcheck"]
+
+[lints]
+workspace = true

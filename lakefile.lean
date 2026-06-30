@@ -8,7 +8,7 @@ require LSpec from git
   "https://github.com/argumentcomputer/LSpec" @ "d3c15b93a1dd4e7c8d5c0c3825c9555737e55c3e"
 
 require Blake3 from git
-  "https://github.com/argumentcomputer/Blake3.lean" @ "aaf530784082a2c00b0a93648741429d274102ca"
+  "https://github.com/argumentcomputer/Blake3.lean" @ "d15f36cf76eb5834b0e623e02b97fd4d95e56cc7"
 
 require Cli from git
   "https://github.com/leanprover/lean4-cli" @ "v4.29.0"
@@ -40,7 +40,7 @@ def cargoArgs (testFfi : Bool := false) (net : Bool := false) : IO (Array String
   if ixNoPar != some "1" then features := features.push "parallel"
   if net && !System.Platform.isOSX then features := features.push "net"
   if testFfi then features := features.push "test-ffi"
-  let buildArgs := #["build", "--release"]
+  let buildArgs := #["build", "--release", "-p", "ix-ffi"]
   if features.isEmpty then return buildArgs
   else return buildArgs ++ #["--features", ",".intercalate features.toList]
 
@@ -48,7 +48,7 @@ def cargoArgs (testFfi : Bool := false) (net : Bool := false) : IO (Array String
 target ix_rs pkg : FilePath := do
   let args ← cargoArgs
   proc { cmd := "cargo", args, cwd := pkg.dir } (quiet := true)
-  inputBinFile $ pkg.dir / "target" / "release" / nameToStaticLib "ix_rs"
+  inputBinFile $ pkg.dir / "target" / "release" / nameToStaticLib "ix_ffi"
 
 /-- Rebuild the Rust static lib with `test-ffi`.
 Only triggered by `lake test` (via `moreLinkObjs` on `IxTests`).
@@ -57,7 +57,7 @@ target ix_rs_test pkg : FilePath := do
   let _ ← ix_rs.fetch
   let args ← cargoArgs (testFfi := true)
   proc { cmd := "cargo", args, cwd := pkg.dir } (quiet := true)
-  inputBinFile $ pkg.dir / "target" / "release" / nameToStaticLib "ix_rs"
+  inputBinFile $ pkg.dir / "target" / "release" / nameToStaticLib "ix_ffi"
 
 /-- Build the Rust static lib with `net` for the `ix` CLI.
 Fetches `ix_rs` first to guarantee ordering before overwriting the lib. -/
@@ -65,7 +65,7 @@ target ix_rs_net pkg : FilePath := do
   let _ ← ix_rs.fetch
   let args ← cargoArgs (net := true)
   proc { cmd := "cargo", args, cwd := pkg.dir } (quiet := true)
-  inputBinFile $ pkg.dir / "target" / "release" / nameToStaticLib "ix_rs"
+  inputBinFile $ pkg.dir / "target" / "release" / nameToStaticLib "ix_ffi"
 
 end FFI
 

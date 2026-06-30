@@ -3,6 +3,9 @@ version = "0.1.0"
 defaultTargets = ["CompileInitStd"]
 
 [[lean_lib]]
+name = "CompileInit"
+
+[[lean_lib]]
 name = "CompileInitStd"
 
 [[lean_lib]]

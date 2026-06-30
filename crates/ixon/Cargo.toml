@@ -1,0 +1,29 @@
+[package]
+name = "ixon"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+bignat = { workspace = true }
+blake3 = { workspace = true }
+dashmap = { workspace = true }
+indexmap = { workspace = true }
+ix-common = { workspace = true }
+memmap2 = { workspace = true }
+num-bigint = { workspace = true }
+rustc-hash = { workspace = true }
+sha2 = { workspace = true }
+tiny-keccak = { workspace = true }
+
+[target.'cfg(not(target_arch = "riscv64"))'.dependencies]
+dashmap = { workspace = true, features = ["rayon"] }
+rayon = { workspace = true }
+
+[dev-dependencies]
+ix-common = { workspace = true, features = ["quickcheck"] }
+quickcheck = { workspace = true }
+quickcheck_macros = { workspace = true }
+
+[lints]
+workspace = true

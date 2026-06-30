@@ -1,0 +1,17 @@
+[package]
+name = "sp1-guest"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ixon = { path = "../../crates/ixon" }
+ix-kernel = { path = "../../crates/kernel" }
+ix-common = { path = "../../crates/common" }
+sp1-zkvm = { git = "https://github.com/argumentcomputer/sp1", branch = "blake3-precompile" }
+
+# Force blake3 to the patched copy that routes `compress_in_place` /
+# `compress_xof` through SP1's BLAKE3_COMPRESS precompile on the zkVM target.
+# The guest's transitive blake3 (via ix-kernel) would otherwise resolve to
+# the registry version because `sp1-build` doesn't extend the host workspace.
+[patch.crates-io]
+blake3 = { git = "https://github.com/argumentcomputer/BLAKE3", branch = "sp1" }

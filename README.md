@@ -204,6 +204,404 @@ Compiler performance benchmarks are tracked at https://bencher.dev/console/proje
 
 **Rust tests:** `cargo test` or `cargo nextest run`
 
+### Proving under SP1
+
+The Ix kernel typechecker has an SP1 guest at `sp1/guest/` driven by a host at
+`sp1/host/`. The workflow is two steps: first compile a Lean program to a `.ixe`
+serialized `Ixon.Env`, then feed that file to the SP1 host to either execute or
+prove the typecheck.
+
+**Nix users only:** enter the SP1 dev shell first to pick up `cargo-prove` and
+the succinct Rust toolchain:
+
+```
+nix develop .#sp1
+```
+
+Non-Nix users: install the SP1 toolchain manually per the
+[SP1 docs](https://docs.succinct.xyz/docs/sp1/getting-started/install).
+
+1. **Compile a `.ixe` from a Lean file.** `ix compile` takes the Lean source
+   as a positional argument and writes the serialized `Ixon.Env`; `--out` sets
+   the output path (default: the lowercased input stem plus `.ixe`). For a
+   small demo env:
+
+   ```
+   lake exe ix compile Tests/MinimalDefs.lean --out minimal.ixe
+   ```
+
+   For a larger, realistic env compile one of the `Benchmarks/Compile`
+   targets, then scope proving to a single constant with `--constant`
+   (step 2):
+
+   ```
+   lake exe ix compile Benchmarks/Compile/CompileInit.lean --out init.ixe
+   ```
+
+2. **Execute or prove under SP1.** From `sp1/host/`, run the host with `--ixe`
+   pointing at the file produced above:
+
+   ```
+   cd sp1/host
+   # Execute the kernel typecheck in the SP1 VM (no proof), prints failures + cycles
+   RUST_LOG=info cargo run --release -- --execute --ixe ../../minimal.ixe
+   # Generate and verify a compressed SP1 proof of the same typecheck (CPU)
+   WITHOUT_VK_VERIFICATION=1 RUST_LOG=info cargo run --release -- --ixe ../../minimal.ixe
+   # Prove a single constant out of a larger env (Anon-only): the host resolves
+   # the name and ships only that constant's closure sub-env. Full-closure by
+   # default; add --skip-deps for a subject-only check (deps trusted).
+   WITHOUT_VK_VERIFICATION=1 RUST_LOG=info cargo run --release -- --ixe ../../init.ixe --constant Nat.add_comm
+   ```
+
+   With no `--ixe`, the host runs against an empty `Ixon.Env`.
+
+   **Verifying-key bypass (`WITHOUT_VK_VERIFICATION=1`).** Proving currently
+   requires this environment variable; `--execute` does not. The guest hashes
+   via the patched BLAKE3's `BLAKE3_COMPRESS` precompile (see
+   [`argumentcomputer/BLAKE3` branch `sp1`](https://github.com/argumentcomputer/BLAKE3/tree/sp1)),
+   whose recursion shapes aren't in the SP1 prover's bundled `vk_map.bin`.
+   Without the bypass, proving aborts with `vk not allowed` / `vk_root
+   mismatch`. The host is built with the SP1 fork's `experimental` feature,
+   which honors this variable on both the prover and the light-node verifier.
+   Drop it once a production `vk_map.bin` is regenerated with the new chip.
+
+   **Kernel modes.** The default is Anon mode (metadata-erased kernel with
+   lazy on-demand ingress — matches Aiur's `kernel_check_test` semantics).
+   Pass `--meta` to run Meta mode (preserves names + dup-level-param check;
+   eager full-env ingress). Both prove the same structural typecheck; Meta
+   is strictly more constrained but slightly more expensive in cycles.
+
+   **GPU proving (pre-production; depends on the SP1 fork).** Build with the
+   `cuda` feature and set `SP1_PROVER=cuda`. Beyond the stock SP1 CUDA
+   prerequisites (an NVIDIA GPU with CUDA 12+), the BLAKE3_COMPRESS precompile
+   needs two prebuilt binaries that cannot come from a crate registry and must
+   be produced from a local checkout of the `argumentcomputer/sp1` fork's
+   `blake3-precompile` branch. Set `SP1_FORK_DIR` to that checkout. Skipping
+   either step does not fail loudly — you get `invalid syscall number` (stale
+   runner) or a hang/`ConnectionRefused` (missing gpu-server).
+
+   1. **Runner-binary.** The host spawns execution children from
+      `sp1-core-executor-runner-binary`, which embeds the JIT syscall dispatch;
+      a stock/stale one panics `invalid syscall number` on BLAKE3_COMPRESS.
+      Build it from the fork and point the host at it:
+
+      ```
+      (cd "$SP1_FORK_DIR" && cargo build --release -p sp1-core-executor-runner-binary)
+      export SP1_CORE_RUNNER_OVERRIDE_BINARY="$SP1_FORK_DIR/target/release/sp1-core-executor-runner-binary"
+      ```
+
+   2. **GPU server.** Install the fork's `sp1-gpu-server` once into
+      `~/.sp1/bin` via `$SP1_FORK_DIR/sp1-gpu/scripts/install-fork-gpu-server.sh`.
+      The server extracts its own embedded runner to
+      `/tmp/sp1-native-runner-bin-{HASH}` *only if no file is already there*, so
+      pre-write the fork's runner-binary to that path to win the race (the hash
+      is in the server binary: `strings ~/.sp1/bin/sp1-gpu-server | grep -oE
+      'sp1-native-runner-bin-[0-9a-f]{64}'`).
+
+   With both in place:
+
+   ```
+   WITHOUT_VK_VERIFICATION=1 SP1_PROVER=cuda RUST_LOG=info \
+     cargo run --release --features cuda -- --ixe ../../minimal.ixe
+   ```
+
+   On an RTX PRO 6000 a `nataddcomm.ixe` compressed proof takes ~14 s on GPU vs
+   ~466 s on CPU. `WITHOUT_VK_VERIFICATION=1` is required as above; none of this
+   is production-safe until `vk_map.bin` is regenerated with the new chip. See
+   the [SP1 CUDA docs](https://docs.succinct.xyz/docs/sp1/generating-proofs/hardware-acceleration/cuda)
+   for the base CUDA prerequisites.
+
+   **CUDA startup race (`scripts/cuda-runner.sh`).** `sp1/.cargo/config.toml`
+   wires every binary through `scripts/cuda-runner.sh`, which works around an
+   SP1 6.x CUDA-prover startup race: the SDK only retries the gpu-server socket
+   connect for ~1 s (CUDA init can take longer), `kill_on_drop` SIGKILLs the
+   server leaving an orphaned `/tmp/sp1-cuda-*.sock` → `ConnectionRefused`, and
+   the NVIDIA driver holds contexts for tens of seconds after a SIGKILL so a
+   fast retry hangs in `cuInit`. The runner cleans the stale socket and retries
+   with progressive backoff. It is a pass-through no-op when `SP1_PROVER` is not
+   `cuda`.
+
+### Proving under Zisk
+
+The Ix kernel typechecker also has a Zisk guest at `zisk/guest/` driven by a
+host at `zisk/host/`. The workflow mirrors the SP1 one — first compile a Lean
+program to a `.ixe`, then feed it to the Zisk host to either execute or prove
+the typecheck.
+
+**Nix users only:** enter the Zisk dev shell first to pick up `cargo-zisk`,
+`ziskemu`, and the RISC-V toolchain needed to build the guest:
+
+```
+nix develop .#zisk
+```
+
+Non-Nix users: install Zisk manually per the
+[Zisk install docs](https://0xpolygonhermez.github.io/zisk/getting_started/installation.html).
+
+1. **Compile a `.ixe` from a Lean file.** Same as for SP1:
+
+   ```
+   lake exe ix compile Tests/MinimalDefs.lean --out minimal.ixe
+   ```
+
+2. **Execute or prove under Zisk.** From `zisk/`, run the host with `--ixe`:
+
+   ```
+   cd zisk
+   # Execute the kernel typecheck in the Zisk VM (no proof), prints cycles
+   RUST_LOG=info cargo run --release -- --execute --ixe ../minimal.ixe
+   # Run the constraint checker without generating a proof
+   RUST_LOG=info cargo run --release -- --verify-constraints --ixe ../minimal.ixe
+   # Generate and verify a VadcopFinal proof of the same typecheck (CPU)
+   RUST_LOG=info cargo run --release -- --ixe ../minimal.ixe
+   # Check a single named constant out of a larger env. The host resolves the
+   # name and ships only its closure sub-env (lazy fault-in, no whole-env load).
+   # By default this is the FULL-CLOSURE typecheck — the constant and its whole
+   # dependency closure (matching the Aiur `bench-typecheck --constant`).
+   # Composes with --execute (cycles only) and plain prove.
+   RUST_LOG=info cargo run --release -- --execute --ixe ../init.ixe --constant Nat.add_comm
+   RUST_LOG=info cargo run --release -- --ixe ../init.ixe --constant Nat.add_comm
+   # Add --skip-deps for a subject-only check (deps trusted, not re-checked):
+   RUST_LOG=info cargo run --release -- --execute --ixe ../init.ixe --constant Vector.extract_append --skip-deps
+   ```
+
+   `--constant` / `--skip-deps` are the same flags the Aiur `bench-typecheck`
+   uses, so the two backends share one vocabulary. `--skip-deps` trusts
+   dependencies rather than re-checking them, so it is far cheaper than the
+   full-closure default — reserve it for constants too expensive to
+   full-closure-check that also can't be sharded (e.g. `Vector.extract_append`
+   over Init/Std). See [`docs/zisk-cycle-cost-model.md`](docs/zisk-cycle-cost-model.md)
+   for the measured cost models across constant shapes.
+
+   With no `--ixe`, the host runs against an empty `Ixon.Env`. The host's
+   `build.rs` invokes `zisk_sdk::build_program("../guest")`, so `cargo run`
+   transparently rebuilds the guest ELF whenever its sources change.
+
+   **Kernel mode.** The Zisk host runs Anon mode only (metadata-erased
+   kernel with lazy on-demand ingress); there is no `--meta` flag.
+
+   **GPU proving.** Pass `--gpu` at runtime — Zisk's prover backend ships
+   with CUDA support by default (the `cpu-only` Cargo feature is opt-out
+   and is not set here):
+
+   ```
+   RUST_LOG=info cargo run --release -- --gpu --ixe ../minimal.ixe
+   ```
+
+   Requires a CUDA-capable GPU and the matching CUDA runtime libraries
+   visible to the linker (`LD_LIBRARY_PATH`). The Nix `.#zisk` shell wires
+   these up automatically; for non-Nix setups follow the
+   [Zisk install docs](https://0xpolygonhermez.github.io/zisk/getting_started/installation.html).
+
+   **CUDA JIT cache (`CUDA_CACHE_MAXSIZE`).** The driver caches compiled
+   proving kernels (PTX→SASS, under `~/.nv/ComputeCache`) and reuses them
+   across processes — that's what keeps a second run warm. The default cap
+   (~1 GB) is small enough that as a run JITs more kernel variants (bigger
+   envs, more state-machine shapes) it forces LRU eviction and intermittent
+   re-JIT cold spikes mid-run. Pin it to the 4 GB hard max to remove that
+   failure mode (cost is only disk):
+
+   ```
+   export CUDA_CACHE_MAXSIZE=4294967296   # 4 GB
+   ```
+
+   **Warm-batch proving and cold-start.** The first GPU proof on a machine
+   pays a large one-time cold-start: the proving kernels are JIT-compiled
+   (PTX→SASS), almost entirely inside `GENERATING_INNER_PROOFS`. Measured on an
+   RTX PRO 6000, a `nataddcomm.ixe` proof takes **~126 s cold vs ~12 s warm**
+   (the inner-proof phase alone drops from ~123 s to ~9 s; EXECUTE and
+   `CALCULATING_CONTRIBUTIONS` are unchanged). Two things reuse that work:
+   `--ixe` is repeatable, so passing several inputs proves them in one process
+   and pays the cold-start once for the whole batch; and the JIT output is
+   cached on disk (`CUDA_CACHE_MAXSIZE` above), so even a *fresh* process stays
+   warm — the ~12 s figure above is a separate process from the cold run. So a
+   single small one-off proof looks slow (it eats the cold-start); amortize by
+   batching, or just disregard it. By default proving is stateful with no
+   checkpointing — if a run is killed it loses in-flight shard proofs and
+   restarts from the first shard; use a proof store (`--store-dir`, see
+   *Sharding large environments* below) to make a sharded run resumable.
+
+   ```
+   RUST_LOG=info cargo run --release -- --gpu \
+     --ixe ../nataddcomm.ixe --ixe ../stringappend.ixe
+   ```
+
+   **Memlock limit (Linux).** Zisk's assembly emulator `mmap`s ROM and
+   trace buffers with `MAP_LOCKED`, so the per-process locked-memory
+   rlimit (`ulimit -l`) must be high enough to back the trace. Many
+   Linux distros default to a low memlock limit; the Linux kernel
+   itself sets non-privileged processes to `RAM / 8`, which is still
+   too small for larger envs. Symptom: `mmap(rom) errno=11=Resource
+   temporarily unavailable` followed by `Shmem creation … failed with
+   exit status: 255` during `STARTING_ASM_MICROSERVICES`.
+
+   *Per-shell (does not survive new logins or reboot):*
+
+   ```
+   sudo prlimit --memlock=unlimited:unlimited --pid $$
+   ulimit -l   # confirm: prints 'unlimited'
+   ```
+
+   *Persistent (recommended; both edits needed because `systemd` and
+   PAM apply rlimits on different paths — `DefaultLimitMEMLOCK` only
+   reaches services systemd spawns directly, interactive shells go
+   through PAM):*
+
+   ```
+   # 1. systemd-spawned services
+   sudo sed -i 's|^#DefaultLimitMEMLOCK=.*|DefaultLimitMEMLOCK=infinity|' \
+       /etc/systemd/system.conf
+
+   # 2. PAM session limits (applied to login shells, sudo, etc.)
+   sudo tee /etc/security/limits.d/99-memlock.conf >/dev/null <<'EOF'
+   *               soft    memlock         unlimited
+   *               hard    memlock         unlimited
+   EOF
+
+   # Apply: log out of every login shell and back in (no reboot needed).
+   # Verify in a new shell:
+   ulimit -l                              # → unlimited
+   cat /proc/$$/limits | grep "locked"    # → unlimited / unlimited
+   ```
+
+   Matches the Zisk
+   [installation docs](https://0xpolygonhermez.github.io/zisk/getting_started/installation.html).
+
+   **Heap cap.** The Zisk zkVM has a hard 512 MB RAM cap
+   ([`RAM_SIZE`](https://github.com/0xPolygonHermez/zisk/blob/v0.17.0/core/src/mem.rs#L111)),
+   of which ~510 MB is usable heap, and isn't configurable without
+   rebuilding the proving setup. Envs whose deserialized in-memory
+   representation exceeds that won't fit (full `TutorialDefs.lean` pulls in
+   Lean stdlib + Batteries + LSpec, around 1 GB resident). For bigger envs,
+   prefer the SP1 backend (default 24 GB runtime cap
+   [`DEFAULT_MEMORY_LIMIT`](https://github.com/succinctlabs/sp1/blob/v6.2.0/crates/core/executor/src/opts.rs#L25),
+   configurable via `MEMORY_LIMIT` env var up to a ~1 TB JIT ceiling
+   [`MAX_JIT_LOG_ADDR`](https://github.com/succinctlabs/sp1/blob/v6.2.0/crates/primitives/src/consts.rs#L11)),
+   or scope to a single constant with `--constant <name>` (all backends),
+   which resolves the name and ships only that constant's closure sub-env to the
+   guest. By default it re-checks the full dependency closure; add `--skip-deps`
+   to check it **subject-only** (dependencies trusted and lazily faulted in, not
+   re-typechecked) — so individual constants of a large env still fit the cap,
+   even ones whose full-closure typecheck would not. To prove a large env in
+   full under Zisk, shard it (see
+   *Sharding large environments* below): each shard ships only its own closure
+   sub-env, so the pieces fit the cap even when the whole env does not.
+
+   **Host RAM cap (`--max-witness-stored`).** Distinct from the in-guest
+   heap cap above, the prover side (Zisk's `proofman`) holds in-flight
+   witness traces in host RAM during `CALCULATING_CONTRIBUTIONS`. Peak
+   host RAM per shard ≈ `fixed-overhead + N × avg-witness-size`, where
+   `N` is the `max_witness_stored` setting. With the Blake3f precompile the
+   Ix kernel typecheck workload measures roughly `40 GB + N × 16 GB` on
+   typical 200–300 kB anon-byte shards — e.g. `N = 10` peaks near 200 GB
+   (a `--shard-bytes 250000 --max-witness-stored 10` mergesort run completes
+   under a 200 GiB guard without tripping it). An earlier pre-Blake3f figure
+   of ~25 GB per witness is stale; the precompile shrank the witness.
+
+   The `zisk-host` CLI defaults to `--max-witness-stored 5` (Zisk's
+   built-in default is 10, tuned for larger-memory boxes). Override per
+   machine:
+
+   | Host RAM | `--max-witness-stored` | Notes                                                  |
+   | -------- | ---------------------- | ------------------------------------------------------ |
+   | ≤ 128 GB | `3`                    | Override down; consider smaller shards too             |
+   | 256 GB   | `5` (project default)  | Comfortable margin on the typical setup                |
+   | 512 GB   | `10` (Zisk default)    | Override up for maximum prover parallelism             |
+   | ≥ 1 TB   | `10` (Zisk default)    | Override up; default is conservative for this workload |
+
+   Lowering the cap roughly linearly bounds peak RAM but throttles
+   prover parallelism (~10–30 % slower in practice). Raise it if your
+   machine has more RAM headroom; lower it if you OOM during
+   `CALCULATING_CONTRIBUTIONS`. Not relevant for `--execute` or
+   `--verify-constraints` modes.
+
+3. **Sharding large environments.** A whole large env (e.g. all of
+   `Init`) does not fit a single Zisk proof: it overruns both the 512 MB
+   guest heap and, more bindingly, the prover's minimal-trace shared-memory
+   ceiling (64 GB per job on the assembly path). Sharding splits the env's
+   type-checking work into pieces that are proven independently — each
+   shipped with only its own dependency closure — and then folded into one
+   aggregate proof. This is a two-part workflow: produce a shard manifest
+   (a `.ixes` file), then prove it with `--shard-plan`.
+
+   **(a) Produce a shard manifest.** A manifest partitions the env's
+   per-constant work, packing shards to a resource cap by real
+   type-checking cost and cutting where cross-shard dependencies are fewest.
+
+   Profiling runs the kernel over the env (slow) and writes a `.ixprof`
+   cost map; sharding is instant graph work on that map, so it is cheap to
+   re-tune without re-profiling. Both steps are `ix` CLI subcommands:
+
+   ```
+   # Profile once (slow): init.ixe → init.ixprof (cost map + delta graph).
+   lake exe ix profile init.ixe
+   # Shard (instant): init.ixprof → init.ixes manifest. With no budget flags
+   # it bin-packs to the fewest shards that each fit this box's RAM (peak
+   # prover RAM ≈ `50 + 33 × cycles_billions` GB, targeting ~85 % of total).
+   lake exe ix shard init.ixprof
+   # Or pick a per-shard budget / a fixed count instead:
+   #   --max-ram 256   --max-cycles 4500000000   --shards 16
+   ```
+
+   `ix shard` also reports the shard count, total predicted cycles, and a
+   prove-time estimate from the measured leaf model (`54 s + 158 s·Bsteps`
+   per shard). Sharded proving is sequential today, so the estimate assumes
+   one prover; `--parallelism N` divides the wall-clock for a future N-prover
+   setup (the sequential total is always shown alongside).
+
+   **(b) Prove the manifest.** Pass the `.ixes` to the host with
+   `--shard-plan` alongside the same `--ixe` it was built for. Each shard
+   becomes one leaf proof (built over only that shard's closure sub-env),
+   and the leaves fold up the manifest's aggregation tree into a single root
+   proof:
+
+   ```
+   cd zisk
+   RUST_LOG=info cargo run --release -- --gpu \
+     --ixe ../init.ixe --shard-plan ../init.ixes
+   ```
+
+   **Resumable proving (`--store-dir`).** A proof store makes a sharded run
+   restartable and lets proofs be reused across runs and envs:
+
+   ```
+   RUST_LOG=info cargo run --release -- --gpu \
+     --ixe ../init.ixe --shard-plan ../init.ixes \
+     --store-dir ../init-store --require-closed
+   ```
+
+   - `--store-dir DIR`: each completed shard proof is banked to
+     `DIR/proofs/<n>.{proof,cover,asm}` as it finishes. **Re-run the same
+     command to resume** — shards already covered by the store are skipped
+     (not re-proven) and folded into the aggregate instead. Reuse is
+     trustless: a stored proof is re-verified in-circuit at aggregation,
+     never trusted by the host. Proofs are content-addressed, so a constant
+     proven in one env is reused in any other env that contains it.
+   - `--no-reuse`: ignore the store for this run (the "no sharing" baseline);
+     the existing store is neither read nor overwritten.
+   - `--require-closed`: error *before* proving unless every typing
+     dependency of every certified constant is either proven in this run or
+     already in the store — axioms are the only permitted residual. Turns
+     "result modulo axioms" from a printed hope into an enforced
+     precondition. Pairs with `--plan` for a no-prove check.
+
+   **Other shard modes and tuning flags.**
+
+   - *Static partitioning without a manifest:* `--shard-consts N` (N work
+     items per shard) or `--shard-bytes B` (pack contiguous items until
+     serialized bytes exceed `B`). Simpler, but not balanced by real
+     type-checking cost — `--shard-plan` is the performant path.
+   - `--plan`: print the planned partition and exit, no proving.
+   - `--execute`: run the shards in the VM only and print per-shard cycle
+     counts — use it to measure a shard's true cycle cost (e.g. to pick or
+     recalibrate a cycle budget) without proving.
+   - `--only-shard K`: prove just the 1-indexed shard `K` (skips
+     aggregation) for smoke-testing a single shard.
+   - `--dump-input FILE`: write one shard's guest stdin to `FILE` for
+     standalone profiling with `ziskemu` or `cargo-zisk`.
+   - `--agg-arity A` (default 16): how many child proofs each aggregation
+     step folds at once.
+
 ### Nix
 
 #### Prerequisites

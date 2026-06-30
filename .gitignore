@@ -2,7 +2,7 @@
 **/.lake
 
 # Rust
-/target
+**/target
 
 # Nix
 result*

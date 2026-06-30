@@ -47,6 +47,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "aiur"
+version = "0.1.0"
+dependencies = [
+ "hashbrown 0.15.5",
+ "indexmap",
+ "multi-stark",
+ "num-bigint",
+ "rayon",
+ "rustc-hash",
+ "tracing",
+ "tracing-texray",
+]
+
+[[package]]
 name = "allocator-api2"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -63,9 +77,9 @@ dependencies = [
 
 [[package]]
 name = "anyhow"
-version = "1.0.102"
+version = "1.0.103"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
+checksum = "2a4385e2e34eb35d6b3efe798b9eb88096925d87726c0798709bf56d9ed84af3"
 
 [[package]]
 name = "arrayref"
@@ -162,6 +176,14 @@ name = "base64ct"
 version = "1.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
+
+[[package]]
+name = "bignat"
+version = "0.1.0"
+source = "git+https://github.com/argumentcomputer/lean-ffi.git?rev=839b405de708b80504fda39abe1402114b4135a5#839b405de708b80504fda39abe1402114b4135a5"
+dependencies = [
+ "num-bigint",
+]
 
 [[package]]
 name = "bincode"
@@ -298,17 +320,6 @@ name = "cfg_aliases"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
-
-[[package]]
-name = "chacha20"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6f8d983286843e49675a4b7a2d174efe136dc93a18d69130dd18198a6c167601"
-dependencies = [
- "cfg-if",
- "cpufeatures 0.3.0",
- "rand_core 0.10.1",
-]
 
 [[package]]
 name = "chrono"
@@ -1721,29 +1732,61 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
-name = "ix_rs"
+name = "ix-common"
+version = "0.1.0"
+dependencies = [
+ "bignat",
+ "blake3",
+ "indexmap",
+ "quickcheck",
+ "quickcheck_macros",
+ "rustc-hash",
+]
+
+[[package]]
+name = "ix-compile"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bignat",
+ "blake3",
+ "dashmap",
+ "indexmap",
+ "itertools 0.14.0",
+ "ix-common",
+ "ix-kernel",
+ "ixon",
+ "num-bigint",
+ "rayon",
+ "rustc-hash",
+ "sha2 0.10.9",
+]
+
+[[package]]
+name = "ix-ffi"
+version = "0.1.0"
+dependencies = [
+ "aiur",
+ "anyhow",
+ "bignat",
  "bincode",
  "blake3",
  "bytes",
  "dashmap",
  "getrandom 0.3.4",
- "hashbrown 0.15.5",
  "indexmap",
  "iroh",
  "iroh-base",
  "itertools 0.14.0",
+ "ix-common",
+ "ix-compile",
+ "ix-kernel",
+ "ixon",
  "lean-ffi",
- "memmap2",
  "mimalloc",
  "multi-stark",
  "n0-error",
  "num-bigint",
- "quickcheck",
- "quickcheck_macros",
- "rand 0.10.1",
  "rayon",
  "rustc-hash",
  "serde",
@@ -1753,6 +1796,44 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "tracing-texray",
+]
+
+[[package]]
+name = "ix-kernel"
+version = "0.1.0"
+dependencies = [
+ "bignat",
+ "blake3",
+ "dashmap",
+ "indexmap",
+ "itertools 0.14.0",
+ "ix-common",
+ "ixon",
+ "log",
+ "num-bigint",
+ "quickcheck",
+ "quickcheck_macros",
+ "rayon",
+ "rustc-hash",
+]
+
+[[package]]
+name = "ixon"
+version = "0.1.0"
+dependencies = [
+ "bignat",
+ "blake3",
+ "dashmap",
+ "indexmap",
+ "ix-common",
+ "memmap2",
+ "num-bigint",
+ "quickcheck",
+ "quickcheck_macros",
+ "rayon",
+ "rustc-hash",
+ "sha2 0.10.9",
+ "tiny-keccak",
 ]
 
 [[package]]
@@ -1776,8 +1857,9 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 [[package]]
 name = "lean-ffi"
 version = "0.1.0"
-source = "git+https://github.com/argumentcomputer/lean-ffi?rev=cc98ebf67bf453ac3827cb767f78b13ea674dd6a#cc98ebf67bf453ac3827cb767f78b13ea674dd6a"
+source = "git+https://github.com/argumentcomputer/lean-ffi.git?rev=839b405de708b80504fda39abe1402114b4135a5#839b405de708b80504fda39abe1402114b4135a5"
 dependencies = [
+ "bignat",
  "bindgen",
  "cc",
  "num-bigint",
@@ -2708,19 +2790,17 @@ checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
 
 [[package]]
 name = "pkarr"
-version = "5.0.5"
+version = "5.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0db5bc018bd8e26cb7e7913623292e5eddd71caf29801ea2b2bd627167044e05"
+checksum = "2f950360d31be432c0c9467fba5024a94f55128e7f32bc9d32db140369f24c77"
 dependencies = [
  "base32",
  "bytes",
  "cfg_aliases",
  "document-features",
- "ed25519",
  "ed25519-dalek",
  "getrandom 0.4.2",
  "ntimestamp",
- "pkcs8",
  "self_cell",
  "serde",
  "simple-dns",
@@ -3001,7 +3081,6 @@ version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d2e8e8bcc7961af1fdac401278c6a831614941f6164ee3bf4ce61b7edb162207"
 dependencies = [
- "chacha20",
  "getrandom 0.4.2",
  "rand_core 0.10.1",
 ]
@@ -3392,9 +3471,9 @@ checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
 
 [[package]]
 name = "simple-dns"
-version = "0.11.2"
+version = "0.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df350943049174c4ae8ced56c604e28270258faec12a6a48637a7655287c9ce0"
+checksum = "dee851d0e5e7af3721faea1843e8015e820a234f81fda3dea9247e15bac9a86a"
 dependencies = [
  "bitflags",
 ]
