@@ -59,7 +59,7 @@ limit; bound a run with an external `timeout` if needed.
 The JSON is a neutral, flat shape (`{ "<name>": { "constants": …, "fft-cost": …,
 "execute-time": …, "prove-time": …, "throughput": … } }`, where `prove-time` and
 `throughput` appear only for proven constants); any bencher-specific reshaping
-is the caller's job (see `.github/workflows/aiur-bench.yml`).
+is the caller's job (see `.github/workflows/bench-main.yml`).
 -/
 
 open Lean (Json Name)
