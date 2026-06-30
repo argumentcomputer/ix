@@ -217,10 +217,9 @@ jobs:
         env:
           REUSE_IXE: "1"
         run: |
-          # The primary subset's prove tier (cheap primaries) — heavy primaries are
-          # execute-only (a single-shard prove would OOM the runner). run.sh drives
-          # bench-typecheck per constant (per-constant peak-rss), same as the
-          # !benchmark PR path.
+          # All primaries: run.sh proves each whose Aiur fft-cost fits ~128 GB and
+          # execute-only's the rest (so heavy primaries still report execute
+          # metrics). Per-constant peak-rss, same path as the !benchmark PR run.
           benv="${{ matrix.bench }}"; benv="${benv,}"   # InitStd→initStd, Mathlib→mathlib
           python3 .github/scripts/bench.py manifest \
             --csv Benchmarks/Vectors.csv --env "$benv" --mode prove --primary --out names.txt
@@ -389,8 +388,12 @@ jobs:
         env:
           REUSE_IXE: "1"
         run: |
-          bash .github/scripts/run.sh . "${{ matrix.bench }}" native execute \
-            /dev/null neutral.json
+          # Whole env (keyed by env) + the primary constants subject-checked
+          # (keyed by constant) for an apples-to-apples baseline next to zisk/sp1.
+          benv="${{ matrix.bench }}"; benv="${benv,}"
+          python3 .github/scripts/bench.py manifest \
+            --csv Benchmarks/Vectors.csv --env "$benv" --mode execute --primary --out names.txt
+          bash .github/scripts/run.sh . "${{ matrix.bench }}" native execute names.txt neutral.json
           jq 'map_values(map_values({value: .}))' neutral.json > bench.json
           cat bench.json
       # constants is deterministic → pinned (0/0); check-time / throughput /

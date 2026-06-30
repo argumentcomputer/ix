@@ -6,15 +6,15 @@
 #
 #   run.sh <repo_dir> <env> <backend> <mode> <names_file> <out_json>
 #     repo_dir : checked-out worktree (has .lake/build/bin/{ix,bench-typecheck})
-#     env      : initStd | lean | mathlib
+#     env      : initStd | lean | mathlib  (any case; used verbatim for <env>.ixe)
 #     backend  : aiur | zisk | sp1 | native
 #     mode     : execute | prove
 #
 # `ix` / `bench-typecheck` come from <repo_dir> (so base measures base's code, PR
-# the PR's — the caller puts <repo_dir>/.lake/build/bin on PATH). aiur / zisk /
-# sp1 run one subprocess per constant so a failure/timeout drops only that row;
-# native is whole-env (`ix check --anon`, the parallel out-of-circuit kernel) and
-# ignores <names_file>, keyed by the env.
+# the PR's — the caller puts <repo_dir>/.lake/build/bin on PATH). Each constant
+# is its own subprocess (a failure/timeout drops only that row). Only JSON is
+# written to stdout — tool output and `::warning::`/`::notice::` go to logs /
+# stderr so they never corrupt the merged JSON stream.
 set -uo pipefail
 
 repo=${1:?repo_dir}; benv=${2:?env}; backend=${3:?backend}; mode=${4:?mode}
@@ -37,7 +37,7 @@ esac
 
 ixe="$repo/$benv.ixe"
 if [ "${REUSE_IXE:-0}" = 1 ] && [ -f "$ixe" ]; then
-  echo "reusing existing $ixe (REUSE_IXE)"
+  echo "reusing existing $ixe (REUSE_IXE)" >&2
 else
   echo "::group::ix compile $module → $benv.ixe ($backend/$mode)"
   "$repo/.lake/build/bin/ix" compile "$repo/Benchmarks/Compile/$module.lean" --out "$ixe"
@@ -48,19 +48,30 @@ tmp=$(mktemp -d)
 
 case "$backend" in
   aiur)
-    # One bench-typecheck subprocess per constant (isolation + per-constant
-    # peak-rss). Phase 1 (execute) always runs; Phase 2 (prove) unless
-    # --execute-only. bench-typecheck writes the neutral per-constant JSON.
+    # One bench-typecheck per constant (isolation + per-constant peak-rss).
+    # Execute mode → Phase 1 only (--execute-only). Prove mode → prove each
+    # constant whose Aiur fft-cost fits the prover RAM ceiling (~128 GB at
+    # 2.34 GB per billion fft), else fall back to execute-only so a too-large
+    # single-shard prove never OOM-kills the job.
+    csv="$repo/Benchmarks/Vectors.csv"
+    ceil=${AIUR_PROVE_MAX_FFT:-50000000000}
     while IFS= read -r c; do
       [ -z "$c" ] && continue
       slug=$(printf '%s' "$c" | tr '/ .:' '____')
       res="$tmp/$slug.json"
-      if [ "$mode" = execute ]; then
-        bench-typecheck --ixe "$ixe" "$c" --json "$res" --execute-only \
-          || { echo "::warning::aiur execute '$c' failed; dropping"; continue; }
-      else
-        bench-typecheck --ixe "$ixe" "$c" --json "$res" --texray 2> "$tmp/$slug.tx" \
-          || { echo "::warning::aiur prove '$c' failed (OOM/timeout); dropping"; continue; }
+      do_prove=0
+      if [ "$mode" = prove ]; then
+        fft=$(awk -F, -v n="$c" '$1==n {print $6}' "$csv" 2>/dev/null)
+        if [ -n "${fft:-}" ] && [ "$fft" -le "$ceil" ]; then
+          do_prove=1
+        else
+          echo "::notice::aiur: '$c' fft=${fft:-?} exceeds $ceil (~128 GB); execute-only" >&2
+        fi
+      fi
+      if [ "$do_prove" = 1 ]; then
+        bench-typecheck --ixe "$ixe" "$c" --json "$res" --texray \
+          > "$tmp/$slug.log" 2> "$tmp/$slug.tx" \
+          || { echo "::warning::aiur prove '$c' failed (OOM/timeout); dropping" >&2; continue; }
         # Fold texray's proving RSS high-water mark (max over spans; awk's $2+0
         # stops at the first non-digit) into this constant's entry.
         rss=$(awk -F'peak-rss-bytes=' 'NF>1 && $2+0>m {m=$2+0} END {if (m>0) print m}' "$tmp/$slug.tx")
@@ -68,6 +79,9 @@ case "$backend" in
           jq --argjson rss "$rss" 'map_values(. + {"peak-rss": $rss})' "$res" > "$res.t" \
             && mv "$res.t" "$res" || true
         fi
+      else
+        bench-typecheck --ixe "$ixe" "$c" --json "$res" --execute-only > "$tmp/$slug.log" 2>&1 \
+          || { echo "::warning::aiur execute '$c' failed; dropping" >&2; continue; }
       fi
       [ -s "$res" ] && cat "$res"
     done < "$names" | jq -s 'reduce .[] as $o ({}; . + $o)' > "$out" 2>/dev/null
@@ -97,15 +111,15 @@ case "$backend" in
       if [ "$mode" = execute ]; then
         ( cd "$work" && timeout 25m /usr/bin/time -f '%e %M' -o "$tmf" \
             "$bin" --execute --ixe "$ixe" --constant "$c" --skip-deps ) > "$log" 2>>"$log" \
-          || { echo "::warning::$backend execute '$c' failed/timed out; dropping"; continue; }
+          || { echo "::warning::$backend execute '$c' failed/timed out; dropping" >&2; continue; }
         fail=$(grep -oE 'failures[:=] ?[0-9]+' "$log" | head -1 | grep -oE '[0-9]+')
         if [ "${fail:-1}" != 0 ]; then
-          echo "::warning::$backend '$c': nonzero/missing failures; dropping"; continue
+          echo "::warning::$backend '$c': nonzero/missing failures; dropping" >&2; continue
         fi
         # Total cycles: sharded prints "total cycles: N", single prints "cycles: N".
         cyc=$(grep -oE 'total cycles: [0-9]+' "$log" | tail -1 | grep -oE '[0-9]+')
         [ -z "$cyc" ] && cyc=$(grep -oE 'cycles: [0-9]+' "$log" | tail -1 | grep -oE '[0-9]+')
-        [ -z "$cyc" ] && { echo "::warning::$backend '$c': no cycle count; dropping"; continue; }
+        [ -z "$cyc" ] && { echo "::warning::$backend '$c': no cycle count; dropping" >&2; continue; }
         secs=$(awk 'NR==1{print $1}' "$tmf"); rssk=$(awk 'NR==1{print $2}' "$tmf")
         rss=$(( ${rssk:-0} * 1024 ))
         tput=$(awk -v c="$cyc" -v s="${secs:-0}" 'BEGIN{ if (s>0) printf "%.0f", c/s; else print 0 }')
@@ -127,7 +141,7 @@ case "$backend" in
         # prove (single-leaf, GPU runner only — the workflow gates this cell).
         ( cd "$work" && timeout 60m cargo run --quiet --release --bin "$host" -- \
             --gpu --ixe "$ixe" --constant "$c" --skip-deps ) > "$log" 2>&1 \
-          || { echo "::warning::$backend prove '$c' failed/timed out; dropping"; continue; }
+          || { echo "::warning::$backend prove '$c' failed/timed out; dropping" >&2; continue; }
         secs=$(grep -oE 'prove [0-9.]+s'   "$log" | head -1 | grep -oE '[0-9.]+')
         steps=$(grep -oE '\([0-9]+ steps\)' "$log" | head -1 | grep -oE '[0-9]+')
         fail=$(grep -oE 'failures=[0-9]+'  "$log" | head -1 | grep -oE '[0-9]+')
@@ -135,7 +149,7 @@ case "$backend" in
           jq -n --arg n "$c" --argjson t "$secs" --argjson s "${steps:-0}" \
             '{($n): {"prove-time": $t, steps: $s}}'
         else
-          echo "::warning::$backend prove '$c': no clean prove line; dropping"
+          echo "::warning::$backend prove '$c': no clean prove line; dropping" >&2
         fi
       fi
     done < "$names" | jq -s 'reduce .[] as $o ({}; . + $o)' > "$out" 2>/dev/null
@@ -143,28 +157,39 @@ case "$backend" in
     ;;
 
   native)
-    # Native out-of-circuit Rust kernel, whole env across available_parallelism
-    # workers — far faster than proving; ignores <names_file>. ix check is a
-    # single multi-threaded process so /usr/bin/time -f '%M' is the true peak RSS.
-    # `##check## <elapsed_ms> <passed> <failures> <total>` is the machine line.
-    log="$tmp/native.out"; tmf="$tmp/native.time"
-    /usr/bin/time -f '%e %M' -o "$tmf" ix check "$ixe" --anon > "$log" 2>>"$log" \
-      || { echo "::warning::native check failed"; emit_empty; exit 0; }
-    line=$(grep '^##check##' "$log" | tail -1)
-    elapsed_ms=$(echo "$line" | awk '{print $2}')
-    failures=$(echo "$line" | awk '{print $4}'); total=$(echo "$line" | awk '{print $5}')
-    if [ -z "${total:-}" ] || [ "${failures:-1}" != 0 ]; then
-      echo "::warning::native check: nonzero/missing failures or no ##check## line"; emit_empty; exit 0
-    fi
-    rssk=$(awk 'NR==1{print $2}' "$tmf"); rss=$(( ${rssk:-0} * 1024 ))
-    check_s=$(awk -v e="$elapsed_ms" 'BEGIN{printf "%.3f", e/1000}')
-    tput=$(awk -v t="$total" -v e="$elapsed_ms" 'BEGIN{ if (e>0) printf "%.2f", t*1000/e; else print 0 }')
-    jq -n --arg n "$benv" --argjson c "$total" --argjson s "$check_s" \
-          --argjson tp "$tput" --argjson rss "$rss" \
-      '{($n): {constants:$c, "check-time":$s, throughput:$tp, "peak-rss":$rss}}' > "$out"
+    # Native out-of-circuit Rust kernel (far faster than proving). Two views,
+    # both via the `##check## <elapsed_ms> <passed> <failures> <total>` line
+    # (ix check is a single multi-threaded process so /usr/bin/time -f '%M' is the
+    # true peak RSS): the whole env in parallel (`--anon`, keyed by env), and a
+    # per-primary subject check (`--consts`, keyed by constant) for an
+    # apples-to-apples baseline next to the zkVM `--skip-deps` execute.
+    native_one() {  # <label> <ix-check-args…>  → prints one JSON object
+      local label="$1"; shift
+      local log="$tmp/n.out" tmf="$tmp/n.time"
+      /usr/bin/time -f '%e %M' -o "$tmf" ix check "$ixe" "$@" > "$log" 2>>"$log" \
+        || { echo "::warning::native '$label' check failed; dropping" >&2; return; }
+      local line ems fl tot
+      line=$(grep '^##check##' "$log" | tail -1)
+      ems=$(echo "$line" | awk '{print $2}'); fl=$(echo "$line" | awk '{print $4}'); tot=$(echo "$line" | awk '{print $5}')
+      { [ -n "${tot:-}" ] && [ "${fl:-1}" = 0 ]; } \
+        || { echo "::warning::native '$label': bad ##check## / failures; dropping" >&2; return; }
+      local rssk rss cs tp
+      rssk=$(awk 'NR==1{print $2}' "$tmf"); rss=$(( ${rssk:-0} * 1024 ))
+      cs=$(awk -v e="$ems" 'BEGIN{printf "%.3f", e/1000}')
+      tp=$(awk -v t="$tot" -v e="$ems" 'BEGIN{ if (e>0) printf "%.2f", t*1000/e; else print 0 }')
+      jq -n --arg n "$label" --argjson c "$tot" --argjson s "$cs" --argjson tp "$tp" --argjson rss "$rss" \
+        '{($n): {constants:$c, "check-time":$s, throughput:$tp, "peak-rss":$rss}}'
+    }
+    {
+      native_one "$benv" --anon
+      while IFS= read -r c; do
+        [ -z "$c" ] && continue
+        native_one "$c" --consts "$c"
+      done < "$names"
+    } | jq -s 'reduce .[] as $o ({}; . + $o)' > "$out" 2>/dev/null
     emit_empty
     ;;
 
   *) echo "unknown backend: $backend" >&2; exit 2 ;;
 esac
-echo "rows in $out: $(jq 'length' "$out" 2>/dev/null || echo '?')"
+echo "rows in $out: $(jq 'length' "$out" 2>/dev/null || echo '?')" >&2
