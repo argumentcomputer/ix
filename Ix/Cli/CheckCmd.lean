@@ -340,6 +340,33 @@ def runShardOwned (ixonEnv : Ixon.Env) (blocks : Array Address) (shardK : Nat)
   | .error e => IO.eprintln s!"shard witness build failed: {e}"; return 1
   | .ok (claim, witness) => runOne claim witness s!"shard {shardK}"
 
+/-- IxVM-native fast path: skip Lean-side `buildShardCheckEnvWitness`
+    and dispatch through the new `shardCheckIxVM` FFI which builds
+    the witness in Rust directly. `--ixe` path is required (the
+    Rust side memory-maps it). -/
+def runShardOwnedNative (ixePath : String) (compiled : Aiur.CompiledToplevel)
+    (printStats : Bool) (statsOut : Option String)
+    (ixonEnv : Ixon.Env) (blocks : Array Address) (shardK : Nat) : IO UInt32 := do
+  let owned := ownedConstsForBlocks ixonEnv blocks
+  IO.println s!"[shard] shard {shardK}: {blocks.size} owned blocks → \
+    {owned.size}/{ixonEnv.consts.size} owned consts"
+  let label := s!"shard {shardK}"
+  IO.println s!"Typechecking {label}"
+  (← IO.getStdout).flush
+  let funIdx := compiled.getFuncIdx `verify_claim |>.get!
+  let ixePathBytes := ixePath.toUTF8
+  -- Flat 32-byte address ByteArray.
+  let mut blob := ByteArray.empty
+  for a in owned do
+    blob := blob ++ a.hash
+  match compiled.bytecode.shardCheckIxVM funIdx ixePathBytes blob with
+  | .error e =>
+    IO.eprintln s!"{label}: IxVM-native shard check error: {e}"
+    return 1
+  | .ok (_output, _ioBuffer, queryCounts) =>
+    if printStats then emitStats compiled queryCounts statsOut
+    pure 0
+
 /-- Manifest-driven check/prove of one shard `shardK` of the partition. -/
 def runShardCheckManifest (manifestPath ixePath : String) (shardK : Nat)
     (runOne : Ix.Claim → IxVM.ClaimHarness.ClaimWitness → String → IO UInt32) : IO UInt32 := do
@@ -348,6 +375,39 @@ def runShardCheckManifest (manifestPath ixePath : String) (shardK : Nat)
   | .ok (ixonEnv, shards) => match shards[shardK]? with
     | none => IO.eprintln s!"shard {shardK} out of range ({shards.size} shards)"; return 1
     | some blocks => runShardOwned ixonEnv blocks shardK runOne
+
+/-- IxVM-native shard check: skip Lean's `buildShardCheckEnvWitness`
+    by dispatching the witness build to Rust via `shardCheckIxVM`. -/
+def runShardCheckManifestNative (manifestPath ixePath : String) (shardK : Nat)
+    (compiled : Aiur.CompiledToplevel) (printStats : Bool)
+    (statsOut : Option String) : IO UInt32 := do
+  match (← loadEnvAndShards manifestPath ixePath) with
+  | .error e => IO.eprintln e; return 1
+  | .ok (ixonEnv, shards) => match shards[shardK]? with
+    | none => IO.eprintln s!"shard {shardK} out of range ({shards.size} shards)"; return 1
+    | some blocks =>
+      runShardOwnedNative ixePath compiled printStats statsOut ixonEnv blocks shardK
+
+/-- IxVM-native check over EVERY shard. Caller-side: this skips the
+    coverage check; trust the user (or run a separate `--ixes`-only
+    coverage probe first). -/
+def runShardManifestAllNative (manifestPath ixePath : String) (jobs? : Option Nat)
+    (compiled : Aiur.CompiledToplevel) (printStats : Bool)
+    (statsOut : Option String) : IO UInt32 := do
+  match (← loadEnvAndShards manifestPath ixePath) with
+  | .error e => IO.eprintln e; return 1
+  | .ok (ixonEnv, shards) =>
+    let maxJobs := max 1 (jobs?.getD shards.size)
+    let mut rc : UInt32 := 0
+    for chunk in (shards.mapIdx (fun k b => (b, k))).toList.toChunks maxJobs do
+      let tasks ← chunk.mapM fun (blocks, k) =>
+        IO.asTask (prio := .dedicated)
+          (runShardOwnedNative ixePath compiled printStats statsOut ixonEnv blocks k)
+      for t in tasks do
+        match t.get with
+        | .ok r => if r != 0 then rc := 1
+        | .error e => IO.eprintln s!"shard check task failed: {e}"; rc := 1
+    pure rc
 
 /-- Run the shard operation over EVERY shard — the whole-partition behavior of
     `--ixes` with no `--shard` (used by `prove`). Loads the env once. Returns 1
@@ -457,10 +517,28 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
       pure (runCompiled compiled printStats statsOut)
   match ixePath, ixesPath, shardK with
   | some ixe, some manifest, some k =>
-    return (← runShardCheckManifest manifest ixe k (fun _c w l => runOne w l))
+    -- IxVM-native shard check: witness built in Rust (Lean's
+    -- `buildShardCheckEnvWitness` dominates per-shard wall time,
+    -- ~92%; native build avoids per-byte boxing into `Aiur.G`).
+    -- Falls back to the legacy path when `--interp` is set, since
+    -- the Lean interpreter consumes a `ClaimWitness` directly.
+    if interp then
+      return (← runShardCheckManifest manifest ixe k (fun _c w l => runOne w l))
+    else do
+      let compiled ← match toplevel.compile with
+        | .error e => IO.eprintln s!"Compilation failed: {e}"; return 1
+        | .ok c => pure c
+      return (← runShardCheckManifestNative manifest ixe k compiled printStats statsOut)
   | some ixe, some manifest, none   =>
-    return (← runShardCheckAll manifest ixe ((p.flag? "jobs").map (·.as! Nat))
-      (fun _c w l => runOne w l))
+    if interp then
+      return (← runShardCheckAll manifest ixe ((p.flag? "jobs").map (·.as! Nat))
+        (fun _c w l => runOne w l))
+    else do
+      let compiled ← match toplevel.compile with
+        | .error e => IO.eprintln s!"Compilation failed: {e}"; return 1
+        | .ok c => pure c
+      return (← runShardManifestAllNative manifest ixe
+        ((p.flag? "jobs").map (·.as! Nat)) compiled printStats statsOut)
   | _, _, _ =>
     forEachClaim ixePath claimHex names keepGoing "check"
       (fun _ w l => runOne w l)

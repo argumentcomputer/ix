@@ -4,3 +4,4 @@
 
 pub mod aiur_ixvm;
 pub mod aiur_ixvm_runner;
+pub mod aiur_ixvm_witness;

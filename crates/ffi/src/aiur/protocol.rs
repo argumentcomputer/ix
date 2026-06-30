@@ -267,6 +267,109 @@ extern "C" fn rs_aiur_system_prove(
   result.into()
 }
 
+/// `Bytecode.Toplevel.shardCheckIxVMFull`: end-to-end IxVM-native
+/// shard check.
+///
+/// Combines `buildShardCheckEnvWitness` (witness construction) and
+/// `executeIxVM` into a single FFI call so the heavy IOBuffer never
+/// crosses the Lean/Rust boundary. Builds the witness directly in
+/// Rust from a memory-mapped `.ixe` env (no per-byte boxing into
+/// Lean values), then dispatches to `execute_ixvm`.
+///
+/// Returns the same `(output, ioBuffer, queryCounts)` triple as
+/// `rs_aiur_toplevel_execute_ixvm` so the Lean shim can stay drop-
+/// in compatible.
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_toplevel_shard_check_ixvm(
+  toplevel: LeanAiurToplevel<LeanBorrowed<'_>>,
+  fun_idx: LeanNat<LeanBorrowed<'_>>,
+  ixe_path: LeanByteArray<LeanBorrowed<'_>>,
+  owned_blob: LeanByteArray<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  let toplevel = decode_toplevel(&toplevel);
+  let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
+  let ixe_path_str =
+    String::from_utf8_lossy(ixe_path.as_bytes()).into_owned();
+
+  // Owned addresses arrive as a flat ByteArray of 32-byte blocks.
+  let bytes = owned_blob.as_bytes();
+  if bytes.len() % 32 != 0 {
+    return LeanExcept::error_string(&format!(
+      "owned_blob: length {} not a multiple of 32",
+      bytes.len()
+    ));
+  }
+  let owned: Vec<ix_common::address::Address> = bytes
+    .chunks_exact(32)
+    .map(|c| ix_common::address::Address::from_slice(c).unwrap())
+    .collect();
+
+  // Load env via mmap (lazy, only touches what's read).
+  let env = match ixon::Env::get_anon_mmap(
+    std::path::Path::new(&ixe_path_str),
+  ) {
+    Ok(e) => e,
+    Err(e) => return LeanExcept::error_string(&format!("env load: {e}")),
+  };
+
+  // Build the witness in Rust (no per-byte Lean boxing).
+  let (_claim, input, mut io_buffer) =
+    match ix::aiur_ixvm_witness::build_shard_check_env_witness(
+      &env, &owned,
+    ) {
+      Ok(t) => t,
+      Err(e) => return LeanExcept::error_string(&format!("witness build: {e}")),
+    };
+
+  let (query_record, output) = match ix::aiur_ixvm_runner::execute_ixvm(
+    &toplevel,
+    fun_idx,
+    input,
+    &mut io_buffer,
+  ) {
+    Ok(p) => p,
+    Err(e) => return LeanExcept::error_string(&format!("execute_ixvm: {e}")),
+  };
+
+  let mut query_counts: Vec<(usize, usize)> = Vec::with_capacity(
+    query_record.function_queries.len() + toplevel.memory_sizes.len(),
+  );
+  let summarize = |q: &aiur::querymap::QueryMap| -> (usize, usize) {
+    let mut rows = 0usize;
+    let mut hits = 0usize;
+    for (_, res) in q.iter() {
+      let m = usize::try_from(res.multiplicity.as_canonical_u64())
+        .expect("multiplicity exceeds usize");
+      if m != 0 {
+        rows += 1;
+        hits += m;
+      }
+    }
+    (rows, hits)
+  };
+  for queries in &query_record.function_queries {
+    query_counts.push(summarize(queries));
+  }
+  for size in &toplevel.memory_sizes {
+    let pair = query_record.memory_queries.get(size).map_or((0, 0), summarize);
+    query_counts.push(pair);
+  }
+  let lean_query_counts = {
+    let arr = LeanArray::alloc(query_counts.len());
+    for (i, &(rows, hits)) in query_counts.iter().enumerate() {
+      let pair =
+        LeanProd::new(LeanOwned::box_usize(rows), LeanOwned::box_usize(hits));
+      arr.set(i, pair);
+    }
+    arr
+  };
+
+  let lean_io = build_lean_io_buffer(&io_buffer);
+  let io_counts = LeanProd::new(lean_io, lean_query_counts);
+  let result = LeanProd::new(build_g_array(&output), io_counts);
+  LeanExcept::ok(result)
+}
+
 /// `AiurSystem.proveIxVM`: IxVM-native prove path. Same return shape
 /// as `rs_aiur_system_prove`, but routes execution through the
 /// codegen'd Rust kernel (`execute_generated`) via

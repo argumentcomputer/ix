@@ -126,6 +126,33 @@ def executeIxVM (toplevel : @& Bytecode.Toplevel)
     let queryCounts := queryCounts.map fun (uniqueRows, totalHits) => { uniqueRows, totalHits }
     .ok (output, ⟨ioData, ioMap⟩, queryCounts)
 
+@[extern "rs_aiur_toplevel_shard_check_ixvm"]
+private opaque shardCheckIxVM' : @& Bytecode.Toplevel →
+  @& Bytecode.FunIdx → @& ByteArray → @& ByteArray →
+    Except String (Array G ×
+      (Array (G × Array G) × Array ((G × Array G) × IOKeyInfo)) ×
+      Array (Nat × Nat))
+
+
+/-- IxVM-native shard check: builds the witness in Rust (no
+    per-byte boxing into Lean values), then dispatches through
+    `execute_ixvm`. Replaces `buildShardCheckEnvWitness` + `executeIxVM`
+    with a single FFI call.
+
+    `ixePath` is a UTF-8 path to a memory-mappable `.ixe` env;
+    Rust loads it lazily. `ownedBlob` is a flat ByteArray of 32-byte
+    address blocks (one per owned const). -/
+def shardCheckIxVM (toplevel : @& Bytecode.Toplevel)
+  (funIdx : @& Bytecode.FunIdx) (ixePath : ByteArray) (ownedBlob : ByteArray)
+  : Except String (Array G × IOBuffer × Array QueryCount) :=
+  match shardCheckIxVM' toplevel funIdx ixePath ownedBlob with
+  | .error e => .error e
+  | .ok (output, (ioData, ioMap), queryCounts) =>
+    let ioData := ioData.foldl (fun acc (k, v) => acc.insert k v) ∅
+    let ioMap := ioMap.foldl (fun acc (k, v) => acc.insert k v) ∅
+    let queryCounts := queryCounts.map fun (uniqueRows, totalHits) => { uniqueRows, totalHits }
+    .ok (output, ⟨ioData, ioMap⟩, queryCounts)
+
 end Bytecode.Toplevel
 
 end Aiur
