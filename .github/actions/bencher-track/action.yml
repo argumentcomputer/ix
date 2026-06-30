@@ -1,13 +1,18 @@
 name: Track benchmarks on bencher
 description: >-
-  Run `bencher run` for the `ix` project, windowing deterministic "stepping"
-  measures to commits since the last lean-toolchain bump (and dropping them on
-  the bump commit via --thresholds-reset, so a toolchain step lands without a
-  spurious alert). The calling job must check out with fetch-depth: 0.
+  Run `bencher run` for the `ix` project. Every measure's baseline is windowed
+  to the data points recorded since the workload's `baseline-reset-<workload>`
+  tag, so a toolchain bump (or any permanent shift) is recalibrated by moving
+  that one tag — via the !bencher-thresholds-reset PR comment or the
+  bench-thresholds-reset workflow. The calling job must check out with
+  fetch-depth: 0 and fetch-tags: true (the tag is read here).
 
 inputs:
   testbed:
-    description: Bencher testbed name.
+    description: Bencher testbed slug.
+    required: true
+  workload:
+    description: Workload key for the `baseline-reset-<workload>` tag (e.g. ix-compile, aiur).
     required: true
   file:
     description: Bencher Metric Format JSON file to upload.
@@ -18,56 +23,52 @@ inputs:
   github-token:
     description: GITHUB_TOKEN, for the --github-actions comment.
     required: true
-  always-thresholds:
+  thresholds:
     description: >-
-      Raw `--threshold-measure …` flags for measures tracked on every commit
-      (non-stepping). Word-split, so keep each flag a single token.
-    required: false
-    default: ""
-  stepping-measures:
-    description: >-
-      Space-separated measure names that step on a toolchain bump (e.g.
-      "file-size constants" or "fft-cost"). Windowed to commits-since-bump and
-      omitted on the bump commit.
-    required: false
-    default: ""
+      `--threshold-*` flags for every tracked measure. Use the literal token
+      `__WINDOW__` in place of each `--threshold-max-sample-size` value; it is
+      replaced with the data-point count since the baseline anchor. Word-split,
+      so keep each flag a single token.
+    required: true
 
 runs:
   using: composite
   steps:
-    - uses: bencherdev/bencher@v0.6.7
+    - uses: bencherdev/bencher@v0.6.8
     - shell: bash
       env:
         BENCHER_KEY: ${{ inputs.key }}
         GH_TOKEN: ${{ inputs.github-token }}
         TESTBED: ${{ inputs.testbed }}
+        WORKLOAD: ${{ inputs.workload }}
         FILE: ${{ inputs.file }}
-        ALWAYS_THRESHOLDS: ${{ inputs.always-thresholds }}
-        STEPPING_MEASURES: ${{ inputs.stepping-measures }}
+        THRESHOLDS: ${{ inputs.thresholds }}
       run: |
-        # Sample only commits since lean-toolchain last changed, so a stepping
-        # measure's baseline window never straddles a toolchain bump.
-        last_bump=$(git log -1 --format=%H -- lean-toolchain)
-        sample=$(git rev-list --count "${last_bump}..HEAD")
-        [ "$sample" -gt 64 ] && sample=64
-        echo "commits since last lean-toolchain bump (capped 64): $sample"
-        # On the bump commit (sample=0) omit the stepping measures entirely;
-        # --thresholds-reset then clears their models so the step doesn't alert.
-        # Between bumps these measures are deterministic, so pin them exactly
-        # (0% on both sides): any change in either direction is a real circuit
-        # or closure change, not noise, and should alert.
-        step_thresholds=()
-        if [ "$sample" -gt 0 ]; then
-          for m in $STEPPING_MEASURES; do
-            step_thresholds+=(
-              --threshold-measure "$m"
-              --threshold-test percentage
-              --threshold-max-sample-size "$sample"
-              --threshold-upper-boundary 0
-              --threshold-lower-boundary 0
-            )
-          done
+        # Baseline window: data points for this benchmark since the workload's
+        # `baseline-reset-<workload>` tag (moved on a toolchain bump or any
+        # permanent shift). The same window applies to every measure. We count
+        # actual data points, not commits, so the baseline never reaches past
+        # the anchor (a failed run produces no metric, so a commit count would
+        # overshoot). The matrix uploads one report per benchmark, so count this
+        # benchmark's reports (its name is the upload's top-level key). The ix
+        # project is public, so no token is needed. With no tag yet, fall back
+        # to Bencher's 64-point window.
+        sample=64
+        if reset_epoch=$(git log -1 --format=%ct "baseline-reset-$WORKLOAD" 2>/dev/null); then
+          bench=$(jq -r '[keys[]][0]' "$FILE")
+          sample=$(curl -fsS "https://api.bencher.dev/v0/projects/ix/reports?branch=${GITHUB_REF_NAME}&testbed=${TESTBED}&start_time=$((reset_epoch * 1000))&per_page=255" \
+            | jq --arg b "$bench" '[.[] | select([.results[]?[]?.benchmark.name] | index($b))] | length')
         fi
+        sample=${sample:-0}
+        [ "$sample" -gt 64 ] && sample=64
+        echo "baseline window for '$WORKLOAD': $sample data point(s)"
+
+        # No data points since the reset → omit thresholds so the reset commit
+        # lands without an alert (--thresholds-reset clears stale models); they
+        # re-arm next run. Otherwise substitute the window into each measure.
+        thresholds=()
+        [ "$sample" -gt 0 ] && thresholds=( ${THRESHOLDS//__WINDOW__/$sample} )
+
         bencher run \
           --project ix \
           --key "$BENCHER_KEY" \
@@ -76,7 +77,6 @@ runs:
           --testbed "$TESTBED" \
           --adapter json \
           --github-actions "$GH_TOKEN" \
-          $ALWAYS_THRESHOLDS \
-          "${step_thresholds[@]}" \
+          "${thresholds[@]}" \
           --thresholds-reset \
           --file "$FILE"

@@ -81,6 +81,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          fetch-tags: true   # bencher-track reads the baseline-reset tag
       - uses: actions/cache/restore@v5
         with:
           path: ~/.local/bin
@@ -138,24 +139,30 @@ jobs:
             }
           }
           EOF
-      # Upload compile metrics. file-size/constants step on a toolchain bump, so
-      # they're the bump-windowed stepping measures; compile-time/throughput ride
-      # their normal 64-window (throughput's regression is a drop, hence its
-      # lower boundary).
+      # Upload compile metrics. Every measure shares the per-workload baseline
+      # window (data points since the ix-compile reset tag): file-size/constants
+      # are deterministic, pinned exactly (0/0); compile-time rides a 5% upper
+      # bound; throughput a 5% lower bound (its regression is a drop).
       - uses: ./.github/actions/bencher-track
         with:
-          testbed: warp-ubuntu-x64-32x
+          testbed: ix-compile-x64-32x
+          workload: ix-compile
           file: benchmark.json
           key: ${{ secrets.BENCHER_API_KEY }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          stepping-measures: file-size constants
-          always-thresholds: |
+          thresholds: |
             --threshold-measure compile-time --threshold-test percentage
-            --threshold-max-sample-size 64 --threshold-upper-boundary 0.05
+            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.05
             --threshold-lower-boundary _
             --threshold-measure throughput --threshold-test percentage
-            --threshold-max-sample-size 64 --threshold-upper-boundary _
+            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary _
             --threshold-lower-boundary 0.05
+            --threshold-measure file-size --threshold-test percentage
+            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0
+            --threshold-lower-boundary 0
+            --threshold-measure constants --threshold-test percentage
+            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0
+            --threshold-lower-boundary 0
 
   # Restore each matrix job's `.ixe` from the cache and run the Aiur execute + prove
   # benchmark over selected constants. No compiler run here.
@@ -174,7 +181,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 0   # full history for the toolchain-bump sample-size query
+          fetch-depth: 0     # full history for the baseline-anchor lookup
+          fetch-tags: true   # bencher-track reads the baseline-reset tag
       - uses: actions/cache/restore@v5
         with:
           path: ~/.local/bin
@@ -230,30 +238,37 @@ jobs:
             map_values(to_entries | map({(.key): {value: .value}}) | add)
           ' results.json > aiur.json
           cat aiur.json
-      # Upload Aiur metrics. fft-cost and constants are deterministic and step on a
-      # toolchain bump (a different stdlib changes the constants' circuits and
-      # closure sizes), so they're the bump-windowed stepping measures — same
-      # treatment compile gives file-size/constants. prove-time/execute-time,
+      # Upload Aiur metrics. Every measure shares the per-workload baseline
+      # window (data points since the aiur reset tag). constants is deterministic
+      # → pinned exactly (0/0). fft-cost is deterministic but only ever drops on
+      # a real Aiur win, so it rides an upper-only 5% bound (flag a regression,
+      # let wins through) rather than a hard pin. prove-time/execute-time,
       # peak-rss (texray's proving RSS high-water mark), and throughput
-      # (constants/prove-time, like compile's, where a drop is the regression)
-      # are noisy wall-clock and ride their normal 64-window.
+      # (constants/prove-time, where a drop is the regression) are noisy
+      # wall-clock and ride percentage bounds.
       - uses: ./.github/actions/bencher-track
         with:
           testbed: aiur-typecheck-x64-32x
+          workload: aiur
           file: aiur.json
           key: ${{ secrets.BENCHER_API_KEY }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          stepping-measures: fft-cost constants
-          always-thresholds: |
+          thresholds: |
+            --threshold-measure constants --threshold-test percentage
+            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0
+            --threshold-lower-boundary 0
+            --threshold-measure fft-cost --threshold-test percentage
+            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.05
+            --threshold-lower-boundary _
             --threshold-measure prove-time --threshold-test percentage
-            --threshold-max-sample-size 64 --threshold-upper-boundary 0.10
+            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.10
             --threshold-lower-boundary _
             --threshold-measure execute-time --threshold-test percentage
-            --threshold-max-sample-size 64 --threshold-upper-boundary 0.10
+            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.10
             --threshold-lower-boundary _
             --threshold-measure peak-rss --threshold-test percentage
-            --threshold-max-sample-size 64 --threshold-upper-boundary 0.10
+            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.10
             --threshold-lower-boundary _
             --threshold-measure throughput --threshold-test percentage
-            --threshold-max-sample-size 64 --threshold-upper-boundary _
+            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary _
             --threshold-lower-boundary 0.10

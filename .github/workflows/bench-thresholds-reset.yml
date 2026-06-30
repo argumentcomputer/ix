@@ -1,0 +1,82 @@
+name: Bencher thresholds reset
+
+# Move `baseline-reset-<workload>` tag(s) so bencher-track re-windows those
+# measures from a chosen commit — after a toolchain bump or any permanent shift.
+# Other workloads are unaffected; historical data stays in Bencher, only the
+# alert baseline is re-anchored. Two ways to trigger:
+#
+#   - Merged PR carrying a maintainer comment `!bencher-thresholds-reset <workload|all>`:
+#     fires automatically on merge, anchored at the merge commit — no need to
+#     race a manual run afterward. A bare command (no workload) is ignored.
+#   - workflow_dispatch: reset the chosen workload at a given commit (default
+#     HEAD); does not read PR contents. For ad-hoc or bootstrap resets.
+#
+# pull_request_target runs in the base-repo context with a write token (works
+# for fork PRs too). Safe here because the job runs no PR-provided code — only
+# `gh api` calls against the trusted event payload.
+on:
+  workflow_dispatch:
+    inputs:
+      workload:
+        description: Workload baseline to reset
+        required: true
+        type: choice
+        options: [ix-compile, aiur, all]
+      sha:
+        description: "Commit to anchor to (default: HEAD)"
+        required: false
+  pull_request_target:
+    types: [closed]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  reset:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+      EVENT: ${{ github.event_name }}
+      INPUT_WORKLOAD: ${{ inputs.workload }}
+      INPUT_SHA: ${{ inputs.sha }}
+      HEAD_SHA: ${{ github.sha }}
+      PR: ${{ github.event.pull_request.number }}
+      MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+    steps:
+      - run: |
+          valid="ix-compile aiur"
+          if [ "$EVENT" = workflow_dispatch ]; then
+            # Reset the chosen workload(s) at the given commit; no PR scan.
+            sha="${INPUT_SHA:-$HEAD_SHA}"
+            [ "$INPUT_WORKLOAD" = all ] && workloads="$valid" || workloads="$INPUT_WORKLOAD"
+          else
+            # Reset workloads named in maintainer `!bencher-thresholds-reset`
+            # comments, anchored at the merge commit. Arg required, so a bare
+            # command matches nothing and is ignored.
+            sha="$MERGE_SHA"
+            workloads=$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
+              --jq '.[] | select(.author_association | IN("OWNER","MEMBER","COLLABORATOR")) | .body' \
+              | grep -oiE '!bencher-thresholds-reset[[:space:]]+[a-z0-9 -]+' \
+              | sed -E 's/^!bencher-thresholds-reset[[:space:]]+//I' \
+              | tr '[:upper:] ' '[:lower:]\n' | sort -u)
+            echo "$workloads" | grep -qx all && workloads="$valid"
+          fi
+
+          done_list=""
+          for w in $workloads; do
+            case " $valid " in *" $w "*) ;; *) echo "skip unknown workload: $w"; continue ;; esac
+            tag="baseline-reset-$w"
+            echo "Anchoring $tag -> $sha"
+            gh api -X PATCH "repos/$REPO/git/refs/tags/$tag" -f sha="$sha" -F force=true \
+              || gh api -X POST "repos/$REPO/git/refs" -f ref="refs/tags/$tag" -f sha="$sha"
+            done_list="$done_list $w"
+          done
+          [ -z "$done_list" ] && { echo "Nothing to reset."; exit 0; }
+
+          # Confirm on the PR for the merge-triggered path.
+          [ "$EVENT" = pull_request_target ] && gh pr comment "$PR" --repo "$REPO" \
+            --body "♻️ Baseline reset to \`${sha:0:7}\` for:$done_list"
+          true
