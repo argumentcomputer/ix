@@ -106,18 +106,24 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: minimal-ixe
-      - name: Install Zisk toolchain (ziskup, latest)
+      - name: Install Zisk toolchain (ziskup, pinned v0.18.0)
+        # `--version 0.18.0` pins the toolchain to match our deps. Our host links
+        # the argumentcomputer/zisk `blake3-precompile` fork, which is based on
+        # v0.18.0 (its cargo-zisk has `check-setup`, used below to regenerate the
+        # key's const-trees). Without the pin, ziskup installs `releases/latest`,
+        # which resolves to upstream `v1.0.0-alpha` — a different circuit whose
+        # cargo-zisk dropped the `check-setup` subcommand, breaking the key step.
         # `--cpu` picks the CPU build (no GPU on the runner) and `--nokey` skips
-        # ziskup's key install — both avoid its interactive /dev/tty prompts.
-        # We keep `--nokey` because the upstream `zisk-setup` bucket only carries
-        # the upstream circuit's key; our blake3-precompile fork has a different
-        # circuit (extra Blake3f AIR), so we restore the fork-matching key from
-        # our own S3 in the next step. `--prefix $HOME/.zisk` pins the install
-        # where cargo-zisk's ZiskPaths fallback looks (the runner sets
-        # XDG_CONFIG_HOME, which would otherwise relocate it).
+        # ziskup's key install — both avoid its interactive /dev/tty prompts. We
+        # keep `--nokey` because the upstream `zisk-setup` bucket only carries the
+        # upstream circuit's key; our fork has a different circuit (extra Blake3f
+        # AIR), so we restore the fork-matching key from our own S3 in the next
+        # step. `--prefix $HOME/.zisk` pins the install where cargo-zisk's
+        # ZiskPaths fallback looks (the runner sets XDG_CONFIG_HOME, which would
+        # otherwise relocate it).
         run: |
           curl -L https://raw.githubusercontent.com/0xPolygonHermez/zisk/main/ziskup/install.sh \
-            | bash -s -- --cpu --nokey -y --prefix "$HOME/.zisk"
+            | bash -s -- --cpu --nokey -y --version 0.18.0 --prefix "$HOME/.zisk"
           echo "$HOME/.zisk/bin" >> "$GITHUB_PATH"
       # Execute still needs a proving key present: zisk-host calls
       # `client.setup()` (which the SDK runs before the execute branch), and that
