@@ -17,6 +17,12 @@ name: Benchmark pull requests
 on:
   issue_comment:
     types: [created]
+  # TEST: temporary trigger so this workflow can be exercised from a PR branch.
+  # issue_comment only fires once the workflow is on the default branch, so a
+  # `!benchmark` comment can't test it pre-merge. On pull_request there is no
+  # comment, so the run uses the parser defaults (aiur / initStd / execute).
+  # Remove this trigger before merge.
+  pull_request:
 
 permissions:
   contents: read
@@ -24,18 +30,19 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.issue.number }}
+  group: ${{ github.workflow }}-${{ github.event.issue.number || github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
   setup:
     name: Parse !benchmark comment
     if: >-
-      github.event.issue.pull_request &&
-      github.event.issue.state == 'open' &&
-      contains(github.event.comment.body, '!benchmark') &&
-      (github.event.comment.author_association == 'MEMBER' ||
-       github.event.comment.author_association == 'OWNER')
+      github.event_name == 'pull_request' ||
+      (github.event.issue.pull_request &&
+       github.event.issue.state == 'open' &&
+       contains(github.event.comment.body, '!benchmark') &&
+       (github.event.comment.author_association == 'MEMBER' ||
+        github.event.comment.author_association == 'OWNER'))
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.parse.outputs.matrix }}
@@ -44,16 +51,29 @@ jobs:
       shard: ${{ steps.parse.outputs.shard }}
       passthrough-env: ${{ steps.parse.outputs.passthrough-env }}
       config-summary: ${{ steps.parse.outputs.config-summary }}
-      base-sha: ${{ steps.comment-branch.outputs.base_sha }}
-      head-sha: ${{ steps.comment-branch.outputs.head_sha }}
+      base-sha: ${{ steps.shas.outputs.base }}
+      head-sha: ${{ steps.shas.outputs.head }}
     steps:
       - uses: actions/checkout@v6
-      # Resolve the PR's base/head SHAs from the comment's issue.
-      - uses: xt0rted/pull-request-comment-branch@v3
+      # issue_comment exposes the PR's base/head only via this action; the
+      # pull_request event carries them on the payload directly.
+      - if: github.event_name == 'issue_comment'
+        uses: xt0rted/pull-request-comment-branch@v3
         id: comment-branch
-      # Parse the comment from an env var (never inline-interpolated) → matrix +
-      # config. The allowlist drops anything that isn't a known flag/env key.
-      - name: Parse comment
+      - name: Resolve base/head SHAs
+        id: shas
+        run: |
+          if [ "${{ github.event_name }}" = pull_request ]; then
+            echo "base=${{ github.event.pull_request.base.sha }}" >> "$GITHUB_OUTPUT"
+            echo "head=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "base=${{ steps.comment-branch.outputs.base_sha }}" >> "$GITHUB_OUTPUT"
+            echo "head=${{ steps.comment-branch.outputs.head_sha }}" >> "$GITHUB_OUTPUT"
+          fi
+      # Parse the !benchmark command from an env var (never inline-interpolated).
+      # The allowlist drops anything that isn't a known flag/env key; an empty
+      # body (pull_request) yields the parser defaults.
+      - name: Parse command
         id: parse
         env:
           COMMENT_BODY: ${{ github.event.comment.body }}
@@ -239,5 +259,5 @@ jobs:
         uses: peter-evans/create-or-update-comment@v5
         with:
           token: ${{ steps.app-token.outputs.token }}
-          issue-number: ${{ github.event.issue.number }}
+          issue-number: ${{ github.event.issue.number || github.event.pull_request.number }}
           body-path: comment-body.md
