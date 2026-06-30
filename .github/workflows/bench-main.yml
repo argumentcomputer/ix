@@ -178,11 +178,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - bench: InitStd
-            consts: Nat.add_comm Nat.sub_le_of_le_add String.append Array.append_assoc
-          - bench: Mathlib
-            consts: Nat.factorial Nat.Coprime Nat.Prime.two_le
+        bench: [InitStd, Mathlib]
     steps:
       - uses: actions/checkout@v6
         with:
@@ -230,7 +226,14 @@ jobs:
                 "res-$c.json" > "res-$c.json.tmp" && mv "res-$c.json.tmp" "res-$c.json" || true
             fi
           }
-          for c in ${{ matrix.consts }}; do measure "$c"; done
+          # The primary subset's prove tier (cheap primaries) — heavy primaries are
+          # execute-only (a single-shard prove would OOM the runner).
+          benv="${{ matrix.bench }}"; benv="${benv,}"   # InitStd→initStd, Mathlib→mathlib
+          python3 .github/scripts/bench.py manifest \
+            --csv Benchmarks/Vectors.csv --env "$benv" --mode prove --primary \
+            --out names.txt
+          echo "proving $(wc -l < names.txt) primary constants:"; cat names.txt
+          while IFS= read -r c; do [ -n "$c" ] && measure "$c"; done < names.txt
           # Merge the per-constant results; if none produced anything, emit `{}`.
           jq -s 'reduce .[] as $o ({}; . + $o)' res-*.json > results.json 2>/dev/null \
             || echo '{}' > results.json
@@ -293,7 +296,6 @@ jobs:
         backend: [zisk, sp1]
         include:
           - bench: InitStd
-            consts: Nat.add_comm Nat.sub_le_of_le_add String.append Array.append_assoc
     steps:
       - uses: actions/checkout@v6
         with:
@@ -318,7 +320,13 @@ jobs:
         env:
           REUSE_IXE: "1"
         run: |
-          printf '%s\n' ${{ matrix.consts }} > names.txt
+          # The primary subset in execute mode = all primaries for the env
+          # (cheap + heavy); execute handles the heavy ones, unlike prove.
+          benv="${{ matrix.bench }}"; benv="${benv,}"   # InitStd→initStd
+          python3 .github/scripts/bench.py manifest \
+            --csv Benchmarks/Vectors.csv --env "$benv" --mode execute --primary \
+            --out names.txt
+          echo "executing $(wc -l < names.txt) primary constants:"; cat names.txt
           bash .github/scripts/run.sh . ${{ matrix.bench }} ${{ matrix.backend }} execute \
             names.txt neutral.json
           # Wrap neutral { name: { metric: v } } → Bencher Metric Format.

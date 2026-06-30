@@ -21,7 +21,7 @@ import os
 BACKENDS = ("aiur", "zisk", "sp1")
 MODES = ("execute", "prove")
 ENVS = ("initStd", "lean", "mathlib")
-CONFIG_KEYS = {"BENCH_ENVS", "BENCH_TIER", "BENCH_SHARD", "BENCH_GPU"}
+CONFIG_KEYS = {"BENCH_ENVS", "BENCH_TIER", "BENCH_SHARD", "BENCH_GPU", "BENCH_FULL"}
 PASSTHROUGH_KEYS = {"RUST_LOG", "WITHOUT_VK_VERIFICATION", "RUSTFLAGS"}
 
 
@@ -70,6 +70,7 @@ def cmd_parse(_a):
     if tier not in ("cheap", "heavy", "all"):
         tier = ""             # empty ⇒ derived from mode at manifest time
     shard = "1" if cfg.get("BENCH_SHARD") == "1" else "0"
+    full = "1" if cfg.get("BENCH_FULL") == "1" else "0"  # full set vs primary subset
     gpu = cfg.get("BENCH_GPU") == "1"
 
     cells = []
@@ -80,14 +81,14 @@ def cmd_parse(_a):
                           "skip": "true" if skip else "false", "label": f"{b}-{e}-{mode}"})
 
     summary = (f"backends: `{' '.join(backends)}` · mode: `{mode}` · "
-               f"envs: `{','.join(envs)}` · tier: `{tier or 'auto'}` · "
-               f"shard: `{shard}` · gpu: `{int(gpu)}`")
+               f"envs: `{','.join(envs)}` · set: `{'full' if full == '1' else 'primary'}` · "
+               f"tier: `{tier or 'auto'}` · shard: `{shard}` · gpu: `{int(gpu)}`")
     if passthrough:
         summary += " · env: `" + " ".join(passthrough) + "`"
 
     with open(os.environ.get("GITHUB_OUTPUT", "/dev/stdout"), "a") as f:
         f.write(f"matrix={json.dumps(cells)}\n")
-        f.write(f"mode={mode}\ntier={tier}\nshard={shard}\n")
+        f.write(f"mode={mode}\ntier={tier}\nshard={shard}\nfull={full}\n")
         f.write(f"config-summary={summary}\n")
         f.write("passthrough-env<<PTENV\n" + "\n".join(passthrough)
                 + ("\n" if passthrough else "") + "PTENV\n")
@@ -108,7 +109,10 @@ def cmd_manifest(a):
             if cols[0] == "name" or len(cols) < 4:
                 continue
             name, env, ctier, shard = cols[:4]
+            rep = cols[4] if len(cols) >= 5 else "0"
             if env != a.env:
+                continue
+            if a.primary and rep != "1":
                 continue
             if tier in ("cheap", "heavy") and ctier != tier:
                 continue
@@ -245,6 +249,8 @@ def main():
     m.add_argument("--csv", required=True); m.add_argument("--env", required=True)
     m.add_argument("--mode", required=True); m.add_argument("--tier", default="")
     m.add_argument("--shard", default="0"); m.add_argument("--out", required=True)
+    m.add_argument("--primary", action="store_true",
+                   help="Restrict to the primary subset (the primary=1 column).")
     m.set_defaults(fn=cmd_manifest)
 
     c = sub.add_parser("compare")
