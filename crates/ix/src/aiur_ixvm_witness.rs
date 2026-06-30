@@ -216,6 +216,42 @@ fn add_entries_parallel(
   }
 }
 
+/// Build a `Check { const_addr, assumptions=None }` claim witness
+/// directly in Rust. Returns `(claim, claim_digest_input, io_buffer)`
+/// ready to feed to `crate::ix::aiur_ixvm_runner::execute_ixvm`.
+///
+/// Mirrors `IxVM.ClaimHarness.buildClaimWitness` on the
+/// `Claim.check addr none` branch: closure-from-addr seeds ch 2/3/4/5,
+/// claim bytes go to ch 0. Asm-tree variant deferred — caller falls
+/// back to Lean witness when `asm = Some _`.
+pub fn build_claim_check_witness(
+  env: &Env,
+  target: &Address,
+) -> Result<(Claim, Vec<G>, IOBuffer), String> {
+  // Transitive closure rooted at `target`.
+  let closure: FxHashSet<Address> = closure_from_set(env, &[target.clone()]);
+
+  let claim = Claim::Check {
+    const_addr: target.clone(),
+    assumptions: None,
+  };
+  let mut claim_bytes: Vec<u8> = Vec::new();
+  claim.put(&mut claim_bytes);
+  let digest = Address::hash(&claim_bytes);
+  let digest_key = addr_key(&digest);
+
+  let mut io = IOBuffer {
+    data: rustc_hash::FxHashMap::default(),
+    map: rustc_hash::FxHashMap::default(),
+  };
+  // ch 0: claim bytes
+  extend(&mut io, G::ZERO, digest_key.clone(), bytes_to_g(&claim_bytes));
+  // ch 2/3/4/5: per-const/blob/hint entries — parallel byte conversion.
+  add_entries_parallel(env, &closure, &mut io);
+
+  Ok((claim, digest_key, io))
+}
+
 /// Build a `CheckEnv`-shaped shard witness directly in Rust. Returns
 /// `(claim, claim_digest_input, io_buffer)` ready to feed to
 /// `crate::ix::aiur_ixvm_runner::execute_ixvm`.

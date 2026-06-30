@@ -34,7 +34,9 @@ def main : IO Unit := do
 
   let _ ← bgroup "IxVM benchmarks" { oneShot := true } do
     throughput (.Elements n.toUInt64 "consts")
+    -- IxVM-native prove: routes execution through the codegen'd Rust
+    -- kernel (`execute_generated`) instead of the bytecode interpreter.
     bench "serde/blake3 Nat.add_comm"
-      (aiurSystem.prove friParameters funIdx #[.ofNat n])
+      (aiurSystem.proveIxVM friParameters funIdx #[.ofNat n])
       ioBuffer
   return

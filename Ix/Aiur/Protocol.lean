@@ -96,6 +96,68 @@ def proveIxVM (system : @& AiurSystem) (friParameters : @& FriParameters)
   let ioMap := ioMap.foldl (fun acc (k, v) => acc.insert k v) ∅
   (claim, proof, ⟨ioData, ioMap⟩)
 
+@[extern "rs_aiur_system_prove_addr_ixvm"]
+private opaque proveAddrIxVM' : @& AiurSystem → @& FriParameters →
+  @& Bytecode.FunIdx → @& ByteArray → @& ByteArray →
+    Except String (Array G × Proof ×
+      Array (G × Array G) × Array ((G × Array G) × IOKeyInfo))
+
+/-- End-to-end per-claim prove: Rust builds the witness for
+    `Claim.check addr none` from the memory-mapped `.ixe` env at
+    `ixePath`, runs `execute_ixvm`, then drives the STARK prove
+    pipeline. Single FFI trip — the `IOBuffer` never crosses the
+    language boundary before prove time. Falls back to `proveIxVM`
+    on a Lean-built witness when the claim variant isn't
+    `check addr none`. -/
+def proveAddrIxVM (system : @& AiurSystem) (friParameters : @& FriParameters)
+  (funIdx : @& Bytecode.FunIdx) (ixePath : ByteArray) (addrBytes : ByteArray) :
+    Except String (Array G × Proof × IOBuffer) :=
+  match proveAddrIxVM' system friParameters funIdx ixePath addrBytes with
+  | .error e => .error e
+  | .ok (claim, proof, ioData, ioMap) =>
+    let ioData := ioData.foldl (fun acc (k, v) => acc.insert k v) ∅
+    let ioMap := ioMap.foldl (fun acc (k, v) => acc.insert k v) ∅
+    .ok (claim, proof, ⟨ioData, ioMap⟩)
+
+@[extern "rs_aiur_system_prove_env_bytes_ixvm"]
+private opaque proveEnvBytesIxVM' : @& AiurSystem → @& FriParameters →
+  @& Bytecode.FunIdx → @& ByteArray → @& ByteArray →
+    Except String (Array G × Proof ×
+      Array (G × Array G) × Array ((G × Array G) × IOKeyInfo))
+
+/-- Bytes-blob variant of `proveAddrIxVM`: the env is passed in as a
+    serialized blob (Lean's `Ixon.serEnv`) instead of a `.ixe` path.
+    Used by `ix prove NAME` without `--ixe`. -/
+def proveEnvBytesIxVM (system : @& AiurSystem) (friParameters : @& FriParameters)
+  (funIdx : @& Bytecode.FunIdx) (envBytes : ByteArray) (addrBytes : ByteArray) :
+    Except String (Array G × Proof × IOBuffer) :=
+  match proveEnvBytesIxVM' system friParameters funIdx envBytes addrBytes with
+  | .error e => .error e
+  | .ok (claim, proof, ioData, ioMap) =>
+    let ioData := ioData.foldl (fun acc (k, v) => acc.insert k v) ∅
+    let ioMap := ioMap.foldl (fun acc (k, v) => acc.insert k v) ∅
+    .ok (claim, proof, ⟨ioData, ioMap⟩)
+
+@[extern "rs_aiur_system_shard_prove_ixvm"]
+private opaque shardProveIxVM' : @& AiurSystem → @& FriParameters →
+  @& Bytecode.FunIdx → @& ByteArray → @& ByteArray →
+    Except String (Array G × Proof ×
+      Array (G × Array G) × Array ((G × Array G) × IOKeyInfo))
+
+/-- End-to-end per-shard prove. Rust builds the `CheckEnv` witness
+    over `ownedBlob` (flat 32-byte addresses), runs `execute_ixvm`,
+    and drives the STARK prove. Same return shape as
+    `proveAddrIxVM`. -/
+def shardProveIxVM (system : @& AiurSystem) (friParameters : @& FriParameters)
+  (funIdx : @& Bytecode.FunIdx) (ixePath : ByteArray) (ownedBlob : ByteArray) :
+    Except String (Array G × Proof × IOBuffer) :=
+  match shardProveIxVM' system friParameters funIdx ixePath ownedBlob with
+  | .error e => .error e
+  | .ok (claim, proof, ioData, ioMap) =>
+    let ioData := ioData.foldl (fun acc (k, v) => acc.insert k v) ∅
+    let ioMap := ioMap.foldl (fun acc (k, v) => acc.insert k v) ∅
+    .ok (claim, proof, ⟨ioData, ioMap⟩)
+
 @[extern "rs_aiur_system_verify"]
 opaque verify : @& AiurSystem → @& FriParameters →
   @& Array G → @& Proof → Except String Unit

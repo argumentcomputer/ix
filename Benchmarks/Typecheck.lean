@@ -188,14 +188,22 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
 
   -- Phase 1: execute every constant (cheap, deterministic structural metrics).
   -- Carry each target's address through so phase 2 can rebuild its witness.
+  -- For full-closure check claims (`Claim.check addr none`), use the
+  -- Rust-native fast path `checkAddrIxVM`: skips per-byte boxing into
+  -- `Aiur.G` (the dominant cost on heavy closures). For
+  -- `--subject-only` (`buildVerifyConst`), the witness is a small
+  -- subject-only blob — keep Lean witness + `executeIxVM`.
   IO.println "── Phase 1: execute (witness generation) ──"
+  let ixePathBytes := ixePath.toUTF8
   let mut execed : Array (Result × Address) := #[]
   for (label, addr) in targets do
     try
-      let witness ← mkWitness addr
       let (res, execSec) ← timed fun _ =>
-        Aiur.Bytecode.Toplevel.execute compiled.bytecode funIdx
-          witness.input witness.inputIOBuffer
+        if subjectOnly then
+          let witness := IxVM.ClaimHarness.buildVerifyConst ixonEnv addr
+          compiled.bytecode.executeIxVM funIdx witness.input witness.inputIOBuffer
+        else
+          compiled.bytecode.checkAddrIxVM funIdx ixePathBytes addr.hash
       match res with
       | .error e => IO.eprintln s!"  execute {label} failed: {e}"
       | .ok (_, _, queryCounts) =>
@@ -223,12 +231,19 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
   let mut ordered := execed.qsort (·.1.fftCost < ·.1.fftCost)
   writeJson (ordered.map (·.1))
   let mut spent : Float := 0.0
+  let ixePathBytes := ixePath.toUTF8
   for i in [:ordered.size] do
     let (r, addr) := ordered[i]!
     try
-      let witness ← mkWitness addr
-      let (_, proveSec) ← timed fun _ =>
-        aiurSystem.prove friParameters funIdx witness.input witness.inputIOBuffer
+      let (proveRes, proveSec) ← timed fun _ =>
+        if subjectOnly then
+          let witness := IxVM.ClaimHarness.buildVerifyConst ixonEnv addr
+          .ok (aiurSystem.proveIxVM friParameters funIdx witness.input witness.inputIOBuffer)
+        else
+          aiurSystem.proveAddrIxVM friParameters funIdx ixePathBytes addr.hash
+      match (proveRes : Except String (Array Aiur.G × Aiur.Proof × Aiur.IOBuffer)) with
+      | .error e => IO.eprintln s!"  prove {r.name} failed: {e}"; continue
+      | .ok _ => pure ()
       spent := spent + proveSec
       IO.println s!"  {r.name}: prove={proveSec}s (cumulative {spent}s)"
       ordered := ordered.set! i ({ r with proveSec := some proveSec }, addr)

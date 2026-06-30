@@ -2,8 +2,8 @@
   `ix codegen`: write the IxVM kernel as a Rust source file via the
   Bytecode → Rust codegen pass.
 
-  Output path is fixed at compile time: `src/ix/aiur_ixvm.rs`. The
-  generated file is the single destination; no flag overrides.
+  Output path is fixed at compile time: `crates/ix/src/aiur_ixvm.rs`.
+  The generated file is the single destination; no flag overrides.
 
   Output: a Rust module body containing one `fn aiur_fn_N(...)` per
   Aiur kernel function, plus per-fn `IN_N` / `OUT_N` / `INPUT_SIZE_N`
@@ -33,7 +33,7 @@ namespace Ix.Cli.CodegenCmd
 open Aiur
 
 /-- Fixed destination — compile-time constant, no CLI override. -/
-def codegenOutPath : String := "src/ix/aiur_ixvm.rs"
+def codegenOutPath : String := "crates/ix/src/aiur_ixvm.rs"
 
 def runCodegenCmd (_p : Cli.Parsed) : IO UInt32 := do
   -- Compile the IxVM source to bytecode.
@@ -54,7 +54,7 @@ end Ix.Cli.CodegenCmd
 open Ix.Cli.CodegenCmd in
 def codegenCmd : Cli.Cmd := `[Cli|
   "codegen" VIA runCodegenCmd;
-  "Compile the IxVM Aiur kernel to Rust source via the Bytecode → Rust codegen pass. Writes to `src/ix/aiur_ixvm.rs` (fixed path, no override). PARITY UNVERIFIED — run the generated code on test fixtures against the interpreter before trusting any witness it produces."
+  "Compile the IxVM Aiur kernel to Rust source via the Bytecode → Rust codegen pass. Writes to `crates/ix/src/aiur_ixvm.rs` (fixed path, no override). PARITY UNVERIFIED — run the generated code on test fixtures against the interpreter before trusting any witness it produces."
 ]
 
 end

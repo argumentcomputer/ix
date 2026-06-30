@@ -133,6 +133,20 @@ private opaque shardCheckIxVM' : @& Bytecode.Toplevel →
       (Array (G × Array G) × Array ((G × Array G) × IOKeyInfo)) ×
       Array (Nat × Nat))
 
+@[extern "rs_aiur_toplevel_check_addr_ixvm"]
+private opaque checkAddrIxVM' : @& Bytecode.Toplevel →
+  @& Bytecode.FunIdx → @& ByteArray → @& ByteArray →
+    Except String (Array G ×
+      (Array (G × Array G) × Array ((G × Array G) × IOKeyInfo)) ×
+      Array (Nat × Nat))
+
+@[extern "rs_aiur_toplevel_check_env_bytes_ixvm"]
+private opaque checkEnvBytesIxVM' : @& Bytecode.Toplevel →
+  @& Bytecode.FunIdx → @& ByteArray → @& ByteArray →
+    Except String (Array G ×
+      (Array (G × Array G) × Array ((G × Array G) × IOKeyInfo)) ×
+      Array (Nat × Nat))
+
 
 /-- IxVM-native shard check: builds the witness in Rust (no
     per-byte boxing into Lean values), then dispatches through
@@ -146,6 +160,37 @@ def shardCheckIxVM (toplevel : @& Bytecode.Toplevel)
   (funIdx : @& Bytecode.FunIdx) (ixePath : ByteArray) (ownedBlob : ByteArray)
   : Except String (Array G × IOBuffer × Array QueryCount) :=
   match shardCheckIxVM' toplevel funIdx ixePath ownedBlob with
+  | .error e => .error e
+  | .ok (output, (ioData, ioMap), queryCounts) =>
+    let ioData := ioData.foldl (fun acc (k, v) => acc.insert k v) ∅
+    let ioMap := ioMap.foldl (fun acc (k, v) => acc.insert k v) ∅
+    let queryCounts := queryCounts.map fun (uniqueRows, totalHits) => { uniqueRows, totalHits }
+    .ok (output, ⟨ioData, ioMap⟩, queryCounts)
+
+/-- IxVM-native per-claim fast path for `Claim.check addr none`.
+    Builds the witness in Rust (closure rooted at `addrBytes`),
+    dispatches through `execute_ixvm`. `ixePath` is a UTF-8 path to
+    a memory-mappable `.ixe` env; `addrBytes` is the 32-byte target
+    address. Same shape as `shardCheckIxVM`. -/
+def checkAddrIxVM (toplevel : @& Bytecode.Toplevel)
+  (funIdx : @& Bytecode.FunIdx) (ixePath : ByteArray) (addrBytes : ByteArray)
+  : Except String (Array G × IOBuffer × Array QueryCount) :=
+  match checkAddrIxVM' toplevel funIdx ixePath addrBytes with
+  | .error e => .error e
+  | .ok (output, (ioData, ioMap), queryCounts) =>
+    let ioData := ioData.foldl (fun acc (k, v) => acc.insert k v) ∅
+    let ioMap := ioMap.foldl (fun acc (k, v) => acc.insert k v) ∅
+    let queryCounts := queryCounts.map fun (uniqueRows, totalHits) => { uniqueRows, totalHits }
+    .ok (output, ⟨ioData, ioMap⟩, queryCounts)
+
+/-- Bytes-blob variant of `checkAddrIxVM`: the env is passed in as a
+    serialized blob (Lean's `Ixon.serEnv`) instead of a `.ixe` path.
+    Used by the compiled-Lean-env code path (`ix check NAME` without
+    `--ixe`), where the env is built in Lean memory. -/
+def checkEnvBytesIxVM (toplevel : @& Bytecode.Toplevel)
+  (funIdx : @& Bytecode.FunIdx) (envBytes : ByteArray) (addrBytes : ByteArray)
+  : Except String (Array G × IOBuffer × Array QueryCount) :=
+  match checkEnvBytesIxVM' toplevel funIdx envBytes addrBytes with
   | .error e => .error e
   | .ok (output, (ioData, ioMap), queryCounts) =>
     let ioData := ioData.foldl (fun acc (k, v) => acc.insert k v) ∅
