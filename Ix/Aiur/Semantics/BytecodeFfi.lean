@@ -67,6 +67,37 @@ structure QueryCount where
   totalHits : Nat
   deriving Inhabited
 
+-- ===========================================================================
+-- EnvHandle: Rust-owned `ixon::Env` exposed to Lean as an opaque handle.
+-- Built once per CLI invocation; reused across every per-claim and
+-- per-shard FFI call so the env is parsed exactly once.
+-- ===========================================================================
+
+private opaque EnvHandleNonempty : NonemptyType
+def EnvHandle : Type := EnvHandleNonempty.type
+instance : Nonempty EnvHandle := EnvHandleNonempty.property
+
+namespace EnvHandle
+
+@[extern "rs_aiur_env_handle_from_ixe"]
+private opaque fromIxe' : @& ByteArray → Except String EnvHandle
+
+/-- Load an `EnvHandle` from a `.ixe` file path (UTF-8 ByteArray).
+    Rust mmap's the file zero-copy; the handle keeps the mapping
+    alive for as long as Lean retains it. -/
+def fromIxe (path : String) : Except String EnvHandle :=
+  fromIxe' path.toUTF8
+
+@[extern "rs_aiur_env_handle_from_bytes"]
+private opaque fromBytes' : @& ByteArray → Except String EnvHandle
+
+/-- Build an `EnvHandle` from a serialized env blob (e.g. produced
+    by `Ixon.serEnv` on the compiled-Lean-env code path). -/
+def fromBytes (bytes : ByteArray) : Except String EnvHandle :=
+  fromBytes' bytes
+
+end EnvHandle
+
 namespace Bytecode.Toplevel
 
 @[extern "rs_aiur_toplevel_execute"]
@@ -126,40 +157,32 @@ def executeIxVM (toplevel : @& Bytecode.Toplevel)
     let queryCounts := queryCounts.map fun (uniqueRows, totalHits) => { uniqueRows, totalHits }
     .ok (output, ⟨ioData, ioMap⟩, queryCounts)
 
-@[extern "rs_aiur_toplevel_shard_check_ixvm"]
-private opaque shardCheckIxVM' : @& Bytecode.Toplevel →
-  @& Bytecode.FunIdx → @& ByteArray → @& ByteArray →
+-- (EnvHandle opaque type + constructors live above `namespace
+-- Bytecode.Toplevel`; see `Aiur.EnvHandle`. The with-env FFI
+-- declarations below reference `EnvHandle` and `Bytecode.Toplevel`
+-- from the same scope.)
+
+@[extern "rs_aiur_toplevel_check_addr_with_env"]
+private opaque checkAddrWithEnv' : @& Bytecode.Toplevel →
+  @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray →
     Except String (Array G ×
       (Array (G × Array G) × Array ((G × Array G) × IOKeyInfo)) ×
       Array (Nat × Nat))
 
-@[extern "rs_aiur_toplevel_check_addr_ixvm"]
-private opaque checkAddrIxVM' : @& Bytecode.Toplevel →
-  @& Bytecode.FunIdx → @& ByteArray → @& ByteArray →
-    Except String (Array G ×
-      (Array (G × Array G) × Array ((G × Array G) × IOKeyInfo)) ×
-      Array (Nat × Nat))
-
-@[extern "rs_aiur_toplevel_check_env_bytes_ixvm"]
-private opaque checkEnvBytesIxVM' : @& Bytecode.Toplevel →
-  @& Bytecode.FunIdx → @& ByteArray → @& ByteArray →
+@[extern "rs_aiur_toplevel_shard_check_with_env"]
+private opaque shardCheckWithEnv' : @& Bytecode.Toplevel →
+  @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray →
     Except String (Array G ×
       (Array (G × Array G) × Array ((G × Array G) × IOKeyInfo)) ×
       Array (Nat × Nat))
 
 
-/-- IxVM-native shard check: builds the witness in Rust (no
-    per-byte boxing into Lean values), then dispatches through
-    `execute_ixvm`. Replaces `buildShardCheckEnvWitness` + `executeIxVM`
-    with a single FFI call.
-
-    `ixePath` is a UTF-8 path to a memory-mappable `.ixe` env;
-    Rust loads it lazily. `ownedBlob` is a flat ByteArray of 32-byte
-    address blocks (one per owned const). -/
-def shardCheckIxVM (toplevel : @& Bytecode.Toplevel)
-  (funIdx : @& Bytecode.FunIdx) (ixePath : ByteArray) (ownedBlob : ByteArray)
+/-- Per-claim check against a Rust-owned `EnvHandle`. Reuses the
+    handle's already-parsed env across many calls. -/
+def checkAddrWithEnv (toplevel : @& Bytecode.Toplevel)
+  (funIdx : @& Bytecode.FunIdx) (envHandle : @& EnvHandle) (addrBytes : ByteArray)
   : Except String (Array G × IOBuffer × Array QueryCount) :=
-  match shardCheckIxVM' toplevel funIdx ixePath ownedBlob with
+  match checkAddrWithEnv' toplevel funIdx envHandle addrBytes with
   | .error e => .error e
   | .ok (output, (ioData, ioMap), queryCounts) =>
     let ioData := ioData.foldl (fun acc (k, v) => acc.insert k v) ∅
@@ -167,30 +190,11 @@ def shardCheckIxVM (toplevel : @& Bytecode.Toplevel)
     let queryCounts := queryCounts.map fun (uniqueRows, totalHits) => { uniqueRows, totalHits }
     .ok (output, ⟨ioData, ioMap⟩, queryCounts)
 
-/-- IxVM-native per-claim fast path for `Claim.check addr none`.
-    Builds the witness in Rust (closure rooted at `addrBytes`),
-    dispatches through `execute_ixvm`. `ixePath` is a UTF-8 path to
-    a memory-mappable `.ixe` env; `addrBytes` is the 32-byte target
-    address. Same shape as `shardCheckIxVM`. -/
-def checkAddrIxVM (toplevel : @& Bytecode.Toplevel)
-  (funIdx : @& Bytecode.FunIdx) (ixePath : ByteArray) (addrBytes : ByteArray)
+/-- Per-shard check against a Rust-owned `EnvHandle`. -/
+def shardCheckWithEnv (toplevel : @& Bytecode.Toplevel)
+  (funIdx : @& Bytecode.FunIdx) (envHandle : @& EnvHandle) (ownedBlob : ByteArray)
   : Except String (Array G × IOBuffer × Array QueryCount) :=
-  match checkAddrIxVM' toplevel funIdx ixePath addrBytes with
-  | .error e => .error e
-  | .ok (output, (ioData, ioMap), queryCounts) =>
-    let ioData := ioData.foldl (fun acc (k, v) => acc.insert k v) ∅
-    let ioMap := ioMap.foldl (fun acc (k, v) => acc.insert k v) ∅
-    let queryCounts := queryCounts.map fun (uniqueRows, totalHits) => { uniqueRows, totalHits }
-    .ok (output, ⟨ioData, ioMap⟩, queryCounts)
-
-/-- Bytes-blob variant of `checkAddrIxVM`: the env is passed in as a
-    serialized blob (Lean's `Ixon.serEnv`) instead of a `.ixe` path.
-    Used by the compiled-Lean-env code path (`ix check NAME` without
-    `--ixe`), where the env is built in Lean memory. -/
-def checkEnvBytesIxVM (toplevel : @& Bytecode.Toplevel)
-  (funIdx : @& Bytecode.FunIdx) (envBytes : ByteArray) (addrBytes : ByteArray)
-  : Except String (Array G × IOBuffer × Array QueryCount) :=
-  match checkEnvBytesIxVM' toplevel funIdx envBytes addrBytes with
+  match shardCheckWithEnv' toplevel funIdx envHandle ownedBlob with
   | .error e => .error e
   | .ok (output, (ioData, ioMap), queryCounts) =>
     let ioData := ioData.foldl (fun acc (k, v) => acc.insert k v) ∅

@@ -61,7 +61,8 @@ private def friParameters : Aiur.FriParameters := {
 def proveOne (aiurSystem : Aiur.AiurSystem)
     (compiled : Aiur.CompiledToplevel)
     (claim : Ix.Claim)
-    (src : Ix.Cli.CheckCmd.WitnessSource)
+    (envHandle? : Option Aiur.EnvHandle)
+    (target : Ix.Cli.CheckCmd.Target)
     (label : String) : IO UInt32 := do
   IO.println s!"Proving {label}"
   (← IO.getStdout).flush
@@ -71,31 +72,33 @@ def proveOne (aiurSystem : Aiur.AiurSystem)
       IO.eprintln s!"{label}: entrypoint `verify_claim` missing from compiled toplevel"
       return 1
   let _ ← StoreIO.toIO (Store.write (Ix.Claim.ser claim))
-  -- Native IxVM path: routes execution through the codegen'd Rust
-  -- kernel (`execute_generated`). For `Claim.check addr none` via
-  -- `--ixe`, witness + execute + STARK prove run end-to-end in
-  -- Rust (`proveAddrIxVM`) — no Lean-side per-byte boxing into
-  -- `Aiur.G`. The Lean fallback path consumes a pre-built
-  -- `ClaimWitness` (compiled-Lean-env, or a non-`check` persisted
-  -- claim).
-  let proof : Aiur.Proof ← match src with
-    | .native ixe addr =>
-      match aiurSystem.proveAddrIxVM friParameters funIdx
-              ixe.toUTF8 addr.hash with
+  -- Native IxVM path: routes execution + STARK prove through the
+  -- codegen'd Rust kernel. `.addr` / `.shard` go through the
+  -- envHandle-based prove FFIs (witness + execute + prove all in
+  -- one Rust trip). `.leanW` consumes a pre-built `ClaimWitness`
+  -- via `proveIxVM` (used for non-`check addr none` `--claim hex`).
+  let proof : Aiur.Proof ← match target, envHandle? with
+    | .addr a, some envHandle =>
+      match aiurSystem.proveAddrWithEnv friParameters funIdx envHandle a.hash with
       | .error e =>
-        IO.eprintln s!"{label}: proveAddrIxVM error: {e}"
+        IO.eprintln s!"{label}: proveAddrWithEnv error: {e}"
         return 1
-      | .ok (_aiurClaim, proof, _outIO) => pure proof
-    | .nativeBytes envBytes addr =>
-      match aiurSystem.proveEnvBytesIxVM friParameters funIdx envBytes addr.hash with
+      | .ok (_claimBytes, proof, _outIO) => pure proof
+    | .shard owned, some envHandle =>
+      let mut blob := ByteArray.empty
+      for x in owned do blob := blob ++ x.hash
+      match aiurSystem.shardProveWithEnv friParameters funIdx envHandle blob with
       | .error e =>
-        IO.eprintln s!"{label}: proveEnvBytesIxVM error: {e}"
+        IO.eprintln s!"{label}: shardProveWithEnv error: {e}"
         return 1
-      | .ok (_aiurClaim, proof, _outIO) => pure proof
-    | .lean witness =>
+      | .ok (_claimBytes, proof, _outIO) => pure proof
+    | .leanW witness, _ =>
       let (_aiurClaim, proof, _outIO) :=
         aiurSystem.proveIxVM friParameters funIdx witness.input witness.inputIOBuffer
       pure proof
+    | _, none =>
+      IO.eprintln s!"{label}: internal: addr/shard target with no envHandle"
+      return 1
   let wrapper : Ixon.Proof := { claim, proof := proof.toBytes }
   let proofAddr ← StoreIO.toIO (Store.write (Ixon.Proof.ser wrapper))
   IO.println (toString proofAddr)
@@ -105,42 +108,40 @@ def proveOne (aiurSystem : Aiur.AiurSystem)
     (`shardProveIxVM`): witness build, `execute_ixvm`, and STARK
     prove run in one FFI trip with the parallel Rust witness
     builder. -/
-def runShardProveNative (manifestPath ixePath : String) (shardK : Nat)
+def runShardProveNative (manifestPath : String) (envHandle : Aiur.EnvHandle)
+    (ixonEnv : Ixon.Env) (shards : Array (Array Address)) (shardK : Nat)
     (aiurSystem : Aiur.AiurSystem) (compiled : Aiur.CompiledToplevel)
-    (printStats : Bool) : IO UInt32 := do
-  match (← Ix.Cli.CheckCmd.loadEnvAndShards manifestPath ixePath) with
-  | .error e => IO.eprintln e; return 1
-  | .ok (ixonEnv, shards) =>
-    match shards[shardK]? with
-    | none => IO.eprintln s!"shard {shardK} out of range (0..{shards.size})"; return 1
-    | some blocks => do
-      let owned := Ix.Cli.CheckCmd.ownedConstsForBlocks ixonEnv blocks
-      let mut blob := ByteArray.empty
-      for a in owned do
-        blob := blob ++ a.hash
-      let label := s!"shard {shardK}"
-      IO.println s!"Proving {label}"
-      (← IO.getStdout).flush
-      let funIdx := compiled.getFuncIdx `verify_claim |>.get!
-      match aiurSystem.shardProveIxVM friParameters funIdx
-              ixePath.toUTF8 blob with
+    (_printStats : Bool) : IO UInt32 := do
+  match shards[shardK]? with
+  | none => IO.eprintln s!"shard {shardK} out of range (0..{shards.size})"; return 1
+  | some blocks => do
+    let owned := Ix.Cli.CheckCmd.ownedConstsForBlocks ixonEnv blocks
+    let mut blob := ByteArray.empty
+    for a in owned do
+      blob := blob ++ a.hash
+    let label := s!"shard {shardK}"
+    IO.println s!"Proving {label}"
+    (← IO.getStdout).flush
+    let funIdx := compiled.getFuncIdx `verify_claim |>.get!
+    match aiurSystem.shardProveWithEnv friParameters funIdx envHandle blob with
+    | .error e =>
+      IO.eprintln s!"{label}: shardProveWithEnv error: {e}"
+      return 1
+    | .ok (claimBytes, proof, _outIO) =>
+      -- Rust returns the canonical CheckEnv claim's wire bytes; deserialize
+      -- back to `Ix.Claim` to persist alongside the proof. Avoids
+      -- recomputing the closure walk + canonical AssumptionTree Lean-side.
+      match Ixon.runGet Ix.Claim.get claimBytes with
       | .error e =>
-        IO.eprintln s!"{label}: shardProveIxVM error: {e}"
+        IO.eprintln s!"{label}: Claim wire-decode failed: {e}"
         return 1
-      | .ok (_aiurClaim, proof, _outIO) =>
-        -- Reconstruct the shard's CheckEnv claim from the owned
-        -- blocks so we can persist (claim, proof) like proveOne.
-        match IxVM.ClaimHarness.shardCheckEnvClaim ixonEnv owned with
-        | .error e =>
-          IO.eprintln s!"{label}: claim reconstruct failed: {e}"
-          return 1
-        | .ok (claim, _closure, _trees) => do
-          let _ ← StoreIO.toIO (Store.write (Ix.Claim.ser claim))
-          let wrapper : Ixon.Proof := { claim, proof := proof.toBytes }
-          let proofAddr ← StoreIO.toIO (Store.write (Ixon.Proof.ser wrapper))
-          IO.println (toString proofAddr)
-          if printStats then pure ()  -- TODO: surface query-counts if needed
-          return 0
+      | .ok claim => do
+        let _ ← StoreIO.toIO (Store.write (Ix.Claim.ser claim))
+        let wrapper : Ixon.Proof := { claim, proof := proof.toBytes }
+        let proofAddr ← StoreIO.toIO (Store.write (Ixon.Proof.ser wrapper))
+        IO.println (toString proofAddr)
+        let _ := manifestPath  -- kept for parity with previous signature
+        return 0
 
 def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
   Std.Internal.UV.System.osSetenv "IX_QUIET" "1"
@@ -158,16 +159,28 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
   let runOne := proveOne aiurSystem compiled
   match ixePath, (p.flag? "ixes").map (·.as! String), (p.flag? "shard").map (·.as! Nat) with
   | some ixe, some manifest, some k =>
-    -- IxVM-native shard prove: witness + execute + STARK prove all
-    -- in Rust via `shardProveIxVM`.
-    runShardProveNative manifest ixe k aiurSystem compiled false
-  | some ixe, some manifest, none =>
+    -- IxVM-native shard prove. Build the envHandle once + share it
+    -- with the shard prove FFI.
     match (← Ix.Cli.CheckCmd.loadEnvAndShards manifest ixe) with
     | .error e => IO.eprintln e; return 1
-    | .ok (_, shards) =>
+    | .ok (ixonEnv, shards) =>
+      let envHandle ← match Aiur.EnvHandle.fromIxe ixe with
+        | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixe}: {e}"; return 1
+        | .ok h => pure h
+      runShardProveNative manifest envHandle ixonEnv shards k aiurSystem compiled false
+  | some ixe, some manifest, none =>
+    -- IxVM-native all-shards prove. Same envHandle reused across
+    -- every shard.
+    match (← Ix.Cli.CheckCmd.loadEnvAndShards manifest ixe) with
+    | .error e => IO.eprintln e; return 1
+    | .ok (ixonEnv, shards) =>
+      let envHandle ← match Aiur.EnvHandle.fromIxe ixe with
+        | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixe}: {e}"; return 1
+        | .ok h => pure h
       let mut rc : UInt32 := 0
       for k in [0 : shards.size] do
-        if (← runShardProveNative manifest ixe k aiurSystem compiled false) != 0 then
+        if (← runShardProveNative manifest envHandle ixonEnv shards k
+              aiurSystem compiled false) != 0 then
           rc := 1
       pure rc
   | _, _, _ =>

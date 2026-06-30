@@ -102,39 +102,49 @@ def emitStats (compiled : Aiur.CompiledToplevel)
     try Aiur.printStats stats
     finally let _ ← IO.setStdout old
 
-/-- Source for a `verify_claim` invocation.
+/-- What a single `runOne` invocation is targeting.
 
-    * `native`: env is a `.ixe` file; Rust mmaps it and builds the
-      witness in Rust (parallel closure walk + parallel byte→G).
-    * `nativeBytes`: env is in-memory (compiled-Lean-env path);
-      Lean serializes to bytes via `Ixon.serEnv`, Rust decodes via
-      `Env::get` and runs the same witness builder. Avoids the
-      tmp-file round trip.
-    * `lean`: a pre-built `ClaimWitness` — used by `--claim <hex>`
-      over a non-`check addr none` persisted claim, and by
-      `--interp` mode. -/
-inductive WitnessSource where
-  | native (ixePath : String) (addr : Address)
-  | nativeBytes (envBytes : ByteArray) (addr : Address)
-  | lean (witness : IxVM.ClaimHarness.ClaimWitness)
+    * `addr`: full-closure `Claim.check addr none` — dispatch via
+      `checkAddrWithEnv` / `proveAddrWithEnv` (handle required).
+    * `shard`: `Claim.checkEnv root none` over `owned` blocks —
+      dispatch via `shardCheckWithEnv` / `shardProveWithEnv`
+      (handle required).
+    * `leanW`: a pre-built `ClaimWitness` — used by `--interp`
+      mode and by `--claim <hex>` over a non-`check addr none`
+      persisted claim. No envHandle needed.
 
-/-- Run a single check claim through the codegen'd IxVM Rust kernel
-    (`executeIxVM` or `checkAddrIxVM`). The bytecode interpreter is
-    no longer reachable from `ix check`. -/
+    The env lives once per CLI invocation in a Rust-owned
+    `Aiur.EnvHandle`. Lean threads a `@& EnvHandle` reference
+    through every per-target FFI call, eliminating per-call env
+    re-parse. -/
+inductive Target where
+  | addr  (a : Address)
+  | shard (owned : Array Address)
+  | leanW (w : IxVM.ClaimHarness.ClaimWitness)
+
+/-- Run a single check claim through the codegen'd IxVM Rust kernel.
+    The `envHandle?` is `none` only for `.leanW` targets (`--interp`
+    fallback); the addr/shard arms require it. -/
 def runCompiled (compiled : Aiur.CompiledToplevel) (printStats : Bool)
-    (statsOut : Option String) (src : WitnessSource)
-    (label : String) : IO UInt32 := do
+    (statsOut : Option String) (envHandle? : Option Aiur.EnvHandle)
+    (target : Target) (label : String) : IO UInt32 := do
   IO.println s!"Typechecking {label}"
   (← IO.getStdout).flush
   let funIdx := compiled.getFuncIdx `verify_claim |>.get!
+  let buildBlob (owned : Array Address) : ByteArray := Id.run do
+    let mut blob := ByteArray.empty
+    for x in owned do blob := blob ++ x.hash
+    pure blob
   let res :=
-    match src with
-    | .native ixePath addr =>
-      compiled.bytecode.checkAddrIxVM funIdx ixePath.toUTF8 addr.hash
-    | .nativeBytes envBytes addr =>
-      compiled.bytecode.checkEnvBytesIxVM funIdx envBytes addr.hash
-    | .lean witness =>
+    match target, envHandle? with
+    | .addr a, some envHandle =>
+      compiled.bytecode.checkAddrWithEnv funIdx envHandle a.hash
+    | .shard owned, some envHandle =>
+      compiled.bytecode.shardCheckWithEnv funIdx envHandle (buildBlob owned)
+    | .leanW witness, _ =>
       compiled.bytecode.executeIxVM funIdx witness.input witness.inputIOBuffer
+    | _, none =>
+      .error "internal: addr/shard target with no envHandle"
   match res with
   | .error e =>
     IO.eprintln s!"{label}: IxVM-native Aiur execution error: {e}"
@@ -182,15 +192,23 @@ def runInterp (decls : Aiur.Source.Decls)
 def forEachClaim
     (ixePath : Option String) (claimHex : Option String) (names : List String)
     (keepGoing : Bool) (logTag : String)
-    (runOne : Ix.Claim → WitnessSource → String → IO UInt32)
+    (runOne : Ix.Claim → Option Aiur.EnvHandle → Target → String → IO UInt32)
     : IO UInt32 := do
   let mut failures : Array String := #[]
   match ixePath with
   | some path =>
+    -- Build the env once for the entire batch. The lazy index parse
+    -- runs O(num_consts) once at handle construction; all per-name
+    -- FFI calls below share the parsed env (no per-call re-mmap).
+    let envHandle ← match Aiur.EnvHandle.fromIxe path with
+      | .error e =>
+        IO.eprintln s!"EnvHandle.fromIxe {path}: {e}"; return 1
+      | .ok h => pure h
+    -- We still load a Lean-side Ixon.Env for `resolveIxeAddr` (the
+    -- name → address resolution used by `--claim` / per-name modes)
+    -- and for the rare non-`check addr none` claim-variant Lean
+    -- witness builder. Anon load is lazy zero-copy.
     let bytes ← IO.FS.readBinFile path
-    -- Anon load: lazy zero-copy constants, binder metadata dropped. The Aiur
-    -- check circuit consumes only anonymous constants, blobs, and per-Defn
-    -- reducibility hints — mirrors the Rust kernel's `get_anon_mmap`.
     let ixonEnv ← match Ixon.deEnvAnon bytes with
       | .error e =>
         IO.eprintln s!"Failed to deserialize {path}: {e}"; return 1
@@ -204,13 +222,13 @@ def forEachClaim
       -- `check addr none` shape has a Rust-witness fast path today.
       -- Other variants (eval/reveal/contains/checkEnv-with-asm)
       -- still build the witness in Lean.
-      let src : WitnessSource ← match claim with
-        | .check addr none => pure (.native path addr)
+      let target : Target ← match claim with
+        | .check addr none => pure (.addr addr)
         | _ =>
           let witness ← IO.ofExcept <|
             IxVM.ClaimHarness.buildClaimWitness ixonEnv claim trees
-          pure (.lean witness)
-      if (← runOne claim src label) ≠ 0 then
+          pure (.leanW witness)
+      if (← runOne claim (some envHandle) target label) ≠ 0 then
         failures := failures.push label
     else if names.isEmpty then
       let sorted := ixonEnv.named.toArray.qsort
@@ -219,7 +237,7 @@ def forEachClaim
         let leanName := ixNameToLeanName ixName
         let label := toString leanName
         let claim := Ix.Claim.check named.addr none
-        if (← runOne claim (.native path named.addr) label) ≠ 0 then
+        if (← runOne claim (some envHandle) (.addr named.addr) label) ≠ 0 then
           failures := failures.push label
           if !keepGoing then break
     else
@@ -232,31 +250,34 @@ def forEachClaim
         | some addr =>
           let label := arg
           let claim := Ix.Claim.check addr none
-          if (← runOne claim (.native path addr) label) ≠ 0 then
+          if (← runOne claim (some envHandle) (.addr addr) label) ≠ 0 then
             failures := failures.push label
             if !keepGoing then break
   | none =>
     if claimHex.isSome then
       IO.eprintln "error: --claim requires --ixe <path>"; return 1
     let env ← get_env!
-    -- Compiled-Lean-env path. Builds the Ixon env per-name in
-    -- Lean memory, serializes to a byte blob, and hands off to
-    -- the Rust witness builder via `nativeBytes`. Same fast path
-    -- as the `--ixe` route — only the env-source differs.
-    let buildOne (name : Lean.Name) :
-        IO (Ix.Claim × ByteArray × Address) := do
+    -- Compiled-Lean-env path. Builds a per-name Ixon env in Lean
+    -- memory, serializes to a byte blob, and constructs an
+    -- `EnvHandle` from it. Each name has its own closure-rooted
+    -- env, so the handle is rebuilt per name. (The `--ixe` arm
+    -- can share one handle across many names; this arm cannot
+    -- without a shared-env preprocess pass.)
+    let runOneByName (name : Lean.Name) (label : String) : IO UInt32 := do
       let ixonEnv ← IxVM.ClaimHarness.loadIxonEnv name env
       let addr ← IxVM.ClaimHarness.lookupAddr ixonEnv name
       let claim := Ix.Claim.check addr none
       let envBytes := Ixon.serEnv ixonEnv
-      pure (claim, envBytes, addr)
+      let envHandle ← match Aiur.EnvHandle.fromBytes envBytes with
+        | .error e => throw (IO.userError s!"EnvHandle.fromBytes failed for {label}: {e}")
+        | .ok h => pure h
+      runOne claim (some envHandle) (.addr addr) label
     if names.isEmpty then
       let sorted := env.constants.toList.toArray.qsort
         (fun a b => toString a.1 < toString b.1)
       for (name, _) in sorted do
         let label := toString name
-        let (claim, envBytes, addr) ← buildOne name
-        if (← runOne claim (.nativeBytes envBytes addr) label) ≠ 0 then
+        if (← runOneByName name label) ≠ 0 then
           failures := failures.push label
           if !keepGoing then break
     else
@@ -269,8 +290,7 @@ def forEachClaim
           else continue
         | some name =>
           let label := toString name
-          let (claim, envBytes, addr) ← buildOne name
-          if (← runOne claim (.nativeBytes envBytes addr) label) ≠ 0 then
+          if (← runOneByName name label) ≠ 0 then
             failures := failures.push label
             if !keepGoing then break
 
@@ -383,11 +403,11 @@ def runShardOwned (ixonEnv : Ixon.Env) (blocks : Array Address) (shardK : Nat)
   | .error e => IO.eprintln s!"shard witness build failed: {e}"; return 1
   | .ok (claim, witness) => runOne claim witness s!"shard {shardK}"
 
-/-- IxVM-native fast path: skip Lean-side `buildShardCheckEnvWitness`
-    and dispatch through the new `shardCheckIxVM` FFI which builds
-    the witness in Rust directly. `--ixe` path is required (the
-    Rust side memory-maps it). -/
-def runShardOwnedNative (ixePath : String) (compiled : Aiur.CompiledToplevel)
+/-- IxVM-native fast path: dispatch through `shardCheckWithEnv` (a
+    Rust-owned `EnvHandle` reused across calls). Caller threads in
+    the pre-built envHandle so all shards in an all-shards run share
+    one env parse. -/
+def runShardOwnedNative (envHandle : Aiur.EnvHandle) (compiled : Aiur.CompiledToplevel)
     (printStats : Bool) (statsOut : Option String)
     (ixonEnv : Ixon.Env) (blocks : Array Address) (shardK : Nat) : IO UInt32 := do
   let owned := ownedConstsForBlocks ixonEnv blocks
@@ -397,12 +417,10 @@ def runShardOwnedNative (ixePath : String) (compiled : Aiur.CompiledToplevel)
   IO.println s!"Typechecking {label}"
   (← IO.getStdout).flush
   let funIdx := compiled.getFuncIdx `verify_claim |>.get!
-  let ixePathBytes := ixePath.toUTF8
-  -- Flat 32-byte address ByteArray.
   let mut blob := ByteArray.empty
   for a in owned do
     blob := blob ++ a.hash
-  match compiled.bytecode.shardCheckIxVM funIdx ixePathBytes blob with
+  match compiled.bytecode.shardCheckWithEnv funIdx envHandle blob with
   | .error e =>
     IO.eprintln s!"{label}: IxVM-native shard check error: {e}"
     return 1
@@ -419,8 +437,8 @@ def runShardCheckManifest (manifestPath ixePath : String) (shardK : Nat)
     | none => IO.eprintln s!"shard {shardK} out of range ({shards.size} shards)"; return 1
     | some blocks => runShardOwned ixonEnv blocks shardK runOne
 
-/-- IxVM-native shard check: skip Lean's `buildShardCheckEnvWitness`
-    by dispatching the witness build to Rust via `shardCheckIxVM`. -/
+/-- IxVM-native shard check, single shard. Builds an `EnvHandle`
+    once for this one call. -/
 def runShardCheckManifestNative (manifestPath ixePath : String) (shardK : Nat)
     (compiled : Aiur.CompiledToplevel) (printStats : Bool)
     (statsOut : Option String) : IO UInt32 := do
@@ -429,23 +447,30 @@ def runShardCheckManifestNative (manifestPath ixePath : String) (shardK : Nat)
   | .ok (ixonEnv, shards) => match shards[shardK]? with
     | none => IO.eprintln s!"shard {shardK} out of range ({shards.size} shards)"; return 1
     | some blocks =>
-      runShardOwnedNative ixePath compiled printStats statsOut ixonEnv blocks shardK
+      let envHandle ← match Aiur.EnvHandle.fromIxe ixePath with
+        | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixePath}: {e}"; return 1
+        | .ok h => pure h
+      runShardOwnedNative envHandle compiled printStats statsOut ixonEnv blocks shardK
 
-/-- IxVM-native check over EVERY shard. Caller-side: this skips the
-    coverage check; trust the user (or run a separate `--ixes`-only
-    coverage probe first). -/
+/-- IxVM-native check over EVERY shard. Builds the `EnvHandle` ONCE
+    and shares it across every shard's FFI call (no per-shard
+    re-mmap). Caller-side: skips the coverage check; trust the user
+    (or run a separate `--ixes`-only coverage probe first). -/
 def runShardManifestAllNative (manifestPath ixePath : String) (jobs? : Option Nat)
     (compiled : Aiur.CompiledToplevel) (printStats : Bool)
     (statsOut : Option String) : IO UInt32 := do
   match (← loadEnvAndShards manifestPath ixePath) with
   | .error e => IO.eprintln e; return 1
   | .ok (ixonEnv, shards) =>
+    let envHandle ← match Aiur.EnvHandle.fromIxe ixePath with
+      | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixePath}: {e}"; return 1
+      | .ok h => pure h
     let maxJobs := max 1 (jobs?.getD shards.size)
     let mut rc : UInt32 := 0
     for chunk in (shards.mapIdx (fun k b => (b, k))).toList.toChunks maxJobs do
       let tasks ← chunk.mapM fun (blocks, k) =>
         IO.asTask (prio := .dedicated)
-          (runShardOwnedNative ixePath compiled printStats statsOut ixonEnv blocks k)
+          (runShardOwnedNative envHandle compiled printStats statsOut ixonEnv blocks k)
       for t in tasks do
         match t.get with
         | .ok r => if r != 0 then rc := 1
@@ -547,53 +572,41 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
   let toplevel ← match IxVM.ixVM with
     | .error e => IO.eprintln s!"Toplevel merging failed: {e}"; return 1
     | .ok t => pure t
-  -- The per-claim `runOne` accepts a `WitnessSource` (Rust-native
-  -- via `--ixe`, or Lean-built for the compiled-Lean-env path).
-  -- The legacy `--interp` route needs a fully-built `ClaimWitness`
-  -- in Lean, so it materialises the witness from the source first
-  -- (the `--interp` path is expected to be small constants for
-  -- developer ergonomics — heavy claims are run in production via
-  -- the codegen path).
-  let materialise (src : WitnessSource) : IO IxVM.ClaimHarness.ClaimWitness :=
-    match src with
-    | .lean w => pure w
-    | .native ixe addr => do
-      let bytes ← IO.FS.readBinFile ixe
-      let ixonEnv ← match Ixon.deEnvAnon bytes with
-        | .error e => throw (IO.userError s!"deserialize {ixe} failed: {e}")
-        | .ok env => pure env
-      mkWitness addr ixonEnv
-    | .nativeBytes envBytes addr => do
-      let ixonEnv ← match Ixon.deEnv envBytes with
-        | .error e => throw (IO.userError s!"deserialize env bytes failed: {e}")
-        | .ok env => pure env
-      mkWitness addr ixonEnv
-  let runOne : Ix.Claim → WitnessSource → String → IO UInt32 ←
+  -- `runOne` consumes `(claim, envHandle?, target, label)`. For the
+  -- codegen path it dispatches via `runCompiled`. For `--interp`
+  -- it builds a `ClaimWitness` from the target — `.leanW` is
+  -- already a witness; `.addr` would require running the Rust
+  -- witness builder Lean-side, which `--interp` is meant to
+  -- bypass. So `--interp` rejects `.addr`/`.shard` targets here;
+  -- the legacy `runShardCheckManifest` path is used for `--interp`
+  -- shard mode.
+  let runOne : Ix.Claim → Option Aiur.EnvHandle → Target → String → IO UInt32 ←
     if interp then do
       let decls ← match toplevel.mkDecls with
         | .error e => IO.eprintln s!"mkDecls failed: {e}"; return 1
         | .ok d => pure d
-      let go (_ : Ix.Claim) (src : WitnessSource) (label : String) : IO UInt32 := do
-        let witness ← materialise src
-        runInterp decls witness label
+      let go (_ : Ix.Claim) (_ : Option Aiur.EnvHandle) (target : Target)
+          (label : String) : IO UInt32 :=
+        match target with
+        | .leanW w => runInterp decls w label
+        | _ => do
+          IO.eprintln s!"{label}: --interp requires a Lean witness; \
+            addr/shard targets unreachable here"
+          pure 1
       pure go
     else do
       let compiled ← match toplevel.compile with
         | .error e => IO.eprintln s!"Compilation failed: {e}"; return 1
         | .ok c => pure c
-      let go (_ : Ix.Claim) (src : WitnessSource) (label : String) : IO UInt32 :=
-        runCompiled compiled printStats statsOut src label
+      let go (_ : Ix.Claim) (envHandle? : Option Aiur.EnvHandle) (target : Target)
+          (label : String) : IO UInt32 :=
+        runCompiled compiled printStats statsOut envHandle? target label
       pure go
   match ixePath, ixesPath, shardK with
   | some ixe, some manifest, some k =>
-    -- IxVM-native shard check: witness built in Rust (Lean's
-    -- `buildShardCheckEnvWitness` dominates per-shard wall time,
-    -- ~92%; native build avoids per-byte boxing into `Aiur.G`).
-    -- Falls back to the legacy path when `--interp` is set, since
-    -- the Lean interpreter consumes a `ClaimWitness` directly.
     if interp then
       return (← runShardCheckManifest manifest ixe k
-        (fun c w l => runOne c (.lean w) l))
+        (fun c w l => runOne c none (.leanW w) l))
     else do
       let compiled ← match toplevel.compile with
         | .error e => IO.eprintln s!"Compilation failed: {e}"; return 1
@@ -602,7 +615,7 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
   | some ixe, some manifest, none   =>
     if interp then
       return (← runShardCheckAll manifest ixe ((p.flag? "jobs").map (·.as! Nat))
-        (fun c w l => runOne c (.lean w) l))
+        (fun c w l => runOne c none (.leanW w) l))
     else do
       let compiled ← match toplevel.compile with
         | .error e => IO.eprintln s!"Compilation failed: {e}"; return 1
