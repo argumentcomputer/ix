@@ -100,7 +100,10 @@ def cmd_parse(_a):
 
 # ──────────────────────── manifest ────────────────────────
 def cmd_manifest(a):
-    tier = a.tier or ("cheap" if a.mode == "prove" else "all")
+    # prove defaults to the cheap tier to keep the full set bounded; the curated
+    # primary subset is exempt — run.sh proves each primary that fits the Aiur RAM
+    # ceiling and execute-only's the rest, so all primaries are selected here.
+    tier = a.tier or ("cheap" if (a.mode == "prove" and not a.primary) else "all")
     names = []
     with open(a.csv) as f:
         for line in f:

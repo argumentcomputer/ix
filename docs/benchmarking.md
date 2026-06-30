@@ -14,7 +14,14 @@ the same backend drivers:
 |---|---|---|
 | `aiur` | IxVM kernel typecheck in the Aiur STARK prover (out-of-circuit execute + in-circuit prove) | `fft-cost`, `execute-time`, `prove-time`, `peak-rss`, `constants`, `throughput` |
 | `zisk` / `sp1` | the same kernel in the Zisk / SP1 zkVM hosts, **execute** only (proving needs a GPU) | `cycles`, `execute-time`, `throughput`, `peak-rss` (+ `shards`, `max-shard-cycles` for sharded runs) |
-| `native` | the same kernel run **out-of-circuit and in parallel** (`ix check --anon`, whole env) — far faster | `throughput` (constants/s), `check-time`, `peak-rss`, `constants` |
+| `native` | the same kernel run **out-of-circuit and in parallel** (`ix check`) — far faster | `throughput` (constants/s), `check-time`, `peak-rss`, `constants` |
+
+In **prove** mode, `run.sh` proves each constant whose Aiur fft-cost fits the
+prover RAM ceiling (`AIUR_PROVE_MAX_FFT`, ~128 GB at 2.34 GB per billion fft) and
+falls back to **execute-only** for the rest, so every primary still reports
+metrics. The `native` backend reports two views: the **whole env** (`ix check
+--anon`, keyed by env) and a **per-primary subject check** (`ix check --consts`,
+keyed by constant — apples-to-apples with the zkVM `--skip-deps` execute).
 
 All four are driven by `.github/scripts/run.sh` (compile the env `.ixe`, run the
 backend, emit a neutral `{ "<name>": { "<metric>": n } }` JSON). The PR workflow
