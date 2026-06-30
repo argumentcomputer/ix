@@ -213,19 +213,19 @@ impl Bytes1Queries {
     Self([[G::ZERO; TRACE_WIDTH]; 256])
   }
 
-  fn bump_bit_decomposition(&mut self, byte: &G) {
+  pub(crate) fn bump_bit_decomposition(&mut self, byte: &G) {
     self.bump_multiplicity_for(byte, 0)
   }
 
-  fn bump_shift_left(&mut self, byte: &G) {
+  pub(crate) fn bump_shift_left(&mut self, byte: &G) {
     self.bump_multiplicity_for(byte, 1)
   }
 
-  fn bump_shift_right(&mut self, byte: &G) {
+  pub(crate) fn bump_shift_right(&mut self, byte: &G) {
     self.bump_multiplicity_for(byte, 2)
   }
 
-  fn bump_multiplicity_for(&mut self, byte: &G, col: usize) {
+  pub(crate) fn bump_multiplicity_for(&mut self, byte: &G, col: usize) {
     let row = usize::try_from(byte.as_canonical_u64()).unwrap();
     self.0[row][col] += G::ONE;
   }

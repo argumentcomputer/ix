@@ -430,11 +430,11 @@ impl Bytes2Queries {
     Self(vec![[G::ZERO; TRACE_WIDTH]; 256 * 256].into_boxed_slice())
   }
 
-  fn bump_xor(&mut self, i: &G, j: &G) {
+  pub(crate) fn bump_xor(&mut self, i: &G, j: &G) {
     self.bump_multiplicity_for(i, j, 0)
   }
 
-  fn bump_add(&mut self, i: &G, j: &G) {
+  pub(crate) fn bump_add(&mut self, i: &G, j: &G) {
     self.bump_multiplicity_for(i, j, 1)
   }
 
@@ -442,15 +442,15 @@ impl Bytes2Queries {
     self.bump_multiplicity_for(i, j, 2)
   }
 
-  fn bump_and(&mut self, i: &G, j: &G) {
+  pub(crate) fn bump_and(&mut self, i: &G, j: &G) {
     self.bump_multiplicity_for(i, j, 3)
   }
 
-  fn bump_or(&mut self, i: &G, j: &G) {
+  pub(crate) fn bump_or(&mut self, i: &G, j: &G) {
     self.bump_multiplicity_for(i, j, 4)
   }
 
-  fn bump_less_than(&mut self, i: &G, j: &G) {
+  pub(crate) fn bump_less_than(&mut self, i: &G, j: &G) {
     self.bump_multiplicity_for(i, j, 5)
   }
 
@@ -458,19 +458,19 @@ impl Bytes2Queries {
     self.bump_multiplicity_for(i, j, 6)
   }
 
-  fn bump_mul(&mut self, i: &G, j: &G) {
+  pub(crate) fn bump_mul(&mut self, i: &G, j: &G) {
     self.bump_multiplicity_for(i, j, 7)
   }
 
-  fn bump_chain_rotr7(&mut self, i: &G, j: &G) {
+  pub(crate) fn bump_chain_rotr7(&mut self, i: &G, j: &G) {
     self.bump_multiplicity_for(i, j, 8)
   }
 
-  fn bump_chain_rotr4(&mut self, i: &G, j: &G) {
+  pub(crate) fn bump_chain_rotr4(&mut self, i: &G, j: &G) {
     self.bump_multiplicity_for(i, j, 9)
   }
 
-  fn bump_multiplicity_for(&mut self, i: &G, j: &G, col: usize) {
+  pub(crate) fn bump_multiplicity_for(&mut self, i: &G, j: &G, col: usize) {
     let i = usize::try_from(i.as_canonical_u64()).unwrap();
     let j = usize::try_from(j.as_canonical_u64()).unwrap();
     let row = 256 * i + j;

@@ -374,13 +374,28 @@ private def emitCall (out : Nat) (callee : FunIdx) (args : Array ValIdx)
   -- Structured IR for if-let-as-expression would need a `blockExpr`
   -- node; deferred until after parity testing validates the shape.
   let argsStr : String := (argsAsArray args).toStr
-  let opUnStr : String := if opUn then "true" else "false"
+  -- Constant-fold the `unconstrained || OP_UN` / `!unconstrained && !OP_UN`
+  -- patterns based on the static `opUn` flag. When opUn = true the
+  -- callee always runs unconstrained AND the multiplicity bump is
+  -- always skipped; when opUn = false both expressions collapse to
+  -- just `unconstrained`.
+  let cuExpr : String := if opUn then "true" else "unconstrained"
+  let bumpCond : String := if opUn then "false" else "!unconstrained"
+  let bumpStmt : String :=
+    if opUn then ""
+    else s!" if {bumpCond} \{ *result.multiplicity += G::ONE; }"
+  -- Skip `try_into().unwrap()` on the cache hit: we statically know
+  -- the cached output has exactly `OUT_{callee}` elements (only we
+  -- ever insert into this slot via the matching aiur_fn_{callee}
+  -- `Ctrl::Return`). An unchecked array copy is sound.
+  let retExpr : String :=
+    s!" let __ret: [G; OUT_{callee}] = unsafe \{ *(result.output.as_ptr() as *const [G; OUT_{callee}]) }; __ret"
   let blockExpr : String :=
     s!"\{ let __args: [G; IN_{callee}] = {argsStr};" ++
-    s!" let __cu = unconstrained || {opUnStr};" ++
+    s!" let __cu = {cuExpr};" ++
     s!" if let Some(result) = record.function_queries[{callee}].get_mut(&__args[..]) \{" ++
-    s!" if !unconstrained && !{opUnStr} \{ *result.multiplicity += G::ONE; }" ++
-    s!" let __ret: [G; OUT_{callee}] = result.output.try_into().unwrap(); __ret" ++
+    bumpStmt ++
+    retExpr ++
     s!" } else \{ aiur_fn_{callee}(__args, record, io_buffer, __cu)? } }"
   let mut stmts : Array RustStmt := #[
     .letStmt false "__r_arr" (some s!"[G; OUT_{callee}]") (.lit blockExpr)
@@ -497,60 +512,64 @@ private def emitIOWrite (channel : ValIdx) (data : Array ValIdx) : Array RustStm
     the same op. The execute.rs interpreter does the same dispatch.
 -/
 
-/-- Bytes1 op with a single G output. The interpreter's
-    `bytes1_execute` extends `map` by 1 G; the unconstrained shortcut
-    is a single value. Generate a scratch Vec around the helper so the
-    output is captured into a local `__v_{out}`. -/
-private def emitU8Bytes1 (out : Nat) (gadgetOp : String) (byte : ValIdx)
-    (unconShortcut : String) (outCount : Nat) : Array RustStmt := Id.run do
-  -- `unconShortcut` example: `Bytes1::shift_left` (returns G).
-  -- BitDecomposition returns 8 Gs, so outCount = 8; others 1.
-  let unconExpr : String :=
-    if outCount == 1 then s!"vec![{unconShortcut}(&__v_{byte})]"
-    else s!"{unconShortcut}(&__v_{byte}).to_vec()"
-  let blockExpr : String :=
-    s!"\{ let mut __scratch: Vec<G> = vec![__v_{byte}];" ++
-    s!" if unconstrained \{ __scratch.extend({unconExpr}); }" ++
-    s!" else \{ bytes1_execute(0, &Bytes1Op::{gadgetOp}, &mut __scratch, record); }" ++
-    s!" let __arr: [G; {outCount}] = __scratch[1..].try_into().unwrap(); __arr }"
-  let mut stmts : Array RustStmt := #[
-    .letStmt false "__b1_out" (some s!"[G; {outCount}]") (.lit blockExpr)
-  ]
-  for k in [0 : outCount] do
-    stmts := stmts.push (declVal (out + k) (.index (.var "__b1_out") (.lit (toString k))))
-  return stmts
+/-- Bytes1 op. No scratch Vec — the constrained branch calls
+    `bytes1_*_value` (defined in `crate::aiur::execute`) which
+    bumps the byte-chip queries and returns the gadget output by
+    value; the unconstrained branch calls the pure `Bytes1::*`
+    helper directly. -/
+private def emitU8Bytes1 (out : Nat) (valueHelper : String)
+    (unconShortcut : String) (byte : ValIdx) (outCount : Nat) :
+    Array RustStmt := Id.run do
+  if outCount == 1 then
+    let blockExpr : String :=
+      s!"if unconstrained \{ {unconShortcut}(&__v_{byte}) }" ++
+      s!" else \{ {valueHelper}(__v_{byte}, record) }"
+    return #[.letStmt false s!"__v_{out}" (some "G") (.lit blockExpr)]
+  else
+    -- BitDecomposition returns [G; 8]; the unconstrained shortcut
+    -- is the pure `Bytes1::bit_decompose` which returns Vec<G>.
+    -- Coerce its result into [G; outCount] for unified handling.
+    let blockExpr : String :=
+      s!"if unconstrained \{ let __v: Vec<G> = {unconShortcut}(&__v_{byte}); let __a: [G; {outCount}] = __v.try_into().unwrap(); __a }" ++
+      s!" else \{ {valueHelper}(__v_{byte}, record) }"
+    let mut stmts : Array RustStmt := #[
+      .letStmt false "__b1_out" (some s!"[G; {outCount}]") (.lit blockExpr)
+    ]
+    for k in [0 : outCount] do
+      stmts := stmts.push (declVal (out + k) (.index (.var "__b1_out") (.lit (toString k))))
+    return stmts
 
-/-- Bytes2 op with `outCount` G outputs. -/
-private def emitU8Bytes2 (out : Nat) (gadgetOp : String) (i j : ValIdx)
-    (unconShortcut : String) (outCount : Nat) : Array RustStmt := Id.run do
-  let unconExpr : String :=
-    if outCount == 1 then s!"vec![Bytes2::{unconShortcut}(&__v_{i}, &__v_{j})]"
-    else
-      -- For ops that return tuples (mul → (lo, hi); chain → (o0,o1,o2)).
-      let tup := s!"Bytes2::{unconShortcut}(&__v_{i}, &__v_{j})"
-      let fields := (List.range outCount).map (fun k => s!"{tup}.{k}") |> String.intercalate ", "
-      s!"vec![{fields}]"
-  let blockExpr : String :=
-    s!"\{ let mut __scratch: Vec<G> = vec![__v_{i}, __v_{j}];" ++
-    s!" if unconstrained \{ __scratch.extend({unconExpr}); }" ++
-    s!" else \{ bytes2_execute(0, 1, &Bytes2Op::{gadgetOp}, &mut __scratch, record); }" ++
-    s!" let __arr: [G; {outCount}] = __scratch[2..].try_into().unwrap(); __arr }"
-  let mut stmts : Array RustStmt := #[
-    .letStmt false "__b2_out" (some s!"[G; {outCount}]") (.lit blockExpr)
-  ]
-  for k in [0 : outCount] do
-    stmts := stmts.push (declVal (out + k) (.index (.var "__b2_out") (.lit (toString k))))
-  return stmts
+/-- Bytes2 op. Same pattern as `emitU8Bytes1` — no scratch Vec. -/
+private def emitU8Bytes2 (out : Nat) (valueHelper : String)
+    (unconShortcut : String) (i j : ValIdx) (outCount : Nat) :
+    Array RustStmt := Id.run do
+  if outCount == 1 then
+    let blockExpr : String :=
+      s!"if unconstrained \{ Bytes2::{unconShortcut}(&__v_{i}, &__v_{j}) }" ++
+      s!" else \{ {valueHelper}(__v_{i}, __v_{j}, record) }"
+    return #[.letStmt false s!"__v_{out}" (some "G") (.lit blockExpr)]
+  else
+    -- 2-tuple outputs (Mul) or 3-tuple (ChainRotr7/4).
+    let blockExpr : String :=
+      s!"if unconstrained \{ Bytes2::{unconShortcut}(&__v_{i}, &__v_{j}) }" ++
+      s!" else \{ {valueHelper}(__v_{i}, __v_{j}, record) }"
+    let tupTy : String :=
+      "(" ++ (String.intercalate ", " (List.replicate outCount "G")) ++ ")"
+    let mut stmts : Array RustStmt := #[
+      .letStmt false "__b2_out" (some tupTy) (.lit blockExpr)
+    ]
+    for k in [0 : outCount] do
+      stmts := stmts.push (declVal (out + k) (.field (.var "__b2_out") (toString k)))
+    return stmts
 
-/-- `Op::U8Add`: gadget pushes 1 G (low byte) via bytes2_execute; carry
-    is computed natively. Two outputs total: `(low, carry)`. -/
+/-- `Op::U8Add`: gadget bumps `bytes2_queries.add` and returns
+    `(low, carry)`. Codegen now calls `bytes2_add_value` ONCE in
+    the constrained branch (vs the interpreter's two `Bytes2::add`
+    calls). -/
 private def emitU8Add (out : Nat) (i j : ValIdx) : Array RustStmt :=
   let blockExpr : String :=
-    s!"\{ let (_, __carry) = Bytes2::add(&__v_{i}, &__v_{j});" ++
-    s!" let mut __scratch: Vec<G> = vec![__v_{i}, __v_{j}];" ++
-    s!" if unconstrained \{ __scratch.push(Bytes2::add(&__v_{i}, &__v_{j}).0); }" ++
-    s!" else \{ bytes2_execute(0, 1, &Bytes2Op::Add, &mut __scratch, record); }" ++
-    s!" (__scratch[2], __carry) }"
+    s!"if unconstrained \{ Bytes2::add(&__v_{i}, &__v_{j}) }" ++
+    s!" else \{ bytes2_add_value(__v_{i}, __v_{j}, record) }"
   #[
     .letStmt false "__b2_add" (some "(G, G)") (.lit blockExpr),
     declVal out (.field (.var "__b2_add") "0"),
@@ -560,11 +579,8 @@ private def emitU8Add (out : Nat) (i j : ValIdx) : Array RustStmt :=
 /-- `Op::U8Sub`: symmetric to U8Add. -/
 private def emitU8Sub (out : Nat) (i j : ValIdx) : Array RustStmt :=
   let blockExpr : String :=
-    s!"\{ let (_, __borrow) = Bytes2::sub(&__v_{i}, &__v_{j});" ++
-    s!" let mut __scratch: Vec<G> = vec![__v_{i}, __v_{j}];" ++
-    s!" if unconstrained \{ __scratch.push(Bytes2::sub(&__v_{i}, &__v_{j}).0); }" ++
-    s!" else \{ bytes2_execute(0, 1, &Bytes2Op::Sub, &mut __scratch, record); }" ++
-    s!" (__scratch[2], __borrow) }"
+    s!"if unconstrained \{ Bytes2::sub(&__v_{i}, &__v_{j}) }" ++
+    s!" else \{ bytes2_sub_value(__v_{i}, __v_{j}, record) }"
   #[
     .letStmt false "__b2_sub" (some "(G, G)") (.lit blockExpr),
     declVal out (.field (.var "__b2_sub") "0"),
@@ -639,16 +655,16 @@ def emitOp (out : Nat) (op : Op) : Array RustStmt :=
   | .ioSetInfo ch key idx len => emitIOSetInfo ch key idx len
   | .ioRead ch idx len => emitIORead out ch idx len
   | .ioWrite ch data => emitIOWrite ch data
-  | .u8BitDecomposition b => emitU8Bytes1 out "BitDecomposition" b "Bytes1::bit_decompose" 8
-  | .u8ShiftLeft b => emitU8Bytes1 out "ShiftLeft" b "Bytes1::shift_left" 1
-  | .u8ShiftRight b => emitU8Bytes1 out "ShiftRight" b "Bytes1::shift_right" 1
-  | .u8Xor i j => emitU8Bytes2 out "Xor" i j "xor" 1
-  | .u8Mul i j => emitU8Bytes2 out "Mul" i j "mul" 2
-  | .u8And i j => emitU8Bytes2 out "And" i j "and" 1
-  | .u8Or i j => emitU8Bytes2 out "Or" i j "or" 1
-  | .u8LessThan i j => emitU8Bytes2 out "LessThan" i j "less_than" 1
-  | .u8ChainRotr7 i j => emitU8Bytes2 out "ChainRotr7" i j "chain_rotr7" 3
-  | .u8ChainRotr4 i j => emitU8Bytes2 out "ChainRotr4" i j "chain_rotr4" 3
+  | .u8BitDecomposition b => emitU8Bytes1 out "bytes1_bit_decompose_value" "Bytes1::bit_decompose" b 8
+  | .u8ShiftLeft b => emitU8Bytes1 out "bytes1_shift_left_value" "Bytes1::shift_left" b 1
+  | .u8ShiftRight b => emitU8Bytes1 out "bytes1_shift_right_value" "Bytes1::shift_right" b 1
+  | .u8Xor i j => emitU8Bytes2 out "bytes2_xor_value" "xor" i j 1
+  | .u8Mul i j => emitU8Bytes2 out "bytes2_mul_value" "mul" i j 2
+  | .u8And i j => emitU8Bytes2 out "bytes2_and_value" "and" i j 1
+  | .u8Or i j => emitU8Bytes2 out "bytes2_or_value" "or" i j 1
+  | .u8LessThan i j => emitU8Bytes2 out "bytes2_less_than_value" "less_than" i j 1
+  | .u8ChainRotr7 i j => emitU8Bytes2 out "bytes2_chain_rotr7_value" "chain_rotr7" i j 3
+  | .u8ChainRotr4 i j => emitU8Bytes2 out "bytes2_chain_rotr4_value" "chain_rotr4" i j 3
   | .u8Add i j => emitU8Add out i j
   | .u8Sub i j => emitU8Sub out i j
   | .u32LessThan a b => emitU32LessThan out a b
@@ -863,7 +879,11 @@ def emitFunction (funIdx : FunIdx) (f : Function) : Array RustItem := Id.run do
     s!"{rbrace}\n\n"
   #[inputSizeConst, inConst, outConst, .raw fnText]
 
-def emitPrelude : RustItem := .raw
+/-- Header that's always emitted (file comments, lint allows, and the
+    fixed `use` items every generated body references). Per-op
+    helpers (`bytes2_xor_value`, etc.) are added only when the body
+    actually mentions them — see `emitConditionalImports`. -/
+def emitPreludeHeader : String :=
   "// Auto-generated by Aiur codegen. Do not edit.\n\
    //\n\
    // Mirrors `src/aiur/execute.rs`'s QueryRecord side effects exactly.\n\
@@ -877,14 +897,44 @@ def emitPrelude : RustItem := .raw
    )]\n\
    \n\
    use multi_stark::p3_field::{PrimeCharacteristicRing, PrimeField64};\n\
-   use crate::aiur::G;\n\
-   use crate::aiur::execute::{\n\
-   \x20\x20ExecError, IOBuffer, QueryRecord,\n\
-   \x20\x20bytes1_execute, bytes2_execute, unconstrained_big_uint_div_mod_helper,\n\
-   \x20\x20CodegenBytes1 as Bytes1, CodegenBytes1Op as Bytes1Op,\n\
-   \x20\x20CodegenBytes2 as Bytes2, CodegenBytes2Op as Bytes2Op,\n\
-   };\n\
-   \n"
+   use crate::aiur::G;\n"
+
+/-- The set of optional `crate::aiur::execute` items the codegen
+    might emit references to. Each pair is `(rust_path, search_token)`
+    — if `search_token` appears anywhere in the body string, the item
+    is included in the generated `use` block. The token is the exact
+    identifier that appears at every call site; substring match is
+    safe because all of these names are unique within the generated
+    file (no other crate-level item has the same identifier). -/
+def optionalExecuteUses : Array (String × String) := #[
+  ("bytes1_bit_decompose_value", "bytes1_bit_decompose_value"),
+  ("bytes1_shift_left_value", "bytes1_shift_left_value"),
+  ("bytes1_shift_right_value", "bytes1_shift_right_value"),
+  ("bytes2_xor_value", "bytes2_xor_value"),
+  ("bytes2_and_value", "bytes2_and_value"),
+  ("bytes2_or_value", "bytes2_or_value"),
+  ("bytes2_less_than_value", "bytes2_less_than_value"),
+  ("bytes2_mul_value", "bytes2_mul_value"),
+  ("bytes2_add_value", "bytes2_add_value"),
+  ("bytes2_sub_value", "bytes2_sub_value"),
+  ("bytes2_chain_rotr7_value", "bytes2_chain_rotr7_value"),
+  ("bytes2_chain_rotr4_value", "bytes2_chain_rotr4_value"),
+  ("unconstrained_big_uint_div_mod_helper", "unconstrained_big_uint_div_mod_helper"),
+  ("CodegenBytes1 as Bytes1", "Bytes1::"),
+  ("CodegenBytes2 as Bytes2", "Bytes2::")
+]
+
+/-- Build the `use crate::aiur::execute::{...};` block, including only
+    items whose search token appears in `body`. -/
+def emitConditionalImports (body : String) : String := Id.run do
+  let always : Array String := #["ExecError", "IOBuffer", "QueryRecord"]
+  let mut items : Array String := always
+  for (path, token) in optionalExecuteUses do
+    if (body.splitOn token).length > 1 then
+      items := items.push path
+  let joined : String := items.toList.foldl
+    (fun acc s => if acc.isEmpty then s else acc ++ ", " ++ s) ""
+  s!"use crate::aiur::execute::\{ {joined} };\n\n"
 
 /-- Build the dispatch entry point `pub fn execute_generated(...)`
     that maps a `fun_idx` to the right `aiur_fn_N` invocation. Mirrors
@@ -923,16 +973,18 @@ def emitDispatch (tl : Toplevel) : RustItem := Id.run do
         stmtsToStr 1 body ++
         s!"{rbrace}\n")
 
-/-- Emit Rust source for the whole `Bytecode.Toplevel`. -/
+/-- Emit Rust source for the whole `Bytecode.Toplevel`. Builds the
+    body first, then emits a prelude whose `use` block lists only
+    the helpers the body actually mentions. -/
 def emit (tl : Toplevel) : String := Id.run do
-  let mut items : Array RustItem := #[emitPrelude]
+  let mut items : Array RustItem := #[]
   for funIdx in [0 : tl.functions.size] do
     items := items ++ emitFunction funIdx tl.functions[funIdx]!
   items := items.push (emitDispatch tl)
-  let mut o := ""
+  let mut bodyStr := ""
   for it in items do
-    o := o ++ it.toStr
-  o
+    bodyStr := bodyStr ++ it.toStr
+  emitPreludeHeader ++ emitConditionalImports bodyStr ++ bodyStr
 
 end Aiur.Codegen
 

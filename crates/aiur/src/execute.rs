@@ -678,15 +678,157 @@ pub fn bytes2_execute(
   map.extend(Bytes2.execute(op, &[map[i], map[j]], record));
 }
 
+// ============================================================================
+// Per-op value-returning helpers for the codegen'd kernel.
+//
+// The interpreter routes byte ops through `bytes{1,2}_execute(idx, op,
+// &mut Vec<G>, record)` which `extends` the Vec with the gadget's
+// output. The codegen'd kernel doesn't keep a `Vec<G>` value stack
+// (every Aiur ValIdx is a real Rust local), so the wrappers below let
+// it consume gadget outputs as fixed-size arrays / tuples / single Gs
+// without an allocating Vec<G> per op.
+//
+// Each helper bumps the same `bytes{1,2}_queries` channel as the
+// interpreter's `Bytes{1,2}::execute` arm, so QueryRecord parity is
+// preserved bit-for-bit.
+// ============================================================================
+
+#[inline]
+pub fn bytes1_bit_decompose_value(
+  byte: G,
+  record: &mut QueryRecord,
+) -> [G; 8] {
+  record.bytes1_queries.bump_bit_decomposition(&byte);
+  let byte_u64 = byte.as_canonical_u64();
+  [
+    G::from_bool(byte_u64 & 1 == 1),
+    G::from_bool(byte_u64 >> 1 & 1 == 1),
+    G::from_bool(byte_u64 >> 2 & 1 == 1),
+    G::from_bool(byte_u64 >> 3 & 1 == 1),
+    G::from_bool(byte_u64 >> 4 & 1 == 1),
+    G::from_bool(byte_u64 >> 5 & 1 == 1),
+    G::from_bool(byte_u64 >> 6 & 1 == 1),
+    G::from_bool(byte_u64 >> 7 & 1 == 1),
+  ]
+}
+
+/// IxVM kernel doesn't emit `Op::U8ShiftLeft` today; kept for codegen
+/// of other toplevels that might.
+#[inline]
+#[allow(dead_code)]
+pub fn bytes1_shift_left_value(
+  byte: G,
+  record: &mut QueryRecord,
+) -> G {
+  record.bytes1_queries.bump_shift_left(&byte);
+  Bytes1::shift_left(&byte)
+}
+
+/// IxVM kernel doesn't emit `Op::U8ShiftRight` today; kept for
+/// codegen of other toplevels.
+#[inline]
+#[allow(dead_code)]
+pub fn bytes1_shift_right_value(
+  byte: G,
+  record: &mut QueryRecord,
+) -> G {
+  record.bytes1_queries.bump_shift_right(&byte);
+  Bytes1::shift_right(&byte)
+}
+
+#[inline]
+pub fn bytes2_xor_value(a: G, b: G, record: &mut QueryRecord) -> G {
+  record.bytes2_queries.bump_xor(&a, &b);
+  Bytes2::xor(&a, &b)
+}
+
+#[inline]
+pub fn bytes2_and_value(a: G, b: G, record: &mut QueryRecord) -> G {
+  record.bytes2_queries.bump_and(&a, &b);
+  Bytes2::and(&a, &b)
+}
+
+#[inline]
+pub fn bytes2_or_value(a: G, b: G, record: &mut QueryRecord) -> G {
+  record.bytes2_queries.bump_or(&a, &b);
+  Bytes2::or(&a, &b)
+}
+
+#[inline]
+pub fn bytes2_less_than_value(
+  a: G,
+  b: G,
+  record: &mut QueryRecord,
+) -> G {
+  record.bytes2_queries.bump_less_than(&a, &b);
+  Bytes2::less_than(&a, &b)
+}
+
+/// IxVM kernel doesn't emit `Op::U8Mul` today; kept for codegen of
+/// other toplevels.
+#[inline]
+#[allow(dead_code)]
+pub fn bytes2_mul_value(
+  a: G,
+  b: G,
+  record: &mut QueryRecord,
+) -> (G, G) {
+  record.bytes2_queries.bump_mul(&a, &b);
+  Bytes2::mul(&a, &b)
+}
+
+#[inline]
+pub fn bytes2_chain_rotr7_value(
+  a: G,
+  b: G,
+  record: &mut QueryRecord,
+) -> (G, G, G) {
+  record.bytes2_queries.bump_chain_rotr7(&a, &b);
+  Bytes2::chain_rotr7(&a, &b)
+}
+
+#[inline]
+pub fn bytes2_chain_rotr4_value(
+  a: G,
+  b: G,
+  record: &mut QueryRecord,
+) -> (G, G, G) {
+  record.bytes2_queries.bump_chain_rotr4(&a, &b);
+  Bytes2::chain_rotr4(&a, &b)
+}
+
+/// Bumps `bytes2_queries.add` and returns the full `(low, carry)`
+/// pair. The constrained-mode gadget only LOOKUPS `low` from the
+/// chip; carry is derived natively. The codegen path uses this
+/// helper so the add gadget runs exactly once.
+#[inline]
+pub fn bytes2_add_value(
+  a: G,
+  b: G,
+  record: &mut QueryRecord,
+) -> (G, G) {
+  record.bytes2_queries.bump_add(&a, &b);
+  Bytes2::add(&a, &b)
+}
+
+#[inline]
+pub fn bytes2_sub_value(
+  a: G,
+  b: G,
+  record: &mut QueryRecord,
+) -> (G, G) {
+  record.bytes2_queries.bump_sub(&a, &b);
+  Bytes2::sub(&a, &b)
+}
+
 /// Re-exports for the codegen'd kernel (`ix::aiur_ixvm`). The generated
 /// code names these as `aiur::execute::*`; we re-export them `pub` here
-/// so an external `ix` crate can see them.
-pub use crate::gadgets::bytes1::{
-  Bytes1 as CodegenBytes1, Bytes1Op as CodegenBytes1Op,
-};
-pub use crate::gadgets::bytes2::{
-  Bytes2 as CodegenBytes2, Bytes2Op as CodegenBytes2Op,
-};
+/// so an external `ix` crate can see them. `CodegenBytes1Op` and
+/// `CodegenBytes2Op` aren't re-exported here because the generated
+/// kernel no longer references them (per-op value helpers above
+/// replaced the byte-op enum dispatch).
+pub use crate::gadgets::bytes1::Bytes1 as CodegenBytes1;
+pub use crate::gadgets::bytes2::Bytes2 as CodegenBytes2;
 
 /// Helper extracted for the codegen'd kernel: compute the unconstrained
 /// BigUint div-mod and return `(q_ptr, r_ptr)`. Same side effects on
