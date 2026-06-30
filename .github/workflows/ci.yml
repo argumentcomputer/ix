@@ -27,6 +27,8 @@ jobs:
       # lean-action builds above — fails CI.
       - name: Build all targets
         run: lake lint -- --wfail -v
+      - name: Check codegen'd IxVM kernel is up to date
+        run: lake exe ix codegen --check
       - name: Test Ix CLI
         run: lake test --wfail -- cli
       - name: Aiur tests
