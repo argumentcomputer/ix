@@ -40,7 +40,7 @@ def runShardCmd (p : Cli.Parsed) : IO UInt32 := do
     -- Default manifest mirrors the profile's base name: `init.ixprof` →
     -- `init.ixes` (not `init.ixprof.ixes`).
     | none      =>
-      let base := if espPath.endsWith ".ixprof" then espPath.dropRight 7 else espPath
+      let base := if espPath.endsWith ".ixprof" then (espPath.dropEnd 7).toString else espPath
       base ++ ".ixes"
   let shardsFlag : Option Nat := (p.flag? "shards").map (·.as! Nat)
   let maxCycles  : Option Nat := (p.flag? "max-cycles").map (·.as! Nat)

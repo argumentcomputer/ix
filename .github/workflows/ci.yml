@@ -22,10 +22,15 @@ jobs:
       - uses: leanprover/lean-action@v1
         with:
           build-args: "--wfail -v"
+      # build-all lint driver compiles every lib/exe target with --wfail, so a
+      # warning in any target (exes, benchmarks, Apps) — not just the default lib
+      # lean-action builds above — fails CI.
+      - name: Build all targets
+        run: lake lint -- --wfail -v
       - name: Test Ix CLI
-        run: lake test -- cli
+        run: lake test --wfail -- cli
       - name: Aiur tests
-        run: lake test -- --ignored aiur aiur-hashes ixvm multi-stark recursive-verifier
+        run: lake test --wfail -- --ignored aiur aiur-hashes ixvm multi-stark recursive-verifier
       - name: Check Lean versions match for Ix and compiler bench
         run: diff lean-toolchain Benchmarks/Compile/lean-toolchain
 

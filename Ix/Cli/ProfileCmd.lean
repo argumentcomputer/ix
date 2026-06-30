@@ -32,7 +32,7 @@ def runProfileCmd (p : Cli.Parsed) : IO UInt32 := do
     -- Default sidecar mirrors the env's base name: `init.ixe` → `init.ixprof`
     -- (not `init.ixe.ixprof`); a non-`.ixe` path just gets `.ixprof` appended.
     | none      =>
-      let base := if envPath.endsWith ".ixe" then envPath.dropRight 4 else envPath
+      let base := if envPath.endsWith ".ixe" then (envPath.dropEnd 4).toString else envPath
       base ++ ".ixprof"
   let isolate := !(p.flag? "keep-caches" |>.isSome)
   let quiet   := !(p.flag? "verbose" |>.isSome)
