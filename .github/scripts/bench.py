@@ -18,7 +18,7 @@ import os
 
 
 # ───────────────────────── parse ─────────────────────────
-BACKENDS = ("aiur", "zisk", "sp1")
+BACKENDS = ("aiur", "zisk", "sp1", "native")
 MODES = ("execute", "prove")
 ENVS = ("initStd", "lean", "mathlib")
 CONFIG_KEYS = {"BENCH_ENVS", "BENCH_TIER", "BENCH_SHARD", "BENCH_GPU", "BENCH_FULL"}
@@ -28,6 +28,8 @@ PASSTHROUGH_KEYS = {"RUST_LOG", "WITHOUT_VK_VERIFICATION", "RUSTFLAGS"}
 def runner_for(backend, mode, gpu):
     """(runs-on label, skip?) for a cell."""
     if backend == "aiur":
+        return "warp-ubuntu-latest-x64-32x", False
+    if backend == "native":   # whole-env parallel check; no proving, never skips
         return "warp-ubuntu-latest-x64-32x", False
     if mode == "execute":
         return "warp-ubuntu-latest-x64-16x", False
@@ -132,6 +134,9 @@ METRICS = {
     ("zisk", "execute"): ["cycles", "execute-time", "throughput", "peak-rss"],
     ("sp1", "execute"): ["cycles", "execute-time", "throughput", "peak-rss"],
     ("zisk", "prove"): ["prove-time", "steps"], ("sp1", "prove"): ["prove-time", "steps"],
+    # native is whole-env (one row per env); mode is ignored (it never proves).
+    ("native", "execute"): ["throughput", "check-time", "peak-rss"],
+    ("native", "prove"): ["throughput", "check-time", "peak-rss"],
 }
 
 
