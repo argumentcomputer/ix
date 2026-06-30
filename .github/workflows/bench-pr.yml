@@ -3,6 +3,7 @@
 #
 #   !benchmark [aiur] [zisk] [sp1 | all]  [execute|prove]
 #   BENCH_ENVS=initStd,mathlib     # which compiled envs (default initStd)
+#   BENCH_FULL=1                   # run the full curated set, not the ~11 primary
 #   BENCH_TIER=cheap|heavy|all     # override the mode default (execute=all, prove=cheap)
 #   BENCH_SHARD=1                  # restrict to the multi-shard target constants
 #   BENCH_GPU=1                    # allow zkVM prove on a self-hosted GPU runner
@@ -49,6 +50,7 @@ jobs:
       mode: ${{ steps.parse.outputs.mode }}
       tier: ${{ steps.parse.outputs.tier }}
       shard: ${{ steps.parse.outputs.shard }}
+      full: ${{ steps.parse.outputs.full }}
       passthrough-env: ${{ steps.parse.outputs.passthrough-env }}
       config-summary: ${{ steps.parse.outputs.config-summary }}
       base-sha: ${{ steps.shas.outputs.base }}
@@ -96,6 +98,7 @@ jobs:
       HEAD_SHA: ${{ needs.setup.outputs.head-sha }}
       TIER: ${{ needs.setup.outputs.tier }}
       SHARD: ${{ needs.setup.outputs.shard }}
+      FULL: ${{ needs.setup.outputs.full }}
     steps:
       # ---------- skipped cell (zkVM prove without a GPU runner) ----------
       - name: Skip note
@@ -126,14 +129,16 @@ jobs:
           PTENV
       # Select the constants for this cell → names.txt; emit count/vhash/tier
       # (vhash is part of the main cache key, so editing Vectors.csv invalidates
-      # stale main results).
+      # stale main results). Defaults to the primary subset; BENCH_FULL=1
+      # (→ full=1) runs the whole curated set.
       - name: Select constants from Benchmarks/Vectors.csv
         if: matrix.cell.skip != 'true'
         id: man
         run: |
+          PRIMARY=--primary; [ "$FULL" = 1 ] && PRIMARY=
           python3 .github/scripts/bench.py manifest \
             --csv Benchmarks/Vectors.csv --env "$BENV" --mode "$MODE" \
-            --tier "$TIER" --shard "$SHARD" --out "$GITHUB_WORKSPACE/names.txt" \
+            --tier "$TIER" --shard "$SHARD" $PRIMARY --out "$GITHUB_WORKSPACE/names.txt" \
             | tee -a "$GITHUB_OUTPUT"
 
       # Lean toolchain + build `ix` and `bench-typecheck` for the PR side (every
