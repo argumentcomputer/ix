@@ -3424,6 +3424,7 @@ impl IngressStreamTimingSnapshot {
   }
 }
 
+#[cfg(not(target_arch = "riscv64"))]
 #[derive(Default)]
 struct IxonDropTiming {
   consts_ns: u64,
@@ -3433,6 +3434,7 @@ struct IxonDropTiming {
   comms_ns: u64,
 }
 
+#[cfg(not(target_arch = "riscv64"))]
 struct LookupDropTiming {
   names_ns: u64,
   name_to_addr_ns: u64,
@@ -3446,16 +3448,19 @@ fn elapsed_ns(start: Instant) -> u64 {
   duration_ns(start.elapsed())
 }
 
+#[cfg(not(target_arch = "riscv64"))]
 #[allow(clippy::cast_precision_loss)]
 fn seconds(ns: u64) -> f64 {
   ns as f64 / 1_000_000_000.0
 }
 
+#[cfg(not(target_arch = "riscv64"))]
 #[allow(clippy::cast_precision_loss)]
 fn percent(part: u64, total: u64) -> f64 {
   if total == 0 { 0.0 } else { (part as f64 * 100.0) / total as f64 }
 }
 
+#[cfg(not(target_arch = "riscv64"))]
 fn timed_drop_ns<T>(value: T) -> u64 {
   let start = Instant::now();
   drop(value);
@@ -3584,7 +3589,10 @@ fn insert_standalone_entries<M: KernelMode>(
   zenv: &mut KEnv<M>,
   entries: Vec<(KId<M>, KConst<M>)>,
 ) -> IngressInsertTiming {
+  #[cfg(not(target_arch = "riscv64"))]
   let mut timing = IngressInsertTiming::default();
+  #[cfg(target_arch = "riscv64")]
+  let timing = IngressInsertTiming::default();
 
   #[cfg(not(target_arch = "riscv64"))]
   let phase_start = Instant::now();
@@ -3613,7 +3621,10 @@ fn insert_muts_entries<M: KernelMode>(
   zenv: &mut KEnv<M>,
   entries: Vec<(KId<M>, KConst<M>)>,
 ) -> IngressInsertTiming {
+  #[cfg(not(target_arch = "riscv64"))]
   let mut timing = IngressInsertTiming::default();
+  #[cfg(target_arch = "riscv64")]
+  let timing = IngressInsertTiming::default();
 
   #[cfg(not(target_arch = "riscv64"))]
   let phase_start = Instant::now();
@@ -3787,15 +3798,12 @@ fn ixon_ingress_inner<M: KernelMode>(
   #[cfg(not(target_arch = "riscv64"))]
   let phase_start = Instant::now();
   let mut work_items: Vec<IngressWorkItem> = Vec::new();
-  let mut standalone_count = 0usize;
-  let mut muts_count = 0usize;
 
   for entry in ixon_env.named.iter() {
     let const_name = entry.key().clone();
     let named = entry.value();
     match &named.meta.info {
       ConstantMetaInfo::Muts { .. } => {
-        muts_count += 1;
         work_items.push(IngressWorkItem::Muts(const_name));
       },
       ConstantMetaInfo::Indc { .. }
@@ -3808,7 +3816,6 @@ fn ixon_ingress_inner<M: KernelMode>(
             | IxonCI::RPrj(_)
             | IxonCI::DPrj(_) => {},
             _ => {
-              standalone_count += 1;
               work_items.push(IngressWorkItem::Standalone(const_name));
             },
           }
@@ -3819,25 +3826,29 @@ fn ixon_ingress_inner<M: KernelMode>(
           match &c.info {
             IxonCI::DPrj(_) => {},
             _ => {
-              standalone_count += 1;
               work_items.push(IngressWorkItem::Standalone(const_name));
             },
           }
         }
       },
       _ => {
-        standalone_count += 1;
         work_items.push(IngressWorkItem::Standalone(const_name));
       },
     }
   }
   #[cfg(not(target_arch = "riscv64"))]
-  log::info!(
-    "[ixon_ingress] partition work: {:.2}s ({} standalone, {} muts)",
-    phase_start.elapsed().as_secs_f32(),
-    standalone_count,
-    muts_count
-  );
+  {
+    let muts_count = work_items
+      .iter()
+      .filter(|w| matches!(w, IngressWorkItem::Muts(_)))
+      .count();
+    log::info!(
+      "[ixon_ingress] partition work: {:.2}s ({} standalone, {} muts)",
+      phase_start.elapsed().as_secs_f32(),
+      work_items.len() - muts_count,
+      muts_count
+    );
+  }
 
   // Convert each standalone constant or Muts block sequentially into the
   // single-threaded KEnv.
