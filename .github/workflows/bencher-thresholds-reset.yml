@@ -5,20 +5,29 @@ name: Bencher thresholds reset
 # Other workloads are unaffected; historical data stays in Bencher, only the
 # alert baseline is re-anchored. Two ways to trigger:
 #
-#   - Merged PR carrying a maintainer comment `!bencher-thresholds-reset <workload|all>`:
-#     fires automatically on merge, anchored at the merge commit — no need to
-#     race a manual run afterward. A bare command (no workload) is ignored.
-#     When the command is first commented on the still-open PR, the `ack` job
-#     replies to confirm the reset is queued for merge (and warns on an
-#     unknown/missing workload), so a typo is caught immediately instead of
-#     silently doing nothing at merge time.
+#   - Maintainer comment `!bencher-thresholds-reset <workload|all>` on a PR:
+#     the `ack` job (issue_comment) is the single place that parses/validates the
+#     command. It records each valid workload as a `baseline-reset:<workload>`
+#     PR label and replies to confirm (or warns on an unknown/missing workload,
+#     catching a typo immediately). On merge, the `reset` job simply reads those
+#     labels from the event payload — no re-parsing — and anchors the tags at the
+#     merge commit. The label is the shared flag between the two events, and is
+#     human-visible/cancelable (remove the label to cancel a queued reset).
+#   - Manual label (no comment needed): the merge step honors any
+#     `baseline-reset:<workload>` label on the PR, whatever added it — so a
+#     Triage+ collaborator can queue a reset by applying the label directly, and
+#     cancel by removing it before merge. Naming convention: one label per
+#     workload, `baseline-reset:<workload>` where <workload> is one of the valid
+#     workloads (currently `ix-compile`, `aiur`); there is no `all` label — the
+#     comment path expands `all` into the per-workload labels. Labeling requires
+#     Triage+, so PR authors from forks cannot self-queue a reset.
 #   - workflow_dispatch: reset the chosen workload at a given commit (default
 #     HEAD); does not read PR contents. For ad-hoc or bootstrap resets.
 #
 # pull_request_target / issue_comment both run in the base-repo context with a
 # write token (works for fork PRs too). Safe here because the jobs run no
-# PR-provided code — only `gh api` calls against the trusted event payload, with
-# the comment body used purely as data (never evaluated).
+# PR-provided code — only `gh` calls against the trusted event payload, with the
+# comment body used purely as data (never evaluated).
 on:
   workflow_dispatch:
     inputs:
@@ -38,6 +47,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  issues: write # ack creates/applies the baseline-reset:<workload> label
 
 jobs:
   reset:
@@ -60,16 +70,13 @@ jobs:
             sha="${INPUT_SHA:-$HEAD_SHA}"
             [ "$INPUT_WORKLOAD" = all ] && workloads="$valid" || workloads="$INPUT_WORKLOAD"
           else
-            # Reset workloads named in maintainer `!bencher-thresholds-reset`
-            # comments, anchored at the merge commit. Arg required, so a bare
-            # command matches nothing and is ignored.
+            # Reset the workloads the `ack` job recorded as `baseline-reset:*`
+            # labels (already parsed/validated at comment time), anchored at the
+            # merge commit. Read straight from the event payload — no re-parsing.
             sha="$MERGE_SHA"
-            workloads=$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
-              --jq '.[] | select(.author_association | IN("OWNER","MEMBER","COLLABORATOR")) | .body' \
-              | grep -oiE '!bencher-thresholds-reset[[:space:]]+[a-z0-9 -]+' \
-              | sed -E 's/^!bencher-thresholds-reset[[:space:]]+//I' \
-              | tr '[:upper:] ' '[:lower:]\n' | sort -u)
-            echo "$workloads" | grep -qx all && workloads="$valid"
+            workloads=$(jq -r '.pull_request.labels[].name
+              | select(startswith("baseline-reset:")) | ltrimstr("baseline-reset:")' \
+              "$GITHUB_EVENT_PATH")
           fi
 
           done_list=""
@@ -120,6 +127,14 @@ jobs:
             case " $valid " in *" $w "*) ok="$ok $w" ;; *) ;; esac
           done
           if [ -n "$ok" ]; then
+            # Record each workload as a label — the flag the merge-time `reset`
+            # job reads. Create the label on first use (idempotent), then apply.
+            for w in $ok; do
+              label="baseline-reset:$w"
+              gh label create "$label" --repo "$REPO" --color BFD4F2 \
+                --description "bencher baseline reset queued on merge" 2>/dev/null || true
+              gh pr edit "$PR" --repo "$REPO" --add-label "$label"
+            done
             gh pr comment "$PR" --repo "$REPO" \
               --body "♻️ Baseline reset queued for:$ok — will anchor to the merge commit when this PR merges."
           else
