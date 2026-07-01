@@ -184,7 +184,7 @@ def runProveCmd (p : Cli.Parsed) : IO UInt32 := do
           rc := 1
       pure rc
   | _, _, _ =>
-    Ix.Cli.CheckCmd.forEachClaim ixePath claimHex names keepGoing "prove" runOne
+    Ix.Cli.CheckCmd.forEachClaim ixePath claimHex names keepGoing "prove" false runOne
 
 end Ix.Cli.ProveCmd
 

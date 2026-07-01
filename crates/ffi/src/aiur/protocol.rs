@@ -389,17 +389,42 @@ fn decode_owned_blob(
   )
 }
 
+/// Run `fun_idx` with `input` + `io_buffer`, routing through either
+/// the codegen'd IxVM kernel (`use_bytecode = false`) or the
+/// generic Aiur bytecode interpreter (`use_bytecode = true`).
+/// The bytecode interpreter doesn't require regenerating the
+/// codegen'd Rust kernel after Lean-side IxVM source changes —
+/// useful for tight iteration loops on `Ix/IxVM/*.lean`.
+#[inline]
+fn dispatch_execute(
+  toplevel: &aiur::bytecode::Toplevel,
+  fun_idx: aiur::bytecode::FunIdx,
+  input: Vec<aiur::G>,
+  io_buffer: &mut aiur::execute::IOBuffer,
+  use_bytecode: bool,
+) -> Result<(aiur::execute::QueryRecord, Vec<aiur::G>), String> {
+  if use_bytecode {
+    toplevel
+      .execute(fun_idx, input, io_buffer)
+      .map_err(|e| format!("execute (bytecode): {e}"))
+  } else {
+    ix::aiur_ixvm_runner::execute_ixvm(toplevel, fun_idx, input, io_buffer)
+      .map_err(|e| format!("execute_ixvm: {e}"))
+  }
+}
+
 /// `Bytecode.Toplevel.checkAddrWithEnv`: per-claim check against a
-/// Rust-owned `EnvHandle`. Builds the witness for
-/// `Claim.check addr none` in Rust, runs `execute_ixvm`. Reuses the
-/// handle's already-parsed env — no per-call mmap or anon_hints
-/// harvest.
+/// Rust-owned `EnvHandle`. `use_bytecode` selects the executor:
+/// `false` = codegen'd IxVM kernel (`execute_ixvm`),
+/// `true`  = generic Aiur bytecode interpreter
+/// (`Toplevel::execute`).
 #[unsafe(no_mangle)]
 extern "C" fn rs_aiur_toplevel_check_addr_with_env(
   toplevel: LeanAiurToplevel<LeanBorrowed<'_>>,
   fun_idx: LeanNat<LeanBorrowed<'_>>,
   env_handle: LeanExternal<ix::env_handle::EnvHandle, LeanBorrowed<'_>>,
   addr_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  use_bytecode: bool,
 ) -> LeanExcept<LeanOwned> {
   let toplevel = decode_toplevel(&toplevel);
   let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
@@ -415,13 +440,12 @@ extern "C" fn rs_aiur_toplevel_check_addr_with_env(
       Err(e) => return LeanExcept::error_string(&format!("witness build: {e}")),
     };
 
-  let (query_record, output) =
-    match ix::aiur_ixvm_runner::execute_ixvm(
-      &toplevel, fun_idx, input, &mut io_buffer,
-    ) {
-      Ok(p) => p,
-      Err(e) => return LeanExcept::error_string(&format!("execute_ixvm: {e}")),
-    };
+  let (query_record, output) = match dispatch_execute(
+    &toplevel, fun_idx, input, &mut io_buffer, use_bytecode,
+  ) {
+    Ok(p) => p,
+    Err(e) => return LeanExcept::error_string(&e),
+  };
 
   let lean_query_counts = build_query_counts_array(&query_record, &toplevel);
   let lean_io = build_lean_io_buffer(&io_buffer);
@@ -431,13 +455,15 @@ extern "C" fn rs_aiur_toplevel_check_addr_with_env(
 }
 
 /// `Bytecode.Toplevel.shardCheckWithEnv`: per-shard check against a
-/// Rust-owned `EnvHandle`.
+/// Rust-owned `EnvHandle`. See `checkAddrWithEnv` for `use_bytecode`
+/// semantics.
 #[unsafe(no_mangle)]
 extern "C" fn rs_aiur_toplevel_shard_check_with_env(
   toplevel: LeanAiurToplevel<LeanBorrowed<'_>>,
   fun_idx: LeanNat<LeanBorrowed<'_>>,
   env_handle: LeanExternal<ix::env_handle::EnvHandle, LeanBorrowed<'_>>,
   owned_blob: LeanByteArray<LeanBorrowed<'_>>,
+  use_bytecode: bool,
 ) -> LeanExcept<LeanOwned> {
   let toplevel = decode_toplevel(&toplevel);
   let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
@@ -453,13 +479,12 @@ extern "C" fn rs_aiur_toplevel_shard_check_with_env(
       Err(e) => return LeanExcept::error_string(&format!("witness build: {e}")),
     };
 
-  let (query_record, output) =
-    match ix::aiur_ixvm_runner::execute_ixvm(
-      &toplevel, fun_idx, input, &mut io_buffer,
-    ) {
-      Ok(p) => p,
-      Err(e) => return LeanExcept::error_string(&format!("execute_ixvm: {e}")),
-    };
+  let (query_record, output) = match dispatch_execute(
+    &toplevel, fun_idx, input, &mut io_buffer, use_bytecode,
+  ) {
+    Ok(p) => p,
+    Err(e) => return LeanExcept::error_string(&e),
+  };
 
   let lean_query_counts = build_query_counts_array(&query_record, &toplevel);
   let lean_io = build_lean_io_buffer(&io_buffer);

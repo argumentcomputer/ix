@@ -164,25 +164,30 @@ def executeIxVM (toplevel : @& Bytecode.Toplevel)
 
 @[extern "rs_aiur_toplevel_check_addr_with_env"]
 private opaque checkAddrWithEnv' : @& Bytecode.Toplevel →
-  @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray →
+  @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray → Bool →
     Except String (Array G ×
       (Array (G × Array G) × Array ((G × Array G) × IOKeyInfo)) ×
       Array (Nat × Nat))
 
 @[extern "rs_aiur_toplevel_shard_check_with_env"]
 private opaque shardCheckWithEnv' : @& Bytecode.Toplevel →
-  @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray →
+  @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray → Bool →
     Except String (Array G ×
       (Array (G × Array G) × Array ((G × Array G) × IOKeyInfo)) ×
       Array (Nat × Nat))
 
 
-/-- Per-claim check against a Rust-owned `EnvHandle`. Reuses the
-    handle's already-parsed env across many calls. -/
+/-- Per-claim check against a Rust-owned `EnvHandle`. `useBytecode`
+    selects the generic Aiur bytecode interpreter
+    (`Bytecode.Toplevel.execute`) over the codegen'd IxVM kernel
+    (`execute_ixvm`); useful for tight iteration loops on Lean-side
+    IxVM source where regenerating `crates/ix/src/aiur_ixvm.rs` and
+    recompiling Rust is too slow. -/
 def checkAddrWithEnv (toplevel : @& Bytecode.Toplevel)
-  (funIdx : @& Bytecode.FunIdx) (envHandle : @& EnvHandle) (addrBytes : ByteArray)
+  (funIdx : @& Bytecode.FunIdx) (envHandle : @& EnvHandle)
+  (addrBytes : ByteArray) (useBytecode : Bool := false)
   : Except String (Array G × IOBuffer × Array QueryCount) :=
-  match checkAddrWithEnv' toplevel funIdx envHandle addrBytes with
+  match checkAddrWithEnv' toplevel funIdx envHandle addrBytes useBytecode with
   | .error e => .error e
   | .ok (output, (ioData, ioMap), queryCounts) =>
     let ioData := ioData.foldl (fun acc (k, v) => acc.insert k v) ∅
@@ -190,11 +195,13 @@ def checkAddrWithEnv (toplevel : @& Bytecode.Toplevel)
     let queryCounts := queryCounts.map fun (uniqueRows, totalHits) => { uniqueRows, totalHits }
     .ok (output, ⟨ioData, ioMap⟩, queryCounts)
 
-/-- Per-shard check against a Rust-owned `EnvHandle`. -/
+/-- Per-shard check against a Rust-owned `EnvHandle`. See
+    `checkAddrWithEnv` for `useBytecode` semantics. -/
 def shardCheckWithEnv (toplevel : @& Bytecode.Toplevel)
-  (funIdx : @& Bytecode.FunIdx) (envHandle : @& EnvHandle) (ownedBlob : ByteArray)
+  (funIdx : @& Bytecode.FunIdx) (envHandle : @& EnvHandle)
+  (ownedBlob : ByteArray) (useBytecode : Bool := false)
   : Except String (Array G × IOBuffer × Array QueryCount) :=
-  match shardCheckWithEnv' toplevel funIdx envHandle ownedBlob with
+  match shardCheckWithEnv' toplevel funIdx envHandle ownedBlob useBytecode with
   | .error e => .error e
   | .ok (output, (ioData, ioMap), queryCounts) =>
     let ioData := ioData.foldl (fun acc (k, v) => acc.insert k v) ∅

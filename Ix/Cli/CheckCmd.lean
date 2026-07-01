@@ -126,7 +126,8 @@ inductive Target where
     The `envHandle?` is `none` only for `.leanW` targets (`--interp`
     fallback); the addr/shard arms require it. -/
 def runCompiled (compiled : Aiur.CompiledToplevel) (printStats : Bool)
-    (statsOut : Option String) (envHandle? : Option Aiur.EnvHandle)
+    (statsOut : Option String) (useBytecode : Bool)
+    (envHandle? : Option Aiur.EnvHandle)
     (target : Target) (label : String) : IO UInt32 := do
   IO.println s!"Typechecking {label}"
   (← IO.getStdout).flush
@@ -138,11 +139,14 @@ def runCompiled (compiled : Aiur.CompiledToplevel) (printStats : Bool)
   let res :=
     match target, envHandle? with
     | .addr a, some envHandle =>
-      compiled.bytecode.checkAddrWithEnv funIdx envHandle a.hash
+      compiled.bytecode.checkAddrWithEnv funIdx envHandle a.hash useBytecode
     | .shard owned, some envHandle =>
-      compiled.bytecode.shardCheckWithEnv funIdx envHandle (buildBlob owned)
+      compiled.bytecode.shardCheckWithEnv funIdx envHandle (buildBlob owned) useBytecode
     | .leanW witness, _ =>
-      compiled.bytecode.executeIxVM funIdx witness.input witness.inputIOBuffer
+      if useBytecode then
+        compiled.bytecode.execute funIdx witness.input witness.inputIOBuffer
+      else
+        compiled.bytecode.executeIxVM funIdx witness.input witness.inputIOBuffer
     | _, none =>
       .error "internal: addr/shard target with no envHandle"
   match res with
@@ -191,7 +195,7 @@ def runInterp (decls : Aiur.Source.Decls)
     variant isn't `check addr none`. -/
 def forEachClaim
     (ixePath : Option String) (claimHex : Option String) (names : List String)
-    (keepGoing : Bool) (logTag : String)
+    (keepGoing : Bool) (logTag : String) (forceLeanWitness : Bool)
     (runOne : Ix.Claim → Option Aiur.EnvHandle → Target → String → IO UInt32)
     : IO UInt32 := do
   let mut failures : Array String := #[]
@@ -237,7 +241,12 @@ def forEachClaim
         let leanName := ixNameToLeanName ixName
         let label := toString leanName
         let claim := Ix.Claim.check named.addr none
-        if (← runOne claim (some envHandle) (.addr named.addr) label) ≠ 0 then
+        let target : Target ←
+          if forceLeanWitness then
+            let w ← mkWitness named.addr ixonEnv
+            pure (.leanW w)
+          else pure (.addr named.addr)
+        if (← runOne claim (some envHandle) target label) ≠ 0 then
           failures := failures.push label
           if !keepGoing then break
     else
@@ -250,7 +259,12 @@ def forEachClaim
         | some addr =>
           let label := arg
           let claim := Ix.Claim.check addr none
-          if (← runOne claim (some envHandle) (.addr addr) label) ≠ 0 then
+          let target : Target ←
+            if forceLeanWitness then
+              let w ← mkWitness addr ixonEnv
+              pure (.leanW w)
+            else pure (.addr addr)
+          if (← runOne claim (some envHandle) target label) ≠ 0 then
             failures := failures.push label
             if !keepGoing then break
   | none =>
@@ -267,11 +281,15 @@ def forEachClaim
       let ixonEnv ← IxVM.ClaimHarness.loadIxonEnv name env
       let addr ← IxVM.ClaimHarness.lookupAddr ixonEnv name
       let claim := Ix.Claim.check addr none
-      let envBytes := Ixon.serEnv ixonEnv
-      let envHandle ← match Aiur.EnvHandle.fromBytes envBytes with
-        | .error e => throw (IO.userError s!"EnvHandle.fromBytes failed for {label}: {e}")
-        | .ok h => pure h
-      runOne claim (some envHandle) (.addr addr) label
+      if forceLeanWitness then
+        let w ← mkWitness addr ixonEnv
+        runOne claim none (.leanW w) label
+      else
+        let envBytes := Ixon.serEnv ixonEnv
+        let envHandle ← match Aiur.EnvHandle.fromBytes envBytes with
+          | .error e => throw (IO.userError s!"EnvHandle.fromBytes failed for {label}: {e}")
+          | .ok h => pure h
+        runOne claim (some envHandle) (.addr addr) label
     if names.isEmpty then
       let sorted := env.constants.toList.toArray.qsort
         (fun a b => toString a.1 < toString b.1)
@@ -408,7 +426,7 @@ def runShardOwned (ixonEnv : Ixon.Env) (blocks : Array Address) (shardK : Nat)
     the pre-built envHandle so all shards in an all-shards run share
     one env parse. -/
 def runShardOwnedNative (envHandle : Aiur.EnvHandle) (compiled : Aiur.CompiledToplevel)
-    (printStats : Bool) (statsOut : Option String)
+    (printStats : Bool) (statsOut : Option String) (useBytecode : Bool)
     (ixonEnv : Ixon.Env) (blocks : Array Address) (shardK : Nat) : IO UInt32 := do
   let owned := ownedConstsForBlocks ixonEnv blocks
   IO.println s!"[shard] shard {shardK}: {blocks.size} owned blocks → \
@@ -420,7 +438,7 @@ def runShardOwnedNative (envHandle : Aiur.EnvHandle) (compiled : Aiur.CompiledTo
   let mut blob := ByteArray.empty
   for a in owned do
     blob := blob ++ a.hash
-  match compiled.bytecode.shardCheckWithEnv funIdx envHandle blob with
+  match compiled.bytecode.shardCheckWithEnv funIdx envHandle blob useBytecode with
   | .error e =>
     IO.eprintln s!"{label}: IxVM-native shard check error: {e}"
     return 1
@@ -441,7 +459,7 @@ def runShardCheckManifest (manifestPath ixePath : String) (shardK : Nat)
     once for this one call. -/
 def runShardCheckManifestNative (manifestPath ixePath : String) (shardK : Nat)
     (compiled : Aiur.CompiledToplevel) (printStats : Bool)
-    (statsOut : Option String) : IO UInt32 := do
+    (statsOut : Option String) (useBytecode : Bool) : IO UInt32 := do
   match (← loadEnvAndShards manifestPath ixePath) with
   | .error e => IO.eprintln e; return 1
   | .ok (ixonEnv, shards) => match shards[shardK]? with
@@ -450,7 +468,7 @@ def runShardCheckManifestNative (manifestPath ixePath : String) (shardK : Nat)
       let envHandle ← match Aiur.EnvHandle.fromIxe ixePath with
         | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixePath}: {e}"; return 1
         | .ok h => pure h
-      runShardOwnedNative envHandle compiled printStats statsOut ixonEnv blocks shardK
+      runShardOwnedNative envHandle compiled printStats statsOut useBytecode ixonEnv blocks shardK
 
 /-- IxVM-native check over EVERY shard. Builds the `EnvHandle` ONCE
     and shares it across every shard's FFI call (no per-shard
@@ -458,7 +476,7 @@ def runShardCheckManifestNative (manifestPath ixePath : String) (shardK : Nat)
     (or run a separate `--ixes`-only coverage probe first). -/
 def runShardManifestAllNative (manifestPath ixePath : String) (jobs? : Option Nat)
     (compiled : Aiur.CompiledToplevel) (printStats : Bool)
-    (statsOut : Option String) : IO UInt32 := do
+    (statsOut : Option String) (useBytecode : Bool) : IO UInt32 := do
   match (← loadEnvAndShards manifestPath ixePath) with
   | .error e => IO.eprintln e; return 1
   | .ok (ixonEnv, shards) =>
@@ -470,7 +488,7 @@ def runShardManifestAllNative (manifestPath ixePath : String) (jobs? : Option Na
     for chunk in (shards.mapIdx (fun k b => (b, k))).toList.toChunks maxJobs do
       let tasks ← chunk.mapM fun (blocks, k) =>
         IO.asTask (prio := .dedicated)
-          (runShardOwnedNative envHandle compiled printStats statsOut ixonEnv blocks k)
+          (runShardOwnedNative envHandle compiled printStats statsOut useBytecode ixonEnv blocks k)
       for t in tasks do
         match t.get with
         | .ok r => if r != 0 then rc := 1
@@ -555,7 +573,14 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
   -- Always silence the Rust-side `[compile_env]` progress logs. The
   -- per-name labels + stats are signal enough at this layer.
   Std.Internal.UV.System.osSetenv "IX_QUIET" "1"
-  let interp := p.hasFlag "interp"
+  let interpMode : Option String := (p.flag? "interp").map (·.as! String)
+  let interpSource := interpMode == some "source"
+  let useBytecode := interpMode == some "bytecode"
+  match interpMode with
+  | none | some "source" | some "bytecode" => pure ()
+  | some other =>
+    IO.eprintln s!"error: --interp expects \"source\" or \"bytecode\", got \"{other}\""
+    return 1
   let keepGoing := p.hasFlag "keep-going"
   let statsOut : Option String :=
     (p.flag? "stats-out").map (·.as! String)
@@ -581,7 +606,7 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
   -- the legacy `runShardCheckManifest` path is used for `--interp`
   -- shard mode.
   let runOne : Ix.Claim → Option Aiur.EnvHandle → Target → String → IO UInt32 ←
-    if interp then do
+    if interpSource then do
       let decls ← match toplevel.mkDecls with
         | .error e => IO.eprintln s!"mkDecls failed: {e}"; return 1
         | .ok d => pure d
@@ -600,20 +625,20 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
         | .ok c => pure c
       let go (_ : Ix.Claim) (envHandle? : Option Aiur.EnvHandle) (target : Target)
           (label : String) : IO UInt32 :=
-        runCompiled compiled printStats statsOut envHandle? target label
+        runCompiled compiled printStats statsOut useBytecode envHandle? target label
       pure go
   match ixePath, ixesPath, shardK with
   | some ixe, some manifest, some k =>
-    if interp then
+    if interpSource then
       return (← runShardCheckManifest manifest ixe k
         (fun c w l => runOne c none (.leanW w) l))
     else do
       let compiled ← match toplevel.compile with
         | .error e => IO.eprintln s!"Compilation failed: {e}"; return 1
         | .ok c => pure c
-      return (← runShardCheckManifestNative manifest ixe k compiled printStats statsOut)
+      return (← runShardCheckManifestNative manifest ixe k compiled printStats statsOut useBytecode)
   | some ixe, some manifest, none   =>
-    if interp then
+    if interpSource then
       return (← runShardCheckAll manifest ixe ((p.flag? "jobs").map (·.as! Nat))
         (fun c w l => runOne c none (.leanW w) l))
     else do
@@ -621,9 +646,9 @@ def runCheckCmd (p : Cli.Parsed) : IO UInt32 := do
         | .error e => IO.eprintln s!"Compilation failed: {e}"; return 1
         | .ok c => pure c
       return (← runShardManifestAllNative manifest ixe
-        ((p.flag? "jobs").map (·.as! Nat)) compiled printStats statsOut)
+        ((p.flag? "jobs").map (·.as! Nat)) compiled printStats statsOut useBytecode)
   | _, _, _ =>
-    forEachClaim ixePath claimHex names keepGoing "check" runOne
+    forEachClaim ixePath claimHex names keepGoing "check" interpSource runOne
 
 end Ix.Cli.CheckCmd
 
@@ -633,7 +658,7 @@ def checkCmd : Cli.Cmd := `[Cli|
   "Typecheck Lean / `.ixe` constants through the IxVM Aiur kernel"
 
   FLAGS:
-    interp;                 "Use the Aiur interpreter (richer per-execution error diagnostics) instead of the codegen'd IxVM Rust kernel."
+    interp : String;        "Use an interpreter instead of the codegen'd IxVM Rust kernel. Modes: `source` = Aiur source interpreter (richer per-execution error diagnostics, slowest); `bytecode` = generic Aiur bytecode interpreter (skips the regen + cargo rebuild cycle when iterating on `Ix/IxVM/*.lean`). Omit the flag entirely for the native codegen kernel."
     "keep-going";           "Continue past failures and report them at the end instead of halting on the first."
     "ixe"       : String;   "Path to a serialized `.ixe` env. When set, the binary reads the env from disk instead of using the compiled-in Lean env."
     "claim"     : String;   "32-byte hex address of a persisted `Ix.Claim` in `~/.ix/store/`. When set, runs the `verify_claim` entrypoint once over the claim's witness against the `--ixe` env (single execution, skips per-const iteration)."
