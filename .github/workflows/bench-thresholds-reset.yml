@@ -70,8 +70,13 @@ jobs:
             case " $valid " in *" $w "*) ;; *) echo "skip unknown workload: $w"; continue ;; esac
             tag="baseline-reset-$w"
             echo "Anchoring $tag -> $sha"
-            gh api -X PATCH "repos/$REPO/git/refs/tags/$tag" -f sha="$sha" -F force=true \
-              || gh api -X POST "repos/$REPO/git/refs" -f ref="refs/tags/$tag" -f sha="$sha"
+            # Update the tag if it exists, else create it. (Checking first avoids
+            # the spurious 422 a PATCH-then-POST logs on first creation.)
+            if gh api --silent "repos/$REPO/git/refs/tags/$tag" 2>/dev/null; then
+              gh api --silent -X PATCH "repos/$REPO/git/refs/tags/$tag" -f sha="$sha" -F force=true
+            else
+              gh api --silent -X POST "repos/$REPO/git/refs" -f ref="refs/tags/$tag" -f sha="$sha"
+            fi
             done_list="$done_list $w"
           done
           [ -z "$done_list" ] && { echo "Nothing to reset."; exit 0; }

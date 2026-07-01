@@ -106,19 +106,57 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: minimal-ixe
-      - name: Install Zisk toolchain (ziskup, latest)
+      - name: Install Zisk toolchain (ziskup, pinned v0.18.0)
+        # `--version 0.18.0` pins the toolchain to match our deps. Our host links
+        # the argumentcomputer/zisk `blake3-precompile` fork, which is based on
+        # v0.18.0 (its cargo-zisk has `check-setup`, used below to regenerate the
+        # key's const-trees). Without the pin, ziskup installs `releases/latest`,
+        # which resolves to upstream `v1.0.0-alpha` — a different circuit whose
+        # cargo-zisk dropped the `check-setup` subcommand, breaking the key step.
         # `--cpu` picks the CPU build (no GPU on the runner) and `--nokey` skips
-        # the proving/verify keys — together they avoid ziskup's interactive
-        # /dev/tty prompts, and execute needs no keys. `--prefix $HOME/.zisk`
-        # pins the install where cargo-zisk's ZiskPaths fallback looks (the
-        # runner sets XDG_CONFIG_HOME, which would otherwise relocate it).
+        # ziskup's key install — both avoid its interactive /dev/tty prompts. We
+        # keep `--nokey` because the upstream `zisk-setup` bucket only carries the
+        # upstream circuit's key; our fork has a different circuit (extra Blake3f
+        # AIR), so we restore the fork-matching key from our own S3 in the next
+        # step. `--prefix $HOME/.zisk` pins the install where cargo-zisk's
+        # ZiskPaths fallback looks (the runner sets XDG_CONFIG_HOME, which would
+        # otherwise relocate it).
         run: |
           curl -L https://raw.githubusercontent.com/0xPolygonHermez/zisk/main/ziskup/install.sh \
-            | bash -s -- --cpu --nokey -y --prefix "$HOME/.zisk"
+            | bash -s -- --cpu --nokey -y --version 0.18.0 --prefix "$HOME/.zisk"
           echo "$HOME/.zisk/bin" >> "$GITHUB_PATH"
+      # Execute still needs a proving key present: zisk-host calls
+      # `client.setup()` (which the SDK runs before the execute branch), and that
+      # loads the circuit's const-tree files. We host the fork-matching key in a
+      # public S3 bucket WITHOUT the const-trees — exactly like Zisk's released
+      # `zisk-provingkey-*.tar.gz` on `storage.googleapis.com/zisk-setup` — and
+      # regenerate them here with `cargo-zisk check-setup -a`, which is how
+      # `ziskup` itself populates them. That keeps the artifact ~3 GB (gzip)
+      # instead of ~48 GB. The object name carries the fork rev so a circuit
+      # change can't silently reuse a stale key. Public bucket → plain curl, no
+      # AWS creds.
+      - name: Restore Zisk proving key (fork circuit) from S3
+        run: |
+          mkdir -p "$HOME/.zisk"
+          curl -fSL --retry 3 \
+            https://argument-zisk-setup.s3.amazonaws.com/zisk-provingkey-blake3-8f9e24d5-cpu.tar.gz \
+            -o /tmp/zisk-provingkey.tar.gz
+          tar -C "$HOME/.zisk" -xzf /tmp/zisk-provingkey.tar.gz
+          rm -f /tmp/zisk-provingkey.tar.gz
+          # Regenerate the const-tree files omitted from the artifact (CPU build,
+          # so no --gpu). This is the "may take a while" step ziskup prints.
+          cargo-zisk check-setup --proving-key "$HOME/.zisk/provingKey" -a
       - name: Zisk — execute minimal.ixe (assert failures == 0)
         run: |
           cd zisk
-          ulimit -l unlimited 2>/dev/null || true
+          # ZisK's ASM microservices mmap the ROM with MAP_LOCKED, which needs
+          # unlimited locked memory — the Zisk book's "Critical Memory
+          # Configuration" prescribes DefaultLimitMEMLOCK=infinity. The runner
+          # caps the memlock hard limit (so a bare `ulimit -l unlimited` can't
+          # raise it) and we can't reboot it, so raise the limit in-session as
+          # root via prlimit; the cargo child (and the ASM services it spawns)
+          # inherit it. Without this the services die with
+          # `mmap(rom) errno=11` / "shmem creation ... failed".
+          sudo prlimit --pid $$ --memlock=unlimited:unlimited
           cargo run --bin zisk-host -- --execute --ixe ../minimal.ixe --constant myReflEq --skip-deps | tee only.txt
           grep -qE "failures: 0\b" only.txt
