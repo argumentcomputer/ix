@@ -8,12 +8,17 @@ name: Bencher thresholds reset
 #   - Merged PR carrying a maintainer comment `!bencher-thresholds-reset <workload|all>`:
 #     fires automatically on merge, anchored at the merge commit — no need to
 #     race a manual run afterward. A bare command (no workload) is ignored.
+#     When the command is first commented on the still-open PR, the `ack` job
+#     replies to confirm the reset is queued for merge (and warns on an
+#     unknown/missing workload), so a typo is caught immediately instead of
+#     silently doing nothing at merge time.
 #   - workflow_dispatch: reset the chosen workload at a given commit (default
 #     HEAD); does not read PR contents. For ad-hoc or bootstrap resets.
 #
-# pull_request_target runs in the base-repo context with a write token (works
-# for fork PRs too). Safe here because the job runs no PR-provided code — only
-# `gh api` calls against the trusted event payload.
+# pull_request_target / issue_comment both run in the base-repo context with a
+# write token (works for fork PRs too). Safe here because the jobs run no
+# PR-provided code — only `gh api` calls against the trusted event payload, with
+# the comment body used purely as data (never evaluated).
 on:
   workflow_dispatch:
     inputs:
@@ -27,6 +32,8 @@ on:
         required: false
   pull_request_target:
     types: [closed]
+  issue_comment:
+    types: [created]
 
 permissions:
   contents: write
@@ -85,3 +92,37 @@ jobs:
           [ "$EVENT" = pull_request_target ] && gh pr comment "$PR" --repo "$REPO" \
             --body "♻️ Baseline reset to \`${sha:0:7}\` for:$done_list"
           true
+
+  # Immediate acknowledgment: when a maintainer comments the reset command on a
+  # still-open PR, reply that the named baseline(s) will be reset on merge — or
+  # warn if the workload is unknown/missing. The `user.type != 'Bot'` guard keeps
+  # this reply (which may echo the command) from re-triggering the job.
+  ack:
+    if: github.event_name == 'issue_comment' && github.event.issue.pull_request && github.event.issue.state == 'open' && github.event.comment.user.type != 'Bot' && contains(github.event.comment.body, '!bencher-thresholds-reset') && (github.event.comment.author_association == 'OWNER' || github.event.comment.author_association == 'MEMBER' || github.event.comment.author_association == 'COLLABORATOR')
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+      PR: ${{ github.event.issue.number }}
+      BODY: ${{ github.event.comment.body }}
+    steps:
+      - run: |
+          valid="ix-compile aiur"
+          # Same parse as the merge path: workload name(s) after the command,
+          # lowercased; `all` expands to every workload.
+          workloads=$(printf '%s' "$BODY" \
+            | grep -oiE '!bencher-thresholds-reset[[:space:]]+[a-z0-9 -]+' \
+            | sed -E 's/^!bencher-thresholds-reset[[:space:]]+//I' \
+            | tr '[:upper:] ' '[:lower:]\n' | sort -u)
+          echo "$workloads" | grep -qx all && workloads="$valid"
+          ok=""
+          for w in $workloads; do
+            case " $valid " in *" $w "*) ok="$ok $w" ;; *) ;; esac
+          done
+          if [ -n "$ok" ]; then
+            gh pr comment "$PR" --repo "$REPO" \
+              --body "♻️ Baseline reset queued for:$ok — will anchor to the merge commit when this PR merges."
+          else
+            gh pr comment "$PR" --repo "$REPO" \
+              --body "⚠️ Reset command matched no known workload (expected \`ix-compile\`, \`aiur\`, or \`all\`). Nothing will reset on merge."
+          fi

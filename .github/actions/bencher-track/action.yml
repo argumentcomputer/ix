@@ -4,7 +4,7 @@ description: >-
   to the data points recorded since the workload's `baseline-reset-<workload>`
   tag, so a toolchain bump (or any permanent shift) is recalibrated by moving
   that one tag — via the !bencher-thresholds-reset PR comment or the
-  bench-thresholds-reset workflow. The calling job must check out with
+  bencher-thresholds-reset workflow. The calling job must check out with
   fetch-depth: 0 and fetch-tags: true (the tag is read here).
 
 inputs:
