@@ -1,5 +1,6 @@
 --import Ix.Cli.StoreCmd
 import Ix.Cli.AddrOfCmd
+import Ix.Cli.NameOfCmd
 import Ix.Cli.CheckCmd
 import Ix.Cli.CodegenCmd
 import Ix.Cli.CheckRsCmd
@@ -36,6 +37,7 @@ def ixCmd : Cli.Cmd := `[Cli|
     codegenCmd;
     verifyCmd;
     addrOfCmd;
+    nameOfCmd;
     ingressCmd;
     validateCmd;
     serveCmd;
