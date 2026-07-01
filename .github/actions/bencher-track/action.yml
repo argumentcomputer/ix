@@ -1,7 +1,7 @@
 name: Track benchmarks on bencher
 description: >-
   Run `bencher run` for the `ix` project. Every measure's baseline is windowed
-  to the data points recorded since the workload's `baseline-reset-<workload>`
+  to the data points recorded since the workload's `bencher-thresholds-reset-<workload>`
   tag, so a toolchain bump (or any permanent shift) is recalibrated by moving
   that one tag — via the !bencher-thresholds-reset PR comment or the
   bencher-thresholds-reset workflow. The calling job must check out with
@@ -12,7 +12,7 @@ inputs:
     description: Bencher testbed slug.
     required: true
   workload:
-    description: Workload key for the `baseline-reset-<workload>` tag (e.g. ix-compile, aiur).
+    description: Workload key for the `bencher-thresholds-reset-<workload>` tag (e.g. ix-compile, aiur).
     required: true
   file:
     description: Bencher Metric Format JSON file to upload.
@@ -45,7 +45,7 @@ runs:
         THRESHOLDS: ${{ inputs.thresholds }}
       run: |
         # Baseline window: data points for this benchmark since the workload's
-        # `baseline-reset-<workload>` tag (moved on a toolchain bump or any
+        # `bencher-thresholds-reset-<workload>` tag (moved on a toolchain bump or any
         # permanent shift). The same window applies to every measure. We count
         # actual data points, not commits, so the baseline never reaches past
         # the anchor (a failed run produces no metric, so a commit count would
@@ -54,7 +54,7 @@ runs:
         # project is public, so no token is needed. With no tag yet, fall back
         # to Bencher's 64-point window.
         sample=64
-        if reset_epoch=$(git log -1 --format=%ct "baseline-reset-$WORKLOAD" 2>/dev/null); then
+        if reset_epoch=$(git log -1 --format=%ct "bencher-thresholds-reset-$WORKLOAD" 2>/dev/null); then
           bench=$(jq -r '[keys[]][0]' "$FILE")
           sample=$(curl -fsS "https://api.bencher.dev/v0/projects/ix/reports?branch=${GITHUB_REF_NAME}&testbed=${TESTBED}&start_time=$((reset_epoch * 1000))&per_page=255" \
             | jq --arg b "$bench" '[.[] | select([.results[]?[]?.benchmark.name] | index($b))] | length')
