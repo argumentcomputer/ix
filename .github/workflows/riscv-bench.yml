@@ -149,6 +149,14 @@ jobs:
       - name: Zisk — execute minimal.ixe (assert failures == 0)
         run: |
           cd zisk
-          ulimit -l unlimited 2>/dev/null || true
+          # ZisK's ASM microservices mmap the ROM with MAP_LOCKED, which needs
+          # unlimited locked memory — the Zisk book's "Critical Memory
+          # Configuration" prescribes DefaultLimitMEMLOCK=infinity. The runner
+          # caps the memlock hard limit (so a bare `ulimit -l unlimited` can't
+          # raise it) and we can't reboot it, so raise the limit in-session as
+          # root via prlimit; the cargo child (and the ASM services it spawns)
+          # inherit it. Without this the services die with
+          # `mmap(rom) errno=11` / "shmem creation ... failed".
+          sudo prlimit --pid $$ --memlock=unlimited:unlimited
           cargo run --bin zisk-host -- --execute --ixe ../minimal.ixe --constant myReflEq --skip-deps | tee only.txt
           grep -qE "failures: 0\b" only.txt
