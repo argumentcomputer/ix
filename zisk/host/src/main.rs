@@ -551,7 +551,8 @@ fn leaf_assumptions(
   out
 }
 
-/// Extract a proof's 32-byte program vk: v0.18 lays the proof out as u64
+/// Extract a proof's 32-byte program vk: Zisk (v0.18 and v1.0.0-alpha
+/// alike) lays the proof out as u64
 /// words `[minimal(1)][n_publics(1)][program_vk(4)]…`, so the program vk is
 /// bytes `[16..48)` (words 2..6). Used both to derive the allowed-vk set the
 /// agg guest pins against and to key the proof store.
@@ -797,7 +798,7 @@ fn build_client(
   if gpu {
     builder = builder.gpu();
   }
-  builder.build()
+  Ok(builder.build()?)
 }
 
 /// Check a single constant chosen by Lean NAME (the `--constant` path).

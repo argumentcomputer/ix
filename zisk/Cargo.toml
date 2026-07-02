@@ -8,7 +8,8 @@ resolver = "2"
 
 [workspace.dependencies]
 # argumentcomputer/zisk fork — the `blake3-precompile` branch adds a Blake3
-# compression precompile on top of upstream Zisk v0.18.0 (proofman v0.18.0).
+# compression precompile on top of upstream Zisk v1.0.0-alpha (proofman
+# v1.0.0-alpha).
 # The guest reaches the precompile via `ziskos::zisklib::blake3` or,
 # transparently, through the `blake3` shim crate (see `zisk/guest/Cargo.toml`).
 zisk-sdk = { git = "https://github.com/argumentcomputer/zisk.git", branch = "blake3-precompile" }
@@ -18,7 +19,7 @@ ziskos = { git = "https://github.com/argumentcomputer/zisk.git", branch = "blake
 panic = "abort"
 
 # No local-path patch: the host builds zisk-sdk directly from the
-# `blake3-precompile` branch above (now that v0.18.0 + the blake3 shim are
-# pushed). To iterate against a local checkout instead, re-add:
+# `blake3-precompile` branch above. To iterate against a local checkout
+# instead, re-add:
 #   [patch."https://github.com/argumentcomputer/zisk.git"]
 #   zisk-sdk = { path = "/home/ubuntu/zisk/sdk" }
