@@ -6,7 +6,7 @@ name: RISC-V bench
 # kernel typecheck of one constant in the SP1 and Zisk VMs — in parallel jobs.
 on:
   push:
-    branches: main
+    branches: [main, sb/ci-benchmarks]   # TEMPORARY: test on this branch
   workflow_dispatch:
 
 permissions:
@@ -40,7 +40,7 @@ jobs:
   # no proof, no GPU). SP1 and Zisk run as independent jobs so they parallelize;
   # each installs only its own toolchain via sp1up / ziskup (prebuilt binaries)
   # and downloads the shared fixture. minimal.ixe carries the full Init closure,
-  # so we scope execution with `--constant myReflEq --skip-deps`: that
+  # so we scope execution with `--consts myReflEq --skip-deps`: that
   # subject-only-typechecks just the named constant, trusting its Init
   # dependencies as Claim assumptions, instead of typechecking all of Init (which
   # never finishes in the emulator). Each host bails non-zero on any typecheck
@@ -69,7 +69,7 @@ jobs:
       - name: SP1 — execute minimal.ixe (assert failures == 0)
         run: |
           cd sp1
-          cargo run --bin sp1-host -- --execute --ixe ../minimal.ixe --constant myReflEq --skip-deps | tee only.txt
+          cargo run --bin sp1-host -- --execute --ixe ../minimal.ixe --consts myReflEq --skip-deps | tee only.txt
           grep -qE "failures: 0\b" only.txt
 
   zisk-execute:
@@ -97,5 +97,5 @@ jobs:
           # inherit it. Without this the services die with
           # `mmap(rom) errno=11` / "shmem creation ... failed".
           sudo prlimit --pid $$ --memlock=unlimited:unlimited
-          cargo run --bin zisk-host -- --execute --ixe ../minimal.ixe --constant myReflEq --skip-deps | tee only.txt
+          cargo run --bin zisk-host -- --execute --ixe ../minimal.ixe --consts myReflEq --skip-deps | tee only.txt
           grep -qE "failures: 0\b" only.txt

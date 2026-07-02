@@ -4,9 +4,18 @@ Ix is benchmarked on two surfaces, both driven by one curated constant set and
 the same backend drivers:
 
 - **`!benchmark` PR comment** (`.github/workflows/bench-pr.yml`) — on demand,
-  posts a **main-vs-PR** comparison table on the pull request.
+  posts a **main-vs-PR** comparison table on the pull request. main's numbers
+  are pulled from bencher.dev via its public reports API (`bench.py fetch-main`);
+  the PR side is measured fresh. Design-level skips (`aiur execute` — redundant
+  with `aiur prove`; `zkVM prove` — no GPU on main; `ooc prove` — no in-circuit
+  prove) are filtered from the matrix at parse time and post a note explaining
+  why. For supported combinations, if bencher hasn't ingested the base SHA yet
+  (freshly-pushed main whose push CI is still running), the workflow falls
+  back to re-running the base SHA locally.
 - **Bencher.dev** (`.github/workflows/bench-main.yml`) — on every push to `main`,
-  tracks each measure over time at <https://bencher.dev> (project `ix`).
+  tracks each measure over time at <https://bencher.dev> (project `ix`). This is
+  the canonical store for main-branch measurements; the `!benchmark` PR path
+  reads from it.
 
 ## Backends
 
@@ -16,10 +25,9 @@ the same backend drivers:
 | `zisk` / `sp1` | the same kernel in the Zisk / SP1 zkVM hosts, **execute** only (proving needs a GPU) | `cycles`, `execute-time`, `throughput`, `peak-rss` |
 | `ooc` | the same kernel run **out-of-circuit and in parallel** (`ix check-rs`) — far faster | `throughput` (constants/s), `check-time`, `peak-rss`, `constants` |
 
-In **prove** mode, `run.sh` proves each constant whose Aiur fft-cost fits the
-prover RAM ceiling (`AIUR_PROVE_MAX_FFT`, ~128 GB at 2.34 GB per billion fft) and
-falls back to **execute-only** for the rest, so every primary still reports
-metrics. The `ooc` backend reports two views: the **whole env** (`ix check-rs
+In **prove** mode, `run.sh` proves each `cheap`-tier primary and falls back to
+**execute-only** for the `heavy`-tier ones (a single-shard prove would exceed
+Aiur's ~128 GB RAM ceiling), so every primary still reports metrics. The `ooc` backend reports two views: the **whole env** (`ix check-rs
 --anon`, keyed by env) and a **per-primary subject check** (`ix check-rs
 --consts`, keyed by constant — apples-to-apples with the zkVM `--skip-deps`
 execute).
@@ -46,7 +54,7 @@ PR seconds + Δ%), so a regression can be traced to the phase that moved.
 
 ## Constant set — `Benchmarks/Vectors.csv`
 
-One CSV is the single source of truth: `name,env,tier,shard_target,primary,aiur_fft,zisk_cycles`.
+One CSV is the single source of truth for *which* constants to run: `name,env,tier,shard_target,primary`. Measurements never live here — they're in each tool's neutral results JSON and in bencher.dev.
 
 - `env` — compile target the constant resolves in (`initStd` / `lean` / `mathlib`).
 - `tier` — `cheap` (prove-feasible on a CI runner) or `heavy` (execute-only; a
@@ -63,23 +71,28 @@ One CSV is the single source of truth: `name,env,tier,shard_target,primary,aiur_
 Maintainer comment on a PR:
 
 ```
-!benchmark ([aiur] [zisk] [sp1] [ooc] | all)  [execute|prove]
+!benchmark ([aiur] [zisk] [sp1] [ooc] | all) [execute]
 BENCH_ENVS=initStd,mathlib     # which compiled envs (default initStd)
 BENCH_FULL=1                   # run the full curated set, not the ~11 primary
 BENCH_TIER=cheap|heavy|all     # override the mode default (execute=all, prove=cheap)
 BENCH_SHARD=1                  # restrict to the multi-shard target constants
-BENCH_GPU=1                    # allow zkVM prove on a self-hosted GPU runner
 RUST_LOG=info                  # passthrough env (allowlisted)
 ```
 
-Defaults: `aiur`, `execute`, `initStd`, primary subset. Backends fan out as a
-matrix; `main` results are cached by base SHA. zkVM `prove` is skipped with a
-note unless a GPU runner is selected.
+Mode is fixed per backend: `aiur` runs `prove` by default (its report also
+carries the execute-side columns `fft-cost` / `execute-time` alongside
+`prove-time`), while `zisk` / `sp1` / `ooc` always run `execute`. The optional
+bare `execute` token flips `aiur` to execute-only (`bench-typecheck
+--execute-only`; skips Phase 2); on the other three backends it's a no-op.
+Defaults: `aiur`, `initStd`, primary subset. Backends fan out as a matrix;
+`main` results are pulled from bencher.dev.
 
 ## Bencher jobs (`bench-main.yml`)
 
 `build → compile → { prove, zkvm-execute, ooc-check }`, each reporting to its
 own testbed + **workload** (`aiur-check`, `zisk-check`, `sp1-check`, `ooc-check`, `ix-compile`).
+All four typecheck testbeds share the same slug shape:
+`<backend>-check-x64-32x`.
 Deterministic measures (cycles, fft-cost, constants, …) are pinned exactly;
 noisy wall-clock measures (time, RAM, throughput) ride percentage bounds, both
 windowed to the per-workload `bencher-thresholds-reset-<workload>` tag.
@@ -90,5 +103,5 @@ To re-baseline a workload after an intended step change, comment
 
 ## Not yet covered
 
-- **zkVM proving** (Zisk/SP1 `prove`) needs a self-hosted GPU runner; on CPU
-  runners it is execute-only.
+- **zkVM proving** (Zisk/SP1 `prove`) is not wired up — needs a self-hosted
+  GPU runner. Currently zkVMs are execute-only on both surfaces.

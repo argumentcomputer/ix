@@ -1,8 +1,10 @@
 name: Install Zisk
 description: >-
-  Install the system build deps and the ZisK zkVM toolchain (ziskup, CPU build,
-  no proving keys) needed to build and run the Zisk host. Assumes a Rust
-  toolchain is already set up.
+  Install the system build deps, the ZisK zkVM toolchain (ziskup, CPU build),
+  and the fork-matching proving key needed to build and run the Zisk host.
+  Execute needs the key too — zisk-host's `client.setup()` loads the circuit's
+  const-tree files before either the execute or the prove branch. Assumes a
+  Rust toolchain is already set up.
 
 runs:
   using: composite

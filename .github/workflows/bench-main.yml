@@ -217,9 +217,9 @@ jobs:
         env:
           REUSE_IXE: "1"
         run: |
-          # All primaries: run.sh proves each whose Aiur fft-cost fits ~128 GB and
-          # execute-only's the rest (so heavy primaries still report execute
-          # metrics). Per-constant peak-rss, same path as the !benchmark PR run.
+          # All primaries: run.sh proves each cheap-tier primary and execute-only's
+          # the heavy ones (so heavy primaries still report execute metrics).
+          # Per-constant peak-rss, same path as the !benchmark PR run.
           benv="${{ matrix.bench }}"; benv="${benv,}"   # InitStd→initStd, Mathlib→mathlib
           python3 .github/scripts/bench.py manifest \
             --csv Benchmarks/Vectors.csv --env "$benv" --mode prove --primary --out names.txt
@@ -243,7 +243,7 @@ jobs:
       # does the phase-level alerting).
       - uses: ./.github/actions/bencher-track
         with:
-          testbed: aiur-typecheck-x64-32x
+          testbed: aiur-check-x64-32x
           workload: aiur-check
           file: aiur.json
           key: ${{ secrets.BENCHER_API_KEY }}
@@ -275,7 +275,7 @@ jobs:
   # execute-only. Toolchain + deps come from the shared install-{zisk,sp1} actions.
   zkvm-execute:
     needs: compile
-    runs-on: warp-ubuntu-latest-x64-16x
+    runs-on: warp-ubuntu-latest-x64-32x
     timeout-minutes: 60
     strategy:
       fail-fast: false
@@ -325,7 +325,7 @@ jobs:
       # percentage bounds (throughput's regression is a drop).
       - uses: ./.github/actions/bencher-track
         with:
-          testbed: ${{ matrix.backend }}-execute-x64-16x
+          testbed: ${{ matrix.backend }}-check-x64-32x
           workload: ${{ matrix.backend }}-check
           file: bench.json
           key: ${{ secrets.BENCHER_API_KEY }}

@@ -6,7 +6,7 @@
 //! RUST_LOG=info cargo run --release -- --execute --ixe ../../minimal.ixe
 //! WITHOUT_VK_VERIFICATION=1 RUST_LOG=info cargo run --release  # prove (compressed)
 //! # prove a single constant out of a large env (Anon-only):
-//! WITHOUT_VK_VERIFICATION=1 RUST_LOG=info cargo run --release -- --ixe ../../init.ixe --constant Nat.add_comm
+//! WITHOUT_VK_VERIFICATION=1 RUST_LOG=info cargo run --release -- --ixe ../../init.ixe --consts Nat.add_comm
 //! ```
 //!
 //! Proving (any non-`--execute` run) requires `WITHOUT_VK_VERIFICATION=1` in
@@ -37,54 +37,37 @@ pub const GUEST_ELF: Elf = include_elf!("sp1-guest");
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-  /// Run the program in the VM only - no proof.
+  /// Execute in the VM only — no proof.
   #[arg(long)]
   execute: bool,
 
-  /// Run the kernel in Meta mode (preserves names + dup-level-param-name
-  /// check). Default is Anon mode, which matches Aiur's `kernel_check_test`
-  /// semantics. Both modes prove the same structural typecheck; Meta is
-  /// strictly more constrained but slightly more expensive.
+  /// Run the kernel in Meta mode (default: Anon). Meta preserves names.
   #[arg(long)]
   meta: bool,
 
-  /// Path to a `.ixe` file produced by `lake exe ix compile`. If omitted, an
-  /// empty `IxonEnv` is used.
+  /// Path to a `.ixe` (default: empty env).
   #[arg(long)]
   ixe: Option<PathBuf>,
 
-  /// Check a single constant selected by its Lean NAME (e.g. "Nat.add_comm").
-  /// The name resolves through the env's `named` metadata to its ingress
-  /// block; the guest receives only that block's closure sub-env, so one
-  /// constant can be proved out of a large env without shipping (or
-  /// typechecking) the whole thing. By default this is the **full-closure**
-  /// typecheck (the constant and its whole dependency closure, matching
-  /// `Ix.Claim.check addr none` / the Aiur `bench-typecheck --constant`); pass
-  /// `--skip-deps` for a subject-only check (deps trusted). Anon-only
-  /// (incompatible with `--meta`). Requires `--ixe`.
-  #[arg(long)]
-  constant: Option<String>,
+  /// Comma-separated Lean names to check (Anon-only; each is one guest run).
+  #[arg(long, value_delimiter = ',')]
+  consts: Vec<String>,
 
-  /// Modifies `--constant`: check only the named constant itself, trusting its
-  /// dependencies (subject-only), instead of re-checking its whole transitive
-  /// closure. Same flag/semantics as `zisk-host --skip-deps` and the Aiur
-  /// `bench-typecheck --skip-deps`.
-  #[arg(long, requires = "constant")]
+  /// Additional names from a file (one per line, `#` comments); unions with --consts.
+  #[arg(long)]
+  consts_file: Option<PathBuf>,
+
+  /// With --consts: check each subject only, trusting its deps.
+  #[arg(long, requires = "consts")]
   skip_deps: bool,
 
-  /// Write the neutral per-constant results JSON `{ "<name>": { … } }` to this
-  /// path (execute → cycles/execute-time/throughput/peak-rss; prove →
-  /// prove-time/peak-rss). Written only on a clean run (zero failures), so a
-  /// present file always holds a valid measurement. This is the machine
-  /// source the CI bench driver merges; the human summary still prints.
+  /// Write per-constant results JSON `{ "<name>": { … } }` (accumulated across --consts).
   #[arg(long)]
   json: Option<PathBuf>,
 
-  /// Write per-phase timings (`{"span","seconds"}` JSON Lines) to this path via
-  /// tracing-texray's sink, for the CI drill-down. The host records its
-  /// `execute` / `prove` phases here.
+  /// Enable tracing-texray; with --json, per-phase spans are written to <json>.spans.
   #[arg(long)]
-  texray_json: Option<PathBuf>,
+  texray: bool,
 }
 
 /// Peak resident set size (bytes) across this process *and its children*, from
@@ -97,17 +80,49 @@ fn peak_rss_bytes() -> Option<u64> {
   }
 }
 
-/// Write the neutral per-constant entry `{ "<name>": <metrics> }` to `path`
-/// (the shape `run.sh` merges with `jq -s`). serde_json handles key escaping so
-/// arbitrary Lean names are safe.
+/// Append the per-constant entry `{ "<name>": <metrics> }` to the results JSON
+/// at `path`, merging into any existing object so a multi-const run (`--consts
+/// a,b,c`) accumulates one map with an entry per name.
 fn write_json_entry(
   path: &PathBuf,
   name: &str,
   metrics: serde_json::Value,
 ) -> Result<()> {
-  let entry = serde_json::json!({ name: metrics });
-  fs::write(path, serde_json::to_string(&entry)?)
+  let mut map: serde_json::Map<String, serde_json::Value> = match fs::read(path)
+  {
+    Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_default(),
+    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+      serde_json::Map::new()
+    },
+    Err(e) => return Err(anyhow::anyhow!("read {}: {e}", path.display())),
+  };
+  map.insert(name.to_string(), metrics);
+  fs::write(path, serde_json::to_string(&serde_json::Value::Object(map))?)
     .map_err(|e| anyhow::anyhow!("write {}: {e}", path.display()))
+}
+
+/// Union `--consts` with names from `--consts-file`, preserving first-seen order.
+fn collect_consts(args: &Args) -> Result<Vec<String>> {
+  let mut seen: std::collections::HashSet<String> =
+    std::collections::HashSet::new();
+  let mut out: Vec<String> = Vec::new();
+  for name in &args.consts {
+    let trimmed = name.trim();
+    if !trimmed.is_empty() && seen.insert(trimmed.to_string()) {
+      out.push(trimmed.to_string());
+    }
+  }
+  if let Some(path) = &args.consts_file {
+    let contents = fs::read_to_string(path)
+      .map_err(|e| anyhow::anyhow!("read {}: {e}", path.display()))?;
+    for line in contents.lines() {
+      let name = line.split('#').next().unwrap_or("").trim();
+      if !name.is_empty() && seen.insert(name.to_string()) {
+        out.push(name.to_string());
+      }
+    }
+  }
+  Ok(out)
 }
 
 fn load_env_bytes(ixe: Option<&PathBuf>) -> Vec<u8> {
@@ -149,7 +164,7 @@ fn count_checkable(env_bytes: &[u8], meta_mode: bool) -> usize {
   }
 }
 
-/// Resolve `--constant <name>` to the guest inputs for that one constant: its
+/// Resolve one `--consts` name to the guest inputs for that constant: its
 /// closure sub-env and a check-list. The name resolves through the full env's
 /// `named` metadata to a constant address, which maps to the `build_anon_work`
 /// item whose ingress block owns it (standalone → itself; a mutual-block member
@@ -233,40 +248,55 @@ async fn main() -> Result<()> {
   // composing it with the SDK's global logger (`sp1_sdk::utils::setup_logger`),
   // currently the sole subscriber.
   tracing_texray::rss_sampler::start(std::time::Duration::from_millis(50));
-  if let Some(path) = &args.texray_json {
-    if let Some(p) = path.to_str() {
-      let _ = tracing_texray::json_sink::to_file(p);
+  // With --texray + --json, per-phase span timings land at `<json>.spans` as
+  // JSON Lines — the CI drill-down input.
+  if args.texray {
+    if let Some(json) = args.json.as_ref().and_then(|p| p.to_str()) {
+      let _ = tracing_texray::json_sink::to_file(format!("{json}.spans"));
     }
   }
 
   let whole_env_bytes = load_env_bytes(args.ixe.as_ref());
+  let client = ProverClient::from_env().await;
+  let consts = collect_consts(&args)?;
+  if !consts.is_empty() && args.meta {
+    bail!("--consts is Anon-only and cannot be combined with --meta");
+  }
 
-  // `--constant` ships a closure sub-env + a check-list (Anon only); otherwise
-  // the whole env ships with an empty check-list (= check everything).
-  let (env_bytes, check_list, const_count) =
-    if let Some(name) = &args.constant {
-      if args.meta {
-        bail!("--constant is Anon-only and cannot be combined with --meta");
-      }
-      constant_inputs(&whole_env_bytes, name, args.skip_deps)?
-    } else {
-      let cc = count_checkable(&whole_env_bytes, args.meta);
-      (whole_env_bytes, Vec::new(), cc)
-    };
+  if consts.is_empty() {
+    run_one(&client, &args, &whole_env_bytes, None).await?;
+  } else {
+    for name in &consts {
+      run_one(&client, &args, &whole_env_bytes, Some(name)).await?;
+    }
+  }
+  Ok(())
+}
+
+async fn run_one<C: Prover + Sync>(
+  client: &C,
+  args: &Args,
+  whole_env_bytes: &[u8],
+  name: Option<&str>,
+) -> Result<()> {
+  // A name ships a closure sub-env + a check-list (Anon only); otherwise the
+  // whole env ships with an empty check-list (= check everything).
+  let (env_bytes, check_list, const_count) = match name {
+    Some(n) => constant_inputs(whole_env_bytes, n, args.skip_deps)?,
+    None => {
+      let cc = count_checkable(whole_env_bytes, args.meta);
+      (whole_env_bytes.to_vec(), Vec::new(), cc)
+    },
+  };
 
   // Three guest inputs, in order:
   //   1. 1-byte mode flag (0 = Anon / 1 = Meta).
-  //   2. Serialized Ixon env (whole env, or a closure sub-env under
-  //      `--constant`). Anon enumerates work in-guest via
-  //      `ix_kernel::anon_work::build_anon_work`; Meta walks `env.named`.
-  //   3. Check-list of packed primary addresses (`--constant`), or empty
-  //      to check every work item.
+  //   2. Serialized Ixon env (whole env, or a closure sub-env under --consts).
+  //   3. Check-list of packed primary addresses (--consts), or empty for all.
   let mut stdin = SP1Stdin::new();
   stdin.write::<u8>(&u8::from(args.meta));
   stdin.write_vec(env_bytes);
   stdin.write_vec(check_list);
-
-  let client = ProverClient::from_env().await;
 
   if args.execute {
     let exec_start = Instant::now();
@@ -320,7 +350,8 @@ async fn main() -> Result<()> {
       let cycles = report.total_instruction_count();
       let secs = exec_duration.as_secs_f64();
       let tput = if secs > 0.0 { cycles as f64 / secs } else { 0.0 };
-      let key = args.constant.clone().unwrap_or_else(|| "env".to_string());
+      let key =
+        name.map(|s| s.to_string()).unwrap_or_else(|| "env".to_string());
       write_json_entry(
         path,
         &key,
@@ -364,7 +395,7 @@ async fn main() -> Result<()> {
   let verify_duration = verify_start.elapsed();
   println!("proof verified in {:.3}s", verify_duration.as_secs_f64());
   if let Some(path) = &args.json {
-    let key = args.constant.clone().unwrap_or_else(|| "env".to_string());
+    let key = name.map(|s| s.to_string()).unwrap_or_else(|| "env".to_string());
     write_json_entry(
       path,
       &key,
@@ -375,4 +406,69 @@ async fn main() -> Result<()> {
     )?;
   }
   Ok(())
+}
+
+#[cfg(test)]
+mod cli_tests {
+  use clap::Parser;
+
+  use super::{Args, collect_consts};
+
+  fn parse(argv: &[&str]) -> Args {
+    Args::try_parse_from(
+      std::iter::once("sp1-host").chain(argv.iter().copied()),
+    )
+    .expect("parse ok")
+  }
+  fn parse_err(argv: &[&str]) -> String {
+    Args::try_parse_from(
+      std::iter::once("sp1-host").chain(argv.iter().copied()),
+    )
+    .unwrap_err()
+    .to_string()
+  }
+
+  #[test]
+  fn consts_splits_on_comma() {
+    let a = parse(&["--consts", "Nat.add_comm,Nat.succ"]);
+    assert_eq!(a.consts, vec!["Nat.add_comm", "Nat.succ"]);
+  }
+
+  #[test]
+  fn consts_repeatable_and_comma_lists_stack() {
+    let a = parse(&["--consts", "a", "--consts", "b,c"]);
+    assert_eq!(a.consts, vec!["a", "b", "c"]);
+  }
+
+  #[test]
+  fn skip_deps_requires_consts() {
+    assert!(parse_err(&["--skip-deps"]).contains("--consts"));
+  }
+
+  #[test]
+  fn json_alone_ok() {
+    // sp1-host's --json is not gated on --consts (keys by "env" when no name).
+    let a = parse(&["--json", "out.json"]);
+    assert_eq!(a.json.as_deref(), Some(std::path::Path::new("out.json")));
+  }
+
+  #[test]
+  fn consts_file_alone_ok() {
+    let a = parse(&["--consts-file", "names.txt"]);
+    assert_eq!(
+      a.consts_file.as_deref(),
+      Some(std::path::Path::new("names.txt"))
+    );
+  }
+
+  #[test]
+  fn collect_unions_and_dedups() {
+    let path = std::env::temp_dir().join("sp1_host_cli_test_consts.txt");
+    std::fs::write(&path, "a\nb\n# comment\n  c  \n\na\n").expect("write");
+    let a =
+      parse(&["--consts", "a,d", "--consts-file", path.to_str().unwrap()]);
+    let got = collect_consts(&a).expect("collect");
+    assert_eq!(got, vec!["a", "d", "b", "c"]);
+    let _ = std::fs::remove_file(&path);
+  }
 }

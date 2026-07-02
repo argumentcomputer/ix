@@ -39,6 +39,38 @@ merge_phases() {  # <results.json> <spans.jsonl>
     && mv "$res.p" "$res" || true
 }
 
+# Background RAM watchdog. Every ~3 s, sum RSS across `root_pid` and every
+# descendant (via `ps -eo pid,ppid,rss` + a small BFS); when the total exceeds
+# `max_gb`, touch `marker` and SIGKILL the tree. Callers detect the kill by
+# testing `-f "$marker"` after wait. Idempotent-ish under EPERM: descendants
+# spawned after the last sample are only reaped on the next sweep, but their
+# parent dying takes them out anyway.
+watch_ram_kill() {  # <root_pid> <max_gb> <marker>
+  local root_pid=$1 max_gb=$2 marker=$3
+  local max_kb=$((max_gb * 1024 * 1024)) total_kb
+  while kill -0 "$root_pid" 2>/dev/null; do
+    total_kb=$(ps -eo pid,ppid,rss --no-headers 2>/dev/null | awk -v root="$root_pid" '
+      { rss[$1]=$3; parent[$1]=$2 }
+      END {
+        alive[root]=1; changed=1
+        while (changed) {
+          changed=0
+          for (p in parent) if (alive[parent[p]] && !alive[p]) { alive[p]=1; changed=1 }
+        }
+        s=0; for (p in alive) s += rss[p]+0
+        print s
+      }')
+    if [ -n "$total_kb" ] && [ "$total_kb" -gt "$max_kb" ]; then
+      echo "::warning::RAM watchdog: killing pid=$root_pid tree-RSS=${total_kb}kB > ${max_kb}kB (~${max_gb} GB)" >&2
+      : > "$marker"
+      kill -KILL "$root_pid" 2>/dev/null || true
+      pkill -KILL -P "$root_pid" 2>/dev/null || true
+      return
+    fi
+    sleep 3
+  done
+}
+
 # `$benv` is used verbatim for the `.ixe` filename (bench-pr compiles `initStd.ixe`;
 # the bencher jobs reuse the compile job's cached `InitStd.ixe`), and lowercased
 # only to pick the Compile module.
@@ -63,35 +95,40 @@ tmp=$(mktemp -d)
 case "$backend" in
   aiur)
     # One bench-typecheck per constant (isolation + per-constant peak-rss).
-    # Execute mode → Phase 1 only (--execute-only). Prove mode → prove each
-    # constant whose Aiur fft-cost fits the prover RAM ceiling (~128 GB at
-    # 2.34 GB per billion fft), else fall back to execute-only so a too-large
-    # single-shard prove never OOM-kills the job.
-    csv="$repo/Benchmarks/Vectors.csv"
-    ceil=${AIUR_PROVE_MAX_FFT:-50000000000}
+    # Execute mode → Phase 1 only (--execute-only). Prove mode → always attempt
+    # a full prove (no tier gate). A RAM watchdog SIGKILLs the process tree if
+    # its tree-RSS approaches the runner's ceiling; the constant then records
+    # the neutral OOM sentinel `{ "<name>": {"oom": true} }` so bench.py compare
+    # renders `OOM` in that row instead of dropping it.
+    ceiling_gb=${AIUR_PROVE_MAX_RSS_GB:-120}
     while IFS= read -r c; do
       [ -z "$c" ] && continue
       slug=$(printf '%s' "$c" | tr '/ .:' '____')
-      res="$tmp/$slug.json"; spans="$tmp/$slug.spans"
-      do_prove=0
-      if [ "$mode" = prove ]; then
-        fft=$(awk -F, -v n="$c" '$1==n {print $6}' "$csv" 2>/dev/null)
-        if [ -n "${fft:-}" ] && [ "$fft" -le "$ceil" ]; then
-          do_prove=1
-        else
-          echo "::notice::aiur: '$c' fft=${fft:-?} exceeds $ceil (~128 GB); execute-only" >&2
-        fi
-      fi
+      res="$tmp/$slug.json"; spans="$res.spans"; oom="$tmp/$slug.oom"
+      rm -f "$oom"
       # bench-typecheck self-reports peak-rss (texray tree sampler) in its --json;
-      # --texray-json captures the per-phase aiur/*, stark/* timings.
-      if [ "$do_prove" = 1 ]; then
-        bench-typecheck --ixe "$ixe" "$c" --json "$res" --texray-json "$spans" \
+      # with --texray + --json it also writes per-phase aiur/*, stark/* timings
+      # to `<json>.spans` for the drill-down.
+      if [ "$mode" = execute ]; then
+        bench-typecheck --ixe "$ixe" --consts "$c" --json "$res" --execute-only --texray \
           > "$tmp/$slug.log" 2>&1 \
-          || { echo "::warning::aiur prove '$c' failed (OOM/timeout); dropping" >&2; continue; }
-      else
-        bench-typecheck --ixe "$ixe" "$c" --json "$res" --execute-only \
-          --texray-json "$spans" > "$tmp/$slug.log" 2>&1 \
           || { echo "::warning::aiur execute '$c' failed; dropping" >&2; continue; }
+      else
+        ( bench-typecheck --ixe "$ixe" --consts "$c" --json "$res" --texray ) \
+          > "$tmp/$slug.log" 2>&1 &
+        bt_pid=$!
+        watch_ram_kill "$bt_pid" "$ceiling_gb" "$oom" &
+        w_pid=$!
+        wait "$bt_pid" 2>/dev/null; bt_exit=$?
+        kill "$w_pid" 2>/dev/null || true
+        wait "$w_pid" 2>/dev/null || true
+        if [ -f "$oom" ]; then
+          echo "::warning::aiur prove '$c' OOM-killed at ${ceiling_gb} GB" >&2
+          jq -n --arg n "$c" '{($n): {oom: true}}' > "$res"
+        elif [ "$bt_exit" -ne 0 ]; then
+          echo "::warning::aiur prove '$c' failed (exit $bt_exit); dropping" >&2
+          continue
+        fi
       fi
       merge_phases "$res" "$spans"
       [ -s "$res" ] && cat "$res"
@@ -100,12 +137,17 @@ case "$backend" in
     ;;
 
   zisk|sp1)
+    # zkVM prove is not currently wired up (no GPU runner), so this branch runs
+    # execute only. The workflow filters `zisk|sp1 prove` at parse time.
+    if [ "$mode" != execute ]; then
+      echo "::error::$backend $mode: only execute mode is supported" >&2
+      emit_empty; exit 2
+    fi
     host="${backend}-host"; work="$repo/$backend"
     # Build the host once so per-constant timing excludes compilation. The host
     # self-measures and writes its own neutral results JSON via `--json`
-    # (cycles/execute-time/throughput/peak-rss for execute; prove-time/… for
-    # prove), so there is nothing to grep — `timeout` only bounds a runaway
-    # constant.
+    # (cycles/execute-time/throughput/peak-rss), so there is nothing to grep —
+    # `timeout` only bounds a runaway constant.
     echo "::group::cargo build $host"
     ( cd "$work" && cargo build --quiet --release --bin "$host" )
     echo "::endgroup::"
@@ -116,24 +158,14 @@ case "$backend" in
     # in-session as root; the host children inherit it. Without this the ASM
     # services die with `mmap(rom) errno=11`. SP1 needs no such raise.
     [ "$backend" = zisk ] && sudo prlimit --pid $$ --memlock=unlimited:unlimited
-    # zisk proves with `--gpu`; sp1 selects the GPU prover via its env/features.
-    gpu=; [ "$backend" = zisk ] && gpu=--gpu
     while IFS= read -r c; do
       [ -z "$c" ] && continue
       slug=$(printf '%s' "$c" | tr '/ .:' '____')
-      res="$tmp/$slug.json"; log="$tmp/$slug.log"; spans="$tmp/$slug.spans"
-      if [ "$mode" = execute ]; then
-        ( cd "$work" && timeout 25m "$bin" --execute --ixe "$ixe" \
-            --constant "$c" --skip-deps --json "$res" --texray-json "$spans" ) \
-          > "$log" 2>&1 \
-          || { echo "::warning::$backend execute '$c' failed/timed out; dropping" >&2; continue; }
-      else
-        # prove (GPU runner only — the workflow gates this cell).
-        ( cd "$work" && timeout 60m "$bin" $gpu --ixe "$ixe" \
-            --constant "$c" --skip-deps --json "$res" --texray-json "$spans" ) \
-          > "$log" 2>&1 \
-          || { echo "::warning::$backend prove '$c' failed/timed out; dropping" >&2; continue; }
-      fi
+      res="$tmp/$slug.json"; log="$tmp/$slug.log"; spans="$res.spans"
+      ( cd "$work" && timeout 25m "$bin" --execute --ixe "$ixe" \
+          --consts "$c" --skip-deps --json "$res" --texray ) \
+        > "$log" 2>&1 \
+        || { echo "::warning::$backend execute '$c' failed/timed out; dropping" >&2; continue; }
       # The host writes $res only on a clean (zero-failure) run.
       merge_phases "$res" "$spans"
       [ -s "$res" ] && cat "$res"

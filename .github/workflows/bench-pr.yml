@@ -1,18 +1,20 @@
 # `!benchmark` PR command: run the curated constant set (Benchmarks/Vectors.csv)
 # through chosen prover backend(s) and post a main-vs-PR comparison table.
 #
-#   !benchmark ([aiur] [zisk] [sp1] [ooc] | all)  [execute|prove]
+#   !benchmark ([aiur] [zisk] [sp1] [ooc] | all) [execute]
 #   BENCH_ENVS=initStd,mathlib     # which compiled envs (default initStd)
 #   BENCH_FULL=1                   # run the full curated set, not the ~11 primary
 #   BENCH_TIER=cheap|heavy|all     # override the mode default (execute=all, prove=cheap)
 #   BENCH_SHARD=1                  # restrict to the multi-shard target constants
-#   BENCH_GPU=1                    # allow zkVM prove on a self-hosted GPU runner
 #   RUST_LOG=info                  # passthrough env (allowlisted)
 #
-# Per-PR scope: Aiur runs execute (fast, --execute-only) or prove on CPU; the
-# Zisk/SP1 zkVM hosts run execute (deterministic cycle counts). zkVM prove needs
-# a GPU and is skipped with a note unless BENCH_GPU=1 selects a GPU runner. main's
-# numbers are cached by base SHA so they are not recomputed on every comment.
+# Mode is fixed per backend: `aiur` runs `prove` by default (its report also
+# carries the execute-side columns `fft-cost` / `execute-time`); `zisk` / `sp1`
+# / `ooc` always run `execute`. The optional `execute` token flips aiur to
+# execute-only (skips Phase 2); it's a no-op on other backends. main's numbers
+# come from bencher.dev; the workflow falls back to re-running the base SHA
+# locally only when bencher hasn't ingested it yet (freshly-pushed main whose
+# CI is still running).
 name: Benchmark pull requests
 
 on:
@@ -40,7 +42,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.parse.outputs.matrix }}
-      mode: ${{ steps.parse.outputs.mode }}
       tier: ${{ steps.parse.outputs.tier }}
       shard: ${{ steps.parse.outputs.shard }}
       full: ${{ steps.parse.outputs.full }}
@@ -93,39 +94,22 @@ jobs:
       SHARD: ${{ needs.setup.outputs.shard }}
       FULL: ${{ needs.setup.outputs.full }}
     steps:
-      # ---------- skipped cell (zkVM prove without a GPU runner) ----------
-      - name: Skip note
-        if: matrix.cell.skip == 'true'
-        run: |
-          mkdir -p out
-          {
-            echo "### \`$BACKEND\` · \`$BENV\` · \`$MODE\`"
-            echo
-            echo "_Skipped: zkVM proving needs a GPU runner. Re-run with \`BENCH_GPU=1\` on a GPU-enabled runner._"
-          } > "out/table-$LABEL.md"
-
-      # ---------- real cell ----------
       # PR checked out at the workspace root so the local install actions and the
-      # helper scripts resolve; base (cache-miss only) goes under base/.
+      # helper scripts resolve; base (bencher-miss fallback only) goes under base/.
       - name: Checkout PR
-        if: matrix.cell.skip != 'true'
         uses: actions/checkout@v6
         with:
           ref: ${{ env.HEAD_SHA }}
       - name: Apply passthrough env
-        if: matrix.cell.skip != 'true'
         run: |
           while IFS= read -r line; do
             [ -n "$line" ] && printf '%s\n' "$line" >> "$GITHUB_ENV"
           done <<'PTENV'
           ${{ needs.setup.outputs.passthrough-env }}
           PTENV
-      # Select the constants for this cell → names.txt; emit count/vhash/tier
-      # (vhash is part of the main cache key, so editing Vectors.csv invalidates
-      # stale main results). Defaults to the primary subset; BENCH_FULL=1
-      # (→ full=1) runs the whole curated set.
+      # Select the constants for this cell → names.txt. Defaults to the primary
+      # subset; BENCH_FULL=1 (→ full=1) runs the whole curated set.
       - name: Select constants from Benchmarks/Vectors.csv
-        if: matrix.cell.skip != 'true'
         id: man
         run: |
           PRIMARY=--primary; [ "$FULL" = 1 ] && PRIMARY=
@@ -138,7 +122,6 @@ jobs:
       # backend needs `ix` to compile the env to a `.ixe`). Mathlib cache only
       # pulled for the mathlib env.
       - name: Build PR (ix, bench-typecheck)
-        if: matrix.cell.skip != 'true'
         uses: leanprover/lean-action@v1
         with:
           lake-package-directory: .
@@ -150,33 +133,38 @@ jobs:
       # zkVM cells additionally need the Rust toolchain + the backend's toolchain
       # and system deps (the shared composite install actions).
       - name: Set up zkVM Rust toolchain
-        if: matrix.cell.skip != 'true' && (matrix.cell.backend == 'zisk' || matrix.cell.backend == 'sp1')
+        if: matrix.cell.backend == 'zisk' || matrix.cell.backend == 'sp1'
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           cache-workspaces: ${{ matrix.cell.backend }}
       - name: Install SP1
-        if: matrix.cell.skip != 'true' && matrix.cell.backend == 'sp1'
+        if: matrix.cell.backend == 'sp1'
         uses: ./.github/actions/install-sp1
       - name: Install Zisk
-        if: matrix.cell.skip != 'true' && matrix.cell.backend == 'zisk'
+        if: matrix.cell.backend == 'zisk'
         uses: ./.github/actions/install-zisk
 
-      # ---------- main side (cached by base SHA) ----------
-      - name: Restore cached main results
-        if: matrix.cell.skip != 'true'
-        id: main-cache
-        uses: actions/cache/restore@v4
-        with:
-          path: main.json
-          key: bench-${{ matrix.cell.label }}-${{ env.BASE_SHA }}-${{ steps.man.outputs.vhash }}
-      - name: Checkout base
-        if: matrix.cell.skip != 'true' && steps.main-cache.outputs.cache-hit != 'true'
+      # ---------- main side ----------
+      # Try bencher.dev first (bench-main.yml has uploaded main's numbers).
+      # continue-on-error so bench.py's exit 2 (unsupported backend/mode) or 3
+      # (no data yet / API error) doesn't fail the job — we fall back to a
+      # local base run below.
+      - name: Fetch main from bencher
+        id: bencher
+        continue-on-error: true
+        run: |
+          python3 .github/scripts/bench.py fetch-main \
+            --sha "$BASE_SHA" --backend "$BACKEND" --mode "$MODE" \
+            --names "$GITHUB_WORKSPACE/names.txt" \
+            --out "$GITHUB_WORKSPACE/main.json"
+      - name: Checkout base (bencher had no data)
+        if: steps.bencher.outcome != 'success'
         uses: actions/checkout@v6
         with:
           ref: ${{ env.BASE_SHA }}
           path: base
       - name: Build base (ix, bench-typecheck)
-        if: matrix.cell.skip != 'true' && steps.main-cache.outputs.cache-hit != 'true'
+        if: steps.bencher.outcome != 'success'
         uses: leanprover/lean-action@v1
         with:
           lake-package-directory: base
@@ -186,21 +174,14 @@ jobs:
           use-github-cache: false
           use-mathlib-cache: ${{ matrix.cell.env == 'mathlib' && 'true' || 'false' }}
       - name: Run backend on base → main.json
-        if: matrix.cell.skip != 'true' && steps.main-cache.outputs.cache-hit != 'true'
+        if: steps.bencher.outcome != 'success'
         run: |
           export PATH="$PWD/base/.lake/build/bin:$PATH"
           bash .github/scripts/run.sh base "$BENV" "$BACKEND" "$MODE" \
             "$GITHUB_WORKSPACE/names.txt" "$GITHUB_WORKSPACE/main.json"
-      - name: Save cached main results
-        if: matrix.cell.skip != 'true' && steps.main-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: main.json
-          key: bench-${{ matrix.cell.label }}-${{ env.BASE_SHA }}-${{ steps.man.outputs.vhash }}
 
       # ---------- PR side ----------
       - name: Run backend on PR → pr.json
-        if: matrix.cell.skip != 'true'
         run: |
           export PATH="$PWD/.lake/build/bin:$PATH"
           bash .github/scripts/run.sh . "$BENV" "$BACKEND" "$MODE" \
@@ -208,14 +189,14 @@ jobs:
 
       # ---------- compare ----------
       - name: Build comparison table
-        if: matrix.cell.skip != 'true'
         run: |
+          src=ran; [ "${{ steps.bencher.outcome }}" = success ] && src=bencher
           mkdir -p out
           python3 .github/scripts/bench.py compare \
             --main main.json --pr pr.json --out "out/table-$LABEL.md" \
             --backend "$BACKEND" --env "$BENV" --mode "$MODE" \
             --count "${{ steps.man.outputs.count }}" \
-            --cache-hit "${{ steps.main-cache.outputs.cache-hit }}"
+            --main-source "$src"
           cat "out/table-$LABEL.md"
 
       - name: Upload table
