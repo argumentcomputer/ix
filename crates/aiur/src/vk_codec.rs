@@ -172,10 +172,10 @@ impl W {
     self.usize(c.stage_2_width);
   }
   fn commitment(&mut self, c: &Commitment) {
-    // MerkleCap: Vec<[u64; 4]> digests (raw words, no field reduction).
-    self.vec(c.roots(), |w, digest: &[u64; 4]| {
-      for &word in digest {
-        w.u64(word);
+    // MerkleCap: Vec<[u8; 32]> Blake3 digests (raw bytes).
+    self.vec(c.roots(), |w, digest: &[u8; 32]| {
+      for &byte in digest {
+        w.u8(byte);
       }
     });
   }
@@ -335,7 +335,13 @@ impl<'a> R<'a> {
     })
   }
   fn commitment(&mut self) -> Result<Commitment, String> {
-    let caps = self.vec(|r| Ok([r.u64()?, r.u64()?, r.u64()?, r.u64()?]))?;
+    let caps = self.vec(|r| {
+      let mut d = [0u8; 32];
+      for b in d.iter_mut() {
+        *b = r.u8()?;
+      }
+      Ok(d)
+    })?;
     Ok(Commitment::from(caps))
   }
   fn option<T>(

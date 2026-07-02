@@ -122,6 +122,10 @@ lean_exe «bench-typecheck» where
   root := `Benchmarks.Typecheck
   supportInterpreter := true
 
+lean_exe «bench-recursive-verifier» where
+  root := `Benchmarks.RecursiveVerifier
+  supportInterpreter := true
+
 end Benchmarks
 
 section IxApplications

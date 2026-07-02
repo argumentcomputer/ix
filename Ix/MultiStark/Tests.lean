@@ -105,7 +105,7 @@ def tests := ⟦
       store(ListNode.Cons(5u8, store(ListNode.Cons(4u8, store(ListNode.Cons(3u8,
       store(ListNode.Cons(2u8, store(ListNode.Cons(1u8, store(ListNode.Nil)))))))))))))))));
     let (bits, _i, _o) = ch_sample_bits(input, store(ListNode.Nil), 20);
-    assert_eq!(bits_to_num(bits), 799146);
+    assert_eq!(bits_to_num(bits), 1019203);
     1
   }
 
@@ -121,23 +121,23 @@ def tests := ⟦
     -- α_pcs (output empty ⇒ flush), then α_fri (CONSECUTIVE ⇒ thread output).
     let (apcs, input, o1) = pcs_sample_ext(input, store(ListNode.Nil));
     let (afri, input, o2) = pcs_sample_ext(input, o1);
-    assert_eq!(limb_to_field(apcs[0]), 2882912772410685996);
-    assert_eq!(limb_to_field(apcs[1]), 910933442133595775);
-    assert_eq!(limb_to_field(afri[0]), 14440140149289897216);
-    assert_eq!(limb_to_field(afri[1]), 8092267645441512944);
+    assert_eq!(limb_to_field(apcs[0]), 17795849114622667264);
+    assert_eq!(limb_to_field(apcs[1]), 4116843485681689527);
+    assert_eq!(limb_to_field(afri[0]), 11768399386651893439);
+    assert_eq!(limb_to_field(afri[1]), 10948618071942561750);
     -- observe commit (clears output), sample β.
     let v2 = [239u8, 190u8, 173u8, 222u8, 0u8, 0u8, 0u8, 0u8]; -- 0x00000000deadbeef
     let (input, _oc) = ch_observe_val(input, v2);
     let (beta, input, _ob) = pcs_sample_ext(input, store(ListNode.Nil));
-    assert_eq!(limb_to_field(beta[0]), 10456048119516576995);
-    assert_eq!(limb_to_field(beta[1]), 3173538015651228593);
+    assert_eq!(limb_to_field(beta[0]), 12096272534537655203);
+    assert_eq!(limb_to_field(beta[1]), 11431251745744402868);
     -- observe final_poly coeff + log_arity (each a Val), then sample the index.
     let v3 = [4u8, 3u8, 2u8, 1u8, 13u8, 12u8, 11u8, 10u8]; -- 0x0a0b0c0d01020304
     let v4 = [2u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8];     -- 0x0000000000000002
     let (input, _o3) = ch_observe_val(input, v3);
     let (input, _o4) = ch_observe_val(input, v4);
     let (bits, _bi, _bo) = ch_sample_bits(input, store(ListNode.Nil), 20);
-    assert_eq!(bits_to_num(bits), 336138);
+    assert_eq!(bits_to_num(bits), 458922);
     1
   }
 
@@ -215,27 +215,26 @@ def tests := ⟦
     1
   }
   pub fn pcs_hash_test() -> G {
-    -- LEAF3: hash([1,2,3])
+    -- Leaf hashes: `blake3` over the row's canonical 8-LE-byte serialization
+    -- (`SerializingHasher<Blake3>`). Reference digests from the `gen_pcs_refs`
+    -- generator in `multi-stark`, cross-checked with `b3sum`.
     let d3 = mmcs_hash_row(build_range(0, 3));
-    assert_eq!(assert_digest(d3, 0xc55a6a1beaea9fec, 0xc8f0dbc4c59ec440,
-                                 0xacb1295de9bfe032, 0x445d569d3dfc9543), 1);
-    -- LEAF17: exactly one full block, no extra permute.
+    assert_eq!(assert_digest(d3, 4163513704854067712, 9384471110237386207,
+                                 13671380075168847140, 1533933974187331481), 1);
     let d17 = mmcs_hash_row(build_range(0, 17));
-    assert_eq!(assert_digest(d17, 0x388da73622e8fdd5, 0xec687be9c50d2218,
-                                  0x528d145dfe6571af, 0xd2eb808dfba4703c), 1);
-    -- LEAF22: full block + 5-element partial (two permutes), >20 lanes.
+    assert_eq!(assert_digest(d17, 8431665677194841246, 4495111673672851816,
+                                  7709594803249897978, 12683511314940902790), 1);
     let d22 = mmcs_hash_row(build_range(0, 22));
-    assert_eq!(assert_digest(d22, 520358013996801752, 12301199992631688477,
-      8732686820159480415, 10883226686987971725), 1);
-    -- LEAF20: full block + 3-element partial (two permutes).
+    assert_eq!(assert_digest(d22, 14017803411919507972, 9236340131056405306,
+                                  11356520758956579629, 2008168271701183309), 1);
     let d20 = mmcs_hash_row(build_range(0, 20));
-    assert_eq!(assert_digest(d20, 0xec696847be88d358, 0x202861c67ff4cec8,
-                                  0x88e006a48aaa0661, 0xabaddb9d32ecd024), 1);
-    -- COMPRESS([1,2,3,4],[5,6,7,8])
+    assert_eq!(assert_digest(d20, 8822819174011220231, 9835070768970864367,
+                                  9646176123001837413, 1210344881395534089), 1);
+    -- Compression: `blake3(a_bytes || b_bytes)` of two 32-byte child digests.
     let c = mmcs_compress([u64_of(1u8), u64_of(2u8), u64_of(3u8), u64_of(4u8)],
                           [u64_of(5u8), u64_of(6u8), u64_of(7u8), u64_of(8u8)]);
-    assert_eq!(assert_digest(c, 0xda1ef0642722b22e, 0x4851efdbdb2a2fd8,
-                                0x37e8ff900ea95d47, 0xa153eee7805376fb), 1);
+    assert_eq!(assert_digest(c, 16432952784711837466, 12565756115161032165,
+                                6915939387221618258, 11123773279136987111), 1);
     1
   }
 
@@ -256,32 +255,32 @@ def tests := ⟦
     let lhs = store(ListNode.Cons(3, store(ListNode.Cons(2, store(ListNode.Cons(1, store(ListNode.Nil)))))));
     let ibits = store(ListNode.Cons(1, store(ListNode.Cons(0, store(ListNode.Cons(1, store(ListNode.Nil)))))));
     -- authentication path SIB0, SIB1, SIB2 (each a Digest = [U64; 4]).
-    let sib0 = [[9u8, 36u8, 179u8, 127u8, 205u8, 83u8, 105u8, 203u8],
-                [95u8, 229u8, 105u8, 223u8, 113u8, 55u8, 97u8, 122u8],
-                [135u8, 8u8, 65u8, 248u8, 163u8, 163u8, 68u8, 81u8],
-                [9u8, 11u8, 20u8, 209u8, 10u8, 168u8, 151u8, 125u8]];
-    let sib1 = [[227u8, 58u8, 255u8, 213u8, 77u8, 152u8, 42u8, 77u8],
-                [113u8, 86u8, 2u8, 151u8, 97u8, 63u8, 58u8, 45u8],
-                [228u8, 139u8, 228u8, 194u8, 182u8, 115u8, 107u8, 221u8],
-                [248u8, 16u8, 30u8, 93u8, 176u8, 36u8, 205u8, 88u8]];
-    let sib2 = [[236u8, 144u8, 115u8, 218u8, 140u8, 5u8, 86u8, 229u8],
-                [95u8, 186u8, 252u8, 175u8, 21u8, 247u8, 153u8, 25u8],
-                [113u8, 78u8, 92u8, 200u8, 212u8, 175u8, 247u8, 47u8],
-                [78u8, 145u8, 206u8, 54u8, 175u8, 155u8, 165u8, 206u8]];
+    let sib0 = [[229u8, 114u8, 223u8, 248u8, 35u8, 4u8, 112u8, 11u8],
+                [133u8, 106u8, 85u8, 90u8, 195u8, 164u8, 85u8, 141u8],
+                [13u8, 243u8, 100u8, 106u8, 55u8, 39u8, 129u8, 101u8],
+                [0u8, 39u8, 10u8, 147u8, 198u8, 106u8, 172u8, 30u8]];
+    let sib1 = [[234u8, 150u8, 163u8, 93u8, 30u8, 78u8, 129u8, 226u8],
+                [24u8, 27u8, 220u8, 33u8, 92u8, 142u8, 194u8, 191u8],
+                [193u8, 63u8, 223u8, 131u8, 67u8, 230u8, 55u8, 63u8],
+                [169u8, 209u8, 214u8, 101u8, 245u8, 28u8, 141u8, 193u8]];
+    let sib2 = [[167u8, 176u8, 170u8, 74u8, 66u8, 157u8, 36u8, 153u8],
+                [220u8, 192u8, 39u8, 69u8, 198u8, 24u8, 123u8, 147u8],
+                [63u8, 5u8, 74u8, 98u8, 77u8, 73u8, 181u8, 252u8],
+                [134u8, 86u8, 33u8, 32u8, 240u8, 13u8, 134u8, 153u8]];
     let proof = store(ListNode.Cons(sib0, store(ListNode.Cons(sib1,
                   store(ListNode.Cons(sib2, store(ListNode.Nil)))))));
     let (root, capidx) = mmcs_root(rows, lhs, ibits, proof, 3);
     assert_eq!(capidx, 0);
-    assert_eq!(assert_digest(root, 0x6211b9a1a116a006, 0x435ee98e1504880f,
-                                   0x900c7274b9a215f, 0xf6e3aaac5dcd90bd), 1);
+    assert_eq!(assert_digest(root, 4722047561722553901, 2839201037098837684,
+                                   4926058068911485563, 1219861215742277604), 1);
     -- tamper: perturb m0's first opened value → root must change.
     let bad0 = store(ListNode.Cons(u64_of(99u8), store(ListNode.Cons(u64_of(12u8), store(ListNode.Nil)))));
     let bad_rows = store(ListNode.Cons(bad0, store(ListNode.Cons(row1,
                      store(ListNode.Cons(row2, store(ListNode.Nil)))))));
-    let cap = store(ListNode.Cons([[6u8, 160u8, 22u8, 161u8, 161u8, 185u8, 17u8, 98u8],
-                                   [15u8, 136u8, 4u8, 21u8, 142u8, 233u8, 94u8, 67u8],
-                                   [95u8, 33u8, 154u8, 75u8, 39u8, 199u8, 0u8, 9u8],
-                                   [189u8, 144u8, 205u8, 93u8, 172u8, 170u8, 227u8, 246u8]],
+    let cap = store(ListNode.Cons([[45u8, 230u8, 248u8, 40u8, 61u8, 21u8, 136u8, 65u8],
+                                   [180u8, 102u8, 50u8, 238u8, 76u8, 222u8, 102u8, 39u8],
+                                   [123u8, 114u8, 106u8, 220u8, 182u8, 223u8, 92u8, 68u8],
+                                   [228u8, 55u8, 152u8, 7u8, 80u8, 209u8, 237u8, 16u8]],
                     store(ListNode.Nil)));
     assert_eq!(mmcs_verify(cap, rows, lhs, ibits, proof, 3), 1);
     assert_eq!(mmcs_verify(cap, bad_rows, lhs, ibits, proof, 3), 0);

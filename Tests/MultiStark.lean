@@ -5,7 +5,7 @@ public import Ix.Aiur.Meta
 public import Ix.Aiur.Protocol
 public import Ix.Aiur.Compiler
 public import Ix.MultiStark
-public import Ix.Keccak
+public import Blake3.Rust
 
 /-!
 # Tests for the Multi-STARK recursive verifier
@@ -16,14 +16,14 @@ runners (registered in `Tests/Main.lean`, both wired into `ci.yml`):
 
 * **`multi-stark`** — `selfTestSuite`. Executes the verifier's primitive
   `*_test` entrypoints (`Ix/MultiStark/Tests.lean`), each of which validates one
-  primitive (keccak MMCS sponge/compress, Merkle `verify_batch`, the challenger,
+  primitive (Blake3 MMCS leaf/compress, Merkle `verify_batch`, the challenger,
   FRI fold + reduced openings, non-native Goldilocks/ExtGoldilocks arithmetic)
-  against the Rust reference values in `multi-stark/src/types.rs`. Cheap: just
+  against the Rust reference values from `multi-stark` (`gen_pcs_refs`). Cheap: just
   bytecode execution, no proving. The in-circuit `assert_eq!`s do the checking;
   every entrypoint returns `1` on success.
 
 * **`recursive-verifier`** — `endToEndSuite`. The full pipeline (~1.5 min,
-  dominated by proving + the keccak-heavy verifier executions):
+  dominated by proving + the verifier executions):
   1. prove `factorial(5) = 120` with the Multi-STARK backend,
   2. feed that proof as non-deterministic advice (IO channel 0; vk on 1, claims
      on 2) and run `verify_multi_stark_proof` over it — it must accept,
@@ -60,7 +60,7 @@ def expectErr (descr : String) (e : Except ε α) : TestSeq :=
 /-- The verifier's primitive self-test entrypoints (`Ix/MultiStark/Tests.lean`)
 and a one-line description of what each validates against the Rust reference. -/
 def selfTests : List (Lean.Name × String) := [
-  (`pcs_hash_test, "keccak MMCS sponge/compress match reference"),
+  (`pcs_hash_test, "Blake3 MMCS leaf/compress match reference"),
   (`pcs_merkle_test, "Merkle verify_batch matches reference (root + tamper)"),
   (`sample_bits_test, "challenger sample_bits matches reference"),
   (`pcs_challenger4_test, "PCS challenger continuation (α_pcs/α_fri/β/index) matches reference"),
@@ -143,13 +143,13 @@ def endToEndSuite : IO UInt32 := do
   let expectedClaim := buildClaim facIdx input #[Aiur.G.ofNat 120]
   let proofBytes := proof.toBytes
 
-  -- ── serialize proof (advice) + vk + claims, with public keccak-256 digests ──
+  -- ── serialize proof (advice) + vk + claims, with public Blake3 digests ──
   let proofGs : Array Aiur.G := proofBytes.data.map .ofUInt8
   let vkBytes := facSystem.vkBytes
-  let sysDigestInput : Array Aiur.G := (Keccak.hash vkBytes).data.map .ofUInt8
+  let sysDigestInput : Array Aiur.G := (Blake3.Rust.hash vkBytes).val.data.map .ofUInt8
   let vkGs : Array Aiur.G := vkBytes.data.map .ofUInt8
   let claimBytes := serializeClaims #[claim]
-  let claimsDigestInput : Array Aiur.G := (Keccak.hash claimBytes).data.map .ofUInt8
+  let claimsDigestInput : Array Aiur.G := (Blake3.Rust.hash claimBytes).val.data.map .ofUInt8
   let claimGs : Array Aiur.G := claimBytes.data.map .ofUInt8
   -- Public input = vk digest ++ claims digest ++ (num_queries, commit_pow, log_blowup).
   let friParamInput : Array Aiur.G :=
@@ -182,7 +182,7 @@ def endToEndSuite : IO UInt32 := do
   let badClaim : Array Aiur.G := claim.set! (claim.size - 1) (Aiur.G.ofNat 121)
   let badClaimBytes := serializeClaims #[badClaim]
   let badClaimInput : Array Aiur.G :=
-    sysDigestInput ++ ((Keccak.hash badClaimBytes).data.map .ofUInt8) ++ friParamInput
+    sysDigestInput ++ ((Blake3.Rust.hash badClaimBytes).val.data.map .ofUInt8) ++ friParamInput
 
   -- ── run the (expensive) checks, then assert ─────────────────────────────────
   IO.println "recursive-verifier (proving + recursive verification, ~1.5 min)…"
