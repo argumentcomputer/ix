@@ -1,7 +1,7 @@
 # `!benchmark` PR command: run the curated constant set (Benchmarks/Vectors.csv)
 # through chosen prover backend(s) and post a main-vs-PR comparison table.
 #
-#   !benchmark [aiur] [zisk] [sp1] [native | all]  [execute|prove]
+#   !benchmark ([aiur] [zisk] [sp1] [ooc] | all)  [execute|prove]
 #   BENCH_ENVS=initStd,mathlib     # which compiled envs (default initStd)
 #   BENCH_FULL=1                   # run the full curated set, not the ~11 primary
 #   BENCH_TIER=cheap|heavy|all     # override the mode default (execute=all, prove=cheap)

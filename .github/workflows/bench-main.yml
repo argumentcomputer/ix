@@ -9,9 +9,9 @@ name: Benchmarks
 #   3. zkvm-execute — restore that `.ixe` and execute the same constants through
 #                     the Zisk and SP1 zkVM hosts (deterministic cycle counts +
 #                     time/throughput/RAM; proving needs a GPU, so execute-only).
-#   4. native-check — restore that `.ixe` and run the native Rust kernel (the same
-#                     kernel, out-of-circuit and parallel — far faster) over the
-#                     whole env via `ix check --anon`, tracking throughput.
+#   4. ooc-check    — restore that `.ixe` and run the out-of-circuit Rust kernel
+#                     (the same kernel, out-of-circuit and parallel — far faster)
+#                     over the whole env via `ix check --anon`, tracking throughput.
 # Each job reports to its own bencher testbed/workload so a threshold reset only
 # touches its own measures.
 
@@ -231,7 +231,7 @@ jobs:
           jq 'map_values((.phases // {}) as $p | del(.phases) | (. + ($p | with_entries(.key |= "phase:" + .))) | map_values({value: .}))' neutral.json > aiur.json
           cat aiur.json
       # Upload Aiur metrics. Every measure shares the per-workload baseline
-      # window (data points since the aiur reset tag). constants is deterministic
+      # window (data points since the aiur-check reset tag). constants is deterministic
       # → pinned exactly (0/0). fft-cost is deterministic but only ever drops on
       # a real Aiur win, so it rides an upper-only 5% bound (flag a regression,
       # let wins through) rather than a hard pin. prove-time/execute-time,
@@ -244,7 +244,7 @@ jobs:
       - uses: ./.github/actions/bencher-track
         with:
           testbed: aiur-typecheck-x64-32x
-          workload: aiur
+          workload: aiur-check
           file: aiur.json
           key: ${{ secrets.BENCHER_API_KEY }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -326,7 +326,7 @@ jobs:
       - uses: ./.github/actions/bencher-track
         with:
           testbed: ${{ matrix.backend }}-execute-x64-16x
-          workload: ${{ matrix.backend }}
+          workload: ${{ matrix.backend }}-check
           file: bench.json
           key: ${{ secrets.BENCHER_API_KEY }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -350,12 +350,12 @@ jobs:
             --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary _
             --threshold-lower-boundary 0.10
 
-  # Native Rust kernel typecheck — the same kernel as the zkVM guest, but run
-  # out-of-circuit and in parallel (`--workers` defaults to the core count), so
-  # far faster than proving. Checks the whole env via `ix check --anon`, tracking
-  # throughput (constants/sec), wall time, and peak RAM. Reuses the compile job's
-  # cached `.ixe` and the staged `ix` binary — no recompile.
-  native-check:
+  # Out-of-circuit Rust kernel typecheck — the same kernel as the zkVM guest, but
+  # run out-of-circuit and in parallel (`--workers` defaults to the core count),
+  # so far faster than proving. Checks the whole env via `ix check --anon`,
+  # tracking throughput (constants/sec), wall time, and peak RAM. Reuses the
+  # compile job's cached `.ixe` and the staged `ix` binary — no recompile.
+  ooc-check:
     needs: compile
     runs-on: warp-ubuntu-latest-x64-32x
     timeout-minutes: 60
@@ -388,10 +388,10 @@ jobs:
           path: ${{ matrix.bench }}.ixe
           key: aiur-ixe-${{ github.sha }}-${{ matrix.bench }}
           fail-on-cache-miss: true
-      # run.sh native runs `ix check --anon` (whole env, parallel) and emits the
+      # run.sh ooc runs `ix check --anon` (whole env, parallel) and emits the
       # neutral { <env>: { constants, check-time, throughput, peak-rss } } — same
-      # path as the !benchmark native backend.
-      - name: Run native kernel check
+      # path as the !benchmark ooc backend.
+      - name: Run out-of-circuit kernel check
         env:
           REUSE_IXE: "1"
         run: |
@@ -400,17 +400,17 @@ jobs:
           benv="${{ matrix.bench }}"; benv="${benv,}"
           python3 .github/scripts/bench.py manifest \
             --csv Benchmarks/Vectors.csv --env "$benv" --mode execute --primary --out names.txt
-          bash .github/scripts/run.sh . "${{ matrix.bench }}" native execute names.txt neutral.json
+          bash .github/scripts/run.sh . "${{ matrix.bench }}" ooc execute names.txt neutral.json
           # Wrap → Bencher Metric Format, flattening `phases` into `phase:<span>`
-          # measures (a no-op for native, which records no spans).
+          # measures (a no-op for ooc, which records no spans).
           jq 'map_values((.phases // {}) as $p | del(.phases) | (. + ($p | with_entries(.key |= "phase:" + .))) | map_values({value: .}))' neutral.json > bench.json
           cat bench.json
       # constants is deterministic → pinned (0/0); check-time / throughput /
       # peak-rss are noisy parallel wall-clock → percentage bounds.
       - uses: ./.github/actions/bencher-track
         with:
-          testbed: native-check-x64-32x
-          workload: native-check
+          testbed: ooc-check-x64-32x
+          workload: ooc-check
           file: bench.json
           key: ${{ secrets.BENCHER_API_KEY }}
           github-token: ${{ secrets.GITHUB_TOKEN }}

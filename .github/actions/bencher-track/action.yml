@@ -12,7 +12,7 @@ inputs:
     description: Bencher testbed slug.
     required: true
   workload:
-    description: Workload key for the `bencher-thresholds-reset-<workload>` tag (e.g. ix-compile, aiur).
+    description: Workload key for the `bencher-thresholds-reset-<workload>` tag (e.g. ix-compile, aiur-check).
     required: true
   file:
     description: Bencher Metric Format JSON file to upload.
