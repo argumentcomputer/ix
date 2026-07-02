@@ -1,20 +1,21 @@
 # `!benchmark` PR command: run the curated constant set (Benchmarks/Vectors.csv)
 # through chosen prover backend(s) and post a main-vs-PR comparison table.
 #
-#   !benchmark ([aiur] [zisk] [sp1] [ooc] | all) [execute]
+#   !benchmark ([aiur] [zisk] [sp1] [ooc] [compile] | all) [execute]
 #   BENCH_ENVS=initStd,mathlib     # which compiled envs (default initStd)
-#   BENCH_FULL=1                   # run the full curated set, not the ~11 primary
-#   BENCH_TIER=cheap|heavy|all     # override the mode default (execute=all, prove=cheap)
+#   BENCH_FULL=1                   # run the full curated set, not just primary
+#   BENCH_TIER=cheap|heavy|all     # tier override (default: all)
 #   BENCH_SHARD=1                  # restrict to the multi-shard target constants
 #   RUST_LOG=info                  # passthrough env (allowlisted)
 #
 # Mode is fixed per backend: `aiur` runs `prove` by default (its report also
 # carries the execute-side columns `fft-cost` / `execute-time`); `zisk` / `sp1`
-# / `ooc` always run `execute`. The optional `execute` token flips aiur to
-# execute-only (skips Phase 2); it's a no-op on other backends. main's numbers
-# come from bencher.dev; the workflow falls back to re-running the base SHA
-# locally only when bencher hasn't ingested it yet (freshly-pushed main whose
-# CI is still running).
+# / `ooc` run `execute`; `compile` runs `ix compile <env>.lean → <env>.ixe`
+# (the same job bench-main.yml uploads under testbed `ix-compile-*`). The
+# optional bare `execute` token flips `aiur` to execute-only (skips Phase 2);
+# on the other backends it's a no-op. main's numbers come from bencher.dev;
+# the workflow falls back to re-running the base SHA locally only when bencher
+# hasn't ingested it yet (freshly-pushed main whose CI is still running).
 name: Benchmark pull requests
 
 on:
@@ -108,13 +109,16 @@ jobs:
           ${{ needs.setup.outputs.passthrough-env }}
           PTENV
       # Select the constants for this cell → names.txt. Defaults to the primary
-      # subset; BENCH_FULL=1 (→ full=1) runs the whole curated set.
+      # subset; BENCH_FULL=1 (→ full=1) runs the whole curated set. The `compile`
+      # backend short-circuits this in bench.py — its "benchmark name" is the
+      # CamelCase env slug, so names.txt gets one line and the CSV is ignored.
       - name: Select constants from Benchmarks/Vectors.csv
         id: man
         run: |
           PRIMARY=--primary; [ "$FULL" = 1 ] && PRIMARY=
           python3 .github/scripts/bench.py manifest \
             --csv Benchmarks/Vectors.csv --env "$BENV" --mode "$MODE" \
+            --backend "$BACKEND" \
             --tier "$TIER" --shard "$SHARD" $PRIMARY --out "$GITHUB_WORKSPACE/names.txt" \
             | tee -a "$GITHUB_OUTPUT"
 

@@ -7,14 +7,16 @@
 #   run.sh <repo_dir> <env> <backend> <mode> <names_file> <out_json>
 #     repo_dir : checked-out worktree (has .lake/build/bin/{ix,bench-typecheck})
 #     env      : initStd | lean | mathlib  (any case; used verbatim for <env>.ixe)
-#     backend  : aiur | zisk | sp1 | ooc
-#     mode     : execute | prove
+#     backend  : aiur | zisk | sp1 | ooc | compile
+#     mode     : execute | prove | compile
 #
 # `ix` / `bench-typecheck` come from <repo_dir> (so base measures base's code, PR
-# the PR's — the caller puts <repo_dir>/.lake/build/bin on PATH). Each constant
-# is its own subprocess (a failure/timeout drops only that row). Only JSON is
-# written to stdout — tool output and `::warning::`/`::notice::` go to logs /
-# stderr so they never corrupt the merged JSON stream.
+# the PR's — the caller puts <repo_dir>/.lake/build/bin on PATH). For the
+# per-constant backends (aiur, zisk, sp1, ooc), each name is its own subprocess
+# so a failure/timeout drops only that row. The `compile` backend is per-env
+# (the env slug is the benchmark name) and measures the compile step directly.
+# Only JSON is written to stdout — tool output and `::warning::`/`::notice::`
+# go to logs / stderr so they never corrupt the merged JSON stream.
 set -uo pipefail
 
 repo=${1:?repo_dir}; benv=${2:?env}; backend=${3:?backend}; mode=${4:?mode}
@@ -81,16 +83,19 @@ case "$(printf '%s' "$benv" | tr '[:upper:]' '[:lower:]')" in
   *) echo "unknown env: $benv" >&2; exit 2 ;;
 esac
 
+tmp=$(mktemp -d)
+compile_log="$tmp/compile.log"
+
+# `compile` backend needs a fresh compile to measure — never honor REUSE_IXE.
 ixe="$repo/$benv.ixe"
-if [ "${REUSE_IXE:-0}" = 1 ] && [ -f "$ixe" ]; then
+if [ "${REUSE_IXE:-0}" = 1 ] && [ "$backend" != compile ] && [ -f "$ixe" ]; then
   echo "reusing existing $ixe (REUSE_IXE)" >&2
 else
   echo "::group::ix compile $module → $benv.ixe ($backend/$mode)"
-  "$repo/.lake/build/bin/ix" compile "$repo/Benchmarks/Compile/$module.lean" --out "$ixe"
+  "$repo/.lake/build/bin/ix" compile "$repo/Benchmarks/Compile/$module.lean" \
+    --out "$ixe" 2>&1 | tee "$compile_log"
   echo "::endgroup::"
 fi
-
-tmp=$(mktemp -d)
 
 case "$backend" in
   aiur)
@@ -162,8 +167,12 @@ case "$backend" in
       [ -z "$c" ] && continue
       slug=$(printf '%s' "$c" | tr '/ .:' '____')
       res="$tmp/$slug.json"; log="$tmp/$slug.log"; spans="$res.spans"
+      # Full-closure check (no --skip-deps) so this is directly comparable to
+      # the ooc `ix check-rs --consts` run — the delta then isolates the
+      # in-circuit-vs-out-of-circuit overhead rather than mixing in subject-
+      # only vs full-closure scope.
       ( cd "$work" && timeout 25m "$bin" --execute --ixe "$ixe" \
-          --consts "$c" --skip-deps --json "$res" --texray ) \
+          --consts "$c" --json "$res" --texray ) \
         > "$log" 2>&1 \
         || { echo "::warning::$backend execute '$c' failed/timed out; dropping" >&2; continue; }
       # The host writes $res only on a clean (zero-failure) run.
@@ -178,9 +187,10 @@ case "$backend" in
     # off the structured line
     #   `##check## <elapsed_ms> <passed> <failures> <total> <peak-rss-bytes>`
     # (peak-rss from ix check's tracing-texray tree sampler): the whole env in
-    # parallel (`--anon`, keyed by env), and a per-primary subject check
-    # (`--consts`, keyed by constant) for an apples-to-apples baseline next to
-    # the zkVM `--skip-deps` execute.
+    # parallel (`--anon`, keyed by env), and a per-primary full-closure check
+    # (`--consts`, keyed by constant) — apples-to-apples with the zkVM execute
+    # above (also full-closure now), so the delta isolates in-circuit vs
+    # out-of-circuit overhead.
     ooc_one() {  # <label> <ix-check-args…>  → prints one JSON object
       local label="$1"; shift
       local log="$tmp/n.out"
@@ -207,6 +217,33 @@ case "$backend" in
       done < "$names"
     } | jq -s 'reduce .[] as $o ({}; . + $o)' > "$out" 2>/dev/null
     emit_empty
+    ;;
+
+  compile)
+    # `ix compile <env>.lean → <env>.ixe` is the benchmark; the compile step
+    # above always ran fresh for this backend (REUSE_IXE ignored) and teed to
+    # `$compile_log`. `ix compile` emits `##benchmark## <elapsed_ms> <bytes>
+    # <constants>` which we parse into the neutral results shape. The bencher
+    # benchmark name is the CamelCase env slug (matches bench-main.yml's
+    # matrix.bench keys: `InitStd`, `Lean`, `Mathlib`, `FLT`).
+    line=$(grep '^##benchmark##' "$compile_log" 2>/dev/null | tail -1)
+    if [ -z "$line" ]; then
+      echo "::warning::compile: no ##benchmark## line in $compile_log; dropping" >&2
+      emit_empty
+    else
+      elapsed_ms=$(echo "$line" | awk '{print $2}')
+      bytes=$(echo "$line" | awk '{print $3}')
+      constants=$(echo "$line" | awk '{print $4}')
+      benv_cc=$(printf '%s' "$benv" | awk '{print toupper(substr($0,1,1)) substr($0,2)}')
+      elapsed_s=$(awk -v e="$elapsed_ms" 'BEGIN{printf "%.3f", e/1000}')
+      throughput=$(awk -v c="$constants" -v e="$elapsed_ms" \
+        'BEGIN{ if (e>0) printf "%.2f", c*1000/e; else print 0 }')
+      jq -n --arg n "$benv_cc" \
+            --argjson t "$elapsed_s" --argjson b "$bytes" \
+            --argjson c "$constants" --argjson tp "$throughput" \
+        '{($n): {"compile-time":$t,"file-size":$b,"constants":$c,"throughput":$tp}}' \
+        > "$out"
+    fi
     ;;
 
   *) echo "unknown backend: $backend" >&2; exit 2 ;;
