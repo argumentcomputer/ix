@@ -409,18 +409,19 @@ Non-Nix users: install Zisk manually per the
    export CUDA_CACHE_MAXSIZE=4294967296   # 4 GB
    ```
 
-   **Warm-batch proving and cold-start.** The first GPU proof on a machine
-   pays a large one-time cold-start: the proving kernels are JIT-compiled
-   (PTX→SASS), almost entirely inside `GENERATING_INNER_PROOFS`. Measured on an
-   RTX PRO 6000, a `nataddcomm.ixe` proof takes **~126 s cold vs ~12 s warm**
-   (the inner-proof phase alone drops from ~123 s to ~9 s; EXECUTE and
-   `CALCULATING_CONTRIBUTIONS` are unchanged). Two things reuse that work:
-   `--ixe` is repeatable, so passing several inputs proves them in one process
-   and pays the cold-start once for the whole batch; and the JIT output is
-   cached on disk (`CUDA_CACHE_MAXSIZE` above), so even a *fresh* process stays
-   warm — the ~12 s figure above is a separate process from the cold run. So a
-   single small one-off proof looks slow (it eats the cold-start); amortize by
-   batching, or just disregard it. By default proving is stateful with no
+   **Warm-batch proving and cold-start.** On the Zisk v0.18 branch the first
+   GPU proof on a machine paid a large one-time JIT cold-start (PTX→SASS,
+   ~126 s cold vs ~12 s warm for `nataddcomm.ixe` on an RTX PRO 6000). At
+   Zisk v1.0.0-alpha that per-process JIT penalty is gone: cold ≈ warm, both
+   **~17.6-17.9 s** for the same `nataddcomm.ixe` proof on the same GPU
+   (inner-proof phase ~14 s — note that is slower than v0.18's ~9 s warm
+   figure; upstream prover/recursion changes, not the blake3 port). The one
+   remaining true first-run cost is one-time and on-disk, not per-process:
+   the first GPU prove against a freshly generated proving key materializes
+   ~40 GB of `*_gpu` const/consttree variants under `~/.zisk/provingKey`.
+   `--ixe` is still repeatable, so several inputs can be proved in one warm
+   process. Keeping `CUDA_CACHE_MAXSIZE` pinned (above) remains harmless but
+   is no longer load-bearing. By default proving is stateful with no
    checkpointing — if a run is killed it loses in-flight shard proofs and
    restarts from the first shard; use a proof store (`--store-dir`, see
    *Sharding large environments* below) to make a sharded run resumable.
@@ -472,7 +473,7 @@ Non-Nix users: install Zisk manually per the
    [installation docs](https://0xpolygonhermez.github.io/zisk/getting_started/installation.html).
 
    **Heap cap.** The Zisk zkVM has a hard 512 MB RAM cap
-   ([`RAM_SIZE`](https://github.com/0xPolygonHermez/zisk/blob/v0.17.0/core/src/mem.rs#L111)),
+   ([`RAM_SIZE`](https://github.com/0xPolygonHermez/zisk/blob/v1.0.0-alpha/core/src/mem.rs#L111)),
    of which ~510 MB is usable heap, and isn't configurable without
    rebuilding the proving setup. Envs whose deserialized in-memory
    representation exceeds that won't fit (full `TutorialDefs.lean` pulls in

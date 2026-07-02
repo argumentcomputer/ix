@@ -49,7 +49,8 @@
 //!   - [76..108) combined assumptions root (mode 1: post-discharge)
 //!   - [108..112) num_proofs           (checked_count)
 //!
-//! v0.18 proof word layout (as `&[u64]`):
+//! Zisk proof word layout (as `&[u64]`; unchanged v0.18 → v1.0.0-alpha,
+//! re-verified against v1.0.0-alpha leaf proofs):
 //!   [minimal(1)][n_publics(1)][program_vk(4)][zisk_publics(64)][proof…][vk(4)]
 //! so program_vk = words[2..6]; the leaf's committed publics occupy the
 //! zisk_publics region (one u32 slot per word, low 32 bits) starting at
