@@ -105,10 +105,10 @@ fn closure_from(env: &Env, target: &Address, visited: &DashSet<Address>) {
       ConstantInfo::DPrj(p) => Some(&p.block),
       _ => None,
     };
-    if let Some(b) = block {
-      if !visited.contains(b) {
-        stack.push(b.clone());
-      }
+    if let Some(b) = block
+      && !visited.contains(b)
+    {
+      stack.push(b.clone());
     }
   }
 }
@@ -183,7 +183,6 @@ fn add_entries_parallel(
           let data = bytes_to_g(blob.value());
           p.blobs.push((key.clone(), data));
           p.discs.push((key, g_zero));
-          continue;
         }
         // Neither — closure includes some addresses (e.g. blob refs
         // from const.refs) that may not be in env.blobs if the env
@@ -229,12 +228,10 @@ pub fn build_claim_check_witness(
   target: &Address,
 ) -> Result<(Claim, Vec<G>, IOBuffer), String> {
   // Transitive closure rooted at `target`.
-  let closure: FxHashSet<Address> = closure_from_set(env, &[target.clone()]);
+  let closure: FxHashSet<Address> =
+    closure_from_set(env, std::slice::from_ref(target));
 
-  let claim = Claim::Check {
-    const_addr: target.clone(),
-    assumptions: None,
-  };
+  let claim = Claim::Check { const_addr: target.clone(), assumptions: None };
   let mut claim_bytes: Vec<u8> = Vec::new();
   claim.put(&mut claim_bytes);
   let digest = Address::hash(&claim_bytes);
@@ -267,13 +264,11 @@ pub fn build_shard_check_env_witness(
 
   let mut closure_vec: Vec<Address> = closure.iter().cloned().collect();
   closure_vec.sort();
-  let frontier: Vec<Address> = closure_vec
-    .iter()
-    .filter(|a| !owned_set.contains(*a))
-    .cloned()
-    .collect();
-  let env_tree = AssumptionTree::canonical(&closure_vec)
-    .ok_or_else(|| "build_shard_check_env_witness: empty closure".to_string())?;
+  let frontier: Vec<Address> =
+    closure_vec.iter().filter(|a| !owned_set.contains(*a)).cloned().collect();
+  let env_tree = AssumptionTree::canonical(&closure_vec).ok_or_else(|| {
+    "build_shard_check_env_witness: empty closure".to_string()
+  })?;
   let asm_tree = AssumptionTree::canonical(&frontier);
 
   let claim = Claim::CheckEnv {

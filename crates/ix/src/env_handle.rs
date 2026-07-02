@@ -11,10 +11,7 @@
 //! `Env::get` (full-form decode used by the bytes-blob path) does
 //! not, so `from_bytes` runs the harvest post-decode.
 
-use ixon::{
-  Env,
-  metadata::ConstantMetaInfo,
-};
+use ixon::{Env, metadata::ConstantMetaInfo};
 
 pub struct EnvHandle {
   pub env: Env,
@@ -45,7 +42,7 @@ impl EnvHandle {
       .filter_map(|entry| {
         let named = entry.value();
         if let ConstantMetaInfo::Def { hints, .. } = &named.meta.info {
-          Some((named.addr.clone(), hints.clone()))
+          Some((named.addr.clone(), *hints))
         } else {
           None
         }

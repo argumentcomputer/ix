@@ -894,6 +894,8 @@ def emitPreludeHeader : String :=
    #![allow(\n\
    \x20\x20unused_variables, unused_assignments, unused_mut, dead_code,\n\
    \x20\x20unused_parens, non_snake_case, clippy::all,\n\
+   \x20\x20clippy::ptr_as_ptr, clippy::match_same_arms,\n\
+   \x20\x20clippy::large_types_passed_by_value,\n\
    )]\n\
    \n\
    use multi_stark::p3_field::{PrimeCharacteristicRing, PrimeField64};\n\

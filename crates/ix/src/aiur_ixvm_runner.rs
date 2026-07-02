@@ -14,16 +14,20 @@
 //! `Toplevel`'s bytecode is NOT walked at execution time; only its
 //! shape is consulted.
 
+use crate::aiur_ixvm::execute_generated;
 use aiur::G;
 use aiur::bytecode::{FunIdx, Toplevel};
 use aiur::execute::{ExecError, IOBuffer, QueryRecord};
-use crate::aiur_ixvm::execute_generated;
 
 /// Mirror of `Toplevel::execute` (same return shape, same
 /// `entry`-flag gate), but routes execution through the codegen'd
 /// Rust kernel. Deep recursion is handled via per-fn
 /// `stacker::maybe_grow` checks in the generated code — no
 /// pre-reserved giant stack on this thread, no scope dance.
+// `args: Vec<G>` mirrors `Toplevel::execute`'s signature so this fn
+// can be used as an `impl Fn(&Toplevel, _, Vec<G>, _) -> _` in
+// `AiurSystem::prove_ixvm` — a `&[G]` here would break that bound.
+#[allow(clippy::needless_pass_by_value)]
 pub fn execute_ixvm(
   toplevel: &Toplevel,
   fun_idx: FunIdx,

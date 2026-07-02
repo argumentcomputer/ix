@@ -19,7 +19,7 @@ use crate::{
 };
 use aiur::{
   G,
-  execute::{IOBuffer, IOKeyInfo},
+  execute::{IOBuffer, IOKeyInfo, QueryRecord},
   synthesis::AiurSystem,
 };
 
@@ -189,16 +189,15 @@ extern "C" fn rs_aiur_toplevel_execute_ixvm(
   let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
   let mut io_buffer = decode_io_buffer(&io_data_arr, &io_map_arr);
 
-  let (query_record, output) =
-    match ix::aiur_ixvm_runner::execute_ixvm(
-      &toplevel,
-      fun_idx,
-      args.map(|x| lean_unbox_g(&x)),
-      &mut io_buffer,
-    ) {
-      Ok(pair) => pair,
-      Err(err) => return LeanExcept::error_string(&err.to_string()),
-    };
+  let (query_record, output) = match ix::aiur_ixvm_runner::execute_ixvm(
+    &toplevel,
+    fun_idx,
+    args.map(|x| lean_unbox_g(&x)),
+    &mut io_buffer,
+  ) {
+    Ok(pair) => pair,
+    Err(err) => return LeanExcept::error_string(&err.to_string()),
+  };
 
   // Same query-count summarisation as `rs_aiur_toplevel_execute`.
   let mut query_counts: Vec<(usize, usize)> = Vec::with_capacity(
@@ -269,7 +268,6 @@ extern "C" fn rs_aiur_system_prove(
   result.into()
 }
 
-
 // =============================================================================
 // EnvHandle constructors + with-env FFIs (PLAN.md "EnvHandle redesign")
 // =============================================================================
@@ -318,7 +316,7 @@ extern "C" fn rs_aiur_env_handle_from_bytes(
 /// function circuit followed by one per memory size. Mirrors the
 /// summary code used by every check/prove FFI.
 fn build_query_counts_array(
-  query_record: &aiur::execute::QueryRecord,
+  query_record: &QueryRecord,
   toplevel: &aiur::bytecode::Toplevel,
 ) -> LeanArray<LeanOwned> {
   let mut query_counts: Vec<(usize, usize)> = Vec::with_capacity(
@@ -375,7 +373,7 @@ fn decode_owned_blob(
   owned_blob: &LeanByteArray<LeanBorrowed<'_>>,
 ) -> Result<Vec<ix_common::address::Address>, String> {
   let bytes = owned_blob.as_bytes();
-  if bytes.len() % 32 != 0 {
+  if !bytes.len().is_multiple_of(32) {
     return Err(format!(
       "owned_blob: length {} not a multiple of 32",
       bytes.len()
@@ -399,10 +397,10 @@ fn decode_owned_blob(
 fn dispatch_execute(
   toplevel: &aiur::bytecode::Toplevel,
   fun_idx: aiur::bytecode::FunIdx,
-  input: Vec<aiur::G>,
-  io_buffer: &mut aiur::execute::IOBuffer,
+  input: Vec<G>,
+  io_buffer: &mut IOBuffer,
   use_bytecode: bool,
-) -> Result<(aiur::execute::QueryRecord, Vec<aiur::G>), String> {
+) -> Result<(QueryRecord, Vec<G>), String> {
   if use_bytecode {
     toplevel
       .execute(fun_idx, input, io_buffer)
@@ -437,11 +435,17 @@ extern "C" fn rs_aiur_toplevel_check_addr_with_env(
   let (_claim, input, mut io_buffer) =
     match ix::aiur_ixvm_witness::build_claim_check_witness(env, &addr) {
       Ok(t) => t,
-      Err(e) => return LeanExcept::error_string(&format!("witness build: {e}")),
+      Err(e) => {
+        return LeanExcept::error_string(&format!("witness build: {e}"));
+      },
     };
 
   let (query_record, output) = match dispatch_execute(
-    &toplevel, fun_idx, input, &mut io_buffer, use_bytecode,
+    &toplevel,
+    fun_idx,
+    input,
+    &mut io_buffer,
+    use_bytecode,
   ) {
     Ok(p) => p,
     Err(e) => return LeanExcept::error_string(&e),
@@ -476,11 +480,17 @@ extern "C" fn rs_aiur_toplevel_shard_check_with_env(
   let (_claim, input, mut io_buffer) =
     match ix::aiur_ixvm_witness::build_shard_check_env_witness(env, &owned) {
       Ok(t) => t,
-      Err(e) => return LeanExcept::error_string(&format!("witness build: {e}")),
+      Err(e) => {
+        return LeanExcept::error_string(&format!("witness build: {e}"));
+      },
     };
 
   let (query_record, output) = match dispatch_execute(
-    &toplevel, fun_idx, input, &mut io_buffer, use_bytecode,
+    &toplevel,
+    fun_idx,
+    input,
+    &mut io_buffer,
+    use_bytecode,
   ) {
     Ok(p) => p,
     Err(e) => return LeanExcept::error_string(&e),
@@ -517,7 +527,9 @@ extern "C" fn rs_aiur_system_prove_addr_with_env(
   let (claim, input, mut io_buffer) =
     match ix::aiur_ixvm_witness::build_claim_check_witness(env, &addr) {
       Ok(t) => t,
-      Err(e) => return LeanExcept::error_string(&format!("witness build: {e}")),
+      Err(e) => {
+        return LeanExcept::error_string(&format!("witness build: {e}"));
+      },
     };
 
   let (_aiur_claim_arr, proof) = aiur_system_obj.get().prove_ixvm(
@@ -561,7 +573,9 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
   let (claim, input, mut io_buffer) =
     match ix::aiur_ixvm_witness::build_shard_check_env_witness(env, &owned) {
       Ok(t) => t,
-      Err(e) => return LeanExcept::error_string(&format!("witness build: {e}")),
+      Err(e) => {
+        return LeanExcept::error_string(&format!("witness build: {e}"));
+      },
     };
 
   let (_aiur_claim_arr, proof) = aiur_system_obj.get().prove_ixvm(
@@ -582,8 +596,6 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
   let result = LeanProd::new(lean_claim_bytes, proof_io);
   LeanExcept::ok(result)
 }
-
-
 
 /// `AiurSystem.proveIxVM`: IxVM-native prove path. Same return shape
 /// as `rs_aiur_system_prove`, but routes execution through the
@@ -619,9 +631,6 @@ extern "C" fn rs_aiur_system_prove_ixvm(
   let result = LeanProd::new(build_g_array(&claim), proof_io_tuple);
   result.into()
 }
-
-
-
 
 // =============================================================================
 // Helpers
