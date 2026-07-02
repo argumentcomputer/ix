@@ -113,61 +113,61 @@ def canonicalCheck := ⟦
   -- IMax < Param.
   -- ============================================================================
   fn compare_kuniv(x: KLevel, y: KLevel) -> G {
-    match x {
-      KLevel.Zero =>
-        match y {
-          KLevel.Zero => 1,
+    match load(x) {
+      KLevelNode.Zero =>
+        match load(y) {
+          KLevelNode.Zero => 1,
           _ => 0,
         },
-      KLevel.Succ(&xa) =>
-        match y {
-          KLevel.Zero => 2,
-          KLevel.Succ(&ya) => compare_kuniv(xa, ya),
+      KLevelNode.Succ(xa) =>
+        match load(y) {
+          KLevelNode.Zero => 2,
+          KLevelNode.Succ(ya) => compare_kuniv(xa, ya),
           _ => 0,
         },
-      KLevel.Max(&xl, &xr) =>
-        match y {
-          KLevel.Zero => 2,
-          KLevel.Succ(_) => 2,
-          KLevel.Max(&yl, &yr) =>
+      KLevelNode.Max(xl, xr) =>
+        match load(y) {
+          KLevelNode.Zero => 2,
+          KLevelNode.Succ(_) => 2,
+          KLevelNode.Max(yl, yr) =>
             ord_then(compare_kuniv(xl, yl), compare_kuniv(xr, yr)),
           _ => 0,
         },
-      KLevel.IMax(&xl, &xr) =>
-        match y {
-          KLevel.Zero => 2,
-          KLevel.Succ(_) => 2,
-          KLevel.Max(_, _) => 2,
-          KLevel.IMax(&yl, &yr) =>
+      KLevelNode.IMax(xl, xr) =>
+        match load(y) {
+          KLevelNode.Zero => 2,
+          KLevelNode.Succ(_) => 2,
+          KLevelNode.Max(_, _) => 2,
+          KLevelNode.IMax(yl, yr) =>
             ord_then(compare_kuniv(xl, yl), compare_kuniv(xr, yr)),
-          KLevel.Param(_) => 0,
+          KLevelNode.Param(_) => 0,
         },
-      KLevel.Param(xi) =>
-        match y {
-          KLevel.Param(yi) => ord_cmp_g(xi, yi),
+      KLevelNode.Param(xi) =>
+        match load(y) {
+          KLevelNode.Param(yi) => ord_cmp_g(xi, yi),
           _ => 2,
         },
     }
   }
 
-  fn compare_kuniv_list(xs: List‹&KLevel›, ys: List‹&KLevel›) -> G {
+  fn compare_kuniv_list(xs: List‹KLevel›, ys: List‹KLevel›) -> G {
     match load(xs) {
       ListNode.Nil =>
         match load(ys) {
           ListNode.Nil => 1,
           _ => 0,
         },
-      ListNode.Cons(&xh, xt) =>
+      ListNode.Cons(xh, xt) =>
         match load(ys) {
           ListNode.Nil => 2,
-          ListNode.Cons(&yh, yt) =>
+          ListNode.Cons(yh, yt) =>
             ord_then(compare_kuniv(xh, yh), compare_kuniv_list(xt, yt)),
         },
     }
   }
 
   -- SOrd-returning variant; universes are structural so always strong.
-  fn compare_kuniv_list_sord(xs: List‹&KLevel›, ys: List‹&KLevel›) -> (G, G) {
+  fn compare_kuniv_list_sord(xs: List‹KLevel›, ys: List‹KLevel›) -> (G, G) {
     sord_of_g(compare_kuniv_list(xs, ys))
   }
 
@@ -192,10 +192,10 @@ def canonicalCheck := ⟦
           KExprNode.BVar(yi) => ord_cmp_g(xi, yi),
           _ => 0,
         },
-      KExprNode.Srt(&xu) =>
+      KExprNode.Srt(xu) =>
         match y {
           KExprNode.BVar(_) => 2,
-          KExprNode.Srt(&yu) => compare_kuniv(xu, yu),
+          KExprNode.Srt(yu) => compare_kuniv(xu, yu),
           _ => 0,
         },
       KExprNode.Const(xid, xls) =>
@@ -285,10 +285,10 @@ def canonicalCheck := ⟦
           KExprNode.BVar(yi) => sord_of_g(ord_cmp_g(xi, yi)),
           _ => sord_lt_strong(),
         },
-      KExprNode.Srt(&xu) =>
+      KExprNode.Srt(xu) =>
         match y {
           KExprNode.BVar(_) => sord_gt_strong(),
-          KExprNode.Srt(&yu) => sord_of_g(compare_kuniv(xu, yu)),
+          KExprNode.Srt(yu) => sord_of_g(compare_kuniv(xu, yu)),
           _ => sord_lt_strong(),
         },
       KExprNode.Const(xid, xls) =>

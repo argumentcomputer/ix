@@ -71,7 +71,7 @@ def infer := ⟦
       -- has to compare `Succ(IMax 0 1)` against `Succ(Succ Zero)`
       -- structurally and the case-split paths can diverge.
       KExprNode.Srt(l) =>
-        store(KExprNode.Srt(store(level_reduce(KLevel.Succ(l))))),
+        store(KExprNode.Srt(level_reduce(store(KLevelNode.Succ(l))))),
 
       -- Mirror: src/ix/kernel/check.rs:110-120 universe-arity validation.
       -- Validates `lvls.len() == num_lvls(ci)`.
@@ -107,7 +107,7 @@ def infer := ⟦
         let u1 = k_ensure_sort(ty, types, top, addrs);
         let types2 = store(ListNode.Cons(ty, types));
         let u2 = k_ensure_sort(body, types2, top, addrs);
-        store(KExprNode.Srt(store(level_imax(load(u1), load(u2))))),
+        store(KExprNode.Srt(level_imax(u1, u2))),
 
       KExprNode.Let(ty, val, body) =>
         let _ = k_ensure_sort(ty, types, top, addrs);
@@ -194,7 +194,7 @@ def infer := ⟦
   }
 
   fn k_ensure_sort(e: KExpr, types: List‹KExpr›,
-                   top: List‹&KConstantInfo›, addrs: List‹Addr›) -> &KLevel {
+                   top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KLevel {
     let ty = k_infer(e, types, top, addrs);
     -- Mirror: src/ix/kernel/infer.rs:454-478 syntactic Sort fast-path.
     match load(ty) {
@@ -275,7 +275,7 @@ def infer := ⟦
     match load(e) {
       KExprNode.BVar(i) => types_lookup(types, i),
       KExprNode.Srt(l) =>
-        store(KExprNode.Srt(store(level_reduce(KLevel.Succ(l))))),
+        store(KExprNode.Srt(level_reduce(store(KLevelNode.Succ(l))))),
       KExprNode.Const(idx, lvls) =>
         let ci = load(list_lookup(top, idx));
         let expected = const_num_lvls(ci);
@@ -304,7 +304,7 @@ def infer := ⟦
         let u1 = k_ensure_sort_only(ty, types, top, addrs);
         let types2 = store(ListNode.Cons(ty, types));
         let u2 = k_ensure_sort_only(body, types2, top, addrs);
-        store(KExprNode.Srt(store(level_imax(load(u1), load(u2))))),
+        store(KExprNode.Srt(level_imax(u1, u2))),
       KExprNode.Let(_, val, body) =>
         let body_substed = expr_inst1(body, val, 0);
         k_infer_only(body_substed, types, top, addrs),
@@ -344,7 +344,7 @@ def infer := ⟦
   }
 
   fn k_ensure_sort_only(e: KExpr, types: List‹KExpr›,
-                        top: List‹&KConstantInfo›, addrs: List‹Addr›) -> &KLevel {
+                        top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KLevel {
     let ty = k_infer_only(e, types, top, addrs);
     match load(ty) {
       KExprNode.Srt(l) => l,
@@ -447,7 +447,7 @@ def infer := ⟦
       0 => (),
       _ =>
         let lvl = k_ensure_sort(dom, types, top, addrs);
-        match level_equal(load(lvl), KLevel.Zero) {
+        match level_equal(lvl, store(KLevelNode.Zero)) {
           1 => (),
           _ =>
             -- data field; body must have no loose bvars.
@@ -475,13 +475,13 @@ def infer := ⟦
   -- Mirror: src/ix/kernel/infer.rs:488-520 inductive_app_is_prop.
   -- Returns 1 iff the inductive lives in Prop (peeled past params + indices,
   -- result sort = Zero).
-  fn is_inductive_prop(ind_ty: KExpr, lvls: List‹&KLevel›, n_skip: G,
+  fn is_inductive_prop(ind_ty: KExpr, lvls: List‹KLevel›, n_skip: G,
                        types: List‹KExpr›, top: List‹&KConstantInfo›,
                        addrs: List‹Addr›) -> G {
     let ind_ty_inst = expr_inst_levels(ind_ty, lvls);
     let result = peel_n_alls_whnf(ind_ty_inst, n_skip, types, top, addrs);
     match load(result) {
-      KExprNode.Srt(l) => level_equal(load(l), KLevel.Zero),
+      KExprNode.Srt(l) => level_equal(l, store(KLevelNode.Zero)),
       _ => 0,
     }
   }
@@ -495,7 +495,7 @@ def infer := ⟦
       0 => (),
       _ =>
         let lvl = k_ensure_sort(dom, types, top, addrs);
-        assert_eq!(level_equal(load(lvl), KLevel.Zero), 1);
+        assert_eq!(level_equal(lvl, store(KLevelNode.Zero)), 1);
         (),
     }
   }

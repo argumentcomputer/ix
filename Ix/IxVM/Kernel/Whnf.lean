@@ -215,7 +215,7 @@ def whnf := ⟦
   -- decidable, in order. Returns (1, reduced) on the first family that matches
   -- and reduces, else (0, _). Factored out so `prim_any_addr` can gate the
   -- whole chain for non-primitive heads in one shot.
-  fn try_address_primitives(head_addr: Addr, idx: G, lvls: List‹&KLevel›,
+  fn try_address_primitives(head_addr: Addr, idx: G, lvls: List‹KLevel›,
                             spine: List‹KExpr›, types: List‹KExpr›,
                             top: List‹&KConstantInfo›, addrs: List‹Addr›) -> (G, KExpr) {
     match try_nat_dispatch(head_addr, spine, types, top, addrs) {
@@ -243,7 +243,7 @@ def whnf := ⟦
   -- Const-head WHNF dispatch, split out of `whnf_with_spine` (see its Const arm).
   -- `head` is the original `Const(idx, lvls)` KExpr, passed for the stuck
   -- `apply_spine(head, spine)` fallbacks.
-  fn whnf_const_head(idx: G, lvls: List‹&KLevel›, head: KExpr, spine: List‹KExpr›,
+  fn whnf_const_head(idx: G, lvls: List‹KLevel›, head: KExpr, spine: List‹KExpr›,
                      types: List‹KExpr›, top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
     let head_addr = list_lookup(addrs, idx);
     let ci = load(list_lookup(top, idx));
@@ -400,7 +400,7 @@ def whnf := ⟦
 
   -- The difference from `whnf_const_head`: Defn arm returns stuck instead of
   -- unfolding. Iota, quot, primitives, proj-defs still apply.
-  fn whnf_nd_const_head(idx: G, lvls: List‹&KLevel›, head: KExpr, spine: List‹KExpr›,
+  fn whnf_nd_const_head(idx: G, lvls: List‹KLevel›, head: KExpr, spine: List‹KExpr›,
                          types: List‹KExpr›, top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
     let head_addr = list_lookup(addrs, idx);
     let ci = load(list_lookup(top, idx));
@@ -467,7 +467,7 @@ def whnf := ⟦
   -- ============================================================================
   -- Iota (recursor on ctor)
   -- ============================================================================
-  fn try_iota(lvls: List‹&KLevel›, spine: List‹KExpr›,
+  fn try_iota(lvls: List‹KLevel›, spine: List‹KExpr›,
               num_lvls: G, num_params: G, num_indices: G,
               num_motives: G, num_minors: G,
               rules: List‹KRecRule›, k_flag: G, types: List‹KExpr›,
@@ -573,7 +573,7 @@ def whnf := ⟦
     }
   }
 
-  fn try_iota_with_major(lvls: List‹&KLevel›, spine: List‹KExpr›,
+  fn try_iota_with_major(lvls: List‹KLevel›, spine: List‹KExpr›,
                          num_params: G, num_motives: G, num_minors: G,
                          major_idx: G, rules: List‹KRecRule›, k_flag: G,
                          types: List‹KExpr›,
@@ -754,7 +754,7 @@ def whnf := ⟦
   fn try_struct_eta_iota(spine: List‹KExpr›,
                          num_params: G, num_motives: G, num_minors: G,
                          major_idx: G, rules: List‹KRecRule›,
-                         lvls: List‹&KLevel›, types: List‹KExpr›,
+                         lvls: List‹KLevel›, types: List‹KExpr›,
                          top: List‹&KConstantInfo›, addrs: List‹Addr›) -> (G, KExpr) {
     let n_rules = list_length(rules);
     match n_rules {
@@ -976,10 +976,10 @@ def whnf := ⟦
     }
   }
 
-  fn ensure_sort_post_whnf(e: KExpr) -> (G, &KLevel) {
+  fn ensure_sort_post_whnf(e: KExpr) -> (G, KLevel) {
     match load(e) {
       KExprNode.Srt(l) => (1, l),
-      _ => (0, store(KLevel.Zero)),
+      _ => (0, store(KLevelNode.Zero)),
     }
   }
 

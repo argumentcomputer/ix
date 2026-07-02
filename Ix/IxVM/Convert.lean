@@ -59,23 +59,23 @@ def convert := ⟦
   -- pattern already used for `convert_expr(e: &Expr)`.
   fn convert_univ(u: &Univ) -> KLevel {
     match load(u) {
-      Univ.Zero => KLevel.Zero,
-      Univ.Succ(inner) => KLevel.Succ(store(convert_univ(inner))),
-      Univ.Max(a, b) => KLevel.Max(store(convert_univ(a)), store(convert_univ(b))),
-      Univ.IMax(a, b) => KLevel.IMax(store(convert_univ(a)), store(convert_univ(b))),
-      Univ.Var(idx) => KLevel.Param(flatten_u64(idx)),
+      Univ.Zero => store(KLevelNode.Zero),
+      Univ.Succ(inner) => store(KLevelNode.Succ(convert_univ(inner))),
+      Univ.Max(a, b) => store(KLevelNode.Max(convert_univ(a), convert_univ(b))),
+      Univ.IMax(a, b) => store(KLevelNode.IMax(convert_univ(a), convert_univ(b))),
+      Univ.Var(idx) => store(KLevelNode.Param(flatten_u64(idx))),
     }
   }
 
-  -- Resolve a list of universe indices to a List‹&KLevel›
-  fn convert_univ_idxs(idxs: List‹U64›, univs: List‹&Univ›) -> List‹&KLevel› {
+  -- Resolve a list of universe indices to a List‹KLevel›
+  fn convert_univ_idxs(idxs: List‹U64›, univs: List‹&Univ›) -> List‹KLevel› {
     match load(idxs) {
       ListNode.Nil => store(ListNode.Nil),
       ListNode.Cons(idx, rest) =>
         -- universe indices are small; walk with a field index (cheap per-step
         -- field sub) instead of `list_lookup_u64`'s per-step U64 predecessor.
         let u_ref = list_lookup(univs, flatten_u64(idx));
-        store(ListNode.Cons(store(convert_univ(u_ref)), convert_univ_idxs(rest, univs))),
+        store(ListNode.Cons(convert_univ(u_ref), convert_univ_idxs(rest, univs))),
     }
   }
 
@@ -154,7 +154,7 @@ def convert := ⟦
         -- field-indexed walk (see `convert_univ_idxs`): avoids the per-step
         -- U64 predecessor of `list_lookup_u64` on this hot universe lookup.
         let u_ref = list_lookup(univs, flatten_u64(univ_idx));
-        store(KExprNode.Srt(store(convert_univ(u_ref)))),
+        store(KExprNode.Srt(convert_univ(u_ref))),
 
       Expr.Var(idx) =>
         store(KExprNode.BVar(flatten_u64(idx))),

@@ -15,43 +15,43 @@ src/ix/kernel/expr.rs. Self-contained; new kernel modules
 
 def levels := ⟦
   fn level_is_not_zero(l: KLevel) -> G {
-    match l {
-      KLevel.Zero => 0,
-      KLevel.Param(_) => 0,
-      KLevel.Succ(_) => 1,
-      KLevel.Max(&a, &b) => match (level_is_not_zero(a), level_is_not_zero(b)) {
+    match load(l) {
+      KLevelNode.Zero => 0,
+      KLevelNode.Param(_) => 0,
+      KLevelNode.Succ(_) => 1,
+      KLevelNode.Max(a, b) => match (level_is_not_zero(a), level_is_not_zero(b)) {
         (0, 0) => 0,
         _ => 1,
       },
-      KLevel.IMax(_, &b) => level_is_not_zero(b),
+      KLevelNode.IMax(_, b) => level_is_not_zero(b),
     }
   }
 
   fn level_eq(a: KLevel, b: KLevel) -> G {
-    match a {
-      KLevel.Zero =>
-        match b {
-          KLevel.Zero => 1,
+    match load(a) {
+      KLevelNode.Zero =>
+        match load(b) {
+          KLevelNode.Zero => 1,
           _ => 0,
         },
-      KLevel.Succ(&a1) =>
-        match b {
-          KLevel.Succ(&b1) => level_eq(a1, b1),
+      KLevelNode.Succ(a1) =>
+        match load(b) {
+          KLevelNode.Succ(b1) => level_eq(a1, b1),
           _ => 0,
         },
-      KLevel.Max(&a1, &a2) =>
-        match b {
-          KLevel.Max(&b1, &b2) => level_eq(a1, b1) * level_eq(a2, b2),
+      KLevelNode.Max(a1, a2) =>
+        match load(b) {
+          KLevelNode.Max(b1, b2) => level_eq(a1, b1) * level_eq(a2, b2),
           _ => 0,
         },
-      KLevel.IMax(&a1, &a2) =>
-        match b {
-          KLevel.IMax(&b1, &b2) => level_eq(a1, b1) * level_eq(a2, b2),
+      KLevelNode.IMax(a1, a2) =>
+        match load(b) {
+          KLevelNode.IMax(b1, b2) => level_eq(a1, b1) * level_eq(a2, b2),
           _ => 0,
         },
-      KLevel.Param(i) =>
-        match b {
-          KLevel.Param(j) => eq_zero(i - j),
+      KLevelNode.Param(i) =>
+        match load(b) {
+          KLevelNode.Param(j) => eq_zero(i - j),
           _ => 0,
         },
     }
@@ -337,13 +337,13 @@ def levels := ⟦
   -- replicate the aux IMax-shape cases verbatim, as in level.rs).
   fn normalize_aux(l: KLevel, path: List‹G›, k: G,
                    acc: List‹&NLEntry›) -> List‹&NLEntry› {
-    match l {
-      KLevel.Zero => nl_add_const(acc, path, k),
-      KLevel.Succ(&inner) => normalize_aux(inner, path, k + 1, acc),
-      KLevel.Max(&a, &b) =>
+    match load(l) {
+      KLevelNode.Zero => nl_add_const(acc, path, k),
+      KLevelNode.Succ(inner) => normalize_aux(inner, path, k + 1, acc),
+      KLevelNode.Max(a, b) =>
         normalize_aux(b, path, k, normalize_aux(a, path, k, acc)),
-      KLevel.IMax(&u, &b) => normalize_imax_dispatch(u, b, path, k, acc),
-      KLevel.Param(idx) =>
+      KLevelNode.IMax(u, b) => normalize_imax_dispatch(u, b, path, k, acc),
+      KLevelNode.Param(idx) =>
         match glist_ordered_insert(idx, path) {
           (1, new_path) =>
             nl_add_var(nl_add_const(acc, path, k), new_path, idx, k),
@@ -360,19 +360,19 @@ def levels := ⟦
   -- imax = max; max/imax distribute; param conditions the path.
   fn normalize_imax_dispatch(a: KLevel, b: KLevel, path: List‹G›, k: G,
                              acc: List‹&NLEntry›) -> List‹&NLEntry› {
-    match b {
-      KLevel.Zero => nl_add_const(acc, path, k),
-      KLevel.Succ(&v) =>
+    match load(b) {
+      KLevelNode.Zero => nl_add_const(acc, path, k),
+      KLevelNode.Succ(v) =>
         normalize_aux(v, path, k + 1, normalize_aux(a, path, k, acc)),
-      KLevel.Max(&v, &w) =>
+      KLevelNode.Max(v, w) =>
         -- imax(a, max(v, w)) = max(imax(a, v), imax(a, w))
         normalize_imax_dispatch(a, w, path, k,
           normalize_imax_dispatch(a, v, path, k, acc)),
-      KLevel.IMax(&v, &w) =>
+      KLevelNode.IMax(v, w) =>
         -- imax(a, imax(v, w)) = max(imax(a, w), imax(v, w))
         normalize_imax_dispatch(v, w, path, k,
           normalize_imax_dispatch(a, w, path, k, acc)),
-      KLevel.Param(idx) =>
+      KLevelNode.Param(idx) =>
         match glist_ordered_insert(idx, path) {
           (1, new_path) =>
             -- param(idx) = 0 branch: imax(a, 0) = 0, contributing k.
@@ -616,8 +616,8 @@ def levels := ⟦
     match level_eq(a, b) {
       1 => 1,
       0 =>
-        match a {
-          KLevel.Zero => 1,
+        match load(a) {
+          KLevelNode.Zero => 1,
           _ => nl_le(level_normalize(a), level_normalize(b)),
         },
     }
@@ -635,23 +635,23 @@ def levels := ⟦
   }
 
   fn level_max(a: KLevel, b: KLevel) -> KLevel {
-    match a {
-      KLevel.Zero => b,
+    match load(a) {
+      KLevelNode.Zero => b,
       _ =>
-        match b {
-          KLevel.Zero => a,
+        match load(b) {
+          KLevelNode.Zero => a,
           _ =>
             let eq = level_eq(a, b);
             match eq {
               1 => a,
               0 =>
-                match a {
-                  KLevel.Succ(&a1) =>
-                    match b {
-                      KLevel.Succ(&b1) => KLevel.Succ(store(level_max(a1, b1))),
-                      _ => KLevel.Max(store(a), store(b)),
+                match load(a) {
+                  KLevelNode.Succ(a1) =>
+                    match load(b) {
+                      KLevelNode.Succ(b1) => store(KLevelNode.Succ(level_max(a1, b1))),
+                      _ => store(KLevelNode.Max(a, b)),
                     },
-                  _ => KLevel.Max(store(a), store(b)),
+                  _ => store(KLevelNode.Max(a, b)),
                 },
             },
         },
@@ -659,21 +659,21 @@ def levels := ⟦
   }
 
   fn level_imax(a: KLevel, b: KLevel) -> KLevel {
-    match b {
-      KLevel.Zero => KLevel.Zero,
-      KLevel.Succ(_) => level_max(a, b),
+    match load(b) {
+      KLevelNode.Zero => store(KLevelNode.Zero),
+      KLevelNode.Succ(_) => level_max(a, b),
       _ =>
         let not_zero = level_is_not_zero(b);
         match not_zero {
           1 => level_max(a, b),
           0 =>
-            match a {
-              KLevel.Zero => b,
+            match load(a) {
+              KLevelNode.Zero => b,
               _ =>
                 let eq = level_eq(a, b);
                 match eq {
                   1 => a,
-                  0 => KLevel.IMax(store(a), store(b)),
+                  0 => store(KLevelNode.IMax(a, b)),
                 },
             },
         },
@@ -681,38 +681,38 @@ def levels := ⟦
   }
 
   fn level_reduce(l: KLevel) -> KLevel {
-    match l {
-      KLevel.Zero => KLevel.Zero,
-      KLevel.Param(i) => KLevel.Param(i),
-      KLevel.Succ(&u) => KLevel.Succ(store(level_reduce(u))),
-      KLevel.Max(&a, &b) => level_max(level_reduce(a), level_reduce(b)),
-      KLevel.IMax(&a, &b) => level_imax(level_reduce(a), level_reduce(b)),
+    match load(l) {
+      KLevelNode.Zero => store(KLevelNode.Zero),
+      KLevelNode.Param(i) => store(KLevelNode.Param(i)),
+      KLevelNode.Succ(u) => store(KLevelNode.Succ(level_reduce(u))),
+      KLevelNode.Max(a, b) => level_max(level_reduce(a), level_reduce(b)),
+      KLevelNode.IMax(a, b) => level_imax(level_reduce(a), level_reduce(b)),
     }
   }
 
-  fn level_inst_params(l: KLevel, params: List‹&KLevel›) -> KLevel {
-    match l {
-      KLevel.Zero => KLevel.Zero,
-      KLevel.Succ(&u) => KLevel.Succ(store(level_inst_params(u, params))),
-      KLevel.Max(&a, &b) =>
+  fn level_inst_params(l: KLevel, params: List‹KLevel›) -> KLevel {
+    match load(l) {
+      KLevelNode.Zero => store(KLevelNode.Zero),
+      KLevelNode.Succ(u) => store(KLevelNode.Succ(level_inst_params(u, params))),
+      KLevelNode.Max(a, b) =>
         level_max(level_inst_params(a, params), level_inst_params(b, params)),
-      KLevel.IMax(&a, &b) =>
+      KLevelNode.IMax(a, b) =>
         level_imax(level_inst_params(a, params), level_inst_params(b, params)),
-      KLevel.Param(i) => load(list_lookup(params, i)),
+      KLevelNode.Param(i) => list_lookup(params, i),
     }
   }
 
-  fn level_list_inst(lvls: List‹&KLevel›, params: List‹&KLevel›) -> List‹&KLevel› {
+  fn level_list_inst(lvls: List‹KLevel›, params: List‹KLevel›) -> List‹KLevel› {
     match load(lvls) {
       ListNode.Nil => store(ListNode.Nil),
-      ListNode.Cons(&l, rest) =>
+      ListNode.Cons(l, rest) =>
         store(ListNode.Cons(
-          store(level_inst_params(l, params)),
+          level_inst_params(l, params),
           level_list_inst(rest, params))),
     }
   }
 
-  fn expr_inst_levels(e: KExpr, params: List‹&KLevel›) -> KExpr {
+  fn expr_inst_levels(e: KExpr, params: List‹KLevel›) -> KExpr {
     -- Fast path: empty param list = identity. Common when caller's lvls
     -- list is Nil (constants with no universe params).
     match load(params) {
@@ -721,11 +721,11 @@ def levels := ⟦
     }
   }
 
-  fn expr_inst_levels_walk(e: KExpr, params: List‹&KLevel›) -> KExpr {
+  fn expr_inst_levels_walk(e: KExpr, params: List‹KLevel›) -> KExpr {
     match load(e) {
       KExprNode.BVar(i) => store(KExprNode.BVar(i)),
-      KExprNode.Srt(&l) =>
-        store(KExprNode.Srt(store(level_inst_params(l, params)))),
+      KExprNode.Srt(l) =>
+        store(KExprNode.Srt(level_inst_params(l, params))),
       KExprNode.Const(idx, lvls) =>
         store(KExprNode.Const(idx, level_list_inst(lvls, params))),
       KExprNode.App(f, a) =>

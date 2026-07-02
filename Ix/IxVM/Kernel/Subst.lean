@@ -25,7 +25,7 @@ Aiur memoization caches calls automatically; no explicit cache table.
 `KExprNode` lives in `Ix/IxVM/KernelTypes.lean`:
 ```
 enum KExprNode {
-  BVar(G), Srt(&KLevel), Const(G, List‹&KLevel›),
+  BVar(G), Srt(KLevel), Const(G, List‹KLevel›),
   App(KExpr, KExpr), Lam(KExpr, KExpr), Forall(KExpr, KExpr),
   Let(KExpr, KExpr, KExpr), Lit(KLiteral), Proj(G, G, KExpr),
 }

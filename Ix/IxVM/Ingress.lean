@@ -1654,7 +1654,7 @@ def ingress := ⟦
   -- its true position; the stub is only consulted otherwise.
   fn synthetic_primitive_entries() -> (List‹&KConstantInfo›, List‹Addr›) {
     let addrs = synthetic_primitive_addrs();
-    let stub_ty = store(KExprNode.Srt(store(KLevel.Zero)));
+    let stub_ty = store(KExprNode.Srt(store(KLevelNode.Zero)));
     let stub = store(KConstantInfo.Axiom(0, stub_ty, 0));
     let consts = list_repeat_stub(stub, list_addr_length(addrs));
     (consts, addrs)
