@@ -231,7 +231,7 @@ Non-Nix users: install the SP1 toolchain manually per the
    ```
 
    For a larger, realistic env compile one of the `Benchmarks/Compile`
-   targets, then scope proving to a single constant with `--constant`
+   targets, then scope proving to one or more constants with `--consts`
    (step 2):
 
    ```
@@ -250,7 +250,7 @@ Non-Nix users: install the SP1 toolchain manually per the
    # Prove a single constant out of a larger env (Anon-only): the host resolves
    # the name and ships only that constant's closure sub-env. Full-closure by
    # default; add --skip-deps for a subject-only check (deps trusted).
-   WITHOUT_VK_VERIFICATION=1 RUST_LOG=info cargo run --release -- --ixe ../../init.ixe --constant Nat.add_comm
+   WITHOUT_VK_VERIFICATION=1 RUST_LOG=info cargo run --release -- --ixe ../../init.ixe --consts Nat.add_comm
    ```
 
    With no `--ixe`, the host runs against an empty `Ixon.Env`.
@@ -354,19 +354,20 @@ Non-Nix users: install Zisk manually per the
    RUST_LOG=info cargo run --release -- --verify-constraints --ixe ../minimal.ixe
    # Generate and verify a VadcopFinal proof of the same typecheck (CPU)
    RUST_LOG=info cargo run --release -- --ixe ../minimal.ixe
-   # Check a single named constant out of a larger env. The host resolves the
+   # Check one or more named constants out of a larger env. The host resolves each
    # name and ships only its closure sub-env (lazy fault-in, no whole-env load).
    # By default this is the FULL-CLOSURE typecheck — the constant and its whole
-   # dependency closure (matching the Aiur `bench-typecheck --constant`).
+   # dependency closure (matching the Aiur `bench-typecheck --consts <names>`).
    # Composes with --execute (cycles only) and plain prove.
-   RUST_LOG=info cargo run --release -- --execute --ixe ../init.ixe --constant Nat.add_comm
-   RUST_LOG=info cargo run --release -- --ixe ../init.ixe --constant Nat.add_comm
+   RUST_LOG=info cargo run --release -- --execute --ixe ../init.ixe --consts Nat.add_comm
+   RUST_LOG=info cargo run --release -- --ixe ../init.ixe --consts Nat.add_comm,Nat.succ
    # Add --skip-deps for a subject-only check (deps trusted, not re-checked):
-   RUST_LOG=info cargo run --release -- --execute --ixe ../init.ixe --constant Vector.extract_append --skip-deps
+   RUST_LOG=info cargo run --release -- --execute --ixe ../init.ixe --consts Vector.extract_append --skip-deps
    ```
 
-   `--constant` / `--skip-deps` are the same flags the Aiur `bench-typecheck`
-   uses, so the two backends share one vocabulary. `--skip-deps` trusts
+   `--consts` / `--skip-deps` are the same flags `ix check`, `sp1-host`, and the
+   Aiur `bench-typecheck` use, so all four share one vocabulary. `--skip-deps`
+   trusts
    dependencies rather than re-checking them, so it is far cheaper than the
    full-closure default — reserve it for constants too expensive to
    full-closure-check that also can't be sharded (e.g. `Vector.extract_append`
@@ -477,10 +478,10 @@ Non-Nix users: install Zisk manually per the
    [`DEFAULT_MEMORY_LIMIT`](https://github.com/succinctlabs/sp1/blob/v6.2.0/crates/core/executor/src/opts.rs#L25),
    configurable via `MEMORY_LIMIT` env var up to a ~1 TB JIT ceiling
    [`MAX_JIT_LOG_ADDR`](https://github.com/succinctlabs/sp1/blob/v6.2.0/crates/primitives/src/consts.rs#L11)),
-   or scope to a single constant with `--constant <name>` (all backends),
-   which resolves the name and ships only that constant's closure sub-env to the
-   guest. By default it re-checks the full dependency closure; add `--skip-deps`
-   to check it **subject-only** (dependencies trusted and lazily faulted in, not
+   or scope to one or more constants with `--consts <n1,n2,…>` (all backends),
+   which resolves each name and ships only that constant's closure sub-env to the
+   guest. By default each re-checks its full dependency closure; add `--skip-deps`
+   to check them **subject-only** (dependencies trusted and lazily faulted in, not
    re-typechecked) — so individual constants of a large env still fit the cap,
    even ones whose full-closure typecheck would not. To prove a large env in
    full under Zisk, shard it (see

@@ -186,44 +186,29 @@ struct Args {
   #[arg(long)]
   dump_input: Option<PathBuf>,
 
-  /// Check a single constant selected by its Lean NAME (e.g.
-  /// "ByteArray.utf8DecodeChar?_utf8EncodeChar_append"), with no manifest or
-  /// range plumbing: the name is resolved through the env's `named` metadata to
-  /// its ingress block, and the guest receives only its closure sub-env. By
-  /// default this is the **full-closure** typecheck — the constant *and* its
-  /// whole dependency closure are re-checked (matching `Ix.Claim.check addr
-  /// none`, the default of the Aiur `bench-typecheck --constant`). Pass
-  /// `--skip-deps` for a subject-only check (deps trusted). Composes with
-  /// `--execute` (cycles), plain prove (single leaf, subject-bound + verified),
-  /// and `--dump-input` (write the stdin for ziskemu profiling). Requires
-  /// exactly one `--ixe`. Note: a member of a mutual block selects the whole
-  /// block's work item (the kernel checks blocks atomically).
-  #[arg(long, conflicts_with_all = ["shard_plan", "only_shard", "store_dir"])]
-  constant: Option<String>,
+  /// Comma-separated Lean names to check (each: closure sub-env → one leaf).
+  #[arg(
+    long,
+    value_delimiter = ',',
+    conflicts_with_all = ["shard_plan", "only_shard", "store_dir"]
+  )]
+  consts: Vec<String>,
 
-  /// Modifies `--constant`: check only the named constant itself, trusting its
-  /// dependencies (subject-only), instead of re-checking its whole transitive
-  /// closure. Reserved for constants too expensive to full-closure-check that
-  /// also can't be sharded. Same flag/semantics as the Aiur
-  /// `bench-typecheck --skip-deps`.
-  #[arg(long, requires = "constant")]
+  /// Additional names from a file (one per line, `#` comments); unions with --consts.
+  #[arg(long, conflicts_with_all = ["shard_plan", "only_shard", "store_dir"])]
+  consts_file: Option<PathBuf>,
+
+  /// With --consts: check each subject only, trusting its deps.
+  #[arg(long, requires = "consts")]
   skip_deps: bool,
 
-  /// Write the neutral per-constant results JSON `{ "<name>": { … } }` to this
-  /// path (execute → cycles/execute-time/throughput/peak-rss; prove →
-  /// prove-time/steps/peak-rss). Written only on a clean run (zero failures),
-  /// so a present file always holds a valid measurement. Requires `--constant`.
-  /// This is the machine-readable source the CI bench driver merges; the
-  /// human-readable summary still prints regardless.
-  #[arg(long, requires = "constant")]
+  /// Write per-constant results JSON `{ "<name>": { … } }` (accumulated across --consts).
+  #[arg(long, requires = "consts")]
   json: Option<PathBuf>,
 
-  /// Write per-phase timings (`{"span","seconds"}` JSON Lines) to this path via
-  /// tracing-texray's sink, for the CI drill-down. The host records its
-  /// `execute` / `prove` phases here; any zisk-sdk tracing spans nested under
-  /// them are captured too.
+  /// Enable tracing-texray; with --json, per-phase spans are written to <json>.spans.
   #[arg(long)]
-  texray_json: Option<PathBuf>,
+  texray: bool,
 }
 
 /// Peak resident set size (bytes) across this process *and its children*, from
@@ -237,17 +222,55 @@ fn peak_rss_bytes() -> Option<u64> {
   }
 }
 
-/// Write the neutral per-constant entry `{ "<name>": <metrics> }` to `path`
-/// (the shape `run.sh` merges with `jq -s`). serde_json handles key escaping so
-/// arbitrary Lean names are safe.
+/// Append the per-constant entry `{ "<name>": <metrics> }` to the neutral
+/// results JSON at `path`. If the file exists, its object is loaded and the new
+/// key is merged in (overwriting on collision), so a multi-const run
+/// (`--consts a,b,c`) accumulates one map with an entry per name. Written after
+/// every constant, so an external `timeout` still leaves a complete file of the
+/// entries collected so far. serde_json handles key escaping so arbitrary Lean
+/// names are safe.
 fn write_json_entry(
   path: &PathBuf,
   name: &str,
   metrics: serde_json::Value,
 ) -> Result<()> {
-  let entry = serde_json::json!({ name: metrics });
-  std::fs::write(path, serde_json::to_string(&entry)?)
+  let mut map: serde_json::Map<String, serde_json::Value> =
+    match std::fs::read(path) {
+      Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_default(),
+      Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+        serde_json::Map::new()
+      },
+      Err(e) => return Err(anyhow::anyhow!("read {}: {e}", path.display())),
+    };
+  map.insert(name.to_string(), metrics);
+  std::fs::write(path, serde_json::to_string(&serde_json::Value::Object(map))?)
     .map_err(|e| anyhow::anyhow!("write {}: {e}", path.display()))
+}
+
+/// Union `--consts` (comma-list) with names read from `--consts-file` (one per
+/// line, `#` comments and blank lines dropped), preserving first-seen order so
+/// the same name is never re-proven.
+fn collect_consts(args: &Args) -> Result<Vec<String>> {
+  let mut seen: std::collections::HashSet<String> =
+    std::collections::HashSet::new();
+  let mut out: Vec<String> = Vec::new();
+  for name in &args.consts {
+    let trimmed = name.trim();
+    if !trimmed.is_empty() && seen.insert(trimmed.to_string()) {
+      out.push(trimmed.to_string());
+    }
+  }
+  if let Some(path) = &args.consts_file {
+    let contents = std::fs::read_to_string(path)
+      .map_err(|e| anyhow::anyhow!("read {}: {e}", path.display()))?;
+    for line in contents.lines() {
+      let name = line.split('#').next().unwrap_or("").trim();
+      if !name.is_empty() && seen.insert(name.to_string()) {
+        out.push(name.to_string());
+      }
+    }
+  }
+  Ok(out)
 }
 
 /// 112-byte public output of one shard-guest proof.
@@ -789,10 +812,7 @@ fn check_input_coherence(
   Ok(failures)
 }
 
-fn build_client(
-  gpu: bool,
-  asm: bool,
-) -> Result<EmbeddedClient> {
+fn build_client(gpu: bool, asm: bool) -> Result<EmbeddedClient> {
   // Executor choice. The default is the Assembly executor (`asm = true`,
   // i.e. no `--emulator`): it is markedly faster at trace generation and is
   // the prerequisite for the hints stream. It historically broke under our
@@ -825,7 +845,7 @@ fn build_client(
   builder.build()
 }
 
-/// Check a single constant chosen by Lean NAME (the `--constant` path).
+/// Check a single constant chosen by Lean NAME (one iteration of `--consts`).
 /// Resolve name → constant address via the env's `named` metadata, map to its
 /// ingress block's work item, and ship its closure sub-env. By default the
 /// check-list is the ENTIRE closure (full-closure typecheck); with
@@ -955,7 +975,10 @@ async fn run_constant(
   result.get_public_values_slice(&mut buf);
   let publics = ShardPublics::decode(&buf);
   let leaf_ms = result.get_proving_time();
-  tracing_texray::json_sink::record_manual("zisk/prove", leaf_ms as f64 / 1000.0);
+  tracing_texray::json_sink::record_manual(
+    "zisk/prove",
+    leaf_ms as f64 / 1000.0,
+  );
   let expected = subject_of_cover(&cover);
   if *expected.as_bytes() != publics.subject_root {
     bail!(
@@ -1672,9 +1695,11 @@ async fn main() -> Result<()> {
   // own tracing spans — which requires composing it with the SDK's global logger
   // (`zisk_sdk::setup_logger`), currently the sole subscriber.
   tracing_texray::rss_sampler::start(std::time::Duration::from_millis(50));
-  if let Some(path) = &args.texray_json {
-    if let Some(p) = path.to_str() {
-      let _ = tracing_texray::json_sink::to_file(p);
+  // With --texray + --json, per-phase span timings land at `<json>.spans` as
+  // JSON Lines — the CI drill-down input.
+  if args.texray {
+    if let Some(json) = args.json.as_ref().and_then(|p| p.to_str()) {
+      let _ = tracing_texray::json_sink::to_file(format!("{json}.spans"));
     }
   }
 
@@ -1700,9 +1725,9 @@ async fn main() -> Result<()> {
       "--shard-plan requires exactly one --ixe input (the env the manifest was built for)"
     );
   }
-  // `--constant` selects a named constant from one env.
-  if args.constant.is_some() && inputs.len() > 1 {
-    bail!("--constant requires exactly one --ixe input");
+  // `--consts` selects named constants from one env.
+  if !args.consts.is_empty() && inputs.len() > 1 {
+    bail!("--consts requires exactly one --ixe input");
   }
 
   // ---- Plan every input up front (parse + shard). ----
@@ -1766,8 +1791,7 @@ async fn main() -> Result<()> {
   let grand_target_count: usize = plans.iter().map(|p| p.target_count).sum();
   let total_leaves: usize = plans.iter().map(|p| p.shards.len()).sum();
 
-  let client =
-    build_client(args.gpu, !args.emulator)?;
+  let client = build_client(args.gpu, !args.emulator)?;
   client.setup(&SHARD_PROGRAM).run()?.await?;
   // Skip agg-guest setup unless we'll produce more than one leaf proof.
   // The shard-plan path sets up the agg program itself, after its leaves.
@@ -1796,9 +1820,12 @@ async fn main() -> Result<()> {
     return Ok(());
   }
 
-  // ---- Single named constant (no manifest/range). ----
-  if let Some(name) = &args.constant {
-    run_constant(&client, &plans[0], name, &args).await?;
+  // ---- Named constants (no manifest/range). Loops one leaf per name. ----
+  let consts = collect_consts(&args)?;
+  if !consts.is_empty() {
+    for name in &consts {
+      run_constant(&client, &plans[0], name, &args).await?;
+    }
     return Ok(());
   }
 
@@ -2088,5 +2115,72 @@ mod closure_tests {
       &hottest.hex()[..16],
       missing2.len()
     );
+  }
+}
+
+#[cfg(test)]
+mod cli_tests {
+  use clap::Parser;
+
+  use super::{Args, collect_consts};
+
+  fn parse(argv: &[&str]) -> Args {
+    Args::try_parse_from(
+      std::iter::once("zisk-host").chain(argv.iter().copied()),
+    )
+    .expect("parse ok")
+  }
+  fn parse_err(argv: &[&str]) -> String {
+    Args::try_parse_from(
+      std::iter::once("zisk-host").chain(argv.iter().copied()),
+    )
+    .unwrap_err()
+    .to_string()
+  }
+
+  #[test]
+  fn consts_splits_on_comma() {
+    let a = parse(&["--consts", "Nat.add_comm,Nat.succ,String.append"]);
+    assert_eq!(a.consts, vec!["Nat.add_comm", "Nat.succ", "String.append"]);
+  }
+
+  #[test]
+  fn consts_repeatable_and_comma_lists_stack() {
+    let a = parse(&["--consts", "a", "--consts", "b,c"]);
+    assert_eq!(a.consts, vec!["a", "b", "c"]);
+  }
+
+  #[test]
+  fn skip_deps_requires_consts() {
+    assert!(parse_err(&["--skip-deps"]).contains("--consts"));
+  }
+
+  #[test]
+  fn json_requires_consts() {
+    assert!(parse_err(&["--json", "out.json"]).contains("--consts"));
+  }
+
+  #[test]
+  fn consts_conflicts_with_shard_plan() {
+    let s = parse_err(&["--consts", "a", "--shard-plan", "p.ixes"]);
+    assert!(s.contains("shard-plan") || s.contains("shard_plan"));
+  }
+
+  #[test]
+  fn consts_conflicts_with_only_shard() {
+    let s = parse_err(&["--consts", "a", "--only-shard", "1"]);
+    assert!(s.contains("only-shard") || s.contains("only_shard"));
+  }
+
+  #[test]
+  fn collect_unions_and_dedups() {
+    let dir = std::env::temp_dir();
+    let path = dir.join("zisk_host_cli_test_consts.txt");
+    std::fs::write(&path, "a\nb\n# comment\n  c  \n\na\n").expect("write");
+    let a =
+      parse(&["--consts", "a,d", "--consts-file", path.to_str().unwrap()]);
+    let got = collect_consts(&a).expect("collect");
+    assert_eq!(got, vec!["a", "d", "b", "c"]);
+    let _ = std::fs::remove_file(&path);
   }
 }

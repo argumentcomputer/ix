@@ -18,22 +18,21 @@ runtime. Useful standalone (per-constant timeline + RAM breakdown via
 tracing-texray) and as a machine source (neutral results JSON).
 
 ```
-lake exe bench-typecheck --ixe <path> [--constant <name>] [names…] [flags]
+lake exe bench-typecheck --ixe <path> --consts <n1,n2,…> [--consts-file <p>] [flags]
 
-  --ixe <path>       serialized `Ixon.Env`, e.g. from `ix compile Foo.lean`
-                     (writes `foo.ixe`). Required.
-  --constant <name>  constant to benchmark, by fully-qualified Lean name. The
-                     canonical single-target flag, shared with the Zisk
-                     `zisk-host --constant`. Unions with names / manifest.
-  [names…]           zero or more additional constant names to benchmark,
-                     e.g. `Nat.add_comm String.append`.
-  --manifest <path>  additionally read names from a file: one per line, blank
-                     lines and `#` comments ignored. Unions with [names…].
+  --ixe <path>          serialized `Ixon.Env`, e.g. from `ix compile Foo.lean`
+                        (writes `foo.ixe`). Required.
+  --consts <n1,n2,…>    comma-separated fully-qualified constant names to
+                        benchmark (e.g. `Nat.add_comm,String.append`). Same
+                        flag/shape as `ix check --consts`, `zisk-host --consts`,
+                        and `sp1-host --consts`.
+  --consts-file <path>  additionally read names from a file: one per line, blank
+                        lines and `#` comments ignored. Unions with --consts.
 
   Names (from any source) resolve against the env's named map via
   `String.toName` plus a `toString` fallback (mirrors `ix check --ixe`), so
   numeric / private components round-trip (`Foo.0.Bar`, `_private.M.0.foo`).
-  Pass at least one name via --constant, positional args, or --manifest.
+  Pass at least one name via --consts or --consts-file.
 
   --skip-deps    check only each target itself (verify_const, trusting its
                  deps) instead of its whole transitive closure (verify_claim,
@@ -41,9 +40,9 @@ lake exe bench-typecheck --ixe <path> [--constant <name>] [names…] [flags]
                  for targets too expensive to full-closure-check.
   --json <path>  write per-constant results JSON to <path>. Off by default:
                  normal CLI usage prints only the human-readable summary.
-  --texray       force the tracing-texray timeline + RAM breakdown on.
-  --no-texray    force it off. Default: on iff `--json` was NOT given, so a
-                 plain local run gets the breakdown while a JSON run stays quiet.
+  --texray       enable the tracing-texray timeline + RAM breakdown. With
+                 --json <path>, per-phase span timings are also written to
+                 <path>.spans (JSON Lines) for the CI drill-down. Off by default.
   --execute-only run only Phase 1 (constants / fft-cost / execute-time) and skip
                  proving — the fast `execute`-mode signal.
 ```
@@ -86,12 +85,12 @@ def friParameters : Aiur.FriParameters := {
   queryProofOfWorkBits := 0
 }
 
-/-- Manifest lines as raw strings: one name per line. Everything from a `#` to
-    end of line is a comment (whole-line or inline); blank lines are dropped.
-    `#` never appears in a Lean name, so splitting on it is safe. Resolution
-    against the env happens later (so the `toString` fallback can see the
-    displayed form the user wrote). -/
-def parseManifest (contents : String) : Array String :=
+/-- `--consts-file` lines as raw strings: one name per line. Everything from a
+    `#` to end of line is a comment (whole-line or inline); blank lines are
+    dropped. `#` never appears in a Lean name, so splitting on it is safe.
+    Resolution against the env happens later (so the `toString` fallback can
+    see the displayed form the user wrote). -/
+def parseConstsFile (contents : String) : Array String :=
   (contents.splitOn "\n").filterMap (fun line =>
     let s := ((line.splitOn "#").head?.getD "").trimAscii
     if s.isEmpty then none else some s.toString) |>.toArray
@@ -145,48 +144,43 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
   let some ixeArg := p.flag? "ixe"
     | IO.eprintln "error: --ixe <path> is required"; return 1
   let ixePath := ixeArg.as! String
-  -- Names come from `--constant`, the variadic positional args, and/or a
-  -- `--manifest` file. `--constant` is the canonical single-target flag shared
-  -- with the Zisk `zisk-host --constant`; positional names and `--manifest`
-  -- remain for benchmarking many constants at once.
-  let constName : Array String := match p.flag? "constant" with
-    | some f => #[f.as! String]
+  -- Names come from `--consts` (comma-list) and/or a `--consts-file` file.
+  let cliNames : Array String := match p.flag? "consts" with
+    | some f => ((f.as! String).splitOn ",").toArray.filterMap (fun s =>
+        let t := s.trim
+        if t.isEmpty then none else some t)
     | none => #[]
-  let cliNames := p.variableArgsAs! String
-  let fileNames ← match p.flag? "manifest" with
-    | some f => pure (parseManifest (← IO.FS.readFile (f.as! String)))
+  let fileNames ← match p.flag? "consts-file" with
+    | some f => pure (parseConstsFile (← IO.FS.readFile (f.as! String)))
     | none => pure #[]
   -- Union, preserving first-seen order, so the same const isn't proven twice.
   let nameArgs := Id.run do
     let mut seen : Std.HashSet String := {}
     let mut acc : Array String := #[]
-    for n in constName ++ cliNames ++ fileNames do
+    for n in cliNames ++ fileNames do
       if !seen.contains n then seen := seen.insert n; acc := acc.push n
     return acc
   if nameArgs.isEmpty then
-    IO.eprintln "error: provide a constant via --constant, positional name(s), and/or --manifest <path>"
+    IO.eprintln "error: provide at least one constant via --consts <n1,n2,…> and/or --consts-file <path>"
     return 1
   let jsonOut : Option String := (p.flag? "json").map (·.as! String)
-  let texrayJson : Option String := (p.flag? "texray-json").map (·.as! String)
-  -- Start the process-tree RSS sampler so each Result's peak-rss reflects the
-  -- true high-water mark. When a drill-down path is given, install the streaming
-  -- subscriber and point the per-span sink at it, so the prover's aiur/* and
-  -- stark/* phase timings land as JSON Lines for the CI comparison.
-  TracingTexray.startSampler
-  match texrayJson with
-  | some path => TracingTexray.init {}; TracingTexray.jsonSink path
-  | none => pure ()
   -- skip-deps: check just the target (`verify_const`, trusting its deps)
   -- instead of re-checking the whole transitive closure (`verify_claim`).
   let skipDeps := p.hasFlag "skip-deps"
   -- Execute-only: run just Phase 1 (constants / fft-cost / execute-time) and
   -- skip the Phase 2 prove loop.
   let executeOnly := p.hasFlag "execute-only"
-  -- Default: trace iff we're not in JSON/bencher mode.
-  let useTexray :=
-    if p.hasFlag "texray" then true
-    else if p.hasFlag "no-texray" then false
-    else jsonOut.isNone
+  -- Off by default; CI passes --texray explicitly.
+  let useTexray := p.hasFlag "texray"
+  -- Start the process-tree RSS sampler so each Result's peak-rss reflects the
+  -- true high-water mark. When --texray + --json are both on, also install the
+  -- streaming subscriber and point the per-span sink at `<json>.spans`, so the
+  -- prover's aiur/* and stark/* phase timings land as JSON Lines for the CI
+  -- comparison.
+  TracingTexray.startSampler
+  match useTexray, jsonOut with
+  | true, some path => TracingTexray.init {}; TracingTexray.jsonSink s!"{path}.spans"
+  | _, _ => pure ()
 
   -- Compile the IxVM kernel once; build the prover system once.
   let .ok toplevel := IxVM.ixVM
@@ -315,18 +309,14 @@ def typecheckCmd : Cli.Cmd := `[Cli|
   "Benchmark IxVM-kernel execution + proving of `Ix.Claim.check` over `.ixe` constants"
 
   FLAGS:
-    "ixe"       : String; "Path to a serialized `Ixon.Env` (e.g. produced by `ix compile`). Required."
-    "constant"  : String; "Constant to benchmark, by fully-qualified Lean name. The canonical single-target flag (shared with `zisk-host --constant`). Unions with positional names / --manifest."
-    "manifest"  : String; "Additionally read constant names from a file (one per line; `#` comments and blank lines ignored). Unions with the positional names."
+    "ixe"          : String; "Path to a serialized `Ixon.Env` (e.g. produced by `ix compile`). Required."
+    "consts"       : String; "Comma-separated fully-qualified constant names to benchmark (e.g. `Nat.add_comm,String.append`). Same flag/shape as `ix check --consts`, `zisk-host --consts`, and `sp1-host --consts`."
+    "consts-file"  : String; "Additionally read constant names from a file (one per line; `#` comments and blank lines ignored). Unions with --consts."
     "json"      : String; "Write per-constant results JSON to this path. Off by default; normal CLI usage prints only the human-readable summary."
     "skip-deps";          "Check only each target itself (verify_const, trusting its deps) instead of re-checking its whole transitive closure (verify_claim). Same flag as `zisk-host --skip-deps`."
     "execute-only";       "Execute only (Phase 1: constants / fft-cost / execute-time) and skip proving. The fast per-PR `execute`-mode signal."
-    texray;               "Force the tracing-texray timeline + RAM breakdown on (per-prove spans on stderr)."
-    "no-texray";          "Force the breakdown off. Default: on iff --json was not given."
-    "texray-json" : String; "Write per-phase span timings (aiur/*, stark/*) as JSON Lines to this path, for the CI drill-down. Implies installing the streaming subscriber."
+    texray;               "Enable the tracing-texray timeline + RAM breakdown (per-prove spans on stderr). Combined with --json, per-phase span timings are additionally written to `<json>.spans` as JSON Lines for the CI drill-down. Off by default."
 
-  ARGS:
-    ...names : String;   "Fully-qualified constant name(s) to benchmark (e.g. `Nat.add_comm String.append`). Optional if `--manifest` is given."
 ]
 
 def main (args : List String) : IO UInt32 :=

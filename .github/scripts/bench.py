@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """All data-wrangling for the `!benchmark` PR workflow, as subcommands:
 
-  parse     COMMENT_BODY env → matrix + config (writes $GITHUB_OUTPUT)
-  manifest  Benchmarks/Vectors.csv → the constant names for one cell
-  compare   main.json + pr.json   → a Markdown main-vs-PR table
-  comment   per-cell table files  → the final PR comment body
+  parse       COMMENT_BODY env → matrix + config (writes $GITHUB_OUTPUT)
+  manifest    Benchmarks/Vectors.csv → the constant names for one cell
+  fetch-main  base SHA + cell → main.json pulled from bencher.dev
+  compare     main.json + pr.json → a Markdown main-vs-PR table
+  comment     per-cell table files → the final PR comment body
 
 The neutral results JSON every backend normalises to (see run.sh) is
 `{ "<name>": { "<metric>": <number>, ... }, ... }`. All metrics are
@@ -12,30 +13,25 @@ lower-is-better, so a positive Δ% is a regression.
 """
 import argparse
 import glob
-import hashlib
 import json
 import os
+import urllib.parse
+import urllib.request
 
 
 # ───────────────────────── parse ─────────────────────────
-BACKENDS = ("aiur", "zisk", "sp1", "ooc")
-MODES = ("execute", "prove")
+# Default mode per backend. Aiur is the only backend with a real choice:
+# `prove` (default) is the full pipeline; `execute` skips Phase 2 (--execute-only)
+# and reports the fft-cost / execute-time subset. Users opt in with the bare
+# `execute` token in `!benchmark`. The zkVMs and ooc are always execute.
+DEFAULT_MODE = {"aiur": "prove", "zisk": "execute", "sp1": "execute", "ooc": "execute"}
+BACKENDS = tuple(DEFAULT_MODE)
 ENVS = ("initStd", "lean", "mathlib")
-CONFIG_KEYS = {"BENCH_ENVS", "BENCH_TIER", "BENCH_SHARD", "BENCH_GPU", "BENCH_FULL"}
+CONFIG_KEYS = {"BENCH_ENVS", "BENCH_TIER", "BENCH_SHARD", "BENCH_FULL"}
 PASSTHROUGH_KEYS = {"RUST_LOG", "WITHOUT_VK_VERIFICATION", "RUSTFLAGS"}
 
 
-def runner_for(backend, mode, gpu):
-    """(runs-on label, skip?) for a cell."""
-    if backend == "aiur":
-        return "warp-ubuntu-latest-x64-32x", False
-    if backend == "ooc":      # whole-env parallel check; no proving, never skips
-        return "warp-ubuntu-latest-x64-32x", False
-    if mode == "execute":
-        return "warp-ubuntu-latest-x64-16x", False
-    if gpu:                       # zkVM prove needs a GPU
-        return "self-hosted-gpu", False
-    return "ubuntu-latest", True
+RUNNER = "warp-ubuntu-latest-x64-32x"
 
 
 def cmd_parse(_a):
@@ -44,14 +40,14 @@ def cmd_parse(_a):
     cmd = next((ln for ln in lines if "!benchmark" in ln), "")
     toks = cmd.split("!benchmark", 1)[1].split() if "!benchmark" in cmd else []
 
-    backends, mode = [], "execute"
+    backends, execute_flag = [], False
     for t in (t.lower() for t in toks):
         if t == "all":
             backends = list(BACKENDS)
         elif t in BACKENDS and t not in backends:
             backends.append(t)
-        elif t in MODES:
-            mode = t
+        elif t == "execute":
+            execute_flag = True
     if not backends:
         backends = ["aiur"]
 
@@ -73,24 +69,29 @@ def cmd_parse(_a):
         tier = ""             # empty ⇒ derived from mode at manifest time
     shard = "1" if cfg.get("BENCH_SHARD") == "1" else "0"
     full = "1" if cfg.get("BENCH_FULL") == "1" else "0"  # full set vs primary subset
-    gpu = cfg.get("BENCH_GPU") == "1"
+
+    def mode_for(b):
+        # `execute` only affects aiur (the zkVMs and ooc are execute-only anyway).
+        return "execute" if (b == "aiur" and execute_flag) else DEFAULT_MODE[b]
 
     cells = []
     for b in backends:
+        m = mode_for(b)
         for e in envs:
-            runner, skip = runner_for(b, mode, gpu)
-            cells.append({"backend": b, "env": e, "mode": mode, "runner": runner,
-                          "skip": "true" if skip else "false", "label": f"{b}-{e}-{mode}"})
+            cells.append({"backend": b, "env": e, "mode": m,
+                          "runner": RUNNER,
+                          "label": f"{b}-{e}-{m}"})
 
-    summary = (f"backends: `{' '.join(backends)}` · mode: `{mode}` · "
-               f"envs: `{','.join(envs)}` · set: `{'full' if full == '1' else 'primary'}` · "
-               f"tier: `{tier or 'auto'}` · shard: `{shard}` · gpu: `{int(gpu)}`")
+    modes = " ".join(f"{b}={mode_for(b)}" for b in backends)
+    summary = (f"backends: `{modes}` · envs: `{','.join(envs)}` · "
+               f"set: `{'full' if full == '1' else 'primary'}` · "
+               f"tier: `{tier or 'auto'}` · shard: `{shard}`")
     if passthrough:
         summary += " · env: `" + " ".join(passthrough) + "`"
 
     with open(os.environ.get("GITHUB_OUTPUT", "/dev/stdout"), "a") as f:
         f.write(f"matrix={json.dumps(cells)}\n")
-        f.write(f"mode={mode}\ntier={tier}\nshard={shard}\nfull={full}\n")
+        f.write(f"tier={tier}\nshard={shard}\nfull={full}\n")
         f.write(f"config-summary={summary}\n")
         f.write("passthrough-env<<PTENV\n" + "\n".join(passthrough)
                 + ("\n" if passthrough else "") + "PTENV\n")
@@ -101,8 +102,9 @@ def cmd_parse(_a):
 # ──────────────────────── manifest ────────────────────────
 def cmd_manifest(a):
     # prove defaults to the cheap tier to keep the full set bounded; the curated
-    # primary subset is exempt — run.sh proves each primary that fits the Aiur RAM
-    # ceiling and execute-only's the rest, so all primaries are selected here.
+    # primary subset is exempt — run.sh gates prove vs execute-only per-constant
+    # on the tier column, so all primaries are selected here (heavy ones fall
+    # back to execute-only in run.sh, not by being excluded up here).
     tier = a.tier or ("cheap" if (a.mode == "prove" and not a.primary) else "all")
     names = []
     with open(a.csv) as f:
@@ -111,9 +113,13 @@ def cmd_manifest(a):
             if not row or row.startswith("#"):
                 continue
             cols = row.split(",")
-            if cols[0] == "name" or len(cols) < 4:
+            if cols[0] == "name" or len(cols) < 3:
                 continue
-            name, env, ctier, shard = cols[:4]
+            # `shard_target` and `primary` default to "0" when the column is
+            # omitted, so rows can drop trailing zero fields (most only carry
+            # the first three).
+            name, env, ctier = cols[:3]
+            shard = cols[3] if len(cols) >= 4 else "0"
             rep = cols[4] if len(cols) >= 5 else "0"
             if env != a.env:
                 continue
@@ -126,21 +132,20 @@ def cmd_manifest(a):
             names.append(name)
     with open(a.out, "w") as f:
         f.write("\n".join(names) + ("\n" if names else ""))
-    vhash = hashlib.sha256(open(a.csv, "rb").read()).hexdigest()[:16]
-    print(f"count={len(names)}\nvhash={vhash}\ntier={tier}")
+    print(f"count={len(names)}\ntier={tier}")
 
 
 # ───────────────────────── compare ─────────────────────────
+# Compare-column set per (backend, mode). Aiur has both modes: `prove` shows
+# the full execute+prove metric set; `execute` is a subset (Phase 1 only, no
+# prove-time / no throughput). Bencher stores only the prove set for main —
+# `execute` mode filters that same JSON down to the execute-side columns.
 METRICS = {
-    ("aiur", "execute"): ["fft-cost", "execute-time"],
-    ("aiur", "prove"): ["prove-time", "peak-rss"],
-    ("zisk", "execute"): ["cycles", "execute-time", "throughput", "peak-rss"],
-    ("sp1", "execute"): ["cycles", "execute-time", "throughput", "peak-rss"],
-    ("zisk", "prove"): ["prove-time", "steps", "peak-rss"],
-    ("sp1", "prove"): ["prove-time", "peak-rss"],
-    # ooc is whole-env (one row per env); mode is ignored (it never proves).
-    ("ooc", "execute"): ["throughput", "check-time", "peak-rss"],
-    ("ooc", "prove"): ["throughput", "check-time", "peak-rss"],
+    ("aiur", "prove"):    ["fft-cost", "execute-time", "prove-time", "peak-rss"],
+    ("aiur", "execute"):  ["fft-cost", "execute-time", "peak-rss"],
+    ("zisk", "execute"):  ["cycles", "execute-time", "throughput", "peak-rss"],
+    ("sp1",  "execute"):  ["cycles", "execute-time", "throughput", "peak-rss"],
+    ("ooc",  "execute"):  ["throughput", "check-time", "peak-rss"],
 }
 
 
@@ -149,12 +154,76 @@ def _num(d, name, metric):
     return v if isinstance(v, (int, float)) else None
 
 
-def _human(v):
-    if v is None:
-        return "n/a"
+# Per-metric formatting kind. Metric names are the neutral-JSON keys the tools
+# emit (see METRICS above). Unknown metrics fall through to `_human_auto`.
+_METRIC_KIND = {
+    # bytes
+    "peak-rss": "bytes",
+    "file-size": "bytes",
+    # seconds
+    "execute-time": "seconds",
+    "prove-time": "seconds",
+    "check-time": "seconds",
+    "compile-time": "seconds",
+    # large counts (10^6+ typical)
+    "fft-cost": "count",
+    "cycles": "count",
+    "steps": "count",
+    "max-shard-cycles": "count",
+    "throughput": "count",
+    # small integers
+    "constants": "int",
+    "shards": "int",
+}
+
+
+def _human_bytes(v):
+    v = float(v)
+    for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
+        if abs(v) < 1024:
+            return f"{int(v):,} {unit}" if unit == "B" else f"{v:,.2f} {unit}"
+        v /= 1024
+    return f"{v:,.2f} PiB"
+
+
+def _human_seconds(v):
+    v = float(v)
+    if abs(v) < 1e-3:
+        return f"{v * 1e6:.1f} µs"
+    if abs(v) < 1:
+        return f"{v * 1e3:.1f} ms"
+    if abs(v) < 60:
+        return f"{v:.3f} s"
+    m, s = divmod(v, 60)
+    return f"{int(m)}m {s:.1f}s"
+
+
+def _human_count(v):
+    v = float(v)
+    if abs(v) < 1000:
+        return f"{int(v):,}" if v == int(v) else f"{v:.3f}"
+    for unit in ("K", "M", "B", "T"):
+        v /= 1000
+        if abs(v) < 1000:
+            return f"{v:.2f}{unit}"
+    return f"{v:.2f}Q"
+
+
+def _human_auto(v):
     if isinstance(v, int) or (isinstance(v, float) and v.is_integer()):
         return f"{int(v):,}"
     return f"{v:,.3f}"
+
+
+def _human(v, metric=None):
+    if v is None:
+        return "n/a"
+    kind = _METRIC_KIND.get(metric, "auto")
+    if kind == "bytes":   return _human_bytes(v)
+    if kind == "seconds": return _human_seconds(v)
+    if kind == "count":   return _human_count(v)
+    if kind == "int":     return f"{int(v):,}"
+    return _human_auto(v)
 
 
 def _delta(main, pr):
@@ -172,38 +241,13 @@ def _load(path):
         return {}
 
 
-def _phases(entry):
-    """The `phases` object (span → seconds) on a constant's entry, or {}."""
-    p = entry.get("phases") if isinstance(entry, dict) else None
-    return p if isinstance(p, dict) else {}
-
-
-def _phase_details(main_d, pr_d, names):
-    """Collapsible per-constant phase (span) timing tables — the drill-down that
-    shows *where* time moved between main and PR. Emitted only for constants that
-    carry tracing-texray span data."""
-    blocks = []
-    for n in names:
-        mp, pp = _phases(main_d.get(n, {})), _phases(pr_d.get(n, {}))
-        # Only worth a drill-down when there's more than one phase; a lone phase
-        # (zisk/sp1 execute, ooc check) just restates the headline metric.
-        if len(set(mp) | set(pp)) < 2:
-            continue
-        rows = ["| phase | main (s) | PR (s) | Δ% |", "|---|--:|--:|--:|"]
-        # Slowest-on-PR (else main) first, so the dominant phase leads.
-        spans = sorted(set(mp) | set(pp),
-                       key=lambda s: -(pp.get(s) if isinstance(pp.get(s), (int, float))
-                                       else mp.get(s) if isinstance(mp.get(s), (int, float)) else 0))
-        for s in spans:
-            mv, pv = mp.get(s), pp.get(s)
-            mv = mv if isinstance(mv, (int, float)) else None
-            pv = pv if isinstance(pv, (int, float)) else None
-            dp = _delta(mv, pv)
-            rows.append(f"| `{s}` | {_human(mv)} | {_human(pv)} | "
-                        f"{'n/a' if dp is None else f'{dp:+.1f}%'} |")
-        blocks.append(f"<details><summary><code>{n}</code> — phase breakdown</summary>\n\n"
-                      + "\n".join(rows) + "\n\n</details>")
-    return blocks
+# TODO: re-add the per-constant Aiur phase (sub-span) drill-down. run.sh's
+# `merge_phases` still folds tracing-texray JSON-Lines into `phases: { span:
+# seconds }` on each entry; the compare renderer previously emitted a
+# collapsible `<details>` block per constant showing main-vs-PR per-span deltas
+# so a regression could be traced to `aiur/execute`, `aiur/witness`,
+# `stark/fri_open`, etc. Removed while the compare surface is being stabilised;
+# reinstate once we've settled on the primary table's flag/threshold semantics.
 
 
 def cmd_compare(a):
@@ -212,9 +256,9 @@ def cmd_compare(a):
         raise SystemExit("compare: pass --metric or a known --backend/--mode")
     title = a.title
     if title is None and a.backend:
-        hit = "hit (cached)" if a.cache_hit == "true" else "miss (ran main)"
+        src = a.main_source or "unknown"
         cnt = f"{a.count} constants · " if a.count else ""
-        title = f"### `{a.backend}` · `{a.env}` · `{a.mode}` — {cnt}main cache: {hit}"
+        title = f"### `{a.backend}` · `{a.env}` · `{a.mode}` — {cnt}main from: {src}"
 
     def emit(text):
         if a.out:
@@ -239,35 +283,40 @@ def cmd_compare(a):
         head += [f"{m} (main)", f"{m} (PR)", "Δ%"]
     rows = ["| " + " | ".join(head) + " |", "|" + "|".join(["---"] * len(head)) + "|"]
 
-    n_reg = n_imp = 0
-    worst = None
+    def _oom(d, n):
+        return isinstance(d.get(n), dict) and d[n].get("oom") is True
+
+    regressed, improved = set(), set()
+    worst = None  # (dp, name, metric)
     for n in names:
         cells = [f"`{n}`"]
-        for i, m in enumerate(metrics):
+        main_oom, pr_oom = _oom(main_d, n), _oom(pr_d, n)
+        for m in metrics:
             mv, pv = _num(main_d, n, m), _num(pr_d, n, m)
+            mv_h = "OOM" if main_oom else _human(mv, m)
+            pv_h = "OOM" if pr_oom else _human(pv, m)
+            if main_oom or pr_oom:
+                cells += [mv_h, pv_h, "n/a"]
+                continue
             dp = _delta(mv, pv)
             cell = "n/a" if dp is None else f"{dp:+.1f}%"
-            if i == 0 and dp is not None:
+            if dp is not None:
                 if dp > a.threshold:
-                    cell += " ⚠️"; n_reg += 1
+                    cell += " ⚠️"; regressed.add(n)
                 elif dp < -a.threshold:
-                    cell += " 🟢"; n_imp += 1
+                    cell += " 🟢"; improved.add(n)
                 if worst is None or dp > worst[0]:
-                    worst = (dp, n)
-            cells += [_human(mv), _human(pv), cell]
+                    worst = (dp, n, m)
+            cells += [mv_h, pv_h, cell]
         rows.append("| " + " | ".join(cells) + " |")
 
     out = ([title, ""] if title else []) + rows + [""]
-    s = (f"_{len(names)} constants · {n_reg} regressed · {n_imp} improved "
-         f"(|Δ| > {a.threshold:g}% on `{primary}`)._")
+    s = (f"_{len(names)} constants · {len(regressed)} regressed · "
+         f"{len(improved)} improved (|Δ| > {a.threshold:g}% on any metric)._")
     if worst and worst[0] is not None and worst[0] > a.threshold:
-        s += f" Worst: `{worst[1]}` {worst[0]:+.1f}%."
+        s += f" Worst: `{worst[1]}` `{worst[2]}` {worst[0]:+.1f}%."
     out.append(s)
-    details = _phase_details(main_d, pr_d, names)
-    if details:
-        out += ["", "<details><summary>Per-phase timing drill-down</summary>", ""]
-        out += details
-        out += ["", "</details>"]
+    # TODO: emit per-constant phase drill-down (see the TODO by _phase_details).
     emit("\n".join(out))
 
 
@@ -286,6 +335,83 @@ def cmd_comment(a):
     print(open(a.out).read())
 
 
+# ─────────────────────── fetch-main ──────────────────────
+# Testbeds bench-main.yml uploads to, keyed by (backend, mode). Only the
+# pairs main actually runs land here — anything else (e.g. `aiur execute`,
+# `zisk prove`) has no bencher data; fetch-main exits non-zero for those and
+# bench-pr.yml falls back to running main locally.
+MAIN_TESTBEDS = {
+    # `aiur execute` uses the same testbed as `aiur prove` — bencher stores
+    # only prove and the execute columns are extracted from that JSON.
+    ("aiur", "prove"):    "aiur-check-x64-32x",
+    ("aiur", "execute"):  "aiur-check-x64-32x",
+    ("zisk", "execute"):  "zisk-check-x64-32x",
+    ("sp1",  "execute"):  "sp1-check-x64-32x",
+    ("ooc",  "execute"):  "ooc-check-x64-32x",
+}
+
+
+def cmd_fetch_main(a):
+    """Pull the base SHA's neutral results JSON from bencher.dev.
+
+    Exits 2 if (backend, mode) isn't a combination main runs. Exits 3 if
+    bencher has no report at that hash yet (freshly-pushed main whose CI is
+    still ingesting) or the request failed. Callers fall back to running
+    main locally on any non-zero exit.
+    """
+    testbed = MAIN_TESTBEDS.get((a.backend, a.mode))
+    if not testbed:
+        print(f"fetch-main: no main testbed for {a.backend}/{a.mode}")
+        raise SystemExit(2)
+    wanted = set(open(a.names).read().split()) if a.names else None
+    # TODO: support any base/PR branch, not just `main`. Today bench-main.yml
+    # only runs on push to main and this query hardcodes `branch=main`, so a PR
+    # against a non-main base branch (e.g. a long-running feature branch) always
+    # falls through to the local base-run path. To generalise: (1) let
+    # bench-main.yml (or a sibling) upload reports for other tracked branches,
+    # (2) plumb `--branch` here from `github.base_ref` in bench-pr.yml, (3) fall
+    # back to `main` when the base branch has no bencher data.
+    params = {"branch": "main", "testbed": testbed, "per_page": 255}
+    url = "https://api.bencher.dev/v0/projects/ix/reports?" + urllib.parse.urlencode(params)
+    try:
+        with urllib.request.urlopen(url, timeout=15) as f:
+            reports = json.load(f)
+    except Exception as e:
+        print(f"fetch-main: bencher API error: {e}")
+        raise SystemExit(3)
+    # Bencher stores the git hash at `branch.head.version.hash`.
+    at_sha = [
+        r for r in reports
+        if (((r.get("branch") or {}).get("head") or {}).get("version") or {}).get("hash") == a.sha
+    ]
+    if not at_sha:
+        print(f"fetch-main: no reports for {a.backend}/{a.mode} @ {a.sha[:8]}")
+        raise SystemExit(3)
+    # Matrix envs upload separately to the same testbed at the same commit,
+    # each contributing its own benchmark subset — aggregate across reports.
+    # Filter/emit by `name` (Bencher's `slug` is a lower-kebab-cased derivation
+    # that would mangle Lean names like `Nat.add_comm` → `nat-add-comm`).
+    out = {}
+    for r in at_sha:
+        for iteration in r.get("results", []):
+            for bench in iteration:
+                name = bench["benchmark"]["name"]
+                if wanted is not None and name not in wanted:
+                    continue
+                metrics = {
+                    m["measure"]["name"]: m["metric"]["value"]
+                    for m in bench.get("measures", [])
+                }
+                if metrics:
+                    out[name] = metrics
+    if not out:
+        print(f"fetch-main: reports found but no matching benchmarks in --names")
+        raise SystemExit(3)
+    with open(a.out, "w") as f:
+        json.dump(out, f)
+    print(f"fetch-main: {len(out)} constant(s) from bencher for {a.backend}/{a.mode}")
+
+
 # ────────────────────────── cli ──────────────────────────
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
@@ -301,12 +427,20 @@ def main():
                    help="Restrict to the primary subset (the primary=1 column).")
     m.set_defaults(fn=cmd_manifest)
 
+    fm = sub.add_parser("fetch-main")
+    fm.add_argument("--sha", required=True)
+    fm.add_argument("--backend", required=True)
+    fm.add_argument("--mode", required=True)
+    fm.add_argument("--names", help="Only fetch benchmarks whose names appear in this file.")
+    fm.add_argument("--out", required=True)
+    fm.set_defaults(fn=cmd_fetch_main)
+
     c = sub.add_parser("compare")
     c.add_argument("--main", required=True); c.add_argument("--pr", required=True)
     c.add_argument("--metric", action="append", default=[])
     c.add_argument("--threshold", type=float, default=3.0)
     c.add_argument("--title"); c.add_argument("--backend"); c.add_argument("--env")
-    c.add_argument("--mode"); c.add_argument("--count"); c.add_argument("--cache-hit", default="")
+    c.add_argument("--mode"); c.add_argument("--count"); c.add_argument("--main-source", default="")
     c.add_argument("--out")
     c.set_defaults(fn=cmd_compare)
 

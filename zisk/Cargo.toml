@@ -21,4 +21,4 @@ panic = "abort"
 # `blake3-precompile` branch above (now that v0.18.0 + the blake3 shim are
 # pushed). To iterate against a local checkout instead, re-add:
 #   [patch."https://github.com/argumentcomputer/zisk.git"]
-#   zisk-sdk = { path = "/home/ubuntu/zisk/sdk" }
+#   zisk-sdk = { path = "/path/to/zisk/sdk" }

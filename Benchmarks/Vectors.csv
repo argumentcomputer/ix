@@ -1,98 +1,90 @@
-# Benchmark constant vectors -- single shared source of truth.
-# Consumed identically by Aiur (bench-typecheck --manifest), the Zisk/SP1 hosts
-# (--constant loop), and CI shell (awk). One row per curated constant.
+# Benchmark constant vectors -- single shared source of truth for which
+# constants to run. Consumed identically by Aiur (bench-typecheck --consts-file),
+# the Zisk/SP1 hosts (--consts loop), and CI shell (awk). One row per curated
+# constant. Measurements (fft, cycles, prove-time, …) live in the neutral
+# results JSON each tool emits and in bencher.dev — never in this file.
 #
-# Provenance: measured across this box's benchmarking dirs, de-duplicated --
-#   aiur_fft / env : ~/ix-aiur/Benchmarks/Statistics/data/aiur/cost.csv
-#   zisk_cycles    : ~/ix-aiur/Benchmarks/Statistics/data/zisk/single_shard.csv
-# 27 IxVM kernel-primitive constants from cost.csv are intentionally excluded
-# (not Init/Std/Mathlib library constants).
-#
-# Columns:
+# Columns (shard_target and primary default to 0 when trailing; most rows only
+# carry the first three):
 #   name         fully-qualified Lean name (resolves via NameResolve.resolveIxeAddr).
 #   env          compile target / .ixe it resolves in: initStd | lean | mathlib.
 #   tier         cheap = prove-feasible per-PR; heavy = execute-only / sharded.
-#                Boundary: Aiur fft >= 1e9 => heavy.
+#                run.sh's prove-loop reads this to gate prove vs execute-only.
 #   shard_target 1 = heavy constant designated as a multi-shard prove target.
-#   primary 1 = part of the ~11-constant primary subset spanning
-#                shape + the cheap->heavy cost range. Default for the !benchmark
-#                PR comment and the bencher prove / zkVM jobs (full set via
-#                BENCH_FULL=1). Heavy reps run only in execute/native; prove
-#                mode keeps the cheap primaries (tier filter).
-#   aiur_fft     measured Aiur fft-cost (proving-cost proxy). Informational.
-#   zisk_cycles  measured Zisk ziskemu step count; empty if unmeasured. Informational.
+#   primary      1 = part of the primary subset spanning shape + the cheap->heavy
+#                cost range. Default for the !benchmark PR comment and the
+#                bencher prove / zkVM jobs (full set via BENCH_FULL=1). Heavy
+#                reps run only in execute/native; prove mode keeps the cheap
+#                primaries (tier filter).
 #
 # CI filters on the env column (not line number), so these '#' lines and the
 # header are skipped by: awk -F, '$1!~/^#/ && $1!="name" && $2==env ...'
-name,env,tier,shard_target,primary,aiur_fft,zisk_cycles
-HEq,initStd,cheap,0,0,1716582,
-Nat,initStd,cheap,0,0,1857523,975244
-Eq.rec,initStd,cheap,0,0,2575400,2348520
-HEq.rec,initStd,cheap,0,0,2692988,2727278
-Trans.mk,initStd,cheap,0,0,2911629,7229214
-Array.toList,initStd,cheap,0,0,3332563,2580844
-Acc.rec,initStd,cheap,0,0,3505064,5105888
-Std.Time.Month.Offset.ofNat,initStd,cheap,0,0,3607673,1493508
-Sum.elim,initStd,cheap,0,0,5589905,6618130
-Prod.map,initStd,cheap,0,0,6904183,8177456
-Option.bind,initStd,cheap,0,0,7329183,7440608
-Except.bind,initStd,cheap,0,0,7667869,9427477
-WellFounded.fix,initStd,cheap,0,0,10125144,13415585
-Nat.add,initStd,cheap,0,0,13343000,10606339
-List.foldr,initStd,cheap,0,1,18579757,16707100
-List.dropLast,initStd,cheap,0,0,19509718,17522863
-List.range,initStd,cheap,0,0,20251801,13666491
-List.zipWith,initStd,cheap,0,0,20439088,20229977
-List.filterMap,initStd,cheap,0,0,25335779,21435279
-List.foldlM,initStd,cheap,0,0,39202740,
-Int.add,initStd,cheap,0,0,44714703,27635032
-BitVec.toFin,initStd,cheap,0,0,50437466,28681028
-Nat.add_comm,initStd,cheap,0,1,56084908,53239676
-UInt32.toNat,initStd,cheap,0,0,59331806,29980254
-USize.toNat,initStd,cheap,0,0,71607481,35811906
-Nat.decEq,initStd,cheap,0,0,71921625,57411966
-ByteSlice.ofByteArray,initStd,cheap,0,0,107574377,53555107
-Nat.decLe,initStd,cheap,0,0,209641496,143391161
-Nat.strongRecOn,initStd,cheap,0,0,273068854,190849758
-Int.emod,initStd,cheap,0,0,422940733,269380418
-Int.ediv,initStd,cheap,0,0,430476738,270987292
-Array.foldlM,initStd,cheap,0,0,434577494,
-Array.foldl,initStd,cheap,0,1,449323126,278537034
-Array.filter,initStd,cheap,0,0,464818232,285847515
-Nat.sub_le_of_le_add,initStd,cheap,0,0,567575653,373184538
-BitVec.add,initStd,cheap,0,0,617113462,373772656
-Int.gcd,initStd,cheap,0,1,657502637,409112011
-Nat.toDigits,initStd,cheap,0,0,663606297,357145741
-Array.map,initStd,cheap,0,0,734574964,443199245
-Array.zipWith,initStd,cheap,0,0,736658636,445195121
-String.Internal.append,initStd,cheap,0,1,793580333,
-Lean.Name.hash,initStd,cheap,0,0,861742653,447441591
-BitVec.umod,initStd,cheap,0,0,926177790,526467117
-Nat.repr,initStd,cheap,0,0,966452765,498729913
-Int.repr,initStd,cheap,0,0,993792541,504234535
-String.intercalate,initStd,heavy,0,0,1089240518,599428829
-_private.Init.Prelude.0.Lean.extractMainModule._unsafe_rec,initStd,heavy,0,0,1197925029,
-Char.toLower,initStd,heavy,0,0,1198467414,665920824
-Nat.gcd_comm,initStd,heavy,0,1,1954958779,1144352360
-Int.emod_emod_of_dvd,initStd,heavy,0,0,3856852693,2201588182
-Array.append_assoc,initStd,heavy,0,0,3938574533,1570256148
-Vector.append,initStd,heavy,0,0,4023268168,1614275115
-Fin.foldl,initStd,heavy,0,0,10853255199,5110854190
-List.mergeSort,initStd,heavy,1,1,13825318985,6706906294
-Array.binSearch,initStd,heavy,1,0,14397133548,6785827470
-Array.qsort,initStd,heavy,0,0,15781689533,7199288749
-Array.qsortOrd,initStd,heavy,0,0,15841062472,7206704674
-String.split,initStd,heavy,0,1,19578088286,8657387499
-Std.Time.Week.Offset.ofMilliseconds,initStd,heavy,0,0,24577209792,6653972854
-Vector.extract_append,initStd,heavy,1,1,61830646478,
-Lean.Expr.replace,lean,cheap,0,0,859625514,
-List.Sorted,mathlib,cheap,0,0,9578666,
-Nat.choose,mathlib,cheap,0,0,29018862,
-Nat.factorial,mathlib,cheap,0,1,33562426,
-Nat.fib,mathlib,cheap,0,0,34171209,
-GCDMonoid.gcd,mathlib,heavy,0,0,1005736276,
-Nat.Prime.two_le,mathlib,heavy,0,0,1504045298,
-Finset.prod,mathlib,heavy,0,0,3045165822,
-Finset.sum,mathlib,heavy,0,0,3045189408,
-Polynomial.eval,mathlib,heavy,0,0,5342731754,
-Multiset.sort,mathlib,heavy,1,1,18670960624,
+name,env,tier,shard_target,primary
+HEq,initStd,cheap
+Nat,initStd,cheap
+Eq.rec,initStd,cheap
+HEq.rec,initStd,cheap
+Trans.mk,initStd,cheap
+Array.toList,initStd,cheap
+Acc.rec,initStd,cheap
+Sum.elim,initStd,cheap
+Prod.map,initStd,cheap
+Option.bind,initStd,cheap
+Except.bind,initStd,cheap
+WellFounded.fix,initStd,cheap
+Nat.add,initStd,cheap
+List.filterMap,initStd,cheap
+Int.add,initStd,cheap
+BitVec.toFin,initStd,cheap
+Nat.add_comm,initStd,cheap,0,1
+USize.toNat,initStd,cheap
+Nat.decEq,initStd,cheap
+ByteSlice.ofByteArray,initStd,cheap
+Nat.decLe,initStd,cheap
+Nat.strongRecOn,initStd,cheap
+Int.emod,initStd,cheap
+Array.foldlM,initStd,cheap
+Array.filter,initStd,cheap
+Nat.sub_le_of_le_add,initStd,cheap,0,1
+BitVec.add,initStd,cheap
+Int.gcd,initStd,cheap,0,1
+Nat.toDigits,initStd,cheap
+Array.map,initStd,cheap
+Lean.Name.hash,initStd,cheap
+BitVec.umod,initStd,cheap
+Nat.repr,initStd,cheap
+String.intercalate,initStd,heavy
+_private.Init.Prelude.0.Lean.extractMainModule._unsafe_rec,initStd,heavy
+Char.toLower,initStd,heavy
+Nat.gcd_comm,initStd,heavy,0,1
+Int.emod_emod_of_dvd,initStd,heavy
+Array.append_assoc,initStd,heavy
+Vector.append,initStd,heavy,0,1
+Fin.foldl,initStd,heavy
+List.mergeSort,initStd,heavy,1,1
+Array.binSearch,initStd,heavy,1
+Array.qsortOrd,initStd,heavy
+String.split,initStd,heavy,0,1
+Std.Time.Week.Offset.ofMilliseconds,initStd,heavy
+Vector.extract_append._proof_1,initStd,heavy,1,1
+ByteArray.utf8DecodeChar?_utf8EncodeChar_append,initStd,heavy,0,1
+String.append,initStd,cheap,0,1
+_private.Init.Data.Range.Polymorphic.SInt.0.Int8.instRxcHasSize_eq,initStd,heavy,0,1
+_private.Init.Data.Range.Polymorphic.SInt.0.Int16.instRxcHasSize_eq,initStd,heavy,0,1
+_private.Init.Data.Range.Polymorphic.SInt.0.Int32.instRxcHasSize_eq,initStd,heavy,0,1
+_private.Init.Data.Range.Polymorphic.SInt.0.Int64.instRxcHasSize_eq,initStd,heavy,0,1
+Char.ofOrdinal_le_of_le,initStd,heavy,0,1
+Array.extract_append._proof_1_1,initStd,heavy,0,1
+IxVMPrim.nat_pow_big,initStd,heavy,0,1
+Std.Tactic.BVDecide.BVExpr.bitblast.goCache_Inv_of_Inv._mutual,initStd,heavy,0,1
+Lean.Expr.replace,lean,cheap
+List.Sorted,mathlib,cheap
+Nat.choose,mathlib,cheap
+Nat.factorial,mathlib,cheap,0,1
+Nat.fib,mathlib,cheap
+GCDMonoid.gcd,mathlib,heavy
+Nat.Prime.two_le,mathlib,heavy
+Finset.prod,mathlib,heavy
+Finset.sum,mathlib,heavy
+Polynomial.eval,mathlib,heavy
+Multiset.sort,mathlib,heavy,1,1
