@@ -1152,10 +1152,27 @@ def primitive := ⟦
     }
   }
 
+  -- Binary exponentiation. Replaces the old O(exp) recursive
+  -- `klimbs_mul(base, klimbs_pow(base, klimbs_dec(exp)))` body, which
+  -- created one per-fn memo row per exponent step and OOM'd for
+  -- non-trivial exponents. Recursion depth is `log2(exp)` — for
+  -- `exp = 2^32` that's 32 memo entries instead of 4 billion.
+  --
+  -- Both `klimbs_div2` (= `klimbs_div(exp, 2)`) and `klimbs_is_odd`
+  -- (= `klimbs_mod(exp, 2) != 0`) route through `klimbs_div_mod`, which
+  -- is itself native (unconstrained_big_uint_div_mod) — so the
+  -- division per step is O(1) work.
   fn klimbs_pow(base: KLimbs, exp: KLimbs) -> KLimbs {
     match klimbs_is_zero(exp) {
       1 => store(ListNode.Cons([1u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], store(ListNode.Nil))),
-      0 => klimbs_mul(base, klimbs_pow(base, klimbs_dec(exp))),
+      0 =>
+        let two = store(ListNode.Cons([2u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8], store(ListNode.Nil)));
+        let (half, r) = klimbs_div_mod(exp, two);
+        let sq = klimbs_pow(klimbs_normalize(klimbs_mul(base, base)), klimbs_normalize(half));
+        match klimbs_is_zero(r) {
+          1 => sq,
+          0 => klimbs_mul(base, sq),
+        },
     }
   }
 

@@ -44,6 +44,13 @@ public theorem nat_lor_lit : Nat.lor 0xf0 0x0f = 0xff := rfl
 public theorem nat_xor_lit : Nat.xor 0xff 0x0f = 0xf0 := rfl
 public theorem nat_shl_lit : Nat.shiftLeft 1 8 = 256 := rfl
 public theorem nat_shr_lit : Nat.shiftRight 256 4 = 16 := rfl
+-- Synthetic: exercises `klimbs_pow` at a non-trivial exponent so the cost
+-- of the current O(exp) recursive implementation shows up in the FFT pin.
+-- Sized to terminate under typical caps with the current O(exp) body — a
+-- proxy for the eventual binary-exponentiation rewrite.
+set_option exponentiation.threshold 65536 in
+set_option maxRecDepth 65536 in
+public theorem nat_pow_big : (2 ^ 16384 : Nat) - (2 ^ 16384) = 0 := rfl
 
 -- Nat predicates (return Bool ctors)
 public theorem nat_beq_lit : Nat.beq 42 42 = true := rfl
@@ -141,15 +148,16 @@ private def kernelCheckEntries : List (String × Nat) := [
   ("IxVMPrim.nat_land_lit",                                              1_019_743_752),
   ("IxVMPrim.nat_lor_lit",                                               1_020_972_680),
   ("IxVMPrim.nat_xor_lit",                                               1_029_804_417),
-  ("IxVMPrim.nat_shl_lit",                                               34_843_370),
-  ("IxVMPrim.nat_shr_lit",                                               372_727_841),
+  ("IxVMPrim.nat_shl_lit",                                               34_836_668),
+  ("IxVMPrim.nat_shr_lit",                                               372_729_464),
+  ("IxVMPrim.nat_pow_big",                                                71_856_587),
   ("IxVMPrim.nat_beq_lit",                                               24_108_404),
   ("IxVMPrim.nat_ble_lit",                                               22_469_243),
   ("IxVMPrim.nat_dec_le",                                                198_104_580),
   ("IxVMPrim.nat_dec_lt",                                                202_076_479),
   ("IxVMPrim.nat_dec_eq",                                                82_352_518),
   ("IxVMPrim.str_size_lit",                                              733_902_817),
-  ("IxVMPrim.bv_to_nat_lit",                                             577_368_692),
+  ("IxVMPrim.bv_to_nat_lit",                                             577_322_203),
   -- Mutual block + multi-member recursors
   ("IxVMInd.Even",                                                       25_965_406),
   ("IxVMInd.Odd",                                                        25_728_543),
