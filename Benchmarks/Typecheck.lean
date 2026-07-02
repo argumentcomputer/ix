@@ -5,6 +5,7 @@ import Ix.Aiur.Compiler
 import Ix.Aiur.Statistics
 import Ix.TracingTexray
 import Ix.Benchmark.Bench
+import Ix.Cli.ConstsFile
 import Ix.Cli.NameResolve
 
 /-!
@@ -65,8 +66,11 @@ warning, so a single bad name never fails the run. The harness imposes no time
 limit; bound a run with an external `timeout` if needed.
 
 The JSON is a neutral, flat shape (`{ "<name>": { "constants": …, "fft-cost": …,
-"execute-time": …, "prove-time": …, "throughput": … } }`, where `prove-time` and
-`throughput` appear only for proven constants); any bencher-specific reshaping
+"execute-time": …, "execute-peak-rss": …, "prove-time": …, "peak-rss": …,
+"throughput": … } }`). `execute-peak-rss` is the Phase-1 RSS high-water,
+sampled before proving starts, so it is comparable across execute-only and
+prove runs; `prove-time`, `peak-rss` (the prover's high-water), and
+`throughput` appear only for proven constants. Any bencher-specific reshaping
 is the caller's job (see `.github/workflows/bench-main.yml`).
 -/
 
@@ -85,15 +89,6 @@ def friParameters : Aiur.FriParameters := {
   queryProofOfWorkBits := 0
 }
 
-/-- `--consts-file` lines as raw strings: one name per line. Everything from a
-    `#` to end of line is a comment (whole-line or inline); blank lines are
-    dropped. `#` never appears in a Lean name, so splitting on it is safe.
-    Resolution against the env happens later (so the `toString` fallback can
-    see the displayed form the user wrote). -/
-def parseConstsFile (contents : String) : Array String :=
-  (contents.splitOn "\n").filterMap (fun line =>
-    let s := ((line.splitOn "#").head?.getD "").trimAscii
-    if s.isEmpty then none else some s.toString) |>.toArray
 
 
 /-- Per-constant measurements. `proveSec` is `none` when the constant was
@@ -107,28 +102,43 @@ structure Result where
   /-- Peak resident-set size in bytes (tracing-texray tree sampler), captured
       after the constant's heaviest phase. -/
   peakRss : Option Nat := none
+  /-- Phase-1 (execute) RSS high-water mark, sampled before any proving
+      allocations. Present in BOTH modes so an execute-only run compares
+      apples-to-apples against a prove run's baseline — `peak-rss` in a prove
+      run is dominated by the prover and would dwarf an execute-only peak. -/
+  executePeakRss : Option Nat := none
   deriving Inhabited
 
-/-- Round a Float to `d` decimal places, to keep the emitted JSON readable. -/
-def roundTo (d : Nat) (f : Float) : Float :=
+/-- A `Json` number with at most `d` decimal places, rendered decimally.
+    `Float`'s own `ToJson` prints the full binary representation
+    (`0.02602000000000000146…`), so build the `JsonNumber` (mantissa ·
+    10⁻ᵈ) directly from the rounded value instead. -/
+def jsonRound (d : Nat) (f : Float) : Json :=
   let scale := (10.0 : Float) ^ d.toFloat
-  (f * scale).round / scale
+  let scaled := f * scale
+  let m : Int :=
+    if scaled < 0 then -Int.ofNat (-scaled).round.toUInt64.toNat
+    else Int.ofNat scaled.round.toUInt64.toNat
+  Json.num ⟨m, d⟩
 
 /-- Neutral, flat results object: `name → { constants, fft-cost, execute-time,
     prove-time?, throughput? }`. No bencher-specific shaping. -/
 def Result.toJsonEntry (r : Result) : String × Json :=
   let base : List (String × Json) :=
     [ ("constants", Lean.toJson r.constants)
-    , ("fft-cost", Lean.toJson (roundTo 0 r.fftCost))
-    , ("execute-time", Lean.toJson (roundTo 6 r.executeSec)) ]
+    , ("fft-cost", jsonRound 0 r.fftCost)
+    , ("execute-time", jsonRound 6 r.executeSec) ]
   let base := match r.peakRss with
     | some n => base ++ [ ("peak-rss", Lean.toJson n) ]
+    | none => base
+  let base := match r.executePeakRss with
+    | some n => base ++ [ ("execute-peak-rss", Lean.toJson n) ]
     | none => base
   -- prove-time and the derived proving throughput (constants/prove-time, the
   -- proving analog of compile's constants/sec) are present only once proven.
   let fields := match r.proveSec with
-    | some p => base ++ [ ("prove-time", Lean.toJson (roundTo 6 p))
-                        , ("throughput", Lean.toJson (roundTo 2 (r.constants.toFloat / p))) ]
+    | some p => base ++ [ ("prove-time", jsonRound 6 p)
+                        , ("throughput", jsonRound 2 (r.constants.toFloat / p)) ]
     | none => base
   (r.name, Json.mkObj fields)
 
@@ -144,22 +154,11 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
   let some ixeArg := p.flag? "ixe"
     | IO.eprintln "error: --ixe <path> is required"; return 1
   let ixePath := ixeArg.as! String
-  -- Names come from `--consts` (comma-list) and/or a `--consts-file` file.
-  let cliNames : Array String := match p.flag? "consts" with
-    | some f => ((f.as! String).splitOn ",").toArray.filterMap (fun s =>
-        let t := s.trim
-        if t.isEmpty then none else some t)
-    | none => #[]
-  let fileNames ← match p.flag? "consts-file" with
-    | some f => pure (parseConstsFile (← IO.FS.readFile (f.as! String)))
-    | none => pure #[]
-  -- Union, preserving first-seen order, so the same const isn't proven twice.
-  let nameArgs := Id.run do
-    let mut seen : Std.HashSet String := {}
-    let mut acc : Array String := #[]
-    for n in cliNames ++ fileNames do
-      if !seen.contains n then seen := seen.insert n; acc := acc.push n
-    return acc
+  -- `--consts` comma-list ∪ `--consts-file`, shared grammar + dedup
+  -- (Ix.Cli.ConstsFile — same parser as `ix check-rs`). Raw strings:
+  -- resolution against the env happens later (so the `toString` fallback can
+  -- see the displayed form the user wrote).
+  let nameArgs ← Ix.Cli.ConstsFile.gather p
   if nameArgs.isEmpty then
     IO.eprintln "error: provide at least one constant via --consts <n1,n2,…> and/or --consts-file <path>"
     return 1
@@ -250,11 +249,15 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
       IO.FS.writeFile path (Json.mkObj (results.map Result.toJsonEntry).toList).pretty
     | none => pure ()
 
+  -- Phase-1 RSS high-water, sampled BEFORE any proving allocations so the
+  -- measure is comparable between execute-only and prove runs (`peak-rss`
+  -- from a prove run is the prover's high-water and would dwarf it).
+  let executePeak ← TracingTexray.peakTreeRssBytes
+  execed := execed.map (fun (r, a) => ({ r with executePeakRss := some executePeak }, a))
+
   -- `--execute-only`: stop after Phase 1; the results JSON (if requested) is
   -- already complete with the execute metrics.
   if executeOnly then
-    let peak ← TracingTexray.peakTreeRssBytes
-    execed := execed.map (fun (r, a) => ({ r with peakRss := some peak }, a))
     writeJson (execed.map (·.1))
     match jsonOut with
     | some path => IO.println s!"wrote {execed.size} execute-only benchmarks to {path}"

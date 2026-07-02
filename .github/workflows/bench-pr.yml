@@ -76,8 +76,56 @@ jobs:
           COMMENT_BODY: ${{ github.event.comment.body }}
         run: python3 .github/scripts/bench.py parse
 
-  benchmark:
+  # Build the PR's `ix` + `bench-typecheck` once (they embed the IxVM kernel
+  # and the Aiur prover), stage under ~/.local/bin, and cache by head SHA —
+  # the matrix cells restore instead of re-running the full Lean build per
+  # cell, and re-running !benchmark on the same commit skips the build
+  # entirely. ubuntu-latest mirrors bench-main.yml's build job so PR binaries
+  # carry the same instruction-set provenance as the binaries behind bencher's
+  # main-side numbers.
+  build:
     needs: setup
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.setup.outputs.head-sha }}
+      - id: bins
+        uses: actions/cache/restore@v5
+        with:
+          path: ~/.local/bin
+          key: bench-bins-${{ needs.setup.outputs.head-sha }}
+      - if: steps.bins.outputs.cache-hit != 'true'
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+      # `.cargo/config.toml` sets `-Ctarget-cpu=native`; log the build CPU so a
+      # benchmark shift can be traced to an instruction-set change.
+      - name: Log build CPU
+        if: steps.bins.outputs.cache-hit != 'true'
+        run: |
+          lscpu
+          grep -qw avx512f /proc/cpuinfo \
+            && echo "AVX-512F: present (compiled into the binary)" \
+            || echo "AVX-512F: absent"
+      - if: steps.bins.outputs.cache-hit != 'true'
+        uses: leanprover/lean-action@v1
+        with:
+          auto-config: false
+          build: true
+          build-args: "ix bench-typecheck"
+          use-github-cache: false
+      - if: steps.bins.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/.local/bin
+          cp .lake/build/bin/ix .lake/build/bin/bench-typecheck ~/.local/bin/
+          chmod +x ~/.local/bin/ix ~/.local/bin/bench-typecheck
+      - if: steps.bins.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: ~/.local/bin
+          key: bench-bins-${{ needs.setup.outputs.head-sha }}
+
+  benchmark:
+    needs: [setup, build]
     runs-on: ${{ matrix.cell.runner }}
     timeout-minutes: 120
     strategy:
@@ -122,18 +170,39 @@ jobs:
             --tier "$TIER" --shard "$SHARD" $PRIMARY --out "$GITHUB_WORKSPACE/names.txt" \
             | tee -a "$GITHUB_OUTPUT"
 
-      # Lean toolchain + build `ix` and `bench-typecheck` for the PR side (every
-      # backend needs `ix` to compile the env to a `.ixe`). Mathlib cache only
-      # pulled for the mathlib env.
-      - name: Build PR (ix, bench-typecheck)
+      # Restore the once-built PR binaries (see the build job) and stage them
+      # into .bins/pr — ~/.local/bin is reused below for the base side's cache
+      # restore, so each side keeps its own directory and PATH. run.sh resolves
+      # tools in-tree first, then PATH, so the staged dir Just Works.
+      - name: Restore PR binaries
+        uses: actions/cache/restore@v5
+        with:
+          path: ~/.local/bin
+          key: bench-bins-${{ env.HEAD_SHA }}
+          fail-on-cache-miss: true
+      - run: |
+          mkdir -p .bins/pr
+          mv ~/.local/bin/ix ~/.local/bin/bench-typecheck .bins/pr/
+      # Toolchain provisioning only (no package build): the restored binaries
+      # link against the toolchain's libleanshared. Mathlib olean cache only
+      # for the mathlib env (its `ix compile` needs the oleans).
+      - name: Provision Lean toolchain
         uses: leanprover/lean-action@v1
         with:
           lake-package-directory: .
           auto-config: false
-          build: true
-          build-args: "ix bench-typecheck"
+          build: false
           use-github-cache: false
           use-mathlib-cache: ${{ matrix.cell.env == 'mathlib' && 'true' || 'false' }}
+      # The compiled env is identical across every cell of the same PR commit —
+      # cache it so only the first cell pays the `ix compile`. (The `compile`
+      # backend ignores REUSE_IXE by design: it measures the compile itself.)
+      - name: Restore PR .ixe
+        id: pr-ixe
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ matrix.cell.env }}.ixe
+          key: bench-pr-ixe-${{ env.HEAD_SHA }}-${{ matrix.cell.env }}
       # zkVM cells additionally need the Rust toolchain + the backend's toolchain
       # and system deps (the shared composite install actions).
       - name: Set up zkVM Rust toolchain
@@ -150,25 +219,78 @@ jobs:
 
       # ---------- main side ----------
       # Try bencher.dev first (bench-main.yml has uploaded main's numbers).
-      # continue-on-error so bench.py's exit 2 (unsupported backend/mode) or 3
-      # (no data yet / API error) doesn't fail the job — we fall back to a
-      # local base run below.
+      # fetch-main's exit codes are load-bearing: 3 = transient (base SHA not
+      # ingested yet) → fall back to a local base run; anything else (2 =
+      # backend/mode has no main testbed — a BACKEND_TABLE / bench-main.yml
+      # drift) is a permanent misconfiguration that a local rebuild can never
+      # fix, so fail the cell loudly instead of silently paying the fallback
+      # on every future run.
       - name: Fetch main from bencher
         id: bencher
-        continue-on-error: true
         run: |
+          set +e
           python3 .github/scripts/bench.py fetch-main \
-            --sha "$BASE_SHA" --backend "$BACKEND" --mode "$MODE" \
+            --sha "$BASE_SHA" --backend "$BACKEND" --mode "$MODE" --env "$BENV" \
             --names "$GITHUB_WORKSPACE/names.txt" \
             --out "$GITHUB_WORKSPACE/main.json"
+          rc=$?
+          set -e
+          case $rc in
+            0) echo "source=bencher" >> "$GITHUB_OUTPUT" ;;
+            3) echo "source=ran" >> "$GITHUB_OUTPUT" ;;
+            *) echo "::error::fetch-main: permanent config error (exit $rc) — check BACKEND_TABLE in bench.py vs bench-main.yml testbeds"; exit "$rc" ;;
+          esac
       - name: Checkout base (bencher had no data)
-        if: steps.bencher.outcome != 'success'
+        if: steps.bencher.outputs.source == 'ran'
         uses: actions/checkout@v6
         with:
           ref: ${{ env.BASE_SHA }}
           path: base
+      # bench-main.yml's build/compile jobs already cached the base SHA's
+      # binaries and `.ixe` on the push to main — restore both before paying
+      # for a from-scratch base build. The `.ixe` cache key/path use the
+      # CamelCase env slug (bench-main's matrix.bench).
+      - name: Compute env slug
+        if: steps.bencher.outputs.source == 'ran'
+        id: envcc
+        run: |
+          benv="$BENV"
+          echo "cc=${benv^}" >> "$GITHUB_OUTPUT"
+      - name: Restore base binaries (bench-main build cache)
+        if: steps.bencher.outputs.source == 'ran'
+        id: base-bins
+        uses: actions/cache/restore@v5
+        with:
+          path: ~/.local/bin
+          key: bench-bins-${{ env.BASE_SHA }}
+      - name: Restore base .ixe (bench-main compile cache)
+        if: steps.bencher.outputs.source == 'ran'
+        id: base-ixe
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ steps.envcc.outputs.cc }}.ixe
+          key: bench-ixe-${{ env.BASE_SHA }}-${{ steps.envcc.outputs.cc }}
+      # Cached base binaries are usable only when the two `lean-toolchain`
+      # files are identical (plain `cmp`), and — for the mathlib env — only
+      # when the `.ixe` was also restored (otherwise base's `ix compile` needs
+      # mathlib oleans that only the full build fetches).
+      - name: Resolve base binaries
+        if: steps.bencher.outputs.source == 'ran'
+        id: base-src
+        run: |
+          cached=false
+          if [ "${{ steps.base-bins.outputs.cache-hit }}" = true ] \
+             && cmp -s lean-toolchain base/lean-toolchain; then
+            if [ "$BENV" != mathlib ] || [ "${{ steps.base-ixe.outputs.cache-hit }}" = true ]; then
+              mkdir -p .bins/base
+              mv ~/.local/bin/ix ~/.local/bin/bench-typecheck .bins/base/ 2>/dev/null || true
+              [ -x .bins/base/ix ] && [ -x .bins/base/bench-typecheck ] && cached=true
+            fi
+          fi
+          echo "cached=$cached" >> "$GITHUB_OUTPUT"
+          echo "base binaries: $([ "$cached" = true ] && echo restored from bench-main cache || echo building from source)"
       - name: Build base (ix, bench-typecheck)
-        if: steps.bencher.outcome != 'success'
+        if: steps.bencher.outputs.source == 'ran' && steps.base-src.outputs.cached != 'true'
         uses: leanprover/lean-action@v1
         with:
           lake-package-directory: base
@@ -177,30 +299,51 @@ jobs:
           build-args: "ix bench-typecheck"
           use-github-cache: false
           use-mathlib-cache: ${{ matrix.cell.env == 'mathlib' && 'true' || 'false' }}
+      # NOTE: this runs the PR's run.sh against base-built binaries. When a PR
+      # changes the benchmark CLIs themselves, the base binaries reject the new
+      # flags and every constant drops — compare then renders the loud
+      # "main produced no results" note instead of a silent all-n/a table.
       - name: Run backend on base → main.json
-        if: steps.bencher.outcome != 'success'
+        if: steps.bencher.outputs.source == 'ran'
         run: |
-          export PATH="$PWD/base/.lake/build/bin:$PATH"
+          if [ "${{ steps.base-ixe.outputs.cache-hit }}" = true ]; then
+            mv "${{ steps.envcc.outputs.cc }}.ixe" "base/$BENV.ixe"
+            export REUSE_IXE=1
+          fi
+          if [ "${{ steps.base-src.outputs.cached }}" = true ]; then
+            export PATH="$PWD/.bins/base:$PATH"
+          else
+            export PATH="$PWD/base/.lake/build/bin:$PATH"
+          fi
           bash .github/scripts/run.sh base "$BENV" "$BACKEND" "$MODE" \
             "$GITHUB_WORKSPACE/names.txt" "$GITHUB_WORKSPACE/main.json"
 
       # ---------- PR side ----------
       - name: Run backend on PR → pr.json
+        env:
+          REUSE_IXE: ${{ steps.pr-ixe.outputs.cache-hit == 'true' && '1' || '0' }}
         run: |
-          export PATH="$PWD/.lake/build/bin:$PATH"
+          export PATH="$PWD/.bins/pr:$PATH"
           bash .github/scripts/run.sh . "$BENV" "$BACKEND" "$MODE" \
             "$GITHUB_WORKSPACE/names.txt" "$GITHUB_WORKSPACE/pr.json"
+      # First cell to compile the PR env publishes it for the others (racing
+      # saves are fine — the first wins, the rest fail gracefully).
+      - name: Save PR .ixe
+        if: steps.pr-ixe.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ matrix.cell.env }}.ixe
+          key: bench-pr-ixe-${{ env.HEAD_SHA }}-${{ matrix.cell.env }}
 
       # ---------- compare ----------
       - name: Build comparison table
         run: |
-          src=ran; [ "${{ steps.bencher.outcome }}" = success ] && src=bencher
           mkdir -p out
           python3 .github/scripts/bench.py compare \
             --main main.json --pr pr.json --out "out/table-$LABEL.md" \
             --backend "$BACKEND" --env "$BENV" --mode "$MODE" \
             --count "${{ steps.man.outputs.count }}" \
-            --main-source "$src"
+            --main-source "${{ steps.bencher.outputs.source }}"
           cat "out/table-$LABEL.md"
 
       - name: Upload table

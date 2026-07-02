@@ -8,9 +8,9 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
-  cancel-in-progress: true
+# No concurrency group: push-to-main and manual dispatch only — every merged
+# commit runs the extended tests; a later merge must never cancel an in-flight
+# run.
 
 jobs:
   ignored-test:

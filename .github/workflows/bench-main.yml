@@ -24,6 +24,10 @@ permissions:
   contents: read
   checks: write
 
+# No concurrency group: push-to-main and manual dispatch only — every merged
+# commit gets benchmarked; a later merge must never cancel or queue behind an
+# in-flight run.
+
 env:
   COMPILE_DIR: Benchmarks/Compile
 
@@ -62,7 +66,7 @@ jobs:
       - uses: actions/cache/save@v5
         with:
           path: ~/.local/bin
-          key: aiur-bench-bins-${{ github.sha }}
+          key: bench-bins-${{ github.sha }}
 
   # Compile each library env to a `.ixe` and track compile throughput. Caches
   # the `.ixe` (keyed by sha + matrix job) for the prove job to consume.
@@ -90,7 +94,7 @@ jobs:
       - uses: actions/cache/restore@v5
         with:
           path: ~/.local/bin
-          key: aiur-bench-bins-${{ github.sha }}
+          key: bench-bins-${{ github.sha }}
       - run: echo "$HOME/.local/bin" >> $GITHUB_PATH
       # FC's library env lives in a sibling `${COMPILE_DIR}FC` package dir, so
       # point COMPILE_DIR there for the FC matrix job.
@@ -115,35 +119,24 @@ jobs:
       # warning that must not fail the build.
       - run: lake build Compile${{ matrix.bench }}
         working-directory: ${{ env.COMPILE_DIR }}
-      # Serialize the env to a `.ixe` and emit the `##benchmark##` line.
-      - name: Run ix compile
+      # Serialize the env to a `.ixe` and measure the compile via run.sh's
+      # `compile` backend — the same driver + `##benchmark##` parser the
+      # !benchmark PR path uses, so the line format is parsed in exactly one
+      # place. run.sh writes `<Bench>.ixe` at the workspace root (the env arg
+      # is used verbatim for the filename) and neutral.json keyed by the
+      # CamelCase env slug; bmf wraps it for bencher.
+      - name: Run ix compile benchmark
         run: |
-          ix compile ${{ env.COMPILE_DIR }}/Compile${{ matrix.bench }}.lean \
-            --out ${{ matrix.bench }}.ixe 2>&1 | tee output.txt
+          bash .github/scripts/run.sh . ${{ matrix.bench }} compile compile /dev/null neutral.json
+          python3 .github/scripts/bench.py bmf --in neutral.json --out benchmark.json
+          cat benchmark.json
       # Cache the `.ixe` for the prove job (reused, never recompiled there).
       # Only the matrix jobs the prove job consumes, to stay under the repo cache limit.
       - if: matrix.bench == 'InitStd' || matrix.bench == 'Mathlib'
         uses: actions/cache/save@v5
         with:
           path: ${{ matrix.bench }}.ixe
-          key: aiur-ixe-${{ github.sha }}-${{ matrix.bench }}
-      - name: Generate compile benchmark JSON
-        run: |
-          line=$(grep '^##benchmark##' output.txt)
-          elapsed_s=$(echo "$line" | awk '{printf "%.3f", $2 / 1000}')
-          bytes=$(echo "$line" | awk '{print $3}')
-          constants=$(echo "$line" | awk '{print $4}')
-          throughput=$(echo "$line" | awk '{if ($2 > 0) printf "%.2f", $4 * 1000 / $2; else print 0}')
-          cat > benchmark.json <<EOF
-          {
-            "${{ matrix.bench }}": {
-              "compile-time": {"value": ${elapsed_s}},
-              "file-size": {"value": ${bytes}},
-              "throughput": {"value": ${throughput}},
-              "constants": {"value": ${constants}}
-            }
-          }
-          EOF
+          key: bench-ixe-${{ github.sha }}-${{ matrix.bench }}
       # Upload compile metrics. Every measure shares the per-workload baseline
       # window (data points since the ix-compile reset tag): file-size/constants
       # are deterministic, pinned exactly (0/0); compile-time rides a 5% upper
@@ -187,7 +180,7 @@ jobs:
       - uses: actions/cache/restore@v5
         with:
           path: ~/.local/bin
-          key: aiur-bench-bins-${{ github.sha }}
+          key: bench-bins-${{ github.sha }}
       - run: echo "$HOME/.local/bin" >> $GITHUB_PATH
       # Provision the toolchain so the bench-typecheck binary finds libleanshared
       # (no package build). use-github-cache off: nothing to cache here, and
@@ -201,7 +194,7 @@ jobs:
       - uses: actions/cache/restore@v5
         with:
           path: ${{ matrix.bench }}.ixe
-          key: aiur-ixe-${{ github.sha }}-${{ matrix.bench }}
+          key: bench-ixe-${{ github.sha }}-${{ matrix.bench }}
           fail-on-cache-miss: true
       # Run each constant in its own process so a clean failure or timeout drops
       # only that constant from the report. NB: a constant heavy enough to OOM
@@ -217,18 +210,18 @@ jobs:
         env:
           REUSE_IXE: "1"
         run: |
-          # All primaries: run.sh proves each cheap-tier primary and execute-only's
-          # the heavy ones (so heavy primaries still report execute metrics).
+          # All primaries: run.sh attempts a full prove of every primary under
+          # the RAM watchdog; a too-large prove records the `oom: true` sentinel
+          # (alongside any Phase-1 execute metrics measured before the kill).
           # Per-constant peak-rss, same path as the !benchmark PR run.
           benv="${{ matrix.bench }}"; benv="${benv,}"   # InitStd→initStd, Mathlib→mathlib
           python3 .github/scripts/bench.py manifest \
             --csv Benchmarks/Vectors.csv --env "$benv" --mode prove --primary --out names.txt
           echo "proving $(wc -l < names.txt) primary constants:"; cat names.txt
           bash .github/scripts/run.sh . "${{ matrix.bench }}" aiur prove names.txt neutral.json
-          # Wrap neutral { name: { metric: v } } → Bencher Metric Format,
-          # flattening the per-phase `phases` object into `phase:<span>` measures
-          # so span timings are tracked over time alongside the headline metrics.
-          jq 'map_values((.phases // {}) as $p | del(.phases) | (. + ($p | with_entries(.key |= "phase:" + .))) | map_values({value: .}))' neutral.json > aiur.json
+          # neutral → Bencher Metric Format (phases flattened to phase:<span>
+          # measures; the boolean `oom` sentinel stripped — see bench.py bmf).
+          python3 .github/scripts/bench.py bmf --in neutral.json --out aiur.json
           cat aiur.json
       # Upload Aiur metrics. Every measure shares the per-workload baseline
       # window (data points since the aiur-check reset tag). constants is deterministic
@@ -264,12 +257,15 @@ jobs:
             --threshold-measure peak-rss --threshold-test percentage
             --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.10
             --threshold-lower-boundary _
+            --threshold-measure execute-peak-rss --threshold-test percentage
+            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.10
+            --threshold-lower-boundary _
             --threshold-measure throughput --threshold-test percentage
             --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary _
             --threshold-lower-boundary 0.10
 
   # Execute the same constants through the Zisk and SP1 zkVM hosts and track
-  # cycles / execute-time / throughput / peak-rss (and shards / max-shard-cycles
+  # cycles / execute-time / throughput / execute-peak-rss (and shards / max-shard-cycles
   # for any sharded run). Lean-free: reuses the compile job's cached `.ixe` and
   # only builds the Rust host. zkVM proving needs a GPU (absent here), so this is
   # execute-only. Toolchain + deps come from the shared install-{zisk,sp1} actions.
@@ -300,7 +296,7 @@ jobs:
       - uses: actions/cache/restore@v5
         with:
           path: ${{ matrix.bench }}.ixe
-          key: aiur-ixe-${{ github.sha }}-${{ matrix.bench }}
+          key: bench-ixe-${{ github.sha }}-${{ matrix.bench }}
           fail-on-cache-miss: true
       - name: Run ${{ matrix.backend }} execute benchmark
         env:
@@ -315,10 +311,10 @@ jobs:
           echo "executing $(wc -l < names.txt) primary constants:"; cat names.txt
           bash .github/scripts/run.sh . ${{ matrix.bench }} ${{ matrix.backend }} execute \
             names.txt neutral.json
-          # Wrap neutral { name: { metric: v } } → Bencher Metric Format,
-          # flattening the per-phase `phases` object into `phase:<span>` measures
-          # so span timings are tracked over time alongside the headline metrics.
-          jq 'map_values((.phases // {}) as $p | del(.phases) | (. + ($p | with_entries(.key |= "phase:" + .))) | map_values({value: .}))' neutral.json > bench.json
+          # neutral → Bencher Metric Format (phases flattened; the boolean
+          # `oom` sentinel a watchdog-killed execute records is stripped —
+          # see bench.py bmf).
+          python3 .github/scripts/bench.py bmf --in neutral.json --out bench.json
           cat bench.json
       # cycles / shards / max-shard-cycles are deterministic per guest ELF, but
       # a real guest / packer improvement legitimately drops them — upper-only
@@ -345,7 +341,7 @@ jobs:
             --threshold-measure execute-time --threshold-test percentage
             --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.10
             --threshold-lower-boundary _
-            --threshold-measure peak-rss --threshold-test percentage
+            --threshold-measure execute-peak-rss --threshold-test percentage
             --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.10
             --threshold-lower-boundary _
             --threshold-measure throughput --threshold-test percentage
@@ -373,7 +369,7 @@ jobs:
       - uses: actions/cache/restore@v5
         with:
           path: ~/.local/bin
-          key: aiur-bench-bins-${{ github.sha }}
+          key: bench-bins-${{ github.sha }}
       - run: echo "$HOME/.local/bin" >> $GITHUB_PATH
       # Provision the toolchain so `ix` finds libleanshared (no package build).
       - uses: leanprover/lean-action@v1
@@ -388,7 +384,7 @@ jobs:
       - uses: actions/cache/restore@v5
         with:
           path: ${{ matrix.bench }}.ixe
-          key: aiur-ixe-${{ github.sha }}-${{ matrix.bench }}
+          key: bench-ixe-${{ github.sha }}-${{ matrix.bench }}
           fail-on-cache-miss: true
       # run.sh ooc runs `ix check --anon` (whole env, parallel) and emits the
       # neutral { <env>: { constants, check-time, throughput, peak-rss } } — same
@@ -397,15 +393,14 @@ jobs:
         env:
           REUSE_IXE: "1"
         run: |
-          # Whole env (keyed by env) + the primary constants subject-checked
+          # Whole env (keyed by env) + the primary constants checked full-closure
           # (keyed by constant) for an apples-to-apples baseline next to zisk/sp1.
           benv="${{ matrix.bench }}"; benv="${benv,}"
           python3 .github/scripts/bench.py manifest \
             --csv Benchmarks/Vectors.csv --env "$benv" --mode execute --primary --out names.txt
           bash .github/scripts/run.sh . "${{ matrix.bench }}" ooc execute names.txt neutral.json
-          # Wrap → Bencher Metric Format, flattening `phases` into `phase:<span>`
-          # measures (a no-op for ooc, which records no spans).
-          jq 'map_values((.phases // {}) as $p | del(.phases) | (. + ($p | with_entries(.key |= "phase:" + .))) | map_values({value: .}))' neutral.json > bench.json
+          # neutral → Bencher Metric Format (see bench.py bmf).
+          python3 .github/scripts/bench.py bmf --in neutral.json --out bench.json
           cat bench.json
       # constants is deterministic → pinned (0/0); check-time / throughput /
       # peak-rss are noisy parallel wall-clock → percentage bounds.

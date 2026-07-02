@@ -198,12 +198,14 @@ struct Args {
   #[arg(long, conflicts_with_all = ["shard_plan", "only_shard", "store_dir"])]
   consts_file: Option<PathBuf>,
 
-  /// With --consts: check each subject only, trusting its deps.
-  #[arg(long, requires = "consts")]
+  /// With --consts/--consts-file: check each subject only, trusting its deps.
+  // Validated in main (not clap `requires = "consts"`): names may come from
+  // --consts-file alone, which a clap-level `requires` would wrongly reject.
+  #[arg(long)]
   skip_deps: bool,
 
-  /// Write per-constant results JSON `{ "<name>": { … } }` (accumulated across --consts).
-  #[arg(long, requires = "consts")]
+  /// Write per-constant results JSON `{ "<name>": { … } }` (accumulated across names).
+  #[arg(long)]
   json: Option<PathBuf>,
 
   /// Enable tracing-texray; with --json, per-phase spans are written to <json>.spans.
@@ -962,7 +964,10 @@ async fn run_constant(
           "cycles": cycles,
           "execute-time": (execute_secs * 1e6).round() / 1e6,
           "throughput": tput.round(),
-          "peak-rss": peak_rss_bytes(),
+          // Named for what it measures (the execute phase's RSS high-water),
+          // matching bench-typecheck's execute-peak-rss; bare `peak-rss` is
+          // reserved for prove-phase peaks.
+          "execute-peak-rss": peak_rss_bytes(),
         }),
       )?;
     }
@@ -1699,7 +1704,7 @@ async fn main() -> Result<()> {
   // JSON Lines — the CI drill-down input.
   if args.texray {
     if let Some(json) = args.json.as_ref().and_then(|p| p.to_str()) {
-      let _ = tracing_texray::json_sink::to_file(format!("{json}.spans"));
+      let _ = tracing_texray::json_sink::to_file(&format!("{json}.spans"));
     }
   }
 
@@ -1725,9 +1730,16 @@ async fn main() -> Result<()> {
       "--shard-plan requires exactly one --ixe input (the env the manifest was built for)"
     );
   }
-  // `--consts` selects named constants from one env.
-  if !args.consts.is_empty() && inputs.len() > 1 {
-    bail!("--consts requires exactly one --ixe input");
+  // Named constants (from --consts and/or --consts-file) select from one env.
+  let consts = collect_consts(&args)?;
+  if !consts.is_empty() && inputs.len() > 1 {
+    bail!("--consts/--consts-file requires exactly one --ixe input");
+  }
+  if consts.is_empty() && args.skip_deps {
+    bail!("--skip-deps requires constants via --consts or --consts-file");
+  }
+  if consts.is_empty() && args.json.is_some() {
+    bail!("--json requires constants via --consts or --consts-file");
   }
 
   // ---- Plan every input up front (parse + shard). ----
@@ -1821,7 +1833,6 @@ async fn main() -> Result<()> {
   }
 
   // ---- Named constants (no manifest/range). Loops one leaf per name. ----
-  let consts = collect_consts(&args)?;
   if !consts.is_empty() {
     for name in &consts {
       run_constant(&client, &plans[0], name, &args).await?;
@@ -2151,13 +2162,19 @@ mod cli_tests {
   }
 
   #[test]
-  fn skip_deps_requires_consts() {
-    assert!(parse_err(&["--skip-deps"]).contains("--consts"));
-  }
-
-  #[test]
-  fn json_requires_consts() {
-    assert!(parse_err(&["--json", "out.json"]).contains("--consts"));
+  fn skip_deps_and_json_parse_with_consts_file_only() {
+    // --skip-deps/--json need names, but names may come from --consts-file
+    // alone — clap must accept the parse (main validates after
+    // collect_consts).
+    let a = parse(&[
+      "--consts-file",
+      "names.txt",
+      "--skip-deps",
+      "--json",
+      "out.json",
+    ]);
+    assert!(a.skip_deps);
+    assert_eq!(a.json.as_deref(), Some(std::path::Path::new("out.json")));
   }
 
   #[test]

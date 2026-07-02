@@ -12,9 +12,9 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+# No concurrency group: this workflow only runs on push-to-main and manual
+# dispatch, and every merged commit should be benchmarked — a later merge must
+# never cancel or queue behind an in-flight run.
 
 jobs:
   # Compile a tiny env once (ix is already built here) and hand it to the zkVM

@@ -3,41 +3,87 @@
 
   parse       COMMENT_BODY env → matrix + config (writes $GITHUB_OUTPUT)
   manifest    Benchmarks/Vectors.csv → the constant names for one cell
+  bmf         neutral results JSON → Bencher Metric Format (bench-main.yml)
   fetch-main  base SHA + cell → main.json pulled from bencher.dev
   compare     main.json + pr.json → a Markdown main-vs-PR table
   comment     per-cell table files → the final PR comment body
 
 The neutral results JSON every backend normalises to (see run.sh) is
-`{ "<name>": { "<metric>": <number>, ... }, ... }`. All metrics are
-lower-is-better, so a positive Δ% is a regression.
+`{ "<name>": { "<metric>": <number>, ... }, ... }`. Most metrics are
+lower-is-better (a positive Δ% is a regression); the exceptions live in
+HIGHER_IS_BETTER (throughput), where the polarity is flipped.
 """
 import argparse
 import glob
 import json
 import os
+import time
 import urllib.parse
 import urllib.request
 
 
-# ───────────────────────── parse ─────────────────────────
-# Default mode per backend. Aiur is the only backend with a real choice:
-# `prove` (default) is the full pipeline; `execute` skips Phase 2
-# (`--execute-only`) and reports the `fft-cost` / `execute-time` subset —
-# users opt in via the bare `execute` token in `!benchmark`. The zkVMs and
-# `ooc` always run execute; `compile` runs `ix compile`.
-DEFAULT_MODE = {
-    "aiur":    "prove",
-    "zisk":    "execute",
-    "sp1":     "execute",
-    "ooc":     "execute",
-    # `compile` benchmarks `ix compile <env>.lean → <env>.ixe` — the same job
-    # `bench-main.yml`'s `compile` matrix uploads under testbed `ix-compile-*`.
-    # Mode is `compile` (there's no execute/prove split); the "benchmark name"
-    # in bencher is the CamelCase env slug (`InitStd`, `Lean`, `Mathlib`, `FLT`).
-    "compile": "compile",
+# ─────────────────── backend identity table ────────────────────
+# Single source of truth for what each backend is:
+#   default_mode — what `!benchmark <backend>` runs. The bare `execute` token
+#     switches to the "execute" metrics entry when one exists (only aiur has
+#     a real choice: `prove` is the full pipeline; `execute` skips Phase 2 via
+#     `--execute-only`).
+#   testbed — the bencher testbed bench-main.yml uploads main's numbers to.
+#     MUST match that workflow's `testbed:` strings; fetch-main fails a cell
+#     loudly (exit 2) when a (backend, mode) has no entry here, so drift shows
+#     up as a red cell instead of a silent local-rebuild fallback.
+#   metrics — compare-table columns per supported mode. aiur's execute entry
+#     reads the SAME testbed as prove (bencher stores only prove runs; the
+#     execute-side columns — incl. execute-peak-rss, sampled at the Phase 1/2
+#     boundary — are extracted from that JSON, apples-to-apples).
+# `compile` benchmarks `ix compile <env>.lean → <env>.ixe`; its benchmark name
+# on bencher is the CamelCase env slug (ENV_CC below).
+BACKEND_TABLE = {
+    "aiur": {
+        "default_mode": "prove",
+        "testbed": "aiur-check-x64-32x",
+        "metrics": {
+            "prove":   ["fft-cost", "execute-time", "prove-time", "peak-rss"],
+            "execute": ["fft-cost", "execute-time", "execute-peak-rss"],
+        },
+    },
+    "zisk": {
+        "default_mode": "execute",
+        "testbed": "zisk-check-x64-32x",
+        "metrics": {
+            "execute": ["cycles", "execute-time", "throughput", "execute-peak-rss"],
+        },
+    },
+    "sp1": {
+        "default_mode": "execute",
+        "testbed": "sp1-check-x64-32x",
+        "metrics": {
+            "execute": ["cycles", "execute-time", "throughput", "execute-peak-rss"],
+        },
+    },
+    "ooc": {
+        "default_mode": "execute",
+        "testbed": "ooc-check-x64-32x",
+        "metrics": {
+            "execute": ["throughput", "check-time", "peak-rss"],
+        },
+    },
+    "compile": {
+        "default_mode": "compile",
+        "testbed": "ix-compile-x64-32x",
+        "metrics": {
+            "compile": ["compile-time", "throughput", "file-size", "constants"],
+        },
+    },
 }
-BACKENDS = tuple(DEFAULT_MODE)
+BACKENDS = tuple(BACKEND_TABLE)
 ENVS = ("initStd", "lean", "mathlib")
+# CamelCase benchmark key per env — must match bench-main.yml's matrix.bench
+# values (the names bencher stores env-keyed rows under: ooc whole-env,
+# compile). One explicit table, not a first-letter-upper derivation, so an
+# env whose CamelCase isn't mechanical (e.g. a future `flt` → `FLT`) can't
+# silently diverge from the workflow.
+ENV_CC = {"initStd": "InitStd", "lean": "Lean", "mathlib": "Mathlib"}
 CONFIG_KEYS = {"BENCH_ENVS", "BENCH_TIER", "BENCH_SHARD", "BENCH_FULL"}
 PASSTHROUGH_KEYS = {"RUST_LOG", "WITHOUT_VK_VERIFICATION", "RUSTFLAGS"}
 
@@ -82,8 +128,12 @@ def cmd_parse(_a):
     full = "1" if cfg.get("BENCH_FULL") == "1" else "0"  # full set vs primary subset
 
     def mode_for(b):
-        # `execute` only affects aiur (the zkVMs and ooc are execute-only anyway).
-        return "execute" if (b == "aiur" and execute_flag) else DEFAULT_MODE[b]
+        # The bare `execute` token selects a backend's execute entry when it
+        # has one — a real switch only for aiur (everything else already
+        # defaults to execute, or has no execute mode at all: compile).
+        if execute_flag and "execute" in BACKEND_TABLE[b]["metrics"]:
+            return "execute"
+        return BACKEND_TABLE[b]["default_mode"]
 
     cells = []
     for b in backends:
@@ -115,9 +165,8 @@ def cmd_manifest(a):
     # `compile` doesn't consume Vectors.csv — the "benchmark name" on bencher
     # is the CamelCase env slug (`initStd` → `InitStd`), one per cell.
     if a.backend == "compile":
-        name = a.env[:1].upper() + a.env[1:]
         with open(a.out, "w") as f:
-            f.write(name + "\n")
+            f.write(ENV_CC[a.env] + "\n")
         print(f"count=1\ntier=n/a")
         return
     # prove defaults to the cheap tier to keep the full set bounded; the curated
@@ -155,30 +204,17 @@ def cmd_manifest(a):
 
 
 # ───────────────────────── compare ─────────────────────────
-# Compare-column set per (backend, mode). Aiur has both modes: `prove` shows
-# the full execute+prove metric set; `execute` is a subset (Phase 1 only, no
-# prove-time / no throughput). Bencher stores only the prove set for main —
-# `execute` mode filters that same JSON down to the execute-side columns.
-METRICS = {
-    ("aiur",    "prove"):    ["fft-cost", "execute-time", "prove-time", "peak-rss"],
-    ("aiur",    "execute"):  ["fft-cost", "execute-time", "peak-rss"],
-    ("zisk",    "execute"):  ["cycles", "execute-time", "throughput", "peak-rss"],
-    ("sp1",     "execute"):  ["cycles", "execute-time", "throughput", "peak-rss"],
-    ("ooc",     "execute"):  ["throughput", "check-time", "peak-rss"],
-    ("compile", "compile"):  ["compile-time", "throughput", "file-size", "constants"],
-}
-
-
 def _num(d, name, metric):
     v = d.get(name, {}).get(metric)
     return v if isinstance(v, (int, float)) else None
 
 
 # Per-metric formatting kind. Metric names are the neutral-JSON keys the tools
-# emit (see METRICS above). Unknown metrics fall through to `_human_auto`.
+# emit (see BACKEND_TABLE). Unknown metrics fall through to `_human_auto`.
 _METRIC_KIND = {
     # bytes
     "peak-rss": "bytes",
+    "execute-peak-rss": "bytes",
     "file-size": "bytes",
     # seconds
     "execute-time": "seconds",
@@ -246,19 +282,51 @@ def _human(v, metric=None):
     return _human_auto(v)
 
 
+# Metrics where a LARGER value is the improvement. Everything else is
+# lower-is-better (times, RAM, cycles, fft-cost, sizes).
+HIGHER_IS_BETTER = {"throughput"}
+
+
 def _delta(main, pr):
     if main is None or pr is None or main == 0:
         return None
     return (pr - main) / main * 100.0
 
 
-def _ratio(main, pr):
-    """(factor, direction) with `factor` always ≥ 1.0. Metrics are lower-
-    is-better, so `pr > main` reads as slower / larger; `pr < main` as
-    faster / smaller. Returns None if either side is missing or non-positive."""
+def _badness(dp, metric):
+    """Signed regression magnitude: positive ⇒ the PR got worse on `metric`.
+    For lower-is-better metrics that's a positive Δ%; for higher-is-better
+    (throughput) it's a negative Δ%."""
+    if dp is None:
+        return None
+    return -dp if metric in HIGHER_IS_BETTER else dp
+
+
+# Ratio direction words per metric kind (grew, shrank). Rates and times read
+# as faster/slower; sizes as larger/smaller; counts (cycles, fft-cost, …) as
+# more/fewer — "1.15× slower" is meaningless for a byte or count metric.
+_RATIO_WORDS = {
+    "seconds": ("slower", "faster"),
+    "bytes":   ("larger", "smaller"),
+    "count":   ("more", "fewer"),
+    "int":     ("more", "fewer"),
+}
+
+
+def _ratio(main, pr, metric):
+    """(factor, direction word) with `factor` always ≥ 1.0. Wording follows
+    the metric's kind and polarity: throughput (a rate) and the time metrics
+    read as faster/slower, sizes as larger/smaller, counts as more/fewer.
+    Returns None if either side is missing or non-positive."""
     if main is None or pr is None or main <= 0 or pr <= 0:
         return None
-    return (pr / main, "slower") if pr >= main else (main / pr, "faster")
+    grew = pr >= main
+    factor = pr / main if grew else main / pr
+    if metric in HIGHER_IS_BETTER:      # rate: more per second = faster
+        return (factor, "faster" if grew else "slower")
+    kind = _METRIC_KIND.get(metric, "auto")
+    words = _RATIO_WORDS.get(kind, ("larger", "smaller"))
+    return (factor, words[0] if grew else words[1])
 
 
 def _load(path):
@@ -280,7 +348,7 @@ def _load(path):
 
 
 def cmd_compare(a):
-    metrics = a.metric or METRICS.get((a.backend, a.mode))
+    metrics = a.metric or BACKEND_TABLE.get(a.backend, {}).get("metrics", {}).get(a.mode)
     if not metrics:
         raise SystemExit("compare: pass --metric or a known --backend/--mode")
     title = a.title
@@ -301,6 +369,18 @@ def cmd_compare(a):
         emit((title or "") + "\n\n_No results were produced (every constant failed, "
              "timed out, or was dropped). See the workflow logs._")
         return
+    # One side empty while the other measured is almost always a broken side
+    # (e.g. the base-run fallback hit a CLI-incompatible base), not a real
+    # all-regressed/all-new comparison — say so instead of a silent n/a column.
+    side_note = ""
+    if not main_d:
+        side_note = ("\n\n_⚠️ main produced no results — the base-side run "
+                     "failed entirely (often a CLI-incompatible base binary "
+                     "when bencher had no data). Deltas unavailable; see the "
+                     "workflow logs._")
+    elif not pr_d:
+        side_note = ("\n\n_⚠️ the PR side produced no results — every "
+                     "constant failed or was dropped. See the workflow logs._")
 
     primary = metrics[0]
     names.sort(key=lambda n: (0, -v) if (v := (_num(pr_d, n, primary)
@@ -316,32 +396,33 @@ def cmd_compare(a):
         return isinstance(d.get(n), dict) and d[n].get("oom") is True
 
     regressed, improved = set(), set()
-    worst = None  # (dp, name, metric)
+    worst = None  # (badness, dp, name, metric)
     for n in names:
         cells = [f"`{n}`"]
         main_oom, pr_oom = _oom(main_d, n), _oom(pr_d, n)
         for m in metrics:
             mv, pv = _num(main_d, n, m), _num(pr_d, n, m)
-            mv_h = "OOM" if main_oom else _human(mv, m)
-            pv_h = "OOM" if pr_oom else _human(pv, m)
-            if main_oom or pr_oom:
-                cells += [mv_h, pv_h, "n/a"]
-                continue
+            # An OOM entry may still carry real Phase-1 measurements (run.sh
+            # merges the sentinel into whatever was recorded before the kill);
+            # render those, and OOM only for the metrics the kill prevented.
+            mv_h = "OOM" if (main_oom and mv is None) else _human(mv, m)
+            pv_h = "OOM" if (pr_oom and pv is None) else _human(pv, m)
             dp = _delta(mv, pv)
+            bad = _badness(dp, m)
             cell = "n/a" if dp is None else f"{dp:+.1f}%"
             if dp is not None:
                 # Ratio only when the change is big enough that "1.18× slower"
                 # carries new signal beyond the percentage — sub-5% deltas would
                 # just add `(1.03× slower)` noise to the cell.
-                r = _ratio(mv, pv)
+                r = _ratio(mv, pv, m)
                 if r is not None and r[0] >= 1.05:
                     cell += f" ({r[0]:.2f}× {r[1]})"
-                if dp > a.threshold:
+                if bad > a.threshold:
                     cell += " ⚠️"; regressed.add(n)
-                elif dp < -a.threshold:
+                elif bad < -a.threshold:
                     cell += " 🟢"; improved.add(n)
-                if worst is None or dp > worst[0]:
-                    worst = (dp, n, m)
+                if worst is None or bad > worst[0]:
+                    worst = (bad, dp, n, m)
             cells += [mv_h, pv_h, cell]
         rows.append("| " + " | ".join(cells) + " |")
 
@@ -349,8 +430,10 @@ def cmd_compare(a):
     s = (f"_{len(names)} constants · {len(regressed)} regressed · "
          f"{len(improved)} improved (|Δ| > {a.threshold:g}% on any metric)._")
     if worst and worst[0] is not None and worst[0] > a.threshold:
-        s += f" Worst: `{worst[1]}` `{worst[2]}` {worst[0]:+.1f}%."
+        s += f" Worst: `{worst[2]}` `{worst[3]}` {worst[1]:+.1f}%."
     out.append(s)
+    if side_note:
+        out.append(side_note.strip())
     # TODO: emit per-constant phase drill-down (see the TODO by _phase_details).
     emit("\n".join(out))
 
@@ -370,36 +453,63 @@ def cmd_comment(a):
     print(open(a.out).read())
 
 
+# ──────────────────────── bmf ─────────────────────────
+def cmd_bmf(a):
+    """Neutral results JSON → Bencher Metric Format.
+
+    One converter for every bench-main.yml upload site (previously four
+    hand-copied jq pipelines): flattens each entry's `phases` object into
+    `phase:<span>` measures, strips the boolean `oom` sentinel (BMF values
+    must be numeric — one boolean would fail the whole `bencher run` upload;
+    the sentinel is for the PR comparison table only), and drops entries left
+    with no measures.
+    """
+    with open(a.infile) as f:
+        neutral = json.load(f)
+    out = {}
+    for name, entry in (neutral or {}).items():
+        if not isinstance(entry, dict):
+            continue
+        phases = entry.get("phases")
+        phases = phases if isinstance(phases, dict) else {}
+        measures = {}
+        for k, v in entry.items():
+            if k in ("phases", "oom"):
+                continue
+            if isinstance(v, (int, float)) and not isinstance(v, bool):
+                measures[k] = {"value": v}
+        for span, secs in phases.items():
+            if isinstance(secs, (int, float)) and not isinstance(secs, bool):
+                measures[f"phase:{span}"] = {"value": secs}
+        if measures:
+            out[name] = measures
+    with open(a.out, "w") as f:
+        json.dump(out, f, indent=1)
+    print(f"bmf: {len(out)} benchmark(s) → {a.out}")
+
+
 # ─────────────────────── fetch-main ──────────────────────
-# Testbeds bench-main.yml uploads to, keyed by (backend, mode). Only the
-# pairs main actually runs land here — anything else (e.g. `aiur execute`,
-# `zisk prove`) has no bencher data; fetch-main exits non-zero for those and
-# bench-pr.yml falls back to running main locally.
-MAIN_TESTBEDS = {
-    # `aiur execute` uses the same testbed as `aiur prove` — bencher stores
-    # only prove and the execute columns are extracted from that JSON.
-    ("aiur",    "prove"):    "aiur-check-x64-32x",
-    ("aiur",    "execute"):  "aiur-check-x64-32x",
-    ("zisk",    "execute"):  "zisk-check-x64-32x",
-    ("sp1",     "execute"):  "sp1-check-x64-32x",
-    ("ooc",     "execute"):  "ooc-check-x64-32x",
-    ("compile", "compile"):  "ix-compile-x64-32x",
-}
-
-
 def cmd_fetch_main(a):
     """Pull the base SHA's neutral results JSON from bencher.dev.
 
-    Exits 2 if (backend, mode) isn't a combination main runs. Exits 3 if
-    bencher has no report at that hash yet (freshly-pushed main whose CI is
-    still ingesting) or the request failed. Callers fall back to running
-    main locally on any non-zero exit.
+    The testbed comes from BACKEND_TABLE — supported (backend, mode) pairs are
+    exactly the table's metrics keys. Exit codes are load-bearing for
+    bench-pr.yml: 3 = transient (bencher has no report at that hash yet, or
+    the API failed after retries) — the caller falls back to running main
+    locally; 2 = permanent config error ((backend, mode) not in BACKEND_TABLE,
+    i.e. table / bench-main.yml drift) — the caller fails the cell loudly
+    instead of paying the fallback forever.
     """
-    testbed = MAIN_TESTBEDS.get((a.backend, a.mode))
+    entry = BACKEND_TABLE.get(a.backend)
+    testbed = entry["testbed"] if entry and a.mode in entry["metrics"] else None
     if not testbed:
         print(f"fetch-main: no main testbed for {a.backend}/{a.mode}")
         raise SystemExit(2)
     wanted = set(open(a.names).read().split()) if a.names else None
+    # ooc's headline row is keyed by the CamelCase env slug (not a Vectors.csv
+    # constant), so names.txt alone would filter it out — admit it explicitly.
+    if wanted is not None and a.env:
+        wanted.add(ENV_CC.get(a.env, a.env))
     # TODO: support any base/PR branch, not just `main`. Today bench-main.yml
     # only runs on push to main and this query hardcodes `branch=main`, so a PR
     # against a non-main base branch (e.g. a long-running feature branch) always
@@ -407,19 +517,44 @@ def cmd_fetch_main(a):
     # bench-main.yml (or a sibling) upload reports for other tracked branches,
     # (2) plumb `--branch` here from `github.base_ref` in bench-pr.yml, (3) fall
     # back to `main` when the base branch has no bencher data.
-    params = {"branch": "main", "testbed": testbed, "per_page": 255}
-    url = "https://api.bencher.dev/v0/projects/ix/reports?" + urllib.parse.urlencode(params)
-    try:
-        with urllib.request.urlopen(url, timeout=15) as f:
-            reports = json.load(f)
-    except Exception as e:
-        print(f"fetch-main: bencher API error: {e}")
-        raise SystemExit(3)
     # Bencher stores the git hash at `branch.head.version.hash`.
-    at_sha = [
-        r for r in reports
-        if (((r.get("branch") or {}).get("head") or {}).get("version") or {}).get("hash") == a.sha
-    ]
+    def _report_hash(r):
+        return (((r.get("branch") or {}).get("head") or {}).get("version") or {}).get("hash")
+
+    def _get_json(url, attempts=3):
+        for i in range(attempts):
+            try:
+                with urllib.request.urlopen(url, timeout=15) as f:
+                    return json.load(f)
+            except Exception as e:
+                if i == attempts - 1:
+                    raise
+                print(f"fetch-main: attempt {i + 1} failed ({e}); retrying")
+                time.sleep(2 ** i)
+
+    # Page newest-first until the base SHA's reports are found (a matrix env
+    # uploads one report each, all within one push's CI window, so once we've
+    # matched and a later page yields nothing new we're past it). A transient
+    # API error is retried before the expensive local-base fallback fires.
+    per_page = 255
+    at_sha, page = [], 1
+    while page <= 8:  # 2040 newest reports — far beyond a realistic backlog
+        params = {"branch": "main", "testbed": testbed,
+                  "per_page": per_page, "page": page}
+        url = ("https://api.bencher.dev/v0/projects/ix/reports?"
+               + urllib.parse.urlencode(params))
+        try:
+            reports = _get_json(url)
+        except Exception as e:
+            print(f"fetch-main: bencher API error: {e}")
+            raise SystemExit(3)
+        matches = [r for r in reports if _report_hash(r) == a.sha]
+        if at_sha and not matches:
+            break            # past the SHA's window
+        at_sha += matches
+        if len(reports) < per_page:
+            break            # end of data
+        page += 1
     if not at_sha:
         print(f"fetch-main: no reports for {a.backend}/{a.mode} @ {a.sha[:8]}")
         raise SystemExit(3)
@@ -466,10 +601,20 @@ def main():
                    help="Restrict to the primary subset (the primary=1 column).")
     m.set_defaults(fn=cmd_manifest)
 
+    b = sub.add_parser("bmf")
+    b.add_argument("--in", dest="infile", required=True,
+                   help="Neutral results JSON (run.sh output).")
+    b.add_argument("--out", required=True,
+                   help="Bencher Metric Format JSON for `bencher run`.")
+    b.set_defaults(fn=cmd_bmf)
+
     fm = sub.add_parser("fetch-main")
     fm.add_argument("--sha", required=True)
     fm.add_argument("--backend", required=True)
     fm.add_argument("--mode", required=True)
+    fm.add_argument("--env", default="",
+                    help="Cell env; admits the env-keyed row (ooc whole-env) "
+                         "past the --names filter.")
     fm.add_argument("--names", help="Only fetch benchmarks whose names appear in this file.")
     fm.add_argument("--out", required=True)
     fm.set_defaults(fn=cmd_fetch_main)
