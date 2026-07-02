@@ -134,7 +134,7 @@ def defEq := ⟦
     match load(a) {
       KExprNode.Srt(la) =>
         match load(b) {
-          KExprNode.Srt(lb) => level_equal(load(la), load(lb)),
+          KExprNode.Srt(lb) => level_equal(la, lb),
           _ => 0,
         },
       KExprNode.Lam(ty_a, body_a) =>
@@ -183,7 +183,7 @@ def defEq := ⟦
     match load(sort_w) {
       KExprNode.Srt(l) =>
         match load(l) {
-          KLevel.Zero => 1,
+          KLevelNode.Zero => 1,
           _ => 0,
         },
       _ => 0,
@@ -429,7 +429,7 @@ def defEq := ⟦
     match load(a) {
       KExprNode.Srt(la) =>
         match load(b) {
-          KExprNode.Srt(lb) => level_equal(load(la), load(lb)),
+          KExprNode.Srt(lb) => level_equal(la, lb),
           KExprNode.Lam(ty_b, body_b) => try_eta_expand(ty_b, body_b, a, types, top, addrs),
           _ => 0,
         },
@@ -557,7 +557,7 @@ def defEq := ⟦
   -- ============================================================================
   -- Level list equality.
   -- ============================================================================
-  fn k_is_def_eq_levels(a: List‹&KLevel›, b: List‹&KLevel›) -> G {
+  fn k_is_def_eq_levels(a: List‹KLevel›, b: List‹KLevel›) -> G {
     match load(a) {
       ListNode.Nil =>
         match load(b) {
@@ -568,7 +568,7 @@ def defEq := ⟦
         match load(b) {
           ListNode.Nil => 0,
           ListNode.Cons(lb, rb) =>
-            let l_eq = level_equal(load(la), load(lb));
+            let l_eq = level_equal(la, lb);
             match l_eq {
               1 => k_is_def_eq_levels(ra, rb),
               0 => 0,
@@ -765,8 +765,8 @@ def defEq := ⟦
   -- Const-vs-Const spine congruence: same idx, def-eq levels, same arity,
   -- pairwise def-eq args. Inner of try_lazy_delta_app without the head
   -- loads (caller already did them).
-  fn try_const_app_congruence(ai: G, al: List‹&KLevel›, aa: List‹KExpr›,
-                              bi: G, bl: List‹&KLevel›, bb: List‹KExpr›,
+  fn try_const_app_congruence(ai: G, al: List‹KLevel›, aa: List‹KExpr›,
+                              bi: G, bl: List‹KLevel›, bb: List‹KExpr›,
                               types: List‹KExpr›, top: List‹&KConstantInfo›,
                               addrs: List‹Addr›) -> G {
     match ai - bi {

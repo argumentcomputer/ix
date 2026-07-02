@@ -89,25 +89,25 @@ def check := ⟦
   -- Walks a KLevel asserting `Param(i)` has `i < bound`. Aiur's `store`/
   -- `load` deduplication subsumes Rust's seen-set.
   fn validate_univ_params_seen(u: KLevel, bound: G) {
-    match u {
-      KLevel.Zero => (),
-      KLevel.Succ(&inner) => validate_univ_params_seen(inner, bound),
-      KLevel.Max(&a, &b) =>
+    match load(u) {
+      KLevelNode.Zero => (),
+      KLevelNode.Succ(inner) => validate_univ_params_seen(inner, bound),
+      KLevelNode.Max(a, b) =>
         let _ = validate_univ_params_seen(a, bound);
         validate_univ_params_seen(b, bound),
-      KLevel.IMax(&a, &b) =>
+      KLevelNode.IMax(a, b) =>
         let _ = validate_univ_params_seen(a, bound);
         validate_univ_params_seen(b, bound),
-      KLevel.Param(i) =>
+      KLevelNode.Param(i) =>
         assert_eq!(u32_less_than(i, bound), 1);
         (),
     }
   }
 
-  fn validate_univ_params_list(lvls: List‹&KLevel›, bound: G) {
+  fn validate_univ_params_list(lvls: List‹KLevel›, bound: G) {
     match load(lvls) {
       ListNode.Nil => (),
-      ListNode.Cons(&u, rest) =>
+      ListNode.Cons(u, rest) =>
         let _ = validate_univ_params_seen(u, bound);
         validate_univ_params_list(rest, bound),
     }
@@ -122,7 +122,7 @@ def check := ⟦
       KExprNode.BVar(i) =>
         assert_eq!(u32_less_than(i, depth), 1);
         (),
-      KExprNode.Srt(&l) => validate_univ_params_seen(l, bound),
+      KExprNode.Srt(l) => validate_univ_params_seen(l, bound),
       KExprNode.Const(idx, lvls) =>
         let ci = load(list_lookup(top, idx));
         let expected = const_num_lvls(ci);
@@ -219,7 +219,7 @@ def check := ⟦
       KConstantInfo.Thm(_, ty, val) =>
         -- Mirror: src/ix/kernel/check.rs:135. Theorem type must be Sort 0.
         let lvl = k_ensure_sort(ty, store(ListNode.Nil), top, addrs);
-        assert_eq!(level_equal(load(lvl), KLevel.Zero), 1);
+        assert_eq!(level_equal(lvl, store(KLevelNode.Zero)), 1);
         let _ = assert_safety(u, ty, top);
         let _ = assert_safety(u, val, top);
         let _ = k_check(val, ty, store(ListNode.Nil), top, addrs);

@@ -1942,7 +1942,7 @@ def primitive := ⟦
   -- first arg. Requires `types` to be the local context so k_infer is
   -- valid under binders.
   fn try_reduce_decidable(head_addr: Addr, head_idx: G,
-                          head_lvls: List‹&KLevel›,
+                          head_lvls: List‹KLevel›,
                           spine: List‹KExpr›,
                           types: List‹KExpr›,
                           top: List‹&KConstantInfo›,
@@ -2015,7 +2015,7 @@ def primitive := ⟦
   -- For Int.decEq/decLe/decLt: whnf both args, extract Int literals,
   -- rebuild canonical form `App(Const(int_dec_*), int_of_nat n, int_neg_succ k, ...)`.
   -- Bails if both args already canonical (no normalization needed).
-  fn try_normalize_int_decidable(head_idx: G, head_lvls: List‹&KLevel›,
+  fn try_normalize_int_decidable(head_idx: G, head_lvls: List‹KLevel›,
                                   spine: List‹KExpr›, types: List‹KExpr›,
                                   top: List‹&KConstantInfo›,
                                   addrs: List‹Addr›) -> (G, KExpr) {
@@ -2036,7 +2036,7 @@ def primitive := ⟦
     }
   }
 
-  fn normalize_int_dec_rebuild(head_idx: G, head_lvls: List‹&KLevel›,
+  fn normalize_int_dec_rebuild(head_idx: G, head_lvls: List‹KLevel›,
                                 spine: List‹KExpr›, a0: KExpr, a1: KExpr,
                                 types: List‹KExpr›, top: List‹&KConstantInfo›,
                                 addrs: List‹Addr›) -> (G, KExpr) {
@@ -2066,7 +2066,7 @@ def primitive := ⟦
   }
 
   fn decidable_dispatch(is_dec_le: G, is_dec_eq: G, is_dec_lt: G,
-                         head_idx: G, head_lvls: List‹&KLevel›,
+                         head_idx: G, head_lvls: List‹KLevel›,
                          spine: List‹KExpr›, types: List‹KExpr›,
                          top: List‹&KConstantInfo›,
                          addrs: List‹Addr›) -> (G, KExpr) {
@@ -2103,7 +2103,7 @@ def primitive := ⟦
   }
 
   fn decidable_dispatch_le_eq(is_dec_le: G, is_dec_eq: G,
-                              head_idx: G, head_lvls: List‹&KLevel›,
+                              head_idx: G, head_lvls: List‹KLevel›,
                               spine: List‹KExpr›, types: List‹KExpr›,
                               top: List‹&KConstantInfo›,
                               addrs: List‹Addr›) -> (G, KExpr) {
@@ -2133,7 +2133,7 @@ def primitive := ⟦
   -- k_infer over the original call expression in `decidable_finish`.
   fn decidable_build_proof(is_dec_le: G, is_dec_eq: G, verdict: G,
                            n_e: KExpr, m_e: KExpr,
-                           head_idx: G, head_lvls: List‹&KLevel›,
+                           head_idx: G, head_lvls: List‹KLevel›,
                            spine: List‹KExpr›,
                            types: List‹KExpr›,
                            top: List‹&KConstantInfo›,
@@ -2154,7 +2154,7 @@ def primitive := ⟦
             match bool_lit_pair {
               (0, _) => (0, store(KExprNode.BVar(0))),
               (1, bool_lit_idx) =>
-                let one_lvl = store(KLevel.Succ(store(KLevel.Zero)));
+                let one_lvl = store(KLevelNode.Succ(store(KLevelNode.Zero)));
                 let lvls = store(ListNode.Cons(one_lvl, store(ListNode.Nil)));
                 let eq_refl_const = store(KExprNode.Const(eq_refl_idx, lvls));
                 let bool_const = store(KExprNode.Const(bool_idx, store(ListNode.Nil)));
@@ -2199,7 +2199,7 @@ def primitive := ⟦
   }
 
   fn decidable_finish(verdict: G, proof: KExpr, head_idx: G,
-                       head_lvls: List‹&KLevel›, spine: List‹KExpr›,
+                       head_lvls: List‹KLevel›, spine: List‹KExpr›,
                        types: List‹KExpr›, top: List‹&KConstantInfo›,
                        addrs: List‹Addr›) -> (G, KExpr) {
     let dec_addr = match verdict {
@@ -2419,7 +2419,7 @@ def primitive := ⟦
                     match find_addr_idx_safe(string_of_list_addr(), addrs, 0) {
                       (0, _) => (0, store(KExprNode.BVar(0))),
                       (1, str_idx) =>
-                        let zero_lvl = store(KLevel.Zero);
+                        let zero_lvl = store(KLevelNode.Zero);
                         let ulvls = store(ListNode.Cons(zero_lvl, store(ListNode.Nil)));
                         let nil_const = store(KExprNode.Const(nil_idx, ulvls));
                         let cons_const = store(KExprNode.Const(cons_idx, ulvls));

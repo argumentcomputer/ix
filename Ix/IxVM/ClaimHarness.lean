@@ -124,19 +124,45 @@ private def hintToG : Lean.ReducibilityHints → Aiur.G
   | .abbrev => .ofNat 0xFFFFFFFF
   | .regular n => .ofNat (min (1 + n.toNat) 0xFFFFFFFE)
 
+/-! ## IxVM IOBuffer interface
+
+The host seeds blake3-keyed payloads on six channels; the Aiur kernel
+consumes them via `io_get_info` + `#read_byte_stream`. One value shape
+per channel — no overloading, no in-band discriminators.
+
+Tiered by access pattern (matches kernel runtime order):
+
+| Tier   | Channel | Purpose                  | Key (32 G)              | Value shape       |
+|--------|---------|--------------------------|-------------------------|-------------------|
+| Ctrl   | 0       | claim wire bytes         | `blake3(claim_bytes)`   | claim bytes       |
+| Ctrl   | 1       | assumption tree bytes    | `tree.root`             | tree bytes        |
+| Const  | 2       | constant wire bytes      | const addr              | const bytes       |
+| Const  | 3       | Defn reducibility hint   | Defn addr               | single G          |
+| Blob   | 4       | blob discriminator       | addr                    | one byte (1=const, 0=blob) |
+| Blob   | 5       | blob raw bytes           | blob addr               | raw bytes         |
+
+Tier 1 fires once per `verify_claim` invocation (claim + optional tree).
+Tier 2 fires per constant traversed during `load_with_deps`. Tier 3
+fires per blob ref encountered during `build_ref_idxs_and_blobs`.
+
+Soundness:
+* ch 0/1/2/5 — every byte stream is blake3-verified by the kernel
+  against its content-addressed key.
+* ch 3 — semantically optional; controls WHNF reduction heuristic
+  only, def-eq is sound either way.
+* ch 4 — sound by erasure-correctness: a lying discriminator flips
+  the const/blob decision and the wrong-path load downstream fails
+  (a "const" blob triggers a ch 2 read returning empty → blake3
+  verify against the non-empty addr fails; a "blob" const dangles
+  references → typecheck fail).
+
+Channel numbers MUST stay in sync with the inlined `io_get_info` /
+`#read_byte_stream` channel literals in `Ix/IxVM/Ingress.lean` and
+`Ix/IxVM/Kernel/Claim.lean`.
+-/
+
 /-- Insert all per-address entries for `addr`s satisfying `keep` into
-    `ioBuffer`. Each address kind lives on its own channel; the key is
-    always the 32-G blake3 hash, with no disambiguating suffix.
-
-    | channel | key (32 G) | value          | meaning |
-    |---------|------------|----------------|---------|
-    | 0       | `addr`     | const bytes    | constant data (empty marker = `addr` is a blob) |
-    | 1       | `addr`     | raw blob bytes | referenced data (verified by Aiur via blake3) |
-    | 2       | `addr`     | single G       | Defn `ReducibilityHints` encoding |
-
-    Blob addrs also get an empty entry on channel 0 so the kernel's
-    constant-vs-blob detection (`io_get_info(0, addr) ⇒ len=0`) still
-    works without a separate query path. -/
+    `ioBuffer`. See the channel table above. -/
 def addEntries (ixonEnv : Ixon.Env) (keep : Address → Bool)
     (ioBuffer : Aiur.IOBuffer) : Aiur.IOBuffer := Id.run do
   let mut ioBuffer := ioBuffer
@@ -146,18 +172,21 @@ def addEntries (ixonEnv : Ixon.Env) (keep : Address → Bool)
     -- serialized form the lazy entry holds — no materialization needed.
     let bytes := lc.rawBytes
     let key : Array Aiur.G := addr.hash.data.map .ofUInt8
-    ioBuffer := ioBuffer.extend 0 key (bytes.data.map .ofUInt8)
+    ioBuffer := ioBuffer.extend 2 key (bytes.data.map .ofUInt8)
+    -- Discriminator: this addr resolves to a constant.
+    ioBuffer := ioBuffer.extend 4 key #[.ofNat 1]
   for (addr, rawBytes) in ixonEnv.blobs do
     if !keep addr then continue
     let key : Array Aiur.G := addr.hash.data.map .ofUInt8
-    ioBuffer := ioBuffer.extend 1 key (rawBytes.data.map fun b => .ofNat b.toNat)
-    ioBuffer := ioBuffer.extend 0 key #[]
+    ioBuffer := ioBuffer.extend 5 key (rawBytes.data.map fun b => .ofNat b.toNat)
+    -- Discriminator: this addr resolves to a blob.
+    ioBuffer := ioBuffer.extend 4 key #[.ofNat 0]
   for (_, named) in ixonEnv.named do
     if !keep named.addr then continue
     match named.constMeta with
     | .defn _ _ hints _ _ _ _ _ =>
       let key : Array Aiur.G := named.addr.hash.data.map .ofUInt8
-      ioBuffer := ioBuffer.extend 2 key #[hintToG hints]
+      ioBuffer := ioBuffer.extend 3 key #[hintToG hints]
     | _ => pure ()
   return ioBuffer
 
@@ -189,7 +218,7 @@ private def seedTreeAt (root : Address)
   match trees.get? root with
   | some tree =>
     let bytes := Ix.AssumptionTree.ser tree
-    .ok (ioBuffer.extend 0 (addrKey tree.root) (bytes.data.map .ofUInt8))
+    .ok (ioBuffer.extend 1 (addrKey tree.root) (bytes.data.map .ofUInt8))
   | none => .error s!"no assumption tree supplied for root {root}"
 
 /-- Build the witness for `verify_claim` against `claim`.

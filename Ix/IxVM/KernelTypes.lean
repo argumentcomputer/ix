@@ -10,13 +10,15 @@ def kernelTypes := ⟦
   -- Universe Levels
   -- ============================================================================
 
-  enum KLevel {
+  enum KLevelNode {
     Zero,
-    Succ(&KLevel),
-    Max(&KLevel, &KLevel),
-    IMax(&KLevel, &KLevel),
+    Succ(KLevel),
+    Max(KLevel, KLevel),
+    IMax(KLevel, KLevel),
     Param(G)
   }
+
+  type KLevel = &KLevelNode
 
   -- ============================================================================
   -- Literals
@@ -38,8 +40,8 @@ def kernelTypes := ⟦
 
   enum KExprNode {
     BVar(G),
-    Srt(&KLevel),
-    Const(G, List‹&KLevel›),
+    Srt(KLevel),
+    Const(G, List‹KLevel›),
     App(KExpr, KExpr),
     Lam(KExpr, KExpr),
     Forall(KExpr, KExpr),
@@ -73,19 +75,19 @@ def kernelTypes := ⟦
   -- ============================================================================
 
   enum KValNode {
-    Srt(&KLevel),
+    Srt(KLevel),
     Lit(KLiteral),
     Lam(KVal, KExpr, KValEnv),
     Pi(KVal, KExpr, KValEnv),
-    Ctor(G, List‹&KLevel›, G, List‹KVal›),
+    Ctor(G, List‹KLevel›, G, List‹KVal›),
     FVar(G, KVal, List‹KVal›),
-    Axiom(G, List‹&KLevel›, List‹KVal›),
-    Defn(G, List‹&KLevel›, List‹KVal›),
-    Thm(G, List‹&KLevel›, List‹KVal›),
-    Opaque(G, List‹&KLevel›, List‹KVal›),
-    Quot(G, List‹&KLevel›, List‹KVal›),
-    Induct(G, List‹&KLevel›, List‹KVal›),
-    Rec(G, List‹&KLevel›, List‹KVal›),
+    Axiom(G, List‹KLevel›, List‹KVal›),
+    Defn(G, List‹KLevel›, List‹KVal›),
+    Thm(G, List‹KLevel›, List‹KVal›),
+    Opaque(G, List‹KLevel›, List‹KVal›),
+    Quot(G, List‹KLevel›, List‹KVal›),
+    Induct(G, List‹KLevel›, List‹KVal›),
+    Rec(G, List‹KLevel›, List‹KVal›),
     Proj(G, G, KVal, List‹KVal›),
     Thunk(KExpr, KValEnv)
   }

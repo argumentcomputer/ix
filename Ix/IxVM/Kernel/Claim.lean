@@ -438,23 +438,12 @@ def claim := ⟦
   -- Load + verify a claim from the IOBuffer at key=`digest`. Mirrors
   -- `load_verified_constant`: read bytes, recompute blake3, assert
   -- equality, deserialize, assert no trailing data.
+  -- Load + verify a claim from IOBuffer at `digest` (ch 0). Reads bytes,
+  -- recomputes blake3, asserts equality, deserialises.
   fn load_verified_claim(digest: [U8; 32]) -> Claim {
     let (idx, len) = io_get_info(0, digest);
     let bytes = #read_byte_stream(0, idx, len);
-    let h = blake3(bytes);
-    assert_eq!(
-      [
-        h[0][0], h[0][1], h[0][2], h[0][3],
-        h[1][0], h[1][1], h[1][2], h[1][3],
-        h[2][0], h[2][1], h[2][2], h[2][3],
-        h[3][0], h[3][1], h[3][2], h[3][3],
-        h[4][0], h[4][1], h[4][2], h[4][3],
-        h[5][0], h[5][1], h[5][2], h[5][3],
-        h[6][0], h[6][1], h[6][2], h[6][3],
-        h[7][0], h[7][1], h[7][2], h[7][3]
-      ],
-      digest
-    );
+    let _ = verify_bytes_against(bytes, digest);
     let (claim, rest) = get_claim(bytes);
     assert_eq!(load(rest), ListNode.Nil);
     claim
@@ -467,17 +456,7 @@ def claim := ⟦
   -- ============================================================================
   fn expr_addr(e_ref: &Expr) -> Addr {
     let bytes = put_expr(load(e_ref), store(ListNode.Nil));
-    let h = blake3(bytes);
-    store([
-      h[0][0], h[0][1], h[0][2], h[0][3],
-      h[1][0], h[1][1], h[1][2], h[1][3],
-      h[2][0], h[2][1], h[2][2], h[2][3],
-      h[3][0], h[3][1], h[3][2], h[3][3],
-      h[4][0], h[4][1], h[4][2], h[4][3],
-      h[5][0], h[5][1], h[5][2], h[5][3],
-      h[6][0], h[6][1], h[6][2], h[6][3],
-      h[7][0], h[7][1], h[7][2], h[7][3]
-    ])
+    bytes_to_addr(bytes)
   }
 
   -- ============================================================================
@@ -728,33 +707,13 @@ def claim := ⟦
   fn leaf_hash(addr: Addr) -> Addr {
     let tail = put_address(addr, store(ListNode.Nil));
     let bytes = store(ListNode.Cons(0u8, tail));
-    let h = blake3(bytes);
-    store([
-      h[0][0], h[0][1], h[0][2], h[0][3],
-      h[1][0], h[1][1], h[1][2], h[1][3],
-      h[2][0], h[2][1], h[2][2], h[2][3],
-      h[3][0], h[3][1], h[3][2], h[3][3],
-      h[4][0], h[4][1], h[4][2], h[4][3],
-      h[5][0], h[5][1], h[5][2], h[5][3],
-      h[6][0], h[6][1], h[6][2], h[6][3],
-      h[7][0], h[7][1], h[7][2], h[7][3]
-    ])
+    bytes_to_addr(bytes)
   }
 
   fn node_hash(l: Addr, r: Addr) -> Addr {
     let tail = put_address(l, put_address(r, store(ListNode.Nil)));
     let bytes = store(ListNode.Cons(1u8, tail));
-    let h = blake3(bytes);
-    store([
-      h[0][0], h[0][1], h[0][2], h[0][3],
-      h[1][0], h[1][1], h[1][2], h[1][3],
-      h[2][0], h[2][1], h[2][2], h[2][3],
-      h[3][0], h[3][1], h[3][2], h[3][3],
-      h[4][0], h[4][1], h[4][2], h[4][3],
-      h[5][0], h[5][1], h[5][2], h[5][3],
-      h[6][0], h[6][1], h[6][2], h[6][3],
-      h[7][0], h[7][1], h[7][2], h[7][3]
-    ])
+    bytes_to_addr(bytes)
   }
 
   -- ============================================================================
@@ -780,8 +739,8 @@ def claim := ⟦
 
   fn load_assumption_tree(root: Addr) -> List‹Addr› {
     let raw = load(root);
-    let (idx, len) = io_get_info(0, raw);
-    let bytes = #read_byte_stream(0, idx, len);
+    let (idx, len) = io_get_info(1, raw);
+    let bytes = #read_byte_stream(1, idx, len);
     let (tag, s) = get_tag4(bytes);
     let (flag, size) = tag;
     assert_eq!(flag, 0xE);
