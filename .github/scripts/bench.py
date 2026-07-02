@@ -21,10 +21,21 @@ import urllib.request
 
 # ───────────────────────── parse ─────────────────────────
 # Default mode per backend. Aiur is the only backend with a real choice:
-# `prove` (default) is the full pipeline; `execute` skips Phase 2 (--execute-only)
-# and reports the fft-cost / execute-time subset. Users opt in with the bare
-# `execute` token in `!benchmark`. The zkVMs and ooc are always execute.
-DEFAULT_MODE = {"aiur": "prove", "zisk": "execute", "sp1": "execute", "ooc": "execute"}
+# `prove` (default) is the full pipeline; `execute` skips Phase 2
+# (`--execute-only`) and reports the `fft-cost` / `execute-time` subset —
+# users opt in via the bare `execute` token in `!benchmark`. The zkVMs and
+# `ooc` always run execute; `compile` runs `ix compile`.
+DEFAULT_MODE = {
+    "aiur":    "prove",
+    "zisk":    "execute",
+    "sp1":     "execute",
+    "ooc":     "execute",
+    # `compile` benchmarks `ix compile <env>.lean → <env>.ixe` — the same job
+    # `bench-main.yml`'s `compile` matrix uploads under testbed `ix-compile-*`.
+    # Mode is `compile` (there's no execute/prove split); the "benchmark name"
+    # in bencher is the CamelCase env slug (`InitStd`, `Lean`, `Mathlib`, `FLT`).
+    "compile": "compile",
+}
 BACKENDS = tuple(DEFAULT_MODE)
 ENVS = ("initStd", "lean", "mathlib")
 CONFIG_KEYS = {"BENCH_ENVS", "BENCH_TIER", "BENCH_SHARD", "BENCH_FULL"}
@@ -101,10 +112,18 @@ def cmd_parse(_a):
 
 # ──────────────────────── manifest ────────────────────────
 def cmd_manifest(a):
+    # `compile` doesn't consume Vectors.csv — the "benchmark name" on bencher
+    # is the CamelCase env slug (`initStd` → `InitStd`), one per cell.
+    if a.backend == "compile":
+        name = a.env[:1].upper() + a.env[1:]
+        with open(a.out, "w") as f:
+            f.write(name + "\n")
+        print(f"count=1\ntier=n/a")
+        return
     # prove defaults to the cheap tier to keep the full set bounded; the curated
-    # primary subset is exempt — run.sh gates prove vs execute-only per-constant
-    # on the tier column, so all primaries are selected here (heavy ones fall
-    # back to execute-only in run.sh, not by being excluded up here).
+    # primary subset is exempt — run.sh's aiur prove path attempts prove for
+    # every primary (RAM watchdog catches OOMs), so all primaries are selected
+    # here regardless of tier.
     tier = a.tier or ("cheap" if (a.mode == "prove" and not a.primary) else "all")
     names = []
     with open(a.csv) as f:
@@ -141,11 +160,12 @@ def cmd_manifest(a):
 # prove-time / no throughput). Bencher stores only the prove set for main —
 # `execute` mode filters that same JSON down to the execute-side columns.
 METRICS = {
-    ("aiur", "prove"):    ["fft-cost", "execute-time", "prove-time", "peak-rss"],
-    ("aiur", "execute"):  ["fft-cost", "execute-time", "peak-rss"],
-    ("zisk", "execute"):  ["cycles", "execute-time", "throughput", "peak-rss"],
-    ("sp1",  "execute"):  ["cycles", "execute-time", "throughput", "peak-rss"],
-    ("ooc",  "execute"):  ["throughput", "check-time", "peak-rss"],
+    ("aiur",    "prove"):    ["fft-cost", "execute-time", "prove-time", "peak-rss"],
+    ("aiur",    "execute"):  ["fft-cost", "execute-time", "peak-rss"],
+    ("zisk",    "execute"):  ["cycles", "execute-time", "throughput", "peak-rss"],
+    ("sp1",     "execute"):  ["cycles", "execute-time", "throughput", "peak-rss"],
+    ("ooc",     "execute"):  ["throughput", "check-time", "peak-rss"],
+    ("compile", "compile"):  ["compile-time", "throughput", "file-size", "constants"],
 }
 
 
@@ -343,11 +363,12 @@ def cmd_comment(a):
 MAIN_TESTBEDS = {
     # `aiur execute` uses the same testbed as `aiur prove` — bencher stores
     # only prove and the execute columns are extracted from that JSON.
-    ("aiur", "prove"):    "aiur-check-x64-32x",
-    ("aiur", "execute"):  "aiur-check-x64-32x",
-    ("zisk", "execute"):  "zisk-check-x64-32x",
-    ("sp1",  "execute"):  "sp1-check-x64-32x",
-    ("ooc",  "execute"):  "ooc-check-x64-32x",
+    ("aiur",    "prove"):    "aiur-check-x64-32x",
+    ("aiur",    "execute"):  "aiur-check-x64-32x",
+    ("zisk",    "execute"):  "zisk-check-x64-32x",
+    ("sp1",     "execute"):  "sp1-check-x64-32x",
+    ("ooc",     "execute"):  "ooc-check-x64-32x",
+    ("compile", "compile"):  "ix-compile-x64-32x",
 }
 
 
@@ -423,6 +444,9 @@ def main():
     m.add_argument("--csv", required=True); m.add_argument("--env", required=True)
     m.add_argument("--mode", required=True); m.add_argument("--tier", default="")
     m.add_argument("--shard", default="0"); m.add_argument("--out", required=True)
+    m.add_argument("--backend", default="",
+                   help="Backend for this cell (used to special-case `compile`, "
+                        "which doesn't consume Vectors.csv).")
     m.add_argument("--primary", action="store_true",
                    help="Restrict to the primary subset (the primary=1 column).")
     m.set_defaults(fn=cmd_manifest)

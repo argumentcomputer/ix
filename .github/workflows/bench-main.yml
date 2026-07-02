@@ -1,4 +1,4 @@
-name: Benchmarks
+name: Benchmark main
 
 # Benchmarks tracked on Bencher on every push to main, all reusing the one
 # compiled `.ixe` so the compiler runs once:
@@ -320,8 +320,10 @@ jobs:
           # so span timings are tracked over time alongside the headline metrics.
           jq 'map_values((.phases // {}) as $p | del(.phases) | (. + ($p | with_entries(.key |= "phase:" + .))) | map_values({value: .}))' neutral.json > bench.json
           cat bench.json
-      # cycles / shards / max-shard-cycles are deterministic per guest ELF →
-      # pinned (0/0). execute-time / peak-rss / throughput are noisy wall-clock →
+      # cycles / shards / max-shard-cycles are deterministic per guest ELF, but
+      # a real guest / packer improvement legitimately drops them — upper-only
+      # 0% bound (flag regressions, let wins through), like `fft-cost` on the
+      # aiur job. execute-time / peak-rss / throughput are noisy wall-clock →
       # percentage bounds (throughput's regression is a drop).
       - uses: ./.github/actions/bencher-track
         with:
@@ -333,13 +335,13 @@ jobs:
           thresholds: |
             --threshold-measure cycles --threshold-test percentage
             --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0
-            --threshold-lower-boundary 0
+            --threshold-lower-boundary _
             --threshold-measure shards --threshold-test percentage
             --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0
-            --threshold-lower-boundary 0
+            --threshold-lower-boundary _
             --threshold-measure max-shard-cycles --threshold-test percentage
             --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0
-            --threshold-lower-boundary 0
+            --threshold-lower-boundary _
             --threshold-measure execute-time --threshold-test percentage
             --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.10
             --threshold-lower-boundary _
