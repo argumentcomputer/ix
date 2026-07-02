@@ -23,7 +23,7 @@ runs:
           nlohmann-json3-dev protobuf-compiler uuid-dev libgrpc++-dev \
           libsecp256k1-dev libsodium-dev libpqxx-dev nasm libopenmpi-dev \
           openmpi-bin openmpi-common libclang-dev clang gcc-riscv64-unknown-elf \
-          pkg-config libssl-dev time
+          pkg-config libssl-dev
     # `--version 0.18.0` pins the toolchain to match our deps. Our host links the
     # argumentcomputer/zisk `blake3-precompile` fork, which is based on v0.18.0
     # (its cargo-zisk has `check-setup`, used below to regenerate the key's

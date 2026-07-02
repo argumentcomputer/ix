@@ -29,6 +29,7 @@ public import Cli
 public import Ix.Common
 public import Ix.KernelCheck
 public import Ix.Meta
+public import Ix.TracingTexray
 public import Ix.Cli.ValidateCmd
 public import Std.Internal.UV.System
 
@@ -168,7 +169,8 @@ private def runCheckAnon (envPath : String) (p : Cli.Parsed) : IO UInt32 := do
   if !failOutPath.isEmpty then
     IO.println s!"[check] streamed {failures.size} failure(s) to {failOutPath}"
 
-  IO.println s!"##check## {elapsed} {passed} {failures.size} {results.size}"
+  let peakRss ← TracingTexray.peakTreeRssBytes
+  IO.println s!"##check## {elapsed} {passed} {failures.size} {results.size} {peakRss}"
   return if failures.isEmpty then 0 else 1
 
 /-- Meta-mode runner: dispatch to `rsCheckIxonFFI` with seed filtering. -/
@@ -219,7 +221,8 @@ private def runCheckMeta (envPath : String) (p : Cli.Parsed) : IO UInt32 := do
   if !failOutPath.isEmpty then
     IO.println s!"[check] streamed {failures.size} failure(s) to {failOutPath}"
 
-  IO.println s!"##check## {elapsed} {passed} {failures.size} {seedNames.size}"
+  let peakRss ← TracingTexray.peakTreeRssBytes
+  IO.println s!"##check## {elapsed} {passed} {failures.size} {seedNames.size} {peakRss}"
   return if failures.isEmpty then 0 else 1
 
 def runCheckRsCmd (p : Cli.Parsed) : IO UInt32 := do
@@ -227,6 +230,10 @@ def runCheckRsCmd (p : Cli.Parsed) : IO UInt32 := do
     | p.printError "error: must specify <path> to a .ixe file"
       return 1
   let envPath := pathArg.as! String
+
+  -- Start the process-tree RSS sampler so the `##check##` line can report an
+  -- accurate peak-rss (the parallel kernel check's high-water mark).
+  TracingTexray.startSampler
 
   -- `--workers N` is plumbed through the existing
   -- `IX_KERNEL_CHECK_WORKERS` env var that `resolve_kernel_check_workers`

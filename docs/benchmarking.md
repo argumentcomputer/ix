@@ -13,19 +13,36 @@ the same backend drivers:
 | backend | what it measures | metrics |
 |---|---|---|
 | `aiur` | IxVM kernel typecheck in the Aiur STARK prover (out-of-circuit execute + in-circuit prove) | `fft-cost`, `execute-time`, `prove-time`, `peak-rss`, `constants`, `throughput` |
-| `zisk` / `sp1` | the same kernel in the Zisk / SP1 zkVM hosts, **execute** only (proving needs a GPU) | `cycles`, `execute-time`, `throughput`, `peak-rss` (+ `shards`, `max-shard-cycles` for sharded runs) |
-| `native` | the same kernel run **out-of-circuit and in parallel** (`ix check`) — far faster | `throughput` (constants/s), `check-time`, `peak-rss`, `constants` |
+| `zisk` / `sp1` | the same kernel in the Zisk / SP1 zkVM hosts, **execute** only (proving needs a GPU) | `cycles`, `execute-time`, `throughput`, `peak-rss` |
+| `native` | the same kernel run **out-of-circuit and in parallel** (`ix check-rs`) — far faster | `throughput` (constants/s), `check-time`, `peak-rss`, `constants` |
 
 In **prove** mode, `run.sh` proves each constant whose Aiur fft-cost fits the
 prover RAM ceiling (`AIUR_PROVE_MAX_FFT`, ~128 GB at 2.34 GB per billion fft) and
 falls back to **execute-only** for the rest, so every primary still reports
-metrics. The `native` backend reports two views: the **whole env** (`ix check
---anon`, keyed by env) and a **per-primary subject check** (`ix check --consts`,
-keyed by constant — apples-to-apples with the zkVM `--skip-deps` execute).
+metrics. The `native` backend reports two views: the **whole env** (`ix check-rs
+--anon`, keyed by env) and a **per-primary subject check** (`ix check-rs
+--consts`, keyed by constant — apples-to-apples with the zkVM `--skip-deps`
+execute).
 
 All four are driven by `.github/scripts/run.sh` (compile the env `.ixe`, run the
 backend, emit a neutral `{ "<name>": { "<metric>": n } }` JSON). The PR workflow
 compares two such JSONs; the bencher workflow wraps one in Bencher Metric Format.
+
+### Peak RAM and the per-phase drill-down (tracing-texray)
+
+Every tool sources `peak-rss` from **tracing-texray's process-tree sampler** — a
+background thread that sums `VmRSS` across the process *and its children* and
+tracks the high-water mark. This captures memory that a bare `/proc/self/status`
+read misses, most importantly Zisk's ASM microservices (separate PIDs).
+
+Each tool also writes its per-phase span timings (tracing-texray's JSON-Lines
+sink, one `{"span","seconds"}` per closed span) to a side file, which `run.sh`
+aggregates into a `phases` object on the constant's entry. `aiur` yields a rich
+breakdown (`aiur/execute`, `aiur/witness`, `stark/fri_open`, …) since the prover
+instruments those spans; `zisk`/`sp1` record a single `execute`/`prove` phase;
+`native` records none. In a `!benchmark` comparison, `bench.py` renders any
+multi-phase constant as a collapsible **per-phase timing drill-down** (main vs
+PR seconds + Δ%), so a regression can be traced to the phase that moved.
 
 ## Constant set — `Benchmarks/Vectors.csv`
 

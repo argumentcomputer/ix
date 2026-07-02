@@ -105,6 +105,9 @@ structure Result where
   fftCost : Float
   executeSec : Float
   proveSec : Option Float := none
+  /-- Peak resident-set size in bytes (tracing-texray tree sampler), captured
+      after the constant's heaviest phase. -/
+  peakRss : Option Nat := none
   deriving Inhabited
 
 /-- Round a Float to `d` decimal places, to keep the emitted JSON readable. -/
@@ -119,6 +122,9 @@ def Result.toJsonEntry (r : Result) : String × Json :=
     [ ("constants", Lean.toJson r.constants)
     , ("fft-cost", Lean.toJson (roundTo 0 r.fftCost))
     , ("execute-time", Lean.toJson (roundTo 6 r.executeSec)) ]
+  let base := match r.peakRss with
+    | some n => base ++ [ ("peak-rss", Lean.toJson n) ]
+    | none => base
   -- prove-time and the derived proving throughput (constants/prove-time, the
   -- proving analog of compile's constants/sec) are present only once proven.
   let fields := match r.proveSec with
@@ -161,6 +167,15 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
     IO.eprintln "error: provide a constant via --constant, positional name(s), and/or --manifest <path>"
     return 1
   let jsonOut : Option String := (p.flag? "json").map (·.as! String)
+  let texrayJson : Option String := (p.flag? "texray-json").map (·.as! String)
+  -- Start the process-tree RSS sampler so each Result's peak-rss reflects the
+  -- true high-water mark. When a drill-down path is given, install the streaming
+  -- subscriber and point the per-span sink at it, so the prover's aiur/* and
+  -- stark/* phase timings land as JSON Lines for the CI comparison.
+  TracingTexray.startSampler
+  match texrayJson with
+  | some path => TracingTexray.init {}; TracingTexray.jsonSink path
+  | none => pure ()
   -- skip-deps: check just the target (`verify_const`, trusting its deps)
   -- instead of re-checking the whole transitive closure (`verify_claim`).
   let skipDeps := p.hasFlag "skip-deps"
@@ -244,6 +259,8 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
   -- `--execute-only`: stop after Phase 1; the results JSON (if requested) is
   -- already complete with the execute metrics.
   if executeOnly then
+    let peak ← TracingTexray.peakTreeRssBytes
+    execed := execed.map (fun (r, a) => ({ r with peakRss := some peak }, a))
     writeJson (execed.map (·.1))
     match jsonOut with
     | some path => IO.println s!"wrote {execed.size} execute-only benchmarks to {path}"
@@ -280,8 +297,10 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
       | .error e => IO.eprintln s!"  prove {r.name} failed: {e}"; continue
       | .ok _ => pure ()
       spent := spent + proveSec
+      let peak ← TracingTexray.peakTreeRssBytes
       IO.println s!"  {r.name}: prove={proveSec}s (cumulative {spent}s)"
-      ordered := ordered.set! i ({ r with proveSec := some proveSec }, addr)
+      ordered := ordered.set! i
+        ({ r with proveSec := some proveSec, peakRss := some peak }, addr)
       writeJson (ordered.map (·.1))
     catch e =>
       IO.eprintln s!"  prove {r.name} threw: {e}"
@@ -304,6 +323,7 @@ def typecheckCmd : Cli.Cmd := `[Cli|
     "execute-only";       "Execute only (Phase 1: constants / fft-cost / execute-time) and skip proving. The fast per-PR `execute`-mode signal."
     texray;               "Force the tracing-texray timeline + RAM breakdown on (per-prove spans on stderr)."
     "no-texray";          "Force the breakdown off. Default: on iff --json was not given."
+    "texray-json" : String; "Write per-phase span timings (aiur/*, stark/*) as JSON Lines to this path, for the CI drill-down. Implies installing the streaming subscriber."
 
   ARGS:
     ...names : String;   "Fully-qualified constant name(s) to benchmark (e.g. `Nat.add_comm String.append`). Optional if `--manifest` is given."

@@ -5411,6 +5411,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "terminal_size"
+version = "0.4.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "230a1b821ccbd75b185820a1f1ff7b14d21da1e442e22c0863ea5f08771a8874"
+dependencies = [
+ "rustix",
+ "windows-sys 0.60.2",
+]
+
+[[package]]
 name = "thiserror"
 version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5902,6 +5912,18 @@ dependencies = [
  "tracing-core",
  "tracing-log",
  "tracing-serde",
+]
+
+[[package]]
+name = "tracing-texray"
+version = "0.2.0"
+source = "git+https://github.com/argumentcomputer/tracing-texray?rev=15ae57cfbcb234ff5911a306898e7d93d396d648#15ae57cfbcb234ff5911a306898e7d93d396d648"
+dependencies = [
+ "loom",
+ "parking_lot",
+ "terminal_size",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -7257,7 +7279,9 @@ dependencies = [
  "ix-common",
  "ix-kernel",
  "ixon",
+ "serde_json",
  "tokio",
+ "tracing-texray",
  "zisk-sdk",
 ]
 
