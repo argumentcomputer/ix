@@ -252,6 +252,15 @@ def _delta(main, pr):
     return (pr - main) / main * 100.0
 
 
+def _ratio(main, pr):
+    """(factor, direction) with `factor` always ≥ 1.0. Metrics are lower-
+    is-better, so `pr > main` reads as slower / larger; `pr < main` as
+    faster / smaller. Returns None if either side is missing or non-positive."""
+    if main is None or pr is None or main <= 0 or pr <= 0:
+        return None
+    return (pr / main, "slower") if pr >= main else (main / pr, "faster")
+
+
 def _load(path):
     try:
         with open(path) as f:
@@ -321,6 +330,12 @@ def cmd_compare(a):
             dp = _delta(mv, pv)
             cell = "n/a" if dp is None else f"{dp:+.1f}%"
             if dp is not None:
+                # Ratio only when the change is big enough that "1.18× slower"
+                # carries new signal beyond the percentage — sub-5% deltas would
+                # just add `(1.03× slower)` noise to the cell.
+                r = _ratio(mv, pv)
+                if r is not None and r[0] >= 1.05:
+                    cell += f" ({r[0]:.2f}× {r[1]})"
                 if dp > a.threshold:
                     cell += " ⚠️"; regressed.add(n)
                 elif dp < -a.threshold:
