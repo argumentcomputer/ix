@@ -25,6 +25,20 @@ repo=$(cd "$repo" && pwd)
 : > "$out"
 emit_empty() { [ -s "$out" ] || echo '{}' > "$out"; }
 
+# Fold a tool's per-phase span timings (tracing-texray JSONL, one
+# `{"span":"…","seconds":N}` per closed span, possibly repeated per shard) into
+# its per-constant results file under a `phases` object, summed by span name —
+# the source bench.py renders as the comparative drill-down. No-op if the tool
+# emitted no spans.
+merge_phases() {  # <results.json> <spans.jsonl>
+  local res="$1" spans="$2" ph
+  [ -s "$spans" ] || return 0
+  ph=$(jq -s 'reduce .[] as $o ({}; .[$o.span] += $o.seconds)' "$spans" 2>/dev/null)
+  [ -n "$ph" ] && [ "$ph" != "{}" ] || return 0
+  jq --argjson ph "$ph" 'map_values(. + {phases: $ph})' "$res" > "$res.p" \
+    && mv "$res.p" "$res" || true
+}
+
 # `$benv` is used verbatim for the `.ixe` filename (bench-pr compiles `initStd.ixe`;
 # the bencher jobs reuse the compile job's cached `InitStd.ixe`), and lowercased
 # only to pick the Compile module.
@@ -58,7 +72,7 @@ case "$backend" in
     while IFS= read -r c; do
       [ -z "$c" ] && continue
       slug=$(printf '%s' "$c" | tr '/ .:' '____')
-      res="$tmp/$slug.json"
+      res="$tmp/$slug.json"; spans="$tmp/$slug.spans"
       do_prove=0
       if [ "$mode" = prove ]; then
         fft=$(awk -F, -v n="$c" '$1==n {print $6}' "$csv" 2>/dev/null)
@@ -68,21 +82,18 @@ case "$backend" in
           echo "::notice::aiur: '$c' fft=${fft:-?} exceeds $ceil (~128 GB); execute-only" >&2
         fi
       fi
+      # bench-typecheck self-reports peak-rss (texray tree sampler) in its --json;
+      # --texray-json captures the per-phase aiur/*, stark/* timings.
       if [ "$do_prove" = 1 ]; then
-        bench-typecheck --ixe "$ixe" "$c" --json "$res" --texray \
-          > "$tmp/$slug.log" 2> "$tmp/$slug.tx" \
+        bench-typecheck --ixe "$ixe" "$c" --json "$res" --texray-json "$spans" \
+          > "$tmp/$slug.log" 2>&1 \
           || { echo "::warning::aiur prove '$c' failed (OOM/timeout); dropping" >&2; continue; }
-        # Fold texray's proving RSS high-water mark (max over spans; awk's $2+0
-        # stops at the first non-digit) into this constant's entry.
-        rss=$(awk -F'peak-rss-bytes=' 'NF>1 && $2+0>m {m=$2+0} END {if (m>0) print m}' "$tmp/$slug.tx")
-        if [ -n "${rss:-}" ] && [ -s "$res" ]; then
-          jq --argjson rss "$rss" 'map_values(. + {"peak-rss": $rss})' "$res" > "$res.t" \
-            && mv "$res.t" "$res" || true
-        fi
       else
-        bench-typecheck --ixe "$ixe" "$c" --json "$res" --execute-only > "$tmp/$slug.log" 2>&1 \
+        bench-typecheck --ixe "$ixe" "$c" --json "$res" --execute-only \
+          --texray-json "$spans" > "$tmp/$slug.log" 2>&1 \
           || { echo "::warning::aiur execute '$c' failed; dropping" >&2; continue; }
       fi
+      merge_phases "$res" "$spans"
       [ -s "$res" ] && cat "$res"
     done < "$names" | jq -s 'reduce .[] as $o ({}; . + $o)' > "$out" 2>/dev/null
     emit_empty
@@ -90,10 +101,11 @@ case "$backend" in
 
   zisk|sp1)
     host="${backend}-host"; work="$repo/$backend"
-    # Build the host once so per-constant timing excludes compilation. Order is
-    # `timeout … /usr/bin/time … host`: timeout bounds a runaway constant while
-    # /usr/bin/time still measures the host directly (its child), so RSS/elapsed
-    # are the host's, not a wrapper's.
+    # Build the host once so per-constant timing excludes compilation. The host
+    # self-measures and writes its own neutral results JSON via `--json`
+    # (cycles/execute-time/throughput/peak-rss for execute; prove-time/… for
+    # prove), so there is nothing to grep — `timeout` only bounds a runaway
+    # constant.
     echo "::group::cargo build $host"
     ( cd "$work" && cargo build --quiet --release --bin "$host" )
     echo "::endgroup::"
@@ -104,80 +116,55 @@ case "$backend" in
     # in-session as root; the host children inherit it. Without this the ASM
     # services die with `mmap(rom) errno=11`. SP1 needs no such raise.
     [ "$backend" = zisk ] && sudo prlimit --pid $$ --memlock=unlimited:unlimited
+    # zisk proves with `--gpu`; sp1 selects the GPU prover via its env/features.
+    gpu=; [ "$backend" = zisk ] && gpu=--gpu
     while IFS= read -r c; do
       [ -z "$c" ] && continue
       slug=$(printf '%s' "$c" | tr '/ .:' '____')
-      log="$tmp/$slug.out"; tmf="$tmp/$slug.time"
+      res="$tmp/$slug.json"; log="$tmp/$slug.log"; spans="$tmp/$slug.spans"
       if [ "$mode" = execute ]; then
-        ( cd "$work" && timeout 25m /usr/bin/time -f '%e %M' -o "$tmf" \
-            "$bin" --execute --ixe "$ixe" --constant "$c" --skip-deps ) > "$log" 2>>"$log" \
+        ( cd "$work" && timeout 25m "$bin" --execute --ixe "$ixe" \
+            --constant "$c" --skip-deps --json "$res" --texray-json "$spans" ) \
+          > "$log" 2>&1 \
           || { echo "::warning::$backend execute '$c' failed/timed out; dropping" >&2; continue; }
-        fail=$(grep -oE 'failures[:=] ?[0-9]+' "$log" | head -1 | grep -oE '[0-9]+')
-        if [ "${fail:-1}" != 0 ]; then
-          echo "::warning::$backend '$c': nonzero/missing failures; dropping" >&2; continue
-        fi
-        # Total cycles: sharded prints "total cycles: N", single prints "cycles: N".
-        cyc=$(grep -oE 'total cycles: [0-9]+' "$log" | tail -1 | grep -oE '[0-9]+')
-        [ -z "$cyc" ] && cyc=$(grep -oE 'cycles: [0-9]+' "$log" | tail -1 | grep -oE '[0-9]+')
-        [ -z "$cyc" ] && { echo "::warning::$backend '$c': no cycle count; dropping" >&2; continue; }
-        secs=$(awk 'NR==1{print $1}' "$tmf"); rssk=$(awk 'NR==1{print $2}' "$tmf")
-        rss=$(( ${rssk:-0} * 1024 ))
-        tput=$(awk -v c="$cyc" -v s="${secs:-0}" 'BEGIN{ if (s>0) printf "%.0f", c/s; else print 0 }')
-        # Per-shard "cycles=<n>" lines appear only for sharded runs.
-        mapfile -t sh < <(grep -oE 'cycles=[0-9]+' "$log" | grep -oE '[0-9]+')
-        base="cycles:\$cyc, \"execute-time\":\$secs, throughput:\$tput, \"peak-rss\":\$rss"
-        if [ "${#sh[@]}" -gt 0 ]; then
-          maxsh=$(printf '%s\n' "${sh[@]}" | sort -n | tail -1)
-          jq -n --arg n "$c" --argjson cyc "$cyc" --argjson secs "${secs:-0}" \
-                --argjson tput "$tput" --argjson rss "$rss" \
-                --argjson nsh "${#sh[@]}" --argjson maxsh "$maxsh" \
-            "{(\$n): {$base, shards:\$nsh, \"max-shard-cycles\":\$maxsh}}"
-        else
-          jq -n --arg n "$c" --argjson cyc "$cyc" --argjson secs "${secs:-0}" \
-                --argjson tput "$tput" --argjson rss "$rss" \
-            "{(\$n): {$base}}"
-        fi
       else
-        # prove (single-leaf, GPU runner only — the workflow gates this cell).
-        ( cd "$work" && timeout 60m cargo run --quiet --release --bin "$host" -- \
-            --gpu --ixe "$ixe" --constant "$c" --skip-deps ) > "$log" 2>&1 \
+        # prove (GPU runner only — the workflow gates this cell).
+        ( cd "$work" && timeout 60m "$bin" $gpu --ixe "$ixe" \
+            --constant "$c" --skip-deps --json "$res" --texray-json "$spans" ) \
+          > "$log" 2>&1 \
           || { echo "::warning::$backend prove '$c' failed/timed out; dropping" >&2; continue; }
-        secs=$(grep -oE 'prove [0-9.]+s'   "$log" | head -1 | grep -oE '[0-9.]+')
-        steps=$(grep -oE '\([0-9]+ steps\)' "$log" | head -1 | grep -oE '[0-9]+')
-        fail=$(grep -oE 'failures=[0-9]+'  "$log" | head -1 | grep -oE '[0-9]+')
-        if [ -n "${secs:-}" ] && [ "${fail:-1}" = 0 ]; then
-          jq -n --arg n "$c" --argjson t "$secs" --argjson s "${steps:-0}" \
-            '{($n): {"prove-time": $t, steps: $s}}'
-        else
-          echo "::warning::$backend prove '$c': no clean prove line; dropping" >&2
-        fi
       fi
+      # The host writes $res only on a clean (zero-failure) run.
+      merge_phases "$res" "$spans"
+      [ -s "$res" ] && cat "$res"
     done < "$names" | jq -s 'reduce .[] as $o ({}; . + $o)' > "$out" 2>/dev/null
     emit_empty
     ;;
 
   native)
     # Native out-of-circuit Rust kernel (far faster than proving). Two views,
-    # both via the `##check## <elapsed_ms> <passed> <failures> <total>` line
-    # (ix check is a single multi-threaded process so /usr/bin/time -f '%M' is the
-    # true peak RSS): the whole env in parallel (`--anon`, keyed by env), and a
-    # per-primary subject check (`--consts`, keyed by constant) for an
-    # apples-to-apples baseline next to the zkVM `--skip-deps` execute.
+    # both keyed off the structured line
+    #   `##check## <elapsed_ms> <passed> <failures> <total> <peak-rss-bytes>`
+    # (peak-rss from ix check's tracing-texray tree sampler): the whole env in
+    # parallel (`--anon`, keyed by env), and a per-primary subject check
+    # (`--consts`, keyed by constant) for an apples-to-apples baseline next to
+    # the zkVM `--skip-deps` execute.
     native_one() {  # <label> <ix-check-args…>  → prints one JSON object
       local label="$1"; shift
-      local log="$tmp/n.out" tmf="$tmp/n.time"
-      /usr/bin/time -f '%e %M' -o "$tmf" ix check "$ixe" "$@" > "$log" 2>>"$log" \
+      local log="$tmp/n.out"
+      ix check-rs "$ixe" "$@" > "$log" 2>>"$log" \
         || { echo "::warning::native '$label' check failed; dropping" >&2; return; }
-      local line ems fl tot
+      local line ems fl tot rss
       line=$(grep '^##check##' "$log" | tail -1)
-      ems=$(echo "$line" | awk '{print $2}'); fl=$(echo "$line" | awk '{print $4}'); tot=$(echo "$line" | awk '{print $5}')
+      ems=$(echo "$line" | awk '{print $2}'); fl=$(echo "$line" | awk '{print $4}')
+      tot=$(echo "$line" | awk '{print $5}'); rss=$(echo "$line" | awk '{print $6}')
       { [ -n "${tot:-}" ] && [ "${fl:-1}" = 0 ]; } \
         || { echo "::warning::native '$label': bad ##check## / failures; dropping" >&2; return; }
-      local rssk rss cs tp
-      rssk=$(awk 'NR==1{print $2}' "$tmf"); rss=$(( ${rssk:-0} * 1024 ))
+      local cs tp
       cs=$(awk -v e="$ems" 'BEGIN{printf "%.3f", e/1000}')
       tp=$(awk -v t="$tot" -v e="$ems" 'BEGIN{ if (e>0) printf "%.2f", t*1000/e; else print 0 }')
-      jq -n --arg n "$label" --argjson c "$tot" --argjson s "$cs" --argjson tp "$tp" --argjson rss "$rss" \
+      jq -n --arg n "$label" --argjson c "$tot" --argjson s "$cs" --argjson tp "$tp" \
+            --argjson rss "${rss:-0}" \
         '{($n): {constants:$c, "check-time":$s, throughput:$tp, "peak-rss":$rss}}'
     }
     {

@@ -136,7 +136,8 @@ METRICS = {
     ("aiur", "prove"): ["prove-time", "peak-rss"],
     ("zisk", "execute"): ["cycles", "execute-time", "throughput", "peak-rss"],
     ("sp1", "execute"): ["cycles", "execute-time", "throughput", "peak-rss"],
-    ("zisk", "prove"): ["prove-time", "steps"], ("sp1", "prove"): ["prove-time", "steps"],
+    ("zisk", "prove"): ["prove-time", "steps", "peak-rss"],
+    ("sp1", "prove"): ["prove-time", "peak-rss"],
     # native is whole-env (one row per env); mode is ignored (it never proves).
     ("native", "execute"): ["throughput", "check-time", "peak-rss"],
     ("native", "prove"): ["throughput", "check-time", "peak-rss"],
@@ -169,6 +170,40 @@ def _load(path):
         return d if isinstance(d, dict) else {}
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
+
+
+def _phases(entry):
+    """The `phases` object (span → seconds) on a constant's entry, or {}."""
+    p = entry.get("phases") if isinstance(entry, dict) else None
+    return p if isinstance(p, dict) else {}
+
+
+def _phase_details(main_d, pr_d, names):
+    """Collapsible per-constant phase (span) timing tables — the drill-down that
+    shows *where* time moved between main and PR. Emitted only for constants that
+    carry tracing-texray span data."""
+    blocks = []
+    for n in names:
+        mp, pp = _phases(main_d.get(n, {})), _phases(pr_d.get(n, {}))
+        # Only worth a drill-down when there's more than one phase; a lone phase
+        # (zisk/sp1 execute, native check) just restates the headline metric.
+        if len(set(mp) | set(pp)) < 2:
+            continue
+        rows = ["| phase | main (s) | PR (s) | Δ% |", "|---|--:|--:|--:|"]
+        # Slowest-on-PR (else main) first, so the dominant phase leads.
+        spans = sorted(set(mp) | set(pp),
+                       key=lambda s: -(pp.get(s) if isinstance(pp.get(s), (int, float))
+                                       else mp.get(s) if isinstance(mp.get(s), (int, float)) else 0))
+        for s in spans:
+            mv, pv = mp.get(s), pp.get(s)
+            mv = mv if isinstance(mv, (int, float)) else None
+            pv = pv if isinstance(pv, (int, float)) else None
+            dp = _delta(mv, pv)
+            rows.append(f"| `{s}` | {_human(mv)} | {_human(pv)} | "
+                        f"{'n/a' if dp is None else f'{dp:+.1f}%'} |")
+        blocks.append(f"<details><summary><code>{n}</code> — phase breakdown</summary>\n\n"
+                      + "\n".join(rows) + "\n\n</details>")
+    return blocks
 
 
 def cmd_compare(a):
@@ -228,6 +263,11 @@ def cmd_compare(a):
     if worst and worst[0] is not None and worst[0] > a.threshold:
         s += f" Worst: `{worst[1]}` {worst[0]:+.1f}%."
     out.append(s)
+    details = _phase_details(main_d, pr_d, names)
+    if details:
+        out += ["", "<details><summary>Per-phase timing drill-down</summary>", ""]
+        out += details
+        out += ["", "</details>"]
     emit("\n".join(out))
 
 

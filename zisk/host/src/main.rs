@@ -208,6 +208,46 @@ struct Args {
   /// `bench-typecheck --skip-deps`.
   #[arg(long, requires = "constant")]
   skip_deps: bool,
+
+  /// Write the neutral per-constant results JSON `{ "<name>": { … } }` to this
+  /// path (execute → cycles/execute-time/throughput/peak-rss; prove →
+  /// prove-time/steps/peak-rss). Written only on a clean run (zero failures),
+  /// so a present file always holds a valid measurement. Requires `--constant`.
+  /// This is the machine-readable source the CI bench driver merges; the
+  /// human-readable summary still prints regardless.
+  #[arg(long, requires = "constant")]
+  json: Option<PathBuf>,
+
+  /// Write per-phase timings (`{"span","seconds"}` JSON Lines) to this path via
+  /// tracing-texray's sink, for the CI drill-down. The host records its
+  /// `execute` / `prove` phases here; any zisk-sdk tracing spans nested under
+  /// them are captured too.
+  #[arg(long)]
+  texray_json: Option<PathBuf>,
+}
+
+/// Peak resident set size (bytes) across this process *and its children*, from
+/// tracing-texray's tree sampler. `0` until [`start`] has run or off Linux.
+/// Unlike a bare `/proc/self/status` read this includes Zisk's ASM
+/// microservices, which mmap large ROMs in separate PIDs.
+fn peak_rss_bytes() -> Option<u64> {
+  match tracing_texray::rss_sampler::peak_tree_rss_bytes() {
+    0 => None,
+    n => Some(n),
+  }
+}
+
+/// Write the neutral per-constant entry `{ "<name>": <metrics> }` to `path`
+/// (the shape `run.sh` merges with `jq -s`). serde_json handles key escaping so
+/// arbitrary Lean names are safe.
+fn write_json_entry(
+  path: &PathBuf,
+  name: &str,
+  metrics: serde_json::Value,
+) -> Result<()> {
+  let entry = serde_json::json!({ name: metrics });
+  std::fs::write(path, serde_json::to_string(&entry)?)
+    .map_err(|e| anyhow::anyhow!("write {}: {e}", path.display()))
 }
 
 /// 112-byte public output of one shard-guest proof.
@@ -880,17 +920,31 @@ async fn run_constant(
 
   // ---- Execute mode: cycles only, no proof. ----
   if args.execute {
+    let t0 = Instant::now();
     let result = client.execute(&SHARD_PROGRAM, stdin).run()?.await?;
+    let execute_secs = t0.elapsed().as_secs_f64();
+    tracing_texray::json_sink::record_manual("zisk/execute", execute_secs);
     let mut buf = [0u8; SHARD_PUBLICS_LEN];
     result.get_public_values_slice(&mut buf);
     let publics = ShardPublics::decode(&buf);
-    println!(
-      "cycles: {}, failures: {}",
-      result.get_execution_steps(),
-      publics.failures
-    );
+    let cycles = result.get_execution_steps();
+    println!("cycles: {cycles}, failures: {}", publics.failures);
     if publics.failures > 0 {
       bail!("kernel typecheck produced {} failure(s)", publics.failures);
+    }
+    if let Some(path) = &args.json {
+      let tput =
+        if execute_secs > 0.0 { cycles as f64 / execute_secs } else { 0.0 };
+      write_json_entry(
+        path,
+        name,
+        serde_json::json!({
+          "cycles": cycles,
+          "execute-time": (execute_secs * 1e6).round() / 1e6,
+          "throughput": tput.round(),
+          "peak-rss": peak_rss_bytes(),
+        }),
+      )?;
     }
     return Ok(());
   }
@@ -901,6 +955,7 @@ async fn run_constant(
   result.get_public_values_slice(&mut buf);
   let publics = ShardPublics::decode(&buf);
   let leaf_ms = result.get_proving_time();
+  tracing_texray::json_sink::record_manual("zisk/prove", leaf_ms as f64 / 1000.0);
   let expected = subject_of_cover(&cover);
   if *expected.as_bytes() != publics.subject_root {
     bail!(
@@ -928,6 +983,17 @@ async fn run_constant(
       "kernel typecheck produced {} failure(s) (proof still verifies)",
       publics.failures
     );
+  }
+  if let Some(path) = &args.json {
+    write_json_entry(
+      path,
+      name,
+      serde_json::json!({
+        "prove-time": (leaf_ms as f64).round() / 1000.0,
+        "steps": result.get_execution_steps(),
+        "peak-rss": peak_rss_bytes(),
+      }),
+    )?;
   }
   Ok(())
 }
@@ -1595,6 +1661,22 @@ async fn main() -> Result<()> {
   zisk_sdk::setup_logger(VerboseMode::Info);
 
   let args = Args::parse();
+
+  // Start the process-tree RSS sampler so `peak_rss_bytes()` reflects the ASM
+  // microservices' memory, and point the per-phase timing sink at the drill-down
+  // file if requested. Both are independent of the SDK's global tracing logger.
+  //
+  // TODO(spans): the sink only receives the coarse `zisk/execute` / `zisk/prove`
+  // phases we `record_manual` below. For a finer drill-down (setup, trace-gen,
+  // per-microservice), install a TeXRay subscriber and examine the zisk-sdk's
+  // own tracing spans — which requires composing it with the SDK's global logger
+  // (`zisk_sdk::setup_logger`), currently the sole subscriber.
+  tracing_texray::rss_sampler::start(std::time::Duration::from_millis(50));
+  if let Some(path) = &args.texray_json {
+    if let Some(p) = path.to_str() {
+      let _ = tracing_texray::json_sink::to_file(p);
+    }
+  }
 
   // Collect inputs. No `--ixe` → a single empty env (back-compat).
   let inputs: Vec<Option<PathBuf>> = if args.ixe.is_empty() {

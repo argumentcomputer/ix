@@ -71,6 +71,43 @@ struct Args {
   /// `bench-typecheck --skip-deps`.
   #[arg(long, requires = "constant")]
   skip_deps: bool,
+
+  /// Write the neutral per-constant results JSON `{ "<name>": { … } }` to this
+  /// path (execute → cycles/execute-time/throughput/peak-rss; prove →
+  /// prove-time/peak-rss). Written only on a clean run (zero failures), so a
+  /// present file always holds a valid measurement. This is the machine
+  /// source the CI bench driver merges; the human summary still prints.
+  #[arg(long)]
+  json: Option<PathBuf>,
+
+  /// Write per-phase timings (`{"span","seconds"}` JSON Lines) to this path via
+  /// tracing-texray's sink, for the CI drill-down. The host records its
+  /// `execute` / `prove` phases here.
+  #[arg(long)]
+  texray_json: Option<PathBuf>,
+}
+
+/// Peak resident set size (bytes) across this process *and its children*, from
+/// tracing-texray's tree sampler. `0` until the sampler has started or off
+/// Linux.
+fn peak_rss_bytes() -> Option<u64> {
+  match tracing_texray::rss_sampler::peak_tree_rss_bytes() {
+    0 => None,
+    n => Some(n),
+  }
+}
+
+/// Write the neutral per-constant entry `{ "<name>": <metrics> }` to `path`
+/// (the shape `run.sh` merges with `jq -s`). serde_json handles key escaping so
+/// arbitrary Lean names are safe.
+fn write_json_entry(
+  path: &PathBuf,
+  name: &str,
+  metrics: serde_json::Value,
+) -> Result<()> {
+  let entry = serde_json::json!({ name: metrics });
+  fs::write(path, serde_json::to_string(&entry)?)
+    .map_err(|e| anyhow::anyhow!("write {}: {e}", path.display()))
 }
 
 fn load_env_bytes(ixe: Option<&PathBuf>) -> Vec<u8> {
@@ -185,6 +222,23 @@ async fn main() -> Result<()> {
   sp1_sdk::utils::setup_logger();
 
   let args = Args::parse();
+
+  // Start the process-tree RSS sampler (accurate peak RAM) and point the
+  // per-phase timing sink at the drill-down file if requested — both
+  // independent of the SDK's global tracing logger.
+  //
+  // TODO(spans): the sink only receives the coarse `sp1/execute` / `sp1/prove`
+  // phases we `record_manual` below. For a finer drill-down, install a TeXRay
+  // subscriber and examine the sp1-sdk's own tracing spans — which requires
+  // composing it with the SDK's global logger (`sp1_sdk::utils::setup_logger`),
+  // currently the sole subscriber.
+  tracing_texray::rss_sampler::start(std::time::Duration::from_millis(50));
+  if let Some(path) = &args.texray_json {
+    if let Some(p) = path.to_str() {
+      let _ = tracing_texray::json_sink::to_file(p);
+    }
+  }
+
   let whole_env_bytes = load_env_bytes(args.ixe.as_ref());
 
   // `--constant` ships a closure sub-env + a check-list (Anon only); otherwise
@@ -219,6 +273,10 @@ async fn main() -> Result<()> {
     let (output, report) =
       client.execute(GUEST_ELF, stdin).await.expect("execute");
     let exec_duration = exec_start.elapsed();
+    tracing_texray::json_sink::record_manual(
+      "sp1/execute",
+      exec_duration.as_secs_f64(),
+    );
     let failures = u32::from_le_bytes(
       output.as_slice()[..4].try_into().expect("output too short"),
     );
@@ -258,6 +316,22 @@ async fn main() -> Result<()> {
     if failures > 0 {
       bail!("kernel typecheck produced {failures} failure(s)");
     }
+    if let Some(path) = &args.json {
+      let cycles = report.total_instruction_count();
+      let secs = exec_duration.as_secs_f64();
+      let tput = if secs > 0.0 { cycles as f64 / secs } else { 0.0 };
+      let key = args.constant.clone().unwrap_or_else(|| "env".to_string());
+      write_json_entry(
+        path,
+        &key,
+        serde_json::json!({
+          "cycles": cycles,
+          "execute-time": (secs * 1e6).round() / 1e6,
+          "throughput": tput.round(),
+          "peak-rss": peak_rss_bytes(),
+        }),
+      )?;
+    }
     return Ok(());
   }
 
@@ -269,6 +343,10 @@ async fn main() -> Result<()> {
   // var (see the module doc header and `Cargo.toml`). `--execute` doesn't.
   let proof = client.prove(&pk, stdin).compressed().await.expect("prove");
   let prove_duration = start.elapsed();
+  tracing_texray::json_sink::record_manual(
+    "sp1/prove",
+    prove_duration.as_secs_f64(),
+  );
   let throughput =
     const_count as f64 / prove_duration.as_secs_f64().max(f64::EPSILON);
   // `SP1ProofWithPublicValues::bytes()` is the onchain-verifier encoding
@@ -285,5 +363,16 @@ async fn main() -> Result<()> {
   client.verify(&proof, pk.verifying_key(), None).expect("verify");
   let verify_duration = verify_start.elapsed();
   println!("proof verified in {:.3}s", verify_duration.as_secs_f64());
+  if let Some(path) = &args.json {
+    let key = args.constant.clone().unwrap_or_else(|| "env".to_string());
+    write_json_entry(
+      path,
+      &key,
+      serde_json::json!({
+        "prove-time": (prove_duration.as_secs_f64() * 1e6).round() / 1e6,
+        "peak-rss": peak_rss_bytes(),
+      }),
+    )?;
+  }
   Ok(())
 }

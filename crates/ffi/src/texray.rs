@@ -59,3 +59,38 @@ extern "C" fn rs_texray_init(
   let _ = Registry::default().with(layer.with_filter(filter)).try_init();
   LeanIOResult::ok(LeanOwned::box_usize(0))
 }
+
+/// Start tracing-texray's process-tree RSS sampler (idempotent). `interval_ms`
+/// is the sampling period in milliseconds. Runs on a background daemon thread;
+/// [`rs_texray_peak_tree_rss_bytes`] reads back the high-water mark. Captures
+/// child-process memory (e.g. a zkVM host's helper processes) that a bare
+/// `/proc/self/status` read misses.
+#[unsafe(no_mangle)]
+extern "C" fn rs_texray_start_sampler(
+  interval_ms: u64,
+) -> LeanIOResult<LeanOwned> {
+  tracing_texray::rss_sampler::start(std::time::Duration::from_millis(
+    interval_ms,
+  ));
+  LeanIOResult::ok(LeanOwned::box_usize(0))
+}
+
+/// Peak resident-set size (bytes) across this process and its children per the
+/// tree sampler. `0` until [`rs_texray_start_sampler`] has run or off Linux.
+#[unsafe(no_mangle)]
+extern "C" fn rs_texray_peak_tree_rss_bytes() -> LeanIOResult<LeanOwned> {
+  let bytes = tracing_texray::rss_sampler::peak_tree_rss_bytes();
+  LeanIOResult::ok(LeanOwned::box_u64(bytes))
+}
+
+/// Direct tracing-texray's per-span timing sink to `path` (one
+/// `{"span","seconds"}` JSON line per closed examined span). Combine with a
+/// `streaming`/examined subscriber so the prover's `aiur/*` + `stark/*` spans
+/// are recorded for the CI drill-down.
+#[unsafe(no_mangle)]
+extern "C" fn rs_texray_json_sink(
+  path: LeanString<LeanBorrowed<'_>>,
+) -> LeanIOResult<LeanOwned> {
+  let _ = tracing_texray::json_sink::to_file(&path.to_string());
+  LeanIOResult::ok(LeanOwned::box_usize(0))
+}

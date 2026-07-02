@@ -160,12 +160,6 @@ jobs:
       - name: Install Zisk
         if: matrix.cell.skip != 'true' && matrix.cell.backend == 'zisk'
         uses: ./.github/actions/install-zisk
-      # native = whole-env `ix check --anon`; needs only GNU time (ix is built above).
-      - name: Install GNU time
-        if: matrix.cell.skip != 'true' && matrix.cell.backend == 'native'
-        run: |
-          sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt 2>/dev/null || true
-          sudo apt-get update && sudo apt-get install -y time
 
       # ---------- main side (cached by base SHA) ----------
       - name: Restore cached main results

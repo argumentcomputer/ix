@@ -225,8 +225,10 @@ jobs:
             --csv Benchmarks/Vectors.csv --env "$benv" --mode prove --primary --out names.txt
           echo "proving $(wc -l < names.txt) primary constants:"; cat names.txt
           bash .github/scripts/run.sh . "${{ matrix.bench }}" aiur prove names.txt neutral.json
-          # Wrap neutral { name: { metric: v } } → Bencher Metric Format.
-          jq 'map_values(map_values({value: .}))' neutral.json > aiur.json
+          # Wrap neutral { name: { metric: v } } → Bencher Metric Format,
+          # flattening the per-phase `phases` object into `phase:<span>` measures
+          # so span timings are tracked over time alongside the headline metrics.
+          jq 'map_values((.phases // {}) as $p | del(.phases) | (. + ($p | with_entries(.key |= "phase:" + .))) | map_values({value: .}))' neutral.json > aiur.json
           cat aiur.json
       # Upload Aiur metrics. Every measure shares the per-workload baseline
       # window (data points since the aiur reset tag). constants is deterministic
@@ -235,7 +237,10 @@ jobs:
       # let wins through) rather than a hard pin. prove-time/execute-time,
       # peak-rss (texray's proving RSS high-water mark), and throughput
       # (constants/prove-time, where a drop is the regression) are noisy
-      # wall-clock and ride percentage bounds.
+      # wall-clock and ride percentage bounds. The per-phase `phase:<span>`
+      # measures are uploaded for trend visibility but intentionally left
+      # un-thresholded (noisy and dynamically named; the PR-comment drill-down
+      # does the phase-level alerting).
       - uses: ./.github/actions/bencher-track
         with:
           testbed: aiur-typecheck-x64-32x
@@ -310,8 +315,10 @@ jobs:
           echo "executing $(wc -l < names.txt) primary constants:"; cat names.txt
           bash .github/scripts/run.sh . ${{ matrix.bench }} ${{ matrix.backend }} execute \
             names.txt neutral.json
-          # Wrap neutral { name: { metric: v } } → Bencher Metric Format.
-          jq 'map_values(map_values({value: .}))' neutral.json > bench.json
+          # Wrap neutral { name: { metric: v } } → Bencher Metric Format,
+          # flattening the per-phase `phases` object into `phase:<span>` measures
+          # so span timings are tracked over time alongside the headline metrics.
+          jq 'map_values((.phases // {}) as $p | del(.phases) | (. + ($p | with_entries(.key |= "phase:" + .))) | map_values({value: .}))' neutral.json > bench.json
           cat bench.json
       # cycles / shards / max-shard-cycles are deterministic per guest ELF →
       # pinned (0/0). execute-time / peak-rss / throughput are noisy wall-clock →
@@ -394,7 +401,9 @@ jobs:
           python3 .github/scripts/bench.py manifest \
             --csv Benchmarks/Vectors.csv --env "$benv" --mode execute --primary --out names.txt
           bash .github/scripts/run.sh . "${{ matrix.bench }}" native execute names.txt neutral.json
-          jq 'map_values(map_values({value: .}))' neutral.json > bench.json
+          # Wrap → Bencher Metric Format, flattening `phases` into `phase:<span>`
+          # measures (a no-op for native, which records no spans).
+          jq 'map_values((.phases // {}) as $p | del(.phases) | (. + ($p | with_entries(.key |= "phase:" + .))) | map_values({value: .}))' neutral.json > bench.json
           cat bench.json
       # constants is deterministic → pinned (0/0); check-time / throughput /
       # peak-rss are noisy parallel wall-clock → percentage bounds.
