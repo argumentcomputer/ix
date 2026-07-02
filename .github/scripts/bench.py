@@ -18,7 +18,7 @@ import os
 
 
 # ───────────────────────── parse ─────────────────────────
-BACKENDS = ("aiur", "zisk", "sp1", "native")
+BACKENDS = ("aiur", "zisk", "sp1", "ooc")
 MODES = ("execute", "prove")
 ENVS = ("initStd", "lean", "mathlib")
 CONFIG_KEYS = {"BENCH_ENVS", "BENCH_TIER", "BENCH_SHARD", "BENCH_GPU", "BENCH_FULL"}
@@ -29,7 +29,7 @@ def runner_for(backend, mode, gpu):
     """(runs-on label, skip?) for a cell."""
     if backend == "aiur":
         return "warp-ubuntu-latest-x64-32x", False
-    if backend == "native":   # whole-env parallel check; no proving, never skips
+    if backend == "ooc":      # whole-env parallel check; no proving, never skips
         return "warp-ubuntu-latest-x64-32x", False
     if mode == "execute":
         return "warp-ubuntu-latest-x64-16x", False
@@ -138,9 +138,9 @@ METRICS = {
     ("sp1", "execute"): ["cycles", "execute-time", "throughput", "peak-rss"],
     ("zisk", "prove"): ["prove-time", "steps", "peak-rss"],
     ("sp1", "prove"): ["prove-time", "peak-rss"],
-    # native is whole-env (one row per env); mode is ignored (it never proves).
-    ("native", "execute"): ["throughput", "check-time", "peak-rss"],
-    ("native", "prove"): ["throughput", "check-time", "peak-rss"],
+    # ooc is whole-env (one row per env); mode is ignored (it never proves).
+    ("ooc", "execute"): ["throughput", "check-time", "peak-rss"],
+    ("ooc", "prove"): ["throughput", "check-time", "peak-rss"],
 }
 
 
@@ -186,7 +186,7 @@ def _phase_details(main_d, pr_d, names):
     for n in names:
         mp, pp = _phases(main_d.get(n, {})), _phases(pr_d.get(n, {}))
         # Only worth a drill-down when there's more than one phase; a lone phase
-        # (zisk/sp1 execute, native check) just restates the headline metric.
+        # (zisk/sp1 execute, ooc check) just restates the headline metric.
         if len(set(mp) | set(pp)) < 2:
             continue
         rows = ["| phase | main (s) | PR (s) | Δ% |", "|---|--:|--:|--:|"]

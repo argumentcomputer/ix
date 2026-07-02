@@ -7,7 +7,7 @@
 #   run.sh <repo_dir> <env> <backend> <mode> <names_file> <out_json>
 #     repo_dir : checked-out worktree (has .lake/build/bin/{ix,bench-typecheck})
 #     env      : initStd | lean | mathlib  (any case; used verbatim for <env>.ixe)
-#     backend  : aiur | zisk | sp1 | native
+#     backend  : aiur | zisk | sp1 | ooc
 #     mode     : execute | prove
 #
 # `ix` / `bench-typecheck` come from <repo_dir> (so base measures base's code, PR
@@ -141,25 +141,25 @@ case "$backend" in
     emit_empty
     ;;
 
-  native)
-    # Native out-of-circuit Rust kernel (far faster than proving). Two views,
-    # both keyed off the structured line
+  ooc)
+    # Out-of-circuit Rust kernel (far faster than proving). Two views, both keyed
+    # off the structured line
     #   `##check## <elapsed_ms> <passed> <failures> <total> <peak-rss-bytes>`
     # (peak-rss from ix check's tracing-texray tree sampler): the whole env in
     # parallel (`--anon`, keyed by env), and a per-primary subject check
     # (`--consts`, keyed by constant) for an apples-to-apples baseline next to
     # the zkVM `--skip-deps` execute.
-    native_one() {  # <label> <ix-check-args…>  → prints one JSON object
+    ooc_one() {  # <label> <ix-check-args…>  → prints one JSON object
       local label="$1"; shift
       local log="$tmp/n.out"
       ix check-rs "$ixe" "$@" > "$log" 2>>"$log" \
-        || { echo "::warning::native '$label' check failed; dropping" >&2; return; }
+        || { echo "::warning::ooc '$label' check failed; dropping" >&2; return; }
       local line ems fl tot rss
       line=$(grep '^##check##' "$log" | tail -1)
       ems=$(echo "$line" | awk '{print $2}'); fl=$(echo "$line" | awk '{print $4}')
       tot=$(echo "$line" | awk '{print $5}'); rss=$(echo "$line" | awk '{print $6}')
       { [ -n "${tot:-}" ] && [ "${fl:-1}" = 0 ]; } \
-        || { echo "::warning::native '$label': bad ##check## / failures; dropping" >&2; return; }
+        || { echo "::warning::ooc '$label': bad ##check## / failures; dropping" >&2; return; }
       local cs tp
       cs=$(awk -v e="$ems" 'BEGIN{printf "%.3f", e/1000}')
       tp=$(awk -v t="$tot" -v e="$ems" 'BEGIN{ if (e>0) printf "%.2f", t*1000/e; else print 0 }')
@@ -168,10 +168,10 @@ case "$backend" in
         '{($n): {constants:$c, "check-time":$s, throughput:$tp, "peak-rss":$rss}}'
     }
     {
-      native_one "$benv" --anon
+      ooc_one "$benv" --anon
       while IFS= read -r c; do
         [ -z "$c" ] && continue
-        native_one "$c" --consts "$c"
+        ooc_one "$c" --consts "$c"
       done < "$names"
     } | jq -s 'reduce .[] as $o ({}; . + $o)' > "$out" 2>/dev/null
     emit_empty

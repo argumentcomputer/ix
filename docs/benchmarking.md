@@ -14,12 +14,12 @@ the same backend drivers:
 |---|---|---|
 | `aiur` | IxVM kernel typecheck in the Aiur STARK prover (out-of-circuit execute + in-circuit prove) | `fft-cost`, `execute-time`, `prove-time`, `peak-rss`, `constants`, `throughput` |
 | `zisk` / `sp1` | the same kernel in the Zisk / SP1 zkVM hosts, **execute** only (proving needs a GPU) | `cycles`, `execute-time`, `throughput`, `peak-rss` |
-| `native` | the same kernel run **out-of-circuit and in parallel** (`ix check-rs`) — far faster | `throughput` (constants/s), `check-time`, `peak-rss`, `constants` |
+| `ooc` | the same kernel run **out-of-circuit and in parallel** (`ix check-rs`) — far faster | `throughput` (constants/s), `check-time`, `peak-rss`, `constants` |
 
 In **prove** mode, `run.sh` proves each constant whose Aiur fft-cost fits the
 prover RAM ceiling (`AIUR_PROVE_MAX_FFT`, ~128 GB at 2.34 GB per billion fft) and
 falls back to **execute-only** for the rest, so every primary still reports
-metrics. The `native` backend reports two views: the **whole env** (`ix check-rs
+metrics. The `ooc` backend reports two views: the **whole env** (`ix check-rs
 --anon`, keyed by env) and a **per-primary subject check** (`ix check-rs
 --consts`, keyed by constant — apples-to-apples with the zkVM `--skip-deps`
 execute).
@@ -40,7 +40,7 @@ sink, one `{"span","seconds"}` per closed span) to a side file, which `run.sh`
 aggregates into a `phases` object on the constant's entry. `aiur` yields a rich
 breakdown (`aiur/execute`, `aiur/witness`, `stark/fri_open`, …) since the prover
 instruments those spans; `zisk`/`sp1` record a single `execute`/`prove` phase;
-`native` records none. In a `!benchmark` comparison, `bench.py` renders any
+`ooc` records none. In a `!benchmark` comparison, `bench.py` renders any
 multi-phase constant as a collapsible **per-phase timing drill-down** (main vs
 PR seconds + Δ%), so a regression can be traced to the phase that moved.
 
@@ -63,7 +63,7 @@ One CSV is the single source of truth: `name,env,tier,shard_target,primary,aiur_
 Maintainer comment on a PR:
 
 ```
-!benchmark [aiur] [zisk] [sp1] [native | all]  [execute|prove]
+!benchmark ([aiur] [zisk] [sp1] [ooc] | all)  [execute|prove]
 BENCH_ENVS=initStd,mathlib     # which compiled envs (default initStd)
 BENCH_FULL=1                   # run the full curated set, not the ~11 primary
 BENCH_TIER=cheap|heavy|all     # override the mode default (execute=all, prove=cheap)
@@ -78,8 +78,8 @@ note unless a GPU runner is selected.
 
 ## Bencher jobs (`bench-main.yml`)
 
-`build → compile → { prove, zkvm-execute, native-check }`, each reporting to its
-own testbed + **workload** (`aiur`, `zisk`, `sp1`, `native-check`, `ix-compile`).
+`build → compile → { prove, zkvm-execute, ooc-check }`, each reporting to its
+own testbed + **workload** (`aiur-check`, `zisk-check`, `sp1-check`, `ooc-check`, `ix-compile`).
 Deterministic measures (cycles, fft-cost, constants, …) are pinned exactly;
 noisy wall-clock measures (time, RAM, throughput) ride percentage bounds, both
 windowed to the per-workload `bencher-thresholds-reset-<workload>` tag.
