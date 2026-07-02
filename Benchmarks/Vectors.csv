@@ -8,8 +8,11 @@
 # carry the first three):
 #   name         fully-qualified Lean name (resolves via NameResolve.resolveIxeAddr).
 #   env          compile target / .ixe it resolves in: initStd | lean | mathlib.
-#   tier         cheap = prove-feasible per-PR; heavy = execute-only / sharded.
-#                run.sh's prove-loop reads this to gate prove vs execute-only.
+#   tier         cheap = prove-feasible on a CI runner; heavy = a single-shard
+#                prove exceeds the RAM watchdog ceiling (expect an OOM row).
+#                Consumed by bench.py manifest only (BENCH_TIER filter; the
+#                non-primary prove set defaults to cheap) — run.sh attempts a
+#                full prove of every selected constant regardless of tier.
 #   shard_target 1 = heavy constant designated as a multi-shard prove target.
 #   primary      1 = part of the primary subset spanning shape + the cheap->heavy
 #                cost range. Default for the !benchmark PR comment and the

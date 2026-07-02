@@ -57,8 +57,10 @@ struct Args {
   #[arg(long)]
   consts_file: Option<PathBuf>,
 
-  /// With --consts: check each subject only, trusting its deps.
-  #[arg(long, requires = "consts")]
+  /// With --consts/--consts-file: check each subject only, trusting its deps.
+  // Validated in main (not clap `requires = "consts"`): names may come from
+  // --consts-file alone, which a clap-level `requires` would wrongly reject.
+  #[arg(long)]
   skip_deps: bool,
 
   /// Write per-constant results JSON `{ "<name>": { … } }` (accumulated across --consts).
@@ -252,7 +254,7 @@ async fn main() -> Result<()> {
   // JSON Lines — the CI drill-down input.
   if args.texray {
     if let Some(json) = args.json.as_ref().and_then(|p| p.to_str()) {
-      let _ = tracing_texray::json_sink::to_file(format!("{json}.spans"));
+      let _ = tracing_texray::json_sink::to_file(&format!("{json}.spans"));
     }
   }
 
@@ -261,6 +263,9 @@ async fn main() -> Result<()> {
   let consts = collect_consts(&args)?;
   if !consts.is_empty() && args.meta {
     bail!("--consts is Anon-only and cannot be combined with --meta");
+  }
+  if consts.is_empty() && args.skip_deps {
+    bail!("--skip-deps requires constants via --consts or --consts-file");
   }
 
   if consts.is_empty() {
@@ -359,7 +364,10 @@ async fn run_one<C: Prover + Sync>(
           "cycles": cycles,
           "execute-time": (secs * 1e6).round() / 1e6,
           "throughput": tput.round(),
-          "peak-rss": peak_rss_bytes(),
+          // Named for what it measures (the execute phase's RSS high-water),
+          // matching bench-typecheck's execute-peak-rss; bare `peak-rss` is
+          // reserved for prove-phase peaks.
+          "execute-peak-rss": peak_rss_bytes(),
         }),
       )?;
     }
@@ -420,13 +428,6 @@ mod cli_tests {
     )
     .expect("parse ok")
   }
-  fn parse_err(argv: &[&str]) -> String {
-    Args::try_parse_from(
-      std::iter::once("sp1-host").chain(argv.iter().copied()),
-    )
-    .unwrap_err()
-    .to_string()
-  }
 
   #[test]
   fn consts_splits_on_comma() {
@@ -441,8 +442,11 @@ mod cli_tests {
   }
 
   #[test]
-  fn skip_deps_requires_consts() {
-    assert!(parse_err(&["--skip-deps"]).contains("--consts"));
+  fn skip_deps_parses_with_consts_file_only() {
+    // Names may come from --consts-file alone; clap must accept the parse
+    // (main validates after collect_consts).
+    let a = parse(&["--consts-file", "names.txt", "--skip-deps"]);
+    assert!(a.skip_deps);
   }
 
   #[test]

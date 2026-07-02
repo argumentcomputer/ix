@@ -6,18 +6,22 @@
 
   - Default (Meta): kernel runs with metadata fields populated (Lean.Name,
     binder info, mdata). Supports `--ns` / `--consts` / `--consts-file`
-    for seed filtering and `--fail-out` for bisect-loop workflows.
+    for seed filtering and `--fail-out` for bisect-loop workflows. Seeded
+    meta checks are SUBJECT-ONLY: each seed is checked with its deps
+    lazily ingressed but trusted, not re-checked.
   - `--anon` (metadata-free): the env is loaded via `Env::get_anon` —
     `named`/`names`/`comms` sections are discarded at load time, never
-    reaching the kernel. Every kernel-checkable address (every constant
-    except Muts blocks and projections — projections are covered by
-    their parent block) is checked. The kernel's typechecking logic
-    structurally cannot read metadata (`M::MField<T>` is `()` in Anon
-    mode); progress labels are `@<hex>` addresses, not names.
+    reaching the kernel. The kernel's typechecking logic structurally
+    cannot read metadata (`M::MField<T>` is `()` in Anon mode); progress
+    labels are `@<hex>` addresses, not names.
 
-    `--anon` is incompatible with `--ns` / `--consts` / `--consts-file`:
-    the anon path checks everything in the env. Add `--addrs <hex,…>`
-    in the future if address-based filtering is needed.
+    Without a filter, every kernel-checkable address is checked (whole
+    env). With `--consts` / `--consts-file`, the named constants are
+    checked together with their FULL dependency closures — the same mode
+    and scope as the zkVM hosts' `--consts` execute path, so an
+    out-of-circuit run is directly comparable to the in-circuit one. Add
+    `--skip-deps` for a subject-only check (deps trusted), mirroring
+    `zisk-host --skip-deps`. `--ns` prefix filtering stays meta-only.
 
   Direct Lean → kernel typechecking (compile-and-check from source) is
   available via the `rsCheckConstsFFI` API for tests
@@ -30,6 +34,7 @@ public import Ix.Common
 public import Ix.KernelCheck
 public import Ix.Meta
 public import Ix.TracingTexray
+public import Ix.Cli.ConstsFile
 public import Ix.Cli.ValidateCmd
 public import Std.Internal.UV.System
 
@@ -48,18 +53,6 @@ private structure SeedSpec where
 
 private def SeedSpec.isEmpty (s : SeedSpec) : Bool :=
   s.prefixes.isEmpty && s.exacts.isEmpty
-
-/-- Read one constant name per line from `path`. Blank lines and lines
-    starting with `#` (after trimming) are ignored. -/
-private def readNamesFile (path : String) : IO (List Lean.Name) := do
-  let content ← IO.FS.readFile path
-  let lines := content.splitOn "\n"
-  let names : List Lean.Name := lines.filterMap fun raw =>
-    let cs := raw.toList.dropWhile Char.isWhitespace
-    let trimmed := String.ofList (cs.reverse.dropWhile Char.isWhitespace).reverse
-    if trimmed.isEmpty || trimmed.startsWith "#" then none
-    else some trimmed.toName
-  pure names
 
 /-- Build a `SeedSpec` from `--ns`, `--consts`, and `--consts-file`. -/
 private def resolveSeedSpec (p : Cli.Parsed) : IO (Option SeedSpec) := do
@@ -83,7 +76,8 @@ private def resolveSeedSpec (p : Cli.Parsed) : IO (Option SeedSpec) := do
     exacts := exacts ++ parsed
   if let some flag := fileFlag then
     let path := flag.as! String
-    let parsed ← readNamesFile path
+    -- Shared grammar (Ix.Cli.ConstsFile); meta seeds resolve via `toName`.
+    let parsed := (← ConstsFile.read path).toList.map (·.toName)
     if parsed.isEmpty then
       IO.println s!"[check] warning: --consts-file '{path}' yielded zero names"
     else
@@ -173,6 +167,48 @@ private def runCheckAnon (envPath : String) (p : Cli.Parsed) : IO UInt32 := do
   IO.println s!"##check## {elapsed} {passed} {failures.size} {results.size} {peakRss}"
   return if failures.isEmpty then 0 else 1
 
+/-- Anon-mode per-constant runner: dispatch to `rsCheckAnonConstsFFI`. Checks
+    the named constants and (by default) their full dependency closures — the
+    zkVM hosts' semantics — or subject-only under `--skip-deps`. -/
+private def runCheckAnonConsts (envPath : String) (p : Cli.Parsed) : IO UInt32 := do
+  let verbose := p.flag? "verbose" |>.isSome
+  let skipDeps := p.hasFlag "skip-deps"
+  let failOutPath : String :=
+    match p.flag? "fail-out" with
+    | some flag => flag.as! String
+    | none      => ""
+  -- Raw strings (no toName round-trip): the FFI resolves displayed forms
+  -- against the env's `named` map, matching the zkVM hosts' resolution.
+  let names ← ConstsFile.gather p
+  if names.isEmpty then
+    IO.println "[check] error: --consts/--consts-file resolved to zero names"
+    return 1
+
+  let scope := if skipDeps then "subject-only" else "full-closure"
+  IO.println s!"Running Ix kernel check (anon mode, {scope}) on {envPath}"
+  IO.println s!"[check] {names.size} seed constant(s): {", ".intercalate names.toList}"
+  let start ← IO.monoMsNow
+  let results ← rsCheckAnonConstsFFI envPath names skipDeps (!verbose) failOutPath
+  let elapsed := (← IO.monoMsNow) - start
+
+  let mut passed := 0
+  let mut failures : Array (String × String) := #[]
+  for (hex, res) in results do
+    match res with
+    | none => passed := passed + 1
+    | some err => failures := failures.push (s!"#{hex}", err.message)
+
+  IO.println s!"[check] checked {results.size} constants in {elapsed.formatMs}"
+  IO.println s!"[check] {passed}/{results.size} passed"
+  reportFailures failures
+
+  if !failOutPath.isEmpty then
+    IO.println s!"[check] streamed {failures.size} failure(s) to {failOutPath}"
+
+  let peakRss ← TracingTexray.peakTreeRssBytes
+  IO.println s!"##check## {elapsed} {passed} {failures.size} {results.size} {peakRss}"
+  return if failures.isEmpty then 0 else 1
+
 /-- Meta-mode runner: dispatch to `rsCheckIxonFFI` with seed filtering. -/
 private def runCheckMeta (envPath : String) (p : Cli.Parsed) : IO UInt32 := do
   let verbose := p.flag? "verbose" |>.isSome
@@ -247,14 +283,19 @@ def runCheckRsCmd (p : Cli.Parsed) : IO UInt32 := do
     Std.Internal.UV.System.osSetenv "IX_KERNEL_CHECK_WORKERS" (toString n)
 
   let anon := p.flag? "anon" |>.isSome
+  let hasConsts := (p.flag? "consts").isSome || (p.flag? "consts-file").isSome
+  if p.hasFlag "skip-deps" && !(anon && hasConsts) then
+    p.printError "error: --skip-deps only applies to `--anon --consts/--consts-file` \
+      (meta-mode seeded checks are always subject-only)"
+    return 1
   if anon then
-    let hasConsts := p.flag? "consts" |>.isSome
-    let hasNs := p.flag? "ns" |>.isSome
-    let hasConstsFile := p.flag? "consts-file" |>.isSome
-    if hasConsts || hasNs || hasConstsFile then
-      p.printError "error: --anon checks the entire env; --consts/--ns/--consts-file are unsupported"
+    if p.flag? "ns" |>.isSome then
+      p.printError "error: --ns prefix filtering is meta-only; --anon supports --consts/--consts-file"
       return 1
-    runCheckAnon envPath p
+    if hasConsts then
+      runCheckAnonConsts envPath p
+    else
+      runCheckAnon envPath p
   else
     runCheckMeta envPath p
 
@@ -268,8 +309,9 @@ def checkRsCmd : Cli.Cmd := `[Cli|
   FLAGS:
     anon;                   "Run the kernel in anon mode (no metadata read from .ixe)"
     ns            : String; "Comma-separated Lean.Name prefixes to filter on (meta mode only)"
-    consts        : String; "Comma-separated EXACT constant names to seed (meta mode only)"
-    "consts-file" : String; "Path to a file with one constant name per line (meta mode only)"
+    consts        : String; "Comma-separated EXACT constant names. Meta mode: subject-only seed check. Anon mode: full-closure check of each name (the zkVM hosts' semantics; --skip-deps for subject-only)."
+    "consts-file" : String; "Path to a file with one constant name per line (`#` comments); unions with --consts."
+    "skip-deps";            "With --anon --consts: check each named constant subject-only, trusting its deps (same flag as zisk-host/sp1-host/bench-typecheck)."
     "fail-out"    : String; "Write failing constants to this path (consumable by --consts-file)"
     workers       : Nat;    "Number of parallel kernel-check workers; 1 disables parallelism (default: available_parallelism). Plumbs via IX_KERNEL_CHECK_WORKERS env var."
     verbose;                "Log every constant on its own line (default: quiet)"

@@ -18,8 +18,8 @@ the same backend drivers:
 
 | backend | what it measures | metrics |
 |---|---|---|
-| `aiur` | IxVM kernel typecheck in the Aiur STARK prover (out-of-circuit execute + in-circuit prove) | `fft-cost`, `execute-time`, `prove-time`, `peak-rss` |
-| `zisk` / `sp1` | the same kernel in the Zisk / SP1 zkVM hosts, **execute** only (proving needs a GPU) | `cycles`, `execute-time`, `throughput`, `peak-rss` |
+| `aiur` | IxVM kernel typecheck in the Aiur STARK prover (out-of-circuit execute + in-circuit prove) | `fft-cost`, `execute-time`, `execute-peak-rss`, `prove-time`, `peak-rss` |
+| `zisk` / `sp1` | the same kernel in the Zisk / SP1 zkVM hosts, **execute** only (proving needs a GPU) | `cycles`, `execute-time`, `throughput`, `execute-peak-rss` |
 | `ooc` | the same kernel run **out-of-circuit and in parallel** (`ix check-rs`) — far faster | `throughput`, `check-time`, `peak-rss` |
 | `compile` | `ix compile <env>.lean → <env>.ixe` on the current PR — measures the compile step itself, keyed by CamelCase env slug (`InitStd`, `Lean`, `Mathlib`, `FLT`) | `compile-time`, `throughput`, `file-size`, `constants` |
 
@@ -31,10 +31,12 @@ constant records the neutral `{"oom": true}` sentinel and `bench.py compare`
 renders `OOM` cells (with `n/a` Δ%) in the table for that row.
 
 The `ooc` backend reports two views: the **whole env** (`ix check-rs --anon`,
-keyed by env) and a **per-primary full-closure check** (`ix check-rs --consts`,
-keyed by constant — apples-to-apples with the zkVM execute (also full-closure),
-so the delta isolates in-circuit vs out-of-circuit overhead rather than mixing
-in subject-only vs full-closure scope).
+keyed by env) and a **per-primary full-closure check** (`ix check-rs --anon
+--consts <name>`, keyed by constant). The per-primary view runs the constant's
+full dependency closure in anon mode — the same mode and scope as the zkVM
+execute — so the delta isolates in-circuit vs out-of-circuit overhead rather
+than mixing in closure-size or metadata effects. (`--skip-deps` exists on both
+sides for a subject-only variant, but the benchmarks use full-closure.)
 
 All are driven by `.github/scripts/run.sh` (compile the env `.ixe`, run the
 backend, emit a neutral `{ "<name>": { "<metric>": n } }` JSON). The PR workflow
@@ -71,9 +73,11 @@ JSON and in bencher.dev.
 
 - `env` — compile target the constant resolves in (`initStd` / `lean` / `mathlib`).
 - `tier` — `cheap` (prove-feasible on a CI runner under Aiur's ~128 GB RAM
-  ceiling) or `heavy` (a single-shard prove would OOM without the runner-
-  installed RAM watchdog killing it). Informational-only after the RAM
-  watchdog took over gating — `run.sh` no longer branches on `tier`.
+  ceiling) or `heavy` (a single-shard prove exceeds the RAM watchdog ceiling
+  and records an OOM row). Consumed only by `bench.py manifest` for selection
+  (the `BENCH_TIER` filter, and the non-primary prove set defaults to cheap);
+  `run.sh` itself never branches on tier — it attempts a full prove of every
+  selected constant under the watchdog.
 - `primary` — the curated **primary subset** (currently ~20 constants across
   initStd + mathlib), spanning shape and cost range. Default for the
   `!benchmark` PR comment and the bencher jobs. Set `BENCH_FULL=1` to include
@@ -101,8 +105,11 @@ RUST_LOG=info                  # passthrough env (allowlisted)
 ```
 
 Mode is fixed per backend: `aiur` runs `prove` by default (its report also
-carries the execute-side columns `fft-cost` / `execute-time` alongside
-`prove-time`); `zisk` / `sp1` / `ooc` run `execute`; `compile` runs `ix
+carries the execute-side columns `fft-cost` / `execute-time` /
+`execute-peak-rss` alongside `prove-time` / `peak-rss` — `execute-peak-rss`
+is sampled at the Phase 1/2 boundary, before proving allocations, precisely
+so execute-mode comparisons stay apples-to-apples against prove-run
+baselines); `zisk` / `sp1` / `ooc` run `execute`; `compile` runs `ix
 compile`. The optional bare `execute` token flips `aiur` to execute-only
 (`bench-typecheck --execute-only`, skips Phase 2); on other backends it's a
 no-op. Defaults: `aiur`, `initStd`, primary subset. Backends fan out as a
@@ -124,8 +131,11 @@ Threshold semantics per measure kind:
   directional: `upper 0` (any increase is a real regression), `lower _`
   (drops are legitimate wins — algorithmic improvements, better packing).
 - **`execute-time`, `prove-time`, `check-time`, `compile-time`, `peak-rss`,
-  `file-size`** — noisy wall-clock or size measures: `upper 0.05–0.10`,
-  `lower _`.
+  `execute-peak-rss`, `file-size`** — noisy wall-clock or size measures:
+  `upper 0.05–0.10`, `lower _`. `execute-peak-rss` is the execute phase's RSS
+  high-water on every backend that has one (bench-typecheck samples it at the
+  Phase 1/2 boundary; the zkVM hosts' execute peak carries the same name);
+  bare `peak-rss` is a prove-phase (or, for ooc, whole-check) peak.
 - **`throughput`** — higher-is-better: `upper _`, `lower 0.05–0.10`.
 - **`phase:<span>`** — uploaded for trend visibility, intentionally left
   un-thresholded (dynamic names + noise; the PR-comment drill-down is where

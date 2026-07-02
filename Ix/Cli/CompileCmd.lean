@@ -3,6 +3,7 @@ public import Cli
 public import Ix.Common
 public import Ix.CompileM
 public import Ix.Meta
+public import Ix.Cli.ConstsFile
 public import Ix.Cli.ValidateCmd
 
 public section
@@ -13,19 +14,6 @@ private def defaultOutPathFor (pathStr : String) : String :=
   let path := FilePath.mk pathStr
   let stem := path.fileStem.getD (path.fileName.getD pathStr)
   stem.toLower ++ ".ixe"
-
-/-- Read one constant name per line from `path`. Blank lines and lines
-    starting with `#` (after trimming) are ignored. Mirrors
-    `Ix.Cli.CheckCmd.readNamesFile`. -/
-private def readNamesFile (path : String) : IO (List Lean.Name) := do
-  let content ← IO.FS.readFile path
-  let lines := content.splitOn "\n"
-  let names : List Lean.Name := lines.filterMap fun raw =>
-    let cs := raw.toList.dropWhile Char.isWhitespace
-    let trimmed := String.ofList (cs.reverse.dropWhile Char.isWhitespace).reverse
-    if trimmed.isEmpty || trimmed.startsWith "#" then none
-    else some trimmed.toName
-  pure names
 
 def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   let some path := p.positionalArg? "path"
@@ -51,7 +39,10 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
     if let some flag := p.flag? "exclude" then
       for n in parsePrefixes (flag.as! String) do s := s.insert n
     if let some flag := p.flag? "exclude-file" then
-      for n in ← readNamesFile (flag.as! String) do s := s.insert n
+      -- Shared names-file grammar (Ix.Cli.ConstsFile); names resolve here
+      -- via `toName` like the `--exclude` comma-list.
+      for n in ← Ix.Cli.ConstsFile.read (flag.as! String) do
+        s := s.insert n.toName
     pure s
   if !excludeSet.isEmpty then
     IO.println s!"[compile] exclude: {excludeSet.size} name(s) will be dropped from seed set"
