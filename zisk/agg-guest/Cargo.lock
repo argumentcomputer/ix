@@ -272,7 +272,7 @@ checksum = "84d7ced0ae9557296835c32bf1b1e02b44c746701f898460fb000d7eaa84f00a"
 [[package]]
 name = "blake3"
 version = "1.8.4"
-source = "git+https://github.com/argumentcomputer/zisk.git?branch=blake3-precompile#8f9e24d562cf7ec4069506d5c0189bf7fe711fb5"
+source = "git+https://github.com/argumentcomputer/zisk.git?branch=blake3-precompile#e4057c4cd6daaa29ea54f283ff27818acc9be8b2"
 dependencies = [
  "arrayvec",
  "ziskos",
@@ -326,8 +326,8 @@ checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
 name = "circuit"
-version = "0.18.0"
-source = "git+https://github.com/argumentcomputer/zisk.git?branch=blake3-precompile#8f9e24d562cf7ec4069506d5c0189bf7fe711fb5"
+version = "1.0.0-alpha"
+source = "git+https://github.com/argumentcomputer/zisk.git?branch=blake3-precompile#e4057c4cd6daaa29ea54f283ff27818acc9be8b2"
 
 [[package]]
 name = "clang-sys"
@@ -461,8 +461,8 @@ checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 
 [[package]]
 name = "fields"
-version = "0.18.0"
-source = "git+https://github.com/0xPolygonHermez/pil2-proofman.git?tag=v0.18.0#42ad4d02da3d3b6238ac126ead82a8814f3fd426"
+version = "1.0.0-alpha"
+source = "git+https://github.com/0xPolygonHermez/pil2-proofman.git?tag=v1.0.0-alpha#4f2a34ac686c788ad66a1a8ea0a17a016319e65b"
 dependencies = [
  "cfg-if",
  "num-bigint",
@@ -617,8 +617,8 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
 name = "lib-c"
-version = "0.18.0"
-source = "git+https://github.com/argumentcomputer/zisk.git?branch=blake3-precompile#8f9e24d562cf7ec4069506d5c0189bf7fe711fb5"
+version = "1.0.0-alpha"
+source = "git+https://github.com/argumentcomputer/zisk.git?branch=blake3-precompile#e4057c4cd6daaa29ea54f283ff27818acc9be8b2"
 
 [[package]]
 name = "libc"
@@ -808,15 +808,14 @@ dependencies = [
 
 [[package]]
 name = "precompiles-helpers"
-version = "0.18.0"
-source = "git+https://github.com/argumentcomputer/zisk.git?branch=blake3-precompile#8f9e24d562cf7ec4069506d5c0189bf7fe711fb5"
+version = "1.0.0-alpha"
+source = "git+https://github.com/argumentcomputer/zisk.git?branch=blake3-precompile#e4057c4cd6daaa29ea54f283ff27818acc9be8b2"
 dependencies = [
  "ark-bls12-381",
  "ark-bn254",
  "ark-ff",
  "ark-secp256k1",
  "ark-secp256r1",
- "ark-std",
  "cfg-if",
  "circuit",
  "crunchy",
@@ -846,8 +845,8 @@ dependencies = [
 
 [[package]]
 name = "proofman-verifier"
-version = "0.18.0"
-source = "git+https://github.com/0xPolygonHermez/pil2-proofman.git?tag=v0.18.0#42ad4d02da3d3b6238ac126ead82a8814f3fd426"
+version = "1.0.0-alpha"
+source = "git+https://github.com/0xPolygonHermez/pil2-proofman.git?tag=v1.0.0-alpha#4f2a34ac686c788ad66a1a8ea0a17a016319e65b"
 dependencies = [
  "fields",
  "num-traits",
@@ -1087,15 +1086,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
 
 [[package]]
-name = "spin"
-version = "0.9.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"
-dependencies = [
- "lock_api",
-]
-
-[[package]]
 name = "syn"
 version = "2.0.117"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1227,21 +1217,21 @@ dependencies = [
 
 [[package]]
 name = "zisk-definitions"
-version = "0.18.0"
-source = "git+https://github.com/argumentcomputer/zisk.git?branch=blake3-precompile#8f9e24d562cf7ec4069506d5c0189bf7fe711fb5"
+version = "1.0.0-alpha"
+source = "git+https://github.com/argumentcomputer/zisk.git?branch=blake3-precompile#e4057c4cd6daaa29ea54f283ff27818acc9be8b2"
 
 [[package]]
 name = "zisk-verifier"
-version = "0.18.0"
-source = "git+https://github.com/argumentcomputer/zisk.git?branch=blake3-precompile#8f9e24d562cf7ec4069506d5c0189bf7fe711fb5"
+version = "1.0.0-alpha"
+source = "git+https://github.com/argumentcomputer/zisk.git?branch=blake3-precompile#e4057c4cd6daaa29ea54f283ff27818acc9be8b2"
 dependencies = [
  "proofman-verifier",
 ]
 
 [[package]]
 name = "ziskos"
-version = "0.18.0"
-source = "git+https://github.com/argumentcomputer/zisk.git?branch=blake3-precompile#8f9e24d562cf7ec4069506d5c0189bf7fe711fb5"
+version = "1.0.0-alpha"
+source = "git+https://github.com/argumentcomputer/zisk.git?branch=blake3-precompile#e4057c4cd6daaa29ea54f283ff27818acc9be8b2"
 dependencies = [
  "ark-bn254",
  "ark-ec",
@@ -1265,7 +1255,6 @@ dependencies = [
  "secp256k1",
  "serde",
  "sha2",
- "spin",
  "tiny-keccak",
  "zisk-definitions",
  "zisk-verifier",
@@ -1274,8 +1263,8 @@ dependencies = [
 
 [[package]]
 name = "zkvm-interface"
-version = "0.18.0"
-source = "git+https://github.com/argumentcomputer/zisk.git?branch=blake3-precompile#8f9e24d562cf7ec4069506d5c0189bf7fe711fb5"
+version = "1.0.0-alpha"
+source = "git+https://github.com/argumentcomputer/zisk.git?branch=blake3-precompile#e4057c4cd6daaa29ea54f283ff27818acc9be8b2"
 dependencies = [
  "bindgen",
 ]

@@ -8,6 +8,12 @@ prove within the RAM cap while minimizing the number of pieces.
 Measured on an RTX PRO 6000 (250 GiB host). Inputs, scripts, and raw data:
 `~/benchdata/prof/`.
 
+> **Version note.** All numbers below were measured on the Zisk v0.18-based
+> `blake3-precompile` branch. On the v1.0.0-alpha port the cycle counts drift
+> slightly from upstream zisklib/ROM changes (e.g. `nataddcomm.ixe`:
+> 53,239,676 → 53,860,206 STEPS, ~+1.2%); the model's structure and
+> coefficients remain a good approximation but have not been re-fit.
+
 ---
 
 ## Background
