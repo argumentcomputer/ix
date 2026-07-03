@@ -16,8 +16,10 @@
 # (the same job bench-main.yml uploads under testbed `ix-compile-*`). The
 # optional bare `execute` token flips `aiur` to execute-only (skips Phase 2);
 # on the other backends it's a no-op. main's numbers come from bencher.dev;
-# the workflow falls back to re-running the base SHA locally only when bencher
-# hasn't ingested it yet (freshly-pushed main whose CI is still running).
+# the workflow re-runs the base SHA locally only for what bencher can't supply:
+# the full set when the SHA isn't ingested yet (freshly-pushed main whose CI is
+# still running), or just the missing names when the PR's Vectors.csv selects
+# constants main was never benched on (constants the PR itself adds).
 name: Benchmark pull requests
 
 on:
@@ -224,11 +226,19 @@ jobs:
       # ---------- main side ----------
       # Try bencher.dev first (bench-main.yml has uploaded main's numbers).
       # fetch-main's exit codes are load-bearing: 3 = transient (base SHA not
-      # ingested yet) → fall back to a local base run; anything else (2 =
-      # backend/mode has no main testbed — a BACKEND_TABLE / bench-main.yml
-      # drift) is a permanent misconfiguration that a local rebuild can never
-      # fix, so fail the cell loudly instead of silently paying the fallback
-      # on every future run.
+      # ingested yet) → fall back to a local base run of the full set; anything
+      # else (2 = backend/mode has no main testbed — a BACKEND_TABLE /
+      # bench-main.yml drift) is a permanent misconfiguration that a local
+      # rebuild can never fix, so fail the cell loudly instead of silently
+      # paying the fallback on every future run.
+      #
+      # Partial miss (exit 0 + non-empty missing.txt): the PR's Vectors.csv
+      # selects names main was never benched on — typically constants the PR
+      # itself adds. Bencher's numbers stand for the covered set; the base
+      # checkout runs JUST the missing names and merges below, so a brand-new
+      # constant still gets a real main-vs-PR delta on its first !benchmark.
+      # `run-base` gates every base-side step; `base-names` picks the file the
+      # base run measures (missing.txt = partial, names.txt = full fallback).
       - name: Fetch main from bencher
         id: bencher
         run: |
@@ -236,16 +246,26 @@ jobs:
           python3 .github/scripts/bench.py fetch-main \
             --sha "$BASE_SHA" --backend "$BACKEND" --mode "$MODE" --env "$BENV" \
             --names "$GITHUB_WORKSPACE/names.txt" \
+            --missing-out "$GITHUB_WORKSPACE/missing.txt" \
             --out "$GITHUB_WORKSPACE/main.json"
           rc=$?
           set -e
           case $rc in
-            0) echo "source=bencher" >> "$GITHUB_OUTPUT" ;;
-            3) echo "source=ran" >> "$GITHUB_OUTPUT" ;;
+            0) if [ -s "$GITHUB_WORKSPACE/missing.txt" ]; then
+                 echo "source=bencher + base run ($(wc -l < "$GITHUB_WORKSPACE/missing.txt") new)" >> "$GITHUB_OUTPUT"
+                 echo "run-base=true" >> "$GITHUB_OUTPUT"
+                 echo "base-names=missing.txt" >> "$GITHUB_OUTPUT"
+               else
+                 echo "source=bencher" >> "$GITHUB_OUTPUT"
+                 echo "run-base=false" >> "$GITHUB_OUTPUT"
+               fi ;;
+            3) echo "source=ran" >> "$GITHUB_OUTPUT"
+               echo "run-base=true" >> "$GITHUB_OUTPUT"
+               echo "base-names=names.txt" >> "$GITHUB_OUTPUT" ;;
             *) echo "::error::fetch-main: permanent config error (exit $rc) — check BACKEND_TABLE in bench.py vs bench-main.yml testbeds"; exit "$rc" ;;
           esac
-      - name: Checkout base (bencher had no data)
-        if: steps.bencher.outputs.source == 'ran'
+      - name: Checkout base (bencher data missing or partial)
+        if: steps.bencher.outputs.run-base == 'true'
         uses: actions/checkout@v6
         with:
           ref: ${{ env.BASE_SHA }}
@@ -255,20 +275,20 @@ jobs:
       # for a from-scratch base build. The `.ixe` cache key/path use the
       # CamelCase env slug (bench-main's matrix.bench).
       - name: Compute env slug
-        if: steps.bencher.outputs.source == 'ran'
+        if: steps.bencher.outputs.run-base == 'true'
         id: envcc
         run: |
           benv="$BENV"
           echo "cc=${benv^}" >> "$GITHUB_OUTPUT"
       - name: Restore base binaries (bench-main build cache)
-        if: steps.bencher.outputs.source == 'ran'
+        if: steps.bencher.outputs.run-base == 'true'
         id: base-bins
         uses: actions/cache/restore@v5
         with:
           path: ~/.local/bin
           key: bench-bins-${{ env.BASE_SHA }}
       - name: Restore base .ixe (bench-main compile cache)
-        if: steps.bencher.outputs.source == 'ran'
+        if: steps.bencher.outputs.run-base == 'true'
         id: base-ixe
         uses: actions/cache/restore@v5
         with:
@@ -283,7 +303,7 @@ jobs:
       # when the `.ixe` was also restored (otherwise base's `ix compile` needs
       # mathlib oleans that only the full build fetches).
       - name: Resolve base binaries
-        if: steps.bencher.outputs.source == 'ran'
+        if: steps.bencher.outputs.run-base == 'true'
         id: base-src
         run: |
           cached=false
@@ -298,7 +318,7 @@ jobs:
           echo "cached=$cached" >> "$GITHUB_OUTPUT"
           echo "base binaries: $([ "$cached" = true ] && echo restored from bench-main cache || echo building from source)"
       - name: Build base (ix, bench-typecheck)
-        if: steps.bencher.outputs.source == 'ran' && steps.base-src.outputs.cached != 'true'
+        if: steps.bencher.outputs.run-base == 'true' && steps.base-src.outputs.cached != 'true'
         uses: leanprover/lean-action@v1
         with:
           lake-package-directory: base
@@ -311,8 +331,8 @@ jobs:
       # changes the benchmark CLIs themselves, the base binaries reject the new
       # flags and every constant drops — compare then renders the loud
       # "main produced no results" note instead of a silent all-n/a table.
-      - name: Run backend on base → main.json
-        if: steps.bencher.outputs.source == 'ran'
+      - name: Run backend on base → merge into main.json
+        if: steps.bencher.outputs.run-base == 'true'
         run: |
           if [ "${{ steps.base-ixe.outputs.cache-hit }}" = true ]; then
             mv "${{ steps.envcc.outputs.cc }}.ixe" "base/$BENV.ixe"
@@ -324,7 +344,20 @@ jobs:
             export PATH="$PWD/base/.lake/build/bin:$PATH"
           fi
           bash .github/scripts/run.sh base "$BENV" "$BACKEND" "$MODE" \
-            "$GITHUB_WORKSPACE/names.txt" "$GITHUB_WORKSPACE/main.json"
+            "$GITHUB_WORKSPACE/${{ steps.bencher.outputs.base-names }}" \
+            "$GITHUB_WORKSPACE/base.json"
+          # Partial fallback: bencher already supplied main.json for the
+          # covered names; fill only the gaps from the base run. Bencher wins
+          # any overlap (e.g. ooc's always-emitted whole-env row) — it is the
+          # canonical main-side number. Full fallback: main.json doesn't exist
+          # (fetch-main exits 3 before writing), so the base run IS main.json.
+          if [ -s "$GITHUB_WORKSPACE/main.json" ]; then
+            jq -s '.[0] + .[1]' "$GITHUB_WORKSPACE/base.json" "$GITHUB_WORKSPACE/main.json" \
+              > "$GITHUB_WORKSPACE/main.merged" \
+              && mv "$GITHUB_WORKSPACE/main.merged" "$GITHUB_WORKSPACE/main.json"
+          else
+            mv "$GITHUB_WORKSPACE/base.json" "$GITHUB_WORKSPACE/main.json"
+          fi
 
       # ---------- PR side ----------
       - name: Run backend on PR → pr.json

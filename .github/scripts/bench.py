@@ -506,6 +506,11 @@ def cmd_fetch_main(a):
     locally; 2 = permanent config error ((backend, mode) not in BACKEND_TABLE,
     i.e. table / bench-main.yml drift) — the caller fails the cell loudly
     instead of paying the fallback forever.
+
+    A PARTIAL miss (bencher answered, but some --names entries have no data —
+    e.g. constants the PR adds to Vectors.csv) still exits 0: main.json holds
+    what bencher had, and --missing-out lists the uncovered names so the
+    caller can measure just those against the base checkout and merge.
     """
     entry = BACKEND_TABLE.get(a.backend)
     testbed = entry["testbed"] if entry and a.mode in entry["metrics"] else None
@@ -585,6 +590,20 @@ def cmd_fetch_main(a):
     if not out:
         print(f"fetch-main: reports found but no matching benchmarks in --names")
         raise SystemExit(3)
+    # Names the PR side selected (its Vectors.csv) that bencher has no data
+    # for at this SHA — typically constants the PR itself adds to the CSV.
+    # The caller runs the base checkout on JUST these and merges, so a new
+    # constant still gets a real main-vs-PR delta on its first !benchmark.
+    # Computed against names.txt verbatim (not the ENV_CC-augmented `wanted`):
+    # the env-keyed row is an admit-filter, not a per-constant expectation.
+    if a.missing_out:
+        name_set = set(open(a.names).read().split()) if a.names else set()
+        missing = sorted(name_set - set(out))
+        with open(a.missing_out, "w") as f:
+            f.write("\n".join(missing) + ("\n" if missing else ""))
+        if missing:
+            print(f"fetch-main: {len(missing)} name(s) not on bencher @ "
+                  f"{a.sha[:8]} (base run will measure): " + ", ".join(missing))
     with open(a.out, "w") as f:
         json.dump(out, f)
     print(f"fetch-main: {len(out)} constant(s) from bencher for {a.backend}/{a.mode}")
@@ -623,6 +642,10 @@ def main():
                     help="Cell env; admits the env-keyed row (ooc whole-env) "
                          "past the --names filter.")
     fm.add_argument("--names", help="Only fetch benchmarks whose names appear in this file.")
+    fm.add_argument("--missing-out", dest="missing_out",
+                    help="Write the --names entries bencher had no data for "
+                         "(one per line; empty file when none) — the subset "
+                         "the caller should measure against the base checkout.")
     fm.add_argument("--out", required=True)
     fm.set_defaults(fn=cmd_fetch_main)
 
