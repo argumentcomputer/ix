@@ -13,7 +13,9 @@ use rayon::{
 use crate::{
   FxIndexMap, G,
   bytecode::{Block, Ctrl, Function, Op, Toplevel},
-  execute::{IOBuffer, IOKeyInfo, QueryRecord},
+  execute::{
+    IOBuffer, IOKeyInfo, QueryRecord, find_unconstrained_big_uint_div_mod,
+  },
   function_channel,
   gadgets::{bytes1::Bytes1, bytes2::Bytes2},
   memory::Memory,
@@ -558,10 +560,26 @@ impl Op {
           ),
         );
       },
+      Op::UnconstrainedBigUintDivMod(a, b) => {
+        // Mirrors the execute arm and the two auxiliary columns the
+        // constraints allocate: recompute `(q, r)` and resolve the head
+        // pointers execution recorded in memory[10]. Skipping the two map
+        // pushes would shift every later `ValIdx` (and witness column) in
+        // the block.
+        let (q_ptr, r_ptr) = find_unconstrained_big_uint_div_mod(
+          map[*a].0,
+          map[*b].0,
+          &context.query_record.memory_queries,
+        )
+        .expect("BigUint div-mod result not recorded");
+        for f in [q_ptr, r_ptr] {
+          map.push((f, 1));
+          slice.push_auxiliary(index, f);
+        }
+      },
       Op::AssertEq(..)
       | Op::IOSetInfo(..)
       | Op::IOWrite(..)
-      | Op::UnconstrainedBigUintDivMod(..)
       | Op::Debug(..) => {},
     }
   }
