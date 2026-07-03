@@ -1,10 +1,20 @@
 name: Install Zisk
 description: >-
   Install the system build deps, the ZisK zkVM toolchain (ziskup, CPU build),
-  and the fork-matching proving key needed to build and run the Zisk host.
-  Execute needs the key too — zisk-host's `client.setup()` loads the circuit's
-  const-tree files before either the execute or the prove branch. Assumes a
-  Rust toolchain is already set up.
+  and — unless `proving-key: false` — the fork-matching proving key needed to
+  RUN the Zisk host. Execute needs the key too (zisk-host's `client.setup()`
+  loads the circuit's const-tree files before either the execute or the prove
+  branch), but BUILDING the host does not, so build-only callers skip the
+  ~3 GB download + const-tree regeneration. Assumes a Rust toolchain is
+  already set up.
+
+inputs:
+  proving-key:
+    description: >-
+      Install the fork-matching proving key (required to execute or prove;
+      not needed to build). Set false for build-only jobs.
+    required: false
+    default: "true"
 
 runs:
   using: composite
@@ -55,6 +65,7 @@ runs:
     # ~48 GB. The object name carries the fork rev so a circuit change can't
     # silently reuse a stale key. Public bucket → plain curl, no AWS creds.
     - name: Restore Zisk proving key (fork circuit) from S3
+      if: inputs.proving-key == 'true'
       shell: bash
       run: |
         mkdir -p "$HOME/.zisk"

@@ -1,59 +1,33 @@
-name: RISC-V bench
+name: zkVM host build
 
-# zkVM execute is ~10+ min (toolchain installs + host builds + emulation), so it
-# is kept off the per-PR path: this workflow runs only on pushes to main (and on
-# manual dispatch). It compiles the `minimal.ixe` fixture, then executes the
-# kernel typecheck of one constant in the SP1 and Zisk VMs — in parallel jobs.
+# Fast hard gate: do the Zisk/SP1 hosts (and their guest ELFs, via each
+# workspace's build.rs) still compile? Regular CI doesn't build these
+# workspaces (special toolchains), and bench-main.yml's zkvm-execute job —
+# which runs real executions — tolerates per-constant failures by design
+# (dropped rows, OOM sentinels), so it never turns red on a breakage. This
+# workflow is the red-X signal, kept cheap: build-only, no execution, and
+# therefore no Zisk proving key (the key is loaded at runtime by
+# `client.setup()`, never at build time — skipping it saves a ~3 GB download
+# + const-tree regeneration per run).
 on:
   push:
-    branches: [main, sb/ci-benchmarks]   # TEMPORARY: test on this branch
+    branches: main
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# No concurrency group: this workflow only runs on push-to-main and manual
-# dispatch, and every merged commit should be benchmarked — a later merge must
-# never cancel or queue behind an in-flight run.
+# No concurrency group: push-to-main and manual dispatch only — every merged
+# commit gets gated; a later merge must never cancel an in-flight run.
 
 jobs:
-  # Compile a tiny env once (ix is already built here) and hand it to the zkVM
-  # execute jobs via artifact, so those jobs stay Lean-free.
-  compile-fixture:
-    name: Compile zkVM fixture (minimal.ixe)
-    runs-on: warp-ubuntu-latest-x64-16x
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-      - uses: leanprover/lean-action@v1
-        with:
-          build-args: "--wfail -v"
-      - name: Compile zkVM test fixture (minimal.ixe)
-        run: lake exe ix compile Tests/MinimalDefs.lean --out minimal.ixe
-      - uses: actions/upload-artifact@v4
-        with:
-          name: minimal-ixe
-          path: minimal.ixe
-          if-no-files-found: error
-
-  # Execute the kernel typecheck of the `minimal.ixe` fixture natively (no Nix,
-  # no proof, no GPU). SP1 and Zisk run as independent jobs so they parallelize;
-  # each installs only its own toolchain via sp1up / ziskup (prebuilt binaries)
-  # and downloads the shared fixture. minimal.ixe carries the full Init closure,
-  # so we scope execution with `--consts myReflEq --skip-deps`: that
-  # subject-only-typechecks just the named constant, trusting its Init
-  # dependencies as Claim assumptions, instead of typechecking all of Init (which
-  # never finishes in the emulator). Each host bails non-zero on any typecheck
-  # failure; we also assert the `failures: 0` line.
-  #
-  # The apt list is the shared superset both backends need: the ZisK book's full
-  # Ubuntu list (its prebuilt cargo-zisk and proofman's C++ link OpenMPI, OpenMP,
-  # GMP, nlohmann-json, nasm, secp256k1, …) plus pkg-config + libssl-dev for
-  # SP1's host crates (openssl/bindgen). The Nix shells provided all this; a bare
-  # runner doesn't. Must precede the toolchain install (it runs cargo-zisk).
-  sp1-execute:
-    name: SP1 zkVM Execute
-    needs: compile-fixture
+  # SP1 and Zisk build as independent jobs so they parallelize; each installs
+  # only its own toolchain via sp1up / ziskup (prebuilt binaries). The apt
+  # list inside the install actions is the shared superset both backends need
+  # (proofman's C++ links OpenMPI/OpenMP/GMP/…; SP1's host crates need
+  # pkg-config + libssl-dev).
+  sp1-build:
+    name: SP1 host build
     runs-on: warp-ubuntu-latest-x64-16x
     steps:
       - uses: actions/checkout@v6
@@ -61,20 +35,19 @@ jobs:
         with:
           cache-workspaces: sp1
       - uses: ./.github/actions/install-sp1
-      - uses: actions/download-artifact@v4
-        with:
-          name: minimal-ixe
       # The precompile-aware SP1 runner-binary is auto-built from the fork git
       # dep by `sp1-core-executor-runner`'s build script — no manual override.
-      - name: SP1 — execute minimal.ixe (assert failures == 0)
+      # `cargo test` reuses the build's dep graph and runs the host's unit
+      # tests — the clap surface run.sh drives (`--consts` comma-splitting,
+      # `--consts-file` union/dedup), so a CLI regression reds this gate too.
+      - name: Build + test sp1-host (guest ELF via build.rs)
         run: |
           cd sp1
-          cargo run --bin sp1-host -- --execute --ixe ../minimal.ixe --consts myReflEq --skip-deps | tee only.txt
-          grep -qE "failures: 0\b" only.txt
+          cargo build --release --bin sp1-host
+          cargo test --release --bin sp1-host
 
-  zisk-execute:
-    name: Zisk zkVM Execute
-    needs: compile-fixture
+  zisk-build:
+    name: Zisk host build
     runs-on: warp-ubuntu-latest-x64-16x
     steps:
       - uses: actions/checkout@v6
@@ -82,20 +55,13 @@ jobs:
         with:
           cache-workspaces: zisk
       - uses: ./.github/actions/install-zisk
-      - uses: actions/download-artifact@v4
         with:
-          name: minimal-ixe
-      - name: Zisk — execute minimal.ixe (assert failures == 0)
+          proving-key: false
+      # Unit tests: the clap surface run.sh drives, plus the closure auditor
+      # (closure_detects_missing_dep self-skips without an IX_TEST_IXE
+      # fixture — this gate has no Lean build to produce one).
+      - name: Build + test zisk-host (guest ELF via build.rs)
         run: |
           cd zisk
-          # ZisK's ASM microservices mmap the ROM with MAP_LOCKED, which needs
-          # unlimited locked memory — the Zisk book's "Critical Memory
-          # Configuration" prescribes DefaultLimitMEMLOCK=infinity. The runner
-          # caps the memlock hard limit (so a bare `ulimit -l unlimited` can't
-          # raise it) and we can't reboot it, so raise the limit in-session as
-          # root via prlimit; the cargo child (and the ASM services it spawns)
-          # inherit it. Without this the services die with
-          # `mmap(rom) errno=11` / "shmem creation ... failed".
-          sudo prlimit --pid $$ --memlock=unlimited:unlimited
-          cargo run --bin zisk-host -- --execute --ixe ../minimal.ixe --consts myReflEq --skip-deps | tee only.txt
-          grep -qE "failures: 0\b" only.txt
+          cargo build --release --bin zisk-host
+          cargo test --release --bin zisk-host
