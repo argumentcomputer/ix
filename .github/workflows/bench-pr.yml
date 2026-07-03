@@ -174,7 +174,12 @@ jobs:
             --csv Benchmarks/Vectors.csv --env "$BENV" --mode "$MODE" \
             --backend "$BACKEND" \
             --tier "$TIER" --shard "$SHARD" $PRIMARY --out "$GITHUB_WORKSPACE/names.txt" \
+            --heavy-out "$GITHUB_WORKSPACE/heavy.txt" \
             | tee -a "$GITHUB_OUTPUT"
+          # Heavy-tier names run closure-sharded on zisk (run.sh cuts the
+          # artifacts with `ix extract` → `ix profile` → `ix shard` when
+          # they aren't already cached).
+          echo "ZISK_HEAVY_NAMES=$GITHUB_WORKSPACE/heavy.txt" >> "$GITHUB_ENV"
 
       # Restore the once-built PR binaries (see the build job) and stage them
       # into .bins/pr — ~/.local/bin is reused below for the base side's cache
@@ -209,16 +214,6 @@ jobs:
         with:
           path: ${{ matrix.cell.env }}.ixe
           key: bench-pr-ixe-${{ env.HEAD_SHA }}-${{ matrix.cell.env }}
-      # The PR's shard manifest (run.sh cuts it via ix profile → ix shard for
-      # the env-sharded zisk run — the PR side partitions its OWN tree). Cached
-      # separately from the `.ixe`: only zisk cells produce it.
-      - name: Restore PR shard manifest
-        if: matrix.cell.backend == 'zisk'
-        id: pr-ixes
-        uses: actions/cache/restore@v5
-        with:
-          path: ${{ matrix.cell.env }}.ixes
-          key: bench-pr-ixes-${{ env.HEAD_SHA }}-${{ matrix.cell.env }}
       # zkVM cells additionally need the Rust toolchain + the backend's toolchain
       # and system deps (the shared composite install actions).
       - name: Set up zkVM Rust toolchain
@@ -305,10 +300,10 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           # Path list must match bench-main's compile-job save (actions/cache
-          # versions entries by path list); the `.ixes` itself is unused here.
+          # versions entries by path list).
           path: |
             ${{ steps.envcc.outputs.cc }}.ixe
-            ${{ steps.envcc.outputs.cc }}.ixes
+            zkshards-${{ steps.envcc.outputs.cc }}
           key: bench-ixe-${{ env.BASE_SHA }}-${{ steps.envcc.outputs.cc }}
       # Cached base binaries are usable only when the two `lean-toolchain`
       # files are identical (plain `cmp`), and — for the mathlib env — only
@@ -348,9 +343,9 @@ jobs:
         run: |
           if [ "${{ steps.base-ixe.outputs.cache-hit }}" = true ]; then
             mv "${{ steps.envcc.outputs.cc }}.ixe" "base/$BENV.ixe"
-            # bench-main's shard manifest rides the same cache entry; with it
-            # in place run.sh skips re-profiling the base tree.
-            mv "${{ steps.envcc.outputs.cc }}.ixes" "base/$BENV.ixes" 2>/dev/null || true
+            # bench-main's pre-cut closure shards ride the same cache entry;
+            # in place, run.sh skips re-cutting them for the base tree.
+            mv "zkshards-${{ steps.envcc.outputs.cc }}" "base/zkshards-$BENV" 2>/dev/null || true
             export REUSE_IXE=1
           fi
           if [ "${{ steps.base-src.outputs.cached }}" = true ]; then
@@ -358,10 +353,6 @@ jobs:
           else
             export PATH="$PWD/base/.lake/build/bin:$PATH"
           fi
-          # The zisk env-sharded run is only worth paying on the FULL
-          # fallback — a partial miss means bencher already holds main's
-          # env-keyed row (it is never in missing.txt).
-          export ZISK_ENV_SHARD=$([ "${{ steps.bencher.outputs.base-names }}" = names.txt ] && echo 1 || echo 0)
           bash .github/scripts/run.sh base "$BENV" "$BACKEND" "$MODE" \
             "$GITHUB_WORKSPACE/${{ steps.bencher.outputs.base-names }}" \
             "$GITHUB_WORKSPACE/base.json"
@@ -394,17 +385,6 @@ jobs:
         with:
           path: ${{ matrix.cell.env }}.ixe
           key: bench-pr-ixe-${{ env.HEAD_SHA }}-${{ matrix.cell.env }}
-      # hashFiles guard: skip (instead of erroring) when profile/shard failed
-      # and run.sh dropped the env-sharded run.
-      - name: Save PR shard manifest
-        if: >-
-          matrix.cell.backend == 'zisk' &&
-          steps.pr-ixes.outputs.cache-hit != 'true' &&
-          hashFiles(format('{0}.ixes', matrix.cell.env)) != ''
-        uses: actions/cache/save@v5
-        with:
-          path: ${{ matrix.cell.env }}.ixes
-          key: bench-pr-ixes-${{ env.HEAD_SHA }}-${{ matrix.cell.env }}
 
       # ---------- compare ----------
       - name: Build comparison table

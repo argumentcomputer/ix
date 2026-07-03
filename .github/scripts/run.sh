@@ -7,8 +7,8 @@
 #   run.sh <repo_dir> <env> <backend> <mode> <names_file> <out_json>
 #     repo_dir : checked-out worktree (has .lake/build/bin/{ix,bench-typecheck})
 #     env      : initStd | lean | mathlib  (any case; used verbatim for <env>.ixe)
-#     backend  : aiur | zisk | sp1 | ooc | compile
-#     mode     : execute | prove | compile
+#     backend  : aiur | zisk | sp1 | ooc | compile | cutshards
+#     mode     : execute | prove | compile (ignored by cutshards)
 #
 # `ix` / `bench-typecheck` come from <repo_dir> (so base measures base's code, PR
 # the PR's — the caller puts <repo_dir>/.lake/build/bin on PATH). For the
@@ -133,6 +133,35 @@ resolve_bin() {  # <name> → prints the path, or fails
 tmp=$(mktemp -d)
 compile_log="$tmp/compile.log"
 
+# Closure-shard artifacts for the zisk heavy tier: `ix shard extract` cuts a
+# standalone closure-only env (no recompile), `ix profile` → `ix shard` cut
+# its manifest (the canonical partitioner: profiled heartbeats + min-cut,
+# capped by predicted RAM). One dir per env; slugs must match the zkvm loop's
+# result keys (same `tr` set).
+shards_dir_for_env() { printf '%s' "$repo/zkshards-$benv"; }
+cut_closure_shards() {  # <name> <slug> → 0 when <dir>/$slug.{ixe,ixes} are ready
+  local c="$1" slug="$2" dir ix_bin rc
+  dir=$(shards_dir_for_env)
+  [ -f "$dir/$slug.ixes" ] && [ -f "$dir/$slug.ixe" ] && return 0
+  ix_bin=$(resolve_bin ix 2>/dev/null) || {
+    echo "::warning::no ix binary to cut closure shards for '$c'" >&2
+    return 1
+  }
+  mkdir -p "$dir"
+  echo "::group::ix shard extract + profile + shard: $c"
+  "$ix_bin" shard extract "$ixe" --consts "$c" --out "$dir/$slug.ixe" \
+    && "$ix_bin" profile "$dir/$slug.ixe" --out "$dir/$slug.ixprof" \
+    && "$ix_bin" shard "$dir/$slug.ixprof" \
+         --max-ram "${SHARD_MAX_RAM_GB:-120}" --out "$dir/$slug.ixes"
+  rc=$?
+  echo "::endgroup::"
+  [ "$rc" -eq 0 ] || {
+    echo "::warning::extract/profile/shard failed for '$c'" >&2
+    rm -f "$dir/$slug.ixes"
+    return 1
+  }
+}
+
 # `compile` backend needs a fresh compile to measure — never honor REUSE_IXE.
 ixe="$repo/$benv.ixe"
 if [ "${REUSE_IXE:-0}" = 1 ] && [ "$backend" != compile ] && [ -f "$ixe" ]; then
@@ -247,14 +276,14 @@ case "$backend" in
     # plain subshell wrapper's pgid would be run.sh's own. The host writes
     # $res only on a clean (zero-failure) run; `$out` is re-merged per run so
     # a job-level kill keeps completed rows.
-    zkvm_run() {  # <timeout> <key> <host args…>
-      local run_timeout="$1" key="$2"; shift 2
+    zkvm_run() {  # <timeout> <key> <ixe> <host args…>
+      local run_timeout="$1" key="$2" run_ixe="$3"; shift 3
       local slug; slug=$(printf '%s' "$key" | tr '/ .:' '____')
       local res="$tmp/$slug.json" log="$tmp/$slug.log" oom="$tmp/$slug.oom"
       local spans="$res.spans" zk_pid w_pid zk_exit
       rm -f "$oom"
       ( cd "$work" && exec setsid timeout "$run_timeout" "$bin" --execute \
-          --ixe "$ixe" --json "$res" --texray "$@" ) \
+          --ixe "$run_ixe" --json "$res" --texray "$@" ) \
         > "$log" 2>&1 &
       zk_pid=$!
       watch_ram_kill "$zk_pid" "$ceiling_gb" "$oom" &
@@ -277,44 +306,38 @@ case "$backend" in
         jq -s 'reduce .[] as $o ({}; . + $o)' "$rows"/*.json > "$out" 2>/dev/null || true
       fi
     }
+    # Closure-sharded pipeline for the heavy tier (zisk only). A heavy
+    # constant's full closure blows the runner's RAM as a single leaf, so it
+    # runs as its shard-manifest partition instead: `ix shard extract` cuts a
+    # standalone closure-only env, `ix profile` → `ix shard` cut the manifest
+    # (the canonical partitioner: profiled heartbeats + min-cut, capped by
+    # predicted RAM), and one `--shard-plan` host run executes the shards
+    # sequentially, emitting the constant's row (totals + per-shard
+    # breakdown). bench-main pre-cuts the artifacts in the compile job and
+    # ships them via cache; the PR side cuts its own — a PR can change the
+    # cost profile, and profiling counts heartbeats (not wall time) so an
+    # unchanged tree re-partitions deterministically. If cutting isn't
+    # possible (no ix binary, or a failure), fall back to the single-leaf
+    # run — the watchdog then records the honest OOM row.
+    heavy_file="${ZISK_HEAVY_NAMES:-}"
+    is_heavy() {
+      [ -n "$heavy_file" ] && [ -f "$heavy_file" ] && grep -qxF "$1" "$heavy_file"
+    }
+    shards_dir=$(shards_dir_for_env)
     # Full-closure check (no --skip-deps) so this is directly comparable to
     # the ooc `ix check-rs --anon --consts` run — the delta then isolates the
     # in-circuit-vs-out-of-circuit overhead rather than mixing in subject-
     # only vs full-closure scope.
     while IFS= read -r c; do
       [ -z "$c" ] && continue
-      zkvm_run "${ZKVM_EXECUTE_TIMEOUT:-25m}" "$c" --consts "$c"
+      slug=$(printf '%s' "$c" | tr '/ .:' '____')
+      if [ "$backend" = zisk ] && is_heavy "$c" && cut_closure_shards "$c" "$slug"; then
+        zkvm_run "${ZKVM_EXECUTE_TIMEOUT:-25m}" "$c" "$shards_dir/$slug.ixe" \
+          --shard-plan "$shards_dir/$slug.ixes" --json-name "$c"
+      else
+        zkvm_run "${ZKVM_EXECUTE_TIMEOUT:-25m}" "$c" "$ixe" --consts "$c"
+      fi
     done < "$names"
-    # Env-sharded execute (zisk only): execute the WHOLE env as its manifest
-    # shards and merge one env-keyed row — totals plus a per-shard
-    # `shard-cycles` breakdown — alongside the per-constant rows. The
-    # manifest comes from bench-main's compile-job cache when it was restored
-    # next to the `.ixe`; otherwise (the !benchmark PR side, a cold base
-    # fallback) it is cut fresh HERE — each side profiles its own tree, since
-    # a PR can change the cost profile, and the profiler counts heartbeats
-    # (not wall time) so an unchanged tree re-partitions deterministically.
-    # ZISK_ENV_SHARD=0 skips the whole run (the partial base fallback, where
-    # bencher already holds main's env row).
-    plan_ixes="${ixe%.ixe}.ixes"
-    if [ "$backend" = zisk ] && [ "${ZISK_ENV_SHARD:-1}" = 1 ]; then
-      if [ ! -f "$plan_ixes" ]; then
-        if ix_bin=$(resolve_bin ix 2>/dev/null); then
-          echo "::group::ix profile + shard → $plan_ixes"
-          "$ix_bin" profile "$ixe" --out "${ixe%.ixe}.ixprof" \
-            && "$ix_bin" shard "${ixe%.ixe}.ixprof" \
-                 --max-ram "${SHARD_MAX_RAM_GB:-120}" --out "$plan_ixes" \
-            || { echo "::warning::ix profile/shard failed; skipping env-sharded run" >&2
-                 rm -f "$plan_ixes"; }
-          echo "::endgroup::"
-        else
-          echo "::warning::no ix binary to cut $plan_ixes; skipping env-sharded run" >&2
-        fi
-      fi
-      if [ -f "$plan_ixes" ]; then
-        zkvm_run "${ZISK_ENV_EXECUTE_TIMEOUT:-60m}" "$benv_cc" \
-          --shard-plan "$plan_ixes" --json-name "$benv_cc"
-      fi
-    fi
     emit_empty
     ;;
 
@@ -356,6 +379,19 @@ case "$backend" in
         ooc_one "$c" --anon --consts "$c"
       done < "$names"
     } | jq -s 'reduce .[] as $o ({}; . + $o)' > "$out" 2>/dev/null
+    emit_empty
+    ;;
+
+  cutshards)
+    # Pre-cut the closure-shard artifacts for every name (bench-main's
+    # compile job — it has `ix` + the Lean toolchain next to the fresh
+    # `.ixe`, so the zkvm job stays Lean-free and just restores the dir).
+    # Exactly the artifacts the zisk branch cuts lazily when absent.
+    while IFS= read -r c; do
+      [ -z "$c" ] && continue
+      slug=$(printf '%s' "$c" | tr '/ .:' '____')
+      cut_closure_shards "$c" "$slug" || true
+    done < "$names"
     emit_empty
     ;;
 

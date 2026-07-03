@@ -19,7 +19,7 @@ the same backend drivers:
 | backend | what it measures | metrics |
 |---|---|---|
 | `aiur` | IxVM kernel typecheck in the Aiur STARK prover (out-of-circuit execute + in-circuit prove; each fresh proof is also verified) | `fft-cost`, `execute-time`, `execute-peak-rss`, `prove-time`, `verify-time`, `proof-size`, `peak-rss` |
-| `zisk` / `sp1` | the same kernel in the Zisk / SP1 zkVM hosts, **execute** only (proving needs a GPU) | `cycles`, `execute-time`, `throughput`, `execute-peak-rss`; zisk's env-sharded row adds `shards`, `max-shard-cycles`, `shard-cycles:<k>` |
+| `zisk` / `sp1` | the same kernel in the Zisk / SP1 zkVM hosts, **execute** only (proving needs a GPU) | `cycles`, `execute-time`, `throughput`, `execute-peak-rss`; zisk's closure-sharded heavy rows add `shards`, `max-shard-cycles`, `shard-{cycles,time,peak-rss}:<k>` |
 | `ooc` | the same kernel run **out-of-circuit and in parallel** (`ix check-rs`) — far faster | `throughput`, `check-time`, `peak-rss` |
 | `compile` | `ix compile <env>.lean → <env>.ixe` on the current PR — measures the compile step itself, keyed by CamelCase env slug (`InitStd`, `Lean`, `Mathlib`, `FLT`) | `compile-time`, `throughput`, `file-size`, `constants` |
 
@@ -129,25 +129,37 @@ CI); the host still builds + unit-tests on every PR via ci.yml. To
 re-enable, uncomment sp1 in two places: the zkvm-execute matrix cell in
 `bench-main.yml` and the Install SP1 step in `bench-pr.yml`.
 
-The zisk job additionally executes the **whole env** as its shard-manifest
-partition, merging one env-keyed row (`InitStd` / `Mathlib`): total
+**Heavy primaries run closure-sharded on zisk.** A heavy constant's full
+closure blows the runner's RAM as a single guest leaf, so it executes as its
+shard-manifest partition instead: `ix shard extract <Env>.ixe --consts <name>`
+cuts a standalone closure-only env (no recompile; anon-faithful — identical
+addresses and fft-cost as the full env), `ix profile` → `ix shard --max-ram
+120` cut the manifest (the canonical partitioner: profiled heartbeats +
+min-cut, capped by predicted RAM), and one `zisk-host --shard-plan` run
+executes the shards sequentially. The constant's row then carries total
 `cycles`, `shards`, `max-shard-cycles`, `execute-time`, `throughput`
 (cycles/s), `execute-peak-rss` (max over the per-shard windows), plus the
 per-shard breakdown uploaded as `shard-cycles:<k>` / `shard-time:<k>` /
-`shard-peak-rss:<k>` measures. This is also how the constants that OOM as
-single full-closure leaves get measured at all — under env sharding each
-check fits in one shard, with deps checked in other shards.
+`shard-peak-rss:<k>` measures. Cheap primaries keep the plain single-leaf
+`--consts` run.
 
-The manifest (`ix profile <Env>.ixe` → `ix shard --max-ram 120` →
-`<Env>.ixes`) is cut once per tree: bench-main's compile job generates it
-after the compile benchmark and caches it next to the `.ixe`; on the
-`!benchmark` PR path, run.sh cuts it in-place with the side's own `ix`
-(cached per head SHA) — each side partitions its **own** tree, because a PR
-can change the cost profile, and the profiler counts heartbeats rather than
-wall time so an unchanged tree re-partitions deterministically. The base
-fallback reuses bench-main's cached manifest and only pays the env-sharded
-run on a full bencher miss (a partial miss means bencher already holds
-main's env row; `ZISK_ENV_SHARD=0`).
+The artifacts live in `zkshards-<Env>/` and are cut once per tree:
+bench-main's compile job pre-cuts them (run.sh's `cutshards` backend — it
+has `ix`, the toolchain, and the fresh `.ixe`; the zkvm job stays Lean-free)
+and ships them in the `bench-ixe-*` cache; on the `!benchmark` PR path,
+run.sh cuts them fresh in-place with the side's own `ix` (cheap: seconds per
+closure) — each side partitions its **own** tree, because
+a PR can change the cost profile, and the profiler counts heartbeats rather
+than wall time, so an unchanged tree re-partitions deterministically. The
+heavy set comes from Vectors.csv's tier column via `bench.py manifest
+--heavy-out` (`ZISK_HEAVY_NAMES`).
+
+A constant whose partition still can't fit — an atomic mutual block above
+the cap (`ix shard` flags it INFEASIBLE) — OOMs its shard under the RAM
+watchdog like any other over-ceiling run: the constant gets the honest OOM
+row, its remaining shards are skipped, and the loop proceeds to the next
+constant. If cutting fails entirely (no `ix` on PATH, extract error), the
+constant falls back to the single-leaf run.
 
 Threshold semantics per measure kind:
 - **`constants`** — pinned exactly (0/0). A definitional count; either

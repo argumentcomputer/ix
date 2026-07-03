@@ -175,7 +175,7 @@ def cmd_manifest(a):
     # every primary (RAM watchdog catches OOMs), so all primaries are selected
     # here regardless of tier.
     tier = a.tier or ("cheap" if (a.mode == "prove" and not a.primary) else "all")
-    names = []
+    names, heavy = [], []
     with open(a.csv) as f:
         for line in f:
             row = line.rstrip("\n")
@@ -199,8 +199,16 @@ def cmd_manifest(a):
             if a.shard == "1" and shard != "1":
                 continue
             names.append(name)
+            if ctier == "heavy":
+                heavy.append(name)
     with open(a.out, "w") as f:
         f.write("\n".join(names) + ("\n" if names else ""))
+    # The selected names that are heavy-tier — the subset the zisk cells run
+    # through the closure-sharded pipeline (ix extract → profile → shard)
+    # instead of a single full-closure leaf.
+    if a.heavy_out:
+        with open(a.heavy_out, "w") as f:
+            f.write("\n".join(heavy) + ("\n" if heavy else ""))
     print(f"count={len(names)}\ntier={tier}")
 
 
@@ -625,6 +633,9 @@ def main():
                         "which doesn't consume Vectors.csv).")
     m.add_argument("--primary", action="store_true",
                    help="Restrict to the primary subset (the primary=1 column).")
+    m.add_argument("--heavy-out", dest="heavy_out",
+                   help="Also write the selected heavy-tier names (one per "
+                        "line) — the subset zisk runs closure-sharded.")
     m.set_defaults(fn=cmd_manifest)
 
     b = sub.add_parser("bmf")
