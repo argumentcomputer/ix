@@ -118,6 +118,10 @@ exceptions = [
     # Each entry is the crate and version constraint, and its specific allow
     # list
     #{ allow = ["Zlib"], crate = "adler32" },
+    # ar_archive_writer is a build-time transitive of stacker → psm; the
+    # LLVM-exception variant of Apache-2.0 is standard for LLVM tooling and
+    # imposes no additional runtime obligations on downstream users.
+    { allow = ["Apache-2.0 WITH LLVM-exception"], crate = "ar_archive_writer" },
 ]
 
 # Some crates don't have (easily) machine readable licensing information,
