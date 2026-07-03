@@ -56,8 +56,11 @@ transitive typecheck) in two phases:
    (Σ width·height·log2(height) over circuits — the proving-cost proxy), and
    `execute-time`.
 2. **Prove** (cheap→expensive by measured fft-cost): the end-to-end STARK prove,
-   recording `prove-time`. With texray on, each prove emits a per-span timeline
-   (`aiur/execute`, `aiur/witness`, `stark/...`) with RAM Δ/peak to stderr.
+   recording `prove-time`, the serialized `proof-size` (bytes), and
+   `verify-time` (verifying the fresh proof) — prover changes can trade speed
+   against proof size or verification cost, so all three are tracked. With
+   texray on, each prove emits a per-span timeline (`aiur/execute`,
+   `aiur/witness`, `stark/...`) with RAM Δ/peak to stderr.
 
 When `--json` is set the file is rewritten after every prove, so an external
 `timeout` still leaves a complete file of the results collected so far (cheapest
@@ -66,12 +69,13 @@ warning, so a single bad name never fails the run. The harness imposes no time
 limit; bound a run with an external `timeout` if needed.
 
 The JSON is a neutral, flat shape (`{ "<name>": { "constants": …, "fft-cost": …,
-"execute-time": …, "execute-peak-rss": …, "prove-time": …, "peak-rss": …,
-"throughput": … } }`). `execute-peak-rss` is the Phase-1 RSS high-water,
-sampled before proving starts, so it is comparable across execute-only and
-prove runs; `prove-time`, `peak-rss` (the prover's high-water), and
-`throughput` appear only for proven constants. Any bencher-specific reshaping
-is the caller's job (see `.github/workflows/bench-main.yml`).
+"execute-time": …, "execute-peak-rss": …, "prove-time": …, "proof-size": …,
+"verify-time": …, "peak-rss": …, "throughput": … } }`). `execute-peak-rss` is
+the Phase-1 RSS high-water, sampled before proving starts, so it is comparable
+across execute-only and prove runs; `prove-time`, `proof-size`, `verify-time`,
+`peak-rss` (the prover's high-water), and `throughput` appear only for proven
+constants. Any bencher-specific reshaping is the caller's job (see
+`.github/workflows/bench-main.yml`).
 -/
 
 open Lean (Json Name)
@@ -99,6 +103,12 @@ structure Result where
   fftCost : Float
   executeSec : Float
   proveSec : Option Float := none
+  /-- Serialized proof size in bytes (`Aiur.Proof.toBytes`). Tracked because
+      prover changes can trade speed against proof size. -/
+  proofSize : Option Nat := none
+  /-- Wall time of `AiurSystem.verify` over the fresh proof — the other side
+      of the same trade-off. `none` if verification failed (reported loudly). -/
+  verifySec : Option Float := none
   /-- Peak resident-set size in bytes (tracing-texray tree sampler), captured
       after the constant's heaviest phase. -/
   peakRss : Option Nat := none
@@ -140,6 +150,12 @@ def Result.toJsonEntry (r : Result) : String × Json :=
     | some p => base ++ [ ("prove-time", jsonRound 6 p)
                         , ("throughput", jsonRound 2 (r.constants.toFloat / p)) ]
     | none => base
+  let fields := match r.proofSize with
+    | some n => fields ++ [ ("proof-size", Lean.toJson n) ]
+    | none => fields
+  let fields := match r.verifySec with
+    | some v => fields ++ [ ("verify-time", jsonRound 6 v) ]
+    | none => fields
   (r.name, Json.mkObj fields)
 
 /-- Time a thunk, returning its value and the elapsed seconds. The result is
@@ -284,21 +300,34 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
         else
           match aiurSystem.proveAddrWithEnv friParameters funIdx envHandle addr.hash with
           | .error e => .error e
-          | .ok (_claimBytes, proof, ioBuf) =>
-            -- The shared envHandle path doesn't return an `Array G`
-            -- claim — adapt to the existing benchmark return shape
-            -- by recomputing the claim digest from the witness's
-            -- input (Phase 2 doesn't read it).
-            .ok (#[], proof, ioBuf)
+          | .ok (claimBytes, proof, ioBuf) =>
+            -- The envHandle path returns the SERIALIZED `Ix.Claim`; rebuild
+            -- the Array-G claim `verify` takes — `verify_claim`'s input is
+            -- the 32-G blake3 digest of those bytes (same recipe as
+            -- `ix verify`).
+            let digest := Address.blake3 claimBytes
+            let claim :=
+              Aiur.buildClaim funIdx (digest.hash.data.map .ofUInt8) #[]
+            .ok (claim, proof, ioBuf)
       match (proveRes : Except String (Array Aiur.G × Aiur.Proof × Aiur.IOBuffer)) with
       | .error e => IO.eprintln s!"  prove {r.name} failed: {e}"; continue
-      | .ok _ => pure ()
-      spent := spent + proveSec
-      let peak ← TracingTexray.peakTreeRssBytes
-      IO.println s!"  {r.name}: prove={proveSec}s (cumulative {spent}s)"
-      ordered := ordered.set! i
-        ({ r with proveSec := some proveSec, peakRss := some peak }, addr)
-      writeJson (ordered.map (·.1))
+      | .ok (claim, proof, _ioBuf) =>
+        spent := spent + proveSec
+        let peak ← TracingTexray.peakTreeRssBytes
+        let proofSize := (Aiur.Proof.toBytes proof).size
+        let (verifyRes, verifySec) ← timed fun _ =>
+          aiurSystem.verify friParameters claim proof
+        let verifySec? ← match verifyRes with
+          | .ok () => pure (some verifySec)
+          | .error e =>
+            IO.eprintln s!"  verify {r.name} FAILED: {e}"
+            pure none
+        IO.println s!"  {r.name}: prove={proveSec}s verify={verifySec}s \
+          proof={proofSize} bytes (cumulative {spent}s)"
+        ordered := ordered.set! i
+          ({ r with proveSec := some proveSec, peakRss := some peak
+                  , proofSize := some proofSize, verifySec := verifySec? }, addr)
+        writeJson (ordered.map (·.1))
     catch e =>
       IO.eprintln s!"  prove {r.name} threw: {e}"
 

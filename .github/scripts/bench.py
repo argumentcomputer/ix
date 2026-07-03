@@ -43,7 +43,8 @@ BACKEND_TABLE = {
         "default_mode": "prove",
         "testbed": "aiur-check-x64-32x",
         "metrics": {
-            "prove":   ["fft-cost", "execute-time", "prove-time", "peak-rss"],
+            "prove":   ["fft-cost", "execute-time", "prove-time", "verify-time",
+                        "proof-size", "peak-rss"],
             "execute": ["fft-cost", "execute-time", "execute-peak-rss"],
         },
     },
@@ -216,9 +217,11 @@ _METRIC_KIND = {
     "peak-rss": "bytes",
     "execute-peak-rss": "bytes",
     "file-size": "bytes",
+    "proof-size": "bytes",
     # seconds
     "execute-time": "seconds",
     "prove-time": "seconds",
+    "verify-time": "seconds",
     "check-time": "seconds",
     "compile-time": "seconds",
     # large counts (10^6+ typical)

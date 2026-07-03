@@ -18,7 +18,7 @@ the same backend drivers:
 
 | backend | what it measures | metrics |
 |---|---|---|
-| `aiur` | IxVM kernel typecheck in the Aiur STARK prover (out-of-circuit execute + in-circuit prove) | `fft-cost`, `execute-time`, `execute-peak-rss`, `prove-time`, `peak-rss` |
+| `aiur` | IxVM kernel typecheck in the Aiur STARK prover (out-of-circuit execute + in-circuit prove; each fresh proof is also verified) | `fft-cost`, `execute-time`, `execute-peak-rss`, `prove-time`, `verify-time`, `proof-size`, `peak-rss` |
 | `zisk` / `sp1` | the same kernel in the Zisk / SP1 zkVM hosts, **execute** only (proving needs a GPU) | `cycles`, `execute-time`, `throughput`, `execute-peak-rss` |
 | `ooc` | the same kernel run **out-of-circuit and in parallel** (`ix check-rs`) — far faster | `throughput`, `check-time`, `peak-rss` |
 | `compile` | `ix compile <env>.lean → <env>.ixe` on the current PR — measures the compile step itself, keyed by CamelCase env slug (`InitStd`, `Lean`, `Mathlib`, `FLT`) | `compile-time`, `throughput`, `file-size`, `constants` |
@@ -135,8 +135,8 @@ Threshold semantics per measure kind:
 - **`fft-cost`, `cycles`, `shards`, `max-shard-cycles`** — deterministic but
   directional: `upper 0` (any increase is a real regression), `lower _`
   (drops are legitimate wins — algorithmic improvements, better packing).
-- **`execute-time`, `prove-time`, `check-time`, `compile-time`, `peak-rss`,
-  `execute-peak-rss`, `file-size`** — noisy wall-clock or size measures:
+- **`execute-time`, `prove-time`, `verify-time`, `check-time`, `compile-time`, `peak-rss`,
+  `execute-peak-rss`, `file-size`, `proof-size`** — noisy wall-clock or size measures:
   `upper 0.05–0.10`, `lower _`. `execute-peak-rss` is the execute phase's RSS
   high-water on every backend that has one (bench-typecheck samples it at the
   Phase 1/2 boundary; the zkVM hosts' execute peak carries the same name);
