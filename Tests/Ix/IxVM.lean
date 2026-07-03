@@ -5,7 +5,7 @@ public import Ix.AssumptionTree
 public import Ix.IxVM.ClaimHarness
 public import Tests.Aiur.Common
 
-open IxVM.ClaimHarness
+open IxVM.ClaimHarness LSpec
 
 /-! # Aiur kernel test fixtures
 
@@ -181,6 +181,44 @@ public def kernelChecks (env : Lean.Environment) : IO (List AiurTestCase) :=
   kernelCheckEntries.mapM fun (name, expected) => do
     let tc ← kernelCheck (nameOfString name) env
     pure { tc with expectedFftCost := some expected }
+
+/-! ## Codegen ↔ bytecode parity
+
+Runs the same `AiurTestCase` through both `Toplevel.execute` (Aiur
+bytecode interpreter) and `Toplevel.executeIxVM` (codegen'd Rust
+kernel), diffing the two triples. Guards against the invariant the
+whole codegen design rests on — "generated kernel ≡ interpreter on
+the `QueryRecord`" — turning it from reviewed-by-hand into
+checked-by-CI. -/
+public def runParityCase (compiled : Aiur.CompiledToplevel)
+    (tc : AiurTestCase) : TestSeq :=
+  let label := tc.label
+  let funIdx := compiled.getFuncIdx tc.functionName |>.get!
+  match compiled.bytecode.execute funIdx tc.input tc.inputIOBuffer,
+        compiled.bytecode.executeIxVM funIdx tc.input tc.inputIOBuffer with
+  | .error e, _ => test s!"[parity] bytecode execute succeeds for {label}: {e}" false
+  | _, .error e => test s!"[parity] codegen execute succeeds for {label}: {e}" false
+  | .ok (bOut, bIO, bQC), .ok (cOut, cIO, cQC) =>
+    test s!"[parity] output matches for {label}"    (bOut == cOut)
+    ++ test s!"[parity] IOBuffer matches for {label}" (bIO == cIO)
+    ++ test s!"[parity] QueryCount matches for {label}"
+         (bQC.size == cQC.size &&
+          (bQC.zip cQC).all fun (b, c) =>
+            b.uniqueRows == c.uniqueRows && b.totalHits == c.totalHits)
+
+/-- Parity fixtures: `kernel_unit_tests` covers the level primitives
+    end-to-end with zero IO, and every pinned `kernelCheckEntries`
+    constant runs a realistic workload (blake3, ingress, whnf, def-eq,
+    recursor gen) against the same IOBuffer under both engines. -/
+public def parityCases (env : Lean.Environment) : IO (List AiurTestCase) := do
+  let emptyIO : Aiur.IOBuffer := { data := ∅, map := ∅ }
+  let kunit : AiurTestCase :=
+    { functionName := `kernel_unit_tests, label := "kernel_unit_tests"
+      input := #[], inputIOBuffer := emptyIO
+      expectedIOBuffer := emptyIO, interpret := false, executionOnly := true }
+  let checks ← kernelCheckEntries.mapM fun (name, _) =>
+    kernelCheck (nameOfString name) env
+  pure (kunit :: checks)
 
 /-! ## Claim variant smoke tests
 

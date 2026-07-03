@@ -225,9 +225,17 @@ def forEachClaim
       -- Persisted `--claim` may be any `Claim` variant; only the
       -- `check addr none` shape has a Rust-witness fast path today.
       -- Other variants (eval/reveal/contains/checkEnv-with-asm)
-      -- still build the witness in Lean.
+      -- still build the witness in Lean. `forceLeanWitness` (set by
+      -- `--interp source`) always routes through the Lean witness
+      -- path even for the fast-path shape — `.addr` targets are
+      -- unreachable from `runInterp`.
       let target : Target ← match claim with
-        | .check addr none => pure (.addr addr)
+        | .check addr none =>
+          if forceLeanWitness then
+            let witness ← IO.ofExcept <|
+              IxVM.ClaimHarness.buildClaimWitness ixonEnv claim trees
+            pure (.leanW witness)
+          else pure (.addr addr)
         | _ =>
           let witness ← IO.ofExcept <|
             IxVM.ClaimHarness.buildClaimWitness ixonEnv claim trees
@@ -470,44 +478,6 @@ def runShardCheckManifestNative (manifestPath ixePath : String) (shardK : Nat)
         | .ok h => pure h
       runShardOwnedNative envHandle compiled printStats statsOut useBytecode ixonEnv blocks shardK
 
-/-- IxVM-native check over EVERY shard. Builds the `EnvHandle` ONCE
-    and shares it across every shard's FFI call (no per-shard
-    re-mmap). Caller-side: skips the coverage check; trust the user
-    (or run a separate `--ixes`-only coverage probe first). -/
-def runShardManifestAllNative (manifestPath ixePath : String) (jobs? : Option Nat)
-    (compiled : Aiur.CompiledToplevel) (printStats : Bool)
-    (statsOut : Option String) (useBytecode : Bool) : IO UInt32 := do
-  match (← loadEnvAndShards manifestPath ixePath) with
-  | .error e => IO.eprintln e; return 1
-  | .ok (ixonEnv, shards) =>
-    let envHandle ← match Aiur.EnvHandle.fromIxe ixePath with
-      | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixePath}: {e}"; return 1
-      | .ok h => pure h
-    let maxJobs := max 1 (jobs?.getD shards.size)
-    let mut rc : UInt32 := 0
-    for chunk in (shards.mapIdx (fun k b => (b, k))).toList.toChunks maxJobs do
-      let tasks ← chunk.mapM fun (blocks, k) =>
-        IO.asTask (prio := .dedicated)
-          (runShardOwnedNative envHandle compiled printStats statsOut useBytecode ixonEnv blocks k)
-      for t in tasks do
-        match t.get with
-        | .ok r => if r != 0 then rc := 1
-        | .error e => IO.eprintln s!"shard check task failed: {e}"; rc := 1
-    pure rc
-
-/-- Run the shard operation over EVERY shard — the whole-partition behavior of
-    `--ixes` with no `--shard` (used by `prove`). Loads the env once. Returns 1
-    if any shard fails, else 0. -/
-def runShardManifestAll (manifestPath ixePath : String)
-    (runOne : Ix.Claim → IxVM.ClaimHarness.ClaimWitness → String → IO UInt32) : IO UInt32 := do
-  match (← loadEnvAndShards manifestPath ixePath) with
-  | .error e => IO.eprintln e; return 1
-  | .ok (ixonEnv, shards) =>
-    let mut rc : UInt32 := 0
-    for (blocks, k) in shards.mapIdx (fun k b => (b, k)) do
-      if (← runShardOwned ixonEnv blocks k runOne) != 0 then rc := 1
-    pure rc
-
 /-- Coverage check over already-loaded env + shards: every constant's
     check-schedule block is owned by **exactly one** shard. That is the whole
     soundness condition for the check case — each constant is type-checked
@@ -543,6 +513,46 @@ def shardsCover (ixonEnv : Ixon.Env) (shards : Array (Array Address)) : IO Bool 
   if ok then
     IO.println s!"[shards] OK: partition covers all {ixonEnv.consts.size} consts, disjoint"
   pure ok
+
+/-- IxVM-native check over EVERY shard. Builds the `EnvHandle` ONCE
+    and shares it across every shard's FFI call (no per-shard
+    re-mmap). Coverage-gates the manifest before running any shard —
+    exit 0 has to mean "every env const was checked by some shard",
+    same soundness contract as `runShardCheckAll`. -/
+def runShardManifestAllNative (manifestPath ixePath : String) (jobs? : Option Nat)
+    (compiled : Aiur.CompiledToplevel) (printStats : Bool)
+    (statsOut : Option String) (useBytecode : Bool) : IO UInt32 := do
+  match (← loadEnvAndShards manifestPath ixePath) with
+  | .error e => IO.eprintln e; return 1
+  | .ok (ixonEnv, shards) =>
+    if !(← shardsCover ixonEnv shards) then return 1
+    let envHandle ← match Aiur.EnvHandle.fromIxe ixePath with
+      | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixePath}: {e}"; return 1
+      | .ok h => pure h
+    let maxJobs := max 1 (jobs?.getD shards.size)
+    let mut rc : UInt32 := 0
+    for chunk in (shards.mapIdx (fun k b => (b, k))).toList.toChunks maxJobs do
+      let tasks ← chunk.mapM fun (blocks, k) =>
+        IO.asTask (prio := .dedicated)
+          (runShardOwnedNative envHandle compiled printStats statsOut useBytecode ixonEnv blocks k)
+      for t in tasks do
+        match t.get with
+        | .ok r => if r != 0 then rc := 1
+        | .error e => IO.eprintln s!"shard check task failed: {e}"; rc := 1
+    pure rc
+
+/-- Run the shard operation over EVERY shard — the whole-partition behavior of
+    `--ixes` with no `--shard` (used by `prove`). Loads the env once. Returns 1
+    if any shard fails, else 0. -/
+def runShardManifestAll (manifestPath ixePath : String)
+    (runOne : Ix.Claim → IxVM.ClaimHarness.ClaimWitness → String → IO UInt32) : IO UInt32 := do
+  match (← loadEnvAndShards manifestPath ixePath) with
+  | .error e => IO.eprintln e; return 1
+  | .ok (ixonEnv, shards) =>
+    let mut rc : UInt32 := 0
+    for (blocks, k) in shards.mapIdx (fun k b => (b, k)) do
+      if (← runShardOwned ixonEnv blocks k runOne) != 0 then rc := 1
+    pure rc
 
 /-- Check EVERY shard of the partition concurrently (shards are independent
     bytecode runs) after verifying coverage — the whole-partition behavior of

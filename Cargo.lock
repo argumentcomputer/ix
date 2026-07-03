@@ -1741,21 +1741,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
-name = "ix"
-version = "0.1.0"
-dependencies = [
- "aiur",
- "dashmap",
- "ix-common",
- "ixon",
- "multi-stark",
- "num-bigint",
- "rayon",
- "rustc-hash",
- "stacker",
-]
-
-[[package]]
 name = "ix-common"
 version = "0.1.0"
 dependencies = [
@@ -1802,11 +1787,11 @@ dependencies = [
  "iroh",
  "iroh-base",
  "itertools 0.14.0",
- "ix",
  "ix-common",
  "ix-compile",
  "ix-kernel",
  "ixon",
+ "ixvm-codegen",
  "lean-ffi",
  "mimalloc",
  "multi-stark",
@@ -1859,6 +1844,21 @@ dependencies = [
  "rustc-hash",
  "sha2 0.10.9",
  "tiny-keccak",
+]
+
+[[package]]
+name = "ixvm-codegen"
+version = "0.1.0"
+dependencies = [
+ "aiur",
+ "dashmap",
+ "ix-common",
+ "ixon",
+ "multi-stark",
+ "num-bigint",
+ "rayon",
+ "rustc-hash",
+ "stacker",
 ]
 
 [[package]]

@@ -98,6 +98,7 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
     let serdeNatAddCommTest ← serdeNatAddComm env
     let kernelChecks ← kernelChecks env
     let claimSmokes ← claimSmokeTests env
+    let parityCases ← parityCases env
     let aiurTests := [kernelUnitTests, serdeNatAddCommTest]
                      ++ kernelChecks ++ claimSmokes
     -- The arena suite shares the compiled toplevel with the AiurTestCase
@@ -109,7 +110,9 @@ def ignoredRunners (env : Lean.Environment) : List (String × IO UInt32) := [
       let arenaSeq ← Tests.Ix.Kernel.Arena.arenaTests env aiurEnv.compiled
       let aiurSeq := aiurTests.foldl (init := .done) fun s tc =>
         s ++ aiurEnv.runTestCase tc
-      LSpec.lspecIO (.ofList [("ixvm", [aiurSeq, arenaSeq])]) []),
+      let paritySeq := parityCases.foldl (init := .done) fun s tc =>
+        s ++ runParityCase aiurEnv.compiled tc
+      LSpec.lspecIO (.ofList [("ixvm", [aiurSeq, arenaSeq, paritySeq])]) []),
   ("rbtree-map", do
     IO.println "rbtree-map"
     match AiurTestEnv.build (pure IxVM.rbTreeMap) with

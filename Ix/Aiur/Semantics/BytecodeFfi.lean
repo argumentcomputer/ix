@@ -181,7 +181,7 @@ private opaque shardCheckWithEnv' : @& Bytecode.Toplevel →
     selects the generic Aiur bytecode interpreter
     (`Bytecode.Toplevel.execute`) over the codegen'd IxVM kernel
     (`execute_ixvm`); useful for tight iteration loops on Lean-side
-    IxVM source where regenerating `crates/ix/src/aiur_ixvm.rs` and
+    IxVM source where regenerating `crates/ixvm-codegen/src/aiur_ixvm.rs` and
     recompiling Rust is too slow. -/
 def checkAddrWithEnv (toplevel : @& Bytecode.Toplevel)
   (funIdx : @& Bytecode.FunIdx) (envHandle : @& EnvHandle)
