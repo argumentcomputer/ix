@@ -11,7 +11,7 @@ name: zkVM host build
 # + const-tree regeneration per run).
 on:
   push:
-    branches: main
+    branches: [main, sb/ci-benchmarks]   # TEMPORARY: test on this branch
   workflow_dispatch:
 
 permissions:
