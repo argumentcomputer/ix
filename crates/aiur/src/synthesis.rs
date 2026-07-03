@@ -16,7 +16,7 @@ use crate::{
   G,
   bytecode::{FunIdx, Toplevel},
   constraints::Constraints,
-  execute::IOBuffer,
+  execute::{ExecError, IOBuffer, QueryRecord},
   function_channel,
   gadgets::{AiurGadget, bytes1::Bytes1, bytes2::Bytes2},
   memory::Memory,
@@ -170,6 +170,82 @@ impl AiurSystem {
     claim.extend(output);
 
     // Finally prove.
+    let proof = self.system.prove(fri_parameters, &self.key, &claim, witness);
+    (claim, proof)
+  }
+
+  /// IxVM-native prove: identical to `prove` except the execute step
+  /// is provided by the caller as `executor` (a closure that runs
+  /// the codegen'd Rust kernel `ix::aiur_ixvm_runner::execute_ixvm`
+  /// instead of the bytecode interpreter). Avoids a circular crate
+  /// dependency: `aiur` doesn't know about `ix`; `ix` (or its
+  /// downstream `ffi`) injects the executor.
+  ///
+  /// QueryRecord shape + witness construction + claim layout + proof
+  /// generation are all unchanged — the proof produced here is
+  /// verification-compatible with one produced by `prove`.
+  #[tracing::instrument(level = "info", skip_all, name = "aiur/prove_ixvm")]
+  pub fn prove_ixvm<F>(
+    &self,
+    fri_parameters: FriParameters,
+    fun_idx: FunIdx,
+    input: &[G],
+    io_buffer: &mut IOBuffer,
+    executor: F,
+  ) -> (Vec<G>, Proof)
+  where
+    F: FnOnce(
+      &Toplevel,
+      FunIdx,
+      Vec<G>,
+      &mut IOBuffer,
+    ) -> Result<(QueryRecord, Vec<G>), ExecError>,
+  {
+    tracing_texray::examine_current();
+    let _g = tracing::info_span!("aiur/execute_ixvm").entered();
+    let (query_record, output) =
+      executor(&self.toplevel, fun_idx, input.to_vec(), io_buffer)
+        .expect("IxVM-native Aiur execution failed during prove_ixvm");
+    drop(_g);
+
+    let _g = tracing::info_span!("aiur/witness").entered();
+    let functions =
+      (0..self.toplevel.functions.len()).into_par_iter().filter_map(|idx| {
+        if self.toplevel.functions[idx].constrained {
+          Some(CircuitType::Function { idx })
+        } else {
+          None
+        }
+      });
+    let memories = self
+      .toplevel
+      .memory_sizes
+      .par_iter()
+      .map(|&width| CircuitType::Memory { width });
+    let gadgets = [CircuitType::Bytes1, CircuitType::Bytes2].into_par_iter();
+    let witness_data = functions
+      .chain(memories)
+      .chain(gadgets)
+      .map(|circuit_type| match circuit_type {
+        CircuitType::Function { idx } => {
+          self.toplevel.witness_data(idx, &query_record, io_buffer)
+        },
+        CircuitType::Memory { width } => {
+          Memory::witness_data(width, &query_record)
+        },
+        CircuitType::Bytes1 => Bytes1.witness_data(&query_record),
+        CircuitType::Bytes2 => Bytes2.witness_data(&query_record),
+      })
+      .collect::<Vec<_>>();
+    drop(query_record);
+    let (traces, lookups) = witness_data.into_iter().unzip();
+    let witness = SystemWitness { traces, lookups };
+    drop(_g);
+
+    let mut claim = vec![function_channel(), G::from_usize(fun_idx)];
+    claim.extend(input);
+    claim.extend(output);
+
     let proof = self.system.prove(fri_parameters, &self.key, &claim, witness);
     (claim, proof)
   }

@@ -19,7 +19,7 @@ use crate::{
 };
 use aiur::{
   G,
-  execute::{IOBuffer, IOKeyInfo},
+  execute::{IOBuffer, IOKeyInfo, QueryRecord},
   synthesis::AiurSystem,
 };
 
@@ -31,6 +31,9 @@ static AIUR_PROOF_CLASS: LazyLock<ExternalClass> =
   LazyLock::new(ExternalClass::register_with_drop::<Proof>);
 static AIUR_SYSTEM_CLASS: LazyLock<ExternalClass> =
   LazyLock::new(ExternalClass::register_with_drop::<AiurSystem>);
+static IX_ENV_HANDLE_CLASS: LazyLock<ExternalClass> = LazyLock::new(
+  ExternalClass::register_with_drop::<ixvm_codegen::env_handle::EnvHandle>,
+);
 
 // =============================================================================
 // Lean FFI functions
@@ -169,6 +172,75 @@ extern "C" fn rs_aiur_toplevel_execute(
   LeanExcept::ok(result)
 }
 
+/// `Bytecode.Toplevel.executeIxVM`: same shape as `rs_aiur_toplevel_execute`,
+/// but routes execution through the codegen'd IxVM Rust kernel
+/// (`ixvm_codegen::aiur_ixvm::execute_generated`) via the helper in
+/// `ixvm_codegen::aiur_ixvm_runner::execute_ixvm`. The resulting
+/// `QueryRecord` is byte-for-byte identical to the interpreter's
+/// (modulo standing codegen parity invariant).
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_toplevel_execute_ixvm(
+  toplevel: LeanAiurToplevel<LeanBorrowed<'_>>,
+  fun_idx: LeanNat<LeanBorrowed<'_>>,
+  args: LeanArray<LeanBorrowed<'_>>,
+  io_data_arr: LeanArray<LeanBorrowed<'_>>,
+  io_map_arr: LeanArray<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  let toplevel = decode_toplevel(&toplevel);
+  let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
+  let mut io_buffer = decode_io_buffer(&io_data_arr, &io_map_arr);
+
+  let (query_record, output) =
+    match ixvm_codegen::aiur_ixvm_runner::execute_ixvm(
+      &toplevel,
+      fun_idx,
+      args.map(|x| lean_unbox_g(&x)),
+      &mut io_buffer,
+    ) {
+      Ok(pair) => pair,
+      Err(err) => return LeanExcept::error_string(&err.to_string()),
+    };
+
+  // Same query-count summarisation as `rs_aiur_toplevel_execute`.
+  let mut query_counts: Vec<(usize, usize)> = Vec::with_capacity(
+    query_record.function_queries.len() + toplevel.memory_sizes.len(),
+  );
+  let summarize = |q: &aiur::querymap::QueryMap| -> (usize, usize) {
+    let mut rows = 0usize;
+    let mut hits = 0usize;
+    for (_, res) in q.iter() {
+      let m = usize::try_from(res.multiplicity.as_canonical_u64())
+        .expect("multiplicity exceeds usize");
+      if m != 0 {
+        rows += 1;
+        hits += m;
+      }
+    }
+    (rows, hits)
+  };
+  for queries in &query_record.function_queries {
+    query_counts.push(summarize(queries));
+  }
+  for size in &toplevel.memory_sizes {
+    let pair = query_record.memory_queries.get(size).map_or((0, 0), summarize);
+    query_counts.push(pair);
+  }
+  let lean_query_counts = {
+    let arr = LeanArray::alloc(query_counts.len());
+    for (i, &(rows, hits)) in query_counts.iter().enumerate() {
+      let pair =
+        LeanProd::new(LeanOwned::box_usize(rows), LeanOwned::box_usize(hits));
+      arr.set(i, pair);
+    }
+    arr
+  };
+
+  let lean_io = build_lean_io_buffer(&io_buffer);
+  let io_counts = LeanProd::new(lean_io, lean_query_counts);
+  let result = LeanProd::new(build_g_array(&output), io_counts);
+  LeanExcept::ok(result)
+}
+
 /// `AiurSystem.prove`: runs the prover and returns
 /// `Array G × Proof × Array G × Array (Array G × IOKeyInfo)`
 #[unsafe(no_mangle)]
@@ -194,6 +266,390 @@ extern "C" fn rs_aiur_system_prove(
   // Proof × Array G × Array (Array G × IOKeyInfo)
   let proof_io_tuple = LeanProd::new(lean_proof, lean_io);
   // Array G × Proof × Array G × Array (Array G × IOKeyInfo)
+  let result = LeanProd::new(build_g_array(&claim), proof_io_tuple);
+  result.into()
+}
+
+// =============================================================================
+// EnvHandle constructors + with-env FFIs (PLAN.md "EnvHandle redesign")
+// =============================================================================
+
+/// `Aiur.EnvHandle.fromIxe`: open and parse a `.ixe` file once,
+/// return an opaque Rust-owned handle. The mmap stays alive inside
+/// the handle (via per-constant `Arc<Mmap>` windows) for as long as
+/// Lean retains the `LeanExternal<EnvHandle>` reference.
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_env_handle_from_ixe(
+  path_bytes: LeanByteArray<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  let path_str = String::from_utf8_lossy(path_bytes.as_bytes()).into_owned();
+  match ixvm_codegen::env_handle::EnvHandle::from_ixe_path(
+    std::path::Path::new(&path_str),
+  ) {
+    Ok(h) => {
+      let lean_handle: LeanOwned =
+        LeanExternal::alloc(&IX_ENV_HANDLE_CLASS, h).into();
+      LeanExcept::ok(lean_handle)
+    },
+    Err(e) => LeanExcept::error_string(&format!("env handle from_ixe: {e}")),
+  }
+}
+
+/// `Aiur.EnvHandle.fromBytes`: decode a serialized env blob
+/// (`Ixon.serEnv` output) and harvest `anon_hints` post-decode.
+/// Used by the compiled-Lean-env path (`ix check NAME` without
+/// `--ixe`).
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_env_handle_from_bytes(
+  bytes: LeanByteArray<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  match ixvm_codegen::env_handle::EnvHandle::from_bytes(bytes.as_bytes()) {
+    Ok(h) => {
+      let lean_handle: LeanOwned =
+        LeanExternal::alloc(&IX_ENV_HANDLE_CLASS, h).into();
+      LeanExcept::ok(lean_handle)
+    },
+    Err(e) => LeanExcept::error_string(&format!("env handle from_bytes: {e}")),
+  }
+}
+
+/// Helper: summarise one execute's `QueryRecord` into a Lean
+/// `Array (Nat × Nat)` of `(unique_rows, total_hits)` pairs, one per
+/// function circuit followed by one per memory size. Mirrors the
+/// summary code used by every check/prove FFI.
+fn build_query_counts_array(
+  query_record: &QueryRecord,
+  toplevel: &aiur::bytecode::Toplevel,
+) -> LeanArray<LeanOwned> {
+  let mut query_counts: Vec<(usize, usize)> = Vec::with_capacity(
+    query_record.function_queries.len() + toplevel.memory_sizes.len(),
+  );
+  let summarize = |q: &aiur::querymap::QueryMap| -> (usize, usize) {
+    let mut rows = 0usize;
+    let mut hits = 0usize;
+    for (_, res) in q.iter() {
+      let m = usize::try_from(res.multiplicity.as_canonical_u64())
+        .expect("multiplicity exceeds usize");
+      if m != 0 {
+        rows += 1;
+        hits += m;
+      }
+    }
+    (rows, hits)
+  };
+  for queries in &query_record.function_queries {
+    query_counts.push(summarize(queries));
+  }
+  for size in &toplevel.memory_sizes {
+    let pair = query_record.memory_queries.get(size).map_or((0, 0), summarize);
+    query_counts.push(pair);
+  }
+  let arr = LeanArray::alloc(query_counts.len());
+  for (i, &(rows, hits)) in query_counts.iter().enumerate() {
+    let pair =
+      LeanProd::new(LeanOwned::box_usize(rows), LeanOwned::box_usize(hits));
+    arr.set(i, pair);
+  }
+  arr
+}
+
+/// Helper: decode a 32-byte address from a `LeanByteArray`.
+fn decode_addr(
+  addr_bytes: &LeanByteArray<LeanBorrowed<'_>>,
+) -> Result<ix_common::address::Address, String> {
+  let slice = addr_bytes.as_bytes();
+  if slice.len() != 32 {
+    return Err(format!(
+      "addr_bytes: expected 32-byte address, got {} bytes",
+      slice.len()
+    ));
+  }
+  Ok(
+    ix_common::address::Address::from_slice(slice)
+      .expect("32-byte slice already length-checked"),
+  )
+}
+
+/// Helper: decode a flat 32-byte-block owned blob into `Vec<Address>`.
+fn decode_owned_blob(
+  owned_blob: &LeanByteArray<LeanBorrowed<'_>>,
+) -> Result<Vec<ix_common::address::Address>, String> {
+  let bytes = owned_blob.as_bytes();
+  if !bytes.len().is_multiple_of(32) {
+    return Err(format!(
+      "owned_blob: length {} not a multiple of 32",
+      bytes.len()
+    ));
+  }
+  Ok(
+    bytes
+      .chunks_exact(32)
+      .map(|c| ix_common::address::Address::from_slice(c).unwrap())
+      .collect(),
+  )
+}
+
+/// Run `fun_idx` with `input` + `io_buffer`, routing through either
+/// the codegen'd IxVM kernel (`use_bytecode = false`) or the
+/// generic Aiur bytecode interpreter (`use_bytecode = true`).
+/// The bytecode interpreter doesn't require regenerating the
+/// codegen'd Rust kernel after Lean-side IxVM source changes —
+/// useful for tight iteration loops on `Ix/IxVM/*.lean`.
+#[inline]
+fn dispatch_execute(
+  toplevel: &aiur::bytecode::Toplevel,
+  fun_idx: aiur::bytecode::FunIdx,
+  input: Vec<G>,
+  io_buffer: &mut IOBuffer,
+  use_bytecode: bool,
+) -> Result<(QueryRecord, Vec<G>), String> {
+  if use_bytecode {
+    toplevel
+      .execute(fun_idx, input, io_buffer)
+      .map_err(|e| format!("execute (bytecode): {e}"))
+  } else {
+    ixvm_codegen::aiur_ixvm_runner::execute_ixvm(
+      toplevel, fun_idx, input, io_buffer,
+    )
+    .map_err(|e| format!("execute_ixvm: {e}"))
+  }
+}
+
+/// `Bytecode.Toplevel.checkAddrWithEnv`: per-claim check against a
+/// Rust-owned `EnvHandle`. `use_bytecode` selects the executor:
+/// `false` = codegen'd IxVM kernel (`execute_ixvm`),
+/// `true`  = generic Aiur bytecode interpreter
+/// (`Toplevel::execute`).
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_toplevel_check_addr_with_env(
+  toplevel: LeanAiurToplevel<LeanBorrowed<'_>>,
+  fun_idx: LeanNat<LeanBorrowed<'_>>,
+  env_handle: LeanExternal<
+    ixvm_codegen::env_handle::EnvHandle,
+    LeanBorrowed<'_>,
+  >,
+  addr_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  use_bytecode: bool,
+) -> LeanExcept<LeanOwned> {
+  let toplevel = decode_toplevel(&toplevel);
+  let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
+  let addr = match decode_addr(&addr_bytes) {
+    Ok(a) => a,
+    Err(e) => return LeanExcept::error_string(&e),
+  };
+  let env = &env_handle.get().env;
+
+  let (_claim, input, mut io_buffer) =
+    match ixvm_codegen::aiur_ixvm_witness::build_claim_check_witness(env, &addr)
+    {
+      Ok(t) => t,
+      Err(e) => {
+        return LeanExcept::error_string(&format!("witness build: {e}"));
+      },
+    };
+
+  let (query_record, output) = match dispatch_execute(
+    &toplevel,
+    fun_idx,
+    input,
+    &mut io_buffer,
+    use_bytecode,
+  ) {
+    Ok(p) => p,
+    Err(e) => return LeanExcept::error_string(&e),
+  };
+
+  let lean_query_counts = build_query_counts_array(&query_record, &toplevel);
+  let lean_io = build_lean_io_buffer(&io_buffer);
+  let io_counts = LeanProd::new(lean_io, lean_query_counts);
+  let result = LeanProd::new(build_g_array(&output), io_counts);
+  LeanExcept::ok(result)
+}
+
+/// `Bytecode.Toplevel.shardCheckWithEnv`: per-shard check against a
+/// Rust-owned `EnvHandle`. See `checkAddrWithEnv` for `use_bytecode`
+/// semantics.
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_toplevel_shard_check_with_env(
+  toplevel: LeanAiurToplevel<LeanBorrowed<'_>>,
+  fun_idx: LeanNat<LeanBorrowed<'_>>,
+  env_handle: LeanExternal<
+    ixvm_codegen::env_handle::EnvHandle,
+    LeanBorrowed<'_>,
+  >,
+  owned_blob: LeanByteArray<LeanBorrowed<'_>>,
+  use_bytecode: bool,
+) -> LeanExcept<LeanOwned> {
+  let toplevel = decode_toplevel(&toplevel);
+  let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
+  let owned = match decode_owned_blob(&owned_blob) {
+    Ok(v) => v,
+    Err(e) => return LeanExcept::error_string(&e),
+  };
+  let env = &env_handle.get().env;
+
+  let (_claim, input, mut io_buffer) =
+    match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness(
+      env, &owned,
+    ) {
+      Ok(t) => t,
+      Err(e) => {
+        return LeanExcept::error_string(&format!("witness build: {e}"));
+      },
+    };
+
+  let (query_record, output) = match dispatch_execute(
+    &toplevel,
+    fun_idx,
+    input,
+    &mut io_buffer,
+    use_bytecode,
+  ) {
+    Ok(p) => p,
+    Err(e) => return LeanExcept::error_string(&e),
+  };
+
+  let lean_query_counts = build_query_counts_array(&query_record, &toplevel);
+  let lean_io = build_lean_io_buffer(&io_buffer);
+  let io_counts = LeanProd::new(lean_io, lean_query_counts);
+  let result = LeanProd::new(build_g_array(&output), io_counts);
+  LeanExcept::ok(result)
+}
+
+/// `AiurSystem.proveAddrWithEnv`: per-claim prove against a
+/// Rust-owned `EnvHandle`. Returns `(claim_bytes, proof, ioBuffer)`
+/// — the claim's wire bytes are serialized via `ixon::Claim::put`
+/// so Lean can deserialize directly into `Ix.Claim` without
+/// reconstructing it from the target addr.
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_system_prove_addr_with_env(
+  aiur_system_obj: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
+  fri_parameters: LeanAiurFriParameters<LeanBorrowed<'_>>,
+  fun_idx: LeanNat<LeanBorrowed<'_>>,
+  env_handle: LeanExternal<
+    ixvm_codegen::env_handle::EnvHandle,
+    LeanBorrowed<'_>,
+  >,
+  addr_bytes: LeanByteArray<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  let fri_parameters = decode_fri_parameters(&fri_parameters);
+  let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
+  let addr = match decode_addr(&addr_bytes) {
+    Ok(a) => a,
+    Err(e) => return LeanExcept::error_string(&e),
+  };
+  let env = &env_handle.get().env;
+
+  let (claim, input, mut io_buffer) =
+    match ixvm_codegen::aiur_ixvm_witness::build_claim_check_witness(env, &addr)
+    {
+      Ok(t) => t,
+      Err(e) => {
+        return LeanExcept::error_string(&format!("witness build: {e}"));
+      },
+    };
+
+  let (_aiur_claim_arr, proof) = aiur_system_obj.get().prove_ixvm(
+    fri_parameters,
+    fun_idx,
+    &input,
+    &mut io_buffer,
+    ixvm_codegen::aiur_ixvm_runner::execute_ixvm,
+  );
+
+  let mut claim_bytes: Vec<u8> = Vec::new();
+  claim.put(&mut claim_bytes);
+  let lean_claim_bytes = LeanByteArray::from_bytes(&claim_bytes);
+  let lean_proof: LeanOwned =
+    LeanExternal::alloc(&AIUR_PROOF_CLASS, proof).into();
+  let lean_io = build_lean_io_buffer(&io_buffer);
+  let proof_io = LeanProd::new(lean_proof, lean_io);
+  let result = LeanProd::new(lean_claim_bytes, proof_io);
+  LeanExcept::ok(result)
+}
+
+/// `AiurSystem.shardProveWithEnv`: per-shard prove against a
+/// Rust-owned `EnvHandle`. Same `(claim_bytes, proof, ioBuffer)`
+/// return shape as `proveAddrWithEnv`.
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_system_shard_prove_with_env(
+  aiur_system_obj: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
+  fri_parameters: LeanAiurFriParameters<LeanBorrowed<'_>>,
+  fun_idx: LeanNat<LeanBorrowed<'_>>,
+  env_handle: LeanExternal<
+    ixvm_codegen::env_handle::EnvHandle,
+    LeanBorrowed<'_>,
+  >,
+  owned_blob: LeanByteArray<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  let fri_parameters = decode_fri_parameters(&fri_parameters);
+  let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
+  let owned = match decode_owned_blob(&owned_blob) {
+    Ok(v) => v,
+    Err(e) => return LeanExcept::error_string(&e),
+  };
+  let env = &env_handle.get().env;
+
+  let (claim, input, mut io_buffer) =
+    match ixvm_codegen::aiur_ixvm_witness::build_shard_check_env_witness(
+      env, &owned,
+    ) {
+      Ok(t) => t,
+      Err(e) => {
+        return LeanExcept::error_string(&format!("witness build: {e}"));
+      },
+    };
+
+  let (_aiur_claim_arr, proof) = aiur_system_obj.get().prove_ixvm(
+    fri_parameters,
+    fun_idx,
+    &input,
+    &mut io_buffer,
+    ixvm_codegen::aiur_ixvm_runner::execute_ixvm,
+  );
+
+  let mut claim_bytes: Vec<u8> = Vec::new();
+  claim.put(&mut claim_bytes);
+  let lean_claim_bytes = LeanByteArray::from_bytes(&claim_bytes);
+  let lean_proof: LeanOwned =
+    LeanExternal::alloc(&AIUR_PROOF_CLASS, proof).into();
+  let lean_io = build_lean_io_buffer(&io_buffer);
+  let proof_io = LeanProd::new(lean_proof, lean_io);
+  let result = LeanProd::new(lean_claim_bytes, proof_io);
+  LeanExcept::ok(result)
+}
+
+/// `AiurSystem.proveIxVM`: IxVM-native prove path. Same return shape
+/// as `rs_aiur_system_prove`, but routes execution through the
+/// codegen'd Rust kernel (`execute_generated`) via
+/// `AiurSystem::prove_ixvm`. The resulting `Proof` is verification-
+/// compatible with `rs_aiur_system_prove`.
+#[unsafe(no_mangle)]
+extern "C" fn rs_aiur_system_prove_ixvm(
+  aiur_system_obj: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
+  fri_parameters: LeanAiurFriParameters<LeanBorrowed<'_>>,
+  fun_idx: LeanNat<LeanBorrowed<'_>>,
+  args: LeanArray<LeanBorrowed<'_>>,
+  io_data_arr: LeanArray<LeanBorrowed<'_>>,
+  io_map_arr: LeanArray<LeanBorrowed<'_>>,
+) -> LeanOwned {
+  let fri_parameters = decode_fri_parameters(&fri_parameters);
+  let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
+  let args = args.map(|x| lean_unbox_g(&x));
+  let mut io_buffer = decode_io_buffer(&io_data_arr, &io_map_arr);
+
+  let (claim, proof) = aiur_system_obj.get().prove_ixvm(
+    fri_parameters,
+    fun_idx,
+    &args,
+    &mut io_buffer,
+    ixvm_codegen::aiur_ixvm_runner::execute_ixvm,
+  );
+
+  let lean_proof: LeanOwned =
+    LeanExternal::alloc(&AIUR_PROOF_CLASS, proof).into();
+  let lean_io = build_lean_io_buffer(&io_buffer);
+  let proof_io_tuple = LeanProd::new(lean_proof, lean_io);
   let result = LeanProd::new(build_g_array(&claim), proof_io_tuple);
   result.into()
 }

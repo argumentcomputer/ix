@@ -67,6 +67,37 @@ structure QueryCount where
   totalHits : Nat
   deriving Inhabited
 
+-- ===========================================================================
+-- EnvHandle: Rust-owned `ixon::Env` exposed to Lean as an opaque handle.
+-- Built once per CLI invocation; reused across every per-claim and
+-- per-shard FFI call so the env is parsed exactly once.
+-- ===========================================================================
+
+private opaque EnvHandleNonempty : NonemptyType
+def EnvHandle : Type := EnvHandleNonempty.type
+instance : Nonempty EnvHandle := EnvHandleNonempty.property
+
+namespace EnvHandle
+
+@[extern "rs_aiur_env_handle_from_ixe"]
+private opaque fromIxe' : @& ByteArray → Except String EnvHandle
+
+/-- Load an `EnvHandle` from a `.ixe` file path (UTF-8 ByteArray).
+    Rust mmap's the file zero-copy; the handle keeps the mapping
+    alive for as long as Lean retains it. -/
+def fromIxe (path : String) : Except String EnvHandle :=
+  fromIxe' path.toUTF8
+
+@[extern "rs_aiur_env_handle_from_bytes"]
+private opaque fromBytes' : @& ByteArray → Except String EnvHandle
+
+/-- Build an `EnvHandle` from a serialized env blob (e.g. produced
+    by `Ixon.serEnv` on the compiled-Lean-env code path). -/
+def fromBytes (bytes : ByteArray) : Except String EnvHandle :=
+  fromBytes' bytes
+
+end EnvHandle
+
 namespace Bytecode.Toplevel
 
 @[extern "rs_aiur_toplevel_execute"]
@@ -89,6 +120,88 @@ def execute (toplevel : @& Bytecode.Toplevel)
   let ioData := ioBuffer.data.toArray
   let ioMap := ioBuffer.map.toArray
   match execute' toplevel funIdx args ioData ioMap with
+  | .error e => .error e
+  | .ok (output, (ioData, ioMap), queryCounts) =>
+    let ioData := ioData.foldl (fun acc (k, v) => acc.insert k v) ∅
+    let ioMap := ioMap.foldl (fun acc (k, v) => acc.insert k v) ∅
+    let queryCounts := queryCounts.map fun (uniqueRows, totalHits) => { uniqueRows, totalHits }
+    .ok (output, ⟨ioData, ioMap⟩, queryCounts)
+
+@[extern "rs_aiur_toplevel_execute_ixvm"]
+private opaque executeIxVM' : @& Bytecode.Toplevel →
+  @& Bytecode.FunIdx → @& Array G →
+  (ioData : @& Array (G × Array G)) →
+  (ioMap : @& Array ((G × Array G) × IOKeyInfo)) →
+    Except String (Array G ×
+      (Array (G × Array G) × Array ((G × Array G) × IOKeyInfo)) ×
+      Array (Nat × Nat))
+
+/-- IxVM-native execution: same shape as `execute`, but routes the
+    function invocation through the codegen'd Rust kernel
+    (`crate::ix::aiur_ixvm::execute_generated`) instead of the
+    generic bytecode interpreter. The resulting `QueryRecord` is
+    byte-for-byte identical (modulo the standing codegen parity
+    invariant). Only valid when `toplevel` is the IxVM kernel's
+    `Bytecode.Toplevel` — other toplevels produce undefined results
+    because the generated function bodies are fixed at codegen time. -/
+def executeIxVM (toplevel : @& Bytecode.Toplevel)
+  (funIdx : @& Bytecode.FunIdx) (args : @& Array G) (ioBuffer : IOBuffer) :
+    Except String (Array G × IOBuffer × Array QueryCount) :=
+  let ioData := ioBuffer.data.toArray
+  let ioMap := ioBuffer.map.toArray
+  match executeIxVM' toplevel funIdx args ioData ioMap with
+  | .error e => .error e
+  | .ok (output, (ioData, ioMap), queryCounts) =>
+    let ioData := ioData.foldl (fun acc (k, v) => acc.insert k v) ∅
+    let ioMap := ioMap.foldl (fun acc (k, v) => acc.insert k v) ∅
+    let queryCounts := queryCounts.map fun (uniqueRows, totalHits) => { uniqueRows, totalHits }
+    .ok (output, ⟨ioData, ioMap⟩, queryCounts)
+
+-- (EnvHandle opaque type + constructors live above `namespace
+-- Bytecode.Toplevel`; see `Aiur.EnvHandle`. The with-env FFI
+-- declarations below reference `EnvHandle` and `Bytecode.Toplevel`
+-- from the same scope.)
+
+@[extern "rs_aiur_toplevel_check_addr_with_env"]
+private opaque checkAddrWithEnv' : @& Bytecode.Toplevel →
+  @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray → Bool →
+    Except String (Array G ×
+      (Array (G × Array G) × Array ((G × Array G) × IOKeyInfo)) ×
+      Array (Nat × Nat))
+
+@[extern "rs_aiur_toplevel_shard_check_with_env"]
+private opaque shardCheckWithEnv' : @& Bytecode.Toplevel →
+  @& Bytecode.FunIdx → @& EnvHandle → @& ByteArray → Bool →
+    Except String (Array G ×
+      (Array (G × Array G) × Array ((G × Array G) × IOKeyInfo)) ×
+      Array (Nat × Nat))
+
+
+/-- Per-claim check against a Rust-owned `EnvHandle`. `useBytecode`
+    selects the generic Aiur bytecode interpreter
+    (`Bytecode.Toplevel.execute`) over the codegen'd IxVM kernel
+    (`execute_ixvm`); useful for tight iteration loops on Lean-side
+    IxVM source where regenerating `crates/ixvm-codegen/src/aiur_ixvm.rs` and
+    recompiling Rust is too slow. -/
+def checkAddrWithEnv (toplevel : @& Bytecode.Toplevel)
+  (funIdx : @& Bytecode.FunIdx) (envHandle : @& EnvHandle)
+  (addrBytes : ByteArray) (useBytecode : Bool := false)
+  : Except String (Array G × IOBuffer × Array QueryCount) :=
+  match checkAddrWithEnv' toplevel funIdx envHandle addrBytes useBytecode with
+  | .error e => .error e
+  | .ok (output, (ioData, ioMap), queryCounts) =>
+    let ioData := ioData.foldl (fun acc (k, v) => acc.insert k v) ∅
+    let ioMap := ioMap.foldl (fun acc (k, v) => acc.insert k v) ∅
+    let queryCounts := queryCounts.map fun (uniqueRows, totalHits) => { uniqueRows, totalHits }
+    .ok (output, ⟨ioData, ioMap⟩, queryCounts)
+
+/-- Per-shard check against a Rust-owned `EnvHandle`. See
+    `checkAddrWithEnv` for `useBytecode` semantics. -/
+def shardCheckWithEnv (toplevel : @& Bytecode.Toplevel)
+  (funIdx : @& Bytecode.FunIdx) (envHandle : @& EnvHandle)
+  (ownedBlob : ByteArray) (useBytecode : Bool := false)
+  : Except String (Array G × IOBuffer × Array QueryCount) :=
+  match shardCheckWithEnv' toplevel funIdx envHandle ownedBlob useBytecode with
   | .error e => .error e
   | .ok (output, (ioData, ioMap), queryCounts) =>
     let ioData := ioData.foldl (fun acc (k, v) => acc.insert k v) ∅

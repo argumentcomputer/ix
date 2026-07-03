@@ -172,11 +172,6 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
     | .error e => IO.eprintln s!"deserialize {ixePath} failed: {e}"; return 1
     | .ok env => pure env
   IO.println s!"Loaded {ixePath}: {ixonEnv.namedCount} named, {ixonEnv.constCount} consts"
-  -- Build the witness for `addr`: subject-only (`verify_const`) trusts deps;
-  -- otherwise the full-closure check (`verify_claim`, `check addr none`).
-  let mkWitness (addr : Address) : IO IxVM.ClaimHarness.ClaimWitness :=
-    if subjectOnly then pure (IxVM.ClaimHarness.buildVerifyConst ixonEnv addr)
-    else IO.ofExcept (IxVM.ClaimHarness.buildClaimWitness ixonEnv (Ix.Claim.check addr none))
   let mut targets : Array (String × Address) := #[]
   for arg in nameArgs do
     match Ix.Cli.NameResolve.resolveIxeAddr ixonEnv arg with
@@ -186,16 +181,28 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
     IO.eprintln "no requested constants were found in the env"
     return 1
 
+  -- Build the env once into a Rust-owned `EnvHandle` and share it
+  -- across both Phase 1 and Phase 2 loops. Per-target FFI calls
+  -- reuse the parsed env — no per-call mmap / lazy-index rebuild.
+  let envHandle ← match Aiur.EnvHandle.fromIxe ixePath with
+    | .error e => IO.eprintln s!"EnvHandle.fromIxe {ixePath}: {e}"; return 1
+    | .ok h => pure h
+
   -- Phase 1: execute every constant (cheap, deterministic structural metrics).
-  -- Carry each target's address through so phase 2 can rebuild its witness.
+  -- For full-closure check claims, use `checkAddrWithEnv` against the
+  -- shared `envHandle`. For `--subject-only` (`buildVerifyConst`), the
+  -- witness is a small subject-only blob — keep Lean witness +
+  -- `executeIxVM`.
   IO.println "── Phase 1: execute (witness generation) ──"
   let mut execed : Array (Result × Address) := #[]
   for (label, addr) in targets do
     try
-      let witness ← mkWitness addr
       let (res, execSec) ← timed fun _ =>
-        Aiur.Bytecode.Toplevel.execute compiled.bytecode funIdx
-          witness.input witness.inputIOBuffer
+        if subjectOnly then
+          let witness := IxVM.ClaimHarness.buildVerifyConst ixonEnv addr
+          compiled.bytecode.executeIxVM funIdx witness.input witness.inputIOBuffer
+        else
+          compiled.bytecode.checkAddrWithEnv funIdx envHandle addr.hash
       match res with
       | .error e => IO.eprintln s!"  execute {label} failed: {e}"
       | .ok (_, _, queryCounts) =>
@@ -226,9 +233,25 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
   for i in [:ordered.size] do
     let (r, addr) := ordered[i]!
     try
-      let witness ← mkWitness addr
-      let (_, proveSec) ← timed fun _ =>
-        aiurSystem.prove friParameters funIdx witness.input witness.inputIOBuffer
+      let (proveRes, proveSec) ← timed fun _ =>
+        if subjectOnly then
+          let witness := IxVM.ClaimHarness.buildVerifyConst ixonEnv addr
+          let (claim, proof, ioBuf) :=
+            aiurSystem.proveIxVM friParameters funIdx witness.input witness.inputIOBuffer
+          (.ok (claim, proof, ioBuf) :
+            Except String (Array Aiur.G × Aiur.Proof × Aiur.IOBuffer))
+        else
+          match aiurSystem.proveAddrWithEnv friParameters funIdx envHandle addr.hash with
+          | .error e => .error e
+          | .ok (_claimBytes, proof, ioBuf) =>
+            -- The shared envHandle path doesn't return an `Array G`
+            -- claim — adapt to the existing benchmark return shape
+            -- by recomputing the claim digest from the witness's
+            -- input (Phase 2 doesn't read it).
+            .ok (#[], proof, ioBuf)
+      match (proveRes : Except String (Array Aiur.G × Aiur.Proof × Aiur.IOBuffer)) with
+      | .error e => IO.eprintln s!"  prove {r.name} failed: {e}"; continue
+      | .ok _ => pure ()
       spent := spent + proveSec
       IO.println s!"  {r.name}: prove={proveSec}s (cumulative {spent}s)"
       ordered := ordered.set! i ({ r with proveSec := some proveSec }, addr)
