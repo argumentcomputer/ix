@@ -23,14 +23,14 @@ jobs:
     name: Compile zkVM fixture (minimal.ixe)
     runs-on: warp-ubuntu-latest-x64-16x
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions-rust-lang/setup-rust-toolchain@v1
       - uses: leanprover/lean-action@v1
         with:
           build-args: "--wfail -v"
       - name: Compile zkVM test fixture (minimal.ixe)
         run: lake exe ix compile Tests/MinimalDefs.lean --out minimal.ixe
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: minimal-ixe
           path: minimal.ixe
@@ -56,7 +56,7 @@ jobs:
     needs: compile-fixture
     runs-on: warp-ubuntu-latest-x64-16x
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           cache-workspaces: sp1
@@ -69,7 +69,7 @@ jobs:
             libsecp256k1-dev libsodium-dev libpqxx-dev nasm libopenmpi-dev \
             openmpi-bin openmpi-common libclang-dev clang gcc-riscv64-unknown-elf \
             pkg-config libssl-dev
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: minimal-ixe
       - name: Install SP1 toolchain (sp1up, latest)
@@ -90,7 +90,7 @@ jobs:
     needs: compile-fixture
     runs-on: warp-ubuntu-latest-x64-16x
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           cache-workspaces: zisk
@@ -103,7 +103,7 @@ jobs:
             libsecp256k1-dev libsodium-dev libpqxx-dev nasm libopenmpi-dev \
             openmpi-bin openmpi-common libclang-dev clang gcc-riscv64-unknown-elf \
             pkg-config libssl-dev
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: minimal-ixe
       - name: Install Zisk toolchain (ziskup, pinned v0.18.0)
