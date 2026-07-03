@@ -69,7 +69,7 @@ Array.binSearch,initStd,heavy,1
 Array.qsortOrd,initStd,heavy
 String.split,initStd,heavy,0,1
 Std.Time.Week.Offset.ofMilliseconds,initStd,heavy
-Vector.extract_append._proof_1,initStd,heavy,1,1
+Vector.extract_append._proof_2,initStd,heavy,1,1
 ByteArray.utf8DecodeChar?_utf8EncodeChar_append,initStd,heavy,0,1
 String.append,initStd,cheap,0,1
 _private.Init.Data.Range.Polymorphic.SInt.0.Int8.instRxcHasSize_eq,initStd,heavy,0,1
@@ -77,8 +77,7 @@ _private.Init.Data.Range.Polymorphic.SInt.0.Int16.instRxcHasSize_eq,initStd,heav
 _private.Init.Data.Range.Polymorphic.SInt.0.Int32.instRxcHasSize_eq,initStd,heavy,0,1
 _private.Init.Data.Range.Polymorphic.SInt.0.Int64.instRxcHasSize_eq,initStd,heavy,0,1
 Char.ofOrdinal_le_of_le,initStd,heavy,0,1
-Array.extract_append._proof_1_1,initStd,heavy,0,1
-IxVMPrim.nat_pow_big,initStd,heavy,0,1
+Array.extract_append,initStd,heavy,0,1
 Std.Tactic.BVDecide.BVExpr.bitblast.goCache_Inv_of_Inv._mutual,initStd,heavy,0,1
 Lean.Expr.replace,lean,cheap
 List.Sorted,mathlib,cheap

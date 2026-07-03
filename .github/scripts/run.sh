@@ -88,6 +88,22 @@ mark_oom() {  # <results.json> <name>
   fi
 }
 
+# A prove can die of memory three ways: the watchdog's group-kill (marker
+# file), the kernel OOM killer (SIGKILL → exit 137, no marker), or an
+# ALLOCATION-FAILURE ABORT — one huge trace allocation fails while total RSS
+# is still under the watchdog ceiling, and the Rust/Lean runtime aborts
+# (SIGABRT → exit 134) with an allocator message in the log. All three are
+# OOM for the benchmark table.
+looks_like_oom() {  # <exit> <marker> <log>
+  local code="$1" marker="$2" log="$3"
+  [ -f "$marker" ] && return 0
+  [ "$code" -eq 137 ] && return 0
+  [ "$code" -eq 134 ] && grep -qiE \
+    'memory allocation of .* failed|std::bad_alloc|out of memory|(unable|failed) to allocate' \
+    "$log" 2>/dev/null && return 0
+  return 1
+}
+
 # `$benv` is used verbatim for the `.ixe` filename (bench-pr compiles `initStd.ixe`;
 # the bencher jobs reuse the compile job's cached `InitStd.ixe`), and lowercased
 # only to pick the Compile module. `$benv_cc` is the CamelCase form — the
@@ -168,13 +184,12 @@ case "$backend" in
         wait "$bt_pid" 2>/dev/null; bt_exit=$?
         kill "$w_pid" 2>/dev/null || true
         wait "$w_pid" 2>/dev/null || true
-        # Exit 137 (SIGKILL) without our marker = the kernel OOM killer beat
-        # the 3 s sampling window — still an OOM, label it as one.
-        if [ -f "$oom" ] || [ "$bt_exit" -eq 137 ]; then
-          echo "::warning::aiur prove '$c' OOM-killed (marker=$([ -f "$oom" ] && echo watchdog || echo kernel), ceiling ${ceiling_gb} GB)" >&2
+        if looks_like_oom "$bt_exit" "$oom" "$tmp/$slug.log"; then
+          echo "::warning::aiur prove '$c' OOM (exit $bt_exit, marker=$([ -f "$oom" ] && echo watchdog || echo runtime), ceiling ${ceiling_gb} GB)" >&2
           mark_oom "$res" "$c"
         elif [ "$bt_exit" -ne 0 ]; then
           echo "::warning::aiur prove '$c' failed (exit $bt_exit); dropping" >&2
+          sed -n '1,5p' "$tmp/$slug.log" >&2 || true
           continue
         fi
       fi
@@ -209,6 +224,18 @@ case "$backend" in
     # in-session as root; the host children inherit it. Without this the ASM
     # services die with `mmap(rom) errno=11`. SP1 needs no such raise.
     [ "$backend" = zisk ] && sudo prlimit --pid $$ --memlock=unlimited:unlimited
+    # A group-killed Zisk run skips the host's Drop-time cleanup of its
+    # /dev/shm/ZISK_* segments and semaphores (multi-GB — the MT output segment
+    # alone starts at 6 GB), so the NEXT host launch fails creating its own
+    # segments (tmpfs / MAP_LOCKED exhaustion) before Zisk's startup stale-pid
+    # sweep can save it — one dropped constant per watchdog kill. Sweep the
+    # dead run's debris ourselves; nothing zisk-related is alive at call time.
+    zisk_shm_sweep() {
+      [ "$backend" = zisk ] || return 0
+      pkill -KILL -f -- '--shm_prefix ZISK_' 2>/dev/null
+      rm -f /dev/shm/ZISK_* /dev/shm/sem.ZISK_* 2>/dev/null
+      return 0
+    }
     ceiling_gb=${ZKVM_EXECUTE_MAX_RSS_GB:-120}
     rows="$tmp/rows"; mkdir -p "$rows"
     while IFS= read -r c; do
@@ -235,11 +262,13 @@ case "$backend" in
       wait "$zk_pid" 2>/dev/null; zk_exit=$?
       kill "$w_pid" 2>/dev/null || true
       wait "$w_pid" 2>/dev/null || true
-      if [ -f "$oom" ] || [ "$zk_exit" -eq 137 ]; then
-        echo "::warning::$backend execute '$c' OOM-killed (marker=$([ -f "$oom" ] && echo watchdog || echo kernel), ceiling ${ceiling_gb} GB)" >&2
+      [ "$zk_exit" -ne 0 ] && zisk_shm_sweep
+      if looks_like_oom "$zk_exit" "$oom" "$log"; then
+        echo "::warning::$backend execute '$c' OOM (exit $zk_exit, marker=$([ -f "$oom" ] && echo watchdog || echo runtime), ceiling ${ceiling_gb} GB)" >&2
         mark_oom "$res" "$c"
       elif [ "$zk_exit" -ne 0 ]; then
         echo "::warning::$backend execute '$c' failed/timed out (exit $zk_exit); dropping" >&2
+        sed -n '1,5p' "$log" >&2 || true
         continue
       fi
       # The host writes $res only on a clean (zero-failure) run. `$out` is
