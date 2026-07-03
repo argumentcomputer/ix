@@ -132,8 +132,9 @@ re-enable, uncomment sp1 in two places: the zkvm-execute matrix cell in
 The zisk job additionally executes the **whole env** as its shard-manifest
 partition, merging one env-keyed row (`InitStd` / `Mathlib`): total
 `cycles`, `shards`, `max-shard-cycles`, `execute-time`, `throughput`
-(cycles/s), `execute-peak-rss`, plus the per-shard breakdown uploaded as
-`shard-cycles:<k>` measures. This is also how the constants that OOM as
+(cycles/s), `execute-peak-rss` (max over the per-shard windows), plus the
+per-shard breakdown uploaded as `shard-cycles:<k>` / `shard-time:<k>` /
+`shard-peak-rss:<k>` measures. This is also how the constants that OOM as
 single full-closure leaves get measured at all — under env sharding each
 check fits in one shard, with deps checked in other shards.
 
@@ -161,11 +162,12 @@ Threshold semantics per measure kind:
   Phase 1/2 boundary; the zkVM hosts' execute peak carries the same name);
   bare `peak-rss` is a prove-phase (or, for ooc, whole-check) peak.
 - **`throughput`** — higher-is-better: `upper _`, `lower 0.05–0.10`.
-- **`phase:<span>`, `shard-cycles:<k>`** — uploaded for trend visibility,
-  intentionally left un-thresholded (dynamic names; a re-partition renames
-  the shard keys). The thresholded aggregates (`shards`, `max-shard-cycles`,
-  total `cycles`) do the alerting; the PR-comment drill-down is where
-  per-phase / per-shard attention goes when that view lands.
+- **`phase:<span>`, `shard-{cycles,time,peak-rss}:<k>`** — uploaded for
+  trend visibility, intentionally left un-thresholded (dynamic names; a
+  re-partition renames the shard keys). The thresholded aggregates
+  (`shards`, `max-shard-cycles`, total `cycles`) do the alerting; the
+  PR-comment drill-down is where per-phase / per-shard attention goes when
+  that view lands.
 
 All thresholds are windowed to the per-workload
 `bencher-thresholds-reset-<workload>` tag.

@@ -1335,25 +1335,44 @@ async fn run_shard_plan(
     let mut total_steps = 0u64;
     let mut total_failures = 0u32;
     let mut max_shard_cycles = 0u64;
+    let mut max_shard_peak: Option<u64> = None;
     let mut shard_cycles = serde_json::Map::new();
+    let mut shard_time = serde_json::Map::new();
+    let mut shard_peak_rss = serde_json::Map::new();
     for &(idx, g) in &novel {
       let (check_list, sub_env, _cover) = build_inputs(g)?;
       let stdin = leaf_stdin(0, 0, &sub_env, &check_list);
+      // Windowed RAM high-water: reset before each shard so the per-shard
+      // peaks are independent; the env row's execute-peak-rss is their max.
+      tracing_texray::rss_sampler::reset_peak_tree_rss();
       let result = client.execute(&SHARD_PROGRAM, stdin).run()?.await?;
       let mut buf = [0u8; SHARD_PUBLICS_LEN];
       result.get_public_values_slice(&mut buf);
       let publics = ShardPublics::decode(&buf);
       let cycles = result.get_execution_steps();
+      let exec_secs = result.get_execution_time() as f64 / 1000.0;
+      let peak = peak_rss_bytes();
       total_steps += cycles;
       max_shard_cycles = max_shard_cycles.max(cycles);
+      max_shard_peak = max_shard_peak.max(peak);
       // 1-based zero-padded keys: matches --only-shard's numbering and keeps
-      // the flattened bencher measure list (`shard-cycles:<k>`) sorted.
-      shard_cycles.insert(format!("{:02}", idx + 1), serde_json::json!(cycles));
+      // the flattened bencher measure list (`shard-cycles:<k>`, …) sorted.
+      let key = format!("{:02}", idx + 1);
+      shard_cycles.insert(key.clone(), serde_json::json!(cycles));
+      shard_time.insert(key.clone(), serde_json::json!(exec_secs));
+      if let Some(p) = peak {
+        shard_peak_rss.insert(key, serde_json::json!(p));
+      }
       total_failures = total_failures.saturating_add(publics.failures);
       println!(
-        "  [shard {idx}] {} work items, failures={}, cycles={cycles}",
+        "  [shard {idx}] {} work items, failures={}, cycles={cycles}, \
+         {exec_secs:.1}s, peak {}",
         g.len(),
         publics.failures,
+        peak.map_or("?".to_string(), |p| format!(
+          "{:.2} GiB",
+          p as f64 / (1 << 30) as f64
+        )),
       );
     }
     let execute_secs = t0.elapsed().as_secs_f64();
@@ -1383,8 +1402,12 @@ async fn run_shard_plan(
           "max-shard-cycles": max_shard_cycles,
           "execute-time": (execute_secs * 1e6).round() / 1e6,
           "throughput": tput.round(),
-          "execute-peak-rss": peak_rss_bytes(),
+          // Max over the per-shard windows == the run's execution-phase
+          // high-water (setup RAM excluded by the resets above).
+          "execute-peak-rss": max_shard_peak,
           "shard-cycles": shard_cycles,
+          "shard-time": shard_time,
+          "shard-peak-rss": shard_peak_rss,
         }),
       )?;
     }
