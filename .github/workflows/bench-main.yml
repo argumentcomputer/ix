@@ -276,7 +276,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        backend: [zisk, sp1]
+        # backend: [zisk, sp1] — sp1 disabled for now: its execute run is too
+        # slow for a per-push job. Re-add to the list to re-enable.
+        backend: [zisk]
         bench: [InitStd, Mathlib]
     steps:
       - uses: actions/checkout@v6

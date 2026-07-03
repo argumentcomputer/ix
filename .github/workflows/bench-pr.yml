@@ -2,6 +2,8 @@
 # through chosen prover backend(s) and post a main-vs-PR comparison table.
 #
 #   !benchmark ([aiur] [zisk] [sp1] [ooc] [compile] | all) [execute]
+#     (sp1 is temporarily disabled: its install step below is commented out,
+#      so an sp1 cell fails at the install-less execute step)
 #   BENCH_ENVS=initStd,mathlib     # which compiled envs (default initStd)
 #   BENCH_FULL=1                   # run the full curated set, not just primary
 #   BENCH_TIER=cheap|heavy|all     # tier override (default: all)
@@ -210,9 +212,11 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           cache-workspaces: ${{ matrix.cell.backend }}
-      - name: Install SP1
-        if: matrix.cell.backend == 'sp1'
-        uses: ./.github/actions/install-sp1
+      # sp1 is temporarily disabled (execute too slow for CI); uncomment to
+      # re-enable, along with bench-main.yml's sp1 matrix cell.
+      # - name: Install SP1
+      #   if: matrix.cell.backend == 'sp1'
+      #   uses: ./.github/actions/install-sp1
       - name: Install Zisk
         if: matrix.cell.backend == 'zisk'
         uses: ./.github/actions/install-zisk

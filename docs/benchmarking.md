@@ -124,6 +124,11 @@ own testbed + **workload** (`aiur-check`, `zisk-check`, `sp1-check`,
 `<backend>-check-x64-32x`; the compile job uses `ix-compile-x64-32x`. Every
 bench job runs on the same runner (`warp-ubuntu-latest-x64-32x`).
 
+sp1 benchmarks are temporarily disabled (its execute run is too slow for
+CI); the host still builds + unit-tests on every PR via ci.yml. To
+re-enable, uncomment sp1 in two places: the zkvm-execute matrix cell in
+`bench-main.yml` and the Install SP1 step in `bench-pr.yml`.
+
 Threshold semantics per measure kind:
 - **`constants`** — pinned exactly (0/0). A definitional count; either
   direction is worth flagging (someone added/removed a def).
