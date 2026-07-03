@@ -102,6 +102,11 @@ structure Result where
   constants : Nat
   fftCost : Float
   executeSec : Float
+  /-- The kernel REJECTED the constant (Phase-1 check error). The JSON entry
+      is the bare `{"failed": true}` sentinel — a rejected constant is a
+      correctness signal, not a benchmark datum — and Phase 2 skips it.
+      bench.py compare renders a ❌ row plus a loud note. -/
+  failed : Bool := false
   proveSec : Option Float := none
   /-- Serialized proof size in bytes (`Aiur.Proof.toBytes`). Tracked because
       prover changes can trade speed against proof size. -/
@@ -134,6 +139,7 @@ def jsonRound (d : Nat) (f : Float) : Json :=
 /-- Neutral, flat results object: `name → { constants, fft-cost, execute-time,
     prove-time?, throughput? }`. No bencher-specific shaping. -/
 def Result.toJsonEntry (r : Result) : String × Json :=
+  if r.failed then (r.name, Json.mkObj [("failed", Json.bool true)]) else
   let base : List (String × Json) :=
     [ ("constants", Lean.toJson r.constants)
     , ("fft-cost", jsonRound 0 r.fftCost)
@@ -246,7 +252,11 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
         else
           compiled.bytecode.checkAddrWithEnv funIdx envHandle addr.hash
       match res with
-      | .error e => IO.eprintln s!"  execute {label} failed: {e}"
+      | .error e =>
+        IO.eprintln s!"  ❌ {label} FAILED TO TYPECHECK: {e}"
+        execed := execed.push
+          ({ name := label, constants := 0, fftCost := 0, executeSec := 0,
+             failed := true }, addr)
       | .ok (_, _, queryCounts) =>
         let stats := Aiur.computeStats compiled queryCounts
         let constants := (IxVM.ClaimHarness.closureFrom ixonEnv addr).size
@@ -289,6 +299,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
   let mut spent : Float := 0.0
   for i in [:ordered.size] do
     let (r, addr) := ordered[i]!
+    if r.failed then continue
     try
       let (proveRes, proveSec) ← timed fun _ =>
         if skipDeps then

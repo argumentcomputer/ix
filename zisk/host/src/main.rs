@@ -232,6 +232,23 @@ fn peak_rss_bytes() -> Option<u64> {
   }
 }
 
+/// Fail FAST on a guest typecheck failure: a rejected constant rejects the
+/// whole workload, so bail before spending cycles (or proofs) on the
+/// remaining shards — mirroring the OOM kill, which also cancels the rest.
+/// Callers write no `--json` row for a rejected workload; the CI harness
+/// keys off this message ("kernel typecheck produced") to record the
+/// `failed` sentinel.
+fn reject_failures(publics: &ShardPublics, ctx: &str) -> Result<()> {
+  if publics.failures > 0 {
+    bail!(
+      "kernel typecheck produced {} failure(s) in {ctx}; \
+       aborting remaining shards",
+      publics.failures
+    );
+  }
+  Ok(())
+}
+
 /// Append the per-constant entry `{ "<name>": <metrics> }` to the neutral
 /// results JSON at `path`. If the file exists, its object is loaded and the new
 /// key is merged in (overwriting on collision), so a multi-const run
@@ -1333,7 +1350,6 @@ async fn run_shard_plan(
   if args.execute {
     let t0 = Instant::now();
     let mut total_steps = 0u64;
-    let mut total_failures = 0u32;
     let mut max_shard_cycles = 0u64;
     let mut max_shard_peak: Option<u64> = None;
     let mut shard_cycles = serde_json::Map::new();
@@ -1363,7 +1379,6 @@ async fn run_shard_plan(
       if let Some(p) = peak {
         shard_peak_rss.insert(key, serde_json::json!(p));
       }
-      total_failures = total_failures.saturating_add(publics.failures);
       println!(
         "  [shard {idx}] {} work items, failures={}, cycles={cycles}, \
          {exec_secs:.1}s, peak {}",
@@ -1374,13 +1389,11 @@ async fn run_shard_plan(
           p as f64 / (1 << 30) as f64
         )),
       );
+      reject_failures(&publics, &format!("shard {idx}"))?;
     }
     let execute_secs = t0.elapsed().as_secs_f64();
     tracing_texray::json_sink::record_manual("zisk/execute", execute_secs);
-    println!("total cycles: {total_steps}, failures: {total_failures}");
-    if total_failures > 0 {
-      bail!("kernel typecheck produced {total_failures} failure(s)");
-    }
+    println!("total cycles: {total_steps}, failures: 0");
     if let Some(path) = &args.json {
       let name = args.json_name.clone().unwrap_or_else(|| {
         manifest_path
@@ -1455,6 +1468,7 @@ async fn run_shard_plan(
       leaf_ms as f64 / 1000.0,
       result.get_execution_steps(),
     );
+    reject_failures(&publics, &format!("shard {idx}"))?;
     // Bind each leaf: its committed subject must equal the env-derived merkle
     // root over the constants it certified. A guest that proved a different set
     // than the manifest assigned would commit a different root and fail here.
@@ -1915,7 +1929,6 @@ async fn main() -> Result<()> {
   if args.execute {
     let mut total_steps: u64 = 0;
     let mut total_exec_ms: u64 = 0;
-    let mut total_failures: u32 = 0;
     for plan in &plans {
       let num_shards = plan.shards.len();
       for (i, &(start, end)) in plan.shards.iter().enumerate() {
@@ -1927,19 +1940,22 @@ async fn main() -> Result<()> {
         let cycles = result.get_execution_steps();
         total_steps += cycles;
         total_exec_ms += result.get_execution_time();
-        total_failures = total_failures.saturating_add(publics.failures);
         println!(
           "  [{} shard {}/{num_shards}] range [{start}, {end}), failures={}, cycles={cycles}",
           plan.label,
           i + 1,
           publics.failures,
         );
+        reject_failures(
+          &publics,
+          &format!("{} shard {}/{num_shards}", plan.label, i + 1),
+        )?;
       }
     }
     let total_exec = Duration::from_millis(total_exec_ms);
     let throughput =
       grand_target_count as f64 / total_exec.as_secs_f64().max(f64::EPSILON);
-    println!("failures: {total_failures}");
+    println!("failures: 0");
     println!("cycles: {total_steps}");
     println!("inputs: {}", plans.len());
     println!("work items: {grand_total_items}");
@@ -1949,9 +1965,6 @@ async fn main() -> Result<()> {
       total_exec.as_secs_f64(),
       throughput.human_throughput("consts"),
     );
-    if total_failures > 0 {
-      bail!("kernel typecheck produced {total_failures} failure(s)");
-    }
     return Ok(());
   }
 
@@ -2004,6 +2017,10 @@ async fn main() -> Result<()> {
         (leaf_ms as f64) / 1000.0,
         result.get_execution_steps(),
       );
+      reject_failures(
+        &publics,
+        &format!("{} leaf {}/{num_shards}", plan.label, i + 1),
+      )?;
       leaf_proof_bytes.push(result.get_proof_bytes()?);
       input_publics.push(publics);
       last_leaf_result = Some(result);

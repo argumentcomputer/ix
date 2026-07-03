@@ -406,18 +406,32 @@ def cmd_compare(a):
     def _oom(d, n):
         return isinstance(d.get(n), dict) and d[n].get("oom") is True
 
+    def _failed(d, n):
+        return isinstance(d.get(n), dict) and d[n].get("failed") is True
+
     regressed, improved = set(), set()
+    failures = []  # (name, side) — typecheck failures, surfaced loudly below
     worst = None  # (badness, dp, name, metric)
     for n in names:
         cells = [f"`{n}`"]
         main_oom, pr_oom = _oom(main_d, n), _oom(pr_d, n)
+        main_failed, pr_failed = _failed(main_d, n), _failed(pr_d, n)
+        if main_failed:
+            failures.append((n, "main"))
+        if pr_failed:
+            failures.append((n, "PR"))
         for m in metrics:
             mv, pv = _num(main_d, n, m), _num(pr_d, n, m)
             # An OOM entry may still carry real Phase-1 measurements (run.sh
             # merges the sentinel into whatever was recorded before the kill);
             # render those, and OOM only for the metrics the kill prevented.
-            mv_h = "OOM" if (main_oom and mv is None) else _human(mv, m)
-            pv_h = "OOM" if (pr_oom and pv is None) else _human(pv, m)
+            # A typecheck FAILURE outranks everything — the constant is
+            # rejected, not benchmarked. Spell it out in the cell: a bare ❌
+            # would read as any generic failure.
+            mv_h = ("❌ failed typecheck" if main_failed
+                    else "OOM" if (main_oom and mv is None) else _human(mv, m))
+            pv_h = ("❌ failed typecheck" if pr_failed
+                    else "OOM" if (pr_oom and pv is None) else _human(pv, m))
             dp = _delta(mv, pv)
             bad = _badness(dp, m)
             cell = "n/a" if dp is None else f"{dp:+.1f}%"
@@ -438,6 +452,13 @@ def cmd_compare(a):
         rows.append("| " + " | ".join(cells) + " |")
 
     out = ([title, ""] if title else []) + rows + [""]
+    # Typecheck failures first and loud — a constant the kernel REJECTS is a
+    # correctness signal, not a benchmark blip.
+    for n, side in failures:
+        out.append(f"❌ **`{n}` FAILED TO TYPECHECK on the {side} side** — "
+                   "the kernel rejected it; see the workflow logs.")
+    if failures:
+        out.append("")
     s = (f"_{len(names)} constants · {len(regressed)} regressed · "
          f"{len(improved)} improved (|Δ| > {a.threshold:g}% on any metric)._")
     if worst and worst[0] is not None and worst[0] > a.threshold:
@@ -483,7 +504,7 @@ def cmd_bmf(a):
             continue
         measures = {}
         for k, v in entry.items():
-            if k == "oom":
+            if k in ("oom", "failed"):
                 continue
             # Nested objects are per-sub-measure breakdowns: `phases` (span →
             # seconds) flattens to `phase:<span>`; anything else (e.g. the

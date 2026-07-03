@@ -30,6 +30,15 @@ every ~3 s and `SIGKILL`s the tree if it exceeds `AIUR_PROVE_MAX_RSS_GB`
 constant records the neutral `{"oom": true}` sentinel and `bench.py compare`
 renders `OOM` cells (with `n/a` Δ%) in the table for that row.
 
+A **typecheck failure** is a correctness regression, not a benchmark blip,
+and surfaces loudly everywhere: the tool fails fast (a zisk shard failure
+aborts the constant's remaining shards, like an OOM kill), the constant
+records the `{"failed": true}` sentinel instead of numbers, `compare`
+renders ❌ cells plus a bold "FAILED TO TYPECHECK" note under the table,
+the failing rows never reach bencher, and the workflow job exits nonzero —
+after the clean rows have been uploaded (bench-main) or the table posted
+(bench-pr) — so the red X lands on the commit/PR.
+
 The `ooc` backend reports two views: the **whole env** (`ix check-rs --anon`,
 keyed by env) and a **per-primary full-closure check** (`ix check-rs --anon
 --consts <name>`, keyed by constant). The per-primary view runs the constant's

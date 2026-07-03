@@ -218,7 +218,7 @@ case "$backend" in
           mark_oom "$res" "$c"
         elif [ "$bt_exit" -ne 0 ]; then
           echo "::warning::aiur prove '$c' failed (exit $bt_exit); dropping" >&2
-          sed -n '1,5p' "$tmp/$slug.log" >&2 || true
+          { sed -n '1,5p' "$tmp/$slug.log"; echo "  …"; tail -n 3 "$tmp/$slug.log"; } >&2 || true
           continue
         fi
       fi
@@ -295,9 +295,17 @@ case "$backend" in
       if looks_like_oom "$zk_exit" "$oom" "$log"; then
         echo "::warning::$backend execute '$key' OOM (exit $zk_exit, marker=$([ -f "$oom" ] && echo watchdog || echo runtime), ceiling ${ceiling_gb} GB)" >&2
         mark_oom "$res" "$key"
+      elif [ "$zk_exit" -ne 0 ] && grep -q 'kernel typecheck produced' "$log" 2>/dev/null; then
+        # The kernel REJECTED the constant (the host fails fast and aborts
+        # any remaining shards). Record the `failed` sentinel — compare
+        # renders a ❌ row + loud note, and the workflow fails at the end.
+        echo "::error::$backend: '$key' FAILED TO TYPECHECK — kernel rejected it" >&2
+        tail -n 3 "$log" >&2 || true
+        jq -n --arg n "$key" '{($n): {failed: true}}' > "$res"
       elif [ "$zk_exit" -ne 0 ]; then
         echo "::warning::$backend execute '$key' failed/timed out (exit $zk_exit); dropping" >&2
-        sed -n '1,5p' "$log" >&2 || true
+        # Head for early failures (name resolution), tail for late ones.
+        { sed -n '1,5p' "$log"; echo "  …"; tail -n 3 "$log"; } >&2 || true
         return 0
       fi
       merge_phases "$res" "$spans"
@@ -361,8 +369,13 @@ case "$backend" in
       line=$(grep '^##check##' "$log" | tail -1)
       ems=$(echo "$line" | awk '{print $2}'); fl=$(echo "$line" | awk '{print $4}')
       tot=$(echo "$line" | awk '{print $5}'); rss=$(echo "$line" | awk '{print $6}')
-      { [ -n "${tot:-}" ] && [ "${fl:-1}" = 0 ]; } \
-        || { echo "::warning::ooc '$label': bad ##check## / failures; dropping" >&2; return; }
+      if [ -n "${fl:-}" ] && [ "$fl" != 0 ]; then
+        echo "::error::ooc: '$label' FAILED TO TYPECHECK — kernel rejected $fl item(s)" >&2
+        jq -n --arg n "$label" '{($n): {failed: true}}'
+        return
+      fi
+      [ -n "${tot:-}" ] \
+        || { echo "::warning::ooc '$label': bad ##check## line; dropping" >&2; return; }
       local cs tp
       cs=$(awk -v e="$ems" 'BEGIN{printf "%.3f", e/1000}')
       tp=$(awk -v t="$tot" -v e="$ems" 'BEGIN{ if (e>0) printf "%.2f", t*1000/e; else print 0 }')

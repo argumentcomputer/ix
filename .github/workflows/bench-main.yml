@@ -293,6 +293,17 @@ jobs:
             --threshold-measure throughput --threshold-test percentage
             --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary _
             --threshold-lower-boundary 0.10
+      # A typecheck failure is a correctness regression, not a benchmark blip.
+      # The failing constants never reach bencher (bmf strips the sentinel and
+      # drops the empty entry) and the clean rows are uploaded above — now
+      # fail the job LOUDLY so the red X lands on the commit.
+      - name: Fail on typecheck failures
+        run: |
+          failed=$(jq -r 'to_entries[] | select(.value.failed == true) | .key' neutral.json)
+          if [ -n "$failed" ]; then
+            for c in $failed; do echo "::error::$c FAILED TO TYPECHECK"; done
+            exit 1
+          fi
 
   # Execute the same constants through the Zisk and SP1 zkVM hosts and track
   # cycles / execute-time / throughput / execute-peak-rss (and shards / max-shard-cycles
@@ -389,6 +400,14 @@ jobs:
             --threshold-measure throughput --threshold-test percentage
             --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary _
             --threshold-lower-boundary 0.10
+      # See the prove job's twin step: reject → red X, after the clean upload.
+      - name: Fail on typecheck failures
+        run: |
+          failed=$(jq -r 'to_entries[] | select(.value.failed == true) | .key' neutral.json)
+          if [ -n "$failed" ]; then
+            for c in $failed; do echo "::error::$c FAILED TO TYPECHECK"; done
+            exit 1
+          fi
 
   # Out-of-circuit Rust kernel typecheck — the same kernel as the zkVM guest, but
   # run out-of-circuit and in parallel (`--workers` defaults to the core count),
@@ -468,3 +487,11 @@ jobs:
             --threshold-measure peak-rss --threshold-test percentage
             --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.10
             --threshold-lower-boundary _
+      # See the prove job's twin step: reject → red X, after the clean upload.
+      - name: Fail on typecheck failures
+        run: |
+          failed=$(jq -r 'to_entries[] | select(.value.failed == true) | .key' neutral.json)
+          if [ -n "$failed" ]; then
+            for c in $failed; do echo "::error::$c FAILED TO TYPECHECK"; done
+            exit 1
+          fi

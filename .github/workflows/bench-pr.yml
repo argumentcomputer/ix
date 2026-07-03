@@ -404,6 +404,16 @@ jobs:
           name: table-${{ env.LABEL }}
           path: out/table-${{ env.LABEL }}.md
           if-no-files-found: warn
+      # A PR-side typecheck failure is a correctness regression: fail the
+      # cell LOUDLY (red X on the PR) — after the table upload, so the
+      # comment still posts with the constant's ❌ row and note.
+      - name: Fail on PR-side typecheck failures
+        run: |
+          failed=$(jq -r 'to_entries[] | select(.value.failed == true) | .key' "$GITHUB_WORKSPACE/pr.json")
+          if [ -n "$failed" ]; then
+            for c in $failed; do echo "::error::$c FAILED TO TYPECHECK on the PR side"; done
+            exit 1
+          fi
 
   comment:
     needs: [setup, benchmark]
