@@ -130,15 +130,23 @@ re-enable, uncomment sp1 in two places: the zkvm-execute matrix cell in
 `bench-main.yml` and the Install SP1 step in `bench-pr.yml`.
 
 The zisk job additionally executes the **whole env** as its shard-manifest
-partition. The compile job runs `ix profile <Env>.ixe` → `ix shard --max-ram
-120` after the compile benchmark and caches the `.ixes` manifest next to the
-`.ixe`; run.sh's zisk branch picks it up (skipped when absent, e.g. on the
-`!benchmark` PR path) and merges one env-keyed row (`InitStd` / `Mathlib`):
-total `cycles`, `shards`, `max-shard-cycles`, `execute-time`, `throughput`
+partition, merging one env-keyed row (`InitStd` / `Mathlib`): total
+`cycles`, `shards`, `max-shard-cycles`, `execute-time`, `throughput`
 (cycles/s), `execute-peak-rss`, plus the per-shard breakdown uploaded as
 `shard-cycles:<k>` measures. This is also how the constants that OOM as
 single full-closure leaves get measured at all — under env sharding each
 check fits in one shard, with deps checked in other shards.
+
+The manifest (`ix profile <Env>.ixe` → `ix shard --max-ram 120` →
+`<Env>.ixes`) is cut once per tree: bench-main's compile job generates it
+after the compile benchmark and caches it next to the `.ixe`; on the
+`!benchmark` PR path, run.sh cuts it in-place with the side's own `ix`
+(cached per head SHA) — each side partitions its **own** tree, because a PR
+can change the cost profile, and the profiler counts heartbeats rather than
+wall time so an unchanged tree re-partitions deterministically. The base
+fallback reuses bench-main's cached manifest and only pays the env-sharded
+run on a full bencher miss (a partial miss means bencher already holds
+main's env row; `ZISK_ENV_SHARD=0`).
 
 Threshold semantics per measure kind:
 - **`constants`** — pinned exactly (0/0). A definitional count; either

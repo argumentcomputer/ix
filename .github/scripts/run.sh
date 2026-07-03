@@ -285,15 +285,35 @@ case "$backend" in
       [ -z "$c" ] && continue
       zkvm_run "${ZKVM_EXECUTE_TIMEOUT:-25m}" "$c" --consts "$c"
     done < "$names"
-    # Env-sharded execute (zisk only): when the compile job published a shard
-    # manifest next to the `.ixe` (ix profile → ix shard), execute the WHOLE
-    # env as its manifest shards and merge one env-keyed row — totals plus a
-    # per-shard `shard-cycles` breakdown — alongside the per-constant rows.
-    # Absent manifest (e.g. the !benchmark PR path) → skipped.
+    # Env-sharded execute (zisk only): execute the WHOLE env as its manifest
+    # shards and merge one env-keyed row — totals plus a per-shard
+    # `shard-cycles` breakdown — alongside the per-constant rows. The
+    # manifest comes from bench-main's compile-job cache when it was restored
+    # next to the `.ixe`; otherwise (the !benchmark PR side, a cold base
+    # fallback) it is cut fresh HERE — each side profiles its own tree, since
+    # a PR can change the cost profile, and the profiler counts heartbeats
+    # (not wall time) so an unchanged tree re-partitions deterministically.
+    # ZISK_ENV_SHARD=0 skips the whole run (the partial base fallback, where
+    # bencher already holds main's env row).
     plan_ixes="${ixe%.ixe}.ixes"
-    if [ "$backend" = zisk ] && [ -f "$plan_ixes" ]; then
-      zkvm_run "${ZISK_ENV_EXECUTE_TIMEOUT:-60m}" "$benv_cc" \
-        --shard-plan "$plan_ixes" --json-name "$benv_cc"
+    if [ "$backend" = zisk ] && [ "${ZISK_ENV_SHARD:-1}" = 1 ]; then
+      if [ ! -f "$plan_ixes" ]; then
+        if ix_bin=$(resolve_bin ix 2>/dev/null); then
+          echo "::group::ix profile + shard → $plan_ixes"
+          "$ix_bin" profile "$ixe" --out "${ixe%.ixe}.ixprof" \
+            && "$ix_bin" shard "${ixe%.ixe}.ixprof" \
+                 --max-ram "${SHARD_MAX_RAM_GB:-120}" --out "$plan_ixes" \
+            || { echo "::warning::ix profile/shard failed; skipping env-sharded run" >&2
+                 rm -f "$plan_ixes"; }
+          echo "::endgroup::"
+        else
+          echo "::warning::no ix binary to cut $plan_ixes; skipping env-sharded run" >&2
+        fi
+      fi
+      if [ -f "$plan_ixes" ]; then
+        zkvm_run "${ZISK_ENV_EXECUTE_TIMEOUT:-60m}" "$benv_cc" \
+          --shard-plan "$plan_ixes" --json-name "$benv_cc"
+      fi
     fi
     emit_empty
     ;;

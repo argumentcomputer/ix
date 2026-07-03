@@ -131,7 +131,9 @@ jobs:
   benchmark:
     needs: [setup, build]
     runs-on: ${{ matrix.cell.runner }}
-    timeout-minutes: 120
+    # Wide enough for the zisk cell's worst case: per-constant loop + PR-side
+    # `ix profile` + the env-sharded execute (own 60m cap inside run.sh).
+    timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix:
@@ -207,6 +209,16 @@ jobs:
         with:
           path: ${{ matrix.cell.env }}.ixe
           key: bench-pr-ixe-${{ env.HEAD_SHA }}-${{ matrix.cell.env }}
+      # The PR's shard manifest (run.sh cuts it via ix profile → ix shard for
+      # the env-sharded zisk run — the PR side partitions its OWN tree). Cached
+      # separately from the `.ixe`: only zisk cells produce it.
+      - name: Restore PR shard manifest
+        if: matrix.cell.backend == 'zisk'
+        id: pr-ixes
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ matrix.cell.env }}.ixes
+          key: bench-pr-ixes-${{ env.HEAD_SHA }}-${{ matrix.cell.env }}
       # zkVM cells additionally need the Rust toolchain + the backend's toolchain
       # and system deps (the shared composite install actions).
       - name: Set up zkVM Rust toolchain
@@ -336,6 +348,9 @@ jobs:
         run: |
           if [ "${{ steps.base-ixe.outputs.cache-hit }}" = true ]; then
             mv "${{ steps.envcc.outputs.cc }}.ixe" "base/$BENV.ixe"
+            # bench-main's shard manifest rides the same cache entry; with it
+            # in place run.sh skips re-profiling the base tree.
+            mv "${{ steps.envcc.outputs.cc }}.ixes" "base/$BENV.ixes" 2>/dev/null || true
             export REUSE_IXE=1
           fi
           if [ "${{ steps.base-src.outputs.cached }}" = true ]; then
@@ -343,6 +358,10 @@ jobs:
           else
             export PATH="$PWD/base/.lake/build/bin:$PATH"
           fi
+          # The zisk env-sharded run is only worth paying on the FULL
+          # fallback — a partial miss means bencher already holds main's
+          # env-keyed row (it is never in missing.txt).
+          export ZISK_ENV_SHARD=$([ "${{ steps.bencher.outputs.base-names }}" = names.txt ] && echo 1 || echo 0)
           bash .github/scripts/run.sh base "$BENV" "$BACKEND" "$MODE" \
             "$GITHUB_WORKSPACE/${{ steps.bencher.outputs.base-names }}" \
             "$GITHUB_WORKSPACE/base.json"
@@ -375,6 +394,17 @@ jobs:
         with:
           path: ${{ matrix.cell.env }}.ixe
           key: bench-pr-ixe-${{ env.HEAD_SHA }}-${{ matrix.cell.env }}
+      # hashFiles guard: skip (instead of erroring) when profile/shard failed
+      # and run.sh dropped the env-sharded run.
+      - name: Save PR shard manifest
+        if: >-
+          matrix.cell.backend == 'zisk' &&
+          steps.pr-ixes.outputs.cache-hit != 'true' &&
+          hashFiles(format('{0}.ixes', matrix.cell.env)) != ''
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ matrix.cell.env }}.ixes
+          key: bench-pr-ixes-${{ env.HEAD_SHA }}-${{ matrix.cell.env }}
 
       # ---------- compare ----------
       - name: Build comparison table
