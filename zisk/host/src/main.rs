@@ -205,8 +205,16 @@ struct Args {
   skip_deps: bool,
 
   /// Write per-constant results JSON `{ "<name>": { … } }` (accumulated across names).
+  /// With `--shard-plan --execute` it instead gets one env-level row (totals +
+  /// per-shard cycles breakdown).
   #[arg(long)]
   json: Option<PathBuf>,
+
+  /// Benchmark key for the env-level row `--shard-plan --execute --json`
+  /// writes (e.g. the CamelCase env slug CI uses). Defaults to the manifest
+  /// file stem.
+  #[arg(long, requires = "shard_plan")]
+  json_name: Option<String>,
 
   /// Enable tracing-texray; with --json, per-phase spans are written to <json>.spans.
   #[arg(long)]
@@ -1318,10 +1326,16 @@ async fn run_shard_plan(
   }
 
   // ---- Execute mode: run each novel shard in the VM for cycles (no proof);
-  // store-covered shards have nothing to execute. ----
+  // store-covered shards have nothing to execute. With `--json`, one
+  // env-level row (keyed by `--json-name`, default the manifest stem)
+  // carries the totals plus a per-shard cycles breakdown under
+  // `shard-cycles` — the CI benchmark's per-shard tracking. ----
   if args.execute {
+    let t0 = Instant::now();
     let mut total_steps = 0u64;
     let mut total_failures = 0u32;
+    let mut max_shard_cycles = 0u64;
+    let mut shard_cycles = serde_json::Map::new();
     for &(idx, g) in &novel {
       let (check_list, sub_env, _cover) = build_inputs(g)?;
       let stdin = leaf_stdin(0, 0, &sub_env, &check_list);
@@ -1331,6 +1345,10 @@ async fn run_shard_plan(
       let publics = ShardPublics::decode(&buf);
       let cycles = result.get_execution_steps();
       total_steps += cycles;
+      max_shard_cycles = max_shard_cycles.max(cycles);
+      // 1-based zero-padded keys: matches --only-shard's numbering and keeps
+      // the flattened bencher measure list (`shard-cycles:<k>`) sorted.
+      shard_cycles.insert(format!("{:02}", idx + 1), serde_json::json!(cycles));
       total_failures = total_failures.saturating_add(publics.failures);
       println!(
         "  [shard {idx}] {} work items, failures={}, cycles={cycles}",
@@ -1338,9 +1356,37 @@ async fn run_shard_plan(
         publics.failures,
       );
     }
+    let execute_secs = t0.elapsed().as_secs_f64();
+    tracing_texray::json_sink::record_manual("zisk/execute", execute_secs);
     println!("total cycles: {total_steps}, failures: {total_failures}");
     if total_failures > 0 {
       bail!("kernel typecheck produced {total_failures} failure(s)");
+    }
+    if let Some(path) = &args.json {
+      let name = args.json_name.clone().unwrap_or_else(|| {
+        manifest_path
+          .file_stem()
+          .map(|s| s.to_string_lossy().into_owned())
+          .unwrap_or_else(|| "env".to_string())
+      });
+      let tput = if execute_secs > 0.0 {
+        total_steps as f64 / execute_secs
+      } else {
+        0.0
+      };
+      write_json_entry(
+        path,
+        &name,
+        serde_json::json!({
+          "cycles": total_steps,
+          "shards": novel.len(),
+          "max-shard-cycles": max_shard_cycles,
+          "execute-time": (execute_secs * 1e6).round() / 1e6,
+          "throughput": tput.round(),
+          "execute-peak-rss": peak_rss_bytes(),
+          "shard-cycles": shard_cycles,
+        }),
+      )?;
     }
     return Ok(());
   }
@@ -1738,8 +1784,10 @@ async fn main() -> Result<()> {
   if consts.is_empty() && args.skip_deps {
     bail!("--skip-deps requires constants via --consts or --consts-file");
   }
-  if consts.is_empty() && args.json.is_some() {
-    bail!("--json requires constants via --consts or --consts-file");
+  if consts.is_empty() && args.json.is_some() && args.shard_plan.is_none() {
+    bail!(
+      "--json requires constants via --consts/--consts-file, or --shard-plan"
+    );
   }
 
   // ---- Plan every input up front (parse + shard). ----

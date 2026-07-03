@@ -473,17 +473,21 @@ def cmd_bmf(a):
     for name, entry in (neutral or {}).items():
         if not isinstance(entry, dict):
             continue
-        phases = entry.get("phases")
-        phases = phases if isinstance(phases, dict) else {}
         measures = {}
         for k, v in entry.items():
-            if k in ("phases", "oom"):
+            if k == "oom":
                 continue
-            if isinstance(v, (int, float)) and not isinstance(v, bool):
+            # Nested objects are per-sub-measure breakdowns: `phases` (span →
+            # seconds) flattens to `phase:<span>`; anything else (e.g. the
+            # zisk env row's `shard-cycles`) to `<key>:<sub>`. Both stay
+            # un-thresholded on bencher (dynamic names).
+            if isinstance(v, dict):
+                prefix = "phase" if k == "phases" else k
+                for sub, sv in v.items():
+                    if isinstance(sv, (int, float)) and not isinstance(sv, bool):
+                        measures[f"{prefix}:{sub}"] = {"value": sv}
+            elif isinstance(v, (int, float)) and not isinstance(v, bool):
                 measures[k] = {"value": v}
-        for span, secs in phases.items():
-            if isinstance(secs, (int, float)) and not isinstance(secs, bool):
-                measures[f"phase:{span}"] = {"value": secs}
         if measures:
             out[name] = measures
     with open(a.out, "w") as f:

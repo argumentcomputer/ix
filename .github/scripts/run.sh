@@ -238,23 +238,23 @@ case "$backend" in
     }
     ceiling_gb=${ZKVM_EXECUTE_MAX_RSS_GB:-120}
     rows="$tmp/rows"; mkdir -p "$rows"
-    while IFS= read -r c; do
-      [ -z "$c" ] && continue
-      slug=$(printf '%s' "$c" | tr '/ .:' '____')
-      res="$tmp/$slug.json"; log="$tmp/$slug.log"; spans="$res.spans"; oom="$tmp/$slug.oom"
+    # One watchdog-guarded guest run, keyed `$key` in the results. Full
+    # closures are RAM-unbounded (the ASM microservices mmap multi-GB ROMs on
+    # top of the guest trace), so the same watchdog as the aiur prove path
+    # guards the runner. `exec setsid`: the subshell (whose pid is $!)
+    # replaces itself with the session leader, so the watchdog's group-kill
+    # (`kill -- -$!`) reaches the host and every descendant — without it a
+    # plain subshell wrapper's pgid would be run.sh's own. The host writes
+    # $res only on a clean (zero-failure) run; `$out` is re-merged per run so
+    # a job-level kill keeps completed rows.
+    zkvm_run() {  # <timeout> <key> <host args…>
+      local run_timeout="$1" key="$2"; shift 2
+      local slug; slug=$(printf '%s' "$key" | tr '/ .:' '____')
+      local res="$tmp/$slug.json" log="$tmp/$slug.log" oom="$tmp/$slug.oom"
+      local spans="$res.spans" zk_pid w_pid zk_exit
       rm -f "$oom"
-      # Full-closure check (no --skip-deps) so this is directly comparable to
-      # the ooc `ix check-rs --anon --consts` run — the delta then isolates the
-      # in-circuit-vs-out-of-circuit overhead rather than mixing in subject-
-      # only vs full-closure scope. Full closures are RAM-unbounded (the ASM
-      # microservices mmap multi-GB ROMs on top of the guest trace), so the
-      # same watchdog as the aiur prove path guards the runner.
-      # `exec setsid`: the subshell (whose pid is $!) replaces itself with the
-      # session leader, so the watchdog's group-kill (`kill -- -$!`) reaches
-      # the host and every descendant — without a plain subshell wrapper whose
-      # pgid would be run.sh's own.
-      ( cd "$work" && exec setsid timeout 25m "$bin" --execute --ixe "$ixe" \
-          --consts "$c" --json "$res" --texray ) \
+      ( cd "$work" && exec setsid timeout "$run_timeout" "$bin" --execute \
+          --ixe "$ixe" --json "$res" --texray "$@" ) \
         > "$log" 2>&1 &
       zk_pid=$!
       watch_ram_kill "$zk_pid" "$ceiling_gb" "$oom" &
@@ -264,21 +264,37 @@ case "$backend" in
       wait "$w_pid" 2>/dev/null || true
       [ "$zk_exit" -ne 0 ] && zisk_shm_sweep
       if looks_like_oom "$zk_exit" "$oom" "$log"; then
-        echo "::warning::$backend execute '$c' OOM (exit $zk_exit, marker=$([ -f "$oom" ] && echo watchdog || echo runtime), ceiling ${ceiling_gb} GB)" >&2
-        mark_oom "$res" "$c"
+        echo "::warning::$backend execute '$key' OOM (exit $zk_exit, marker=$([ -f "$oom" ] && echo watchdog || echo runtime), ceiling ${ceiling_gb} GB)" >&2
+        mark_oom "$res" "$key"
       elif [ "$zk_exit" -ne 0 ]; then
-        echo "::warning::$backend execute '$c' failed/timed out (exit $zk_exit); dropping" >&2
+        echo "::warning::$backend execute '$key' failed/timed out (exit $zk_exit); dropping" >&2
         sed -n '1,5p' "$log" >&2 || true
-        continue
+        return 0
       fi
-      # The host writes $res only on a clean (zero-failure) run. `$out` is
-      # re-merged per constant so a job-level kill keeps completed rows.
       merge_phases "$res" "$spans"
       if [ -s "$res" ]; then
         cp "$res" "$rows/$slug.json"
         jq -s 'reduce .[] as $o ({}; . + $o)' "$rows"/*.json > "$out" 2>/dev/null || true
       fi
+    }
+    # Full-closure check (no --skip-deps) so this is directly comparable to
+    # the ooc `ix check-rs --anon --consts` run — the delta then isolates the
+    # in-circuit-vs-out-of-circuit overhead rather than mixing in subject-
+    # only vs full-closure scope.
+    while IFS= read -r c; do
+      [ -z "$c" ] && continue
+      zkvm_run "${ZKVM_EXECUTE_TIMEOUT:-25m}" "$c" --consts "$c"
     done < "$names"
+    # Env-sharded execute (zisk only): when the compile job published a shard
+    # manifest next to the `.ixe` (ix profile → ix shard), execute the WHOLE
+    # env as its manifest shards and merge one env-keyed row — totals plus a
+    # per-shard `shard-cycles` breakdown — alongside the per-constant rows.
+    # Absent manifest (e.g. the !benchmark PR path) → skipped.
+    plan_ixes="${ixe%.ixe}.ixes"
+    if [ "$backend" = zisk ] && [ -f "$plan_ixes" ]; then
+      zkvm_run "${ZISK_ENV_EXECUTE_TIMEOUT:-60m}" "$benv_cc" \
+        --shard-plan "$plan_ixes" --json-name "$benv_cc"
+    fi
     emit_empty
     ;;
 

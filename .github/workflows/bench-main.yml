@@ -130,12 +130,28 @@ jobs:
           bash .github/scripts/run.sh . ${{ matrix.bench }} compile compile /dev/null neutral.json
           python3 .github/scripts/bench.py bmf --in neutral.json --out benchmark.json
           cat benchmark.json
-      # Cache the `.ixe` for the prove job (reused, never recompiled there).
-      # Only the matrix jobs the prove job consumes, to stay under the repo cache limit.
+      # Profile the env out of circuit and cut a shard manifest (`ix profile`
+      # → `ix shard`) for the zkvm-execute job's env-sharded run. Profiling is
+      # cache-isolated (sound heartbeats), so it costs a full un-memoized
+      # kernel pass — done once here, next to the freshly compiled `.ixe`,
+      # rather than in every consumer. --max-ram caps each shard's predicted
+      # prove RAM under the runner class's ceiling
+      # (docs/zisk-cycle-cost-model.md) — conservative for execute-only runs.
+      - if: matrix.bench == 'InitStd' || matrix.bench == 'Mathlib'
+        name: Profile + shard plan
+        run: |
+          ix profile ${{ matrix.bench }}.ixe --out ${{ matrix.bench }}.ixprof
+          ix shard ${{ matrix.bench }}.ixprof --max-ram 120 --out ${{ matrix.bench }}.ixes
+      # Cache the `.ixe` + shard manifest for the prove/zkvm jobs (reused,
+      # never regenerated there). Only the matrix jobs those consume, to stay
+      # under the repo cache limit. NB: every restore of this key must list
+      # the SAME paths — actions/cache versions the entry by its path list.
       - if: matrix.bench == 'InitStd' || matrix.bench == 'Mathlib'
         uses: actions/cache/save@v5
         with:
-          path: ${{ matrix.bench }}.ixe
+          path: |
+            ${{ matrix.bench }}.ixe
+            ${{ matrix.bench }}.ixes
           key: bench-ixe-${{ github.sha }}-${{ matrix.bench }}
       # Upload compile metrics. Every measure shares the per-workload baseline
       # window (data points since the ix-compile reset tag): file-size/constants
@@ -191,9 +207,12 @@ jobs:
           build: false
           use-github-cache: false
       # Pull the `.ixe` the compile job built — do NOT recompile it here.
+      # (The path list must match the compile job's save exactly.)
       - uses: actions/cache/restore@v5
         with:
-          path: ${{ matrix.bench }}.ixe
+          path: |
+            ${{ matrix.bench }}.ixe
+            ${{ matrix.bench }}.ixes
           key: bench-ixe-${{ github.sha }}-${{ matrix.bench }}
           fail-on-cache-miss: true
       # Run each constant in its own process so a clean failure or timeout drops
@@ -278,7 +297,11 @@ jobs:
   zkvm-execute:
     needs: compile
     runs-on: warp-ubuntu-latest-x64-32x
-    timeout-minutes: 60
+    # Per-constant loop (heavy primaries ride the RAM watchdog to OOM rows)
+    # plus the env-sharded whole-env run (its own 60m timeout in run.sh) —
+    # run.sh re-merges results incrementally, so even a job-level timeout
+    # would keep completed rows, but the bencher upload needs the job alive.
+    timeout-minutes: 150
     strategy:
       fail-fast: false
       matrix:
@@ -300,10 +323,14 @@ jobs:
       - name: Install SP1
         if: matrix.backend == 'sp1'
         uses: ./.github/actions/install-sp1
-      # Pull the `.ixe` the compile job built — no recompile (REUSE_IXE).
+      # Pull the `.ixe` + shard manifest the compile job built — no recompile
+      # (REUSE_IXE). run.sh's zisk branch adds the env-sharded execute row
+      # when the `.ixes` is present next to the `.ixe`.
       - uses: actions/cache/restore@v5
         with:
-          path: ${{ matrix.bench }}.ixe
+          path: |
+            ${{ matrix.bench }}.ixe
+            ${{ matrix.bench }}.ixes
           key: bench-ixe-${{ github.sha }}-${{ matrix.bench }}
           fail-on-cache-miss: true
       - name: Run ${{ matrix.backend }} execute benchmark
@@ -391,7 +418,9 @@ jobs:
           sudo apt-get update && sudo apt-get install -y time
       - uses: actions/cache/restore@v5
         with:
-          path: ${{ matrix.bench }}.ixe
+          path: |
+            ${{ matrix.bench }}.ixe
+            ${{ matrix.bench }}.ixes
           key: bench-ixe-${{ github.sha }}-${{ matrix.bench }}
           fail-on-cache-miss: true
       # run.sh ooc runs `ix check --anon` (whole env, parallel) and emits the

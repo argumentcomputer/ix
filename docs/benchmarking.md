@@ -19,7 +19,7 @@ the same backend drivers:
 | backend | what it measures | metrics |
 |---|---|---|
 | `aiur` | IxVM kernel typecheck in the Aiur STARK prover (out-of-circuit execute + in-circuit prove; each fresh proof is also verified) | `fft-cost`, `execute-time`, `execute-peak-rss`, `prove-time`, `verify-time`, `proof-size`, `peak-rss` |
-| `zisk` / `sp1` | the same kernel in the Zisk / SP1 zkVM hosts, **execute** only (proving needs a GPU) | `cycles`, `execute-time`, `throughput`, `execute-peak-rss` |
+| `zisk` / `sp1` | the same kernel in the Zisk / SP1 zkVM hosts, **execute** only (proving needs a GPU) | `cycles`, `execute-time`, `throughput`, `execute-peak-rss`; zisk's env-sharded row adds `shards`, `max-shard-cycles`, `shard-cycles:<k>` |
 | `ooc` | the same kernel run **out-of-circuit and in parallel** (`ix check-rs`) — far faster | `throughput`, `check-time`, `peak-rss` |
 | `compile` | `ix compile <env>.lean → <env>.ixe` on the current PR — measures the compile step itself, keyed by CamelCase env slug (`InitStd`, `Lean`, `Mathlib`, `FLT`) | `compile-time`, `throughput`, `file-size`, `constants` |
 
@@ -129,6 +129,17 @@ CI); the host still builds + unit-tests on every PR via ci.yml. To
 re-enable, uncomment sp1 in two places: the zkvm-execute matrix cell in
 `bench-main.yml` and the Install SP1 step in `bench-pr.yml`.
 
+The zisk job additionally executes the **whole env** as its shard-manifest
+partition. The compile job runs `ix profile <Env>.ixe` → `ix shard --max-ram
+120` after the compile benchmark and caches the `.ixes` manifest next to the
+`.ixe`; run.sh's zisk branch picks it up (skipped when absent, e.g. on the
+`!benchmark` PR path) and merges one env-keyed row (`InitStd` / `Mathlib`):
+total `cycles`, `shards`, `max-shard-cycles`, `execute-time`, `throughput`
+(cycles/s), `execute-peak-rss`, plus the per-shard breakdown uploaded as
+`shard-cycles:<k>` measures. This is also how the constants that OOM as
+single full-closure leaves get measured at all — under env sharding each
+check fits in one shard, with deps checked in other shards.
+
 Threshold semantics per measure kind:
 - **`constants`** — pinned exactly (0/0). A definitional count; either
   direction is worth flagging (someone added/removed a def).
@@ -142,9 +153,11 @@ Threshold semantics per measure kind:
   Phase 1/2 boundary; the zkVM hosts' execute peak carries the same name);
   bare `peak-rss` is a prove-phase (or, for ooc, whole-check) peak.
 - **`throughput`** — higher-is-better: `upper _`, `lower 0.05–0.10`.
-- **`phase:<span>`** — uploaded for trend visibility, intentionally left
-  un-thresholded (dynamic names + noise; the PR-comment drill-down is where
-  phase-level attention goes when the drill-down is reinstated).
+- **`phase:<span>`, `shard-cycles:<k>`** — uploaded for trend visibility,
+  intentionally left un-thresholded (dynamic names; a re-partition renames
+  the shard keys). The thresholded aggregates (`shards`, `max-shard-cycles`,
+  total `cycles`) do the alerting; the PR-comment drill-down is where
+  per-phase / per-shard attention goes when that view lands.
 
 All thresholds are windowed to the per-workload
 `bencher-thresholds-reset-<workload>` tag.
