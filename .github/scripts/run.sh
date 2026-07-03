@@ -104,14 +104,15 @@ esac
 
 # Tool resolution: prefer the in-tree build (so base measures base's code, PR
 # the PR's), fall back to PATH — CI restores cached binaries onto PATH instead
-# of building in-tree.
+# of building in-tree. Resolved LAZILY at each use site: the zkVM branch needs
+# neither `ix` nor `bench-typecheck` when REUSE_IXE short-circuits the compile
+# (bench-main's zkvm-execute job restores only the `.ixe` cache, no binaries).
 resolve_bin() {  # <name> → prints the path, or fails
   local name="$1" in_tree="$repo/.lake/build/bin/$1"
   if [ -x "$in_tree" ]; then printf '%s' "$in_tree"
   else command -v "$name" || { echo "::error::$name not found (in-tree or PATH)" >&2; return 2; }
   fi
 }
-ix_bin=$(resolve_bin ix) || exit 2
 
 tmp=$(mktemp -d)
 compile_log="$tmp/compile.log"
@@ -121,6 +122,7 @@ ixe="$repo/$benv.ixe"
 if [ "${REUSE_IXE:-0}" = 1 ] && [ "$backend" != compile ] && [ -f "$ixe" ]; then
   echo "reusing existing $ixe (REUSE_IXE)" >&2
 else
+  ix_bin=$(resolve_bin ix) || exit 2
   echo "::group::ix compile $module → $benv.ixe ($backend/$mode)"
   "$ix_bin" compile "$repo/Benchmarks/Compile/$module.lean" \
     --out "$ixe" 2>&1 | tee "$compile_log"
@@ -261,6 +263,7 @@ case "$backend" in
     # dependency closure in anon mode — the same mode and scope as the zkVM
     # execute above, so the delta isolates in-circuit vs out-of-circuit
     # overhead rather than mixing in closure-size or metadata effects.
+    ix_bin=$(resolve_bin ix) || exit 2
     ooc_one() {  # <label> <ix-check-args…>  → prints one JSON object
       local label="$1"; shift
       local log="$tmp/n.out"
