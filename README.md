@@ -231,7 +231,7 @@ Non-Nix users: install the SP1 toolchain manually per the
    ```
 
    For a larger, realistic env compile one of the `Benchmarks/Compile`
-   targets, then scope proving to a single constant with `--constant`
+   targets, then scope proving to one or more constants with `--consts`
    (step 2):
 
    ```
@@ -250,7 +250,7 @@ Non-Nix users: install the SP1 toolchain manually per the
    # Prove a single constant out of a larger env (Anon-only): the host resolves
    # the name and ships only that constant's closure sub-env. Full-closure by
    # default; add --skip-deps for a subject-only check (deps trusted).
-   WITHOUT_VK_VERIFICATION=1 RUST_LOG=info cargo run --release -- --ixe ../../init.ixe --constant Nat.add_comm
+   WITHOUT_VK_VERIFICATION=1 RUST_LOG=info cargo run --release -- --ixe ../../init.ixe --consts Nat.add_comm
    ```
 
    With no `--ixe`, the host runs against an empty `Ixon.Env`.
@@ -354,19 +354,20 @@ Non-Nix users: install Zisk manually per the
    RUST_LOG=info cargo run --release -- --verify-constraints --ixe ../minimal.ixe
    # Generate and verify a VadcopFinal proof of the same typecheck (CPU)
    RUST_LOG=info cargo run --release -- --ixe ../minimal.ixe
-   # Check a single named constant out of a larger env. The host resolves the
+   # Check one or more named constants out of a larger env. The host resolves each
    # name and ships only its closure sub-env (lazy fault-in, no whole-env load).
    # By default this is the FULL-CLOSURE typecheck — the constant and its whole
-   # dependency closure (matching the Aiur `bench-typecheck --constant`).
+   # dependency closure (matching the Aiur `bench-typecheck --consts <names>`).
    # Composes with --execute (cycles only) and plain prove.
-   RUST_LOG=info cargo run --release -- --execute --ixe ../init.ixe --constant Nat.add_comm
-   RUST_LOG=info cargo run --release -- --ixe ../init.ixe --constant Nat.add_comm
+   RUST_LOG=info cargo run --release -- --execute --ixe ../init.ixe --consts Nat.add_comm
+   RUST_LOG=info cargo run --release -- --ixe ../init.ixe --consts Nat.add_comm,Nat.succ
    # Add --skip-deps for a subject-only check (deps trusted, not re-checked):
-   RUST_LOG=info cargo run --release -- --execute --ixe ../init.ixe --constant Vector.extract_append --skip-deps
+   RUST_LOG=info cargo run --release -- --execute --ixe ../init.ixe --consts Vector.extract_append --skip-deps
    ```
 
-   `--constant` / `--skip-deps` are the same flags the Aiur `bench-typecheck`
-   uses, so the two backends share one vocabulary. `--skip-deps` trusts
+   `--consts` / `--skip-deps` are the same flags `ix check`, `sp1-host`, and the
+   Aiur `bench-typecheck` use, so all four share one vocabulary. `--skip-deps`
+   trusts
    dependencies rather than re-checking them, so it is far cheaper than the
    full-closure default — reserve it for constants too expensive to
    full-closure-check that also can't be sharded (e.g. `Vector.extract_append`
@@ -477,41 +478,24 @@ Non-Nix users: install Zisk manually per the
    [`DEFAULT_MEMORY_LIMIT`](https://github.com/succinctlabs/sp1/blob/v6.2.0/crates/core/executor/src/opts.rs#L25),
    configurable via `MEMORY_LIMIT` env var up to a ~1 TB JIT ceiling
    [`MAX_JIT_LOG_ADDR`](https://github.com/succinctlabs/sp1/blob/v6.2.0/crates/primitives/src/consts.rs#L11)),
-   or scope to a single constant with `--constant <name>` (all backends),
-   which resolves the name and ships only that constant's closure sub-env to the
-   guest. By default it re-checks the full dependency closure; add `--skip-deps`
-   to check it **subject-only** (dependencies trusted and lazily faulted in, not
+   or scope to one or more constants with `--consts <n1,n2,…>` (all backends),
+   which resolves each name and ships only that constant's closure sub-env to the
+   guest. By default each re-checks its full dependency closure; add `--skip-deps`
+   to check them **subject-only** (dependencies trusted and lazily faulted in, not
    re-typechecked) — so individual constants of a large env still fit the cap,
    even ones whose full-closure typecheck would not. To prove a large env in
    full under Zisk, shard it (see
    *Sharding large environments* below): each shard ships only its own closure
    sub-env, so the pieces fit the cap even when the whole env does not.
 
-   **Host RAM cap (`--max-witness-stored`).** Distinct from the in-guest
-   heap cap above, the prover side (Zisk's `proofman`) holds in-flight
-   witness traces in host RAM during `CALCULATING_CONTRIBUTIONS`. Peak
-   host RAM per shard ≈ `fixed-overhead + N × avg-witness-size`, where
-   `N` is the `max_witness_stored` setting. With the Blake3f precompile the
-   Ix kernel typecheck workload measures roughly `40 GB + N × 16 GB` on
-   typical 200–300 kB anon-byte shards — e.g. `N = 10` peaks near 200 GB
-   (a `--shard-bytes 250000 --max-witness-stored 10` mergesort run completes
-   under a 200 GiB guard without tripping it). An earlier pre-Blake3f figure
-   of ~25 GB per witness is stale; the precompile shrank the witness.
-
-   The `zisk-host` CLI defaults to `--max-witness-stored 5` (Zisk's
-   built-in default is 10, tuned for larger-memory boxes). Override per
-   machine:
-
-   | Host RAM | `--max-witness-stored` | Notes                                                  |
-   | -------- | ---------------------- | ------------------------------------------------------ |
-   | ≤ 128 GB | `3`                    | Override down; consider smaller shards too             |
-   | 256 GB   | `5` (project default)  | Comfortable margin on the typical setup                |
-   | 512 GB   | `10` (Zisk default)    | Override up for maximum prover parallelism             |
-   | ≥ 1 TB   | `10` (Zisk default)    | Override up; default is conservative for this workload |
-
-   Lowering the cap roughly linearly bounds peak RAM but throttles
-   prover parallelism (~10–30 % slower in practice). Raise it if your
-   machine has more RAM headroom; lower it if you OOM during
+   **Host RAM during proving.** Distinct from the in-guest heap cap above,
+   the prover side (Zisk's `proofman`) holds in-flight witness traces in host
+   RAM during `CALCULATING_CONTRIBUTIONS`. The number of resident witnesses
+   (Zisk's `max_witness_stored`) is left at Zisk's built-in default of 10:
+   we measured that lowering it does not materially reduce peak host RAM or
+   prove time for the Ix kernel typecheck workload, so it is not exposed as a
+   knob. Peak host RAM per shard is instead governed by shard size — prove
+   smaller shards (`--shard-bytes`) if you OOM during
    `CALCULATING_CONTRIBUTIONS`. Not relevant for `--execute` or
    `--verify-constraints` modes.
 

@@ -1,4 +1,21 @@
-# Creates a PR benchmark comment with a comparison to main
+# `!benchmark` PR command: run the curated constant set (Benchmarks/Vectors.csv)
+# through chosen prover backend(s) and post a main-vs-PR comparison table.
+#
+#   !benchmark ([aiur] [zisk] [sp1] [ooc] [compile] | all) [execute]
+#   BENCH_ENVS=initStd,mathlib     # which compiled envs (default initStd)
+#   BENCH_FULL=1                   # run the full curated set, not just primary
+#   BENCH_TIER=cheap|heavy|all     # tier override (default: all)
+#   BENCH_SHARD=1                  # restrict to the multi-shard target constants
+#   RUST_LOG=info                  # passthrough env (allowlisted)
+#
+# Mode is fixed per backend: `aiur` runs `prove` by default (its report also
+# carries the execute-side columns `fft-cost` / `execute-time`); `zisk` / `sp1`
+# / `ooc` run `execute`; `compile` runs `ix compile <env>.lean → <env>.ixe`
+# (the same job bench-main.yml uploads under testbed `ix-compile-*`). The
+# optional bare `execute` token flips `aiur` to execute-only (skips Phase 2);
+# on the other backends it's a no-op. main's numbers come from bencher.dev;
+# the workflow falls back to re-running the base SHA locally only when bencher
+# hasn't ingested it yet (freshly-pushed main whose CI is still running).
 name: Benchmark pull requests
 
 on:
@@ -11,145 +28,362 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  group: ${{ github.workflow }}-${{ github.event.issue.number || github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
   setup:
-    name: Comparative PR benchmark comment
-    if:
-      github.event.issue.pull_request
-      && github.event.issue.state == 'open'
-      && (contains(github.event.comment.body, '!benchmark'))
-      && (github.event.comment.author_association == 'MEMBER' || github.event.comment.author_association == 'OWNER')
+    name: Parse !benchmark comment
+    if: >-
+      github.event.issue.pull_request &&
+      github.event.issue.state == 'open' &&
+      contains(github.event.comment.body, '!benchmark') &&
+      (github.event.comment.author_association == 'MEMBER' ||
+       github.event.comment.author_association == 'OWNER')
     runs-on: ubuntu-latest
     outputs:
-      benches: ${{ steps.bench-params.outputs.benches }}
-      env-vars: ${{ steps.bench-params.outputs.env-vars }}
+      matrix: ${{ steps.parse.outputs.matrix }}
+      tier: ${{ steps.parse.outputs.tier }}
+      shard: ${{ steps.parse.outputs.shard }}
+      full: ${{ steps.parse.outputs.full }}
+      passthrough-env: ${{ steps.parse.outputs.passthrough-env }}
+      config-summary: ${{ steps.parse.outputs.config-summary }}
+      base-sha: ${{ steps.shas.outputs.base }}
+      head-sha: ${{ steps.shas.outputs.head }}
     steps:
       - uses: actions/checkout@v6
-      - name: Parse PR comment body
-        id: bench-params
+      # issue_comment exposes the PR's base/head only via this action; the
+      # pull_request event carries them on the payload directly.
+      - if: github.event_name == 'issue_comment'
+        uses: xt0rted/pull-request-comment-branch@v3
+        id: comment-branch
+      - name: Resolve base/head SHAs
+        id: shas
         run: |
-          # Parse `issue_comment` body
-          printf '${{ github.event.comment.body }}' > comment.txt
-          BENCH_COMMAND=$(head -n 1 comment.txt | tr -d '\r')
-          echo "$BENCH_COMMAND"
+          if [ "${{ github.event_name }}" = pull_request ]; then
+            echo "base=${{ github.event.pull_request.base.sha }}" >> "$GITHUB_OUTPUT"
+            echo "head=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "base=${{ steps.comment-branch.outputs.base_sha }}" >> "$GITHUB_OUTPUT"
+            echo "head=${{ steps.comment-branch.outputs.head_sha }}" >> "$GITHUB_OUTPUT"
+          fi
+      # Parse the !benchmark command from an env var (never inline-interpolated).
+      # The allowlist drops anything that isn't a known flag/env key; an empty
+      # body (pull_request) yields the parser defaults.
+      - name: Parse command
+        id: parse
+        env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
+        run: python3 .github/scripts/bench.py parse
 
-          BENCHES=$(echo $BENCH_COMMAND | awk -F'!benchmark ' '{ print $2 }')
-          # Set default benches to run if none specified
-          BENCHES=${BENCHES:-"bench-aiur"}
-          echo "BENCHES:"
-          echo "$BENCHES"
-          JSON=$(echo $BENCHES | jq -R -c 'split(" ")')
-
-          echo "JSON:"
-          echo "$JSON"
-
-          echo "benches=$JSON" | tee -a $GITHUB_OUTPUT
-
-          # Can't persist env vars between jobs, so we pass them as an output and set them in the next job
-          echo "env-vars=$(tail -n +2 comment.txt | tr -d '\r' | tr '\n' ' ')" | tee -a $GITHUB_OUTPUT
+  # Build the PR's `ix` + `bench-typecheck` once (they embed the IxVM kernel
+  # and the Aiur prover), stage under ~/.local/bin, and cache by head SHA —
+  # the matrix cells restore instead of re-running the full Lean build per
+  # cell, and re-running !benchmark on the same commit skips the build
+  # entirely. ubuntu-latest mirrors bench-main.yml's build job so PR binaries
+  # carry the same instruction-set provenance as the binaries behind bencher's
+  # main-side numbers.
+  build:
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.setup.outputs.head-sha }}
+      - id: bins
+        uses: actions/cache/restore@v5
+        with:
+          path: ~/.local/bin
+          key: bench-bins-${{ needs.setup.outputs.head-sha }}
+      - if: steps.bins.outputs.cache-hit != 'true'
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+      # `.cargo/config.toml` sets `-Ctarget-cpu=native`; log the build CPU so a
+      # benchmark shift can be traced to an instruction-set change.
+      - name: Log build CPU
+        if: steps.bins.outputs.cache-hit != 'true'
+        run: |
+          lscpu
+          grep -qw avx512f /proc/cpuinfo \
+            && echo "AVX-512F: present (compiled into the binary)" \
+            || echo "AVX-512F: absent"
+      - if: steps.bins.outputs.cache-hit != 'true'
+        uses: leanprover/lean-action@v1
+        with:
+          auto-config: false
+          build: true
+          build-args: "ix bench-typecheck"
+          use-github-cache: false
+      - if: steps.bins.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/.local/bin
+          cp .lake/build/bin/ix .lake/build/bin/bench-typecheck ~/.local/bin/
+          chmod +x ~/.local/bin/ix ~/.local/bin/bench-typecheck
+      - if: steps.bins.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: ~/.local/bin
+          key: bench-bins-${{ needs.setup.outputs.head-sha }}
 
   benchmark:
-    needs: [ setup ]
-    runs-on: warp-ubuntu-latest-x64-16x
+    needs: [setup, build]
+    runs-on: ${{ matrix.cell.runner }}
+    timeout-minutes: 120
     strategy:
+      fail-fast: false
       matrix:
-        # Runs a job for each benchmark specified in the `issue_comment` input
-        bench: ${{ fromJSON(needs.setup.outputs.benches) }}
+        cell: ${{ fromJSON(needs.setup.outputs.matrix) }}
+    env:
+      BACKEND: ${{ matrix.cell.backend }}
+      BENV: ${{ matrix.cell.env }}
+      MODE: ${{ matrix.cell.mode }}
+      LABEL: ${{ matrix.cell.label }}
+      BASE_SHA: ${{ needs.setup.outputs.base-sha }}
+      HEAD_SHA: ${{ needs.setup.outputs.head-sha }}
+      TIER: ${{ needs.setup.outputs.tier }}
+      SHARD: ${{ needs.setup.outputs.shard }}
+      FULL: ${{ needs.setup.outputs.full }}
     steps:
-      - name: Set env vars
-        run: |
-          # Overrides default env vars with those specified in the `issue_comment` input if identically named
-          for var in ${{ needs.setup.outputs.env-vars }}
-          do
-            echo "$var" | tee -a $GITHUB_ENV
-          done
-      - uses: actions/checkout@v6
-        # Get base branch of the PR
-      - uses: xt0rted/pull-request-comment-branch@v3
-        id: comment-branch
-      - name: Checkout base branch
+      # PR checked out at the workspace root so the local install actions and the
+      # helper scripts resolve; base (bencher-miss fallback only) goes under base/.
+      - name: Checkout PR
         uses: actions/checkout@v6
         with:
-          ref: ${{ steps.comment-branch.outputs.base_sha }}
-          path : ${{ github.workspace }}/base
-      - name: Run `lake build` on base branch
+          ref: ${{ env.HEAD_SHA }}
+      - name: Apply passthrough env
+        run: |
+          while IFS= read -r line; do
+            [ -n "$line" ] && printf '%s\n' "$line" >> "$GITHUB_ENV"
+          done <<'PTENV'
+          ${{ needs.setup.outputs.passthrough-env }}
+          PTENV
+      # Select the constants for this cell → names.txt. Defaults to the primary
+      # subset; BENCH_FULL=1 (→ full=1) runs the whole curated set. The `compile`
+      # backend short-circuits this in bench.py — its "benchmark name" is the
+      # CamelCase env slug, so names.txt gets one line and the CSV is ignored.
+      - name: Select constants from Benchmarks/Vectors.csv
+        id: man
+        run: |
+          PRIMARY=--primary; [ "$FULL" = 1 ] && PRIMARY=
+          python3 .github/scripts/bench.py manifest \
+            --csv Benchmarks/Vectors.csv --env "$BENV" --mode "$MODE" \
+            --backend "$BACKEND" \
+            --tier "$TIER" --shard "$SHARD" $PRIMARY --out "$GITHUB_WORKSPACE/names.txt" \
+            | tee -a "$GITHUB_OUTPUT"
+
+      # Restore the once-built PR binaries (see the build job) and stage them
+      # into .bins/pr — ~/.local/bin is reused below for the base side's cache
+      # restore, so each side keeps its own directory and PATH. run.sh resolves
+      # tools in-tree first, then PATH, so the staged dir Just Works.
+      - name: Restore PR binaries
+        uses: actions/cache/restore@v5
+        with:
+          path: ~/.local/bin
+          key: bench-bins-${{ env.HEAD_SHA }}
+          fail-on-cache-miss: true
+      - run: |
+          mkdir -p .bins/pr
+          mv ~/.local/bin/ix ~/.local/bin/bench-typecheck .bins/pr/
+      # Toolchain provisioning only (no package build): the restored binaries
+      # link against the toolchain's libleanshared. Mathlib olean cache only
+      # for the mathlib env (its `ix compile` needs the oleans).
+      - name: Provision Lean toolchain
         uses: leanprover/lean-action@v1
         with:
-          lake-package-directory: ${{ github.workspace }}/base
-          test: false
-      - name: Run bench on base branch
+          lake-package-directory: .
+          auto-config: false
+          build: false
+          use-github-cache: false
+          use-mathlib-cache: ${{ matrix.cell.env == 'mathlib' && 'true' || 'false' }}
+      # The compiled env is identical across every cell of the same PR commit —
+      # cache it so only the first cell pays the `ix compile`. (The `compile`
+      # backend ignores REUSE_IXE by design: it measures the compile itself.)
+      - name: Restore PR .ixe
+        id: pr-ixe
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ matrix.cell.env }}.ixe
+          key: bench-pr-ixe-${{ env.HEAD_SHA }}-${{ matrix.cell.env }}
+      # zkVM cells additionally need the Rust toolchain + the backend's toolchain
+      # and system deps (the shared composite install actions).
+      - name: Set up zkVM Rust toolchain
+        if: matrix.cell.backend == 'zisk' || matrix.cell.backend == 'sp1'
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache-workspaces: ${{ matrix.cell.backend }}
+      - name: Install SP1
+        if: matrix.cell.backend == 'sp1'
+        uses: ./.github/actions/install-sp1
+      - name: Install Zisk
+        if: matrix.cell.backend == 'zisk'
+        uses: ./.github/actions/install-zisk
+
+      # ---------- main side ----------
+      # Try bencher.dev first (bench-main.yml has uploaded main's numbers).
+      # fetch-main's exit codes are load-bearing: 3 = transient (base SHA not
+      # ingested yet) → fall back to a local base run; anything else (2 =
+      # backend/mode has no main testbed — a BACKEND_TABLE / bench-main.yml
+      # drift) is a permanent misconfiguration that a local rebuild can never
+      # fix, so fail the cell loudly instead of silently paying the fallback
+      # on every future run.
+      - name: Fetch main from bencher
+        id: bencher
         run: |
-          if $(lake run get-exe-targets | grep -q ${{ matrix.bench }}); then
-            lake exe ${{ matrix.bench }}
-          else
-            echo "No matching bench target found on base branch"
+          set +e
+          python3 .github/scripts/bench.py fetch-main \
+            --sha "$BASE_SHA" --backend "$BACKEND" --mode "$MODE" --env "$BENV" \
+            --names "$GITHUB_WORKSPACE/names.txt" \
+            --out "$GITHUB_WORKSPACE/main.json"
+          rc=$?
+          set -e
+          case $rc in
+            0) echo "source=bencher" >> "$GITHUB_OUTPUT" ;;
+            3) echo "source=ran" >> "$GITHUB_OUTPUT" ;;
+            *) echo "::error::fetch-main: permanent config error (exit $rc) — check BACKEND_TABLE in bench.py vs bench-main.yml testbeds"; exit "$rc" ;;
+          esac
+      - name: Checkout base (bencher had no data)
+        if: steps.bencher.outputs.source == 'ran'
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.BASE_SHA }}
+          path: base
+      # bench-main.yml's build/compile jobs already cached the base SHA's
+      # binaries and `.ixe` on the push to main — restore both before paying
+      # for a from-scratch base build. The `.ixe` cache key/path use the
+      # CamelCase env slug (bench-main's matrix.bench).
+      - name: Compute env slug
+        if: steps.bencher.outputs.source == 'ran'
+        id: envcc
+        run: |
+          benv="$BENV"
+          echo "cc=${benv^}" >> "$GITHUB_OUTPUT"
+      - name: Restore base binaries (bench-main build cache)
+        if: steps.bencher.outputs.source == 'ran'
+        id: base-bins
+        uses: actions/cache/restore@v5
+        with:
+          path: ~/.local/bin
+          key: bench-bins-${{ env.BASE_SHA }}
+      - name: Restore base .ixe (bench-main compile cache)
+        if: steps.bencher.outputs.source == 'ran'
+        id: base-ixe
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ steps.envcc.outputs.cc }}.ixe
+          key: bench-ixe-${{ env.BASE_SHA }}-${{ steps.envcc.outputs.cc }}
+      # Cached base binaries are usable only when the two `lean-toolchain`
+      # files are identical (plain `cmp`), and — for the mathlib env — only
+      # when the `.ixe` was also restored (otherwise base's `ix compile` needs
+      # mathlib oleans that only the full build fetches).
+      - name: Resolve base binaries
+        if: steps.bencher.outputs.source == 'ran'
+        id: base-src
+        run: |
+          cached=false
+          if [ "${{ steps.base-bins.outputs.cache-hit }}" = true ] \
+             && cmp -s lean-toolchain base/lean-toolchain; then
+            if [ "$BENV" != mathlib ] || [ "${{ steps.base-ixe.outputs.cache-hit }}" = true ]; then
+              mkdir -p .bins/base
+              mv ~/.local/bin/ix ~/.local/bin/bench-typecheck .bins/base/ 2>/dev/null || true
+              [ -x .bins/base/ix ] && [ -x .bins/base/bench-typecheck ] && cached=true
+            fi
           fi
-        working-directory: ${{ github.workspace }}/base
-      - name: Checkout PR branch
-        uses: actions/checkout@v6
-        with:
-          path: ${{ github.workspace }}/pr
-          ref: ${{ steps.comment-branch.outputs.head_sha }}
-      - name: Run `lake build` on PR branch
+          echo "cached=$cached" >> "$GITHUB_OUTPUT"
+          echo "base binaries: $([ "$cached" = true ] && echo restored from bench-main cache || echo building from source)"
+      - name: Build base (ix, bench-typecheck)
+        if: steps.bencher.outputs.source == 'ran' && steps.base-src.outputs.cached != 'true'
         uses: leanprover/lean-action@v1
         with:
-          lake-package-directory: ${{ github.workspace }}/pr
-          test: false
-      - name: Copy base benchmarks into PR dir for comparison
+          lake-package-directory: base
+          auto-config: false
+          build: true
+          build-args: "ix bench-typecheck"
+          use-github-cache: false
+          use-mathlib-cache: ${{ matrix.cell.env == 'mathlib' && 'true' || 'false' }}
+      # NOTE: this runs the PR's run.sh against base-built binaries. When a PR
+      # changes the benchmark CLIs themselves, the base binaries reject the new
+      # flags and every constant drops — compare then renders the loud
+      # "main produced no results" note instead of a silent all-n/a table.
+      - name: Run backend on base → main.json
+        if: steps.bencher.outputs.source == 'ran'
         run: |
-          BENCH_DIR_PR=${{ github.workspace }}/pr/.lake/benches
-          BENCH_DIR_BASE=${{ github.workspace }}/base/.lake/benches
-          mkdir -p $BENCH_DIR_PR
-          [ -d "$BENCH_DIR_BASE" ] && cp -r $BENCH_DIR_BASE/. $BENCH_DIR_PR/
-          ls $BENCH_DIR_PR
-      - name: Run bench on PR branch and generate comparison report
+          if [ "${{ steps.base-ixe.outputs.cache-hit }}" = true ]; then
+            mv "${{ steps.envcc.outputs.cc }}.ixe" "base/$BENV.ixe"
+            export REUSE_IXE=1
+          fi
+          if [ "${{ steps.base-src.outputs.cached }}" = true ]; then
+            export PATH="$PWD/.bins/base:$PATH"
+          else
+            export PATH="$PWD/base/.lake/build/bin:$PATH"
+          fi
+          bash .github/scripts/run.sh base "$BENV" "$BACKEND" "$MODE" \
+            "$GITHUB_WORKSPACE/names.txt" "$GITHUB_WORKSPACE/main.json"
+
+      # ---------- PR side ----------
+      - name: Run backend on PR → pr.json
+        env:
+          REUSE_IXE: ${{ steps.pr-ixe.outputs.cache-hit == 'true' && '1' || '0' }}
         run: |
-          BENCH_REPORT=1 lake exe ${{ matrix.bench }}
-        working-directory: ${{ github.workspace }}/pr
-      - name: Get env for PR body
+          export PATH="$PWD/.bins/pr:$PATH"
+          bash .github/scripts/run.sh . "$BENV" "$BACKEND" "$MODE" \
+            "$GITHUB_WORKSPACE/names.txt" "$GITHUB_WORKSPACE/pr.json"
+      # First cell to compile the PR env publishes it for the others (racing
+      # saves are fine — the first wins, the rest fail gracefully).
+      - name: Save PR .ixe
+        if: steps.pr-ixe.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ matrix.cell.env }}.ixe
+          key: bench-pr-ixe-${{ env.HEAD_SHA }}-${{ matrix.cell.env }}
+
+      # ---------- compare ----------
+      - name: Build comparison table
+        run: |
+          mkdir -p out
+          python3 .github/scripts/bench.py compare \
+            --main main.json --pr pr.json --out "out/table-$LABEL.md" \
+            --backend "$BACKEND" --env "$BENV" --mode "$MODE" \
+            --count "${{ steps.man.outputs.count }}" \
+            --main-source "${{ steps.bencher.outputs.source }}"
+          cat "out/table-$LABEL.md"
+
+      - name: Upload table
         if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: table-${{ env.LABEL }}
+          path: out/table-${{ env.LABEL }}.md
+          if-no-files-found: warn
+
+  comment:
+    needs: [setup, benchmark]
+    if: always() && needs.setup.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Download tables
+        uses: actions/download-artifact@v4
+        with:
+          path: tables
+          pattern: table-*
+          merge-multiple: true
+      - name: Build comment body
+        env:
+          SUMMARY: ${{ needs.setup.outputs.config-summary }}
         run: |
-          SHORT_SHA_PR=$(git rev-parse --short HEAD)
-          REPO_URL=${{ github.server_url }}/${{ github.repository }}
-          echo "COMMIT_LINK=[\`$SHORT_SHA_PR\`]($REPO_URL/commit/${{ steps.comment-branch.outputs.head_sha }})" | tee -a $GITHUB_ENV
-          echo "WORKFLOW_LINK=[Workflow logs]($REPO_URL/actions/runs/${{ github.run_id }})" | tee -a $GITHUB_ENV
-        working-directory: ${{ github.workspace }}/pr
+          python3 .github/scripts/bench.py comment \
+            --tables tables --summary "$SUMMARY" \
+            --head "${{ needs.setup.outputs.head-sha }}" \
+            --repo-url "${{ github.server_url }}/${{ github.repository }}" \
+            --run-id "${{ github.run_id }}" --out comment-body.md
       - name: Generate token to write PR comment
-        uses: actions/create-github-app-token@v3
-        if: always()
         id: app-token
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ secrets.TOKEN_APP_ID }}
           private-key: ${{ secrets.TOKEN_APP_PRIVATE_KEY }}
-      - name: Build benchmark comment body
-        if: success()
-        run: |
-          {
-            echo '## Benchmark for `${{ matrix.bench }}` at ${{ env.COMMIT_LINK }}';
-            echo "";
-            for file in .lake/benches/*/report.md; do
-              [ -f "$file" ] && cat "$file" && echo ""
-            done
-            echo "${{ env.WORKFLOW_LINK }}";
-          } > ${{ github.workspace }}/comment-body.md
-        working-directory: ${{ github.workspace }}/pr
-      - name: Comment on successful run
-        if: success()
+      - name: Post / update comment
         uses: peter-evans/create-or-update-comment@v5
         with:
           token: ${{ steps.app-token.outputs.token }}
-          issue-number: ${{ github.event.issue.number }}
-          body-path: 'comment-body.md'
-      - name: Comment on failing run
-        if: failure()
-        uses: peter-evans/create-or-update-comment@v5
-        with:
-          token: ${{ steps.app-token.outputs.token }}
-          issue-number: ${{ github.event.issue.number }}
-          body: |
-            ## Benchmark for `${{ matrix.bench }}` at ${{ env.COMMIT_LINK }} failed :x:
-
-            [Workflow logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          issue-number: ${{ github.event.issue.number || github.event.pull_request.number }}
+          body-path: comment-body.md

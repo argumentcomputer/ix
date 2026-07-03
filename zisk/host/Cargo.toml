@@ -17,6 +17,12 @@ ix-kernel = { path = "../../crates/kernel" }
 zisk-sdk = { workspace = true }
 anyhow = "1"
 clap = { version = "4.0", features = ["derive"] }
+# Neutral per-constant results JSON (`--json`), merged by the CI bench driver.
+serde_json = "1"
+# Accurate peak RAM via the process-tree sampler (captures the ASM
+# microservices' child-process memory that `/proc/self/status` misses) and the
+# per-phase timing sink feeding the CI drill-down.
+tracing-texray = { git = "https://github.com/argumentcomputer/tracing-texray", rev = "bd4faa08a4fa4edb46bde393b4d20c6bd49591d0" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 # Throughput formatting (e.g. `42.0 consts/s`).
 human-repr = "1"

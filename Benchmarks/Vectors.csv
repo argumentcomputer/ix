@@ -1,0 +1,93 @@
+# Benchmark constant vectors -- single shared source of truth for which
+# constants to run. Consumed identically by Aiur (bench-typecheck --consts-file),
+# the Zisk/SP1 hosts (--consts loop), and CI shell (awk). One row per curated
+# constant. Measurements (fft, cycles, prove-time, …) live in the neutral
+# results JSON each tool emits and in bencher.dev — never in this file.
+#
+# Columns (shard_target and primary default to 0 when trailing; most rows only
+# carry the first three):
+#   name         fully-qualified Lean name (resolves via NameResolve.resolveIxeAddr).
+#   env          compile target / .ixe it resolves in: initStd | lean | mathlib.
+#   tier         cheap = prove-feasible on a CI runner; heavy = a single-shard
+#                prove exceeds the RAM watchdog ceiling (expect an OOM row).
+#                Consumed by bench.py manifest only (BENCH_TIER filter; the
+#                non-primary prove set defaults to cheap) — run.sh attempts a
+#                full prove of every selected constant regardless of tier.
+#   shard_target 1 = heavy constant designated as a multi-shard prove target.
+#   primary      1 = part of the primary subset spanning shape + the cheap->heavy
+#                cost range. Default for the !benchmark PR comment and the
+#                bencher prove / zkVM jobs (full set via BENCH_FULL=1). Heavy
+#                reps run only in execute/native; prove mode keeps the cheap
+#                primaries (tier filter).
+#
+# CI filters on the env column (not line number), so these '#' lines and the
+# header are skipped by: awk -F, '$1!~/^#/ && $1!="name" && $2==env ...'
+name,env,tier,shard_target,primary
+HEq,initStd,cheap
+Nat,initStd,cheap
+Eq.rec,initStd,cheap
+HEq.rec,initStd,cheap
+Trans.mk,initStd,cheap
+Array.toList,initStd,cheap
+Acc.rec,initStd,cheap
+Sum.elim,initStd,cheap
+Prod.map,initStd,cheap
+Option.bind,initStd,cheap
+Except.bind,initStd,cheap
+WellFounded.fix,initStd,cheap
+Nat.add,initStd,cheap
+List.filterMap,initStd,cheap
+Int.add,initStd,cheap
+BitVec.toFin,initStd,cheap
+Nat.add_comm,initStd,cheap,0,1
+USize.toNat,initStd,cheap
+Nat.decEq,initStd,cheap
+ByteSlice.ofByteArray,initStd,cheap
+Nat.decLe,initStd,cheap
+Nat.strongRecOn,initStd,cheap
+Int.emod,initStd,cheap
+Array.foldlM,initStd,cheap
+Array.filter,initStd,cheap
+Nat.sub_le_of_le_add,initStd,cheap,0,1
+BitVec.add,initStd,cheap
+Int.gcd,initStd,cheap,0,1
+Nat.toDigits,initStd,cheap
+Array.map,initStd,cheap
+Lean.Name.hash,initStd,cheap
+BitVec.umod,initStd,cheap
+Nat.repr,initStd,cheap
+String.intercalate,initStd,heavy
+_private.Init.Prelude.0.Lean.extractMainModule._unsafe_rec,initStd,heavy
+Char.toLower,initStd,heavy
+Nat.gcd_comm,initStd,heavy,0,1
+Int.emod_emod_of_dvd,initStd,heavy
+Array.append_assoc,initStd,heavy
+Vector.append,initStd,heavy,0,1
+Fin.foldl,initStd,heavy
+List.mergeSort,initStd,heavy,1,1
+Array.binSearch,initStd,heavy,1
+Array.qsortOrd,initStd,heavy
+String.split,initStd,heavy,0,1
+Std.Time.Week.Offset.ofMilliseconds,initStd,heavy
+Vector.extract_append._proof_1,initStd,heavy,1,1
+ByteArray.utf8DecodeChar?_utf8EncodeChar_append,initStd,heavy,0,1
+String.append,initStd,cheap,0,1
+_private.Init.Data.Range.Polymorphic.SInt.0.Int8.instRxcHasSize_eq,initStd,heavy,0,1
+_private.Init.Data.Range.Polymorphic.SInt.0.Int16.instRxcHasSize_eq,initStd,heavy,0,1
+_private.Init.Data.Range.Polymorphic.SInt.0.Int32.instRxcHasSize_eq,initStd,heavy,0,1
+_private.Init.Data.Range.Polymorphic.SInt.0.Int64.instRxcHasSize_eq,initStd,heavy,0,1
+Char.ofOrdinal_le_of_le,initStd,heavy,0,1
+Array.extract_append._proof_1_1,initStd,heavy,0,1
+IxVMPrim.nat_pow_big,initStd,heavy,0,1
+Std.Tactic.BVDecide.BVExpr.bitblast.goCache_Inv_of_Inv._mutual,initStd,heavy,0,1
+Lean.Expr.replace,lean,cheap
+List.Sorted,mathlib,cheap
+Nat.choose,mathlib,cheap
+Nat.factorial,mathlib,cheap,0,1
+Nat.fib,mathlib,cheap
+GCDMonoid.gcd,mathlib,heavy
+Nat.Prime.two_le,mathlib,heavy
+Finset.prod,mathlib,heavy
+Finset.sum,mathlib,heavy
+Polynomial.eval,mathlib,heavy
+Multiset.sort,mathlib,heavy,1,1

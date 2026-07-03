@@ -142,6 +142,32 @@ opaque rsCheckAnonFFI :
     @& String →                          -- fail-out path ("" = none)
     IO (Array (String × Option CheckError))
 
+/-- FFI: anon-mode type-check of named constants with (by default) their full
+    dependency closures — the same mode and scope as the zkVM hosts' `--consts`
+    execute path, so an out-of-circuit run is directly comparable to the
+    in-circuit one. The `Bool` after the names is `skip-deps`: `true` checks
+    only each name's own work item (subject-only; deps trusted), mirroring
+    `zisk-host --skip-deps`.
+
+    Names are the constants' displayed forms (e.g. `"Nat.add_comm"`,
+    `"_private.Init.….instRxcHasSize_eq"`), resolved through the env's `named`
+    metadata by string match — the same resolution the zkVM hosts use — after
+    which the check runs on the anon view (the kernel never sees names). A
+    member of a mutual block selects the whole block's work item. Multiple
+    names union their closures into one check set.
+
+    Returns `(hex_address, Option CheckError)` pairs, one per checked target,
+    exactly like `rsCheckAnonFFI`. Errors (rather than returning) when a name
+    doesn't resolve, so a typo can't silently produce an empty check. -/
+@[extern "rs_kernel_check_anon_consts"]
+opaque rsCheckAnonConstsFFI :
+    @& String →                          -- .ixe path
+    @& Array String →                    -- constant names (displayed form)
+    @& Bool →                            -- skip-deps (subject-only)
+    @& Bool →                            -- quiet
+    @& String →                          -- fail-out path ("" = none)
+    IO (Array (String × Option CheckError))
+
 /-- FFI: profile a `.ixe` out of circuit, writing a `.ixprof` sidecar with
     per-block heartbeats + the delta-unfold graph (the sharding cost model,
     see `plans/sharding.md`). Runs the anon kernel over every checkable target.

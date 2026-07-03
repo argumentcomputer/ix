@@ -1653,8 +1653,8 @@ pub fn block_step_cost(b: &BlockEntry) -> u64 {
 /// size shards straight from `MemTotal` without ever picking a budget. Inverts
 /// the measured single-leaf prover model on this setup
 /// (`peak_RAM_GiB ≈ 50 + 33 × steps_billions`, measured by a guarded 7-shard GPU
-/// prove sweep over 0.27–3.79e9-step Init shards, R²=0.99, `--max-witness-stored
-/// 5`) at [`RAM_USABLE_FRAC`] of RAM (reserving the rest for the OS, cross-shard
+/// prove sweep over 0.27–3.79e9-step Init shards, R²=0.99) at
+/// [`RAM_USABLE_FRAC`] of RAM (reserving the rest for the OS, cross-shard
 /// re-ingress, and run-to-run variance). Returns 0 when the box can't even hold the ~50 GiB
 /// prover base (nothing will prove). Approximate by design — pair with
 /// [`partition_for_cycle_cap`] to get N. The earlier `45 + 32` model was
@@ -1662,8 +1662,7 @@ pub fn block_step_cost(b: &BlockEntry) -> u64 {
 /// target actually used ~225 GB).
 /// Measured prover-RAM model (the single source of truth, used by both
 /// [`cycle_cap_for_ram`] and [`ram_gib_for_steps`]): peak host RAM ≈
-/// `RAM_BASE_GIB + RAM_GIB_PER_BCYCLE × steps_billions` (at
-/// `--max-witness-stored 5`).
+/// `RAM_BASE_GIB + RAM_GIB_PER_BCYCLE × steps_billions`.
 pub const RAM_BASE_GIB: f64 = 50.0;
 pub const RAM_GIB_PER_BCYCLE: f64 = 33.0;
 /// Usable fraction of a host-RAM budget (headroom for OS + variance) — applied
@@ -1685,8 +1684,8 @@ pub fn cycle_cap_for_ram(ram_gb: f64) -> u64 {
 }
 
 /// Measured single-GPU **leaf prove time**: `≈ PROVE_SETUP_SECS +
-/// PROVE_SECS_PER_BCYCLE × steps_billions` per shard (RTX PRO 6000,
-/// `--max-witness-stored 5`). Aggregation adds a smaller per-fold term this model
+/// PROVE_SECS_PER_BCYCLE × steps_billions` per shard (RTX PRO 6000).
+/// Aggregation adds a smaller per-fold term this model
 /// omits — minutes next to hours of leaf proving at large shard counts.
 pub const PROVE_SETUP_SECS: f64 = 54.0;
 pub const PROVE_SECS_PER_BCYCLE: f64 = 158.0;
