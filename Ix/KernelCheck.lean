@@ -168,6 +168,20 @@ opaque rsCheckAnonConstsFFI :
     @& String →                          -- fail-out path ("" = none)
     IO (Array (String × Option CheckError))
 
+/-- FFI: extract the named constants' dependency closure from a serialized
+    env into a standalone `.ixe` — genuine constant bytes, blobs, and
+    reducibility hints, plus the closure constants' Named entries so names
+    still resolve — without recompiling from source. Names resolve like
+    `rsCheckAnonConstsFFI` (displayed form); a mutual-block member pulls its
+    whole block. Errors on an unresolvable name. -/
+@[extern "rs_env_extract"]
+opaque rsEnvExtractFFI :
+    @& String →                          -- source .ixe path
+    @& Array String →                    -- constant names (displayed form)
+    @& String →                          -- output .ixe path
+    @& Bool →                            -- quiet
+    IO Unit
+
 /-- FFI: profile a `.ixe` out of circuit, writing a `.ixprof` sidecar with
     per-block heartbeats + the delta-unfold graph (the sharding cost model,
     see `plans/sharding.md`). Runs the anon kernel over every checkable target.

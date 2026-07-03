@@ -1860,6 +1860,133 @@ pub extern "C" fn rs_kernel_check_anon_consts(
   build_anon_result_array(&addrs_for_return, &results)
 }
 
+/// FFI: extract the named constants' dependency closure from a serialized
+/// env into a standalone `.ixe` — genuine constant bytes, blobs, and
+/// reducibility hints (via the anon view), plus every closure constant's
+/// Named entry (via the full view) so names still resolve downstream — all
+/// without recompiling from source. Each name extracts its covering work
+/// item (a mutual-block member pulls the whole block).
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_env_extract(
+  env_path: LeanString<LeanBorrowed<'_>>,
+  names: LeanArray<LeanBorrowed<'_>>,
+  out_path: LeanString<LeanBorrowed<'_>>,
+  quiet: LeanBool<LeanBorrowed<'_>>,
+) -> LeanIOResult<LeanOwned> {
+  use ix_kernel::anon_work::{
+    block_of_addr, build_anon_work, build_sub_env_named, work_block_addr,
+  };
+
+  let quiet = quiet.to_bool();
+  let path = env_path.to_string();
+  let out = out_path.to_string();
+  let names_vec: Vec<String> = names.map(|obj| obj.as_string().to_string());
+  if names_vec.is_empty() {
+    return LeanIOResult::error_string(
+      "rs_env_extract: no constant names given",
+    );
+  }
+
+  let bytes = match std::fs::read(&path) {
+    Ok(bytes) => bytes,
+    Err(e) => {
+      return LeanIOResult::error_string(&format!(
+        "rs_env_extract: failed to read {path}: {e}"
+      ));
+    },
+  };
+  let mut slice: &[u8] = &bytes;
+  let full = match IxonEnv::get(&mut slice) {
+    Ok(env) => env,
+    Err(e) => {
+      return LeanIOResult::error_string(&format!(
+        "rs_env_extract: failed to deserialize {path}: {e}"
+      ));
+    },
+  };
+  // Resolve displayed names → addresses through the full env's `named`
+  // metadata (the anon view discards it).
+  let by_name: FxHashMap<String, Address> = full
+    .named
+    .iter()
+    .map(|e| (e.key().to_string(), e.value().addr.clone()))
+    .collect();
+  let mut resolved: Vec<Address> = Vec::with_capacity(names_vec.len());
+  let mut missing: Vec<&str> = Vec::new();
+  for n in &names_vec {
+    match by_name.get(n.as_str()) {
+      Some(a) => resolved.push(a.clone()),
+      None => missing.push(n),
+    }
+  }
+  if !missing.is_empty() {
+    return LeanIOResult::error_string(&format!(
+      "rs_env_extract: no constant(s) named [{}] in {path}",
+      missing.join(", ")
+    ));
+  }
+
+  let mut slice: &[u8] = &bytes;
+  let anon = match IxonEnv::get_anon(&mut slice) {
+    Ok(env) => env,
+    Err(e) => {
+      return LeanIOResult::error_string(&format!(
+        "rs_env_extract: failed to deserialize (anon) {path}: {e}"
+      ));
+    },
+  };
+
+  // Roots: each name's covering work item's proven targets (standalone →
+  // itself; a mutual-block member → every sibling, checked atomically).
+  let work = match build_anon_work(&anon) {
+    Ok(work) => work,
+    Err(e) => {
+      return LeanIOResult::error_string(&format!(
+        "rs_env_extract: build_anon_work: {e}"
+      ));
+    },
+  };
+  let by_block: FxHashMap<Address, usize> = work
+    .iter()
+    .enumerate()
+    .map(|(i, w)| (work_block_addr(&anon, w), i))
+    .collect();
+  let mut roots: Vec<Address> = Vec::new();
+  for addr in &resolved {
+    let block = block_of_addr(&anon, addr);
+    match by_block.get(&block) {
+      Some(&i) => roots.extend(work[i].proven_targets()),
+      None => {
+        return LeanIOResult::error_string(&format!(
+          "rs_env_extract: no work item covers block {}…",
+          &block.hex()[..16]
+        ));
+      },
+    }
+  }
+
+  let sub_bytes = match build_sub_env_named(&anon, &full, &roots) {
+    Ok(b) => b,
+    Err(e) => {
+      return LeanIOResult::error_string(&format!("rs_env_extract: {e}"));
+    },
+  };
+  if let Err(e) = std::fs::write(&out, &sub_bytes) {
+    return LeanIOResult::error_string(&format!(
+      "rs_env_extract: failed to write {out}: {e}"
+    ));
+  }
+  if !quiet {
+    eprintln!(
+      "[rs_env_extract] {} name(s) → {} ({} bytes) from {path}",
+      names_vec.len(),
+      out,
+      sub_bytes.len(),
+    );
+  }
+  LeanIOResult::ok(LeanOwned::box_usize(0))
+}
+
 // ===========================================================================
 // Sharding profiler: run the anon kernel out of circuit over a `.ixe`,
 // recording per-block heartbeats + the delta-unfold graph into a `.ixprof`.

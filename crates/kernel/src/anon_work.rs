@@ -279,6 +279,17 @@ pub fn build_sub_env(
   source: &IxonEnv,
   roots: &[Address],
 ) -> Result<Vec<u8>, String> {
+  let sub = sub_env_of(source, roots);
+  let mut buf = Vec::new();
+  sub.put(&mut buf).map_err(|e| format!("sub-env serialize: {e}"))?;
+  Ok(buf)
+}
+
+/// The in-memory closure sub-env behind [`build_sub_env`]: copy the BFS
+/// dependency closure of `roots` (genuine bytes + blobs + reducibility
+/// hints), no Named section.
+#[cfg(not(target_arch = "riscv64"))]
+fn sub_env_of(source: &IxonEnv, roots: &[Address]) -> IxonEnv {
   let closure = closure_addrs(source, roots);
   let mut sub = IxonEnv::new();
   for addr in &closure {
@@ -294,6 +305,55 @@ pub fn build_sub_env(
     // `Regular(0)` and does extra def-eq work (the ~30% check overhead).
     if let Some(h) = source.anon_hints.get(addr) {
       sub.anon_hints.insert(addr.clone(), *h);
+    }
+  }
+  sub
+}
+
+/// [`build_sub_env`] plus a name→address entry for every closure constant
+/// named in the FULL view of the same env — a standalone `.ixe` whose names
+/// still resolve (for `--consts`-style tools), extracted without recompiling
+/// from source.
+///
+/// METADATA IS DROPPED: each copied entry is `Named::with_addr` (empty
+/// `ConstantMeta`), because real metadata references name addresses
+/// throughout its tree and carrying it would require the full env's
+/// hash-consed name index. The extract serves the ANON pipeline
+/// (`check-rs --anon`, the zkVM hosts, `ix profile`/`ix shard`,
+/// `bench-typecheck`), where metadata is never read and reducibility hints
+/// travel in the `anon_hints` section instead. Meta-mode tools need the
+/// source env.
+#[cfg(not(target_arch = "riscv64"))]
+pub fn build_sub_env_named(
+  source: &IxonEnv,
+  full: &IxonEnv,
+  roots: &[Address],
+) -> Result<Vec<u8>, String> {
+  use ix_common::env::NameData;
+
+  let sub = sub_env_of(source, roots);
+  // The Named section serializes keys as name HASHES resolved through the
+  // names section, so each key's component chain must be interned too.
+  fn intern_chain(sub: &IxonEnv, name: &ix_common::env::Name) {
+    let addr = Address::from_blake3_hash(*name.get_hash());
+    if sub.get_name(&addr).is_some() {
+      return;
+    }
+    match name.as_data() {
+      NameData::Anonymous(_) => {},
+      NameData::Str(parent, _, _) | NameData::Num(parent, _, _) => {
+        intern_chain(sub, parent);
+      },
+    }
+    sub.store_name(addr, name.clone());
+  }
+  for e in full.named.iter() {
+    if sub.get_const(&e.value().addr).is_some() {
+      intern_chain(&sub, e.key());
+      sub.register_name(
+        e.key().clone(),
+        ixon::env::Named::with_addr(e.value().addr.clone()),
+      );
     }
   }
   let mut buf = Vec::new();
