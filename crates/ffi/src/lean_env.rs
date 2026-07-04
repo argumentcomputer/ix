@@ -3385,7 +3385,9 @@ extern "C" fn rs_compile_validate_aux(
       .resolve_addr(&mk_name("Tests.Ix.Compile.Mutual.AlphaCollapse.A"))
       .is_some();
     let canonicity_loaded = stt
-      .resolve_addr(&mk_name("Tests.Ix.Compile.Canonicity.CrossNamespaceTwin1.A"))
+      .resolve_addr(&mk_name(
+        "Tests.Ix.Compile.Canonicity.CrossNamespaceTwin1.A",
+      ))
       .is_some();
 
     for group in groups {

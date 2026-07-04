@@ -857,20 +857,25 @@ pub fn compile_expr(
                       + plan.n_source_minors..];
                     let (target_levels, specs) =
                       surgery::derive_head_rewrite_app(
-                        name, levels, &hr, params, motives, lean_env_ref,
+                        name,
+                        levels,
+                        &hr,
+                        params,
+                        motives,
+                        lean_env_ref,
                       )
-                      .map_err(|e| CompileError::InvalidMutualBlock {
-                        reason: format!(
-                          "head-rewrite for '{}': {e}",
-                          name.pretty()
-                        ),
+                      .map_err(|e| {
+                        CompileError::InvalidMutualBlock {
+                          reason: format!(
+                            "head-rewrite for '{}': {e}",
+                            name.pretty()
+                          ),
+                        }
                       })?;
 
-                    let mut canonical_args: Vec<LeanExpr> =
-                      Vec::with_capacity(
-                        specs.len() + 1 + plan.n_canonical_minors()
-                          + tail.len(),
-                      );
+                    let mut canonical_args: Vec<LeanExpr> = Vec::with_capacity(
+                      specs.len() + 1 + plan.n_canonical_minors() + tail.len(),
+                    );
                     let mut collapsed_args: Vec<LeanExpr> = Vec::new();
                     let mut entries: Vec<CallSiteEntry> = Vec::new();
 

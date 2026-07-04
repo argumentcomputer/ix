@@ -305,10 +305,10 @@ pub fn lean_egress(zenv: &KEnv<Meta>) -> Result<env::Env, String> {
   let groups: DashMap<Name, Vec<Name>> = DashMap::new();
   entries.into_par_iter().for_each(|(id, zc)| {
     let ci = egress_constant(&zc);
-    if let LeanCI::InductInfo(v) = &ci {
-      if let Some(first) = v.all.first() {
-        groups.entry(first.clone()).or_insert_with(|| v.all.clone());
-      }
+    if let LeanCI::InductInfo(v) = &ci
+      && let Some(first) = v.all.first()
+    {
+      groups.entry(first.clone()).or_insert_with(|| v.all.clone());
     }
     egressed.insert(id.name.clone(), ci);
   });

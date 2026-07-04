@@ -33,7 +33,7 @@ use ixon::expr::Expr as IxonExpr;
 use super::{
   aux_gen::expr_utils::{
     LocalDecl, consume_type_annotations, decompose_apps, fresh_fvar,
-    instantiate1, instantiate_rev, mk_lambda, subst_levels,
+    instantiate_rev, instantiate1, mk_lambda, subst_levels,
   },
   nat_conv::nat_to_usize,
 };
@@ -342,15 +342,13 @@ pub fn compute_call_site_plans(
   // evaporated with the SCC split), not the source count. Falling through
   // to `n_source_aux_motives` there would resurrect phantom canonical
   // slots and misalign every motive/minor mapping below.
-  let aux_canonical_count = aux_perm
-    .map(|p| {
-      p.iter()
-        .copied()
-        .filter(|&c| c != PERM_OUT_OF_SCC)
-        .max()
-        .map_or(0, |m| m + 1)
-    })
-    .unwrap_or(n_source_aux_motives);
+  let aux_canonical_count = aux_perm.map_or(n_source_aux_motives, |p| {
+    p.iter()
+      .copied()
+      .filter(|&c| c != PERM_OUT_OF_SCC)
+      .max()
+      .map_or(0, |m| m + 1)
+  });
 
   let aux_canon_of_source = |source_aux_j: usize| -> Option<usize> {
     match aux_perm.and_then(|p| p.get(source_aux_j).copied()) {
@@ -643,7 +641,7 @@ pub fn compute_call_site_plans(
       let mut source_to_canon_motive = vec![0usize; n_source_motives];
       source_to_canon_motive[x_pos] = 0;
       let counts: &[usize] =
-        aux_layout.map(|l| l.source_ctor_counts.as_slice()).unwrap_or(&[]);
+        aux_layout.map_or(&[], |l| l.source_ctor_counts.as_slice());
       let band_start: usize =
         n_user_minors + counts.iter().take(aux_j).sum::<usize>();
       let band_len = counts.get(aux_j).copied().unwrap_or(0);
@@ -713,8 +711,7 @@ pub fn compute_call_site_plans(
   {
     // (owner, external head) per source aux — only needed when some source
     // aux is out-of-SCC, i.e. potentially evaporated.
-    let any_out = aux_perm
-      .is_some_and(|p| p.iter().any(|&c| c == PERM_OUT_OF_SCC));
+    let any_out = aux_perm.is_some_and(|p| p.contains(&PERM_OUT_OF_SCC));
     let src_owner_heads: Vec<(Name, Name)> = if any_out {
       crate::compile::aux_gen::nested::source_aux_order_with_owner(
         original_all,
@@ -1026,7 +1023,7 @@ fn aux_motive_sigs(
       _ => return out,
     }
   }
-  for m_idx in 0..n_motives.min(motives.len()) {
+  for (m_idx, motive) in motives.iter().enumerate().take(n_motives) {
     let next = match cur.as_data() {
       ExprData::ForallE(_, dom, body, _, _) => {
         if m_idx >= n_user {
@@ -1059,7 +1056,7 @@ fn aux_motive_sigs(
             }
           }
         }
-        instantiate_rev(body, std::slice::from_ref(&motives[m_idx]))
+        instantiate_rev(body, std::slice::from_ref(motive))
       },
       _ => return out,
     };
@@ -1088,8 +1085,7 @@ pub fn derive_head_rewrite_app(
     return Err(format!("'{}' is not a recursor", rec_name.pretty()));
   };
   let sigs = aux_motive_sigs(rec, rec_levels, params, motives, lean_env);
-  let Some(sig) =
-    sigs.iter().find(|s| s.source_pos == hr.target_motive_pos)
+  let Some(sig) = sigs.iter().find(|s| s.source_pos == hr.target_motive_pos)
   else {
     return Err(format!(
       "no aux motive signature at position {}",
@@ -1108,8 +1104,7 @@ pub fn derive_head_rewrite_app(
   let occ_levels = {
     let mut cur =
       subst_levels(&rec.cnst.typ, &rec.cnst.level_params, rec_levels);
-    for arg in params.iter().chain(motives.iter().take(hr.target_motive_pos))
-    {
+    for arg in params.iter().chain(motives.iter().take(hr.target_motive_pos)) {
       match cur.as_data() {
         // Shift-aware substitution — args may reference the caller's
         // telescope (see `source_minor_type`).
@@ -1265,9 +1260,7 @@ fn find_source_rec_target(
   let ExprData::Const(target_name, _, _) = head.as_data() else {
     return None;
   };
-  if let Some(source_pos) =
-    original_all.iter().position(|n| n == target_name)
-  {
+  if let Some(source_pos) = original_all.iter().position(|n| n == target_name) {
     let target_n_params = match lean_env.get(target_name)? {
       LeanConstantInfo::InductInfo(ind) => nat_to_usize(&ind.num_params),
       _ => return None,

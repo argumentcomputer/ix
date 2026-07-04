@@ -942,7 +942,8 @@ pub fn generate_aux_patches(
     && let Some(first_orig_name) = original_all.first()
   {
     let in_scc: FxHashSet<&Name> = sorted_classes.iter().flatten().collect();
-    let src_order = nested::source_aux_order_with_owner(original_all, lean_env)?;
+    let src_order =
+      nested::source_aux_order_with_owner(original_all, lean_env)?;
     for (source_j, &canonical_i) in perm.iter().enumerate() {
       if canonical_i != nested::PERM_OUT_OF_SCC {
         continue;

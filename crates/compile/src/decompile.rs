@@ -822,8 +822,7 @@ pub fn decompile_expr(
             // level args) lives in meta_sharing, pointed at by
             // `orig_head` — decompile that instead. Otherwise rebuild the
             // head from the CallSite name + the stored head's levels.
-            let orig_head_frame = if let Some((sharing_idx, meta)) = orig_head
-            {
+            let orig_head_frame = if let Some((sharing_idx, meta)) = orig_head {
               let head_share = cache
                 .meta_sharing
                 .get(*sharing_idx as usize)
@@ -2442,7 +2441,11 @@ fn ixon_content_address(constant: &Constant) -> Address {
 /// types can be identical while these differ (`hints`/`all` are metadata,
 /// not hashed — they can never cause an address mismatch). Used by the
 /// `IX_ROUNDTRIP_DEBUG` mismatch dump in `roundtrip_block`.
-fn ixon_mut_const_summary(label: &str, class_idx: usize, mc: &MutConst) -> String {
+fn ixon_mut_const_summary(
+  label: &str,
+  class_idx: usize,
+  mc: &MutConst,
+) -> String {
   let ehash = |e: &Arc<Expr>| -> String {
     let mut b = Vec::new();
     ixon::serialize::put_expr(e, &mut b);
@@ -2538,11 +2541,8 @@ fn roundtrip_block(
     }
     preseed_expr_tables(&exprs, &mut_ctx, &mut cache, stt, "roundtrip_block")
       .map_err(|e| DecompileError::BadConstantFormat {
-        msg: format!(
-          "roundtrip preseed {}: {e}",
-          consts[0].name().pretty()
-        ),
-      })?;
+      msg: format!("roundtrip preseed {}: {e}", consts[0].name().pretty()),
+    })?;
   }
 
   // Map from name → (class_idx, MutConst kind) for projection construction.
@@ -2846,8 +2846,7 @@ fn roundtrip_block(
             });
             match compiled {
               Ok(data) => {
-                let prefs: Vec<Address> =
-                  pcache.refs.iter().cloned().collect();
+                let prefs: Vec<Address> = pcache.refs.iter().cloned().collect();
                 let punivs: Vec<Arc<Univ>> =
                   pcache.univs.iter().cloned().collect();
                 let result = match &data {
@@ -3816,8 +3815,7 @@ fn recover_aux_from_original(
     return false;
   };
   let had_entry = dstt.env.contains_key(name);
-  let synthetic =
-    Named { addr: orig_addr, meta: orig_meta, original: None };
+  let synthetic = Named { addr: orig_addr, meta: orig_meta, original: None };
   if decompile_named_const(name, &synthetic, stt, dstt).is_err() {
     return false;
   }
@@ -4713,10 +4711,10 @@ pub fn decompile_env(
     dstt.env.iter().map(|e| (e.key().clone(), e.value().clone())).collect();
   let mut groups: FxHashMap<Name, Vec<Name>> = FxHashMap::default();
   for entry in dstt.env.iter() {
-    if let LeanConstantInfo::InductInfo(v) = entry.value() {
-      if let Some(first) = v.all.first() {
-        groups.entry(first.clone()).or_insert_with(|| v.all.clone());
-      }
+    if let LeanConstantInfo::InductInfo(v) = entry.value()
+      && let Some(first) = v.all.first()
+    {
+      groups.entry(first.clone()).or_insert_with(|| v.all.clone());
     }
   }
   for (key, all) in &groups {
@@ -4726,12 +4724,12 @@ pub fn decompile_env(
       }
     })?;
     for member in all {
-      if let Some(mut entry) = dstt.env.get_mut(member) {
-        if let LeanConstantInfo::InductInfo(v) = entry.value_mut() {
-          v.num_nested = Nat::from(flags.num_nested);
-          v.is_rec = flags.is_rec;
-          v.is_reflexive = flags.is_reflexive;
-        }
+      if let Some(mut entry) = dstt.env.get_mut(member)
+        && let LeanConstantInfo::InductInfo(v) = entry.value_mut()
+      {
+        v.num_nested = Nat::from(flags.num_nested);
+        v.is_rec = flags.is_rec;
+        v.is_reflexive = flags.is_reflexive;
       }
     }
   }
