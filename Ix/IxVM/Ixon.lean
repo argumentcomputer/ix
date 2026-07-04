@@ -83,9 +83,9 @@ def ixon := ⟦
     Mk(G, U64, U64, U64, U64, &Expr)
   }
 
-  -- Inductive: (recr, refl, is_unsafe, lvls, params, indices, nested, typ, ctors)
+  -- Inductive: (is_unsafe, lvls, params, indices, typ, ctors)
   enum Inductive {
-    Mk(G, G, G, U64, U64, U64, U64, &Expr, List‹Constructor›)
+    Mk(G, U64, U64, U64, &Expr, List‹Constructor›)
   }
 
   -- InductiveProj: (idx, block_address)

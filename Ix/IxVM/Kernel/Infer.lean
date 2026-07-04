@@ -133,7 +133,7 @@ def infer := ⟦
                 assert_eq!(idx, tidx);
                 let ind_ci = load(list_lookup(top, idx));
                 match ind_ci {
-                  KConstantInfo.Induct(_, ind_ty, n_params, n_indices, ctor_indices, _, _, _, _, _) =>
+                  KConstantInfo.Induct(_, ind_ty, n_params, n_indices, ctor_indices, _, _) =>
                     -- Single-ctor structure required.
                     assert_eq!(list_length(ctor_indices), 1);
                     let is_prop = is_inductive_prop(ind_ty, lvls, n_params + n_indices,
@@ -324,7 +324,7 @@ def infer := ⟦
                 assert_eq!(idx, tidx);
                 let ind_ci = load(list_lookup(top, idx));
                 match ind_ci {
-                  KConstantInfo.Induct(_, ind_ty, n_params, n_indices, ctor_indices, _, _, _, _, _) =>
+                  KConstantInfo.Induct(_, ind_ty, n_params, n_indices, ctor_indices, _, _) =>
                     assert_eq!(list_length(ctor_indices), 1);
                     let is_prop = is_inductive_prop(ind_ty, lvls, n_params + n_indices,
                                                      types, top, addrs);
@@ -369,7 +369,7 @@ def infer := ⟦
       KConstantInfo.Thm(_, ty, _) => ty,
       KConstantInfo.Opaque(_, ty, _, _) => ty,
       KConstantInfo.Quot(_, ty, _) => ty,
-      KConstantInfo.Induct(_, ty, _, _, _, _, _, _, _, _) => ty,
+      KConstantInfo.Induct(_, ty, _, _, _, _, _) => ty,
       KConstantInfo.Ctor(_, ty, _, _, _, _, _) => ty,
       KConstantInfo.Rec(_, ty, _, _, _, _, _, _, _, _) => ty,
     }
@@ -383,7 +383,7 @@ def infer := ⟦
       KConstantInfo.Thm(n, _, _) => n,
       KConstantInfo.Opaque(n, _, _, _) => n,
       KConstantInfo.Quot(n, _, _) => n,
-      KConstantInfo.Induct(n, _, _, _, _, _, _, _, _, _) => n,
+      KConstantInfo.Induct(n, _, _, _, _, _, _) => n,
       KConstantInfo.Ctor(n, _, _, _, _, _, _) => n,
       KConstantInfo.Rec(n, _, _, _, _, _, _, _, _, _) => n,
     }

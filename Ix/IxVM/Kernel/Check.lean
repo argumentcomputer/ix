@@ -44,7 +44,7 @@ def check := ⟦
       KConstantInfo.Thm(_, _, _) => 0,
       KConstantInfo.Opaque(_, _, _, u) => u,
       KConstantInfo.Quot(_, _, _) => 0,
-      KConstantInfo.Induct(_, _, _, _, _, _, _, u, _, _) => u,
+      KConstantInfo.Induct(_, _, _, _, _, u, _) => u,
       KConstantInfo.Ctor(_, _, _, _, _, _, u) => u,
       KConstantInfo.Rec(_, _, _, _, _, _, _, _, u, _) => u,
     }
@@ -186,7 +186,7 @@ def check := ⟦
     let eq_idx = find_addr_idx(eq_addr(), addrs, 0);
     let eq_ci = load(list_lookup(top, eq_idx));
     match eq_ci {
-      KConstantInfo.Induct(num_lvls, _, n_params, _, ctor_indices, _, _, _, _, _) =>
+      KConstantInfo.Induct(num_lvls, _, n_params, _, ctor_indices, _, _) =>
         assert_eq!(num_lvls, 1);
         assert_eq!(n_params, 2);
         assert_eq!(list_length(ctor_indices), 1);
@@ -246,20 +246,19 @@ def check := ⟦
         let _ = check_quot(self_addr, kind, num_lvls, ty, top, addrs);
         (),
 
-      KConstantInfo.Induct(_, ty, n_params, n_indices, ctor_indices,
-                          is_rec, _, _, _, block_addr) =>
+      KConstantInfo.Induct(_, ty, n_params, n_indices, _,
+                          _, block_addr) =>
         let _ = k_ensure_sort(ty, store(ListNode.Nil), top, addrs);
         let _ = assert_safety(u, ty, top);
         let _ = check_block_peer_param_agreement(pos, ty, n_params, n_indices,
                                                   block_addr, top, addrs);
         let block_idxs = derive_block_member_idxs(pos, top);
         let _ = validate_block_auxes(block_idxs, top);
-        -- H1: constructively recompute is_rec by scanning ctor field doms
-        -- for block-member references. Mirror src/ix/kernel/inductive.rs:309-315.
-        -- Without this, an adversary could set is_rec=0 on a recursive
-        -- 1-ctor inductive to enable struct-eta on a recursive structure.
-        let computed_is_rec = compute_is_rec(ctor_indices, n_params, block_idxs, top);
-        assert_eq!(is_rec, computed_is_rec);
+        -- The former H1 declared-vs-computed is_rec check is gone with the
+        -- Ixon recr flag: there is no declared value to verify. is_rec is
+        -- computed on demand (`computed_is_rec_ind`) wherever it matters
+        -- (struct-eta / unit-like gates), so an adversary has nothing to
+        -- forge. Mirror: check_inductive after `Ixon: drop recr/refl/nested`.
         (),
 
       -- Ctor cross-ref + return-type + field-universe + strict-positivity
@@ -270,7 +269,7 @@ def check := ⟦
         let _ = check_ctor_against_inductive_member(pos, ci, top);
         let ind_ci = load(list_lookup(top, induct_idx));
         match ind_ci {
-          KConstantInfo.Induct(ind_num_lvls, ind_ty, ind_n_params, ind_n_indices, _, _, _, _, _, _) =>
+          KConstantInfo.Induct(ind_num_lvls, ind_ty, ind_n_params, ind_n_indices, _, _, _) =>
             assert_eq!(num_params, ind_n_params);
             -- A1 defense-in-depth: ctor's leading param domains must match
             -- parent inductive's. Mirror src/ix/kernel/inductive.rs:283,393.

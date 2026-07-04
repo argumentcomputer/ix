@@ -536,7 +536,7 @@ def canonicalCheck := ⟦
       KConstantInfo.Defn(_, _, _, _, _) => 0,
       KConstantInfo.Thm(_, _, _) => 0,
       KConstantInfo.Opaque(_, _, _, _) => 0,
-      KConstantInfo.Induct(_, _, _, _, _, _, _, _, _, _) => 1,
+      KConstantInfo.Induct(_, _, _, _, _, _, _) => 1,
       KConstantInfo.Rec(_, _, _, _, _, _, _, _, _, _) => 2,
       KConstantInfo.Ctor(_, _, _, _, _, _, _) => 3,
       KConstantInfo.Axiom(_, _, _) => 4,
@@ -586,18 +586,17 @@ def canonicalCheck := ⟦
             ord_then(ord_cmp_g(xn, yn),
               ord_then(compare_kexpr(xt, yt), ord_cmp_g(xu, yu))),
         },
-      -- Mirror: src/ix/kernel/canonical_check.rs:299-340 compare_kindc
-      -- order: (is_rec, is_unsafe, lvls, params, indices, ctors_len, ty, ctors).
-      KConstantInfo.Induct(xn, xt, xp, xi, xc, xr, _xrf, xu, _xne, _xa) =>
+      -- Mirror: src/ix/kernel/canonical_check.rs compare_kindc
+      -- order: (is_unsafe, lvls, params, indices, ctors_len, ty, ctors).
+      KConstantInfo.Induct(xn, xt, xp, xi, xc, xu, _xa) =>
         match y {
-          KConstantInfo.Induct(yn, yt, yp, yi, yc, yr, _yrf, yu, _yne, _ya) =>
-            ord_then(ord_cmp_g(xr, yr),
-              ord_then(ord_cmp_g(xu, yu),
-                ord_then(ord_cmp_g(xn, yn),
-                  ord_then(ord_cmp_g(xp, yp),
-                    ord_then(ord_cmp_g(xi, yi),
-                      ord_then(ord_cmp_g(list_length(xc), list_length(yc)),
-                        compare_kexpr(xt, yt))))))),
+          KConstantInfo.Induct(yn, yt, yp, yi, yc, yu, _ya) =>
+            ord_then(ord_cmp_g(xu, yu),
+              ord_then(ord_cmp_g(xn, yn),
+                ord_then(ord_cmp_g(xp, yp),
+                  ord_then(ord_cmp_g(xi, yi),
+                    ord_then(ord_cmp_g(list_length(xc), list_length(yc)),
+                      compare_kexpr(xt, yt)))))),
         },
       -- Mirror: src/ix/kernel/canonical_check.rs:346-368 compare_kctor
       -- order: (lvls, cidx, params, fields, ty). induct_idx + unsafe excluded
@@ -677,16 +676,15 @@ def canonicalCheck := ⟦
               sord_then(compare_kexpr_ctx(xt, yt, ctx),
                          sord_of_g(ord_cmp_g(xu, yu)))),
         },
-      KConstantInfo.Induct(xn, xt, xp, xi, xc, xr, _xrf, xu, _xne, _xa) =>
+      KConstantInfo.Induct(xn, xt, xp, xi, xc, xu, _xa) =>
         match y {
-          KConstantInfo.Induct(yn, yt, yp, yi, yc, yr, _yrf, yu, _yne, _ya) =>
-            sord_then(sord_of_g(ord_cmp_g(xr, yr)),
-              sord_then(sord_of_g(ord_cmp_g(xu, yu)),
-                sord_then(sord_of_g(ord_cmp_g(xn, yn)),
-                  sord_then(sord_of_g(ord_cmp_g(xp, yp)),
-                    sord_then(sord_of_g(ord_cmp_g(xi, yi)),
-                      sord_then(sord_of_g(ord_cmp_g(list_length(xc), list_length(yc))),
-                        compare_kexpr_ctx(xt, yt, ctx))))))),
+          KConstantInfo.Induct(yn, yt, yp, yi, yc, yu, _ya) =>
+            sord_then(sord_of_g(ord_cmp_g(xu, yu)),
+              sord_then(sord_of_g(ord_cmp_g(xn, yn)),
+                sord_then(sord_of_g(ord_cmp_g(xp, yp)),
+                  sord_then(sord_of_g(ord_cmp_g(xi, yi)),
+                    sord_then(sord_of_g(ord_cmp_g(list_length(xc), list_length(yc))),
+                      compare_kexpr_ctx(xt, yt, ctx)))))),
         },
       KConstantInfo.Ctor(xn, xt, _xi, xc, xp, xf, _xu) =>
         match y {
@@ -740,11 +738,11 @@ def canonicalCheck := ⟦
 
   fn kconst_block_addr(ci: KConstantInfo, top: List‹&KConstantInfo›) -> Addr {
     match ci {
-      KConstantInfo.Induct(_, _, _, _, _, _, _, _, _, ba) => ba,
+      KConstantInfo.Induct(_, _, _, _, _, _, ba) => ba,
       KConstantInfo.Ctor(_, _, induct_idx, _, _, _, _) =>
         let ind_ci = load(list_lookup(top, induct_idx));
         match ind_ci {
-          KConstantInfo.Induct(_, _, _, _, _, _, _, _, _, ba) => ba,
+          KConstantInfo.Induct(_, _, _, _, _, _, ba) => ba,
           _ => store([0u8; 32]),
         },
       KConstantInfo.Rec(_, _, _, _, _, _, _, _, _, ba) => ba,

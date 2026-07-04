@@ -203,7 +203,10 @@ def defEq := ⟦
     }
   }
 
-  -- 1 iff ty is `Const(I, _) args` for non-rec 1-ctor 0-field inductive.
+  -- 1 iff ty is `Const(I, _) args` for a 1-ctor 0-field inductive.
+  -- (A 0-field ctor cannot reference the block, so an is_rec check would
+  -- be redundant — mirror def_eq.rs try_unit_like, which dropped the flag
+  -- when Ixon stopped storing it.)
   fn is_unit_like_type(ty: KExpr, top: List‹&KConstantInfo›) -> G {
     match collect_spine(ty) {
       (head, _) =>
@@ -211,24 +214,20 @@ def defEq := ⟦
           KExprNode.Const(idx, _) =>
             let ci = load(list_lookup(top, idx));
             match ci {
-              KConstantInfo.Induct(_, _, _, _, ctor_indices, is_rec, _, _, _, _) =>
-                match is_rec {
-                  1 => 0,
-                  0 =>
-                    match list_length(ctor_indices) {
-                      1 =>
-                        let ctor_idx = list_lookup(ctor_indices, 0);
-                        let ctor_ci = load(list_lookup(top, ctor_idx));
-                        match ctor_ci {
-                          KConstantInfo.Ctor(_, _, _, _, _, n_fields, _) =>
-                            match n_fields {
-                              0 => 1,
-                              _ => 0,
-                            },
+              KConstantInfo.Induct(_, _, _, _, ctor_indices, _, _) =>
+                match list_length(ctor_indices) {
+                  1 =>
+                    let ctor_idx = list_lookup(ctor_indices, 0);
+                    let ctor_ci = load(list_lookup(top, ctor_idx));
+                    match ctor_ci {
+                      KConstantInfo.Ctor(_, _, _, _, _, n_fields, _) =>
+                        match n_fields {
+                          0 => 1,
                           _ => 0,
                         },
                       _ => 0,
                     },
+                  _ => 0,
                 },
               _ => 0,
             },
@@ -379,15 +378,21 @@ def defEq := ⟦
                 match arity_diff {
                   0 =>
                     match load(list_lookup(top, induct_idx)) {
-                      KConstantInfo.Induct(_, _, _, n_indices, ctor_indices, is_rec, _, _, _, _) =>
-                        let struct_like = eq_zero(is_rec) * eq_zero(n_indices) *
-                                          eq_zero(list_length(ctor_indices) - 1);
-                        match struct_like {
+                      KConstantInfo.Induct(_, _, _, n_indices, ctor_indices, _, _) =>
+                        -- struct-like: 0 indices, 1 ctor, computed non-rec
+                        -- (recr flag dropped from Ixon; mirror is_struct_like).
+                        let shape_ok = eq_zero(n_indices) *
+                                       eq_zero(list_length(ctor_indices) - 1);
+                        match shape_ok {
                           0 => 0,
                           1 =>
-                            compare_struct_fields(induct_idx, num_params,
-                                                   num_fields, t, s_args, 0,
-                                                   types, top, addrs),
+                            match computed_is_rec_ind(induct_idx, top) {
+                              1 => 0,
+                              0 =>
+                                compare_struct_fields(induct_idx, num_params,
+                                                       num_fields, t, s_args, 0,
+                                                       types, top, addrs),
+                            },
                         },
                       _ => 0,
                     },
