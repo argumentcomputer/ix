@@ -786,7 +786,10 @@ pub fn decompile_expr(
           },
 
           // CallSite: surgered call-site — reconstruct source-order telescope
-          (ExprMetaData::CallSite { name, entries, canon_meta: _ }, _) => {
+          (
+            ExprMetaData::CallSite { name, entries, canon_meta: _, orig_head },
+            _,
+          ) => {
             // Collect the canonical Ixon App telescope
             let (head_ixon, canonical_args) =
               collect_ixon_telescope_expanding_shares(&e, cache)?;
@@ -812,30 +815,53 @@ pub fn decompile_expr(
               });
             }
 
-            // Decompile head: resolve name from CallSite. This must succeed —
-            // a CallSite metadata node without a resolvable head indicates
-            // compiler/decompiler corruption, not malformed user input.
-            let head_name = decompile_name(name, stt).map_err(|_| {
-              DecompileError::BadConstantFormat {
-                msg: format!(
-                  "CallSite in '{}': head name address does not resolve",
-                  cache.current_const
-                ),
-              }
-            })?;
-            // Extract univ args from head
-            let levels = match head_ixon.as_ref() {
-              Expr::Ref(_, univ_indices) | Expr::Rec(_, univ_indices) => {
-                decompile_univ_indices(univ_indices, lvl_names, cache)?
-              },
-              _ => vec![],
+            // Head restore. A head-rewritten call site (evaporated-aux
+            // recursor rebuilt onto the external recursor's telescope)
+            // stores the canonical head with the TARGET's extended level
+            // list; the ORIGINAL head expression (source name + source
+            // level args) lives in meta_sharing, pointed at by
+            // `orig_head` — decompile that instead. Otherwise rebuild the
+            // head from the CallSite name + the stored head's levels.
+            let orig_head_frame = if let Some((sharing_idx, meta)) = orig_head
+            {
+              let head_share = cache
+                .meta_sharing
+                .get(*sharing_idx as usize)
+                .ok_or_else(|| DecompileError::InvalidShareIndex {
+                  idx: *sharing_idx,
+                  max: cache.meta_sharing.len(),
+                  constant: cache.current_const.clone(),
+                })?
+                .clone();
+              Some(Frame::Decompile(head_share, *meta))
+            } else {
+              // Decompile head: resolve name from CallSite. This must
+              // succeed — a CallSite metadata node without a resolvable
+              // head indicates compiler/decompiler corruption, not
+              // malformed user input.
+              let head_name = decompile_name(name, stt).map_err(|_| {
+                DecompileError::BadConstantFormat {
+                  msg: format!(
+                    "CallSite in '{}': head name address does not resolve",
+                    cache.current_const
+                  ),
+                }
+              })?;
+              // Extract univ args from head
+              let levels = match head_ixon.as_ref() {
+                Expr::Ref(_, univ_indices) | Expr::Rec(_, univ_indices) => {
+                  decompile_univ_indices(univ_indices, lvl_names, cache)?
+                },
+                _ => vec![],
+              };
+              // Push the bare head (Mdata is applied by BuildTelescope to
+              // the entire spine, not just the head — wrapping here would
+              // produce `App(App(mdata(head), a), b)` instead of the
+              // correct `mdata(App(App(head, a), b))` and break roundtrip
+              // hash equality).
+              results.push(LeanExpr::cnst(head_name, levels));
+              None
             };
-            // Push the bare head (Mdata is applied by BuildTelescope to
-            // the entire spine, not just the head — wrapping here would
-            // produce `App(App(mdata(head), a), b)` instead of the
-            // correct `mdata(App(App(head, a), b))` and break roundtrip
-            // hash equality).
-            results.push(LeanExpr::cnst(head_name, levels));
 
             // Push BuildTelescope to assemble source-order App spine.
             // `mdata_layers` travels with the telescope so the final
@@ -895,6 +921,13 @@ pub fn decompile_expr(
                   stack.push(Frame::Decompile(arg_ixon, *meta));
                 },
               }
+            }
+            // Head-rewritten sites: the original-head frame is pushed
+            // LAST so it executes FIRST — its result must sit beneath the
+            // args on the results stack when BuildTelescope assembles the
+            // spine (matching the `results.push(head)` of the plain path).
+            if let Some(frame) = orig_head_frame {
+              stack.push(frame);
             }
             // The outer `Frame::CacheResult` pushed at the top of
             // `Frame::Decompile` will fire after BuildTelescope finishes,
@@ -2404,6 +2437,55 @@ fn ixon_content_address(constant: &Constant) -> Address {
 /// used only for diagnostic hash comparisons. When `None` (production/no-debug
 /// path), hash comparisons against originals are skipped — the roundtrip still
 /// produces correct constants via metadata restoration.
+/// Debug summary of a compiled Ixon class representative: the HASHED
+/// scalar fields plus per-component serialization hashes. Pretty-printed
+/// types can be identical while these differ (`hints`/`all` are metadata,
+/// not hashed — they can never cause an address mismatch). Used by the
+/// `IX_ROUNDTRIP_DEBUG` mismatch dump in `roundtrip_block`.
+fn ixon_mut_const_summary(label: &str, class_idx: usize, mc: &MutConst) -> String {
+  let ehash = |e: &Arc<Expr>| -> String {
+    let mut b = Vec::new();
+    ixon::serialize::put_expr(e, &mut b);
+    Address::hash(&b).hex()[..12].to_string()
+  };
+  match mc {
+    MutConst::Recr(r) => format!(
+      "  -- {label} class[{class_idx}] Recr: k={} unsafe={} lvls={} \
+       params={} indices={} motives={} minors={} rule_fields={:?} \
+       typ#={} rule_rhs#={:?}",
+      r.k,
+      r.is_unsafe,
+      r.lvls,
+      r.params,
+      r.indices,
+      r.motives,
+      r.minors,
+      r.rules.iter().map(|ru| ru.fields).collect::<Vec<_>>(),
+      ehash(&r.typ),
+      r.rules.iter().map(|ru| ehash(&ru.rhs)).collect::<Vec<_>>(),
+    ),
+    MutConst::Defn(d) => format!(
+      "  -- {label} class[{class_idx}] Defn: kind={:?} safety={:?} \
+       lvls={} typ#={} value#={}",
+      d.kind,
+      d.safety,
+      d.lvls,
+      ehash(&d.typ),
+      ehash(&d.value),
+    ),
+    MutConst::Indc(i) => format!(
+      "  -- {label} class[{class_idx}] Indc: unsafe={} lvls={} \
+       params={} indices={} ctors={} typ#={}",
+      i.is_unsafe,
+      i.lvls,
+      i.params,
+      i.indices,
+      i.ctors.len(),
+      ehash(&i.typ),
+    ),
+  }
+}
+
 fn roundtrip_block(
   consts: &[LeanMutConst],
   generated_consts: &FxHashMap<Name, LeanConstantInfo>,
@@ -2412,8 +2494,9 @@ fn roundtrip_block(
   dstt: &DecompileState,
 ) -> Result<FxHashMap<Name, LeanConstantInfo>, DecompileError> {
   use crate::compile::{
-    BlockCache as CompileBlockCache, compile_definition, compile_inductive,
-    compile_mutual_block, compile_recursor, sort_consts,
+    BlockCache as CompileBlockCache, collect_mut_const_exprs,
+    compile_definition, compile_inductive, compile_mutual_block,
+    compile_recursor, preseed_expr_tables, sort_consts,
   };
   use crate::mutual::ctx_to_all;
 
@@ -2434,6 +2517,33 @@ fn roundtrip_block(
     }
   })?;
   let mut_ctx = LeanMutConst::ctx(&sorted_classes);
+
+  // Mirror the production compile paths (`compile_single_def`, the
+  // singleton-RecInfo arm of `compile_const_inner`, `compile_mutual`):
+  // preseed the cache's ref/univ tables from ALL block exprs before
+  // compiling. The preseed inserts refs and univs in SORTED order and
+  // the serialized constant embeds those tables — without it the tables
+  // fill in traversal order, permuting every `Ref(i)`/univ index: a
+  // byte-different but semantically identical constant (decode resolves
+  // through the embedded table, so Phase B and 7b still round-trip
+  // exactly). This silently failed the Phase-A address comparison
+  // against `Named.original.0` for 1529 of 1545 aux constants.
+  // The preseed sorts + dedups, so collection order is irrelevant.
+  {
+    let mut exprs: Vec<(&LeanExpr, &[Name])> = Vec::new();
+    for class in &sorted_classes {
+      for cnst in class {
+        collect_mut_const_exprs(cnst, &mut exprs);
+      }
+    }
+    preseed_expr_tables(&exprs, &mut_ctx, &mut cache, stt, "roundtrip_block")
+      .map_err(|e| DecompileError::BadConstantFormat {
+        msg: format!(
+          "roundtrip preseed {}: {e}",
+          consts[0].name().pretty()
+        ),
+      })?;
+  }
 
   // Map from name → (class_idx, MutConst kind) for projection construction.
   let mut name_to_class: FxHashMap<Name, usize> = FxHashMap::default();
@@ -2505,6 +2615,21 @@ fn roundtrip_block(
   let block_refs: Vec<Address> = cache.refs.iter().cloned().collect();
   let block_univs: Vec<Arc<Univ>> = cache.univs.iter().cloned().collect();
   let name_str = consts[0].name().pretty();
+
+  // Precompute (debug-gated) component-level summaries of the compiled
+  // class representatives BEFORE `ixon_mutuals` is moved into the block
+  // compile below. Pretty-printed types can be identical while HASHED
+  // scalar fields (recursor params/indices/motives/minors/k, def
+  // kind/safety, lvls) or sub-expressions differ (`hints`/`all` are
+  // metadata, not hashed — they can never cause an address mismatch).
+  let debug_class_summaries: Option<Vec<String>> =
+    std::env::var_os("IX_ROUNDTRIP_DEBUG").map(|_| {
+      ixon_mutuals
+        .iter()
+        .enumerate()
+        .map(|(class_idx, mc)| ixon_mut_const_summary("regen", class_idx, mc))
+        .collect()
+    });
 
   let (block_constant, block_addr) = if singleton && ixon_mutuals.len() == 1 {
     // Singleton: compile as bare constant (no Muts wrapper).
@@ -2581,7 +2706,6 @@ fn roundtrip_block(
     if let Some(orig) = orig_addr
       && block_addr != orig
     {
-      let first_is_aux_gen = is_aux_gen_suffix(&first_name);
       if std::env::var_os("IX_ROUNDTRIP_DEBUG").is_some() {
         // Full dump so we can compare what aux_gen regenerated vs
         // Lean's source for the failing constant. Set
@@ -2625,17 +2749,163 @@ fn roundtrip_block(
             }
           }
         }
+        // Component-level dump (precomputed above, before the block
+        // compile consumed `ixon_mutuals`) plus the Lean originals'
+        // counts, so the diverging hashed component is identifiable.
+        if let Some(summaries) = &debug_class_summaries {
+          for s in summaries {
+            eprintln!("{s}");
+          }
+        }
+        for cnst in consts {
+          let nm = cnst.name();
+          if let Some(orig_env) = orig_env
+            && let Some(ci) = orig_env.get(&nm)
+          {
+            match ci {
+              LeanConstantInfo::RecInfo(rv) => eprintln!(
+                "  -- lean  {} RecInfo: k={} unsafe={} lvls={} params={} \
+                 indices={} motives={} minors={} rule_fields={:?}",
+                nm.pretty(),
+                rv.k,
+                rv.is_unsafe,
+                rv.cnst.level_params.len(),
+                rv.num_params,
+                rv.num_indices,
+                rv.num_motives,
+                rv.num_minors,
+                rv.rules
+                  .iter()
+                  .map(|ru| ru.n_fields.clone())
+                  .collect::<Vec<_>>(),
+              ),
+              LeanConstantInfo::DefnInfo(dv) => eprintln!(
+                "  -- lean  {} DefnInfo: safety={:?} lvls={}",
+                nm.pretty(),
+                dv.safety,
+                dv.cnst.level_params.len(),
+              ),
+              LeanConstantInfo::ThmInfo(tv) => eprintln!(
+                "  -- lean  {} ThmInfo: lvls={}",
+                nm.pretty(),
+                tv.cnst.level_params.len(),
+              ),
+              _ => {},
+            }
+          }
+        }
+        // Probe: recompile the LEAN ORIGINAL through the identical
+        // singleton path in a fresh cache, using the same production
+        // conversions (`Def::mk_defn`/`mk_theo`/`mk_opaq`, `Recr(rv)`).
+        // Compile is deterministic, so:
+        //   addr == orig ⇒ the roundtrip context is faithful and the
+        //     REGEN input must differ at byte level — diff this probe
+        //     summary against the regen summary above.
+        //   addr != orig ⇒ `Named.original.0` is not reproducible from
+        //     the constant alone: the original-track compile context
+        //     (cache/ref-table/surgery state) differed, and the
+        //     divergence is contextual, not a regen defect.
+        if singleton && let Some(oenv) = orig_env {
+          let nm = consts[0].name();
+          let omc: Option<LeanMutConst> = match oenv.get(&nm) {
+            Some(LeanConstantInfo::RecInfo(rv)) => {
+              Some(LeanMutConst::Recr(rv.clone()))
+            },
+            Some(LeanConstantInfo::DefnInfo(dv)) => {
+              Some(LeanMutConst::Defn(Def::mk_defn(dv)))
+            },
+            Some(LeanConstantInfo::ThmInfo(tv)) => {
+              Some(LeanMutConst::Defn(Def::mk_theo(tv)))
+            },
+            Some(LeanConstantInfo::OpaqueInfo(ov)) => {
+              Some(LeanMutConst::Defn(Def::mk_opaq(ov)))
+            },
+            _ => None,
+          };
+          if let Some(omc) = omc {
+            let mut pcache = CompileBlockCache::default();
+            let mut pexprs: Vec<(&LeanExpr, &[Name])> = Vec::new();
+            collect_mut_const_exprs(&omc, &mut pexprs);
+            let preseeded = preseed_expr_tables(
+              &pexprs,
+              &mut_ctx,
+              &mut pcache,
+              stt,
+              "roundtrip_probe",
+            );
+            let compiled = preseeded.and_then(|()| match &omc {
+              LeanMutConst::Defn(d) => {
+                compile_definition(d, &mut_ctx, &mut pcache, stt)
+                  .map(|(data, _)| MutConst::Defn(data))
+              },
+              LeanMutConst::Recr(r) => {
+                compile_recursor(r, &mut_ctx, &mut pcache, stt)
+                  .map(|(data, _)| MutConst::Recr(data))
+              },
+              LeanMutConst::Indc(_) => unreachable!("probe is Defn/Recr only"),
+            });
+            match compiled {
+              Ok(data) => {
+                let prefs: Vec<Address> =
+                  pcache.refs.iter().cloned().collect();
+                let punivs: Vec<Arc<Univ>> =
+                  pcache.univs.iter().cloned().collect();
+                let result = match &data {
+                  MutConst::Defn(def) => {
+                    crate::compile::apply_sharing_to_definition_with_stats(
+                      def.clone(),
+                      prefs,
+                      punivs,
+                      Some(&name_str),
+                    )
+                  },
+                  MutConst::Recr(rec) => {
+                    crate::compile::apply_sharing_to_recursor_with_stats(
+                      rec.clone(),
+                      prefs,
+                      punivs,
+                    )
+                  },
+                  MutConst::Indc(_) => unreachable!(),
+                };
+                let mut pbytes = Vec::new();
+                result.constant.put(&mut pbytes);
+                let paddr = Address::hash(&pbytes);
+                eprintln!(
+                  "  -- probe original-form recompile: addr={:.12} vs orig {:.12} => {}",
+                  paddr.hex(),
+                  orig.hex(),
+                  if paddr == orig {
+                    "REPRODUCED (context faithful; regen input differs)"
+                  } else {
+                    "NOT REPRODUCED (orig addr is context-dependent)"
+                  },
+                );
+                eprintln!("{}", ixon_mut_const_summary("probe", 0, &data));
+              },
+              Err(e) => {
+                eprintln!("  -- probe original-form recompile FAILED: {e}");
+              },
+            }
+          }
+        }
       }
-      if !first_is_aux_gen {
-        return Err(DecompileError::BadConstantFormat {
-          msg: format!(
-            "roundtrip recompile hash mismatch for '{}': recompiled={:.12} original={:.12}",
-            first_name.pretty(),
-            block_addr.hex(),
-            orig.hex(),
-          ),
-        });
-      }
+      // Hard invariant (no aux exemption): the regenerated block must
+      // recompile to exactly `Named.original.0`. Since the preseed fix
+      // (see `preseed_expr_tables` above) this holds for every aux
+      // constant in the corpus — full-env rust-compile Phases 2+6 and
+      // validate-aux all report zero mismatches — so any mismatch here
+      // is a regression, not an expected divergence. Callers record it
+      // in `aux_gen_errors` (recovery keeps the Lean-facing env
+      // populated for diagnosis, but the error is never silent).
+      return Err(DecompileError::BadConstantFormat {
+        msg: format!(
+          "roundtrip recompile hash mismatch for '{}': recompiled={:.12} original={:.12}",
+          first_name.pretty(),
+          block_addr.hex(),
+          orig.hex(),
+        ),
+      });
     }
   }
 
@@ -2944,7 +3214,15 @@ fn roundtrip_block(
           }
         },
         Err(e) => {
-          eprintln!("[roundtrip] decompile failed for {}: {e}", name.pretty());
+          // Callers recover shape-divergent aux members from the original
+          // pair (`recover_aux_from_original`), so this is expected for
+          // over-merged/collapsed blocks — keep the trace debug-gated.
+          if std::env::var_os("IX_ROUNDTRIP_DEBUG").is_some() {
+            eprintln!(
+              "[roundtrip] decompile failed for {}: {e}",
+              name.pretty()
+            );
+          }
           return Err(e);
         },
       }
@@ -3512,6 +3790,60 @@ fn install_decompile_call_site_plans(
   Ok(())
 }
 
+/// Source-faithful recovery for an aux constant whose canonical
+/// regeneration diverges from Lean's original declaration (over-merge
+/// splits, alpha collapse, evaporated auxes). `roundtrip_block` pairs the
+/// REGENERATED bytes with the ORIGINAL metadata — aligned only when regen
+/// and original are structurally congruent; for shape-divergent blocks the
+/// pairing misaligns ("missing Ref metadata"). The original compile track
+/// (`Named.original`) stores an address+metadata pair that is aligned by
+/// construction, and decompiling it reproduces Lean's exact constant —
+/// which is the whole point of the sidecar (see `Named::original` docs).
+/// The canonical regeneration remains the claim; this only restores the
+/// Lean-facing view in `dstt.env`.
+///
+/// Returns `true` when the original pair existed and decompiled cleanly.
+fn recover_aux_from_original(
+  name: &Name,
+  stt: &CompileState,
+  dstt: &DecompileState,
+) -> bool {
+  let original = match stt.env.named.get(name) {
+    Some(named) => named.original.clone(),
+    None => None,
+  };
+  let Some((orig_addr, orig_meta)) = original else {
+    return false;
+  };
+  let had_entry = dstt.env.contains_key(name);
+  let synthetic =
+    Named { addr: orig_addr, meta: orig_meta, original: None };
+  if decompile_named_const(name, &synthetic, stt, dstt).is_err() {
+    return false;
+  }
+  // `decompile_named_const` silently no-ops when the original's constant
+  // bytes are absent from the env (its missing-address arm returns Ok).
+  // Recovery must not claim success unless the entry actually landed —
+  // otherwise the caller skips its regen fallback and the constant goes
+  // missing from the decompiled env.
+  if !had_entry && !dstt.env.contains_key(name) {
+    return false;
+  }
+  // Debug-track validation: when the source env is available, the
+  // recovered constant must be Lean's original bit-for-bit. A mismatch
+  // means the original pair itself is corrupt — surface the roundtrip
+  // error rather than silently accepting the recovery.
+  if let Some(lean_env) = stt.lean_env.as_ref()
+    && let Some(orig_ci) = lean_env.get(name)
+  {
+    return matches!(
+      dstt.env.get(name),
+      Some(recovered) if recovered.get_hash() == orig_ci.get_hash()
+    );
+  }
+  true
+}
+
 fn decompile_block_aux_gen(
   all_names: &[Name],
   aux_members: &[(AuxKind, Name)],
@@ -3676,6 +4008,7 @@ fn decompile_block_aux_gen(
             dstt.env.insert(n.clone(), LeanConstantInfo::RecInfo(rv.clone()));
           }
         }
+        aux_gen_errors.push((all_names[0].clone(), e));
       },
     }
   }
@@ -3770,10 +4103,26 @@ fn decompile_block_aux_gen(
               dstt.env.insert(n, ci);
             }
           },
-          Ok(_) | Err(_) => {
-            if let Some(ci) = generated_consts.get(&aux_def.name) {
+          Ok(_) => {
+            // Empty roundtrip result: prefer the source-faithful original
+            // pair; fall back to the regenerated form otherwise.
+            if !recover_aux_from_original(&aux_def.name, stt, dstt)
+              && let Some(ci) = generated_consts.get(&aux_def.name)
+            {
               dstt.env.insert(aux_def.name.clone(), ci.clone());
             }
+          },
+          Err(e) => {
+            // Recovery keeps the Lean-facing env populated for diagnosis,
+            // but the failure is always recorded — post-preseed, the
+            // roundtrip is byte-exact corpus-wide, so any error here is
+            // a regression.
+            if !recover_aux_from_original(&aux_def.name, stt, dstt)
+              && let Some(ci) = generated_consts.get(&aux_def.name)
+            {
+              dstt.env.insert(aux_def.name.clone(), ci.clone());
+            }
+            aux_gen_errors.push((aux_def.name.clone(), e));
           },
         }
       }
@@ -3848,10 +4197,26 @@ fn decompile_block_aux_gen(
               dstt.env.insert(n, ci);
             }
           },
-          Ok(_) | Err(_) => {
-            if let Some(ci) = generated_consts.get(&aux_def.name) {
+          Ok(_) => {
+            // Empty roundtrip result: prefer the source-faithful original
+            // pair; fall back to the regenerated form otherwise.
+            if !recover_aux_from_original(&aux_def.name, stt, dstt)
+              && let Some(ci) = generated_consts.get(&aux_def.name)
+            {
               dstt.env.insert(aux_def.name.clone(), ci.clone());
             }
+          },
+          Err(e) => {
+            // Recovery keeps the Lean-facing env populated for diagnosis,
+            // but the failure is always recorded — post-preseed, the
+            // roundtrip is byte-exact corpus-wide, so any error here is
+            // a regression.
+            if !recover_aux_from_original(&aux_def.name, stt, dstt)
+              && let Some(ci) = generated_consts.get(&aux_def.name)
+            {
+              dstt.env.insert(aux_def.name.clone(), ci.clone());
+            }
+            aux_gen_errors.push((aux_def.name.clone(), e));
           },
         }
       }
@@ -3966,6 +4331,7 @@ fn decompile_block_aux_gen(
             if let BelowConstant::Indc(i) = bc
               && below_members.contains(&&i.name)
             {
+              let _ = recover_aux_from_original(&i.name, stt, dstt);
               aux_gen_errors.push((i.name.clone(), e.clone()));
             }
           }
@@ -3987,6 +4353,18 @@ fn decompile_block_aux_gen(
       let BelowConstant::Def(d) = bc else {
         continue;
       };
+      // Only roundtrip regen-track members: `aux_members` lists exactly
+      // the `Named.original`-bearing names Pass 1 skipped (see the
+      // `blocks` construction in `decompile_env`), mirroring the
+      // `brecon_members` filter below. Source-form regeneration also
+      // emits evaporated `below_N` (over-merge splits, §6.5) — those
+      // compiled as surgered originals with full storage, so Pass 1
+      // already decompiled them faithfully, and recompiling them here
+      // would re-run call-site surgery, whose head-rewrite derivation
+      // requires `stt.lean_env` (absent on a deserialized state).
+      if !below_members.contains(&&d.name) {
+        continue;
+      }
       // DEBUG: report Lean's `.all` and the Ixon addr/kind stored at
       // `Named.original.0`, so we can tell whether Lean emitted this
       // below as a bare def or whether compile_const_no_aux grouped
@@ -4050,6 +4428,11 @@ fn decompile_block_aux_gen(
           }
         },
         Err(e) => {
+          // Recovery keeps the Lean-facing env populated for diagnosis,
+          // but the failure is always recorded — post-preseed, the
+          // roundtrip is byte-exact corpus-wide, so any error here is a
+          // regression.
+          let _ = recover_aux_from_original(&d.name, stt, dstt);
           aux_gen_errors.push((d.name.clone(), e));
         },
       }
@@ -4115,12 +4498,15 @@ fn decompile_block_aux_gen(
                 dstt.env.insert(n, ci);
               }
             },
-            Err(_) => {
+            Err(e) => {
               for (n, rv) in &below_recs {
                 if below_rec_members.contains(&n) {
-                  dstt
-                    .env
-                    .insert(n.clone(), LeanConstantInfo::RecInfo(rv.clone()));
+                  if !recover_aux_from_original(n, stt, dstt) {
+                    dstt
+                      .env
+                      .insert(n.clone(), LeanConstantInfo::RecInfo(rv.clone()));
+                  }
+                  aux_gen_errors.push((n.clone(), e.clone()));
                 }
               }
             },
@@ -4215,15 +4601,25 @@ fn decompile_block_aux_gen(
                 dstt.env.insert(n, ci);
               }
             },
-            Ok(_) | Err(_) => {
-              // Fallback when the roundtrip_block compile step fails:
-              // still surface a best-effort LeanConstantInfo so the
-              // decompiled env is populated. `brecon_def_to_lean` applies
-              // the same kind/safety/hints matrix that the compile path
-              // used, so the kind recorded here mirrors what Lean's
-              // original has (even if the recompile couldn't prove byte
-              // equivalence).
-              dstt.env.insert(d.name.clone(), brecon_def_to_lean(d));
+            Ok(_) => {
+              // Empty roundtrip result: prefer the source-faithful
+              // original pair; otherwise surface a best-effort
+              // LeanConstantInfo so the decompiled env is populated.
+              // `brecon_def_to_lean` applies the same kind/safety/hints
+              // matrix that the compile path used.
+              if !recover_aux_from_original(&d.name, stt, dstt) {
+                dstt.env.insert(d.name.clone(), brecon_def_to_lean(d));
+              }
+            },
+            Err(e) => {
+              // Recovery keeps the Lean-facing env populated for
+              // diagnosis, but the failure is always recorded —
+              // post-preseed, the roundtrip is byte-exact corpus-wide,
+              // so any error here is a regression.
+              if !recover_aux_from_original(&d.name, stt, dstt) {
+                dstt.env.insert(d.name.clone(), brecon_def_to_lean(d));
+              }
+              aux_gen_errors.push((d.name.clone(), e));
             },
           }
         }
@@ -4786,6 +5182,7 @@ mod tests {
       name: head_addr.clone(),
       entries,
       canon_meta: vec![leaf0, leaf1, leaf2],
+      orig_head: None,
     });
 
     // Canonical Ixon App spine: head applied to canonical-order args
@@ -4879,6 +5276,7 @@ mod tests {
       name: head_addr.clone(),
       entries,
       canon_meta: vec![major_leaf],
+      orig_head: None,
     });
 
     // Canonical Ixon spine: App(head, major). Major is a distinguishable
@@ -5001,6 +5399,7 @@ mod tests {
         CallSiteEntry::Kept { canon_idx: 0, meta: major_leaf },
       ],
       canon_meta: vec![major_leaf],
+      orig_head: None,
     });
 
     // Ixon expressions: type is Sort 0, value is the canonical App spine

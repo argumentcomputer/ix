@@ -856,6 +856,7 @@ fn ingress_expr<M: KernelMode>(
               name: cs_name,
               entries: _,
               canon_meta,
+              orig_head: _,
             } = node
             {
               // Flatten the canonical App telescope. `a_i` is the arg
@@ -5063,6 +5064,7 @@ mod tests {
         meta: bad_entry_meta,
       }],
       canon_meta: vec![arg_canon_meta],
+      orig_head: None,
     });
 
     let ixon = IxonExpr::app(

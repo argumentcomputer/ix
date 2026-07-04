@@ -659,7 +659,12 @@ pub(super) fn instantiate1_at(
 /// Matches Lean C++ `instantiate_rev(e, n, subst)`. At binder depth `d`,
 /// BVar(d + i) for i < n becomes `shift_vars(args[i], d, 0)`, and
 /// BVar(d + i) for i >= n becomes BVar(d + i - n).
-pub(super) fn instantiate_rev(body: &LeanExpr, args: &[LeanExpr]) -> LeanExpr {
+///
+/// Unlike [`instantiate1`], the substituted argument's loose BVars are
+/// LIFTED by the binder depth at each site — required whenever the
+/// argument may reference the caller's telescope (e.g. call-site surgery
+/// on an application under binders, as in `.brecOn_N.go` bodies).
+pub fn instantiate_rev(body: &LeanExpr, args: &[LeanExpr]) -> LeanExpr {
   if args.is_empty() {
     return body.clone();
   }

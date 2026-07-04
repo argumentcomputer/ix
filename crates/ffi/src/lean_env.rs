@@ -321,6 +321,60 @@ fn build_collapse_const_map(
   map
 }
 
+/// Aux-`_N` rename map for alpha-collapsed nested auxiliaries.
+///
+/// When `perm` maps several source aux positions to one canonical slot,
+/// aux_gen names its regenerated patches after the MIN source position
+/// (`docs/ix_canonicity.md` §6.4); the other source `_N` names are address
+/// aliases (in-SCC collapse) or surgered originals (evaporated auxes of a
+/// split block). Either way, structural comparison of a regenerated patch
+/// against a source-order original must rename the non-representative
+/// `<all0>.{rec,below,brecOn}_{j+1}` (and `.brecOn_{j+1}.go/.eq`) to the
+/// representative's `_N` — address equality alone does not hold for the
+/// evaporated case, whose surgered originals differ in the kept-motive
+/// binder position.
+fn build_aux_collapse_const_map(
+  all0: &Name,
+  perm: &[usize],
+) -> FxHashMap<Name, Name> {
+  use ix_compile::congruence::perm::PERM_OUT_OF_SCC;
+  let mut map: FxHashMap<Name, Name> = FxHashMap::default();
+  let mut rep_of: FxHashMap<usize, usize> = FxHashMap::default();
+  for (j, &c) in perm.iter().enumerate() {
+    if c != PERM_OUT_OF_SCC {
+      rep_of.entry(c).or_insert(j);
+    }
+  }
+  for (j, &c) in perm.iter().enumerate() {
+    if c == PERM_OUT_OF_SCC {
+      continue;
+    }
+    let Some(&r) = rep_of.get(&c) else {
+      continue;
+    };
+    if r == j {
+      continue;
+    }
+    for suffix in ["rec", "below", "brecOn"] {
+      let from = Name::str(all0.clone(), format!("{suffix}_{}", j + 1));
+      let to = Name::str(all0.clone(), format!("{suffix}_{}", r + 1));
+      map.insert(from, to);
+    }
+    for sub in ["go", "eq"] {
+      let from = Name::str(
+        Name::str(all0.clone(), format!("brecOn_{}", j + 1)),
+        sub.to_string(),
+      );
+      let to = Name::str(
+        Name::str(all0.clone(), format!("brecOn_{}", r + 1)),
+        sub.to_string(),
+      );
+      map.insert(from, to);
+    }
+  }
+  map
+}
+
 #[derive(Clone)]
 struct AuxCompareEntry {
   generated: ConstantInfo,
@@ -1332,7 +1386,10 @@ extern "C" fn rs_tmp_decode_const_map(
       // class aux_gen output vs original Lean). Both sides keep `A`
       // and `B` distinct even under compile-time collapse, so a
       // collapse-driven `B → A` const_map would break the comparison.
-      let const_map: FxHashMap<Name, Name> = FxHashMap::default();
+      // Aux-`_N` names are the exception: the regenerated side names
+      // collapsed auxes after the representative (min source) position,
+      // so orig-side non-representative `_N` references must be renamed.
+      let const_map = build_aux_collapse_const_map(first, perm);
 
       Some(PermCtx {
         aux_perm: perm.to_vec(),
@@ -2129,8 +2186,10 @@ extern "C" fn rs_compile_validate_aux(
       // at compile time), so collapse-driven `B → A` rewrites would
       // *break* the comparison rather than help. Phase 2 only needs
       // the nested-aux motive/minor permutation, which is encoded by
-      // `aux_perm` + `rec_heads` on this PermCtx.
-      let const_map: FxHashMap<Name, Name> = FxHashMap::default();
+      // `aux_perm` + `rec_heads` on this PermCtx — plus the aux-`_N`
+      // renames for collapsed auxes, whose regenerated patches use the
+      // representative (min source) numbering.
+      let const_map = build_aux_collapse_const_map(first, perm);
 
       Some(PermCtx {
         aux_perm: perm.to_vec(),
@@ -3279,7 +3338,55 @@ extern "C" fn rs_compile_validate_aux(
         "Tests.Ix.Compile.Canonicity.StructureTwin1.SP.rec",
         "Tests.Ix.Compile.Canonicity.StructureTwin2.XP.rec",
       ],
+      // ── AuxDedup: evaporated nested auxiliaries (over-merge split) ──
+      // AuxDedup1 declares `A | mk : List B → List C → A` with B, C in the
+      // same mutual; AuxDedup2 declares C outside it. SCC splitting makes
+      // B and C standalone in both, every `List _` aux evaporates, and the
+      // canonical forms must coincide pairwise across the two declarations.
+      &[
+        "_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A",
+        "_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup2.A",
+      ],
+      &[
+        "_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.B",
+        "_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.C",
+        "_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup2.B",
+        "_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup2.C",
+      ],
+      // Evaporated aux recursors: dropping the irrelevant over-merged
+      // motives leaves exactly the external inductive's generic recursor,
+      // so every `rec_N` claim aliases `List.rec` itself. AuxDedupMixed's
+      // `rec_2` is the evaporated half of a mixed block (its `rec_1` stays
+      // a genuine canonical aux of M's own block).
+      //
+      // `List.rec` itself is deliberately NOT in the group: groups whose
+      // fixture names are all absent are skipped (subset envs like
+      // validate-aux's seed closure), and a stdlib member would make such
+      // a group partially present and fail as "missing names". The
+      // equality to `List.rec`'s address is enforced by kernel-check
+      // anyway — the claims only typecheck as projections of List's
+      // recursor block.
+      &[
+        "_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A.rec_1",
+        "_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A.rec_2",
+        "_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup2.A.rec_1",
+        "_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M.rec_2",
+      ],
     ];
+
+    // Module markers: a fully-absent group is "not applicable" only when
+    // its fixture module isn't in the env at all (the standalone
+    // `ix validate --path <file>` command runs against arbitrary
+    // environments, e.g. Mathlib smoke tests). If the marker resolves but
+    // a whole group doesn't, the group has silently dropped out of
+    // coverage (seed-filter or compile regression) — that must FAIL, not
+    // skip: Phase 4b once ran `0 pass, 0 fail` for exactly this reason.
+    let mutual_loaded = stt
+      .resolve_addr(&mk_name("Tests.Ix.Compile.Mutual.AlphaCollapse.A"))
+      .is_some();
+    let canonicity_loaded = stt
+      .resolve_addr(&mk_name("Tests.Ix.Compile.Canonicity.CrossNamespaceTwin1.A"))
+      .is_some();
 
     for group in groups {
       let addrs: Vec<_> = group
@@ -3290,11 +3397,18 @@ extern "C" fn rs_compile_validate_aux(
       let Some((_, Some(first_addr))) =
         addrs.iter().find(|(_, addr)| addr.is_some())
       else {
-        // Phase 4b fixtures live in `Tests.Ix.Compile.Canonicity`. The
-        // standalone `ix validate --path <file>` command can run against
-        // arbitrary environments (e.g. Mathlib smoke tests) that do not
-        // import those test declarations. Treat fully-absent fixture groups
-        // as not applicable; partial presence below remains a real failure.
+        let module_loaded = if group[0].contains("Tests.Ix.Compile.Mutual") {
+          mutual_loaded
+        } else {
+          canonicity_loaded
+        };
+        if module_loaded {
+          p4b.record_fail(format!(
+            "group fully absent though its fixture module is loaded \
+             (seed/coverage regression): {}",
+            group.join(", ")
+          ));
+        }
         continue;
       };
 

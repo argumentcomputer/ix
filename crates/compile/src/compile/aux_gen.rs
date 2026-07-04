@@ -84,7 +84,7 @@ pub mod recursor;
 
 use std::sync::Arc;
 
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::compile::CompileState;
 use ix_common::env::{
@@ -498,7 +498,46 @@ pub fn generate_aux_patches(
       )?
     }
   } else {
-    // No nested types at all — standard path.
+    // Metadata/structural disagreement, or no nested at all — standard
+    // flat-block recursor generation. Two disagreement flavors still need
+    // the source→canonical aux permutation:
+    //
+    //   * metadata-only: Lean's `num_nested` says nested but the
+    //     SCC-filtered expansion finds nothing, because over-merge
+    //     splitting moved every spec-param inductive of every aux out of
+    //     this SCC (e.g. `mutual A | mk : List B → A; B | leaf end`
+    //     splits into {A},{B} and `List B` stops being nested for {A}).
+    //     The source walk still has aux positions; the perm is all
+    //     `PERM_OUT_OF_SCC`, which drives call-site surgery drops and the
+    //     evaporated-aux `<ext>.rec` aliases below. Falling back to
+    //     `perm = None` would make surgery treat the evaporated auxes as
+    //     identity-mapped canonical slots that don't exist.
+    //
+    //   * structural-only: the detector finds auxes where Lean's metadata
+    //     says zero (parameterized nested blocks); extra Lean aux names
+    //     become address aliases keyed off the perm.
+    if structural_has_nested || metadata_has_nested {
+      let orig_to_canon_map: std::collections::HashMap<Name, Name> =
+        sorted_classes
+          .iter()
+          .flat_map(|class| {
+            let rep = class[0].clone();
+            class.iter().map(move |n| (n.clone(), rep.clone()))
+          })
+          .collect();
+      let n_canon =
+        expanded_probe.types.len().saturating_sub(expanded_probe.n_originals);
+      let perm = nested::compute_aux_perm(
+        &expanded_probe,
+        original_all,
+        lean_env,
+        stt,
+        &orig_to_canon_map,
+      )?;
+      captured_perm = Some(perm.clone());
+      captured_n_canonical_aux = n_canon;
+      captured_n_source_aux = perm.len();
+    }
     recursor::generate_canonical_recursors_with_overlay(
       sorted_classes,
       lean_env,
@@ -875,6 +914,66 @@ pub fn generate_aux_patches(
           aliases.insert(source_name, target_name);
         }
       }
+    }
+  }
+
+  // Evaporated aux recursor aliases. A source aux whose OWNER is in this
+  // SCC but whose spec-param inductives are not has no home in ANY split
+  // SCC (SCCs partition the block): the ctor walk that discovers it lives
+  // here, but the spec inductives that would make it a canonical aux
+  // member split away. The aux evaporates — the canonical block has no
+  // member for it, and dropping the irrelevant motives/minors from Lean's
+  // `<all0>.rec_{j+1}` leaves exactly the external inductive's own generic
+  // recursor (the isomorphic minimal declaration proves the same family
+  // without them). Alias the Lean-visible name to `<ext>.rec` so the claim
+  // resolves to the canonical constant instead of falling back to an
+  // original-form compile — the kernel rejects a standalone specialized
+  // recursor block, since it regenerates the generic signature from the
+  // external inductive's block. Call sites are rewritten onto the external
+  // telescope by the out-of-SCC surgery plan (`compute_call_site_plans`).
+  //
+  // The owner gate matters: an out-of-SCC entry whose owner is ALSO
+  // out-of-SCC is simply another SCC's aux (e.g. `List A` seen from C's
+  // block in an over-merged [A, B, C]) — that SCC compiles it as a normal
+  // canonical aux and registers the `_N` name; aliasing it here would
+  // conflict.
+  if let Some(perm) = captured_perm.as_ref()
+    && perm.contains(&nested::PERM_OUT_OF_SCC)
+    && let Some(first_orig_name) = original_all.first()
+  {
+    let in_scc: FxHashSet<&Name> = sorted_classes.iter().flatten().collect();
+    let src_order = nested::source_aux_order_with_owner(original_all, lean_env)?;
+    for (source_j, &canonical_i) in perm.iter().enumerate() {
+      if canonical_i != nested::PERM_OUT_OF_SCC {
+        continue;
+      }
+      let Some((owner, ext_head, _)) = src_order.get(source_j) else {
+        continue;
+      };
+      if !in_scc.contains(owner) {
+        continue;
+      }
+      let source_name =
+        Name::str(first_orig_name.clone(), format!("rec_{}", source_j + 1));
+      let target_name = Name::str(ext_head.clone(), "rec".to_string());
+      // Target guard mirrors the head-rewrite plan registration in
+      // `surgery::compute_call_site_plans` — alias and call-site rewrite
+      // must fire together or not at all, or callers and claim disagree.
+      // Multi-motive external targets (mutual/nested external families)
+      // are outside the supported rewrite domain; skipping leaves the
+      // original compile, which kernel-check reports per constant.
+      let target_ok = matches!(
+        lean_env.get(&target_name),
+        Some(ix_common::env::ConstantInfo::RecInfo(r))
+          if crate::compile::nat_conv::nat_to_usize(&r.num_motives) == 1
+      );
+      if patches.contains_key(&source_name)
+        || lean_env.get(&source_name).is_none()
+        || !target_ok
+      {
+        continue;
+      }
+      aliases.insert(source_name, target_name);
     }
   }
 

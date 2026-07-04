@@ -485,5 +485,19 @@ end
 
 end AuxDedup2
 
+-- Mixed nested auxiliaries: `List M` stays a genuine nested occurrence of
+-- M's split SCC (M is recursive through it), while `List B` evaporates
+-- (B splits into its own SCC). Exercises the expand/restore path with a
+-- perm mixing a canonical slot and PERM_OUT_OF_SCC for the same owner:
+-- `M.rec_1` is a canonical aux patch, `M.rec_2` aliases `List.rec`.
+namespace AuxDedupMixed
+
+mutual
+  inductive M : Type where | mk : List M → List B → M
+  inductive B : Type where | leaf : B
+end
+
+end AuxDedupMixed
+
 
 end Tests.Ix.Compile.Mutual

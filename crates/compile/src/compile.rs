@@ -644,6 +644,10 @@ pub fn compile_expr(
       n_canonical: usize,
       /// Number of collapsed args on the results stack (after canonical args).
       n_collapsed: usize,
+      /// True when the LAST collapsed arg is the ORIGINAL (pre-rewrite) head
+      /// expression of a head-rewritten call site. It gets a
+      /// `CallSite.orig_head` pointer instead of a source-order entry.
+      orig_head_collapsed: bool,
     },
   }
 
@@ -773,14 +777,209 @@ pub fn compile_expr(
               // original's Ixon still lives in `stt.env.consts` and its
               // arena must be decompile-safe (decompile iterates all
               // constants).
-              let compiling_is_aux_regen = cache
-                .compiling
-                .as_ref()
-                .is_some_and(crate::decompile::is_aux_gen_suffix);
+              //
+              // The suffix alone is NOT sufficient: an EVAPORATED aux
+              // (`.below_N` / `.brecOn_N` family whose nested occurrence
+              // left the SCC) has no regenerated canonical at all — its
+              // surgered original IS its canonical form, so surgery MUST
+              // run for it. "Has a regen/alias" is:
+              //  - membership in `aux_name_to_addr` (in-memory compile
+              //    state: every compile_aux_block projection, below ctor,
+              //    and alias registration inserts here — covers the
+              //    original-track compile, which runs BEFORE promote), or
+              //  - `Named.original.is_some()` (durable: set by
+              //    `promote_aux` exactly for regen/aliased names and
+              //    survives serialization — covers decompile-side
+              //    roundtrip recompiles on a DESERIALIZED state, where
+              //    `aux_name_to_addr` is empty and the in-memory check
+              //    alone would wrongly re-enable surgery).
+              // Evaporated names enter neither.
+              let compiling_is_aux_regen =
+                cache.compiling.as_ref().is_some_and(|c| {
+                  crate::decompile::is_aux_gen_suffix(c)
+                    && (stt.aux_name_to_addr.contains_key(c)
+                      || stt
+                        .env
+                        .named
+                        .get(c)
+                        .is_some_and(|n| n.original.is_some()))
+                });
               if !compiling_is_aux_regen {
                 if let Some(plan) = stt.call_site_plans.get(name)
                   && !plan.is_identity()
                 {
+                  // Evaporated-aux head rewrite: the callee's claim is
+                  // aliased to the external inductive's recursor, so the
+                  // over-merged spine is rebuilt onto that telescope —
+                  // specs… motive minors′… indices… major — with the level
+                  // list extended to the target's arity. Dropped args are
+                  // preserved as Collapsed entries for decompile; wrapped
+                  // minors follow the adapted-minor convention below.
+                  if let Some(hr) = plan.head_rewrite.clone() {
+                    let expected_total = plan.n_params
+                      + plan.n_source_motives
+                      + plan.n_source_minors
+                      + plan.n_indices
+                      + 1; // major
+                    if args.len() < expected_total {
+                      return Err(CompileError::InvalidMutualBlock {
+                        reason: format!(
+                          "head-rewrite call site for '{}' is under-applied: \
+                           {} args, telescope needs {}",
+                          name.pretty(),
+                          args.len(),
+                          expected_total,
+                        ),
+                      });
+                    }
+                    let lean_env_ref =
+                      stt.lean_env.as_deref().ok_or_else(|| {
+                        CompileError::InvalidMutualBlock {
+                          reason: format!(
+                            "head-rewrite for '{}' requires the Lean env",
+                            name.pretty()
+                          ),
+                        }
+                      })?;
+                    let name_addr = compile_name(name, stt);
+                    let args_owned: Vec<LeanExpr> =
+                      args.iter().map(|arg| (*arg).clone()).collect();
+                    let params = &args_owned[..plan.n_params];
+                    let motives = &args_owned
+                      [plan.n_params..plan.n_params + plan.n_source_motives];
+                    let minors = &args_owned[plan.n_params
+                      + plan.n_source_motives
+                      ..plan.n_params
+                        + plan.n_source_motives
+                        + plan.n_source_minors];
+                    let tail = &args_owned[plan.n_params
+                      + plan.n_source_motives
+                      + plan.n_source_minors..];
+                    let (target_levels, specs) =
+                      surgery::derive_head_rewrite_app(
+                        name, levels, &hr, params, motives, lean_env_ref,
+                      )
+                      .map_err(|e| CompileError::InvalidMutualBlock {
+                        reason: format!(
+                          "head-rewrite for '{}': {e}",
+                          name.pretty()
+                        ),
+                      })?;
+
+                    let mut canonical_args: Vec<LeanExpr> =
+                      Vec::with_capacity(
+                        specs.len() + 1 + plan.n_canonical_minors()
+                          + tail.len(),
+                      );
+                    let mut collapsed_args: Vec<LeanExpr> = Vec::new();
+                    let mut entries: Vec<CallSiteEntry> = Vec::new();
+
+                    // Source params don't appear in the target spine (the
+                    // specs subsume them) — collapse for reconstruction.
+                    for p in params.iter() {
+                      let sharing_idx = collapsed_args.len();
+                      collapsed_args.push(p.clone());
+                      entries.push(CallSiteEntry::Collapsed {
+                        sharing_idx: sharing_idx as u64,
+                        meta: 0,
+                      });
+                    }
+                    let n_specs = specs.len();
+                    canonical_args.extend(specs.into_iter());
+                    for (src_i, motive) in motives.iter().enumerate() {
+                      if plan.motive_keep[src_i] {
+                        canonical_args.push(motive.clone());
+                        entries.push(CallSiteEntry::Kept {
+                          canon_idx: n_specs as u64,
+                          meta: 0,
+                        });
+                      } else {
+                        let sharing_idx = collapsed_args.len();
+                        collapsed_args.push(motive.clone());
+                        entries.push(CallSiteEntry::Collapsed {
+                          sharing_idx: sharing_idx as u64,
+                          meta: 0,
+                        });
+                      }
+                    }
+                    for (src_i, minor) in minors.iter().enumerate() {
+                      if plan.minor_keep[src_i] {
+                        let canon_pos = canonical_args.len();
+                        let adapted_minor = surgery::adapt_split_minor(
+                          name,
+                          levels,
+                          &plan,
+                          src_i,
+                          minor,
+                          params,
+                          motives,
+                          minors,
+                          lean_env_ref,
+                        );
+                        let minor_arg = adapted_minor
+                          .clone()
+                          .unwrap_or_else(|| minor.clone());
+                        canonical_args.push(minor_arg);
+                        if adapted_minor.is_some() {
+                          let sharing_idx = collapsed_args.len();
+                          collapsed_args.push(minor.clone());
+                          entries.push(CallSiteEntry::Collapsed {
+                            sharing_idx: sharing_idx as u64,
+                            meta: 0,
+                          });
+                        } else {
+                          entries.push(CallSiteEntry::Kept {
+                            canon_idx: canon_pos as u64,
+                            meta: 0,
+                          });
+                        }
+                      } else {
+                        let sharing_idx = collapsed_args.len();
+                        collapsed_args.push(minor.clone());
+                        entries.push(CallSiteEntry::Collapsed {
+                          sharing_idx: sharing_idx as u64,
+                          meta: 0,
+                        });
+                      }
+                    }
+                    for t in tail.iter() {
+                      let canon_pos = canonical_args.len();
+                      canonical_args.push(t.clone());
+                      entries.push(CallSiteEntry::Kept {
+                        canon_idx: canon_pos as u64,
+                        meta: 0,
+                      });
+                    }
+
+                    // Preserve the ORIGINAL head (source name + source
+                    // level args) as the LAST sharing entry so decompile
+                    // can restore it — the stored canonical head carries
+                    // the target recursor's extended level list.
+                    collapsed_args.push(head_expr.clone());
+                    let n_canonical = canonical_args.len();
+                    let n_collapsed = collapsed_args.len();
+                    // The head keeps its SOURCE name (the alias resolves it
+                    // to the external recursor's address and the arena
+                    // records the source name for decompile) but carries
+                    // the target's level list.
+                    let head_for_canon =
+                      LeanExpr::cnst(name.clone(), target_levels);
+                    stack.push(Frame::BuildCallSite {
+                      name_addr,
+                      entries,
+                      n_canonical,
+                      n_collapsed,
+                      orig_head_collapsed: true,
+                    });
+                    for arg in collapsed_args.iter().rev() {
+                      stack.push(Frame::Compile(arg.clone()));
+                    }
+                    for arg in canonical_args.iter().rev() {
+                      stack.push(Frame::Compile(arg.clone()));
+                    }
+                    stack.push(Frame::Compile(head_for_canon));
+                    continue;
+                  }
                   let expected_total = plan.n_params
                     + plan.n_source_motives
                     + plan.n_source_minors
@@ -917,6 +1116,7 @@ pub fn compile_expr(
                       entries,
                       n_canonical,
                       n_collapsed,
+                      orig_head_collapsed: false,
                     });
                     for arg in collapsed_args.iter().rev() {
                       stack.push(Frame::Compile(arg.clone()));
@@ -1018,6 +1218,7 @@ pub fn compile_expr(
                       entries,
                       n_canonical,
                       n_collapsed,
+                      orig_head_collapsed: false,
                     });
                     for arg in collapsed_args.iter().rev() {
                       stack.push(Frame::Compile(arg.clone()));
@@ -1149,6 +1350,7 @@ pub fn compile_expr(
                       entries,
                       n_canonical,
                       n_collapsed,
+                      orig_head_collapsed: false,
                     });
                     for arg in collapsed_args.iter().rev() {
                       stack.push(Frame::Compile(arg.clone()));
@@ -1244,9 +1446,9 @@ pub fn compile_expr(
             stack.push(Frame::Compile(inner.clone()));
           },
 
-          ExprData::Fvar(..) => {
+          ExprData::Fvar(n, _) => {
             return Err(CompileError::UnsupportedExpr {
-              desc: "free variable".into(),
+              desc: format!("free variable '{}'", n.pretty()),
             });
           },
 
@@ -1354,6 +1556,7 @@ pub fn compile_expr(
         mut entries,
         n_canonical,
         n_collapsed,
+        orig_head_collapsed,
       } => {
         // Pop collapsed arg results and their arena roots
         let mut collapsed_exprs = Vec::with_capacity(n_collapsed);
@@ -1414,6 +1617,11 @@ pub fn compile_expr(
         // short-circuits anyway — non-identity is the case where surgery
         // actually fires, and only `canon_idx` gives the right root
         // there.
+        //
+        // When `orig_head_collapsed`, the LAST collapsed slot is the
+        // original head expression — it has no source-order entry, so the
+        // sequential fill below never reaches it; it's referenced by the
+        // node's `orig_head` field instead.
         let mut collapsed_idx = 0usize;
         for entry in &mut entries {
           match entry {
@@ -1427,12 +1635,21 @@ pub fn compile_expr(
             },
           }
         }
+        let orig_head = if orig_head_collapsed && n_collapsed > 0 {
+          Some((
+            (sharing_base + n_collapsed - 1) as u64,
+            collapsed_roots[n_collapsed - 1],
+          ))
+        } else {
+          None
+        };
 
         // Allocate CallSite metadata node in the arena
         let call_site_root = cache.arena.alloc(ExprMetaData::CallSite {
           name: name_addr,
           entries,
           canon_meta,
+          orig_head,
         });
 
         // Build canonical Ixon App spine: foldl App head canonical_args
@@ -3854,21 +4071,28 @@ fn compile_mutual(
         aux_layout_stored.as_ref(),
       )?;
       for (name, plan) in plans {
-        if let Some(brecon_name) = surgery::rec_name_to_brecon_name(&name)
-          && lean_env.get(&brecon_name).is_some()
-        {
-          stt.brec_on_call_site_plans.insert(
-            brecon_name,
-            surgery::BRecOnCallSitePlan::from_rec_plan(&plan),
-          );
-        }
-        if let Some(below_name) = surgery::rec_name_to_below_name(&name)
-          && lean_env.get(&below_name).is_some()
-        {
-          stt.below_call_site_plans.insert(
-            below_name,
-            surgery::BRecOnCallSitePlan::from_rec_plan(&plan),
-          );
+        // Head-rewritten (evaporated-aux) recursors get NO derived
+        // brecOn/below plans: their `.brecOn_N`/`.below_N` siblings have no
+        // canonical regeneration — they compile as surgered originals that
+        // KEEP the source telescope — so their callers must not be
+        // rewritten.
+        if plan.head_rewrite.is_none() {
+          if let Some(brecon_name) = surgery::rec_name_to_brecon_name(&name)
+            && lean_env.get(&brecon_name).is_some()
+          {
+            stt.brec_on_call_site_plans.insert(
+              brecon_name,
+              surgery::BRecOnCallSitePlan::from_rec_plan(&plan),
+            );
+          }
+          if let Some(below_name) = surgery::rec_name_to_below_name(&name)
+            && lean_env.get(&below_name).is_some()
+          {
+            stt.below_call_site_plans.insert(
+              below_name,
+              surgery::BRecOnCallSitePlan::from_rec_plan(&plan),
+            );
+          }
         }
         stt.call_site_plans.insert(name, plan);
       }
@@ -4126,6 +4350,7 @@ mod tests {
         source_to_canon_motive: vec![0, 1, 3, 2],
         source_to_canon_minor: vec![0, 1, 3, 2],
         source_in_block: vec![true, true, true, true],
+        head_rewrite: None,
       },
     );
 
@@ -4166,7 +4391,7 @@ mod tests {
     );
 
     let root = *cache.arena_roots.last().expect("compiled expression root");
-    let ExprMetaData::CallSite { name, entries, canon_meta } =
+    let ExprMetaData::CallSite { name, entries, canon_meta, orig_head: _ } =
       &cache.arena.nodes[root as usize]
     else {
       panic!("expected CallSite metadata at expression root");
