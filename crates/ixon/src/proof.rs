@@ -50,13 +50,10 @@ pub enum RevealMutConstInfo {
     value: Option<Address>,
   },
   Indc {
-    recr: Option<bool>,
-    refl: Option<bool>,
     is_unsafe: Option<bool>,
     lvls: Option<u64>,
     params: Option<u64>,
     indices: Option<u64>,
-    nested: Option<u64>,
     typ: Option<Address>,
     ctors: Option<Vec<(u64, RevealConstructorInfo)>>,
   },
@@ -470,36 +467,17 @@ impl RevealMutConstInfo {
           buf.extend_from_slice(v.as_bytes());
         }
       },
-      Self::Indc {
-        recr,
-        refl,
-        is_unsafe,
-        lvls,
-        params,
-        indices,
-        nested,
-        typ,
-        ctors,
-      } => {
+      Self::Indc { is_unsafe, lvls, params, indices, typ, ctors } => {
         buf.push(1);
         let mask = compute_mask(&[
-          recr.is_some(),
-          refl.is_some(),
           is_unsafe.is_some(),
           lvls.is_some(),
           params.is_some(),
           indices.is_some(),
-          nested.is_some(),
           typ.is_some(),
           ctors.is_some(),
         ]);
         Tag0::new(mask).put(buf);
-        if let Some(r) = recr {
-          put_bool_field(*r, buf);
-        }
-        if let Some(r) = refl {
-          put_bool_field(*r, buf);
-        }
         if let Some(u) = is_unsafe {
           put_bool_field(*u, buf);
         }
@@ -511,9 +489,6 @@ impl RevealMutConstInfo {
         }
         if let Some(i) = indices {
           Tag0::new(*i).put(buf);
-        }
-        if let Some(n) = nested {
-          Tag0::new(*n).put(buf);
         }
         if let Some(t) = typ {
           buf.extend_from_slice(t.as_bytes());
@@ -592,33 +567,17 @@ impl RevealMutConstInfo {
         Ok(Self::Defn { kind, safety, lvls, typ, value })
       },
       1 => {
-        let recr =
-          if mask & 1 != 0 { Some(get_bool_field(buf)?) } else { None };
-        let refl =
-          if mask & 2 != 0 { Some(get_bool_field(buf)?) } else { None };
         let is_unsafe =
-          if mask & 4 != 0 { Some(get_bool_field(buf)?) } else { None };
+          if mask & 1 != 0 { Some(get_bool_field(buf)?) } else { None };
         let lvls =
-          if mask & 8 != 0 { Some(Tag0::get(buf)?.size) } else { None };
+          if mask & 2 != 0 { Some(Tag0::get(buf)?.size) } else { None };
         let params =
-          if mask & 16 != 0 { Some(Tag0::get(buf)?.size) } else { None };
+          if mask & 4 != 0 { Some(Tag0::get(buf)?.size) } else { None };
         let indices =
-          if mask & 32 != 0 { Some(Tag0::get(buf)?.size) } else { None };
-        let nested =
-          if mask & 64 != 0 { Some(Tag0::get(buf)?.size) } else { None };
-        let typ = if mask & 128 != 0 { Some(get_address(buf)?) } else { None };
-        let ctors = if mask & 256 != 0 { Some(get_ctors(buf)?) } else { None };
-        Ok(Self::Indc {
-          recr,
-          refl,
-          is_unsafe,
-          lvls,
-          params,
-          indices,
-          nested,
-          typ,
-          ctors,
-        })
+          if mask & 8 != 0 { Some(Tag0::get(buf)?.size) } else { None };
+        let typ = if mask & 16 != 0 { Some(get_address(buf)?) } else { None };
+        let ctors = if mask & 32 != 0 { Some(get_ctors(buf)?) } else { None };
+        Ok(Self::Indc { is_unsafe, lvls, params, indices, typ, ctors })
       },
       2 => {
         let k = if mask & 1 != 0 { Some(get_bool_field(buf)?) } else { None };
@@ -1282,13 +1241,10 @@ mod tests {
           value: gen_opt_addr(g),
         },
         1 => Self::Indc {
-          recr: gen_opt_bool(g),
-          refl: gen_opt_bool(g),
           is_unsafe: gen_opt_bool(g),
           lvls: gen_opt_u64(g),
           params: gen_opt_u64(g),
           indices: gen_opt_u64(g),
-          nested: gen_opt_u64(g),
           typ: gen_opt_addr(g),
           ctors: gen_opt_ctors(g),
         },
@@ -2003,13 +1959,10 @@ mod tests {
           (
             0,
             RevealMutConstInfo::Indc {
-              recr: Some(true),
-              refl: None,
               is_unsafe: Some(false),
               lvls: None,
               params: Some(2),
               indices: None,
-              nested: None,
               typ: None,
               ctors: Some(vec![(
                 0,

@@ -123,7 +123,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     }
     let (orig_head, orig_args) = collect_app_spine(original);
     let (cur_head, cur_args) = collect_app_spine(current);
-    log::info!(
+    eprintln!(
       "[whnf fuel] {phase} const={} depth={} original_head={} original_args={} current_head={} current_args={}",
       self.debug_label.as_deref().unwrap_or("<unknown>"),
       self.depth(),
@@ -132,8 +132,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       cur_head,
       cur_args.len()
     );
-    log::info!("  original: {original}");
-    log::info!("  current:  {current}");
+    eprintln!("  original: {original}");
+    eprintln!("  current:  {current}");
   }
 
   fn dump_delta_trace(&self, id: &KId<M>, arity: usize, e: &KExpr<M>) {
@@ -147,7 +147,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     if !filter.is_empty() && !id_s.contains(filter) {
       return;
     }
-    log::info!(
+    eprintln!(
       "[delta] const={} depth={} head={} args={arity} expr={}",
       self.debug_label.as_deref().unwrap_or("<unknown>"),
       self.depth(),
@@ -176,7 +176,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     }
     let (head, args) = collect_app_spine(wval);
     match result {
-      Some(result) => log::info!(
+      Some(result) => eprintln!(
         "[proj] const={} depth={} proj={} field={} struct_head={} struct_args={} ctor_params={:?} result={}",
         self.debug_label.as_deref().unwrap_or("<unknown>"),
         self.depth(),
@@ -187,7 +187,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         ctor_params,
         result
       ),
-      None => log::info!(
+      None => eprintln!(
         "[proj] const={} depth={} proj={} field={} struct_head={} struct_args={} ctor_params={:?} result=<stuck>",
         self.debug_label.as_deref().unwrap_or("<unknown>"),
         self.depth(),
@@ -212,7 +212,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     if !filter.is_empty() && !head_s.contains(filter) {
       return;
     }
-    log::info!(
+    eprintln!(
       "[nat] const={} depth={} phase={} head={} args={} expr={}",
       self.debug_label.as_deref().unwrap_or("<unknown>"),
       self.depth(),
@@ -236,7 +236,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     if *IX_WHNF_COUNT_LOG {
       let n = WHNF_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
       if n.is_multiple_of(100_000) && n > 0 {
-        log::info!("[whnf] count={n}");
+        eprintln!("[whnf] count={n}");
       }
     }
     crate::profile::bump_whnf();
@@ -935,7 +935,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         let n = NAT_IOTA_TRACE_COUNT
           .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         if n < 32 {
-          log::info!(
+          eprintln!(
             "[nat_iota_trace] rec={} major_bits={} spine={} major_idx={}",
             rec_id,
             val.0.bits(),
@@ -979,9 +979,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     if !is_ctor && let Some(filter) = IX_IOTA_STUCK.as_ref() {
       let rec_name = format!("{rec_id}");
       if filter.is_empty() || rec_name.contains(filter) {
-        log::info!("[iota stuck] rec={rec_name}");
-        log::info!("[iota stuck]   major:      {major}");
-        log::info!("[iota stuck]   major whnf: {major_whnf}");
+        eprintln!("[iota stuck] rec={rec_name}");
+        eprintln!("[iota stuck]   major:      {major}");
+        eprintln!("[iota stuck]   major whnf: {major_whnf}");
       }
     }
 
@@ -1038,13 +1038,13 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     Ok(None)
   }
 
-  fn is_struct_like(&mut self, id: &KId<M>) -> Result<bool, TcError<M>> {
-    Ok(match self.try_get_const(id)? {
-      Some(KConst::Indc { is_rec, indices, ctors, .. }) => {
-        !is_rec && indices == 0 && ctors.len() == 1
-      },
-      _ => false,
-    })
+  pub fn is_struct_like(&mut self, id: &KId<M>) -> Result<bool, TcError<M>> {
+    match self.try_get_const(id)? {
+      Some(KConst::Indc { indices, ctors, .. })
+        if indices == 0 && ctors.len() == 1 => {},
+      _ => return Ok(false),
+    }
+    Ok(!self.computed_is_rec(id)?)
   }
 
   fn apply_iota_arg(
@@ -1674,7 +1674,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       let n =
         NAT_EXPAND_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
       if n.is_multiple_of(10_000) {
-        log::info!("[nat_to_constructor] count={n} val_bits={}", val.0.bits());
+        eprintln!("[nat_to_constructor] count={n} val_bits={}", val.0.bits());
       }
     }
     if val.0 == BigUint::ZERO {
@@ -1869,7 +1869,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
       if n < 8 {
         let step_whnf = self.whnf(step)?;
-        log::info!(
+        eprintln!(
           "[nat_linear_rec] major_bits={} base_idx={} step_idx={} spine={} step_whnf={}",
           parts.major.0.bits(),
           parts.base_idx,
@@ -3333,10 +3333,7 @@ mod tests {
         lvls: 0,
         params: 1,
         indices: 0,
-        is_rec: true,
-        is_refl: false,
         is_unsafe: false,
-        nested: 0,
         block: list_id.clone(),
         member_idx: 0,
         ty: pi(sort0(), sort0()),
@@ -3554,9 +3551,6 @@ mod tests {
         lvls: 0,
         params: 0,
         indices: 0,
-        is_rec: false,
-        is_refl: false,
-        nested: 0,
         block: block.clone(),
         member_idx: 0,
         ty: sort1(),
@@ -3650,9 +3644,6 @@ mod tests {
         lvls: 0,
         params: 0,
         indices: 0,
-        is_rec: true,
-        is_refl: false,
-        nested: 0,
         block: block.clone(),
         member_idx: 0,
         ty: sort1(),
@@ -4196,7 +4187,7 @@ mod tests {
       },
       ExprData::App(..) => {
         // Might be Nat.succ chain — that's also acceptable
-        log::info!("Nat.rec result is App chain (not folded to literal)");
+        eprintln!("Nat.rec result is App chain (not folded to literal)");
       },
       other => panic!("unexpected Nat.rec result: {:?}", other),
     }

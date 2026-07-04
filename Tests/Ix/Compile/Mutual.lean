@@ -465,4 +465,25 @@ public inductive DClosure (α : Type) (S : MySet (MySet α)) : MySet (MySet α)
 
 end ReducibleAliasTarget
 
+namespace AuxDedup1
+
+mutual
+  inductive A : Type where | mk : List B → List C → A
+  inductive B : Type where | leaf : B
+  inductive C : Type where | leaf : C
+end
+
+end AuxDedup1
+
+namespace AuxDedup2
+
+  inductive C : Type where | leaf : C
+mutual
+  inductive A : Type where | mk : List B → List C → A
+  inductive B : Type where | leaf : B
+end
+
+end AuxDedup2
+
+
 end Tests.Ix.Compile.Mutual

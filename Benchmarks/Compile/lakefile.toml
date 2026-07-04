@@ -17,6 +17,13 @@ name = "CompileMathlib"
 [[lean_lib]]
 name = "CompileFLT"
 
+[[lean_lib]]
+name = "CompileMutualFixtures"
+
+[[require]]
+name = "ix"
+path = "../.."
+
 [[require]]
 name = "flt"
 git = "https://github.com/ImperialCollegeLondon/FLT"

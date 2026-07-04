@@ -39,6 +39,7 @@ use ixon::{
 
 use crate::{
   compile::CompileState,
+  compile::aux_gen::nested::compute_lean_ind_flags,
   mutual::{Def, Ind, MutConst as LeanMutConst, MutCtx, all_to_ctx},
 };
 use dashmap::DashMap;
@@ -1622,9 +1623,9 @@ fn decompile_inductive(
     num_indices: Nat::from(ind.indices),
     all,
     ctors: ctor_names,
-    num_nested: Nat::from(ind.nested),
-    is_rec: ind.recr,
-    is_reflexive: ind.refl,
+    num_nested: Nat::from(0u64),
+    is_rec: false,
+    is_reflexive: false,
     is_unsafe: ind.is_unsafe,
   };
 
@@ -2718,8 +2719,19 @@ fn roundtrip_block(
               .map(|ci| vec![(name.clone(), ci)])
           },
           (Some(MutConst::Indc(ind)), LeanMutConst::Indc(_)) => {
-            let (iv, cvs) =
+            let (mut iv, cvs) =
               decompile_inductive(ind, &orig_meta, &mut dec_cache, stt, dstt)?;
+            // Recompute the lean flags, which are not stored by Ixon
+            let flags = compute_lean_ind_flags(&iv.all, generated_consts)
+              .map_err(|e| DecompileError::BadConstantFormat {
+                msg: format!(
+                  "roundtrip ind-flags for '{}': {e}",
+                  name.pretty()
+                ),
+              })?;
+            iv.num_nested = Nat::from(flags.num_nested);
+            iv.is_rec = flags.is_rec;
+            iv.is_reflexive = flags.is_reflexive;
             let mut entries =
               vec![(name.clone(), LeanConstantInfo::InductInfo(iv))];
             for cv in cvs {
@@ -4297,6 +4309,40 @@ pub fn decompile_env(
     "[decompile] Pass 1 done in {:.2}s ({} constants in dstt.env)",
     t_p1.elapsed().as_secs_f32(),
     dstt.env.len(),
+  );
+
+  // Pass 1.5: Lean-faithful inductive flags
+  let t_p1_5 = std::time::Instant::now();
+  let lean_env: ix_common::env::Env =
+    dstt.env.iter().map(|e| (e.key().clone(), e.value().clone())).collect();
+  let mut groups: FxHashMap<Name, Vec<Name>> = FxHashMap::default();
+  for entry in dstt.env.iter() {
+    if let LeanConstantInfo::InductInfo(v) = entry.value() {
+      if let Some(first) = v.all.first() {
+        groups.entry(first.clone()).or_insert_with(|| v.all.clone());
+      }
+    }
+  }
+  for (key, all) in &groups {
+    let flags = compute_lean_ind_flags(all, &lean_env).map_err(|e| {
+      DecompileError::BadConstantFormat {
+        msg: format!("ind-flags fixup for block '{}': {e}", key.pretty()),
+      }
+    })?;
+    for member in all {
+      if let Some(mut entry) = dstt.env.get_mut(member) {
+        if let LeanConstantInfo::InductInfo(v) = entry.value_mut() {
+          v.num_nested = Nat::from(flags.num_nested);
+          v.is_rec = flags.is_rec;
+          v.is_reflexive = flags.is_reflexive;
+        }
+      }
+    }
+  }
+  eprintln!(
+    "[decompile] Pass 1.5 done in {:.2}s ({} constants in dstt.env)",
+    t_p1_5.elapsed().as_secs_f32(),
+    groups.len(),
   );
 
   // Pass 2: Regenerate aux_gen constants for mutual inductive blocks.

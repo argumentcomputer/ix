@@ -330,8 +330,7 @@ public def claimRevealMuts (ixonEnv : Ixon.Env) : IO AiurTestCase := do
     | throw <| IO.userError "Muts components empty"
   let revealMc : Ix.RevealMutConstInfo := match firstMc with
     | .defn d => .defn (some d.kind) (some d.safety) none none none
-    | .indc i => .indc (some i.recr) (some i.refl) (some i.isUnsafe)
-                       none none none none none none
+    | .indc i => .indc (some i.isUnsafe) none none none none none
     | .recr r => .recr (some r.k) (some r.isUnsafe) none none none none none
                        none none
   let revealInfo : Ix.RevealConstantInfo := .muts #[(0, revealMc)]

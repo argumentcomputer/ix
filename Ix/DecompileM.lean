@@ -670,8 +670,9 @@ def decompileInductive (ind : Ixon.Inductive) (cnst : Constant) (cMeta : Constan
     cnst := { name, levelParams := univParams, type := typeExpr },
     numParams := ind.params.toNat, numIndices := ind.indices.toNat,
     all := allNames, ctors := ctorNames,
-    numNested := ind.nested.toNat, isRec := ind.recr,
-    isUnsafe := ind.isUnsafe, isReflexive := ind.refl }
+    -- temporary stub until we update the Lean compiler and decompiler semantics
+    numNested := 0, isRec := false
+    isUnsafe := ind.isUnsafe, isReflexive := false }
   pure (indVal, ctors)
 
 /-! ## Projection Handling -/

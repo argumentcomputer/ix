@@ -1905,13 +1905,10 @@ pub fn apply_sharing_to_mutual_block(
           })
           .collect();
         IxonMutConst::Indc(Inductive {
-          recr: ind.recr,
-          refl: ind.refl,
           is_unsafe: ind.is_unsafe,
           lvls: ind.lvls,
           params: ind.params,
           indices: ind.indices,
-          nested: ind.nested,
           typ: rewritten[indices[0]].clone(),
           ctors: new_ctors,
         })
@@ -2200,8 +2197,6 @@ pub fn compile_inductive(
     univ_params.iter().map(|n| compile_name(n, stt)).collect();
 
   let data = Inductive {
-    recr: ind.ind.is_rec,
-    refl: ind.ind.is_reflexive,
     is_unsafe: ind.ind.is_unsafe,
     lvls: univ_params.len() as u64,
     params: nat_to_u64(&ind.ind.num_params, "inductive num_params too large")?,
@@ -2209,7 +2204,6 @@ pub fn compile_inductive(
       &ind.ind.num_indices,
       "inductive num_indices too large",
     )?,
-    nested: nat_to_u64(&ind.ind.num_nested, "num_nested too large")?,
     typ,
     ctors,
   };
@@ -5025,13 +5019,10 @@ mod tests {
     );
 
     let ind = Inductive {
-      recr: false,
-      refl: false,
       is_unsafe: false,
       lvls: 0,
       params: 0,
       indices: 0,
-      nested: 0,
       typ: rewritten[0].clone(),
       ctors: ctors
         .into_iter()

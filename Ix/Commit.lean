@@ -208,8 +208,7 @@ def openMutConst (mc : Ixon.MutConst) : RevealMutConstInfo :=
       for j in [:i.ctors.size] do
         arr := arr.push (j.toUInt64, openConstructor i.ctors[j]!)
       return arr
-    .indc (some i.recr) (some i.refl) (some i.isUnsafe)
-      (some i.lvls) (some i.params) (some i.indices) (some i.nested)
+    .indc (some i.isUnsafe) (some i.lvls) (some i.params) (some i.indices)
       (some (exprAddr i.typ)) (some ctors)
   | .recr r =>
     let rules := Id.run do

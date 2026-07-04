@@ -7,3 +7,4 @@
 # Nix
 result*
 .direnv/
+*.ixe

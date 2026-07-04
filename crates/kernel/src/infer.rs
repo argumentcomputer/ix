@@ -42,7 +42,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     if *IX_INFER_COUNT_LOG {
       let n = INFER_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
       if n.is_multiple_of(100_000) && n > 0 {
-        log::info!("[infer] count={n}");
+        eprintln!("[infer] count={n}");
       }
     }
     let infer_only = self.infer_only;
@@ -111,27 +111,27 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         let f_ty = self.infer(f)?;
         let (dom, cod) = self.ensure_forall(&f_ty).inspect_err(|_err| {
           if *IX_INFER_APP_FORALL_DUMP && self.debug_label_matches_env() {
-            log::info!("[infer App] ensure_forall FAILED");
-            log::info!(
+            eprintln!("[infer App] ensure_forall FAILED");
+            eprintln!(
               "  const: {}",
               self.debug_label.as_deref().unwrap_or("<unknown>")
             );
-            log::info!("  f:    {f}");
-            log::info!("  f_ty: {f_ty}");
-            log::info!("  f_ty addr: {:?}", f_ty.addr());
-            log::info!("  a:    {a}");
+            eprintln!("  f:    {f}");
+            eprintln!("  f_ty: {f_ty}");
+            eprintln!("  f_ty addr: {:?}", f_ty.addr());
+            eprintln!("  a:    {a}");
             if let ExprData::App(ff, fa, _) = f.data() {
-              log::info!("  ff:    {ff}");
-              log::info!("  ff addr: {:?}", ff.addr());
+              eprintln!("  ff:    {ff}");
+              eprintln!("  ff addr: {:?}", ff.addr());
               if let Ok(ff_ty) = self.infer(ff) {
-                log::info!("  ff_ty: {ff_ty}");
-                log::info!("  ff_ty addr: {:?}", ff_ty.addr());
+                eprintln!("  ff_ty: {ff_ty}");
+                eprintln!("  ff_ty addr: {:?}", ff_ty.addr());
                 if let Ok((dom2, cod2)) = self.ensure_forall(&ff_ty) {
-                  log::info!("  ff_ty dom: {dom2}");
-                  log::info!("  ff_ty cod: {cod2}");
+                  eprintln!("  ff_ty dom: {dom2}");
+                  eprintln!("  ff_ty cod: {cod2}");
                 }
               }
-              log::info!("  fa:    {fa}");
+              eprintln!("  fa:    {fa}");
             }
           }
         })?;
@@ -158,27 +158,27 @@ impl<M: KernelMode> TypeChecker<'_, M> {
                 .ok()
                 .and_then(|s| s.parse::<usize>().ok())
                 .unwrap_or(2);
-              log::info!(
+              eprintln!(
                 "[app diff] AppTypeMismatch at depth={}",
                 self.ctx.len()
               );
-              log::info!("  f:          {}", compact_expr(f));
-              log::info!("  a:          {}", compact_expr(a));
-              log::info!("  a_ty:       {}", compact_expr_deep(&a_ty, depth));
-              log::info!("  dom:        {}", compact_expr_deep(&dom, depth));
-              log::info!("  a_ty data:  {:?}", a_ty.data());
-              log::info!("  dom data:   {:?}", dom.data());
+              eprintln!("  f:          {}", compact_expr(f));
+              eprintln!("  a:          {}", compact_expr(a));
+              eprintln!("  a_ty:       {}", compact_expr_deep(&a_ty, depth));
+              eprintln!("  dom:        {}", compact_expr_deep(&dom, depth));
+              eprintln!("  a_ty data:  {:?}", a_ty.data());
+              eprintln!("  dom data:   {:?}", dom.data());
               match &a_whnf {
                 Ok(w) => {
-                  log::info!("  a_ty whnf:  {}", compact_expr_deep(w, depth))
+                  eprintln!("  a_ty whnf:  {}", compact_expr_deep(w, depth))
                 },
-                Err(e) => log::info!("  a_ty whnf:  ERR {e}"),
+                Err(e) => eprintln!("  a_ty whnf:  ERR {e}"),
               }
               match &d_whnf {
                 Ok(w) => {
-                  log::info!("  dom  whnf:  {}", compact_expr_deep(w, depth))
+                  eprintln!("  dom  whnf:  {}", compact_expr_deep(w, depth))
                 },
-                Err(e) => log::info!("  dom  whnf:  ERR {e}"),
+                Err(e) => eprintln!("  dom  whnf:  ERR {e}"),
               }
             }
             return Err(TcError::AppTypeMismatch {
@@ -241,14 +241,14 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         let fv_id = self.fresh_fvar_id();
         let fv = self.intern(KExpr::fvar(fv_id, name.clone()));
         if crate::env_var("IX_FVAR_TRACE").is_ok() {
-          log::info!(
+          eprintln!(
             "[fvar All push] fv={fv_id} ty.addr={:?} ty.lbr={} ctx_len_before_push={} body.lbr={}",
             ty.addr(),
             ty.lbr(),
             self.ctx.len(),
             body.lbr(),
           );
-          log::info!("    ty data: {:?}", ty.data());
+          eprintln!("    ty data: {:?}", ty.data());
         }
         self.lctx.push(
           fv_id,

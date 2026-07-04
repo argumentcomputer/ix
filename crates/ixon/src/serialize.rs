@@ -641,11 +641,10 @@ impl Constructor {
 
 impl Inductive {
   pub fn put(&self, buf: &mut Vec<u8>) {
-    put_u8(pack_bools([self.recr, self.refl, self.is_unsafe]), buf);
+    put_u8(pack_bools([self.is_unsafe]), buf);
     put_u64(self.lvls, buf);
     put_u64(self.params, buf);
     put_u64(self.indices, buf);
-    put_u64(self.nested, buf);
     put_expr(&self.typ, buf);
     put_u64(self.ctors.len() as u64, buf);
     for ctor in &self.ctors {
@@ -654,28 +653,17 @@ impl Inductive {
   }
 
   pub fn get(buf: &mut &[u8]) -> Result<Self, String> {
-    let bools = unpack_bools(3, get_u8(buf)?);
+    let bools = unpack_bools(1, get_u8(buf)?);
     let lvls = get_u64(buf)?;
     let params = get_u64(buf)?;
     let indices = get_u64(buf)?;
-    let nested = get_u64(buf)?;
     let typ = get_expr(buf)?;
     let num_ctors = get_u64(buf)?;
     let mut ctors = Vec::with_capacity(capped_capacity(num_ctors, buf));
     for _ in 0..num_ctors {
       ctors.push(Constructor::get(buf)?);
     }
-    Ok(Inductive {
-      recr: bools[0],
-      refl: bools[1],
-      is_unsafe: bools[2],
-      lvls,
-      params,
-      indices,
-      nested,
-      typ,
-      ctors,
-    })
+    Ok(Inductive { is_unsafe: bools[0], lvls, params, indices, typ, ctors })
   }
 }
 

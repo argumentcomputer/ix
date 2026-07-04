@@ -159,16 +159,16 @@ impl<M: KernelMode> TypeChecker<'_, M> {
             // (delta, iota, native, ...) is missing for convergence.
             let val_ty_whnf = self.whnf(&val_ty);
             let ty_whnf = self.whnf(ty);
-            log::info!("[decl diff] DeclTypeMismatch");
-            log::info!("  val_ty:      {val_ty}");
-            log::info!("  ty:          {ty}");
+            eprintln!("[decl diff] DeclTypeMismatch");
+            eprintln!("  val_ty:      {val_ty}");
+            eprintln!("  ty:          {ty}");
             match &val_ty_whnf {
-              Ok(w) => log::info!("  val_ty whnf: {w}"),
-              Err(e) => log::info!("  val_ty whnf: ERR {e}"),
+              Ok(w) => eprintln!("  val_ty whnf: {w}"),
+              Err(e) => eprintln!("  val_ty whnf: ERR {e}"),
             }
             match &ty_whnf {
-              Ok(w) => log::info!("  ty     whnf: {w}"),
-              Err(e) => log::info!("  ty     whnf: ERR {e}"),
+              Ok(w) => eprintln!("  ty     whnf: {w}"),
+              Err(e) => eprintln!("  ty     whnf: ERR {e}"),
             }
           }
           return Err(TcError::DeclTypeMismatch);
@@ -192,7 +192,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         if let Some(t0) = overall
           && self.phase_timing_label_matches(id)
         {
-          log::info!(
+          eprintln!(
             "[phase] {} total={:>8.1?} dup_lvls={:>8.1?} validate={:>8.1?} validate_ty={:>8.1?} validate_val={:>8.1?} validate_rules={:>8.1?} validate_univ={:>8.1?} infer_ty={:>8.1?} infer_val={:>8.1?} def_eq={:>8.1?} safety={:>8.1?} safety_ty={:>8.1?} safety_val={:>8.1?}",
             id,
             t0.elapsed(),
@@ -395,7 +395,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     if let Some(t0) = overall
       && self.phase_timing_label_matches(block)
     {
-      log::info!(
+      eprintln!(
         "[phase-block] {} kind={:?} members={} total={:>8.1?} get_members={:>8.1?} prevalidate={:>8.1?} validate_ty={:>8.1?} validate_val={:>8.1?} validate_rules={:>8.1?} validate_univ={:>8.1?} classify={:>8.1?} body={:>8.1?}",
         block,
         kind,
@@ -1236,10 +1236,7 @@ mod tests {
         lvls: 0,
         params: 0,
         indices: 0,
-        is_rec: false,
-        is_refl: false,
         is_unsafe: true,
-        nested: 0,
         block: unsafe_ty.clone(),
         member_idx: 0,
         ty: sort1(),

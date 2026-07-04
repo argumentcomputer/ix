@@ -94,10 +94,9 @@ structure RevealRecursorRule where
 inductive RevealMutConstInfo where
   | defn (kind : Option DefKind) (safety : Option DefinitionSafety)
          (lvls : Option UInt64) (typ : Option Address) (value : Option Address)
-  | indc (isRecr : Option Bool) (refl : Option Bool) (isUnsafe : Option Bool)
-         (lvls : Option UInt64) (params : Option UInt64)
-         (indices : Option UInt64) (nested : Option UInt64)
-         (typ : Option Address) (ctors : Option (Array (UInt64 × RevealConstructorInfo)))
+  | indc (isUnsafe : Option Bool) (lvls : Option UInt64) (params : Option UInt64)
+         (indices : Option UInt64) (typ : Option Address)
+         (ctors : Option (Array (UInt64 × RevealConstructorInfo)))
   | recr (k : Option Bool) (isUnsafe : Option Bool) (lvls : Option UInt64)
          (params : Option UInt64) (indices : Option UInt64)
          (motives : Option UInt64) (minors : Option UInt64)
@@ -240,19 +239,15 @@ def put : RevealMutConstInfo → PutM Unit
     match lvls with | some n => putTag0 ⟨n⟩ | none => pure ()
     match typ with | some a => Serialize.put a | none => pure ()
     match value with | some a => Serialize.put a | none => pure ()
-  | .indc isRecr refl isUnsafe lvls params indices nested typ ctors => do
+  | .indc isUnsafe lvls params indices typ ctors => do
     putU8 1
-    let mask := computeMask [isRecr.isSome, refl.isSome, isUnsafe.isSome,
-                             lvls.isSome, params.isSome, indices.isSome,
-                             nested.isSome, typ.isSome, ctors.isSome]
+    let mask := computeMask [isUnsafe.isSome, lvls.isSome, params.isSome, 
+      indices.isSome, typ.isSome, ctors.isSome]
     putTag0 ⟨mask⟩
-    match isRecr with | some b => putBoolField b | none => pure ()
-    match refl with | some b => putBoolField b | none => pure ()
     match isUnsafe with | some b => putBoolField b | none => pure ()
     match lvls with | some n => putTag0 ⟨n⟩ | none => pure ()
     match params with | some n => putTag0 ⟨n⟩ | none => pure ()
     match indices with | some n => putTag0 ⟨n⟩ | none => pure ()
-    match nested with | some n => putTag0 ⟨n⟩ | none => pure ()
     match typ with | some a => Serialize.put a | none => pure ()
     match ctors with | some c => putCtors c | none => pure ()
   | .recr k isUnsafe lvls params indices motives minors typ rules => do
@@ -283,16 +278,13 @@ def get : GetM RevealMutConstInfo := do
     let value ← getOpt mask 16 Serialize.get
     return .defn kind safety lvls typ value
   | 1 => do -- Indc
-    let isRecr ← getOpt mask 1 getBoolField
-    let refl ← getOpt mask 2 getBoolField
-    let isUnsafe ← getOpt mask 4 getBoolField
-    let lvls ← getOpt mask 8 getTag0Size
-    let params ← getOpt mask 16 getTag0Size
-    let indices ← getOpt mask 32 getTag0Size
-    let nested ← getOpt mask 64 getTag0Size
-    let typ ← getOpt mask 128 Serialize.get
-    let ctors ← getOpt mask 256 getCtors
-    return .indc isRecr refl isUnsafe lvls params indices nested typ ctors
+    let isUnsafe ← getOpt mask 1 getBoolField
+    let lvls ← getOpt mask 2 getTag0Size
+    let params ← getOpt mask 4 getTag0Size
+    let indices ← getOpt mask 8 getTag0Size
+    let typ ← getOpt mask 16 Serialize.get
+    let ctors ← getOpt mask 32 getCtors
+    return .indc isUnsafe lvls params indices typ ctors
   | 2 => do -- Recr
     let k ← getOpt mask 1 getBoolField
     let isUnsafe ← getOpt mask 2 getBoolField

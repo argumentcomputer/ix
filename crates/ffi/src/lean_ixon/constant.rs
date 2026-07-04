@@ -294,17 +294,14 @@ impl LeanIxonInductive<LeanOwned> {
     ctor.set_num_64(0, ind.lvls);
     ctor.set_num_64(1, ind.params);
     ctor.set_num_64(2, ind.indices);
-    ctor.set_num_64(3, ind.nested);
-    ctor.set_num_8(0, u8::from(ind.recr));
-    ctor.set_num_8(1, u8::from(ind.refl));
-    ctor.set_num_8(2, u8::from(ind.is_unsafe));
+    ctor.set_num_8(0, u8::from(ind.is_unsafe));
     ctor
   }
 }
 
 impl<R: LeanRef> LeanIxonInductive<R> {
   /// Decode Ixon.Inductive.
-  /// Scalars ordered by size: lvls(8) + params(8) + indices(8) + nested(8) + recr(1) + refl(1) + isUnsafe(1) + padding(5)
+  /// Scalars ordered by size: lvls(8) + params(8) + indices(8) + isUnsafe(1) + padding(5)
   pub fn decode(&self) -> IxonInductive {
     let ctor = self.as_ctor();
     let typ = Arc::new(LeanIxonExpr::new(ctor.get(0).to_owned_ref()).decode());
@@ -314,21 +311,8 @@ impl<R: LeanRef> LeanIxonInductive<R> {
     let lvls = self.get_num_64(0);
     let params = self.get_num_64(1);
     let indices = self.get_num_64(2);
-    let nested = self.get_num_64(3);
-    let recr = self.get_num_8(0) != 0;
-    let refl = self.get_num_8(1) != 0;
-    let is_unsafe = self.get_num_8(2) != 0;
-    IxonInductive {
-      recr,
-      refl,
-      is_unsafe,
-      lvls,
-      params,
-      indices,
-      nested,
-      typ,
-      ctors,
-    }
+    let is_unsafe = self.get_num_8(0) != 0;
+    IxonInductive { is_unsafe, lvls, params, indices, typ, ctors }
   }
 }
 

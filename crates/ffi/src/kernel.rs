@@ -3444,7 +3444,14 @@ pub extern "C" fn rs_kernel_roundtrip_no_compile(
 
   // Egress kernel → Lean.
   let t2 = Instant::now();
-  let egressed_env = lean_egress(&kenv);
+  let egressed_env = match lean_egress(&kenv) {
+    Ok(env) => env,
+    Err(e) => {
+      return LeanIOResult::error_string(&format!(
+        "rs_kernel_roundtrip_no_compile: egress failed {e}"
+      ));
+    },
+  };
   eprintln!(
     "[rs_kernel_roundtrip_no_compile] egress:      {:>8.1?} ({} consts)",
     t2.elapsed(),
