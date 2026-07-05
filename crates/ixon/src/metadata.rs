@@ -252,6 +252,105 @@ impl ConstantMeta {
       || !self.meta_univs.is_empty()
   }
 
+  /// Enumerate every external address this metadata references,
+  /// partitioned by the table that resolves it:
+  ///
+  /// - `names`: name-component addresses (resolved against
+  ///   `Env.names`) — the variant's `name`/`lvls`/`all`/`ctx`/...
+  ///   fields, arena binder/ref/proj/call-site names, and KVMap keys
+  ///   plus `DataValue::OfName` payloads;
+  /// - `blobs`: raw-byte payload addresses (`DataValue`
+  ///   strings/nats/ints/syntax, resolved against `Env.blobs`);
+  /// - `dag`: `meta_refs` extension-table addresses — constants or
+  ///   blobs referenced by collapsed call-site argument expressions,
+  ///   i.e. genuine value-DAG edges the primary `Constant.refs` walk
+  ///   cannot see.
+  ///
+  /// Used by `Env::prune_to_closure` to carry a bundle's display
+  /// metadata completely. Duplicates are not filtered; callers dedup.
+  pub fn collect_deps(
+    &self,
+    names: &mut Vec<Address>,
+    blobs: &mut Vec<Address>,
+    dag: &mut Vec<Address>,
+  ) {
+    use ConstantMetaInfo as I;
+    let mut arena: Option<&ExprMeta> = None;
+    match &self.info {
+      I::Empty => {},
+      I::Def { name, lvls, all, ctx, arena: a, .. } => {
+        names.push(name.clone());
+        names.extend(lvls.iter().cloned());
+        names.extend(all.iter().cloned());
+        names.extend(ctx.iter().cloned());
+        arena = Some(a);
+      },
+      I::Axio { name, lvls, arena: a, .. }
+      | I::Quot { name, lvls, arena: a, .. } => {
+        names.push(name.clone());
+        names.extend(lvls.iter().cloned());
+        arena = Some(a);
+      },
+      I::Indc { name, lvls, ctors, all, ctx, arena: a, .. } => {
+        names.push(name.clone());
+        names.extend(lvls.iter().cloned());
+        names.extend(ctors.iter().cloned());
+        names.extend(all.iter().cloned());
+        names.extend(ctx.iter().cloned());
+        arena = Some(a);
+      },
+      I::Ctor { name, lvls, induct, arena: a, .. } => {
+        names.push(name.clone());
+        names.extend(lvls.iter().cloned());
+        names.push(induct.clone());
+        arena = Some(a);
+      },
+      I::Rec { name, lvls, rules, all, ctx, arena: a, .. } => {
+        names.push(name.clone());
+        names.extend(lvls.iter().cloned());
+        names.extend(rules.iter().cloned());
+        names.extend(all.iter().cloned());
+        names.extend(ctx.iter().cloned());
+        arena = Some(a);
+      },
+      I::Muts { all, .. } => {
+        for class in all {
+          names.extend(class.iter().cloned());
+        }
+      },
+    }
+    if let Some(a) = arena {
+      for node in &a.nodes {
+        match node {
+          ExprMetaData::Leaf | ExprMetaData::App { .. } => {},
+          ExprMetaData::Binder { name, .. }
+          | ExprMetaData::LetBinder { name, .. }
+          | ExprMetaData::Ref { name }
+          | ExprMetaData::CallSite { name, .. } => names.push(name.clone()),
+          ExprMetaData::Prj { struct_name, .. } => {
+            names.push(struct_name.clone());
+          },
+          ExprMetaData::Mdata { mdata, .. } => {
+            for kv in mdata {
+              for (key, value) in kv {
+                names.push(key.clone());
+                match value {
+                  DataValue::OfName(a) => names.push(a.clone()),
+                  DataValue::OfString(a)
+                  | DataValue::OfNat(a)
+                  | DataValue::OfInt(a)
+                  | DataValue::OfSyntax(a) => blobs.push(a.clone()),
+                  DataValue::OfBool(_) => {},
+                }
+              }
+            }
+          },
+        }
+      }
+    }
+    dag.extend(self.meta_refs.iter().cloned());
+  }
+
   /// Delegate indexed serialization to the inner enum, then serialize
   /// extension tables.
   pub fn put_with(

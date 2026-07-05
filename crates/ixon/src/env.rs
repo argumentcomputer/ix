@@ -8,7 +8,10 @@ use ix_common::address::Address;
 use ix_common::env::{Name, ReducibilityHints};
 
 use super::comm::Comm;
-use super::constant::Constant;
+use super::constant::{
+  Constant, ConstantInfo, MutConst, ctor_proj_address, defn_proj_address,
+  indc_proj_address, recr_proj_address,
+};
 use super::lazy::LazyConstant;
 use super::map::IxonMap;
 use super::metadata::{ConstantMeta, ConstantMetaInfo};
@@ -196,6 +199,10 @@ pub struct LazyIndex {
   pub consts: Vec<LazyConstSlice>,
   pub named: Vec<LazyNamed>,
   pub blobs: Vec<(Address, Vec<u8>)>,
+  /// Bundle root (`Env::main`) as read from the header.
+  pub main: Option<Address>,
+  /// Bundle trust boundary (`Env::assumptions`), in header (sorted) order.
+  pub assumptions: Vec<Address>,
 }
 
 /// The Ixon environment.
@@ -235,6 +242,18 @@ pub struct Env {
   /// supplying them in anon mode does not relax the kernel's
   /// metadata-free correctness model.
   pub anon_hints: FxHashMap<Address, ReducibilityHints>,
+  /// Distinguished root constant for bundle envs; `None` for whole
+  /// environments. A pointer, not a proof: nothing in the file
+  /// authenticates it, so readers check `main ∈ consts` and consumers
+  /// holding an externally-expected address (from a Claim, a request)
+  /// must compare against it.
+  pub main: Option<Address>,
+  /// Explicit trust boundary for thin bundles: addresses (constants
+  /// or blobs) the receiver is expected to already have, so the
+  /// closure of `main` need not be carried in full. Serialized as a
+  /// strictly ascending leaf list; `merkle_root_canonical` over it
+  /// reproduces the root a `Claim::assumptions` field commits to.
+  pub assumptions: FxHashSet<Address>,
 }
 
 impl Env {
@@ -246,6 +265,8 @@ impl Env {
       names: IxonMap::new(),
       comms: IxonMap::new(),
       anon_hints: FxHashMap::default(),
+      main: None,
+      assumptions: FxHashSet::default(),
     }
   }
 
@@ -477,6 +498,281 @@ impl Env {
     v.sort_unstable();
     v
   }
+
+  /// Collect `c`'s outgoing closure edges: Expr-level `refs`, a
+  /// projection's structural `block` pointer, and — for a `Muts`
+  /// block at `addr` — every member/constructor projection address
+  /// (derived, not stored anywhere; `ingress_anon_block` computes
+  /// these and requires them present in the env).
+  fn closure_edges(addr: &Address, c: &Constant, edges: &mut Vec<Address>) {
+    edges.extend(c.refs.iter().cloned());
+    match &c.info {
+      ConstantInfo::IPrj(p) => edges.push(p.block.clone()),
+      ConstantInfo::CPrj(p) => edges.push(p.block.clone()),
+      ConstantInfo::RPrj(p) => edges.push(p.block.clone()),
+      ConstantInfo::DPrj(p) => edges.push(p.block.clone()),
+      ConstantInfo::Muts(members) => {
+        for (i, m) in members.iter().enumerate() {
+          let i = i as u64;
+          edges.push(match m {
+            MutConst::Defn(_) => defn_proj_address(i, addr),
+            MutConst::Indc(_) => indc_proj_address(i, addr),
+            MutConst::Recr(_) => recr_proj_address(i, addr),
+          });
+          if let MutConst::Indc(ind) = m {
+            for cidx in 0..ind.ctors.len() as u64 {
+              edges.push(ctor_proj_address(i, cidx, addr));
+            }
+          }
+        }
+      },
+      _ => {},
+    }
+  }
+
+  /// BFS-collect the full dependency closure of `roots`, following
+  /// all three structural edge kinds (see [`Self::closure_edges`]):
+  ///
+  /// 1. `Constant.refs` — Expr-level references (constants and blobs);
+  /// 2. projection → its `Muts` block (`DPrj`/`IPrj`/`RPrj`/`CPrj`
+  ///    carry `block` in the info payload and have EMPTY refs tables,
+  ///    so a refs-only walk returns just the projection itself);
+  /// 3. `Muts` block → every member/constructor projection address.
+  ///
+  /// Compare [`Self::bfs_refs`], which follows only edge 1 and stays
+  /// the basis of claim assumption roots. The kernel's
+  /// `anon_work::closure_addrs` delegates here.
+  ///
+  /// Referenced addresses absent from `consts` (blobs and external
+  /// assumptions) appear in the returned set as leaves.
+  pub fn bfs_closure(&self, roots: &[Address]) -> FxHashSet<Address> {
+    let mut closure: FxHashSet<Address> = FxHashSet::default();
+    let mut queue: VecDeque<Address> = VecDeque::new();
+    for r in roots {
+      if closure.insert(r.clone()) {
+        queue.push_back(r.clone());
+      }
+    }
+    while let Some(addr) = queue.pop_front() {
+      // Materialize just long enough to read edges; drop the map
+      // guard before recursing (see `bfs_refs`).
+      let constant = self.consts.get(&addr).and_then(|r| r.value().get().ok());
+      let Some(c) = constant else { continue };
+      let mut edges: Vec<Address> = Vec::new();
+      Self::closure_edges(&addr, &c, &mut edges);
+      for e in edges {
+        if closure.insert(e.clone()) {
+          queue.push_back(e);
+        }
+      }
+    }
+    closure
+  }
+
+  /// Bundle completeness check (receiver side): `main` must be a
+  /// stored constant, and every address reachable from it via
+  /// [`Self::bfs_closure`] must be either carried by this env
+  /// (consts ∪ blobs) or declared in `assumptions`.
+  ///
+  /// This validates the VALUE pin. Display-metadata completeness
+  /// (names, `DataValue` blobs) is the writer's business —
+  /// [`Self::prune_to_closure`] carries it; a receiver that only
+  /// typechecks/evaluates never needs it.
+  pub fn validate_closed(&self) -> Result<(), String> {
+    let Some(main) = self.main.clone() else {
+      return Err("validate_closed: env has no main".to_string());
+    };
+    if self.consts.get(&main).is_none() {
+      return Err(format!(
+        "validate_closed: main {} not present in consts",
+        main.hex()
+      ));
+    }
+    for addr in self.bfs_closure(std::slice::from_ref(&main)) {
+      if self.consts.contains_key(&addr)
+        || self.blobs.contains_key(&addr)
+        || self.assumptions.contains(&addr)
+      {
+        continue;
+      }
+      return Err(format!(
+        "validate_closed: {} reachable from main but neither carried nor \
+         assumed",
+        addr.hex()
+      ));
+    }
+    Ok(())
+  }
+
+  /// Build a self-contained bundle env: the 3-edge closure of `main`,
+  /// cut at `assumed`.
+  ///
+  /// - Reached constants are carried with their GENUINE bytes
+  ///   (`store_const_lazy`), so the receiver's per-entry hash check
+  ///   and consts merkle root hold; reached blobs are copied.
+  /// - Cut-points actually reached go to `out.assumptions` (minimal:
+  ///   a declared-but-unreached assumption is not carried).
+  /// - `anon_hints` are copied per carried constant (else a bundle
+  ///   regresses kernel-check time to the `Regular(0)` fallback).
+  /// - Display metadata is carried for every carried constant: its
+  ///   `named` entries (all of them — alpha-equivalent names may
+  ///   share one address), the name components they reference (with
+  ///   full parent chains and string-component blobs), `DataValue`
+  ///   payload blobs, `meta_refs` extension DAG edges, and aux_gen
+  ///   `original` constants. Metadata can introduce new DAG edges, so
+  ///   the walk runs to fixpoint (usually two rounds).
+  ///
+  /// Errors if a reached address is in neither `consts`, `blobs`, nor
+  /// `assumed` — the source env cannot produce a closed bundle for
+  /// `main` under that cut.
+  ///
+  /// Host-only — see `store_blob`.
+  #[cfg(not(target_arch = "riscv64"))]
+  pub fn prune_to_closure(
+    &self,
+    main: &Address,
+    assumed: &FxHashSet<Address>,
+  ) -> Result<Env, String> {
+    if assumed.contains(main) {
+      return Err("prune_to_closure: main cannot be assumed".to_string());
+    }
+    let mut out = Env::new();
+    out.main = Some(main.clone());
+
+    let mut visited: FxHashSet<Address> = FxHashSet::default();
+    let mut pending: VecDeque<Address> = VecDeque::new();
+    visited.insert(main.clone());
+    pending.push_back(main.clone());
+    let mut named_done: FxHashSet<Name> = FxHashSet::default();
+
+    loop {
+      // ── Value pass: 3-edge BFS over pending roots, cut at `assumed`.
+      while let Some(addr) = pending.pop_front() {
+        if assumed.contains(&addr) {
+          out.assumptions.insert(addr);
+          continue;
+        }
+        if let Some(bytes) = self.get_const_bytes(&addr) {
+          out.store_const_lazy(addr.clone(), bytes);
+          if let Some(h) = self.anon_hints.get(&addr) {
+            out.anon_hints.insert(addr.clone(), *h);
+          }
+          let c = self.get_const(&addr).ok_or_else(|| {
+            format!("prune_to_closure: constant {} unparseable", addr.hex())
+          })?;
+          let mut edges: Vec<Address> = Vec::new();
+          Self::closure_edges(&addr, &c, &mut edges);
+          for e in edges {
+            if visited.insert(e.clone()) {
+              pending.push_back(e);
+            }
+          }
+        } else if let Some(blob) = self.get_blob(&addr) {
+          out.blobs.insert(addr, blob);
+        } else {
+          return Err(format!(
+            "prune_to_closure: {} reachable from main but not in \
+             consts/blobs and not assumed",
+            addr.hex()
+          ));
+        }
+      }
+
+      // ── Named pass: carry display metadata for every carried
+      // constant. Metadata references content the value walk cannot
+      // see; new DAG edges feed the next value pass.
+      for entry in self.named.iter() {
+        let named = entry.value();
+        if !out.consts.contains_key(&named.addr)
+          || named_done.contains(entry.key())
+        {
+          continue;
+        }
+        named_done.insert(entry.key().clone());
+        out.named.insert(entry.key().clone(), named.clone());
+        self.carry_name(&mut out, entry.key());
+
+        let mut name_addrs: Vec<Address> = Vec::new();
+        let mut blob_addrs: Vec<Address> = Vec::new();
+        let mut dag_addrs: Vec<Address> = Vec::new();
+        named.meta().collect_deps(
+          &mut name_addrs,
+          &mut blob_addrs,
+          &mut dag_addrs,
+        );
+        if let Some((orig_addr, orig_meta)) = named.original() {
+          dag_addrs.push(orig_addr);
+          orig_meta.collect_deps(
+            &mut name_addrs,
+            &mut blob_addrs,
+            &mut dag_addrs,
+          );
+        }
+        for na in name_addrs {
+          let Some(name) = self.get_name(&na) else {
+            return Err(format!(
+              "prune_to_closure: metadata references name {} absent from \
+               names",
+              na.hex()
+            ));
+          };
+          self.carry_name(&mut out, &name);
+        }
+        for ba in blob_addrs {
+          let Some(blob) = self.get_blob(&ba) else {
+            return Err(format!(
+              "prune_to_closure: metadata references blob {} absent from \
+               blobs",
+              ba.hex()
+            ));
+          };
+          out.blobs.insert(ba, blob);
+        }
+        for da in dag_addrs {
+          if visited.insert(da.clone()) {
+            pending.push_back(da);
+          }
+        }
+      }
+
+      // The named pass ran against the final consts of this round; if
+      // it produced no new DAG work, the walk is complete.
+      if pending.is_empty() {
+        break;
+      }
+    }
+    Ok(out)
+  }
+
+  /// Copy `name` and its full parent chain into `out.names`, storing
+  /// each string component's bytes as a blob (the compiler's
+  /// convention — mirrors `addNameComponentsWithBlobs` on the Lean
+  /// side). Stops early once a component is already present: its
+  /// parents were carried with it.
+  #[cfg(not(target_arch = "riscv64"))]
+  fn carry_name(&self, out: &mut Env, name: &Name) {
+    use ix_common::env::NameData;
+    let mut cur = name.clone();
+    loop {
+      let addr = Address::from_blake3_hash(*cur.get_hash());
+      if out.names.get(&addr).is_some() {
+        return;
+      }
+      out.names.insert(addr, cur.clone());
+      let next = match cur.as_data() {
+        NameData::Anonymous(_) => None,
+        NameData::Str(parent, s, _) => {
+          out.store_blob(s.as_bytes().to_vec());
+          Some(parent.clone())
+        },
+        NameData::Num(parent, _, _) => Some(parent.clone()),
+      };
+      match next {
+        Some(p) => cur = p,
+        None => return,
+      }
+    }
+  }
 }
 
 impl Clone for Env {
@@ -516,6 +812,8 @@ impl Clone for Env {
       names,
       comms,
       anon_hints: self.anon_hints.clone(),
+      main: self.main.clone(),
+      assumptions: self.assumptions.clone(),
     }
   }
 }
@@ -911,5 +1209,171 @@ mod tests {
         entry.key()
       );
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // bfs_closure / prune_to_closure / validate_closed
+  // ---------------------------------------------------------------------------
+
+  fn defn_member(discriminator: u64) -> crate::constant::Definition {
+    use crate::constant::{DefKind, Definition};
+    use ix_common::env::DefinitionSafety;
+    Definition {
+      kind: DefKind::Definition,
+      safety: DefinitionSafety::Safe,
+      lvls: discriminator,
+      typ: Arc::new(Expr::Sort(0)),
+      value: Arc::new(Expr::Var(0)),
+    }
+  }
+
+  #[test]
+  fn bfs_closure_follows_projection_and_block_edges() {
+    use crate::constant::{MutConst, defn_proj_address, defn_proj_constant};
+    let env = Env::new();
+    let block_addr = store_canonical(
+      &env,
+      Constant::new(ConstantInfo::Muts(vec![
+        MutConst::Defn(defn_member(0)),
+        MutConst::Defn(defn_member(1)),
+      ])),
+    );
+    // Member projections live at derived addresses.
+    let p0_addr =
+      store_canonical(&env, defn_proj_constant(0, block_addr.clone()));
+    assert_eq!(p0_addr, defn_proj_address(0, &block_addr));
+    let p1_addr =
+      store_canonical(&env, defn_proj_constant(1, block_addr.clone()));
+
+    // From a projection root: the block and its sibling projections
+    // are reachable via the structural edges.
+    let closure = env.bfs_closure(std::slice::from_ref(&p0_addr));
+    assert!(closure.contains(&p0_addr));
+    assert!(closure.contains(&block_addr), "Prj → block edge");
+    assert!(closure.contains(&p1_addr), "block → sibling projection edge");
+
+    // A refs-only walk sees none of this (projections have empty refs).
+    let refs_only = env.bfs_refs(&p0_addr);
+    assert_eq!(refs_only.len(), 1, "refs-only walk stops at the projection");
+  }
+
+  #[test]
+  fn prune_to_closure_carries_value_closure_and_blobs() {
+    let env = Env::new();
+    let blob_addr = env.store_blob(b"forty two".to_vec());
+    let c = store_canonical(&env, const_with_refs(vec![]));
+    let a = store_canonical(
+      &env,
+      const_with_refs(vec![blob_addr.clone(), c.clone()]),
+    );
+    let d = store_canonical(&env, const_with_refs_discriminator(vec![], 7));
+
+    let bundle = env.prune_to_closure(&a, &FxHashSet::default()).unwrap();
+    assert_eq!(bundle.main, Some(a.clone()));
+    assert!(bundle.consts.contains_key(&a));
+    assert!(bundle.consts.contains_key(&c));
+    assert!(!bundle.consts.contains_key(&d), "unreachable const not carried");
+    assert_eq!(bundle.get_blob(&blob_addr), Some(b"forty two".to_vec()));
+    assert!(bundle.assumptions.is_empty());
+    bundle.validate_closed().unwrap();
+
+    // Bundle survives a serialize → deserialize roundtrip closed
+    // (genuine bytes: per-entry hashes and the merkle root hold).
+    let mut buf = Vec::new();
+    bundle.put(&mut buf).unwrap();
+    let loaded = Env::get(&mut buf.as_slice()).unwrap();
+    loaded.validate_closed().unwrap();
+    assert_eq!(loaded.main, Some(a));
+  }
+
+  #[test]
+  fn prune_to_closure_cuts_at_assumed() {
+    let env = Env::new();
+    let c = store_canonical(&env, const_with_refs(vec![]));
+    let b = store_canonical(&env, const_with_refs(vec![c.clone()]));
+    let a = store_canonical(&env, const_with_refs(vec![b.clone()]));
+    let assumed: FxHashSet<Address> = [b.clone()].into_iter().collect();
+    let bundle = env.prune_to_closure(&a, &assumed).unwrap();
+    assert!(bundle.consts.contains_key(&a));
+    assert!(!bundle.consts.contains_key(&b), "cut point not carried");
+    assert!(!bundle.consts.contains_key(&c), "beyond the cut not carried");
+    assert_eq!(
+      bundle.assumptions, assumed,
+      "minimal assumptions = reached cuts"
+    );
+    bundle.validate_closed().unwrap();
+  }
+
+  #[test]
+  fn prune_to_closure_missing_dep_errors_unless_assumed() {
+    let env = Env::new();
+    let ghost = Address::hash(b"ghost");
+    let a = store_canonical(&env, const_with_refs(vec![ghost.clone()]));
+    let err = env.prune_to_closure(&a, &FxHashSet::default()).unwrap_err();
+    assert!(err.contains("not in consts/blobs"), "got: {err}");
+    let assumed: FxHashSet<Address> = [ghost].into_iter().collect();
+    let bundle = env.prune_to_closure(&a, &assumed).unwrap();
+    bundle.validate_closed().unwrap();
+  }
+
+  #[test]
+  fn validate_closed_rejects_missing_blob_unless_assumed() {
+    let mut env = Env::new();
+    let blob_addr = Address::hash(b"blob-bytes");
+    let a = store_canonical(&env, const_with_refs(vec![blob_addr.clone()]));
+    env.main = Some(a);
+    let err = env.validate_closed().unwrap_err();
+    assert!(err.contains("reachable from main"), "got: {err}");
+    env.assumptions.insert(blob_addr);
+    env.validate_closed().unwrap();
+  }
+
+  #[test]
+  fn prune_to_closure_carries_named_metadata() {
+    use crate::metadata::{ConstantMetaInfo, ExprMeta};
+    let env = Env::new();
+    let a = store_canonical(&env, const_with_refs(vec![]));
+    // A blob referenced ONLY from metadata (meta_refs extension table)
+    // — invisible to the value walk.
+    let meta_blob = env.store_blob(b"callsite payload".to_vec());
+    let name = n("Bundled");
+    let name_addr = Address::from_blake3_hash(*name.get_hash());
+    env.store_name(name_addr.clone(), name.clone());
+    let mut meta = ConstantMeta::new(ConstantMetaInfo::Def {
+      name: name_addr.clone(),
+      lvls: vec![],
+      hints: ReducibilityHints::Regular(3),
+      all: vec![],
+      ctx: vec![],
+      arena: ExprMeta::default(),
+      type_root: 0,
+      value_root: 0,
+    });
+    meta.meta_refs.push(meta_blob.clone());
+    env.register_name(name.clone(), Named::new(a.clone(), meta));
+
+    let bundle = env.prune_to_closure(&a, &FxHashSet::default()).unwrap();
+    assert!(bundle.named.get(&name).is_some(), "named entry carried");
+    assert_eq!(
+      bundle.get_name(&name_addr),
+      Some(name.clone()),
+      "name component carried"
+    );
+    assert_eq!(
+      bundle.get_blob(&meta_blob),
+      Some(b"callsite payload".to_vec()),
+      "meta_refs blob carried"
+    );
+    // String-component blob carried too (compiler convention).
+    assert_eq!(
+      bundle.get_blob(&Address::hash(b"Bundled")),
+      Some(b"Bundled".to_vec())
+    );
+    // Hints derive from the carried Def meta on serialization; the
+    // anon reader sees them without touching metadata sections.
+    let mut buf = Vec::new();
+    bundle.put(&mut buf).unwrap();
+    let anon = Env::get_anon(&mut buf.as_slice()).unwrap();
+    assert_eq!(anon.anon_hints.get(&a), Some(&ReducibilityHints::Regular(3)));
   }
 }

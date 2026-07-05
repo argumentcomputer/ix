@@ -234,6 +234,60 @@ pub extern "C" fn rs_eq_env_serialization(
     }
   }
 
+  // Bundle header fields.
+  if rust_env.main != decoded.main {
+    if debug {
+      eprintln!(
+        "[rs_eq_env_serialization] main mismatch: rust={:?}, decoded={:?}",
+        rust_env.main.as_ref().map(Address::hex),
+        decoded.main.as_ref().map(Address::hex),
+      );
+    }
+    return false;
+  }
+  let decoded_assumptions: rustc_hash::FxHashSet<Address> =
+    decoded.assumptions.iter().cloned().collect();
+  if rust_env.assumptions != decoded_assumptions {
+    if debug {
+      eprintln!(
+        "[rs_eq_env_serialization] assumptions mismatch: rust={}, decoded={}",
+        rust_env.assumptions.len(),
+        decoded_assumptions.len(),
+      );
+    }
+    return false;
+  }
+
+  // Hints: the writers derive §3 from Named `Def` metadata when the
+  // explicit map is empty, so the parsed env's hints must equal the
+  // same derivation over the decoded RawEnv.
+  let expected_hints: rustc_hash::FxHashMap<
+    Address,
+    ix_common::env::ReducibilityHints,
+  > = if decoded.anon_hints.is_empty() {
+    let mut derived = rustc_hash::FxHashMap::default();
+    for rn in &decoded.named {
+      if let ixon::metadata::ConstantMetaInfo::Def { hints, .. } =
+        &rn.const_meta.info
+      {
+        derived.entry(rn.addr.clone()).or_insert(*hints);
+      }
+    }
+    derived
+  } else {
+    decoded.anon_hints.iter().cloned().collect()
+  };
+  if rust_env.anon_hints != expected_hints {
+    if debug {
+      eprintln!(
+        "[rs_eq_env_serialization] anon_hints mismatch: rust={}, expected={}",
+        rust_env.anon_hints.len(),
+        expected_hints.len(),
+      );
+    }
+    return false;
+  }
+
   true
 }
 

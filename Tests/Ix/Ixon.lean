@@ -153,9 +153,11 @@ def envSerdeUnit (env : Env) : Bool :=
 def envUnitTests : TestSeq :=
   -- Test 1: Empty env
   let emptyEnv : Env := {}
-  -- Test 2: Env with only a blob
-  let blobAddr := Address.blake3 (ByteArray.mk #[1, 2, 3])
-  let envWithBlob : Env := { blobs := ({} : Std.HashMap _ _).insert blobAddr (ByteArray.mk #[4, 5, 6]) }
+  -- Test 2: Env with only a blob. Blob addresses must be the content
+  -- hash of the bytes — readers verify per entry.
+  let blobBytes := ByteArray.mk #[4, 5, 6]
+  let blobAddr := Address.blake3 blobBytes
+  let envWithBlob : Env := { blobs := ({} : Std.HashMap _ _).insert blobAddr blobBytes }
   -- Test 3: Env with a simple name (no named entry)
   let testName := Ix.Name.mkStr Ix.Name.mkAnon "test"
   let testNameAddr := testName.getHash
@@ -179,15 +181,34 @@ def envUnitTests : TestSeq :=
   let payloadAddr := Address.blake3 (ByteArray.mk #[13, 14, 15])
   let commAddr := Address.blake3 (ByteArray.mk #[16, 17, 18])
   let envWithBlobAndComm : Env := {
-    blobs := ({} : Std.HashMap _ _).insert blobAddr (ByteArray.mk #[4, 5, 6]),
+    blobs := ({} : Std.HashMap _ _).insert blobAddr blobBytes,
     comms := ({} : Std.HashMap _ _).insert commAddr (Comm.mk secretAddr payloadAddr)
   }
+  -- Test 7: Bundle env — main + assumptions + anonHints exercise the
+  -- bundle header and §3.
+  let bundleDef : Definition := {
+    kind := .defn, safety := .safe, lvls := 0, typ := .sort 0, value := .sort 0
+  }
+  let bundleConst : Constant := {
+    info := .defn bundleDef, sharing := #[], refs := #[], univs := #[]
+  }
+  let bundleConstAddr := Address.blake3 (serConstant bundleConst)
+  let bundleEnv : Env := Id.run do
+    let mut env : Env := {}
+    env := env.storeConst bundleConstAddr bundleConst
+    return { env with
+      main := some bundleConstAddr
+      assumptions := ({} : Std.HashSet Address)
+        |>.insert (Address.blake3 (ByteArray.mk #[42]))
+        |>.insert (Address.blake3 (ByteArray.mk #[43]))
+      anonHints := ({} : Std.HashMap _ _).insert bundleConstAddr (.regular 5) }
   test "Empty env roundtrip" (envSerdeUnit emptyEnv) ++
   test "Env with blob roundtrip" (envSerdeUnit envWithBlob) ++
   test "Env with name roundtrip" (envSerdeUnit envWithName) ++
   test "Env with named (empty meta) roundtrip" (envSerdeUnit envWithNamed) ++
   test "Env with nested name roundtrip" (envSerdeUnit envWithNestedName) ++
-  test "Env with blob+comm roundtrip" (envSerdeUnit envWithBlobAndComm)
+  test "Env with blob+comm roundtrip" (envSerdeUnit envWithBlobAndComm) ++
+  test "Bundle env (main/assumptions/hints) roundtrip" (envSerdeUnit bundleEnv)
 
 /-! ## Cross-implementation serialization comparison tests -/
 
@@ -204,15 +225,22 @@ def envSerializationMatches (raw : RawEnv) : Bool :=
   let env := raw.toEnv
   rsEqEnvSerialization raw (serEnv env)
 
+/-- Strict byte equality between the pure-Lean writer and the Rust
+    writer over the same RawEnv (a stronger check than
+    `rsEqEnvSerialization`'s content comparison). -/
+def envBytesMatchRust (raw : RawEnv) : Bool :=
+  serEnv raw.toEnv == rsSerEnvFFI raw
+
 /-- Unit tests for Lean==Rust serialization comparison -/
 def envSerializationUnitTests : TestSeq :=
   -- Test 1: Empty env
   let emptyRaw : RawEnv := { consts := #[], named := #[], blobs := #[], comms := #[] }
-  -- Test 2: Env with one blob
-  let blobAddr := Address.blake3 (ByteArray.mk #[1, 2, 3])
+  -- Test 2: Env with one blob (content-addressed: readers verify).
+  let blobBytes := ByteArray.mk #[4, 5, 6]
+  let blobAddr := Address.blake3 blobBytes
   let blobRaw : RawEnv := {
     consts := #[], named := #[],
-    blobs := #[{ addr := blobAddr, bytes := ByteArray.mk #[4, 5, 6] }],
+    blobs := #[{ addr := blobAddr, bytes := blobBytes }],
     comms := #[]
   }
   -- Test 3: Env with one comm
@@ -227,13 +255,35 @@ def envSerializationUnitTests : TestSeq :=
   -- Test 4: Env with blob + comm
   let blobCommRaw : RawEnv := {
     consts := #[], named := #[],
-    blobs := #[{ addr := blobAddr, bytes := ByteArray.mk #[4, 5, 6] }],
+    blobs := #[{ addr := blobAddr, bytes := blobBytes }],
     comms := #[{ addr := commAddr, comm := Comm.mk secretAddr payloadAddr }]
+  }
+  -- Test 5: Bundle env — the directed cross-language vector for the
+  -- bundle header (main/assumptions) and §3 anon_hints.
+  let bundleDef : Definition := {
+    kind := .defn, safety := .safe, lvls := 0, typ := .sort 0, value := .sort 0
+  }
+  let bundleConst : Constant := {
+    info := .defn bundleDef, sharing := #[], refs := #[], univs := #[]
+  }
+  let bundleConstAddr := Address.blake3 (serConstant bundleConst)
+  let bundleRaw : RawEnv := {
+    consts := #[{ addr := bundleConstAddr, const := bundleConst }],
+    named := #[], blobs := #[], comms := #[],
+    main := some bundleConstAddr,
+    assumptions := #[
+      Address.blake3 (ByteArray.mk #[42]),
+      Address.blake3 (ByteArray.mk #[43])],
+    anonHints := #[(bundleConstAddr, .regular 5)]
   }
   test "Empty env Lean==Rust" (envSerializationMatches emptyRaw) ++
   test "Blob env Lean==Rust" (envSerializationMatches blobRaw) ++
   test "Comm env Lean==Rust" (envSerializationMatches commRaw) ++
-  test "Blob+Comm env Lean==Rust" (envSerializationMatches blobCommRaw)
+  test "Blob+Comm env Lean==Rust" (envSerializationMatches blobCommRaw) ++
+  test "Bundle env Lean==Rust" (envSerializationMatches bundleRaw) ++
+  test "Empty env bytes Lean==Rust" (envBytesMatchRust emptyRaw) ++
+  test "Blob env bytes Lean==Rust" (envBytesMatchRust blobRaw) ++
+  test "Bundle env bytes Lean==Rust" (envBytesMatchRust bundleRaw)
 
 /-! ## Canonical env merkle root: Lean vs. Rust agreement -/
 
