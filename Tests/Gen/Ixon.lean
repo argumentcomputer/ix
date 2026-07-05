@@ -457,9 +457,12 @@ def genRawConst : Gen RawConst := do
 def genRawNamed : Gen RawNamed :=
   RawNamed.mk <$> genIxName 3 <*> genAddress <*> pure .empty
 
-/-- Generate a RawBlob -/
-def genRawBlob : Gen RawBlob :=
-  RawBlob.mk <$> genAddress <*> genByteArray
+/-- Generate a RawBlob whose `addr` is the canonical content hash of
+    `bytes`. Readers verify `Address.blake3 bytes == addr` per entry
+    (blob-tampering defense), so arbitrary addresses are rejected. -/
+def genRawBlob : Gen RawBlob := do
+  let bytes ← genByteArray
+  pure { addr := Address.blake3 bytes, bytes }
 
 /-- Generate a RawComm -/
 def genRawComm : Gen RawComm :=
@@ -469,13 +472,29 @@ def genRawComm : Gen RawComm :=
 def genRawNameEntry : Gen RawNameEntry :=
   RawNameEntry.mk <$> genAddress <*> genIxName 3
 
-/-- Generate a RawEnv with small arrays to avoid memory issues -/
-def genRawEnv : Gen RawEnv :=
-  RawEnv.mk <$> genSmallArray genRawConst
-    <*> genSmallArray genRawNamed
-    <*> genSmallArray genRawBlob
-    <*> genSmallArray genRawComm
-    <*> genSmallArray genRawNameEntry
+/-- Generate a RawEnv with small arrays to avoid memory issues. `main`
+    (when present) references a generated const — writers/readers check
+    `main ∈ consts`. Assumptions and hint keys are opaque addresses. -/
+def genRawEnv : Gen RawEnv := do
+  let consts ← genSmallArray genRawConst
+  let named ← genSmallArray genRawNamed
+  let blobs ← genSmallArray genRawBlob
+  let comms ← genSmallArray genRawComm
+  let names ← genSmallArray genRawNameEntry
+  let main ←
+    if consts.size > 0 then
+      frequency [
+        (1, pure none),
+        (1, do
+          let i ← Gen.choose Nat 0 (consts.size - 1)
+          pure (consts[i % consts.size]?.map (·.addr))),
+      ]
+    else pure none
+  let assumptionList ← genList genAddress
+  let assumptions := assumptionList.toArray.qsort fun a b => (compare a b).isLT
+  let hintList ← genList (Prod.mk <$> genAddress <*> genReducibilityHints)
+  let anonHints := hintList.toArray.qsort fun a b => (compare a.1 b.1).isLT
+  pure { consts, named, blobs, comms, names, main, assumptions, anonHints }
 
 instance : Shrinkable RawConst where
   shrink rc := (fun c => { rc with const := c }) <$> Shrinkable.shrink rc.const
@@ -486,18 +505,36 @@ instance : Shrinkable RawNamed where
     | _ => [{ rn with constMeta := .empty }]
 
 instance : Shrinkable RawBlob where
-  shrink rb := if rb.bytes.size > 0 then [{ rb with bytes := ByteArray.empty }] else []
+  shrink rb :=
+    -- Keep the content-address invariant: shrunk bytes need the
+    -- matching hash or the loaders reject the shrunk case.
+    if rb.bytes.size > 0 then
+      [{ addr := Address.blake3 ByteArray.empty, bytes := ByteArray.empty }]
+    else []
 
 instance : Shrinkable RawComm where
   shrink _ := []
 
 instance : Shrinkable RawEnv where
   shrink env :=
-    (if env.consts.size > 0 then [{ env with consts := env.consts.pop }] else []) ++
+    -- Popping a const may orphan `main` (writers reject main ∉ consts),
+    -- so clear it when its target is dropped.
+    (if env.consts.size > 0 then
+      let popped := env.consts.pop
+      let main := match env.main with
+        | some m => if popped.any (·.addr == m) then env.main else none
+        | none => none
+      [{ env with consts := popped, main }]
+     else []) ++
     (if env.named.size > 0 then [{ env with named := env.named.pop }] else []) ++
     (if env.blobs.size > 0 then [{ env with blobs := env.blobs.pop }] else []) ++
     (if env.comms.size > 0 then [{ env with comms := env.comms.pop }] else []) ++
-    (if env.names.size > 0 then [{ env with names := env.names.pop }] else [])
+    (if env.names.size > 0 then [{ env with names := env.names.pop }] else []) ++
+    (if env.assumptions.size > 0 then [{ env with assumptions := env.assumptions.pop }] else []) ++
+    (if env.anonHints.size > 0 then [{ env with anonHints := env.anonHints.pop }] else []) ++
+    (match env.main with
+      | some _ => [{ env with main := none }]
+      | none => [])
 
 instance : SampleableExt RawConst := SampleableExt.mkSelfContained genRawConst
 instance : SampleableExt RawNamed := SampleableExt.mkSelfContained genRawNamed

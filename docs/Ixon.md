@@ -802,15 +802,22 @@ plus `.ixe`. See `src/ix/ixon/serialize.rs::Env::put` for the
 byte-level layout.
 
 The .ixe layout is a Tag4(0xE, 0) header byte followed by a 32-byte
-canonical merkle root and then 5 sections:
+canonical merkle root, the bundle header fields, and then 6 sections
+(hot data first, metadata last):
 
 ```
-Header:  Tag4 { flag: 0xE, size: 0 }    -- one byte (0xE0)
-Root:    32 bytes                       -- canonical merkle root over
-                                          consts.keys(); for empty
-                                          const sets this is the
-                                          fixed `zero_address`
-                                          sentinel.
+Header:      Tag4 { flag: 0xE, size: 0 }  -- one byte (0xE0)
+Root:        32 bytes                     -- canonical merkle root over
+                                            consts.keys(); for empty
+                                            const sets this is the
+                                            fixed `zero_address`
+                                            sentinel.
+Main:        1 byte (0x00 | 0x01) + 32 bytes if 0x01
+                                          -- optional bundle root; see
+                                            "Bundles" below.
+Assumptions: count (Tag0) + [Address (32 bytes)]*
+                                          -- strictly ascending; the
+                                            bundle trust boundary.
 ```
 
 The root is mandatory (non-optional): every env has a unique canonical
@@ -819,11 +826,22 @@ produce byte-identical roots regardless of construction order.
 Deserialization recomputes the root from `consts` and rejects any
 mismatch as tampered.
 
+`main` and `assumptions` are NOT covered by the consts merkle root —
+`main` is a convenience pointer (readers verify `main ∈ consts`;
+consumers holding an externally-expected address must compare), and
+the assumptions root, when a claim needs it, is recomputed as
+`merkle_root_canonical(leaves)` from the section (identical to the
+root `AssumptionTree::canonical` produces over the same leaves).
+
 **Section 1: Blobs** (Address → raw bytes)
 ```
 count (Tag0)
 [Address (32 bytes) + len (Tag0) + bytes]*
 ```
+
+Every reader verifies `blake3(bytes) == addr` per blob entry — a
+swapped blob would otherwise silently change a Nat/String literal's
+value under an otherwise-valid file.
 
 **Section 2: Constants** (Address → length-prefixed Constant bytes)
 ```
@@ -833,41 +851,84 @@ count (Tag0)
 
 The Tag0 length sidecar is a **section-level** framing byte: it is not
 part of the constant's content-addressed bytes. The address is
-computed as `blake3` over only the Tag4 constant body. This layout
-lets a lazy loader slice each constant directly into a
-[`LazyConstant`](../src/ix/ixon/lazy.rs) without parsing its Tag4
-envelope, deferring full deserialization until first access. The
-materialized `Constant` is cached so subsequent accesses are free.
+computed as `blake3` over only the Tag4 constant body (verified per
+entry on load). This layout lets a lazy loader slice each constant
+directly into a [`LazyConstant`](../crates/ixon/src/lazy.rs) without
+parsing its Tag4 envelope, deferring full deserialization until first
+access.
 
-### Anonymous-only loading
+**Section 3: Reducibility hints** (Address → ReducibilityHints)
+```
+count (Tag0)
+[Address (32 bytes) + ReducibilityHints]*
+```
 
-`Env::get_anon` (`src/ix/ixon/serialize.rs`) is a sibling of
-`Env::get` that loads only the anonymous sections — header, blobs,
-consts — and parses-and-drops the metadata sections (names, named,
-comms). The returned `Env` has empty `named`/`names`/`comms` and is
-suitable for anon-mode kernel workflows that never consult metadata.
-Steady-state memory for a Mathlib-scale env drops from ~3-4 GB
-(structured + metadata) to ~1 GB (lazy bytes only).
+The canonical hint channel for the anon/lazy readers, keyed by
+constant address and sorted ascending. Writers ALWAYS emit this
+section: when the in-memory hint map is empty (the compile path —
+hints live in Named metadata), the section is derived from the Named
+entries' `Def` metadata at write time. Hints are performance-only
+advice (the `Regular(0)` fallback is always correct) and are
+intentionally outside the consts merkle root.
 
-Exposed to Lean via `rs_de_env_anon` (`Ix.Ixon.rsDeEnvAnon`).
-
-**Section 3: Names** (Address → NameComponent, topologically sorted)
+**Section 4: Names** (Address → NameComponent, topologically sorted)
 ```
 count (Tag0)
 [Address (32 bytes) + NameComponent]*
 ```
 
-**Section 4: Named** (Name Address → Named with indexed metadata)
+**Section 5: Named** (Name Address → Named with indexed metadata)
 ```
 count (Tag0)
 [NameAddress (32 bytes) + ConstAddress (32 bytes) + ConstantMeta]*
 ```
 
-**Section 5: Commitments** (Address → Comm)
+**Section 6: Commitments** (Address → Comm)
 ```
 count (Tag0)
 [Address (32 bytes) + secret_addr (32 bytes) + payload_addr (32 bytes)]*
 ```
+
+The full reader (`Env::get` / Lean `getEnv`) rejects trailing bytes
+after Section 6.
+
+### Anonymous-only loading
+
+`Env::get_anon` (`crates/ixon/src/serialize.rs`) is a sibling of
+`Env::get` that reads the header, §1 blobs, §2 consts, and §3 hints,
+then STOPS — the metadata sections are laid out after the hints
+precisely so anon readers never touch them. The returned `Env` has
+empty `named`/`names`/`comms` and is suitable for anon-mode kernel
+workflows that never consult metadata. Steady-state memory for a
+Mathlib-scale env drops from ~3-4 GB (structured + metadata) to ~1 GB
+(lazy bytes only).
+
+Exposed to Lean via `rs_de_env_anon` (`Ix.Ixon.rsDeEnvAnon`);
+`Env::get_anon_mmap` is the zero-copy mmap sibling and
+`Env::parse_lazy_index` the zero-copy index variant (reads through §5,
+skipping only comms).
+
+### Bundles: pinning a single value
+
+A **bundle** is an `.ixe` whose `main` points at a distinguished
+constant (e.g. an anonymous `Defn` wrapping a value, produced by
+`Ix.Commit.compileDef`) and whose contents are closed up to
+`assumptions`. Because a constant's address is a merkle root over its
+entire dependency DAG (refs tables hold addresses of constants and
+literal blobs, recursively), `main`'s 32 bytes alone pin the value;
+the bundle is the data-availability artifact that ships the bytes
+behind those addresses.
+
+- `Env::prune_to_closure(main, assumed)` builds a bundle: the 3-edge
+  closure of `main` (Expr refs; projection → `Muts` block; `Muts`
+  block → member/constructor projections), cut at `assumed`, carrying
+  constants (genuine bytes), blobs, per-constant hints, and display
+  metadata (named entries, name components + string blobs, `DataValue`
+  payload blobs, `meta_refs` extension edges, aux_gen originals).
+- `Env::validate_closed()` is the receiver-side check: `main ∈ consts`
+  and every reachable address is carried (consts ∪ blobs) or assumed.
+- Whole-environment files are the degenerate case (`main` absent,
+  `assumptions` empty).
 
 ---
 
@@ -881,7 +942,7 @@ fits in single-byte tags (sizes 0..=7 per flag).
 
 | Size | Byte | Type | Payload |
 |------|------|------|---------|
-| 0 | `0xE0` | Environment | bare 32-byte merkle root + 5 sections |
+| 0 | `0xE0` | Environment | 32-byte merkle root + main/assumptions + 6 sections |
 | 1 | `0xE1` | Commitment | 2 addr: secret, payload |
 | 2 | `0xE2` | AssumptionTree | recursive merkle-tree body (see below) |
 | 3 | `0xE3` | Eval claim | 2 addr (input, output) + opt assumptions |

@@ -137,10 +137,11 @@ def serdeTests : TestSeq :=
   -- Empty RawEnv. Only data construction happens eagerly; FFI is deferred
   -- inside `mkSerdeRoundtripTest`.
   let empty : RawEnv := { consts := #[], named := #[], blobs := #[], comms := #[] }
-  -- RawEnv with data. The const's `addr` must be the canonical content
-  -- hash (`Address.blake3 (serConstant c)`) — the Rust loader verifies
-  -- `Address::hash(bytes) == addr` on load. Blobs and comms don't carry
-  -- a content-hash invariant, so `testAddr` is fine there.
+  -- RawEnv with data. Consts AND blobs must be content-addressed — the
+  -- Rust loader verifies `Address::hash(bytes) == addr` per entry for
+  -- both. `testAddr` is blake3 of `[1,2,3]`, which is exactly the blob's
+  -- bytes below, so the blob invariant holds; comms carry no
+  -- content-hash invariant, so `testAddr` is fine there too.
   let testAddr := Address.blake3 (ByteArray.mk #[1, 2, 3])
   let testExpr : Expr := .sort 0
   let testDef : Definition := {
@@ -220,13 +221,12 @@ private def genSerdeRawEnv : Gen RawEnv := do
     let idx ← Gen.choose Nat 0 (pool.size - 1)
     let (addr, name) := pool[idx]!
     named := named.push { name, addr, constMeta := .empty }
-  -- Blobs: pool addresses
+  -- Blobs: content-addressed (the loaders verify blake3(bytes) == addr)
   let numBlobs ← Gen.choose Nat 0 3
   let mut blobs : Array RawBlob := #[]
   for _ in [:numBlobs] do
-    let addr ← pickAddr
     let bytes ← Tests.Gen.Ixon.genByteArray
-    blobs := blobs.push { addr, bytes }
+    blobs := blobs.push { addr := Address.blake3 bytes, bytes }
   -- Comms: pool addresses
   let numComms ← Gen.choose Nat 0 2
   let mut comms : Array RawComm := #[]

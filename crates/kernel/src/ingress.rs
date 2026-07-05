@@ -3684,11 +3684,21 @@ fn drop_ixon_env(_ixon_env: IxonEnv, _quiet: bool) {
 fn drop_ixon_env(ixon_env: IxonEnv, quiet: bool) {
   let total_start = Instant::now();
   // `anon_hints` is a small FxHashMap (one entry per Def from the .ixe's
-  // Named metadata); dropping it inline alongside the bookkeeping below
-  // is negligible compared to the DashMap dropdance.
+  // hints section); `main`/`assumptions` are a single address and a small
+  // set. Dropping them inline alongside the bookkeeping below is
+  // negligible compared to the DashMap dropdance.
   // `..` covers the env's private fields.
-  let IxonEnv { consts, named, blobs, names, comms, anon_hints: _, .. } =
-    ixon_env;
+  let IxonEnv {
+    consts,
+    named,
+    blobs,
+    names,
+    comms,
+    anon_hints: _,
+    main: _,
+    assumptions: _,
+    ..
+  } = ixon_env;
   let consts_len = consts.len();
   let named_len = named.len();
   let names_len = names.len();

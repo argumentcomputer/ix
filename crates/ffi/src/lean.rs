@@ -52,13 +52,15 @@ lean_ffi::lean_inductive! {
   LeanIxonRawBlob         [ { num_obj: 2 } ];
   LeanIxonRawComm         [ { num_obj: 2 } ];
   LeanIxonRawNameEntry    [ { num_obj: 2 } ];
-  LeanIxonRawEnv          [ { num_obj: 5 } ];
+  // consts, named, blobs, comms, names, main, assumptions, anonHints
+  LeanIxonRawEnv          [ { num_obj: 8 } ];
 
   // Lazy/anon deserialization (`rs_de_env_lazy`): zero-copy const windows
-  // (addr + offset + len), name->addr + hint, and copied blobs.
+  // (addr + offset + len), name->addr + hint, copied blobs, and the
+  // bundle header fields (main, assumptions).
   LeanIxonRawConstSlice   [ { num_obj: 1, num_64: 2 } ];
   LeanIxonRawNamedLite    [ { num_obj: 2, num_64: 2 } ];
-  LeanIxonRawEnvLazy      [ { num_obj: 3 } ];
+  LeanIxonRawEnvLazy      [ { num_obj: 5 } ];
 
   // --- Ixon multi-variant inductives ---
 

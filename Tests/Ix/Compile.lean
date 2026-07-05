@@ -337,8 +337,8 @@ def testCrossImpl : TestSeq :=
         IO.println s!"[Step 4]   Lean blob stats: total={fmtBytes leanTotalBlobData}, max={fmtBytes leanMaxBlob}, avg={fmtBytes leanAvgBlob}, big(>1kB)={leanBig}, huge(>100kB)={leanHuge}"
         IO.println s!"[Step 4]   Lean top 10 blob sizes: {leanTopSizes.map fmtBytes}"
 
-        let (leanBlobs, leanConsts, leanNames, leanNamed, leanComms) := Ixon.envSectionSizes leanIxonEnv
-        IO.println s!"[Step 4]   Lean sections: blobs={fmtBytes leanBlobs}, consts={fmtBytes leanConsts}, names={fmtBytes leanNames}, named={fmtBytes leanNamed}, comms={fmtBytes leanComms}"
+        let (leanBlobs, leanConsts, leanHints, leanNames, leanNamed, leanComms) := Ixon.envSectionSizes leanIxonEnv
+        IO.println s!"[Step 4]   Lean sections: blobs={fmtBytes leanBlobs}, consts={fmtBytes leanConsts}, hints={fmtBytes leanHints}, names={fmtBytes leanNames}, named={fmtBytes leanNamed}, comms={fmtBytes leanComms}"
         let leanEnvBytes := serializeEnv leanIxonEnv
         IO.println s!"[Step 4]   Lean env done: {fmtBytes leanEnvBytes.size}"
 
@@ -358,8 +358,8 @@ def testCrossImpl : TestSeq :=
         IO.println s!"[Step 4]   Rust blob stats: total={fmtBytes rustTotalBlobData}, max={fmtBytes rustMaxBlob}, avg={fmtBytes rustAvgBlob}, big(>1kB)={rustBig}, huge(>100kB)={rustHuge}"
         IO.println s!"[Step 4]   Rust top 10 blob sizes: {rustTopSizes.map fmtBytes}"
 
-        let (rustBlobs, rustConsts, rustNames, rustNamed, rustComms) := Ixon.envSectionSizes phases.compileEnv
-        IO.println s!"[Step 4]   Rust sections: blobs={fmtBytes rustBlobs}, consts={fmtBytes rustConsts}, names={fmtBytes rustNames}, named={fmtBytes rustNamed}, comms={fmtBytes rustComms}"
+        let (rustBlobs, rustConsts, rustHints, rustNames, rustNamed, rustComms) := Ixon.envSectionSizes phases.compileEnv
+        IO.println s!"[Step 4]   Rust sections: blobs={fmtBytes rustBlobs}, consts={fmtBytes rustConsts}, hints={fmtBytes rustHints}, names={fmtBytes rustNames}, named={fmtBytes rustNamed}, comms={fmtBytes rustComms}"
         let rustEnvBytes := serializeEnv phases.compileEnv
         IO.println s!"[Step 4]   Rust env done: {fmtBytes rustEnvBytes.size}"
         let serTime := (← IO.monoMsNow) - serStart

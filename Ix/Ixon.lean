@@ -1520,6 +1520,20 @@ structure Env where
   comms : Std.HashMap Address Comm := {}
   /-- Reverse index: constant Address → Ix.Name -/
   addrToName : Std.HashMap Address Ix.Name := {}
+  /-- Distinguished root constant for bundle envs; `none` for whole
+      environments. A pointer, not a proof: readers check
+      `main ∈ consts`, and consumers holding an externally-expected
+      address must compare against it. -/
+  main : Option Address := none
+  /-- Explicit trust boundary for thin bundles: addresses (constants
+      or blobs) the receiver is expected to already have. Serialized
+      as a strictly ascending leaf list; `Ix.Merkle.merkleRootCanonical`
+      over it reproduces the root a `Claim.assumptions` commits to. -/
+  assumptions : Std.HashSet Address := {}
+  /-- Reducibility hints (§3, the canonical hint channel for anon/lazy
+      readers). When empty, `putEnv` derives the section from Named
+      `.defn` metadata at write time. Mirrors Rust `Env.anon_hints`. -/
+  anonHints : Std.HashMap Address Lean.ReducibilityHints := {}
   deriving Inhabited
 
 namespace Env
@@ -1627,13 +1641,21 @@ structure RawNameEntry where
   deriving Repr, Inhabited, BEq
 
 /-- Raw FFI environment structure using arrays instead of HashMaps.
-    This is the array-based equivalent of `Env` for FFI compatibility. -/
+    This is the array-based equivalent of `Env` for FFI compatibility.
+    Field order matters: the Rust mirror (`LeanIxonRawEnv`) addresses
+    constructor slots positionally (0-7). -/
 structure RawEnv where
   consts : Array RawConst
   named : Array RawNamed
   blobs : Array RawBlob
   comms : Array RawComm
   names : Array RawNameEntry := #[]
+  /-- Bundle root (`Env.main`). -/
+  main : Option Address := none
+  /-- Bundle trust boundary (`Env.assumptions`), sorted ascending. -/
+  assumptions : Array Address := #[]
+  /-- Explicit reducibility hints (`Env.anonHints`), sorted by address. -/
+  anonHints : Array (Address × Lean.ReducibilityHints) := #[]
   deriving Repr, Inhabited, BEq
 
 namespace RawEnv
@@ -1691,7 +1713,10 @@ def toEnv (raw : RawEnv) : Env := Id.run do
     env := { env with blobs := env.blobs.insert addr bytes }
   for ⟨addr, comm⟩ in raw.comms do
     env := env.storeComm addr comm
-  return env
+  return { env with
+    main := raw.main
+    assumptions := raw.assumptions.foldl (·.insert ·) {}
+    anonHints := raw.anonHints.foldl (fun m (a, h) => m.insert a h) {} }
 
 end RawEnv
 
@@ -1700,7 +1725,9 @@ end RawEnv
 namespace Env
 
 /-- Convert Env with HashMaps to RawEnv with Arrays for FFI.
-    Includes the full names table for round-trip fidelity. -/
+    Includes the full names table for round-trip fidelity. The
+    set-shaped bundle fields are sorted so the transfer is
+    deterministic (matches Rust `ixon_env_to_decoded`). -/
 def toRawEnv (env : Env) : RawEnv := {
   consts := env.consts.toArray.map fun (addr, lc) =>
     { addr, const := lc.get?.getD default }
@@ -1708,6 +1735,11 @@ def toRawEnv (env : Env) : RawEnv := {
   blobs := env.blobs.toArray.map fun (addr, bytes) => { addr, bytes }
   comms := env.comms.toArray.map fun (addr, comm) => { addr, comm }
   names := env.names.toArray.map fun (addr, name) => { addr, name }
+  main := env.main
+  assumptions := env.assumptions.toList.toArray.qsort
+    fun a b => (compare a b).isLT
+  anonHints := env.anonHints.toList.toArray.qsort
+    fun a b => (compare a.1 b.1).isLT
 }
 
 /-- Tag4 flag for Env (0xE), variant 0. -/
@@ -1773,11 +1805,15 @@ partial def topologicalSortNames (names : Std.HashMap Address Ix.Name) : Array (
       let visited := visited.insert addr
       let result := result.push (addr, name)
       (visited, result)
-  -- Start with anonymous already visited (it's implicit)
+  -- Include the anonymous name first so it gets index 0 in the name
+  -- index (arena nodes frequently reference it as a binder name).
+  -- Matches Rust `topological_sort_names`, which emits it explicitly —
+  -- required for byte-identical writer output across the mirrors.
   let initVisited : Std.HashSet Address := ({} : Std.HashSet Address).insert anonAddr
+  let initResult : Array (Address × Ix.Name) := #[(anonAddr, Ix.Name.mkAnon)]
   -- Sort names by address before iterating to ensure deterministic DFS order
   let sortedEntries := names.toList.toArray.qsort fun a b => (compare a.1 b.1).isLT
-  let (_, result) := sortedEntries.foldl (init := (initVisited, #[])) fun (visited, result) (_, name) =>
+  let (_, result) := sortedEntries.foldl (init := (initVisited, initResult)) fun (visited, result) (_, name) =>
     visit name visited result
   result
 
@@ -1794,6 +1830,19 @@ def putEnv (env : Env) : PutM Unit := do
     (env.consts.toList.toArray.map (·.1))
   let root := (Ix.Merkle.merkleRootCanonical constAddrs).getD Ix.Merkle.zeroAddress
   Serialize.put root
+
+  -- Bundle header fields: main (Option, 0/1-tagged) + assumptions
+  -- (strictly ascending address list). Matches Rust `Env::put`.
+  match env.main with
+  | none => putU8 0
+  | some addr => do
+    putU8 1
+    Serialize.put addr
+  let assumptions := env.assumptions.toList.toArray.qsort
+    fun a b => (compare a b).isLT
+  putTag0 ⟨assumptions.size.toUInt64⟩
+  for addr in assumptions do
+    Serialize.put addr
 
   -- Section 1: Blobs (Address -> bytes)
   let blobs := env.blobs.toList.toArray.qsort fun a b => (compare a.1 b.1).isLT
@@ -1820,7 +1869,36 @@ def putEnv (env : Env) : PutM Unit := do
     putTag0 ⟨bytes.size.toUInt64⟩
     putBytes bytes
 
-  -- Section 3: Names (Address -> Name component)
+  -- Section 3: anon_hints — the canonical hint channel for the
+  -- anon/lazy readers, placed before the metadata sections so they can
+  -- stop right after it. When the in-memory map is empty (the compile
+  -- path: hints live in Named metadata), the section is derived from
+  -- `named`. `named` is sorted here (the §5 canonical order, by name
+  -- hash) and reused for §5 below; the sorted iteration makes the
+  -- first-wins dedup by constant address deterministic. Matches Rust
+  -- `Env::put`.
+  let named := env.named.toList.toArray.qsort fun a b => (compare a.1 b.1).isLT
+  let hintPairs : Array (Address × Lean.ReducibilityHints) :=
+    if env.anonHints.isEmpty then Id.run do
+      let mut seen : Std.HashSet Address := {}
+      let mut pairs : Array (Address × Lean.ReducibilityHints) := #[]
+      for (_, namedEntry) in named do
+        match namedEntry.constMeta with
+        | .defn _ _ hints _ _ _ _ _ =>
+          if !seen.contains namedEntry.addr then
+            seen := seen.insert namedEntry.addr
+            pairs := pairs.push (namedEntry.addr, hints)
+        | _ => pure ()
+      return pairs
+    else
+      env.anonHints.toList.toArray
+  let hintPairs := hintPairs.qsort fun a b => (compare a.1 b.1).isLT
+  putTag0 ⟨hintPairs.size.toUInt64⟩
+  for (addr, hints) in hintPairs do
+    Serialize.put addr
+    putReducibilityHints hints
+
+  -- Section 4: Names (Address -> Name component)
   -- Topologically sorted so parents come before children, with ties broken by address
   let sortedNames := topologicalSortNames env.names
   -- Build name index from sorted positions (matching Rust)
@@ -1831,8 +1909,7 @@ def putEnv (env : Env) : PutM Unit := do
     Serialize.put addr
     putNameComponent name
 
-  -- Section 4: Named (name Address -> Named with metadata)
-  let named := env.named.toList.toArray.qsort fun a b => (compare a.1 b.1).isLT
+  -- Section 5: Named (name Address -> Named with metadata)
   putTag0 ⟨named.size.toUInt64⟩
   for (name, namedEntry) in named do
     -- Use the name's stored hash, which matches how it was stored in env.names
@@ -1847,7 +1924,7 @@ def putEnv (env : Env) : PutM Unit := do
       Serialize.put origAddr
       putConstantMetaIndexed origMeta nameIdx
 
-  -- Section 5: Comms (Address -> Comm)
+  -- Section 6: Comms (Address -> Comm)
   let comms := env.comms.toList.toArray.qsort fun a b => (compare a.1 b.1).isLT
   putTag0 ⟨comms.size.toUInt64⟩
   for (addr, comm) in comms do
@@ -1872,28 +1949,68 @@ def getEnv : GetM Env := do
   -- the recomputed root.
   let storedRoot : Address ← Serialize.get
 
-  let mut env : Env := {}
+  -- Bundle header fields: main (Option) + strictly ascending
+  -- assumptions list. A pre-bundle-format `.ixe` has the §1 blob
+  -- count here, so a bad tag most likely means a stale file.
+  let mainTag ← getU8
+  let main : Option Address ← match mainTag with
+    | 0 => pure none
+    | 1 => some <$> Serialize.get
+    | x => throw s!"Env.get: invalid main tag {x} in bundle header — \
+                    possibly a pre-bundle-format .ixe; recompile it"
+  let numAssumptions := (← getTag0).size
+  let mut assumptionArr : Array Address := #[]
+  for _ in [:numAssumptions.toNat] do
+    let addr : Address ← Serialize.get
+    if let some prev := assumptionArr.back? then
+      if !(compare prev addr).isLT then
+        throw "Env.get: assumptions not strictly ascending"
+    assumptionArr := assumptionArr.push addr
 
-  -- Section 1: Blobs
+  let mut env : Env := {
+    main
+    assumptions := assumptionArr.foldl (·.insert ·) {}
+  }
+
+  -- Section 1: Blobs (hash-verified per entry: a swapped blob would
+  -- otherwise silently change a Nat/String literal's value — the
+  -- consts merkle root covers only constant addresses)
   let numBlobs := (← getTag0).size
   for _ in [:numBlobs.toNat] do
     let addr ← Serialize.get
     let len := (← getTag0).size
     let bytes ← getBytes len.toNat
+    if Address.blake3 bytes != addr then
+      throw s!"Env.get: blob bytes hash mismatch for {reprStr (toString addr)}"
     env := { env with blobs := env.blobs.insert addr bytes }
 
-  -- Section 2: Consts (length-prefixed; see putEnv for rationale)
+  -- Section 2: Consts (length-prefixed; see putEnv for rationale).
+  -- Per-entry integrity: bytes must hash to the stored address.
   let numConsts := (← getTag0).size
   for _ in [:numConsts.toNat] do
     let addr ← Serialize.get
     let len := (← getTag0).size
     let bytes ← getBytes len.toNat
+    if Address.blake3 bytes != addr then
+      throw s!"Env.get: const bytes hash mismatch for {reprStr (toString addr)}"
     match deConstant bytes with
     | .ok constant => env := env.storeConst addr constant
     | .error e =>
       throw s!"Env.get: bad constant bytes for addr {reprStr (toString addr)}: {e}"
 
-  -- Section 3: Names (build lookup table AND reverse index)
+  -- `main` must reference a constant actually present in the file.
+  if let some m := main then
+    if !env.consts.contains m then
+      throw s!"Env.get: main {reprStr (toString m)} not present in consts"
+
+  -- Section 3: anon_hints
+  let numHints := (← getTag0).size
+  for _ in [:numHints.toNat] do
+    let addr : Address ← Serialize.get
+    let hints ← getReducibilityHints
+    env := { env with anonHints := env.anonHints.insert addr hints }
+
+  -- Section 4: Names (build lookup table AND reverse index)
   let numNames := (← getTag0).size
   let mut namesLookup : Std.HashMap Address Ix.Name := {}
   let mut nameRev : NameReverseIndex := #[]
@@ -1906,7 +2023,7 @@ def getEnv : GetM Env := do
     namesLookup := namesLookup.insert addr name
     env := { env with names := env.names.insert addr name }
 
-  -- Section 4: Named (name Address -> Named with metadata)
+  -- Section 5: Named (name Address -> Named with metadata)
   let numNamed := (← getTag0).size
   for _ in [:numNamed.toNat] do
     let nameAddr ← Serialize.get
@@ -1930,7 +2047,7 @@ def getEnv : GetM Env := do
     | none =>
       throw s!"getEnv: named entry references unknown name address {reprStr (toString nameAddr)}"
 
-  -- Section 5: Comms
+  -- Section 6: Comms
   let numComms := (← getTag0).size
   for _ in [:numComms.toNat] do
     let addr ← Serialize.get (α := Address)
@@ -1946,6 +2063,13 @@ def getEnv : GetM Env := do
   if computedRoot != storedRoot then
     throw "Env.get: merkle root mismatch"
 
+  -- Comms is the final section; trailing bytes are truncation damage
+  -- or concatenated garbage. (Mirrors Rust `Env::get`; the early-stop
+  -- readers cannot make this check by design.)
+  let st ← get
+  if st.idx != st.bytes.size then
+    throw s!"Env.get: {st.bytes.size - st.idx} trailing bytes after final section"
+
   pure env
 
 end Env
@@ -1956,8 +2080,9 @@ def serEnv (env : Env) : ByteArray := runPut (Env.putEnv env)
 /-- Deserialize an Env from bytes (full metadata, pure Lean). -/
 def deEnv (bytes : ByteArray) : Except String Env := runGet Env.getEnv bytes
 
-/-- Compute section sizes for debugging. Returns (blobs, consts, names, named, comms). -/
-def envSectionSizes (env : Env) : Nat × Nat × Nat × Nat × Nat := Id.run do
+/-- Compute section sizes for debugging.
+    Returns (blobs, consts, anonHints, names, named, comms). -/
+def envSectionSizes (env : Env) : Nat × Nat × Nat × Nat × Nat × Nat := Id.run do
   -- Blobs section
   let blobsBytes := runPut do
     let blobs := env.blobs.toList.toArray.qsort fun a b => (compare a.1 b.1).isLT
@@ -1974,6 +2099,29 @@ def envSectionSizes (env : Env) : Nat × Nat × Nat × Nat × Nat := Id.run do
     for (addr, lc) in consts do
       Serialize.put addr
       putBytes lc.rawBytes
+
+  -- anon_hints section (mirrors putEnv's derive-from-named rule)
+  let hintsBytes := runPut do
+    let named := env.named.toList.toArray.qsort fun a b => (compare a.1 b.1).isLT
+    let hintPairs : Array (Address × Lean.ReducibilityHints) :=
+      if env.anonHints.isEmpty then Id.run do
+        let mut seen : Std.HashSet Address := {}
+        let mut pairs : Array (Address × Lean.ReducibilityHints) := #[]
+        for (_, namedEntry) in named do
+          match namedEntry.constMeta with
+          | .defn _ _ hints _ _ _ _ _ =>
+            if !seen.contains namedEntry.addr then
+              seen := seen.insert namedEntry.addr
+              pairs := pairs.push (namedEntry.addr, hints)
+          | _ => pure ()
+        return pairs
+      else
+        env.anonHints.toList.toArray
+    let hintPairs := hintPairs.qsort fun a b => (compare a.1 b.1).isLT
+    putTag0 ⟨hintPairs.size.toUInt64⟩
+    for (addr, hints) in hintPairs do
+      Serialize.put addr
+      putReducibilityHints hints
 
   -- Names section
   let namesBytes := runPut do
@@ -2009,7 +2157,8 @@ def envSectionSizes (env : Env) : Nat × Nat × Nat × Nat × Nat := Id.run do
       Serialize.put addr
       putComm comm
 
-  (blobsBytes.size, constsBytes.size, namesBytes.size, namedBytes.size, commsBytes.size)
+  ( blobsBytes.size, constsBytes.size, hintsBytes.size, namesBytes.size,
+    namedBytes.size, commsBytes.size )
 
 /-! ## Rust FFI Serialization -/
 
@@ -2056,11 +2205,16 @@ structure RawNamedLite where
   hintVal : UInt64
   deriving Inhabited
 
-/-- Metadata-light env returned by `rs_de_env_lazy`. -/
+/-- Metadata-light env returned by `rs_de_env_lazy`. Field order
+    matters: the Rust builder addresses constructor slots 0-4. -/
 structure RawEnvLazy where
   consts : Array RawConstSlice
   named : Array RawNamedLite
   blobs : Array RawBlob
+  /-- Bundle root (`Env.main`) from the header. -/
+  main : Option Address := none
+  /-- Bundle trust boundary (`Env.assumptions`), in header order. -/
+  assumptions : Array Address := #[]
   deriving Inhabited
 
 /-- Decode an encoded reducibility hint into the `ConstantMeta` the check path
@@ -2080,7 +2234,8 @@ def RawNamedLite.toConstMeta (n : RawNamedLite) : ConstantMeta :=
     that share `buf`. `buf` MUST be the exact buffer passed to `rs_de_env_lazy`
     (offsets are relative to it). -/
 def RawEnvLazy.toEnv (raw : RawEnvLazy) (buf : ByteArray) : Env := Id.run do
-  let mut env : Env := {}
+  let mut env : Env := { main := raw.main
+                         assumptions := raw.assumptions.foldl (·.insert ·) {} }
   for ⟨addr, offset, len⟩ in raw.consts do
     env := { env with
       consts := env.consts.insert addr
@@ -2104,9 +2259,10 @@ opaque rsDeEnvLazyFFI : @& ByteArray → Except String RawEnvLazy
 def deEnvAnon (bytes : ByteArray) : Except String Env :=
   return (← rsDeEnvLazyFFI bytes).toEnv bytes
 
-/-- Anonymous-only deserialization: keep blobs + consts, parse-and-drop
-    names/named/comms. Returns a `RawEnv` whose `named`/`names`/`comms`
-    arrays are empty. -/
+/-- Anonymous-only deserialization: keep blobs + consts + anon_hints
+    and stop — the metadata sections (names/named/comms) are laid out
+    after the hints and never touched. Returns a `RawEnv` whose
+    `named`/`names`/`comms` arrays are empty. -/
 @[extern "rs_de_env_anon"]
 opaque rsDeEnvAnonFFI : @& ByteArray → Except String RawEnv
 

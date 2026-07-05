@@ -76,25 +76,143 @@ fn put_address(a: &Address, buf: &mut Vec<u8>) {
   put_bytes(a.as_bytes(), buf);
 }
 
-/// Read the optional trailing `anon_hints` section written by `Env::put`.
-/// No-op when no bytes remain after the comms section — backward-compatible
-/// with `.ixe` that have no hints or predate the section. Inserts into
-/// `env.anon_hints` (overwriting any value harvested from a Named section,
-/// with the identical value, so the order of harvest vs. section is moot).
-fn read_anon_hints_section(
-  buf: &mut &[u8],
-  env: &mut Env,
-) -> Result<(), String> {
-  if buf.is_empty() {
-    return Ok(());
+/// Write an `Option<Address>` as `[0x00]` (None) or `[0x01][addr:32]`
+/// (Some). Mirrors the Claim-side encoding in `proof.rs`.
+fn put_opt_addr(opt: &Option<Address>, buf: &mut Vec<u8>) {
+  match opt {
+    None => buf.push(0x00),
+    Some(addr) => {
+      buf.push(0x01);
+      buf.extend_from_slice(addr.as_bytes());
+    },
   }
-  let n = get_u64(buf)?;
+}
+
+fn get_opt_addr(buf: &mut &[u8]) -> Result<Option<Address>, String> {
+  match get_u8(buf)? {
+    0x00 => Ok(None),
+    0x01 => Ok(Some(get_address(buf)?)),
+    b => Err(format!("get_opt_addr: invalid tag 0x{:02X}", b)),
+  }
+}
+
+/// Read the `.ixe` header shared by every Env reader: `Tag4(0xE, 0)`,
+/// the 32-byte consts merkle root, the bundle `main` pointer, and the
+/// strictly ascending assumptions list. Centralized so the four readers
+/// (`get`, `get_anon`, `get_anon_mmap`, `parse_lazy_index`) cannot
+/// drift. `ctx` labels errors with the calling reader.
+fn read_env_header(
+  buf: &mut &[u8],
+  ctx: &str,
+) -> Result<(Address, Option<Address>, Vec<Address>), String> {
+  let tag = Tag4::get(buf)?;
+  if tag.flag != Env::FLAG {
+    return Err(format!(
+      "{ctx}: expected flag 0x{:X}, got 0x{:X}",
+      Env::FLAG,
+      tag.flag
+    ));
+  }
+  if tag.size != 0 {
+    return Err(format!("{ctx}: expected Env variant 0, got {}", tag.size));
+  }
+  let stored_root = get_address(buf)?;
+  // A pre-bundle-format `.ixe` has the §1 blob count here, so this
+  // byte is that count's Tag0 head — flag the likely cause when it
+  // isn't a valid opt tag. (.ixe files are regenerated artifacts.)
+  let main = get_opt_addr(buf).map_err(|e| {
+    format!(
+      "{ctx}: {e} in bundle header — possibly a pre-bundle-format .ixe; \
+       recompile it"
+    )
+  })?;
+  let n = get_u64(buf)? as usize;
+  // Each assumption is 32 bytes; a count the remaining buffer cannot
+  // hold is corruption (or a stale format) — reject before allocating.
+  if n > buf.len() / 32 {
+    return Err(format!(
+      "{ctx}: assumption count {n} exceeds remaining buffer — corrupt or \
+       pre-bundle-format .ixe"
+    ));
+  }
+  let mut assumptions: Vec<Address> = Vec::with_capacity(n);
+  for i in 0..n {
+    let addr = get_address(buf)?;
+    if let Some(prev) = assumptions.last()
+      && *prev >= addr
+    {
+      return Err(format!(
+        "{ctx}: assumptions not strictly ascending at idx {i} ({} then {})",
+        prev.hex(),
+        addr.hex()
+      ));
+    }
+    assumptions.push(addr);
+  }
+  Ok((stored_root, main, assumptions))
+}
+
+/// Read the §1 blob section, verifying `Address::hash(bytes) == addr`
+/// per entry. Without the check a swapped blob would silently change a
+/// Nat/String literal's value under an otherwise-valid file (the consts
+/// merkle root covers only const addresses).
+fn read_blob_section(
+  buf: &mut &[u8],
+  ctx: &str,
+) -> Result<Vec<(Address, Vec<u8>)>, String> {
+  let num_blobs = get_u64(buf)? as usize;
+  // Each blob entry needs at least addr (32) + a length byte.
+  if num_blobs > buf.len() / 33 {
+    return Err(format!(
+      "{ctx}: blob count {num_blobs} exceeds remaining buffer"
+    ));
+  }
+  let mut blobs = Vec::with_capacity(num_blobs);
+  for i in 0..num_blobs {
+    let addr = get_address(buf)?;
+    let len = get_u64(buf)? as usize;
+    if buf.len() < len {
+      return Err(format!(
+        "{ctx}: need {} bytes for blob, have {}",
+        len,
+        buf.len()
+      ));
+    }
+    let (bytes, rest) = buf.split_at(len);
+    *buf = rest;
+    let computed = Address::hash(bytes);
+    if computed != addr {
+      return Err(format!(
+        "{ctx}: blob at idx {i} bytes hash to {} but stored under {}",
+        computed.hex(),
+        addr.hex()
+      ));
+    }
+    blobs.push((addr, bytes.to_vec()));
+  }
+  Ok(blobs)
+}
+
+/// Read the §3 `anon_hints` section (unconditional — every writer
+/// emits it, deriving the entries from Named metadata when the
+/// in-memory map is empty; see `Env::put`).
+fn read_hints_section(
+  buf: &mut &[u8],
+) -> Result<Vec<(Address, ReducibilityHints)>, String> {
+  let n = get_u64(buf)? as usize;
+  // Each hint entry needs at least addr (32) + one byte of hint.
+  if n > buf.len() / 33 {
+    return Err(format!(
+      "read_hints_section: hint count {n} exceeds remaining buffer"
+    ));
+  }
+  let mut hints = Vec::with_capacity(n);
   for _ in 0..n {
     let addr = get_address(buf)?;
-    let hints = ReducibilityHints::get_ser(buf)?;
-    env.anon_hints.insert(addr, hints);
+    let hint = ReducibilityHints::get_ser(buf)?;
+    hints.push((addr, hint));
   }
-  Ok(())
+  Ok(hints)
 }
 
 fn get_address(buf: &mut &[u8]) -> Result<Address, String> {
@@ -1154,11 +1272,31 @@ impl Env {
     put_address(&root, buf);
 
     // ─────────────────────────────────────────────────────────────────────
+    // Bundle header fields: distinguished root + assumed-present list
+    // (see `Env::main` / `Env::assumptions`). Writer-side sanity: a
+    // `main` outside `consts` would produce a file every reader
+    // rejects — fail here with the clearer message.
+    // ─────────────────────────────────────────────────────────────────────
+    if let Some(m) = &self.main
+      && self.consts.get(m).is_none()
+    {
+      return Err(format!("Env::put: main {} not present in consts", m.hex()));
+    }
+    put_opt_addr(&self.main, buf);
+    let mut assumption_addrs: Vec<Address> =
+      self.assumptions.iter().cloned().collect();
+    assumption_addrs.sort_unstable();
+    put_u64(assumption_addrs.len() as u64, buf);
+    for addr in &assumption_addrs {
+      put_address(addr, buf);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // Section 1: Blobs (Address -> bytes)
     // ─────────────────────────────────────────────────────────────────────
     let sec_start = std::time::Instant::now();
     if !quiet {
-      eprintln!("[Env::put] section 1/5 blobs: {} entries", self.blobs.len(),);
+      eprintln!("[Env::put] section 1/6 blobs: {} entries", self.blobs.len(),);
     }
     let mut blob_addrs: Vec<Address> =
       self.blobs.iter().map(|e| e.key().clone()).collect();
@@ -1177,7 +1315,7 @@ impl Env {
     }
     if !quiet {
       eprintln!(
-        "[Env::put] section 1/5 blobs done in {:.1}s ({} bytes so far)",
+        "[Env::put] section 1/6 blobs done in {:.1}s ({} bytes so far)",
         sec_start.elapsed().as_secs_f64(),
         buf.len(),
       );
@@ -1191,11 +1329,11 @@ impl Env {
     // ─────────────────────────────────────────────────────────────────────
     let sec_start = std::time::Instant::now();
     if !quiet {
-      eprintln!("[Env::put] section 2/5 consts: {} entries", self.consts.len(),);
+      eprintln!("[Env::put] section 2/6 consts: {} entries", self.consts.len(),);
     }
     if !quiet {
       eprintln!(
-        "[Env::put] section 2/5 consts: collected+sorted in {:.1}s, \
+        "[Env::put] section 2/6 consts: collected+sorted in {:.1}s, \
          streaming put...",
         sec_start.elapsed().as_secs_f64(),
       );
@@ -1216,7 +1354,7 @@ impl Env {
     }
     if !quiet {
       eprintln!(
-        "[Env::put] section 2/5 consts done: put in {:.1}s, total {:.1}s \
+        "[Env::put] section 2/6 consts done: put in {:.1}s, total {:.1}s \
          ({} bytes so far)",
         put_start.elapsed().as_secs_f64(),
         sec_start.elapsed().as_secs_f64(),
@@ -1225,7 +1363,67 @@ impl Env {
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // Section 3: Names (Address -> Name component, topologically sorted)
+    // Section 3: anon_hints (Address -> ReducibilityHints)
+    //
+    // The canonical hint channel for the anon/lazy readers, placed
+    // before the metadata sections so `get_anon`/`get_anon_mmap` can
+    // stop right after it (they never touch names/named/comms). When
+    // the in-memory map is empty (the compile path: hints live in
+    // Named metadata), the section is derived from `named` — the same
+    // harvest `get_anon` historically did at read time, moved to
+    // write time. Hints are performance-only advice and intentionally
+    // NOT covered by the consts merkle root.
+    //
+    // `named_keys` is collected and sorted here (by name hash — the
+    // Section 5 canonical order) and reused for Section 5 below; the
+    // sorted iteration makes the first-wins dedup by constant address
+    // deterministic when alpha-equivalent names share one constant.
+    // ─────────────────────────────────────────────────────────────────────
+    let sec_start = std::time::Instant::now();
+    let mut named_keys: Vec<Name> =
+      self.named.iter().map(|e| e.key().clone()).collect();
+    #[cfg(not(target_arch = "riscv64"))]
+    named_keys.par_sort_unstable_by(|a, b| {
+      a.get_hash().as_bytes().cmp(b.get_hash().as_bytes())
+    });
+    #[cfg(target_arch = "riscv64")]
+    named_keys.sort_unstable_by(|a, b| {
+      a.get_hash().as_bytes().cmp(b.get_hash().as_bytes())
+    });
+    let mut hint_pairs: Vec<(Address, ReducibilityHints)> =
+      if self.anon_hints.is_empty() {
+        let mut derived: FxHashMap<Address, ReducibilityHints> =
+          FxHashMap::default();
+        for name in &named_keys {
+          if let Some(entry) = self.named.get(name)
+            && let super::metadata::ConstantMetaInfo::Def { hints, .. } =
+              &entry.value().meta().info
+          {
+            derived.entry(entry.value().addr.clone()).or_insert(*hints);
+          }
+        }
+        derived.into_iter().collect()
+      } else {
+        self.anon_hints.iter().map(|(a, h)| (a.clone(), *h)).collect()
+      };
+    hint_pairs.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+    put_u64(hint_pairs.len() as u64, buf);
+    for (addr, hints) in &hint_pairs {
+      put_address(addr, buf);
+      hints.put_ser(buf);
+    }
+    if !quiet {
+      eprintln!(
+        "[Env::put] section 3/6 anon_hints done: {} entries in {:.1}s \
+         ({} bytes so far)",
+        hint_pairs.len(),
+        sec_start.elapsed().as_secs_f64(),
+        buf.len(),
+      );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Section 4: Names (Address -> Name component, topologically sorted)
     // ─────────────────────────────────────────────────────────────────────
     // Topological sort ensures parents come before children so the name
     // index assigned during serialization is valid for all references that
@@ -1234,14 +1432,14 @@ impl Env {
     let sec_start = std::time::Instant::now();
     if !quiet {
       eprintln!(
-        "[Env::put] section 3/5 names: topo-sorting {} entries",
+        "[Env::put] section 4/6 names: topo-sorting {} entries",
         self.names.len(),
       );
     }
     let sorted_names = topological_sort_names(&self.names);
     if !quiet {
       eprintln!(
-        "[Env::put] section 3/5 names: topo-sorted in {:.1}s, serializing...",
+        "[Env::put] section 4/6 names: topo-sorted in {:.1}s, serializing...",
         sec_start.elapsed().as_secs_f64(),
       );
     }
@@ -1255,7 +1453,7 @@ impl Env {
     }
     if !quiet {
       eprintln!(
-        "[Env::put] section 3/5 names done: put in {:.1}s, total {:.1}s \
+        "[Env::put] section 4/6 names done: put in {:.1}s, total {:.1}s \
          ({} bytes so far)",
         put_start.elapsed().as_secs_f64(),
         sec_start.elapsed().as_secs_f64(),
@@ -1264,37 +1462,18 @@ impl Env {
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // Section 4: Named (Name -> Named metadata with indexed addresses)
+    // Section 5: Named (Name -> Named metadata with indexed addresses)
     // ─────────────────────────────────────────────────────────────────────
     // Named values are the *largest* per-entry (each carries a ConstantMeta
     // with metadata arenas), so the streaming pattern's win is greatest
     // here: on Mathlib, avoiding the clone-into-Vec saves ~30 GB peak RAM.
     //
-    // Key clone cost: a `Name` is `Arc<NameData>`, so each clone is a
-    // single atomic refcount increment (<1s for 733k).
+    // `named_keys` was collected and sorted (by cached name hash bytes)
+    // up in Section 3, where the hint derivation needs the same
+    // canonical order.
     let sec_start = std::time::Instant::now();
     if !quiet {
-      eprintln!("[Env::put] section 4/5 named: {} entries", self.named.len(),);
-    }
-    let mut named_keys: Vec<Name> =
-      self.named.iter().map(|e| e.key().clone()).collect();
-    // Sort by the cached name hash bytes (same key used by every existing
-    // Section 4 ordering guarantee). `par_sort_unstable_by` uses rayon to
-    // parallelize the compare across all cores.
-    #[cfg(not(target_arch = "riscv64"))]
-    named_keys.par_sort_unstable_by(|a, b| {
-      a.get_hash().as_bytes().cmp(b.get_hash().as_bytes())
-    });
-    #[cfg(target_arch = "riscv64")]
-    named_keys.sort_unstable_by(|a, b| {
-      a.get_hash().as_bytes().cmp(b.get_hash().as_bytes())
-    });
-    if !quiet {
-      eprintln!(
-        "[Env::put] section 4/5 named: collected+sorted in {:.1}s, \
-         streaming put...",
-        sec_start.elapsed().as_secs_f64(),
-      );
+      eprintln!("[Env::put] section 5/6 named: {} entries", self.named.len(),);
     }
     let put_start = std::time::Instant::now();
     put_u64(named_keys.len() as u64, buf);
@@ -1306,7 +1485,7 @@ impl Env {
     }
     if !quiet {
       eprintln!(
-        "[Env::put] section 4/5 named done: put in {:.1}s, total {:.1}s \
+        "[Env::put] section 5/6 named done: put in {:.1}s, total {:.1}s \
          ({} bytes so far)",
         put_start.elapsed().as_secs_f64(),
         sec_start.elapsed().as_secs_f64(),
@@ -1315,11 +1494,11 @@ impl Env {
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // Section 5: Comms (Address -> Comm) — typically empty on compile path
+    // Section 6: Comms (Address -> Comm) — typically empty on compile path
     // ─────────────────────────────────────────────────────────────────────
     let sec_start = std::time::Instant::now();
     if !quiet {
-      eprintln!("[Env::put] section 5/5 comms: {} entries", self.comms.len(),);
+      eprintln!("[Env::put] section 6/6 comms: {} entries", self.comms.len(),);
     }
     let mut comm_addrs: Vec<Address> =
       self.comms.iter().map(|e| e.key().clone()).collect();
@@ -1336,31 +1515,10 @@ impl Env {
     }
     if !quiet {
       eprintln!(
-        "[Env::put] section 5/5 comms done in {:.1}s ({} bytes so far)",
+        "[Env::put] section 6/6 comms done in {:.1}s ({} bytes so far)",
         sec_start.elapsed().as_secs_f64(),
         buf.len(),
       );
-    }
-
-    // Optional trailing section: anon_hints (Address -> ReducibilityHints).
-    // `get_anon` normally HARVESTS hints from the Named section; a closure
-    // sub-env (built for shard injection) DROPS that section, which would
-    // force the kernel to `Regular(0)` and add a def-eq overhead vs whole-env
-    // proving. Carrying the hints here lets the guest reproduce vanilla kernel
-    // behavior exactly. Written only when populated, so compiler-produced
-    // `.ixe` (empty map) are byte-identical to before; loaders read it only if
-    // bytes remain after comms. Hints are performance-only (the `Regular(0)`
-    // fallback is always correct), so this section is intentionally NOT covered
-    // by the consts merkle root.
-    if !self.anon_hints.is_empty() {
-      let mut hint_addrs: Vec<Address> =
-        self.anon_hints.keys().cloned().collect();
-      hint_addrs.sort_unstable();
-      put_u64(hint_addrs.len() as u64, buf);
-      for addr in &hint_addrs {
-        put_address(addr, buf);
-        self.anon_hints[addr].put_ser(buf);
-      }
     }
 
     if !quiet {
@@ -1411,6 +1569,25 @@ impl Env {
     let root = merkle_root_canonical(&const_addrs).unwrap_or_else(zero_address);
     put_address(&root, &mut buf);
 
+    // Bundle header fields: distinguished root + assumed-present list
+    // (mirrors `Env::put`, including the writer-side main sanity check).
+    if let Some(m) = &self.main
+      && self.consts.get(m).is_none()
+    {
+      return Err(format!(
+        "Env::put_file: main {} not present in consts",
+        m.hex()
+      ));
+    }
+    put_opt_addr(&self.main, &mut buf);
+    let mut assumption_addrs: Vec<Address> =
+      self.assumptions.iter().cloned().collect();
+    assumption_addrs.sort_unstable();
+    put_u64(assumption_addrs.len() as u64, &mut buf);
+    for addr in &assumption_addrs {
+      put_address(addr, &mut buf);
+    }
+
     // Section 1: Blobs
     let mut blob_addrs: Vec<Address> =
       self.blobs.iter().map(|e| e.key().clone()).collect();
@@ -1440,7 +1617,40 @@ impl Env {
         written += bytes.len() as u64;
       }
     }
-    // Section 3: Names (topologically sorted; builds the name index the
+    // Section 3: anon_hints — the canonical hint channel. Always
+    // emitted; when the in-memory map is empty it is derived from Named
+    // `Def` metadata in hash-sorted name order, mirroring `Env::put`
+    // exactly (same iteration order → same `or_insert` winners).
+    let mut named_keys: Vec<Name> =
+      self.named.iter().map(|e| e.key().clone()).collect();
+    named_keys.par_sort_unstable_by(|a, b| {
+      a.get_hash().as_bytes().cmp(b.get_hash().as_bytes())
+    });
+    let mut hint_pairs: Vec<(Address, ReducibilityHints)> =
+      if self.anon_hints.is_empty() {
+        let mut derived: FxHashMap<Address, ReducibilityHints> =
+          FxHashMap::default();
+        for name in &named_keys {
+          if let Some(entry) = self.named.get(name)
+            && let super::metadata::ConstantMetaInfo::Def { hints, .. } =
+              &entry.value().meta().info
+          {
+            derived.entry(entry.value().addr.clone()).or_insert(*hints);
+          }
+        }
+        derived.into_iter().collect()
+      } else {
+        self.anon_hints.iter().map(|(a, h)| (a.clone(), *h)).collect()
+      };
+    hint_pairs.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+    put_u64(hint_pairs.len() as u64, &mut buf);
+    for (addr, hints) in &hint_pairs {
+      put_address(addr, &mut buf);
+      hints.put_ser(&mut buf);
+      emit!();
+    }
+
+    // Section 4: Names (topologically sorted; builds the name index the
     // Named section encodes through).
     let sorted_names = topological_sort_names(&self.names);
     let mut name_index: NameIndex = NameIndex::new();
@@ -1452,16 +1662,11 @@ impl Env {
       emit!();
     }
 
-    // Section 4: Named — the largest per-entry section, and the only
+    // Section 5: Named — the largest per-entry section, and the only
     // one whose per-entry encode is CPU-heavy (demoted entries decode
     // and re-encode through the name index). Chunks encode in parallel
     // into per-entry buffers and drain to the writer in order; the
     // chunk size bounds staged memory to a few MiB.
-    let mut named_keys: Vec<Name> =
-      self.named.iter().map(|e| e.key().clone()).collect();
-    named_keys.par_sort_unstable_by(|a, b| {
-      a.get_hash().as_bytes().cmp(b.get_hash().as_bytes())
-    });
     put_u64(named_keys.len() as u64, &mut buf);
     emit!();
     for chunk in named_keys.chunks(4096) {
@@ -1481,7 +1686,7 @@ impl Env {
         written += b.len() as u64;
       }
     }
-    // Section 5: Comms
+    // Section 6: Comms
     let mut comm_addrs: Vec<Address> =
       self.comms.iter().map(|e| e.key().clone()).collect();
     comm_addrs.par_sort_unstable();
@@ -1494,64 +1699,31 @@ impl Env {
       }
     }
 
-    // Optional trailing anon_hints section — same condition as `put`.
-    if !self.anon_hints.is_empty() {
-      let mut hint_addrs: Vec<Address> =
-        self.anon_hints.keys().cloned().collect();
-      hint_addrs.sort_unstable();
-      put_u64(hint_addrs.len() as u64, &mut buf);
-      for addr in &hint_addrs {
-        put_address(addr, &mut buf);
-        self.anon_hints[addr].put_ser(&mut buf);
-      }
-    }
-
     emit!();
     w.flush().map_err(|e| format!("Env::put_file: flush: {e}"))?;
     Ok(written)
   }
 
   /// Deserialize an Env from bytes.
+  ///
+  /// The whole buffer must be consumed — trailing bytes after the
+  /// final section are rejected (truncation/concatenation guard). The
+  /// early-stop readers (`get_anon`, `get_anon_mmap`,
+  /// `parse_lazy_index`) cannot make that check by design.
   pub fn get(buf: &mut &[u8]) -> Result<Self, String> {
-    // Header
-    let tag = Tag4::get(buf)?;
-    if tag.flag != Self::FLAG {
-      return Err(format!(
-        "Env::get: expected flag 0x{:X}, got 0x{:X}",
-        Self::FLAG,
-        tag.flag
-      ));
-    }
-    if tag.size != 0 {
-      return Err(format!(
-        "Env::get: expected Env variant 0, got {}",
-        tag.size
-      ));
-    }
-
-    // Canonical merkle root (fixed 32 bytes). For empty const sets the
-    // stored value is `zero_address()`. Verified against the
-    // recomputed value at the end of deserialization.
-    let stored_root = get_address(buf)?;
+    // Header: tag + stored merkle root (verified at the end against
+    // the recomputed root; empty const sets store `zero_address()`) +
+    // bundle fields.
+    let (stored_root, main, assumptions) = read_env_header(buf, "Env::get")?;
 
     #[cfg_attr(not(target_arch = "riscv64"), allow(unused_mut))]
     let mut env = Env::new();
+    env.main = main;
+    env.assumptions = assumptions.into_iter().collect();
 
-    // Section 1: Blobs
-    let num_blobs = get_u64(buf)?;
-    for _ in 0..num_blobs {
-      let addr = get_address(buf)?;
-      let len = get_u64(buf)? as usize;
-      if buf.len() < len {
-        return Err(format!(
-          "Env::get: need {} bytes for blob, have {}",
-          len,
-          buf.len()
-        ));
-      }
-      let (bytes, rest) = buf.split_at(len);
-      *buf = rest;
-      env.blobs.insert(addr, bytes.to_vec());
+    // Section 1: Blobs (hash-verified per entry)
+    for (addr, bytes) in read_blob_section(buf, "Env::get")? {
+      env.blobs.insert(addr, bytes);
     }
 
     // Section 2: Consts (lazy: read length prefix, slice bytes, defer parse)
@@ -1587,7 +1759,19 @@ impl Env {
         .insert(addr, crate::lazy::LazyConstant::from_bytes(bytes.into()));
     }
 
-    // Section 3: Names (build lookup table and reverse index for metadata)
+    // `main` must reference a constant actually present in the file.
+    if let Some(m) = &env.main
+      && env.consts.get(m).is_none()
+    {
+      return Err(format!("Env::get: main {} not present in consts", m.hex()));
+    }
+
+    // Section 3: anon_hints
+    for (addr, hints) in read_hints_section(buf)? {
+      env.anon_hints.insert(addr, hints);
+    }
+
+    // Section 4: Names (build lookup table and reverse index for metadata)
     let num_names = get_u64(buf)?;
     let mut names_lookup: FxHashMap<Address, Name> = FxHashMap::default();
     let mut name_reverse_index: NameReverseIndex =
@@ -1606,7 +1790,7 @@ impl Env {
       env.names.insert(addr, name);
     }
 
-    // Section 4: Named (use indexed deserialization for metadata)
+    // Section 5: Named (use indexed deserialization for metadata)
     let num_named = get_u64(buf)?;
     for _ in 0..num_named {
       let name_addr = get_address(buf)?;
@@ -1617,16 +1801,13 @@ impl Env {
       env.named.insert(name, named);
     }
 
-    // Section 5: Comms
+    // Section 6: Comms
     let num_comms = get_u64(buf)?;
     for _ in 0..num_comms {
       let addr = get_address(buf)?;
       let comm = Comm::get(buf)?;
       env.comms.insert(addr, comm);
     }
-
-    // Optional trailing anon_hints section (see `Env::put`).
-    read_anon_hints_section(buf, &mut env)?;
 
     // Verify the stored merkle root matches what we'd compute from
     // env.consts. Empty const set → expected = zero_address().
@@ -1641,6 +1822,15 @@ impl Env {
         "Env::get: merkle root mismatch (stored={}, computed={})",
         stored_root.hex(),
         computed_root.hex(),
+      ));
+    }
+
+    // Comms is the final section; anything after it is truncation
+    // damage or concatenated garbage.
+    if !buf.is_empty() {
+      return Err(format!(
+        "Env::get: {} trailing bytes after final section",
+        buf.len()
       ));
     }
 
@@ -1664,41 +1854,15 @@ impl Env {
   pub fn parse_lazy_index(data: &[u8]) -> Result<LazyIndex, String> {
     let mut buf: &[u8] = data;
 
-    // Header: Tag4 (flag/variant) + canonical merkle root.
-    let tag = Tag4::get(&mut buf)?;
-    if tag.flag != Self::FLAG {
-      return Err(format!(
-        "parse_lazy_index: expected flag 0x{:X}, got 0x{:X}",
-        Self::FLAG,
-        tag.flag
-      ));
-    }
-    if tag.size != 0 {
-      return Err(format!(
-        "parse_lazy_index: expected Env variant 0, got {}",
-        tag.size
-      ));
-    }
-    let stored_root = get_address(&mut buf)?;
+    // Header: tag + merkle root + bundle fields.
+    let (stored_root, main, assumptions) =
+      read_env_header(&mut buf, "parse_lazy_index")?;
 
-    let mut index = LazyIndex::default();
+    let mut index = LazyIndex { main, assumptions, ..LazyIndex::default() };
 
-    // Section 1: Blobs (copied — small, and the kernel ingests their bytes).
-    let num_blobs = get_u64(&mut buf)?;
-    for _ in 0..num_blobs {
-      let addr = get_address(&mut buf)?;
-      let len = get_u64(&mut buf)? as usize;
-      if buf.len() < len {
-        return Err(format!(
-          "parse_lazy_index: need {} bytes for blob, have {}",
-          len,
-          buf.len()
-        ));
-      }
-      let (bytes, rest) = buf.split_at(len);
-      buf = rest;
-      index.blobs.push((addr, bytes.to_vec()));
-    }
+    // Section 1: Blobs (copied — small, and the kernel ingests their
+    // bytes; hash-verified per entry).
+    index.blobs = read_blob_section(&mut buf, "parse_lazy_index")?;
 
     // Section 2: Consts — record offset windows, never parse the bodies.
     let num_consts = get_u64(&mut buf)?;
@@ -1718,7 +1882,13 @@ impl Env {
       index.consts.push(LazyConstSlice { addr, offset, len });
     }
 
-    // Section 3: Names — parsed to build the index for metadata decoding, then
+    // Section 3: anon_hints — the canonical hint channel (the writer
+    // always emits it, deriving from Named metadata when needed), so
+    // `LazyNamed.hint` is a plain lookup instead of a metadata harvest.
+    let hints_map: FxHashMap<Address, ReducibilityHints> =
+      read_hints_section(&mut buf)?.into_iter().collect();
+
+    // Section 4: Names — parsed to build the index for metadata decoding, then
     // dropped (the check never consults the name component table).
     let num_names = get_u64(&mut buf)?;
     let mut names_lookup: FxHashMap<Address, Name> = FxHashMap::default();
@@ -1733,8 +1903,9 @@ impl Env {
       names_lookup.insert(addr, name);
     }
 
-    // Section 4: Named — keep `name → addr` and the Defn reducibility hint; the
-    // full ConstantMeta (arena, CallSite, ...) is parsed then discarded.
+    // Section 5: Named — keep `name → addr` plus the §3 hint for that
+    // address; the full ConstantMeta (arena, CallSite, ...) is parsed
+    // then discarded.
     let num_named = get_u64(&mut buf)?;
     for _ in 0..num_named {
       let name_addr = get_address(&mut buf)?;
@@ -1742,14 +1913,11 @@ impl Env {
       let name = names_lookup.get(&name_addr).cloned().ok_or_else(|| {
         format!("parse_lazy_index: missing name for addr {:?}", name_addr)
       })?;
-      let hint = match &named.meta().info {
-        super::metadata::ConstantMetaInfo::Def { hints, .. } => Some(*hints),
-        _ => None,
-      };
+      let hint = hints_map.get(&named.addr).copied();
       index.named.push(LazyNamed { name, addr: named.addr, hint });
     }
 
-    // Section 5 (comms) is skipped: not needed by the check path.
+    // Section 6 (comms) is never reached: not needed by the check path.
 
     // Re-verify the merkle root over const addresses (header integrity).
     let mut const_addrs: Vec<Address> =
@@ -1765,63 +1933,50 @@ impl Env {
       ));
     }
 
+    // `main` must reference a constant present in the file.
+    if let Some(m) = &index.main
+      && const_addrs.binary_search(m).is_err()
+    {
+      return Err(format!(
+        "parse_lazy_index: main {} not present in consts",
+        m.hex()
+      ));
+    }
+
     Ok(index)
   }
 
-  /// Anonymous-only deserialization: read the header + blobs +
-  /// consts sections, parse-and-discard the metadata sections
-  /// (names / named / comms).
+  /// Anonymous-only deserialization: read the header + §1 blobs +
+  /// §2 consts + §3 anon_hints, then STOP — the metadata sections
+  /// (§4 names / §5 named / §6 comms) are laid out after the hints
+  /// precisely so this reader never has to touch them.
   ///
-  /// Returns an `Env` with populated `consts` (lazy) and `blobs`, and
-  /// **empty** `named` / `names` / `comms`. The merkle-root header is
-  /// re-verified against the recomputed root over `consts.keys()`,
-  /// exactly as in [`Env::get`].
+  /// Returns an `Env` with populated `consts` (lazy), `blobs`, and
+  /// `anon_hints`, and **empty** `named` / `names` / `comms`. The
+  /// merkle-root header is re-verified against the recomputed root
+  /// over `consts.keys()`, exactly as in [`Env::get`]. Because the
+  /// cursor stops at §3, trailing-buffer checks are impossible here
+  /// by design — only the full [`Env::get`] enforces EOF.
   ///
-  /// Why "parse and discard"? Sections 3-5 lack a section-level length
-  /// prefix today (only section 2 has one), so we can't byte-skip
-  /// them without parsing. Parsing into local scopes that drop on
-  /// return still wins us the steady-state memory: the returned `Env`
-  /// is metadata-free, and the temporary lookup tables / parsed
-  /// metadata values are reclaimed before this function returns.
+  /// Hints come straight from §3: the writer always emits that
+  /// section, deriving it from Named metadata when the in-memory map
+  /// is empty, so the historical read-time harvest from §Named is
+  /// gone.
   ///
   /// Used by the anon-mode kernel path so a verifier holding only
-  /// content addresses doesn't pay the long-term cost of metadata
-  /// sections it will never consult.
+  /// content addresses doesn't pay for metadata it will never consult.
   pub fn get_anon(buf: &mut &[u8]) -> Result<Self, String> {
     // Header (same as Env::get)
-    let tag = Tag4::get(buf)?;
-    if tag.flag != Self::FLAG {
-      return Err(format!(
-        "Env::get_anon: expected flag 0x{:X}, got 0x{:X}",
-        Self::FLAG,
-        tag.flag
-      ));
-    }
-    if tag.size != 0 {
-      return Err(format!(
-        "Env::get_anon: expected Env variant 0, got {}",
-        tag.size
-      ));
-    }
-    let stored_root = get_address(buf)?;
+    let (stored_root, main, assumptions) =
+      read_env_header(buf, "Env::get_anon")?;
 
     let mut env = Env::new();
+    env.main = main;
+    env.assumptions = assumptions.into_iter().collect();
 
-    // Section 1: Blobs (kept)
-    let num_blobs = get_u64(buf)?;
-    for _ in 0..num_blobs {
-      let addr = get_address(buf)?;
-      let len = get_u64(buf)? as usize;
-      if buf.len() < len {
-        return Err(format!(
-          "Env::get_anon: need {} bytes for blob, have {}",
-          len,
-          buf.len()
-        ));
-      }
-      let (bytes, rest) = buf.split_at(len);
-      *buf = rest;
-      env.blobs.insert(addr, bytes.to_vec());
+    // Section 1: Blobs (kept; hash-verified per entry)
+    for (addr, bytes) in read_blob_section(buf, "Env::get_anon")? {
+      env.blobs.insert(addr, bytes);
     }
 
     // Section 2: Consts (kept, lazy)
@@ -1851,55 +2006,27 @@ impl Env {
         .insert(addr, crate::lazy::LazyConstant::from_bytes(bytes.into()));
     }
 
-    // Section 3: Names — parse and DISCARD. We still need a populated
-    // `names_lookup` and `name_reverse_index` so section 4's indexed
-    // metadata parses correctly, but both go out of scope before
-    // returning so the steady-state `Env` carries no name data.
-    let num_names = get_u64(buf)?;
-    let mut names_lookup: FxHashMap<Address, Name> = FxHashMap::default();
-    let mut name_reverse_index: NameReverseIndex =
-      Vec::with_capacity(num_names as usize + 1);
-    let anon_addr = Address::from_blake3_hash(*Name::anon().get_hash());
-    names_lookup.insert(anon_addr, Name::anon());
-    for _ in 0..num_names {
-      let addr = get_address(buf)?;
-      let name = get_name_component(buf, &names_lookup)?;
-      name_reverse_index.push(addr.clone());
-      names_lookup.insert(addr, name);
+    // `main` must reference a constant actually present in the file.
+    if let Some(m) = &env.main
+      && env.consts.get(m).is_none()
+    {
+      return Err(format!(
+        "Env::get_anon: main {} not present in consts",
+        m.hex()
+      ));
     }
 
-    // Section 4: Named — parse and mostly discard, but harvest
-    // `ReducibilityHints` from each `Def` variant into `env.anon_hints`.
-    // Hints are performance advice (lazy-delta tiebreak); the kernel's
-    // anon-mode correctness model is preserved either way. Without
-    // them, every Definition is forced to `Regular(0)` and the kernel
-    // can chew through `MAX_WHNF_FUEL` on definitions Lean would have
-    // marked `Abbrev`/`Regular(h)`.
-    let num_named = get_u64(buf)?;
-    for _ in 0..num_named {
-      let _name_addr = get_address(buf)?;
-      let named = get_named_indexed(buf, &name_reverse_index)?;
-      if let super::metadata::ConstantMetaInfo::Def { hints, .. } =
-        &named.meta().info
-      {
-        env.anon_hints.insert(named.addr.clone(), *hints);
-      }
+    // Section 3: anon_hints. Hints are performance advice (lazy-delta
+    // tiebreak); the kernel's anon-mode correctness model is preserved
+    // either way. Without them, every Definition is forced to
+    // `Regular(0)` and the kernel can chew through `MAX_WHNF_FUEL` on
+    // definitions Lean would have marked `Abbrev`/`Regular(h)`.
+    for (addr, hints) in read_hints_section(buf)? {
+      env.anon_hints.insert(addr, hints);
     }
 
-    // Section 5: Comms — parse and DISCARD.
-    let num_comms = get_u64(buf)?;
-    for _ in 0..num_comms {
-      let _addr = get_address(buf)?;
-      let _comm = Comm::get(buf)?;
-    }
-
-    // Optional trailing anon_hints section (see `Env::put`). For a closure
-    // sub-env this carries the hints the dropped Named section would have, so
-    // the kernel reproduces vanilla behavior with no def-eq overhead.
-    read_anon_hints_section(buf, &mut env)?;
-
-    drop(names_lookup);
-    drop(name_reverse_index);
+    // Sections 4-6 (names / named / comms) are laid out after the
+    // hints precisely so this reader can stop here.
 
     // Verify merkle root over loaded consts.
     let mut const_addrs: Vec<Address> =
@@ -1929,11 +2056,10 @@ impl Env {
   /// the mapping stays alive as long as any consumer holds the env or
   /// any clone of a `LazyConstant` from it.
   ///
-  /// Sections 1 (blobs), 3 (names), 4 (named), and 5 (comms) are
-  /// handled the same way as `get_anon`: blobs are heap-copied (they
-  /// are small and consumed eagerly), names and named are
-  /// parse-and-discard (with hints harvested into `env.anon_hints`),
-  /// comms are skipped.
+  /// Sections are handled the same way as `get_anon`: §1 blobs are
+  /// heap-copied and hash-verified (small, eagerly consumed), §3
+  /// anon_hints is read into `env.anon_hints`, and the reader stops
+  /// there — the metadata sections (§4-§6) are never touched.
   ///
   /// On Linux, the kernel's adaptive readahead handles the linear
   /// scan during section parsing efficiently; subsequent random
@@ -1990,39 +2116,17 @@ impl Env {
     let mut buf: &[u8] = mmap_full;
 
     // Header (same shape as Env::get_anon)
-    let tag = Tag4::get(&mut buf)?;
-    if tag.flag != Self::FLAG {
-      return Err(format!(
-        "Env::get_anon_mmap: expected flag 0x{:X}, got 0x{:X}",
-        Self::FLAG,
-        tag.flag
-      ));
-    }
-    if tag.size != 0 {
-      return Err(format!(
-        "Env::get_anon_mmap: expected Env variant 0, got {}",
-        tag.size
-      ));
-    }
-    let stored_root = get_address(&mut buf)?;
+    let (stored_root, main, assumptions) =
+      read_env_header(&mut buf, "Env::get_anon_mmap")?;
 
     let mut env = Env::new();
+    env.main = main;
+    env.assumptions = assumptions.into_iter().collect();
 
-    // Section 1: Blobs (heap-copied; small, eagerly consumed)
-    let num_blobs = get_u64(&mut buf)?;
-    for _ in 0..num_blobs {
-      let addr = get_address(&mut buf)?;
-      let len = get_u64(&mut buf)? as usize;
-      if buf.len() < len {
-        return Err(format!(
-          "Env::get_anon_mmap: need {} bytes for blob, have {}",
-          len,
-          buf.len()
-        ));
-      }
-      let (bytes, rest) = buf.split_at(len);
-      buf = rest;
-      env.blobs.insert(addr, bytes.to_vec());
+    // Section 1: Blobs (heap-copied; small, eagerly consumed;
+    // hash-verified per entry)
+    for (addr, bytes) in read_blob_section(&mut buf, "Env::get_anon_mmap")? {
+      env.blobs.insert(addr, bytes);
     }
 
     // Section 2: Consts (mmap-backed lazy windows)
@@ -2060,47 +2164,23 @@ impl Env {
       buf = &buf[len..];
     }
 
-    // Section 3: Names — parse and DISCARD (needed transiently so
-    // section 4's indexed metadata can be decoded).
-    let num_names = get_u64(&mut buf)?;
-    let mut names_lookup: FxHashMap<Address, Name> = FxHashMap::default();
-    let mut name_reverse_index: NameReverseIndex =
-      Vec::with_capacity(num_names as usize + 1);
-    let anon_addr = Address::from_blake3_hash(*Name::anon().get_hash());
-    names_lookup.insert(anon_addr, Name::anon());
-    for _ in 0..num_names {
-      let addr = get_address(&mut buf)?;
-      let name = get_name_component(&mut buf, &names_lookup)?;
-      name_reverse_index.push(addr.clone());
-      names_lookup.insert(addr, name);
+    // `main` must reference a constant actually present in the file.
+    if let Some(m) = &env.main
+      && env.consts.get(m).is_none()
+    {
+      return Err(format!(
+        "Env::get_anon_mmap: main {} not present in consts",
+        m.hex()
+      ));
     }
 
-    // Section 4: Named — harvest `ReducibilityHints` from `Def`
-    // entries into `env.anon_hints`; discard the rest. See `get_anon`
-    // for the rationale.
-    let num_named = get_u64(&mut buf)?;
-    for _ in 0..num_named {
-      let _name_addr = get_address(&mut buf)?;
-      let named = get_named_indexed(&mut buf, &name_reverse_index)?;
-      if let super::metadata::ConstantMetaInfo::Def { hints, .. } =
-        &named.meta().info
-      {
-        env.anon_hints.insert(named.addr.clone(), *hints);
-      }
+    // Section 3: anon_hints — see `get_anon` for the rationale.
+    for (addr, hints) in read_hints_section(&mut buf)? {
+      env.anon_hints.insert(addr, hints);
     }
 
-    // Section 5: Comms — parse and DISCARD.
-    let num_comms = get_u64(&mut buf)?;
-    for _ in 0..num_comms {
-      let _addr = get_address(&mut buf)?;
-      let _comm = Comm::get(&mut buf)?;
-    }
-
-    // Optional trailing anon_hints section (see `Env::put`).
-    read_anon_hints_section(&mut buf, &mut env)?;
-
-    drop(names_lookup);
-    drop(name_reverse_index);
+    // Sections 4-6 (names / named / comms) are laid out after the
+    // hints precisely so this reader can stop here.
 
     // Verify merkle root over loaded consts (same as get_anon).
     let mut const_addrs: Vec<Address> =
@@ -2126,20 +2206,29 @@ impl Env {
     Ok(buf.len())
   }
 
-  /// Calculate serialized size with breakdown by section.
+  /// Calculate serialized size with breakdown by section:
+  /// `(header, blobs, consts, anon_hints, names, named, comms)`.
   pub fn serialized_size_breakdown(
     &self,
-  ) -> Result<(usize, usize, usize, usize, usize, usize), String> {
+  ) -> Result<(usize, usize, usize, usize, usize, usize, usize), String> {
     let mut buf = Vec::new();
 
-    // Header + merkle root (matches Env::put layout; root is always
-    // 32 bytes, with `zero_address()` as the empty-env sentinel).
+    // Header: tag + merkle root (32 bytes, `zero_address()` sentinel
+    // for empty const sets) + bundle fields (matches Env::put layout).
     Tag4::new(Self::FLAG, 0).put(&mut buf);
     let mut const_addrs: Vec<Address> =
       self.consts.iter().map(|e| e.key().clone()).collect();
     const_addrs.sort_unstable();
     let root = merkle_root_canonical(&const_addrs).unwrap_or_else(zero_address);
     put_address(&root, &mut buf);
+    put_opt_addr(&self.main, &mut buf);
+    let mut assumption_addrs: Vec<Address> =
+      self.assumptions.iter().cloned().collect();
+    assumption_addrs.sort_unstable();
+    put_u64(assumption_addrs.len() as u64, &mut buf);
+    for addr in &assumption_addrs {
+      put_address(addr, &mut buf);
+    }
     let header_size = buf.len();
 
     // Section 1: Blobs
@@ -2162,7 +2251,32 @@ impl Env {
     }
     let consts_size = buf.len() - before_consts;
 
-    // Section 3: Names (also build name index)
+    // Section 3: anon_hints (mirrors Env::put's derive-from-named rule)
+    let before_hints = buf.len();
+    let mut hint_pairs: Vec<(Address, ReducibilityHints)> =
+      if self.anon_hints.is_empty() {
+        let mut derived: FxHashMap<Address, ReducibilityHints> =
+          FxHashMap::default();
+        for entry in self.named.iter() {
+          if let super::metadata::ConstantMetaInfo::Def { hints, .. } =
+            &entry.value().meta().info
+          {
+            derived.entry(entry.value().addr.clone()).or_insert(*hints);
+          }
+        }
+        derived.into_iter().collect()
+      } else {
+        self.anon_hints.iter().map(|(a, h)| (a.clone(), *h)).collect()
+      };
+    hint_pairs.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+    put_u64(hint_pairs.len() as u64, &mut buf);
+    for (addr, hints) in &hint_pairs {
+      put_address(addr, &mut buf);
+      hints.put_ser(&mut buf);
+    }
+    let hints_size = buf.len() - before_hints;
+
+    // Section 4: Names (also build name index)
     let before_names = buf.len();
     let sorted_names = topological_sort_names(&self.names);
     let mut name_index: NameIndex = NameIndex::new();
@@ -2174,7 +2288,7 @@ impl Env {
     }
     let names_size = buf.len() - before_names;
 
-    // Section 4: Named (use indexed serialization)
+    // Section 5: Named (use indexed serialization)
     let before_named = buf.len();
     put_u64(self.named.len() as u64, &mut buf);
     for entry in self.named.iter() {
@@ -2183,7 +2297,7 @@ impl Env {
     }
     let named_size = buf.len() - before_named;
 
-    // Section 5: Comms
+    // Section 6: Comms
     let before_comms = buf.len();
     put_u64(self.comms.len() as u64, &mut buf);
     for entry in self.comms.iter() {
@@ -2196,6 +2310,7 @@ impl Env {
       header_size,
       blobs_size,
       consts_size,
+      hints_size,
       names_size,
       named_size,
       comms_size,
@@ -2385,7 +2500,7 @@ mod tests {
   }
 
   fn gen_env(g: &mut Gen) -> Env {
-    let env = Env::new();
+    let mut env = Env::new();
 
     // Generate blobs
     let num_blobs = gen_range(g, 0..10);
@@ -2407,12 +2522,14 @@ mod tests {
 
     // Generate constants and named entries
     let num_consts = gen_range(g, 0..10);
+    let mut const_addrs: Vec<Address> = Vec::new();
     for i in 0..num_consts {
       let constant = gen_constant(g);
       let mut buf = Vec::new();
       constant.put(&mut buf);
       let addr = Address::hash(&buf);
       env.store_const(addr.clone(), constant);
+      const_addrs.push(addr.clone());
 
       // Create a named entry for this constant
       if !names.is_empty() {
@@ -2446,6 +2563,34 @@ mod tests {
       let comm = Comm::arbitrary(g);
       let addr = Address::arbitrary(g);
       env.comms.insert(addr, comm);
+    }
+
+    // Bundle fields. `main` must reference a stored const — `Env::put`
+    // validates that; `assumptions` are opaque addresses (no content
+    // behind them is required), so random ones exercise the encoding.
+    if !const_addrs.is_empty() && bool::arbitrary(g) {
+      let idx = usize::arbitrary(g) % const_addrs.len();
+      env.main = Some(const_addrs[idx].clone());
+    }
+    let num_assumptions = gen_range(g, 0..5);
+    for _ in 0..num_assumptions {
+      env.assumptions.insert(Address::arbitrary(g));
+    }
+
+    // Explicit anon_hints (keyed by arbitrary addresses — the map is
+    // advisory). When left empty, `Env::put` derives §3 from Named
+    // metadata instead; gen_env metas are all `Empty`, so that
+    // derivation contributes nothing and roundtrip equality holds
+    // either way.
+    let num_hints = gen_range(g, 0..4);
+    for _ in 0..num_hints {
+      let variant: u8 = Arbitrary::arbitrary(g);
+      let hint = match variant % 3 {
+        0 => ReducibilityHints::Opaque,
+        1 => ReducibilityHints::Abbrev,
+        _ => ReducibilityHints::Regular(Arbitrary::arbitrary(g)),
+      };
+      env.anon_hints.insert(Address::arbitrary(g), hint);
     }
 
     env
@@ -2544,6 +2689,29 @@ mod tests {
               return false;
             },
           }
+        }
+
+        // Bundle fields + hints (gen_env metas are all Empty, so §3
+        // derivation contributes nothing and plain equality holds).
+        if env.main != recovered.main {
+          eprintln!("main mismatch: {:?} vs {:?}", env.main, recovered.main);
+          return false;
+        }
+        if env.assumptions != recovered.assumptions {
+          eprintln!(
+            "assumptions mismatch: {} vs {} entries",
+            env.assumptions.len(),
+            recovered.assumptions.len()
+          );
+          return false;
+        }
+        if env.anon_hints != recovered.anon_hints {
+          eprintln!(
+            "anon_hints mismatch: {} vs {} entries",
+            env.anon_hints.len(),
+            recovered.anon_hints.len()
+          );
+          return false;
         }
 
         true
@@ -2683,21 +2851,39 @@ mod tests {
     assert!(res.is_err(), "tampered root should be rejected");
   }
 
+  /// Byte offset of the first constant's payload within a serialized
+  /// env buffer, computed by walking the header + §1 (blobs) + the §2
+  /// prefix with the real parsers — so tampering tests track layout
+  /// changes instead of hardcoding offsets.
+  fn first_const_payload_offset(buf: &[u8]) -> usize {
+    let mut cur: &[u8] = buf;
+    read_env_header(&mut cur, "test").unwrap();
+    read_blob_section(&mut cur, "test").unwrap();
+    let n = get_u64(&mut cur).unwrap();
+    assert!(n >= 1, "need at least one const to locate");
+    let _addr = get_address(&mut cur).unwrap();
+    let _len = Tag0::get(&mut cur).unwrap();
+    buf.len() - cur.len()
+  }
+
+  /// Byte offset of the first blob's payload (same technique as
+  /// [`first_const_payload_offset`]).
+  fn first_blob_payload_offset(buf: &[u8]) -> usize {
+    let mut cur: &[u8] = buf;
+    read_env_header(&mut cur, "test").unwrap();
+    let n = get_u64(&mut cur).unwrap();
+    assert!(n >= 1, "need at least one blob to locate");
+    let _addr = get_address(&mut cur).unwrap();
+    let _len = get_u64(&mut cur).unwrap();
+    buf.len() - cur.len()
+  }
+
   /// Flip a byte inside the first const's payload bytes (not its
   /// stored address): merkle still validates over `consts.keys()`, so
   /// the per-entry `Address::hash(bytes) == addr` check is what must
   /// reject this corruption. Without that check, `Env::get` would
   /// succeed and the failure would surface much later inside
   /// `LazyConstant::get` with a misleading parse error.
-  ///
-  /// Header layout for an env with empty blobs and one const:
-  ///   [0]      Tag4 (0xE0)
-  ///   [1..33)  merkle root (32 bytes)
-  ///   [33]     Section 1 (blobs) count = 0 (Tag0)
-  ///   [34]     Section 2 (consts) count = 1 (Tag0)
-  ///   [35..67) const address (32 bytes)
-  ///   [67]     Tag0 length of const bytes
-  ///   [68..]   const bytes (target for tampering)
   #[test]
   fn env_const_bytes_tampering_rejected_by_get() {
     let env = Env::new();
@@ -2705,7 +2891,7 @@ mod tests {
     let mut buf = Vec::new();
     env.put(&mut buf).unwrap();
     // Flip a byte well inside the const payload.
-    let off = 68 + 3;
+    let off = first_const_payload_offset(&buf) + 3;
     assert!(off < buf.len(), "expected const bytes at offset {off}");
     buf[off] ^= 0xFF;
     let res = Env::get(&mut buf.as_slice());
@@ -2722,7 +2908,7 @@ mod tests {
     env.store_const(Address::hash(b"a"), defn_const(vec![]));
     let mut buf = Vec::new();
     env.put(&mut buf).unwrap();
-    let off = 68 + 3;
+    let off = first_const_payload_offset(&buf) + 3;
     assert!(off < buf.len());
     buf[off] ^= 0xFF;
     let res = Env::get_anon(&mut buf.as_slice());
@@ -2740,7 +2926,7 @@ mod tests {
     env.store_const(Address::hash(b"a"), defn_const(vec![]));
     let mut buf = Vec::new();
     env.put(&mut buf).unwrap();
-    let off = 68 + 3;
+    let off = first_const_payload_offset(&buf) + 3;
     assert!(off < buf.len());
     buf[off] ^= 0xFF;
     // mmap requires a real file
@@ -2884,5 +3070,188 @@ mod tests {
 
     assert_eq!(pre_a, post_a, "`a` content should be stable across unlink");
     assert_ne!(post_a, post_b, "discriminators should still differentiate");
+  }
+
+  // ---------------------------------------------------------------------------
+  // Bundle header fields (main / assumptions) + §1/§3 integrity
+  // ---------------------------------------------------------------------------
+
+  #[test]
+  fn env_main_and_assumptions_roundtrip_all_readers() {
+    let mut env = Env::new();
+    let a = store_canonical(&env, defn_const(vec![]));
+    store_canonical(&env, defn_const_discriminator(vec![], 1));
+    env.main = Some(a.clone());
+    env.assumptions.insert(Address::hash(b"assume-1"));
+    env.assumptions.insert(Address::hash(b"assume-2"));
+
+    let mut buf = Vec::new();
+    env.put(&mut buf).unwrap();
+
+    let full = Env::get(&mut buf.as_slice()).unwrap();
+    assert_eq!(full.main, Some(a.clone()));
+    assert_eq!(full.assumptions, env.assumptions);
+
+    let anon = Env::get_anon(&mut buf.as_slice()).unwrap();
+    assert_eq!(anon.main, Some(a.clone()));
+    assert_eq!(anon.assumptions, env.assumptions);
+
+    let index = Env::parse_lazy_index(&buf).unwrap();
+    assert_eq!(index.main, Some(a));
+    let mut sorted: Vec<Address> = env.assumptions.iter().cloned().collect();
+    sorted.sort_unstable();
+    assert_eq!(index.assumptions, sorted, "LazyIndex keeps header order");
+  }
+
+  #[test]
+  fn env_put_rejects_main_not_in_consts() {
+    let mut env = Env::new();
+    store_canonical(&env, defn_const(vec![]));
+    env.main = Some(Address::hash(b"not-a-const"));
+    let mut buf = Vec::new();
+    let err = env
+      .put(&mut buf)
+      .expect_err("main outside consts must be rejected at write time");
+    assert!(err.contains("main"), "got: {err}");
+  }
+
+  /// Flip a byte of the serialized `main` address: the header parses,
+  /// but the resulting address is (w.h.p.) not a stored constant, so
+  /// the `main ∈ consts` reader check must reject the file. This test
+  /// intentionally knows the fixed header prefix (tag byte + 32-byte
+  /// root — same knowledge as `parse_stored_root`).
+  #[test]
+  fn env_get_rejects_tampered_main() {
+    let mut env = Env::new();
+    let a = store_canonical(&env, defn_const(vec![]));
+    env.main = Some(a);
+    let mut buf = Vec::new();
+    env.put(&mut buf).unwrap();
+    assert_eq!(buf[33], 0x01, "main opt-flag should be Some");
+    buf[34] ^= 0xFF;
+    let err = Env::get(&mut buf.as_slice())
+      .expect_err("tampered main must be rejected");
+    assert!(err.contains("main"), "got: {err}");
+  }
+
+  #[test]
+  fn env_get_rejects_unsorted_assumptions() {
+    let mut env = Env::new();
+    store_canonical(&env, defn_const(vec![]));
+    env.assumptions.insert(Address::hash(b"x"));
+    env.assumptions.insert(Address::hash(b"y"));
+    let mut buf = Vec::new();
+    env.put(&mut buf).unwrap();
+    // Locate the header end with the real parser, then swap the two
+    // 32-byte assumption addresses in place (the writer sorts them).
+    let header_len = {
+      let mut cur: &[u8] = &buf;
+      read_env_header(&mut cur, "test").unwrap();
+      buf.len() - cur.len()
+    };
+    let (lo, hi) = (header_len - 64, header_len - 32);
+    let first: Vec<u8> = buf[lo..hi].to_vec();
+    let second: Vec<u8> = buf[hi..header_len].to_vec();
+    buf[lo..hi].copy_from_slice(&second);
+    buf[hi..header_len].copy_from_slice(&first);
+    let err = Env::get(&mut buf.as_slice())
+      .expect_err("descending assumptions must be rejected");
+    assert!(err.contains("strictly ascending"), "got: {err}");
+  }
+
+  #[test]
+  fn env_blob_tampering_rejected_by_all_readers() {
+    use std::io::Write;
+    let env = Env::new();
+    store_canonical(&env, defn_const(vec![]));
+    env.store_blob(b"blob payload".to_vec());
+    let mut buf = Vec::new();
+    env.put(&mut buf).unwrap();
+    let off = first_blob_payload_offset(&buf) + 2;
+    buf[off] ^= 0xFF;
+
+    for (reader, res) in [
+      ("get", Env::get(&mut buf.as_slice()).err()),
+      ("get_anon", Env::get_anon(&mut buf.as_slice()).err()),
+      ("parse_lazy_index", Env::parse_lazy_index(&buf).err()),
+    ] {
+      let err =
+        res.unwrap_or_else(|| panic!("{reader}: tampered blob accepted"));
+      assert!(
+        err.contains("blob at idx"),
+        "{reader}: expected blob verify error, got: {err}"
+      );
+    }
+
+    let tmp = std::env::temp_dir().join("ix_env_blob_tamper_mmap_test.ixe");
+    {
+      let mut f = std::fs::File::create(&tmp).unwrap();
+      f.write_all(&buf).unwrap();
+    }
+    let err = Env::get_anon_mmap(&tmp)
+      .expect_err("get_anon_mmap: tampered blob accepted");
+    assert!(err.contains("blob at idx"), "got: {err}");
+    std::fs::remove_file(&tmp).ok();
+  }
+
+  #[test]
+  fn env_get_rejects_trailing_garbage_but_get_anon_stops_early() {
+    let env = Env::new();
+    store_canonical(&env, defn_const(vec![]));
+    let mut buf = Vec::new();
+    env.put(&mut buf).unwrap();
+    buf.extend_from_slice(&[0xAB, 0xCD, 0xEF]);
+    let err = Env::get(&mut buf.as_slice())
+      .expect_err("trailing bytes must be rejected by the full reader");
+    assert!(err.contains("trailing"), "got: {err}");
+    // get_anon stops after §3 and never sees the tail — by design.
+    Env::get_anon(&mut buf.as_slice())
+      .expect("get_anon early-stops before the garbage");
+  }
+
+  /// §3 is the canonical hint channel: with an empty `anon_hints` map
+  /// the writer derives the section from Named `Def` metadata, and an
+  /// env carrying the same hints explicitly serializes byte-identically.
+  #[test]
+  fn env_hints_derived_from_named_metadata() {
+    use crate::env::Named;
+    use crate::metadata::{ConstantMetaInfo, ExprMeta};
+
+    let env = Env::new();
+    let const_addr = store_canonical(&env, defn_const(vec![]));
+    let name = Name::str(Name::anon(), "hinted".to_string());
+    let name_addr = Address::from_blake3_hash(*name.get_hash());
+    env.names.insert(name_addr.clone(), name.clone());
+    let meta = ConstantMeta::new(ConstantMetaInfo::Def {
+      name: name_addr,
+      lvls: vec![],
+      hints: ReducibilityHints::Regular(7),
+      all: vec![],
+      ctx: vec![],
+      arena: ExprMeta::default(),
+      type_root: 0,
+      value_root: 0,
+    });
+    env.named.insert(name, Named::new(const_addr.clone(), meta));
+
+    // Empty map → §3 derived from Named at write time; the anon
+    // reader picks it up without ever parsing the Named section.
+    let mut buf = Vec::new();
+    env.put(&mut buf).unwrap();
+    let anon = Env::get_anon(&mut buf.as_slice()).unwrap();
+    assert_eq!(
+      anon.anon_hints.get(&const_addr),
+      Some(&ReducibilityHints::Regular(7))
+    );
+
+    // Explicit map with identical content → identical bytes.
+    let mut env2 = env.clone();
+    env2.anon_hints.insert(const_addr, ReducibilityHints::Regular(7));
+    let mut buf2 = Vec::new();
+    env2.put(&mut buf2).unwrap();
+    assert_eq!(
+      buf, buf2,
+      "derived and explicit hint sections should serialize identically"
+    );
   }
 }
