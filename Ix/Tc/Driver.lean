@@ -1,6 +1,7 @@
 module
 
 public import Ix.Tc.Ingress
+public import Ix.Tc.Check
 
 /-!
 Mirror: crates/kernel/src/anon_work.rs (work enumeration) plus the driver
@@ -130,6 +131,73 @@ def ingressAll (ixonEnv : Ixon.Env) (verify : Bool := true) :
         | throw s!"ingressAll: missing block {blockAddr}"
       let _ ← ingressAnonBlock ixonEnv c blockAddr
   return work
+
+/-! ### The anon check driver -/
+
+/-- Driver configuration. -/
+structure CheckCfg where
+  /-- Verify `blake3(bytes) == addr` at every constant materialization
+      (the soundness-critical integrity check; see `Ix.Tc.Ingress`). -/
+  verifyHashes : Bool := true
+  /-- Clear the reduction-memo caches every N work items (structural caches,
+      constants, and the faulted set are preserved). `0` disables. -/
+  clearEvery : Nat := 50
+  deriving Repr, Inhabited
+
+/-- One work item's verdict, fanned out per covered target address. -/
+structure CheckResult where
+  addr : Address
+  err? : Option String
+  deriving Repr, Inhabited
+
+/-- Fresh anon checker state over `ixonEnv` with the lazy fault hook
+    installed (constants ingress on demand as typechecking discovers them).
+    Mirrors Rust `TypeChecker::new_with_lazy_anon`. -/
+def TcState.newLazyAnon (ixonEnv : Ixon.Env) (verify : Bool := true) :
+    TcState .anon :=
+  { env := {}
+    prims := .ofAnonAddrs
+    lazyFault := some fun addr => ingressAnonAddrShallow ixonEnv addr verify }
+
+/-- Check every anon work item of `ixonEnv` with one persistent kernel env
+    (lazy faulting makes the cross-item constant reuse pay off) and a fresh
+    checker state per item. Verdicts are fanned to every target the item
+    covers. Never throws: per-item errors land in the results. -/
+def checkEnvAnon (ixonEnv : Ixon.Env) (cfg : CheckCfg := {}) :
+    Except IngressErr (Array CheckResult) := do
+  let work ← buildAnonWork ixonEnv
+  let mut results : Array CheckResult := #[]
+  let mut st := TcState.newLazyAnon ixonEnv cfg.verifyHashes
+  let mut sinceClear := 0
+  for item in work do
+    let primary : KId .anon := ⟨item.primary, ()⟩
+    let err? ← match (TcM.checkConst primary).run st with
+      | .ok () st' =>
+        st := st'
+        pure none
+      | .error e st' =>
+        st := st'
+        pure (some (toString e))
+    for target in item.targets do
+      results := results.push ⟨target, err?⟩
+    sinceClear := sinceClear + 1
+    if cfg.clearEvery != 0 && sinceClear ≥ cfg.clearEvery then
+      st := { st with env := st.env.clearReductionCaches }
+      sinceClear := 0
+  return results
+
+/-- Read a serialized env (anon sections) and check it. -/
+def checkIxeBytesAnon (bytes : ByteArray) (cfg : CheckCfg := {}) :
+    Except IngressErr (Array CheckResult) := do
+  match Ixon.deEnvAnon bytes with
+  | .ok env => checkEnvAnon env cfg
+  | .error e => throw s!"checkIxeBytesAnon: deserialize failed: {e}"
+
+/-- Check a `.ixe` file from disk. -/
+def checkIxeAnon (path : System.FilePath) (cfg : CheckCfg := {}) :
+    IO (Except IngressErr (Array CheckResult)) := do
+  let bytes ← IO.FS.readBinFile path
+  return checkIxeBytesAnon bytes cfg
 
 end Ix.Tc
 

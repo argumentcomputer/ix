@@ -95,6 +95,17 @@ structure TcState (m : Mode) where
   ctxAddrCache : HashMap (Address × UInt64) Address := {}
   /-- Local context for fvar-based binder opening. -/
   lctx : LocalContext m := {}
+  /-- Lazy on-demand ingress hook (Rust `LazyAnonIngress`): faults a missing
+      constant's block into `env` by address. Installed by the driver
+      (`TcState.newLazyAnon`); `none` for eagerly-ingressed envs. The closure
+      runs against `env` and returns whether the address was found in the
+      backing Ixon env. (The error type is `Ix.Tc.IngressErr`, spelled
+      `String` here because `Ix.Tc.Ingress` imports this module.) -/
+  lazyFault : Option (Address → EStateM String (KEnv m) Bool) := none
+  /-- Addresses already faulted (hit or miss) — never re-ingress. Lives on
+      the state (not reset per constant), mirroring Rust
+      `LazyAnonIngress::faulted_addrs`. -/
+  faultedAddrs : Std.HashSet Address := {}
 
 namespace TcState
 
@@ -155,10 +166,37 @@ def freshFVarId : TcM m FVarId := fun s =>
   let (id, env) := s.env.freshFVarId
   .ok id { s with env }
 
-/-- Constant lookup; `none` on a miss. The lazy-ingress fault hook is layered
-    on in `Ix.Tc.Driver` (P7); this is the plain env read. -/
+/-- Fault `addr` through the lazy-ingress hook (if installed), deduplicated
+    by `faultedAddrs`. Ingress errors surface as `TcError.other` with the
+    Rust "lazy anon ingress" prefix. Mirrors tc.rs `lazy_ingress_addr`. -/
+def lazyIngressAddr (addr : Address) : TcM m Unit := fun s =>
+  match s.lazyFault with
+  | none => .ok () s
+  | some fault =>
+    if s.faultedAddrs.contains addr then
+      .ok () s
+    else
+      let s := { s with faultedAddrs := s.faultedAddrs.insert addr }
+      match fault addr s.env with
+      | .ok _ env => .ok () { s with env }
+      | .error e env =>
+        .error (.other s!"lazy anon ingress {addr}: {e}") { s with env }
+
+/-- Constant lookup. On a miss with the lazy hook installed, faults the
+    address and retries; a post-fault miss is a hard `unknownConst` (Rust
+    parity: with lazy enabled, `try_get_const` errors rather than returning
+    `none`). Without the hook, plain env read. -/
 def tryGetConst (id : KId m) : TcM m (Option (KConst m)) := do
-  return (← get).env.get? id
+  if let some c := (← get).env.get? id then
+    return some c
+  let lazyEnabled := (← get).lazyFault.isSome
+  lazyIngressAddr id.addr
+  match (← get).env.get? id with
+  | some c => return some c
+  | none =>
+    if lazyEnabled then
+      throw (.unknownConst id.addr)
+    return none
 
 def getConst (id : KId m) : TcM m (KConst m) := do
   match (← tryGetConst id) with
@@ -168,7 +206,12 @@ def getConst (id : KId m) : TcM m (KConst m) := do
 def hasConst (id : KId m) : TcM m Bool := do
   return (← tryGetConst id).isSome
 
+/-- Block lookup with the same fault-on-miss behavior (a post-fault miss is
+    `none`, not an error — mirrors tc.rs `try_get_block`). -/
 def tryGetBlock (id : KId m) : TcM m (Option (Array (KId m))) := do
+  if let some members := (← get).env.getBlock? id then
+    return some members
+  lazyIngressAddr id.addr
   return (← get).env.getBlock? id
 
 /-! ### Context management -/
