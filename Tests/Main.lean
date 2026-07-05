@@ -28,6 +28,7 @@ import Tests.Ix.Tc.CheckTests
 import Tests.Ix.Tc.NodeAddr
 import Tests.Ix.Tc.AnonDiff
 import Tests.Ix.Tc.InitScale
+import Tests.Ix.Tc.TutorialTc
 import Tests.Ix.CanonM
 import Tests.Ix.GraphM
 import Tests.Ix.CondenseM
@@ -91,6 +92,7 @@ def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("tc-node-addr", Tests.Tc.NodeAddr.suite),
   ("tc-anon-diff", Tests.Tc.AnonDiff.suite),
   ("tc-init", Tests.Tc.InitScale.suite),
+  ("tc-tutorial", Tests.Tc.TutorialTc.suite),
   -- Tracked pure-Lean kernel divergences (EXPECTED to fail; see
   -- Tests.Tc.AnonDiff.knownDivergenceSuite).
   ("tc-known-divergence", Tests.Tc.AnonDiff.knownDivergence),
