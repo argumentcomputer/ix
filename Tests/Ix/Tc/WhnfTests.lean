@@ -11,6 +11,8 @@ construction are inert until the knot is tied — exactly the plan's P4
 acceptance scope). Assertions are by exact node address.
 -/
 
+public section
+
 namespace Tests.Tc.WhnfTests
 
 open LSpec
@@ -246,3 +248,5 @@ public def suite : List TestSeq :=
   [structuralTests, iotaTests, natTests, nativeTests, cacheTests]
 
 end Tests.Tc.WhnfTests
+
+end
