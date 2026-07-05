@@ -1,6 +1,6 @@
 module
 
-public import Ix.Tc.Knot
+public import Ix.Tc.Inductive
 
 /-!
 Mirror: crates/kernel/src/check.rs
@@ -17,10 +17,9 @@ Constant checking dispatch:
   run the safety lattice; inductives/ctors/recursors run inference plus the
   inductive machinery.
 
-The inductive/recursor member and block validators live in
-`Ix.Tc.Inductive` (P8/P9); until then the hooks below throw an explicit
-`other "…not yet ported"` so inductive work items fail loudly rather than
-silently pass.
+The inductive member/block validators live in `Ix.Tc.Inductive` (P8);
+recursor validation hooks throw an explicit `other "…not yet ported"` until
+P9 lands, so recursor work items fail loudly rather than silently pass.
 -/
 
 public section
@@ -39,80 +38,6 @@ inductive CheckBlockKind where
 namespace RecM
 
 mutual
-
--- ### Well-scopedness validation
-
-/-- Universe params in range, iterative with an addr-keyed seen set. -/
-partial def validateUnivParamsSeen (root : KUniv m) (bound : Nat)
-    (seen : HashSet Address) : RecM m (HashSet Address) := do
-  let mut seen := seen
-  let mut stack : Array (KUniv m) := #[root]
-  while !stack.isEmpty do
-    let u := stack.back!
-    stack := stack.pop
-    if seen.contains u.addr then
-      continue
-    seen := seen.insert u.addr
-    match u with
-    | .zero _ => pure ()
-    | .succ inner _ => stack := stack.push inner
-    | .max a b _ | .imax a b _ =>
-      stack := stack.push a |>.push b
-    | .param idx _ _ =>
-      if idx.toNat ≥ bound then
-        throw (.univParamOutOfRange idx bound)
-  return seen
-
-/-- Closed at top level; every `param` within the declaration's own level
-    arity; const arities match; prj heads known. Iterative, memoized on
-    `(addr, depth)`. Mirrors check.rs `validate_expr_well_scoped`. -/
-partial def validateExprWellScoped (root : KExpr m) (rootDepth : UInt64)
-    (lvlBound : Nat) : RecM m Unit := do
-  let mut stack : Array (KExpr m × UInt64) := #[(root, rootDepth)]
-  let mut seenExprs : HashSet (Address × UInt64) := {}
-  let mut seenUnivs : HashSet Address := {}
-  while !stack.isEmpty do
-    let (e, depth) := stack.back!
-    stack := stack.pop
-    if seenExprs.contains (e.addr, depth) then
-      continue
-    seenExprs := seenExprs.insert (e.addr, depth)
-    match e with
-    | .var idx _ _ =>
-      if idx ≥ depth then
-        throw (.varOutOfRange idx depth.toNat)
-    | .sort u _ =>
-      seenUnivs ← validateUnivParamsSeen u lvlBound seenUnivs
-    | .const id us _ =>
-      let c ← TcM.getConst id
-      if c.lvls.toNat != us.size then
-        throw (.univParamMismatch c.lvls us.size)
-      for u in us do
-        seenUnivs ← validateUnivParamsSeen u lvlBound seenUnivs
-    | .app f a _ =>
-      stack := stack.push (f, depth) |>.push (a, depth)
-    | .lam _ _ ty body _ | .all _ _ ty body _ =>
-      stack := stack.push (ty, depth) |>.push (body, depth + 1)
-    | .letE _ ty val body _ _ =>
-      stack := stack.push (ty, depth) |>.push (val, depth)
-        |>.push (body, depth + 1)
-    | .prj id _ val _ =>
-      if !(← TcM.hasConst id) then
-        throw (.unknownConst id.addr)
-      stack := stack.push (val, depth)
-    -- FVars carry no de Bruijn index; leaves.
-    | .fvar .. | .nat .. | .str .. => pure ()
-
-partial def validateConstWellScoped (c : KConst m) : RecM m Unit := do
-  let lvlBound := c.lvls.toNat
-  validateExprWellScoped c.ty 0 lvlBound
-  match c with
-  | .defn (val := val) .. =>
-    validateExprWellScoped val 0 lvlBound
-  | .recr (rules := rules) .. =>
-    for rule in rules do
-      validateExprWellScoped rule.rhs 0 lvlBound
-  | _ => pure ()
 
 -- ### Safety lattice
 
@@ -368,21 +293,21 @@ partial def checkBlockBody (block : KId m) (requested : KId m) :
   | .inductive' => checkInductiveBlock block members
   | .recursor => checkRecursorBlock block members
 
--- ### Inductive machinery hooks (P8/P9 — Ix.Tc.Inductive replaces these)
+-- ### Inductive machinery (P8: validation in Ix.Tc.Inductive; P9 stubs)
 
-partial def checkInductiveMember (_id : KId m) : RecM m Unit :=
-  throw (.other "inductive validation not yet ported (P8)")
+partial def checkInductiveMember (id : KId m) : RecM m Unit :=
+  checkInductiveMemberImpl id
 
-partial def checkCtorAgainstInductiveMember (_id _induct : KId m) :
+partial def checkCtorAgainstInductiveMember (id induct : KId m) :
     RecM m Unit :=
-  throw (.other "inductive validation not yet ported (P8)")
+  checkCtorAgainstInductiveMemberImpl id induct
+
+partial def checkInductiveBlock (block : KId m) (members : Array (KId m)) :
+    RecM m Unit :=
+  checkInductiveBlockImpl block members
 
 partial def checkRecursorMember (_id : KId m) : RecM m Unit :=
   throw (.other "recursor validation not yet ported (P9)")
-
-partial def checkInductiveBlock (_block : KId m) (_members : Array (KId m)) :
-    RecM m Unit :=
-  throw (.other "inductive validation not yet ported (P8)")
 
 partial def checkRecursorBlock (_block : KId m) (_members : Array (KId m)) :
     RecM m Unit :=

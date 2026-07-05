@@ -18,6 +18,7 @@ public import Ix.Tc.Whnf
 public import Ix.Tc.Infer
 public import Ix.Tc.DefEq
 public import Ix.Tc.Knot
+public import Ix.Tc.Inductive
 public import Ix.Tc.Check
 
 /-!

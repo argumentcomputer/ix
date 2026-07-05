@@ -218,7 +218,7 @@ def lazyTests : TestSeq :=
           (TcState.newLazyAnon ixon) with
       | .error (.unknownConst a) _ => a == ghost
       | _ => false : Bool))
-  ++ test "checkEnvAnon: standalones pass, inductive items report P8 stub"
+  ++ test "checkEnvAnon: standalones and inductive blocks all pass"
     ((let (ixon, aAddr) := envA
       let idDefn : Ixon.Constant :=
         ⟨.defn ⟨.defn, .safe, 0,
@@ -232,11 +232,7 @@ def lazyTests : TestSeq :=
       match checkEnvAnon ixon with
       | .ok results =>
         results.size == 4  -- A, idA, B, B.mk
-          && results.all (fun r =>
-            match r.err? with
-            | none => true
-            | some msg => (msg.splitOn "not yet ported").length > 1)
-          && (results.filter (·.err?.isNone)).size == 2
+          && results.all (·.err?.isNone)
       | .error _ => false : Bool))
   ++ test "integrity violation surfaces through the fault path"
     ((let wrongAddr := Address.blake3 "wrong".toUTF8
@@ -248,8 +244,103 @@ def lazyTests : TestSeq :=
       | .error (.other msg) _ => (msg.splitOn "integrity").length > 1
       | _ => false : Bool))
 
+/-! ### P8: inductive validation (A1–A4, S3, cidx) -/
+
+def indPasses (block : Ixon.Constant) (extra : Ixon.Env := {}) : Bool := Id.run do
+  let (ixon, blockAddr) := storeMutsWithProjs extra block
+  passes ixon (indcProjAddr blockAddr 0)
+
+def indFailsWith (block : Ixon.Constant) (frag : String)
+    (extra : Ixon.Env := {}) : Bool := Id.run do
+  let (ixon, blockAddr) := storeMutsWithProjs extra block
+  failsContaining ixon (indcProjAddr blockAddr 0) frag
+
+def inductiveTests : TestSeq :=
+  test "Nat-like recursive inductive validates"
+    -- N : Sort 1, zero : N, succ : N → N
+    ((let ind : Ixon.Inductive :=
+        ⟨false, 0, 0, 0, .sort 0,
+          #[⟨false, 0, 0, 0, 0, .recur 0 #[]⟩,
+            ⟨false, 0, 1, 0, 1, .all (.recur 0 #[]) (.recur 0 #[])⟩]⟩
+      indPasses ⟨.muts #[.indc ind], #[], #[], #[.succ .zero]⟩ : Bool))
+  ++ test "parameterized inductive validates"
+    -- P : Sort 1 → Sort 1, mkP : ∀ (α : Sort 1), α → P α
+    ((let ind : Ixon.Inductive :=
+        ⟨false, 0, 1, 0, .all (.sort 0) (.sort 0),
+          #[⟨false, 0, 0, 1, 1,
+            .all (.sort 0) (.all (.var 0) (.app (.recur 0 #[]) (.var 1)))⟩]⟩
+      indPasses ⟨.muts #[.indc ind], #[], #[], #[.succ .zero]⟩ : Bool))
+  ++ test "negative occurrence is rejected (A3)"
+    -- bad : ((B → B) → B) — B in the domain of a field's Pi
+    ((let ind : Ixon.Inductive :=
+        ⟨false, 0, 0, 0, .sort 0,
+          #[⟨false, 0, 0, 0, 1,
+            .all (.all (.recur 0 #[]) (.recur 0 #[])) (.recur 0 #[])⟩]⟩
+      indFailsWith ⟨.muts #[.indc ind], #[], #[], #[.succ .zero]⟩
+        "strict positivity" : Bool))
+  ++ test "unsafe inductive skips positivity (A3 exemption)"
+    ((let ind : Ixon.Inductive :=
+        ⟨true, 0, 0, 0, .sort 0,
+          #[⟨true, 0, 0, 0, 1,
+            .all (.all (.recur 0 #[]) (.recur 0 #[])) (.recur 0 #[])⟩]⟩
+      indPasses ⟨.muts #[.indc ind], #[], #[], #[.succ .zero]⟩ : Bool))
+  ++ test "field universe above inductive level is rejected (A4)"
+    -- B : Sort 1 with a field of type Sort 1 (level 2 > 1)
+    ((let ind : Ixon.Inductive :=
+        ⟨false, 0, 0, 0, .sort 0,
+          #[⟨false, 0, 0, 0, 1, .all (.sort 0) (.recur 0 #[])⟩]⟩
+      indFailsWith ⟨.muts #[.indc ind], #[], #[], #[.succ .zero]⟩
+        "field universe exceeds" : Bool))
+  ++ test "Prop inductive permits any field universe (A4 exemption)"
+    -- B : Prop with a field of type Sort 1
+    ((let ind : Ixon.Inductive :=
+        ⟨false, 0, 0, 0, .sort 0,
+          #[⟨false, 0, 0, 0, 1, .all (.sort 1) (.recur 0 #[])⟩]⟩
+      indPasses ⟨.muts #[.indc ind], #[], #[], #[.zero, .succ .zero]⟩ : Bool))
+  ++ test "ctor returning the wrong type is rejected (A2)"
+    -- mk : A instead of mk : B
+    ((let (extra, aAddr) := envA
+      let ind : Ixon.Inductive :=
+        ⟨false, 0, 0, 0, .sort 0, #[⟨false, 0, 0, 0, 0, .ref 0 #[]⟩]⟩
+      indFailsWith ⟨.muts #[.indc ind], #[], #[aAddr], #[.succ .zero]⟩
+        "head is not the inductive" (extra := extra) : Bool))
+  ++ test "ctor cidx mismatch is rejected"
+    ((let ind : Ixon.Inductive :=
+        ⟨false, 0, 0, 0, .sort 0, #[⟨false, 0, 1, 0, 0, .recur 0 #[]⟩]⟩
+      indFailsWith ⟨.muts #[.indc ind], #[], #[], #[.succ .zero]⟩
+        "cidx mismatch" : Bool))
+  ++ test "ctor params mismatch is rejected"
+    ((let ind : Ixon.Inductive :=
+        ⟨false, 0, 0, 0, .sort 0, #[⟨false, 0, 0, 1, 0, .recur 0 #[]⟩]⟩
+      indFailsWith ⟨.muts #[.indc ind], #[], #[], #[.succ .zero]⟩
+        "params mismatch" : Bool))
+  ++ test "mutual peers in different universes are rejected (S3)"
+    ((let indB : Ixon.Inductive := ⟨false, 0, 0, 0, .sort 0, #[]⟩
+      let indC : Ixon.Inductive := ⟨false, 0, 0, 0, .sort 1, #[]⟩
+      indFailsWith
+        ⟨.muts #[.indc indB, .indc indC], #[], #[],
+          #[.succ .zero, .succ (.succ .zero)]⟩
+        "same universe" : Bool))
+  ++ test "mutual peers agreeing in universe validate (S3)"
+    ((let indB : Ixon.Inductive := ⟨false, 0, 0, 0, .sort 0, #[]⟩
+      let indC : Ixon.Inductive := ⟨false, 0, 0, 0, .sort 0, #[]⟩
+      indPasses ⟨.muts #[.indc indB, .indc indC], #[], #[], #[.succ .zero]⟩
+      : Bool))
+  ++ test "index mentioning a block inductive is rejected (A2)"
+    -- Block [B : Sort 1 (no ctors), I : Sort 1 → Sort 1] with
+    -- `mk : I (B → B)` — the index arg is well-typed but mentions B.
+    ((let indB : Ixon.Inductive := ⟨false, 0, 0, 0, .sort 0, #[]⟩
+      let indI : Ixon.Inductive :=
+        ⟨false, 0, 0, 1, .all (.sort 0) (.sort 0),
+          #[⟨false, 0, 0, 0, 0,
+            .app (.recur 1 #[]) (.all (.recur 0 #[]) (.recur 0 #[]))⟩]⟩
+      let (ixon, blockAddr) := storeMutsWithProjs {}
+        ⟨.muts #[.indc indB, .indc indI], #[], #[], #[.succ .zero]⟩
+      failsContaining ixon (indcProjAddr blockAddr 1)
+        "index mentions block inductive" : Bool))
+
 public def suite : List TestSeq :=
   [acceptRejectTests, wellScopedTests, safetyTests, quotTests, blockTests,
-   lazyTests]
+   lazyTests, inductiveTests]
 
 end Tests.Tc.CheckTests
