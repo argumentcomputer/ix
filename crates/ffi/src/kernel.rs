@@ -4041,3 +4041,77 @@ pub extern "C" fn rs_kernel_roundtrip_no_compile(
 
   build_string_array(&errors)
 }
+
+/// Test-FFI: ingress every anon work item of a serialized env into a fresh
+/// `KEnv<Anon>` and dump one row per kernel constant:
+/// `(kid_hex, ty_addr_hex, extra_hex)` where `extra_hex` is the Defn value
+/// address, or the comma-joined recursor rule-RHS addresses, or empty.
+/// Node-address bit-compat oracle for the pure-Lean `Ix.Tc` ingress
+/// (`Tests/Ix/Tc/NodeAddr.lean`): root ty/val/rule address equality
+/// transitively certifies every child node hash. Rows sorted by kid hex.
+#[cfg(feature = "test-ffi")]
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_kernel_ingress_anon_addrs(
+  env_bytes: lean_ffi::object::LeanByteArray<LeanBorrowed<'_>>,
+) -> LeanIOResult<LeanOwned> {
+  use ix_kernel::anon_work::build_anon_work;
+  use ix_kernel::constant::KConst;
+  use ix_kernel::ingress::ingress_anon_addr_shallow;
+
+  let bytes = env_bytes.as_bytes();
+  let mut slice: &[u8] = bytes;
+  let ixon_env = match IxonEnv::get(&mut slice) {
+    Ok(env) => env,
+    Err(e) => {
+      return LeanIOResult::error_string(&format!(
+        "rs_kernel_ingress_anon_addrs: deserialize failed: {e}"
+      ));
+    },
+  };
+  let work = match build_anon_work(&ixon_env) {
+    Ok(w) => w,
+    Err(e) => {
+      return LeanIOResult::error_string(&format!(
+        "rs_kernel_ingress_anon_addrs: build_anon_work: {e}"
+      ));
+    },
+  };
+  let mut kenv = KEnv::<Anon>::new();
+  for item in &work {
+    if let Err(e) =
+      ingress_anon_addr_shallow(&mut kenv, &ixon_env, item.primary())
+    {
+      return LeanIOResult::error_string(&format!(
+        "rs_kernel_ingress_anon_addrs: ingress {}: {e}",
+        item.primary().hex()
+      ));
+    }
+  }
+  let mut rows: Vec<(String, String, String)> = kenv
+    .iter()
+    .map(|(id, c)| {
+      let ty_hex = c.ty().addr().to_hex().to_string();
+      let extra = match &c {
+        KConst::Defn { val, .. } => val.addr().to_hex().to_string(),
+        KConst::Recr { rules, .. } => rules
+          .iter()
+          .map(|r| r.rhs.addr().to_hex().to_string())
+          .collect::<Vec<_>>()
+          .join(","),
+        _ => String::new(),
+      };
+      (id.addr.hex(), ty_hex, extra)
+    })
+    .collect();
+  rows.sort();
+  let arr = LeanArray::alloc(rows.len());
+  for (i, (kid, ty, extra)) in rows.iter().enumerate() {
+    let kid_obj: LeanOwned = LeanString::new(kid).into();
+    let ty_obj: LeanOwned = LeanString::new(ty).into();
+    let extra_obj: LeanOwned = LeanString::new(extra).into();
+    let inner: LeanOwned = LeanProd::new(ty_obj, extra_obj).into();
+    let triple: LeanOwned = LeanProd::new(kid_obj, inner).into();
+    arr.set(i, triple);
+  }
+  LeanIOResult::ok(arr)
+}

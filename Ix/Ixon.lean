@@ -1127,6 +1127,42 @@ def rawBytes (lc : LazyConstant) : ByteArray :=
 
 end LazyConstant
 
+/-- `ConstantInfo` variant tag, readable from a `LazyConstant`'s head byte
+    without parsing the body. Mirrors Rust `ixon::lazy::ConstVariantTag`. -/
+inductive ConstTag where
+  | defn | recr | axio | quot | muts | iPrj | cPrj | rPrj | dPrj
+  deriving BEq, Repr, Inhabited, DecidableEq
+
+namespace LazyConstant
+
+/-- Peek the `ConstantInfo` variant from the leading Tag4 head byte, without
+    parsing the body — the cheap dispatch used by anon work enumeration
+    (mirrors Rust `LazyConstant::peek_variant`). -/
+def peekTag (lc : LazyConstant) : Except String ConstTag := do
+  if lc.len == 0 || lc.off ≥ lc.buf.size then
+    throw "LazyConstant.peekTag: empty bytes"
+  let head := lc.buf[lc.off]!
+  let flag := head >>> 4
+  let large := head &&& 0b1000 != 0
+  let small : UInt64 := (head &&& 0b0111).toUInt64
+  if flag == Constant.FLAG_MUTS then
+    return .muts
+  if flag != Constant.FLAG then
+    throw s!"LazyConstant.peekTag: unexpected Tag4 flag {flag} (head={head})"
+  if large then
+    throw s!"LazyConstant.peekTag: unexpected large-form Tag4 for non-Muts constant (head={head})"
+  if small == ConstantInfo.CONST_DEFN then return .defn
+  else if small == ConstantInfo.CONST_RECR then return .recr
+  else if small == ConstantInfo.CONST_AXIO then return .axio
+  else if small == ConstantInfo.CONST_QUOT then return .quot
+  else if small == ConstantInfo.CONST_CPRJ then return .cPrj
+  else if small == ConstantInfo.CONST_RPRJ then return .rPrj
+  else if small == ConstantInfo.CONST_IPRJ then return .iPrj
+  else if small == ConstantInfo.CONST_DPRJ then return .dPrj
+  else throw s!"LazyConstant.peekTag: invalid ConstantInfo variant {small}"
+
+end LazyConstant
+
 /-! ## Metadata Serialization -/
 
 /-- Type alias for name index (Address → u64). -/

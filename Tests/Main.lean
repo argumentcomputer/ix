@@ -21,6 +21,8 @@ import Tests.Ix.RustDecompile
 import Tests.Ix.Sharing
 import Tests.Ix.Tc.Unit
 import Tests.Ix.Tc.Substrate
+import Tests.Ix.Tc.IxonFixtures
+import Tests.Ix.Tc.NodeAddr
 import Tests.Ix.CanonM
 import Tests.Ix.GraphM
 import Tests.Ix.CondenseM
@@ -55,7 +57,8 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("graph-unit", Tests.Ix.GraphM.suite),
   ("condense-unit", Tests.Ix.CondenseM.suite),
   ("aiur-cross", [AiurTests.Cross.tests]),
-  ("tc-unit", Tests.Tc.Unit.suite ++ Tests.Tc.Substrate.suite),
+  ("tc-unit", Tests.Tc.Unit.suite ++ Tests.Tc.Substrate.suite
+    ++ Tests.Tc.Fixtures.suite),
 ]
 
 /-- Ignored test suites - expensive, run only when explicitly requested. These require significant RAM -/
@@ -79,6 +82,7 @@ def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("kernel-check-const", Tests.Ix.Kernel.CheckEnv.constSuite),
   ("rust-kernel-build-primitives", Tests.Ix.Kernel.BuildPrimitives.suite),
   ("rust-kernel-build-prim-origs", Tests.Ix.Kernel.BuildPrimOrigs.suite),
+  ("tc-node-addr", Tests.Tc.NodeAddr.suite),
 ]
 
 /-- Ignored test runners - expensive, deferred IO actions run only when explicitly requested -/
