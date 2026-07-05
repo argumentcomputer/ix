@@ -27,9 +27,9 @@ Errors inside K-synthesis, struct-eta, and decidable probes are swallowed
 
 v1 scope (per plan): Nat literal arithmetic + succ-collapse + linear-rec,
 String machinery, platform bits, reduceBool/reduceNat markers, Nat
-decidables, Int decidable literal normalization. **BitVec native reduction
-is deferred** — `tryReduceBitvec` is a stub returning `none` (Rust reduces
-`BitVec.toNat/ult/decide-lt` natively; those fall to delta/iota here).
+decidables, Int decidable literal normalization, and BitVec natives
+(`BitVec.toNat/ult/decide-lt` — load-bearing for UInt-heavy grind proofs,
+which otherwise descend into Nat.rec towers and trip maxDefEqDepth).
 -/
 
 public section
@@ -1187,10 +1187,162 @@ partial def tryQuotReduce (e : KExpr m) : RecM m (Option (KExpr m)) := do
     result ← TcM.intern (KExpr.mkApp result arg)
   return some result
 
-/-- BitVec native reduction (BitVec.toNat/ofNat/ult, decide-lt) —
-    **deferred** for v1 (falls back to delta/iota). TODO(post-v1): port
-    whnf.rs `try_reduce_bitvec` + `try_eval_nat_value_for_pred`. -/
-partial def tryReduceBitvec (_e : KExpr m) : RecM m (Option (KExpr m)) :=
+-- ### BitVec native reduction (whnf.rs try_reduce_bitvec)
+
+/-- Heads that leave a Nat-predicate argument stuck. -/
+partial def isNatStuckRecursorAddr (addr : Address) : RecM m Bool := do
+  let p ← prims
+  return addr == p.natRec.addr || addr == p.natCasesOn.addr
+    || addr == p.bitVecToNat.addr
+
+partial def isStuckNatPredicateProbe (e : KExpr m) : RecM m Bool := do
+  let (head, _) := e.collectSpine
+  match head with
+  | .const id _ _ =>
+    return (← isNatBinPredAddr id.addr) || (← isNatStuckRecursorAddr id.addr)
+  | .prj id _ val _ =>
+    if id.addr == (← prims).fin.addr then
+      return true
+    let (valHead, _) := val.collectSpine
+    match valHead with
+    | .const valId _ _ => isNatStuckRecursorAddr valId.addr
+    | _ => return false
+  | _ => return false
+
+/-- Bounded literal evaluator for widths/predicate args: literal
+    extraction, succ/pred/binary-arith folding, stuck-probe early-out,
+    whnf fallback. Mirrors whnf.rs `try_eval_nat_value_for_pred`. -/
+partial def tryEvalNatValueForPred (e : KExpr m) (depth : Nat := 0) :
+    RecM m (Option Nat) := do
+  if depth ≥ 64 then
+    return none
+  let p ← prims
+  if let some n := extractNatLit e p then
+    return some n
+  if ← isStuckNatPredicateProbe e then
+    return none
+  let (head, args) := e.collectSpine
+  match head with
+  | .const id _ _ =>
+    if id.addr == p.natSucc.addr && args.size == 1 then
+      let some pred ← tryEvalNatValueForPred args[0]! (depth + 1)
+        | return none
+      return some (pred + 1)
+    if id.addr == p.natPred.addr && args.size == 1 then
+      let some n ← tryEvalNatValueForPred args[0]! (depth + 1)
+        | return none
+      return some (n - 1)
+    if (← isNatBinArithAddr id.addr) && args.size == 2 then
+      let some a ← tryEvalNatValueForPred args[0]! (depth + 1)
+        | return none
+      let some b ← tryEvalNatValueForPred args[1]! (depth + 1)
+        | return none
+      return computeNatBin id.addr PrimAddrs.canonical a b
+  | .var .. | .fvar .. | .sort .. | .lam .. | .all .. | .str .. | .nat .. =>
+    return none
+  | _ => pure ()
+  let w ← whnf e
+  if let some n := extractNatValue w p then
+    return some n
+  if w.addr == e.addr then
+    return none
+  tryEvalNatValueForPred w (depth + 1)
+
+/-- `(width, n)` from `BitVec.ofNat width n` or
+    `OfNat.ofNat (BitVec width) n inst…`. -/
+partial def bitvecOfNatArgs (e : KExpr m) :
+    RecM m (Option (KExpr m × KExpr m)) := do
+  let p ← prims
+  let (head, args) := e.collectSpine
+  let .const id _ _ := head | return none
+  if id.addr == p.bitVecOfNat.addr && args.size == 2 then
+    return some (args[0]!, args[1]!)
+  if id.addr != p.ofNatOfNat.addr || args.size < 2 then
+    return none
+  let (typeHead, typeArgs) := args[0]!.collectSpine
+  let .const typeId _ _ := typeHead | return none
+  if typeId.addr == p.bitVec.addr && typeArgs.size == 1 then
+    return some (typeArgs[0]!, args[1]!)
+  return none
+
+/-- `BitVec.toNat (BitVec.ofNat w n) ⇒ n % 2^w` (width ≤ 2^24). -/
+partial def tryReduceBitvecToNat (value : KExpr m) :
+    RecM m (Option (KExpr m)) := do
+  let some (width, nExpr) ← bitvecOfNatArgs value | return none
+  let nWhnf ← whnf nExpr
+  let some n := extractNatValue nWhnf (← prims) | return none
+  if n == 0 then
+    return some (natLiteral 0)
+  let some widthVal ← tryEvalNatValueForPred width | return none
+  if widthVal > (1 <<< 24) then
+    return none
+  return some (natExprFromValue (n % (1 <<< widthVal)))
+
+/-- `value.toNat` — collapsed when possible, else the symbolic
+    `BitVec.toNat width value` application. -/
+partial def bitvecToNatExpr (width value : KExpr m) : RecM m (KExpr m) := do
+  if let some result ← tryReduceBitvecToNat value then
+    return result
+  let head ← TcM.intern (.mkConst (← prims).bitVecToNat #[])
+  let withWidth ← TcM.intern (.mkApp head width)
+  TcM.intern (.mkApp withWidth value)
+
+/-- `BitVec.ult w x y`: rhs 0 ⇒ false; both literal ⇒ compare; else the
+    definitional `Nat.ble (succ x.toNat) y.toNat` route when it collapses
+    to a Bool literal. -/
+partial def tryReduceBitvecUlt (width lhs rhs : KExpr m) :
+    RecM m (Option (KExpr m)) := do
+  let p ← prims
+  let lhsNat ← bitvecToNatExpr width lhs
+  let rhsNat ← bitvecToNatExpr width rhs
+  let rhsNatWhnf ← whnf rhsNat
+  if let some rhsVal := extractNatValue rhsNatWhnf p then
+    if rhsVal == 0 then
+      return some (← TcM.intern (.mkConst p.boolFalse #[]))
+    let lhsNatWhnf ← whnf lhsNat
+    if let some lhsVal := extractNatValue lhsNatWhnf p then
+      let resultId := if lhsVal < rhsVal then p.boolTrue else p.boolFalse
+      return some (← TcM.intern (.mkConst resultId #[]))
+  let lhsSucc ← mkNatSucc lhsNat
+  let ble ← TcM.intern (.mkConst p.natBle #[])
+  let cmpLhs ← TcM.intern (.mkApp ble lhsSucc)
+  let cmp ← TcM.intern (.mkApp cmpLhs rhsNat)
+  let result ← whnf cmp
+  if (← boolLitValue result).isSome then
+    return some result
+  return none
+
+/-- `LT.lt (BitVec w) inst x y ⇒ ult w x y`. -/
+partial def tryReduceBitvecLtProp (prop : KExpr m) :
+    RecM m (Option (KExpr m)) := do
+  let p ← prims
+  let (head, args) := prop.collectSpine
+  let .const id _ _ := head | return none
+  if id.addr != p.ltLt.addr || args.size != 4 then
+    return none
+  let (typeHead, typeArgs) := args[0]!.collectSpine
+  let .const typeId _ _ := typeHead | return none
+  if typeId.addr != p.bitVec.addr || typeArgs.size != 1 then
+    return none
+  tryReduceBitvecUlt typeArgs[0]! args[2]! args[3]!
+
+/-- BitVec native reduction: `BitVec.toNat`, `BitVec.ult`, and
+    `Decidable.decide (LT.lt (BitVec w) …)`. -/
+partial def tryReduceBitvec (e : KExpr m) : RecM m (Option (KExpr m)) := do
+  let p ← prims
+  let (head, args) := e.collectSpine
+  let .const id _ _ := head | return none
+  if id.addr == p.bitVecToNat.addr && args.size ≥ 2 then
+    if let some result ← tryReduceBitvecToNat args[1]! then
+      return some (← finishAppResult result args 2)
+    return none
+  if id.addr == p.bitVecUlt.addr && args.size ≥ 3 then
+    if let some result ← tryReduceBitvecUlt args[0]! args[1]! args[2]! then
+      return some (← finishAppResult result args 3)
+    return none
+  if id.addr == p.decidableDecide.addr && args.size ≥ 2 then
+    if let some result ← tryReduceBitvecLtProp args[0]! then
+      return some (← finishAppResult result args 2)
   return none
 
 /-- Native reduction: `Lean.reduceBool/reduceNat` markers,

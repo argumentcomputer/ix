@@ -56,7 +56,7 @@ def runCheckTcCmd (p : Cli.Parsed) : IO UInt32 := do
   let workN := match max? with
     | some n => min n work.size
     | none => work.size
-  IO.println s!"[check-tc] {work.size} work item(s) discovered{if workN < work.size then s!", checking first {workN}" else ""}"
+  IO.println s!"[check-tc] {work.size} work item(s) discovered{if workN < work.size then s!", checking first {workN}" else ""} ({ixonEnv.consts.size} consts, {ixonEnv.anonHints.size} hints)"
 
   let failOut? ← if failOutPath.isEmpty then pure none
     else pure (some (← IO.FS.Handle.mk failOutPath .write))
