@@ -82,6 +82,20 @@ instance : Repr Address where
 instance : Ord Address where
   compare a b := compare a.hash.data.toList b.hash.data.toList
 
+/-- Byte-loop lexicographic comparison. Agrees with the `Ord Address` instance
+    (and with Rust's derived `Ord` on `Address([u8; 32])`) but avoids the
+    per-compare `List` conversion; use this on hot paths. -/
+def Address.cmpBytes (a b : Address) : Ordering := Id.run do
+  let x := a.hash
+  let y := b.hash
+  let n := min x.size y.size
+  for i in [0:n] do
+    let xi := x[i]!
+    let yi := y[i]!
+    if xi < yi then return .lt
+    if yi < xi then return .gt
+  return compare x.size y.size
+
 instance : Inhabited Address where
   default := Address.blake3 ⟨#[]⟩
 
