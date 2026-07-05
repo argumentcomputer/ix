@@ -25,6 +25,8 @@ namespace Tests.Tc.AnonDiff
 open LSpec
 open Ix.Tc
 
+public section
+
 /-- Skip marker for the not-yet-ported inductive machinery. -/
 def isStubErr (msg : String) : Bool :=
   (msg.splitOn "not yet ported").length > 1
@@ -113,5 +115,33 @@ def diffSuite : TestSeq := Id.run do
   return ts
 
 public def suite : List TestSeq := [diffSuite]
+
+/-! ### Known divergences (tracked repro, expected to fail)
+
+`grind`-generated `Char.Ordinal` proofs (UInt32 arithmetic with 2^32-scale
+literals) trip `maxDefEqDepth` in the pure-Lean kernel while the Rust
+kernel passes them: a def-eq chain nests one `isDefEq` entry per reduction
+step on literal-driven `Nat.rec`-tower comparisons instead of collapsing
+them. Repro: `IxTests tc-known-divergence --ignored` — the suite FAILS
+until the whnf/def-eq nat-recursor fast-path gap is fixed. See the P10
+commit message for the full diagnosis trail. -/
+
+def knownDivergenceSeeds : List (String × List Lean.Name) :=
+  [ ("char-ordinal", [`Char.ofOrdinal, `Char.ofOrdinal_le_of_le,
+      `Char.succ?_eq, `Char.ordinal_ofOrdinal]) ]
+
+def knownDivergenceSuite : TestSeq := Id.run do
+  let mut ts : TestSeq := .done
+  for (label, seeds) in knownDivergenceSeeds do
+    ts := ts ++ .individualIO s!"KNOWN-DIVERGENT verdict parity: {label}" none (do
+      let env ← get_env!
+      let (compared, skipped, diff?) ← diffOnSeeds env label seeds
+      let msg := diff?.map (s!"compared {compared}, skipped {skipped}: " ++ ·)
+      return (diff?.isNone, compared, skipped, msg)) .done
+  return ts
+
+public def knownDivergence : List TestSeq := [knownDivergenceSuite]
+
+end
 
 end Tests.Tc.AnonDiff

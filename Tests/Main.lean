@@ -27,6 +27,7 @@ import Tests.Ix.Tc.InferDefEq
 import Tests.Ix.Tc.CheckTests
 import Tests.Ix.Tc.NodeAddr
 import Tests.Ix.Tc.AnonDiff
+import Tests.Ix.Tc.InitScale
 import Tests.Ix.CanonM
 import Tests.Ix.GraphM
 import Tests.Ix.CondenseM
@@ -89,6 +90,10 @@ def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("rust-kernel-build-prim-origs", Tests.Ix.Kernel.BuildPrimOrigs.suite),
   ("tc-node-addr", Tests.Tc.NodeAddr.suite),
   ("tc-anon-diff", Tests.Tc.AnonDiff.suite),
+  ("tc-init", Tests.Tc.InitScale.suite),
+  -- Tracked pure-Lean kernel divergences (EXPECTED to fail; see
+  -- Tests.Tc.AnonDiff.knownDivergenceSuite).
+  ("tc-known-divergence", Tests.Tc.AnonDiff.knownDivergence),
 ]
 
 /-- Ignored test runners - expensive, deferred IO actions run only when explicitly requested -/
