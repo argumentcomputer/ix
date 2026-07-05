@@ -42,6 +42,7 @@ inductive TcError (m : Mode) where
       expression into the canonical-ordering stage. -/
   | unexpectedFVarInComparator
   | other (msg : String)
+  deriving BEq
 
 namespace TcError
 

@@ -6,6 +6,12 @@ public import Ix.Tc.Level
 public import Ix.Tc.Expr
 public import Ix.Tc.Error
 public import Ix.Tc.Const
+public import Ix.Tc.Equiv
+public import Ix.Tc.Env
+public import Ix.Tc.Primitive
+public import Ix.Tc.Subst
+public import Ix.Tc.Lctx
+public import Ix.Tc.Monad
 
 /-!
 # Ix.Tc — pure-Lean Ix kernel over Ixon
@@ -17,12 +23,18 @@ for performance, use the Rust kernel.
 
 Module map (mirrors `crates/kernel/src/` file-for-file):
 
-| Lean module      | Rust source   |
-|------------------|---------------|
-| `Ix.Tc.Mode`     | `mode.rs`     |
-| `Ix.Tc.Id`       | `id.rs`       |
-| `Ix.Tc.Error`    | `error.rs`    |
-| `Ix.Tc.Level`    | `level.rs`    |
-| `Ix.Tc.Expr`     | `expr.rs`     |
-| `Ix.Tc.Const`    | `constant.rs` |
+| Lean module       | Rust source    |
+|-------------------|----------------|
+| `Ix.Tc.Mode`      | `mode.rs`      |
+| `Ix.Tc.Id`        | `id.rs`        |
+| `Ix.Tc.Error`     | `error.rs`     |
+| `Ix.Tc.Level`     | `level.rs`     |
+| `Ix.Tc.Expr`      | `expr.rs`      |
+| `Ix.Tc.Const`     | `constant.rs`  |
+| `Ix.Tc.Equiv`     | `equiv.rs`     |
+| `Ix.Tc.Env`       | `env.rs`       |
+| `Ix.Tc.Primitive` | `primitive.rs` |
+| `Ix.Tc.Subst`     | `subst.rs`     |
+| `Ix.Tc.Lctx`      | `lctx.rs`      |
+| `Ix.Tc.Monad`     | `tc.rs`        |
 -/
