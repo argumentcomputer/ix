@@ -14,6 +14,7 @@ public import Ix.Tc.Lctx
 public import Ix.Tc.Monad
 public import Ix.Tc.Ingress
 public import Ix.Tc.Driver
+public import Ix.Tc.Whnf
 
 /-!
 # Ix.Tc — pure-Lean Ix kernel over Ixon

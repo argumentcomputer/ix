@@ -15,6 +15,8 @@ via the `Ix.Tc` smart constructors — a pure-Lean end-to-end check of the
 index-resolution + Blake3 pipeline.
 -/
 
+public section
+
 namespace Tests.Tc.Fixtures
 
 open LSpec
@@ -321,3 +323,5 @@ def rejectTests : TestSeq :=
 public def suite : List TestSeq := [acceptTests, rejectTests]
 
 end Tests.Tc.Fixtures
+
+end

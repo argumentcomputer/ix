@@ -24,6 +24,9 @@ structure RecRule (m : Mode) where
   fields : UInt64
   rhs : KExpr m
 
+instance : Inhabited (RecRule m) :=
+  ⟨{ ctor := Mode.F.mkDefault, fields := 0, rhs := default }⟩
+
 /-- A loaded constant. -/
 inductive KConst (m : Mode) where
   | defn (name : m.F Name) (levelParams : m.F (Array Name))

@@ -22,6 +22,7 @@ import Tests.Ix.Sharing
 import Tests.Ix.Tc.Unit
 import Tests.Ix.Tc.Substrate
 import Tests.Ix.Tc.IxonFixtures
+import Tests.Ix.Tc.WhnfTests
 import Tests.Ix.Tc.NodeAddr
 import Tests.Ix.CanonM
 import Tests.Ix.GraphM
@@ -58,7 +59,7 @@ def primarySuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("condense-unit", Tests.Ix.CondenseM.suite),
   ("aiur-cross", [AiurTests.Cross.tests]),
   ("tc-unit", Tests.Tc.Unit.suite ++ Tests.Tc.Substrate.suite
-    ++ Tests.Tc.Fixtures.suite),
+    ++ Tests.Tc.Fixtures.suite ++ Tests.Tc.WhnfTests.suite),
 ]
 
 /-- Ignored test suites - expensive, run only when explicitly requested. These require significant RAM -/
