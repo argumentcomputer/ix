@@ -17,9 +17,8 @@ Constant checking dispatch:
   run the safety lattice; inductives/ctors/recursors run inference plus the
   inductive machinery.
 
-The inductive member/block validators live in `Ix.Tc.Inductive` (P8);
-recursor validation hooks throw an explicit `other "…not yet ported"` until
-P9 lands, so recursor work items fail loudly rather than silently pass.
+The inductive and recursor member/block validators live in
+`Ix.Tc.Inductive` (P8/P9).
 -/
 
 public section
@@ -306,12 +305,12 @@ partial def checkInductiveBlock (block : KId m) (members : Array (KId m)) :
     RecM m Unit :=
   checkInductiveBlockImpl block members
 
-partial def checkRecursorMember (_id : KId m) : RecM m Unit :=
-  throw (.other "recursor validation not yet ported (P9)")
+partial def checkRecursorMember (id : KId m) : RecM m Unit :=
+  checkRecursorMemberImpl id
 
-partial def checkRecursorBlock (_block : KId m) (_members : Array (KId m)) :
+partial def checkRecursorBlock (block : KId m) (members : Array (KId m)) :
     RecM m Unit :=
-  throw (.other "recursor validation not yet ported (P9)")
+  checkRecursorBlockImpl block members
 
 end
 

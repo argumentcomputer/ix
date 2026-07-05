@@ -339,8 +339,51 @@ def inductiveTests : TestSeq :=
       failsContaining ixon (indcProjAddr blockAddr 1)
         "index mentions block inductive" : Bool))
 
+/-! ### P9: recursor stored-vs-generated validation -/
+
+/-- Env with `B : Sort 1`, `B.mk : B`, and a recursor block whose single
+    recursor is shaped exactly like the canonical generation for B:
+    `∀ (motive : B → Sort u) (minor : motive B.mk) (t : B), motive t`
+    with the single rule `λ motive minor, minor`. Returns
+    `(env, recProjAddr)`. -/
+def recFixture (k : Bool) (tamperRule : Bool) : Ixon.Env × Address := Id.run do
+  let ind : Ixon.Inductive :=
+    ⟨false, 0, 0, 0, .sort 0, #[⟨false, 0, 0, 0, 0, .recur 0 #[]⟩]⟩
+  let (env, bBlockAddr) := storeMutsWithProjs {}
+    ⟨.muts #[.indc ind], #[], #[], #[.succ .zero]⟩
+  let bAddr := indcProjAddr bBlockAddr 0
+  let mkAddr := ctorProjAddr bBlockAddr 0 0
+  -- B is not Prop → large eliminator: lvls 1, Sort (param 0).
+  let motiveTy : Ixon.Expr := .all (.ref 0 #[]) (.sort 0)
+  let recTyp : Ixon.Expr :=
+    .all motiveTy
+      (.all (.app (.var 0) (.ref 1 #[]))
+        (.all (.ref 0 #[])
+          (.app (.var 2) (.var 0))))
+  let ruleRhs : Ixon.Expr :=
+    if tamperRule then
+      .lam motiveTy (.lam (.app (.var 0) (.ref 1 #[])) (.var 1))
+    else
+      .lam motiveTy (.lam (.app (.var 0) (.ref 1 #[])) (.var 0))
+  let recr : Ixon.Recursor :=
+    ⟨k, false, 1, 0, 0, 1, 1, recTyp, #[⟨0, ruleRhs⟩]⟩
+  let (env, recBlockAddr) := storeMutsWithProjs env
+    ⟨.muts #[.recr recr], #[], #[bAddr, mkAddr], #[.var 0]⟩
+  return (env, recrProjAddr recBlockAddr 0)
+
+def recursorTests : TestSeq :=
+  test "canonical-shaped recursor validates against generation"
+    ((let (ixon, recAddr) := recFixture false false
+      passes ixon recAddr : Bool))
+  ++ test "K-flag mismatch is rejected (S1)"
+    ((let (ixon, recAddr) := recFixture true false
+      failsContaining ixon recAddr "K-target mismatch" : Bool))
+  ++ test "tampered rule RHS is rejected"
+    ((let (ixon, recAddr) := recFixture false true
+      failsContaining ixon recAddr "RHS mismatch" : Bool))
+
 public def suite : List TestSeq :=
   [acceptRejectTests, wellScopedTests, safetyTests, quotTests, blockTests,
-   lazyTests, inductiveTests]
+   lazyTests, inductiveTests, recursorTests]
 
 end Tests.Tc.CheckTests
