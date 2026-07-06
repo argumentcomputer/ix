@@ -93,10 +93,10 @@ def check := ⟦
       KLevelNode.Zero => (),
       KLevelNode.Succ(inner) => validate_univ_params_seen(inner, bound),
       KLevelNode.Max(a, b) =>
-        let _ = validate_univ_params_seen(a, bound);
+        validate_univ_params_seen(a, bound);
         validate_univ_params_seen(b, bound),
       KLevelNode.IMax(a, b) =>
-        let _ = validate_univ_params_seen(a, bound);
+        validate_univ_params_seen(a, bound);
         validate_univ_params_seen(b, bound),
       KLevelNode.Param(i) =>
         assert_eq!(u32_less_than(i, bound), 1);
@@ -108,7 +108,7 @@ def check := ⟦
     match load(lvls) {
       ListNode.Nil => (),
       ListNode.Cons(u, rest) =>
-        let _ = validate_univ_params_seen(u, bound);
+        validate_univ_params_seen(u, bound);
         validate_univ_params_list(rest, bound),
     }
   }
@@ -129,17 +129,17 @@ def check := ⟦
         assert_eq!(list_length(lvls), expected);
         validate_univ_params_list(lvls, bound),
       KExprNode.App(f, a) =>
-        let _ = validate_expr_well_scoped(f, depth, bound, top);
+        validate_expr_well_scoped(f, depth, bound, top);
         validate_expr_well_scoped(a, depth, bound, top),
       KExprNode.Lam(t, b) =>
-        let _ = validate_expr_well_scoped(t, depth, bound, top);
+        validate_expr_well_scoped(t, depth, bound, top);
         validate_expr_well_scoped(b, depth + 1, bound, top),
       KExprNode.Forall(t, b) =>
-        let _ = validate_expr_well_scoped(t, depth, bound, top);
+        validate_expr_well_scoped(t, depth, bound, top);
         validate_expr_well_scoped(b, depth + 1, bound, top),
       KExprNode.Let(t, v, b) =>
-        let _ = validate_expr_well_scoped(t, depth, bound, top);
-        let _ = validate_expr_well_scoped(v, depth, bound, top);
+        validate_expr_well_scoped(t, depth, bound, top);
+        validate_expr_well_scoped(v, depth, bound, top);
         validate_expr_well_scoped(b, depth + 1, bound, top),
       KExprNode.Lit(_) => (),
       KExprNode.Proj(_, _, val) =>
@@ -152,7 +152,7 @@ def check := ⟦
   fn validate_const_well_scoped(ci: KConstantInfo, top: List‹&KConstantInfo›) {
     let bound = const_num_lvls(ci);
     let ty = const_type_of(ci);
-    let _ = validate_expr_well_scoped(ty, 0, bound, top);
+    validate_expr_well_scoped(ty, 0, bound, top);
     match ci {
       KConstantInfo.Defn(_, _, val, _, _) =>
         validate_expr_well_scoped(val, 0, bound, top),
@@ -173,7 +173,7 @@ def check := ⟦
       ListNode.Cons(rule, rest) =>
         match rule {
           KRecRule.Mk(_, _, rhs) =>
-            let _ = validate_expr_well_scoped(rhs, 0, bound, top);
+            validate_expr_well_scoped(rhs, 0, bound, top);
             validate_recr_rules(rest, bound, top),
         },
     }
@@ -201,59 +201,59 @@ def check := ⟦
   -- check_const: dispatch per KConstantInfo variant.
   -- ============================================================================
   fn check_const(ci: KConstantInfo, pos: G, top: List‹&KConstantInfo›, addrs: List‹Addr›) {
-    let _ = validate_const_well_scoped(ci, top);
+    validate_const_well_scoped(ci, top);
     let u = is_unsafe_ci(ci);
     match ci {
       KConstantInfo.Axiom(_, ty, _) =>
-        let _ = k_ensure_sort(ty, store(ListNode.Nil), top, addrs);
-        let _ = assert_safety(u, ty, top);
+        k_ensure_sort(ty, store(ListNode.Nil), top, addrs);
+        assert_safety(u, ty, top);
         (),
 
       KConstantInfo.Defn(_, ty, val, _, _) =>
-        let _ = k_ensure_sort(ty, store(ListNode.Nil), top, addrs);
-        let _ = assert_safety(u, ty, top);
-        let _ = assert_safety(u, val, top);
-        let _ = k_check(val, ty, store(ListNode.Nil), top, addrs);
+        k_ensure_sort(ty, store(ListNode.Nil), top, addrs);
+        assert_safety(u, ty, top);
+        assert_safety(u, val, top);
+        k_check(val, ty, store(ListNode.Nil), top, addrs);
         (),
 
       KConstantInfo.Thm(_, ty, val) =>
         -- Mirror: src/ix/kernel/check.rs:135. Theorem type must be Sort 0.
         let lvl = k_ensure_sort(ty, store(ListNode.Nil), top, addrs);
         assert_eq!(level_equal(lvl, store(KLevelNode.Zero)), 1);
-        let _ = assert_safety(u, ty, top);
-        let _ = assert_safety(u, val, top);
-        let _ = k_check(val, ty, store(ListNode.Nil), top, addrs);
+        assert_safety(u, ty, top);
+        assert_safety(u, val, top);
+        k_check(val, ty, store(ListNode.Nil), top, addrs);
         (),
 
       KConstantInfo.Opaque(_, ty, val, is_unsafe) =>
-        let _ = k_ensure_sort(ty, store(ListNode.Nil), top, addrs);
-        let _ = assert_safety(u, ty, top);
-        let _ = assert_safety(u, val, top);
+        k_ensure_sort(ty, store(ListNode.Nil), top, addrs);
+        assert_safety(u, ty, top);
+        assert_safety(u, val, top);
         match is_unsafe {
           1 => (),
           0 =>
-            let _ = k_check(val, ty, store(ListNode.Nil), top, addrs);
+            k_check(val, ty, store(ListNode.Nil), top, addrs);
             (),
         },
 
       KConstantInfo.Quot(num_lvls, ty, kind) =>
-        let _ = k_ensure_sort(ty, store(ListNode.Nil), top, addrs);
-        let _ = assert_safety(u, ty, top);
+        k_ensure_sort(ty, store(ListNode.Nil), top, addrs);
+        assert_safety(u, ty, top);
         -- Mirror: src/ix/kernel/check.rs:606-675 fn check_quot.
         -- Validate kind ↔ address consistency, universe-param count per
         -- variant, and forall-binder count.
         let self_addr = list_lookup(addrs, pos);
-        let _ = check_quot(self_addr, kind, num_lvls, ty, top, addrs);
+        check_quot(self_addr, kind, num_lvls, ty, top, addrs);
         (),
 
       KConstantInfo.Induct(_, ty, n_params, n_indices, _,
                           _, block_addr) =>
-        let _ = k_ensure_sort(ty, store(ListNode.Nil), top, addrs);
-        let _ = assert_safety(u, ty, top);
-        let _ = check_block_peer_param_agreement(pos, ty, n_params, n_indices,
+        k_ensure_sort(ty, store(ListNode.Nil), top, addrs);
+        assert_safety(u, ty, top);
+        check_block_peer_param_agreement(pos, ty, n_params, n_indices,
                                                   block_addr, top, addrs);
         let block_idxs = derive_block_member_idxs(pos, top);
-        let _ = validate_block_auxes(block_idxs, top);
+        validate_block_auxes(block_idxs, top);
         -- The former H1 declared-vs-computed is_rec check is gone with the
         -- Ixon recr flag: there is no declared value to verify. is_rec is
         -- computed on demand (`computed_is_rec_ind`) wherever it matters
@@ -264,29 +264,29 @@ def check := ⟦
       -- Ctor cross-ref + return-type + field-universe + strict-positivity
       -- (positivity walks mutual + nested via derive_block_member_idxs).
       KConstantInfo.Ctor(_, ty, induct_idx, _, num_params, num_fields, _) =>
-        let _ = k_ensure_sort(ty, store(ListNode.Nil), top, addrs);
-        let _ = assert_safety(u, ty, top);
-        let _ = check_ctor_against_inductive_member(pos, ci, top);
+        k_ensure_sort(ty, store(ListNode.Nil), top, addrs);
+        assert_safety(u, ty, top);
+        check_ctor_against_inductive_member(pos, ci, top);
         let ind_ci = load(list_lookup(top, induct_idx));
         match ind_ci {
           KConstantInfo.Induct(ind_num_lvls, ind_ty, ind_n_params, ind_n_indices, _, _, _) =>
             assert_eq!(num_params, ind_n_params);
             -- A1 defense-in-depth: ctor's leading param domains must match
             -- parent inductive's. Mirror src/ix/kernel/inductive.rs:283,393.
-            let _ = check_param_agreement(ind_ty, ty, ind_n_params, top, addrs);
-            let _ = check_ctor_return_type(ty, num_params, ind_n_indices, num_fields,
+            check_param_agreement(ind_ty, ty, ind_n_params, top, addrs);
+            check_ctor_return_type(ty, num_params, ind_n_indices, num_fields,
                                            induct_idx, ind_num_lvls);
             let ind_level = get_result_sort_level(ind_ty, ind_n_params + ind_n_indices);
-            let _ = check_field_universes(ty, num_params, ind_level,
+            check_field_universes(ty, num_params, ind_level,
                                           store(ListNode.Nil), top, addrs);
-            let _ = check_positivity(ty, num_params, induct_idx, store(ListNode.Nil), top, addrs);
+            check_positivity(ty, num_params, induct_idx, store(ListNode.Nil), top, addrs);
             (),
         },
 
       KConstantInfo.Rec(_, ty, _, _, _, _, _, _, _, _) =>
-        let _ = k_ensure_sort(ty, store(ListNode.Nil), top, addrs);
-        let _ = assert_safety(u, ty, top);
-        let _ = check_recursor_member(pos, ci, top, addrs);
+        k_ensure_sort(ty, store(ListNode.Nil), top, addrs);
+        assert_safety(u, ty, top);
+        check_recursor_member(pos, ci, top, addrs);
         (),
     }
   }
@@ -310,7 +310,7 @@ def check := ⟦
         assert_eq!(address_eq(self_addr, quot_lift_addr()), 1);
         -- Mirror: src/ix/kernel/check.rs:651-653. Lift requires Eq type
         -- to be properly formed (Quot.lift uses Eq in its reduction rule).
-        let _ = check_eq_type(top, addrs);
+        check_eq_type(top, addrs);
         (2, 6),
       QuotKind.Ind =>
         assert_eq!(address_eq(self_addr, quot_ind_addr()), 1);
@@ -337,7 +337,7 @@ def check := ⟦
   }
 
   fn check_all(consts: List‹&KConstantInfo›, top: List‹&KConstantInfo›, addrs: List‹Addr›) {
-    let _ = check_canonical_block_sort(top);
+    check_canonical_block_sort(top);
     check_all_iter(consts, top, addrs, 0)
   }
 
@@ -346,7 +346,7 @@ def check := ⟦
     match load(consts) {
       ListNode.Nil => (),
       ListNode.Cons(&ci, rest) =>
-        let _ = check_const(ci, pos, top, addrs);
+        check_const(ci, pos, top, addrs);
         check_all_iter(rest, top, addrs, pos + 1),
     }
   }

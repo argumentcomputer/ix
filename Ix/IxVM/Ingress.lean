@@ -49,7 +49,7 @@ def ingress := ⟦
     let raw = load(addr);
     let (idx, len) = io_get_info(2, raw);
     let bytes = #read_byte_stream(2, idx, len);
-    let _ = verify_bytes_against(bytes, raw);
+    verify_bytes_against(bytes, raw);
     let (constant, rest) = get_constant(bytes);
     assert_eq!(load(rest), ListNode.Nil);
     constant
@@ -61,7 +61,7 @@ def ingress := ⟦
     let raw = load(addr);
     let (idx, len) = io_get_info(5, raw);
     let bytes = #read_byte_stream(5, idx, len);
-    let _ = verify_bytes_against(bytes, raw);
+    verify_bytes_against(bytes, raw);
     bytes
   }
 

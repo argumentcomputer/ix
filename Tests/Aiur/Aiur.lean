@@ -688,7 +688,7 @@ def toplevel := ⟦
   -- function with different lookup counts. Continuation stores + recurses.
   fn ntm_cv_a(x: G) -> G { x }
   fn ntm_cv_b(x: G) -> G { load(store(x)) }
-  fn ntm_cv_c(x: G) -> G { let _ = store(x); load(store(x + 1)) }
+  fn ntm_cv_c(x: G) -> G { store(x); load(store(x + 1)) }
   fn ntm_cv_d(x: G) -> G { x * x }
   fn ntm_cv_e(x: G) -> G { load(store(load(store(x)))) }
   fn ntm_cv_f(x: G, y: G) -> G { x + y }
@@ -726,7 +726,7 @@ def toplevel := ⟦
           CKind.E(x, &extra) => ntm_cv_e2(x, extra),
           CKind.F(x) => ntm_cv_f2(x),
         };
-        let _ = store(ci);
+        store(ci);
         ci + ntm_convert_all(rest, kind),
     }
   }

@@ -98,7 +98,7 @@ def infer := ⟦
         },
 
       KExprNode.Lam(ty, body) =>
-        let _ = k_ensure_sort(ty, types, top, addrs);
+        k_ensure_sort(ty, types, top, addrs);
         let types2 = store(ListNode.Cons(ty, types));
         let body_ty = k_infer(body, types2, top, addrs);
         store(KExprNode.Forall(ty, body_ty)),
@@ -110,8 +110,8 @@ def infer := ⟦
         store(KExprNode.Srt(level_imax(u1, u2))),
 
       KExprNode.Let(ty, val, body) =>
-        let _ = k_ensure_sort(ty, types, top, addrs);
-        let _ = k_check(val, ty, types, top, addrs);
+        k_ensure_sort(ty, types, top, addrs);
+        k_check(val, ty, types, top, addrs);
         let body_substed = expr_inst1(body, val, 0);
         k_infer(body_substed, types, top, addrs),
 
@@ -175,7 +175,7 @@ def infer := ⟦
         match load(t) {
           KExprNode.Forall(dom, cod) =>
             let concrete_dom = expr_inst_many(dom, subs_rev, 0);
-            let _ = k_check(a, concrete_dom, types, top, addrs);
+            k_check(a, concrete_dom, types, top, addrs);
             let new_subs = store(ListNode.Cons(a, subs_rev));
             k_infer_app_spine_loop(cod, rest, new_subs, types, top, addrs),
           _ =>
@@ -185,7 +185,7 @@ def infer := ⟦
             match triple {
               (ok, dom, cod) =>
                 assert_eq!(ok, 1);
-                let _ = k_check(a, dom, types, top, addrs);
+                k_check(a, dom, types, top, addrs);
                 let new_subs = store(ListNode.Cons(a, store(ListNode.Nil)));
                 k_infer_app_spine_loop(cod, rest, new_subs, types, top, addrs),
             },
@@ -217,7 +217,6 @@ def infer := ⟦
     let inferred = k_infer(e, types, top, addrs);
     let eq = k_is_def_eq(inferred, expected, types, top, addrs);
     assert_eq!(eq, 1);
-    ()
   }
 
   -- ============================================================================
@@ -423,10 +422,10 @@ def infer := ⟦
       KExprNode.Forall(dom, body) =>
         match target_field - current {
           0 =>
-            let _ = check_prop_field_if_prop(is_prop, dom, types, top, addrs);
+            check_prop_field_if_prop(is_prop, dom, types, top, addrs);
             dom,
           _ =>
-            let _ = check_no_dep_data_field_if_prop(is_prop, dom, body, types, top, addrs);
+            check_no_dep_data_field_if_prop(is_prop, dom, body, types, top, addrs);
             let proj_expr = store(KExprNode.Proj(struct_idx, current, val));
             let body_substed = expr_inst1(body, proj_expr, 0);
             peel_field_loop(body_substed, target_field, current + 1,

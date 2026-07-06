@@ -135,12 +135,21 @@ syntax ("." noWs)? ident                                                      : 
 syntax num                                                                    : aiur_trm
 syntax "(" ")"                                                                : aiur_trm
 syntax "(" aiur_trm (", " aiur_trm)* ")"                                    : aiur_trm
-syntax "[" aiur_trm (", " aiur_trm)* "]"                                    : aiur_trm
-syntax "[" aiur_trm "; " num "]"                                             : aiur_trm
-syntax "return " aiur_trm                                                    : aiur_trm
-syntax "let " aiur_pattern (":" aiur_typ)? " = " aiur_trm "; " aiur_trm   : aiur_trm
-syntax "let " aiur_pattern (":" aiur_typ)? " = " aiur_trm ";"              : aiur_trm
-syntax "let " aiur_pattern (":" aiur_typ)? " = " aiur_trm                  : aiur_trm
+-- Array elements and `return` operands parse at prec 1: it keeps the
+-- statement-sequencing rule (prec 0, below `let`) out of expression
+-- positions and keeps `[t; n]` replicate vs `[t]` list unambiguous.
+syntax "[" aiur_trm:1 (", " aiur_trm:1)* "]"                                : aiur_trm
+syntax "[" aiur_trm:1 "; " num "]"                                           : aiur_trm
+syntax "return " aiur_trm:1                                                  : aiur_trm
+-- `let` right-hand sides parse at prec 1 so the statement-sequencing rule
+-- (prec 0, below) can't swallow the `let`'s own `;` and continuation.
+syntax "let " aiur_pattern (":" aiur_typ)? " = " aiur_trm:1 "; " aiur_trm  : aiur_trm
+syntax "let " aiur_pattern (":" aiur_typ)? " = " aiur_trm:1 ";"            : aiur_trm
+syntax "let " aiur_pattern (":" aiur_typ)? " = " aiur_trm:1                : aiur_trm
+-- Statement sequencing: `t; rest` discards `t`'s value (elaborates to
+-- `let _ = t; rest`); trailing `t;` closes the block with `()`. Lets
+-- unit-returning calls sit in statement position without `let _ =`.
+syntax:0 aiur_trm "; " (aiur_trm)?                                          : aiur_trm
 syntax "match " aiur_trm " { "
        (aiur_pattern " => " aiur_trm ", ")+ " }"                            : aiur_trm
 syntax ("." noWs)? ident "(" ")"                                              : aiur_trm
@@ -156,8 +165,11 @@ syntax "#" noWs ident "‹" aiur_typ (", " aiur_typ)* "›" "(" aiur_trm
 syntax ident "‹" aiur_typ (", " aiur_typ)* "›" "." noWs ident "(" ")"       : aiur_trm
 syntax ident "‹" aiur_typ (", " aiur_typ)* "›" "." noWs ident
        "(" aiur_trm (", " aiur_trm)* ")"                                    : aiur_trm
-syntax:50 aiur_trm " + " aiur_trm                                           : aiur_trm
-syntax:50 aiur_trm " - " aiur_trm                                           : aiur_trm
+-- Right operands parse at prec 1 (not 0) so the statement-sequencing rule
+-- can't swallow `<binop-expr>; rest` from inside the right operand. All
+-- other rules have prec ≥ 50, so associativity/precedence are unchanged.
+syntax:50 aiur_trm " + " aiur_trm:1                                         : aiur_trm
+syntax:50 aiur_trm " - " aiur_trm:1                                         : aiur_trm
 syntax aiur_trm " * " aiur_trm:51                                           : aiur_trm
 syntax "eq_zero" "(" aiur_trm ")"                                            : aiur_trm
 syntax "proj" "(" aiur_trm ", " num ")"                                      : aiur_trm
@@ -240,6 +252,9 @@ partial def elabTrm : ElabStxCat `aiur_trm
     | some ty => do
       let t ← mkAppM ``Source.Term.ann #[← elabTyp ty, ← elabTrm t]
       mkAppM ``Source.Term.let #[← elabPattern p, t, mkConst ``Source.Term.unit]
+  | `(aiur_trm| $t:aiur_trm; $[$t':aiur_trm]?) => do
+    mkAppM ``Source.Term.let
+      #[mkConst ``Pattern.wildcard, ← elabTrm t, ← elabRet t']
   | `(aiur_trm| match $t:aiur_trm {$[$ps:aiur_pattern => $ts:aiur_trm,]*}) => do
     let mut prods := Array.mkEmpty (ps.size + 1)
     for (p, t) in ps.zip ts do
@@ -570,6 +585,10 @@ where
       let body ← if v.getId = old then pure body
         else replaceToken old new body
       `(aiur_trm| fold($i .. $j, $init, |$acc, @$v| $body))
+    | `(aiur_trm| $t:aiur_trm; $[$t':aiur_trm]?) => do
+      let t ← replaceToken old new t
+      let t' ← t'.mapM $ replaceToken old new
+      `(aiur_trm| $t; $[$t']?)
     | stx => pure stx
 
 declare_syntax_cat                                aiur_constructor

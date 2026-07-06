@@ -38,10 +38,10 @@ def inductive_check := ⟦
         match load(head) {
           KExprNode.Const(idx, lvls) =>
             assert_eq!(idx, ind_idx);
-            let _ = assert_lvls_are_params(lvls, ind_num_lvls, 0);
+            assert_lvls_are_params(lvls, ind_num_lvls, 0);
             let args_len = list_length(args);
             assert_eq!(args_len, n_params + n_indices);
-            let _ = assert_first_args_are_param_bvars(args, n_params, n_fields, 0);
+            assert_first_args_are_param_bvars(args, n_params, n_fields, 0);
             (),
         },
     }
@@ -73,7 +73,7 @@ def inductive_check := ⟦
             match load(l) {
               KLevelNode.Param(i) =>
                 assert_eq!(i, idx);
-                let _ = assert_lvls_are_params(rest, count - 1, idx + 1);
+                assert_lvls_are_params(rest, count - 1, idx + 1);
                 (),
             },
         },
@@ -99,7 +99,7 @@ def inductive_check := ⟦
             match load(arg) {
               KExprNode.BVar(j) =>
                 assert_eq!(j, ((n_fields + n_params) - 1) - i);
-                let _ = assert_first_args_are_param_bvars(rest, n_params, n_fields, i + 1);
+                assert_first_args_are_param_bvars(rest, n_params, n_fields, i + 1);
                 (),
             },
         },
@@ -217,7 +217,7 @@ def inductive_check := ⟦
                              top: List‹&KConstantInfo›, addrs: List‹Addr›) {
     match load(ty) {
       KExprNode.Forall(dom, body) =>
-        let _ = check_positivity_aug(dom, block_idxs, types, top, addrs);
+        check_positivity_aug(dom, block_idxs, types, top, addrs);
         let types2 = store(ListNode.Cons(dom, types));
         check_positivity_fields(body, block_idxs, types2, top, addrs),
       _ => (),
@@ -434,7 +434,7 @@ def inductive_check := ⟦
             let pair = peel_n_foralls_with_types(ctor_ty, n_params, store(ListNode.Nil));
             match pair {
               (body, types_after) =>
-                let _ = check_positivity_fields_aug(body, aug, types_after, top, addrs);
+                check_positivity_fields_aug(body, aug, types_after, top, addrs);
                 check_ctors_positivity(rest, args, aug, top, addrs),
             },
           _ => check_ctors_positivity(rest, args, aug, top, addrs),
@@ -447,7 +447,7 @@ def inductive_check := ⟦
                                   top: List‹&KConstantInfo›, addrs: List‹Addr›) {
     match load(ty) {
       KExprNode.Forall(dom, body) =>
-        let _ = check_positivity_aug(dom, aug, types, top, addrs);
+        check_positivity_aug(dom, aug, types, top, addrs);
         let types2 = store(ListNode.Cons(dom, types));
         check_positivity_fields_aug(body, aug, types2, top, addrs),
       _ => (),
@@ -2589,7 +2589,7 @@ def inductive_check := ⟦
               1 =>
                 -- S3b: param-count + param-domain agreement.
                 assert_eq!(peer_n_params, self_n_params);
-                let _ = check_param_agreement(self_ty, peer_ty, self_n_params, top, addrs);
+                check_param_agreement(self_ty, peer_ty, self_n_params, top, addrs);
                 -- S3: result-universe agreement. Mirror src/ix/kernel/inductive.rs:228-237.
                 let self_lvl = get_result_sort_level(self_ty, self_n_params + self_n_indices);
                 let peer_lvl = get_result_sort_level(peer_ty, peer_n_params + peer_n_indices);

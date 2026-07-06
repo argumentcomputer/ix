@@ -21,7 +21,7 @@ def sha256 := ⟦
     let key = [num_hashes_pred];
     let (idx, len) = io_get_info(0, key);
     let byte_stream = #read_byte_stream(0, idx, len);
-    let _ = sha256(byte_stream);
+    sha256(byte_stream);
     match num_hashes_pred {
       0 => 0,
       _ => sha256_bench(num_hashes_pred),
