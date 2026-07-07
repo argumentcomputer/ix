@@ -42,6 +42,13 @@ def metricKind (metric : String) : String :=
   else if ["constants", "shards"].contains metric then "int"
   else "auto"
 
+/-- Display label for a metric column. Keys stay the bencher measure slugs
+    (renaming one would orphan its threshold/history); only the table
+    rendering differs. `file-size` is the serialized `.ixe` env — bencher
+    plots it as "Environment Size". -/
+def metricLabel (metric : String) : String :=
+  if metric == "file-size" then "env-size" else metric
+
 private def pad (s : String) : String := s
 
 private def fmtF (f : Float) (decimals : Nat) : String :=
@@ -156,7 +163,7 @@ def renderCompare (a : CompareArgs) : String := Id.run do
 
   let mut head := #["constant"]
   for m in a.metrics do
-    head := head ++ #[s!"{m} (main)", s!"{m} (PR)", "Δ%"]
+    head := head ++ #[s!"{metricLabel m} (main)", s!"{metricLabel m} (PR)", "Δ%"]
   let mut lines := #[
     "| " ++ " | ".intercalate head.toList ++ " |",
     "|" ++ "|".intercalate (head.toList.map fun _ => "---") ++ "|"]
