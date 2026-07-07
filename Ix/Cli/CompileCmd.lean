@@ -3,6 +3,7 @@ public import Cli
 public import Ix.Common
 public import Ix.CompileM
 public import Ix.Meta
+public import Ix.TracingTexray
 public import Ix.Benchmark.Results
 public import Ix.Cli.ConstsFile
 public import Ix.Cli.ValidateCmd
@@ -126,6 +127,13 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   let totalConsts := constList.length
   println! "Total constants: {totalConsts}"
 
+  -- Window the tree-RSS sampler around the compile so the row's peak-rss
+  -- is the compile step's own high-water (the loaded Lean env is still in
+  -- the baseline — RSS is absolute).
+  let benched := (p.flag? "json").isSome
+  if benched then
+    TracingTexray.startSampler
+    TracingTexray.resetPeakTreeRss
   let start ← IO.monoMsNow
   let bytes ← Ix.CompileM.rsCompileEnvBytesFFI constList
   let elapsed := (← IO.monoMsNow) - start
@@ -137,11 +145,13 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
     let secs := elapsed.toFloat / 1000.0
     let tput := if elapsed > 0
       then totalConsts.toFloat * 1000.0 / elapsed.toFloat else 0.0
+    let peakRss ← TracingTexray.peakTreeRssBytes
     Ix.Benchmark.Results.writeRow (flag.as! String) key "ok"
       [ ("compile-time", Ix.Benchmark.Results.jsonRound 3 secs)
       , ("file-size", Lean.toJson bytes.size)
       , ("constants", Lean.toJson totalConsts)
-      , ("throughput", Ix.Benchmark.Results.jsonRound 2 tput) ]
+      , ("throughput", Ix.Benchmark.Results.jsonRound 2 tput)
+      , ("peak-rss", Lean.toJson peakRss) ]
 
   -- Persist the serialized IxonEnv (`Env::put` bytes) to disk so subsequent
   -- runs (e.g. `ix check-ixon`) can skip the Lean → IxOn compile step. The

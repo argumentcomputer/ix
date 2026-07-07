@@ -46,7 +46,7 @@
       "default_mode": "compile",
       "testbed": "ix-compile-x64-32x",
       "metrics": {
-        "compile": ["compile-time", "throughput", "file-size", "constants"]
+        "compile": ["compile-time", "throughput", "file-size", "constants", "peak-rss"]
       }
     },
     "cutshards": {
