@@ -112,6 +112,8 @@ jobs:
       - uses: actions/checkout@v6
         with:
           ref: ${{ needs.setup.outputs.head-sha }}
+          # The job builds and runs PR code; never leave the token in .git.
+          persist-credentials: false
       - id: bins
         uses: actions/cache/restore@v5
         with:
@@ -173,6 +175,8 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.HEAD_SHA }}
+          # The job runs PR code; never leave the token in .git.
+          persist-credentials: false
       - name: Apply passthrough env
         run: |
           while IFS= read -r line; do
@@ -316,6 +320,7 @@ jobs:
         with:
           ref: ${{ env.BASE_SHA }}
           path: base
+          persist-credentials: false
       # bench-main.yml's build/compile jobs already cached the base SHA's
       # binaries and `.ixe` on the push to main — restore both before paying
       # for a from-scratch base build.
@@ -450,17 +455,25 @@ jobs:
           echo "::error::ix bench run failed on the PR side (kernel rejection or empty run) — see the 'Run backend on PR' step"
           exit 1
 
-  comment:
+  # Assemble the comment body from the per-cell tables. Deliberately
+  # UNPRIVILEGED: this job checks out and executes PR-derived code (the
+  # PR-built `ix bench comment`), so it must never share a job with the App
+  # token — the posting job below only downloads the finished body as an
+  # artifact and never touches PR code (CodeQL: untrusted checkout /
+  # execution in a privileged issue_comment workflow).
+  assemble:
     needs: [setup, build, benchmark]
-    # Post even when benchmark cells failed (the tables carry the ❌ rows).
-    # The body is assembled by the PR's `ix bench comment`, so the build job
-    # must have produced the binaries.
+    # Assemble even when benchmark cells failed (the tables carry the ❌
+    # rows); the build job must have produced the binaries.
     if: always() && needs.setup.result == 'success' && needs.build.result == 'success'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v6
         with:
           ref: ${{ needs.setup.outputs.head-sha }}
+          persist-credentials: false
       - uses: actions/cache/restore@v5
         with:
           path: ~/.local/bin
@@ -482,13 +495,31 @@ jobs:
       - name: Build comment body
         env:
           SUMMARY: ${{ needs.setup.outputs.config-summary }}
+          HEAD_SHA: ${{ needs.setup.outputs.head-sha }}
         run: |
           mkdir -p tables   # absent when no cell uploaded a table
           ix bench comment \
             --tables tables --summary "$SUMMARY" \
-            --head "${{ needs.setup.outputs.head-sha }}" \
+            --head "$HEAD_SHA" \
             --repo-url "${{ github.server_url }}/${{ github.repository }}" \
             --run-id "${{ github.run_id }}" --out comment-body.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: comment-body
+          path: comment-body.md
+
+  # Post the assembled body. This is the ONLY job with access to the App
+  # token, and it runs no checkout and no repo-derived code — just an
+  # artifact download and two actions.
+  comment:
+    needs: [setup, assemble]
+    if: always() && needs.assemble.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download comment body
+        uses: actions/download-artifact@v4
+        with:
+          name: comment-body
       - name: Generate token to write PR comment
         id: app-token
         uses: actions/create-github-app-token@v3
