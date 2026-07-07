@@ -1,7 +1,7 @@
 # Benchmark constant vectors -- single shared source of truth for which
 # constants to run. Consumed identically by Aiur (bench-typecheck --consts-file),
 # the Zisk/SP1 hosts (--consts loop), and CI shell (awk). One row per curated
-# constant. Measurements (fft, cycles, prove-time, …) live in the neutral
+# constant. Measurements (fft, cycles, prove-time, …) live in the benchmark
 # results JSON each tool emits and in bencher.dev — never in this file.
 #
 # Columns (shard_target and primary default to 0 when trailing; most rows only

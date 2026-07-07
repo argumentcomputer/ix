@@ -16,9 +16,9 @@ workflows execute, so every CI number is reproducible on your machine.
 
 ## The row contract
 
-Every measured tool reports through one shape — the **neutral rows JSON** —
+Every measured tool reports through one shape — the **benchmark results JSON** —
 and one exit-code convention (Rust: `crates/bench`; Lean:
-`Ix/Benchmark/Neutral.lean`):
+`Ix/Benchmark/Results.lean`):
 
 ```json
 { "<name>": { "status": "ok", "<metric>": 123, "phases": { "<span>": 1.5 } } }

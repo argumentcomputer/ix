@@ -1,6 +1,6 @@
 /-
-  `ix bench` reporting subcommands — everything between the neutral rows
-  JSON (`Ix.Benchmark.Neutral`) and a human or bencher.dev:
+  `ix bench` reporting subcommands — everything between the results rows
+  JSON (`Ix.Benchmark.Results`) and a human or bencher.dev:
 
     compare     two rows files → a Markdown main-vs-PR table. With no
                 explicit inputs, compares the cell's local baseline against
@@ -17,19 +17,19 @@
 module
 public import Cli
 public import Lean.Data.Json
-public import Ix.Benchmark.Neutral
+public import Ix.Benchmark.Results
 public import Ix.Cli.BenchCmd
 
 public section
 
 open Lean (Json)
-open Ix.Benchmark.Neutral
+open Ix.Benchmark.Results
 
 namespace Ix.Cli.BenchReport
 
 /-! ## Metric formatting -/
 
-/-- Per-metric formatting kind. Metric names are the neutral-JSON keys the
+/-- Per-metric formatting kind. Metric names are the results-JSON keys the
     tools emit (see bench-config.json). Unknown metrics fall through to a
     generic decimal rendering. -/
 def metricKind (metric : String) : String :=
@@ -483,7 +483,7 @@ end Ix.Cli.BenchReport
 open Ix.Cli.BenchReport in
 def benchCompareCmd : Cli.Cmd := `[Cli|
   "compare" VIA runCompareCmd;
-  "Render a Markdown main-vs-PR table from two neutral rows files. Defaults to the cell's local baseline pair (.bench/<cell>{.prev,}.json), so a bare rerun compares against the previous local run."
+  "Render a Markdown main-vs-PR table from two results rows files. Defaults to the cell's local baseline pair (.bench/<cell>{.prev,}.json), so a bare rerun compares against the previous local run."
 
   FLAGS:
     backend       : String; "Cell backend (metrics come from bench-config.json)"
@@ -516,10 +516,10 @@ def benchCommentCmd : Cli.Cmd := `[Cli|
 open Ix.Cli.BenchReport in
 def benchBmfCmd : Cli.Cmd := `[Cli|
   "bmf" VIA runBmfCmd;
-  "Convert neutral rows JSON to Bencher Metric Format (rows with status ≠ ok are dropped whole)"
+  "Convert benchmark results JSON to Bencher Metric Format (rows with status ≠ ok are dropped whole)"
 
   FLAGS:
-    "in" : String; "Neutral rows JSON (default: bench.json)"
+    "in" : String; "Benchmark results JSON (default: bench.json)"
     out  : String; "BMF output path (default: bmf.json)"
 ]
 

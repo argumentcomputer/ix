@@ -167,7 +167,7 @@ jobs:
       # Serialize the env to a `.ixe` and measure the compile via `ix bench
       # run` — for the `compile` backend the compile IS the benchmark (always
       # fresh; `--reuse-ixe` is ignored by design). Writes `<env>.ixe` at the
-      # workspace root and one neutral row keyed by the CamelCase env slug —
+      # workspace root and one results row keyed by the CamelCase env slug —
       # the same driver the !benchmark PR path uses; bmf wraps it for bencher.
       - name: Run ix compile benchmark
         run: |

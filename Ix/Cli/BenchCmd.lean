@@ -16,10 +16,10 @@
   4. on an abnormal exit, marks the in-flight constant's row `status: oom`
      (preserving any partial metrics the tool flushed) and respawns with the
      remaining names — one constant's death costs one constant;
-  5. gates the cell on the row contract (`Ix.Benchmark.Neutral`): exit 3
+  5. gates the cell on the row contract (`Ix.Benchmark.Results`): exit 3
      when any row is `rejected`, exit 1 when NO rows were produced, else 0.
 
-  Every tool self-reports through the same `--json` neutral-rows contract,
+  Every tool self-reports through the same `--json` results-rows contract,
   so there is no output scraping anywhere: state flows through rows and
   exit codes only. Registry data (env slugs/modules, backend modes,
   testbeds) comes from `Benchmarks/bench-config.json`.
@@ -32,13 +32,13 @@
 module
 public import Cli
 public import Lean.Data.Json
-public import Ix.Benchmark.Neutral
+public import Ix.Benchmark.Results
 public import Ix.Cli.ConstsFile
 
 public section
 
 open System (FilePath)
-open Ix.Benchmark.Neutral
+open Ix.Benchmark.Results
 
 namespace Ix.Cli.BenchCmd
 
@@ -401,13 +401,13 @@ end Ix.Cli.BenchCmd
 open Ix.Cli.BenchCmd in
 def benchRunCmd : Cli.Cmd := `[Cli|
   "run" VIA runBenchRunCmd;
-  "Run one benchmark cell (backend × env × mode), writing neutral rows JSON. Exits 0 on success (rows saved as the local baseline), 3 when the kernel rejected any constant, 1 when no rows were produced."
+  "Run one benchmark cell (backend × env × mode), writing benchmark results JSON. Exits 0 on success (rows saved as the local baseline), 3 when the kernel rejected any constant, 1 when no rows were produced."
 
   FLAGS:
     backend      : String; "aiur | zisk | sp1 | ooc | compile | cutshards"
     env          : String; "Benchmark env from bench-config.json (default: initStd)"
     mode         : String; "prove | execute | compile (default: the backend's default_mode)"
-    out          : String; "Neutral rows JSON output path (default: bench.json)"
+    out          : String; "Benchmark results JSON output path (default: bench.json)"
     repo         : String; "Checkout to benchmark: tools resolve from <repo>/.lake/build/bin first, then PATH (default: .)"
     config       : String; "Registry path (default: Benchmarks/bench-config.json)"
     csv          : String; "Vectors path (default: <repo>/Benchmarks/Vectors.csv)"

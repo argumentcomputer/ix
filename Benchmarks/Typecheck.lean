@@ -5,7 +5,7 @@ import Ix.Aiur.Compiler
 import Ix.Aiur.Statistics
 import Ix.TracingTexray
 import Ix.Benchmark.Bench
-import Ix.Benchmark.Neutral
+import Ix.Benchmark.Results
 import Ix.Cli.ConstsFile
 import Ix.Cli.NameResolve
 
@@ -17,7 +17,7 @@ kernel's `verify_claim` entrypoint, run over constants from a serialized
 `Ixon.Env` (`.ixe`). Reading the env from a `.ixe` keeps this on Ix's critical
 path (same load `ix check --ixe` uses) and avoids importing Lean modules at
 runtime. Useful standalone (per-constant timeline + RAM breakdown via
-tracing-texray) and as a machine source (neutral results JSON).
+tracing-texray) and as a machine source (benchmark results JSON).
 
 ```
 lake exe bench-typecheck --ixe <path> --consts <n1,n2,…> [--consts-file <p>] [flags]
@@ -69,7 +69,7 @@ first). A name absent from the env or whose execution errors is skipped with a
 warning, so a single bad name never fails the run. The harness imposes no time
 limit; bound a run with an external `timeout` if needed.
 
-The JSON is a neutral, flat shape (`{ "<name>": { "constants": …, "fft-cost": …,
+The JSON is a flat shape (`{ "<name>": { "constants": …, "fft-cost": …,
 "execute-time": …, "execute-peak-rss": …, "prove-time": …, "proof-size": …,
 "verify-time": …, "peak-rss": …, "throughput": … } }`). `execute-peak-rss` is
 the Phase-1 RSS high-water, sampled before proving starts, so it is comparable
@@ -104,7 +104,7 @@ structure Result where
   fftCost : Float
   executeSec : Float
   /-- The kernel REJECTED the constant (Phase-1 check error). The JSON entry
-      is `{"status": "rejected"}` (see `Ix.Benchmark.Neutral`) — a rejected
+      is `{"status": "rejected"}` (see `Ix.Benchmark.Results`) — a rejected
       constant is a correctness signal, not a benchmark datum — Phase 2
       skips it, and the run exits with the reserved rejection code. -/
   failed : Bool := false
@@ -138,7 +138,7 @@ def jsonRound (d : Nat) (f : Float) : Json :=
     else Int.ofNat scaled.round.toUInt64.toNat
   Json.num ⟨m, d⟩
 
-/-- Neutral, flat results object: `name → { constants, fft-cost, execute-time,
+/-- Flat results object: `name → { constants, fft-cost, execute-time,
     prove-time?, throughput? }`. No bencher-specific shaping. -/
 def Result.toJsonEntry (r : Result) : String × Json :=
   if r.failed then
@@ -276,7 +276,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
     catch e =>
       IO.eprintln s!"  execute {label} threw: {e}"
 
-  -- Write the neutral results JSON, but only when `--json` was given. Rewritten
+  -- Write the benchmark results JSON, but only when `--json` was given. Rewritten
   -- after each prove so a `timeout` kill still leaves a complete file.
   let writeJson (results : Array Result) : IO Unit :=
     match jsonOut with
@@ -291,7 +291,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
     match jsonOut with
     | some path => IO.println s!"wrote {execed.size} execute-only benchmarks to {path}"
     | none => IO.println s!"executed {execed.size} constants (--execute-only); pass --json <path> to emit results"
-    return if execed.any (·.1.failed) then Ix.Benchmark.Neutral.exitRejected else 0
+    return if execed.any (·.1.failed) then Ix.Benchmark.Results.exitRejected else 0
 
   -- Phase 2: prove cheap→expensive. Refine each entry with its prove-time as it
   -- lands. Install texray first so the prove spans (timeline + RAM Δ/peak) render.
@@ -351,7 +351,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
   match jsonOut with
   | some path => IO.println s!"wrote {ordered.size} benchmarks to {path} ({spent}s proving)"
   | none => IO.println s!"proved {ordered.size} constants ({spent}s); pass --json <path> to emit results"
-  return if ordered.any (·.1.failed) then Ix.Benchmark.Neutral.exitRejected else 0
+  return if ordered.any (·.1.failed) then Ix.Benchmark.Results.exitRejected else 0
 
 def typecheckCmd : Cli.Cmd := `[Cli|
   typecheck VIA runTypecheckCmd;

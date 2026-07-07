@@ -3,7 +3,7 @@ public import Cli
 public import Ix.Common
 public import Ix.CompileM
 public import Ix.Meta
-public import Ix.Benchmark.Neutral
+public import Ix.Benchmark.Results
 public import Ix.Cli.ConstsFile
 public import Ix.Cli.ValidateCmd
 
@@ -137,11 +137,11 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
     let secs := elapsed.toFloat / 1000.0
     let tput := if elapsed > 0
       then totalConsts.toFloat * 1000.0 / elapsed.toFloat else 0.0
-    Ix.Benchmark.Neutral.writeRow (flag.as! String) key "ok"
-      [ ("compile-time", Ix.Benchmark.Neutral.jsonRound 3 secs)
+    Ix.Benchmark.Results.writeRow (flag.as! String) key "ok"
+      [ ("compile-time", Ix.Benchmark.Results.jsonRound 3 secs)
       , ("file-size", Lean.toJson bytes.size)
       , ("constants", Lean.toJson totalConsts)
-      , ("throughput", Ix.Benchmark.Neutral.jsonRound 2 tput) ]
+      , ("throughput", Ix.Benchmark.Results.jsonRound 2 tput) ]
 
   -- Persist the serialized IxonEnv (`Env::put` bytes) to disk so subsequent
   -- runs (e.g. `ix check-ixon`) can skip the Lean → IxOn compile step. The
@@ -166,7 +166,7 @@ def compileCmd : Cli.Cmd := `[Cli|
     module         : String; "Comma-separated module-name prefixes to filter on (e.g. 'Tests.Ix.Kernel.TutorialDefs,Tests.Ix.Kernel.NatReduction'). Match is against the SOURCE MODULE a constant came from (via `Lean.Environment.getModuleIdxFor?`), not the constant's own name — so macro-emitted decls that register under unqualified names still get caught when their host module's name matches. Transitive deps are pulled in automatically."
     exclude        : String; "Comma-separated exact Lean.Name(s) to strip from the seed set. Excluded names that are still referenced by another seed will reappear via the transitive-dep closure."
     "exclude-file" : String; "Path to a file with one Lean.Name per line to strip from the seed set. Same semantics as --exclude; same line format as `ix check --consts-file`."
-    json           : String; "Write the compile's neutral benchmark row (compile-time, file-size, constants, throughput) to this path, merging into any existing rows object."
+    json           : String; "Write the compile's benchmark results row (compile-time, file-size, constants, throughput) to this path, merging into any existing rows object."
     "json-name"    : String; "Row key for the --json row (default: the input file's stem, e.g. `CompileInitStd`)"
 
   ARGS:

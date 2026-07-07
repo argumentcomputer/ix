@@ -1,5 +1,5 @@
 /-
-  The neutral benchmark-results row contract, Lean side.
+  The benchmark-results row contract, Lean side.
 
   Every measured tool reports results as one JSON object per benchmark name
   in a single file:
@@ -23,7 +23,7 @@ public import Lean.Data.Json
 
 public section
 
-namespace Ix.Benchmark.Neutral
+namespace Ix.Benchmark.Results
 
 /-- Bad invocation (unknown name, missing input, conflicting flags). -/
 def exitUsage : UInt32 := 2
@@ -63,4 +63,4 @@ def writeRow (path : String) (name : String) (status : String)
   let row := Lean.Json.mkObj (("status", Lean.Json.str status) :: fields)
   IO.FS.writeFile path ((existing.setObjVal! name row).compress)
 
-end Ix.Benchmark.Neutral
+end Ix.Benchmark.Results

@@ -1769,7 +1769,7 @@ fn closure_work_items(
 /// of a mutual block selects the whole block's work item (blocks check
 /// atomically). Multiple names union their closures into one check set.
 ///
-/// `json_path` (empty = off) additionally emits per-name neutral benchmark
+/// `json_path` (empty = off) additionally emits per-name benchmark results
 /// rows. With it set, each name is checked as its own closure run — the
 /// per-constant scope the zkVM hosts measure — instead of one union set:
 /// the env still loads once, and each row's `check-time`/`peak-rss` window

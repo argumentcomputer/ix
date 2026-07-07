@@ -156,11 +156,11 @@ opaque rsCheckAnonFFI :
     member of a mutual block selects the whole block's work item. Multiple
     names union their closures into one check set.
 
-    The trailing `String` is the neutral-rows JSON path (`""` = off). When
+    The trailing `String` is the results-rows JSON path (`""` = off). When
     set, each name is instead checked as its own independent closure run —
     the zkVM hosts' per-constant scope — with the env still loaded once, and
     the row `{ name: { status, constants, check-time, throughput, peak-rss } }`
-    flushed per name (see `Ix.Benchmark.Neutral` for the contract). The
+    flushed per name (see `Ix.Benchmark.Results` for the contract). The
     per-name `check-time`/`peak-rss` window wraps only that name's closure
     selection + check, so rows aren't distorted by the env load; meaningful
     `peak-rss` needs `TracingTexray.startSampler`. Not combinable with a
@@ -177,7 +177,7 @@ opaque rsCheckAnonConstsFFI :
     @& Bool →                            -- skip-deps (subject-only)
     @& Bool →                            -- quiet
     @& String →                          -- fail-out path ("" = none)
-    @& String →                          -- neutral rows JSON path ("" = off)
+    @& String →                          -- benchmark results JSON path ("" = off)
     IO (Array (String × Option CheckError))
 
 /-- FFI: extract the named constants' dependency closure from a serialized
