@@ -24,7 +24,7 @@ name: Benchmark main
 
 on:
   push:
-    branches: [main]
+    branches: [main, sb/ci-benchmarks]   # TEMPORARY: test on this branch — revert before merge
   workflow_dispatch:
 
 permissions:

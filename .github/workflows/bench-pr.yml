@@ -28,6 +28,13 @@ name: Benchmark pull requests
 on:
   issue_comment:
     types: [created]
+  # TEMPORARY: also run when this branch's PR is pushed, so the whole
+  # pipeline (fetch-main → run → compare → comment) can be exercised
+  # without an issue_comment. Revert before merge — the pull_request
+  # branches below name the PR's BASE, so as written this would fire for
+  # every PR into main.
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: read
@@ -35,18 +42,23 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.issue.number }}
+  # TEMPORARY: the pull_request fallback goes with the pull_request trigger.
+  group: ${{ github.workflow }}-${{ github.event.issue.number || github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
   setup:
     name: Parse !benchmark comment
+    # TEMPORARY: the pull_request arm (head-ref gated to this branch) goes
+    # with the pull_request trigger.
     if: >-
-      github.event.issue.pull_request &&
+      (github.event_name == 'pull_request' &&
+       github.head_ref == 'sb/ci-benchmarks') ||
+      (github.event.issue.pull_request &&
       github.event.issue.state == 'open' &&
       contains(github.event.comment.body, '!benchmark') &&
       (github.event.comment.author_association == 'MEMBER' ||
-       github.event.comment.author_association == 'OWNER')
+       github.event.comment.author_association == 'OWNER'))
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.parse.outputs.matrix }}
@@ -60,21 +72,30 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       # issue_comment doesn't carry the PR's base/head; this action looks
-      # them up.
-      - uses: xt0rted/pull-request-comment-branch@v3
+      # them up. (TEMPORARY: skipped under the pull_request trigger, whose
+      # payload carries both directly.)
+      - if: github.event_name == 'issue_comment'
+        uses: xt0rted/pull-request-comment-branch@v3
         id: comment-branch
       - name: Resolve base/head SHAs
         id: shas
         run: |
-          echo "base=${{ steps.comment-branch.outputs.base_sha }}" >> "$GITHUB_OUTPUT"
-          echo "head=${{ steps.comment-branch.outputs.head_sha }}" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.event_name }}" = pull_request ]; then
+            echo "base=${{ github.event.pull_request.base.sha }}" >> "$GITHUB_OUTPUT"
+            echo "head=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "base=${{ steps.comment-branch.outputs.base_sha }}" >> "$GITHUB_OUTPUT"
+            echo "head=${{ steps.comment-branch.outputs.head_sha }}" >> "$GITHUB_OUTPUT"
+          fi
       # Parse the !benchmark command from an env var (never inline-interpolated).
       # The allowlist drops anything that isn't a known flag/env key. Backends
       # and envs come from Benchmarks/bench-config.json.
+      # TEMPORARY: pull_request runs get a fixed cheap command (ooc + compile
+      # exercise fetch-main, run, compare, and comment end to end).
       - name: Parse command
         id: parse
         env:
-          COMMENT_BODY: ${{ github.event.comment.body }}
+          COMMENT_BODY: ${{ github.event_name == 'pull_request' && '!benchmark ooc compile' || github.event.comment.body }}
         run: python3 .github/scripts/bench.py parse
 
   # Build the PR's `ix` + `bench-typecheck` once (they embed the IxVM kernel
@@ -478,5 +499,6 @@ jobs:
         uses: peter-evans/create-or-update-comment@v5
         with:
           token: ${{ steps.app-token.outputs.token }}
-          issue-number: ${{ github.event.issue.number }}
+          # TEMPORARY: the pull_request fallback goes with the trigger.
+          issue-number: ${{ github.event.issue.number || github.event.pull_request.number }}
           body-path: comment-body.md
