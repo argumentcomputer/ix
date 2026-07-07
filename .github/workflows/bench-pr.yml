@@ -177,13 +177,14 @@ jobs:
           ref: ${{ env.HEAD_SHA }}
           # The job runs PR code; never leave the token in .git.
           persist-credentials: false
+      # Allowlisted KEY=VALUE lines from the !benchmark comment (often
+      # empty). Delivered via an env var — inline `${{ }}` inside a heredoc
+      # both risks injection and breaks the quoted terminator's required
+      # column-0 position under YAML block indentation.
       - name: Apply passthrough env
-        run: |
-          while IFS= read -r line; do
-            [ -n "$line" ] && printf '%s\n' "$line" >> "$GITHUB_ENV"
-          done <<'PTENV'
-          ${{ needs.setup.outputs.passthrough-env }}
-          PTENV
+        env:
+          PTENV: ${{ needs.setup.outputs.passthrough-env }}
+        run: printf '%s\n' "$PTENV" | sed '/^[[:space:]]*$/d' >> "$GITHUB_ENV"
       # Restore the once-built PR binaries (see the build job) into the PR
       # tree's own bin dir: `ix bench run` resolves the measured tools from
       # <repo>/.lake/build/bin first, then PATH, so staging in-tree keeps the
