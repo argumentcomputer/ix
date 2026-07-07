@@ -34,6 +34,9 @@ use std::time::{Duration, Instant};
 use anyhow::{Result, bail};
 use clap::Parser;
 use human_repr::{HumanCount, HumanThroughput};
+use ix_bench::{
+  EXIT_REJECTED, Rejection, Status, collect_consts, peak_rss_bytes, write_row,
+};
 use ix_kernel::anon_work::{
   AnonWorkItem, block_of_addr, build_anon_work, build_sub_env, work_block_addr,
 };
@@ -221,83 +224,19 @@ struct Args {
   texray: bool,
 }
 
-/// Peak resident set size (bytes) across this process *and its children*, from
-/// tracing-texray's tree sampler. `0` until [`start`] has run or off Linux.
-/// Unlike a bare `/proc/self/status` read this includes Zisk's ASM
-/// microservices, which mmap large ROMs in separate PIDs.
-fn peak_rss_bytes() -> Option<u64> {
-  match tracing_texray::rss_sampler::peak_tree_rss_bytes() {
-    0 => None,
-    n => Some(n),
-  }
-}
-
 /// Fail FAST on a guest typecheck failure: a rejected constant rejects the
 /// whole workload, so bail before spending cycles (or proofs) on the
 /// remaining shards — mirroring the OOM kill, which also cancels the rest.
-/// Callers write no `--json` row for a rejected workload; the CI harness
-/// keys off this message ("kernel typecheck produced") to record the
-/// `failed` sentinel.
+/// Callers with a `--json` row in flight write it with `status: rejected`
+/// BEFORE calling this; `main` maps the typed error to `EXIT_REJECTED`.
 fn reject_failures(publics: &ShardPublics, ctx: &str) -> Result<()> {
   if publics.failures > 0 {
-    bail!(
-      "kernel typecheck produced {} failure(s) in {ctx}; \
-       aborting remaining shards",
-      publics.failures
+    return Err(
+      Rejection { failures: publics.failures.into(), ctx: ctx.to_string() }
+        .into(),
     );
   }
   Ok(())
-}
-
-/// Append the per-constant entry `{ "<name>": <metrics> }` to the neutral
-/// results JSON at `path`. If the file exists, its object is loaded and the new
-/// key is merged in (overwriting on collision), so a multi-const run
-/// (`--consts a,b,c`) accumulates one map with an entry per name. Written after
-/// every constant, so an external `timeout` still leaves a complete file of the
-/// entries collected so far. serde_json handles key escaping so arbitrary Lean
-/// names are safe.
-fn write_json_entry(
-  path: &PathBuf,
-  name: &str,
-  metrics: serde_json::Value,
-) -> Result<()> {
-  let mut map: serde_json::Map<String, serde_json::Value> =
-    match std::fs::read(path) {
-      Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_default(),
-      Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-        serde_json::Map::new()
-      },
-      Err(e) => return Err(anyhow::anyhow!("read {}: {e}", path.display())),
-    };
-  map.insert(name.to_string(), metrics);
-  std::fs::write(path, serde_json::to_string(&serde_json::Value::Object(map))?)
-    .map_err(|e| anyhow::anyhow!("write {}: {e}", path.display()))
-}
-
-/// Union `--consts` (comma-list) with names read from `--consts-file` (one per
-/// line, `#` comments and blank lines dropped), preserving first-seen order so
-/// the same name is never re-proven.
-fn collect_consts(args: &Args) -> Result<Vec<String>> {
-  let mut seen: std::collections::HashSet<String> =
-    std::collections::HashSet::new();
-  let mut out: Vec<String> = Vec::new();
-  for name in &args.consts {
-    let trimmed = name.trim();
-    if !trimmed.is_empty() && seen.insert(trimmed.to_string()) {
-      out.push(trimmed.to_string());
-    }
-  }
-  if let Some(path) = &args.consts_file {
-    let contents = std::fs::read_to_string(path)
-      .map_err(|e| anyhow::anyhow!("read {}: {e}", path.display()))?;
-    for line in contents.lines() {
-      let name = line.split('#').next().unwrap_or("").trim();
-      if !name.is_empty() && seen.insert(name.to_string()) {
-        out.push(name.to_string());
-      }
-    }
-  }
-  Ok(out)
 }
 
 /// 112-byte public output of one shard-guest proof.
@@ -976,15 +915,15 @@ async fn run_constant(
     let publics = ShardPublics::decode(&buf);
     let cycles = result.get_execution_steps();
     println!("cycles: {cycles}, failures: {}", publics.failures);
-    if publics.failures > 0 {
-      bail!("kernel typecheck produced {} failure(s)", publics.failures);
-    }
     if let Some(path) = &args.json {
       let tput =
         if execute_secs > 0.0 { cycles as f64 / execute_secs } else { 0.0 };
-      write_json_entry(
+      let status =
+        if publics.failures > 0 { Status::Rejected } else { Status::Ok };
+      write_row(
         path,
         name,
+        status,
         serde_json::json!({
           "cycles": cycles,
           "execute-time": (execute_secs * 1e6).round() / 1e6,
@@ -996,6 +935,7 @@ async fn run_constant(
         }),
       )?;
     }
+    reject_failures(&publics, &format!("constant {name}"))?;
     return Ok(());
   }
 
@@ -1031,16 +971,13 @@ async fn run_constant(
     &expected.hex()[..16],
     roots.len(),
   );
-  if publics.failures > 0 {
-    bail!(
-      "kernel typecheck produced {} failure(s) (proof still verifies)",
-      publics.failures
-    );
-  }
   if let Some(path) = &args.json {
-    write_json_entry(
+    let status =
+      if publics.failures > 0 { Status::Rejected } else { Status::Ok };
+    write_row(
       path,
       name,
+      status,
       serde_json::json!({
         "prove-time": (leaf_ms as f64).round() / 1000.0,
         "steps": result.get_execution_steps(),
@@ -1048,6 +985,9 @@ async fn run_constant(
       }),
     )?;
   }
+  // Proof still verifies on rejection — the guest certifies "checked, with
+  // failures" — but a rejected constant must land as a red row, not a metric.
+  reject_failures(&publics, &format!("constant {name}"))?;
   Ok(())
 }
 
@@ -1355,6 +1295,9 @@ async fn run_shard_plan(
     let mut shard_cycles = serde_json::Map::new();
     let mut shard_time = serde_json::Map::new();
     let mut shard_peak_rss = serde_json::Map::new();
+    // Fail FAST on a rejected shard (skip the rest), but still write the
+    // row — with the shards measured so far — as `status: rejected`.
+    let mut rejection: Option<Rejection> = None;
     for &(idx, g) in &novel {
       let (check_list, sub_env, _cover) = build_inputs(g)?;
       let stdin = leaf_stdin(0, 0, &sub_env, &check_list);
@@ -1389,11 +1332,20 @@ async fn run_shard_plan(
           p as f64 / (1 << 30) as f64
         )),
       );
-      reject_failures(&publics, &format!("shard {idx}"))?;
+      if publics.failures > 0 {
+        rejection = Some(Rejection {
+          failures: publics.failures.into(),
+          ctx: format!("shard {idx}"),
+        });
+        break;
+      }
     }
     let execute_secs = t0.elapsed().as_secs_f64();
     tracing_texray::json_sink::record_manual("zisk/execute", execute_secs);
-    println!("total cycles: {total_steps}, failures: 0");
+    println!(
+      "total cycles: {total_steps}, failures: {}",
+      rejection.as_ref().map_or(0, |r| r.failures)
+    );
     if let Some(path) = &args.json {
       let name = args.json_name.clone().unwrap_or_else(|| {
         manifest_path
@@ -1406,9 +1358,12 @@ async fn run_shard_plan(
       } else {
         0.0
       };
-      write_json_entry(
+      let status =
+        if rejection.is_some() { Status::Rejected } else { Status::Ok };
+      write_row(
         path,
         &name,
+        status,
         serde_json::json!({
           "cycles": total_steps,
           "shards": novel.len(),
@@ -1423,6 +1378,9 @@ async fn run_shard_plan(
           "shard-peak-rss": shard_peak_rss,
         }),
       )?;
+    }
+    if let Some(r) = rejection {
+      return Err(r.into());
     }
     return Ok(());
   }
@@ -1760,15 +1718,35 @@ async fn run_shard_plan(
     covered_union.len(),
   );
   if total_failures > 0 {
-    bail!(
-      "kernel typecheck produced {total_failures} failure(s) (proof still verifies)"
+    return Err(
+      Rejection {
+        failures: total_failures.into(),
+        ctx: "aggregate (proof still verifies)".to_string(),
+      }
+      .into(),
     );
   }
   Ok(())
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> std::process::ExitCode {
+  match run().await {
+    Ok(()) => std::process::ExitCode::SUCCESS,
+    Err(e) => {
+      eprintln!("error: {e:#}");
+      if e.downcast_ref::<Rejection>().is_some() {
+        // Reserved exit code: rejection rows are on disk; the caller needs
+        // no log parsing to tell "kernel said no" from an infra failure.
+        std::process::ExitCode::from(EXIT_REJECTED as u8)
+      } else {
+        std::process::ExitCode::FAILURE
+      }
+    },
+  }
+}
+
+async fn run() -> Result<()> {
   zisk_sdk::setup_logger(VerboseMode::Info);
 
   let args = Args::parse();
@@ -1814,7 +1792,7 @@ async fn main() -> Result<()> {
     );
   }
   // Named constants (from --consts and/or --consts-file) select from one env.
-  let consts = collect_consts(&args)?;
+  let consts = collect_consts(&args.consts, args.consts_file.as_deref())?;
   if !consts.is_empty() && inputs.len() > 1 {
     bail!("--consts/--consts-file requires exactly one --ixe input");
   }
@@ -2140,8 +2118,12 @@ async fn main() -> Result<()> {
   }
   println!("verify time: {:.3}s", (verify_ms as f64) / 1000.0);
   if total_failures > 0 {
-    bail!(
-      "kernel typecheck produced {total_failures} failure(s) (proof still verifies)"
+    return Err(
+      Rejection {
+        failures: total_failures.into(),
+        ctx: "batch (proof still verifies)".to_string(),
+      }
+      .into(),
     );
   }
   Ok(())
@@ -2221,7 +2203,7 @@ mod closure_tests {
 mod cli_tests {
   use clap::Parser;
 
-  use super::{Args, collect_consts};
+  use super::Args;
 
   fn parse(argv: &[&str]) -> Args {
     Args::try_parse_from(
@@ -2279,12 +2261,15 @@ mod cli_tests {
 
   #[test]
   fn collect_unions_and_dedups() {
+    // Grammar/union behavior is tested in ix-bench; this pins the Args
+    // plumbing (comma splitting stacked with a file) end to end.
     let dir = std::env::temp_dir();
     let path = dir.join("zisk_host_cli_test_consts.txt");
     std::fs::write(&path, "a\nb\n# comment\n  c  \n\na\n").expect("write");
     let a =
       parse(&["--consts", "a,d", "--consts-file", path.to_str().unwrap()]);
-    let got = collect_consts(&a).expect("collect");
+    let got = ix_bench::collect_consts(&a.consts, a.consts_file.as_deref())
+      .expect("collect");
     assert_eq!(got, vec!["a", "d", "b", "c"]);
     let _ = std::fs::remove_file(&path);
   }

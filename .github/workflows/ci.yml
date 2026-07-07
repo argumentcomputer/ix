@@ -88,7 +88,7 @@ jobs:
       # The precompile-aware SP1 runner-binary is auto-built from the fork git
       # dep by `sp1-core-executor-runner`'s build script — no manual override.
       # `cargo test` reuses the build's dep graph and runs the host's unit
-      # tests — the clap surface run.sh drives (`--consts` comma-splitting,
+      # tests — the clap surface `ix bench run` drives (`--consts` comma-splitting,
       # `--consts-file` union/dedup), so a CLI regression reds this gate too.
       - name: Build + test sp1-host (guest ELF via build.rs)
         run: |
@@ -107,7 +107,7 @@ jobs:
       - uses: ./.github/actions/install-zisk
         with:
           proving-key: false
-      # Unit tests: the clap surface run.sh drives, plus the closure auditor
+      # Unit tests: the clap surface `ix bench run` drives, plus the closure auditor
       # (closure_detects_missing_dep self-skips without an IX_TEST_IXE
       # fixture — this gate has no Lean build to produce one).
       - name: Build + test zisk-host (guest ELF via build.rs)

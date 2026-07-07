@@ -1,212 +1,155 @@
 # Benchmarking
 
-Ix is benchmarked on two surfaces, both driven by one curated constant set and
-the same backend drivers:
+One orchestrator — `ix bench` — runs every benchmark cell, locally and in CI.
+A **cell** is `(backend, env, mode)`, e.g. `zisk-initStd-execute`. CI is a
+thin wrapper: the same `ix bench run` you type in a terminal is what both
+workflows execute, so every CI number is reproducible on your machine.
 
 - **`!benchmark` PR comment** (`.github/workflows/bench-pr.yml`) — on demand,
   posts a **main-vs-PR** comparison table on the pull request. main's numbers
-  are pulled from bencher.dev via its public reports API (`bench.py fetch-main`);
-  the PR side is measured fresh. If bencher hasn't ingested the base SHA yet
-  (freshly-pushed main whose push CI is still running), the workflow falls
-  back to re-running the base SHA locally.
-- **Bencher.dev** (`.github/workflows/bench-main.yml`) — on every push to `main`,
-  tracks each measure over time at <https://bencher.dev> (project `ix`). This is
-  the canonical store for main-branch measurements; the `!benchmark` PR path
-  reads from it.
+  come from bencher.dev (`ix bench fetch-main`); the PR side is measured
+  fresh. When bencher can't supply the base SHA (not ingested yet, or the PR
+  adds new constants), the workflow measures the gap on a base checkout.
+- **Bencher.dev** (`.github/workflows/bench-main.yml`) — on every push to
+  `main`, tracks each measure over time at <https://bencher.dev> (project
+  `ix`), the canonical store the PR path reads from.
+
+## The row contract
+
+Every measured tool reports through one shape — the **neutral rows JSON** —
+and one exit-code convention (Rust: `crates/bench`; Lean:
+`Ix/Benchmark/Neutral.lean`):
+
+```json
+{ "<name>": { "status": "ok", "<metric>": 123, "phases": { "<span>": 1.5 } } }
+```
+
+- Rows are flushed after every name, so a killed run keeps its completed rows.
+- `status` is `ok` or `rejected` (written by the tool) or `oom` (merged in by
+  `ix bench run` after an abnormal exit — a process never observes its own
+  OOM kill). An `oom` row keeps whatever metrics landed before the kill.
+- Exit codes: `0` all ok · `2` usage error · `3` the kernel **rejected** a
+  constant (its row is on disk) · anything else is an infrastructure failure.
+
+There is no output scraping anywhere: no marker lines, no log grepping, no
+sentinel-key jq. State flows through rows and exit codes only. A rejected or
+OOM'd constant never reaches bencher (`ix bench bmf` drops non-`ok` rows),
+and a run that produces zero rows exits nonzero — an empty cell can't be
+green.
+
+## `ix bench` subcommands
+
+| subcommand | job |
+|---|---|
+| `run`        | run one cell: select names, ensure the `.ixe`, spawn the tool under the RAM watchdog, resume around per-constant deaths, gate on the rows |
+| `compare`    | two rows files → Markdown main-vs-PR table (thresholds, ratios, OOM/❌ rows) |
+| `bmf`        | rows → Bencher Metric Format (non-`ok` rows dropped) |
+| `fetch-main` | pull a base SHA's rows from bencher.dev (exit 3 = fall back to a local base run) |
+| `comment`    | assemble per-cell tables into the PR comment body |
+| `matrix`     | emit the workflows' job matrices from `bench-config.json` |
+
+### Local usage
+
+```shell
+# Run the ooc cell over initStd's primary constants:
+ix bench run --backend ooc --env initStd
+
+# Change something, run again, and diff against your previous run
+# (runs are saved as baselines under .bench/<cell>{,.prev}.json):
+ix bench run --backend ooc --env initStd --reuse-ixe
+ix bench compare --backend ooc --env initStd
+```
+
+`--repo <dir>` points the run at another checkout: the *measured* tools
+resolve from `<dir>/.lake/build/bin` first, so one `ix` can drive a base and
+a PR tree and compare them — exactly what the PR workflow does.
 
 ## Backends
 
-| backend | what it measures | metrics |
+| backend | what it measures | tool |
 |---|---|---|
-| `aiur` | IxVM kernel typecheck in the Aiur STARK prover (out-of-circuit execute + in-circuit prove; each fresh proof is also verified) | `fft-cost`, `execute-time`, `execute-peak-rss`, `prove-time`, `verify-time`, `proof-size`, `peak-rss` |
-| `zisk` / `sp1` | the same kernel in the Zisk / SP1 zkVM hosts, **execute** only (proving needs a GPU) | `cycles`, `execute-time`, `throughput`, `execute-peak-rss`; zisk's closure-sharded heavy rows add `shards`, `max-shard-cycles`, `shard-{cycles,time,peak-rss}:<k>` |
-| `ooc` | the same kernel run **out-of-circuit and in parallel** (`ix check-rs`) — far faster | `throughput`, `check-time`, `peak-rss` |
-| `compile` | `ix compile <env>.lean → <env>.ixe` on the current PR — measures the compile step itself, keyed by CamelCase env slug (`InitStd`, `Lean`, `Mathlib`, `FLT`) | `compile-time`, `throughput`, `file-size`, `constants` |
+| `aiur`    | Aiur STARK check: execute (fft-cost, execute-time) + prove (prove-time, proof-size, verify-time, peak-rss) | `bench-typecheck` |
+| `zisk`    | ZisK VM execute: cycles, execute-time, throughput, execute-peak-rss | `zisk-host` |
+| `sp1`     | SP1 VM execute (currently disabled in `bench-config.json`) | `sp1-host` |
+| `ooc`     | out-of-circuit Rust kernel: whole-env row + one full-closure row per primary (`check-time` wraps only the check — the env loads once, outside every row's timed window) | `ix check-rs --json` |
+| `compile` | `ix compile <env>.lean → <env>.ixe`: compile-time, file-size, constants, throughput | `ix compile --json` |
 
-In **prove** mode, `run.sh` attempts a full prove for every primary — cheap
-*and* heavy. A RAM watchdog (`watch_ram_kill`) samples the process tree's RSS
-every ~3 s and `SIGKILL`s the tree if it exceeds `AIUR_PROVE_MAX_RSS_GB`
-(default 120 GB — 8 GB headroom under a 128 GB runner). When killed, the
-constant records the neutral `{"oom": true}` sentinel and `bench.py compare`
-renders `OOM` cells (with `n/a` Δ%) in the table for that row.
+All tools take the same `--consts`/`--consts-file` grammar and emit the same
+rows. The ooc and zkVM cells share per-constant **full-closure** scope, so
+their delta isolates in-circuit vs out-of-circuit overhead.
 
-A **typecheck failure** is a correctness regression, not a benchmark blip,
-and surfaces loudly everywhere: the tool fails fast (a zisk shard failure
-aborts the constant's remaining shards, like an OOM kill), the constant
-records the `{"failed": true}` sentinel instead of numbers, `compare`
-renders ❌ cells plus a bold "FAILED TO TYPECHECK" note under the table,
-the failing rows never reach bencher, and the workflow job exits nonzero —
-after the clean rows have been uploaded (bench-main) or the table posted
-(bench-pr) — so the red X lands on the commit/PR.
+With `--texray`, tools also write per-phase span timings (`aiur/execute`,
+`stark/*`, `zisk/execute`, …) to `<json>.spans`; the rows carry them under
+`phases`, flattened by `bmf` to `phase:<span>` measures.
 
-The `ooc` backend reports two views: the **whole env** (`ix check-rs --anon`,
-keyed by env) and a **per-primary full-closure check** (`ix check-rs --anon
---consts <name>`, keyed by constant). The per-primary view runs the constant's
-full dependency closure in anon mode — the same mode and scope as the zkVM
-execute — so the delta isolates in-circuit vs out-of-circuit overhead rather
-than mixing in closure-size or metadata effects. (`--skip-deps` exists on both
-sides for a subject-only variant, but the benchmarks use full-closure.)
+## RAM: watchdog, OOM rows, sharding
 
-All are driven by `.github/scripts/run.sh` (compile the env `.ixe`, run the
-backend, emit a neutral `{ "<name>": { "<metric>": n } }` JSON). The PR workflow
-compares two such JSONs; the bencher workflow wraps one in Bencher Metric
-Format.
+`ix bench run` wraps each tool in `.github/scripts/watchdog.sh <ceiling-gb>
+<cmd>`: a sidecar that samples the process tree's RSS and, on breach, sends
+SIGTERM (tools flush their in-flight row and clean up), then SIGKILL after a
+10s grace. On any abnormal tool exit the orchestrator marks the in-flight
+constant's row `status: oom` and respawns with the remaining names — one
+constant's death costs one constant. There are **no per-constant timeouts**;
+the job-level `timeout-minutes` is the only clock.
 
-### Peak RAM and the per-phase drill-down (tracing-texray)
+Heavy-tier zisk constants (whose single-leaf closure would blow the runner's
+RAM) run as their closure-shard partition instead: `ix shard extract` →
+`ix profile` → `ix shard` cut a manifest, and one `--shard-plan` host run
+executes the shards sequentially, emitting the constant's row with per-shard
+breakdowns. bench-main's compile job pre-cuts these artifacts
+(`ix bench run --backend cutshards`) and ships them via cache.
 
-Every tool sources `peak-rss` from **tracing-texray's process-tree sampler** — a
-background thread that sums `VmRSS` across the process *and its children* and
-tracks the high-water mark. This captures memory that a bare `/proc/self/status`
-read misses, most importantly Zisk's ASM microservices (separate PIDs).
+## Registry and constant set
 
-Each tool also writes its per-phase span timings (tracing-texray's JSON-Lines
-sink, one `{"span","seconds"}` per closed span) to a side file, which `run.sh`
-aggregates into a `phases` object on the constant's entry. `aiur` yields a rich
-breakdown (`aiur/execute`, `aiur/witness`, `stark/fri_open`, …) since the prover
-instruments those spans; `zisk`/`sp1` record a single `execute`/`prove` phase;
-`ooc` records none. `bench-main.yml` flattens the `phases` object into
-`phase:<span>` measures on the way to bencher, so each span is tracked over
-time. (**TODO**: `bench.py compare` used to emit a per-constant collapsible
-drill-down in the PR comment; that renderer was removed while the primary
-table's flag / threshold semantics were being stabilised — see the TODO in
-`bench.py` at the previous `_phase_details` location. The `phases` data is
-still populated in the neutral JSON, ready to consume.)
-
-## Constant set — `Benchmarks/Vectors.csv`
-
-One CSV is the single source of truth for *which* constants to run:
-`name,env,tier,shard_target,primary`. Rows may omit trailing zero fields — the
-parser tolerates 3, 4, or 5 columns, defaulting `shard_target` and `primary`
-to `0`. Measurements never live here; they live in each tool's neutral results
-JSON and in bencher.dev.
-
-- `env` — compile target the constant resolves in (`initStd` / `lean` / `mathlib`).
-- `tier` — `cheap` (prove-feasible on a CI runner under Aiur's ~128 GB RAM
-  ceiling) or `heavy` (a single-shard prove exceeds the RAM watchdog ceiling
-  and records an OOM row). Consumed only by `bench.py manifest` for selection
-  (the `BENCH_TIER` filter, and the non-primary prove set defaults to cheap);
-  `run.sh` itself never branches on tier — it attempts a full prove of every
-  selected constant under the watchdog.
-- `primary` — the curated **primary subset** (currently ~20 constants across
-  initStd + mathlib), spanning shape and cost range. Default for the
-  `!benchmark` PR comment and the bencher jobs. Set `BENCH_FULL=1` to include
-  everything (~68 total).
-- `shard_target` — marks a heavy constant designated for the manifest-sharded
-  prove path (currently 4 rows).
-
-`bench.py manifest` selects names by env + `--primary` (plus optional
-`--tier`, `--shard`). The `compile` backend short-circuits this — its
-"benchmark" is the env slug itself, so `manifest` writes a one-line
-`names.txt` with the CamelCase env name (`InitStd`, etc.) and skips the CSV.
-`bench.py compare` renders the PR table from the two side JSONs.
+- **`Benchmarks/Vectors.csv`** — the curated constants: one row per
+  `(name, env, tier[, shard_target[, primary]])`. `tier: heavy` marks
+  constants whose full prove is expected to OOM (they still run; the row
+  records it). `primary: 1` is the default `!benchmark` subset.
+- **`Benchmarks/bench-config.json`** — everything else: env slugs and compile
+  modules, backends (enabled flag, default mode, bencher testbed, compare
+  columns), the runner, the watchdog ceiling. The workflows' matrices are
+  generated from it (`ix bench matrix`), the `!benchmark` parser reads it,
+  and `bencher-thresholds-reset.yml` derives its workload lists from it —
+  add or disable a backend in one place.
 
 ## `!benchmark` grammar
 
-Maintainer comment on a PR:
-
 ```
-!benchmark ([aiur] [zisk] [sp1] [ooc] [compile] | all) [execute]
-BENCH_ENVS=initStd,mathlib     # which compiled envs (default initStd)
-BENCH_FULL=1                   # run the full curated set, not just primary
-BENCH_TIER=cheap|heavy|all     # tier override (default: all)
-BENCH_SHARD=1                  # restrict to the multi-shard target constants
-RUST_LOG=info                  # passthrough env (allowlisted)
+!benchmark ([aiur] [zisk] [ooc] [compile] | all) [execute]
+BENCH_ENVS=initStd,mathlib     # default initStd
+BENCH_FULL=1                   # full curated set, not just primary
+BENCH_TIER=cheap|heavy|all     # tier filter
+BENCH_SHARD=1                  # only the multi-shard target constants
+RUST_LOG=info                  # allowlisted passthrough env
 ```
 
-Mode is fixed per backend: `aiur` runs `prove` by default (its report also
-carries the execute-side columns `fft-cost` / `execute-time` /
-`execute-peak-rss` alongside `prove-time` / `peak-rss` — `execute-peak-rss`
-is sampled at the Phase 1/2 boundary, before proving allocations, precisely
-so execute-mode comparisons stay apples-to-apples against prove-run
-baselines); `zisk` / `sp1` / `ooc` run `execute`; `compile` runs `ix
-compile`. The optional bare `execute` token flips `aiur` to execute-only
-(`bench-typecheck --execute-only`, skips Phase 2); on other backends it's a
-no-op. Defaults: `aiur`, `initStd`, primary subset. Backends fan out as a
-matrix; each cell is one `(backend, env, mode)` job. main's numbers are
-pulled from bencher.dev.
+Parsed by `.github/scripts/bench.py` (the one Python remnant — it must run
+before any Lean build exists). Mode is fixed per backend by
+`bench-config.json`; the bare `execute` token flips `aiur` to Phase-1 only.
 
-## Bencher jobs (`bench-main.yml`)
+## CI shape
 
-`build → compile → { prove, zkvm-execute, ooc-check }`, each reporting to its
-own testbed + **workload** (`aiur-check`, `zisk-check`, `sp1-check`,
-`ooc-check`, `ix-compile`). The four typecheck testbeds share the shape
-`<backend>-check-x64-32x`; the compile job uses `ix-compile-x64-32x`. Every
-bench job runs on the same runner (`warp-ubuntu-latest-x64-32x`).
+**bench-main.yml**: `build` (compile `ix` + `bench-typecheck` once, cache by
+SHA) → `plan` (`ix bench matrix` → job matrices) + `compile` (per env:
+`ix bench run --backend compile`, cache the `.ixe` + pre-cut zisk shards) →
+`prove` / `zkvm-execute` / `ooc-check` (each: restore caches, one
+`ix bench run … --reuse-ixe`, `ix bench bmf`, upload via
+`.github/actions/bencher-track`). A kernel rejection exits 3 and reddens the
+run step while the clean rows still upload.
 
-sp1 benchmarks are temporarily disabled (its execute run is too slow for
-CI); the host still builds + unit-tests on every PR via ci.yml. To
-re-enable, uncomment sp1 in two places: the zkvm-execute matrix cell in
-`bench-main.yml` and the Install SP1 step in `bench-pr.yml`.
-
-**Heavy primaries run closure-sharded on zisk.** A heavy constant's full
-closure blows the runner's RAM as a single guest leaf, so it executes as its
-shard-manifest partition instead: `ix shard extract <Env>.ixe --consts <name>`
-cuts a standalone closure-only env (no recompile; anon-faithful — identical
-addresses and fft-cost as the full env), `ix profile` → `ix shard --max-ram
-120` cut the manifest (the canonical partitioner: profiled heartbeats +
-min-cut, capped by predicted RAM), and one `zisk-host --shard-plan` run
-executes the shards sequentially. The constant's row then carries total
-`cycles`, `shards`, `max-shard-cycles`, `execute-time`, `throughput`
-(cycles/s), `execute-peak-rss` (max over the per-shard windows), plus the
-per-shard breakdown uploaded as `shard-cycles:<k>` / `shard-time:<k>` /
-`shard-peak-rss:<k>` measures. Cheap primaries keep the plain single-leaf
-`--consts` run.
-
-The artifacts live in `zkshards-<Env>/` and are cut once per tree:
-bench-main's compile job pre-cuts them (run.sh's `cutshards` backend — it
-has `ix`, the toolchain, and the fresh `.ixe`; the zkvm job stays Lean-free)
-and ships them in the `bench-ixe-*` cache; on the `!benchmark` PR path,
-run.sh cuts them fresh in-place with the side's own `ix` (cheap: seconds per
-closure) — each side partitions its **own** tree, because
-a PR can change the cost profile, and the profiler counts heartbeats rather
-than wall time, so an unchanged tree re-partitions deterministically. The
-heavy set comes from Vectors.csv's tier column via `bench.py manifest
---heavy-out` (`ZISK_HEAVY_NAMES`).
-
-A constant whose partition still can't fit — an atomic mutual block above
-the cap (`ix shard` flags it INFEASIBLE) — OOMs its shard under the RAM
-watchdog like any other over-ceiling run: the constant gets the honest OOM
-row, its remaining shards are skipped, and the loop proceeds to the next
-constant. If cutting fails entirely (no `ix` on PATH, extract error), the
-constant falls back to the single-leaf run.
-
-Threshold semantics per measure kind:
-- **`constants`** — pinned exactly (0/0). A definitional count; either
-  direction is worth flagging (someone added/removed a def).
-- **`fft-cost`, `cycles`, `shards`, `max-shard-cycles`** — deterministic but
-  directional: `upper 0` (any increase is a real regression), `lower _`
-  (drops are legitimate wins — algorithmic improvements, better packing).
-- **`execute-time`, `prove-time`, `verify-time`, `check-time`, `compile-time`, `peak-rss`,
-  `execute-peak-rss`, `file-size`, `proof-size`** — noisy wall-clock or size measures:
-  `upper 0.05–0.10`, `lower _`. `execute-peak-rss` is the execute phase's RSS
-  high-water on every backend that has one (bench-typecheck samples it at the
-  Phase 1/2 boundary; the zkVM hosts' execute peak carries the same name);
-  bare `peak-rss` is a prove-phase (or, for ooc, whole-check) peak.
-- **`throughput`** — higher-is-better: `upper _`, `lower 0.05–0.10`.
-- **`phase:<span>`, `shard-{cycles,time,peak-rss}:<k>`** — uploaded for
-  trend visibility, intentionally left un-thresholded (dynamic names; a
-  re-partition renames the shard keys). The thresholded aggregates
-  (`shards`, `max-shard-cycles`, total `cycles`) do the alerting; the
-  PR-comment drill-down is where per-phase / per-shard attention goes when
-  that view lands.
-
-All thresholds are windowed to the per-workload
-`bencher-thresholds-reset-<workload>` tag.
-
-To re-baseline a workload after an intended step change, comment
-`!bencher-thresholds-reset <workload|all>` on the merging PR, or run the
-`bencher-thresholds-reset` workflow
-(`.github/workflows/bencher-thresholds-reset.yml`).
+**bench-pr.yml**: `setup` (parse the comment) → `build` (PR binaries, cached
+by head SHA) → `benchmark` matrix (per cell: PR-side `ix bench run`;
+`ix bench fetch-main` for main's numbers, with a targeted base-checkout run
+covering only what bencher lacked; `ix bench compare` → table artifact) →
+`comment` (`ix bench comment` → one PR comment).
 
 ## Not yet covered
 
-- **zkVM proving** (Zisk/SP1 `prove`) is not wired up — needs a self-hosted
-  GPU runner. `bench.py`'s parse layer treats `zisk`/`sp1` as `execute`-only.
-- **Per-constant phase drill-down** in the PR comment (was removed while the
-  primary table's semantics were stabilised; TODO in `bench.py` marks the
-  reinstatement point — the `phases` data is still populated in the
-  neutral JSON and flattened to `phase:<span>` on bencher).
-- **Non-`main` base branches** — `bench.py fetch-main` hardcodes
-  `branch=main`; a PR against a non-main base always falls through to the
-  local base-run path. TODO in `bench.py` lays out the three-step plan
-  (producer / consumer / fallback).
+- **zkVM prove** — the hosts prove, but CI has no GPU runner; cells are
+  execute-only.
+- **sp1** — disabled in `bench-config.json` (execute too slow per push);
+  re-enable it there and it returns to the matrices and the parser.
+- **Per-constant phase drill-down in the PR table** — the `phases` data
+  rides the rows; the collapsible rendering hasn't been rebuilt.
+- **Non-`main` base branches** — `fetch-main` queries `branch=main`; a PR
+  against another base always pays the local base run.

@@ -16,6 +16,7 @@ dashmap = { workspace = true, features = ["rayon"] }
 indexmap = { workspace = true, features = ["rayon"] }
 itertools = { workspace = true }
 ixvm-codegen = { workspace = true }
+ix-bench = { workspace = true }
 ix-common = { workspace = true }
 ix-compile = { workspace = true }
 ixon = { workspace = true }
@@ -26,6 +27,7 @@ mimalloc = { workspace = true }
 num-bigint = { workspace = true }
 rayon = { workspace = true }
 rustc-hash = { workspace = true }
+serde_json = { workspace = true }
 sha2 = { workspace = true }
 tiny-keccak = { workspace = true }
 tracing = { workspace = true }

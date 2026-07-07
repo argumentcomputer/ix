@@ -64,8 +64,7 @@ def runIngressCmd (p : Cli.Parsed) : IO UInt32 := do
   let elapsed := (← IO.monoMsNow) - start
 
   IO.println s!"[ingress] ingressed {kenvLen} kernel consts in {elapsed.formatMs}"
-  -- Machine-readable line for CI benchmark tracking, mirrors
-  -- `ix compile`'s `##benchmark##` shape.
+  -- Machine-readable line: `<elapsed_ms> <kenv_len> <total_consts>`.
   IO.println s!"##ingress## {elapsed} {kenvLen} {totalConsts}"
   return 0
 

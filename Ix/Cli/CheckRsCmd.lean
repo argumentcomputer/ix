@@ -34,6 +34,7 @@ public import Ix.Common
 public import Ix.KernelCheck
 public import Ix.Meta
 public import Ix.TracingTexray
+public import Ix.Benchmark.Neutral
 public import Ix.Cli.ConstsFile
 public import Ix.Cli.ValidateCmd
 public import Std.Internal.UV.System
@@ -132,7 +133,8 @@ private def reportFailures (failures : Array (String × String))
 
 /-- Anon-mode runner: dispatch to `rsCheckAnonFFI`. The Rust side checks
     every kernel-checkable address in the env and streams failures to
-    `failOutPath` (when nonempty). -/
+    `failOutPath` (when nonempty). With `--json`, the run is additionally
+    recorded as one env-keyed neutral row (key from `--json-name`). -/
 private def runCheckAnon (envPath : String) (p : Cli.Parsed) : IO UInt32 := do
   let verbose := p.flag? "verbose" |>.isSome
   let failOutPath : String :=
@@ -163,13 +165,27 @@ private def runCheckAnon (envPath : String) (p : Cli.Parsed) : IO UInt32 := do
   if !failOutPath.isEmpty then
     IO.println s!"[check] streamed {failures.size} failure(s) to {failOutPath}"
 
-  let peakRss ← TracingTexray.peakTreeRssBytes
-  IO.println s!"##check## {elapsed} {passed} {failures.size} {results.size} {peakRss}"
-  return if failures.isEmpty then 0 else 1
+  if let some flag := p.flag? "json" then
+    let key := (p.flag? "json-name").map (·.as! String) |>.getD "env"
+    let secs := elapsed.toFloat / 1000.0
+    let tput := if elapsed > 0
+      then results.size.toFloat * 1000.0 / elapsed.toFloat else 0.0
+    let peakRss ← TracingTexray.peakTreeRssBytes
+    let status := if failures.isEmpty then "ok" else "rejected"
+    Ix.Benchmark.Neutral.writeRow (flag.as! String) key status
+      [ ("constants", Lean.toJson results.size)
+      , ("check-time", Ix.Benchmark.Neutral.jsonRound 3 secs)
+      , ("throughput", Ix.Benchmark.Neutral.jsonRound 2 tput)
+      , ("peak-rss", Lean.toJson peakRss) ]
+
+  return if failures.isEmpty then 0 else Ix.Benchmark.Neutral.exitRejected
 
 /-- Anon-mode per-constant runner: dispatch to `rsCheckAnonConstsFFI`. Checks
     the named constants and (by default) their full dependency closures — the
-    zkVM hosts' semantics — or subject-only under `--skip-deps`. -/
+    zkVM hosts' semantics — or subject-only under `--skip-deps`. With
+    `--json`, each name runs as its own closure check and records a neutral
+    per-name row (see `Ix.Benchmark.Neutral`); without it, the names union
+    into one check set. -/
 private def runCheckAnonConsts (envPath : String) (p : Cli.Parsed) : IO UInt32 := do
   let verbose := p.flag? "verbose" |>.isSome
   let skipDeps := p.hasFlag "skip-deps"
@@ -177,18 +193,27 @@ private def runCheckAnonConsts (envPath : String) (p : Cli.Parsed) : IO UInt32 :
     match p.flag? "fail-out" with
     | some flag => flag.as! String
     | none      => ""
+  let jsonPath : String :=
+    match p.flag? "json" with
+    | some flag => flag.as! String
+    | none      => ""
+  if !jsonPath.isEmpty && !failOutPath.isEmpty then
+    p.printError "error: --json per-name rows and --fail-out cannot be combined"
+    return Ix.Benchmark.Neutral.exitUsage
   -- Raw strings (no toName round-trip): the FFI resolves displayed forms
   -- against the env's `named` map, matching the zkVM hosts' resolution.
   let names ← ConstsFile.gather p
   if names.isEmpty then
     IO.println "[check] error: --consts/--consts-file resolved to zero names"
-    return 1
+    return Ix.Benchmark.Neutral.exitUsage
 
   let scope := if skipDeps then "subject-only" else "full-closure"
-  IO.println s!"Running Ix kernel check (anon mode, {scope}) on {envPath}"
+  let shape := if jsonPath.isEmpty then "union" else "per-name rows"
+  IO.println s!"Running Ix kernel check (anon mode, {scope}, {shape}) on {envPath}"
   IO.println s!"[check] {names.size} seed constant(s): {", ".intercalate names.toList}"
   let start ← IO.monoMsNow
-  let results ← rsCheckAnonConstsFFI envPath names skipDeps (!verbose) failOutPath
+  let results ← rsCheckAnonConstsFFI envPath names skipDeps (!verbose)
+    failOutPath jsonPath
   let elapsed := (← IO.monoMsNow) - start
 
   let mut passed := 0
@@ -205,9 +230,7 @@ private def runCheckAnonConsts (envPath : String) (p : Cli.Parsed) : IO UInt32 :
   if !failOutPath.isEmpty then
     IO.println s!"[check] streamed {failures.size} failure(s) to {failOutPath}"
 
-  let peakRss ← TracingTexray.peakTreeRssBytes
-  IO.println s!"##check## {elapsed} {passed} {failures.size} {results.size} {peakRss}"
-  return if failures.isEmpty then 0 else 1
+  return if failures.isEmpty then 0 else Ix.Benchmark.Neutral.exitRejected
 
 /-- Meta-mode runner: dispatch to `rsCheckIxonFFI` with seed filtering. -/
 private def runCheckMeta (envPath : String) (p : Cli.Parsed) : IO UInt32 := do
@@ -257,9 +280,7 @@ private def runCheckMeta (envPath : String) (p : Cli.Parsed) : IO UInt32 := do
   if !failOutPath.isEmpty then
     IO.println s!"[check] streamed {failures.size} failure(s) to {failOutPath}"
 
-  let peakRss ← TracingTexray.peakTreeRssBytes
-  IO.println s!"##check## {elapsed} {passed} {failures.size} {seedNames.size} {peakRss}"
-  return if failures.isEmpty then 0 else 1
+  return if failures.isEmpty then 0 else Ix.Benchmark.Neutral.exitRejected
 
 def runCheckRsCmd (p : Cli.Parsed) : IO UInt32 := do
   let some pathArg := p.positionalArg? "path"
@@ -267,7 +288,7 @@ def runCheckRsCmd (p : Cli.Parsed) : IO UInt32 := do
       return 1
   let envPath := pathArg.as! String
 
-  -- Start the process-tree RSS sampler so the `##check##` line can report an
+  -- Start the process-tree RSS sampler so `--json` rows can report an
   -- accurate peak-rss (the parallel kernel check's high-water mark).
   TracingTexray.startSampler
 
@@ -304,7 +325,7 @@ end Ix.Cli.CheckRsCmd
 open Ix.Cli.CheckRsCmd in
 def checkRsCmd : Cli.Cmd := `[Cli|
   "check-rs" VIA runCheckRsCmd;
-  "Typecheck a `.ixe` through the Rust kernel"
+  "Typecheck a `.ixe` through the Rust kernel. Exits 0 when everything passes, 3 when the kernel rejects any constant (with --json, the rejected rows are on disk), nonzero otherwise on infrastructure failures."
 
   FLAGS:
     anon;                   "Run the kernel in anon mode (no metadata read from .ixe)"
@@ -313,6 +334,8 @@ def checkRsCmd : Cli.Cmd := `[Cli|
     "consts-file" : String; "Path to a file with one constant name per line (`#` comments); unions with --consts."
     "skip-deps";            "With --anon --consts: check each named constant subject-only, trusting its deps (same flag as zisk-host/sp1-host/bench-typecheck)."
     "fail-out"    : String; "Write failing constants to this path (consumable by --consts-file)"
+    json          : String; "Write neutral benchmark rows to this path (anon mode). Whole-env: one row keyed by --json-name. With --consts: each name runs as its OWN closure check (the zkVM hosts' per-constant scope) and records its own timed row, env loaded once."
+    "json-name"   : String; "Row key for the whole-env --json row (default: `env`)"
     workers       : Nat;    "Number of parallel kernel-check workers; 1 disables parallelism (default: available_parallelism). Plumbs via IX_KERNEL_CHECK_WORKERS env var."
     verbose;                "Log every constant on its own line (default: quiet)"
 

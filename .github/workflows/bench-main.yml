@@ -1,23 +1,30 @@
 name: Benchmark main
 
 # Benchmarks tracked on Bencher on every push to main, all reusing the one
-# compiled `.ixe` so the compiler runs once:
-#   1. compile      — `ix compile` the Lean env to a `.ixe` (compile-throughput
-#                     metrics) and cache the `.ixe`.
+# compiled `.ixe` so the compiler runs once. Every measurement is a single
+# `ix bench run` cell (backend × env × mode) — the same orchestrator local
+# runs and the !benchmark PR workflow use — converted for upload by
+# `ix bench bmf`:
+#   1. compile      — `ix bench run --backend compile`: serialize the Lean env
+#                     to a `.ixe` (compile-throughput metrics) and cache the
+#                     `.ixe`.
 #   2. prove        — restore that `.ixe` (no recompile) and STARK-check selected
 #                     constants over it via bench-typecheck (Aiur execute + prove).
 #   3. zkvm-execute — restore that `.ixe` and execute the same constants through
-#                     the Zisk and SP1 zkVM hosts (deterministic cycle counts +
+#                     the zkVM hosts (deterministic cycle counts +
 #                     time/throughput/RAM; proving needs a GPU, so execute-only).
 #   4. ooc-check    — restore that `.ixe` and run the out-of-circuit Rust kernel
 #                     (the same kernel, out-of-circuit and parallel — far faster)
-#                     over the whole env via `ix check --anon`, tracking throughput.
+#                     over the whole env, tracking throughput.
 # Each job reports to its own bencher testbed/workload so a threshold reset only
-# touches its own measures.
+# touches its own measures. `ix bench run` exits 3 when the kernel REJECTS a
+# constant — the red X lands on that step (no output scraping), while the clean
+# rows still upload (`ix bench bmf` drops every non-ok row, so a rejected or
+# OOM'd constant never becomes a bencher data point).
 
 on:
   push:
-    branches: [main, sb/ci-benchmarks]   # TEMPORARY: test on this branch
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -68,24 +75,62 @@ jobs:
           path: ~/.local/bin
           key: bench-bins-${{ github.sha }}
 
+  # Derive the job matrices from the registry (Benchmarks/bench-config.json)
+  # via `ix bench matrix`, so the benched-env / enabled-backend fan-out is
+  # single-sourced instead of hand-copied per job. Runs beside the compile
+  # job; only the downstream matrix jobs wait on it.
+  plan:
+    needs: build
+    runs-on: ubuntu-latest
+    outputs:
+      bench-envs: ${{ steps.matrix.outputs.bench-envs }}
+      zkvm-cells: ${{ steps.matrix.outputs.zkvm-cells }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/cache/restore@v5
+        with:
+          path: ~/.local/bin
+          key: bench-bins-${{ github.sha }}
+          fail-on-cache-miss: true
+      - run: echo "$HOME/.local/bin" >> $GITHUB_PATH
+      # Provision the toolchain so `ix` finds libleanshared (no package build).
+      - uses: leanprover/lean-action@v1
+        with:
+          auto-config: false
+          build: false
+          use-github-cache: false
+      - id: matrix
+        run: |
+          ix bench matrix --kind cells > cells.json
+          cat cells.json
+          # bench-envs: one {env, slug} pair per benched env — env is the
+          # registry key `ix bench run --env` takes (also the `<env>.ixe`
+          # filename); slug is the CamelCase cache-key/benchmark name.
+          # zkvm-cells: the zkVM subset of the cells (zisk today; sp1 comes
+          # back by re-enabling it in bench-config.json).
+          echo "bench-envs=$(jq -c 'map({env, slug}) | unique' cells.json)" >> "$GITHUB_OUTPUT"
+          echo "zkvm-cells=$(jq -c 'map(select(.backend == "zisk" or .backend == "sp1"))' cells.json)" >> "$GITHUB_OUTPUT"
+
   # Compile each library env to a `.ixe` and track compile throughput. Caches
-  # the `.ixe` (keyed by sha + matrix job) for the prove job to consume.
+  # the `.ixe` (keyed by sha + env slug) for the prove job to consume.
   compile:
     needs: build
     runs-on: warp-ubuntu-latest-x64-32x
     strategy:
       fail-fast: false
       matrix:
-        bench: [InitStd, Lean, Mathlib, FLT] # Add FC if updated to latest Lean
+        # env = the bench-config.json registry key (`ix bench run --env`, the
+        # `<env>.ixe` filename); bench = its CamelCase slug (lake target
+        # Compile<bench>, cache-key suffix, bencher row name). Deliberately
+        # wider than the benched set: Lean/FLT compile-throughput is tracked
+        # even though no downstream job proves them. Add FC if updated to
+        # latest Lean.
         include:
-          - bench: Mathlib
-            mathlib: true
-          - bench: FLT
-            cache_pkg: flt
-            mathlib: true
-          # - bench: FC
-          #   cache_pkg: formal_conjectures
-          #   mathlib: true
+          - { env: initStd, bench: InitStd }
+          - { env: lean, bench: Lean }
+          - { env: mathlib, bench: Mathlib, mathlib: true }
+          - { env: flt, bench: FLT, cache_pkg: flt, mathlib: true }
+          # - { env: fc, bench: FC, cache_pkg: formal_conjectures, mathlib: true }
     steps:
       - uses: actions/checkout@v6
         with:
@@ -119,44 +164,37 @@ jobs:
       # warning that must not fail the build.
       - run: lake build Compile${{ matrix.bench }}
         working-directory: ${{ env.COMPILE_DIR }}
-      # Serialize the env to a `.ixe` and measure the compile via run.sh's
-      # `compile` backend — the same driver + `##benchmark##` parser the
-      # !benchmark PR path uses, so the line format is parsed in exactly one
-      # place. run.sh writes `<Bench>.ixe` at the workspace root (the env arg
-      # is used verbatim for the filename) and neutral.json keyed by the
-      # CamelCase env slug; bmf wraps it for bencher.
+      # Serialize the env to a `.ixe` and measure the compile via `ix bench
+      # run` — for the `compile` backend the compile IS the benchmark (always
+      # fresh; `--reuse-ixe` is ignored by design). Writes `<env>.ixe` at the
+      # workspace root and one neutral row keyed by the CamelCase env slug —
+      # the same driver the !benchmark PR path uses; bmf wraps it for bencher.
       - name: Run ix compile benchmark
         run: |
-          bash .github/scripts/run.sh . ${{ matrix.bench }} compile compile /dev/null neutral.json
-          python3 .github/scripts/bench.py bmf --in neutral.json --out benchmark.json
+          ix bench run --backend compile --env ${{ matrix.env }} --out bench.json
+          ix bench bmf --in bench.json --out benchmark.json
           cat benchmark.json
       # Pre-cut the zisk closure-shard artifacts for the heavy primaries
-      # (`ix extract` → `ix profile` → `ix shard`, via run.sh's cutshards
-      # backend — the same code path the !benchmark PR side runs lazily).
-      # Done here, next to the fresh `.ixe` with `ix` + the Lean toolchain
-      # on hand, so the zkvm job stays Lean-free and just restores the dir.
-      - if: matrix.bench == 'InitStd' || matrix.bench == 'Mathlib'
+      # (`ix shard extract` → `ix profile` → `ix shard`, via `ix bench run`'s
+      # cutshards backend — the same code path the zisk cells run lazily when
+      # the artifacts are absent). Done here, next to the fresh `.ixe` with
+      # `ix` + the Lean toolchain on hand, so the zkvm job just restores the
+      # dir. The benched-env conditionals below must match bench-config.json's
+      # `benched: true` envs (what `ix bench matrix --kind envs` returns).
+      - if: matrix.env == 'initStd' || matrix.env == 'mathlib'
         name: Cut closure shards for heavy primaries
-        env:
-          REUSE_IXE: "1"
-        run: |
-          benv="${{ matrix.bench }}"; benv="${benv,}"
-          python3 .github/scripts/bench.py manifest \
-            --csv Benchmarks/Vectors.csv --env "$benv" --mode execute --primary \
-            --heavy-out heavy.txt --out /dev/null
-          echo "cutting closure shards for $(wc -l < heavy.txt) heavy primaries:"; cat heavy.txt
-          bash .github/scripts/run.sh . "${{ matrix.bench }}" cutshards execute heavy.txt /dev/null
+        run: ix bench run --backend cutshards --env ${{ matrix.env }} --reuse-ixe
       # Cache the `.ixe` + closure-shard artifacts for the prove/zkvm jobs
-      # (reused, never regenerated there). Only the matrix jobs those
+      # (reused, never regenerated there). Only the benched envs those
       # consume, to stay under the repo cache limit. NB: every restore of
       # this key must list the SAME paths — actions/cache versions the entry
       # by its path list.
-      - if: matrix.bench == 'InitStd' || matrix.bench == 'Mathlib'
+      - if: matrix.env == 'initStd' || matrix.env == 'mathlib'
         uses: actions/cache/save@v5
         with:
           path: |
-            ${{ matrix.bench }}.ixe
-            zkshards-${{ matrix.bench }}
+            ${{ matrix.env }}.ixe
+            zkshards-${{ matrix.env }}
           key: bench-ixe-${{ github.sha }}-${{ matrix.bench }}
       # Upload compile metrics. Every measure shares the per-workload baseline
       # window (data points since the ix-compile reset tag): file-size/constants
@@ -183,16 +221,20 @@ jobs:
             --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0
             --threshold-lower-boundary 0
 
-  # Restore each matrix job's `.ixe` from the cache and run the Aiur execute + prove
-  # benchmark over selected constants. No compiler run here.
+  # Restore each matrix job's `.ixe` from the cache and run the Aiur execute +
+  # prove benchmark over the primary constants. No compiler run here:
+  # `ix bench run --reuse-ixe` picks up the cached `.ixe`, attempts a full
+  # prove of every primary under the RAM watchdog with per-constant subprocess
+  # isolation, and records a `status: oom` row (keeping any Phase-1 metrics
+  # flushed before the kill) for a too-large prove instead of dying.
   prove:
-    needs: compile
+    needs: [compile, plan]
     runs-on: warp-ubuntu-latest-x64-32x
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        bench: [InitStd, Mathlib]
+        bench: ${{ fromJson(needs.plan.outputs.bench-envs) }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -216,49 +258,38 @@ jobs:
       - uses: actions/cache/restore@v5
         with:
           path: |
-            ${{ matrix.bench }}.ixe
-            zkshards-${{ matrix.bench }}
-          key: bench-ixe-${{ github.sha }}-${{ matrix.bench }}
+            ${{ matrix.bench.env }}.ixe
+            zkshards-${{ matrix.bench.env }}
+          key: bench-ixe-${{ github.sha }}-${{ matrix.bench.slug }}
           fail-on-cache-miss: true
-      # Run each constant in its own process so a clean failure or timeout drops
-      # only that constant from the report. NB: a constant heavy enough to OOM
-      # the runner host still cancels the whole job (an OOM SIGKILL of the host
-      # is uncatchable here), so every listed constant must fit in runner RAM.
-      # RAM is tracked via tracing-texray's machine-readable streaming lines
-      # (`[texray] <span> peak-rss-bytes=<N> (<X.YZ MiB>)`, emitted as each
-      # span closes): we parse the raw byte integer (awk's `$2+0` stops at
-      # the first non-digit, ignoring the parenthesized human suffix) and
-      # fold the max over spans in as `peak-rss` (bytes), the proving RSS
-      # high-water mark.
+      # Exit 3 = the kernel REJECTED a constant (a correctness regression, not
+      # a benchmark blip): the job reddens right here, with the rows on disk
+      # for the upload below.
       - name: Run Aiur typecheck benchmark
-        env:
-          REUSE_IXE: "1"
         run: |
-          # All primaries: run.sh attempts a full prove of every primary under
-          # the RAM watchdog; a too-large prove records the `oom: true` sentinel
-          # (alongside any Phase-1 execute metrics measured before the kill).
-          # Per-constant peak-rss, same path as the !benchmark PR run.
-          benv="${{ matrix.bench }}"; benv="${benv,}"   # InitStd→initStd, Mathlib→mathlib
-          python3 .github/scripts/bench.py manifest \
-            --csv Benchmarks/Vectors.csv --env "$benv" --mode prove --primary --out names.txt
-          echo "proving $(wc -l < names.txt) primary constants:"; cat names.txt
-          bash .github/scripts/run.sh . "${{ matrix.bench }}" aiur prove names.txt neutral.json
-          # neutral → Bencher Metric Format (phases flattened to phase:<span>
-          # measures; the boolean `oom` sentinel stripped — see bench.py bmf).
-          python3 .github/scripts/bench.py bmf --in neutral.json --out aiur.json
+          ix bench run --backend aiur --env ${{ matrix.bench.env }} --mode prove \
+            --reuse-ixe --out bench.json
+      # Upload whatever clean rows exist even when the run step reddened the
+      # job — bmf drops every non-ok row, so a rejected or OOM'd constant
+      # never reaches bencher.
+      - name: Convert to Bencher Metric Format
+        if: ${{ !cancelled() }}
+        run: |
+          ix bench bmf --in bench.json --out aiur.json
           cat aiur.json
       # Upload Aiur metrics. Every measure shares the per-workload baseline
       # window (data points since the aiur-check reset tag). constants is deterministic
       # → pinned exactly (0/0). fft-cost is deterministic but only ever drops on
       # a real Aiur win, so it rides an upper-only 5% bound (flag a regression,
       # let wins through) rather than a hard pin. prove-time/execute-time,
-      # peak-rss (texray's proving RSS high-water mark), and throughput
+      # peak-rss (the proving RSS high-water mark), and throughput
       # (constants/prove-time, where a drop is the regression) are noisy
       # wall-clock and ride percentage bounds. The per-phase `phase:<span>`
       # measures are uploaded for trend visibility but intentionally left
       # un-thresholded (noisy and dynamically named; the PR-comment drill-down
       # does the phase-level alerting).
       - uses: ./.github/actions/bencher-track
+        if: ${{ !cancelled() }}
         with:
           testbed: aiur-check-x64-32x
           workload: aiur-check
@@ -293,38 +324,31 @@ jobs:
             --threshold-measure throughput --threshold-test percentage
             --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary _
             --threshold-lower-boundary 0.10
-      # A typecheck failure is a correctness regression, not a benchmark blip.
-      # The failing constants never reach bencher (bmf strips the sentinel and
-      # drops the empty entry) and the clean rows are uploaded above — now
-      # fail the job LOUDLY so the red X lands on the commit.
-      - name: Fail on typecheck failures
-        run: |
-          failed=$(jq -r 'to_entries[] | select(.value.failed == true) | .key' neutral.json)
-          if [ -n "$failed" ]; then
-            for c in $failed; do echo "::error::$c FAILED TO TYPECHECK"; done
-            exit 1
-          fi
 
-  # Execute the same constants through the Zisk and SP1 zkVM hosts and track
-  # cycles / execute-time / throughput / execute-peak-rss (and shards / max-shard-cycles
-  # for any sharded run). Lean-free: reuses the compile job's cached `.ixe` and
-  # only builds the Rust host. zkVM proving needs a GPU (absent here), so this is
-  # execute-only. Toolchain + deps come from the shared install-{zisk,sp1} actions.
+  # Execute the same constants through the zkVM hosts and track cycles /
+  # execute-time / throughput / execute-peak-rss (and shards / max-shard-cycles
+  # for the closure-sharded heavy primaries). Reuses the compile job's cached
+  # `.ixe` + pre-cut zkshards-<env>/ artifacts; `ix bench run` builds the Rust
+  # host itself and runs each heavy primary as its shard-manifest partition
+  # when the artifacts are present. zkVM proving needs a GPU (absent here), so
+  # this is execute-only. `ix` orchestrates the cell, so the staged binaries +
+  # Lean toolchain (libleanshared) are restored here too.
   zkvm-execute:
-    needs: compile
+    needs: [compile, plan]
     runs-on: warp-ubuntu-latest-x64-32x
-    # Per-constant loop (heavy primaries ride the RAM watchdog to OOM rows)
-    # plus the env-sharded whole-env run (its own 60m timeout in run.sh) —
-    # run.sh re-merges results incrementally, so even a job-level timeout
-    # would keep completed rows, but the bencher upload needs the job alive.
+    # Per-constant loop (heavy primaries ride the RAM watchdog to OOM rows) —
+    # `ix bench run` persists completed rows incrementally, so even a job-level
+    # timeout would keep them on disk, but the bencher upload needs the job
+    # alive.
     timeout-minutes: 150
     strategy:
       fail-fast: false
       matrix:
-        # backend: [zisk, sp1] — sp1 disabled for now: its execute run is too
-        # slow for a per-push job. Re-add to the list to re-enable.
-        backend: [zisk]
-        bench: [InitStd, Mathlib]
+        # Enabled zkVM backends × benched envs, from the registry. sp1 is
+        # disabled in bench-config.json (execute too slow for a per-push job);
+        # re-enabling it there restores its cells — also restore an
+        # `if: matrix.cell.backend == 'sp1'` install-sp1 step then.
+        cell: ${{ fromJson(needs.plan.outputs.zkvm-cells) }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -332,53 +356,61 @@ jobs:
           fetch-tags: true   # bencher-track reads the bencher-thresholds-reset tag
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          cache-workspaces: ${{ matrix.backend }}
+          cache-workspaces: ${{ matrix.cell.backend }}
       - name: Install Zisk
-        if: matrix.backend == 'zisk'
+        if: matrix.cell.backend == 'zisk'
         uses: ./.github/actions/install-zisk
-      - name: Install SP1
-        if: matrix.backend == 'sp1'
-        uses: ./.github/actions/install-sp1
+      - uses: actions/cache/restore@v5
+        with:
+          path: ~/.local/bin
+          key: bench-bins-${{ github.sha }}
+      - run: echo "$HOME/.local/bin" >> $GITHUB_PATH
+      # Provision the toolchain so `ix` finds libleanshared (no package build).
+      - uses: leanprover/lean-action@v1
+        with:
+          auto-config: false
+          build: false
+          use-github-cache: false
       # Pull the `.ixe` + the pre-cut closure-shard artifacts the compile job
-      # built — no recompile (REUSE_IXE), no `ix` needed here: run.sh's zisk
-      # branch runs each heavy primary as its shard-manifest partition when
-      # its artifacts are present in zkshards-<Bench>/.
+      # built — `--reuse-ixe` means no recompile, and `ix bench run` skips
+      # re-cutting shards it finds in zkshards-<env>/.
       - uses: actions/cache/restore@v5
         with:
           path: |
-            ${{ matrix.bench }}.ixe
-            zkshards-${{ matrix.bench }}
-          key: bench-ixe-${{ github.sha }}-${{ matrix.bench }}
+            ${{ matrix.cell.env }}.ixe
+            zkshards-${{ matrix.cell.env }}
+          key: bench-ixe-${{ github.sha }}-${{ matrix.cell.slug }}
           fail-on-cache-miss: true
-      - name: Run ${{ matrix.backend }} execute benchmark
-        env:
-          REUSE_IXE: "1"
+      # Exit 3 = kernel rejection → red X here; clean rows still upload below.
+      - name: Run ${{ matrix.cell.backend }} execute benchmark
         run: |
-          # The primary subset in execute mode = all primaries for the env
-          # (cheap + heavy); heavy ones run closure-sharded on zisk.
-          benv="${{ matrix.bench }}"; benv="${benv,}"   # InitStd→initStd
-          python3 .github/scripts/bench.py manifest \
-            --csv Benchmarks/Vectors.csv --env "$benv" --mode execute --primary \
-            --heavy-out heavy.txt --out names.txt
-          echo "executing $(wc -l < names.txt) primary constants ($(wc -l < heavy.txt) heavy):"; cat names.txt
-          export ZISK_HEAVY_NAMES="$GITHUB_WORKSPACE/heavy.txt"
-          bash .github/scripts/run.sh . ${{ matrix.bench }} ${{ matrix.backend }} execute \
-            names.txt neutral.json
-          # neutral → Bencher Metric Format (phases flattened; the boolean
-          # `oom` sentinel a watchdog-killed execute records is stripped —
-          # see bench.py bmf).
-          python3 .github/scripts/bench.py bmf --in neutral.json --out bench.json
-          cat bench.json
+          # ZisK's ASM microservices mmap with MAP_LOCKED: raise the memlock
+          # hard limit in this shell so the tools `ix bench run` spawns
+          # inherit it.
+          if [ "${{ matrix.cell.backend }}" = zisk ]; then
+            sudo prlimit --pid $$ --memlock=unlimited:unlimited
+          fi
+          ix bench run --backend ${{ matrix.cell.backend }} \
+            --env ${{ matrix.cell.env }} --mode execute \
+            --reuse-ixe --out bench.json
+      # Upload whatever clean rows exist even when the run step reddened the
+      # job — bmf drops every non-ok row.
+      - name: Convert to Bencher Metric Format
+        if: ${{ !cancelled() }}
+        run: |
+          ix bench bmf --in bench.json --out bench-bmf.json
+          cat bench-bmf.json
       # cycles / shards / max-shard-cycles are deterministic per guest ELF, but
       # a real guest / packer improvement legitimately drops them — upper-only
       # 0% bound (flag regressions, let wins through), like `fft-cost` on the
       # aiur job. execute-time / peak-rss / throughput are noisy wall-clock →
       # percentage bounds (throughput's regression is a drop).
       - uses: ./.github/actions/bencher-track
+        if: ${{ !cancelled() }}
         with:
-          testbed: ${{ matrix.backend }}-check-x64-32x
-          workload: ${{ matrix.backend }}-check
-          file: bench.json
+          testbed: ${{ matrix.cell.backend }}-check-x64-32x
+          workload: ${{ matrix.cell.backend }}-check
+          file: bench-bmf.json
           key: ${{ secrets.BENCHER_API_KEY }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           thresholds: |
@@ -400,28 +432,21 @@ jobs:
             --threshold-measure throughput --threshold-test percentage
             --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary _
             --threshold-lower-boundary 0.10
-      # See the prove job's twin step: reject → red X, after the clean upload.
-      - name: Fail on typecheck failures
-        run: |
-          failed=$(jq -r 'to_entries[] | select(.value.failed == true) | .key' neutral.json)
-          if [ -n "$failed" ]; then
-            for c in $failed; do echo "::error::$c FAILED TO TYPECHECK"; done
-            exit 1
-          fi
 
-  # Out-of-circuit Rust kernel typecheck — the same kernel as the zkVM guest, but
-  # run out-of-circuit and in parallel (`--workers` defaults to the core count),
-  # so far faster than proving. Checks the whole env via `ix check --anon`,
-  # tracking throughput (constants/sec), wall time, and peak RAM. Reuses the
-  # compile job's cached `.ixe` and the staged `ix` binary — no recompile.
+  # Out-of-circuit Rust kernel typecheck — the same kernel as the zkVM guest,
+  # but run out-of-circuit and in parallel, so far faster than proving.
+  # `ix bench run --backend ooc` checks the whole env (one row keyed by the
+  # env slug) plus one full-closure row per primary constant, for an
+  # apples-to-apples baseline next to the zkVM cells. Reuses the compile job's
+  # cached `.ixe` and the staged `ix` binary — no recompile.
   ooc-check:
-    needs: compile
+    needs: [compile, plan]
     runs-on: warp-ubuntu-latest-x64-32x
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        bench: [InitStd, Mathlib]
+        bench: ${{ fromJson(needs.plan.outputs.bench-envs) }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -438,40 +463,34 @@ jobs:
           auto-config: false
           build: false
           use-github-cache: false
-      - name: Install GNU time
-        run: |
-          sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt 2>/dev/null || true
-          sudo apt-get update && sudo apt-get install -y time
+      # (The path list must match the compile job's save exactly.)
       - uses: actions/cache/restore@v5
         with:
           path: |
-            ${{ matrix.bench }}.ixe
-            zkshards-${{ matrix.bench }}
-          key: bench-ixe-${{ github.sha }}-${{ matrix.bench }}
+            ${{ matrix.bench.env }}.ixe
+            zkshards-${{ matrix.bench.env }}
+          key: bench-ixe-${{ github.sha }}-${{ matrix.bench.slug }}
           fail-on-cache-miss: true
-      # run.sh ooc runs `ix check --anon` (whole env, parallel) and emits the
-      # neutral { <env>: { constants, check-time, throughput, peak-rss } } — same
-      # path as the !benchmark ooc backend.
+      # Exit 3 = kernel rejection → red X here; clean rows still upload below.
       - name: Run out-of-circuit kernel check
-        env:
-          REUSE_IXE: "1"
         run: |
-          # Whole env (keyed by env) + the primary constants checked full-closure
-          # (keyed by constant) for an apples-to-apples baseline next to zisk/sp1.
-          benv="${{ matrix.bench }}"; benv="${benv,}"
-          python3 .github/scripts/bench.py manifest \
-            --csv Benchmarks/Vectors.csv --env "$benv" --mode execute --primary --out names.txt
-          bash .github/scripts/run.sh . "${{ matrix.bench }}" ooc execute names.txt neutral.json
-          # neutral → Bencher Metric Format (see bench.py bmf).
-          python3 .github/scripts/bench.py bmf --in neutral.json --out bench.json
-          cat bench.json
+          ix bench run --backend ooc --env ${{ matrix.bench.env }} --mode execute \
+            --reuse-ixe --out bench.json
+      # Upload whatever clean rows exist even when the run step reddened the
+      # job — bmf drops every non-ok row.
+      - name: Convert to Bencher Metric Format
+        if: ${{ !cancelled() }}
+        run: |
+          ix bench bmf --in bench.json --out bench-bmf.json
+          cat bench-bmf.json
       # constants is deterministic → pinned (0/0); check-time / throughput /
       # peak-rss are noisy parallel wall-clock → percentage bounds.
       - uses: ./.github/actions/bencher-track
+        if: ${{ !cancelled() }}
         with:
           testbed: ooc-check-x64-32x
           workload: ooc-check
-          file: bench.json
+          file: bench-bmf.json
           key: ${{ secrets.BENCHER_API_KEY }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           thresholds: |
@@ -487,11 +506,3 @@ jobs:
             --threshold-measure peak-rss --threshold-test percentage
             --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.10
             --threshold-lower-boundary _
-      # See the prove job's twin step: reject → red X, after the clean upload.
-      - name: Fail on typecheck failures
-        run: |
-          failed=$(jq -r 'to_entries[] | select(.value.failed == true) | .key' neutral.json)
-          if [ -n "$failed" ]; then
-            for c in $failed; do echo "::error::$c FAILED TO TYPECHECK"; done
-            exit 1
-          fi

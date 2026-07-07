@@ -83,6 +83,15 @@ extern "C" fn rs_texray_peak_tree_rss_bytes() -> LeanIOResult<LeanOwned> {
   LeanIOResult::ok(LeanOwned::box_u64(bytes))
 }
 
+/// Reset the tree sampler's high-water mark, opening a new measurement
+/// window — the per-item peaks a benchmark loop needs (the zkVM hosts do
+/// the same between shards).
+#[unsafe(no_mangle)]
+extern "C" fn rs_texray_reset_peak_tree_rss() -> LeanIOResult<LeanOwned> {
+  tracing_texray::rss_sampler::reset_peak_tree_rss();
+  LeanIOResult::ok(LeanOwned::box_usize(0))
+}
+
 /// Direct tracing-texray's per-span timing sink to `path` (one
 /// `{"span","seconds"}` JSON line per closed examined span). Combine with a
 /// `streaming`/examined subscriber so the prover's `aiur/*` + `stark/*` spans

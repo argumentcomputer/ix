@@ -59,6 +59,13 @@ private opaque peakTreeRssBytesFFI : IO UInt64
 def peakTreeRssBytes : IO Nat := do
   return (← peakTreeRssBytesFFI).toNat
 
+@[extern "rs_texray_reset_peak_tree_rss"]
+private opaque resetPeakTreeRssFFI : IO Unit
+
+/-- Reset the tree sampler's high-water mark, opening a new measurement
+    window — use between benchmark items so each reports its own peak. -/
+def resetPeakTreeRss : IO Unit := resetPeakTreeRssFFI
+
 @[extern "rs_texray_json_sink"]
 private opaque jsonSinkFFI (path : @& String) : IO Unit
 

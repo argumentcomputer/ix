@@ -5,6 +5,7 @@ import Ix.Aiur.Compiler
 import Ix.Aiur.Statistics
 import Ix.TracingTexray
 import Ix.Benchmark.Bench
+import Ix.Benchmark.Neutral
 import Ix.Cli.ConstsFile
 import Ix.Cli.NameResolve
 
@@ -103,9 +104,9 @@ structure Result where
   fftCost : Float
   executeSec : Float
   /-- The kernel REJECTED the constant (Phase-1 check error). The JSON entry
-      is the bare `{"failed": true}` sentinel — a rejected constant is a
-      correctness signal, not a benchmark datum — and Phase 2 skips it.
-      bench.py compare renders a ❌ row plus a loud note. -/
+      is `{"status": "rejected"}` (see `Ix.Benchmark.Neutral`) — a rejected
+      constant is a correctness signal, not a benchmark datum — Phase 2
+      skips it, and the run exits with the reserved rejection code. -/
   failed : Bool := false
   proveSec : Option Float := none
   /-- Serialized proof size in bytes (`Aiur.Proof.toBytes`). Tracked because
@@ -117,10 +118,11 @@ structure Result where
   /-- Peak resident-set size in bytes (tracing-texray tree sampler), captured
       after the constant's heaviest phase. -/
   peakRss : Option Nat := none
-  /-- Phase-1 (execute) RSS high-water mark, sampled before any proving
-      allocations. Present in BOTH modes so an execute-only run compares
-      apples-to-apples against a prove run's baseline — `peak-rss` in a prove
-      run is dominated by the prover and would dwarf an execute-only peak. -/
+  /-- The constant's own Phase-1 (execute) RSS high-water mark — the sampler
+      window resets per constant. Present in BOTH modes so an execute-only
+      run compares apples-to-apples against a prove run's baseline —
+      `peak-rss` in a prove run is dominated by the prover and would dwarf
+      an execute-only peak. -/
   executePeakRss : Option Nat := none
   deriving Inhabited
 
@@ -139,9 +141,11 @@ def jsonRound (d : Nat) (f : Float) : Json :=
 /-- Neutral, flat results object: `name → { constants, fft-cost, execute-time,
     prove-time?, throughput? }`. No bencher-specific shaping. -/
 def Result.toJsonEntry (r : Result) : String × Json :=
-  if r.failed then (r.name, Json.mkObj [("failed", Json.bool true)]) else
+  if r.failed then
+    (r.name, Json.mkObj [("status", Json.str "rejected")]) else
   let base : List (String × Json) :=
-    [ ("constants", Lean.toJson r.constants)
+    [ ("status", Json.str "ok")
+    , ("constants", Lean.toJson r.constants)
     , ("fft-cost", jsonRound 0 r.fftCost)
     , ("execute-time", jsonRound 6 r.executeSec) ]
   let base := match r.peakRss with
@@ -245,12 +249,16 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
   let mut execed : Array (Result × Address) := #[]
   for (label, addr) in targets do
     try
+      -- Windowed high-water: reset per constant so each row's
+      -- execute-peak-rss is its own, not the loop's running maximum.
+      TracingTexray.resetPeakTreeRss
       let (res, execSec) ← timed fun _ =>
         if skipDeps then
           let witness := IxVM.ClaimHarness.buildVerifyConst ixonEnv addr
           compiled.bytecode.executeIxVM funIdx witness.input witness.inputIOBuffer
         else
           compiled.bytecode.checkAddrWithEnv funIdx envHandle addr.hash
+      let execPeak ← TracingTexray.peakTreeRssBytes
       match res with
       | .error e =>
         IO.eprintln s!"  ❌ {label} FAILED TO TYPECHECK: {e}"
@@ -263,7 +271,8 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
         IO.println s!"  {label}: constants={constants} fft-cost={stats.totalFftCost} \
           execute={execSec}s"
         execed := execed.push
-          ({ name := label, constants, fftCost := stats.totalFftCost, executeSec := execSec }, addr)
+          ({ name := label, constants, fftCost := stats.totalFftCost,
+             executeSec := execSec, executePeakRss := some execPeak }, addr)
     catch e =>
       IO.eprintln s!"  execute {label} threw: {e}"
 
@@ -275,12 +284,6 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
       IO.FS.writeFile path (Json.mkObj (results.map Result.toJsonEntry).toList).pretty
     | none => pure ()
 
-  -- Phase-1 RSS high-water, sampled BEFORE any proving allocations so the
-  -- measure is comparable between execute-only and prove runs (`peak-rss`
-  -- from a prove run is the prover's high-water and would dwarf it).
-  let executePeak ← TracingTexray.peakTreeRssBytes
-  execed := execed.map (fun (r, a) => ({ r with executePeakRss := some executePeak }, a))
-
   -- `--execute-only`: stop after Phase 1; the results JSON (if requested) is
   -- already complete with the execute metrics.
   if executeOnly then
@@ -288,7 +291,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
     match jsonOut with
     | some path => IO.println s!"wrote {execed.size} execute-only benchmarks to {path}"
     | none => IO.println s!"executed {execed.size} constants (--execute-only); pass --json <path> to emit results"
-    return 0
+    return if execed.any (·.1.failed) then Ix.Benchmark.Neutral.exitRejected else 0
 
   -- Phase 2: prove cheap→expensive. Refine each entry with its prove-time as it
   -- lands. Install texray first so the prove spans (timeline + RAM Δ/peak) render.
@@ -301,6 +304,9 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
     let (r, addr) := ordered[i]!
     if r.failed then continue
     try
+      -- Windowed high-water: each prove's peak-rss is its own window, not
+      -- the run's cumulative maximum (mirrors the Phase-1 resets).
+      TracingTexray.resetPeakTreeRss
       let (proveRes, proveSec) ← timed fun _ =>
         if skipDeps then
           let witness := IxVM.ClaimHarness.buildVerifyConst ixonEnv addr
@@ -345,7 +351,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
   match jsonOut with
   | some path => IO.println s!"wrote {ordered.size} benchmarks to {path} ({spent}s proving)"
   | none => IO.println s!"proved {ordered.size} constants ({spent}s); pass --json <path> to emit results"
-  return 0
+  return if ordered.any (·.1.failed) then Ix.Benchmark.Neutral.exitRejected else 0
 
 def typecheckCmd : Cli.Cmd := `[Cli|
   typecheck VIA runTypecheckCmd;

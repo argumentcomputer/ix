@@ -2,24 +2,27 @@
 # through chosen prover backend(s) and post a main-vs-PR comparison table.
 #
 #   !benchmark ([aiur] [zisk] [sp1] [ooc] [compile] | all) [execute]
-#     (sp1 is temporarily disabled: its install step below is commented out,
-#      so an sp1 cell fails at the install-less execute step)
+#     (sp1 is disabled in Benchmarks/bench-config.json — the parser skips it
+#      with a note in the config summary)
 #   BENCH_ENVS=initStd,mathlib     # which compiled envs (default initStd)
 #   BENCH_FULL=1                   # run the full curated set, not just primary
 #   BENCH_TIER=cheap|heavy|all     # tier override (default: all)
 #   BENCH_SHARD=1                  # restrict to the multi-shard target constants
 #   RUST_LOG=info                  # passthrough env (allowlisted)
 #
-# Mode is fixed per backend: `aiur` runs `prove` by default (its report also
-# carries the execute-side columns `fft-cost` / `execute-time`); `zisk` / `sp1`
-# / `ooc` run `execute`; `compile` runs `ix compile <env>.lean → <env>.ixe`
-# (the same job bench-main.yml uploads under testbed `ix-compile-*`). The
-# optional bare `execute` token flips `aiur` to execute-only (skips Phase 2);
-# on the other backends it's a no-op. main's numbers come from bencher.dev;
-# the workflow re-runs the base SHA locally only for what bencher can't supply:
-# the full set when the SHA isn't ingested yet (freshly-pushed main whose CI is
-# still running), or just the missing names when the PR's Vectors.csv selects
-# constants main was never benched on (constants the PR itself adds).
+# Mode is fixed per backend (bench-config.json's default_mode): `aiur` runs
+# `prove` (its report also carries the execute-side columns `fft-cost` /
+# `execute-time`); `zisk` / `sp1` / `ooc` run `execute`; `compile` runs
+# `ix compile <env>.lean → <env>.ixe` (the same cell bench-main.yml uploads
+# under testbed `ix-compile-*`). The optional bare `execute` token flips
+# `aiur` to execute-only (skips Phase 2); on the other backends it's a no-op.
+#
+# Each matrix cell is one `ix bench run` per side, driven by the PR's `ix`
+# (`--repo` points it at the checkout to measure). main's numbers come from
+# bencher.dev (`ix bench fetch-main`); the workflow re-runs the base SHA
+# locally only when bencher can't supply them: the base SHA isn't ingested yet
+# (freshly-pushed main whose CI is still running), or the PR's Vectors.csv
+# selects constants main was never benched on (constants the PR itself adds).
 name: Benchmark pull requests
 
 on:
@@ -32,7 +35,7 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.issue.number || github.event.pull_request.number }}
+  group: ${{ github.workflow }}-${{ github.event.issue.number }}
   cancel-in-progress: true
 
 jobs:
@@ -56,24 +59,18 @@ jobs:
       head-sha: ${{ steps.shas.outputs.head }}
     steps:
       - uses: actions/checkout@v6
-      # issue_comment exposes the PR's base/head only via this action; the
-      # pull_request event carries them on the payload directly.
-      - if: github.event_name == 'issue_comment'
-        uses: xt0rted/pull-request-comment-branch@v3
+      # issue_comment doesn't carry the PR's base/head; this action looks
+      # them up.
+      - uses: xt0rted/pull-request-comment-branch@v3
         id: comment-branch
       - name: Resolve base/head SHAs
         id: shas
         run: |
-          if [ "${{ github.event_name }}" = pull_request ]; then
-            echo "base=${{ github.event.pull_request.base.sha }}" >> "$GITHUB_OUTPUT"
-            echo "head=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "base=${{ steps.comment-branch.outputs.base_sha }}" >> "$GITHUB_OUTPUT"
-            echo "head=${{ steps.comment-branch.outputs.head_sha }}" >> "$GITHUB_OUTPUT"
-          fi
+          echo "base=${{ steps.comment-branch.outputs.base_sha }}" >> "$GITHUB_OUTPUT"
+          echo "head=${{ steps.comment-branch.outputs.head_sha }}" >> "$GITHUB_OUTPUT"
       # Parse the !benchmark command from an env var (never inline-interpolated).
-      # The allowlist drops anything that isn't a known flag/env key; an empty
-      # body (pull_request) yields the parser defaults.
+      # The allowlist drops anything that isn't a known flag/env key. Backends
+      # and envs come from Benchmarks/bench-config.json.
       - name: Parse command
         id: parse
         env:
@@ -132,7 +129,7 @@ jobs:
     needs: [setup, build]
     runs-on: ${{ matrix.cell.runner }}
     # Wide enough for the zisk cell's worst case: per-constant loop + PR-side
-    # `ix profile` + the env-sharded execute (own 60m cap inside run.sh).
+    # `ix profile` when a heavy primary's closure shards must be cut fresh.
     timeout-minutes: 180
     strategy:
       fail-fast: false
@@ -149,8 +146,8 @@ jobs:
       SHARD: ${{ needs.setup.outputs.shard }}
       FULL: ${{ needs.setup.outputs.full }}
     steps:
-      # PR checked out at the workspace root so the local install actions and the
-      # helper scripts resolve; base (bencher-miss fallback only) goes under base/.
+      # PR checked out at the workspace root so the local install actions
+      # resolve; base (bencher-miss fallback only) goes under base/.
       - name: Checkout PR
         uses: actions/checkout@v6
         with:
@@ -162,29 +159,13 @@ jobs:
           done <<'PTENV'
           ${{ needs.setup.outputs.passthrough-env }}
           PTENV
-      # Select the constants for this cell → names.txt. Defaults to the primary
-      # subset; BENCH_FULL=1 (→ full=1) runs the whole curated set. The `compile`
-      # backend short-circuits this in bench.py — its "benchmark name" is the
-      # CamelCase env slug, so names.txt gets one line and the CSV is ignored.
-      - name: Select constants from Benchmarks/Vectors.csv
-        id: man
-        run: |
-          PRIMARY=--primary; [ "$FULL" = 1 ] && PRIMARY=
-          python3 .github/scripts/bench.py manifest \
-            --csv Benchmarks/Vectors.csv --env "$BENV" --mode "$MODE" \
-            --backend "$BACKEND" \
-            --tier "$TIER" --shard "$SHARD" $PRIMARY --out "$GITHUB_WORKSPACE/names.txt" \
-            --heavy-out "$GITHUB_WORKSPACE/heavy.txt" \
-            | tee -a "$GITHUB_OUTPUT"
-          # Heavy-tier names run closure-sharded on zisk (run.sh cuts the
-          # artifacts with `ix extract` → `ix profile` → `ix shard` when
-          # they aren't already cached).
-          echo "ZISK_HEAVY_NAMES=$GITHUB_WORKSPACE/heavy.txt" >> "$GITHUB_ENV"
-
-      # Restore the once-built PR binaries (see the build job) and stage them
-      # into .bins/pr — ~/.local/bin is reused below for the base side's cache
-      # restore, so each side keeps its own directory and PATH. run.sh resolves
-      # tools in-tree first, then PATH, so the staged dir Just Works.
+      # Restore the once-built PR binaries (see the build job) into the PR
+      # tree's own bin dir: `ix bench run` resolves the measured tools from
+      # <repo>/.lake/build/bin first, then PATH, so staging in-tree keeps the
+      # PR and base sides cleanly separated (~/.local/bin stays free for the
+      # base side's cache restore below). The same dir goes on PATH — the
+      # PR's `ix bench` orchestrates BOTH sides, with `--repo` selecting
+      # whose tools get measured.
       - name: Restore PR binaries
         uses: actions/cache/restore@v5
         with:
@@ -192,8 +173,9 @@ jobs:
           key: bench-bins-${{ env.HEAD_SHA }}
           fail-on-cache-miss: true
       - run: |
-          mkdir -p .bins/pr
-          mv ~/.local/bin/ix ~/.local/bin/bench-typecheck .bins/pr/
+          mkdir -p .lake/build/bin
+          mv ~/.local/bin/ix ~/.local/bin/bench-typecheck .lake/build/bin/
+          echo "$PWD/.lake/build/bin" >> "$GITHUB_PATH"
       # Toolchain provisioning only (no package build): the restored binaries
       # link against the toolchain's libleanshared. Mathlib olean cache only
       # for the mathlib env (its `ix compile` needs the oleans).
@@ -206,8 +188,9 @@ jobs:
           use-github-cache: false
           use-mathlib-cache: ${{ matrix.cell.env == 'mathlib' && 'true' || 'false' }}
       # The compiled env is identical across every cell of the same PR commit —
-      # cache it so only the first cell pays the `ix compile`. (The `compile`
-      # backend ignores REUSE_IXE by design: it measures the compile itself.)
+      # cache it so only the first cell pays the `ix compile`. (`--reuse-ixe`
+      # compiles when the file is absent; the `compile` backend always
+      # compiles by design.)
       - name: Restore PR .ixe
         id: pr-ixe
         uses: actions/cache/restore@v5
@@ -221,8 +204,8 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           cache-workspaces: ${{ matrix.cell.backend }}
-      # sp1 is temporarily disabled (execute too slow for CI); uncomment to
-      # re-enable, along with bench-main.yml's sp1 matrix cell.
+      # sp1 is disabled in bench-config.json (execute too slow for CI);
+      # re-enable it there and uncomment this install step to restore it.
       # - name: Install SP1
       #   if: matrix.cell.backend == 'sp1'
       #   uses: ./.github/actions/install-sp1
@@ -230,27 +213,64 @@ jobs:
         if: matrix.cell.backend == 'zisk'
         uses: ./.github/actions/install-zisk
 
+      # ---------- PR side ----------
+      # The PR side runs FIRST: `ix bench run` does its own constant selection
+      # from Vectors.csv, so pr.json's row names are this cell's canonical
+      # name list — the main-side bencher fetch below filters on them.
+      - name: Run backend on PR → pr.json
+        id: pr-run
+        # Exit 3 = the kernel rejected a constant on the PR side (rows on
+        # disk). Don't stop the job here — the compare table and PR comment
+        # must still render the ❌ row; the failure is re-raised LOUDLY at
+        # the end of the job, after the table upload.
+        continue-on-error: true
+        run: |
+          if [ "$BACKEND" = zisk ]; then
+            # ZisK's ASM microservices mmap with MAP_LOCKED: raise the memlock
+            # hard limit in this shell so the spawned tools inherit it.
+            sudo prlimit --pid $$ --memlock=unlimited:unlimited
+          fi
+          flags=""
+          [ "$FULL" = 1 ] && flags="$flags --full"
+          [ -n "$TIER" ] && flags="$flags --tier $TIER"
+          [ "$SHARD" = 1 ] && flags="$flags --shard-only"
+          ix bench run --backend "$BACKEND" --env "$BENV" --mode "$MODE" \
+            --reuse-ixe --out "$GITHUB_WORKSPACE/pr.json" $flags
+      # First cell to compile the PR env publishes it for the others (racing
+      # saves are fine — the first wins, the rest fail gracefully). hashFiles
+      # guard: the run step is continue-on-error, so it may have died before
+      # producing the `.ixe` — saving a missing path would fail this step.
+      - name: Save PR .ixe
+        if: steps.pr-ixe.outputs.cache-hit != 'true' && hashFiles(format('{0}.ixe', matrix.cell.env)) != ''
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ matrix.cell.env }}.ixe
+          key: bench-pr-ixe-${{ env.HEAD_SHA }}-${{ matrix.cell.env }}
+
       # ---------- main side ----------
       # Try bencher.dev first (bench-main.yml has uploaded main's numbers).
       # fetch-main's exit codes are load-bearing: 3 = transient (base SHA not
-      # ingested yet) → fall back to a local base run of the full set; anything
-      # else (2 = backend/mode has no main testbed — a BACKEND_TABLE /
+      # ingested yet) → fall back to a local base run; anything else (2 =
+      # backend/mode has no main testbed — a bench-config.json /
       # bench-main.yml drift) is a permanent misconfiguration that a local
       # rebuild can never fix, so fail the cell loudly instead of silently
       # paying the fallback on every future run.
       #
       # Partial miss (exit 0 + non-empty missing.txt): the PR's Vectors.csv
       # selects names main was never benched on — typically constants the PR
-      # itself adds. Bencher's numbers stand for the covered set; the base
-      # checkout runs JUST the missing names and merges below, so a brand-new
-      # constant still gets a real main-vs-PR delta on its first !benchmark.
-      # `run-base` gates every base-side step; `base-names` picks the file the
-      # base run measures (missing.txt = partial, names.txt = full fallback).
+      # itself adds. Bencher's numbers stand for the covered set; the base run
+      # below fills the gaps and the merge keeps bencher canonical. `run-base`
+      # gates every base-side step.
       - name: Fetch main from bencher
         id: bencher
         run: |
+          # This cell's names = pr.json's row keys (empty when the PR run
+          # produced nothing — fetch-main then exits 3 and the base run
+          # supplies the whole main side).
+          jq -r 'keys[]' "$GITHUB_WORKSPACE/pr.json" > "$GITHUB_WORKSPACE/names.txt" \
+            2>/dev/null || : > "$GITHUB_WORKSPACE/names.txt"
           set +e
-          python3 .github/scripts/bench.py fetch-main \
+          ix bench fetch-main \
             --sha "$BASE_SHA" --backend "$BACKEND" --mode "$MODE" --env "$BENV" \
             --names "$GITHUB_WORKSPACE/names.txt" \
             --missing-out "$GITHUB_WORKSPACE/missing.txt" \
@@ -261,15 +281,13 @@ jobs:
             0) if [ -s "$GITHUB_WORKSPACE/missing.txt" ]; then
                  echo "source=bencher + base run ($(wc -l < "$GITHUB_WORKSPACE/missing.txt") new)" >> "$GITHUB_OUTPUT"
                  echo "run-base=true" >> "$GITHUB_OUTPUT"
-                 echo "base-names=missing.txt" >> "$GITHUB_OUTPUT"
                else
                  echo "source=bencher" >> "$GITHUB_OUTPUT"
                  echo "run-base=false" >> "$GITHUB_OUTPUT"
                fi ;;
             3) echo "source=ran" >> "$GITHUB_OUTPUT"
-               echo "run-base=true" >> "$GITHUB_OUTPUT"
-               echo "base-names=names.txt" >> "$GITHUB_OUTPUT" ;;
-            *) echo "::error::fetch-main: permanent config error (exit $rc) — check BACKEND_TABLE in bench.py vs bench-main.yml testbeds"; exit "$rc" ;;
+               echo "run-base=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "::error::fetch-main: permanent config error (exit $rc) — check bench-config.json backends/testbeds vs bench-main.yml"; exit "$rc" ;;
           esac
       - name: Checkout base (bencher data missing or partial)
         if: steps.bencher.outputs.run-base == 'true'
@@ -279,14 +297,7 @@ jobs:
           path: base
       # bench-main.yml's build/compile jobs already cached the base SHA's
       # binaries and `.ixe` on the push to main — restore both before paying
-      # for a from-scratch base build. The `.ixe` cache key/path use the
-      # CamelCase env slug (bench-main's matrix.bench).
-      - name: Compute env slug
-        if: steps.bencher.outputs.run-base == 'true'
-        id: envcc
-        run: |
-          benv="$BENV"
-          echo "cc=${benv^}" >> "$GITHUB_OUTPUT"
+      # for a from-scratch base build.
       - name: Restore base binaries (bench-main build cache)
         if: steps.bencher.outputs.run-base == 'true'
         id: base-bins
@@ -300,15 +311,18 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           # Path list must match bench-main's compile-job save (actions/cache
-          # versions entries by path list).
+          # versions entries by path list); the key suffix is the CamelCase
+          # env slug (bench-main's matrix.bench).
           path: |
-            ${{ steps.envcc.outputs.cc }}.ixe
-            zkshards-${{ steps.envcc.outputs.cc }}
-          key: bench-ixe-${{ env.BASE_SHA }}-${{ steps.envcc.outputs.cc }}
+            ${{ matrix.cell.env }}.ixe
+            zkshards-${{ matrix.cell.env }}
+          key: bench-ixe-${{ env.BASE_SHA }}-${{ matrix.cell.slug }}
       # Cached base binaries are usable only when the two `lean-toolchain`
       # files are identical (plain `cmp`), and — for the mathlib env — only
       # when the `.ixe` was also restored (otherwise base's `ix compile` needs
-      # mathlib oleans that only the full build fetches).
+      # mathlib oleans that only the full build fetches). Usable binaries are
+      # staged into base/.lake/build/bin, where `ix bench run --repo base`
+      # resolves them (a from-scratch base build lands there natively).
       - name: Resolve base binaries
         if: steps.bencher.outputs.run-base == 'true'
         id: base-src
@@ -317,9 +331,9 @@ jobs:
           if [ "${{ steps.base-bins.outputs.cache-hit }}" = true ] \
              && cmp -s lean-toolchain base/lean-toolchain; then
             if [ "$BENV" != mathlib ] || [ "${{ steps.base-ixe.outputs.cache-hit }}" = true ]; then
-              mkdir -p .bins/base
-              mv ~/.local/bin/ix ~/.local/bin/bench-typecheck .bins/base/ 2>/dev/null || true
-              [ -x .bins/base/ix ] && [ -x .bins/base/bench-typecheck ] && cached=true
+              mkdir -p base/.lake/build/bin
+              mv ~/.local/bin/ix ~/.local/bin/bench-typecheck base/.lake/build/bin/ 2>/dev/null || true
+              [ -x base/.lake/build/bin/ix ] && [ -x base/.lake/build/bin/bench-typecheck ] && cached=true
             fi
           fi
           echo "cached=$cached" >> "$GITHUB_OUTPUT"
@@ -334,67 +348,69 @@ jobs:
           build-args: "ix bench-typecheck"
           use-github-cache: false
           use-mathlib-cache: ${{ matrix.cell.env == 'mathlib' && 'true' || 'false' }}
-      # NOTE: this runs the PR's run.sh against base-built binaries. When a PR
-      # changes the benchmark CLIs themselves, the base binaries reject the new
+      # NOTE: the PR's `ix bench` orchestrates the base run (--repo base); the
+      # MEASURED tools resolve from base/.lake/build/bin. When a PR changes
+      # the benchmark CLIs themselves, the base tools may reject the new
       # flags and every constant drops — compare then renders the loud
       # "main produced no results" note instead of a silent all-n/a table.
+      #
+      # Partial bencher miss (missing.txt non-empty): the base side runs JUST
+      # the uncovered names (`--names-file`) — typically constants the PR
+      # itself adds to Vectors.csv, which base's Vectors.csv doesn't list, so
+      # `--csv` points at the PR's copy. Full miss: the whole cell runs on
+      # base with the normal CSV selection.
       - name: Run backend on base → merge into main.json
         if: steps.bencher.outputs.run-base == 'true'
         run: |
           if [ "${{ steps.base-ixe.outputs.cache-hit }}" = true ]; then
-            mv "${{ steps.envcc.outputs.cc }}.ixe" "base/$BENV.ixe"
+            mv "${{ matrix.cell.env }}.ixe" "base/${{ matrix.cell.env }}.ixe"
             # bench-main's pre-cut closure shards ride the same cache entry;
-            # in place, run.sh skips re-cutting them for the base tree.
-            mv "zkshards-${{ steps.envcc.outputs.cc }}" "base/zkshards-$BENV" 2>/dev/null || true
-            export REUSE_IXE=1
+            # in place, `ix bench run` skips re-cutting them for the base tree.
+            mv "zkshards-${{ matrix.cell.env }}" "base/zkshards-${{ matrix.cell.env }}" 2>/dev/null || true
           fi
-          if [ "${{ steps.base-src.outputs.cached }}" = true ]; then
-            export PATH="$PWD/.bins/base:$PATH"
-          else
-            export PATH="$PWD/base/.lake/build/bin:$PATH"
+          if [ "$BACKEND" = zisk ]; then
+            sudo prlimit --pid $$ --memlock=unlimited:unlimited
           fi
-          bash .github/scripts/run.sh base "$BENV" "$BACKEND" "$MODE" \
-            "$GITHUB_WORKSPACE/${{ steps.bencher.outputs.base-names }}" \
-            "$GITHUB_WORKSPACE/base.json"
+          flags=""
+          [ "$FULL" = 1 ] && flags="$flags --full"
+          [ -n "$TIER" ] && flags="$flags --tier $TIER"
+          [ "$SHARD" = 1 ] && flags="$flags --shard-only"
+          if [ -s "$GITHUB_WORKSPACE/main.json" ] && [ -s "$GITHUB_WORKSPACE/missing.txt" ]; then
+            flags="$flags --names-file $GITHUB_WORKSPACE/missing.txt"
+          fi
+          # A base-side rejection or empty run must not redden the PR's cell:
+          # whatever rows landed are merged and the table says the rest.
+          set +e
+          ix bench run --backend "$BACKEND" --env "$BENV" --mode "$MODE" \
+            --repo base --reuse-ixe \
+            --csv "$GITHUB_WORKSPACE/Benchmarks/Vectors.csv" \
+            --out "$GITHUB_WORKSPACE/base.json" $flags
+          echo "base-side ix bench run exit $?"
+          set -e
           # Partial fallback: bencher already supplied main.json for the
           # covered names; fill only the gaps from the base run. Bencher wins
           # any overlap (e.g. ooc's always-emitted whole-env row) — it is the
           # canonical main-side number. Full fallback: main.json doesn't exist
           # (fetch-main exits 3 before writing), so the base run IS main.json.
-          if [ -s "$GITHUB_WORKSPACE/main.json" ]; then
-            jq -s '.[0] + .[1]' "$GITHUB_WORKSPACE/base.json" "$GITHUB_WORKSPACE/main.json" \
-              > "$GITHUB_WORKSPACE/main.merged" \
-              && mv "$GITHUB_WORKSPACE/main.merged" "$GITHUB_WORKSPACE/main.json"
-          else
-            mv "$GITHUB_WORKSPACE/base.json" "$GITHUB_WORKSPACE/main.json"
+          if [ -s "$GITHUB_WORKSPACE/base.json" ]; then
+            if [ -s "$GITHUB_WORKSPACE/main.json" ]; then
+              jq -s '.[0] + .[1]' "$GITHUB_WORKSPACE/base.json" "$GITHUB_WORKSPACE/main.json" \
+                > "$GITHUB_WORKSPACE/main.merged" \
+                && mv "$GITHUB_WORKSPACE/main.merged" "$GITHUB_WORKSPACE/main.json"
+            else
+              mv "$GITHUB_WORKSPACE/base.json" "$GITHUB_WORKSPACE/main.json"
+            fi
           fi
-
-      # ---------- PR side ----------
-      - name: Run backend on PR → pr.json
-        env:
-          REUSE_IXE: ${{ steps.pr-ixe.outputs.cache-hit == 'true' && '1' || '0' }}
-        run: |
-          export PATH="$PWD/.bins/pr:$PATH"
-          bash .github/scripts/run.sh . "$BENV" "$BACKEND" "$MODE" \
-            "$GITHUB_WORKSPACE/names.txt" "$GITHUB_WORKSPACE/pr.json"
-      # First cell to compile the PR env publishes it for the others (racing
-      # saves are fine — the first wins, the rest fail gracefully).
-      - name: Save PR .ixe
-        if: steps.pr-ixe.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v5
-        with:
-          path: ${{ matrix.cell.env }}.ixe
-          key: bench-pr-ixe-${{ env.HEAD_SHA }}-${{ matrix.cell.env }}
 
       # ---------- compare ----------
       - name: Build comparison table
         run: |
           mkdir -p out
-          python3 .github/scripts/bench.py compare \
-            --main main.json --pr pr.json --out "out/table-$LABEL.md" \
+          ix bench compare \
             --backend "$BACKEND" --env "$BENV" --mode "$MODE" \
-            --count "${{ steps.man.outputs.count }}" \
-            --main-source "${{ steps.bencher.outputs.source }}"
+            --main "$GITHUB_WORKSPACE/main.json" --pr "$GITHUB_WORKSPACE/pr.json" \
+            --main-source "${{ steps.bencher.outputs.source }}" \
+            --out "out/table-$LABEL.md"
           cat "out/table-$LABEL.md"
 
       - name: Upload table
@@ -404,23 +420,38 @@ jobs:
           name: table-${{ env.LABEL }}
           path: out/table-${{ env.LABEL }}.md
           if-no-files-found: warn
-      # A PR-side typecheck failure is a correctness regression: fail the
-      # cell LOUDLY (red X on the PR) — after the table upload, so the
-      # comment still posts with the constant's ❌ row and note.
-      - name: Fail on PR-side typecheck failures
+      # A PR-side rejection is a correctness regression: re-raise the run
+      # step's failure LOUDLY (red X on the PR) — after the table upload, so
+      # the comment still posts with the constant's ❌ row and note.
+      - name: Fail on PR-side benchmark failure
+        if: steps.pr-run.outcome != 'success'
         run: |
-          failed=$(jq -r 'to_entries[] | select(.value.failed == true) | .key' "$GITHUB_WORKSPACE/pr.json")
-          if [ -n "$failed" ]; then
-            for c in $failed; do echo "::error::$c FAILED TO TYPECHECK on the PR side"; done
-            exit 1
-          fi
+          echo "::error::ix bench run failed on the PR side (kernel rejection or empty run) — see the 'Run backend on PR' step"
+          exit 1
 
   comment:
-    needs: [setup, benchmark]
-    if: always() && needs.setup.result == 'success'
+    needs: [setup, build, benchmark]
+    # Post even when benchmark cells failed (the tables carry the ❌ rows).
+    # The body is assembled by the PR's `ix bench comment`, so the build job
+    # must have produced the binaries.
+    if: always() && needs.setup.result == 'success' && needs.build.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.setup.outputs.head-sha }}
+      - uses: actions/cache/restore@v5
+        with:
+          path: ~/.local/bin
+          key: bench-bins-${{ needs.setup.outputs.head-sha }}
+          fail-on-cache-miss: true
+      - run: echo "$HOME/.local/bin" >> $GITHUB_PATH
+      # Provision the toolchain so `ix` finds libleanshared (no package build).
+      - uses: leanprover/lean-action@v1
+        with:
+          auto-config: false
+          build: false
+          use-github-cache: false
       - name: Download tables
         uses: actions/download-artifact@v4
         with:
@@ -431,7 +462,8 @@ jobs:
         env:
           SUMMARY: ${{ needs.setup.outputs.config-summary }}
         run: |
-          python3 .github/scripts/bench.py comment \
+          mkdir -p tables   # absent when no cell uploaded a table
+          ix bench comment \
             --tables tables --summary "$SUMMARY" \
             --head "${{ needs.setup.outputs.head-sha }}" \
             --repo-url "${{ github.server_url }}/${{ github.repository }}" \
@@ -446,5 +478,5 @@ jobs:
         uses: peter-evans/create-or-update-comment@v5
         with:
           token: ${{ steps.app-token.outputs.token }}
-          issue-number: ${{ github.event.issue.number || github.event.pull_request.number }}
+          issue-number: ${{ github.event.issue.number }}
           body-path: comment-body.md

@@ -3,6 +3,7 @@ public import Cli
 public import Ix.Common
 public import Ix.CompileM
 public import Ix.Meta
+public import Ix.Benchmark.Neutral
 public import Ix.Cli.ConstsFile
 public import Ix.Cli.ValidateCmd
 
@@ -72,13 +73,20 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
     if !constsSeeds.isEmpty then do
       let mut seeds : List Lean.Name := []
       let mut missing : List String := []
+      -- Displayed-form fallback, built at most once: a fresh
+      -- `constants.toList.find?` scan per missing name is O(names × env),
+      -- seconds of allocation per name at mathlib scale.
+      let mut byDisplayed : Option (Std.HashMap String Lean.Name) := none
       for n in constsSeeds do
         let name := n.toName
         if leanEnv.constants.contains name then
           seeds := name :: seeds
         else
-          match leanEnv.constants.toList.find? (fun (m, _) => toString m == n) with
-          | some (m, _) => seeds := m :: seeds
+          let map := byDisplayed.getD <| .ofList <|
+            leanEnv.constants.toList.map fun (m, _) => (toString m, m)
+          byDisplayed := some map
+          match map.get? n with
+          | some m => seeds := m :: seeds
           | none => missing := n :: missing
       if !missing.isEmpty then
         p.printError s!"error: no constant(s) named {missing} in the environment"
@@ -123,8 +131,17 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   let elapsed := (← IO.monoMsNow) - start
 
   println! "Compiled {fmtBytes bytes.size} env in {elapsed.formatMs}"
-  -- Machine-readable line for CI benchmark tracking
-  IO.println s!"##benchmark## {elapsed} {bytes.size} {totalConsts}"
+  if let some flag := p.flag? "json" then
+    let key := (p.flag? "json-name").map (·.as! String)
+      |>.getD ((FilePath.mk pathStr).fileStem.getD "env")
+    let secs := elapsed.toFloat / 1000.0
+    let tput := if elapsed > 0
+      then totalConsts.toFloat * 1000.0 / elapsed.toFloat else 0.0
+    Ix.Benchmark.Neutral.writeRow (flag.as! String) key "ok"
+      [ ("compile-time", Ix.Benchmark.Neutral.jsonRound 3 secs)
+      , ("file-size", Lean.toJson bytes.size)
+      , ("constants", Lean.toJson totalConsts)
+      , ("throughput", Ix.Benchmark.Neutral.jsonRound 2 tput) ]
 
   -- Persist the serialized IxonEnv (`Env::put` bytes) to disk so subsequent
   -- runs (e.g. `ix check-ixon`) can skip the Lean → IxOn compile step. The
@@ -149,6 +166,8 @@ def compileCmd : Cli.Cmd := `[Cli|
     module         : String; "Comma-separated module-name prefixes to filter on (e.g. 'Tests.Ix.Kernel.TutorialDefs,Tests.Ix.Kernel.NatReduction'). Match is against the SOURCE MODULE a constant came from (via `Lean.Environment.getModuleIdxFor?`), not the constant's own name — so macro-emitted decls that register under unqualified names still get caught when their host module's name matches. Transitive deps are pulled in automatically."
     exclude        : String; "Comma-separated exact Lean.Name(s) to strip from the seed set. Excluded names that are still referenced by another seed will reappear via the transitive-dep closure."
     "exclude-file" : String; "Path to a file with one Lean.Name per line to strip from the seed set. Same semantics as --exclude; same line format as `ix check --consts-file`."
+    json           : String; "Write the compile's neutral benchmark row (compile-time, file-size, constants, throughput) to this path, merging into any existing rows object."
+    "json-name"    : String; "Row key for the --json row (default: the input file's stem, e.g. `CompileInitStd`)"
 
   ARGS:
     path : String; "Path to the Lean source file to compile."

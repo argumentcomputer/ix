@@ -24,6 +24,9 @@ use std::time::Instant;
 use anyhow::{Result, bail};
 use clap::Parser;
 use human_repr::{HumanCount, HumanThroughput};
+use ix_bench::{
+  EXIT_REJECTED, Rejection, Status, collect_consts, peak_rss_bytes, write_row,
+};
 use ix_kernel::anon_work::{
   block_of_addr, build_anon_work, build_sub_env, work_block_addr,
 };
@@ -70,61 +73,6 @@ struct Args {
   /// Enable tracing-texray; with --json, per-phase spans are written to <json>.spans.
   #[arg(long)]
   texray: bool,
-}
-
-/// Peak resident set size (bytes) across this process *and its children*, from
-/// tracing-texray's tree sampler. `0` until the sampler has started or off
-/// Linux.
-fn peak_rss_bytes() -> Option<u64> {
-  match tracing_texray::rss_sampler::peak_tree_rss_bytes() {
-    0 => None,
-    n => Some(n),
-  }
-}
-
-/// Append the per-constant entry `{ "<name>": <metrics> }` to the results JSON
-/// at `path`, merging into any existing object so a multi-const run (`--consts
-/// a,b,c`) accumulates one map with an entry per name.
-fn write_json_entry(
-  path: &PathBuf,
-  name: &str,
-  metrics: serde_json::Value,
-) -> Result<()> {
-  let mut map: serde_json::Map<String, serde_json::Value> = match fs::read(path)
-  {
-    Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_default(),
-    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-      serde_json::Map::new()
-    },
-    Err(e) => return Err(anyhow::anyhow!("read {}: {e}", path.display())),
-  };
-  map.insert(name.to_string(), metrics);
-  fs::write(path, serde_json::to_string(&serde_json::Value::Object(map))?)
-    .map_err(|e| anyhow::anyhow!("write {}: {e}", path.display()))
-}
-
-/// Union `--consts` with names from `--consts-file`, preserving first-seen order.
-fn collect_consts(args: &Args) -> Result<Vec<String>> {
-  let mut seen: std::collections::HashSet<String> =
-    std::collections::HashSet::new();
-  let mut out: Vec<String> = Vec::new();
-  for name in &args.consts {
-    let trimmed = name.trim();
-    if !trimmed.is_empty() && seen.insert(trimmed.to_string()) {
-      out.push(trimmed.to_string());
-    }
-  }
-  if let Some(path) = &args.consts_file {
-    let contents = fs::read_to_string(path)
-      .map_err(|e| anyhow::anyhow!("read {}: {e}", path.display()))?;
-    for line in contents.lines() {
-      let name = line.split('#').next().unwrap_or("").trim();
-      if !name.is_empty() && seen.insert(name.to_string()) {
-        out.push(name.to_string());
-      }
-    }
-  }
-  Ok(out)
 }
 
 fn load_env_bytes(ixe: Option<&PathBuf>) -> Vec<u8> {
@@ -235,7 +183,23 @@ fn constant_inputs(
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> std::process::ExitCode {
+  match run().await {
+    Ok(()) => std::process::ExitCode::SUCCESS,
+    Err(e) => {
+      eprintln!("error: {e:#}");
+      if e.downcast_ref::<Rejection>().is_some() {
+        // Reserved exit code: rejection rows are on disk; the caller needs
+        // no log parsing to tell "kernel said no" from an infra failure.
+        std::process::ExitCode::from(EXIT_REJECTED as u8)
+      } else {
+        std::process::ExitCode::FAILURE
+      }
+    },
+  }
+}
+
+async fn run() -> Result<()> {
   sp1_sdk::utils::setup_logger();
 
   let args = Args::parse();
@@ -260,7 +224,7 @@ async fn main() -> Result<()> {
 
   let whole_env_bytes = load_env_bytes(args.ixe.as_ref());
   let client = ProverClient::from_env().await;
-  let consts = collect_consts(&args)?;
+  let consts = collect_consts(&args.consts, args.consts_file.as_deref())?;
   if !consts.is_empty() && args.meta {
     bail!("--consts is Anon-only and cannot be combined with --meta");
   }
@@ -348,18 +312,17 @@ async fn run_one<C: Prover + Sync>(
     // point for profiling SP1 cycles.
     println!("---- ExecutionReport ----");
     println!("{report}");
-    if failures > 0 {
-      bail!("kernel typecheck produced {failures} failure(s)");
-    }
     if let Some(path) = &args.json {
       let cycles = report.total_instruction_count();
       let secs = exec_duration.as_secs_f64();
       let tput = if secs > 0.0 { cycles as f64 / secs } else { 0.0 };
       let key =
         name.map(|s| s.to_string()).unwrap_or_else(|| "env".to_string());
-      write_json_entry(
+      let status = if failures > 0 { Status::Rejected } else { Status::Ok };
+      write_row(
         path,
         &key,
+        status,
         serde_json::json!({
           "cycles": cycles,
           "execute-time": (secs * 1e6).round() / 1e6,
@@ -370,6 +333,15 @@ async fn run_one<C: Prover + Sync>(
           "execute-peak-rss": peak_rss_bytes(),
         }),
       )?;
+    }
+    if failures > 0 {
+      return Err(
+        Rejection {
+          failures: failures.into(),
+          ctx: name.map_or_else(|| "env".to_string(), |s| s.to_string()),
+        }
+        .into(),
+      );
     }
     return Ok(());
   }
@@ -404,9 +376,10 @@ async fn run_one<C: Prover + Sync>(
   println!("proof verified in {:.3}s", verify_duration.as_secs_f64());
   if let Some(path) = &args.json {
     let key = name.map(|s| s.to_string()).unwrap_or_else(|| "env".to_string());
-    write_json_entry(
+    write_row(
       path,
       &key,
+      Status::Ok,
       serde_json::json!({
         "prove-time": (prove_duration.as_secs_f64() * 1e6).round() / 1e6,
         "peak-rss": peak_rss_bytes(),
@@ -420,7 +393,7 @@ async fn run_one<C: Prover + Sync>(
 mod cli_tests {
   use clap::Parser;
 
-  use super::{Args, collect_consts};
+  use super::Args;
 
   fn parse(argv: &[&str]) -> Args {
     Args::try_parse_from(
@@ -467,11 +440,14 @@ mod cli_tests {
 
   #[test]
   fn collect_unions_and_dedups() {
+    // Grammar/union behavior is tested in ix-bench; this pins the Args
+    // plumbing (comma splitting stacked with a file) end to end.
     let path = std::env::temp_dir().join("sp1_host_cli_test_consts.txt");
     std::fs::write(&path, "a\nb\n# comment\n  c  \n\na\n").expect("write");
     let a =
       parse(&["--consts", "a,d", "--consts-file", path.to_str().unwrap()]);
-    let got = collect_consts(&a).expect("collect");
+    let got = ix_bench::collect_consts(&a.consts, a.consts_file.as_deref())
+      .expect("collect");
     assert_eq!(got, vec!["a", "d", "b", "c"]);
     let _ = std::fs::remove_file(&path);
   }

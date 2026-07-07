@@ -1767,6 +1767,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
+name = "ix-bench"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "tracing-texray",
+]
+
+[[package]]
 name = "ix-common"
 version = "0.1.0"
 dependencies = [
@@ -4103,6 +4111,7 @@ dependencies = [
  "bincode",
  "clap",
  "human-repr",
+ "ix-bench",
  "ix-common",
  "ix-kernel",
  "ixon",

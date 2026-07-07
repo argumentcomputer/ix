@@ -10,6 +10,9 @@ path = "src/main.rs"
 
 [dependencies]
 ixon = { path = "../../crates/ixon" }
+# Neutral results-row contract (status enum, row writer, exit codes) shared
+# with sp1-host and `ix bench`.
+ix-bench = { path = "../../crates/bench" }
 ix-common = { path = "../../crates/common" }
 # Used only to count work items for human-readable output via
 # `build_anon_work` — same enumeration the guest runs in-circuit.
