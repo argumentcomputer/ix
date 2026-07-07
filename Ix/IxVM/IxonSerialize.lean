@@ -387,17 +387,15 @@ def ixonSerialize := ⟦
 
   fn put_inductive(indc: Inductive, rest: ByteStream) -> ByteStream {
     match indc {
-      Inductive.Mk(recr, refl, is_unsafe, lvls, params, indices, nested, &typ, ctors) =>
-        let bools = recr + 2 * refl + 4 * is_unsafe;
+      Inductive.Mk(is_unsafe, lvls, params, indices, &typ, ctors) =>
         let ctors_len = list_length_u64(ctors);
-        store(ListNode.Cons(u8_from_field_unsafe(bools),
+        store(ListNode.Cons(u8_from_field_unsafe(is_unsafe),
           put_tag0(lvls,
             put_tag0(params,
               put_tag0(indices,
-                put_tag0(nested,
-                  put_expr(typ,
-                    put_tag0(ctors_len,
-                      put_constructor_list(ctors, rest))))))))),
+                put_expr(typ,
+                  put_tag0(ctors_len,
+                    put_constructor_list(ctors, rest)))))))),
     }
   }
 

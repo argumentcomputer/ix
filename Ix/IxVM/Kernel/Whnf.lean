@@ -767,13 +767,15 @@ def whnf := ⟦
               KConstantInfo.Ctor(_, _, induct_idx, _, _, _, _) =>
                 let ind_ci = load(list_lookup(top, induct_idx));
                 match ind_ci {
-                  KConstantInfo.Induct(_, _, _, n_indices, ctor_indices, is_rec, _, _, _, _) =>
+                  KConstantInfo.Induct(_, _, _, n_indices, ctor_indices, _, _) =>
                     let n_ctors = list_length(ctor_indices);
                     match n_ctors {
                       1 =>
                         match n_indices {
                           0 =>
-                            match is_rec {
+                            -- is_rec is computed on demand (the recr flag was
+                            -- dropped from Ixon); memoized per induct_idx.
+                            match computed_is_rec_ind(induct_idx, top) {
                               0 =>
                                 let major = list_lookup(spine, major_idx);
                                 let major_ty = k_infer(major, types, top, addrs);
@@ -927,7 +929,7 @@ def whnf := ⟦
               KConstantInfo.Ctor(_, _, induct_idx, _, _, _, _) =>
                 let ind_ci = load(list_lookup(top, induct_idx));
                 match ind_ci {
-                  KConstantInfo.Induct(_, _, _, _, ctor_indices, _, _, _, _, _) =>
+                  KConstantInfo.Induct(_, _, _, _, ctor_indices, _, _) =>
                     let n_ctors = list_length(ctor_indices);
                     match n_ctors {
                       0 => (0, store(KExprNode.BVar(0))),

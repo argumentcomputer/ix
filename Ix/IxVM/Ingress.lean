@@ -175,7 +175,7 @@ def ingress := ⟦
     match mc {
       MutConst.Indc(ind) =>
         match ind {
-          Inductive.Mk(_, _, _, _, _, _, _, _, ctors) =>
+          Inductive.Mk(_, _, _, _, _, ctors) =>
             list_length(ctors) + 1,
         },
       MutConst.Recr(_) => 1,
@@ -850,7 +850,7 @@ def ingress := ⟦
         match mc {
           MutConst.Indc(ind) =>
             match ind {
-              Inductive.Mk(_, _, _, _, _, _, _, _, ctors) =>
+              Inductive.Mk(_, _, _, _, _, ctors) =>
                 let num_ctors = list_length(ctors);
                 let this_ctors = build_ctor_idxs(num_ctors, cur_pos, 0);
                 let rest_ctors = build_rule_ctor_idxs_walk(rest,
@@ -998,7 +998,7 @@ def ingress := ⟦
             match mc {
               MutConst.Indc(ind) =>
                 match ind {
-                  Inductive.Mk(_, _, _, _, _, _, _, _, ctors) =>
+                  Inductive.Mk(_, _, _, _, _, ctors) =>
                     build_ctor_idxs(list_length(ctors), cur_pos, 0),
                 },
               _ => store(ListNode.Nil),
@@ -1027,7 +1027,7 @@ def ingress := ⟦
     match mc {
       MutConst.Indc(ind) =>
         match ind {
-          Inductive.Mk(_, _, _, _, _, _, _, _, ctors) =>
+          Inductive.Mk(_, _, _, _, _, ctors) =>
             let num_ctors = list_length(ctors);
             let induct_pos = block_start + member_offset(members, member_idx);
             let ctor_idxs = build_ctor_idxs(num_ctors, induct_pos, 0);
@@ -1546,7 +1546,7 @@ def ingress := ⟦
             match mc {
               MutConst.Indc(ind) =>
                 match ind {
-                  Inductive.Mk(_, _, _, _, _, _, _, _, ctors) =>
+                  Inductive.Mk(_, _, _, _, _, ctors) =>
                     list_length(ctors),
                 },
               _ => 0,

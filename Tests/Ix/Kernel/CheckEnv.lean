@@ -16,6 +16,7 @@ import Ix.Common
 import Ix.Meta
 import Ix.KernelCheck
 import Tests.Ix.Kernel.Tutorial
+import Tests.Ix.Compile.Mutual
 import Tests.Ix.Kernel.TutorialMeta
 import LSpec
 

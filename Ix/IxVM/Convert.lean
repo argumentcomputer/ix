@@ -314,11 +314,11 @@ def convert := ⟦
     match ctx {
       ConvertCtx.Mk(sharing, ref_idxs, recur_idxs, lit_blobs, univs) =>
         match ind {
-          Inductive.Mk(is_rec, is_refl, is_unsafe, lvls, params, indices, nested, typ, _) =>
+          Inductive.Mk(is_unsafe, lvls, params, indices, typ, _) =>
             let ktyp = convert_expr(typ, sharing, ref_idxs, recur_idxs, lit_blobs, univs);
             KConstantInfo.Induct(
               flatten_u64(lvls), ktyp, flatten_u64(params), flatten_u64(indices),
-              ctor_idxs, is_rec, is_refl, is_unsafe, flatten_u64(nested), block_addr),
+              ctor_idxs, is_unsafe, block_addr),
         },
     }
   }

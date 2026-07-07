@@ -856,6 +856,7 @@ fn ingress_expr<M: KernelMode>(
               name: cs_name,
               entries: _,
               canon_meta,
+              orig_head: _,
             } = node
             {
               // Flatten the canonical App telescope. `a_i` is the arg
@@ -1859,10 +1860,7 @@ fn ingress_muts_inductive<M: KernelMode>(
       lvls: ind.lvls,
       params: ind.params,
       indices: ind.indices,
-      is_rec: ind.recr,
-      is_refl: ind.refl,
       is_unsafe: ind.is_unsafe,
-      nested: ind.nested,
       block: block_id,
       member_idx,
       ty: typ,
@@ -2861,10 +2859,7 @@ fn lean_const_to_kconst(
         lvls: pn.len() as u64,
         params: v.num_params.to_u64().unwrap_or(0),
         indices: v.num_indices.to_u64().unwrap_or(0),
-        is_rec: v.is_rec,
-        is_refl: v.is_reflexive,
         is_unsafe: v.is_unsafe,
-        nested: v.num_nested.to_u64().unwrap_or(0),
         block: lean_block_id(self_name, all, n2a),
         member_idx: lean_member_idx(self_name, all),
         ty: expr_to_k(&v.cnst.typ, pn),
@@ -4350,10 +4345,7 @@ fn ingress_anon_inductive(
       lvls: ind.lvls,
       params: ind.params,
       indices: ind.indices,
-      is_rec: ind.recr,
-      is_refl: ind.refl,
       is_unsafe: ind.is_unsafe,
-      nested: ind.nested,
       block: block_id,
       member_idx,
       ty: typ,
@@ -5072,6 +5064,7 @@ mod tests {
         meta: bad_entry_meta,
       }],
       canon_meta: vec![arg_canon_meta],
+      orig_head: None,
     });
 
     let ixon = IxonExpr::app(

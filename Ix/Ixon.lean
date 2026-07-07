@@ -341,13 +341,10 @@ structure Constructor where
   deriving BEq, Repr, Inhabited
 
 structure Inductive where
-  recr : Bool
-  refl : Bool
   isUnsafe : Bool
   lvls : UInt64
   params : UInt64
   indices : UInt64
-  nested : UInt64
   typ : Expr
   ctors : Array Constructor
   deriving BEq, Repr, Inhabited
@@ -873,30 +870,26 @@ instance : Serialize Constructor where
   get := getConstructor
 
 def putInductive (i : Inductive) : PutM Unit := do
-  putU8 (packBools [i.recr, i.refl, i.isUnsafe])
+  putU8 (packBools [i.isUnsafe])
   putTag0 ⟨i.lvls⟩
   putTag0 ⟨i.params⟩
   putTag0 ⟨i.indices⟩
-  putTag0 ⟨i.nested⟩
   putExpr i.typ
   putTag0 ⟨i.ctors.size.toUInt64⟩
   for c in i.ctors do putConstructor c
 
 def getInductive : GetM Inductive := do
-  let bools := unpackBools 3 (← getU8)
-  let recr := bools[0]!
-  let refl := bools[1]!
-  let isUnsafe := bools[2]!
+  let bools := unpackBools 1 (← getU8)
+  let isUnsafe := bools[0]!
   let lvls := (← getTag0).size
   let params := (← getTag0).size
   let indices := (← getTag0).size
-  let nested := (← getTag0).size
   let typ ← getExpr
   let numCtors := (← getTag0).size.toNat
   let mut ctors := #[]
   for _ in [0:numCtors] do
     ctors := ctors.push (← getConstructor)
-  return ⟨recr, refl, isUnsafe, lvls, params, indices, nested, typ, ctors⟩
+  return ⟨isUnsafe, lvls, params, indices, typ, ctors⟩
 
 instance : Serialize Inductive where
   put := putInductive

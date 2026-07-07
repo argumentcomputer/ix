@@ -33,7 +33,7 @@ use ixon::expr::Expr as IxonExpr;
 use super::{
   aux_gen::expr_utils::{
     LocalDecl, consume_type_annotations, decompose_apps, fresh_fvar,
-    instantiate1, mk_lambda, subst_levels,
+    instantiate_rev, instantiate1, mk_lambda, subst_levels,
   },
   nat_conv::nat_to_usize,
 };
@@ -81,6 +81,28 @@ pub struct CallSitePlan {
   /// "canonical recursor supplies an IH binder" from "the IH must be
   /// synthesized by a recursive call into another canonical block".
   pub source_in_block: Vec<bool>,
+  /// `Some` when the callee is an EVAPORATED aux recursor — a
+  /// `<all0>.rec_N` whose nested occurrence lost every spec-param inductive
+  /// to another SCC. Its claim is aliased to the external inductive's own
+  /// recursor (see the evaporated-aux alias pass in `aux_gen.rs`), so the
+  /// call spine must be rebuilt onto that telescope:
+  ///
+  ///   source: params… motives… minors… indices… major   (over-merged)
+  ///   target: specs…  motive   minors′… indices… major  (external rec)
+  ///
+  /// The spec args and extended level list are derived at the apply site
+  /// from the source recursor's type instantiated with the call-site args
+  /// (`derive_head_rewrite_app`).
+  pub head_rewrite: Option<AuxHeadRewrite>,
+}
+
+/// Head-rewrite directive carried by [`CallSitePlan::head_rewrite`].
+#[derive(Clone, Debug)]
+pub struct AuxHeadRewrite {
+  /// The external inductive's recursor (the alias target, e.g. `List.rec`).
+  pub target_rec: Name,
+  /// Source motive position of the evaporated aux (`n_user_motives + j`).
+  pub target_motive_pos: usize,
 }
 
 impl CallSitePlan {
@@ -105,7 +127,8 @@ impl CallSitePlan {
 
   /// Whether this plan is an identity (no reordering, no collapse).
   pub fn is_identity(&self) -> bool {
-    self.motive_keep.iter().all(|&k| k)
+    self.head_rewrite.is_none()
+      && self.motive_keep.iter().all(|&k| k)
       && self.minor_keep.iter().all(|&k| k)
       && self.source_to_canon_motive.iter().enumerate().all(|(i, &c)| c == i)
       && self.source_to_canon_minor.iter().enumerate().all(|(i, &c)| c == i)
@@ -314,11 +337,18 @@ pub fn compute_call_site_plans(
   let n_aux_minors = n_source_minors - n_user_minors;
   let aux_perm = aux_layout.map(|l| l.perm.as_slice());
 
-  let aux_canonical_count = aux_perm
-    .and_then(|p| {
-      p.iter().copied().filter(|&c| c != PERM_OUT_OF_SCC).max().map(|m| m + 1)
-    })
-    .unwrap_or(n_source_aux_motives);
+  // When a perm is present, the canonical aux count comes from it — and an
+  // all-out-of-SCC perm means ZERO canonical auxes (every source aux
+  // evaporated with the SCC split), not the source count. Falling through
+  // to `n_source_aux_motives` there would resurrect phantom canonical
+  // slots and misalign every motive/minor mapping below.
+  let aux_canonical_count = aux_perm.map_or(n_source_aux_motives, |p| {
+    p.iter()
+      .copied()
+      .filter(|&c| c != PERM_OUT_OF_SCC)
+      .max()
+      .map_or(0, |m| m + 1)
+  });
 
   let aux_canon_of_source = |source_aux_j: usize| -> Option<usize> {
     match aux_perm.and_then(|p| p.get(source_aux_j).copied()) {
@@ -593,8 +623,56 @@ pub fn compute_call_site_plans(
       source_to_canon_motive: source_to_canon_motive.clone(),
       source_to_canon_minor,
       source_in_block: source_in_block.clone(),
+      head_rewrite: None,
     }
   };
+
+  // Build a plan for an EVAPORATED aux recursor `<all0>.rec_{aux_j+1}`:
+  // every spec-param inductive of source aux `aux_j` left this SCC, the
+  // claim is aliased to the external inductive's recursor, and call sites
+  // are rebuilt onto that telescope. Only the aux's own motive and its own
+  // minor band survive; the external recursor supplies the aux's IH
+  // binders (`source_in_block[x_pos] = true`), while IHs consumed from
+  // other dropped motives are synthesized by `adapt_split_minor`.
+  let build_out_of_scc_plan =
+    |x_pos: usize, aux_j: usize, target_rec: Name, n_indices: usize| {
+      let mut motive_keep = vec![false; n_source_motives];
+      motive_keep[x_pos] = true;
+      let mut source_to_canon_motive = vec![0usize; n_source_motives];
+      source_to_canon_motive[x_pos] = 0;
+      let counts: &[usize] =
+        aux_layout.map_or(&[], |l| l.source_ctor_counts.as_slice());
+      let band_start: usize =
+        n_user_minors + counts.iter().take(aux_j).sum::<usize>();
+      let band_len = counts.get(aux_j).copied().unwrap_or(0);
+      let mut minor_keep = vec![false; n_source_minors];
+      let mut source_to_canon_minor = vec![0usize; n_source_minors];
+      for k in 0..band_len {
+        if let Some(slot) = minor_keep.get_mut(band_start + k) {
+          *slot = true;
+        }
+        if let Some(slot) = source_to_canon_minor.get_mut(band_start + k) {
+          *slot = k;
+        }
+      }
+      let mut source_in_block = vec![false; n_source_motives];
+      source_in_block[x_pos] = true;
+      CallSitePlan {
+        n_params,
+        n_source_motives,
+        n_source_minors,
+        n_indices,
+        motive_keep,
+        minor_keep,
+        source_to_canon_motive,
+        source_to_canon_minor,
+        source_in_block,
+        head_rewrite: Some(AuxHeadRewrite {
+          target_rec,
+          target_motive_pos: x_pos,
+        }),
+      }
+    };
 
   // Register plans for each user inductive's `X.rec` (x_pos ∈ [0, n_user)).
   for (x_pos, x_name) in original_all.iter().enumerate() {
@@ -631,23 +709,70 @@ pub fn compute_call_site_plans(
   if n_source_motives > n_user_motives
     && let Some(head_name) = original_all.first()
   {
+    // (owner, external head) per source aux — only needed when some source
+    // aux is out-of-SCC, i.e. potentially evaporated.
+    let any_out = aux_perm.is_some_and(|p| p.contains(&PERM_OUT_OF_SCC));
+    let src_owner_heads: Vec<(Name, Name)> = if any_out {
+      crate::compile::aux_gen::nested::source_aux_order_with_owner(
+        original_all,
+        lean_env,
+      )?
+      .into_iter()
+      .map(|(owner, head, _)| (owner, head))
+      .collect()
+    } else {
+      Vec::new()
+    };
+
     for aux_idx in 0..(n_source_motives - n_user_motives) {
-      if aux_perm
-        .and_then(|p| p.get(aux_idx).copied())
-        .is_some_and(|canon_i| canon_i == PERM_OUT_OF_SCC)
-      {
+      let x_pos = n_user_motives + aux_idx;
+      let rec_name =
+        Name::str(head_name.clone(), format!("rec_{}", aux_idx + 1));
+      if lean_env.get(&rec_name).is_none() {
         continue;
       }
-      let x_pos = n_user_motives + aux_idx;
+      let out_of_scc = aux_perm
+        .and_then(|p| p.get(aux_idx).copied())
+        .is_some_and(|canon_i| canon_i == PERM_OUT_OF_SCC);
+      if out_of_scc {
+        // Evaporated-aux head rewrite. Owner gate mirrors the alias pass
+        // in `aux_gen.rs`: an out-of-SCC aux whose OWNER is also
+        // out-of-SCC is another SCC's canonical aux (that SCC registers
+        // its plan); only the owner's SCC decides evaporation. The target
+        // guard also mirrors the alias pass — no alias means no rewrite,
+        // and vice versa, or callers and claim disagree.
+        let Some((owner, ext_head)) = src_owner_heads.get(aux_idx) else {
+          continue;
+        };
+        if !name_to_class.contains_key(owner) {
+          continue;
+        }
+        let target_rec = Name::str(ext_head.clone(), "rec".to_string());
+        let target_ok = matches!(
+          lean_env.get(&target_rec),
+          Some(LeanConstantInfo::RecInfo(r))
+            if nat_to_usize(&r.num_motives) == 1
+        );
+        if !target_ok {
+          continue;
+        }
+        // Index count comes from the aux recursor itself (the external
+        // inductive's indices), not the block-wide default.
+        let rec_n_indices = match lean_env.get(&rec_name) {
+          Some(LeanConstantInfo::RecInfo(r)) => nat_to_usize(&r.num_indices),
+          _ => n_indices,
+        };
+        plans.insert(
+          rec_name,
+          build_out_of_scc_plan(x_pos, aux_idx, target_rec, rec_n_indices),
+        );
+        continue;
+      }
       let plan = build_plan(x_pos);
       if plan.is_identity() {
         continue;
       }
-      let rec_name =
-        Name::str(head_name.clone(), format!("rec_{}", aux_idx + 1));
-      if lean_env.get(&rec_name).is_some() {
-        plans.insert(rec_name, plan);
-      }
+      plans.insert(rec_name, plan);
     }
   }
 
@@ -727,8 +852,13 @@ pub fn adapt_split_minor(
     _ => return None,
   };
   let original_all = rec.all.as_slice();
+  // Nested-aux motive signatures: fields targeting an aux occurrence
+  // (`List B` rather than a user original) also carry IH binders in the
+  // source minor; they must be detected for the peel below to stay
+  // aligned, and synthesized/kept like user-target IHs.
+  let aux_sigs = aux_motive_sigs(rec, rec_levels, params, motives, lean_env);
   let (_parent_src, ctor) =
-    source_ctor_for_minor(src_minor_idx, rec, lean_env)?;
+    source_ctor_for_minor(src_minor_idx, rec, lean_env, &aux_sigs)?;
   let n_fields = nat_to_usize(&ctor.num_fields);
   let source_minor_ty =
     source_minor_type(rec, rec_levels, params, motives, minors, src_minor_idx)?;
@@ -745,6 +875,7 @@ pub fn adapt_split_minor(
       lean_env,
       "split_xs",
       field_idx,
+      &aux_sigs,
     ) {
       rec_fields.push((field_idx, target));
     }
@@ -786,13 +917,33 @@ pub fn adapt_split_minor(
     }
   }
 
-  Some(mk_lambda(body, &wrapper_decls))
+  let wrapper = mk_lambda(body, &wrapper_decls);
+  if std::env::var("IX_SPLIT_MINOR_DUMP").is_ok() {
+    let w = wrapper.pretty();
+    if w.contains("fvar(") {
+      eprintln!(
+        "[adapt_split_minor.LEAK] rec={} minor_idx={} n_fields={} \
+         rec_fields={:?}\n  minor={}\n  wrapper={}",
+        rec_name.pretty(),
+        src_minor_idx,
+        n_fields,
+        rec_fields
+          .iter()
+          .map(|(fi, t)| (*fi, t.source_pos))
+          .collect::<Vec<_>>(),
+        minor.pretty(),
+        w,
+      );
+    }
+  }
+  Some(wrapper)
 }
 
 fn source_ctor_for_minor(
   src_minor_idx: usize,
   rec: &RecursorVal,
   lean_env: &LeanEnv,
+  aux_sigs: &[AuxMotiveSig],
 ) -> Option<(usize, ConstructorVal)> {
   let mut offset = 0usize;
   for (source_pos, ind_name) in rec.all.iter().enumerate() {
@@ -812,7 +963,205 @@ fn source_ctor_for_minor(
     }
     offset += n_ctors;
   }
+  // Aux minor bands follow the user bands, one per source aux in source
+  // order. The ctor list is the external inductive's own (the aux is the
+  // external applied at spec args, so field counts match).
+  for sig in aux_sigs {
+    let Some(LeanConstantInfo::InductInfo(ind)) = lean_env.get(&sig.ext_name)
+    else {
+      return None;
+    };
+    let n_ctors = ind.ctors.len();
+    if src_minor_idx < offset + n_ctors {
+      let ctor_name = &ind.ctors[src_minor_idx - offset];
+      let ctor = match lean_env.get(ctor_name)? {
+        LeanConstantInfo::CtorInfo(ctor) => ctor.clone(),
+        _ => return None,
+      };
+      return Some((sig.source_pos, ctor));
+    }
+    offset += n_ctors;
+  }
   None
+}
+
+/// Signature of a nested-aux motive read off a source recursor's type:
+/// motive `source_pos` targets `ext_name specs… idx…`. Spec args are
+/// concrete (the recursor type is instantiated with call-site params
+/// before extraction), so field types can be matched against them by hash.
+struct AuxMotiveSig {
+  source_pos: usize,
+  ext_name: Name,
+  ext_n_params: usize,
+  specs: Vec<LeanExpr>,
+}
+
+/// Extract [`AuxMotiveSig`]s for every aux motive position (`>= all.len()`)
+/// of `rec`, by walking its type instantiated with the call site's levels,
+/// params, and motives.
+fn aux_motive_sigs(
+  rec: &RecursorVal,
+  rec_levels: &[Level],
+  params: &[LeanExpr],
+  motives: &[LeanExpr],
+  lean_env: &LeanEnv,
+) -> Vec<AuxMotiveSig> {
+  let n_user = rec.all.len();
+  let n_motives = nat_to_usize(&rec.num_motives);
+  let mut out = Vec::new();
+  if n_motives <= n_user {
+    return out;
+  }
+  let mut cur = subst_levels(&rec.cnst.typ, &rec.cnst.level_params, rec_levels);
+  for arg in params {
+    match cur.as_data() {
+      // Shift-aware substitution — args may reference the caller's
+      // telescope (see `source_minor_type`).
+      ExprData::ForallE(_, _, body, _, _) => {
+        cur = instantiate_rev(body, std::slice::from_ref(arg));
+      },
+      _ => return out,
+    }
+  }
+  for (m_idx, motive) in motives.iter().enumerate().take(n_motives) {
+    let next = match cur.as_data() {
+      ExprData::ForallE(_, dom, body, _, _) => {
+        if m_idx >= n_user {
+          // dom = `∀ idx…, Ext specs… idx… → Sort _` — the major's type is
+          // the last peeled domain.
+          let mut d = consume_type_annotations(dom);
+          let mut last_dom: Option<LeanExpr> = None;
+          let mut i = 0usize;
+          while let ExprData::ForallE(_, dd, db, _, _) = d.as_data() {
+            last_dom = Some(consume_type_annotations(dd));
+            let (_, fv) = fresh_fvar("aux_sig_idx", m_idx * 64 + i);
+            d = instantiate1(db, &fv);
+            i += 1;
+          }
+          if let Some(t) = last_dom {
+            let (head, t_args) = decompose_apps(&t);
+            if let ExprData::Const(ext_name, _, _) = head.as_data()
+              && let Some(LeanConstantInfo::InductInfo(ind)) =
+                lean_env.get(ext_name)
+            {
+              let ext_n_params = nat_to_usize(&ind.num_params);
+              if t_args.len() >= ext_n_params {
+                out.push(AuxMotiveSig {
+                  source_pos: m_idx,
+                  ext_name: ext_name.clone(),
+                  ext_n_params,
+                  specs: t_args.into_iter().take(ext_n_params).collect(),
+                });
+              }
+            }
+          }
+        }
+        instantiate_rev(body, std::slice::from_ref(motive))
+      },
+      _ => return out,
+    };
+    cur = next;
+  }
+  out
+}
+
+/// Derive the pieces needed to rebuild a head-rewritten call site onto the
+/// external recursor's telescope: the extended universe-level list and the
+/// external inductive's parameter (spec) arguments.
+///
+/// Both are read off the SOURCE aux recursor's type — the motive binder at
+/// `hr.target_motive_pos` has domain `∀ idx…, Ext.{occ} specs… idx… →
+/// Sort _` — instantiated with the call site's levels, params, and
+/// preceding motives, so the result is expressed in caller terms.
+pub fn derive_head_rewrite_app(
+  rec_name: &Name,
+  rec_levels: &[Level],
+  hr: &AuxHeadRewrite,
+  params: &[LeanExpr],
+  motives: &[LeanExpr],
+  lean_env: &LeanEnv,
+) -> Result<(Vec<Level>, Vec<LeanExpr>), String> {
+  let Some(LeanConstantInfo::RecInfo(rec)) = lean_env.get(rec_name) else {
+    return Err(format!("'{}' is not a recursor", rec_name.pretty()));
+  };
+  let sigs = aux_motive_sigs(rec, rec_levels, params, motives, lean_env);
+  let Some(sig) = sigs.iter().find(|s| s.source_pos == hr.target_motive_pos)
+  else {
+    return Err(format!(
+      "no aux motive signature at position {}",
+      hr.target_motive_pos
+    ));
+  };
+  if Name::str(sig.ext_name.clone(), "rec".to_string()) != hr.target_rec {
+    return Err(format!(
+      "aux motive targets '{}' but the plan's target is '{}'",
+      sig.ext_name.pretty(),
+      hr.target_rec.pretty()
+    ));
+  }
+  // Occurrence levels: re-extract the external const's level args from the
+  // motive's major type (aux_motive_sigs keeps only the value args).
+  let occ_levels = {
+    let mut cur =
+      subst_levels(&rec.cnst.typ, &rec.cnst.level_params, rec_levels);
+    for arg in params.iter().chain(motives.iter().take(hr.target_motive_pos)) {
+      match cur.as_data() {
+        // Shift-aware substitution — args may reference the caller's
+        // telescope (see `source_minor_type`).
+        ExprData::ForallE(_, _, body, _, _) => {
+          cur = instantiate_rev(body, std::slice::from_ref(arg));
+        },
+        _ => return Err("recursor telescope too short".into()),
+      }
+    }
+    let ExprData::ForallE(_, dom, _, _, _) = cur.as_data() else {
+      return Err("missing target motive binder".into());
+    };
+    let mut d = consume_type_annotations(dom);
+    let mut last_dom: Option<LeanExpr> = None;
+    let mut i = 0usize;
+    while let ExprData::ForallE(_, dd, db, _, _) = d.as_data() {
+      last_dom = Some(consume_type_annotations(dd));
+      let (_, fv) = fresh_fvar("hr_idx", i);
+      d = instantiate1(db, &fv);
+      i += 1;
+    }
+    let Some(t) = last_dom else {
+      return Err("motive domain has no major binder".into());
+    };
+    let (head, _) = decompose_apps(&t);
+    match head.as_data() {
+      ExprData::Const(_, lvls, _) => lvls.clone(),
+      _ => return Err("major type head is not a constant".into()),
+    }
+  };
+  let Some(LeanConstantInfo::RecInfo(target)) = lean_env.get(&hr.target_rec)
+  else {
+    return Err(format!(
+      "target recursor '{}' missing from env",
+      hr.target_rec.pretty()
+    ));
+  };
+  let needed = target.cnst.level_params.len();
+  let target_levels: Vec<Level> = if needed == occ_levels.len() + 1 {
+    // Elimination level first (Lean's recursor level convention), then the
+    // external inductive's own levels from the occurrence.
+    let Some(elim) = rec_levels.first() else {
+      return Err("source recursor has no elimination level".into());
+    };
+    std::iter::once(elim.clone()).chain(occ_levels.iter().cloned()).collect()
+  } else if needed == occ_levels.len() {
+    occ_levels.clone()
+  } else {
+    return Err(format!(
+      "cannot map universe levels: target '{}' has {} level params, \
+       occurrence supplies {}",
+      hr.target_rec.pretty(),
+      needed,
+      occ_levels.len()
+    ));
+  };
+  Ok((target_levels, sig.specs.clone()))
 }
 
 fn source_minor_type(
@@ -829,7 +1178,11 @@ fn source_minor_type(
   {
     match cur.as_data() {
       ExprData::ForallE(_, _, body, _, _) => {
-        cur = instantiate1(body, arg);
+        // `instantiate_rev`, not `instantiate1`: call-site args may carry
+        // loose BVars into the caller's telescope (rec applications under
+        // binders, e.g. `.brecOn_N.go` bodies) and must be lifted when
+        // substituted under the type's remaining binders.
+        cur = instantiate_rev(body, std::slice::from_ref(arg));
       },
       _ => return None,
     }
@@ -883,6 +1236,7 @@ fn find_source_rec_target(
   lean_env: &LeanEnv,
   prefix: &str,
   field_idx: usize,
+  aux_sigs: &[AuxMotiveSig],
 ) -> Option<SourceRecTarget> {
   let mut cur = consume_type_annotations(dom);
   let mut xs_decls = Vec::new();
@@ -906,25 +1260,43 @@ fn find_source_rec_target(
   let ExprData::Const(target_name, _, _) = head.as_data() else {
     return None;
   };
-  let source_pos = original_all.iter().position(|n| n == target_name)?;
-  let target_n_params = match lean_env.get(target_name)? {
-    LeanConstantInfo::InductInfo(ind) => nat_to_usize(&ind.num_params),
-    _ => return None,
-  };
-  if args.len() < target_n_params || params.len() < target_n_params {
-    return None;
+  if let Some(source_pos) = original_all.iter().position(|n| n == target_name) {
+    let target_n_params = match lean_env.get(target_name)? {
+      LeanConstantInfo::InductInfo(ind) => nat_to_usize(&ind.num_params),
+      _ => return None,
+    };
+    if args.len() < target_n_params || params.len() < target_n_params {
+      return None;
+    }
+    if !args[..target_n_params]
+      .iter()
+      .zip(params.iter())
+      .all(|(arg, param)| arg.get_hash() == param.get_hash())
+    {
+      return None;
+    }
+    return Some(SourceRecTarget {
+      source_pos,
+      idx_args: args.into_iter().skip(target_n_params).collect(),
+      xs_decls,
+      xs_fvars,
+    });
   }
-  if !args[..target_n_params]
-    .iter()
-    .zip(params.iter())
-    .all(|(arg, param)| arg.get_hash() == param.get_hash())
-  {
-    return None;
-  }
-
+  // Nested-aux target: the field's type is an external-inductive
+  // application matching one of the recursor's aux motive signatures
+  // (`List B` targeting motive `n_user + j`). Spec args are compared by
+  // hash — both sides are instantiated with the same call-site params.
+  let matched = aux_sigs.iter().find(|sig| {
+    *target_name == sig.ext_name
+      && args.len() >= sig.ext_n_params
+      && args[..sig.ext_n_params]
+        .iter()
+        .zip(sig.specs.iter())
+        .all(|(arg, spec)| arg.get_hash() == spec.get_hash())
+  })?;
   Some(SourceRecTarget {
-    source_pos,
-    idx_args: args.into_iter().skip(target_n_params).collect(),
+    source_pos: matched.source_pos,
+    idx_args: args.into_iter().skip(matched.ext_n_params).collect(),
     xs_decls,
     xs_fvars,
   })
@@ -939,8 +1311,17 @@ fn synthesize_external_ih(
   motives: &[LeanExpr],
   minors: &[LeanExpr],
 ) -> LeanExpr {
-  let target_name = &original_all[target.source_pos];
-  let target_rec_name = Name::str(target_name.clone(), "rec".to_string());
+  // User targets eliminate with the target's own source recursor; aux
+  // targets (source_pos >= all.len()) with the source aux recursor
+  // `<all0>.rec_{j+1}`. Either way the full source telescope is passed
+  // verbatim — the inner call then goes through its own call-site surgery
+  // (plan lookup by head name), which canonicalizes it for its SCC.
+  let target_rec_name = if target.source_pos < original_all.len() {
+    Name::str(original_all[target.source_pos].clone(), "rec".to_string())
+  } else {
+    let aux_j = target.source_pos - original_all.len();
+    Name::str(original_all[0].clone(), format!("rec_{}", aux_j + 1))
+  };
   let mut ih = LeanExpr::cnst(target_rec_name, rec_levels.to_vec());
 
   for arg in params {
@@ -1164,8 +1545,32 @@ mod tests {
       source_to_canon_motive: vec![0, 1],
       source_to_canon_minor: vec![0, 1],
       source_in_block: vec![true, true],
+      head_rewrite: None,
     };
     assert!(plan.is_identity());
+  }
+
+  #[test]
+  fn test_head_rewrite_plan_never_identity() {
+    // An otherwise-identity plan with a head rewrite must still fire:
+    // the spine has to be rebuilt onto the external recursor's telescope
+    // even when no motive/minor is dropped or permuted.
+    let plan = CallSitePlan {
+      n_params: 0,
+      n_source_motives: 1,
+      n_source_minors: 1,
+      n_indices: 0,
+      motive_keep: vec![true],
+      minor_keep: vec![true],
+      source_to_canon_motive: vec![0],
+      source_to_canon_minor: vec![0],
+      source_in_block: vec![true],
+      head_rewrite: Some(AuxHeadRewrite {
+        target_rec: nn("List", "rec"),
+        target_motive_pos: 0,
+      }),
+    };
+    assert!(!plan.is_identity());
   }
 
   #[test]
@@ -1180,6 +1585,7 @@ mod tests {
       source_to_canon_motive: vec![0, 1, 0],
       source_to_canon_minor: vec![0, 1, 0],
       source_in_block: vec![true, true, true],
+      head_rewrite: None,
     };
     assert!(!plan.is_identity());
   }
@@ -1196,6 +1602,7 @@ mod tests {
       source_to_canon_motive: vec![2, 0, 1], // permuted
       source_to_canon_minor: vec![2, 0, 1],
       source_in_block: vec![true, true, true],
+      head_rewrite: None,
     };
     assert!(!plan.is_identity());
   }

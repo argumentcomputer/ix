@@ -659,7 +659,12 @@ pub(super) fn instantiate1_at(
 /// Matches Lean C++ `instantiate_rev(e, n, subst)`. At binder depth `d`,
 /// BVar(d + i) for i < n becomes `shift_vars(args[i], d, 0)`, and
 /// BVar(d + i) for i >= n becomes BVar(d + i - n).
-pub(super) fn instantiate_rev(body: &LeanExpr, args: &[LeanExpr]) -> LeanExpr {
+///
+/// Unlike [`instantiate1`], the substituted argument's loose BVars are
+/// LIFTED by the binder depth at each site — required whenever the
+/// argument may reference the caller's telescope (e.g. call-site surgery
+/// on an application under binders, as in `.brecOn_N.go` bodies).
+pub fn instantiate_rev(body: &LeanExpr, args: &[LeanExpr]) -> LeanExpr {
   if args.is_empty() {
     return body.clone();
   }
@@ -1781,13 +1786,10 @@ pub fn ensure_prelude_in_kenv_of(
         lvls: 1,
         params: 0,
         indices: 0,
-        is_rec: false,
-        is_refl: false,
         is_unsafe: false,
         ctors: vec![unit_id],
         ty: punit_ty,
         block: punit_id,
-        nested: 0,
         member_idx: 0,
         lean_all: vec![],
       },
@@ -1890,13 +1892,10 @@ pub fn ensure_prelude_in_kenv_of(
         lvls: 2,
         params: 2,
         indices: 0,
-        is_rec: false,
-        is_refl: false,
         is_unsafe: false,
         ctors: vec![mk_id],
         ty: pprod_ty,
         block: pprod_id,
-        nested: 0,
         member_idx: 0,
         lean_all: vec![],
       },
@@ -2030,13 +2029,10 @@ fn ensure_in_kenv_of_inner_env(
           lvls: n_lvls,
           params: nat_to_u64(&ind.num_params),
           indices: nat_to_u64(&ind.num_indices),
-          is_rec: ind.is_rec,
-          is_refl: ind.is_reflexive,
           is_unsafe: ind.is_unsafe,
           ctors: ctor_zids,
           ty: ty_z,
           block: zid,
-          nested: nat_to_u64(&ind.num_nested),
           member_idx: 0,
           lean_all: vec![],
         },

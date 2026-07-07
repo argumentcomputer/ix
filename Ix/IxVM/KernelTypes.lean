@@ -128,7 +128,10 @@ def kernelTypes := ⟦
   -- CIOpaque: (num_levels, type, value, is_unsafe)
   -- CIQuot:   (num_levels, type, kind)
   -- CIInduct: (num_levels, type, num_params, num_indices,
-  --            ctor_indices, is_rec, is_reflexive, is_unsafe, nested)
+  --            ctor_indices, is_unsafe)
+  -- The recr/refl/nested flags were dropped from Ixon (derivable from
+  -- constructor structure; trusting declared values was an adversarial
+  -- surface). is_rec is computed on demand via `compute_is_rec`.
   -- CICtor:   (num_levels, type, induct_idx, cidx,
   --            num_params, num_fields, is_unsafe)
   -- CIRec:    (num_levels, type, num_params, num_indices,
@@ -143,7 +146,7 @@ def kernelTypes := ⟦
     Thm(G, KExpr, KExpr),
     Opaque(G, KExpr, KExpr, G),
     Quot(G, KExpr, QuotKind),
-    Induct(G, KExpr, G, G, List‹G›, G, G, G, G, Addr),
+    Induct(G, KExpr, G, G, List‹G›, G, Addr),
     Ctor(G, KExpr, G, G, G, G, G),
     Rec(G, KExpr, G, G, G, G, List‹KRecRule›, G, G, Addr)
   }

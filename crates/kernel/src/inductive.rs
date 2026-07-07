@@ -149,36 +149,31 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     &mut self,
     id: &KId<M>,
   ) -> Result<(), TcError<M>> {
-    let (params, indices, lvls, ctors, block, is_rec, is_unsafe, _nested, ty) =
-      match self.get_const(id)? {
-        KConst::Indc {
-          params,
-          indices,
-          lvls,
-          ctors,
-          block,
-          is_rec,
-          is_unsafe,
-          nested,
-          ty,
-          ..
-        } => (
-          params,
-          indices,
-          lvls,
-          ctors.clone(),
-          block.clone(),
-          is_rec,
-          is_unsafe,
-          nested,
-          ty.clone(),
-        ),
-        _ => {
-          return Err(TcError::Other(
-            "check_inductive: not an inductive".into(),
-          ));
-        },
-      };
+    let (params, indices, lvls, ctors, block, is_unsafe, ty) = match self
+      .get_const(id)?
+    {
+      KConst::Indc {
+        params,
+        indices,
+        lvls,
+        ctors,
+        block,
+        is_unsafe,
+        ty,
+        ..
+      } => (
+        params,
+        indices,
+        lvls,
+        ctors.clone(),
+        block.clone(),
+        is_unsafe,
+        ty.clone(),
+      ),
+      _ => {
+        return Err(TcError::Other("check_inductive: not an inductive".into()));
+      },
+    };
 
     // Discover all inductives in the mutual block
     let block_inds = self.discover_block_inductives(&block)?;
@@ -304,17 +299,6 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       )?;
     }
 
-    // H1: Verify is_rec constructively — scan constructor fields for block references.
-    // An adversary could set is_rec=false on a recursive inductive to enable improper
-    // struct eta expansion. We verify against the actual constructor structure.
-    let computed_is_rec =
-      self.compute_is_rec(&ctors, u64_to_usize(params)?, &block_addrs)?;
-    if computed_is_rec != is_rec {
-      return Err(TcError::Other(format!(
-        "check_inductive: is_rec mismatch: declared {is_rec}, computed {computed_is_rec}"
-      )));
-    }
-
     // Trigger recursor generation for the block (fatal — ZK context cannot tolerate silent failure)
     if !self.env.recursor_cache.contains_key(&block) {
       self.generate_block_recursors(&block)?;
@@ -438,6 +422,39 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       }
     }
     Ok(inds)
+  }
+
+  pub fn computed_is_rec(&mut self, ind: &KId<M>) -> Result<bool, TcError<M>> {
+    if let Some(&v) = self.env.is_rec_cache.get(&ind.addr) {
+      return Ok(v);
+    }
+    let (params, ctors, block) = match self.get_const(ind)? {
+      KConst::Indc { params, ctors, block, .. } => {
+        (params, ctors.clone(), block.clone())
+      },
+      _ => {
+        return Err(TcError::Other("computed_is_rec: not an inductive".into()));
+      },
+    };
+    // provisional true entry. compute_is_rec can hit the is_rec_cache via
+    // whnf ~> try_struct_eta_iota ~> is_struct_like ~> cache
+    // if and only if the inductive is recursive, so not observable otherwise
+    self.env.is_rec_cache.insert(ind.addr.clone(), true);
+    let block_inds = self.discover_block_inductives(&block)?;
+    let block_addrs: Vec<Address> =
+      block_inds.iter().map(|id| id.addr.clone()).collect();
+    match self.compute_is_rec(&ctors, u64_to_usize::<M>(params)?, &block_addrs)
+    {
+      Ok(v) => {
+        self.env.is_rec_cache.insert(ind.addr.clone(), v);
+        Ok(v)
+      },
+      Err(e) => {
+        // ensure the provisional entry doesn't outlive an error
+        self.env.is_rec_cache.remove(&ind.addr);
+        Err(e)
+      },
+    }
   }
 
   /// H1: Compute `is_rec` constructively by scanning constructor fields for
@@ -1266,10 +1283,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         lvls: block_us.len() as u64,
         params: n_block_params,
         indices: ext_n_indices,
-        is_rec: false,
-        is_refl: false,
         is_unsafe: false,
-        nested: 0,
         block: KId::new(
           Address::hash(b"synthetic-aux-block"),
           M::meta_field(Name::anon()),
@@ -1305,7 +1319,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     });
 
     if dump_canonical {
-      log::info!(
+      eprintln!(
         "[canonical_aux_order.dump] all0={:?} n_aux={} n_block_params={}",
         all0_name.map(Name::pretty),
         pairs.len(),
@@ -1313,7 +1327,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       );
       for (i, (kid, kconst)) in pairs.iter().enumerate() {
         let seed = aux_seed_names.get(i).cloned().unwrap_or_else(Name::anon);
-        log::info!(
+        eprintln!(
           "  pre-sort[{}] addr={} seed={} member_id_addr={}",
           i,
           &kid.addr.hex()[..8],
@@ -1321,12 +1335,12 @@ impl<M: KernelMode> TypeChecker<'_, M> {
           &aux[i].id.addr.hex()[..8]
         );
         if let KConst::Indc { ty, ctors, .. } = kconst {
-          log::info!("    indc.ty={ty}");
+          eprintln!("    indc.ty={ty}");
           for (ci, ctor_kid) in ctors.iter().enumerate() {
             if let Some(KConst::Ctor { ty, .. }) =
               all_ctor_lookup.get(&ctor_kid.addr)
             {
-              log::info!("    ctor[{ci}].ty={ty}");
+              eprintln!("    ctor[{ci}].ty={ty}");
             }
           }
         }
@@ -1345,10 +1359,10 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     )?;
 
     if dump_canonical {
-      log::info!("[canonical_aux_order.dump] post-sort classes:");
+      eprintln!("[canonical_aux_order.dump] post-sort classes:");
       for (ci, class) in classes.iter().enumerate() {
         for (mi, (kid, _)) in class.iter().enumerate() {
-          log::info!("  class[{ci}][{mi}] addr={}", &kid.addr.hex()[..8]);
+          eprintln!("  class[{ci}][{mi}] addr={}", &kid.addr.hex()[..8]);
         }
       }
     }
@@ -1407,7 +1421,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     if !self.recursor_dump_matches_block(block_id, flat) {
       return;
     }
-    log::info!(
+    eprintln!(
       "[recursor.dump] {label} flat aux order for {block_id}: originals={} aux={}",
       n_originals,
       flat.len().saturating_sub(n_originals)
@@ -1415,11 +1429,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     for (aux_i, member) in flat.iter().skip(n_originals).enumerate() {
       let spec =
         member.spec_params.iter().map(|e| format!("{e}")).collect::<Vec<_>>();
-      log::info!(
+      eprintln!(
         "  aux[{aux_i:2}] id={} own_params={} indices={} spec={spec:?}",
-        member.id,
-        member.own_params,
-        member.n_indices
+        member.id, member.own_params, member.n_indices
       );
     }
   }
@@ -1530,18 +1542,18 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     failed_gen_major: Option<&KExpr<M>>,
     failed_stored_major: Option<&KExpr<M>>,
   ) {
-    log::info!(
+    eprintln!(
       "[recursor.align] FAIL ind_block={ind_block_id} rec_block={rec_block_id} \
 peers={} flat={} rec_ids={} failed_gi={failed_gi}",
       generated_snapshot.len(),
       flat.len(),
       rec_ids.len()
     );
-    log::info!(
+    eprintln!(
       "  failed gen major: {}",
       Self::major_domain_signature_text(failed_gen_major)
     );
-    log::info!(
+    eprintln!(
       "  failed stored major: {}",
       Self::major_domain_signature_text(failed_stored_major)
     );
@@ -1571,18 +1583,18 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
         None => None,
       };
       let mark = if gi == failed_gi { "!!" } else { "  " };
-      log::info!(
+      eprintln!(
         "  {mark} peer[{gi:2}] flat.id={} target={}… aux={} ind={}…",
         flat[gi].id,
         &target_addr.hex()[..8],
         flat[gi].is_aux,
         &gen_rec.ind_addr.hex()[..8]
       );
-      log::info!(
+      eprintln!(
         "       gen   : {}",
         Self::major_domain_signature_text(gen_major.as_ref())
       );
-      log::info!(
+      eprintln!(
         "       sto   : {} (rid={})",
         Self::major_domain_signature_text(stored_major.as_ref()),
         rid
@@ -1601,9 +1613,9 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
       return Ok(false);
     }
     if depth > 80 {
-      log::info!("[rule rhs diff] first diff {path}: recursion limit");
-      log::info!("  gen: {lhs}");
-      log::info!("  sto: {rhs}");
+      eprintln!("[rule rhs diff] first diff {path}: recursion limit");
+      eprintln!("  gen: {lhs}");
+      eprintln!("  sto: {rhs}");
       return Ok(true);
     }
 
@@ -1619,9 +1631,9 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
         ExprData::All(_, _, rty, rbody, _),
       ) => {
         if !self.is_def_eq(lty, rty)? {
-          log::info!("[rule rhs diff] first diff {path}.dom");
-          log::info!("  gen: {lty}");
-          log::info!("  sto: {rty}");
+          eprintln!("[rule rhs diff] first diff {path}.dom");
+          eprintln!("  gen: {lty}");
+          eprintln!("  sto: {rty}");
           return Ok(true);
         }
         let saved = self.lctx.len();
@@ -1649,9 +1661,9 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
         self.dump_rule_rhs_first_diff(la, ra, &format!("{path}.arg"), depth + 1)
       },
       _ => {
-        log::info!("[rule rhs diff] first diff {path}");
-        log::info!("  gen: {lw}");
-        log::info!("  sto: {rw}");
+        eprintln!("[rule rhs diff] first diff {path}");
+        eprintln!("  gen: {lw}");
+        eprintln!("  sto: {rw}");
         Ok(true)
       },
     }
@@ -2129,7 +2141,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
   pub fn is_large_eliminator(
     &mut self,
     result_level: &KUniv<M>,
-    ind_infos: &[(KId<M>, u64, u64, Vec<KId<M>>, KExpr<M>, bool)],
+    ind_infos: &[(KId<M>, u64, u64, Vec<KId<M>>, KExpr<M>)],
   ) -> Result<bool, TcError<M>> {
     // Case 1: non-Prop → always large.
     // Use is_never_zero() (not !is_zero()) so that Param(u) — which CAN be
@@ -2141,7 +2153,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
     if ind_infos.len() != 1 {
       return Ok(false);
     }
-    let (_, n_params, _, ref ctors, _, _) = ind_infos[0];
+    let (_, n_params, _, ref ctors, _) = ind_infos[0];
     let n_params = u64_to_usize::<M>(n_params)?;
     match ctors.len() {
       // Case 2: 0 constructors → large (Empty/False)
@@ -2222,12 +2234,12 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
     }
 
     // Extract basic info for is_large_eliminator check.
-    let mut ind_infos: Vec<(KId<M>, u64, u64, Vec<KId<M>>, KExpr<M>, bool)> =
+    let mut ind_infos: Vec<(KId<M>, u64, u64, Vec<KId<M>>, KExpr<M>)> =
       Vec::new();
     let mut n_params: u64 = 0;
     for (i, ind_id) in block_inds.iter().enumerate() {
       match self.get_const(ind_id)? {
-        KConst::Indc { params, indices, ctors, ty, is_rec, .. } => {
+        KConst::Indc { params, indices, ctors, ty, .. } => {
           if i == 0 {
             n_params = params;
           }
@@ -2237,7 +2249,6 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
             indices,
             ctors.clone(),
             ty.clone(),
-            is_rec,
           ));
         },
         _ => {
@@ -2293,7 +2304,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
         block_first_id.as_ref(),
       )?;
       if self.recursor_dump_matches_block(block_id, &flat) {
-        log::info!("[recursor.dump] canonical_order={canonical_order:?}");
+        eprintln!("[recursor.dump] canonical_order={canonical_order:?}");
       }
       // Apply the permutation produced by sort_consts: each canonical
       // class index k maps to one representative aux from the original
@@ -2312,25 +2323,17 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
 
     // Convert flat block to ind_infos format for existing build_motive_type / build_rec_type.
     // For auxiliary members, we need their type from the environment.
-    let mut flat_ind_infos: Vec<(
-      KId<M>,
-      u64,
-      u64,
-      Vec<KId<M>>,
-      KExpr<M>,
-      bool,
-    )> = Vec::with_capacity(flat.len());
+    let mut flat_ind_infos: Vec<(KId<M>, u64, u64, Vec<KId<M>>, KExpr<M>)> =
+      Vec::with_capacity(flat.len());
     for m in &flat {
       let c = self.get_const(&m.id)?;
       let ty = c.ty().clone();
-      let is_rec = matches!(c, KConst::Indc { is_rec: true, .. });
       flat_ind_infos.push((
         m.id.clone(),
         m.own_params,
         m.n_indices,
         m.ctors.clone(),
         ty,
-        is_rec,
       ));
     }
     let flat_ids: Vec<KId<M>> = flat.iter().map(|m| m.id.clone()).collect();
@@ -2393,7 +2396,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
       let n_motives = flat.len() as u64;
       let n_minors: u64 = flat.iter().map(|m| m.ctors.len() as u64).sum();
       let prefix_skip = n_params + n_motives + n_minors;
-      log::info!(
+      eprintln!(
         "[recursor.dump] generated recursors for {block_id}: count={} prefix_skip={prefix_skip}",
         generated.len()
       );
@@ -2403,7 +2406,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
           prefix_skip,
           &g.ind_addr,
         )?;
-        log::info!(
+        eprintln!(
           "  gen[{gi:2}] ind_addr={} {}",
           &g.ind_addr.hex()[..8],
           Self::major_domain_signature_text(major.as_ref())
@@ -3028,7 +3031,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
   fn build_rec_type(
     &mut self,
     di: usize,
-    ind_infos: &[(KId<M>, u64, u64, Vec<KId<M>>, KExpr<M>, bool)],
+    ind_infos: &[(KId<M>, u64, u64, Vec<KId<M>>, KExpr<M>)],
     block_inds: &[KId<M>],
     flat: &[FlatBlockMember<M>],
     _elim_level: &KUniv<M>,
@@ -3085,7 +3088,7 @@ peers={} flat={} rec_ids={} failed_gi={failed_gi}",
     // --- Minors: built inline at the correct depth ---
     // motive_base = depth after pushing params (motives start here)
     let motive_base = u64_to_usize::<M>(self.depth())? - n_motives;
-    for (j, (_, _, _, j_ctors, _, _)) in ind_infos.iter().enumerate() {
+    for (j, (_, _, _, j_ctors, _)) in ind_infos.iter().enumerate() {
       let j_member = flat[j].clone();
       for ctor_id in j_ctors {
         let minor_ty = self.build_minor_at_depth(
@@ -4216,17 +4219,15 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
       .or_else(|| generated.iter().position(|g| g.ind_addr == ind_id.addr));
 
     if self.recursor_dump_matches_id(id) {
-      log::info!(
+      eprintln!(
         "[recursor.dump] check {} rec_block={} resolved_block={} stored_pos={stored_pos:?} selected_idx={selected_idx:?}",
-        id,
-        rec_block,
-        resolved_block
+        id, rec_block, resolved_block
       );
-      log::info!(
+      eprintln!(
         "[recursor.dump] stored major: {}",
         Self::major_domain_signature_text(stored_major.as_ref())
       );
-      log::info!("[recursor.dump] signature_matches={signature_matches:?}");
+      eprintln!("[recursor.dump] signature_matches={signature_matches:?}");
       for (gi, g) in generated.iter().enumerate() {
         if g.ind_addr != ind_id.addr {
           continue;
@@ -4236,7 +4237,7 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
           prefix_skip,
           &g.ind_addr,
         )?;
-        log::info!(
+        eprintln!(
           "  cand[{gi:2}] {}",
           Self::major_domain_signature_text(major.as_ref())
         );
@@ -4289,11 +4290,11 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
                     } else {
                       "idx/major"
                     };
-                    log::info!(
+                    eprintln!(
                       "[type diff] binder {bi} ({label}) DIFFERS (p={params} m={motives} min={minors})"
                     );
-                    log::info!("  gen: {gd}");
-                    log::info!("  sto: {sd}");
+                    eprintln!("  gen: {gd}");
+                    eprintln!("  sto: {sd}");
                     break;
                   }
                   let _ = self.push_fvar_decl_anon(gd.clone());
@@ -4302,9 +4303,9 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
                   bi += 1;
                 },
                 _ => {
-                  log::info!("[type diff] return differs at {bi}");
-                  log::info!("  gen: {gc}");
-                  log::info!("  sto: {sc}");
+                  eprintln!("[type diff] return differs at {bi}");
+                  eprintln!("  gen: {gc}");
+                  eprintln!("  sto: {sc}");
                   break;
                 },
               }
@@ -4380,12 +4381,12 @@ re-run with `IX_RECURSOR_DUMP={}` for the full breakdown.",
                 "rhs",
                 0,
               );
-              log::info!(
+              eprintln!(
                 "[rule rhs diff] rule {ri} RHS mismatch (fields={})",
                 gen_rule.fields
               );
-              log::info!("  gen: {}", gen_rule.rhs);
-              log::info!("  sto: {}", stored_rule.rhs);
+              eprintln!("  gen: {}", gen_rule.rhs);
+              eprintln!("  sto: {}", stored_rule.rhs);
             }
             return Err(TcError::Other(format!(
               "check_recursor: rule {ri} RHS mismatch"
@@ -4569,10 +4570,7 @@ mod tests {
         lvls: 0,
         params: 0,
         indices: 0,
-        is_rec: false,
-        is_refl: false,
         is_unsafe: false,
-        nested: 0,
         block: block.clone(),
         member_idx: 0,
         ty: sort1(),
@@ -4746,10 +4744,7 @@ mod tests {
         lvls: 0,
         params: 0,
         indices: 0,
-        is_rec: true,
-        is_refl: false,
         is_unsafe: false,
-        nested: 0,
         block: block.clone(),
         member_idx: 0,
         ty: sort1(),
@@ -4945,10 +4940,7 @@ mod tests {
         lvls: 1,
         params: 1,
         indices: 0,
-        is_rec: true,
-        is_refl: false,
         is_unsafe: false,
-        nested: 0,
         block: block.clone(),
         member_idx: 0,
         ty: list_ty,
@@ -5082,10 +5074,7 @@ mod tests {
         lvls: 0,
         params: 0,
         indices: 0,
-        is_rec: true,
-        is_refl: false,
         is_unsafe: false,
-        nested: 1,
         block: tree_block.clone(),
         member_idx: 0,
         ty: sort1(),
@@ -5135,10 +5124,7 @@ mod tests {
         lvls: 1,
         params: 1,
         indices: 0,
-        is_rec: true,
-        is_refl: false,
         is_unsafe: false,
-        nested: 0,
         block: mk_id("List"),
         member_idx: 0,
         ty: list_ty,
@@ -5386,10 +5372,7 @@ mod tests {
         lvls: 1,
         params: 1,
         indices: 0,
-        is_rec: true,
-        is_refl: false,
         is_unsafe: false,
-        nested: 1,
         block: block.clone(),
         member_idx: 0,
         ty: ptree_ty,
@@ -5448,10 +5431,7 @@ mod tests {
         lvls: 1,
         params: 1,
         indices: 0,
-        is_rec: true,
-        is_refl: false,
         is_unsafe: false,
-        nested: 0,
         block: mk_id("List"),
         member_idx: 0,
         ty: list_ty,
@@ -5601,10 +5581,7 @@ mod tests {
         lvls: 2,
         params: 2,
         indices: 0,
-        is_rec: false,
-        is_refl: false,
         is_unsafe: false,
-        nested: 0,
         block: mk_id("Pair"),
         member_idx: 0,
         ty: pair_ty,
@@ -5651,10 +5628,7 @@ mod tests {
         lvls: 1,
         params: 1,
         indices: 0,
-        is_rec: true,
-        is_refl: false,
         is_unsafe: false,
-        nested: 0,
         block: mk_id("List"),
         member_idx: 0,
         ty: list_ty,
@@ -5711,10 +5685,7 @@ mod tests {
         lvls: 0,
         params: 0,
         indices: 0,
-        is_rec: true,
-        is_refl: false,
         is_unsafe: false,
-        nested: 1,
         block: block.clone(),
         member_idx: 0,
         ty: sort1(),
@@ -5964,10 +5935,7 @@ mod tests {
         lvls: 1,
         params: 1,
         indices: 0,
-        is_rec: false,
-        is_refl: false,
         is_unsafe: false,
-        nested: 0,
         block: mk_id("Array"),
         member_idx: 0,
         ty: arr_ty,
@@ -6008,10 +5976,7 @@ mod tests {
         lvls: 1,
         params: 1,
         indices: 0,
-        is_rec: true,
-        is_refl: false,
         is_unsafe: false,
-        nested: 0,
         block: mk_id("List"),
         member_idx: 0,
         ty: list_ty,
@@ -6069,10 +6034,7 @@ mod tests {
         lvls: 1,
         params: 1,
         indices: 0,
-        is_rec: true,
-        is_refl: false,
         is_unsafe: false,
-        nested: 1,
         block: block.clone(),
         member_idx: 0,
         ty: inl_ty,
@@ -6311,10 +6273,7 @@ mod tests {
         lvls: 1,
         params: 1,
         indices: 1,
-        is_rec: true,
-        is_refl: false,
         is_unsafe: false,
-        nested: 0,
         block: block.clone(),
         member_idx: 0,
         ty: ok_ty,
@@ -6512,10 +6471,7 @@ mod tests {
         lvls: 0,
         params: 1,
         indices: 0,
-        is_rec: false,
-        is_refl: false,
         is_unsafe: false,
-        nested: 0,
         block: wrap_block.clone(),
         member_idx: 0,
         ty: wrap_ty,
@@ -6560,10 +6516,7 @@ mod tests {
         lvls: 0,
         params: 0,
         indices: 0,
-        is_rec: false,
-        is_refl: false,
         is_unsafe: false,
-        nested: 0,
         block: evil_block.clone(),
         member_idx: 0,
         ty: sort1(),
@@ -6624,10 +6577,7 @@ mod tests {
         lvls: 0,
         params: 0,
         indices: 0,
-        is_rec: true,
-        is_refl: false,
         is_unsafe,
-        nested: 0,
         block: block.clone(),
         member_idx: 0,
         ty: sort1(),
@@ -6694,10 +6644,7 @@ mod tests {
         lvls: 0,
         params: 0,
         indices: 0,
-        is_rec: true,
-        is_refl: false,
         is_unsafe: false,
-        nested: 0,
         block: tree_block.clone(),
         member_idx: 0,
         ty: sort1(),
@@ -6851,10 +6798,7 @@ mod tests {
         lvls: 0,
         params: 1,
         indices: 0,
-        is_rec: false,
-        is_refl: false,
         is_unsafe: false,
-        nested: 0,
         block: block.clone(),
         member_idx: 0,
         ty: m1_ty,
@@ -6875,10 +6819,7 @@ mod tests {
         lvls: 0,
         params: 1,
         indices: 0,
-        is_rec: false,
-        is_refl: false,
         is_unsafe: false,
-        nested: 0,
         block: block.clone(),
         member_idx: 1,
         ty: m2_ty,
@@ -6916,10 +6857,7 @@ mod tests {
           lvls: 0,
           params: 1,
           indices: 0,
-          is_rec: false,
-          is_refl: false,
           is_unsafe: false,
-          nested: 0,
           block: block.clone(),
           member_idx: i as u64,
           ty: shared_ty.clone(),
@@ -6957,10 +6895,7 @@ mod tests {
         lvls: 0,
         params: 1,
         indices: 0,
-        is_rec: false,
-        is_refl: false,
         is_unsafe: false,
-        nested: 0,
         block: block.clone(),
         member_idx: 0,
         ty: pi(sort1(), sort1()),
@@ -6977,10 +6912,7 @@ mod tests {
         lvls: 0,
         params: 0,
         indices: 0,
-        is_rec: false,
-        is_refl: false,
         is_unsafe: false,
-        nested: 0,
         block: block.clone(),
         member_idx: 1,
         ty: sort1(),

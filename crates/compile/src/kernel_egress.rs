@@ -1,4 +1,4 @@
-//! Egress: convert zero kernel types (`Meta` mode) to `src/ix/env.rs` Lean types.
+//! Egress: convert kernel types (`Meta` mode) to `src/ix/env.rs` Lean types.
 //!
 //! Only works for `Meta` mode since it needs actual names and binder info.
 
@@ -15,6 +15,8 @@ use ix_common::env::{
 };
 use ixon::constant::DefKind;
 
+use crate::compile::aux_gen::nested::compute_lean_ind_flags;
+use dashmap::DashMap;
 use ix_kernel::constant::KConst;
 use ix_kernel::env::KEnv;
 use ix_kernel::expr::{ExprData, KExpr, MData};
@@ -22,7 +24,7 @@ use ix_kernel::id::KId;
 use ix_kernel::level::{KUniv, UnivData};
 use ix_kernel::mode::Meta;
 
-/// Convert a zero kernel universe to a Lean level.
+/// Convert a kernel universe to a Lean level.
 fn egress_level(u: &KUniv<Meta>, level_params: &[Name]) -> env::Level {
   match u.data() {
     UnivData::Zero(_) => env::Level::zero(),
@@ -55,7 +57,7 @@ fn egress_levels(
 /// Expression egress cache, keyed by content hash.
 type Cache = FxHashMap<ix_kernel::env::Addr, env::Expr>;
 
-/// Convert a zero kernel expression to a Lean expression.
+/// Convert a kernel expression to a Lean expression.
 fn egress_expr(
   expr: &KExpr<Meta>,
   level_params: &[Name],
@@ -127,7 +129,7 @@ fn zids_to_names(ids: &[KId<Meta>]) -> Vec<Name> {
   ids.iter().map(|id| id.name.clone()).collect()
 }
 
-/// Convert a zero kernel constant to a Lean `ConstantInfo`.
+/// Convert a kernel constant to a Lean `ConstantInfo`.
 pub fn egress_constant(zc: &KConst<Meta>) -> LeanCI {
   let mut cache = Cache::default();
 
@@ -198,10 +200,7 @@ pub fn egress_constant(zc: &KConst<Meta>) -> LeanCI {
       level_params,
       params,
       indices,
-      is_rec,
-      is_refl,
       is_unsafe,
-      nested,
       ty,
       ctors,
       lean_all,
@@ -218,10 +217,11 @@ pub fn egress_constant(zc: &KConst<Meta>) -> LeanCI {
         num_indices: Nat::from(*indices),
         all: zids_to_names(lean_all),
         ctors: zids_to_names(ctors),
-        num_nested: Nat::from(*nested),
-        is_rec: *is_rec,
         is_unsafe: *is_unsafe,
-        is_reflexive: *is_refl,
+        // temporary stubs that get recomputed in lean_egress stage 2
+        num_nested: Nat::from(0u64),
+        is_rec: false,
+        is_reflexive: false,
       })
     },
 
@@ -295,20 +295,40 @@ pub fn egress_constant(zc: &KConst<Meta>) -> LeanCI {
   }
 }
 
-/// Convert the entire zero kernel environment to a Lean environment.
-pub fn lean_egress(zenv: &KEnv<Meta>) -> env::Env {
+/// Convert the entire kernel environment to a Lean environment.
+pub fn lean_egress(zenv: &KEnv<Meta>) -> Result<env::Env, String> {
   let entries: Vec<_> = zenv.iter().collect();
 
-  let results: Vec<(Name, LeanCI)> = entries
-    .into_par_iter()
-    .map(|(id, zc)| (id.name.clone(), egress_constant(&zc)))
-    .collect();
+  // Stage 1: egresss everything in parallel, split inductives into a staging
+  // area
+  let egressed: DashMap<Name, LeanCI> = DashMap::with_capacity(entries.len());
+  let groups: DashMap<Name, Vec<Name>> = DashMap::new();
+  entries.into_par_iter().for_each(|(id, zc)| {
+    let ci = egress_constant(&zc);
+    if let LeanCI::InductInfo(v) = &ci
+      && let Some(first) = v.all.first()
+    {
+      groups.entry(first.clone()).or_insert_with(|| v.all.clone());
+    }
+    egressed.insert(id.name.clone(), ci);
+  });
 
-  let mut lean_env = env::Env::default();
-  for (name, ci) in results {
-    lean_env.insert(name, ci);
+  // Stage 2: fixup the staged inductive flags which were stubbed
+  let mut lean_env: env::Env = egressed.into_iter().collect();
+  for entry in groups.iter() {
+    let (key, all) = (entry.key(), entry.value());
+    let f = compute_lean_ind_flags(all, &lean_env).map_err(|e| {
+      format!("lean_egress: ind flags for '{}': {e}", key.pretty())
+    })?;
+    for member in all {
+      if let Some(LeanCI::InductInfo(v)) = lean_env.get_mut(member) {
+        v.is_rec = f.is_rec;
+        v.is_rec = f.is_reflexive;
+        v.num_nested = Nat::from(f.num_nested);
+      }
+    }
   }
-  lean_env
+  Ok(lean_env)
 }
 
 // ===========================================================================
@@ -653,18 +673,7 @@ fn kind_to_ixon(
   ctor_kconsts: &[&KConst<Meta>],
   ctx: &mut EgressCtx,
 ) -> Result<IxonInductive, String> {
-  let KConst::Indc {
-    lvls,
-    params,
-    indices,
-    is_rec,
-    is_refl,
-    is_unsafe,
-    nested,
-    ty,
-    ..
-  } = ind_kc
-  else {
+  let KConst::Indc { lvls, params, indices, is_unsafe, ty, .. } = ind_kc else {
     return Err(format!(
       "kind_to_ixon: expected Indc, got {}",
       kc_kind(ind_kc)
@@ -694,13 +703,10 @@ fn kind_to_ixon(
     .collect::<Result<_, _>>()?;
 
   Ok(IxonInductive {
-    recr: *is_rec,
-    refl: *is_refl,
     is_unsafe: *is_unsafe,
     lvls: *lvls,
     params: *params,
     indices: *indices,
-    nested: *nested,
     typ,
     ctors,
   })
@@ -1573,10 +1579,7 @@ mod tests {
       lvls: 0,
       params: 2,
       indices: 3,
-      is_rec: true,
-      is_refl: false,
       is_unsafe: false,
-      nested: 1,
       block: mk_id("A"),
       member_idx: 0,
       ty: sort0(),
@@ -1588,8 +1591,8 @@ mod tests {
       LeanCI::InductInfo(v) => {
         assert_eq!(v.num_params.to_u64(), Some(2));
         assert_eq!(v.num_indices.to_u64(), Some(3));
-        assert_eq!(v.num_nested.to_u64(), Some(1));
-        assert!(v.is_rec);
+        assert_eq!(v.num_nested.to_u64(), Some(0));
+        assert!(!v.is_rec);
         assert!(!v.is_reflexive);
         assert_eq!(v.all.len(), 1);
         assert_eq!(v.ctors.len(), 1);
@@ -1663,7 +1666,7 @@ mod tests {
   #[test]
   fn lean_egress_on_empty_env() {
     let zenv = KEnv::<Meta>::new();
-    let le = lean_egress(&zenv);
+    let le = lean_egress(&zenv).unwrap();
     // `Env` is a `FxHashMap<Name, ConstantInfo>`.
     assert_eq!(le.len(), 0);
   }
@@ -1684,7 +1687,7 @@ mod tests {
         },
       );
     }
-    let le = lean_egress(&zenv);
+    let le = lean_egress(&zenv).unwrap();
     assert_eq!(le.len(), 3);
     for name in ["A", "B", "C"] {
       let ci = le.get(&mk_name(name)).expect("missing name");

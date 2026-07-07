@@ -63,8 +63,8 @@ def claim := ⟦
   enum RevealMutConstInfo {
     Defn(Option‹DefKind›, Option‹DefinitionSafety›,
          Option‹U64›, Option‹Addr›, Option‹Addr›),
-    Indc(Option‹G›, Option‹G›, Option‹G›,
-         Option‹U64›, Option‹U64›, Option‹U64›, Option‹U64›,
+    Indc(Option‹G›,
+         Option‹U64›, Option‹U64›, Option‹U64›,
          Option‹Addr›,
          Option‹List‹(U64, RevealConstructorInfo)››),
     Recr(Option‹G›, Option‹G›,
@@ -289,17 +289,14 @@ def claim := ⟦
         let (value, s) = get_opt_addr_masked(b4, s);
         (RevealMutConstInfo.Defn(kind, safety, lvls, typ, value), s),
       1 =>
-        let (is_recr, s) = get_opt_bool_masked(b0, s);
-        let (refl, s) = get_opt_bool_masked(b1, s);
-        let (is_unsafe, s) = get_opt_bool_masked(b2, s);
-        let (lvls, s) = get_opt_u64_masked(b3, s);
-        let (params, s) = get_opt_u64_masked(b4, s);
-        let (indices, s) = get_opt_u64_masked(b5, s);
-        let (nested, s) = get_opt_u64_masked(b6, s);
-        let (typ, s) = get_opt_addr_masked(b7, s);
-        let (ctors, s) = get_opt_ctor_entry_list_masked(b8, s);
-        (RevealMutConstInfo.Indc(is_recr, refl, is_unsafe, lvls, params,
-                                  indices, nested, typ, ctors), s),
+        let (is_unsafe, s) = get_opt_bool_masked(b0, s);
+        let (lvls, s) = get_opt_u64_masked(b1, s);
+        let (params, s) = get_opt_u64_masked(b2, s);
+        let (indices, s) = get_opt_u64_masked(b3, s);
+        let (typ, s) = get_opt_addr_masked(b4, s);
+        let (ctors, s) = get_opt_ctor_entry_list_masked(b5, s);
+        (RevealMutConstInfo.Indc(is_unsafe, lvls, params,
+                                  indices, typ, ctors), s),
       2 =>
         let (k, s) = get_opt_bool_masked(b0, s);
         let (is_unsafe, s) = get_opt_bool_masked(b1, s);
@@ -648,19 +645,16 @@ def claim := ⟦
         },
       MutConst.Indc(i) =>
         match claimed {
-          RevealMutConstInfo.Indc(opt_recr, opt_refl, opt_unsafe, opt_lvls,
-                                   opt_params, opt_indices, opt_nested,
+          RevealMutConstInfo.Indc(opt_unsafe, opt_lvls,
+                                   opt_params, opt_indices,
                                    opt_typ, opt_ctors) =>
             match i {
-              Inductive.Mk(r_recr, r_refl, r_unsafe, r_lvls, r_params,
-                            r_indices, r_nested, r_typ, r_ctors) =>
-                let _ = check_opt_bool(r_recr, opt_recr);
-                let _ = check_opt_bool(r_refl, opt_refl);
+              Inductive.Mk(r_unsafe, r_lvls, r_params,
+                            r_indices, r_typ, r_ctors) =>
                 let _ = check_opt_bool(r_unsafe, opt_unsafe);
                 let _ = check_opt_u64(r_lvls, opt_lvls);
                 let _ = check_opt_u64(r_params, opt_params);
                 let _ = check_opt_u64(r_indices, opt_indices);
-                let _ = check_opt_u64(r_nested, opt_nested);
                 let _ = check_opt_expr_addr(r_typ, opt_typ);
                 check_opt_ctor_entries(r_ctors, opt_ctors),
             },

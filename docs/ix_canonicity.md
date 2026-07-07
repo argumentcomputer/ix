@@ -646,7 +646,72 @@ the same projection address (in the inductive block for the aux
 inductive itself, and in the corresponding derived blocks for its
 `.rec`, `.below`, `.brecOn`, etc.).
 
-### 6.5 The content-address recipe
+### 6.5 Evaporated auxiliaries (over-merge splits)
+
+A source aux can lose its home entirely: its OWNER (the inductive
+whose constructor walk discovers the occurrence) stays in an SCC while
+every spec-param inductive splits into other SCCs. Example:
+
+```lean
+mutual
+  inductive A | mk : List B → List C → A
+  inductive B | leaf
+  inductive C | leaf
+end
+```
+
+SCC splitting yields `{A}`, `{B}`, `{C}`. From `{A}`'s view, `List B`
+mentions no block member — it is no longer a nested occurrence at all.
+Since SCCs partition the block, no SCC contains both the owner and the
+specs: the aux **evaporates**. (`compute_aux_perm` marks these source
+positions `PERM_OUT_OF_SCC`; an out-of-SCC entry whose owner is ALSO
+out-of-SCC is just another SCC's aux, handled there.)
+
+The canonical form follows from the isomorphism principle: a source
+declaration with `C` outside the mutual is isomorphic and never had
+the extra motives, so they are irrelevant and canonicalization drops
+them. Dropping the irrelevant motives/minors from `<all0>.rec_N`
+leaves exactly the EXTERNAL inductive's own generic recursor — which
+is also what the kernel regenerates from the external block, so no
+other stored form can check. Concretely:
+
+- `<all0>.rec_N` claims are **address aliases of `<Ext>.rec`**
+  (`aux_gen`'s evaporated-alias pass). All evaporated auxes with the
+  same external head collapse to one address, across declarations.
+- Call sites are rebuilt onto the external telescope by a
+  **head-rewrite `CallSitePlan`**: spec args and the extended level
+  list are derived from the source recursor's type instantiated with
+  call-site args (`surgery::derive_head_rewrite_app`); the aux's own
+  motive maps to the external motive slot; its minor band is kept,
+  with `adapt_split_minor` synthesizing IHs consumed from dropped
+  motives (via the target's source recursor — including AUX targets,
+  which recurse through their own head-rewrite plans). The ORIGINAL
+  head (source name + source levels) is preserved in `meta_sharing`,
+  pointed at by `ExprMetaData::CallSite::orig_head`, and restored by
+  decompile.
+- `.below_N` / `.brecOn_N[.go|.eq]` of evaporated auxes have no
+  canonical regeneration: they compile as **surgered originals**
+  (source telescopes kept, embedded `rec_N` spines rewritten), exactly
+  like `_sizeOf_N`. Their claims typecheck; address identity across
+  isomorphic declarations is deliberately NOT promised for these
+  derived definitions (their telescopes still carry the source arity).
+- The rewrite domain is restricted to single-motive external targets;
+  unsupported shapes skip both alias and plan together and fall back
+  to original compilation, which kernel-check reports per constant.
+
+Decompile regenerates the Lean-faithful over-merged view from the
+stored `Muts` metadata, and the regeneration is **byte-exact**: for
+every aux constant, `roundtrip_block`'s recompile of the regenerated
+form reproduces `Named.original.0` exactly (this requires mirroring
+the production compile paths' `preseed_expr_tables` call — the
+serialized constant embeds its ref/univ tables in preseeded sorted
+order, so an unseeded recompile permutes every `Ref`/univ index into
+a byte-different, semantically identical constant). A Phase-A address
+mismatch is therefore a **hard error** with no aux exemption; the
+recovery path (`recover_aux_from_original`) only preserves the
+Lean-facing constant for diagnosis while the error is recorded.
+
+### 6.6 The content-address recipe
 
 Each block's content hash is computed from its **members array in
 canonical layout order**. The aux permutation and the Lean-visible

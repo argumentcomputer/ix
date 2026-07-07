@@ -45,8 +45,7 @@ def genRevealMutConstInfo : Gen RevealMutConstInfo :=
       <$> genOptional genDefKind <*> genOptional genDefinitionSafety
       <*> genOptional genUInt64Small <*> genOptional genAddress <*> genOptional genAddress),
     (5, RevealMutConstInfo.indc
-      <$> genOptional genBool <*> genOptional genBool <*> genOptional genBool
-      <*> genOptional genUInt64Small <*> genOptional genUInt64Small
+      <$> genOptional genBool <*> genOptional genUInt64Small
       <*> genOptional genUInt64Small <*> genOptional genUInt64Small
       <*> genOptional genAddress
       <*> genOptional (genSmallArray (Prod.mk <$> genUInt64Small <*> genRevealConstructorInfo))),

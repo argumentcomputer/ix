@@ -15,7 +15,9 @@ use rayon::prelude::*;
 use rustc_hash::FxHashSet;
 
 use crate::compile::{
-  BlockCache, CompileOptions, CompileState, compile_const, compile_const_no_aux,
+  BlockCache, CompileOptions, CompileState,
+  aux_gen::nested::validate_lean_ind_flags, compile_const,
+  compile_const_no_aux,
 };
 use crate::condense::compute_sccs;
 use crate::graph::{NameSet, build_ref_graph};
@@ -173,6 +175,16 @@ pub fn compile_env_with_options(
     eprintln!(
       "[compile_env] setup 3/7 compute_sccs ({} blocks): {:.2}s",
       condensed.blocks.len(),
+      phase_start.elapsed().as_secs_f32()
+    );
+  }
+
+  // Domain restriction: reject environments with non-canonical inductive flags
+  let phase_start = Instant::now();
+  validate_lean_ind_flags(lean_env.as_ref())?;
+  if !*IX_QUIET {
+    eprintln!(
+      "[compile_env] setup 4/7 validate_ind_flags: {:.2}s",
       phase_start.elapsed().as_secs_f32()
     );
   }

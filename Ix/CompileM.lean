@@ -1112,13 +1112,10 @@ def compileInductive (i : InductiveVal) (ctorVals : Array ConstructorVal)
     let ctxAddrs ← getMutCtxAddrs
 
     let ind : Ixon.Inductive := {
-      recr := i.isRec
-      refl := i.isReflexive
       isUnsafe := i.isUnsafe
       lvls := i.cnst.levelParams.size.toUInt64
       params := i.numParams.toUInt64
       indices := i.numIndices.toUInt64
-      nested := i.numNested.toUInt64
       typ := typeExpr
       ctors := ctors
     }
@@ -1194,13 +1191,10 @@ def compileInductiveData (i : Ind)
     let ctxAddrs ← getMutCtxAddrs
 
     let ind : Ixon.Inductive := {
-      recr := i.isRec
-      refl := i.isReflexive
       isUnsafe := i.isUnsafe
       lvls := i.levelParams.size.toUInt64
       params := i.numParams.toUInt64
       indices := i.numIndices.toUInt64
-      nested := i.numNested.toUInt64
       typ := typeExpr
       ctors := ctors
     }

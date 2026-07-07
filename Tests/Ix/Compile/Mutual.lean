@@ -465,4 +465,39 @@ public inductive DClosure (α : Type) (S : MySet (MySet α)) : MySet (MySet α)
 
 end ReducibleAliasTarget
 
+namespace AuxDedup1
+
+mutual
+  inductive A : Type where | mk : List B → List C → A
+  inductive B : Type where | leaf : B
+  inductive C : Type where | leaf : C
+end
+
+end AuxDedup1
+
+namespace AuxDedup2
+
+  inductive C : Type where | leaf : C
+mutual
+  inductive A : Type where | mk : List B → List C → A
+  inductive B : Type where | leaf : B
+end
+
+end AuxDedup2
+
+-- Mixed nested auxiliaries: `List M` stays a genuine nested occurrence of
+-- M's split SCC (M is recursive through it), while `List B` evaporates
+-- (B splits into its own SCC). Exercises the expand/restore path with a
+-- perm mixing a canonical slot and PERM_OUT_OF_SCC for the same owner:
+-- `M.rec_1` is a canonical aux patch, `M.rec_2` aliases `List.rec`.
+namespace AuxDedupMixed
+
+mutual
+  inductive M : Type where | mk : List M → List B → M
+  inductive B : Type where | leaf : B
+end
+
+end AuxDedupMixed
+
+
 end Tests.Ix.Compile.Mutual

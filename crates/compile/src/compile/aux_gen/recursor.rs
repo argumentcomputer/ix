@@ -2350,7 +2350,6 @@ fn compute_is_large_and_k(
     u64,
     Vec<KId<Meta>>,
     ix_kernel::expr::KExpr<Meta>,
-    bool,
   )> = Vec::new();
 
   // Use the first class's block KId as the shared block reference.
@@ -2418,10 +2417,7 @@ fn compute_is_large_and_k(
         lvls: cls_n_lvls,
         params: n_params as u64,
         indices: cls_n_indices,
-        is_rec: cls_ind.is_rec,
-        is_refl: cls_ind.is_reflexive,
         is_unsafe: cls_ind.is_unsafe,
-        nested: 0,
         block: block_zid.clone(),
         member_idx: ci as u64,
         ty: cls_ty_z.clone(),
@@ -2448,7 +2444,6 @@ fn compute_is_large_and_k(
       cls_n_indices,
       cls_ctor_zids,
       cls_ty_z,
-      false, // is_rec — not needed for is_large check
     ));
   }
 

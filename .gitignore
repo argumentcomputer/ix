@@ -7,3 +7,7 @@
 # Nix
 result*
 .direnv/
+
+#Ix
+*.ixe
+plans

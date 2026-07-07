@@ -65,15 +65,21 @@ def runCompileValidateAux (env : Lean.Environment) : IO UInt32 := do
   IO.println "[validate-aux] finding seeds..."
   let prefixes := [
     `Tests.Ix.Compile.Mutual,
-    --`Tests.Ix.Compile.Canonicity,
+    `Tests.Ix.Compile.Canonicity,
     --`Init,
     --`_private.Init,
     --`State,
     --`Lean,
     --`Tests.Ix.Kernel.TutorialDefs
   ]
+  -- Module-system fixtures declared without `public` get private-mangled
+  -- names (`_private.<module>.0.<name>` — e.g. the AuxDedup namespaces in
+  -- Tests.Ix.Compile.Mutual). Match prefixes against the user-visible form
+  -- so those constants are seeded too; otherwise Phase 4b's AuxDedup
+  -- identity groups are fully absent and silently skipped.
   let mut seeds := env.constants.toList.filterMap fun (n, _) =>
-    if prefixes.any (·.isPrefixOf n) then some n else none
+    let visible := (Lean.privateToUserName? n).getD n
+    if prefixes.any (·.isPrefixOf visible) then some n else none
   -- Add prereqs that aux_gen references but test fixtures don't directly use.
   -- .below uses PUnit/PProd (Type-level), .brecOn uses Eq/True.
   -- We need the full inductive family: type, constructors, and recursor.

@@ -39,7 +39,7 @@ lean_ffi::lean_inductive! {
   LeanIxonAxiom           [ { num_obj: 1, num_64: 1, num_8: 1 } ];
   LeanIxonQuotient        [ { num_obj: 1, num_64: 1, num_8: 1 } ];
   LeanIxonConstructor     [ { num_obj: 1, num_64: 4, num_8: 1 } ];
-  LeanIxonInductive       [ { num_obj: 2, num_64: 4, num_8: 3 } ];
+  LeanIxonInductive       [ { num_obj: 2, num_64: 3, num_8: 1 } ];
   LeanIxonInductiveProj   [ { num_obj: 1, num_64: 1 } ];
   LeanIxonConstructorProj [ { num_obj: 1, num_64: 2 } ];
   LeanIxonRecursorProj    [ { num_obj: 1, num_64: 1 } ];

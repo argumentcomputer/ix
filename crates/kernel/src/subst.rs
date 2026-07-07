@@ -51,7 +51,7 @@ pub fn subst<M: KernelMode>(
   if *IX_SUBST_COUNT_LOG && depth == 0 {
     let n = SUBST_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     if n.is_multiple_of(100_000) && n > 0 {
-      log::info!("[subst] count={n}");
+      eprintln!("[subst] count={n}");
     }
   }
   // Fast path: no loose bound vars at or below `depth` means nothing to

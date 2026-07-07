@@ -692,9 +692,13 @@ bad_raw_consts
       all := [n]
       ctors := [n ++ `mk]
       numNested := 0
-      isRec := false
+      -- Honest flags (the `n → n` ctor field domain is a self-occurrence
+      -- inside an arrow): the badness under test is the NEGATIVE
+      -- occurrence, which the kernel must reject — not a compile-side
+      -- `validate_ind_flags` mismatch (see the `reflOccInIndex` note).
+      isRec := true
       isUnsafe := false
-      isReflexive := false
+      isReflexive := true
   }
   ]
 
@@ -750,9 +754,12 @@ bad_raw_consts
       all := [n]
       ctors := [n ++ `mk]
       numNested := 0
-      isRec := false
+      -- Honest flags (self-occurrence inside an arrow domain; the badness
+      -- under test is the reducible-hidden negative occurrence — see the
+      -- `reflOccInIndex` note).
+      isRec := true
       isUnsafe := false
-      isReflexive := false
+      isReflexive := true
   }
   ]
 
@@ -956,9 +963,13 @@ bad_raw_consts
       all := [n]
       ctors := [n ++ `mk]
       numNested := 0
-      isRec := false
+      -- Honest flags (`Nat → n → Nat` field domain contains a
+      -- self-occurrence and is an arrow): the badness under test is the
+      -- LEFT-of-arrow occurrence, which the kernel must reject — see the
+      -- `reflOccInIndex` note.
+      isRec := true
       isUnsafe := false
-      isReflexive := false
+      isReflexive := true
   }
   ]
 
@@ -988,9 +999,15 @@ bad_raw_consts
       all := [n]
       ctors := [n ++ `mk]
       numNested := 0
-      isRec := false
+      -- Honest flags (the ctor field `Nat → I (I α)` makes `I` recursive
+      -- and reflexive): compile-side `validate_ind_flags` must not be the
+      -- thing that rejects this fixture — the badness under test is the
+      -- reflexive occurrence in INDEX position, which the *kernel* must
+      -- reject. Stale `false` flags here failed the whole shared tutorial
+      -- env compile, poisoning every other test case.
+      isRec := true
       isUnsafe := false
-      isReflexive := false
+      isReflexive := true
   }
   ]
 

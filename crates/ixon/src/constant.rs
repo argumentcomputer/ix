@@ -107,10 +107,6 @@ pub struct Constructor {
 /// An inductive type.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Inductive {
-  /// Has recursive occurrences
-  pub recr: bool,
-  /// Is reflexive
-  pub refl: bool,
   pub is_unsafe: bool,
   /// Number of universe parameters
   pub lvls: u64,
@@ -118,8 +114,6 @@ pub struct Inductive {
   pub params: u64,
   /// Number of indices
   pub indices: u64,
-  /// Nested inductive depth
-  pub nested: u64,
   /// Type expression
   pub typ: Arc<Expr>,
   /// Constructors
@@ -396,13 +390,10 @@ pub mod tests {
 
   pub fn gen_inductive(g: &mut Gen) -> Inductive {
     Inductive {
-      recr: bool::arbitrary(g),
-      refl: bool::arbitrary(g),
       is_unsafe: bool::arbitrary(g),
       lvls: u64::arbitrary(g) % 10,
       params: u64::arbitrary(g) % 10,
       indices: u64::arbitrary(g) % 5,
-      nested: u64::arbitrary(g) % 3,
       typ: arbitrary_expr(g),
       ctors: (0..gen_range(g, 0..4)).map(|_| gen_constructor(g)).collect(),
     }

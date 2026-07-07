@@ -163,6 +163,7 @@ pub struct KEnvCacheSizes {
   pub unfold: usize,
   pub ingress: usize,
   pub is_prop: usize,
+  pub is_rec: usize,
   pub recursor: usize,
   pub rec_majors: usize,
   pub block_peer_agreement: usize,
@@ -192,6 +193,7 @@ impl KEnvCacheSizes {
       self.unfold,
       self.ingress,
       self.is_prop,
+      self.is_rec,
       self.recursor,
       self.rec_majors,
       self.block_peer_agreement,
@@ -331,6 +333,8 @@ pub struct KEnv<M: KernelMode> {
   /// is the dominant cost on mathlib proof-heavy blocks, where the same
   /// propositions are tested for equality thousands of times.
   pub is_prop_cache: FxHashMap<(Addr, Addr), bool>,
+  /// Computed `is_rec` per inductive, keyed by content address
+  pub is_rec_cache: FxHashMap<Address, bool>,
   /// Generated recursors, keyed by inductive Muts block id.
   pub recursor_cache: FxHashMap<KId<M>, Vec<GeneratedRecursor<M>>>,
   /// Nested-auxiliary order expected by stored recursors in this environment.
@@ -383,7 +387,7 @@ impl<M: KernelMode> Drop for KEnv<M> {
     if super::perf::enabled() {
       let summary = self.perf.summary();
       if !summary.is_empty() {
-        log::info!("{summary}");
+        eprintln!("{summary}");
       }
     }
   }
@@ -416,6 +420,7 @@ impl<M: KernelMode> KEnv<M> {
       nat_succ_stuck: FxHashSet::default(),
       ingress_cache: FxHashMap::default(),
       is_prop_cache: FxHashMap::default(),
+      is_rec_cache: FxHashMap::default(),
       recursor_cache: FxHashMap::default(),
       recursor_aux_order,
       rec_majors_cache: FxHashMap::default(),
@@ -560,6 +565,7 @@ impl<M: KernelMode> KEnv<M> {
       unfold: self.unfold_cache.len(),
       ingress: self.ingress_cache.len(),
       is_prop: self.is_prop_cache.len(),
+      is_rec: self.is_rec_cache.len(),
       recursor: self.recursor_cache.len(),
       rec_majors: self.rec_majors_cache.len(),
       block_peer_agreement: self.block_peer_agreement_cache.len(),

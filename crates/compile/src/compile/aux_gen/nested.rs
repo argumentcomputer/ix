@@ -16,6 +16,7 @@
 
 use bignat::Nat;
 use blake3::Hash;
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use super::expr_utils::{
@@ -2065,17 +2066,131 @@ fn try_detect_nested_fvar(
   });
 }
 
-// NOTE: the kernel-level `compute_occurrence_levels` / `compute_expr_sort_level`
-// / `extract_level_param_with_offset` / `peel_succ` helpers, and their
-// transitive dep `super::below::get_ind_sort_level`, were removed as part
-// of Round 2 dead-code cleanup. They implemented the principled universe
-// recomputation per `elim_nested_inductive_fn` in the C++ kernel, but
-// were never wired into the live pipeline — `try_detect_nested_fvar` uses
-// raw `head_levels` and `maximize_occurrence_levels` does pointwise-max
-// per external name. If we ever need the principled path (e.g., for
-// heterogeneous nested args like `HashMap (List α) (Array β)`), revive
-// from git history; the current live pipeline has zero observed failures
-// on 25k+ constants via `validate-aux`.
+/// Lean-faithful declaration flags for an original mutual block
+pub struct LeanIndFlags {
+  pub is_rec: bool,
+  pub is_reflexive: bool,
+  pub num_nested: u64,
+}
+
+/// Recompute Lean's block-wide `isRec` / `isReflexive` / `numNested` for the
+/// original mutual group `all`
+/// used whereever an `InductiveVal` must be reconstructed without a Lean env
+/// to copy from, such as kernel egress and decompile, since Ixon doesn't store
+/// these flags
+pub fn compute_lean_ind_flags(
+  all: &[Name],
+  lean_env: &LeanEnv,
+) -> Result<LeanIndFlags, CompileError> {
+  let expanded = expand_nested_block(all, lean_env, &FxHashMap::default())?;
+  let num_nested = (expanded.types.len() - expanded.n_originals) as u64;
+  let block_names: FxHashSet<&Name> =
+    expanded.types.iter().map(|m| &m.name).collect();
+
+  let mut occ_cache: FxHashMap<Hash, bool> = FxHashMap::default();
+  let mut is_rec = false;
+  let mut is_reflexive = false;
+  for member in &expanded.types {
+    for ctor in &member.ctors {
+      let mut ty = &ctor.typ;
+      while let ExprData::ForallE(_, dom, body, _, _) = ty.as_data() {
+        if has_ind_occ(dom, &block_names, &mut occ_cache) {
+          is_rec = true;
+          if matches!(dom.as_data(), ExprData::ForallE(..)) {
+            is_reflexive = true;
+          }
+        }
+        ty = body;
+      }
+    }
+  }
+  Ok(LeanIndFlags { is_rec, is_reflexive, num_nested })
+}
+
+/// Validate that every inductive group in `lean_env` carries exactly the flags
+/// `compute_lean_ind_flags` recomputes.
+pub fn validate_lean_ind_flags(lean_env: &LeanEnv) -> Result<(), CompileError> {
+  let mut groups: FxHashMap<&Name, &[Name]> = FxHashMap::default();
+  for ci in lean_env.values() {
+    if let ConstantInfo::InductInfo(v) = ci
+      && let Some(first) = v.all.first()
+    {
+      groups.entry(first).or_insert(v.all.as_slice());
+    }
+  }
+  //let groups: Vec<(&Name, &[Name])> = groups.into_iter().collect();
+  groups.par_iter().try_for_each(|(_, all)| {
+    for member in all.iter() {
+      let Some(ConstantInfo::InductInfo(v)) = lean_env.get(member) else {
+        return Ok(());
+      };
+      for cn in &v.ctors {
+        if !matches!(lean_env.get(cn), Some(ConstantInfo::CtorInfo(_))) {
+          return Ok(());
+        }
+      }
+    }
+    let flags = compute_lean_ind_flags(all, lean_env)?;
+    for member in all.iter() {
+      let Some(ConstantInfo::InductInfo(v)) = lean_env.get(member) else {
+        continue; // unreachable
+      };
+      if v.is_rec != flags.is_rec
+        || v.is_reflexive != flags.is_reflexive
+        || v.num_nested != Nat::from(flags.num_nested)
+      {
+        return Err(CompileError::InvalidMutualBlock {
+          reason: format!(
+            "non-canonical inductive flags for '{}': \
+               stored isRec={}isReflexive={} numNested={}, \
+               computed isRec={}isReflexive={} numNested={}",
+            member.pretty(),
+            v.is_rec,
+            v.is_reflexive,
+            v.num_nested,
+            flags.is_rec,
+            flags.is_reflexive,
+            flags.num_nested,
+          ),
+        });
+      }
+    }
+    Ok(())
+  })
+}
+
+// does `expr` mention any block type by name anywhere?
+// hash-memoized like `has_out_of_scc_const` - ctor types share subterm DAGS
+fn has_ind_occ(
+  expr: &LeanExpr,
+  names: &FxHashSet<&Name>,
+  cache: &mut FxHashMap<Hash, bool>,
+) -> bool {
+  let key = *expr.get_hash();
+  if let Some(&cached) = cache.get(&key) {
+    return cached;
+  }
+  let result = match expr.as_data() {
+    ExprData::Const(name, _, _) => names.contains(name),
+    ExprData::App(f, a, _) => {
+      has_ind_occ(f, names, cache) || has_ind_occ(a, names, cache)
+    },
+    ExprData::Lam(_, t, b, _, _) | ExprData::ForallE(_, t, b, _, _) => {
+      has_ind_occ(t, names, cache) || has_ind_occ(b, names, cache)
+    },
+    ExprData::LetE(_, t, v, b, _, _) => {
+      has_ind_occ(t, names, cache)
+        || has_ind_occ(v, names, cache)
+        || has_ind_occ(b, names, cache)
+    },
+    ExprData::Proj(_, _, e, _) | ExprData::Mdata(_, e, _) => {
+      has_ind_occ(e, names, cache)
+    },
+    _ => false,
+  };
+  cache.insert(key, result);
+  result
+}
 
 #[cfg(test)]
 mod tests {
@@ -2337,5 +2452,81 @@ mod tests {
     );
     let r = build_compile_flat_block(&[mk_name_for("Pretender")], &env);
     assert!(r.is_err());
+  }
+
+  /// Recursive single-ctor inductive `N` with a real `CtorInfo` entry
+  /// (`minimal_nat_env`'s axiom-shaped ctors are invisible to
+  /// `expand_nested_block`'s ctor seeding). Canonical flags:
+  /// isRec=true, isReflexive=false, numNested=0.
+  fn flags_env(is_rec: bool, is_reflexive: bool, num_nested: u64) -> LeanEnv {
+    use ix_common::env::ConstructorVal;
+    let mut env = LeanEnv::default();
+    let n = mk_name_for("N");
+    env.insert(
+      n.clone(),
+      ConstantInfo::InductInfo(InductiveVal {
+        cnst: ConstantVal {
+          name: n.clone(),
+          level_params: vec![],
+          typ: LeanExpr::sort(LL::succ(LL::zero())),
+        },
+        num_params: Nat::from(0u64),
+        num_indices: Nat::from(0u64),
+        all: vec![n.clone()],
+        ctors: vec![mk_name_for("N.mk")],
+        num_nested: Nat::from(num_nested),
+        is_rec,
+        is_unsafe: false,
+        is_reflexive,
+      }),
+    );
+    // N.mk : N → N
+    env.insert(
+      mk_name_for("N.mk"),
+      ConstantInfo::CtorInfo(ConstructorVal {
+        cnst: ConstantVal {
+          name: mk_name_for("N.mk"),
+          level_params: vec![],
+          typ: LeanExpr::all(
+            mk_name_for("_"),
+            LeanExpr::cnst(n.clone(), vec![]),
+            LeanExpr::cnst(n.clone(), vec![]),
+            ix_common::env::BinderInfo::Default,
+          ),
+        },
+        induct: n,
+        cidx: Nat::from(0u64),
+        num_params: Nat::from(0u64),
+        num_fields: Nat::from(1u64),
+        is_unsafe: false,
+      }),
+    );
+    env
+  }
+
+  #[test]
+  fn validate_lean_ind_flags_accepts_canonical() {
+    assert!(validate_lean_ind_flags(&flags_env(true, false, 0)).is_ok());
+  }
+
+  #[test]
+  fn validate_lean_ind_flags_rejects_bad_is_rec() {
+    let r = validate_lean_ind_flags(&flags_env(false, false, 0));
+    assert!(matches!(r, Err(CompileError::InvalidMutualBlock { .. })));
+  }
+
+  #[test]
+  fn validate_lean_ind_flags_rejects_bad_num_nested() {
+    let r = validate_lean_ind_flags(&flags_env(true, false, 1));
+    assert!(matches!(r, Err(CompileError::InvalidMutualBlock { .. })));
+  }
+
+  #[test]
+  fn validate_lean_ind_flags_skips_unresolvable_group() {
+    // Wrong flags, but the ctor entry is removed → group unresolvable →
+    // skipped (grounding owns partial envs), not rejected.
+    let mut env = flags_env(false, false, 0);
+    env.remove(&mk_name_for("N.mk"));
+    assert!(validate_lean_ind_flags(&env).is_ok());
   }
 }

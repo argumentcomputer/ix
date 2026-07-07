@@ -110,8 +110,8 @@ def genConstructor : Gen Constructor :=
   .mk <$> genBool <*> genUInt64Small <*> genUInt64Small <*> genUInt64Small <*> genUInt64Small <*> genExpr
 
 def genInductive : Gen Inductive :=
-  .mk <$> genBool <*> genBool <*> genBool <*> genUInt64Small <*> genUInt64Small
-    <*> genUInt64Small <*> genUInt64Small <*> genExpr <*> genArray genConstructor
+  .mk <$> genBool <*> genUInt64Small <*> genUInt64Small
+    <*> genUInt64Small <*> genExpr <*> genArray genConstructor
 
 
 def genBinderInfo : Gen Lean.BinderInfo :=

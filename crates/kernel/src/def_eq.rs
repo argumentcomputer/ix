@@ -63,7 +63,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     if *IX_DEF_EQ_COUNT_LOG {
       let n = DEF_EQ_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
       if n.is_multiple_of(100_000) && n > 0 {
-        log::info!("[is_def_eq] count={n}");
+        eprintln!("[is_def_eq] count={n}");
       }
     }
     crate::profile::bump_def_eq();
@@ -86,12 +86,12 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       let a_hit = head_const_name(a).is_some_and(|n| n.contains(prefix));
       let b_hit = head_const_name(b).is_some_and(|n| n.contains(prefix));
       if a_hit || b_hit {
-        log::info!(
+        eprintln!(
           "[deq] depth={} a={}",
           self.def_eq_depth,
           compact_def_eq_expr(a)
         );
-        log::info!(
+        eprintln!(
           "[deq] depth={} b={}",
           self.def_eq_depth,
           compact_def_eq_expr(b)
@@ -210,7 +210,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
 
     let ok = result?;
     if trace_active {
-      log::info!(
+      eprintln!(
         "[deq] depth={} -> {} ({})",
         self.def_eq_depth,
         ok,
@@ -219,8 +219,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       // On FAIL, also dump the full a/b that failed (post-Tier-1 quick).
       // Lets us see what the def-eq engine actually compared.
       if !ok {
-        log::info!("[deq fail] depth={} a-full: {a}", self.def_eq_depth);
-        log::info!("[deq fail] depth={} b-full: {b}", self.def_eq_depth);
+        eprintln!("[deq fail] depth={} a-full: {a}", self.def_eq_depth);
+        eprintln!("[deq fail] depth={} b-full: {b}", self.def_eq_depth);
       }
       self.def_eq_trace_depth = self.def_eq_trace_depth.saturating_sub(1);
     }
@@ -495,9 +495,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     }
 
     if self.def_eq_trace_depth > 0 {
-      log::info!("[deq tier4 break] depth={}", self.def_eq_depth);
-      log::info!("  wa: {wa}");
-      log::info!("  wb: {wb}");
+      eprintln!("[deq tier4 break] depth={}", self.def_eq_depth);
+      eprintln!("  wa: {wa}");
+      eprintln!("  wb: {wb}");
     }
 
     // Tier 4b: post-delta congruence checks (lean4lean isDefEqConst/Fvar/Proj)
@@ -544,9 +544,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
       let a_match = head_const_name(&wa).is_some_and(|n| n.contains(&prefix));
       let b_match = head_const_name(&wb).is_some_and(|n| n.contains(&prefix));
       if prefix.is_empty() || a_match || b_match {
-        log::info!("[deq tier5 fail] depth={}", self.def_eq_depth);
-        log::info!("  wa: {wa}");
-        log::info!("  wb: {wb}");
+        eprintln!("[deq tier5 fail] depth={}", self.def_eq_depth);
+        eprintln!("  wa: {wa}");
+        eprintln!("  wb: {wb}");
       }
     }
 
@@ -873,8 +873,8 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     };
     // Check unit-like: non-recursive, 0 indices, 1 ctor with 0 fields
     let is_unit = match self.try_get_const(&a_ind)? {
-      Some(KConst::Indc { is_rec, indices, ctors, .. }) => {
-        if is_rec || indices != 0 || ctors.len() != 1 {
+      Some(KConst::Indc { indices, ctors, .. }) => {
+        if indices != 0 || ctors.len() != 1 {
           false
         } else {
           match self.try_get_const(&ctors[0])? {
@@ -1143,29 +1143,9 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     }
 
     // Inductive must be struct-like (non-recursive, 0 indices, 1 ctor)
-    match self.try_get_const(&induct_id)? {
-      Some(KConst::Indc { is_rec, indices, ctors, .. }) => {
-        if is_rec || indices != 0 || ctors.len() != 1 {
-          self.dump_eta_trace(
-            "not-struct-like",
-            Some(&induct_id),
-            0,
-            &t_norm,
-            s,
-          );
-          return Ok(false);
-        }
-      },
-      _ => {
-        self.dump_eta_trace(
-          "inductive-missing",
-          Some(&induct_id),
-          0,
-          &t_norm,
-          s,
-        );
-        return Ok(false);
-      },
+    if !self.is_struct_like(&induct_id)? {
+      self.dump_eta_trace("not-struct-like", Some(&induct_id), 0, &t_norm, s);
+      return Ok(false);
     }
 
     // Types must be def-eq (lean4lean tryEtaStructCore, line 515).
@@ -1518,7 +1498,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     if !filter.is_empty() && !id_s.contains(filter) {
       return;
     }
-    log::info!(
+    eprintln!(
       "[proj-delta] const={} depth={} phase={} proj={}.{} a={} b={}",
       self.debug_label.as_deref().unwrap_or("<unknown>"),
       self.def_eq_depth,
@@ -1562,7 +1542,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     if !filter.is_empty() && !id_s.contains(filter) {
       return;
     }
-    log::info!(
+    eprintln!(
       "[eta] const={} depth={} reason={} id={} idx={} a={} b={}",
       self.debug_label.as_deref().unwrap_or("<unknown>"),
       self.def_eq_depth,
@@ -1692,21 +1672,17 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     {
       return;
     }
-    log::info!(
+    eprintln!(
       "[deq max] {kind} depth={} a_head={} b_head={} wa_head={} wb_head={}",
-      self.def_eq_depth,
-      a_head,
-      b_head,
-      wa_head,
-      wb_head
+      self.def_eq_depth, a_head, b_head, wa_head, wb_head
     );
-    log::info!("  a:  {a}");
-    log::info!("  b:  {b}");
+    eprintln!("  a:  {a}");
+    eprintln!("  b:  {b}");
     if let Some(wa) = wa {
-      log::info!("  wa: {wa}");
+      eprintln!("  wa: {wa}");
     }
     if let Some(wb) = wb {
-      log::info!("  wb: {wb}");
+      eprintln!("  wb: {wb}");
     }
   }
 
@@ -1725,7 +1701,7 @@ impl<M: KernelMode> TypeChecker<'_, M> {
     {
       return;
     }
-    log::info!(
+    eprintln!(
       "[deq max] rec-fuel depth={} a={} b={}",
       self.def_eq_depth,
       compact_def_eq_expr(a),
@@ -2137,10 +2113,7 @@ mod tests {
         lvls: 0,
         params: 0,
         indices: 0,
-        is_rec: false,
-        is_refl: false,
         is_unsafe: false,
-        nested: 0,
         block: mk_id("Unit"),
         member_idx: 0,
         ty: AE::sort(AU::succ(AU::zero())),
@@ -2330,10 +2303,7 @@ mod tests {
         lvls: 0,
         params: 0,
         indices: 0,
-        is_rec: false,
-        is_refl: false,
         is_unsafe: false,
-        nested: 0,
         block: mk_id("Pair"),
         member_idx: 0,
         ty: AE::sort(AU::succ(AU::zero())),

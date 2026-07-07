@@ -122,53 +122,72 @@ public def kernelCheck (name : Lean.Name) (env : Lean.Environment) :
     observed cost in the message so it can be pasted back. -/
 private def kernelCheckEntries : List (String × Nat) := [
   -- Stdlib
-  ("HEq",                                                                1_713_377),
-  ("HEq.rec",                                                            2_673_812),
-  ("Eq.rec",                                                             2_569_093),
-  ("Nat",                                                                1_856_206),
-  ("Nat.add",                                                            12_913_896),
-  ("Nat.add_comm",                                                       53_941_716),
-  ("Nat.decEq",                                                          68_096_944),
-  ("Nat.decLe",                                                          189_429_058),
-  ("Nat.sub_le_of_le_add",                                               510_307_972),
+  ("HEq",                                                                1_696_277),
+  ("HEq.rec",                                                            2_660_559),
+  ("Eq.rec",                                                             2_556_021),
+  ("Nat",                                                                1_838_794),
+  ("Nat.add",                                                            12_870_219),
+  ("Nat.add_comm",                                                       53_798_540),
+  ("Nat.decEq",                                                          67_509_881),
+  ("Nat.decLe",                                                          188_576_447),
+  ("Nat.sub_le_of_le_add",                                               509_824_193),
   -- Newly-unlocked targets (level_leq Géran normalize).
-  ("Trans.mk",                                                           2_846_339),
-  ("Array.append_assoc",                                                 2_533_794_863),
-  ("Vector.append",                                                      2_604_106_735),
+  ("Trans.mk",                                                           2_828_880),
+  ("Array.append_assoc",                                                 2_526_945_883),
+  ("Vector.append",                                                      2_595_348_010),
   -- Primitive reduction theorems (`IxVMPrim`)
-  ("IxVMPrim.nat_add_lit",                                               27_892_351),
-  ("IxVMPrim.nat_sub_lit",                                               33_496_649),
-  ("IxVMPrim.nat_mul_lit",                                               24_496_901),
-  ("IxVMPrim.nat_mul_big",                                               23_999_554),
-  ("IxVMPrim.nat_div_lit",                                               363_376_868),
-  ("IxVMPrim.nat_mod_lit",                                               372_058_694),
-  ("IxVMPrim.nat_succ_lit",                                              7_291_627),
-  ("IxVMPrim.nat_pred_lit",                                              14_654_021),
-  ("IxVMPrim.nat_gcd_lit",                                               599_139_076),
-  ("IxVMPrim.nat_land_lit",                                              1_008_587_524),
-  ("IxVMPrim.nat_lor_lit",                                               1_009_390_333),
-  ("IxVMPrim.nat_xor_lit",                                               1_017_980_364),
-  ("IxVMPrim.nat_shl_lit",                                               34_588_323),
-  ("IxVMPrim.nat_shr_lit",                                               368_712_426),
-  ("IxVMPrim.nat_pow_big",                                                71_440_452),
-  ("IxVMPrim.nat_beq_lit",                                               24_003_617),
-  ("IxVMPrim.nat_ble_lit",                                               22_333_231),
-  ("IxVMPrim.nat_dec_le",                                                195_956_041),
-  ("IxVMPrim.nat_dec_lt",                                                199_899_015),
-  ("IxVMPrim.nat_dec_eq",                                                81_741_042),
-  ("IxVMPrim.str_size_lit",                                              715_801_486),
-  ("IxVMPrim.bv_to_nat_lit",                                             570_773_030),
+  ("IxVMPrim.nat_add_lit",                                               27_637_857),
+  ("IxVMPrim.nat_sub_lit",                                               33_385_419),
+  ("IxVMPrim.nat_mul_lit",                                               24_394_797),
+  ("IxVMPrim.nat_mul_big",                                               23_838_327),
+  ("IxVMPrim.nat_div_lit",                                               362_960_268),
+  ("IxVMPrim.nat_mod_lit",                                               371_196_326),
+  ("IxVMPrim.nat_succ_lit",                                              7_223_234),
+  ("IxVMPrim.nat_pred_lit",                                              14_513_542),
+  ("IxVMPrim.nat_gcd_lit",                                               597_735_811),
+  ("IxVMPrim.nat_land_lit",                                              1_006_503_401),
+  ("IxVMPrim.nat_lor_lit",                                               1_007_225_060),
+  ("IxVMPrim.nat_xor_lit",                                               1_015_339_126),
+  ("IxVMPrim.nat_shl_lit",                                               34_423_639),
+  ("IxVMPrim.nat_shr_lit",                                               367_918_664),
+  ("IxVMPrim.nat_pow_big",                                                71_297_878),
+  ("IxVMPrim.nat_beq_lit",                                               23_859_376),
+  ("IxVMPrim.nat_ble_lit",                                               22_158_417),
+  ("IxVMPrim.nat_dec_le",                                                195_022_086),
+  ("IxVMPrim.nat_dec_lt",                                                198_963_907),
+  ("IxVMPrim.nat_dec_eq",                                                81_012_993),
+  ("IxVMPrim.str_size_lit",                                              712_334_245),
+  ("IxVMPrim.bv_to_nat_lit",                                             569_570_268),
   -- Mutual block + multi-member recursors
-  ("IxVMInd.Even",                                                       25_782_173),
-  ("IxVMInd.Odd",                                                        25_542_593),
-  ("IxVMInd.Even.rec",                                                   31_350_868),
-  ("IxVMInd.Odd.rec",                                                    31_349_966),
+  ("IxVMInd.Even",                                                       25_606_681),
+  ("IxVMInd.Odd",                                                        25_359_159),
+  ("IxVMInd.Even.rec",                                                   31_141_424),
+  ("IxVMInd.Odd.rec",                                                    31_138_920),
   -- Nested inductive + aux recursor (Tree.mk : List Tree → Tree)
-  ("IxVMInd.Tree",                                                       2_634_029),
-  ("IxVMInd.Tree.rec",                                                   4_857_081),
+  ("IxVMInd.Tree",                                                       2_615_058),
+  ("IxVMInd.Tree.rec",                                                   4_845_820),
   -- Edge cases from prelude
-  ("String.Internal.append",                                             707_266_965),
-  ("_private.Init.Prelude.0.Lean.extractMainModule._unsafe_rec",         1_063_187_671),
+  ("String.Internal.append",                                             704_687_418),
+  ("_private.Init.Prelude.0.Lean.extractMainModule._unsafe_rec",         1_059_246_298),
+  -- Aux recursor with transitively-nested inductives (Syntax → Array Syntax
+  -- → List Syntax); shard 53 regression driver.
+  ("Lean.Syntax.rec",                                                    730_451_588),
+  -- Evaporated-aux canonicalization (Tests/Ix/Compile/Mutual.lean AuxDedup*):
+  -- SCC splitting strands `rec_N` auxes whose spec-param inductives moved to
+  -- other SCCs; their claims alias the external inductive's recursor
+  -- (`List.rec`) — hence the identical pin on all four evaporated entries,
+  -- whose claims are literally the same `List.rec` closure. AuxDedupMixed
+  -- mixes one genuine canonical aux (`M.rec_1`, over `List M`) with one
+  -- evaporated alias (`M.rec_2`, over `List B`).
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A",             3_524_532),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A.rec",         4_412_424),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A.rec_1",       3_073_003),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup1.A.rec_2",       3_073_003),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedup2.A.rec_1",       3_073_003),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M",         3_557_470),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M.rec",     6_164_616),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M.rec_1",   6_166_583),
+  ("_private.Tests.Ix.Compile.Mutual.0.Tests.Ix.Compile.Mutual.AuxDedupMixed.M.rec_2",   3_073_003),
 ]
 
 private def nameOfString (str : String) : Lean.Name :=
@@ -330,8 +349,7 @@ public def claimRevealMuts (ixonEnv : Ixon.Env) : IO AiurTestCase := do
     | throw <| IO.userError "Muts components empty"
   let revealMc : Ix.RevealMutConstInfo := match firstMc with
     | .defn d => .defn (some d.kind) (some d.safety) none none none
-    | .indc i => .indc (some i.recr) (some i.refl) (some i.isUnsafe)
-                       none none none none none none
+    | .indc i => .indc (some i.isUnsafe) none none none none none
     | .recr r => .recr (some r.k) (some r.isUnsafe) none none none none none
                        none none
   let revealInfo : Ix.RevealConstantInfo := .muts #[(0, revealMc)]

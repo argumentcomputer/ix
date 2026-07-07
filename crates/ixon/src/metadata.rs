@@ -80,6 +80,14 @@ pub enum ExprMetaData {
     /// replacement argument's metadata by canonical position, while decompile
     /// needs the source-order `entries` to reconstruct the original spine.
     canon_meta: Vec<u64>,
+    /// `Some((sharing_idx, meta))` when the call-site HEAD itself was
+    /// rewritten (evaporated-aux recursors: `<all0>.rec_N` aliased to the
+    /// external inductive's recursor, whose universe-level arity differs).
+    /// Points at the ORIGINAL head expression in
+    /// `ConstantMeta.meta_sharing`, exactly like a `Collapsed` argument —
+    /// decompile uses it to restore the source head (name + original level
+    /// args) instead of reading levels off the stored canonical head.
+    orig_head: Option<(u64, u64)>,
   },
 }
 
@@ -843,7 +851,7 @@ impl ExprMetaData {
         put_mdata_stack_indexed(mdata, idx, buf)?;
         put_u64(*child, buf);
       },
-      Self::CallSite { name, entries, canon_meta } => {
+      Self::CallSite { name, entries, canon_meta, orig_head } => {
         put_u8(10, buf);
         put_idx(name, idx, buf)?;
         put_vec_len(entries.len(), buf);
@@ -862,6 +870,14 @@ impl ExprMetaData {
           }
         }
         put_u64_vec(canon_meta, buf);
+        match orig_head {
+          None => put_u8(0, buf),
+          Some((sharing_idx, meta)) => {
+            put_u8(1, buf);
+            put_u64(*sharing_idx, buf);
+            put_u64(*meta, buf);
+          },
+        }
       },
     }
     Ok(())
@@ -933,7 +949,18 @@ impl ExprMetaData {
           entries.push(entry);
         }
         let canon_meta = get_u64_vec(buf)?;
-        Ok(Self::CallSite { name, entries, canon_meta })
+        let orig_head = match get_u8(buf)? {
+          0 => None,
+          1 => {
+            let sharing_idx = get_u64(buf)?;
+            let meta = get_u64(buf)?;
+            Some((sharing_idx, meta))
+          },
+          x => {
+            return Err(format!("CallSite::get: invalid orig_head tag {x}"));
+          },
+        };
+        Ok(Self::CallSite { name, entries, canon_meta, orig_head })
       },
       x => Err(format!("ExprMetaData::get: invalid tag {x}")),
     }

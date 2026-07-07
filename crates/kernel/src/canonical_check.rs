@@ -294,20 +294,18 @@ pub fn compare_krec_rule<M: KernelMode>(
 /// Field order:
 /// `(is_rec, is_unsafe, lvls, params, indices, |ctors|, ty, ctors[*])`.
 ///
-/// `is_rec` and `is_unsafe` participate so alpha-collapse can't merge
+/// `is_unsafe` participates so alpha-collapse can't merge
 /// inductives whose derived flags differ.
 fn compare_kindc<M: KernelMode>(
   x_lvls: u64,
   x_params: u64,
   x_indices: u64,
-  x_is_rec: bool,
   x_is_unsafe: bool,
   x_ty: &KExpr<M>,
   x_ctors: &[KId<M>],
   y_lvls: u64,
   y_params: u64,
   y_indices: u64,
-  y_is_rec: bool,
   y_is_unsafe: bool,
   y_ty: &KExpr<M>,
   y_ctors: &[KId<M>],
@@ -315,8 +313,7 @@ fn compare_kindc<M: KernelMode>(
   resolve_ctor: &dyn Fn(&KId<M>) -> Option<KConst<M>>,
 ) -> Result<SOrd, TcError<M>> {
   Ok(
-    SOrd::cmp(&x_is_rec, &y_is_rec)
-      .compare(SOrd::cmp(&x_is_unsafe, &y_is_unsafe))
+    SOrd::cmp(&x_is_unsafe, &y_is_unsafe)
       .compare(SOrd::cmp(&x_lvls, &y_lvls))
       .compare(SOrd::cmp(&x_params, &y_params))
       .compare(SOrd::cmp(&x_indices, &y_indices))
@@ -471,7 +468,6 @@ pub fn compare_kconst<M: KernelMode>(
         lvls: xl,
         params: xp,
         indices: xi,
-        is_rec: xr,
         is_unsafe: xu,
         ty: xt,
         ctors: xc,
@@ -481,7 +477,6 @@ pub fn compare_kconst<M: KernelMode>(
         lvls: yl,
         params: yp,
         indices: yi,
-        is_rec: yr,
         is_unsafe: yu,
         ty: yt,
         ctors: yc,
@@ -491,14 +486,12 @@ pub fn compare_kconst<M: KernelMode>(
       *xl,
       *xp,
       *xi,
-      *xr,
       *xu,
       xt,
       xc,
       *yl,
       *yp,
       *yi,
-      *yr,
       *yu,
       yt,
       yc,
@@ -872,10 +865,7 @@ mod tests {
       lvls: 0,
       params,
       indices,
-      is_rec: false,
-      is_refl: false,
       is_unsafe: false,
-      nested: 0,
       block: KId::new(mk_addr("blk"), ()),
       member_idx: 0,
       ty,

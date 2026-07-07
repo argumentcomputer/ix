@@ -254,7 +254,7 @@ def inductive_check := ⟦
                         -- inductive app".
                         let ci = load(list_lookup(top, idx));
                         match ci {
-                          KConstantInfo.Induct(_, _, n_params, _, ctor_indices, _, _, _, _, ext_block_addr) =>
+                          KConstantInfo.Induct(_, _, n_params, _, ctor_indices, _, ext_block_addr) =>
                             let after_params = list_drop(args, n_params);
                             assert_eq!(list_any_mentions(after_params, block_idxs), 0);
                             let aug = augment_block_idxs(block_idxs, ext_block_addr, top);
@@ -284,10 +284,24 @@ def inductive_check := ⟦
     }
   }
 
-  -- Returns 1 iff `e` contains any Const(idx) with idx in `idxs`.
-  -- Mirror: src/ix/kernel/inductive.rs:448-483 fn compute_is_rec.
-  -- Constructively recompute is_rec by scanning each ctor's field domains
-  -- (post n_params peeling) for any reference to a block member's idx.
+  -- Mirror: src/ix/kernel/inductive.rs fn computed_is_rec. Ixon no longer
+  -- stores the recr flag; is_rec is computed on demand from constructor
+  -- structure. Aiur memoization is the is_rec_cache (keyed on induct_idx);
+  -- no cycle-breaking needed because `compute_is_rec` is structural (no
+  -- whnf), unlike the Rust version.
+  fn computed_is_rec_ind(induct_idx: G, top: List‹&KConstantInfo›) -> G {
+    let ci = load(list_lookup(top, induct_idx));
+    match ci {
+      KConstantInfo.Induct(_, _, n_params, _, ctor_indices, _, _) =>
+        let block_idxs = derive_block_member_idxs(induct_idx, top);
+        compute_is_rec(ctor_indices, n_params, block_idxs, top),
+      _ => 0,
+    }
+  }
+
+  -- Mirror: src/ix/kernel/inductive.rs fn compute_is_rec.
+  -- Compute is_rec by scanning each ctor's field domains (post n_params
+  -- peeling) for any reference to a block member's idx.
   -- Returns 1 iff at least one field domain mentions a block_idx.
   fn compute_is_rec(ctors: List‹G›, n_params: G, block_idxs: List‹G›,
                     top: List‹&KConstantInfo›) -> G {
@@ -383,7 +397,7 @@ def inductive_check := ⟦
       ListNode.Nil => block_idxs,
       ListNode.Cons(&ci, rest) =>
         match ci {
-          KConstantInfo.Induct(_, _, _, _, _, _, _, _, _, ba) =>
+          KConstantInfo.Induct(_, _, _, _, _, _, ba) =>
             let same = address_eq(ba, ext_block_addr);
             let nonzero = 1 - address_eq(ext_block_addr, store([0u8; 32]));
             let already = list_contains_g(block_idxs, idx);
@@ -813,7 +827,9 @@ def inductive_check := ⟦
   -- ============================================================================
   fn build_minor_at_depth(ind_idx: G, ctor_idx: G, ctor_ty: KExpr,
                           is_aux: G, spec_params: List‹KExpr›,
-                          occurrence_us: List‹KLevel›, flat_idxs: List‹G›,
+                          occurrence_us: List‹KLevel›,
+                          flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›,
+                          flat_idxs: List‹G›,
                           flat_own_params: List‹G›,
                           n_rec_params: G, n_motives: G, prev_minors: G,
                           motive_base: G,
@@ -829,7 +845,7 @@ def inductive_check := ⟦
                                                minor_saved, is_aux, spec_params, 0);
     let self_mem_pair = find_member_local_idx(flat_idxs, ind_idx, 0);
     let self_mem_idx = match self_mem_pair { (_, m) => m, };
-    let walk = walk_fields_classify(after_params, flat_idxs, store(ListNode.Nil),
+    let walk = walk_fields_classify(after_params, flat, store(ListNode.Nil),
                                      store(ListNode.Nil), store(ListNode.Nil),
                                      store(ListNode.Nil), top, addrs, 0);
     match walk {
@@ -894,7 +910,7 @@ def inductive_check := ⟦
   -- A field is recursive (direct case) when its spine head is Const(ind_idx).
   -- Builds accumulators with O(1) cons (prepend) and reverses once at end —
   -- O(F) total vs O(F²) with snoc.
-  fn walk_fields_classify(ty: KExpr, block_member_idxs: List‹G›,
+  fn walk_fields_classify(ty: KExpr, flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›,
                           doms_acc: List‹KExpr›, rec_acc: List‹G›,
                           rec_mem_acc: List‹G›,
                           types: List‹KExpr›,
@@ -902,17 +918,17 @@ def inductive_check := ⟦
                           fidx: G) -> (List‹KExpr›, List‹G›, List‹G›, KExpr) {
     match load(ty) {
       KExprNode.Forall(dom, body) =>
-        let r = is_rec_field(dom, block_member_idxs, types, top, addrs);
+        let r = is_rec_field(dom, flat, types, top, addrs);
         let new_doms = store(ListNode.Cons(dom, doms_acc));
         let types2 = store(ListNode.Cons(dom, types));
         match r {
           (1, mem_idx) =>
             let new_rec = store(ListNode.Cons(fidx, rec_acc));
             let new_mem = store(ListNode.Cons(mem_idx, rec_mem_acc));
-            walk_fields_classify(body, block_member_idxs, new_doms, new_rec, new_mem,
+            walk_fields_classify(body, flat, new_doms, new_rec, new_mem,
                                  types2, top, addrs, fidx + 1),
           _ =>
-            walk_fields_classify(body, block_member_idxs, new_doms, rec_acc, rec_mem_acc,
+            walk_fields_classify(body, flat, new_doms, rec_acc, rec_mem_acc,
                                  types2, top, addrs, fidx + 1),
         },
       _ => (list_reverse(doms_acc), list_reverse(rec_acc), list_reverse(rec_mem_acc), ty),
@@ -925,7 +941,7 @@ def inductive_check := ⟦
   fn derive_block_member_idxs(ind_idx: G, top: List‹&KConstantInfo›) -> List‹G› {
     let ci = load(list_lookup(top, ind_idx));
     match ci {
-      KConstantInfo.Induct(_, _, _, _, _, _, _, _, _, block_addr) =>
+      KConstantInfo.Induct(_, _, _, _, _, _, block_addr) =>
         match address_eq(block_addr, store([0u8; 32])) {
           1 => store(ListNode.Cons(ind_idx, store(ListNode.Nil))),
           0 => collect_block_members(block_addr, top, 0),
@@ -940,7 +956,7 @@ def inductive_check := ⟦
       ListNode.Nil => store(ListNode.Nil),
       ListNode.Cons(&ci, rest) =>
         match ci {
-          KConstantInfo.Induct(_, _, _, _, _, _, _, _, _, ba) =>
+          KConstantInfo.Induct(_, _, _, _, _, _, ba) =>
             match address_eq(ba, block_addr) {
               1 => store(ListNode.Cons(idx, collect_block_members(block_addr, rest, idx + 1))),
               0 => collect_block_members(block_addr, rest, idx + 1),
@@ -956,13 +972,13 @@ def inductive_check := ⟦
   fn is_in_same_block(idx: G, ind_idx: G, top: List‹&KConstantInfo›) -> G {
     let i_ci = load(list_lookup(top, ind_idx));
     match i_ci {
-      KConstantInfo.Induct(_, _, _, _, _, _, _, _, _, ind_ba) =>
+      KConstantInfo.Induct(_, _, _, _, _, _, ind_ba) =>
         match address_eq(ind_ba, store([0u8; 32])) {
           1 => 0,
           0 =>
             let other_ci = load(list_lookup(top, idx));
             match other_ci {
-              KConstantInfo.Induct(_, _, _, _, _, _, _, _, _, other_ba) =>
+              KConstantInfo.Induct(_, _, _, _, _, _, other_ba) =>
                 address_eq(other_ba, ind_ba),
               _ => 0,
             },
@@ -972,13 +988,16 @@ def inductive_check := ⟦
   }
 
   -- Mirror: src/ix/kernel/inductive.rs:2968-3019 fn is_rec_field.
-  -- Returns (is_rec, member_local_idx) where member_local_idx is the
-  -- position of the head idx within block_member_idxs (0 for direct).
-  -- Returns (0, 0) if not recursive. WHNFs the per-field body so that
-  -- ctor field types written via reducible defs (e.g. `constType (n α)
-  -- (n α)`) collapse to expose the underlying inductive head, mirroring
-  -- the Rust kernel's whnf inside `is_rec_field`.
-  fn is_rec_field(dom: KExpr, block_member_idxs: List‹G›,
+  -- Returns (is_rec, member_local_idx) where member_local_idx is the position
+  -- within `flat` of the matching entry (0 for direct member). Returns (0, 0)
+  -- if not recursive. WHNFs the per-field body so that ctor field types written
+  -- via reducible defs collapse to expose the underlying inductive head. The
+  -- match key is (head_const_idx, spine_arg_prefix ≡ flat.spec_params) — const
+  -- idx alone is not enough because a nested aux (e.g. `List Lean.Syntax`)
+  -- shares the base ind's idx with unrelated occurrences (e.g. `List
+  -- Preresolved`); using idx alone would false-positive the unrelated field
+  -- as recursive and inject a spurious IH binder.
+  fn is_rec_field(dom: KExpr, flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›,
                    types: List‹KExpr›, top: List‹&KConstantInfo›,
                    addrs: List‹Addr›) -> (G, G) {
     match peel_leading_foralls(dom) {
@@ -986,10 +1005,52 @@ def inductive_check := ⟦
         let inner_types = list_concat(list_reverse(doms), types);
         let body_w = whnf(body, inner_types, top, addrs);
         match collect_spine(body_w) {
-          (head, _) =>
+          (head, spine_args) =>
             match load(head) {
-              KExprNode.Const(idx, _) => find_member_local_idx(block_member_idxs, idx, 0),
+              KExprNode.Const(idx, _) => find_flat_member_match(flat, idx, spine_args, 0),
               _ => (0, 0),
+            },
+        },
+    }
+  }
+
+  -- Walk `flat`; return (1, i) at the first entry whose idx == head_idx AND
+  -- whose spec_params structurally match the leading `|spec_params|` entries
+  -- of the field's spine args. Original members have spec_params=[] so any
+  -- field whose head is the original ind matches. Auxes carry their concrete
+  -- occurrence, so only fields applied to that exact occurrence match.
+  fn find_flat_member_match(flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›,
+                             head_idx: G, spine_args: List‹KExpr›,
+                             i: G) -> (G, G) {
+    match load(flat) {
+      ListNode.Nil => (0, 0),
+      ListNode.Cons(entry, rest) =>
+        match entry {
+          (fidx, _, fsps, _) =>
+            match fidx - head_idx {
+              0 =>
+                match spine_prefix_eq(spine_args, fsps) {
+                  1 => (1, i),
+                  _ => find_flat_member_match(rest, head_idx, spine_args, i + 1),
+                },
+              _ => find_flat_member_match(rest, head_idx, spine_args, i + 1),
+            },
+        },
+    }
+  }
+
+  -- Structural prefix compare: 1 iff `spec_params` is a prefix of `spine_args`
+  -- under `kexpr_struct_eq`. Empty spec_params always matches.
+  fn spine_prefix_eq(spine_args: List‹KExpr›, spec_params: List‹KExpr›) -> G {
+    match load(spec_params) {
+      ListNode.Nil => 1,
+      ListNode.Cons(sp, sps_rest) =>
+        match load(spine_args) {
+          ListNode.Nil => 0,
+          ListNode.Cons(sa, sa_rest) =>
+            match kexpr_struct_eq(sa, sp) {
+              1 => spine_prefix_eq(sa_rest, sps_rest),
+              _ => 0,
             },
         },
     }
@@ -1106,7 +1167,9 @@ def inductive_check := ⟦
   -- to use for the ctor head; flat_idxs is used for rec field detection.
   fn build_minor_doms(ctor_indices: List‹G›, ind_idx: G,
                       is_aux: G, spec_params: List‹KExpr›,
-                      occurrence_us: List‹KLevel›, flat_idxs: List‹G›,
+                      occurrence_us: List‹KLevel›,
+                      flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›,
+                      flat_idxs: List‹G›,
                       flat_own_params: List‹G›,
                       n_rec_params: G, n_motives: G,
                       motive_base: G,
@@ -1120,11 +1183,11 @@ def inductive_check := ⟦
           KConstantInfo.Ctor(_, ctor_ty, _, _, _, _, _) =>
             let minor = build_minor_at_depth(ind_idx, ctor_idx, ctor_ty,
                                              is_aux, spec_params, occurrence_us,
-                                             flat_idxs, flat_own_params,
+                                             flat, flat_idxs, flat_own_params,
                                              n_rec_params, n_motives, prev_minors,
                                              motive_base, top, addrs);
             let rest_minors = build_minor_doms(rest, ind_idx, is_aux, spec_params,
-                                               occurrence_us, flat_idxs,
+                                               occurrence_us, flat, flat_idxs,
                                                flat_own_params,
                                                n_rec_params, n_motives,
                                                motive_base,
@@ -1160,8 +1223,7 @@ def inductive_check := ⟦
           (member_idx, is_aux, spec_params, occ_us) =>
             let ci = load(list_lookup(top, member_idx));
             match ci {
-              KConstantInfo.Induct(_, m_ind_ty, m_own_params, m_n_indices,
-                                  _, _, _, _, _, _) =>
+              KConstantInfo.Induct(_, m_ind_ty, m_own_params, m_n_indices, _, _, _) =>
                 let mt = build_motive_type_flat(member_idx, m_ind_ty, m_own_params,
                                                  m_n_indices, occ_us, elim_level,
                                                  n_rec_params,
@@ -1189,6 +1251,23 @@ def inductive_check := ⟦
                       ind_lvls: G, univ_offset: G, motive_base: G,
                       top: List‹&KConstantInfo›, addrs: List‹Addr›,
                       prev_minors: G) -> List‹KExpr› {
+    build_all_minors_walk(flat, flat, flat_idxs, flat_own_params,
+                          n_rec_params, n_motives, ind_lvls, univ_offset,
+                          motive_base, top, addrs, prev_minors)
+  }
+
+  -- `full_flat` stays pinned to the caller's original flat list so
+  -- `is_rec_field` sees every block member for spec_params matching; `flat`
+  -- shrinks as we iterate members. Bug guarded against: previously we passed
+  -- the shrinking `flat` into `build_minor_doms`, which made later members'
+  -- ctor-field classification blind to earlier members.
+  fn build_all_minors_walk(flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›,
+                           full_flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›,
+                           flat_idxs: List‹G›, flat_own_params: List‹G›,
+                           n_rec_params: G, n_motives: G,
+                           ind_lvls: G, univ_offset: G, motive_base: G,
+                           top: List‹&KConstantInfo›, addrs: List‹Addr›,
+                           prev_minors: G) -> List‹KExpr› {
     match load(flat) {
       ListNode.Nil => store(ListNode.Nil),
       ListNode.Cons(m, rest) =>
@@ -1196,21 +1275,24 @@ def inductive_check := ⟦
           (member_idx, is_aux, spec_params, occ_us) =>
             let ci = load(list_lookup(top, member_idx));
             match ci {
-              KConstantInfo.Induct(_, _, _, _, m_ctor_indices, _, _, _, _, _) =>
+              KConstantInfo.Induct(_, _, _, _, m_ctor_indices, _, _) =>
                 let m_minors = build_minor_doms(m_ctor_indices, member_idx,
-                                                 is_aux, spec_params, occ_us, flat_idxs,
+                                                 is_aux, spec_params, occ_us,
+                                                 full_flat, flat_idxs,
                                                  flat_own_params,
                                                  n_rec_params, n_motives,
                                                  motive_base, top, addrs, prev_minors);
                 let added = list_length(m_minors);
-                let rest_minors = build_all_minors(rest, flat_idxs, flat_own_params,
+                let rest_minors = build_all_minors_walk(rest, full_flat,
+                                                    flat_idxs, flat_own_params,
                                                     n_rec_params,
                                                     n_motives, ind_lvls, univ_offset,
                                                     motive_base, top, addrs,
                                                     prev_minors + added);
                 list_concat(m_minors, rest_minors),
               _ =>
-                build_all_minors(rest, flat_idxs, flat_own_params,
+                build_all_minors_walk(rest, full_flat,
+                                  flat_idxs, flat_own_params,
                                   n_rec_params, n_motives, ind_lvls,
                                   univ_offset, motive_base, top, addrs, prev_minors),
             },
@@ -1331,6 +1413,7 @@ def inductive_check := ⟦
                     ind_lvls: G, univ_offset: G,
                     motive_doms: List‹KExpr›, minor_doms: List‹KExpr›,
                     param_doms: List‹KExpr›, peer_recs: List‹G›,
+                    flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›,
                     flat_idxs: List‹G›, flat_own_params: List‹G›,
                     is_aux: G, spec_params: List‹KExpr›,
                     occurrence_us: List‹KLevel›,
@@ -1349,7 +1432,7 @@ def inductive_check := ⟦
     let n_own_params = ctor_num_params_of(ctor_idx, top);
     let after_params = peel_rule_ctor_params(ctor_ty_inst, n_own_params,
                                               is_aux, spec_params);
-    let walk = walk_fields_classify(after_params, flat_idxs, store(ListNode.Nil),
+    let walk = walk_fields_classify(after_params, flat, store(ListNode.Nil),
                                      store(ListNode.Nil), store(ListNode.Nil),
                                      store(ListNode.Nil), top, addrs, 0);
     match walk {
@@ -1624,7 +1707,7 @@ def inductive_check := ⟦
       KConstantInfo.Ctor(_, _, induct_idx, cidx, _, _, _) =>
         let ind_ci = load(list_lookup(top, induct_idx));
         match ind_ci {
-          KConstantInfo.Induct(_, _, _, _, ctor_indices, _, _, _, _, _) =>
+          KConstantInfo.Induct(_, _, _, _, ctor_indices, _, _) =>
             let expected = list_lookup(ctor_indices, cidx);
             assert_eq!(expected, ctor_idx);
             (),
@@ -1638,8 +1721,7 @@ def inductive_check := ⟦
   fn compute_k_target(ind_idx: G, top: List‹&KConstantInfo›) -> G {
     let ind_ci = load(list_lookup(top, ind_idx));
     match ind_ci {
-      KConstantInfo.Induct(_, ind_ty, n_params, n_indices, ctor_indices,
-                          _, _, _, _, _) =>
+      KConstantInfo.Induct(_, ind_ty, n_params, n_indices, ctor_indices, _, _) =>
         let block_members = derive_block_member_idxs(ind_idx, top);
         match list_length(block_members) - 1 {
           0 =>
@@ -1664,6 +1746,70 @@ def inductive_check := ⟦
     }
   }
 
+  -- Structural KExpr equality (heads + payload only; ignores universes/binder
+  -- names). Used to compare a ctor field's spine-arg prefix against a flat
+  -- aux member's spec_params in `is_rec_field`, where content-addressed exprs
+  -- from the same block-flattening pass are guaranteed to be structurally
+  -- comparable without WHNF.
+  fn kexpr_struct_eq(a: KExpr, b: KExpr) -> G {
+    match load(a) {
+      KExprNode.BVar(ia) =>
+        match load(b) {
+          KExprNode.BVar(ib) =>
+            match (u32_less_than(ia, ib) + u32_less_than(ib, ia)) {
+              0 => 1,
+              _ => 0,
+            },
+          _ => 0,
+        },
+      KExprNode.Srt(_) =>
+        match load(b) {
+          KExprNode.Srt(_) => 1,
+          _ => 0,
+        },
+      KExprNode.Const(ca, _) =>
+        match load(b) {
+          KExprNode.Const(cb, _) =>
+            match (u32_less_than(ca, cb) + u32_less_than(cb, ca)) {
+              0 => 1,
+              _ => 0,
+            },
+          _ => 0,
+        },
+      KExprNode.App(fa, aa) =>
+        match load(b) {
+          KExprNode.App(fb, ab) =>
+            let feq = kexpr_struct_eq(fa, fb);
+            match feq {
+              1 => kexpr_struct_eq(aa, ab),
+              _ => 0,
+            },
+          _ => 0,
+        },
+      KExprNode.Lam(ta, ba) =>
+        match load(b) {
+          KExprNode.Lam(tb, bb) =>
+            let teq = kexpr_struct_eq(ta, tb);
+            match teq {
+              1 => kexpr_struct_eq(ba, bb),
+              _ => 0,
+            },
+          _ => 0,
+        },
+      KExprNode.Forall(da, xa) =>
+        match load(b) {
+          KExprNode.Forall(db, xb) =>
+            let deq = kexpr_struct_eq(da, db);
+            match deq {
+              1 => kexpr_struct_eq(xa, xb),
+              _ => 0,
+            },
+          _ => 0,
+        },
+      _ => 0,
+    }
+  }
+
   fn check_recursor_member(rec_idx: G, ci_rec: KConstantInfo,
                            top: List‹&KConstantInfo›, addrs: List‹Addr›) {
     match ci_rec {
@@ -1679,11 +1825,9 @@ def inductive_check := ⟦
         let primary_ci = load(list_lookup(top, ind_idx));
         let self_ci = load(list_lookup(top, self_major));
         match primary_ci {
-          KConstantInfo.Induct(ind_lvls, ind_ty, ind_n_params, _,
-                              _, _, _, _, _, _) =>
+          KConstantInfo.Induct(ind_lvls, ind_ty, ind_n_params, _, _, _, _) =>
             match self_ci {
-              KConstantInfo.Induct(_, self_ind_ty, self_own_params, self_n_indices,
-                                  self_ctor_indices, _, _, _, _, _) =>
+              KConstantInfo.Induct(_, self_ind_ty, self_own_params, self_n_indices, self_ctor_indices, _, _) =>
                 let canonical_ty = build_rec_type(self_major, self_ind_ty, self_ctor_indices,
                                                    ind_n_params, self_n_indices, ind_lvls,
                                                    self_own_params, ind_idx, top, addrs);
@@ -1730,7 +1874,7 @@ def inductive_check := ⟦
                                                          ind_n_params, n_motives, n_minors,
                                                          ind_lvls, univ_offset,
                                                          motive_doms, minor_doms, param_doms,
-                                                         peer_recs, flat_idxs, flat_own_params,
+                                                         peer_recs, flat, flat_idxs, flat_own_params,
                                                          self_is_aux, self_spec_params, self_occ_us,
                                                          top, addrs, ctor_pos_offset);
                     compare_rules(rules, canonical_rules, top, addrs),
@@ -1747,13 +1891,115 @@ def inductive_check := ⟦
   -- auxes: is_aux=1, ind_idx=ext_ind_idx, spec_params=detected substitution
   -- exprs, occurrence_us = univ args from the actual nested ref.
   -- Mirror: src/ix/kernel/inductive.rs:490-601 build_flat_block.
+  -- Queue-based fixed-point build. Mirror `crates/kernel/src/inductive.rs`
+  -- `build_flat_block:531-599`. Seed with originals, then iteratively scan
+  -- every discovered member's ctors for further nested occurrences; every
+  -- newly-detected aux gets pushed onto the flat list AND its own ctors
+  -- scanned in the next round.
   fn build_flat_block(block_member_idxs: List‹G›, univ_offset: G,
                       top: List‹&KConstantInfo›)
                       -> List‹(G, G, List‹KExpr›, List‹KLevel›)› {
     let originals = build_flat_originals(block_member_idxs, univ_offset, top);
-    let nested = gather_block_nested(block_member_idxs, block_member_idxs, top);
-    let auxes = build_flat_auxes(nested);
-    list_concat(originals, auxes)
+    build_flat_block_iter(originals, 0, block_member_idxs, top)
+  }
+
+  fn build_flat_block_iter(flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›,
+                           qi: G, block_member_idxs: List‹G›,
+                           top: List‹&KConstantInfo›)
+                           -> List‹(G, G, List‹KExpr›, List‹KLevel›)› {
+    let n = list_length(flat);
+    let more = u32_less_than(qi, n);
+    match more {
+      0 => flat,
+      _ =>
+        let member = flat_member_at(flat, qi);
+        match member {
+          (m_idx, is_aux, sp, ou) =>
+            let new_triples = detect_nested_in_member(m_idx, is_aux, sp, ou,
+                                                       block_member_idxs, top);
+            let flat_updated = flat_append_new_auxes(flat, new_triples);
+            build_flat_block_iter(flat_updated, qi + 1, block_member_idxs, top),
+        },
+    }
+  }
+
+  fn detect_nested_in_member(m_idx: G, is_aux: G,
+                             spec_params: List‹KExpr›,
+                             occ_us: List‹KLevel›,
+                             block_idxs: List‹G›,
+                             top: List‹&KConstantInfo›)
+                             -> List‹(G, List‹KExpr›, List‹KLevel›)› {
+    let ci = load(list_lookup(top, m_idx));
+    match ci {
+      KConstantInfo.Induct(_, _, n_params, _, ctor_indices, _, _) =>
+        detect_nested_in_member_ctors(ctor_indices, n_params, is_aux,
+                                       spec_params, occ_us, block_idxs, top),
+      _ => store(ListNode.Nil),
+    }
+  }
+
+  fn detect_nested_in_member_ctors(ctor_indices: List‹G›, n_params: G,
+                                    is_aux: G, spec_params: List‹KExpr›,
+                                    occ_us: List‹KLevel›,
+                                    block_idxs: List‹G›,
+                                    top: List‹&KConstantInfo›)
+                                    -> List‹(G, List‹KExpr›, List‹KLevel›)› {
+    match load(ctor_indices) {
+      ListNode.Nil => store(ListNode.Nil),
+      ListNode.Cons(ctor_idx, rest) =>
+        let ctor_ci = load(list_lookup(top, ctor_idx));
+        match ctor_ci {
+          KConstantInfo.Ctor(_, ctor_ty, _, _, _, _, _) =>
+            let body = match is_aux {
+              0 => peel_n_foralls_tolerant(ctor_ty, n_params),
+              _ =>
+                let ctor_ty_inst = expr_inst_levels(ctor_ty, occ_us);
+                synth_aux_ctor_ty(ctor_ty_inst, n_params, spec_params),
+            };
+            let from_this = detect_nested_in_field_chain(body, block_idxs, top);
+            let from_rest = detect_nested_in_member_ctors(rest, n_params, is_aux,
+                                                          spec_params, occ_us,
+                                                          block_idxs, top);
+            list_concat(from_this, from_rest),
+          _ => detect_nested_in_member_ctors(rest, n_params, is_aux,
+                                              spec_params, occ_us, block_idxs, top),
+        },
+    }
+  }
+
+  fn flat_append_new_auxes(flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›,
+                           new_triples: List‹(G, List‹KExpr›, List‹KLevel›)›)
+                           -> List‹(G, G, List‹KExpr›, List‹KLevel›)› {
+    match load(new_triples) {
+      ListNode.Nil => flat,
+      ListNode.Cons(t, rest) =>
+        match t {
+          (idx, sp, ou) =>
+            match flat_contains_idx(flat, idx) {
+              1 => flat_append_new_auxes(flat, rest),
+              _ =>
+                let singleton = store(ListNode.Cons((idx, 1, sp, ou),
+                                                     store(ListNode.Nil)));
+                let flat_appended = list_concat(flat, singleton);
+                flat_append_new_auxes(flat_appended, rest),
+            },
+        },
+    }
+  }
+
+  fn flat_contains_idx(flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›,
+                       target_idx: G) -> G {
+    match load(flat) {
+      ListNode.Nil => 0,
+      ListNode.Cons(m, rest) =>
+        match m {
+          (idx, _is_aux, _sp, _ou) =>
+            match (u32_less_than(idx, target_idx) + u32_less_than(target_idx, idx)) {
+              0 => 1,
+              _ => flat_contains_idx(rest, target_idx),
+            },
+        },
+    }
   }
 
   fn build_flat_originals(block_member_idxs: List‹G›, univ_offset: G,
@@ -1764,26 +2010,13 @@ def inductive_check := ⟦
       ListNode.Cons(idx, rest) =>
         let ci = load(list_lookup(top, idx));
         match ci {
-          KConstantInfo.Induct(lvls, _, _, _, _, _, _, _, _, _) =>
+          KConstantInfo.Induct(lvls, _, _, _, _, _, _) =>
             let occ_us = build_param_lvls_range(univ_offset, lvls, 0);
             store(ListNode.Cons((idx, 0, store(ListNode.Nil), occ_us),
               build_flat_originals(rest, univ_offset, top))),
           _ =>
             store(ListNode.Cons((idx, 0, store(ListNode.Nil), store(ListNode.Nil)),
               build_flat_originals(rest, univ_offset, top))),
-        },
-    }
-  }
-
-  fn build_flat_auxes(nested: List‹(G, List‹KExpr›, List‹KLevel›)›)
-                      -> List‹(G, G, List‹KExpr›, List‹KLevel›)› {
-    match load(nested) {
-      ListNode.Nil => store(ListNode.Nil),
-      ListNode.Cons(p, rest) =>
-        match p {
-          (ext_idx, sps, occ_us) =>
-            store(ListNode.Cons((ext_idx, 1, sps, occ_us),
-              build_flat_auxes(rest))),
         },
     }
   }
@@ -1835,7 +2068,7 @@ def inductive_check := ⟦
           (ind_idx, _, _, _) =>
             let ci = load(list_lookup(top, ind_idx));
             match ci {
-              KConstantInfo.Induct(_, _, np, _, _, _, _, _, _, _) =>
+              KConstantInfo.Induct(_, _, np, _, _, _, _) =>
                 store(ListNode.Cons(np, flat_own_params_of(rest, top))),
               _ =>
                 store(ListNode.Cons(0, flat_own_params_of(rest, top))),
@@ -1861,6 +2094,39 @@ def inductive_check := ⟦
     }
   }
 
+  -- Returns 1 iff `idx`'s own ctor fields contain a nested occurrence
+  -- (external inductive applied to args mentioning block members).
+  -- Structural replacement for the dropped Ixon `nested` count: an
+  -- original of a nested-emitting block detects non-empty; an aux (whose
+  -- specialized ctors reference only block members) and a pure-mutual
+  -- peer detect empty. Aiur memoization caches per (idx, block, top).
+  fn member_has_nested(idx: G, block_idxs: List‹G›,
+                       top: List‹&KConstantInfo›) -> G {
+    let nested = detect_nested_in_orig(idx, block_idxs, top);
+    match load(nested) {
+      ListNode.Nil => 0,
+      _ => 1,
+    }
+  }
+
+  fn any_member_has_nested(walk_idxs: List‹G›, block_idxs: List‹G›,
+                           top: List‹&KConstantInfo›) -> G {
+    match load(walk_idxs) {
+      ListNode.Nil => 0,
+      ListNode.Cons(idx, rest) =>
+        match member_has_nested(idx, block_idxs, top) {
+          1 => 1,
+          0 => any_member_has_nested(rest, block_idxs, top),
+        },
+    }
+  }
+
+  -- Returns 1 iff `ind_idx`'s block emits nested auxes.
+  fn ind_has_nested(ind_idx: G, top: List‹&KConstantInfo›) -> G {
+    let block_idxs = derive_block_member_idxs(ind_idx, top);
+    any_member_has_nested(block_idxs, block_idxs, top)
+  }
+
   fn scan_primary_in_rec_block(rec_block: Addr,
                                consts: List‹&KConstantInfo›,
                                top: List‹&KConstantInfo›, idx: G) -> (G, G) {
@@ -1875,8 +2141,8 @@ def inductive_check := ⟦
                 let r_ind = rec_to_ind_idx_with_ty(rules, ty, n_p, n_m, n_min, n_i, top);
                 let r_ci = load(list_lookup(top, r_ind));
                 match r_ci {
-                  KConstantInfo.Induct(_, _, _, _, _, _, _, _, ne, _) =>
-                    match ne {
+                  KConstantInfo.Induct(_, _, _, _, _, _, _) =>
+                    match ind_has_nested(r_ind, top) {
                       0 => scan_primary_in_rec_block(rec_block, rest, top, idx + 1),
                       _ => (1, r_ind),
                     },
@@ -1899,7 +2165,7 @@ def inductive_check := ⟦
           0 =>
             let ci = load(list_lookup(top, member_idx));
             match ci {
-              KConstantInfo.Induct(_, _, _, _, m_ctors, _, _, _, _, _) =>
+              KConstantInfo.Induct(_, _, _, _, m_ctors, _, _) =>
                 ctors_before_member(rest, target_ind_idx, top,
                                     acc + list_length(m_ctors)),
               _ => ctors_before_member(rest, target_ind_idx, top, acc),
@@ -1908,42 +2174,25 @@ def inductive_check := ⟦
     }
   }
 
-  -- Returns 1 iff `ci_idx` is an auxiliary
-  -- Inductive in its block. Aux iff: in non-solo block AND own nested=0
-  -- AND some other member of the block has nested>0 (i.e., the block is
-  -- a nested-emitting block, not pure mutual).
+  -- Returns 1 iff `ci_idx` is an auxiliary Inductive in its block.
+  -- Aux iff: in a non-solo block AND own ctors contain no nested
+  -- occurrence AND some block member's do (i.e., the block is a
+  -- nested-emitting block, not pure mutual). Structural — the Ixon
+  -- `nested` count this used to read was dropped.
   fn is_aux_inductive(ci_idx: G, top: List‹&KConstantInfo›) -> G {
     let ci = load(list_lookup(top, ci_idx));
     match ci {
-      KConstantInfo.Induct(_, _, _, _, _, _, _, _, this_nested, this_block_addr) =>
+      KConstantInfo.Induct(_, _, _, _, _, _, this_block_addr) =>
         match address_eq(this_block_addr, store([0u8; 32])) {
           1 => 0,
           0 =>
-            match this_nested {
-              0 => block_has_some_nested(this_block_addr, top, 0),
+            let block_idxs = derive_block_member_idxs(ci_idx, top);
+            match member_has_nested(ci_idx, block_idxs, top) {
+              0 => any_member_has_nested(block_idxs, block_idxs, top),
               _ => 0,
             },
         },
       _ => 0,
-    }
-  }
-
-  -- Returns 1 iff some Inductive in `top` shares `target_block` AND has
-  -- nested > 0 (i.e., it's an original in a nested-emitting block).
-  fn block_has_some_nested(target_block: Addr,
-                           consts: List‹&KConstantInfo›, idx: G) -> G {
-    match load(consts) {
-      ListNode.Nil => 0,
-      ListNode.Cons(&ci, rest) =>
-        match ci {
-          KConstantInfo.Induct(_, _, _, _, _, _, _, _, n, ba) =>
-            let same = address_eq(ba, target_block);
-            match same * n {
-              0 => block_has_some_nested(target_block, rest, idx + 1),
-              _ => 1,
-            },
-          _ => block_has_some_nested(target_block, rest, idx + 1),
-        },
     }
   }
 
@@ -1957,7 +2206,7 @@ def inductive_check := ⟦
                            -> List‹(G, List‹KExpr›, List‹KLevel›)› {
     let orig_ci = load(list_lookup(top, orig_idx));
     match orig_ci {
-      KConstantInfo.Induct(_, _, n_params, _, ctor_indices, _, _, _, _, _) =>
+      KConstantInfo.Induct(_, _, n_params, _, ctor_indices, _, _) =>
         detect_nested_in_ctors(ctor_indices, n_params, block_idxs, top),
       _ => store(ListNode.Nil),
     }
@@ -2008,7 +2257,7 @@ def inductive_check := ⟦
                   0 =>
                     let ci = load(list_lookup(top, idx));
                     match ci {
-                      KConstantInfo.Induct(_, _, ext_n_params, _, _, _, _, _, _, _) =>
+                      KConstantInfo.Induct(_, _, ext_n_params, _, _, _, _) =>
                         let n_args = list_length(args);
                         match u32_less_than(n_args, ext_n_params) {
                           1 => store(ListNode.Nil),
@@ -2090,7 +2339,7 @@ def inductive_check := ⟦
           0 =>
             let ci = load(list_lookup(top, idx));
             match ci {
-              KConstantInfo.Induct(_, ind_ty, n_params, _, _, _, _, _, _, _) =>
+              KConstantInfo.Induct(_, ind_ty, n_params, _, _, _, _) =>
                 let walk = collect_n_doms(ind_ty, n_params);
                 match walk {
                   (doms, _) => (n_params, doms),
@@ -2132,7 +2381,7 @@ def inductive_check := ⟦
           1 =>
             let aux_ci = load(list_lookup(top, idx));
             match aux_ci {
-              KConstantInfo.Induct(_, aux_ind_ty, _, _, aux_ctor_indices, _, _, _, _, _) =>
+              KConstantInfo.Induct(_, aux_ind_ty, _, _, aux_ctor_indices, _, _) =>
                 let matched = try_match_aux(aux_ind_ty, aux_ctor_indices, nested_list,
                                              n_block_params, block_param_doms, top);
                 assert_eq!(matched, 1);
@@ -2157,7 +2406,7 @@ def inductive_check := ⟦
           (ext_idx, spec_params, _occ_us) =>
             let ext_ci = load(list_lookup(top, ext_idx));
             match ext_ci {
-              KConstantInfo.Induct(_, ext_ind_ty, ext_n_params, _, ext_ctor_indices, _, _, _, _, _) =>
+              KConstantInfo.Induct(_, ext_ind_ty, ext_n_params, _, ext_ctor_indices, _, _) =>
                 let body = synth_aux_ind_ty(ext_ind_ty, ext_n_params, spec_params);
                 let synth = wrap_foralls(body, block_param_doms);
                 let cmp = compare_kexpr(synth, aux_ind_ty);
@@ -2229,6 +2478,7 @@ def inductive_check := ⟦
                     ind_lvls: G, univ_offset: G,
                     motive_doms: List‹KExpr›, minor_doms: List‹KExpr›,
                     param_doms: List‹KExpr›, peer_recs: List‹G›,
+                    flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›,
                     flat_idxs: List‹G›, flat_own_params: List‹G›,
                     is_aux: G, spec_params: List‹KExpr›,
                     occurrence_us: List‹KLevel›,
@@ -2243,13 +2493,13 @@ def inductive_check := ⟦
             let rhs = build_rule_rhs(rec_idx, owning_ind, ctor_idx, ctor_ty, ctor_pos,
                                      n_params, n_motives, n_minors, ind_lvls, univ_offset,
                                      motive_doms, minor_doms, param_doms, peer_recs,
-                                     flat_idxs, flat_own_params,
+                                     flat, flat_idxs, flat_own_params,
                                      is_aux, spec_params, occurrence_us, top, addrs);
             let rule = KRecRule.Mk(ctor_idx, n_fields, rhs);
             store(ListNode.Cons(rule,
               populate_rules(rec_idx, ind_idx, rest, n_params, n_motives, n_minors,
                              ind_lvls, univ_offset, motive_doms, minor_doms, param_doms,
-                             peer_recs, flat_idxs, flat_own_params,
+                             peer_recs, flat, flat_idxs, flat_own_params,
                              is_aux, spec_params, occurrence_us,
                              top, addrs, ctor_pos + 1))),
         },
@@ -2331,8 +2581,7 @@ def inductive_check := ⟦
       ListNode.Nil => (),
       ListNode.Cons(&ci, rest) =>
         match ci {
-          KConstantInfo.Induct(_, peer_ty, peer_n_params, peer_n_indices, _,
-                              _, _, _, _, peer_block_addr) =>
+          KConstantInfo.Induct(_, peer_ty, peer_n_params, peer_n_indices, _, _, peer_block_addr) =>
             let same_block = address_eq(peer_block_addr, block_addr);
             let is_self = eq_zero(idx - self_pos);
             let should_check = same_block * (1 - is_self);

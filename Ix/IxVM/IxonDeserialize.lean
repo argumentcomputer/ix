@@ -479,21 +479,18 @@ def ixonDeserialize := ⟦
   }
 
   -- Inductive: byte(bools) + Tag0(lvls) + Tag0(params) + Tag0(indices) +
-  --            Tag0(nested) + expr(typ) + Tag0(ctors_len) + ctors...
+  --            expr(typ) + Tag0(ctors_len) + ctors...
   fn get_inductive(stream: ByteStream) -> (Inductive, ByteStream) {
     let (bools_byte, s) = read_byte(stream);
     let bits = u8_bit_decomposition(bools_byte);
-    let recr = bits[0];
-    let refl = bits[1];
-    let is_unsafe = bits[2];
+    let is_unsafe = bits[0];
     let (lvls, s2) = get_tag0(s);
     let (params, s3) = get_tag0(s2);
     let (indices, s4) = get_tag0(s3);
-    let (nested, s5) = get_tag0(s4);
-    let (typ, s6) = get_expr(s5);
-    let (ctors_len, s7) = get_tag0(s6);
-    let (ctors, s8) = get_constructor_list(s7, ctors_len);
-    (Inductive.Mk(recr, refl, is_unsafe, lvls, params, indices, nested, store(typ), ctors), s8)
+    let (typ, s5) = get_expr(s4);
+    let (ctors_len, s6) = get_tag0(s5);
+    let (ctors, s7) = get_constructor_list(s6, ctors_len);
+    (Inductive.Mk(is_unsafe, lvls, params, indices, store(typ), ctors), s7)
   }
 
   -- ============================================================================

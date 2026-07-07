@@ -328,6 +328,40 @@ private partial def collectDependenciesAux (const : Lean.ConstantInfo)
     goExpr consts acc val.value
   | .recInfo val =>
     let acc ← collectNames val.all acc
+    -- The compiler processes a declaration's recursors as one block, and
+    -- they cross-reference in rule RHSs (`A.rec`'s rule calls `A.rec_1`,
+    -- `A.rec_2`'s calls `C.rec`), so the closure needs every sibling:
+    -- `<ind>.rec` per block inductive plus the nested-aux `<all0>.rec_N`.
+    let siblings := val.all.filterMap fun ind =>
+      let n := Lean.mkRecName ind
+      if consts.contains n then some n else none
+    let auxSiblings : List Lean.Name := Id.run do
+      let mut out := []
+      let mut i := 1
+      repeat
+        match val.all.head? with
+        | none => break
+        | some base =>
+          let n := Lean.Name.mkStr base s!"rec_{i}"
+          if consts.contains n then
+            out := n :: out
+            i := i + 1
+          else break
+      return out
+    let acc ← collectNames (siblings ++ auxSiblings) acc
+    -- A nested-aux recursor's rules recurse via the external container's
+    -- ctors; its evaporated form aliases that container's recursor
+    -- (`List.rec`), which no collected expr mentions — pull it via each
+    -- rule ctor's owning inductive.
+    let extRecs := val.rules.filterMap fun rule =>
+      match consts.find? rule.ctor with
+      | some (.ctorInfo cv) =>
+        if val.all.contains cv.induct then none
+        else
+          let n := Lean.mkRecName cv.induct
+          if consts.contains n then some n else none
+      | _ => none
+    let acc ← collectNames extRecs acc
     let acc ← goExpr consts acc val.type
     val.rules.foldlM (init := acc) fun acc rule => goExpr consts acc rule.rhs
 where

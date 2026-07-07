@@ -817,25 +817,22 @@ mod tests {
       num_indices: n(0),
       all: vec![mk_name("A")],
       ctors: vec![],
-      num_nested: n(0),
       is_rec: false,
-      is_unsafe: false,
       is_reflexive: false,
+      num_nested: bignat::Nat::from(0),
+      is_unsafe: false,
     });
     let kc = KConst::<Anon>::Indc {
       name: (),
       level_params: (),
       params: 5, // wrong
       indices: 0,
-      is_rec: false,
-      is_refl: false,
       ctors: vec![],
       lvls: 0,
       ty: KExpr::sort(KUniv::zero()),
       lean_all: (),
       block: KId::new(mk_addr("A"), ()),
       is_unsafe: false,
-      nested: 0,
       member_idx: 0,
     };
     let e = const_congruent(&lci, &kc, &r).unwrap_err();
