@@ -247,8 +247,14 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
   -- `executeIxVM`.
   IO.println "── Phase 1: execute (witness generation) ──"
   let mut execed : Array (Result × Address) := #[]
+  let mut execIdx := 0
   for (label, addr) in targets do
+    execIdx := execIdx + 1
     try
+      -- Announce BEFORE the execute (flushed): a kill mid-execute must
+      -- leave the in-flight constant's name in the log.
+      IO.println s!"  [{execIdx}/{targets.size}] executing {label} …"
+      (← IO.getStdout).flush
       -- Windowed high-water: reset per constant so each row's
       -- execute-peak-rss is its own, not the loop's running maximum.
       TracingTexray.resetPeakTreeRss
@@ -304,6 +310,10 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
     let (r, addr) := ordered[i]!
     if r.failed then continue
     try
+      -- Announce BEFORE the prove (flushed): when a watchdog kill or OOM
+      -- lands mid-prove, the log must already say which constant died.
+      IO.println s!"  [{i + 1}/{ordered.size}] proving {r.name} (fft-cost={r.fftCost}) …"
+      (← IO.getStdout).flush
       -- Windowed high-water: each prove's peak-rss is its own window, not
       -- the run's cumulative maximum (mirrors the Phase-1 resets).
       TracingTexray.resetPeakTreeRss
