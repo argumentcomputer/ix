@@ -209,6 +209,19 @@ def renderCompare (a : CompareArgs) : String := Id.run do
   if !failures.isEmpty then out := out.push ""
   out := out.push s!"_{names.size} constants · {regressed} regressed · \
     {improved} improved (|Δ| > {fmtF a.threshold 1}% on any metric)._"
+  -- One side empty while the other measured is almost always a broken side
+  -- (e.g. the base-run fallback hit a base binary that predates a flag),
+  -- not a real all-regressed/all-new comparison — say so instead of a
+  -- silent all-n/a column.
+  if (rowNames a.mainRows).isEmpty then
+    out := out.push "" |>.push
+      "_⚠️ main produced no results — the base side failed entirely (often \
+       a CLI-incompatible base binary when bencher had no data yet). Deltas \
+       unavailable; see the workflow logs._"
+  else if (rowNames a.prRows).isEmpty then
+    out := out.push "" |>.push
+      "_⚠️ the PR side produced no results — every constant failed or was \
+       dropped. See the workflow logs._"
   return "\n".intercalate out.toList
 
 def metricsFor (cfg : Json) (backend mode : String) : Array String :=

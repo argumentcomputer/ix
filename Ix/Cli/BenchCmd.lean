@@ -160,15 +160,23 @@ def resumeLoop (out : String) (names : Array String)
     let exit ← spawn namesFile
     if exit == 0 || exit == exitRejected then
       return
-    -- Abnormal exit: poison the in-flight constant and resume after it.
+    -- Only a KILLED tool (≥128: the watchdog's TERM/KILL or the kernel OOM
+    -- killer) implicates the in-flight constant. Any other failure is
+    -- deterministic (usage error, missing input, crash on startup) —
+    -- poisoning and respawning would just relabel every remaining constant
+    -- as oom, one spawn at a time (e.g. a base-side binary that predates a
+    -- flag this side passes).
+    if exit < 128 then
+      IO.eprintln s!"[bench] tool failed (exit {exit}, not a kill); aborting the remaining {remaining.size} name(s)"
+      return
     let missing ← namesWithoutRows out remaining
     match missing[0]? with
     | none =>
-      -- Every requested name has a row; the failure was after the last
+      -- Every requested name has a row; the kill landed after the last
       -- row (e.g. teardown) — nothing to resume.
       return
     | some poisoned =>
-      IO.eprintln s!"[bench] '{poisoned}' died (exit {exit}); recording oom and resuming"
+      IO.eprintln s!"[bench] '{poisoned}' killed (exit {exit}); recording oom and resuming"
       markOom out poisoned
       remaining := missing.filter (· != poisoned)
 
