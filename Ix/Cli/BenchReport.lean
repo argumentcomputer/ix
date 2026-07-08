@@ -4,7 +4,7 @@
 
     compare     two rows files → a Markdown main-vs-PR table. With no
                 explicit inputs, compares the cell's local baseline against
-                its previous run (`.bench/<cell>.json` vs `.prev.json`), so
+                its previous run (`.lake/benches/<cell>.json` vs `.prev.json`), so
                 a bare local rerun reports its own delta.
     report      per-cell table files → one Markdown report (the PR comment)
     bmf         rows JSON → Bencher Metric Format (status ≠ ok rows dropped)
@@ -290,10 +290,11 @@ def runCompareCmd (p : Cli.Parsed) : IO UInt32 := do
   let cell := s!"{backend}-{env}-{mode}"
   -- Explicit paths win; otherwise the local baseline pair, so a bare
   -- `ix bench compare --backend …` after two runs reports the local delta.
+  let benchDir ← Ix.Cli.BenchCmd.benchOutputDir
   let mainPath := (p.flag? "main").map (·.as! String)
-    |>.getD s!".bench/{cell}.prev.json"
+    |>.getD s!"{benchDir}/{cell}.prev.json"
   let prPath := (p.flag? "pr").map (·.as! String)
-    |>.getD s!".bench/{cell}.json"
+    |>.getD s!"{benchDir}/{cell}.json"
   let metrics :=
     let flagged := (p.flag? "metric").map (·.as! (Array String)) |>.getD #[]
     if flagged.isEmpty then
@@ -644,14 +645,14 @@ end Ix.Cli.BenchReport
 open Ix.Cli.BenchReport in
 def benchCompareCmd : Cli.Cmd := `[Cli|
   "compare" VIA runCompareCmd;
-  "Render a Markdown main-vs-PR table from two results rows files. Defaults to the cell's local baseline pair (.bench/<cell>{.prev,}.json), so a bare rerun compares against the previous local run."
+  "Render a Markdown main-vs-PR table from two results rows files. Defaults to the cell's local baseline pair (<BENCH_OUTPUT_DIR or .lake/benches>/<cell>{.prev,}.json), so a bare rerun compares against the previous local run."
 
   FLAGS:
     backend       : String; "Cell backend (metrics come from the registry)"
     env           : String; "Cell env (default: InitStd)"
     mode          : String; "Cell mode (default: the backend's default_mode)"
-    main          : String; "Main-side rows JSON (default: .bench/<cell>.prev.json)"
-    pr            : String; "PR-side rows JSON (default: .bench/<cell>.json)"
+    main          : String; "Main-side rows JSON (default: the cell baseline .prev.json)"
+    pr            : String; "PR-side rows JSON (default: the cell baseline .json)"
     metric        : Array String; "Metric column(s), overriding the registry"
     threshold     : Nat;    "Flag |Δ| above this percentage (default: 3)"
     title         : String; "Table title (default: derived from the cell)"

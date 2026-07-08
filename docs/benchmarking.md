@@ -57,7 +57,8 @@ row** — an empty or quietly-partial cell can't be green.
 ix bench run --backend ooc --env InitStd
 
 # Change something, run again, and diff against your previous run
-# (runs are saved as baselines under .bench/<cell>{,.prev}.json):
+# (runs save baselines under .lake/benches/<cell>{,.prev}.json — the same
+# BENCH_OUTPUT_DIR root the Ix.Benchmark framework writes to):
 ix bench run --backend ooc --env InitStd --reuse-ixe
 ix bench compare --backend ooc --env InitStd
 
@@ -75,7 +76,7 @@ ix bench run --backend aiur --env InitStd --mode prove \
 ix bench fetch-main --sha $(git merge-base origin/main HEAD) \
   --backend aiur --mode prove --names names.txt --out main.json
 ix bench compare --backend aiur --env InitStd --mode prove \
-  --main main.json --pr .bench/aiur-InitStd-prove.json
+  --main main.json --pr .lake/benches/aiur-InitStd-prove.json
 ```
 
 `--repo <dir>` points the run at another checkout: the *measured* tools

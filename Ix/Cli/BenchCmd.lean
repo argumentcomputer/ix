@@ -350,14 +350,22 @@ def gate (out : String) (expected : Array String) : IO UInt32 := do
     IO.eprintln "[bench] error: results file is not an object"
     return 1
 
-/-- Save the run as the local baseline (`.bench/<cell>.json`), rotating the
-    previous baseline to `.prev.json` — `ix bench compare` defaults to it,
-    so a bare local rerun compares against the last run automatically. -/
+/-- The benchmark output root shared with the `Ix.Benchmark` framework:
+    `BENCH_OUTPUT_DIR`, defaulting to `.lake/benches` (see
+    `Ix.Benchmark.Common.Config.outputDir`). -/
+def benchOutputDir : IO String :=
+  return (← IO.getEnv "BENCH_OUTPUT_DIR").getD ".lake/benches"
+
+/-- Save the run as the local baseline (`<benchOutputDir>/<cell>.json`),
+    rotating the previous baseline to `.prev.json` — `ix bench compare`
+    defaults to the pair, so a bare local rerun compares against the last
+    run automatically. -/
 def saveBaseline (out : String) (cell : String) : IO Unit := do
-  IO.FS.createDirAll ".bench"
-  let base := s!".bench/{cell}.json"
+  let dir ← benchOutputDir
+  IO.FS.createDirAll dir
+  let base := s!"{dir}/{cell}.json"
   if ← FilePath.pathExists base then
-    IO.FS.writeFile s!".bench/{cell}.prev.json" (← IO.FS.readFile base)
+    IO.FS.writeFile s!"{dir}/{cell}.prev.json" (← IO.FS.readFile base)
   IO.FS.writeFile base (← IO.FS.readFile out)
 
 def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
