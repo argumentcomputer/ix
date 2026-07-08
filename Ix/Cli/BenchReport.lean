@@ -6,7 +6,7 @@
                 explicit inputs, compares the cell's local baseline against
                 its previous run (`.bench/<cell>.json` vs `.prev.json`), so
                 a bare local rerun reports its own delta.
-    comment     per-cell table files → the final PR comment body
+    report      per-cell table files → one Markdown report (the PR comment)
     bmf         rows JSON → Bencher Metric Format (status ≠ ok rows dropped)
     fetch-main  base SHA + cell → rows JSON pulled from bencher.dev (curl)
     matrix      registry → GitHub Actions job-matrix JSON
@@ -317,28 +317,37 @@ def runCompareCmd (p : Cli.Parsed) : IO UInt32 := do
   | none => IO.println table
   return 0
 
-/-! ## comment -/
+/-! ## report -/
 
-def runCommentCmd (p : Cli.Parsed) : IO UInt32 := do
+/-- Assemble per-cell compare tables (`<dir>/table-*.md`) into one Markdown
+    report — run several cells locally, `--out table-<cell>.md` each, and
+    read them as a single document. The link flags are optional garnish:
+    with `--head`/`--repo-url`/`--run-id` (the PR workflow passes them) the
+    header links the commit and a logs footer is appended. -/
+def runReportCmd (p : Cli.Parsed) : IO UInt32 := do
   let tablesDir := (p.flag? "tables").map (·.as! String) |>.getD "tables"
   let head := (p.flag? "head").map (·.as! String) |>.getD ""
   let repoUrl := (p.flag? "repo-url").map (·.as! String) |>.getD ""
   let runId := (p.flag? "run-id").map (·.as! String) |>.getD ""
   let summary := (p.flag? "summary").map (·.as! String) |>.getD ""
-  let out := (p.flag? "out").map (·.as! String) |>.getD "comment-body.md"
-  let commit := s!"[`{head.take 7}`]({repoUrl}/commit/{head})"
-  let mut parts := #[s!"## `!benchmark` — main vs {commit}", "", summary, ""]
+  let commit := if head.isEmpty then ""
+    else if repoUrl.isEmpty then s!" — main vs `{head.take 7}`"
+    else s!" — main vs [`{head.take 7}`]({repoUrl}/commit/{head})"
+  let mut parts := #[s!"## `!benchmark`{commit}", "", summary, ""]
   let entries := (← System.FilePath.readDir tablesDir).map (·.path.toString)
   let tables := (entries.filter fun p =>
     (p.splitOn "/").getLast!.startsWith "table-" && p.endsWith ".md").qsort (· < ·)
   if tables.isEmpty then
-    parts := parts ++ #["_No result tables were produced — see the workflow logs._", ""]
+    parts := parts ++ #["_No result tables were produced — see the run logs._", ""]
   else
     for t in tables do
       parts := parts ++ #[(← IO.FS.readFile t).trimAscii.toString, ""]
-  parts := parts.push s!"[Workflow logs]({repoUrl}/actions/runs/{runId})"
-  IO.FS.writeFile out ("\n".intercalate parts.toList ++ "\n")
-  IO.println (← IO.FS.readFile out)
+  if !repoUrl.isEmpty && !runId.isEmpty then
+    parts := parts.push s!"[Workflow logs]({repoUrl}/actions/runs/{runId})"
+  let body := "\n".intercalate parts.toList ++ "\n"
+  match p.flag? "out" with
+  | some f => IO.FS.writeFile (f.as! String) body; IO.println body
+  | none => IO.println body
   return 0
 
 /-! ## bmf -/
@@ -515,11 +524,13 @@ def runMatrixCmd (p : Cli.Parsed) : IO UInt32 := do
 
 /-! ## parse -/
 
-/-- Parse the `!benchmark` PR-comment command (from the `COMMENT_BODY` env
-    var — never inline-interpolated into a shell) into the benchmark job
-    matrix, written to `$GITHUB_OUTPUT` (stdout when unset). Runs in the
-    build job, right after the `ix` binary exists — the registry lives in
-    Lean, so nothing pre-build can read it, and nothing needs to.
+/-- Parse a `!benchmark` command into the cells it schedules — locally a
+    dry-run preview (`ix bench parse --comment "!benchmark aiur"` prints
+    the summary and cell list), in CI the matrix generator. The text comes
+    from `--comment`, else the `COMMENT_BODY` env var (how the PR workflow
+    passes the comment without inline shell interpolation). When
+    `$GITHUB_OUTPUT` is set, the machine outputs (matrix, flags, summary,
+    passthrough env) are appended there in Actions format.
 
     Grammar (unknown tokens fall off the allowlist):
 
@@ -532,8 +543,10 @@ def runMatrixCmd (p : Cli.Parsed) : IO UInt32 := do
     The bare `execute` token flips a backend with an execute metrics entry
     to execute-only — a real switch only for aiur, whose two modes store on
     separate testbeds, so either kind of cell finds a cached baseline. -/
-def runParseCmd (_p : Cli.Parsed) : IO UInt32 := do
-  let body := (← IO.getEnv "COMMENT_BODY").getD ""
+def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
+  let body ← match p.flag? "comment" with
+    | some f => pure (f.as! String)
+    | none => pure ((← IO.getEnv "COMMENT_BODY").getD "")
   let lines := (body.splitOn "\n").map (·.replace "\r" "")
   let isCmd := fun (l : String) => (l.splitOn "!benchmark").length > 1
   let cmd := (lines.find? isCmd).getD ""
@@ -608,15 +621,15 @@ def runParseCmd (_p : Cli.Parsed) : IO UInt32 := do
   if !passthrough.isEmpty then
     summary := summary ++ " · env: `" ++ " ".intercalate passthrough.toList ++ "`"
 
-  let outPath := (← IO.getEnv "GITHUB_OUTPUT").getD "/dev/stdout"
-  let h ← IO.FS.Handle.mk outPath IO.FS.Mode.append
-  h.putStr <| s!"matrix={(Json.arr cells).compress}\n"
-    ++ s!"shard={shard}\nfull={full}\n"
-    ++ s!"config-summary={summary}\n"
-    ++ "passthrough-env<<PTENV\n"
-    ++ "\n".intercalate passthrough.toList
-    ++ (if passthrough.isEmpty then "" else "\n") ++ "PTENV\n"
-  h.flush
+  if let some outPath := ← IO.getEnv "GITHUB_OUTPUT" then
+    let h ← IO.FS.Handle.mk outPath IO.FS.Mode.append
+    h.putStr <| s!"matrix={(Json.arr cells).compress}\n"
+      ++ s!"shard={shard}\nfull={full}\n"
+      ++ s!"config-summary={summary}\n"
+      ++ "passthrough-env<<PTENV\n"
+      ++ "\n".intercalate passthrough.toList
+      ++ (if passthrough.isEmpty then "" else "\n") ++ "PTENV\n"
+    h.flush
   IO.println summary
   IO.println (Json.arr cells).pretty
   return 0
@@ -642,17 +655,17 @@ def benchCompareCmd : Cli.Cmd := `[Cli|
 ]
 
 open Ix.Cli.BenchReport in
-def benchCommentCmd : Cli.Cmd := `[Cli|
-  "comment" VIA runCommentCmd;
-  "Assemble per-cell table files (tables/table-*.md) into the final PR comment body"
+def benchReportCmd : Cli.Cmd := `[Cli|
+  "report" VIA runReportCmd;
+  "Assemble per-cell compare tables (<dir>/table-*.md) into one Markdown report. The link flags are optional: the PR workflow passes them to make the report a linkable comment body."
 
   FLAGS:
     tables     : String; "Directory of table-*.md files (default: tables)"
-    summary    : String; "Config summary line for the header"
-    head       : String; "PR head SHA"
-    "repo-url" : String; "Repository URL for links"
+    summary    : String; "Summary line for the header"
+    head       : String; "Commit SHA to title the report with"
+    "repo-url" : String; "Repository URL, enabling commit/logs links"
     "run-id"   : String; "Workflow run id for the logs link"
-    out        : String; "Output path (default: comment-body.md)"
+    out        : String; "Also write the report here (always printed)"
 ]
 
 open Ix.Cli.BenchReport in
@@ -692,7 +705,10 @@ def benchMatrixCmd : Cli.Cmd := `[Cli|
 open Ix.Cli.BenchReport in
 def benchParseCmd : Cli.Cmd := `[Cli|
   "parse" VIA runParseCmd;
-  "Parse the !benchmark command in $COMMENT_BODY into the benchmark job matrix, written to $GITHUB_OUTPUT (stdout when unset). Unknown tokens fall off the allowlist."
+  "Parse a !benchmark command into the cells it schedules — a local dry-run preview, and the CI matrix generator (machine outputs land in $GITHUB_OUTPUT when set). Unknown tokens fall off the allowlist."
+
+  FLAGS:
+    comment : String; "The command text (default: the COMMENT_BODY env var)"
 ]
 
 def benchCmd : Cli.Cmd := `[Cli|
@@ -704,7 +720,7 @@ def benchCmd : Cli.Cmd := `[Cli|
     benchShardCmd;
     benchParseCmd;
     benchCompareCmd;
-    benchCommentCmd;
+    benchReportCmd;
     benchBmfCmd;
     benchFetchMainCmd;
     benchMatrixCmd

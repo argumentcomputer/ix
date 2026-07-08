@@ -126,7 +126,10 @@ structure BackendSpec where
   disabled : Option String := none
   /-- (mode, bencher testbed). -/
   testbeds : List (String × String)
-  /-- (mode, compare-table columns). -/
+  /-- (mode, compare-table columns), rendered in list order; the head is
+      the table's row sort key. Column convention: the mode's headline
+      wall-clock time, throughput, peak-rss, then detail (secondary times,
+      sizes, deterministic counters). -/
   metrics : List (String × List String)
 
 def backendSpecs : List BackendSpec := [
@@ -136,26 +139,26 @@ def backendSpecs : List BackendSpec := [
   { name := "aiur", defaultMode := "prove",
     testbeds := [("prove", "aiur-check-prove-x64-32x"),
                  ("execute", "aiur-check-execute-x64-32x")],
-    metrics := [("prove", ["fft-cost", "execute-time", "prove-time",
-                           "verify-time", "proof-size", "peak-rss"]),
-                ("execute", ["fft-cost", "execute-time", "throughput",
-                             "peak-rss"])] },
+    metrics := [("prove", ["prove-time", "peak-rss", "execute-time",
+                           "verify-time", "proof-size", "fft-cost"]),
+                ("execute", ["execute-time", "throughput", "peak-rss",
+                             "fft-cost"])] },
   { name := "zisk", defaultMode := "execute",
     testbeds := [("execute", "zisk-check-x64-32x")],
-    metrics := [("execute", ["cycles", "execute-time", "throughput",
-                             "peak-rss"])] },
+    metrics := [("execute", ["execute-time", "throughput", "peak-rss",
+                             "cycles"])] },
   { name := "sp1", defaultMode := "execute",
     disabled := some "execute run too slow for per-push CI; re-enable here once trimmed",
     testbeds := [("execute", "sp1-check-x64-32x")],
-    metrics := [("execute", ["cycles", "execute-time", "throughput",
-                             "peak-rss"])] },
+    metrics := [("execute", ["execute-time", "throughput", "peak-rss",
+                             "cycles"])] },
   { name := "ooc", defaultMode := "execute",
     testbeds := [("execute", "ooc-check-x64-32x")],
-    metrics := [("execute", ["throughput", "check-time", "peak-rss"])] },
+    metrics := [("execute", ["check-time", "throughput", "peak-rss"])] },
   { name := "compile", defaultMode := "execute",
     testbeds := [("execute", "ix-compile-x64-32x")],
-    metrics := [("execute", ["compile-time", "throughput", "file-size",
-                             "constants", "peak-rss"])] }
+    metrics := [("execute", ["compile-time", "throughput", "peak-rss",
+                             "file-size", "constants"])] }
 ]
 
 def findBackend (name : String) : Option BackendSpec :=

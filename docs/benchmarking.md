@@ -46,7 +46,7 @@ green.
 | `compare`    | two rows files → Markdown main-vs-PR table (thresholds, ratios, OOM/❌ rows) |
 | `bmf`        | rows → Bencher Metric Format (non-`ok` rows dropped) |
 | `fetch-main` | pull a base SHA's rows from bencher.dev (exit 3 = fall back to a local base run) |
-| `comment`    | assemble per-cell tables into the PR comment body |
+| `report`     | assemble per-cell tables into one Markdown report (CI posts it as the PR comment) |
 | `matrix`     | emit the workflows' job matrices from the registry |
 | `parse`      | `!benchmark` comment → job matrix (runs in the build job, right after `ix` exists) |
 
@@ -148,7 +148,7 @@ run step while the clean rows still upload.
 by head SHA) → `benchmark` matrix (per cell: PR-side `ix bench run`;
 `ix bench fetch-main` for main's numbers, with a targeted base-checkout run
 covering only what bencher lacked; `ix bench compare` → table artifact) →
-`comment` (`ix bench comment` → one PR comment).
+`comment` (`ix bench report` → one PR comment).
 
 ## Not yet covered
 

@@ -469,7 +469,7 @@ jobs:
 
   # Assemble the comment body from the per-cell tables. Deliberately
   # UNPRIVILEGED: this job checks out and executes PR-derived code (the
-  # PR-built `ix bench comment`), so it must never share a job with the App
+  # PR-built `ix bench report`), so it must never share a job with the App
   # token — the posting job below only downloads the finished body as an
   # artifact and never touches PR code (CodeQL: untrusted checkout /
   # execution in a privileged issue_comment workflow).
@@ -510,7 +510,7 @@ jobs:
           HEAD_SHA: ${{ needs.setup.outputs.head-sha }}
         run: |
           mkdir -p tables   # absent when no cell uploaded a table
-          ix bench comment \
+          ix bench report \
             --tables tables --summary "$SUMMARY" \
             --head "$HEAD_SHA" \
             --repo-url "${{ github.server_url }}/${{ github.repository }}" \
