@@ -145,10 +145,9 @@ breakdowns. bench-main's compile job pre-cuts these artifacts
   matrices and `ix bench ci parse` the `!benchmark` cells, both post-build.
   (`bencher-thresholds-reset.yml` keeps a static workload list with a sync
   note.) CI-only data stays out of it: the runner name lives with the `ci`
-  adapters. The watchdog ceiling defaults to the machine's RAM minus
-  the backend's registry headroom — 24 GiB for the burst-prone provers,
-  12 for `ix compile`, whose growth is build-paced but whose Mathlib peak
-  is legitimately ~100 GB (`--ceiling-gb` overrides).
+  adapters. The watchdog ceiling defaults to a flat 110 GB — above the
+  largest legitimate workload (Mathlib `ix compile` peaks ~100 GB), below
+  the CI runner's RAM (`--ceiling-gb` overrides).
 
 ## `!benchmark` grammar
 
