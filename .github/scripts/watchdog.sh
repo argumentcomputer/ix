@@ -1,58 +1,95 @@
 #!/usr/bin/env bash
-# RAM-watchdog exec wrapper: run a command under a hard, kernel-enforced
-# memory cap.
+# RAM-watchdog exec wrapper: run a command, kill its tree before it takes
+# the machine down.
 #
 #   watchdog.sh <ceiling_gb> <cmd> [args...]
 #
-# The command runs in a fresh cgroup (v2) with `memory.max` at the
-# ceiling: the kernel caps the tree's RESIDENT memory and, with
-# `memory.oom.group`, OOM-kills the whole group atomically at the line,
-# exiting 137. This charges actual pages (an allocator's cached virtual
-# reservations can't false-trip it), sums the entire process tree
-# (Zisk's ASM microservices), and can't lose a race (no sampling — a
-# prover's commit phases allocate multiple GB/s).
+# Samples the process tree's summed RSS and kills the tree on breach.
+# Adaptive cadence: ~1s normally, dropping to 0.2s once the tree is
+# within 20 GB of the ceiling (100 GB at the default 120) — the danger
+# zone where a prover's commit phases can allocate multiple GB/s and a
+# relaxed cadence would let the breach outrun the kill. On breach,
+# SIGTERM the tree, then re-sample every 0.2s: the grace (up to 10s,
+# for destructors — e.g. Zisk's shm cleanup) only continues while the
+# tree is BELOW the ceiling; still at/above means still allocating →
+# SIGKILL immediately. Tools flush results rows as they go, so nothing
+# of value needs the grace.
 #
-# Requires cgroup v2 and passwordless sudo (both present on the CI
-# runners and any modern Linux box). NO FALLBACK: a run whose ceiling
-# can't be enforced is not a benchmark run — fail loudly instead.
-#
-# Exits with the child's status (137 after an OOM kill). That is the
+# Exits with the child's status (143/137 after a kill). That is the
 # whole job: no markers, no exit-code taxonomy, no output parsing. The
-# orchestrator (`ix bench run`) treats any exit ≥128 as the in-flight
-# constant's OOM.
+# orchestrator (`ix bench run`) treats any exit ≥128 — this script's
+# kills or the kernel OOM killer's — as the in-flight constant's OOM.
 set -uo pipefail
 
 ceiling_gb=${1:?ceiling_gb}
 shift
 [ $# -ge 1 ] || { echo "watchdog: no command given" >&2; exit 2; }
+max_kb=$((ceiling_gb * 1024 * 1024))
+# Fast-sampling zone: within 20 GB of the ceiling.
+fast_kb=$(( ceiling_gb > 20 ? (ceiling_gb - 20) * 1024 * 1024 : 0 ))
 
-die() { echo "watchdog: $1 — cannot enforce the ${ceiling_gb}G ceiling; refusing to run unguarded" >&2; exit 2; }
-
-[ -f /sys/fs/cgroup/cgroup.controllers ] || die "no cgroup v2 at /sys/fs/cgroup"
-grep -qw memory /sys/fs/cgroup/cgroup.controllers || die "cgroup v2 memory controller unavailable"
-command -v sudo >/dev/null && sudo -n true 2>/dev/null || die "no passwordless sudo"
-
-cg="/sys/fs/cgroup/ixbench-$$"
-sudo mkdir "$cg" || die "mkdir $cg failed"
-echo $((ceiling_gb * 1024 * 1024 * 1024)) | sudo tee "$cg/memory.max" >/dev/null \
-  || die "writing memory.max failed"
-echo 1 | sudo tee "$cg/memory.oom.group" >/dev/null \
-  || die "writing memory.oom.group failed"
-# Absent when swap accounting is off (then there is no swap to escape to).
-echo 0 | sudo tee "$cg/memory.swap.max" >/dev/null 2>&1 || true
-
-echo "watchdog: cgroup memory.max=${ceiling_gb}G ($cg)" >&2
-(
-  echo "$BASHPID" | sudo tee "$cg/cgroup.procs" >/dev/null || exit 2
-  exec "$@"
-) &
+"$@" &
 root=$!
+
+tree_pids() {  # every live pid in root's descendant tree, root included
+  ps -eo pid,ppid --no-headers 2>/dev/null | awk -v root="$root" '
+    { parent[$1]=$2 }
+    END {
+      alive[root]=1; changed=1
+      while (changed) {
+        changed=0
+        for (p in parent) if (alive[parent[p]] && !alive[p]) { alive[p]=1; changed=1 }
+      }
+      for (p in alive) print p
+    }'
+}
+
+tree_rss_kb() {
+  ps -eo pid,ppid,rss --no-headers 2>/dev/null | awk -v root="$root" '
+    { rss[$1]=$3; parent[$1]=$2 }
+    END {
+      alive[root]=1; changed=1
+      while (changed) {
+        changed=0
+        for (p in parent) if (alive[parent[p]] && !alive[p]) { alive[p]=1; changed=1 }
+      }
+      s=0; for (p in alive) s += rss[p]+0
+      print s
+    }'
+}
+
+(
+  while kill -0 "$root" 2>/dev/null; do
+    total_kb=$(tree_rss_kb)
+    if [ -n "$total_kb" ] && [ "$total_kb" -gt "$max_kb" ]; then
+      echo "watchdog: tree-RSS ${total_kb}kB > ${max_kb}kB (~${ceiling_gb} GB); TERM pid=$root tree" >&2
+      pids=$(tree_pids)
+      kill -TERM $pids 2>/dev/null
+      for _ in $(seq 50); do
+        sleep 0.2
+        kill -0 "$root" 2>/dev/null || exit 0
+        total_kb=$(tree_rss_kb)
+        if [ -n "$total_kb" ] && [ "$total_kb" -gt "$max_kb" ]; then
+          echo "watchdog: still ${total_kb}kB above ceiling after TERM; KILL now" >&2
+          kill -KILL $(tree_pids) 2>/dev/null
+          exit 0
+        fi
+      done
+      echo "watchdog: grace expired; KILL" >&2
+      kill -KILL $(tree_pids) 2>/dev/null
+      exit 0
+    fi
+    if [ -n "$total_kb" ] && [ "$total_kb" -gt "$fast_kb" ]; then
+      sleep 0.2
+    else
+      sleep 1
+    fi
+  done
+) &
+monitor=$!
+
 wait "$root"
 status=$?
-if grep -Eq 'oom_kill [1-9]' "$cg/memory.events" 2>/dev/null; then
-  echo "watchdog: kernel OOM-killed the tree at memory.max=${ceiling_gb}G" >&2
-fi
-# Reap any stragglers still charged to the group, then remove it.
-echo 1 | sudo tee "$cg/cgroup.kill" >/dev/null 2>&1 || true
-sudo rmdir "$cg" 2>/dev/null || true
+kill "$monitor" 2>/dev/null
+wait "$monitor" 2>/dev/null
 exit "$status"

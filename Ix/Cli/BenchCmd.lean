@@ -170,12 +170,11 @@ def BackendSpec.testbedFor (b : BackendSpec) (mode : String) : Option String :=
 def BackendSpec.metricsFor (b : BackendSpec) (mode : String) : List String :=
   ((b.metrics.find? (·.1 == mode)).map (·.2)).getD []
 
-/-- Default RAM watchdog ceiling, enforced as a cgroup `memory.max` — a
-    kernel cap on the tree's RESIDENT memory (OOM-kill at the line, exit
-    137). The watchdog needs cgroup v2 + passwordless sudo and FAILS
-    LOUDLY without them: a run whose ceiling can't be enforced is not a
-    benchmark run. `--ceiling-gb` overrides; on machines with less RAM
-    than this, pass a value that actually protects them. -/
+/-- Default RAM watchdog ceiling, enforced by the watchdog's tree-RSS
+    sampler (TERM → short grace → KILL), which samples faster inside the
+    last 20 GB below the ceiling to keep a prover's GB/s bursts from
+    outrunning the kill. `--ceiling-gb` overrides; on machines with less
+    RAM than this, pass a value that actually protects them. -/
 def defaultCeilingGb : Nat := 120
 
 /-- Resolve a tool binary: prefer the in-tree build under `repo` (so a base
