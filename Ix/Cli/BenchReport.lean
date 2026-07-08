@@ -33,7 +33,8 @@ namespace Ix.Cli.BenchReport
     tools emit (see bench-config.json). Unknown metrics fall through to a
     generic decimal rendering. -/
 def metricKind (metric : String) : String :=
-  if ["peak-rss", "execute-peak-rss", "file-size", "proof-size"].contains metric
+  if ["peak-rss", "execute-peak-rss", "prove-peak-rss", "file-size",
+      "proof-size"].contains metric
   then "bytes"
   else if ["execute-time", "prove-time", "verify-time", "check-time",
            "compile-time"].contains metric then "seconds"

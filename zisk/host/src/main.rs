@@ -929,8 +929,8 @@ async fn run_constant(
           "execute-time": (execute_secs * 1e6).round() / 1e6,
           "throughput": tput.round(),
           // Named for what it measures (the execute phase's RSS high-water),
-          // matching bench-typecheck's execute-peak-rss; bare `peak-rss` is
-          // reserved for prove-phase peaks.
+          // matching bench-typecheck's execute-peak-rss (prove-peak-rss is
+          // the prove phase's).
           "execute-peak-rss": peak_rss_bytes(),
         }),
       )?;
@@ -981,7 +981,7 @@ async fn run_constant(
       serde_json::json!({
         "prove-time": (leaf_ms as f64).round() / 1000.0,
         "steps": result.get_execution_steps(),
-        "peak-rss": peak_rss_bytes(),
+        "prove-peak-rss": peak_rss_bytes(),
       }),
     )?;
   }

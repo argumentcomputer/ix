@@ -71,11 +71,11 @@ limit; bound a run with an external `timeout` if needed.
 
 The JSON is a flat shape (`{ "<name>": { "constants": …, "fft-cost": …,
 "execute-time": …, "execute-peak-rss": …, "prove-time": …, "proof-size": …,
-"verify-time": …, "peak-rss": …, "throughput": … } }`). `execute-peak-rss` is
-the Phase-1 RSS high-water, sampled before proving starts, so it is comparable
-across execute-only and prove runs; `prove-time`, `proof-size`, `verify-time`,
-`peak-rss` (the prover's high-water), and `throughput` appear only for proven
-constants. Any bencher-specific reshaping is the caller's job (see
+"verify-time": …, "prove-peak-rss": …, "throughput": … } }`).
+`execute-peak-rss` is the Phase-1 RSS high-water, sampled before proving
+starts, so it is comparable across execute-only and prove runs; `prove-time`,
+`proof-size`, `verify-time`, `prove-peak-rss` (the prover's high-water), and
+`throughput` appear only for proven constants. Any bencher-specific reshaping is the caller's job (see
 `.github/workflows/bench-main.yml`).
 -/
 
@@ -115,13 +115,13 @@ structure Result where
   /-- Wall time of `AiurSystem.verify` over the fresh proof — the other side
       of the same trade-off. `none` if verification failed (reported loudly). -/
   verifySec : Option Float := none
-  /-- Peak resident-set size in bytes (tracing-texray tree sampler), captured
-      after the constant's heaviest phase. -/
+  /-- The constant's prove-phase RSS high-water in bytes (tracing-texray
+      tree sampler; the window resets per prove). -/
   peakRss : Option Nat := none
   /-- The constant's own Phase-1 (execute) RSS high-water mark — the sampler
       window resets per constant. Present in BOTH modes so an execute-only
       run compares apples-to-apples against a prove run's baseline —
-      `peak-rss` in a prove run is dominated by the prover and would dwarf
+      `prove-peak-rss` is dominated by the prover and would dwarf
       an execute-only peak. -/
   executePeakRss : Option Nat := none
   deriving Inhabited
@@ -155,7 +155,7 @@ def Result.toJsonEntry (r : Result) : String × Json :=
                jsonRound 2 (r.constants.toFloat / r.executeSec)) ]
   else base
   let base := match r.peakRss with
-    | some n => base ++ [ ("peak-rss", Lean.toJson n) ]
+    | some n => base ++ [ ("prove-peak-rss", Lean.toJson n) ]
     | none => base
   let base := match r.executePeakRss with
     | some n => base ++ [ ("execute-peak-rss", Lean.toJson n) ]
@@ -320,7 +320,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
       -- lands mid-prove, the log must already say which constant died.
       IO.println s!"  [{i + 1}/{ordered.size}] proving {r.name} (fft-cost={r.fftCost}) …"
       (← IO.getStdout).flush
-      -- Windowed high-water: each prove's peak-rss is its own window, not
+      -- Windowed high-water: each prove's prove-peak-rss is its own window, not
       -- the run's cumulative maximum (mirrors the Phase-1 resets).
       TracingTexray.resetPeakTreeRss
       let (proveRes, proveSec) ← timed fun _ =>
