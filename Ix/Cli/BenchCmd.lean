@@ -170,12 +170,22 @@ def BackendSpec.testbedFor (b : BackendSpec) (mode : String) : Option String :=
 def BackendSpec.metricsFor (b : BackendSpec) (mode : String) : List String :=
   ((b.metrics.find? (·.1 == mode)).map (·.2)).getD []
 
-/-- Default RAM watchdog ceiling, enforced by the watchdog's tree-RSS
-    sampler (TERM → short grace → KILL), which samples faster inside the
-    last 20 GB below the ceiling to keep a prover's GB/s bursts from
-    outrunning the kill. `--ceiling-gb` overrides; on machines with less
-    RAM than this, pass a value that actually protects them. -/
-def defaultCeilingGb : Nat := 120
+/-- Default RAM watchdog ceiling: the machine's total RAM minus 12 GiB
+    of headroom (the ~123 GiB CI runner lands at 111; a 64 GiB
+    workstation at 52). The headroom absorbs the sampler's worst case —
+    a prover's GB/s burst during the ~0.2s fast-cadence window plus the
+    OS and runner agent — so a breach dies before it takes the machine
+    down. `--ceiling-gb` overrides — do so on machines too small for the
+    rule to leave a useful budget. -/
+def defaultCeilingGb : IO Nat := do
+  let s ← try IO.FS.readFile "/proc/meminfo" catch _ => pure ""
+  let kb := (s.splitOn "\n").findSome? fun l =>
+    if l.startsWith "MemTotal:" then
+      ((l.splitOn " ").filter (· ≠ "") |>.drop 1).head?.bind (·.toNat?)
+    else none
+  return match kb with
+    | some kb => max 8 (kb / (1024 * 1024) - 12)
+    | none => 16
 
 /-- Resolve a tool binary: prefer the in-tree build under `repo` (so a base
     checkout measures the base's code), else PATH. -/
@@ -379,8 +389,9 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
   let out := (p.flag? "out").map (·.as! String) |>.getD "bench.json"
   let full := p.hasFlag "full"
   let tier := (p.flag? "tier").map (·.as! String) |>.getD ""
-  let ceilingGb : Nat := (p.flag? "ceiling-gb").map (·.as! Nat)
-    |>.getD defaultCeilingGb
+  let ceilingGb : Nat ← match p.flag? "ceiling-gb" with
+    | some f => pure (f.as! Nat)
+    | none => defaultCeilingGb
   let watchdogPath := (p.flag? "watchdog").map (·.as! String)
     |>.getD s!"{repo}/.github/scripts/watchdog.sh"
   -- Absolute: the zkVM hosts spawn with their workspace as cwd, where a
@@ -522,8 +533,9 @@ def runBenchShardCmd (p : Cli.Parsed) : IO UInt32 := do
       return exitUsage
   let env := info.name
   let repo := (p.flag? "repo").map (·.as! String) |>.getD "."
-  let ceilingGb : Nat := (p.flag? "ceiling-gb").map (·.as! Nat)
-    |>.getD defaultCeilingGb
+  let ceilingGb : Nat ← match p.flag? "ceiling-gb" with
+    | some f => pure (f.as! Nat)
+    | none => defaultCeilingGb
   let csv := (p.flag? "csv").map (·.as! String)
     |>.getD s!"{repo}/Benchmarks/Vectors.csv"
   let rows := parseVectorsCsv (← IO.FS.readFile csv)
@@ -555,7 +567,7 @@ def benchRunCmd : Cli.Cmd := `[Cli|
     tier         : String; "cheap | heavy | all — tier filter (default: all; prove-mode --full defaults to cheap)"
     "shard-only";          "Restrict to shard_target rows"
     "reuse-ixe";           "Reuse an existing <env>.ixe instead of recompiling (ignored by the compile backend)"
-    "ceiling-gb" : Nat;    "RAM watchdog ceiling in GB (default: 120)"
+    "ceiling-gb" : Nat;    "RAM watchdog ceiling in GB (default: machine RAM minus 12 GiB)"
     watchdog     : String; "Watchdog wrapper path (default: <repo>/.github/scripts/watchdog.sh; missing = run unguarded)"
 ]
 
@@ -569,6 +581,6 @@ def benchShardCmd : Cli.Cmd := `[Cli|
     repo         : String; "Checkout to shard: tools resolve from <repo>/.lake/build/bin first, then PATH (default: .)"
     csv          : String; "Vectors path (default: <repo>/Benchmarks/Vectors.csv)"
     "reuse-ixe";           "Reuse an existing <env>.ixe instead of recompiling"
-    "ceiling-gb" : Nat;    "Predicted-RAM cap per shard, passed to `ix shard --max-ram` (default: 120)"
+    "ceiling-gb" : Nat;    "Predicted-RAM cap per shard, passed to `ix shard --max-ram` (default: machine RAM minus 12 GiB)"
 ]
 

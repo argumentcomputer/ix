@@ -6,7 +6,7 @@
 #
 # Samples the process tree's summed RSS and kills the tree on breach.
 # Adaptive cadence: ~1s normally, dropping to 0.2s once the tree is
-# within 20 GB of the ceiling (100 GB at the default 120) — the danger
+# within 20 GB of the ceiling — the danger
 # zone where a prover's commit phases can allocate multiple GB/s and a
 # relaxed cadence would let the breach outrun the kill. On breach,
 # SIGTERM the tree, then re-sample every 0.2s: the grace (up to 10s,
