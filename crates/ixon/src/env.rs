@@ -83,6 +83,53 @@ pub struct LazyNamed {
   pub hint: Option<ReducibilityHints>,
 }
 
+/// Compile-accumulator spill mode, parsed once from `IX_COMPILE_SPILL`.
+///
+/// - `Off` (default): `store_const` keeps a materialized `Arc<Constant>`
+///   cache next to the serialized bytes.
+/// - `Demote`: `store_const` stores bytes only; `get_const` re-parses per
+///   access (the lazy-load policy — see `LazyConstant` docs).
+/// - `Mmap`: demote plus spilling the bytes to a file-backed mapping
+///   (see docs/compile-spill.md, step 2).
+///
+/// Host-only: the guest builds `Env` via deserialization and never calls
+/// `store_const`.
+#[cfg(not(target_arch = "riscv64"))]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SpillMode {
+  Off,
+  Demote,
+  Mmap,
+}
+
+#[cfg(not(target_arch = "riscv64"))]
+pub static SPILL_MODE: std::sync::LazyLock<SpillMode> =
+  std::sync::LazyLock::new(|| {
+    match std::env::var("IX_COMPILE_SPILL").as_deref() {
+      Ok("demote") => SpillMode::Demote,
+      Ok("mmap") => SpillMode::Mmap,
+      Ok("off") | Err(_) => SpillMode::Off,
+      Ok(other) => {
+        eprintln!(
+          "[ixon] IX_COMPILE_SPILL={other:?} not recognized \
+           (expected off|demote|mmap); using off"
+        );
+        SpillMode::Off
+      },
+    }
+  });
+
+/// Composition of [`Env::consts`], from [`Env::const_cache_stats`].
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ConstCacheStats {
+  /// Total entries in the consts map.
+  pub entries: usize,
+  /// Summed `raw_bytes()` length across all entries.
+  pub bytes: usize,
+  /// Entries holding a materialized `Arc<Constant>` cache.
+  pub materialized: usize,
+}
+
 /// Result of [`Env::parse_lazy_index`]: a metadata-light, zero-copy view of an
 /// `.ixe` buffer suitable for the anon/lazy check path. Constants are byte
 /// windows (offsets), `named` is `name → addr` + hint, and `blobs` are copied
@@ -165,14 +212,23 @@ impl Env {
 
   /// Store a structured constant under `addr`.
   ///
-  /// Serializes the constant once and pre-populates the
-  /// [`LazyConstant`] cache so subsequent `Env::put` is a memcpy and
-  /// the first `get_const` call is free.
+  /// Serializes the constant once. In the default [`SpillMode::Off`],
+  /// the [`LazyConstant`] cache is pre-populated so `get_const` is
+  /// free; under `IX_COMPILE_SPILL=demote|mmap` the structured value is
+  /// dropped and the entry costs only its bytes (`get_const` re-parses
+  /// per access). Compilation never reads stored constants back, so the
+  /// modes differ only in memory footprint and later readers' CPU cost.
   ///
   /// Host-only — see `store_blob`.
   #[cfg(not(target_arch = "riscv64"))]
   pub fn store_const(&self, addr: Address, constant: Constant) {
-    self.consts.insert(addr, LazyConstant::from_constant(constant));
+    let lazy = match *SPILL_MODE {
+      SpillMode::Off => LazyConstant::from_constant(constant),
+      SpillMode::Demote | SpillMode::Mmap => {
+        LazyConstant::from_constant_uncached(constant)
+      },
+    };
+    self.consts.insert(addr, lazy);
   }
 
   /// Store an already-serialized constant under `addr` (lazy load path).
@@ -257,6 +313,21 @@ impl Env {
   /// Number of constants.
   pub fn const_count(&self) -> usize {
     self.consts.len()
+  }
+
+  /// Composition of the consts map: entry count, summed serialized byte
+  /// length, and how many entries hold a materialized `Arc<Constant>`
+  /// cache (see [`LazyConstant::is_materialized`]). O(n) scan over the
+  /// map; used to split the accumulator's footprint into structured-cache
+  /// vs raw-bytes shares.
+  pub fn const_cache_stats(&self) -> ConstCacheStats {
+    let mut stats = ConstCacheStats::default();
+    for entry in self.consts.iter() {
+      stats.entries += 1;
+      stats.bytes += entry.value().raw_bytes().len();
+      stats.materialized += usize::from(entry.value().is_materialized());
+    }
+    stats
   }
 
   /// Number of named entries.
