@@ -639,8 +639,11 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
          ("runner", Json.str ciRunner),
          ("label", Json.str s!"{b.name}-{e}-{modeFor b}")]
 
+  -- Annotate the mode only where a mode CHOICE exists (aiur's
+  -- execute/prove); `ooc=execute` for a single-mode backend is noise.
   let modes := " ".intercalate
-    (backends.map (fun b => s!"{b.name}={modeFor b}")).toList
+    (backends.map (fun b =>
+      if b.testbeds.length > 1 then s!"{b.name}={modeFor b}" else b.name)).toList
   let mut summary := s!"backends: `{modes}` · envs: `{",".intercalate envs.toList}` · \
     set: `{if full == "1" then "full" else "primary"}` · shard: `{shard}`"
   for b in skipped do
