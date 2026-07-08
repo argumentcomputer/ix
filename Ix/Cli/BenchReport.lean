@@ -251,15 +251,17 @@ def renderCompare (a : CompareArgs) : String := Id.run do
   else if (rowNames a.prRows).isEmpty then
     out := out.push "" |>.push
       "_⚠️ no PR-side results (see the workflow logs)._"
-  -- Per-phase drill-down: collapsible, one mini-table per constant, only
-  -- for constants where either side carries `phase:<span>` fields (aiur
-  -- witness/commit/quotient breakdowns, zkVM coarse phases, …).
+  -- Per-phase drill-down: one collapsed section per cell, with each
+  -- constant NESTED as its own collapsible mini-table (`phase | main | PR
+  -- | Δ%`) — only for constants where either side carries `phase:<span>`
+  -- fields (aiur witness/commit/quotient breakdowns, zkVM coarse phases).
   let mut detail : Array String := #[]
   for n in names do
     let keys := (rowPhaseKeys a.mainRows n ++ rowPhaseKeys a.prRows n).foldl
       (fun acc k => if acc.contains k then acc else acc.push k) #[]
     if keys.isEmpty then continue
-    detail := detail.push "" |>.push s!"**`{n}`**" |>.push ""
+    detail := detail.push "" |>.push "<details>"
+      |>.push s!"<summary><code>{n}</code></summary>" |>.push ""
       |>.push "| phase | main | PR | Δ% |" |>.push "|---|---|---|---|"
     for k in keys.qsort (· < ·) do
       let mv := rowNum a.mainRows n k
@@ -273,6 +275,7 @@ def renderCompare (a : CompareArgs) : String := Id.run do
         | _, _ => "n/a"
       detail := detail.push
         s!"| `{k.drop 6}` | {human mv k} | {human pv k} | {delta} |"
+    detail := detail.push "" |>.push "</details>"
   if !detail.isEmpty then
     out := ((out.push "" |>.push "<details>"
       |>.push "<summary>per-phase drill-down</summary>") ++ detail)
