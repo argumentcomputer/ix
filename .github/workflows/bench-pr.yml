@@ -97,6 +97,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.parse.outputs.matrix }}
+      prep-envs: ${{ steps.parse.outputs.prep-envs }}
       shard: ${{ steps.parse.outputs.shard }}
       full: ${{ steps.parse.outputs.full }}
       passthrough-env: ${{ steps.parse.outputs.passthrough-env }}
@@ -159,11 +160,76 @@ jobs:
           COMMENT_BODY: ${{ github.event_name == 'pull_request' && '!benchmark ooc compile' || github.event.comment.body }}
         run: ix bench ci parse
 
+  # Compile each needed env's `.ixe` ONCE and publish it under the cache
+  # key the cells restore — without this, every same-env cell misses the
+  # cold cache simultaneously and pays its own `ix compile` in parallel.
+  # Skipped entirely when only the compile backend was requested (its cells
+  # compile fresh by design — that IS the benchmark).
+  prepare:
+    name: prepare-${{ matrix.env }}
+    needs: [setup, build]
+    if: needs.build.outputs.prep-envs != '[]'
+    runs-on: warp-ubuntu-latest-x64-32x
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        env: ${{ fromJSON(needs.build.outputs.prep-envs) }}
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.setup.outputs.head-sha }}
+          # The job runs PR code; never leave the token in .git.
+          persist-credentials: false
+      # Re-running !benchmark on the same commit: the .ixe is already
+      # published — nothing to do.
+      - name: Check for published .ixe
+        id: pr-ixe
+        uses: actions/cache/restore@v5
+        with:
+          path: ${{ matrix.env }}.ixe
+          key: bench-pr-ixe-${{ needs.setup.outputs.head-sha }}-${{ matrix.env }}
+          lookup-only: true
+      - name: Restore PR binaries
+        if: steps.pr-ixe.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v5
+        with:
+          path: ~/.local/bin
+          key: bench-bins-${{ needs.setup.outputs.head-sha }}
+          fail-on-cache-miss: true
+      - if: steps.pr-ixe.outputs.cache-hit != 'true'
+        run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Provision Lean toolchain
+        if: steps.pr-ixe.outputs.cache-hit != 'true'
+        uses: leanprover/lean-action@v1
+        with:
+          lake-package-directory: .
+          auto-config: false
+          build: false
+          use-github-cache: false
+          use-mathlib-cache: ${{ matrix.env == 'Mathlib' && 'true' || 'false' }}
+      # The compile backend cell is the measured compile; this one just
+      # produces the artifact (same orchestrator, row discarded).
+      - name: Compile ${{ matrix.env }}.ixe
+        if: steps.pr-ixe.outputs.cache-hit != 'true'
+        run: ix bench run --backend compile --env ${{ matrix.env }} --out prep.json
+      - name: Publish .ixe
+        if: steps.pr-ixe.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: ${{ matrix.env }}.ixe
+          key: bench-pr-ixe-${{ needs.setup.outputs.head-sha }}-${{ matrix.env }}
+
   benchmark:
     # Explicit name: the default would append EVERY matrix value (backend,
     # env, mode, runner, label); the label already is the cell id.
     name: ${{ matrix.cell.label }}
-    needs: [setup, build]
+    needs: [setup, build, prepare]
+    # prepare is skipped (not failed) for compile-only requests — run the
+    # cells then too; a real prepare failure stops them (the cells would
+    # just re-fail the same compile lazily).
+    if: ${{ !cancelled() && needs.build.result == 'success' && needs.prepare.result != 'failure' && needs.prepare.result != 'cancelled' }}
     runs-on: ${{ matrix.cell.runner }}
     # Wide enough for the zisk cell's worst case: per-constant loop + PR-side
     # `ix profile` when a heavy primary's closure shards must be cut fresh.
