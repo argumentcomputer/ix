@@ -44,8 +44,12 @@ tree_pids() {  # every live pid in root's descendant tree, root included
     }'
 }
 
+# Tree RSS plus /dev/shm: Zisk's ASM services park locked shared segments
+# there that per-process RSS under-attributes — observed dying at a
+# nominal 0.4 GB over the ceiling because the true commit was higher.
 tree_rss_kb() {
-  ps -eo pid,ppid,rss --no-headers 2>/dev/null | awk -v root="$root" '
+  local rss shm
+  rss=$(ps -eo pid,ppid,rss --no-headers 2>/dev/null | awk -v root="$root" '
     { rss[$1]=$3; parent[$1]=$2 }
     END {
       alive[root]=1; changed=1
@@ -55,14 +59,23 @@ tree_rss_kb() {
       }
       s=0; for (p in alive) s += rss[p]+0
       print s
-    }'
+    }')
+  shm=$(du -sk /dev/shm 2>/dev/null | cut -f1)
+  echo $(( ${rss:-0} + ${shm:-0} ))
 }
 
 (
+  prev_kb=0
   while kill -0 "$root" 2>/dev/null; do
     total_kb=$(tree_rss_kb)
-    if [ -n "$total_kb" ] && [ "$total_kb" -gt "$max_kb" ]; then
-      echo "watchdog: tree-RSS ${total_kb}kB > ${max_kb}kB (~${ceiling_gb} GB); TERM pid=$root tree" >&2
+    # Breach = over the ceiling, OR on a trajectory to blow past it within
+    # the next sample (one-sample linear projection): a prover first-touching
+    # a pre-reserved region grows RSS at memory bandwidth, faster than any
+    # cadence — the projection buys back one sample of reaction time.
+    proj_kb=$(( total_kb + (total_kb > prev_kb && prev_kb > 0 ? total_kb - prev_kb : 0) ))
+    prev_kb=$total_kb
+    if [ -n "$total_kb" ] && [ "$proj_kb" -gt "$max_kb" ]; then
+      echo "watchdog: tree-RSS ${total_kb}kB (projected ${proj_kb}kB) > ${max_kb}kB (~${ceiling_gb} GB); TERM pid=$root tree" >&2
       pids=$(tree_pids)
       kill -TERM $pids 2>/dev/null
       for _ in $(seq 50); do

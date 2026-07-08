@@ -170,13 +170,14 @@ def BackendSpec.testbedFor (b : BackendSpec) (mode : String) : Option String :=
 def BackendSpec.metricsFor (b : BackendSpec) (mode : String) : List String :=
   ((b.metrics.find? (·.1 == mode)).map (·.2)).getD []
 
-/-- Default RAM watchdog ceiling: the machine's total RAM minus 12 GiB
-    of headroom (the ~123 GiB CI runner lands at 111; a 64 GiB
-    workstation at 52). The headroom absorbs the sampler's worst case —
-    a prover's GB/s burst during the ~0.2s fast-cadence window plus the
-    OS and runner agent — so a breach dies before it takes the machine
-    down. `--ceiling-gb` overrides — do so on machines too small for the
-    rule to leave a useful budget. -/
+/-- Default RAM watchdog ceiling: the machine's total RAM minus 24 GiB
+    of headroom (the ~123 GiB CI runner lands at 99; a 64 GiB
+    workstation at 40). The headroom must absorb the sampler's MEASURED
+    worst case — a prover first-touching pre-reserved buffers grows RSS
+    at memory bandwidth, ~13 GB inside one 0.2s sample — plus the OS and
+    runner agent, or the breach takes the machine down before any kill
+    lands. `--ceiling-gb` overrides — do so on machines too small for
+    the rule to leave a useful budget. -/
 def defaultCeilingGb : IO Nat := do
   let s ← try IO.FS.readFile "/proc/meminfo" catch _ => pure ""
   let kb := (s.splitOn "\n").findSome? fun l =>
@@ -184,7 +185,7 @@ def defaultCeilingGb : IO Nat := do
       ((l.splitOn " ").filter (· ≠ "") |>.drop 1).head?.bind (·.toNat?)
     else none
   return match kb with
-    | some kb => max 8 (kb / (1024 * 1024) - 12)
+    | some kb => max 8 (kb / (1024 * 1024) - 24)
     | none => 16
 
 /-- Resolve a tool binary: prefer the in-tree build under `repo` (so a base
@@ -567,7 +568,7 @@ def benchRunCmd : Cli.Cmd := `[Cli|
     tier         : String; "cheap | heavy | all — tier filter (default: all; prove-mode --full defaults to cheap)"
     "shard-only";          "Restrict to shard_target rows"
     "reuse-ixe";           "Reuse an existing <env>.ixe instead of recompiling (ignored by the compile backend)"
-    "ceiling-gb" : Nat;    "RAM watchdog ceiling in GB (default: machine RAM minus 12 GiB)"
+    "ceiling-gb" : Nat;    "RAM watchdog ceiling in GB (default: machine RAM minus 24 GiB)"
     watchdog     : String; "Watchdog wrapper path (default: <repo>/.github/scripts/watchdog.sh; missing = run unguarded)"
 ]
 
@@ -581,6 +582,6 @@ def benchShardCmd : Cli.Cmd := `[Cli|
     repo         : String; "Checkout to shard: tools resolve from <repo>/.lake/build/bin first, then PATH (default: .)"
     csv          : String; "Vectors path (default: <repo>/Benchmarks/Vectors.csv)"
     "reuse-ixe";           "Reuse an existing <env>.ixe instead of recompiling"
-    "ceiling-gb" : Nat;    "Predicted-RAM cap per shard, passed to `ix shard --max-ram` (default: machine RAM minus 12 GiB)"
+    "ceiling-gb" : Nat;    "Predicted-RAM cap per shard, passed to `ix shard --max-ram` (default: machine RAM minus 24 GiB)"
 ]
 

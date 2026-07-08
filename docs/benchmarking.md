@@ -145,7 +145,7 @@ breakdowns. bench-main's compile job pre-cuts these artifacts
   (`bencher-thresholds-reset.yml` keeps a static workload list with a sync
   note.) CI-only data stays out of it: the runner name lives with the `ci`
   adapters. The watchdog ceiling defaults to the machine's RAM minus
-  12 GiB of headroom (`--ceiling-gb` overrides).
+  24 GiB of headroom (`--ceiling-gb` overrides).
 
 ## `!benchmark` grammar
 
