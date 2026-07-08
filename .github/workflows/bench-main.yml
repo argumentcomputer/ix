@@ -54,9 +54,8 @@ jobs:
       - name: Log build CPU
         run: |
           lscpu
-          grep -qw avx512f /proc/cpuinfo \
-            && echo "AVX-512F: present (compiled into the binary)" \
-            || echo "AVX-512F: absent"
+          flags=$(grep -m1 -oE 'avx2|avx512[a-z0-9_]*' /proc/cpuinfo | sort -u | tr '\n' ' ')
+          echo "AVX flags: ${flags:-absent}"
       - uses: leanprover/lean-action@v1
         with:
           auto-config: false

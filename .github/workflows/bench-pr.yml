@@ -123,9 +123,8 @@ jobs:
         if: steps.bins.outputs.cache-hit != 'true'
         run: |
           lscpu
-          grep -qw avx512f /proc/cpuinfo \
-            && echo "AVX-512F: present (compiled into the binary)" \
-            || echo "AVX-512F: absent"
+          flags=$(grep -m1 -oE 'avx2|avx512[a-z0-9_]*' /proc/cpuinfo | sort -u | tr '\n' ' ')
+          echo "AVX flags: ${flags:-absent}"
       # One lean-action for both paths: cache miss → build the binaries;
       # cache hit → provision the toolchain only (the restored `ix` still
       # needs libleanshared to run the parse step below).
