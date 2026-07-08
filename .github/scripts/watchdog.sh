@@ -4,31 +4,30 @@
 #
 #   watchdog.sh <ceiling_gb> <cmd> [args...]
 #
-# Two enforcement layers:
+# Preferred mode — cgroup v2 `memory.max` (needs cgroup v2 + passwordless
+# sudo, both true on the CI runners): the kernel caps the tree's RESIDENT
+# memory and OOM-kills the whole group atomically at the ceiling
+# (memory.oom.group), exiting 137. This is the real primitive the
+# fallbacks approximate: it charges actual pages (an allocator's cached
+# virtual reservations don't count, so Lean's mimalloc slack can't
+# false-trip it), it sums the whole tree (Zisk's ASM microservices), and
+# it can't lose a race (no sampling — a prover's commit phases allocate
+# multiple GB/s, faster than any sampler reacts).
 #
-# 1. RLIMIT_DATA at the ceiling on the spawned command: the allocation
-#    that would cross the line FAILS inside the process — Rust's
-#    handle_alloc_error / Lean's OOM panic abort on the spot (SIGABRT,
-#    exit 134) with zero overshoot. This is the primary defense: a
-#    prover's commit phases allocate multiple GB/s across 32 threads,
-#    which no sampling cadence can catch before the VM is thrashing
-#    (observed: 13 GB past the ceiling within one sample; the runner
-#    agent misses its heartbeat and GitHub cancels the job before any
-#    kill lands). The limit is per-process; anonymous allocations count,
-#    file-backed mmaps don't.
-# 2. A ~1s tree-RSS sampler as backstop for what RLIMIT_DATA can't see:
-#    the SUM across a multi-process tree (Zisk's ASM microservices).
-#    On breach, SIGTERM the tree, then re-sample each second — the
-#    grace (up to 10s, for destructors) only continues while the tree
-#    is BELOW the ceiling; still at/above means still allocating →
-#    SIGKILL immediately. Tools flush results rows as they go, so
-#    nothing of value needs the grace.
+# Fallback (no cgroup/sudo — local runs), two layers:
+# 1. RLIMIT_DATA at the ceiling: the over-budget allocation FAILS inside
+#    the process (Rust handle_alloc_error → SIGABRT 134; Lean OOM panic).
+#    Caveat: it caps VIRTUAL data mappings, which allocator caching can
+#    push far above true RSS — big Lean-env workloads may trip it early.
+# 2. A ~1s tree-RSS sampler for the multi-process sum: on breach, SIGTERM
+#    the tree, re-sample each second (grace only continues while BELOW
+#    the ceiling; still above → SIGKILL now).
 #
-# Exits with the child's status (134/143/137 after a limit/kill). That
+# Exits with the child's status (137/134/143 after a kill/limit). That
 # is the whole job: no markers, no exit-code taxonomy, no output
 # parsing. The orchestrator (`ix bench run`) treats any exit ≥128 —
-# this script's aborts and kills, or the kernel OOM killer's — as the
-# in-flight constant's OOM.
+# these kills or the kernel OOM killer's — as the in-flight constant's
+# OOM.
 set -uo pipefail
 
 ceiling_gb=${1:?ceiling_gb}
@@ -36,6 +35,36 @@ shift
 [ $# -ge 1 ] || { echo "watchdog: no command given" >&2; exit 2; }
 max_kb=$((ceiling_gb * 1024 * 1024))
 
+cg=""
+if [ -f /sys/fs/cgroup/cgroup.controllers ] \
+    && grep -qw memory /sys/fs/cgroup/cgroup.controllers \
+    && command -v sudo >/dev/null && sudo -n true 2>/dev/null \
+    && sudo mkdir "/sys/fs/cgroup/ixbench-$$" 2>/dev/null; then
+  cg="/sys/fs/cgroup/ixbench-$$"
+  echo $((ceiling_gb * 1024 * 1024 * 1024)) | sudo tee "$cg/memory.max" >/dev/null
+  echo 0 | sudo tee "$cg/memory.swap.max" >/dev/null 2>&1 || true
+  echo 1 | sudo tee "$cg/memory.oom.group" >/dev/null
+fi
+
+if [ -n "$cg" ]; then
+  echo "watchdog: cgroup memory.max=${ceiling_gb}G ($cg)" >&2
+  (
+    echo "$BASHPID" | sudo tee "$cg/cgroup.procs" >/dev/null
+    exec "$@"
+  ) &
+  root=$!
+  wait "$root"
+  status=$?
+  if grep -Eq 'oom_kill [1-9]' "$cg/memory.events" 2>/dev/null; then
+    echo "watchdog: kernel OOM-killed the tree at memory.max=${ceiling_gb}G" >&2
+  fi
+  # Reap any stragglers still charged to the group, then remove it.
+  echo 1 | sudo tee "$cg/cgroup.kill" >/dev/null 2>&1 || true
+  sudo rmdir "$cg" 2>/dev/null || true
+  exit "$status"
+fi
+
+echo "watchdog: no cgroup v2 + sudo; falling back to RLIMIT_DATA + sampler" >&2
 (
   ulimit -d "$max_kb" 2>/dev/null || true
   exec "$@"

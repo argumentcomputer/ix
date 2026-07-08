@@ -170,13 +170,13 @@ def BackendSpec.testbedFor (b : BackendSpec) (mode : String) : Option String :=
 def BackendSpec.metricsFor (b : BackendSpec) (mode : String) : List String :=
   ((b.metrics.find? (·.1 == mode)).map (·.2)).getD []
 
-/-- Default RAM watchdog ceiling. Enforced primarily as RLIMIT_DATA (the
-    over-budget allocation fails inside the process — no sampling race),
-    which caps virtual data mappings: Lean's allocator reserves beyond
-    true RSS, so the value needs slack above the expected peak — a Mathlib
-    env build crosses 111 GB of address space while comfortably inside
-    physical RAM. `--ceiling-gb` overrides; on machines with less RAM than
-    this, pass a value that actually protects them. -/
+/-- Default RAM watchdog ceiling. On CI this is a cgroup `memory.max` —
+    a kernel cap on the tree's RESIDENT memory (OOM-kill at the line,
+    exit 137). The local fallback is RLIMIT_DATA + a tree-RSS sampler;
+    the rlimit caps virtual data mappings, which allocator caching can
+    push well above true RSS on big Lean-env workloads. `--ceiling-gb`
+    overrides; on machines with less RAM than this, pass a value that
+    actually protects them. -/
 def defaultCeilingGb : Nat := 120
 
 /-- Resolve a tool binary: prefer the in-tree build under `repo` (so a base
