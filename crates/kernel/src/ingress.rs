@@ -3684,7 +3684,11 @@ fn drop_ixon_env(ixon_env: IxonEnv, quiet: bool) {
   // `anon_hints` is a small FxHashMap (one entry per Def from the .ixe's
   // Named metadata); dropping it inline alongside the bookkeeping below
   // is negligible compared to the DashMap dropdance.
-  let IxonEnv { consts, named, blobs, names, comms, anon_hints: _ } = ixon_env;
+  // `..` also drops the env's private spill slot (closes the spill fd;
+  // sealed mmap windows live on inside the consts entries until those
+  // drop below).
+  let IxonEnv { consts, named, blobs, names, comms, anon_hints: _, .. } =
+    ixon_env;
   let consts_len = consts.len();
   let named_len = named.len();
   let names_len = names.len();

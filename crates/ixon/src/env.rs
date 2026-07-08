@@ -178,6 +178,12 @@ pub struct Env {
   /// supplying them in anon mode does not relax the kernel's
   /// metadata-free correctness model.
   pub anon_hints: FxHashMap<Address, ReducibilityHints>,
+  /// Spill file state for `IX_COMPILE_SPILL=mmap` (see the `spill`
+  /// module docs). `Unopened` until the first spill-mode `store_const`.
+  /// Not carried by `Clone` — a cloned env starts a fresh spill file;
+  /// its mmap-backed entries keep their `Arc<Mmap>` windows regardless.
+  #[cfg(not(target_arch = "riscv64"))]
+  pub(crate) spill: std::sync::Mutex<crate::spill::SpillSlot>,
 }
 
 impl Env {
@@ -189,6 +195,8 @@ impl Env {
       names: IxonMap::new(),
       comms: IxonMap::new(),
       anon_hints: FxHashMap::default(),
+      #[cfg(not(target_arch = "riscv64"))]
+      spill: Default::default(),
     }
   }
 
@@ -222,13 +230,113 @@ impl Env {
   /// Host-only — see `store_blob`.
   #[cfg(not(target_arch = "riscv64"))]
   pub fn store_const(&self, addr: Address, constant: Constant) {
-    let lazy = match *SPILL_MODE {
-      SpillMode::Off => LazyConstant::from_constant(constant),
-      SpillMode::Demote | SpillMode::Mmap => {
-        LazyConstant::from_constant_uncached(constant)
+    self.store_const_with_mode(addr, constant, *SPILL_MODE);
+  }
+
+  /// `store_const` with an explicit mode, bypassing `IX_COMPILE_SPILL`.
+  /// Exists so tests can drive `Demote`/`Mmap` without process-global
+  /// env-var races.
+  #[cfg(not(target_arch = "riscv64"))]
+  pub fn store_const_with_mode(
+    &self,
+    addr: Address,
+    constant: Constant,
+    mode: SpillMode,
+  ) {
+    match mode {
+      SpillMode::Off => {
+        self.consts.insert(addr, LazyConstant::from_constant(constant));
       },
-    };
-    self.consts.insert(addr, lazy);
+      // In the spill modes a re-store of an existing address is a no-op:
+      // content-addressing guarantees identical bytes, re-inserting
+      // would downgrade an already-sealed mmap window back to heap, and
+      // re-appending would duplicate the bytes in the spill file.
+      // (Alpha-collapsed blocks re-store the shared address once per
+      // member.) `Off` keeps insert-overwrite: there a re-store can
+      // upgrade a cache-less lazy-loaded entry to a cached one.
+      SpillMode::Demote => {
+        if self.consts.contains_key(&addr) {
+          return;
+        }
+        self
+          .consts
+          .insert(addr, LazyConstant::from_constant_uncached(constant));
+      },
+      SpillMode::Mmap => {
+        if self.consts.contains_key(&addr) {
+          return;
+        }
+        let mut buf = Vec::new();
+        constant.put(&mut buf);
+        let bytes: Arc<[u8]> = buf.into();
+        // Heap entry first so the address is immediately readable; the
+        // spill seal swaps it to an mmap window later.
+        self
+          .consts
+          .insert(addr.clone(), LazyConstant::from_bytes(bytes.clone()));
+        self.spill_append(addr, &bytes);
+      },
+    }
+  }
+
+  /// Append one entry to the spill file, sealing (and swapping the
+  /// sealed entries to mmap windows) when a segment fills. Any I/O
+  /// error disables spilling for this env: heap-backed entries remain
+  /// valid, sealed windows keep their mappings.
+  #[cfg(not(target_arch = "riscv64"))]
+  fn spill_append(&self, addr: Address, bytes: &[u8]) {
+    use crate::spill::{SpillSlot, SpillState};
+    let mut slot = self.spill.lock().unwrap();
+    if matches!(*slot, SpillSlot::Unopened) {
+      match SpillState::create() {
+        Ok(st) => *slot = SpillSlot::Active(st),
+        Err(e) => {
+          eprintln!(
+            "[ixon] spill file creation failed ({e}); \
+             falling back to heap-backed entries"
+          );
+          *slot = SpillSlot::Disabled;
+        },
+      }
+    }
+    let SpillSlot::Active(st) = &mut *slot else { return };
+    match st.append(addr, bytes) {
+      Ok(None) => {},
+      Ok(Some((mmap, entries))) => {
+        if std::env::var("IX_QUIET").is_err() {
+          eprintln!(
+            "[ixon] spill segment {} sealed: {} entries, file {:.1} MiB",
+            st.segments_sealed,
+            entries.len(),
+            st.file_len() as f64 / (1024.0 * 1024.0),
+          );
+        }
+        for (a, off, len) in entries {
+          self
+            .consts
+            .insert(a, LazyConstant::from_mmap_slice(mmap.clone(), off, len));
+        }
+      },
+      Err(e) => {
+        eprintln!(
+          "[ixon] spill write failed ({e}); \
+           falling back to heap-backed entries"
+        );
+        *slot = SpillSlot::Disabled;
+      },
+    }
+  }
+
+  /// Spill file observability: `(file_bytes, segments_sealed,
+  /// unsealed_entry_count)`, or `None` if spilling never activated.
+  #[cfg(not(target_arch = "riscv64"))]
+  pub fn spill_stats(&self) -> Option<(u64, usize, usize)> {
+    match &*self.spill.lock().unwrap() {
+      crate::spill::SpillSlot::Active(st) => {
+        Some((st.file_len(), st.segments_sealed, st.pending_count()))
+      },
+      _ => None,
+    }
   }
 
   /// Store an already-serialized constant under `addr` (lazy load path).
@@ -446,6 +554,10 @@ impl Clone for Env {
       names,
       comms,
       anon_hints: self.anon_hints.clone(),
+      // A cloned env starts a fresh spill file; already-sealed mmap
+      // windows travel inside the cloned LazyConstants.
+      #[cfg(not(target_arch = "riscv64"))]
+      spill: Default::default(),
     }
   }
 }
@@ -489,6 +601,72 @@ mod tests {
     env.store_const(addr.clone(), constant.clone());
     let got = env.get_const(&addr).unwrap();
     assert_eq!(*got, constant);
+  }
+
+  /// Distinct axiom per `lvls` so each store gets its own address.
+  fn axiom_with_lvls(lvls: u64) -> Constant {
+    Constant::new(ConstantInfo::Axio(Axiom {
+      is_unsafe: false,
+      lvls,
+      typ: Arc::new(Expr::Sort(0)),
+    }))
+  }
+
+  /// Preset an Active spill state with a tiny segment so a handful of
+  /// stores force seals (bypasses the env-var-driven `SpillState::create`).
+  fn preset_tiny_spill(env: &Env, segment_bytes: usize) {
+    let dir = std::env::temp_dir();
+    *env.spill.lock().unwrap() = crate::spill::SpillSlot::Active(
+      crate::spill::SpillState::create_in(dir.to_str().unwrap(), segment_bytes)
+        .unwrap(),
+    );
+  }
+
+  #[test]
+  fn store_const_mmap_seals_segments_and_roundtrips() {
+    let env = Env::new();
+    preset_tiny_spill(&env, 256);
+    let mut stored = Vec::new();
+    for i in 0..64 {
+      let c = axiom_with_lvls(i);
+      let (addr, _) = c.commit();
+      env.store_const_with_mode(addr.clone(), c.clone(), SpillMode::Mmap);
+      stored.push((addr, c));
+    }
+    let (file_bytes, segments, unsealed) = env.spill_stats().unwrap();
+    assert!(segments >= 1, "no segment sealed (file {file_bytes}B)");
+    assert!(unsealed < 64, "nothing was sealed");
+    // Every entry — mmap-backed or still-heap — verifies and roundtrips.
+    for (addr, c) in &stored {
+      let entry = env.consts.get(addr).unwrap();
+      assert!(entry.value().verify_address(addr));
+      assert!(!entry.value().is_materialized());
+      drop(entry);
+      assert_eq!(*env.get_const(addr).unwrap(), *c);
+    }
+  }
+
+  #[test]
+  fn env_put_identical_across_spill_modes() {
+    let build = |mode: SpillMode, tiny_spill: bool| {
+      let env = Env::new();
+      if tiny_spill {
+        preset_tiny_spill(&env, 128);
+      }
+      for i in 0..32 {
+        let c = axiom_with_lvls(i);
+        let (addr, _) = c.commit();
+        env.store_const_with_mode(addr, c, mode);
+      }
+      let mut buf = Vec::new();
+      env.put(&mut buf).unwrap();
+      buf
+    };
+    let off = build(SpillMode::Off, false);
+    let demote = build(SpillMode::Demote, false);
+    let mmap = build(SpillMode::Mmap, true);
+    assert_eq!(off, demote);
+    assert_eq!(off, mmap);
   }
 
   #[test]

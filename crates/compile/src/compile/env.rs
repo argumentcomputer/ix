@@ -1002,6 +1002,13 @@ pub fn compile_env_with_options(
       acc.bytes as f64 / (1024.0 * 1024.0),
       acc.materialized,
     );
+    if let Some((file_bytes, segments, unsealed)) = stt.env.spill_stats() {
+      eprintln!(
+        "[compile_env] spill: {:.1} MiB file · {segments} segments sealed \
+         · {unsealed} entries unsealed (heap)",
+        file_bytes as f64 / (1024.0 * 1024.0),
+      );
+    }
   }
 
   Ok(stt)

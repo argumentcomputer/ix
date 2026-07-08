@@ -19,6 +19,8 @@ pub mod metadata;
 pub mod proof;
 pub mod serialize;
 pub mod sharing;
+#[cfg(not(target_arch = "riscv64"))]
+pub(crate) mod spill;
 pub mod tag;
 pub mod univ;
 
