@@ -152,6 +152,9 @@ jobs:
           key: bench-bins-${{ needs.setup.outputs.head-sha }}
 
   benchmark:
+    # Explicit name: the default would append EVERY matrix value (backend,
+    # env, slug, mode, runner, label); the label already is the cell id.
+    name: ${{ matrix.cell.label }}
     needs: [setup, build]
     runs-on: ${{ matrix.cell.runner }}
     # Wide enough for the zisk cell's worst case: per-constant loop + PR-side

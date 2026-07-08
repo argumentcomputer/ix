@@ -114,6 +114,9 @@ jobs:
   # Compile each library env to a `.ixe` and track compile throughput. Caches
   # the `.ixe` (keyed by sha + env slug) for the prove job to consume.
   compile:
+    # Explicit names on the matrix jobs: the default would append every
+    # matrix value (slugs, flags) to the job title.
+    name: compile-${{ matrix.env }}
     needs: build
     runs-on: warp-ubuntu-latest-x64-32x
     strategy:
@@ -234,6 +237,7 @@ jobs:
   # No compiler run here: `ix bench run --reuse-ixe` picks up the cached
   # `.ixe`.
   aiur:
+    name: aiur-${{ matrix.bench.env }}-${{ matrix.mode }}
     needs: [compile, plan]
     runs-on: warp-ubuntu-latest-x64-32x
     timeout-minutes: 60
@@ -340,6 +344,7 @@ jobs:
   # this is execute-only. `ix` orchestrates the cell, so the staged binaries +
   # Lean toolchain (libleanshared) are restored here too.
   zkvm-execute:
+    name: ${{ matrix.cell.backend }}-${{ matrix.cell.env }}-execute
     needs: [compile, plan]
     runs-on: warp-ubuntu-latest-x64-32x
     # Per-constant loop (heavy primaries ride the RAM watchdog to OOM rows) —
@@ -446,6 +451,7 @@ jobs:
   # apples-to-apples baseline next to the zkVM cells. Reuses the compile job's
   # cached `.ixe` and the staged `ix` binary — no recompile.
   ooc-check:
+    name: ooc-${{ matrix.bench.env }}
     needs: [compile, plan]
     runs-on: warp-ubuntu-latest-x64-32x
     timeout-minutes: 60
