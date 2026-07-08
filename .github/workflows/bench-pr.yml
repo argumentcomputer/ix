@@ -126,11 +126,13 @@ jobs:
           grep -qw avx512f /proc/cpuinfo \
             && echo "AVX-512F: present (compiled into the binary)" \
             || echo "AVX-512F: absent"
-      - if: steps.bins.outputs.cache-hit != 'true'
-        uses: leanprover/lean-action@v1
+      # One lean-action for both paths: cache miss → build the binaries;
+      # cache hit → provision the toolchain only (the restored `ix` still
+      # needs libleanshared to run the parse step below).
+      - uses: leanprover/lean-action@v1
         with:
           auto-config: false
-          build: true
+          build: ${{ steps.bins.outputs.cache-hit != 'true' }}
           build-args: "ix bench-typecheck"
           use-github-cache: false
       - if: steps.bins.outputs.cache-hit != 'true'
@@ -143,14 +145,6 @@ jobs:
         with:
           path: ~/.local/bin
           key: bench-bins-${{ needs.setup.outputs.head-sha }}
-      # Provision the toolchain so `ix` finds libleanshared on the
-      # cache-hit path (the build path provisioned it above).
-      - if: steps.bins.outputs.cache-hit == 'true'
-        uses: leanprover/lean-action@v1
-        with:
-          auto-config: false
-          build: false
-          use-github-cache: false
       - run: echo "$HOME/.local/bin" >> $GITHUB_PATH
       # Parse the !benchmark command from an env var (never
       # inline-interpolated); unknown tokens fall off the allowlist.
