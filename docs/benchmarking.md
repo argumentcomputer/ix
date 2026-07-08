@@ -144,8 +144,8 @@ breakdowns. bench-main's compile job pre-cuts these artifacts
   matrices and `ix bench ci parse` the `!benchmark` cells, both post-build.
   (`bencher-thresholds-reset.yml` keeps a static workload list with a sync
   note.) CI-only data stays out of it: the runner name lives with the `ci`
-  adapters, and the watchdog ceiling defaults to the machine's RAM minus
-  12 GiB headroom wherever the run happens.
+  adapters. The watchdog ceiling defaults to 120 GB (`--ceiling-gb`
+  overrides — set it lower on smaller machines).
 
 ## `!benchmark` grammar
 
