@@ -113,7 +113,7 @@ and render in the PR comment as a collapsible per-constant drill-down.
 `MemTotal − ceiling`. MemAvailable already accounts for everything the
 tree consumes (RSS, locked shared memory, page tables) while ignoring
 reclaimable cache, so there's nothing to sum and nothing to
-under-attribute; the 0.25s cadence plus the ceiling's built-in headroom
+under-attribute; the 0.5s cadence plus the ceiling's built-in headroom
 absorb even memory-bandwidth bursts. A killed per-constant process gets
 its row marked `status: oom`
 (keeping whatever was flushed, spans included) and the loop continues — one

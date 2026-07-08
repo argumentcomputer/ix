@@ -11,7 +11,7 @@
 # ignores reclaimable page cache. The kill floor is MemTotal - ceiling:
 # the tree may use up to <ceiling_gb>, and anything driving available
 # memory below the remainder trips a TERM -> 2s -> KILL of the tree.
-# Sampling is a fixed 0.25s (a meminfo read is ~free); the headroom baked
+# Sampling is a fixed 0.5s (a meminfo read is ~free); the headroom baked
 # into the default ceiling absorbs the worst measured burst (a prover
 # first-touching pre-reserved buffers moves ~13 GB per sample). The floor
 # never drops below 4 GiB, so a ceiling at or above machine RAM still
@@ -59,7 +59,7 @@ tree_pids() {  # every live pid in root's descendant tree, root included
       kill -KILL $(tree_pids) 2>/dev/null
       exit 0
     fi
-    sleep 0.25
+    sleep 0.5
   done
 ) &
 monitor=$!
