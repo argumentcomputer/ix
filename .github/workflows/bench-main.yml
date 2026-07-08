@@ -103,12 +103,13 @@ jobs:
         run: |
           ix bench matrix --kind cells > cells.json
           cat cells.json
-          # bench-envs: one {env, slug} pair per benched env — env is the
-          # registry key `ix bench run --env` takes (also the `<env>.ixe`
-          # filename); slug is the CamelCase cache-key/benchmark name.
+          # bench-envs: the benched env names — an env name (e.g. InitStd)
+          # is the single identifier: `ix bench run --env`, the `<env>.ixe`
+          # filename, the cache-key suffix, and the env-keyed bencher
+          # benchmark name.
           # zkvm-cells: the zkVM subset of the cells (zisk today; sp1 comes
           # back by re-enabling it in bench-config.json).
-          echo "bench-envs=$(jq -c 'map({env, slug}) | unique' cells.json)" >> "$GITHUB_OUTPUT"
+          echo "bench-envs=$(jq -c '[.[].env] | unique' cells.json)" >> "$GITHUB_OUTPUT"
           echo "zkvm-cells=$(jq -c 'map(select(.backend == "zisk" or .backend == "sp1"))' cells.json)" >> "$GITHUB_OUTPUT"
 
   # Compile each library env to a `.ixe` and track compile throughput. Caches
@@ -122,18 +123,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # env = the bench-config.json registry key (`ix bench run --env`, the
-        # `<env>.ixe` filename); bench = its CamelCase slug (lake target
-        # Compile<bench>, cache-key suffix, bencher row name). Deliberately
-        # wider than the benched set: Lean/FLT compile-throughput is tracked
-        # even though no downstream job proves them. Add FC if updated to
-        # latest Lean.
+        # env = the bench-config.json registry key: the `ix bench run --env`
+        # token, `<env>.ixe` filename, lake target suffix (Compile<env>),
+        # cache-key suffix, and bencher row name, all one spelling.
+        # Deliberately wider than the benched set: Lean/FLT
+        # compile-throughput is tracked even though no downstream job proves
+        # them. Add FC if updated to latest Lean.
         include:
-          - { env: initStd, bench: InitStd }
-          - { env: lean, bench: Lean }
-          - { env: mathlib, bench: Mathlib, mathlib: true }
-          - { env: flt, bench: FLT, cache_pkg: flt, mathlib: true }
-          # - { env: fc, bench: FC, cache_pkg: formal_conjectures, mathlib: true }
+          - { env: InitStd }
+          - { env: Lean }
+          - { env: Mathlib, mathlib: true }
+          - { env: FLT, cache_pkg: flt, mathlib: true }
+          # - { env: FC, cache_pkg: formal_conjectures, mathlib: true }
     steps:
       - uses: actions/checkout@v6
         with:
@@ -146,7 +147,7 @@ jobs:
       - run: echo "$HOME/.local/bin" >> $GITHUB_PATH
       # FC's library env lives in a sibling `${COMPILE_DIR}FC` package dir, so
       # point COMPILE_DIR there for the FC matrix job.
-      # - if: matrix.bench == 'FC'
+      # - if: matrix.env == 'FC'
       #   run: echo "COMPILE_DIR=${{ env.COMPILE_DIR }}FC" | tee -a $GITHUB_ENV
       # Download elan; fetch the mathlib cache only for benches that import
       # Mathlib (Mathlib, FLT) — InitStd/Lean would otherwise pull it for
@@ -165,7 +166,7 @@ jobs:
           key: ${{ matrix.cache_pkg }}-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles(format('{0}/lean-toolchain', env.COMPILE_DIR)) }}-${{ hashFiles(format('{0}/lake-manifest.json', env.COMPILE_DIR)) }}
       # No `--wfail` here: formal-conjectures (FC) emits a copyright-notice
       # warning that must not fail the build.
-      - run: lake build Compile${{ matrix.bench }}
+      - run: lake build Compile${{ matrix.env }}
         working-directory: ${{ env.COMPILE_DIR }}
       # Serialize the env to a `.ixe` and measure the compile via `ix bench
       # run` — for the `compile` backend the compile IS the benchmark (always
@@ -184,7 +185,7 @@ jobs:
       # `ix` + the Lean toolchain on hand, so the zkvm job just restores the
       # dir. The benched-env conditionals below must match bench-config.json's
       # `benched: true` envs (what `ix bench matrix --kind envs` returns).
-      - if: matrix.env == 'initStd' || matrix.env == 'mathlib'
+      - if: matrix.env == 'InitStd' || matrix.env == 'Mathlib'
         name: Cut closure shards for heavy primaries
         run: ix bench shard --env ${{ matrix.env }} --reuse-ixe
       # Cache the `.ixe` + closure-shard artifacts for the prove/zkvm jobs
@@ -192,13 +193,13 @@ jobs:
       # consume, to stay under the repo cache limit. NB: every restore of
       # this key must list the SAME paths — actions/cache versions the entry
       # by its path list.
-      - if: matrix.env == 'initStd' || matrix.env == 'mathlib'
+      - if: matrix.env == 'InitStd' || matrix.env == 'Mathlib'
         uses: actions/cache/save@v5
         with:
           path: |
             ${{ matrix.env }}.ixe
             zkshards-${{ matrix.env }}
-          key: bench-ixe-${{ github.sha }}-${{ matrix.bench }}
+          key: bench-ixe-${{ github.sha }}-${{ matrix.env }}
       # Upload compile metrics. Every measure shares the per-workload baseline
       # window (data points since the ix-compile reset tag): file-size/constants
       # are deterministic, pinned exactly (0/0); compile-time rides a 5% upper
@@ -237,7 +238,7 @@ jobs:
   # No compiler run here: `ix bench run --reuse-ixe` picks up the cached
   # `.ixe`.
   aiur:
-    name: aiur-${{ matrix.bench.env }}-${{ matrix.mode }}
+    name: aiur-${{ matrix.bench }}-${{ matrix.mode }}
     needs: [compile, plan]
     runs-on: warp-ubuntu-latest-x64-32x
     timeout-minutes: 60
@@ -269,16 +270,16 @@ jobs:
       - uses: actions/cache/restore@v5
         with:
           path: |
-            ${{ matrix.bench.env }}.ixe
-            zkshards-${{ matrix.bench.env }}
-          key: bench-ixe-${{ github.sha }}-${{ matrix.bench.slug }}
+            ${{ matrix.bench }}.ixe
+            zkshards-${{ matrix.bench }}
+          key: bench-ixe-${{ github.sha }}-${{ matrix.bench }}
           fail-on-cache-miss: true
       # Exit 3 = the kernel REJECTED a constant (a correctness regression, not
       # a benchmark blip): the job reddens right here, with the rows on disk
       # for the upload below.
       - name: Run Aiur typecheck benchmark
         run: |
-          ix bench run --backend aiur --env ${{ matrix.bench.env }} \
+          ix bench run --backend aiur --env ${{ matrix.bench }} \
             --mode ${{ matrix.mode }} --reuse-ixe --out bench.json
       # Upload whatever clean rows exist even when the run step reddened the
       # job — bmf drops every non-ok row, so a rejected or OOM'd constant
@@ -390,7 +391,7 @@ jobs:
           path: |
             ${{ matrix.cell.env }}.ixe
             zkshards-${{ matrix.cell.env }}
-          key: bench-ixe-${{ github.sha }}-${{ matrix.cell.slug }}
+          key: bench-ixe-${{ github.sha }}-${{ matrix.cell.env }}
           fail-on-cache-miss: true
       # Exit 3 = kernel rejection → red X here; clean rows still upload below.
       - name: Run ${{ matrix.cell.backend }} execute benchmark
@@ -451,7 +452,7 @@ jobs:
   # apples-to-apples baseline next to the zkVM cells. Reuses the compile job's
   # cached `.ixe` and the staged `ix` binary — no recompile.
   ooc-check:
-    name: ooc-${{ matrix.bench.env }}
+    name: ooc-${{ matrix.bench }}
     needs: [compile, plan]
     runs-on: warp-ubuntu-latest-x64-32x
     timeout-minutes: 60
@@ -479,14 +480,14 @@ jobs:
       - uses: actions/cache/restore@v5
         with:
           path: |
-            ${{ matrix.bench.env }}.ixe
-            zkshards-${{ matrix.bench.env }}
-          key: bench-ixe-${{ github.sha }}-${{ matrix.bench.slug }}
+            ${{ matrix.bench }}.ixe
+            zkshards-${{ matrix.bench }}
+          key: bench-ixe-${{ github.sha }}-${{ matrix.bench }}
           fail-on-cache-miss: true
       # Exit 3 = kernel rejection → red X here; clean rows still upload below.
       - name: Run out-of-circuit kernel check
         run: |
-          ix bench run --backend ooc --env ${{ matrix.bench.env }} --mode execute \
+          ix bench run --backend ooc --env ${{ matrix.bench }} --mode execute \
             --reuse-ixe --out bench.json
       # Upload whatever clean rows exist even when the run step reddened the
       # job — bmf drops every non-ok row.

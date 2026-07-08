@@ -1,7 +1,7 @@
 # Benchmarking
 
 One orchestrator — `ix bench` — runs every benchmark cell, locally and in CI.
-A **cell** is `(backend, env, mode)`, e.g. `zisk-initStd-execute`. CI is a
+A **cell** is `(backend, env, mode)`, e.g. `zisk-InitStd-execute`. CI is a
 thin wrapper: the same `ix bench run` you type in a terminal is what both
 workflows execute, so every CI number is reproducible on your machine.
 
@@ -52,13 +52,13 @@ green.
 ### Local usage
 
 ```shell
-# Run the ooc cell over initStd's primary constants:
-ix bench run --backend ooc --env initStd
+# Run the ooc cell over InitStd's primary constants:
+ix bench run --backend ooc --env InitStd
 
 # Change something, run again, and diff against your previous run
 # (runs are saved as baselines under .bench/<cell>{,.prev}.json):
-ix bench run --backend ooc --env initStd --reuse-ixe
-ix bench compare --backend ooc --env initStd
+ix bench run --backend ooc --env InitStd --reuse-ixe
+ix bench compare --backend ooc --env InitStd
 ```
 
 `--repo <dir>` points the run at another checkout: the *measured* tools
@@ -117,7 +117,7 @@ breakdowns. bench-main's compile job pre-cuts these artifacts
 
 ```
 !benchmark ([aiur] [zisk] [ooc] [compile] | all) [execute]
-BENCH_ENVS=initStd,mathlib     # default initStd
+BENCH_ENVS=InitStd,Mathlib     # default InitStd (case-insensitive)
 BENCH_FULL=1                   # full curated set, not just primary
 BENCH_SHARD=1                  # only the multi-shard target constants
 RUST_LOG=info                  # allowlisted passthrough env

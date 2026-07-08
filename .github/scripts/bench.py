@@ -64,8 +64,13 @@ def cmd_parse():
         elif key in PASSTHROUGH_KEYS:
             passthrough.append(f"{key}={val}")
 
-    envs = [e.strip() for e in cfg_kv.get("BENCH_ENVS", "initStd").split(",") if e.strip()]
-    envs = [e for e in envs if e in env_table] or ["initStd"]
+    # Env tokens match the registry keys case-insensitively (users type
+    # BENCH_ENVS=initstd as often as InitStd); the canonical key wins.
+    by_lower = {e.lower(): e for e in env_table}
+    envs = [by_lower[e.strip().lower()]
+            for e in cfg_kv.get("BENCH_ENVS", "InitStd").split(",")
+            if e.strip().lower() in by_lower]
+    envs = list(dict.fromkeys(envs)) or ["InitStd"]
     shard = "1" if cfg_kv.get("BENCH_SHARD") == "1" else "0"
     full = "1" if cfg_kv.get("BENCH_FULL") == "1" else "0"  # full set vs primary subset
 
@@ -80,15 +85,15 @@ def cmd_parse():
             return "execute"
         return table[b]["default_mode"]
 
-    # `slug` is the CamelCase env name — bench-main's cache-key suffix and
-    # the benchmark key of env-keyed bencher rows (ooc whole-env, compile).
+    # `env` (e.g. InitStd) is the single identifier: the `<env>.ixe`
+    # filename, the cache-key suffix, and the env-keyed bencher benchmark
+    # name.
     cells = []
     for b in backends:
         m = mode_for(b)
         for e in envs:
-            cells.append({"backend": b, "env": e, "slug": env_table[e]["slug"],
-                          "mode": m, "runner": runner,
-                          "label": f"{b}-{e}-{m}"})
+            cells.append({"backend": b, "env": e, "mode": m,
+                          "runner": runner, "label": f"{b}-{e}-{m}"})
 
     modes = " ".join(f"{b}={mode_for(b)}" for b in backends)
     summary = (f"backends: `{modes}` · envs: `{','.join(envs)}` · "

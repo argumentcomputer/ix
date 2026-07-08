@@ -1,10 +1,10 @@
 {
   "_comment": "Single registry for the benchmark pipeline. Consumed by `ix bench` (Ix/Cli/BenchCmd.lean), the !benchmark comment parser (.github/scripts/bench.py), and matrix generation in the bench workflows. Vectors.csv (same directory) holds the per-constant rows; this file holds everything else that used to be hand-copied across bench.py, run.sh, and the workflow YAML.",
   "envs": {
-    "initStd": { "slug": "InitStd", "module": "Benchmarks/Compile/CompileInitStd.lean", "benched": true },
-    "lean":    { "slug": "Lean",    "module": "Benchmarks/Compile/CompileLean.lean",    "benched": false },
-    "mathlib": { "slug": "Mathlib", "module": "Benchmarks/Compile/CompileMathlib.lean", "benched": true },
-    "flt":     { "slug": "FLT",     "module": "Benchmarks/Compile/CompileFLT.lean",     "benched": false }
+    "InitStd": { "module": "Benchmarks/Compile/CompileInitStd.lean", "benched": true },
+    "Lean":    { "module": "Benchmarks/Compile/CompileLean.lean",    "benched": false },
+    "Mathlib": { "module": "Benchmarks/Compile/CompileMathlib.lean", "benched": true },
+    "FLT":     { "module": "Benchmarks/Compile/CompileFLT.lean",     "benched": false }
   },
   "backends": {
     "aiur": {

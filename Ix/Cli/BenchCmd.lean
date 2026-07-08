@@ -21,7 +21,7 @@
 
   Every tool self-reports through the same `--json` results-rows contract,
   so there is no output scraping anywhere: state flows through rows and
-  exit codes only. Registry data (env slugs/modules, backend modes,
+  exit codes only. Registry data (env modules, backend modes,
   testbeds) comes from `Benchmarks/bench-config.json`.
 
   Note for the zisk backend: ZisK's ASM microservices need an unlimited
@@ -82,10 +82,12 @@ def selectNames (rows : Array VectorRow) (env : String) (mode : String)
     && (effTier == "all" || r.tier == effTier)
     && (!shardOnly || r.shardTarget)
 
-/-- Registry entry for one env from `bench-config.json`. -/
+/-- Registry entry for one env from `bench-config.json`. The env name
+    (e.g. `InitStd`) is the single identifier everywhere: the CLI/`!benchmark`
+    token, the `<env>.ixe` filename, the cache-key suffix, and the
+    env-keyed bencher benchmark name. -/
 structure EnvInfo where
   key : String
-  slug : String
   module : String
 
 def loadConfig (path : String) : IO Lean.Json := do
@@ -101,7 +103,7 @@ def envInfo (cfg : Lean.Json) (env : String) : IO EnvInfo := do
     match entry.getObjVal? k with
     | .ok (.str s) => return s
     | _ => throw <| IO.userError s!"env '{env}': missing '{k}' in bench-config"
-  return { key := env, slug := ← get "slug", module := ← get "module" }
+  return { key := env, module := ← get "module" }
 
 /-- Resolve a tool binary: prefer the in-tree build under `repo` (so a base
     checkout measures the base's code), else PATH. -/
@@ -255,7 +257,7 @@ def saveBaseline (out : String) (cell : String) : IO Unit := do
 
 def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
   let backend := (p.flag? "backend").map (·.as! String) |>.getD ""
-  let env := (p.flag? "env").map (·.as! String) |>.getD "initStd"
+  let env := (p.flag? "env").map (·.as! String) |>.getD "InitStd"
   let cfg ← loadConfig <| (p.flag? "config").map (·.as! String)
     |>.getD "Benchmarks/bench-config.json"
   let some backendCfg := (cfg.getObjVal? "backends" |>.toOption).bind
@@ -311,20 +313,20 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
 
   match backend with
   | "compile" =>
-    -- The compile IS the benchmark: always fresh, row keyed by the env slug.
+    -- The compile IS the benchmark: always fresh, row keyed by the env name.
     let ix ← resolveBin repo "ix"
     let exit ← runGuarded watchdog ceilingGb ix
       #["compile", s!"{repo}/{info.module}", "--out", s!"{repo}/{env}.ixe",
-        "--json", out, "--json-name", info.slug]
+        "--json", out, "--json-name", info.key]
     if exit != 0 then
       IO.eprintln s!"[bench] ix compile failed (exit {exit})"
       return 1
   | "ooc" =>
     let ixe ← ensureIxe repo info (p.hasFlag "reuse-ixe")
     let ix ← resolveBin repo "ix"
-    -- Whole-env row (keyed by the env slug) …
+    -- Whole-env row (keyed by the env name) …
     let exit ← runGuarded watchdog ceilingGb ix
-      #["check-rs", ixe, "--anon", "--json", out, "--json-name", info.slug]
+      #["check-rs", ixe, "--anon", "--json", out, "--json-name", info.key]
     if exit != 0 && exit != exitRejected then
       IO.eprintln s!"[bench] whole-env check failed (exit {exit})"
     -- … plus one full-closure row per primary, env loaded once.
@@ -404,7 +406,7 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
     same cache; the zisk cells cut lazily as a fallback when they're
     absent. -/
 def runBenchShardCmd (p : Cli.Parsed) : IO UInt32 := do
-  let env := (p.flag? "env").map (·.as! String) |>.getD "initStd"
+  let env := (p.flag? "env").map (·.as! String) |>.getD "InitStd"
   let cfg ← loadConfig <| (p.flag? "config").map (·.as! String)
     |>.getD "Benchmarks/bench-config.json"
   let repo := (p.flag? "repo").map (·.as! String) |>.getD "."
@@ -437,7 +439,7 @@ def benchRunCmd : Cli.Cmd := `[Cli|
 
   FLAGS:
     backend      : String; "aiur | zisk | sp1 | ooc | compile"
-    env          : String; "Benchmark env from bench-config.json (default: initStd)"
+    env          : String; "Benchmark env from bench-config.json (default: InitStd)"
     mode         : String; "prove | execute (default: the backend's default_mode)"
     out          : String; "Benchmark results JSON output path (default: bench.json)"
     repo         : String; "Checkout to benchmark: tools resolve from <repo>/.lake/build/bin first, then PATH (default: .)"
@@ -458,7 +460,7 @@ def benchShardCmd : Cli.Cmd := `[Cli|
   "Pre-cut closure-shard artifacts (ix shard extract → profile → shard) for the env's heavy-tier constants into zkshards-<env>/; skips names already cut. The zisk cells cut lazily when these are absent — this front-loads the work so the artifacts can be cached once per commit."
 
   FLAGS:
-    env          : String; "Benchmark env from bench-config.json (default: initStd)"
+    env          : String; "Benchmark env from bench-config.json (default: InitStd)"
     repo         : String; "Checkout to shard: tools resolve from <repo>/.lake/build/bin first, then PATH (default: .)"
     config       : String; "Registry path (default: Benchmarks/bench-config.json)"
     csv          : String; "Vectors path (default: <repo>/Benchmarks/Vectors.csv)"

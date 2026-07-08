@@ -4,7 +4,7 @@
 #   !benchmark ([aiur] [zisk] [sp1] [ooc] [compile] | all) [execute]
 #     (sp1 is disabled in Benchmarks/bench-config.json — the parser skips it
 #      with a note in the config summary)
-#   BENCH_ENVS=initStd,mathlib     # which compiled envs (default initStd)
+#   BENCH_ENVS=InitStd,Mathlib     # which compiled envs (default InitStd; case-insensitive)
 #   BENCH_FULL=1                   # run the full curated set, not just primary
 #   BENCH_SHARD=1                  # restrict to the multi-shard target constants
 #   RUST_LOG=info                  # passthrough env (allowlisted)
@@ -151,7 +151,7 @@ jobs:
 
   benchmark:
     # Explicit name: the default would append EVERY matrix value (backend,
-    # env, slug, mode, runner, label); the label already is the cell id.
+    # env, mode, runner, label); the label already is the cell id.
     name: ${{ matrix.cell.label }}
     needs: [setup, build]
     runs-on: ${{ matrix.cell.runner }}
@@ -215,7 +215,7 @@ jobs:
           auto-config: false
           build: false
           use-github-cache: false
-          use-mathlib-cache: ${{ matrix.cell.env == 'mathlib' && 'true' || 'false' }}
+          use-mathlib-cache: ${{ matrix.cell.env == 'Mathlib' && 'true' || 'false' }}
       # The compiled env is identical across every cell of the same PR commit —
       # cache it so only the first cell pays the `ix compile`. (`--reuse-ixe`
       # compiles when the file is absent; the `compile` backend always
@@ -340,12 +340,12 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           # Path list must match bench-main's compile-job save (actions/cache
-          # versions entries by path list); the key suffix is the CamelCase
-          # env slug (bench-main's matrix.bench).
+          # versions entries by path list); the key suffix is the env name
+          # (bench-main's matrix.env).
           path: |
             ${{ matrix.cell.env }}.ixe
             zkshards-${{ matrix.cell.env }}
-          key: bench-ixe-${{ env.BASE_SHA }}-${{ matrix.cell.slug }}
+          key: bench-ixe-${{ env.BASE_SHA }}-${{ matrix.cell.env }}
       # Cached base binaries are usable only when the two `lean-toolchain`
       # files are identical (plain `cmp`), and — for the mathlib env — only
       # when the `.ixe` was also restored (otherwise base's `ix compile` needs
@@ -376,7 +376,7 @@ jobs:
           build: true
           build-args: "ix bench-typecheck"
           use-github-cache: false
-          use-mathlib-cache: ${{ matrix.cell.env == 'mathlib' && 'true' || 'false' }}
+          use-mathlib-cache: ${{ matrix.cell.env == 'Mathlib' && 'true' || 'false' }}
       # NOTE: the PR's `ix bench` orchestrates the base run (--repo base); the
       # MEASURED tools resolve from base/.lake/build/bin. When a PR changes
       # the benchmark CLIs themselves, the base tools may reject the new

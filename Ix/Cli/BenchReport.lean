@@ -256,7 +256,7 @@ def metricsFor (cfg : Json) (backend mode : String) : Array String :=
 
 def runCompareCmd (p : Cli.Parsed) : IO UInt32 := do
   let backend := (p.flag? "backend").map (·.as! String) |>.getD ""
-  let env := (p.flag? "env").map (·.as! String) |>.getD "initStd"
+  let env := (p.flag? "env").map (·.as! String) |>.getD "InitStd"
   let cfg ← Ix.Cli.BenchCmd.loadConfig <| (p.flag? "config").map (·.as! String)
     |>.getD "Benchmarks/bench-config.json"
   let mode := (p.flag? "mode").map (·.as! String) |>.getD <|
@@ -401,11 +401,9 @@ def runFetchMainCmd (p : Cli.Parsed) : IO UInt32 := do
       let names ← Ix.Cli.ConstsFile.read (f.as! String)
       -- The env-keyed row (ooc whole-env, compile) isn't a Vectors.csv
       -- constant; admit it past the names filter explicitly.
-      let env := (p.flag? "env").map (·.as! String) |>.getD ""
-      let slug := ((cfg.getObjVal? "envs").toOption.bind fun es =>
-        (es.getObjVal? env).toOption.bind fun e =>
-          (e.getObjVal? "slug").toOption.bind (·.getStr?.toOption))
-      pure (some (match slug with | some s => names.push s | none => names))
+      match (p.flag? "env").map (·.as! String) with
+      | some env => pure (some (names.push env))
+      | none => pure (some names)
     | none => pure none
 
   -- Page newest-first until the SHA's reports are found; aggregate across
@@ -483,24 +481,22 @@ def runFetchMainCmd (p : Cli.Parsed) : IO UInt32 := do
 
 /-- Emit GitHub Actions matrix JSON from the registry, so workflow matrices
     are generated instead of hand-copied. `--kind envs` lists the benched
-    env slugs; `--kind cells` fans enabled backends × benched envs. -/
+    env names; `--kind cells` fans enabled backends × benched envs. -/
 def runMatrixCmd (p : Cli.Parsed) : IO UInt32 := do
   let cfg ← Ix.Cli.BenchCmd.loadConfig <| (p.flag? "config").map (·.as! String)
     |>.getD "Benchmarks/bench-config.json"
   let kind := (p.flag? "kind").map (·.as! String) |>.getD "envs"
   let envs := (cfg.getObjVal? "envs").toOption.getD (Json.mkObj [])
-  let benched : Array (String × String) := Id.run do
+  let benched : Array String := Id.run do
     let mut out := #[]
     for key in rowNames envs do
       let e := (envs.getObjVal? key).toOption.getD (Json.mkObj [])
       if (e.getObjVal? "benched").toOption == some (Json.bool true) then
-        let slug := (e.getObjVal? "slug").toOption.bind (·.getStr?.toOption)
-          |>.getD key
-        out := out.push (key, slug)
+        out := out.push key
     return out
   match kind with
   | "envs" =>
-    IO.println (Json.arr (benched.map fun (_, slug) => Json.str slug)).compress
+    IO.println (Json.arr (benched.map Json.str)).compress
   | "cells" =>
     let backends := (cfg.getObjVal? "backends").toOption.getD (Json.mkObj [])
     let mut cells : Array Json := #[]
@@ -510,10 +506,10 @@ def runMatrixCmd (p : Cli.Parsed) : IO UInt32 := do
         continue
       let mode := (bc.getObjVal? "default_mode").toOption.bind (·.getStr?.toOption)
         |>.getD "execute"
-      for (env, slug) in benched do
+      for env in benched do
         cells := cells.push <| Json.mkObj
           [("backend", Json.str b), ("env", Json.str env),
-           ("slug", Json.str slug), ("mode", Json.str mode)]
+           ("mode", Json.str mode)]
     IO.println (Json.arr cells).compress
   | other =>
     p.printError s!"error: unknown --kind '{other}' (envs | cells)"
@@ -529,7 +525,7 @@ def benchCompareCmd : Cli.Cmd := `[Cli|
 
   FLAGS:
     backend       : String; "Cell backend (metrics come from bench-config.json)"
-    env           : String; "Cell env (default: initStd)"
+    env           : String; "Cell env (default: InitStd)"
     mode          : String; "Cell mode (default: the backend's default_mode)"
     main          : String; "Main-side rows JSON (default: .bench/<cell>.prev.json)"
     pr            : String; "PR-side rows JSON (default: .bench/<cell>.json)"
@@ -587,7 +583,7 @@ def benchMatrixCmd : Cli.Cmd := `[Cli|
   "Emit GitHub Actions matrix JSON from bench-config.json (--kind envs | cells)"
 
   FLAGS:
-    kind   : String; "envs = benched env slugs; cells = enabled backends × benched envs"
+    kind   : String; "envs = benched env names; cells = enabled backends × benched envs"
     config : String; "Registry path (default: Benchmarks/bench-config.json)"
 ]
 
