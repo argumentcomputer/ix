@@ -433,8 +433,8 @@ jobs:
       - uses: ./.github/actions/bencher-track
         if: ${{ !cancelled() && steps.bmf.outcome == 'success' }}
         with:
-          testbed: ${{ matrix.cell.backend }}-check-x64-32x
-          workload: ${{ matrix.cell.backend }}-check
+          testbed: ${{ matrix.cell.backend }}-check-${{ matrix.cell.mode }}-x64-32x
+          workload: ${{ matrix.cell.backend }}-check-${{ matrix.cell.mode }}
           file: bench-bmf.json
           key: ${{ secrets.BENCHER_API_KEY }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
