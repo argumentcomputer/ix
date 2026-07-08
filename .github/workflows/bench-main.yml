@@ -78,8 +78,11 @@ jobs:
   # job; only the downstream matrix jobs wait on it.
   plan:
     needs: build
-    # Runs the warp-built (AVX-512) `ix` — must be a warp host (see build).
-    runs-on: warp-ubuntu-latest-x64-32x
+    # `ci matrix` is a pure-Lean subcommand (AVX-512 lives only in the
+    # binary's Rust objects, which it never executes) — cheap host is fine.
+    # Move to a warp host if `ix` startup or this subcommand ever touches
+    # the FFI.
+    runs-on: ubuntu-latest
     outputs:
       bench-envs: ${{ steps.matrix.outputs.bench-envs }}
       zkvm-cells: ${{ steps.matrix.outputs.zkvm-cells }}
