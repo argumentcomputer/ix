@@ -438,7 +438,7 @@ def benchRunCmd : Cli.Cmd := `[Cli|
   FLAGS:
     backend      : String; "aiur | zisk | sp1 | ooc | compile"
     env          : String; "Benchmark env from bench-config.json (default: initStd)"
-    mode         : String; "prove | execute | compile (default: the backend's default_mode)"
+    mode         : String; "prove | execute (default: the backend's default_mode)"
     out          : String; "Benchmark results JSON output path (default: bench.json)"
     repo         : String; "Checkout to benchmark: tools resolve from <repo>/.lake/build/bin first, then PATH (default: .)"
     config       : String; "Registry path (default: Benchmarks/bench-config.json)"

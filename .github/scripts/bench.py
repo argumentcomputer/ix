@@ -75,7 +75,7 @@ def cmd_parse():
     def mode_for(b):
         # The bare `execute` token selects a backend's execute entry when it
         # has one — a real switch only for aiur (everything else already
-        # defaults to execute, or has no execute mode at all: compile).
+        # defaults to execute).
         if execute_flag and "execute" in table[b].get("metrics", {}):
             return "execute"
         return table[b]["default_mode"]

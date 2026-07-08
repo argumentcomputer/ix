@@ -43,10 +43,10 @@
     },
     "compile": {
       "enabled": true,
-      "default_mode": "compile",
+      "default_mode": "execute",
       "testbed": "ix-compile-x64-32x",
       "metrics": {
-        "compile": ["compile-time", "throughput", "file-size", "constants", "peak-rss"]
+        "execute": ["compile-time", "throughput", "file-size", "constants", "peak-rss"]
       }
     }
   },
