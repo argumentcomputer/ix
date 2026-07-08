@@ -174,7 +174,10 @@ Ix consists of the following core components:
 
 ## Benchmarks
 
-Compiler performance benchmarks are tracked at https://bencher.dev/console/projects/ix/plots
+Benchmarks (compiler, kernel, and zk-prover backends) are tracked at
+https://bencher.dev/console/projects/ix/plots. `ix bench` runs the same
+cells locally, and `!benchmark` runs them on a PR — see
+[docs/benchmarking.md](docs/benchmarking.md).
 
 ## Usage
 

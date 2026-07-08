@@ -34,8 +34,8 @@ and one exit-code convention (Rust: `crates/bench`; Lean:
 There is no output scraping anywhere: no marker lines, no log grepping, no
 sentinel-key jq. State flows through rows and exit codes only. A rejected or
 OOM'd constant never reaches bencher (`ix bench bmf` drops non-`ok` rows),
-and a run that produces zero rows exits nonzero — an empty cell can't be
-green.
+and `ix bench run` exits nonzero unless **every selected name produced a
+row** — an empty or quietly-partial cell can't be green.
 
 ## `ix bench` subcommands
 
@@ -43,9 +43,9 @@ green.
 |---|---|
 | `run`        | run one cell: select names, ensure the `.ixe`, spawn the tool under the RAM watchdog (one process per constant on aiur/zkVM), fold each spawn's span window into its row, gate on the rows |
 | `shard`      | pre-cut the closure-shard artifacts for the env's heavy-tier constants (`ix shard extract` → `ix profile` → `ix shard`) |
-| `compare`    | two rows files → Markdown main-vs-PR table (thresholds, ratios, OOM/❌ rows) |
+| `compare`    | two rows files → Markdown main-vs-PR table (thresholds, ratios, OOM/❌ rows, per-constant phase drop-downs) |
 | `bmf`        | rows → Bencher Metric Format (non-`ok` rows dropped) |
-| `fetch-main` | pull a base SHA's rows from bencher.dev (exit 3 = fall back to a local base run) |
+| `fetch-main` | pull a base SHA's rows from bencher.dev (exit 3 = transient, fall back to a local base run; exit 2 = config error, fail loudly) |
 | `report`     | assemble per-cell tables into one Markdown report (CI posts it as the PR comment) |
 | `ci matrix`  | emit the workflows' job matrices from the registry (CI adapter) |
 | `ci parse`   | `!benchmark` comment → job matrix (CI adapter; `--comment` pre-flights a comment locally) |
@@ -60,6 +60,22 @@ ix bench run --backend ooc --env InitStd
 # (runs are saved as baselines under .bench/<cell>{,.prev}.json):
 ix bench run --backend ooc --env InitStd --reuse-ixe
 ix bench compare --backend ooc --env InitStd
+
+# One constant through aiur — the fast Phase-1 signal, then the full prove
+# (cap the watchdog to what your machine can spare):
+echo Nat.add_comm > names.txt
+ix bench run --backend aiur --env InitStd --mode execute \
+  --names-file names.txt --reuse-ixe --ceiling-gb 50
+ix bench run --backend aiur --env InitStd --mode prove \
+  --names-file names.txt --reuse-ixe --ceiling-gb 50
+
+# Compare a local run against main's numbers straight from bencher.dev
+# (no token needed; --names filters to your constants — the testbed holds
+# every benched env's):
+ix bench fetch-main --sha $(git merge-base origin/main HEAD) \
+  --backend aiur --mode prove --names names.txt --out main.json
+ix bench compare --backend aiur --env InitStd --mode prove \
+  --main main.json --pr .bench/aiur-InitStd-prove.json
 ```
 
 `--repo <dir>` points the run at another checkout: the *measured* tools
@@ -94,9 +110,14 @@ and render in the PR comment as a collapsible per-constant drill-down.
 <cmd>`: a sidecar that samples the process tree's RSS and, on breach, sends
 SIGTERM (tools flush their in-flight row and clean up), then SIGKILL after a
 10s grace. A killed per-constant process gets its row marked `status: oom`
-(keeping whatever was flushed) and the loop continues — one constant's
-death costs one constant. There are **no per-constant timeouts**;
-the job-level `timeout-minutes` is the only clock.
+(keeping whatever was flushed, spans included) and the loop continues — one
+constant's death costs one constant. A kill that lands *after* the row
+carries the mode's completion metric hit teardown (the prover releasing
+tens of GB right after the final write), so the finished row stays `ok`.
+ooc and compile run as single processes instead — their checks never
+approach the ceiling, and a kill there means missing rows and a red cell.
+There are **no per-constant timeouts**; the job-level `timeout-minutes` is
+the only clock.
 
 Heavy-tier zisk constants (whose single-leaf closure would blow the runner's
 RAM) run as their closure-shard partition instead: `ix shard extract` →
@@ -122,11 +143,12 @@ breakdowns. bench-main's compile job pre-cuts these artifacts
 ## `!benchmark` grammar
 
 ```
-!benchmark ([aiur] [zisk] [ooc] [compile] | all) [execute]
+!benchmark ([aiur] [zisk] [sp1] [ooc] [compile] | all) [execute]
 BENCH_ENVS=InitStd,Mathlib     # default InitStd (case-insensitive)
 BENCH_FULL=1                   # full curated set, not just primary
 BENCH_SHARD=1                  # only the multi-shard target constants
-RUST_LOG=info                  # allowlisted passthrough env
+RUST_LOG=info                  # passthrough env (allowlist: RUST_LOG,
+                               # WITHOUT_VK_VERIFICATION, RUSTFLAGS)
 ```
 
 Parsed by `ix bench ci parse` in the PR build job, right after the `ix`
@@ -144,11 +166,14 @@ SHA) → `plan` (`ix bench ci matrix` → job matrices) + `compile` (per env:
 `.github/actions/bencher-track`). A kernel rejection exits 3 and reddens the
 run step while the clean rows still upload.
 
-**bench-pr.yml**: `setup` (parse the comment) → `build` (PR binaries, cached
-by head SHA) → `benchmark` matrix (per cell: PR-side `ix bench run`;
-`ix bench fetch-main` for main's numbers, with a targeted base-checkout run
-covering only what bencher lacked; `ix bench compare` → table artifact) →
-`comment` (`ix bench report` → one PR comment).
+**bench-pr.yml**: `setup` (authorize the comment, resolve base/head SHAs) →
+`build` (PR binaries, cached by head SHA; ends with `ix bench ci parse` —
+the matrix can only exist once `ix` does) → `benchmark` matrix (per cell:
+PR-side `ix bench run`; `ix bench fetch-main` for main's numbers, with a
+targeted base-checkout run covering only what bencher lacked;
+`ix bench compare` → table artifact) → `assemble` (`ix bench report` builds
+the comment body, unprivileged) → `comment` (posts it — the only job with a
+write token, running no PR code).
 
 ## Not yet covered
 
