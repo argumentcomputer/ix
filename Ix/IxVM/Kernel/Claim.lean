@@ -440,7 +440,7 @@ def claim := ⟦
   fn load_verified_claim(digest: [U8; 32]) -> Claim {
     let (idx, len) = io_get_info(0, digest);
     let bytes = #read_byte_stream(0, idx, len);
-    let _ = verify_bytes_against(bytes, digest);
+    verify_bytes_against(bytes, digest);
     let (claim, rest) = get_claim(bytes);
     assert_eq!(load(rest), ListNode.Nil);
     claim
@@ -568,7 +568,7 @@ def claim := ⟦
                 match rr {
                   RecursorRule.Mk(r_fields, r_rhs) =>
                     assert_eq!(r_fields, c_fields);
-                    let _ = check_opt_expr_addr(r_rhs, Option.Some(c_rhs));
+                    check_opt_expr_addr(r_rhs, Option.Some(c_rhs));
                     check_recr_rules(rest_real, rest_claimed),
                 },
             },
@@ -595,11 +595,11 @@ def claim := ⟦
                                 opt_params, opt_fields, opt_typ) =>
         match real_ctor {
           Constructor.Mk(r_unsafe, r_lvls, r_cidx, r_params, r_fields, r_typ) =>
-            let _ = check_opt_bool(r_unsafe, opt_unsafe);
-            let _ = check_opt_u64(r_lvls, opt_lvls);
-            let _ = check_opt_u64(r_cidx, opt_cidx);
-            let _ = check_opt_u64(r_params, opt_params);
-            let _ = check_opt_u64(r_fields, opt_fields);
+            check_opt_bool(r_unsafe, opt_unsafe);
+            check_opt_u64(r_lvls, opt_lvls);
+            check_opt_u64(r_cidx, opt_cidx);
+            check_opt_u64(r_params, opt_params);
+            check_opt_u64(r_fields, opt_fields);
             check_opt_expr_addr(r_typ, opt_typ),
         },
     }
@@ -612,7 +612,7 @@ def claim := ⟦
       ListNode.Cons(entry, rest) =>
         match entry {
           (idx, info) =>
-            let _ = check_ctor_entry(real_list, idx, info);
+            check_ctor_entry(real_list, idx, info);
             check_ctor_entries(real_list, rest),
         },
     }
@@ -636,10 +636,10 @@ def claim := ⟦
                                    opt_typ, opt_value) =>
             match d {
               Definition.Mk(r_kind, r_safety, r_lvls, r_typ, r_value) =>
-                let _ = check_opt_def_kind(r_kind, opt_kind);
-                let _ = check_opt_def_safety(r_safety, opt_safety);
-                let _ = check_opt_u64(r_lvls, opt_lvls);
-                let _ = check_opt_expr_addr(r_typ, opt_typ);
+                check_opt_def_kind(r_kind, opt_kind);
+                check_opt_def_safety(r_safety, opt_safety);
+                check_opt_u64(r_lvls, opt_lvls);
+                check_opt_expr_addr(r_typ, opt_typ);
                 check_opt_expr_addr(r_value, opt_value),
             },
         },
@@ -651,11 +651,11 @@ def claim := ⟦
             match i {
               Inductive.Mk(r_unsafe, r_lvls, r_params,
                             r_indices, r_typ, r_ctors) =>
-                let _ = check_opt_bool(r_unsafe, opt_unsafe);
-                let _ = check_opt_u64(r_lvls, opt_lvls);
-                let _ = check_opt_u64(r_params, opt_params);
-                let _ = check_opt_u64(r_indices, opt_indices);
-                let _ = check_opt_expr_addr(r_typ, opt_typ);
+                check_opt_bool(r_unsafe, opt_unsafe);
+                check_opt_u64(r_lvls, opt_lvls);
+                check_opt_u64(r_params, opt_params);
+                check_opt_u64(r_indices, opt_indices);
+                check_opt_expr_addr(r_typ, opt_typ);
                 check_opt_ctor_entries(r_ctors, opt_ctors),
             },
         },
@@ -667,14 +667,14 @@ def claim := ⟦
             match r {
               Recursor.Mk(r_k, r_unsafe, r_lvls, r_params, r_indices,
                            r_motives, r_minors, r_typ, r_rules) =>
-                let _ = check_opt_bool(r_k, opt_k);
-                let _ = check_opt_bool(r_unsafe, opt_unsafe);
-                let _ = check_opt_u64(r_lvls, opt_lvls);
-                let _ = check_opt_u64(r_params, opt_params);
-                let _ = check_opt_u64(r_indices, opt_indices);
-                let _ = check_opt_u64(r_motives, opt_motives);
-                let _ = check_opt_u64(r_minors, opt_minors);
-                let _ = check_opt_expr_addr(r_typ, opt_typ);
+                check_opt_bool(r_k, opt_k);
+                check_opt_bool(r_unsafe, opt_unsafe);
+                check_opt_u64(r_lvls, opt_lvls);
+                check_opt_u64(r_params, opt_params);
+                check_opt_u64(r_indices, opt_indices);
+                check_opt_u64(r_motives, opt_motives);
+                check_opt_u64(r_minors, opt_minors);
+                check_opt_expr_addr(r_typ, opt_typ);
                 check_opt_recr_rules(r_rules, opt_rules),
             },
         },
@@ -689,7 +689,7 @@ def claim := ⟦
         match entry {
           (idx, info) =>
             let real_mc = list_lookup_u64(real, idx);
-            let _ = check_mut_const(real_mc, info);
+            check_mut_const(real_mc, info);
             check_muts_components(real, rest_claimed),
         },
     }
@@ -802,7 +802,7 @@ def claim := ⟦
                         top: List‹&KConstantInfo›,
                         addrs: List‹Addr›,
                         asm_leaves: List‹Addr›) {
-    let _ = check_canonical_block_sort(top);
+    check_canonical_block_sort(top);
     -- Build the skip-set once (O(N log N)) instead of an O(N) linear scan per
     -- checked const.
     let skip_set = build_skip_set(asm_leaves, RBTreeMap.Nil);
@@ -822,7 +822,7 @@ def claim := ⟦
           1 =>
             check_all_skipping_iter(rest, top, addrs, skip_set, pos + 1),
           _ =>
-            let _ = check_const(ci, pos, top, addrs);
+            check_const(ci, pos, top, addrs);
             check_all_skipping_iter(rest, top, addrs, skip_set, pos + 1),
         },
     }
@@ -844,7 +844,6 @@ def claim := ⟦
   fn run_contains(tree_root: Addr, target_addr: Addr) {
     let leaves = load_assumption_tree(tree_root);
     assert_eq!(addr_in_list(target_addr, leaves), 1);
-    ()
   }
 
   -- Ingress the union closure of all env leaves ONCE, then check every
@@ -878,10 +877,10 @@ def claim := ⟦
                                        opt_typ, opt_value) =>
                 match d {
                   Definition.Mk(r_kind, r_safety, r_lvls, r_typ, r_value) =>
-                    let _ = check_opt_def_kind(r_kind, opt_kind);
-                    let _ = check_opt_def_safety(r_safety, opt_safety);
-                    let _ = check_opt_u64(r_lvls, opt_lvls);
-                    let _ = check_opt_expr_addr(r_typ, opt_typ);
+                    check_opt_def_kind(r_kind, opt_kind);
+                    check_opt_def_safety(r_safety, opt_safety);
+                    check_opt_u64(r_lvls, opt_lvls);
+                    check_opt_expr_addr(r_typ, opt_typ);
                     check_opt_expr_addr(r_value, opt_value),
                 },
             },
@@ -893,14 +892,14 @@ def claim := ⟦
                 match r {
                   Recursor.Mk(r_k, r_unsafe, r_lvls, r_params, r_indices,
                                r_motives, r_minors, r_typ, r_rules) =>
-                    let _ = check_opt_bool(r_k, opt_k);
-                    let _ = check_opt_bool(r_unsafe, opt_unsafe);
-                    let _ = check_opt_u64(r_lvls, opt_lvls);
-                    let _ = check_opt_u64(r_params, opt_params);
-                    let _ = check_opt_u64(r_indices, opt_indices);
-                    let _ = check_opt_u64(r_motives, opt_motives);
-                    let _ = check_opt_u64(r_minors, opt_minors);
-                    let _ = check_opt_expr_addr(r_typ, opt_typ);
+                    check_opt_bool(r_k, opt_k);
+                    check_opt_bool(r_unsafe, opt_unsafe);
+                    check_opt_u64(r_lvls, opt_lvls);
+                    check_opt_u64(r_params, opt_params);
+                    check_opt_u64(r_indices, opt_indices);
+                    check_opt_u64(r_motives, opt_motives);
+                    check_opt_u64(r_minors, opt_minors);
+                    check_opt_expr_addr(r_typ, opt_typ);
                     check_opt_recr_rules(r_rules, opt_rules),
                 },
             },
@@ -909,8 +908,8 @@ def claim := ⟦
               RevealConstantInfo.Axio(opt_unsafe, opt_lvls, opt_typ) =>
                 match a {
                   Axiom.Mk(r_unsafe, r_lvls, r_typ) =>
-                    let _ = check_opt_bool(r_unsafe, opt_unsafe);
-                    let _ = check_opt_u64(r_lvls, opt_lvls);
+                    check_opt_bool(r_unsafe, opt_unsafe);
+                    check_opt_u64(r_lvls, opt_lvls);
                     check_opt_expr_addr(r_typ, opt_typ),
                 },
             },
@@ -919,8 +918,8 @@ def claim := ⟦
               RevealConstantInfo.Quot(opt_kind, opt_lvls, opt_typ) =>
                 match q {
                   Quotient.Mk(r_kind, r_lvls, r_typ) =>
-                    let _ = check_opt_quot_kind(r_kind, opt_kind);
-                    let _ = check_opt_u64(r_lvls, opt_lvls);
+                    check_opt_quot_kind(r_kind, opt_kind);
+                    check_opt_u64(r_lvls, opt_lvls);
                     check_opt_expr_addr(r_typ, opt_typ),
                 },
             },
@@ -929,8 +928,8 @@ def claim := ⟦
               RevealConstantInfo.CPrj(opt_idx, opt_cidx, opt_block) =>
                 match p {
                   ConstructorProj.Mk(r_idx, r_cidx, r_block) =>
-                    let _ = check_opt_u64(r_idx, opt_idx);
-                    let _ = check_opt_u64(r_cidx, opt_cidx);
+                    check_opt_u64(r_idx, opt_idx);
+                    check_opt_u64(r_cidx, opt_cidx);
                     check_opt_addr(r_block, opt_block),
                 },
             },
@@ -939,7 +938,7 @@ def claim := ⟦
               RevealConstantInfo.RPrj(opt_idx, opt_block) =>
                 match p {
                   RecursorProj.Mk(r_idx, r_block) =>
-                    let _ = check_opt_u64(r_idx, opt_idx);
+                    check_opt_u64(r_idx, opt_idx);
                     check_opt_addr(r_block, opt_block),
                 },
             },
@@ -948,7 +947,7 @@ def claim := ⟦
               RevealConstantInfo.IPrj(opt_idx, opt_block) =>
                 match p {
                   InductiveProj.Mk(r_idx, r_block) =>
-                    let _ = check_opt_u64(r_idx, opt_idx);
+                    check_opt_u64(r_idx, opt_idx);
                     check_opt_addr(r_block, opt_block),
                 },
             },
@@ -957,7 +956,7 @@ def claim := ⟦
               RevealConstantInfo.DPrj(opt_idx, opt_block) =>
                 match p {
                   DefinitionProj.Mk(r_idx, r_block) =>
-                    let _ = check_opt_u64(r_idx, opt_idx);
+                    check_opt_u64(r_idx, opt_idx);
                     check_opt_addr(r_block, opt_block),
                 },
             },
@@ -974,7 +973,6 @@ def claim := ⟦
     -- Eval semantics undefined upstream; placeholder until Rust kernel
     -- pins them.
     assert_eq!(0, 1);
-    ()
   }
 
   -- ============================================================================

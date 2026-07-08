@@ -766,7 +766,7 @@ def canonicalCheck := ⟦
             check_canonical_block_sort_walk(rest, ba, list_snoc(cur_members, pos),
                                              pos + 1, top),
           0 =>
-            let _ = validate_block_if_nonzero(cur_ba, cur_members, top);
+            validate_block_if_nonzero(cur_ba, cur_members, top);
             let new_members = init_block_members(ba, pos);
             check_canonical_block_sort_walk(rest, ba, new_members, pos + 1, top),
         },

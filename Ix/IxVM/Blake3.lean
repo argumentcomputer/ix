@@ -21,7 +21,7 @@ def blake3 := ⟦
     let key = [num_hashes_pred];
     let (idx, len) = io_get_info(0, key);
     let byte_stream = #read_byte_stream(0, idx, len);
-    let _ = blake3(byte_stream);
+    blake3(byte_stream);
     match num_hashes_pred {
       0 => 0,
       _ => blake3_bench(num_hashes_pred),
@@ -60,7 +60,6 @@ def blake3 := ⟦
        h[6][0], h[6][1], h[6][2], h[6][3],
        h[7][0], h[7][1], h[7][2], h[7][3]],
       expected);
-    ()
   }
 
   -- Hash `bytes` and intern the digest into the Store. Returned pointer is

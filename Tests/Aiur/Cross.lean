@@ -1021,7 +1021,7 @@ def toplevel : Source.Toplevel := ⟦
           CKind.E(x, &extra) => ntm_cv_e2(x, extra),
           CKind.F(x) => ntm_cv_f2(x),
         };
-        let _ = store(ci);
+        store(ci);
         ci + ntm_convert_all(rest, kind),
     }
   }
