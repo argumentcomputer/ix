@@ -172,12 +172,12 @@ def BackendSpec.metricsFor (b : BackendSpec) (mode : String) : List String :=
 
 /-- Default RAM watchdog ceiling: the machine's total RAM minus 24 GiB
     of headroom (the ~123 GiB CI runner lands at 99; a 64 GiB
-    workstation at 40). The headroom must absorb the sampler's MEASURED
-    worst case — a prover first-touching pre-reserved buffers grows RSS
-    at memory bandwidth, ~13 GB inside one 0.2s sample — plus the OS and
-    runner agent, or the breach takes the machine down before any kill
-    lands. `--ceiling-gb` overrides — do so on machines too small for
-    the rule to leave a useful budget. -/
+    workstation at 40). The watchdog kills when the machine's
+    `MemAvailable` drops below `MemTotal − ceiling`, so the headroom is
+    the free-memory floor — sized to absorb the MEASURED worst burst (a
+    prover first-touching pre-reserved buffers moves ~13 GB per sample)
+    plus the OS and runner agent. `--ceiling-gb` overrides — do so on
+    machines too small for the rule to leave a useful budget. -/
 def defaultCeilingGb : IO Nat := do
   let s ← try IO.FS.readFile "/proc/meminfo" catch _ => pure ""
   let kb := (s.splitOn "\n").findSome? fun l =>
