@@ -178,14 +178,21 @@ jobs:
           ix bench run --backend compile --env ${{ matrix.env }} --out bench.json
           ix bench bmf --in bench.json --out benchmark.json
           cat benchmark.json
+      # Gate for the two steps below: is this env benched (registry
+      # `benched: true`)? Derived from the registry via the in-job `ix`
+      # instead of hand-copying the env list into the conditionals.
+      - id: benched
+        name: Is this env benched?
+        run: |
+          echo "yes=$(ix bench ci matrix --kind envs \
+            | jq 'index("${{ matrix.env }}") != null')" >> "$GITHUB_OUTPUT"
       # Pre-cut the zisk closure-shard artifacts for the heavy primaries
       # (`ix shard extract` → `ix profile` → `ix shard`, via `ix bench
       # shard` — the same code path the zisk cells run lazily when the
       # artifacts are absent). Done here, next to the fresh `.ixe` with
       # `ix` + the Lean toolchain on hand, so the zkvm job just restores the
-      # dir. The benched-env conditionals below must match the registry's
-      # `benched: true` envs (what `ix bench ci matrix --kind envs` returns).
-      - if: matrix.env == 'InitStd' || matrix.env == 'Mathlib'
+      # dir.
+      - if: steps.benched.outputs.yes == 'true'
         name: Cut closure shards for heavy primaries
         run: ix bench shard --env ${{ matrix.env }} --reuse-ixe
       # Cache the `.ixe` + closure-shard artifacts for the prove/zkvm jobs
@@ -193,7 +200,7 @@ jobs:
       # consume, to stay under the repo cache limit. NB: every restore of
       # this key must list the SAME paths — actions/cache versions the entry
       # by its path list.
-      - if: matrix.env == 'InitStd' || matrix.env == 'Mathlib'
+      - if: steps.benched.outputs.yes == 'true'
         uses: actions/cache/save@v5
         with:
           path: |

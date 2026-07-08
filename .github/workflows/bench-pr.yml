@@ -369,7 +369,7 @@ jobs:
           cached=false
           if [ "${{ steps.base-bins.outputs.cache-hit }}" = true ] \
              && cmp -s lean-toolchain base/lean-toolchain; then
-            if [ "$BENV" != mathlib ] || [ "${{ steps.base-ixe.outputs.cache-hit }}" = true ]; then
+            if [ "$BENV" != Mathlib ] || [ "${{ steps.base-ixe.outputs.cache-hit }}" = true ]; then
               mkdir -p base/.lake/build/bin
               mv ~/.local/bin/ix ~/.local/bin/bench-typecheck base/.lake/build/bin/ 2>/dev/null || true
               [ -x base/.lake/build/bin/ix ] && [ -x base/.lake/build/bin/bench-typecheck ] && cached=true
