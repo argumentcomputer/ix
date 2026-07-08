@@ -307,8 +307,14 @@ def runCompareCmd (p : Cli.Parsed) : IO UInt32 := do
   let threshold := (p.flag? "threshold").map (fun f => (f.as! Nat).toFloat)
     |>.getD 3.0
   let mainSrc := (p.flag? "main-source").map (·.as! String) |>.getD mainPath
+  -- Name the mode only where a mode choice exists (aiur); a single-mode
+  -- backend's `· execute` is registry plumbing, not information.
+  let cellName :=
+    if ((Ix.Cli.BenchCmd.findBackend backend).map (·.testbeds.length)).getD 0 > 1
+    then s!"`{backend}` · `{env}` · `{mode}`"
+    else s!"`{backend}` · `{env}`"
   let title := (p.flag? "title").map (·.as! String)
-    |>.getD s!"### `{backend}` · `{env}` · `{mode}` — main from: {mainSrc}"
+    |>.getD s!"### {cellName} — main from: {mainSrc}"
   let table := renderCompare {
     mainRows := ← readRows mainPath
     prRows := ← readRows prPath
