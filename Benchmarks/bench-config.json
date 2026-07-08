@@ -11,7 +11,7 @@
       "enabled": true,
       "default_mode": "prove",
       "testbed": "aiur-prove-x64-32x",
-      "_comment": "Only the prove cell reaches bencher / the PR comment — it simulates the real workload and measures Phase 1 (execute-time, fft-cost) on the way. The execute metrics entry serves LOCAL runs only (`ix bench run --backend aiur --mode execute` + compare against the .bench/ baseline).",
+      "_comment": "bencher stores the prove cell only — it simulates the real workload and measures Phase 1 (execute-time, fft-cost) on the way. The execute metrics entry serves execute-only runs (locally, or `!benchmark … execute` on a PR), whose main side is always a fresh base run: fetch-main exits 3 for non-default modes.",
       "metrics": {
         "prove":   ["fft-cost", "execute-time", "prove-time", "verify-time", "proof-size", "peak-rss"],
         "execute": ["fft-cost", "execute-time", "throughput", "peak-rss"]
