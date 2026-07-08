@@ -21,7 +21,7 @@ and one exit-code convention (Rust: `crates/bench`; Lean:
 `Ix/Benchmark/Results.lean`):
 
 ```json
-{ "<name>": { "status": "ok", "<metric>": 123, "phases": { "<span>": 1.5 } } }
+{ "<name>": { "status": "ok", "<metric>": 123, "phase:<span>": 1.5 } }
 ```
 
 - Rows are flushed after every name, so a killed run keeps its completed rows.
@@ -41,7 +41,7 @@ green.
 
 | subcommand | job |
 |---|---|
-| `run`        | run one cell: select names, ensure the `.ixe`, spawn the tool under the RAM watchdog, resume around per-constant deaths, gate on the rows |
+| `run`        | run one cell: select names, ensure the `.ixe`, spawn the tool under the RAM watchdog (one process per constant on aiur/zkVM), fold each spawn's span window into its row, gate on the rows |
 | `shard`      | pre-cut the closure-shard artifacts for the env's heavy-tier constants (`ix shard extract` → `ix profile` → `ix shard`) |
 | `compare`    | two rows files → Markdown main-vs-PR table (thresholds, ratios, OOM/❌ rows) |
 | `bmf`        | rows → Bencher Metric Format (non-`ok` rows dropped) |
@@ -92,9 +92,9 @@ and render in the PR comment as a collapsible per-constant drill-down.
 `ix bench run` wraps each tool in `.github/scripts/watchdog.sh <ceiling-gb>
 <cmd>`: a sidecar that samples the process tree's RSS and, on breach, sends
 SIGTERM (tools flush their in-flight row and clean up), then SIGKILL after a
-10s grace. On any abnormal tool exit the orchestrator marks the in-flight
-constant's row `status: oom` and respawns with the remaining names — one
-constant's death costs one constant. There are **no per-constant timeouts**;
+10s grace. A killed per-constant process gets its row marked `status: oom`
+(keeping whatever was flushed) and the loop continues — one constant's
+death costs one constant. There are **no per-constant timeouts**;
 the job-level `timeout-minutes` is the only clock.
 
 Heavy-tier zisk constants (whose single-leaf closure would blow the runner's
@@ -153,7 +153,5 @@ covering only what bencher lacked; `ix bench compare` → table artifact) →
   execute-only.
 - **sp1** — disabled in `bench-config.json` (execute too slow per push);
   re-enable it there and it returns to the matrices and the parser.
-- **Per-constant phase drill-down in the PR table** — the `phases` data
-  rides the rows; the collapsible rendering hasn't been rebuilt.
 - **Non-`main` base branches** — `fetch-main` queries `branch=main`; a PR
   against another base always pays the local base run.

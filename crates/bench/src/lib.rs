@@ -6,7 +6,7 @@
 //!
 //! ```json
 //! { "<name>": { "status": "ok", "<metric>": <number>, ...,
-//!               "phases": { "<span>": <seconds>, ... } } }
+//!               "phase:<span>": <seconds>, ... } }
 //! ```
 //!
 //! Rows are flushed to disk after every name, so a killed process still
@@ -109,9 +109,12 @@ pub fn write_row(
 }
 
 /// Append the entry `{ "<name>": <value> }` to the JSON object at `path`,
-/// creating the file if absent. Written whole after every merge, so an
-/// external kill still leaves a valid file of the entries so far. serde_json
-/// handles key escaping, so arbitrary Lean names are safe.
+/// creating the file if absent. The write is ATOMIC (temp file + rename):
+/// the accumulator is shared by sequential per-constant processes and
+/// their orchestrator, and a watchdog KILL landing mid-write would
+/// otherwise truncate it — which the tolerant readers on both sides would
+/// silently reset to `{}`, losing every prior row. serde_json handles key
+/// escaping, so arbitrary Lean names are safe.
 pub fn write_json_entry(
   path: &Path,
   name: &str,
@@ -123,7 +126,10 @@ pub fn write_json_entry(
     Err(e) => return Err(e),
   };
   map.insert(name.to_string(), value);
-  std::fs::write(path, serde_json::to_string(&Value::Object(map))?)
+  let mut tmp = path.as_os_str().to_owned();
+  tmp.push(".tmp");
+  std::fs::write(&tmp, serde_json::to_string(&Value::Object(map))?)?;
+  std::fs::rename(&tmp, path)
 }
 
 /// Union comma-separated `--consts` values with names read from a

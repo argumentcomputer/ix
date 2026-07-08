@@ -137,9 +137,7 @@ def runGuarded (watchdog : Option String) (ceilingGb : Nat)
 def markOom (out : String) (name : String) : IO Unit := do
   let rows ← readRows out
   let row := (rows.getObjVal? name).toOption.getD (Lean.Json.mkObj [])
-  IO.FS.writeFile out
-    (rows.setObjVal! name (row.setObjVal! "status" (Lean.Json.str "oom"))
-      |>.compress)
+  writeEntry out name (row.setObjVal! "status" (Lean.Json.str "oom"))
 
 /-- Sum a texray spans JSONL window (`{"span": s, "seconds": n}` per line)
     by span name. Missing or unparseable content contributes nothing. -/
@@ -172,7 +170,7 @@ def mergeSpans (out : String) (name : String) : IO Unit := do
     if let some row := (rows.getObjVal? name).toOption then
       let row := spans.foldl (init := row) fun r (s, v) =>
         r.setObjVal! s!"phase:{s}" (jsonRound 6 v)
-      IO.FS.writeFile out ((rows.setObjVal! name row).compress)
+      writeEntry out name row
   if ← FilePath.pathExists spansPath then
     IO.FS.removeFile spansPath
 
@@ -184,17 +182,28 @@ def mergeSpans (out : String) (name : String) : IO Unit := do
     and continue; `exitRejected` → the rejected row is on disk, continue
     (the final gate reddens the cell); any other nonzero exit is
     deterministic (usage error, missing input, crash on startup) and would
-    repeat for every remaining name — abort loudly. -/
+    repeat for every remaining name — abort loudly.
+
+    `doneKey` is the mode's completion metric (e.g. `prove-time`): a kill
+    that lands AFTER the row carries it hit teardown, not measurement —
+    typically the prover releasing tens of GB right after the final row
+    write, while RSS is still at its peak — so the finished row stays ok. -/
 def runPerConstant (out : String) (names : Array String)
-    (spawn : String → IO UInt32) : IO Unit := do
+    (doneKey : String) (spawn : String → IO UInt32) : IO Unit := do
   for name in names do
     let exit ← spawn name
     if exit != 0 && exit != exitRejected && exit < 128 then
       IO.eprintln s!"[bench] tool failed on '{name}' (exit {exit}, not a kill); aborting the remaining names"
       return
     if exit ≥ 128 then
-      IO.eprintln s!"[bench] '{name}' killed (exit {exit}); recording oom"
-      markOom out name
+      let rows ← readRows out
+      let complete := ((rows.getObjVal? name).toOption.bind
+        fun r => (r.getObjVal? doneKey).toOption).isSome
+      if complete then
+        IO.eprintln s!"[bench] '{name}' killed in teardown (exit {exit}); row already complete"
+      else
+        IO.eprintln s!"[bench] '{name}' killed (exit {exit}); recording oom"
+        markOom out name
     mergeSpans out name
 
 /-- Ensure the env's `.ixe` exists at `<repo>/<env>.ixe`, compiling it when
@@ -239,22 +248,26 @@ def cutClosureShards (ix : String) (envIxe : String)
       return none
   return some (subIxe, manifest)
 
-/-- Final cell gate from the rows themselves: exit 3 when any row is
-    `rejected` (red cell, rows on disk say why), exit 1 when no rows were
-    produced (a silent-empty run must never look green), else 0. -/
-def gate (out : String) : IO UInt32 := do
+/-- Final cell gate from the rows themselves: exit 1 when any EXPECTED name
+    lacks a row (an aborted loop, a killed batch, or a dropped whole-env
+    check must never look green — every selected name owes exactly one
+    row), exit 3 when any row is `rejected` (red cell, rows on disk say
+    why), else 0. -/
+def gate (out : String) (expected : Array String) : IO UInt32 := do
   let rows ← readRows out
   match rows with
   | .obj kvs =>
     let entries := kvs.toArray
-    if entries.isEmpty then
-      IO.eprintln "[bench] error: no rows were produced"
-      return 1
+    let missing := expected.filter fun n =>
+      !(entries.any fun ⟨name, _⟩ => name == n)
+    for n in missing do
+      IO.eprintln s!"[bench] error: no row for '{n}'"
     let rejected := entries.filter fun ⟨_, row⟩ =>
       (row.getObjVal? "status").toOption == some (Lean.Json.str "rejected")
     for ⟨name, _⟩ in rejected do
       IO.eprintln s!"[bench] ❌ '{name}' FAILED TO TYPECHECK — kernel rejected it"
-    IO.eprintln s!"[bench] {entries.size} row(s), {rejected.size} rejected"
+    IO.eprintln s!"[bench] {entries.size} row(s), {missing.size} missing, {rejected.size} rejected"
+    if !missing.isEmpty then return 1
     return if rejected.isEmpty then 0 else exitRejected
   | _ =>
     IO.eprintln "[bench] error: results file is not an object"
@@ -359,7 +372,8 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
     let ixe ← ensureIxe repo info (p.hasFlag "reuse-ixe")
     let bt ← resolveBin repo "bench-typecheck"
     let modeArgs := if mode == "execute" then #["--execute-only"] else #[]
-    runPerConstant out names fun name =>
+    let doneKey := if mode == "prove" then "prove-time" else "execute-time"
+    runPerConstant out names doneKey fun name =>
       runGuarded watchdog ceilingGb bt
         (#["--ixe", ixe, "--consts", name, "--json", out, "--texray"]
           ++ modeArgs)
@@ -386,12 +400,12 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
     let heavy := if backend == "zisk"
       then (selected.filter (·.tier == "heavy")).map (·.name) else #[]
     let light := names.filter (!heavy.contains ·)
-    runPerConstant outAbs light fun name =>
+    runPerConstant outAbs light "execute-time" fun name =>
       runGuarded watchdog ceilingGb bin
         #["--execute", "--ixe", ixeAbs, "--consts", name,
           "--json", outAbs, "--texray"] (cwd := some work)
     let ix ← resolveBin repo "ix"
-    runPerConstant outAbs heavy fun name => do
+    runPerConstant outAbs heavy "execute-time" fun name => do
       let plan ← cutClosureShards ix ixe s!"{repo}/zkshards-{env}"
         name ceilingGb
       match plan with
@@ -409,7 +423,13 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
     p.printError s!"error: backend '{other}' has no runner"
     return exitUsage
 
-  let code ← gate out
+  -- Every selected name owes a row; the env-keyed backends owe the env
+  -- row too.
+  let expected := match backend with
+    | "compile" => #[info.key]
+    | "ooc" => #[info.key] ++ names
+    | _ => names
+  let code ← gate out expected
   if code == 0 || code == exitRejected then
     saveBaseline out s!"{backend}-{env}-{mode}"
   return code

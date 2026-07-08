@@ -56,10 +56,18 @@ def readRows (path : String) : IO Lean.Json := do
 
 /-- Write a prebuilt row object into the results file at `path`, merging
     into any existing object (overwriting on collision) — the shape every
-    tool uses, so per-constant processes can safely share one file. -/
+    tool uses, so per-constant processes can safely share one file.
+
+    The write is ATOMIC (temp file + rename): the accumulator is shared by
+    N sequential processes and their orchestrator, and a watchdog KILL
+    landing mid-write would otherwise truncate it — which the tolerant
+    `readRows` would then silently reset to `{}`, losing every prior
+    constant's row. -/
 def writeEntry (path : String) (name : String) (row : Lean.Json) : IO Unit := do
   let existing ← readRows path
-  IO.FS.writeFile path ((existing.setObjVal! name row).compress)
+  let tmp := path ++ ".tmp"
+  IO.FS.writeFile tmp ((existing.setObjVal! name row).compress)
+  IO.FS.rename tmp path
 
 /-- Write the row `{ "<name>": { "status": <status>, <fields> } }` into the
     results file at `path`. -/

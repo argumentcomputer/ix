@@ -356,8 +356,9 @@ def runCommentCmd (p : Cli.Parsed) : IO UInt32 := do
 
 /-- Rows JSON → Bencher Metric Format. Rows with `status ≠ ok` are dropped
     whole — a rejected or OOM'd constant must never become a bencher data
-    point. Nested objects (`phases`, `shard-cycles`, …) flatten to
-    `<prefix>:<sub>` measures; `phases` uses the `phase:` prefix. -/
+    point. Numeric fields (`phase:<span>` included) pass through as
+    measures; nested objects (`shard-cycles`, …) flatten to `<key>:<sub>`
+    measures. -/
 def toBmf (rows : Json) : Json := Id.run do
   let mut out : Array (String × Json) := #[]
   for name in rowNames rows do
@@ -371,11 +372,10 @@ def toBmf (rows : Json) : Json := Id.run do
         match v with
         | .num _ => measures := measures.push (k, Json.mkObj [("value", v)])
         | .obj sub =>
-          let prefixKey := if k == "phases" then "phase" else k
           for (subK, subV) in sub.toArray do
             if let .num _ := subV then
               measures := measures.push
-                (s!"{prefixKey}:{subK}", Json.mkObj [("value", subV)])
+                (s!"{k}:{subK}", Json.mkObj [("value", subV)])
         | _ => pure ()
     | _ => pure ()
     if !measures.isEmpty then

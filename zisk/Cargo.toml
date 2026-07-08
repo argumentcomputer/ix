@@ -14,8 +14,11 @@ resolver = "2"
 zisk-sdk = { git = "https://github.com/argumentcomputer/zisk.git", branch = "blake3-precompile" }
 ziskos = { git = "https://github.com/argumentcomputer/zisk.git", branch = "blake3-precompile" }
 
-[profile.release]
-panic = "abort"
+# Host panics must UNWIND (the default): a deterministic bug then exits 101
+# and `ix bench run` aborts the cell loudly, while SIGABRT (exit 134) stays
+# reserved for real allocation-failure OOMs — with `panic = "abort"` every
+# panic would read as an OOM kill, turning a broken host into a green cell
+# of all-oom rows. The guests build in their own excluded workspaces.
 
 # No local-path patch: the host builds zisk-sdk directly from the
 # `blake3-precompile` branch above (now that v0.18.0 + the blake3 shim are
