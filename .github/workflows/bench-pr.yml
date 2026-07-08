@@ -526,7 +526,9 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ secrets.TOKEN_APP_ID }}
+          # `client-id` accepts the numeric App ID too (the JWT issuer claim
+          # takes either), so the existing secret works unchanged.
+          client-id: ${{ secrets.TOKEN_APP_ID }}
           private-key: ${{ secrets.TOKEN_APP_PRIVATE_KEY }}
       - name: Post / update comment
         uses: peter-evans/create-or-update-comment@v5
