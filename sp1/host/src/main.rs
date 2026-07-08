@@ -327,10 +327,9 @@ async fn run_one<C: Prover + Sync>(
           "cycles": cycles,
           "execute-time": (secs * 1e6).round() / 1e6,
           "throughput": tput.round(),
-          // Named for what it measures (the execute phase's RSS high-water),
-          // matching bench-typecheck's execute-peak-rss (prove-peak-rss is
-          // the prove phase's).
-          "execute-peak-rss": peak_rss_bytes(),
+          // The execute phase's RSS high-water — the only phase this cell
+          // has, so the name stays bare (phases separate at the testbed).
+          "peak-rss": peak_rss_bytes(),
         }),
       )?;
     }
@@ -382,7 +381,7 @@ async fn run_one<C: Prover + Sync>(
       Status::Ok,
       serde_json::json!({
         "prove-time": (prove_duration.as_secs_f64() * 1e6).round() / 1e6,
-        "prove-peak-rss": peak_rss_bytes(),
+        "peak-rss": peak_rss_bytes(),
       }),
     )?;
   }

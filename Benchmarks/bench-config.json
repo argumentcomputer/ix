@@ -10,10 +10,13 @@
     "aiur": {
       "enabled": true,
       "default_mode": "prove",
-      "testbed": "aiur-check-x64-32x",
+      "testbed": {
+        "prove": "aiur-prove-x64-32x",
+        "execute": "aiur-execute-x64-32x"
+      },
       "metrics": {
-        "prove":   ["fft-cost", "execute-time", "execute-throughput", "execute-peak-rss", "prove-time", "verify-time", "proof-size", "prove-peak-rss"],
-        "execute": ["fft-cost", "execute-time", "execute-throughput", "execute-peak-rss"]
+        "prove":   ["fft-cost", "execute-time", "prove-time", "verify-time", "proof-size", "peak-rss"],
+        "execute": ["fft-cost", "execute-time", "throughput", "peak-rss"]
       }
     },
     "zisk": {
@@ -21,7 +24,7 @@
       "default_mode": "execute",
       "testbed": "zisk-check-x64-32x",
       "metrics": {
-        "execute": ["cycles", "execute-time", "throughput", "execute-peak-rss"]
+        "execute": ["cycles", "execute-time", "throughput", "peak-rss"]
       }
     },
     "sp1": {
@@ -30,7 +33,7 @@
       "default_mode": "execute",
       "testbed": "sp1-check-x64-32x",
       "metrics": {
-        "execute": ["cycles", "execute-time", "throughput", "execute-peak-rss"]
+        "execute": ["cycles", "execute-time", "throughput", "peak-rss"]
       }
     },
     "ooc": {

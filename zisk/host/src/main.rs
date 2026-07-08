@@ -928,10 +928,9 @@ async fn run_constant(
           "cycles": cycles,
           "execute-time": (execute_secs * 1e6).round() / 1e6,
           "throughput": tput.round(),
-          // Named for what it measures (the execute phase's RSS high-water),
-          // matching bench-typecheck's execute-peak-rss (prove-peak-rss is
-          // the prove phase's).
-          "execute-peak-rss": peak_rss_bytes(),
+          // The execute phase's RSS high-water — the only phase this cell
+          // has, so the name stays bare (phases separate at the testbed).
+          "peak-rss": peak_rss_bytes(),
         }),
       )?;
     }
@@ -981,7 +980,7 @@ async fn run_constant(
       serde_json::json!({
         "prove-time": (leaf_ms as f64).round() / 1000.0,
         "steps": result.get_execution_steps(),
-        "prove-peak-rss": peak_rss_bytes(),
+        "peak-rss": peak_rss_bytes(),
       }),
     )?;
   }
@@ -1302,7 +1301,7 @@ async fn run_shard_plan(
       let (check_list, sub_env, _cover) = build_inputs(g)?;
       let stdin = leaf_stdin(0, 0, &sub_env, &check_list);
       // Windowed RAM high-water: reset before each shard so the per-shard
-      // peaks are independent; the env row's execute-peak-rss is their max.
+      // peaks are independent; the env row's peak-rss is their max.
       tracing_texray::rss_sampler::reset_peak_tree_rss();
       let result = client.execute(&SHARD_PROGRAM, stdin).run()?.await?;
       let mut buf = [0u8; SHARD_PUBLICS_LEN];
@@ -1372,7 +1371,7 @@ async fn run_shard_plan(
           "throughput": tput.round(),
           // Max over the per-shard windows == the run's execution-phase
           // high-water (setup RAM excluded by the resets above).
-          "execute-peak-rss": max_shard_peak,
+          "peak-rss": max_shard_peak,
           "shard-cycles": shard_cycles,
           "shard-time": shard_time,
           "shard-peak-rss": shard_peak_rss,

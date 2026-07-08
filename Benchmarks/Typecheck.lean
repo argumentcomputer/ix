@@ -70,12 +70,14 @@ warning, so a single bad name never fails the run. The harness imposes no time
 limit; bound a run with an external `timeout` if needed.
 
 The JSON is a flat shape (`{ "<name>": { "constants": …, "fft-cost": …,
-"execute-time": …, "execute-peak-rss": …, "prove-time": …, "proof-size": …,
-"verify-time": …, "prove-peak-rss": …, "throughput": … } }`).
-`execute-peak-rss` is the Phase-1 RSS high-water, sampled before proving
-starts, so it is comparable across execute-only and prove runs; `prove-time`,
-`proof-size`, `verify-time`, `prove-peak-rss` (the prover's high-water), and
-`throughput` appear only for proven constants. Any bencher-specific reshaping is the caller's job (see
+"execute-time": …, "prove-time": …, "proof-size": …, "verify-time": …,
+"throughput": …, "peak-rss": … } }`). `peak-rss` and `throughput` are
+phase-scoped by MODE: an `--execute-only` row carries the Phase-1 RSS
+high-water and constants/sec over the execute; a prove row carries the
+prover's high-water and constants/sec over the prove (with `prove-time`,
+`proof-size`, `verify-time` present only once proven). The two modes are
+stored on separate bencher testbeds, so the shared names never collide. Any
+bencher-specific reshaping is the caller's job (see
 `.github/workflows/bench-main.yml`).
 -/
 
@@ -119,10 +121,10 @@ structure Result where
       tree sampler; the window resets per prove). -/
   peakRss : Option Nat := none
   /-- The constant's own Phase-1 (execute) RSS high-water mark — the sampler
-      window resets per constant. Present in BOTH modes so an execute-only
-      run compares apples-to-apples against a prove run's baseline —
-      `prove-peak-rss` is dominated by the prover and would dwarf
-      an execute-only peak. -/
+      window resets per constant. Emitted as `peak-rss` in execute-only
+      mode; a prove row's `peak-rss` is the prover's window instead (the
+      prover would dwarf an execute peak, so the modes never share a row —
+      or a testbed). -/
   executePeakRss : Option Nat := none
   deriving Inhabited
 
@@ -138,9 +140,16 @@ def jsonRound (d : Nat) (f : Float) : Json :=
     else Int.ofNat scaled.round.toUInt64.toNat
   Json.num ⟨m, d⟩
 
-/-- Flat results object: `name → { constants, fft-cost, execute-time,
-    prove-time?, throughput? }`. No bencher-specific shaping. -/
-def Result.toJsonEntry (r : Result) : String × Json :=
+/-- Flat results object: `name → { constants, fft-cost, execute-time, … }`.
+    No bencher-specific shaping.
+
+    `peak-rss` and `throughput` are PHASE-SCOPED BY MODE, not by name: an
+    execute-only run's row carries the Phase-1 peak and constants/sec over
+    the execute; a prove run's row carries the prove-phase peak and
+    constants/sec over the prove. The two modes upload to separate bencher
+    testbeds (aiur-execute-* / aiur-prove-*), so the shared names never
+    collide — run the execute cell when you want execute-side numbers. -/
+def Result.toJsonEntry (executeOnly : Bool) (r : Result) : String × Json :=
   if r.failed then
     (r.name, Json.mkObj [("status", Json.str "rejected")]) else
   let base : List (String × Json) :=
@@ -148,31 +157,31 @@ def Result.toJsonEntry (r : Result) : String × Json :=
     , ("constants", Lean.toJson r.constants)
     , ("fft-cost", jsonRound 0 r.fftCost)
     , ("execute-time", jsonRound 6 r.executeSec) ]
-  -- Witness-generation throughput (closure constants/sec over Phase 1) —
-  -- the execute-side analog of the proving `throughput` below.
-  let base := if r.executeSec > 0 then
-    base ++ [ ("execute-throughput",
-               jsonRound 2 (r.constants.toFloat / r.executeSec)) ]
-  else base
-  let base := match r.peakRss with
-    | some n => base ++ [ ("prove-peak-rss", Lean.toJson n) ]
-    | none => base
-  let base := match r.executePeakRss with
-    | some n => base ++ [ ("execute-peak-rss", Lean.toJson n) ]
-    | none => base
-  -- prove-time and the derived proving throughput (constants/prove-time, the
-  -- proving analog of compile's constants/sec) are present only once proven.
-  let fields := match r.proveSec with
-    | some p => base ++ [ ("prove-time", jsonRound 6 p)
-                        , ("throughput", jsonRound 2 (r.constants.toFloat / p)) ]
-    | none => base
-  let fields := match r.proofSize with
-    | some n => fields ++ [ ("proof-size", Lean.toJson n) ]
-    | none => fields
-  let fields := match r.verifySec with
-    | some v => fields ++ [ ("verify-time", jsonRound 6 v) ]
-    | none => fields
-  (r.name, Json.mkObj fields)
+  if executeOnly then
+    let fields := if r.executeSec > 0 then
+      base ++ [ ("throughput", jsonRound 2 (r.constants.toFloat / r.executeSec)) ]
+    else base
+    let fields := match r.executePeakRss with
+      | some n => fields ++ [ ("peak-rss", Lean.toJson n) ]
+      | none => fields
+    (r.name, Json.mkObj fields)
+  else
+    -- prove-time, the proving throughput, and the prove-phase peak are
+    -- present only once proven.
+    let fields := match r.proveSec with
+      | some p => base ++ [ ("prove-time", jsonRound 6 p)
+                          , ("throughput", jsonRound 2 (r.constants.toFloat / p)) ]
+      | none => base
+    let fields := match r.peakRss with
+      | some n => fields ++ [ ("peak-rss", Lean.toJson n) ]
+      | none => fields
+    let fields := match r.proofSize with
+      | some n => fields ++ [ ("proof-size", Lean.toJson n) ]
+      | none => fields
+    let fields := match r.verifySec with
+      | some v => fields ++ [ ("verify-time", jsonRound 6 v) ]
+      | none => fields
+    (r.name, Json.mkObj fields)
 
 /-- Time a thunk, returning its value and the elapsed seconds. The result is
     forced by `blackBoxIO` so a pure computation isn't optimized away. -/
@@ -262,7 +271,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
       IO.println s!"  [{execIdx}/{targets.size}] executing {label} …"
       (← IO.getStdout).flush
       -- Windowed high-water: reset per constant so each row's
-      -- execute-peak-rss is its own, not the loop's running maximum.
+      -- execute peak is its own, not the loop's running maximum.
       TracingTexray.resetPeakTreeRss
       let (res, execSec) ← timed fun _ =>
         if skipDeps then
@@ -293,7 +302,8 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
   let writeJson (results : Array Result) : IO Unit :=
     match jsonOut with
     | some path =>
-      IO.FS.writeFile path (Json.mkObj (results.map Result.toJsonEntry).toList).pretty
+      IO.FS.writeFile path
+        (Json.mkObj (results.map (Result.toJsonEntry executeOnly)).toList).pretty
     | none => pure ()
 
   -- `--execute-only`: stop after Phase 1; the results JSON (if requested) is
@@ -320,7 +330,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
       -- lands mid-prove, the log must already say which constant died.
       IO.println s!"  [{i + 1}/{ordered.size}] proving {r.name} (fft-cost={r.fftCost}) …"
       (← IO.getStdout).flush
-      -- Windowed high-water: each prove's prove-peak-rss is its own window, not
+      -- Windowed high-water: each prove's peak is its own window, not
       -- the run's cumulative maximum (mirrors the Phase-1 resets).
       TracingTexray.resetPeakTreeRss
       let (proveRes, proveSec) ← timed fun _ =>

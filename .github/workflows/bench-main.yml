@@ -222,12 +222,15 @@ jobs:
             --threshold-lower-boundary 0
 
   # Restore each matrix job's `.ixe` from the cache and run the Aiur execute +
-  # prove benchmark over the primary constants. No compiler run here:
-  # `ix bench run --reuse-ixe` picks up the cached `.ixe`, attempts a full
-  # prove of every primary under the RAM watchdog with per-constant subprocess
-  # isolation, and records a `status: oom` row (keeping any Phase-1 metrics
-  # flushed before the kill) for a too-large prove instead of dying.
-  prove:
+  # Aiur benchmark over the primary constants, one cell per mode: `execute`
+  # (Phase 1 only — witness generation) and `prove` (the full STARK prove
+  # under the RAM watchdog, with per-constant subprocess isolation and a
+  # `status: oom` row — keeping any Phase-1 metrics flushed before the kill —
+  # for a too-large prove). The modes upload to separate testbeds
+  # (aiur-execute-* / aiur-prove-*): they share measure names (`peak-rss`,
+  # `throughput`) that mean different phases per mode. No compiler run here:
+  # `ix bench run --reuse-ixe` picks up the cached `.ixe`.
+  aiur:
     needs: [compile, plan]
     runs-on: warp-ubuntu-latest-x64-32x
     timeout-minutes: 60
@@ -235,6 +238,7 @@ jobs:
       fail-fast: false
       matrix:
         bench: ${{ fromJson(needs.plan.outputs.bench-envs) }}
+        mode: [execute, prove]
     steps:
       - uses: actions/checkout@v6
         with:
@@ -267,8 +271,8 @@ jobs:
       # for the upload below.
       - name: Run Aiur typecheck benchmark
         run: |
-          ix bench run --backend aiur --env ${{ matrix.bench.env }} --mode prove \
-            --reuse-ixe --out bench.json
+          ix bench run --backend aiur --env ${{ matrix.bench.env }} \
+            --mode ${{ matrix.mode }} --reuse-ixe --out bench.json
       # Upload whatever clean rows exist even when the run step reddened the
       # job — bmf drops every non-ok row, so a rejected or OOM'd constant
       # never reaches bencher.
@@ -278,21 +282,23 @@ jobs:
           ix bench bmf --in bench.json --out aiur.json
           cat aiur.json
       # Upload Aiur metrics. Every measure shares the per-workload baseline
-      # window (data points since the aiur-check reset tag). constants is deterministic
-      # → pinned exactly (0/0). fft-cost is deterministic but only ever drops on
-      # a real Aiur win, so it rides an upper-only 5% bound (flag a regression,
-      # let wins through) rather than a hard pin. prove-time/execute-time,
-      # peak-rss (the proving RSS high-water mark), and throughput
-      # (constants/prove-time, where a drop is the regression) are noisy
-      # wall-clock and ride percentage bounds. The per-phase `phase:<span>`
-      # measures are uploaded for trend visibility but intentionally left
-      # un-thresholded (noisy and dynamically named; the PR-comment drill-down
-      # does the phase-level alerting).
+      # window (data points since the workload's reset tag). constants is
+      # deterministic → pinned exactly (0/0). fft-cost is deterministic but
+      # only ever drops on a real Aiur win, so it rides an upper-only 5%
+      # bound (flag a regression, let wins through) rather than a hard pin.
+      # The wall-clock/RAM/rate measures ride percentage bounds; peak-rss
+      # and throughput are phase-scoped by the CELL (execute vs prove
+      # testbed), and prove-time/verify-time/proof-size exist only on the
+      # prove testbed — a threshold naming an absent measure just sits
+      # empty there. The per-phase `phase:<span>` measures are uploaded for
+      # trend visibility but intentionally left un-thresholded (noisy and
+      # dynamically named; the PR-comment drill-down does the phase-level
+      # alerting).
       - uses: ./.github/actions/bencher-track
         if: ${{ !cancelled() }}
         with:
-          testbed: aiur-check-x64-32x
-          workload: aiur-check
+          testbed: aiur-${{ matrix.mode }}-x64-32x
+          workload: aiur-${{ matrix.mode }}
           file: aiur.json
           key: ${{ secrets.BENCHER_API_KEY }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -318,15 +324,12 @@ jobs:
             --threshold-measure peak-rss --threshold-test percentage
             --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.10
             --threshold-lower-boundary _
-            --threshold-measure execute-peak-rss --threshold-test percentage
-            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.10
-            --threshold-lower-boundary _
             --threshold-measure throughput --threshold-test percentage
             --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary _
             --threshold-lower-boundary 0.10
 
   # Execute the same constants through the zkVM hosts and track cycles /
-  # execute-time / throughput / execute-peak-rss (and shards / max-shard-cycles
+  # execute-time / throughput / peak-rss (and shards / max-shard-cycles
   # for the closure-sharded heavy primaries). Reuses the compile job's cached
   # `.ixe` + pre-cut zkshards-<env>/ artifacts; `ix bench run` builds the Rust
   # host itself and runs each heavy primary as its shard-manifest partition
@@ -426,7 +429,7 @@ jobs:
             --threshold-measure execute-time --threshold-test percentage
             --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.10
             --threshold-lower-boundary _
-            --threshold-measure execute-peak-rss --threshold-test percentage
+            --threshold-measure peak-rss --threshold-test percentage
             --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.10
             --threshold-lower-boundary _
             --threshold-measure throughput --threshold-test percentage

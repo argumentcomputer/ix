@@ -33,13 +33,12 @@ namespace Ix.Cli.BenchReport
     tools emit (see bench-config.json). Unknown metrics fall through to a
     generic decimal rendering. -/
 def metricKind (metric : String) : String :=
-  if ["peak-rss", "execute-peak-rss", "prove-peak-rss", "file-size",
-      "proof-size"].contains metric
+  if ["peak-rss", "file-size", "proof-size"].contains metric
   then "bytes"
   else if ["execute-time", "prove-time", "verify-time", "check-time",
            "compile-time"].contains metric then "seconds"
   else if ["fft-cost", "cycles", "steps", "max-shard-cycles",
-           "throughput", "execute-throughput"].contains metric then "count"
+           "throughput"].contains metric then "count"
   else if ["constants", "shards"].contains metric then "int"
   else "auto"
 
@@ -50,7 +49,19 @@ def metricKind (metric : String) : String :=
 def metricLabel (metric : String) : String :=
   if metric == "file-size" then "env-size" else metric
 
-private def pad (s : String) : String := s
+/-- Group a digit string by thousands: `"105492"` → `"105,492"`. -/
+private def commafy (s : String) : String := Id.run do
+  let (sign, digits) :=
+    if s.startsWith "-" then ("-", (s.drop 1).toString) else ("", s)
+  let n := digits.length
+  let mut out := sign
+  let mut i := 0
+  for c in digits.toList do
+    if i != 0 && (n - i) % 3 == 0 then
+      out := out.push ','
+    out := out.push c
+    i := i + 1
+  return out
 
 private def fmtF (f : Float) (decimals : Nat) : String :=
   let scale := (10.0 : Float) ^ decimals.toFloat
@@ -92,13 +103,15 @@ def human (v : Option Float) (metric : String) : String :=
     | "bytes" => humanBytes v
     | "seconds" => humanSeconds v
     | "count" => humanCount v
-    | "int" => fmtF v 0
-    | _ => if v == v.round then fmtF v 0 else fmtF v 3
+    | "int" => commafy (fmtF v 0)
+    | _ => if v == v.round then commafy (fmtF v 0) else fmtF v 3
 
 /-- Metrics where a LARGER value is the improvement; everything else is
-    lower-is-better (times, RAM, cycles, sizes). -/
-def higherIsBetter (metric : String) : Bool :=
-  ["throughput", "execute-throughput"].contains metric
+    lower-is-better (times, RAM, cycles, sizes). `throughput` is reused
+    across backends with different units (consts/s on most; cycles/s on the
+    zkVM hosts) — testbeds keep the series separate, and within any one
+    table the unit is uniform. -/
+def higherIsBetter (metric : String) : Bool := metric == "throughput"
 
 /-! ## Row access -/
 
@@ -365,11 +378,19 @@ def runFetchMainCmd (p : Cli.Parsed) : IO UInt32 := do
     |>.getD "Benchmarks/bench-config.json"
   let mode := (p.flag? "mode").map (·.as! String) |>.getD ""
   let out := (p.flag? "out").map (·.as! String) |>.getD "main.json"
+  -- `testbed` is a string, or an object keyed by mode when a backend's
+  -- modes store separately (aiur: shared measure names like `peak-rss`
+  -- mean different phases per mode, so each mode gets its own testbed).
   let testbed :=
     ((cfg.getObjVal? "backends").toOption.bind fun bs =>
       (bs.getObjVal? backend).toOption.bind fun b =>
         if (metricsFor cfg backend mode).isEmpty then none
-        else (b.getObjVal? "testbed").toOption.bind (·.getStr?.toOption))
+        else match (b.getObjVal? "testbed").toOption with
+          | some (.str s) => some s
+          | some (.obj _) =>
+            ((b.getObjVal? "testbed").toOption.bind fun t =>
+              (t.getObjVal? mode).toOption.bind (·.getStr?.toOption))
+          | _ => none)
   let some testbed := testbed
     | IO.println s!"fetch-main: no testbed for {backend}/{mode}"
       return exitUsage

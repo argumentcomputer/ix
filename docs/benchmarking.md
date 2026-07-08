@@ -69,8 +69,8 @@ a PR tree and compare them — exactly what the PR workflow does.
 
 | backend | what it measures | tool |
 |---|---|---|
-| `aiur`    | Aiur STARK check: execute (fft-cost, execute-time) + prove (prove-time, proof-size, verify-time, prove-peak-rss) | `bench-typecheck` |
-| `zisk`    | ZisK VM execute: cycles, execute-time, throughput, execute-peak-rss | `zisk-host` |
+| `aiur`    | Aiur STARK check, one cell per mode on its own testbed: execute (fft-cost, execute-time, throughput, peak-rss) and prove (prove-time, proof-size, verify-time, peak-rss) | `bench-typecheck` |
+| `zisk`    | ZisK VM execute: cycles, execute-time, throughput, peak-rss | `zisk-host` |
 | `sp1`     | SP1 VM execute (currently disabled in `bench-config.json`) | `sp1-host` |
 | `ooc`     | out-of-circuit Rust kernel: whole-env row + one full-closure row per primary (`check-time` wraps only the check — the env loads once, outside every row's timed window) | `ix check-rs --json` |
 | `compile` | `ix compile <env>.lean → <env>.ixe`: compile-time, file-size, constants, throughput | `ix compile --json` |

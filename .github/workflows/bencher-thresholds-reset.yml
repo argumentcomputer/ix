@@ -19,7 +19,7 @@ name: Bencher thresholds reset
 #     cancel by removing it before merge. Naming convention: one label per token,
 #     `bencher-thresholds-reset:<token>` where <token> is a workload (a backend
 #     testbed from Benchmarks/bench-config.json minus its runner-arch suffix:
-#     `ix-compile`, `aiur-check`, `zisk-check`, `sp1-check`, `ooc-check`) or
+#     `ix-compile`, `aiur-execute`, `aiur-prove`, `zisk-check`, `sp1-check`, `ooc-check`) or
 #     `all` (the merge step expands an `all` label into every workload). Labeling
 #     requires Triage+, so PR authors from forks cannot self-queue a reset. The
 #     label shares the command/workflow name; the git tag it moves is the same
@@ -42,7 +42,7 @@ on:
         # keep it in sync with the backend testbeds in
         # Benchmarks/bench-config.json (the jobs below derive their accepted
         # workloads from that file at run time).
-        options: [ix-compile, aiur-check, zisk-check, sp1-check, ooc-check, all]
+        options: [ix-compile, aiur-execute, aiur-prove, zisk-check, sp1-check, ooc-check, all]
       sha:
         description: "Commit to anchor to (default: HEAD)"
         required: false
@@ -76,8 +76,10 @@ jobs:
       - run: |
           # Workloads are single-sourced from the registry: every backend
           # testbed in bench-config.json minus its runner-arch suffix
-          # (aiur-check-x64-32x → aiur-check).
+          # (zisk-check-x64-32x → zisk-check); a per-mode testbed object
+          # (aiur) contributes one workload per mode.
           valid=$(jq -r '[.backends[] | select(has("testbed")) | .testbed
+            | (if type == "object" then .[] else . end)
             | sub("-[^-]+-[^-]+$"; "")] | unique | join(" ")' Benchmarks/bench-config.json)
           if [ "$EVENT" = workflow_dispatch ]; then
             # Reset the chosen workload(s) at the given commit; no PR scan.
@@ -137,6 +139,7 @@ jobs:
           # which the merge job expands into every workload). Single-sourced
           # from the registry, same derivation as the reset job's list.
           valid=$(jq -r '[.backends[] | select(has("testbed")) | .testbed
+            | (if type == "object" then .[] else . end)
             | sub("-[^-]+-[^-]+$"; "")] | unique | join(" ")' Benchmarks/bench-config.json)
           accepted="$valid all"
           # Parse the workload token(s) after the command, lowercased.
