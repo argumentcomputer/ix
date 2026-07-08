@@ -272,7 +272,11 @@ def runPerConstant (out : String) (names : Array String)
     (doneKey : String) (spawn : String → IO UInt32) : IO Unit := do
   for name in names do
     let exit ← spawn name
-    if exit != 0 && exit != exitRejected && exit < 128 then
+    -- 255 is never a signal death (our kills exit 134/137/143) — it's a
+    -- failed exec ("could not execute external process") or a tool bailing
+    -- with -1; labeling it oom would turn a broken spawn into a green cell
+    -- of fake-OOM rows.
+    if exit == 255 || (exit != 0 && exit != exitRejected && exit < 128) then
       IO.eprintln s!"[bench] tool failed on '{name}' (exit {exit}, not a kill); aborting the remaining names"
       return
     if exit ≥ 128 then
@@ -390,8 +394,11 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
     | none => defaultCeilingGb
   let watchdogPath := (p.flag? "watchdog").map (·.as! String)
     |>.getD s!"{repo}/.github/scripts/watchdog.sh"
+  -- Absolute: the zkVM hosts spawn with their workspace as cwd, where a
+  -- repo-relative script path would fail to exec.
   let watchdog : Option String ←
-    if ← FilePath.pathExists watchdogPath then pure (some watchdogPath)
+    if ← FilePath.pathExists watchdogPath then
+      pure (some (← IO.FS.realPath watchdogPath).toString)
     else do
       IO.eprintln s!"[bench] warning: no watchdog at {watchdogPath}; running unguarded"
       pure none
