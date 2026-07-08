@@ -210,7 +210,8 @@ jobs:
       # Upload compile metrics. Every measure shares the per-workload baseline
       # window (data points since the ix-compile reset tag): file-size/constants
       # are deterministic, pinned exactly (0/0); compile-time rides a 5% upper
-      # bound; throughput a 5% lower bound (its regression is a drop).
+      # bound; throughput a 5% lower bound (its regression is a drop);
+      # peak-rss a 10% upper bound (allocator-noisy, same as the other cells).
       - uses: ./.github/actions/bencher-track
         with:
           testbed: ix-compile-x64-32x
@@ -231,6 +232,9 @@ jobs:
             --threshold-measure constants --threshold-test percentage
             --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0
             --threshold-lower-boundary 0
+            --threshold-measure peak-rss --threshold-test percentage
+            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.10
+            --threshold-lower-boundary _
 
   # Restore each matrix job's `.ixe` from the cache and run the Aiur execute +
   # Aiur benchmark over the primary constants, one cell per mode, each on
