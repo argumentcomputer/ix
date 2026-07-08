@@ -213,13 +213,16 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
   -- Off by default; CI passes --texray explicitly.
   let useTexray := p.hasFlag "texray"
   -- Start the process-tree RSS sampler so each Result's peak-rss reflects the
-  -- true high-water mark. When --texray + --json are both on, also install the
-  -- streaming subscriber and point the per-span sink at `<json>.spans`, so the
-  -- prover's aiur/* and stark/* phase timings land as JSON Lines for the CI
+  -- true high-water mark. With --texray, install the streaming subscriber up
+  -- front: every phase span — aiur/execute_ixvm in Phase 1 included —
+  -- renders its duration and RAM Δ/peak through the one shared channel
+  -- instead of per-benchmark arithmetic. With --json too, the per-span sink
+  -- also lands the timings at `<json>.spans` as JSON Lines for the CI
   -- comparison.
   TracingTexray.startSampler
+  if useTexray then TracingTexray.init {}
   match useTexray, jsonOut with
-  | true, some path => TracingTexray.init {}; TracingTexray.jsonSink s!"{path}.spans"
+  | true, some path => TracingTexray.jsonSink s!"{path}.spans"
   | _, _ => pure ()
 
   -- Compile the IxVM kernel once; build the prover system once.
@@ -289,11 +292,12 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
       | .ok (_, _, queryCounts) =>
         let stats := Aiur.computeStats compiled queryCounts
         let constants := (IxVM.ClaimHarness.closureFrom ixonEnv addr).size
-        let tput := if execSec > 0 then
-          ((constants.toFloat / execSec) * 100).round / 100 else 0
-        let peakGib := ((execPeak.toFloat / 1073741824) * 100).round / 100
+        -- Throughput via the shared benchmark framework; duration/RAM per
+        -- phase stream from texray's `aiur/execute_ixvm` span line.
+        let thrpt := (Throughput.Elements constants.toUInt64 "consts").formatRate
+          (execSec * 1e9)
         IO.println s!"  {label}: constants={constants} fft-cost={stats.totalFftCost} \
-          execute={execSec}s throughput={tput}/s peak-ram={peakGib}GiB"
+          execute={execSec}s thrpt={thrpt}"
         execed := execed.push
           ({ name := label, constants, fftCost := stats.totalFftCost,
              executeSec := execSec, executePeakRss := some execPeak }, addr)
@@ -318,9 +322,9 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
     | none => IO.println s!"executed {execed.size} constants (--execute-only); pass --json <path> to emit results"
     return if execed.any (·.1.failed) then Ix.Benchmark.Results.exitRejected else 0
 
-  -- Phase 2: prove cheap→expensive. Refine each entry with its prove-time as it
-  -- lands. Install texray first so the prove spans (timeline + RAM Δ/peak) render.
-  if useTexray then TracingTexray.init {}
+  -- Phase 2: prove cheap→expensive. Refine each entry with its prove-time as
+  -- it lands (texray was installed before Phase 1, so the prove spans render
+  -- the same way the execute ones did).
   IO.println "── Phase 2: prove ──"
   let mut ordered := execed.qsort (·.1.fftCost < ·.1.fftCost)
   writeJson (ordered.map (·.1))
@@ -368,9 +372,8 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
           | .error e =>
             IO.eprintln s!"  verify {r.name} FAILED: {e}"
             pure none
-        let peakGib := ((peak.toFloat / 1073741824) * 100).round / 100
         IO.println s!"  {r.name}: prove={proveSec}s verify={verifySec}s \
-          proof={proofSize} bytes peak-ram={peakGib}GiB (cumulative {spent}s)"
+          proof={proofSize} bytes (cumulative {spent}s)"
         ordered := ordered.set! i
           ({ r with proveSec := some proveSec, peakRss := some peak
                   , proofSize := some proofSize, verifySec := verifySec? }, addr)

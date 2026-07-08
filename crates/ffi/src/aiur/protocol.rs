@@ -190,6 +190,8 @@ extern "C" fn rs_aiur_toplevel_execute_ixvm(
   let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
   let mut io_buffer = decode_io_buffer(&io_data_arr, &io_map_arr);
 
+  // Same execution-phase span as `dispatch_execute`/the prove pipeline.
+  let _g = tracing::info_span!("aiur/execute_ixvm").entered();
   let (query_record, output) =
     match ixvm_codegen::aiur_ixvm_runner::execute_ixvm(
       &toplevel,
@@ -403,6 +405,11 @@ fn dispatch_execute(
   io_buffer: &mut IOBuffer,
   use_bytecode: bool,
 ) -> Result<(QueryRecord, Vec<G>), String> {
+  // Same span name as the prove pipeline's execution phase
+  // (`synthesis.rs`), so a standalone execute renders/records through the
+  // one texray channel — timing and RAM come from the subscriber, not
+  // per-benchmark arithmetic.
+  let _g = tracing::info_span!("aiur/execute_ixvm").entered();
   if use_bytecode {
     toplevel
       .execute(fun_idx, input, io_buffer)
