@@ -40,13 +40,8 @@ env:
 
 jobs:
   # Build + stage the `ix` and `bench-typecheck` binaries once, then restore
-  # them on the matrix runners. Built ON a warp runner: `.cargo/config.toml`
-  # sets `-Ctarget-cpu=native`, and the warp fleet is CPU-uniform (AMD EPYC
-  # 9R45 / Intel, all AVX-512 — a big Plonky3 speedup), whereas ubuntu-latest
-  # is a host lottery (measured: 4 CPU models, AVX-512 on only ~18% of
-  # builds) that randomly flipped the binaries' instruction set between
-  # pushes. Consequence: every job that RUNS these binaries must also be on
-  # warp, or a non-AVX-512 GitHub host SIGILLs.
+  # them on the matrix runners. `-Ctarget-cpu=native`: every job that RUNS
+  # these binaries must also be a warp host.
   build:
     runs-on: warp-ubuntu-latest-x64-32x
     steps:
