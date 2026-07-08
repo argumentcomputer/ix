@@ -42,6 +42,7 @@ green.
 | subcommand | job |
 |---|---|
 | `run`        | run one cell: select names, ensure the `.ixe`, spawn the tool under the RAM watchdog, resume around per-constant deaths, gate on the rows |
+| `shard`      | pre-cut the closure-shard artifacts for the env's heavy-tier constants (`ix shard extract` → `ix profile` → `ix shard`) |
 | `compare`    | two rows files → Markdown main-vs-PR table (thresholds, ratios, OOM/❌ rows) |
 | `bmf`        | rows → Bencher Metric Format (non-`ok` rows dropped) |
 | `fetch-main` | pull a base SHA's rows from bencher.dev (exit 3 = fall back to a local base run) |
@@ -97,7 +98,7 @@ RAM) run as their closure-shard partition instead: `ix shard extract` →
 `ix profile` → `ix shard` cut a manifest, and one `--shard-plan` host run
 executes the shards sequentially, emitting the constant's row with per-shard
 breakdowns. bench-main's compile job pre-cuts these artifacts
-(`ix bench run --backend cutshards`) and ships them via cache.
+(`ix bench shard`) and ships them via cache.
 
 ## Registry and constant set
 

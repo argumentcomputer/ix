@@ -572,6 +572,7 @@ def benchCmd : Cli.Cmd := `[Cli|
 
   SUBCOMMANDS:
     benchRunCmd;
+    benchShardCmd;
     benchCompareCmd;
     benchCommentCmd;
     benchBmfCmd;

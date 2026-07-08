@@ -48,11 +48,6 @@
       "metrics": {
         "compile": ["compile-time", "throughput", "file-size", "constants", "peak-rss"]
       }
-    },
-    "cutshards": {
-      "_comment": "Not a benchmark cell (no testbed/metrics, never in a matrix): pre-cuts the zisk closure-shard artifacts for the heavy primaries (ix shard extract → profile → shard) into zkshards-<env>/. Invoked directly by bench-main's compile job.",
-      "enabled": false,
-      "default_mode": "execute"
     }
   },
   "runner": "warp-ubuntu-latest-x64-32x",

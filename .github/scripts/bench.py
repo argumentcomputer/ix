@@ -10,9 +10,8 @@ This script remains only because the setup job must parse the comment before
 any `ix` binary has been built or restored.
 
 Backends and envs come from Benchmarks/bench-config.json (the registry).
-Backend command tokens are the registry entries that carry a `testbed`
-(internal helpers like `cutshards` have none); a disabled entry (sp1) is
-recognised but skipped, with a note in the config summary.
+Backend command tokens are the registry's backend entries; a disabled one
+(sp1) is recognised but skipped, with a note in the config summary.
 """
 import json
 import os

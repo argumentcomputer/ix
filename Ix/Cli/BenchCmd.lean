@@ -387,14 +387,6 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
       if exit != 0 && exit != exitRejected then
         IO.eprintln s!"[bench] heavy '{name}' died (exit {exit}); recording oom"
         markOom outAbs name
-  | "cutshards" =>
-    -- Pre-cut the closure-shard artifacts (bench-main's compile job cuts
-    -- them next to the fresh `.ixe`; the zkVM job just restores the dir).
-    let ixe ← ensureIxe repo info (p.hasFlag "reuse-ixe")
-    let ix ← resolveBin repo "ix"
-    for name in (selected.filter (·.tier == "heavy")).map (·.name) do
-      let _ ← cutClosureShards ix ixe s!"{repo}/zkshards-{env}" name ceilingGb
-    return 0
   | other =>
     p.printError s!"error: backend '{other}' has no runner"
     return exitUsage
@@ -404,6 +396,38 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
     saveBaseline out s!"{backend}-{env}-{mode}"
   return code
 
+/-- `ix bench shard`: pre-cut the closure-shard artifacts for the env's
+    heavy-tier constants into `zkshards-<env>/` — `ix shard extract` →
+    `ix profile` → `ix shard` per name, skipping names whose artifacts
+    already exist. Not a benchmark cell (no rows, no watchdog): bench-main's
+    compile job runs it next to the fresh `.ixe` so the artifacts ride the
+    same cache; the zisk cells cut lazily as a fallback when they're
+    absent. -/
+def runBenchShardCmd (p : Cli.Parsed) : IO UInt32 := do
+  let env := (p.flag? "env").map (·.as! String) |>.getD "initStd"
+  let cfg ← loadConfig <| (p.flag? "config").map (·.as! String)
+    |>.getD "Benchmarks/bench-config.json"
+  let repo := (p.flag? "repo").map (·.as! String) |>.getD "."
+  let ceilingGb : Nat :=
+    match p.flag? "ceiling-gb" with
+    | some f => f.as! Nat
+    | none =>
+      match cfg.getObjVal? "ram_ceiling_gb" with
+      | .ok (.num n) => n.mantissa.toNat
+      | _ => 120
+  let info ← envInfo cfg env
+  let csv := (p.flag? "csv").map (·.as! String)
+    |>.getD s!"{repo}/Benchmarks/Vectors.csv"
+  let rows := parseVectorsCsv (← IO.FS.readFile csv)
+  let heavy := (rows.filter fun r =>
+    r.env == env && r.primary && r.tier == "heavy").map (·.name)
+  IO.eprintln s!"[bench] shard {env}: {heavy.size} heavy constant(s)"
+  let ixe ← ensureIxe repo info (p.hasFlag "reuse-ixe")
+  let ix ← resolveBin repo "ix"
+  for name in heavy do
+    let _ ← cutClosureShards ix ixe s!"{repo}/zkshards-{env}" name ceilingGb
+  return 0
+
 end Ix.Cli.BenchCmd
 
 open Ix.Cli.BenchCmd in
@@ -412,7 +436,7 @@ def benchRunCmd : Cli.Cmd := `[Cli|
   "Run one benchmark cell (backend × env × mode), writing benchmark results JSON. Exits 0 on success (rows saved as the local baseline), 3 when the kernel rejected any constant, 1 when no rows were produced."
 
   FLAGS:
-    backend      : String; "aiur | zisk | sp1 | ooc | compile | cutshards"
+    backend      : String; "aiur | zisk | sp1 | ooc | compile"
     env          : String; "Benchmark env from bench-config.json (default: initStd)"
     mode         : String; "prove | execute | compile (default: the backend's default_mode)"
     out          : String; "Benchmark results JSON output path (default: bench.json)"
@@ -426,5 +450,19 @@ def benchRunCmd : Cli.Cmd := `[Cli|
     "reuse-ixe";           "Reuse an existing <env>.ixe instead of recompiling (ignored by the compile backend)"
     "ceiling-gb" : Nat;    "RAM watchdog ceiling in GB (default: bench-config ram_ceiling_gb)"
     watchdog     : String; "Watchdog wrapper path (default: <repo>/.github/scripts/watchdog.sh; missing = run unguarded)"
+]
+
+open Ix.Cli.BenchCmd in
+def benchShardCmd : Cli.Cmd := `[Cli|
+  "shard" VIA runBenchShardCmd;
+  "Pre-cut closure-shard artifacts (ix shard extract → profile → shard) for the env's heavy-tier constants into zkshards-<env>/; skips names already cut. The zisk cells cut lazily when these are absent — this front-loads the work so the artifacts can be cached once per commit."
+
+  FLAGS:
+    env          : String; "Benchmark env from bench-config.json (default: initStd)"
+    repo         : String; "Checkout to shard: tools resolve from <repo>/.lake/build/bin first, then PATH (default: .)"
+    config       : String; "Registry path (default: Benchmarks/bench-config.json)"
+    csv          : String; "Vectors path (default: <repo>/Benchmarks/Vectors.csv)"
+    "reuse-ixe";           "Reuse an existing <env>.ixe instead of recompiling"
+    "ceiling-gb" : Nat;    "Predicted-RAM cap per shard, passed to `ix shard --max-ram` (default: bench-config ram_ceiling_gb)"
 ]
 

@@ -175,15 +175,15 @@ jobs:
           ix bench bmf --in bench.json --out benchmark.json
           cat benchmark.json
       # Pre-cut the zisk closure-shard artifacts for the heavy primaries
-      # (`ix shard extract` → `ix profile` → `ix shard`, via `ix bench run`'s
-      # cutshards backend — the same code path the zisk cells run lazily when
-      # the artifacts are absent). Done here, next to the fresh `.ixe` with
+      # (`ix shard extract` → `ix profile` → `ix shard`, via `ix bench
+      # shard` — the same code path the zisk cells run lazily when the
+      # artifacts are absent). Done here, next to the fresh `.ixe` with
       # `ix` + the Lean toolchain on hand, so the zkvm job just restores the
       # dir. The benched-env conditionals below must match bench-config.json's
       # `benched: true` envs (what `ix bench matrix --kind envs` returns).
       - if: matrix.env == 'initStd' || matrix.env == 'mathlib'
         name: Cut closure shards for heavy primaries
-        run: ix bench run --backend cutshards --env ${{ matrix.env }} --reuse-ixe
+        run: ix bench shard --env ${{ matrix.env }} --reuse-ixe
       # Cache the `.ixe` + closure-shard artifacts for the prove/zkvm jobs
       # (reused, never regenerated there). Only the benched envs those
       # consume, to stay under the repo cache limit. NB: every restore of
