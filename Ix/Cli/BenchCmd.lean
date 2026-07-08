@@ -124,6 +124,14 @@ structure BackendSpec where
   /-- `some reason` ⇒ `parse` skips the backend with the note in the
       config summary. -/
   disabled : Option String := none
+  /-- Watchdog headroom (GiB): the free-memory floor below the default
+      ceiling, sized to the backend's ALLOCATION VELOCITY — it must absorb
+      the worst growth between two watchdog samples plus the OS/runner
+      agent. The provers first-touch pre-reserved buffers at memory
+      bandwidth (~13 GB per sample measured); `ix compile` grows
+      build-paced (a few GB/s) but legitimately peaks near 100 GB on
+      Mathlib, so it gets a thin floor instead of a clipped ceiling. -/
+  headroomGb : Nat := 24
   /-- (mode, bencher testbed). -/
   testbeds : List (String × String)
   /-- (mode, compare-table columns), rendered in list order; the head is
@@ -155,7 +163,7 @@ def backendSpecs : List BackendSpec := [
   { name := "ooc", defaultMode := "execute",
     testbeds := [("execute", "ooc-check-x64-32x")],
     metrics := [("execute", ["check-time", "throughput", "peak-rss"])] },
-  { name := "compile", defaultMode := "execute",
+  { name := "compile", defaultMode := "execute", headroomGb := 12,
     testbeds := [("execute", "ix-compile-x64-32x")],
     metrics := [("execute", ["compile-time", "throughput", "peak-rss",
                              "file-size", "constants"])] }
@@ -170,22 +178,21 @@ def BackendSpec.testbedFor (b : BackendSpec) (mode : String) : Option String :=
 def BackendSpec.metricsFor (b : BackendSpec) (mode : String) : List String :=
   ((b.metrics.find? (·.1 == mode)).map (·.2)).getD []
 
-/-- Default RAM watchdog ceiling: the machine's total RAM minus 24 GiB
-    of headroom (the ~123 GiB CI runner lands at 99; a 64 GiB
-    workstation at 40). The watchdog kills when the machine's
-    `MemAvailable` drops below `MemTotal − ceiling`, so the headroom is
-    the free-memory floor — sized to absorb the MEASURED worst burst (a
-    prover first-touching pre-reserved buffers moves ~13 GB per sample)
-    plus the OS and runner agent. `--ceiling-gb` overrides — do so on
-    machines too small for the rule to leave a useful budget. -/
-def defaultCeilingGb : IO Nat := do
+/-- Default RAM watchdog ceiling: the machine's total RAM minus the
+    backend's `headroomGb` (see `BackendSpec.headroomGb` — the provers'
+    24 GiB puts the ~123 GiB CI runner at 99; compile's 12 at 111). The
+    watchdog kills when the machine's `MemAvailable` drops below
+    `MemTotal − ceiling`, so the headroom is the free-memory floor.
+    `--ceiling-gb` overrides — do so on machines too small for the rule
+    to leave a useful budget. -/
+def defaultCeilingGb (headroomGb : Nat) : IO Nat := do
   let s ← try IO.FS.readFile "/proc/meminfo" catch _ => pure ""
   let kb := (s.splitOn "\n").findSome? fun l =>
     if l.startsWith "MemTotal:" then
       ((l.splitOn " ").filter (· ≠ "") |>.drop 1).head?.bind (·.toNat?)
     else none
   return match kb with
-    | some kb => max 8 (kb / (1024 * 1024) - 24)
+    | some kb => max 8 (kb / (1024 * 1024) - headroomGb)
     | none => 16
 
 /-- Resolve a tool binary: prefer the in-tree build under `repo` (so a base
@@ -392,7 +399,7 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
   let tier := (p.flag? "tier").map (·.as! String) |>.getD ""
   let ceilingGb : Nat ← match p.flag? "ceiling-gb" with
     | some f => pure (f.as! Nat)
-    | none => defaultCeilingGb
+    | none => defaultCeilingGb spec.headroomGb
   let watchdogPath := (p.flag? "watchdog").map (·.as! String)
     |>.getD s!"{repo}/.github/scripts/watchdog.sh"
   -- Absolute: the zkVM hosts spawn with their workspace as cwd, where a
@@ -536,7 +543,7 @@ def runBenchShardCmd (p : Cli.Parsed) : IO UInt32 := do
   let repo := (p.flag? "repo").map (·.as! String) |>.getD "."
   let ceilingGb : Nat ← match p.flag? "ceiling-gb" with
     | some f => pure (f.as! Nat)
-    | none => defaultCeilingGb
+    | none => defaultCeilingGb 24
   let csv := (p.flag? "csv").map (·.as! String)
     |>.getD s!"{repo}/Benchmarks/Vectors.csv"
   let rows := parseVectorsCsv (← IO.FS.readFile csv)

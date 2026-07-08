@@ -146,7 +146,9 @@ breakdowns. bench-main's compile job pre-cuts these artifacts
   (`bencher-thresholds-reset.yml` keeps a static workload list with a sync
   note.) CI-only data stays out of it: the runner name lives with the `ci`
   adapters. The watchdog ceiling defaults to the machine's RAM minus
-  24 GiB of headroom (`--ceiling-gb` overrides).
+  the backend's registry headroom — 24 GiB for the burst-prone provers,
+  12 for `ix compile`, whose growth is build-paced but whose Mathlib peak
+  is legitimately ~100 GB (`--ceiling-gb` overrides).
 
 ## `!benchmark` grammar
 
