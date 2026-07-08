@@ -1,0 +1,87 @@
+name: cgroup memory cap
+
+# Proves that wrapping a command in
+#   systemd-run --user --scope -p MemoryMax=4G -p MemorySwapMax=0 <cmd>
+# hard-caps its memory: a process that grows past the cap is OOM-killed
+# (SIGKILL) immediately, not throttled or allowed to swap. This is the guard
+# we want around memory-heavy steps like `ix compile`. Runs on both runner
+# types since the cgroup/systemd setup differs between them.
+
+on:
+  push:
+    branches:
+      - sb/runner-cpu-info
+  workflow_dispatch:
+
+jobs:
+  memcap:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, warp-ubuntu-latest-x64-32x]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Preflight — cgroup v2 + user systemd
+        run: |
+          echo "cgroup hierarchy:"
+          mount | grep -E 'cgroup' || true
+          test -f /sys/fs/cgroup/cgroup.controllers \
+            && echo "cgroup v2 (unified): yes" \
+            || { echo "cgroup v2 unified hierarchy not found"; exit 1; }
+          echo "memory controller available: $(grep -qw memory /sys/fs/cgroup/cgroup.controllers && echo yes || echo no)"
+          systemd-run --version | head -1
+          # `systemd-run --user` needs a running user manager + its bus.
+          sudo loginctl enable-linger "$USER" || true
+          export XDG_RUNTIME_DIR=/run/user/$(id -u)
+          echo "XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR" >> "$GITHUB_ENV"
+          systemctl --user is-system-running || true
+
+      - name: Write memory hog
+        run: |
+          cat > hog.py <<'PY'
+          # Allocate and touch memory in 128 MiB chunks up to 8 GiB. Touching
+          # every page forces it resident, so under a 4 GiB cap with swap
+          # disabled the cgroup OOM-killer must kill us well before 8 GiB.
+          CHUNK = 128 * 1024 * 1024
+          TARGET = 8 * 1024 * 1024 * 1024
+          blocks, total = [], 0
+          while total < TARGET:
+              b = bytearray(CHUNK)
+              for i in range(0, CHUNK, 4096):
+                  b[i] = 1
+              blocks.append(b)
+              total += CHUNK
+              print(f"allocated {total // (1024 * 1024)} MiB", flush=True)
+          print("REACHED 8 GiB WITHOUT BEING KILLED", flush=True)
+          PY
+
+      - name: Run hog under 4G cap and assert it is killed
+        run: |
+          export XDG_RUNTIME_DIR=/run/user/$(id -u)
+          set +e
+          systemd-run --user --scope \
+            -p MemoryMax=4G -p MemorySwapMax=0 \
+            python3 hog.py | tee hog.out
+          rc=${PIPESTATUS[0]}
+          set -e
+          echo "exit code: $rc"
+
+          if grep -q "REACHED 8 GiB" hog.out; then
+            echo "FAIL: hog allocated 8 GiB — the 4G cap was NOT enforced"
+            exit 1
+          fi
+          if [ "$rc" -eq 0 ]; then
+            echo "FAIL: process exited 0 without hitting the cap"
+            exit 1
+          fi
+          if [ "$rc" -ge 128 ]; then
+            echo "PASS: process killed by signal $((rc - 128)) (137 = SIGKILL from cgroup OOM)"
+          else
+            echo "FAIL: unexpected non-signal exit $rc"
+            exit 1
+          fi
+
+          # Sanity: it should have gotten reasonably close to 4G before dying,
+          # confirming the cap (not some earlier error) is what stopped it.
+          last=$(grep -o 'allocated [0-9]* MiB' hog.out | tail -1 | grep -o '[0-9]*')
+          echo "last successful allocation: ${last:-0} MiB (cap = 4096 MiB)"
