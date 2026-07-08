@@ -378,19 +378,11 @@ def runFetchMainCmd (p : Cli.Parsed) : IO UInt32 := do
     |>.getD "Benchmarks/bench-config.json"
   let mode := (p.flag? "mode").map (·.as! String) |>.getD ""
   let out := (p.flag? "out").map (·.as! String) |>.getD "main.json"
-  -- `testbed` is a string, or an object keyed by mode when a backend's
-  -- modes store separately (aiur: shared measure names like `peak-rss`
-  -- mean different phases per mode, so each mode gets its own testbed).
   let testbed :=
     ((cfg.getObjVal? "backends").toOption.bind fun bs =>
       (bs.getObjVal? backend).toOption.bind fun b =>
         if (metricsFor cfg backend mode).isEmpty then none
-        else match (b.getObjVal? "testbed").toOption with
-          | some (.str s) => some s
-          | some (.obj _) =>
-            ((b.getObjVal? "testbed").toOption.bind fun t =>
-              (t.getObjVal? mode).toOption.bind (·.getStr?.toOption))
-          | _ => none)
+        else (b.getObjVal? "testbed").toOption.bind (·.getStr?.toOption))
   let some testbed := testbed
     | IO.println s!"fetch-main: no testbed for {backend}/{mode}"
       return exitUsage

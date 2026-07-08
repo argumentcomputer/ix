@@ -1,7 +1,7 @@
 # `!benchmark` PR command: run the curated constant set (Benchmarks/Vectors.csv)
 # through chosen prover backend(s) and post a main-vs-PR comparison table.
 #
-#   !benchmark ([aiur] [zisk] [sp1] [ooc] [compile] | all) [execute]
+#   !benchmark ([aiur] [zisk] [sp1] [ooc] [compile] | all)
 #     (sp1 is disabled in Benchmarks/bench-config.json — the parser skips it
 #      with a note in the config summary)
 #   BENCH_ENVS=initStd,mathlib     # which compiled envs (default initStd)
@@ -11,11 +11,12 @@
 #   RUST_LOG=info                  # passthrough env (allowlisted)
 #
 # Mode is fixed per backend (bench-config.json's default_mode): `aiur` runs
-# `prove` (its report also carries the execute-side columns `fft-cost` /
-# `execute-time`); `zisk` / `sp1` / `ooc` run `execute`; `compile` runs
-# `ix compile <env>.lean → <env>.ixe` (the same cell bench-main.yml uploads
-# under testbed `ix-compile-*`). The optional bare `execute` token flips
-# `aiur` to execute-only (skips Phase 2); on the other backends it's a no-op.
+# `prove` — the real-workload simulation, whose report also carries the
+# Phase-1 columns `fft-cost` / `execute-time` measured en route; `zisk` /
+# `sp1` / `ooc` run `execute`; `compile` runs `ix compile <env>.lean →
+# <env>.ixe` (the same cell bench-main.yml uploads under testbed
+# `ix-compile-*`). Aiur execute-only runs are a local dev tool
+# (`ix bench run --backend aiur --mode execute`), never a CI cell.
 #
 # Each matrix cell is one `ix bench run` per side, driven by the PR's `ix`
 # (`--repo` points it at the checkout to measure). main's numbers come from

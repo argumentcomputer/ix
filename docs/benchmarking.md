@@ -69,7 +69,7 @@ a PR tree and compare them — exactly what the PR workflow does.
 
 | backend | what it measures | tool |
 |---|---|---|
-| `aiur`    | Aiur STARK check, one cell per mode on its own testbed: execute (fft-cost, execute-time, throughput, peak-rss) and prove (prove-time, proof-size, verify-time, peak-rss) | `bench-typecheck` |
+| `aiur`    | Aiur STARK prove — the real-workload simulation: prove-time, proof-size, verify-time, peak-rss (the prover's), plus fft-cost / execute-time from its own Phase 1. Execute-only mode (`--mode execute`: fft-cost, execute-time, throughput, peak-rss) is local-only — never uploaded or in the PR comment | `bench-typecheck` |
 | `zisk`    | ZisK VM execute: cycles, execute-time, throughput, peak-rss | `zisk-host` |
 | `sp1`     | SP1 VM execute (currently disabled in `bench-config.json`) | `sp1-host` |
 | `ooc`     | out-of-circuit Rust kernel: whole-env row + one full-closure row per primary (`check-time` wraps only the check — the env loads once, outside every row's timed window) | `ix check-rs --json` |
@@ -116,7 +116,7 @@ breakdowns. bench-main's compile job pre-cuts these artifacts
 ## `!benchmark` grammar
 
 ```
-!benchmark ([aiur] [zisk] [ooc] [compile] | all) [execute]
+!benchmark ([aiur] [zisk] [ooc] [compile] | all)
 BENCH_ENVS=initStd,mathlib     # default initStd
 BENCH_FULL=1                   # full curated set, not just primary
 BENCH_TIER=cheap|heavy|all     # tier filter
@@ -126,14 +126,14 @@ RUST_LOG=info                  # allowlisted passthrough env
 
 Parsed by `.github/scripts/bench.py` (the one Python remnant — it must run
 before any Lean build exists). Mode is fixed per backend by
-`bench-config.json`; the bare `execute` token flips `aiur` to Phase-1 only.
+`bench-config.json` (aiur always proves in CI).
 
 ## CI shape
 
 **bench-main.yml**: `build` (compile `ix` + `bench-typecheck` once, cache by
 SHA) → `plan` (`ix bench matrix` → job matrices) + `compile` (per env:
 `ix bench run --backend compile`, cache the `.ixe` + pre-cut zisk shards) →
-`prove` / `zkvm-execute` / `ooc-check` (each: restore caches, one
+`aiur` (prove) / `zkvm-execute` / `ooc-check` (each: restore caches, one
 `ix bench run … --reuse-ixe`, `ix bench bmf`, upload via
 `.github/actions/bencher-track`). A kernel rejection exits 3 and reddens the
 run step while the clean rows still upload.

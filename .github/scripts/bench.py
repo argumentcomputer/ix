@@ -34,7 +34,7 @@ def cmd_parse():
     cmd = next((ln for ln in lines if "!benchmark" in ln), "")
     toks = cmd.split("!benchmark", 1)[1].split() if "!benchmark" in cmd else []
 
-    backends, skipped, execute_flag = [], [], False
+    backends, skipped = [], []
     for t in (t.lower() for t in toks):
         if t == "all":
             for b in table:
@@ -48,8 +48,6 @@ def cmd_parse():
                 backends.append(t)
             elif t not in skipped:
                 skipped.append(t)
-        elif t == "execute":
-            execute_flag = True
     if not backends:
         backends = ["aiur"]
 
@@ -73,11 +71,10 @@ def cmd_parse():
     full = "1" if cfg_kv.get("BENCH_FULL") == "1" else "0"  # full set vs primary subset
 
     def mode_for(b):
-        # The bare `execute` token selects a backend's execute entry when it
-        # has one — a real switch only for aiur (everything else already
-        # defaults to execute).
-        if execute_flag and "execute" in table[b].get("metrics", {}):
-            return "execute"
+        # CI cells always run the backend's default mode; aiur's default is
+        # prove — the cell that simulates the real workload (Phase 1 is
+        # measured inside it). Execute-only aiur runs are a local dev tool
+        # (`ix bench run --backend aiur --mode execute`), never a CI cell.
         return table[b]["default_mode"]
 
     # `slug` is the CamelCase env name — bench-main's cache-key suffix and
