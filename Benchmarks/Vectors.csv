@@ -1,6 +1,6 @@
 # Benchmark constant vectors -- single shared source of truth for which
 # constants to run, selected per cell by `ix bench run` (see
-# Ix/Cli/BenchCmd.lean; bench-config.json holds everything that isn't a
+# Ix/Cli/BenchCmd.lean, whose registry holds everything that isn't a
 # per-constant row). Measurements (fft, cycles, prove-time, …) live in the
 # benchmark results JSON each tool emits and in bencher.dev — never here.
 #

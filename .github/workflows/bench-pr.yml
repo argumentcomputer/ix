@@ -2,14 +2,14 @@
 # through chosen prover backend(s) and post a main-vs-PR comparison table.
 #
 #   !benchmark ([aiur] [zisk] [sp1] [ooc] [compile] | all) [execute]
-#     (sp1 is disabled in Benchmarks/bench-config.json — the parser skips it
+#     (sp1 is disabled in the registry (Ix/Cli/BenchCmd.lean) — the parser skips it
 #      with a note in the config summary)
 #   BENCH_ENVS=InitStd,Mathlib     # which compiled envs (default InitStd; case-insensitive)
 #   BENCH_FULL=1                   # run the full curated set, not just primary
 #   BENCH_SHARD=1                  # restrict to the multi-shard target constants
 #   RUST_LOG=info                  # passthrough env (allowlisted)
 #
-# Mode defaults per backend (bench-config.json's default_mode): `aiur` runs
+# Mode defaults per backend (the registry's defaultMode): `aiur` runs
 # `prove` — the real-workload simulation, whose report also carries the
 # Phase-1 columns `fft-cost` / `execute-time` measured en route; `zisk` /
 # `sp1` / `ooc` run `execute`; `compile` runs `ix compile <env>.lean →
@@ -63,11 +63,6 @@ jobs:
        github.event.comment.author_association == 'OWNER'))
     runs-on: ubuntu-latest
     outputs:
-      matrix: ${{ steps.parse.outputs.matrix }}
-      shard: ${{ steps.parse.outputs.shard }}
-      full: ${{ steps.parse.outputs.full }}
-      passthrough-env: ${{ steps.parse.outputs.passthrough-env }}
-      config-summary: ${{ steps.parse.outputs.config-summary }}
       base-sha: ${{ steps.shas.outputs.base }}
       head-sha: ${{ steps.shas.outputs.head }}
     steps:
@@ -88,27 +83,24 @@ jobs:
             echo "base=${{ steps.comment-branch.outputs.base_sha }}" >> "$GITHUB_OUTPUT"
             echo "head=${{ steps.comment-branch.outputs.head_sha }}" >> "$GITHUB_OUTPUT"
           fi
-      # Parse the !benchmark command from an env var (never inline-interpolated).
-      # The allowlist drops anything that isn't a known flag/env key. Backends
-      # and envs come from Benchmarks/bench-config.json.
-      # TEMPORARY: pull_request runs get a fixed cheap command (ooc + compile
-      # exercise fetch-main, run, compare, and comment end to end).
-      - name: Parse command
-        id: parse
-        env:
-          COMMENT_BODY: ${{ github.event_name == 'pull_request' && '!benchmark ooc compile' || github.event.comment.body }}
-        run: python3 .github/scripts/bench.py parse
-
   # Build the PR's `ix` + `bench-typecheck` once (they embed the IxVM kernel
   # and the Aiur prover), stage under ~/.local/bin, and cache by head SHA —
   # the matrix cells restore instead of re-running the full Lean build per
   # cell, and re-running !benchmark on the same commit skips the build
   # entirely. ubuntu-latest mirrors bench-main.yml's build job so PR binaries
   # carry the same instruction-set provenance as the binaries behind bencher's
-  # main-side numbers.
+  # main-side numbers. The job ends by parsing the !benchmark command with
+  # the freshly built `ix bench parse` — the registry lives in Lean, so the
+  # matrix can only exist post-build.
   build:
     needs: setup
     runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.parse.outputs.matrix }}
+      shard: ${{ steps.parse.outputs.shard }}
+      full: ${{ steps.parse.outputs.full }}
+      passthrough-env: ${{ steps.parse.outputs.passthrough-env }}
+      config-summary: ${{ steps.parse.outputs.config-summary }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -148,6 +140,24 @@ jobs:
         with:
           path: ~/.local/bin
           key: bench-bins-${{ needs.setup.outputs.head-sha }}
+      # Provision the toolchain so `ix` finds libleanshared on the
+      # cache-hit path (the build path provisioned it above).
+      - if: steps.bins.outputs.cache-hit == 'true'
+        uses: leanprover/lean-action@v1
+        with:
+          auto-config: false
+          build: false
+          use-github-cache: false
+      - run: echo "$HOME/.local/bin" >> $GITHUB_PATH
+      # Parse the !benchmark command from an env var (never
+      # inline-interpolated); unknown tokens fall off the allowlist.
+      # TEMPORARY: pull_request runs get a fixed cheap command (ooc +
+      # compile exercise fetch-main, run, compare, and comment end to end).
+      - name: Parse command
+        id: parse
+        env:
+          COMMENT_BODY: ${{ github.event_name == 'pull_request' && '!benchmark ooc compile' || github.event.comment.body }}
+        run: ix bench parse
 
   benchmark:
     # Explicit name: the default would append EVERY matrix value (backend,
@@ -161,7 +171,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        cell: ${{ fromJSON(needs.setup.outputs.matrix) }}
+        cell: ${{ fromJSON(needs.build.outputs.matrix) }}
     env:
       BACKEND: ${{ matrix.cell.backend }}
       BENV: ${{ matrix.cell.env }}
@@ -169,8 +179,8 @@ jobs:
       LABEL: ${{ matrix.cell.label }}
       BASE_SHA: ${{ needs.setup.outputs.base-sha }}
       HEAD_SHA: ${{ needs.setup.outputs.head-sha }}
-      SHARD: ${{ needs.setup.outputs.shard }}
-      FULL: ${{ needs.setup.outputs.full }}
+      SHARD: ${{ needs.build.outputs.shard }}
+      FULL: ${{ needs.build.outputs.full }}
     steps:
       # PR checked out at the workspace root so the local install actions
       # resolve; base (bencher-miss fallback only) goes under base/.
@@ -186,7 +196,7 @@ jobs:
       # column-0 position under YAML block indentation.
       - name: Apply passthrough env
         env:
-          PTENV: ${{ needs.setup.outputs.passthrough-env }}
+          PTENV: ${{ needs.build.outputs.passthrough-env }}
         run: printf '%s\n' "$PTENV" | sed '/^[[:space:]]*$/d' >> "$GITHUB_ENV"
       # Restore the once-built PR binaries (see the build job) into the PR
       # tree's own bin dir: `ix bench run` resolves the measured tools from
@@ -233,7 +243,7 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           cache-workspaces: ${{ matrix.cell.backend }}
-      # sp1 is disabled in bench-config.json (execute too slow for CI);
+      # sp1 is disabled in the registry (execute too slow for CI);
       # re-enable it there and uncomment this install step to restore it.
       # - name: Install SP1
       #   if: matrix.cell.backend == 'sp1'
@@ -279,7 +289,7 @@ jobs:
       # Try bencher.dev first (bench-main.yml has uploaded main's numbers).
       # fetch-main's exit codes are load-bearing: 3 = transient (base SHA not
       # ingested yet) → fall back to a local base run; anything else (2 =
-      # backend/mode has no main testbed — a bench-config.json /
+      # backend/mode has no main testbed — a registry /
       # bench-main.yml drift) is a permanent misconfiguration that a local
       # rebuild can never fix, so fail the cell loudly instead of silently
       # paying the fallback on every future run.
@@ -315,7 +325,7 @@ jobs:
                fi ;;
             3) echo "source=ran" >> "$GITHUB_OUTPUT"
                echo "run-base=true" >> "$GITHUB_OUTPUT" ;;
-            *) echo "::error::fetch-main: permanent config error (exit $rc) — check bench-config.json backends/testbeds vs bench-main.yml"; exit "$rc" ;;
+            *) echo "::error::fetch-main: permanent config error (exit $rc) — check backendSpecs testbeds vs bench-main.yml"; exit "$rc" ;;
           esac
       - name: Checkout base (bencher data missing or partial)
         if: steps.bencher.outputs.run-base == 'true'
@@ -496,7 +506,7 @@ jobs:
           merge-multiple: true
       - name: Build comment body
         env:
-          SUMMARY: ${{ needs.setup.outputs.config-summary }}
+          SUMMARY: ${{ needs.build.outputs.config-summary }}
           HEAD_SHA: ${{ needs.setup.outputs.head-sha }}
         run: |
           mkdir -p tables   # absent when no cell uploaded a table

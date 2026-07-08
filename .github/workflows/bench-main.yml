@@ -75,7 +75,7 @@ jobs:
           path: ~/.local/bin
           key: bench-bins-${{ github.sha }}
 
-  # Derive the job matrices from the registry (Benchmarks/bench-config.json)
+  # Derive the job matrices from the registry (Ix/Cli/BenchCmd.lean)
   # via `ix bench matrix`, so the benched-env / enabled-backend fan-out is
   # single-sourced instead of hand-copied per job. Runs beside the compile
   # job; only the downstream matrix jobs wait on it.
@@ -108,7 +108,7 @@ jobs:
           # filename, the cache-key suffix, and the env-keyed bencher
           # benchmark name.
           # zkvm-cells: the zkVM subset of the cells (zisk today; sp1 comes
-          # back by re-enabling it in bench-config.json).
+          # back by re-enabling it in the registry).
           echo "bench-envs=$(jq -c '[.[].env] | unique' cells.json)" >> "$GITHUB_OUTPUT"
           echo "zkvm-cells=$(jq -c 'map(select(.backend == "zisk" or .backend == "sp1"))' cells.json)" >> "$GITHUB_OUTPUT"
 
@@ -123,7 +123,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # env = the bench-config.json registry key: the `ix bench run --env`
+        # env = the registry key (Ix/Cli/BenchCmd.lean): the `ix bench run --env`
         # token, `<env>.ixe` filename, lake target suffix (Compile<env>),
         # cache-key suffix, and bencher row name, all one spelling.
         # Deliberately wider than the benched set: Lean/FLT
@@ -183,7 +183,7 @@ jobs:
       # shard` — the same code path the zisk cells run lazily when the
       # artifacts are absent). Done here, next to the fresh `.ixe` with
       # `ix` + the Lean toolchain on hand, so the zkvm job just restores the
-      # dir. The benched-env conditionals below must match bench-config.json's
+      # dir. The benched-env conditionals below must match the registry's
       # `benched: true` envs (what `ix bench matrix --kind envs` returns).
       - if: matrix.env == 'InitStd' || matrix.env == 'Mathlib'
         name: Cut closure shards for heavy primaries
@@ -357,7 +357,7 @@ jobs:
       fail-fast: false
       matrix:
         # Enabled zkVM backends × benched envs, from the registry. sp1 is
-        # disabled in bench-config.json (execute too slow for a per-push job);
+        # disabled in the registry (execute too slow for a per-push job);
         # re-enabling it there restores its cells — also restore an
         # `if: matrix.cell.backend == 'sp1'` install-sp1 step then.
         cell: ${{ fromJson(needs.plan.outputs.zkvm-cells) }}

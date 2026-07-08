@@ -9,7 +9,7 @@
     comment     per-cell table files → the final PR comment body
     bmf         rows JSON → Bencher Metric Format (status ≠ ok rows dropped)
     fetch-main  base SHA + cell → rows JSON pulled from bencher.dev (curl)
-    matrix      bench-config.json → GitHub Actions job-matrix JSON
+    matrix      registry → GitHub Actions job-matrix JSON
 
   CI and local runs share this surface: the PR comment table and the local
   terminal table are the same renderer.
@@ -30,7 +30,7 @@ namespace Ix.Cli.BenchReport
 /-! ## Metric formatting -/
 
 /-- Per-metric formatting kind. Metric names are the results-JSON keys the
-    tools emit (see bench-config.json). Unknown metrics fall through to a
+    tools emit (see the registry in Ix.Cli.BenchCmd). Unknown metrics fall through to a
     generic decimal rendering. -/
 def metricKind (metric : String) : String :=
   if ["peak-rss", "file-size", "proof-size"].contains metric
@@ -281,25 +281,11 @@ def renderCompare (a : CompareArgs) : String := Id.run do
     out := (out.push "" |>.push "**per-phase drill-down**") ++ detail
   return "\n".intercalate out.toList
 
-def metricsFor (cfg : Json) (backend mode : String) : Array String :=
-  ((cfg.getObjVal? "backends").toOption.bind fun bs =>
-    (bs.getObjVal? backend).toOption.bind fun b =>
-    (b.getObjVal? "metrics").toOption.bind fun ms =>
-    (ms.getObjVal? mode).toOption.bind fun arr =>
-      arr.getArr?.toOption.map fun a =>
-        a.filterMap (·.getStr?.toOption))
-  |>.getD #[]
-
 def runCompareCmd (p : Cli.Parsed) : IO UInt32 := do
   let backend := (p.flag? "backend").map (·.as! String) |>.getD ""
   let env := (p.flag? "env").map (·.as! String) |>.getD "InitStd"
-  let cfg ← Ix.Cli.BenchCmd.loadConfig <| (p.flag? "config").map (·.as! String)
-    |>.getD "Benchmarks/bench-config.json"
-  let mode := (p.flag? "mode").map (·.as! String) |>.getD <|
-    ((cfg.getObjVal? "backends").toOption.bind fun bs =>
-      (bs.getObjVal? backend).toOption.bind fun b =>
-      (b.getObjVal? "default_mode").toOption.bind (·.getStr?.toOption))
-    |>.getD "execute"
+  let mode := (p.flag? "mode").map (·.as! String)
+    |>.getD (((Ix.Cli.BenchCmd.findBackend backend).map (·.defaultMode)).getD "execute")
   let cell := s!"{backend}-{env}-{mode}"
   -- Explicit paths win; otherwise the local baseline pair, so a bare
   -- `ix bench compare --backend …` after two runs reports the local delta.
@@ -309,9 +295,12 @@ def runCompareCmd (p : Cli.Parsed) : IO UInt32 := do
     |>.getD s!".bench/{cell}.json"
   let metrics :=
     let flagged := (p.flag? "metric").map (·.as! (Array String)) |>.getD #[]
-    if flagged.isEmpty then metricsFor cfg backend mode else flagged
+    if flagged.isEmpty then
+      (((Ix.Cli.BenchCmd.findBackend backend).map
+        (·.metricsFor mode)).getD []).toArray
+    else flagged
   if metrics.isEmpty then
-    p.printError s!"error: no metrics for {backend}/{mode}; pass --metric or fix bench-config"
+    p.printError s!"error: no metrics for {backend}/{mode}; pass --metric or fix backendSpecs"
     return exitUsage
   let threshold := (p.flag? "threshold").map (fun f => (f.as! Nat).toFloat)
     |>.getD 3.0
@@ -412,24 +401,10 @@ def curlJson (url : String) : IO (Except String Json) := do
 def runFetchMainCmd (p : Cli.Parsed) : IO UInt32 := do
   let sha := (p.flag? "sha").map (·.as! String) |>.getD ""
   let backend := (p.flag? "backend").map (·.as! String) |>.getD ""
-  let cfg ← Ix.Cli.BenchCmd.loadConfig <| (p.flag? "config").map (·.as! String)
-    |>.getD "Benchmarks/bench-config.json"
   let mode := (p.flag? "mode").map (·.as! String) |>.getD ""
   let out := (p.flag? "out").map (·.as! String) |>.getD "main.json"
-  -- `testbed` is a string, or an object keyed by mode when a backend runs
-  -- one bench-main cell per mode (aiur): shared measure names like
-  -- `peak-rss` mean different phases per mode, so each mode stores on its
-  -- own testbed.
-  let testbed :=
-    ((cfg.getObjVal? "backends").toOption.bind fun bs =>
-      (bs.getObjVal? backend).toOption.bind fun b =>
-        if (metricsFor cfg backend mode).isEmpty then none
-        else match (b.getObjVal? "testbed").toOption with
-          | some (.str s) => some s
-          | some t@(.obj _) =>
-            (t.getObjVal? mode).toOption.bind (·.getStr?.toOption)
-          | _ => none)
-  let some testbed := testbed
+  let some testbed := (Ix.Cli.BenchCmd.findBackend backend).bind
+      (·.testbedFor mode)
     | IO.println s!"fetch-main: no testbed for {backend}/{mode}"
       return exitUsage
   let wanted : Option (Array String) ← match p.flag? "names" with
@@ -519,37 +494,131 @@ def runFetchMainCmd (p : Cli.Parsed) : IO UInt32 := do
     are generated instead of hand-copied. `--kind envs` lists the benched
     env names; `--kind cells` fans enabled backends × benched envs. -/
 def runMatrixCmd (p : Cli.Parsed) : IO UInt32 := do
-  let cfg ← Ix.Cli.BenchCmd.loadConfig <| (p.flag? "config").map (·.as! String)
-    |>.getD "Benchmarks/bench-config.json"
   let kind := (p.flag? "kind").map (·.as! String) |>.getD "envs"
-  let envs := (cfg.getObjVal? "envs").toOption.getD (Json.mkObj [])
-  let benched : Array String := Id.run do
-    let mut out := #[]
-    for key in rowNames envs do
-      let e := (envs.getObjVal? key).toOption.getD (Json.mkObj [])
-      if (e.getObjVal? "benched").toOption == some (Json.bool true) then
-        out := out.push key
-    return out
+  let benched := (Ix.Cli.BenchCmd.envSpecs.filter (·.benched)).map (·.name)
   match kind with
   | "envs" =>
-    IO.println (Json.arr (benched.map Json.str)).compress
+    IO.println (Json.arr (benched.map Json.str).toArray).compress
   | "cells" =>
-    let backends := (cfg.getObjVal? "backends").toOption.getD (Json.mkObj [])
     let mut cells : Array Json := #[]
-    for b in rowNames backends do
-      let bc := (backends.getObjVal? b).toOption.getD (Json.mkObj [])
-      if (bc.getObjVal? "enabled").toOption != some (Json.bool true) then
-        continue
-      let mode := (bc.getObjVal? "default_mode").toOption.bind (·.getStr?.toOption)
-        |>.getD "execute"
+    for b in Ix.Cli.BenchCmd.backendSpecs do
+      if b.disabled.isSome then continue
       for env in benched do
         cells := cells.push <| Json.mkObj
-          [("backend", Json.str b), ("env", Json.str env),
-           ("mode", Json.str mode)]
+          [("backend", Json.str b.name), ("env", Json.str env),
+           ("mode", Json.str b.defaultMode)]
     IO.println (Json.arr cells).compress
   | other =>
     p.printError s!"error: unknown --kind '{other}' (envs | cells)"
     return exitUsage
+  return 0
+
+/-! ## parse -/
+
+/-- Parse the `!benchmark` PR-comment command (from the `COMMENT_BODY` env
+    var — never inline-interpolated into a shell) into the benchmark job
+    matrix, written to `$GITHUB_OUTPUT` (stdout when unset). Runs in the
+    build job, right after the `ix` binary exists — the registry lives in
+    Lean, so nothing pre-build can read it, and nothing needs to.
+
+    Grammar (unknown tokens fall off the allowlist):
+
+      !benchmark ([aiur] [zisk] [sp1] [ooc] [compile] | all) [execute]
+      BENCH_ENVS=InitStd,Mathlib   (case-insensitive; default InitStd)
+      BENCH_FULL=1                 (full curated set, not just primary)
+      BENCH_SHARD=1                (only the multi-shard target constants)
+      RUST_LOG=… / WITHOUT_VK_VERIFICATION=… / RUSTFLAGS=…  (passthrough)
+
+    The bare `execute` token flips a backend with an execute metrics entry
+    to execute-only — a real switch only for aiur, whose two modes store on
+    separate testbeds, so either kind of cell finds a cached baseline. -/
+def runParseCmd (_p : Cli.Parsed) : IO UInt32 := do
+  let body := (← IO.getEnv "COMMENT_BODY").getD ""
+  let lines := (body.splitOn "\n").map (·.replace "\r" "")
+  let isCmd := fun (l : String) => (l.splitOn "!benchmark").length > 1
+  let cmd := (lines.find? isCmd).getD ""
+  let toks := if isCmd cmd
+    then (((cmd.splitOn "!benchmark")[1]!).splitOn " ").filter (· ≠ "")
+    else []
+
+  let mut backends : Array Ix.Cli.BenchCmd.BackendSpec := #[]
+  let mut skipped : Array Ix.Cli.BenchCmd.BackendSpec := #[]
+  let mut executeFlag := false
+  for t in toks.map (·.toLower) do
+    let requested := if t == "all"
+      then Ix.Cli.BenchCmd.backendSpecs
+      else (Ix.Cli.BenchCmd.findBackend t).toList
+    for b in requested do
+      if b.disabled.isSome then
+        if skipped.all (·.name != b.name) then skipped := skipped.push b
+      else if backends.all (·.name != b.name) then
+        backends := backends.push b
+    if t == "execute" then executeFlag := true
+  if backends.isEmpty then
+    backends := (Ix.Cli.BenchCmd.findBackend "aiur").toList.toArray
+
+  -- KEY=VALUE config lines below the command line.
+  let mut envs : Array String := #[]
+  let mut shard := "0"
+  let mut full := "0"
+  let mut passthrough : Array String := #[]
+  let mut seenCmd := false
+  for ln in lines do
+    if !seenCmd then
+      seenCmd := isCmd ln
+      continue
+    let s := ln.trimAscii.toString
+    match s.splitOn "=" with
+    | key :: rest =>
+      if rest.isEmpty then continue
+      let val := "=".intercalate rest |>.trimAscii.toString
+      match key.trimAscii.toString with
+      | "BENCH_ENVS" =>
+        for tok in val.splitOn "," do
+          if let some e := Ix.Cli.BenchCmd.findEnv tok.trimAscii.toString then
+            if e.benched && !envs.contains e.name then
+              envs := envs.push e.name
+      | "BENCH_SHARD" => if val == "1" then shard := "1"
+      | "BENCH_FULL" => if val == "1" then full := "1"
+      | k =>
+        if ["RUST_LOG", "WITHOUT_VK_VERIFICATION", "RUSTFLAGS"].contains k then
+          passthrough := passthrough.push s!"{k}={val}"
+    | [] => continue
+  if envs.isEmpty then envs := #["InitStd"]
+
+  let modeFor := fun (b : Ix.Cli.BenchCmd.BackendSpec) =>
+    if executeFlag && !(b.metricsFor "execute").isEmpty then "execute"
+    else b.defaultMode
+  let mut cells : Array Json := #[]
+  for b in backends do
+    for e in envs do
+      cells := cells.push <| Json.mkObj
+        [("backend", Json.str b.name), ("env", Json.str e),
+         ("mode", Json.str (modeFor b)),
+         ("runner", Json.str Ix.Cli.BenchCmd.benchRunner),
+         ("label", Json.str s!"{b.name}-{e}-{modeFor b}")]
+
+  let modes := " ".intercalate
+    (backends.map (fun b => s!"{b.name}={modeFor b}")).toList
+  let mut summary := s!"backends: `{modes}` · envs: `{",".intercalate envs.toList}` · \
+    set: `{if full == "1" then "full" else "primary"}` · shard: `{shard}`"
+  for b in skipped do
+    summary := summary ++
+      s!" · skipped `{b.name}` ({b.disabled.getD "disabled in the registry"})"
+  if !passthrough.isEmpty then
+    summary := summary ++ " · env: `" ++ " ".intercalate passthrough.toList ++ "`"
+
+  let outPath := (← IO.getEnv "GITHUB_OUTPUT").getD "/dev/stdout"
+  let h ← IO.FS.Handle.mk outPath IO.FS.Mode.append
+  h.putStr <| s!"matrix={(Json.arr cells).compress}\n"
+    ++ s!"shard={shard}\nfull={full}\n"
+    ++ s!"config-summary={summary}\n"
+    ++ "passthrough-env<<PTENV\n"
+    ++ "\n".intercalate passthrough.toList
+    ++ (if passthrough.isEmpty then "" else "\n") ++ "PTENV\n"
+  h.flush
+  IO.println summary
+  IO.println (Json.arr cells).pretty
   return 0
 
 end Ix.Cli.BenchReport
@@ -560,17 +629,16 @@ def benchCompareCmd : Cli.Cmd := `[Cli|
   "Render a Markdown main-vs-PR table from two results rows files. Defaults to the cell's local baseline pair (.bench/<cell>{.prev,}.json), so a bare rerun compares against the previous local run."
 
   FLAGS:
-    backend       : String; "Cell backend (metrics come from bench-config.json)"
+    backend       : String; "Cell backend (metrics come from the registry)"
     env           : String; "Cell env (default: InitStd)"
     mode          : String; "Cell mode (default: the backend's default_mode)"
     main          : String; "Main-side rows JSON (default: .bench/<cell>.prev.json)"
     pr            : String; "PR-side rows JSON (default: .bench/<cell>.json)"
-    metric        : Array String; "Metric column(s), overriding bench-config"
+    metric        : Array String; "Metric column(s), overriding the registry"
     threshold     : Nat;    "Flag |Δ| above this percentage (default: 3)"
     title         : String; "Table title (default: derived from the cell)"
     "main-source" : String; "Where the main side came from, for the title"
     out           : String; "Write the table here instead of stdout"
-    config        : String; "Registry path (default: Benchmarks/bench-config.json)"
 ]
 
 open Ix.Cli.BenchReport in
@@ -604,23 +672,27 @@ def benchFetchMainCmd : Cli.Cmd := `[Cli|
 
   FLAGS:
     sha           : String; "Base commit SHA to fetch reports for"
-    backend       : String; "Cell backend (testbed from bench-config.json)"
+    backend       : String; "Cell backend (testbed from the registry)"
     env           : String; "Cell env — admits the env-keyed row past --names"
     mode          : String; "Cell mode"
     names         : String; "Only fetch benchmarks named in this file"
     "missing-out" : String; "Write the --names entries bencher lacked (the caller measures just these on the base checkout)"
     out           : String; "Rows JSON output (default: main.json)"
-    config        : String; "Registry path (default: Benchmarks/bench-config.json)"
 ]
 
 open Ix.Cli.BenchReport in
 def benchMatrixCmd : Cli.Cmd := `[Cli|
   "matrix" VIA runMatrixCmd;
-  "Emit GitHub Actions matrix JSON from bench-config.json (--kind envs | cells)"
+  "Emit GitHub Actions matrix JSON from the registry (--kind envs | cells)"
 
   FLAGS:
     kind   : String; "envs = benched env names; cells = enabled backends × benched envs"
-    config : String; "Registry path (default: Benchmarks/bench-config.json)"
+]
+
+open Ix.Cli.BenchReport in
+def benchParseCmd : Cli.Cmd := `[Cli|
+  "parse" VIA runParseCmd;
+  "Parse the !benchmark command in $COMMENT_BODY into the benchmark job matrix, written to $GITHUB_OUTPUT (stdout when unset). Unknown tokens fall off the allowlist."
 ]
 
 def benchCmd : Cli.Cmd := `[Cli|
@@ -630,6 +702,7 @@ def benchCmd : Cli.Cmd := `[Cli|
   SUBCOMMANDS:
     benchRunCmd;
     benchShardCmd;
+    benchParseCmd;
     benchCompareCmd;
     benchCommentCmd;
     benchBmfCmd;

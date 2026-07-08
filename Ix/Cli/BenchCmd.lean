@@ -23,8 +23,8 @@
 
   Every tool self-reports through the same `--json` results-rows contract,
   so there is no output scraping anywhere: state flows through rows and
-  exit codes only. Registry data (env modules, backend modes,
-  testbeds) comes from `Benchmarks/bench-config.json`.
+  exit codes only. Registry data (envs, backends, testbeds) lives in this
+  module (`envSpecs`/`backendSpecs`) — one language, one owner.
 
   Note for the zisk backend: ZisK's ASM microservices need an unlimited
   memlock hard limit (mmap with MAP_LOCKED). Raise it in the invoking shell
@@ -84,28 +84,94 @@ def selectNames (rows : Array VectorRow) (env : String) (mode : String)
     && (effTier == "all" || r.tier == effTier)
     && (!shardOnly || r.shardTarget)
 
-/-- Registry entry for one env from `bench-config.json`. The env name
-    (e.g. `InitStd`) is the single identifier everywhere: the CLI/`!benchmark`
-    token, the `<env>.ixe` filename, the cache-key suffix, and the
-    env-keyed bencher benchmark name. -/
-structure EnvInfo where
-  key : String
+/-! ## The registry — single source of truth for the benchmark pipeline
+
+`Benchmarks/Vectors.csv` holds the per-constant rows; everything else lives
+here, in one language with one owner. The workflows never read it directly:
+`ix bench matrix` serves the job matrices and `ix bench parse` the
+`!benchmark` cells, both post-build. (`bencher-thresholds-reset.yml` keeps
+a static workload list with a sync note — it runs on cheap runners with no
+built `ix`.) -/
+
+/-- One benchmark env. `name` (e.g. `InitStd`) is the single identifier
+    everywhere: the `!benchmark` token (matched case-insensitively), the
+    `ix bench run --env` value, the `<name>.ixe` filename, the cache-key
+    suffix, and the env-keyed bencher benchmark name. -/
+structure EnvSpec where
+  name : String
+  /-- The Lean source `ix compile` builds the env from. -/
   module : String
+  /-- In the bench-main matrices (and `!benchmark`'s allowed env set). -/
+  benched : Bool
 
-def loadConfig (path : String) : IO Lean.Json := do
-  match Lean.Json.parse (← IO.FS.readFile path) with
-  | .ok j => return j
-  | .error e => throw <| IO.userError s!"bench-config {path}: {e}"
+def envSpecs : List EnvSpec := [
+  { name := "InitStd", module := "Benchmarks/Compile/CompileInitStd.lean", benched := true },
+  { name := "Lean",    module := "Benchmarks/Compile/CompileLean.lean",    benched := false },
+  { name := "Mathlib", module := "Benchmarks/Compile/CompileMathlib.lean", benched := true },
+  { name := "FLT",     module := "Benchmarks/Compile/CompileFLT.lean",     benched := false }
+]
 
-def envInfo (cfg : Lean.Json) (env : String) : IO EnvInfo := do
-  let some entry := (cfg.getObjVal? "envs" |>.toOption).bind
-      (·.getObjVal? env |>.toOption)
-    | throw <| IO.userError s!"env '{env}' not in bench-config envs"
-  let get (k : String) : IO String := do
-    match entry.getObjVal? k with
-    | .ok (.str s) => return s
-    | _ => throw <| IO.userError s!"env '{env}': missing '{k}' in bench-config"
-  return { key := env, module := ← get "module" }
+def findEnv (token : String) : Option EnvSpec :=
+  envSpecs.find? fun e => e.name.toLower == token.toLower
+
+/-- One benchmark backend. Backends with several modes run one bench-main
+    cell per (mode, testbed) entry — shared measure names (`peak-rss`,
+    `throughput`) mean that mode's phase, and a `!benchmark` cell of either
+    mode finds a cached bencher baseline. -/
+structure BackendSpec where
+  name : String
+  defaultMode : String
+  /-- `some reason` ⇒ `parse` skips the backend with the note in the
+      config summary. -/
+  disabled : Option String := none
+  /-- (mode, bencher testbed). -/
+  testbeds : List (String × String)
+  /-- (mode, compare-table columns). -/
+  metrics : List (String × List String)
+
+def backendSpecs : List BackendSpec := [
+  -- prove is aiur's default: the real-workload simulation (it measures
+  -- Phase 1 — execute-time, fft-cost — inside the same process en route).
+  -- execute is the fast Phase-1-only signal.
+  { name := "aiur", defaultMode := "prove",
+    testbeds := [("prove", "aiur-check-prove-x64-32x"),
+                 ("execute", "aiur-check-execute-x64-32x")],
+    metrics := [("prove", ["fft-cost", "execute-time", "prove-time",
+                           "verify-time", "proof-size", "peak-rss"]),
+                ("execute", ["fft-cost", "execute-time", "throughput",
+                             "peak-rss"])] },
+  { name := "zisk", defaultMode := "execute",
+    testbeds := [("execute", "zisk-check-x64-32x")],
+    metrics := [("execute", ["cycles", "execute-time", "throughput",
+                             "peak-rss"])] },
+  { name := "sp1", defaultMode := "execute",
+    disabled := some "execute run too slow for per-push CI; re-enable here once trimmed",
+    testbeds := [("execute", "sp1-check-x64-32x")],
+    metrics := [("execute", ["cycles", "execute-time", "throughput",
+                             "peak-rss"])] },
+  { name := "ooc", defaultMode := "execute",
+    testbeds := [("execute", "ooc-check-x64-32x")],
+    metrics := [("execute", ["throughput", "check-time", "peak-rss"])] },
+  { name := "compile", defaultMode := "execute",
+    testbeds := [("execute", "ix-compile-x64-32x")],
+    metrics := [("execute", ["compile-time", "throughput", "file-size",
+                             "constants", "peak-rss"])] }
+]
+
+def findBackend (name : String) : Option BackendSpec :=
+  backendSpecs.find? (·.name == name)
+
+def BackendSpec.testbedFor (b : BackendSpec) (mode : String) : Option String :=
+  (b.testbeds.find? (·.1 == mode)).map (·.2)
+
+def BackendSpec.metricsFor (b : BackendSpec) (mode : String) : List String :=
+  ((b.metrics.find? (·.1 == mode)).map (·.2)).getD []
+
+/-- The warp runner every benchmark cell measures on. -/
+def benchRunner : String := "warp-ubuntu-latest-x64-32x"
+
+/-- Default RAM watchdog ceiling (`--ceiling-gb` overrides). -/
+def defaultCeilingGb : Nat := 120
 
 /-- Resolve a tool binary: prefer the in-tree build under `repo` (so a base
     checkout measures the base's code), else PATH. -/
@@ -208,8 +274,8 @@ def runPerConstant (out : String) (names : Array String)
 
 /-- Ensure the env's `.ixe` exists at `<repo>/<env>.ixe`, compiling it when
     absent (or when reuse is off). Returns the `.ixe` path. -/
-def ensureIxe (repo : String) (info : EnvInfo) (reuse : Bool) : IO String := do
-  let ixe := s!"{repo}/{info.key}.ixe"
+def ensureIxe (repo : String) (info : EnvSpec) (reuse : Bool) : IO String := do
+  let ixe := s!"{repo}/{info.name}.ixe"
   if reuse && (← FilePath.pathExists ixe) then
     IO.eprintln s!"[bench] reusing {ixe}"
     return ixe
@@ -285,18 +351,14 @@ def saveBaseline (out : String) (cell : String) : IO Unit := do
 
 def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
   let backend := (p.flag? "backend").map (·.as! String) |>.getD ""
-  let env := (p.flag? "env").map (·.as! String) |>.getD "InitStd"
-  let cfg ← loadConfig <| (p.flag? "config").map (·.as! String)
-    |>.getD "Benchmarks/bench-config.json"
-  let some backendCfg := (cfg.getObjVal? "backends" |>.toOption).bind
-      (·.getObjVal? backend |>.toOption)
-    | p.printError s!"error: unknown backend '{backend}' (see bench-config.json)"
+  let some spec := findBackend backend
+    | p.printError s!"error: unknown backend '{backend}' (see backendSpecs)"
       return exitUsage
-  let defaultMode :=
-    match backendCfg.getObjVal? "default_mode" with
-    | .ok (.str s) => s
-    | _ => "execute"
-  let mode := (p.flag? "mode").map (·.as! String) |>.getD defaultMode
+  let some info := findEnv ((p.flag? "env").map (·.as! String) |>.getD "InitStd")
+    | p.printError "error: unknown env (see envSpecs)"
+      return exitUsage
+  let env := info.name
+  let mode := (p.flag? "mode").map (·.as! String) |>.getD spec.defaultMode
   let repo := (p.flag? "repo").map (·.as! String) |>.getD "."
   let out := (p.flag? "out").map (·.as! String) |>.getD "bench.json"
   let full := p.hasFlag "full"
@@ -304,10 +366,7 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
   let ceilingGb : Nat :=
     match p.flag? "ceiling-gb" with
     | some f => f.as! Nat
-    | none =>
-      match cfg.getObjVal? "ram_ceiling_gb" with
-      | .ok (.num n) => n.mantissa.toNat
-      | _ => 120
+    | none => defaultCeilingGb
   let watchdogPath := (p.flag? "watchdog").map (·.as! String)
     |>.getD s!"{repo}/.github/scripts/watchdog.sh"
   let watchdog : Option String ←
@@ -315,8 +374,6 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
     else do
       IO.eprintln s!"[bench] warning: no watchdog at {watchdogPath}; running unguarded"
       pure none
-
-  let info ← envInfo cfg env
   let csv := (p.flag? "csv").map (·.as! String)
     |>.getD s!"{repo}/Benchmarks/Vectors.csv"
   let rows := parseVectorsCsv (← IO.FS.readFile csv)
@@ -345,7 +402,7 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
     let ix ← resolveBin repo "ix"
     let exit ← runGuarded watchdog ceilingGb ix
       #["compile", s!"{repo}/{info.module}", "--out", s!"{repo}/{env}.ixe",
-        "--json", out, "--json-name", info.key]
+        "--json", out, "--json-name", info.name]
     if exit != 0 then
       IO.eprintln s!"[bench] ix compile failed (exit {exit})"
       return 1
@@ -354,7 +411,7 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
     let ix ← resolveBin repo "ix"
     -- Whole-env row (keyed by the env name) …
     let exit ← runGuarded watchdog ceilingGb ix
-      #["check-rs", ixe, "--anon", "--json", out, "--json-name", info.key]
+      #["check-rs", ixe, "--anon", "--json", out, "--json-name", info.name]
     if exit != 0 && exit != exitRejected then
       IO.eprintln s!"[bench] whole-env check failed (exit {exit})"
     -- … plus one full-closure row per primary. ONE process for all names
@@ -426,8 +483,8 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
   -- Every selected name owes a row; the env-keyed backends owe the env
   -- row too.
   let expected := match backend with
-    | "compile" => #[info.key]
-    | "ooc" => #[info.key] ++ names
+    | "compile" => #[info.name]
+    | "ooc" => #[info.name] ++ names
     | _ => names
   let code ← gate out expected
   if code == 0 || code == exitRejected then
@@ -442,18 +499,15 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
     same cache; the zisk cells cut lazily as a fallback when they're
     absent. -/
 def runBenchShardCmd (p : Cli.Parsed) : IO UInt32 := do
-  let env := (p.flag? "env").map (·.as! String) |>.getD "InitStd"
-  let cfg ← loadConfig <| (p.flag? "config").map (·.as! String)
-    |>.getD "Benchmarks/bench-config.json"
+  let some info := findEnv ((p.flag? "env").map (·.as! String) |>.getD "InitStd")
+    | p.printError "error: unknown env (see envSpecs)"
+      return exitUsage
+  let env := info.name
   let repo := (p.flag? "repo").map (·.as! String) |>.getD "."
   let ceilingGb : Nat :=
     match p.flag? "ceiling-gb" with
     | some f => f.as! Nat
-    | none =>
-      match cfg.getObjVal? "ram_ceiling_gb" with
-      | .ok (.num n) => n.mantissa.toNat
-      | _ => 120
-  let info ← envInfo cfg env
+    | none => defaultCeilingGb
   let csv := (p.flag? "csv").map (·.as! String)
     |>.getD s!"{repo}/Benchmarks/Vectors.csv"
   let rows := parseVectorsCsv (← IO.FS.readFile csv)
@@ -475,18 +529,17 @@ def benchRunCmd : Cli.Cmd := `[Cli|
 
   FLAGS:
     backend      : String; "aiur | zisk | sp1 | ooc | compile"
-    env          : String; "Benchmark env from bench-config.json (default: InitStd)"
-    mode         : String; "prove | execute (default: the backend's default_mode)"
+    env          : String; "Benchmark env from the registry (default: InitStd)"
+    mode         : String; "prove | execute (default: the backend's defaultMode)"
     out          : String; "Benchmark results JSON output path (default: bench.json)"
     repo         : String; "Checkout to benchmark: tools resolve from <repo>/.lake/build/bin first, then PATH (default: .)"
-    config       : String; "Registry path (default: Benchmarks/bench-config.json)"
     csv          : String; "Vectors path (default: <repo>/Benchmarks/Vectors.csv)"
     full;                  "Run the env's full curated set instead of the primary subset"
     "names-file" : String; "Run exactly these names (one per line) instead of the Vectors.csv selection"
     tier         : String; "cheap | heavy | all — tier filter (default: all; prove-mode --full defaults to cheap)"
     "shard-only";          "Restrict to shard_target rows"
     "reuse-ixe";           "Reuse an existing <env>.ixe instead of recompiling (ignored by the compile backend)"
-    "ceiling-gb" : Nat;    "RAM watchdog ceiling in GB (default: bench-config ram_ceiling_gb)"
+    "ceiling-gb" : Nat;    "RAM watchdog ceiling in GB (default: 120)"
     watchdog     : String; "Watchdog wrapper path (default: <repo>/.github/scripts/watchdog.sh; missing = run unguarded)"
 ]
 
@@ -496,11 +549,10 @@ def benchShardCmd : Cli.Cmd := `[Cli|
   "Pre-cut closure-shard artifacts (ix shard extract → profile → shard) for the env's heavy-tier constants into zkshards-<env>/; skips names already cut. The zisk cells cut lazily when these are absent — this front-loads the work so the artifacts can be cached once per commit."
 
   FLAGS:
-    env          : String; "Benchmark env from bench-config.json (default: InitStd)"
+    env          : String; "Benchmark env from the registry (default: InitStd)"
     repo         : String; "Checkout to shard: tools resolve from <repo>/.lake/build/bin first, then PATH (default: .)"
-    config       : String; "Registry path (default: Benchmarks/bench-config.json)"
     csv          : String; "Vectors path (default: <repo>/Benchmarks/Vectors.csv)"
     "reuse-ixe";           "Reuse an existing <env>.ixe instead of recompiling"
-    "ceiling-gb" : Nat;    "Predicted-RAM cap per shard, passed to `ix shard --max-ram` (default: bench-config ram_ceiling_gb)"
+    "ceiling-gb" : Nat;    "Predicted-RAM cap per shard, passed to `ix shard --max-ram` (default: 120)"
 ]
 

@@ -47,7 +47,8 @@ green.
 | `bmf`        | rows → Bencher Metric Format (non-`ok` rows dropped) |
 | `fetch-main` | pull a base SHA's rows from bencher.dev (exit 3 = fall back to a local base run) |
 | `comment`    | assemble per-cell tables into the PR comment body |
-| `matrix`     | emit the workflows' job matrices from `bench-config.json` |
+| `matrix`     | emit the workflows' job matrices from the registry |
+| `parse`      | `!benchmark` comment → job matrix (runs in the build job, right after `ix` exists) |
 
 ### Local usage
 
@@ -71,7 +72,7 @@ a PR tree and compare them — exactly what the PR workflow does.
 |---|---|---|
 | `aiur`    | Aiur STARK check, one bench-main cell per mode on its own testbed: prove — the real-workload simulation (prove-time, proof-size, verify-time, peak-rss, plus fft-cost / execute-time from its own Phase 1) — and execute, the fast Phase-1-only signal (fft-cost, execute-time, throughput, peak-rss). `!benchmark aiur [execute]` picks the mode | `bench-typecheck` |
 | `zisk`    | ZisK VM execute: cycles, execute-time, throughput, peak-rss | `zisk-host` |
-| `sp1`     | SP1 VM execute (currently disabled in `bench-config.json`) | `sp1-host` |
+| `sp1`     | SP1 VM execute (currently disabled in the registry) | `sp1-host` |
 | `ooc`     | out-of-circuit Rust kernel: whole-env row + one full-closure row per primary (`check-time` wraps only the check — the env loads once, outside every row's timed window) | `ix check-rs --json` |
 | `compile` | `ix compile <env>.lean → <env>.ixe`: compile-time, file-size, constants, throughput | `ix compile --json` |
 
@@ -110,12 +111,13 @@ breakdowns. bench-main's compile job pre-cuts these artifacts
   `(name, env, tier[, shard_target[, primary]])`. `tier: heavy` marks
   constants whose full prove is expected to OOM (they still run; the row
   records it). `primary: 1` is the default `!benchmark` subset.
-- **`Benchmarks/bench-config.json`** — everything else: env slugs and compile
-  modules, backends (enabled flag, default mode, bencher testbed, compare
-  columns), the runner, the watchdog ceiling. The workflows' matrices are
-  generated from it (`ix bench matrix`), the `!benchmark` parser reads it,
-  and `bencher-thresholds-reset.yml` derives its workload lists from it —
-  add or disable a backend in one place.
+- **The registry** (`envSpecs`/`backendSpecs` in `Ix/Cli/BenchCmd.lean`) —
+  everything else: env modules, backends (disabled reason, default mode,
+  bencher testbeds, compare columns), the runner, the watchdog ceiling.
+  Typed Lean data with one owner: the workflows never read it directly —
+  `ix bench matrix` serves the job matrices and `ix bench parse` the
+  `!benchmark` cells, both post-build. (`bencher-thresholds-reset.yml`
+  keeps a static workload list with a sync note.)
 
 ## `!benchmark` grammar
 
@@ -127,9 +129,10 @@ BENCH_SHARD=1                  # only the multi-shard target constants
 RUST_LOG=info                  # allowlisted passthrough env
 ```
 
-Parsed by `.github/scripts/bench.py` (the one Python remnant — it must run
-before any Lean build exists). Mode defaults per backend from
-`bench-config.json`; the bare `execute` token flips `aiur` to Phase-1 only.
+Parsed by `ix bench parse` in the PR build job, right after the `ix`
+binary exists — the registry lives in Lean, so nothing pre-build reads it
+(and no Python remains). Mode defaults per backend from the registry; the
+bare `execute` token flips `aiur` to Phase-1 only.
 
 ## CI shape
 
@@ -151,7 +154,7 @@ covering only what bencher lacked; `ix bench compare` → table artifact) →
 
 - **zkVM prove** — the hosts prove, but CI has no GPU runner; cells are
   execute-only.
-- **sp1** — disabled in `bench-config.json` (execute too slow per push);
+- **sp1** — disabled in the registry (execute too slow per push);
   re-enable it there and it returns to the matrices and the parser.
 - **Non-`main` base branches** — `fetch-main` queries `branch=main`; a PR
   against another base always pays the local base run.
