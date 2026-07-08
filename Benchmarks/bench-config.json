@@ -11,8 +11,8 @@
       "enabled": true,
       "default_mode": "prove",
       "testbed": {
-        "prove": "aiur-prove-x64-32x",
-        "execute": "aiur-execute-x64-32x"
+        "prove": "aiur-check-prove-x64-32x",
+        "execute": "aiur-check-execute-x64-32x"
       },
       "_comment": "One bench-main cell per mode, each on its own testbed — the shared measure names (peak-rss, throughput) mean that mode's phase, and a `!benchmark aiur [execute]` PR cell always finds a cached baseline on bencher. prove is the default: the real-workload simulation (it measures Phase 1 en route); execute is the fast Phase-1-only signal.",
       "metrics": {

@@ -304,8 +304,8 @@ jobs:
       - uses: ./.github/actions/bencher-track
         if: ${{ !cancelled() }}
         with:
-          testbed: aiur-${{ matrix.mode }}-x64-32x
-          workload: aiur-${{ matrix.mode }}
+          testbed: aiur-check-${{ matrix.mode }}-x64-32x
+          workload: aiur-check-${{ matrix.mode }}
           file: aiur.json
           key: ${{ secrets.BENCHER_API_KEY }}
           github-token: ${{ secrets.GITHUB_TOKEN }}

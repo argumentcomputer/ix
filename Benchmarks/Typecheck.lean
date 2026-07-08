@@ -147,7 +147,7 @@ def jsonRound (d : Nat) (f : Float) : Json :=
     execute-only run's row carries the Phase-1 peak and constants/sec over
     the execute; a prove run's row carries the prove-phase peak and
     constants/sec over the prove. The two modes upload to separate bencher
-    testbeds (aiur-execute-* / aiur-prove-*), so the shared names never
+    testbeds (aiur-check-execute-* / aiur-check-prove-*), so the shared names never
     collide — run the execute cell when you want execute-side numbers. -/
 def Result.toJsonEntry (executeOnly : Bool) (r : Result) : String × Json :=
   if r.failed then
