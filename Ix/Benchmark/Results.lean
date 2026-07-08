@@ -54,13 +54,17 @@ def readRows (path : String) : IO Lean.Json := do
   else
     return Lean.Json.mkObj []
 
-/-- Write the row `{ "<name>": { "status": <status>, <fields> } }` into the
-    results file at `path`, merging into any existing object (overwriting on
-    collision) so a multi-name run accumulates one map with a row per name. -/
-def writeRow (path : String) (name : String) (status : String)
-    (fields : List (String × Lean.Json)) : IO Unit := do
+/-- Write a prebuilt row object into the results file at `path`, merging
+    into any existing object (overwriting on collision) — the shape every
+    tool uses, so per-constant processes can safely share one file. -/
+def writeEntry (path : String) (name : String) (row : Lean.Json) : IO Unit := do
   let existing ← readRows path
-  let row := Lean.Json.mkObj (("status", Lean.Json.str status) :: fields)
   IO.FS.writeFile path ((existing.setObjVal! name row).compress)
+
+/-- Write the row `{ "<name>": { "status": <status>, <fields> } }` into the
+    results file at `path`. -/
+def writeRow (path : String) (name : String) (status : String)
+    (fields : List (String × Lean.Json)) : IO Unit :=
+  writeEntry path name (Lean.Json.mkObj (("status", Lean.Json.str status) :: fields))
 
 end Ix.Benchmark.Results

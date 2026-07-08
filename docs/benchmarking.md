@@ -79,9 +79,13 @@ All tools take the same `--consts`/`--consts-file` grammar and emit the same
 rows. The ooc and zkVM cells share per-constant **full-closure** scope, so
 their delta isolates in-circuit vs out-of-circuit overhead.
 
-With `--texray`, tools also write per-phase span timings (`aiur/execute`,
-`stark/*`, `zisk/execute`, …) to `<json>.spans`; the rows carry them under
-`phases`, flattened by `bmf` to `phase:<span>` measures.
+With `--texray`, tools write per-phase span timings (`aiur/prove_ixvm`,
+`aiur/witness`, `stark/*`, `zisk/execute`, …) to `<json>.spans`. The
+per-constant backends run **one process per constant**, so each spawn's
+window belongs wholly to its constant: `ix bench run` folds it into the
+row as flat `phase:<span>` fields, which flow to bencher as independent
+measures (witness gen, stage commits, quotient, … each get a trend line)
+and render in the PR comment as a collapsible per-constant drill-down.
 
 ## RAM: watchdog, OOM rows, sharding
 

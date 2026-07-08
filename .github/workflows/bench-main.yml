@@ -298,10 +298,10 @@ jobs:
       # and throughput are phase-scoped by the CELL (execute vs prove
       # testbed), and prove-time/verify-time/proof-size exist only on the
       # prove testbed — a threshold naming an absent measure just sits
-      # empty there. The per-phase `phase:<span>` measures are uploaded for
-      # trend visibility but intentionally left un-thresholded (noisy and
-      # dynamically named; the PR-comment drill-down does the phase-level
-      # alerting).
+      # empty there. The per-phase `phase:<span>` measures (witness gen,
+      # stage commits, quotient, …) are uploaded for trend visibility but
+      # intentionally left un-thresholded (noisy and dynamically named;
+      # the PR-comment drill-down does the phase-level comparison).
       - uses: ./.github/actions/bencher-track
         if: ${{ !cancelled() }}
         with:

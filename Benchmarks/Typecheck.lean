@@ -304,13 +304,16 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
     catch e =>
       IO.eprintln s!"  execute {label} threw: {e}"
 
-  -- Write the benchmark results JSON, but only when `--json` was given. Rewritten
-  -- after each prove so a `timeout` kill still leaves a complete file.
+  -- Persist rows when `--json` was given, MERGING into the file (the shared
+  -- results-row contract): rows land after each result, so a kill leaves the
+  -- completed ones, and per-constant processes can share one file with the
+  -- orchestrator and each other.
   let writeJson (results : Array Result) : IO Unit :=
     match jsonOut with
     | some path =>
-      IO.FS.writeFile path
-        (Json.mkObj (results.map (Result.toJsonEntry executeOnly)).toList).pretty
+      results.forM fun r =>
+        let (name, row) := Result.toJsonEntry executeOnly r
+        Ix.Benchmark.Results.writeEntry path name row
     | none => pure ()
 
   -- `--execute-only`: stop after Phase 1; the results JSON (if requested) is

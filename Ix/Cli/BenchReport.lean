@@ -35,6 +35,7 @@ namespace Ix.Cli.BenchReport
 def metricKind (metric : String) : String :=
   if ["peak-rss", "file-size", "proof-size"].contains metric
   then "bytes"
+  else if metric.startsWith "phase:" then "seconds"
   else if ["execute-time", "prove-time", "verify-time", "check-time",
            "compile-time"].contains metric then "seconds"
   else if ["fft-cost", "cycles", "steps", "max-shard-cycles",
@@ -131,6 +132,13 @@ def rowStatus (rows : Json) (name : String) : String :=
 def rowNames (rows : Json) : Array String :=
   match rows with
   | .obj kvs => kvs.toArray.map (·.1)
+  | _ => #[]
+
+/-- The `phase:<span>` field names of one row (flat keys — same shape on
+    the PR side, in local baselines, and coming back from bencher). -/
+def rowPhaseKeys (rows : Json) (name : String) : Array String :=
+  match (rows.getObjVal? name).toOption with
+  | some (.obj kvs) => kvs.toArray.map (·.1) |>.filter (·.startsWith "phase:")
   | _ => #[]
 
 /-! ## compare -/
@@ -243,6 +251,32 @@ def renderCompare (a : CompareArgs) : String := Id.run do
   else if (rowNames a.prRows).isEmpty then
     out := out.push "" |>.push
       "_⚠️ no PR-side results (see the workflow logs)._"
+  -- Per-phase drill-down: collapsible, one mini-table per constant, only
+  -- for constants where either side carries `phase:<span>` fields (aiur
+  -- witness/commit/quotient breakdowns, zkVM coarse phases, …).
+  let mut detail : Array String := #[]
+  for n in names do
+    let keys := (rowPhaseKeys a.mainRows n ++ rowPhaseKeys a.prRows n).foldl
+      (fun acc k => if acc.contains k then acc else acc.push k) #[]
+    if keys.isEmpty then continue
+    detail := detail.push "" |>.push s!"**`{n}`**" |>.push ""
+      |>.push "| phase | main | PR | Δ% |" |>.push "|---|---|---|---|"
+    for k in keys.qsort (· < ·) do
+      let mv := rowNum a.mainRows n k
+      let pv := rowNum a.prRows n k
+      let delta := match mv, pv with
+        | some m, some p =>
+          if m != 0.0 then
+            let dp := (p - m) / m * 100.0
+            (if dp >= 0.0 then "+" else "") ++ fmtF dp 1 ++ "%"
+          else "n/a"
+        | _, _ => "n/a"
+      detail := detail.push
+        s!"| `{k.drop 6}` | {human mv k} | {human pv k} | {delta} |"
+  if !detail.isEmpty then
+    out := ((out.push "" |>.push "<details>"
+      |>.push "<summary>per-phase drill-down</summary>") ++ detail)
+      |>.push "" |>.push "</details>"
   return "\n".intercalate out.toList
 
 def metricsFor (cfg : Json) (backend mode : String) : Array String :=

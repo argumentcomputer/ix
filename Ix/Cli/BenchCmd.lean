@@ -11,12 +11,14 @@
      compile IS the benchmark);
   3. spawns the cell's measured tool — `bench-typecheck` (aiur),
      `zisk-host`/`sp1-host` (zkVM execute), `ix check-rs` (ooc),
-     `ix compile` (compile) — with the full name list, wrapped in the RAM
-     watchdog (`watchdog.sh`, TERM → grace → KILL);
-  4. on an abnormal exit, marks the in-flight constant's row `status: oom`
-     (preserving any partial metrics the tool flushed) and respawns with the
-     remaining names — one constant's death costs one constant;
-  5. gates the cell on the row contract (`Ix.Benchmark.Results`): exit 3
+     `ix compile` (compile) — wrapped in the RAM watchdog (`watchdog.sh`,
+     TERM → grace → KILL). The per-constant backends (aiur, zkVM) spawn
+     ONE PROCESS PER CONSTANT: a kill costs exactly that constant (its row
+     is marked `status: oom`, keeping whatever the tool flushed), and each
+     spawn's texray window (`<out>.spans`) belongs wholly to it, folded
+     into the row as flat `phase:<span>` fields — independent bencher
+     measures with no attribution machinery;
+  4. gates the cell on the row contract (`Ix.Benchmark.Results`): exit 3
      when any row is `rejected`, exit 1 when NO rows were produced, else 0.
 
   Every tool self-reports through the same `--json` results-rows contract,
@@ -139,48 +141,61 @@ def markOom (out : String) (name : String) : IO Unit := do
     (rows.setObjVal! name (row.setObjVal! "status" (Lean.Json.str "oom"))
       |>.compress)
 
-/-- Names from `remaining` that have no row in `out` yet. -/
-def namesWithoutRows (out : String) (remaining : Array String) :
-    IO (Array String) := do
-  let rows ← readRows out
-  return remaining.filter fun n => (rows.getObjVal? n).toOption.isNone
+/-- Sum a texray spans JSONL window (`{"span": s, "seconds": n}` per line)
+    by span name. Missing or unparseable content contributes nothing. -/
+def readSpans (path : String) : IO (Array (String × Float)) := do
+  if !(← FilePath.pathExists path) then return #[]
+  let mut acc : Array (String × Float) := #[]
+  for line in (← IO.FS.readFile path).splitOn "\n" do
+    if let .ok j := Lean.Json.parse line then
+      let span := (j.getObjVal? "span").toOption.bind (·.getStr?.toOption)
+      let secs := match (j.getObjVal? "seconds").toOption with
+        | some (.num n) => some n.toFloat
+        | _ => none
+      if let (some s, some v) := (span, secs) then
+        match acc.findIdx? (·.1 == s) with
+        | some i => acc := acc.set! i (s, acc[i]!.2 + v)
+        | none => acc := acc.push (s, v)
+  return acc
 
-/-- Run a per-constant tool over `names` with crash isolation: on an
-    abnormal exit (watchdog kill, kernel OOM, crash) the in-flight
-    constant — the first remaining name without a row — is marked
-    `status: oom` and the tool respawns with the rest. One constant's
-    death costs one constant; O(failures) respawns, not O(names).
+/-- Fold a spawn's texray window (`<out>.spans`) into its constant's row as
+    flat `phase:<span>` fields — the aiur prover's tracing spans and the
+    zkVM hosts' `record_manual` entries alike — then drop the window file.
+    The keys pass straight through `bmf` as independent bencher measures
+    and come back from `fetch-main` in the same shape. No row (the tool
+    died before writing one) → nothing to attach the spans to. -/
+def mergeSpans (out : String) (name : String) : IO Unit := do
+  let spansPath := out ++ ".spans"
+  let spans ← readSpans spansPath
+  if !spans.isEmpty then
+    let rows ← readRows out
+    if let some row := (rows.getObjVal? name).toOption then
+      let row := spans.foldl (init := row) fun r (s, v) =>
+        r.setObjVal! s!"phase:{s}" (jsonRound 6 v)
+      IO.FS.writeFile out ((rows.setObjVal! name row).compress)
+  if ← FilePath.pathExists spansPath then
+    IO.FS.removeFile spansPath
 
-    `spawn` receives the names file to run. Exits the loop on 0 (done) and
-    on `exitRejected` (the tool fail-fasts after flushing the rejected row;
-    the final gate reddens the cell from the rows). -/
-def resumeLoop (out : String) (names : Array String)
-    (namesFile : String) (spawn : String → IO UInt32) : IO Unit := do
-  let mut remaining := names
-  while !remaining.isEmpty do
-    IO.FS.writeFile namesFile ("\n".intercalate remaining.toList ++ "\n")
-    let exit ← spawn namesFile
-    if exit == 0 || exit == exitRejected then
+/-- Run a per-constant tool: ONE PROCESS PER CONSTANT, so a kill costs
+    exactly that constant with no resume inference, and each spawn's texray
+    window (`<out>.spans`, truncated by the tool at startup) belongs wholly
+    to it. Per exit: ≥128 (watchdog TERM/KILL or the kernel OOM killer) →
+    mark the row `oom` (keeping whatever the tool flushed, spans included)
+    and continue; `exitRejected` → the rejected row is on disk, continue
+    (the final gate reddens the cell); any other nonzero exit is
+    deterministic (usage error, missing input, crash on startup) and would
+    repeat for every remaining name — abort loudly. -/
+def runPerConstant (out : String) (names : Array String)
+    (spawn : String → IO UInt32) : IO Unit := do
+  for name in names do
+    let exit ← spawn name
+    if exit != 0 && exit != exitRejected && exit < 128 then
+      IO.eprintln s!"[bench] tool failed on '{name}' (exit {exit}, not a kill); aborting the remaining names"
       return
-    -- Only a KILLED tool (≥128: the watchdog's TERM/KILL or the kernel OOM
-    -- killer) implicates the in-flight constant. Any other failure is
-    -- deterministic (usage error, missing input, crash on startup) —
-    -- poisoning and respawning would just relabel every remaining constant
-    -- as oom, one spawn at a time (e.g. a base-side binary that predates a
-    -- flag this side passes).
-    if exit < 128 then
-      IO.eprintln s!"[bench] tool failed (exit {exit}, not a kill); aborting the remaining {remaining.size} name(s)"
-      return
-    let missing ← namesWithoutRows out remaining
-    match missing[0]? with
-    | none =>
-      -- Every requested name has a row; the kill landed after the last
-      -- row (e.g. teardown) — nothing to resume.
-      return
-    | some poisoned =>
-      IO.eprintln s!"[bench] '{poisoned}' killed (exit {exit}); recording oom and resuming"
-      markOom out poisoned
-      remaining := missing.filter (· != poisoned)
+    if exit ≥ 128 then
+      IO.eprintln s!"[bench] '{name}' killed (exit {exit}); recording oom"
+      markOom out name
+    mergeSpans out name
 
 /-- Ensure the env's `.ixe` exists at `<repo>/<env>.ixe`, compiling it when
     absent (or when reuse is off). Returns the `.ixe` path. -/
@@ -329,18 +344,24 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
       #["check-rs", ixe, "--anon", "--json", out, "--json-name", info.key]
     if exit != 0 && exit != exitRejected then
       IO.eprintln s!"[bench] whole-env check failed (exit {exit})"
-    -- … plus one full-closure row per primary, env loaded once.
+    -- … plus one full-closure row per primary. ONE process for all names
+    -- (unlike the per-constant backends below): the check-rs rows mode
+    -- attributes per name internally with the env loaded once — a
+    -- per-constant process would re-pay the multi-minute Mathlib env parse
+    -- per name — and out-of-circuit checks don't approach the RAM ceiling.
     if !names.isEmpty then
-      resumeLoop out names namesFile fun nf =>
-        runGuarded watchdog ceilingGb ix
-          #["check-rs", ixe, "--anon", "--consts-file", nf, "--json", out]
+      IO.FS.writeFile namesFile ("\n".intercalate names.toList ++ "\n")
+      let exit ← runGuarded watchdog ceilingGb ix
+        #["check-rs", ixe, "--anon", "--consts-file", namesFile, "--json", out]
+      if exit != 0 && exit != exitRejected then
+        IO.eprintln s!"[bench] per-constant checks failed (exit {exit})"
   | "aiur" =>
     let ixe ← ensureIxe repo info (p.hasFlag "reuse-ixe")
     let bt ← resolveBin repo "bench-typecheck"
     let modeArgs := if mode == "execute" then #["--execute-only"] else #[]
-    resumeLoop out names namesFile fun nf =>
+    runPerConstant out names fun name =>
       runGuarded watchdog ceilingGb bt
-        (#["--ixe", ixe, "--consts-file", nf, "--json", out, "--texray"]
+        (#["--ixe", ixe, "--consts", name, "--json", out, "--texray"]
           ++ modeArgs)
   | "zisk" | "sp1" =>
     if mode != "execute" then
@@ -361,34 +382,29 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
     let bin := (← IO.FS.realPath s!"{work}/target/release/{host}").toString
     -- Heavy-tier zisk constants run as their closure-shard partition (a
     -- single full-closure leaf would blow the runner's RAM); everything
-    -- else goes through the host's own per-constant loop.
+    -- else runs as one host process per constant like the aiur cells.
     let heavy := if backend == "zisk"
       then (selected.filter (·.tier == "heavy")).map (·.name) else #[]
     let light := names.filter (!heavy.contains ·)
-    if !light.isEmpty then
-      resumeLoop outAbs light namesFile fun nf => do
-        let nfAbs := (← IO.FS.realPath nf).toString
-        runGuarded watchdog ceilingGb bin
-          #["--execute", "--ixe", ixeAbs, "--consts-file", nfAbs,
-            "--json", outAbs, "--texray"] (cwd := some work)
+    runPerConstant outAbs light fun name =>
+      runGuarded watchdog ceilingGb bin
+        #["--execute", "--ixe", ixeAbs, "--consts", name,
+          "--json", outAbs, "--texray"] (cwd := some work)
     let ix ← resolveBin repo "ix"
-    for name in heavy do
+    runPerConstant outAbs heavy fun name => do
       let plan ← cutClosureShards ix ixe s!"{repo}/zkshards-{env}"
         name ceilingGb
-      let exit ← match plan with
-        | some (subIxe, manifest) =>
-          runGuarded watchdog ceilingGb bin
-            #["--execute", "--ixe", (← IO.FS.realPath subIxe).toString,
-              "--shard-plan", (← IO.FS.realPath manifest).toString,
-              "--json", outAbs, "--json-name", name, "--texray"]
-            (cwd := some work)
-        | none =>
-          runGuarded watchdog ceilingGb bin
-            #["--execute", "--ixe", ixeAbs, "--consts", name,
-              "--json", outAbs, "--texray"] (cwd := some work)
-      if exit != 0 && exit != exitRejected then
-        IO.eprintln s!"[bench] heavy '{name}' died (exit {exit}); recording oom"
-        markOom outAbs name
+      match plan with
+      | some (subIxe, manifest) =>
+        runGuarded watchdog ceilingGb bin
+          #["--execute", "--ixe", (← IO.FS.realPath subIxe).toString,
+            "--shard-plan", (← IO.FS.realPath manifest).toString,
+            "--json", outAbs, "--json-name", name, "--texray"]
+          (cwd := some work)
+      | none =>
+        runGuarded watchdog ceilingGb bin
+          #["--execute", "--ixe", ixeAbs, "--consts", name,
+            "--json", outAbs, "--texray"] (cwd := some work)
   | other =>
     p.printError s!"error: backend '{other}' has no runner"
     return exitUsage
