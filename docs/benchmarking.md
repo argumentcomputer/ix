@@ -108,12 +108,13 @@ and render in the PR comment as a collapsible per-constant drill-down.
 ## RAM: watchdog, OOM rows, sharding
 
 `ix bench run` wraps each tool in `.github/scripts/watchdog.sh <ceiling-gb>
-<cmd>`. On the CI runners (cgroup v2 + passwordless sudo) that is a cgroup
-`memory.max` cap: the kernel limits the tree's *resident* memory and
-OOM-kills the whole group atomically at the ceiling — no sampling race, no
-virtual-memory false trips, multi-process sums included. Elsewhere it
-falls back to `RLIMIT_DATA` (the over-budget allocation fails inside the
-process) plus a ~1s tree-RSS sampler. A killed per-constant process gets
+<cmd>`: a cgroup `memory.max` cap — the kernel limits the tree's
+*resident* memory and OOM-kills the whole group atomically at the ceiling
+(exit 137). No sampling race, no virtual-memory false trips, and
+multi-process sums (Zisk's ASM services) share the one budget. It needs
+cgroup v2 and passwordless sudo (the CI runners; any modern Linux box) and
+**fails loudly without them** — a run whose ceiling can't be enforced is
+not a benchmark run. A killed per-constant process gets
 its row marked `status: oom`
 (keeping whatever was flushed, spans included) and the loop continues — one
 constant's death costs one constant. A kill that lands *after* the row

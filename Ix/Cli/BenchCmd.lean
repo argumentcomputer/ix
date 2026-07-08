@@ -170,13 +170,12 @@ def BackendSpec.testbedFor (b : BackendSpec) (mode : String) : Option String :=
 def BackendSpec.metricsFor (b : BackendSpec) (mode : String) : List String :=
   ((b.metrics.find? (·.1 == mode)).map (·.2)).getD []
 
-/-- Default RAM watchdog ceiling. On CI this is a cgroup `memory.max` —
-    a kernel cap on the tree's RESIDENT memory (OOM-kill at the line,
-    exit 137). The local fallback is RLIMIT_DATA + a tree-RSS sampler;
-    the rlimit caps virtual data mappings, which allocator caching can
-    push well above true RSS on big Lean-env workloads. `--ceiling-gb`
-    overrides; on machines with less RAM than this, pass a value that
-    actually protects them. -/
+/-- Default RAM watchdog ceiling, enforced as a cgroup `memory.max` — a
+    kernel cap on the tree's RESIDENT memory (OOM-kill at the line, exit
+    137). The watchdog needs cgroup v2 + passwordless sudo and FAILS
+    LOUDLY without them: a run whose ceiling can't be enforced is not a
+    benchmark run. `--ceiling-gb` overrides; on machines with less RAM
+    than this, pass a value that actually protects them. -/
 def defaultCeilingGb : Nat := 120
 
 /-- Resolve a tool binary: prefer the in-tree build under `repo` (so a base
@@ -386,13 +385,14 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
   let watchdogPath := (p.flag? "watchdog").map (·.as! String)
     |>.getD s!"{repo}/.github/scripts/watchdog.sh"
   -- Absolute: the zkVM hosts spawn with their workspace as cwd, where a
-  -- repo-relative script path would fail to exec.
+  -- repo-relative script path would fail to exec. No watchdog, no run —
+  -- an unenforced ceiling is not a benchmark run.
   let watchdog : Option String ←
     if ← FilePath.pathExists watchdogPath then
       pure (some (← IO.FS.realPath watchdogPath).toString)
     else do
-      IO.eprintln s!"[bench] warning: no watchdog at {watchdogPath}; running unguarded"
-      pure none
+      p.printError s!"error: no watchdog at {watchdogPath} (--watchdog overrides)"
+      return exitUsage
   let csv := (p.flag? "csv").map (·.as! String)
     |>.getD s!"{repo}/Benchmarks/Vectors.csv"
   let rows := parseVectorsCsv (← IO.FS.readFile csv)
