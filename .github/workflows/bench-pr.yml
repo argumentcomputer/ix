@@ -16,9 +16,9 @@
 # `sp1` / `ooc` run `execute`; `compile` runs `ix compile <env>.lean →
 # <env>.ixe` (the same cell bench-main.yml uploads under testbed
 # `ix-compile-*`). The optional bare `execute` token flips `aiur` to
-# execute-only (Phase 1, skipping the prove); bench-main uploads only
-# default modes, so that cell's main side is always measured on the base
-# checkout rather than fetched from bencher.
+# execute-only (Phase 1, skipping the prove); bench-main runs both aiur
+# modes as separate cells on separate testbeds, so either kind of cell
+# fetches a cached main-side baseline from bencher.
 #
 # Each matrix cell is one `ix bench run` per side, driven by the PR's `ix`
 # (`--repo` points it at the checkout to measure). main's numbers come from

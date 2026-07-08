@@ -378,24 +378,19 @@ def runFetchMainCmd (p : Cli.Parsed) : IO UInt32 := do
     |>.getD "Benchmarks/bench-config.json"
   let mode := (p.flag? "mode").map (·.as! String) |>.getD ""
   let out := (p.flag? "out").map (·.as! String) |>.getD "main.json"
-  -- bench-main uploads only each backend's DEFAULT mode, and the shared
-  -- measure names (peak-rss, throughput) mean that mode's phase. A
-  -- non-default cell (e.g. `!benchmark aiur execute`) must not read the
-  -- default mode's numbers as its own — exit 3 so the caller measures the
-  -- base checkout instead.
-  let defaultMode :=
-    ((cfg.getObjVal? "backends").toOption.bind fun bs =>
-      (bs.getObjVal? backend).toOption.bind fun b =>
-        (b.getObjVal? "default_mode").toOption.bind (·.getStr?.toOption))
-  if defaultMode != some mode then
-    IO.println s!"fetch-main: bencher stores only {backend}'s default mode \
-      ({defaultMode.getD "?"}), not {mode}; base run will measure"
-    return exitRejected
+  -- `testbed` is a string, or an object keyed by mode when a backend runs
+  -- one bench-main cell per mode (aiur): shared measure names like
+  -- `peak-rss` mean different phases per mode, so each mode stores on its
+  -- own testbed.
   let testbed :=
     ((cfg.getObjVal? "backends").toOption.bind fun bs =>
       (bs.getObjVal? backend).toOption.bind fun b =>
         if (metricsFor cfg backend mode).isEmpty then none
-        else (b.getObjVal? "testbed").toOption.bind (·.getStr?.toOption))
+        else match (b.getObjVal? "testbed").toOption with
+          | some (.str s) => some s
+          | some t@(.obj _) =>
+            (t.getObjVal? mode).toOption.bind (·.getStr?.toOption)
+          | _ => none)
   let some testbed := testbed
     | IO.println s!"fetch-main: no testbed for {backend}/{mode}"
       return exitUsage

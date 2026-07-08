@@ -10,8 +10,11 @@
     "aiur": {
       "enabled": true,
       "default_mode": "prove",
-      "testbed": "aiur-prove-x64-32x",
-      "_comment": "bencher stores the prove cell only — it simulates the real workload and measures Phase 1 (execute-time, fft-cost) on the way. The execute metrics entry serves execute-only runs (locally, or `!benchmark … execute` on a PR), whose main side is always a fresh base run: fetch-main exits 3 for non-default modes.",
+      "testbed": {
+        "prove": "aiur-prove-x64-32x",
+        "execute": "aiur-execute-x64-32x"
+      },
+      "_comment": "One bench-main cell per mode, each on its own testbed — the shared measure names (peak-rss, throughput) mean that mode's phase, and a `!benchmark aiur [execute]` PR cell always finds a cached baseline on bencher. prove is the default: the real-workload simulation (it measures Phase 1 en route); execute is the fast Phase-1-only signal.",
       "metrics": {
         "prove":   ["fft-cost", "execute-time", "prove-time", "verify-time", "proof-size", "peak-rss"],
         "execute": ["fft-cost", "execute-time", "throughput", "peak-rss"]

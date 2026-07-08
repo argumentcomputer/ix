@@ -76,9 +76,9 @@ def cmd_parse():
         # Cells run the backend's default mode (aiur: prove — the cell that
         # simulates the real workload, measuring Phase 1 inside it). The
         # bare `execute` token flips a backend with an execute metrics
-        # entry to execute-only — a real switch only for aiur. bench-main
-        # uploads default modes only, so such a cell's main side is always
-        # measured on the base checkout (fetch-main exits 3 for it).
+        # entry to execute-only — a real switch only for aiur, whose two
+        # modes bench-main runs as separate cells on separate testbeds, so
+        # either kind of PR cell finds a cached bencher baseline.
         if execute_flag and "execute" in table[b].get("metrics", {}):
             return "execute"
         return table[b]["default_mode"]

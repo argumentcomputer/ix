@@ -222,14 +222,15 @@ jobs:
             --threshold-lower-boundary 0
 
   # Restore each matrix job's `.ixe` from the cache and run the Aiur execute +
-  # Aiur prove benchmark over the primary constants — the cell that
-  # simulates the real workload: the full STARK prove under the RAM
-  # watchdog, with per-constant subprocess isolation and a `status: oom`
-  # row (keeping any Phase-1 metrics flushed before the kill) for a
-  # too-large prove. Phase 1 (witness generation) runs inside this same
-  # process as a prerequisite, so execute-time / fft-cost are measured en
-  # route — no separate execute cell uploads; execute-only mode
-  # (`ix bench run --backend aiur --mode execute`) is a local dev tool.
+  # Aiur benchmark over the primary constants, one cell per mode, each on
+  # its own testbed (they share measure names — peak-rss, throughput —
+  # that mean that mode's phase, and a `!benchmark aiur [execute]` PR cell
+  # always finds a cached baseline this way):
+  #   - `prove` — the real-workload simulation: the full STARK prove under
+  #     the RAM watchdog, with per-constant subprocess isolation and a
+  #     `status: oom` row (keeping any Phase-1 metrics flushed before the
+  #     kill) for a too-large prove.
+  #   - `execute` — the fast Phase-1-only signal (witness generation).
   # No compiler run here: `ix bench run --reuse-ixe` picks up the cached
   # `.ixe`.
   aiur:
@@ -240,6 +241,7 @@ jobs:
       fail-fast: false
       matrix:
         bench: ${{ fromJson(needs.plan.outputs.bench-envs) }}
+        mode: [execute, prove]
     steps:
       - uses: actions/checkout@v6
         with:
@@ -273,7 +275,7 @@ jobs:
       - name: Run Aiur typecheck benchmark
         run: |
           ix bench run --backend aiur --env ${{ matrix.bench.env }} \
-            --mode prove --reuse-ixe --out bench.json
+            --mode ${{ matrix.mode }} --reuse-ixe --out bench.json
       # Upload whatever clean rows exist even when the run step reddened the
       # job — bmf drops every non-ok row, so a rejected or OOM'd constant
       # never reaches bencher.
@@ -287,17 +289,19 @@ jobs:
       # deterministic → pinned exactly (0/0). fft-cost is deterministic but
       # only ever drops on a real Aiur win, so it rides an upper-only 5%
       # bound (flag a regression, let wins through) rather than a hard pin.
-      # The wall-clock/RAM/rate measures (prove-time, execute-time,
-      # peak-rss — the prover's high-water — and throughput,
-      # constants/prove-time) ride percentage bounds. The per-phase
-      # `phase:<span>` measures are uploaded for trend visibility but
-      # intentionally left un-thresholded (noisy and dynamically named;
-      # the PR-comment drill-down does the phase-level alerting).
+      # The wall-clock/RAM/rate measures ride percentage bounds; peak-rss
+      # and throughput are phase-scoped by the CELL (execute vs prove
+      # testbed), and prove-time/verify-time/proof-size exist only on the
+      # prove testbed — a threshold naming an absent measure just sits
+      # empty there. The per-phase `phase:<span>` measures are uploaded for
+      # trend visibility but intentionally left un-thresholded (noisy and
+      # dynamically named; the PR-comment drill-down does the phase-level
+      # alerting).
       - uses: ./.github/actions/bencher-track
         if: ${{ !cancelled() }}
         with:
-          testbed: aiur-prove-x64-32x
-          workload: aiur-prove
+          testbed: aiur-${{ matrix.mode }}-x64-32x
+          workload: aiur-${{ matrix.mode }}
           file: aiur.json
           key: ${{ secrets.BENCHER_API_KEY }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
