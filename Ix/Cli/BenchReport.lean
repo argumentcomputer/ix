@@ -251,10 +251,11 @@ def renderCompare (a : CompareArgs) : String := Id.run do
   else if (rowNames a.prRows).isEmpty then
     out := out.push "" |>.push
       "_⚠️ no PR-side results (see the workflow logs)._"
-  -- Per-phase drill-down: one collapsed section per cell, with each
-  -- constant NESTED as its own collapsible mini-table (`phase | main | PR
-  -- | Δ%`) — only for constants where either side carries `phase:<span>`
-  -- fields (aiur witness/commit/quotient breakdowns, zkVM coarse phases).
+  -- Per-phase drill-down: the main table above carries every constant's
+  -- high-level row; below it, each constant with `phase:<span>` fields
+  -- (aiur witness/commit/quotient breakdowns, zkVM coarse phases) gets its
+  -- own collapsed mini-table (`phase | main | PR | Δ%`), opened as
+  -- desired.
   let mut detail : Array String := #[]
   for n in names do
     let keys := (rowPhaseKeys a.mainRows n ++ rowPhaseKeys a.prRows n).foldl
@@ -277,9 +278,7 @@ def renderCompare (a : CompareArgs) : String := Id.run do
         s!"| `{k.drop 6}` | {human mv k} | {human pv k} | {delta} |"
     detail := detail.push "" |>.push "</details>"
   if !detail.isEmpty then
-    out := ((out.push "" |>.push "<details>"
-      |>.push "<summary>per-phase drill-down</summary>") ++ detail)
-      |>.push "" |>.push "</details>"
+    out := (out.push "" |>.push "**per-phase drill-down**") ++ detail
   return "\n".intercalate out.toList
 
 def metricsFor (cfg : Json) (backend mode : String) : Array String :=
