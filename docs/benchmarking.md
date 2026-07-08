@@ -134,11 +134,13 @@ breakdowns. bench-main's compile job pre-cuts these artifacts
   records it). `primary: 1` is the default `!benchmark` subset.
 - **The registry** (`envSpecs`/`backendSpecs` in `Ix/Cli/BenchCmd.lean`) —
   everything else: env modules, backends (disabled reason, default mode,
-  bencher testbeds, compare columns), the runner, the watchdog ceiling.
-  Typed Lean data with one owner: the workflows never read it directly —
-  `ix bench ci matrix` serves the job matrices and `ix bench ci parse` the
-  `!benchmark` cells, both post-build. (`bencher-thresholds-reset.yml`
-  keeps a static workload list with a sync note.)
+  bencher testbeds, compare columns). Typed Lean data with one owner: the
+  workflows never read it directly — `ix bench ci matrix` serves the job
+  matrices and `ix bench ci parse` the `!benchmark` cells, both post-build.
+  (`bencher-thresholds-reset.yml` keeps a static workload list with a sync
+  note.) CI-only data stays out of it: the runner name lives with the `ci`
+  adapters, and the watchdog ceiling defaults to the machine's RAM minus
+  8 GiB headroom wherever the run happens.
 
 ## `!benchmark` grammar
 

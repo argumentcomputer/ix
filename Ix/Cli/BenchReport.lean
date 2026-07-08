@@ -525,6 +525,10 @@ def runMatrixCmd (p : Cli.Parsed) : IO UInt32 := do
 
 /-! ## parse -/
 
+/-- The runner every CI benchmark cell measures on — a `runs-on` field for
+    the workflows' job matrices, meaningless locally. -/
+def ciRunner : String := "warp-ubuntu-latest-x64-32x"
+
 /-- Parse a `!benchmark` command into the cells it schedules — locally a
     dry-run preview (`ix bench ci parse --comment "!benchmark aiur"` prints
     the summary and cell list), in CI the matrix generator. The text comes
@@ -609,7 +613,7 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
       cells := cells.push <| Json.mkObj
         [("backend", Json.str b.name), ("env", Json.str e),
          ("mode", Json.str (modeFor b)),
-         ("runner", Json.str Ix.Cli.BenchCmd.benchRunner),
+         ("runner", Json.str ciRunner),
          ("label", Json.str s!"{b.name}-{e}-{modeFor b}")]
 
   let modes := " ".intercalate
