@@ -6,7 +6,6 @@
 #      with a note in the config summary)
 #   BENCH_ENVS=initStd,mathlib     # which compiled envs (default initStd)
 #   BENCH_FULL=1                   # run the full curated set, not just primary
-#   BENCH_TIER=cheap|heavy|all     # tier override (default: all)
 #   BENCH_SHARD=1                  # restrict to the multi-shard target constants
 #   RUST_LOG=info                  # passthrough env (allowlisted)
 #
@@ -65,7 +64,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.parse.outputs.matrix }}
-      tier: ${{ steps.parse.outputs.tier }}
       shard: ${{ steps.parse.outputs.shard }}
       full: ${{ steps.parse.outputs.full }}
       passthrough-env: ${{ steps.parse.outputs.passthrough-env }}
@@ -171,7 +169,6 @@ jobs:
       LABEL: ${{ matrix.cell.label }}
       BASE_SHA: ${{ needs.setup.outputs.base-sha }}
       HEAD_SHA: ${{ needs.setup.outputs.head-sha }}
-      TIER: ${{ needs.setup.outputs.tier }}
       SHARD: ${{ needs.setup.outputs.shard }}
       FULL: ${{ needs.setup.outputs.full }}
     steps:
@@ -264,7 +261,6 @@ jobs:
           fi
           flags=""
           [ "$FULL" = 1 ] && flags="$flags --full"
-          [ -n "$TIER" ] && flags="$flags --tier $TIER"
           [ "$SHARD" = 1 ] && flags="$flags --shard-only"
           ix bench run --backend "$BACKEND" --env "$BENV" --mode "$MODE" \
             --reuse-ixe --out "$GITHUB_WORKSPACE/pr.json" $flags
@@ -406,7 +402,6 @@ jobs:
           fi
           flags=""
           [ "$FULL" = 1 ] && flags="$flags --full"
-          [ -n "$TIER" ] && flags="$flags --tier $TIER"
           [ "$SHARD" = 1 ] && flags="$flags --shard-only"
           if [ -s "$GITHUB_WORKSPACE/main.json" ] && [ -s "$GITHUB_WORKSPACE/missing.txt" ]; then
             flags="$flags --names-file $GITHUB_WORKSPACE/missing.txt"

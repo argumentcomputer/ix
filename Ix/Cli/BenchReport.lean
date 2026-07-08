@@ -45,9 +45,11 @@ def metricKind (metric : String) : String :=
 /-- Display label for a metric column. Keys stay the bencher measure slugs
     (renaming one would orphan its threshold/history); only the table
     rendering differs. `file-size` is the serialized `.ixe` env — bencher
-    plots it as "Environment Size". -/
+    plots it as "Environment Size"; `peak-rss` reads better as plain RAM. -/
 def metricLabel (metric : String) : String :=
-  if metric == "file-size" then "env-size" else metric
+  if metric == "file-size" then "env-size"
+  else if metric == "peak-rss" then "peak-ram"
+  else metric
 
 /-- Group a digit string by thousands: `"105492"` → `"105,492"`. -/
 private def commafy (s : String) : String := Id.run do

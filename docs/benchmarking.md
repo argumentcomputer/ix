@@ -119,7 +119,6 @@ breakdowns. bench-main's compile job pre-cuts these artifacts
 !benchmark ([aiur] [zisk] [ooc] [compile] | all) [execute]
 BENCH_ENVS=initStd,mathlib     # default initStd
 BENCH_FULL=1                   # full curated set, not just primary
-BENCH_TIER=cheap|heavy|all     # tier filter
 BENCH_SHARD=1                  # only the multi-shard target constants
 RUST_LOG=info                  # allowlisted passthrough env
 ```

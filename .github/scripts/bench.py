@@ -18,7 +18,7 @@ import os
 import sys
 
 CONFIG_PATH = "Benchmarks/bench-config.json"
-CONFIG_KEYS = {"BENCH_ENVS", "BENCH_TIER", "BENCH_SHARD", "BENCH_FULL"}
+CONFIG_KEYS = {"BENCH_ENVS", "BENCH_SHARD", "BENCH_FULL"}
 PASSTHROUGH_KEYS = {"RUST_LOG", "WITHOUT_VK_VERIFICATION", "RUSTFLAGS"}
 
 
@@ -66,9 +66,6 @@ def cmd_parse():
 
     envs = [e.strip() for e in cfg_kv.get("BENCH_ENVS", "initStd").split(",") if e.strip()]
     envs = [e for e in envs if e in env_table] or ["initStd"]
-    tier = cfg_kv.get("BENCH_TIER", "")
-    if tier not in ("cheap", "heavy", "all"):
-        tier = ""             # empty ⇒ `ix bench run` derives it from the mode
     shard = "1" if cfg_kv.get("BENCH_SHARD") == "1" else "0"
     full = "1" if cfg_kv.get("BENCH_FULL") == "1" else "0"  # full set vs primary subset
 
@@ -96,7 +93,7 @@ def cmd_parse():
     modes = " ".join(f"{b}={mode_for(b)}" for b in backends)
     summary = (f"backends: `{modes}` · envs: `{','.join(envs)}` · "
                f"set: `{'full' if full == '1' else 'primary'}` · "
-               f"tier: `{tier or 'auto'}` · shard: `{shard}`")
+               f"shard: `{shard}`")
     for b in skipped:
         reason = table[b].get("disabled_reason", "disabled in bench-config.json")
         summary += f" · skipped `{b}` ({reason})"
@@ -105,7 +102,7 @@ def cmd_parse():
 
     with open(os.environ.get("GITHUB_OUTPUT", "/dev/stdout"), "a") as f:
         f.write(f"matrix={json.dumps(cells)}\n")
-        f.write(f"tier={tier}\nshard={shard}\nfull={full}\n")
+        f.write(f"shard={shard}\nfull={full}\n")
         f.write(f"config-summary={summary}\n")
         f.write("passthrough-env<<PTENV\n" + "\n".join(passthrough)
                 + ("\n" if passthrough else "") + "PTENV\n")

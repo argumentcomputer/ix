@@ -1,8 +1,8 @@
 # Benchmark constant vectors -- single shared source of truth for which
-# constants to run. Consumed identically by Aiur (bench-typecheck --consts-file),
-# the Zisk/SP1 hosts (--consts loop), and CI shell (awk). One row per curated
-# constant. Measurements (fft, cycles, prove-time, …) live in the benchmark
-# results JSON each tool emits and in bencher.dev — never in this file.
+# constants to run, selected per cell by `ix bench run` (see
+# Ix/Cli/BenchCmd.lean; bench-config.json holds everything that isn't a
+# per-constant row). Measurements (fft, cycles, prove-time, …) live in the
+# benchmark results JSON each tool emits and in bencher.dev — never here.
 #
 # Columns (shard_target and primary default to 0 when trailing; most rows only
 # carry the first three):
@@ -10,18 +10,16 @@
 #   env          compile target / .ixe it resolves in: initStd | lean | mathlib.
 #   tier         cheap = prove-feasible on a CI runner; heavy = a single-shard
 #                prove exceeds the RAM watchdog ceiling (expect an OOM row).
-#                Consumed by bench.py manifest only (BENCH_TIER filter; the
-#                non-primary prove set defaults to cheap) — run.sh attempts a
-#                full prove of every selected constant regardless of tier.
-#   shard_target 1 = heavy constant designated as a multi-shard prove target.
-#   primary      1 = part of the primary subset spanning shape + the cheap->heavy
-#                cost range. Default for the !benchmark PR comment and the
-#                bencher prove / zkVM jobs (full set via BENCH_FULL=1). Heavy
-#                reps run only in execute/native; prove mode keeps the cheap
-#                primaries (tier filter).
-#
-# CI filters on the env column (not line number), so these '#' lines and the
-# header are skipped by: awk -F, '$1!~/^#/ && $1!="name" && $2==env ...'
+#                `ix bench run` proves every selected constant regardless of
+#                tier (--full prove runs default to cheap; --tier overrides);
+#                heavy zisk constants run as their closure-shard partition,
+#                pre-cut by `ix bench shard`.
+#   shard_target 1 = heavy constant designated as a multi-shard prove target
+#                (--shard-only restricts to these).
+#   primary      1 = part of the primary subset spanning shape + the
+#                cheap->heavy cost range. Default for the !benchmark PR
+#                comment and the bench-main cells (full set via BENCH_FULL=1
+#                / --full).
 name,env,tier,shard_target,primary
 HEq,initStd,cheap
 Nat,initStd,cheap
