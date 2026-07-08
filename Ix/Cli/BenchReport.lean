@@ -354,17 +354,28 @@ def runReportCmd (p : Cli.Parsed) : IO UInt32 := do
 
 /-! ## bmf -/
 
+/-- Measure slug for a per-shard breakdown key: the shard rows share the
+    parent row's measure vocabulary (`shard-cycles` → `cycles`,
+    `shard-time` → `execute-time`, `shard-peak-rss` → `peak-rss`). -/
+def shardMeasure (k : String) : String :=
+  if k == "shard-time" then "execute-time"
+  else if k.startsWith "shard-" then (k.drop 6).toString
+  else k
+
 /-- Rows JSON → Bencher Metric Format. Rows with `status ≠ ok` are dropped
     whole — a rejected or OOM'd constant must never become a bencher data
     point. Numeric fields (`phase:<span>` included) pass through as
-    measures; nested objects (`shard-cycles`, …) flatten to `<key>:<sub>`
-    measures. -/
+    measures. Nested per-shard objects (`shard-cycles: {"0": …}`) become
+    per-shard BENCHMARKS (`<name>/shard-0`) sharing the parent's measure
+    slugs — multiplicity belongs in bencher's benchmark dimension, not as
+    one measure per shard index. -/
 def toBmf (rows : Json) : Json := Id.run do
   let mut out : Array (String × Json) := #[]
   for name in rowNames rows do
     if rowStatus rows name != "ok" then continue
     let some row := (rows.getObjVal? name).toOption | continue
     let mut measures : Array (String × Json) := #[]
+    let mut shardRows : Array (String × Array (String × Json)) := #[]
     match row with
     | .obj kvs =>
       for (k, v) in kvs.toArray do
@@ -374,12 +385,17 @@ def toBmf (rows : Json) : Json := Id.run do
         | .obj sub =>
           for (subK, subV) in sub.toArray do
             if let .num _ := subV then
-              measures := measures.push
-                (s!"{k}:{subK}", Json.mkObj [("value", subV)])
+              let bench := s!"{name}/shard-{subK}"
+              let m := (shardMeasure k, Json.mkObj [("value", subV)])
+              shardRows := match shardRows.findIdx? (·.1 == bench) with
+                | some i => shardRows.modify i fun (b, ms) => (b, ms.push m)
+                | none => shardRows.push (bench, #[m])
         | _ => pure ()
     | _ => pure ()
     if !measures.isEmpty then
       out := out.push (name, Json.mkObj measures.toList)
+    for (bench, ms) in shardRows do
+      out := out.push (bench, Json.mkObj ms.toList)
   return Json.mkObj out.toList
 
 def runBmfCmd (p : Cli.Parsed) : IO UInt32 := do
