@@ -40,19 +40,22 @@ env:
 
 jobs:
   # Build + stage the `ix` and `bench-typecheck` binaries once, then restore
-  # them on the (more expensive) matrix runners.
+  # them on the matrix runners. Built ON a warp runner: `.cargo/config.toml`
+  # sets `-Ctarget-cpu=native`, and the warp fleet is CPU-uniform (AMD EPYC
+  # 9R45 / Intel, all AVX-512 — a big Plonky3 speedup), whereas ubuntu-latest
+  # is a host lottery (measured: 4 CPU models, AVX-512 on only ~18% of
+  # builds) that randomly flipped the binaries' instruction set between
+  # pushes. Consequence: every job that RUNS these binaries must also be on
+  # warp, or a non-AVX-512 GitHub host SIGILLs.
   build:
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-latest-x64-32x
     steps:
       - uses: actions/checkout@v6
       # Pinned Rust toolchain + cargo cache (~/.cargo + target/, via the action's
       # built-in rust-cache), so `lake build`'s cargo step doesn't recompile the
       # Plonky3/multi-stark deps from scratch on every run.
       - uses: actions-rust-lang/setup-rust-toolchain@v1
-      # `.cargo/config.toml` sets `-Ctarget-cpu=native`, and the binary is built
-      # once here (then only restored on the warp runners), so this build host's
-      # CPU fixes the instruction set baked in — incl. AVX-512, a big Plonky3
-      # speedup. Log it so a benchmark shift can be traced to a build-CPU change.
+      # Log the build CPU so a benchmark shift can be traced to a host change.
       - name: Log build CPU
         run: |
           lscpu
@@ -81,7 +84,8 @@ jobs:
   # job; only the downstream matrix jobs wait on it.
   plan:
     needs: build
-    runs-on: ubuntu-latest
+    # Runs the warp-built (AVX-512) `ix` — must be a warp host (see build).
+    runs-on: warp-ubuntu-latest-x64-32x
     outputs:
       bench-envs: ${{ steps.matrix.outputs.bench-envs }}
       zkvm-cells: ${{ steps.matrix.outputs.zkvm-cells }}

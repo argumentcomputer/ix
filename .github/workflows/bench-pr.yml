@@ -87,14 +87,16 @@ jobs:
   # and the Aiur prover), stage under ~/.local/bin, and cache by head SHA —
   # the matrix cells restore instead of re-running the full Lean build per
   # cell, and re-running !benchmark on the same commit skips the build
-  # entirely. ubuntu-latest mirrors bench-main.yml's build job so PR binaries
-  # carry the same instruction-set provenance as the binaries behind bencher's
-  # main-side numbers. The job ends by parsing the !benchmark command with
+  # entirely. Built on warp, mirroring bench-main.yml's build job, so PR
+  # binaries carry the same instruction-set provenance (uniform AVX-512
+  # fleet) as the binaries behind bencher's main-side numbers — and every
+  # job that RUNS them must be a warp host too, or a non-AVX-512 GitHub
+  # host SIGILLs. The job ends by parsing the !benchmark command with
   # the freshly built `ix bench ci parse` — the registry lives in Lean, so the
   # matrix can only exist post-build.
   build:
     needs: setup
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-latest-x64-32x
     outputs:
       matrix: ${{ steps.parse.outputs.matrix }}
       prep-envs: ${{ steps.parse.outputs.prep-envs }}
@@ -544,7 +546,8 @@ jobs:
     # Assemble even when benchmark cells failed (the tables carry the ❌
     # rows); the build job must have produced the binaries.
     if: always() && needs.setup.result == 'success' && needs.build.result == 'success'
-    runs-on: ubuntu-latest
+    # Runs the warp-built (AVX-512) `ix` — must be a warp host (see build).
+    runs-on: warp-ubuntu-latest-x64-32x
     permissions:
       contents: read
     steps:
