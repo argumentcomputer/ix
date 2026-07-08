@@ -47,8 +47,8 @@ green.
 | `bmf`        | rows → Bencher Metric Format (non-`ok` rows dropped) |
 | `fetch-main` | pull a base SHA's rows from bencher.dev (exit 3 = fall back to a local base run) |
 | `report`     | assemble per-cell tables into one Markdown report (CI posts it as the PR comment) |
-| `matrix`     | emit the workflows' job matrices from the registry |
-| `parse`      | `!benchmark` comment → job matrix (runs in the build job, right after `ix` exists) |
+| `ci matrix`  | emit the workflows' job matrices from the registry (CI adapter) |
+| `ci parse`   | `!benchmark` comment → job matrix (CI adapter; `--comment` pre-flights a comment locally) |
 
 ### Local usage
 
@@ -115,7 +115,7 @@ breakdowns. bench-main's compile job pre-cuts these artifacts
   everything else: env modules, backends (disabled reason, default mode,
   bencher testbeds, compare columns), the runner, the watchdog ceiling.
   Typed Lean data with one owner: the workflows never read it directly —
-  `ix bench matrix` serves the job matrices and `ix bench parse` the
+  `ix bench ci matrix` serves the job matrices and `ix bench ci parse` the
   `!benchmark` cells, both post-build. (`bencher-thresholds-reset.yml`
   keeps a static workload list with a sync note.)
 
@@ -129,7 +129,7 @@ BENCH_SHARD=1                  # only the multi-shard target constants
 RUST_LOG=info                  # allowlisted passthrough env
 ```
 
-Parsed by `ix bench parse` in the PR build job, right after the `ix`
+Parsed by `ix bench ci parse` in the PR build job, right after the `ix`
 binary exists — the registry lives in Lean, so nothing pre-build reads it
 (and no Python remains). Mode defaults per backend from the registry; the
 bare `execute` token flips `aiur` to Phase-1 only.
@@ -137,7 +137,7 @@ bare `execute` token flips `aiur` to Phase-1 only.
 ## CI shape
 
 **bench-main.yml**: `build` (compile `ix` + `bench-typecheck` once, cache by
-SHA) → `plan` (`ix bench matrix` → job matrices) + `compile` (per env:
+SHA) → `plan` (`ix bench ci matrix` → job matrices) + `compile` (per env:
 `ix bench run --backend compile`, cache the `.ixe` + pre-cut zisk shards) →
 `aiur` (execute + prove cells) / `zkvm-execute` / `ooc-check` (each: restore caches, one
 `ix bench run … --reuse-ixe`, `ix bench bmf`, upload via

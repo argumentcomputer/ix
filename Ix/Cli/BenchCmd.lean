@@ -88,7 +88,7 @@ def selectNames (rows : Array VectorRow) (env : String) (mode : String)
 
 `Benchmarks/Vectors.csv` holds the per-constant rows; everything else lives
 here, in one language with one owner. The workflows never read it directly:
-`ix bench matrix` serves the job matrices and `ix bench parse` the
+`ix bench ci matrix` serves the job matrices and `ix bench ci parse` the
 `!benchmark` cells, both post-build. (`bencher-thresholds-reset.yml` keeps
 a static workload list with a sync note — it runs on cheap runners with no
 built `ix`.) -/

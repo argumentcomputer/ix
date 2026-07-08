@@ -76,7 +76,7 @@ jobs:
           key: bench-bins-${{ github.sha }}
 
   # Derive the job matrices from the registry (Ix/Cli/BenchCmd.lean)
-  # via `ix bench matrix`, so the benched-env / enabled-backend fan-out is
+  # via `ix bench ci matrix`, so the benched-env / enabled-backend fan-out is
   # single-sourced instead of hand-copied per job. Runs beside the compile
   # job; only the downstream matrix jobs wait on it.
   plan:
@@ -101,7 +101,7 @@ jobs:
           use-github-cache: false
       - id: matrix
         run: |
-          ix bench matrix --kind cells > cells.json
+          ix bench ci matrix --kind cells > cells.json
           cat cells.json
           # bench-envs: the benched env names — an env name (e.g. InitStd)
           # is the single identifier: `ix bench run --env`, the `<env>.ixe`
@@ -184,7 +184,7 @@ jobs:
       # artifacts are absent). Done here, next to the fresh `.ixe` with
       # `ix` + the Lean toolchain on hand, so the zkvm job just restores the
       # dir. The benched-env conditionals below must match the registry's
-      # `benched: true` envs (what `ix bench matrix --kind envs` returns).
+      # `benched: true` envs (what `ix bench ci matrix --kind envs` returns).
       - if: matrix.env == 'InitStd' || matrix.env == 'Mathlib'
         name: Cut closure shards for heavy primaries
         run: ix bench shard --env ${{ matrix.env }} --reuse-ixe

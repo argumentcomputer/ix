@@ -9,7 +9,8 @@
     report      per-cell table files → one Markdown report (the PR comment)
     bmf         rows JSON → Bencher Metric Format (status ≠ ok rows dropped)
     fetch-main  base SHA + cell → rows JSON pulled from bencher.dev (curl)
-    matrix      registry → GitHub Actions job-matrix JSON
+    ci …        CI adapters: parse (!benchmark comment → job matrix) and
+                matrix (registry → workflow job matrices)
 
   CI and local runs share this surface: the PR comment table and the local
   terminal table are the same renderer.
@@ -525,7 +526,7 @@ def runMatrixCmd (p : Cli.Parsed) : IO UInt32 := do
 /-! ## parse -/
 
 /-- Parse a `!benchmark` command into the cells it schedules — locally a
-    dry-run preview (`ix bench parse --comment "!benchmark aiur"` prints
+    dry-run preview (`ix bench ci parse --comment "!benchmark aiur"` prints
     the summary and cell list), in CI the matrix generator. The text comes
     from `--comment`, else the `COMMENT_BODY` env var (how the PR workflow
     passes the comment without inline shell interpolation). When
@@ -694,7 +695,7 @@ def benchFetchMainCmd : Cli.Cmd := `[Cli|
 ]
 
 open Ix.Cli.BenchReport in
-def benchMatrixCmd : Cli.Cmd := `[Cli|
+def benchCiMatrixCmd : Cli.Cmd := `[Cli|
   "matrix" VIA runMatrixCmd;
   "Emit GitHub Actions matrix JSON from the registry (--kind envs | cells)"
 
@@ -703,12 +704,21 @@ def benchMatrixCmd : Cli.Cmd := `[Cli|
 ]
 
 open Ix.Cli.BenchReport in
-def benchParseCmd : Cli.Cmd := `[Cli|
+def benchCiParseCmd : Cli.Cmd := `[Cli|
   "parse" VIA runParseCmd;
-  "Parse a !benchmark command into the cells it schedules — a local dry-run preview, and the CI matrix generator (machine outputs land in $GITHUB_OUTPUT when set). Unknown tokens fall off the allowlist."
+  "Parse a !benchmark command into the cells it schedules and write the job matrix to $GITHUB_OUTPUT (when set). Unknown tokens fall off the allowlist; --comment doubles as a local pre-flight of a comment before posting it."
 
   FLAGS:
     comment : String; "The command text (default: the COMMENT_BODY env var)"
+]
+
+def benchCiCmd : Cli.Cmd := `[Cli|
+  ci NOOP;
+  "CI adapters: the workflows' matrix and !benchmark-comment plumbing (safe to run by hand, rarely needed)"
+
+  SUBCOMMANDS:
+    benchCiParseCmd;
+    benchCiMatrixCmd
 ]
 
 def benchCmd : Cli.Cmd := `[Cli|
@@ -718,10 +728,9 @@ def benchCmd : Cli.Cmd := `[Cli|
   SUBCOMMANDS:
     benchRunCmd;
     benchShardCmd;
-    benchParseCmd;
     benchCompareCmd;
     benchReportCmd;
     benchBmfCmd;
     benchFetchMainCmd;
-    benchMatrixCmd
+    benchCiCmd
 ]

@@ -90,7 +90,7 @@ jobs:
   # entirely. ubuntu-latest mirrors bench-main.yml's build job so PR binaries
   # carry the same instruction-set provenance as the binaries behind bencher's
   # main-side numbers. The job ends by parsing the !benchmark command with
-  # the freshly built `ix bench parse` — the registry lives in Lean, so the
+  # the freshly built `ix bench ci parse` — the registry lives in Lean, so the
   # matrix can only exist post-build.
   build:
     needs: setup
@@ -157,7 +157,7 @@ jobs:
         id: parse
         env:
           COMMENT_BODY: ${{ github.event_name == 'pull_request' && '!benchmark ooc compile' || github.event.comment.body }}
-        run: ix bench parse
+        run: ix bench ci parse
 
   benchmark:
     # Explicit name: the default would append EVERY matrix value (backend,
