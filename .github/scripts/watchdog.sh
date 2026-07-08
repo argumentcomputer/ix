@@ -20,6 +20,15 @@ shift
 sudo -n loginctl enable-linger "${USER:-$(id -un)}" 2>/dev/null || true
 export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
 
+# memory.oom.group=1: on breach the kernel kills the WHOLE scope (exit
+# 137 -> oom row), not just its biggest process. Without it, Zisk's ASM
+# service gets singled out and the surviving host converts the memory
+# kill into a clean exit 1 — which the orchestrator must treat as a
+# deterministic failure. The scope's cgroup is user-delegated, so the
+# write needs no sudo; if it fails, exit 2 rather than run with wrong
+# kill semantics.
 exec systemd-run --user --scope --quiet \
   -p MemoryMax="${ceiling_gb}G" -p MemorySwapMax=0 \
-  "$@"
+  bash -c 'echo 1 > "/sys/fs/cgroup$(cut -d: -f3- /proc/self/cgroup)/memory.oom.group" \
+             || { echo "watchdog: cannot set memory.oom.group" >&2; exit 2; }
+           exec "$@"' watchdog "$@"
