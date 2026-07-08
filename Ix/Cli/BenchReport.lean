@@ -404,6 +404,12 @@ def runBmfCmd (p : Cli.Parsed) : IO UInt32 := do
   let bmf := toBmf (← readRows inPath)
   IO.FS.writeFile outPath bmf.pretty
   IO.println s!"bmf: {(rowNames bmf).size} benchmark(s) → {outPath}"
+  -- Zero survivors (missing input, or every row OOM'd/rejected) is not an
+  -- uploadable result — exit nonzero so the caller skips the upload
+  -- instead of sending bencher an empty report it will reject.
+  if (rowNames bmf).isEmpty then
+    IO.eprintln "bmf: no ok rows — nothing to upload"
+    return 1
   return 0
 
 /-! ## fetch-main -/

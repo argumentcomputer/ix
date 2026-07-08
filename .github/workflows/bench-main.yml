@@ -296,6 +296,7 @@ jobs:
       # job — bmf drops every non-ok row, so a rejected or OOM'd constant
       # never reaches bencher.
       - name: Convert to Bencher Metric Format
+        id: bmf
         if: ${{ !cancelled() }}
         run: |
           ix bench bmf --in bench.json --out aiur.json
@@ -314,7 +315,7 @@ jobs:
       # intentionally left un-thresholded (noisy and dynamically named;
       # the PR-comment drill-down does the phase-level comparison).
       - uses: ./.github/actions/bencher-track
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.bmf.outcome == 'success' }}
         with:
           testbed: aiur-check-${{ matrix.mode }}-x64-32x
           workload: aiur-check-${{ matrix.mode }}
@@ -419,6 +420,7 @@ jobs:
       # Upload whatever clean rows exist even when the run step reddened the
       # job — bmf drops every non-ok row.
       - name: Convert to Bencher Metric Format
+        id: bmf
         if: ${{ !cancelled() }}
         run: |
           ix bench bmf --in bench.json --out bench-bmf.json
@@ -429,7 +431,7 @@ jobs:
       # aiur job. execute-time / peak-rss / throughput are noisy wall-clock →
       # percentage bounds (throughput's regression is a drop).
       - uses: ./.github/actions/bencher-track
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.bmf.outcome == 'success' }}
         with:
           testbed: ${{ matrix.cell.backend }}-check-x64-32x
           workload: ${{ matrix.cell.backend }}-check
@@ -503,6 +505,7 @@ jobs:
       # Upload whatever clean rows exist even when the run step reddened the
       # job — bmf drops every non-ok row.
       - name: Convert to Bencher Metric Format
+        id: bmf
         if: ${{ !cancelled() }}
         run: |
           ix bench bmf --in bench.json --out bench-bmf.json
@@ -510,7 +513,7 @@ jobs:
       # constants is deterministic → pinned (0/0); check-time / throughput /
       # peak-rss are noisy parallel wall-clock → percentage bounds.
       - uses: ./.github/actions/bencher-track
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.bmf.outcome == 'success' }}
         with:
           testbed: ooc-check-x64-32x
           workload: ooc-check
