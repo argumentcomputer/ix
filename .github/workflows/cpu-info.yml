@@ -1,0 +1,27 @@
+name: Runner CPU info
+
+on:
+  push:
+    branches:
+      - sb/runner-cpu-info
+
+jobs:
+  cpu-info:
+    runs-on: warp-ubuntu-latest-x64-32x
+    steps:
+      - name: CPU architecture
+        run: |
+          echo "uname -m: $(uname -m)"
+          echo "uname -a: $(uname -a)"
+
+      - name: Full lscpu
+        run: lscpu
+
+      - name: AVX-512 support
+        run: |
+          echo "AVX-512 flags reported by the CPU:"
+          if grep -o 'avx512[a-z0-9_]*' /proc/cpuinfo | sort -u | grep .; then
+            echo "AVX-512 is supported"
+          else
+            echo "No AVX-512 flags found"
+          fi
