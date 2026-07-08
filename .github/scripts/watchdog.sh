@@ -4,17 +4,20 @@
 #
 #   watchdog.sh <ceiling_gb> <cmd> [args...]
 #
-# Runs <cmd> as a child and every ~3s sums RSS across it and every
-# descendant. On breach, SIGTERM the whole tree, wait up to 10s for a
-# graceful exit (tools flush their in-flight results row and run
-# destructors — e.g. Zisk's shm cleanup), then SIGKILL whatever survives.
-# Exits with the child's status (143/137 after a watchdog kill).
+# Runs <cmd> as a child and every ~1s sums RSS across it and every
+# descendant. On breach, SIGTERM the whole tree, then re-sample each
+# second: the grace (up to 10s, for destructors — e.g. Zisk's shm
+# cleanup) only continues while the tree is BELOW the ceiling. A tree
+# still at/above it is still allocating, and every second of tolerance
+# is a GB closer to taking the whole VM down (a thrashing runner misses
+# its heartbeat and GitHub cancels the job before any kill lands) —
+# SIGKILL immediately. Tools flush results rows as they go, so nothing
+# of value needs the grace. Exits with the child's status (143/137).
 #
 # That is the whole job: no markers, no exit-code taxonomy, no output
-# parsing. The orchestrator (`ix bench run`) infers "killed" from the
-# abnormal exit and the results file's missing row, and treats a kernel
-# OOM-killer SIGKILL (exit 137) — which a fast spike can reach before the
-# 3s cadence does — identically.
+# parsing. The orchestrator (`ix bench run`) treats any exit ≥128 —
+# including a kernel OOM-killer SIGKILL that a fast spike reaches before
+# the sampling cadence does — as the in-flight constant's OOM.
 set -uo pipefail
 
 ceiling_gb=${1:?ceiling_gb}
@@ -60,14 +63,20 @@ tree_rss_kb() {
       pids=$(tree_pids)
       kill -TERM $pids 2>/dev/null
       for _ in $(seq 10); do
-        kill -0 "$root" 2>/dev/null || exit 0
         sleep 1
+        kill -0 "$root" 2>/dev/null || exit 0
+        total_kb=$(tree_rss_kb)
+        if [ -n "$total_kb" ] && [ "$total_kb" -gt "$max_kb" ]; then
+          echo "watchdog: still ${total_kb}kB above ceiling after TERM; KILL now" >&2
+          kill -KILL $(tree_pids) 2>/dev/null
+          exit 0
+        fi
       done
       echo "watchdog: grace expired; KILL" >&2
       kill -KILL $(tree_pids) 2>/dev/null
       exit 0
     fi
-    sleep 3
+    sleep 1
   done
 ) &
 monitor=$!
