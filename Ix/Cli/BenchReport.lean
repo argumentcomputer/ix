@@ -38,7 +38,7 @@ def metricKind (metric : String) : String :=
   else if ["execute-time", "prove-time", "verify-time", "check-time",
            "compile-time"].contains metric then "seconds"
   else if ["fft-cost", "cycles", "steps", "max-shard-cycles",
-           "throughput"].contains metric then "count"
+           "throughput", "execute-throughput"].contains metric then "count"
   else if ["constants", "shards"].contains metric then "int"
   else "auto"
 
@@ -96,7 +96,8 @@ def human (v : Option Float) (metric : String) : String :=
 
 /-- Metrics where a LARGER value is the improvement; everything else is
     lower-is-better (times, RAM, cycles, sizes). -/
-def higherIsBetter (metric : String) : Bool := metric == "throughput"
+def higherIsBetter (metric : String) : Bool :=
+  ["throughput", "execute-throughput"].contains metric
 
 /-! ## Row access -/
 

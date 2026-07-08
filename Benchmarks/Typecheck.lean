@@ -148,6 +148,12 @@ def Result.toJsonEntry (r : Result) : String × Json :=
     , ("constants", Lean.toJson r.constants)
     , ("fft-cost", jsonRound 0 r.fftCost)
     , ("execute-time", jsonRound 6 r.executeSec) ]
+  -- Witness-generation throughput (closure constants/sec over Phase 1) —
+  -- the execute-side analog of the proving `throughput` below.
+  let base := if r.executeSec > 0 then
+    base ++ [ ("execute-throughput",
+               jsonRound 2 (r.constants.toFloat / r.executeSec)) ]
+  else base
   let base := match r.peakRss with
     | some n => base ++ [ ("peak-rss", Lean.toJson n) ]
     | none => base

@@ -12,8 +12,8 @@
       "default_mode": "prove",
       "testbed": "aiur-check-x64-32x",
       "metrics": {
-        "prove":   ["fft-cost", "execute-time", "prove-time", "verify-time", "proof-size", "peak-rss"],
-        "execute": ["fft-cost", "execute-time", "execute-peak-rss"]
+        "prove":   ["fft-cost", "execute-time", "execute-throughput", "execute-peak-rss", "prove-time", "verify-time", "proof-size", "peak-rss"],
+        "execute": ["fft-cost", "execute-time", "execute-throughput", "execute-peak-rss"]
       }
     },
     "zisk": {
