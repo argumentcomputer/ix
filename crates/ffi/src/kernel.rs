@@ -1851,7 +1851,11 @@ pub extern "C" fn rs_kernel_check_anon_consts(
       };
       let failed = results.iter().filter(|r| r.is_err()).count();
       let secs = t.elapsed().as_secs_f64();
-      let tput = if secs > 0.0 { total as f64 / secs } else { 0.0 };
+      let tput = if secs > 0.0 {
+        f64::from(u32::try_from(total).unwrap_or(u32::MAX)) / secs
+      } else {
+        0.0
+      };
       let status = if failed > 0 {
         ix_bench::Status::Rejected
       } else {

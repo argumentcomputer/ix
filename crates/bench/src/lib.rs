@@ -29,9 +29,9 @@ use std::path::Path;
 use serde_json::{Map, Value};
 
 /// Bad invocation (unknown name, missing input, conflicting flags).
-pub const EXIT_USAGE: i32 = 2;
+pub const EXIT_USAGE: u8 = 2;
 /// The kernel rejected at least one constant; its row is on disk.
-pub const EXIT_REJECTED: i32 = 3;
+pub const EXIT_REJECTED: u8 = 3;
 
 /// Row outcome as written by a tool (`Oom` is only ever set by the
 /// orchestrator, after the fact — a tool never observes its own OOM kill).

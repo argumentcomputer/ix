@@ -191,7 +191,7 @@ async fn main() -> std::process::ExitCode {
       if e.downcast_ref::<Rejection>().is_some() {
         // Reserved exit code: rejection rows are on disk; the caller needs
         // no log parsing to tell "kernel said no" from an infra failure.
-        std::process::ExitCode::from(EXIT_REJECTED as u8)
+        std::process::ExitCode::from(EXIT_REJECTED)
       } else {
         std::process::ExitCode::FAILURE
       }
