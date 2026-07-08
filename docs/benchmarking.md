@@ -108,13 +108,12 @@ and render in the PR comment as a collapsible per-constant drill-down.
 ## RAM: watchdog, OOM rows, sharding
 
 `ix bench run` wraps each tool in `.github/scripts/watchdog.sh <ceiling-gb>
-<cmd>`: a sidecar that watches one kernel number — `/proc/meminfo`'s
-`MemAvailable` — and TERM→KILLs the tool's tree when it drops below
-`MemTotal − ceiling`. MemAvailable already accounts for everything the
-tree consumes (RSS, locked shared memory, page tables) while ignoring
-reclaimable cache, so there's nothing to sum and nothing to
-under-attribute; the 0.5s cadence plus the ceiling's built-in headroom
-absorb even memory-bandwidth bursts. A killed per-constant process gets
+<cmd>`: a thin wrapper over `systemd-run --user --scope` that runs the
+tool under a cgroup-v2 `memory.max` cap with swap disabled. The kernel
+OOM-kills at the ceiling — SIGKILL, exit 137 — with no sampler to race
+and nothing to sum: the cgroup charges the whole tree's resident memory,
+locked shared segments included, while an allocator's cached virtual
+reservations don't count. A killed per-constant process gets
 its row marked `status: oom`
 (keeping whatever was flushed, spans included) and the loop continues — one
 constant's death costs one constant. A kill that lands *after* the row

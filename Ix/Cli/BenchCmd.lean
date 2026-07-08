@@ -11,8 +11,9 @@
      compile IS the benchmark);
   3. spawns the cell's measured tool — `bench-typecheck` (aiur),
      `zisk-host`/`sp1-host` (zkVM execute), `ix check-rs` (ooc),
-     `ix compile` (compile) — wrapped in the RAM watchdog (`watchdog.sh`,
-     TERM → grace → KILL). The per-constant backends (aiur, zkVM) spawn
+     `ix compile` (compile) — wrapped in the RAM watchdog (`watchdog.sh`:
+     cgroup `memory.max` via a systemd user scope; the kernel OOM-kills
+     at the ceiling). The per-constant backends (aiur, zkVM) spawn
      ONE PROCESS PER CONSTANT: a kill costs exactly that constant (its row
      is marked `status: oom`, keeping whatever the tool flushed), and each
      spawn's texray window (`<out>.spans`) belongs wholly to it, folded
@@ -173,9 +174,10 @@ def BackendSpec.metricsFor (b : BackendSpec) (mode : String) : List String :=
 /-- Default RAM watchdog ceiling, same rule for all backends: the
     machine's total RAM minus 15 GB (the ~123 GiB CI runner lands at
     ~108 — above Mathlib `ix compile`'s ~100 GB peak, the largest
-    legitimate workload). The watchdog kills when the machine's
-    `MemAvailable` drops below `MemTotal − ceiling`, so the 15 GB is the
-    free-memory floor. `--ceiling-gb` overrides. -/
+    legitimate workload). Enforced as cgroup `memory.max` on a systemd
+    user scope: the kernel OOM-kills the tool at the ceiling (exit 137);
+    the 15 GB stays outside the cap for the OS, runner agent, and page
+    cache. `--ceiling-gb` overrides. -/
 def defaultCeilingGb : IO Nat := do
   let s ← try IO.FS.readFile "/proc/meminfo" catch _ => pure ""
   let kb := (s.splitOn "\n").findSome? fun l =>
