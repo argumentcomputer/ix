@@ -317,13 +317,13 @@ jobs:
           set -e
           case $rc in
             0) if [ -s "$GITHUB_WORKSPACE/missing.txt" ]; then
-                 echo "source=bencher + base run ($(wc -l < "$GITHUB_WORKSPACE/missing.txt") new)" >> "$GITHUB_OUTPUT"
+                 echo "source=bencher @ ${BASE_SHA::7} + base run ($(wc -l < "$GITHUB_WORKSPACE/missing.txt") new)" >> "$GITHUB_OUTPUT"
                  echo "run-base=true" >> "$GITHUB_OUTPUT"
                else
-                 echo "source=bencher" >> "$GITHUB_OUTPUT"
+                 echo "source=bencher @ ${BASE_SHA::7}" >> "$GITHUB_OUTPUT"
                  echo "run-base=false" >> "$GITHUB_OUTPUT"
                fi ;;
-            3) echo "source=ran" >> "$GITHUB_OUTPUT"
+            3) echo "source=base run @ ${BASE_SHA::7} (not on bencher)" >> "$GITHUB_OUTPUT"
                echo "run-base=true" >> "$GITHUB_OUTPUT" ;;
             *) echo "::error::fetch-main: permanent config error (exit $rc) — check backendSpecs testbeds vs bench-main.yml"; exit "$rc" ;;
           esac
