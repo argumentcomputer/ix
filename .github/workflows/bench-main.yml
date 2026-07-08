@@ -212,10 +212,13 @@ jobs:
             zkshards-${{ matrix.env }}
           key: bench-ixe-${{ github.sha }}-${{ matrix.env }}
       # Upload compile metrics. Every measure shares the per-workload baseline
-      # window (data points since the ix-compile reset tag): file-size/constants
-      # are deterministic, pinned exactly (0/0); compile-time rides a 5% upper
-      # bound; throughput a 5% lower bound (its regression is a drop);
-      # peak-rss a 10% upper bound (allocator-noisy, same as the other cells).
+      # window (data points since the ix-compile reset tag): constants is
+      # deterministic, pinned exactly (0/0); file-size wiggles slightly
+      # run-to-run (the serialized env is not byte-reproducible — worth its
+      # own investigation for a content-addressed store) so it rides a tight
+      # ±1% band instead of a pin; compile-time a 5% upper bound; throughput
+      # a 5% lower bound (its regression is a drop); peak-rss a 10% upper
+      # bound (allocator-noisy, same as the other cells).
       - uses: ./.github/actions/bencher-track
         with:
           testbed: ix-compile-x64-32x
@@ -231,8 +234,8 @@ jobs:
             --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary _
             --threshold-lower-boundary 0.05
             --threshold-measure file-size --threshold-test percentage
-            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0
-            --threshold-lower-boundary 0
+            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.01
+            --threshold-lower-boundary 0.01
             --threshold-measure constants --threshold-test percentage
             --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0
             --threshold-lower-boundary 0
