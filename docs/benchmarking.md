@@ -108,9 +108,13 @@ and render in the PR comment as a collapsible per-constant drill-down.
 ## RAM: watchdog, OOM rows, sharding
 
 `ix bench run` wraps each tool in `.github/scripts/watchdog.sh <ceiling-gb>
-<cmd>`: a sidecar that samples the process tree's RSS and, on breach, sends
-SIGTERM (tools flush their in-flight row and clean up), then SIGKILL after a
-10s grace. A killed per-constant process gets its row marked `status: oom`
+<cmd>`, which enforces in two layers: `RLIMIT_DATA` at the ceiling, so the
+allocation that would cross it fails *inside* the process (Rust/Lean abort
+on the spot — no sampling race, zero overshoot; a prover can allocate GB/s,
+faster than any sampler reacts), plus a ~1s tree-RSS sampler as backstop
+for multi-process sums (Zisk's ASM services), which TERMs the tree and
+SIGKILLs if it stays above the ceiling. A killed per-constant process gets
+its row marked `status: oom`
 (keeping whatever was flushed, spans included) and the loop continues — one
 constant's death costs one constant. A kill that lands *after* the row
 carries the mode's completion metric hit teardown (the prover releasing
