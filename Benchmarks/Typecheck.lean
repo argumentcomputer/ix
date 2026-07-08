@@ -289,8 +289,11 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
       | .ok (_, _, queryCounts) =>
         let stats := Aiur.computeStats compiled queryCounts
         let constants := (IxVM.ClaimHarness.closureFrom ixonEnv addr).size
+        let tput := if execSec > 0 then
+          ((constants.toFloat / execSec) * 100).round / 100 else 0
+        let peakGib := ((execPeak.toFloat / 1073741824) * 100).round / 100
         IO.println s!"  {label}: constants={constants} fft-cost={stats.totalFftCost} \
-          execute={execSec}s"
+          execute={execSec}s throughput={tput}/s peak-ram={peakGib}GiB"
         execed := execed.push
           ({ name := label, constants, fftCost := stats.totalFftCost,
              executeSec := execSec, executePeakRss := some execPeak }, addr)
@@ -365,8 +368,9 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
           | .error e =>
             IO.eprintln s!"  verify {r.name} FAILED: {e}"
             pure none
+        let peakGib := ((peak.toFloat / 1073741824) * 100).round / 100
         IO.println s!"  {r.name}: prove={proveSec}s verify={verifySec}s \
-          proof={proofSize} bytes (cumulative {spent}s)"
+          proof={proofSize} bytes peak-ram={peakGib}GiB (cumulative {spent}s)"
         ordered := ordered.set! i
           ({ r with proveSec := some proveSec, peakRss := some peak
                   , proofSize := some proofSize, verifySec := verifySec? }, addr)
