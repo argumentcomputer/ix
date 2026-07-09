@@ -35,7 +35,6 @@ import Tests.Aiur.Common
 import Tests.Ix.Kernel.TutorialMeta
 import Tests.Ix.Kernel.TutorialDefs
 import Tests.Ix.Kernel.NatReduction
-import Tests.Ix.Kernel.Tutorial
 import LSpec
 
 open LSpec
@@ -125,7 +124,7 @@ def arenaTests (env : Lean.Environment)
   let rawMap : Std.HashMap Lean.Name Lean.ConstantInfo :=
     rawConsts.foldl (fun m ci => m.insert ci.name ci)
       (Std.HashMap.emptyWithCapacity rawConsts.size)
-  let (_, closed) := Tests.Ix.Kernel.Tutorial.collectDepsWithExtras env rawMap
+  let (_, closed) := collectDepsWithExtras env rawMap
     (checks.map (·.name)).toList
   let rawEnv ← Ix.CompileM.rsCompileEnvFFI
     (closed ++ rawConsts.toList.map fun ci => (ci.name, ci))

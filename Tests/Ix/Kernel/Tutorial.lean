@@ -21,64 +21,6 @@ namespace Tests.Ix.Kernel.Tutorial
 -- The single source of truth lives in `Ix/KernelCheck.lean`.
 export Ix.KernelCheck (CheckError)
 
-/-- Compute the transitive closure of constants referenced by `seeds`, and
-    return the subset of `env.constants` reachable from them.
-
-    Mirrors `Ix/Cli/ValidateCmd.lean`'s `collectDeps` exactly, but extends the
-    lookup with `extraConsts` so seeds that only exist in `bad_raw_consts`
-    (e.g. `inductBadNonSort`, which the Lean kernel rejected and therefore
-    never entered `env.constants`) still get their transitive dependencies
-    pulled in.
-
-    Returns `(needed : Std.HashSet Name, closed : List (Name × ConstantInfo))`
-    so callers can both inspect membership and ship the closed subset. -/
-partial def collectDepsWithExtras
-    (env : Lean.Environment)
-    (extraConsts : Std.HashMap Lean.Name Lean.ConstantInfo)
-    (seeds : List Lean.Name)
-    : Std.HashSet Lean.Name × List (Lean.Name × Lean.ConstantInfo) := Id.run do
-  let mut needed : Std.HashSet Lean.Name := {}
-  let mut worklist := seeds
-  while !worklist.isEmpty do
-    match worklist with
-    | [] => break
-    | n :: rest =>
-      worklist := rest
-      if needed.contains n then continue
-      needed := needed.insert n
-      -- Prefer env.constants; fall back to extraConsts for bad_raw_consts.
-      let ci? := env.constants.find? n <|> extraConsts.get? n
-      if let some ci := ci? then
-        let mut refs : Lean.NameSet := ci.type.getUsedConstantsAsSet
-        match ci with
-        | .defnInfo v =>
-          for r in v.value.getUsedConstantsAsSet do refs := refs.insert r
-        | .thmInfo v =>
-          for r in v.value.getUsedConstantsAsSet do refs := refs.insert r
-        | .opaqueInfo v =>
-          for r in v.value.getUsedConstantsAsSet do refs := refs.insert r
-        | .inductInfo v =>
-          for ctorName in v.ctors do
-            refs := refs.insert ctorName
-            if let some ctorCi :=
-                env.constants.find? ctorName <|> extraConsts.get? ctorName then
-              for r in ctorCi.type.getUsedConstantsAsSet do refs := refs.insert r
-          for mutName in v.all do
-            refs := refs.insert mutName
-        | .ctorInfo v =>
-          refs := refs.insert v.induct
-        | .recInfo v =>
-          for mutName in v.all do
-            refs := refs.insert mutName
-          for rule in v.rules do
-            for r in rule.rhs.getUsedConstantsAsSet do refs := refs.insert r
-        | _ => pure ()
-        for r in refs do
-          if !needed.contains r then
-            worklist := r :: worklist
-  let closed := env.constants.toList.filter fun (n, _) => needed.contains n
-  return (needed, closed)
-
 -- Re-export the shared FFI binding so existing call sites keep working
 -- without an explicit `Ix.KernelCheck.` qualifier. The single
 -- `@[extern "rs_kernel_check_consts"]` declaration lives in
@@ -194,7 +136,7 @@ def testTutorialConsts : TestSeq :=
         (Std.HashMap.emptyWithCapacity rawConsts.size)
     let seeds : List Lean.Name :=
       constNames.toList ++ (rawConsts.toList.map (·.name))
-    let (_, closedConsts) := collectDepsWithExtras leanEnv rawConstsMap seeds
+    let (_, closedConsts) := TutorialMeta.collectDepsWithExtras leanEnv rawConstsMap seeds
     let allConstList := closedConsts ++ extraConstList
 
     IO.println s!"[kernel-tutorial] {testCases.size} test cases, {constNames.size} constants to check ({allConstList.length} consts in closure)"
