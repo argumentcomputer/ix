@@ -61,7 +61,7 @@ sha2 = "0.10"
 tiny-keccak = { version = "2", features = ["keccak"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-tracing-texray = { git = "https://github.com/argumentcomputer/tracing-texray", rev = "bd4faa08a4fa4edb46bde393b4d20c6bd49591d0" }
+tracing-texray = { git = "https://github.com/argumentcomputer/tracing-texray", rev = "465bbca0bea4721e58419c11cabd8cce21757822" }
 
 [workspace.lints.rust]
 invalid_reference_casting = "warn"
