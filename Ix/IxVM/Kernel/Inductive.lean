@@ -54,10 +54,12 @@ def inductive_check := ⟦
     }
   }
 
-  -- Validate the inductive's own shape AND every constructor (A1-A4).
+  -- Validate the inductive's own shape AND every constructor (param
+  -- agreement, return type, field universes, positivity).
   -- Mirror: src/ix/kernel/inductive.rs:148-297 check_inductive_member.
-  -- The per-const dispatch in Check.lean also runs A1-A4 when each Ctor
-  -- const is checked; bundling them on the inductive makes it
+  -- The per-const dispatch in Check.lean also runs the same per-ctor
+  -- checks when each Ctor const is checked; bundling them on the
+  -- inductive makes it
   -- self-contained under subject-only checking (the arena's
   -- `verify_const`) and lets `check_recursor_member` gate on a valid
   -- major (coherence gate, inductive.rs:4089-4102) — recursor gen
@@ -2532,7 +2534,7 @@ def inductive_check := ⟦
                             match list_any_mentions(param_args, block_idxs) {
                               0 => store(ListNode.Nil),
                               1 =>
-                                -- S7: reject occurrences whose param args
+                                -- Reject occurrences whose param args
                                 -- reference a field/domain-local binder — a
                                 -- loose BVar below the extraction depth. Not
                                 -- a valid nested-inductive parameterization;
@@ -2550,8 +2552,9 @@ def inductive_check := ⟦
                                     -- consumer assumes, and the frame that
                                     -- makes the same occurrence at two
                                     -- field depths compare equal for aux
-                                    -- dedup. Sound: S7 above guarantees no
-                                    -- loose BVar below `d`.
+                                    -- dedup. Sound: the validity check
+                                    -- above guarantees no loose BVar
+                                    -- below `d`.
                                     let lowered = spec_params_lower(param_args, d);
                                     store(ListNode.Cons((idx, lowered, occ_us),
                                                          store(ListNode.Nil))),

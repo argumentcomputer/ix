@@ -1254,13 +1254,13 @@ good_thm natBeqTrue : Nat.beq 42 42 = true := by native_decide
 
 good_thm natBeqFalse : Nat.beq 42 43 = false := by native_decide
 
-/-! ## Nested-occurrence spec_params validity (S7)
+/-! ## Nested-occurrence spec_params validity
 
 `F.mk : (n : Nat) → P n F → F`. The `P n F` occurrence LOOKS nested
 (head `P` is an external inductive whose param args mention the block
 member `F`), but its first param arg `n` references the constructor's
 own field-local binder, so it is NOT a valid nested-inductive
-parameterization. Rust (`crates/kernel/src/inductive.rs:723-730`, S7)
+parameterization. Rust (`crates/kernel/src/inductive.rs:723-730`)
 skips the occurrence: no `P` aux is synthesized, `F.rec` keeps the
 plain non-nested shape (no IH for the `P n F` field), and the env is
 accepted — this is a GOOD fixture.
@@ -1315,7 +1315,8 @@ good_raw_consts
       -- Compile-side `validate_ind_flags` computes isRec structurally
       -- (any self-mention in a ctor field, valid nesting or not), so the
       -- `F` inside `P n F` makes F "recursive" for flag purposes even
-      -- though S7 rejects it as a nested-inductive parameterization.
+      -- though the spec_params validity check rejects it as a
+      -- nested-inductive parameterization.
       isRec := true
       isUnsafe := false
       isReflexive := false

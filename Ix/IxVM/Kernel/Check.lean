@@ -252,10 +252,12 @@ def check := ⟦
         assert_safety(u, ty, top);
         check_block_peer_param_agreement(pos, ty, n_params, n_indices,
                                                   block_addr, top, addrs);
-        -- Self-contained inductive validation: result-sort + A1-A4 over
-        -- every ctor. Without it, subject-only checking (arena
-        -- `verify_const`) accepts an inductive whose badness lives in a
-        -- ctor const. Mirror: check_inductive_member walks its ctors.
+        -- Self-contained inductive validation: result sort + the full
+        -- per-ctor gauntlet (param agreement, return type, field
+        -- universes, positivity). Without it, subject-only checking
+        -- (arena `verify_const`) accepts an inductive whose badness
+        -- lives in a ctor const. Mirror: check_inductive_member walks
+        -- its ctors.
         check_inductive_shape(pos, top, addrs);
         let block_idxs = derive_block_member_idxs(pos, top);
         validate_block_auxes(block_idxs, top);

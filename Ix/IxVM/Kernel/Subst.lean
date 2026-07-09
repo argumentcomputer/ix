@@ -101,7 +101,7 @@ def subst := ⟦
   -- invisible to it — e.g. `App(BVar(d), BVar(0))` at depth `d` has
   -- lbr `d + 1` yet references the innermost field local.
   --
-  -- Used by the nested-occurrence spec_params validity check (S7) in
+  -- Used by the nested-occurrence spec_params validity check in
   -- `Kernel/Inductive.lean`: at extraction depth `d`, a spec_param with
   -- a loose BVar in `[0, d)` depends on a field/domain-local binder.
   -- Mirror: `sp.has_fvars()` in `crates/kernel/src/inductive.rs:723-730`
@@ -256,7 +256,7 @@ def subst := ⟦
   -- `[cutoff, cutoff + shift)` — otherwise the subtraction would capture
   -- it under an unrelated binder (field arithmetic would even wrap for
   -- `i - shift < 0`). The nested-occurrence extraction path guarantees
-  -- this via the S7 `spec_params_valid` check before lowering.
+  -- this via the `spec_params_valid` check before lowering.
   --
   -- Used to de-lift extracted spec_params to the recursor-param frame
   -- (block param j at `BVar(n_rec_params - 1 - j)`), the storage
