@@ -1462,8 +1462,252 @@ impl ConstantInfo {
   }
 }
 
-/// The Lean kernel environment: a map from names to their constant declarations.
-pub type Env = FxHashMap<Name, ConstantInfo>;
+/// Guard returned by [`Env::get`]: derefs to [`ConstantInfo`].
+///
+/// Eager environments hand out plain borrows (zero cost); lazy
+/// environments hand out `Arc`s so the entry stays alive even if the
+/// backing cache evicts it concurrently.
+pub enum EnvEntry<'a> {
+  Borrowed(&'a ConstantInfo),
+  Owned(Arc<ConstantInfo>),
+}
+
+impl std::ops::Deref for EnvEntry<'_> {
+  type Target = ConstantInfo;
+  fn deref(&self) -> &ConstantInfo {
+    match self {
+      EnvEntry::Borrowed(c) => c,
+      EnvEntry::Owned(c) => c,
+    }
+  }
+}
+
+impl EnvEntry<'_> {
+  /// Owned copy of the constant. Cheap only when a caller genuinely
+  /// needs ownership — prefer deref for reads.
+  pub fn cloned(&self) -> ConstantInfo {
+    (**self).clone()
+  }
+}
+
+/// Host-only lazy backing for [`Env`]: a name index plus an injected
+/// fetch that decodes one constant on demand (in practice from Lean
+/// objects held as `LeanShared` handles — see docs/compile-spill.md,
+/// lever 1), fronted by a sharded bounded cache.
+#[cfg(not(target_arch = "riscv64"))]
+pub struct LazyEnv {
+  /// All names, in the source env's iteration order.
+  names: Vec<Name>,
+  /// Membership index into `names`.
+  index: FxHashMap<Name, usize>,
+  /// Decode one constant. Must be pure and thread-safe.
+  fetch: Box<dyn Fn(&Name) -> Option<ConstantInfo> + Send + Sync>,
+  /// Sharded cache; per-shard capacity bounds resident decoded
+  /// constants. Eviction is `swap_remove_index(0)` — cheap
+  /// oldest-biased pseudo-FIFO, adequate for the scheduler's
+  /// topological locality.
+  shards: Vec<std::sync::Mutex<indexmap::IndexMap<Name, Arc<ConstantInfo>>>>,
+  cap_per_shard: usize,
+  hits: std::sync::atomic::AtomicU64,
+  misses: std::sync::atomic::AtomicU64,
+}
+
+#[cfg(not(target_arch = "riscv64"))]
+impl LazyEnv {
+  const SHARDS: usize = 64;
+
+  fn shard_for(&self, name: &Name) -> usize {
+    let bytes = name.get_hash().as_bytes();
+    let word = u64::from_le_bytes(bytes[..8].try_into().unwrap());
+    (word as usize) % Self::SHARDS
+  }
+
+  fn get(&self, name: &Name) -> Option<Arc<ConstantInfo>> {
+    use std::sync::atomic::Ordering;
+    if !self.index.contains_key(name) {
+      return None;
+    }
+    let shard_idx = self.shard_for(name);
+    if let Some(hit) = self.shards[shard_idx].lock().unwrap().get(name) {
+      self.hits.fetch_add(1, Ordering::Relaxed);
+      return Some(hit.clone());
+    }
+    // Decode outside the shard lock: fetches can be slow and other
+    // names hashing to this shard shouldn't wait on them.
+    self.misses.fetch_add(1, Ordering::Relaxed);
+    let decoded = Arc::new((self.fetch)(name)?);
+    let mut shard = self.shards[shard_idx].lock().unwrap();
+    if shard.len() >= self.cap_per_shard {
+      shard.swap_remove_index(0);
+    }
+    shard.insert(name.clone(), decoded.clone());
+    Some(decoded)
+  }
+
+  /// `(hits, misses)` counters for instrumentation.
+  fn stats(&self) -> (u64, u64) {
+    use std::sync::atomic::Ordering;
+    (self.hits.load(Ordering::Relaxed), self.misses.load(Ordering::Relaxed))
+  }
+}
+
+/// The Lean kernel environment: a map from names to their constant
+/// declarations. Eager (an owned map — the default, and the only
+/// variant on the guest) or, on the host, a lazy on-demand view (see
+/// [`LazyEnv`]).
+///
+/// Was `pub type Env = FxHashMap<Name, ConstantInfo>`; the struct keeps
+/// the map API shape, with [`Env::get`] returning the [`EnvEntry`]
+/// guard instead of a plain borrow.
+#[derive(Default)]
+pub struct Env {
+  eager: FxHashMap<Name, ConstantInfo>,
+  #[cfg(not(target_arch = "riscv64"))]
+  lazy: Option<LazyEnv>,
+}
+
+impl std::fmt::Debug for Env {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_struct("Env").field("len", &self.len()).finish()
+  }
+}
+
+impl Clone for Env {
+  /// Clones the eager map. Lazy environments are read-only views and
+  /// are never cloned (the compile pipeline shares them via `Arc`).
+  fn clone(&self) -> Self {
+    #[cfg(not(target_arch = "riscv64"))]
+    assert!(
+      self.lazy.is_none(),
+      "Env::clone on a lazy environment (share via Arc instead)"
+    );
+    Env {
+      eager: self.eager.clone(),
+      #[cfg(not(target_arch = "riscv64"))]
+      lazy: None,
+    }
+  }
+}
+
+impl Env {
+  /// Build a lazy env from a name list and a fetch function.
+  /// `cache_entries` bounds resident decoded constants (total across
+  /// shards; minimum one per shard).
+  #[cfg(not(target_arch = "riscv64"))]
+  pub fn new_lazy(
+    names: Vec<Name>,
+    fetch: Box<dyn Fn(&Name) -> Option<ConstantInfo> + Send + Sync>,
+    cache_entries: usize,
+  ) -> Self {
+    let index: FxHashMap<Name, usize> =
+      names.iter().enumerate().map(|(i, n)| (n.clone(), i)).collect();
+    let cap_per_shard = (cache_entries / LazyEnv::SHARDS).max(1);
+    let shards = (0..LazyEnv::SHARDS)
+      .map(|_| {
+        std::sync::Mutex::new(indexmap::IndexMap::with_capacity(
+          cap_per_shard.min(4096),
+        ))
+      })
+      .collect();
+    Env {
+      eager: FxHashMap::default(),
+      lazy: Some(LazyEnv {
+        names,
+        index,
+        fetch,
+        shards,
+        cap_per_shard,
+        hits: std::sync::atomic::AtomicU64::new(0),
+        misses: std::sync::atomic::AtomicU64::new(0),
+      }),
+    }
+  }
+
+  /// Cache hit/miss counters (lazy mode only).
+  #[cfg(not(target_arch = "riscv64"))]
+  pub fn lazy_cache_stats(&self) -> Option<(u64, u64)> {
+    self.lazy.as_ref().map(LazyEnv::stats)
+  }
+
+  pub fn get(&self, name: &Name) -> Option<EnvEntry<'_>> {
+    #[cfg(not(target_arch = "riscv64"))]
+    if let Some(lazy) = &self.lazy {
+      return lazy.get(name).map(EnvEntry::Owned);
+    }
+    self.eager.get(name).map(EnvEntry::Borrowed)
+  }
+
+  pub fn contains_key(&self, name: &Name) -> bool {
+    #[cfg(not(target_arch = "riscv64"))]
+    if let Some(lazy) = &self.lazy {
+      return lazy.index.contains_key(name);
+    }
+    self.eager.contains_key(name)
+  }
+
+  pub fn len(&self) -> usize {
+    #[cfg(not(target_arch = "riscv64"))]
+    if let Some(lazy) = &self.lazy {
+      return lazy.names.len();
+    }
+    self.eager.len()
+  }
+
+  pub fn is_empty(&self) -> bool {
+    self.len() == 0
+  }
+
+  /// Insert a constant. Eager only — lazy environments are read-only
+  /// views.
+  pub fn insert(
+    &mut self,
+    name: Name,
+    info: ConstantInfo,
+  ) -> Option<ConstantInfo> {
+    #[cfg(not(target_arch = "riscv64"))]
+    assert!(self.lazy.is_none(), "Env::insert on a lazy environment");
+    self.eager.insert(name, info)
+  }
+
+  pub fn get_mut(&mut self, name: &Name) -> Option<&mut ConstantInfo> {
+    #[cfg(not(target_arch = "riscv64"))]
+    assert!(self.lazy.is_none(), "Env::get_mut on a lazy environment");
+    self.eager.get_mut(name)
+  }
+
+  /// All names, in map order (eager) or source order (lazy). No
+  /// decode.
+  pub fn keys(&self) -> Box<dyn Iterator<Item = &Name> + '_> {
+    #[cfg(not(target_arch = "riscv64"))]
+    if let Some(lazy) = &self.lazy {
+      return Box::new(lazy.names.iter());
+    }
+    Box::new(self.eager.keys())
+  }
+
+  /// Iterate `(name, constant)`. Lazy mode decodes each entry fresh,
+  /// bypassing the cache — whole-env passes are single-visit, and
+  /// caching them would just churn the shards.
+  pub fn iter(&self) -> Box<dyn Iterator<Item = (&Name, EnvEntry<'_>)> + '_> {
+    #[cfg(not(target_arch = "riscv64"))]
+    if let Some(lazy) = &self.lazy {
+      return Box::new(lazy.names.iter().filter_map(move |n| {
+        (lazy.fetch)(n).map(|ci| (n, EnvEntry::Owned(Arc::new(ci))))
+      }));
+    }
+    Box::new(self.eager.iter().map(|(n, c)| (n, EnvEntry::Borrowed(c))))
+  }
+}
+
+impl FromIterator<(Name, ConstantInfo)> for Env {
+  fn from_iter<T: IntoIterator<Item = (Name, ConstantInfo)>>(it: T) -> Self {
+    Env {
+      eager: it.into_iter().collect(),
+      #[cfg(not(target_arch = "riscv64"))]
+      lazy: None,
+    }
+  }
+}
 
 #[cfg(any(test, feature = "quickcheck"))]
 pub mod arbitrary {

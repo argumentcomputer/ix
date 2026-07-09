@@ -2716,7 +2716,7 @@ pub fn build_leon_addr_map(lean_env: &LeanEnv) -> DashMap<Name, Address> {
   // phase from `src/ix/compile/aux_gen.rs:823`. Splitting the two into
   // different types would propagate a signature change through ~5
   // functions with no matching perf win.
-  let entries: Vec<(&Name, &LeanCI)> = lean_env.iter().collect();
+  let entries: Vec<_> = lean_env.iter().collect();
   let map = DashMap::with_capacity(lean_env.len());
   entries.par_iter().for_each(|(name, ci)| {
     map.insert((*name).clone(), Address::from_blake3_hash(ci.get_hash()));
@@ -2977,7 +2977,7 @@ pub fn lean_ingress(lean_env: &LeanEnv) -> KEnv<Meta> {
   let t = Instant::now();
   for (name, ci) in lean_env.iter() {
     let kid = KId::new(leon_addr_of(name, &n2a), name.clone());
-    let kc = lean_const_to_kconst(name, ci, &mut kenv, &n2a);
+    let kc = lean_const_to_kconst(name, &ci, &mut kenv, &n2a);
     kenv.insert(kid, kc);
   }
   if !quiet {
@@ -3051,12 +3051,12 @@ pub fn lean_ingress(lean_env: &LeanEnv) -> KEnv<Meta> {
   let t = Instant::now();
   let mut seeded: FxHashSet<KId<Meta>> = FxHashSet::default();
   for (name, ci) in lean_env.iter() {
-    let block_id = block_rep(name, ci);
+    let block_id = block_rep(name, &ci);
     if !seeded.insert(block_id.clone()) {
       continue;
     }
     let all =
-      lean_constant_all(ci).cloned().unwrap_or_else(|| vec![name.clone()]);
+      lean_constant_all(&ci).cloned().unwrap_or_else(|| vec![name.clone()]);
     let members: Vec<KId<Meta>> =
       all.iter().map(|n| KId::new(leon_addr_of(n, &n2a), n.clone())).collect();
     kenv.blocks.insert(block_id, members);
@@ -3075,9 +3075,9 @@ pub fn lean_ingress(lean_env: &LeanEnv) -> KEnv<Meta> {
   // (`find_peer_recursors` for recs).
   let t = Instant::now();
   for (name, ci) in lean_env.iter() {
-    match ci {
+    match &*ci {
       LeanCI::InductInfo(v) => {
-        let block_id = block_rep(name, ci);
+        let block_id = block_rep(name, &ci);
         for ctor_name in &v.ctors {
           let ctor_kid: KId<Meta> =
             KId::new(leon_addr_of(ctor_name, &n2a), ctor_name.clone());
@@ -3085,7 +3085,7 @@ pub fn lean_ingress(lean_env: &LeanEnv) -> KEnv<Meta> {
         }
       },
       LeanCI::RecInfo(_) => {
-        let block_id = block_rep(name, ci);
+        let block_id = block_rep(name, &ci);
         let self_kid = KId::new(leon_addr_of(name, &n2a), name.clone());
         kenv.blocks.entry(block_id).or_default().push(self_kid);
       },

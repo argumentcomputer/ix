@@ -127,7 +127,7 @@ pub fn generate_below_constants(
     let class_rep = &sorted_classes[ci][0];
 
     let ind_ref = lean_env.get(class_rep);
-    let ind = match ind_ref {
+    let ind = match ind_ref.as_deref() {
       Some(ConstantInfo::InductInfo(v)) => v,
       _ => {
         return Err(CompileError::MissingConstant {
@@ -181,7 +181,7 @@ pub fn generate_below_constants(
     if n_aux > 0 {
       let first_class_name = &sorted_classes[0][0];
       let first_ind_ref = lean_env.get(first_class_name);
-      let first_ind = match first_ind_ref {
+      let first_ind = match first_ind_ref.as_deref() {
         Some(ConstantInfo::InductInfo(v)) => v,
         _ => {
           return Err(CompileError::MissingConstant {
@@ -413,7 +413,7 @@ fn extract_major_head_ind(
   };
   let (head, _) = decompose_apps(major_dom);
   match head.as_data() {
-    ExprData::Const(name, _, _) => match lean_env.get(name) {
+    ExprData::Const(name, _, _) => match lean_env.get(name).as_deref() {
       Some(ConstantInfo::InductInfo(v)) => Some(v.clone()),
       _ => None,
     },
@@ -639,7 +639,7 @@ fn build_below_indc(
   for class_idx in 0..n_classes {
     let class_rep = &sorted_classes[class_idx][0];
     let class_ind_ref = lean_env.get(class_rep);
-    let class_ind = match class_ind_ref {
+    let class_ind = match class_ind_ref.as_deref() {
       Some(ConstantInfo::InductInfo(v)) => v,
       _ => {
         return Err(CompileError::MissingConstant {
@@ -656,7 +656,7 @@ fn build_below_indc(
       if class_idx == ci {
         // This ctor belongs to our class — build a .below ctor for it
         let ctor_ref = lean_env.get(ctor_name);
-        let ctor = match ctor_ref {
+        let ctor = match ctor_ref.as_deref() {
           Some(ConstantInfo::CtorInfo(c)) => c,
           _ => {
             return Err(CompileError::MissingConstant {
@@ -803,7 +803,7 @@ fn build_below_indc_ctor(
   let orig_below_ctor_name = below_name.append_components(&ctor_suffix);
   let orig_field_names: Vec<Name> = lean_env
     .get(&orig_below_ctor_name)
-    .and_then(|ci| match ci {
+    .and_then(|ci| match &*ci {
       ConstantInfo::CtorInfo(cv) => {
         let mut names = Vec::new();
         let mut ty = cv.cnst.typ.clone();
@@ -871,7 +871,7 @@ fn build_below_indc_ctor(
   let all_ind_names: Vec<(Name, usize)> = (0..n_classes)
     .flat_map(|j| {
       sorted_classes[j].iter().filter_map(move |name| {
-        lean_env.get(name).map(|ci| match ci {
+        lean_env.get(name).map(|ci| match &*ci {
           ConstantInfo::InductInfo(v) => (v.cnst.name.clone(), j),
           _ => (name.clone(), j),
         })

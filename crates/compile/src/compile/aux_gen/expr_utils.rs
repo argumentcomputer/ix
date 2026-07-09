@@ -1969,7 +1969,7 @@ fn ensure_in_kenv_of_inner_env(
     }
   }
 
-  let Some(ci) = lean_env.get(name).cloned() else { return };
+  let Some(ci) = lean_env.get(name).map(|e| e.cloned()) else { return };
   // Helper: convert a LeanExpr to KExpr with the given level param names,
   // using the KEnv's persistent ingress cache. Callers are top-level, so
   // we start with an empty binder-name stack.
@@ -1998,7 +1998,7 @@ fn ensure_in_kenv_of_inner_env(
       let ty_z = to_z(&ind.cnst.typ, lp, kenv);
       let mut ctor_zids = Vec::new();
       for ctor_name in &ind.ctors {
-        if let Some(LCI::CtorInfo(ctor)) = lean_env.get(ctor_name) {
+        if let Some(LCI::CtorInfo(ctor)) = lean_env.get(ctor_name).as_deref() {
           let ctor_zid = KId::new(
             resolve_lean_name_addr(ctor_name, n2a, aux_n2a),
             ctor_name.clone(),

@@ -1692,7 +1692,7 @@ mod tests {
     assert_eq!(le.len(), 3);
     for name in ["A", "B", "C"] {
       let ci = le.get(&mk_name(name)).expect("missing name");
-      assert!(matches!(ci, LeanCI::AxiomInfo(..)));
+      assert!(matches!(&*ci, LeanCI::AxiomInfo(..)));
     }
   }
 }

@@ -5,7 +5,7 @@
 //! compute SCCs (strongly connected components) for mutual block detection.
 //! Construction is parallelized via rayon.
 
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::collections::hash_map::Entry;
 
@@ -78,14 +78,15 @@ pub fn build_ref_graph(env: &Env) -> RefGraph {
     bigger
   };
 
-  let (out_refs, in_refs) = env
-    .par_iter()
-    .map(|entry| {
-      let (name, constant) = entry;
-      let deps = get_constant_info_references(constant);
+  let names: Vec<&Name> = env.keys().collect();
+  let (out_refs, in_refs) = names
+    .into_par_iter()
+    .filter_map(|name| {
+      let constant = env.get(name)?;
+      let deps = get_constant_info_references(&constant);
       let in_refs = mk_in_refs(name, &deps);
       let out_refs = RefMap::from_iter([(name.clone(), deps)]);
-      (out_refs, in_refs)
+      Some((out_refs, in_refs))
     })
     .reduce(
       || (RefMap::default(), RefMap::default()),

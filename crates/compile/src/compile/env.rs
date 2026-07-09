@@ -1065,6 +1065,15 @@ pub fn compile_env_with_options(
         file_bytes as f64 / (1024.0 * 1024.0),
       );
     }
+    if let Some((hits, misses)) = lean_env.lazy_cache_stats() {
+      let total = hits + misses;
+      let hit_pct =
+        if total == 0 { 0.0 } else { 100.0 * hits as f64 / total as f64 };
+      eprintln!(
+        "[compile_env] lazy lean env: {hits} hits · {misses} misses \
+         ({hit_pct:.1}% hit rate)",
+      );
+    }
   }
 
   Ok(stt)

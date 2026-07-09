@@ -256,7 +256,7 @@ pub fn generate_aux_patches(
     expanded_probe.types.len() > expanded_probe.n_originals;
   let metadata_has_nested = original_all.iter().any(|name| {
     matches!(
-      lean_env.get(name),
+      lean_env.get(name).as_deref(),
       Some(ix_common::env::ConstantInfo::InductInfo(v))
         if crate::compile::nat_conv::nat_to_usize(&v.num_nested) > 0
     )
@@ -759,13 +759,13 @@ pub fn generate_aux_patches(
               Some(PatchedConstant::BelowIndc(_))
             )
           {
-            let rep_ctors = match lean_env.get(rep) {
+            let rep_ctors = match lean_env.get(rep).as_deref() {
               Some(ix_common::env::ConstantInfo::InductInfo(v)) => {
                 v.ctors.clone()
               },
               _ => vec![],
             };
-            let alias_ctors = match lean_env.get(alias) {
+            let alias_ctors = match lean_env.get(alias).as_deref() {
               Some(ix_common::env::ConstantInfo::InductInfo(v)) => {
                 v.ctors.clone()
               },
@@ -964,7 +964,7 @@ pub fn generate_aux_patches(
       // are outside the supported rewrite domain; skipping leaves the
       // original compile, which kernel-check reports per constant.
       let target_ok = matches!(
-        lean_env.get(&target_name),
+        lean_env.get(&target_name).as_deref(),
         Some(ix_common::env::ConstantInfo::RecInfo(r))
           if crate::compile::nat_conv::nat_to_usize(&r.num_motives) == 1
       );

@@ -5,7 +5,7 @@
 //! propagates through the reference graph: if A references ungrounded B, then A
 //! is also ungrounded.
 
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::collections::hash_map::Entry;
 
@@ -47,13 +47,14 @@ pub fn ground_consts(
   in_refs: &RefMap,
 ) -> FxHashMap<Name, GroundError> {
   // Collect immediate ungrounded constants.
-  let mut ungrounded: FxHashMap<_, _> = env
-    .par_iter()
-    .filter_map(|entry| {
-      let (name, constant) = entry;
-      let univs = const_univs(constant);
+  let names: Vec<&Name> = env.keys().collect();
+  let mut ungrounded: FxHashMap<_, _> = names
+    .into_par_iter()
+    .filter_map(|name| {
+      let constant = env.get(name)?;
+      let univs = const_univs(&constant);
       let mut stt = GroundState::default();
-      if let Err(err) = ground_const(constant, env, univs, 0, &mut stt) {
+      if let Err(err) = ground_const(&constant, env, univs, 0, &mut stt) {
         Some((name.clone(), err))
       } else {
         None
@@ -125,7 +126,7 @@ fn ground_const(
     },
     ConstantInfo::InductInfo(val) => {
       for ctor in &val.ctors {
-        let ci = env.get(ctor).cloned();
+        let ci = env.get(ctor).map(|e| e.cloned());
         match ci.as_ref() {
           Some(ConstantInfo::CtorInfo(_)) => (),
           _ => {

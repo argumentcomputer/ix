@@ -2024,7 +2024,7 @@ fn build_block_env(all_names: &[Name], lean_env: &LeanEnv) -> LeanEnv {
   for ind_name in all_names {
     if let Some(ci) = lean_env.get(ind_name) {
       env.insert(ind_name.clone(), ci.clone());
-      if let LeanConstantInfo::InductInfo(v) = ci {
+      if let LeanConstantInfo::InductInfo(v) = &*ci {
         for ctor_name in &v.ctors {
           if let Some(ctor_ci) = lean_env.get(ctor_name) {
             env.insert(ctor_name.clone(), ctor_ci.clone());
@@ -2200,7 +2200,7 @@ fn print_const_comparison(
 ) {
   let Some(orig_env) = orig_env else { return };
   let Some(lean_ci_ref) = orig_env.get(name) else { return };
-  let lean_ci = lean_ci_ref;
+  let lean_ci = &*lean_ci_ref;
   if std::mem::discriminant(decompiled) != std::mem::discriminant(lean_ci) {
     eprintln!(
       "[aux_gen diff] {}: kind decompiled={} original={}",
@@ -2741,7 +2741,7 @@ fn roundtrip_block(
           if let Some(orig_env) = orig_env
             && let Some(lean_ci_ref) = orig_env.get(&nm)
           {
-            let lean_ci = lean_ci_ref;
+            let lean_ci = &*lean_ci_ref;
             eprintln!("  -- lean  {} --", nm.pretty());
             eprintln!("    type: {}", lean_ci.get_type().pretty());
             if let Some(v) = get_value(lean_ci) {
@@ -2762,7 +2762,7 @@ fn roundtrip_block(
           if let Some(orig_env) = orig_env
             && let Some(ci) = orig_env.get(&nm)
           {
-            match ci {
+            match &*ci {
               LeanConstantInfo::RecInfo(rv) => eprintln!(
                 "  -- lean  {} RecInfo: k={} unsafe={} lvls={} params={} \
                  indices={} motives={} minors={} rule_fields={:?}",
@@ -2807,7 +2807,7 @@ fn roundtrip_block(
         //     divergence is contextual, not a regen defect.
         if singleton && let Some(oenv) = orig_env {
           let nm = consts[0].name();
-          let omc: Option<LeanMutConst> = match oenv.get(&nm) {
+          let omc: Option<LeanMutConst> = match oenv.get(&nm).as_deref() {
             Some(LeanConstantInfo::RecInfo(rv)) => {
               Some(LeanMutConst::Recr(rv.clone()))
             },
@@ -2992,12 +2992,18 @@ fn roundtrip_block(
             let (mut iv, cvs) =
               decompile_inductive(ind, &orig_meta, &mut dec_cache, stt, dstt)?;
             // Recompute the lean flags, which are not stored by Ixon
-            let flags = compute_lean_ind_flags(&iv.all, generated_consts)
-              .map_err(|e| DecompileError::BadConstantFormat {
-                msg: format!(
-                  "roundtrip ind-flags for '{}': {e}",
-                  name.pretty()
-                ),
+            let flags_env: LeanEnv = generated_consts
+              .iter()
+              .map(|(k, v)| (k.clone(), v.clone()))
+              .collect();
+            let flags =
+              compute_lean_ind_flags(&iv.all, &flags_env).map_err(|e| {
+                DecompileError::BadConstantFormat {
+                  msg: format!(
+                    "roundtrip ind-flags for '{}': {e}",
+                    name.pretty()
+                  ),
+                }
               })?;
             iv.num_nested = Nat::from(flags.num_nested);
             iv.is_rec = flags.is_rec;
@@ -3036,7 +3042,7 @@ fn roundtrip_block(
               && let Some(lean_ci_ref) = orig.get(&n)
               && ci.get_hash() != lean_ci_ref.get_hash()
             {
-              let lean_ci = lean_ci_ref;
+              let lean_ci = &*lean_ci_ref;
               if std::env::var_os("IX_ROUNDTRIP_DEBUG").is_some() {
                 eprintln!(
                   "[lean hash mismatch] {}: generated_ci_hash={:x?} lean_ci_hash={:x?}",
@@ -3245,7 +3251,7 @@ fn print_rec_comparison(
 ) {
   let Some(orig_env) = orig_env else { return };
   let orig_ci = orig_env.get(rec_name);
-  let Some(LeanConstantInfo::RecInfo(lean_rv)) = orig_ci else {
+  let Some(LeanConstantInfo::RecInfo(lean_rv)) = orig_ci.as_deref() else {
     return;
   };
 
@@ -3557,7 +3563,8 @@ fn block_mut_consts_from_env(
 ) -> Result<Vec<LeanMutConst>, DecompileError> {
   let mut cs = Vec::with_capacity(all_names.len());
   for name in all_names {
-    let Some(LeanConstantInfo::InductInfo(ind)) = env.get(name) else {
+    let ind_entry = env.get(name);
+    let Some(LeanConstantInfo::InductInfo(ind)) = ind_entry.as_deref() else {
       return Err(DecompileError::BadConstantFormat {
         msg: format!(
           "decompile aux plan: block member '{}' is not an inductive",
@@ -3567,7 +3574,7 @@ fn block_mut_consts_from_env(
     };
     let mut ctors = Vec::with_capacity(ind.ctors.len());
     for ctor_name in &ind.ctors {
-      match env.get(ctor_name) {
+      match env.get(ctor_name).as_deref() {
         Some(LeanConstantInfo::CtorInfo(ctor)) => ctors.push(ctor.clone()),
         _ => {
           return Err(DecompileError::BadConstantFormat {
@@ -3890,7 +3897,7 @@ fn decompile_block_aux_gen(
     use crate::graph::get_constant_info_references;
     for ind_name in all_names {
       if let Some(ci) = env.get(ind_name) {
-        for ref_name in get_constant_info_references(ci) {
+        for ref_name in get_constant_info_references(&ci) {
           expr_utils::ensure_in_kenv_of(&ref_name, env, stt, kctx);
         }
       }
@@ -4015,16 +4022,18 @@ fn decompile_block_aux_gen(
 
   // Sync generated .rec constants into env and dstt.env so later phases can find them.
   for (n, rv) in &canonical_recs {
-    env
-      .entry(n.clone())
-      .or_insert_with(|| LeanConstantInfo::RecInfo(rv.clone()));
+    if !env.contains_key(n) {
+      env.insert(n.clone(), LeanConstantInfo::RecInfo(rv.clone()));
+    }
     dstt
       .env
       .entry(n.clone())
       .or_insert_with(|| LeanConstantInfo::RecInfo(rv.clone()));
   }
   for (n, ci) in &generated_consts {
-    env.entry(n.clone()).or_insert_with(|| ci.clone());
+    if !env.contains_key(n) {
+      env.insert(n.clone(), ci.clone());
+    }
     dstt.env.entry(n.clone()).or_insert_with(|| ci.clone());
   }
 
@@ -4048,7 +4057,7 @@ fn decompile_block_aux_gen(
         _ => continue,
       };
       let rec_name = Name::str(ind_name.clone(), "rec".to_string());
-      let rec_val = match env.get(&rec_name) {
+      let rec_val = match env.get(&rec_name).as_deref() {
         Some(LeanConstantInfo::RecInfo(rv)) => rv.clone(),
         _ => {
           // Try dstt.env (may have been inserted above)
@@ -4145,7 +4154,7 @@ fn decompile_block_aux_gen(
         _ => continue,
       };
       let rec_name = Name::str(ind_name, "rec".to_string());
-      let rec_val = match env.get(&rec_name) {
+      let rec_val = match env.get(&rec_name).as_deref() {
         Some(LeanConstantInfo::RecInfo(rv)) => rv.clone(),
         _ => match dstt.env.get(&rec_name).as_deref() {
           Some(LeanConstantInfo::RecInfo(rv)) => rv.clone(),
@@ -4281,7 +4290,9 @@ fn decompile_block_aux_gen(
 
   // Sync generated constants into env and dstt.env for subsequent phases.
   for (n, ci) in &generated_consts {
-    env.entry(n.clone()).or_insert_with(|| ci.clone());
+    if !env.contains_key(n) {
+      env.insert(n.clone(), ci.clone());
+    }
     dstt.env.entry(n.clone()).or_insert_with(|| ci.clone());
   }
 
@@ -4373,7 +4384,7 @@ fn decompile_block_aux_gen(
       if std::env::var_os("IX_ROUNDTRIP_DEBUG").is_some()
         && let Some(ref lean_env) = stt.lean_env
       {
-        let lean_all = match lean_env.get(&d.name) {
+        let lean_all = match lean_env.get(&d.name).as_deref() {
           Some(LeanConstantInfo::DefnInfo(v)) => Some(v.all.clone()),
           Some(LeanConstantInfo::ThmInfo(v)) => Some(v.all.clone()),
           Some(LeanConstantInfo::OpaqueInfo(v)) => Some(v.all.clone()),
@@ -4530,7 +4541,9 @@ fn decompile_block_aux_gen(
 
   // Sync generated constants (below, below.rec) into env and dstt.env for brecOn.
   for (n, ci) in &generated_consts {
-    env.entry(n.clone()).or_insert_with(|| ci.clone());
+    if !env.contains_key(n) {
+      env.insert(n.clone(), ci.clone());
+    }
     dstt.env.entry(n.clone()).or_insert_with(|| ci.clone());
   }
 
@@ -4643,7 +4656,8 @@ fn decompile_block_aux_gen(
   if let Some(orig) = orig_env {
     for (name, generated_ci) in &generated_consts {
       if let Some(orig_ci) = orig.get(name)
-        && let Err(e) = crate::congruence::const_alpha_eq(generated_ci, orig_ci)
+        && let Err(e) =
+          crate::congruence::const_alpha_eq(generated_ci, &orig_ci)
       {
         aux_gen_errors.push((
           name.clone(),
@@ -4875,7 +4889,7 @@ pub fn decompile_env(
       }
       expr_utils::ensure_in_kenv_of(&name, &work_env, stt, &mut kctx);
       if let Some(ci) = work_env.get(&name) {
-        for ref_name in get_constant_info_references(ci) {
+        for ref_name in get_constant_info_references(&ci) {
           if !ingressed.contains(&ref_name) {
             stack.push(ref_name);
           }
@@ -4998,7 +5012,7 @@ pub fn check_decompile(
     if is_aux_gen_suffix(name) {
       return Ok::<(), DecompileError>(());
     }
-    match original.get(name) {
+    match original.get(name).as_deref() {
       Some(orig_info) if orig_info.get_hash() == info.get_hash() => {
         matches.fetch_add(1, Ordering::Relaxed);
         Ok::<(), DecompileError>(())
