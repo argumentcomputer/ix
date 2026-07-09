@@ -78,6 +78,14 @@ jobs:
   build:
     needs: setup
     runs-on: warp-ubuntu-latest-x64-32x
+    # The cache service refuses writes from a wholly read-only token
+    # ("cache write denied: token has no writable scopes"), and this job
+    # saves the bench-bins cache — actions:write makes the token writable.
+    # Granted per-job so the workflow default stays read-only (the
+    # privileged comment job must not inherit it).
+    permissions:
+      contents: read
+      actions: write
     outputs:
       matrix: ${{ steps.parse.outputs.matrix }}
       envs: ${{ steps.parse.outputs.envs }}
@@ -143,6 +151,10 @@ jobs:
     needs: [setup, build]
     if: needs.build.outputs.envs != '[]'
     runs-on: warp-ubuntu-latest-x64-32x
+    # Saves the .ixe + compile-row caches (see build for why actions:write).
+    permissions:
+      contents: read
+      actions: write
     timeout-minutes: 120
     strategy:
       fail-fast: false
@@ -205,6 +217,11 @@ jobs:
     # env, mode, runner, label); the label already is the cell id.
     name: ${{ matrix.cell.label }}
     needs: [setup, build, compile]
+    # Saves the .ixe fallback + rust-cache entries (see build for why
+    # actions:write).
+    permissions:
+      contents: read
+      actions: write
     # A compile failure stops the cells (they would just re-fail the same
     # compile lazily); the skipped case can't arise (envs is never empty)
     # but is tolerated for robustness.
