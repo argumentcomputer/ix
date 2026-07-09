@@ -138,9 +138,6 @@ jobs:
           # - { env: FC, cache_pkg: formal_conjectures, mathlib: true }
     steps:
       - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-          fetch-tags: true   # bencher-track reads the bencher-thresholds-reset tag
       - uses: actions/cache/restore@v5
         with:
           path: ~/.local/bin
@@ -264,9 +261,6 @@ jobs:
         mode: [execute, prove]
     steps:
       - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0     # full history for the baseline-anchor lookup
-          fetch-tags: true   # bencher-track reads the bencher-thresholds-reset tag
       - uses: actions/cache/restore@v5
         with:
           path: ~/.local/bin
@@ -379,9 +373,6 @@ jobs:
         cell: ${{ fromJson(needs.plan.outputs.zkvm-cells) }}
     steps:
       - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-          fetch-tags: true   # bencher-track reads the bencher-thresholds-reset tag
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           cache-workspaces: ${{ matrix.cell.backend }}
@@ -479,9 +470,6 @@ jobs:
         bench: ${{ fromJson(needs.plan.outputs.bench-envs) }}
     steps:
       - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-          fetch-tags: true   # bencher-track reads the bencher-thresholds-reset tag
       - uses: actions/cache/restore@v5
         with:
           path: ~/.local/bin

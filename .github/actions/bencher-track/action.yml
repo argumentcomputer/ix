@@ -1,18 +1,19 @@
 name: Track benchmarks on bencher
 description: >-
   Run `bencher run` for the `ix` project. Every measure's baseline is windowed
-  to the data points recorded since the workload's `bencher-thresholds-reset-<workload>`
-  tag, so a toolchain bump (or any permanent shift) is recalibrated by moving
-  that one tag — via the !bencher-thresholds-reset PR comment or the
-  bencher-thresholds-reset workflow. The calling job must check out with
-  fetch-depth: 0 and fetch-tags: true (the tag is read here).
+  to the data points recorded since the workload's
+  `refs/bencher/<workload>` anchor ref, so a toolchain bump
+  (or any permanent shift) is recalibrated by moving that one ref — via the
+  !bencher-thresholds-reset PR comment or the bencher-thresholds-reset
+  workflow. The ref lives outside refs/tags (fetched here directly), so it
+  never decorates `git log` and callers need no fetch-depth/fetch-tags.
 
 inputs:
   testbed:
     description: Bencher testbed slug.
     required: true
   workload:
-    description: Workload key for the `bencher-thresholds-reset-<workload>` tag (the backend testbed minus its runner-arch suffix, e.g. zisk-check-execute).
+    description: Workload key for the `refs/bencher/<workload>` anchor (the backend testbed minus its runner-arch suffix, e.g. zisk-check-execute).
     required: true
   file:
     description: Bencher Metric Format JSON file to upload.
@@ -45,16 +46,21 @@ runs:
         THRESHOLDS: ${{ inputs.thresholds }}
       run: |
         # Baseline window: data points for this benchmark since the workload's
-        # `bencher-thresholds-reset-<workload>` tag (moved on a toolchain bump or any
-        # permanent shift). The same window applies to every measure. We count
-        # actual data points, not commits, so the baseline never reaches past
-        # the anchor (a failed run produces no metric, so a commit count would
-        # overshoot). The matrix uploads one report per benchmark, so count this
-        # benchmark's reports (its name is the upload's top-level key). The ix
-        # project is public, so no token is needed. With no tag yet, fall back
-        # to Bencher's 64-point window.
+        # `refs/bencher/<workload>` anchor ref (moved on a
+        # toolchain bump or any permanent shift). A custom namespace, NOT
+        # refs/tags: these are CI plumbing, and tags would decorate every
+        # user's bare `git log` at the anchor commit. The same window applies
+        # to every measure. We count actual data points, not commits, so the
+        # baseline never reaches past the anchor (a failed run produces no
+        # metric, so a commit count would overshoot). The matrix uploads one
+        # report per benchmark, so count this benchmark's reports (its name
+        # is the upload's top-level key). The ix project is public, so no
+        # token is needed. With no anchor yet, fall back to Bencher's
+        # 64-point window.
         sample=64
-        if reset_epoch=$(git log -1 --format=%ct "bencher-thresholds-reset-$WORKLOAD" 2>/dev/null); then
+        git fetch --quiet --no-tags origin \
+          "+refs/bencher/*:refs/bencher/*" 2>/dev/null || true
+        if reset_epoch=$(git log -1 --format=%ct "refs/bencher/$WORKLOAD" 2>/dev/null); then
           bench=$(jq -r '[keys[]][0]' "$FILE")
           sample=$(curl -fsS "https://api.bencher.dev/v0/projects/ix/reports?branch=${GITHUB_REF_NAME}&testbed=${TESTBED}&start_time=$((reset_epoch * 1000))&per_page=255" \
             | jq --arg b "$bench" '[.[] | select([.results[]?[]?.benchmark.name] | index($b))] | length')
