@@ -1019,7 +1019,9 @@ fn get_name_component(
 // ============================================================================
 
 use super::env::{AuxLayout, Named};
-use super::metadata::{ConstantMeta, NameIndex, NameReverseIndex};
+use super::metadata::{
+  ConstantMeta, NameGet, NameIndex, NamePut, NameReverseIndex,
+};
 
 /// Serialize an `AuxLayout` side-table entry.
 ///
@@ -1059,14 +1061,17 @@ pub fn put_named_indexed(
   buf: &mut Vec<u8>,
 ) -> Result<(), String> {
   put_address(&named.addr, buf);
-  named.meta.put_indexed(idx, buf)?;
+  // Demoted entries decode here and re-encode through the name index —
+  // the raw and indexed encodings share the wire format, differing only
+  // in how name references are written.
+  named.meta().put_with(NamePut::Indexed(idx), buf)?;
   // Serialize original as Option: 0 = None, 1 = Some(addr, meta)
-  match &named.original {
+  match named.original() {
     None => buf.push(0),
     Some((addr, meta)) => {
       buf.push(1);
-      put_address(addr, buf);
-      meta.put_indexed(idx, buf)?;
+      put_address(&addr, buf);
+      meta.put_with(NamePut::Indexed(idx), buf)?;
     },
   }
   Ok(())
@@ -1078,17 +1083,18 @@ pub fn get_named_indexed(
   rev: &NameReverseIndex,
 ) -> Result<Named, String> {
   let addr = get_address(buf)?;
-  let meta = ConstantMeta::get_indexed(buf, rev)?;
-  let original = match get_u8(buf)? {
-    0 => None,
+  let meta = ConstantMeta::get_with(buf, NameGet::Indexed(rev))?;
+  let mut named = Named::new(addr, meta);
+  match get_u8(buf)? {
+    0 => {},
     1 => {
       let orig_addr = get_address(buf)?;
-      let orig_meta = ConstantMeta::get_indexed(buf, rev)?;
-      Some((orig_addr, orig_meta))
+      let orig_meta = ConstantMeta::get_with(buf, NameGet::Indexed(rev))?;
+      named.set_original(orig_addr, orig_meta);
     },
     x => return Err(format!("Named.original: invalid tag {x}")),
-  };
-  Ok(Named { addr, meta, original })
+  }
+  Ok(named)
 }
 
 // ============================================================================
@@ -1598,7 +1604,7 @@ impl Env {
       let name = names_lookup.get(&name_addr).cloned().ok_or_else(|| {
         format!("parse_lazy_index: missing name for addr {:?}", name_addr)
       })?;
-      let hint = match &named.meta.info {
+      let hint = match &named.meta().info {
         super::metadata::ConstantMetaInfo::Def { hints, .. } => Some(*hints),
         _ => None,
       };
@@ -1736,7 +1742,7 @@ impl Env {
       let _name_addr = get_address(buf)?;
       let named = get_named_indexed(buf, &name_reverse_index)?;
       if let super::metadata::ConstantMetaInfo::Def { hints, .. } =
-        &named.meta.info
+        &named.meta().info
       {
         env.anon_hints.insert(named.addr.clone(), *hints);
       }
@@ -1939,7 +1945,7 @@ impl Env {
       let _name_addr = get_address(&mut buf)?;
       let named = get_named_indexed(&mut buf, &name_reverse_index)?;
       if let super::metadata::ConstantMetaInfo::Def { hints, .. } =
-        &named.meta.info
+        &named.meta().info
       {
         env.anon_hints.insert(named.addr.clone(), *hints);
       }
@@ -2271,7 +2277,10 @@ mod tests {
         } else {
           None
         };
-        let named = Named { addr: addr.clone(), meta, original };
+        let mut named = Named::new(addr.clone(), meta);
+        if let Some((orig_addr, orig_meta)) = original {
+          named.set_original(orig_addr, orig_meta);
+        }
         env.named.insert(name, named);
       }
     }

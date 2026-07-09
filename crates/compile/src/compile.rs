@@ -312,7 +312,7 @@ impl CompileState {
       self.name_to_addr.insert(name.clone(), aux_addr.clone());
     }
     if let Some(mut entry) = self.env.named.get_mut(name) {
-      entry.value_mut().original = Some((orig_addr, orig_meta));
+      entry.value_mut().set_original(orig_addr, orig_meta);
     }
     Ok(())
   }
@@ -798,11 +798,7 @@ pub fn compile_expr(
                 cache.compiling.as_ref().is_some_and(|c| {
                   crate::decompile::is_aux_gen_suffix(c)
                     && (stt.aux_name_to_addr.contains_key(c)
-                      || stt
-                        .env
-                        .named
-                        .get(c)
-                        .is_some_and(|n| n.original.is_some()))
+                      || stt.env.named.get(c).is_some_and(|n| n.has_original()))
                 });
               if !compiling_is_aux_regen {
                 if let Some(plan) = stt.call_site_plans.get(name)

@@ -2410,7 +2410,7 @@ extern "C" fn rs_compile_validate_aux(
 
     stt.env.named.par_iter().for_each(|entry| {
       let named = entry.value();
-      if let Some((orig_addr, _)) = &named.original {
+      if let Some((orig_addr, _)) = &named.original() {
         if *orig_addr != named.addr
           && stt.env.consts.contains_key(orig_addr)
           && !canonical_addrs.contains(orig_addr)
@@ -3703,7 +3703,7 @@ extern "C" fn rs_compile_validate_aux(
           fresh_stt
             .name_to_addr
             .insert(entry.key().clone(), entry.value().addr.clone());
-          if entry.value().original.is_some() {
+          if entry.value().has_original() {
             n_original += 1;
           }
         }
@@ -4165,7 +4165,7 @@ fn compute_const_size_breakdown(
 
   // Metadata size
   let meta_size = if let Some(named) = stt.env.named.get(name) {
-    serialized_meta_size(&named.meta, name_index)
+    serialized_meta_size(&named.meta(), name_index)
   } else {
     0
   };
@@ -4181,7 +4181,7 @@ fn serialized_meta_size(
 ) -> usize {
   let mut buf = Vec::new();
   meta
-    .put_indexed(name_index, &mut buf)
+    .put_with(ixon::metadata::NamePut::Indexed(name_index), &mut buf)
     .expect("metadata serialization failed");
   buf.len()
 }

@@ -1895,8 +1895,9 @@ fn ingress_muts_inductive<M: KernelMode>(
       )
     })?;
 
+    let ctor_named_meta = ctor_named.meta();
     let (ctor_lvl_params, ctor_arena, ctor_type_root) =
-      match &ctor_named.meta.info {
+      match &ctor_named_meta.info {
         ConstantMetaInfo::Ctor { lvls, arena, type_root, .. } => {
           (resolve_level_params(lvls, names), arena, *type_root)
         },
@@ -1998,7 +1999,7 @@ fn ingress_muts_block<M: KernelMode>(
       format!("Muts member '{member_name}' not found in named entries")
     })?;
     let member_addr = &member_named.addr;
-    let member_meta = &member_named.meta;
+    let member_meta = &member_named.meta();
 
     let self_id: KId<M> =
       KId::new(member_addr.clone(), M::meta_field(member_name.clone()));
@@ -2586,8 +2587,9 @@ pub fn ingress_compiled_names(
     let mut stats = ConvertStats::default();
 
     // Check if this is a Muts entry (mutual block) — handle differently
-    if matches!(&named.meta.info, ConstantMetaInfo::Muts { .. }) {
-      if let ConstantMetaInfo::Muts { all, .. } = &named.meta.info
+    let named_meta = named.meta();
+    if matches!(&named_meta.info, ConstantMetaInfo::Muts { .. }) {
+      if let ConstantMetaInfo::Muts { all, .. } = &named_meta.info
         && let Ok(entries) = ingress_muts_block(
           name,
           &named.addr,
@@ -2630,7 +2632,7 @@ pub fn ingress_compiled_names(
       name,
       &named.addr,
       &constant,
-      &named.meta,
+      &named_meta,
       ixon_env,
       name_map,
       addr_map,
@@ -3160,7 +3162,7 @@ pub fn build_ixon_ingress_lookups(ixon_env: &IxonEnv) -> IxonIngressLookups {
       .addr_to_name
       .entry(named.addr.clone())
       .or_insert_with(|| name.clone());
-    if let ConstantMetaInfo::Muts { all, .. } = &named.meta.info {
+    if let ConstantMetaInfo::Muts { all, .. } = &named.meta().info {
       lookups
         .muts_by_addr
         .entry(named.addr.clone())
@@ -3364,7 +3366,7 @@ fn ingress_addr_set_into_kenv<M: KernelMode>(
             const_name,
             &addr,
             &constant,
-            &named.meta,
+            &named.meta(),
             ixon_env,
             &lookups.names,
             &lookups.name_to_addr,
@@ -3801,7 +3803,7 @@ fn ixon_ingress_inner<M: KernelMode>(
   for entry in ixon_env.named.iter() {
     let const_name = entry.key().clone();
     let named = entry.value();
-    match &named.meta.info {
+    match &named.meta().info {
       ConstantMetaInfo::Muts { .. } => {
         work_items.push(IngressWorkItem::Muts(const_name));
       },
@@ -3899,7 +3901,7 @@ fn ixon_ingress_inner<M: KernelMode>(
           &const_name,
           &named.addr,
           &constant,
-          &named.meta,
+          &named.meta(),
           ixon_env,
           &names,
           &name_to_addr,
@@ -3935,7 +3937,8 @@ fn ixon_ingress_inner<M: KernelMode>(
           timing.lookup_ns += elapsed_ns(lookup_start);
         }
 
-        let all = match &named.meta.info {
+        let named_meta = named.meta();
+        let all = match &named_meta.info {
           ConstantMetaInfo::Muts { all, .. } => all,
           _ => {
             timing.convert_stats = convert_stats;

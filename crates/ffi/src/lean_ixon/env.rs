@@ -359,7 +359,7 @@ pub fn ixon_env_to_decoded(env: &IxonEnv) -> Result<DecodedRawEnv, String> {
     .map(|e| DecodedRawNamed {
       name: e.key().clone(),
       addr: e.value().addr.clone(),
-      const_meta: e.value().meta.clone(),
+      const_meta: (*e.value().meta()).clone(),
     })
     .collect();
   let blobs = env

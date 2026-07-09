@@ -790,15 +790,15 @@ fn build_mut_const(
 /// the original's `meta` and `original` (aux_gen regeneration hint) fields
 /// but with an updated `addr`.
 ///
-/// Decompile's Pass 2 relies on `named.original.is_some()` to decide which
+/// Decompile's Pass 2 relies on `named.has_original()` to decide which
 /// entries are aux_gen-regenerated — we MUST copy that field over, or
 /// otherwise every `.brecOn*` / `.below` / `.brecOn_N.eq` gets dropped.
 fn rebuild_named(addr: Address, original: &Named) -> Named {
-  Named {
-    addr,
-    meta: original.meta.clone(),
-    original: original.original.clone(),
+  let mut named = Named::new(addr, (*original.meta()).clone());
+  if let Some((orig_addr, orig_meta)) = original.original() {
+    named.set_original(orig_addr, (*orig_meta).clone());
   }
+  named
 }
 
 /// Register a member `Named` pointing at the appropriate address:
@@ -976,7 +976,7 @@ fn egress_muts_block(
 
   // Register the synthetic Muts Named entry at the new block_addr. Preserve
   // the original `meta` / `original` fields — decompile's Pass 2 keys off
-  // `named.original.is_some()` to identify aux_gen entries.
+  // `named.has_original()` to identify aux_gen entries.
   out.register_name(
     muts_name.clone(),
     rebuild_named(block_addr.clone(), muts_named),
@@ -1198,7 +1198,7 @@ pub fn ixon_egress(
   for entry in original_env.named.iter() {
     let name = entry.key().clone();
     let named = entry.value().clone();
-    match &named.meta.info {
+    match &named.meta().info {
       ConstantMetaInfo::Muts { .. } => muts_entries.push((name, named)),
       _ => {
         let orig_const = original_env.get_const(&named.addr);
@@ -1229,7 +1229,8 @@ pub fn ixon_egress(
   let t_muts = std::time::Instant::now();
   muts_entries.par_iter().try_for_each(
     |(muts_name, muts_named)| -> Result<(), String> {
-      let all: &[Vec<Address>] = match &muts_named.meta.info {
+      let muts_meta = muts_named.meta();
+      let all: &[Vec<Address>] = match &muts_meta.info {
         ConstantMetaInfo::Muts { all, .. } => all.as_slice(),
         _ => unreachable!("partitioned above"),
       };

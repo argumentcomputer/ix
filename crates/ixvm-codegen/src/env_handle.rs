@@ -41,7 +41,7 @@ impl EnvHandle {
       .iter()
       .filter_map(|entry| {
         let named = entry.value();
-        if let ConstantMetaInfo::Def { hints, .. } = &named.meta.info {
+        if let ConstantMetaInfo::Def { hints, .. } = &named.meta().info {
           Some((named.addr.clone(), *hints))
         } else {
           None

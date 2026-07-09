@@ -686,7 +686,11 @@ impl<R: LeanRef> LeanIxonNamed<R> {
         tag => panic!("Invalid Option tag for Named.original: {tag}"),
       }
     };
-    Named { addr, meta, original }
+    let mut named = Named::new(addr, meta);
+    if let Some((orig_addr, orig_meta)) = original {
+      named.set_original(orig_addr, orig_meta);
+    }
+    named
   }
 }
 
@@ -774,5 +778,6 @@ pub extern "C" fn rs_roundtrip_ixon_named(
   obj: LeanIxonNamed<LeanBorrowed<'_>>,
 ) -> LeanIxonNamed<LeanOwned> {
   let named = obj.decode();
-  LeanIxonNamed::build(&named.addr, &named.meta, &named.original)
+  let original = named.original().map(|(a, m)| (a, (*m).clone()));
+  LeanIxonNamed::build(&named.addr, &named.meta(), &original)
 }

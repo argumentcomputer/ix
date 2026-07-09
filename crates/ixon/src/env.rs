@@ -13,27 +13,117 @@ use super::lazy::LazyConstant;
 use super::map::IxonMap;
 use super::metadata::{ConstantMeta, ConstantMetaInfo};
 
+/// Metadata representation inside [`Named`]: structured (default) or
+/// demoted to its self-contained serialized form
+/// ([`ConstantMeta::put_raw`]), which costs a fraction of the
+/// pointer-rich structured DAG and is decoded on demand. The demoted
+/// form is chosen at registration under `IX_COMPILE_META=demote`.
+#[derive(Clone, Debug)]
+enum MetaRepr {
+  Structured(Arc<ConstantMeta>),
+  Bytes(Arc<[u8]>),
+}
+
+impl MetaRepr {
+  fn structured(meta: ConstantMeta) -> Self {
+    MetaRepr::Structured(Arc::new(meta))
+  }
+
+  fn demoted(meta: &ConstantMeta) -> Self {
+    let mut buf = Vec::new();
+    meta
+      .put_raw(&mut buf)
+      .expect("ConstantMeta::put_raw cannot fail on in-memory metadata");
+    MetaRepr::Bytes(buf.into())
+  }
+
+  /// Materialize. Cheap `Arc` clone for `Structured`; a fresh decode per
+  /// call for `Bytes` (nothing is cached — mirroring `LazyConstant`).
+  fn decode(&self) -> Arc<ConstantMeta> {
+    match self {
+      MetaRepr::Structured(m) => m.clone(),
+      MetaRepr::Bytes(b) => {
+        let mut slice: &[u8] = b;
+        Arc::new(
+          ConstantMeta::get_raw(&mut slice)
+            .expect("Named meta bytes produced by put_raw failed to decode"),
+        )
+      },
+    }
+  }
+}
+
 /// A named constant with metadata.
 #[derive(Clone, Debug)]
 pub struct Named {
   /// Address of the constant (in consts map)
   pub addr: Address,
-  /// Typed metadata for this constant (includes mutual context in `all` field)
-  pub meta: ConstantMeta,
+  /// Typed metadata for this constant (includes mutual context in `all`
+  /// field). Private repr: structured, or demoted to serialized bytes —
+  /// read through [`Self::meta`].
+  meta: MetaRepr,
   /// For aux_gen-rewritten constants: the original Lean constant's compiled
   /// form (address + metadata). Ingress uses `addr`/`meta` (the canonical
   /// aux_gen form). Decompile uses `original` for faithful roundtrip of
   /// binder names and other cosmetic metadata.
-  pub original: Option<(Address, ConstantMeta)>,
+  original: Option<(Address, MetaRepr)>,
 }
 
 impl Named {
   pub fn new(addr: Address, meta: ConstantMeta) -> Self {
-    Named { addr, meta, original: None }
+    Named { addr, meta: MetaRepr::structured(meta), original: None }
   }
 
   pub fn with_addr(addr: Address) -> Self {
-    Named { addr, meta: ConstantMeta::default(), original: None }
+    Named {
+      addr,
+      meta: MetaRepr::structured(ConstantMeta::default()),
+      original: None,
+    }
+  }
+
+  /// The constant's metadata. Cheap (`Arc` clone) for structured
+  /// entries; a fresh decode per call for demoted ones.
+  pub fn meta(&self) -> Arc<ConstantMeta> {
+    self.meta.decode()
+  }
+
+  /// The aux_gen original form, if recorded (see field docs).
+  pub fn original(&self) -> Option<(Address, Arc<ConstantMeta>)> {
+    self.original.as_ref().map(|(a, m)| (a.clone(), m.decode()))
+  }
+
+  pub fn has_original(&self) -> bool {
+    self.original.is_some()
+  }
+
+  /// Record the aux_gen original form. Stored in the same repr as
+  /// `self.meta`, so demoted entries stay fully demoted.
+  pub fn set_original(&mut self, addr: Address, meta: ConstantMeta) {
+    let repr = match &self.meta {
+      MetaRepr::Structured(_) => MetaRepr::structured(meta),
+      MetaRepr::Bytes(_) => MetaRepr::demoted(&meta),
+    };
+    self.original = Some((addr, repr));
+  }
+
+  pub fn clear_original(&mut self) {
+    self.original = None;
+  }
+
+  /// Convert both metadata slots to the serialized-bytes repr.
+  pub fn demote(&mut self) {
+    if let MetaRepr::Structured(m) = &self.meta {
+      self.meta = MetaRepr::demoted(m);
+    }
+    if let Some((a, MetaRepr::Structured(m))) = &self.original {
+      self.original = Some((a.clone(), MetaRepr::demoted(m)));
+    }
+  }
+
+  /// Whether the primary metadata slot holds structured metadata.
+  pub fn is_meta_structured(&self) -> bool {
+    matches!(self.meta, MetaRepr::Structured(_))
   }
 }
 
@@ -101,6 +191,25 @@ pub enum SpillMode {
   Demote,
   Mmap,
 }
+
+/// `IX_COMPILE_META=demote` stores registered names' metadata as
+/// serialized bytes instead of structured `ConstantMeta` (see
+/// [`Named::demote`]). Default: structured — today's behavior.
+#[cfg(not(target_arch = "riscv64"))]
+pub static META_DEMOTE: std::sync::LazyLock<bool> =
+  std::sync::LazyLock::new(|| {
+    match std::env::var("IX_COMPILE_META").as_deref() {
+      Ok("demote") => true,
+      Ok("structured") | Err(_) => false,
+      Ok(other) => {
+        eprintln!(
+          "[ixon] IX_COMPILE_META={other:?} not recognized \
+           (expected structured|demote); using structured"
+        );
+        false
+      },
+    }
+  });
 
 #[cfg(not(target_arch = "riscv64"))]
 pub static SPILL_MODE: std::sync::LazyLock<SpillMode> =
@@ -385,9 +494,16 @@ impl Env {
     self.consts.get(addr).map(|r| Arc::from(r.value().raw_bytes()))
   }
 
-  /// Register a named constant. Host-only — see `store_blob`.
+  /// Register a named constant. Under `IX_COMPILE_META=demote` the
+  /// entry's metadata is stored in its serialized-bytes form (see
+  /// [`Named::demote`]) — the structured DAG costs a large multiple of
+  /// its encoding and compilation never reads it back.
+  /// Host-only — see `store_blob`.
   #[cfg(not(target_arch = "riscv64"))]
-  pub fn register_name(&self, name: Name, named: Named) {
+  pub fn register_name(&self, name: Name, mut named: Named) {
+    if *META_DEMOTE {
+      named.demote();
+    }
     self.named.insert(name, named);
   }
 
@@ -452,7 +568,9 @@ impl Env {
     self
       .named
       .iter()
-      .filter(|e| !matches!(e.value().meta.info, ConstantMetaInfo::Muts { .. }))
+      .filter(|e| {
+        !matches!(e.value().meta().info, ConstantMetaInfo::Muts { .. })
+      })
       .map(|e| e.value().addr.clone())
       .collect()
   }
@@ -644,6 +762,39 @@ mod tests {
       drop(entry);
       assert_eq!(*env.get_const(addr).unwrap(), *c);
     }
+  }
+
+  #[test]
+  fn demoted_named_roundtrips_and_serializes_identically() {
+    let addr = Address::hash(b"demoted-named-target");
+    // Empty metadata: no name references, so `Env::put` needs no name
+    // index entries. Name-ref-rich raw/indexed equivalence is covered
+    // by `metadata::tests::test_constant_meta_indexed_roundtrip`.
+    let meta = ConstantMeta::default();
+    let mut structured = Named::new(addr.clone(), meta.clone());
+    structured.set_original(addr.clone(), meta.clone());
+    let mut demoted = structured.clone();
+    demoted.demote();
+
+    assert!(structured.is_meta_structured());
+    assert!(!demoted.is_meta_structured());
+    // Accessors agree between reprs.
+    assert_eq!(*structured.meta(), *demoted.meta());
+    assert!(demoted.has_original());
+    let (sa, sm) = structured.original().unwrap();
+    let (da, dm) = demoted.original().unwrap();
+    assert_eq!(sa, da);
+    assert_eq!(*sm, *dm);
+
+    // Envs whose named entries differ only in repr serialize identically.
+    let mk_env = |named: &Named| {
+      let env = Env::new();
+      env.register_name(n("target"), named.clone());
+      let mut buf = Vec::new();
+      env.put(&mut buf).unwrap();
+      buf
+    };
+    assert_eq!(mk_env(&structured), mk_env(&demoted));
   }
 
   #[test]

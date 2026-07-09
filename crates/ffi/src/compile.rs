@@ -458,7 +458,7 @@ pub extern "C" fn rs_compile_phases(
       .collect();
     let named_arr = LeanArray::alloc(named.len());
     for (i, (name, n)) in named.iter().enumerate() {
-      named_arr.set(i, build_raw_named(&mut cache, name, &n.addr, &n.meta));
+      named_arr.set(i, build_raw_named(&mut cache, name, &n.addr, &n.meta()));
     }
 
     let blobs: Vec<_> = compile_stt
@@ -554,7 +554,7 @@ pub extern "C" fn rs_compile_env_to_ixon(
       .collect();
     let named_arr = LeanArray::alloc(named.len());
     for (i, (name, n)) in named.iter().enumerate() {
-      named_arr.set(i, build_raw_named(&mut cache, name, &n.addr, &n.meta));
+      named_arr.set(i, build_raw_named(&mut cache, name, &n.addr, &n.meta()));
     }
 
     let blobs: Vec<_> = compile_stt

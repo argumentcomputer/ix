@@ -254,12 +254,12 @@ impl ConstantMeta {
 
   /// Delegate indexed serialization to the inner enum, then serialize
   /// extension tables.
-  pub fn put_indexed(
+  pub fn put_with(
     &self,
-    idx: &NameIndex,
+    idx: NamePut<'_>,
     buf: &mut Vec<u8>,
   ) -> Result<(), String> {
-    self.info.put_indexed(idx, buf)?;
+    self.info.put_with(idx, buf)?;
     // Extension tables (backward-compatible: 0-length for old constants)
     put_vec_len(self.meta_sharing.len(), buf);
     for expr in &self.meta_sharing {
@@ -276,13 +276,23 @@ impl ConstantMeta {
     Ok(())
   }
 
+  /// Self-contained encoding: name references as raw 32-byte addresses,
+  /// no index required. This is the demoted in-memory form
+  /// (`IX_COMPILE_META=demote`), NOT the `.ixe` named-section encoding —
+  /// `Env::put` re-encodes through the name index.
+  pub fn put_raw(&self, buf: &mut Vec<u8>) -> Result<(), String> {
+    self.put_with(NamePut::Raw, buf)
+  }
+
+  /// Decode the [`Self::put_raw`] encoding.
+  pub fn get_raw(buf: &mut &[u8]) -> Result<Self, String> {
+    Self::get_with(buf, NameGet::Raw)
+  }
+
   /// Delegate indexed deserialization, then deserialize extension tables.
-  pub fn get_indexed(
-    buf: &mut &[u8],
-    rev: &NameReverseIndex,
-  ) -> Result<Self, String> {
-    let info = ConstantMetaInfo::get_indexed(buf, rev)?;
-    // Extension tables: always present (put_indexed always writes them,
+  pub fn get_with(buf: &mut &[u8], rev: NameGet<'_>) -> Result<Self, String> {
+    let info = ConstantMetaInfo::get_with(buf, rev)?;
+    // Extension tables: always present (put_with always writes them,
     // even when empty — three zero-length vectors).
     let sharing_len = get_vec_len(buf)?;
     let mut meta_sharing = Vec::with_capacity(sharing_len);
@@ -631,36 +641,65 @@ pub type NameIndex = HashMap<Address, u64>;
 /// Reverse name index for deserialization: position -> Address
 pub type NameReverseIndex = Vec<Address>;
 
+/// How name references are written: compressed through the env-level
+/// name index (the `.ixe` named-section form), or as raw 32-byte
+/// addresses — a self-contained encoding that needs no index, used by
+/// the demoted in-memory metadata form (`IX_COMPILE_META=demote`).
+#[derive(Clone, Copy)]
+pub enum NamePut<'a> {
+  Indexed(&'a NameIndex),
+  Raw,
+}
+
+/// Decoding counterpart of [`NamePut`].
+#[derive(Clone, Copy)]
+pub enum NameGet<'a> {
+  Indexed(&'a NameReverseIndex),
+  Raw,
+}
+
 pub(super) fn put_idx(
   addr: &Address,
-  idx: &NameIndex,
+  idx: NamePut<'_>,
   buf: &mut Vec<u8>,
 ) -> Result<(), String> {
-  let i = idx.get(addr).copied().ok_or_else(|| {
-    format!(
-      "put_idx: address {:?} not in name index (index has {} entries)",
-      addr,
-      idx.len()
-    )
-  })?;
-  put_u64(i, buf);
-  Ok(())
+  match idx {
+    NamePut::Indexed(map) => {
+      let i = map.get(addr).copied().ok_or_else(|| {
+        format!(
+          "put_idx: address {:?} not in name index (index has {} entries)",
+          addr,
+          map.len()
+        )
+      })?;
+      put_u64(i, buf);
+      Ok(())
+    },
+    NamePut::Raw => {
+      put_address_raw(addr, buf);
+      Ok(())
+    },
+  }
 }
 
 pub(super) fn get_idx(
   buf: &mut &[u8],
-  rev: &NameReverseIndex,
+  rev: NameGet<'_>,
 ) -> Result<Address, String> {
-  let i = get_u64(buf)? as usize;
-  rev
-    .get(i)
-    .cloned()
-    .ok_or_else(|| format!("invalid name index {i}, max {}", rev.len()))
+  match rev {
+    NameGet::Indexed(v) => {
+      let i = get_u64(buf)? as usize;
+      v.get(i)
+        .cloned()
+        .ok_or_else(|| format!("invalid name index {i}, max {}", v.len()))
+    },
+    NameGet::Raw => get_address_raw(buf),
+  }
 }
 
 fn put_idx_vec(
   addrs: &[Address],
-  idx: &NameIndex,
+  idx: NamePut<'_>,
   buf: &mut Vec<u8>,
 ) -> Result<(), String> {
   put_vec_len(addrs.len(), buf);
@@ -672,7 +711,7 @@ fn put_idx_vec(
 
 fn get_idx_vec(
   buf: &mut &[u8],
-  rev: &NameReverseIndex,
+  rev: NameGet<'_>,
 ) -> Result<Vec<Address>, String> {
   let len = get_vec_len(buf)?;
   let mut v = Vec::with_capacity(len);
@@ -687,9 +726,9 @@ fn get_idx_vec(
 // ===========================================================================
 
 impl DataValue {
-  pub fn put_indexed(
+  pub fn put_with(
     &self,
-    idx: &NameIndex,
+    idx: NamePut<'_>,
     buf: &mut Vec<u8>,
   ) -> Result<(), String> {
     match self {
@@ -723,10 +762,7 @@ impl DataValue {
     Ok(())
   }
 
-  pub fn get_indexed(
-    buf: &mut &[u8],
-    rev: &NameReverseIndex,
-  ) -> Result<Self, String> {
+  pub fn get_with(buf: &mut &[u8], rev: NameGet<'_>) -> Result<Self, String> {
     match get_u8(buf)? {
       0 => Ok(Self::OfString(get_address_raw(buf)?)),
       1 => Ok(Self::OfBool(get_bool(buf)?)),
@@ -745,32 +781,32 @@ impl DataValue {
 
 fn put_kvmap_indexed(
   kvmap: &KVMap,
-  idx: &NameIndex,
+  idx: NamePut<'_>,
   buf: &mut Vec<u8>,
 ) -> Result<(), String> {
   put_vec_len(kvmap.len(), buf);
   for (k, v) in kvmap {
     put_idx(k, idx, buf)?;
-    v.put_indexed(idx, buf)?;
+    v.put_with(idx, buf)?;
   }
   Ok(())
 }
 
 fn get_kvmap_indexed(
   buf: &mut &[u8],
-  rev: &NameReverseIndex,
+  rev: NameGet<'_>,
 ) -> Result<KVMap, String> {
   let len = get_vec_len(buf)?;
   let mut kvmap = Vec::with_capacity(len);
   for _ in 0..len {
-    kvmap.push((get_idx(buf, rev)?, DataValue::get_indexed(buf, rev)?));
+    kvmap.push((get_idx(buf, rev)?, DataValue::get_with(buf, rev)?));
   }
   Ok(kvmap)
 }
 
 fn put_mdata_stack_indexed(
   mdata: &[KVMap],
-  idx: &NameIndex,
+  idx: NamePut<'_>,
   buf: &mut Vec<u8>,
 ) -> Result<(), String> {
   put_vec_len(mdata.len(), buf);
@@ -782,7 +818,7 @@ fn put_mdata_stack_indexed(
 
 fn get_mdata_stack_indexed(
   buf: &mut &[u8],
-  rev: &NameReverseIndex,
+  rev: NameGet<'_>,
 ) -> Result<Vec<KVMap>, String> {
   let len = get_vec_len(buf)?;
   let mut mdata = Vec::with_capacity(len);
@@ -805,9 +841,9 @@ impl ExprMetaData {
   // Tag 8: Prj { struct_name_idx, child: u32 }
   // Tag 9: Mdata { kvmap_count, kvmaps..., child: u32 }
 
-  pub fn put_indexed(
+  pub fn put_with(
     &self,
-    idx: &NameIndex,
+    idx: NamePut<'_>,
     buf: &mut Vec<u8>,
   ) -> Result<(), String> {
     match self {
@@ -883,10 +919,7 @@ impl ExprMetaData {
     Ok(())
   }
 
-  pub fn get_indexed(
-    buf: &mut &[u8],
-    rev: &NameReverseIndex,
-  ) -> Result<Self, String> {
+  pub fn get_with(buf: &mut &[u8], rev: NameGet<'_>) -> Result<Self, String> {
     match get_u8(buf)? {
       0 => Ok(Self::Leaf),
       1 => {
@@ -972,26 +1005,23 @@ impl ExprMetaData {
 // ===========================================================================
 
 impl ExprMeta {
-  pub fn put_indexed(
+  pub fn put_with(
     &self,
-    idx: &NameIndex,
+    idx: NamePut<'_>,
     buf: &mut Vec<u8>,
   ) -> Result<(), String> {
     put_vec_len(self.nodes.len(), buf);
     for node in &self.nodes {
-      node.put_indexed(idx, buf)?;
+      node.put_with(idx, buf)?;
     }
     Ok(())
   }
 
-  pub fn get_indexed(
-    buf: &mut &[u8],
-    rev: &NameReverseIndex,
-  ) -> Result<Self, String> {
+  pub fn get_with(buf: &mut &[u8], rev: NameGet<'_>) -> Result<Self, String> {
     let len = get_vec_len(buf)?;
     let mut nodes = Vec::with_capacity(len);
     for _ in 0..len {
-      nodes.push(ExprMetaData::get_indexed(buf, rev)?);
+      nodes.push(ExprMetaData::get_with(buf, rev)?);
     }
     Ok(ExprMeta { nodes })
   }
@@ -1018,9 +1048,9 @@ fn get_u64_vec(buf: &mut &[u8]) -> Result<Vec<u64>, String> {
 // ===========================================================================
 
 impl ConstantMetaInfo {
-  pub fn put_indexed(
+  pub fn put_with(
     &self,
-    idx: &NameIndex,
+    idx: NamePut<'_>,
     buf: &mut Vec<u8>,
   ) -> Result<(), String> {
     match self {
@@ -1041,7 +1071,7 @@ impl ConstantMetaInfo {
         hints.put_ser(buf);
         put_idx_vec(all, idx, buf)?;
         put_idx_vec(ctx, idx, buf)?;
-        arena.put_indexed(idx, buf)?;
+        arena.put_with(idx, buf)?;
         put_u64(*type_root, buf);
         put_u64(*value_root, buf);
       },
@@ -1049,14 +1079,14 @@ impl ConstantMetaInfo {
         put_u8(1, buf);
         put_idx(name, idx, buf)?;
         put_idx_vec(lvls, idx, buf)?;
-        arena.put_indexed(idx, buf)?;
+        arena.put_with(idx, buf)?;
         put_u64(*type_root, buf);
       },
       Self::Quot { name, lvls, arena, type_root } => {
         put_u8(2, buf);
         put_idx(name, idx, buf)?;
         put_idx_vec(lvls, idx, buf)?;
-        arena.put_indexed(idx, buf)?;
+        arena.put_with(idx, buf)?;
         put_u64(*type_root, buf);
       },
       Self::Indc { name, lvls, ctors, all, ctx, arena, type_root } => {
@@ -1066,7 +1096,7 @@ impl ConstantMetaInfo {
         put_idx_vec(ctors, idx, buf)?;
         put_idx_vec(all, idx, buf)?;
         put_idx_vec(ctx, idx, buf)?;
-        arena.put_indexed(idx, buf)?;
+        arena.put_with(idx, buf)?;
         put_u64(*type_root, buf);
       },
       Self::Ctor { name, lvls, induct, arena, type_root } => {
@@ -1074,7 +1104,7 @@ impl ConstantMetaInfo {
         put_idx(name, idx, buf)?;
         put_idx_vec(lvls, idx, buf)?;
         put_idx(induct, idx, buf)?;
-        arena.put_indexed(idx, buf)?;
+        arena.put_with(idx, buf)?;
         put_u64(*type_root, buf);
       },
       Self::Rec {
@@ -1093,7 +1123,7 @@ impl ConstantMetaInfo {
         put_idx_vec(rules, idx, buf)?;
         put_idx_vec(all, idx, buf)?;
         put_idx_vec(ctx, idx, buf)?;
-        arena.put_indexed(idx, buf)?;
+        arena.put_with(idx, buf)?;
         put_u64(*type_root, buf);
         put_u64_vec(rule_roots, buf);
       },
@@ -1125,10 +1155,7 @@ impl ConstantMetaInfo {
     Ok(())
   }
 
-  pub fn get_indexed(
-    buf: &mut &[u8],
-    rev: &NameReverseIndex,
-  ) -> Result<Self, String> {
+  pub fn get_with(buf: &mut &[u8], rev: NameGet<'_>) -> Result<Self, String> {
     match get_u8(buf)? {
       255 => Ok(Self::Empty),
       0 => Ok(Self::Def {
@@ -1137,20 +1164,20 @@ impl ConstantMetaInfo {
         hints: ReducibilityHints::get_ser(buf)?,
         all: get_idx_vec(buf, rev)?,
         ctx: get_idx_vec(buf, rev)?,
-        arena: ExprMeta::get_indexed(buf, rev)?,
+        arena: ExprMeta::get_with(buf, rev)?,
         type_root: get_u64(buf)?,
         value_root: get_u64(buf)?,
       }),
       1 => Ok(Self::Axio {
         name: get_idx(buf, rev)?,
         lvls: get_idx_vec(buf, rev)?,
-        arena: ExprMeta::get_indexed(buf, rev)?,
+        arena: ExprMeta::get_with(buf, rev)?,
         type_root: get_u64(buf)?,
       }),
       2 => Ok(Self::Quot {
         name: get_idx(buf, rev)?,
         lvls: get_idx_vec(buf, rev)?,
-        arena: ExprMeta::get_indexed(buf, rev)?,
+        arena: ExprMeta::get_with(buf, rev)?,
         type_root: get_u64(buf)?,
       }),
       3 => Ok(Self::Indc {
@@ -1159,14 +1186,14 @@ impl ConstantMetaInfo {
         ctors: get_idx_vec(buf, rev)?,
         all: get_idx_vec(buf, rev)?,
         ctx: get_idx_vec(buf, rev)?,
-        arena: ExprMeta::get_indexed(buf, rev)?,
+        arena: ExprMeta::get_with(buf, rev)?,
         type_root: get_u64(buf)?,
       }),
       4 => Ok(Self::Ctor {
         name: get_idx(buf, rev)?,
         lvls: get_idx_vec(buf, rev)?,
         induct: get_idx(buf, rev)?,
-        arena: ExprMeta::get_indexed(buf, rev)?,
+        arena: ExprMeta::get_with(buf, rev)?,
         type_root: get_u64(buf)?,
       }),
       5 => Ok(Self::Rec {
@@ -1175,7 +1202,7 @@ impl ConstantMetaInfo {
         rules: get_idx_vec(buf, rev)?,
         all: get_idx_vec(buf, rev)?,
         ctx: get_idx_vec(buf, rev)?,
-        arena: ExprMeta::get_indexed(buf, rev)?,
+        arena: ExprMeta::get_with(buf, rev)?,
         type_root: get_u64(buf)?,
         rule_roots: get_u64_vec(buf)?,
       }),
@@ -1282,10 +1309,22 @@ mod tests {
     });
 
     let mut buf = Vec::new();
-    meta.put_indexed(&idx, &mut buf).unwrap();
+    meta.put_with(NamePut::Indexed(&idx), &mut buf).unwrap();
     let recovered =
-      ConstantMeta::get_indexed(&mut buf.as_slice(), &rev).unwrap();
+      ConstantMeta::get_with(&mut buf.as_slice(), NameGet::Indexed(&rev))
+        .unwrap();
     assert_eq!(meta, recovered);
+
+    // Raw (self-contained) encoding roundtrips the same value without
+    // any index, and re-encoding the recovered value through the index
+    // matches the indexed bytes exactly.
+    let mut raw = Vec::new();
+    meta.put_raw(&mut raw).unwrap();
+    let from_raw = ConstantMeta::get_raw(&mut raw.as_slice()).unwrap();
+    assert_eq!(meta, from_raw);
+    let mut reindexed = Vec::new();
+    from_raw.put_with(NamePut::Indexed(&idx), &mut reindexed).unwrap();
+    assert_eq!(buf, reindexed);
   }
 
   #[test]
@@ -1307,8 +1346,9 @@ mod tests {
     let _ = mdata;
 
     let mut buf = Vec::new();
-    arena.put_indexed(&idx, &mut buf).unwrap();
-    let recovered = ExprMeta::get_indexed(&mut buf.as_slice(), &rev).unwrap();
+    arena.put_with(NamePut::Indexed(&idx), &mut buf).unwrap();
+    let recovered =
+      ExprMeta::get_with(&mut buf.as_slice(), NameGet::Indexed(&rev)).unwrap();
     assert_eq!(arena, recovered);
   }
 }
