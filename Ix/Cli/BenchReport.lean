@@ -656,19 +656,14 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
   if !passthrough.isEmpty then
     summary := summary ++ " · env: `" ++ " ".intercalate passthrough.toList ++ "`"
 
-  -- Envs whose `.ixe` the cells will consume (any non-compile backend):
-  -- the workflow's prepare stage compiles each once so same-env cells
-  -- start against a warm cache instead of racing to compile in parallel.
-  -- The compile backend is excluded — compiling fresh IS its benchmark.
-  let prepEnvs := envs.filter fun e =>
-    backends.any fun b => b.name != "compile"
-      && cells.any fun c => (c.getObjVal? "env").toOption == some (Json.str e)
-        && (c.getObjVal? "backend").toOption == some (Json.str b.name)
-
+  -- `envs` drives the workflow's compile stage: every requested env is
+  -- compiled exactly once — the `.ixe` artifact the prover cells restore,
+  -- AND the measured row the compile cell reuses as its PR side instead
+  -- of compiling a second time.
   if let some outPath := ← IO.getEnv "GITHUB_OUTPUT" then
     let h ← IO.FS.Handle.mk outPath IO.FS.Mode.append
     h.putStr <| s!"matrix={(Json.arr cells).compress}\n"
-      ++ s!"prep-envs={(Json.arr (prepEnvs.map Json.str)).compress}\n"
+      ++ s!"envs={(Json.arr (envs.map Json.str)).compress}\n"
       ++ s!"shard={shard}\nfull={full}\n"
       ++ s!"config-summary={summary}\n"
       ++ "passthrough-env<<PTENV\n"

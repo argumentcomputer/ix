@@ -175,9 +175,9 @@ run step while the clean rows still upload.
 
 **bench-pr.yml**: `setup` (authorize the comment, resolve base/head SHAs) →
 `build` (PR binaries, cached by head SHA; ends with `ix bench ci parse` —
-the matrix can only exist once `ix` does) → `prepare` (compile each needed
-`<env>.ixe` once, published to the cache the cells restore) → `benchmark`
-matrix (per cell:
+the matrix can only exist once `ix` does) → `compile` (one measured
+`ix compile` per env: publishes the `.ixe` the prover cells restore AND
+the row the compile cell reuses as its PR side) → `benchmark` matrix (per cell:
 PR-side `ix bench run`; `ix bench fetch-main` for main's numbers, with a
 targeted base-checkout run covering only what bencher lacked;
 `ix bench compare` → table artifact) → `assemble` (`ix bench report` builds
