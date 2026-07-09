@@ -1254,4 +1254,86 @@ good_thm natBeqTrue : Nat.beq 42 42 = true := by native_decide
 
 good_thm natBeqFalse : Nat.beq 42 43 = false := by native_decide
 
+/-! ## Nested-occurrence spec_params validity (S7)
+
+`F.mk : (n : Nat) → P n F → F`. The `P n F` occurrence LOOKS nested
+(head `P` is an external inductive whose param args mention the block
+member `F`), but its first param arg `n` references the constructor's
+own field-local binder, so it is NOT a valid nested-inductive
+parameterization. Rust (`crates/kernel/src/inductive.rs:723-730`, S7)
+skips the occurrence: no `P` aux is synthesized, `F.rec` keeps the
+plain non-nested shape (no IH for the `P n F` field), and the env is
+accepted — this is a GOOD fixture.
+
+Lean's elaborator rejects this declaration (nested occurrences must
+use only the block's fixed params), so it is hand-built here. The
+`dummyRecInfo` stubs satisfy compile-side aux-gen's regeneration gate
+(`lean_env.get(rec_name).is_some()`); aux-gen replaces their contents
+with the recursors it derives — its own `has_invalid_spec_ref` check
+(`crates/compile/src/compile/aux_gen/nested.rs`) skips the `P n F`
+occurrence the same way the Rust kernel does. -/
+
+good_raw_consts
+  let p := `nestedSpecLocalP
+  let f := `nestedSpecLocalF
+  #[ .inductInfo {
+      name := p
+      levelParams := []
+      type := arrow (Lean.mkConst ``Nat) (arrow (.sort 1) (.sort 1))
+      numParams := 2
+      numIndices := 0
+      all := [p]
+      ctors := [p ++ `mk]
+      numNested := 0
+      isRec := false
+      isUnsafe := false
+      isReflexive := false
+  },
+  .ctorInfo {
+      name := p ++ `mk
+      levelParams := []
+      type :=
+        arrow (n := `n) (Lean.mkConst ``Nat) <|
+        arrow (n := `B) (.sort 1) <|
+        Lean.mkApp2 (Lean.mkConst p) (.bvar 1) (.bvar 0)
+      numParams := 2
+      induct := p
+      cidx := 0
+      numFields := 0
+      isUnsafe := false
+  },
+  dummyRecInfo p,
+  .inductInfo {
+      name := f
+      levelParams := []
+      type := .sort 1
+      numParams := 0
+      numIndices := 0
+      all := [f]
+      ctors := [f ++ `mk]
+      numNested := 0
+      -- Compile-side `validate_ind_flags` computes isRec structurally
+      -- (any self-mention in a ctor field, valid nesting or not), so the
+      -- `F` inside `P n F` makes F "recursive" for flag purposes even
+      -- though S7 rejects it as a nested-inductive parameterization.
+      isRec := true
+      isUnsafe := false
+      isReflexive := false
+  },
+  .ctorInfo {
+      name := f ++ `mk
+      levelParams := []
+      type :=
+        arrow (n := `n) (Lean.mkConst ``Nat) <|
+        arrow (Lean.mkApp2 (Lean.mkConst p) (.bvar 0) (Lean.mkConst f)) <|
+        Lean.mkConst f
+      numParams := 0
+      induct := f
+      cidx := 0
+      numFields := 2
+      isUnsafe := false
+  },
+  dummyRecInfo f
+  ]
+
 end Tests.Ix.Kernel.TutorialDefs

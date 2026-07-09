@@ -32,7 +32,7 @@ export Ix.KernelCheck (CheckError)
 
     Returns `(needed : Std.HashSet Name, closed : List (Name × ConstantInfo))`
     so callers can both inspect membership and ship the closed subset. -/
-private partial def collectDepsWithExtras
+partial def collectDepsWithExtras
     (env : Lean.Environment)
     (extraConsts : Std.HashMap Lean.Name Lean.ConstantInfo)
     (seeds : List Lean.Name)
