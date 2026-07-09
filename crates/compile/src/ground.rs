@@ -48,21 +48,37 @@ pub fn ground_consts(
 ) -> FxHashMap<Name, GroundError> {
   // Collect immediate ungrounded constants.
   let names: Vec<&Name> = env.keys().collect();
-  let mut ungrounded: FxHashMap<_, _> = names
+  let ungrounded: FxHashMap<_, _> = names
     .into_par_iter()
     .filter_map(|name| {
       let constant = env.get(name)?;
-      let univs = const_univs(&constant);
-      let mut stt = GroundState::default();
-      if let Err(err) = ground_const(&constant, env, univs, 0, &mut stt) {
-        Some((name.clone(), err))
-      } else {
-        None
+      match ground_const_check(&constant, env) {
+        Err(err) => Some((name.clone(), err)),
+        Ok(()) => None,
       }
     })
     .collect();
+  proliferate_ungrounded(ungrounded, in_refs)
+}
 
-  // Proliferate ungroundedness through in-refs.
+/// Per-constant groundedness check, for callers that already hold a
+/// decoded constant (the fused setup scan — see `graph::setup_scan`).
+pub fn ground_const_check(
+  constant: &ConstantInfo,
+  env: &Env,
+) -> Result<(), GroundError> {
+  let univs = const_univs(constant);
+  let mut stt = GroundState::default();
+  ground_const(constant, env, univs, 0, &mut stt)
+}
+
+/// Spread ungroundedness from the immediately-ungrounded set through
+/// the reverse-reference graph: anything referencing an ungrounded
+/// constant is itself ungrounded.
+pub fn proliferate_ungrounded(
+  mut ungrounded: FxHashMap<Name, GroundError>,
+  in_refs: &RefMap,
+) -> FxHashMap<Name, GroundError> {
   let mut stack: Vec<_> = ungrounded.keys().cloned().collect();
   while let Some(popped) = stack.pop() {
     let Some(in_ref_set) = in_refs.get(&popped) else {
@@ -75,7 +91,6 @@ pub fn ground_consts(
       }
     }
   }
-
   ungrounded
 }
 

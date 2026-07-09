@@ -47,6 +47,116 @@ pub struct RefGraph {
 ///
 /// For each constant, extracts the set of names it references (from types, values, constructors,
 /// and recursor rules), then assembles both the forward and reverse edge maps.
+/// Everything the compile-env setup needs from a whole-env pass: the
+/// reference graph, the immediately-ungrounded set (before transitive
+/// proliferation), and the inductive mutual-block groups
+/// (`all[0] → all`, for flag validation).
+pub struct SetupScan {
+  pub graph: RefGraph,
+  pub immediate_ungrounded: FxHashMap<Name, crate::ground::GroundError>,
+  pub ind_groups: FxHashMap<Name, Vec<Name>>,
+}
+
+/// Fused whole-env setup pass: one decode per constant feeding the ref
+/// graph, the groundedness check, and inductive-group collection.
+/// Replaces three back-to-back full-env sweeps (`build_ref_graph`,
+/// `ground_consts`' scan, `validate_lean_ind_flags`' scan) — under
+/// `IX_COMPILE_LEAN_ENV=lazy` each sweep re-decodes every constant, so
+/// fusing them cuts the setup decode count to a third. Outputs are
+/// identical to the separate passes.
+pub fn setup_scan(env: &Env) -> SetupScan {
+  struct Acc {
+    out_refs: RefMap,
+    in_refs: RefMap,
+    ungrounded: FxHashMap<Name, crate::ground::GroundError>,
+    ind_groups: FxHashMap<Name, Vec<Name>>,
+  }
+  impl Default for Acc {
+    fn default() -> Self {
+      Acc {
+        out_refs: RefMap::default(),
+        in_refs: RefMap::default(),
+        ungrounded: FxHashMap::default(),
+        ind_groups: FxHashMap::default(),
+      }
+    }
+  }
+
+  let names: Vec<&Name> = env.keys().collect();
+  let acc = names
+    .into_par_iter()
+    .filter_map(|name| {
+      let constant = env.get(name)?;
+      let deps = get_constant_info_references(&constant);
+      let mut acc = Acc {
+        in_refs: mk_in_refs(name, &deps),
+        out_refs: RefMap::from_iter([(name.clone(), deps)]),
+        ..Acc::default()
+      };
+      if let Err(err) = crate::ground::ground_const_check(&constant, env) {
+        acc.ungrounded.insert(name.clone(), err);
+      }
+      // Members of one mutual family share the same `all`, so
+      // first-wins insertion is value-identical regardless of which
+      // member lands first (the same invariant the unfused scan
+      // relied on).
+      if let ConstantInfo::InductInfo(v) = &*constant
+        && let Some(first) = v.all.first()
+      {
+        acc.ind_groups.entry(first.clone()).or_insert_with(|| v.all.clone());
+      }
+      Some(acc)
+    })
+    .reduce(Acc::default, |mut l, r| {
+      l.out_refs = merge_ref_maps(l.out_refs, r.out_refs);
+      l.in_refs = merge_ref_maps(l.in_refs, r.in_refs);
+      l.ungrounded.extend(r.ungrounded);
+      for (k, v) in r.ind_groups {
+        l.ind_groups.entry(k).or_insert(v);
+      }
+      l
+    });
+
+  SetupScan {
+    graph: RefGraph { out_refs: acc.out_refs, in_refs: acc.in_refs },
+    immediate_ungrounded: acc.ungrounded,
+    ind_groups: acc.ind_groups,
+  }
+}
+
+/// `name → {name} ∪ deps`-shaped reverse-edge fragment for one
+/// constant, merged across the parallel scan.
+fn mk_in_refs(name: &Name, deps: &NameSet) -> RefMap {
+  let mut in_refs = RefMap::from_iter([(name.clone(), NameSet::default())]);
+  for dep in deps {
+    match in_refs.entry(dep.clone()) {
+      Entry::Vacant(entry) => {
+        entry.insert(NameSet::from_iter([name.clone()]));
+      },
+      Entry::Occupied(mut entry) => {
+        entry.get_mut().insert(name.clone());
+      },
+    }
+  }
+  in_refs
+}
+
+/// Size-aware map union (drain the smaller side into the bigger).
+fn merge_ref_maps(l: RefMap, r: RefMap) -> RefMap {
+  let (smaller, mut bigger) = if l.len() < r.len() { (l, r) } else { (r, l) };
+  for (name, set) in smaller {
+    match bigger.entry(name) {
+      Entry::Vacant(entry) => {
+        entry.insert(set);
+      },
+      Entry::Occupied(mut entry) => {
+        entry.get_mut().extend(set);
+      },
+    }
+  }
+  bigger
+}
+
 pub fn build_ref_graph(env: &Env) -> RefGraph {
   let mk_in_refs = |name: &Name, deps: &NameSet| -> RefMap {
     let mut in_refs = RefMap::from_iter([(name.clone(), NameSet::default())]);

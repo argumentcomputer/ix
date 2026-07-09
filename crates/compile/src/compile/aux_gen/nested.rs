@@ -2118,7 +2118,16 @@ pub fn validate_lean_ind_flags(lean_env: &LeanEnv) -> Result<(), CompileError> {
       groups.entry(first.clone()).or_insert_with(|| v.all.clone());
     }
   }
-  //let groups: Vec<(&Name, &[Name])> = groups.into_iter().collect();
+  validate_ind_groups(&groups, lean_env)
+}
+
+/// Per-group half of [`validate_lean_ind_flags`], for callers that
+/// already collected the inductive groups (the fused setup scan — see
+/// `graph::setup_scan`).
+pub fn validate_ind_groups(
+  groups: &FxHashMap<Name, Vec<Name>>,
+  lean_env: &LeanEnv,
+) -> Result<(), CompileError> {
   groups.par_iter().try_for_each(|(_, all)| {
     for member in all.iter() {
       let entry = lean_env.get(member);

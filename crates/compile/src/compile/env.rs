@@ -16,12 +16,11 @@ use rustc_hash::FxHashSet;
 
 use crate::compile::{
   BlockCache, CompileOptions, CompileState,
-  aux_gen::nested::validate_lean_ind_flags, compile_const,
-  compile_const_no_aux,
+  aux_gen::nested::validate_ind_groups, compile_const, compile_const_no_aux,
 };
 use crate::condense::compute_sccs;
-use crate::graph::{NameSet, build_ref_graph};
-use crate::ground::ground_consts;
+use crate::graph::{NameSet, setup_scan};
+use crate::ground::proliferate_ungrounded;
 use ix_common::address::Address;
 use ix_common::env::{Env as LeanEnv, Name};
 use ixon::CompileError;
@@ -154,25 +153,30 @@ pub fn compile_env_with_options(
   options: CompileOptions,
 ) -> Result<CompileState, CompileError> {
   let setup_start = Instant::now();
+  // Fused whole-env scan: ref graph + immediate groundedness +
+  // inductive groups in one decode per constant (three separate sweeps
+  // triple the decode cost under IX_COMPILE_LEAN_ENV=lazy).
   let phase_start = Instant::now();
-  let graph = build_ref_graph(lean_env.as_ref());
+  let scan = setup_scan(lean_env.as_ref());
+  let graph = scan.graph;
   if !*IX_QUIET {
     eprintln!(
-      "[compile_env] setup 1/7 build_ref_graph: {:.2}s",
+      "[compile_env] setup 1/7 setup_scan (graph+ground+groups): {:.2}s",
       phase_start.elapsed().as_secs_f32()
     );
   }
 
-  // Grounding pass: identify constants whose transitive Const-refs can't all
-  // be resolved. These are collected into `stt.ungrounded` and filtered from
-  // the SCC input so they don't clog the scheduler. Callers (e.g. the kernel
-  // check FFI) inspect `stt.ungrounded` per-constant to report them as
-  // compile-side rejections without aborting the whole batch.
+  // Grounding: constants whose transitive Const-refs can't all be
+  // resolved are collected into `stt.ungrounded` and filtered from the
+  // SCC input so they don't clog the scheduler. Callers (e.g. the
+  // kernel check FFI) inspect `stt.ungrounded` per-constant to report
+  // them as compile-side rejections without aborting the whole batch.
   let phase_start = Instant::now();
-  let ungrounded = ground_consts(lean_env.as_ref(), &graph.in_refs);
+  let ungrounded =
+    proliferate_ungrounded(scan.immediate_ungrounded, &graph.in_refs);
   if !*IX_QUIET {
     eprintln!(
-      "[compile_env] setup 2/7 ground_consts: {:.2}s",
+      "[compile_env] setup 2/7 proliferate_ungrounded: {:.2}s",
       phase_start.elapsed().as_secs_f32()
     );
   }
@@ -220,9 +224,11 @@ pub fn compile_env_with_options(
     );
   }
 
-  // Domain restriction: reject environments with non-canonical inductive flags
+  // Domain restriction: reject environments with non-canonical inductive
+  // flags. Groups come from the fused scan; only inductive families are
+  // re-read here.
   let phase_start = Instant::now();
-  validate_lean_ind_flags(lean_env.as_ref())?;
+  validate_ind_groups(&scan.ind_groups, lean_env.as_ref())?;
   if !*IX_QUIET {
     eprintln!(
       "[compile_env] setup 4/7 validate_ind_flags: {:.2}s",
