@@ -97,21 +97,6 @@ jobs:
             -f head-sha="${{ steps.comment-branch.outputs.head_sha }}" \
             -f comment-body="$COMMENT_BODY"
 
-  setup:
-    name: Validate dispatch inputs
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    outputs:
-      base-sha: ${{ inputs.base-sha }}
-      head-sha: ${{ inputs.head-sha }}
-    steps:
-      - name: Validate SHAs
-        env:
-          BASE: ${{ inputs.base-sha }}
-          HEAD: ${{ inputs.head-sha }}
-        run: |
-          [[ "$BASE" =~ ^[0-9a-f]{40}$ && "$HEAD" =~ ^[0-9a-f]{40}$ ]] \
-            || { echo "base-sha/head-sha must be full 40-hex SHAs" >&2; exit 1; }
   # Build the PR's `ix` + `bench-typecheck` once (they embed the IxVM kernel
   # and the Aiur prover), stage under ~/.local/bin, and cache by head SHA —
   # the matrix cells restore instead of re-running the full Lean build per
@@ -124,7 +109,7 @@ jobs:
   # the freshly built `ix bench ci parse` — the registry lives in Lean, so the
   # matrix can only exist post-build.
   build:
-    needs: setup
+    if: github.event_name == 'workflow_dispatch'
     runs-on: warp-ubuntu-latest-x64-32x
     outputs:
       matrix: ${{ steps.parse.outputs.matrix }}
@@ -134,16 +119,25 @@ jobs:
       passthrough-env: ${{ steps.parse.outputs.passthrough-env }}
       config-summary: ${{ steps.parse.outputs.config-summary }}
     steps:
+      # Everything downstream needs this job, so malformed inputs die here
+      # (the checkout would take a bare "main" or a short SHA otherwise).
+      - name: Validate SHAs
+        env:
+          BASE: ${{ inputs.base-sha }}
+          HEAD: ${{ inputs.head-sha }}
+        run: |
+          [[ "$BASE" =~ ^[0-9a-f]{40}$ && "$HEAD" =~ ^[0-9a-f]{40}$ ]] \
+            || { echo "base-sha/head-sha must be full 40-hex SHAs" >&2; exit 1; }
       - uses: actions/checkout@v6
         with:
-          ref: ${{ needs.setup.outputs.head-sha }}
+          ref: ${{ inputs.head-sha }}
           # The job builds and runs PR code; never leave the token in .git.
           persist-credentials: false
       - id: bins
         uses: actions/cache/restore@v5
         with:
           path: ~/.local/bin
-          key: bench-bins-${{ needs.setup.outputs.head-sha }}
+          key: bench-bins-${{ inputs.head-sha }}
       - if: steps.bins.outputs.cache-hit != 'true'
         uses: actions-rust-lang/setup-rust-toolchain@v1
       # `.cargo/config.toml` sets `-Ctarget-cpu=native`; log the build CPU so a
@@ -172,7 +166,7 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: ~/.local/bin
-          key: bench-bins-${{ needs.setup.outputs.head-sha }}
+          key: bench-bins-${{ inputs.head-sha }}
       - run: echo "$HOME/.local/bin" >> $GITHUB_PATH
       # Parse the !benchmark command from an env var (never
       # inline-interpolated); unknown tokens fall off the allowlist.
@@ -188,7 +182,7 @@ jobs:
   # requesting the compile backend never compiles the env twice.
   compile:
     name: compile-${{ matrix.env }}
-    needs: [setup, build]
+    needs: build
     if: needs.build.outputs.envs != '[]'
     runs-on: warp-ubuntu-latest-x64-32x
     timeout-minutes: 120
@@ -200,7 +194,7 @@ jobs:
       - name: Checkout PR
         uses: actions/checkout@v6
         with:
-          ref: ${{ needs.setup.outputs.head-sha }}
+          ref: ${{ inputs.head-sha }}
           # The job runs PR code; never leave the token in .git.
           persist-credentials: false
       # Re-running !benchmark on the same commit: the .ixe is already
@@ -210,14 +204,14 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ matrix.env }}.ixe
-          key: bench-pr-ixe-${{ needs.setup.outputs.head-sha }}-${{ matrix.env }}
+          key: bench-pr-ixe-${{ inputs.head-sha }}-${{ matrix.env }}
           lookup-only: true
       - name: Restore PR binaries
         if: steps.pr-ixe.outputs.cache-hit != 'true'
         uses: actions/cache/restore@v5
         with:
           path: ~/.local/bin
-          key: bench-bins-${{ needs.setup.outputs.head-sha }}
+          key: bench-bins-${{ inputs.head-sha }}
           fail-on-cache-miss: true
       - if: steps.pr-ixe.outputs.cache-hit != 'true'
         run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
@@ -238,7 +232,7 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: ${{ matrix.env }}.ixe
-          key: bench-pr-ixe-${{ needs.setup.outputs.head-sha }}-${{ matrix.env }}
+          key: bench-pr-ixe-${{ inputs.head-sha }}-${{ matrix.env }}
       # The measured row: the compile cell reuses it as its PR side (same
       # runner class, same binaries, same command it would run itself).
       - name: Publish compile row
@@ -246,13 +240,13 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: compile.json
-          key: bench-pr-row-${{ needs.setup.outputs.head-sha }}-${{ matrix.env }}
+          key: bench-pr-row-${{ inputs.head-sha }}-${{ matrix.env }}
 
   benchmark:
     # Explicit name: the default would append EVERY matrix value (backend,
     # env, mode, runner, label); the label already is the cell id.
     name: ${{ matrix.cell.label }}
-    needs: [setup, build, compile]
+    needs: [build, compile]
     # A compile failure stops the cells (they would just re-fail the same
     # compile lazily); the skipped case can't arise (envs is never empty)
     # but is tolerated for robustness.
@@ -270,8 +264,8 @@ jobs:
       BENV: ${{ matrix.cell.env }}
       MODE: ${{ matrix.cell.mode }}
       LABEL: ${{ matrix.cell.label }}
-      BASE_SHA: ${{ needs.setup.outputs.base-sha }}
-      HEAD_SHA: ${{ needs.setup.outputs.head-sha }}
+      BASE_SHA: ${{ inputs.base-sha }}
+      HEAD_SHA: ${{ inputs.head-sha }}
       SHARD: ${{ needs.build.outputs.shard }}
       FULL: ${{ needs.build.outputs.full }}
     steps:
@@ -586,10 +580,10 @@ jobs:
   # artifact and never touches PR code (CodeQL: untrusted checkout /
   # execution in a privileged workflow).
   assemble:
-    needs: [setup, build, benchmark]
+    needs: [build, benchmark]
     # Assemble even when benchmark cells failed (the tables carry the ❌
     # rows); the build job must have produced the binaries.
-    if: always() && needs.setup.result == 'success' && needs.build.result == 'success'
+    if: always() && needs.build.result == 'success'
     # `bench report` is a pure-Lean subcommand (AVX-512 lives only in the
     # binary's Rust objects, which it never executes) — cheap host is fine.
     # Move to a warp host if `ix` startup or this subcommand ever touches
@@ -600,12 +594,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ needs.setup.outputs.head-sha }}
+          ref: ${{ inputs.head-sha }}
           persist-credentials: false
       - uses: actions/cache/restore@v5
         with:
           path: ~/.local/bin
-          key: bench-bins-${{ needs.setup.outputs.head-sha }}
+          key: bench-bins-${{ inputs.head-sha }}
           fail-on-cache-miss: true
       - run: echo "$HOME/.local/bin" >> $GITHUB_PATH
       # Provision the toolchain so `ix` finds libleanshared (no package build).
@@ -623,7 +617,7 @@ jobs:
       - name: Build comment body
         env:
           SUMMARY: ${{ needs.build.outputs.config-summary }}
-          HEAD_SHA: ${{ needs.setup.outputs.head-sha }}
+          HEAD_SHA: ${{ inputs.head-sha }}
         run: |
           mkdir -p tables   # absent when no cell uploaded a table
           ix bench report \
@@ -640,7 +634,7 @@ jobs:
   # token, and it runs no checkout and no repo-derived code — just an
   # artifact download and two actions.
   comment:
-    needs: [setup, assemble]
+    needs: assemble
     if: always() && needs.assemble.result == 'success'
     runs-on: ubuntu-latest
     steps:
