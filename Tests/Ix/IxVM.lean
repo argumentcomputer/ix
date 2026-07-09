@@ -86,6 +86,27 @@ end
 public inductive Tree where
   | mk : List Tree → Tree
 
+-- Aux dedup key: two nested occurrences of the SAME external inductive
+-- with DISTINCT spec_params. flat must be [DedupM, Bar2⟨DedupM,Nat⟩,
+-- Bar2⟨DedupM,Bool⟩] (3 motives); a dedup keyed on the base const idx
+-- alone collapses the two Bar2 auxes.
+public inductive Bar2 (α β : Type) where
+  | mk : α → Bar2 α β
+
+public inductive DedupM where
+  | mk : Bar2 DedupM Nat → Bar2 DedupM Bool → DedupM
+
+-- De-lift guard: the SAME spec_param (`Bar1 (DepthM α)`) at field
+-- depths 0 and 2. In the un-opened de Bruijn view the block-param ref
+-- is BVar(0) vs BVar(2); without de-lifting to the param context a
+-- structural/ptr dedup would see two distinct auxes where flat must
+-- have exactly one.
+public inductive Bar1 (α : Type) where
+  | mk : α → Bar1 α
+
+public inductive DepthM (α : Type) where
+  | mk : Bar1 (DepthM α) → Nat → Bar1 (DepthM α) → DepthM α
+
 end IxVMInd
 
 /-! ## Test runners -/
@@ -166,6 +187,16 @@ private def kernelCheckEntries : List (String × Nat) := [
   -- Nested inductive + aux recursor (Tree.mk : List Tree → Tree)
   ("IxVMInd.Tree",                                                       2_614_193),
   ("IxVMInd.Tree.rec",                                                   4_847_896),
+  -- Aux dedup: distinct spec_params on one external inductive (3 motives).
+  -- The .rec entries currently FAIL (assert_eq mismatch: 0 != 1): the
+  -- idx-only aux dedup collapses the two Bar2 auxes (DedupM), and raw
+  -- extraction-depth spec_params break the is_rec_field minor matching
+  -- at field depth > 0 (DepthM). Pin values recorded once fixed.
+  ("IxVMInd.DedupM",                                                     4_768_265),
+  ("IxVMInd.DedupM.rec",                                                 0),
+  -- Aux dedup de-lift guard: equal spec_params at field depths 0 and 2.
+  ("IxVMInd.DepthM",                                                     3_581_656),
+  ("IxVMInd.DepthM.rec",                                                 0),
   -- Edge cases from prelude
   ("String.Internal.append",                                             705_149_768),
   ("_private.Init.Prelude.0.Lean.extractMainModule._unsafe_rec",         1_059_825_958),
