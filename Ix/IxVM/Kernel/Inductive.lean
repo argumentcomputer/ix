@@ -30,7 +30,8 @@ def inductive_check := ⟦
   -- kernel's accept/reject convention.
   fn check_ctor_return_type(ctor_ty: KExpr,
                             n_params: G, n_indices: G, n_fields: G,
-                            ind_idx: G, ind_num_lvls: G) {
+                            ind_idx: G, ind_num_lvls: G,
+                            top: List‹&KConstantInfo›) {
     let body = peel_n_foralls(ctor_ty, n_params + n_fields);
     let pair = collect_spine(body);
     match pair {
@@ -42,6 +43,72 @@ def inductive_check := ⟦
             let args_len = list_length(args);
             assert_eq!(args_len, n_params + n_indices);
             assert_first_args_are_param_bvars(args, n_params, n_fields, 0);
+            -- Index args must not mention block inductives (rejects e.g.
+            -- `mk : I (I x)` — a reflexive occurrence in index position).
+            -- Mirror: src/ix/kernel/inductive.rs:2088-2095.
+            let idx_args = list_drop(args, n_params);
+            let block_idxs = derive_block_member_idxs(ind_idx, top);
+            assert_eq!(list_any_mentions(idx_args, block_idxs), 0);
+            (),
+        },
+    }
+  }
+
+  -- Validate the inductive's own shape AND every constructor (A1-A4).
+  -- Mirror: src/ix/kernel/inductive.rs:148-297 check_inductive_member.
+  -- The per-const dispatch in Check.lean also runs A1-A4 when each Ctor
+  -- const is checked; bundling them on the inductive makes it
+  -- self-contained under subject-only checking (the arena's
+  -- `verify_const`) and lets `check_recursor_member` gate on a valid
+  -- major (coherence gate, inductive.rs:4089-4102) — recursor gen
+  -- succeeds syntactically even for unsound inductives. Aiur memoizes
+  -- fn calls, so the closure-wide double coverage is cache hits.
+  -- Cycle invariant (per Rust): never calls back into recursor checks.
+  fn check_inductive_shape(ind_pos: G, top: List‹&KConstantInfo›,
+                           addrs: List‹Addr›) {
+    let ci = load(list_lookup(top, ind_pos));
+    match ci {
+      KConstantInfo.Induct(num_lvls, ty, n_params, n_indices, ctor_indices, _, _) =>
+        -- The inductive type must peel params+indices down to a Sort;
+        -- `get_result_sort_level`'s non-exhaustive matches reject
+        -- anything else. Mirror: inductive.rs:183-186.
+        let ind_level = get_result_sort_level(ty, n_params + n_indices);
+        check_inductive_shape_ctors(ctor_indices, ind_pos, ty, num_lvls,
+                                    n_params, n_indices, ind_level, 0,
+                                    top, addrs),
+      -- Non-inductive majors (e.g. Quot) are validated by their own
+      -- check_const arms.
+      _ => (),
+    }
+  }
+
+  fn check_inductive_shape_ctors(ctor_indices: List‹G›, ind_pos: G,
+                                 ind_ty: KExpr, num_lvls: G,
+                                 n_params: G, n_indices: G,
+                                 ind_level: KLevel, expected_cidx: G,
+                                 top: List‹&KConstantInfo›,
+                                 addrs: List‹Addr›) {
+    match load(ctor_indices) {
+      ListNode.Nil => (),
+      ListNode.Cons(ctor_idx, rest) =>
+        let ctor_ci = load(list_lookup(top, ctor_idx));
+        match ctor_ci {
+          KConstantInfo.Ctor(_, cty, c_induct, c_cidx, c_np, c_nf, _) =>
+            assert_eq!(c_induct, ind_pos);
+            assert_eq!(c_cidx, expected_cidx);
+            assert_eq!(c_np, n_params);
+            check_param_agreement(ind_ty, cty, n_params, top, addrs);
+            check_ctor_return_type(cty, c_np, n_indices, c_nf, ind_pos,
+                                   num_lvls, top);
+            check_field_universes(cty, c_np, ind_level,
+                                  store(ListNode.Nil), top, addrs);
+            check_positivity(cty, c_np, ind_pos, store(ListNode.Nil),
+                             top, addrs);
+            check_inductive_shape_ctors(rest, ind_pos, ind_ty, num_lvls,
+                                        n_params, n_indices, ind_level,
+                                        expected_cidx + 1, top, addrs),
+          _ =>
+            assert_eq!(0, 1);
             (),
         },
     }
@@ -1963,6 +2030,11 @@ def inductive_check := ⟦
         -- Use it as the canonical-block source. Self's major may be different
         -- (an external aux ind).
         let self_major = rec_to_ind_idx_with_ty(rules, ty, n_p, n_mot, n_min, n_i, top);
+        -- Coherence gate: the major inductive must itself pass the
+        -- inductive checks before its recursor is validated — recursor
+        -- generation succeeds syntactically even when the inductive is
+        -- unsound. Mirror: crates/kernel/src/inductive.rs:4089-4102.
+        check_inductive_shape(self_major, top, addrs);
         let ind_idx = resolve_primary_ind_for_rec(self_major, rec_block, top);
         let computed_k = compute_k_target(self_major, top);
         assert_eq!(k_flag, computed_k);

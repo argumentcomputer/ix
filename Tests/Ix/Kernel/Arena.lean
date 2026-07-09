@@ -65,7 +65,12 @@ def knownIncompatible : Array (Lean.Name × String) := #[
   -- the bad rule post-aux-gen. Standard Lean→Ixon→Aiur path never
   -- exposes the malformed rule.
   (`Tests.Ix.Kernel.TutorialDefs.AdvNat.rec,
-   "malformed rec rule sanitized by aux-gen; Tutorial uses bespoke FFI")
+   "malformed rec rule sanitized by aux-gen; Tutorial uses bespoke FFI"),
+  -- Same reason as tut06_bad01: duplicate levelParams is Meta-mode
+  -- hygiene; Ixon Anon stores only the `lvls` COUNT, so the duplication
+  -- pattern is erased before the Aiur kernel can see it.
+  (`inductLevelParam,
+   "duplicate levelParams: Anon-mode hygiene check, see src/ix/kernel/check.rs:107")
 ]
 
 private def collectChecks (env : Lean.Environment) : Array ArenaCheck := Id.run do
