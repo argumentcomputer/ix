@@ -446,15 +446,15 @@ def runFetchMainCmd (p : Cli.Parsed) : IO UInt32 := do
       (·.testbedFor mode)
     | IO.println s!"fetch-main: no testbed for {backend}/{mode}"
       return exitUsage
-  let wanted : Option (Array String) ← match p.flag? "names" with
-    | some f => do
-      let names ← Ix.Cli.ConstsFile.read (f.as! String)
+  let wanted : Option (Array String) ← do
+    let names ← Ix.Cli.ConstsFile.gather p "consts" "names"
+    if (p.flag? "consts").isNone && (p.flag? "names").isNone then pure none
+    else
       -- The env-keyed row (ooc whole-env, compile) isn't a Vectors.csv
       -- constant; admit it past the names filter explicitly.
       match (p.flag? "env").map (·.as! String) with
       | some env => pure (some (names.push env))
       | none => pure (some names)
-    | none => pure none
 
   -- Page newest-first until the SHA's reports are found; aggregate across
   -- reports (matrix envs upload separately to one testbed), NEWEST report
@@ -512,11 +512,9 @@ def runFetchMainCmd (p : Cli.Parsed) : IO UInt32 := do
     IO.println "fetch-main: reports found but no matching benchmarks in --names"
     return exitRejected
   if let some missingOut := (p.flag? "missing-out").map (·.as! String) then
-    -- Computed against the names file verbatim: the env-keyed row is an
+    -- Computed against the listed names verbatim: the env-keyed row is an
     -- admit-filter, not a per-constant expectation.
-    let nameSet ← match p.flag? "names" with
-      | some f => Ix.Cli.ConstsFile.read (f.as! String)
-      | none => pure #[]
+    let nameSet ← Ix.Cli.ConstsFile.gather p "consts" "names"
     let missing := nameSet.filter fun n => !seen.contains n
     IO.FS.writeFile missingOut
       ("\n".intercalate missing.toList ++ (if missing.isEmpty then "" else "\n"))
@@ -735,7 +733,8 @@ def benchFetchMainCmd : Cli.Cmd := `[Cli|
     backend       : String; "Cell backend (testbed from the registry)"
     env           : String; "Cell env — admits the env-keyed row past --names"
     mode          : String; "Cell mode"
-    names         : String; "Only fetch benchmarks named in this file"
+    consts        : String; "Only fetch these comma-separated benchmark names"
+    names         : String; "Additionally read names from a file (one per line); unions with --consts"
     "missing-out" : String; "Write the --names entries bencher lacked (the caller measures just these on the base checkout)"
     out           : String; "Rows JSON output (default: main.json)"
 ]

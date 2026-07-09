@@ -267,9 +267,8 @@ jobs:
           use-github-cache: false
           use-mathlib-cache: ${{ matrix.cell.env == 'Mathlib' && 'true' || 'false' }}
       # The compiled env is identical across every cell of the same PR commit —
-      # cache it so only the first cell pays the `ix compile`. (`--reuse-ixe`
-      # compiles when the file is absent; the `compile` backend always
-      # compiles by design.)
+      # cached so cells pass it via `--ixe` instead of recompiling (the
+      # `compile` backend always compiles by design).
       - name: Restore PR .ixe
         id: pr-ixe
         uses: actions/cache/restore@v5
@@ -312,8 +311,11 @@ jobs:
           flags=""
           [ "$FULL" = 1 ] && flags="$flags --full"
           [ "$SHARD" = 1 ] && flags="$flags --shard-only"
+          # prepare published the .ixe; if it is somehow absent, ix bench
+          # run compiles it fresh (no flag).
+          [ -f "$BENV.ixe" ] && flags="$flags --ixe $BENV.ixe"
           ix bench run --backend "$BACKEND" --env "$BENV" --mode "$MODE" \
-            --reuse-ixe --out "$GITHUB_WORKSPACE/pr.json" $flags
+            --out "$GITHUB_WORKSPACE/pr.json" $flags
       # First cell to compile the PR env publishes it for the others (racing
       # saves are fine — the first wins, the rest fail gracefully). hashFiles
       # guard: the run step is continue-on-error, so it may have died before
@@ -345,12 +347,11 @@ jobs:
           # This cell's names = pr.json's row keys (empty when the PR run
           # produced nothing — fetch-main then exits 3 and the base run
           # supplies the whole main side).
-          jq -r 'keys[]' "$GITHUB_WORKSPACE/pr.json" > "$GITHUB_WORKSPACE/names.txt" \
-            2>/dev/null || : > "$GITHUB_WORKSPACE/names.txt"
+          NAMES=$(jq -r 'keys | join(",")' "$GITHUB_WORKSPACE/pr.json" 2>/dev/null || true)
           set +e
           ix bench fetch-main \
             --sha "$BASE_SHA" --backend "$BACKEND" --mode "$MODE" --env "$BENV" \
-            --names "$GITHUB_WORKSPACE/names.txt" \
+            --consts "$NAMES" \
             --missing-out "$GITHUB_WORKSPACE/missing.txt" \
             --out "$GITHUB_WORKSPACE/main.json"
           rc=$?
@@ -434,7 +435,7 @@ jobs:
       # "main produced no results" note instead of a silent all-n/a table.
       #
       # Partial bencher miss (missing.txt non-empty): the base side runs JUST
-      # the uncovered names (`--names-file`) — typically constants the PR
+      # the uncovered names (passed via `--consts`) — typically constants the PR
       # itself adds to Vectors.csv, which base's Vectors.csv doesn't list, so
       # `--csv` points at the PR's copy. Full miss: the whole cell runs on
       # base with the normal CSV selection.
@@ -454,13 +455,16 @@ jobs:
           [ "$FULL" = 1 ] && flags="$flags --full"
           [ "$SHARD" = 1 ] && flags="$flags --shard-only"
           if [ -s "$GITHUB_WORKSPACE/main.json" ] && [ -s "$GITHUB_WORKSPACE/missing.txt" ]; then
-            flags="$flags --names-file $GITHUB_WORKSPACE/missing.txt"
+            flags="$flags --consts $(paste -sd, "$GITHUB_WORKSPACE/missing.txt")"
           fi
           # A base-side rejection or empty run must not redden the PR's cell:
           # whatever rows landed are merged and the table says the rest.
           set +e
+          # Cached base .ixe when the restore above hit; else the base run
+          # compiles it fresh (no flag).
+          [ -f "base/$BENV.ixe" ] && flags="$flags --ixe base/$BENV.ixe"
           ix bench run --backend "$BACKEND" --env "$BENV" --mode "$MODE" \
-            --repo base --reuse-ixe \
+            --repo base \
             --csv "$GITHUB_WORKSPACE/Benchmarks/Vectors.csv" \
             --out "$GITHUB_WORKSPACE/base.json" $flags
           echo "base-side ix bench run exit $?"

@@ -171,7 +171,7 @@ jobs:
         working-directory: ${{ env.COMPILE_DIR }}
       # Serialize the env to a `.ixe` and measure the compile via `ix bench
       # run` — for the `compile` backend the compile IS the benchmark (always
-      # fresh; `--reuse-ixe` is ignored by design). Writes `<env>.ixe` at the
+      # fresh; `--ixe` is ignored by design). Writes `<env>.ixe` at the
       # workspace root and one results row keyed by the CamelCase env slug —
       # the same driver the !benchmark PR path uses; bmf wraps it for bencher.
       - name: Run ix compile benchmark
@@ -195,7 +195,7 @@ jobs:
       # dir.
       - if: steps.benched.outputs.yes == 'true'
         name: Cut closure shards for heavy primaries
-        run: ix bench shard --env ${{ matrix.env }} --reuse-ixe
+        run: ix bench shard --env ${{ matrix.env }} --ixe ${{ matrix.env }}.ixe
       # Cache the `.ixe` + closure-shard artifacts for the prove/zkvm jobs
       # (reused, never regenerated there). Only the benched envs those
       # consume, to stay under the repo cache limit. NB: every restore of
@@ -250,7 +250,7 @@ jobs:
   #     `status: oom` row (keeping any Phase-1 metrics flushed before the
   #     kill) for a too-large prove.
   #   - `execute` — the fast Phase-1-only signal (witness generation).
-  # No compiler run here: `ix bench run --reuse-ixe` picks up the cached
+  # No compiler run here: `--ixe` points at the cached
   # `.ixe`.
   aiur:
     name: aiur-${{ matrix.bench }}-${{ matrix.mode }}
@@ -295,7 +295,7 @@ jobs:
       - name: Run Aiur typecheck benchmark
         run: |
           ix bench run --backend aiur --env ${{ matrix.bench }} \
-            --mode ${{ matrix.mode }} --reuse-ixe --out bench.json
+            --mode ${{ matrix.mode }} --ixe ${{ matrix.bench }}.ixe --out bench.json
       # Upload whatever clean rows exist even when the run step reddened the
       # job — bmf drops every non-ok row, so a rejected or OOM'd constant
       # never reaches bencher.
@@ -400,7 +400,7 @@ jobs:
           build: false
           use-github-cache: false
       # Pull the `.ixe` + the pre-cut closure-shard artifacts the compile job
-      # built — `--reuse-ixe` means no recompile, and `ix bench run` skips
+      # built — `--ixe` means no recompile, and `ix bench run` skips
       # re-cutting shards it finds in zkshards-<env>/.
       - uses: actions/cache/restore@v5
         with:
@@ -420,7 +420,7 @@ jobs:
           fi
           ix bench run --backend ${{ matrix.cell.backend }} \
             --env ${{ matrix.cell.env }} --mode execute \
-            --reuse-ixe --out bench.json
+            --ixe ${{ matrix.cell.env }}.ixe --out bench.json
       # Upload whatever clean rows exist even when the run step reddened the
       # job — bmf drops every non-ok row.
       - name: Convert to Bencher Metric Format
@@ -505,7 +505,7 @@ jobs:
       - name: Run out-of-circuit kernel check
         run: |
           ix bench run --backend ooc --env ${{ matrix.bench }} --mode execute \
-            --reuse-ixe --out bench.json
+            --ixe ${{ matrix.bench }}.ixe --out bench.json
       # Upload whatever clean rows exist even when the run step reddened the
       # job — bmf drops every non-ok row.
       - name: Convert to Bencher Metric Format

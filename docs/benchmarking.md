@@ -59,23 +59,21 @@ ix bench run --backend ooc --env InitStd
 # Change something, run again, and diff against your previous run
 # (runs save baselines under .lake/benches/<cell>{,.prev}.json — the same
 # BENCH_OUTPUT_DIR root the Ix.Benchmark framework writes to):
-ix bench run --backend ooc --env InitStd --reuse-ixe
+ix bench run --backend ooc --env InitStd --ixe InitStd.ixe
 ix bench compare --backend ooc --env InitStd
 
 # One constant through aiur — the fast Phase-1 signal, then the full prove
 # (cap the watchdog to what your machine can spare):
 ix bench run --backend aiur --env InitStd --mode execute \
-  --consts Nat.add_comm --reuse-ixe --ceiling-gb 50
+  --consts Nat.add_comm --ixe InitStd.ixe --ceiling-gb 50
 ix bench run --backend aiur --env InitStd --mode prove \
-  --consts Nat.add_comm --reuse-ixe --ceiling-gb 50
-
-echo Nat.add_comm > names.txt   # fetch-main takes a names FILE
+  --consts Nat.add_comm --ixe InitStd.ixe --ceiling-gb 50
 
 # Compare a local run against main's numbers straight from bencher.dev
-# (no token needed; --names filters to your constants — the testbed holds
-# every benched env's):
+# (no token needed; --consts filters to your constants — the testbed
+# holds every benched env's):
 ix bench fetch-main --sha $(git merge-base origin/main HEAD) \
-  --backend aiur --mode prove --names names.txt --out main.json
+  --backend aiur --mode prove --consts Nat.add_comm --out main.json
 ix bench compare --backend aiur --env InitStd --mode prove \
   --main main.json --pr .lake/benches/aiur-InitStd-prove.json
 ```
@@ -171,7 +169,7 @@ bare `execute` token flips `aiur` to Phase-1 only.
 SHA) → `plan` (`ix bench ci matrix` → job matrices) + `compile` (per env:
 `ix bench run --backend compile`, cache the `.ixe` + pre-cut zisk shards) →
 `aiur` (execute + prove cells) / `zkvm-execute` / `ooc-check` (each: restore caches, one
-`ix bench run … --reuse-ixe`, `ix bench bmf`, upload via
+`ix bench run … --ixe`, `ix bench bmf`, upload via
 `.github/actions/bencher-track`). A kernel rejection exits 3 and reddens the
 run step while the clean rows still upload.
 

@@ -6,9 +6,9 @@
 
   1. selects constant names from `Benchmarks/Vectors.csv` (filters ported
      from the `!benchmark` manifest: env, tier, primary subset, shard flag);
-  2. ensures the env's `.ixe` exists (`ix compile`, reused when present and
-     `--reuse-ixe` is set — except for the `compile` backend, where the
-     compile IS the benchmark);
+  2. resolves the env's `.ixe` (an explicit `--ixe` path, else `ix
+     compile` — except for the `compile` backend, where the compile IS
+     the benchmark);
   3. spawns the cell's measured tool — `bench-typecheck` (aiur),
      `zisk-host`/`sp1-host` (zkVM execute), `ix check-rs` (ooc),
      `ix compile` (compile) — wrapped in the RAM watchdog (`watchdog.sh`:
@@ -291,13 +291,16 @@ def runPerConstant (out : String) (names : Array String)
         markOom out name
     mergeSpans out name
 
-/-- Ensure the env's `.ixe` exists at `<repo>/<env>.ixe`, compiling it when
-    absent (or when reuse is off). Returns the `.ixe` path. -/
-def ensureIxe (repo : String) (info : EnvSpec) (reuse : Bool) : IO String := do
+/-- Resolve the env's `.ixe`: an explicit `--ixe` path is used as-is (and
+    must exist — no silent recompile of a mistyped path); otherwise the
+    env is compiled fresh to `<repo>/<env>.ixe`. -/
+def ensureIxe (repo : String) (info : EnvSpec) (explicit : Option String) :
+    IO String := do
+  if let some path := explicit then
+    if ← FilePath.pathExists path then
+      return path
+    throw <| IO.userError s!"--ixe {path} not found"
   let ixe := s!"{repo}/{info.name}.ixe"
-  if reuse && (← FilePath.pathExists ixe) then
-    IO.eprintln s!"[bench] reusing {ixe}"
-    return ixe
   let ix ← resolveBin repo "ix"
   let exit ← runGuarded none 0 ix
     #["compile", s!"{repo}/{info.module}", "--out", ixe]
@@ -407,11 +410,12 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
   let csv := (p.flag? "csv").map (·.as! String)
     |>.getD s!"{repo}/Benchmarks/Vectors.csv"
   let rows := parseVectorsCsv (← IO.FS.readFile csv)
-  -- `--consts`/`--names-file` (unioned) override the CSV selection — a
-  -- one-off local run, or bench-pr's targeted base run over just the
-  -- constants bencher lacked; tier metadata still comes from the CSV so
-  -- heavy zisk names keep their sharded pipeline.
-  let wanted ← Ix.Cli.ConstsFile.gather p "consts" "names-file"
+  -- `--consts` overrides the CSV selection — a one-off local run, or
+  -- bench-pr's targeted base run over just the constants bencher lacked;
+  -- tier metadata still comes from the CSV so heavy zisk names keep
+  -- their sharded pipeline.
+  let wanted := ((p.flag? "consts").map
+    (fun f => Ix.Cli.ConstsFile.parseCommaList (f.as! String))).getD #[]
   let selected :=
     if wanted.isEmpty then
       selectNames rows env mode full tier (p.hasFlag "shard-only")
@@ -437,7 +441,7 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
       IO.eprintln s!"[bench] ix compile failed (exit {exit})"
       return 1
   | "ooc" =>
-    let ixe ← ensureIxe repo info (p.hasFlag "reuse-ixe")
+    let ixe ← ensureIxe repo info ((p.flag? "ixe").map (·.as! String))
     let ix ← resolveBin repo "ix"
     -- Whole-env row (keyed by the env name) …
     let exit ← runGuarded watchdog ceilingGb ix
@@ -456,7 +460,7 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
       if exit != 0 && exit != exitRejected then
         IO.eprintln s!"[bench] per-constant checks failed (exit {exit})"
   | "aiur" =>
-    let ixe ← ensureIxe repo info (p.hasFlag "reuse-ixe")
+    let ixe ← ensureIxe repo info ((p.flag? "ixe").map (·.as! String))
     let bt ← resolveBin repo "bench-typecheck"
     let modeArgs := if mode == "execute" then #["--execute-only"] else #[]
     let doneKey := if mode == "prove" then "prove-time" else "execute-time"
@@ -468,7 +472,7 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
     if mode != "execute" then
       p.printError s!"error: {backend} supports only execute mode"
       return exitUsage
-    let ixe ← ensureIxe repo info (p.hasFlag "reuse-ixe")
+    let ixe ← ensureIxe repo info ((p.flag? "ixe").map (·.as! String))
     let ixeAbs := (← IO.FS.realPath ixe).toString
     let outAbs ← do
       IO.FS.writeFile out ""  -- realPath needs an existing file
@@ -543,7 +547,7 @@ def runBenchShardCmd (p : Cli.Parsed) : IO UInt32 := do
   let heavy := (rows.filter fun r =>
     r.env == env && r.primary && r.tier == "heavy").map (·.name)
   IO.eprintln s!"[bench] shard {env}: {heavy.size} heavy constant(s)"
-  let ixe ← ensureIxe repo info (p.hasFlag "reuse-ixe")
+  let ixe ← ensureIxe repo info ((p.flag? "ixe").map (·.as! String))
   let ix ← resolveBin repo "ix"
   for name in heavy do
     let _ ← cutClosureShards ix ixe s!"{repo}/zkshards-{env}" name ceilingGb
@@ -565,10 +569,9 @@ def benchRunCmd : Cli.Cmd := `[Cli|
     csv          : String; "Vectors path (default: <repo>/Benchmarks/Vectors.csv)"
     full;                  "Run the env's full curated set instead of the primary subset"
     consts       : String; "Run exactly these comma-separated names instead of the Vectors.csv selection (same grammar as the tools' --consts)"
-    "names-file" : String; "Additionally read names from a file (one per line); unions with --consts"
     tier         : String; "cheap | heavy | all — tier filter (default: all; prove-mode --full defaults to cheap)"
     "shard-only";          "Restrict to shard_target rows"
-    "reuse-ixe";           "Reuse an existing <env>.ixe instead of recompiling (ignored by the compile backend)"
+    ixe          : String; "Path to an existing .ixe env to use (default: compile <env> fresh; ignored by the compile backend)"
     "ceiling-gb" : Nat;    "RAM watchdog ceiling in GB (default: machine RAM minus 15 GB)"
     watchdog     : String; "Watchdog wrapper path (default: <repo>/.github/scripts/watchdog.sh; missing = run unguarded)"
 ]
@@ -582,7 +585,7 @@ def benchShardCmd : Cli.Cmd := `[Cli|
     env          : String; "Benchmark env from the registry (default: InitStd)"
     repo         : String; "Checkout to shard: tools resolve from <repo>/.lake/build/bin first, then PATH (default: .)"
     csv          : String; "Vectors path (default: <repo>/Benchmarks/Vectors.csv)"
-    "reuse-ixe";           "Reuse an existing <env>.ixe instead of recompiling"
+    ixe          : String; "Path to an existing .ixe env to use (default: compile <env> fresh)"
     "ceiling-gb" : Nat;    "Predicted-RAM cap per shard, passed to `ix shard --max-ram` (default: machine RAM minus 15 GB)"
 ]
 
