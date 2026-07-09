@@ -396,6 +396,79 @@ pub extern "C" fn rs_compile_env(
   }
 }
 
+/// FFI: compile a Lean environment and stream the serialized Ixon.Env
+/// straight to `out_path` (see `Env::put_file`) — no env-sized `Vec` or
+/// Lean `ByteArray` is built. Writes `<out_path>.tmp`, then renames, so
+/// a crash cannot leave a truncated file. Returns bytes written (Nat).
+/// Byte-identical output to `rs_compile_env` + `IO.FS.writeBinFile`.
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_compile_env_to_file(
+  env_consts_ptr: LeanList<LeanBorrowed<'_>>,
+  out_path: LeanString<LeanBorrowed<'_>>,
+) -> LeanIOResult<LeanOwned> {
+  let quiet = std::env::var("IX_QUIET").is_ok();
+  let rss_gib = |label: &str| {
+    if !quiet && let Some((vm, anon, file)) = ix_compile::compile::self_rss_kb()
+    {
+      eprintln!(
+        "[rs_compile_env_to_file] rss {label}: {:.1} GiB (anon {:.1}, file {:.1})",
+        vm as f64 / (1024.0 * 1024.0),
+        anon as f64 / (1024.0 * 1024.0),
+        file as f64 / (1024.0 * 1024.0),
+      );
+    }
+  };
+  rss_gib("at entry");
+  let rust_env = decode_env(env_consts_ptr);
+  let rust_env = Arc::new(rust_env);
+  rss_gib("after decode_env");
+
+  let compile_stt =
+    match compile_env_with_options(&rust_env, CompileOptions::default()) {
+      Ok(stt) => stt,
+      Err(e) => {
+        let msg =
+          format!("rs_compile_env_to_file: Rust compilation failed: {:?}", e);
+        return LeanIOResult::error_string(&msg);
+      },
+    };
+
+  let path = std::path::PathBuf::from(out_path.as_str());
+  let tmp = {
+    let mut s = path.clone().into_os_string();
+    s.push(".tmp");
+    std::path::PathBuf::from(s)
+  };
+  let written = match compile_stt.env.put_file(&tmp) {
+    Ok(n) => n,
+    Err(e) => {
+      std::fs::remove_file(&tmp).ok();
+      let msg = format!("rs_compile_env_to_file: serialization failed: {e}");
+      return LeanIOResult::error_string(&msg);
+    },
+  };
+  if let Err(e) = std::fs::rename(&tmp, &path) {
+    std::fs::remove_file(&tmp).ok();
+    let msg = format!(
+      "rs_compile_env_to_file: rename {} -> {}: {e}",
+      tmp.display(),
+      path.display()
+    );
+    return LeanIOResult::error_string(&msg);
+  }
+  rss_gib("after put_file");
+
+  // Same destructor skip as `rs_compile_env` — one-shot CLI process.
+  if std::env::var("IX_SKIP_DROPS").ok().as_deref() != Some("0") {
+    std::mem::forget(compile_stt);
+    std::mem::forget(rust_env);
+  } else {
+    drop(compile_stt);
+    drop(rust_env);
+  }
+  LeanIOResult::ok(LeanOwned::from_nat_u64(written))
+}
+
 /// Round-trip a RawEnv: decode from Lean, re-encode via builder.
 /// This performs a full decode/build cycle to verify FFI correctness.
 #[cfg(feature = "test-ffi")]

@@ -134,6 +134,32 @@ def runCompileCmd (p : Cli.Parsed) : IO UInt32 := do
   if benched then
     TracingTexray.startSampler
     TracingTexray.resetPeakTreeRss
+
+  -- IX_COMPILE_STREAM=1: Rust writes the `.ixe` directly (streamed;
+  -- avoids ~2× env size of peak RAM for the buffered ByteArray path).
+  -- Both paths produce byte-identical files.
+  let stream := (← IO.getEnv "IX_COMPILE_STREAM") == some "1"
+  if stream then
+    let start ← IO.monoMsNow
+    let size ← Ix.CompileM.rsCompileEnvToFileFFI constList outPath
+    let elapsed := (← IO.monoMsNow) - start
+    println! "Compiled and wrote {fmtBytes size} env to {outPath} in {elapsed.formatMs}"
+    IO.println s!"##benchmark## {elapsed} {size} {totalConsts}"
+    if let some flag := p.flag? "json" then
+      let key := (p.flag? "json-name").map (·.as! String)
+        |>.getD ((FilePath.mk pathStr).fileStem.getD "env")
+      let secs := elapsed.toFloat / 1000.0
+      let tput := if elapsed > 0
+        then totalConsts.toFloat * 1000.0 / elapsed.toFloat else 0.0
+      let peakRss ← TracingTexray.peakTreeRssBytes
+      Ix.Benchmark.Results.writeRow (flag.as! String) key "ok"
+        [ ("compile-time", Ix.Benchmark.Results.jsonRound 3 secs)
+        , ("file-size", Lean.toJson size)
+        , ("constants", Lean.toJson totalConsts)
+        , ("throughput", Ix.Benchmark.Results.jsonRound 2 tput)
+        , ("peak-rss", Lean.toJson peakRss) ]
+    return 0
+
   let start ← IO.monoMsNow
   let bytes ← Ix.CompileM.rsCompileEnvBytesFFI constList
   let elapsed := (← IO.monoMsNow) - start

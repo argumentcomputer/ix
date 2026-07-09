@@ -1373,6 +1373,159 @@ impl Env {
     Ok(())
   }
 
+  /// Serialize the environment directly to a file, streaming entry by
+  /// entry through a reusable staging buffer — nothing proportional to
+  /// env size is allocated (contrast [`Env::put`], whose output `Vec`
+  /// is ~env size). Returns the byte count written.
+  ///
+  /// MUST remain byte-identical with [`Env::put`] — checked by the
+  /// `put_file_matches_put` test and the A/B `cmp` oracle. Any format
+  /// change lands in both or not at all.
+  #[cfg(not(target_arch = "riscv64"))]
+  pub fn put_file(&self, path: &std::path::Path) -> Result<u64, String> {
+    use rayon::slice::ParallelSliceMut;
+    use std::io::Write;
+    let quiet = std::env::var("IX_QUIET").is_ok();
+    let overall_start = std::time::Instant::now();
+    let file = std::fs::File::create(path)
+      .map_err(|e| format!("Env::put_file: create {}: {e}", path.display()))?;
+    let mut w = std::io::BufWriter::with_capacity(8 * 1024 * 1024, file);
+    let mut written: u64 = 0;
+    let mut buf: Vec<u8> = Vec::with_capacity(64 * 1024);
+    // Drain the staging buffer to the writer. Large constant bodies
+    // bypass staging and go straight to the writer.
+    macro_rules! emit {
+      () => {
+        if !buf.is_empty() {
+          w.write_all(&buf)
+            .map_err(|e| format!("Env::put_file: write: {e}"))?;
+          written += buf.len() as u64;
+          buf.clear();
+        }
+      };
+    }
+
+    // Header: Tag4 + canonical merkle root over consts.keys().
+    Tag4::new(Self::FLAG, 0).put(&mut buf);
+    let mut const_addrs: Vec<Address> =
+      self.consts.iter().map(|e| e.key().clone()).collect();
+    const_addrs.par_sort_unstable();
+    let root = merkle_root_canonical(&const_addrs).unwrap_or_else(zero_address);
+    put_address(&root, &mut buf);
+
+    // Section 1: Blobs
+    let mut blob_addrs: Vec<Address> =
+      self.blobs.iter().map(|e| e.key().clone()).collect();
+    blob_addrs.par_sort_unstable();
+    put_u64(blob_addrs.len() as u64, &mut buf);
+    for addr in &blob_addrs {
+      if let Some(entry) = self.blobs.get(addr) {
+        let bytes = entry.value();
+        put_address(addr, &mut buf);
+        put_u64(bytes.len() as u64, &mut buf);
+        buf.extend_from_slice(bytes);
+        emit!();
+      }
+    }
+
+    // Section 2: Consts — the dominant bytes; raw_bytes stream straight
+    // through (under IX_COMPILE_SPILL=mmap this is page cache → page
+    // cache).
+    let sec_start = std::time::Instant::now();
+    put_u64(const_addrs.len() as u64, &mut buf);
+    for addr in &const_addrs {
+      if let Some(entry) = self.consts.get(addr) {
+        put_address(addr, &mut buf);
+        let bytes = entry.value().raw_bytes();
+        Tag0::new(bytes.len() as u64).put(&mut buf);
+        emit!();
+        w.write_all(bytes)
+          .map_err(|e| format!("Env::put_file: write const: {e}"))?;
+        written += bytes.len() as u64;
+      }
+    }
+    if !quiet {
+      eprintln!(
+        "[Env::put_file] consts streamed: {} entries in {:.1}s \
+         ({written} bytes so far)",
+        const_addrs.len(),
+        sec_start.elapsed().as_secs_f64(),
+      );
+    }
+
+    // Section 3: Names (topologically sorted; builds the name index the
+    // Named section encodes through).
+    let sorted_names = topological_sort_names(&self.names);
+    let mut name_index: NameIndex = NameIndex::new();
+    put_u64(sorted_names.len() as u64, &mut buf);
+    for (i, (addr, name)) in sorted_names.iter().enumerate() {
+      name_index.insert(addr.clone(), i as u64);
+      put_address(addr, &mut buf);
+      put_name_component(name, &mut buf);
+      emit!();
+    }
+
+    // Section 4: Named — the largest per-entry section; demoted entries
+    // decode and re-encode through the name index one at a time.
+    let sec_start = std::time::Instant::now();
+    let mut named_keys: Vec<Name> =
+      self.named.iter().map(|e| e.key().clone()).collect();
+    named_keys.par_sort_unstable_by(|a, b| {
+      a.get_hash().as_bytes().cmp(b.get_hash().as_bytes())
+    });
+    put_u64(named_keys.len() as u64, &mut buf);
+    for name in &named_keys {
+      if let Some(entry) = self.named.get(name) {
+        put_bytes(name.get_hash().as_bytes(), &mut buf);
+        put_named_indexed(entry.value(), &name_index, &mut buf)?;
+        emit!();
+      }
+    }
+    if !quiet {
+      eprintln!(
+        "[Env::put_file] named streamed: {} entries in {:.1}s \
+         ({written} bytes so far)",
+        named_keys.len(),
+        sec_start.elapsed().as_secs_f64(),
+      );
+    }
+
+    // Section 5: Comms
+    let mut comm_addrs: Vec<Address> =
+      self.comms.iter().map(|e| e.key().clone()).collect();
+    comm_addrs.par_sort_unstable();
+    put_u64(comm_addrs.len() as u64, &mut buf);
+    for addr in &comm_addrs {
+      if let Some(entry) = self.comms.get(addr) {
+        put_address(addr, &mut buf);
+        entry.value().put(&mut buf);
+        emit!();
+      }
+    }
+
+    // Optional trailing anon_hints section — same condition as `put`.
+    if !self.anon_hints.is_empty() {
+      let mut hint_addrs: Vec<Address> =
+        self.anon_hints.keys().cloned().collect();
+      hint_addrs.sort_unstable();
+      put_u64(hint_addrs.len() as u64, &mut buf);
+      for addr in &hint_addrs {
+        put_address(addr, &mut buf);
+        self.anon_hints[addr].put_ser(&mut buf);
+      }
+    }
+
+    emit!();
+    w.flush().map_err(|e| format!("Env::put_file: flush: {e}"))?;
+    if !quiet {
+      eprintln!(
+        "[Env::put_file] ALL DONE: {written} bytes in {:.1}s",
+        overall_start.elapsed().as_secs_f64(),
+      );
+    }
+    Ok(written)
+  }
+
   /// Deserialize an Env from bytes.
   pub fn get(buf: &mut &[u8]) -> Result<Self, String> {
     // Header
@@ -2145,6 +2298,23 @@ mod tests {
     let mut bools = x;
     bools.truncate(8);
     bools == unpack_bools(bools.len(), pack_bools(bools.clone()))
+  }
+
+  #[test]
+  fn put_file_matches_put() {
+    let mut g = Gen::new(24);
+    for i in 0..8 {
+      let env = gen_env(&mut g);
+      let mut buf = Vec::new();
+      env.put(&mut buf).unwrap();
+      let path = std::env::temp_dir()
+        .join(format!("ixon_put_file_test_{}_{i}.ixe", std::process::id()));
+      let written = env.put_file(&path).unwrap();
+      let from_file = std::fs::read(&path).unwrap();
+      std::fs::remove_file(&path).ok();
+      assert_eq!(written as usize, from_file.len());
+      assert_eq!(buf, from_file, "put and put_file bytes diverge");
+    }
   }
 
   #[test]

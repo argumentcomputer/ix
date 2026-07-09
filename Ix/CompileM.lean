@@ -1920,6 +1920,15 @@ def compileEnvParallel (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
 @[extern "rs_compile_env"]
 opaque rsCompileEnvBytesFFI : @& List (Lean.Name × Lean.ConstantInfo) → IO ByteArray
 
+/-- FFI: Compile a Lean environment and write the serialized Ixon.Env
+    straight to `outPath` from Rust (streamed; no env-sized ByteArray
+    crosses the FFI). Writes to `<outPath>.tmp` then renames, so a crash
+    cannot leave a truncated file. Returns the byte count written.
+    Byte-identical to writing `rsCompileEnvBytesFFI`'s result. -/
+@[extern "rs_compile_env_to_file"]
+opaque rsCompileEnvToFileFFI
+  : @& List (Lean.Name × Lean.ConstantInfo) → @& String → IO Nat
+
 /-- FFI: 8-phase validation of the aux_gen compile pipeline (compile +
     decompile + roundtrip + alpha-equivalence + nested-detect checks).
     Returns total failure count across all phases.
