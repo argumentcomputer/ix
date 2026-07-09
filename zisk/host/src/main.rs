@@ -34,6 +34,9 @@ use std::time::{Duration, Instant};
 use anyhow::{Result, bail};
 use clap::Parser;
 use human_repr::{HumanCount, HumanThroughput};
+use ix_bench::{
+  EXIT_REJECTED, Rejection, Status, collect_consts, peak_rss_bytes, write_row,
+};
 use ix_kernel::anon_work::{
   AnonWorkItem, block_of_addr, build_anon_work, build_sub_env, work_block_addr,
 };
@@ -186,40 +189,54 @@ struct Args {
   #[arg(long)]
   dump_input: Option<PathBuf>,
 
-  /// Check a single constant selected by its Lean NAME (e.g.
-  /// "ByteArray.utf8DecodeChar?_utf8EncodeChar_append"), with no manifest or
-  /// range plumbing: the name is resolved through the env's `named` metadata to
-  /// its ingress block, and the guest receives only its closure sub-env. By
-  /// default this is the **full-closure** typecheck — the constant *and* its
-  /// whole dependency closure are re-checked (matching `Ix.Claim.check addr
-  /// none`, the default of the Aiur `bench-typecheck --constant`). Pass
-  /// `--skip-deps` for a subject-only check (deps trusted). Composes with
-  /// `--execute` (cycles), plain prove (single leaf, subject-bound + verified),
-  /// and `--dump-input` (write the stdin for ziskemu profiling). Requires
-  /// exactly one `--ixe`. Note: a member of a mutual block selects the whole
-  /// block's work item (the kernel checks blocks atomically).
-  #[arg(long, conflicts_with_all = ["shard_plan", "only_shard", "store_dir"])]
-  constant: Option<String>,
+  /// Comma-separated Lean names to check (each: closure sub-env → one leaf).
+  #[arg(
+    long,
+    value_delimiter = ',',
+    conflicts_with_all = ["shard_plan", "only_shard", "store_dir"]
+  )]
+  consts: Vec<String>,
 
-  /// Modifies `--constant`: check only the named constant itself, trusting its
-  /// dependencies (subject-only), instead of re-checking its whole transitive
-  /// closure. Reserved for constants too expensive to full-closure-check that
-  /// also can't be sharded. Same flag/semantics as the Aiur
-  /// `bench-typecheck --skip-deps`.
-  #[arg(long, requires = "constant")]
+  /// Additional names from a file (one per line, `#` comments); unions with --consts.
+  #[arg(long, conflicts_with_all = ["shard_plan", "only_shard", "store_dir"])]
+  consts_file: Option<PathBuf>,
+
+  /// With --consts/--consts-file: check each subject only, trusting its deps.
+  // Validated in main (not clap `requires = "consts"`): names may come from
+  // --consts-file alone, which a clap-level `requires` would wrongly reject.
+  #[arg(long)]
   skip_deps: bool,
 
-  /// Cap on resident witness traces during the prove phase, bounding
-  /// peak host RAM per shard. Zisk's prover queues witnesses up to this
-  /// count before committing them; peak RAM ≈ N × avg-witness-size +
-  /// fixed overheads. Zisk's built-in default is 10 (tuned for
-  /// large-memory boxes); we default to 5 here as a safer fit for
-  /// ~256 GB machines. Override up to 10 on bigger boxes for maximum
-  /// parallelism, or down to 3 on smaller ones. See the Zisk section
-  /// of the top-level README for a per-RAM recommendation table. Has
-  /// no effect on `--execute` / `--verify-constraints` modes.
-  #[arg(long, default_value_t = 5)]
-  max_witness_stored: usize,
+  /// Write per-constant results JSON `{ "<name>": { … } }` (accumulated across names).
+  /// With `--shard-plan --execute` it instead gets one env-level row (totals +
+  /// per-shard cycles breakdown).
+  #[arg(long)]
+  json: Option<PathBuf>,
+
+  /// Benchmark key for the env-level row `--shard-plan --execute --json`
+  /// writes (e.g. the CamelCase env slug CI uses). Defaults to the manifest
+  /// file stem.
+  #[arg(long, requires = "shard_plan")]
+  json_name: Option<String>,
+
+  /// Enable tracing-texray; with --json, per-phase spans are written to <json>.spans.
+  #[arg(long)]
+  texray: bool,
+}
+
+/// Fail FAST on a guest typecheck failure: a rejected constant rejects the
+/// whole workload, so bail before spending cycles (or proofs) on the
+/// remaining shards — mirroring the OOM kill, which also cancels the rest.
+/// Callers with a `--json` row in flight write it with `status: rejected`
+/// BEFORE calling this; `main` maps the typed error to `EXIT_REJECTED`.
+fn reject_failures(publics: &ShardPublics, ctx: &str) -> Result<()> {
+  if publics.failures > 0 {
+    return Err(
+      Rejection { failures: publics.failures.into(), ctx: ctx.to_string() }
+        .into(),
+    );
+  }
+  Ok(())
 }
 
 /// 112-byte public output of one shard-guest proof.
@@ -761,11 +778,7 @@ fn check_input_coherence(
   Ok(failures)
 }
 
-fn build_client(
-  gpu: bool,
-  asm: bool,
-  max_witness_stored: Option<usize>,
-) -> Result<EmbeddedClient> {
+fn build_client(gpu: bool, asm: bool) -> Result<EmbeddedClient> {
   // Executor choice. The default is the Assembly executor (`asm = true`,
   // i.e. no `--emulator`): it is markedly faster at trace generation and is
   // the prerequisite for the hints stream. It historically broke under our
@@ -785,10 +798,8 @@ fn build_client(
   // docs ("Reduce memory footprint during proving at the cost of
   // speed"). We have ~94 GB of free GPU memory, so the speed
   // trade-off is the wrong direction for this hardware.
-  let mut opts = EmbeddedOpts::default();
-  if let Some(n) = max_witness_stored {
-    opts = opts.max_witness_stored(n);
-  }
+  // Zisk's default embedded opts (witness cap 10).
+  let opts = EmbeddedOpts::default();
   let mut builder: EmbeddedClientBuilder =
     ProverClient::embedded().with_embedded_opts(opts);
   if asm {
@@ -800,7 +811,7 @@ fn build_client(
   builder.build()
 }
 
-/// Check a single constant chosen by Lean NAME (the `--constant` path).
+/// Check a single constant chosen by Lean NAME (one iteration of `--consts`).
 /// Resolve name → constant address via the env's `named` metadata, map to its
 /// ingress block's work item, and ship its closure sub-env. By default the
 /// check-list is the ENTIRE closure (full-closure typecheck); with
@@ -895,18 +906,35 @@ async fn run_constant(
 
   // ---- Execute mode: cycles only, no proof. ----
   if args.execute {
+    let t0 = Instant::now();
     let result = client.execute(&SHARD_PROGRAM, stdin).run()?.await?;
+    let execute_secs = t0.elapsed().as_secs_f64();
+    tracing_texray::json_sink::record_manual("zisk/execute", execute_secs);
     let mut buf = [0u8; SHARD_PUBLICS_LEN];
     result.get_public_values_slice(&mut buf);
     let publics = ShardPublics::decode(&buf);
-    println!(
-      "cycles: {}, failures: {}",
-      result.get_execution_steps(),
-      publics.failures
-    );
-    if publics.failures > 0 {
-      bail!("kernel typecheck produced {} failure(s)", publics.failures);
+    let cycles = result.get_execution_steps();
+    println!("cycles: {cycles}, failures: {}", publics.failures);
+    if let Some(path) = &args.json {
+      let tput =
+        if execute_secs > 0.0 { cycles as f64 / execute_secs } else { 0.0 };
+      let status =
+        if publics.failures > 0 { Status::Rejected } else { Status::Ok };
+      write_row(
+        path,
+        name,
+        status,
+        serde_json::json!({
+          "cycles": cycles,
+          "execute-time": (execute_secs * 1e6).round() / 1e6,
+          "throughput": tput.round(),
+          // The execute phase's RSS high-water — the only phase this cell
+          // has, so the name stays bare (phases separate at the testbed).
+          "peak-rss": peak_rss_bytes(),
+        }),
+      )?;
     }
+    reject_failures(&publics, &format!("constant {name}"))?;
     return Ok(());
   }
 
@@ -916,6 +944,10 @@ async fn run_constant(
   result.get_public_values_slice(&mut buf);
   let publics = ShardPublics::decode(&buf);
   let leaf_ms = result.get_proving_time();
+  tracing_texray::json_sink::record_manual(
+    "zisk/prove",
+    leaf_ms as f64 / 1000.0,
+  );
   let expected = subject_of_cover(&cover);
   if *expected.as_bytes() != publics.subject_root {
     bail!(
@@ -938,12 +970,23 @@ async fn run_constant(
     &expected.hex()[..16],
     roots.len(),
   );
-  if publics.failures > 0 {
-    bail!(
-      "kernel typecheck produced {} failure(s) (proof still verifies)",
-      publics.failures
-    );
+  if let Some(path) = &args.json {
+    let status =
+      if publics.failures > 0 { Status::Rejected } else { Status::Ok };
+    write_row(
+      path,
+      name,
+      status,
+      serde_json::json!({
+        "prove-time": (leaf_ms as f64).round() / 1000.0,
+        "steps": result.get_execution_steps(),
+        "peak-rss": peak_rss_bytes(),
+      }),
+    )?;
   }
+  // Proof still verifies on rejection — the guest certifies "checked, with
+  // failures" — but a rejected constant must land as a red row, not a metric.
+  reject_failures(&publics, &format!("constant {name}"))?;
   Ok(())
 }
 
@@ -1239,29 +1282,104 @@ async fn run_shard_plan(
   }
 
   // ---- Execute mode: run each novel shard in the VM for cycles (no proof);
-  // store-covered shards have nothing to execute. ----
+  // store-covered shards have nothing to execute. With `--json`, one
+  // env-level row (keyed by `--json-name`, default the manifest stem)
+  // carries the totals plus a per-shard cycles breakdown under
+  // `shard-cycles` — the CI benchmark's per-shard tracking. ----
   if args.execute {
+    let t0 = Instant::now();
     let mut total_steps = 0u64;
-    let mut total_failures = 0u32;
+    let mut max_shard_cycles = 0u64;
+    let mut max_shard_peak: Option<u64> = None;
+    let mut shard_cycles = serde_json::Map::new();
+    let mut shard_time = serde_json::Map::new();
+    let mut shard_peak_rss = serde_json::Map::new();
+    // Fail FAST on a rejected shard (skip the rest), but still write the
+    // row — with the shards measured so far — as `status: rejected`.
+    let mut rejection: Option<Rejection> = None;
     for &(idx, g) in &novel {
       let (check_list, sub_env, _cover) = build_inputs(g)?;
       let stdin = leaf_stdin(0, 0, &sub_env, &check_list);
+      // Windowed RAM high-water: reset before each shard so the per-shard
+      // peaks are independent; the env row's peak-rss is their max.
+      tracing_texray::rss_sampler::reset_peak_tree_rss();
       let result = client.execute(&SHARD_PROGRAM, stdin).run()?.await?;
       let mut buf = [0u8; SHARD_PUBLICS_LEN];
       result.get_public_values_slice(&mut buf);
       let publics = ShardPublics::decode(&buf);
       let cycles = result.get_execution_steps();
+      let exec_secs = result.get_execution_time() as f64 / 1000.0;
+      let peak = peak_rss_bytes();
       total_steps += cycles;
-      total_failures = total_failures.saturating_add(publics.failures);
+      max_shard_cycles = max_shard_cycles.max(cycles);
+      max_shard_peak = max_shard_peak.max(peak);
+      // 1-based zero-padded keys: matches --only-shard's numbering and keeps
+      // the flattened bencher measure list (`shard-cycles:<k>`, …) sorted.
+      let key = format!("{:02}", idx + 1);
+      shard_cycles.insert(key.clone(), serde_json::json!(cycles));
+      shard_time.insert(key.clone(), serde_json::json!(exec_secs));
+      if let Some(p) = peak {
+        shard_peak_rss.insert(key, serde_json::json!(p));
+      }
       println!(
-        "  [shard {idx}] {} work items, failures={}, cycles={cycles}",
+        "  [shard {idx}] {} work items, failures={}, cycles={cycles}, \
+         {exec_secs:.1}s, peak {}",
         g.len(),
         publics.failures,
+        peak.map_or("?".to_string(), |p| format!(
+          "{:.2} GiB",
+          p as f64 / (1 << 30) as f64
+        )),
       );
+      if publics.failures > 0 {
+        rejection = Some(Rejection {
+          failures: publics.failures.into(),
+          ctx: format!("shard {idx}"),
+        });
+        break;
+      }
     }
-    println!("total cycles: {total_steps}, failures: {total_failures}");
-    if total_failures > 0 {
-      bail!("kernel typecheck produced {total_failures} failure(s)");
+    let execute_secs = t0.elapsed().as_secs_f64();
+    tracing_texray::json_sink::record_manual("zisk/execute", execute_secs);
+    println!(
+      "total cycles: {total_steps}, failures: {}",
+      rejection.as_ref().map_or(0, |r| r.failures)
+    );
+    if let Some(path) = &args.json {
+      let name = args.json_name.clone().unwrap_or_else(|| {
+        manifest_path
+          .file_stem()
+          .map(|s| s.to_string_lossy().into_owned())
+          .unwrap_or_else(|| "env".to_string())
+      });
+      let tput = if execute_secs > 0.0 {
+        total_steps as f64 / execute_secs
+      } else {
+        0.0
+      };
+      let status =
+        if rejection.is_some() { Status::Rejected } else { Status::Ok };
+      write_row(
+        path,
+        &name,
+        status,
+        serde_json::json!({
+          "cycles": total_steps,
+          "shards": novel.len(),
+          "max-shard-cycles": max_shard_cycles,
+          "execute-time": (execute_secs * 1e6).round() / 1e6,
+          "throughput": tput.round(),
+          // Max over the per-shard windows == the run's execution-phase
+          // high-water (setup RAM excluded by the resets above).
+          "peak-rss": max_shard_peak,
+          "shard-cycles": shard_cycles,
+          "shard-time": shard_time,
+          "shard-peak-rss": shard_peak_rss,
+        }),
+      )?;
+    }
+    if let Some(r) = rejection {
+      return Err(r.into());
     }
     return Ok(());
   }
@@ -1307,6 +1425,7 @@ async fn run_shard_plan(
       leaf_ms as f64 / 1000.0,
       result.get_execution_steps(),
     );
+    reject_failures(&publics, &format!("shard {idx}"))?;
     // Bind each leaf: its committed subject must equal the env-derived merkle
     // root over the constants it certified. A guest that proved a different set
     // than the manifest assigned would commit a different root and fail here.
@@ -1598,18 +1717,56 @@ async fn run_shard_plan(
     covered_union.len(),
   );
   if total_failures > 0 {
-    bail!(
-      "kernel typecheck produced {total_failures} failure(s) (proof still verifies)"
+    return Err(
+      Rejection {
+        failures: total_failures.into(),
+        ctx: "aggregate (proof still verifies)".to_string(),
+      }
+      .into(),
     );
   }
   Ok(())
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> std::process::ExitCode {
+  match run().await {
+    Ok(()) => std::process::ExitCode::SUCCESS,
+    Err(e) => {
+      eprintln!("error: {e:#}");
+      if e.downcast_ref::<Rejection>().is_some() {
+        // Reserved exit code: rejection rows are on disk; the caller needs
+        // no log parsing to tell "kernel said no" from an infra failure.
+        std::process::ExitCode::from(EXIT_REJECTED)
+      } else {
+        std::process::ExitCode::FAILURE
+      }
+    },
+  }
+}
+
+async fn run() -> Result<()> {
   zisk_sdk::setup_logger(VerboseMode::Info);
 
   let args = Args::parse();
+
+  // Start the process-tree RSS sampler so `peak_rss_bytes()` reflects the ASM
+  // microservices' memory, and point the per-phase timing sink at the drill-down
+  // file if requested. Both are independent of the SDK's global tracing logger.
+  //
+  // TODO(spans): the sink only receives the coarse `zisk/execute` / `zisk/prove`
+  // phases we `record_manual` below. For a finer drill-down (setup, trace-gen,
+  // per-microservice), install a TeXRay subscriber and examine the zisk-sdk's
+  // own tracing spans — which requires composing it with the SDK's global logger
+  // (`zisk_sdk::setup_logger`), currently the sole subscriber.
+  tracing_texray::rss_sampler::start(std::time::Duration::from_millis(50));
+  // With --texray + --json, per-phase span timings land at `<json>.spans` as
+  // JSON Lines — the CI drill-down input.
+  if args.texray {
+    if let Some(json) = args.json.as_ref().and_then(|p| p.to_str()) {
+      let _ = tracing_texray::json_sink::to_file(&format!("{json}.spans"));
+    }
+  }
 
   // Collect inputs. No `--ixe` → a single empty env (back-compat).
   let inputs: Vec<Option<PathBuf>> = if args.ixe.is_empty() {
@@ -1633,9 +1790,18 @@ async fn main() -> Result<()> {
       "--shard-plan requires exactly one --ixe input (the env the manifest was built for)"
     );
   }
-  // `--constant` selects a named constant from one env.
-  if args.constant.is_some() && inputs.len() > 1 {
-    bail!("--constant requires exactly one --ixe input");
+  // Named constants (from --consts and/or --consts-file) select from one env.
+  let consts = collect_consts(&args.consts, args.consts_file.as_deref())?;
+  if !consts.is_empty() && inputs.len() > 1 {
+    bail!("--consts/--consts-file requires exactly one --ixe input");
+  }
+  if consts.is_empty() && args.skip_deps {
+    bail!("--skip-deps requires constants via --consts or --consts-file");
+  }
+  if consts.is_empty() && args.json.is_some() && args.shard_plan.is_none() {
+    bail!(
+      "--json requires constants via --consts/--consts-file, or --shard-plan"
+    );
   }
 
   // ---- Plan every input up front (parse + shard). ----
@@ -1699,8 +1865,7 @@ async fn main() -> Result<()> {
   let grand_target_count: usize = plans.iter().map(|p| p.target_count).sum();
   let total_leaves: usize = plans.iter().map(|p| p.shards.len()).sum();
 
-  let client =
-    build_client(args.gpu, !args.emulator, Some(args.max_witness_stored))?;
+  let client = build_client(args.gpu, !args.emulator)?;
   client.setup(&SHARD_PROGRAM).run()?.await?;
   // Skip agg-guest setup unless we'll produce more than one leaf proof.
   // The shard-plan path sets up the agg program itself, after its leaves.
@@ -1729,9 +1894,11 @@ async fn main() -> Result<()> {
     return Ok(());
   }
 
-  // ---- Single named constant (no manifest/range). ----
-  if let Some(name) = &args.constant {
-    run_constant(&client, &plans[0], name, &args).await?;
+  // ---- Named constants (no manifest/range). Loops one leaf per name. ----
+  if !consts.is_empty() {
+    for name in &consts {
+      run_constant(&client, &plans[0], name, &args).await?;
+    }
     return Ok(());
   }
 
@@ -1739,7 +1906,6 @@ async fn main() -> Result<()> {
   if args.execute {
     let mut total_steps: u64 = 0;
     let mut total_exec_ms: u64 = 0;
-    let mut total_failures: u32 = 0;
     for plan in &plans {
       let num_shards = plan.shards.len();
       for (i, &(start, end)) in plan.shards.iter().enumerate() {
@@ -1751,19 +1917,22 @@ async fn main() -> Result<()> {
         let cycles = result.get_execution_steps();
         total_steps += cycles;
         total_exec_ms += result.get_execution_time();
-        total_failures = total_failures.saturating_add(publics.failures);
         println!(
           "  [{} shard {}/{num_shards}] range [{start}, {end}), failures={}, cycles={cycles}",
           plan.label,
           i + 1,
           publics.failures,
         );
+        reject_failures(
+          &publics,
+          &format!("{} shard {}/{num_shards}", plan.label, i + 1),
+        )?;
       }
     }
     let total_exec = Duration::from_millis(total_exec_ms);
     let throughput =
       grand_target_count as f64 / total_exec.as_secs_f64().max(f64::EPSILON);
-    println!("failures: {total_failures}");
+    println!("failures: 0");
     println!("cycles: {total_steps}");
     println!("inputs: {}", plans.len());
     println!("work items: {grand_total_items}");
@@ -1773,9 +1942,6 @@ async fn main() -> Result<()> {
       total_exec.as_secs_f64(),
       throughput.human_throughput("consts"),
     );
-    if total_failures > 0 {
-      bail!("kernel typecheck produced {total_failures} failure(s)");
-    }
     return Ok(());
   }
 
@@ -1828,6 +1994,10 @@ async fn main() -> Result<()> {
         (leaf_ms as f64) / 1000.0,
         result.get_execution_steps(),
       );
+      reject_failures(
+        &publics,
+        &format!("{} leaf {}/{num_shards}", plan.label, i + 1),
+      )?;
       leaf_proof_bytes.push(result.get_proof_bytes()?);
       input_publics.push(publics);
       last_leaf_result = Some(result);
@@ -1947,8 +2117,12 @@ async fn main() -> Result<()> {
   }
   println!("verify time: {:.3}s", (verify_ms as f64) / 1000.0);
   if total_failures > 0 {
-    bail!(
-      "kernel typecheck produced {total_failures} failure(s) (proof still verifies)"
+    return Err(
+      Rejection {
+        failures: total_failures.into(),
+        ctx: "batch (proof still verifies)".to_string(),
+      }
+      .into(),
     );
   }
   Ok(())
@@ -2021,5 +2195,81 @@ mod closure_tests {
       &hottest.hex()[..16],
       missing2.len()
     );
+  }
+}
+
+#[cfg(test)]
+mod cli_tests {
+  use clap::Parser;
+
+  use super::Args;
+
+  fn parse(argv: &[&str]) -> Args {
+    Args::try_parse_from(
+      std::iter::once("zisk-host").chain(argv.iter().copied()),
+    )
+    .expect("parse ok")
+  }
+  fn parse_err(argv: &[&str]) -> String {
+    Args::try_parse_from(
+      std::iter::once("zisk-host").chain(argv.iter().copied()),
+    )
+    .unwrap_err()
+    .to_string()
+  }
+
+  #[test]
+  fn consts_splits_on_comma() {
+    let a = parse(&["--consts", "Nat.add_comm,Nat.succ,String.append"]);
+    assert_eq!(a.consts, vec!["Nat.add_comm", "Nat.succ", "String.append"]);
+  }
+
+  #[test]
+  fn consts_repeatable_and_comma_lists_stack() {
+    let a = parse(&["--consts", "a", "--consts", "b,c"]);
+    assert_eq!(a.consts, vec!["a", "b", "c"]);
+  }
+
+  #[test]
+  fn skip_deps_and_json_parse_with_consts_file_only() {
+    // --skip-deps/--json need names, but names may come from --consts-file
+    // alone — clap must accept the parse (main validates after
+    // collect_consts).
+    let a = parse(&[
+      "--consts-file",
+      "names.txt",
+      "--skip-deps",
+      "--json",
+      "out.json",
+    ]);
+    assert!(a.skip_deps);
+    assert_eq!(a.json.as_deref(), Some(std::path::Path::new("out.json")));
+  }
+
+  #[test]
+  fn consts_conflicts_with_shard_plan() {
+    let s = parse_err(&["--consts", "a", "--shard-plan", "p.ixes"]);
+    assert!(s.contains("shard-plan") || s.contains("shard_plan"));
+  }
+
+  #[test]
+  fn consts_conflicts_with_only_shard() {
+    let s = parse_err(&["--consts", "a", "--only-shard", "1"]);
+    assert!(s.contains("only-shard") || s.contains("only_shard"));
+  }
+
+  #[test]
+  fn collect_unions_and_dedups() {
+    // Grammar/union behavior is tested in ix-bench; this pins the Args
+    // plumbing (comma splitting stacked with a file) end to end.
+    let dir = std::env::temp_dir();
+    let path = dir.join("zisk_host_cli_test_consts.txt");
+    std::fs::write(&path, "a\nb\n# comment\n  c  \n\na\n").expect("write");
+    let a =
+      parse(&["--consts", "a,d", "--consts-file", path.to_str().unwrap()]);
+    let got = ix_bench::collect_consts(&a.consts, a.consts_file.as_deref())
+      .expect("collect");
+    assert_eq!(got, vec!["a", "d", "b", "c"]);
+    let _ = std::fs::remove_file(&path);
   }
 }

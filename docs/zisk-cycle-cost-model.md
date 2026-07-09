@@ -68,7 +68,7 @@ objective for a cost spanning 50M–9B cycles.
 **Full-closure typecheck** — a self-contained closure: a small program, or a
 constant checked with all its dependencies. Calibrated **cross-library** on
 n=76: 12 small programs + 64 diverse constants checked full-closure via
-`--constant`, spanning **Init (51), Std (3), and Mathlib (10)**:
+`--consts`, spanning **Init (51), Std (3), and Mathlib (10)**:
 ```
 cycles ≈ 0.68M + 96,989·hb + 4,151·subst        R² 0.987, MAPE 6%
 ```
@@ -99,23 +99,23 @@ cycles ≈ 0.39M + 6,740·block_bytes + 14·subenv_bytes + 4,070·subst   R² 0.
 Reserved for constants too expensive to full-closure-check that can't be sharded
 (Finding 4).
 
-**Measuring one constant.** `zisk-host --execute --ixe initstd.ixe --constant
+**Measuring one constant.** `zisk-host --execute --ixe initstd.ixe --consts
 <NAME>` resolves the name, builds just its closure sub-env (deps lazily faulted
 in — no separate `.ixe`, no whole-env ingress), and checks it. Full-closure by
 default (`Ix.Claim.check addr none`); add `--skip-deps` for subject-only. Same
-flags as the Aiur `bench-typecheck`.
+`--consts` / `--skip-deps` vocabulary as `ix check`, `sp1-host`, and the Aiur
+`bench-typecheck`.
 
 ---
 
 ## Prover RAM and prove time
 
-Measured proving 7 Init shards on GPU at `--max-witness-stored 5`, STEPS
-0.27–3.79e9:
+Measured proving 7 Init shards on GPU, STEPS 0.27–3.79e9:
 ```
 peak host RAM (GiB) ≈ 50 + 33·STEPS_billions     R² 0.99
 GPU prove time (s)  ≈ 54 + 158·STEPS_billions     R² 0.98   (~6.3M steps/s)
 ```
-RAM scales with `--max-witness-stored N` (this is N=5). Inverting the RAM model
+Inverting the RAM model
 at `RAM_USABLE_FRAC` = 0.85 gives a safe per-shard cap of **~3.6e9 steps** for a
 200 GiB target (`shard.rs:cycle_cap_for_ram`).
 
@@ -148,12 +148,18 @@ side.
    the cap still executes under it. Each leaf pays the ~180M fixed floor and adds
    an aggregation node, so cheap constants are batched rather than proven one at
    a time. (`--shards N` still does balanced bisection, for manual control.)
-4. **A few constants can't be full-closure-proven on a 250 GiB box and aren't
-   shardable** (single atomic constants): `Vector/Array.extract_append._proof_1`,
-   the `instRxcHasSize_eq` family. The escape hatch is `--skip-deps`:
-   `Vector.extract_append` is the 143 GiB OOM case under full-closure but checks
-   subject-only in 74M cycles. The planner flags these via
-   `infeasible_atomic_floor`.
+4. **A few constants can't be proven as a single full-closure leaf on a 250 GiB
+   box**: `Vector/Array.extract_append._proof_1`, the `instRxcHasSize_eq` family.
+   This is a per-leaf ingress/RAM ceiling on the `--consts <name>` (full-closure,
+   `Ix.Claim.check addr none`) mode — not a global unshardability. In
+   env-sharding mode (`--shard-plan`) these same constants are fine: their
+   subject checks fit in one work item and their deps are proved in other
+   shards, folded in through the assumptions root. The only work unit the
+   env-sharding planner truly can't split is a **mutual block** (`build_anon_work`
+   emits one item per Muts block, checked atomically). The escape hatch in
+   single-constant mode is `--skip-deps`: `Vector.extract_append` is the 143 GiB
+   OOM case under full-closure but checks subject-only in 74M cycles. The
+   planner flags these via `infeasible_atomic_floor`.
 5. **The packing order comes from min-cut.** Whole-env profiling of
    Init/Std/**Mathlib** (mathlib = 631k blocks) shows Lean typecheck is uniformly
    reduction-dominated: own-bytes is only **2.6–7% of member cost** (mathlib
@@ -171,7 +177,7 @@ side.
 
 Applying the cost model to every Init constant's native profile (51,003 blocks /
 51,678 constants) vs a single-leaf cap: **~99.98% of Init typechecks on Zisk.**
-Exactly **12 constants** exceed a single 250 GiB leaf (`--max-witness-stored 5`)
+Exactly **12 constants** exceed a single 250 GiB leaf
 — all single atomic constants (un-shardable), `hb`-dominated. Listed by name
 (all are `_private` proof terms; private prefix elided):
 
@@ -190,7 +196,7 @@ Exactly **12 constants** exceed a single 250 GiB leaf (`--max-witness-stored 5`)
 | `Array.extract_append_extract._proof_1_1` | 13,226 | 4.7e9 |
 | `Char.ofOrdinal_ordinal` | 14,136 | 4.5e9 |
 
-Each has a workaround — lower `--max-witness-stored`, a bigger box, `--skip-deps`
+Each has a workaround — a bigger box, `--skip-deps`
 (subject-only), or upstream proof restructuring — so 12 is an upper bound on
 truly-stuck constants. At a 200 GiB cap the list grows to 16. Estimate uses the
 planner's `block_step_cost` model (`162,339·hb + 4,276·subst + 652·bytes`, the
@@ -222,7 +228,7 @@ Shards 630/634 are one atomic constant each (`Int*.instRxcHasSize_eq`): tiny
 `bytes`/`subst` but huge cycles, driven by `hb` (deep nat-range def-eq) — the
 "expensive atomic" case (Finding 4).
 
-### Full-closure single constants — `--constant`, diverse shapes
+### Full-closure single constants — `--consts`, diverse shapes
 
 One library constant each, checked full-closure (the constant and its whole
 dependency closure). The 35 Init constants below (over `initstd.ixe`) are shown
@@ -289,7 +295,7 @@ lake exe ix shard env.ixprof --max-ram 256        # or --max-cycles C / --shards
 cargo run --release --bin zisk-host -- --execute --ixe <env.ixe> \
   [--shard-plan <plan.ixes> --only-shard K]
 cargo run --release --bin zisk-host -- --execute --ixe initstd.ixe \
-  --constant "Nat.add_comm" [--skip-deps]      # full-closure / subject-only
+  --consts "Nat.add_comm" [--skip-deps]        # full-closure / subject-only
 
 # fits
 python3 ~/benchdata/prof/fit_xlib.py         # full-closure model (76 pts, Init+Std+Mathlib)
@@ -311,8 +317,7 @@ native profiling run and compile out on the zkvm target.
   5–8%); the shard model is still n=12 and Init-derived, so the ~190M shard
   intercept is the term most likely to
   shift on Std/Mathlib — worth re-checking there.
-- RAM/prove-time models are for one GPU at `--max-witness-stored 5`; both scale
-  with that setting.
+- RAM/prove-time models are for one GPU.
 - Cycle counts are deterministic for a fixed guest ELF; the profiler counters
   compile out on the zkvm target, so the proven ELF is unaffected.
 - **Regimes have distinct coefficients and don't transfer.**

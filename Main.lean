@@ -1,5 +1,6 @@
 --import Ix.Cli.StoreCmd
 import Ix.Cli.AddrOfCmd
+import Ix.Cli.BenchReport
 import Ix.Cli.CheckCmd
 import Ix.Cli.CodegenCmd
 import Ix.Cli.CheckRsCmd
@@ -25,6 +26,7 @@ def ixCmd : Cli.Cmd := `[Cli|
 
   SUBCOMMANDS:
     --storeCmd;
+    benchCmd;
     compileCmd;
     checkCmd;
     checkRsCmd;

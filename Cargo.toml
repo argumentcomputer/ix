@@ -1,6 +1,7 @@
 [workspace]
 members = [
   "crates/aiur",
+  "crates/bench",
   "crates/common",
   "crates/compile",
   "crates/ffi",
@@ -29,6 +30,7 @@ license = "MIT OR Apache-2.0"
 # Internal crates
 aiur = { path = "crates/aiur" }
 ixvm-codegen = { path = "crates/ixvm-codegen" }
+ix-bench = { path = "crates/bench" }
 ix-common = { path = "crates/common" }
 ix-compile = { path = "crates/compile" }
 ixon = { path = "crates/ixon" }
@@ -54,11 +56,12 @@ quickcheck = "1.0.3"
 quickcheck_macros = "1.0.0"
 rayon = "1"
 rustc-hash = "2"
+serde_json = "1"
 sha2 = "0.10"
 tiny-keccak = { version = "2", features = ["keccak"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-tracing-texray = { git = "https://github.com/argumentcomputer/tracing-texray", rev = "31d194dd1bc50458d26f77c89bb68f67e5d1c149" }
+tracing-texray = { git = "https://github.com/argumentcomputer/tracing-texray", rev = "465bbca0bea4721e58419c11cabd8cce21757822" }
 
 [workspace.lints.rust]
 invalid_reference_casting = "warn"

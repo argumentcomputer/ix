@@ -846,6 +846,61 @@ pub fn unconstrained_big_uint_div_mod_helper(
   Ok((q_ptr, r_ptr))
 }
 
+/// Read-only twin of `unconstrained_big_uint_div_mod_helper` for trace
+/// population: recompute `(q, r)` and resolve the list-head pointers the
+/// execution already recorded in `memory[10]` — every node was built there
+/// during execution, so each key must be present.
+pub fn find_unconstrained_big_uint_div_mod(
+  a_ptr: G,
+  b_ptr: G,
+  memory: &FxIndexMap<usize, QueryMap>,
+) -> Result<(G, G), String> {
+  let a_limbs = read_klimbs_u64(memory, a_ptr)?;
+  let b_limbs = read_klimbs_u64(memory, b_ptr)?;
+  let a_big = klimbs_u64_to_biguint(&a_limbs);
+  let b_big = klimbs_u64_to_biguint(&b_limbs);
+  let (q_big, r_big) = if b_big == num_bigint::BigUint::ZERO {
+    (num_bigint::BigUint::ZERO, a_big.clone())
+  } else {
+    (&a_big / &b_big, &a_big % &b_big)
+  };
+  let q_ptr = find_klimbs_u64(memory, &biguint_to_klimbs_u64(&q_big))?;
+  let r_ptr = find_klimbs_u64(memory, &biguint_to_klimbs_u64(&r_big))?;
+  Ok((q_ptr, r_ptr))
+}
+
+/// Read-only twin of `build_klimbs_u64`: resolve the pointer of each
+/// (already-recorded) list node without inserting.
+fn find_klimbs_u64(
+  memory: &FxIndexMap<usize, QueryMap>,
+  limbs: &[u64],
+) -> Result<G, String> {
+  let queries = memory.get(&10).ok_or_else(|| {
+    "memory[10] channel not registered (no List<U64> in program?)".to_string()
+  })?;
+  let nil_key: Vec<G> =
+    std::iter::once(G::ONE).chain((0..9).map(|_| G::ZERO)).collect();
+  let mut tail_ptr = queries
+    .get(&nil_key)
+    .ok_or_else(|| "List<U64> Nil node not recorded".to_string())?
+    .output[0];
+  for limb in limbs.iter().rev() {
+    let mut key: Vec<G> = Vec::with_capacity(10);
+    key.push(G::ZERO); // Cons tag (first variant of ListNode‹U64›)
+    for b in &limb.to_le_bytes() {
+      key.push(G::from_u8(*b));
+    }
+    key.push(tail_ptr);
+    tail_ptr = queries
+      .get(&key)
+      .ok_or_else(|| {
+        format!("List<U64> Cons node for limb {limb} not recorded")
+      })?
+      .output[0];
+  }
+  Ok(tail_ptr)
+}
+
 /// Walk a `List<U64>` chain from `head_ptr` in `memory[10]`, returning the
 /// u64 limbs in head-first order. Each memory[10] entry is the standard Aiur
 /// tagged-enum layout: `[tag, byte0..byte7, next_ptr]`. `tag == 0` = Nil

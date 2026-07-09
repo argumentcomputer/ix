@@ -14,16 +14,62 @@
   manifest and prints a what-if report (per-shard cost + total cross-shard
   ingress). The partitioner is self-contained — no external graph-library
   dependency.
+
+  `ix shard extract <path.ixe> --consts <n1,n2,…>`: the pipeline's scoping
+  step — extract the named constants' dependency closure from a serialized
+  env into a standalone `.ixe`, without recompiling from source. The output
+  carries the closure's genuine constant bytes, blobs, and reducibility
+  hints, plus each closure constant's name→address entry, so it composes
+  with everything that consumes a `.ixe` (`ix profile` → `ix shard`,
+  `ix check-rs --consts`, the zkVM hosts, `bench-typecheck`).
 -/
 module
 public import Cli
 public import Ix.KernelCheck
+public import Ix.Cli.ConstsFile
 
 public section
 
 open Ix.KernelCheck
 
 namespace Ix.Cli.ShardCmd
+
+def runShardExtractCmd (p : Cli.Parsed) : IO UInt32 := do
+  let some pathArg := p.positionalArg? "path"
+    | p.printError "error: must specify <path> to a .ixe file"
+      return 1
+  let envPath := pathArg.as! String
+  let names ← Ix.Cli.ConstsFile.gather p
+  if names.isEmpty then
+    p.printError "error: pass at least one name via --consts or --consts-file"
+    return 1
+  let outPath : String :=
+    match p.flag? "out" with
+    | some flag => flag.as! String
+    -- Default output mirrors the first constant's slug next to the source
+    -- env: `init.ixe --consts Nat.add_comm` → `nat_add_comm.ixe`.
+    | none =>
+      let slug := names[0]!.map fun c =>
+        if c.isAlphanum then c.toLower else '_'
+      s!"{slug}.ixe"
+  let quiet := !(p.flag? "verbose" |>.isSome)
+  rsEnvExtractFFI envPath names outPath quiet
+  IO.println s!"[extract] wrote {outPath} ({names.size} root name(s))"
+  return 0
+
+def shardExtractCmd : Cli.Cmd := `[Cli|
+  "extract" VIA runShardExtractCmd;
+  "Extract named constants + their dependency closure from a `.ixe` into a standalone `.ixe`"
+
+  FLAGS:
+    consts        : String; "Comma-separated EXACT constant names (displayed form) to extract, e.g. `Nat.add_comm,String.append`. Same flag/shape as `ix check-rs --consts`. A mutual-block member extracts its whole block."
+    "consts-file" : String; "Additionally read names from a file (one per line; `#` comments and blank lines ignored). Unions with --consts."
+    out           : String; "Output `.ixe` path. Defaults to a slug of the first name (e.g. `nat_add_comm.ixe`)."
+    verbose;                "Print extraction details to stderr."
+
+  ARGS:
+    path : String; "Path to the source `.ixe` (e.g. from `ix compile`)."
+]
 
 def runShardCmd (p : Cli.Parsed) : IO UInt32 := do
   let some pathArg := p.positionalArg? "path"
@@ -87,6 +133,9 @@ def shardCmd : Cli.Cmd := `[Cli|
 
   ARGS:
     path : String; "Path to a .ixprof produced by `ix profile`"
+
+  SUBCOMMANDS:
+    shardExtractCmd
 ]
 
 end

@@ -14,11 +14,8 @@ resolver = "2"
 zisk-sdk = { git = "https://github.com/argumentcomputer/zisk.git", branch = "blake3-precompile" }
 ziskos = { git = "https://github.com/argumentcomputer/zisk.git", branch = "blake3-precompile" }
 
-[profile.release]
-panic = "abort"
-
 # No local-path patch: the host builds zisk-sdk directly from the
 # `blake3-precompile` branch above (now that v0.18.0 + the blake3 shim are
 # pushed). To iterate against a local checkout instead, re-add:
 #   [patch."https://github.com/argumentcomputer/zisk.git"]
-#   zisk-sdk = { path = "/home/ubuntu/zisk/sdk" }
+#   zisk-sdk = { path = "/path/to/zisk/sdk" }

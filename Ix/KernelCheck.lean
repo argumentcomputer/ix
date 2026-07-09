@@ -142,6 +142,58 @@ opaque rsCheckAnonFFI :
     @& String →                          -- fail-out path ("" = none)
     IO (Array (String × Option CheckError))
 
+/-- FFI: anon-mode type-check of named constants with (by default) their full
+    dependency closures — the same mode and scope as the zkVM hosts' `--consts`
+    execute path, so an out-of-circuit run is directly comparable to the
+    in-circuit one. The `Bool` after the names is `skip-deps`: `true` checks
+    only each name's own work item (subject-only; deps trusted), mirroring
+    `zisk-host --skip-deps`.
+
+    Names are the constants' displayed forms (e.g. `"Nat.add_comm"`,
+    `"_private.Init.….instRxcHasSize_eq"`), resolved through the env's `named`
+    metadata by string match — the same resolution the zkVM hosts use — after
+    which the check runs on the anon view (the kernel never sees names). A
+    member of a mutual block selects the whole block's work item. Multiple
+    names union their closures into one check set.
+
+    The trailing `String` is the results-rows JSON path (`""` = off). When
+    set, each name is instead checked as its own independent closure run —
+    the zkVM hosts' per-constant scope — with the env still loaded once, and
+    the row `{ name: { status, constants, check-time, throughput, peak-rss } }`
+    flushed per name (see `Ix.Benchmark.Results` for the contract). The
+    per-name `check-time`/`peak-rss` window wraps only that name's closure
+    selection + check, so rows aren't distorted by the env load; meaningful
+    `peak-rss` needs `TracingTexray.startSampler`. Not combinable with a
+    fail-out path.
+
+    Returns `(hex_address, Option CheckError)` pairs, one per checked target,
+    exactly like `rsCheckAnonFFI` (concatenated across the per-name runs when
+    rows are on). Errors (rather than returning) when a name doesn't resolve,
+    so a typo can't silently produce an empty check. -/
+@[extern "rs_kernel_check_anon_consts"]
+opaque rsCheckAnonConstsFFI :
+    @& String →                          -- .ixe path
+    @& Array String →                    -- constant names (displayed form)
+    @& Bool →                            -- skip-deps (subject-only)
+    @& Bool →                            -- quiet
+    @& String →                          -- fail-out path ("" = none)
+    @& String →                          -- benchmark results JSON path ("" = off)
+    IO (Array (String × Option CheckError))
+
+/-- FFI: extract the named constants' dependency closure from a serialized
+    env into a standalone `.ixe` — genuine constant bytes, blobs, and
+    reducibility hints, plus the closure constants' Named entries so names
+    still resolve — without recompiling from source. Names resolve like
+    `rsCheckAnonConstsFFI` (displayed form); a mutual-block member pulls its
+    whole block. Errors on an unresolvable name. -/
+@[extern "rs_env_extract"]
+opaque rsEnvExtractFFI :
+    @& String →                          -- source .ixe path
+    @& Array String →                    -- constant names (displayed form)
+    @& String →                          -- output .ixe path
+    @& Bool →                            -- quiet
+    IO Unit
+
 /-- FFI: profile a `.ixe` out of circuit, writing a `.ixprof` sidecar with
     per-block heartbeats + the delta-unfold graph (the sharding cost model,
     see `plans/sharding.md`). Runs the anon kernel over every checkable target.

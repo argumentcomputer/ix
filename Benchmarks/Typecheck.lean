@@ -5,6 +5,8 @@ import Ix.Aiur.Compiler
 import Ix.Aiur.Statistics
 import Ix.TracingTexray
 import Ix.Benchmark.Bench
+import Ix.Benchmark.Results
+import Ix.Cli.ConstsFile
 import Ix.Cli.NameResolve
 
 /-!
@@ -15,28 +17,36 @@ kernel's `verify_claim` entrypoint, run over constants from a serialized
 `Ixon.Env` (`.ixe`). Reading the env from a `.ixe` keeps this on Ix's critical
 path (same load `ix check --ixe` uses) and avoids importing Lean modules at
 runtime. Useful standalone (per-constant timeline + RAM breakdown via
-tracing-texray) and as a machine source (neutral results JSON).
+tracing-texray) and as a machine source (benchmark results JSON).
 
 ```
-lake exe bench-typecheck --ixe <path> [names…] [flags]
+lake exe bench-typecheck --ixe <path> --consts <n1,n2,…> [--consts-file <p>] [flags]
 
-  --ixe <path>       serialized `Ixon.Env`, e.g. from `ix compile Foo.lean`
-                     (writes `foo.ixe`). Required.
-  [names…]           zero or more fully-qualified constant names to benchmark,
-                     e.g. `Nat.add_comm String.append`.
-  --manifest <path>  additionally read names from a file: one per line, blank
-                     lines and `#` comments ignored. Unions with [names…].
+  --ixe <path>          serialized `Ixon.Env`, e.g. from `ix compile Foo.lean`
+                        (writes `foo.ixe`). Required.
+  --consts <n1,n2,…>    comma-separated fully-qualified constant names to
+                        benchmark (e.g. `Nat.add_comm,String.append`). Same
+                        flag/shape as `ix check --consts`, `zisk-host --consts`,
+                        and `sp1-host --consts`.
+  --consts-file <path>  additionally read names from a file: one per line, blank
+                        lines and `#` comments ignored. Unions with --consts.
 
-  Names (from either source) resolve against the env's named map via
+  Names (from any source) resolve against the env's named map via
   `String.toName` plus a `toString` fallback (mirrors `ix check --ixe`), so
   numeric / private components round-trip (`Foo.0.Bar`, `_private.M.0.foo`).
-  Pass at least one name or a `--manifest`.
+  Pass at least one name via --consts or --consts-file.
 
+  --skip-deps    check only each target itself (verify_const, trusting its
+                 deps) instead of its whole transitive closure (verify_claim,
+                 the default). Same flag as `zisk-host --skip-deps`; reserved
+                 for targets too expensive to full-closure-check.
   --json <path>  write per-constant results JSON to <path>. Off by default:
                  normal CLI usage prints only the human-readable summary.
-  --texray       force the tracing-texray timeline + RAM breakdown on.
-  --no-texray    force it off. Default: on iff `--json` was NOT given, so a
-                 plain local run gets the breakdown while a JSON run stays quiet.
+  --texray       enable the tracing-texray timeline + RAM breakdown. With
+                 --json <path>, per-phase span timings are also written to
+                 <path>.spans (JSON Lines) for the CI drill-down. Off by default.
+  --execute-only run only Phase 1 (constants / fft-cost / execute-time) and skip
+                 proving — the fast `execute`-mode signal.
 ```
 
 For each constant the harness STARK-checks `Ix.Claim.check addr none` (the full
@@ -47,8 +57,11 @@ transitive typecheck) in two phases:
    (Σ width·height·log2(height) over circuits — the proving-cost proxy), and
    `execute-time`.
 2. **Prove** (cheap→expensive by measured fft-cost): the end-to-end STARK prove,
-   recording `prove-time`. With texray on, each prove emits a per-span timeline
-   (`aiur/execute`, `aiur/witness`, `stark/...`) with RAM Δ/peak to stderr.
+   recording `prove-time`, the serialized `proof-size` (bytes), and
+   `verify-time` (verifying the fresh proof) — prover changes can trade speed
+   against proof size or verification cost, so all three are tracked. With
+   texray on, each prove emits a per-span timeline (`aiur/execute`,
+   `aiur/witness`, `stark/...`) with RAM Δ/peak to stderr.
 
 When `--json` is set the file is rewritten after every prove, so an external
 `timeout` still leaves a complete file of the results collected so far (cheapest
@@ -56,10 +69,16 @@ first). A name absent from the env or whose execution errors is skipped with a
 warning, so a single bad name never fails the run. The harness imposes no time
 limit; bound a run with an external `timeout` if needed.
 
-The JSON is a neutral, flat shape (`{ "<name>": { "constants": …, "fft-cost": …,
-"execute-time": …, "prove-time": …, "throughput": … } }`, where `prove-time` and
-`throughput` appear only for proven constants); any bencher-specific reshaping
-is the caller's job (see `.github/workflows/bench-main.yml`).
+The JSON is a flat shape (`{ "<name>": { "constants": …, "fft-cost": …,
+"execute-time": …, "prove-time": …, "proof-size": …, "verify-time": …,
+"throughput": …, "peak-rss": … } }`). `peak-rss` and `throughput` are
+phase-scoped by MODE: an `--execute-only` row carries the Phase-1 RSS
+high-water and constants/sec over the execute; a prove row carries the
+prover's high-water and constants/sec over the prove (with `prove-time`,
+`proof-size`, `verify-time` present only once proven). The two modes are
+stored on separate bencher testbeds, so the shared names never collide. Any
+bencher-specific reshaping is the caller's job (see
+`.github/workflows/bench-main.yml`).
 -/
 
 open Lean (Json Name)
@@ -77,15 +96,6 @@ def friParameters : Aiur.FriParameters := {
   queryProofOfWorkBits := 0
 }
 
-/-- Manifest lines as raw strings: one name per line. Everything from a `#` to
-    end of line is a comment (whole-line or inline); blank lines are dropped.
-    `#` never appears in a Lean name, so splitting on it is safe. Resolution
-    against the env happens later (so the `toString` fallback can see the
-    displayed form the user wrote). -/
-def parseManifest (contents : String) : Array String :=
-  (contents.splitOn "\n").filterMap (fun line =>
-    let s := ((line.splitOn "#").head?.getD "").trimAscii
-    if s.isEmpty then none else some s.toString) |>.toArray
 
 
 /-- Per-constant measurements. `proveSec` is `none` when the constant was
@@ -95,28 +105,83 @@ structure Result where
   constants : Nat
   fftCost : Float
   executeSec : Float
+  /-- The kernel REJECTED the constant (Phase-1 check error). The JSON entry
+      is `{"status": "rejected"}` (see `Ix.Benchmark.Results`) — a rejected
+      constant is a correctness signal, not a benchmark datum — Phase 2
+      skips it, and the run exits with the reserved rejection code. -/
+  failed : Bool := false
   proveSec : Option Float := none
+  /-- Serialized proof size in bytes (`Aiur.Proof.toBytes`). Tracked because
+      prover changes can trade speed against proof size. -/
+  proofSize : Option Nat := none
+  /-- Wall time of `AiurSystem.verify` over the fresh proof — the other side
+      of the same trade-off. `none` if verification failed (reported loudly). -/
+  verifySec : Option Float := none
+  /-- The constant's prove-phase RSS high-water in bytes (tracing-texray
+      tree sampler; the window resets per prove). -/
+  peakRss : Option Nat := none
+  /-- The constant's own Phase-1 (execute) RSS high-water mark — the sampler
+      window resets per constant. Emitted as `peak-rss` in execute-only
+      mode; a prove row's `peak-rss` is the prover's window instead (the
+      prover would dwarf an execute peak, so the modes never share a row —
+      or a testbed). -/
+  executePeakRss : Option Nat := none
   deriving Inhabited
 
-/-- Round a Float to `d` decimal places, to keep the emitted JSON readable. -/
-def roundTo (d : Nat) (f : Float) : Float :=
+/-- A `Json` number with at most `d` decimal places, rendered decimally.
+    `Float`'s own `ToJson` prints the full binary representation
+    (`0.02602000000000000146…`), so build the `JsonNumber` (mantissa ·
+    10⁻ᵈ) directly from the rounded value instead. -/
+def jsonRound (d : Nat) (f : Float) : Json :=
   let scale := (10.0 : Float) ^ d.toFloat
-  (f * scale).round / scale
+  let scaled := f * scale
+  let m : Int :=
+    if scaled < 0 then -Int.ofNat (-scaled).round.toUInt64.toNat
+    else Int.ofNat scaled.round.toUInt64.toNat
+  Json.num ⟨m, d⟩
 
-/-- Neutral, flat results object: `name → { constants, fft-cost, execute-time,
-    prove-time?, throughput? }`. No bencher-specific shaping. -/
-def Result.toJsonEntry (r : Result) : String × Json :=
+/-- Flat results object: `name → { constants, fft-cost, execute-time, … }`.
+    No bencher-specific shaping.
+
+    `peak-rss` and `throughput` are PHASE-SCOPED BY MODE, not by name: an
+    execute-only run's row carries the Phase-1 peak and constants/sec over
+    the execute; a prove run's row carries the prove-phase peak and
+    constants/sec over the prove. The two modes upload to separate bencher
+    testbeds (aiur-check-execute-* / aiur-check-prove-*), so the shared names never
+    collide — run the execute cell when you want execute-side numbers. -/
+def Result.toJsonEntry (executeOnly : Bool) (r : Result) : String × Json :=
+  if r.failed then
+    (r.name, Json.mkObj [("status", Json.str "rejected")]) else
   let base : List (String × Json) :=
-    [ ("constants", Lean.toJson r.constants)
-    , ("fft-cost", Lean.toJson (roundTo 0 r.fftCost))
-    , ("execute-time", Lean.toJson (roundTo 6 r.executeSec)) ]
-  -- prove-time and the derived proving throughput (constants/prove-time, the
-  -- proving analog of compile's constants/sec) are present only once proven.
-  let fields := match r.proveSec with
-    | some p => base ++ [ ("prove-time", Lean.toJson (roundTo 6 p))
-                        , ("throughput", Lean.toJson (roundTo 2 (r.constants.toFloat / p))) ]
-    | none => base
-  (r.name, Json.mkObj fields)
+    [ ("status", Json.str "ok")
+    , ("constants", Lean.toJson r.constants)
+    , ("fft-cost", jsonRound 0 r.fftCost)
+    , ("execute-time", jsonRound 6 r.executeSec) ]
+  if executeOnly then
+    let fields := if r.executeSec > 0 then
+      base ++ [ ("throughput", jsonRound 2 (r.constants.toFloat / r.executeSec)) ]
+    else base
+    let fields := match r.executePeakRss with
+      | some n => fields ++ [ ("peak-rss", Lean.toJson n) ]
+      | none => fields
+    (r.name, Json.mkObj fields)
+  else
+    -- prove-time, the proving throughput, and the prove-phase peak are
+    -- present only once proven.
+    let fields := match r.proveSec with
+      | some p => base ++ [ ("prove-time", jsonRound 6 p)
+                          , ("throughput", jsonRound 2 (r.constants.toFloat / p)) ]
+      | none => base
+    let fields := match r.peakRss with
+      | some n => fields ++ [ ("peak-rss", Lean.toJson n) ]
+      | none => fields
+    let fields := match r.proofSize with
+      | some n => fields ++ [ ("proof-size", Lean.toJson n) ]
+      | none => fields
+    let fields := match r.verifySec with
+      | some v => fields ++ [ ("verify-time", jsonRound 6 v) ]
+      | none => fields
+    (r.name, Json.mkObj fields)
 
 /-- Time a thunk, returning its value and the elapsed seconds. The result is
     forced by `blackBoxIO` so a pure computation isn't optimized away. -/
@@ -130,37 +195,42 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
   let some ixeArg := p.flag? "ixe"
     | IO.eprintln "error: --ixe <path> is required"; return 1
   let ixePath := ixeArg.as! String
-  -- Names come from the variadic positional args and/or a `--manifest` file.
-  let cliNames := p.variableArgsAs! String
-  let fileNames ← match p.flag? "manifest" with
-    | some f => pure (parseManifest (← IO.FS.readFile (f.as! String)))
-    | none => pure #[]
-  -- Union, preserving first-seen order, so the same const isn't proven twice.
-  let nameArgs := Id.run do
-    let mut seen : Std.HashSet String := {}
-    let mut acc : Array String := #[]
-    for n in cliNames ++ fileNames do
-      if !seen.contains n then seen := seen.insert n; acc := acc.push n
-    return acc
+  -- `--consts` comma-list ∪ `--consts-file`, shared grammar + dedup
+  -- (Ix.Cli.ConstsFile — same parser as `ix check-rs`). Raw strings:
+  -- resolution against the env happens later (so the `toString` fallback can
+  -- see the displayed form the user wrote).
+  let nameArgs ← Ix.Cli.ConstsFile.gather p
   if nameArgs.isEmpty then
-    IO.eprintln "error: provide one or more constant names and/or --manifest <path>"
+    IO.eprintln "error: provide at least one constant via --consts <n1,n2,…> and/or --consts-file <path>"
     return 1
   let jsonOut : Option String := (p.flag? "json").map (·.as! String)
-  -- subject-only: check just the target (`verify_const`, trusting its deps)
+  -- skip-deps: check just the target (`verify_const`, trusting its deps)
   -- instead of re-checking the whole transitive closure (`verify_claim`).
-  let subjectOnly := p.hasFlag "subject-only"
-  -- Default: trace iff we're not in JSON/bencher mode.
-  let useTexray :=
-    if p.hasFlag "texray" then true
-    else if p.hasFlag "no-texray" then false
-    else jsonOut.isNone
+  let skipDeps := p.hasFlag "skip-deps"
+  -- Execute-only: run just Phase 1 (constants / fft-cost / execute-time) and
+  -- skip the Phase 2 prove loop.
+  let executeOnly := p.hasFlag "execute-only"
+  -- Off by default; CI passes --texray explicitly.
+  let useTexray := p.hasFlag "texray"
+  -- Start the process-tree RSS sampler so each Result's peak-rss reflects the
+  -- true high-water mark. With --texray, install the streaming subscriber up
+  -- front: every phase span — aiur/execute_ixvm in Phase 1 included —
+  -- renders its duration and RAM Δ/peak through the one shared channel
+  -- instead of per-benchmark arithmetic. With --json too, the per-span sink
+  -- also lands the timings at `<json>.spans` as JSON Lines for the CI
+  -- comparison.
+  TracingTexray.startSampler
+  if useTexray then TracingTexray.init {}
+  match useTexray, jsonOut with
+  | true, some path => TracingTexray.jsonSink s!"{path}.spans"
+  | _, _ => pure ()
 
   -- Compile the IxVM kernel once; build the prover system once.
   let .ok toplevel := IxVM.ixVM
     | throw (IO.userError "Merging IxVM kernel failed")
   let .ok compiled := toplevel.compile
     | throw (IO.userError "Compilation of IxVM kernel failed")
-  let entrypoint := if subjectOnly then `verify_const else `verify_claim
+  let entrypoint := if skipDeps then `verify_const else `verify_claim
   let some funIdx := compiled.getFuncIdx entrypoint
     | throw (IO.userError s!"{entrypoint} entrypoint missing")
   let aiurSystem := Aiur.AiurSystem.build compiled.bytecode commitmentParameters
@@ -190,51 +260,91 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
 
   -- Phase 1: execute every constant (cheap, deterministic structural metrics).
   -- For full-closure check claims, use `checkAddrWithEnv` against the
-  -- shared `envHandle`. For `--subject-only` (`buildVerifyConst`), the
+  -- shared `envHandle`. For `--skip-deps` (`buildVerifyConst`), the
   -- witness is a small subject-only blob — keep Lean witness +
   -- `executeIxVM`.
   IO.println "── Phase 1: execute (witness generation) ──"
   let mut execed : Array (Result × Address) := #[]
+  let mut execIdx := 0
   for (label, addr) in targets do
+    execIdx := execIdx + 1
     try
+      -- Announce BEFORE the execute (flushed): a kill mid-execute must
+      -- leave the in-flight constant's name in the log.
+      IO.println s!"  [{execIdx}/{targets.size}] executing {label} …"
+      (← IO.getStdout).flush
+      -- Windowed high-water: reset per constant so each row's
+      -- execute peak is its own, not the loop's running maximum.
+      TracingTexray.resetPeakTreeRss
       let (res, execSec) ← timed fun _ =>
-        if subjectOnly then
+        if skipDeps then
           let witness := IxVM.ClaimHarness.buildVerifyConst ixonEnv addr
           compiled.bytecode.executeIxVM funIdx witness.input witness.inputIOBuffer
         else
           compiled.bytecode.checkAddrWithEnv funIdx envHandle addr.hash
+      let execPeak ← TracingTexray.peakTreeRssBytes
       match res with
-      | .error e => IO.eprintln s!"  execute {label} failed: {e}"
+      | .error e =>
+        IO.eprintln s!"  ❌ {label} FAILED TO TYPECHECK: {e}"
+        execed := execed.push
+          ({ name := label, constants := 0, fftCost := 0, executeSec := 0,
+             failed := true }, addr)
       | .ok (_, _, queryCounts) =>
         let stats := Aiur.computeStats compiled queryCounts
         let constants := (IxVM.ClaimHarness.closureFrom ixonEnv addr).size
+        -- Throughput via the shared benchmark framework; duration/RAM per
+        -- phase stream from texray's `aiur/execute_ixvm` span line.
+        let thrpt := (Throughput.Elements constants.toUInt64 "consts").formatRate
+          (execSec * 1e9)
         IO.println s!"  {label}: constants={constants} fft-cost={stats.totalFftCost} \
-          execute={execSec}s"
+          execute={execSec}s thrpt={thrpt}"
         execed := execed.push
-          ({ name := label, constants, fftCost := stats.totalFftCost, executeSec := execSec }, addr)
+          ({ name := label, constants, fftCost := stats.totalFftCost,
+             executeSec := execSec, executePeakRss := some execPeak }, addr)
     catch e =>
       IO.eprintln s!"  execute {label} threw: {e}"
 
-  -- Write the neutral results JSON, but only when `--json` was given. Rewritten
-  -- after each prove so a `timeout` kill still leaves a complete file.
+  -- Persist rows when `--json` was given, MERGING into the file (the shared
+  -- results-row contract): rows land after each result, so a kill leaves the
+  -- completed ones, and per-constant processes can share one file with the
+  -- orchestrator and each other.
   let writeJson (results : Array Result) : IO Unit :=
     match jsonOut with
     | some path =>
-      IO.FS.writeFile path (Json.mkObj (results.map Result.toJsonEntry).toList).pretty
+      results.forM fun r =>
+        let (name, row) := Result.toJsonEntry executeOnly r
+        Ix.Benchmark.Results.writeEntry path name row
     | none => pure ()
 
-  -- Phase 2: prove cheap→expensive. Refine each entry with its prove-time as it
-  -- lands. Install texray first so the prove spans (timeline + RAM Δ/peak) render.
-  if useTexray then TracingTexray.init {}
+  -- `--execute-only`: stop after Phase 1; the results JSON (if requested) is
+  -- already complete with the execute metrics.
+  if executeOnly then
+    writeJson (execed.map (·.1))
+    match jsonOut with
+    | some path => IO.println s!"wrote {execed.size} execute-only benchmarks to {path}"
+    | none => IO.println s!"executed {execed.size} constants (--execute-only); pass --json <path> to emit results"
+    return if execed.any (·.1.failed) then Ix.Benchmark.Results.exitRejected else 0
+
+  -- Phase 2: prove cheap→expensive. Refine each entry with its prove-time as
+  -- it lands (texray was installed before Phase 1, so the prove spans render
+  -- the same way the execute ones did).
   IO.println "── Phase 2: prove ──"
   let mut ordered := execed.qsort (·.1.fftCost < ·.1.fftCost)
   writeJson (ordered.map (·.1))
   let mut spent : Float := 0.0
   for i in [:ordered.size] do
     let (r, addr) := ordered[i]!
+    if r.failed then continue
     try
+      -- Announce BEFORE the prove (flushed): when a watchdog kill or OOM
+      -- lands mid-prove, the log must already say which constant died.
+      IO.println s!"  [{i + 1}/{ordered.size}] proving {r.name} (fft-cost={r.fftCost}) …"
+      (← IO.getStdout).flush
+      -- Windowed high-water: each prove's peak is its own window, not
+      -- the run's cumulative maximum (mirrors the Phase-1 resets).
+      TracingTexray.resetPeakTreeRss
       let (proveRes, proveSec) ← timed fun _ =>
-        if subjectOnly then
+        if skipDeps then
           let witness := IxVM.ClaimHarness.buildVerifyConst ixonEnv addr
           let (claim, proof, ioBuf) :=
             aiurSystem.proveIxVM friParameters funIdx witness.input witness.inputIOBuffer
@@ -243,41 +353,55 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
         else
           match aiurSystem.proveAddrWithEnv friParameters funIdx envHandle addr.hash with
           | .error e => .error e
-          | .ok (_claimBytes, proof, ioBuf) =>
-            -- The shared envHandle path doesn't return an `Array G`
-            -- claim — adapt to the existing benchmark return shape
-            -- by recomputing the claim digest from the witness's
-            -- input (Phase 2 doesn't read it).
-            .ok (#[], proof, ioBuf)
+          | .ok (claimBytes, proof, ioBuf) =>
+            -- The envHandle path returns the SERIALIZED `Ix.Claim`; rebuild
+            -- the Array-G claim `verify` takes — `verify_claim`'s input is
+            -- the 32-G blake3 digest of those bytes (same recipe as
+            -- `ix verify`).
+            let digest := Address.blake3 claimBytes
+            let claim :=
+              Aiur.buildClaim funIdx (digest.hash.data.map .ofUInt8) #[]
+            .ok (claim, proof, ioBuf)
       match (proveRes : Except String (Array Aiur.G × Aiur.Proof × Aiur.IOBuffer)) with
       | .error e => IO.eprintln s!"  prove {r.name} failed: {e}"; continue
-      | .ok _ => pure ()
-      spent := spent + proveSec
-      IO.println s!"  {r.name}: prove={proveSec}s (cumulative {spent}s)"
-      ordered := ordered.set! i ({ r with proveSec := some proveSec }, addr)
-      writeJson (ordered.map (·.1))
+      | .ok (claim, proof, _ioBuf) =>
+        spent := spent + proveSec
+        let peak ← TracingTexray.peakTreeRssBytes
+        let proofSize := (Aiur.Proof.toBytes proof).size
+        let (verifyRes, verifySec) ← timed fun _ =>
+          aiurSystem.verify friParameters claim proof
+        let verifySec? ← match verifyRes with
+          | .ok () => pure (some verifySec)
+          | .error e =>
+            IO.eprintln s!"  verify {r.name} FAILED: {e}"
+            pure none
+        IO.println s!"  {r.name}: prove={proveSec}s verify={verifySec}s \
+          proof={proofSize} bytes (cumulative {spent}s)"
+        ordered := ordered.set! i
+          ({ r with proveSec := some proveSec, peakRss := some peak
+                  , proofSize := some proofSize, verifySec := verifySec? }, addr)
+        writeJson (ordered.map (·.1))
     catch e =>
       IO.eprintln s!"  prove {r.name} threw: {e}"
 
   match jsonOut with
   | some path => IO.println s!"wrote {ordered.size} benchmarks to {path} ({spent}s proving)"
   | none => IO.println s!"proved {ordered.size} constants ({spent}s); pass --json <path> to emit results"
-  return 0
+  return if ordered.any (·.1.failed) then Ix.Benchmark.Results.exitRejected else 0
 
 def typecheckCmd : Cli.Cmd := `[Cli|
   typecheck VIA runTypecheckCmd;
   "Benchmark IxVM-kernel execution + proving of `Ix.Claim.check` over `.ixe` constants"
 
   FLAGS:
-    "ixe"       : String; "Path to a serialized `Ixon.Env` (e.g. produced by `ix compile`). Required."
-    "manifest"  : String; "Additionally read constant names from a file (one per line; `#` comments and blank lines ignored). Unions with the positional names."
+    "ixe"          : String; "Path to a serialized `Ixon.Env` (e.g. produced by `ix compile`). Required."
+    "consts"       : String; "Comma-separated fully-qualified constant names to benchmark (e.g. `Nat.add_comm,String.append`). Same flag/shape as `ix check --consts`, `zisk-host --consts`, and `sp1-host --consts`."
+    "consts-file"  : String; "Additionally read constant names from a file (one per line; `#` comments and blank lines ignored). Unions with --consts."
     "json"      : String; "Write per-constant results JSON to this path. Off by default; normal CLI usage prints only the human-readable summary."
-    "subject-only";       "Check only each target itself (verify_const, trusting its deps) instead of re-checking its whole transitive closure (verify_claim)."
-    texray;               "Force the tracing-texray timeline + RAM breakdown on (per-prove spans on stderr)."
-    "no-texray";          "Force the breakdown off. Default: on iff --json was not given."
+    "skip-deps";          "Check only each target itself (verify_const, trusting its deps) instead of re-checking its whole transitive closure (verify_claim). Same flag as `zisk-host --skip-deps`."
+    "execute-only";       "Execute only (Phase 1: constants / fft-cost / execute-time) and skip proving. The fast per-PR `execute`-mode signal."
+    texray;               "Enable the tracing-texray timeline + RAM breakdown (per-prove spans on stderr). Combined with --json, per-phase span timings are additionally written to `<json>.spans` as JSON Lines for the CI drill-down. Off by default."
 
-  ARGS:
-    ...names : String;   "Fully-qualified constant name(s) to benchmark (e.g. `Nat.add_comm String.append`). Optional if `--manifest` is given."
 ]
 
 def main (args : List String) : IO UInt32 :=

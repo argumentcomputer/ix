@@ -1318,12 +1318,14 @@ enum AnonWorkItem {
 /// [`ix_kernel::anon_work::build_anon_work`] (shared with the
 /// SP1/Zisk guests) and layers the FFI's per-target result-slot
 /// bookkeeping on top.
-fn build_anon_work(
-  env: &IxonEnv,
-) -> Result<(Vec<AnonWorkItem>, Vec<Address>), String> {
+/// Assign result slots to a set of kernel work items — the indexing step
+/// shared by the whole-env check (every item) and the per-constant closure
+/// check (a filtered subset).
+fn index_anon_work(
+  kernel_work: Vec<ix_kernel::anon_work::AnonWorkItem>,
+) -> (Vec<AnonWorkItem>, Vec<Address>) {
   use ix_kernel::anon_work::AnonWorkItem as KItem;
 
-  let kernel_work = ix_kernel::anon_work::build_anon_work(env)?;
   let mut work: Vec<AnonWorkItem> = Vec::with_capacity(kernel_work.len());
   let mut addrs: Vec<Address> = Vec::new();
   for item in kernel_work {
@@ -1341,7 +1343,13 @@ fn build_anon_work(
       },
     }
   }
-  Ok((work, addrs))
+  (work, addrs)
+}
+
+fn build_anon_work(
+  env: &IxonEnv,
+) -> Result<(Vec<AnonWorkItem>, Vec<Address>), String> {
+  Ok(index_anon_work(ix_kernel::anon_work::build_anon_work(env)?))
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -1621,6 +1629,473 @@ pub extern "C" fn rs_kernel_check_anon(
   }
 
   build_anon_result_array(&addrs_for_return, &results)
+}
+
+/// Shared anon-mode seed context: the anon-view env, its whole-env work
+/// items, and each requested name resolved to its covering work item
+/// (standalone → itself; a mutual-block member → the whole block, checked
+/// atomically).
+struct AnonSeedContext {
+  env: Arc<IxonEnv>,
+  kernel_work: Vec<ix_kernel::anon_work::AnonWorkItem>,
+  /// One `(displayed name, work-item index)` per requested name, in request
+  /// order. Two names may share a work item (same mutual block).
+  seeds: Vec<(String, usize)>,
+}
+
+/// Load `path` once and resolve `names` for anon-mode seeded checking:
+/// displayed names → addresses via the full view's `named` metadata (dropped
+/// right after), then the anon view + whole-env work items. `label` prefixes
+/// diagnostics and error messages.
+fn load_anon_seed_context(
+  label: &str,
+  path: &str,
+  names: &[String],
+) -> Result<AnonSeedContext, String> {
+  use ix_kernel::anon_work::{block_of_addr, work_block_addr};
+
+  let t0 = Instant::now();
+  let bytes = std::fs::read(path)
+    .map_err(|e| format!("{label}: failed to read {path}: {e}"))?;
+
+  let resolved: Vec<Address> = {
+    let mut slice: &[u8] = &bytes;
+    let full = IxonEnv::get(&mut slice)
+      .map_err(|e| format!("{label}: failed to deserialize {path}: {e}"))?;
+    let by_name: FxHashMap<String, Address> = full
+      .named
+      .iter()
+      .map(|e| (e.key().to_string(), e.value().addr.clone()))
+      .collect();
+    let mut addrs = Vec::with_capacity(names.len());
+    let mut missing: Vec<&str> = Vec::new();
+    for n in names {
+      match by_name.get(n) {
+        Some(a) => addrs.push(a.clone()),
+        None => missing.push(n),
+      }
+    }
+    if !missing.is_empty() {
+      return Err(format!(
+        "{label}: no constant(s) named [{}] in {path}",
+        missing.join(", ")
+      ));
+    }
+    addrs
+  };
+  eprintln!(
+    "[{label}] resolve:    {:>8.1?} ({} name(s))",
+    t0.elapsed(),
+    resolved.len()
+  );
+
+  let t1 = Instant::now();
+  let mut slice: &[u8] = &bytes;
+  let ixon_env = IxonEnv::get_anon(&mut slice).map_err(|e| {
+    format!("{label}: failed to deserialize (anon) {path}: {e}")
+  })?;
+  drop(bytes);
+  eprintln!(
+    "[{label}] anon parse: {:>8.1?} ({} consts)",
+    t1.elapsed(),
+    ixon_env.const_count(),
+  );
+
+  let t2 = Instant::now();
+  let kernel_work = ix_kernel::anon_work::build_anon_work(&ixon_env)
+    .map_err(|e| format!("{label}: build_anon_work: {e}"))?;
+  let by_block: FxHashMap<Address, usize> = kernel_work
+    .iter()
+    .enumerate()
+    .map(|(i, w)| (work_block_addr(&ixon_env, w), i))
+    .collect();
+  let mut seeds: Vec<(String, usize)> = Vec::with_capacity(names.len());
+  for (n, addr) in names.iter().zip(&resolved) {
+    let block = block_of_addr(&ixon_env, addr);
+    match by_block.get(&block) {
+      Some(i) => seeds.push((n.clone(), *i)),
+      None => {
+        return Err(format!(
+          "{label}: no work item covers {} (block {})",
+          addr.hex(),
+          block.hex()
+        ));
+      },
+    }
+  }
+  eprintln!(
+    "[{label}] build work: {:>8.1?} ({} item(s))",
+    t2.elapsed(),
+    kernel_work.len(),
+  );
+  Ok(AnonSeedContext { env: Arc::new(ixon_env), kernel_work, seeds })
+}
+
+/// Work items inside the seeds' full dependency closure — the same set a
+/// zkVM guest enumerates from its closure sub-env (`build_sub_env` +
+/// `build_anon_work`), computed directly from `closure_addrs` without
+/// serializing a sub-env.
+fn closure_work_items(
+  ctx: &AnonSeedContext,
+  seed_items: &[usize],
+) -> Vec<ix_kernel::anon_work::AnonWorkItem> {
+  use ix_kernel::anon_work::{AnonWorkItem as KItem, closure_addrs};
+
+  let roots: Vec<Address> = seed_items
+    .iter()
+    .flat_map(|&i| ctx.kernel_work[i].proven_targets())
+    .collect();
+  let closure = closure_addrs(&ctx.env, &roots);
+  ctx
+    .kernel_work
+    .iter()
+    .filter(|w| match w {
+      KItem::Standalone { addr } => closure.contains(addr),
+      KItem::Block { block_addr, .. } => closure.contains(block_addr),
+    })
+    .cloned()
+    .collect()
+}
+
+/// FFI: anon-mode type-check of named constants with (by default) their full
+/// dependency closures — the same mode and scope as the zkVM hosts' `--consts`
+/// execute path, so an out-of-circuit run is directly comparable to the
+/// in-circuit one. `skip_deps` restricts the check to each name's own work
+/// item (subject-only; deps trusted), mirroring `zisk-host --skip-deps`.
+///
+/// Names resolve through the env's `named` metadata by displayed form (the
+/// same string match the zkVM hosts use), then the metadata is dropped and
+/// the check runs on the anon view — the kernel never sees names. A member
+/// of a mutual block selects the whole block's work item (blocks check
+/// atomically). Multiple names union their closures into one check set.
+///
+/// `json_path` (empty = off) additionally emits per-name benchmark results
+/// rows. With it set, each name is checked as its own closure run — the
+/// per-constant scope the zkVM hosts measure — instead of one union set:
+/// the env still loads once, and each row's `check-time`/`peak-rss` window
+/// wraps only that name's closure selection + check. Rows are flushed per
+/// name, so a killed run keeps completed rows; a rejected name gets
+/// `status: rejected` and the loop continues.
+///
+/// Returns `(hex_address, Option CheckError)` pairs, one per checked target,
+/// exactly like `rs_kernel_check_anon` (concatenated across names when
+/// per-name rows are on — shared deps then appear once per name that
+/// re-checked them).
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_kernel_check_anon_consts(
+  env_path: LeanString<LeanBorrowed<'_>>,
+  names: LeanArray<LeanBorrowed<'_>>,
+  skip_deps: LeanBool<LeanBorrowed<'_>>,
+  quiet: LeanBool<LeanBorrowed<'_>>,
+  fail_out: LeanString<LeanBorrowed<'_>>,
+  json_path: LeanString<LeanBorrowed<'_>>,
+) -> LeanIOResult<LeanOwned> {
+  let total_start = Instant::now();
+  let quiet = quiet.to_bool();
+  let skip_deps = skip_deps.to_bool();
+  let path = env_path.to_string();
+  let fail_out_path = fail_out.to_string();
+  let fail_out_path =
+    if fail_out_path.is_empty() { None } else { Some(fail_out_path) };
+  let json_path = json_path.to_string();
+  let names_vec: Vec<String> = names.map(|obj| obj.as_string().to_string());
+  if names_vec.is_empty() {
+    return LeanIOResult::error_string(
+      "rs_kernel_check_anon_consts: no constant names given",
+    );
+  }
+  if !json_path.is_empty() && fail_out_path.is_some() {
+    return LeanIOResult::error_string(
+      "rs_kernel_check_anon_consts: --fail-out is not supported with per-name rows (--json)",
+    );
+  }
+
+  let ctx = match load_anon_seed_context(
+    "rs_kernel_check_anon_consts",
+    &path,
+    &names_vec,
+  ) {
+    Ok(ctx) => ctx,
+    Err(e) => return LeanIOResult::error_string(&e),
+  };
+
+  // ---- Per-name rows mode: one independent closure run per name (the
+  // zkVM hosts' per-constant scope), timing only each name's closure
+  // selection + check. Rows flush per name; a rejected name records
+  // `status: rejected` and the loop continues.
+  if !json_path.is_empty() {
+    let json_file = std::path::PathBuf::from(&json_path);
+    let mut all_addrs: Vec<Address> = Vec::new();
+    let mut all_results = Vec::new();
+    for (name, item_idx) in &ctx.seeds {
+      tracing_texray::rss_sampler::reset_peak_tree_rss();
+      let t = Instant::now();
+      let selected = if skip_deps {
+        vec![ctx.kernel_work[*item_idx].clone()]
+      } else {
+        closure_work_items(&ctx, &[*item_idx])
+      };
+      let (work, addrs) = index_anon_work(selected);
+      let total = addrs.len();
+      let results = match run_anon_checks_parallel(
+        Arc::clone(&ctx.env),
+        work,
+        addrs.clone(),
+        quiet,
+        None,
+      ) {
+        Ok(r) => r,
+        Err(msg) => {
+          return build_uniform_error(total, &format!("[thread] {msg}"));
+        },
+      };
+      let failed = results.iter().filter(|r| r.is_err()).count();
+      let secs = t.elapsed().as_secs_f64();
+      let tput = if secs > 0.0 {
+        f64::from(u32::try_from(total).unwrap_or(u32::MAX)) / secs
+      } else {
+        0.0
+      };
+      let status = if failed > 0 {
+        ix_bench::Status::Rejected
+      } else {
+        ix_bench::Status::Ok
+      };
+      eprintln!(
+        "[rs_kernel_check_anon_consts] {name}: {}/{total} passed ({secs:.3}s)",
+        total - failed,
+      );
+      if let Err(e) = ix_bench::write_row(
+        &json_file,
+        name,
+        status,
+        serde_json::json!({
+          "constants": total,
+          "check-time": (secs * 1e6).round() / 1e6,
+          "throughput": (tput * 100.0).round() / 100.0,
+          "peak-rss": ix_bench::peak_rss_bytes(),
+        }),
+      ) {
+        return LeanIOResult::error_string(&format!(
+          "rs_kernel_check_anon_consts: write {}: {e}",
+          json_file.display()
+        ));
+      }
+      all_addrs.extend(addrs);
+      all_results.extend(results);
+    }
+    eprintln!(
+      "[rs_kernel_check_anon_consts] rows total: {:>8.1?} ({} name(s))",
+      total_start.elapsed(),
+      ctx.seeds.len(),
+    );
+    return build_anon_result_array(&all_addrs, &all_results);
+  }
+
+  let mut seed_items: Vec<usize> = Vec::new();
+  for &(_, i) in &ctx.seeds {
+    if !seed_items.contains(&i) {
+      seed_items.push(i);
+    }
+  }
+
+  // The check set. Subject-only: the seeds' own items. Full-closure: every
+  // work item inside the seeds' dependency closure (union across seeds).
+  let selected = if skip_deps {
+    seed_items.iter().map(|&i| ctx.kernel_work[i].clone()).collect()
+  } else {
+    closure_work_items(&ctx, &seed_items)
+  };
+  let (work, addrs) = index_anon_work(selected);
+  eprintln!(
+    "[rs_kernel_check_anon_consts] check set: {} items, {} targets, {}",
+    work.len(),
+    addrs.len(),
+    if skip_deps { "subject-only" } else { "full-closure" },
+  );
+
+  let failure_log: Option<Arc<FailureLog>> = match fail_out_path.as_deref() {
+    None => None,
+    Some(out_path) => match FailureLog::open(out_path, &path, addrs.len()) {
+      Ok(log) => {
+        eprintln!(
+          "[rs_kernel_check_anon_consts] streaming failures to {out_path}"
+        );
+        Some(Arc::new(log))
+      },
+      Err(e) => {
+        return LeanIOResult::error_string(&format!(
+          "rs_kernel_check_anon_consts: failed to open fail-out file {out_path}: {e}"
+        ));
+      },
+    },
+  };
+
+  let total = addrs.len();
+  let addrs_for_return = addrs.clone();
+  let t3 = Instant::now();
+  let results = match run_anon_checks_parallel(
+    ctx.env,
+    work,
+    addrs,
+    quiet,
+    failure_log.clone(),
+  ) {
+    Ok(r) => r,
+    Err(msg) => {
+      if let Some(log) = failure_log.as_ref() {
+        log.finalize();
+      }
+      return build_uniform_error(total, &format!("[thread] {msg}"));
+    },
+  };
+
+  let passed = results.iter().filter(|r| r.is_ok()).count();
+  let failed = results.iter().filter(|r| r.is_err()).count();
+  eprintln!(
+    "[rs_kernel_check_anon_consts] {passed}/{total} passed, {failed} failed ({:.1?})",
+    t3.elapsed()
+  );
+  eprintln!(
+    "[rs_kernel_check_anon_consts] total:      {:>8.1?}",
+    total_start.elapsed()
+  );
+  if let Some(log) = failure_log.as_ref() {
+    log.finalize();
+    eprintln!(
+      "[rs_kernel_check_anon_consts] streamed {} failure(s) to fail-out",
+      log.count()
+    );
+  }
+
+  build_anon_result_array(&addrs_for_return, &results)
+}
+
+/// FFI: extract the named constants' dependency closure from a serialized
+/// env into a standalone `.ixe` — genuine constant bytes, blobs, and
+/// reducibility hints (via the anon view), plus every closure constant's
+/// Named entry (via the full view) so names still resolve downstream — all
+/// without recompiling from source. Each name extracts its covering work
+/// item (a mutual-block member pulls the whole block).
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_env_extract(
+  env_path: LeanString<LeanBorrowed<'_>>,
+  names: LeanArray<LeanBorrowed<'_>>,
+  out_path: LeanString<LeanBorrowed<'_>>,
+  quiet: LeanBool<LeanBorrowed<'_>>,
+) -> LeanIOResult<LeanOwned> {
+  use ix_kernel::anon_work::{
+    block_of_addr, build_anon_work, build_sub_env_named, work_block_addr,
+  };
+
+  let quiet = quiet.to_bool();
+  let path = env_path.to_string();
+  let out = out_path.to_string();
+  let names_vec: Vec<String> = names.map(|obj| obj.as_string().to_string());
+  if names_vec.is_empty() {
+    return LeanIOResult::error_string(
+      "rs_env_extract: no constant names given",
+    );
+  }
+
+  let bytes = match std::fs::read(&path) {
+    Ok(bytes) => bytes,
+    Err(e) => {
+      return LeanIOResult::error_string(&format!(
+        "rs_env_extract: failed to read {path}: {e}"
+      ));
+    },
+  };
+  let mut slice: &[u8] = &bytes;
+  let full = match IxonEnv::get(&mut slice) {
+    Ok(env) => env,
+    Err(e) => {
+      return LeanIOResult::error_string(&format!(
+        "rs_env_extract: failed to deserialize {path}: {e}"
+      ));
+    },
+  };
+  // Resolve displayed names → addresses through the full env's `named`
+  // metadata (the anon view discards it).
+  let by_name: FxHashMap<String, Address> = full
+    .named
+    .iter()
+    .map(|e| (e.key().to_string(), e.value().addr.clone()))
+    .collect();
+  let mut resolved: Vec<Address> = Vec::with_capacity(names_vec.len());
+  let mut missing: Vec<&str> = Vec::new();
+  for n in &names_vec {
+    match by_name.get(n.as_str()) {
+      Some(a) => resolved.push(a.clone()),
+      None => missing.push(n),
+    }
+  }
+  if !missing.is_empty() {
+    return LeanIOResult::error_string(&format!(
+      "rs_env_extract: no constant(s) named [{}] in {path}",
+      missing.join(", ")
+    ));
+  }
+
+  let mut slice: &[u8] = &bytes;
+  let anon = match IxonEnv::get_anon(&mut slice) {
+    Ok(env) => env,
+    Err(e) => {
+      return LeanIOResult::error_string(&format!(
+        "rs_env_extract: failed to deserialize (anon) {path}: {e}"
+      ));
+    },
+  };
+
+  // Roots: each name's covering work item's proven targets (standalone →
+  // itself; a mutual-block member → every sibling, checked atomically).
+  let work = match build_anon_work(&anon) {
+    Ok(work) => work,
+    Err(e) => {
+      return LeanIOResult::error_string(&format!(
+        "rs_env_extract: build_anon_work: {e}"
+      ));
+    },
+  };
+  let by_block: FxHashMap<Address, usize> = work
+    .iter()
+    .enumerate()
+    .map(|(i, w)| (work_block_addr(&anon, w), i))
+    .collect();
+  let mut roots: Vec<Address> = Vec::new();
+  for addr in &resolved {
+    let block = block_of_addr(&anon, addr);
+    match by_block.get(&block) {
+      Some(&i) => roots.extend(work[i].proven_targets()),
+      None => {
+        return LeanIOResult::error_string(&format!(
+          "rs_env_extract: no work item covers block {}…",
+          &block.hex()[..16]
+        ));
+      },
+    }
+  }
+
+  let sub_bytes = match build_sub_env_named(&anon, &full, &roots) {
+    Ok(b) => b,
+    Err(e) => {
+      return LeanIOResult::error_string(&format!("rs_env_extract: {e}"));
+    },
+  };
+  if let Err(e) = std::fs::write(&out, &sub_bytes) {
+    return LeanIOResult::error_string(&format!(
+      "rs_env_extract: failed to write {out}: {e}"
+    ));
+  }
+  if !quiet {
+    eprintln!(
+      "[rs_env_extract] {} name(s) → {} ({} bytes) from {path}",
+      names_vec.len(),
+      out,
+      sub_bytes.len(),
+    );
+  }
+  LeanIOResult::ok(LeanOwned::box_usize(0))
 }
 
 // ===========================================================================
