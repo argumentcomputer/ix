@@ -249,6 +249,66 @@ def subst := ⟦
   }
 
   -- ============================================================================
+  -- expr_lower
+  --
+  -- Shift `BVar(i)` → `BVar(i - shift)` when `i ≥ cutoff`. Inverse of
+  -- `expr_lift`. SOUNDNESS PRECONDITION: no loose BVar of `e` lies in
+  -- `[cutoff, cutoff + shift)` — otherwise the subtraction would capture
+  -- it under an unrelated binder (field arithmetic would even wrap for
+  -- `i - shift < 0`). The nested-occurrence extraction path guarantees
+  -- this via the S7 `spec_params_valid` check before lowering.
+  --
+  -- Used to de-lift extracted spec_params to the recursor-param frame
+  -- (block param j at `BVar(n_rec_params - 1 - j)`), the storage
+  -- convention every flat consumer assumes. Mirrors the depth-stability
+  -- Rust gets for free by opening field binders as fvars.
+  -- ============================================================================
+  fn expr_lower(e: KExpr, shift: G, cutoff: G) -> KExpr {
+    match shift {
+      0 => e,
+      _ =>
+        let l = expr_lbr(e);
+        match u32_less_than(cutoff, l) {
+          0 => e,
+          1 => expr_lower_walk(e, shift, cutoff),
+        },
+    }
+  }
+
+  fn expr_lower_walk(e: KExpr, shift: G, cutoff: G) -> KExpr {
+    match load(e) {
+      KExprNode.BVar(i) =>
+        let lt = u32_less_than(i, cutoff);
+        match lt {
+          1 => e,
+          0 => store(KExprNode.BVar(i - shift)),
+        },
+      KExprNode.Srt(l) => store(KExprNode.Srt(l)),
+      KExprNode.Const(idx, lvls) => store(KExprNode.Const(idx, lvls)),
+      KExprNode.App(f, a) =>
+        store(KExprNode.App(
+          expr_lower(f, shift, cutoff),
+          expr_lower(a, shift, cutoff))),
+      KExprNode.Lam(ty, body) =>
+        store(KExprNode.Lam(
+          expr_lower(ty, shift, cutoff),
+          expr_lower(body, shift, cutoff + 1))),
+      KExprNode.Forall(ty, body) =>
+        store(KExprNode.Forall(
+          expr_lower(ty, shift, cutoff),
+          expr_lower(body, shift, cutoff + 1))),
+      KExprNode.Let(ty, val, body) =>
+        store(KExprNode.Let(
+          expr_lower(ty, shift, cutoff),
+          expr_lower(val, shift, cutoff),
+          expr_lower(body, shift, cutoff + 1))),
+      KExprNode.Lit(lit) => store(KExprNode.Lit(lit)),
+      KExprNode.Proj(tidx, fidx, e1) =>
+        store(KExprNode.Proj(tidx, fidx, expr_lower(e1, shift, cutoff))),
+    }
+  }
+
+  -- ============================================================================
   -- expr_inst1
   --
   -- Substitute `BVar(depth)` with `expr_lift(arg, depth, 0)` and decrement
