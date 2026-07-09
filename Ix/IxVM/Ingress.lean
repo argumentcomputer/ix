@@ -205,76 +205,28 @@ def ingress := ⟦
     }
   }
 
-  -- Look up the kernel position for an address. Fast path: a ptr_val hit
-  -- in the interned `addr_pos_map` (values stored as pos+1, so 0 = absent).
-  -- Sound because ptr_val equality ⟹ content equality (the POSITIVE
-  -- direction; see the invariant on `build_addr_pos_map`). On a miss — a
-  -- de-interned pointer, or a genuine non-constant such as a blob ref —
-  -- fall back to the content-based `address_eq` scan, which returns 0 when
-  -- truly absent. Honest provers always intern, so the fallback adds ~0
-  -- rows to the honest trace; the hot path is the O(log N) tree lookup.
-  -- Single-map ptr_val lookup. After `build_addr_pos_map_aug`, the map
-  -- carries three classes of value for an address key:
-  --   * 0          → not registered (truly unknown OR de-interned const)
-  --   * SENTINEL   → known blob ref (= 4294967295, beyond any honest pos+1)
-  --   * pos+1      → known const at position `pos`
-  -- The blob class is populated once per ingress by walking every
-  -- constant's `refs` and inserting any non-const ref with SENTINEL.
-  -- Blob-ref lookups (the dominant non-const-ref traffic) now hit the
-  -- O(log N) probe and short-circuit to 0 without scanning.
-  --
-  -- ptr_val-key soundness: ptr equality → content equality (positive
-  -- direction, sound because Aiur's Store content-addresses by content).
-  -- Hit on either pos+1 or SENTINEL is sound by ptr equality. Miss falls
-  -- through to the content-based linear scan, which catches any
-  -- de-interned const at its true position.
-  fn lookup_addr_pos(target: Addr, addr_pos_map: &RBTreeMap‹G›,
-                     all_addrs: List‹Addr›, pos_map: List‹G›) -> G {
-    let hit = rbtree_map_lookup_or_default(ptr_val(target), load(addr_pos_map), 0);
+  -- Resolve an address to its kernel position via `addr_pos_map`:
+  -- SENTINEL (4294967295) → blob ref → 0; else → const at `hit-1`.
+  -- Panic-on-miss `rbtree_map_lookup` asserts presence; see
+  -- `build_addr_pos_map` for why a miss is rejected, not recovered.
+  fn lookup_addr_pos(target: Addr, addr_pos_map: &RBTreeMap‹G›) -> G {
+    let hit = rbtree_map_lookup(ptr_val(target), load(addr_pos_map));
     match hit {
-      0 => lookup_addr_pos_linear(target, all_addrs, pos_map),
       4294967295 => 0,
       _ => hit - 1,
     }
   }
 
-  -- Content-based fallback for `lookup_addr_pos`: O(N) parallel-list scan
-  -- via `address_eq` (full 32-byte compare, sound under de-intern).
-  -- Returns 0 if absent. Structurally identical to `lookup_block_start`;
-  -- Aiur merges the two into one circuit.
-  fn lookup_addr_pos_linear(target: Addr, all_addrs: List‹Addr›, pos_map: List‹G›) -> G {
-    match load(all_addrs) {
-      ListNode.Nil => 0,
-      ListNode.Cons(addr, rest_addrs) =>
-        match load(pos_map) {
-          ListNode.Cons(pos, rest_pos) =>
-            let eq = address_eq(target, addr);
-            match eq {
-              1 => pos,
-              0 => lookup_addr_pos_linear(target, rest_addrs, rest_pos),
-            },
-        },
-    }
-  }
-
-  -- Build the `ptr_val(addr) → (pos+1)` map keyed by every constant
-  -- address. Serves two roles: `lookup_addr_pos`'s fast path (returns the
-  -- kernel position) and `is_blob`'s membership test (present ⟺ constant).
-  -- pos+1 so the lookup default 0 unambiguously means "absent". Head is
-  -- inserted last (recurse first), so on any duplicate ptr_val the head
-  -- wins — matching the linear scan's first-match.
+  -- `ptr_val(addr) → pos+1` for every const (`pos+1` keeps 0 free; the blob
+  -- SENTINEL sits above any pos+1). Head inserted last, so duplicate
+  -- `ptr_val`s resolve to the first (canonical) position.
   --
-  -- ptr_val-key SOUNDNESS INVARIANT: a pointer maps to exactly one stored
-  -- value (memory consistency), so ptr_val collision across DISTINCT
-  -- contents is impossible — distinct addresses can never be conflated.
-  -- A malicious prover's only freedom is de-interning (one content stored
-  -- at several pointers), which makes a present key read as ABSENT. So a
-  -- ptr_val-keyed map is sound ONLY where a false "absent" is conservative.
-  -- `is_blob` is fine: a de-interned constant reads as a blob, content-bound
-  -- and harmless. `lookup_addr_pos` is NOT fine on its own — a miss yields a
-  -- usable position — so it falls back to the content-based `address_eq`
-  -- scan on miss. Each Addr is also blake3-bound to its content and the
-  -- checkEnv claim merkle-commits the address set.
+  -- Soundness: the memory AIR strictly increments the pointer column, so the
+  -- table is a function ptr → values ⟹ `ptr_val` eq ⟹ content eq (no false
+  -- collisions; a hit is always correct). The converse can fail — a malicious
+  -- witness may de-intern (same content at several pointers) — so consumers
+  -- probe with panic-on-miss `rbtree_map_lookup`: a de-intern miss is rejected,
+  -- and honest provers always hit (they intern; every ref/head address is keyed).
   fn build_addr_pos_map(all_addrs: List‹Addr›, pos_map: List‹G›) -> RBTreeMap‹G› {
     match load(all_addrs) {
       ListNode.Nil => RBTreeMap.Nil,
@@ -326,9 +278,15 @@ def ingress := ⟦
     }
   }
 
--- Index `block_addrs`/`block_starts` into a single ptr_val-keyed rbtree so
-  -- the per-call lookup is O(log N) instead of an O(N) parallel-list walk.
-  -- ptr_val keying is sound by Aiur Store content-addressing.
+-- `ptr_val(block_addr) → block_start` for every Muts block. O(log N) probe
+  -- vs an O(N) parallel-list walk.
+  --
+  -- `lookup_block_start` probes with panic-on-miss `rbtree_map_lookup`. A
+  -- `_or_default 0` would be UNSOUND: starts are raw 0-based, so `0` is a
+  -- valid position (the first block), not an absent-sentinel — a de-interned
+  -- `block_addr` would miss and silently resolve the projection to the wrong
+  -- slot. Honest provers always hit (the block is loaded and keyed; interning
+  -- makes the lookup pointer equal the keyed pointer).
   fn build_block_start_map(block_addrs: List‹Addr›, block_starts: List‹G›) -> RBTreeMap‹G› {
     build_block_start_map_walk(block_addrs, block_starts, RBTreeMap.Nil)
   }
@@ -346,10 +304,9 @@ def ingress := ⟦
     }
   }
 
-  -- O(log N) block-start probe. Returns 0 when the address isn't a known
-  -- block (mirrors the historical "not found → 0" semantics).
+  -- Panic-on-miss asserts presence; see `build_block_start_map`.
   fn lookup_block_start(target: Addr, block_start_map: &RBTreeMap‹G›) -> G {
-    rbtree_map_lookup_or_default(ptr_val(target), load(block_start_map), 0)
+    rbtree_map_lookup(ptr_val(target), load(block_start_map))
   }
 
   -- ============================================================================
@@ -638,27 +595,19 @@ def ingress := ⟦
   -- Ref index building using position map
   -- ============================================================================
 
-  -- Fused walk of `refs` producing both `ref_idxs` and `lit_blobs` in one
-  -- pass. Each ref goes through ONE rbtree probe (`addr_pos_map`) and the
-  -- result is interpreted as both classifications:
-  --   * hit == 0 (absent — de-intern soundness floor): fall back to linear
-  --     scan for `ref_idx`, leave `lit_blob` empty (the conservative path).
-  --   * hit == SENTINEL_BLOB_REF: known blob → load + decode; idx = 0.
-  --   * hit == pos + 1: known const → idx = pos, blob slot empty.
-  fn build_ref_idxs_and_blobs(refs: List‹Addr›, addr_pos_map: &RBTreeMap‹G›,
-                               all_addrs: List‹Addr›, pos_map: List‹G›)
+  -- Fused walk of `refs` → (ref_idxs, lit_blobs), one `addr_pos_map` probe
+  -- per ref: SENTINEL → blob (load+decode, idx 0); else → const at `hit-1`.
+  -- Panic-on-miss `rbtree_map_lookup` is safe: `augment_with_blob_refs` keyed
+  -- every ref from these same list cells, so the probe always hits.
+  fn build_ref_idxs_and_blobs(refs: List‹Addr›, addr_pos_map: &RBTreeMap‹G›)
                                -> (List‹G›, List‹ByteStream›) {
     match load(refs) {
       ListNode.Nil => (store(ListNode.Nil), store(ListNode.Nil)),
       ListNode.Cons(addr, rest) =>
         let (rest_idxs, rest_blobs) =
-          build_ref_idxs_and_blobs(rest, addr_pos_map, all_addrs, pos_map);
-        let hit = rbtree_map_lookup_or_default(ptr_val(addr), load(addr_pos_map), 0);
+          build_ref_idxs_and_blobs(rest, addr_pos_map);
+        let hit = rbtree_map_lookup(ptr_val(addr), load(addr_pos_map));
         match hit {
-          0 =>
-            let pos = lookup_addr_pos_linear(addr, all_addrs, pos_map);
-            (store(ListNode.Cons(pos, rest_idxs)),
-             store(ListNode.Cons(store(ListNode.Nil), rest_blobs))),
           4294967295 =>
             let bs = load_verified_blob(addr);
             (store(ListNode.Cons(0, rest_idxs)),
@@ -1160,10 +1109,10 @@ def ingress := ⟦
                           _ => store(ListNode.Cons(mptr, seen_mptrs)),
                         };
                         let size = block_kernel_size(members);
-                        let canon_block_start = lookup_addr_pos(head_addr, addr_pos_map, all_addrs, pos_map);
+                        let canon_block_start = lookup_addr_pos(head_addr, addr_pos_map);
                         let canon_addr = lookup_canon_addr(head_addr, canon_addr_map);
                         let (ref_idxs, lit_blobs) =
-                          build_ref_idxs_and_blobs(refs, addr_pos_map, all_addrs, pos_map);
+                          build_ref_idxs_and_blobs(refs, addr_pos_map);
                         let recur_idxs = build_recur_idxs(members, canon_block_start, 0);
                         let ctx = ConvertCtx.Mk(sharing, ref_idxs, recur_idxs, lit_blobs, univs);
                         let expanded = expand_members(members, ctx, members, canon_block_start, 0,
@@ -1182,7 +1131,7 @@ def ingress := ⟦
                     build_convert_inputs_walk(rest, rest_addrs, all_addrs, addr_pos_map, pos_map, canon_addr_map, block_start_map, pos, seen_mptrs),
                   ConstantInfo.Defn(defn) =>
                     let (ref_idxs, lit_blobs) =
-                      build_ref_idxs_and_blobs(refs, addr_pos_map, all_addrs, pos_map);
+                      build_ref_idxs_and_blobs(refs, addr_pos_map);
                     let recur_idxs = store(ListNode.Cons(pos, store(ListNode.Nil)));
                     let ctx = ConvertCtx.Mk(sharing, ref_idxs, recur_idxs, lit_blobs, univs);
                     let hint = #load_constant_hint(head_addr);
@@ -1191,21 +1140,21 @@ def ingress := ⟦
                       build_convert_inputs_walk(rest, rest_addrs, all_addrs, addr_pos_map, pos_map, canon_addr_map, block_start_map, pos + 1, seen_mptrs))),
                   ConstantInfo.Axio(axio) =>
                     let (ref_idxs, lit_blobs) =
-                      build_ref_idxs_and_blobs(refs, addr_pos_map, all_addrs, pos_map);
+                      build_ref_idxs_and_blobs(refs, addr_pos_map);
                     let ctx = ConvertCtx.Mk(sharing, ref_idxs, store(ListNode.Nil), lit_blobs, univs);
                     let input = ConvertInput.Mk(ctx, ConvertKind.CKAxio(axio));
                     store(ListNode.Cons(store(input),
                       build_convert_inputs_walk(rest, rest_addrs, all_addrs, addr_pos_map, pos_map, canon_addr_map, block_start_map, pos + 1, seen_mptrs))),
                   ConstantInfo.Quot(quot) =>
                     let (ref_idxs, lit_blobs) =
-                      build_ref_idxs_and_blobs(refs, addr_pos_map, all_addrs, pos_map);
+                      build_ref_idxs_and_blobs(refs, addr_pos_map);
                     let ctx = ConvertCtx.Mk(sharing, ref_idxs, store(ListNode.Nil), lit_blobs, univs);
                     let input = ConvertInput.Mk(ctx, ConvertKind.CKQuot(quot));
                     store(ListNode.Cons(store(input),
                       build_convert_inputs_walk(rest, rest_addrs, all_addrs, addr_pos_map, pos_map, canon_addr_map, block_start_map, pos + 1, seen_mptrs))),
                   ConstantInfo.Recr(recr) =>
                     let (ref_idxs, lit_blobs) =
-                      build_ref_idxs_and_blobs(refs, addr_pos_map, all_addrs, pos_map);
+                      build_ref_idxs_and_blobs(refs, addr_pos_map);
                     -- `build_aux_recr_ctor_idxs` already does the typ-peel +
                     -- IPrj lookup to find the recursor's inductive block;
                     -- get block_addr from the same call instead of redoing
