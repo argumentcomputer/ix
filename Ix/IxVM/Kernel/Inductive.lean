@@ -1956,7 +1956,7 @@ def inductive_check := ⟦
                 let ctor_ty_inst = expr_inst_levels(ctor_ty, occ_us);
                 synth_aux_ctor_ty(ctor_ty_inst, n_params, spec_params),
             };
-            let from_this = detect_nested_in_field_chain(body, block_idxs, top);
+            let from_this = detect_nested_in_field_chain(body, block_idxs, top, 0);
             let from_rest = detect_nested_in_member_ctors(rest, n_params, is_aux,
                                                           spec_params, occ_us,
                                                           block_idxs, top);
@@ -2223,7 +2223,7 @@ def inductive_check := ⟦
         match ctor_ci {
           KConstantInfo.Ctor(_, ctor_ty, _, _, _, _, _) =>
             let body = peel_n_foralls_tolerant(ctor_ty, n_params);
-            let from_this = detect_nested_in_field_chain(body, block_idxs, top);
+            let from_this = detect_nested_in_field_chain(body, block_idxs, top, 0);
             let from_rest = detect_nested_in_ctors(rest, n_params, block_idxs, top);
             list_concat(from_this, from_rest),
           _ => detect_nested_in_ctors(rest, n_params, block_idxs, top),
@@ -2231,23 +2231,29 @@ def inductive_check := ⟦
     }
   }
 
+  -- `depth` = number of binders between the constructor's param context
+  -- and the current position (field binders walked so far, plus leading
+  -- foralls peeled off the domain in `detect_nested_in_dom`). Both call
+  -- paths (originals after `peel_n_foralls_tolerant`, auxes after
+  -- `synth_aux_ctor_ty` substitution) start at 0.
   fn detect_nested_in_field_chain(ty: KExpr, block_idxs: List‹G›,
-                                   top: List‹&KConstantInfo›)
+                                   top: List‹&KConstantInfo›, depth: G)
                                    -> List‹(G, List‹KExpr›, List‹KLevel›)› {
     match load(ty) {
       KExprNode.Forall(dom, body) =>
-        let from_dom = detect_nested_in_dom(dom, block_idxs, top);
-        let from_rest = detect_nested_in_field_chain(body, block_idxs, top);
+        let from_dom = detect_nested_in_dom(dom, block_idxs, top, depth);
+        let from_rest = detect_nested_in_field_chain(body, block_idxs, top,
+                                                     depth + 1);
         list_concat(from_dom, from_rest),
       _ => store(ListNode.Nil),
     }
   }
 
   fn detect_nested_in_dom(dom: KExpr, block_idxs: List‹G›,
-                          top: List‹&KConstantInfo›)
+                          top: List‹&KConstantInfo›, depth: G)
                           -> List‹(G, List‹KExpr›, List‹KLevel›)› {
     match peel_leading_foralls(dom) {
-      (_doms, body) =>
+      (doms, body) =>
         match collect_spine(body) {
           (head, args) =>
             match load(head) {
@@ -2265,8 +2271,21 @@ def inductive_check := ⟦
                             let param_args = list_take(args, ext_n_params);
                             match list_any_mentions(param_args, block_idxs) {
                               0 => store(ListNode.Nil),
-                              1 => store(ListNode.Cons((idx, param_args, occ_us),
-                                                        store(ListNode.Nil))),
+                              1 =>
+                                -- S7: reject occurrences whose param args
+                                -- reference a field/domain-local binder — a
+                                -- loose BVar below the extraction depth. Not
+                                -- a valid nested-inductive parameterization;
+                                -- no aux may be synthesized. Mirror:
+                                -- crates/kernel/src/inductive.rs:723-730
+                                -- (`sp.has_fvars()` — Rust opens those
+                                -- binders as fvars, Aiur keeps de Bruijn).
+                                let d = depth + list_length(doms);
+                                match spec_params_valid(param_args, d) {
+                                  0 => store(ListNode.Nil),
+                                  1 => store(ListNode.Cons((idx, param_args, occ_us),
+                                                            store(ListNode.Nil))),
+                                },
                             },
                         },
                       _ => store(ListNode.Nil),
@@ -2274,6 +2293,18 @@ def inductive_check := ⟦
                 },
               _ => store(ListNode.Nil),
             },
+        },
+    }
+  }
+
+  -- 1 iff no spec_param references a binder below extraction depth `d`.
+  fn spec_params_valid(sps: List‹KExpr›, d: G) -> G {
+    match load(sps) {
+      ListNode.Nil => 1,
+      ListNode.Cons(sp, rest) =>
+        match has_bvar_in_range(sp, 0, d) {
+          1 => 0,
+          0 => spec_params_valid(rest, d),
         },
     }
   }
