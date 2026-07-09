@@ -407,18 +407,18 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
   let csv := (p.flag? "csv").map (·.as! String)
     |>.getD s!"{repo}/Benchmarks/Vectors.csv"
   let rows := parseVectorsCsv (← IO.FS.readFile csv)
-  -- `--names-file` overrides the CSV selection (the caller already knows
-  -- exactly which names it wants — e.g. bench-pr's targeted base run over
-  -- just the constants bencher lacked); tier metadata still comes from the
-  -- CSV so heavy zisk names keep their sharded pipeline.
-  let selected ← match p.flag? "names-file" with
-    | some f => do
-      let wanted ← Ix.Cli.ConstsFile.read (f.as! String)
-      pure <| wanted.map fun n =>
+  -- `--consts`/`--names-file` (unioned) override the CSV selection — a
+  -- one-off local run, or bench-pr's targeted base run over just the
+  -- constants bencher lacked; tier metadata still comes from the CSV so
+  -- heavy zisk names keep their sharded pipeline.
+  let wanted ← Ix.Cli.ConstsFile.gather p "consts" "names-file"
+  let selected :=
+    if wanted.isEmpty then
+      selectNames rows env mode full tier (p.hasFlag "shard-only")
+    else
+      wanted.map fun n =>
         (rows.find? (fun r => r.name == n && r.env == env)).getD
           { name := n, env, tier := "cheap", shardTarget := false, primary := false }
-    | none =>
-      pure <| selectNames rows env mode full tier (p.hasFlag "shard-only")
   let names := selected.map (·.name)
   IO.eprintln s!"[bench] cell {backend}-{env}-{mode}: {names.size} constant(s)"
 
@@ -564,7 +564,8 @@ def benchRunCmd : Cli.Cmd := `[Cli|
     repo         : String; "Checkout to benchmark: tools resolve from <repo>/.lake/build/bin first, then PATH (default: .)"
     csv          : String; "Vectors path (default: <repo>/Benchmarks/Vectors.csv)"
     full;                  "Run the env's full curated set instead of the primary subset"
-    "names-file" : String; "Run exactly these names (one per line) instead of the Vectors.csv selection"
+    consts       : String; "Run exactly these comma-separated names instead of the Vectors.csv selection (same grammar as the tools' --consts)"
+    "names-file" : String; "Additionally read names from a file (one per line); unions with --consts"
     tier         : String; "cheap | heavy | all — tier filter (default: all; prove-mode --full defaults to cheap)"
     "shard-only";          "Restrict to shard_target rows"
     "reuse-ixe";           "Reuse an existing <env>.ixe instead of recompiling (ignored by the compile backend)"

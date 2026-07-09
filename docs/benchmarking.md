@@ -64,11 +64,12 @@ ix bench compare --backend ooc --env InitStd
 
 # One constant through aiur — the fast Phase-1 signal, then the full prove
 # (cap the watchdog to what your machine can spare):
-echo Nat.add_comm > names.txt
 ix bench run --backend aiur --env InitStd --mode execute \
-  --names-file names.txt --reuse-ixe --ceiling-gb 50
+  --consts Nat.add_comm --reuse-ixe --ceiling-gb 50
 ix bench run --backend aiur --env InitStd --mode prove \
-  --names-file names.txt --reuse-ixe --ceiling-gb 50
+  --consts Nat.add_comm --reuse-ixe --ceiling-gb 50
+
+echo Nat.add_comm > names.txt   # fetch-main takes a names FILE
 
 # Compare a local run against main's numbers straight from bencher.dev
 # (no token needed; --names filters to your constants — the testbed holds
