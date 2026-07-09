@@ -1,7 +1,10 @@
 name: Bencher thresholds reset
 
-# Move `bencher-thresholds-reset-<workload>` tag(s) so bencher-track re-windows those
-# measures from a chosen commit — after a toolchain bump or any permanent shift.
+# Move `refs/bencher/<workload>` anchor ref(s) so bencher-track re-windows
+# those measures from a chosen commit — after a toolchain bump or any
+# permanent shift. A custom ref namespace, NOT refs/tags: the anchors are CI
+# plumbing, and tags would decorate every user's bare `git log` at the
+# anchor commit (and be fetched by every clone).
 # Other workloads are unaffected; historical data stays in Bencher, only the
 # alert baseline is re-anchored. Two ways to trigger:
 #
@@ -10,7 +13,7 @@ name: Bencher thresholds reset
 #     command. It records each valid workload as a `bencher-thresholds-reset:<workload>`
 #     PR label and replies to confirm (or warns on an unknown/missing workload,
 #     catching a typo immediately). On merge, the `reset` job simply reads those
-#     labels from the event payload — no re-parsing — and anchors the tags at the
+#     labels from the event payload — no re-parsing — and anchors the refs at the
 #     merge commit. The label is the shared flag between the two events, and is
 #     human-visible/cancelable (remove the label to cancel a queued reset).
 #   - Manual label (no comment needed): the merge step honors any
@@ -22,8 +25,8 @@ name: Bencher thresholds reset
 #     `ix-compile`, `aiur-check-execute`, `aiur-check-prove`, `zisk-check-execute`, `sp1-check-execute`, `ooc-check`) or
 #     `all` (the merge step expands an `all` label into every workload). Labeling
 #     requires Triage+, so PR authors from forks cannot self-queue a reset. The
-#     label shares the command/workflow name; the git tag it moves is the same
-#     stem with a dash: `bencher-thresholds-reset-<workload>`.
+#     label shares the command/workflow name; the ref it moves is
+#     `refs/bencher/<workload>`.
 #   - workflow_dispatch: reset the chosen workload at a given commit (default
 #     HEAD); does not read PR contents. For ad-hoc or bootstrap resets.
 #
@@ -94,14 +97,14 @@ jobs:
           done_list=""
           for w in $workloads; do
             case " $valid " in *" $w "*) ;; *) echo "skip unknown workload: $w"; continue ;; esac
-            tag="bencher-thresholds-reset-$w"
-            echo "Anchoring $tag -> $sha"
-            # Update the tag if it exists, else create it. (Checking first avoids
+            ref="bencher/$w"
+            echo "Anchoring refs/$ref -> $sha"
+            # Update the ref if it exists, else create it. (Checking first avoids
             # the spurious 422 a PATCH-then-POST logs on first creation.)
-            if gh api --silent "repos/$REPO/git/refs/tags/$tag" 2>/dev/null; then
-              gh api --silent -X PATCH "repos/$REPO/git/refs/tags/$tag" -f sha="$sha" -F force=true
+            if gh api --silent "repos/$REPO/git/ref/$ref" 2>/dev/null; then
+              gh api --silent -X PATCH "repos/$REPO/git/refs/$ref" -f sha="$sha" -F force=true
             else
-              gh api --silent -X POST "repos/$REPO/git/refs" -f ref="refs/tags/$tag" -f sha="$sha"
+              gh api --silent -X POST "repos/$REPO/git/refs" -f ref="refs/$ref" -f sha="$sha"
             fi
             done_list="$done_list $w"
           done
