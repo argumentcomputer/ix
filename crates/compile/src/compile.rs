@@ -4120,7 +4120,7 @@ mod env;
 pub mod mutual;
 pub mod nat_conv;
 pub mod surgery;
-pub use env::{compile_env, compile_env_with_options};
+pub use env::{compile_env, compile_env_with_options, self_rss_kb};
 
 #[cfg(test)]
 mod tests {

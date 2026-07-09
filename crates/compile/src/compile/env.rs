@@ -48,6 +48,47 @@ static IX_PROGRESS_MS: LazyLock<u64> = LazyLock::new(|| {
     .unwrap_or(2000)
 });
 
+/// Clear each worker's kernel env every N completed blocks (releasing
+/// allocations), trading re-ingress CPU for bounded per-worker cache
+/// growth. `0` (default) never clears — today's behavior. The kenv is
+/// a pure cache of Lean-env-derived data (`ensure_in_kenv` re-ingresses
+/// on demand), so clearing at block boundaries is semantics-free.
+static IX_COMPILE_KENV_CLEAR_EVERY: LazyLock<usize> = LazyLock::new(|| {
+  std::env::var("IX_COMPILE_KENV_CLEAR_EVERY")
+    .ok()
+    .and_then(|s| s.parse().ok())
+    .unwrap_or(0)
+});
+
+/// `(VmRSS, RssAnon, RssFile)` of this process in KiB, from
+/// `/proc/self/status`. Anonymous memory can only leave RAM via swap;
+/// file-backed RSS is reclaimable page cache — the split is what the
+/// spill work changes, so the instrumentation reports both.
+pub fn self_rss_kb() -> Option<(u64, u64, u64)> {
+  let status = std::fs::read_to_string("/proc/self/status").ok()?;
+  let field = |key: &str| {
+    status
+      .lines()
+      .find(|l| l.starts_with(key))
+      .and_then(|l| l.split_whitespace().nth(1))
+      .and_then(|v| v.parse::<u64>().ok())
+  };
+  Some((field("VmRSS:")?, field("RssAnon:")?, field("RssFile:")?))
+}
+
+/// Render `self_rss_kb` for the progress logs.
+fn rss_log_suffix() -> String {
+  match self_rss_kb() {
+    Some((vm, anon, file)) => format!(
+      " · rss {:.1} GiB (anon {:.1}, file {:.1})",
+      vm as f64 / (1024.0 * 1024.0),
+      anon as f64 / (1024.0 * 1024.0),
+      file as f64 / (1024.0 * 1024.0),
+    ),
+    None => String::new(),
+  }
+}
+
 /// Recover a short string description from a panic payload.
 fn panic_message(panic: &(dyn std::any::Any + Send)) -> String {
   panic
@@ -365,7 +406,8 @@ pub fn compile_env_with_options(
 
   if !*IX_QUIET {
     eprintln!(
-      "[compile_env] starting: {total_blocks} blocks, {num_threads} workers"
+      "[compile_env] starting: {total_blocks} blocks, {num_threads} workers{}",
+      rss_log_suffix(),
     );
   }
 
@@ -478,10 +520,11 @@ pub fn compile_env_with_options(
             let acc = stats_stt.env.const_cache_stats();
             eprintln!(
               "[compile_env] accumulator @ {done}/{total}: {} consts · \
-               {:.1} MiB serialized bytes · {} materialized caches",
+               {:.1} MiB serialized bytes · {} materialized caches{}",
               acc.entries,
               acc.bytes as f64 / (1024.0 * 1024.0),
               acc.materialized,
+              rss_log_suffix(),
             );
             // Aggregate worker kenv sizes from the per-worker snapshots
             // (each refreshed at that worker's last block completion) —
@@ -511,6 +554,7 @@ pub fn compile_env_with_options(
     for worker_id in 0..num_threads {
       s.spawn(move || {
         let mut worker_kctx = crate::compile::KernelCtx::new();
+        let mut worker_blocks_done = 0usize;
         loop {
           // Try to get work from the ready queue
           let work = {
@@ -870,6 +914,17 @@ pub fn compile_env_with_options(
                 condvar_ref.notify_one();
               }
 
+              // Bounded per-worker kenv growth: drop the caches every N
+              // blocks when configured. Block boundary only — nothing
+              // holds kenv references across blocks; `ensure_in_kenv`
+              // re-ingresses on demand.
+              worker_blocks_done += 1;
+              if *IX_COMPILE_KENV_CLEAR_EVERY > 0
+                && worker_blocks_done % *IX_COMPILE_KENV_CLEAR_EVERY == 0
+              {
+                worker_kctx.kenv.clear_releasing_memory();
+              }
+
               // Refresh this worker's kenv-size snapshot for the
               // reporter's decile aggregate. cache_sizes() is ~20 map
               // len() reads; the slot is uncontended except during the
@@ -978,12 +1033,13 @@ pub fn compile_env_with_options(
     let total_elapsed = compile_start.elapsed().as_secs_f64();
     eprintln!(
       "[compile_env] complete in {total_elapsed:.1}s · \
-       env: {} consts, {} named, {} names, {} blobs, {} comms",
+       env: {} consts, {} named, {} names, {} blobs, {} comms{}",
       stt.env.const_count(),
       stt.env.named_count(),
       stt.env.name_count(),
       stt.env.blob_count(),
       stt.env.comm_count(),
+      rss_log_suffix(),
     );
     // Accumulator composition: how much of `env.consts` is materialized
     // `Arc<Constant>` caches vs serialized bytes. The byte sum is the

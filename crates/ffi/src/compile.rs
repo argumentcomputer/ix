@@ -291,8 +291,24 @@ pub extern "C" fn rs_compile_env(
 ) -> LeanIOResult<LeanOwned> {
   {
     let quiet = std::env::var("IX_QUIET").is_ok();
+    // RSS here ≈ the Lean-side floor (imports + elaborated env); the
+    // post-decode delta is the owned Rust copy of the environment.
+    let rss_gib = |label: &str| {
+      if !quiet
+        && let Some((vm, anon, file)) = ix_compile::compile::self_rss_kb()
+      {
+        eprintln!(
+          "[rs_compile_env] rss {label}: {:.1} GiB (anon {:.1}, file {:.1})",
+          vm as f64 / (1024.0 * 1024.0),
+          anon as f64 / (1024.0 * 1024.0),
+          file as f64 / (1024.0 * 1024.0),
+        );
+      }
+    };
+    rss_gib("at entry");
     let rust_env = decode_env(env_consts_ptr);
     let rust_env = Arc::new(rust_env);
+    rss_gib("after decode_env");
 
     let compile_stt =
       match compile_env_with_options(&rust_env, CompileOptions::default()) {
