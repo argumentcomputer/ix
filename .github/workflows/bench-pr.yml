@@ -114,6 +114,9 @@ jobs:
       full: ${{ steps.parse.outputs.full }}
       passthrough-env: ${{ steps.parse.outputs.passthrough-env }}
       config-summary: ${{ steps.parse.outputs.config-summary }}
+      # Set (with the step failing) when the !benchmark command was
+      # rejected; the failure comment quotes it.
+      parse-error: ${{ steps.parse.outputs.parse-error }}
     steps:
       # Everything downstream needs this job, so malformed inputs die here
       # (the checkout would take a bare "main" or a short SHA otherwise).
@@ -626,18 +629,41 @@ jobs:
           name: comment-body
           path: comment-body.md
 
-  # Post the assembled body. This is the ONLY job with access to the App
-  # token, and it runs no checkout and no repo-derived code — just an
-  # artifact download and two actions.
+  # Post the assembled body — or a red-X diagnostic when any stage failed
+  # (a rejected command or broken run must never end in silence on the
+  # PR). This is the ONLY job with access to the App token, and it runs
+  # no checkout and no repo-derived code — just an artifact download and
+  # two actions.
   comment:
-    needs: assemble
-    if: always() && needs.assemble.result == 'success'
+    needs: [build, compile, benchmark, assemble]
+    if: always() && github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Download comment body
+        if: needs.assemble.result == 'success'
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           name: comment-body
+      # Any failed stage prepends a red-X header (quoting the parse error
+      # when that's the cause) to the report — or replaces it when
+      # assemble produced none. A rejection-reddened cell still shows its
+      # tables below the header.
+      - name: Note failures
+        if: contains(needs.*.result, 'failure') || needs.assemble.result != 'success'
+        env:
+          PARSE_ERROR: ${{ needs.build.outputs.parse-error }}
+        run: |
+          {
+            echo "## ❌ benchmark run failed — [run log](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+            if [ -n "$PARSE_ERROR" ]; then
+              echo
+              echo "> $PARSE_ERROR"
+            fi
+            echo
+            if [ -f comment-body.md ]; then cat comment-body.md; fi
+          } > body-with-header.md
+          mv body-with-header.md comment-body.md
       - name: Generate token to write PR comment
         id: app-token
         uses: actions/create-github-app-token@v3
