@@ -20,6 +20,7 @@ public import Cli
 public import Lean.Data.Json
 public import Ix.Benchmark.Results
 public import Ix.Cli.BenchCmd
+public import Ix.Cli.BenchPlots
 
 public section
 
@@ -844,5 +845,6 @@ def benchCmd : Cli.Cmd := `[Cli|
     benchReportCmd;
     benchBmfCmd;
     benchFetchMainCmd;
+    benchPlotsCmd;
     benchCiCmd
 ]
