@@ -59,11 +59,11 @@ pub struct SetupScan {
 
 /// Fused whole-env setup pass: one decode per constant feeding the ref
 /// graph, the groundedness check, and inductive-group collection.
-/// Replaces three back-to-back full-env sweeps (`build_ref_graph`,
+/// One pass instead of separate `build_ref_graph` /
 /// `ground_consts`' scan, `validate_lean_ind_flags`' scan) — under
-/// `IX_COMPILE_LEAN_ENV=lazy` each sweep re-decodes every constant, so
-/// fusing them cuts the setup decode count to a third. Outputs are
-/// identical to the separate passes.
+/// (the compile path'''s default) decodes a constant per access, so
+/// visiting the whole env once instead of three times cuts the setup
+/// decode count to a third. Outputs are identical to the separate passes.
 pub fn setup_scan(env: &Env) -> SetupScan {
   struct Acc {
     out_refs: RefMap,
@@ -98,8 +98,7 @@ pub fn setup_scan(env: &Env) -> SetupScan {
       }
       // Members of one mutual family share the same `all`, so
       // first-wins insertion is value-identical regardless of which
-      // member lands first (the same invariant the unfused scan
-      // relied on).
+      // member lands first.
       if let ConstantInfo::InductInfo(v) = &*constant
         && let Some(first) = v.all.first()
       {

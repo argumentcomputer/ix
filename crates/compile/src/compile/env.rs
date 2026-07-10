@@ -2,41 +2,32 @@
 //!
 //! Extracted from `compile.rs` to keep the scheduler independently readable.
 //!
-//! # Memory tuning
+//! # Memory
 //!
-//! Compiling a large environment (Mathlib-scale) peaks at tens of GB by
-//! default. A set of opt-in, independently toggleable env vars trades
-//! bounded CPU for RAM; each defaults to today's fastest behavior, and
-//! every combination produces a bit-identical `.ixe`:
+//! Peak RSS is kept a small multiple of the environment's serialized
+//! size (Mathlib: ~19 GB for a 3 GB `.ixe`) by holding compact
+//! representations everywhere the structured forms aren't actually
+//! read: the Lean environment decodes on demand behind a bounded cache
+//! (`decode_env_lazy` in the ffi crate) rather than as a whole-env
+//! owned copy, accumulator constants and named metadata live as their
+//! serialized bytes rather than ~20×-larger structured forms, worker
+//! kernel envs clear periodically, the setup passes share one
+//! whole-env decode, and the `.ixe` streams to disk from Rust rather
+//! than crossing the FFI as an env-sized ByteArray. All of it is
+//! always on, and every mode produces a bit-identical `.ixe`.
 //!
+//! Two knobs:
 //! - `IX_COMPILE_WORKERS=N` — scheduler worker count (default: all
 //!   cores). Scales the per-worker transients.
-//! - `IX_COMPILE_KENV_CLEAR_EVERY=N` — clear each worker's kernel env
-//!   every N blocks (default 0 = never). The kenv is a pure cache;
-//!   clearing at block boundaries is semantics-free.
-//! - `IX_COMPILE_SPILL=off|demote|mmap` — accumulator constants keep a
-//!   materialized cache next to their bytes (`off`, default), keep
-//!   bytes only (`demote`; the structured form costs ~20× its
-//!   encoding), or additionally spill the bytes to an anonymous temp
-//!   file in sealed mmap segments the kernel can evict under pressure
-//!   (`mmap`; see `ixon`'s `spill` module; `IX_COMPILE_SPILL_DIR`
-//!   must be disk-backed, default cwd; `IX_COMPILE_SPILL_SEGMENT_MB`).
-//! - `IX_COMPILE_META=structured|demote` — store registered names'
-//!   metadata structured (default) or as self-contained serialized
-//!   bytes decoded on demand (same ~20× trade as the accumulator).
-//! - `IX_COMPILE_LEAN_ENV=eager|lazy` + `IX_COMPILE_LEAN_ENV_CACHE` —
-//!   materialize the whole Lean environment as owned Rust data up
-//!   front (default) or decode constants on demand from the Lean
-//!   objects behind a bounded cache (the decoded copy is the single
-//!   largest term at Mathlib scale). Measured at wall-time parity.
-//! - `IX_COMPILE_STREAM=1` (read by the Lean CLI) — stream the `.ixe`
-//!   to disk from Rust instead of returning an env-sized ByteArray.
+//! - `IX_COMPILE_DEMOTE=0` — keep materialized caches next to the
+//!   accumulator's bytes instead of demoting to bytes-only. Spends
+//!   RAM to make post-compile structural reads free, which only pays
+//!   in flows that re-read the compiled env in-process (`ix check` /
+//!   `ix validate`); `ix compile` itself never reads them back.
 //!
-//! With everything on, Mathlib compiles in ~19 GB peak RSS (vs OOM on
-//! a 50 GB budget by default) at equal wall time. Progress telemetry
-//! (`IX_QUIET`, `IX_PROGRESS_MS`, `IX_LOG_BLOCKS`) reports RSS
-//! anon/file splits, accumulator composition, worker-kenv sizes, and
-//! lazy-env cache hit rates per decile to guide tuning.
+//! Progress telemetry (`IX_QUIET`, `IX_PROGRESS_MS`, `IX_LOG_BLOCKS`)
+//! reports RSS anon/file splits, accumulator composition, worker-kenv
+//! sizes, and lazy-env cache hit rates per decile.
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{
@@ -83,22 +74,18 @@ static IX_PROGRESS_MS: LazyLock<u64> = LazyLock::new(|| {
     .unwrap_or(2000)
 });
 
-/// Clear each worker's kernel env every N completed blocks (releasing
-/// allocations), trading re-ingress CPU for bounded per-worker cache
-/// growth. `0` (default) never clears — today's behavior. The kenv is
-/// a pure cache of Lean-env-derived data (`ensure_in_kenv` re-ingresses
-/// on demand), so clearing at block boundaries is semantics-free.
-static IX_COMPILE_KENV_CLEAR_EVERY: LazyLock<usize> = LazyLock::new(|| {
-  std::env::var("IX_COMPILE_KENV_CLEAR_EVERY")
-    .ok()
-    .and_then(|s| s.parse().ok())
-    .unwrap_or(0)
-});
+/// Clear each worker's kernel env every this many completed blocks
+/// (releasing allocations). The kenv is a pure cache of
+/// Lean-env-derived data (`ensure_in_kenv` re-ingresses on demand), so
+/// clearing at block boundaries is semantics-free; unbounded it grows
+/// to several GB on Mathlib-scale envs, and this cadence measures at
+/// zero wall-clock cost there.
+const KENV_CLEAR_EVERY: usize = 64;
 
 /// `(VmRSS, RssAnon, RssFile)` of this process in KiB, from
 /// `/proc/self/status`. Anonymous memory can only leave RAM via swap;
-/// file-backed RSS is reclaimable page cache — the split is what the
-/// spill work changes, so the instrumentation reports both.
+/// file-backed RSS is reclaimable page cache — the split tells the two
+/// apart, so the instrumentation reports both.
 pub fn self_rss_kb() -> Option<(u64, u64, u64)> {
   let status = std::fs::read_to_string("/proc/self/status").ok()?;
   let field = |key: &str| {
@@ -189,9 +176,9 @@ pub fn compile_env_with_options(
   options: CompileOptions,
 ) -> Result<CompileState, CompileError> {
   let setup_start = Instant::now();
-  // Fused whole-env scan: ref graph + immediate groundedness +
-  // inductive groups in one decode per constant (three separate sweeps
-  // triple the decode cost under IX_COMPILE_LEAN_ENV=lazy).
+  // Whole-env scan: ref graph + immediate groundedness + inductive
+  // groups in one decode per constant — the env decodes lazily, so
+  // each additional full sweep would decode every constant again.
   let phase_start = Instant::now();
   let scan = setup_scan(lean_env.as_ref());
   let graph = scan.graph;
@@ -956,14 +943,9 @@ pub fn compile_env_with_options(
                 condvar_ref.notify_one();
               }
 
-              // Bounded per-worker kenv growth: drop the caches every N
-              // blocks when configured. Block boundary only — nothing
-              // holds kenv references across blocks; `ensure_in_kenv`
-              // re-ingresses on demand.
+              // Bounded per-worker kenv growth (see KENV_CLEAR_EVERY).
               worker_blocks_done += 1;
-              if *IX_COMPILE_KENV_CLEAR_EVERY > 0
-                && worker_blocks_done % *IX_COMPILE_KENV_CLEAR_EVERY == 0
-              {
+              if worker_blocks_done % KENV_CLEAR_EVERY == 0 {
                 worker_kctx.kenv.clear_releasing_memory();
               }
 
@@ -1100,13 +1082,6 @@ pub fn compile_env_with_options(
       acc.bytes as f64 / (1024.0 * 1024.0),
       acc.materialized,
     );
-    if let Some((file_bytes, segments, unsealed)) = stt.env.spill_stats() {
-      eprintln!(
-        "[compile_env] spill: {:.1} MiB file · {segments} segments sealed \
-         · {unsealed} entries unsealed (heap)",
-        file_bytes as f64 / (1024.0 * 1024.0),
-      );
-    }
     if let Some((hits, misses)) = lean_env.lazy_cache_stats() {
       let total = hits + misses;
       let hit_pct =

@@ -194,7 +194,7 @@ pub extern "C" fn rs_compile_env_full(
 ) -> LeanIOResult<LeanOwned> {
   {
     // Phase 1: Decode Lean environment
-    let rust_env = crate::lean_env::decode_env_auto(env_consts_ptr);
+    let rust_env = crate::lean_env::decode_env(env_consts_ptr);
     let env_len = rust_env.len();
     let rust_env = Arc::new(rust_env);
 
@@ -305,7 +305,7 @@ pub extern "C" fn rs_compile_env(
       }
     };
     rss_gib("at entry");
-    let rust_env = crate::lean_env::decode_env_auto(env_consts_ptr);
+    let rust_env = crate::lean_env::decode_env_for_compile(env_consts_ptr);
     let rust_env = Arc::new(rust_env);
     rss_gib("after decode_env");
 
@@ -418,7 +418,7 @@ pub extern "C" fn rs_compile_env_to_file(
     }
   };
   rss_gib("at entry");
-  let rust_env = crate::lean_env::decode_env_auto(env_consts_ptr);
+  let rust_env = crate::lean_env::decode_env_for_compile(env_consts_ptr);
   let rust_env = Arc::new(rust_env);
   rss_gib("after decode_env");
 
@@ -485,7 +485,7 @@ pub extern "C" fn rs_compile_phases(
   env_consts_ptr: LeanList<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
   {
-    let rust_env = crate::lean_env::decode_env_auto(env_consts_ptr);
+    let rust_env = crate::lean_env::decode_env(env_consts_ptr);
     let env_len = rust_env.len();
     let rust_env = Arc::new(rust_env);
 
@@ -589,7 +589,7 @@ pub extern "C" fn rs_compile_env_to_ixon(
   env_consts_ptr: LeanList<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
   {
-    let rust_env = crate::lean_env::decode_env_auto(env_consts_ptr);
+    let rust_env = crate::lean_env::decode_env(env_consts_ptr);
     let rust_env = Arc::new(rust_env);
 
     let compile_stt =
@@ -679,7 +679,7 @@ pub extern "C" fn rs_canonicalize_env_to_ix(
   env_consts_ptr: LeanList<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
   {
-    let rust_env = crate::lean_env::decode_env_auto(env_consts_ptr);
+    let rust_env = crate::lean_env::decode_env(env_consts_ptr);
     let mut cache = LeanBuildCache::with_capacity(rust_env.len());
     let raw_env = LeanIxRawEnvironment::build(&mut cache, &rust_env);
     LeanIOResult::ok(raw_env)
@@ -706,7 +706,7 @@ pub extern "C" fn rs_canonicalize_env_to_ix(
 pub extern "C" fn rs_leon_hashes(
   env_consts_ptr: LeanList<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
-  let rust_env = crate::lean_env::decode_env_auto(env_consts_ptr);
+  let rust_env = crate::lean_env::decode_env(env_consts_ptr);
   let mut cache = LeanBuildCache::with_capacity(rust_env.len());
 
   let arr = LeanArray::alloc(rust_env.len());

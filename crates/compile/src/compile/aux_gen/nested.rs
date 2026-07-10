@@ -2122,8 +2122,7 @@ pub fn validate_lean_ind_flags(lean_env: &LeanEnv) -> Result<(), CompileError> {
 }
 
 /// Per-group half of [`validate_lean_ind_flags`], for callers that
-/// already collected the inductive groups (the fused setup scan — see
-/// `graph::setup_scan`).
+/// already hold the inductive groups from a wider env pass.
 pub fn validate_ind_groups(
   groups: &FxHashMap<Name, Vec<Name>>,
   lean_env: &LeanEnv,

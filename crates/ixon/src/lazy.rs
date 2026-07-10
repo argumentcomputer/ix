@@ -142,9 +142,9 @@ impl LazyConstant {
 
   /// Like [`Self::from_constant`] but drops the structured value after
   /// serializing (`cache: None`), so the entry costs only its bytes and
-  /// `get()` re-parses per access — the same policy as [`Self::from_bytes`].
-  /// Used by `Env::store_const` when `IX_COMPILE_SPILL` demotes the
-  /// compile accumulator to bytes.
+  /// `get()` re-parses per access — the same policy as
+  /// [`Self::from_bytes`]. The demoted accumulator repr (see
+  /// `env::DEMOTE`).
   pub fn from_constant_uncached(c: Constant) -> Self {
     let mut buf = Vec::new();
     c.put(&mut buf);

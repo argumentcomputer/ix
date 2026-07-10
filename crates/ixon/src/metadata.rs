@@ -278,7 +278,7 @@ impl ConstantMeta {
 
   /// Self-contained encoding: name references as raw 32-byte addresses,
   /// no index required. This is the demoted in-memory form
-  /// (`IX_COMPILE_META=demote`), NOT the `.ixe` named-section encoding —
+  /// (see `env::DEMOTE`), NOT the `.ixe` named-section encoding —
   /// `Env::put` re-encodes through the name index.
   pub fn put_raw(&self, buf: &mut Vec<u8>) -> Result<(), String> {
     self.put_with(NamePut::Raw, buf)
@@ -644,7 +644,7 @@ pub type NameReverseIndex = Vec<Address>;
 /// How name references are written: compressed through the env-level
 /// name index (the `.ixe` named-section form), or as raw 32-byte
 /// addresses — a self-contained encoding that needs no index, used by
-/// the demoted in-memory metadata form (`IX_COMPILE_META=demote`).
+/// the demoted in-memory metadata form (see `env::DEMOTE`).
 #[derive(Clone, Copy)]
 pub enum NamePut<'a> {
   Indexed(&'a NameIndex),

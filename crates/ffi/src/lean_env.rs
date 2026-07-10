@@ -1124,30 +1124,22 @@ fn decode_name_constant_info(
   (name, constant_info)
 }
 
-/// Decode dispatch for the compile FFI entries: eager (default) or,
-/// under `IX_COMPILE_LEAN_ENV=lazy`, an on-demand view that avoids
-/// materializing the full Rust copy of the environment
-/// (`IX_COMPILE_LEAN_ENV_CACHE` bounds resident decoded constants —
-/// see [`decode_env_lazy`]).
-pub fn decode_env_auto(list: LeanList<LeanBorrowed<'_>>) -> Env {
-  match std::env::var("IX_COMPILE_LEAN_ENV").as_deref() {
-    Ok("lazy") => {
-      let cache_entries = std::env::var("IX_COMPILE_LEAN_ENV_CACHE")
-        .ok()
-        .and_then(|s| s.parse::<usize>().ok())
-        .filter(|&n| n > 0)
-        .unwrap_or(65536);
-      decode_env_lazy(list, cache_entries)
-    },
-    Ok("eager") | Err(_) => decode_env(list),
-    Ok(other) => {
-      eprintln!(
-        "[ffi] IX_COMPILE_LEAN_ENV={other:?} not recognized \
-         (expected eager|lazy); using eager"
-      );
-      decode_env(list)
-    },
-  }
+/// Resident-decoded-constant bound for [`decode_env_lazy`]'s cache.
+/// Wall time measured at parity with the eager decode at this size on
+/// InitStd through Mathlib (the setup scan decodes each constant
+/// exactly once regardless; compile-phase misses hide in the parallel
+/// schedule), so there is nothing to tune — a bigger cache buys no
+/// measured speed, a smaller one risks thrash.
+const LAZY_ENV_CACHE_ENTRIES: usize = 65536;
+
+/// Decode for the production compile FFI entries: an on-demand view
+/// that avoids materializing the full Rust copy of the environment —
+/// the eager copy is the single largest memory term at Mathlib scale
+/// (~25 GB) and compile wall time is at parity without it. Test and
+/// roundtrip entries keep [`decode_env`] (they re-read the env
+/// structurally throughout).
+pub fn decode_env_for_compile(list: LeanList<LeanBorrowed<'_>>) -> Env {
+  decode_env_lazy(list, LAZY_ENV_CACHE_ENTRIES)
 }
 
 /// Lazy variant of [`decode_env`]: decode only the *names* eagerly,

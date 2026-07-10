@@ -1379,7 +1379,7 @@ impl Env {
   /// is ~env size). Returns the byte count written.
   ///
   /// MUST remain byte-identical with [`Env::put`] — checked by the
-  /// `put_file_matches_put` test and the A/B `cmp` oracle. Any format
+  /// `put_file_matches_put` test. Any format
   /// change lands in both or not at all.
   #[cfg(not(target_arch = "riscv64"))]
   pub fn put_file(&self, path: &std::path::Path) -> Result<u64, String> {
@@ -1429,8 +1429,7 @@ impl Env {
     }
 
     // Section 2: Consts — the dominant bytes; raw_bytes stream straight
-    // through (under IX_COMPILE_SPILL=mmap this is page cache → page
-    // cache).
+    // through with no intermediate copy of the constant bodies
     let sec_start = std::time::Instant::now();
     put_u64(const_addrs.len() as u64, &mut buf);
     for addr in &const_addrs {

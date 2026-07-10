@@ -1559,9 +1559,9 @@ impl LazyEnv {
 /// variant on the guest) or, on the host, a lazy on-demand view (see
 /// [`LazyEnv`]).
 ///
-/// Was `pub type Env = FxHashMap<Name, ConstantInfo>`; the struct keeps
-/// the map API shape, with [`Env::get`] returning the [`EnvEntry`]
-/// guard instead of a plain borrow.
+/// Keeps the plain-map API shape, with [`Env::get`] returning the
+/// [`EnvEntry`] guard instead of a plain borrow, so both variants
+/// serve reads through one signature.
 #[derive(Default)]
 pub struct Env {
   eager: FxHashMap<Name, ConstantInfo>,

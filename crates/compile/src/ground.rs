@@ -62,7 +62,7 @@ pub fn ground_consts(
 }
 
 /// Per-constant groundedness check, for callers that already hold a
-/// decoded constant (the fused setup scan — see `graph::setup_scan`).
+/// decoded constant and check as part of a wider pass.
 pub fn ground_const_check(
   constant: &ConstantInfo,
   env: &Env,
