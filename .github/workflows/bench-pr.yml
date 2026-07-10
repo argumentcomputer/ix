@@ -654,18 +654,27 @@ jobs:
         env:
           PARSE_ERROR: ${{ needs.build.outputs.parse-error }}
         run: |
-          {
-            echo "## ❌ benchmark run failed"
-            if [ -n "$PARSE_ERROR" ]; then
+          if [ -f comment-body.md ]; then
+            # A report exists: some job failed but results came through.
+            # Soft note on top; the report's own footer links the logs.
+            {
+              echo "> ⚠️ Some benchmark jobs failed — results may be partial."
               echo
-              echo "> $PARSE_ERROR"
-            fi
-            echo
-            if [ -f comment-body.md ]; then cat comment-body.md; fi
-            echo
-            echo "[Workflow logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
-          } > body-with-header.md
-          mv body-with-header.md comment-body.md
+              cat comment-body.md
+            } > body-with-note.md
+            mv body-with-note.md comment-body.md
+          else
+            # No report at all: the run itself failed.
+            {
+              echo "## ❌ benchmark run failed"
+              if [ -n "$PARSE_ERROR" ]; then
+                echo
+                echo "> $PARSE_ERROR"
+              fi
+              echo
+              echo "[Workflow logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+            } > comment-body.md
+          fi
       - name: Generate token to write PR comment
         id: app-token
         uses: actions/create-github-app-token@v3
