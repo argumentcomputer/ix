@@ -2294,7 +2294,12 @@ structure EnvStats where
     `fields` is never empty: `"kind"` marks a variant change and
     `"encoding"` an address change with no detected semantic field
     difference (table reorder / sharing-decision churn). `metaFields`
-    is only populated in meta mode. -/
+    is only populated in meta mode. `rippled` is the root-cause
+    verdict: true iff the address change is fully explained by
+    dependency re-addressing (re-classified under the old→new quotient
+    of all changed rows, every residual label is
+    `"encoding"`/`"block-siblings"`); `fields` stays the strict
+    classification. -/
 structure NamedDiff where
   name : String
   oldAddr : Address
@@ -2303,6 +2308,7 @@ structure NamedDiff where
   newKind : String
   fields : Array String
   metaFields : Array String
+  rippled : Bool
   deriving Inhabited, BEq
 
 /-- Report produced by `rsDiffEnvs`. Set-difference lists are complete

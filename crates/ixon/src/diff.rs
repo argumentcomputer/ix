@@ -19,6 +19,28 @@
 //!   `Named.original` content, populating [`EnvDiff::named_meta_only`]
 //!   and [`NamedChange::meta_fields`].
 //!
+//! Every changed row additionally carries a ripple verdict
+//! ([`NamedChange::rippled`]): after the join, changed pairs are
+//! re-classified under a quotient where an (old, new) address pair
+//! compares equal when some changed name maps old→new. Rows whose
+//! residual labels are all `"encoding"`/`"block-siblings"` are
+//! *rippled* — fully explained by dependency re-addressing (the
+//! content-address ripple: one edited constant re-addresses its whole
+//! reverse-dependency cone); the rest are *roots* (intrinsic edits). A
+//! single-level mapping is complete because expression comparison only
+//! ever consults immediate-dependency addresses — composition across
+//! the DAG happens through the per-row verdicts, never through the map.
+//! Accepted semantic edges:
+//! - Induced re-elaboration verdicts root: a dependency's
+//!   universe/arity signature change alters dependents' terms beyond
+//!   addresses (e.g. `Ref` univ-argument arity), so "roots"
+//!   over-approximates "human edits" when signatures change.
+//! - An intrinsic edit of a block member with no named projection has
+//!   no root row of its own (blocks are unnamed; in practice ix names
+//!   every projection, so the member's projection row is the root).
+//! - The `"block"` fallback (block bytes missing, e.g. behind a
+//!   bundle's assumption cut) verdicts root — fail-safe over-report.
+//!
 //! Expression comparison ([`exprs_equal`]) is a lockstep structural walk
 //! that resolves table indices through each side's own `Constant` tables:
 //! identical expr bytes over different tables compare *different*, and
@@ -32,7 +54,9 @@
 //! prefixed) churn as one removed+added pair per changed block; display
 //! layers may group them.
 
-use rustc_hash::FxHashSet;
+use std::sync::Arc;
+
+use rustc_hash::{FxHashMap, FxHashSet};
 
 use ix_common::address::Address;
 use ix_common::env::{Name, ReducibilityHints};
@@ -72,6 +96,12 @@ pub struct NamedChange {
   /// Metadata component labels when the metadata ALSO changed. Only
   /// populated in meta mode; may be empty.
   pub meta_fields: Vec<String>,
+  /// True iff the address change is fully explained by dependency
+  /// re-addressing: re-classified under the old→new quotient of all
+  /// changed rows, the residual labels are all `"encoding"` /
+  /// `"block-siblings"`. `fields` stays the strict (unquotiented)
+  /// classification; this is the orthogonal root-vs-ripple verdict.
+  pub rippled: bool,
 }
 
 /// Report produced by [`diff_envs`]. All name-keyed vectors are sorted
@@ -205,6 +235,12 @@ fn ref_at<'c>(
   })
 }
 
+/// Old→new address pairs harvested from every changed named row in
+/// pass 1 (kind-change and encoding rows included). Set-valued to
+/// tolerate name splits: two names sharing an old address, diverging in
+/// the new env. Directional — keys are A-side (old) addresses.
+type AddrMap = FxHashMap<Address, Vec<Address>>;
+
 /// Lockstep expression comparator over one pair of table contexts.
 ///
 /// The pointer-pair memo persists across `eq` calls for the same
@@ -212,15 +248,27 @@ fn ref_at<'c>(
 /// across type/value/rules). Entries record "heads matched, children
 /// enqueued" — an unequal result returns early and leaves enqueued
 /// children unverified, so [`Self::eq`] clears the memo on `false`.
+///
+/// `map` selects the address equality: `None` = strict (pass 1),
+/// `Some` = the ripple quotient (pass 2).
 struct ExprCmp<'a> {
   ca: &'a Constant,
   cb: &'a Constant,
   memo: FxHashSet<(usize, usize)>,
+  map: Option<&'a AddrMap>,
 }
 
 impl<'a> ExprCmp<'a> {
-  fn new(ca: &'a Constant, cb: &'a Constant) -> Self {
-    ExprCmp { ca, cb, memo: FxHashSet::default() }
+  fn new(ca: &'a Constant, cb: &'a Constant, map: Option<&'a AddrMap>) -> Self {
+    ExprCmp { ca, cb, memo: FxHashSet::default(), map }
+  }
+
+  /// Address equality under the selected mode. `l` MUST be the A-side
+  /// (old) address and `r` the B-side (new) — the quotient map is
+  /// directional. Every comparison site preserves that order (the walk
+  /// always pairs (A-expr, B-expr)).
+  fn addrs_eq(&self, l: &Address, r: &Address) -> bool {
+    l == r || self.map.is_some_and(|m| m.get(l).is_some_and(|v| v.contains(r)))
   }
 
   fn eq(&mut self, a: &'a Expr, b: &'a Expr) -> Result<bool, String> {
@@ -254,8 +302,10 @@ impl<'a> ExprCmp<'a> {
           }
         },
         (Expr::Ref(i, us), Expr::Ref(j, vs)) => {
-          if ref_at(self.ca, *i, "left")? != ref_at(self.cb, *j, "right")?
-            || !self.univ_lists_equal(us, vs)?
+          if !self.addrs_eq(
+            ref_at(self.ca, *i, "left")?,
+            ref_at(self.cb, *j, "right")?,
+          ) || !self.univ_lists_equal(us, vs)?
           {
             return Ok(false);
           }
@@ -269,13 +319,22 @@ impl<'a> ExprCmp<'a> {
         (Expr::Str(i), Expr::Str(j)) | (Expr::Nat(i), Expr::Nat(j)) => {
           // Blob content behind equal addresses is identical by
           // content-addressing (blob sections are hash-verified on load).
-          if ref_at(self.ca, *i, "left")? != ref_at(self.cb, *j, "right")? {
+          // Blob addresses never enter the quotient map (it holds
+          // constant addresses from named rows), so literal changes stay
+          // intrinsic under pass 2 — `addrs_eq` degenerates to `==`.
+          if !self.addrs_eq(
+            ref_at(self.ca, *i, "left")?,
+            ref_at(self.cb, *j, "right")?,
+          ) {
             return Ok(false);
           }
         },
         (Expr::Prj(ti, fi, va), Expr::Prj(tj, fj, vb)) => {
           if fi != fj
-            || ref_at(self.ca, *ti, "left")? != ref_at(self.cb, *tj, "right")?
+            || !self.addrs_eq(
+              ref_at(self.ca, *ti, "left")?,
+              ref_at(self.cb, *tj, "right")?,
+            )
           {
             return Ok(false);
           }
@@ -326,7 +385,7 @@ pub fn exprs_equal(
   b: &Expr,
   cb: &Constant,
 ) -> Result<bool, String> {
-  ExprCmp::new(ca, cb).eq(a, b)
+  ExprCmp::new(ca, cb, None).eq(a, b)
 }
 
 // ============================================================================
@@ -518,6 +577,7 @@ fn classify_prj(
   cidx: Option<(u64, u64)>,
   block_a: &Address,
   block_b: &Address,
+  map: Option<&AddrMap>,
   out: &mut Vec<String>,
 ) -> Result<(), String> {
   if idx_a != idx_b {
@@ -528,6 +588,11 @@ fn classify_prj(
   {
     out.push("cidx".to_string());
   }
+  // Strict `==` deliberately, even under the quotient: blocks are
+  // unnamed (their synthetic names embed the hash, so they never join
+  // as changed rows and never enter the map), and descent is mandatory
+  // — a block-internal intrinsic edit has no named row of its own, so
+  // short-circuiting a "mapped" block pair would hide the root.
   if block_a == block_b {
     return Ok(());
   }
@@ -558,7 +623,7 @@ fn classify_prj(
   };
   // Expression tables are constant-level: members resolve through the
   // enclosing block constants' tables.
-  let mut cmp = ExprCmp::new(&ba, &bb);
+  let mut cmp = ExprCmp::new(&ba, &bb, map);
   let before = out.len();
   match cidx {
     None => classify_mut_member(mem_a, mem_b, &mut cmp, "block.", out)?,
@@ -589,14 +654,19 @@ fn classify_prj(
 /// labels. Never returns an empty list: kind mismatches yield `"kind"`,
 /// and an address change with no detected semantic difference yields
 /// `"encoding"` (table reorder / sharing-decision churn).
+///
+/// `map = None` is the strict pass-1 classification; `Some` re-runs it
+/// under the ripple quotient (pass 2), where the labels are consumed
+/// only by the [`rippled_labels`] verdict and then discarded.
 fn classify_constants(
   env_a: &Env,
   ca: &Constant,
   env_b: &Env,
   cb: &Constant,
+  map: Option<&AddrMap>,
 ) -> Result<Vec<String>, String> {
   let mut out = Vec::new();
-  let mut cmp = ExprCmp::new(ca, cb);
+  let mut cmp = ExprCmp::new(ca, cb, map);
   match (&ca.info, &cb.info) {
     (ConstantInfo::Defn(a), ConstantInfo::Defn(b)) => {
       classify_defn(a, b, &mut cmp, "", &mut out)?;
@@ -628,17 +698,17 @@ fn classify_constants(
     },
     (ConstantInfo::DPrj(a), ConstantInfo::DPrj(b)) => {
       classify_prj(
-        env_a, env_b, a.idx, b.idx, None, &a.block, &b.block, &mut out,
+        env_a, env_b, a.idx, b.idx, None, &a.block, &b.block, map, &mut out,
       )?;
     },
     (ConstantInfo::IPrj(a), ConstantInfo::IPrj(b)) => {
       classify_prj(
-        env_a, env_b, a.idx, b.idx, None, &a.block, &b.block, &mut out,
+        env_a, env_b, a.idx, b.idx, None, &a.block, &b.block, map, &mut out,
       )?;
     },
     (ConstantInfo::RPrj(a), ConstantInfo::RPrj(b)) => {
       classify_prj(
-        env_a, env_b, a.idx, b.idx, None, &a.block, &b.block, &mut out,
+        env_a, env_b, a.idx, b.idx, None, &a.block, &b.block, map, &mut out,
       )?;
     },
     (ConstantInfo::CPrj(a), ConstantInfo::CPrj(b)) => {
@@ -650,6 +720,7 @@ fn classify_constants(
         Some((a.cidx, b.cidx)),
         &a.block,
         &b.block,
+        map,
         &mut out,
       )?;
     },
@@ -727,6 +798,31 @@ fn env_stats(e: &Env) -> EnvStats {
   }
 }
 
+/// Materialize the constant behind a named row's address, with
+/// name-and-side error context. Shared by the pass-1 classification and
+/// the pass-2 ripple verdict (constants are re-parsed on every call —
+/// `LazyConstant` deliberately keeps no parse cache, which is what
+/// bounds resident memory at mathlib scale).
+fn materialize_const(
+  env: &Env,
+  addr: &Address,
+  name: &Name,
+  which: &str,
+) -> Result<Arc<Constant>, String> {
+  env
+    .try_get_const(addr)
+    .ok_or_else(|| {
+      format!(
+        "diff: named '{}' addr {} not present in consts of the {which} env",
+        name.pretty(),
+        addr.hex()
+      )
+    })?
+    .map_err(|e| {
+      format!("diff: named '{}' ({}): {e}", name.pretty(), addr.hex())
+    })
+}
+
 fn classify_named_change(
   env_a: &Env,
   env_b: &Env,
@@ -735,23 +831,9 @@ fn classify_named_change(
   nb: &Named,
   meta: bool,
 ) -> Result<NamedChange, String> {
-  let materialize = |env: &Env, addr: &Address, which: &str| {
-    env
-      .try_get_const(addr)
-      .ok_or_else(|| {
-        format!(
-          "diff: named '{}' addr {} not present in consts of the {which} env",
-          name.pretty(),
-          addr.hex()
-        )
-      })?
-      .map_err(|e| {
-        format!("diff: named '{}' ({}): {e}", name.pretty(), addr.hex())
-      })
-  };
-  let ca = materialize(env_a, &na.addr, "first")?;
-  let cb = materialize(env_b, &nb.addr, "second")?;
-  let fields = classify_constants(env_a, &ca, env_b, &cb)?;
+  let ca = materialize_const(env_a, &na.addr, name, "first")?;
+  let cb = materialize_const(env_b, &nb.addr, name, "second")?;
+  let fields = classify_constants(env_a, &ca, env_b, &cb, None)?;
   let meta_fields =
     if meta { meta_component_labels(na, nb) } else { Vec::new() };
   Ok(NamedChange {
@@ -762,7 +844,22 @@ fn classify_named_change(
     new_kind: kind_label(&cb.info),
     fields,
     meta_fields,
+    // Verdict assigned by pass 2 (a row is a root until explained).
+    rippled: false,
   })
+}
+
+/// Pass-2 verdict over quotient labels: rippled iff every residual
+/// label is explained by re-addressing — `"encoding"` (quotient-equal
+/// everywhere; the fallback when no field label fired) or
+/// `"block-siblings"` (the projected member is quotient-equal; the
+/// block hash moved for reasons surfaced by other rows). Scalar labels,
+/// `"kind"`, coordinate labels (`"idx"`/`"cidx"`), `"block"`, and all
+/// `block.*` detail labels mean intrinsic change → root. Labels are
+/// never empty (the `"encoding"` fallback), so `all` cannot pass
+/// vacuously.
+fn rippled_labels(labels: &[String]) -> bool {
+  labels.iter().all(|l| l == "encoding" || l == "block-siblings")
 }
 
 /// Sort by (pretty name, name hash) — the hash tiebreak keeps distinct
@@ -771,22 +868,41 @@ fn sort_by_name<T>(v: &mut [(String, Name, T)]) {
   v.sort_by(|x, y| x.0.cmp(&y.0).then_with(|| x.1.cmp(&y.1)));
 }
 
-/// Coarse progress for the named join — the only diff phase whose cost
-/// scales with the number of *changed* names (each one materializes two
-/// constants and walks their expressions). Parses happen before
-/// [`diff_envs`] and are the caller's to report.
+/// Which diff pass a [`JoinProgress`] event reports.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DiffPhase {
+  /// Pass 1: the named join (change detection + strict classification).
+  NamedJoin,
+  /// Pass 2: re-classification of changed rows under the ripple
+  /// quotient (root vs rippled verdicts).
+  RippleClassify,
+}
+
+/// Coarse progress for the two passes whose cost scales with the number
+/// of *changed* names (each one materializes two constants and walks
+/// their expressions). Parses happen before [`diff_envs`] and are the
+/// caller's to report.
 #[derive(Clone, Copy, Debug)]
 pub struct JoinProgress {
-  /// Entries of the first env's named map processed so far.
+  /// The pass this event reports. `done` counts reset between phases.
+  pub phase: DiffPhase,
+  /// [`DiffPhase::NamedJoin`]: first-env named entries processed.
+  /// [`DiffPhase::RippleClassify`]: changed rows verdicted.
   pub done: usize,
-  /// Total entries in the first env's named map.
+  /// Total entries of the reporting phase.
   pub total: usize,
-  /// Changed names (addr differs) classified so far.
+  /// [`DiffPhase::NamedJoin`]: changed names classified so far.
+  /// [`DiffPhase::RippleClassify`]: roots found so far.
   pub changed: usize,
 }
 
 /// Named-join entries between progress callbacks in [`diff_envs_with`].
 const JOIN_PROGRESS_STRIDE: usize = 100_000;
+
+/// Changed rows between pass-2 progress callbacks — one event every
+/// ~1-2 s at mathlib scale (each row re-materializes and re-walks a
+/// constant pair, so rows are ~10× slower than join probes).
+const RIPPLE_PROGRESS_STRIDE: usize = 10_000;
 
 /// Diff two environments. `meta = false` (anon mode, the default)
 /// compares only anonymous structure; `meta = true` additionally
@@ -817,6 +933,8 @@ pub fn diff_envs_with(
   let mut removed: Vec<(String, Name, Address)> = Vec::new();
   let mut changed: Vec<(String, Name, NamedChange)> = Vec::new();
   let mut meta_only: Vec<(String, Name, Vec<String>)> = Vec::new();
+  // Old→new mapping over every changed row, consumed by pass 2.
+  let mut addr_map: AddrMap = FxHashMap::default();
   let join_total = a.named.len();
   let mut join_done: usize = 0;
   for entry in a.named.iter() {
@@ -834,6 +952,10 @@ pub fn diff_envs_with(
           }
         } else {
           let change = classify_named_change(a, b, name, na, nb, meta)?;
+          let slot = addr_map.entry(na.addr.clone()).or_default();
+          if !slot.contains(&nb.addr) {
+            slot.push(nb.addr.clone());
+          }
           changed.push((name.pretty(), name.clone(), change));
         }
       },
@@ -842,6 +964,7 @@ pub fn diff_envs_with(
     if join_done.is_multiple_of(JOIN_PROGRESS_STRIDE) && join_done < join_total
     {
       on_progress(JoinProgress {
+        phase: DiffPhase::NamedJoin,
         done: join_done,
         total: join_total,
         changed: changed.len(),
@@ -849,10 +972,58 @@ pub fn diff_envs_with(
     }
   }
   on_progress(JoinProgress {
+    phase: DiffPhase::NamedJoin,
     done: join_total,
     total: join_total,
     changed: changed.len(),
   });
+
+  // Pass 2 (ripple): re-classify each changed pair under the quotient
+  // of the just-completed old→new mapping. A pair whose residual labels
+  // are all explained by re-addressing is rippled (induced by its
+  // dependencies' address changes); the rest are roots. Alias rows —
+  // several names spanning one (old, new) pair — share one cached
+  // verdict and one computation. Materialization failure here is a hard
+  // error: pass 1 already materialized both sides of every changed row.
+  if !changed.is_empty() {
+    let mut verdicts: FxHashMap<(Address, Address), bool> =
+      FxHashMap::default();
+    let ripple_total = changed.len();
+    let mut roots: usize = 0;
+    for (i, (_, name, ch)) in changed.iter_mut().enumerate() {
+      let key = (ch.old_addr.clone(), ch.new_addr.clone());
+      let rippled = match verdicts.get(&key) {
+        Some(v) => *v,
+        None => {
+          let ca = materialize_const(a, &ch.old_addr, name, "first")?;
+          let cb = materialize_const(b, &ch.new_addr, name, "second")?;
+          let labels = classify_constants(a, &ca, b, &cb, Some(&addr_map))?;
+          let v = rippled_labels(&labels);
+          verdicts.insert(key, v);
+          v
+        },
+      };
+      ch.rippled = rippled;
+      if !rippled {
+        roots += 1;
+      }
+      let done = i + 1;
+      if done.is_multiple_of(RIPPLE_PROGRESS_STRIDE) && done < ripple_total {
+        on_progress(JoinProgress {
+          phase: DiffPhase::RippleClassify,
+          done,
+          total: ripple_total,
+          changed: roots,
+        });
+      }
+    }
+    on_progress(JoinProgress {
+      phase: DiffPhase::RippleClassify,
+      done: ripple_total,
+      total: ripple_total,
+      changed: roots,
+    });
+  }
   for entry in b.named.iter() {
     let name = entry.key();
     if a.named.get(name).is_none() {
@@ -966,7 +1137,9 @@ pub fn diff_envs_with(
 mod tests {
   use super::*;
   use crate::comm::Comm;
-  use crate::constant::{DefKind, defn_proj_constant};
+  use crate::constant::{
+    DefKind, ctor_proj_constant, defn_proj_constant, indc_proj_constant,
+  };
   use crate::metadata::{ConstantMeta, ConstantMetaInfo, ExprMeta};
   use ix_common::env::DefinitionSafety;
   use std::sync::Arc;
@@ -1463,15 +1636,39 @@ mod tests {
     let mut events: Vec<JoinProgress> = Vec::new();
     let d = diff_envs_with(&a, &b, false, &mut |p| events.push(p))
       .expect("diff_envs_with failed");
-    let last = events.last().expect("no progress events");
-    assert_eq!(last.done, last.total);
-    assert_eq!(last.total, a.named.len());
-    assert_eq!(last.changed, d.named_changed.len());
+    // `done` resets between phases — assert each phase separately.
+    let join: Vec<_> =
+      events.iter().filter(|p| p.phase == DiffPhase::NamedJoin).collect();
+    let ripple: Vec<_> =
+      events.iter().filter(|p| p.phase == DiffPhase::RippleClassify).collect();
+    let last_join = join.last().expect("no join events");
+    assert_eq!(last_join.done, last_join.total);
+    assert_eq!(last_join.total, a.named.len());
+    assert_eq!(last_join.changed, d.named_changed.len());
     assert_eq!(d.named_changed.len(), 1);
-    assert!(
-      events.windows(2).all(|w| w[0].done <= w[1].done),
-      "progress must be monotone"
+    let last_ripple = ripple.last().expect("no ripple events");
+    assert_eq!(last_ripple.done, last_ripple.total);
+    assert_eq!(last_ripple.total, d.named_changed.len());
+    assert_eq!(
+      last_ripple.changed,
+      d.named_changed.iter().filter(|c| !c.rippled).count()
     );
+    for phase_events in [&join, &ripple] {
+      assert!(
+        phase_events.windows(2).all(|w| w[0].done <= w[1].done),
+        "per-phase progress must be monotone"
+      );
+    }
+    // All ripple events come after the join completes.
+    let first_ripple = events
+      .iter()
+      .position(|p| p.phase == DiffPhase::RippleClassify)
+      .expect("no ripple events");
+    let last_join_pos = events
+      .iter()
+      .rposition(|p| p.phase == DiffPhase::NamedJoin)
+      .expect("no join events");
+    assert!(last_join_pos < first_ripple, "phases must not interleave");
   }
 
   #[test]
@@ -1503,5 +1700,463 @@ mod tests {
     let (b, _) = env1("R", &mk(Expr::var(4), true));
     let d = diff(&a, &b);
     assert_eq!(labels(&d.named_changed[0].fields), ["rules.len"]);
+  }
+
+  // ==========================================================================
+  // Ripple root-causing (pass 2)
+  // ==========================================================================
+
+  /// A defn whose value is a bare `Ref` into `refs[0] = r`.
+  fn defn_ref(typ_var: u64, r: Address) -> Constant {
+    defn_ct(
+      Expr::var(typ_var),
+      Expr::reference(0, vec![]),
+      vec![],
+      vec![r],
+      vec![],
+    )
+  }
+
+  fn changed_by_name<'d>(d: &'d EnvDiff, name: &str) -> &'d NamedChange {
+    d.named_changed
+      .iter()
+      .find(|c| c.name == name)
+      .unwrap_or_else(|| panic!("no changed row named {name}: {d:?}"))
+  }
+
+  /// Editing a leaf re-addresses the chain above it; only the leaf is a
+  /// root. Proves the single-level map composes across the DAG through
+  /// per-row verdicts.
+  #[test]
+  fn ripple_two_hop_chain() {
+    let build = |leaf_value: Arc<Expr>| {
+      let env = Env::new();
+      let leaf = defn_c(Expr::var(3), leaf_value);
+      let leaf_addr = store_canonical(&env, &leaf);
+      let mid = defn_ref(4, leaf_addr.clone());
+      let mid_addr = store_canonical(&env, &mid);
+      let top = defn_ref(5, mid_addr.clone());
+      let top_addr = store_canonical(&env, &top);
+      env.register_name(n("Leaf"), Named::with_addr(leaf_addr));
+      env.register_name(n("Mid"), Named::with_addr(mid_addr));
+      env.register_name(n("Top"), Named::with_addr(top_addr));
+      env
+    };
+    let a = build(Expr::var(0));
+    let b = build(Expr::var(1));
+    let d = diff(&a, &b);
+    assert_eq!(d.named_changed.len(), 3);
+    let leaf = changed_by_name(&d, "Leaf");
+    assert!(!leaf.rippled, "the edited leaf is the root");
+    assert_eq!(labels(&leaf.fields), ["value"]);
+    for name in ["Mid", "Top"] {
+      let c = changed_by_name(&d, name);
+      assert!(c.rippled, "{name} must be rippled: {c:?}");
+      // Strict fields are untouched by the verdict.
+      assert_eq!(labels(&c.fields), ["value"]);
+    }
+  }
+
+  /// Blob addresses never enter the quotient map: a literal edit is the
+  /// intrinsic change site.
+  #[test]
+  fn ripple_literal_change_is_root() {
+    let build = |blob: Vec<u8>| {
+      let env = Env::new();
+      let blob_addr = env.store_blob(blob);
+      let c =
+        defn_ct(Expr::var(3), Expr::nat(0), vec![], vec![blob_addr], vec![]);
+      let addr = store_canonical(&env, &c);
+      env.register_name(n("Lit"), Named::with_addr(addr));
+      env
+    };
+    let a = build(vec![42]);
+    let b = build(vec![43]);
+    let d = diff(&a, &b);
+    let c = changed_by_name(&d, "Lit");
+    assert!(!c.rippled);
+    assert_eq!(labels(&c.fields), ["value"]);
+  }
+
+  /// Block-internal ctor edit: the edited ctor's projection is the root
+  /// (block descent runs under the quotient too); the untouched sibling
+  /// ctor and any external dependent are rippled.
+  #[test]
+  fn ripple_block_ctor_edit_projections() {
+    let build = |c1_typ: Arc<Expr>| {
+      let env = Env::new();
+      let indc = Inductive {
+        is_unsafe: false,
+        lvls: 0,
+        params: 0,
+        indices: 0,
+        typ: Expr::var(3),
+        ctors: vec![
+          Constructor {
+            is_unsafe: false,
+            lvls: 0,
+            cidx: 0,
+            params: 0,
+            fields: 0,
+            typ: Expr::var(1),
+          },
+          Constructor {
+            is_unsafe: false,
+            lvls: 0,
+            cidx: 1,
+            params: 0,
+            fields: 0,
+            typ: c1_typ,
+          },
+        ],
+      };
+      let block = Constant::new(ConstantInfo::Muts(vec![MutConst::Indc(indc)]));
+      let block_addr = store_canonical(&env, &block);
+      let iprj =
+        store_canonical(&env, &indc_proj_constant(0, block_addr.clone()));
+      let c0 =
+        store_canonical(&env, &ctor_proj_constant(0, 0, block_addr.clone()));
+      let c1 = store_canonical(&env, &ctor_proj_constant(0, 1, block_addr));
+      env.register_name(n("I"), Named::with_addr(iprj.clone()));
+      env.register_name(n("I.c0"), Named::with_addr(c0));
+      env.register_name(n("I.c1"), Named::with_addr(c1));
+      // External dependent referencing the inductive's projection.
+      let dep = defn_ref(9, iprj);
+      let dep_addr = store_canonical(&env, &dep);
+      env.register_name(n("UsesI"), Named::with_addr(dep_addr));
+      env
+    };
+    let a = build(Expr::var(2));
+    let b = build(Expr::var(9));
+    let d = diff(&a, &b);
+    assert_eq!(d.named_changed.len(), 4);
+
+    let edited = changed_by_name(&d, "I.c1");
+    assert!(!edited.rippled, "edited ctor's projection is the root");
+    assert_eq!(labels(&edited.fields), ["block.ctor.type"]);
+
+    let indc_row = changed_by_name(&d, "I");
+    assert!(!indc_row.rippled, "the inductive sees its ctor's edit");
+    assert_eq!(labels(&indc_row.fields), ["block.ctors[1].type"]);
+
+    let sibling = changed_by_name(&d, "I.c0");
+    assert!(sibling.rippled, "untouched sibling ctor is rippled");
+    assert_eq!(labels(&sibling.fields), ["block-siblings"]);
+
+    let dep = changed_by_name(&d, "UsesI");
+    assert!(dep.rippled, "external dependent of the block is rippled");
+    assert_eq!(labels(&dep.fields), ["value"]);
+  }
+
+  /// The existing block-descent fixture, now with verdicts: the member
+  /// whose value changed is the root; its sibling projection rides.
+  #[test]
+  fn ripple_defn_block_sibling() {
+    let f = MutConst::Defn(mk_defn(0, Expr::var(3), Expr::var(0)));
+    let g_old = MutConst::Defn(mk_defn(0, Expr::var(3), Expr::var(1)));
+    let g_new = MutConst::Defn(mk_defn(0, Expr::var(3), Expr::var(2)));
+    let block_a = Constant::new(ConstantInfo::Muts(vec![f.clone(), g_old]));
+    let block_b = Constant::new(ConstantInfo::Muts(vec![f, g_new]));
+
+    let a = Env::new();
+    let block_a_addr = store_canonical(&a, &block_a);
+    let fa = store_canonical(&a, &defn_proj_constant(0, block_a_addr.clone()));
+    let ga = store_canonical(&a, &defn_proj_constant(1, block_a_addr));
+    a.register_name(n("M.f"), Named::with_addr(fa));
+    a.register_name(n("M.g"), Named::with_addr(ga));
+
+    let b = Env::new();
+    let block_b_addr = store_canonical(&b, &block_b);
+    let fb = store_canonical(&b, &defn_proj_constant(0, block_b_addr.clone()));
+    let gb = store_canonical(&b, &defn_proj_constant(1, block_b_addr));
+    b.register_name(n("M.f"), Named::with_addr(fb));
+    b.register_name(n("M.g"), Named::with_addr(gb));
+
+    let d = diff(&a, &b);
+    assert!(changed_by_name(&d, "M.f").rippled);
+    assert!(!changed_by_name(&d, "M.g").rippled);
+  }
+
+  /// Scalar changes are quotient-invariant → always roots.
+  #[test]
+  fn ripple_lvls_change_is_root() {
+    let (a, _) = env1(
+      "Foo",
+      &Constant::new(ConstantInfo::Defn(mk_defn(
+        0,
+        Expr::var(3),
+        Expr::var(0),
+      ))),
+    );
+    let (b, _) = env1(
+      "Foo",
+      &Constant::new(ConstantInfo::Defn(mk_defn(
+        1,
+        Expr::var(3),
+        Expr::var(0),
+      ))),
+    );
+    let d = diff(&a, &b);
+    let c = changed_by_name(&d, "Foo");
+    assert!(!c.rippled);
+    assert_eq!(labels(&c.fields), ["lvls"]);
+  }
+
+  /// Pure representation churn (strict `["encoding"]`) has no intrinsic
+  /// difference under the quotient either → rippled.
+  #[test]
+  fn ripple_pure_encoding_is_rippled() {
+    let x = Address::hash(b"X");
+    let y = Address::hash(b"Y");
+    let ca = defn_ct(
+      Expr::var(1),
+      Expr::app(Expr::reference(0, vec![]), Expr::reference(1, vec![])),
+      vec![],
+      vec![x.clone(), y.clone()],
+      vec![],
+    );
+    let cb = defn_ct(
+      Expr::var(1),
+      Expr::app(Expr::reference(1, vec![]), Expr::reference(0, vec![])),
+      vec![],
+      vec![y, x],
+      vec![],
+    );
+    let (a, _) = env1("Foo", &ca);
+    let (b, _) = env1("Foo", &cb);
+    let d = diff(&a, &b);
+    let c = changed_by_name(&d, "Foo");
+    assert_eq!(labels(&c.fields), ["encoding"]);
+    assert!(c.rippled);
+  }
+
+  /// Kind-change rows enter the map too: their dependents are rippled.
+  #[test]
+  fn ripple_kind_change_root_and_maps() {
+    let build = |axio: bool| {
+      let env = Env::new();
+      let dc: Constant = if axio {
+        Constant::new(ConstantInfo::Axio(crate::constant::Axiom {
+          is_unsafe: false,
+          lvls: 0,
+          typ: Expr::var(3),
+        }))
+      } else {
+        defn_c(Expr::var(3), Expr::var(0))
+      };
+      let d_addr = store_canonical(&env, &dc);
+      let dep = defn_ref(9, d_addr.clone());
+      let dep_addr = store_canonical(&env, &dep);
+      env.register_name(n("D"), Named::with_addr(d_addr));
+      env.register_name(n("UsesD"), Named::with_addr(dep_addr));
+      env
+    };
+    let a = build(true);
+    let b = build(false);
+    let d = diff(&a, &b);
+    let kd = changed_by_name(&d, "D");
+    assert!(!kd.rippled);
+    assert_eq!(labels(&kd.fields), ["kind"]);
+    let dep = changed_by_name(&d, "UsesD");
+    assert!(dep.rippled, "kind rows must still enter the quotient map");
+  }
+
+  /// Two names sharing one old address, diverging in the new env: the
+  /// set-valued map explains both dependents.
+  #[test]
+  fn ripple_name_split_conflict() {
+    let a = Env::new();
+    let x = defn_c(Expr::var(3), Expr::var(0));
+    let x_addr = store_canonical(&a, &x);
+    a.register_name(n("P"), Named::with_addr(x_addr.clone()));
+    a.register_name(n("Q"), Named::with_addr(x_addr.clone()));
+    let dp = defn_ref(7, x_addr.clone());
+    let dp_addr = store_canonical(&a, &dp);
+    a.register_name(n("DP"), Named::with_addr(dp_addr));
+    let dq = defn_ref(8, x_addr);
+    let dq_addr = store_canonical(&a, &dq);
+    a.register_name(n("DQ"), Named::with_addr(dq_addr));
+
+    let b = Env::new();
+    let y1 = defn_c(Expr::var(3), Expr::var(1));
+    let y1_addr = store_canonical(&b, &y1);
+    let y2 = defn_c(Expr::var(3), Expr::var(2));
+    let y2_addr = store_canonical(&b, &y2);
+    b.register_name(n("P"), Named::with_addr(y1_addr.clone()));
+    b.register_name(n("Q"), Named::with_addr(y2_addr.clone()));
+    let dp2 = defn_ref(7, y1_addr);
+    let dp2_addr = store_canonical(&b, &dp2);
+    b.register_name(n("DP"), Named::with_addr(dp2_addr));
+    let dq2 = defn_ref(8, y2_addr);
+    let dq2_addr = store_canonical(&b, &dq2);
+    b.register_name(n("DQ"), Named::with_addr(dq2_addr));
+
+    let d = diff(&a, &b);
+    assert!(!changed_by_name(&d, "P").rippled);
+    assert!(!changed_by_name(&d, "Q").rippled);
+    assert!(changed_by_name(&d, "DP").rippled);
+    assert!(changed_by_name(&d, "DQ").rippled);
+  }
+
+  /// Ref univ arguments: same args over a mapped target → rippled;
+  /// changed arg arity (induced re-elaboration) → root.
+  #[test]
+  fn ripple_ref_univ_args() {
+    let build = |leaf_value: Arc<Expr>, dep_univs: bool| {
+      let env = Env::new();
+      let leaf =
+        Constant::new(ConstantInfo::Defn(mk_defn(1, Expr::var(3), leaf_value)));
+      let leaf_addr = store_canonical(&env, &leaf);
+      let dep = if dep_univs {
+        defn_ct(
+          Expr::var(9),
+          Expr::reference(0, vec![0, 1]),
+          vec![],
+          vec![leaf_addr.clone()],
+          vec![Univ::zero(), Univ::succ(Univ::zero())],
+        )
+      } else {
+        defn_ct(
+          Expr::var(9),
+          Expr::reference(0, vec![0]),
+          vec![],
+          vec![leaf_addr.clone()],
+          vec![Univ::zero()],
+        )
+      };
+      let dep_addr = store_canonical(&env, &dep);
+      env.register_name(n("Leaf"), Named::with_addr(leaf_addr));
+      env.register_name(n("Dep"), Named::with_addr(dep_addr));
+      env
+    };
+    // Same univ args over a mapped target: rippled.
+    let a = build(Expr::var(0), false);
+    let b = build(Expr::var(1), false);
+    let d = diff(&a, &b);
+    assert!(!changed_by_name(&d, "Leaf").rippled);
+    assert!(changed_by_name(&d, "Dep").rippled);
+
+    // Univ-argument arity changed at the use site: intrinsic (induced
+    // re-elaboration) → root, even though the target maps.
+    let a = build(Expr::var(0), false);
+    let b = build(Expr::var(1), true);
+    let d = diff(&a, &b);
+    assert!(!changed_by_name(&d, "Leaf").rippled);
+    let dep = changed_by_name(&d, "Dep");
+    assert!(!dep.rippled);
+    assert_eq!(labels(&dep.fields), ["value"]);
+  }
+
+  /// A dependency renamed (removed+added) never enters the map: its
+  /// dependents verdict root — fail-safe over-report.
+  #[test]
+  fn ripple_renamed_dep_is_root() {
+    let a = Env::new();
+    let old = defn_c(Expr::var(3), Expr::var(0));
+    let old_addr = store_canonical(&a, &old);
+    a.register_name(n("OldDep"), Named::with_addr(old_addr.clone()));
+    let dep = defn_ref(9, old_addr);
+    let dep_addr = store_canonical(&a, &dep);
+    a.register_name(n("User"), Named::with_addr(dep_addr));
+
+    let b = Env::new();
+    let new = defn_c(Expr::var(3), Expr::var(1));
+    let new_addr = store_canonical(&b, &new);
+    b.register_name(n("NewDep"), Named::with_addr(new_addr.clone()));
+    let dep2 = defn_ref(9, new_addr);
+    let dep2_addr = store_canonical(&b, &dep2);
+    b.register_name(n("User"), Named::with_addr(dep2_addr));
+
+    let d = diff(&a, &b);
+    assert_eq!(d.named_removed.len(), 1);
+    assert_eq!(d.named_added.len(), 1);
+    let user = changed_by_name(&d, "User");
+    assert!(!user.rippled, "renamed dep is not in the map → root");
+  }
+
+  /// The third address site: `Expr::Prj` type targets quotient too.
+  #[test]
+  fn ripple_expr_prj_type_mapped() {
+    let build = |t_value: Arc<Expr>| {
+      let env = Env::new();
+      let t = defn_c(Expr::var(3), t_value);
+      let t_addr = store_canonical(&env, &t);
+      let dep = defn_ct(
+        Expr::var(9),
+        Expr::prj(0, 0, Expr::var(0)),
+        vec![],
+        vec![t_addr.clone()],
+        vec![],
+      );
+      let dep_addr = store_canonical(&env, &dep);
+      env.register_name(n("T"), Named::with_addr(t_addr));
+      env.register_name(n("UsesT"), Named::with_addr(dep_addr));
+      env
+    };
+    let a = build(Expr::var(0));
+    let b = build(Expr::var(1));
+    let d = diff(&a, &b);
+    assert!(!changed_by_name(&d, "T").rippled);
+    assert!(changed_by_name(&d, "UsesT").rippled);
+  }
+
+  /// Changed projection coordinates target a different member: root.
+  #[test]
+  fn ripple_cprj_cidx_change_is_root() {
+    let block_a = Constant::new(ConstantInfo::Muts(vec![MutConst::Defn(
+      mk_defn(0, Expr::var(3), Expr::var(0)),
+    )]));
+    let block_b = Constant::new(ConstantInfo::Muts(vec![MutConst::Defn(
+      mk_defn(0, Expr::var(3), Expr::var(1)),
+    )]));
+    let a = Env::new();
+    let ba = store_canonical(&a, &block_a);
+    let pa = store_canonical(&a, &ctor_proj_constant(0, 0, ba));
+    a.register_name(n("C"), Named::with_addr(pa));
+    let b = Env::new();
+    let bb = store_canonical(&b, &block_b);
+    let pb = store_canonical(&b, &ctor_proj_constant(0, 1, bb));
+    b.register_name(n("C"), Named::with_addr(pb));
+    let d = diff(&a, &b);
+    let c = changed_by_name(&d, "C");
+    assert_eq!(labels(&c.fields), ["cidx", "block"]);
+    assert!(!c.rippled);
+  }
+
+  /// Alias rows spanning one (old, new) pair share one cached verdict.
+  #[test]
+  fn ripple_alias_rows_consistent() {
+    let build = |value: Arc<Expr>| {
+      let env = Env::new();
+      let c = defn_c(Expr::var(3), value);
+      let addr = store_canonical(&env, &c);
+      env.register_name(n("P"), Named::with_addr(addr.clone()));
+      env.register_name(n("Q"), Named::with_addr(addr));
+      env
+    };
+    let a = build(Expr::var(0));
+    let b = build(Expr::var(1));
+    let d = diff(&a, &b);
+    assert_eq!(d.named_changed.len(), 2);
+    let p = changed_by_name(&d, "P");
+    let q = changed_by_name(&d, "Q");
+    assert_eq!(p.rippled, q.rippled);
+    assert!(!p.rippled);
+    assert_eq!(
+      (p.old_addr.clone(), p.new_addr.clone()),
+      (q.old_addr.clone(), q.new_addr.clone())
+    );
+  }
+
+  /// A lone changed leaf with no dependents: verdict root, and strict
+  /// fields identical to the pre-ripple behavior.
+  #[test]
+  fn ripple_single_root_no_map_hits() {
+    let (a, _) = env1("Foo", &defn_c(Expr::var(3), Expr::var(0)));
+    let (b, _) = env1("Foo", &defn_c(Expr::var(3), Expr::var(1)));
+    let d = diff(&a, &b);
+    let c = changed_by_name(&d, "Foo");
+    assert!(!c.rippled);
+    assert_eq!(labels(&c.fields), ["value"]);
   }
 }

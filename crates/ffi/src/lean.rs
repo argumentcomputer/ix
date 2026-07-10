@@ -67,7 +67,8 @@ lean_ffi::lean_inductive! {
   // consts, named, blobs, comms counts
   LeanIxonEnvStats        [ { num_64: 4 } ];
   // name, oldAddr, newAddr, oldKind, newKind, fields, metaFields
-  LeanIxonNamedDiff       [ { num_obj: 7 } ];
+  // + rippled (Bool scalar)
+  LeanIxonNamedDiff       [ { num_obj: 7, num_8: 1 } ];
   // mainChanged, assumptions±, named±/changed/metaOnly, comms±/changed,
   // constsOnly×2, blobsOnly×2, hintsChanged, statsA, statsB
   LeanIxonEnvDiff         [ { num_obj: 17 } ];

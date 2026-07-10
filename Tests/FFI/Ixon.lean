@@ -331,7 +331,31 @@ def envDiffTests : TestSeq :=
       (d.namedChanged[0]!).oldKind == "defn" &&
       (d.namedChanged[0]!).newKind == "defn" &&
       (d.namedChanged[0]!).fields == #["value"] &&
-      (d.namedChanged[0]!).metaFields.isEmpty) ++
+      (d.namedChanged[0]!).metaFields.isEmpty &&
+      (d.namedChanged[0]!).rippled == false) ++
+  -- A dependent whose only change is its ref re-addressing must marshal
+  -- `rippled == true` (pins the num_8 scalar slot against layout swaps).
+  test "EnvDiff: ripple verdict marshals"
+    (let mkRefConst (r : Address) : Constant :=
+      { info := .defn { kind := .defn, safety := .safe, lvls := 0,
+                        typ := .var 3, value := .ref 0 #[] }
+        sharing := #[], refs := #[r], univs := #[] }
+     let mkPair (leaf : Constant) : Env := Id.run do
+       let leafAddr := Address.blake3 (serConstant leaf)
+       let dep := mkRefConst leafAddr
+       let depAddr := Address.blake3 (serConstant dep)
+       let mut env : Env := {}
+       env := env.storeConst leafAddr leaf
+       env := env.storeConst depAddr dep
+       env := { env with names := RawEnv.addNameComponents env.names fooName }
+       env := env.registerName fooName { addr := leafAddr, constMeta := .empty }
+       env := { env with names := RawEnv.addNameComponents env.names barName }
+       env := env.registerName barName { addr := depAddr, constMeta := .empty }
+       return env
+     (runDiff (mkPair constA) (mkPair constB)).any fun d =>
+       d.namedChanged.size == 2 &&
+       (d.namedChanged.find? (·.name == "foo")).any (·.rippled == false) &&
+       (d.namedChanged.find? (·.name == "bar")).any (·.rippled == true)) ++
   -- Hints derive into anon §3, so a hint tweak is visible in the
   -- default anon mode; the metadata carrying it only shows under meta.
   test "EnvDiff: hint change visible in anon mode"

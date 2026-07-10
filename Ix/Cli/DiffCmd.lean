@@ -10,6 +10,14 @@
   representation moved). `--meta` additionally compares named metadata
   (`ConstantMeta`/`original`).
 
+  Every changed row carries a root-vs-rippled verdict: one edited
+  constant re-addresses its whole reverse-dependency cone, so most
+  changed rows are *rippled* (fully explained by dependency
+  re-addressing) and only the *roots* are intrinsic edits. The default
+  display lists roots and summarizes the rippled count; `--verbose`
+  lists rippled rows too, and in `--meta` mode rippled rows carrying
+  metadata edits stay visible.
+
   Exit codes (GNU diff convention): 0 = no difference found in the
   selected mode, 1 = differences found, 2 = error.
 -/
@@ -62,35 +70,49 @@ private def printNamedSection
   let removed := d.namedRemoved.filter (keep ·.1)
   let synAdded := d.namedAdded.size - added.size
   let synRemoved := d.namedRemoved.size - removed.size
+  let roots := d.namedChanged.filter (!·.rippled)
+  let rippleCount :=
+    if d.namedChanged.isEmpty then ""
+    else s!" ({roots.size} roots, {d.namedChanged.size - roots.size} rippled)"
   let metaCount :=
     if wantMeta then s!", {d.namedMetaOnly.size} metadata-only" else ""
   IO.println
-    s!"named: {d.namedAdded.size} added, {d.namedRemoved.size} removed, {d.namedChanged.size} changed{metaCount}"
+    s!"named: {d.namedAdded.size} added, {d.namedRemoved.size} removed, {d.namedChanged.size} changed{rippleCount}{metaCount}"
   if synAdded + synRemoved > 0 then
     IO.println
       s!"  (synthetic mutual-block names: {synAdded} added, {synRemoved} removed — --verbose lists)"
+  -- Changed rows shown by default: the roots, plus (under --meta)
+  -- rippled rows carrying metadata edits — `namedMetaOnly` only covers
+  -- same-addr rows, so hiding those would hide real metadata changes.
+  let shown := d.namedChanged.filter fun c =>
+    verbose || !c.rippled || (wantMeta && !c.metaFields.isEmpty)
   -- Column width over everything we are about to print.
   let mut wMax := 0
   for (n, _) in added do wMax := max wMax n.length
   for (n, _) in removed do wMax := max wMax n.length
-  for c in d.namedChanged do wMax := max wMax c.name.length
+  for c in shown do wMax := max wMax c.name.length
   for (n, _) in d.namedMetaOnly do wMax := max wMax n.length
   let w := min wMax 40
   for (n, addr) in added do
     IO.println s!"  + {pad n w}  {shortAddr verbose addr}"
   for (n, addr) in removed do
     IO.println s!"  - {pad n w}  {shortAddr verbose addr}"
-  for c in d.namedChanged do
+  for c in shown do
     let kind :=
       if c.oldKind == c.newKind then c.oldKind
       else s!"{c.oldKind}→{c.newKind}"
+    let ripTag := if c.rippled then " (rippled)" else ""
     IO.println
-      s!"  ~ {pad c.name w}  {pad kind 9}  {shortAddr verbose c.oldAddr} → {shortAddr verbose c.newAddr}  {brackets c.fields}"
+      s!"  ~ {pad c.name w}  {pad kind 9}  {shortAddr verbose c.oldAddr} → {shortAddr verbose c.newAddr}  {brackets c.fields}{ripTag}"
     if wantMeta && !c.metaFields.isEmpty then
       IO.println s!"      meta: {brackets c.metaFields}"
+  let hidden := d.namedChanged.size - shown.size
+  if hidden > 0 then
+    IO.println
+      s!"  ({hidden} rippled rows hidden — address changes fully explained by dependency re-addressing; --verbose lists)"
   for (n, labels) in d.namedMetaOnly do
     IO.println s!"  m {pad n w}  {brackets labels}"
-  if d.namedChanged.any (·.fields.contains "encoding") then
+  if shown.any (·.fields.contains "encoding") then
     IO.println
       "  (encoding = representation changed; no semantic field difference detected)"
 
@@ -175,12 +197,12 @@ end Ix.Cli.DiffCmd
 open Ix.Cli.DiffCmd in
 def diffCmd : Cli.Cmd := `[Cli|
   diff VIA runDiffCmd;
-  "Print a structured diff of two serialized Ixon environments (`.ixe`). By default only anonymous structure is compared: constants by content address (joined through names, with per-field change classification), consts/blobs sets, comms, main/assumptions, and reducibility hints. Exit codes: 0 = no difference, 1 = differences found, 2 = error."
+  "Print a structured diff of two serialized Ixon environments (`.ixe`). By default only anonymous structure is compared: constants by content address (joined through names, with per-field change classification), consts/blobs sets, comms, main/assumptions, and reducibility hints. Changed names are root-caused: rows fully explained by dependency re-addressing are counted as `rippled` and hidden by default, so the listing shows the intrinsic edits (roots). Exit codes: 0 = no difference, 1 = differences found, 2 = error."
 
   FLAGS:
     anon; "Compare only anonymous structure (the default; accepted for explicitness)."
     «meta»; "Additionally compare named metadata (binder names, originals, kv-maps)."
-    verbose; "Print full addresses, uncapped lists, and synthetic mutual-block names."
+    verbose; "Print full addresses, uncapped lists, synthetic mutual-block names, and rippled changed rows."
 
   ARGS:
     old : String; "Path to the first (old) serialized env (`.ixe`)."
