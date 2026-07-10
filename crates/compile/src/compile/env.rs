@@ -24,10 +24,6 @@
 //!   RAM to make post-compile structural reads free, which only pays
 //!   in flows that re-read the compiled env in-process (`ix check` /
 //!   `ix validate`); `ix compile` itself never reads them back.
-//!
-//! Progress telemetry (`IX_QUIET`, `IX_PROGRESS_MS`, `IX_LOG_BLOCKS`)
-//! reports RSS anon/file splits, accumulator composition, worker-kenv
-//! sizes, and lazy-env cache hit rates per decile.
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{
@@ -81,35 +77,6 @@ static IX_PROGRESS_MS: LazyLock<u64> = LazyLock::new(|| {
 /// to several GB on Mathlib-scale envs, and this cadence measures at
 /// zero wall-clock cost there.
 const KENV_CLEAR_EVERY: usize = 64;
-
-/// `(VmRSS, RssAnon, RssFile)` of this process in KiB, from
-/// `/proc/self/status`. Anonymous memory can only leave RAM via swap;
-/// file-backed RSS is reclaimable page cache — the split tells the two
-/// apart, so the instrumentation reports both.
-pub fn self_rss_kb() -> Option<(u64, u64, u64)> {
-  let status = std::fs::read_to_string("/proc/self/status").ok()?;
-  let field = |key: &str| {
-    status
-      .lines()
-      .find(|l| l.starts_with(key))
-      .and_then(|l| l.split_whitespace().nth(1))
-      .and_then(|v| v.parse::<u64>().ok())
-  };
-  Some((field("VmRSS:")?, field("RssAnon:")?, field("RssFile:")?))
-}
-
-/// Render `self_rss_kb` for the progress logs.
-pub fn rss_log_suffix() -> String {
-  match self_rss_kb() {
-    Some((vm, anon, file)) => format!(
-      " · rss {:.1} GiB (anon {:.1}, file {:.1})",
-      vm as f64 / (1024.0 * 1024.0),
-      anon as f64 / (1024.0 * 1024.0),
-      file as f64 / (1024.0 * 1024.0),
-    ),
-    None => String::new(),
-  }
-}
 
 /// Recover a short string description from a panic payload.
 fn panic_message(panic: &(dyn std::any::Any + Send)) -> String {
@@ -427,16 +394,9 @@ pub fn compile_env_with_options(
     Arc::new(Mutex::new(Vec::new()));
   let stop_progress = Arc::new(AtomicBool::new(false));
 
-  // Per-worker kenv size snapshots, refreshed by each worker at block
-  // completion and aggregated by the reporter's decile stats. One slot
-  // per worker so updates never contend.
-  let worker_kenv_sizes: Vec<Mutex<ix_kernel::env::KEnvCacheSizes>> =
-    (0..num_threads).map(|_| Mutex::new(Default::default())).collect();
-
   if !*IX_QUIET {
     eprintln!(
-      "[compile_env] starting: {total_blocks} blocks, {num_threads} workers{}",
-      rss_log_suffix(),
+      "[compile_env] starting: {total_blocks} blocks, {num_threads} workers"
     );
   }
 
@@ -451,7 +411,6 @@ pub fn compile_env_with_options(
   let condvar_ref = &work_available;
   let active_ref = &active;
   let stop_progress_ref = &stop_progress;
-  let worker_kenv_sizes_ref = &worker_kenv_sizes;
 
   thread::scope(|s| {
     // Periodic progress reporter. Wakes every IX_PROGRESS_MS to print
@@ -472,11 +431,9 @@ pub fn compile_env_with_options(
       let active_p = Arc::clone(active_ref);
       let stop_p = Arc::clone(stop_progress_ref);
       let start = compile_start;
-      let stats_stt = &stt;
       s.spawn(move || {
         let mut last_completed = 0usize;
         let mut last_print = Instant::now();
-        let mut last_stats_decile = 0usize;
         while !stop_p.load(AtomicOrdering::Relaxed) {
           thread::sleep(check_interval);
           if stop_p.load(AtomicOrdering::Relaxed) {
@@ -539,49 +496,12 @@ pub fn compile_env_with_options(
               "[compile_env] {done}/{total} ({pct:.1}%) · STALLED{suffix}"
             );
           }
-
-          // Accumulator composition once per completed decile, so runs
-          // that die before completion (OOM) still leave a growth curve
-          // in the log. O(consts) scan, ≤9 times per run.
-          let decile = if total == 0 { 0 } else { done * 10 / total };
-          if decile > last_stats_decile && done > 0 {
-            last_stats_decile = decile;
-            let acc = stats_stt.env.const_cache_stats();
-            eprintln!(
-              "[compile_env] accumulator @ {done}/{total}: {} consts · \
-               {:.1} MiB serialized bytes · {} materialized caches{}",
-              acc.entries,
-              acc.bytes as f64 / (1024.0 * 1024.0),
-              acc.materialized,
-              rss_log_suffix(),
-            );
-            // Aggregate worker kenv sizes from the per-worker snapshots
-            // (each refreshed at that worker's last block completion) —
-            // the accumulating term the consts split doesn't cover.
-            let mut consts = 0usize;
-            let mut intern_exprs = 0usize;
-            let mut ingress = 0usize;
-            let mut largest = 0usize;
-            for slot in worker_kenv_sizes_ref {
-              let s = *slot.lock().unwrap();
-              consts += s.consts;
-              intern_exprs += s.intern_exprs;
-              ingress += s.ingress;
-              largest = largest.max(s.max());
-            }
-            eprintln!(
-              "[compile_env] worker kenvs @ {done}/{total}: \
-               consts={consts} intern_exprs={intern_exprs} \
-               ingress={ingress} (largest single cache {largest})",
-            );
-          }
         }
       });
     }
 
     // Spawn worker threads
-    for (worker_id, kenv_size_slot) in worker_kenv_sizes_ref.iter().enumerate()
-    {
+    for _ in 0..num_threads {
       s.spawn(move || {
         let mut worker_kctx = crate::compile::KernelCtx::new();
         let mut worker_blocks_done = 0usize;
@@ -596,7 +516,7 @@ pub fn compile_env_with_options(
             Some((lo, all)) => {
               // Check if we should stop due to error
               if error_ref.lock().unwrap().is_some() {
-                break;
+                return;
               }
 
               // Skip if already processed (prevents double-counting from
@@ -949,22 +869,15 @@ pub fn compile_env_with_options(
               if worker_blocks_done.is_multiple_of(KENV_CLEAR_EVERY) {
                 worker_kctx.kenv.clear_releasing_memory();
               }
-
-              // Refresh this worker's kenv-size snapshot for the
-              // reporter's decile aggregate. cache_sizes() is ~20 map
-              // len() reads; the slot is uncontended except during the
-              // reporter's brief decile sweep.
-              *kenv_size_slot.lock().unwrap() =
-                worker_kctx.kenv.cache_sizes();
             },
             None => {
               // No work available - check if we're done
               if completed_ref.load(AtomicOrdering::SeqCst) == total_blocks {
-                break;
+                return;
               }
               // Check for errors
               if error_ref.lock().unwrap().is_some() {
-                break;
+                return;
               }
               // Wait for new work to become available
               let queue = ready_queue_ref.lock().unwrap();
@@ -972,23 +885,6 @@ pub fn compile_env_with_options(
                 .wait_timeout(queue, Duration::from_millis(10))
                 .unwrap();
             },
-          }
-        }
-        // Per-worker kernel env sizes at exit. The kenv persists across
-        // every block this worker compiled (nothing clears it during
-        // compilation), so these counts are the worker's whole-run
-        // accumulation — the term the accumulator split above does not
-        // cover.
-        if !*IX_QUIET {
-          let sizes = worker_kctx.kenv.cache_sizes();
-          // Workers that never populated their kenv (no aux_gen blocks
-          // landed on them) have nothing to report.
-          if sizes.max() > 0 {
-            eprintln!(
-              "[compile_env] worker {worker_id} kenv at exit: {sizes} \
-               (largest cache {})",
-              sizes.max(),
-            );
           }
         }
       });
@@ -1058,47 +954,13 @@ pub fn compile_env_with_options(
     let total_elapsed = compile_start.elapsed().as_secs_f64();
     eprintln!(
       "[compile_env] complete in {total_elapsed:.1}s · \
-       env: {} consts, {} named, {} names, {} blobs, {} comms{}",
+       env: {} consts, {} named, {} names, {} blobs, {} comms",
       stt.env.const_count(),
       stt.env.named_count(),
       stt.env.name_count(),
       stt.env.blob_count(),
       stt.env.comm_count(),
-      rss_log_suffix(),
     );
-    // Accumulator composition: how much of `env.consts` is materialized
-    // `Arc<Constant>` caches vs serialized bytes. The byte sum is the
-    // floor the accumulator would shrink to if every cache were dropped
-    // dropped.
-    let acc = stt.env.const_cache_stats();
-    let materialized_pct = if acc.entries == 0 {
-      0.0
-    } else {
-      100.0 * acc.materialized as f64 / acc.entries as f64
-    };
-    eprintln!(
-      "[compile_env] accumulator: {} consts · {:.1} MiB serialized bytes \
-       · {} materialized caches ({materialized_pct:.1}%)",
-      acc.entries,
-      acc.bytes as f64 / (1024.0 * 1024.0),
-      acc.materialized,
-    );
-    if let Some(lz) = lean_env.lazy_cache_stats() {
-      let total = lz.hits + lz.misses;
-      let hit_pct =
-        if total == 0 { 0.0 } else { 100.0 * lz.hits as f64 / total as f64 };
-      // Decode durations are summed across threads — divide by the
-      // worker count for a rough wall-clock bound.
-      eprintln!(
-        "[compile_env] lazy lean env: {} hits · {} misses \
-         ({hit_pct:.1}% hit rate) · miss decode {:.1}s · \
-         scan decode {:.1}s (thread-summed)",
-        lz.hits,
-        lz.misses,
-        lz.miss_decode.as_secs_f64(),
-        lz.iter_decode.as_secs_f64(),
-      );
-    }
   }
 
   Ok(stt)

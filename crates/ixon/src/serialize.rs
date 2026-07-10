@@ -1385,8 +1385,6 @@ impl Env {
   pub fn put_file(&self, path: &std::path::Path) -> Result<u64, String> {
     use rayon::slice::ParallelSliceMut;
     use std::io::Write;
-    let quiet = std::env::var("IX_QUIET").is_ok();
-    let overall_start = std::time::Instant::now();
     let file = std::fs::File::create(path)
       .map_err(|e| format!("Env::put_file: create {}: {e}", path.display()))?;
     let mut w = std::io::BufWriter::with_capacity(8 * 1024 * 1024, file);
@@ -1430,7 +1428,6 @@ impl Env {
 
     // Section 2: Consts — the dominant bytes; raw_bytes stream straight
     // through with no intermediate copy of the constant bodies
-    let sec_start = std::time::Instant::now();
     put_u64(const_addrs.len() as u64, &mut buf);
     for addr in &const_addrs {
       if let Some(entry) = self.consts.get(addr) {
@@ -1443,15 +1440,6 @@ impl Env {
         written += bytes.len() as u64;
       }
     }
-    if !quiet {
-      eprintln!(
-        "[Env::put_file] consts streamed: {} entries in {:.1}s \
-         ({written} bytes so far)",
-        const_addrs.len(),
-        sec_start.elapsed().as_secs_f64(),
-      );
-    }
-
     // Section 3: Names (topologically sorted; builds the name index the
     // Named section encodes through).
     let sorted_names = topological_sort_names(&self.names);
@@ -1466,7 +1454,6 @@ impl Env {
 
     // Section 4: Named — the largest per-entry section; demoted entries
     // decode and re-encode through the name index one at a time.
-    let sec_start = std::time::Instant::now();
     let mut named_keys: Vec<Name> =
       self.named.iter().map(|e| e.key().clone()).collect();
     named_keys.par_sort_unstable_by(|a, b| {
@@ -1480,15 +1467,6 @@ impl Env {
         emit!();
       }
     }
-    if !quiet {
-      eprintln!(
-        "[Env::put_file] named streamed: {} entries in {:.1}s \
-         ({written} bytes so far)",
-        named_keys.len(),
-        sec_start.elapsed().as_secs_f64(),
-      );
-    }
-
     // Section 5: Comms
     let mut comm_addrs: Vec<Address> =
       self.comms.iter().map(|e| e.key().clone()).collect();
@@ -1516,12 +1494,6 @@ impl Env {
 
     emit!();
     w.flush().map_err(|e| format!("Env::put_file: flush: {e}"))?;
-    if !quiet {
-      eprintln!(
-        "[Env::put_file] ALL DONE: {written} bytes in {:.1}s",
-        overall_start.elapsed().as_secs_f64(),
-      );
-    }
     Ok(written)
   }
 

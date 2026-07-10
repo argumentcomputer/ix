@@ -187,17 +187,6 @@ pub static DEMOTE: std::sync::LazyLock<bool> = std::sync::LazyLock::new(|| {
   std::env::var("IX_COMPILE_DEMOTE").as_deref() != Ok("0")
 });
 
-/// Composition of [`Env::consts`], from [`Env::const_cache_stats`].
-#[derive(Clone, Copy, Debug, Default)]
-pub struct ConstCacheStats {
-  /// Total entries in the consts map.
-  pub entries: usize,
-  /// Summed `raw_bytes()` length across all entries.
-  pub bytes: usize,
-  /// Entries holding a materialized `Arc<Constant>` cache.
-  pub materialized: usize,
-}
-
 /// Result of [`Env::parse_lazy_index`]: a metadata-light, zero-copy view of an
 /// `.ixe` buffer suitable for the anon/lazy check path. Constants are byte
 /// windows (offsets), `named` is `name → addr` + hint, and `blobs` are copied
@@ -407,21 +396,6 @@ impl Env {
   /// Number of constants.
   pub fn const_count(&self) -> usize {
     self.consts.len()
-  }
-
-  /// Composition of the consts map: entry count, summed serialized byte
-  /// length, and how many entries hold a materialized `Arc<Constant>`
-  /// cache (see [`LazyConstant::is_materialized`]). O(n) scan over the
-  /// map; used to split the accumulator's footprint into structured-cache
-  /// vs raw-bytes shares.
-  pub fn const_cache_stats(&self) -> ConstCacheStats {
-    let mut stats = ConstCacheStats::default();
-    for entry in self.consts.iter() {
-      stats.entries += 1;
-      stats.bytes += entry.value().raw_bytes().len();
-      stats.materialized += usize::from(entry.value().is_materialized());
-    }
-    stats
   }
 
   /// Number of named entries.

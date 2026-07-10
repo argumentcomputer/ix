@@ -1511,37 +1511,13 @@ pub struct LazyEnv {
   /// topological locality.
   shards: Vec<std::sync::Mutex<indexmap::IndexMap<Name, Arc<ConstantInfo>>>>,
   cap_per_shard: usize,
-  hits: std::sync::atomic::AtomicU64,
-  misses: std::sync::atomic::AtomicU64,
-  /// Nanoseconds spent inside `fetch` on cache misses (summed across
-  /// threads, so it can exceed wall time under parallelism).
-  miss_nanos: std::sync::atomic::AtomicU64,
-  /// Nanoseconds spent inside `fetch` during cache-bypassing `iter`
-  /// sweeps (same summed-across-threads caveat).
-  iter_nanos: std::sync::atomic::AtomicU64,
-}
-
-/// [`LazyEnv`] instrumentation counters, from [`Env::lazy_cache_stats`].
-#[cfg(not(target_arch = "riscv64"))]
-#[derive(Clone, Copy, Debug)]
-pub struct LazyEnvStats {
-  pub hits: u64,
-  pub misses: u64,
-  /// Thread-summed time inside miss decodes.
-  pub miss_decode: std::time::Duration,
-  /// Thread-summed time inside `iter` sweep decodes.
-  pub iter_decode: std::time::Duration,
-}
-
-/// Nanosecond counters saturate to `u64` (~584 years of accumulated
-/// decode time) rather than paying `u128` atomics.
-#[cfg(not(target_arch = "riscv64"))]
-fn elapsed_nanos(start: std::time::Instant) -> u64 {
-  u64::try_from(start.elapsed().as_nanos()).unwrap_or(u64::MAX)
 }
 
 #[cfg(not(target_arch = "riscv64"))]
 impl LazyEnv {
+  /// Lock-striping width: comfortably above the scheduler's worker
+  /// count (one per core) so concurrent `get`s rarely contend on a
+  /// shard mutex. Must divide 256 — `shard_for` selects by hash byte.
   const SHARDS: usize = 64;
 
   /// One hash byte picks the shard: `SHARDS` divides 256, so the
@@ -1551,42 +1527,22 @@ impl LazyEnv {
   }
 
   fn get(&self, name: &Name) -> Option<Arc<ConstantInfo>> {
-    use std::sync::atomic::Ordering;
     if !self.index.contains_key(name) {
       return None;
     }
     let shard_idx = self.shard_for(name);
     if let Some(hit) = self.shards[shard_idx].lock().unwrap().get(name) {
-      self.hits.fetch_add(1, Ordering::Relaxed);
       return Some(hit.clone());
     }
     // Decode outside the shard lock: fetches can be slow and other
     // names hashing to this shard shouldn't wait on them.
-    self.misses.fetch_add(1, Ordering::Relaxed);
-    let fetch_start = std::time::Instant::now();
-    let decoded = (self.fetch)(name);
-    self.miss_nanos.fetch_add(elapsed_nanos(fetch_start), Ordering::Relaxed);
-    let decoded = Arc::new(decoded?);
+    let decoded = Arc::new((self.fetch)(name)?);
     let mut shard = self.shards[shard_idx].lock().unwrap();
     if shard.len() >= self.cap_per_shard {
       shard.swap_remove_index(0);
     }
     shard.insert(name.clone(), decoded.clone());
     Some(decoded)
-  }
-
-  fn stats(&self) -> LazyEnvStats {
-    use std::sync::atomic::Ordering;
-    LazyEnvStats {
-      hits: self.hits.load(Ordering::Relaxed),
-      misses: self.misses.load(Ordering::Relaxed),
-      miss_decode: std::time::Duration::from_nanos(
-        self.miss_nanos.load(Ordering::Relaxed),
-      ),
-      iter_decode: std::time::Duration::from_nanos(
-        self.iter_nanos.load(Ordering::Relaxed),
-      ),
-    }
   }
 }
 
@@ -1650,24 +1606,8 @@ impl Env {
       .collect();
     Env {
       eager: FxHashMap::default(),
-      lazy: Some(LazyEnv {
-        names,
-        index,
-        fetch,
-        shards,
-        cap_per_shard,
-        hits: std::sync::atomic::AtomicU64::new(0),
-        miss_nanos: std::sync::atomic::AtomicU64::new(0),
-        iter_nanos: std::sync::atomic::AtomicU64::new(0),
-        misses: std::sync::atomic::AtomicU64::new(0),
-      }),
+      lazy: Some(LazyEnv { names, index, fetch, shards, cap_per_shard }),
     }
-  }
-
-  /// Cache hit/miss counters (lazy mode only).
-  #[cfg(not(target_arch = "riscv64"))]
-  pub fn lazy_cache_stats(&self) -> Option<LazyEnvStats> {
-    self.lazy.as_ref().map(LazyEnv::stats)
   }
 
   pub fn get(&self, name: &Name) -> Option<EnvEntry<'_>> {
@@ -1733,13 +1673,7 @@ impl Env {
     #[cfg(not(target_arch = "riscv64"))]
     if let Some(lazy) = &self.lazy {
       return Box::new(lazy.names.iter().filter_map(move |n| {
-        let fetch_start = std::time::Instant::now();
-        let decoded = (lazy.fetch)(n);
-        lazy.iter_nanos.fetch_add(
-          elapsed_nanos(fetch_start),
-          std::sync::atomic::Ordering::Relaxed,
-        );
-        decoded.map(|ci| (n, EnvEntry::Owned(Arc::new(ci))))
+        (lazy.fetch)(n).map(|ci| (n, EnvEntry::Owned(Arc::new(ci))))
       }));
     }
     Box::new(self.eager.iter().map(|(n, c)| (n, EnvEntry::Borrowed(c))))

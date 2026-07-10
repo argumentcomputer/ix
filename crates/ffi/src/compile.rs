@@ -294,19 +294,8 @@ pub extern "C" fn rs_compile_env(
   env_consts_ptr: LeanList<LeanBorrowed<'_>>,
   out_path: LeanString<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
-  let quiet = std::env::var("IX_QUIET").is_ok();
-  let rss_gib = |label: &str| {
-    if !quiet {
-      let suffix = ix_compile::compile::rss_log_suffix();
-      if !suffix.is_empty() {
-        eprintln!("[rs_compile_env] {label}{suffix}");
-      }
-    }
-  };
-  rss_gib("at entry");
   let rust_env = crate::lean_env::decode_env_for_compile(env_consts_ptr);
   let rust_env = Arc::new(rust_env);
-  rss_gib("after decode_env");
 
   let compile_stt =
     match compile_env_with_options(&rust_env, CompileOptions::default()) {
@@ -340,17 +329,12 @@ pub extern "C" fn rs_compile_env(
     );
     return LeanIOResult::error_string(&msg);
   }
-  rss_gib("after put_file");
 
-  // Skip destructors: one-shot CLI process; the OS reclaims at exit and
-  // dropping the maps costs tens of seconds at Mathlib scale.
-  if std::env::var("IX_SKIP_DROPS").ok().as_deref() != Some("0") {
-    std::mem::forget(compile_stt);
-    std::mem::forget(rust_env);
-  } else {
-    drop(compile_stt);
-    drop(rust_env);
-  }
+  // Skip destructors: the compile CLI is a one-shot process, the OS
+  // reclaims at exit, and dropping the maps costs tens of seconds at
+  // Mathlib scale.
+  std::mem::forget(compile_stt);
+  std::mem::forget(rust_env);
   LeanIOResult::ok(LeanOwned::from_nat_u64(written))
 }
 
