@@ -1082,13 +1082,20 @@ pub fn compile_env_with_options(
       acc.bytes as f64 / (1024.0 * 1024.0),
       acc.materialized,
     );
-    if let Some((hits, misses)) = lean_env.lazy_cache_stats() {
-      let total = hits + misses;
+    if let Some(lz) = lean_env.lazy_cache_stats() {
+      let total = lz.hits + lz.misses;
       let hit_pct =
-        if total == 0 { 0.0 } else { 100.0 * hits as f64 / total as f64 };
+        if total == 0 { 0.0 } else { 100.0 * lz.hits as f64 / total as f64 };
+      // Decode durations are summed across threads — divide by the
+      // worker count for a rough wall-clock bound.
       eprintln!(
-        "[compile_env] lazy lean env: {hits} hits · {misses} misses \
-         ({hit_pct:.1}% hit rate)",
+        "[compile_env] lazy lean env: {} hits · {} misses \
+         ({hit_pct:.1}% hit rate) · miss decode {:.1}s · \
+         scan decode {:.1}s (thread-summed)",
+        lz.hits,
+        lz.misses,
+        lz.miss_decode.as_secs_f64(),
+        lz.iter_decode.as_secs_f64(),
       );
     }
   }

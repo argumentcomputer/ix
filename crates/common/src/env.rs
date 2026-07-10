@@ -1513,6 +1513,24 @@ pub struct LazyEnv {
   cap_per_shard: usize,
   hits: std::sync::atomic::AtomicU64,
   misses: std::sync::atomic::AtomicU64,
+  /// Nanoseconds spent inside `fetch` on cache misses (summed across
+  /// threads, so it can exceed wall time under parallelism).
+  miss_nanos: std::sync::atomic::AtomicU64,
+  /// Nanoseconds spent inside `fetch` during cache-bypassing `iter`
+  /// sweeps (same summed-across-threads caveat).
+  iter_nanos: std::sync::atomic::AtomicU64,
+}
+
+/// [`LazyEnv`] instrumentation counters, from [`Env::lazy_cache_stats`].
+#[cfg(not(target_arch = "riscv64"))]
+#[derive(Clone, Copy, Debug)]
+pub struct LazyEnvStats {
+  pub hits: u64,
+  pub misses: u64,
+  /// Thread-summed time inside miss decodes.
+  pub miss_decode: std::time::Duration,
+  /// Thread-summed time inside `iter` sweep decodes.
+  pub iter_decode: std::time::Duration,
 }
 
 #[cfg(not(target_arch = "riscv64"))]
@@ -1538,7 +1556,12 @@ impl LazyEnv {
     // Decode outside the shard lock: fetches can be slow and other
     // names hashing to this shard shouldn't wait on them.
     self.misses.fetch_add(1, Ordering::Relaxed);
-    let decoded = Arc::new((self.fetch)(name)?);
+    let fetch_start = std::time::Instant::now();
+    let decoded = (self.fetch)(name);
+    self
+      .miss_nanos
+      .fetch_add(fetch_start.elapsed().as_nanos() as u64, Ordering::Relaxed);
+    let decoded = Arc::new(decoded?);
     let mut shard = self.shards[shard_idx].lock().unwrap();
     if shard.len() >= self.cap_per_shard {
       shard.swap_remove_index(0);
@@ -1547,10 +1570,18 @@ impl LazyEnv {
     Some(decoded)
   }
 
-  /// `(hits, misses)` counters for instrumentation.
-  fn stats(&self) -> (u64, u64) {
+  fn stats(&self) -> LazyEnvStats {
     use std::sync::atomic::Ordering;
-    (self.hits.load(Ordering::Relaxed), self.misses.load(Ordering::Relaxed))
+    LazyEnvStats {
+      hits: self.hits.load(Ordering::Relaxed),
+      misses: self.misses.load(Ordering::Relaxed),
+      miss_decode: std::time::Duration::from_nanos(
+        self.miss_nanos.load(Ordering::Relaxed),
+      ),
+      iter_decode: std::time::Duration::from_nanos(
+        self.iter_nanos.load(Ordering::Relaxed),
+      ),
+    }
   }
 }
 
@@ -1621,6 +1652,8 @@ impl Env {
         shards,
         cap_per_shard,
         hits: std::sync::atomic::AtomicU64::new(0),
+        miss_nanos: std::sync::atomic::AtomicU64::new(0),
+        iter_nanos: std::sync::atomic::AtomicU64::new(0),
         misses: std::sync::atomic::AtomicU64::new(0),
       }),
     }
@@ -1628,7 +1661,7 @@ impl Env {
 
   /// Cache hit/miss counters (lazy mode only).
   #[cfg(not(target_arch = "riscv64"))]
-  pub fn lazy_cache_stats(&self) -> Option<(u64, u64)> {
+  pub fn lazy_cache_stats(&self) -> Option<LazyEnvStats> {
     self.lazy.as_ref().map(LazyEnv::stats)
   }
 
@@ -1695,7 +1728,13 @@ impl Env {
     #[cfg(not(target_arch = "riscv64"))]
     if let Some(lazy) = &self.lazy {
       return Box::new(lazy.names.iter().filter_map(move |n| {
-        (lazy.fetch)(n).map(|ci| (n, EnvEntry::Owned(Arc::new(ci))))
+        let fetch_start = std::time::Instant::now();
+        let decoded = (lazy.fetch)(n);
+        lazy.iter_nanos.fetch_add(
+          fetch_start.elapsed().as_nanos() as u64,
+          std::sync::atomic::Ordering::Relaxed,
+        );
+        decoded.map(|ci| (n, EnvEntry::Owned(Arc::new(ci))))
       }));
     }
     Box::new(self.eager.iter().map(|(n, c)| (n, EnvEntry::Borrowed(c))))
