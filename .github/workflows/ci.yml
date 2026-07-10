@@ -8,6 +8,10 @@ on:
 
 permissions:
   contents: read
+  # The zkVM gates' `gh cache list` check (for lean-test's nataddcomm.ixe cache)
+  # needs the Actions read scope. (actions/cache/restore uses the runner's own
+  # cache token, not this.)
+  actions: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
@@ -29,6 +33,22 @@ jobs:
         run: lake lint -- --wfail -v
       - name: Check codegen'd IxVM kernel is up to date
         run: lake exe ix codegen --check
+      # Compile the `.ixe` the zkVM execution gates run the guests over:
+      # `Nat.add_comm`'s transitive-dep closure (~40 kB, ~40 constants — a real
+      # theorem, not an empty env). Seeded from `Ix.lean` (already built above)
+      # via `--consts`, so it's the constant's closure, NOT the 184 MB full
+      # Init+Std env `bench-main`'s compile job produces. Root package has no
+      # Mathlib dep, so no cache fetch. Cached for the sp1-build / zisk-build
+      # jobs, which have no Lean toolchain to compile it.
+      - name: Compile nataddcomm.ixe for zkVM execution gates
+        run: lake exe ix compile Ix.lean --consts Nat.add_comm --out nataddcomm.ixe
+      # Keyed by commit sha so every run gets a fresh entry (the .ixe is not
+      # byte-reproducible).
+      - name: Cache nataddcomm.ixe for the zkVM execution gates
+        uses: actions/cache/save@v6
+        with:
+          path: nataddcomm.ixe
+          key: nataddcomm-ixe-${{ github.sha }}
       - name: Test Ix CLI
         run: lake test --wfail -- cli
       - name: Aiur tests
@@ -63,19 +83,26 @@ jobs:
         with:
           rust-version: ${{ env.RUST_VERSION }}
 
-  # zkVM host build gate: do the Zisk/SP1 hosts (and their guest ELFs, via
-  # each workspace's build.rs) still compile? rust-test doesn't build these
-  # workspaces (special toolchains), and bench-main.yml's zkvm-execute job —
-  # which runs real executions — tolerates per-constant failures by design
-  # (dropped rows, OOM sentinels), so it never turns red on a breakage. These
-  # jobs are the red-X signal, kept cheap: build-only, no execution, and
-  # therefore no Zisk proving key (the key is loaded at runtime by
-  # `client.setup()`, never at build time — skipping it saves a ~3 GB download
-  # + const-tree regeneration per run). SP1 and Zisk build as independent jobs
-  # so they parallelize; each installs only its own toolchain via sp1up /
-  # ziskup (prebuilt binaries). The apt list inside the install actions is the
-  # shared superset both backends need (proofman's C++ links
-  # OpenMPI/OpenMP/GMP/…; SP1's host crates need pkg-config + libssl-dev).
+  # zkVM host build + execute gate: do the Zisk/SP1 hosts (and their guest
+  # ELFs, via each workspace's build.rs) still compile AND run? rust-test
+  # doesn't build these workspaces (special toolchains), and bench-main.yml's
+  # zkvm-execute job — which also runs real executions — tolerates per-constant
+  # failures by design (dropped rows, OOM sentinels), so it never turns red on
+  # a breakage. These jobs are the red-X signal: each builds its host, then
+  # runs the guest in the VM over `nataddcomm.ixe` (a ~40-constant closure the
+  # lean-test job compiles + caches). They run in parallel with lean-test, each
+  # waiting for that cache entry before its execute step. Both hosts exit
+  # non-zero when the kernel rejects a constant (sp1: EXIT_REJECTED; zisk:
+  # `reject_failures`), so a guest that compiles but panics / faults / rejects
+  # fails the job. SP1 execute is pure RISC-V emulation (no key). Zisk execute
+  # goes through `client.setup()`, which loads the circuit const-trees — so the
+  # Zisk job DOES install the fork-matching proving key (~3 GB + const-tree regen;
+  # verified against the Zisk source: `AsmCoreProver::new` requires the key at
+  # client-build time, before setup). SP1 and Zisk build as independent jobs so
+  # they parallelize; each installs only its own toolchain via sp1up / ziskup
+  # (prebuilt binaries). The apt list inside the install actions is the shared
+  # superset both backends need (proofman's C++ links OpenMPI/OpenMP/GMP/…;
+  # SP1's host crates need pkg-config + libssl-dev).
   sp1-build:
     name: SP1 host build
     runs-on: warp-ubuntu-latest-x64-16x
@@ -95,6 +122,34 @@ jobs:
           cd sp1
           cargo build --release --bin sp1-host
           cargo test --release --bin sp1-host
+      # Wait 5 minutes max for `lean-test` to upload `nataddcomm.ixe`
+      - name: Wait for the nataddcomm.ixe cache
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          key=nataddcomm-ixe-${{ github.sha }}
+          for i in $(seq 1 30); do
+            if gh cache list --key "$key" --json id | grep -q '"id"'; then
+              echo "$key is cached"; exit 0
+            fi
+            echo "waiting for $key cache ($i/30)…"; sleep 10
+          done
+          echo "::error::timed out waiting for $key cache (did lean-test fail before caching?)"
+          exit 1
+      - uses: actions/cache/restore@v6
+        with:
+          path: nataddcomm.ixe
+          key: nataddcomm-ixe-${{ github.sha }}
+          fail-on-cache-miss: true
+      # Run the guest ELF in SP1's RISC-V executor over the nataddcomm env —
+      # pure emulation, no GPU or proving key. `--execute` exits 3
+      # (EXIT_REJECTED) if the kernel rejects any constant and non-zero on any
+      # VM fault, so this reds the gate on a guest that compiles but doesn't run.
+      - name: Execute sp1-guest over the nataddcomm env
+        run: cargo run --release --bin sp1-host -- --execute --ixe ../nataddcomm.ixe
+        working-directory: sp1
+        env:
+          RUST_LOG: info
 
   zisk-build:
     name: Zisk host build
@@ -104,9 +159,11 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           cache-workspaces: zisk
+      # Proving key ON (the default): the execute step's `client.setup()` loads
+      # the circuit const-trees, and `AsmCoreProver::new` requires the key path
+      # to exist at client-build time — so an execute run needs it even though a
+      # build does not.
       - uses: ./.github/actions/install-zisk
-        with:
-          proving-key: false
       # Unit tests: the clap surface `ix bench run` drives, plus the closure auditor
       # (closure_detects_missing_dep self-skips without an IX_TEST_IXE
       # fixture — this gate has no Lean build to produce one).
@@ -115,3 +172,33 @@ jobs:
           cd zisk
           cargo build --release --bin zisk-host
           cargo test --release --bin zisk-host
+      - name: Wait for the nataddcomm.ixe cache
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          key=nataddcomm-ixe-${{ github.sha }}
+          for i in $(seq 1 30); do
+            if gh cache list --key "$key" --json id | grep -q '"id"'; then
+              echo "$key is cached"; exit 0
+            fi
+            echo "waiting for $key cache ($i/30)…"; sleep 10
+          done
+          echo "::error::timed out waiting for $key cache (did lean-test fail before caching?)"
+          exit 1
+      - uses: actions/cache/restore@v6
+        with:
+          path: nataddcomm.ixe
+          key: nataddcomm-ixe-${{ github.sha }}
+          fail-on-cache-miss: true
+      # Run the guest ELF in the Zisk VM over the nataddcomm env. `zisk-host`
+      # exits 3 (EXIT_REJECTED, via `reject_failures`) if the kernel rejects any
+      # constant and non-zero on any VM fault — so the tool errors on failures,
+      # no output parsing. The ASM executor (default) mmaps with MAP_LOCKED, so
+      # raise the memlock limit in this shell for the tool it spawns.
+      - name: Execute zisk-guest over the nataddcomm env
+        working-directory: zisk
+        env:
+          RUST_LOG: info
+        run: |
+          sudo prlimit --pid $$ --memlock=unlimited:unlimited
+          cargo run --release --bin zisk-host -- --execute --ixe ../nataddcomm.ixe
