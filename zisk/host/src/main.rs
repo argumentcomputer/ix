@@ -35,7 +35,8 @@ use anyhow::{Result, bail};
 use clap::Parser;
 use human_repr::{HumanCount, HumanThroughput};
 use ix_bench::{
-  EXIT_REJECTED, Rejection, Status, collect_consts, peak_rss_bytes, write_row,
+  EXIT_REJECTED, Rejection, Status, collect_consts, peak_rss_bytes, throughput,
+  write_row,
 };
 use ix_kernel::anon_work::{
   AnonWorkItem, block_of_addr, build_anon_work, build_sub_env, work_block_addr,
@@ -916,8 +917,7 @@ async fn run_constant(
     let cycles = result.get_execution_steps();
     println!("cycles: {cycles}, failures: {}", publics.failures);
     if let Some(path) = &args.json {
-      let tput =
-        if execute_secs > 0.0 { cycles as f64 / execute_secs } else { 0.0 };
+      let tput = throughput(cover.len(), execute_secs);
       let status =
         if publics.failures > 0 { Status::Rejected } else { Status::Ok };
       write_row(
@@ -925,7 +925,14 @@ async fn run_constant(
         name,
         status,
         serde_json::json!({
+          // Named constants certified over the checked closure — the same
+          // number the aiur row reports (anon dedup shrinks the WORK item
+          // count, but not the input set).
+          "constants": cover.len(),
           "cycles": cycles,
+          // A non-sharded execute is a single leaf: one shard, not an
+          // absent field — the compare table prints 1, not n/a.
+          "shards": 1,
           "execute-time": (execute_secs * 1e6).round() / 1e6,
           "throughput": tput.round(),
           // The execute phase's RSS high-water — the only phase this cell
@@ -978,6 +985,7 @@ async fn run_constant(
       name,
       status,
       serde_json::json!({
+        "constants": cover.len(),
         "prove-time": (leaf_ms as f64).round() / 1000.0,
         "steps": result.get_execution_steps(),
         "peak-rss": peak_rss_bytes(),
@@ -1352,11 +1360,7 @@ async fn run_shard_plan(
           .map(|s| s.to_string_lossy().into_owned())
           .unwrap_or_else(|| "env".to_string())
       });
-      let tput = if execute_secs > 0.0 {
-        total_steps as f64 / execute_secs
-      } else {
-        0.0
-      };
+      let tput = throughput(needed.len(), execute_secs);
       let status =
         if rejection.is_some() { Status::Rejected } else { Status::Ok };
       write_row(
@@ -1364,6 +1368,11 @@ async fn run_shard_plan(
         &name,
         status,
         serde_json::json!({
+          // Named constants this run answers for — the pre-shard closure
+          // count, the same number the aiur row reports. Sharding may
+          // grow the WORK (cross-ingress re-checks land in cycles), but
+          // never the input set.
+          "constants": needed.len(),
           "cycles": total_steps,
           "shards": novel.len(),
           "max-shard-cycles": max_shard_cycles,

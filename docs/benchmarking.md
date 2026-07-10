@@ -43,10 +43,11 @@ row** — an empty or quietly-partial cell can't be green.
 |---|---|
 | `run`        | run one cell: select names, ensure the `.ixe`, spawn the tool under the RAM watchdog (one process per constant on aiur/zkVM), fold each spawn's span window into its row, gate on the rows |
 | `shard`      | pre-cut the closure-shard artifacts for the env's heavy-tier constants (`ix shard extract` → `ix profile` → `ix shard`) |
-| `compare`    | two rows files → Markdown main-vs-PR table (thresholds, ratios, OOM/❌ rows, per-constant phase drop-downs) |
+| `compare`    | two rows files → Markdown main-vs-PR table (thresholds, ratios, OOM/❌ rows; per-constant phase drop-downs under `BENCH_PHASES=1`) |
 | `bmf`        | rows → Bencher Metric Format (non-`ok` rows dropped) |
 | `fetch-main` | pull a base SHA's rows from bencher.dev (exit 3 = transient, fall back to a local base run; exit 2 = config error, fail loudly) |
 | `report`     | assemble per-cell tables into one Markdown report (CI posts it as the PR comment) |
+| `plots`      | sync the bencher dashboard plots to the registry (via the bencher CLI; `--dry-run` previews) |
 | `ci matrix`  | emit the workflows' job matrices from the registry (CI adapter) |
 | `ci parse`   | `!benchmark` comment → job matrix (CI adapter; `--comment` pre-flights a comment locally) |
 
@@ -87,7 +88,7 @@ a PR tree and compare them — exactly what the PR workflow does.
 | backend | what it measures | tool |
 |---|---|---|
 | `aiur`    | Aiur STARK check, one bench-main cell per mode on its own testbed: prove — the real-workload simulation (prove-time, proof-size, verify-time, peak-rss, plus fft-cost / execute-time from its own Phase 1) — and execute, the fast Phase-1-only signal (fft-cost, execute-time, throughput, peak-rss). `!benchmark aiur [execute]` picks the mode | `bench-typecheck` |
-| `zisk`    | ZisK VM execute: cycles, execute-time, throughput, peak-rss | `zisk-host` |
+| `zisk`    | ZisK VM execute: cycles, execute-time, throughput, peak-rss, constants (pre-shard closure count, same universe as aiur's), shards (1 when unsharded) | `zisk-host` |
 | `sp1`     | SP1 VM execute (currently disabled in the registry) | `sp1-host` |
 | `ooc`     | out-of-circuit Rust kernel: whole-env row + one full-closure row per primary (`check-time` wraps only the check — the env loads once, outside every row's timed window) | `ix check-rs --json` |
 | `compile` | `ix compile <env>.lean → <env>.ixe`: compile-time, file-size, constants, throughput | `ix compile --json` |
@@ -102,7 +103,9 @@ per-constant backends run **one process per constant**, so each spawn's
 window belongs wholly to its constant: `ix bench run` folds it into the
 row as flat `phase-<span>` fields, which flow to bencher as independent
 measures (witness gen, stage commits, quotient, … each get a trend line)
-and render in the PR comment as a collapsible per-constant drill-down.
+and render as a collapsible per-constant drill-down under `BENCH_PHASES=1`
+(a `!benchmark` config line, or the env var for a local `ix bench
+compare`; off by default — the spans are noisy and dynamically named).
 
 ## RAM: watchdog, OOM rows, sharding
 
@@ -150,13 +153,21 @@ breakdowns. bench-main's compile job pre-cuts these artifacts
 ## `!benchmark` grammar
 
 ```
-!benchmark ([aiur] [zisk] [sp1] [ooc] [compile] | all) [execute]
+!benchmark ([aiur] [zisk] [sp1] [ooc] [compile] | all) [execute] [KEY=VALUE …]
 BENCH_ENVS=InitStd,Mathlib     # default InitStd (case-insensitive)
 BENCH_FULL=1                   # full curated set, not just primary
 BENCH_SHARD=1                  # only the multi-shard target constants
-RUST_LOG=info                  # passthrough env (allowlist: RUST_LOG,
-                               # WITHOUT_VK_VERIFICATION, RUSTFLAGS)
+BENCH_PHASES=1                 # add the per-constant phase drill-downs
+                               # to the comment (off by default)
+RUST_LOG=info                  # passthrough env (allowlist: BENCH_PHASES,
+                               # RUST_LOG, WITHOUT_VK_VERIFICATION, RUSTFLAGS)
 ```
+
+The `KEY=VALUE` config works both as lines below the command (the comment
+form above) and inline on the command line, whitespace-separated — the
+single-line form for `bench-pr.yml`'s manual workflow_dispatch, whose
+input box can't hold newlines:
+`!benchmark aiur execute BENCH_ENVS=InitStd,Mathlib BENCH_FULL=1`.
 
 Parsed by `ix bench ci parse` in the PR build job, right after the `ix`
 binary exists — the registry lives in Lean, so nothing pre-build reads it
@@ -172,6 +183,19 @@ SHA) → `plan` (`ix bench ci matrix` → job matrices) + `compile` (per env:
 `ix bench run … --ixe`, `ix bench bmf`, upload via
 `.github/actions/bencher-track`). A kernel rejection exits 3 and reddens the
 run step while the clean rows still upload.
+
+**Dashboard plots**: `ix bench plots` pins one plot per (testbed, measure)
+to <https://bencher.dev/console/projects/ix/plots> — main-branch trend
+lines, one per benchmark row the cell uploads, plus the cross-kernel
+input-constants overlay. Registry-derived like the job matrices (titles,
+ordering, and skips live in `Ix/Cli/BenchPlots.lean`), so rerun the sync
+after changing the registry or the primary constants — either locally
+(needs the bencher CLI and a user API key in `BENCHER_API_KEY`;
+`--dry-run` previews) or via the `bencher-plots.yml` workflow_dispatch
+(run it after bench-main has built the merged registry). Idempotent:
+matching plots are kept, stale ones replaced, hand-pinned ones untouched.
+The sync also asserts every measure's canonical units (bencher
+auto-creates measures with placeholder units on first upload).
 
 **bench-pr.yml**: `setup` (authorize the comment, resolve base/head SHAs) →
 `build` (PR binaries, cached by head SHA; ends with `ix bench ci parse` —

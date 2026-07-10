@@ -86,6 +86,19 @@ pub fn peak_rss_bytes() -> Option<u64> {
   }
 }
 
+/// Constants checked per second — the one meaning `throughput` has on
+/// every backend (a zkVM's cycle rate stays derivable from its `cycles`
+/// and `execute-time` fields). Zero when the timed window is empty.
+///
+/// The count converts through u32, the widest type with a lossless
+/// `f64::from`. A count beyond u32 (no env comes within orders of
+/// magnitude) panics rather than reporting a wrong number.
+pub fn throughput(constants: usize, secs: f64) -> f64 {
+  let constants =
+    u32::try_from(constants).expect("constant count exceeds u32::MAX");
+  if secs > 0.0 { f64::from(constants) / secs } else { 0.0 }
+}
+
 /// Write the row `{ "<name>": { "status": …, …metrics } }` into the results
 /// file at `path`, merging into any existing object (overwriting on
 /// collision) so a multi-name run accumulates one map with a row per name.

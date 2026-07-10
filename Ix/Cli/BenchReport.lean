@@ -20,6 +20,7 @@ public import Cli
 public import Lean.Data.Json
 public import Ix.Benchmark.Results
 public import Ix.Cli.BenchCmd
+public import Ix.Cli.BenchPlots
 
 public section
 
@@ -111,10 +112,10 @@ def human (v : Option Float) (metric : String) : String :=
     | _ => if v == v.round then commafy (fmtF v 0) else fmtF v 3
 
 /-- Metrics where a LARGER value is the improvement; everything else is
-    lower-is-better (times, RAM, cycles, sizes). `throughput` is reused
-    across backends with different units (consts/s on most; cycles/s on the
-    zkVM hosts) — testbeds keep the series separate, and within any one
-    table the unit is uniform. -/
+    lower-is-better (times, RAM, cycles, sizes). `throughput` means
+    constants checked per second on EVERY backend (`ix_bench::throughput`
+    is the one calculator; a zkVM's cycle rate stays derivable from its
+    cycles / execute-time fields). -/
 def higherIsBetter (metric : String) : Bool := metric == "throughput"
 
 /-! ## Row access -/
@@ -169,6 +170,10 @@ structure CompareArgs where
   metrics : Array String
   threshold : Float
   title : String
+  /-- Render the per-constant `phase-<span>` drill-downs (opt-in:
+      `BENCH_PHASES=1`) — the spans are noisy and dynamically named, so
+      the default table stays at the headline measures. -/
+  phases : Bool := false
 
 def renderCompare (a : CompareArgs) : String := Id.run do
   let names := (rowNames a.mainRows ++ rowNames a.prRows).foldl
@@ -252,32 +257,33 @@ def renderCompare (a : CompareArgs) : String := Id.run do
   else if (rowNames a.prRows).isEmpty then
     out := out.push "" |>.push
       "_⚠️ no PR-side results (see the workflow logs)._"
-  -- Per-phase drill-down: the main table above carries every constant's
-  -- high-level row; below it, each constant with `phase-<span>` fields
-  -- (aiur witness/commit/quotient breakdowns, zkVM coarse phases) gets its
-  -- own collapsed mini-table (`phase | main | PR | Δ%`), opened as
-  -- desired.
+  -- Per-phase drill-down (only under `a.phases`): the main table above
+  -- carries every constant's high-level row; below it, each constant with
+  -- `phase-<span>` fields (aiur witness/commit/quotient breakdowns, zkVM
+  -- coarse phases) gets its own collapsed mini-table
+  -- (`phase | main | PR | Δ%`), opened as desired.
   let mut detail : Array String := #[]
-  for n in names do
-    let keys := (rowPhaseKeys a.mainRows n ++ rowPhaseKeys a.prRows n).foldl
-      (fun acc k => if acc.contains k then acc else acc.push k) #[]
-    if keys.isEmpty then continue
-    detail := detail.push "" |>.push "<details>"
-      |>.push s!"<summary><code>{n}</code></summary>" |>.push ""
-      |>.push "| phase | main | PR | Δ% |" |>.push "|---|---|---|---|"
-    for k in keys.qsort (· < ·) do
-      let mv := rowNum a.mainRows n k
-      let pv := rowNum a.prRows n k
-      let delta := match mv, pv with
-        | some m, some p =>
-          if m != 0.0 then
-            let dp := (p - m) / m * 100.0
-            (if dp >= 0.0 then "+" else "") ++ fmtF dp 1 ++ "%"
-          else "n/a"
-        | _, _ => "n/a"
-      detail := detail.push
-        s!"| `{k.drop 6}` | {human mv k} | {human pv k} | {delta} |"
-    detail := detail.push "" |>.push "</details>"
+  if a.phases then
+    for n in names do
+      let keys := (rowPhaseKeys a.mainRows n ++ rowPhaseKeys a.prRows n).foldl
+        (fun acc k => if acc.contains k then acc else acc.push k) #[]
+      if keys.isEmpty then continue
+      detail := detail.push "" |>.push "<details>"
+        |>.push s!"<summary><code>{n}</code></summary>" |>.push ""
+        |>.push "| phase | main | PR | Δ% |" |>.push "|---|---|---|---|"
+      for k in keys.qsort (· < ·) do
+        let mv := rowNum a.mainRows n k
+        let pv := rowNum a.prRows n k
+        let delta := match mv, pv with
+          | some m, some p =>
+            if m != 0.0 then
+              let dp := (p - m) / m * 100.0
+              (if dp >= 0.0 then "+" else "") ++ fmtF dp 1 ++ "%"
+            else "n/a"
+          | _, _ => "n/a"
+        detail := detail.push
+          s!"| `{k.drop 6}` | {human mv k} | {human pv k} | {delta} |"
+      detail := detail.push "" |>.push "</details>"
   if !detail.isEmpty then
     out := (out.push "" |>.push "**per-phase drill-down**") ++ detail
   return "\n".intercalate out.toList
@@ -319,6 +325,7 @@ def runCompareCmd (p : Cli.Parsed) : IO UInt32 := do
     mainRows := ← readRows mainPath
     prRows := ← readRows prPath
     metrics, threshold, title
+    phases := ((← IO.getEnv "BENCH_PHASES").getD "0") == "1"
   }
   match p.flag? "out" with
   | some f => IO.FS.writeFile (f.as! String) (table ++ "\n")
@@ -583,10 +590,20 @@ def parseError (msg : String) : IO UInt32 := do
     BENCH_ENVS, rejects the command — exit 2 and a `parse-error` output):
 
       !benchmark ([aiur] [zisk] [sp1] [ooc] [compile] | all) [execute]
+                 [KEY=VALUE …]
       BENCH_ENVS=InitStd,Mathlib   (case-insensitive; default InitStd)
       BENCH_FULL=1                 (full curated set, not just primary)
       BENCH_SHARD=1                (only the multi-shard target constants)
-      RUST_LOG=… / WITHOUT_VK_VERIFICATION=… / RUSTFLAGS=…  (passthrough)
+      BENCH_PHASES=1 / RUST_LOG=… / WITHOUT_VK_VERIFICATION=… /
+      RUSTFLAGS=…                  (passthrough; BENCH_PHASES=1 adds the
+                                    per-constant phase drill-downs to the
+                                    comment)
+
+    The KEY=VALUE config may sit on its own lines below the command (the
+    comment form) or inline on the command line, whitespace-separated
+    (the single-line form — a workflow_dispatch input box can't hold
+    newlines). Inline keys parse strictly: an unknown key rejects the
+    command, like a typo'd backend.
 
     The bare `execute` token flips a backend with an execute metrics entry
     to execute-only — a real switch only for aiur, whose two modes store on
@@ -601,6 +618,11 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
   let toks := if isCmd cmd
     then (((cmd.splitOn "!benchmark")[1]!).splitOn " ").filter (· ≠ "")
     else []
+  -- `KEY=VALUE` tokens on the command line itself are the single-line
+  -- form of the config lines — the manual workflow_dispatch path, whose
+  -- input box can't hold newlines. Split them out here; they parse with
+  -- the config lines below (strictly — like any command-line token).
+  let (cfgToks, toks) := toks.partition (fun t => (t.splitOn "=").length > 1)
 
   let mut backends : Array Ix.Cli.BenchCmd.BackendSpec := #[]
   let mut skipped : Array Ix.Cli.BenchCmd.BackendSpec := #[]
@@ -628,19 +650,26 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
   if backends.isEmpty then
     backends := (Ix.Cli.BenchCmd.findBackend "aiur").toList.toArray
 
-  -- KEY=VALUE config lines below the command line.
+  -- KEY=VALUE config: the inline command-line tokens (strict — an
+  -- unknown key rejects, same as a typo'd backend), then the lines below
+  -- the command (lenient — comments contain prose, and prose contains
+  -- `=`, so only recognized keys are consulted there).
   let benchedEnvNames :=
     (Ix.Cli.BenchCmd.envSpecs.filter (·.benched)).map (·.name)
   let mut envs : Array String := #[]
   let mut shard := "0"
   let mut full := "0"
   let mut passthrough : Array String := #[]
+  let mut cfgEntries : Array (String × Bool) :=
+    (cfgToks.map ((·, true))).toArray
   let mut seenCmd := false
   for ln in lines do
     if !seenCmd then
       seenCmd := isCmd ln
       continue
-    let s := ln.trimAscii.toString
+    cfgEntries := cfgEntries.push (ln, false)
+  for (entry, strict) in cfgEntries do
+    let s := entry.trimAscii.toString
     match s.splitOn "=" with
     | key :: rest =>
       if rest.isEmpty then continue
@@ -664,8 +693,14 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
       | "BENCH_SHARD" => if val == "1" then shard := "1"
       | "BENCH_FULL" => if val == "1" then full := "1"
       | k =>
-        if ["RUST_LOG", "WITHOUT_VK_VERIFICATION", "RUSTFLAGS"].contains k then
+        if ["BENCH_PHASES", "RUST_LOG", "WITHOUT_VK_VERIFICATION",
+            "RUSTFLAGS"].contains k then
           passthrough := passthrough.push s!"{k}={val}"
+        else if strict then
+          return ← parseError s!"unknown config key `{k}` in the \
+            benchmark command (expected BENCH_ENVS / BENCH_FULL / \
+            BENCH_SHARD, or passthrough: BENCH_PHASES, RUST_LOG, \
+            WITHOUT_VK_VERIFICATION, RUSTFLAGS)"
     | [] => continue
   if envs.isEmpty then envs := #["InitStd"]
 
@@ -810,5 +845,6 @@ def benchCmd : Cli.Cmd := `[Cli|
     benchReportCmd;
     benchBmfCmd;
     benchFetchMainCmd;
+    benchPlotsCmd;
     benchCiCmd
 ]

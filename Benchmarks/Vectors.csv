@@ -21,22 +21,12 @@
 #                comment and the bench-main cells (full set via BENCH_FULL=1
 #                / --full).
 name,env,tier,shard_target,primary
-HEq,InitStd,cheap
-Nat,InitStd,cheap
 Eq.rec,InitStd,cheap
-HEq.rec,InitStd,cheap
-Trans.mk,InitStd,cheap
-Array.toList,InitStd,cheap
-Acc.rec,InitStd,cheap
-Sum.elim,InitStd,cheap
-Prod.map,InitStd,cheap
-Option.bind,InitStd,cheap
 Except.bind,InitStd,cheap
 WellFounded.fix,InitStd,cheap
-Nat.add,InitStd,cheap
 List.filterMap,InitStd,cheap
-Int.add,InitStd,cheap
 BitVec.toFin,InitStd,cheap
+Std.HashMap,InitStd,heavy
 Nat.add_comm,InitStd,cheap,0,1
 USize.toNat,InitStd,cheap
 Nat.decEq,InitStd,cheap
@@ -44,12 +34,9 @@ ByteSlice.ofByteArray,InitStd,cheap
 Nat.decLe,InitStd,cheap
 Nat.strongRecOn,InitStd,cheap
 Int.emod,InitStd,cheap
-Array.foldlM,InitStd,cheap
-Array.filter,InitStd,cheap
 Nat.sub_le_of_le_add,InitStd,cheap,0,1
 BitVec.add,InitStd,cheap
 Int.gcd,InitStd,cheap,0,1
-Nat.toDigits,InitStd,cheap
 Array.map,InitStd,cheap
 Lean.Name.hash,InitStd,cheap
 BitVec.umod,InitStd,cheap
@@ -70,9 +57,6 @@ Std.Time.Week.Offset.ofMilliseconds,InitStd,heavy
 Vector.extract_append._proof_2,InitStd,heavy,1,1
 ByteArray.utf8DecodeChar?_utf8EncodeChar_append,InitStd,heavy,0,1
 String.append,InitStd,cheap,0,1
-_private.Init.Data.Range.Polymorphic.SInt.0.Int8.instRxcHasSize_eq,InitStd,heavy,0,1
-_private.Init.Data.Range.Polymorphic.SInt.0.Int16.instRxcHasSize_eq,InitStd,heavy,0,1
-_private.Init.Data.Range.Polymorphic.SInt.0.Int32.instRxcHasSize_eq,InitStd,heavy,0,1
 _private.Init.Data.Range.Polymorphic.SInt.0.Int64.instRxcHasSize_eq,InitStd,heavy,0,1
 Char.ofOrdinal_le_of_le,InitStd,heavy,0,1
 Array.extract_append,InitStd,heavy,0,1

@@ -420,10 +420,12 @@ jobs:
         run: |
           ix bench bmf --in bench.json --out bench-bmf.json
           cat bench-bmf.json
-      # cycles / shards / max-shard-cycles are deterministic per guest ELF, but
-      # a real guest / packer improvement legitimately drops them — upper-only
-      # 0% bound (flag regressions, let wins through), like `fft-cost` on the
-      # aiur job. execute-time / peak-rss / throughput are noisy wall-clock →
+      # constants is deterministic and a drop means lost coverage → pinned
+      # (0/0), like the aiur/ooc/compile cells. cycles / shards /
+      # max-shard-cycles are deterministic per guest ELF, but a real guest /
+      # packer improvement legitimately drops them — upper-only 0% bound
+      # (flag regressions, let wins through), like `fft-cost` on the aiur
+      # job. execute-time / peak-rss / throughput are noisy wall-clock →
       # percentage bounds (throughput's regression is a drop).
       - uses: ./.github/actions/bencher-track
         if: ${{ !cancelled() && steps.bmf.outcome == 'success' }}
@@ -434,6 +436,9 @@ jobs:
           key: ${{ secrets.BENCHER_API_KEY }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           thresholds: |
+            --threshold-measure constants --threshold-test percentage
+            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0
+            --threshold-lower-boundary 0
             --threshold-measure cycles --threshold-test percentage
             --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0
             --threshold-lower-boundary _

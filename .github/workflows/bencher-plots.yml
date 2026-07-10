@@ -1,0 +1,54 @@
+name: Sync bencher dashboard plots
+
+# Manual bencher op, like bencher-thresholds-reset: `ix bench plots` syncs
+# the dashboard plots to the registry (one plot per tracked (testbed,
+# measure) plus the input-constants overlay; see Ix/Cli/BenchPlots.lean
+# for the keep/replace semantics). Dispatch it after a registry change —
+# new primary constant, measure-list edit, plot-title change — has merged
+# to main AND bench-main has run on it: the registry is compiled into the
+# `ix` binary this restores, and a brand-new constant only gets its plot
+# line once its first rows have uploaded. Idempotent, so re-running after
+# a too-early dispatch just converges.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: Preview the create/replace/keep decisions without writing
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  sync-plots:
+    # `ci matrix` is a pure-Lean subcommand and the rest is bencher API
+    # calls — cheap host is fine (same rationale as bench-main's plan job).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      # The staged binaries from bench-main's build job: this main tip's
+      # exact cache when bench-main has finished its build, else the newest
+      # available (prefix match) — whose compiled-in registry may then lag
+      # the checkout.
+      - uses: actions/cache/restore@v5
+        with:
+          path: ~/.local/bin
+          key: bench-bins-${{ github.sha }}
+          restore-keys: bench-bins-
+          fail-on-cache-miss: true
+      - run: echo "$HOME/.local/bin" >> $GITHUB_PATH
+      # Provision the toolchain so `ix` finds libleanshared (no build).
+      - uses: leanprover/lean-action@v1
+        with:
+          auto-config: false
+          build: false
+          use-github-cache: false
+      - uses: bencherdev/bencher@v0.6.8
+      # Plot create/delete needs those permissions on the ix project: a
+      # user-scoped `bencher_user_*` key (the report-upload token the bench
+      # workflows use may be run-scoped and unable to manage plots).
+      - env:
+          BENCHER_API_KEY: ${{ secrets.BENCHER_API_KEY }}
+        run: ix bench plots${{ inputs.dry-run && ' --dry-run' || '' }}
