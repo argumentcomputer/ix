@@ -203,6 +203,11 @@ pub struct LazyIndex {
   pub main: Option<Address>,
   /// Bundle trust boundary (`Env::assumptions`), in header (sorted) order.
   pub assumptions: Vec<Address>,
+  /// §3 anon_hints verbatim (file order) — the same content the full
+  /// reader puts in `Env::anon_hints`.
+  pub hints: Vec<(Address, ReducibilityHints)>,
+  /// §6 comms (tiny in practice; empty for compile-produced envs).
+  pub comms: Vec<(Address, Comm)>,
 }
 
 /// The Ixon environment.
@@ -350,6 +355,55 @@ impl Env {
     len: usize,
   ) {
     self.consts.insert(addr, LazyConstant::from_mmap_slice(mmap, offset, len));
+  }
+
+  /// Build a metadata-light `Env` from a parsed [`LazyIndex`] over
+  /// `data` — the exact buffer handed to [`Env::parse_lazy_index`]
+  /// (constant windows are copied out of it, so the result owns its
+  /// bytes). `named` entries carry empty `ConstantMeta`; everything an
+  /// anon-mode consumer needs (consts, name→addr, §3 hints, blobs,
+  /// comms, `main`, `assumptions`) is populated.
+  ///
+  /// This is the memory-lean anon loading path (e.g. `ix diff`): the
+  /// full reader materializes every `ConstantMeta`, which at mathlib
+  /// scale costs tens of GB; this path costs roughly the consts
+  /// section plus the name table. Host-only — see `store_blob`.
+  #[cfg(not(target_arch = "riscv64"))]
+  pub fn from_lazy_index(
+    index: &LazyIndex,
+    data: &[u8],
+  ) -> Result<Env, String> {
+    let mut env = Env::new();
+    for c in &index.consts {
+      let end = c
+        .offset
+        .checked_add(c.len)
+        .filter(|e| *e <= data.len())
+        .ok_or_else(|| {
+          format!(
+            "from_lazy_index: constant window [{}, +{}) out of bounds ({} bytes)",
+            c.offset,
+            c.len,
+            data.len()
+          )
+        })?;
+      env.store_const_lazy(c.addr.clone(), Arc::from(&data[c.offset..end]));
+    }
+    for n in &index.named {
+      env.register_name(n.name.clone(), Named::with_addr(n.addr.clone()));
+    }
+    for (addr, hint) in &index.hints {
+      env.anon_hints.insert(addr.clone(), *hint);
+    }
+    for (addr, bytes) in &index.blobs {
+      env.blobs.insert(addr.clone(), bytes.clone());
+    }
+    for (addr, comm) in &index.comms {
+      env.comms.insert(addr.clone(), comm.clone());
+    }
+    env.main = index.main.clone();
+    env.assumptions = index.assumptions.iter().cloned().collect();
+    Ok(env)
   }
 
   /// Get a constant by address, materializing on demand.

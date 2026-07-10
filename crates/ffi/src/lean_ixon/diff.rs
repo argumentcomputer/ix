@@ -1,13 +1,20 @@
-//! `rs_diff_envs`: parse two serialized envs with the full reader
-//! (`Env::get`, preserving `Named.original`), diff them in Rust
-//! (`ixon::diff::diff_envs`), and marshal the [`EnvDiff`] report to
-//! Lean (`Ixon.EnvDiff`).
+//! `rs_diff_envs`: parse two serialized envs, diff them in Rust
+//! (`ixon::diff`), and marshal the [`EnvDiff`] report to Lean
+//! (`Ixon.EnvDiff`).
+//!
+//! Anon mode (the default) loads via the memory-lean lazy-index path
+//! (`parse_lazy_index` + `Env::from_lazy_index` — ConstantMeta is never
+//! materialized); meta mode uses the full reader (`Env::get`,
+//! preserving `Named.meta`/`original`). Large inputs get incremental
+//! progress on stderr.
 //!
 //! Names cross the boundary pre-rendered (`Name::pretty()`) and
 //! pre-sorted; addresses cross raw so Lean owns display formatting.
 
+use std::time::Instant;
+
 use ix_common::address::Address;
-use ixon::diff::{EnvDiff, EnvStats, NamedChange, diff_envs};
+use ixon::diff::{EnvDiff, EnvStats, NamedChange, diff_envs_with};
 use ixon::env::Env as IxonEnv;
 use lean_ffi::object::{
   LeanArray, LeanBool, LeanBorrowed, LeanByteArray, LeanExcept, LeanOption,
@@ -137,18 +144,58 @@ impl LeanIxonEnvDiff<LeanOwned> {
   }
 }
 
+/// Inputs at least this large get incremental progress on stderr
+/// (`[rs_diff_envs] …` lines, matching the `[rs_compile_env]` idiom).
+/// Small inputs — unit tests, property tests, tiny bundles — stay
+/// silent.
+const PROGRESS_MIN_BYTES: usize = 100 * 1024 * 1024;
+
 /// FFI: diff two serialized envs.
 /// `(a b : ByteArray) → (meta : Bool) → Except String Ixon.EnvDiff`.
-/// Pure; both buffers are parsed with the full reader (`Env::get`).
+/// Pure result; reader choice (lazy-index vs full) follows `meta` —
+/// see the module docs. For large inputs, progress goes to stderr.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_diff_envs(
   a: LeanByteArray<LeanBorrowed<'_>>,
   b: LeanByteArray<LeanBorrowed<'_>>,
   meta: LeanBool<LeanBorrowed<'_>>,
 ) -> LeanExcept<LeanOwned> {
+  let progress = a.as_bytes().len() >= PROGRESS_MIN_BYTES
+    || b.as_bytes().len() >= PROGRESS_MIN_BYTES;
+  let want_meta = meta.to_bool();
+  // Anon mode loads via the lazy index: constant byte-windows +
+  // name→addr + §3 hints + §6 comms, never materializing ConstantMeta
+  // — at mathlib scale the full reader's metadata costs tens of GB and
+  // OOMs a 128 GB machine when two envs are held at once. Meta mode
+  // needs `Named.meta`/`original`, so it pays for the full reader.
   let parse = |bytes: &[u8], which: &str| -> Result<IxonEnv, String> {
-    let mut cursor: &[u8] = bytes;
-    IxonEnv::get(&mut cursor).map_err(|e| format!("{which} input: {e}"))
+    let reader = if want_meta { "full" } else { "anon" };
+    if progress {
+      eprintln!(
+        "[rs_diff_envs] parsing {which} env ({} MB, {reader} reader)...",
+        bytes.len() / 1_000_000
+      );
+    }
+    let t = Instant::now();
+    let env = if want_meta {
+      let mut cursor: &[u8] = bytes;
+      IxonEnv::get(&mut cursor).map_err(|e| format!("{which} input: {e}"))?
+    } else {
+      let index = IxonEnv::parse_lazy_index(bytes)
+        .map_err(|e| format!("{which} input: {e}"))?;
+      IxonEnv::from_lazy_index(&index, bytes)
+        .map_err(|e| format!("{which} input: {e}"))?
+    };
+    if progress {
+      eprintln!(
+        "[rs_diff_envs] {which} env parsed in {:.1}s ({} consts, {} named, {} blobs)",
+        t.elapsed().as_secs_f64(),
+        env.consts.len(),
+        env.named.len(),
+        env.blobs.len()
+      );
+    }
+    Ok(env)
   };
   let env_a = match parse(a.as_bytes(), "first") {
     Ok(env) => env,
@@ -158,8 +205,25 @@ pub extern "C" fn rs_diff_envs(
     Ok(env) => env,
     Err(e) => return LeanExcept::error_string(&format!("rs_diff_envs: {e}")),
   };
-  match diff_envs(&env_a, &env_b, meta.to_bool()) {
-    Ok(d) => LeanExcept::ok(LeanIxonEnvDiff::build(&d)),
+  let t = Instant::now();
+  let mut on_progress = |p: ixon::diff::JoinProgress| {
+    if progress {
+      eprintln!(
+        "[rs_diff_envs] named join: {}/{} ({} changed so far)",
+        p.done, p.total, p.changed
+      );
+    }
+  };
+  match diff_envs_with(&env_a, &env_b, want_meta, &mut on_progress) {
+    Ok(d) => {
+      if progress {
+        eprintln!(
+          "[rs_diff_envs] diff computed in {:.1}s",
+          t.elapsed().as_secs_f64()
+        );
+      }
+      LeanExcept::ok(LeanIxonEnvDiff::build(&d))
+    },
     Err(e) => LeanExcept::error_string(&format!("rs_diff_envs: {e}")),
   }
 }

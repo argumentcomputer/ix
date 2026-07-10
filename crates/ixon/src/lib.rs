@@ -32,7 +32,9 @@ pub use constant::{
   Recursor, RecursorProj, RecursorRule,
 };
 #[cfg(not(target_arch = "riscv64"))]
-pub use diff::{EnvDiff, EnvStats, NamedChange, diff_envs};
+pub use diff::{
+  EnvDiff, EnvStats, JoinProgress, NamedChange, diff_envs, diff_envs_with,
+};
 pub use env::{Env, Named};
 pub use error::{CompileError, DecompileError, SerializeError};
 pub use expr::Expr;
