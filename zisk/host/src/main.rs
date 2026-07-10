@@ -925,7 +925,14 @@ async fn run_constant(
         name,
         status,
         serde_json::json!({
+          // Named constants certified over the checked closure — the same
+          // number the aiur row reports (anon dedup shrinks the WORK item
+          // count, but not the input set).
+          "constants": cover.len(),
           "cycles": cycles,
+          // A non-sharded execute is a single leaf: one shard, not an
+          // absent field — the compare table prints 1, not n/a.
+          "shards": 1,
           "execute-time": (execute_secs * 1e6).round() / 1e6,
           "throughput": tput.round(),
           // The execute phase's RSS high-water — the only phase this cell
@@ -978,6 +985,7 @@ async fn run_constant(
       name,
       status,
       serde_json::json!({
+        "constants": cover.len(),
         "prove-time": (leaf_ms as f64).round() / 1000.0,
         "steps": result.get_execution_steps(),
         "peak-rss": peak_rss_bytes(),
@@ -1364,6 +1372,11 @@ async fn run_shard_plan(
         &name,
         status,
         serde_json::json!({
+          // Named constants this run answers for — the pre-shard closure
+          // count, the same number the aiur row reports. Sharding may
+          // grow the WORK (cross-ingress re-checks land in cycles), but
+          // never the input set.
+          "constants": needed.len(),
           "cycles": total_steps,
           "shards": novel.len(),
           "max-shard-cycles": max_shard_cycles,
