@@ -54,7 +54,7 @@ on:
         description: The !benchmark command line(s)
         required: true
 
-run-name: ${{ github.event_name == 'workflow_dispatch' && format('Benchmark PR #{0}', inputs.pr) || 'Relay benchmark comment' }}
+run-name: "${{ github.event_name == 'workflow_dispatch' && format('Benchmark PR #{0}', inputs.pr) || 'Relay benchmark comment' }}"
 
 permissions:
   contents: read
