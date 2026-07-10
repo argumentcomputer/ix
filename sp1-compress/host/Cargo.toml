@@ -1,0 +1,28 @@
+[package]
+name = "sp1-compress-host"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# `parallel` mirrors the FFI host build: multi-stark's prover parallelizes
+# under rayon. Only the host proves; the guest never enables it.
+aiur = { path = "../../crates/aiur", features = ["parallel"] }
+# Same rev as the root workspace and the guest — see guest/Cargo.toml.
+multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "2c019220cb43ce946efec6b9caf507f5a6bccd1c" }
+blake3 = "1"
+# `profiling` selects SP1's portable executor instead of the native JIT one.
+# The JIT executor runs the guest in a child process backed by /dev/shm, which
+# is capped at 63MB in this environment and SIGBUSes; the portable executor
+# has no shm dependency. It also enables the executor's cycle tracker.
+sp1-sdk = { version = "6.3.1", features = ["profiling"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"
+# Proof-size measurement: `SP1ProofWithPublicValues::bytes()` only supports
+# the onchain encodings, so Compressed sizes are measured via bincode — the
+# same encoding `.save()` writes (see ../../sp1/host/Cargo.toml).
+bincode = "1.3"
+hex = "0.4"
+
+[build-dependencies]
+sp1-build = "6.3.1"

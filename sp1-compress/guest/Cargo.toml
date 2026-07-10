@@ -1,0 +1,23 @@
+[package]
+name = "sp1-compress-guest"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# default-features = false drops `texray`, whose terminal_size dependency
+# doesn't build for the zkVM target. The verify path doesn't need it.
+aiur = { path = "../../crates/aiur", default-features = false }
+# Must stay on the exact rev the root workspace pins: the proof/vk wire
+# formats and the verifier transcript are rev-sensitive.
+multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "2c019220cb43ce946efec6b9caf507f5a6bccd1c" }
+# Digest of the verifying-key bytes committed as public values. Same hash the
+# Ix store uses for addressing, so consumers can compare against known vks.
+blake3 = "1"
+sp1-zkvm = "6.3.1"
+
+# Route Keccak-f through SP1's KECCAK_PERMUTE precompile. multi-stark's
+# Merkle/challenger hashing is Keccak-256 via p3-keccak -> tiny-keccak, and it
+# dominates the verifier's cycle count (unpatched: ~215M cycles for the demo).
+# The guest is its own workspace, so this patch must live here.
+[patch.crates-io]
+tiny-keccak = { git = "https://github.com/sp1-patches/tiny-keccak", tag = "patch-2.0.2-sp1-6.2.0" }

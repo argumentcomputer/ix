@@ -39,6 +39,7 @@ use multi_stark::{
   builder::symbolic::{Entry, SymbolicExpression, SymbolicVariable},
   lookup::{Lookup, LookupAir},
   p3_field::{PrimeCharacteristicRing, PrimeField64},
+  p3_matrix::Matrix,
   system::{Circuit, System},
   types::{Commitment, CommitmentParameters, FriParameters, Val},
 };
@@ -330,13 +331,16 @@ impl<'a> R<'a> {
     })
   }
   fn circuit(&mut self) -> Result<Circuit<AiurCircuit, Val>, String> {
-    // LookupAir: inner_air, lookups (preprocessed is prover-only -> None).
-    let air = LookupAir {
-      inner_air: self.aircircuit()?,
-      lookups: self.vec(Self::lookup)?,
-      preprocessed: None,
-    };
-    Ok(Circuit {
+    // LookupAir: inner_air, lookups. The preprocessed trace is not in the
+    // wire format, but it is NOT prover-only: `LookupAir::eval` dispatches on
+    // `preprocessed.is_some()`, so a verifier with `None` here would evaluate
+    // the gadget circuits' preprocessed-column expressions against nothing
+    // and panic. The gadget tables are deterministic functions of the inner
+    // air, so `LookupAir::new` regenerates them.
+    let inner_air = self.aircircuit()?;
+    let lookups = self.vec(Self::lookup)?;
+    let air = LookupAir::new(inner_air, lookups);
+    let circuit = Circuit {
       air,
       constraint_count: self.usize()?,
       max_constraint_degree: self.usize()?,
@@ -344,7 +348,22 @@ impl<'a> R<'a> {
       preprocessed_width: self.usize()?,
       stage_1_width: self.usize()?,
       stage_2_width: self.usize()?,
-    })
+    };
+    // The serialized dimensions must describe the regenerated table.
+    let (height, width) = circuit
+      .air
+      .preprocessed
+      .as_ref()
+      .map_or((0, 0), |m| (m.height(), m.width()));
+    if (height, width)
+      != (circuit.preprocessed_height, circuit.preprocessed_width)
+    {
+      return Err(format!(
+        "preprocessed trace is {height}x{width}, but the vk declares {}x{}",
+        circuit.preprocessed_height, circuit.preprocessed_width
+      ));
+    }
+    Ok(circuit)
   }
   fn commitment(&mut self) -> Result<Commitment, String> {
     let caps = self.vec(|r| {
@@ -404,6 +423,58 @@ pub(crate) fn from_bytes(
     preprocessed_indices,
   };
   Ok((system, commitment_parameters, fri_parameters))
+}
+
+/// A decoded Aiur verifying key: the `System` alone, without the prover-side
+/// `Toplevel`/`ProverKey` that a full [`AiurSystem`] carries.
+///
+/// This is the entrypoint for standalone verifiers (e.g. a zkVM guest that
+/// re-verifies an Aiur proof in-circuit): decode the bytes produced by
+/// [`aiur_system_to_bytes`], then [`verify`](Self::verify) a `(claim, proof)`
+/// pair against it. Keeps `AiurCircuit` out of the public API. The wire
+/// format carries the commitment and FRI parameters, so verification needs
+/// no further configuration; consumers binding the statement to specific
+/// parameters can cross-check [`fri_parameters`](Self::fri_parameters).
+pub struct AiurVerifyingKey {
+  system: System<AiurConfig, AiurCircuit>,
+  commitment_parameters: CommitmentParameters,
+  fri_parameters: FriParameters,
+}
+
+impl AiurVerifyingKey {
+  /// Decode a verifying key serialized by [`aiur_system_to_bytes`].
+  pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+    from_bytes(bytes).map(|(system, commitment_parameters, fri_parameters)| {
+      Self { system, commitment_parameters, fri_parameters }
+    })
+  }
+
+  /// Serialize back to the [`aiur_system_to_bytes`] wire format.
+  pub fn to_bytes(&self) -> Vec<u8> {
+    to_bytes(&self.system, self.commitment_parameters, self.fri_parameters)
+  }
+
+  /// The FRI parameters serialized inside the verifying key (the ones
+  /// [`verify`](Self::verify) uses).
+  pub fn fri_parameters(&self) -> FriParameters {
+    self.fri_parameters
+  }
+
+  /// The commitment parameters serialized inside the verifying key.
+  pub fn commitment_parameters(&self) -> CommitmentParameters {
+    self.commitment_parameters
+  }
+
+  pub fn verify(
+    &self,
+    claim: &[Val],
+    proof: &crate::synthesis::AiurProof,
+  ) -> Result<
+    (),
+    multi_stark::verifier::VerificationError<multi_stark::types::PcsError>,
+  > {
+    self.system.verify(claim, proof)
+  }
 }
 
 #[cfg(test)]

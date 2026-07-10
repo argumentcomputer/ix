@@ -1,0 +1,7 @@
+[workspace]
+members = ["host"]
+# `guest/` is built via `sp1-build` for the RISC-V zkVM target and only
+# compiles under the succinct toolchain; excluded so host workspace ops
+# don't pick it up. Mirrors the layout of `../sp1`.
+exclude = ["guest"]
+resolver = "2"

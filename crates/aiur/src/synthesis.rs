@@ -125,6 +125,7 @@ impl AiurSystem {
     input: &[G],
     io_buffer: &mut IOBuffer,
   ) -> (Vec<G>, AiurProof) {
+    #[cfg(feature = "texray")]
     tracing_texray::examine_current();
 
     // Execute the Aiur bytecode.
@@ -203,6 +204,7 @@ impl AiurSystem {
       &mut IOBuffer,
     ) -> Result<(QueryRecord, Vec<G>), ExecError>,
   {
+    #[cfg(feature = "texray")]
     tracing_texray::examine_current();
     let _g = tracing::info_span!("aiur/execute_ixvm").entered();
     let (query_record, output) =

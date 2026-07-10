@@ -12,11 +12,16 @@ num-bigint = { workspace = true }
 rayon = { workspace = true }
 rustc-hash = { workspace = true }
 tracing = { workspace = true }
-tracing-texray = { workspace = true }
+tracing-texray = { workspace = true, optional = true }
 
 [features]
-default = []
+# `texray` (span timing surfaced on the CLI) is default-on for host builds;
+# zkVM guests (../../sp1-compress/guest) disable default features because
+# tracing-texray's `terminal_size` dependency doesn't build for RISC-V
+# zkVM targets.
+default = ["texray"]
 parallel = ["multi-stark/parallel"]
+texray = ["dep:tracing-texray"]
 
 [lints]
 workspace = true
