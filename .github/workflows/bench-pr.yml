@@ -25,45 +25,74 @@
 # locally only when bencher can't supply them: the base SHA isn't ingested yet
 # (freshly-pushed main whose CI is still running), or the PR's Vectors.csv
 # selects constants main was never benched on (constants the PR itself adds).
+# Two-stage trigger: the issue_comment run only gates the commenter and
+# re-dispatches this same file as workflow_dispatch. GitHub classifies
+# issue_comment as a low-trust trigger with unconditionally READ-ONLY cache
+# access in the default branch's scope (anti-cache-poisoning; no token
+# permission can override it), so every cache save in a comment-triggered
+# run fails with "token has no writable scopes". workflow_dispatch is on
+# the trusted-trigger allowlist, so the dispatched run's cache saves work
+# with an ordinary read-only token. The commenter gate (org MEMBER/OWNER)
+# lives in the dispatch job; manual dispatch needs repo write access.
 name: Benchmark pull requests
 
 on:
   issue_comment:
     types: [created]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: PR number (for the result comment)
+        required: true
+      base-sha:
+        description: Full base SHA to compare against
+        required: true
+      head-sha:
+        description: Full head SHA to benchmark
+        required: true
+      comment-body:
+        description: The !benchmark command line(s)
+        required: true
+
+run-name: "${{ github.event_name == 'workflow_dispatch' && format('Benchmark PR #{0}', inputs.pr) || 'Relay benchmark comment' }}"
 
 permissions:
   contents: read
   issues: read
   pull-requests: read
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.event.issue.number }}
-  cancel-in-progress: true
-
 jobs:
-  setup:
-    name: Parse !benchmark comment
+  dispatch:
+    name: Relay !benchmark comment
     if: >-
+      github.event_name == 'issue_comment' &&
       github.event.issue.pull_request &&
       github.event.issue.state == 'open' &&
       contains(github.event.comment.body, '!benchmark') &&
       (github.event.comment.author_association == 'MEMBER' ||
        github.event.comment.author_association == 'OWNER')
     runs-on: ubuntu-latest
-    outputs:
-      base-sha: ${{ steps.shas.outputs.base }}
-      head-sha: ${{ steps.shas.outputs.head }}
+    permissions:
+      actions: write
+      pull-requests: read
     steps:
-      - uses: actions/checkout@v6
       # issue_comment doesn't carry the PR's base/head; this action looks
       # them up.
       - uses: xt0rted/pull-request-comment-branch@v3
         id: comment-branch
-      - name: Resolve base/head SHAs
-        id: shas
+      - name: Dispatch the trusted run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
         run: |
-          echo "base=${{ steps.comment-branch.outputs.base_sha }}" >> "$GITHUB_OUTPUT"
-          echo "head=${{ steps.comment-branch.outputs.head_sha }}" >> "$GITHUB_OUTPUT"
+          gh workflow run bench-pr.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref "${{ github.event.repository.default_branch }}" \
+            -f pr="${{ github.event.issue.number }}" \
+            -f base-sha="${{ steps.comment-branch.outputs.base_sha }}" \
+            -f head-sha="${{ steps.comment-branch.outputs.head_sha }}" \
+            -f comment-body="$COMMENT_BODY"
+
   # Build the PR's `ix` + `bench-typecheck` once (they embed the IxVM kernel
   # and the Aiur prover), stage under ~/.local/bin, and cache by head SHA —
   # the matrix cells restore instead of re-running the full Lean build per
@@ -76,16 +105,8 @@ jobs:
   # the freshly built `ix bench ci parse` — the registry lives in Lean, so the
   # matrix can only exist post-build.
   build:
-    needs: setup
+    if: github.event_name == 'workflow_dispatch'
     runs-on: warp-ubuntu-latest-x64-32x
-    # The cache service refuses writes from a wholly read-only token
-    # ("cache write denied: token has no writable scopes"), and this job
-    # saves the bench-bins cache — actions:write makes the token writable.
-    # Granted per-job so the workflow default stays read-only (the
-    # privileged comment job must not inherit it).
-    permissions:
-      contents: read
-      actions: write
     outputs:
       matrix: ${{ steps.parse.outputs.matrix }}
       envs: ${{ steps.parse.outputs.envs }}
@@ -93,17 +114,29 @@ jobs:
       full: ${{ steps.parse.outputs.full }}
       passthrough-env: ${{ steps.parse.outputs.passthrough-env }}
       config-summary: ${{ steps.parse.outputs.config-summary }}
+      # Set (with the step failing) when the !benchmark command was
+      # rejected; the failure comment quotes it.
+      parse-error: ${{ steps.parse.outputs.parse-error }}
     steps:
+      # Everything downstream needs this job, so malformed inputs die here
+      # (the checkout would take a bare "main" or a short SHA otherwise).
+      - name: Validate SHAs
+        env:
+          BASE: ${{ inputs.base-sha }}
+          HEAD: ${{ inputs.head-sha }}
+        run: |
+          [[ "$BASE" =~ ^[0-9a-f]{40}$ && "$HEAD" =~ ^[0-9a-f]{40}$ ]] \
+            || { echo "base-sha/head-sha must be full 40-hex SHAs" >&2; exit 1; }
       - uses: actions/checkout@v6
         with:
-          ref: ${{ needs.setup.outputs.head-sha }}
+          ref: ${{ inputs.head-sha }}
           # The job builds and runs PR code; never leave the token in .git.
           persist-credentials: false
       - id: bins
         uses: actions/cache/restore@v5
         with:
           path: ~/.local/bin
-          key: bench-bins-${{ needs.setup.outputs.head-sha }}
+          key: bench-bins-${{ inputs.head-sha }}
       - if: steps.bins.outputs.cache-hit != 'true'
         uses: actions-rust-lang/setup-rust-toolchain@v1
       # `.cargo/config.toml` sets `-Ctarget-cpu=native`; log the build CPU so a
@@ -132,14 +165,14 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: ~/.local/bin
-          key: bench-bins-${{ needs.setup.outputs.head-sha }}
+          key: bench-bins-${{ inputs.head-sha }}
       - run: echo "$HOME/.local/bin" >> $GITHUB_PATH
       # Parse the !benchmark command from an env var (never
       # inline-interpolated); unknown tokens fall off the allowlist.
       - name: Parse command
         id: parse
         env:
-          COMMENT_BODY: ${{ github.event.comment.body }}
+          COMMENT_BODY: ${{ inputs.comment-body }}
         run: ix bench ci parse
 
   # ONE measured `ix compile` per requested env, before the cells: it
@@ -148,13 +181,9 @@ jobs:
   # requesting the compile backend never compiles the env twice.
   compile:
     name: compile-${{ matrix.env }}
-    needs: [setup, build]
+    needs: build
     if: needs.build.outputs.envs != '[]'
     runs-on: warp-ubuntu-latest-x64-32x
-    # Saves the .ixe + compile-row caches (see build for why actions:write).
-    permissions:
-      contents: read
-      actions: write
     timeout-minutes: 120
     strategy:
       fail-fast: false
@@ -164,7 +193,7 @@ jobs:
       - name: Checkout PR
         uses: actions/checkout@v6
         with:
-          ref: ${{ needs.setup.outputs.head-sha }}
+          ref: ${{ inputs.head-sha }}
           # The job runs PR code; never leave the token in .git.
           persist-credentials: false
       # Re-running !benchmark on the same commit: the .ixe is already
@@ -174,14 +203,14 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ matrix.env }}.ixe
-          key: bench-pr-ixe-${{ needs.setup.outputs.head-sha }}-${{ matrix.env }}
+          key: bench-pr-ixe-${{ inputs.head-sha }}-${{ matrix.env }}
           lookup-only: true
       - name: Restore PR binaries
         if: steps.pr-ixe.outputs.cache-hit != 'true'
         uses: actions/cache/restore@v5
         with:
           path: ~/.local/bin
-          key: bench-bins-${{ needs.setup.outputs.head-sha }}
+          key: bench-bins-${{ inputs.head-sha }}
           fail-on-cache-miss: true
       - if: steps.pr-ixe.outputs.cache-hit != 'true'
         run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
@@ -202,7 +231,7 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: ${{ matrix.env }}.ixe
-          key: bench-pr-ixe-${{ needs.setup.outputs.head-sha }}-${{ matrix.env }}
+          key: bench-pr-ixe-${{ inputs.head-sha }}-${{ matrix.env }}
       # The measured row: the compile cell reuses it as its PR side (same
       # runner class, same binaries, same command it would run itself).
       - name: Publish compile row
@@ -210,18 +239,13 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: compile.json
-          key: bench-pr-row-${{ needs.setup.outputs.head-sha }}-${{ matrix.env }}
+          key: bench-pr-row-${{ inputs.head-sha }}-${{ matrix.env }}
 
   benchmark:
     # Explicit name: the default would append EVERY matrix value (backend,
     # env, mode, runner, label); the label already is the cell id.
     name: ${{ matrix.cell.label }}
-    needs: [setup, build, compile]
-    # Saves the .ixe fallback + rust-cache entries (see build for why
-    # actions:write).
-    permissions:
-      contents: read
-      actions: write
+    needs: [build, compile]
     # A compile failure stops the cells (they would just re-fail the same
     # compile lazily); the skipped case can't arise (envs is never empty)
     # but is tolerated for robustness.
@@ -239,8 +263,8 @@ jobs:
       BENV: ${{ matrix.cell.env }}
       MODE: ${{ matrix.cell.mode }}
       LABEL: ${{ matrix.cell.label }}
-      BASE_SHA: ${{ needs.setup.outputs.base-sha }}
-      HEAD_SHA: ${{ needs.setup.outputs.head-sha }}
+      BASE_SHA: ${{ inputs.base-sha }}
+      HEAD_SHA: ${{ inputs.head-sha }}
       SHARD: ${{ needs.build.outputs.shard }}
       FULL: ${{ needs.build.outputs.full }}
     steps:
@@ -553,12 +577,12 @@ jobs:
   # PR-built `ix bench report`), so it must never share a job with the App
   # token — the posting job below only downloads the finished body as an
   # artifact and never touches PR code (CodeQL: untrusted checkout /
-  # execution in a privileged issue_comment workflow).
+  # execution in a privileged workflow).
   assemble:
-    needs: [setup, build, benchmark]
+    needs: [build, benchmark]
     # Assemble even when benchmark cells failed (the tables carry the ❌
     # rows); the build job must have produced the binaries.
-    if: always() && needs.setup.result == 'success' && needs.build.result == 'success'
+    if: always() && needs.build.result == 'success'
     # `bench report` is a pure-Lean subcommand (AVX-512 lives only in the
     # binary's Rust objects, which it never executes) — cheap host is fine.
     # Move to a warp host if `ix` startup or this subcommand ever touches
@@ -569,12 +593,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ needs.setup.outputs.head-sha }}
+          ref: ${{ inputs.head-sha }}
           persist-credentials: false
       - uses: actions/cache/restore@v5
         with:
           path: ~/.local/bin
-          key: bench-bins-${{ needs.setup.outputs.head-sha }}
+          key: bench-bins-${{ inputs.head-sha }}
           fail-on-cache-miss: true
       - run: echo "$HOME/.local/bin" >> $GITHUB_PATH
       # Provision the toolchain so `ix` finds libleanshared (no package build).
@@ -592,7 +616,7 @@ jobs:
       - name: Build comment body
         env:
           SUMMARY: ${{ needs.build.outputs.config-summary }}
-          HEAD_SHA: ${{ needs.setup.outputs.head-sha }}
+          HEAD_SHA: ${{ inputs.head-sha }}
         run: |
           mkdir -p tables   # absent when no cell uploaded a table
           ix bench report \
@@ -605,18 +629,43 @@ jobs:
           name: comment-body
           path: comment-body.md
 
-  # Post the assembled body. This is the ONLY job with access to the App
-  # token, and it runs no checkout and no repo-derived code — just an
-  # artifact download and two actions.
+  # Post the assembled body — or a red-X diagnostic when any stage failed
+  # (a rejected command or broken run must never end in silence on the
+  # PR). This is the ONLY job with access to the App token, and it runs
+  # no checkout and no repo-derived code — just an artifact download and
+  # two actions.
   comment:
-    needs: [setup, assemble]
-    if: always() && needs.assemble.result == 'success'
+    needs: [build, compile, benchmark, assemble]
+    if: always() && github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Download comment body
+        if: needs.assemble.result == 'success'
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           name: comment-body
+      # Any failed stage prepends a red-X header (quoting the parse error
+      # when that's the cause) to the report — or replaces it when
+      # assemble produced none. A rejection-reddened cell still shows its
+      # tables below the header.
+      - name: Note failures
+        if: contains(needs.*.result, 'failure') || needs.assemble.result != 'success'
+        env:
+          PARSE_ERROR: ${{ needs.build.outputs.parse-error }}
+        run: |
+          {
+            echo "## ❌ benchmark run failed"
+            if [ -n "$PARSE_ERROR" ]; then
+              echo
+              echo "> $PARSE_ERROR"
+            fi
+            echo
+            if [ -f comment-body.md ]; then cat comment-body.md; fi
+            echo
+            echo "[Workflow logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+          } > body-with-header.md
+          mv body-with-header.md comment-body.md
       - name: Generate token to write PR comment
         id: app-token
         uses: actions/create-github-app-token@v3
@@ -629,5 +678,5 @@ jobs:
         uses: peter-evans/create-or-update-comment@v5
         with:
           token: ${{ steps.app-token.outputs.token }}
-          issue-number: ${{ github.event.issue.number }}
+          issue-number: ${{ inputs.pr }}
           body-path: comment-body.md

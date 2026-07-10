@@ -556,6 +556,17 @@ def runMatrixCmd (p : Cli.Parsed) : IO UInt32 := do
     the workflows' job matrices, meaningless locally. -/
 def ciRunner : String := "warp-ubuntu-latest-x64-32x"
 
+/-- Reject the `!benchmark` command: stderr for the log, and a
+    `parse-error` step output so the workflow's failure comment can quote
+    the reason instead of pointing at the run log. Exit 2 (usage). -/
+def parseError (msg : String) : IO UInt32 := do
+  IO.eprintln s!"error: {msg}"
+  if let some outPath := ← IO.getEnv "GITHUB_OUTPUT" then
+    let h ← IO.FS.Handle.mk outPath IO.FS.Mode.append
+    h.putStr s!"parse-error={msg}\n"
+    h.flush
+  return 2
+
 /-- Parse a `!benchmark` command into the cells it schedules — locally a
     dry-run preview (`ix bench ci parse --comment "!benchmark aiur"` prints
     the summary and cell list), in CI the matrix generator. The text comes
@@ -564,7 +575,8 @@ def ciRunner : String := "warp-ubuntu-latest-x64-32x"
     `$GITHUB_OUTPUT` is set, the machine outputs (matrix, flags, summary,
     passthrough env) are appended there in Actions format.
 
-    Grammar (unknown tokens fall off the allowlist):
+    Grammar (an unknown command-line token, or an unknown/unbenched env in
+    BENCH_ENVS, rejects the command — exit 2 and a `parse-error` output):
 
       !benchmark ([aiur] [zisk] [sp1] [ooc] [compile] | all) [execute]
       BENCH_ENVS=InitStd,Mathlib   (case-insensitive; default InitStd)
@@ -590,19 +602,31 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
   let mut skipped : Array Ix.Cli.BenchCmd.BackendSpec := #[]
   let mut executeFlag := false
   for t in toks.map (·.toLower) do
+    if t == "execute" then
+      executeFlag := true
+      continue
     let requested := if t == "all"
       then Ix.Cli.BenchCmd.backendSpecs
       else (Ix.Cli.BenchCmd.findBackend t).toList
+    -- Everything after `!benchmark` on the command line must parse: a
+    -- typo'd backend silently running the default would report numbers
+    -- the commenter never asked for.
+    if requested.isEmpty then
+      return ← parseError s!"unknown token `{t}` in the benchmark command \
+        (expected a backend — \
+        {", ".intercalate (Ix.Cli.BenchCmd.backendSpecs.map (·.name))} — \
+        or `all` / `execute`)"
     for b in requested do
       if b.disabled.isSome then
         if skipped.all (·.name != b.name) then skipped := skipped.push b
       else if backends.all (·.name != b.name) then
         backends := backends.push b
-    if t == "execute" then executeFlag := true
   if backends.isEmpty then
     backends := (Ix.Cli.BenchCmd.findBackend "aiur").toList.toArray
 
   -- KEY=VALUE config lines below the command line.
+  let benchedEnvNames :=
+    (Ix.Cli.BenchCmd.envSpecs.filter (·.benched)).map (·.name)
   let mut envs : Array String := #[]
   let mut shard := "0"
   let mut full := "0"
@@ -619,10 +643,20 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
       let val := "=".intercalate rest |>.trimAscii.toString
       match key.trimAscii.toString with
       | "BENCH_ENVS" =>
+        -- A recognized key makes intent unambiguous, so its VALUE must
+        -- parse fully too (unknown bare keys stay ignored — comments
+        -- contain prose, and prose contains `=`).
         for tok in val.splitOn "," do
-          if let some e := Ix.Cli.BenchCmd.findEnv tok.trimAscii.toString then
-            if e.benched && !envs.contains e.name then
-              envs := envs.push e.name
+          let tok := tok.trimAscii.toString
+          match Ix.Cli.BenchCmd.findEnv tok with
+          | some e =>
+            if !e.benched then
+              return ← parseError s!"env `{e.name}` is not benched in CI \
+                (benched: {", ".intercalate benchedEnvNames})"
+            if !envs.contains e.name then envs := envs.push e.name
+          | none =>
+            return ← parseError s!"unknown env `{tok}` in BENCH_ENVS \
+              (benched: {", ".intercalate benchedEnvNames})"
       | "BENCH_SHARD" => if val == "1" then shard := "1"
       | "BENCH_FULL" => if val == "1" then full := "1"
       | k =>
