@@ -313,11 +313,13 @@ jobs:
           mv ~/.local/bin/ix ~/.local/bin/bench-typecheck .lake/build/bin/
           echo "$PWD/.lake/build/bin" >> "$GITHUB_PATH"
       # Toolchain provisioning only (no package build, no mathlib cache):
-      # the restored binaries link against the toolchain's libleanshared,
-      # and the env `.ixe` comes from the compile job. (The lazy in-cell
-      # compile fallback therefore can't rebuild the Mathlib env — its
-      # oleans live in the Benchmarks/Compile subpackage, provisioned only
-      # by the compile job — and fails loudly instead.)
+      # the restored binaries link against the toolchain's libleanshared.
+      # Cells never compile an env: the `.ixe` and the compile row come
+      # from the compile job, and their restores fail on a miss — both
+      # were published moments ago in this same run, so a miss is an
+      # infrastructure failure, not something to recompile around (and an
+      # in-cell compile couldn't rebuild the Mathlib env anyway: its
+      # oleans live only in the compile job's subpackage provisioning).
       - name: Provision Lean toolchain
         uses: leanprover/lean-action@v1
         with:
@@ -329,19 +331,19 @@ jobs:
       # the compile job published it; cells pass it via `--ixe` instead of
       # recompiling.
       - name: Restore PR .ixe
-        id: pr-ixe
         uses: actions/cache/restore@v5
         with:
           path: ${{ matrix.cell.env }}.ixe
           key: bench-pr-ixe-${{ env.HEAD_SHA }}-${{ matrix.cell.env }}
-      # Compile cells reuse the compile job's measured row as their PR side
-      # (a miss just means this cell compiles and measures itself).
+          fail-on-cache-miss: true
+      # Compile cells reuse the compile job's measured row as their PR side.
       - name: Restore compile row
         if: matrix.cell.backend == 'compile'
         uses: actions/cache/restore@v5
         with:
           path: compile.json
           key: bench-pr-row-${{ env.HEAD_SHA }}-${{ matrix.cell.env }}
+          fail-on-cache-miss: true
       # zkVM cells additionally need the Rust toolchain + the backend's toolchain
       # and system deps (the shared composite install actions).
       - name: Set up zkVM Rust toolchain
@@ -375,7 +377,7 @@ jobs:
             # hard limit in this shell so the spawned tools inherit it.
             sudo prlimit --pid $$ --memlock=unlimited:unlimited
           fi
-          if [ "$BACKEND" = compile ] && [ -f "$GITHUB_WORKSPACE/compile.json" ]; then
+          if [ "$BACKEND" = compile ]; then
             # The compile job already measured this env's compile (same
             # runner class, binaries, and command) — reuse its row instead
             # of compiling a second time.
@@ -385,21 +387,8 @@ jobs:
           flags=""
           [ "$FULL" = 1 ] && flags="$flags --full"
           [ "$SHARD" = 1 ] && flags="$flags --shard-only"
-          # The compile job published the .ixe; if it is somehow absent,
-          # ix bench run compiles it fresh (no flag).
-          [ -f "$BENV.ixe" ] && flags="$flags --ixe $BENV.ixe"
           ix bench run --backend "$BACKEND" --env "$BENV" --mode "$MODE" \
-            --out "$GITHUB_WORKSPACE/pr.json" $flags
-      # First cell to compile the PR env publishes it for the others (racing
-      # saves are fine — the first wins, the rest fail gracefully). hashFiles
-      # guard: the run step is continue-on-error, so it may have died before
-      # producing the `.ixe` — saving a missing path would fail this step.
-      - name: Save PR .ixe
-        if: steps.pr-ixe.outputs.cache-hit != 'true' && hashFiles(format('{0}.ixe', matrix.cell.env)) != ''
-        uses: actions/cache/save@v5
-        with:
-          path: ${{ matrix.cell.env }}.ixe
-          key: bench-pr-ixe-${{ env.HEAD_SHA }}-${{ matrix.cell.env }}
+            --ixe "$BENV.ixe" --out "$GITHUB_WORKSPACE/pr.json" $flags
 
       # ---------- main side ----------
       # Try bencher.dev first (bench-main.yml has uploaded main's numbers).
