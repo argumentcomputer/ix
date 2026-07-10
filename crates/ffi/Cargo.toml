@@ -56,6 +56,10 @@ parallel = ["aiur/parallel"]
 test-ffi = []
 net = ["bytes", "tokio", "iroh", "iroh-base", "n0-error", "getrandom", "bincode", "serde"]
 sp1 = ["dep:sp1-compress-host"]
+# GPU proving (runtime-selected with SP1_PROVER=cuda). Lake: IX_SP1_CUDA=1.
+sp1-cuda = ["sp1", "sp1-compress-host/cuda"]
+# Portable executor for tiny-/dev/shm environments. Lake: IX_SP1_PORTABLE=1.
+sp1-portable = ["sp1", "sp1-compress-host/portable"]
 
 [lints]
 workspace = true

@@ -156,7 +156,12 @@ pub fn run_sp1_blocking(
   mode: Mode,
   output: Option<&Path>,
 ) -> Result<()> {
-  tokio::runtime::Runtime::new()
-    .context("tokio runtime")?
-    .block_on(run_sp1(vk_bytes, claim_bytes, proof_bytes, fri, mode, output))
+  tokio::runtime::Runtime::new().context("tokio runtime")?.block_on(run_sp1(
+    vk_bytes,
+    claim_bytes,
+    proof_bytes,
+    fri,
+    mode,
+    output,
+  ))
 }
