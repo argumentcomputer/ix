@@ -247,7 +247,7 @@ def slugify (s : String) : String :=
   -- Collapse runs so `a__b` and `a_b` can't alias two spellings apart.
   let folded := dashed.foldl (init := []) fun acc c =>
     if c == '-' && acc.head? == some '-' then acc else c :: acc
-  String.mk folded.reverse
+  String.ofList folded.reverse
 
 /-- Fold a spawn's texray window (`<out>.spans`) into its constant's row as
     flat `phase-<span>` fields — the aiur prover's tracing spans and the
