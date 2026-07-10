@@ -635,8 +635,21 @@ private def emitUncBigUintDivMod (out : Nat) (a b : ValIdx) : Array RustStmt :=
     declVal (out + 1) (.field (.var "__bu_qr") "1")
   ]
 
-/-- `Op::Debug`: 0 outputs; println side effect. Skipped for now. -/
-private def emitDebug : Array RustStmt := #[]
+/-- `Op::Debug`: 0 outputs; println side effect, mirroring the bytecode
+    interpreter's `Op::Debug` arm (crates/aiur/src/execute.rs). Production
+    kernels contain no `dbg!`, so this emits nothing there; when probing
+    with `dbg!` it makes the (much faster) codegen kernel print the same
+    lines as `--interp bytecode`. -/
+private def emitDebug (label : String) (args : Option (Array ValIdx)) : Array RustStmt :=
+  -- Escape the label for use inside a Rust format-string literal.
+  let esc := label.replace "\\" "\\\\" |>.replace "\"" "\\\""
+    |>.replace "{" "{{" |>.replace "}" "}}"
+  match args with
+  | none => #[.exprStmt (.lit s!"println!(\"{esc}\")")]
+  | some idxs =>
+    let holes := String.intercalate ", " (idxs.map (fun _ => "{}")).toList
+    let vals := String.intercalate ", " (idxs.map (s!"__v_{·}")).toList
+    #[.exprStmt (.lit s!"println!(\"{esc}: {holes}\", {vals})")]
 
 /-- Top-level op dispatch. `out` = the first ValIdx for outputs;
     callers must advance their counter by `Op.outputCount`. -/
@@ -670,7 +683,7 @@ def emitOp (out : Nat) (op : Op) : Array RustStmt :=
   | .u32LessThan a b => emitU32LessThan out a b
   | .u8RangeCheck i j => emitU8RangeCheck i j
   | .unconstrainedBigUintDivMod a b => emitUncBigUintDivMod out a b
-  | .debug _ _ => emitDebug
+  | .debug label args => emitDebug label args
 
 /-! ## Ctrl emission -/
 
