@@ -54,6 +54,7 @@
 //! prefixed) churn as one removed+added pair per changed block; display
 //! layers may group them.
 
+use std::cmp::Ordering;
 use std::sync::Arc;
 
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -65,8 +66,9 @@ use super::constant::{
   Constant, ConstantInfo, Constructor, Definition, Inductive, MutConst,
   Recursor,
 };
-use super::env::{Env, Named};
+use super::env::{Env, LazyIndex, Named};
 use super::expr::Expr;
+use super::serialize::NamedMetaCursor;
 use super::univ::Univ;
 
 /// Per-env entity counts, reported for both inputs so display layers can
@@ -829,13 +831,11 @@ fn classify_named_change(
   name: &Name,
   na: &Named,
   nb: &Named,
-  meta: bool,
+  meta_fields: Vec<String>,
 ) -> Result<NamedChange, String> {
   let ca = materialize_const(env_a, &na.addr, name, "first")?;
   let cb = materialize_const(env_b, &nb.addr, name, "second")?;
   let fields = classify_constants(env_a, &ca, env_b, &cb, None)?;
-  let meta_fields =
-    if meta { meta_component_labels(na, nb) } else { Vec::new() };
   Ok(NamedChange {
     name: name.pretty(),
     old_addr: na.addr.clone(),
@@ -871,6 +871,9 @@ fn sort_by_name<T>(v: &mut [(String, Name, T)]) {
 /// Which diff pass a [`JoinProgress`] event reports.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DiffPhase {
+  /// Meta mode only, before the join: the streaming §5 metadata sweep
+  /// (lockstep merge-join of both files' named sections).
+  MetaSweep,
   /// Pass 1: the named join (change detection + strict classification).
   NamedJoin,
   /// Pass 2: re-classification of changed rows under the ripple
@@ -878,25 +881,25 @@ pub enum DiffPhase {
   RippleClassify,
 }
 
-/// Coarse progress for the two passes whose cost scales with the number
-/// of *changed* names (each one materializes two constants and walks
-/// their expressions). Parses happen before [`diff_envs`] and are the
-/// caller's to report.
+/// Coarse progress for the passes whose cost scales with entry counts.
+/// Parses happen before [`diff_envs`] and are the caller's to report.
 #[derive(Clone, Copy, Debug)]
 pub struct JoinProgress {
   /// The pass this event reports. `done` counts reset between phases.
   pub phase: DiffPhase,
+  /// [`DiffPhase::MetaSweep`]: §5 entries merged (max of both sides).
   /// [`DiffPhase::NamedJoin`]: first-env named entries processed.
   /// [`DiffPhase::RippleClassify`]: changed rows verdicted.
   pub done: usize,
   /// Total entries of the reporting phase.
   pub total: usize,
+  /// [`DiffPhase::MetaSweep`]: names with differing metadata so far.
   /// [`DiffPhase::NamedJoin`]: changed names classified so far.
   /// [`DiffPhase::RippleClassify`]: roots found so far.
   pub changed: usize,
 }
 
-/// Named-join entries between progress callbacks in [`diff_envs_with`].
+/// Named-join / meta-sweep entries between progress callbacks.
 const JOIN_PROGRESS_STRIDE: usize = 100_000;
 
 /// Changed rows between pass-2 progress callbacks — one event every
@@ -904,20 +907,170 @@ const JOIN_PROGRESS_STRIDE: usize = 100_000;
 /// constant pair, so rows are ~10× slower than join probes).
 const RIPPLE_PROGRESS_STRIDE: usize = 10_000;
 
+/// Where metadata comparisons come from.
+///
+/// The full-reader path holds complete `Named` values in the envs
+/// (`InEnv`); the memory-lean bytes/mmap path never materializes them
+/// in bulk, so the streaming §5 sweep precomputes labels per name
+/// (`Sweep`); anon mode compares no metadata at all (`None`).
+enum MetaSource<'m> {
+  None,
+  InEnv,
+  Sweep(&'m FxHashMap<Name, Vec<String>>),
+}
+
+impl MetaSource<'_> {
+  fn labels(&self, name: &Name, na: &Named, nb: &Named) -> Vec<String> {
+    match self {
+      MetaSource::None => Vec::new(),
+      MetaSource::InEnv => meta_component_labels(na, nb),
+      MetaSource::Sweep(m) => m.get(name).cloned().unwrap_or_default(),
+    }
+  }
+}
+
 /// Diff two environments. `meta = false` (anon mode, the default)
 /// compares only anonymous structure; `meta = true` additionally
-/// compares `Named` metadata content. See the module docs.
+/// compares `Named` metadata content held in the envs (full-reader
+/// path — for the memory-lean bytes path see [`diff_env_bytes`]). See
+/// the module docs.
 pub fn diff_envs(a: &Env, b: &Env, meta: bool) -> Result<EnvDiff, String> {
   diff_envs_with(a, b, meta, &mut |_| {})
 }
 
 /// [`diff_envs`] with a progress callback: `on_progress` fires every
-/// `JOIN_PROGRESS_STRIDE` named-join entries and once when the join
-/// completes (so the final event always carries `done == total`).
+/// `JOIN_PROGRESS_STRIDE` named-join entries and once when each phase
+/// completes (final events always carry `done == total`).
 pub fn diff_envs_with(
   a: &Env,
   b: &Env,
   meta: bool,
+  on_progress: &mut dyn FnMut(JoinProgress),
+) -> Result<EnvDiff, String> {
+  let source = if meta { MetaSource::InEnv } else { MetaSource::None };
+  diff_envs_impl(a, b, &source, on_progress)
+}
+
+/// One side of a lazy-path diff: the env built from `index` over `data`
+/// (via [`Env::from_lazy_index`] or [`Env::from_lazy_index_mmap`]).
+#[derive(Clone, Copy)]
+pub struct LazySide<'a> {
+  pub env: &'a Env,
+  pub index: &'a LazyIndex,
+  pub data: &'a [u8],
+}
+
+/// Memory-lean bytes-level diff (the `ix diff` path): lazy-index
+/// structural load plus, in meta mode, the streaming §5 metadata sweep
+/// — `ConstantMeta` is never bulk-materialized on either side.
+pub fn diff_env_bytes(
+  a: &[u8],
+  b: &[u8],
+  meta: bool,
+  on_progress: &mut dyn FnMut(JoinProgress),
+) -> Result<EnvDiff, String> {
+  let ia = Env::parse_lazy_index(a)?;
+  let ib = Env::parse_lazy_index(b)?;
+  let ea = Env::from_lazy_index(&ia, a)?;
+  let eb = Env::from_lazy_index(&ib, b)?;
+  diff_envs_lazy(
+    LazySide { env: &ea, index: &ia, data: a },
+    LazySide { env: &eb, index: &ib, data: b },
+    meta,
+    on_progress,
+  )
+}
+
+/// Core of the bytes/mmap paths: both sides already lazily loaded. In
+/// meta mode, runs the streaming §5 sweep first (metadata labels per
+/// name, parse-compare-drop), then the structural join consuming them.
+pub fn diff_envs_lazy(
+  a: LazySide<'_>,
+  b: LazySide<'_>,
+  meta: bool,
+  on_progress: &mut dyn FnMut(JoinProgress),
+) -> Result<EnvDiff, String> {
+  if meta {
+    let map = sweep_meta(&a, &b, on_progress)?;
+    diff_envs_impl(a.env, b.env, &MetaSource::Sweep(&map), on_progress)
+  } else {
+    diff_envs_impl(a.env, b.env, &MetaSource::None, on_progress)
+  }
+}
+
+/// Streaming §5 metadata sweep: lockstep merge-join of both files'
+/// named sections (canonical ascending name-hash order — exactly
+/// `Name`'s `Ord`), parsing each side's entry against its own §4
+/// reverse index, comparing, and dropping. Returns component labels
+/// for every joined name whose metadata differs — the addr-equal ones
+/// become `named_meta_only` rows, the addr-changed ones `meta_fields`.
+fn sweep_meta(
+  a: &LazySide<'_>,
+  b: &LazySide<'_>,
+  on_progress: &mut dyn FnMut(JoinProgress),
+) -> Result<FxHashMap<Name, Vec<String>>, String> {
+  let mut cur_a = NamedMetaCursor::open(a.data, a.index)?;
+  let mut cur_b = NamedMetaCursor::open(b.data, b.index)?;
+  let an = &a.index.named;
+  let bn = &b.index.named;
+  let total = an.len().max(bn.len());
+  let mut out: FxHashMap<Name, Vec<String>> = FxHashMap::default();
+  let (mut i, mut j) = (0usize, 0usize);
+  let mut fired = 0usize;
+  while i < an.len() && j < bn.len() {
+    match an[i].name.cmp(&bn[j].name) {
+      Ordering::Less => {
+        cur_a.next_entry()?;
+        i += 1;
+      },
+      Ordering::Greater => {
+        cur_b.next_entry()?;
+        j += 1;
+      },
+      Ordering::Equal => {
+        let (_, na) = cur_a
+          .next_entry()?
+          .ok_or("sweep_meta: first cursor exhausted early")?;
+        let (_, nb) = cur_b
+          .next_entry()?
+          .ok_or("sweep_meta: second cursor exhausted early")?;
+        // Cursor and index walked the same section — desync means a bug.
+        if na.addr != an[i].addr || nb.addr != bn[j].addr {
+          return Err("sweep_meta: cursor desynced from index".to_string());
+        }
+        let labels = meta_component_labels(&na, &nb);
+        if !labels.is_empty() {
+          out.insert(an[i].name.clone(), labels);
+        }
+        i += 1;
+        j += 1;
+      },
+    }
+    let done = i.max(j);
+    if done / JOIN_PROGRESS_STRIDE > fired && done < total {
+      fired = done / JOIN_PROGRESS_STRIDE;
+      on_progress(JoinProgress {
+        phase: DiffPhase::MetaSweep,
+        done,
+        total,
+        changed: out.len(),
+      });
+    }
+  }
+  // Unjoined tails carry no comparison work — cursors just drop.
+  on_progress(JoinProgress {
+    phase: DiffPhase::MetaSweep,
+    done: total,
+    total,
+    changed: out.len(),
+  });
+  Ok(out)
+}
+
+fn diff_envs_impl(
+  a: &Env,
+  b: &Env,
+  source: &MetaSource<'_>,
   on_progress: &mut dyn FnMut(JoinProgress),
 ) -> Result<EnvDiff, String> {
   let mut d = EnvDiff {
@@ -944,14 +1097,13 @@ pub fn diff_envs_with(
       Some(nb_ref) => {
         let nb = nb_ref.value();
         if na.addr == nb.addr {
-          if meta {
-            let labels = meta_component_labels(na, nb);
-            if !labels.is_empty() {
-              meta_only.push((name.pretty(), name.clone(), labels));
-            }
+          let labels = source.labels(name, na, nb);
+          if !labels.is_empty() {
+            meta_only.push((name.pretty(), name.clone(), labels));
           }
         } else {
-          let change = classify_named_change(a, b, name, na, nb, meta)?;
+          let meta_fields = source.labels(name, na, nb);
+          let change = classify_named_change(a, b, name, na, nb, meta_fields)?;
           let slot = addr_map.entry(na.addr.clone()).or_default();
           if !slot.contains(&nb.addr) {
             slot.push(nb.addr.clone());
@@ -2158,5 +2310,193 @@ mod tests {
     let c = changed_by_name(&d, "Foo");
     assert!(!c.rippled);
     assert_eq!(labels(&c.fields), ["value"]);
+  }
+
+  // ==========================================================================
+  // Streaming §5 meta sweep (diff_env_bytes)
+  // ==========================================================================
+
+  /// Register `name`'s component in `env.names`; returns its address.
+  fn register_component(env: &Env, name: &Name) -> Address {
+    let addr = Address::from_blake3_hash(*name.get_hash());
+    env.names.insert(addr.clone(), name.clone());
+    addr
+  }
+
+  fn def_meta(name_addr: Address, hint: u32) -> ConstantMeta {
+    ConstantMeta::new(ConstantMetaInfo::Def {
+      name: name_addr,
+      lvls: vec![],
+      hints: ReducibilityHints::Regular(hint),
+      all: vec![],
+      ctx: vec![],
+      arena: ExprMeta::default(),
+      type_root: 0,
+      value_root: 0,
+    })
+  }
+
+  fn full_read(bytes: &[u8]) -> Env {
+    let mut cur = bytes;
+    Env::get(&mut cur).expect("full read failed")
+  }
+
+  /// The streaming §5 sweep must reproduce the full reader's meta-mode
+  /// report exactly: `named_meta_only`, `meta_fields` on changed rows,
+  /// and everything structural.
+  #[test]
+  fn meta_sweep_matches_full_reader() {
+    let build = |foo_value: Arc<Expr>,
+                 foo_hint: u32,
+                 monly_hint: u32,
+                 foo_original: bool|
+     -> Vec<u8> {
+      let env = Env::new();
+      let foo = n("Foo");
+      let foo_comp = register_component(&env, &foo);
+      let c = defn_c(Expr::var(3), foo_value);
+      let addr = store_canonical(&env, &c);
+      let mut foo_named =
+        Named::new(addr.clone(), def_meta(foo_comp, foo_hint));
+      if foo_original {
+        foo_named.set_original(addr, ConstantMeta::default());
+      }
+      env.register_name(foo.clone(), foo_named);
+      // Same const both sides; only metadata differs → named_meta_only.
+      let monly = n("MetaOnly");
+      let monly_comp = register_component(&env, &monly);
+      let stable = defn_c(Expr::var(7), Expr::var(0));
+      let stable_addr = store_canonical(&env, &stable);
+      env.register_name(
+        monly.clone(),
+        Named::new(stable_addr, def_meta(monly_comp, monly_hint)),
+      );
+      let mut bytes = Vec::new();
+      env.put(&mut bytes).expect("put failed");
+      bytes
+    };
+    let ba = build(Expr::var(0), 1, 3, false);
+    let bb = build(Expr::var(1), 2, 4, true);
+
+    let via_full =
+      diff_envs(&full_read(&ba), &full_read(&bb), true).expect("full diff");
+    let mut events: Vec<JoinProgress> = Vec::new();
+    let via_sweep = diff_env_bytes(&ba, &bb, true, &mut |p| events.push(p))
+      .expect("sweep diff");
+    assert_eq!(via_full, via_sweep);
+    // The pair genuinely exercises both meta categories.
+    assert_eq!(via_full.named_meta_only.len(), 1);
+    assert_eq!(via_full.named_meta_only[0].0, "MetaOnly");
+    let foo_row =
+      via_full.named_changed.iter().find(|c| c.name == "Foo").unwrap();
+    assert!(!foo_row.meta_fields.is_empty());
+    // The sweep phase fired and completed before the join started.
+    assert_eq!(events.first().map(|p| p.phase), Some(DiffPhase::MetaSweep));
+    let last_sweep =
+      events.iter().rfind(|p| p.phase == DiffPhase::MetaSweep).unwrap();
+    assert_eq!(last_sweep.done, last_sweep.total);
+
+    // Anon parity through the bytes path too.
+    let anon_full =
+      diff_envs(&full_read(&ba), &full_read(&bb), false).expect("anon full");
+    let anon_sweep =
+      diff_env_bytes(&ba, &bb, false, &mut |_| {}).expect("anon sweep");
+    assert_eq!(anon_full, anon_sweep);
+    // Self-diff via the bytes path is empty in both modes.
+    assert!(diff_env_bytes(&ba, &ba, true, &mut |_| {}).unwrap().is_empty());
+    assert!(diff_env_bytes(&ba, &ba, false, &mut |_| {}).unwrap().is_empty());
+  }
+
+  /// Metadata name references are file-relative §4 indices, so raw §5
+  /// windows differ across files whose name tables differ — the sweep
+  /// must still see logically identical metadata as equal (it compares
+  /// parsed, Address-valued values, never bytes).
+  #[test]
+  fn meta_sweep_ignores_name_index_shift() {
+    let foo = n("Foo");
+    let foo_comp = Address::from_blake3_hash(*foo.get_hash());
+    // A name whose component address sorts BEFORE Foo's: its presence
+    // in env B shifts Foo's §4 index, re-encoding Foo's (identical)
+    // metadata over different indices.
+    let extra = (0..)
+      .map(|i| n(&format!("X{i}")))
+      .find(|nm| Address::from_blake3_hash(*nm.get_hash()) < foo_comp)
+      .expect("some candidate component sorts before Foo");
+    let build = |with_extra: bool| -> Vec<u8> {
+      let env = Env::new();
+      register_component(&env, &foo);
+      let c = defn_c(Expr::var(3), Expr::var(0));
+      let addr = store_canonical(&env, &c);
+      env.register_name(
+        foo.clone(),
+        Named::new(addr, def_meta(foo_comp.clone(), 1)),
+      );
+      if with_extra {
+        register_component(&env, &extra);
+        let c2 = defn_c(Expr::var(8), Expr::var(2));
+        let a2 = store_canonical(&env, &c2);
+        env.register_name(extra.clone(), Named::with_addr(a2));
+      }
+      let mut bytes = Vec::new();
+      env.put(&mut bytes).expect("put failed");
+      bytes
+    };
+    let ba = build(false);
+    let bb = build(true);
+    let d = diff_env_bytes(&ba, &bb, true, &mut |_| {}).expect("sweep diff");
+    assert_eq!(d.named_added.len(), 1);
+    assert!(
+      d.named_meta_only.is_empty(),
+      "index shift misread as a metadata diff: {d:?}"
+    );
+    assert!(d.named_changed.is_empty());
+    // And the full reader agrees.
+    assert_eq!(
+      d,
+      diff_envs(&full_read(&ba), &full_read(&bb), true).expect("full diff")
+    );
+  }
+
+  /// Mmap-backed lazy sides produce the same report as heap-backed
+  /// ones (the `rs_diff_env_files` path).
+  #[test]
+  fn mmap_lazy_side_matches_heap() {
+    let build = |value: Arc<Expr>| -> Vec<u8> {
+      let env = Env::new();
+      let foo = n("Foo");
+      register_component(&env, &foo);
+      let c = defn_c(Expr::var(3), value);
+      let addr = store_canonical(&env, &c);
+      env.register_name(foo, Named::with_addr(addr));
+      let mut bytes = Vec::new();
+      env.put(&mut bytes).expect("put failed");
+      bytes
+    };
+    let (ba, bb) = (build(Expr::var(0)), build(Expr::var(1)));
+
+    let path = std::env::temp_dir()
+      .join(format!("ixon-diff-mmap-test-{}.ixe", std::process::id()));
+    std::fs::write(&path, &ba).expect("write temp");
+    let file = std::fs::File::open(&path).expect("open temp");
+    let mmap =
+      Arc::new(unsafe { memmap2::Mmap::map(&file) }.expect("mmap temp"));
+    let ia = Env::parse_lazy_index(&mmap[..]).expect("lazy index (mmap)");
+    let ea = Env::from_lazy_index_mmap(&ia, &mmap).expect("from mmap");
+
+    let ib = Env::parse_lazy_index(&bb).expect("lazy index (heap)");
+    let eb = Env::from_lazy_index(&ib, &bb).expect("from heap");
+
+    let via_mmap = diff_envs_lazy(
+      LazySide { env: &ea, index: &ia, data: &mmap[..] },
+      LazySide { env: &eb, index: &ib, data: &bb },
+      true,
+      &mut |_| {},
+    )
+    .expect("mmap-side diff");
+    let via_heap =
+      diff_env_bytes(&ba, &bb, true, &mut |_| {}).expect("heap diff");
+    assert_eq!(via_mmap, via_heap);
+    assert_eq!(via_heap.named_changed.len(), 1);
+    std::fs::remove_file(&path).ok();
   }
 }

@@ -1215,6 +1215,62 @@ pub fn get_named_indexed(
   Ok(named)
 }
 
+/// Streaming cursor over an env's §5 named entries: parse one `Named`
+/// at a time against this file's own §4 reverse index, hand it out,
+/// drop it. Entries arrive in the file's canonical ascending
+/// name-hash order (which is exactly `Name`'s `Ord`), so two cursors
+/// merge-join by name.
+///
+/// This exists for the diff meta sweep: raw §5 windows are NOT
+/// comparable across files (metadata name references are file-relative
+/// §4 indices — identical metadata serializes to different bytes over
+/// different name tables), but parsed [`Named`] values are
+/// Address-valued and file-independent. Streaming keeps resident
+/// metadata O(1) instead of the full reader's everything-at-once.
+pub struct NamedMetaCursor<'a> {
+  buf: &'a [u8],
+  remaining: u64,
+  rev: &'a NameReverseIndex,
+}
+
+impl<'a> NamedMetaCursor<'a> {
+  /// Open a cursor at `index.named_section_offset` within `data` — the
+  /// exact buffer [`Env::parse_lazy_index`] produced `index` from.
+  pub fn open(
+    data: &'a [u8],
+    index: &'a LazyIndex,
+  ) -> Result<NamedMetaCursor<'a>, String> {
+    let mut buf = data.get(index.named_section_offset..).ok_or_else(|| {
+      format!(
+        "NamedMetaCursor: §5 offset {} out of bounds ({} bytes)",
+        index.named_section_offset,
+        data.len()
+      )
+    })?;
+    let remaining = get_u64(&mut buf)?;
+    if remaining as usize != index.named.len() {
+      return Err(format!(
+        "NamedMetaCursor: §5 count {} disagrees with the index ({} entries)",
+        remaining,
+        index.named.len()
+      ));
+    }
+    Ok(NamedMetaCursor { buf, remaining, rev: &index.name_reverse_index })
+  }
+
+  /// Parse the next entry: `(name-component hash, Named)`; `None` once
+  /// the section is exhausted.
+  pub fn next_entry(&mut self) -> Result<Option<(Address, Named)>, String> {
+    if self.remaining == 0 {
+      return Ok(None);
+    }
+    self.remaining -= 1;
+    let name_addr = get_address(&mut self.buf)?;
+    let named = get_named_indexed(&mut self.buf, self.rev)?;
+    Ok(Some((name_addr, named)))
+  }
+}
+
 // ============================================================================
 // Env serialization
 // ============================================================================
@@ -1894,8 +1950,10 @@ impl Env {
     let hints_map: FxHashMap<Address, ReducibilityHints> =
       index.hints.iter().cloned().collect();
 
-    // Section 4: Names — parsed to build the index for metadata decoding, then
-    // dropped (the check never consults the name component table).
+    // Section 4: Names — parsed to build the index for metadata
+    // decoding. The reverse index is retained on the LazyIndex so §5
+    // entries can be re-parsed standalone later (the diff meta sweep);
+    // the Address→Name lookup is dropped (LazyNamed carries the Names).
     let num_names = get_u64(&mut buf)?;
     let mut names_lookup: FxHashMap<Address, Name> = FxHashMap::default();
     let mut name_reverse_index: NameReverseIndex =
@@ -1908,14 +1966,17 @@ impl Env {
       name_reverse_index.push(addr.clone());
       names_lookup.insert(addr, name);
     }
+    index.name_reverse_index = name_reverse_index;
 
     // Section 5: Named — keep `name → addr` plus the §3 hint for that
     // address; the full ConstantMeta (arena, CallSite, ...) is parsed
-    // then discarded.
+    // then discarded. The section offset is recorded so a
+    // [`NamedMetaCursor`] can re-walk it without re-parsing §1–§4.
+    index.named_section_offset = data.len() - buf.len();
     let num_named = get_u64(&mut buf)?;
     for _ in 0..num_named {
       let name_addr = get_address(&mut buf)?;
-      let named = get_named_indexed(&mut buf, &name_reverse_index)?;
+      let named = get_named_indexed(&mut buf, &index.name_reverse_index)?;
       let name = names_lookup.get(&name_addr).cloned().ok_or_else(|| {
         format!("parse_lazy_index: missing name for addr {:?}", name_addr)
       })?;

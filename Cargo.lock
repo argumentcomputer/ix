@@ -1802,6 +1802,7 @@ dependencies = [
  "ixon",
  "ixvm-codegen",
  "lean-ffi",
+ "memmap2",
  "mimalloc",
  "multi-stark",
  "n0-error",

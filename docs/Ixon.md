@@ -946,6 +946,33 @@ reads with the full reader so display metadata survives the prune;
 compile once, pack many. (`ix shard extract` is the non-bundle sibling:
 a general sub-env for the kernel-check pipeline, no `main` root.)
 
+### Diffing environments
+
+```
+lake exe ix diff <old.ixe> <new.ixe> [--anon | --meta] [--verbose]
+```
+
+`ix diff` (engine: `ixon::diff`) joins two envs on names: a name
+"changed" ⇔ its constant address changed, with per-field
+classification (`type`/`value`/`lvls`/…, `block.*` through projection
+descent, `"encoding"` for pure representation churn). Because one
+edited constant re-addresses its whole reverse-dependency cone, every
+changed row also carries a **root vs rippled** verdict: changed pairs
+are re-classified under the quotient of all changed rows' old→new
+address mapping, and rows fully explained by dependency re-addressing
+are `rippled` (hidden by default; `--verbose` lists). A 5-day mathlib
+window classifies 143k changed names into ~4.5k roots.
+
+Memory: both files are mmap'd and lazily parsed in both modes
+(constant windows stay zero-copy; `ConstantMeta` is never
+bulk-materialized). `--meta` compares metadata by streaming both §5
+named sections in a lockstep merge-join — each side's entry is parsed
+against its own §4 reverse index, compared, and dropped. Raw §5
+windows are *not* comparable across files (metadata name references
+are file-relative §4 indices), so the sweep compares parsed,
+Address-valued `ConstantMeta`. Exit codes follow GNU diff: 0 = no
+difference in the selected mode, 1 = differences, 2 = error.
+
 ---
 
 ## Proofs and Claims

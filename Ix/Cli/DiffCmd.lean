@@ -2,13 +2,15 @@
   `ix diff <old.ixe> <new.ixe>`: structured diff of two serialized Ixon
   environments.
 
-  The diff itself is computed in Rust (`rs_diff_envs` → `ixon::diff`):
-  both files are parsed with the full reader and compared on anonymous
-  structure — names serve as join/display keys, constants compare by
-  content address with per-field classification (type/value/lvls/…,
-  `block.*` for projection targets, `"encoding"` when only the
-  representation moved). `--meta` additionally compares named metadata
-  (`ConstantMeta`/`original`).
+  The diff itself is computed in Rust (`rs_diff_env_files` →
+  `ixon::diff`): both files are memory-mapped and lazily parsed
+  (constant windows stay zero-copy mmap slices; `ConstantMeta` is never
+  bulk-materialized) and compared on anonymous structure — names serve
+  as join/display keys, constants compare by content address with
+  per-field classification (type/value/lvls/…, `block.*` for projection
+  targets, `"encoding"` when only the representation moved). `--meta`
+  additionally compares named metadata (`ConstantMeta`/`original`) via
+  a streaming merge-join over both files' §5 named sections.
 
   Every changed row carries a root-vs-rippled verdict: one edited
   constant re-addresses its whole reverse-dependency cone, so most
@@ -128,17 +130,16 @@ def runDiffCmd (p : Cli.Parsed) : IO UInt32 := do
     IO.eprintln "error: --anon and --meta are mutually exclusive"
     return 2
   let verbose := p.hasFlag "verbose"
-  let readBin (path : String) : IO (Option ByteArray) :=
-    try pure (some (← IO.FS.readBinFile path))
-    catch e => IO.eprintln s!"error: {path}: {e}"; pure none
-  let some oldBytes ← readBin oldPath | return 2
-  let some newBytes ← readBin newPath | return 2
-  if oldBytes == newBytes then
-    IO.println "identical"
-    return 0
-  let d ← match Ixon.rsDiffEnvs oldBytes newBytes wantMeta with
-    | .error e => IO.eprintln s!"error: {e}"; return 2
-    | .ok d => pure d
+  -- Byte-equal fast path and the diff itself both run over mmapped
+  -- files — nothing is read into Lean ByteArrays.
+  let d ← try
+    if ← Ixon.rsIxeFilesEqual oldPath newPath then
+      IO.println "identical"
+      return (0 : UInt32)
+    Ixon.rsDiffEnvFiles oldPath newPath wantMeta
+  catch e =>
+    IO.eprintln s!"error: {e.toString}"
+    return (2 : UInt32)
   printStats oldPath d.statsA
   printStats newPath d.statsB
   if d.isEmpty then
