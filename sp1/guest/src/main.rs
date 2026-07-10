@@ -105,7 +105,7 @@ pub fn main() {
         .named
         .iter()
         .filter(|e| {
-          !matches!(e.value().meta.info, ConstantMetaInfo::Muts { .. })
+          !matches!(e.value().meta().info, ConstantMetaInfo::Muts { .. })
         })
         .map(|e| KId::<Meta>::new(e.value().addr.clone(), e.key().clone())),
     );
