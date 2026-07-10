@@ -930,6 +930,22 @@ behind those addresses.
 - Whole-environment files are the degenerate case (`main` absent,
   `assumptions` empty).
 
+The CLI producer is `ix pack`:
+
+```
+lake exe ix pack <env.ixe> <name> [--out <path>]
+                 [--assume <name|hex64,...>] [--assume-file <f>] [--verbose]
+```
+
+It resolves `<name>` (displayed form) against the env's `named` table,
+runs `prune_to_closure`, re-validates with `validate_closed`, and
+writes the bundle (default `<name>.ixe`). `--assume` entries — names or
+64-hex constant addresses — declare trust-boundary cut points; the ones
+actually reached become the bundle's `assumptions` (thin bundle). Pack
+reads with the full reader so display metadata survives the prune;
+compile once, pack many. (`ix shard extract` is the non-bundle sibling:
+a general sub-env for the kernel-check pipeline, no `main` root.)
+
 ---
 
 ## Proofs and Claims
