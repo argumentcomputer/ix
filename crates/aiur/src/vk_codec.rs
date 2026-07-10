@@ -465,6 +465,12 @@ impl AiurVerifyingKey {
     self.commitment_parameters
   }
 
+  /// Number of circuits in the system (diagnostics: a valid proof carries
+  /// one stage-1/stage-2 opening set per circuit).
+  pub fn num_circuits(&self) -> usize {
+    self.system.circuits.len()
+  }
+
   pub fn verify(
     &self,
     claim: &[Val],

@@ -144,6 +144,18 @@ abbrev functionChannel : G := .ofNat 0
 def buildClaim (funIdx : Bytecode.FunIdx) (input output : Array G) :=
   #[functionChannel, .ofNat funIdx] ++ input ++ output
 
+/-- Compress an Aiur proof by re-verifying it inside the SP1 zkVM and
+    producing a recursive SP1 proof of that verification (`sp1-compress/`).
+    Arguments: verifying-key bytes (`AiurSystem.vkBytes`), the claim as
+    canonical u64 LE bytes, `Proof.toBytes` bytes, the FRI parameters the
+    proof was made with, the SP1 mode
+    (`execute | core | compressed | groth16 | plonk`), and a path to save
+    the SP1 proof to (`""` = don't save). Stub that always errors unless
+    `ix` was built with `IX_SP1=1`. -/
+@[extern "rs_sp1_compress_aiur_proof"]
+opaque sp1CompressAiurProof : @& ByteArray → @& ByteArray → @& ByteArray →
+  @& FriParameters → @& String → @& String → Except String Unit
+
 end Aiur
 
 end

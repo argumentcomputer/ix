@@ -7,7 +7,7 @@ use std::sync::LazyLock;
 
 use lean_ffi::object::{
   ExternalClass, LeanArray, LeanBorrowed, LeanByteArray, LeanExcept,
-  LeanExternal, LeanNat, LeanOwned, LeanProd, LeanRef,
+  LeanExternal, LeanNat, LeanOwned, LeanProd, LeanRef, LeanString,
 };
 
 use crate::{
@@ -758,4 +758,62 @@ fn decode_io_buffer_map(
     map.insert((channel, key), info);
   }
   map
+}
+
+// =============================================================================
+// SP1 proof compression (feature `sp1`)
+// =============================================================================
+
+/// `Aiur.sp1CompressAiurProof : @& ByteArray → @& ByteArray → @& ByteArray →
+/// @& FriParameters → @& String → @& String → Except String Unit`
+///
+/// Verifies an Aiur proof inside the SP1 zkVM guest and produces a recursive
+/// SP1 proof of that verification (see `sp1-compress/`). Arguments are the
+/// verifying-key bytes (`vk_codec` format), the claim as canonical u64 LE
+/// Goldilocks elements, and the `Proof::to_bytes` bytes. `mode` is one of
+/// `execute|core|compressed|groth16|plonk`; `output` is the path the SP1
+/// proof is saved to (`""` = don't save).
+///
+/// Without the `sp1` cargo feature (lake: `IX_SP1=1`) this is a stub that
+/// returns an error, so the Lean binding always links.
+#[unsafe(no_mangle)]
+extern "C" fn rs_sp1_compress_aiur_proof(
+  vk_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  claim_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  proof_bytes: LeanByteArray<LeanBorrowed<'_>>,
+  fri_parameters: LeanAiurFriParameters<LeanBorrowed<'_>>,
+  mode: LeanString<LeanBorrowed<'_>>,
+  output: LeanString<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  #[cfg(feature = "sp1")]
+  {
+    let fri = decode_fri_parameters(&fri_parameters);
+    let mode = match mode.as_str().parse::<sp1_compress_host::Mode>() {
+      Ok(m) => m,
+      Err(e) => return LeanExcept::error_string(&e),
+    };
+    let output = match output.as_str() {
+      "" => None,
+      s => Some(std::path::PathBuf::from(s)),
+    };
+    match sp1_compress_host::run_sp1_blocking(
+      vk_bytes.as_bytes().to_vec(),
+      claim_bytes.as_bytes().to_vec(),
+      proof_bytes.as_bytes().to_vec(),
+      &fri,
+      mode,
+      output.as_deref(),
+    ) {
+      Ok(()) => LeanExcept::ok(LeanOwned::box_usize(0)),
+      Err(e) => LeanExcept::error_string(&format!("{e:#}")),
+    }
+  }
+  #[cfg(not(feature = "sp1"))]
+  {
+    let _ =
+      (&vk_bytes, &claim_bytes, &proof_bytes, &fri_parameters, &mode, &output);
+    LeanExcept::error_string(
+      "ix was built without SP1 support; rebuild with `IX_SP1=1 lake build`",
+    )
+  }
 }

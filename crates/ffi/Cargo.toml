@@ -35,6 +35,11 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 tracing-texray = { workspace = true }
 
+# SP1 proof compression (`ix compress`). Building with the `sp1` feature
+# needs the succinct toolchain (sp1up) on PATH for the guest ELF and protoc
+# for the SDK. See sp1-compress/README.md.
+sp1-compress-host = { path = "../../sp1-compress/host", optional = true }
+
 # Iroh dependencies
 bytes = { version = "1.10.1", optional = true }
 tokio = { version = "1.44.1", optional = true }
@@ -50,6 +55,7 @@ default = []
 parallel = ["aiur/parallel"]
 test-ffi = []
 net = ["bytes", "tokio", "iroh", "iroh-base", "n0-error", "getrandom", "bincode", "serde"]
+sp1 = ["dep:sp1-compress-host"]
 
 [lints]
 workspace = true

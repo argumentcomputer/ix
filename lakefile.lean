@@ -36,10 +36,15 @@ Cargo output is visible with `lake -v build`. -/
 def cargoArgs (testFfi : Bool := false) (net : Bool := false) : IO (Array String) := do
   -- IX_NO_PAR=1 disables parallel
   let ixNoPar ← IO.getEnv "IX_NO_PAR"
+  -- IX_SP1=1 enables `ix compress` (SP1 recursive proof compression).
+  -- Needs the succinct toolchain (sp1up) on PATH and protoc installed;
+  -- see sp1-compress/README.md.
+  let ixSp1 ← IO.getEnv "IX_SP1"
   let mut features : Array String := #[]
   if ixNoPar != some "1" then features := features.push "parallel"
   if net && !System.Platform.isOSX then features := features.push "net"
   if testFfi then features := features.push "test-ffi"
+  if ixSp1 == some "1" then features := features.push "sp1"
   let buildArgs := #["build", "--release", "-p", "ix-ffi"]
   if features.isEmpty then return buildArgs
   else return buildArgs ++ #["--features", ",".intercalate features.toList]

@@ -14,6 +14,10 @@
 //!                 `--vk` (aiur::vk_codec::aiur_system_to_bytes bytes),
 //!                 `--claim` (canonical u64 LE Goldilocks elements),
 //!                 `--proof` (multi_stark Proof::to_bytes bytes).
+//!
+//! The real pipeline is also reachable without artifact files via
+//! `ix compress <proof-hex>` (see `Ix/Cli/CompressCmd.lean`), which drives
+//! this crate's library through FFI.
 
 mod demo;
 
@@ -26,16 +30,12 @@ use aiur::{
   vk_codec::{AiurVerifyingKey, aiur_system_to_bytes},
 };
 use anyhow::{Context, Result, bail};
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::{Args, Parser, Subcommand};
 use multi_stark::{
   p3_field::{PrimeCharacteristicRing, PrimeField64},
   types::{CommitmentParameters, FriParameters},
 };
-use sp1_sdk::{
-  ProverClient, SP1ProofWithPublicValues, SP1Stdin, include_elf, prelude::*,
-};
-
-const GUEST_ELF: Elf = include_elf!("sp1-compress-guest");
+use sp1_compress_host::{Mode, run_sp1};
 
 #[derive(Parser)]
 #[command(
@@ -105,39 +105,18 @@ impl FriArgs {
       query_proof_of_work_bits: self.query_pow_bits,
     }
   }
-
-  fn to_bytes(&self) -> Vec<u8> {
-    [
-      self.log_final_poly_len,
-      self.max_log_arity,
-      self.num_queries,
-      self.commit_pow_bits,
-      self.query_pow_bits,
-    ]
-    .iter()
-    .flat_map(|&x| (x as u64).to_le_bytes())
-    .collect()
-  }
 }
 
 #[derive(Args)]
 struct Sp1Args {
-  /// SP1 stage: `execute` only emulates (cycle counts, no proof).
-  /// `groth16`/`plonk` additionally need Docker or a native gnark build.
-  #[arg(long, value_enum, default_value_t = Mode::Compressed)]
-  mode: Mode,
+  /// SP1 stage: execute | core | compressed | groth16 | plonk.
+  /// `execute` only emulates (cycle counts, no proof); `groth16`/`plonk`
+  /// additionally need Docker or a native gnark build.
+  #[arg(long, default_value = "compressed")]
+  mode: String,
   /// Write the SP1 proof here (bincode, the SDK's `.save()` format).
   #[arg(long)]
   output: Option<PathBuf>,
-}
-
-#[derive(Clone, Copy, ValueEnum)]
-enum Mode {
-  Execute,
-  Core,
-  Compressed,
-  Groth16,
-  Plonk,
 }
 
 #[tokio::main]
@@ -154,7 +133,17 @@ async fn main() -> Result<()> {
         std::fs::write(dir.join("proof.bin"), &proof_bytes)?;
         println!("artifacts written to {}", dir.display());
       }
-      run_sp1(vk_bytes, claim_bytes, proof_bytes, &fri, &sp1).await
+      let mode: Mode =
+        sp1.mode.parse().map_err(|e: String| anyhow::anyhow!(e))?;
+      run_sp1(
+        vk_bytes,
+        claim_bytes,
+        proof_bytes,
+        &fri.to_parameters(),
+        mode,
+        sp1.output.as_deref(),
+      )
+      .await
     },
     Command::Compress { vk, claim, proof, fri, sp1 } => {
       let vk_bytes =
@@ -191,7 +180,17 @@ async fn main() -> Result<()> {
         anyhow::anyhow!("Aiur proof does not verify natively: {e:?}")
       })?;
       println!("native pre-check: Aiur proof verifies");
-      run_sp1(vk_bytes, claim_bytes, proof_bytes, &fri, &sp1).await
+      let mode: Mode =
+        sp1.mode.parse().map_err(|e: String| anyhow::anyhow!(e))?;
+      run_sp1(
+        vk_bytes,
+        claim_bytes,
+        proof_bytes,
+        &fri.to_parameters(),
+        mode,
+        sp1.output.as_deref(),
+      )
+      .await
     },
   }
 }
@@ -245,80 +244,4 @@ fn prove_demo(fri: &FriArgs) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>)> {
     .to_bytes()
     .map_err(|e| anyhow::anyhow!("proof serialization failed: {e}"))?;
   Ok((vk_bytes, claim_bytes, proof_bytes))
-}
-
-/// Expected guest public values: `blake3(vk) || fri params || claim`.
-fn expected_public_values(
-  vk_bytes: &[u8],
-  claim_bytes: &[u8],
-  fri: &FriArgs,
-) -> Vec<u8> {
-  let mut expected = Vec::with_capacity(32 + 40 + claim_bytes.len());
-  expected.extend_from_slice(blake3::hash(vk_bytes).as_bytes());
-  expected.extend_from_slice(&fri.to_bytes());
-  expected.extend_from_slice(claim_bytes);
-  expected
-}
-
-async fn run_sp1(
-  vk_bytes: Vec<u8>,
-  claim_bytes: Vec<u8>,
-  proof_bytes: Vec<u8>,
-  fri: &FriArgs,
-  sp1: &Sp1Args,
-) -> Result<()> {
-  println!(
-    "inner proof: {} bytes, vk: {} bytes, claim: {} elements",
-    proof_bytes.len(),
-    vk_bytes.len(),
-    claim_bytes.len() / 8
-  );
-
-  let mut stdin = SP1Stdin::new();
-  stdin.write_vec(vk_bytes.clone());
-  stdin.write_vec(fri.to_bytes());
-  stdin.write_vec(claim_bytes.clone());
-  stdin.write_vec(proof_bytes);
-
-  let expected = expected_public_values(&vk_bytes, &claim_bytes, fri);
-  let client = ProverClient::from_env().await;
-
-  if matches!(sp1.mode, Mode::Execute) {
-    let (public_values, report) =
-      client.execute(GUEST_ELF, stdin).await.context("execution failed")?;
-    if public_values.as_slice() != expected.as_slice() {
-      bail!("guest public values mismatch");
-    }
-    println!("total cycles: {}", report.total_instruction_count());
-    println!("{report}");
-    return Ok(());
-  }
-
-  let pk = client.setup(GUEST_ELF).await.context("setup failed")?;
-  let request = client.prove(&pk, stdin);
-  let proof: SP1ProofWithPublicValues = match sp1.mode {
-    Mode::Execute => unreachable!(),
-    Mode::Core => request.core().await,
-    Mode::Compressed => request.compressed().await,
-    Mode::Groth16 => request.groth16().await,
-    Mode::Plonk => request.plonk().await,
-  }
-  .context("SP1 proving failed")?;
-
-  client
-    .verify(&proof, pk.verifying_key(), None)
-    .context("SP1 proof verification failed")?;
-  if proof.public_values.as_slice() != expected.as_slice() {
-    bail!("guest public values mismatch");
-  }
-
-  let size = bincode::serialized_size(&proof)?;
-  println!("SP1 proof verified; serialized size: {size} bytes");
-  println!("vk digest: {}", hex::encode(blake3::hash(&vk_bytes).as_bytes()));
-
-  if let Some(path) = &sp1.output {
-    proof.save(path).context("saving SP1 proof failed")?;
-    println!("SP1 proof saved to {}", path.display());
-  }
-  Ok(())
 }
