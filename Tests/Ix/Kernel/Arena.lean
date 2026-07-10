@@ -14,10 +14,12 @@
   be revalidated N times). Verifier policy must never accept this
   funcidx as a production claim.
 
+  Raw-const fixtures (`good_raw_consts` / `bad_raw_consts`, whose decls
+  live in `TutorialMeta.rawConstsExt` rather than `env.constants`) are
+  compiled into the shared Ixon env via `collectDepsWithExtras`, same
+  as the Rust tutorial suite.
+
   Skips:
-  - test cases registered via `bad_raw_consts` (decls live in
-    `TutorialMeta.rawConstsExt`, not `env.constants`, so Aiur ingress
-    can't address them);
   - renaming test cases (collision tests, not single-constant
     typechecks);
   - constants filtered by `compile_env` (ungrounded blocks);
@@ -62,12 +64,23 @@ def knownIncompatible : Array (Lean.Name × String) := #[
   -- the bad rule post-aux-gen. Standard Lean→Ixon→Aiur path never
   -- exposes the malformed rule.
   (`Tests.Ix.Kernel.TutorialDefs.AdvNat.rec,
-   "malformed rec rule sanitized by aux-gen; Tutorial uses bespoke FFI")
+   "malformed rec rule sanitized by aux-gen; Tutorial uses bespoke FFI"),
+  -- Same reason as tut06_bad01: duplicate levelParams is Meta-mode
+  -- hygiene; Ixon Anon stores only the `lvls` COUNT, so the duplication
+  -- pattern is erased before the Aiur kernel can see it.
+  (`inductLevelParam,
+   "duplicate levelParams: Anon-mode hygiene check, see src/ix/kernel/check.rs:107")
 ]
 
 private def collectChecks (env : Lean.Environment) : Array ArenaCheck := Id.run do
   let skipSet : Std.HashSet Lean.Name :=
     knownIncompatible.foldl (init := {}) (fun s (n, _) => s.insert n)
+  -- Raw consts (`good_raw_consts` / `bad_raw_consts`) never enter
+  -- `env.constants` (the Lean kernel refused them); they are compiled
+  -- into the shared Ixon env via `collectDepsWithExtras` below. Consts
+  -- `compile_env` refuses to ground surface as skips in `buildInput`.
+  let rawNames : Std.HashSet Lean.Name :=
+    (getRawConsts env).foldl (fun s ci => s.insert ci.name) {}
   let mut out : Array ArenaCheck := #[]
   let mut seen : Std.HashSet Lean.Name := {}
   for tc in getTestCases env do
@@ -76,7 +89,7 @@ private def collectChecks (env : Lean.Environment) : Array ArenaCheck := Id.run 
     for n in tc.decls do
       if seen.contains n then continue
       seen := seen.insert n
-      if !env.constants.contains n then continue
+      if !env.constants.contains n && !rawNames.contains n then continue
       if skipSet.contains n then continue
       out := out.push { name := n, expectPass := pass }
   return out
@@ -103,7 +116,19 @@ def arenaTests (env : Lean.Environment)
     | some i => pure i
     | none => throw <| IO.userError "verify_const entrypoint missing"
   let checks := collectChecks env
-  let ixonEnv ← loadSharedIxonEnv (checks.map (·.name)) env
+  -- Raw fixtures don't live in `env.constants`; close over the check
+  -- names with the raw consts as extra lookups, then append the raw
+  -- consts themselves so `compile_env` grounds them (mirrors the Rust
+  -- tutorial suite's env build).
+  let rawConsts := getRawConsts env
+  let rawMap : Std.HashMap Lean.Name Lean.ConstantInfo :=
+    rawConsts.foldl (fun m ci => m.insert ci.name ci)
+      (Std.HashMap.emptyWithCapacity rawConsts.size)
+  let (_, closed) := collectDepsWithExtras env rawMap
+    (checks.map (·.name)).toList
+  let rawEnv ← Ix.CompileM.rsCompileEnvFFI
+    (closed ++ rawConsts.toList.map fun ci => (ci.name, ci))
+  let ixonEnv := rawEnv.toEnv
   let mut tests : TestSeq := .done
   for c in checks do
     let label := s!"arena {if c.expectPass then "GOOD" else "BAD"} {c.name}"

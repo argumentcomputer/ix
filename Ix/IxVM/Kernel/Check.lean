@@ -252,6 +252,13 @@ def check := ⟦
         assert_safety(u, ty, top);
         check_block_peer_param_agreement(pos, ty, n_params, n_indices,
                                                   block_addr, top, addrs);
+        -- Self-contained inductive validation: result sort + the full
+        -- per-ctor gauntlet (param agreement, return type, field
+        -- universes, positivity). Without it, subject-only checking
+        -- (arena `verify_const`) accepts an inductive whose badness
+        -- lives in a ctor const. Mirror: check_inductive_member walks
+        -- its ctors.
+        check_inductive_shape(pos, top, addrs);
         let block_idxs = derive_block_member_idxs(pos, top);
         validate_block_auxes(block_idxs, top);
         -- The former H1 declared-vs-computed is_rec check is gone with the
@@ -275,7 +282,7 @@ def check := ⟦
             -- parent inductive's. Mirror src/ix/kernel/inductive.rs:283,393.
             check_param_agreement(ind_ty, ty, ind_n_params, top, addrs);
             check_ctor_return_type(ty, num_params, ind_n_indices, num_fields,
-                                           induct_idx, ind_num_lvls);
+                                           induct_idx, ind_num_lvls, top);
             let ind_level = get_result_sort_level(ind_ty, ind_n_params + ind_n_indices);
             check_field_universes(ty, num_params, ind_level,
                                           store(ListNode.Nil), top, addrs);

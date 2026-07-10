@@ -90,6 +90,66 @@ def subst := ⟦
     }
   }
 
+  -- ============================================================================
+  -- has_bvar_in_range
+  --
+  -- 1 iff `e` has a loose BVar with index in `[lo, hi)`. Loose means
+  -- not captured by a binder inside `e`; both bounds shift by 1 under
+  -- Lam/Forall/Let bodies so the window keeps tracking the same outer
+  -- binders. `expr_lbr` cannot answer this: it is `1 + max` over loose
+  -- BVars, so a low (local) ref hidden next to a higher (param) ref is
+  -- invisible to it — e.g. `App(BVar(d), BVar(0))` at depth `d` has
+  -- lbr `d + 1` yet references the innermost field local.
+  --
+  -- Used by the nested-occurrence spec_params validity check in
+  -- `Kernel/Inductive.lean`: at extraction depth `d`, a spec_param with
+  -- a loose BVar in `[0, d)` depends on a field/domain-local binder.
+  -- Mirror: `sp.has_fvars()` in `crates/kernel/src/inductive.rs:723-730`
+  -- (Rust opens field/domain binders as fvars; Aiur keeps de Bruijn, so
+  -- the same references appear as loose BVars below the depth).
+  -- ============================================================================
+  fn has_bvar_in_range(e: KExpr, lo: G, hi: G) -> G {
+    match load(e) {
+      KExprNode.BVar(i) =>
+        match u32_less_than(i, lo) {
+          1 => 0,
+          0 => u32_less_than(i, hi),
+        },
+      KExprNode.Srt(_) => 0,
+      KExprNode.Const(_, _) => 0,
+      KExprNode.Lit(_) => 0,
+      KExprNode.App(f, a) =>
+        match has_bvar_in_range(f, lo, hi) {
+          1 => 1,
+          0 => has_bvar_in_range(a, lo, hi),
+        },
+      KExprNode.Lam(ty, body) => has_bvar_in_range_binder(ty, body, lo, hi),
+      KExprNode.Forall(ty, body) => has_bvar_in_range_binder(ty, body, lo, hi),
+      KExprNode.Let(ty, val, body) => has_bvar_in_range_let(ty, val, body, lo, hi),
+      KExprNode.Proj(_, _, e1) => has_bvar_in_range(e1, lo, hi),
+    }
+  }
+
+  -- Cold-extracted binder arm (same pattern as `expr_lbr_let`): the
+  -- two-call arm would otherwise widen every row of the hot walk.
+  fn has_bvar_in_range_binder(ty: KExpr, body: KExpr, lo: G, hi: G) -> G {
+    match has_bvar_in_range(ty, lo, hi) {
+      1 => 1,
+      0 => has_bvar_in_range(body, lo + 1, hi + 1),
+    }
+  }
+
+  fn has_bvar_in_range_let(ty: KExpr, val: KExpr, body: KExpr, lo: G, hi: G) -> G {
+    match has_bvar_in_range(ty, lo, hi) {
+      1 => 1,
+      0 =>
+        match has_bvar_in_range(val, lo, hi) {
+          1 => 1,
+          0 => has_bvar_in_range(body, lo + 1, hi + 1),
+        },
+    }
+  }
+
   -- Number of leading `types` frames an expr with loose-bvar-range `base` can
   -- reach. `BVar(i)` reads `types[i]`, and a kept frame's own stored type can
   -- reference further-out frames, so expand `need` to the fixpoint that closes
@@ -185,6 +245,66 @@ def subst := ⟦
       KExprNode.Lit(lit) => store(KExprNode.Lit(lit)),
       KExprNode.Proj(tidx, fidx, e1) =>
         store(KExprNode.Proj(tidx, fidx, expr_lift(e1, shift, cutoff))),
+    }
+  }
+
+  -- ============================================================================
+  -- expr_lower
+  --
+  -- Shift `BVar(i)` → `BVar(i - shift)` when `i ≥ cutoff`. Inverse of
+  -- `expr_lift`. SOUNDNESS PRECONDITION: no loose BVar of `e` lies in
+  -- `[cutoff, cutoff + shift)` — otherwise the subtraction would capture
+  -- it under an unrelated binder (field arithmetic would even wrap for
+  -- `i - shift < 0`). The nested-occurrence extraction path guarantees
+  -- this via the `spec_params_valid` check before lowering.
+  --
+  -- Used to de-lift extracted spec_params to the recursor-param frame
+  -- (block param j at `BVar(n_rec_params - 1 - j)`), the storage
+  -- convention every flat consumer assumes. Mirrors the depth-stability
+  -- Rust gets for free by opening field binders as fvars.
+  -- ============================================================================
+  fn expr_lower(e: KExpr, shift: G, cutoff: G) -> KExpr {
+    match shift {
+      0 => e,
+      _ =>
+        let l = expr_lbr(e);
+        match u32_less_than(cutoff, l) {
+          0 => e,
+          1 => expr_lower_walk(e, shift, cutoff),
+        },
+    }
+  }
+
+  fn expr_lower_walk(e: KExpr, shift: G, cutoff: G) -> KExpr {
+    match load(e) {
+      KExprNode.BVar(i) =>
+        let lt = u32_less_than(i, cutoff);
+        match lt {
+          1 => e,
+          0 => store(KExprNode.BVar(i - shift)),
+        },
+      KExprNode.Srt(l) => store(KExprNode.Srt(l)),
+      KExprNode.Const(idx, lvls) => store(KExprNode.Const(idx, lvls)),
+      KExprNode.App(f, a) =>
+        store(KExprNode.App(
+          expr_lower(f, shift, cutoff),
+          expr_lower(a, shift, cutoff))),
+      KExprNode.Lam(ty, body) =>
+        store(KExprNode.Lam(
+          expr_lower(ty, shift, cutoff),
+          expr_lower(body, shift, cutoff + 1))),
+      KExprNode.Forall(ty, body) =>
+        store(KExprNode.Forall(
+          expr_lower(ty, shift, cutoff),
+          expr_lower(body, shift, cutoff + 1))),
+      KExprNode.Let(ty, val, body) =>
+        store(KExprNode.Let(
+          expr_lower(ty, shift, cutoff),
+          expr_lower(val, shift, cutoff),
+          expr_lower(body, shift, cutoff + 1))),
+      KExprNode.Lit(lit) => store(KExprNode.Lit(lit)),
+      KExprNode.Proj(tidx, fidx, e1) =>
+        store(KExprNode.Proj(tidx, fidx, expr_lower(e1, shift, cutoff))),
     }
   }
 
