@@ -1916,17 +1916,13 @@ def compileEnvParallel (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
 
 /-! ## Rust Compilation FFI -/
 
-/-- FFI: Compile a Lean environment to serialized Ixon.Env bytes using Rust. -/
-@[extern "rs_compile_env"]
-opaque rsCompileEnvBytesFFI : @& List (Lean.Name × Lean.ConstantInfo) → IO ByteArray
-
 /-- FFI: Compile a Lean environment and write the serialized Ixon.Env
-    straight to `outPath` from Rust (streamed; no env-sized ByteArray
-    crosses the FFI). Writes to `<outPath>.tmp` then renames, so a crash
-    cannot leave a truncated file. Returns the byte count written.
-    Byte-identical to writing `rsCompileEnvBytesFFI`'s result. -/
-@[extern "rs_compile_env_to_file"]
-opaque rsCompileEnvToFileFFI
+    bytes straight to `outPath` from Rust (streamed; no env-sized
+    ByteArray crosses the FFI). Writes to `<outPath>.tmp` then renames,
+    so a crash cannot leave a truncated file. Returns the byte count
+    written. -/
+@[extern "rs_compile_env"]
+opaque rsCompileEnvBytesFFI
   : @& List (Lean.Name × Lean.ConstantInfo) → @& String → IO Nat
 
 /-- FFI: 8-phase validation of the aux_gen compile pipeline (compile +
@@ -1941,10 +1937,12 @@ opaque rsCompileEnvToFileFFI
 opaque rsCompileValidateAuxFFI
   : @& List (Lean.Name × Lean.ConstantInfo) → USize
 
-/-- Compile a Lean environment to Ixon.Env bytes using the Rust compiler. -/
-def rsCompileEnvBytes (leanEnv : Lean.Environment) : IO ByteArray := do
+/-- Compile a Lean environment and write the serialized Ixon.Env bytes
+    to `outPath` using the Rust compiler. Returns the byte count. -/
+def rsCompileEnvBytes (leanEnv : Lean.Environment) (outPath : String)
+    : IO Nat := do
   let constList := leanEnv.constants.toList
-  rsCompileEnvBytesFFI constList
+  rsCompileEnvBytesFFI constList outPath
 
 -- Re-export RawEnv types from Ixon for backwards compatibility
 export Ixon (RawConst RawNamed RawBlob RawComm RawEnv)
