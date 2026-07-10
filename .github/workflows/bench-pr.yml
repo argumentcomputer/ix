@@ -7,6 +7,7 @@
 #   BENCH_ENVS=InitStd,Mathlib     # which compiled envs (default InitStd; case-insensitive)
 #   BENCH_FULL=1                   # run the full curated set, not just primary
 #   BENCH_SHARD=1                  # restrict to the multi-shard target constants
+#   BENCH_PHASES=1                 # add per-constant phase drill-downs to the comment
 #   RUST_LOG=info                  # passthrough env (allowlisted)
 #
 # Mode defaults per backend (the registry's defaultMode): `aiur` runs
@@ -51,7 +52,7 @@ on:
         description: Full head SHA to benchmark
         required: true
       comment-body:
-        description: The !benchmark command line(s)
+        description: "The !benchmark command; single-line KEY=VALUE config, e.g. `!benchmark aiur BENCH_ENVS=InitStd,Mathlib`"
         required: true
 
 run-name: "${{ github.event_name == 'workflow_dispatch' && format('Benchmark PR #{0}', inputs.pr) || 'Relay benchmark comment' }}"
