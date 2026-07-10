@@ -180,7 +180,7 @@ pub struct LazyNamed {
 /// - `Demote`: `store_const` stores bytes only; `get_const` re-parses per
 ///   access (the lazy-load policy — see `LazyConstant` docs).
 /// - `Mmap`: demote plus spilling the bytes to a file-backed mapping
-///   (see docs/compile-spill.md, step 2).
+///   (see the `spill` module docs).
 ///
 /// Host-only: the guest builds `Env` via deserialization and never calls
 /// `store_const`.

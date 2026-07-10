@@ -1492,8 +1492,11 @@ impl EnvEntry<'_> {
 
 /// Host-only lazy backing for [`Env`]: a name index plus an injected
 /// fetch that decodes one constant on demand (in practice from Lean
-/// objects held as `LeanShared` handles — see docs/compile-spill.md,
-/// lever 1), fronted by a sharded bounded cache.
+/// objects held as `LeanShared` handles — see `decode_env_lazy` in the
+/// ffi crate), fronted by a sharded bounded cache. Avoids materializing
+/// the full owned copy of the environment up front, which costs a large
+/// multiple of the working set the compile pipeline actually touches at
+/// any one time.
 #[cfg(not(target_arch = "riscv64"))]
 pub struct LazyEnv {
   /// All names, in the source env's iteration order.

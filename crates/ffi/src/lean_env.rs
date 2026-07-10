@@ -1124,12 +1124,11 @@ fn decode_name_constant_info(
   (name, constant_info)
 }
 
-// Decode a Lean environment in parallel with hybrid caching.
 /// Decode dispatch for the compile FFI entries: eager (default) or,
 /// under `IX_COMPILE_LEAN_ENV=lazy`, an on-demand view that avoids
 /// materializing the full Rust copy of the environment
-/// (`IX_COMPILE_LEAN_ENV_CACHE` bounds resident decoded constants;
-/// see docs/compile-spill.md, lever 1).
+/// (`IX_COMPILE_LEAN_ENV_CACHE` bounds resident decoded constants —
+/// see [`decode_env_lazy`]).
 pub fn decode_env_auto(list: LeanList<LeanBorrowed<'_>>) -> Env {
   match std::env::var("IX_COMPILE_LEAN_ENV").as_deref() {
     Ok("lazy") => {
@@ -3850,67 +3849,70 @@ extern "C" fn rs_compile_validate_aux(
     orig_names.par_iter().for_each(|&name| {
       let Some(orig_ci) = orig.get(name) else { return };
       match dstt2.env.get(name) {
-      Some(dec_entry) => {
-        let dec_ci = dec_entry.value();
-        let type_ok =
-          dec_ci.get_type().get_hash() == orig_ci.get_type().get_hash();
-        let val_ok = match (dec_ci.get_value(), orig_ci.get_value()) {
-          (Some(d), Some(o)) => d.get_hash() == o.get_hash(),
-          (None, None) => true,
-          _ => false,
-        };
-        let aux_eq_result = if ix_compile::decompile::is_aux_gen_suffix(name)
-          && !(type_ok && val_ok)
-        {
-          Some(aux_congruence_result(
-            name,
-            dec_ci,
-            &orig_ci,
-            aux_compare_contexts.get(name),
-          ))
-        } else {
-          None
-        };
-        let ok = match aux_eq_result.as_ref() {
-          Some(Ok(())) => true,
-          Some(Err(_)) => false,
-          None => type_ok && val_ok,
-        };
-        if ok {
-          passes.fetch_add(1, Ordering::Relaxed);
-        } else {
+        Some(dec_entry) => {
+          let dec_ci = dec_entry.value();
+          let type_ok =
+            dec_ci.get_type().get_hash() == orig_ci.get_type().get_hash();
+          let val_ok = match (dec_ci.get_value(), orig_ci.get_value()) {
+            (Some(d), Some(o)) => d.get_hash() == o.get_hash(),
+            (None, None) => true,
+            _ => false,
+          };
+          let aux_eq_result = if ix_compile::decompile::is_aux_gen_suffix(name)
+            && !(type_ok && val_ok)
+          {
+            Some(aux_congruence_result(
+              name,
+              dec_ci,
+              &orig_ci,
+              aux_compare_contexts.get(name),
+            ))
+          } else {
+            None
+          };
+          let ok = match aux_eq_result.as_ref() {
+            Some(Ok(())) => true,
+            Some(Err(_)) => false,
+            None => type_ok && val_ok,
+          };
+          if ok {
+            passes.fetch_add(1, Ordering::Relaxed);
+          } else {
+            fails.fetch_add(1, Ordering::Relaxed);
+            let mut msgs = fail_msgs.lock().unwrap();
+            if msgs.len() < 20 {
+              let mut parts = Vec::new();
+              match aux_eq_result {
+                Some(Err(e)) => parts.push(format!("aux congruence: {e}")),
+                _ => {
+                  if !type_ok {
+                    parts.push(format!(
+                      "type: dec={} orig={}",
+                      dec_ci.get_type().pretty(),
+                      orig_ci.get_type().pretty(),
+                    ));
+                  }
+                  if !val_ok {
+                    parts.push("value hash mismatch".to_string());
+                  }
+                },
+              }
+              msgs.push(format!("{}: {}", name.pretty(), parts.join("; ")));
+            }
+          }
+        },
+        None => {
           fails.fetch_add(1, Ordering::Relaxed);
           let mut msgs = fail_msgs.lock().unwrap();
           if msgs.len() < 20 {
-            let mut parts = Vec::new();
-            match aux_eq_result {
-              Some(Err(e)) => parts.push(format!("aux congruence: {e}")),
-              _ => {
-                if !type_ok {
-                  parts.push(format!(
-                    "type: dec={} orig={}",
-                    dec_ci.get_type().pretty(),
-                    orig_ci.get_type().pretty(),
-                  ));
-                }
-                if !val_ok {
-                  parts.push("value hash mismatch".to_string());
-                }
-              },
-            }
-            msgs.push(format!("{}: {}", name.pretty(), parts.join("; ")));
+            msgs.push(format!(
+              "{}: missing from roundtripped env",
+              name.pretty(),
+            ));
           }
-        }
-      },
-      None => {
-        fails.fetch_add(1, Ordering::Relaxed);
-        let mut msgs = fail_msgs.lock().unwrap();
-        if msgs.len() < 20 {
-          msgs
-            .push(format!("{}: missing from roundtripped env", name.pretty(),));
-        }
-      },
-    }});
+        },
+      }
+    });
 
     p7b.pass = passes.load(Ordering::Relaxed);
     p7b.fail = fails.load(Ordering::Relaxed);
@@ -3988,9 +3990,9 @@ extern "C" fn rs_compile_validate_aux(
         original_strs.iter().map(|s| mk_name(s)).collect();
 
       // Skip if any name is missing from the env (fixture not compiled).
-      let all_present = originals
-        .iter()
-        .all(|n| matches!(env.get(n).as_deref(), Some(ConstantInfo::InductInfo(_))));
+      let all_present = originals.iter().all(|n| {
+        matches!(env.get(n).as_deref(), Some(ConstantInfo::InductInfo(_)))
+      });
       if !all_present {
         continue;
       }

@@ -1,6 +1,42 @@
 //! Top-level environment compilation with work-stealing parallelism.
 //!
 //! Extracted from `compile.rs` to keep the scheduler independently readable.
+//!
+//! # Memory tuning
+//!
+//! Compiling a large environment (Mathlib-scale) peaks at tens of GB by
+//! default. A set of opt-in, independently toggleable env vars trades
+//! bounded CPU for RAM; each defaults to today's fastest behavior, and
+//! every combination produces a bit-identical `.ixe`:
+//!
+//! - `IX_COMPILE_WORKERS=N` — scheduler worker count (default: all
+//!   cores). Scales the per-worker transients.
+//! - `IX_COMPILE_KENV_CLEAR_EVERY=N` — clear each worker's kernel env
+//!   every N blocks (default 0 = never). The kenv is a pure cache;
+//!   clearing at block boundaries is semantics-free.
+//! - `IX_COMPILE_SPILL=off|demote|mmap` — accumulator constants keep a
+//!   materialized cache next to their bytes (`off`, default), keep
+//!   bytes only (`demote`; the structured form costs ~20× its
+//!   encoding), or additionally spill the bytes to an anonymous temp
+//!   file in sealed mmap segments the kernel can evict under pressure
+//!   (`mmap`; see `ixon`'s `spill` module; `IX_COMPILE_SPILL_DIR`
+//!   must be disk-backed, default cwd; `IX_COMPILE_SPILL_SEGMENT_MB`).
+//! - `IX_COMPILE_META=structured|demote` — store registered names'
+//!   metadata structured (default) or as self-contained serialized
+//!   bytes decoded on demand (same ~20× trade as the accumulator).
+//! - `IX_COMPILE_LEAN_ENV=eager|lazy` + `IX_COMPILE_LEAN_ENV_CACHE` —
+//!   materialize the whole Lean environment as owned Rust data up
+//!   front (default) or decode constants on demand from the Lean
+//!   objects behind a bounded cache (the decoded copy is the single
+//!   largest term at Mathlib scale). Measured at wall-time parity.
+//! - `IX_COMPILE_STREAM=1` (read by the Lean CLI) — stream the `.ixe`
+//!   to disk from Rust instead of returning an env-sized ByteArray.
+//!
+//! With everything on, Mathlib compiles in ~19 GB peak RSS (vs OOM on
+//! a 50 GB budget by default) at equal wall time. Progress telemetry
+//! (`IX_QUIET`, `IX_PROGRESS_MS`, `IX_LOG_BLOCKS`) reports RSS
+//! anon/file splits, accumulator composition, worker-kenv sizes, and
+//! lazy-env cache hit rates per decile to guide tuning.
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{
@@ -959,7 +995,7 @@ pub fn compile_env_with_options(
         // every block this worker compiled (nothing clears it during
         // compilation), so these counts are the worker's whole-run
         // accumulation — the term the accumulator split above does not
-        // cover (see docs/compile-spill.md, step 0).
+        // cover.
         if !*IX_QUIET {
           let sizes = worker_kctx.kenv.cache_sizes();
           // Workers that never populated their kenv (no aux_gen blocks
@@ -1050,7 +1086,7 @@ pub fn compile_env_with_options(
     // Accumulator composition: how much of `env.consts` is materialized
     // `Arc<Constant>` caches vs serialized bytes. The byte sum is the
     // floor the accumulator would shrink to if every cache were dropped
-    // (see docs/compile-spill.md, step 0).
+    // dropped.
     let acc = stt.env.const_cache_stats();
     let materialized_pct = if acc.entries == 0 {
       0.0
