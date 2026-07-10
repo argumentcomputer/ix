@@ -62,6 +62,16 @@ lean_ffi::lean_inductive! {
   LeanIxonRawNamedLite    [ { num_obj: 2, num_64: 2 } ];
   LeanIxonRawEnvLazy      [ { num_obj: 5 } ];
 
+  // Env diff report (`rs_diff_envs`). Slot counts MUST match the Lean
+  // structures in Ix/Ixon.lean (Ixon.EnvStats / NamedDiff / EnvDiff).
+  // consts, named, blobs, comms counts
+  LeanIxonEnvStats        [ { num_64: 4 } ];
+  // name, oldAddr, newAddr, oldKind, newKind, fields, metaFields
+  LeanIxonNamedDiff       [ { num_obj: 7 } ];
+  // mainChanged, assumptions±, named±/changed/metaOnly, comms±/changed,
+  // constsOnly×2, blobsOnly×2, hintsChanged, statsA, statsB
+  LeanIxonEnvDiff         [ { num_obj: 17 } ];
+
   // --- Ixon multi-variant inductives ---
 
   LeanIxonUniv [

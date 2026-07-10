@@ -2272,6 +2272,91 @@ opaque rsDeEnvAnonFFI : @& ByteArray → Except String RawEnv
 def rsDeEnvAnon (bytes : ByteArray) : Except String Env :=
   return (← rsDeEnvAnonFFI bytes).toEnv
 
+/-! ### Env diff (`rs_diff_envs`)
+
+The diff is computed in Rust (`ixon::diff::diff_envs`): both inputs are
+parsed with the full reader (so `Named.original` participates), the
+report below is marshaled back with names pre-rendered (`Name::pretty`)
+and pre-sorted, addresses raw. Field order in these structures matters:
+the Rust builders address constructor slots positionally (see
+`crates/ffi/src/lean_ixon/diff.rs` and the `LeanIxonEnvDiff` layout in
+`crates/ffi/src/lean.rs`). -/
+
+/-- Per-env entity counts for the diff header. -/
+structure EnvStats where
+  consts : UInt64
+  named : UInt64
+  blobs : UInt64
+  comms : UInt64
+  deriving Inhabited, BEq
+
+/-- One name present in both envs whose constant address changed.
+    `fields` is never empty: `"kind"` marks a variant change and
+    `"encoding"` an address change with no detected semantic field
+    difference (table reorder / sharing-decision churn). `metaFields`
+    is only populated in meta mode. -/
+structure NamedDiff where
+  name : String
+  oldAddr : Address
+  newAddr : Address
+  oldKind : String
+  newKind : String
+  fields : Array String
+  metaFields : Array String
+  deriving Inhabited, BEq
+
+/-- Report produced by `rsDiffEnvs`. Set-difference lists are complete
+    (display layers cap as needed); name-keyed arrays are sorted by
+    pretty name, address arrays ascending. -/
+structure EnvDiff where
+  /-- `none` = unchanged, otherwise `(first env's main, second's)`. -/
+  mainChanged : Option (Option Address × Option Address)
+  assumptionsAdded : Array Address
+  assumptionsRemoved : Array Address
+  namedAdded : Array (String × Address)
+  namedRemoved : Array (String × Address)
+  namedChanged : Array NamedDiff
+  /-- Same constant address, different metadata (meta mode only). -/
+  namedMetaOnly : Array (String × Array String)
+  commsAdded : Array Address
+  commsRemoved : Array Address
+  commsChanged : Array Address
+  constsOnlyA : Array Address
+  constsOnlyB : Array Address
+  blobsOnlyA : Array Address
+  blobsOnlyB : Array Address
+  /-- Hint deltas for constants present in BOTH envs, rendered as
+      `"opaque" | "abbrev" | "regular(N)" | "none"`. -/
+  hintsChanged : Array (Address × String × String)
+  statsA : EnvStats
+  statsB : EnvStats
+  deriving Inhabited, BEq
+
+/-- True when no difference was found (ignores `statsA`/`statsB`,
+    which are always populated). -/
+def EnvDiff.isEmpty (d : EnvDiff) : Bool :=
+  d.mainChanged.isNone
+  && d.assumptionsAdded.isEmpty && d.assumptionsRemoved.isEmpty
+  && d.namedAdded.isEmpty && d.namedRemoved.isEmpty
+  && d.namedChanged.isEmpty && d.namedMetaOnly.isEmpty
+  && d.commsAdded.isEmpty && d.commsRemoved.isEmpty && d.commsChanged.isEmpty
+  && d.constsOnlyA.isEmpty && d.constsOnlyB.isEmpty
+  && d.blobsOnlyA.isEmpty && d.blobsOnlyB.isEmpty
+  && d.hintsChanged.isEmpty
+
+@[extern "rs_diff_envs"]
+opaque rsDiffEnvsFFI : @& ByteArray → @& ByteArray → Bool → Except String EnvDiff
+
+/-- Diff two serialized envs in Rust. `compareMeta := false` (the
+    default) compares only anonymous structure — name→addr changes with
+    per-field classification, consts/blobs sets, comms,
+    `main`/`assumptions`, and reducibility hints; `compareMeta := true`
+    additionally compares `Named` metadata content (`namedMetaOnly` +
+    `NamedDiff.metaFields`). -/
+def rsDiffEnvs (a b : ByteArray) (compareMeta : Bool := false) :
+    Except String EnvDiff :=
+  rsDiffEnvsFFI a b compareMeta
+
 /-! ## Canonical merkle root over consts -/
 
 @[extern "rs_env_merkle_root"]

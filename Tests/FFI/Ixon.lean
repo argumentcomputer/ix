@@ -266,6 +266,103 @@ def rawEnvTests : TestSeq :=
   test "RawEnv empty" (rawEnvEq (roundtripRawEnv empty) empty) ++
   test "RawEnv with data" (rawEnvEq (roundtripRawEnv withData) withData)
 
+/-! ## Env diff FFI (`rs_diff_envs`)
+
+The classification logic is covered by Rust unit tests
+(`crates/ixon/src/diff.rs`); these tests pin the FFI marshaling — a
+constructor-slot swap would surface as wrong-category contents. -/
+
+def envDiffTests : TestSeq :=
+  let fooName := Ix.Name.mkStr Ix.Name.mkAnon "foo"
+  let barName := Ix.Name.mkStr Ix.Name.mkAnon "bar"
+  -- `.var` exprs only: classification resolves table indices, so a
+  -- `.sort 0` over an empty univs table would be a (correctly) rejected
+  -- malformed constant.
+  let mkConst (value : Expr) : Constant :=
+    { info := .defn { kind := .defn, safety := .safe, lvls := 0,
+                      typ := .var 3, value }
+      sharing := #[], refs := #[], univs := #[] }
+  -- Named metadata carries the hint; `anonHints` stays empty so the
+  -- writer derives §3 from the named `Def` metadata.
+  let mkEnv (c : Constant) (h : Lean.ReducibilityHints) : Env := Id.run do
+    let addr := Address.blake3 (serConstant c)
+    let mut env : Env := {}
+    env := env.storeConst addr c
+    env := { env with names := RawEnv.addNameComponents env.names fooName }
+    env := env.registerName fooName
+      { addr, constMeta := .defn fooName.getHash #[] h #[] #[] {} 0 0 }
+    return env
+  let constA := mkConst (.var 0)
+  let constB := mkConst (.var 1)
+  let addrA := Address.blake3 (serConstant constA)
+  let addrB := Address.blake3 (serConstant constB)
+  let envBase := mkEnv constA (.regular 5)
+  let envValueChanged := mkEnv constB (.regular 5)
+  let envHintChanged := mkEnv constA (.regular 6)
+  let envExtra := Id.run do
+    let mut env := envBase
+    env := env.storeConst addrB constB
+    env := { env with names := RawEnv.addNameComponents env.names barName }
+    env := env.registerName barName { addr := addrB, constMeta := .empty }
+    return env
+  let runDiff (a b : Env) (compareMeta : Bool := false) :
+      Option Ixon.EnvDiff :=
+    (Ixon.rsDiffEnvs (serEnv a) (serEnv b) compareMeta).toOption
+  test "EnvDiff: self-diff empty (anon)"
+    ((runDiff envBase envBase).any (·.isEmpty)) ++
+  test "EnvDiff: self-diff empty (meta)"
+    ((runDiff envBase envBase true).any (·.isEmpty)) ++
+  test "EnvDiff: stats populated"
+    ((runDiff envBase envBase).any fun d =>
+      d.statsA.consts == 1 && d.statsA.named == 1 && d.statsB == d.statsA) ++
+  test "EnvDiff: added name"
+    ((runDiff envBase envExtra).any fun d =>
+      d.namedAdded == #[("bar", addrB)] && d.constsOnlyB == #[addrB]
+      && d.namedRemoved.isEmpty && d.namedChanged.isEmpty) ++
+  test "EnvDiff: removed name"
+    ((runDiff envExtra envBase).any fun d =>
+      d.namedRemoved == #[("bar", addrB)] && d.constsOnlyA == #[addrB]) ++
+  test "EnvDiff: value change classified"
+    ((runDiff envBase envValueChanged).any fun d =>
+      d.namedChanged.size == 1 &&
+      (d.namedChanged[0]!).name == "foo" &&
+      (d.namedChanged[0]!).oldAddr == addrA &&
+      (d.namedChanged[0]!).newAddr == addrB &&
+      (d.namedChanged[0]!).oldKind == "defn" &&
+      (d.namedChanged[0]!).newKind == "defn" &&
+      (d.namedChanged[0]!).fields == #["value"] &&
+      (d.namedChanged[0]!).metaFields.isEmpty) ++
+  -- Hints derive into anon §3, so a hint tweak is visible in the
+  -- default anon mode; the metadata carrying it only shows under meta.
+  test "EnvDiff: hint change visible in anon mode"
+    ((runDiff envBase envHintChanged).any fun d =>
+      d.hintsChanged == #[(addrA, "regular(5)", "regular(6)")]
+      && d.namedMetaOnly.isEmpty && d.namedChanged.isEmpty) ++
+  test "EnvDiff: hint change flags metadata under meta mode"
+    ((runDiff envBase envHintChanged true).any fun d =>
+      d.hintsChanged.size == 1
+      && d.namedMetaOnly == #[("foo", #["meta.info"])]) ++
+  test "EnvDiff: main change"
+    ((runDiff { envBase with main := some addrA } envBase).any fun d =>
+      d.mainChanged == some (some addrA, none)) ++
+  test "EnvDiff: assumptions delta"
+    (let p := Address.blake3 (ByteArray.mk #[1])
+     let q := Address.blake3 (ByteArray.mk #[2])
+     let r := Address.blake3 (ByteArray.mk #[3])
+     let a := { envBase with
+       assumptions := ({} : Std.HashSet Address).insert p |>.insert q }
+     let b := { envBase with
+       assumptions := ({} : Std.HashSet Address).insert q |>.insert r }
+     (runDiff a b).any fun d =>
+       d.assumptionsAdded == #[r] && d.assumptionsRemoved == #[p])
+
+/-- Self-diff over the pure-Lean writer's bytes must be empty in both
+    modes (also exercises report marshaling on arbitrary inputs). -/
+def selfDiffEmpty (compareMeta : Bool) (env : RawEnv) : Bool :=
+  match Ixon.rsDiffEnvs (serEnv env.toEnv) (serEnv env.toEnv) compareMeta with
+  | .ok d => d.isEmpty
+  | .error _ => false
+
 /-! ## Test Suite -/
 
 def suite : List TestSeq := [
@@ -307,6 +404,12 @@ def suite : List TestSeq := [
   checkIO "Ixon.Named roundtrip" (∀ x : Named, roundtripIxonNamed x == x),
   ---- RawEnv roundtrip
   checkIO "Ixon.RawEnv roundtrip" (∀ env : RawEnv, rawEnvEq (roundtripRawEnv env) env),
+  ---- Env diff
+  envDiffTests,
+  checkIO "Ixon.EnvDiff self-diff empty (anon)"
+    (∀ env : RawEnv, selfDiffEmpty false env),
+  checkIO "Ixon.EnvDiff self-diff empty (meta)"
+    (∀ env : RawEnv, selfDiffEmpty true env),
 ]
 
 end Tests.FFI.Ixon
