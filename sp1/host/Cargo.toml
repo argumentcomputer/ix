@@ -37,7 +37,7 @@ anyhow = "1"
 serde_json = "1"
 # Process-tree RSS sampler (accurate peak RAM) + per-phase timing sink for the
 # CI drill-down.
-tracing-texray = { git = "https://github.com/argumentcomputer/tracing-texray", rev = "bd4faa08a4fa4edb46bde393b4d20c6bd49591d0" }
+tracing-texray = { git = "https://github.com/argumentcomputer/tracing-texray", rev = "465bbca0bea4721e58419c11cabd8cce21757822" }
 # Throughput formatting (e.g. `42.0 consts/s`).
 human-repr = "1"
 # Proof-size measurement: SP1's `SP1ProofWithPublicValues::bytes()` returns
