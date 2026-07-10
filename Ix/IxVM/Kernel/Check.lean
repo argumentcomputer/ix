@@ -283,7 +283,8 @@ def check := ⟦
             check_param_agreement(ind_ty, ty, ind_n_params, top, addrs);
             check_ctor_return_type(ty, num_params, ind_n_indices, num_fields,
                                            induct_idx, ind_num_lvls, top);
-            let ind_level = get_result_sort_level(ind_ty, ind_n_params + ind_n_indices);
+            let ind_level = get_result_sort_level(ind_ty, ind_n_params + ind_n_indices,
+                                                  store(ListNode.Nil), top, addrs);
             check_field_universes(ty, num_params, ind_level,
                                           store(ListNode.Nil), top, addrs);
             check_positivity(ty, num_params, induct_idx, store(ListNode.Nil), top, addrs);
@@ -344,7 +345,7 @@ def check := ⟦
   }
 
   fn check_all(consts: List‹&KConstantInfo›, top: List‹&KConstantInfo›, addrs: List‹Addr›) {
-    check_canonical_block_sort(top);
+    check_canonical_block_sort(top, addrs);
     check_all_iter(consts, top, addrs, 0)
   }
 

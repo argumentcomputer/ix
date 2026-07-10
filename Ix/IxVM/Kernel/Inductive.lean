@@ -74,7 +74,8 @@ def inductive_check := ⟦
         -- The inductive type must peel params+indices down to a Sort;
         -- `get_result_sort_level`'s non-exhaustive matches reject
         -- anything else. Mirror: inductive.rs:183-186.
-        let ind_level = get_result_sort_level(ty, n_params + n_indices);
+        let ind_level = get_result_sort_level(ty, n_params + n_indices,
+                                              store(ListNode.Nil), top, addrs);
         check_inductive_shape_ctors(ctor_indices, ind_pos, ty, num_lvls,
                                     n_params, n_indices, ind_level, 0,
                                     top, addrs),
@@ -177,16 +178,26 @@ def inductive_check := ⟦
 
   -- Extract the inductive's result-sort level: peel `n` (params + indices)
   -- Foralls; the body must be `Srt(level)`. Returns the level value.
-  -- Mirror: src/ix/kernel/inductive.rs::get_result_sort_level (line 2089+).
-  fn get_result_sort_level(ind_ty: KExpr, n: G) -> KLevel {
+  -- Mirror: src/ix/kernel/inductive.rs::get_result_sort_level (line 2101+):
+  -- whnf BEFORE each peel and before the final Sort match — index binders
+  -- can hide under definitional wrappers (e.g. Mathlib's
+  -- `inductive εClosure (S : Set σ) : Set σ` stores a type ending in
+  -- `Set σ`, which only whnf exposes as `σ → Prop`).
+  fn get_result_sort_level(ind_ty: KExpr, n: G,
+                           types: List‹KExpr›,
+                           top: List‹&KConstantInfo›,
+                           addrs: List‹Addr›) -> KLevel {
+    let w = whnf(ind_ty, types, top, addrs);
     match n {
       0 =>
-        match load(ind_ty) {
+        match load(w) {
           KExprNode.Srt(l) => l,
         },
       _ =>
-        match load(ind_ty) {
-          KExprNode.Forall(_, body) => get_result_sort_level(body, n - 1),
+        match load(w) {
+          KExprNode.Forall(dom, body) =>
+            get_result_sort_level(body, n - 1,
+                                  store(ListNode.Cons(dom, types)), top, addrs),
         },
     }
   }
@@ -707,11 +718,13 @@ def inductive_check := ⟦
                             occurrence_us: List‹KLevel›,
                             elim_level: KLevel,
                             n_rec_params: G,
-                            is_aux: G, spec_params: List‹KExpr›) -> KExpr {
+                            is_aux: G, spec_params: List‹KExpr›,
+                            top: List‹&KConstantInfo›,
+                            addrs: List‹Addr›) -> KExpr {
     let ind_ty_inst = expr_inst_levels(ind_ty, occurrence_us);
     let after_params = peel_motive_params_subst(ind_ty_inst, n_own_params, n_rec_params,
                                           is_aux, spec_params, 0);
-    let index_doms = collect_index_doms(after_params, n_indices);
+    let index_doms = collect_index_doms(after_params, n_indices, top, addrs);
     let head = store(KExprNode.Const(ind_idx, occurrence_us));
     let with_args = build_major_args_for_member(head, n_rec_params, n_indices,
                                                  is_aux, spec_params);
@@ -831,13 +844,19 @@ def inductive_check := ⟦
     }
   }
 
-  fn collect_index_doms(ty: KExpr, n: G) -> List‹KExpr› {
+  -- Mirror: src/ix/kernel/inductive.rs:2521-2531 — whnf before each peel.
+  -- Index binders can hide under definitional wrappers (e.g. a result type
+  -- `Set σ` only exposes its `σ → Prop` index binder after whnf).
+  fn collect_index_doms(ty: KExpr, n: G,
+                        top: List‹&KConstantInfo›,
+                        addrs: List‹Addr›) -> List‹KExpr› {
     match n {
       0 => store(ListNode.Nil),
       _ =>
-        match load(ty) {
+        let w = whnf(ty, store(ListNode.Nil), top, addrs);
+        match load(w) {
           KExprNode.Forall(dom, body) =>
-            store(ListNode.Cons(dom, collect_index_doms(body, n - 1))),
+            store(ListNode.Cons(dom, collect_index_doms(body, n - 1, top, addrs))),
         },
     }
   }
@@ -1303,16 +1322,18 @@ def inductive_check := ⟦
                        n_params: G,
                        ind_lvls: G, elim_level: KLevel, univ_offset: G,
                        n_rec_params: G,
-                       top: List‹&KConstantInfo›) -> List‹KExpr› {
+                       top: List‹&KConstantInfo›,
+                       addrs: List‹Addr›) -> List‹KExpr› {
     build_all_motives_walk(flat, n_params, ind_lvls, elim_level,
-                            univ_offset, n_rec_params, top, 0)
+                            univ_offset, n_rec_params, top, addrs, 0)
   }
 
   fn build_all_motives_walk(flat: List‹(G, G, List‹KExpr›, List‹KLevel›)›,
                              n_params: G,
                              ind_lvls: G, elim_level: KLevel, univ_offset: G,
                              n_rec_params: G,
-                             top: List‹&KConstantInfo›, j: G) -> List‹KExpr› {
+                             top: List‹&KConstantInfo›,
+                             addrs: List‹Addr›, j: G) -> List‹KExpr› {
     match load(flat) {
       ListNode.Nil => store(ListNode.Nil),
       ListNode.Cons(m, rest) =>
@@ -1324,14 +1345,14 @@ def inductive_check := ⟦
                 let mt = build_motive_type_flat(member_idx, m_ind_ty, m_own_params,
                                                  m_n_indices, occ_us, elim_level,
                                                  n_rec_params,
-                                                 is_aux, spec_params);
+                                                 is_aux, spec_params, top, addrs);
                 let mt_lifted = expr_lift(mt, j, 0);
                 store(ListNode.Cons(mt_lifted,
                   build_all_motives_walk(rest, n_params, ind_lvls, elim_level,
-                                          univ_offset, n_rec_params, top, j + 1))),
+                                          univ_offset, n_rec_params, top, addrs, j + 1))),
               _ =>
                 build_all_motives_walk(rest, n_params, ind_lvls, elim_level,
-                                        univ_offset, n_rec_params, top, j),
+                                        univ_offset, n_rec_params, top, addrs, j),
             },
         },
     }
@@ -1426,7 +1447,8 @@ def inductive_check := ⟦
                     self_own_params: G,
                     primary_ind_idx: G, self_mem_pos: G,
                     top: List‹&KConstantInfo›, addrs: List‹Addr›) -> KExpr {
-    let result_level = get_result_sort_level(ind_ty, self_own_params + n_indices);
+    let result_level = get_result_sort_level(ind_ty, self_own_params + n_indices,
+                                             store(ListNode.Nil), top, addrs);
     let is_large = is_large_eliminator(result_level, ctor_indices, top, addrs);
     let elim_level = match is_large {
       1 => store(KLevelNode.Param(0)),
@@ -1452,42 +1474,41 @@ def inductive_check := ⟦
         let flat_own_params = flat_own_params_of(flat, top);
         let motive_doms = build_all_motives(flat, n_params,
                                              ind_lvls, elim_level, univ_offset,
-                                             n_rec_params, top);
+                                             n_rec_params, top, addrs);
 
         let minor_doms = build_all_minors(flat, flat_idxs, flat_own_params,
                                            n_rec_params, n_motives,
                                            ind_lvls, univ_offset, motive_base, top, addrs, 0);
         let n_minors = list_length(minor_doms);
 
-        let indices_walk = collect_n_doms(after_params, n_indices);
-        match indices_walk {
-          (index_doms_raw, _ret_sort) =>
-            let index_doms = list_lift_indices(index_doms_raw, n_motives + n_minors, 0);
-            let self_mem_idx = self_mem_pos;
-            let self_member = flat_member_at(flat, self_mem_idx);
-            let self_is_aux = match self_member { (_, ia, _, _) => ia, };
-            let self_spec_params = match self_member { (_, _, sp, _) => sp, };
-            let self_occ_us = match self_member { (_, _, _, ou) => ou, };
-            let head = store(KExprNode.Const(ind_idx, self_occ_us));
-            let pre_major_depth = n_rec_params + n_motives + n_minors + n_indices;
-            let with_args = build_major_args_for_self(head, n_rec_params,
-                                                       pre_major_depth - 1,
-                                                       n_motives + n_minors + n_indices,
-                                                       self_is_aux, self_spec_params);
-            let major_ty = build_major_indices(with_args, n_indices, 0);
+        -- whnf-aware: index binders can hide under definitional wrappers
+        -- (mirror inductive.rs build_rec_type's whnf-peel index walk).
+        let index_doms_raw = collect_index_doms(after_params, n_indices, top, addrs);
+        let index_doms = list_lift_indices(index_doms_raw, n_motives + n_minors, 0);
+        let self_mem_idx = self_mem_pos;
+        let self_member = flat_member_at(flat, self_mem_idx);
+        let self_is_aux = match self_member { (_, ia, _, _) => ia, };
+        let self_spec_params = match self_member { (_, _, sp, _) => sp, };
+        let self_occ_us = match self_member { (_, _, _, ou) => ou, };
+        let head = store(KExprNode.Const(ind_idx, self_occ_us));
+        let pre_major_depth = n_rec_params + n_motives + n_minors + n_indices;
+        let with_args = build_major_args_for_self(head, n_rec_params,
+                                                   pre_major_depth - 1,
+                                                   n_motives + n_minors + n_indices,
+                                                   self_is_aux, self_spec_params);
+        let major_ty = build_major_indices(with_args, n_indices, 0);
 
-            let depth_after_major = pre_major_depth + 1;
-            let motive_var = (depth_after_major - 1) - (motive_base + self_mem_idx);
-            let motive_ref = store(KExprNode.BVar(motive_var));
-            let with_indices = apply_indices_in_conclusion(motive_ref, n_indices, 0);
-            let conclusion = store(KExprNode.App(with_indices, store(KExprNode.BVar(0))));
+        let depth_after_major = pre_major_depth + 1;
+        let motive_var = (depth_after_major - 1) - (motive_base + self_mem_idx);
+        let motive_ref = store(KExprNode.BVar(motive_var));
+        let with_indices = apply_indices_in_conclusion(motive_ref, n_indices, 0);
+        let conclusion = store(KExprNode.App(with_indices, store(KExprNode.BVar(0))));
 
-            let with_major = store(KExprNode.Forall(major_ty, conclusion));
-            let with_idx_foralls = wrap_foralls(with_major, index_doms);
-            let with_minors = wrap_foralls(with_idx_foralls, minor_doms);
-            let with_motives = wrap_foralls(with_minors, motive_doms);
-            wrap_foralls(with_motives, param_doms),
-        },
+        let with_major = store(KExprNode.Forall(major_ty, conclusion));
+        let with_idx_foralls = wrap_foralls(with_major, index_doms);
+        let with_minors = wrap_foralls(with_idx_foralls, minor_doms);
+        let with_motives = wrap_foralls(with_minors, motive_doms);
+        wrap_foralls(with_motives, param_doms),
     }
   }
 
@@ -1875,14 +1896,16 @@ def inductive_check := ⟦
   -- Mirror: src/ix/kernel/inductive.rs:4451-4489 compute_k_target.
   -- K-target valid iff: solo block, result level == 0 (Prop), single ctor
   -- with zero non-param fields. Returns 1 if K-target, else 0.
-  fn compute_k_target(ind_idx: G, top: List‹&KConstantInfo›) -> G {
+  fn compute_k_target(ind_idx: G, top: List‹&KConstantInfo›,
+                      addrs: List‹Addr›) -> G {
     let ind_ci = load(list_lookup(top, ind_idx));
     match ind_ci {
       KConstantInfo.Induct(_, ind_ty, n_params, n_indices, ctor_indices, _, _) =>
         let block_members = derive_block_member_idxs(ind_idx, top);
         match list_length(block_members) - 1 {
           0 =>
-            let result_level = get_result_sort_level(ind_ty, n_params + n_indices);
+            let result_level = get_result_sort_level(ind_ty, n_params + n_indices,
+                                                     store(ListNode.Nil), top, addrs);
             match level_equal(result_level, store(KLevelNode.Zero)) {
               0 => 0,
               1 =>
@@ -2038,7 +2061,7 @@ def inductive_check := ⟦
         -- unsound. Mirror: crates/kernel/src/inductive.rs:4089-4102.
         check_inductive_shape(self_major, top, addrs);
         let ind_idx = resolve_primary_ind_for_rec(self_major, rec_block, top);
-        let computed_k = compute_k_target(self_major, top);
+        let computed_k = compute_k_target(self_major, top, addrs);
         assert_eq!(k_flag, computed_k);
         let primary_ci = load(list_lookup(top, ind_idx));
         let self_ci = load(list_lookup(top, self_major));
@@ -2047,7 +2070,8 @@ def inductive_check := ⟦
             match self_ci {
               KConstantInfo.Induct(_, self_ind_ty, self_own_params, self_n_indices, self_ctor_indices, _, _) =>
                 -- Re-derive elim_level / univ_offset using self's data.
-                let result_level = get_result_sort_level(self_ind_ty, self_own_params + self_n_indices);
+                let result_level = get_result_sort_level(self_ind_ty, self_own_params + self_n_indices,
+                                                         store(ListNode.Nil), top, addrs);
                 let univ_offset = is_large_eliminator(result_level, self_ctor_indices, top, addrs);
                 let elim_level = match univ_offset {
                   1 => store(KLevelNode.Param(0)),
@@ -2070,7 +2094,7 @@ def inductive_check := ⟦
                 let flat_own_params = flat_own_params_of(flat, top);
                 let motive_doms = build_all_motives(flat, ind_n_params,
                                                     ind_lvls, elim_level, univ_offset,
-                                                    n_rec_params, top);
+                                                    n_rec_params, top, addrs);
                 let minor_doms = build_all_minors(flat, flat_idxs, flat_own_params,
                                                    n_rec_params, n_motives,
                                                    ind_lvls, univ_offset, motive_base, top, addrs, 0);
@@ -2903,8 +2927,10 @@ def inductive_check := ⟦
                 assert_eq!(peer_n_params, self_n_params);
                 check_param_agreement(self_ty, peer_ty, self_n_params, top, addrs);
                 -- S3: result-universe agreement. Mirror src/ix/kernel/inductive.rs:228-237.
-                let self_lvl = get_result_sort_level(self_ty, self_n_params + self_n_indices);
-                let peer_lvl = get_result_sort_level(peer_ty, peer_n_params + peer_n_indices);
+                let self_lvl = get_result_sort_level(self_ty, self_n_params + self_n_indices,
+                                                     store(ListNode.Nil), top, addrs);
+                let peer_lvl = get_result_sort_level(peer_ty, peer_n_params + peer_n_indices,
+                                                     store(ListNode.Nil), top, addrs);
                 assert_eq!(level_equal(self_lvl, peer_lvl), 1);
                 peer_param_loop(self_pos, self_ty, self_n_params, self_n_indices,
                                 block_addr, rest, top, addrs, idx + 1),
