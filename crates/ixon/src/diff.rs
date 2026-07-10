@@ -56,7 +56,7 @@ pub struct EnvStats {
 }
 
 /// One name present in both envs whose constant address changed.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NamedChange {
   /// `Name::pretty()` of the joined name.
   pub name: String,
@@ -77,7 +77,7 @@ pub struct NamedChange {
 /// Report produced by [`diff_envs`]. All name-keyed vectors are sorted
 /// by (pretty name, name hash); address vectors are sorted ascending.
 /// Set-difference lists are complete — display layers cap as needed.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct EnvDiff {
   /// `None` = unchanged, otherwise `(a.main, b.main)`.
   pub main_changed: Option<(Option<Address>, Option<Address>)>,
@@ -771,10 +771,39 @@ fn sort_by_name<T>(v: &mut [(String, Name, T)]) {
   v.sort_by(|x, y| x.0.cmp(&y.0).then_with(|| x.1.cmp(&y.1)));
 }
 
+/// Coarse progress for the named join — the only diff phase whose cost
+/// scales with the number of *changed* names (each one materializes two
+/// constants and walks their expressions). Parses happen before
+/// [`diff_envs`] and are the caller's to report.
+#[derive(Clone, Copy, Debug)]
+pub struct JoinProgress {
+  /// Entries of the first env's named map processed so far.
+  pub done: usize,
+  /// Total entries in the first env's named map.
+  pub total: usize,
+  /// Changed names (addr differs) classified so far.
+  pub changed: usize,
+}
+
+/// Named-join entries between progress callbacks in [`diff_envs_with`].
+const JOIN_PROGRESS_STRIDE: usize = 100_000;
+
 /// Diff two environments. `meta = false` (anon mode, the default)
 /// compares only anonymous structure; `meta = true` additionally
 /// compares `Named` metadata content. See the module docs.
 pub fn diff_envs(a: &Env, b: &Env, meta: bool) -> Result<EnvDiff, String> {
+  diff_envs_with(a, b, meta, &mut |_| {})
+}
+
+/// [`diff_envs`] with a progress callback: `on_progress` fires every
+/// `JOIN_PROGRESS_STRIDE` named-join entries and once when the join
+/// completes (so the final event always carries `done == total`).
+pub fn diff_envs_with(
+  a: &Env,
+  b: &Env,
+  meta: bool,
+  on_progress: &mut dyn FnMut(JoinProgress),
+) -> Result<EnvDiff, String> {
   let mut d = EnvDiff {
     stats_a: env_stats(a),
     stats_b: env_stats(b),
@@ -788,6 +817,8 @@ pub fn diff_envs(a: &Env, b: &Env, meta: bool) -> Result<EnvDiff, String> {
   let mut removed: Vec<(String, Name, Address)> = Vec::new();
   let mut changed: Vec<(String, Name, NamedChange)> = Vec::new();
   let mut meta_only: Vec<(String, Name, Vec<String>)> = Vec::new();
+  let join_total = a.named.len();
+  let mut join_done: usize = 0;
   for entry in a.named.iter() {
     let (name, na) = (entry.key(), entry.value());
     match b.named.get(name) {
@@ -807,7 +838,21 @@ pub fn diff_envs(a: &Env, b: &Env, meta: bool) -> Result<EnvDiff, String> {
         }
       },
     }
+    join_done += 1;
+    if join_done.is_multiple_of(JOIN_PROGRESS_STRIDE) && join_done < join_total
+    {
+      on_progress(JoinProgress {
+        done: join_done,
+        total: join_total,
+        changed: changed.len(),
+      });
+    }
   }
+  on_progress(JoinProgress {
+    done: join_total,
+    total: join_total,
+    changed: changed.len(),
+  });
   for entry in b.named.iter() {
     let name = entry.key();
     if a.named.get(name).is_none() {
@@ -1340,6 +1385,93 @@ mod tests {
     assert_eq!((mf.old_kind, mf.new_kind), ("dprj", "dprj"));
     assert_eq!(labels(&mf.fields), ["block-siblings"]);
     assert_eq!(labels(&mg.fields), ["block.value"]);
+  }
+
+  /// Anon-mode diffs must be identical whether the envs came from the
+  /// full reader or the lazy-index path (`ix diff`'s memory-lean route).
+  #[test]
+  fn lazy_index_env_matches_full_reader_in_anon_mode() {
+    let build = |value: Arc<Expr>, hint: u32, with_extra: bool| {
+      let mut env = Env::new();
+      let register = |env: &Env, label: &str, addr: Address| {
+        let name = n(label);
+        env
+          .names
+          .insert(Address::from_blake3_hash(*name.get_hash()), name.clone());
+        env.register_name(name, Named::with_addr(addr));
+      };
+      let c = defn_c(Expr::var(3), value);
+      let addr = store_canonical(&env, &c);
+      register(&env, "Foo", addr.clone());
+      // Hint lives on a constant PRESENT IN BOTH envs — the hints diff
+      // joins on shared consts only.
+      let stable = defn_c(Expr::var(7), Expr::var(0));
+      let stable_addr = store_canonical(&env, &stable);
+      register(&env, "Stable", stable_addr.clone());
+      env.anon_hints.insert(stable_addr, ReducibilityHints::Regular(hint));
+      env.store_blob(vec![1, 2, 3]);
+      env.store_comm(
+        Address::hash(b"comm"),
+        Comm::new(Address::hash(b"s"), Address::hash(b"p")),
+      );
+      env.main = Some(addr);
+      env.assumptions.insert(Address::hash(b"assumed"));
+      if with_extra {
+        let extra = defn_c(Expr::var(5), Expr::var(2));
+        let extra_addr = store_canonical(&env, &extra);
+        register(&env, "Extra", extra_addr);
+      }
+      let mut bytes = Vec::new();
+      env.put(&mut bytes).expect("put failed");
+      bytes
+    };
+    let bytes_a = build(Expr::var(0), 1, false);
+    let bytes_b = build(Expr::var(1), 2, true);
+
+    let full = |bytes: &[u8]| {
+      let mut cursor = bytes;
+      Env::get(&mut cursor).expect("full read failed")
+    };
+    let lazy = |bytes: &[u8]| {
+      let index = Env::parse_lazy_index(bytes).expect("lazy index failed");
+      Env::from_lazy_index(&index, bytes).expect("from_lazy_index failed")
+    };
+
+    let via_full = diff(&full(&bytes_a), &full(&bytes_b));
+    let via_lazy = diff(&lazy(&bytes_a), &lazy(&bytes_b));
+    assert_eq!(via_full, via_lazy);
+    // Sanity: the pair genuinely exercises every section.
+    assert_eq!(via_full.named_changed.len(), 1);
+    assert_eq!(via_full.named_added.len(), 1);
+    assert_eq!(via_full.hints_changed.len(), 1);
+    // Lazy self-diff is empty.
+    assert!(diff(&lazy(&bytes_a), &lazy(&bytes_a)).is_empty());
+  }
+
+  #[test]
+  fn join_progress_final_event_totals() {
+    let (a, _) = env1("Base", &defn_c(Expr::var(3), Expr::var(0)));
+    let b = a.clone();
+    let extra = defn_c(Expr::var(4), Expr::var(1));
+    let extra_addr = store_canonical(&b, &extra);
+    b.register_name(n("Extra"), Named::with_addr(extra_addr));
+    // Change Base's constant so exactly one join entry classifies.
+    let changed = defn_c(Expr::var(3), Expr::var(9));
+    let changed_addr = store_canonical(&b, &changed);
+    b.register_name(n("Base"), Named::with_addr(changed_addr));
+
+    let mut events: Vec<JoinProgress> = Vec::new();
+    let d = diff_envs_with(&a, &b, false, &mut |p| events.push(p))
+      .expect("diff_envs_with failed");
+    let last = events.last().expect("no progress events");
+    assert_eq!(last.done, last.total);
+    assert_eq!(last.total, a.named.len());
+    assert_eq!(last.changed, d.named_changed.len());
+    assert_eq!(d.named_changed.len(), 1);
+    assert!(
+      events.windows(2).all(|w| w[0].done <= w[1].done),
+      "progress must be monotone"
+    );
   }
 
   #[test]

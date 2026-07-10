@@ -1707,9 +1707,9 @@ impl Env {
   /// Deserialize an Env from bytes.
   ///
   /// The whole buffer must be consumed — trailing bytes after the
-  /// final section are rejected (truncation/concatenation guard). The
-  /// early-stop readers (`get_anon`, `get_anon_mmap`,
-  /// `parse_lazy_index`) cannot make that check by design.
+  /// final section are rejected (truncation/concatenation guard).
+  /// `parse_lazy_index` enforces the same; the early-stop readers
+  /// (`get_anon`, `get_anon_mmap`) cannot make that check by design.
   pub fn get(buf: &mut &[u8]) -> Result<Self, String> {
     // Header: tag + stored merkle root (verified at the end against
     // the recomputed root; empty const sets store `zero_address()`) +
@@ -1847,10 +1847,14 @@ impl Env {
   /// - the `names` table and each `Named`'s `ExprMetaArena` are parsed only to
   ///   advance the cursor and are then dropped, keeping just `name → addr` and
   ///   the per-`Defn` reducibility hint;
-  /// - `comms` are skipped entirely.
+  /// - §3 hints and §6 comms are carried verbatim (both tiny), so an `Env`
+  ///   rebuilt from the index (see [`Env::from_lazy_index`]) matches the full
+  ///   reader on every anon-visible section.
   ///
   /// `data` must be the whole buffer (offsets are relative to its start). The
-  /// env-level merkle root over const addresses is still re-verified.
+  /// env-level merkle root over const addresses is still re-verified. Since
+  /// this reader now consumes every section, trailing bytes are rejected
+  /// exactly as in [`Env::get`].
   pub fn parse_lazy_index(data: &[u8]) -> Result<LazyIndex, String> {
     let mut buf: &[u8] = data;
 
@@ -1885,8 +1889,10 @@ impl Env {
     // Section 3: anon_hints — the canonical hint channel (the writer
     // always emits it, deriving from Named metadata when needed), so
     // `LazyNamed.hint` is a plain lookup instead of a metadata harvest.
+    // Kept verbatim on the index for full-reader parity.
+    index.hints = read_hints_section(&mut buf)?;
     let hints_map: FxHashMap<Address, ReducibilityHints> =
-      read_hints_section(&mut buf)?.into_iter().collect();
+      index.hints.iter().cloned().collect();
 
     // Section 4: Names — parsed to build the index for metadata decoding, then
     // dropped (the check never consults the name component table).
@@ -1917,7 +1923,24 @@ impl Env {
       index.named.push(LazyNamed { name, addr: named.addr, hint });
     }
 
-    // Section 6 (comms) is never reached: not needed by the check path.
+    // Section 6: Comms — carried verbatim (tiny; empty for
+    // compile-produced envs). The check path ignores them, but
+    // `Env::from_lazy_index` consumers (e.g. `ix diff`) want parity
+    // with the full reader.
+    let num_comms = get_u64(&mut buf)?;
+    for _ in 0..num_comms {
+      let addr = get_address(&mut buf)?;
+      let comm = Comm::get(&mut buf)?;
+      index.comms.push((addr, comm));
+    }
+
+    // Every section consumed — enforce EOF like `Env::get`.
+    if !buf.is_empty() {
+      return Err(format!(
+        "parse_lazy_index: {} trailing bytes after final section",
+        buf.len()
+      ));
+    }
 
     // Re-verify the merkle root over const addresses (header integrity).
     let mut const_addrs: Vec<Address> =
