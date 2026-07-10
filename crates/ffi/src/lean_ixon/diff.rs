@@ -14,7 +14,7 @@
 use std::time::Instant;
 
 use ix_common::address::Address;
-use ixon::diff::{EnvDiff, EnvStats, NamedChange, diff_envs_with};
+use ixon::diff::{DiffPhase, EnvDiff, EnvStats, NamedChange, diff_envs_with};
 use ixon::env::Env as IxonEnv;
 use lean_ffi::object::{
   LeanArray, LeanBool, LeanBorrowed, LeanByteArray, LeanExcept, LeanOption,
@@ -95,7 +95,7 @@ impl LeanIxonEnvStats<LeanOwned> {
 
 impl LeanIxonNamedDiff<LeanOwned> {
   /// Build `Ixon.NamedDiff { name, oldAddr, newAddr, oldKind, newKind,
-  /// fields, metaFields }`.
+  /// fields, metaFields, rippled }`.
   fn build(c: &NamedChange) -> Self {
     let ctor = LeanIxonNamedDiff::alloc(0);
     ctor.set_obj(0, LeanString::new(&c.name));
@@ -105,6 +105,7 @@ impl LeanIxonNamedDiff<LeanOwned> {
     ctor.set_obj(4, LeanString::new(c.new_kind));
     ctor.set_obj(5, string_array(&c.fields));
     ctor.set_obj(6, string_array(&c.meta_fields));
+    ctor.set_num_8(0, u8::from(c.rippled));
     ctor
   }
 }
@@ -208,10 +209,16 @@ pub extern "C" fn rs_diff_envs(
   let t = Instant::now();
   let mut on_progress = |p: ixon::diff::JoinProgress| {
     if progress {
-      eprintln!(
-        "[rs_diff_envs] named join: {}/{} ({} changed so far)",
-        p.done, p.total, p.changed
-      );
+      match p.phase {
+        DiffPhase::NamedJoin => eprintln!(
+          "[rs_diff_envs] named join: {}/{} ({} changed so far)",
+          p.done, p.total, p.changed
+        ),
+        DiffPhase::RippleClassify => eprintln!(
+          "[rs_diff_envs] ripple pass: {}/{} ({} roots so far)",
+          p.done, p.total, p.changed
+        ),
+      }
     }
   };
   match diff_envs_with(&env_a, &env_b, want_meta, &mut on_progress) {
