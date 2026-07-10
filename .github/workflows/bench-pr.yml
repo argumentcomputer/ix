@@ -215,15 +215,25 @@ jobs:
           fail-on-cache-miss: true
       - if: steps.pr-ixe.outputs.cache-hit != 'true'
         run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      # Pointed at the Benchmarks/Compile SUBPACKAGE (same toolchain as the
+      # root): mathlib is a dependency there only, so `lake exe cache get`
+      # (use-mathlib-cache) is an unknown executable from the root.
       - name: Provision Lean toolchain
         if: steps.pr-ixe.outputs.cache-hit != 'true'
         uses: leanprover/lean-action@v1
         with:
-          lake-package-directory: .
+          lake-package-directory: Benchmarks/Compile
           auto-config: false
           build: false
           use-github-cache: false
           use-mathlib-cache: ${{ matrix.env == 'Mathlib' && 'true' || 'false' }}
+      # The measured `ix compile` resolves the env's imports from the
+      # subpackage's oleans — bench-main builds the same target before its
+      # measured compile.
+      - name: Build env oleans
+        if: steps.pr-ixe.outputs.cache-hit != 'true'
+        working-directory: Benchmarks/Compile
+        run: lake build Compile${{ matrix.env }}
       - name: Compile ${{ matrix.env }}.ixe
         if: steps.pr-ixe.outputs.cache-hit != 'true'
         run: ix bench run --backend compile --env ${{ matrix.env }} --out compile.json
@@ -302,9 +312,12 @@ jobs:
           mkdir -p .lake/build/bin
           mv ~/.local/bin/ix ~/.local/bin/bench-typecheck .lake/build/bin/
           echo "$PWD/.lake/build/bin" >> "$GITHUB_PATH"
-      # Toolchain provisioning only (no package build): the restored binaries
-      # link against the toolchain's libleanshared. Mathlib olean cache only
-      # for the mathlib env (its `ix compile` needs the oleans).
+      # Toolchain provisioning only (no package build, no mathlib cache):
+      # the restored binaries link against the toolchain's libleanshared,
+      # and the env `.ixe` comes from the compile job. (The lazy in-cell
+      # compile fallback therefore can't rebuild the Mathlib env — its
+      # oleans live in the Benchmarks/Compile subpackage, provisioned only
+      # by the compile job — and fails loudly instead.)
       - name: Provision Lean toolchain
         uses: leanprover/lean-action@v1
         with:
@@ -312,7 +325,6 @@ jobs:
           auto-config: false
           build: false
           use-github-cache: false
-          use-mathlib-cache: ${{ matrix.cell.env == 'Mathlib' && 'true' || 'false' }}
       # The compiled env is identical across every cell of the same PR commit —
       # the compile job published it; cells pass it via `--ixe` instead of
       # recompiling.
@@ -489,7 +501,19 @@ jobs:
           build: true
           build-args: "ix bench-typecheck"
           use-github-cache: false
-          use-mathlib-cache: ${{ matrix.cell.env == 'Mathlib' && 'true' || 'false' }}
+      # Base-side `ix compile` of the Mathlib env resolves imports from the
+      # base tree's Benchmarks/Compile subpackage — mathlib lives there, not
+      # in the root workspace, so the cache fetch can't ride the build
+      # action above.
+      - name: Fetch base Mathlib oleans
+        if: >-
+          steps.bencher.outputs.run-base == 'true' &&
+          steps.base-src.outputs.cached != 'true' &&
+          matrix.cell.env == 'Mathlib'
+        working-directory: base/Benchmarks/Compile
+        run: |
+          lake exe cache get
+          lake build CompileMathlib
       # NOTE: the PR's `ix bench` orchestrates the base run (--repo base); the
       # MEASURED tools resolve from base/.lake/build/bin. When a PR changes
       # the benchmark CLIs themselves, the base tools may reject the new
