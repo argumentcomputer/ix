@@ -10,11 +10,10 @@ aiur = { path = "../../crates/aiur", features = ["parallel"] }
 # Same rev as the root workspace and the guest — see guest/Cargo.toml.
 multi-stark = { git = "https://github.com/argumentcomputer/multi-stark.git", rev = "2c019220cb43ce946efec6b9caf507f5a6bccd1c" }
 blake3 = "1"
-# `profiling` selects SP1's portable executor instead of the native JIT one.
-# The JIT executor runs the guest in a child process backed by /dev/shm, which
-# is capped at 63MB in this environment and SIGBUSes; the portable executor
-# has no shm dependency. It also enables the executor's cycle tracker.
-sp1-sdk = { version = "6.3.1", features = ["profiling"] }
+# Git tag rather than crates.io: the SDK's `cuda` feature depends on
+# `sp1-cuda` 6.3.1, which was never published to crates.io and only resolves
+# from the sp1 repo itself. Same code as the crates.io 6.3.1 release.
+sp1-sdk = { git = "https://github.com/succinctlabs/sp1", tag = "v6.3.1" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"
@@ -26,3 +25,14 @@ hex = "0.4"
 
 [build-dependencies]
 sp1-build = "6.3.1"
+
+[features]
+default = []
+# NVIDIA GPU proving via the auto-downloaded `sp1-gpu-server` (no Docker).
+# Compile-time only makes the prover available; select it at runtime with
+# SP1_PROVER=cuda.
+cuda = ["sp1-sdk/cuda"]
+# SP1's portable executor instead of the native JIT one (which runs the guest
+# in a /dev/shm-backed child process and SIGBUSes when shm is tiny, e.g. in
+# sandboxes/containers). Also enables the executor's cycle tracker.
+portable = ["sp1-sdk/profiling"]

@@ -39,12 +39,20 @@ def cargoArgs (testFfi : Bool := false) (net : Bool := false) : IO (Array String
   -- IX_SP1=1 enables `ix compress` (SP1 recursive proof compression).
   -- Needs the succinct toolchain (sp1up) on PATH and protoc installed;
   -- see sp1-compress/README.md.
+  -- IX_SP1_CUDA=1 additionally compiles in the GPU prover (select it at
+  -- runtime with SP1_PROVER=cuda); IX_SP1_PORTABLE=1 selects SP1's portable
+  -- executor for environments with a tiny /dev/shm.
   let ixSp1 ← IO.getEnv "IX_SP1"
+  let ixSp1Cuda ← IO.getEnv "IX_SP1_CUDA"
+  let ixSp1Portable ← IO.getEnv "IX_SP1_PORTABLE"
   let mut features : Array String := #[]
   if ixNoPar != some "1" then features := features.push "parallel"
   if net && !System.Platform.isOSX then features := features.push "net"
   if testFfi then features := features.push "test-ffi"
-  if ixSp1 == some "1" then features := features.push "sp1"
+  if ixSp1 == some "1" || ixSp1Cuda == some "1" || ixSp1Portable == some "1" then
+    features := features.push "sp1"
+  if ixSp1Cuda == some "1" then features := features.push "sp1-cuda"
+  if ixSp1Portable == some "1" then features := features.push "sp1-portable"
   let buildArgs := #["build", "--release", "-p", "ix-ffi"]
   if features.isEmpty then return buildArgs
   else return buildArgs ++ #["--features", ",".intercalate features.toList]
