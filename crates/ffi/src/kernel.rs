@@ -3673,7 +3673,7 @@ fn compare_envs(
             find_diff(orig_ci.get_type(), egressed_ci.get_type(), "type");
           errors.push(format!("{name}: {diff}"));
         }
-        match (orig_ci, egressed_ci) {
+        match (&*orig_ci, &*egressed_ci) {
           (LCI::DefnInfo(a), LCI::DefnInfo(b))
             if a.value.get_hash() != b.value.get_hash() =>
           {

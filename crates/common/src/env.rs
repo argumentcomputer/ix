@@ -1533,14 +1533,21 @@ pub struct LazyEnvStats {
   pub iter_decode: std::time::Duration,
 }
 
+/// Nanosecond counters saturate to `u64` (~584 years of accumulated
+/// decode time) rather than paying `u128` atomics.
+#[cfg(not(target_arch = "riscv64"))]
+fn elapsed_nanos(start: std::time::Instant) -> u64 {
+  u64::try_from(start.elapsed().as_nanos()).unwrap_or(u64::MAX)
+}
+
 #[cfg(not(target_arch = "riscv64"))]
 impl LazyEnv {
   const SHARDS: usize = 64;
 
+  /// One hash byte picks the shard: `SHARDS` divides 256, so the
+  /// low byte of a uniform hash is itself uniform over shards.
   fn shard_for(&self, name: &Name) -> usize {
-    let bytes = name.get_hash().as_bytes();
-    let word = u64::from_le_bytes(bytes[..8].try_into().unwrap());
-    (word as usize) % Self::SHARDS
+    usize::from(name.get_hash().as_bytes()[0]) % Self::SHARDS
   }
 
   fn get(&self, name: &Name) -> Option<Arc<ConstantInfo>> {
@@ -1558,9 +1565,7 @@ impl LazyEnv {
     self.misses.fetch_add(1, Ordering::Relaxed);
     let fetch_start = std::time::Instant::now();
     let decoded = (self.fetch)(name);
-    self
-      .miss_nanos
-      .fetch_add(fetch_start.elapsed().as_nanos() as u64, Ordering::Relaxed);
+    self.miss_nanos.fetch_add(elapsed_nanos(fetch_start), Ordering::Relaxed);
     let decoded = Arc::new(decoded?);
     let mut shard = self.shards[shard_idx].lock().unwrap();
     if shard.len() >= self.cap_per_shard {
@@ -1731,7 +1736,7 @@ impl Env {
         let fetch_start = std::time::Instant::now();
         let decoded = (lazy.fetch)(n);
         lazy.iter_nanos.fetch_add(
-          fetch_start.elapsed().as_nanos() as u64,
+          elapsed_nanos(fetch_start),
           std::sync::atomic::Ordering::Relaxed,
         );
         decoded.map(|ci| (n, EnvEntry::Owned(Arc::new(ci))))

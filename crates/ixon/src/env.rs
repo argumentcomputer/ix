@@ -312,7 +312,7 @@ impl Env {
       if self.consts.contains_key(&addr) {
         return;
       }
-      self.consts.insert(addr, LazyConstant::from_constant_uncached(constant));
+      self.consts.insert(addr, LazyConstant::from_constant_uncached(&constant));
     } else {
       self.consts.insert(addr, LazyConstant::from_constant(constant));
     }

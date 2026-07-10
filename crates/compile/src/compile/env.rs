@@ -99,7 +99,7 @@ pub fn self_rss_kb() -> Option<(u64, u64, u64)> {
 }
 
 /// Render `self_rss_kb` for the progress logs.
-fn rss_log_suffix() -> String {
+pub fn rss_log_suffix() -> String {
   match self_rss_kb() {
     Some((vm, anon, file)) => format!(
       " · rss {:.1} GiB (anon {:.1}, file {:.1})",
@@ -580,7 +580,8 @@ pub fn compile_env_with_options(
     }
 
     // Spawn worker threads
-    for worker_id in 0..num_threads {
+    for (worker_id, kenv_size_slot) in worker_kenv_sizes_ref.iter().enumerate()
+    {
       s.spawn(move || {
         let mut worker_kctx = crate::compile::KernelCtx::new();
         let mut worker_blocks_done = 0usize;
@@ -945,7 +946,7 @@ pub fn compile_env_with_options(
 
               // Bounded per-worker kenv growth (see KENV_CLEAR_EVERY).
               worker_blocks_done += 1;
-              if worker_blocks_done % KENV_CLEAR_EVERY == 0 {
+              if worker_blocks_done.is_multiple_of(KENV_CLEAR_EVERY) {
                 worker_kctx.kenv.clear_releasing_memory();
               }
 
@@ -953,7 +954,7 @@ pub fn compile_env_with_options(
               // reporter's decile aggregate. cache_sizes() is ~20 map
               // len() reads; the slot is uncontended except during the
               // reporter's brief decile sweep.
-              *worker_kenv_sizes_ref[worker_id].lock().unwrap() =
+              *kenv_size_slot.lock().unwrap() =
                 worker_kctx.kenv.cache_sizes();
             },
             None => {

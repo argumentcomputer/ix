@@ -296,14 +296,11 @@ pub extern "C" fn rs_compile_env(
 ) -> LeanIOResult<LeanOwned> {
   let quiet = std::env::var("IX_QUIET").is_ok();
   let rss_gib = |label: &str| {
-    if !quiet && let Some((vm, anon, file)) = ix_compile::compile::self_rss_kb()
-    {
-      eprintln!(
-        "[rs_compile_env] rss {label}: {:.1} GiB (anon {:.1}, file {:.1})",
-        vm as f64 / (1024.0 * 1024.0),
-        anon as f64 / (1024.0 * 1024.0),
-        file as f64 / (1024.0 * 1024.0),
-      );
+    if !quiet {
+      let suffix = ix_compile::compile::rss_log_suffix();
+      if !suffix.is_empty() {
+        eprintln!("[rs_compile_env] {label}{suffix}");
+      }
     }
   };
   rss_gib("at entry");
@@ -650,7 +647,7 @@ extern "C" fn rs_compile_env_rust_first(
   env_consts_ptr: LeanList<LeanBorrowed<'_>>,
 ) -> *mut RustCompiledEnv {
   // Decode Lean environment
-  let lean_env = decode_env(env_consts_ptr);
+  let lean_env = crate::lean_env::decode_env(env_consts_ptr);
   let lean_env = Arc::new(lean_env);
 
   // Compile with Rust

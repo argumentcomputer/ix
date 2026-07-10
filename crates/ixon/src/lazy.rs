@@ -145,7 +145,7 @@ impl LazyConstant {
   /// `get()` re-parses per access — the same policy as
   /// [`Self::from_bytes`]. The demoted accumulator repr (see
   /// `env::DEMOTE`).
-  pub fn from_constant_uncached(c: Constant) -> Self {
+  pub fn from_constant_uncached(c: &Constant) -> Self {
     let mut buf = Vec::new();
     c.put(&mut buf);
     LazyConstant { bytes: BytesSource::Heap(buf.into()), cache: None }
@@ -309,7 +309,7 @@ mod tests {
   fn from_constant_uncached_roundtrips_without_cache() {
     let c = defn_constant();
     let (addr, bytes) = c.commit();
-    let lazy = LazyConstant::from_constant_uncached(c.clone());
+    let lazy = LazyConstant::from_constant_uncached(&c);
     assert!(!lazy.is_materialized());
     // Same serialized form as the cached constructor / commit().
     assert_eq!(lazy.raw_bytes(), &bytes[..]);

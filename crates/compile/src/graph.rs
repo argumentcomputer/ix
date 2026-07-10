@@ -65,21 +65,12 @@ pub struct SetupScan {
 /// visiting the whole env once instead of three times cuts the setup
 /// decode count to a third. Outputs are identical to the separate passes.
 pub fn setup_scan(env: &Env) -> SetupScan {
+  #[derive(Default)]
   struct Acc {
     out_refs: RefMap,
     in_refs: RefMap,
     ungrounded: FxHashMap<Name, crate::ground::GroundError>,
     ind_groups: FxHashMap<Name, Vec<Name>>,
-  }
-  impl Default for Acc {
-    fn default() -> Self {
-      Acc {
-        out_refs: RefMap::default(),
-        in_refs: RefMap::default(),
-        ungrounded: FxHashMap::default(),
-        ind_groups: FxHashMap::default(),
-      }
-    }
   }
 
   let names: Vec<&Name> = env.keys().collect();

@@ -1465,7 +1465,7 @@ extern "C" fn rs_tmp_decode_const_map(
     let mut seen_blocks: FxHashSet<Vec<Name>> = FxHashSet::default();
 
     for (name, ci) in env.iter() {
-      let all = match ci {
+      let all = match &*ci {
         LeanCI::InductInfo(v) => &v.all,
         _ => continue,
       };
@@ -1484,8 +1484,9 @@ extern "C" fn rs_tmp_decode_const_map(
       // longer required at this call site. Still verify the block has at
       // least one ingress-able inductive so we don't waste work on
       // broken envs.
-      let has_indc =
-        all.iter().any(|n| matches!(env.get(n), Some(LeanCI::InductInfo(_))));
+      let has_indc = all
+        .iter()
+        .any(|n| matches!(env.get(n).as_deref(), Some(LeanCI::InductInfo(_))));
       if !has_indc {
         continue;
       }
@@ -1586,7 +1587,7 @@ extern "C" fn rs_tmp_decode_const_map(
         let Some(orig_ci_ref) = env.get(patch_name) else {
           continue;
         };
-        let orig_ci: &LeanCI = orig_ci_ref;
+        let orig_ci: &LeanCI = &orig_ci_ref;
         let eq_result = match &perm_ctx_1b {
           Some(ctx) => ix_compile::congruence::perm::const_alpha_eq_with_perm(
             &gen_ci, orig_ci, ctx,
