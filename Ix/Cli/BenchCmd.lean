@@ -78,7 +78,8 @@ def selectNames (rows : Array VectorRow) (env : String) (mode : String)
     Array VectorRow := Id.run do
   let effTier :=
     if tier != "" then tier
-    else if mode == "prove" && full then "cheap" else "all"
+    else if (mode == "prove" || mode == "recursive") && full then "cheap"
+    else "all"
   rows.filter fun r =>
     r.env == env
     && (full || r.primary)
@@ -136,15 +137,24 @@ structure BackendSpec where
 def backendSpecs : List BackendSpec := [
   -- prove is aiur's default: the real-workload simulation (it measures
   -- Phase 1 — execute-time, fft-cost — inside the same process en route).
-  -- execute is the fast Phase-1-only signal.
+  -- execute is the fast Phase-1-only signal. recursive layers the in-circuit
+  -- multi-stark verifier on prove: execute it over each fresh proof, then
+  -- prove that execution — the recursion cell. It runs under the
+  -- recursion-tuned FRI parameters, so even its shared-name metrics
+  -- (prove-time, peak-rss) are not comparable to the prove cell's.
   { name := "aiur", defaultMode := "prove",
     testbeds := [("prove", "aiur-check-prove-x64-32x"),
-                 ("execute", "aiur-check-execute-x64-32x")],
+                 ("execute", "aiur-check-execute-x64-32x"),
+                 ("recursive", "aiur-check-recursive-x64-32x")],
     metrics := [("prove", ["prove-time", "throughput", "peak-rss",
                            "execute-time", "verify-time", "proof-size",
                            "fft-cost"]),
                 ("execute", ["execute-time", "throughput", "peak-rss",
-                             "fft-cost"])] },
+                             "fft-cost"]),
+                ("recursive", ["recursive-prove-time", "recursive-peak-rss",
+                               "recursive-proof-size", "recursive-verify-time",
+                               "recursive-time", "recursive-fft-cost",
+                               "prove-time"])] },
   { name := "zisk", defaultMode := "execute",
     testbeds := [("execute", "zisk-check-execute-x64-32x")],
     metrics := [("execute", ["execute-time", "throughput", "peak-rss",
@@ -475,8 +485,14 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
   | "aiur" =>
     let ixe ← ensureIxe repo info ((p.flag? "ixe").map (·.as! String))
     let bt ← resolveBin repo "bench-typecheck"
-    let modeArgs := if mode == "execute" then #["--execute-only"] else #[]
-    let doneKey := if mode == "prove" then "prove-time" else "execute-time"
+    let modeArgs := match mode with
+      | "execute" => #["--execute-only"]
+      | "recursive" => #["--recursive"]
+      | _ => #[]
+    let doneKey := match mode with
+      | "execute" => "execute-time"
+      | "recursive" => "recursive-prove-time"
+      | _ => "prove-time"
     runPerConstant out names doneKey fun name =>
       runGuarded watchdog ceilingGb bt
         (#["--ixe", ixe, "--consts", name, "--json", out, "--texray"]
@@ -576,7 +592,7 @@ def benchRunCmd : Cli.Cmd := `[Cli|
   FLAGS:
     backend      : String; "aiur | zisk | sp1 | ooc | compile"
     env          : String; "Benchmark env from the registry (default: InitStd)"
-    mode         : String; "prove | execute (default: the backend's defaultMode)"
+    mode         : String; "prove | execute | recursive (default: the backend's defaultMode)"
     out          : String; "Benchmark results JSON output path (default: bench.json)"
     repo         : String; "Checkout to benchmark: tools resolve from <repo>/.lake/build/bin first, then PATH (default: .)"
     csv          : String; "Vectors path (default: <repo>/Benchmarks/Vectors.csv)"
