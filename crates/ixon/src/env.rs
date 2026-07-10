@@ -208,6 +208,13 @@ pub struct LazyIndex {
   pub hints: Vec<(Address, ReducibilityHints)>,
   /// §6 comms (tiny in practice; empty for compile-produced envs).
   pub comms: Vec<(Address, Comm)>,
+  /// Byte offset (within the parsed buffer) of §5's entry count — where
+  /// a [`crate::serialize::NamedMetaCursor`] starts its streaming walk.
+  pub named_section_offset: usize,
+  /// §4 positional index → name-component address, retained so §5
+  /// entries can be re-parsed standalone (`get_named_indexed`) without
+  /// re-walking §4. ~32 B per name.
+  pub name_reverse_index: crate::metadata::NameReverseIndex,
 }
 
 /// The Ixon environment.
@@ -373,22 +380,53 @@ impl Env {
     index: &LazyIndex,
     data: &[u8],
   ) -> Result<Env, String> {
-    let mut env = Env::new();
+    let env = Env::new();
     for c in &index.consts {
-      let end = c
-        .offset
-        .checked_add(c.len)
-        .filter(|e| *e <= data.len())
-        .ok_or_else(|| {
-          format!(
-            "from_lazy_index: constant window [{}, +{}) out of bounds ({} bytes)",
-            c.offset,
-            c.len,
-            data.len()
-          )
-        })?;
+      let end = Self::lazy_slice_end(c, data.len(), "from_lazy_index")?;
       env.store_const_lazy(c.addr.clone(), Arc::from(&data[c.offset..end]));
     }
+    Ok(Self::fill_from_lazy_index(env, index))
+  }
+
+  /// [`Env::from_lazy_index`] over a memory-mapped buffer: constant
+  /// windows stay zero-copy mmap slices (the OS page cache backs them)
+  /// instead of heap copies. `mmap` must be the exact buffer
+  /// [`Env::parse_lazy_index`] walked.
+  #[cfg(not(target_arch = "riscv64"))]
+  pub fn from_lazy_index_mmap(
+    index: &LazyIndex,
+    mmap: &Arc<memmap2::Mmap>,
+  ) -> Result<Env, String> {
+    let env = Env::new();
+    for c in &index.consts {
+      Self::lazy_slice_end(c, mmap.len(), "from_lazy_index_mmap")?;
+      env.store_const_lazy_mmap(
+        c.addr.clone(),
+        Arc::clone(mmap),
+        c.offset,
+        c.len,
+      );
+    }
+    Ok(Self::fill_from_lazy_index(env, index))
+  }
+
+  #[cfg(not(target_arch = "riscv64"))]
+  fn lazy_slice_end(
+    c: &LazyConstSlice,
+    data_len: usize,
+    who: &str,
+  ) -> Result<usize, String> {
+    c.offset.checked_add(c.len).filter(|e| *e <= data_len).ok_or_else(|| {
+      format!(
+        "{who}: constant window [{}, +{}) out of bounds ({data_len} bytes)",
+        c.offset, c.len,
+      )
+    })
+  }
+
+  /// The non-const parts shared by both `from_lazy_index` variants.
+  #[cfg(not(target_arch = "riscv64"))]
+  fn fill_from_lazy_index(mut env: Env, index: &LazyIndex) -> Env {
     for n in &index.named {
       env.register_name(n.name.clone(), Named::with_addr(n.addr.clone()));
     }
@@ -403,7 +441,7 @@ impl Env {
     }
     env.main = index.main.clone();
     env.assumptions = index.assumptions.iter().cloned().collect();
-    Ok(env)
+    env
   }
 
   /// Get a constant by address, materializing on demand.

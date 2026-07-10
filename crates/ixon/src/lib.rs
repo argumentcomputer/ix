@@ -33,8 +33,8 @@ pub use constant::{
 };
 #[cfg(not(target_arch = "riscv64"))]
 pub use diff::{
-  DiffPhase, EnvDiff, EnvStats, JoinProgress, NamedChange, diff_envs,
-  diff_envs_with,
+  DiffPhase, EnvDiff, EnvStats, JoinProgress, LazySide, NamedChange,
+  diff_env_bytes, diff_envs, diff_envs_lazy, diff_envs_with,
 };
 pub use env::{Env, Named};
 pub use error::{CompileError, DecompileError, SerializeError};

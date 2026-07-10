@@ -2363,6 +2363,24 @@ def rsDiffEnvs (a b : ByteArray) (compareMeta : Bool := false) :
     Except String EnvDiff :=
   rsDiffEnvsFFI a b compareMeta
 
+@[extern "rs_diff_env_files"]
+opaque rsDiffEnvFilesFFI : @& String → @& String → Bool → IO EnvDiff
+
+/-- File-path variant of `rsDiffEnvs`: memory-maps both `.ixe` files
+    (constant windows stay zero-copy mmap slices backed by the OS page
+    cache) and diffs via the lazy reader in both modes — `ConstantMeta`
+    is never bulk-materialized; meta mode streams both §5 named
+    sections in a lockstep merge-join. The leanest diff path for
+    multi-GB envs. Failures surface as `IO` errors. -/
+def rsDiffEnvFiles (a b : String) (compareMeta : Bool := false) :
+    IO EnvDiff :=
+  rsDiffEnvFilesFFI a b compareMeta
+
+/-- Byte-equality of two files: metadata length fast path, then an
+    mmap memcmp — no heap reads. -/
+@[extern "rs_ixe_files_equal"]
+opaque rsIxeFilesEqual : @& String → @& String → IO Bool
+
 /-! ### Env pack (`rs_pack_env`) -/
 
 /-- Pack a value bundle in Rust: read the env at `envPath` (full

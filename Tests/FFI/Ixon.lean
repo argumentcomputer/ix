@@ -378,7 +378,30 @@ def envDiffTests : TestSeq :=
      let b := { envBase with
        assumptions := ({} : Std.HashSet Address).insert q |>.insert r }
      (runDiff a b).any fun d =>
-       d.assumptionsAdded == #[r] && d.assumptionsRemoved == #[p])
+       d.assumptionsAdded == #[r] && d.assumptionsRemoved == #[p]) ++
+  -- The mmap file-path entry must agree with the bytes-based one, and
+  -- the byte-equality fast path must distinguish same vs different.
+  (TestSeq.individualIO "EnvDiff: file-based diff matches bytes-based"
+    none (do
+      let dir ← IO.FS.createTempDir
+      let pa := dir / "a.ixe"
+      let pb := dir / "b.ixe"
+      let bytesA := serEnv envBase
+      let bytesB := serEnv envValueChanged
+      IO.FS.writeBinFile pa bytesA
+      IO.FS.writeBinFile pb bytesB
+      let r ← try
+        let eqSame ← Ixon.rsIxeFilesEqual pa.toString pa.toString
+        let eqDiff ← Ixon.rsIxeFilesEqual pa.toString pb.toString
+        let dFiles ← Ixon.rsDiffEnvFiles pa.toString pb.toString false
+        let ok := eqSame && !eqDiff &&
+          (match Ixon.rsDiffEnvs bytesA bytesB false with
+           | .ok dBytes => dFiles == dBytes
+           | .error _ => false)
+        pure (ok, if ok then none else some "file/bytes reports disagree")
+      catch e => pure (false, some e.toString)
+      IO.FS.removeDirAll dir
+      pure (r.1, 0, 0, r.2)) .done)
 
 /-- Self-diff over the pure-Lean writer's bytes must be empty in both
     modes (also exercises report marshaling on arbitrary inputs). -/

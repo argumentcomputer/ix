@@ -1,24 +1,32 @@
-//! `rs_diff_envs`: parse two serialized envs, diff them in Rust
-//! (`ixon::diff`), and marshal the [`EnvDiff`] report to Lean
-//! (`Ixon.EnvDiff`).
+//! Env diff FFI: `rs_diff_envs` (two serialized byte arrays),
+//! `rs_diff_env_files` (two file paths, memory-mapped), and
+//! `rs_ixe_files_equal` (byte-equality fast path) — all marshaling the
+//! [`EnvDiff`] report to Lean (`Ixon.EnvDiff`).
 //!
-//! Anon mode (the default) loads via the memory-lean lazy-index path
-//! (`parse_lazy_index` + `Env::from_lazy_index` — ConstantMeta is never
-//! materialized); meta mode uses the full reader (`Env::get`,
-//! preserving `Named.meta`/`original`). Large inputs get incremental
-//! progress on stderr.
+//! Both modes load via the memory-lean lazy-index path
+//! (`parse_lazy_index` + `from_lazy_index`/`from_lazy_index_mmap` —
+//! `ConstantMeta` is never bulk-materialized); meta mode additionally
+//! streams both files' §5 named sections in a lockstep merge-join
+//! (`ixon::diff::diff_envs_lazy`). The file-path entry keeps constant
+//! windows as zero-copy mmap slices, so neither the 2× file bytes nor
+//! the const-window copies of the ByteArray path are resident. Large
+//! inputs get incremental progress on stderr.
 //!
 //! Names cross the boundary pre-rendered (`Name::pretty()`) and
 //! pre-sorted; addresses cross raw so Lean owns display formatting.
 
+use std::sync::Arc;
 use std::time::Instant;
 
 use ix_common::address::Address;
-use ixon::diff::{DiffPhase, EnvDiff, EnvStats, NamedChange, diff_envs_with};
-use ixon::env::Env as IxonEnv;
+use ixon::diff::{
+  DiffPhase, EnvDiff, EnvStats, JoinProgress, LazySide, NamedChange,
+  diff_envs_lazy,
+};
+use ixon::env::{Env as IxonEnv, LazyIndex};
 use lean_ffi::object::{
-  LeanArray, LeanBool, LeanBorrowed, LeanByteArray, LeanExcept, LeanOption,
-  LeanOwned, LeanProd, LeanString,
+  LeanArray, LeanBool, LeanBorrowed, LeanByteArray, LeanExcept, LeanIOResult,
+  LeanOption, LeanOwned, LeanProd, LeanString,
 };
 
 use crate::lean::{
@@ -151,86 +159,226 @@ impl LeanIxonEnvDiff<LeanOwned> {
 /// silent.
 const PROGRESS_MIN_BYTES: usize = 100 * 1024 * 1024;
 
+/// Stderr line per progress event, tagged by phase.
+fn print_progress(p: &JoinProgress) {
+  match p.phase {
+    DiffPhase::MetaSweep => eprintln!(
+      "[rs_diff_envs] meta sweep: {}/{} ({} differing so far)",
+      p.done, p.total, p.changed
+    ),
+    DiffPhase::NamedJoin => eprintln!(
+      "[rs_diff_envs] named join: {}/{} ({} changed so far)",
+      p.done, p.total, p.changed
+    ),
+    DiffPhase::RippleClassify => eprintln!(
+      "[rs_diff_envs] ripple pass: {}/{} ({} roots so far)",
+      p.done, p.total, p.changed
+    ),
+  }
+}
+
+fn print_parse_start(which: &str, len: usize, progress: bool) {
+  if progress {
+    eprintln!(
+      "[rs_diff_envs] parsing {which} env ({} MB, lazy reader)...",
+      len / 1_000_000
+    );
+  }
+}
+
+fn print_parse_done(which: &str, t: Instant, env: &IxonEnv, progress: bool) {
+  if progress {
+    eprintln!(
+      "[rs_diff_envs] {which} env parsed in {:.1}s ({} consts, {} named, {} blobs)",
+      t.elapsed().as_secs_f64(),
+      env.consts.len(),
+      env.named.len(),
+      env.blobs.len()
+    );
+  }
+}
+
+/// Lazy-parse one heap-backed side: index + env.
+fn parse_side_bytes(
+  bytes: &[u8],
+  which: &str,
+  progress: bool,
+) -> Result<(LazyIndex, IxonEnv), String> {
+  print_parse_start(which, bytes.len(), progress);
+  let t = Instant::now();
+  let index = IxonEnv::parse_lazy_index(bytes)
+    .map_err(|e| format!("{which} input: {e}"))?;
+  let env = IxonEnv::from_lazy_index(&index, bytes)
+    .map_err(|e| format!("{which} input: {e}"))?;
+  print_parse_done(which, t, &env, progress);
+  Ok((index, env))
+}
+
+/// Run the shared lazy diff over two prepared sides and marshal.
+fn run_diff(
+  a: LazySide<'_>,
+  b: LazySide<'_>,
+  want_meta: bool,
+  progress: bool,
+  who: &str,
+) -> Result<EnvDiff, String> {
+  let t = Instant::now();
+  let mut on_progress = |p: JoinProgress| {
+    if progress {
+      print_progress(&p);
+    }
+  };
+  let d = diff_envs_lazy(a, b, want_meta, &mut on_progress)?;
+  if progress {
+    eprintln!("[{who}] diff computed in {:.1}s", t.elapsed().as_secs_f64());
+  }
+  Ok(d)
+}
+
 /// FFI: diff two serialized envs.
 /// `(a b : ByteArray) → (meta : Bool) → Except String Ixon.EnvDiff`.
-/// Pure result; reader choice (lazy-index vs full) follows `meta` —
-/// see the module docs. For large inputs, progress goes to stderr.
+/// Pure result; both modes use the lazy reader (meta mode adds the
+/// streaming §5 sweep). For large inputs, progress goes to stderr.
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_diff_envs(
   a: LeanByteArray<LeanBorrowed<'_>>,
   b: LeanByteArray<LeanBorrowed<'_>>,
   meta: LeanBool<LeanBorrowed<'_>>,
 ) -> LeanExcept<LeanOwned> {
-  let progress = a.as_bytes().len() >= PROGRESS_MIN_BYTES
-    || b.as_bytes().len() >= PROGRESS_MIN_BYTES;
+  let (a_bytes, b_bytes) = (a.as_bytes(), b.as_bytes());
+  let progress =
+    a_bytes.len() >= PROGRESS_MIN_BYTES || b_bytes.len() >= PROGRESS_MIN_BYTES;
   let want_meta = meta.to_bool();
-  // Anon mode loads via the lazy index: constant byte-windows +
-  // name→addr + §3 hints + §6 comms, never materializing ConstantMeta
-  // — at mathlib scale the full reader's metadata costs tens of GB and
-  // OOMs a 128 GB machine when two envs are held at once. Meta mode
-  // needs `Named.meta`/`original`, so it pays for the full reader.
-  let parse = |bytes: &[u8], which: &str| -> Result<IxonEnv, String> {
-    let reader = if want_meta { "full" } else { "anon" };
-    if progress {
-      eprintln!(
-        "[rs_diff_envs] parsing {which} env ({} MB, {reader} reader)...",
-        bytes.len() / 1_000_000
-      );
-    }
-    let t = Instant::now();
-    let env = if want_meta {
-      let mut cursor: &[u8] = bytes;
-      IxonEnv::get(&mut cursor).map_err(|e| format!("{which} input: {e}"))?
-    } else {
-      let index = IxonEnv::parse_lazy_index(bytes)
-        .map_err(|e| format!("{which} input: {e}"))?;
-      IxonEnv::from_lazy_index(&index, bytes)
-        .map_err(|e| format!("{which} input: {e}"))?
-    };
-    if progress {
-      eprintln!(
-        "[rs_diff_envs] {which} env parsed in {:.1}s ({} consts, {} named, {} blobs)",
-        t.elapsed().as_secs_f64(),
-        env.consts.len(),
-        env.named.len(),
-        env.blobs.len()
-      );
-    }
-    Ok(env)
-  };
-  let env_a = match parse(a.as_bytes(), "first") {
-    Ok(env) => env,
+  let sides = parse_side_bytes(a_bytes, "first", progress)
+    .and_then(|a| Ok((a, parse_side_bytes(b_bytes, "second", progress)?)));
+  let ((ia, ea), (ib, eb)) = match sides {
+    Ok(s) => s,
     Err(e) => return LeanExcept::error_string(&format!("rs_diff_envs: {e}")),
   };
-  let env_b = match parse(b.as_bytes(), "second") {
-    Ok(env) => env,
-    Err(e) => return LeanExcept::error_string(&format!("rs_diff_envs: {e}")),
-  };
-  let t = Instant::now();
-  let mut on_progress = |p: ixon::diff::JoinProgress| {
-    if progress {
-      match p.phase {
-        DiffPhase::NamedJoin => eprintln!(
-          "[rs_diff_envs] named join: {}/{} ({} changed so far)",
-          p.done, p.total, p.changed
-        ),
-        DiffPhase::RippleClassify => eprintln!(
-          "[rs_diff_envs] ripple pass: {}/{} ({} roots so far)",
-          p.done, p.total, p.changed
-        ),
-      }
-    }
-  };
-  match diff_envs_with(&env_a, &env_b, want_meta, &mut on_progress) {
-    Ok(d) => {
-      if progress {
-        eprintln!(
-          "[rs_diff_envs] diff computed in {:.1}s",
-          t.elapsed().as_secs_f64()
-        );
-      }
-      LeanExcept::ok(LeanIxonEnvDiff::build(&d))
-    },
+  match run_diff(
+    LazySide { env: &ea, index: &ia, data: a_bytes },
+    LazySide { env: &eb, index: &ib, data: b_bytes },
+    want_meta,
+    progress,
+    "rs_diff_envs",
+  ) {
+    Ok(d) => LeanExcept::ok(LeanIxonEnvDiff::build(&d)),
     Err(e) => LeanExcept::error_string(&format!("rs_diff_envs: {e}")),
   }
+}
+
+/// Memory-map a file, guarding against a concurrent length change.
+fn mmap_file(path: &str, which: &str) -> Result<Arc<memmap2::Mmap>, String> {
+  let file = std::fs::File::open(path)
+    .map_err(|e| format!("{which} input {path}: {e}"))?;
+  let expected =
+    file.metadata().map_err(|e| format!("{which} input {path}: {e}"))?.len();
+  let mmap = unsafe { memmap2::Mmap::map(&file) }
+    .map_err(|e| format!("{which} input {path}: mmap failed: {e}"))?;
+  if mmap.len() as u64 != expected {
+    return Err(format!(
+      "{which} input {path}: mapped length {} != metadata length {expected}",
+      mmap.len()
+    ));
+  }
+  Ok(Arc::new(mmap))
+}
+
+/// Lazy-parse one mmap-backed side: constant windows stay zero-copy.
+fn parse_side_mmap(
+  mmap: &Arc<memmap2::Mmap>,
+  which: &str,
+  progress: bool,
+) -> Result<(LazyIndex, IxonEnv), String> {
+  print_parse_start(which, mmap.len(), progress);
+  let t = Instant::now();
+  let index = IxonEnv::parse_lazy_index(&mmap[..])
+    .map_err(|e| format!("{which} input: {e}"))?;
+  let env = IxonEnv::from_lazy_index_mmap(&index, mmap)
+    .map_err(|e| format!("{which} input: {e}"))?;
+  print_parse_done(which, t, &env, progress);
+  Ok((index, env))
+}
+
+/// FFI: diff two `.ixe` files by path, memory-mapped.
+/// `(a b : String) → (meta : Bool) → IO Ixon.EnvDiff`.
+/// Constant windows are zero-copy mmap slices, so neither the file
+/// bytes nor const-window copies are heap-resident — the leanest diff
+/// path for multi-GB envs. Errors surface as `IO` errors.
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_diff_env_files(
+  a_path: LeanString<LeanBorrowed<'_>>,
+  b_path: LeanString<LeanBorrowed<'_>>,
+  meta: LeanBool<LeanBorrowed<'_>>,
+) -> LeanIOResult<LeanOwned> {
+  let want_meta = meta.to_bool();
+  let a_path = a_path.to_string();
+  let b_path = b_path.to_string();
+  let sides = mmap_file(&a_path, "first")
+    .and_then(|ma| Ok((ma, mmap_file(&b_path, "second")?)));
+  let (ma, mb) = match sides {
+    Ok(s) => s,
+    Err(e) => {
+      return LeanIOResult::error_string(&format!("rs_diff_env_files: {e}"));
+    },
+  };
+  let progress =
+    ma.len() >= PROGRESS_MIN_BYTES || mb.len() >= PROGRESS_MIN_BYTES;
+  let parsed = parse_side_mmap(&ma, "first", progress)
+    .and_then(|a| Ok((a, parse_side_mmap(&mb, "second", progress)?)));
+  let ((ia, ea), (ib, eb)) = match parsed {
+    Ok(s) => s,
+    Err(e) => {
+      return LeanIOResult::error_string(&format!("rs_diff_env_files: {e}"));
+    },
+  };
+  match run_diff(
+    LazySide { env: &ea, index: &ia, data: &ma[..] },
+    LazySide { env: &eb, index: &ib, data: &mb[..] },
+    want_meta,
+    progress,
+    "rs_diff_env_files",
+  ) {
+    Ok(d) => LeanIOResult::ok(LeanIxonEnvDiff::build(&d)),
+    Err(e) => LeanIOResult::error_string(&format!("rs_diff_env_files: {e}")),
+  }
+}
+
+/// FFI: byte-equality of two files. `(a b : String) → IO Bool`.
+/// Length fast path via metadata, then an mmap memcmp — no heap reads.
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_ixe_files_equal(
+  a_path: LeanString<LeanBorrowed<'_>>,
+  b_path: LeanString<LeanBorrowed<'_>>,
+) -> LeanIOResult<LeanOwned> {
+  let a_path = a_path.to_string();
+  let b_path = b_path.to_string();
+  let len = |path: &str, which: &str| -> Result<u64, String> {
+    std::fs::metadata(path)
+      .map(|m| m.len())
+      .map_err(|e| format!("{which} input {path}: {e}"))
+  };
+  let lens =
+    len(&a_path, "first").and_then(|la| Ok((la, len(&b_path, "second")?)));
+  let (la, lb) = match lens {
+    Ok(s) => s,
+    Err(e) => {
+      return LeanIOResult::error_string(&format!("rs_ixe_files_equal: {e}"));
+    },
+  };
+  let eq = if la != lb {
+    false
+  } else if la == 0 {
+    true // two empty files; mmap of a zero-length file errors
+  } else {
+    let maps = mmap_file(&a_path, "first")
+      .and_then(|ma| Ok((ma, mmap_file(&b_path, "second")?)));
+    match maps {
+      Ok((ma, mb)) => ma[..] == mb[..],
+      Err(e) => {
+        return LeanIOResult::error_string(&format!("rs_ixe_files_equal: {e}"));
+      },
+    }
+  };
+  LeanIOResult::ok(LeanOwned::box_usize(usize::from(eq)))
 }
