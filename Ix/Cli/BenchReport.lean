@@ -36,7 +36,7 @@ namespace Ix.Cli.BenchReport
 def metricKind (metric : String) : String :=
   if ["peak-rss", "file-size", "proof-size"].contains metric
   then "bytes"
-  else if metric.startsWith "phase:" then "seconds"
+  else if metric.startsWith "phase-" then "seconds"
   else if ["execute-time", "prove-time", "verify-time", "check-time",
            "compile-time"].contains metric then "seconds"
   else if ["fft-cost", "cycles", "steps", "max-shard-cycles",
@@ -135,11 +135,11 @@ def rowNames (rows : Json) : Array String :=
   | .obj kvs => kvs.toArray.map (·.1)
   | _ => #[]
 
-/-- The `phase:<span>` field names of one row (flat keys — same shape on
+/-- The `phase-<span>` field names of one row (flat keys — same shape on
     the PR side, in local baselines, and coming back from bencher). -/
 def rowPhaseKeys (rows : Json) (name : String) : Array String :=
   match (rows.getObjVal? name).toOption with
-  | some (.obj kvs) => kvs.toArray.map (·.1) |>.filter (·.startsWith "phase:")
+  | some (.obj kvs) => kvs.toArray.map (·.1) |>.filter (·.startsWith "phase-")
   | _ => #[]
 
 /-! ## compare -/
@@ -253,7 +253,7 @@ def renderCompare (a : CompareArgs) : String := Id.run do
     out := out.push "" |>.push
       "_⚠️ no PR-side results (see the workflow logs)._"
   -- Per-phase drill-down: the main table above carries every constant's
-  -- high-level row; below it, each constant with `phase:<span>` fields
+  -- high-level row; below it, each constant with `phase-<span>` fields
   -- (aiur witness/commit/quotient breakdowns, zkVM coarse phases) gets its
   -- own collapsed mini-table (`phase | main | PR | Δ%`), opened as
   -- desired.
@@ -370,7 +370,7 @@ def shardMeasure (k : String) : String :=
 
 /-- Rows JSON → Bencher Metric Format. Rows with `status ≠ ok` are dropped
     whole — a rejected or OOM'd constant must never become a bencher data
-    point. Numeric fields (`phase:<span>` included) pass through as
+    point. Numeric fields (`phase-<span>` included) pass through as
     measures. Nested per-shard objects (`shard-cycles: {"0": …}`) become
     per-shard BENCHMARKS (`<name>/shard-0`) sharing the parent's measure
     slugs — multiplicity belongs in bencher's benchmark dimension, not as
@@ -499,12 +499,16 @@ def runFetchMainCmd (p : Cli.Parsed) : IO UInt32 := do
         let ms := (bench.getObjVal? "measures").toOption.bind (·.getArr?.toOption)
           |>.getD #[]
         for m in ms do
-          let mName := (m.getObjVal? "measure").toOption.bind fun x =>
-            (x.getObjVal? "name").toOption.bind (·.getStr?.toOption)
+          -- The SLUG is the source of truth: row keys are born
+          -- slug-shaped (see the registry metric lists and
+          -- `BenchCmd.slugify`), uploads attach to measures by it, and
+          -- the console-editable display name is never consulted.
+          let mSlug := (m.getObjVal? "measure").toOption.bind fun x =>
+            (x.getObjVal? "slug").toOption.bind (·.getStr?.toOption)
           let mVal := (m.getObjVal? "metric").toOption.bind fun x =>
             (x.getObjVal? "value").toOption
-          if let (some mn, some mv) := (mName, mVal) then
-            metrics := metrics.push (mn, mv)
+          if let (some ms, some mv) := (mSlug, mVal) then
+            metrics := metrics.push (ms, mv)
         if metrics.size > 1 then
           seen := seen.push name
           rows := rows.push (name, Json.mkObj metrics.toList)

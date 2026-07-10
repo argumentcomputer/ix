@@ -21,7 +21,7 @@ and one exit-code convention (Rust: `crates/bench`; Lean:
 `Ix/Benchmark/Results.lean`):
 
 ```json
-{ "<name>": { "status": "ok", "<metric>": 123, "phase:<span>": 1.5 } }
+{ "<name>": { "status": "ok", "<metric>": 123, "phase-<span>": 1.5 } }
 ```
 
 - Rows are flushed after every name, so a killed run keeps its completed rows.
@@ -100,7 +100,7 @@ With `--texray`, tools write per-phase span timings (`aiur/prove_ixvm`,
 `aiur/witness`, `stark/*`, `zisk/execute`, …) to `<json>.spans`. The
 per-constant backends run **one process per constant**, so each spawn's
 window belongs wholly to its constant: `ix bench run` folds it into the
-row as flat `phase:<span>` fields, which flow to bencher as independent
+row as flat `phase-<span>` fields, which flow to bencher as independent
 measures (witness gen, stage commits, quotient, … each get a trend line)
 and render in the PR comment as a collapsible per-constant drill-down.
 

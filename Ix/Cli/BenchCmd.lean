@@ -17,7 +17,7 @@
      ONE PROCESS PER CONSTANT: a kill costs exactly that constant (its row
      is marked `status: oom`, keeping whatever the tool flushed), and each
      spawn's texray window (`<out>.spans`) belongs wholly to it, folded
-     into the row as flat `phase:<span>` fields — independent bencher
+     into the row as flat `phase-<span>` fields — independent bencher
      measures with no attribution machinery;
   4. gates the cell on the row contract (`Ix.Benchmark.Results`): exit 3
      when any row is `rejected`, exit 1 when NO rows were produced, else 0.
@@ -237,8 +237,20 @@ def readSpans (path : String) : IO (Array (String × Float)) := do
         | none => acc := acc.push (s, v)
   return acc
 
+/-- A span name as a bencher-legal measure slug: lowercase alphanumerics
+    with every other character folded to `-` (`stark/stage1_commit` →
+    `stark-stage1-commit`). Row keys ARE bencher measure slugs — the slug
+    is the one identity uploads and `fetch-main` agree on — so they must
+    be born slug-shaped. -/
+def slugify (s : String) : String :=
+  let dashed := s.toList.map fun c => if c.isAlphanum then c.toLower else '-'
+  -- Collapse runs so `a__b` and `a_b` can't alias two spellings apart.
+  let folded := dashed.foldl (init := []) fun acc c =>
+    if c == '-' && acc.head? == some '-' then acc else c :: acc
+  String.mk folded.reverse
+
 /-- Fold a spawn's texray window (`<out>.spans`) into its constant's row as
-    flat `phase:<span>` fields — the aiur prover's tracing spans and the
+    flat `phase-<span>` fields — the aiur prover's tracing spans and the
     zkVM hosts' `record_manual` entries alike — then drop the window file.
     The keys pass straight through `bmf` as independent bencher measures
     and come back from `fetch-main` in the same shape. No row (the tool
@@ -250,7 +262,7 @@ def mergeSpans (out : String) (name : String) : IO Unit := do
     let rows ← readRows out
     if let some row := (rows.getObjVal? name).toOption then
       let row := spans.foldl (init := row) fun r (s, v) =>
-        r.setObjVal! s!"phase:{s}" (jsonRound 6 v)
+        r.setObjVal! s!"phase-{slugify s}" (jsonRound 6 v)
       writeEntry out name row
   if ← FilePath.pathExists spansPath then
     IO.FS.removeFile spansPath
