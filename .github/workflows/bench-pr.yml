@@ -655,13 +655,15 @@ jobs:
           PARSE_ERROR: ${{ needs.build.outputs.parse-error }}
         run: |
           {
-            echo "## ❌ benchmark run failed — [run log](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+            echo "## ❌ benchmark run failed"
             if [ -n "$PARSE_ERROR" ]; then
               echo
               echo "> $PARSE_ERROR"
             fi
             echo
             if [ -f comment-body.md ]; then cat comment-body.md; fi
+            echo
+            echo "[Workflow logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
           } > body-with-header.md
           mv body-with-header.md comment-body.md
       - name: Generate token to write PR comment
