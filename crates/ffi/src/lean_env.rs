@@ -1125,12 +1125,16 @@ fn decode_name_constant_info(
 }
 
 /// Resident-decoded-constant bound for [`decode_env_lazy`]'s cache.
-/// Wall time measured at parity with the eager decode at this size on
-/// InitStd through Mathlib (the setup scan decodes each constant
-/// exactly once regardless; compile-phase misses hide in the parallel
-/// schedule), so there is nothing to tune — a bigger cache buys no
-/// measured speed, a smaller one risks thrash.
-const LAZY_ENV_CACHE_ENTRIES: usize = 65536;
+///
+/// Sized by sweep, not by hit rate: on FLT (511k consts) wall time is
+/// flat from 4096 through 1M entries (60–67 s; misses hide in the
+/// scheduler's dependency-stall slack) while peak RSS climbs from
+/// 11.5 GiB (4k) → 13.0 (64k) → 24.7 (1M); Mathlib (737k consts)
+/// confirms parity at this size (87.5 s / 17.0 GiB vs 87.3 s /
+/// 18.3 GiB at 64k). So the cache buys RAM, not speed, and the bound
+/// sits at the small end with headroom over the 4k floor measured to
+/// still not thrash.
+const LAZY_ENV_CACHE_ENTRIES: usize = 16384;
 
 /// Decode for the production compile FFI entries: an on-demand view
 /// that avoids materializing the full Rust copy of the environment —

@@ -1493,7 +1493,7 @@ impl EnvEntry<'_> {
 /// Host-only lazy backing for [`Env`]: a name index plus an injected
 /// fetch that decodes one constant on demand (in practice from Lean
 /// objects held as `LeanShared` handles — see `decode_env_lazy` in the
-/// ffi crate), fronted by a sharded bounded cache. Avoids materializing
+/// ffi crate), fronted by a lock-partitioned bounded cache. Avoids materializing
 /// the full owned copy of the environment up front, which costs a large
 /// multiple of the working set the compile pipeline actually touches at
 /// any one time.
@@ -1505,43 +1505,53 @@ pub struct LazyEnv {
   index: FxHashMap<Name, usize>,
   /// Decode one constant. Must be pure and thread-safe.
   fetch: Box<dyn Fn(&Name) -> Option<ConstantInfo> + Send + Sync>,
-  /// Sharded cache; per-shard capacity bounds resident decoded
-  /// constants. Eviction is `swap_remove_index(0)` — cheap
+  /// Independently locked cache segments so concurrent
+  /// `get`s rarely contend; per-segment capacity bounds resident
+  /// decoded constants. Eviction is `swap_remove_index(0)` — cheap
   /// oldest-biased pseudo-FIFO, adequate for the scheduler's
   /// topological locality.
-  shards: Vec<std::sync::Mutex<indexmap::IndexMap<Name, Arc<ConstantInfo>>>>,
-  cap_per_shard: usize,
+  segments: Vec<std::sync::Mutex<indexmap::IndexMap<Name, Arc<ConstantInfo>>>>,
+  cap_per_segment: usize,
 }
 
 #[cfg(not(target_arch = "riscv64"))]
 impl LazyEnv {
-  /// Lock-striping width: comfortably above the scheduler's worker
-  /// count (one per core) so concurrent `get`s rarely contend on a
-  /// shard mutex. Must divide 256 — `shard_for` selects by hash byte.
-  const SHARDS: usize = 64;
+  /// Segment count: 4× the hardware threads (the scheduler runs at
+  /// most one worker per thread), rounded up to a power of two so the
+  /// hash mask in `segment_for` stays uniform. The 4× headroom keeps
+  /// expected pairwise collisions low when every worker is in `get`
+  /// at once; a mutexed segment costs ~40 bytes, so overprovisioning
+  /// is free.
+  fn segment_count() -> usize {
+    let threads = std::thread::available_parallelism().map_or(1, usize::from);
+    // Capped at the two-byte selector's range (`segment_for`).
+    (threads * 4).next_power_of_two().min(1 << 16)
+  }
 
-  /// One hash byte picks the shard: `SHARDS` divides 256, so the
-  /// low byte of a uniform hash is itself uniform over shards.
-  fn shard_for(&self, name: &Name) -> usize {
-    usize::from(name.get_hash().as_bytes()[0]) % Self::SHARDS
+  /// Two low hash bytes masked down to the segment count: uniform by
+  /// hash uniformity because the count is a power of two.
+  fn segment_for(&self, name: &Name) -> usize {
+    let bytes = name.get_hash().as_bytes();
+    let window = usize::from(u16::from_le_bytes([bytes[0], bytes[1]]));
+    window & (self.segments.len() - 1)
   }
 
   fn get(&self, name: &Name) -> Option<Arc<ConstantInfo>> {
     if !self.index.contains_key(name) {
       return None;
     }
-    let shard_idx = self.shard_for(name);
-    if let Some(hit) = self.shards[shard_idx].lock().unwrap().get(name) {
+    let segment_idx = self.segment_for(name);
+    if let Some(hit) = self.segments[segment_idx].lock().unwrap().get(name) {
       return Some(hit.clone());
     }
-    // Decode outside the shard lock: fetches can be slow and other
-    // names hashing to this shard shouldn't wait on them.
+    // Decode outside the segment lock: fetches can be slow and other
+    // names hashing to this segment shouldn't wait on them.
     let decoded = Arc::new((self.fetch)(name)?);
-    let mut shard = self.shards[shard_idx].lock().unwrap();
-    if shard.len() >= self.cap_per_shard {
-      shard.swap_remove_index(0);
+    let mut segment = self.segments[segment_idx].lock().unwrap();
+    if segment.len() >= self.cap_per_segment {
+      segment.swap_remove_index(0);
     }
-    shard.insert(name.clone(), decoded.clone());
+    segment.insert(name.clone(), decoded.clone());
     Some(decoded)
   }
 }
@@ -1587,7 +1597,7 @@ impl Clone for Env {
 impl Env {
   /// Build a lazy env from a name list and a fetch function.
   /// `cache_entries` bounds resident decoded constants (total across
-  /// shards; minimum one per shard).
+  /// segments; minimum one per segment).
   #[cfg(not(target_arch = "riscv64"))]
   pub fn new_lazy(
     names: Vec<Name>,
@@ -1596,17 +1606,18 @@ impl Env {
   ) -> Self {
     let index: FxHashMap<Name, usize> =
       names.iter().enumerate().map(|(i, n)| (n.clone(), i)).collect();
-    let cap_per_shard = (cache_entries / LazyEnv::SHARDS).max(1);
-    let shards = (0..LazyEnv::SHARDS)
+    let segment_count = LazyEnv::segment_count();
+    let cap_per_segment = (cache_entries / segment_count).max(1);
+    let segments = (0..segment_count)
       .map(|_| {
         std::sync::Mutex::new(indexmap::IndexMap::with_capacity(
-          cap_per_shard.min(4096),
+          cap_per_segment.min(4096),
         ))
       })
       .collect();
     Env {
       eager: FxHashMap::default(),
-      lazy: Some(LazyEnv { names, index, fetch, shards, cap_per_shard }),
+      lazy: Some(LazyEnv { names, index, fetch, segments, cap_per_segment }),
     }
   }
 
@@ -1668,7 +1679,7 @@ impl Env {
 
   /// Iterate `(name, constant)`. Lazy mode decodes each entry fresh,
   /// bypassing the cache — whole-env passes are single-visit, and
-  /// caching them would just churn the shards.
+  /// caching them would just churn the segments.
   pub fn iter(&self) -> Box<dyn Iterator<Item = (&Name, EnvEntry<'_>)> + '_> {
     #[cfg(not(target_arch = "riscv64"))]
     if let Some(lazy) = &self.lazy {
