@@ -2383,17 +2383,20 @@ opaque rsIxeFilesEqual : @& String → @& String → IO Bool
 
 /-! ### Env pack (`rs_pack_env`) -/
 
-/-- Pack a value bundle in Rust: read the env at `envPath` (full
-    reader), resolve `mainName` (displayed form) to its constant
-    address, prune to the self-contained closure
-    (`Env::prune_to_closure` — sets `main`, collects reached cut-points
-    into `assumptions`, carries display metadata to fixpoint), validate
-    (`Env::validate_closed`), and write the bundle to `outPath`.
-    `assume` entries resolve as displayed names first, else as 64-hex
-    constant addresses. Failures surface as `IO` errors. -/
+/-- Pack a value bundle in Rust: memory-map the env at `envPath`
+    (lazy reader — metadata is never bulk-materialized), resolve
+    `mainName` (displayed form) to its constant address, prune to the
+    self-contained closure — `main` set, reached cut-points recorded in
+    `assumptions`; display metadata carried to fixpoint by re-streaming
+    §5 per round, or skipped entirely when `anon` is true (value
+    closure + §3 hints only, the minimal typecheck/eval artifact) —
+    validate (`Env::validate_closed`), and write the bundle to
+    `outPath`. `assume` entries resolve as displayed names first, else
+    as 64-hex constant addresses. Failures surface as `IO` errors.
+    Arg order: envPath, mainName, assume, outPath, anon, verbose. -/
 @[extern "rs_pack_env"]
 opaque rsPackEnv : @& String → @& String → @& Array String → @& String →
-  Bool → IO Unit
+  Bool → Bool → IO Unit
 
 /-! ## Canonical merkle root over consts -/
 

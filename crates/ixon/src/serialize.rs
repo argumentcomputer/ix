@@ -999,6 +999,9 @@ impl Constant {
 use bignat::Nat;
 use ix_common::env::{Name, NameData};
 use rustc_hash::FxHashMap;
+// Used only by the host-gated streaming prune's signature.
+#[cfg(not(target_arch = "riscv64"))]
+use rustc_hash::FxHashSet;
 
 /// Serialize a Name to bytes (full recursive serialization, for standalone use).
 pub fn put_name(name: &Name, buf: &mut Vec<u8>) {
@@ -1912,6 +1915,18 @@ impl Env {
   /// this reader now consumes every section, trailing bytes are rejected
   /// exactly as in [`Env::get`].
   pub fn parse_lazy_index(data: &[u8]) -> Result<LazyIndex, String> {
+    Self::parse_lazy_index_with_names(data).map(|(index, _)| index)
+  }
+
+  /// [`Env::parse_lazy_index`], additionally returning the §4
+  /// Address→Name component lookup. The lookup is built during the
+  /// walk regardless (§4 parsing resolves parent references through
+  /// it); the plain variant just drops it. Consumers that resolve
+  /// metadata name references from §5 windows — the streaming prune —
+  /// need it.
+  pub fn parse_lazy_index_with_names(
+    data: &[u8],
+  ) -> Result<(LazyIndex, FxHashMap<Address, Name>), String> {
     let mut buf: &[u8] = data;
 
     // Header: tag + merkle root + bundle fields.
@@ -2027,7 +2042,61 @@ impl Env {
       ));
     }
 
-    Ok(index)
+    Ok((index, names_lookup))
+  }
+
+  /// [`Env::prune_to_closure`] over a lazily-loaded env — the
+  /// streaming-metadata pack path. `self` must be the env built by
+  /// [`Env::from_lazy_index`]/[`Env::from_lazy_index_mmap`] from
+  /// `index` over `data`, and `names` the §4 lookup from
+  /// [`Env::parse_lazy_index_with_names`]. Each fixpoint round
+  /// re-streams §5 with a [`NamedMetaCursor`], materializing `Named`
+  /// entries only for carried constants — resident metadata is
+  /// O(survivors) instead of O(env), the full reader's cost. The carry
+  /// logic is [`Env::carry_named_entry`], shared with the in-memory
+  /// prune, so the two paths produce identical bundles.
+  #[cfg(not(target_arch = "riscv64"))]
+  pub fn prune_to_closure_streaming(
+    &self,
+    index: &LazyIndex,
+    data: &[u8],
+    names: &FxHashMap<Address, Name>,
+    main: &Address,
+    assumed: &FxHashSet<Address>,
+  ) -> Result<Env, String> {
+    let (mut out, mut visited, mut pending) = Self::prune_init(main, assumed)?;
+    let mut named_done: FxHashSet<Name> = FxHashSet::default();
+    loop {
+      self.prune_value_pass(&mut out, &mut visited, &mut pending, assumed)?;
+
+      // ── Named pass, streamed: every §5 entry is parsed (boundaries
+      // require it — no length sidecar), but only entries whose
+      // constant was carried this round materialize into `out`.
+      let mut cursor = NamedMetaCursor::open(data, index)?;
+      let mut i = 0usize;
+      while let Some((_, named)) = cursor.next_entry()? {
+        let name = &index.named[i].name;
+        i += 1;
+        if !out.consts.contains_key(&named.addr) || named_done.contains(name) {
+          continue;
+        }
+        named_done.insert(name.clone());
+        Self::carry_named_entry(
+          &mut out,
+          name,
+          &named,
+          &|na| names.get(na).cloned(),
+          &|ba| self.get_blob(ba),
+          &mut visited,
+          &mut pending,
+        )?;
+      }
+
+      if pending.is_empty() {
+        break;
+      }
+    }
+    Ok(out)
   }
 
   /// Anonymous-only deserialization: read the header + §1 blobs +

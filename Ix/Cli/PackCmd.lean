@@ -42,11 +42,13 @@ def runPackCmd (p : Cli.Parsed) : IO UInt32 := do
     match p.flag? "out" with
     | some flag => flag.as! String
     | none => s!"{mainName}.ixe"
-  let verbose := (p.flag? "verbose").isSome
+  let anon := p.hasFlag "anon"
+  let verbose := p.hasFlag "verbose"
   try
-    Ixon.rsPackEnv envPath mainName assume outPath verbose
+    Ixon.rsPackEnv envPath mainName assume outPath anon verbose
+    let mode := if anon then " [anon]" else ""
     IO.println s!"[pack] wrote {outPath} (main {mainName}, \
-      {assume.size} assumption cut(s) declared)"
+      {assume.size} assumption cut(s) declared){mode}"
     return (0 : UInt32)
   catch e =>
     IO.eprintln s!"error: {e.toString}"
@@ -60,6 +62,7 @@ def packCmd : Cli.Cmd := `[Cli|
   "Prune a `.ixe` env to the self-contained bundle pinning one constant (sets `main`; validated closed)"
 
   FLAGS:
+    anon;                   "Pack only anonymous structure — no names or metadata (§4/§5 empty; §3 hints still carried). The minimal artifact a receiver needs to typecheck/evaluate the pinned value."
     assume        : String; "Comma-separated cut-point constants — displayed names or 64-hex addresses. Reached cut-points are recorded in the bundle's `assumptions` instead of carried (thin bundle)."
     "assume-file" : String; "Additionally read cut-points from a file (one per line; `#` comments and blank lines ignored). Unions with --assume."
     out           : String; "Output `.ixe` path. Defaults to `<name>.ixe` (e.g. `Nat.add.ixe`)."

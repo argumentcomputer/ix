@@ -1,15 +1,16 @@
 //! `rs_pack_env`: read a serialized env, prune it to the self-contained
-//! closure of one named constant ([`ixon::env::Env::prune_to_closure`] —
-//! sets `main` and collects reached cut-points into `assumptions`),
-//! validate the result ([`ixon::env::Env::validate_closed`]), and write
-//! the bundle `.ixe`.
+//! closure of one named constant ([`ixon::env::Env::prune_to_closure`]
+//! semantics — sets `main` and collects reached cut-points into
+//! `assumptions`), validate the result
+//! ([`ixon::env::Env::validate_closed`]), and write the bundle `.ixe`.
 //!
-//! Uses the full reader (`Env::get`): the prune's named fixpoint carries
-//! display metadata (names, `DataValue` blobs, aux `original`s), which
-//! the anon/lazy views drop. At mathlib scale that means tens of GB
-//! resident for the source env — functional, but heavy; a leaner
-//! selective-metadata pack (stream §5, carry only survivors) is future
-//! work on the diff meta-sweep streaming machinery.
+//! The source env is memory-mapped and lazily loaded (constant windows
+//! stay zero-copy mmap slices); metadata is never bulk-materialized.
+//! The default mode carries display metadata by re-streaming §5 per
+//! prune fixpoint round (`Env::prune_to_closure_streaming` —
+//! O(survivors) resident metadata); `anon` mode skips metadata
+//! entirely (`Env::prune_to_closure_anon` — value closure + §3 hints
+//! only, the minimal typecheck/eval artifact).
 
 use ix_common::address::Address;
 use ixon::env::Env as IxonEnv;
@@ -18,9 +19,11 @@ use lean_ffi::object::{
 };
 use rustc_hash::{FxHashMap, FxHashSet};
 
+use super::diff::mmap_file;
+
 /// FFI: pack a value bundle.
 /// `(envPath mainName : String) → (assume : Array String) →
-/// (outPath : String) → (verbose : Bool) → IO Unit`.
+/// (outPath : String) → (anon verbose : Bool) → IO Unit`.
 ///
 /// `assume` entries resolve as displayed constant names first, else as
 /// 64-hex constant addresses (cut points need not be named).
@@ -30,53 +33,55 @@ pub extern "C" fn rs_pack_env(
   main_name: LeanString<LeanBorrowed<'_>>,
   assume: LeanArray<LeanBorrowed<'_>>,
   out_path: LeanString<LeanBorrowed<'_>>,
+  anon: LeanBool<LeanBorrowed<'_>>,
   verbose: LeanBool<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
+  let anon = anon.to_bool();
   let verbose = verbose.to_bool();
   let path = env_path.to_string();
   let main_str = main_name.to_string();
   let out = out_path.to_string();
   let assume_vec: Vec<String> = assume.map(|obj| obj.as_string().to_string());
 
-  let bytes = match std::fs::read(&path) {
-    Ok(bytes) => bytes,
-    Err(e) => {
-      return LeanIOResult::error_string(&format!(
-        "rs_pack_env: failed to read {path}: {e}"
-      ));
-    },
+  let mmap = match mmap_file(&path, "source") {
+    Ok(m) => m,
+    Err(e) => return LeanIOResult::error_string(&format!("rs_pack_env: {e}")),
   };
   if verbose {
     eprintln!(
-      "[rs_pack_env] parsing {path} ({} MB, full reader)...",
-      bytes.len() / 1_000_000
+      "[rs_pack_env] parsing {path} ({} MB, lazy reader)...",
+      mmap.len() / 1_000_000
     );
   }
-  let mut slice: &[u8] = &bytes;
-  let full = match IxonEnv::get(&mut slice) {
+  let (index, names) = match IxonEnv::parse_lazy_index_with_names(&mmap[..]) {
+    Ok(v) => v,
+    Err(e) => {
+      return LeanIOResult::error_string(&format!(
+        "rs_pack_env: failed to index {path}: {e}"
+      ));
+    },
+  };
+  let src = match IxonEnv::from_lazy_index_mmap(&index, &mmap) {
     Ok(env) => env,
     Err(e) => {
       return LeanIOResult::error_string(&format!(
-        "rs_pack_env: failed to deserialize {path}: {e}"
+        "rs_pack_env: failed to load {path}: {e}"
       ));
     },
   };
   if verbose {
     eprintln!(
       "[rs_pack_env] source env: {} consts, {} named, {} blobs",
-      full.consts.len(),
-      full.named.len(),
-      full.blobs.len()
+      src.consts.len(),
+      src.named.len(),
+      src.blobs.len()
     );
   }
 
-  // Resolve displayed names → addresses through the full env's `named`
-  // metadata (the `rs_env_extract` idiom).
-  let by_name: FxHashMap<String, Address> = full
-    .named
-    .iter()
-    .map(|e| (e.key().to_string(), e.value().addr.clone()))
-    .collect();
+  // Resolve displayed names → addresses through the lazy index's
+  // name→addr entries (the `rs_env_extract` idiom).
+  let by_name: FxHashMap<String, Address> =
+    index.named.iter().map(|n| (n.name.to_string(), n.addr.clone())).collect();
   let main = match by_name.get(&main_str) {
     Some(a) => a.clone(),
     None => {
@@ -104,7 +109,12 @@ pub extern "C" fn rs_pack_env(
     ));
   }
 
-  let bundle = match full.prune_to_closure(&main, &assumed) {
+  let bundle = if anon {
+    src.prune_to_closure_anon(&main, &assumed)
+  } else {
+    src.prune_to_closure_streaming(&index, &mmap[..], &names, &main, &assumed)
+  };
+  let bundle = match bundle {
     Ok(b) => b,
     Err(e) => return LeanIOResult::error_string(&format!("rs_pack_env: {e}")),
   };
@@ -126,14 +136,15 @@ pub extern "C" fn rs_pack_env(
     eprintln!("[rs_pack_env] main {} ({main_str})", main.hex());
     eprintln!(
       "[rs_pack_env] kept {}/{} consts, {}/{} named, {}/{} blobs, \
-       {} assumption(s)",
+       {} assumption(s){}",
       bundle.consts.len(),
-      full.consts.len(),
+      src.consts.len(),
       bundle.named.len(),
-      full.named.len(),
+      src.named.len(),
       bundle.blobs.len(),
-      full.blobs.len(),
-      bundle.assumptions.len()
+      src.blobs.len(),
+      bundle.assumptions.len(),
+      if anon { " [anon: no display metadata]" } else { "" }
     );
     eprintln!("[rs_pack_env] wrote {out} ({} bytes)", buf.len());
   }
