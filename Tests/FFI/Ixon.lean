@@ -420,14 +420,15 @@ population — and the closed-subset relationship to the source env. -/
 /-- Write `env` to a temp `.ixe`, pack `mainName` with `assume` cuts,
     and parse the resulting bundle. Pack failures surface as `.error`. -/
 private def packFixture (env : Env) (mainName : String)
-    (assume : Array String) : IO (Except String Env) := do
+    (assume : Array String) (anon : Bool := false) :
+    IO (Except String Env) := do
   let dir ← IO.FS.createTempDir
   let src := dir / "src.ixe"
   let out := dir / "bundle.ixe"
   -- Every failure mode is caught into `.error`, so cleanup always runs.
   let result ← try
     IO.FS.writeBinFile src (serEnv env)
-    Ixon.rsPackEnv src.toString mainName assume out.toString false
+    Ixon.rsPackEnv src.toString mainName assume out.toString anon false
     let bytes ← IO.FS.readBinFile out
     pure (Ixon.rsDeEnv bytes)
   catch e =>
@@ -521,6 +522,14 @@ def envPackTests : TestSeq :=
   packTest "EnvPack: assume cut (by hex address) records assumption"
     (packFixture src "bar" #[toString fooAddr]) (fun b =>
       b.consts.size == 1 && b.assumptions.contains fooAddr) ++
+  packTest "EnvPack: anon bundle has no metadata, keeps the value pin"
+    (packFixture src "bar" #[] (anon := true)) (fun b =>
+      b.main == some barAddr
+      && b.named.isEmpty
+      -- The writer always emits the anonymous name as §4 entry 0.
+      && b.names.size <= 1
+      && b.consts.size == 2
+      && (b.getAddr? barName).isNone) ++
   packErrTest "EnvPack: unknown root name errors"
     (packFixture src "nope" #[]) ++
   packErrTest "EnvPack: main cannot be assumed"

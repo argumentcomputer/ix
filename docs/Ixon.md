@@ -938,13 +938,21 @@ lake exe ix pack <env.ixe> <name> [--out <path>]
 ```
 
 It resolves `<name>` (displayed form) against the env's `named` table,
-runs `prune_to_closure`, re-validates with `validate_closed`, and
-writes the bundle (default `<name>.ixe`). `--assume` entries — names or
-64-hex constant addresses — declare trust-boundary cut points; the ones
-actually reached become the bundle's `assumptions` (thin bundle). Pack
-reads with the full reader so display metadata survives the prune;
-compile once, pack many. (`ix shard extract` is the non-bundle sibling:
-a general sub-env for the kernel-check pipeline, no `main` root.)
+runs the prune, re-validates with `validate_closed`, and writes the
+bundle (default `<name>.ixe`). `--assume` entries — names or 64-hex
+constant addresses — declare trust-boundary cut points; the ones
+actually reached become the bundle's `assumptions` (thin bundle).
+
+The source env is memory-mapped and lazily loaded; display metadata is
+carried by **re-streaming §5 per prune fixpoint round**
+(`Env::prune_to_closure_streaming`) so resident metadata is
+O(survivors), not O(env) — byte-identical output to the in-memory
+`prune_to_closure`, which shares the same carry engine. `--anon` skips
+metadata entirely (`Env::prune_to_closure_anon`): value closure + §3
+hints, empty §4/§5 — the minimal artifact a receiver needs to
+typecheck/evaluate the pinned value, since `validate_closed` checks
+only the value pin. (`ix shard extract` is the non-bundle sibling: a
+general sub-env for the kernel-check pipeline, no `main` root.)
 
 ### Diffing environments
 

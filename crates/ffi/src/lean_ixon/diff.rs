@@ -268,7 +268,11 @@ pub extern "C" fn rs_diff_envs(
 }
 
 /// Memory-map a file, guarding against a concurrent length change.
-fn mmap_file(path: &str, which: &str) -> Result<Arc<memmap2::Mmap>, String> {
+/// Shared with `rs_pack_env` (`super::pack`).
+pub(crate) fn mmap_file(
+  path: &str,
+  which: &str,
+) -> Result<Arc<memmap2::Mmap>, String> {
   let file = std::fs::File::open(path)
     .map_err(|e| format!("{which} input {path}: {e}"))?;
   let expected =
