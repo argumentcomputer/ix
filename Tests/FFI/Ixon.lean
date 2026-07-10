@@ -363,6 +363,122 @@ def selfDiffEmpty (compareMeta : Bool) (env : RawEnv) : Bool :=
   | .ok d => d.isEmpty
   | .error _ => false
 
+/-! ## Env pack FFI (`rs_pack_env`)
+
+The prune/validate engine is covered by Rust unit tests (the
+`prune_to_closure` tests in `crates/ixon/src/env.rs`); these pin the
+FFI surface end-to-end — file IO, name/hex resolution, bundle-field
+population — and the closed-subset relationship to the source env. -/
+
+/-- Write `env` to a temp `.ixe`, pack `mainName` with `assume` cuts,
+    and parse the resulting bundle. Pack failures surface as `.error`. -/
+private def packFixture (env : Env) (mainName : String)
+    (assume : Array String) : IO (Except String Env) := do
+  let dir ← IO.FS.createTempDir
+  let src := dir / "src.ixe"
+  let out := dir / "bundle.ixe"
+  -- Every failure mode is caught into `.error`, so cleanup always runs.
+  let result ← try
+    IO.FS.writeBinFile src (serEnv env)
+    Ixon.rsPackEnv src.toString mainName assume out.toString false
+    let bytes ← IO.FS.readBinFile out
+    pure (Ixon.rsDeEnv bytes)
+  catch e =>
+    pure (.error e.toString)
+  IO.FS.removeDirAll dir
+  return result
+
+/-- IO test asserting on a successfully packed bundle. -/
+private def packTest (descr : String) (act : IO (Except String Env))
+    (check : Env → Bool) : TestSeq :=
+  .individualIO descr none (do
+    match ← act with
+    | .ok bundle =>
+      let ok := check bundle
+      pure (ok, 0, 0, if ok then none else some "bundle assertion failed")
+    | .error e => pure (false, 0, 0, some e)) .done
+
+/-- IO test asserting the pack call fails. -/
+private def packErrTest (descr : String) (act : IO (Except String Env)) :
+    TestSeq :=
+  .individualIO descr none (do
+    match ← act with
+    | .ok _ => pure (false, 0, 0, some "expected pack to fail")
+    | .error _ => pure (true, 0, 0, none)) .done
+
+def envPackTests : TestSeq :=
+  let fooName := Ix.Name.mkStr Ix.Name.mkAnon "foo"
+  let barName := Ix.Name.mkStr Ix.Name.mkAnon "bar"
+  let quxName := Ix.Name.mkStr Ix.Name.mkAnon "qux"
+  let leaf (v : UInt64) : Constant :=
+    { info := .defn { kind := .defn, safety := .safe, lvls := 0,
+                      typ := .var 3, value := .var v }
+      sharing := #[], refs := #[], univs := #[] }
+  let fooConst := leaf 0
+  let quxConst := leaf 1
+  let fooAddr := Address.blake3 (serConstant fooConst)
+  -- `bar` reaches `foo` through its refs table (a genuine closure
+  -- edge); `qux` is unreachable from `bar` and must be pruned away.
+  let barConst : Constant :=
+    { info := .defn { kind := .defn, safety := .safe, lvls := 0,
+                      typ := .var 3, value := .ref 0 #[] }
+      sharing := #[], refs := #[fooAddr], univs := #[] }
+  let barAddr := Address.blake3 (serConstant barConst)
+  let src : Env := Id.run do
+    let mut env : Env := {}
+    for (n, c) in [(fooName, fooConst), (barName, barConst),
+                   (quxName, quxConst)] do
+      let addr := Address.blake3 (serConstant c)
+      env := env.storeConst addr c
+      -- String components ride as blobs (the compiler's convention);
+      -- prune's `carry_name` recreates them in the bundle, so a fixture
+      -- without them would spuriously diff as bundle-only blobs.
+      let (names, blobs) :=
+        RawEnv.addNameComponentsWithBlobs env.names env.blobs n
+      env := { env with names, blobs }
+      env := env.registerName n { addr, constMeta := .empty }
+    return env
+  packTest "EnvPack: closure bundle pins main and prunes"
+    (packFixture src "bar" #[]) (fun b =>
+      b.main == some barAddr
+      && b.getAddr? barName == some barAddr
+      && b.getAddr? fooName == some fooAddr
+      && (b.getAddr? quxName).isNone
+      && b.consts.size == 2
+      && b.assumptions.isEmpty) ++
+  (TestSeq.individualIO "EnvPack: bundle is a removals-only subset under diff"
+    none (do
+      match ← packFixture src "bar" #[] with
+      | .error e => pure (false, 0, 0, some e)
+      | .ok b =>
+        match Ixon.rsDiffEnvs (serEnv src) (serEnv b) with
+        | .error e => pure (false, 0, 0, some s!"diff failed: {e}")
+        | .ok d =>
+          let ok := d.mainChanged == some (none, some barAddr)
+            && d.namedRemoved.size == 1
+            && d.namedAdded.isEmpty && d.namedChanged.isEmpty
+            && d.constsOnlyB.isEmpty && d.blobsOnlyB.isEmpty
+          let msg := s!"mainOk={d.mainChanged == some (none, some barAddr)} \
+            removed={d.namedRemoved.map (·.1)} \
+            added={d.namedAdded.map (·.1)} \
+            changed={d.namedChanged.map (·.name)} \
+            constsOnlyB={d.constsOnlyB.size} blobsOnlyB={d.blobsOnlyB.size}"
+          pure (ok, 0, 0, if ok then none else some msg)) .done) ++
+  packTest "EnvPack: assume cut (by name) records assumption"
+    (packFixture src "bar" #["foo"]) (fun b =>
+      b.main == some barAddr
+      && (b.getAddr? fooName).isNone
+      && b.consts.size == 1
+      && b.assumptions.size == 1
+      && b.assumptions.contains fooAddr) ++
+  packTest "EnvPack: assume cut (by hex address) records assumption"
+    (packFixture src "bar" #[toString fooAddr]) (fun b =>
+      b.consts.size == 1 && b.assumptions.contains fooAddr) ++
+  packErrTest "EnvPack: unknown root name errors"
+    (packFixture src "nope" #[]) ++
+  packErrTest "EnvPack: main cannot be assumed"
+    (packFixture src "bar" #["bar"])
+
 /-! ## Test Suite -/
 
 def suite : List TestSeq := [
@@ -410,6 +526,8 @@ def suite : List TestSeq := [
     (∀ env : RawEnv, selfDiffEmpty false env),
   checkIO "Ixon.EnvDiff self-diff empty (meta)"
     (∀ env : RawEnv, selfDiffEmpty true env),
+  ---- Env pack
+  envPackTests,
 ]
 
 end Tests.FFI.Ixon

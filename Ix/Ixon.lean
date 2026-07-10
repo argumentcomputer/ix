@@ -2357,6 +2357,20 @@ def rsDiffEnvs (a b : ByteArray) (compareMeta : Bool := false) :
     Except String EnvDiff :=
   rsDiffEnvsFFI a b compareMeta
 
+/-! ### Env pack (`rs_pack_env`) -/
+
+/-- Pack a value bundle in Rust: read the env at `envPath` (full
+    reader), resolve `mainName` (displayed form) to its constant
+    address, prune to the self-contained closure
+    (`Env::prune_to_closure` — sets `main`, collects reached cut-points
+    into `assumptions`, carries display metadata to fixpoint), validate
+    (`Env::validate_closed`), and write the bundle to `outPath`.
+    `assume` entries resolve as displayed names first, else as 64-hex
+    constant addresses. Failures surface as `IO` errors. -/
+@[extern "rs_pack_env"]
+opaque rsPackEnv : @& String → @& String → @& Array String → @& String →
+  Bool → IO Unit
+
 /-! ## Canonical merkle root over consts -/
 
 @[extern "rs_env_merkle_root"]
