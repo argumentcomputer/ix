@@ -112,10 +112,10 @@ def human (v : Option Float) (metric : String) : String :=
     | _ => if v == v.round then commafy (fmtF v 0) else fmtF v 3
 
 /-- Metrics where a LARGER value is the improvement; everything else is
-    lower-is-better (times, RAM, cycles, sizes). `throughput` is reused
-    across backends with different units (consts/s on most; cycles/s on the
-    zkVM hosts) — testbeds keep the series separate, and within any one
-    table the unit is uniform. -/
+    lower-is-better (times, RAM, cycles, sizes). `throughput` means
+    constants checked per second on EVERY backend (`ix_bench::throughput`
+    is the one calculator; a zkVM's cycle rate stays derivable from its
+    cycles / execute-time fields). -/
 def higherIsBetter (metric : String) : Bool := metric == "throughput"
 
 /-! ## Row access -/

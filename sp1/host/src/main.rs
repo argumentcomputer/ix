@@ -25,7 +25,8 @@ use anyhow::{Result, bail};
 use clap::Parser;
 use human_repr::{HumanCount, HumanThroughput};
 use ix_bench::{
-  EXIT_REJECTED, Rejection, Status, collect_consts, peak_rss_bytes, write_row,
+  EXIT_REJECTED, Rejection, Status, collect_consts, peak_rss_bytes, throughput,
+  write_row,
 };
 use ix_kernel::anon_work::{
   block_of_addr, build_anon_work, build_sub_env, work_block_addr,
@@ -279,8 +280,7 @@ async fn run_one<C: Prover + Sync>(
     let failures = u32::from_le_bytes(
       output.as_slice()[..4].try_into().expect("output too short"),
     );
-    let throughput =
-      const_count as f64 / exec_duration.as_secs_f64().max(f64::EPSILON);
+    let tput = throughput(const_count, exec_duration.as_secs_f64());
     println!("failures: {failures}");
     // Conditional-claim public output (Anon mode): failures(4) +
     // subject_root(32) + assumptions_root(32) + checked_count(4) + env_hash(32).
@@ -301,7 +301,7 @@ async fn run_one<C: Prover + Sync>(
     println!(
       "exec time: {:.3}s, throughput: {}",
       exec_duration.as_secs_f64(),
-      throughput.human_throughput("consts"),
+      tput.human_throughput("consts"),
     );
     // `ExecutionReport`'s `Display` lists opcode counts (RISC-V mix), syscall
     // counts (precompile usage; expected zero for the current guest), and
@@ -315,7 +315,6 @@ async fn run_one<C: Prover + Sync>(
     if let Some(path) = &args.json {
       let cycles = report.total_instruction_count();
       let secs = exec_duration.as_secs_f64();
-      let tput = if secs > 0.0 { cycles as f64 / secs } else { 0.0 };
       let key =
         name.map(|s| s.to_string()).unwrap_or_else(|| "env".to_string());
       let status = if failures > 0 { Status::Rejected } else { Status::Ok };

@@ -86,10 +86,8 @@ def plotSkips : List (String × String) :=
 /-- Canonical units per measure slug, asserted on every sync: bencher
     auto-creates a measure with placeholder units ("Measure (units)") on
     its first upload, leaving plots unitless — and a console edit would
-    drift from this list, so the sync re-asserts it. `throughput` is
-    deliberately generic: the slug is shared across backends with
-    different numerators (constants/s on most cells, cycles/s on the
-    zkVM hosts). Phase spans are wall-clock seconds. -/
+    drift from this list, so the sync re-asserts it. Phase spans are
+    wall-clock seconds. -/
 def unitsFor (slug : String) : Option String :=
   if slug.startsWith "phase-" then some "seconds (s)" else
   [("execute-peak-rss", "bytes (B)"),
@@ -106,7 +104,7 @@ def unitsFor (slug : String) : Option String :=
    ("max-shard-cycles", "cycles"),
    ("shards", "shards"),
    ("fft-cost", "FFTs"),
-   ("throughput", "per second (1/s)")].lookup slug
+   ("throughput", "constants / second")].lookup slug
 
 /-- Dashboard group order (compile first, then aiur prove/execute, zisk,
     ooc); unranked workloads (a future backend) sort last. -/

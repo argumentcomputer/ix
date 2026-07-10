@@ -35,7 +35,8 @@ use anyhow::{Result, bail};
 use clap::Parser;
 use human_repr::{HumanCount, HumanThroughput};
 use ix_bench::{
-  EXIT_REJECTED, Rejection, Status, collect_consts, peak_rss_bytes, write_row,
+  EXIT_REJECTED, Rejection, Status, collect_consts, peak_rss_bytes, throughput,
+  write_row,
 };
 use ix_kernel::anon_work::{
   AnonWorkItem, block_of_addr, build_anon_work, build_sub_env, work_block_addr,
@@ -916,8 +917,7 @@ async fn run_constant(
     let cycles = result.get_execution_steps();
     println!("cycles: {cycles}, failures: {}", publics.failures);
     if let Some(path) = &args.json {
-      let tput =
-        if execute_secs > 0.0 { cycles as f64 / execute_secs } else { 0.0 };
+      let tput = throughput(cover.len(), execute_secs);
       let status =
         if publics.failures > 0 { Status::Rejected } else { Status::Ok };
       write_row(
@@ -1360,11 +1360,7 @@ async fn run_shard_plan(
           .map(|s| s.to_string_lossy().into_owned())
           .unwrap_or_else(|| "env".to_string())
       });
-      let tput = if execute_secs > 0.0 {
-        total_steps as f64 / execute_secs
-      } else {
-        0.0
-      };
+      let tput = throughput(needed.len(), execute_secs);
       let status =
         if rejection.is_some() { Status::Rejected } else { Status::Ok };
       write_row(
