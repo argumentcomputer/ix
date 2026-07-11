@@ -349,45 +349,35 @@ def keccak := ⟦
       -- rho + pi: b[pi(src)] = rotl(t[src], rho(src)).
       -- b0 = rotl(t0, 0): byte rotation only (free)
       let b0 = [t0[0], t0[1], t0[2], t0[3], t0[4], t0[5], t0[6], t0[7]];
-      -- b10 = rotl(t1, 1) = byte-rotl 0 + bit-shl 1
-      let d10_0 = u8_bit_decomposition(t1[0]);
-      let d10_1 = u8_bit_decomposition(t1[1]);
-      let d10_2 = u8_bit_decomposition(t1[2]);
-      let d10_3 = u8_bit_decomposition(t1[3]);
-      let d10_4 = u8_bit_decomposition(t1[4]);
-      let d10_5 = u8_bit_decomposition(t1[5]);
-      let d10_6 = u8_bit_decomposition(t1[6]);
-      let d10_7 = u8_bit_decomposition(t1[7]);
-      let b10 = [
-        u8_from_field_unsafe(d10_7[7] + 2 * d10_0[0] + 4 * d10_0[1] + 8 * d10_0[2] + 16 * d10_0[3] + 32 * d10_0[4] + 64 * d10_0[5] + 128 * d10_0[6]),
-        u8_from_field_unsafe(d10_0[7] + 2 * d10_1[0] + 4 * d10_1[1] + 8 * d10_1[2] + 16 * d10_1[3] + 32 * d10_1[4] + 64 * d10_1[5] + 128 * d10_1[6]),
-        u8_from_field_unsafe(d10_1[7] + 2 * d10_2[0] + 4 * d10_2[1] + 8 * d10_2[2] + 16 * d10_2[3] + 32 * d10_2[4] + 64 * d10_2[5] + 128 * d10_2[6]),
-        u8_from_field_unsafe(d10_2[7] + 2 * d10_3[0] + 4 * d10_3[1] + 8 * d10_3[2] + 16 * d10_3[3] + 32 * d10_3[4] + 64 * d10_3[5] + 128 * d10_3[6]),
-        u8_from_field_unsafe(d10_3[7] + 2 * d10_4[0] + 4 * d10_4[1] + 8 * d10_4[2] + 16 * d10_4[3] + 32 * d10_4[4] + 64 * d10_4[5] + 128 * d10_4[6]),
-        u8_from_field_unsafe(d10_4[7] + 2 * d10_5[0] + 4 * d10_5[1] + 8 * d10_5[2] + 16 * d10_5[3] + 32 * d10_5[4] + 64 * d10_5[5] + 128 * d10_5[6]),
-        u8_from_field_unsafe(d10_5[7] + 2 * d10_6[0] + 4 * d10_6[1] + 8 * d10_6[2] + 16 * d10_6[3] + 32 * d10_6[4] + 64 * d10_6[5] + 128 * d10_6[6]),
-        u8_from_field_unsafe(d10_6[7] + 2 * d10_7[0] + 4 * d10_7[1] + 8 * d10_7[2] + 16 * d10_7[3] + 32 * d10_7[4] + 64 * d10_7[5] + 128 * d10_7[6])
-      ];
-      -- b20 = rotl(t2, 62) = byte-rotl 7 + bit-shl 6
-      let d20_0 = u8_bit_decomposition(t2[0]);
-      let d20_1 = u8_bit_decomposition(t2[1]);
-      let d20_2 = u8_bit_decomposition(t2[2]);
-      let d20_3 = u8_bit_decomposition(t2[3]);
-      let d20_4 = u8_bit_decomposition(t2[4]);
-      let d20_5 = u8_bit_decomposition(t2[5]);
-      let d20_6 = u8_bit_decomposition(t2[6]);
-      let d20_7 = u8_bit_decomposition(t2[7]);
-      let b20 = [
-        u8_from_field_unsafe(d20_0[2] + 2 * d20_0[3] + 4 * d20_0[4] + 8 * d20_0[5] + 16 * d20_0[6] + 32 * d20_0[7] + 64 * d20_1[0] + 128 * d20_1[1]),
-        u8_from_field_unsafe(d20_1[2] + 2 * d20_1[3] + 4 * d20_1[4] + 8 * d20_1[5] + 16 * d20_1[6] + 32 * d20_1[7] + 64 * d20_2[0] + 128 * d20_2[1]),
-        u8_from_field_unsafe(d20_2[2] + 2 * d20_2[3] + 4 * d20_2[4] + 8 * d20_2[5] + 16 * d20_2[6] + 32 * d20_2[7] + 64 * d20_3[0] + 128 * d20_3[1]),
-        u8_from_field_unsafe(d20_3[2] + 2 * d20_3[3] + 4 * d20_3[4] + 8 * d20_3[5] + 16 * d20_3[6] + 32 * d20_3[7] + 64 * d20_4[0] + 128 * d20_4[1]),
-        u8_from_field_unsafe(d20_4[2] + 2 * d20_4[3] + 4 * d20_4[4] + 8 * d20_4[5] + 16 * d20_4[6] + 32 * d20_4[7] + 64 * d20_5[0] + 128 * d20_5[1]),
-        u8_from_field_unsafe(d20_5[2] + 2 * d20_5[3] + 4 * d20_5[4] + 8 * d20_5[5] + 16 * d20_5[6] + 32 * d20_5[7] + 64 * d20_6[0] + 128 * d20_6[1]),
-        u8_from_field_unsafe(d20_6[2] + 2 * d20_6[3] + 4 * d20_6[4] + 8 * d20_6[5] + 16 * d20_6[6] + 32 * d20_6[7] + 64 * d20_7[0] + 128 * d20_7[1]),
-        u8_from_field_unsafe(d20_7[2] + 2 * d20_7[3] + 4 * d20_7[4] + 8 * d20_7[5] + 16 * d20_7[6] + 32 * d20_7[7] + 64 * d20_0[0] + 128 * d20_0[1])
-      ];
-      -- b5 = rotl(t3, 28) = byte-rotl 3 + bit-shl 4
+      -- b10 = rotl(t1, 1) = byte-rotl 0 + 1x rotl1 (u8_add doubling: (b+b) = (2b mod 256, msb); the even low byte absorbs the neighbor's msb via free field add)
+      let (a10_0_0, c10_0_0) = u8_add(t1[0], t1[0]);
+      let (a10_0_1, c10_0_1) = u8_add(t1[1], t1[1]);
+      let (a10_0_2, c10_0_2) = u8_add(t1[2], t1[2]);
+      let (a10_0_3, c10_0_3) = u8_add(t1[3], t1[3]);
+      let (a10_0_4, c10_0_4) = u8_add(t1[4], t1[4]);
+      let (a10_0_5, c10_0_5) = u8_add(t1[5], t1[5]);
+      let (a10_0_6, c10_0_6) = u8_add(t1[6], t1[6]);
+      let (a10_0_7, c10_0_7) = u8_add(t1[7], t1[7]);
+      let b10 = [u8_from_field_unsafe(to_field(a10_0_0) + to_field(c10_0_7)), u8_from_field_unsafe(to_field(a10_0_1) + to_field(c10_0_0)), u8_from_field_unsafe(to_field(a10_0_2) + to_field(c10_0_1)), u8_from_field_unsafe(to_field(a10_0_3) + to_field(c10_0_2)), u8_from_field_unsafe(to_field(a10_0_4) + to_field(c10_0_3)), u8_from_field_unsafe(to_field(a10_0_5) + to_field(c10_0_4)), u8_from_field_unsafe(to_field(a10_0_6) + to_field(c10_0_5)), u8_from_field_unsafe(to_field(a10_0_7) + to_field(c10_0_6))];
+      -- b20 = rotl(t2, 62) = byte-rotl 8 + 2x rotr1 (u8_shift_right drops the lsb, recovered as b - 2*(b >> 1) and recomposed into the neighbor's msb via free field add)
+      let h20_0_0 = u8_shift_right(t2[0]);
+      let h20_0_1 = u8_shift_right(t2[1]);
+      let h20_0_2 = u8_shift_right(t2[2]);
+      let h20_0_3 = u8_shift_right(t2[3]);
+      let h20_0_4 = u8_shift_right(t2[4]);
+      let h20_0_5 = u8_shift_right(t2[5]);
+      let h20_0_6 = u8_shift_right(t2[6]);
+      let h20_0_7 = u8_shift_right(t2[7]);
+      let h20_1_0 = u8_shift_right(u8_from_field_unsafe(to_field(h20_0_0) + 128 * (to_field(t2[1]) - 2 * to_field(h20_0_1))));
+      let h20_1_1 = u8_shift_right(u8_from_field_unsafe(to_field(h20_0_1) + 128 * (to_field(t2[2]) - 2 * to_field(h20_0_2))));
+      let h20_1_2 = u8_shift_right(u8_from_field_unsafe(to_field(h20_0_2) + 128 * (to_field(t2[3]) - 2 * to_field(h20_0_3))));
+      let h20_1_3 = u8_shift_right(u8_from_field_unsafe(to_field(h20_0_3) + 128 * (to_field(t2[4]) - 2 * to_field(h20_0_4))));
+      let h20_1_4 = u8_shift_right(u8_from_field_unsafe(to_field(h20_0_4) + 128 * (to_field(t2[5]) - 2 * to_field(h20_0_5))));
+      let h20_1_5 = u8_shift_right(u8_from_field_unsafe(to_field(h20_0_5) + 128 * (to_field(t2[6]) - 2 * to_field(h20_0_6))));
+      let h20_1_6 = u8_shift_right(u8_from_field_unsafe(to_field(h20_0_6) + 128 * (to_field(t2[7]) - 2 * to_field(h20_0_7))));
+      let h20_1_7 = u8_shift_right(u8_from_field_unsafe(to_field(h20_0_7) + 128 * (to_field(t2[0]) - 2 * to_field(h20_0_0))));
+      let b20 = [u8_from_field_unsafe(to_field(h20_1_0) + 128 * (to_field(u8_from_field_unsafe(to_field(h20_0_1) + 128 * (to_field(t2[2]) - 2 * to_field(h20_0_2)))) - 2 * to_field(h20_1_1))), u8_from_field_unsafe(to_field(h20_1_1) + 128 * (to_field(u8_from_field_unsafe(to_field(h20_0_2) + 128 * (to_field(t2[3]) - 2 * to_field(h20_0_3)))) - 2 * to_field(h20_1_2))), u8_from_field_unsafe(to_field(h20_1_2) + 128 * (to_field(u8_from_field_unsafe(to_field(h20_0_3) + 128 * (to_field(t2[4]) - 2 * to_field(h20_0_4)))) - 2 * to_field(h20_1_3))), u8_from_field_unsafe(to_field(h20_1_3) + 128 * (to_field(u8_from_field_unsafe(to_field(h20_0_4) + 128 * (to_field(t2[5]) - 2 * to_field(h20_0_5)))) - 2 * to_field(h20_1_4))), u8_from_field_unsafe(to_field(h20_1_4) + 128 * (to_field(u8_from_field_unsafe(to_field(h20_0_5) + 128 * (to_field(t2[6]) - 2 * to_field(h20_0_6)))) - 2 * to_field(h20_1_5))), u8_from_field_unsafe(to_field(h20_1_5) + 128 * (to_field(u8_from_field_unsafe(to_field(h20_0_6) + 128 * (to_field(t2[7]) - 2 * to_field(h20_0_7)))) - 2 * to_field(h20_1_6))), u8_from_field_unsafe(to_field(h20_1_6) + 128 * (to_field(u8_from_field_unsafe(to_field(h20_0_7) + 128 * (to_field(t2[0]) - 2 * to_field(h20_0_0)))) - 2 * to_field(h20_1_7))), u8_from_field_unsafe(to_field(h20_1_7) + 128 * (to_field(u8_from_field_unsafe(to_field(h20_0_0) + 128 * (to_field(t2[1]) - 2 * to_field(h20_0_1)))) - 2 * to_field(h20_1_0)))];
+      -- b5 = rotl(t3, 28) = byte-rotl 3 + bit-shl 4 (decomposition)
       let d5_0 = u8_bit_decomposition(t3[0]);
       let d5_1 = u8_bit_decomposition(t3[1]);
       let d5_2 = u8_bit_decomposition(t3[2]);
@@ -396,36 +386,34 @@ def keccak := ⟦
       let d5_5 = u8_bit_decomposition(t3[5]);
       let d5_6 = u8_bit_decomposition(t3[6]);
       let d5_7 = u8_bit_decomposition(t3[7]);
-      let b5 = [
-        u8_from_field_unsafe(d5_4[4] + 2 * d5_4[5] + 4 * d5_4[6] + 8 * d5_4[7] + 16 * d5_5[0] + 32 * d5_5[1] + 64 * d5_5[2] + 128 * d5_5[3]),
-        u8_from_field_unsafe(d5_5[4] + 2 * d5_5[5] + 4 * d5_5[6] + 8 * d5_5[7] + 16 * d5_6[0] + 32 * d5_6[1] + 64 * d5_6[2] + 128 * d5_6[3]),
-        u8_from_field_unsafe(d5_6[4] + 2 * d5_6[5] + 4 * d5_6[6] + 8 * d5_6[7] + 16 * d5_7[0] + 32 * d5_7[1] + 64 * d5_7[2] + 128 * d5_7[3]),
-        u8_from_field_unsafe(d5_7[4] + 2 * d5_7[5] + 4 * d5_7[6] + 8 * d5_7[7] + 16 * d5_0[0] + 32 * d5_0[1] + 64 * d5_0[2] + 128 * d5_0[3]),
-        u8_from_field_unsafe(d5_0[4] + 2 * d5_0[5] + 4 * d5_0[6] + 8 * d5_0[7] + 16 * d5_1[0] + 32 * d5_1[1] + 64 * d5_1[2] + 128 * d5_1[3]),
-        u8_from_field_unsafe(d5_1[4] + 2 * d5_1[5] + 4 * d5_1[6] + 8 * d5_1[7] + 16 * d5_2[0] + 32 * d5_2[1] + 64 * d5_2[2] + 128 * d5_2[3]),
-        u8_from_field_unsafe(d5_2[4] + 2 * d5_2[5] + 4 * d5_2[6] + 8 * d5_2[7] + 16 * d5_3[0] + 32 * d5_3[1] + 64 * d5_3[2] + 128 * d5_3[3]),
-        u8_from_field_unsafe(d5_3[4] + 2 * d5_3[5] + 4 * d5_3[6] + 8 * d5_3[7] + 16 * d5_4[0] + 32 * d5_4[1] + 64 * d5_4[2] + 128 * d5_4[3])
-      ];
-      -- b15 = rotl(t4, 27) = byte-rotl 3 + bit-shl 3
-      let d15_0 = u8_bit_decomposition(t4[0]);
-      let d15_1 = u8_bit_decomposition(t4[1]);
-      let d15_2 = u8_bit_decomposition(t4[2]);
-      let d15_3 = u8_bit_decomposition(t4[3]);
-      let d15_4 = u8_bit_decomposition(t4[4]);
-      let d15_5 = u8_bit_decomposition(t4[5]);
-      let d15_6 = u8_bit_decomposition(t4[6]);
-      let d15_7 = u8_bit_decomposition(t4[7]);
-      let b15 = [
-        u8_from_field_unsafe(d15_4[5] + 2 * d15_4[6] + 4 * d15_4[7] + 8 * d15_5[0] + 16 * d15_5[1] + 32 * d15_5[2] + 64 * d15_5[3] + 128 * d15_5[4]),
-        u8_from_field_unsafe(d15_5[5] + 2 * d15_5[6] + 4 * d15_5[7] + 8 * d15_6[0] + 16 * d15_6[1] + 32 * d15_6[2] + 64 * d15_6[3] + 128 * d15_6[4]),
-        u8_from_field_unsafe(d15_6[5] + 2 * d15_6[6] + 4 * d15_6[7] + 8 * d15_7[0] + 16 * d15_7[1] + 32 * d15_7[2] + 64 * d15_7[3] + 128 * d15_7[4]),
-        u8_from_field_unsafe(d15_7[5] + 2 * d15_7[6] + 4 * d15_7[7] + 8 * d15_0[0] + 16 * d15_0[1] + 32 * d15_0[2] + 64 * d15_0[3] + 128 * d15_0[4]),
-        u8_from_field_unsafe(d15_0[5] + 2 * d15_0[6] + 4 * d15_0[7] + 8 * d15_1[0] + 16 * d15_1[1] + 32 * d15_1[2] + 64 * d15_1[3] + 128 * d15_1[4]),
-        u8_from_field_unsafe(d15_1[5] + 2 * d15_1[6] + 4 * d15_1[7] + 8 * d15_2[0] + 16 * d15_2[1] + 32 * d15_2[2] + 64 * d15_2[3] + 128 * d15_2[4]),
-        u8_from_field_unsafe(d15_2[5] + 2 * d15_2[6] + 4 * d15_2[7] + 8 * d15_3[0] + 16 * d15_3[1] + 32 * d15_3[2] + 64 * d15_3[3] + 128 * d15_3[4]),
-        u8_from_field_unsafe(d15_3[5] + 2 * d15_3[6] + 4 * d15_3[7] + 8 * d15_4[0] + 16 * d15_4[1] + 32 * d15_4[2] + 64 * d15_4[3] + 128 * d15_4[4])
-      ];
-      -- b16 = rotl(t5, 36) = byte-rotl 4 + bit-shl 4
+      let b5 = [u8_from_field_unsafe(d5_4[4] + 2 * d5_4[5] + 4 * d5_4[6] + 8 * d5_4[7] + 16 * d5_5[0] + 32 * d5_5[1] + 64 * d5_5[2] + 128 * d5_5[3]), u8_from_field_unsafe(d5_5[4] + 2 * d5_5[5] + 4 * d5_5[6] + 8 * d5_5[7] + 16 * d5_6[0] + 32 * d5_6[1] + 64 * d5_6[2] + 128 * d5_6[3]), u8_from_field_unsafe(d5_6[4] + 2 * d5_6[5] + 4 * d5_6[6] + 8 * d5_6[7] + 16 * d5_7[0] + 32 * d5_7[1] + 64 * d5_7[2] + 128 * d5_7[3]), u8_from_field_unsafe(d5_7[4] + 2 * d5_7[5] + 4 * d5_7[6] + 8 * d5_7[7] + 16 * d5_0[0] + 32 * d5_0[1] + 64 * d5_0[2] + 128 * d5_0[3]), u8_from_field_unsafe(d5_0[4] + 2 * d5_0[5] + 4 * d5_0[6] + 8 * d5_0[7] + 16 * d5_1[0] + 32 * d5_1[1] + 64 * d5_1[2] + 128 * d5_1[3]), u8_from_field_unsafe(d5_1[4] + 2 * d5_1[5] + 4 * d5_1[6] + 8 * d5_1[7] + 16 * d5_2[0] + 32 * d5_2[1] + 64 * d5_2[2] + 128 * d5_2[3]), u8_from_field_unsafe(d5_2[4] + 2 * d5_2[5] + 4 * d5_2[6] + 8 * d5_2[7] + 16 * d5_3[0] + 32 * d5_3[1] + 64 * d5_3[2] + 128 * d5_3[3]), u8_from_field_unsafe(d5_3[4] + 2 * d5_3[5] + 4 * d5_3[6] + 8 * d5_3[7] + 16 * d5_4[0] + 32 * d5_4[1] + 64 * d5_4[2] + 128 * d5_4[3])];
+      -- b15 = rotl(t4, 27) = byte-rotl 3 + 3x rotl1 (u8_add doubling: (b+b) = (2b mod 256, msb); the even low byte absorbs the neighbor's msb via free field add)
+      let (a15_0_0, c15_0_0) = u8_add(t4[5], t4[5]);
+      let (a15_0_1, c15_0_1) = u8_add(t4[6], t4[6]);
+      let (a15_0_2, c15_0_2) = u8_add(t4[7], t4[7]);
+      let (a15_0_3, c15_0_3) = u8_add(t4[0], t4[0]);
+      let (a15_0_4, c15_0_4) = u8_add(t4[1], t4[1]);
+      let (a15_0_5, c15_0_5) = u8_add(t4[2], t4[2]);
+      let (a15_0_6, c15_0_6) = u8_add(t4[3], t4[3]);
+      let (a15_0_7, c15_0_7) = u8_add(t4[4], t4[4]);
+      let (a15_1_0, c15_1_0) = u8_add(u8_from_field_unsafe(to_field(a15_0_0) + to_field(c15_0_7)), u8_from_field_unsafe(to_field(a15_0_0) + to_field(c15_0_7)));
+      let (a15_1_1, c15_1_1) = u8_add(u8_from_field_unsafe(to_field(a15_0_1) + to_field(c15_0_0)), u8_from_field_unsafe(to_field(a15_0_1) + to_field(c15_0_0)));
+      let (a15_1_2, c15_1_2) = u8_add(u8_from_field_unsafe(to_field(a15_0_2) + to_field(c15_0_1)), u8_from_field_unsafe(to_field(a15_0_2) + to_field(c15_0_1)));
+      let (a15_1_3, c15_1_3) = u8_add(u8_from_field_unsafe(to_field(a15_0_3) + to_field(c15_0_2)), u8_from_field_unsafe(to_field(a15_0_3) + to_field(c15_0_2)));
+      let (a15_1_4, c15_1_4) = u8_add(u8_from_field_unsafe(to_field(a15_0_4) + to_field(c15_0_3)), u8_from_field_unsafe(to_field(a15_0_4) + to_field(c15_0_3)));
+      let (a15_1_5, c15_1_5) = u8_add(u8_from_field_unsafe(to_field(a15_0_5) + to_field(c15_0_4)), u8_from_field_unsafe(to_field(a15_0_5) + to_field(c15_0_4)));
+      let (a15_1_6, c15_1_6) = u8_add(u8_from_field_unsafe(to_field(a15_0_6) + to_field(c15_0_5)), u8_from_field_unsafe(to_field(a15_0_6) + to_field(c15_0_5)));
+      let (a15_1_7, c15_1_7) = u8_add(u8_from_field_unsafe(to_field(a15_0_7) + to_field(c15_0_6)), u8_from_field_unsafe(to_field(a15_0_7) + to_field(c15_0_6)));
+      let (a15_2_0, c15_2_0) = u8_add(u8_from_field_unsafe(to_field(a15_1_0) + to_field(c15_1_7)), u8_from_field_unsafe(to_field(a15_1_0) + to_field(c15_1_7)));
+      let (a15_2_1, c15_2_1) = u8_add(u8_from_field_unsafe(to_field(a15_1_1) + to_field(c15_1_0)), u8_from_field_unsafe(to_field(a15_1_1) + to_field(c15_1_0)));
+      let (a15_2_2, c15_2_2) = u8_add(u8_from_field_unsafe(to_field(a15_1_2) + to_field(c15_1_1)), u8_from_field_unsafe(to_field(a15_1_2) + to_field(c15_1_1)));
+      let (a15_2_3, c15_2_3) = u8_add(u8_from_field_unsafe(to_field(a15_1_3) + to_field(c15_1_2)), u8_from_field_unsafe(to_field(a15_1_3) + to_field(c15_1_2)));
+      let (a15_2_4, c15_2_4) = u8_add(u8_from_field_unsafe(to_field(a15_1_4) + to_field(c15_1_3)), u8_from_field_unsafe(to_field(a15_1_4) + to_field(c15_1_3)));
+      let (a15_2_5, c15_2_5) = u8_add(u8_from_field_unsafe(to_field(a15_1_5) + to_field(c15_1_4)), u8_from_field_unsafe(to_field(a15_1_5) + to_field(c15_1_4)));
+      let (a15_2_6, c15_2_6) = u8_add(u8_from_field_unsafe(to_field(a15_1_6) + to_field(c15_1_5)), u8_from_field_unsafe(to_field(a15_1_6) + to_field(c15_1_5)));
+      let (a15_2_7, c15_2_7) = u8_add(u8_from_field_unsafe(to_field(a15_1_7) + to_field(c15_1_6)), u8_from_field_unsafe(to_field(a15_1_7) + to_field(c15_1_6)));
+      let b15 = [u8_from_field_unsafe(to_field(a15_2_0) + to_field(c15_2_7)), u8_from_field_unsafe(to_field(a15_2_1) + to_field(c15_2_0)), u8_from_field_unsafe(to_field(a15_2_2) + to_field(c15_2_1)), u8_from_field_unsafe(to_field(a15_2_3) + to_field(c15_2_2)), u8_from_field_unsafe(to_field(a15_2_4) + to_field(c15_2_3)), u8_from_field_unsafe(to_field(a15_2_5) + to_field(c15_2_4)), u8_from_field_unsafe(to_field(a15_2_6) + to_field(c15_2_5)), u8_from_field_unsafe(to_field(a15_2_7) + to_field(c15_2_6))];
+      -- b16 = rotl(t5, 36) = byte-rotl 4 + bit-shl 4 (decomposition)
       let d16_0 = u8_bit_decomposition(t5[0]);
       let d16_1 = u8_bit_decomposition(t5[1]);
       let d16_2 = u8_bit_decomposition(t5[2]);
@@ -434,17 +422,8 @@ def keccak := ⟦
       let d16_5 = u8_bit_decomposition(t5[5]);
       let d16_6 = u8_bit_decomposition(t5[6]);
       let d16_7 = u8_bit_decomposition(t5[7]);
-      let b16 = [
-        u8_from_field_unsafe(d16_3[4] + 2 * d16_3[5] + 4 * d16_3[6] + 8 * d16_3[7] + 16 * d16_4[0] + 32 * d16_4[1] + 64 * d16_4[2] + 128 * d16_4[3]),
-        u8_from_field_unsafe(d16_4[4] + 2 * d16_4[5] + 4 * d16_4[6] + 8 * d16_4[7] + 16 * d16_5[0] + 32 * d16_5[1] + 64 * d16_5[2] + 128 * d16_5[3]),
-        u8_from_field_unsafe(d16_5[4] + 2 * d16_5[5] + 4 * d16_5[6] + 8 * d16_5[7] + 16 * d16_6[0] + 32 * d16_6[1] + 64 * d16_6[2] + 128 * d16_6[3]),
-        u8_from_field_unsafe(d16_6[4] + 2 * d16_6[5] + 4 * d16_6[6] + 8 * d16_6[7] + 16 * d16_7[0] + 32 * d16_7[1] + 64 * d16_7[2] + 128 * d16_7[3]),
-        u8_from_field_unsafe(d16_7[4] + 2 * d16_7[5] + 4 * d16_7[6] + 8 * d16_7[7] + 16 * d16_0[0] + 32 * d16_0[1] + 64 * d16_0[2] + 128 * d16_0[3]),
-        u8_from_field_unsafe(d16_0[4] + 2 * d16_0[5] + 4 * d16_0[6] + 8 * d16_0[7] + 16 * d16_1[0] + 32 * d16_1[1] + 64 * d16_1[2] + 128 * d16_1[3]),
-        u8_from_field_unsafe(d16_1[4] + 2 * d16_1[5] + 4 * d16_1[6] + 8 * d16_1[7] + 16 * d16_2[0] + 32 * d16_2[1] + 64 * d16_2[2] + 128 * d16_2[3]),
-        u8_from_field_unsafe(d16_2[4] + 2 * d16_2[5] + 4 * d16_2[6] + 8 * d16_2[7] + 16 * d16_3[0] + 32 * d16_3[1] + 64 * d16_3[2] + 128 * d16_3[3])
-      ];
-      -- b1 = rotl(t6, 44) = byte-rotl 5 + bit-shl 4
+      let b16 = [u8_from_field_unsafe(d16_3[4] + 2 * d16_3[5] + 4 * d16_3[6] + 8 * d16_3[7] + 16 * d16_4[0] + 32 * d16_4[1] + 64 * d16_4[2] + 128 * d16_4[3]), u8_from_field_unsafe(d16_4[4] + 2 * d16_4[5] + 4 * d16_4[6] + 8 * d16_4[7] + 16 * d16_5[0] + 32 * d16_5[1] + 64 * d16_5[2] + 128 * d16_5[3]), u8_from_field_unsafe(d16_5[4] + 2 * d16_5[5] + 4 * d16_5[6] + 8 * d16_5[7] + 16 * d16_6[0] + 32 * d16_6[1] + 64 * d16_6[2] + 128 * d16_6[3]), u8_from_field_unsafe(d16_6[4] + 2 * d16_6[5] + 4 * d16_6[6] + 8 * d16_6[7] + 16 * d16_7[0] + 32 * d16_7[1] + 64 * d16_7[2] + 128 * d16_7[3]), u8_from_field_unsafe(d16_7[4] + 2 * d16_7[5] + 4 * d16_7[6] + 8 * d16_7[7] + 16 * d16_0[0] + 32 * d16_0[1] + 64 * d16_0[2] + 128 * d16_0[3]), u8_from_field_unsafe(d16_0[4] + 2 * d16_0[5] + 4 * d16_0[6] + 8 * d16_0[7] + 16 * d16_1[0] + 32 * d16_1[1] + 64 * d16_1[2] + 128 * d16_1[3]), u8_from_field_unsafe(d16_1[4] + 2 * d16_1[5] + 4 * d16_1[6] + 8 * d16_1[7] + 16 * d16_2[0] + 32 * d16_2[1] + 64 * d16_2[2] + 128 * d16_2[3]), u8_from_field_unsafe(d16_2[4] + 2 * d16_2[5] + 4 * d16_2[6] + 8 * d16_2[7] + 16 * d16_3[0] + 32 * d16_3[1] + 64 * d16_3[2] + 128 * d16_3[3])];
+      -- b1 = rotl(t6, 44) = byte-rotl 5 + bit-shl 4 (decomposition)
       let d1_0 = u8_bit_decomposition(t6[0]);
       let d1_1 = u8_bit_decomposition(t6[1]);
       let d1_2 = u8_bit_decomposition(t6[2]);
@@ -453,55 +432,36 @@ def keccak := ⟦
       let d1_5 = u8_bit_decomposition(t6[5]);
       let d1_6 = u8_bit_decomposition(t6[6]);
       let d1_7 = u8_bit_decomposition(t6[7]);
-      let b1 = [
-        u8_from_field_unsafe(d1_2[4] + 2 * d1_2[5] + 4 * d1_2[6] + 8 * d1_2[7] + 16 * d1_3[0] + 32 * d1_3[1] + 64 * d1_3[2] + 128 * d1_3[3]),
-        u8_from_field_unsafe(d1_3[4] + 2 * d1_3[5] + 4 * d1_3[6] + 8 * d1_3[7] + 16 * d1_4[0] + 32 * d1_4[1] + 64 * d1_4[2] + 128 * d1_4[3]),
-        u8_from_field_unsafe(d1_4[4] + 2 * d1_4[5] + 4 * d1_4[6] + 8 * d1_4[7] + 16 * d1_5[0] + 32 * d1_5[1] + 64 * d1_5[2] + 128 * d1_5[3]),
-        u8_from_field_unsafe(d1_5[4] + 2 * d1_5[5] + 4 * d1_5[6] + 8 * d1_5[7] + 16 * d1_6[0] + 32 * d1_6[1] + 64 * d1_6[2] + 128 * d1_6[3]),
-        u8_from_field_unsafe(d1_6[4] + 2 * d1_6[5] + 4 * d1_6[6] + 8 * d1_6[7] + 16 * d1_7[0] + 32 * d1_7[1] + 64 * d1_7[2] + 128 * d1_7[3]),
-        u8_from_field_unsafe(d1_7[4] + 2 * d1_7[5] + 4 * d1_7[6] + 8 * d1_7[7] + 16 * d1_0[0] + 32 * d1_0[1] + 64 * d1_0[2] + 128 * d1_0[3]),
-        u8_from_field_unsafe(d1_0[4] + 2 * d1_0[5] + 4 * d1_0[6] + 8 * d1_0[7] + 16 * d1_1[0] + 32 * d1_1[1] + 64 * d1_1[2] + 128 * d1_1[3]),
-        u8_from_field_unsafe(d1_1[4] + 2 * d1_1[5] + 4 * d1_1[6] + 8 * d1_1[7] + 16 * d1_2[0] + 32 * d1_2[1] + 64 * d1_2[2] + 128 * d1_2[3])
-      ];
-      -- b11 = rotl(t7, 6) = byte-rotl 0 + bit-shl 6
-      let d11_0 = u8_bit_decomposition(t7[0]);
-      let d11_1 = u8_bit_decomposition(t7[1]);
-      let d11_2 = u8_bit_decomposition(t7[2]);
-      let d11_3 = u8_bit_decomposition(t7[3]);
-      let d11_4 = u8_bit_decomposition(t7[4]);
-      let d11_5 = u8_bit_decomposition(t7[5]);
-      let d11_6 = u8_bit_decomposition(t7[6]);
-      let d11_7 = u8_bit_decomposition(t7[7]);
-      let b11 = [
-        u8_from_field_unsafe(d11_7[2] + 2 * d11_7[3] + 4 * d11_7[4] + 8 * d11_7[5] + 16 * d11_7[6] + 32 * d11_7[7] + 64 * d11_0[0] + 128 * d11_0[1]),
-        u8_from_field_unsafe(d11_0[2] + 2 * d11_0[3] + 4 * d11_0[4] + 8 * d11_0[5] + 16 * d11_0[6] + 32 * d11_0[7] + 64 * d11_1[0] + 128 * d11_1[1]),
-        u8_from_field_unsafe(d11_1[2] + 2 * d11_1[3] + 4 * d11_1[4] + 8 * d11_1[5] + 16 * d11_1[6] + 32 * d11_1[7] + 64 * d11_2[0] + 128 * d11_2[1]),
-        u8_from_field_unsafe(d11_2[2] + 2 * d11_2[3] + 4 * d11_2[4] + 8 * d11_2[5] + 16 * d11_2[6] + 32 * d11_2[7] + 64 * d11_3[0] + 128 * d11_3[1]),
-        u8_from_field_unsafe(d11_3[2] + 2 * d11_3[3] + 4 * d11_3[4] + 8 * d11_3[5] + 16 * d11_3[6] + 32 * d11_3[7] + 64 * d11_4[0] + 128 * d11_4[1]),
-        u8_from_field_unsafe(d11_4[2] + 2 * d11_4[3] + 4 * d11_4[4] + 8 * d11_4[5] + 16 * d11_4[6] + 32 * d11_4[7] + 64 * d11_5[0] + 128 * d11_5[1]),
-        u8_from_field_unsafe(d11_5[2] + 2 * d11_5[3] + 4 * d11_5[4] + 8 * d11_5[5] + 16 * d11_5[6] + 32 * d11_5[7] + 64 * d11_6[0] + 128 * d11_6[1]),
-        u8_from_field_unsafe(d11_6[2] + 2 * d11_6[3] + 4 * d11_6[4] + 8 * d11_6[5] + 16 * d11_6[6] + 32 * d11_6[7] + 64 * d11_7[0] + 128 * d11_7[1])
-      ];
-      -- b21 = rotl(t8, 55) = byte-rotl 6 + bit-shl 7
-      let d21_0 = u8_bit_decomposition(t8[0]);
-      let d21_1 = u8_bit_decomposition(t8[1]);
-      let d21_2 = u8_bit_decomposition(t8[2]);
-      let d21_3 = u8_bit_decomposition(t8[3]);
-      let d21_4 = u8_bit_decomposition(t8[4]);
-      let d21_5 = u8_bit_decomposition(t8[5]);
-      let d21_6 = u8_bit_decomposition(t8[6]);
-      let d21_7 = u8_bit_decomposition(t8[7]);
-      let b21 = [
-        u8_from_field_unsafe(d21_1[1] + 2 * d21_1[2] + 4 * d21_1[3] + 8 * d21_1[4] + 16 * d21_1[5] + 32 * d21_1[6] + 64 * d21_1[7] + 128 * d21_2[0]),
-        u8_from_field_unsafe(d21_2[1] + 2 * d21_2[2] + 4 * d21_2[3] + 8 * d21_2[4] + 16 * d21_2[5] + 32 * d21_2[6] + 64 * d21_2[7] + 128 * d21_3[0]),
-        u8_from_field_unsafe(d21_3[1] + 2 * d21_3[2] + 4 * d21_3[3] + 8 * d21_3[4] + 16 * d21_3[5] + 32 * d21_3[6] + 64 * d21_3[7] + 128 * d21_4[0]),
-        u8_from_field_unsafe(d21_4[1] + 2 * d21_4[2] + 4 * d21_4[3] + 8 * d21_4[4] + 16 * d21_4[5] + 32 * d21_4[6] + 64 * d21_4[7] + 128 * d21_5[0]),
-        u8_from_field_unsafe(d21_5[1] + 2 * d21_5[2] + 4 * d21_5[3] + 8 * d21_5[4] + 16 * d21_5[5] + 32 * d21_5[6] + 64 * d21_5[7] + 128 * d21_6[0]),
-        u8_from_field_unsafe(d21_6[1] + 2 * d21_6[2] + 4 * d21_6[3] + 8 * d21_6[4] + 16 * d21_6[5] + 32 * d21_6[6] + 64 * d21_6[7] + 128 * d21_7[0]),
-        u8_from_field_unsafe(d21_7[1] + 2 * d21_7[2] + 4 * d21_7[3] + 8 * d21_7[4] + 16 * d21_7[5] + 32 * d21_7[6] + 64 * d21_7[7] + 128 * d21_0[0]),
-        u8_from_field_unsafe(d21_0[1] + 2 * d21_0[2] + 4 * d21_0[3] + 8 * d21_0[4] + 16 * d21_0[5] + 32 * d21_0[6] + 64 * d21_0[7] + 128 * d21_1[0])
-      ];
-      -- b6 = rotl(t9, 20) = byte-rotl 2 + bit-shl 4
+      let b1 = [u8_from_field_unsafe(d1_2[4] + 2 * d1_2[5] + 4 * d1_2[6] + 8 * d1_2[7] + 16 * d1_3[0] + 32 * d1_3[1] + 64 * d1_3[2] + 128 * d1_3[3]), u8_from_field_unsafe(d1_3[4] + 2 * d1_3[5] + 4 * d1_3[6] + 8 * d1_3[7] + 16 * d1_4[0] + 32 * d1_4[1] + 64 * d1_4[2] + 128 * d1_4[3]), u8_from_field_unsafe(d1_4[4] + 2 * d1_4[5] + 4 * d1_4[6] + 8 * d1_4[7] + 16 * d1_5[0] + 32 * d1_5[1] + 64 * d1_5[2] + 128 * d1_5[3]), u8_from_field_unsafe(d1_5[4] + 2 * d1_5[5] + 4 * d1_5[6] + 8 * d1_5[7] + 16 * d1_6[0] + 32 * d1_6[1] + 64 * d1_6[2] + 128 * d1_6[3]), u8_from_field_unsafe(d1_6[4] + 2 * d1_6[5] + 4 * d1_6[6] + 8 * d1_6[7] + 16 * d1_7[0] + 32 * d1_7[1] + 64 * d1_7[2] + 128 * d1_7[3]), u8_from_field_unsafe(d1_7[4] + 2 * d1_7[5] + 4 * d1_7[6] + 8 * d1_7[7] + 16 * d1_0[0] + 32 * d1_0[1] + 64 * d1_0[2] + 128 * d1_0[3]), u8_from_field_unsafe(d1_0[4] + 2 * d1_0[5] + 4 * d1_0[6] + 8 * d1_0[7] + 16 * d1_1[0] + 32 * d1_1[1] + 64 * d1_1[2] + 128 * d1_1[3]), u8_from_field_unsafe(d1_1[4] + 2 * d1_1[5] + 4 * d1_1[6] + 8 * d1_1[7] + 16 * d1_2[0] + 32 * d1_2[1] + 64 * d1_2[2] + 128 * d1_2[3])];
+      -- b11 = rotl(t7, 6) = byte-rotl 1 + 2x rotr1 (u8_shift_right drops the lsb, recovered as b - 2*(b >> 1) and recomposed into the neighbor's msb via free field add)
+      let h11_0_0 = u8_shift_right(t7[7]);
+      let h11_0_1 = u8_shift_right(t7[0]);
+      let h11_0_2 = u8_shift_right(t7[1]);
+      let h11_0_3 = u8_shift_right(t7[2]);
+      let h11_0_4 = u8_shift_right(t7[3]);
+      let h11_0_5 = u8_shift_right(t7[4]);
+      let h11_0_6 = u8_shift_right(t7[5]);
+      let h11_0_7 = u8_shift_right(t7[6]);
+      let h11_1_0 = u8_shift_right(u8_from_field_unsafe(to_field(h11_0_0) + 128 * (to_field(t7[0]) - 2 * to_field(h11_0_1))));
+      let h11_1_1 = u8_shift_right(u8_from_field_unsafe(to_field(h11_0_1) + 128 * (to_field(t7[1]) - 2 * to_field(h11_0_2))));
+      let h11_1_2 = u8_shift_right(u8_from_field_unsafe(to_field(h11_0_2) + 128 * (to_field(t7[2]) - 2 * to_field(h11_0_3))));
+      let h11_1_3 = u8_shift_right(u8_from_field_unsafe(to_field(h11_0_3) + 128 * (to_field(t7[3]) - 2 * to_field(h11_0_4))));
+      let h11_1_4 = u8_shift_right(u8_from_field_unsafe(to_field(h11_0_4) + 128 * (to_field(t7[4]) - 2 * to_field(h11_0_5))));
+      let h11_1_5 = u8_shift_right(u8_from_field_unsafe(to_field(h11_0_5) + 128 * (to_field(t7[5]) - 2 * to_field(h11_0_6))));
+      let h11_1_6 = u8_shift_right(u8_from_field_unsafe(to_field(h11_0_6) + 128 * (to_field(t7[6]) - 2 * to_field(h11_0_7))));
+      let h11_1_7 = u8_shift_right(u8_from_field_unsafe(to_field(h11_0_7) + 128 * (to_field(t7[7]) - 2 * to_field(h11_0_0))));
+      let b11 = [u8_from_field_unsafe(to_field(h11_1_0) + 128 * (to_field(u8_from_field_unsafe(to_field(h11_0_1) + 128 * (to_field(t7[1]) - 2 * to_field(h11_0_2)))) - 2 * to_field(h11_1_1))), u8_from_field_unsafe(to_field(h11_1_1) + 128 * (to_field(u8_from_field_unsafe(to_field(h11_0_2) + 128 * (to_field(t7[2]) - 2 * to_field(h11_0_3)))) - 2 * to_field(h11_1_2))), u8_from_field_unsafe(to_field(h11_1_2) + 128 * (to_field(u8_from_field_unsafe(to_field(h11_0_3) + 128 * (to_field(t7[3]) - 2 * to_field(h11_0_4)))) - 2 * to_field(h11_1_3))), u8_from_field_unsafe(to_field(h11_1_3) + 128 * (to_field(u8_from_field_unsafe(to_field(h11_0_4) + 128 * (to_field(t7[4]) - 2 * to_field(h11_0_5)))) - 2 * to_field(h11_1_4))), u8_from_field_unsafe(to_field(h11_1_4) + 128 * (to_field(u8_from_field_unsafe(to_field(h11_0_5) + 128 * (to_field(t7[5]) - 2 * to_field(h11_0_6)))) - 2 * to_field(h11_1_5))), u8_from_field_unsafe(to_field(h11_1_5) + 128 * (to_field(u8_from_field_unsafe(to_field(h11_0_6) + 128 * (to_field(t7[6]) - 2 * to_field(h11_0_7)))) - 2 * to_field(h11_1_6))), u8_from_field_unsafe(to_field(h11_1_6) + 128 * (to_field(u8_from_field_unsafe(to_field(h11_0_7) + 128 * (to_field(t7[7]) - 2 * to_field(h11_0_0)))) - 2 * to_field(h11_1_7))), u8_from_field_unsafe(to_field(h11_1_7) + 128 * (to_field(u8_from_field_unsafe(to_field(h11_0_0) + 128 * (to_field(t7[0]) - 2 * to_field(h11_0_1)))) - 2 * to_field(h11_1_0)))];
+      -- b21 = rotl(t8, 55) = byte-rotl 7 + 1x rotr1 (u8_shift_right drops the lsb, recovered as b - 2*(b >> 1) and recomposed into the neighbor's msb via free field add)
+      let h21_0_0 = u8_shift_right(t8[1]);
+      let h21_0_1 = u8_shift_right(t8[2]);
+      let h21_0_2 = u8_shift_right(t8[3]);
+      let h21_0_3 = u8_shift_right(t8[4]);
+      let h21_0_4 = u8_shift_right(t8[5]);
+      let h21_0_5 = u8_shift_right(t8[6]);
+      let h21_0_6 = u8_shift_right(t8[7]);
+      let h21_0_7 = u8_shift_right(t8[0]);
+      let b21 = [u8_from_field_unsafe(to_field(h21_0_0) + 128 * (to_field(t8[2]) - 2 * to_field(h21_0_1))), u8_from_field_unsafe(to_field(h21_0_1) + 128 * (to_field(t8[3]) - 2 * to_field(h21_0_2))), u8_from_field_unsafe(to_field(h21_0_2) + 128 * (to_field(t8[4]) - 2 * to_field(h21_0_3))), u8_from_field_unsafe(to_field(h21_0_3) + 128 * (to_field(t8[5]) - 2 * to_field(h21_0_4))), u8_from_field_unsafe(to_field(h21_0_4) + 128 * (to_field(t8[6]) - 2 * to_field(h21_0_5))), u8_from_field_unsafe(to_field(h21_0_5) + 128 * (to_field(t8[7]) - 2 * to_field(h21_0_6))), u8_from_field_unsafe(to_field(h21_0_6) + 128 * (to_field(t8[0]) - 2 * to_field(h21_0_7))), u8_from_field_unsafe(to_field(h21_0_7) + 128 * (to_field(t8[1]) - 2 * to_field(h21_0_0)))];
+      -- b6 = rotl(t9, 20) = byte-rotl 2 + bit-shl 4 (decomposition)
       let d6_0 = u8_bit_decomposition(t9[0]);
       let d6_1 = u8_bit_decomposition(t9[1]);
       let d6_2 = u8_bit_decomposition(t9[2]);
@@ -510,267 +470,253 @@ def keccak := ⟦
       let d6_5 = u8_bit_decomposition(t9[5]);
       let d6_6 = u8_bit_decomposition(t9[6]);
       let d6_7 = u8_bit_decomposition(t9[7]);
-      let b6 = [
-        u8_from_field_unsafe(d6_5[4] + 2 * d6_5[5] + 4 * d6_5[6] + 8 * d6_5[7] + 16 * d6_6[0] + 32 * d6_6[1] + 64 * d6_6[2] + 128 * d6_6[3]),
-        u8_from_field_unsafe(d6_6[4] + 2 * d6_6[5] + 4 * d6_6[6] + 8 * d6_6[7] + 16 * d6_7[0] + 32 * d6_7[1] + 64 * d6_7[2] + 128 * d6_7[3]),
-        u8_from_field_unsafe(d6_7[4] + 2 * d6_7[5] + 4 * d6_7[6] + 8 * d6_7[7] + 16 * d6_0[0] + 32 * d6_0[1] + 64 * d6_0[2] + 128 * d6_0[3]),
-        u8_from_field_unsafe(d6_0[4] + 2 * d6_0[5] + 4 * d6_0[6] + 8 * d6_0[7] + 16 * d6_1[0] + 32 * d6_1[1] + 64 * d6_1[2] + 128 * d6_1[3]),
-        u8_from_field_unsafe(d6_1[4] + 2 * d6_1[5] + 4 * d6_1[6] + 8 * d6_1[7] + 16 * d6_2[0] + 32 * d6_2[1] + 64 * d6_2[2] + 128 * d6_2[3]),
-        u8_from_field_unsafe(d6_2[4] + 2 * d6_2[5] + 4 * d6_2[6] + 8 * d6_2[7] + 16 * d6_3[0] + 32 * d6_3[1] + 64 * d6_3[2] + 128 * d6_3[3]),
-        u8_from_field_unsafe(d6_3[4] + 2 * d6_3[5] + 4 * d6_3[6] + 8 * d6_3[7] + 16 * d6_4[0] + 32 * d6_4[1] + 64 * d6_4[2] + 128 * d6_4[3]),
-        u8_from_field_unsafe(d6_4[4] + 2 * d6_4[5] + 4 * d6_4[6] + 8 * d6_4[7] + 16 * d6_5[0] + 32 * d6_5[1] + 64 * d6_5[2] + 128 * d6_5[3])
-      ];
-      -- b7 = rotl(t10, 3) = byte-rotl 0 + bit-shl 3
-      let d7_0 = u8_bit_decomposition(t10[0]);
-      let d7_1 = u8_bit_decomposition(t10[1]);
-      let d7_2 = u8_bit_decomposition(t10[2]);
-      let d7_3 = u8_bit_decomposition(t10[3]);
-      let d7_4 = u8_bit_decomposition(t10[4]);
-      let d7_5 = u8_bit_decomposition(t10[5]);
-      let d7_6 = u8_bit_decomposition(t10[6]);
-      let d7_7 = u8_bit_decomposition(t10[7]);
-      let b7 = [
-        u8_from_field_unsafe(d7_7[5] + 2 * d7_7[6] + 4 * d7_7[7] + 8 * d7_0[0] + 16 * d7_0[1] + 32 * d7_0[2] + 64 * d7_0[3] + 128 * d7_0[4]),
-        u8_from_field_unsafe(d7_0[5] + 2 * d7_0[6] + 4 * d7_0[7] + 8 * d7_1[0] + 16 * d7_1[1] + 32 * d7_1[2] + 64 * d7_1[3] + 128 * d7_1[4]),
-        u8_from_field_unsafe(d7_1[5] + 2 * d7_1[6] + 4 * d7_1[7] + 8 * d7_2[0] + 16 * d7_2[1] + 32 * d7_2[2] + 64 * d7_2[3] + 128 * d7_2[4]),
-        u8_from_field_unsafe(d7_2[5] + 2 * d7_2[6] + 4 * d7_2[7] + 8 * d7_3[0] + 16 * d7_3[1] + 32 * d7_3[2] + 64 * d7_3[3] + 128 * d7_3[4]),
-        u8_from_field_unsafe(d7_3[5] + 2 * d7_3[6] + 4 * d7_3[7] + 8 * d7_4[0] + 16 * d7_4[1] + 32 * d7_4[2] + 64 * d7_4[3] + 128 * d7_4[4]),
-        u8_from_field_unsafe(d7_4[5] + 2 * d7_4[6] + 4 * d7_4[7] + 8 * d7_5[0] + 16 * d7_5[1] + 32 * d7_5[2] + 64 * d7_5[3] + 128 * d7_5[4]),
-        u8_from_field_unsafe(d7_5[5] + 2 * d7_5[6] + 4 * d7_5[7] + 8 * d7_6[0] + 16 * d7_6[1] + 32 * d7_6[2] + 64 * d7_6[3] + 128 * d7_6[4]),
-        u8_from_field_unsafe(d7_6[5] + 2 * d7_6[6] + 4 * d7_6[7] + 8 * d7_7[0] + 16 * d7_7[1] + 32 * d7_7[2] + 64 * d7_7[3] + 128 * d7_7[4])
-      ];
-      -- b17 = rotl(t11, 10) = byte-rotl 1 + bit-shl 2
-      let d17_0 = u8_bit_decomposition(t11[0]);
-      let d17_1 = u8_bit_decomposition(t11[1]);
-      let d17_2 = u8_bit_decomposition(t11[2]);
-      let d17_3 = u8_bit_decomposition(t11[3]);
-      let d17_4 = u8_bit_decomposition(t11[4]);
-      let d17_5 = u8_bit_decomposition(t11[5]);
-      let d17_6 = u8_bit_decomposition(t11[6]);
-      let d17_7 = u8_bit_decomposition(t11[7]);
-      let b17 = [
-        u8_from_field_unsafe(d17_6[6] + 2 * d17_6[7] + 4 * d17_7[0] + 8 * d17_7[1] + 16 * d17_7[2] + 32 * d17_7[3] + 64 * d17_7[4] + 128 * d17_7[5]),
-        u8_from_field_unsafe(d17_7[6] + 2 * d17_7[7] + 4 * d17_0[0] + 8 * d17_0[1] + 16 * d17_0[2] + 32 * d17_0[3] + 64 * d17_0[4] + 128 * d17_0[5]),
-        u8_from_field_unsafe(d17_0[6] + 2 * d17_0[7] + 4 * d17_1[0] + 8 * d17_1[1] + 16 * d17_1[2] + 32 * d17_1[3] + 64 * d17_1[4] + 128 * d17_1[5]),
-        u8_from_field_unsafe(d17_1[6] + 2 * d17_1[7] + 4 * d17_2[0] + 8 * d17_2[1] + 16 * d17_2[2] + 32 * d17_2[3] + 64 * d17_2[4] + 128 * d17_2[5]),
-        u8_from_field_unsafe(d17_2[6] + 2 * d17_2[7] + 4 * d17_3[0] + 8 * d17_3[1] + 16 * d17_3[2] + 32 * d17_3[3] + 64 * d17_3[4] + 128 * d17_3[5]),
-        u8_from_field_unsafe(d17_3[6] + 2 * d17_3[7] + 4 * d17_4[0] + 8 * d17_4[1] + 16 * d17_4[2] + 32 * d17_4[3] + 64 * d17_4[4] + 128 * d17_4[5]),
-        u8_from_field_unsafe(d17_4[6] + 2 * d17_4[7] + 4 * d17_5[0] + 8 * d17_5[1] + 16 * d17_5[2] + 32 * d17_5[3] + 64 * d17_5[4] + 128 * d17_5[5]),
-        u8_from_field_unsafe(d17_5[6] + 2 * d17_5[7] + 4 * d17_6[0] + 8 * d17_6[1] + 16 * d17_6[2] + 32 * d17_6[3] + 64 * d17_6[4] + 128 * d17_6[5])
-      ];
-      -- b2 = rotl(t12, 43) = byte-rotl 5 + bit-shl 3
-      let d2_0 = u8_bit_decomposition(t12[0]);
-      let d2_1 = u8_bit_decomposition(t12[1]);
-      let d2_2 = u8_bit_decomposition(t12[2]);
-      let d2_3 = u8_bit_decomposition(t12[3]);
-      let d2_4 = u8_bit_decomposition(t12[4]);
-      let d2_5 = u8_bit_decomposition(t12[5]);
-      let d2_6 = u8_bit_decomposition(t12[6]);
-      let d2_7 = u8_bit_decomposition(t12[7]);
-      let b2 = [
-        u8_from_field_unsafe(d2_2[5] + 2 * d2_2[6] + 4 * d2_2[7] + 8 * d2_3[0] + 16 * d2_3[1] + 32 * d2_3[2] + 64 * d2_3[3] + 128 * d2_3[4]),
-        u8_from_field_unsafe(d2_3[5] + 2 * d2_3[6] + 4 * d2_3[7] + 8 * d2_4[0] + 16 * d2_4[1] + 32 * d2_4[2] + 64 * d2_4[3] + 128 * d2_4[4]),
-        u8_from_field_unsafe(d2_4[5] + 2 * d2_4[6] + 4 * d2_4[7] + 8 * d2_5[0] + 16 * d2_5[1] + 32 * d2_5[2] + 64 * d2_5[3] + 128 * d2_5[4]),
-        u8_from_field_unsafe(d2_5[5] + 2 * d2_5[6] + 4 * d2_5[7] + 8 * d2_6[0] + 16 * d2_6[1] + 32 * d2_6[2] + 64 * d2_6[3] + 128 * d2_6[4]),
-        u8_from_field_unsafe(d2_6[5] + 2 * d2_6[6] + 4 * d2_6[7] + 8 * d2_7[0] + 16 * d2_7[1] + 32 * d2_7[2] + 64 * d2_7[3] + 128 * d2_7[4]),
-        u8_from_field_unsafe(d2_7[5] + 2 * d2_7[6] + 4 * d2_7[7] + 8 * d2_0[0] + 16 * d2_0[1] + 32 * d2_0[2] + 64 * d2_0[3] + 128 * d2_0[4]),
-        u8_from_field_unsafe(d2_0[5] + 2 * d2_0[6] + 4 * d2_0[7] + 8 * d2_1[0] + 16 * d2_1[1] + 32 * d2_1[2] + 64 * d2_1[3] + 128 * d2_1[4]),
-        u8_from_field_unsafe(d2_1[5] + 2 * d2_1[6] + 4 * d2_1[7] + 8 * d2_2[0] + 16 * d2_2[1] + 32 * d2_2[2] + 64 * d2_2[3] + 128 * d2_2[4])
-      ];
-      -- b12 = rotl(t13, 25) = byte-rotl 3 + bit-shl 1
-      let d12_0 = u8_bit_decomposition(t13[0]);
-      let d12_1 = u8_bit_decomposition(t13[1]);
-      let d12_2 = u8_bit_decomposition(t13[2]);
-      let d12_3 = u8_bit_decomposition(t13[3]);
-      let d12_4 = u8_bit_decomposition(t13[4]);
-      let d12_5 = u8_bit_decomposition(t13[5]);
-      let d12_6 = u8_bit_decomposition(t13[6]);
-      let d12_7 = u8_bit_decomposition(t13[7]);
-      let b12 = [
-        u8_from_field_unsafe(d12_4[7] + 2 * d12_5[0] + 4 * d12_5[1] + 8 * d12_5[2] + 16 * d12_5[3] + 32 * d12_5[4] + 64 * d12_5[5] + 128 * d12_5[6]),
-        u8_from_field_unsafe(d12_5[7] + 2 * d12_6[0] + 4 * d12_6[1] + 8 * d12_6[2] + 16 * d12_6[3] + 32 * d12_6[4] + 64 * d12_6[5] + 128 * d12_6[6]),
-        u8_from_field_unsafe(d12_6[7] + 2 * d12_7[0] + 4 * d12_7[1] + 8 * d12_7[2] + 16 * d12_7[3] + 32 * d12_7[4] + 64 * d12_7[5] + 128 * d12_7[6]),
-        u8_from_field_unsafe(d12_7[7] + 2 * d12_0[0] + 4 * d12_0[1] + 8 * d12_0[2] + 16 * d12_0[3] + 32 * d12_0[4] + 64 * d12_0[5] + 128 * d12_0[6]),
-        u8_from_field_unsafe(d12_0[7] + 2 * d12_1[0] + 4 * d12_1[1] + 8 * d12_1[2] + 16 * d12_1[3] + 32 * d12_1[4] + 64 * d12_1[5] + 128 * d12_1[6]),
-        u8_from_field_unsafe(d12_1[7] + 2 * d12_2[0] + 4 * d12_2[1] + 8 * d12_2[2] + 16 * d12_2[3] + 32 * d12_2[4] + 64 * d12_2[5] + 128 * d12_2[6]),
-        u8_from_field_unsafe(d12_2[7] + 2 * d12_3[0] + 4 * d12_3[1] + 8 * d12_3[2] + 16 * d12_3[3] + 32 * d12_3[4] + 64 * d12_3[5] + 128 * d12_3[6]),
-        u8_from_field_unsafe(d12_3[7] + 2 * d12_4[0] + 4 * d12_4[1] + 8 * d12_4[2] + 16 * d12_4[3] + 32 * d12_4[4] + 64 * d12_4[5] + 128 * d12_4[6])
-      ];
-      -- b22 = rotl(t14, 39) = byte-rotl 4 + bit-shl 7
-      let d22_0 = u8_bit_decomposition(t14[0]);
-      let d22_1 = u8_bit_decomposition(t14[1]);
-      let d22_2 = u8_bit_decomposition(t14[2]);
-      let d22_3 = u8_bit_decomposition(t14[3]);
-      let d22_4 = u8_bit_decomposition(t14[4]);
-      let d22_5 = u8_bit_decomposition(t14[5]);
-      let d22_6 = u8_bit_decomposition(t14[6]);
-      let d22_7 = u8_bit_decomposition(t14[7]);
-      let b22 = [
-        u8_from_field_unsafe(d22_3[1] + 2 * d22_3[2] + 4 * d22_3[3] + 8 * d22_3[4] + 16 * d22_3[5] + 32 * d22_3[6] + 64 * d22_3[7] + 128 * d22_4[0]),
-        u8_from_field_unsafe(d22_4[1] + 2 * d22_4[2] + 4 * d22_4[3] + 8 * d22_4[4] + 16 * d22_4[5] + 32 * d22_4[6] + 64 * d22_4[7] + 128 * d22_5[0]),
-        u8_from_field_unsafe(d22_5[1] + 2 * d22_5[2] + 4 * d22_5[3] + 8 * d22_5[4] + 16 * d22_5[5] + 32 * d22_5[6] + 64 * d22_5[7] + 128 * d22_6[0]),
-        u8_from_field_unsafe(d22_6[1] + 2 * d22_6[2] + 4 * d22_6[3] + 8 * d22_6[4] + 16 * d22_6[5] + 32 * d22_6[6] + 64 * d22_6[7] + 128 * d22_7[0]),
-        u8_from_field_unsafe(d22_7[1] + 2 * d22_7[2] + 4 * d22_7[3] + 8 * d22_7[4] + 16 * d22_7[5] + 32 * d22_7[6] + 64 * d22_7[7] + 128 * d22_0[0]),
-        u8_from_field_unsafe(d22_0[1] + 2 * d22_0[2] + 4 * d22_0[3] + 8 * d22_0[4] + 16 * d22_0[5] + 32 * d22_0[6] + 64 * d22_0[7] + 128 * d22_1[0]),
-        u8_from_field_unsafe(d22_1[1] + 2 * d22_1[2] + 4 * d22_1[3] + 8 * d22_1[4] + 16 * d22_1[5] + 32 * d22_1[6] + 64 * d22_1[7] + 128 * d22_2[0]),
-        u8_from_field_unsafe(d22_2[1] + 2 * d22_2[2] + 4 * d22_2[3] + 8 * d22_2[4] + 16 * d22_2[5] + 32 * d22_2[6] + 64 * d22_2[7] + 128 * d22_3[0])
-      ];
-      -- b23 = rotl(t15, 41) = byte-rotl 5 + bit-shl 1
-      let d23_0 = u8_bit_decomposition(t15[0]);
-      let d23_1 = u8_bit_decomposition(t15[1]);
-      let d23_2 = u8_bit_decomposition(t15[2]);
-      let d23_3 = u8_bit_decomposition(t15[3]);
-      let d23_4 = u8_bit_decomposition(t15[4]);
-      let d23_5 = u8_bit_decomposition(t15[5]);
-      let d23_6 = u8_bit_decomposition(t15[6]);
-      let d23_7 = u8_bit_decomposition(t15[7]);
-      let b23 = [
-        u8_from_field_unsafe(d23_2[7] + 2 * d23_3[0] + 4 * d23_3[1] + 8 * d23_3[2] + 16 * d23_3[3] + 32 * d23_3[4] + 64 * d23_3[5] + 128 * d23_3[6]),
-        u8_from_field_unsafe(d23_3[7] + 2 * d23_4[0] + 4 * d23_4[1] + 8 * d23_4[2] + 16 * d23_4[3] + 32 * d23_4[4] + 64 * d23_4[5] + 128 * d23_4[6]),
-        u8_from_field_unsafe(d23_4[7] + 2 * d23_5[0] + 4 * d23_5[1] + 8 * d23_5[2] + 16 * d23_5[3] + 32 * d23_5[4] + 64 * d23_5[5] + 128 * d23_5[6]),
-        u8_from_field_unsafe(d23_5[7] + 2 * d23_6[0] + 4 * d23_6[1] + 8 * d23_6[2] + 16 * d23_6[3] + 32 * d23_6[4] + 64 * d23_6[5] + 128 * d23_6[6]),
-        u8_from_field_unsafe(d23_6[7] + 2 * d23_7[0] + 4 * d23_7[1] + 8 * d23_7[2] + 16 * d23_7[3] + 32 * d23_7[4] + 64 * d23_7[5] + 128 * d23_7[6]),
-        u8_from_field_unsafe(d23_7[7] + 2 * d23_0[0] + 4 * d23_0[1] + 8 * d23_0[2] + 16 * d23_0[3] + 32 * d23_0[4] + 64 * d23_0[5] + 128 * d23_0[6]),
-        u8_from_field_unsafe(d23_0[7] + 2 * d23_1[0] + 4 * d23_1[1] + 8 * d23_1[2] + 16 * d23_1[3] + 32 * d23_1[4] + 64 * d23_1[5] + 128 * d23_1[6]),
-        u8_from_field_unsafe(d23_1[7] + 2 * d23_2[0] + 4 * d23_2[1] + 8 * d23_2[2] + 16 * d23_2[3] + 32 * d23_2[4] + 64 * d23_2[5] + 128 * d23_2[6])
-      ];
-      -- b8 = rotl(t16, 45) = byte-rotl 5 + bit-shl 5
-      let d8_0 = u8_bit_decomposition(t16[0]);
-      let d8_1 = u8_bit_decomposition(t16[1]);
-      let d8_2 = u8_bit_decomposition(t16[2]);
-      let d8_3 = u8_bit_decomposition(t16[3]);
-      let d8_4 = u8_bit_decomposition(t16[4]);
-      let d8_5 = u8_bit_decomposition(t16[5]);
-      let d8_6 = u8_bit_decomposition(t16[6]);
-      let d8_7 = u8_bit_decomposition(t16[7]);
-      let b8 = [
-        u8_from_field_unsafe(d8_2[3] + 2 * d8_2[4] + 4 * d8_2[5] + 8 * d8_2[6] + 16 * d8_2[7] + 32 * d8_3[0] + 64 * d8_3[1] + 128 * d8_3[2]),
-        u8_from_field_unsafe(d8_3[3] + 2 * d8_3[4] + 4 * d8_3[5] + 8 * d8_3[6] + 16 * d8_3[7] + 32 * d8_4[0] + 64 * d8_4[1] + 128 * d8_4[2]),
-        u8_from_field_unsafe(d8_4[3] + 2 * d8_4[4] + 4 * d8_4[5] + 8 * d8_4[6] + 16 * d8_4[7] + 32 * d8_5[0] + 64 * d8_5[1] + 128 * d8_5[2]),
-        u8_from_field_unsafe(d8_5[3] + 2 * d8_5[4] + 4 * d8_5[5] + 8 * d8_5[6] + 16 * d8_5[7] + 32 * d8_6[0] + 64 * d8_6[1] + 128 * d8_6[2]),
-        u8_from_field_unsafe(d8_6[3] + 2 * d8_6[4] + 4 * d8_6[5] + 8 * d8_6[6] + 16 * d8_6[7] + 32 * d8_7[0] + 64 * d8_7[1] + 128 * d8_7[2]),
-        u8_from_field_unsafe(d8_7[3] + 2 * d8_7[4] + 4 * d8_7[5] + 8 * d8_7[6] + 16 * d8_7[7] + 32 * d8_0[0] + 64 * d8_0[1] + 128 * d8_0[2]),
-        u8_from_field_unsafe(d8_0[3] + 2 * d8_0[4] + 4 * d8_0[5] + 8 * d8_0[6] + 16 * d8_0[7] + 32 * d8_1[0] + 64 * d8_1[1] + 128 * d8_1[2]),
-        u8_from_field_unsafe(d8_1[3] + 2 * d8_1[4] + 4 * d8_1[5] + 8 * d8_1[6] + 16 * d8_1[7] + 32 * d8_2[0] + 64 * d8_2[1] + 128 * d8_2[2])
-      ];
-      -- b18 = rotl(t17, 15) = byte-rotl 1 + bit-shl 7
-      let d18_0 = u8_bit_decomposition(t17[0]);
-      let d18_1 = u8_bit_decomposition(t17[1]);
-      let d18_2 = u8_bit_decomposition(t17[2]);
-      let d18_3 = u8_bit_decomposition(t17[3]);
-      let d18_4 = u8_bit_decomposition(t17[4]);
-      let d18_5 = u8_bit_decomposition(t17[5]);
-      let d18_6 = u8_bit_decomposition(t17[6]);
-      let d18_7 = u8_bit_decomposition(t17[7]);
-      let b18 = [
-        u8_from_field_unsafe(d18_6[1] + 2 * d18_6[2] + 4 * d18_6[3] + 8 * d18_6[4] + 16 * d18_6[5] + 32 * d18_6[6] + 64 * d18_6[7] + 128 * d18_7[0]),
-        u8_from_field_unsafe(d18_7[1] + 2 * d18_7[2] + 4 * d18_7[3] + 8 * d18_7[4] + 16 * d18_7[5] + 32 * d18_7[6] + 64 * d18_7[7] + 128 * d18_0[0]),
-        u8_from_field_unsafe(d18_0[1] + 2 * d18_0[2] + 4 * d18_0[3] + 8 * d18_0[4] + 16 * d18_0[5] + 32 * d18_0[6] + 64 * d18_0[7] + 128 * d18_1[0]),
-        u8_from_field_unsafe(d18_1[1] + 2 * d18_1[2] + 4 * d18_1[3] + 8 * d18_1[4] + 16 * d18_1[5] + 32 * d18_1[6] + 64 * d18_1[7] + 128 * d18_2[0]),
-        u8_from_field_unsafe(d18_2[1] + 2 * d18_2[2] + 4 * d18_2[3] + 8 * d18_2[4] + 16 * d18_2[5] + 32 * d18_2[6] + 64 * d18_2[7] + 128 * d18_3[0]),
-        u8_from_field_unsafe(d18_3[1] + 2 * d18_3[2] + 4 * d18_3[3] + 8 * d18_3[4] + 16 * d18_3[5] + 32 * d18_3[6] + 64 * d18_3[7] + 128 * d18_4[0]),
-        u8_from_field_unsafe(d18_4[1] + 2 * d18_4[2] + 4 * d18_4[3] + 8 * d18_4[4] + 16 * d18_4[5] + 32 * d18_4[6] + 64 * d18_4[7] + 128 * d18_5[0]),
-        u8_from_field_unsafe(d18_5[1] + 2 * d18_5[2] + 4 * d18_5[3] + 8 * d18_5[4] + 16 * d18_5[5] + 32 * d18_5[6] + 64 * d18_5[7] + 128 * d18_6[0])
-      ];
-      -- b3 = rotl(t18, 21) = byte-rotl 2 + bit-shl 5
-      let d3_0 = u8_bit_decomposition(t18[0]);
-      let d3_1 = u8_bit_decomposition(t18[1]);
-      let d3_2 = u8_bit_decomposition(t18[2]);
-      let d3_3 = u8_bit_decomposition(t18[3]);
-      let d3_4 = u8_bit_decomposition(t18[4]);
-      let d3_5 = u8_bit_decomposition(t18[5]);
-      let d3_6 = u8_bit_decomposition(t18[6]);
-      let d3_7 = u8_bit_decomposition(t18[7]);
-      let b3 = [
-        u8_from_field_unsafe(d3_5[3] + 2 * d3_5[4] + 4 * d3_5[5] + 8 * d3_5[6] + 16 * d3_5[7] + 32 * d3_6[0] + 64 * d3_6[1] + 128 * d3_6[2]),
-        u8_from_field_unsafe(d3_6[3] + 2 * d3_6[4] + 4 * d3_6[5] + 8 * d3_6[6] + 16 * d3_6[7] + 32 * d3_7[0] + 64 * d3_7[1] + 128 * d3_7[2]),
-        u8_from_field_unsafe(d3_7[3] + 2 * d3_7[4] + 4 * d3_7[5] + 8 * d3_7[6] + 16 * d3_7[7] + 32 * d3_0[0] + 64 * d3_0[1] + 128 * d3_0[2]),
-        u8_from_field_unsafe(d3_0[3] + 2 * d3_0[4] + 4 * d3_0[5] + 8 * d3_0[6] + 16 * d3_0[7] + 32 * d3_1[0] + 64 * d3_1[1] + 128 * d3_1[2]),
-        u8_from_field_unsafe(d3_1[3] + 2 * d3_1[4] + 4 * d3_1[5] + 8 * d3_1[6] + 16 * d3_1[7] + 32 * d3_2[0] + 64 * d3_2[1] + 128 * d3_2[2]),
-        u8_from_field_unsafe(d3_2[3] + 2 * d3_2[4] + 4 * d3_2[5] + 8 * d3_2[6] + 16 * d3_2[7] + 32 * d3_3[0] + 64 * d3_3[1] + 128 * d3_3[2]),
-        u8_from_field_unsafe(d3_3[3] + 2 * d3_3[4] + 4 * d3_3[5] + 8 * d3_3[6] + 16 * d3_3[7] + 32 * d3_4[0] + 64 * d3_4[1] + 128 * d3_4[2]),
-        u8_from_field_unsafe(d3_4[3] + 2 * d3_4[4] + 4 * d3_4[5] + 8 * d3_4[6] + 16 * d3_4[7] + 32 * d3_5[0] + 64 * d3_5[1] + 128 * d3_5[2])
-      ];
+      let b6 = [u8_from_field_unsafe(d6_5[4] + 2 * d6_5[5] + 4 * d6_5[6] + 8 * d6_5[7] + 16 * d6_6[0] + 32 * d6_6[1] + 64 * d6_6[2] + 128 * d6_6[3]), u8_from_field_unsafe(d6_6[4] + 2 * d6_6[5] + 4 * d6_6[6] + 8 * d6_6[7] + 16 * d6_7[0] + 32 * d6_7[1] + 64 * d6_7[2] + 128 * d6_7[3]), u8_from_field_unsafe(d6_7[4] + 2 * d6_7[5] + 4 * d6_7[6] + 8 * d6_7[7] + 16 * d6_0[0] + 32 * d6_0[1] + 64 * d6_0[2] + 128 * d6_0[3]), u8_from_field_unsafe(d6_0[4] + 2 * d6_0[5] + 4 * d6_0[6] + 8 * d6_0[7] + 16 * d6_1[0] + 32 * d6_1[1] + 64 * d6_1[2] + 128 * d6_1[3]), u8_from_field_unsafe(d6_1[4] + 2 * d6_1[5] + 4 * d6_1[6] + 8 * d6_1[7] + 16 * d6_2[0] + 32 * d6_2[1] + 64 * d6_2[2] + 128 * d6_2[3]), u8_from_field_unsafe(d6_2[4] + 2 * d6_2[5] + 4 * d6_2[6] + 8 * d6_2[7] + 16 * d6_3[0] + 32 * d6_3[1] + 64 * d6_3[2] + 128 * d6_3[3]), u8_from_field_unsafe(d6_3[4] + 2 * d6_3[5] + 4 * d6_3[6] + 8 * d6_3[7] + 16 * d6_4[0] + 32 * d6_4[1] + 64 * d6_4[2] + 128 * d6_4[3]), u8_from_field_unsafe(d6_4[4] + 2 * d6_4[5] + 4 * d6_4[6] + 8 * d6_4[7] + 16 * d6_5[0] + 32 * d6_5[1] + 64 * d6_5[2] + 128 * d6_5[3])];
+      -- b7 = rotl(t10, 3) = byte-rotl 0 + 3x rotl1 (u8_add doubling: (b+b) = (2b mod 256, msb); the even low byte absorbs the neighbor's msb via free field add)
+      let (a7_0_0, c7_0_0) = u8_add(t10[0], t10[0]);
+      let (a7_0_1, c7_0_1) = u8_add(t10[1], t10[1]);
+      let (a7_0_2, c7_0_2) = u8_add(t10[2], t10[2]);
+      let (a7_0_3, c7_0_3) = u8_add(t10[3], t10[3]);
+      let (a7_0_4, c7_0_4) = u8_add(t10[4], t10[4]);
+      let (a7_0_5, c7_0_5) = u8_add(t10[5], t10[5]);
+      let (a7_0_6, c7_0_6) = u8_add(t10[6], t10[6]);
+      let (a7_0_7, c7_0_7) = u8_add(t10[7], t10[7]);
+      let (a7_1_0, c7_1_0) = u8_add(u8_from_field_unsafe(to_field(a7_0_0) + to_field(c7_0_7)), u8_from_field_unsafe(to_field(a7_0_0) + to_field(c7_0_7)));
+      let (a7_1_1, c7_1_1) = u8_add(u8_from_field_unsafe(to_field(a7_0_1) + to_field(c7_0_0)), u8_from_field_unsafe(to_field(a7_0_1) + to_field(c7_0_0)));
+      let (a7_1_2, c7_1_2) = u8_add(u8_from_field_unsafe(to_field(a7_0_2) + to_field(c7_0_1)), u8_from_field_unsafe(to_field(a7_0_2) + to_field(c7_0_1)));
+      let (a7_1_3, c7_1_3) = u8_add(u8_from_field_unsafe(to_field(a7_0_3) + to_field(c7_0_2)), u8_from_field_unsafe(to_field(a7_0_3) + to_field(c7_0_2)));
+      let (a7_1_4, c7_1_4) = u8_add(u8_from_field_unsafe(to_field(a7_0_4) + to_field(c7_0_3)), u8_from_field_unsafe(to_field(a7_0_4) + to_field(c7_0_3)));
+      let (a7_1_5, c7_1_5) = u8_add(u8_from_field_unsafe(to_field(a7_0_5) + to_field(c7_0_4)), u8_from_field_unsafe(to_field(a7_0_5) + to_field(c7_0_4)));
+      let (a7_1_6, c7_1_6) = u8_add(u8_from_field_unsafe(to_field(a7_0_6) + to_field(c7_0_5)), u8_from_field_unsafe(to_field(a7_0_6) + to_field(c7_0_5)));
+      let (a7_1_7, c7_1_7) = u8_add(u8_from_field_unsafe(to_field(a7_0_7) + to_field(c7_0_6)), u8_from_field_unsafe(to_field(a7_0_7) + to_field(c7_0_6)));
+      let (a7_2_0, c7_2_0) = u8_add(u8_from_field_unsafe(to_field(a7_1_0) + to_field(c7_1_7)), u8_from_field_unsafe(to_field(a7_1_0) + to_field(c7_1_7)));
+      let (a7_2_1, c7_2_1) = u8_add(u8_from_field_unsafe(to_field(a7_1_1) + to_field(c7_1_0)), u8_from_field_unsafe(to_field(a7_1_1) + to_field(c7_1_0)));
+      let (a7_2_2, c7_2_2) = u8_add(u8_from_field_unsafe(to_field(a7_1_2) + to_field(c7_1_1)), u8_from_field_unsafe(to_field(a7_1_2) + to_field(c7_1_1)));
+      let (a7_2_3, c7_2_3) = u8_add(u8_from_field_unsafe(to_field(a7_1_3) + to_field(c7_1_2)), u8_from_field_unsafe(to_field(a7_1_3) + to_field(c7_1_2)));
+      let (a7_2_4, c7_2_4) = u8_add(u8_from_field_unsafe(to_field(a7_1_4) + to_field(c7_1_3)), u8_from_field_unsafe(to_field(a7_1_4) + to_field(c7_1_3)));
+      let (a7_2_5, c7_2_5) = u8_add(u8_from_field_unsafe(to_field(a7_1_5) + to_field(c7_1_4)), u8_from_field_unsafe(to_field(a7_1_5) + to_field(c7_1_4)));
+      let (a7_2_6, c7_2_6) = u8_add(u8_from_field_unsafe(to_field(a7_1_6) + to_field(c7_1_5)), u8_from_field_unsafe(to_field(a7_1_6) + to_field(c7_1_5)));
+      let (a7_2_7, c7_2_7) = u8_add(u8_from_field_unsafe(to_field(a7_1_7) + to_field(c7_1_6)), u8_from_field_unsafe(to_field(a7_1_7) + to_field(c7_1_6)));
+      let b7 = [u8_from_field_unsafe(to_field(a7_2_0) + to_field(c7_2_7)), u8_from_field_unsafe(to_field(a7_2_1) + to_field(c7_2_0)), u8_from_field_unsafe(to_field(a7_2_2) + to_field(c7_2_1)), u8_from_field_unsafe(to_field(a7_2_3) + to_field(c7_2_2)), u8_from_field_unsafe(to_field(a7_2_4) + to_field(c7_2_3)), u8_from_field_unsafe(to_field(a7_2_5) + to_field(c7_2_4)), u8_from_field_unsafe(to_field(a7_2_6) + to_field(c7_2_5)), u8_from_field_unsafe(to_field(a7_2_7) + to_field(c7_2_6))];
+      -- b17 = rotl(t11, 10) = byte-rotl 1 + 2x rotl1 (u8_add doubling: (b+b) = (2b mod 256, msb); the even low byte absorbs the neighbor's msb via free field add)
+      let (a17_0_0, c17_0_0) = u8_add(t11[7], t11[7]);
+      let (a17_0_1, c17_0_1) = u8_add(t11[0], t11[0]);
+      let (a17_0_2, c17_0_2) = u8_add(t11[1], t11[1]);
+      let (a17_0_3, c17_0_3) = u8_add(t11[2], t11[2]);
+      let (a17_0_4, c17_0_4) = u8_add(t11[3], t11[3]);
+      let (a17_0_5, c17_0_5) = u8_add(t11[4], t11[4]);
+      let (a17_0_6, c17_0_6) = u8_add(t11[5], t11[5]);
+      let (a17_0_7, c17_0_7) = u8_add(t11[6], t11[6]);
+      let (a17_1_0, c17_1_0) = u8_add(u8_from_field_unsafe(to_field(a17_0_0) + to_field(c17_0_7)), u8_from_field_unsafe(to_field(a17_0_0) + to_field(c17_0_7)));
+      let (a17_1_1, c17_1_1) = u8_add(u8_from_field_unsafe(to_field(a17_0_1) + to_field(c17_0_0)), u8_from_field_unsafe(to_field(a17_0_1) + to_field(c17_0_0)));
+      let (a17_1_2, c17_1_2) = u8_add(u8_from_field_unsafe(to_field(a17_0_2) + to_field(c17_0_1)), u8_from_field_unsafe(to_field(a17_0_2) + to_field(c17_0_1)));
+      let (a17_1_3, c17_1_3) = u8_add(u8_from_field_unsafe(to_field(a17_0_3) + to_field(c17_0_2)), u8_from_field_unsafe(to_field(a17_0_3) + to_field(c17_0_2)));
+      let (a17_1_4, c17_1_4) = u8_add(u8_from_field_unsafe(to_field(a17_0_4) + to_field(c17_0_3)), u8_from_field_unsafe(to_field(a17_0_4) + to_field(c17_0_3)));
+      let (a17_1_5, c17_1_5) = u8_add(u8_from_field_unsafe(to_field(a17_0_5) + to_field(c17_0_4)), u8_from_field_unsafe(to_field(a17_0_5) + to_field(c17_0_4)));
+      let (a17_1_6, c17_1_6) = u8_add(u8_from_field_unsafe(to_field(a17_0_6) + to_field(c17_0_5)), u8_from_field_unsafe(to_field(a17_0_6) + to_field(c17_0_5)));
+      let (a17_1_7, c17_1_7) = u8_add(u8_from_field_unsafe(to_field(a17_0_7) + to_field(c17_0_6)), u8_from_field_unsafe(to_field(a17_0_7) + to_field(c17_0_6)));
+      let b17 = [u8_from_field_unsafe(to_field(a17_1_0) + to_field(c17_1_7)), u8_from_field_unsafe(to_field(a17_1_1) + to_field(c17_1_0)), u8_from_field_unsafe(to_field(a17_1_2) + to_field(c17_1_1)), u8_from_field_unsafe(to_field(a17_1_3) + to_field(c17_1_2)), u8_from_field_unsafe(to_field(a17_1_4) + to_field(c17_1_3)), u8_from_field_unsafe(to_field(a17_1_5) + to_field(c17_1_4)), u8_from_field_unsafe(to_field(a17_1_6) + to_field(c17_1_5)), u8_from_field_unsafe(to_field(a17_1_7) + to_field(c17_1_6))];
+      -- b2 = rotl(t12, 43) = byte-rotl 5 + 3x rotl1 (u8_add doubling: (b+b) = (2b mod 256, msb); the even low byte absorbs the neighbor's msb via free field add)
+      let (a2_0_0, c2_0_0) = u8_add(t12[3], t12[3]);
+      let (a2_0_1, c2_0_1) = u8_add(t12[4], t12[4]);
+      let (a2_0_2, c2_0_2) = u8_add(t12[5], t12[5]);
+      let (a2_0_3, c2_0_3) = u8_add(t12[6], t12[6]);
+      let (a2_0_4, c2_0_4) = u8_add(t12[7], t12[7]);
+      let (a2_0_5, c2_0_5) = u8_add(t12[0], t12[0]);
+      let (a2_0_6, c2_0_6) = u8_add(t12[1], t12[1]);
+      let (a2_0_7, c2_0_7) = u8_add(t12[2], t12[2]);
+      let (a2_1_0, c2_1_0) = u8_add(u8_from_field_unsafe(to_field(a2_0_0) + to_field(c2_0_7)), u8_from_field_unsafe(to_field(a2_0_0) + to_field(c2_0_7)));
+      let (a2_1_1, c2_1_1) = u8_add(u8_from_field_unsafe(to_field(a2_0_1) + to_field(c2_0_0)), u8_from_field_unsafe(to_field(a2_0_1) + to_field(c2_0_0)));
+      let (a2_1_2, c2_1_2) = u8_add(u8_from_field_unsafe(to_field(a2_0_2) + to_field(c2_0_1)), u8_from_field_unsafe(to_field(a2_0_2) + to_field(c2_0_1)));
+      let (a2_1_3, c2_1_3) = u8_add(u8_from_field_unsafe(to_field(a2_0_3) + to_field(c2_0_2)), u8_from_field_unsafe(to_field(a2_0_3) + to_field(c2_0_2)));
+      let (a2_1_4, c2_1_4) = u8_add(u8_from_field_unsafe(to_field(a2_0_4) + to_field(c2_0_3)), u8_from_field_unsafe(to_field(a2_0_4) + to_field(c2_0_3)));
+      let (a2_1_5, c2_1_5) = u8_add(u8_from_field_unsafe(to_field(a2_0_5) + to_field(c2_0_4)), u8_from_field_unsafe(to_field(a2_0_5) + to_field(c2_0_4)));
+      let (a2_1_6, c2_1_6) = u8_add(u8_from_field_unsafe(to_field(a2_0_6) + to_field(c2_0_5)), u8_from_field_unsafe(to_field(a2_0_6) + to_field(c2_0_5)));
+      let (a2_1_7, c2_1_7) = u8_add(u8_from_field_unsafe(to_field(a2_0_7) + to_field(c2_0_6)), u8_from_field_unsafe(to_field(a2_0_7) + to_field(c2_0_6)));
+      let (a2_2_0, c2_2_0) = u8_add(u8_from_field_unsafe(to_field(a2_1_0) + to_field(c2_1_7)), u8_from_field_unsafe(to_field(a2_1_0) + to_field(c2_1_7)));
+      let (a2_2_1, c2_2_1) = u8_add(u8_from_field_unsafe(to_field(a2_1_1) + to_field(c2_1_0)), u8_from_field_unsafe(to_field(a2_1_1) + to_field(c2_1_0)));
+      let (a2_2_2, c2_2_2) = u8_add(u8_from_field_unsafe(to_field(a2_1_2) + to_field(c2_1_1)), u8_from_field_unsafe(to_field(a2_1_2) + to_field(c2_1_1)));
+      let (a2_2_3, c2_2_3) = u8_add(u8_from_field_unsafe(to_field(a2_1_3) + to_field(c2_1_2)), u8_from_field_unsafe(to_field(a2_1_3) + to_field(c2_1_2)));
+      let (a2_2_4, c2_2_4) = u8_add(u8_from_field_unsafe(to_field(a2_1_4) + to_field(c2_1_3)), u8_from_field_unsafe(to_field(a2_1_4) + to_field(c2_1_3)));
+      let (a2_2_5, c2_2_5) = u8_add(u8_from_field_unsafe(to_field(a2_1_5) + to_field(c2_1_4)), u8_from_field_unsafe(to_field(a2_1_5) + to_field(c2_1_4)));
+      let (a2_2_6, c2_2_6) = u8_add(u8_from_field_unsafe(to_field(a2_1_6) + to_field(c2_1_5)), u8_from_field_unsafe(to_field(a2_1_6) + to_field(c2_1_5)));
+      let (a2_2_7, c2_2_7) = u8_add(u8_from_field_unsafe(to_field(a2_1_7) + to_field(c2_1_6)), u8_from_field_unsafe(to_field(a2_1_7) + to_field(c2_1_6)));
+      let b2 = [u8_from_field_unsafe(to_field(a2_2_0) + to_field(c2_2_7)), u8_from_field_unsafe(to_field(a2_2_1) + to_field(c2_2_0)), u8_from_field_unsafe(to_field(a2_2_2) + to_field(c2_2_1)), u8_from_field_unsafe(to_field(a2_2_3) + to_field(c2_2_2)), u8_from_field_unsafe(to_field(a2_2_4) + to_field(c2_2_3)), u8_from_field_unsafe(to_field(a2_2_5) + to_field(c2_2_4)), u8_from_field_unsafe(to_field(a2_2_6) + to_field(c2_2_5)), u8_from_field_unsafe(to_field(a2_2_7) + to_field(c2_2_6))];
+      -- b12 = rotl(t13, 25) = byte-rotl 3 + 1x rotl1 (u8_add doubling: (b+b) = (2b mod 256, msb); the even low byte absorbs the neighbor's msb via free field add)
+      let (a12_0_0, c12_0_0) = u8_add(t13[5], t13[5]);
+      let (a12_0_1, c12_0_1) = u8_add(t13[6], t13[6]);
+      let (a12_0_2, c12_0_2) = u8_add(t13[7], t13[7]);
+      let (a12_0_3, c12_0_3) = u8_add(t13[0], t13[0]);
+      let (a12_0_4, c12_0_4) = u8_add(t13[1], t13[1]);
+      let (a12_0_5, c12_0_5) = u8_add(t13[2], t13[2]);
+      let (a12_0_6, c12_0_6) = u8_add(t13[3], t13[3]);
+      let (a12_0_7, c12_0_7) = u8_add(t13[4], t13[4]);
+      let b12 = [u8_from_field_unsafe(to_field(a12_0_0) + to_field(c12_0_7)), u8_from_field_unsafe(to_field(a12_0_1) + to_field(c12_0_0)), u8_from_field_unsafe(to_field(a12_0_2) + to_field(c12_0_1)), u8_from_field_unsafe(to_field(a12_0_3) + to_field(c12_0_2)), u8_from_field_unsafe(to_field(a12_0_4) + to_field(c12_0_3)), u8_from_field_unsafe(to_field(a12_0_5) + to_field(c12_0_4)), u8_from_field_unsafe(to_field(a12_0_6) + to_field(c12_0_5)), u8_from_field_unsafe(to_field(a12_0_7) + to_field(c12_0_6))];
+      -- b22 = rotl(t14, 39) = byte-rotl 5 + 1x rotr1 (u8_shift_right drops the lsb, recovered as b - 2*(b >> 1) and recomposed into the neighbor's msb via free field add)
+      let h22_0_0 = u8_shift_right(t14[3]);
+      let h22_0_1 = u8_shift_right(t14[4]);
+      let h22_0_2 = u8_shift_right(t14[5]);
+      let h22_0_3 = u8_shift_right(t14[6]);
+      let h22_0_4 = u8_shift_right(t14[7]);
+      let h22_0_5 = u8_shift_right(t14[0]);
+      let h22_0_6 = u8_shift_right(t14[1]);
+      let h22_0_7 = u8_shift_right(t14[2]);
+      let b22 = [u8_from_field_unsafe(to_field(h22_0_0) + 128 * (to_field(t14[4]) - 2 * to_field(h22_0_1))), u8_from_field_unsafe(to_field(h22_0_1) + 128 * (to_field(t14[5]) - 2 * to_field(h22_0_2))), u8_from_field_unsafe(to_field(h22_0_2) + 128 * (to_field(t14[6]) - 2 * to_field(h22_0_3))), u8_from_field_unsafe(to_field(h22_0_3) + 128 * (to_field(t14[7]) - 2 * to_field(h22_0_4))), u8_from_field_unsafe(to_field(h22_0_4) + 128 * (to_field(t14[0]) - 2 * to_field(h22_0_5))), u8_from_field_unsafe(to_field(h22_0_5) + 128 * (to_field(t14[1]) - 2 * to_field(h22_0_6))), u8_from_field_unsafe(to_field(h22_0_6) + 128 * (to_field(t14[2]) - 2 * to_field(h22_0_7))), u8_from_field_unsafe(to_field(h22_0_7) + 128 * (to_field(t14[3]) - 2 * to_field(h22_0_0)))];
+      -- b23 = rotl(t15, 41) = byte-rotl 5 + 1x rotl1 (u8_add doubling: (b+b) = (2b mod 256, msb); the even low byte absorbs the neighbor's msb via free field add)
+      let (a23_0_0, c23_0_0) = u8_add(t15[3], t15[3]);
+      let (a23_0_1, c23_0_1) = u8_add(t15[4], t15[4]);
+      let (a23_0_2, c23_0_2) = u8_add(t15[5], t15[5]);
+      let (a23_0_3, c23_0_3) = u8_add(t15[6], t15[6]);
+      let (a23_0_4, c23_0_4) = u8_add(t15[7], t15[7]);
+      let (a23_0_5, c23_0_5) = u8_add(t15[0], t15[0]);
+      let (a23_0_6, c23_0_6) = u8_add(t15[1], t15[1]);
+      let (a23_0_7, c23_0_7) = u8_add(t15[2], t15[2]);
+      let b23 = [u8_from_field_unsafe(to_field(a23_0_0) + to_field(c23_0_7)), u8_from_field_unsafe(to_field(a23_0_1) + to_field(c23_0_0)), u8_from_field_unsafe(to_field(a23_0_2) + to_field(c23_0_1)), u8_from_field_unsafe(to_field(a23_0_3) + to_field(c23_0_2)), u8_from_field_unsafe(to_field(a23_0_4) + to_field(c23_0_3)), u8_from_field_unsafe(to_field(a23_0_5) + to_field(c23_0_4)), u8_from_field_unsafe(to_field(a23_0_6) + to_field(c23_0_5)), u8_from_field_unsafe(to_field(a23_0_7) + to_field(c23_0_6))];
+      -- b8 = rotl(t16, 45) = byte-rotl 6 + 3x rotr1 (u8_shift_right drops the lsb, recovered as b - 2*(b >> 1) and recomposed into the neighbor's msb via free field add)
+      let h8_0_0 = u8_shift_right(t16[2]);
+      let h8_0_1 = u8_shift_right(t16[3]);
+      let h8_0_2 = u8_shift_right(t16[4]);
+      let h8_0_3 = u8_shift_right(t16[5]);
+      let h8_0_4 = u8_shift_right(t16[6]);
+      let h8_0_5 = u8_shift_right(t16[7]);
+      let h8_0_6 = u8_shift_right(t16[0]);
+      let h8_0_7 = u8_shift_right(t16[1]);
+      let h8_1_0 = u8_shift_right(u8_from_field_unsafe(to_field(h8_0_0) + 128 * (to_field(t16[3]) - 2 * to_field(h8_0_1))));
+      let h8_1_1 = u8_shift_right(u8_from_field_unsafe(to_field(h8_0_1) + 128 * (to_field(t16[4]) - 2 * to_field(h8_0_2))));
+      let h8_1_2 = u8_shift_right(u8_from_field_unsafe(to_field(h8_0_2) + 128 * (to_field(t16[5]) - 2 * to_field(h8_0_3))));
+      let h8_1_3 = u8_shift_right(u8_from_field_unsafe(to_field(h8_0_3) + 128 * (to_field(t16[6]) - 2 * to_field(h8_0_4))));
+      let h8_1_4 = u8_shift_right(u8_from_field_unsafe(to_field(h8_0_4) + 128 * (to_field(t16[7]) - 2 * to_field(h8_0_5))));
+      let h8_1_5 = u8_shift_right(u8_from_field_unsafe(to_field(h8_0_5) + 128 * (to_field(t16[0]) - 2 * to_field(h8_0_6))));
+      let h8_1_6 = u8_shift_right(u8_from_field_unsafe(to_field(h8_0_6) + 128 * (to_field(t16[1]) - 2 * to_field(h8_0_7))));
+      let h8_1_7 = u8_shift_right(u8_from_field_unsafe(to_field(h8_0_7) + 128 * (to_field(t16[2]) - 2 * to_field(h8_0_0))));
+      let h8_2_0 = u8_shift_right(u8_from_field_unsafe(to_field(h8_1_0) + 128 * (to_field(u8_from_field_unsafe(to_field(h8_0_1) + 128 * (to_field(t16[4]) - 2 * to_field(h8_0_2)))) - 2 * to_field(h8_1_1))));
+      let h8_2_1 = u8_shift_right(u8_from_field_unsafe(to_field(h8_1_1) + 128 * (to_field(u8_from_field_unsafe(to_field(h8_0_2) + 128 * (to_field(t16[5]) - 2 * to_field(h8_0_3)))) - 2 * to_field(h8_1_2))));
+      let h8_2_2 = u8_shift_right(u8_from_field_unsafe(to_field(h8_1_2) + 128 * (to_field(u8_from_field_unsafe(to_field(h8_0_3) + 128 * (to_field(t16[6]) - 2 * to_field(h8_0_4)))) - 2 * to_field(h8_1_3))));
+      let h8_2_3 = u8_shift_right(u8_from_field_unsafe(to_field(h8_1_3) + 128 * (to_field(u8_from_field_unsafe(to_field(h8_0_4) + 128 * (to_field(t16[7]) - 2 * to_field(h8_0_5)))) - 2 * to_field(h8_1_4))));
+      let h8_2_4 = u8_shift_right(u8_from_field_unsafe(to_field(h8_1_4) + 128 * (to_field(u8_from_field_unsafe(to_field(h8_0_5) + 128 * (to_field(t16[0]) - 2 * to_field(h8_0_6)))) - 2 * to_field(h8_1_5))));
+      let h8_2_5 = u8_shift_right(u8_from_field_unsafe(to_field(h8_1_5) + 128 * (to_field(u8_from_field_unsafe(to_field(h8_0_6) + 128 * (to_field(t16[1]) - 2 * to_field(h8_0_7)))) - 2 * to_field(h8_1_6))));
+      let h8_2_6 = u8_shift_right(u8_from_field_unsafe(to_field(h8_1_6) + 128 * (to_field(u8_from_field_unsafe(to_field(h8_0_7) + 128 * (to_field(t16[2]) - 2 * to_field(h8_0_0)))) - 2 * to_field(h8_1_7))));
+      let h8_2_7 = u8_shift_right(u8_from_field_unsafe(to_field(h8_1_7) + 128 * (to_field(u8_from_field_unsafe(to_field(h8_0_0) + 128 * (to_field(t16[3]) - 2 * to_field(h8_0_1)))) - 2 * to_field(h8_1_0))));
+      let b8 = [u8_from_field_unsafe(to_field(h8_2_0) + 128 * (to_field(u8_from_field_unsafe(to_field(h8_1_1) + 128 * (to_field(u8_from_field_unsafe(to_field(h8_0_2) + 128 * (to_field(t16[5]) - 2 * to_field(h8_0_3)))) - 2 * to_field(h8_1_2)))) - 2 * to_field(h8_2_1))), u8_from_field_unsafe(to_field(h8_2_1) + 128 * (to_field(u8_from_field_unsafe(to_field(h8_1_2) + 128 * (to_field(u8_from_field_unsafe(to_field(h8_0_3) + 128 * (to_field(t16[6]) - 2 * to_field(h8_0_4)))) - 2 * to_field(h8_1_3)))) - 2 * to_field(h8_2_2))), u8_from_field_unsafe(to_field(h8_2_2) + 128 * (to_field(u8_from_field_unsafe(to_field(h8_1_3) + 128 * (to_field(u8_from_field_unsafe(to_field(h8_0_4) + 128 * (to_field(t16[7]) - 2 * to_field(h8_0_5)))) - 2 * to_field(h8_1_4)))) - 2 * to_field(h8_2_3))), u8_from_field_unsafe(to_field(h8_2_3) + 128 * (to_field(u8_from_field_unsafe(to_field(h8_1_4) + 128 * (to_field(u8_from_field_unsafe(to_field(h8_0_5) + 128 * (to_field(t16[0]) - 2 * to_field(h8_0_6)))) - 2 * to_field(h8_1_5)))) - 2 * to_field(h8_2_4))), u8_from_field_unsafe(to_field(h8_2_4) + 128 * (to_field(u8_from_field_unsafe(to_field(h8_1_5) + 128 * (to_field(u8_from_field_unsafe(to_field(h8_0_6) + 128 * (to_field(t16[1]) - 2 * to_field(h8_0_7)))) - 2 * to_field(h8_1_6)))) - 2 * to_field(h8_2_5))), u8_from_field_unsafe(to_field(h8_2_5) + 128 * (to_field(u8_from_field_unsafe(to_field(h8_1_6) + 128 * (to_field(u8_from_field_unsafe(to_field(h8_0_7) + 128 * (to_field(t16[2]) - 2 * to_field(h8_0_0)))) - 2 * to_field(h8_1_7)))) - 2 * to_field(h8_2_6))), u8_from_field_unsafe(to_field(h8_2_6) + 128 * (to_field(u8_from_field_unsafe(to_field(h8_1_7) + 128 * (to_field(u8_from_field_unsafe(to_field(h8_0_0) + 128 * (to_field(t16[3]) - 2 * to_field(h8_0_1)))) - 2 * to_field(h8_1_0)))) - 2 * to_field(h8_2_7))), u8_from_field_unsafe(to_field(h8_2_7) + 128 * (to_field(u8_from_field_unsafe(to_field(h8_1_0) + 128 * (to_field(u8_from_field_unsafe(to_field(h8_0_1) + 128 * (to_field(t16[4]) - 2 * to_field(h8_0_2)))) - 2 * to_field(h8_1_1)))) - 2 * to_field(h8_2_0)))];
+      -- b18 = rotl(t17, 15) = byte-rotl 2 + 1x rotr1 (u8_shift_right drops the lsb, recovered as b - 2*(b >> 1) and recomposed into the neighbor's msb via free field add)
+      let h18_0_0 = u8_shift_right(t17[6]);
+      let h18_0_1 = u8_shift_right(t17[7]);
+      let h18_0_2 = u8_shift_right(t17[0]);
+      let h18_0_3 = u8_shift_right(t17[1]);
+      let h18_0_4 = u8_shift_right(t17[2]);
+      let h18_0_5 = u8_shift_right(t17[3]);
+      let h18_0_6 = u8_shift_right(t17[4]);
+      let h18_0_7 = u8_shift_right(t17[5]);
+      let b18 = [u8_from_field_unsafe(to_field(h18_0_0) + 128 * (to_field(t17[7]) - 2 * to_field(h18_0_1))), u8_from_field_unsafe(to_field(h18_0_1) + 128 * (to_field(t17[0]) - 2 * to_field(h18_0_2))), u8_from_field_unsafe(to_field(h18_0_2) + 128 * (to_field(t17[1]) - 2 * to_field(h18_0_3))), u8_from_field_unsafe(to_field(h18_0_3) + 128 * (to_field(t17[2]) - 2 * to_field(h18_0_4))), u8_from_field_unsafe(to_field(h18_0_4) + 128 * (to_field(t17[3]) - 2 * to_field(h18_0_5))), u8_from_field_unsafe(to_field(h18_0_5) + 128 * (to_field(t17[4]) - 2 * to_field(h18_0_6))), u8_from_field_unsafe(to_field(h18_0_6) + 128 * (to_field(t17[5]) - 2 * to_field(h18_0_7))), u8_from_field_unsafe(to_field(h18_0_7) + 128 * (to_field(t17[6]) - 2 * to_field(h18_0_0)))];
+      -- b3 = rotl(t18, 21) = byte-rotl 3 + 3x rotr1 (u8_shift_right drops the lsb, recovered as b - 2*(b >> 1) and recomposed into the neighbor's msb via free field add)
+      let h3_0_0 = u8_shift_right(t18[5]);
+      let h3_0_1 = u8_shift_right(t18[6]);
+      let h3_0_2 = u8_shift_right(t18[7]);
+      let h3_0_3 = u8_shift_right(t18[0]);
+      let h3_0_4 = u8_shift_right(t18[1]);
+      let h3_0_5 = u8_shift_right(t18[2]);
+      let h3_0_6 = u8_shift_right(t18[3]);
+      let h3_0_7 = u8_shift_right(t18[4]);
+      let h3_1_0 = u8_shift_right(u8_from_field_unsafe(to_field(h3_0_0) + 128 * (to_field(t18[6]) - 2 * to_field(h3_0_1))));
+      let h3_1_1 = u8_shift_right(u8_from_field_unsafe(to_field(h3_0_1) + 128 * (to_field(t18[7]) - 2 * to_field(h3_0_2))));
+      let h3_1_2 = u8_shift_right(u8_from_field_unsafe(to_field(h3_0_2) + 128 * (to_field(t18[0]) - 2 * to_field(h3_0_3))));
+      let h3_1_3 = u8_shift_right(u8_from_field_unsafe(to_field(h3_0_3) + 128 * (to_field(t18[1]) - 2 * to_field(h3_0_4))));
+      let h3_1_4 = u8_shift_right(u8_from_field_unsafe(to_field(h3_0_4) + 128 * (to_field(t18[2]) - 2 * to_field(h3_0_5))));
+      let h3_1_5 = u8_shift_right(u8_from_field_unsafe(to_field(h3_0_5) + 128 * (to_field(t18[3]) - 2 * to_field(h3_0_6))));
+      let h3_1_6 = u8_shift_right(u8_from_field_unsafe(to_field(h3_0_6) + 128 * (to_field(t18[4]) - 2 * to_field(h3_0_7))));
+      let h3_1_7 = u8_shift_right(u8_from_field_unsafe(to_field(h3_0_7) + 128 * (to_field(t18[5]) - 2 * to_field(h3_0_0))));
+      let h3_2_0 = u8_shift_right(u8_from_field_unsafe(to_field(h3_1_0) + 128 * (to_field(u8_from_field_unsafe(to_field(h3_0_1) + 128 * (to_field(t18[7]) - 2 * to_field(h3_0_2)))) - 2 * to_field(h3_1_1))));
+      let h3_2_1 = u8_shift_right(u8_from_field_unsafe(to_field(h3_1_1) + 128 * (to_field(u8_from_field_unsafe(to_field(h3_0_2) + 128 * (to_field(t18[0]) - 2 * to_field(h3_0_3)))) - 2 * to_field(h3_1_2))));
+      let h3_2_2 = u8_shift_right(u8_from_field_unsafe(to_field(h3_1_2) + 128 * (to_field(u8_from_field_unsafe(to_field(h3_0_3) + 128 * (to_field(t18[1]) - 2 * to_field(h3_0_4)))) - 2 * to_field(h3_1_3))));
+      let h3_2_3 = u8_shift_right(u8_from_field_unsafe(to_field(h3_1_3) + 128 * (to_field(u8_from_field_unsafe(to_field(h3_0_4) + 128 * (to_field(t18[2]) - 2 * to_field(h3_0_5)))) - 2 * to_field(h3_1_4))));
+      let h3_2_4 = u8_shift_right(u8_from_field_unsafe(to_field(h3_1_4) + 128 * (to_field(u8_from_field_unsafe(to_field(h3_0_5) + 128 * (to_field(t18[3]) - 2 * to_field(h3_0_6)))) - 2 * to_field(h3_1_5))));
+      let h3_2_5 = u8_shift_right(u8_from_field_unsafe(to_field(h3_1_5) + 128 * (to_field(u8_from_field_unsafe(to_field(h3_0_6) + 128 * (to_field(t18[4]) - 2 * to_field(h3_0_7)))) - 2 * to_field(h3_1_6))));
+      let h3_2_6 = u8_shift_right(u8_from_field_unsafe(to_field(h3_1_6) + 128 * (to_field(u8_from_field_unsafe(to_field(h3_0_7) + 128 * (to_field(t18[5]) - 2 * to_field(h3_0_0)))) - 2 * to_field(h3_1_7))));
+      let h3_2_7 = u8_shift_right(u8_from_field_unsafe(to_field(h3_1_7) + 128 * (to_field(u8_from_field_unsafe(to_field(h3_0_0) + 128 * (to_field(t18[6]) - 2 * to_field(h3_0_1)))) - 2 * to_field(h3_1_0))));
+      let b3 = [u8_from_field_unsafe(to_field(h3_2_0) + 128 * (to_field(u8_from_field_unsafe(to_field(h3_1_1) + 128 * (to_field(u8_from_field_unsafe(to_field(h3_0_2) + 128 * (to_field(t18[0]) - 2 * to_field(h3_0_3)))) - 2 * to_field(h3_1_2)))) - 2 * to_field(h3_2_1))), u8_from_field_unsafe(to_field(h3_2_1) + 128 * (to_field(u8_from_field_unsafe(to_field(h3_1_2) + 128 * (to_field(u8_from_field_unsafe(to_field(h3_0_3) + 128 * (to_field(t18[1]) - 2 * to_field(h3_0_4)))) - 2 * to_field(h3_1_3)))) - 2 * to_field(h3_2_2))), u8_from_field_unsafe(to_field(h3_2_2) + 128 * (to_field(u8_from_field_unsafe(to_field(h3_1_3) + 128 * (to_field(u8_from_field_unsafe(to_field(h3_0_4) + 128 * (to_field(t18[2]) - 2 * to_field(h3_0_5)))) - 2 * to_field(h3_1_4)))) - 2 * to_field(h3_2_3))), u8_from_field_unsafe(to_field(h3_2_3) + 128 * (to_field(u8_from_field_unsafe(to_field(h3_1_4) + 128 * (to_field(u8_from_field_unsafe(to_field(h3_0_5) + 128 * (to_field(t18[3]) - 2 * to_field(h3_0_6)))) - 2 * to_field(h3_1_5)))) - 2 * to_field(h3_2_4))), u8_from_field_unsafe(to_field(h3_2_4) + 128 * (to_field(u8_from_field_unsafe(to_field(h3_1_5) + 128 * (to_field(u8_from_field_unsafe(to_field(h3_0_6) + 128 * (to_field(t18[4]) - 2 * to_field(h3_0_7)))) - 2 * to_field(h3_1_6)))) - 2 * to_field(h3_2_5))), u8_from_field_unsafe(to_field(h3_2_5) + 128 * (to_field(u8_from_field_unsafe(to_field(h3_1_6) + 128 * (to_field(u8_from_field_unsafe(to_field(h3_0_7) + 128 * (to_field(t18[5]) - 2 * to_field(h3_0_0)))) - 2 * to_field(h3_1_7)))) - 2 * to_field(h3_2_6))), u8_from_field_unsafe(to_field(h3_2_6) + 128 * (to_field(u8_from_field_unsafe(to_field(h3_1_7) + 128 * (to_field(u8_from_field_unsafe(to_field(h3_0_0) + 128 * (to_field(t18[6]) - 2 * to_field(h3_0_1)))) - 2 * to_field(h3_1_0)))) - 2 * to_field(h3_2_7))), u8_from_field_unsafe(to_field(h3_2_7) + 128 * (to_field(u8_from_field_unsafe(to_field(h3_1_0) + 128 * (to_field(u8_from_field_unsafe(to_field(h3_0_1) + 128 * (to_field(t18[7]) - 2 * to_field(h3_0_2)))) - 2 * to_field(h3_1_1)))) - 2 * to_field(h3_2_0)))];
       -- b13 = rotl(t19, 8): byte rotation only (free)
       let b13 = [t19[7], t19[0], t19[1], t19[2], t19[3], t19[4], t19[5], t19[6]];
-      -- b14 = rotl(t20, 18) = byte-rotl 2 + bit-shl 2
-      let d14_0 = u8_bit_decomposition(t20[0]);
-      let d14_1 = u8_bit_decomposition(t20[1]);
-      let d14_2 = u8_bit_decomposition(t20[2]);
-      let d14_3 = u8_bit_decomposition(t20[3]);
-      let d14_4 = u8_bit_decomposition(t20[4]);
-      let d14_5 = u8_bit_decomposition(t20[5]);
-      let d14_6 = u8_bit_decomposition(t20[6]);
-      let d14_7 = u8_bit_decomposition(t20[7]);
-      let b14 = [
-        u8_from_field_unsafe(d14_5[6] + 2 * d14_5[7] + 4 * d14_6[0] + 8 * d14_6[1] + 16 * d14_6[2] + 32 * d14_6[3] + 64 * d14_6[4] + 128 * d14_6[5]),
-        u8_from_field_unsafe(d14_6[6] + 2 * d14_6[7] + 4 * d14_7[0] + 8 * d14_7[1] + 16 * d14_7[2] + 32 * d14_7[3] + 64 * d14_7[4] + 128 * d14_7[5]),
-        u8_from_field_unsafe(d14_7[6] + 2 * d14_7[7] + 4 * d14_0[0] + 8 * d14_0[1] + 16 * d14_0[2] + 32 * d14_0[3] + 64 * d14_0[4] + 128 * d14_0[5]),
-        u8_from_field_unsafe(d14_0[6] + 2 * d14_0[7] + 4 * d14_1[0] + 8 * d14_1[1] + 16 * d14_1[2] + 32 * d14_1[3] + 64 * d14_1[4] + 128 * d14_1[5]),
-        u8_from_field_unsafe(d14_1[6] + 2 * d14_1[7] + 4 * d14_2[0] + 8 * d14_2[1] + 16 * d14_2[2] + 32 * d14_2[3] + 64 * d14_2[4] + 128 * d14_2[5]),
-        u8_from_field_unsafe(d14_2[6] + 2 * d14_2[7] + 4 * d14_3[0] + 8 * d14_3[1] + 16 * d14_3[2] + 32 * d14_3[3] + 64 * d14_3[4] + 128 * d14_3[5]),
-        u8_from_field_unsafe(d14_3[6] + 2 * d14_3[7] + 4 * d14_4[0] + 8 * d14_4[1] + 16 * d14_4[2] + 32 * d14_4[3] + 64 * d14_4[4] + 128 * d14_4[5]),
-        u8_from_field_unsafe(d14_4[6] + 2 * d14_4[7] + 4 * d14_5[0] + 8 * d14_5[1] + 16 * d14_5[2] + 32 * d14_5[3] + 64 * d14_5[4] + 128 * d14_5[5])
-      ];
-      -- b24 = rotl(t21, 2) = byte-rotl 0 + bit-shl 2
-      let d24_0 = u8_bit_decomposition(t21[0]);
-      let d24_1 = u8_bit_decomposition(t21[1]);
-      let d24_2 = u8_bit_decomposition(t21[2]);
-      let d24_3 = u8_bit_decomposition(t21[3]);
-      let d24_4 = u8_bit_decomposition(t21[4]);
-      let d24_5 = u8_bit_decomposition(t21[5]);
-      let d24_6 = u8_bit_decomposition(t21[6]);
-      let d24_7 = u8_bit_decomposition(t21[7]);
-      let b24 = [
-        u8_from_field_unsafe(d24_7[6] + 2 * d24_7[7] + 4 * d24_0[0] + 8 * d24_0[1] + 16 * d24_0[2] + 32 * d24_0[3] + 64 * d24_0[4] + 128 * d24_0[5]),
-        u8_from_field_unsafe(d24_0[6] + 2 * d24_0[7] + 4 * d24_1[0] + 8 * d24_1[1] + 16 * d24_1[2] + 32 * d24_1[3] + 64 * d24_1[4] + 128 * d24_1[5]),
-        u8_from_field_unsafe(d24_1[6] + 2 * d24_1[7] + 4 * d24_2[0] + 8 * d24_2[1] + 16 * d24_2[2] + 32 * d24_2[3] + 64 * d24_2[4] + 128 * d24_2[5]),
-        u8_from_field_unsafe(d24_2[6] + 2 * d24_2[7] + 4 * d24_3[0] + 8 * d24_3[1] + 16 * d24_3[2] + 32 * d24_3[3] + 64 * d24_3[4] + 128 * d24_3[5]),
-        u8_from_field_unsafe(d24_3[6] + 2 * d24_3[7] + 4 * d24_4[0] + 8 * d24_4[1] + 16 * d24_4[2] + 32 * d24_4[3] + 64 * d24_4[4] + 128 * d24_4[5]),
-        u8_from_field_unsafe(d24_4[6] + 2 * d24_4[7] + 4 * d24_5[0] + 8 * d24_5[1] + 16 * d24_5[2] + 32 * d24_5[3] + 64 * d24_5[4] + 128 * d24_5[5]),
-        u8_from_field_unsafe(d24_5[6] + 2 * d24_5[7] + 4 * d24_6[0] + 8 * d24_6[1] + 16 * d24_6[2] + 32 * d24_6[3] + 64 * d24_6[4] + 128 * d24_6[5]),
-        u8_from_field_unsafe(d24_6[6] + 2 * d24_6[7] + 4 * d24_7[0] + 8 * d24_7[1] + 16 * d24_7[2] + 32 * d24_7[3] + 64 * d24_7[4] + 128 * d24_7[5])
-      ];
-      -- b9 = rotl(t22, 61) = byte-rotl 7 + bit-shl 5
-      let d9_0 = u8_bit_decomposition(t22[0]);
-      let d9_1 = u8_bit_decomposition(t22[1]);
-      let d9_2 = u8_bit_decomposition(t22[2]);
-      let d9_3 = u8_bit_decomposition(t22[3]);
-      let d9_4 = u8_bit_decomposition(t22[4]);
-      let d9_5 = u8_bit_decomposition(t22[5]);
-      let d9_6 = u8_bit_decomposition(t22[6]);
-      let d9_7 = u8_bit_decomposition(t22[7]);
-      let b9 = [
-        u8_from_field_unsafe(d9_0[3] + 2 * d9_0[4] + 4 * d9_0[5] + 8 * d9_0[6] + 16 * d9_0[7] + 32 * d9_1[0] + 64 * d9_1[1] + 128 * d9_1[2]),
-        u8_from_field_unsafe(d9_1[3] + 2 * d9_1[4] + 4 * d9_1[5] + 8 * d9_1[6] + 16 * d9_1[7] + 32 * d9_2[0] + 64 * d9_2[1] + 128 * d9_2[2]),
-        u8_from_field_unsafe(d9_2[3] + 2 * d9_2[4] + 4 * d9_2[5] + 8 * d9_2[6] + 16 * d9_2[7] + 32 * d9_3[0] + 64 * d9_3[1] + 128 * d9_3[2]),
-        u8_from_field_unsafe(d9_3[3] + 2 * d9_3[4] + 4 * d9_3[5] + 8 * d9_3[6] + 16 * d9_3[7] + 32 * d9_4[0] + 64 * d9_4[1] + 128 * d9_4[2]),
-        u8_from_field_unsafe(d9_4[3] + 2 * d9_4[4] + 4 * d9_4[5] + 8 * d9_4[6] + 16 * d9_4[7] + 32 * d9_5[0] + 64 * d9_5[1] + 128 * d9_5[2]),
-        u8_from_field_unsafe(d9_5[3] + 2 * d9_5[4] + 4 * d9_5[5] + 8 * d9_5[6] + 16 * d9_5[7] + 32 * d9_6[0] + 64 * d9_6[1] + 128 * d9_6[2]),
-        u8_from_field_unsafe(d9_6[3] + 2 * d9_6[4] + 4 * d9_6[5] + 8 * d9_6[6] + 16 * d9_6[7] + 32 * d9_7[0] + 64 * d9_7[1] + 128 * d9_7[2]),
-        u8_from_field_unsafe(d9_7[3] + 2 * d9_7[4] + 4 * d9_7[5] + 8 * d9_7[6] + 16 * d9_7[7] + 32 * d9_0[0] + 64 * d9_0[1] + 128 * d9_0[2])
-      ];
+      -- b14 = rotl(t20, 18) = byte-rotl 2 + 2x rotl1 (u8_add doubling: (b+b) = (2b mod 256, msb); the even low byte absorbs the neighbor's msb via free field add)
+      let (a14_0_0, c14_0_0) = u8_add(t20[6], t20[6]);
+      let (a14_0_1, c14_0_1) = u8_add(t20[7], t20[7]);
+      let (a14_0_2, c14_0_2) = u8_add(t20[0], t20[0]);
+      let (a14_0_3, c14_0_3) = u8_add(t20[1], t20[1]);
+      let (a14_0_4, c14_0_4) = u8_add(t20[2], t20[2]);
+      let (a14_0_5, c14_0_5) = u8_add(t20[3], t20[3]);
+      let (a14_0_6, c14_0_6) = u8_add(t20[4], t20[4]);
+      let (a14_0_7, c14_0_7) = u8_add(t20[5], t20[5]);
+      let (a14_1_0, c14_1_0) = u8_add(u8_from_field_unsafe(to_field(a14_0_0) + to_field(c14_0_7)), u8_from_field_unsafe(to_field(a14_0_0) + to_field(c14_0_7)));
+      let (a14_1_1, c14_1_1) = u8_add(u8_from_field_unsafe(to_field(a14_0_1) + to_field(c14_0_0)), u8_from_field_unsafe(to_field(a14_0_1) + to_field(c14_0_0)));
+      let (a14_1_2, c14_1_2) = u8_add(u8_from_field_unsafe(to_field(a14_0_2) + to_field(c14_0_1)), u8_from_field_unsafe(to_field(a14_0_2) + to_field(c14_0_1)));
+      let (a14_1_3, c14_1_3) = u8_add(u8_from_field_unsafe(to_field(a14_0_3) + to_field(c14_0_2)), u8_from_field_unsafe(to_field(a14_0_3) + to_field(c14_0_2)));
+      let (a14_1_4, c14_1_4) = u8_add(u8_from_field_unsafe(to_field(a14_0_4) + to_field(c14_0_3)), u8_from_field_unsafe(to_field(a14_0_4) + to_field(c14_0_3)));
+      let (a14_1_5, c14_1_5) = u8_add(u8_from_field_unsafe(to_field(a14_0_5) + to_field(c14_0_4)), u8_from_field_unsafe(to_field(a14_0_5) + to_field(c14_0_4)));
+      let (a14_1_6, c14_1_6) = u8_add(u8_from_field_unsafe(to_field(a14_0_6) + to_field(c14_0_5)), u8_from_field_unsafe(to_field(a14_0_6) + to_field(c14_0_5)));
+      let (a14_1_7, c14_1_7) = u8_add(u8_from_field_unsafe(to_field(a14_0_7) + to_field(c14_0_6)), u8_from_field_unsafe(to_field(a14_0_7) + to_field(c14_0_6)));
+      let b14 = [u8_from_field_unsafe(to_field(a14_1_0) + to_field(c14_1_7)), u8_from_field_unsafe(to_field(a14_1_1) + to_field(c14_1_0)), u8_from_field_unsafe(to_field(a14_1_2) + to_field(c14_1_1)), u8_from_field_unsafe(to_field(a14_1_3) + to_field(c14_1_2)), u8_from_field_unsafe(to_field(a14_1_4) + to_field(c14_1_3)), u8_from_field_unsafe(to_field(a14_1_5) + to_field(c14_1_4)), u8_from_field_unsafe(to_field(a14_1_6) + to_field(c14_1_5)), u8_from_field_unsafe(to_field(a14_1_7) + to_field(c14_1_6))];
+      -- b24 = rotl(t21, 2) = byte-rotl 0 + 2x rotl1 (u8_add doubling: (b+b) = (2b mod 256, msb); the even low byte absorbs the neighbor's msb via free field add)
+      let (a24_0_0, c24_0_0) = u8_add(t21[0], t21[0]);
+      let (a24_0_1, c24_0_1) = u8_add(t21[1], t21[1]);
+      let (a24_0_2, c24_0_2) = u8_add(t21[2], t21[2]);
+      let (a24_0_3, c24_0_3) = u8_add(t21[3], t21[3]);
+      let (a24_0_4, c24_0_4) = u8_add(t21[4], t21[4]);
+      let (a24_0_5, c24_0_5) = u8_add(t21[5], t21[5]);
+      let (a24_0_6, c24_0_6) = u8_add(t21[6], t21[6]);
+      let (a24_0_7, c24_0_7) = u8_add(t21[7], t21[7]);
+      let (a24_1_0, c24_1_0) = u8_add(u8_from_field_unsafe(to_field(a24_0_0) + to_field(c24_0_7)), u8_from_field_unsafe(to_field(a24_0_0) + to_field(c24_0_7)));
+      let (a24_1_1, c24_1_1) = u8_add(u8_from_field_unsafe(to_field(a24_0_1) + to_field(c24_0_0)), u8_from_field_unsafe(to_field(a24_0_1) + to_field(c24_0_0)));
+      let (a24_1_2, c24_1_2) = u8_add(u8_from_field_unsafe(to_field(a24_0_2) + to_field(c24_0_1)), u8_from_field_unsafe(to_field(a24_0_2) + to_field(c24_0_1)));
+      let (a24_1_3, c24_1_3) = u8_add(u8_from_field_unsafe(to_field(a24_0_3) + to_field(c24_0_2)), u8_from_field_unsafe(to_field(a24_0_3) + to_field(c24_0_2)));
+      let (a24_1_4, c24_1_4) = u8_add(u8_from_field_unsafe(to_field(a24_0_4) + to_field(c24_0_3)), u8_from_field_unsafe(to_field(a24_0_4) + to_field(c24_0_3)));
+      let (a24_1_5, c24_1_5) = u8_add(u8_from_field_unsafe(to_field(a24_0_5) + to_field(c24_0_4)), u8_from_field_unsafe(to_field(a24_0_5) + to_field(c24_0_4)));
+      let (a24_1_6, c24_1_6) = u8_add(u8_from_field_unsafe(to_field(a24_0_6) + to_field(c24_0_5)), u8_from_field_unsafe(to_field(a24_0_6) + to_field(c24_0_5)));
+      let (a24_1_7, c24_1_7) = u8_add(u8_from_field_unsafe(to_field(a24_0_7) + to_field(c24_0_6)), u8_from_field_unsafe(to_field(a24_0_7) + to_field(c24_0_6)));
+      let b24 = [u8_from_field_unsafe(to_field(a24_1_0) + to_field(c24_1_7)), u8_from_field_unsafe(to_field(a24_1_1) + to_field(c24_1_0)), u8_from_field_unsafe(to_field(a24_1_2) + to_field(c24_1_1)), u8_from_field_unsafe(to_field(a24_1_3) + to_field(c24_1_2)), u8_from_field_unsafe(to_field(a24_1_4) + to_field(c24_1_3)), u8_from_field_unsafe(to_field(a24_1_5) + to_field(c24_1_4)), u8_from_field_unsafe(to_field(a24_1_6) + to_field(c24_1_5)), u8_from_field_unsafe(to_field(a24_1_7) + to_field(c24_1_6))];
+      -- b9 = rotl(t22, 61) = byte-rotl 8 + 3x rotr1 (u8_shift_right drops the lsb, recovered as b - 2*(b >> 1) and recomposed into the neighbor's msb via free field add)
+      let h9_0_0 = u8_shift_right(t22[0]);
+      let h9_0_1 = u8_shift_right(t22[1]);
+      let h9_0_2 = u8_shift_right(t22[2]);
+      let h9_0_3 = u8_shift_right(t22[3]);
+      let h9_0_4 = u8_shift_right(t22[4]);
+      let h9_0_5 = u8_shift_right(t22[5]);
+      let h9_0_6 = u8_shift_right(t22[6]);
+      let h9_0_7 = u8_shift_right(t22[7]);
+      let h9_1_0 = u8_shift_right(u8_from_field_unsafe(to_field(h9_0_0) + 128 * (to_field(t22[1]) - 2 * to_field(h9_0_1))));
+      let h9_1_1 = u8_shift_right(u8_from_field_unsafe(to_field(h9_0_1) + 128 * (to_field(t22[2]) - 2 * to_field(h9_0_2))));
+      let h9_1_2 = u8_shift_right(u8_from_field_unsafe(to_field(h9_0_2) + 128 * (to_field(t22[3]) - 2 * to_field(h9_0_3))));
+      let h9_1_3 = u8_shift_right(u8_from_field_unsafe(to_field(h9_0_3) + 128 * (to_field(t22[4]) - 2 * to_field(h9_0_4))));
+      let h9_1_4 = u8_shift_right(u8_from_field_unsafe(to_field(h9_0_4) + 128 * (to_field(t22[5]) - 2 * to_field(h9_0_5))));
+      let h9_1_5 = u8_shift_right(u8_from_field_unsafe(to_field(h9_0_5) + 128 * (to_field(t22[6]) - 2 * to_field(h9_0_6))));
+      let h9_1_6 = u8_shift_right(u8_from_field_unsafe(to_field(h9_0_6) + 128 * (to_field(t22[7]) - 2 * to_field(h9_0_7))));
+      let h9_1_7 = u8_shift_right(u8_from_field_unsafe(to_field(h9_0_7) + 128 * (to_field(t22[0]) - 2 * to_field(h9_0_0))));
+      let h9_2_0 = u8_shift_right(u8_from_field_unsafe(to_field(h9_1_0) + 128 * (to_field(u8_from_field_unsafe(to_field(h9_0_1) + 128 * (to_field(t22[2]) - 2 * to_field(h9_0_2)))) - 2 * to_field(h9_1_1))));
+      let h9_2_1 = u8_shift_right(u8_from_field_unsafe(to_field(h9_1_1) + 128 * (to_field(u8_from_field_unsafe(to_field(h9_0_2) + 128 * (to_field(t22[3]) - 2 * to_field(h9_0_3)))) - 2 * to_field(h9_1_2))));
+      let h9_2_2 = u8_shift_right(u8_from_field_unsafe(to_field(h9_1_2) + 128 * (to_field(u8_from_field_unsafe(to_field(h9_0_3) + 128 * (to_field(t22[4]) - 2 * to_field(h9_0_4)))) - 2 * to_field(h9_1_3))));
+      let h9_2_3 = u8_shift_right(u8_from_field_unsafe(to_field(h9_1_3) + 128 * (to_field(u8_from_field_unsafe(to_field(h9_0_4) + 128 * (to_field(t22[5]) - 2 * to_field(h9_0_5)))) - 2 * to_field(h9_1_4))));
+      let h9_2_4 = u8_shift_right(u8_from_field_unsafe(to_field(h9_1_4) + 128 * (to_field(u8_from_field_unsafe(to_field(h9_0_5) + 128 * (to_field(t22[6]) - 2 * to_field(h9_0_6)))) - 2 * to_field(h9_1_5))));
+      let h9_2_5 = u8_shift_right(u8_from_field_unsafe(to_field(h9_1_5) + 128 * (to_field(u8_from_field_unsafe(to_field(h9_0_6) + 128 * (to_field(t22[7]) - 2 * to_field(h9_0_7)))) - 2 * to_field(h9_1_6))));
+      let h9_2_6 = u8_shift_right(u8_from_field_unsafe(to_field(h9_1_6) + 128 * (to_field(u8_from_field_unsafe(to_field(h9_0_7) + 128 * (to_field(t22[0]) - 2 * to_field(h9_0_0)))) - 2 * to_field(h9_1_7))));
+      let h9_2_7 = u8_shift_right(u8_from_field_unsafe(to_field(h9_1_7) + 128 * (to_field(u8_from_field_unsafe(to_field(h9_0_0) + 128 * (to_field(t22[1]) - 2 * to_field(h9_0_1)))) - 2 * to_field(h9_1_0))));
+      let b9 = [u8_from_field_unsafe(to_field(h9_2_0) + 128 * (to_field(u8_from_field_unsafe(to_field(h9_1_1) + 128 * (to_field(u8_from_field_unsafe(to_field(h9_0_2) + 128 * (to_field(t22[3]) - 2 * to_field(h9_0_3)))) - 2 * to_field(h9_1_2)))) - 2 * to_field(h9_2_1))), u8_from_field_unsafe(to_field(h9_2_1) + 128 * (to_field(u8_from_field_unsafe(to_field(h9_1_2) + 128 * (to_field(u8_from_field_unsafe(to_field(h9_0_3) + 128 * (to_field(t22[4]) - 2 * to_field(h9_0_4)))) - 2 * to_field(h9_1_3)))) - 2 * to_field(h9_2_2))), u8_from_field_unsafe(to_field(h9_2_2) + 128 * (to_field(u8_from_field_unsafe(to_field(h9_1_3) + 128 * (to_field(u8_from_field_unsafe(to_field(h9_0_4) + 128 * (to_field(t22[5]) - 2 * to_field(h9_0_5)))) - 2 * to_field(h9_1_4)))) - 2 * to_field(h9_2_3))), u8_from_field_unsafe(to_field(h9_2_3) + 128 * (to_field(u8_from_field_unsafe(to_field(h9_1_4) + 128 * (to_field(u8_from_field_unsafe(to_field(h9_0_5) + 128 * (to_field(t22[6]) - 2 * to_field(h9_0_6)))) - 2 * to_field(h9_1_5)))) - 2 * to_field(h9_2_4))), u8_from_field_unsafe(to_field(h9_2_4) + 128 * (to_field(u8_from_field_unsafe(to_field(h9_1_5) + 128 * (to_field(u8_from_field_unsafe(to_field(h9_0_6) + 128 * (to_field(t22[7]) - 2 * to_field(h9_0_7)))) - 2 * to_field(h9_1_6)))) - 2 * to_field(h9_2_5))), u8_from_field_unsafe(to_field(h9_2_5) + 128 * (to_field(u8_from_field_unsafe(to_field(h9_1_6) + 128 * (to_field(u8_from_field_unsafe(to_field(h9_0_7) + 128 * (to_field(t22[0]) - 2 * to_field(h9_0_0)))) - 2 * to_field(h9_1_7)))) - 2 * to_field(h9_2_6))), u8_from_field_unsafe(to_field(h9_2_6) + 128 * (to_field(u8_from_field_unsafe(to_field(h9_1_7) + 128 * (to_field(u8_from_field_unsafe(to_field(h9_0_0) + 128 * (to_field(t22[1]) - 2 * to_field(h9_0_1)))) - 2 * to_field(h9_1_0)))) - 2 * to_field(h9_2_7))), u8_from_field_unsafe(to_field(h9_2_7) + 128 * (to_field(u8_from_field_unsafe(to_field(h9_1_0) + 128 * (to_field(u8_from_field_unsafe(to_field(h9_0_1) + 128 * (to_field(t22[2]) - 2 * to_field(h9_0_2)))) - 2 * to_field(h9_1_1)))) - 2 * to_field(h9_2_0)))];
       -- b19 = rotl(t23, 56): byte rotation only (free)
       let b19 = [t23[1], t23[2], t23[3], t23[4], t23[5], t23[6], t23[7], t23[0]];
-      -- b4 = rotl(t24, 14) = byte-rotl 1 + bit-shl 6
-      let d4_0 = u8_bit_decomposition(t24[0]);
-      let d4_1 = u8_bit_decomposition(t24[1]);
-      let d4_2 = u8_bit_decomposition(t24[2]);
-      let d4_3 = u8_bit_decomposition(t24[3]);
-      let d4_4 = u8_bit_decomposition(t24[4]);
-      let d4_5 = u8_bit_decomposition(t24[5]);
-      let d4_6 = u8_bit_decomposition(t24[6]);
-      let d4_7 = u8_bit_decomposition(t24[7]);
-      let b4 = [
-        u8_from_field_unsafe(d4_6[2] + 2 * d4_6[3] + 4 * d4_6[4] + 8 * d4_6[5] + 16 * d4_6[6] + 32 * d4_6[7] + 64 * d4_7[0] + 128 * d4_7[1]),
-        u8_from_field_unsafe(d4_7[2] + 2 * d4_7[3] + 4 * d4_7[4] + 8 * d4_7[5] + 16 * d4_7[6] + 32 * d4_7[7] + 64 * d4_0[0] + 128 * d4_0[1]),
-        u8_from_field_unsafe(d4_0[2] + 2 * d4_0[3] + 4 * d4_0[4] + 8 * d4_0[5] + 16 * d4_0[6] + 32 * d4_0[7] + 64 * d4_1[0] + 128 * d4_1[1]),
-        u8_from_field_unsafe(d4_1[2] + 2 * d4_1[3] + 4 * d4_1[4] + 8 * d4_1[5] + 16 * d4_1[6] + 32 * d4_1[7] + 64 * d4_2[0] + 128 * d4_2[1]),
-        u8_from_field_unsafe(d4_2[2] + 2 * d4_2[3] + 4 * d4_2[4] + 8 * d4_2[5] + 16 * d4_2[6] + 32 * d4_2[7] + 64 * d4_3[0] + 128 * d4_3[1]),
-        u8_from_field_unsafe(d4_3[2] + 2 * d4_3[3] + 4 * d4_3[4] + 8 * d4_3[5] + 16 * d4_3[6] + 32 * d4_3[7] + 64 * d4_4[0] + 128 * d4_4[1]),
-        u8_from_field_unsafe(d4_4[2] + 2 * d4_4[3] + 4 * d4_4[4] + 8 * d4_4[5] + 16 * d4_4[6] + 32 * d4_4[7] + 64 * d4_5[0] + 128 * d4_5[1]),
-        u8_from_field_unsafe(d4_5[2] + 2 * d4_5[3] + 4 * d4_5[4] + 8 * d4_5[5] + 16 * d4_5[6] + 32 * d4_5[7] + 64 * d4_6[0] + 128 * d4_6[1])
-      ];
+      -- b4 = rotl(t24, 14) = byte-rotl 2 + 2x rotr1 (u8_shift_right drops the lsb, recovered as b - 2*(b >> 1) and recomposed into the neighbor's msb via free field add)
+      let h4_0_0 = u8_shift_right(t24[6]);
+      let h4_0_1 = u8_shift_right(t24[7]);
+      let h4_0_2 = u8_shift_right(t24[0]);
+      let h4_0_3 = u8_shift_right(t24[1]);
+      let h4_0_4 = u8_shift_right(t24[2]);
+      let h4_0_5 = u8_shift_right(t24[3]);
+      let h4_0_6 = u8_shift_right(t24[4]);
+      let h4_0_7 = u8_shift_right(t24[5]);
+      let h4_1_0 = u8_shift_right(u8_from_field_unsafe(to_field(h4_0_0) + 128 * (to_field(t24[7]) - 2 * to_field(h4_0_1))));
+      let h4_1_1 = u8_shift_right(u8_from_field_unsafe(to_field(h4_0_1) + 128 * (to_field(t24[0]) - 2 * to_field(h4_0_2))));
+      let h4_1_2 = u8_shift_right(u8_from_field_unsafe(to_field(h4_0_2) + 128 * (to_field(t24[1]) - 2 * to_field(h4_0_3))));
+      let h4_1_3 = u8_shift_right(u8_from_field_unsafe(to_field(h4_0_3) + 128 * (to_field(t24[2]) - 2 * to_field(h4_0_4))));
+      let h4_1_4 = u8_shift_right(u8_from_field_unsafe(to_field(h4_0_4) + 128 * (to_field(t24[3]) - 2 * to_field(h4_0_5))));
+      let h4_1_5 = u8_shift_right(u8_from_field_unsafe(to_field(h4_0_5) + 128 * (to_field(t24[4]) - 2 * to_field(h4_0_6))));
+      let h4_1_6 = u8_shift_right(u8_from_field_unsafe(to_field(h4_0_6) + 128 * (to_field(t24[5]) - 2 * to_field(h4_0_7))));
+      let h4_1_7 = u8_shift_right(u8_from_field_unsafe(to_field(h4_0_7) + 128 * (to_field(t24[6]) - 2 * to_field(h4_0_0))));
+      let b4 = [u8_from_field_unsafe(to_field(h4_1_0) + 128 * (to_field(u8_from_field_unsafe(to_field(h4_0_1) + 128 * (to_field(t24[0]) - 2 * to_field(h4_0_2)))) - 2 * to_field(h4_1_1))), u8_from_field_unsafe(to_field(h4_1_1) + 128 * (to_field(u8_from_field_unsafe(to_field(h4_0_2) + 128 * (to_field(t24[1]) - 2 * to_field(h4_0_3)))) - 2 * to_field(h4_1_2))), u8_from_field_unsafe(to_field(h4_1_2) + 128 * (to_field(u8_from_field_unsafe(to_field(h4_0_3) + 128 * (to_field(t24[2]) - 2 * to_field(h4_0_4)))) - 2 * to_field(h4_1_3))), u8_from_field_unsafe(to_field(h4_1_3) + 128 * (to_field(u8_from_field_unsafe(to_field(h4_0_4) + 128 * (to_field(t24[3]) - 2 * to_field(h4_0_5)))) - 2 * to_field(h4_1_4))), u8_from_field_unsafe(to_field(h4_1_4) + 128 * (to_field(u8_from_field_unsafe(to_field(h4_0_5) + 128 * (to_field(t24[4]) - 2 * to_field(h4_0_6)))) - 2 * to_field(h4_1_5))), u8_from_field_unsafe(to_field(h4_1_5) + 128 * (to_field(u8_from_field_unsafe(to_field(h4_0_6) + 128 * (to_field(t24[5]) - 2 * to_field(h4_0_7)))) - 2 * to_field(h4_1_6))), u8_from_field_unsafe(to_field(h4_1_6) + 128 * (to_field(u8_from_field_unsafe(to_field(h4_0_7) + 128 * (to_field(t24[6]) - 2 * to_field(h4_0_0)))) - 2 * to_field(h4_1_7))), u8_from_field_unsafe(to_field(h4_1_7) + 128 * (to_field(u8_from_field_unsafe(to_field(h4_0_0) + 128 * (to_field(t24[7]) - 2 * to_field(h4_0_1)))) - 2 * to_field(h4_1_0)))];
       -- chi: e[x,y] = b[x,y] ^ (~b[x+1,y] & b[x+2,y]); NOT is the free
       -- recomposition 255 - b.
       let e0 = [u8_xor(b0[0], u8_and(u8_from_field_unsafe(255 - to_field(b1[0])), b2[0])), u8_xor(b0[1], u8_and(u8_from_field_unsafe(255 - to_field(b1[1])), b2[1])), u8_xor(b0[2], u8_and(u8_from_field_unsafe(255 - to_field(b1[2])), b2[2])), u8_xor(b0[3], u8_and(u8_from_field_unsafe(255 - to_field(b1[3])), b2[3])), u8_xor(b0[4], u8_and(u8_from_field_unsafe(255 - to_field(b1[4])), b2[4])), u8_xor(b0[5], u8_and(u8_from_field_unsafe(255 - to_field(b1[5])), b2[5])), u8_xor(b0[6], u8_and(u8_from_field_unsafe(255 - to_field(b1[6])), b2[6])), u8_xor(b0[7], u8_and(u8_from_field_unsafe(255 - to_field(b1[7])), b2[7]))];
