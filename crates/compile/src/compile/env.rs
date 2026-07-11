@@ -16,7 +16,7 @@
 //! than crossing the FFI as an env-sized ByteArray. All of it is
 //! always on, and every mode produces a bit-identical `.ixe`.
 //!
-//! Two knobs:
+//! Three knobs:
 //! - `IX_COMPILE_WORKERS=N` — scheduler worker count (default: all
 //!   cores). Scales the per-worker transients.
 //! - `IX_COMPILE_DEMOTE=0` — keep materialized caches next to the
@@ -24,6 +24,11 @@
 //!   RAM to make post-compile structural reads free, which only pays
 //!   in flows that re-read the compiled env in-process (`ix check` /
 //!   `ix validate`); `ix compile` itself never reads them back.
+//! - `IX_COMPILE_EAGER=1` — decode the whole Lean environment up
+//!   front instead of on demand. Spends the single largest memory
+//!   term (FLT: +13 GiB for −8 % wall; Mathlib needs a large-memory
+//!   machine) to shave the last few percent on hardware with RAM to
+//!   spare.
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{

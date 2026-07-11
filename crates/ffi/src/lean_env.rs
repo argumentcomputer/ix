@@ -1138,11 +1138,18 @@ const LAZY_ENV_CACHE_ENTRIES: usize = 16384;
 
 /// Decode for the production compile FFI entries: an on-demand view
 /// that avoids materializing the full Rust copy of the environment —
-/// the eager copy is the single largest memory term at Mathlib scale
-/// (~25 GB) and compile wall time is at parity without it. Test and
-/// roundtrip entries keep [`decode_env`] (they re-read the env
-/// structurally throughout).
+/// the eager copy is the single largest memory term at scale. The
+/// on-demand decode costs a few percent of wall (per-constant fetches
+/// vs one batched decode); `IX_COMPILE_EAGER=1` buys that back on
+/// machines with RAM to spare. Measured on FLT: −8 % wall for
+/// +13 GiB peak; Mathlib eager exceeds a 56 GB machine outright
+/// (the copy sits alongside the Lean-held env). Test and roundtrip
+/// entries keep [`decode_env`] (they re-read the env structurally
+/// throughout).
 pub fn decode_env_for_compile(list: LeanList<LeanBorrowed<'_>>) -> Env {
+  if std::env::var("IX_COMPILE_EAGER").as_deref() == Ok("1") {
+    return decode_env(list);
+  }
   decode_env_lazy(list, LAZY_ENV_CACHE_ENTRIES)
 }
 
