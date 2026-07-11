@@ -174,6 +174,11 @@ structure CompareArgs where
       `BENCH_PHASES=1`) — the spans are noisy and dynamically named, so
       the default table stays at the headline measures. -/
   phases : Bool := false
+  /-- What one table row is, for the header and summary: `constant` on
+      the per-constant backends, `env` on compile (whose rows are
+      env-keyed), `env/constant` on ooc (which mixes an env row with
+      per-constant rows). -/
+  rowNoun : String := "constant"
 
 def renderCompare (a : CompareArgs) : String := Id.run do
   let names := (rowNames a.mainRows ++ rowNames a.prRows).foldl
@@ -192,7 +197,7 @@ def renderCompare (a : CompareArgs) : String := Id.run do
     | none, some _ => false
     | none, none => x < y
 
-  let mut head := #["constant"]
+  let mut head := #[a.rowNoun]
   for m in a.metrics do
     head := head ++ #[s!"{metricLabel m} (main)", s!"{metricLabel m} (PR)", "Δ%"]
   let mut lines := #[
@@ -234,8 +239,11 @@ def renderCompare (a : CompareArgs) : String := Id.run do
           else if bad < -a.threshold then
             delta := delta ++ " 🟢"; rowImproved := true
       cells := cells ++ #[renderSide mainStatus mv, renderSide prStatus pv, delta]
+    -- Independent tallies: a row can regress on one metric and improve
+    -- on another (compile-time up, peak-ram down), and the summary must
+    -- not hide either side.
     if rowRegressed then regressed := regressed + 1
-    else if rowImproved then improved := improved + 1
+    if rowImproved then improved := improved + 1
     lines := lines.push ("| " ++ " | ".intercalate cells.toList ++ " |")
 
   let mut out := #[a.title, ""] ++ lines ++ #[""]
@@ -245,8 +253,11 @@ def renderCompare (a : CompareArgs) : String := Id.run do
     out := out.push s!"❌ **`{n}` FAILED TO TYPECHECK on the {side} side** — \
       the kernel rejected it; see the logs."
   if !failures.isEmpty then out := out.push ""
-  out := out.push s!"_{names.size} constants · {regressed} regressed · \
-    {improved} improved (|Δ| > {fmtF a.threshold 1}% on any metric)._"
+  let plural := fun (n : Nat) (noun : String) =>
+    s!"{n} {noun}{if n == 1 then "" else "s"}"
+  out := out.push s!"_{plural names.size a.rowNoun} · {regressed} with \
+    regressions · {improved} with improvements \
+    (|Δ| > {fmtF a.threshold 1}% on any metric)._"
   -- One side empty while the other measured is almost always a broken side
   -- (e.g. the base-run fallback hit a base binary that predates a flag),
   -- not a real all-regressed/all-new comparison — flag it briefly instead
@@ -326,6 +337,10 @@ def runCompareCmd (p : Cli.Parsed) : IO UInt32 := do
     prRows := ← readRows prPath
     metrics, threshold, title
     phases := ((← IO.getEnv "BENCH_PHASES").getD "0") == "1"
+    rowNoun :=
+      if backend == "compile" then "env"
+      else if backend == "ooc" then "env/constant"
+      else "constant"
   }
   match p.flag? "out" with
   | some f => IO.FS.writeFile (f.as! String) (table ++ "\n")
