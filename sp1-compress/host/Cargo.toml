@@ -14,6 +14,17 @@ blake3 = "1"
 # `sp1-cuda` 6.3.1, which was never published to crates.io and only resolves
 # from the sp1 repo itself. Same code as the crates.io 6.3.1 release.
 sp1-sdk = { git = "https://github.com/succinctlabs/sp1", tag = "v6.3.1" }
+# The `wrap` upgrade path (resume shrink→wrap→gnark from a saved compressed
+# proof) needs the prover internals the SDK doesn't re-export. Same tag as
+# sp1-sdk; the slop-* crates live in the same repo.
+sp1-prover = { git = "https://github.com/succinctlabs/sp1", tag = "v6.3.1" }
+sp1-hypercube = { git = "https://github.com/succinctlabs/sp1", tag = "v6.3.1" }
+sp1-primitives = { git = "https://github.com/succinctlabs/sp1", tag = "v6.3.1" }
+sp1-recursion-circuit = { git = "https://github.com/succinctlabs/sp1", tag = "v6.3.1", default-features = false }
+sp1-recursion-executor = { git = "https://github.com/succinctlabs/sp1", tag = "v6.3.1", default-features = false }
+sp1-recursion-gnark-ffi = { git = "https://github.com/succinctlabs/sp1", tag = "v6.3.1", default-features = false }
+slop-algebra = { git = "https://github.com/succinctlabs/sp1", tag = "v6.3.1" }
+slop-bn254 = { git = "https://github.com/succinctlabs/sp1", tag = "v6.3.1" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"

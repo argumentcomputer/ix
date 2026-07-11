@@ -60,6 +60,19 @@ enum Command {
     #[arg(long)]
     save_artifacts: Option<PathBuf>,
   },
+  /// Upgrade a saved *compressed* SP1 proof (from `--output`) to
+  /// groth16/plonk without redoing the core/compress STARK stages.
+  Wrap {
+    /// Saved SP1 proof (the SDK `.save()` format `--output` writes).
+    #[arg(long)]
+    input: PathBuf,
+    /// Target: groth16 | plonk.
+    #[arg(long, default_value = "plonk")]
+    mode: String,
+    /// Write the upgraded SP1 proof here.
+    #[arg(long)]
+    output: Option<PathBuf>,
+  },
   /// Compress an existing Aiur proof from artifact files.
   Compress {
     /// Verifying key bytes (`aiur::vk_codec::aiur_system_to_bytes`).
@@ -144,6 +157,10 @@ async fn main() -> Result<()> {
         sp1.output.as_deref(),
       )
       .await
+    },
+    Command::Wrap { input, mode, output } => {
+      let mode: Mode = mode.parse().map_err(|e: String| anyhow::anyhow!(e))?;
+      sp1_compress_host::wrap::wrap_saved(&input, mode, output.as_deref()).await
     },
     Command::Compress { vk, claim, proof, fri, sp1 } => {
       let vk_bytes =

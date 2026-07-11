@@ -817,3 +817,44 @@ extern "C" fn rs_sp1_compress_aiur_proof(
     )
   }
 }
+
+/// `Aiur.sp1WrapSavedProof : @& String → @& String → @& String →
+/// Except String Unit`
+///
+/// Upgrade a saved *compressed* SP1 proof (path in the SDK `.save()` format)
+/// to `groth16`/`plonk` without redoing the core/compress STARK stages — only
+/// shrink → BN254 wrap → gnark run. `output` is the path the upgraded proof
+/// is saved to (`""` = don't save). Stub without the `sp1` cargo feature.
+#[unsafe(no_mangle)]
+extern "C" fn rs_sp1_wrap_saved_proof(
+  input: LeanString<LeanBorrowed<'_>>,
+  mode: LeanString<LeanBorrowed<'_>>,
+  output: LeanString<LeanBorrowed<'_>>,
+) -> LeanExcept<LeanOwned> {
+  #[cfg(feature = "sp1")]
+  {
+    let mode = match mode.as_str().parse::<sp1_compress_host::Mode>() {
+      Ok(m) => m,
+      Err(e) => return LeanExcept::error_string(&e),
+    };
+    let output = match output.as_str() {
+      "" => None,
+      s => Some(std::path::PathBuf::from(s)),
+    };
+    match sp1_compress_host::wrap::wrap_saved_blocking(
+      std::path::Path::new(input.as_str()),
+      mode,
+      output.as_deref(),
+    ) {
+      Ok(()) => LeanExcept::ok(LeanOwned::box_usize(0)),
+      Err(e) => LeanExcept::error_string(&format!("{e:#}")),
+    }
+  }
+  #[cfg(not(feature = "sp1"))]
+  {
+    let _ = (&input, &mode, &output);
+    LeanExcept::error_string(
+      "ix was built without SP1 support; rebuild with `IX_SP1=1 lake build`",
+    )
+  }
+}

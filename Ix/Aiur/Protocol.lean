@@ -156,6 +156,15 @@ def buildClaim (funIdx : Bytecode.FunIdx) (input output : Array G) :=
 opaque sp1CompressAiurProof : @& ByteArray → @& ByteArray → @& ByteArray →
   @& FriParameters → @& String → @& String → Except String Unit
 
+/-- Upgrade a saved *compressed* SP1 proof file to `groth16`/`plonk` without
+    redoing the core/compress STARK stages (only shrink → wrap → gnark run).
+    Arguments: input path (the SDK `.save()` format `--output` writes), the
+    target mode, and an output path (`""` = don't save). Stub that always
+    errors unless `ix` was built with `IX_SP1=1`. -/
+@[extern "rs_sp1_wrap_saved_proof"]
+opaque sp1WrapSavedProof : @& String → @& String → @& String →
+  Except String Unit
+
 end Aiur
 
 end
