@@ -1,13 +1,17 @@
 name: Recursive verifier benchmark (temporary)
 
-# TEMPORARY: sizing probe for the aiur `recursive` cell — the IxVM recursive
-# verifier needs >40 GB locally (the in-circuit verifier execution over a
-# ~2.2 MB kernel proof), so run it once per push on a 128 GB warp host to
-# learn whether it fits the CI ceiling and what it costs. One cheap constant
-# suffices: the proof size — and so the recursion cost — is set by the kernel's
-# circuit count, not the constant (HEq --skip-deps proves byte-identical
-# 2221045-byte proofs). Delete this file once the recursive cell either joins
-# bench-main.yml or is redesigned around the interpreter's memory.
+# TEMPORARY: the Blake3 side of the Keccak-vs-Blake3 recursion comparison,
+# on the same 128 GB warp host class the Keccak probe used
+# (sb/keccak-recursive-bench's bench-keccak-recursive-tmp.yml) so the table
+# is apples-to-apples: the toy bench at the floor config (square, 1 query,
+# blowup 1 — the only one Keccak completes, at 80 GB) and the standard
+# config (factorial, 3 queries, blowup 2 — where Keccak OOMs). Blake3 is
+# expected to complete both comfortably (~2.6 / ~6.8 GB locally).
+#
+# The earlier revision of this workflow answered the IxVM-scale sizing
+# question: the recursive Typecheck cell (HEq over InitStd) OOMs at the
+# ~108 GB ceiling in the verifier-execute phase. Delete the file once the
+# comparison datapoints are recorded.
 
 on:
   push:
@@ -38,28 +42,36 @@ jobs:
         with:
           auto-config: false
           build: true
-          build-args: "ix --wfail -v"
-      - run: lake build bench-typecheck
-      # The InitStd library env must be built before `ix compile` (inside the
-      # cell's ensureIxe) can import it — same order as bench-main's compile
-      # job, minus the mathlib cache InitStd doesn't need.
-      - run: lake build CompileInitStd
-        working-directory: Benchmarks/Compile
-      # The full recursive cell under the RAM watchdog (default ceiling: host
-      # RAM − 15 GB ≈ 108 GB): compile InitStd.ixe, prove HEq, execute the
-      # in-circuit verifier over the proof, then prove the verifier. An OOM
-      # kill lands as a `status: oom` row that keeps whatever was flushed
-      # (prove metrics, and recursive-time/recursive-fft-cost if the execute
-      # finished) — the artifact tells the story either way.
-      - name: Run recursive cell (HEq)
+          build-args: "bench-recursive-verifier --wfail -v"
+      # Watchdog ceiling: host RAM minus 15 GB (same rule as ix bench run);
+      # the sampler logs the RSS high-water either way.
+      - name: Run Blake3 recursive floor (square, q=1, b=1)
         run: |
-          .lake/build/bin/ix bench run --backend aiur --env InitStd \
-            --mode recursive --consts HEq --out bench.json
-      - name: Show rows
-        if: ${{ !cancelled() }}
-        run: cat bench.json
-      - uses: actions/upload-artifact@v4
-        if: ${{ !cancelled() }}
-        with:
-          name: recursive-bench
-          path: bench.json
+          ceiling_gb=$(( $(grep MemTotal /proc/meminfo | awk '{print $2}') / 1024 / 1024 - 15 ))
+          echo "watchdog ceiling: ${ceiling_gb} GB"
+          ./.github/scripts/watchdog.sh "$ceiling_gb" \
+            ./.lake/build/bin/bench-recursive-verifier --trivial --queries 1 --blowup 1 &
+          pid=$!
+          ( while kill -0 "$pid" 2>/dev/null; do
+              ps -eo rss,comm | grep bench-recursive | awk '{print $1}'
+              sleep 5
+            done ) > rss.log || true
+          wait "$pid"; code=$?
+          peak_kb=$(sort -n rss.log | tail -1)
+          echo "exit=${code} peak-rss=$(( ${peak_kb:-0} / 1024 / 1024 )) GB (${peak_kb:-0} kB)"
+          exit "$code"
+      - name: Run standard config (factorial, q=3, b=2)
+        run: |
+          ceiling_gb=$(( $(grep MemTotal /proc/meminfo | awk '{print $2}') / 1024 / 1024 - 15 ))
+          echo "watchdog ceiling: ${ceiling_gb} GB"
+          ./.github/scripts/watchdog.sh "$ceiling_gb" \
+            ./.lake/build/bin/bench-recursive-verifier &
+          pid=$!
+          ( while kill -0 "$pid" 2>/dev/null; do
+              ps -eo rss,comm | grep bench-recursive | awk '{print $1}'
+              sleep 5
+            done ) > rss-std.log || true
+          wait "$pid"; code=$?
+          peak_kb=$(sort -n rss-std.log | tail -1)
+          echo "exit=${code} peak-rss=$(( ${peak_kb:-0} / 1024 / 1024 )) GB (${peak_kb:-0} kB)"
+          exit "$code"
