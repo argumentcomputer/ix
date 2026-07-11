@@ -134,36 +134,41 @@ def keccak := ⟦
     [s[0], s[1], s[2], s[3]]
   }
 
-  /- # keccak-f[1600]: 24 rounds of theta-rho-pi-chi-iota, 1 per keccak_roundN circuit (height = 384/1) -/
+  /- # keccak-f[1600]: 24 rounds of theta-rho-pi-chi-iota.
+     Each `@keccak_round` is an INLINED call: the compiler splices the
+     round body into keccak_f, so all 24 rounds share one circuit (one
+     row per permutation, height = block count) with no per-round call
+     interface. The round is written once; the elaborator only sees a
+     single round body plus 24 call sites. -/
 
   fn keccak_f(s: [[U8; 8]; 25]) -> [[U8; 8]; 25] {
-    let s = keccak_roundN(s, [0x01u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
-    let s = keccak_roundN(s, [0x82u8, 0x80u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
-    let s = keccak_roundN(s, [0x8au8, 0x80u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0x80u8]);
-    let s = keccak_roundN(s, [0u8, 0x80u8, 0u8, 0x80u8, 0u8, 0u8, 0u8, 0x80u8]);
-    let s = keccak_roundN(s, [0x8bu8, 0x80u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
-    let s = keccak_roundN(s, [0x01u8, 0u8, 0u8, 0x80u8, 0u8, 0u8, 0u8, 0u8]);
-    let s = keccak_roundN(s, [0x81u8, 0x80u8, 0u8, 0x80u8, 0u8, 0u8, 0u8, 0x80u8]);
-    let s = keccak_roundN(s, [0x09u8, 0x80u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0x80u8]);
-    let s = keccak_roundN(s, [0x8au8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
-    let s = keccak_roundN(s, [0x88u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
-    let s = keccak_roundN(s, [0x09u8, 0x80u8, 0u8, 0x80u8, 0u8, 0u8, 0u8, 0u8]);
-    let s = keccak_roundN(s, [0x0au8, 0u8, 0u8, 0x80u8, 0u8, 0u8, 0u8, 0u8]);
-    let s = keccak_roundN(s, [0x8bu8, 0x80u8, 0u8, 0x80u8, 0u8, 0u8, 0u8, 0u8]);
-    let s = keccak_roundN(s, [0x8bu8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0x80u8]);
-    let s = keccak_roundN(s, [0x89u8, 0x80u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0x80u8]);
-    let s = keccak_roundN(s, [0x03u8, 0x80u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0x80u8]);
-    let s = keccak_roundN(s, [0x02u8, 0x80u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0x80u8]);
-    let s = keccak_roundN(s, [0x80u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0x80u8]);
-    let s = keccak_roundN(s, [0x0au8, 0x80u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
-    let s = keccak_roundN(s, [0x0au8, 0u8, 0u8, 0x80u8, 0u8, 0u8, 0u8, 0x80u8]);
-    let s = keccak_roundN(s, [0x81u8, 0x80u8, 0u8, 0x80u8, 0u8, 0u8, 0u8, 0x80u8]);
-    let s = keccak_roundN(s, [0x80u8, 0x80u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0x80u8]);
-    let s = keccak_roundN(s, [0x01u8, 0u8, 0u8, 0x80u8, 0u8, 0u8, 0u8, 0u8]);
-    keccak_roundN(s, [0x08u8, 0x80u8, 0u8, 0x80u8, 0u8, 0u8, 0u8, 0x80u8])
+    let s = @keccak_round(s, [0x01u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
+    let s = @keccak_round(s, [0x82u8, 0x80u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
+    let s = @keccak_round(s, [0x8au8, 0x80u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0x80u8]);
+    let s = @keccak_round(s, [0u8, 0x80u8, 0u8, 0x80u8, 0u8, 0u8, 0u8, 0x80u8]);
+    let s = @keccak_round(s, [0x8bu8, 0x80u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
+    let s = @keccak_round(s, [0x01u8, 0u8, 0u8, 0x80u8, 0u8, 0u8, 0u8, 0u8]);
+    let s = @keccak_round(s, [0x81u8, 0x80u8, 0u8, 0x80u8, 0u8, 0u8, 0u8, 0x80u8]);
+    let s = @keccak_round(s, [0x09u8, 0x80u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0x80u8]);
+    let s = @keccak_round(s, [0x8au8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
+    let s = @keccak_round(s, [0x88u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
+    let s = @keccak_round(s, [0x09u8, 0x80u8, 0u8, 0x80u8, 0u8, 0u8, 0u8, 0u8]);
+    let s = @keccak_round(s, [0x0au8, 0u8, 0u8, 0x80u8, 0u8, 0u8, 0u8, 0u8]);
+    let s = @keccak_round(s, [0x8bu8, 0x80u8, 0u8, 0x80u8, 0u8, 0u8, 0u8, 0u8]);
+    let s = @keccak_round(s, [0x8bu8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0x80u8]);
+    let s = @keccak_round(s, [0x89u8, 0x80u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0x80u8]);
+    let s = @keccak_round(s, [0x03u8, 0x80u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0x80u8]);
+    let s = @keccak_round(s, [0x02u8, 0x80u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0x80u8]);
+    let s = @keccak_round(s, [0x80u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0x80u8]);
+    let s = @keccak_round(s, [0x0au8, 0x80u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0u8]);
+    let s = @keccak_round(s, [0x0au8, 0u8, 0u8, 0x80u8, 0u8, 0u8, 0u8, 0x80u8]);
+    let s = @keccak_round(s, [0x81u8, 0x80u8, 0u8, 0x80u8, 0u8, 0u8, 0u8, 0x80u8]);
+    let s = @keccak_round(s, [0x80u8, 0x80u8, 0u8, 0u8, 0u8, 0u8, 0u8, 0x80u8]);
+    let s = @keccak_round(s, [0x01u8, 0u8, 0u8, 0x80u8, 0u8, 0u8, 0u8, 0u8]);
+    @keccak_round(s, [0x08u8, 0x80u8, 0u8, 0x80u8, 0u8, 0u8, 0u8, 0x80u8])
   }
 
-  fn keccak_roundN(s0: [[U8; 8]; 25], rc0: [U8; 8]) -> [[U8; 8]; 25] {
+  fn keccak_round(s0: [[U8; 8]; 25], rc0: [U8; 8]) -> [[U8; 8]; 25] {
       -- round 0: theta
       let c0_0 = [u8_xor(s0[20][0], u8_xor(s0[15][0], u8_xor(s0[10][0], u8_xor(s0[5][0], s0[0][0])))), u8_xor(s0[20][1], u8_xor(s0[15][1], u8_xor(s0[10][1], u8_xor(s0[5][1], s0[0][1])))), u8_xor(s0[20][2], u8_xor(s0[15][2], u8_xor(s0[10][2], u8_xor(s0[5][2], s0[0][2])))), u8_xor(s0[20][3], u8_xor(s0[15][3], u8_xor(s0[10][3], u8_xor(s0[5][3], s0[0][3])))), u8_xor(s0[20][4], u8_xor(s0[15][4], u8_xor(s0[10][4], u8_xor(s0[5][4], s0[0][4])))), u8_xor(s0[20][5], u8_xor(s0[15][5], u8_xor(s0[10][5], u8_xor(s0[5][5], s0[0][5])))), u8_xor(s0[20][6], u8_xor(s0[15][6], u8_xor(s0[10][6], u8_xor(s0[5][6], s0[0][6])))), u8_xor(s0[20][7], u8_xor(s0[15][7], u8_xor(s0[10][7], u8_xor(s0[5][7], s0[0][7]))))];
       let c1_0 = [u8_xor(s0[21][0], u8_xor(s0[16][0], u8_xor(s0[11][0], u8_xor(s0[6][0], s0[1][0])))), u8_xor(s0[21][1], u8_xor(s0[16][1], u8_xor(s0[11][1], u8_xor(s0[6][1], s0[1][1])))), u8_xor(s0[21][2], u8_xor(s0[16][2], u8_xor(s0[11][2], u8_xor(s0[6][2], s0[1][2])))), u8_xor(s0[21][3], u8_xor(s0[16][3], u8_xor(s0[11][3], u8_xor(s0[6][3], s0[1][3])))), u8_xor(s0[21][4], u8_xor(s0[16][4], u8_xor(s0[11][4], u8_xor(s0[6][4], s0[1][4])))), u8_xor(s0[21][5], u8_xor(s0[16][5], u8_xor(s0[11][5], u8_xor(s0[6][5], s0[1][5])))), u8_xor(s0[21][6], u8_xor(s0[16][6], u8_xor(s0[11][6], u8_xor(s0[6][6], s0[1][6])))), u8_xor(s0[21][7], u8_xor(s0[16][7], u8_xor(s0[11][7], u8_xor(s0[6][7], s0[1][7]))))];
