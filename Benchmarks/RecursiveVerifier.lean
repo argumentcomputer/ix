@@ -57,14 +57,20 @@ def main (args : List String) : IO Unit := do
   let facSystem := AiurSystem.build facCompiled.bytecode recCommitParams innerFri
   let facIdx := facCompiled.getFuncIdx `factorial |>.get!
   IO.println "proving inner factorial(5)…"
+  let it0 ← IO.monoNanosNow
   let (claim, proof, _) := facSystem.prove facIdx #[Aiur.G.ofNat 5] default
   let proofBytes := proof.toBytes
+  let it1 ← IO.monoNanosNow
+  let innerOk := facSystem.verify claim proof matches .ok _
+  let it2 ← IO.monoNanosNow
+  IO.println s!"inner PROVE: {(Float.ofNat (it1 - it0)) / 1e9} s, \
+    proof {proofBytes.size} bytes; inner VERIFY: \
+    {(Float.ofNat (it2 - it1)) / 1e9} s ({if innerOk then "ok" else "FAILED"})"
   -- Proof (advice, channel 0), vk (channel 1), claims (channel 2), plus the
   -- Blake3-bound vk/claims digests and FRI params as public input.
   let claimBytes := MultiStark.serializeClaims #[claim]
   let (pubInput, io) := MultiStark.verifierInput proofBytes facSystem.vkBytes
     claimBytes recCommitParams innerFri
-  IO.println s!"inner proof: {proofBytes.size} bytes"
   -- Compile the verifier toplevel and run it over the proof.
   let vTop ← match MultiStark.multiStark with
     | .ok t => pure t | .error e => IO.eprintln s!"verifier merge failed: {e}"; return
@@ -88,7 +94,11 @@ def main (args : List String) : IO Unit := do
       TracingTexray.init {}
       let vSystem := AiurSystem.build vCompiled.bytecode recCommitParams innerFri
       let t0 ← IO.monoNanosNow
-      let (_, vproof, _) := vSystem.prove vIdx pubInput io
+      let (vclaim, vproof, _) := vSystem.prove vIdx pubInput io
       let nbytes := vproof.toBytes.size  -- force the (lazy, pure) prove to run
       let t1 ← IO.monoNanosNow
+      let outerOk := vSystem.verify vclaim vproof matches .ok _
+      let t2 ← IO.monoNanosNow
       IO.println s!"verifier PROVE time: {(Float.ofNat (t1 - t0)) / 1e9} s, proof {nbytes} bytes"
+      IO.println s!"verifier proof VERIFY time: \
+        {(Float.ofNat (t2 - t1)) / 1e9} s ({if outerOk then "ok" else "FAILED"})"
