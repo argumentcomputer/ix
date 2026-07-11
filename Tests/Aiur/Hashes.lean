@@ -4,6 +4,8 @@ public import Tests.Aiur.Common
 public import Ix.IxVM.ByteStream
 public import Ix.IxVM.Blake3
 public import Ix.IxVM.Sha256
+public import Ix.IxVM.Keccak
+public import Ix.Keccak
 public import Tests.Sha256
 public import Blake3.Rust
 
@@ -30,6 +32,33 @@ def mkSha256HashTestCase (size : Nat) : AiurTestCase :=
   { functionName := `sha256_test, label := s!"sha256 (size={size})"
     expectedOutput := output, inputIOBuffer := buffer, expectedIOBuffer := buffer
     interpret := false }
+
+def mkKeccakHashTestCase (size : Nat) : AiurTestCase :=
+  let inputBytes := Array.range size |>.map Nat.toUInt8
+  let outputBytes := (Keccak.hash ⟨inputBytes⟩).data
+  let input := inputBytes.map .ofUInt8
+  let output := outputBytes.map .ofUInt8
+  let buffer : Aiur.IOBuffer :=
+    ⟨.ofList [(0, input)], .ofList [((0, #[0]), ⟨0, size⟩)]⟩
+  { functionName := `keccak256_test, label := s!"keccak256 (size={size})"
+    expectedOutput := output, inputIOBuffer := buffer, expectedIOBuffer := buffer
+    interpret := false }
+
+/-- Rate-boundary coverage: 135/136/137 straddle one 136-byte rate block
+    (135 pads in-block, 136 forces the extra all-padding block, 137 spills
+    into a second block), 271/272/273 the same around two blocks. -/
+public def keccakTestCases : List AiurTestCase := [
+  mkKeccakHashTestCase 0,
+  mkKeccakHashTestCase 1,
+  mkKeccakHashTestCase 32,
+  mkKeccakHashTestCase 135,
+  mkKeccakHashTestCase 136,
+  mkKeccakHashTestCase 137,
+  mkKeccakHashTestCase 271,
+  mkKeccakHashTestCase 272,
+  mkKeccakHashTestCase 273,
+  mkKeccakHashTestCase 1200,
+]
 
 public def blake3TestCases : List AiurTestCase := [
   mkBlake3HashTestCase 0,
