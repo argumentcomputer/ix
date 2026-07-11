@@ -52,8 +52,8 @@ extern "C" fn rs_aiur_proof_to_bytes(
 extern "C" fn rs_aiur_proof_of_bytes(
   byte_array: LeanByteArray<LeanBorrowed<'_>>,
 ) -> LeanExternal<AiurProof, LeanOwned> {
-  let proof =
-    AiurProof::from_bytes(byte_array.as_bytes()).expect("Deserialization error");
+  let proof = AiurProof::from_bytes(byte_array.as_bytes())
+    .expect("Deserialization error");
   LeanExternal::alloc(&AIUR_PROOF_CLASS, proof)
 }
 

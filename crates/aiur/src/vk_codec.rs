@@ -446,9 +446,10 @@ mod tests {
   #[test]
   fn rejects_trailing_bytes() {
     let (cp, fp) = test_parameters();
-    let (system, _key) = System::new(AiurConfig::new(cp, fp), [
-      LookupAir::new(AiurCircuit::Bytes1, Bytes1.lookups()),
-    ]);
+    let (system, _key) = System::new(
+      AiurConfig::new(cp, fp),
+      [LookupAir::new(AiurCircuit::Bytes1, Bytes1.lookups())],
+    );
     let mut bytes = to_bytes(&system, cp, fp);
     bytes.push(0);
     assert!(from_bytes(&bytes).is_err(), "should reject trailing data");

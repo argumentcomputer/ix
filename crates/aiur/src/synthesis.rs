@@ -5,7 +5,9 @@ use multi_stark::{
   p3_matrix::dense::RowMajorMatrix,
   prover::Proof,
   system::{ProverKey, System, SystemWitness},
-  types::{CommitmentParameters, FriParameters, GoldilocksBlake3Config, PcsError},
+  types::{
+    CommitmentParameters, FriParameters, GoldilocksBlake3Config, PcsError,
+  },
   verifier::VerificationError,
 };
 use rayon::iter::{
