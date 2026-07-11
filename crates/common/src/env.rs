@@ -1512,6 +1512,14 @@ pub struct LazyEnv {
   /// topological locality.
   segments: Vec<std::sync::Mutex<indexmap::IndexMap<Name, Arc<ConstantInfo>>>>,
   cap_per_segment: usize,
+  /// Never-evicted overlay for hot names, installed once via
+  /// [`Env::pin`] before concurrent readers start. Each slot decodes
+  /// on first access and stays resident; reads after that are
+  /// lock-free. Names outside the overlay fall through to the
+  /// segments.
+  pinned: std::sync::OnceLock<
+    FxHashMap<Name, std::sync::OnceLock<Option<Arc<ConstantInfo>>>>,
+  >,
 }
 
 #[cfg(not(target_arch = "riscv64"))]
@@ -1539,6 +1547,11 @@ impl LazyEnv {
   fn get(&self, name: &Name) -> Option<Arc<ConstantInfo>> {
     if !self.index.contains_key(name) {
       return None;
+    }
+    if let Some(pinned) = self.pinned.get()
+      && let Some(slot) = pinned.get(name)
+    {
+      return slot.get_or_init(|| (self.fetch)(name).map(Arc::new)).clone();
     }
     let segment_idx = self.segment_for(name);
     if let Some(hit) = self.segments[segment_idx].lock().unwrap().get(name) {
@@ -1617,7 +1630,26 @@ impl Env {
       .collect();
     Env {
       eager: FxHashMap::default(),
-      lazy: Some(LazyEnv { names, index, fetch, segments, cap_per_segment }),
+      lazy: Some(LazyEnv {
+        names,
+        index,
+        fetch,
+        segments,
+        cap_per_segment,
+        pinned: std::sync::OnceLock::new(),
+      }),
+    }
+  }
+
+  /// Pin `names` in the lazy cache: they decode on first access and
+  /// are never evicted. Install once, before concurrent readers start
+  /// (later calls are ignored); no-op on eager envs.
+  #[cfg(not(target_arch = "riscv64"))]
+  pub fn pin(&self, names: impl IntoIterator<Item = Name>) {
+    if let Some(lazy) = &self.lazy {
+      let overlay: FxHashMap<_, _> =
+        names.into_iter().map(|n| (n, std::sync::OnceLock::new())).collect();
+      let _ = lazy.pinned.set(overlay);
     }
   }
 

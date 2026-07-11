@@ -175,6 +175,23 @@ pub fn compile_env_with_options(
       phase_start.elapsed().as_secs_f32()
     );
   }
+  // Pin the highest-in-degree constants in the lazy env: the ref
+  // graph gives exact reference counts, and the distribution is
+  // heavily skewed, so a small never-evicted set absorbs repeat
+  // decodes of foundational constants that otherwise churn through
+  // the bounded cache. At this size the overlay costs ≤0.3 GiB on
+  // every measured env and wall time is Lean −15 %, FLT −4 %,
+  // InitStd/Mathlib neutral (24-core box); larger sets bought RAM,
+  // not speed, on the same sweep.
+  const PIN_HOT_CONSTANTS: usize = 16384;
+  if !graph.in_refs.is_empty() {
+    let mut by_deg: Vec<(&Name, usize)> =
+      graph.in_refs.iter().map(|(n, refs)| (n, refs.len())).collect();
+    let k = PIN_HOT_CONSTANTS.min(by_deg.len());
+    by_deg.select_nth_unstable_by(k - 1, |a, b| b.1.cmp(&a.1));
+    lean_env.pin(by_deg[..k].iter().map(|(n, _)| (*n).clone()));
+  }
+
   let ungrounded_map: DashMap<Name, String> =
     ungrounded.iter().map(|(n, e)| (n.clone(), format!("{e:?}"))).collect();
   if !ungrounded.is_empty() && !*IX_QUIET {
