@@ -159,6 +159,18 @@ def backendSpecs : List BackendSpec := [
                                "recursive-proof-size", "recursive-verify-time",
                                "recursive-time", "recursive-fft-cost",
                                "prove-time"])] },
+  -- The recursive-verifier toy (bench-recursive-verifier): fixed tiny
+  -- statements (`recursiveConfigs`), proving the in-circuit multi-stark
+  -- verifier end-to-end. Unlike the aiur backend's recursive MODE (IxVM
+  -- scale — cannot complete anywhere yet, no testbed), the toy completes
+  -- in ~7 GB, so it is bencher-tracked. Env-independent: the cell ignores
+  -- --env and never needs an .ixe.
+  { name := "recursive", defaultMode := "prove",
+    testbeds := [("prove", "recursive-x64-32x")],
+    metrics := [("prove", ["recursive-prove-time", "recursive-peak-rss",
+                           "recursive-proof-size", "recursive-verify-time",
+                           "recursive-time", "recursive-fft-cost",
+                           "prove-time", "proof-size"])] },
   { name := "zisk", defaultMode := "execute",
     testbeds := [("execute", "zisk-check-execute-x64-32x")],
     metrics := [("execute", ["execute-time", "throughput", "peak-rss",
@@ -179,6 +191,16 @@ def backendSpecs : List BackendSpec := [
 
 def findBackend (name : String) : Option BackendSpec :=
   backendSpecs.find? (·.name == name)
+
+/-- The `recursive` backend's rows: (row name, bench-recursive-verifier
+    config args). Fixed configs rather than `Vectors.csv` constants — the
+    toy proves the same tiny statements everywhere: `floor` is the config
+    the Keccak baseline could complete (the hash-migration A/B point) and
+    `standard` the recursion-tuned default. -/
+def recursiveConfigs : List (String × Array String) := [
+  ("square-q1-b1", #["--trivial", "--queries", "1", "--blowup", "1"]),
+  ("factorial-q3-b2", #[])
+]
 
 def BackendSpec.testbedFor (b : BackendSpec) (mode : String) : Option String :=
   (b.testbeds.find? (·.1 == mode)).map (·.2)
@@ -451,7 +473,11 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
         (rows.find? (fun r => r.name == n && r.env == env)).getD
           { name := n, env, tier := "cheap", shardTarget := false, primary := false }
   let names := selected.map (·.name)
-  IO.eprintln s!"[bench] cell {backend}-{env}-{mode}: {names.size} constant(s)"
+  match backend with
+  | "recursive" =>
+    IO.eprintln s!"[bench] cell {backend}-{mode}: {recursiveConfigs.length} config(s)"
+  | _ =>
+    IO.eprintln s!"[bench] cell {backend}-{env}-{mode}: {names.size} constant(s)"
 
   -- Fresh accumulator per run.
   if ← FilePath.pathExists out then IO.FS.removeFile out
@@ -501,6 +527,16 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
       runGuarded watchdog ceilingGb bt
         (#["--ixe", ixe, "--consts", name, "--json", out, "--texray"]
           ++ modeArgs)
+  | "recursive" =>
+    -- Fixed-config rows; no env, no .ixe. One process per config under the
+    -- watchdog, self-reporting through the rows contract like every other
+    -- per-row backend.
+    let brv ← resolveBin repo "bench-recursive-verifier"
+    runPerConstant out (recursiveConfigs.map (·.1)).toArray "recursive-prove-time"
+      fun name =>
+        let cfgArgs := ((recursiveConfigs.find? (·.1 == name)).map (·.2)).getD #[]
+        runGuarded watchdog ceilingGb brv
+          (cfgArgs ++ #["--json", out, "--json-name", name, "--texray"])
   | "zisk" | "sp1" =>
     if mode != "execute" then
       p.printError s!"error: {backend} supports only execute mode"
@@ -552,6 +588,7 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
   let expected := match backend with
     | "compile" => #[info.name]
     | "ooc" => #[info.name] ++ names
+    | "recursive" => (recursiveConfigs.map (·.1)).toArray
     | _ => names
   let code ← gate out expected
   if code == 0 || code == exitRejected then

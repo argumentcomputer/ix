@@ -4,29 +4,41 @@ import Ix.Aiur.Compiler
 import Ix.Aiur.Statistics
 import Ix.MultiStark
 import Ix.TracingTexray
+import Ix.Benchmark.Results
 
 open Aiur
 
 /-!
 # Recursive-verifier cost benchmark
 
-Proves `factorial(5)` with the multi-stark backend, then runs the in-circuit
-recursive verifier (`verify_multi_stark_proof`) over that proof and reports its
-cost. Mirrors the setup of `Tests/MultiStark.lean::endToEndSuite`, but measures
-cost instead of asserting accept/reject.
+Proves a tiny fixed statement with the multi-stark backend, runs the in-circuit
+recursive verifier (`verify_multi_stark_proof`) over that proof, then proves
+and verifies THAT execution — the end-to-end recursion step. Mirrors the setup
+of `Tests/MultiStark.lean::endToEndSuite`, but measures cost instead of
+asserting accept/reject.
 
 ```
-lake exe bench-recursive-verifier                 # execute + FFT + PROVE (texray) — ~5 s / ~7 GB
-lake exe bench-recursive-verifier --execute-only  # skip the prove (FFT/exec only)
+lake exe bench-recursive-verifier                 # factorial(5), q=3, blowup 2 — ~5 s / ~7 GB
+lake exe bench-recursive-verifier --execute-only  # skip the outer prove (FFT/exec only)
+
+  --trivial        square(5) instead of factorial(5) — the per-statement floor
+  --queries N      FRI query count        (default 3)
+  --blowup N       log2 blowup            (default 2)
+  --pow N          commit PoW bits        (default 20)
+  --json <path>    write a benchmark results row (Ix.Benchmark.Results); the
+                   row lands after the verifier execute and is refined after
+                   the outer prove, so a kill mid-prove keeps the execute
+                   metrics. `ix bench run --backend recursive` drives this.
+  --json-name <n>  row key (default: the inner entrypoint name)
+  --texray         tracing-texray timeline + RAM; with --json, spans also land
+                   at `<json>.spans` for the CI drill-down
 ```
 
-What it reports:
-* **In-circuit FFT cost** (`Σ width·height·log₂(height)`) — the prover-work / RAM
-  driver for proving the verifier. This is the headline recursion-cost metric.
-* By default, the **end-to-end STARK prove** of the verifier, with `tracing-texray`
-  emitting the per-stage timeline (`stage1_commit` / `quotient` / `fri_open`) and
-  RAM Δ/peak (~5 s, ~7 GB peak). Pass `--execute-only` to skip the prove on a
-  memory-constrained box.
+Row metrics: `prove-time`/`proof-size`/`verify-time` (the INNER statement),
+`peak-rss` (inner-prove window), `recursive-time`/`recursive-fft-cost` (the
+verifier's execution and its in-circuit cost — the recursion-cost proxy), and
+`recursive-prove-time`/`recursive-peak-rss`/`recursive-proof-size`/
+`recursive-verify-time` (the outer prove — the headline recursion metrics).
 
 Determinism note: the multi-stark prover is **non-deterministic under `parallel`**
 (the same statement yields byte-different valid proofs run-to-run), so the
@@ -60,6 +72,11 @@ def argNat (args : List String) (flag : String) (dflt : Nat) : Nat :=
   | _ :: v :: _ => v.toNat?.getD dflt
   | _ => dflt
 
+def argStr (args : List String) (flag : String) : Option String :=
+  match args.dropWhile (· != flag) with
+  | _ :: v :: _ => some v
+  | _ => none
+
 def recCommitParams (args : List String) : Aiur.CommitmentParameters :=
   { logBlowup := argNat args "--blowup" 2, capHeight := 0 }
 def innerFri (args : List String) : Aiur.FriParameters :=
@@ -67,10 +84,14 @@ def innerFri (args : List String) : Aiur.FriParameters :=
     numQueries := argNat args "--queries" 3,
     commitProofOfWorkBits := argNat args "--pow" 20, queryProofOfWorkBits := 0 }
 
-def main (args : List String) : IO Unit := do
+def secs (t0 t1 : Nat) : Float := (Float.ofNat (t1 - t0)) / 1e9
+
+open Ix.Benchmark.Results in
+def main (args : List String) : IO UInt32 := do
   let doProve := !args.contains "--execute-only"
   let recCommitParams := recCommitParams args
   let innerFri := innerFri args
+  let jsonOut := argStr args "--json"
   IO.println s!"params: logBlowup={recCommitParams.logBlowup} \
     numQueries={innerFri.numQueries} finalPoly={innerFri.logFinalPolyLen} \
     pow={innerFri.commitProofOfWorkBits}"
@@ -79,20 +100,38 @@ def main (args : List String) : IO Unit := do
   let (program, entry) :=
     if args.contains "--trivial" then (squareProgram, `square)
     else (factorialProgram, `factorial)
+  let rowName := (argStr args "--json-name").getD entry.toString
+  -- Same texray/sampler arrangement as bench-typecheck: the RSS sampler
+  -- always runs (peak-rss windows), the timeline only under --texray, and
+  -- with --json too the spans stream to `<json>.spans`.
+  TracingTexray.startSampler
+  if args.contains "--texray" then
+    TracingTexray.init {}
+    if let some path := jsonOut then TracingTexray.jsonSink s!"{path}.spans"
+  let writeRow' := fun (fields : List (String × Lean.Json)) =>
+    match jsonOut with
+    | some path => writeRow path rowName "ok" fields
+    | none => pure ()
   let facCompiled ← match program.compile with
-    | .ok c => pure c | .error e => IO.eprintln s!"inner compile failed: {e}"; return
+    | .ok c => pure c
+    | .error e => IO.eprintln s!"inner compile failed: {e}"; return 1
   let facSystem := AiurSystem.build facCompiled.bytecode recCommitParams innerFri
   let facIdx := facCompiled.getFuncIdx entry |>.get!
   IO.println s!"proving inner {entry}(5)…"
+  TracingTexray.resetPeakTreeRss
   let it0 ← IO.monoNanosNow
   let (claim, proof, _) := facSystem.prove facIdx #[Aiur.G.ofNat 5] default
   let proofBytes := proof.toBytes
   let it1 ← IO.monoNanosNow
   let innerOk := facSystem.verify claim proof matches .ok _
   let it2 ← IO.monoNanosNow
-  IO.println s!"inner PROVE: {(Float.ofNat (it1 - it0)) / 1e9} s, \
+  let innerPeak ← TracingTexray.peakTreeRssBytes
+  IO.println s!"inner PROVE: {secs it0 it1} s, \
     proof {proofBytes.size} bytes; inner VERIFY: \
-    {(Float.ofNat (it2 - it1)) / 1e9} s ({if innerOk then "ok" else "FAILED"})"
+    {secs it1 it2} s ({if innerOk then "ok" else "FAILED"})"
+  if !innerOk then
+    IO.eprintln "inner proof failed to verify"
+    return 1
   -- Proof (advice, channel 0), vk (channel 1), claims (channel 2), plus the
   -- Blake3-bound vk/claims digests and FRI params as public input.
   let claimBytes := MultiStark.serializeClaims #[claim]
@@ -100,32 +139,57 @@ def main (args : List String) : IO Unit := do
     claimBytes recCommitParams innerFri
   -- Compile the verifier toplevel and run it over the proof.
   let vTop ← match MultiStark.multiStark with
-    | .ok t => pure t | .error e => IO.eprintln s!"verifier merge failed: {e}"; return
+    | .ok t => pure t
+    | .error e => IO.eprintln s!"verifier merge failed: {e}"; return 1
   let vCompiled ← match vTop.compile with
-    | .ok c => pure c | .error e => IO.eprintln s!"verifier compile failed: {e}"; return
+    | .ok c => pure c
+    | .error e => IO.eprintln s!"verifier compile failed: {e}"; return 1
   let vIdx := vCompiled.getFuncIdx `verify_multi_stark_proof |>.get!
   IO.println "executing verify_multi_stark_proof…"
+  let e0 ← IO.monoNanosNow
   match vCompiled.bytecode.execute vIdx pubInput io with
-  | .error e => IO.eprintln s!"verifier execution failed: {e}"
-  | .ok (out, _, qc) =>
+  | .error e => IO.eprintln s!"verifier execution REJECTED: {e}"; return 1
+  | .ok (_, _, qc) =>
+    let e1 ← IO.monoNanosNow
     let stats := Aiur.computeStats vCompiled qc
-    IO.println s!"verifier output (1=accept): {out}"
+    IO.println s!"verifier accepted, execute {secs e0 e1} s"
     IO.println s!"\n=== recursive verifier in-circuit cost ==="
     IO.println s!"totalFftCost = {stats.totalFftCost}"
     IO.println "\n=== per-circuit breakdown (top FFT contributors) ==="
     Aiur.printStats stats
-    if doProve then
-      -- PROVE the verifier execution (multi-stark) with texray: per-stage timeline
-      -- + RAM Δ/peak (~7 GB).
-      IO.println "\n=== PROVING the verifier (multi-stark + texray) ==="
-      TracingTexray.init {}
-      let vSystem := AiurSystem.build vCompiled.bytecode recCommitParams innerFri
-      let t0 ← IO.monoNanosNow
-      let (vclaim, vproof, _) := vSystem.prove vIdx pubInput io
-      let nbytes := vproof.toBytes.size  -- force the (lazy, pure) prove to run
-      let t1 ← IO.monoNanosNow
-      let outerOk := vSystem.verify vclaim vproof matches .ok _
-      let t2 ← IO.monoNanosNow
-      IO.println s!"verifier PROVE time: {(Float.ofNat (t1 - t0)) / 1e9} s, proof {nbytes} bytes"
-      IO.println s!"verifier proof VERIFY time: \
-        {(Float.ofNat (t2 - t1)) / 1e9} s ({if outerOk then "ok" else "FAILED"})"
+    -- The execute-side row lands before the outer prove, so an OOM kill
+    -- there still leaves these metrics on disk (the orchestrator merges
+    -- `status: oom` in over them).
+    let baseFields : List (String × Lean.Json) :=
+      [ ("prove-time", jsonRound 6 (secs it0 it1))
+      , ("proof-size", Lean.toJson proofBytes.size)
+      , ("verify-time", jsonRound 6 (secs it1 it2))
+      , ("peak-rss", Lean.toJson innerPeak)
+      , ("recursive-time", jsonRound 6 (secs e0 e1))
+      , ("recursive-fft-cost", jsonRound 0 stats.totalFftCost) ]
+    writeRow' baseFields
+    if !doProve then
+      return 0
+    -- PROVE the verifier execution (multi-stark): the recursion step itself.
+    IO.println "\n=== PROVING the verifier (multi-stark) ==="
+    let vSystem := AiurSystem.build vCompiled.bytecode recCommitParams innerFri
+    TracingTexray.resetPeakTreeRss
+    let t0 ← IO.monoNanosNow
+    let (vclaim, vproof, _) := vSystem.prove vIdx pubInput io
+    let nbytes := vproof.toBytes.size  -- force the (lazy, pure) prove to run
+    let t1 ← IO.monoNanosNow
+    let outerPeak ← TracingTexray.peakTreeRssBytes
+    let outerOk := vSystem.verify vclaim vproof matches .ok _
+    let t2 ← IO.monoNanosNow
+    IO.println s!"verifier PROVE time: {secs t0 t1} s, proof {nbytes} bytes"
+    IO.println s!"verifier proof VERIFY time: \
+      {secs t1 t2} s ({if outerOk then "ok" else "FAILED"})"
+    if !outerOk then
+      IO.eprintln "outer proof failed to verify"
+      return 1
+    writeRow' <| baseFields ++
+      [ ("recursive-prove-time", jsonRound 6 (secs t0 t1))
+      , ("recursive-peak-rss", Lean.toJson outerPeak)
+      , ("recursive-proof-size", Lean.toJson nbytes)
+      , ("recursive-verify-time", jsonRound 6 (secs t1 t2)) ]
+    return 0
