@@ -55,7 +55,15 @@ feature (`IX_SP1=1 lake build`):
 ```bash
 ix prove Nat.add_comm            # → proof address in ~/.ix/store
 ix compress <proof-hex> --mode compressed --output nat.sp1
+
+# Later, upgrade the saved compressed proof to an onchain-sized one WITHOUT
+# redoing the hours-long STARK pipeline (shrink → wrap → gnark only; needs
+# Docker). Also available standalone as `sp1-compress-host wrap`.
+ix compress --from-sp1 nat.sp1 --mode plonk --output nat.plonk
 ```
+
+The upgrade is version-bound: a saved proof only wraps under the same SP1
+circuit version that produced it (the shrink stage rejects mismatches).
 
 ## Cargo features (host crate / ix-ffi / lake env)
 
