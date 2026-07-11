@@ -139,6 +139,18 @@ pub async fn run_sp1(
   let size = bincode::serialized_size(&proof)?;
   println!("SP1 proof verified; serialized size: {size} bytes");
   println!("vk digest: {}", hex::encode(blake3::hash(&vk_bytes).as_bytes()));
+  // For the onchain wraps, also surface the raw proof blob — the thing an
+  // EVM/`sp1-verifier` consumer actually takes (`bytes()` panics on
+  // core/compressed proofs, so gate it).
+  if matches!(mode, Mode::Groth16 | Mode::Plonk) {
+    let onchain = proof.bytes();
+    println!(
+      "onchain proof: {} bytes, 0x{}",
+      onchain.len(),
+      hex::encode(&onchain)
+    );
+    println!("sp1 vkey (bn254): {}", pk.verifying_key().bytes32());
+  }
 
   if let Some(path) = output {
     proof.save(path).context("saving SP1 proof failed")?;
