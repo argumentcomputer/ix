@@ -1,6 +1,34 @@
 //! Top-level environment compilation with work-stealing parallelism.
 //!
 //! Extracted from `compile.rs` to keep the scheduler independently readable.
+//!
+//! # Memory
+//!
+//! Peak RSS is kept a small multiple of the environment's serialized
+//! size (Mathlib: ~19 GB for a 3 GB `.ixe`) by holding compact
+//! representations everywhere the structured forms aren't actually
+//! read: the Lean environment decodes on demand behind a bounded cache
+//! (`decode_env_lazy` in the ffi crate) rather than as a whole-env
+//! owned copy, accumulator constants and named metadata live as their
+//! serialized bytes rather than ~20×-larger structured forms, worker
+//! kernel envs clear periodically, the setup passes share one
+//! whole-env decode, and the `.ixe` streams to disk from Rust rather
+//! than crossing the FFI as an env-sized ByteArray. All of it is
+//! always on, and every mode produces a bit-identical `.ixe`.
+//!
+//! Three knobs:
+//! - `IX_COMPILE_WORKERS=N` — scheduler worker count (default: all
+//!   cores). Scales the per-worker transients.
+//! - `IX_COMPILE_DEMOTE=0` — keep materialized caches next to the
+//!   accumulator's bytes instead of demoting to bytes-only. Spends
+//!   RAM to make post-compile structural reads free, which only pays
+//!   in flows that re-read the compiled env in-process (`ix check` /
+//!   `ix validate`); `ix compile` itself never reads them back.
+//! - `IX_COMPILE_EAGER=1` — decode the whole Lean environment up
+//!   front instead of on demand. Spends the single largest memory
+//!   term (FLT: +13 GiB for −8 % wall; Mathlib needs a large-memory
+//!   machine) to shave the last few percent on hardware with RAM to
+//!   spare.
 
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{
@@ -16,12 +44,11 @@ use rustc_hash::FxHashSet;
 
 use crate::compile::{
   BlockCache, CompileOptions, CompileState,
-  aux_gen::nested::validate_lean_ind_flags, compile_const,
-  compile_const_no_aux,
+  aux_gen::nested::validate_ind_groups, compile_const, compile_const_no_aux,
 };
 use crate::condense::compute_sccs;
-use crate::graph::{NameSet, build_ref_graph};
-use crate::ground::ground_consts;
+use crate::graph::{NameSet, setup_scan};
+use crate::ground::proliferate_ungrounded;
 use ix_common::address::Address;
 use ix_common::env::{Env as LeanEnv, Name};
 use ixon::CompileError;
@@ -47,6 +74,14 @@ static IX_PROGRESS_MS: LazyLock<u64> = LazyLock::new(|| {
     .and_then(|s| s.parse().ok())
     .unwrap_or(2000)
 });
+
+/// Clear each worker's kernel env every this many completed blocks
+/// (releasing allocations). The kenv is a pure cache of
+/// Lean-env-derived data (`ensure_in_kenv` re-ingresses on demand), so
+/// clearing at block boundaries is semantics-free; unbounded it grows
+/// to several GB on Mathlib-scale envs, and this cadence measures at
+/// zero wall-clock cost there.
+const KENV_CLEAR_EVERY: usize = 64;
 
 /// Recover a short string description from a panic payload.
 fn panic_message(panic: &(dyn std::any::Any + Send)) -> String {
@@ -113,28 +148,50 @@ pub fn compile_env_with_options(
   options: CompileOptions,
 ) -> Result<CompileState, CompileError> {
   let setup_start = Instant::now();
+  // Whole-env scan: ref graph + immediate groundedness + inductive
+  // groups in one decode per constant — the env decodes lazily, so
+  // each additional full sweep would decode every constant again.
   let phase_start = Instant::now();
-  let graph = build_ref_graph(lean_env.as_ref());
+  let scan = setup_scan(lean_env.as_ref());
+  let graph = scan.graph;
   if !*IX_QUIET {
     eprintln!(
-      "[compile_env] setup 1/7 build_ref_graph: {:.2}s",
+      "[compile_env] setup 1/7 setup_scan (graph+ground+groups): {:.2}s",
       phase_start.elapsed().as_secs_f32()
     );
   }
 
-  // Grounding pass: identify constants whose transitive Const-refs can't all
-  // be resolved. These are collected into `stt.ungrounded` and filtered from
-  // the SCC input so they don't clog the scheduler. Callers (e.g. the kernel
-  // check FFI) inspect `stt.ungrounded` per-constant to report them as
-  // compile-side rejections without aborting the whole batch.
+  // Grounding: constants whose transitive Const-refs can't all be
+  // resolved are collected into `stt.ungrounded` and filtered from the
+  // SCC input so they don't clog the scheduler. Callers (e.g. the
+  // kernel check FFI) inspect `stt.ungrounded` per-constant to report
+  // them as compile-side rejections without aborting the whole batch.
   let phase_start = Instant::now();
-  let ungrounded = ground_consts(lean_env.as_ref(), &graph.in_refs);
+  let ungrounded =
+    proliferate_ungrounded(scan.immediate_ungrounded, &graph.in_refs);
   if !*IX_QUIET {
     eprintln!(
-      "[compile_env] setup 2/7 ground_consts: {:.2}s",
+      "[compile_env] setup 2/7 proliferate_ungrounded: {:.2}s",
       phase_start.elapsed().as_secs_f32()
     );
   }
+  // Pin the highest-in-degree constants in the lazy env: the ref
+  // graph gives exact reference counts, and the distribution is
+  // heavily skewed, so a small never-evicted set absorbs repeat
+  // decodes of foundational constants that otherwise churn through
+  // the bounded cache. At this size the overlay costs ≤0.3 GiB on
+  // every measured env and wall time is Lean −15 %, FLT −4 %,
+  // InitStd/Mathlib neutral (24-core box); larger sets bought RAM,
+  // not speed, on the same sweep.
+  const PIN_HOT_CONSTANTS: usize = 16384;
+  if !graph.in_refs.is_empty() {
+    let mut by_deg: Vec<(&Name, usize)> =
+      graph.in_refs.iter().map(|(n, refs)| (n, refs.len())).collect();
+    let k = PIN_HOT_CONSTANTS.min(by_deg.len());
+    by_deg.select_nth_unstable_by(k - 1, |a, b| b.1.cmp(&a.1));
+    lean_env.pin(by_deg[..k].iter().map(|(n, _)| (*n).clone()));
+  }
+
   let ungrounded_map: DashMap<Name, String> =
     ungrounded.iter().map(|(n, e)| (n.clone(), format!("{e:?}"))).collect();
   if !ungrounded.is_empty() && !*IX_QUIET {
@@ -179,9 +236,11 @@ pub fn compile_env_with_options(
     );
   }
 
-  // Domain restriction: reject environments with non-canonical inductive flags
+  // Domain restriction: reject environments with non-canonical inductive
+  // flags. Groups come from the fused scan; only inductive families are
+  // re-read here.
   let phase_start = Instant::now();
-  validate_lean_ind_flags(lean_env.as_ref())?;
+  validate_ind_groups(&scan.ind_groups, lean_env.as_ref())?;
   if !*IX_QUIET {
     eprintln!(
       "[compile_env] setup 4/7 validate_ind_flags: {:.2}s",
@@ -467,6 +526,7 @@ pub fn compile_env_with_options(
     for _ in 0..num_threads {
       s.spawn(move || {
         let mut worker_kctx = crate::compile::KernelCtx::new();
+        let mut worker_blocks_done = 0usize;
         loop {
           // Try to get work from the ready queue
           let work = {
@@ -824,6 +884,12 @@ pub fn compile_env_with_options(
                 condvar_ref.notify_all();
               } else {
                 condvar_ref.notify_one();
+              }
+
+              // Bounded per-worker kenv growth (see KENV_CLEAR_EVERY).
+              worker_blocks_done += 1;
+              if worker_blocks_done.is_multiple_of(KENV_CLEAR_EVERY) {
+                worker_kctx.kenv.clear_releasing_memory();
               }
             },
             None => {

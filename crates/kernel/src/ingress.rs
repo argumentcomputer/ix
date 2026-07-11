@@ -1895,8 +1895,9 @@ fn ingress_muts_inductive<M: KernelMode>(
       )
     })?;
 
+    let ctor_named_meta = ctor_named.meta();
     let (ctor_lvl_params, ctor_arena, ctor_type_root) =
-      match &ctor_named.meta.info {
+      match &ctor_named_meta.info {
         ConstantMetaInfo::Ctor { lvls, arena, type_root, .. } => {
           (resolve_level_params(lvls, names), arena, *type_root)
         },
@@ -1998,7 +1999,7 @@ fn ingress_muts_block<M: KernelMode>(
       format!("Muts member '{member_name}' not found in named entries")
     })?;
     let member_addr = &member_named.addr;
-    let member_meta = &member_named.meta;
+    let member_meta = &member_named.meta();
 
     let self_id: KId<M> =
       KId::new(member_addr.clone(), M::meta_field(member_name.clone()));
@@ -2586,8 +2587,9 @@ pub fn ingress_compiled_names(
     let mut stats = ConvertStats::default();
 
     // Check if this is a Muts entry (mutual block) — handle differently
-    if matches!(&named.meta.info, ConstantMetaInfo::Muts { .. }) {
-      if let ConstantMetaInfo::Muts { all, .. } = &named.meta.info
+    let named_meta = named.meta();
+    if matches!(&named_meta.info, ConstantMetaInfo::Muts { .. }) {
+      if let ConstantMetaInfo::Muts { all, .. } = &named_meta.info
         && let Ok(entries) = ingress_muts_block(
           name,
           &named.addr,
@@ -2630,7 +2632,7 @@ pub fn ingress_compiled_names(
       name,
       &named.addr,
       &constant,
-      &named.meta,
+      &named_meta,
       ixon_env,
       name_map,
       addr_map,
@@ -2714,7 +2716,7 @@ pub fn build_leon_addr_map(lean_env: &LeanEnv) -> DashMap<Name, Address> {
   // phase from `src/ix/compile/aux_gen.rs:823`. Splitting the two into
   // different types would propagate a signature change through ~5
   // functions with no matching perf win.
-  let entries: Vec<(&Name, &LeanCI)> = lean_env.iter().collect();
+  let entries: Vec<_> = lean_env.iter().collect();
   let map = DashMap::with_capacity(lean_env.len());
   entries.par_iter().for_each(|(name, ci)| {
     map.insert((*name).clone(), Address::from_blake3_hash(ci.get_hash()));
@@ -2975,7 +2977,7 @@ pub fn lean_ingress(lean_env: &LeanEnv) -> KEnv<Meta> {
   let t = Instant::now();
   for (name, ci) in lean_env.iter() {
     let kid = KId::new(leon_addr_of(name, &n2a), name.clone());
-    let kc = lean_const_to_kconst(name, ci, &mut kenv, &n2a);
+    let kc = lean_const_to_kconst(name, &ci, &mut kenv, &n2a);
     kenv.insert(kid, kc);
   }
   if !quiet {
@@ -3049,12 +3051,12 @@ pub fn lean_ingress(lean_env: &LeanEnv) -> KEnv<Meta> {
   let t = Instant::now();
   let mut seeded: FxHashSet<KId<Meta>> = FxHashSet::default();
   for (name, ci) in lean_env.iter() {
-    let block_id = block_rep(name, ci);
+    let block_id = block_rep(name, &ci);
     if !seeded.insert(block_id.clone()) {
       continue;
     }
     let all =
-      lean_constant_all(ci).cloned().unwrap_or_else(|| vec![name.clone()]);
+      lean_constant_all(&ci).cloned().unwrap_or_else(|| vec![name.clone()]);
     let members: Vec<KId<Meta>> =
       all.iter().map(|n| KId::new(leon_addr_of(n, &n2a), n.clone())).collect();
     kenv.blocks.insert(block_id, members);
@@ -3073,9 +3075,9 @@ pub fn lean_ingress(lean_env: &LeanEnv) -> KEnv<Meta> {
   // (`find_peer_recursors` for recs).
   let t = Instant::now();
   for (name, ci) in lean_env.iter() {
-    match ci {
+    match &*ci {
       LeanCI::InductInfo(v) => {
-        let block_id = block_rep(name, ci);
+        let block_id = block_rep(name, &ci);
         for ctor_name in &v.ctors {
           let ctor_kid: KId<Meta> =
             KId::new(leon_addr_of(ctor_name, &n2a), ctor_name.clone());
@@ -3083,7 +3085,7 @@ pub fn lean_ingress(lean_env: &LeanEnv) -> KEnv<Meta> {
         }
       },
       LeanCI::RecInfo(_) => {
-        let block_id = block_rep(name, ci);
+        let block_id = block_rep(name, &ci);
         let self_kid = KId::new(leon_addr_of(name, &n2a), name.clone());
         kenv.blocks.entry(block_id).or_default().push(self_kid);
       },
@@ -3160,7 +3162,7 @@ pub fn build_ixon_ingress_lookups(ixon_env: &IxonEnv) -> IxonIngressLookups {
       .addr_to_name
       .entry(named.addr.clone())
       .or_insert_with(|| name.clone());
-    if let ConstantMetaInfo::Muts { all, .. } = &named.meta.info {
+    if let ConstantMetaInfo::Muts { all, .. } = &named.meta().info {
       lookups
         .muts_by_addr
         .entry(named.addr.clone())
@@ -3364,7 +3366,7 @@ fn ingress_addr_set_into_kenv<M: KernelMode>(
             const_name,
             &addr,
             &constant,
-            &named.meta,
+            &named.meta(),
             ixon_env,
             &lookups.names,
             &lookups.name_to_addr,
@@ -3684,7 +3686,9 @@ fn drop_ixon_env(ixon_env: IxonEnv, quiet: bool) {
   // `anon_hints` is a small FxHashMap (one entry per Def from the .ixe's
   // Named metadata); dropping it inline alongside the bookkeeping below
   // is negligible compared to the DashMap dropdance.
-  let IxonEnv { consts, named, blobs, names, comms, anon_hints: _ } = ixon_env;
+  // `..` covers the env's private fields.
+  let IxonEnv { consts, named, blobs, names, comms, anon_hints: _, .. } =
+    ixon_env;
   let consts_len = consts.len();
   let named_len = named.len();
   let names_len = names.len();
@@ -3797,7 +3801,7 @@ fn ixon_ingress_inner<M: KernelMode>(
   for entry in ixon_env.named.iter() {
     let const_name = entry.key().clone();
     let named = entry.value();
-    match &named.meta.info {
+    match &named.meta().info {
       ConstantMetaInfo::Muts { .. } => {
         work_items.push(IngressWorkItem::Muts(const_name));
       },
@@ -3895,7 +3899,7 @@ fn ixon_ingress_inner<M: KernelMode>(
           &const_name,
           &named.addr,
           &constant,
-          &named.meta,
+          &named.meta(),
           ixon_env,
           &names,
           &name_to_addr,
@@ -3931,7 +3935,8 @@ fn ixon_ingress_inner<M: KernelMode>(
           timing.lookup_ns += elapsed_ns(lookup_start);
         }
 
-        let all = match &named.meta.info {
+        let named_meta = named.meta();
+        let all = match &named_meta.info {
           ConstantMetaInfo::Muts { all, .. } => all,
           _ => {
             timing.convert_stats = convert_stats;

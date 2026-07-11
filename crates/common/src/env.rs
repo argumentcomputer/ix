@@ -1462,8 +1462,276 @@ impl ConstantInfo {
   }
 }
 
-/// The Lean kernel environment: a map from names to their constant declarations.
-pub type Env = FxHashMap<Name, ConstantInfo>;
+/// Guard returned by [`Env::get`]: derefs to [`ConstantInfo`].
+///
+/// Eager environments hand out plain borrows (zero cost); lazy
+/// environments hand out `Arc`s so the entry stays alive even if the
+/// backing cache evicts it concurrently.
+pub enum EnvEntry<'a> {
+  Borrowed(&'a ConstantInfo),
+  Owned(Arc<ConstantInfo>),
+}
+
+impl std::ops::Deref for EnvEntry<'_> {
+  type Target = ConstantInfo;
+  fn deref(&self) -> &ConstantInfo {
+    match self {
+      EnvEntry::Borrowed(c) => c,
+      EnvEntry::Owned(c) => c,
+    }
+  }
+}
+
+impl EnvEntry<'_> {
+  /// Owned copy of the constant. Cheap only when a caller genuinely
+  /// needs ownership — prefer deref for reads.
+  pub fn cloned(&self) -> ConstantInfo {
+    (**self).clone()
+  }
+}
+
+/// Host-only lazy backing for [`Env`]: a name index plus an injected
+/// fetch that decodes one constant on demand (in practice from Lean
+/// objects held as `LeanShared` handles — see `decode_env_lazy` in the
+/// ffi crate), fronted by a lock-partitioned bounded cache. Avoids materializing
+/// the full owned copy of the environment up front, which costs a large
+/// multiple of the working set the compile pipeline actually touches at
+/// any one time.
+#[cfg(not(target_arch = "riscv64"))]
+pub struct LazyEnv {
+  /// All names, in the source env's iteration order.
+  names: Vec<Name>,
+  /// Membership index into `names`.
+  index: FxHashMap<Name, usize>,
+  /// Decode one constant. Must be pure and thread-safe.
+  fetch: Box<dyn Fn(&Name) -> Option<ConstantInfo> + Send + Sync>,
+  /// Independently locked cache segments so concurrent
+  /// `get`s rarely contend; per-segment capacity bounds resident
+  /// decoded constants. Eviction is `swap_remove_index(0)` — cheap
+  /// oldest-biased pseudo-FIFO, adequate for the scheduler's
+  /// topological locality.
+  segments: Vec<std::sync::Mutex<indexmap::IndexMap<Name, Arc<ConstantInfo>>>>,
+  cap_per_segment: usize,
+  /// Never-evicted overlay for hot names, installed once via
+  /// [`Env::pin`] before concurrent readers start. Each slot decodes
+  /// on first access and stays resident; reads after that are
+  /// lock-free. Names outside the overlay fall through to the
+  /// segments.
+  pinned: std::sync::OnceLock<
+    FxHashMap<Name, std::sync::OnceLock<Option<Arc<ConstantInfo>>>>,
+  >,
+}
+
+#[cfg(not(target_arch = "riscv64"))]
+impl LazyEnv {
+  /// Segment count: 4× the hardware threads (the scheduler runs at
+  /// most one worker per thread), rounded up to a power of two so the
+  /// hash mask in `segment_for` stays uniform. The 4× headroom keeps
+  /// expected pairwise collisions low when every worker is in `get`
+  /// at once; a mutexed segment costs ~40 bytes, so overprovisioning
+  /// is free.
+  fn segment_count() -> usize {
+    let threads = std::thread::available_parallelism().map_or(1, usize::from);
+    // Capped at the two-byte selector's range (`segment_for`).
+    (threads * 4).next_power_of_two().min(1 << 16)
+  }
+
+  /// Two low hash bytes masked down to the segment count: uniform by
+  /// hash uniformity because the count is a power of two.
+  fn segment_for(&self, name: &Name) -> usize {
+    let bytes = name.get_hash().as_bytes();
+    let window = usize::from(u16::from_le_bytes([bytes[0], bytes[1]]));
+    window & (self.segments.len() - 1)
+  }
+
+  fn get(&self, name: &Name) -> Option<Arc<ConstantInfo>> {
+    if !self.index.contains_key(name) {
+      return None;
+    }
+    if let Some(pinned) = self.pinned.get()
+      && let Some(slot) = pinned.get(name)
+    {
+      return slot.get_or_init(|| (self.fetch)(name).map(Arc::new)).clone();
+    }
+    let segment_idx = self.segment_for(name);
+    if let Some(hit) = self.segments[segment_idx].lock().unwrap().get(name) {
+      return Some(hit.clone());
+    }
+    // Decode outside the segment lock: fetches can be slow and other
+    // names hashing to this segment shouldn't wait on them.
+    let decoded = Arc::new((self.fetch)(name)?);
+    let mut segment = self.segments[segment_idx].lock().unwrap();
+    if segment.len() >= self.cap_per_segment {
+      segment.swap_remove_index(0);
+    }
+    segment.insert(name.clone(), decoded.clone());
+    Some(decoded)
+  }
+}
+
+/// The Lean kernel environment: a map from names to their constant
+/// declarations. Eager (an owned map — the default, and the only
+/// variant on the guest) or, on the host, a lazy on-demand view (see
+/// [`LazyEnv`]).
+///
+/// Keeps the plain-map API shape, with [`Env::get`] returning the
+/// [`EnvEntry`] guard instead of a plain borrow, so both variants
+/// serve reads through one signature.
+#[derive(Default)]
+pub struct Env {
+  eager: FxHashMap<Name, ConstantInfo>,
+  #[cfg(not(target_arch = "riscv64"))]
+  lazy: Option<LazyEnv>,
+}
+
+impl std::fmt::Debug for Env {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_struct("Env").field("len", &self.len()).finish()
+  }
+}
+
+impl Clone for Env {
+  /// Clones the eager map. Lazy environments are read-only views and
+  /// are never cloned (the compile pipeline shares them via `Arc`).
+  fn clone(&self) -> Self {
+    #[cfg(not(target_arch = "riscv64"))]
+    assert!(
+      self.lazy.is_none(),
+      "Env::clone on a lazy environment (share via Arc instead)"
+    );
+    Env {
+      eager: self.eager.clone(),
+      #[cfg(not(target_arch = "riscv64"))]
+      lazy: None,
+    }
+  }
+}
+
+impl Env {
+  /// Build a lazy env from a name list and a fetch function.
+  /// `cache_entries` bounds resident decoded constants (total across
+  /// segments; minimum one per segment).
+  #[cfg(not(target_arch = "riscv64"))]
+  pub fn new_lazy(
+    names: Vec<Name>,
+    fetch: Box<dyn Fn(&Name) -> Option<ConstantInfo> + Send + Sync>,
+    cache_entries: usize,
+  ) -> Self {
+    let index: FxHashMap<Name, usize> =
+      names.iter().enumerate().map(|(i, n)| (n.clone(), i)).collect();
+    let segment_count = LazyEnv::segment_count();
+    let cap_per_segment = (cache_entries / segment_count).max(1);
+    let segments = (0..segment_count)
+      .map(|_| {
+        std::sync::Mutex::new(indexmap::IndexMap::with_capacity(
+          cap_per_segment.min(4096),
+        ))
+      })
+      .collect();
+    Env {
+      eager: FxHashMap::default(),
+      lazy: Some(LazyEnv {
+        names,
+        index,
+        fetch,
+        segments,
+        cap_per_segment,
+        pinned: std::sync::OnceLock::new(),
+      }),
+    }
+  }
+
+  /// Pin `names` in the lazy cache: they decode on first access and
+  /// are never evicted. Install once, before concurrent readers start
+  /// (later calls are ignored); no-op on eager envs.
+  #[cfg(not(target_arch = "riscv64"))]
+  pub fn pin(&self, names: impl IntoIterator<Item = Name>) {
+    if let Some(lazy) = &self.lazy {
+      let overlay: FxHashMap<_, _> =
+        names.into_iter().map(|n| (n, std::sync::OnceLock::new())).collect();
+      let _ = lazy.pinned.set(overlay);
+    }
+  }
+
+  pub fn get(&self, name: &Name) -> Option<EnvEntry<'_>> {
+    #[cfg(not(target_arch = "riscv64"))]
+    if let Some(lazy) = &self.lazy {
+      return lazy.get(name).map(EnvEntry::Owned);
+    }
+    self.eager.get(name).map(EnvEntry::Borrowed)
+  }
+
+  pub fn contains_key(&self, name: &Name) -> bool {
+    #[cfg(not(target_arch = "riscv64"))]
+    if let Some(lazy) = &self.lazy {
+      return lazy.index.contains_key(name);
+    }
+    self.eager.contains_key(name)
+  }
+
+  pub fn len(&self) -> usize {
+    #[cfg(not(target_arch = "riscv64"))]
+    if let Some(lazy) = &self.lazy {
+      return lazy.names.len();
+    }
+    self.eager.len()
+  }
+
+  pub fn is_empty(&self) -> bool {
+    self.len() == 0
+  }
+
+  /// Insert a constant. Eager only — lazy environments are read-only
+  /// views.
+  pub fn insert(
+    &mut self,
+    name: Name,
+    info: ConstantInfo,
+  ) -> Option<ConstantInfo> {
+    #[cfg(not(target_arch = "riscv64"))]
+    assert!(self.lazy.is_none(), "Env::insert on a lazy environment");
+    self.eager.insert(name, info)
+  }
+
+  pub fn get_mut(&mut self, name: &Name) -> Option<&mut ConstantInfo> {
+    #[cfg(not(target_arch = "riscv64"))]
+    assert!(self.lazy.is_none(), "Env::get_mut on a lazy environment");
+    self.eager.get_mut(name)
+  }
+
+  /// All names, in map order (eager) or source order (lazy). No
+  /// decode.
+  pub fn keys(&self) -> Box<dyn Iterator<Item = &Name> + '_> {
+    #[cfg(not(target_arch = "riscv64"))]
+    if let Some(lazy) = &self.lazy {
+      return Box::new(lazy.names.iter());
+    }
+    Box::new(self.eager.keys())
+  }
+
+  /// Iterate `(name, constant)`. Lazy mode decodes each entry fresh,
+  /// bypassing the cache — whole-env passes are single-visit, and
+  /// caching them would just churn the segments.
+  pub fn iter(&self) -> Box<dyn Iterator<Item = (&Name, EnvEntry<'_>)> + '_> {
+    #[cfg(not(target_arch = "riscv64"))]
+    if let Some(lazy) = &self.lazy {
+      return Box::new(lazy.names.iter().filter_map(move |n| {
+        (lazy.fetch)(n).map(|ci| (n, EnvEntry::Owned(Arc::new(ci))))
+      }));
+    }
+    Box::new(self.eager.iter().map(|(n, c)| (n, EnvEntry::Borrowed(c))))
+  }
+}
+
+impl FromIterator<(Name, ConstantInfo)> for Env {
+  fn from_iter<T: IntoIterator<Item = (Name, ConstantInfo)>>(it: T) -> Self {
+    Env {
+      eager: it.into_iter().collect(),
+      #[cfg(not(target_arch = "riscv64"))]
+      lazy: None,
+    }
+  }
+}
 
 #[cfg(any(test, feature = "quickcheck"))]
 pub mod arbitrary {

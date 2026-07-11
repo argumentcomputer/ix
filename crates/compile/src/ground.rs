@@ -5,7 +5,7 @@
 //! propagates through the reference graph: if A references ungrounded B, then A
 //! is also ungrounded.
 
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::collections::hash_map::Entry;
 
@@ -47,21 +47,38 @@ pub fn ground_consts(
   in_refs: &RefMap,
 ) -> FxHashMap<Name, GroundError> {
   // Collect immediate ungrounded constants.
-  let mut ungrounded: FxHashMap<_, _> = env
-    .par_iter()
-    .filter_map(|entry| {
-      let (name, constant) = entry;
-      let univs = const_univs(constant);
-      let mut stt = GroundState::default();
-      if let Err(err) = ground_const(constant, env, univs, 0, &mut stt) {
-        Some((name.clone(), err))
-      } else {
-        None
+  let names: Vec<&Name> = env.keys().collect();
+  let ungrounded: FxHashMap<_, _> = names
+    .into_par_iter()
+    .filter_map(|name| {
+      let constant = env.get(name)?;
+      match ground_const_check(&constant, env) {
+        Err(err) => Some((name.clone(), err)),
+        Ok(()) => None,
       }
     })
     .collect();
+  proliferate_ungrounded(ungrounded, in_refs)
+}
 
-  // Proliferate ungroundedness through in-refs.
+/// Per-constant groundedness check, for callers that already hold a
+/// decoded constant and check as part of a wider pass.
+pub fn ground_const_check(
+  constant: &ConstantInfo,
+  env: &Env,
+) -> Result<(), GroundError> {
+  let univs = const_univs(constant);
+  let mut stt = GroundState::default();
+  ground_const(constant, env, univs, 0, &mut stt)
+}
+
+/// Spread ungroundedness from the immediately-ungrounded set through
+/// the reverse-reference graph: anything referencing an ungrounded
+/// constant is itself ungrounded.
+pub fn proliferate_ungrounded(
+  mut ungrounded: FxHashMap<Name, GroundError>,
+  in_refs: &RefMap,
+) -> FxHashMap<Name, GroundError> {
   let mut stack: Vec<_> = ungrounded.keys().cloned().collect();
   while let Some(popped) = stack.pop() {
     let Some(in_ref_set) = in_refs.get(&popped) else {
@@ -74,7 +91,6 @@ pub fn ground_consts(
       }
     }
   }
-
   ungrounded
 }
 
@@ -125,7 +141,7 @@ fn ground_const(
     },
     ConstantInfo::InductInfo(val) => {
       for ctor in &val.ctors {
-        let ci = env.get(ctor).cloned();
+        let ci = env.get(ctor).map(|e| e.cloned());
         match ci.as_ref() {
           Some(ConstantInfo::CtorInfo(_)) => (),
           _ => {

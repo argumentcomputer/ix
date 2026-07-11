@@ -754,7 +754,7 @@ pub extern "C" fn rs_prim_addrs_canonical() -> LeanIOResult<LeanOwned> {
 fn all_checkable_ixon_names(ixon_env: &IxonEnv) -> Vec<Name> {
   let mut names = Vec::with_capacity(ixon_env.named_count());
   for entry in ixon_env.named.iter() {
-    if matches!(entry.value().meta.info, ConstantMetaInfo::Muts { .. }) {
+    if matches!(entry.value().meta().info, ConstantMetaInfo::Muts { .. }) {
       continue;
     }
     names.push(entry.key().clone());
@@ -984,7 +984,7 @@ fn check_schedule_block_addr(
     return None;
   }
   let named = ixon_env.lookup_name(name)?;
-  if matches!(named.meta.info, ConstantMetaInfo::Muts { .. }) {
+  if matches!(named.meta().info, ConstantMetaInfo::Muts { .. }) {
     return None;
   }
   let constant = ixon_env.get_const(&named.addr)?;
@@ -3673,7 +3673,7 @@ fn compare_envs(
             find_diff(orig_ci.get_type(), egressed_ci.get_type(), "type");
           errors.push(format!("{name}: {diff}"));
         }
-        match (orig_ci, egressed_ci) {
+        match (&*orig_ci, &*egressed_ci) {
           (LCI::DefnInfo(a), LCI::DefnInfo(b))
             if a.value.get_hash() != b.value.get_hash() =>
           {

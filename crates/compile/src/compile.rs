@@ -312,7 +312,7 @@ impl CompileState {
       self.name_to_addr.insert(name.clone(), aux_addr.clone());
     }
     if let Some(mut entry) = self.env.named.get_mut(name) {
-      entry.value_mut().original = Some((orig_addr, orig_meta));
+      entry.value_mut().set_original(orig_addr, orig_meta);
     }
     Ok(())
   }
@@ -798,11 +798,7 @@ pub fn compile_expr(
                 cache.compiling.as_ref().is_some_and(|c| {
                   crate::decompile::is_aux_gen_suffix(c)
                     && (stt.aux_name_to_addr.contains_key(c)
-                      || stt
-                        .env
-                        .named
-                        .get(c)
-                        .is_some_and(|n| n.original.is_some()))
+                      || stt.env.named.get(c).is_some_and(|n| n.has_original()))
                 });
               if !compiling_is_aux_regen {
                 if let Some(plan) = stt.call_site_plans.get(name)
@@ -2574,7 +2570,9 @@ pub fn mk_indc(
 ) -> Result<Ind, CompileError> {
   let mut ctors = Vec::with_capacity(ind.ctors.len());
   for ctor_name in &ind.ctors {
-    if let Some(LeanConstantInfo::CtorInfo(c)) = env.as_ref().get(ctor_name) {
+    if let Some(LeanConstantInfo::CtorInfo(c)) =
+      env.as_ref().get(ctor_name).as_deref()
+    {
       ctors.push(c.clone());
     } else {
       return Err(CompileError::MissingConstant {
@@ -3254,7 +3252,7 @@ pub fn compile_const_no_aux(
   let mut lean_all: Vec<Name> = Vec::new();
   for n in all {
     if let Some(ci) = lean_env.get(n) {
-      let block_all = match ci {
+      let block_all = match &*ci {
         LeanConstantInfo::InductInfo(v) => &v.all,
         LeanConstantInfo::RecInfo(v) => &v.all,
         LeanConstantInfo::DefnInfo(v) => &v.all,
@@ -3281,7 +3279,7 @@ pub fn compile_const_no_aux(
     if !stt.aux_gen_extra_names.contains(n) {
       return None;
     }
-    match lean_env.get(n) {
+    match lean_env.get(n).as_deref() {
       Some(LeanConstantInfo::RecInfo(_)) => {
         // Distinguish .rec from .below.rec
         if matches!(n.as_data(), NameData::Str(p, _, _) if p.last_str() == Some("below"))
@@ -3319,7 +3317,10 @@ pub fn compile_const_no_aux(
       // SCC including rec_N names.
       for n in all {
         if stt.aux_gen_extra_names.contains(n)
-          && matches!(lean_env.get(n), Some(LeanConstantInfo::RecInfo(_)))
+          && matches!(
+            lean_env.get(n).as_deref(),
+            Some(LeanConstantInfo::RecInfo(_))
+          )
         {
           filtered.insert(n.clone());
         }
@@ -3328,10 +3329,13 @@ pub fn compile_const_no_aux(
     Phase::BelowIndc => {
       // Use .below's own .all, keep only inductives + their ctors.
       for n in all {
-        if let Some(LeanConstantInfo::InductInfo(v)) = lean_env.get(n) {
+        if let Some(LeanConstantInfo::InductInfo(v)) =
+          lean_env.get(n).as_deref()
+        {
           for a in &v.all {
             if stt.aux_gen_extra_names.contains(a)
-              && let Some(LeanConstantInfo::InductInfo(bi)) = lean_env.get(a)
+              && let Some(LeanConstantInfo::InductInfo(bi)) =
+                lean_env.get(a).as_deref()
             {
               filtered.insert(a.clone());
               for ctor in &bi.ctors {
@@ -3348,7 +3352,10 @@ pub fn compile_const_no_aux(
       // (from DefnInfo.all = [EqC.below]), so use directly.
       for a in &lean_all {
         if stt.aux_gen_extra_names.contains(a)
-          && matches!(lean_env.get(a), Some(LeanConstantInfo::DefnInfo(_)))
+          && matches!(
+            lean_env.get(a).as_deref(),
+            Some(LeanConstantInfo::DefnInfo(_))
+          )
         {
           filtered.insert(a.clone());
         }
@@ -3361,7 +3368,7 @@ pub fn compile_const_no_aux(
         let below_rec = Name::str(ind_name.clone(), "rec".to_string());
         if stt.aux_gen_extra_names.contains(&below_rec)
           && matches!(
-            lean_env.get(&below_rec),
+            lean_env.get(&below_rec).as_deref(),
             Some(LeanConstantInfo::RecInfo(_))
           )
         {
@@ -3649,7 +3656,9 @@ fn compile_const_inner(
 
     LeanConstantInfo::CtorInfo(val) => {
       // Constructors are compiled as part of their inductive
-      if let Some(LeanConstantInfo::InductInfo(_)) = lean_env.get(&val.induct) {
+      if let Some(LeanConstantInfo::InductInfo(_)) =
+        lean_env.get(&val.induct).as_deref()
+      {
         let _ =
           compile_mutual(&val.induct, all, lean_env, cache, stt, kctx, aux)?;
         stt
@@ -3691,10 +3700,9 @@ fn compile_mutual(
   // Collect all constants in the mutual block
   let mut cs = Vec::new();
   for n in all {
-    // `lean_env` is an `FxHashMap` (see `Env` alias in env.rs); `.get()`
-    // returns a plain reference, so there's no read guard to release —
-    // just clone the value and move on.
-    let Some(const_info) = lean_env.get(n).cloned() else {
+    // Clone out of the `EnvEntry` guard so the block owns its constants
+    // and no env borrow is held across the compile below.
+    let Some(const_info) = lean_env.get(n).map(|e| e.cloned()) else {
       return Err(CompileError::MissingConstant {
         name: n.pretty(),
         caller: "compile_mutual".into(),

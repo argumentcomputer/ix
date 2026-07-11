@@ -79,7 +79,7 @@ pub fn generate_brecon_constants(
     let (_, rec_val) = &canonical_recs[ci];
     let class_rep = &sorted_classes[ci][0];
     let ind_ref = lean_env.get(class_rep);
-    let ind = match ind_ref {
+    let ind = match ind_ref.as_deref() {
       Some(ConstantInfo::InductInfo(v)) => v,
       _ => {
         return Err(CompileError::MissingConstant {
@@ -147,7 +147,7 @@ pub fn generate_brecon_constants(
     if n_aux > 0 {
       // all[0] from the first class's inductive — Lean hangs _N names here.
       let first_class_name = &sorted_classes[0][0];
-      let all0 = match lean_env.get(first_class_name) {
+      let all0 = match lean_env.get(first_class_name).as_deref() {
         Some(ConstantInfo::InductInfo(v)) => v.all[0].clone(),
         _ => first_class_name.clone(),
       };
@@ -991,7 +991,7 @@ fn build_type_brecon_fvar(
   // NestedParam.RoseA α: List.casesOn needs (α := RoseA α).
   let cases_on_spec: Vec<LeanExpr> = if ci >= n_classes {
     let (_, major_args) = decompose_apps(&major_decls[0].domain);
-    let ext_n_params = match lean_env.get(&target_ind_name) {
+    let ext_n_params = match lean_env.get(&target_ind_name).as_deref() {
       Some(ConstantInfo::InductInfo(v)) => try_nat_to_usize(&v.num_params)?,
       _ => 0,
     };
@@ -1500,7 +1500,7 @@ fn build_type_brecon_eq_fvar(
       let (head, _) = decompose_apps(&last_dom);
       match head.as_data() {
         ExprData::Const(name, _, _) | ExprData::Fvar(name, _) => {
-          match lean_env.get(name) {
+          match lean_env.get(name).as_deref() {
             Some(ConstantInfo::InductInfo(v)) => v.ctors.len(),
             _ => 0,
           }
@@ -1509,7 +1509,7 @@ fn build_type_brecon_eq_fvar(
       }
     })
     .collect();
-  let target_ctors: Vec<Name> = match lean_env.get(target_ind_name) {
+  let target_ctors: Vec<Name> = match lean_env.get(target_ind_name).as_deref() {
     Some(ConstantInfo::InductInfo(v)) => v.ctors.clone(),
     _ => vec![],
   };

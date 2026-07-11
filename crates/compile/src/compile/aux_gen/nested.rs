@@ -247,7 +247,7 @@ impl<'a> ExpandCtx<'a> {
 
     // Verify head is an external inductive.
     let ext_ind_ref = self.lean_env.get(&head_name);
-    let ext_ind = match ext_ind_ref {
+    let ext_ind = match ext_ind_ref.as_deref() {
       Some(ConstantInfo::InductInfo(v)) => v,
       _ => return None,
     };
@@ -313,7 +313,7 @@ impl<'a> ExpandCtx<'a> {
 
     for j_name in &ext_all {
       let j_info_ref = self.lean_env.get(j_name);
-      let j_info = match j_info_ref {
+      let j_info = match j_info_ref.as_deref() {
         Some(ConstantInfo::InductInfo(v)) => v,
         _ => continue,
       };
@@ -356,7 +356,7 @@ impl<'a> ExpandCtx<'a> {
       let mut aux_ctors: Vec<ExpandedCtor> = Vec::new();
       for j_ctor_name in &j_info.ctors {
         let j_ctor_ref = self.lean_env.get(j_ctor_name);
-        let j_ctor = match j_ctor_ref {
+        let j_ctor = match j_ctor_ref.as_deref() {
           Some(ConstantInfo::CtorInfo(c)) => c,
           _ => continue,
         };
@@ -436,7 +436,7 @@ pub fn expand_nested_block(
     }
   })?;
   let first_ind_ref = lean_env.get(first_name);
-  let first_ind = match first_ind_ref {
+  let first_ind = match first_ind_ref.as_deref() {
     Some(ConstantInfo::InductInfo(v)) => v,
     _ => {
       return Err(CompileError::MissingConstant {
@@ -481,7 +481,7 @@ pub fn expand_nested_block(
   // Seed with original inductives.
   for name in ordered_originals {
     let ind_ref = lean_env.get(name);
-    let ind = match ind_ref {
+    let ind = match ind_ref.as_deref() {
       Some(ConstantInfo::InductInfo(v)) => v,
       _ => {
         return Err(CompileError::MissingConstant {
@@ -493,7 +493,7 @@ pub fn expand_nested_block(
     let ctors: Vec<ExpandedCtor> = ind
       .ctors
       .iter()
-      .filter_map(|cn| match lean_env.get(cn) {
+      .filter_map(|cn| match lean_env.get(cn).as_deref() {
         Some(ConstantInfo::CtorInfo(c)) => Some(ExpandedCtor {
           name: c.cnst.name.clone(),
           typ: c.cnst.typ.clone(),
@@ -1694,7 +1694,7 @@ pub fn build_compile_flat_block_with_overlay(
   let first_ind_ref = overlay
     .and_then(|o| o.get(first_name))
     .or_else(|| lean_env.get(first_name));
-  let first_ind = match first_ind_ref {
+  let first_ind = match first_ind_ref.as_deref() {
     Some(ConstantInfo::InductInfo(v)) => v,
     _ => {
       return Err(CompileError::MissingConstant {
@@ -1729,7 +1729,7 @@ pub fn build_compile_flat_block_with_overlay(
   for name in ordered_originals {
     let ind_ref =
       overlay.and_then(|o| o.get(name)).or_else(|| lean_env.get(name));
-    let ind = match ind_ref {
+    let ind = match ind_ref.as_deref() {
       Some(ConstantInfo::InductInfo(v)) => v,
       _ => {
         return Err(CompileError::MissingConstant {
@@ -1764,7 +1764,7 @@ pub fn build_compile_flat_block_with_overlay(
     let member_ref = overlay
       .and_then(|o| o.get(&member.name))
       .or_else(|| lean_env.get(&member.name));
-    let (ctor_names, level_params) = match member_ref {
+    let (ctor_names, level_params) = match member_ref.as_deref() {
       Some(ConstantInfo::InductInfo(v)) => {
         (v.ctors.clone(), v.cnst.level_params.clone())
       },
@@ -1775,7 +1775,7 @@ pub fn build_compile_flat_block_with_overlay(
       let ctor_ref = overlay
         .and_then(|o| o.get(ctor_name))
         .or_else(|| lean_env.get(ctor_name));
-      let (ctor_n_fields, ctor_typ) = match ctor_ref {
+      let (ctor_n_fields, ctor_typ) = match ctor_ref.as_deref() {
         Some(ConstantInfo::CtorInfo(c)) => {
           let fields = nat_to_usize(&c.num_fields);
           (fields, c.cnst.typ.clone())
@@ -1989,7 +1989,7 @@ fn try_detect_nested_fvar(
   let head_ref = overlay
     .and_then(|o| o.get(&head_name))
     .or_else(|| lean_env.get(&head_name));
-  let (ext_n_params, ext_n_indices) = match head_ref {
+  let (ext_n_params, ext_n_indices) = match head_ref.as_deref() {
     Some(ConstantInfo::InductInfo(v)) => {
       let p = nat_to_usize(&v.num_params);
       let i = nat_to_usize(&v.num_indices);
@@ -2110,29 +2110,42 @@ pub fn compute_lean_ind_flags(
 /// Validate that every inductive group in `lean_env` carries exactly the flags
 /// `compute_lean_ind_flags` recomputes.
 pub fn validate_lean_ind_flags(lean_env: &LeanEnv) -> Result<(), CompileError> {
-  let mut groups: FxHashMap<&Name, &[Name]> = FxHashMap::default();
-  for ci in lean_env.values() {
-    if let ConstantInfo::InductInfo(v) = ci
+  let mut groups: FxHashMap<Name, Vec<Name>> = FxHashMap::default();
+  for (_, ci) in lean_env.iter() {
+    if let ConstantInfo::InductInfo(v) = &*ci
       && let Some(first) = v.all.first()
     {
-      groups.entry(first).or_insert(v.all.as_slice());
+      groups.entry(first.clone()).or_insert_with(|| v.all.clone());
     }
   }
-  //let groups: Vec<(&Name, &[Name])> = groups.into_iter().collect();
+  validate_ind_groups(&groups, lean_env)
+}
+
+/// Per-group half of [`validate_lean_ind_flags`], for callers that
+/// already hold the inductive groups from a wider env pass.
+pub fn validate_ind_groups(
+  groups: &FxHashMap<Name, Vec<Name>>,
+  lean_env: &LeanEnv,
+) -> Result<(), CompileError> {
   groups.par_iter().try_for_each(|(_, all)| {
     for member in all.iter() {
-      let Some(ConstantInfo::InductInfo(v)) = lean_env.get(member) else {
+      let entry = lean_env.get(member);
+      let Some(ConstantInfo::InductInfo(v)) = entry.as_deref() else {
         return Ok(());
       };
       for cn in &v.ctors {
-        if !matches!(lean_env.get(cn), Some(ConstantInfo::CtorInfo(_))) {
+        if !matches!(
+          lean_env.get(cn).as_deref(),
+          Some(ConstantInfo::CtorInfo(_))
+        ) {
           return Ok(());
         }
       }
     }
     let flags = compute_lean_ind_flags(all, lean_env)?;
     for member in all.iter() {
-      let Some(ConstantInfo::InductInfo(v)) = lean_env.get(member) else {
+      let entry = lean_env.get(member);
+      let Some(ConstantInfo::InductInfo(v)) = entry.as_deref() else {
         continue; // unreachable
       };
       if v.is_rec != flags.is_rec
@@ -2525,8 +2538,12 @@ mod tests {
   fn validate_lean_ind_flags_skips_unresolvable_group() {
     // Wrong flags, but the ctor entry is removed → group unresolvable →
     // skipped (grounding owns partial envs), not rejected.
-    let mut env = flags_env(false, false, 0);
-    env.remove(&mk_name_for("N.mk"));
+    let full = flags_env(false, false, 0);
+    let env: LeanEnv = full
+      .iter()
+      .filter(|(n, _)| **n != mk_name_for("N.mk"))
+      .map(|(n, ci)| (n.clone(), ci.cloned()))
+      .collect();
     assert!(validate_lean_ind_flags(&env).is_ok());
   }
 }

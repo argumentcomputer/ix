@@ -60,10 +60,14 @@ def ignoredSuites : Std.HashMap String (List LSpec.TestSeq) := .ofList [
   ("parallel-canon-roundtrip", Tests.CanonM.parallelSuiteIO),
   ("graph-cross", Tests.Ix.GraphM.suiteIO),
   ("condense-cross", Tests.Ix.CondenseM.suiteIO),
-  -- Lean compilation & kernel tests currently broken, disabled
+  -- Lean-side compilation/decompilation currently broken, disabled
   --("compile", Tests.Compile.compileSuiteIO),
   --("decompile", Tests.Decompile.decompileSuiteIO),
   ("rust-serialize", Tests.RustSerialize.rustSerializeSuiteIO),
+  -- Rust decompile of synthesized `_sparseCasesOn` aux constants fails
+  -- ("missing Ref metadata": their aux_gen metadata arena misaligns
+  -- with the serialized expr, and pure-aux constants have no
+  -- `Named.original` sidecar to recover from), disabled
   --("rust-decompile", Tests.RustDecompile.rustDecompileSuiteIO),
   ("commit-io", Tests.Commit.suiteIO),
   ("kernel-ixon-roundtrip", Tests.Ix.Kernel.Roundtrip.suite),

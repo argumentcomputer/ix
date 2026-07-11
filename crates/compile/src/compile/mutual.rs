@@ -617,7 +617,7 @@ pub fn generate_and_compile_aux_recursors(
     let mut source_ctor_counts: Vec<usize> =
       Vec::with_capacity(src_order.len());
     for (head, _) in &src_order {
-      match lean_env.get(head) {
+      match lean_env.get(head).as_deref() {
         Some(LeanConstantInfo::InductInfo(v)) => {
           source_ctor_counts.push(v.ctors.len());
         },

@@ -294,7 +294,7 @@ pub fn compute_call_site_plans(
   // counts are not included here; they're handled separately below.
   let ctor_counts: Vec<usize> = original_all
     .iter()
-    .map(|n| match lean_env.get(n) {
+    .map(|n| match lean_env.get(n).as_deref() {
       Some(LeanConstantInfo::InductInfo(v)) => v.ctors.len(),
       _ => 0,
     })
@@ -314,7 +314,7 @@ pub fn compute_call_site_plans(
     .iter()
     .find_map(|n| {
       let rec_name = Name::str(n.clone(), "rec".to_string());
-      match lean_env.get(&rec_name) {
+      match lean_env.get(&rec_name).as_deref() {
         Some(LeanConstantInfo::RecInfo(r)) => Some((
           nat_to_usize(&r.num_params),
           nat_to_usize(&r.num_indices),
@@ -428,7 +428,7 @@ pub fn compute_call_site_plans(
     .iter()
     .map(|class| {
       let rep = &class[0];
-      match lean_env.get(rep) {
+      match lean_env.get(rep).as_deref() {
         Some(LeanConstantInfo::InductInfo(v)) => v.ctors.len(),
         _ => 0,
       }
@@ -749,7 +749,7 @@ pub fn compute_call_site_plans(
         }
         let target_rec = Name::str(ext_head.clone(), "rec".to_string());
         let target_ok = matches!(
-          lean_env.get(&target_rec),
+          lean_env.get(&target_rec).as_deref(),
           Some(LeanConstantInfo::RecInfo(r))
             if nat_to_usize(&r.num_motives) == 1
         );
@@ -758,7 +758,7 @@ pub fn compute_call_site_plans(
         }
         // Index count comes from the aux recursor itself (the external
         // inductive's indices), not the block-wide default.
-        let rec_n_indices = match lean_env.get(&rec_name) {
+        let rec_n_indices = match lean_env.get(&rec_name).as_deref() {
           Some(LeanConstantInfo::RecInfo(r)) => nat_to_usize(&r.num_indices),
           _ => n_indices,
         };
@@ -847,7 +847,7 @@ pub fn adapt_split_minor(
   }
 
   let rec_info = lean_env.get(rec_name)?;
-  let rec = match rec_info {
+  let rec = match &*rec_info {
     LeanConstantInfo::RecInfo(rec) => rec,
     _ => return None,
   };
@@ -948,14 +948,14 @@ fn source_ctor_for_minor(
   let mut offset = 0usize;
   for (source_pos, ind_name) in rec.all.iter().enumerate() {
     let ind_info = lean_env.get(ind_name)?;
-    let ind = match ind_info {
+    let ind = match &*ind_info {
       LeanConstantInfo::InductInfo(ind) => ind,
       _ => return None,
     };
     let n_ctors = ind.ctors.len();
     if src_minor_idx < offset + n_ctors {
       let ctor_name = &ind.ctors[src_minor_idx - offset];
-      let ctor = match lean_env.get(ctor_name)? {
+      let ctor = match &*lean_env.get(ctor_name)? {
         LeanConstantInfo::CtorInfo(ctor) => ctor.clone(),
         _ => return None,
       };
@@ -967,14 +967,14 @@ fn source_ctor_for_minor(
   // order. The ctor list is the external inductive's own (the aux is the
   // external applied at spec args, so field counts match).
   for sig in aux_sigs {
-    let Some(LeanConstantInfo::InductInfo(ind)) = lean_env.get(&sig.ext_name)
-    else {
+    let ext_entry = lean_env.get(&sig.ext_name);
+    let Some(LeanConstantInfo::InductInfo(ind)) = ext_entry.as_deref() else {
       return None;
     };
     let n_ctors = ind.ctors.len();
     if src_minor_idx < offset + n_ctors {
       let ctor_name = &ind.ctors[src_minor_idx - offset];
-      let ctor = match lean_env.get(ctor_name)? {
+      let ctor = match &*lean_env.get(ctor_name)? {
         LeanConstantInfo::CtorInfo(ctor) => ctor.clone(),
         _ => return None,
       };
@@ -1042,7 +1042,7 @@ fn aux_motive_sigs(
             let (head, t_args) = decompose_apps(&t);
             if let ExprData::Const(ext_name, _, _) = head.as_data()
               && let Some(LeanConstantInfo::InductInfo(ind)) =
-                lean_env.get(ext_name)
+                lean_env.get(ext_name).as_deref()
             {
               let ext_n_params = nat_to_usize(&ind.num_params);
               if t_args.len() >= ext_n_params {
@@ -1081,7 +1081,8 @@ pub fn derive_head_rewrite_app(
   motives: &[LeanExpr],
   lean_env: &LeanEnv,
 ) -> Result<(Vec<Level>, Vec<LeanExpr>), String> {
-  let Some(LeanConstantInfo::RecInfo(rec)) = lean_env.get(rec_name) else {
+  let rec_entry = lean_env.get(rec_name);
+  let Some(LeanConstantInfo::RecInfo(rec)) = rec_entry.as_deref() else {
     return Err(format!("'{}' is not a recursor", rec_name.pretty()));
   };
   let sigs = aux_motive_sigs(rec, rec_levels, params, motives, lean_env);
@@ -1135,8 +1136,8 @@ pub fn derive_head_rewrite_app(
       _ => return Err("major type head is not a constant".into()),
     }
   };
-  let Some(LeanConstantInfo::RecInfo(target)) = lean_env.get(&hr.target_rec)
-  else {
+  let target_entry = lean_env.get(&hr.target_rec);
+  let Some(LeanConstantInfo::RecInfo(target)) = target_entry.as_deref() else {
     return Err(format!(
       "target recursor '{}' missing from env",
       hr.target_rec.pretty()
@@ -1261,7 +1262,7 @@ fn find_source_rec_target(
     return None;
   };
   if let Some(source_pos) = original_all.iter().position(|n| n == target_name) {
-    let target_n_params = match lean_env.get(target_name)? {
+    let target_n_params = match &*lean_env.get(target_name)? {
       LeanConstantInfo::InductInfo(ind) => nat_to_usize(&ind.num_params),
       _ => return None,
     };
@@ -1436,7 +1437,7 @@ fn dump_plan_state(
   // Dump Lean's source recursor telescope, labelled per binder section.
   let first_rec = original_all.iter().find_map(|n| {
     let rec_name = Name::str(n.clone(), "rec".to_string());
-    match lean_env.get(&rec_name) {
+    match lean_env.get(&rec_name).as_deref() {
       Some(LeanConstantInfo::RecInfo(r)) => {
         Some((rec_name, r.cnst.typ.clone()))
       },

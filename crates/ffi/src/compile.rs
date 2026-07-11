@@ -1,7 +1,7 @@
 //! FFI bridge between Lean and Rust for the Ixon compilation/decompilation pipeline.
 //!
 //! Provides `extern "C"` functions callable from Lean via `@[extern]`:
-//! - `rs_compile_env_full` / `rs_compile_env`: compile a Lean environment to Ixon
+//! - `rs_compile_env` / `rs_compile_env_full`: compile a Lean environment to Ixon
 //! - `rs_compile_phases`: run individual pipeline phases (canon, condense, graph, compile)
 //! - `rs_decompile_env`: decompile Ixon back to Lean environment
 //! - `rs_roundtrip_*`: roundtrip FFI tests for Lean↔Rust type conversions
@@ -38,7 +38,6 @@ use lean_ffi::object::{
 
 use crate::builder::LeanBuildCache;
 use crate::lean::LeanIxAddress;
-use crate::lean_env::decode_env;
 use crate::lean_ixon::env::decoded_to_ixon_env;
 
 #[cfg(feature = "test-ffi")]
@@ -195,7 +194,7 @@ pub extern "C" fn rs_compile_env_full(
 ) -> LeanIOResult<LeanOwned> {
   {
     // Phase 1: Decode Lean environment
-    let rust_env = decode_env(env_consts_ptr);
+    let rust_env = crate::lean_env::decode_env(env_consts_ptr);
     let env_len = rust_env.len();
     let rust_env = Arc::new(rust_env);
 
@@ -284,100 +283,59 @@ pub extern "C" fn rs_compile_env_full(
   }
 }
 
-/// FFI function to compile a Lean environment to serialized Ixon.Env bytes.
+/// FFI: compile a Lean environment and stream the serialized Ixon.Env
+/// straight to `out_path` (see `Env::put_file`) — no env-sized `Vec` or
+/// Lean `ByteArray` is built. Writes `<out_path>.tmp`, then renames, so
+/// a crash cannot leave a truncated file. Returns bytes written (Nat).
+/// The file is the canonical `Env::put` encoding (see `put_file`'s
+/// equivalence test).
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_compile_env(
   env_consts_ptr: LeanList<LeanBorrowed<'_>>,
+  out_path: LeanString<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
-  {
-    let quiet = std::env::var("IX_QUIET").is_ok();
-    let rust_env = decode_env(env_consts_ptr);
-    let rust_env = Arc::new(rust_env);
+  let rust_env = crate::lean_env::decode_env_for_compile(env_consts_ptr);
+  let rust_env = Arc::new(rust_env);
 
-    let compile_stt =
-      match compile_env_with_options(&rust_env, CompileOptions::default()) {
-        Ok(stt) => stt,
-        Err(e) => {
-          let msg = format!("rs_compile_env: Rust compilation failed: {:?}", e);
-          return LeanIOResult::error_string(&msg);
-        },
-      };
+  let compile_stt =
+    match compile_env_with_options(&rust_env, CompileOptions::default()) {
+      Ok(stt) => stt,
+      Err(e) => {
+        let msg = format!("rs_compile_env: Rust compilation failed: {:?}", e);
+        return LeanIOResult::error_string(&msg);
+      },
+    };
 
-    // Serialize the compiled Env to bytes
-    if !quiet {
-      eprintln!("[rs_compile_env] starting serialization");
-    }
-    let ser_start = std::time::Instant::now();
-    let mut buf = Vec::new();
-    if let Err(e) = compile_stt.env.put(&mut buf) {
-      let msg = format!("rs_compile_env: Env serialization failed: {}", e);
+  let path = std::path::PathBuf::from(out_path.as_str());
+  let tmp = {
+    let mut s = path.clone().into_os_string();
+    s.push(".tmp");
+    std::path::PathBuf::from(s)
+  };
+  let written = match compile_stt.env.put_file(&tmp) {
+    Ok(n) => n,
+    Err(e) => {
+      std::fs::remove_file(&tmp).ok();
+      let msg = format!("rs_compile_env: serialization failed: {e}");
       return LeanIOResult::error_string(&msg);
-    }
-    if !quiet {
-      eprintln!(
-        "[rs_compile_env] serialization done in {:.1}s: {} bytes",
-        ser_start.elapsed().as_secs_f64(),
-        buf.len(),
-      );
-    }
-
-    // Build Lean ByteArray
-    if !quiet {
-      eprintln!(
-        "[rs_compile_env] building Lean ByteArray ({} bytes)",
-        buf.len()
-      );
-    }
-    let ba_start = std::time::Instant::now();
-    let ba = LeanByteArray::from_bytes(&buf);
-    if !quiet {
-      eprintln!(
-        "[rs_compile_env] ByteArray built in {:.1}s",
-        ba_start.elapsed().as_secs_f64(),
-      );
-    }
-
-    // Skip destructors on the CLI path. `rs_compile_env` is called from
-    // one-shot commands (lake exe ix compile, serve/connect init) where the
-    // process exits shortly after returning the ByteArray. Running ~millions
-    // of Arc<NameData> chain-drops serially across DashMap shards costs 70+
-    // seconds of wall time on Mathlib and accomplishes nothing — the OS
-    // reclaims the allocations instantly at process exit.
-    //
-    // Safety: `mem::forget` on `Arc<T>` leaks one strong refcount; the
-    // underlying allocation is never freed but also never accessed. The
-    // `LeanEnv` inside `rust_env` was decoded into owned Rust data (no
-    // borrow lifetimes from Lean), so there's no UB risk from leaking it.
-    //
-    // Escape hatch: set `IX_SKIP_DROPS=0` to run destructors (for tests
-    // that assert clean teardown; not used by any production path).
-    if std::env::var("IX_SKIP_DROPS").ok().as_deref() != Some("0") {
-      if !quiet {
-        eprintln!("[rs_compile_env] skipping destructors (IX_SKIP_DROPS)");
-      }
-      std::mem::forget(compile_stt);
-      std::mem::forget(rust_env);
-      std::mem::forget(buf);
-    } else {
-      if !quiet {
-        eprintln!("[rs_compile_env] running destructors (IX_SKIP_DROPS=0)");
-      }
-      let drop_start = std::time::Instant::now();
-      drop(buf);
-      drop(compile_stt);
-      drop(rust_env);
-      if !quiet {
-        eprintln!(
-          "[rs_compile_env] destructors done in {:.2}s",
-          drop_start.elapsed().as_secs_f64(),
-        );
-      }
-    }
-    if !quiet {
-      eprintln!("[rs_compile_env] returning ByteArray to Lean");
-    }
-    LeanIOResult::ok(ba)
+    },
+  };
+  if let Err(e) = std::fs::rename(&tmp, &path) {
+    std::fs::remove_file(&tmp).ok();
+    let msg = format!(
+      "rs_compile_env: rename {} -> {}: {e}",
+      tmp.display(),
+      path.display()
+    );
+    return LeanIOResult::error_string(&msg);
   }
+
+  // Skip destructors: the compile CLI is a one-shot process, the OS
+  // reclaims at exit, and dropping the maps costs tens of seconds at
+  // Mathlib scale.
+  std::mem::forget(compile_stt);
+  std::mem::forget(rust_env);
+  LeanIOResult::ok(LeanOwned::from_nat_u64(written))
 }
 
 /// Round-trip a RawEnv: decode from Lean, re-encode via builder.
@@ -397,7 +355,7 @@ pub extern "C" fn rs_compile_phases(
   env_consts_ptr: LeanList<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
   {
-    let rust_env = decode_env(env_consts_ptr);
+    let rust_env = crate::lean_env::decode_env(env_consts_ptr);
     let env_len = rust_env.len();
     let rust_env = Arc::new(rust_env);
 
@@ -442,7 +400,7 @@ pub extern "C" fn rs_compile_phases(
       .collect();
     let named_arr = LeanArray::alloc(named.len());
     for (i, (name, n)) in named.iter().enumerate() {
-      named_arr.set(i, build_raw_named(&mut cache, name, &n.addr, &n.meta));
+      named_arr.set(i, build_raw_named(&mut cache, name, &n.addr, &n.meta()));
     }
 
     let blobs: Vec<_> = compile_stt
@@ -501,7 +459,7 @@ pub extern "C" fn rs_compile_env_to_ixon(
   env_consts_ptr: LeanList<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
   {
-    let rust_env = decode_env(env_consts_ptr);
+    let rust_env = crate::lean_env::decode_env(env_consts_ptr);
     let rust_env = Arc::new(rust_env);
 
     let compile_stt =
@@ -538,7 +496,7 @@ pub extern "C" fn rs_compile_env_to_ixon(
       .collect();
     let named_arr = LeanArray::alloc(named.len());
     for (i, (name, n)) in named.iter().enumerate() {
-      named_arr.set(i, build_raw_named(&mut cache, name, &n.addr, &n.meta));
+      named_arr.set(i, build_raw_named(&mut cache, name, &n.addr, &n.meta()));
     }
 
     let blobs: Vec<_> = compile_stt
@@ -591,7 +549,7 @@ pub extern "C" fn rs_canonicalize_env_to_ix(
   env_consts_ptr: LeanList<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
   {
-    let rust_env = decode_env(env_consts_ptr);
+    let rust_env = crate::lean_env::decode_env(env_consts_ptr);
     let mut cache = LeanBuildCache::with_capacity(rust_env.len());
     let raw_env = LeanIxRawEnvironment::build(&mut cache, &rust_env);
     LeanIOResult::ok(raw_env)
@@ -618,7 +576,7 @@ pub extern "C" fn rs_canonicalize_env_to_ix(
 pub extern "C" fn rs_leon_hashes(
   env_consts_ptr: LeanList<LeanBorrowed<'_>>,
 ) -> LeanIOResult<LeanOwned> {
-  let rust_env = decode_env(env_consts_ptr);
+  let rust_env = crate::lean_env::decode_env(env_consts_ptr);
   let mut cache = LeanBuildCache::with_capacity(rust_env.len());
 
   let arr = LeanArray::alloc(rust_env.len());
@@ -673,7 +631,7 @@ extern "C" fn rs_compile_env_rust_first(
   env_consts_ptr: LeanList<LeanBorrowed<'_>>,
 ) -> *mut RustCompiledEnv {
   // Decode Lean environment
-  let lean_env = decode_env(env_consts_ptr);
+  let lean_env = crate::lean_env::decode_env(env_consts_ptr);
   let lean_env = Arc::new(lean_env);
 
   // Compile with Rust

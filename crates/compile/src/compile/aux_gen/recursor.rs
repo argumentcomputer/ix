@@ -79,7 +79,7 @@ pub fn generate_recursors_from_expanded(
   // the correct `RecursorVal::is_unsafe` / `DefinitionSafety`.
   let block_is_unsafe = original_names
     .first()
-    .and_then(|n| match lean_env.get(n) {
+    .and_then(|n| match lean_env.get(n).as_deref() {
       Some(ConstantInfo::InductInfo(v)) => Some(v.is_unsafe),
       _ => None,
     })
@@ -93,7 +93,7 @@ pub fn generate_recursors_from_expanded(
     // when available. For auxiliary types (not in lean_env), fall back to
     // block-wide defaults.
     let (all_field, is_rec, is_reflexive, ind_is_unsafe) =
-      match lean_env.get(&member.name) {
+      match lean_env.get(&member.name).as_deref() {
         Some(ConstantInfo::InductInfo(orig)) => {
           (orig.all.clone(), orig.is_rec, orig.is_reflexive, orig.is_unsafe)
         },
@@ -121,7 +121,7 @@ pub fn generate_recursors_from_expanded(
       // Look up original ctor's safety when available; fall back to the
       // containing inductive's flag (ctor safety always matches its parent
       // inductive — the kernel rejects unsafe ctors on safe inductives).
-      let ctor_is_unsafe = match lean_env.get(&ctor.name) {
+      let ctor_is_unsafe = match lean_env.get(&ctor.name).as_deref() {
         Some(ConstantInfo::CtorInfo(orig)) => orig.is_unsafe,
         _ => ind_is_unsafe,
       };
@@ -478,8 +478,8 @@ pub fn generate_canonical_recursors_with_layout(
   // Lookup helper: check overlay first, then base env.
   let env_get = |name: &Name| -> Option<ConstantInfo> {
     overlay
-      .and_then(|o| o.get(name).cloned())
-      .or_else(|| lean_env.get(name).cloned())
+      .and_then(|o| o.get(name).map(|e| e.cloned()))
+      .or_else(|| lean_env.get(name).map(|e| e.cloned()))
   };
 
   let mut classes: Vec<FlatInfo> = sorted_classes
@@ -954,8 +954,8 @@ fn build_rec_type(
 ) -> LeanExpr {
   let env_get = |name: &Name| -> Option<ConstantInfo> {
     overlay
-      .and_then(|o| o.get(name).cloned())
-      .or_else(|| lean_env.get(name).cloned())
+      .and_then(|o| o.get(name).map(|e| e.cloned()))
+      .or_else(|| lean_env.get(name).map(|e| e.cloned()))
   };
   let n_flat = flat.len();
 
@@ -1234,7 +1234,9 @@ fn build_motive_type_aux(
 ) -> LeanExpr {
   // Look up the external inductive (check overlay first for expanded aux types).
   let env_get_local = |n: &Name| -> Option<ConstantInfo> {
-    overlay.and_then(|o| o.get(n).cloned()).or_else(|| lean_env.get(n).cloned())
+    overlay
+      .and_then(|o| o.get(n).map(|e| e.cloned()))
+      .or_else(|| lean_env.get(n).map(|e| e.cloned()))
   };
   let ind = match env_get_local(&member.name) {
     Some(ConstantInfo::InductInfo(v)) => v,
@@ -2558,7 +2560,7 @@ fn ingress_target_type_deps(
       continue;
     }
     if let Some(ci) = lean_env.get(&name) {
-      ingress_aux_gen_dep(&name, ci, lean_env, stt, kctx, &mut queue);
+      ingress_aux_gen_dep(&name, &ci, lean_env, stt, kctx, &mut queue);
     }
   }
 }
@@ -2588,7 +2590,7 @@ fn ingress_field_deps(
     }
 
     let Some(ci) = lean_env.get(&name) else { continue };
-    ingress_aux_gen_dep(&name, ci, lean_env, stt, kctx, &mut queue);
+    ingress_aux_gen_dep(&name, &ci, lean_env, stt, kctx, &mut queue);
   }
 }
 
@@ -2610,7 +2612,9 @@ fn ingress_aux_gen_dep(
       super::expr_utils::ensure_full_in_kenv_of(name, lean_env, stt, kctx);
       collect_const_refs(&v.cnst.typ, queue);
       for ctor_name in &v.ctors {
-        if let Some(ConstantInfo::CtorInfo(ctor)) = lean_env.get(ctor_name) {
+        if let Some(ConstantInfo::CtorInfo(ctor)) =
+          lean_env.get(ctor_name).as_deref()
+        {
           collect_const_refs(&ctor.cnst.typ, queue);
         }
       }
@@ -3566,7 +3570,7 @@ mod tests {
 
     let mut cs = Vec::new();
     for name in [&a, &b] {
-      match env.get(name) {
+      match env.get(name).as_deref() {
         Some(LeanCI::InductInfo(v)) => {
           cs.push(MutConst::Indc(
             mk_indc(v, &std::sync::Arc::new(env.clone())).unwrap(),

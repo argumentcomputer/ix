@@ -1019,7 +1019,9 @@ fn get_name_component(
 // ============================================================================
 
 use super::env::{AuxLayout, Named};
-use super::metadata::{ConstantMeta, NameIndex, NameReverseIndex};
+use super::metadata::{
+  ConstantMeta, NameGet, NameIndex, NamePut, NameReverseIndex,
+};
 
 /// Serialize an `AuxLayout` side-table entry.
 ///
@@ -1059,14 +1061,17 @@ pub fn put_named_indexed(
   buf: &mut Vec<u8>,
 ) -> Result<(), String> {
   put_address(&named.addr, buf);
-  named.meta.put_indexed(idx, buf)?;
+  // Demoted entries decode here and re-encode through the name index —
+  // the raw and indexed encodings share the wire format, differing only
+  // in how name references are written.
+  named.meta().put_with(NamePut::Indexed(idx), buf)?;
   // Serialize original as Option: 0 = None, 1 = Some(addr, meta)
-  match &named.original {
+  match named.original() {
     None => buf.push(0),
     Some((addr, meta)) => {
       buf.push(1);
-      put_address(addr, buf);
-      meta.put_indexed(idx, buf)?;
+      put_address(&addr, buf);
+      meta.put_with(NamePut::Indexed(idx), buf)?;
     },
   }
   Ok(())
@@ -1078,17 +1083,18 @@ pub fn get_named_indexed(
   rev: &NameReverseIndex,
 ) -> Result<Named, String> {
   let addr = get_address(buf)?;
-  let meta = ConstantMeta::get_indexed(buf, rev)?;
-  let original = match get_u8(buf)? {
-    0 => None,
+  let meta = ConstantMeta::get_with(buf, NameGet::Indexed(rev))?;
+  let mut named = Named::new(addr, meta);
+  match get_u8(buf)? {
+    0 => {},
     1 => {
       let orig_addr = get_address(buf)?;
-      let orig_meta = ConstantMeta::get_indexed(buf, rev)?;
-      Some((orig_addr, orig_meta))
+      let orig_meta = ConstantMeta::get_with(buf, NameGet::Indexed(rev))?;
+      named.set_original(orig_addr, orig_meta);
     },
     x => return Err(format!("Named.original: invalid tag {x}")),
-  };
-  Ok(Named { addr, meta, original })
+  }
+  Ok(named)
 }
 
 // ============================================================================
@@ -1367,6 +1373,144 @@ impl Env {
     Ok(())
   }
 
+  /// Serialize the environment directly to a file, streaming entry by
+  /// entry through a reusable staging buffer — nothing proportional to
+  /// env size is allocated (contrast [`Env::put`], whose output `Vec`
+  /// is ~env size). Returns the byte count written.
+  ///
+  /// MUST remain byte-identical with [`Env::put`] — checked by the
+  /// `put_file_matches_put` test. Any format
+  /// change lands in both or not at all.
+  #[cfg(not(target_arch = "riscv64"))]
+  pub fn put_file(&self, path: &std::path::Path) -> Result<u64, String> {
+    use rayon::prelude::*;
+    use std::io::Write;
+    let file = std::fs::File::create(path)
+      .map_err(|e| format!("Env::put_file: create {}: {e}", path.display()))?;
+    let mut w = std::io::BufWriter::with_capacity(8 * 1024 * 1024, file);
+    let mut written: u64 = 0;
+    let mut buf: Vec<u8> = Vec::with_capacity(64 * 1024);
+    // Drain the staging buffer to the writer. Large constant bodies
+    // bypass staging and go straight to the writer.
+    macro_rules! emit {
+      () => {
+        if !buf.is_empty() {
+          w.write_all(&buf)
+            .map_err(|e| format!("Env::put_file: write: {e}"))?;
+          written += buf.len() as u64;
+          buf.clear();
+        }
+      };
+    }
+
+    // Header: Tag4 + canonical merkle root over consts.keys().
+    Tag4::new(Self::FLAG, 0).put(&mut buf);
+    let mut const_addrs: Vec<Address> =
+      self.consts.iter().map(|e| e.key().clone()).collect();
+    const_addrs.par_sort_unstable();
+    let root = merkle_root_canonical(&const_addrs).unwrap_or_else(zero_address);
+    put_address(&root, &mut buf);
+
+    // Section 1: Blobs
+    let mut blob_addrs: Vec<Address> =
+      self.blobs.iter().map(|e| e.key().clone()).collect();
+    blob_addrs.par_sort_unstable();
+    put_u64(blob_addrs.len() as u64, &mut buf);
+    for addr in &blob_addrs {
+      if let Some(entry) = self.blobs.get(addr) {
+        let bytes = entry.value();
+        put_address(addr, &mut buf);
+        put_u64(bytes.len() as u64, &mut buf);
+        buf.extend_from_slice(bytes);
+        emit!();
+      }
+    }
+
+    // Section 2: Consts — the dominant bytes; raw_bytes stream straight
+    // through with no intermediate copy of the constant bodies
+    put_u64(const_addrs.len() as u64, &mut buf);
+    for addr in &const_addrs {
+      if let Some(entry) = self.consts.get(addr) {
+        put_address(addr, &mut buf);
+        let bytes = entry.value().raw_bytes();
+        Tag0::new(bytes.len() as u64).put(&mut buf);
+        emit!();
+        w.write_all(bytes)
+          .map_err(|e| format!("Env::put_file: write const: {e}"))?;
+        written += bytes.len() as u64;
+      }
+    }
+    // Section 3: Names (topologically sorted; builds the name index the
+    // Named section encodes through).
+    let sorted_names = topological_sort_names(&self.names);
+    let mut name_index: NameIndex = NameIndex::new();
+    put_u64(sorted_names.len() as u64, &mut buf);
+    for (i, (addr, name)) in sorted_names.iter().enumerate() {
+      name_index.insert(addr.clone(), i as u64);
+      put_address(addr, &mut buf);
+      put_name_component(name, &mut buf);
+      emit!();
+    }
+
+    // Section 4: Named — the largest per-entry section, and the only
+    // one whose per-entry encode is CPU-heavy (demoted entries decode
+    // and re-encode through the name index). Chunks encode in parallel
+    // into per-entry buffers and drain to the writer in order; the
+    // chunk size bounds staged memory to a few MiB.
+    let mut named_keys: Vec<Name> =
+      self.named.iter().map(|e| e.key().clone()).collect();
+    named_keys.par_sort_unstable_by(|a, b| {
+      a.get_hash().as_bytes().cmp(b.get_hash().as_bytes())
+    });
+    put_u64(named_keys.len() as u64, &mut buf);
+    emit!();
+    for chunk in named_keys.chunks(4096) {
+      let encoded: Vec<Vec<u8>> = chunk
+        .into_par_iter()
+        .map(|name| {
+          let mut b = Vec::new();
+          if let Some(entry) = self.named.get(name) {
+            put_bytes(name.get_hash().as_bytes(), &mut b);
+            put_named_indexed(entry.value(), &name_index, &mut b)?;
+          }
+          Ok::<_, String>(b)
+        })
+        .collect::<Result<_, _>>()?;
+      for b in &encoded {
+        w.write_all(b).map_err(|e| format!("Env::put_file: write: {e}"))?;
+        written += b.len() as u64;
+      }
+    }
+    // Section 5: Comms
+    let mut comm_addrs: Vec<Address> =
+      self.comms.iter().map(|e| e.key().clone()).collect();
+    comm_addrs.par_sort_unstable();
+    put_u64(comm_addrs.len() as u64, &mut buf);
+    for addr in &comm_addrs {
+      if let Some(entry) = self.comms.get(addr) {
+        put_address(addr, &mut buf);
+        entry.value().put(&mut buf);
+        emit!();
+      }
+    }
+
+    // Optional trailing anon_hints section — same condition as `put`.
+    if !self.anon_hints.is_empty() {
+      let mut hint_addrs: Vec<Address> =
+        self.anon_hints.keys().cloned().collect();
+      hint_addrs.sort_unstable();
+      put_u64(hint_addrs.len() as u64, &mut buf);
+      for addr in &hint_addrs {
+        put_address(addr, &mut buf);
+        self.anon_hints[addr].put_ser(&mut buf);
+      }
+    }
+
+    emit!();
+    w.flush().map_err(|e| format!("Env::put_file: flush: {e}"))?;
+    Ok(written)
+  }
+
   /// Deserialize an Env from bytes.
   pub fn get(buf: &mut &[u8]) -> Result<Self, String> {
     // Header
@@ -1598,7 +1742,7 @@ impl Env {
       let name = names_lookup.get(&name_addr).cloned().ok_or_else(|| {
         format!("parse_lazy_index: missing name for addr {:?}", name_addr)
       })?;
-      let hint = match &named.meta.info {
+      let hint = match &named.meta().info {
         super::metadata::ConstantMetaInfo::Def { hints, .. } => Some(*hints),
         _ => None,
       };
@@ -1736,7 +1880,7 @@ impl Env {
       let _name_addr = get_address(buf)?;
       let named = get_named_indexed(buf, &name_reverse_index)?;
       if let super::metadata::ConstantMetaInfo::Def { hints, .. } =
-        &named.meta.info
+        &named.meta().info
       {
         env.anon_hints.insert(named.addr.clone(), *hints);
       }
@@ -1939,7 +2083,7 @@ impl Env {
       let _name_addr = get_address(&mut buf)?;
       let named = get_named_indexed(&mut buf, &name_reverse_index)?;
       if let super::metadata::ConstantMetaInfo::Def { hints, .. } =
-        &named.meta.info
+        &named.meta().info
       {
         env.anon_hints.insert(named.addr.clone(), *hints);
       }
@@ -2142,6 +2286,23 @@ mod tests {
   }
 
   #[test]
+  fn put_file_matches_put() {
+    let mut g = Gen::new(24);
+    for i in 0..8 {
+      let env = gen_env(&mut g);
+      let mut buf = Vec::new();
+      env.put(&mut buf).unwrap();
+      let path = std::env::temp_dir()
+        .join(format!("ixon_put_file_test_{}_{i}.ixe", std::process::id()));
+      let written = env.put_file(&path).unwrap();
+      let from_file = std::fs::read(&path).unwrap();
+      std::fs::remove_file(&path).ok();
+      assert_eq!(written as usize, from_file.len());
+      assert_eq!(buf, from_file, "put and put_file bytes diverge");
+    }
+  }
+
+  #[test]
   fn test_pack_bools_specific() {
     assert_eq!(pack_bools([true, false, true]), 0b101);
     assert_eq!(pack_bools([false, false, false, false, true]), 0b10000);
@@ -2271,7 +2432,10 @@ mod tests {
         } else {
           None
         };
-        let named = Named { addr: addr.clone(), meta, original };
+        let mut named = Named::new(addr.clone(), meta);
+        if let Some((orig_addr, orig_meta)) = original {
+          named.set_original(orig_addr, orig_meta);
+        }
         env.named.insert(name, named);
       }
     }

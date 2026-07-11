@@ -147,7 +147,7 @@ impl LeanIxRawEnvironment<LeanOwned> {
     for (i, entry) in consts.iter().enumerate() {
       let (name, info) = entry;
       let key_obj = LeanIxName::build(cache, name);
-      let val_obj = LeanIxConstantInfo::build(cache, info);
+      let val_obj = LeanIxConstantInfo::build(cache, &info);
       // Build pair (Name × ConstantInfo)
       let pair = LeanProd::new(key_obj, val_obj);
       consts_arr.set(i, pair);

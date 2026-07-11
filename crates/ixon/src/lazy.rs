@@ -140,6 +140,17 @@ impl LazyConstant {
     }
   }
 
+  /// Like [`Self::from_constant`] but drops the structured value after
+  /// serializing (`cache: None`), so the entry costs only its bytes and
+  /// `get()` re-parses per access — the same policy as
+  /// [`Self::from_bytes`]. The demoted accumulator repr (see
+  /// `env::DEMOTE`).
+  pub fn from_constant_uncached(c: &Constant) -> Self {
+    let mut buf = Vec::new();
+    c.put(&mut buf);
+    LazyConstant { bytes: BytesSource::Heap(buf.into()), cache: None }
+  }
+
   /// Materialize the `Constant`.
   ///
   /// If this entry was built via [`Self::from_constant`], returns the
@@ -291,6 +302,20 @@ mod tests {
     // ...but no caching, so distinct Arc allocations each call.
     assert!(!Arc::ptr_eq(&a1, &a2));
     // Never materialized — there's nothing to materialize into.
+    assert!(!lazy.is_materialized());
+  }
+
+  #[test]
+  fn from_constant_uncached_roundtrips_without_cache() {
+    let c = defn_constant();
+    let (addr, bytes) = c.commit();
+    let lazy = LazyConstant::from_constant_uncached(&c);
+    assert!(!lazy.is_materialized());
+    // Same serialized form as the cached constructor / commit().
+    assert_eq!(lazy.raw_bytes(), &bytes[..]);
+    assert!(lazy.verify_address(&addr));
+    assert_eq!(*lazy.get().unwrap(), c);
+    // get() parses fresh and does not populate a cache.
     assert!(!lazy.is_materialized());
   }
 

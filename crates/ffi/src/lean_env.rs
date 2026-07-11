@@ -81,14 +81,14 @@ fn build_aux_perm_ctx(
   use ix_compile::congruence::perm::{PermCtx, RecHeadInfo, RecHeadKind};
 
   let first = all.first()?;
-  let n_params = match env.get(first) {
+  let n_params = match env.get(first).as_deref() {
     Some(LeanCI::InductInfo(v)) => v.num_params.to_u64().unwrap_or(0) as usize,
     _ => return None,
   };
   let n_primary = all.len();
   let primary_ctor_counts: Vec<usize> = all
     .iter()
-    .map(|n| match env.get(n) {
+    .map(|n| match env.get(n).as_deref() {
       Some(LeanCI::InductInfo(v)) => v.ctors.len(),
       _ => 0,
     })
@@ -99,7 +99,7 @@ fn build_aux_perm_ctx(
   };
   let source_aux_ctor_counts: Vec<usize> = source_aux_order
     .iter()
-    .map(|(head, _)| match env.get(head) {
+    .map(|(head, _)| match env.get(head).as_deref() {
       Some(LeanCI::InductInfo(v)) => v.ctors.len(),
       _ => 0,
     })
@@ -122,7 +122,7 @@ fn build_aux_perm_ctx(
     source_aux_ctor_counts: source_aux_ctor_counts.clone(),
     aux_perm: perm.to_vec(),
   };
-  let n_indices_for = |rec_name: &Name| match env.get(rec_name) {
+  let n_indices_for = |rec_name: &Name| match env.get(rec_name).as_deref() {
     Some(LeanCI::RecInfo(r)) => r.num_indices.to_u64().unwrap_or(0) as usize,
     _ => 0,
   };
@@ -175,7 +175,7 @@ fn build_aux_perm_ctx(
     for suffix in ["rec", "casesOn", "recOn", "below", "brecOn"] {
       add_addr(&Name::str(member.clone(), suffix.to_string()));
     }
-    if let Some(LeanCI::InductInfo(v)) = env.get(member) {
+    if let Some(LeanCI::InductInfo(v)) = env.get(member).as_deref() {
       for ctor in &v.ctors {
         add_addr(ctor);
       }
@@ -308,7 +308,7 @@ fn build_collapse_const_map(
     // Constructors: positional mapping. Both members are alpha-collapsed,
     // so they have the same number of constructors in the same order.
     if let (Some(LeanCI::InductInfo(m_ind)), Some(LeanCI::InductInfo(r_ind))) =
-      (env.get(member), env.get(rep))
+      (env.get(member).as_deref(), env.get(rep).as_deref())
       && m_ind.ctors.len() == r_ind.ctors.len()
     {
       for (m_ctor, r_ctor) in m_ind.ctors.iter().zip(r_ind.ctors.iter()) {
@@ -543,7 +543,7 @@ fn build_aux_compare_contexts(
   let mut by_name = FxHashMap::default();
   let mut seen_blocks: FxHashSet<Vec<Name>> = FxHashSet::default();
   for (name, ci) in env.iter() {
-    let all = match ci {
+    let all = match &*ci {
       LeanCI::InductInfo(v) => &v.all,
       _ => continue,
     };
@@ -1124,6 +1124,73 @@ fn decode_name_constant_info(
   (name, constant_info)
 }
 
+/// Resident-decoded-constant bound for [`decode_env_lazy`]'s cache.
+///
+/// Sized by sweep, not by hit rate: on FLT (511k consts) wall time is
+/// flat from 4096 through 1M entries (60–67 s; misses hide in the
+/// scheduler's dependency-stall slack) while peak RSS climbs from
+/// 11.5 GiB (4k) → 13.0 (64k) → 24.7 (1M); Mathlib (737k consts)
+/// confirms parity at this size (87.5 s / 17.0 GiB vs 87.3 s /
+/// 18.3 GiB at 64k). So the cache buys RAM, not speed, and the bound
+/// sits at the small end with headroom over the 4k floor measured to
+/// still not thrash.
+const LAZY_ENV_CACHE_ENTRIES: usize = 16384;
+
+/// Decode for the production compile FFI entries: an on-demand view
+/// that avoids materializing the full Rust copy of the environment —
+/// the eager copy is the single largest memory term at scale. The
+/// on-demand decode costs a few percent of wall (per-constant fetches
+/// vs one batched decode); `IX_COMPILE_EAGER=1` buys that back on
+/// machines with RAM to spare. Measured on FLT: −8 % wall for
+/// +13 GiB peak; Mathlib eager exceeds a 56 GB machine outright
+/// (the copy sits alongside the Lean-held env). Test and roundtrip
+/// entries keep [`decode_env`] (they re-read the env structurally
+/// throughout).
+pub fn decode_env_for_compile(list: LeanList<LeanBorrowed<'_>>) -> Env {
+  if std::env::var("IX_COMPILE_EAGER").as_deref() == Ok("1") {
+    return decode_env(list);
+  }
+  decode_env_lazy(list, LAZY_ENV_CACHE_ENTRIES)
+}
+
+/// Lazy variant of [`decode_env`]: decode only the *names* eagerly,
+/// keep a per-constant `LeanShared` handle, and decode `ConstantInfo`s
+/// on demand through `Env`'s bounded cache.
+///
+/// Thread-safety is identical to the eager path, which already decodes
+/// in parallel: `lean_mark_mt` (via `LeanShared::new`) transitions the
+/// reachable graph to atomic refcounting, structural reads through
+/// `LeanBorrowed` accessors are refcount-silent, and each element's
+/// owned handle keeps its Lean objects alive for the `Env`'s lifetime
+/// regardless of what the Lean side does after the FFI call.
+pub fn decode_env_lazy(
+  list: LeanList<LeanBorrowed<'_>>,
+  cache_entries: usize,
+) -> Env {
+  let shared_list = LeanShared::new(list.inner().to_owned_ref());
+  let objs = collect_list_shared(shared_list.borrow().as_list());
+  let global = Arc::new(GlobalCache::with_capacity(objs.len() * 3));
+
+  // Name index (parallel; bodies untouched). Each element is a
+  // `Prod (Name × ConstantInfo)` ctor — field 0 is the name.
+  let named: Vec<(Name, LeanShared)> = objs
+    .into_par_iter()
+    .map(|o| {
+      let name = decode_name(o.borrow().as_ctor().get(0), &global);
+      (name, o)
+    })
+    .collect();
+  let names: Vec<Name> = named.iter().map(|(n, _)| n.clone()).collect();
+  let handles: FxHashMap<Name, LeanShared> = named.into_iter().collect();
+
+  let fetch = move |name: &Name| {
+    let obj = handles.get(name)?;
+    let mut cache = Cache::new(&global);
+    Some(decode_constant_info(obj.borrow().as_ctor().get(1), &mut cache))
+  };
+  Env::new_lazy(names, Box::new(fetch), cache_entries)
+}
+
 // Decode a Lean environment in parallel with hybrid caching.
 pub fn decode_env(list: LeanList<LeanBorrowed<'_>>) -> Env {
   // Phase 1: Mark entire list graph as MT, then collect elements as LeanShared.
@@ -1226,7 +1293,7 @@ extern "C" fn rs_tmp_decode_const_map(
       use ix_compile::congruence::perm::{PermCtx, RecHeadInfo, RecHeadKind};
 
       let first = all.first()?;
-      let n_params = match env.get(first) {
+      let n_params = match env.get(first).as_deref() {
         Some(LeanCI::InductInfo(v)) => {
           v.num_params.to_u64().unwrap_or(0) as usize
         },
@@ -1235,7 +1302,7 @@ extern "C" fn rs_tmp_decode_const_map(
       let n_primary = all.len();
       let primary_ctor_counts: Vec<usize> = all
         .iter()
-        .map(|n| match env.get(n) {
+        .map(|n| match env.get(n).as_deref() {
           Some(LeanCI::InductInfo(v)) => v.ctors.len(),
           _ => 0,
         })
@@ -1246,7 +1313,7 @@ extern "C" fn rs_tmp_decode_const_map(
       };
       let source_aux_ctor_counts: Vec<usize> = source_aux_order
         .iter()
-        .map(|(head, _)| match env.get(head) {
+        .map(|(head, _)| match env.get(head).as_deref() {
           Some(LeanCI::InductInfo(v)) => v.ctors.len(),
           _ => 0,
         })
@@ -1269,7 +1336,7 @@ extern "C" fn rs_tmp_decode_const_map(
         source_aux_ctor_counts: source_aux_ctor_counts.clone(),
         aux_perm: perm.to_vec(),
       };
-      let n_indices_for = |rec_name: &Name| match env.get(rec_name) {
+      let n_indices_for = |rec_name: &Name| match env.get(rec_name).as_deref() {
         Some(LeanCI::RecInfo(r)) => {
           r.num_indices.to_u64().unwrap_or(0) as usize
         },
@@ -1323,7 +1390,7 @@ extern "C" fn rs_tmp_decode_const_map(
         for suffix in ["rec", "casesOn", "recOn", "below", "brecOn"] {
           add_addr(&Name::str(member.clone(), suffix.to_string()));
         }
-        if let Some(LeanCI::InductInfo(v)) = env.get(member) {
+        if let Some(LeanCI::InductInfo(v)) = env.get(member).as_deref() {
           for ctor in &v.ctors {
             add_addr(ctor);
           }
@@ -1409,7 +1476,7 @@ extern "C" fn rs_tmp_decode_const_map(
     let mut seen_blocks: FxHashSet<Vec<Name>> = FxHashSet::default();
 
     for (name, ci) in env.iter() {
-      let all = match ci {
+      let all = match &*ci {
         LeanCI::InductInfo(v) => &v.all,
         _ => continue,
       };
@@ -1428,8 +1495,9 @@ extern "C" fn rs_tmp_decode_const_map(
       // longer required at this call site. Still verify the block has at
       // least one ingress-able inductive so we don't waste work on
       // broken envs.
-      let has_indc =
-        all.iter().any(|n| matches!(env.get(n), Some(LeanCI::InductInfo(_))));
+      let has_indc = all
+        .iter()
+        .any(|n| matches!(env.get(n).as_deref(), Some(LeanCI::InductInfo(_))));
       if !has_indc {
         continue;
       }
@@ -1530,7 +1598,7 @@ extern "C" fn rs_tmp_decode_const_map(
         let Some(orig_ci_ref) = env.get(patch_name) else {
           continue;
         };
-        let orig_ci: &LeanCI = orig_ci_ref;
+        let orig_ci: &LeanCI = &orig_ci_ref;
         let eq_result = match &perm_ctx_1b {
           Some(ctx) => ix_compile::congruence::perm::const_alpha_eq_with_perm(
             &gen_ci, orig_ci, ctx,
@@ -1811,7 +1879,8 @@ extern "C" fn rs_compile_validate_aux(
     let fails = AtomicUsize::new(0);
     let fail_msgs: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
-    env.par_iter().for_each(|(name, _)| {
+    let env_names: Vec<&Name> = env.keys().collect();
+    env_names.par_iter().for_each(|&name| {
       if stt.ungrounded.contains_key(name) {
         return;
       }
@@ -1870,7 +1939,7 @@ extern "C" fn rs_compile_validate_aux(
     let work: Vec<(Name, Vec<Name>, Vec<MutConst>)> = env
       .iter()
       .filter_map(|(name, ci)| {
-        let all = match ci {
+        let all = match &*ci {
           LeanCI::InductInfo(v) => v.all.clone(),
           _ => return None,
         };
@@ -1884,7 +1953,7 @@ extern "C" fn rs_compile_validate_aux(
         }
         let original_cs: Vec<MutConst> = all
           .iter()
-          .filter_map(|n| match env.get(n) {
+          .filter_map(|n| match env.get(n).as_deref() {
             Some(LeanCI::InductInfo(v)) => {
               Some(MutConst::Indc(mk_indc(v, &env).ok()?))
             },
@@ -1939,7 +2008,7 @@ extern "C" fn rs_compile_validate_aux(
             continue;
           }
           if let Some(ci) = env.get(&name) {
-            for ref_name in get_constant_info_references(ci) {
+            for ref_name in get_constant_info_references(&ci) {
               if !p2_ingressed.contains(&ref_name) {
                 stack.push(ref_name);
               }
@@ -1985,7 +2054,7 @@ extern "C" fn rs_compile_validate_aux(
       use rustc_hash::FxHashMap;
 
       let first = all.first()?;
-      let n_params = match env.get(first) {
+      let n_params = match env.get(first).as_deref() {
         Some(LeanCI::InductInfo(v)) => {
           v.num_params.to_u64().unwrap_or(0) as usize
         },
@@ -1994,7 +2063,7 @@ extern "C" fn rs_compile_validate_aux(
       let n_primary = all.len();
       let primary_ctor_counts: Vec<usize> = all
         .iter()
-        .map(|n| match env.get(n) {
+        .map(|n| match env.get(n).as_deref() {
           Some(LeanCI::InductInfo(v)) => v.ctors.len(),
           _ => 0,
         })
@@ -2006,7 +2075,7 @@ extern "C" fn rs_compile_validate_aux(
       };
       let source_aux_ctor_counts: Vec<usize> = source_aux_order
         .iter()
-        .map(|(head, _)| match env.get(head) {
+        .map(|(head, _)| match env.get(head).as_deref() {
           Some(LeanCI::InductInfo(v)) => v.ctors.len(),
           _ => 0,
         })
@@ -2047,7 +2116,7 @@ extern "C" fn rs_compile_validate_aux(
       // Helper: look up `n_indices` for a specific recursor, falling
       // back to 0 when the rec isn't in env (e.g., if Lean didn't
       // generate it for this aux — the entry is benign in that case).
-      let n_indices_for = |rec_name: &Name| match env.get(rec_name) {
+      let n_indices_for = |rec_name: &Name| match env.get(rec_name).as_deref() {
         Some(LeanCI::RecInfo(r)) => {
           r.num_indices.to_u64().unwrap_or(0) as usize
         },
@@ -2118,7 +2187,7 @@ extern "C" fn rs_compile_validate_aux(
         for suffix in ["rec", "casesOn", "recOn", "below", "brecOn"] {
           add_addr(&Name::str(member.clone(), suffix.to_string()));
         }
-        if let Some(LeanCI::InductInfo(v)) = env.get(member) {
+        if let Some(LeanCI::InductInfo(v)) = env.get(member).as_deref() {
           for ctor in &v.ctors {
             add_addr(ctor);
           }
@@ -2345,7 +2414,7 @@ extern "C" fn rs_compile_validate_aux(
           let Some(orig_ci_ref) = env.get(patch_name) else {
             continue; // Synthetic name — no Lean original.
           };
-          let orig_ci: &LeanCI = orig_ci_ref;
+          let orig_ci: &LeanCI = &orig_ci_ref;
 
           let eq_result = match &perm_ctx {
             Some(ctx) => {
@@ -2410,7 +2479,7 @@ extern "C" fn rs_compile_validate_aux(
 
     stt.env.named.par_iter().for_each(|entry| {
       let named = entry.value();
-      if let Some((orig_addr, _)) = &named.original {
+      if let Some((orig_addr, _)) = &named.original() {
         if *orig_addr != named.addr
           && stt.env.consts.contains_key(orig_addr)
           && !canonical_addrs.contains(orig_addr)
@@ -3560,7 +3629,7 @@ extern "C" fn rs_compile_validate_aux(
       let eq_result = aux_congruence_result(
         name,
         dec_ci.value(),
-        orig_ci,
+        &orig_ci,
         aux_compare_contexts.get(name),
       );
       match eq_result {
@@ -3703,7 +3772,7 @@ extern "C" fn rs_compile_validate_aux(
           fresh_stt
             .name_to_addr
             .insert(entry.key().clone(), entry.value().addr.clone());
-          if entry.value().original.is_some() {
+          if entry.value().has_original() {
             n_original += 1;
           }
         }
@@ -3780,67 +3849,73 @@ extern "C" fn rs_compile_validate_aux(
     // present). Aux-generated constants get an alpha-collapse-aware
     // semantic fallback when exact source-shape comparison fails.
     // `get_hash()` reads are pure — ok to run concurrently.
-    orig.par_iter().for_each(|(name, orig_ci)| match dstt2.env.get(name) {
-      Some(dec_entry) => {
-        let dec_ci = dec_entry.value();
-        let type_ok =
-          dec_ci.get_type().get_hash() == orig_ci.get_type().get_hash();
-        let val_ok = match (dec_ci.get_value(), orig_ci.get_value()) {
-          (Some(d), Some(o)) => d.get_hash() == o.get_hash(),
-          (None, None) => true,
-          _ => false,
-        };
-        let aux_eq_result = if ix_compile::decompile::is_aux_gen_suffix(name)
-          && !(type_ok && val_ok)
-        {
-          Some(aux_congruence_result(
-            name,
-            dec_ci,
-            orig_ci,
-            aux_compare_contexts.get(name),
-          ))
-        } else {
-          None
-        };
-        let ok = match aux_eq_result.as_ref() {
-          Some(Ok(())) => true,
-          Some(Err(_)) => false,
-          None => type_ok && val_ok,
-        };
-        if ok {
-          passes.fetch_add(1, Ordering::Relaxed);
-        } else {
+    let orig_names: Vec<&Name> = orig.keys().collect();
+    orig_names.par_iter().for_each(|&name| {
+      let Some(orig_ci) = orig.get(name) else { return };
+      match dstt2.env.get(name) {
+        Some(dec_entry) => {
+          let dec_ci = dec_entry.value();
+          let type_ok =
+            dec_ci.get_type().get_hash() == orig_ci.get_type().get_hash();
+          let val_ok = match (dec_ci.get_value(), orig_ci.get_value()) {
+            (Some(d), Some(o)) => d.get_hash() == o.get_hash(),
+            (None, None) => true,
+            _ => false,
+          };
+          let aux_eq_result = if ix_compile::decompile::is_aux_gen_suffix(name)
+            && !(type_ok && val_ok)
+          {
+            Some(aux_congruence_result(
+              name,
+              dec_ci,
+              &orig_ci,
+              aux_compare_contexts.get(name),
+            ))
+          } else {
+            None
+          };
+          let ok = match aux_eq_result.as_ref() {
+            Some(Ok(())) => true,
+            Some(Err(_)) => false,
+            None => type_ok && val_ok,
+          };
+          if ok {
+            passes.fetch_add(1, Ordering::Relaxed);
+          } else {
+            fails.fetch_add(1, Ordering::Relaxed);
+            let mut msgs = fail_msgs.lock().unwrap();
+            if msgs.len() < 20 {
+              let mut parts = Vec::new();
+              match aux_eq_result {
+                Some(Err(e)) => parts.push(format!("aux congruence: {e}")),
+                _ => {
+                  if !type_ok {
+                    parts.push(format!(
+                      "type: dec={} orig={}",
+                      dec_ci.get_type().pretty(),
+                      orig_ci.get_type().pretty(),
+                    ));
+                  }
+                  if !val_ok {
+                    parts.push("value hash mismatch".to_string());
+                  }
+                },
+              }
+              msgs.push(format!("{}: {}", name.pretty(), parts.join("; ")));
+            }
+          }
+        },
+        None => {
           fails.fetch_add(1, Ordering::Relaxed);
           let mut msgs = fail_msgs.lock().unwrap();
           if msgs.len() < 20 {
-            let mut parts = Vec::new();
-            match aux_eq_result {
-              Some(Err(e)) => parts.push(format!("aux congruence: {e}")),
-              _ => {
-                if !type_ok {
-                  parts.push(format!(
-                    "type: dec={} orig={}",
-                    dec_ci.get_type().pretty(),
-                    orig_ci.get_type().pretty(),
-                  ));
-                }
-                if !val_ok {
-                  parts.push("value hash mismatch".to_string());
-                }
-              },
-            }
-            msgs.push(format!("{}: {}", name.pretty(), parts.join("; ")));
+            msgs.push(format!(
+              "{}: missing from roundtripped env",
+              name.pretty(),
+            ));
           }
-        }
-      },
-      None => {
-        fails.fetch_add(1, Ordering::Relaxed);
-        let mut msgs = fail_msgs.lock().unwrap();
-        if msgs.len() < 20 {
-          msgs
-            .push(format!("{}: missing from roundtripped env", name.pretty(),));
-        }
-      },
+        },
+      }
     });
 
     p7b.pass = passes.load(Ordering::Relaxed);
@@ -3919,9 +3994,9 @@ extern "C" fn rs_compile_validate_aux(
         original_strs.iter().map(|s| mk_name(s)).collect();
 
       // Skip if any name is missing from the env (fixture not compiled).
-      let all_present = originals
-        .iter()
-        .all(|n| matches!(env.get(n), Some(ConstantInfo::InductInfo(_))));
+      let all_present = originals.iter().all(|n| {
+        matches!(env.get(n).as_deref(), Some(ConstantInfo::InductInfo(_)))
+      });
       if !all_present {
         continue;
       }
@@ -4165,7 +4240,7 @@ fn compute_const_size_breakdown(
 
   // Metadata size
   let meta_size = if let Some(named) = stt.env.named.get(name) {
-    serialized_meta_size(&named.meta, name_index)
+    serialized_meta_size(&named.meta(), name_index)
   } else {
     0
   };
@@ -4181,7 +4256,7 @@ fn serialized_meta_size(
 ) -> usize {
   let mut buf = Vec::new();
   meta
-    .put_indexed(name_index, &mut buf)
+    .put_with(ixon::metadata::NamePut::Indexed(name_index), &mut buf)
     .expect("metadata serialization failed");
   buf.len()
 }
