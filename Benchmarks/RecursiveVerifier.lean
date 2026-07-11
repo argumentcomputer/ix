@@ -44,19 +44,46 @@ def factorialProgram : Source.Toplevel := ⟦
   }
 ⟧
 
-def recCommitParams : Aiur.CommitmentParameters := { logBlowup := 2, capHeight := 0 }
-def innerFri : Aiur.FriParameters :=
-  { logFinalPolyLen := 0, maxLogArity := 1, numQueries := 3,
-    commitProofOfWorkBits := 20, queryProofOfWorkBits := 0 }
+/-- The most trivial provable statement (`--trivial`): one non-recursive
+function, no memory — the floor of the verifier's per-statement cost. -/
+def squareProgram : Source.Toplevel := ⟦
+  pub fn square(n: G) -> G {
+    n * n
+  }
+⟧
+
+/-- `--queries N`-style overrides for parameter sweeps (e.g. pairing a run
+against a config another commit could complete); defaults are the standard
+recursion-tuned set. -/
+def argNat (args : List String) (flag : String) (dflt : Nat) : Nat :=
+  match args.dropWhile (· != flag) with
+  | _ :: v :: _ => v.toNat?.getD dflt
+  | _ => dflt
+
+def recCommitParams (args : List String) : Aiur.CommitmentParameters :=
+  { logBlowup := argNat args "--blowup" 2, capHeight := 0 }
+def innerFri (args : List String) : Aiur.FriParameters :=
+  { logFinalPolyLen := argNat args "--final-poly" 0, maxLogArity := 1,
+    numQueries := argNat args "--queries" 3,
+    commitProofOfWorkBits := argNat args "--pow" 20, queryProofOfWorkBits := 0 }
 
 def main (args : List String) : IO Unit := do
   let doProve := !args.contains "--execute-only"
-  -- Inner proof: factorial(5) under the multi-stark backend.
-  let facCompiled ← match factorialProgram.compile with
-    | .ok c => pure c | .error e => IO.eprintln s!"factorial compile failed: {e}"; return
+  let recCommitParams := recCommitParams args
+  let innerFri := innerFri args
+  IO.println s!"params: logBlowup={recCommitParams.logBlowup} \
+    numQueries={innerFri.numQueries} finalPoly={innerFri.logFinalPolyLen} \
+    pow={innerFri.commitProofOfWorkBits}"
+  -- Inner proof: factorial(5) (or `square(5)` under --trivial) under the
+  -- multi-stark backend.
+  let (program, entry) :=
+    if args.contains "--trivial" then (squareProgram, `square)
+    else (factorialProgram, `factorial)
+  let facCompiled ← match program.compile with
+    | .ok c => pure c | .error e => IO.eprintln s!"inner compile failed: {e}"; return
   let facSystem := AiurSystem.build facCompiled.bytecode recCommitParams innerFri
-  let facIdx := facCompiled.getFuncIdx `factorial |>.get!
-  IO.println "proving inner factorial(5)…"
+  let facIdx := facCompiled.getFuncIdx entry |>.get!
+  IO.println s!"proving inner {entry}(5)…"
   let it0 ← IO.monoNanosNow
   let (claim, proof, _) := facSystem.prove facIdx #[Aiur.G.ofNat 5] default
   let proofBytes := proof.toBytes
