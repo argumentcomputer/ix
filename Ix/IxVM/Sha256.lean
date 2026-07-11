@@ -596,6 +596,161 @@ def sha256 := ⟦
     fill_W_and_run_rounds(W, state)
   }
 
+  /- # Word-op helpers (all `@`-inlined into the round / schedule folds). -/
+
+  -- Big-endian 32-bit add (index 3 = LSB); mutually-exclusive carries fold
+  -- with a free field `+`.
+  fn u32_be_add(a: [U8; 4], b: [U8; 4]) -> [U8; 4] {
+    let (s0, c1) = u8_add(a[3], b[3]);
+    let (t1, o1) = u8_add(a[2], b[2]);
+    let (s1, c1a) = u8_add(t1, c1);
+    let c2 = u8_from_field_unsafe(to_field(o1) + to_field(c1a));
+    let (t2, o2) = u8_add(a[1], b[1]);
+    let (s2, c2a) = u8_add(t2, c2);
+    let c3 = u8_from_field_unsafe(to_field(o2) + to_field(c2a));
+    let (t3, _x) = u8_add(a[0], b[0]);
+    let (s3, _x) = u8_add(t3, c3);
+    [s3, s2, s1, s0]
+  }
+
+  fn u32_xor(a: [U8; 4], b: [U8; 4]) -> [U8; 4] {
+    [u8_xor(a[0], b[0]), u8_xor(a[1], b[1]), u8_xor(a[2], b[2]), u8_xor(a[3], b[3])]
+  }
+
+  fn u32_and(a: [U8; 4], b: [U8; 4]) -> [U8; 4] {
+    [u8_and(a[0], b[0]), u8_and(a[1], b[1]), u8_and(a[2], b[2]), u8_and(a[3], b[3])]
+  }
+
+  fn u32_not(a: [U8; 4]) -> [U8; 4] {
+    [u8_from_field_unsafe(255 - to_field(a[0])), u8_from_field_unsafe(255 - to_field(a[1])),
+     u8_from_field_unsafe(255 - to_field(a[2])), u8_from_field_unsafe(255 - to_field(a[3]))]
+  }
+
+  -- ch = (e & f) ^ (~e & g).
+  fn ch(e: [U8; 4], f: [U8; 4], g: [U8; 4]) -> [U8; 4] {
+    @u32_xor(@u32_and(e, f), @u32_and(@u32_not(e), g))
+  }
+
+  -- maj = (a & b) ^ (a & c) ^ (b & c).
+  fn maj(a: [U8; 4], b: [U8; 4], c: [U8; 4]) -> [U8; 4] {
+    @u32_xor(@u32_and(a, b), @u32_xor(@u32_and(a, c), @u32_and(b, c)))
+  }
+
+  -- The four SHA-256 sigmas. Each decomposes its word's bytes ONCE (b0 =
+  -- LSB byte w[3] .. b3 = MSB byte w[0]) and recomposes the rotations as
+  -- weighted bit sums (pure arithmetic: no aux/lookup), then xors them.
+
+  -- Sigma1(e) = rotr6 ^ rotr11 ^ rotr25.
+  fn big_sigma1(w: [U8; 4]) -> [U8; 4] {
+    let b0 = u8_bit_decomposition(w[3]);
+    let b1 = u8_bit_decomposition(w[2]);
+    let b2 = u8_bit_decomposition(w[1]);
+    let b3 = u8_bit_decomposition(w[0]);
+    let r6 = [
+      u8_from_field_unsafe(b3[6] + 2 * b3[7] + 4 * b0[0] + 8 * b0[1] + 16 * b0[2] + 32 * b0[3] + 64 * b0[4] + 128 * b0[5]),
+      u8_from_field_unsafe(b2[6] + 2 * b2[7] + 4 * b3[0] + 8 * b3[1] + 16 * b3[2] + 32 * b3[3] + 64 * b3[4] + 128 * b3[5]),
+      u8_from_field_unsafe(b1[6] + 2 * b1[7] + 4 * b2[0] + 8 * b2[1] + 16 * b2[2] + 32 * b2[3] + 64 * b2[4] + 128 * b2[5]),
+      u8_from_field_unsafe(b0[6] + 2 * b0[7] + 4 * b1[0] + 8 * b1[1] + 16 * b1[2] + 32 * b1[3] + 64 * b1[4] + 128 * b1[5])
+    ];
+    let r11 = [
+      u8_from_field_unsafe(b0[3] + 2 * b0[4] + 4 * b0[5] + 8 * b0[6] + 16 * b0[7] + 32 * b1[0] + 64 * b1[1] + 128 * b1[2]),
+      u8_from_field_unsafe(b3[3] + 2 * b3[4] + 4 * b3[5] + 8 * b3[6] + 16 * b3[7] + 32 * b0[0] + 64 * b0[1] + 128 * b0[2]),
+      u8_from_field_unsafe(b2[3] + 2 * b2[4] + 4 * b2[5] + 8 * b2[6] + 16 * b2[7] + 32 * b3[0] + 64 * b3[1] + 128 * b3[2]),
+      u8_from_field_unsafe(b1[3] + 2 * b1[4] + 4 * b1[5] + 8 * b1[6] + 16 * b1[7] + 32 * b2[0] + 64 * b2[1] + 128 * b2[2])
+    ];
+    let r25 = [
+      u8_from_field_unsafe(b2[1] + 2 * b2[2] + 4 * b2[3] + 8 * b2[4] + 16 * b2[5] + 32 * b2[6] + 64 * b2[7] + 128 * b3[0]),
+      u8_from_field_unsafe(b1[1] + 2 * b1[2] + 4 * b1[3] + 8 * b1[4] + 16 * b1[5] + 32 * b1[6] + 64 * b1[7] + 128 * b2[0]),
+      u8_from_field_unsafe(b0[1] + 2 * b0[2] + 4 * b0[3] + 8 * b0[4] + 16 * b0[5] + 32 * b0[6] + 64 * b0[7] + 128 * b1[0]),
+      u8_from_field_unsafe(b3[1] + 2 * b3[2] + 4 * b3[3] + 8 * b3[4] + 16 * b3[5] + 32 * b3[6] + 64 * b3[7] + 128 * b0[0])
+    ];
+    @u32_xor(r6, @u32_xor(r11, r25))
+  }
+
+  -- Sigma0(a) = rotr2 ^ rotr13 ^ rotr22.
+  fn big_sigma0(w: [U8; 4]) -> [U8; 4] {
+    let b0 = u8_bit_decomposition(w[3]);
+    let b1 = u8_bit_decomposition(w[2]);
+    let b2 = u8_bit_decomposition(w[1]);
+    let b3 = u8_bit_decomposition(w[0]);
+    let r2 = [
+      u8_from_field_unsafe(b3[2] + 2 * b3[3] + 4 * b3[4] + 8 * b3[5] + 16 * b3[6] + 32 * b3[7] + 64 * b0[0] + 128 * b0[1]),
+      u8_from_field_unsafe(b2[2] + 2 * b2[3] + 4 * b2[4] + 8 * b2[5] + 16 * b2[6] + 32 * b2[7] + 64 * b3[0] + 128 * b3[1]),
+      u8_from_field_unsafe(b1[2] + 2 * b1[3] + 4 * b1[4] + 8 * b1[5] + 16 * b1[6] + 32 * b1[7] + 64 * b2[0] + 128 * b2[1]),
+      u8_from_field_unsafe(b0[2] + 2 * b0[3] + 4 * b0[4] + 8 * b0[5] + 16 * b0[6] + 32 * b0[7] + 64 * b1[0] + 128 * b1[1])
+    ];
+    let r13 = [
+      u8_from_field_unsafe(b0[5] + 2 * b0[6] + 4 * b0[7] + 8 * b1[0] + 16 * b1[1] + 32 * b1[2] + 64 * b1[3] + 128 * b1[4]),
+      u8_from_field_unsafe(b3[5] + 2 * b3[6] + 4 * b3[7] + 8 * b0[0] + 16 * b0[1] + 32 * b0[2] + 64 * b0[3] + 128 * b0[4]),
+      u8_from_field_unsafe(b2[5] + 2 * b2[6] + 4 * b2[7] + 8 * b3[0] + 16 * b3[1] + 32 * b3[2] + 64 * b3[3] + 128 * b3[4]),
+      u8_from_field_unsafe(b1[5] + 2 * b1[6] + 4 * b1[7] + 8 * b2[0] + 16 * b2[1] + 32 * b2[2] + 64 * b2[3] + 128 * b2[4])
+    ];
+    let r22 = [
+      u8_from_field_unsafe(b1[6] + 2 * b1[7] + 4 * b2[0] + 8 * b2[1] + 16 * b2[2] + 32 * b2[3] + 64 * b2[4] + 128 * b2[5]),
+      u8_from_field_unsafe(b0[6] + 2 * b0[7] + 4 * b1[0] + 8 * b1[1] + 16 * b1[2] + 32 * b1[3] + 64 * b1[4] + 128 * b1[5]),
+      u8_from_field_unsafe(b3[6] + 2 * b3[7] + 4 * b0[0] + 8 * b0[1] + 16 * b0[2] + 32 * b0[3] + 64 * b0[4] + 128 * b0[5]),
+      u8_from_field_unsafe(b2[6] + 2 * b2[7] + 4 * b3[0] + 8 * b3[1] + 16 * b3[2] + 32 * b3[3] + 64 * b3[4] + 128 * b3[5])
+    ];
+    @u32_xor(r2, @u32_xor(r13, r22))
+  }
+
+  -- sigma0(w) = rotr7 ^ rotr18 ^ shr3.
+  fn small_sigma0(w: [U8; 4]) -> [U8; 4] {
+    let b0 = u8_bit_decomposition(w[3]);
+    let b1 = u8_bit_decomposition(w[2]);
+    let b2 = u8_bit_decomposition(w[1]);
+    let b3 = u8_bit_decomposition(w[0]);
+    let r7 = [
+      u8_from_field_unsafe(b3[7] + 2 * b0[0] + 4 * b0[1] + 8 * b0[2] + 16 * b0[3] + 32 * b0[4] + 64 * b0[5] + 128 * b0[6]),
+      u8_from_field_unsafe(b2[7] + 2 * b3[0] + 4 * b3[1] + 8 * b3[2] + 16 * b3[3] + 32 * b3[4] + 64 * b3[5] + 128 * b3[6]),
+      u8_from_field_unsafe(b1[7] + 2 * b2[0] + 4 * b2[1] + 8 * b2[2] + 16 * b2[3] + 32 * b2[4] + 64 * b2[5] + 128 * b2[6]),
+      u8_from_field_unsafe(b0[7] + 2 * b1[0] + 4 * b1[1] + 8 * b1[2] + 16 * b1[3] + 32 * b1[4] + 64 * b1[5] + 128 * b1[6])
+    ];
+    let r18 = [
+      u8_from_field_unsafe(b1[2] + 2 * b1[3] + 4 * b1[4] + 8 * b1[5] + 16 * b1[6] + 32 * b1[7] + 64 * b2[0] + 128 * b2[1]),
+      u8_from_field_unsafe(b0[2] + 2 * b0[3] + 4 * b0[4] + 8 * b0[5] + 16 * b0[6] + 32 * b0[7] + 64 * b1[0] + 128 * b1[1]),
+      u8_from_field_unsafe(b3[2] + 2 * b3[3] + 4 * b3[4] + 8 * b3[5] + 16 * b3[6] + 32 * b3[7] + 64 * b0[0] + 128 * b0[1]),
+      u8_from_field_unsafe(b2[2] + 2 * b2[3] + 4 * b2[4] + 8 * b2[5] + 16 * b2[6] + 32 * b2[7] + 64 * b3[0] + 128 * b3[1])
+    ];
+    let s3 = [
+      u8_from_field_unsafe(b3[3] + 2 * b3[4] + 4 * b3[5] + 8 * b3[6] + 16 * b3[7]),
+      u8_from_field_unsafe(b2[3] + 2 * b2[4] + 4 * b2[5] + 8 * b2[6] + 16 * b2[7] + 32 * b3[0] + 64 * b3[1] + 128 * b3[2]),
+      u8_from_field_unsafe(b1[3] + 2 * b1[4] + 4 * b1[5] + 8 * b1[6] + 16 * b1[7] + 32 * b2[0] + 64 * b2[1] + 128 * b2[2]),
+      u8_from_field_unsafe(b0[3] + 2 * b0[4] + 4 * b0[5] + 8 * b0[6] + 16 * b0[7] + 32 * b1[0] + 64 * b1[1] + 128 * b1[2])
+    ];
+    @u32_xor(r7, @u32_xor(r18, s3))
+  }
+
+  -- sigma1(w) = rotr17 ^ rotr19 ^ shr10. shr10's top byte is the constant
+  -- 0, so byte 0 of the result xors only two operands.
+  fn small_sigma1(w: [U8; 4]) -> [U8; 4] {
+    let b0 = u8_bit_decomposition(w[3]);
+    let b1 = u8_bit_decomposition(w[2]);
+    let b2 = u8_bit_decomposition(w[1]);
+    let b3 = u8_bit_decomposition(w[0]);
+    let r17 = [
+      u8_from_field_unsafe(b1[1] + 2 * b1[2] + 4 * b1[3] + 8 * b1[4] + 16 * b1[5] + 32 * b1[6] + 64 * b1[7] + 128 * b2[0]),
+      u8_from_field_unsafe(b0[1] + 2 * b0[2] + 4 * b0[3] + 8 * b0[4] + 16 * b0[5] + 32 * b0[6] + 64 * b0[7] + 128 * b1[0]),
+      u8_from_field_unsafe(b3[1] + 2 * b3[2] + 4 * b3[3] + 8 * b3[4] + 16 * b3[5] + 32 * b3[6] + 64 * b3[7] + 128 * b0[0]),
+      u8_from_field_unsafe(b2[1] + 2 * b2[2] + 4 * b2[3] + 8 * b2[4] + 16 * b2[5] + 32 * b2[6] + 64 * b2[7] + 128 * b3[0])
+    ];
+    let r19 = [
+      u8_from_field_unsafe(b1[3] + 2 * b1[4] + 4 * b1[5] + 8 * b1[6] + 16 * b1[7] + 32 * b2[0] + 64 * b2[1] + 128 * b2[2]),
+      u8_from_field_unsafe(b0[3] + 2 * b0[4] + 4 * b0[5] + 8 * b0[6] + 16 * b0[7] + 32 * b1[0] + 64 * b1[1] + 128 * b1[2]),
+      u8_from_field_unsafe(b3[3] + 2 * b3[4] + 4 * b3[5] + 8 * b3[6] + 16 * b3[7] + 32 * b0[0] + 64 * b0[1] + 128 * b0[2]),
+      u8_from_field_unsafe(b2[3] + 2 * b2[4] + 4 * b2[5] + 8 * b2[6] + 16 * b2[7] + 32 * b3[0] + 64 * b3[1] + 128 * b3[2])
+    ];
+    let s10 = [
+      u8_from_field_unsafe(b3[2] + 2 * b3[3] + 4 * b3[4] + 8 * b3[5] + 16 * b3[6] + 32 * b3[7]),
+      u8_from_field_unsafe(b2[2] + 2 * b2[3] + 4 * b2[4] + 8 * b2[5] + 16 * b2[6] + 32 * b2[7] + 64 * b3[0] + 128 * b3[1]),
+      u8_from_field_unsafe(b1[2] + 2 * b1[3] + 4 * b1[4] + 8 * b1[5] + 16 * b1[6] + 32 * b1[7] + 64 * b2[0] + 128 * b2[1])
+    ];
+    [u8_xor(r17[0], r19[0]),
+     u8_xor(r17[1], u8_xor(r19[1], s10[0])),
+     u8_xor(r17[2], u8_xor(r19[2], s10[1])),
+     u8_xor(r17[3], u8_xor(r19[3], s10[2]))]
+  }
+
   fn fill_W_and_run_rounds(W: [[U8; 4]; 16], state: [[U8; 4]; 8]) -> [[U8; 4]; 8] {
     let K = [
       [0x42u8, 0x8au8, 0x2fu8, 0x98u8], [0x71u8, 0x37u8, 0x44u8, 0x91u8], [0xb5u8, 0xc0u8, 0xfbu8, 0xcfu8], [0xe9u8, 0xb5u8, 0xdbu8, 0xa5u8],
@@ -623,289 +778,35 @@ def sha256 := ⟦
     let Wx = [[0u8; 4]; 64];
     let Wx = fold(0 .. 16, Wx, |Wx, @j| set(Wx, @j, W[@j]));
     let Wx = fold(16 .. 64, Wx, |Wx, @i|
-      let [w15_b3, w15_b2, w15_b1, w15_b0] = Wx[@i - 15];
-      let [w15_b0_0, w15_b0_1, w15_b0_2, w15_b0_3, w15_b0_4, w15_b0_5, w15_b0_6, w15_b0_7] = u8_bit_decomposition(w15_b0);
-      let [w15_b1_0, w15_b1_1, w15_b1_2, w15_b1_3, w15_b1_4, w15_b1_5, w15_b1_6, w15_b1_7] = u8_bit_decomposition(w15_b1);
-      let [w15_b2_0, w15_b2_1, w15_b2_2, w15_b2_3, w15_b2_4, w15_b2_5, w15_b2_6, w15_b2_7] = u8_bit_decomposition(w15_b2);
-      let [w15_b3_0, w15_b3_1, w15_b3_2, w15_b3_3, w15_b3_4, w15_b3_5, w15_b3_6, w15_b3_7] = u8_bit_decomposition(w15_b3);
-
-      let w15_rotr7 = [
-        u8_from_field_unsafe(w15_b3_7 + 2 * w15_b0_0 + 4 * w15_b0_1 + 8 * w15_b0_2 + 16 * w15_b0_3 + 32 * w15_b0_4 + 64 * w15_b0_5 + 128 * w15_b0_6),
-        u8_from_field_unsafe(w15_b2_7 + 2 * w15_b3_0 + 4 * w15_b3_1 + 8 * w15_b3_2 + 16 * w15_b3_3 + 32 * w15_b3_4 + 64 * w15_b3_5 + 128 * w15_b3_6),
-        u8_from_field_unsafe(w15_b1_7 + 2 * w15_b2_0 + 4 * w15_b2_1 + 8 * w15_b2_2 + 16 * w15_b2_3 + 32 * w15_b2_4 + 64 * w15_b2_5 + 128 * w15_b2_6),
-        u8_from_field_unsafe(w15_b0_7 + 2 * w15_b1_0 + 4 * w15_b1_1 + 8 * w15_b1_2 + 16 * w15_b1_3 + 32 * w15_b1_4 + 64 * w15_b1_5 + 128 * w15_b1_6)
-      ];
-
-      let w15_rotr18 = [
-        u8_from_field_unsafe(w15_b1_2 + 2 * w15_b1_3 + 4 * w15_b1_4 + 8 * w15_b1_5 + 16 * w15_b1_6 + 32 * w15_b1_7 + 64 * w15_b2_0 + 128 * w15_b2_1),
-        u8_from_field_unsafe(w15_b0_2 + 2 * w15_b0_3 + 4 * w15_b0_4 + 8 * w15_b0_5 + 16 * w15_b0_6 + 32 * w15_b0_7 + 64 * w15_b1_0 + 128 * w15_b1_1),
-        u8_from_field_unsafe(w15_b3_2 + 2 * w15_b3_3 + 4 * w15_b3_4 + 8 * w15_b3_5 + 16 * w15_b3_6 + 32 * w15_b3_7 + 64 * w15_b0_0 + 128 * w15_b0_1),
-        u8_from_field_unsafe(w15_b2_2 + 2 * w15_b2_3 + 4 * w15_b2_4 + 8 * w15_b2_5 + 16 * w15_b2_6 + 32 * w15_b2_7 + 64 * w15_b3_0 + 128 * w15_b3_1)
-      ];
-
-      let w15_shr3 = [
-        u8_from_field_unsafe(w15_b3_3 + 2 * w15_b3_4 + 4 * w15_b3_5 + 8 * w15_b3_6 + 16 * w15_b3_7),
-        u8_from_field_unsafe(w15_b2_3 + 2 * w15_b2_4 + 4 * w15_b2_5 + 8 * w15_b2_6 + 16 * w15_b2_7 + 32 * w15_b3_0 + 64 * w15_b3_1 + 128 * w15_b3_2),
-        u8_from_field_unsafe(w15_b1_3 + 2 * w15_b1_4 + 4 * w15_b1_5 + 8 * w15_b1_6 + 16 * w15_b1_7 + 32 * w15_b2_0 + 64 * w15_b2_1 + 128 * w15_b2_2),
-        u8_from_field_unsafe(w15_b0_3 + 2 * w15_b0_4 + 4 * w15_b0_5 + 8 * w15_b0_6 + 16 * w15_b0_7 + 32 * w15_b1_0 + 64 * w15_b1_1 + 128 * w15_b1_2)
-      ];
-
-      let [w2_b3, w2_b2, w2_b1, w2_b0] = Wx[@i - 2];
-      let [w2_b0_0, w2_b0_1, w2_b0_2, w2_b0_3, w2_b0_4, w2_b0_5, w2_b0_6, w2_b0_7] = u8_bit_decomposition(w2_b0);
-      let [w2_b1_0, w2_b1_1, w2_b1_2, w2_b1_3, w2_b1_4, w2_b1_5, w2_b1_6, w2_b1_7] = u8_bit_decomposition(w2_b1);
-      let [w2_b2_0, w2_b2_1, w2_b2_2, w2_b2_3, w2_b2_4, w2_b2_5, w2_b2_6, w2_b2_7] = u8_bit_decomposition(w2_b2);
-      let [w2_b3_0, w2_b3_1, w2_b3_2, w2_b3_3, w2_b3_4, w2_b3_5, w2_b3_6, w2_b3_7] = u8_bit_decomposition(w2_b3);
-
-      let w2_rotr17 = [
-        u8_from_field_unsafe(w2_b1_1 + 2 * w2_b1_2 + 4 * w2_b1_3 + 8 * w2_b1_4 + 16 * w2_b1_5 + 32 * w2_b1_6 + 64 * w2_b1_7 + 128 * w2_b2_0),
-        u8_from_field_unsafe(w2_b0_1 + 2 * w2_b0_2 + 4 * w2_b0_3 + 8 * w2_b0_4 + 16 * w2_b0_5 + 32 * w2_b0_6 + 64 * w2_b0_7 + 128 * w2_b1_0),
-        u8_from_field_unsafe(w2_b3_1 + 2 * w2_b3_2 + 4 * w2_b3_3 + 8 * w2_b3_4 + 16 * w2_b3_5 + 32 * w2_b3_6 + 64 * w2_b3_7 + 128 * w2_b0_0),
-        u8_from_field_unsafe(w2_b2_1 + 2 * w2_b2_2 + 4 * w2_b2_3 + 8 * w2_b2_4 + 16 * w2_b2_5 + 32 * w2_b2_6 + 64 * w2_b2_7 + 128 * w2_b3_0)
-      ];
-
-      let w2_rotr19 = [
-        u8_from_field_unsafe(w2_b1_3 + 2 * w2_b1_4 + 4 * w2_b1_5 + 8 * w2_b1_6 + 16 * w2_b1_7 + 32 * w2_b2_0 + 64 * w2_b2_1 + 128 * w2_b2_2),
-        u8_from_field_unsafe(w2_b0_3 + 2 * w2_b0_4 + 4 * w2_b0_5 + 8 * w2_b0_6 + 16 * w2_b0_7 + 32 * w2_b1_0 + 64 * w2_b1_1 + 128 * w2_b1_2),
-        u8_from_field_unsafe(w2_b3_3 + 2 * w2_b3_4 + 4 * w2_b3_5 + 8 * w2_b3_6 + 16 * w2_b3_7 + 32 * w2_b0_0 + 64 * w2_b0_1 + 128 * w2_b0_2),
-        u8_from_field_unsafe(w2_b2_3 + 2 * w2_b2_4 + 4 * w2_b2_5 + 8 * w2_b2_6 + 16 * w2_b2_7 + 32 * w2_b3_0 + 64 * w2_b3_1 + 128 * w2_b3_2)
-      ];
-
-      -- shr10's top byte is the constant 0; only the three live bytes are
-      -- materialized, and s1's byte 0 xors two operands instead of three.
-      let w2_shr10 = [
-        u8_from_field_unsafe(w2_b3_2 + 2 * w2_b3_3 + 4 * w2_b3_4 + 8 * w2_b3_5 + 16 * w2_b3_6 + 32 * w2_b3_7),
-        u8_from_field_unsafe(w2_b2_2 + 2 * w2_b2_3 + 4 * w2_b2_4 + 8 * w2_b2_5 + 16 * w2_b2_6 + 32 * w2_b2_7 + 64 * w2_b3_0 + 128 * w2_b3_1),
-        u8_from_field_unsafe(w2_b1_2 + 2 * w2_b1_3 + 4 * w2_b1_4 + 8 * w2_b1_5 + 16 * w2_b1_6 + 32 * w2_b1_7 + 64 * w2_b2_0 + 128 * w2_b2_1)
-      ];
-
-      let ws0 = [
-        u8_xor(w15_rotr7[0], u8_xor(w15_rotr18[0], w15_shr3[0])),
-        u8_xor(w15_rotr7[1], u8_xor(w15_rotr18[1], w15_shr3[1])),
-        u8_xor(w15_rotr7[2], u8_xor(w15_rotr18[2], w15_shr3[2])),
-        u8_xor(w15_rotr7[3], u8_xor(w15_rotr18[3], w15_shr3[3]))
-      ];
-      let ws1 = [
-        u8_xor(w2_rotr17[0], w2_rotr19[0]),
-        u8_xor(w2_rotr17[1], u8_xor(w2_rotr19[1], w2_shr10[0])),
-        u8_xor(w2_rotr17[2], u8_xor(w2_rotr19[2], w2_shr10[1])),
-        u8_xor(w2_rotr17[3], u8_xor(w2_rotr19[3], w2_shr10[2]))
-      ];
-
-      -- W_i = W_i-16 ⊞ s0 ⊞ W_i-7 ⊞ s1 (big-endian u8_add carry chains).
-      let (ss0, ssc1) = u8_add(ws0[3], ws1[3]);
-      let (sst1, sso1) = u8_add(ws0[2], ws1[2]);
-      let (ss1, ssc1a) = u8_add(sst1, ssc1);
-      let ssc2 = u8_from_field_unsafe(to_field(sso1) + to_field(ssc1a));
-      let (sst2, sso2) = u8_add(ws0[1], ws1[1]);
-      let (ss2, ssc2a) = u8_add(sst2, ssc2);
-      let ssc3 = u8_from_field_unsafe(to_field(sso2) + to_field(ssc2a));
-      let (sst3, _x) = u8_add(ws0[0], ws1[0]);
-      let (ss3, _x) = u8_add(sst3, ssc3);
-
+      -- W_i = W_i-16 + sigma0(W_i-15) + W_i-7 + sigma1(W_i-2).
+      let w15 = Wx[@i - 15];
+      let w2 = Wx[@i - 2];
       let w16 = Wx[@i - 16];
       let w7 = Wx[@i - 7];
-      let (ww0, wwc1) = u8_add(w16[3], w7[3]);
-      let (wwt1, wwo1) = u8_add(w16[2], w7[2]);
-      let (ww1, wwc1a) = u8_add(wwt1, wwc1);
-      let wwc2 = u8_from_field_unsafe(to_field(wwo1) + to_field(wwc1a));
-      let (wwt2, wwo2) = u8_add(w16[1], w7[1]);
-      let (ww2, wwc2a) = u8_add(wwt2, wwc2);
-      let wwc3 = u8_from_field_unsafe(to_field(wwo2) + to_field(wwc2a));
-      let (wwt3, _x) = u8_add(w16[0], w7[0]);
-      let (ww3, _x) = u8_add(wwt3, wwc3);
-
-      let (wi0, wic1) = u8_add(ss0, ww0);
-      let (wit1, wio1) = u8_add(ss1, ww1);
-      let (wi1, wic1a) = u8_add(wit1, wic1);
-      let wic2 = u8_from_field_unsafe(to_field(wio1) + to_field(wic1a));
-      let (wit2, wio2) = u8_add(ss2, ww2);
-      let (wi2, wic2a) = u8_add(wit2, wic2);
-      let wic3 = u8_from_field_unsafe(to_field(wio2) + to_field(wic2a));
-      let (wit3, _x) = u8_add(ss3, ww3);
-      let (wi3, _x) = u8_add(wit3, wic3);
-      set(Wx, @i, [wi3, wi2, wi1, wi0])
+      let s0 = @small_sigma0(w15);
+      let s1 = @small_sigma1(w2);
+      set(Wx, @i, @u32_be_add(w16, @u32_be_add(s0, @u32_be_add(w7, s1))))
     );
     let W = Wx;
 
     let state_new = fold(0 .. 64, state, |acc, @i|
-      let e_0_bits = u8_bit_decomposition(acc[4][3]);
-      let e_1_bits = u8_bit_decomposition(acc[4][2]);
-      let e_2_bits = u8_bit_decomposition(acc[4][1]);
-      let e_3_bits = u8_bit_decomposition(acc[4][0]);
-
-      -- Each rotated/shifted byte is the weighted sum of 8 bits. Written
-      -- inline: it is pure arithmetic, so it costs no aux column or lookup.
-      let e_rotr6 = [
-        u8_from_field_unsafe(e_3_bits[6] + 2 * e_3_bits[7] + 4 * e_0_bits[0] + 8 * e_0_bits[1] + 16 * e_0_bits[2] + 32 * e_0_bits[3] + 64 * e_0_bits[4] + 128 * e_0_bits[5]),
-        u8_from_field_unsafe(e_2_bits[6] + 2 * e_2_bits[7] + 4 * e_3_bits[0] + 8 * e_3_bits[1] + 16 * e_3_bits[2] + 32 * e_3_bits[3] + 64 * e_3_bits[4] + 128 * e_3_bits[5]),
-        u8_from_field_unsafe(e_1_bits[6] + 2 * e_1_bits[7] + 4 * e_2_bits[0] + 8 * e_2_bits[1] + 16 * e_2_bits[2] + 32 * e_2_bits[3] + 64 * e_2_bits[4] + 128 * e_2_bits[5]),
-        u8_from_field_unsafe(e_0_bits[6] + 2 * e_0_bits[7] + 4 * e_1_bits[0] + 8 * e_1_bits[1] + 16 * e_1_bits[2] + 32 * e_1_bits[3] + 64 * e_1_bits[4] + 128 * e_1_bits[5])
-      ];
-
-      let e_rotr11 = [
-        u8_from_field_unsafe(e_0_bits[3] + 2 * e_0_bits[4] + 4 * e_0_bits[5] + 8 * e_0_bits[6] + 16 * e_0_bits[7] + 32 * e_1_bits[0] + 64 * e_1_bits[1] + 128 * e_1_bits[2]),
-        u8_from_field_unsafe(e_3_bits[3] + 2 * e_3_bits[4] + 4 * e_3_bits[5] + 8 * e_3_bits[6] + 16 * e_3_bits[7] + 32 * e_0_bits[0] + 64 * e_0_bits[1] + 128 * e_0_bits[2]),
-        u8_from_field_unsafe(e_2_bits[3] + 2 * e_2_bits[4] + 4 * e_2_bits[5] + 8 * e_2_bits[6] + 16 * e_2_bits[7] + 32 * e_3_bits[0] + 64 * e_3_bits[1] + 128 * e_3_bits[2]),
-        u8_from_field_unsafe(e_1_bits[3] + 2 * e_1_bits[4] + 4 * e_1_bits[5] + 8 * e_1_bits[6] + 16 * e_1_bits[7] + 32 * e_2_bits[0] + 64 * e_2_bits[1] + 128 * e_2_bits[2])
-      ];
-
-      let e_rotr25 = [
-        u8_from_field_unsafe(e_2_bits[1] + 2 * e_2_bits[2] + 4 * e_2_bits[3] + 8 * e_2_bits[4] + 16 * e_2_bits[5] + 32 * e_2_bits[6] + 64 * e_2_bits[7] + 128 * e_3_bits[0]),
-        u8_from_field_unsafe(e_1_bits[1] + 2 * e_1_bits[2] + 4 * e_1_bits[3] + 8 * e_1_bits[4] + 16 * e_1_bits[5] + 32 * e_1_bits[6] + 64 * e_1_bits[7] + 128 * e_2_bits[0]),
-        u8_from_field_unsafe(e_0_bits[1] + 2 * e_0_bits[2] + 4 * e_0_bits[3] + 8 * e_0_bits[4] + 16 * e_0_bits[5] + 32 * e_0_bits[6] + 64 * e_0_bits[7] + 128 * e_1_bits[0]),
-        u8_from_field_unsafe(e_3_bits[1] + 2 * e_3_bits[2] + 4 * e_3_bits[3] + 8 * e_3_bits[4] + 16 * e_3_bits[5] + 32 * e_3_bits[6] + 64 * e_3_bits[7] + 128 * e_0_bits[0])
-      ];
-
-      let e_not = [u8_from_field_unsafe(255 - to_field(acc[4][0])), u8_from_field_unsafe(255 - to_field(acc[4][1])), u8_from_field_unsafe(255 - to_field(acc[4][2])), u8_from_field_unsafe(255 - to_field(acc[4][3]))];
-
-      -- Word ops inlined as byte ops (1 aux + 1 lookup each): a call to a
-      -- u32_* helper costs 4 output aux + 1 lookup here PLUS a row in the
-      -- helper's 26-35-wide circuit — the byte ops are less than half that.
-      let s1 = [
-        u8_xor(e_rotr6[0], u8_xor(e_rotr11[0], e_rotr25[0])),
-        u8_xor(e_rotr6[1], u8_xor(e_rotr11[1], e_rotr25[1])),
-        u8_xor(e_rotr6[2], u8_xor(e_rotr11[2], e_rotr25[2])),
-        u8_xor(e_rotr6[3], u8_xor(e_rotr11[3], e_rotr25[3]))
-      ];
-      let ch = [
-        u8_xor(u8_and(acc[4][0], acc[5][0]), u8_and(e_not[0], acc[6][0])),
-        u8_xor(u8_and(acc[4][1], acc[5][1]), u8_and(e_not[1], acc[6][1])),
-        u8_xor(u8_and(acc[4][2], acc[5][2]), u8_and(e_not[2], acc[6][2])),
-        u8_xor(u8_and(acc[4][3], acc[5][3]), u8_and(e_not[3], acc[6][3]))
-      ];
-      -- temp1 = h ⊞ s1 ⊞ ch ⊞ K[i] ⊞ W[i], big-endian byte-carry chains
-      -- (index 3 = LSB; carry folding mirrors `u32_be_add`).
-      let kw = K[@i];
+      -- acc = [a,b,c,d,e,f,g,h]; K[i], W[i] are the round constant and word.
+      let ki = K[@i];
       let wi = W[@i];
-      let (kw0, kwc1) = u8_add(kw[3], wi[3]);
-      let (kwt1, kwo1) = u8_add(kw[2], wi[2]);
-      let (kw1, kwc1a) = u8_add(kwt1, kwc1);
-      let kwc2 = u8_from_field_unsafe(to_field(kwo1) + to_field(kwc1a));
-      let (kwt2, kwo2) = u8_add(kw[1], wi[1]);
-      let (kw2, kwc2a) = u8_add(kwt2, kwc2);
-      let kwc3 = u8_from_field_unsafe(to_field(kwo2) + to_field(kwc2a));
-      let (kwt3, _x) = u8_add(kw[0], wi[0]);
-      let (kw3, _x) = u8_add(kwt3, kwc3);
-
-      let (sc0, scc1) = u8_add(s1[3], ch[3]);
-      let (sct1, sco1) = u8_add(s1[2], ch[2]);
-      let (sc1, scc1a) = u8_add(sct1, scc1);
-      let scc2 = u8_from_field_unsafe(to_field(sco1) + to_field(scc1a));
-      let (sct2, sco2) = u8_add(s1[1], ch[1]);
-      let (sc2, scc2a) = u8_add(sct2, scc2);
-      let scc3 = u8_from_field_unsafe(to_field(sco2) + to_field(scc2a));
-      let (sct3, _x) = u8_add(s1[0], ch[0]);
-      let (sc3, _x) = u8_add(sct3, scc3);
-
-      let (hs0, hsc1) = u8_add(acc[7][3], sc0);
-      let (hst1, hso1) = u8_add(acc[7][2], sc1);
-      let (hs1, hsc1a) = u8_add(hst1, hsc1);
-      let hsc2 = u8_from_field_unsafe(to_field(hso1) + to_field(hsc1a));
-      let (hst2, hso2) = u8_add(acc[7][1], sc2);
-      let (hs2, hsc2a) = u8_add(hst2, hsc2);
-      let hsc3 = u8_from_field_unsafe(to_field(hso2) + to_field(hsc2a));
-      let (hst3, _x) = u8_add(acc[7][0], sc3);
-      let (hs3, _x) = u8_add(hst3, hsc3);
-
-      let (t10, t1c1) = u8_add(hs0, kw0);
-      let (t1t1, t1o1) = u8_add(hs1, kw1);
-      let (t11, t1c1a) = u8_add(t1t1, t1c1);
-      let t1c2 = u8_from_field_unsafe(to_field(t1o1) + to_field(t1c1a));
-      let (t1t2, t1o2) = u8_add(hs2, kw2);
-      let (t12, t1c2a) = u8_add(t1t2, t1c2);
-      let t1c3 = u8_from_field_unsafe(to_field(t1o2) + to_field(t1c2a));
-      let (t1t3, _x) = u8_add(hs3, kw3);
-      let (t13, _x) = u8_add(t1t3, t1c3);
-
-      let a_0_bits = u8_bit_decomposition(acc[0][3]);
-      let a_1_bits = u8_bit_decomposition(acc[0][2]);
-      let a_2_bits = u8_bit_decomposition(acc[0][1]);
-      let a_3_bits = u8_bit_decomposition(acc[0][0]);
-
-      let a_rotr2 = [
-        u8_from_field_unsafe(a_3_bits[2] + 2 * a_3_bits[3] + 4 * a_3_bits[4] + 8 * a_3_bits[5] + 16 * a_3_bits[6] + 32 * a_3_bits[7] + 64 * a_0_bits[0] + 128 * a_0_bits[1]),
-        u8_from_field_unsafe(a_2_bits[2] + 2 * a_2_bits[3] + 4 * a_2_bits[4] + 8 * a_2_bits[5] + 16 * a_2_bits[6] + 32 * a_2_bits[7] + 64 * a_3_bits[0] + 128 * a_3_bits[1]),
-        u8_from_field_unsafe(a_1_bits[2] + 2 * a_1_bits[3] + 4 * a_1_bits[4] + 8 * a_1_bits[5] + 16 * a_1_bits[6] + 32 * a_1_bits[7] + 64 * a_2_bits[0] + 128 * a_2_bits[1]),
-        u8_from_field_unsafe(a_0_bits[2] + 2 * a_0_bits[3] + 4 * a_0_bits[4] + 8 * a_0_bits[5] + 16 * a_0_bits[6] + 32 * a_0_bits[7] + 64 * a_1_bits[0] + 128 * a_1_bits[1])
-      ];
-
-      let a_rotr13 = [
-        u8_from_field_unsafe(a_0_bits[5] + 2 * a_0_bits[6] + 4 * a_0_bits[7] + 8 * a_1_bits[0] + 16 * a_1_bits[1] + 32 * a_1_bits[2] + 64 * a_1_bits[3] + 128 * a_1_bits[4]),
-        u8_from_field_unsafe(a_3_bits[5] + 2 * a_3_bits[6] + 4 * a_3_bits[7] + 8 * a_0_bits[0] + 16 * a_0_bits[1] + 32 * a_0_bits[2] + 64 * a_0_bits[3] + 128 * a_0_bits[4]),
-        u8_from_field_unsafe(a_2_bits[5] + 2 * a_2_bits[6] + 4 * a_2_bits[7] + 8 * a_3_bits[0] + 16 * a_3_bits[1] + 32 * a_3_bits[2] + 64 * a_3_bits[3] + 128 * a_3_bits[4]),
-        u8_from_field_unsafe(a_1_bits[5] + 2 * a_1_bits[6] + 4 * a_1_bits[7] + 8 * a_2_bits[0] + 16 * a_2_bits[1] + 32 * a_2_bits[2] + 64 * a_2_bits[3] + 128 * a_2_bits[4])
-      ];
-
-      let a_rotr22 = [
-        u8_from_field_unsafe(a_1_bits[6] + 2 * a_1_bits[7] + 4 * a_2_bits[0] + 8 * a_2_bits[1] + 16 * a_2_bits[2] + 32 * a_2_bits[3] + 64 * a_2_bits[4] + 128 * a_2_bits[5]),
-        u8_from_field_unsafe(a_0_bits[6] + 2 * a_0_bits[7] + 4 * a_1_bits[0] + 8 * a_1_bits[1] + 16 * a_1_bits[2] + 32 * a_1_bits[3] + 64 * a_1_bits[4] + 128 * a_1_bits[5]),
-        u8_from_field_unsafe(a_3_bits[6] + 2 * a_3_bits[7] + 4 * a_0_bits[0] + 8 * a_0_bits[1] + 16 * a_0_bits[2] + 32 * a_0_bits[3] + 64 * a_0_bits[4] + 128 * a_0_bits[5]),
-        u8_from_field_unsafe(a_2_bits[6] + 2 * a_2_bits[7] + 4 * a_3_bits[0] + 8 * a_3_bits[1] + 16 * a_3_bits[2] + 32 * a_3_bits[3] + 64 * a_3_bits[4] + 128 * a_3_bits[5])
-      ];
-
-      let s0 = [
-        u8_xor(a_rotr2[0], u8_xor(a_rotr13[0], a_rotr22[0])),
-        u8_xor(a_rotr2[1], u8_xor(a_rotr13[1], a_rotr22[1])),
-        u8_xor(a_rotr2[2], u8_xor(a_rotr13[2], a_rotr22[2])),
-        u8_xor(a_rotr2[3], u8_xor(a_rotr13[3], a_rotr22[3]))
-      ];
-      let maj = [
-        u8_xor(u8_and(acc[0][0], acc[1][0]), u8_xor(u8_and(acc[0][0], acc[2][0]), u8_and(acc[1][0], acc[2][0]))),
-        u8_xor(u8_and(acc[0][1], acc[1][1]), u8_xor(u8_and(acc[0][1], acc[2][1]), u8_and(acc[1][1], acc[2][1]))),
-        u8_xor(u8_and(acc[0][2], acc[1][2]), u8_xor(u8_and(acc[0][2], acc[2][2]), u8_and(acc[1][2], acc[2][2]))),
-        u8_xor(u8_and(acc[0][3], acc[1][3]), u8_xor(u8_and(acc[0][3], acc[2][3]), u8_and(acc[1][3], acc[2][3])))
-      ];
-      -- temp2 = s0 ⊞ maj
-      let (t20, t2c1) = u8_add(s0[3], maj[3]);
-      let (t2t1, t2o1) = u8_add(s0[2], maj[2]);
-      let (t21, t2c1a) = u8_add(t2t1, t2c1);
-      let t2c2 = u8_from_field_unsafe(to_field(t2o1) + to_field(t2c1a));
-      let (t2t2, t2o2) = u8_add(s0[1], maj[1]);
-      let (t22, t2c2a) = u8_add(t2t2, t2c2);
-      let t2c3 = u8_from_field_unsafe(to_field(t2o2) + to_field(t2c2a));
-      let (t2t3, _x) = u8_add(s0[0], maj[0]);
-      let (t23, _x) = u8_add(t2t3, t2c3);
-
-      -- a' = temp1 ⊞ temp2
-      let (na0, nac1) = u8_add(t10, t20);
-      let (nat1, nao1) = u8_add(t11, t21);
-      let (na1, nac1a) = u8_add(nat1, nac1);
-      let nac2 = u8_from_field_unsafe(to_field(nao1) + to_field(nac1a));
-      let (nat2, nao2) = u8_add(t12, t22);
-      let (na2, nac2a) = u8_add(nat2, nac2);
-      let nac3 = u8_from_field_unsafe(to_field(nao2) + to_field(nac2a));
-      let (nat3, _x) = u8_add(t13, t23);
-      let (na3, _x) = u8_add(nat3, nac3);
-
-      -- e' = d ⊞ temp1
-      let (ne0, nec1) = u8_add(acc[3][3], t10);
-      let (net1, neo1) = u8_add(acc[3][2], t11);
-      let (ne1, nec1a) = u8_add(net1, nec1);
-      let nec2 = u8_from_field_unsafe(to_field(neo1) + to_field(nec1a));
-      let (net2, neo2) = u8_add(acc[3][1], t12);
-      let (ne2, nec2a) = u8_add(net2, nec2);
-      let nec3 = u8_from_field_unsafe(to_field(neo2) + to_field(nec2a));
-      let (net3, _x) = u8_add(acc[3][0], t13);
-      let (ne3, _x) = u8_add(net3, nec3);
-
-      [[na3, na2, na1, na0], acc[0], acc[1], acc[2], [ne3, ne2, ne1, ne0], acc[4], acc[5], acc[6]]
+      let s1 = @big_sigma1(acc[4]);
+      let ch_efg = @ch(acc[4], acc[5], acc[6]);
+      let temp1 = @u32_be_add(acc[7], @u32_be_add(s1, @u32_be_add(ch_efg, @u32_be_add(ki, wi))));
+      let s0 = @big_sigma0(acc[0]);
+      let maj_abc = @maj(acc[0], acc[1], acc[2]);
+      let temp2 = @u32_be_add(s0, maj_abc);
+      [@u32_be_add(temp1, temp2), acc[0], acc[1], acc[2],
+       @u32_be_add(acc[3], temp1), acc[4], acc[5], acc[6]]
     );
 
-    -- Final Davies-Meyer state addition, inlined per word via the same
-    -- big-endian u8_add carry chains as the round body.
     let fs = fold(0 .. 8, [[0u8; 4]; 8], |fs, @j|
       let sw = state[@j];
       let nw = state_new[@j];
-      let (f0, fc1) = u8_add(sw[3], nw[3]);
-      let (ft1, fo1) = u8_add(sw[2], nw[2]);
-      let (f1, fc1a) = u8_add(ft1, fc1);
-      let fc2 = u8_from_field_unsafe(to_field(fo1) + to_field(fc1a));
-      let (ft2, fo2) = u8_add(sw[1], nw[1]);
-      let (f2, fc2a) = u8_add(ft2, fc2);
-      let fc3 = u8_from_field_unsafe(to_field(fo2) + to_field(fc2a));
-      let (ft3, _x) = u8_add(sw[0], nw[0]);
-      let (f3, _x) = u8_add(ft3, fc3);
-      set(fs, @j, [f3, f2, f1, f0])
+      set(fs, @j, @u32_be_add(sw, nw))
     );
     fs
   }
