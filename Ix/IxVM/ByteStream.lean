@@ -78,14 +78,6 @@ def byteStream := ⟦
     [c0, c1, c2, c3]
   }
 
-  fn u32_and(a: [U8; 4], b: [U8; 4]) -> [U8; 4] {
-    let c0 = u8_and(a[0], b[0]);
-    let c1 = u8_and(a[1], b[1]);
-    let c2 = u8_and(a[2], b[2]);
-    let c3 = u8_and(a[3], b[3]);
-    [c0, c1, c2, c3]
-  }
-
   -- Byte-by-byte `u64` equality
   fn u64_eq(a: U64, b: U64) -> G {
     let [a0, a1, a2, a3, a4, a5, a6, a7] = a;

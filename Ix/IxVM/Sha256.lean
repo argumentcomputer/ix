@@ -704,9 +704,64 @@ def sha256 := ⟦
 
       let e_not = [u8_from_field_unsafe(255 - to_field(acc[4][0])), u8_from_field_unsafe(255 - to_field(acc[4][1])), u8_from_field_unsafe(255 - to_field(acc[4][2])), u8_from_field_unsafe(255 - to_field(acc[4][3]))];
 
-      let s1 = u32_xor(e_rotr6, u32_xor(e_rotr11, e_rotr25));
-      let ch = u32_xor(u32_and(acc[4], acc[5]), u32_and(e_not, acc[6]));
-      let temp1 = u32_be_add(acc[7], u32_be_add(s1, u32_be_add(ch, u32_be_add(K[@i], W[@i]))));
+      -- Word ops inlined as byte ops (1 aux + 1 lookup each): a call to a
+      -- u32_* helper costs 4 output aux + 1 lookup here PLUS a row in the
+      -- helper's 26-35-wide circuit — the byte ops are less than half that.
+      let s1 = [
+        u8_xor(e_rotr6[0], u8_xor(e_rotr11[0], e_rotr25[0])),
+        u8_xor(e_rotr6[1], u8_xor(e_rotr11[1], e_rotr25[1])),
+        u8_xor(e_rotr6[2], u8_xor(e_rotr11[2], e_rotr25[2])),
+        u8_xor(e_rotr6[3], u8_xor(e_rotr11[3], e_rotr25[3]))
+      ];
+      let ch = [
+        u8_xor(u8_and(acc[4][0], acc[5][0]), u8_and(e_not[0], acc[6][0])),
+        u8_xor(u8_and(acc[4][1], acc[5][1]), u8_and(e_not[1], acc[6][1])),
+        u8_xor(u8_and(acc[4][2], acc[5][2]), u8_and(e_not[2], acc[6][2])),
+        u8_xor(u8_and(acc[4][3], acc[5][3]), u8_and(e_not[3], acc[6][3]))
+      ];
+      -- temp1 = h ⊞ s1 ⊞ ch ⊞ K[i] ⊞ W[i], big-endian byte-carry chains
+      -- (index 3 = LSB; carry folding mirrors `u32_be_add`).
+      let kw = K[@i];
+      let wi = W[@i];
+      let (kw0, kwc1) = u8_add(kw[3], wi[3]);
+      let (kwt1, kwo1) = u8_add(kw[2], wi[2]);
+      let (kw1, kwc1a) = u8_add(kwt1, kwc1);
+      let kwc2 = u8_from_field_unsafe(to_field(kwo1) + to_field(kwc1a));
+      let (kwt2, kwo2) = u8_add(kw[1], wi[1]);
+      let (kw2, kwc2a) = u8_add(kwt2, kwc2);
+      let kwc3 = u8_from_field_unsafe(to_field(kwo2) + to_field(kwc2a));
+      let (kwt3, _x) = u8_add(kw[0], wi[0]);
+      let (kw3, _x) = u8_add(kwt3, kwc3);
+
+      let (sc0, scc1) = u8_add(s1[3], ch[3]);
+      let (sct1, sco1) = u8_add(s1[2], ch[2]);
+      let (sc1, scc1a) = u8_add(sct1, scc1);
+      let scc2 = u8_from_field_unsafe(to_field(sco1) + to_field(scc1a));
+      let (sct2, sco2) = u8_add(s1[1], ch[1]);
+      let (sc2, scc2a) = u8_add(sct2, scc2);
+      let scc3 = u8_from_field_unsafe(to_field(sco2) + to_field(scc2a));
+      let (sct3, _x) = u8_add(s1[0], ch[0]);
+      let (sc3, _x) = u8_add(sct3, scc3);
+
+      let (hs0, hsc1) = u8_add(acc[7][3], sc0);
+      let (hst1, hso1) = u8_add(acc[7][2], sc1);
+      let (hs1, hsc1a) = u8_add(hst1, hsc1);
+      let hsc2 = u8_from_field_unsafe(to_field(hso1) + to_field(hsc1a));
+      let (hst2, hso2) = u8_add(acc[7][1], sc2);
+      let (hs2, hsc2a) = u8_add(hst2, hsc2);
+      let hsc3 = u8_from_field_unsafe(to_field(hso2) + to_field(hsc2a));
+      let (hst3, _x) = u8_add(acc[7][0], sc3);
+      let (hs3, _x) = u8_add(hst3, hsc3);
+
+      let (t10, t1c1) = u8_add(hs0, kw0);
+      let (t1t1, t1o1) = u8_add(hs1, kw1);
+      let (t11, t1c1a) = u8_add(t1t1, t1c1);
+      let t1c2 = u8_from_field_unsafe(to_field(t1o1) + to_field(t1c1a));
+      let (t1t2, t1o2) = u8_add(hs2, kw2);
+      let (t12, t1c2a) = u8_add(t1t2, t1c2);
+      let t1c3 = u8_from_field_unsafe(to_field(t1o2) + to_field(t1c2a));
+      let (t1t3, _x) = u8_add(hs3, kw3);
+      let (t13, _x) = u8_add(t1t3, t1c3);
 
       let a_0_bits = u8_bit_decomposition(acc[0][3]);
       let a_1_bits = u8_bit_decomposition(acc[0][2]);
@@ -734,11 +789,52 @@ def sha256 := ⟦
         u8_from_field_unsafe(a_2_bits[6] + 2 * a_2_bits[7] + 4 * a_3_bits[0] + 8 * a_3_bits[1] + 16 * a_3_bits[2] + 32 * a_3_bits[3] + 64 * a_3_bits[4] + 128 * a_3_bits[5])
       ];
 
-      let s0 = u32_xor(a_rotr2, u32_xor(a_rotr13, a_rotr22));
-      let maj = u32_xor(u32_and(acc[0], acc[1]), u32_xor(u32_and(acc[0], acc[2]), u32_and(acc[1], acc[2])));
-      let temp2 = u32_be_add(s0, maj);
+      let s0 = [
+        u8_xor(a_rotr2[0], u8_xor(a_rotr13[0], a_rotr22[0])),
+        u8_xor(a_rotr2[1], u8_xor(a_rotr13[1], a_rotr22[1])),
+        u8_xor(a_rotr2[2], u8_xor(a_rotr13[2], a_rotr22[2])),
+        u8_xor(a_rotr2[3], u8_xor(a_rotr13[3], a_rotr22[3]))
+      ];
+      let maj = [
+        u8_xor(u8_and(acc[0][0], acc[1][0]), u8_xor(u8_and(acc[0][0], acc[2][0]), u8_and(acc[1][0], acc[2][0]))),
+        u8_xor(u8_and(acc[0][1], acc[1][1]), u8_xor(u8_and(acc[0][1], acc[2][1]), u8_and(acc[1][1], acc[2][1]))),
+        u8_xor(u8_and(acc[0][2], acc[1][2]), u8_xor(u8_and(acc[0][2], acc[2][2]), u8_and(acc[1][2], acc[2][2]))),
+        u8_xor(u8_and(acc[0][3], acc[1][3]), u8_xor(u8_and(acc[0][3], acc[2][3]), u8_and(acc[1][3], acc[2][3])))
+      ];
+      -- temp2 = s0 ⊞ maj
+      let (t20, t2c1) = u8_add(s0[3], maj[3]);
+      let (t2t1, t2o1) = u8_add(s0[2], maj[2]);
+      let (t21, t2c1a) = u8_add(t2t1, t2c1);
+      let t2c2 = u8_from_field_unsafe(to_field(t2o1) + to_field(t2c1a));
+      let (t2t2, t2o2) = u8_add(s0[1], maj[1]);
+      let (t22, t2c2a) = u8_add(t2t2, t2c2);
+      let t2c3 = u8_from_field_unsafe(to_field(t2o2) + to_field(t2c2a));
+      let (t2t3, _x) = u8_add(s0[0], maj[0]);
+      let (t23, _x) = u8_add(t2t3, t2c3);
 
-      [u32_be_add(temp1, temp2), acc[0], acc[1], acc[2], u32_be_add(acc[3], temp1), acc[4], acc[5], acc[6]]
+      -- a' = temp1 ⊞ temp2
+      let (na0, nac1) = u8_add(t10, t20);
+      let (nat1, nao1) = u8_add(t11, t21);
+      let (na1, nac1a) = u8_add(nat1, nac1);
+      let nac2 = u8_from_field_unsafe(to_field(nao1) + to_field(nac1a));
+      let (nat2, nao2) = u8_add(t12, t22);
+      let (na2, nac2a) = u8_add(nat2, nac2);
+      let nac3 = u8_from_field_unsafe(to_field(nao2) + to_field(nac2a));
+      let (nat3, _x) = u8_add(t13, t23);
+      let (na3, _x) = u8_add(nat3, nac3);
+
+      -- e' = d ⊞ temp1
+      let (ne0, nec1) = u8_add(acc[3][3], t10);
+      let (net1, neo1) = u8_add(acc[3][2], t11);
+      let (ne1, nec1a) = u8_add(net1, nec1);
+      let nec2 = u8_from_field_unsafe(to_field(neo1) + to_field(nec1a));
+      let (net2, neo2) = u8_add(acc[3][1], t12);
+      let (ne2, nec2a) = u8_add(net2, nec2);
+      let nec3 = u8_from_field_unsafe(to_field(neo2) + to_field(nec2a));
+      let (net3, _x) = u8_add(acc[3][0], t13);
+      let (ne3, _x) = u8_add(net3, nec3);
+
+      [[na3, na2, na1, na0], acc[0], acc[1], acc[2], [ne3, ne2, ne1, ne0], acc[4], acc[5], acc[6]]
     );
 
     [
