@@ -595,9 +595,13 @@ def parseError (msg : String) : IO UInt32 := do
       BENCH_FULL=1                 (full curated set, not just primary)
       BENCH_SHARD=1                (only the multi-shard target constants)
       BENCH_PHASES=1 / RUST_LOG=… / WITHOUT_VK_VERIFICATION=… /
-      RUSTFLAGS=…                  (passthrough; BENCH_PHASES=1 adds the
+      RUSTFLAGS=… / IX_COMPILE_EAGER=… / IX_COMPILE_DEMOTE=… /
+      IX_COMPILE_WORKERS=…         (passthrough; BENCH_PHASES=1 adds the
                                     per-constant phase drill-downs to the
-                                    comment)
+                                    comment; the IX_COMPILE_* knobs reach
+                                    the measured `ix compile` and key its
+                                    caches, so knob runs don't reuse a
+                                    default run's published row)
 
     The KEY=VALUE config may sit on its own lines below the command (the
     comment form) or inline on the command line, whitespace-separated
@@ -694,13 +698,15 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
       | "BENCH_FULL" => if val == "1" then full := "1"
       | k =>
         if ["BENCH_PHASES", "RUST_LOG", "WITHOUT_VK_VERIFICATION",
-            "RUSTFLAGS"].contains k then
+            "RUSTFLAGS", "IX_COMPILE_EAGER", "IX_COMPILE_DEMOTE",
+            "IX_COMPILE_WORKERS"].contains k then
           passthrough := passthrough.push s!"{k}={val}"
         else if strict then
           return ← parseError s!"unknown config key `{k}` in the \
             benchmark command (expected BENCH_ENVS / BENCH_FULL / \
             BENCH_SHARD, or passthrough: BENCH_PHASES, RUST_LOG, \
-            WITHOUT_VK_VERIFICATION, RUSTFLAGS)"
+            WITHOUT_VK_VERIFICATION, RUSTFLAGS, IX_COMPILE_EAGER, \
+            IX_COMPILE_DEMOTE, IX_COMPILE_WORKERS)"
     | [] => continue
   if envs.isEmpty then envs := #["InitStd"]
 

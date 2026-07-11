@@ -9,6 +9,10 @@
 #   BENCH_SHARD=1                  # restrict to the multi-shard target constants
 #   BENCH_PHASES=1                 # add per-constant phase drill-downs to the comment
 #   RUST_LOG=info                  # passthrough env (allowlisted)
+#   IX_COMPILE_EAGER=1             # compile-knob passthrough (also IX_COMPILE_DEMOTE /
+#                                  # IX_COMPILE_WORKERS); reaches the measured `ix
+#                                  # compile` and keys its caches, so a knob run gets
+#                                  # its own row instead of the default run's
 #
 # Mode defaults per backend (the registry's defaultMode): `aiur` runs
 # `prove` — the real-workload simulation, whose report also carries the
@@ -197,14 +201,22 @@ jobs:
           ref: ${{ inputs.head-sha }}
           # The job runs PR code; never leave the token in .git.
           persist-credentials: false
-      # Re-running !benchmark on the same commit: the .ixe is already
-      # published — nothing to do.
+      # Allowlisted KEY=VALUE lines from the !benchmark comment. Applied
+      # here so IX_COMPILE_* knobs reach the measured compile, and staged
+      # to a file so the cache keys below can hash it — a knob run must
+      # not reuse (or overwrite) the default run's published .ixe/row.
+      - name: Apply passthrough env
+        env:
+          PTENV: ${{ needs.build.outputs.passthrough-env }}
+        run: printf '%s\n' "$PTENV" | sed '/^[[:space:]]*$/d' | tee ptenv.txt >> "$GITHUB_ENV"
+      # Re-running !benchmark on the same commit with the same config: the
+      # .ixe is already published — nothing to do.
       - name: Check for published .ixe
         id: pr-ixe
         uses: actions/cache/restore@v5
         with:
           path: ${{ matrix.env }}.ixe
-          key: bench-pr-ixe-${{ inputs.head-sha }}-${{ matrix.env }}
+          key: bench-pr-ixe-${{ inputs.head-sha }}-${{ matrix.env }}-${{ hashFiles('ptenv.txt') }}
           lookup-only: true
       - name: Restore PR binaries
         if: steps.pr-ixe.outputs.cache-hit != 'true'
@@ -242,7 +254,7 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: ${{ matrix.env }}.ixe
-          key: bench-pr-ixe-${{ inputs.head-sha }}-${{ matrix.env }}
+          key: bench-pr-ixe-${{ inputs.head-sha }}-${{ matrix.env }}-${{ hashFiles('ptenv.txt') }}
       # The measured row: the compile cell reuses it as its PR side (same
       # runner class, same binaries, same command it would run itself).
       - name: Publish compile row
@@ -250,7 +262,7 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: compile.json
-          key: bench-pr-row-${{ inputs.head-sha }}-${{ matrix.env }}
+          key: bench-pr-row-${{ inputs.head-sha }}-${{ matrix.env }}-${{ hashFiles('ptenv.txt') }}
 
   benchmark:
     # Explicit name: the default would append EVERY matrix value (backend,
@@ -294,7 +306,7 @@ jobs:
       - name: Apply passthrough env
         env:
           PTENV: ${{ needs.build.outputs.passthrough-env }}
-        run: printf '%s\n' "$PTENV" | sed '/^[[:space:]]*$/d' >> "$GITHUB_ENV"
+        run: printf '%s\n' "$PTENV" | sed '/^[[:space:]]*$/d' | tee ptenv.txt >> "$GITHUB_ENV"
       # Restore the once-built PR binaries (see the build job) into the PR
       # tree's own bin dir: `ix bench run` resolves the measured tools from
       # <repo>/.lake/build/bin first, then PATH, so staging in-tree keeps the
@@ -334,7 +346,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: ${{ matrix.cell.env }}.ixe
-          key: bench-pr-ixe-${{ env.HEAD_SHA }}-${{ matrix.cell.env }}
+          key: bench-pr-ixe-${{ env.HEAD_SHA }}-${{ matrix.cell.env }}-${{ hashFiles('ptenv.txt') }}
           fail-on-cache-miss: true
       # Compile cells reuse the compile job's measured row as their PR side.
       - name: Restore compile row
@@ -342,7 +354,7 @@ jobs:
         uses: actions/cache/restore@v5
         with:
           path: compile.json
-          key: bench-pr-row-${{ env.HEAD_SHA }}-${{ matrix.cell.env }}
+          key: bench-pr-row-${{ env.HEAD_SHA }}-${{ matrix.cell.env }}-${{ hashFiles('ptenv.txt') }}
           fail-on-cache-miss: true
       # zkVM cells additionally need the Rust toolchain + the backend's toolchain
       # and system deps (the shared composite install actions).
