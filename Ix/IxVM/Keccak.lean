@@ -51,67 +51,59 @@ def keccak := ⟦
 
   /- # Sponge -/
 
-  -- Pad bytes for positions i..135 once the message is exhausted: `first`
-  -- is 1 on the first pad position (0x01 bit), position 135 carries the
-  -- 0x80 bit (0x81 when both land on 135).
-  fn build_pad(i: G, first: G) -> ByteStream {
-    match 136 - i {
-      0 => store(ListNode.Nil),
-      _ =>
-        store(ListNode.Cons(u8_from_field_unsafe(first + 128 * eq_zero(135 - i)),
-                            build_pad(i + 1, 0))),
+  -- Pull one rate byte from the stream, injecting pad10*1 when the
+  -- message is exhausted. `first_pad` is 1 until the first pad byte is
+  -- emitted (which carries the 0x01 bit); position 135 carries 0x80
+  -- (0x81 when both coincide). No store on the real-byte path — the
+  -- block is consumed directly, not copied into a 136-node list.
+  fn take_byte(stream: ByteStream, pos: G, first_pad: G) -> (U8, ByteStream, G) {
+    match load(stream) {
+      ListNode.Cons(b, rest) => (b, rest, first_pad),
+      ListNode.Nil =>
+        (u8_from_field_unsafe(first_pad + 128 * eq_zero(135 - pos)),
+         store(ListNode.Nil), 0),
     }
   }
 
-  -- Take one 136-byte rate block from `stream` starting at position `i`.
-  -- Returns (block, rest, full): full=1 iff 136 message bytes were consumed
-  -- (padding not yet applied). An empty stream yields the all-padding block
-  -- keccak appends when the message length is a multiple of 136.
-  fn read_block(stream: ByteStream, i: G) -> (ByteStream, ByteStream, G) {
-    match 136 - i {
-      0 => (store(ListNode.Nil), stream, 1),
-      _ => match load(stream) {
-        ListNode.Cons(b, rest) =>
-          let (blk, r, f) = read_block(rest, i + 1);
-          (store(ListNode.Cons(b, blk)), r, f),
-        ListNode.Nil => (build_pad(i, 1), store(ListNode.Nil), 0),
-      },
-    }
+  -- Pull 8 consecutive rate bytes (one lane) from the stream, threading
+  -- position and the pad flag. Factored out of absorb_blocks so the
+  -- 136-byte walk is one reused circuit, not 136 inline lets in the
+  -- toplevel AST (which overflows the elaborator).
+  fn take_lane(stream: ByteStream, pos: G, first_pad: G) -> ([U8; 8], ByteStream, G) {
+    let (b0, st, fp) = take_byte(stream, pos, first_pad);
+    let (b1, st, fp) = take_byte(st, pos + 1, fp);
+    let (b2, st, fp) = take_byte(st, pos + 2, fp);
+    let (b3, st, fp) = take_byte(st, pos + 3, fp);
+    let (b4, st, fp) = take_byte(st, pos + 4, fp);
+    let (b5, st, fp) = take_byte(st, pos + 5, fp);
+    let (b6, st, fp) = take_byte(st, pos + 6, fp);
+    let (b7, st, fp) = take_byte(st, pos + 7, fp);
+    ([b0, b1, b2, b3, b4, b5, b6, b7], st, fp)
   }
 
-  -- Extract lane bytes [b .. b+7] from the rate block (one `list_drop` to
-  -- the first byte; the rest are successive tails).
-  fn rate_lane(rate: ByteStream, b: G) -> [U8; 8] {
-    let &ListNode.Cons(r0, t0) = list_drop(rate, b);
-    let &ListNode.Cons(r1, t1) = t0;
-    let &ListNode.Cons(r2, t2) = t1;
-    let &ListNode.Cons(r3, t3) = t2;
-    let &ListNode.Cons(r4, t4) = t3;
-    let &ListNode.Cons(r5, t5) = t4;
-    let &ListNode.Cons(r6, t6) = t5;
-    let &ListNode.Cons(r7, _) = t6;
-    [r0, r1, r2, r3, r4, r5, r6, r7]
-  }
-
-  -- XOR one 136-byte rate block into the first 17 lanes, then permute.
-  fn absorb_one(s: [[U8; 8]; 25], rate: ByteStream) -> [[U8; 8]; 25] {
-    let rl0 = rate_lane(rate, 0);
-    let rl1 = rate_lane(rate, 8);
-    let rl2 = rate_lane(rate, 16);
-    let rl3 = rate_lane(rate, 24);
-    let rl4 = rate_lane(rate, 32);
-    let rl5 = rate_lane(rate, 40);
-    let rl6 = rate_lane(rate, 48);
-    let rl7 = rate_lane(rate, 56);
-    let rl8 = rate_lane(rate, 64);
-    let rl9 = rate_lane(rate, 72);
-    let rl10 = rate_lane(rate, 80);
-    let rl11 = rate_lane(rate, 88);
-    let rl12 = rate_lane(rate, 96);
-    let rl13 = rate_lane(rate, 104);
-    let rl14 = rate_lane(rate, 112);
-    let rl15 = rate_lane(rate, 120);
-    let rl16 = rate_lane(rate, 128);
+  -- Absorb one 136-byte rate block (17 lanes) directly from the stream
+  -- into the state, permute, and recurse while whole real blocks keep
+  -- filling (first_pad still 1 after 136 bytes). `first_pad` resets to 1
+  -- per block: only a fully-real block recurses, so a fresh block never
+  -- starts mid-pad.
+  fn absorb_blocks(stream: ByteStream, s: [[U8; 8]; 25]) -> [[U8; 8]; 25] {
+    let (rl0, st, fp) = take_lane(stream, 0, 1);
+    let (rl1, st, fp) = take_lane(st, 8, fp);
+    let (rl2, st, fp) = take_lane(st, 16, fp);
+    let (rl3, st, fp) = take_lane(st, 24, fp);
+    let (rl4, st, fp) = take_lane(st, 32, fp);
+    let (rl5, st, fp) = take_lane(st, 40, fp);
+    let (rl6, st, fp) = take_lane(st, 48, fp);
+    let (rl7, st, fp) = take_lane(st, 56, fp);
+    let (rl8, st, fp) = take_lane(st, 64, fp);
+    let (rl9, st, fp) = take_lane(st, 72, fp);
+    let (rl10, st, fp) = take_lane(st, 80, fp);
+    let (rl11, st, fp) = take_lane(st, 88, fp);
+    let (rl12, st, fp) = take_lane(st, 96, fp);
+    let (rl13, st, fp) = take_lane(st, 104, fp);
+    let (rl14, st, fp) = take_lane(st, 112, fp);
+    let (rl15, st, fp) = take_lane(st, 120, fp);
+    let (rl16, st, fp) = take_lane(st, 128, fp);
     let s = set(s, 0, [u8_xor(s[0][0], rl0[0]), u8_xor(s[0][1], rl0[1]), u8_xor(s[0][2], rl0[2]), u8_xor(s[0][3], rl0[3]), u8_xor(s[0][4], rl0[4]), u8_xor(s[0][5], rl0[5]), u8_xor(s[0][6], rl0[6]), u8_xor(s[0][7], rl0[7])]);
     let s = set(s, 1, [u8_xor(s[1][0], rl1[0]), u8_xor(s[1][1], rl1[1]), u8_xor(s[1][2], rl1[2]), u8_xor(s[1][3], rl1[3]), u8_xor(s[1][4], rl1[4]), u8_xor(s[1][5], rl1[5]), u8_xor(s[1][6], rl1[6]), u8_xor(s[1][7], rl1[7])]);
     let s = set(s, 2, [u8_xor(s[2][0], rl2[0]), u8_xor(s[2][1], rl2[1]), u8_xor(s[2][2], rl2[2]), u8_xor(s[2][3], rl2[3]), u8_xor(s[2][4], rl2[4]), u8_xor(s[2][5], rl2[5]), u8_xor(s[2][6], rl2[6]), u8_xor(s[2][7], rl2[7])]);
@@ -129,16 +121,10 @@ def keccak := ⟦
     let s = set(s, 14, [u8_xor(s[14][0], rl14[0]), u8_xor(s[14][1], rl14[1]), u8_xor(s[14][2], rl14[2]), u8_xor(s[14][3], rl14[3]), u8_xor(s[14][4], rl14[4]), u8_xor(s[14][5], rl14[5]), u8_xor(s[14][6], rl14[6]), u8_xor(s[14][7], rl14[7])]);
     let s = set(s, 15, [u8_xor(s[15][0], rl15[0]), u8_xor(s[15][1], rl15[1]), u8_xor(s[15][2], rl15[2]), u8_xor(s[15][3], rl15[3]), u8_xor(s[15][4], rl15[4]), u8_xor(s[15][5], rl15[5]), u8_xor(s[15][6], rl15[6]), u8_xor(s[15][7], rl15[7])]);
     let s = set(s, 16, [u8_xor(s[16][0], rl16[0]), u8_xor(s[16][1], rl16[1]), u8_xor(s[16][2], rl16[2]), u8_xor(s[16][3], rl16[3]), u8_xor(s[16][4], rl16[4]), u8_xor(s[16][5], rl16[5]), u8_xor(s[16][6], rl16[6]), u8_xor(s[16][7], rl16[7])]);
-    keccak_f(s)
-  }
-
-  -- Absorb every rate block of the (padded) message into the state.
-  fn absorb_blocks(stream: ByteStream, s: [[U8; 8]; 25]) -> [[U8; 8]; 25] {
-    let (block, rest, full) = read_block(stream, 0);
-    let s2 = absorb_one(s, block);
-    match full {
-      0 => s2,
-      _ => absorb_blocks(rest, s2),
+    let s2 = keccak_f(s);
+    match fp {
+      1 => absorb_blocks(st, s2),
+      _ => s2,
     }
   }
 
