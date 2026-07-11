@@ -35,7 +35,7 @@ lake exe bench-recursive-verifier --execute-only  # skip the outer prove (FFT/ex
 ```
 
 Row metrics: `prove-time`/`proof-size`/`verify-time` (the INNER statement),
-`peak-rss` (inner-prove window), `recursive-time`/`recursive-fft-cost` (the
+`peak-rss` (inner-prove window), `recursive-execute-time`/`recursive-fft-cost` (the
 verifier's execution and its in-circuit cost — the recursion-cost proxy), and
 `recursive-prove-time`/`recursive-peak-rss`/`recursive-proof-size`/
 `recursive-verify-time` (the outer prove — the headline recursion metrics).
@@ -165,7 +165,7 @@ def main (args : List String) : IO UInt32 := do
       , ("proof-size", Lean.toJson proofBytes.size)
       , ("verify-time", jsonRound 6 (secs it1 it2))
       , ("peak-rss", Lean.toJson innerPeak)
-      , ("recursive-time", jsonRound 6 (secs e0 e1))
+      , ("recursive-execute-time", jsonRound 6 (secs e0 e1))
       , ("recursive-fft-cost", jsonRound 0 stats.totalFftCost) ]
     writeRow' baseFields
     if !doProve then

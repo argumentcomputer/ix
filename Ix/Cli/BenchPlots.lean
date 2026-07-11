@@ -104,7 +104,7 @@ def unitsFor (slug : String) : Option String :=
    ("max-shard-cycles", "cycles"),
    ("shards", "shards"),
    ("fft-cost", "FFTs"),
-   ("recursive-time", "seconds (s)"),
+   ("recursive-execute-time", "seconds (s)"),
    ("recursive-prove-time", "seconds (s)"),
    ("recursive-verify-time", "seconds (s)"),
    ("recursive-peak-rss", "bytes (B)"),

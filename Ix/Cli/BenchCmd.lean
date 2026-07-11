@@ -157,8 +157,8 @@ def backendSpecs : List BackendSpec := [
                              "fft-cost"]),
                 ("recursive", ["recursive-prove-time", "recursive-peak-rss",
                                "recursive-proof-size", "recursive-verify-time",
-                               "recursive-time", "recursive-fft-cost",
-                               "prove-time"])] },
+                               "recursive-execute-time", "recursive-fft-cost",
+                               "prove-time", "proof-size"])] },
   -- The recursive-verifier toy (bench-recursive-verifier): fixed tiny
   -- statements (`recursiveConfigs`), proving the in-circuit multi-stark
   -- verifier end-to-end. Unlike the aiur backend's recursive MODE (IxVM
@@ -169,7 +169,7 @@ def backendSpecs : List BackendSpec := [
     testbeds := [("prove", "recursive-x64-32x")],
     metrics := [("prove", ["recursive-prove-time", "recursive-peak-rss",
                            "recursive-proof-size", "recursive-verify-time",
-                           "recursive-time", "recursive-fft-cost",
+                           "recursive-execute-time", "recursive-fft-cost",
                            "prove-time", "proof-size"])] },
   { name := "zisk", defaultMode := "execute",
     testbeds := [("execute", "zisk-check-execute-x64-32x")],

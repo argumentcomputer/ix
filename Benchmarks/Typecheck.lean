@@ -50,7 +50,7 @@ lake exe bench-typecheck --ixe <path> --consts <n1,n2,…> [--consts-file <p>] [
                  proving — the fast `execute`-mode signal.
   --recursive    after each constant's prove, run the in-circuit multi-stark
                  verifier (`verify_multi_stark_proof`) over the fresh proof:
-                 execute it (`recursive-time`, `recursive-fft-cost` — the
+                 execute it (`recursive-execute-time`, `recursive-fft-cost` — the
                  recursion-cost proxy), then prove that execution end-to-end
                  (`recursive-prove-time`, `recursive-peak-rss`,
                  `recursive-proof-size`, `recursive-verify-time`). The whole
@@ -90,7 +90,7 @@ limit; bound a run with an external `timeout` if needed.
 
 The JSON is a flat shape (`{ "<name>": { "constants": …, "fft-cost": …,
 "execute-time": …, "prove-time": …, "proof-size": …, "verify-time": …,
-"throughput": …, "peak-rss": …, and with --recursive also "recursive-time": …,
+"throughput": …, "peak-rss": …, and with --recursive also "recursive-execute-time": …,
 "recursive-fft-cost": …, "recursive-prove-time": …, "recursive-peak-rss": …,
 "recursive-proof-size": …, "recursive-verify-time": … } }`). `peak-rss` and `throughput` are
 phase-scoped by MODE: an `--execute-only` row carries the Phase-1 RSS
@@ -169,7 +169,7 @@ structure Result where
   executePeakRss : Option Nat := none
   /-- Wall time of executing the in-circuit multi-stark verifier over this
       constant's fresh proof (`--recursive` only). -/
-  recursiveSec : Option Float := none
+  recursiveExecuteSec : Option Float := none
   /-- That execution's own in-circuit FFT cost — the deterministic proxy for
       what proving the verifier costs. Drifts ~±15% run-to-run: the parallel
       prover emits byte-different valid proofs, so the verifier authenticates
@@ -244,8 +244,8 @@ def Result.toJsonEntry (executeOnly : Bool) (r : Result) : String × Json :=
     -- The recursion metrics (--recursive), in measurement order; the
     -- execute-side pair lands before the outer prove runs, so an OOM'd
     -- outer prove still leaves them on disk.
-    let fields := match r.recursiveSec, r.recursiveFftCost with
-      | some s, some c => fields ++ [ ("recursive-time", jsonRound 6 s)
+    let fields := match r.recursiveExecuteSec, r.recursiveFftCost with
+      | some s, some c => fields ++ [ ("recursive-execute-time", jsonRound 6 s)
                                     , ("recursive-fft-cost", jsonRound 0 c) ]
       | _, _ => fields
     let fields := match r.recursiveProveSec with
@@ -483,7 +483,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
                   , proofSize := some proofBytes.size, verifySec := verifySec? }, addr)
         writeJson (ordered.map (·.1))
         -- Phase 3 (--recursive): the in-circuit verifier over the fresh
-        -- proof — execute it (recursive-time / recursive-fft-cost), then prove
+        -- proof — execute it (recursive-execute-time / recursive-fft-cost), then prove
         -- that execution (recursive-prove-time / recursive-peak-rss /
         -- recursive-proof-size / recursive-verify-time). A reject on the execute
         -- is a correctness alarm, reported loudly with the recursive fields
@@ -505,7 +505,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
               recursive-fft-cost={rvStats.totalFftCost}"
             let (row, _) := ordered[i]!
             ordered := ordered.set! i
-              ({ row with recursiveSec := some rvSec
+              ({ row with recursiveExecuteSec := some rvSec
                         , recursiveFftCost := some rvStats.totalFftCost }, addr)
             -- Flush the execute-side pair before the outer prove: an OOM
             -- there keeps them, and the announce (flushed) names the
