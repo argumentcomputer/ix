@@ -1383,7 +1383,7 @@ impl Env {
   /// change lands in both or not at all.
   #[cfg(not(target_arch = "riscv64"))]
   pub fn put_file(&self, path: &std::path::Path) -> Result<u64, String> {
-    use rayon::slice::ParallelSliceMut;
+    use rayon::prelude::*;
     use std::io::Write;
     let file = std::fs::File::create(path)
       .map_err(|e| format!("Env::put_file: create {}: {e}", path.display()))?;
@@ -1452,19 +1452,33 @@ impl Env {
       emit!();
     }
 
-    // Section 4: Named — the largest per-entry section; demoted entries
-    // decode and re-encode through the name index one at a time.
+    // Section 4: Named — the largest per-entry section, and the only
+    // one whose per-entry encode is CPU-heavy (demoted entries decode
+    // and re-encode through the name index). Chunks encode in parallel
+    // into per-entry buffers and drain to the writer in order; the
+    // chunk size bounds staged memory to a few MiB.
     let mut named_keys: Vec<Name> =
       self.named.iter().map(|e| e.key().clone()).collect();
     named_keys.par_sort_unstable_by(|a, b| {
       a.get_hash().as_bytes().cmp(b.get_hash().as_bytes())
     });
     put_u64(named_keys.len() as u64, &mut buf);
-    for name in &named_keys {
-      if let Some(entry) = self.named.get(name) {
-        put_bytes(name.get_hash().as_bytes(), &mut buf);
-        put_named_indexed(entry.value(), &name_index, &mut buf)?;
-        emit!();
+    emit!();
+    for chunk in named_keys.chunks(4096) {
+      let encoded: Vec<Vec<u8>> = chunk
+        .into_par_iter()
+        .map(|name| {
+          let mut b = Vec::new();
+          if let Some(entry) = self.named.get(name) {
+            put_bytes(name.get_hash().as_bytes(), &mut b);
+            put_named_indexed(entry.value(), &name_index, &mut b)?;
+          }
+          Ok::<_, String>(b)
+        })
+        .collect::<Result<_, _>>()?;
+      for b in &encoded {
+        w.write_all(b).map_err(|e| format!("Env::put_file: write: {e}"))?;
+        written += b.len() as u64;
       }
     }
     // Section 5: Comms
