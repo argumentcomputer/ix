@@ -104,19 +104,13 @@ def unitsFor (slug : String) : Option String :=
    ("max-shard-cycles", "cycles"),
    ("shards", "shards"),
    ("fft-cost", "FFTs"),
-   ("recursive-time", "seconds (s)"),
-   ("recursive-prove-time", "seconds (s)"),
-   ("recursive-verify-time", "seconds (s)"),
-   ("recursive-peak-rss", "bytes (B)"),
-   ("recursive-proof-size", "bytes (B)"),
-   ("recursive-fft-cost", "FFTs"),
    ("throughput", "constants / second")].lookup slug
 
 /-- Dashboard group order (compile first, then aiur prove/execute, zisk,
     ooc); unranked workloads (a future backend) sort last. -/
 def workloadOrder : List String :=
   ["ix-compile", "aiur-check-prove", "aiur-check-execute",
-   "aiur-check-recursive", "zisk-check-execute", "ooc-check"]
+   "zisk-check-execute", "ooc-check"]
 
 structure PlotSpec where
   testbed : String

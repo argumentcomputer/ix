@@ -56,8 +56,10 @@ lake exe bench-typecheck --ixe <path> --consts <n1,n2,…> [--consts-file <p>] [
                  `recursive-proof-size`, `recursive-verify-time`). The whole
                  system, inner prove included, switches to the recursion-tuned
                  parameters (`recursiveFriParameters`), so recursive rows are
-                 NOT comparable to the standard prove cell and land on their
-                 own testbed (`ix bench run --backend aiur --mode recursive`).
+                 NOT comparable to the standard prove cell. The mode is a
+                 local/manual cell (`ix bench run --backend aiur --mode
+                 recursive`) with NO bencher testbed: the outer prove OOMs
+                 even at 128 GB today, so rows stay local until it completes.
                  With --texray, both proves stream the same `stark/...` span
                  names, so the summed `phase-stark-*` fields cover the pair.
                  Conflicts with --execute-only.

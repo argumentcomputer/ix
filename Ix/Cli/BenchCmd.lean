@@ -142,10 +142,14 @@ def backendSpecs : List BackendSpec := [
   -- prove that execution — the recursion cell. It runs under the
   -- recursion-tuned FRI parameters, so even its shared-name metrics
   -- (prove-time, peak-rss) are not comparable to the prove cell's.
+  -- DELIBERATELY no testbed: proving the verifier over an IxVM-kernel
+  -- proof OOMs even at 128 GB today, so the mode is a local/manual cell
+  -- (rows + compare only) and must not reach bencher.dev until it can
+  -- complete; the toy `bench-recursive-verifier` tracks verifier cost
+  -- meanwhile.
   { name := "aiur", defaultMode := "prove",
     testbeds := [("prove", "aiur-check-prove-x64-32x"),
-                 ("execute", "aiur-check-execute-x64-32x"),
-                 ("recursive", "aiur-check-recursive-x64-32x")],
+                 ("execute", "aiur-check-execute-x64-32x")],
     metrics := [("prove", ["prove-time", "throughput", "peak-rss",
                            "execute-time", "verify-time", "proof-size",
                            "fft-cost"]),
