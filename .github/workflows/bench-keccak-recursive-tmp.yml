@@ -1,0 +1,58 @@
+name: Keccak recursive verifier floor (temporary)
+
+# TEMPORARY: can the pre-Blake3 (Keccak) recursive verifier complete its
+# outer prove ANYWHERE? Locally its floor — a trivial one-function inner
+# statement (`square`), one FRI query, logBlowup 1 — measures ~3.2e10 fft
+# (~27x the Blake3 factorial bench), extrapolating to ~125-150 GB of prover
+# RAM: a coin flip on a 128 GB warp host. This runs that floor config under
+# the RAM watchdog so an OOM fails the step cleanly instead of wedging the
+# runner. Branch is cut from the last Keccak main (4954563) plus the ported
+# bench; delete branch + workflow once the datapoint is recorded.
+
+on:
+  push:
+    branches: [sb/keccak-recursive-bench]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: keccak-recursive-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  recursive:
+    runs-on: warp-ubuntu-latest-x64-32x
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Log host CPU/RAM
+        run: |
+          lscpu
+          free -g
+      - uses: leanprover/lean-action@v1
+        with:
+          auto-config: false
+          build: true
+          build-args: "bench-recursive-verifier -v"
+      # Watchdog ceiling: host RAM minus 15 GB (same rule as ix bench run),
+      # so the kernel OOM-kills the bench at the ceiling (exit 137) and the
+      # runner stays alive to report. The sampler logs the RSS high-water
+      # either way — on a kill it records how far it got.
+      - name: Run Keccak recursive floor (square, q=1, b=1)
+        run: |
+          ceiling_gb=$(( $(grep MemTotal /proc/meminfo | awk '{print $2}') / 1024 / 1024 - 15 ))
+          echo "watchdog ceiling: ${ceiling_gb} GB"
+          ./.github/scripts/watchdog.sh "$ceiling_gb" \
+            ./.lake/build/bin/bench-recursive-verifier --trivial --queries 1 --blowup 1 &
+          pid=$!
+          ( while kill -0 "$pid" 2>/dev/null; do
+              ps -eo rss,comm | grep bench-recursive | awk '{print $1}'
+              sleep 5
+            done ) > rss.log || true
+          wait "$pid"; code=$?
+          peak_kb=$(sort -n rss.log | tail -1)
+          echo "exit=${code} peak-rss=$(( ${peak_kb:-0} / 1024 / 1024 )) GB (${peak_kb:-0} kB)"
+          exit "$code"
