@@ -292,6 +292,48 @@ def blake3 := ⟦
     }
   }
 
+  /- # Word-op helpers for the G function (all `@`-inlined). -/
+
+  -- Little-endian 32-bit add (index 0 = LSB); mutually-exclusive carries
+  -- fold with a free field `+`.
+  fn u32_le_add(a: [U8; 4], b: [U8; 4]) -> [U8; 4] {
+    let (s0, c1) = u8_add(a[0], b[0]);
+    let (t1, o1) = u8_add(a[1], b[1]);
+    let (s1, c1a) = u8_add(t1, c1);
+    let c2 = u8_from_field_unsafe(to_field(o1) + to_field(c1a));
+    let (t2, o2) = u8_add(a[2], b[2]);
+    let (s2, c2a) = u8_add(t2, c2);
+    let c3 = u8_from_field_unsafe(to_field(o2) + to_field(c2a));
+    let (t3, _z) = u8_add(a[3], b[3]);
+    let (s3, _z) = u8_add(t3, c3);
+    [s0, s1, s2, s3]
+  }
+
+  fn u32_xor(a: [U8; 4], b: [U8; 4]) -> [U8; 4] {
+    [u8_xor(a[0], b[0]), u8_xor(a[1], b[1]), u8_xor(a[2], b[2]), u8_xor(a[3], b[3])]
+  }
+
+  -- Right-rotations of a little-endian word. rotr16 / rotr8 are pure byte
+  -- moves (free); rotr12 / rotr7 are a byte move composed with the chained
+  -- 4-/7-bit gadget (two lookups + two free field adds each).
+  fn rotr16(w: [U8; 4]) -> [U8; 4] { [w[2], w[3], w[0], w[1]] }
+
+  fn rotr8(w: [U8; 4]) -> [U8; 4] { [w[1], w[2], w[3], w[0]] }
+
+  fn rotr12(w: [U8; 4]) -> [U8; 4] {
+    let (e0, e1, e2) = u8_chain_rotr4(w[1], w[2]);
+    let (f0, f1, f2) = u8_chain_rotr4(w[3], w[0]);
+    [e0, u8_from_field_unsafe(to_field(e1) + to_field(f2)), f0,
+     u8_from_field_unsafe(to_field(f1) + to_field(e2))]
+  }
+
+  fn rotr7(w: [U8; 4]) -> [U8; 4] {
+    let (g0, g1, g2) = u8_chain_rotr7(w[0], w[1]);
+    let (h0, h1, h2) = u8_chain_rotr7(w[2], w[3]);
+    [g0, u8_from_field_unsafe(to_field(g1) + to_field(h2)), h0,
+     u8_from_field_unsafe(to_field(h1) + to_field(g2))]
+  }
+
   fn blake3_g_function(
     a: [U8; 4],
     b: [U8; 4],
@@ -300,108 +342,14 @@ def blake3 := ⟦
     x: [U8; 4],
     y: [U8; 4]
   ) -> [[U8; 4]; 4] {
-    -- a = (a + b) + x
-    let (r1_0, r1_c1) = u8_add(a[0], b[0]);
-    let (r1_s1, r1_o1) = u8_add(a[1], b[1]);
-    let (r1_1, r1_c1a) = u8_add(r1_s1, r1_c1);
-    let r1_c2 = u8_from_field_unsafe(to_field(r1_o1) + to_field(r1_c1a));
-    let (r1_s2, r1_o2) = u8_add(a[2], b[2]);
-    let (r1_2, r1_c2a) = u8_add(r1_s2, r1_c2);
-    let r1_c3 = u8_from_field_unsafe(to_field(r1_o2) + to_field(r1_c2a));
-    let (r1_s3, _z) = u8_add(a[3], b[3]);
-    let (r1_3, _z) = u8_add(r1_s3, r1_c3);
-    let (a0, r2_c1) = u8_add(r1_0, x[0]);
-    let (r2_s1, r2_o1) = u8_add(r1_1, x[1]);
-    let (a1, r2_c1a) = u8_add(r2_s1, r2_c1);
-    let r2_c2 = u8_from_field_unsafe(to_field(r2_o1) + to_field(r2_c1a));
-    let (r2_s2, r2_o2) = u8_add(r1_2, x[2]);
-    let (a2, r2_c2a) = u8_add(r2_s2, r2_c2);
-    let r2_c3 = u8_from_field_unsafe(to_field(r2_o2) + to_field(r2_c2a));
-    let (r2_s3, _z) = u8_add(r1_3, x[3]);
-    let (a3, _z) = u8_add(r2_s3, r2_c3);
-    let a = [a0, a1, a2, a3];
-
-    let d0 = u8_xor(d[0], a[0]);
-    let d1 = u8_xor(d[1], a[1]);
-    let d2 = u8_xor(d[2], a[2]);
-    let d3 = u8_xor(d[3], a[3]);
-    let d = [d2, d3, d0, d1]; -- Right-rotated 16
-
-    -- c = c + d
-    let (nc0, r3_c1) = u8_add(c[0], d[0]);
-    let (r3_s1, r3_o1) = u8_add(c[1], d[1]);
-    let (nc1, r3_c1a) = u8_add(r3_s1, r3_c1);
-    let r3_c2 = u8_from_field_unsafe(to_field(r3_o1) + to_field(r3_c1a));
-    let (r3_s2, r3_o2) = u8_add(c[2], d[2]);
-    let (nc2, r3_c2a) = u8_add(r3_s2, r3_c2);
-    let r3_c3 = u8_from_field_unsafe(to_field(r3_o2) + to_field(r3_c2a));
-    let (r3_s3, _z) = u8_add(c[3], d[3]);
-    let (nc3, _z) = u8_add(r3_s3, r3_c3);
-    let c = [nc0, nc1, nc2, nc3];
-
-    let b0 = u8_xor(b[0], c[0]);
-    let b1 = u8_xor(b[1], c[1]);
-    let b2 = u8_xor(b[2], c[2]);
-    let b3 = u8_xor(b[3], c[3]);
-    -- Right-rotated 12 = rotr8 (byte move) ∘ rotr4 (chained gadget).
-    -- rotr8 of [b0,b1,b2,b3] is [b1,b2,b3,b0]; rotr4 over that pairs (b1,b2)
-    -- and (b3,b0). Two gadget lookups + two free field adds.
-    let (e0, e1, e2) = u8_chain_rotr4(b1, b2);
-    let (f0, f1, f2) = u8_chain_rotr4(b3, b0);
-    -- Combined parts occupy disjoint bit positions: sum is a byte, add as `G`.
-    let b = [e0, u8_from_field_unsafe(to_field(e1) + to_field(f2)), f0,
-             u8_from_field_unsafe(to_field(f1) + to_field(e2))]; -- Right-rotated 12
-
-    -- a = (a + b) + y
-    let (r4_0, r4_c1) = u8_add(a[0], b[0]);
-    let (r4_s1, r4_o1) = u8_add(a[1], b[1]);
-    let (r4_1, r4_c1a) = u8_add(r4_s1, r4_c1);
-    let r4_c2 = u8_from_field_unsafe(to_field(r4_o1) + to_field(r4_c1a));
-    let (r4_s2, r4_o2) = u8_add(a[2], b[2]);
-    let (r4_2, r4_c2a) = u8_add(r4_s2, r4_c2);
-    let r4_c3 = u8_from_field_unsafe(to_field(r4_o2) + to_field(r4_c2a));
-    let (r4_s3, _z) = u8_add(a[3], b[3]);
-    let (r4_3, _z) = u8_add(r4_s3, r4_c3);
-    let (a0, r5_c1) = u8_add(r4_0, y[0]);
-    let (r5_s1, r5_o1) = u8_add(r4_1, y[1]);
-    let (a1, r5_c1a) = u8_add(r5_s1, r5_c1);
-    let r5_c2 = u8_from_field_unsafe(to_field(r5_o1) + to_field(r5_c1a));
-    let (r5_s2, r5_o2) = u8_add(r4_2, y[2]);
-    let (a2, r5_c2a) = u8_add(r5_s2, r5_c2);
-    let r5_c3 = u8_from_field_unsafe(to_field(r5_o2) + to_field(r5_c2a));
-    let (r5_s3, _z) = u8_add(r4_3, y[3]);
-    let (a3, _z) = u8_add(r5_s3, r5_c3);
-    let a = [a0, a1, a2, a3];
-
-    let d0 = u8_xor(d[0], a[0]);
-    let d1 = u8_xor(d[1], a[1]);
-    let d2 = u8_xor(d[2], a[2]);
-    let d3 = u8_xor(d[3], a[3]);
-    let d = [d1, d2, d3, d0]; -- Right-rotated 8
-
-    -- c = c + d
-    let (nc0, r6_c1) = u8_add(c[0], d[0]);
-    let (r6_s1, r6_o1) = u8_add(c[1], d[1]);
-    let (nc1, r6_c1a) = u8_add(r6_s1, r6_c1);
-    let r6_c2 = u8_from_field_unsafe(to_field(r6_o1) + to_field(r6_c1a));
-    let (r6_s2, r6_o2) = u8_add(c[2], d[2]);
-    let (nc2, r6_c2a) = u8_add(r6_s2, r6_c2);
-    let r6_c3 = u8_from_field_unsafe(to_field(r6_o2) + to_field(r6_c2a));
-    let (r6_s3, _z) = u8_add(c[3], d[3]);
-    let (nc3, _z) = u8_add(r6_s3, r6_c3);
-    let c = [nc0, nc1, nc2, nc3];
-
-    let b0 = u8_xor(b[0], c[0]);
-    let b1 = u8_xor(b[1], c[1]);
-    let b2 = u8_xor(b[2], c[2]);
-    let b3 = u8_xor(b[3], c[3]);
-    -- Right-rotated 7 via the chained gadget: pairs (b0,b1) and (b2,b3),
-    -- two lookups + two free field adds.
-    let (g0, g1, g2) = u8_chain_rotr7(b0, b1);
-    let (h0, h1, h2) = u8_chain_rotr7(b2, b3);
-    let b = [g0, u8_from_field_unsafe(to_field(g1) + to_field(h2)), h0,
-             u8_from_field_unsafe(to_field(h1) + to_field(g2))]; -- Right-rotated 7
-
+    let a = @u32_le_add(@u32_le_add(a, b), x);
+    let d = @rotr16(@u32_xor(d, a));
+    let c = @u32_le_add(c, d);
+    let b = @rotr12(@u32_xor(b, c));
+    let a = @u32_le_add(@u32_le_add(a, b), y);
+    let d = @rotr8(@u32_xor(d, a));
+    let c = @u32_le_add(c, d);
+    let b = @rotr7(@u32_xor(b, c));
     [a, b, c, d]
   }
 
