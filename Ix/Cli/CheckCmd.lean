@@ -39,6 +39,31 @@ public section
 open IxVM.ClaimHarness
 open Ix.Cli.NameResolve
 
+-- REPRO(compute_aux_perm): byte-identical copies of the
+-- `Tests/Ix/IxVM.lean` aux-dedup fixtures (`IxVMInd.Bar2` /
+-- `IxVMInd.DedupM`), which compile fine under their original namespace.
+-- Under this namespace, compiling the CLI env rejects the block:
+--
+--   $ lake exe ix check IxDbgRepro.DedupM.rec --interp bytecode
+--   [compile_env] block FAILED IxDbgRepro.DedupM (2 members):
+--     invalid mutual block: compute_aux_perm: no canonical match for
+--     in-SCC source aux #1 owned by IxDbgRepro.DedupM (head=IxDbgRepro.Bar2)
+--
+-- Same structure, different name ⇒ different compile outcome, so the
+-- compile-side aux matching appears name-order sensitive. The nested
+-- occurrences differ only in a phantom parameter (Bar2⟨·,Nat⟩ vs
+-- Bar2⟨·,Bool⟩ are alpha-identical once specialized), so any tie-break
+-- in the aux permutation must be name-independent to be canonical.
+namespace IxDbgRepro
+
+public inductive Bar2 (α β : Type) where
+  | mk : α → Bar2 α β
+
+public inductive DedupM where
+  | mk : Bar2 DedupM Nat → Bar2 DedupM Bool → DedupM
+
+end IxDbgRepro
+
 namespace Ix.Cli.CheckCmd
 
 def addrOfHex! (label : String) (s : String) : IO Address := do
