@@ -5,6 +5,9 @@ public section
 
 namespace IxVM
 
+-- The unrolled message schedule + 64-round fold elaborate to one deeply
+-- nested let chain; the default recursion budget is not enough.
+set_option maxRecDepth 65536 in
 def sha256 := ⟦
   /- # Test entrypoints -/
 
@@ -613,65 +616,116 @@ def sha256 := ⟦
       [0x90u8, 0xbeu8, 0xffu8, 0xfau8], [0xa4u8, 0x50u8, 0x6cu8, 0xebu8], [0xbeu8, 0xf9u8, 0xa3u8, 0xf7u8], [0xc6u8, 0x71u8, 0x78u8, 0xf2u8]
     ];
 
-    let W_16 = define_W_i(W[14], W[9],  W[1],  W[0]);
-    let W_17 = define_W_i(W[15], W[10], W[2],  W[1]);
-    let W_18 = define_W_i(W_16,  W[11], W[3],  W[2]);
-    let W_19 = define_W_i(W_17,  W[12], W[4],  W[3]);
-    let W_20 = define_W_i(W_18,  W[13], W[5],  W[4]);
-    let W_21 = define_W_i(W_19,  W[14], W[6],  W[5]);
-    let W_22 = define_W_i(W_20,  W[15], W[7],  W[6]);
-    let W_23 = define_W_i(W_21,  W_16,  W[8],  W[7]);
-    let W_24 = define_W_i(W_22,  W_17,  W[9],  W[8]);
-    let W_25 = define_W_i(W_23,  W_18,  W[10], W[9]);
-    let W_26 = define_W_i(W_24,  W_19,  W[11], W[10]);
-    let W_27 = define_W_i(W_25,  W_20,  W[12], W[11]);
-    let W_28 = define_W_i(W_26,  W_21,  W[13], W[12]);
-    let W_29 = define_W_i(W_27,  W_22,  W[14], W[13]);
-    let W_30 = define_W_i(W_28,  W_23,  W[15], W[14]);
-    let W_31 = define_W_i(W_29,  W_24,  W_16,  W[15]);
-    let W_32 = define_W_i(W_30,  W_25,  W_17,  W_16);
-    let W_33 = define_W_i(W_31,  W_26,  W_18,  W_17);
-    let W_34 = define_W_i(W_32,  W_27,  W_19,  W_18);
-    let W_35 = define_W_i(W_33,  W_28,  W_20,  W_19);
-    let W_36 = define_W_i(W_34,  W_29,  W_21,  W_20);
-    let W_37 = define_W_i(W_35,  W_30,  W_22,  W_21);
-    let W_38 = define_W_i(W_36,  W_31,  W_23,  W_22);
-    let W_39 = define_W_i(W_37,  W_32,  W_24,  W_23);
-    let W_40 = define_W_i(W_38,  W_33,  W_25,  W_24);
-    let W_41 = define_W_i(W_39,  W_34,  W_26,  W_25);
-    let W_42 = define_W_i(W_40,  W_35,  W_27,  W_26);
-    let W_43 = define_W_i(W_41,  W_36,  W_28,  W_27);
-    let W_44 = define_W_i(W_42,  W_37,  W_29,  W_28);
-    let W_45 = define_W_i(W_43,  W_38,  W_30,  W_29);
-    let W_46 = define_W_i(W_44,  W_39,  W_31,  W_30);
-    let W_47 = define_W_i(W_45,  W_40,  W_32,  W_31);
-    let W_48 = define_W_i(W_46,  W_41,  W_33,  W_32);
-    let W_49 = define_W_i(W_47,  W_42,  W_34,  W_33);
-    let W_50 = define_W_i(W_48,  W_43,  W_35,  W_34);
-    let W_51 = define_W_i(W_49,  W_44,  W_36,  W_35);
-    let W_52 = define_W_i(W_50,  W_45,  W_37,  W_36);
-    let W_53 = define_W_i(W_51,  W_46,  W_38,  W_37);
-    let W_54 = define_W_i(W_52,  W_47,  W_39,  W_38);
-    let W_55 = define_W_i(W_53,  W_48,  W_40,  W_39);
-    let W_56 = define_W_i(W_54,  W_49,  W_41,  W_40);
-    let W_57 = define_W_i(W_55,  W_50,  W_42,  W_41);
-    let W_58 = define_W_i(W_56,  W_51,  W_43,  W_42);
-    let W_59 = define_W_i(W_57,  W_52,  W_44,  W_43);
-    let W_60 = define_W_i(W_58,  W_53,  W_45,  W_44);
-    let W_61 = define_W_i(W_59,  W_54,  W_46,  W_45);
-    let W_62 = define_W_i(W_60,  W_55,  W_47,  W_46);
-    let W_63 = define_W_i(W_61,  W_56,  W_48,  W_47);
+    -- Message schedule, inlined (the old `define_W_i` helper's body): each
+    -- call cost 4 output aux + 1 lookup here plus a 210-wide row per
+    -- distinct input tuple in its own circuit — with the schedule in-block
+    -- the work rides the block row that already exists.
+    let Wx = [[0u8; 4]; 64];
+    let Wx = fold(0 .. 16, Wx, |Wx, @j| set(Wx, @j, W[@j]));
+    let Wx = fold(16 .. 64, Wx, |Wx, @i|
+      let [w15_b3, w15_b2, w15_b1, w15_b0] = Wx[@i - 15];
+      let [w15_b0_0, w15_b0_1, w15_b0_2, w15_b0_3, w15_b0_4, w15_b0_5, w15_b0_6, w15_b0_7] = u8_bit_decomposition(w15_b0);
+      let [w15_b1_0, w15_b1_1, w15_b1_2, w15_b1_3, w15_b1_4, w15_b1_5, w15_b1_6, w15_b1_7] = u8_bit_decomposition(w15_b1);
+      let [w15_b2_0, w15_b2_1, w15_b2_2, w15_b2_3, w15_b2_4, w15_b2_5, w15_b2_6, w15_b2_7] = u8_bit_decomposition(w15_b2);
+      let [w15_b3_0, w15_b3_1, w15_b3_2, w15_b3_3, w15_b3_4, w15_b3_5, w15_b3_6, w15_b3_7] = u8_bit_decomposition(w15_b3);
 
-    let W = [
-      W[0], W[1], W[2],  W[3],  W[4],  W[5],  W[6],  W[7],
-      W[8], W[9], W[10], W[11], W[12], W[13], W[14], W[15],
-      W_16, W_17, W_18,  W_19,  W_20,  W_21,  W_22,  W_23,
-      W_24, W_25, W_26,  W_27,  W_28,  W_29,  W_30,  W_31,
-      W_32, W_33, W_34,  W_35,  W_36,  W_37,  W_38,  W_39,
-      W_40, W_41, W_42,  W_43,  W_44,  W_45,  W_46,  W_47,
-      W_48, W_49, W_50,  W_51,  W_52,  W_53,  W_54,  W_55,
-      W_56, W_57, W_58,  W_59,  W_60,  W_61,  W_62,  W_63
-    ];
+      let w15_rotr7 = [
+        u8_from_field_unsafe(w15_b3_7 + 2 * w15_b0_0 + 4 * w15_b0_1 + 8 * w15_b0_2 + 16 * w15_b0_3 + 32 * w15_b0_4 + 64 * w15_b0_5 + 128 * w15_b0_6),
+        u8_from_field_unsafe(w15_b2_7 + 2 * w15_b3_0 + 4 * w15_b3_1 + 8 * w15_b3_2 + 16 * w15_b3_3 + 32 * w15_b3_4 + 64 * w15_b3_5 + 128 * w15_b3_6),
+        u8_from_field_unsafe(w15_b1_7 + 2 * w15_b2_0 + 4 * w15_b2_1 + 8 * w15_b2_2 + 16 * w15_b2_3 + 32 * w15_b2_4 + 64 * w15_b2_5 + 128 * w15_b2_6),
+        u8_from_field_unsafe(w15_b0_7 + 2 * w15_b1_0 + 4 * w15_b1_1 + 8 * w15_b1_2 + 16 * w15_b1_3 + 32 * w15_b1_4 + 64 * w15_b1_5 + 128 * w15_b1_6)
+      ];
+
+      let w15_rotr18 = [
+        u8_from_field_unsafe(w15_b1_2 + 2 * w15_b1_3 + 4 * w15_b1_4 + 8 * w15_b1_5 + 16 * w15_b1_6 + 32 * w15_b1_7 + 64 * w15_b2_0 + 128 * w15_b2_1),
+        u8_from_field_unsafe(w15_b0_2 + 2 * w15_b0_3 + 4 * w15_b0_4 + 8 * w15_b0_5 + 16 * w15_b0_6 + 32 * w15_b0_7 + 64 * w15_b1_0 + 128 * w15_b1_1),
+        u8_from_field_unsafe(w15_b3_2 + 2 * w15_b3_3 + 4 * w15_b3_4 + 8 * w15_b3_5 + 16 * w15_b3_6 + 32 * w15_b3_7 + 64 * w15_b0_0 + 128 * w15_b0_1),
+        u8_from_field_unsafe(w15_b2_2 + 2 * w15_b2_3 + 4 * w15_b2_4 + 8 * w15_b2_5 + 16 * w15_b2_6 + 32 * w15_b2_7 + 64 * w15_b3_0 + 128 * w15_b3_1)
+      ];
+
+      let w15_shr3 = [
+        u8_from_field_unsafe(w15_b3_3 + 2 * w15_b3_4 + 4 * w15_b3_5 + 8 * w15_b3_6 + 16 * w15_b3_7),
+        u8_from_field_unsafe(w15_b2_3 + 2 * w15_b2_4 + 4 * w15_b2_5 + 8 * w15_b2_6 + 16 * w15_b2_7 + 32 * w15_b3_0 + 64 * w15_b3_1 + 128 * w15_b3_2),
+        u8_from_field_unsafe(w15_b1_3 + 2 * w15_b1_4 + 4 * w15_b1_5 + 8 * w15_b1_6 + 16 * w15_b1_7 + 32 * w15_b2_0 + 64 * w15_b2_1 + 128 * w15_b2_2),
+        u8_from_field_unsafe(w15_b0_3 + 2 * w15_b0_4 + 4 * w15_b0_5 + 8 * w15_b0_6 + 16 * w15_b0_7 + 32 * w15_b1_0 + 64 * w15_b1_1 + 128 * w15_b1_2)
+      ];
+
+      let [w2_b3, w2_b2, w2_b1, w2_b0] = Wx[@i - 2];
+      let [w2_b0_0, w2_b0_1, w2_b0_2, w2_b0_3, w2_b0_4, w2_b0_5, w2_b0_6, w2_b0_7] = u8_bit_decomposition(w2_b0);
+      let [w2_b1_0, w2_b1_1, w2_b1_2, w2_b1_3, w2_b1_4, w2_b1_5, w2_b1_6, w2_b1_7] = u8_bit_decomposition(w2_b1);
+      let [w2_b2_0, w2_b2_1, w2_b2_2, w2_b2_3, w2_b2_4, w2_b2_5, w2_b2_6, w2_b2_7] = u8_bit_decomposition(w2_b2);
+      let [w2_b3_0, w2_b3_1, w2_b3_2, w2_b3_3, w2_b3_4, w2_b3_5, w2_b3_6, w2_b3_7] = u8_bit_decomposition(w2_b3);
+
+      let w2_rotr17 = [
+        u8_from_field_unsafe(w2_b1_1 + 2 * w2_b1_2 + 4 * w2_b1_3 + 8 * w2_b1_4 + 16 * w2_b1_5 + 32 * w2_b1_6 + 64 * w2_b1_7 + 128 * w2_b2_0),
+        u8_from_field_unsafe(w2_b0_1 + 2 * w2_b0_2 + 4 * w2_b0_3 + 8 * w2_b0_4 + 16 * w2_b0_5 + 32 * w2_b0_6 + 64 * w2_b0_7 + 128 * w2_b1_0),
+        u8_from_field_unsafe(w2_b3_1 + 2 * w2_b3_2 + 4 * w2_b3_3 + 8 * w2_b3_4 + 16 * w2_b3_5 + 32 * w2_b3_6 + 64 * w2_b3_7 + 128 * w2_b0_0),
+        u8_from_field_unsafe(w2_b2_1 + 2 * w2_b2_2 + 4 * w2_b2_3 + 8 * w2_b2_4 + 16 * w2_b2_5 + 32 * w2_b2_6 + 64 * w2_b2_7 + 128 * w2_b3_0)
+      ];
+
+      let w2_rotr19 = [
+        u8_from_field_unsafe(w2_b1_3 + 2 * w2_b1_4 + 4 * w2_b1_5 + 8 * w2_b1_6 + 16 * w2_b1_7 + 32 * w2_b2_0 + 64 * w2_b2_1 + 128 * w2_b2_2),
+        u8_from_field_unsafe(w2_b0_3 + 2 * w2_b0_4 + 4 * w2_b0_5 + 8 * w2_b0_6 + 16 * w2_b0_7 + 32 * w2_b1_0 + 64 * w2_b1_1 + 128 * w2_b1_2),
+        u8_from_field_unsafe(w2_b3_3 + 2 * w2_b3_4 + 4 * w2_b3_5 + 8 * w2_b3_6 + 16 * w2_b3_7 + 32 * w2_b0_0 + 64 * w2_b0_1 + 128 * w2_b0_2),
+        u8_from_field_unsafe(w2_b2_3 + 2 * w2_b2_4 + 4 * w2_b2_5 + 8 * w2_b2_6 + 16 * w2_b2_7 + 32 * w2_b3_0 + 64 * w2_b3_1 + 128 * w2_b3_2)
+      ];
+
+      -- shr10's top byte is the constant 0; only the three live bytes are
+      -- materialized, and s1's byte 0 xors two operands instead of three.
+      let w2_shr10 = [
+        u8_from_field_unsafe(w2_b3_2 + 2 * w2_b3_3 + 4 * w2_b3_4 + 8 * w2_b3_5 + 16 * w2_b3_6 + 32 * w2_b3_7),
+        u8_from_field_unsafe(w2_b2_2 + 2 * w2_b2_3 + 4 * w2_b2_4 + 8 * w2_b2_5 + 16 * w2_b2_6 + 32 * w2_b2_7 + 64 * w2_b3_0 + 128 * w2_b3_1),
+        u8_from_field_unsafe(w2_b1_2 + 2 * w2_b1_3 + 4 * w2_b1_4 + 8 * w2_b1_5 + 16 * w2_b1_6 + 32 * w2_b1_7 + 64 * w2_b2_0 + 128 * w2_b2_1)
+      ];
+
+      let ws0 = [
+        u8_xor(w15_rotr7[0], u8_xor(w15_rotr18[0], w15_shr3[0])),
+        u8_xor(w15_rotr7[1], u8_xor(w15_rotr18[1], w15_shr3[1])),
+        u8_xor(w15_rotr7[2], u8_xor(w15_rotr18[2], w15_shr3[2])),
+        u8_xor(w15_rotr7[3], u8_xor(w15_rotr18[3], w15_shr3[3]))
+      ];
+      let ws1 = [
+        u8_xor(w2_rotr17[0], w2_rotr19[0]),
+        u8_xor(w2_rotr17[1], u8_xor(w2_rotr19[1], w2_shr10[0])),
+        u8_xor(w2_rotr17[2], u8_xor(w2_rotr19[2], w2_shr10[1])),
+        u8_xor(w2_rotr17[3], u8_xor(w2_rotr19[3], w2_shr10[2]))
+      ];
+
+      -- W_i = W_i-16 ⊞ s0 ⊞ W_i-7 ⊞ s1 (big-endian u8_add carry chains).
+      let (ss0, ssc1) = u8_add(ws0[3], ws1[3]);
+      let (sst1, sso1) = u8_add(ws0[2], ws1[2]);
+      let (ss1, ssc1a) = u8_add(sst1, ssc1);
+      let ssc2 = u8_from_field_unsafe(to_field(sso1) + to_field(ssc1a));
+      let (sst2, sso2) = u8_add(ws0[1], ws1[1]);
+      let (ss2, ssc2a) = u8_add(sst2, ssc2);
+      let ssc3 = u8_from_field_unsafe(to_field(sso2) + to_field(ssc2a));
+      let (sst3, _x) = u8_add(ws0[0], ws1[0]);
+      let (ss3, _x) = u8_add(sst3, ssc3);
+
+      let w16 = Wx[@i - 16];
+      let w7 = Wx[@i - 7];
+      let (ww0, wwc1) = u8_add(w16[3], w7[3]);
+      let (wwt1, wwo1) = u8_add(w16[2], w7[2]);
+      let (ww1, wwc1a) = u8_add(wwt1, wwc1);
+      let wwc2 = u8_from_field_unsafe(to_field(wwo1) + to_field(wwc1a));
+      let (wwt2, wwo2) = u8_add(w16[1], w7[1]);
+      let (ww2, wwc2a) = u8_add(wwt2, wwc2);
+      let wwc3 = u8_from_field_unsafe(to_field(wwo2) + to_field(wwc2a));
+      let (wwt3, _x) = u8_add(w16[0], w7[0]);
+      let (ww3, _x) = u8_add(wwt3, wwc3);
+
+      let (wi0, wic1) = u8_add(ss0, ww0);
+      let (wit1, wio1) = u8_add(ss1, ww1);
+      let (wi1, wic1a) = u8_add(wit1, wic1);
+      let wic2 = u8_from_field_unsafe(to_field(wio1) + to_field(wic1a));
+      let (wit2, wio2) = u8_add(ss2, ww2);
+      let (wi2, wic2a) = u8_add(wit2, wic2);
+      let wic3 = u8_from_field_unsafe(to_field(wio2) + to_field(wic2a));
+      let (wit3, _x) = u8_add(ss3, ww3);
+      let (wi3, _x) = u8_add(wit3, wic3);
+      set(Wx, @i, [wi3, wi2, wi1, wi0])
+    );
+    let W = Wx;
 
     let state_new = fold(0 .. 64, state, |acc, @i|
       let e_0_bits = u8_bit_decomposition(acc[4][3]);
@@ -837,76 +891,23 @@ def sha256 := ⟦
       [[na3, na2, na1, na0], acc[0], acc[1], acc[2], [ne3, ne2, ne1, ne0], acc[4], acc[5], acc[6]]
     );
 
-    [
-      u32_be_add(state[0], state_new[0]),
-      u32_be_add(state[1], state_new[1]),
-      u32_be_add(state[2], state_new[2]),
-      u32_be_add(state[3], state_new[3]),
-      u32_be_add(state[4], state_new[4]),
-      u32_be_add(state[5], state_new[5]),
-      u32_be_add(state[6], state_new[6]),
-      u32_be_add(state[7], state_new[7])
-    ]
-  }
-
-  fn define_W_i(«W_i-2»: [U8; 4], «W_i-7»: [U8; 4], «W_i-15»: [U8; 4], «W_i-16»: [U8; 4]) -> [U8; 4] {
-    let [«W_i-15_b3», «W_i-15_b2», «W_i-15_b1», «W_i-15_b0»] = «W_i-15»;
-    let [«W_i-15_b0_0», «W_i-15_b0_1», «W_i-15_b0_2», «W_i-15_b0_3», «W_i-15_b0_4», «W_i-15_b0_5», «W_i-15_b0_6», «W_i-15_b0_7»] = u8_bit_decomposition(«W_i-15_b0»);
-    let [«W_i-15_b1_0», «W_i-15_b1_1», «W_i-15_b1_2», «W_i-15_b1_3», «W_i-15_b1_4», «W_i-15_b1_5», «W_i-15_b1_6», «W_i-15_b1_7»] = u8_bit_decomposition(«W_i-15_b1»);
-    let [«W_i-15_b2_0», «W_i-15_b2_1», «W_i-15_b2_2», «W_i-15_b2_3», «W_i-15_b2_4», «W_i-15_b2_5», «W_i-15_b2_6», «W_i-15_b2_7»] = u8_bit_decomposition(«W_i-15_b2»);
-    let [«W_i-15_b3_0», «W_i-15_b3_1», «W_i-15_b3_2», «W_i-15_b3_3», «W_i-15_b3_4», «W_i-15_b3_5», «W_i-15_b3_6», «W_i-15_b3_7»] = u8_bit_decomposition(«W_i-15_b3»);
-
-    let «W_i-15_rotr7» = [
-      u8_from_field_unsafe(«W_i-15_b3_7» + 2 * «W_i-15_b0_0» + 4 * «W_i-15_b0_1» + 8 * «W_i-15_b0_2» + 16 * «W_i-15_b0_3» + 32 * «W_i-15_b0_4» + 64 * «W_i-15_b0_5» + 128 * «W_i-15_b0_6»),
-      u8_from_field_unsafe(«W_i-15_b2_7» + 2 * «W_i-15_b3_0» + 4 * «W_i-15_b3_1» + 8 * «W_i-15_b3_2» + 16 * «W_i-15_b3_3» + 32 * «W_i-15_b3_4» + 64 * «W_i-15_b3_5» + 128 * «W_i-15_b3_6»),
-      u8_from_field_unsafe(«W_i-15_b1_7» + 2 * «W_i-15_b2_0» + 4 * «W_i-15_b2_1» + 8 * «W_i-15_b2_2» + 16 * «W_i-15_b2_3» + 32 * «W_i-15_b2_4» + 64 * «W_i-15_b2_5» + 128 * «W_i-15_b2_6»),
-      u8_from_field_unsafe(«W_i-15_b0_7» + 2 * «W_i-15_b1_0» + 4 * «W_i-15_b1_1» + 8 * «W_i-15_b1_2» + 16 * «W_i-15_b1_3» + 32 * «W_i-15_b1_4» + 64 * «W_i-15_b1_5» + 128 * «W_i-15_b1_6»)
-    ];
-
-    let «W_i-15_rotr18» = [
-      u8_from_field_unsafe(«W_i-15_b1_2» + 2 * «W_i-15_b1_3» + 4 * «W_i-15_b1_4» + 8 * «W_i-15_b1_5» + 16 * «W_i-15_b1_6» + 32 * «W_i-15_b1_7» + 64 * «W_i-15_b2_0» + 128 * «W_i-15_b2_1»),
-      u8_from_field_unsafe(«W_i-15_b0_2» + 2 * «W_i-15_b0_3» + 4 * «W_i-15_b0_4» + 8 * «W_i-15_b0_5» + 16 * «W_i-15_b0_6» + 32 * «W_i-15_b0_7» + 64 * «W_i-15_b1_0» + 128 * «W_i-15_b1_1»),
-      u8_from_field_unsafe(«W_i-15_b3_2» + 2 * «W_i-15_b3_3» + 4 * «W_i-15_b3_4» + 8 * «W_i-15_b3_5» + 16 * «W_i-15_b3_6» + 32 * «W_i-15_b3_7» + 64 * «W_i-15_b0_0» + 128 * «W_i-15_b0_1»),
-      u8_from_field_unsafe(«W_i-15_b2_2» + 2 * «W_i-15_b2_3» + 4 * «W_i-15_b2_4» + 8 * «W_i-15_b2_5» + 16 * «W_i-15_b2_6» + 32 * «W_i-15_b2_7» + 64 * «W_i-15_b3_0» + 128 * «W_i-15_b3_1»)
-    ];
-
-    let «W_i-15_shr3» = [
-      u8_from_field_unsafe(«W_i-15_b3_3» + 2 * «W_i-15_b3_4» + 4 * «W_i-15_b3_5» + 8 * «W_i-15_b3_6» + 16 * «W_i-15_b3_7»),
-      u8_from_field_unsafe(«W_i-15_b2_3» + 2 * «W_i-15_b2_4» + 4 * «W_i-15_b2_5» + 8 * «W_i-15_b2_6» + 16 * «W_i-15_b2_7» + 32 * «W_i-15_b3_0» + 64 * «W_i-15_b3_1» + 128 * «W_i-15_b3_2»),
-      u8_from_field_unsafe(«W_i-15_b1_3» + 2 * «W_i-15_b1_4» + 4 * «W_i-15_b1_5» + 8 * «W_i-15_b1_6» + 16 * «W_i-15_b1_7» + 32 * «W_i-15_b2_0» + 64 * «W_i-15_b2_1» + 128 * «W_i-15_b2_2»),
-      u8_from_field_unsafe(«W_i-15_b0_3» + 2 * «W_i-15_b0_4» + 4 * «W_i-15_b0_5» + 8 * «W_i-15_b0_6» + 16 * «W_i-15_b0_7» + 32 * «W_i-15_b1_0» + 64 * «W_i-15_b1_1» + 128 * «W_i-15_b1_2»)
-    ];
-
-    let [«W_i-2_b3», «W_i-2_b2», «W_i-2_b1», «W_i-2_b0»] = «W_i-2»;
-    let [«W_i-2_b0_0», «W_i-2_b0_1», «W_i-2_b0_2», «W_i-2_b0_3», «W_i-2_b0_4», «W_i-2_b0_5», «W_i-2_b0_6», «W_i-2_b0_7»] = u8_bit_decomposition(«W_i-2_b0»);
-    let [«W_i-2_b1_0», «W_i-2_b1_1», «W_i-2_b1_2», «W_i-2_b1_3», «W_i-2_b1_4», «W_i-2_b1_5», «W_i-2_b1_6», «W_i-2_b1_7»] = u8_bit_decomposition(«W_i-2_b1»);
-    let [«W_i-2_b2_0», «W_i-2_b2_1», «W_i-2_b2_2», «W_i-2_b2_3», «W_i-2_b2_4», «W_i-2_b2_5», «W_i-2_b2_6», «W_i-2_b2_7»] = u8_bit_decomposition(«W_i-2_b2»);
-    let [«W_i-2_b3_0», «W_i-2_b3_1», «W_i-2_b3_2», «W_i-2_b3_3», «W_i-2_b3_4», «W_i-2_b3_5», «W_i-2_b3_6», «W_i-2_b3_7»] = u8_bit_decomposition(«W_i-2_b3»);
-
-    let «W_i-2_rotr17» = [
-      u8_from_field_unsafe(«W_i-2_b1_1» + 2 * «W_i-2_b1_2» + 4 * «W_i-2_b1_3» + 8 * «W_i-2_b1_4» + 16 * «W_i-2_b1_5» + 32 * «W_i-2_b1_6» + 64 * «W_i-2_b1_7» + 128 * «W_i-2_b2_0»),
-      u8_from_field_unsafe(«W_i-2_b0_1» + 2 * «W_i-2_b0_2» + 4 * «W_i-2_b0_3» + 8 * «W_i-2_b0_4» + 16 * «W_i-2_b0_5» + 32 * «W_i-2_b0_6» + 64 * «W_i-2_b0_7» + 128 * «W_i-2_b1_0»),
-      u8_from_field_unsafe(«W_i-2_b3_1» + 2 * «W_i-2_b3_2» + 4 * «W_i-2_b3_3» + 8 * «W_i-2_b3_4» + 16 * «W_i-2_b3_5» + 32 * «W_i-2_b3_6» + 64 * «W_i-2_b3_7» + 128 * «W_i-2_b0_0»),
-      u8_from_field_unsafe(«W_i-2_b2_1» + 2 * «W_i-2_b2_2» + 4 * «W_i-2_b2_3» + 8 * «W_i-2_b2_4» + 16 * «W_i-2_b2_5» + 32 * «W_i-2_b2_6» + 64 * «W_i-2_b2_7» + 128 * «W_i-2_b3_0»)
-    ];
-
-    let «W_i-2_rotr19» = [
-      u8_from_field_unsafe(«W_i-2_b1_3» + 2 * «W_i-2_b1_4» + 4 * «W_i-2_b1_5» + 8 * «W_i-2_b1_6» + 16 * «W_i-2_b1_7» + 32 * «W_i-2_b2_0» + 64 * «W_i-2_b2_1» + 128 * «W_i-2_b2_2»),
-      u8_from_field_unsafe(«W_i-2_b0_3» + 2 * «W_i-2_b0_4» + 4 * «W_i-2_b0_5» + 8 * «W_i-2_b0_6» + 16 * «W_i-2_b0_7» + 32 * «W_i-2_b1_0» + 64 * «W_i-2_b1_1» + 128 * «W_i-2_b1_2»),
-      u8_from_field_unsafe(«W_i-2_b3_3» + 2 * «W_i-2_b3_4» + 4 * «W_i-2_b3_5» + 8 * «W_i-2_b3_6» + 16 * «W_i-2_b3_7» + 32 * «W_i-2_b0_0» + 64 * «W_i-2_b0_1» + 128 * «W_i-2_b0_2»),
-      u8_from_field_unsafe(«W_i-2_b2_3» + 2 * «W_i-2_b2_4» + 4 * «W_i-2_b2_5» + 8 * «W_i-2_b2_6» + 16 * «W_i-2_b2_7» + 32 * «W_i-2_b3_0» + 64 * «W_i-2_b3_1» + 128 * «W_i-2_b3_2»)
-    ];
-
-    let «W_i-2_shr10» = [
-      u8_from_field_unsafe(0),
-      u8_from_field_unsafe(«W_i-2_b3_2» + 2 * «W_i-2_b3_3» + 4 * «W_i-2_b3_4» + 8 * «W_i-2_b3_5» + 16 * «W_i-2_b3_6» + 32 * «W_i-2_b3_7»),
-      u8_from_field_unsafe(«W_i-2_b2_2» + 2 * «W_i-2_b2_3» + 4 * «W_i-2_b2_4» + 8 * «W_i-2_b2_5» + 16 * «W_i-2_b2_6» + 32 * «W_i-2_b2_7» + 64 * «W_i-2_b3_0» + 128 * «W_i-2_b3_1»),
-      u8_from_field_unsafe(«W_i-2_b1_2» + 2 * «W_i-2_b1_3» + 4 * «W_i-2_b1_4» + 8 * «W_i-2_b1_5» + 16 * «W_i-2_b1_6» + 32 * «W_i-2_b1_7» + 64 * «W_i-2_b2_0» + 128 * «W_i-2_b2_1»)
-    ];
-
-    let «W_i_s0» = u32_xor(«W_i-15_rotr7», u32_xor(«W_i-15_rotr18», «W_i-15_shr3»));
-    let «W_i_s1» = u32_xor(«W_i-2_rotr17», u32_xor(«W_i-2_rotr19», «W_i-2_shr10»));
-    u32_be_add(«W_i-16», u32_be_add(«W_i_s0», u32_be_add(«W_i-7», «W_i_s1»)))
+    -- Final Davies-Meyer state addition, inlined per word via the same
+    -- big-endian u8_add carry chains as the round body.
+    let fs = fold(0 .. 8, [[0u8; 4]; 8], |fs, @j|
+      let sw = state[@j];
+      let nw = state_new[@j];
+      let (f0, fc1) = u8_add(sw[3], nw[3]);
+      let (ft1, fo1) = u8_add(sw[2], nw[2]);
+      let (f1, fc1a) = u8_add(ft1, fc1);
+      let fc2 = u8_from_field_unsafe(to_field(fo1) + to_field(fc1a));
+      let (ft2, fo2) = u8_add(sw[1], nw[1]);
+      let (f2, fc2a) = u8_add(ft2, fc2);
+      let fc3 = u8_from_field_unsafe(to_field(fo2) + to_field(fc2a));
+      let (ft3, _x) = u8_add(sw[0], nw[0]);
+      let (f3, _x) = u8_add(ft3, fc3);
+      set(fs, @j, [f3, f2, f1, f0])
+    );
+    fs
   }
 ⟧
 

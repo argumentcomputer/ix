@@ -70,14 +70,6 @@ def byteStream := ⟦
     [sum0, sum1_with_carry, sum2_with_carry, sum3_with_carry]
   }
 
-  fn u32_xor(a: [U8; 4], b: [U8; 4]) -> [U8; 4] {
-    let c0 = u8_xor(a[0], b[0]);
-    let c1 = u8_xor(a[1], b[1]);
-    let c2 = u8_xor(a[2], b[2]);
-    let c3 = u8_xor(a[3], b[3]);
-    [c0, c1, c2, c3]
-  }
-
   -- Byte-by-byte `u64` equality
   fn u64_eq(a: U64, b: U64) -> G {
     let [a0, a1, a2, a3, a4, a5, a6, a7] = a;
@@ -187,27 +179,6 @@ def byteStream := ⟦
     let (sum7, _carry8) = u8_add(u64[0], carry7);
 
     [sum7, sum6, sum5, sum4, sum3, sum2, sum1_with_carry, sum0]
-  }
-
-  fn u32_be_add(a: [U8; 4], b: [U8; 4]) -> [U8; 4] {
-    -- Byte 0, no initial carry
-    let (sum0, carry1) = u8_add(a[3], b[3]);
-
-    -- Byte 1
-    let (sum1, overflow1) = u8_add(a[2], b[2]);
-    let (sum1_with_carry, carry1a) = u8_add(sum1, carry1);
-    let carry2 = u8_from_field_unsafe(to_field(overflow1) + to_field(carry1a));
-
-    -- Byte 2
-    let (sum2, overflow2) = u8_add(a[1], b[1]);
-    let (sum2_with_carry, carry2a) = u8_add(sum2, carry2);
-    let carry3 = u8_from_field_unsafe(to_field(overflow2) + to_field(carry2a));
-
-    -- Byte 3
-    let (sum3, _x) = u8_add(a[0], b[0]);
-    let (sum3_with_carry, _x) = u8_add(sum3, carry3);
-
-    [sum3_with_carry, sum2_with_carry, sum1_with_carry, sum0]
   }
 
   -- Computes the predecessor of an `u64` assumed to be properly represented in

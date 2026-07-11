@@ -207,6 +207,7 @@ syntax:max num "u8"                                                         : ai
 syntax "dbg!" "(" str (", " aiur_trm)? ")" ";" (aiur_trm)?                  : aiur_trm
 
 syntax aiur_trm "[" "@" noWs ident "]"                                                              : aiur_trm
+syntax aiur_trm "[" "@" noWs ident " - " num "]"                                                    : aiur_trm
 syntax "set" "(" aiur_trm ", " "@" noWs ident ", " aiur_trm ")"                                     : aiur_trm
 syntax "fold" "(" num ".." num ", " aiur_trm ", " "|" aiur_pattern ", " "@" noWs ident "|" aiur_trm ")" : aiur_trm
 
@@ -389,6 +390,7 @@ partial def elabTrm : ElabStxCat `aiur_trm
       res ← `(aiur_trm| let $acc = $res; $body')
     elabTrm res
   | `(aiur_trm| $_[@$var]) => throw $ .error var "Unbound macro variable"
+  | `(aiur_trm| $_[@$var - $_:num]) => throw $ .error var "Unbound macro variable"
   | `(aiur_trm| set($_, @$var, $_)) => throw $ .error var "Unbound macro variable"
   | stx => throw $ .error stx "Invalid syntax for term"
 where
@@ -402,6 +404,12 @@ where
         let new := Syntax.mkNatLit new
         `(aiur_trm| $arr[$new])
       else `(aiur_trm| $arr[@$var])
+    | `(aiur_trm| $arr[@$var - $k:num]) => do
+      let arr ← replaceToken old new arr
+      if var.getId = old then
+        let new := Syntax.mkNatLit (new - k.getNat)
+        `(aiur_trm| $arr[$new])
+      else `(aiur_trm| $arr[@$var - $k:num])
     | `(aiur_trm| set($arr, @$var, $v)) => do
       let arr ← replaceToken old new arr
       let v ← replaceToken old new v
