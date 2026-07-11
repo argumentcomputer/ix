@@ -606,7 +606,9 @@ def parseError (msg : String) : IO UInt32 := do
 
       !benchmark ([aiur] [zisk] [sp1] [ooc] [compile] | all) [execute]
                  [KEY=VALUE …]
-      BENCH_ENVS=InitStd,Mathlib   (case-insensitive; default InitStd)
+      BENCH_ENVS=InitStd,Mathlib   (case-insensitive; default InitStd;
+                                    compile-only requests may name any
+                                    registry env, e.g. Lean or FLT)
       BENCH_FULL=1                 (full curated set, not just primary)
       BENCH_SHARD=1                (only the multi-shard target constants)
       BENCH_PHASES=1 / RUST_LOG=… / WITHOUT_VK_VERIFICATION=… /
@@ -702,13 +704,20 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
           let tok := tok.trimAscii.toString
           match Ix.Cli.BenchCmd.findEnv tok with
           | some e =>
-            if !e.benched then
-              return ← parseError s!"env `{e.name}` is not benched in CI \
-                (benched: {", ".intercalate benchedEnvNames})"
+            -- `compile` measures any registry env (its row is env-keyed;
+            -- no curated constants involved). Every other backend selects
+            -- constants from Vectors.csv, which only covers the benched
+            -- envs — so an unbenched env needs a compile-only request.
+            if !e.benched && backends.any (·.name != "compile") then
+              return ← parseError s!"env `{e.name}` is only available for a \
+                compile-only `!benchmark compile` (the other backends need \
+                curated constants; benched: \
+                {", ".intercalate benchedEnvNames})"
             if !envs.contains e.name then envs := envs.push e.name
           | none =>
             return ← parseError s!"unknown env `{tok}` in BENCH_ENVS \
-              (benched: {", ".intercalate benchedEnvNames})"
+              (registry: \
+              {", ".intercalate (Ix.Cli.BenchCmd.envSpecs.map (·.name))})"
       | "BENCH_SHARD" => if val == "1" then shard := "1"
       | "BENCH_FULL" => if val == "1" then full := "1"
       | k =>

@@ -4,7 +4,8 @@
 #   !benchmark ([aiur] [zisk] [sp1] [ooc] [compile] | all) [execute]
 #     (sp1 is disabled in the registry (Ix/Cli/BenchCmd.lean) — the parser skips it
 #      with a note in the config summary)
-#   BENCH_ENVS=InitStd,Mathlib     # which compiled envs (default InitStd; case-insensitive)
+#   BENCH_ENVS=InitStd,Mathlib     # which compiled envs (default InitStd; case-insensitive;
+#                                  #  compile-only requests may name any registry env, e.g. Lean/FLT)
 #   BENCH_FULL=1                   # run the full curated set, not just primary
 #   BENCH_SHARD=1                  # restrict to the multi-shard target constants
 #   BENCH_PHASES=1                 # add per-constant phase drill-downs to the comment
@@ -238,7 +239,8 @@ jobs:
           auto-config: false
           build: false
           use-github-cache: false
-          use-mathlib-cache: ${{ matrix.env == 'Mathlib' && 'true' || 'false' }}
+          # Mathlib oleans for every env that imports Mathlib (FLT does).
+          use-mathlib-cache: ${{ (matrix.env == 'Mathlib' || matrix.env == 'FLT') && 'true' || 'false' }}
       # The measured `ix compile` resolves the env's imports from the
       # subpackage's oleans — bench-main builds the same target before its
       # measured compile.
@@ -502,19 +504,22 @@ jobs:
           build: true
           build-args: "ix bench-typecheck"
           use-github-cache: false
-      # Base-side `ix compile` of the Mathlib env resolves imports from the
-      # base tree's Benchmarks/Compile subpackage — mathlib lives there, not
-      # in the root workspace, so the cache fetch can't ride the build
-      # action above.
+      # Base-side `ix compile` of a mathlib-importing env (Mathlib, FLT)
+      # resolves imports from the base tree's Benchmarks/Compile subpackage —
+      # mathlib lives there, not in the root workspace, so the cache fetch
+      # can't ride the build action above. Compile cells need this even with
+      # cached binaries: the compile backend always compiles (`--ixe` is
+      # ignored by design), while a prover cell with cached binaries rides
+      # the restored `.ixe` and skips the compile entirely.
       - name: Fetch base Mathlib oleans
         if: >-
           steps.bencher.outputs.run-base == 'true' &&
-          steps.base-src.outputs.cached != 'true' &&
-          matrix.cell.env == 'Mathlib'
+          (matrix.cell.env == 'Mathlib' || matrix.cell.env == 'FLT') &&
+          (matrix.cell.backend == 'compile' || steps.base-src.outputs.cached != 'true')
         working-directory: base/Benchmarks/Compile
         run: |
           lake exe cache get
-          lake build CompileMathlib
+          lake build Compile${{ matrix.cell.env }}
       # NOTE: the PR's `ix bench` orchestrates the base run (--repo base); the
       # MEASURED tools resolve from base/.lake/build/bin. When a PR changes
       # the benchmark CLIs themselves, the base tools may reject the new

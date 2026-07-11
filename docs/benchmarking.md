@@ -154,7 +154,9 @@ breakdowns. bench-main's compile job pre-cuts these artifacts
 
 ```
 !benchmark ([aiur] [zisk] [sp1] [ooc] [compile] | all) [execute] [KEY=VALUE …]
-BENCH_ENVS=InitStd,Mathlib     # default InitStd (case-insensitive)
+BENCH_ENVS=InitStd,Mathlib     # default InitStd (case-insensitive); a
+                               # compile-only request may name any registry
+                               # env (Lean, FLT compile fine, just unbenched)
 BENCH_FULL=1                   # full curated set, not just primary
 BENCH_SHARD=1                  # only the multi-shard target constants
 BENCH_PHASES=1                 # add the per-constant phase drill-downs
