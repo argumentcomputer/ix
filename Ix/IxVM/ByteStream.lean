@@ -194,7 +194,7 @@ def byteStream := ⟦
     let (sum6, carry7) = u8_add(u64[1], carry6);
     let (sum7, _carry8) = u8_add(u64[0], carry7);
 
-    [sum7, sum6, sum5, sum4, sum3, sum2, sum1, sum0]
+    [sum7, sum6, sum5, sum4, sum3, sum2, sum1_with_carry, sum0]
   }
 
   fn u32_be_add(a: [U8; 4], b: [U8; 4]) -> [U8; 4] {
