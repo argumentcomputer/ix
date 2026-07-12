@@ -66,10 +66,16 @@ def runCompressCmd (p : Cli.Parsed) : IO UInt32 := do
     | .error e =>
       IO.eprintln s!"error: SP1 wrap failed: {e}"
       return 1
-  let some proofArg := p.positionalArg? "proof"
-    | p.printError "error: must specify <proof-hex> (or --from-sp1 <file>)"; return 1
+  let proofHex ← match (p.variableArgsAs! String).toList with
+    | [h] => pure h
+    | [] =>
+      p.printError "error: must specify <proof-hex> (or --from-sp1 <file>)"
+      return 1
+    | _ =>
+      p.printError "error: expected exactly one <proof-hex>"
+      return 1
   let mode := (p.flag? "mode").map (·.as! String) |>.getD "compressed"
-  let proofAddr ← addrOfHex! "proof" (proofArg.as! String)
+  let proofAddr ← addrOfHex! "proof" proofHex
   let bytes ← StoreIO.toIO (Store.read proofAddr)
   let wrapper ← IO.ofExcept (Ixon.Proof.de bytes)
   let (aiurSystem, compiled) ← match (← Ix.Cli.VerifyCmd.buildBackend) with
@@ -109,7 +115,7 @@ def compressCmd : Cli.Cmd := `[Cli|
     "from-sp1" : String; "Upgrade an already-saved compressed SP1 proof file to groth16/plonk without redoing the STARK pipeline. Skips <proof-hex> and the Aiur backend entirely."
 
   ARGS:
-    proof : String; "32-byte hex address of a persisted `Ixon.Proof` wrapper in `~/.ix/store/`. Not needed with --from-sp1."
+    ...proof : String; "32-byte hex address of a persisted `Ixon.Proof` wrapper in `~/.ix/store/`. Exactly one, unless --from-sp1 is given (then omit it)."
 ]
 
 end
