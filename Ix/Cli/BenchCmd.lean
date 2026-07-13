@@ -199,7 +199,12 @@ def findBackend (name : String) : Option BackendSpec :=
     `standard` the recursion-tuned default. -/
 def recursiveConfigs : List (String × Array String) := [
   ("square-q1-b1", #["--trivial", "--queries", "1", "--blowup", "1"]),
-  ("factorial-q3-b2", #[])
+  ("factorial-q3-b2", #[]),
+  -- Deeper inner recursion (500 field muls at n=500): scales the inner
+  -- statement without changing the system, showing how the recursion cost
+  -- responds to inner trace size.
+  ("factorial50-q3-b2", #["--input", "50"]),
+  ("factorial500-q3-b2", #["--input", "500"])
 ]
 
 def BackendSpec.testbedFor (b : BackendSpec) (mode : String) : Option String :=

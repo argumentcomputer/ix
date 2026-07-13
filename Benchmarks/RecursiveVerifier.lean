@@ -21,7 +21,10 @@ asserting accept/reject.
 lake exe bench-recursive-verifier                 # factorial(5), q=3, blowup 2 — ~5 s / ~7 GB
 lake exe bench-recursive-verifier --execute-only  # skip the outer prove (FFT/exec only)
 
-  --trivial        square(5) instead of factorial(5) — the per-statement floor
+  --trivial        square(n) instead of factorial(n) — the per-statement floor
+  --input N        the inner argument n   (default 5); deeper factorials grow
+                   the inner trace, scaling the statement without changing
+                   the system
   --queries N      FRI query count        (default 3)
   --blowup N       log2 blowup            (default 2)
   --pow N          commit PoW bits        (default 20)
@@ -95,11 +98,12 @@ def main (args : List String) : IO UInt32 := do
   IO.println s!"params: logBlowup={recCommitParams.logBlowup} \
     numQueries={innerFri.numQueries} finalPoly={innerFri.logFinalPolyLen} \
     pow={innerFri.commitProofOfWorkBits}"
-  -- Inner proof: factorial(5) (or `square(5)` under --trivial) under the
+  -- Inner proof: factorial(n) (or `square(n)` under --trivial) under the
   -- multi-stark backend.
   let (program, entry) :=
     if args.contains "--trivial" then (squareProgram, `square)
     else (factorialProgram, `factorial)
+  let inputN := argNat args "--input" 5
   let rowName := (argStr args "--json-name").getD entry.toString
   -- Same texray/sampler arrangement as bench-typecheck: the RSS sampler
   -- always runs (peak-rss windows), the timeline only under --texray, and
@@ -117,10 +121,10 @@ def main (args : List String) : IO UInt32 := do
     | .error e => IO.eprintln s!"inner compile failed: {e}"; return 1
   let facSystem := AiurSystem.build facCompiled.bytecode recCommitParams innerFri
   let facIdx := facCompiled.getFuncIdx entry |>.get!
-  IO.println s!"proving inner {entry}(5)…"
+  IO.println s!"proving inner {entry}({inputN})…"
   TracingTexray.resetPeakTreeRss
   let it0 ← IO.monoNanosNow
-  let (claim, proof, _) := facSystem.prove facIdx #[Aiur.G.ofNat 5] default
+  let (claim, proof, _) := facSystem.prove facIdx #[Aiur.G.ofNat inputN] default
   let proofBytes := proof.toBytes
   let it1 ← IO.monoNanosNow
   let innerOk := facSystem.verify claim proof matches .ok _
