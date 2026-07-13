@@ -58,7 +58,9 @@ def computeStats (compiled : CompiledToplevel) (queryCounts : Array QueryCount) 
         acc := acc.push { name, width := w, height := h, cacheHits := hits, fftCost := fftCost w h : CircuitStats }
     acc
   let memoryCircuits := t.memorySizes.mapIdx fun i size =>
-    let w := size + 11
+    -- Mirrors `crates/aiur/src/memory.rs`: multiplicity + selector + pointer
+    -- + `size` value columns, plus one lookup -> 2*(1 + 1) stage-2 columns.
+    let w := size + 7
     let qc := queryCounts[nAllFuns + i]!
     let h := qc.uniqueRows
     let hits := qc.totalHits - qc.uniqueRows
