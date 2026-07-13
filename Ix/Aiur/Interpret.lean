@@ -358,24 +358,17 @@ partial def interp (decls : Decls) (bindings : Bindings) : Term → InterpM Valu
           let hi : Value := .field (G.ofUInt8 (x / 256).toUInt8)
           return .tuple #[lo, hi]
       | _, _ => throwErr "u8Mul: expected field values"
-  | .u8ChainRotr7 t1 t2 => do
+  | .u8ChainRotr k t1 t2 => do
       match (← interp decls bindings t1), (← interp decls bindings t2) with
       | .field a, .field b =>
           let i := a.val.toUInt8
           let j := b.val.toUInt8
-          return .tuple #[.field (G.ofUInt8 ((i >>> 7) + (j <<< 1))),
-                          .field (G.ofUInt8 (j >>> 7)),
-                          .field (G.ofUInt8 (i <<< 1))]
-      | _, _ => throwErr "u8ChainRotr7: expected field values"
-  | .u8ChainRotr4 t1 t2 => do
-      match (← interp decls bindings t1), (← interp decls bindings t2) with
-      | .field a, .field b =>
-          let i := a.val.toUInt8
-          let j := b.val.toUInt8
-          return .tuple #[.field (G.ofUInt8 ((i >>> 4) + (j <<< 4))),
-                          .field (G.ofUInt8 (j >>> 4)),
-                          .field (G.ofUInt8 (i <<< 4))]
-      | _, _ => throwErr "u8ChainRotr4: expected field values"
+          let hi := k.toUInt8
+          let lo := (8 - k).toUInt8
+          return .tuple #[.field (G.ofUInt8 ((i >>> hi) + (j <<< lo))),
+                          .field (G.ofUInt8 (j >>> hi)),
+                          .field (G.ofUInt8 (i <<< lo))]
+      | _, _ => throwErr "u8ChainRotr: expected field values"
   | .u8Sub t1 t2 => do
       match (← interp decls bindings t1), (← interp decls bindings t2) with
       | .field a, .field b =>

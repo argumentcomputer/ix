@@ -43,12 +43,12 @@ inductive Op
   | u8Or : ValIdx → ValIdx → Op
   | u8LessThan : ValIdx → ValIdx → Op
   | u32LessThan : ValIdx → ValIdx → Op
-  | u8ChainRotr7 : ValIdx → ValIdx → Op
-  | u8ChainRotr4 : ValIdx → ValIdx → Op
+  /-- Chainable right-rotation by `k` bits (1..=7) over a byte pair. -/
+  | u8ChainRotr : Nat → ValIdx → ValIdx → Op
   | debug : String → Option (Array ValIdx) → Op
   /-- Range-check the two values into `[0, 256)` via the byte chip. Produces no
   new values: it is a pure side-effect (lookup), and its `u8` results alias the
-  two inputs. Kept last so its FFI tag (27) doesn't shift the others. -/
+  two inputs. Kept last so its FFI tag (26) doesn't shift the others. -/
   | u8RangeCheck : ValIdx → ValIdx → Op
   /-- Unconstrained LE byte-list division-modulo hint. Inputs are pointers to
   two `List<U64>` (klimbs) values. Produces 2 fresh pointer values

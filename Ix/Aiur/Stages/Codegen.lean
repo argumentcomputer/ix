@@ -348,7 +348,7 @@ def Op.outputCount : Op → Nat
   | .u8Xor _ _ | .u8And _ _ | .u8Or _ _ | .u8LessThan _ _ => 1
   | .u8Mul _ _ => 2
   | .u8Add _ _ | .u8Sub _ _ => 2
-  | .u8ChainRotr7 _ _ | .u8ChainRotr4 _ _ => 3
+  | .u8ChainRotr _ _ _ => 3
   | .u32LessThan _ _ => 1
   | .u8RangeCheck _ _ => 0
   | .unconstrainedBigUintDivMod _ _ => 2
@@ -549,7 +549,7 @@ private def emitU8Bytes2 (out : Nat) (valueHelper : String)
       s!" else \{ {valueHelper}(__v_{i}, __v_{j}, record) }"
     return #[.letStmt false s!"__v_{out}" (some "G") (.lit blockExpr)]
   else
-    -- 2-tuple outputs (Mul) or 3-tuple (ChainRotr7/4).
+    -- 2-tuple outputs (Mul) or 3-tuple (ChainRotr).
     let blockExpr : String :=
       s!"if unconstrained \{ Bytes2::{unconShortcut}(&__v_{i}, &__v_{j}) }" ++
       s!" else \{ {valueHelper}(__v_{i}, __v_{j}, record) }"
@@ -561,6 +561,20 @@ private def emitU8Bytes2 (out : Nat) (valueHelper : String)
     for k in [0 : outCount] do
       stmts := stmts.push (declVal (out + k) (.field (.var "__b2_out") (toString k)))
     return stmts
+
+/-- `Op::U8ChainRotr k`: parameterized chain rotation; the rotation
+    amount is baked into the generated call as a literal. -/
+private def emitU8ChainRotr (out : Nat) (k : Nat) (i j : ValIdx) :
+    Array RustStmt := Id.run do
+  let blockExpr : String :=
+    s!"if unconstrained \{ Bytes2::chain_rotr({k}, &__v_{i}, &__v_{j}) }" ++
+    s!" else \{ bytes2_chain_rotr_value({k}, __v_{i}, __v_{j}, record) }"
+  let mut stmts : Array RustStmt := #[
+    .letStmt false "__b2_out" (some "(G, G, G)") (.lit blockExpr)
+  ]
+  for m in [0 : 3] do
+    stmts := stmts.push (declVal (out + m) (.field (.var "__b2_out") (toString m)))
+  return stmts
 
 /-- `Op::U8Add`: gadget bumps `bytes2_queries.add` and returns
     `(low, carry)`. Codegen now calls `bytes2_add_value` ONCE in
@@ -676,8 +690,7 @@ def emitOp (out : Nat) (op : Op) : Array RustStmt :=
   | .u8And i j => emitU8Bytes2 out "bytes2_and_value" "and" i j 1
   | .u8Or i j => emitU8Bytes2 out "bytes2_or_value" "or" i j 1
   | .u8LessThan i j => emitU8Bytes2 out "bytes2_less_than_value" "less_than" i j 1
-  | .u8ChainRotr7 i j => emitU8Bytes2 out "bytes2_chain_rotr7_value" "chain_rotr7" i j 3
-  | .u8ChainRotr4 i j => emitU8Bytes2 out "bytes2_chain_rotr4_value" "chain_rotr4" i j 3
+  | .u8ChainRotr k i j => emitU8ChainRotr out k i j
   | .u8Add i j => emitU8Add out i j
   | .u8Sub i j => emitU8Sub out i j
   | .u32LessThan a b => emitU32LessThan out a b
@@ -932,8 +945,7 @@ def optionalExecuteUses : Array (String × String) := #[
   ("bytes2_mul_value", "bytes2_mul_value"),
   ("bytes2_add_value", "bytes2_add_value"),
   ("bytes2_sub_value", "bytes2_sub_value"),
-  ("bytes2_chain_rotr7_value", "bytes2_chain_rotr7_value"),
-  ("bytes2_chain_rotr4_value", "bytes2_chain_rotr4_value"),
+  ("bytes2_chain_rotr_value", "bytes2_chain_rotr_value"),
   ("unconstrained_big_uint_div_mod_helper", "unconstrained_big_uint_div_mod_helper"),
   ("CodegenBytes1 as Bytes1", "Bytes1::"),
   ("CodegenBytes2 as Bytes2", "Bytes2::")

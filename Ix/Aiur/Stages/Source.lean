@@ -430,8 +430,8 @@ inductive Term
   | u8Or : Term → Term → Term
   | u8LessThan : Term → Term → Term
   | u32LessThan : Term → Term → Term
-  | u8ChainRotr7 : Term → Term → Term
-  | u8ChainRotr4 : Term → Term → Term
+  /-- Chainable right-rotation by `k` bits (1..=7) over a byte pair. -/
+  | u8ChainRotr : Nat → Term → Term → Term
   /-- Unconstrained LE byte-list division-modulo hint. Inputs are two
   `List<U64>` (klimbs) values (LE limb order). Output is a tuple of two
   fresh `List<U64>` values `(q, r)` with `q*b + r = a` and `0 ≤ r < b`
@@ -670,8 +670,7 @@ def Term.freshen (cnt : Nat) (subst : Std.HashMap Local Local) :
   | .u8Or a b => let (cnt, a') := Term.freshen cnt subst a; let (cnt, b') := Term.freshen cnt subst b; (cnt, .u8Or a' b')
   | .u8LessThan a b => let (cnt, a') := Term.freshen cnt subst a; let (cnt, b') := Term.freshen cnt subst b; (cnt, .u8LessThan a' b')
   | .u32LessThan a b => let (cnt, a') := Term.freshen cnt subst a; let (cnt, b') := Term.freshen cnt subst b; (cnt, .u32LessThan a' b')
-  | .u8ChainRotr7 a b => let (cnt, a') := Term.freshen cnt subst a; let (cnt, b') := Term.freshen cnt subst b; (cnt, .u8ChainRotr7 a' b')
-  | .u8ChainRotr4 a b => let (cnt, a') := Term.freshen cnt subst a; let (cnt, b') := Term.freshen cnt subst b; (cnt, .u8ChainRotr4 a' b')
+  | .u8ChainRotr k a b => let (cnt, a') := Term.freshen cnt subst a; let (cnt, b') := Term.freshen cnt subst b; (cnt, .u8ChainRotr k a' b')
   | .unconstrainedBigUintDivMod a b =>
     let (cnt, a') := Term.freshen cnt subst a; let (cnt, b') := Term.freshen cnt subst b; (cnt, .unconstrainedBigUintDivMod a' b')
   | .u8RangeCheck a b => let (cnt, a') := Term.freshen cnt subst a; let (cnt, b') := Term.freshen cnt subst b; (cnt, .u8RangeCheck a' b')
@@ -706,7 +705,7 @@ def Term.inlineCallSites : Term → List (Global × Nat)
   | .let _ v b => v.inlineCallSites ++ b.inlineCallSites
   | .add a b | .sub a b | .mul a b | .set a _ b
   | .u8Xor a b | .u8Add a b | .u8Mul a b | .u8Sub a b | .u8And a b | .u8Or a b
-  | .u8LessThan a b | .u32LessThan a b | .u8ChainRotr7 a b | .u8ChainRotr4 a b
+  | .u8LessThan a b | .u32LessThan a b | .u8ChainRotr _ a b
   | .unconstrainedBigUintDivMod a b | .u8RangeCheck a b | .ioGetInfo a b =>
     a.inlineCallSites ++ b.inlineCallSites
   | .assertEq a b c | .ioWrite a b c => a.inlineCallSites ++ b.inlineCallSites ++ c.inlineCallSites
@@ -812,8 +811,7 @@ def Term.expandOnce (done : Std.HashMap Global (List Local × Term)) (cnt : Nat)
   | .u8Or a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .u8Or a' b')
   | .u8LessThan a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .u8LessThan a' b')
   | .u32LessThan a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .u32LessThan a' b')
-  | .u8ChainRotr7 a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .u8ChainRotr7 a' b')
-  | .u8ChainRotr4 a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .u8ChainRotr4 a' b')
+  | .u8ChainRotr k a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .u8ChainRotr k a' b')
   | .unconstrainedBigUintDivMod a b =>
     let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .unconstrainedBigUintDivMod a' b')
   | .u8RangeCheck a b => let (cnt, a') := Term.expandOnce done cnt a; let (cnt, b') := Term.expandOnce done cnt b; (cnt, .u8RangeCheck a' b')
@@ -943,10 +941,8 @@ def Term.hoistLets : Term → Term :=
                        match cs with | [a, b] => Term.wrapLets fs (.u8LessThan a b) | _ => t
   | .u32LessThan a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
                         match cs with | [a, b] => Term.wrapLets fs (.u32LessThan a b) | _ => t
-  | .u8ChainRotr7 a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
-                         match cs with | [a, b] => Term.wrapLets fs (.u8ChainRotr7 a b) | _ => t
-  | .u8ChainRotr4 a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
-                         match cs with | [a, b] => Term.wrapLets fs (.u8ChainRotr4 a b) | _ => t
+  | .u8ChainRotr k a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
+                          match cs with | [a, b] => Term.wrapLets fs (.u8ChainRotr k a b) | _ => t
   | .unconstrainedBigUintDivMod a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]
                                        match cs with | [a, b] => Term.wrapLets fs (.unconstrainedBigUintDivMod a b) | _ => t
   | .u8RangeCheck a b => let (fs, cs) := Term.peelListLets [Term.hoistLets a, Term.hoistLets b]

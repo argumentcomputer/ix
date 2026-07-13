@@ -516,20 +516,12 @@ impl Function {
             }
           }
         },
-        ExecEntry::Op(Op::U8ChainRotr7(i, j)) => {
+        ExecEntry::Op(Op::U8ChainRotr(k, i, j)) => {
           if unconstrained {
-            let (o0, o1, o2) = Bytes2::chain_rotr7(&map[*i], &map[*j]);
+            let (o0, o1, o2) = Bytes2::chain_rotr(*k, &map[*i], &map[*j]);
             map.extend([o0, o1, o2]);
           } else {
-            bytes2_execute(*i, *j, &Bytes2Op::ChainRotr7, &mut map, record);
-          }
-        },
-        ExecEntry::Op(Op::U8ChainRotr4(i, j)) => {
-          if unconstrained {
-            let (o0, o1, o2) = Bytes2::chain_rotr4(&map[*i], &map[*j]);
-            map.extend([o0, o1, o2]);
-          } else {
-            bytes2_execute(*i, *j, &Bytes2Op::ChainRotr4, &mut map, record);
+            bytes2_execute(*i, *j, &Bytes2Op::ChainRotr(*k), &mut map, record);
           }
         },
         ExecEntry::Op(Op::U8RangeCheck(i, j)) => {
@@ -773,13 +765,24 @@ pub fn bytes2_mul_value(a: G, b: G, record: &mut QueryRecord) -> (G, G) {
 }
 
 #[inline]
+pub fn bytes2_chain_rotr_value(
+  k: u8,
+  a: G,
+  b: G,
+  record: &mut QueryRecord,
+) -> (G, G, G) {
+  record.bytes2_queries.bump_chain_rotr(k, &a, &b);
+  Bytes2::chain_rotr(k, &a, &b)
+}
+
+/// Legacy fixed-amount aliases, referenced by the codegen'd IxVM kernel.
+#[inline]
 pub fn bytes2_chain_rotr7_value(
   a: G,
   b: G,
   record: &mut QueryRecord,
 ) -> (G, G, G) {
-  record.bytes2_queries.bump_chain_rotr7(&a, &b);
-  Bytes2::chain_rotr7(&a, &b)
+  bytes2_chain_rotr_value(7, a, b, record)
 }
 
 #[inline]
@@ -788,8 +791,7 @@ pub fn bytes2_chain_rotr4_value(
   b: G,
   record: &mut QueryRecord,
 ) -> (G, G, G) {
-  record.bytes2_queries.bump_chain_rotr4(&a, &b);
-  Bytes2::chain_rotr4(&a, &b)
+  bytes2_chain_rotr_value(4, a, b, record)
 }
 
 /// Bumps `bytes2_queries.add` and returns the full `(low, carry)`

@@ -390,22 +390,14 @@ def interp (decls : Decls) (fuel : Nat) (bindings : Bindings)
                    .field (G.ofUInt8 (x / 256).toUInt8)])
         (interp decls fuel bindings t1 st)
         (fun st1 => interp decls fuel bindings t2 st1)
-  | .u8ChainRotr7 t1 t2 =>
+  | .u8ChainRotr k t1 t2 =>
       combineFieldsResult
         (fun a b =>
           let i := a.val.toUInt8; let j := b.val.toUInt8
-          .tuple #[.field (G.ofUInt8 ((i >>> 7) + (j <<< 1))),
-                   .field (G.ofUInt8 (j >>> 7)),
-                   .field (G.ofUInt8 (i <<< 1))])
-        (interp decls fuel bindings t1 st)
-        (fun st1 => interp decls fuel bindings t2 st1)
-  | .u8ChainRotr4 t1 t2 =>
-      combineFieldsResult
-        (fun a b =>
-          let i := a.val.toUInt8; let j := b.val.toUInt8
-          .tuple #[.field (G.ofUInt8 ((i >>> 4) + (j <<< 4))),
-                   .field (G.ofUInt8 (j >>> 4)),
-                   .field (G.ofUInt8 (i <<< 4))])
+          let hi := k.toUInt8; let lo := (8 - k).toUInt8
+          .tuple #[.field (G.ofUInt8 ((i >>> hi) + (j <<< lo))),
+                   .field (G.ofUInt8 (j >>> hi)),
+                   .field (G.ofUInt8 (i <<< lo))])
         (interp decls fuel bindings t1 st)
         (fun st1 => interp decls fuel bindings t2 st1)
   | .u8Sub t1 t2 =>

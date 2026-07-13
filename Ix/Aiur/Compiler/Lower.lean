@@ -306,12 +306,9 @@ def toIndex
   | .u8Mul _ _ i j => do
     let i ← expectIdx layoutMap bindings i; let j ← expectIdx layoutMap bindings j
     pushOp (.u8Mul i j) 2
-  | .u8ChainRotr7 _ _ i j => do
+  | .u8ChainRotr k _ _ i j => do
     let i ← expectIdx layoutMap bindings i; let j ← expectIdx layoutMap bindings j
-    pushOp (.u8ChainRotr7 i j) 3
-  | .u8ChainRotr4 _ _ i j => do
-    let i ← expectIdx layoutMap bindings i; let j ← expectIdx layoutMap bindings j
-    pushOp (.u8ChainRotr4 i j) 3
+    pushOp (.u8ChainRotr k i j) 3
   | .u8Sub _ _ i j => do
     let i ← expectIdx layoutMap bindings i; let j ← expectIdx layoutMap bindings j
     pushOp (.u8Sub i j) 2

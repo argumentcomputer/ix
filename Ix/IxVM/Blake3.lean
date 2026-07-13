@@ -344,15 +344,15 @@ def blake3 := ⟦
   fn rotr8(w: [U8; 4]) -> [U8; 4] { [w[1], w[2], w[3], w[0]] }
 
   fn rotr12(w: [U8; 4]) -> [U8; 4] {
-    let (e0, e1, e2) = u8_chain_rotr4(w[1], w[2]);
-    let (f0, f1, f2) = u8_chain_rotr4(w[3], w[0]);
+    let (e0, e1, e2) = u8_chain_rotr(4, w[1], w[2]);
+    let (f0, f1, f2) = u8_chain_rotr(4, w[3], w[0]);
     [e0, u8_from_field_unsafe(to_field(e1) + to_field(f2)), f0,
      u8_from_field_unsafe(to_field(f1) + to_field(e2))]
   }
 
   fn rotr7(w: [U8; 4]) -> [U8; 4] {
-    let (g0, g1, g2) = u8_chain_rotr7(w[0], w[1]);
-    let (h0, h1, h2) = u8_chain_rotr7(w[2], w[3]);
+    let (g0, g1, g2) = u8_chain_rotr(7, w[0], w[1]);
+    let (h0, h1, h2) = u8_chain_rotr(7, w[2], w[3]);
     [g0, u8_from_field_unsafe(to_field(g1) + to_field(h2)), h0,
      u8_from_field_unsafe(to_field(h1) + to_field(g2))]
   }

@@ -80,8 +80,8 @@ inductive Term : Type where
   | u8Or (typ : Typ) (escapes : Bool) (a : Term) (b : Term) : Term
   | u8LessThan (typ : Typ) (escapes : Bool) (a : Term) (b : Term) : Term
   | u32LessThan (typ : Typ) (escapes : Bool) (a : Term) (b : Term) : Term
-  | u8ChainRotr7 (typ : Typ) (escapes : Bool) (a : Term) (b : Term) : Term
-  | u8ChainRotr4 (typ : Typ) (escapes : Bool) (a : Term) (b : Term) : Term
+  /-- Chainable right-rotation by `k` bits (1..=7) over a byte pair. -/
+  | u8ChainRotr (k : Nat) (typ : Typ) (escapes : Bool) (a : Term) (b : Term) : Term
   | u8RangeCheck (typ : Typ) (escapes : Bool) (a : Term) (b : Term) : Term
   | unconstrainedBigUintDivMod (typ : Typ) (escapes : Bool) (a : Term) (b : Term) : Term
   | toField (typ : Typ) (escapes : Bool) (a : Term) : Term
@@ -102,7 +102,7 @@ def Term.typ : Term → Typ
   | .u8BitDecomposition t _ _ | .u8ShiftLeft t _ _ | .u8ShiftRight t _ _
   | .u8Xor t _ _ _ | .u8Add t _ _ _ | .u8Mul t _ _ _ | .u8Sub t _ _ _
   | .u8And t _ _ _ | .u8Or t _ _ _ | .u8LessThan t _ _ _ | .u32LessThan t _ _ _
-  | .u8ChainRotr7 t _ _ _ | .u8ChainRotr4 t _ _ _ | .u8RangeCheck t _ _ _
+  | .u8ChainRotr _ t _ _ _ | .u8RangeCheck t _ _ _
   | .unconstrainedBigUintDivMod t _ _ _
   | .toField t _ _ | .u8FromFieldUnsafe t _ _
   | .debug t _ _ _ _ => t
@@ -120,7 +120,7 @@ def Term.escapes : Term → Bool
   | .u8BitDecomposition _ e _ | .u8ShiftLeft _ e _ | .u8ShiftRight _ e _
   | .u8Xor _ e _ _ | .u8Add _ e _ _ | .u8Mul _ e _ _ | .u8Sub _ e _ _
   | .u8And _ e _ _ | .u8Or _ e _ _ | .u8LessThan _ e _ _ | .u32LessThan _ e _ _
-  | .u8ChainRotr7 _ e _ _ | .u8ChainRotr4 _ e _ _ | .u8RangeCheck _ e _ _
+  | .u8ChainRotr _ _ e _ _ | .u8RangeCheck _ e _ _
   | .unconstrainedBigUintDivMod _ e _ _
   | .toField _ e _ | .u8FromFieldUnsafe _ e _
   | .debug _ e _ _ _ => e

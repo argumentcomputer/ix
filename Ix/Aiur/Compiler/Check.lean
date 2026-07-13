@@ -49,6 +49,7 @@ inductive CheckError
   | infiniteType : Nat → Typ → CheckError
   | unresolvedMVar : Nat → CheckError
   | u8LitOutOfRange : Nat → CheckError
+  | chainRotrOutOfRange : Nat → CheckError
   | entryHasPointer : Global → CheckError
   deriving Repr
 
@@ -765,14 +766,12 @@ def inferTerm (t : Term) : CheckM Typed.Term := match t with
     let a' ← checkNoEscape a .u8
     let b' ← checkNoEscape b .u8
     pure (Typed.Term.u8Mul (.tuple #[.u8, .u8]) false a' b')
-  | .u8ChainRotr7 a b => do
+  | .u8ChainRotr k a b => do
+    if k == 0 || k > 7 then
+      throw (.chainRotrOutOfRange k)
     let a' ← checkNoEscape a .u8
     let b' ← checkNoEscape b .u8
-    pure (Typed.Term.u8ChainRotr7 (.tuple #[.u8, .u8, .u8]) false a' b')
-  | .u8ChainRotr4 a b => do
-    let a' ← checkNoEscape a .u8
-    let b' ← checkNoEscape b .u8
-    pure (Typed.Term.u8ChainRotr4 (.tuple #[.u8, .u8, .u8]) false a' b')
+    pure (Typed.Term.u8ChainRotr k (.tuple #[.u8, .u8, .u8]) false a' b')
   | .u8Sub a b => do
     -- Low byte and the 0/1 borrow are both `u8` (same range argument as add).
     let a' ← checkNoEscape a .u8
@@ -968,8 +967,7 @@ def zonkTypedTerm (t : Typed.Term) : CheckM Typed.Term := match t with
   | .u8Xor τ e a b => do pure (.u8Xor (← zonkTyp τ) e (← zonkTypedTerm a) (← zonkTypedTerm b))
   | .u8Add τ e a b => do pure (.u8Add (← zonkTyp τ) e (← zonkTypedTerm a) (← zonkTypedTerm b))
   | .u8Mul τ e a b => do pure (.u8Mul (← zonkTyp τ) e (← zonkTypedTerm a) (← zonkTypedTerm b))
-  | .u8ChainRotr7 τ e a b => do pure (.u8ChainRotr7 (← zonkTyp τ) e (← zonkTypedTerm a) (← zonkTypedTerm b))
-  | .u8ChainRotr4 τ e a b => do pure (.u8ChainRotr4 (← zonkTyp τ) e (← zonkTypedTerm a) (← zonkTypedTerm b))
+  | .u8ChainRotr k τ e a b => do pure (.u8ChainRotr k (← zonkTyp τ) e (← zonkTypedTerm a) (← zonkTypedTerm b))
   | .u8Sub τ e a b => do pure (.u8Sub (← zonkTyp τ) e (← zonkTypedTerm a) (← zonkTypedTerm b))
   | .u8And τ e a b => do pure (.u8And (← zonkTyp τ) e (← zonkTypedTerm a) (← zonkTypedTerm b))
   | .u8Or τ e a b => do pure (.u8Or (← zonkTyp τ) e (← zonkTypedTerm a) (← zonkTypedTerm b))

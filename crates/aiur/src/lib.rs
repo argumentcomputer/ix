@@ -80,12 +80,9 @@ pub fn u8_mul_channel() -> G {
   G::from_u8(12)
 }
 
+/// Channel for the chainable right-rotation by `k` bits (1..=7): 13..=19.
 #[inline]
-pub fn u8_chain_rotr7_channel() -> G {
-  G::from_u8(13)
-}
-
-#[inline]
-pub fn u8_chain_rotr4_channel() -> G {
-  G::from_u8(14)
+pub fn u8_chain_rotr_channel(k: u8) -> G {
+  debug_assert!((1..=7).contains(&k));
+  G::from_u8(12 + k)
 }

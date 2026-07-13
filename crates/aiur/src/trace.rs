@@ -20,9 +20,9 @@ use crate::{
   gadgets::{bytes1::Bytes1, bytes2::Bytes2},
   memory::Memory,
   u8_add_channel, u8_and_channel, u8_bit_decomposition_channel,
-  u8_chain_rotr4_channel, u8_chain_rotr7_channel, u8_less_than_channel,
-  u8_mul_channel, u8_or_channel, u8_range_check_channel, u8_shift_left_channel,
-  u8_shift_right_channel, u8_sub_channel, u8_xor_channel,
+  u8_chain_rotr_channel, u8_less_than_channel, u8_mul_channel, u8_or_channel,
+  u8_range_check_channel, u8_shift_left_channel, u8_shift_right_channel,
+  u8_sub_channel, u8_xor_channel,
 };
 
 struct ColumnIndex {
@@ -484,30 +484,17 @@ impl Op {
         let lookup_args = vec![u8_less_than_channel(), i, j, less_than];
         slice.push_lookup(index, Lookup::push(G::ONE, lookup_args));
       },
-      Op::U8ChainRotr7(i, j) => {
+      Op::U8ChainRotr(k, i, j) => {
         let (i, _) = map[*i];
         let (j, _) = map[*j];
-        let (o0, o1, o2) = Bytes2::chain_rotr7(&i, &j);
+        let (o0, o1, o2) = Bytes2::chain_rotr(*k, &i, &j);
         map.push((o0, 1));
         map.push((o1, 1));
         map.push((o2, 1));
         slice.push_auxiliary(index, o0);
         slice.push_auxiliary(index, o1);
         slice.push_auxiliary(index, o2);
-        let lookup_args = vec![u8_chain_rotr7_channel(), i, j, o0, o1, o2];
-        slice.push_lookup(index, Lookup::push(G::ONE, lookup_args));
-      },
-      Op::U8ChainRotr4(i, j) => {
-        let (i, _) = map[*i];
-        let (j, _) = map[*j];
-        let (o0, o1, o2) = Bytes2::chain_rotr4(&i, &j);
-        map.push((o0, 1));
-        map.push((o1, 1));
-        map.push((o2, 1));
-        slice.push_auxiliary(index, o0);
-        slice.push_auxiliary(index, o1);
-        slice.push_auxiliary(index, o2);
-        let lookup_args = vec![u8_chain_rotr4_channel(), i, j, o0, o1, o2];
+        let lookup_args = vec![u8_chain_rotr_channel(*k), i, j, o0, o1, o2];
         slice.push_lookup(index, Lookup::push(G::ONE, lookup_args));
       },
       Op::U32LessThan(x_idx, y_idx) => {

@@ -353,19 +353,19 @@ def toplevel := ⟦
   }
 
   pub fn u8_chain_rotr7_function(i: U8, j: U8) -> (U8, U8, U8) {
-    u8_chain_rotr7(i, j)
+    u8_chain_rotr(7, i, j)
   }
 
   pub fn u8_chain_rotr4_function(i: U8, j: U8) -> (U8, U8, U8) {
-    u8_chain_rotr4(i, j)
+    u8_chain_rotr(4, i, j)
   }
 
   -- Full u32 right-rotation by 7, built by chaining the partial gadget over
   -- adjacent little-endian byte pairs (2 lookups + 2 free field adds).
   pub fn u32_rotr7(b: [U8; 4]) -> [U8; 4] {
     let [b0, b1, b2, b3] = b;
-    let (a0, a1, a2) = u8_chain_rotr7(b0, b1);
-    let (c0, c1, c2) = u8_chain_rotr7(b2, b3);
+    let (a0, a1, a2) = u8_chain_rotr(7, b0, b1);
+    let (c0, c1, c2) = u8_chain_rotr(7, b2, b3);
     -- The two combined parts occupy disjoint bit positions, so their sum never
     -- overflows a byte: add cheaply as `G`, then reinterpret as `U8`.
     [a0, u8_from_field_unsafe(to_field(a1) + to_field(c2)), c0,
