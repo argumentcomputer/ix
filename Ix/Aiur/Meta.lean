@@ -156,6 +156,10 @@ syntax ("." noWs)? ident "(" ")"                                              : 
 syntax ("." noWs)? ident "(" aiur_trm (", " aiur_trm)* ")"                  : aiur_trm
 syntax "#" noWs ("." noWs)? ident "(" ")"                                     : aiur_trm
 syntax "#" noWs ("." noWs)? ident "(" aiur_trm (", " aiur_trm)* ")"         : aiur_trm
+-- Inlined call: `@fn(args)` splices `fn`'s body into the caller at compile
+-- time (no separate circuit). Callee must not be inline-recursive.
+syntax "@" noWs ("." noWs)? ident "(" ")"                                     : aiur_trm
+syntax "@" noWs ("." noWs)? ident "(" aiur_trm (", " aiur_trm)* ")"         : aiur_trm
 syntax ident "‹" aiur_typ (", " aiur_typ)* "›" "(" ")"                      : aiur_trm
 syntax ident "‹" aiur_typ (", " aiur_typ)* "›" "(" aiur_trm
        (", " aiur_trm)* ")"                                                  : aiur_trm
@@ -267,16 +271,22 @@ partial def elabTrm : ElabStxCat `aiur_trm
     | .str .anonymous _ => pure ()
     | _ => logWarningAt f "empty parentheses are not needed; use the name without parentheses"
     let g ← mkAppM ``Global.mk #[toExpr f.getId]
-    mkAppM ``Source.Term.app #[g, ← elabEmptyList ``Source.Term, toExpr false]
+    mkAppM ``Source.Term.app #[g, ← elabEmptyList ``Source.Term, mkConst ``Source.CallMode.normal]
   | `(aiur_trm| $[.]?$f:ident ($a:aiur_trm $[, $as:aiur_trm]*)) => do
     let g ← mkAppM ``Global.mk #[toExpr f.getId]
-    mkAppM ``Source.Term.app #[g, ← elabList a as elabTrm ``Source.Term, toExpr false]
+    mkAppM ``Source.Term.app #[g, ← elabList a as elabTrm ``Source.Term, mkConst ``Source.CallMode.normal]
   | `(aiur_trm| #$[.]?$f:ident()) => do
     let g ← mkAppM ``Global.mk #[toExpr f.getId]
-    mkAppM ``Source.Term.app #[g, ← elabEmptyList ``Source.Term, toExpr true]
+    mkAppM ``Source.Term.app #[g, ← elabEmptyList ``Source.Term, mkConst ``Source.CallMode.unconstrained]
   | `(aiur_trm| #$[.]?$f:ident($a:aiur_trm $[, $as:aiur_trm]*)) => do
     let g ← mkAppM ``Global.mk #[toExpr f.getId]
-    mkAppM ``Source.Term.app #[g, ← elabList a as elabTrm ``Source.Term, toExpr true]
+    mkAppM ``Source.Term.app #[g, ← elabList a as elabTrm ``Source.Term, mkConst ``Source.CallMode.unconstrained]
+  | `(aiur_trm| @$[.]?$f:ident()) => do
+    let g ← mkAppM ``Global.mk #[toExpr f.getId]
+    mkAppM ``Source.Term.app #[g, ← elabEmptyList ``Source.Term, mkConst ``Source.CallMode.inlined]
+  | `(aiur_trm| @$[.]?$f:ident($a:aiur_trm $[, $as:aiur_trm]*)) => do
+    let g ← mkAppM ``Global.mk #[toExpr f.getId]
+    mkAppM ``Source.Term.app #[g, ← elabList a as elabTrm ``Source.Term, mkConst ``Source.CallMode.inlined]
   | `(aiur_trm| $a:aiur_trm + $b:aiur_trm) => do
     mkAppM ``Source.Term.add #[← elabTrm a, ← elabTrm b]
   | `(aiur_trm| $a:aiur_trm - $b:aiur_trm) => do
@@ -356,29 +366,29 @@ partial def elabTrm : ElabStxCat `aiur_trm
   -- Template function calls: explicit type args are dropped (inferred)
   | `(aiur_trm| $f:ident‹$_:aiur_typ $[, $_:aiur_typ]*›()) => do
     let g ← mkAppM ``Global.mk #[toExpr f.getId]
-    mkAppM ``Source.Term.app #[g, ← elabEmptyList ``Source.Term, toExpr false]
+    mkAppM ``Source.Term.app #[g, ← elabEmptyList ``Source.Term, mkConst ``Source.CallMode.normal]
   | `(aiur_trm| $f:ident‹$_:aiur_typ $[, $_:aiur_typ]*›
                  ($a:aiur_trm $[, $as:aiur_trm]*)) => do
     let g ← mkAppM ``Global.mk #[toExpr f.getId]
-    mkAppM ``Source.Term.app #[g, ← elabList a as elabTrm ``Source.Term, toExpr false]
+    mkAppM ``Source.Term.app #[g, ← elabList a as elabTrm ``Source.Term, mkConst ``Source.CallMode.normal]
   | `(aiur_trm| #$f:ident‹$_:aiur_typ $[, $_:aiur_typ]*›()) => do
     let g ← mkAppM ``Global.mk #[toExpr f.getId]
-    mkAppM ``Source.Term.app #[g, ← elabEmptyList ``Source.Term, toExpr true]
+    mkAppM ``Source.Term.app #[g, ← elabEmptyList ``Source.Term, mkConst ``Source.CallMode.unconstrained]
   | `(aiur_trm| #$f:ident‹$_:aiur_typ $[, $_:aiur_typ]*›
                  ($a:aiur_trm $[, $as:aiur_trm]*)) => do
     let g ← mkAppM ``Global.mk #[toExpr f.getId]
-    mkAppM ``Source.Term.app #[g, ← elabList a as elabTrm ``Source.Term, toExpr true]
+    mkAppM ``Source.Term.app #[g, ← elabList a as elabTrm ``Source.Term, mkConst ``Source.CallMode.unconstrained]
   -- Template constructor calls
   | `(aiur_trm| $tmpl:ident‹$_:aiur_typ $[, $_:aiur_typ]*›.$ctor:ident()) => do
     logWarningAt ctor "empty parentheses are not needed; use the name without parentheses"
     let name := tmpl.getId ++ ctor.getId
     let g ← mkAppM ``Global.mk #[toExpr name]
-    mkAppM ``Source.Term.app #[g, ← elabEmptyList ``Source.Term, toExpr false]
+    mkAppM ``Source.Term.app #[g, ← elabEmptyList ``Source.Term, mkConst ``Source.CallMode.normal]
   | `(aiur_trm| $tmpl:ident‹$_:aiur_typ $[, $_:aiur_typ]*›.$ctor:ident
                  ($a:aiur_trm $[, $as:aiur_trm]*)) => do
     let name := tmpl.getId ++ ctor.getId
     let g ← mkAppM ``Global.mk #[toExpr name]
-    mkAppM ``Source.Term.app #[g, ← elabList a as elabTrm ``Source.Term, toExpr false]
+    mkAppM ``Source.Term.app #[g, ← elabList a as elabTrm ``Source.Term, mkConst ``Source.CallMode.normal]
   | `(aiur_trm| fold($i .. $j, $init, |$acc, @$v| $body)) => do
     let i := i.getNat
     let j := j.getNat
