@@ -175,8 +175,8 @@ def constantMetaTests : TestSeq :=
   let smallArena : ExprMetaArena := { nodes := #[.leaf, .app 0 0, .ref testAddr] }
   checkIO "ConstantMeta.empty" (roundtripIxonConstantMeta .empty == .empty) ++
   checkIO "ConstantMeta.defn" (roundtripIxonConstantMeta
-    (.defn testAddr #[testAddr] .opaque #[] #[] smallArena 0 1) ==
-    .defn testAddr #[testAddr] .opaque #[] #[] smallArena 0 1) ++
+    (.defn testAddr #[testAddr] #[] #[] smallArena 0 1) ==
+    .defn testAddr #[testAddr] #[] #[] smallArena 0 1) ++
   checkIO "ConstantMeta.axio" (roundtripIxonConstantMeta
     (.axio testAddr #[] emptyArena 0) ==
     .axio testAddr #[] emptyArena 0) ++
@@ -282,15 +282,16 @@ def envDiffTests : TestSeq :=
     { info := .defn { kind := .defn, safety := .safe, lvls := 0,
                       typ := .var 3, value }
       sharing := #[], refs := #[], univs := #[] }
-  -- Named metadata carries the hint; `anonHints` stays empty so the
-  -- writer derives §3 from the named `Def` metadata.
+  -- Hints live in `env.anonHints`, keyed by constant address; the
+  -- writer serializes that map as the hints section.
   let mkEnv (c : Constant) (h : Lean.ReducibilityHints) : Env := Id.run do
     let addr := Address.blake3 (serConstant c)
     let mut env : Env := {}
     env := env.storeConst addr c
     env := { env with names := RawEnv.addNameComponents env.names fooName }
     env := env.registerName fooName
-      { addr, constMeta := .defn fooName.getHash #[] h #[] #[] {} 0 0 }
+      { addr, constMeta := .defn fooName.getHash #[] #[] #[] {} 0 0 }
+    env := { env with anonHints := env.anonHints.insert addr h }
     return env
   let constA := mkConst (.var 0)
   let constB := mkConst (.var 1)
@@ -356,16 +357,17 @@ def envDiffTests : TestSeq :=
        d.namedChanged.size == 2 &&
        (d.namedChanged.find? (·.name == "foo")).any (·.rippled == false) &&
        (d.namedChanged.find? (·.name == "bar")).any (·.rippled == true)) ++
-  -- Hints derive into anon §3, so a hint tweak is visible in the
-  -- default anon mode; the metadata carrying it only shows under meta.
+  -- Hints live only in the env-level hints section, so a hint tweak
+  -- is a pure `hintsChanged` row — no metadata difference in either
+  -- mode (the named entries are identical).
   test "EnvDiff: hint change visible in anon mode"
     ((runDiff envBase envHintChanged).any fun d =>
       d.hintsChanged == #[(addrA, "regular(5)", "regular(6)")]
       && d.namedMetaOnly.isEmpty && d.namedChanged.isEmpty) ++
-  test "EnvDiff: hint change flags metadata under meta mode"
+  test "EnvDiff: hint change is not a metadata change"
     ((runDiff envBase envHintChanged true).any fun d =>
-      d.hintsChanged.size == 1
-      && d.namedMetaOnly == #[("foo", #["meta.info"])]) ++
+      d.hintsChanged.size == 1 && d.namedMetaOnly.isEmpty
+      && d.namedChanged.isEmpty) ++
   test "EnvDiff: main change"
     ((runDiff { envBase with main := some addrA } envBase).any fun d =>
       d.mainChanged == some (some addrA, none)) ++

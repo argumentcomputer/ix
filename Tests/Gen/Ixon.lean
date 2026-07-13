@@ -356,7 +356,7 @@ def genConstantMeta : Gen ConstantMeta := do
   frequency [
     (10, pure .empty),
     (15, ConstantMeta.defn <$> genAddress <*> genSmallArray genAddress
-      <*> genReducibilityHints <*> genSmallArray genAddress <*> genSmallArray genAddress
+      <*> genSmallArray genAddress <*> genSmallArray genAddress
       <*> pure arena <*> genRoot <*> genRoot),
     (15, ConstantMeta.axio <$> genAddress <*> genSmallArray genAddress
       <*> pure arena <*> genRoot),

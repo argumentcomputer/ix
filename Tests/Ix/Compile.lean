@@ -222,7 +222,7 @@ def testCrossImpl : TestSeq :=
                 IO.println s!"    [{i}] {reprStr arena.nodes[i]!}"
             let dumpMeta (label : String) (cm : Ixon.ConstantMeta) : IO Unit := do
               match cm with
-              | .defn _ _ _ _ _ arena typeRoot valueRoot => do
+              | .defn _ _ _ _ arena typeRoot valueRoot => do
                 dumpArena label "arena" arena
                 IO.println s!"  {label} typeRoot={typeRoot} valueRoot={valueRoot}"
               | .axio _ _ arena typeRoot => do
@@ -261,10 +261,9 @@ def testCrossImpl : TestSeq :=
               IO.println s!"    variant: {leanTag}"
               -- Field-by-field comparison for common variants
               match leanCM, rustCM with
-              | .defn ln ll lh la lc larena ltr lvr, .defn rn rl rh ra rc rarena rtr rvr => do
+              | .defn ln ll la lc larena ltr lvr, .defn rn rl ra rc rarena rtr rvr => do
                 if ln != rn then IO.println s!"    name DIFFERS: Lean={ln} Rust={rn}"
                 if ll != rl then IO.println s!"    lvls DIFFERS: Lean={ll.size} Rust={rl.size}"
-                if lh != rh then IO.println s!"    hints DIFFERS"
                 if la != ra then IO.println s!"    all DIFFERS: Lean={la} Rust={ra}"
                 if lc != rc then IO.println s!"    ctx DIFFERS: Lean={lc} Rust={rc}"
                 if larena != rarena then IO.println s!"    arena DIFFERS: Lean={larena.nodes.size} Rust={rarena.nodes.size}"

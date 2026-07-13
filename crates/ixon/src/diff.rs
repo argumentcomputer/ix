@@ -1248,20 +1248,22 @@ fn diff_envs_impl(
   // Hints, joined on constants present in both envs.
   let shared =
     |addr: &Address| a.consts.contains_key(addr) && b.consts.contains_key(addr);
-  for (addr, ha) in &a.anon_hints {
+  for entry in a.anon_hints.iter() {
+    let (addr, ha) = (entry.key(), entry.value());
     if !shared(addr) {
       continue;
     }
-    let hb = b.anon_hints.get(addr);
-    if hb != Some(ha) {
+    let hb = b.anon_hints.get(addr).map(|r| *r);
+    if hb != Some(*ha) {
       d.hints_changed.push((
         addr.clone(),
         hint_label(Some(ha)),
-        hint_label(hb),
+        hint_label(hb.as_ref()),
       ));
     }
   }
-  for (addr, hb) in &b.anon_hints {
+  for entry in b.anon_hints.iter() {
+    let (addr, hb) = (entry.key(), entry.value());
     if shared(addr) && !a.anon_hints.contains_key(addr) {
       d.hints_changed.push((
         addr.clone(),
@@ -1597,7 +1599,6 @@ mod tests {
     let info = ConstantMetaInfo::Def {
       name: Address::hash(b"nm"),
       lvls: vec![],
-      hints: ReducibilityHints::Regular(1),
       all: vec![],
       ctx: vec![],
       arena: ExprMeta::default(),
@@ -2323,15 +2324,17 @@ mod tests {
     addr
   }
 
-  fn def_meta(name_addr: Address, hint: u32) -> ConstantMeta {
+  /// `variant` lands in `type_root`, so two calls with different
+  /// variants produce metas that differ while the constant (and its
+  /// address) stays identical — a metadata-only difference.
+  fn def_meta(name_addr: Address, variant: u32) -> ConstantMeta {
     ConstantMeta::new(ConstantMetaInfo::Def {
       name: name_addr,
       lvls: vec![],
-      hints: ReducibilityHints::Regular(hint),
       all: vec![],
       ctx: vec![],
       arena: ExprMeta::default(),
-      type_root: 0,
+      type_root: u64::from(variant),
       value_root: 0,
     })
   }
@@ -2347,8 +2350,8 @@ mod tests {
   #[test]
   fn meta_sweep_matches_full_reader() {
     let build = |foo_value: Arc<Expr>,
-                 foo_hint: u32,
-                 monly_hint: u32,
+                 foo_variant: u32,
+                 monly_variant: u32,
                  foo_original: bool|
      -> Vec<u8> {
       let env = Env::new();
@@ -2357,7 +2360,7 @@ mod tests {
       let c = defn_c(Expr::var(3), foo_value);
       let addr = store_canonical(&env, &c);
       let mut foo_named =
-        Named::new(addr.clone(), def_meta(foo_comp, foo_hint));
+        Named::new(addr.clone(), def_meta(foo_comp, foo_variant));
       if foo_original {
         foo_named.set_original(addr, ConstantMeta::default());
       }
@@ -2369,7 +2372,7 @@ mod tests {
       let stable_addr = store_canonical(&env, &stable);
       env.register_name(
         monly.clone(),
-        Named::new(stable_addr, def_meta(monly_comp, monly_hint)),
+        Named::new(stable_addr, def_meta(monly_comp, monly_variant)),
       );
       let mut bytes = Vec::new();
       env.put(&mut bytes).expect("put failed");

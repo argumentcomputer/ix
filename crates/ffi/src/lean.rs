@@ -56,11 +56,11 @@ lean_ffi::lean_inductive! {
   LeanIxonRawEnv          [ { num_obj: 8 } ];
 
   // Lazy/anon deserialization (`rs_de_env_lazy`): zero-copy const windows
-  // (addr + offset + len), name->addr + hint, copied blobs, and the
-  // bundle header fields (main, assumptions).
+  // (addr + offset + len), name->addr, copied blobs, the bundle header
+  // fields (main, assumptions), and the hints-section pairs.
   LeanIxonRawConstSlice   [ { num_obj: 1, num_64: 2 } ];
-  LeanIxonRawNamedLite    [ { num_obj: 2, num_64: 2 } ];
-  LeanIxonRawEnvLazy      [ { num_obj: 5 } ];
+  LeanIxonRawNamedLite    [ { num_obj: 2 } ];
+  LeanIxonRawEnvLazy      [ { num_obj: 6 } ];
 
   // Env diff report (`rs_diff_envs`). Slot counts MUST match the Lean
   // structures in Ix/Ixon.lean (Ixon.EnvStats / NamedDiff / EnvDiff).
@@ -110,7 +110,7 @@ lean_ffi::lean_inductive! {
 
   LeanIxonConstantMeta [
     { },                                      // tag 0: empty (scalar)
-    { num_obj: 6, num_64: 2 },                // tag 1: defn
+    { num_obj: 5, num_64: 2 },                // tag 1: defn
     { num_obj: 3, num_64: 1 },                // tag 2: axio
     { num_obj: 3, num_64: 1 },                // tag 3: quot
     { num_obj: 6, num_64: 1 },                // tag 4: indc

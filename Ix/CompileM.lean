@@ -84,6 +84,10 @@ structure BlockState where
   blockBlobs : Std.HashMap Address ByteArray := {}
   /-- Name components collected during block compilation -/
   blockNames : Std.HashMap Address Ix.Name := {}
+  /-- Reducibility hints per definition name compiled in this block.
+      Hints are not part of `ConstantMeta`; the driver resolves this
+      map into `Ixon.Env.anonHints` once addresses are final. -/
+  defHints : Std.HashMap Name Lean.ReducibilityHints := {}
   /-- Arena-based expression metadata for the current constant -/
   arena : Ixon.ExprMetaArena := {}
   deriving Inhabited
@@ -309,6 +313,10 @@ def storeString (s : String) : CompileM Address := do
   let addr := Address.blake3 bytes
   modifyBlockState fun c => { c with blockBlobs := c.blockBlobs.insert addr bytes }
   pure addr
+
+/-- Record a definition's reducibility hints (see `BlockState.defHints`). -/
+def recordDefHints (name : Name) (hints : Lean.ReducibilityHints) : CompileM Unit :=
+  modifyBlockState fun c => { c with defHints := c.defHints.insert name hints }
 
 /-- Compile a name: store all string components as blobs and track
     name components in blockNames for deduplication.
@@ -889,7 +897,8 @@ def compileDefinition (d : DefinitionVal) : CompileM (Ixon.Definition × Ixon.Co
       typ := typeExpr
       value := valueExpr
     }
-    let constMeta := Ixon.ConstantMeta.defn nameAddr lvlAddrs d.hints allAddrs ctxAddrs arena typeRoot valueRoot
+    recordDefHints d.cnst.name d.hints
+    let constMeta := Ixon.ConstantMeta.defn nameAddr lvlAddrs allAddrs ctxAddrs arena typeRoot valueRoot
     pure (defn, constMeta, typeExpr, valueExpr)
 
 /-- Compile a theorem to Ixon.Definition with metadata. -/
@@ -919,7 +928,8 @@ def compileTheorem (d : TheoremVal) : CompileM (Ixon.Definition × Ixon.Constant
       typ := typeExpr
       value := valueExpr
     }
-    let constMeta := Ixon.ConstantMeta.defn nameAddr lvlAddrs .opaque allAddrs ctxAddrs arena typeRoot valueRoot
+    recordDefHints d.cnst.name .opaque
+    let constMeta := Ixon.ConstantMeta.defn nameAddr lvlAddrs allAddrs ctxAddrs arena typeRoot valueRoot
     pure (defn, constMeta, typeExpr, valueExpr)
 
 /-- Compile an opaque to Ixon.Definition with metadata. -/
@@ -949,7 +959,8 @@ def compileOpaque (d : OpaqueVal) : CompileM (Ixon.Definition × Ixon.ConstantMe
       typ := typeExpr
       value := valueExpr
     }
-    let constMeta := Ixon.ConstantMeta.defn nameAddr lvlAddrs .opaque allAddrs ctxAddrs arena typeRoot valueRoot
+    recordDefHints d.cnst.name .opaque
+    let constMeta := Ixon.ConstantMeta.defn nameAddr lvlAddrs allAddrs ctxAddrs arena typeRoot valueRoot
     pure (defn, constMeta, typeExpr, valueExpr)
 
 /-- Compile an axiom to Ixon.Axiom with metadata. -/
@@ -1155,7 +1166,8 @@ def compileDefinitionData (d : Def) : CompileM (Ixon.Definition × Ixon.Constant
       | .defn => d.hints
       | .thm => .opaque
       | .opaq => .opaque
-    let constMeta := Ixon.ConstantMeta.defn nameAddr lvlAddrs hints allAddrs ctxAddrs arena typeRoot valueRoot
+    recordDefHints d.name hints
+    let constMeta := Ixon.ConstantMeta.defn nameAddr lvlAddrs allAddrs ctxAddrs arena typeRoot valueRoot
     pure (defn, constMeta, typeExpr, valueExpr)
 
 /-- Compile inductive data for an Ind structure (from Mutual.lean).
@@ -1510,6 +1522,7 @@ def compileEnv (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (dbg : Bool 
   -- Initialize compilation state
   let mut compileEnv := CompileEnv.new env
   let mut blockNames : Std.HashMap Address Ix.Name := {}
+  let mut defHints : Std.HashMap Name Lean.ReducibilityHints := {}
 
   -- Build work queue data structures
   let totalBlocks := blocks.blocks.size
@@ -1554,6 +1567,7 @@ def compileEnv (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (dbg : Bool 
         blobs := cache.blockBlobs.fold (fun m k v => m.insert k v) compileEnv.blobs
       }
       blockNames := cache.blockNames.fold (fun m k v => m.insert k v) blockNames
+      defHints := cache.defHints.fold (fun m k v => m.insert k v) defHints
 
       -- If there are projections, store them and map names to projection addresses
       if result.projections.isEmpty then
@@ -1608,6 +1622,17 @@ def compileEnv (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (dbg : Bool 
   -- Merge name string blobs into the main blobs map
   let allBlobs := nameBlobs.fold (fun m k v => m.insert k v) compileEnv.blobs
 
+  -- Resolve per-name hints to each name's registered constant address
+  -- (the projection address for mutual-block members — exactly the
+  -- address the kernel looks hints up under). Alias collisions merge
+  -- order-independently, matching Rust `CompileState::finalize_hints`.
+  let anonHints := compileEnv.nameToNamed.fold (init := {}) fun m name named =>
+    match defHints.get? name with
+    | some h => m.alter named.addr fun
+      | some h₀ => some (Ixon.mergeHints h₀ h)
+      | none => some h
+    | none => m
+
   let ixonEnv : Ixon.Env := {
     consts := compileEnv.constants.fold (init := {})
       fun m a c => m.insert a (Ixon.LazyConstant.ofConstant c)
@@ -1616,6 +1641,7 @@ def compileEnv (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (dbg : Bool 
     names := namesMap
     comms := {}
     addrToName := addrToNameMap
+    anonHints
   }
 
   return .ok (ixonEnv, compileEnv.totalBytes)
@@ -1705,6 +1731,7 @@ structure WaveBlockResult where
   projections : Array (Name × Ixon.Constant × Address × Ixon.ConstantMeta)
   blobs : Std.HashMap Address ByteArray
   names : Std.HashMap Address Ix.Name
+  defHints : Std.HashMap Name Lean.ReducibilityHints
   totalBytes : Nat
 
 /-- Work item for a worker thread -/
@@ -1793,6 +1820,7 @@ def compileEnvParallel (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
               projections := projsNoBytes
               blobs := cache.blockBlobs
               names := cache.blockNames
+              defHints := cache.defHints
               totalBytes := projBytes
             }
         discard <| resultChan.send result
@@ -1808,6 +1836,7 @@ def compileEnvParallel (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
   let mut constants : Std.HashMap Address Ixon.Constant := {}
   let mut blobs : Std.HashMap Address ByteArray := {}
   let mut blockNames : Std.HashMap Address Ix.Name := {}
+  let mut defHints : Std.HashMap Name Lean.ReducibilityHints := {}
   let mut totalBytes : Nat := 0
 
   let mut remaining : Set Name := {}
@@ -1864,9 +1893,10 @@ def compileEnvParallel (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
         for (name, proj, addr, constMeta) in result.projections do
           constants := constants.insert addr proj
           nameToNamed := nameToNamed.insert name { addr, constMeta }
-        -- Store blobs and names
+        -- Store blobs, names, and hints
         blobs := result.blobs.fold (fun m k v => m.insert k v) blobs
         blockNames := result.names.fold (fun m k v => m.insert k v) blockNames
+        defHints := result.defHints.fold (fun m k v => m.insert k v) defHints
         totalBytes := totalBytes + result.totalBytes
         compiled := compiled + 1
 
@@ -1902,6 +1932,15 @@ def compileEnvParallel (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
   if dbg then
     IO.println s!"  [Lean Compile] Blobs: {blockBlobCount} from blocks, {nameBlobCount} from names, {overlapCount} overlap, {finalBlobCount} final"
 
+  -- Resolve per-name hints to registered constant addresses (see the
+  -- serial driver / Rust `CompileState::finalize_hints`).
+  let anonHints := nameToNamed.fold (init := {}) fun m name named =>
+    match defHints.get? name with
+    | some h => m.alter named.addr fun
+      | some h₀ => some (Ixon.mergeHints h₀ h)
+      | none => some h
+    | none => m
+
   let ixonEnv : Ixon.Env := {
     consts := constants.fold (init := {})
       fun m a c => m.insert a (Ixon.LazyConstant.ofConstant c)
@@ -1910,6 +1949,7 @@ def compileEnvParallel (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
     names := namesMap
     comms := {}
     addrToName := addrToNameMap
+    anonHints
   }
 
   return .ok (ixonEnv, totalBytes)

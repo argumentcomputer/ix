@@ -475,7 +475,7 @@ def ExprMetaArena.mdataItemCount (arena : ExprMetaArena) : Nat :=
     that constant, plus root indices pointing into the arena. -/
 inductive ConstantMeta where
   | empty
-  | defn (name : Address) (lvls : Array Address) (hints : Lean.ReducibilityHints)
+  | defn (name : Address) (lvls : Array Address)
          (all : Array Address) (ctx : Array Address)
          (arena : ExprMetaArena) (typeRoot : UInt64) (valueRoot : UInt64)
   | axio (name : Address) (lvls : Array Address)
@@ -497,7 +497,7 @@ inductive ConstantMeta where
 /-- Count total arena nodes in this ConstantMeta. -/
 def ConstantMeta.exprMetaCount : ConstantMeta → Nat
   | .empty => 0
-  | .defn _ _ _ _ _ arena _ _ => arena.nodes.size
+  | .defn _ _ _ _ arena _ _ => arena.nodes.size
   | .axio _ _ arena _ => arena.nodes.size
   | .quot _ _ arena _ => arena.nodes.size
   | .indc _ _ _ _ _ arena _ => arena.nodes.size
@@ -508,7 +508,7 @@ def ConstantMeta.exprMetaCount : ConstantMeta → Nat
 /-- Count total arena nodes and mdata items in this ConstantMeta. -/
 def ConstantMeta.exprMetaStats : ConstantMeta → Nat × Nat
   | .empty => (0, 0)
-  | .defn _ _ _ _ _ arena _ _ => (arena.nodes.size, arena.mdataItemCount)
+  | .defn _ _ _ _ arena _ _ => (arena.nodes.size, arena.mdataItemCount)
   | .axio _ _ arena _ => (arena.nodes.size, arena.mdataItemCount)
   | .quot _ _ arena _ => (arena.nodes.size, arena.mdataItemCount)
   | .indc _ _ _ _ _ arena _ => (arena.nodes.size, arena.mdataItemCount)
@@ -522,7 +522,7 @@ def ConstantMeta.exprMetaByType : ConstantMeta → Nat × Nat × Nat × Nat × N
   | .empty => (0, 0, 0, 0, 0)
   | cm =>
     let arena := match cm with
-      | .defn _ _ _ _ _ a _ _ => a
+      | .defn _ _ _ _ a _ _ => a
       | .axio _ _ a _ => a
       | .quot _ _ a _ => a
       | .indc _ _ _ _ _ a _ => a
@@ -1181,6 +1181,22 @@ def getReducibilityHints : GetM Lean.ReducibilityHints := do
   | 2 => pure (.regular (← getTag0).size.toUInt32)
   | x => throw s!"invalid ReducibilityHints {x}"
 
+/-- Order-independent merge for hint registration: alpha-equivalent
+    definitions share one constant address but may carry different
+    reducibility hints (e.g. one alias marked `@[reducible]`), and the
+    winner must not depend on registration order. Keeps the minimum
+    under `(tag, height)` with `opaque < abbrev < regular h` —
+    commutative, associative, idempotent. Mirrors Rust
+    `Env::register_hint`. -/
+def mergeHints (a b : Lean.ReducibilityHints) : Lean.ReducibilityHints :=
+  let key : Lean.ReducibilityHints → Nat × Nat
+    | .opaque => (0, 0)
+    | .abbrev => (1, 0)
+    | .regular n => (2, n.toNat)
+  let (a₁, a₂) := key a
+  let (b₁, b₂) := key b
+  if b₁ < a₁ || (b₁ == a₁ && b₂ < a₂) then b else a
+
 /-- Serialize DataValue with indexed addresses.
     OfString/OfNat/OfInt/OfSyntax use raw 32-byte addresses (blob addresses, not in name index). -/
 def putDataValueIndexed (dv : DataValue) (idx : NameIndex) : PutM Unit := do
@@ -1315,11 +1331,10 @@ def getExprMetaArenaIndexed (rev : NameReverseIndex) : GetM ExprMetaArena := do
 def putConstantMetaIndexed (cm : ConstantMeta) (idx : NameIndex) : PutM Unit := do
   match cm with
   | .empty => putU8 255
-  | .defn name lvls hints all ctx arena typeRoot valueRoot =>
+  | .defn name lvls all ctx arena typeRoot valueRoot =>
     putU8 0
     putIdx name idx
     putIdxVec lvls idx
-    putReducibilityHints hints
     putIdxVec all idx
     putIdxVec ctx idx
     putExprMetaArenaIndexed arena idx
@@ -1389,13 +1404,12 @@ def getConstantMetaIndexed (rev : NameReverseIndex) : GetM ConstantMeta := do
     | 0 =>
       let name ← getIdx rev
       let lvls ← getIdxVec rev
-      let hints ← getReducibilityHints
       let all ← getIdxVec rev
       let ctx ← getIdxVec rev
       let arena ← getExprMetaArenaIndexed rev
       let typeRoot := (← getTag0).size
       let valueRoot := (← getTag0).size
-      pure (.defn name lvls hints all ctx arena typeRoot valueRoot)
+      pure (.defn name lvls all ctx arena typeRoot valueRoot)
     | 1 =>
       let name ← getIdx rev
       let lvls ← getIdxVec rev
@@ -1530,9 +1544,10 @@ structure Env where
       as a strictly ascending leaf list; `Ix.Merkle.merkleRootCanonical`
       over it reproduces the root a `Claim.assumptions` commits to. -/
   assumptions : Std.HashSet Address := {}
-  /-- Reducibility hints (§3, the canonical hint channel for anon/lazy
-      readers). When empty, `putEnv` derives the section from Named
-      `.defn` metadata at write time. Mirrors Rust `Env.anon_hints`. -/
+  /-- Reducibility hints, keyed by constant address — the single home
+      for hints (they do not appear in `ConstantMeta`). The compiler
+      populates this map; `putEnv` serializes it as the hints section
+      and `getEnv` reads it back. Mirrors Rust `Env.anon_hints`. -/
   anonHints : Std.HashMap Address Lean.ReducibilityHints := {}
   deriving Inhabited
 
@@ -1871,28 +1886,10 @@ def putEnv (env : Env) : PutM Unit := do
 
   -- Section 3: anon_hints — the canonical hint channel for the
   -- anon/lazy readers, placed before the metadata sections so they can
-  -- stop right after it. When the in-memory map is empty (the compile
-  -- path: hints live in Named metadata), the section is derived from
-  -- `named`. `named` is sorted here (the §5 canonical order, by name
-  -- hash) and reused for §5 below; the sorted iteration makes the
-  -- first-wins dedup by constant address deterministic. Matches Rust
-  -- `Env::put`.
-  let named := env.named.toList.toArray.qsort fun a b => (compare a.1 b.1).isLT
-  let hintPairs : Array (Address × Lean.ReducibilityHints) :=
-    if env.anonHints.isEmpty then Id.run do
-      let mut seen : Std.HashSet Address := {}
-      let mut pairs : Array (Address × Lean.ReducibilityHints) := #[]
-      for (_, namedEntry) in named do
-        match namedEntry.constMeta with
-        | .defn _ _ hints _ _ _ _ _ =>
-          if !seen.contains namedEntry.addr then
-            seen := seen.insert namedEntry.addr
-            pairs := pairs.push (namedEntry.addr, hints)
-        | _ => pure ()
-      return pairs
-    else
-      env.anonHints.toList.toArray
-  let hintPairs := hintPairs.qsort fun a b => (compare a.1 b.1).isLT
+  -- stop right after it. Serialized straight from `env.anonHints`, the
+  -- single home for hints. Matches Rust `Env::put`.
+  let hintPairs := env.anonHints.toList.toArray.qsort
+    fun a b => (compare a.1 b.1).isLT
   putTag0 ⟨hintPairs.size.toUInt64⟩
   for (addr, hints) in hintPairs do
     Serialize.put addr
@@ -1910,6 +1907,7 @@ def putEnv (env : Env) : PutM Unit := do
     putNameComponent name
 
   -- Section 5: Named (name Address -> Named with metadata)
+  let named := env.named.toList.toArray.qsort fun a b => (compare a.1 b.1).isLT
   putTag0 ⟨named.size.toUInt64⟩
   for (name, namedEntry) in named do
     -- Use the name's stored hash, which matches how it was stored in env.names
@@ -2102,22 +2100,8 @@ def envSectionSizes (env : Env) : Nat × Nat × Nat × Nat × Nat × Nat := Id.r
 
   -- anon_hints section (mirrors putEnv's derive-from-named rule)
   let hintsBytes := runPut do
-    let named := env.named.toList.toArray.qsort fun a b => (compare a.1 b.1).isLT
-    let hintPairs : Array (Address × Lean.ReducibilityHints) :=
-      if env.anonHints.isEmpty then Id.run do
-        let mut seen : Std.HashSet Address := {}
-        let mut pairs : Array (Address × Lean.ReducibilityHints) := #[]
-        for (_, namedEntry) in named do
-          match namedEntry.constMeta with
-          | .defn _ _ hints _ _ _ _ _ =>
-            if !seen.contains namedEntry.addr then
-              seen := seen.insert namedEntry.addr
-              pairs := pairs.push (namedEntry.addr, hints)
-          | _ => pure ()
-        return pairs
-      else
-        env.anonHints.toList.toArray
-    let hintPairs := hintPairs.qsort fun a b => (compare a.1 b.1).isLT
+    let hintPairs := env.anonHints.toList.toArray.qsort
+      fun a b => (compare a.1 b.1).isLT
     putTag0 ⟨hintPairs.size.toUInt64⟩
     for (addr, hints) in hintPairs do
       Serialize.put addr
@@ -2196,17 +2180,14 @@ structure RawConstSlice where
   len : UInt64
   deriving Inhabited
 
-/-- A named entry reduced to `name → addr` plus an encoded reducibility hint
-    (`hintKind`: 0 = none, 1 = opaque, 2 = abbrev, 3 = regular `hintVal`). -/
+/-- A named entry reduced to `name → addr`. -/
 structure RawNamedLite where
   name : Ix.Name
   addr : Address
-  hintKind : UInt64
-  hintVal : UInt64
   deriving Inhabited
 
 /-- Metadata-light env returned by `rs_de_env_lazy`. Field order
-    matters: the Rust builder addresses constructor slots 0-4. -/
+    matters: the Rust builder addresses constructor slots 0-5. -/
 structure RawEnvLazy where
   consts : Array RawConstSlice
   named : Array RawNamedLite
@@ -2215,19 +2196,9 @@ structure RawEnvLazy where
   main : Option Address := none
   /-- Bundle trust boundary (`Env.assumptions`), in header order. -/
   assumptions : Array Address := #[]
+  /-- Reducibility hints (`Env.anonHints`) from the hints section. -/
+  anonHints : Array (Address × Lean.ReducibilityHints) := #[]
   deriving Inhabited
-
-/-- Decode an encoded reducibility hint into the `ConstantMeta` the check path
-    expects: a stripped `.defn` carrying just the hint (so `addEntries` finds it
-    via `.defn _ _ hints …`), or `.empty` for non-`Defn` entries. -/
-def RawNamedLite.toConstMeta (n : RawNamedLite) : ConstantMeta :=
-  let mkDefn (h : Lean.ReducibilityHints) : ConstantMeta :=
-    .defn default #[] h #[] #[] {} 0 0
-  match n.hintKind with
-  | 1 => mkDefn .opaque
-  | 2 => mkDefn .abbrev
-  | 3 => mkDefn (.regular n.hintVal.toUInt32)
-  | _ => .empty
 
 /-- Reconstruct an `Env` from a `RawEnvLazy` and the original buffer `buf`.
     Constants become `LazyConstant.ofSlice buf offset len` — zero-copy windows
@@ -2235,13 +2206,15 @@ def RawNamedLite.toConstMeta (n : RawNamedLite) : ConstantMeta :=
     (offsets are relative to it). -/
 def RawEnvLazy.toEnv (raw : RawEnvLazy) (buf : ByteArray) : Env := Id.run do
   let mut env : Env := { main := raw.main
-                         assumptions := raw.assumptions.foldl (·.insert ·) {} }
+                         assumptions := raw.assumptions.foldl (·.insert ·) {}
+                         anonHints := raw.anonHints.foldl
+                           (fun m (a, h) => m.insert a h) {} }
   for ⟨addr, offset, len⟩ in raw.consts do
     env := { env with
       consts := env.consts.insert addr
         (LazyConstant.ofSlice buf offset.toNat len.toNat) }
   for n in raw.named do
-    env := env.registerName n.name { addr := n.addr, constMeta := n.toConstMeta }
+    env := env.registerName n.name { addr := n.addr, constMeta := .empty }
   for ⟨addr, bytes⟩ in raw.blobs do
     env := { env with blobs := env.blobs.insert addr bytes }
   return env
