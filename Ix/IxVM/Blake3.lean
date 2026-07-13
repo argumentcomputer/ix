@@ -309,6 +309,29 @@ def blake3 := ⟦
     [s0, s1, s2, s3]
   }
 
+  -- Little-endian sum of three 32-bit words in one carry-propagation pass:
+  -- each byte column accumulates with chained `u8_add` (running partial stays
+  -- < 256) and the 0/1 carry bits fold into the next column with a free field
+  -- add. 11 `u8_add`s vs 14 for two chained `u32_le_add`s. Column carry is
+  -- floor(column_sum / 256) <= 2 (< 256), safe to feed back to `u8_add`.
+  fn u32_le_add3(a: [U8; 4], b: [U8; 4], c: [U8; 4]) -> [U8; 4] {
+    let (t, k1) = u8_add(a[0], b[0]);
+    let (s0, k2) = u8_add(t, c[0]);
+    let cy = u8_from_field_unsafe(to_field(k1) + to_field(k2));
+    let (t, k1) = u8_add(a[1], b[1]);
+    let (t, k2) = u8_add(t, c[1]);
+    let (s1, k3) = u8_add(t, cy);
+    let cy = u8_from_field_unsafe(to_field(k1) + to_field(k2) + to_field(k3));
+    let (t, k1) = u8_add(a[2], b[2]);
+    let (t, k2) = u8_add(t, c[2]);
+    let (s2, k3) = u8_add(t, cy);
+    let cy = u8_from_field_unsafe(to_field(k1) + to_field(k2) + to_field(k3));
+    let (t, _z) = u8_add(a[3], b[3]);
+    let (t, _z) = u8_add(t, c[3]);
+    let (s3, _z) = u8_add(t, cy);
+    [s0, s1, s2, s3]
+  }
+
   fn u32_xor(a: [U8; 4], b: [U8; 4]) -> [U8; 4] {
     [u8_xor(a[0], b[0]), u8_xor(a[1], b[1]), u8_xor(a[2], b[2]), u8_xor(a[3], b[3])]
   }
@@ -342,11 +365,11 @@ def blake3 := ⟦
     x: [U8; 4],
     y: [U8; 4]
   ) -> [[U8; 4]; 4] {
-    let a = @u32_le_add(@u32_le_add(a, b), x);
+    let a = @u32_le_add3(a, b, x);
     let d = @rotr16(@u32_xor(d, a));
     let c = @u32_le_add(c, d);
     let b = @rotr12(@u32_xor(b, c));
-    let a = @u32_le_add(@u32_le_add(a, b), y);
+    let a = @u32_le_add3(a, b, y);
     let d = @rotr8(@u32_xor(d, a));
     let c = @u32_le_add(c, d);
     let b = @rotr7(@u32_xor(b, c));
