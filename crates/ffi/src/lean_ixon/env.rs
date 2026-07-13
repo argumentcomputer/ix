@@ -337,7 +337,7 @@ pub fn set_raw_env_bundle_fields(
     assumptions_arr.set(i, LeanIxAddress::build(addr));
   }
   let mut hints: Vec<(Address, ReducibilityHints)> =
-    env.anon_hints.iter().map(|(a, h)| (a.clone(), *h)).collect();
+    env.anon_hints.iter().map(|e| (e.key().clone(), *e.value())).collect();
   hints.sort_unstable_by(|a, b| a.0.cmp(&b.0));
   let hints_arr = LeanArray::alloc(hints.len());
   for (i, (addr, hint)) in hints.iter().enumerate() {
@@ -486,7 +486,7 @@ pub fn ixon_env_to_decoded(env: &IxonEnv) -> Result<DecodedRawEnv, String> {
   let mut assumptions: Vec<Address> = env.assumptions.iter().cloned().collect();
   assumptions.sort_unstable();
   let mut anon_hints: Vec<(Address, ReducibilityHints)> =
-    env.anon_hints.iter().map(|(a, h)| (a.clone(), *h)).collect();
+    env.anon_hints.iter().map(|e| (e.key().clone(), *e.value())).collect();
   anon_hints.sort_unstable_by(|a, b| a.0.cmp(&b.0));
   Ok(DecodedRawEnv {
     consts,
@@ -608,17 +608,6 @@ pub extern "C" fn rs_de_env_anon(
 // closure it actually checks. See `Ix.Ixon.deEnvAnon`.
 // =============================================================================
 
-/// Encode an optional reducibility hint as `(kind, val)` for the FFI:
-/// `0` = none (not a Defn), `1` = Opaque, `2` = Abbrev, `3` = Regular(val).
-fn encode_hint(hint: &Option<ReducibilityHints>) -> (u64, u64) {
-  match hint {
-    None => (0, 0),
-    Some(ReducibilityHints::Opaque) => (1, 0),
-    Some(ReducibilityHints::Abbrev) => (2, 0),
-    Some(ReducibilityHints::Regular(n)) => (3, u64::from(*n)),
-  }
-}
-
 impl LeanIxonRawConstSlice<LeanOwned> {
   /// Build `Ixon.RawConstSlice { addr, offset, len }`.
   pub fn build(addr: &Address, offset: usize, len: usize) -> Self {
@@ -631,19 +620,15 @@ impl LeanIxonRawConstSlice<LeanOwned> {
 }
 
 impl LeanIxonRawNamedLite<LeanOwned> {
-  /// Build `Ixon.RawNamedLite { name, addr, hintKind, hintVal }`.
+  /// Build `Ixon.RawNamedLite { name, addr }`.
   pub fn build(
     cache: &mut LeanBuildCache,
     name: &Name,
     addr: &Address,
-    hint: &Option<ReducibilityHints>,
   ) -> Self {
-    let (kind, val) = encode_hint(hint);
     let ctor = LeanIxonRawNamedLite::alloc(0);
     ctor.set_obj(0, LeanIxName::build(cache, name));
     ctor.set_obj(1, LeanIxAddress::build(addr));
-    ctor.set_num_64(0, kind);
-    ctor.set_num_64(1, val);
     ctor
   }
 }
@@ -659,10 +644,7 @@ fn build_raw_env_lazy(index: &LazyIndex) -> LeanIxonRawEnvLazy<LeanOwned> {
 
   let named_arr = LeanArray::alloc(index.named.len());
   for (i, n) in index.named.iter().enumerate() {
-    named_arr.set(
-      i,
-      LeanIxonRawNamedLite::build(&mut cache, &n.name, &n.addr, &n.hint),
-    );
+    named_arr.set(i, LeanIxonRawNamedLite::build(&mut cache, &n.name, &n.addr));
   }
 
   let blobs_arr = LeanArray::alloc(index.blobs.len());
@@ -679,12 +661,24 @@ fn build_raw_env_lazy(index: &LazyIndex) -> LeanIxonRawEnvLazy<LeanOwned> {
     assumptions_arr.set(i, LeanIxAddress::build(addr));
   }
 
+  let hints_arr = LeanArray::alloc(index.hints.len());
+  for (i, (addr, hint)) in index.hints.iter().enumerate() {
+    hints_arr.set(
+      i,
+      LeanProd::new(
+        LeanIxAddress::build(addr),
+        LeanIxReducibilityHints::build(hint),
+      ),
+    );
+  }
+
   let ctor = LeanIxonRawEnvLazy::alloc(0);
   ctor.set_obj(0, consts_arr);
   ctor.set_obj(1, named_arr);
   ctor.set_obj(2, blobs_arr);
   ctor.set_obj(3, main_obj);
   ctor.set_obj(4, assumptions_arr);
+  ctor.set_obj(5, hints_arr);
   ctor
 }
 

@@ -972,6 +972,8 @@ pub fn compile_env_with_options(
     });
   }
 
+  stt.finalize_hints();
+
   if !*IX_QUIET {
     let total_elapsed = compile_start.elapsed().as_secs_f64();
     eprintln!(

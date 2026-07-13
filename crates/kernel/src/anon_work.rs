@@ -232,7 +232,7 @@ pub fn build_sub_env(
 #[cfg(not(target_arch = "riscv64"))]
 fn sub_env_of(source: &IxonEnv, roots: &[Address]) -> IxonEnv {
   let closure = closure_addrs(source, roots);
-  let mut sub = IxonEnv::new();
+  let sub = IxonEnv::new();
   for addr in &closure {
     if let Some(bytes) = source.get_const_bytes(addr) {
       sub.store_const_lazy(addr.clone(), bytes);
@@ -241,10 +241,8 @@ fn sub_env_of(source: &IxonEnv, roots: &[Address]) -> IxonEnv {
     }
     // else: external ref absent from `source` — omit; stays an open assumption.
     // Carry the constant's reducibility hint so the guest reproduces vanilla
-    // kernel behavior. The sub-env has no Named section to derive the §3
-    // hints from at serialization time, so populate the map explicitly;
-    // without hints the kernel forces `Regular(0)` and does extra def-eq
-    // work (the ~30% check overhead).
+    // kernel behavior; without hints the kernel forces `Regular(0)` and does
+    // extra def-eq work (the ~30% check overhead).
     if let Some(h) = source.anon_hints.get(addr) {
       sub.anon_hints.insert(addr.clone(), *h);
     }

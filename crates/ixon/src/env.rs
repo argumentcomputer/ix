@@ -1,6 +1,6 @@
 //! Environment for storing Ixon data.
 
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashSet;
 use std::collections::VecDeque;
 use std::sync::Arc;
 
@@ -165,15 +165,14 @@ pub struct LazyConstSlice {
   pub len: usize,
 }
 
-/// One named entry in a [`LazyIndex`]: just the `name → addr` mapping plus the
-/// per-`Defn` reducibility hint (the only metadata the typecheck circuit
-/// consumes). The heavy `ExprMetaArena` is parsed (to advance the cursor and
-/// handle every metadata variant, e.g. `CallSite`) but discarded.
+/// One named entry in a [`LazyIndex`]: just the `name → addr` mapping.
+/// The heavy `ExprMetaArena` is parsed (to advance the cursor and
+/// handle every metadata variant, e.g. `CallSite`) but discarded;
+/// hints live on [`LazyIndex::hints`].
 #[derive(Debug, Clone)]
 pub struct LazyNamed {
   pub name: Name,
   pub addr: Address,
-  pub hint: Option<ReducibilityHints>,
 }
 
 /// `IX_COMPILE_DEMOTE` (default **on**; set `0` to disable): store the
@@ -227,7 +226,7 @@ pub struct LazyIndex {
 /// - `blobs`: Raw data (strings, nats, files)
 /// - `names`: Hash-consed Lean.Name components (Address -> Name)
 /// - `comms`: Cryptographic commitments (secrets)
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Env {
   /// Alpha-invariant constants: Address -> LazyConstant (raw bytes +
   /// optional materialized cache; see [`LazyConstant`]).
@@ -240,20 +239,21 @@ pub struct Env {
   pub names: IxonMap<Address, Name>,
   /// Cryptographic commitments: commitment Address -> Comm
   pub comms: IxonMap<Address, Comm>,
-  /// Reducibility hints sidecar harvested by [`Env::get_anon`] from the
-  /// otherwise-discarded Named section. Keyed by the constant's
-  /// projection/standalone address (i.e. `Named.addr` — the address the
-  /// kernel sees, **not** the name-hash address). Empty for envs loaded
-  /// via [`Env::get`] / [`Env::new`] / `store_*`; meta-mode ingress
-  /// pulls hints directly from `Named.meta` and ignores this field.
+  /// Reducibility hints, keyed by the constant's projection/standalone
+  /// address (i.e. `Named.addr` — the address the kernel sees, **not**
+  /// the name-hash address). The SINGLE home for hints: the compiler
+  /// registers them here ([`Env::register_hint`]), every writer
+  /// serializes this map as the file's hints section, and every reader
+  /// populates it from that section. Hints do not appear in `Named`
+  /// metadata.
   ///
-  /// Anon-mode ingress passes these hints through to
-  /// `ingress_defn` so the kernel's lazy-delta tiebreak
-  /// (`def_eq::def_rank_id`) sees realistic heights instead of the
-  /// constant `Regular(0)` fallback. Hints are performance advice —
-  /// supplying them in anon mode does not relax the kernel's
-  /// metadata-free correctness model.
-  pub anon_hints: FxHashMap<Address, ReducibilityHints>,
+  /// Ingress passes these hints through to `ingress_defn` so the
+  /// kernel's lazy-delta tiebreak (`def_eq::def_rank_id`) sees
+  /// realistic heights instead of the constant `Regular(0)` fallback.
+  /// Hints are performance advice — supplying them does not relax the
+  /// kernel's metadata-free correctness model — and are intentionally
+  /// NOT covered by the consts merkle root.
+  pub anon_hints: IxonMap<Address, ReducibilityHints>,
   /// Distinguished root constant for bundle envs; `None` for whole
   /// environments. A pointer, not a proof: nothing in the file
   /// authenticates it, so readers check `main ∈ consts` and consumers
@@ -276,7 +276,7 @@ impl Env {
       blobs: IxonMap::new(),
       names: IxonMap::new(),
       comms: IxonMap::new(),
-      anon_hints: FxHashMap::default(),
+      anon_hints: IxonMap::new(),
       main: None,
       assumptions: FxHashSet::default(),
     }
@@ -298,6 +298,38 @@ impl Env {
   /// Get a blob by address.
   pub fn get_blob(&self, addr: &Address) -> Option<Vec<u8>> {
     self.blobs.get(addr).map(|r| r.clone())
+  }
+
+  /// Register a constant's reducibility hints (the compile-time
+  /// producer of [`Self::anon_hints`]; readers populate the map from
+  /// the file's hints section instead).
+  ///
+  /// Alpha-equivalent definitions share one constant address but may
+  /// carry different hints (e.g. one alias marked `@[reducible]`), and
+  /// parallel compile workers may race on the entry — so the winner
+  /// must not depend on arrival order. The merge keeps the minimum
+  /// under `(tag, height)` with `Opaque < Abbrev < Regular(h)`:
+  /// commutative, associative, idempotent, hence order-independent.
+  /// The Lean compiler mirror applies the same rule.
+  #[cfg(not(target_arch = "riscv64"))]
+  pub fn register_hint(&self, addr: Address, hints: ReducibilityHints) {
+    fn rank(h: &ReducibilityHints) -> (u8, u32) {
+      match h {
+        ReducibilityHints::Opaque => (0, 0),
+        ReducibilityHints::Abbrev => (1, 0),
+        ReducibilityHints::Regular(x) => (2, *x),
+      }
+    }
+    match self.anon_hints.entry(addr) {
+      dashmap::mapref::entry::Entry::Occupied(mut e) => {
+        if rank(&hints) < rank(e.get()) {
+          e.insert(hints);
+        }
+      },
+      dashmap::mapref::entry::Entry::Vacant(e) => {
+        e.insert(hints);
+      },
+    }
   }
 
   /// Store a structured constant under `addr`.
@@ -928,49 +960,6 @@ impl Env {
   }
 }
 
-impl Clone for Env {
-  // `mut` is only needed on `riscv64` where `IxonMap` wraps `FxHashMap` and
-  // `insert` takes `&mut self`; on host `DashMap::insert` takes `&self`.
-  #[cfg_attr(not(target_arch = "riscv64"), allow(unused_mut))]
-  fn clone(&self) -> Self {
-    let mut consts = IxonMap::new();
-    for entry in self.consts.iter() {
-      consts.insert(entry.key().clone(), entry.value().clone());
-    }
-
-    let mut named = IxonMap::new();
-    for entry in self.named.iter() {
-      named.insert(entry.key().clone(), entry.value().clone());
-    }
-
-    let mut blobs = IxonMap::new();
-    for entry in self.blobs.iter() {
-      blobs.insert(entry.key().clone(), entry.value().clone());
-    }
-
-    let mut names = IxonMap::new();
-    for entry in self.names.iter() {
-      names.insert(entry.key().clone(), entry.value().clone());
-    }
-
-    let mut comms = IxonMap::new();
-    for entry in self.comms.iter() {
-      comms.insert(entry.key().clone(), entry.value().clone());
-    }
-
-    Env {
-      consts,
-      named,
-      blobs,
-      names,
-      comms,
-      anon_hints: self.anon_hints.clone(),
-      main: self.main.clone(),
-      assumptions: self.assumptions.clone(),
-    }
-  }
-}
-
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -1495,7 +1484,6 @@ mod tests {
     let mut meta = ConstantMeta::new(ConstantMetaInfo::Def {
       name: name_addr.clone(),
       lvls: vec![],
-      hints: ReducibilityHints::Regular(3),
       all: vec![],
       ctx: vec![],
       arena: ExprMeta::default(),
@@ -1504,6 +1492,7 @@ mod tests {
     });
     meta.meta_refs.push(meta_blob.clone());
     env.register_name(name.clone(), Named::new(a.clone(), meta));
+    env.register_hint(a.clone(), ReducibilityHints::Regular(3));
 
     let bundle = env.prune_to_closure(&a, &FxHashSet::default()).unwrap();
     assert!(bundle.named.get(&name).is_some(), "named entry carried");
@@ -1522,12 +1511,15 @@ mod tests {
       bundle.get_blob(&Address::hash(b"Bundled")),
       Some(b"Bundled".to_vec())
     );
-    // Hints derive from the carried Def meta on serialization; the
-    // anon reader sees them without touching metadata sections.
+    // Hints are carried per constant by the prune; the anon reader
+    // sees them from the hints section without touching metadata.
     let mut buf = Vec::new();
     bundle.put(&mut buf).unwrap();
     let anon = Env::get_anon(&mut buf.as_slice()).unwrap();
-    assert_eq!(anon.anon_hints.get(&a), Some(&ReducibilityHints::Regular(3)));
+    assert_eq!(
+      anon.anon_hints.get(&a).map(|r| *r),
+      Some(ReducibilityHints::Regular(3))
+    );
   }
 
   /// Fixture for the streaming/anon prune tests: `a` (the main) named
@@ -1552,7 +1544,6 @@ mod tests {
     let mut meta = ConstantMeta::new(ConstantMetaInfo::Def {
       name: foo_addr,
       lvls: vec![u_addr],
-      hints: ReducibilityHints::Regular(2),
       all: vec![],
       ctx: vec![],
       arena: ExprMeta::default(),
@@ -1563,6 +1554,7 @@ mod tests {
     let mut foo_named = Named::new(a.clone(), meta);
     foo_named.set_original(b.clone(), ConstantMeta::default());
     env.register_name(foo, foo_named);
+    env.register_hint(a.clone(), ReducibilityHints::Regular(2));
     let bar = n("Bar");
     let bar_addr = Address::from_blake3_hash(*bar.get_hash());
     env.store_name(bar_addr, bar.clone());
@@ -1646,9 +1638,11 @@ mod tests {
       !bundle.consts.contains_key(&b),
       "metadata-only edges must not be walked in anon mode"
     );
-    // §3 hints derive from the source's Named Def metadata at write
-    // time and ride the lazy env's anon_hints into the bundle.
-    assert_eq!(bundle.anon_hints.get(&a), Some(&ReducibilityHints::Regular(2)));
+    // Hints ride the lazy env's anon_hints into the bundle.
+    assert_eq!(
+      bundle.anon_hints.get(&a).map(|r| *r),
+      Some(ReducibilityHints::Regular(2))
+    );
     bundle.validate_closed().unwrap();
 
     let mut buf = Vec::new();
@@ -1662,6 +1656,9 @@ mod tests {
     assert!(back.names.len() <= 1, "§4 carries at most the anon entry");
     assert_eq!(back.main, Some(a.clone()));
     let anon = Env::get_anon(&mut buf.as_slice()).unwrap();
-    assert_eq!(anon.anon_hints.get(&a), Some(&ReducibilityHints::Regular(2)));
+    assert_eq!(
+      anon.anon_hints.get(&a).map(|r| *r),
+      Some(ReducibilityHints::Regular(2))
+    );
   }
 }

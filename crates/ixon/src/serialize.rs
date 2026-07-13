@@ -1424,47 +1424,17 @@ impl Env {
     // ─────────────────────────────────────────────────────────────────────
     // Section 3: anon_hints (Address -> ReducibilityHints)
     //
-    // The canonical hint channel for the anon/lazy readers, placed
-    // before the metadata sections so `get_anon`/`get_anon_mmap` can
-    // stop right after it (they never touch names/named/comms). When
-    // the in-memory map is empty (the compile path: hints live in
-    // Named metadata), the section is derived from `named` — the same
-    // harvest `get_anon` historically did at read time, moved to
-    // write time. Hints are performance-only advice and intentionally
+    // The canonical hint channel, placed before the metadata sections
+    // so `get_anon`/`get_anon_mmap` can stop right after it (they
+    // never touch names/named/comms). `anon_hints` is the single home
+    // for hints: the compiler registers them per constant address
+    // (`Env::register_hint`) and readers fill the map from this very
+    // section. Hints are performance-only advice and intentionally
     // NOT covered by the consts merkle root.
-    //
-    // `named_keys` is collected and sorted here (by name hash — the
-    // Section 5 canonical order) and reused for Section 5 below; the
-    // sorted iteration makes the first-wins dedup by constant address
-    // deterministic when alpha-equivalent names share one constant.
     // ─────────────────────────────────────────────────────────────────────
     let sec_start = std::time::Instant::now();
-    let mut named_keys: Vec<Name> =
-      self.named.iter().map(|e| e.key().clone()).collect();
-    #[cfg(not(target_arch = "riscv64"))]
-    named_keys.par_sort_unstable_by(|a, b| {
-      a.get_hash().as_bytes().cmp(b.get_hash().as_bytes())
-    });
-    #[cfg(target_arch = "riscv64")]
-    named_keys.sort_unstable_by(|a, b| {
-      a.get_hash().as_bytes().cmp(b.get_hash().as_bytes())
-    });
     let mut hint_pairs: Vec<(Address, ReducibilityHints)> =
-      if self.anon_hints.is_empty() {
-        let mut derived: FxHashMap<Address, ReducibilityHints> =
-          FxHashMap::default();
-        for name in &named_keys {
-          if let Some(entry) = self.named.get(name)
-            && let super::metadata::ConstantMetaInfo::Def { hints, .. } =
-              &entry.value().meta().info
-          {
-            derived.entry(entry.value().addr.clone()).or_insert(*hints);
-          }
-        }
-        derived.into_iter().collect()
-      } else {
-        self.anon_hints.iter().map(|(a, h)| (a.clone(), *h)).collect()
-      };
+      self.anon_hints.iter().map(|e| (e.key().clone(), *e.value())).collect();
     hint_pairs.sort_unstable_by(|a, b| a.0.cmp(&b.0));
     put_u64(hint_pairs.len() as u64, buf);
     for (addr, hints) in &hint_pairs {
@@ -1527,13 +1497,24 @@ impl Env {
     // with metadata arenas), so the streaming pattern's win is greatest
     // here: on Mathlib, avoiding the clone-into-Vec saves ~30 GB peak RAM.
     //
-    // `named_keys` was collected and sorted (by cached name hash bytes)
-    // up in Section 3, where the hint derivation needs the same
-    // canonical order.
+    // Key clone cost: a `Name` is `Arc<NameData>`, so each clone is a
+    // single atomic refcount increment (<1s for 733k).
     let sec_start = std::time::Instant::now();
     if !quiet {
       eprintln!("[Env::put] section 5/6 named: {} entries", self.named.len(),);
     }
+    let mut named_keys: Vec<Name> =
+      self.named.iter().map(|e| e.key().clone()).collect();
+    // Sort by the cached name hash bytes — the section's canonical
+    // order (ascending name hash, which is exactly `Name`'s `Ord`).
+    #[cfg(not(target_arch = "riscv64"))]
+    named_keys.par_sort_unstable_by(|a, b| {
+      a.get_hash().as_bytes().cmp(b.get_hash().as_bytes())
+    });
+    #[cfg(target_arch = "riscv64")]
+    named_keys.sort_unstable_by(|a, b| {
+      a.get_hash().as_bytes().cmp(b.get_hash().as_bytes())
+    });
     let put_start = std::time::Instant::now();
     put_u64(named_keys.len() as u64, buf);
     for name in &named_keys {
@@ -1676,31 +1657,10 @@ impl Env {
         written += bytes.len() as u64;
       }
     }
-    // Section 3: anon_hints — the canonical hint channel. Always
-    // emitted; when the in-memory map is empty it is derived from Named
-    // `Def` metadata in hash-sorted name order, mirroring `Env::put`
-    // exactly (same iteration order → same `or_insert` winners).
-    let mut named_keys: Vec<Name> =
-      self.named.iter().map(|e| e.key().clone()).collect();
-    named_keys.par_sort_unstable_by(|a, b| {
-      a.get_hash().as_bytes().cmp(b.get_hash().as_bytes())
-    });
+    // Section 3: anon_hints — the canonical hint channel, serialized
+    // straight from the map (see `Env::put`).
     let mut hint_pairs: Vec<(Address, ReducibilityHints)> =
-      if self.anon_hints.is_empty() {
-        let mut derived: FxHashMap<Address, ReducibilityHints> =
-          FxHashMap::default();
-        for name in &named_keys {
-          if let Some(entry) = self.named.get(name)
-            && let super::metadata::ConstantMetaInfo::Def { hints, .. } =
-              &entry.value().meta().info
-          {
-            derived.entry(entry.value().addr.clone()).or_insert(*hints);
-          }
-        }
-        derived.into_iter().collect()
-      } else {
-        self.anon_hints.iter().map(|(a, h)| (a.clone(), *h)).collect()
-      };
+      self.anon_hints.iter().map(|e| (e.key().clone(), *e.value())).collect();
     hint_pairs.sort_unstable_by(|a, b| a.0.cmp(&b.0));
     put_u64(hint_pairs.len() as u64, &mut buf);
     for (addr, hints) in &hint_pairs {
@@ -1726,6 +1686,11 @@ impl Env {
     // and re-encode through the name index). Chunks encode in parallel
     // into per-entry buffers and drain to the writer in order; the
     // chunk size bounds staged memory to a few MiB.
+    let mut named_keys: Vec<Name> =
+      self.named.iter().map(|e| e.key().clone()).collect();
+    named_keys.par_sort_unstable_by(|a, b| {
+      a.get_hash().as_bytes().cmp(b.get_hash().as_bytes())
+    });
     put_u64(named_keys.len() as u64, &mut buf);
     emit!();
     for chunk in named_keys.chunks(4096) {
@@ -1957,13 +1922,9 @@ impl Env {
       index.consts.push(LazyConstSlice { addr, offset, len });
     }
 
-    // Section 3: anon_hints — the canonical hint channel (the writer
-    // always emits it, deriving from Named metadata when needed), so
-    // `LazyNamed.hint` is a plain lookup instead of a metadata harvest.
-    // Kept verbatim on the index for full-reader parity.
+    // Section 3: anon_hints — kept verbatim on the index for
+    // full-reader parity.
     index.hints = read_hints_section(&mut buf)?;
-    let hints_map: FxHashMap<Address, ReducibilityHints> =
-      index.hints.iter().cloned().collect();
 
     // Section 4: Names — parsed to build the index for metadata
     // decoding. The reverse index is retained on the LazyIndex so §5
@@ -1983,10 +1944,10 @@ impl Env {
     }
     index.name_reverse_index = name_reverse_index;
 
-    // Section 5: Named — keep `name → addr` plus the §3 hint for that
-    // address; the full ConstantMeta (arena, CallSite, ...) is parsed
-    // then discarded. The section offset is recorded so a
-    // [`NamedMetaCursor`] can re-walk it without re-parsing §1–§4.
+    // Section 5: Named — keep `name → addr`; the full ConstantMeta
+    // (arena, CallSite, ...) is parsed then discarded. The section
+    // offset is recorded so a [`NamedMetaCursor`] can re-walk it
+    // without re-parsing the earlier sections.
     index.named_section_offset = data.len() - buf.len();
     let num_named = get_u64(&mut buf)?;
     for _ in 0..num_named {
@@ -1995,8 +1956,7 @@ impl Env {
       let name = names_lookup.get(&name_addr).cloned().ok_or_else(|| {
         format!("parse_lazy_index: missing name for addr {:?}", name_addr)
       })?;
-      let hint = hints_map.get(&named.addr).copied();
-      index.named.push(LazyNamed { name, addr: named.addr, hint });
+      index.named.push(LazyNamed { name, addr: named.addr });
     }
 
     // Section 6: Comms — carried verbatim (tiny; empty for
@@ -2404,23 +2364,10 @@ impl Env {
     }
     let consts_size = buf.len() - before_consts;
 
-    // Section 3: anon_hints (mirrors Env::put's derive-from-named rule)
+    // Section 3: anon_hints (serialized straight from the map)
     let before_hints = buf.len();
     let mut hint_pairs: Vec<(Address, ReducibilityHints)> =
-      if self.anon_hints.is_empty() {
-        let mut derived: FxHashMap<Address, ReducibilityHints> =
-          FxHashMap::default();
-        for entry in self.named.iter() {
-          if let super::metadata::ConstantMetaInfo::Def { hints, .. } =
-            &entry.value().meta().info
-          {
-            derived.entry(entry.value().addr.clone()).or_insert(*hints);
-          }
-        }
-        derived.into_iter().collect()
-      } else {
-        self.anon_hints.iter().map(|(a, h)| (a.clone(), *h)).collect()
-      };
+      self.anon_hints.iter().map(|e| (e.key().clone(), *e.value())).collect();
     hint_pairs.sort_unstable_by(|a, b| a.0.cmp(&b.0));
     put_u64(hint_pairs.len() as u64, &mut buf);
     for (addr, hints) in &hint_pairs {
@@ -2730,11 +2677,8 @@ mod tests {
       env.assumptions.insert(Address::arbitrary(g));
     }
 
-    // Explicit anon_hints (keyed by arbitrary addresses — the map is
-    // advisory). When left empty, `Env::put` derives §3 from Named
-    // metadata instead; gen_env metas are all `Empty`, so that
-    // derivation contributes nothing and roundtrip equality holds
-    // either way.
+    // anon_hints (keyed by arbitrary addresses — the map is advisory
+    // and the hints section is serialized straight from it).
     let num_hints = gen_range(g, 0..4);
     for _ in 0..num_hints {
       let variant: u8 = Arbitrary::arbitrary(g);
@@ -2858,7 +2802,11 @@ mod tests {
           );
           return false;
         }
-        if env.anon_hints != recovered.anon_hints {
+        let hints_match = env.anon_hints.len() == recovered.anon_hints.len()
+          && env.anon_hints.iter().all(|e| {
+            recovered.anon_hints.get(e.key()).map(|r| *r) == Some(*e.value())
+          });
+        if !hints_match {
           eprintln!(
             "anon_hints mismatch: {} vs {} entries",
             env.anon_hints.len(),
@@ -3365,46 +3313,44 @@ mod tests {
   /// §3 is the canonical hint channel: with an empty `anon_hints` map
   /// the writer derives the section from Named `Def` metadata, and an
   /// env carrying the same hints explicitly serializes byte-identically.
+  /// The hints section round-trips through both the anon and full
+  /// readers, and `register_hint`'s merge is order-independent on
+  /// address collisions.
   #[test]
-  fn env_hints_derived_from_named_metadata() {
-    use crate::env::Named;
-    use crate::metadata::{ConstantMetaInfo, ExprMeta};
-
+  fn env_hints_roundtrip_and_merge_deterministic() {
     let env = Env::new();
     let const_addr = store_canonical(&env, defn_const(vec![]));
-    let name = Name::str(Name::anon(), "hinted".to_string());
-    let name_addr = Address::from_blake3_hash(*name.get_hash());
-    env.names.insert(name_addr.clone(), name.clone());
-    let meta = ConstantMeta::new(ConstantMetaInfo::Def {
-      name: name_addr,
-      lvls: vec![],
-      hints: ReducibilityHints::Regular(7),
-      all: vec![],
-      ctx: vec![],
-      arena: ExprMeta::default(),
-      type_root: 0,
-      value_root: 0,
-    });
-    env.named.insert(name, Named::new(const_addr.clone(), meta));
+    env.register_hint(const_addr.clone(), ReducibilityHints::Regular(7));
 
-    // Empty map → §3 derived from Named at write time; the anon
-    // reader picks it up without ever parsing the Named section.
     let mut buf = Vec::new();
     env.put(&mut buf).unwrap();
     let anon = Env::get_anon(&mut buf.as_slice()).unwrap();
     assert_eq!(
-      anon.anon_hints.get(&const_addr),
-      Some(&ReducibilityHints::Regular(7))
+      anon.anon_hints.get(&const_addr).map(|r| *r),
+      Some(ReducibilityHints::Regular(7))
+    );
+    let full = Env::get(&mut buf.as_slice()).unwrap();
+    assert_eq!(
+      full.anon_hints.get(&const_addr).map(|r| *r),
+      Some(ReducibilityHints::Regular(7))
     );
 
-    // Explicit map with identical content → identical bytes.
-    let mut env2 = env.clone();
-    env2.anon_hints.insert(const_addr, ReducibilityHints::Regular(7));
-    let mut buf2 = Vec::new();
-    env2.put(&mut buf2).unwrap();
+    // Alias collision: registration order must not affect the winner.
+    let a = Env::new();
+    let ca = store_canonical(&a, defn_const(vec![]));
+    a.register_hint(ca.clone(), ReducibilityHints::Regular(9));
+    a.register_hint(ca.clone(), ReducibilityHints::Abbrev);
+    let b = Env::new();
+    let cb = store_canonical(&b, defn_const(vec![]));
+    b.register_hint(cb.clone(), ReducibilityHints::Abbrev);
+    b.register_hint(cb.clone(), ReducibilityHints::Regular(9));
     assert_eq!(
-      buf, buf2,
-      "derived and explicit hint sections should serialize identically"
+      a.anon_hints.get(&ca).map(|r| *r),
+      b.anon_hints.get(&cb).map(|r| *r)
+    );
+    assert_eq!(
+      a.anon_hints.get(&ca).map(|r| *r),
+      Some(ReducibilityHints::Abbrev)
     );
   }
 }

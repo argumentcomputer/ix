@@ -34,7 +34,7 @@ Every `Constant` in Ixon is serialized and hashed with blake3. The resulting 256
 
 The Ixon format separates:
 - **Alpha-invariant data** (`Constant`): The mathematical content, hashed for addressing
-- **Metadata** (`ConstantMeta`, `ExprMeta`): Names, binder info, reducibility hints—stored separately
+- **Metadata** (`ConstantMeta`, `ExprMeta`): Names and binder info—stored separately (reducibility hints live at the environment level, in `Env::anon_hints`)
 
 This separation means cosmetic changes (renaming variables) don't change the constant's address.
 
@@ -690,7 +690,7 @@ Per-constant metadata. Each variant stores a name, universe parameter names, an 
 ```rust
 pub enum ConstantMeta {
     Empty,                                              // tag 255
-    Def { name, lvls, hints, all, ctx,
+    Def { name, lvls, all, ctx,
           arena, type_root, value_root },               // tag 0
     Axio { name, lvls, arena, type_root },              // tag 1
     Quot { name, lvls, arena, type_root },              // tag 2
@@ -706,7 +706,7 @@ pub enum ConstantMeta {
 
 | Tag | Variant | Payload |
 |-----|---------|---------|
-| 0 | Def | name_idx, lvl_idxs, hints, all_idxs, ctx_idxs, arena, type_root, value_root |
+| 0 | Def | name_idx, lvl_idxs, all_idxs, ctx_idxs, arena, type_root, value_root |
 | 1 | Axio | name_idx, lvl_idxs, arena, type_root |
 | 2 | Quot | name_idx, lvl_idxs, arena, type_root |
 | 3 | Indc | name_idx, lvl_idxs, ctor_idxs, all_idxs, ctx_idxs, arena, type_root |
@@ -863,13 +863,13 @@ count (Tag0)
 [Address (32 bytes) + ReducibilityHints]*
 ```
 
-The canonical hint channel for the anon/lazy readers, keyed by
-constant address and sorted ascending. Writers ALWAYS emit this
-section: when the in-memory hint map is empty (the compile path —
-hints live in Named metadata), the section is derived from the Named
-entries' `Def` metadata at write time. Hints are performance-only
-advice (the `Regular(0)` fallback is always correct) and are
-intentionally outside the consts merkle root.
+The canonical (and only) hint channel, keyed by constant address and
+sorted ascending. Hints never appear in `ConstantMeta`: the compiler
+registers each definition's hints into `Env::anon_hints`
+(`Env::register_hint`, an order-independent merge on alias
+collisions), writers serialize that map here, and readers load it
+back. Hints are performance-only advice (the `Regular(0)` fallback is
+always correct) and are intentionally outside the consts merkle root.
 
 **Section 4: Names** (Address → NameComponent, topologically sorted)
 ```
@@ -1312,7 +1312,6 @@ Named {
   meta: ConstantMeta::Def {
     name: addr_of_name("double"),
     lvls: [],
-    hints: ReducibilityHints::Regular(1),
     all: [addr_of_name("double")],
     ctx: [],
     arena: ExprMeta { nodes: [

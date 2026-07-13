@@ -3,9 +3,8 @@
 //! Includes: DataValue, KVMap, ExprMetaData, ExprMetaArena, ConstantMeta, Named, Comm
 
 use crate::lean::{
-  LeanIxReducibilityHints, LeanIxonComm, LeanIxonConstantMeta,
-  LeanIxonDataValue, LeanIxonExprMetaArena, LeanIxonExprMetaData,
-  LeanIxonNamed,
+  LeanIxonComm, LeanIxonConstantMeta, LeanIxonDataValue, LeanIxonExprMetaArena,
+  LeanIxonExprMetaData, LeanIxonNamed,
 };
 use ix_common::address::Address;
 use ix_common::env::BinderInfo;
@@ -349,7 +348,7 @@ impl LeanIxonConstantMeta<LeanOwned> {
   /// | Variant | Tag | Obj fields | Scalar bytes |
   /// |---------|-----|-----------|-------------|
   /// | empty   | 0   | 0         | 0           |
-  /// | defn    | 1   | 6 (name, lvls, hints, all, ctx, arena) | 16 (2× u64) |
+  /// | defn    | 1   | 5 (name, lvls, all, ctx, arena) | 16 (2× u64) |
   /// | axio    | 2   | 3 (name, lvls, arena) | 8 (1× u64) |
   /// | quot    | 3   | 3 (name, lvls, arena) | 8 (1× u64) |
   /// | indc    | 4   | 6 (name, lvls, ctors, all, ctx, arena) | 8 (1× u64) |
@@ -363,7 +362,6 @@ impl LeanIxonConstantMeta<LeanOwned> {
       ConstantMetaInfo::Def {
         name,
         lvls,
-        hints,
         all,
         ctx,
         arena,
@@ -373,10 +371,9 @@ impl LeanIxonConstantMeta<LeanOwned> {
         let ctor = LeanIxonConstantMeta::alloc(1);
         ctor.set_obj(0, LeanIxAddress::build(name));
         ctor.set_obj(1, LeanIxAddress::build_array(lvls));
-        ctor.set_obj(2, LeanIxReducibilityHints::build(hints));
-        ctor.set_obj(3, LeanIxAddress::build_array(all));
-        ctor.set_obj(4, LeanIxAddress::build_array(ctx));
-        ctor.set_obj(5, LeanIxonExprMetaArena::build(arena));
+        ctor.set_obj(2, LeanIxAddress::build_array(all));
+        ctor.set_obj(3, LeanIxAddress::build_array(ctx));
+        ctor.set_obj(4, LeanIxonExprMetaArena::build(arena));
         ctor.set_num_64(0, *type_root);
         ctor.set_num_64(1, *value_root);
         ctor
@@ -486,18 +483,15 @@ impl<R: LeanRef> LeanIxonConstantMeta<R> {
           LeanIxAddress::from_borrowed(self.get_obj(0).as_byte_array())
             .decode();
         let lvls = decode_address_array(self.get_obj(1).as_array());
-        let hints =
-          LeanIxReducibilityHints::new(self.get_obj(2).to_owned_ref()).decode();
-        let all = decode_address_array(self.get_obj(3).as_array());
-        let ctx = decode_address_array(self.get_obj(4).as_array());
+        let all = decode_address_array(self.get_obj(2).as_array());
+        let ctx = decode_address_array(self.get_obj(3).as_array());
         let arena =
-          LeanIxonExprMetaArena::new(self.get_obj(5).to_owned_ref()).decode();
+          LeanIxonExprMetaArena::new(self.get_obj(4).to_owned_ref()).decode();
         let type_root = self.get_num_64(0);
         let value_root = self.get_num_64(1);
         ConstantMeta::new(ConstantMetaInfo::Def {
           name,
           lvls,
-          hints,
           all,
           ctx,
           arena,

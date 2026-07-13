@@ -121,7 +121,6 @@ pub enum ConstantMetaInfo {
   Def {
     name: Address,
     lvls: Vec<Address>,
-    hints: ReducibilityHints,
     all: Vec<Address>,
     ctx: Vec<Address>,
     arena: ExprMeta,
@@ -1154,20 +1153,10 @@ impl ConstantMetaInfo {
   ) -> Result<(), String> {
     match self {
       Self::Empty => put_u8(255, buf),
-      Self::Def {
-        name,
-        lvls,
-        hints,
-        all,
-        ctx,
-        arena,
-        type_root,
-        value_root,
-      } => {
+      Self::Def { name, lvls, all, ctx, arena, type_root, value_root } => {
         put_u8(0, buf);
         put_idx(name, idx, buf)?;
         put_idx_vec(lvls, idx, buf)?;
-        hints.put_ser(buf);
         put_idx_vec(all, idx, buf)?;
         put_idx_vec(ctx, idx, buf)?;
         arena.put_with(idx, buf)?;
@@ -1260,7 +1249,6 @@ impl ConstantMetaInfo {
       0 => Ok(Self::Def {
         name: get_idx(buf, rev)?,
         lvls: get_idx_vec(buf, rev)?,
-        hints: ReducibilityHints::get_ser(buf)?,
         all: get_idx_vec(buf, rev)?,
         ctx: get_idx_vec(buf, rev)?,
         arena: ExprMeta::get_with(buf, rev)?,
@@ -1399,7 +1387,6 @@ mod tests {
     let meta = ConstantMeta::new(ConstantMetaInfo::Def {
       name: addr1.clone(),
       lvls: vec![addr2.clone(), addr3.clone()],
-      hints: ReducibilityHints::Regular(10),
       all: vec![addr1.clone()],
       ctx: vec![addr2.clone()],
       arena,

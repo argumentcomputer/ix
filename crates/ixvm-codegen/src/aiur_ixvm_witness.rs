@@ -191,7 +191,7 @@ fn add_entries_parallel(
       // Hints come from env.anon_hints (sidecar). Collect per chunk.
       for addr in chunk {
         if let Some(h) = env.anon_hints.get(addr) {
-          p.hints.push((addr_key(addr), hint_to_g(h)));
+          p.hints.push((addr_key(addr), hint_to_g(&h)));
         }
       }
       p
