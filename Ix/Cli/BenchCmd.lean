@@ -185,6 +185,14 @@ def backendSpecs : List BackendSpec := [
   { name := "compile", defaultMode := "execute",
     testbeds := [("execute", "ix-compile-x64-32x")],
     metrics := [("execute", ["compile-time", "throughput", "peak-rss",
+                             "file-size", "constants"])] },
+  -- The inverse of compile: decompiles the env's `.ixe` back to Lean
+  -- constants (roundtrip-verified). Env-keyed like compile, but a `.ixe`
+  -- CONSUMER — it reuses the compile cell's fresh `.ixe` rather than
+  -- producing one.
+  { name := "decompile", defaultMode := "execute",
+    testbeds := [("execute", "ix-decompile-x64-32x")],
+    metrics := [("execute", ["decompile-time", "throughput", "peak-rss",
                              "file-size", "constants"])] }
 ]
 
@@ -492,6 +500,18 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
     if exit != 0 then
       IO.eprintln s!"[bench] ix compile failed (exit {exit})"
       return 1
+  | "decompile" =>
+    -- The inverse of compile: consume the env's `.ixe` (the compile cell's
+    -- fresh artifact) and decompile it back to Lean constants. Env-keyed row,
+    -- like compile. A malformed decompile exits nonzero and reddens the cell;
+    -- deep roundtrip fidelity is gated by the canonical roundtrip checks
+    -- (`ix validate` / the roundtrip tests), not measured here.
+    let ixe ← ensureIxe repo info ((p.flag? "ixe").map (·.as! String))
+    let ix ← resolveBin repo "ix"
+    let exit ← runGuarded watchdog ceilingGb ix
+      #["decompile", ixe, "--json", out, "--json-name", info.name]
+    if exit != 0 then
+      IO.eprintln s!"[bench] ix decompile failed (exit {exit})"
   | "ooc" =>
     let ixe ← ensureIxe repo info ((p.flag? "ixe").map (·.as! String))
     let ix ← resolveBin repo "ix"
@@ -586,6 +606,7 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
   -- row too.
   let expected := match backend with
     | "compile" => #[info.name]
+    | "decompile" => #[info.name]
     | "ooc" => #[info.name] ++ names
     | "aiur-recursive" => (recursiveConfigs.map (·.1)).toArray
     | _ => names
@@ -630,7 +651,7 @@ def benchRunCmd : Cli.Cmd := `[Cli|
   "Run one benchmark cell (backend × env × mode), writing benchmark results JSON. Exits 0 on success (rows saved as the local baseline), 3 when the kernel rejected any constant, 1 when no rows were produced."
 
   FLAGS:
-    backend      : String; "aiur | zisk | sp1 | ooc | compile | aiur-recursive"
+    backend      : String; "aiur | zisk | sp1 | ooc | compile | decompile | aiur-recursive"
     env          : String; "Benchmark env from the registry (default: InitStd)"
     mode         : String; "prove | execute | recursive (default: the backend's defaultMode)"
     out          : String; "Benchmark results JSON output path (default: bench.json)"

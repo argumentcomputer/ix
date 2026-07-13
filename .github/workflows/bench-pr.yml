@@ -1,7 +1,7 @@
 # `!benchmark` PR command: run the curated constant set (Benchmarks/Vectors.csv)
 # through chosen prover backend(s) and post a main-vs-PR comparison table.
 #
-#   !benchmark ([aiur] [zisk] [sp1] [ooc] [compile] [aiur-recursive] | all) [execute]
+#   !benchmark ([aiur] [zisk] [sp1] [ooc] [compile] [decompile] [aiur-recursive] | all) [execute]
 #     (sp1 is disabled in the registry (Ix/Cli/BenchCmd.lean) — the parser skips it
 #      with a note in the config summary)
 #   BENCH_ENVS=InitStd,Mathlib     # which compiled envs (default InitStd; case-insensitive;
@@ -20,10 +20,12 @@
 # Phase-1 columns `fft-cost` / `execute-time` measured en route; `zisk` /
 # `sp1` / `ooc` run `execute`; `compile` runs `ix compile <env>.lean →
 # <env>.ixe` (the same cell bench-main.yml uploads under testbed
-# `ix-compile-*`); `aiur-recursive` runs the aiur-recursive toy
-# (bench-recursive-verifier's fixed configs — env-independent, so it
-# always schedules exactly one cell no matter what BENCH_ENVS says).
-# The optional bare `execute` token flips `aiur` to
+# `ix-compile-*`); `decompile` runs `ix decompile <env>.ixe` over the
+# compile cell's fresh PR `.ixe` (testbed `ix-decompile-*`);
+# `aiur-recursive` runs the aiur-recursive toy (bench-recursive-verifier's
+# fixed configs — env-independent, so it always schedules exactly one cell
+# no matter what BENCH_ENVS says). The optional bare `execute` token flips
+# `aiur` to
 # execute-only (Phase 1, skipping the prove); bench-main runs both aiur
 # modes as separate cells on separate testbeds, so either kind of cell
 # fetches a cached main-side baseline from bencher. (aiur's third mode,
