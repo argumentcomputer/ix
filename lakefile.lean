@@ -98,6 +98,11 @@ end Tests
 
 section Benchmarks
 
+-- Shared harness for the hash-proving benchmarks; a `lean_lib` so the
+-- `bench-{blake3,sha256,keccak}` exe roots can import it.
+lean_lib BenchmarksHashCommon where
+  roots := #[`Benchmarks.HashCommon]
+
 lean_exe «bench-aiur» where
   root := `Benchmarks.Aiur
 
@@ -106,6 +111,9 @@ lean_exe «bench-blake3» where
 
 lean_exe «bench-sha256» where
   root := `Benchmarks.Sha256
+
+lean_exe «bench-keccak» where
+  root := `Benchmarks.Keccak
 
 lean_exe «bench-ixvm» where
   root := `Benchmarks.IxVM
