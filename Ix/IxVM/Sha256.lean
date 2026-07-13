@@ -825,6 +825,29 @@ def sha256 := ⟦
      u8_xor(r17[3], u8_xor(r19[3], s10[2]))]
   }
 
+  -- One message-schedule word: W_i = W_16 + sigma0(W_15) + W_7 + sigma1(W_2).
+  -- A call (not `@`-inlined) so the 48 schedule words share one circuit
+  -- instead of widening the block circuit 48-fold.
+  fn sha256_schedule(w16: [U8; 4], w15: [U8; 4], w7: [U8; 4], w2: [U8; 4]) -> [U8; 4] {
+    let s0 = @small_sigma0(w15);
+    let s1 = @small_sigma1(w2);
+    @u32_be_add4(w16, s0, w7, s1)
+  }
+
+  -- One compression round. Called (not `@`-inlined) so the 64 rounds share
+  -- one circuit run as 64 rows, keeping the block circuit narrow -- the
+  -- sigma/ch/maj/add helpers stay inlined within this round.
+  fn sha256_round(acc: [[U8; 4]; 8], ki: [U8; 4], wi: [U8; 4]) -> [[U8; 4]; 8] {
+    let s1 = @big_sigma1(acc[4]);
+    let ch_efg = @ch(acc[4], acc[5], acc[6]);
+    let temp1 = @u32_be_add5(acc[7], s1, ch_efg, ki, wi);
+    let s0 = @big_sigma0(acc[0]);
+    let maj_abc = @maj(acc[0], acc[1], acc[2]);
+    let temp2 = @u32_be_add(s0, maj_abc);
+    [@u32_be_add(temp1, temp2), acc[0], acc[1], acc[2],
+     @u32_be_add(acc[3], temp1), acc[4], acc[5], acc[6]]
+  }
+
   fn fill_W_and_run_rounds(W: [[U8; 4]; 16], state: [[U8; 4]; 8]) -> [[U8; 4]; 8] {
     let K = [
       [0x42u8, 0x8au8, 0x2fu8, 0x98u8], [0x71u8, 0x37u8, 0x44u8, 0x91u8], [0xb5u8, 0xc0u8, 0xfbu8, 0xcfu8], [0xe9u8, 0xb5u8, 0xdbu8, 0xa5u8],
@@ -857,9 +880,7 @@ def sha256 := ⟦
       let w2 = Wx[@i - 2];
       let w16 = Wx[@i - 16];
       let w7 = Wx[@i - 7];
-      let s0 = @small_sigma0(w15);
-      let s1 = @small_sigma1(w2);
-      set(Wx, @i, @u32_be_add4(w16, s0, w7, s1))
+      set(Wx, @i, sha256_schedule(w16, w15, w7, w2))
     );
     let W = Wx;
 
@@ -867,14 +888,7 @@ def sha256 := ⟦
       -- acc = [a,b,c,d,e,f,g,h]; K[i], W[i] are the round constant and word.
       let ki = K[@i];
       let wi = W[@i];
-      let s1 = @big_sigma1(acc[4]);
-      let ch_efg = @ch(acc[4], acc[5], acc[6]);
-      let temp1 = @u32_be_add5(acc[7], s1, ch_efg, ki, wi);
-      let s0 = @big_sigma0(acc[0]);
-      let maj_abc = @maj(acc[0], acc[1], acc[2]);
-      let temp2 = @u32_be_add(s0, maj_abc);
-      [@u32_be_add(temp1, temp2), acc[0], acc[1], acc[2],
-       @u32_be_add(acc[3], temp1), acc[4], acc[5], acc[6]]
+      sha256_round(acc, ki, wi)
     );
 
     let fs = fold(0 .. 8, [[0u8; 4]; 8], |fs, @j|
