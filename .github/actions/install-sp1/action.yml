@@ -23,8 +23,15 @@ runs:
           libsecp256k1-dev libsodium-dev libpqxx-dev nasm libopenmpi-dev \
           openmpi-bin openmpi-common libclang-dev clang gcc-riscv64-unknown-elf \
           pkg-config libssl-dev
+    # sp1up resolves `releases/latest` (and downloads the toolchain) through
+    # api.github.com. Anonymous API calls share a 60/hr per-IP limit that hot
+    # runner IPs exhaust, failing the step with "Unable to access the latest
+    # release"; sp1up picks up GITHUB_TOKEN and authenticates every API call
+    # with it, switching to the token's own per-repo quota.
     - name: Install SP1 toolchain (sp1up, latest)
       shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
       run: |
         curl -L https://sp1up.succinct.xyz | bash
         ~/.sp1/bin/sp1up

@@ -5,7 +5,7 @@ description: >-
   RUN the Zisk host. Execute needs the key too (zisk-host's `client.setup()`
   loads the circuit's const-tree files before either the execute or the prove
   branch), but BUILDING the host does not, so build-only callers skip the
-  ~3 GB download + const-tree regeneration. Assumes a Rust toolchain is
+  few-GB download + const-tree regeneration. Assumes a Rust toolchain is
   already set up.
 
 inputs:
@@ -36,12 +36,12 @@ runs:
           libsecp256k1-dev libsodium-dev libpqxx-dev nasm libopenmpi-dev \
           openmpi-bin openmpi-common libclang-dev clang gcc-riscv64-unknown-elf \
           pkg-config libssl-dev
-    # `--version 0.18.0` pins the toolchain to match our deps. Our host links the
-    # argumentcomputer/zisk `blake3-precompile` fork, which is based on v0.18.0
-    # (its cargo-zisk has `check-setup`, used below to regenerate the key's
-    # const-trees). Without the pin, ziskup installs `releases/latest`, which
-    # resolves to upstream `v1.0.0-alpha` — a different circuit whose cargo-zisk
-    # dropped the `check-setup` subcommand, breaking the key step. `--cpu` picks
+    # `--version 1.0.0-alpha` pins the toolchain to match our deps. Our host
+    # links the argumentcomputer/zisk `blake3-precompile` fork, which is now
+    # based on upstream v1.0.0-alpha (check-setup lives in the new
+    # `cargo-zisk-dev` binary, used below to regenerate the key's const-trees).
+    # Keep the pin anyway so a future upstream release can't silently change
+    # the toolchain under us. `--cpu` picks
     # the CPU build (no GPU on the runner) and `--nokey` skips ziskup's key
     # install — both avoid its interactive /dev/tty prompts. We keep `--nokey`
     # because the upstream `zisk-setup` bucket only carries the upstream circuit's
@@ -49,11 +49,11 @@ runs:
     # fork-matching key from our own S3 in the next step. `--prefix $HOME/.zisk`
     # pins the install where cargo-zisk's ZiskPaths fallback looks (the runner
     # sets XDG_CONFIG_HOME, which would otherwise relocate it).
-    - name: Install Zisk toolchain (ziskup, pinned v0.18.0)
+    - name: Install Zisk toolchain (ziskup, pinned v1.0.0-alpha)
       shell: bash
       run: |
         curl -L https://raw.githubusercontent.com/0xPolygonHermez/zisk/main/ziskup/install.sh \
-          | bash -s -- --cpu --nokey -y --version 0.18.0 --prefix "$HOME/.zisk"
+          | bash -s -- --cpu --nokey -y --version 1.0.0-alpha --prefix "$HOME/.zisk"
         echo "$HOME/.zisk/bin" >> "$GITHUB_PATH"
     # Pre-build the proofman C++ sys crate ALONE so its build script runs
     # exactly once before any parallel zisk-host build. zisk-host pulls
@@ -76,20 +76,22 @@ runs:
     # const-tree files. We host the fork-matching key in a public S3 bucket
     # WITHOUT the const-trees — exactly like Zisk's released
     # `zisk-provingkey-*.tar.gz` on `storage.googleapis.com/zisk-setup` — and
-    # regenerate them here with `cargo-zisk check-setup -a`, which is how `ziskup`
-    # itself populates them. That keeps the artifact ~3 GB (gzip) instead of
-    # ~48 GB. The object name carries the fork rev so a circuit change can't
-    # silently reuse a stale key. Public bucket → plain curl, no AWS creds.
+    # regenerate them here with `cargo-zisk-dev check-setup -a`, which is how
+    # `ziskup` itself populates them. That keeps the artifact a few GB (gzip)
+    # instead of ~50 GB (the tarball also omits the `*_gpu` const variants the
+    # first GPU prove would materialize — unused on this CPU runner). The
+    # object name carries the fork rev so a circuit change can't silently
+    # reuse a stale key. Public bucket → plain curl, no AWS creds.
     - name: Restore Zisk proving key (fork circuit) from S3
       if: inputs.proving-key == 'true'
       shell: bash
       run: |
         mkdir -p "$HOME/.zisk"
         curl -fSL --retry 3 \
-          https://argument-zisk-setup.s3.amazonaws.com/zisk-provingkey-blake3-8f9e24d5-cpu.tar.gz \
+          https://argument-zisk-setup.s3.amazonaws.com/zisk-provingkey-blake3-e4057c4c-cpu.tar.gz \
           -o /tmp/zisk-provingkey.tar.gz
         tar -C "$HOME/.zisk" -xzf /tmp/zisk-provingkey.tar.gz
         rm -f /tmp/zisk-provingkey.tar.gz
         # Regenerate the const-tree files omitted from the artifact (CPU build, so
         # no --gpu). This is the "may take a while" step ziskup prints.
-        cargo-zisk check-setup --proving-key "$HOME/.zisk/provingKey" -a
+        cargo-zisk-dev check-setup --proving-key "$HOME/.zisk/provingKey" -a

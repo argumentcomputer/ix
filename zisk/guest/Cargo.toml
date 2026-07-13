@@ -12,7 +12,7 @@ ix-common = { path = "../../crates/common" }
 # `log::info!` — none of it is reachable from a Zisk guest (no stderr) and
 # the formatting machinery was ~45-55 % of cycles in the profile.
 log = { version = "0.4", features = ["max_level_off"] }
-# argumentcomputer/zisk fork — `blake3-precompile-v0.17` exposes the Blake3
+# argumentcomputer/zisk fork — the `blake3-precompile` branch exposes the Blake3
 # compression precompile via `ziskos::zisklib::blake3`, plus a `name = "blake3"`
 # drop-in crate at `ziskos/blake3/` which the `[patch.crates-io]` below routes
 # every `blake3::Hasher` / `blake3::hash` call through.
