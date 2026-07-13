@@ -626,14 +626,32 @@ def sha256 := ⟦
      u8_from_field_unsafe(255 - to_field(a[2])), u8_from_field_unsafe(255 - to_field(a[3]))]
   }
 
-  -- ch = (e & f) ^ (~e & g).
+  -- ch = (e & f) ^ (~e & g). The two ands are bitwise-disjoint (one needs the
+  -- e bit set, the other clear), so the xor is a free field add (no lookup).
   fn ch(e: [U8; 4], f: [U8; 4], g: [U8; 4]) -> [U8; 4] {
-    @u32_xor(@u32_and(e, f), @u32_and(@u32_not(e), g))
+    let ef = @u32_and(e, f);
+    let neg = @u32_and(@u32_not(e), g);
+    [u8_from_field_unsafe(to_field(ef[0]) + to_field(neg[0])),
+     u8_from_field_unsafe(to_field(ef[1]) + to_field(neg[1])),
+     u8_from_field_unsafe(to_field(ef[2]) + to_field(neg[2])),
+     u8_from_field_unsafe(to_field(ef[3]) + to_field(neg[3]))]
   }
 
-  -- maj = (a & b) ^ (a & c) ^ (b & c).
+  -- maj = (a & b) ^ (a & c) ^ (b & c) = (a & b) + (c & (a ^ b)). `a ^ b` is the
+  -- free recomposition (a + b) - 2·(a & b); the two final terms are disjoint
+  -- (a = b ⇒ second is 0, a ≠ b ⇒ first is 0), so their xor is a free add too.
+  -- Two ands instead of three ands + two xors.
   fn maj(a: [U8; 4], b: [U8; 4], c: [U8; 4]) -> [U8; 4] {
-    @u32_xor(@u32_and(a, b), @u32_xor(@u32_and(a, c), @u32_and(b, c)))
+    let ab = @u32_and(a, b);
+    let axb = [u8_from_field_unsafe((to_field(a[0]) + to_field(b[0])) - 2 * to_field(ab[0])),
+               u8_from_field_unsafe((to_field(a[1]) + to_field(b[1])) - 2 * to_field(ab[1])),
+               u8_from_field_unsafe((to_field(a[2]) + to_field(b[2])) - 2 * to_field(ab[2])),
+               u8_from_field_unsafe((to_field(a[3]) + to_field(b[3])) - 2 * to_field(ab[3]))];
+    let cx = @u32_and(c, axb);
+    [u8_from_field_unsafe(to_field(ab[0]) + to_field(cx[0])),
+     u8_from_field_unsafe(to_field(ab[1]) + to_field(cx[1])),
+     u8_from_field_unsafe(to_field(ab[2]) + to_field(cx[2])),
+     u8_from_field_unsafe(to_field(ab[3]) + to_field(cx[3]))]
   }
 
   -- The four SHA-256 sigmas. Each decomposes its word's bytes ONCE (b0 =
