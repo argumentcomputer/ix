@@ -3526,6 +3526,97 @@ fn build_uniform_error(count: usize, msg: &str) -> LeanIOResult<LeanOwned> {
 // `decompile_env`, which the production CLI path (`rs_kernel_check_consts`)
 // doesn't need. Cfg-gating keeps `lake build ix` (no `test-ffi`) lean.
 
+/// FFI: exercise the serialized decompile pipeline
+/// Lean → compile → serialize → deserialize → decompile → Lean, and
+/// compare each constant against the original. This is `ix decompile`'s
+/// path (an in-memory `.ixe`): the demoted-at-parse metadata load, the
+/// `Named.original` recovery for shape-divergent aux blocks, and
+/// expression interning — without the kernel ingress/egress leg
+/// [`rs_kernel_roundtrip`] adds.
+///
+/// Lean signature:
+/// ```lean
+/// @[extern "rs_decompile_roundtrip"]
+/// opaque rsDecompileRoundtripFFI :
+///     @& List (Lean.Name × Lean.ConstantInfo) → IO (Array String)
+/// ```
+/// Returns an `Array String` of per-constant diff messages. Empty = pass.
+#[cfg(feature = "test-ffi")]
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_decompile_roundtrip(
+  env_consts: LeanList<LeanBorrowed<'_>>,
+) -> LeanIOResult<LeanOwned> {
+  let total_start = Instant::now();
+
+  let t0 = Instant::now();
+  let rust_env = decode_env(env_consts);
+  eprintln!("[rs_decompile_roundtrip] read env:   {:>8.1?}", t0.elapsed());
+
+  let t1 = Instant::now();
+  let rust_env_arc = Arc::new(rust_env);
+  let compile_state =
+    match compile_env_with_options(&rust_env_arc, CompileOptions::default()) {
+      Ok(s) => s,
+      Err(e) => {
+        return build_string_array(&[format!("compile error: {e:?}")]);
+      },
+    };
+  eprintln!("[rs_decompile_roundtrip] compile:    {:>8.1?}", t1.elapsed());
+
+  let t2 = Instant::now();
+  let mut bytes = Vec::new();
+  if let Err(e) = compile_state.env.put(&mut bytes) {
+    return build_string_array(&[format!("serialize error: {e}")]);
+  }
+  drop(compile_state);
+  let mut slice: &[u8] = &bytes;
+  let env = match ixon::env::Env::get_demoted_named(&mut slice) {
+    Ok(env) => env,
+    Err(e) => {
+      return build_string_array(&[format!("deserialize error: {e}")]);
+    },
+  };
+  eprintln!(
+    "[rs_decompile_roundtrip] serialize:  {:>8.1?} ({} bytes)",
+    t2.elapsed(),
+    bytes.len()
+  );
+  drop(bytes);
+
+  let stt = CompileState { env, ..CompileState::default() };
+  for entry in stt.env.named.iter() {
+    stt.name_to_addr.insert(entry.key().clone(), entry.value().addr.clone());
+  }
+
+  let t3 = Instant::now();
+  let dstt = match decompile_env(&stt) {
+    Ok(d) => d,
+    Err(e) => {
+      return build_string_array(&[format!("decompile error: {e:?}")]);
+    },
+  };
+  eprintln!(
+    "[rs_decompile_roundtrip] decompile:  {:>8.1?} ({} consts)",
+    t3.elapsed(),
+    dstt.env.len()
+  );
+
+  let t4 = Instant::now();
+  let (errors, checked, not_found) =
+    compare_envs(&rust_env_arc, |n| dstt.env.get(n));
+  eprintln!(
+    "[rs_decompile_roundtrip] verify:     {:>8.1?} (checked {checked}, not_found {not_found}, errors {})",
+    t4.elapsed(),
+    errors.len()
+  );
+  eprintln!(
+    "[rs_decompile_roundtrip] total:      {:>8.1?}",
+    total_start.elapsed()
+  );
+
+  build_string_array(&errors)
+}
+
 /// FFI: exercise the full pipeline
 /// Lean → Ixon → kernel → Ixon' → decompile → Lean, and compare each
 /// constant against the original.
