@@ -613,6 +613,62 @@ def sha256 := ⟦
     [s3, s2, s1, s0]
   }
 
+  -- Big-endian sum of four 32-bit words in one carry-propagation pass. Each
+  -- byte column is accumulated with chained `u8_add` (running partial stays
+  -- < 256); the 0/1 carry bits fold into the next column with a free field
+  -- add. 15 `u8_add`s vs 21 for three chained `u32_be_add`s. The column carry
+  -- is floor(column_sum / 256) <= 3 (< 256), so feeding it to `u8_add` is safe.
+  fn u32_be_add4(a: [U8; 4], b: [U8; 4], c: [U8; 4], d: [U8; 4]) -> [U8; 4] {
+    let (t, k1) = u8_add(a[3], b[3]);
+    let (t, k2) = u8_add(t, c[3]);
+    let (s0, k3) = u8_add(t, d[3]);
+    let cy = u8_from_field_unsafe(to_field(k1) + to_field(k2) + to_field(k3));
+    let (t, k1) = u8_add(a[2], b[2]);
+    let (t, k2) = u8_add(t, c[2]);
+    let (t, k3) = u8_add(t, d[2]);
+    let (s1, k4) = u8_add(t, cy);
+    let cy = u8_from_field_unsafe(to_field(k1) + to_field(k2) + to_field(k3) + to_field(k4));
+    let (t, k1) = u8_add(a[1], b[1]);
+    let (t, k2) = u8_add(t, c[1]);
+    let (t, k3) = u8_add(t, d[1]);
+    let (s2, k4) = u8_add(t, cy);
+    let cy = u8_from_field_unsafe(to_field(k1) + to_field(k2) + to_field(k3) + to_field(k4));
+    let (t, _x) = u8_add(a[0], b[0]);
+    let (t, _x) = u8_add(t, c[0]);
+    let (t, _x) = u8_add(t, d[0]);
+    let (s3, _x) = u8_add(t, cy);
+    [s3, s2, s1, s0]
+  }
+
+  -- Big-endian sum of five 32-bit words in one carry pass (as `u32_be_add4`).
+  -- 19 `u8_add`s vs 28 for four chained `u32_be_add`s. Column carry is
+  -- floor(column_sum / 256) <= 4 (< 256).
+  fn u32_be_add5(a: [U8; 4], b: [U8; 4], c: [U8; 4], d: [U8; 4], e: [U8; 4]) -> [U8; 4] {
+    let (t, k1) = u8_add(a[3], b[3]);
+    let (t, k2) = u8_add(t, c[3]);
+    let (t, k3) = u8_add(t, d[3]);
+    let (s0, k4) = u8_add(t, e[3]);
+    let cy = u8_from_field_unsafe(to_field(k1) + to_field(k2) + to_field(k3) + to_field(k4));
+    let (t, k1) = u8_add(a[2], b[2]);
+    let (t, k2) = u8_add(t, c[2]);
+    let (t, k3) = u8_add(t, d[2]);
+    let (t, k4) = u8_add(t, e[2]);
+    let (s1, k5) = u8_add(t, cy);
+    let cy = u8_from_field_unsafe(to_field(k1) + to_field(k2) + to_field(k3) + to_field(k4) + to_field(k5));
+    let (t, k1) = u8_add(a[1], b[1]);
+    let (t, k2) = u8_add(t, c[1]);
+    let (t, k3) = u8_add(t, d[1]);
+    let (t, k4) = u8_add(t, e[1]);
+    let (s2, k5) = u8_add(t, cy);
+    let cy = u8_from_field_unsafe(to_field(k1) + to_field(k2) + to_field(k3) + to_field(k4) + to_field(k5));
+    let (t, _x) = u8_add(a[0], b[0]);
+    let (t, _x) = u8_add(t, c[0]);
+    let (t, _x) = u8_add(t, d[0]);
+    let (t, _x) = u8_add(t, e[0]);
+    let (s3, _x) = u8_add(t, cy);
+    [s3, s2, s1, s0]
+  }
+
   fn u32_xor(a: [U8; 4], b: [U8; 4]) -> [U8; 4] {
     [u8_xor(a[0], b[0]), u8_xor(a[1], b[1]), u8_xor(a[2], b[2]), u8_xor(a[3], b[3])]
   }
@@ -803,7 +859,7 @@ def sha256 := ⟦
       let w7 = Wx[@i - 7];
       let s0 = @small_sigma0(w15);
       let s1 = @small_sigma1(w2);
-      set(Wx, @i, @u32_be_add(w16, @u32_be_add(s0, @u32_be_add(w7, s1))))
+      set(Wx, @i, @u32_be_add4(w16, s0, w7, s1))
     );
     let W = Wx;
 
@@ -813,7 +869,7 @@ def sha256 := ⟦
       let wi = W[@i];
       let s1 = @big_sigma1(acc[4]);
       let ch_efg = @ch(acc[4], acc[5], acc[6]);
-      let temp1 = @u32_be_add(acc[7], @u32_be_add(s1, @u32_be_add(ch_efg, @u32_be_add(ki, wi))));
+      let temp1 = @u32_be_add5(acc[7], s1, ch_efg, ki, wi);
       let s0 = @big_sigma0(acc[0]);
       let maj_abc = @maj(acc[0], acc[1], acc[2]);
       let temp2 = @u32_be_add(s0, maj_abc);
