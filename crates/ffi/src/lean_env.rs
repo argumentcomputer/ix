@@ -1773,11 +1773,18 @@ struct PhaseResult {
   pass: usize,
   fail: usize,
   failures: Vec<String>,
+  started: std::time::Instant,
 }
 
 impl PhaseResult {
   fn new(name: &'static str) -> Self {
-    PhaseResult { name, pass: 0, fail: 0, failures: Vec::new() }
+    PhaseResult {
+      name,
+      pass: 0,
+      fail: 0,
+      failures: Vec::new(),
+      started: std::time::Instant::now(),
+    }
   }
 
   fn record_pass(&mut self) {
@@ -1792,7 +1799,11 @@ impl PhaseResult {
   }
 
   fn report(&self) {
-    println!("{VALIDATE_PREFIX} Phase: {}", self.name);
+    println!(
+      "{VALIDATE_PREFIX} Phase: {} ({:.1?})",
+      self.name,
+      self.started.elapsed(),
+    );
     println!("{VALIDATE_PREFIX}   {} pass, {} fail", self.pass, self.fail);
     for f in &self.failures {
       println!("{VALIDATE_PREFIX}     ✗ {f}");
@@ -1821,8 +1832,14 @@ extern "C" fn rs_compile_validate_aux(
   let t_total = std::time::Instant::now();
 
   // ── Decode ──────────────────────────────────────────────────────────
+  // Same on-demand view as the compile CLI, with the same escape
+  // hatch: the eager Rust copy of the Lean env is the single largest
+  // term of the run's baseline RSS and stays resident through every
+  // phase, while the lazy view's re-decode cost is bounded by the
+  // shared cache. `IX_COMPILE_EAGER=1` restores the eager copy for
+  // machines with RAM to spare.
   println!("{VALIDATE_PREFIX} decoding...");
-  let env = decode_env(obj);
+  let env = decode_env_for_compile(obj);
   let n = env.len();
   println!("{VALIDATE_PREFIX} decoded {n} constants");
   let env = Arc::new(env);
@@ -3747,10 +3764,14 @@ extern "C" fn rs_compile_validate_aux(
   let t3 = std::time::Instant::now();
   let dstt2 = {
     // Deserialize inside a short sub-scope so the borrow on `serialized`
-    // ends before we drop it.
+    // ends before we drop it. Metadata is stored demoted as it parses:
+    // the whole named section's structured form costs a large multiple
+    // of its encoding and would sit resident through the re-decompile,
+    // while decompile reads each entry's metadata a bounded number of
+    // times.
     let fresh_env = {
       let mut buf: &[u8] = &serialized;
-      match ixon::env::Env::get(&mut buf) {
+      match ixon::env::Env::get_demoted_named(&mut buf) {
         Ok(fe) => Some(fe),
         Err(e) => {
           p7.record_fail(format!("deserialize FAILED: {e}"));

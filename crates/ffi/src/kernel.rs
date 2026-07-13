@@ -447,10 +447,14 @@ fn poison_second_rec_rule_returns_first_minor(
   let mut rec_constant: ixon::constant::Constant = (*rec_arc).clone();
   drop(rec_arc);
 
+  // The stores below must use `store_const_demoted(.., false)`:
+  // `store_const` under `DEMOTE` treats a re-store of an existing address
+  // as a no-op (content addressing assumes identical bytes), and this
+  // helper deliberately stores *different* bytes at the original address.
   match &mut rec_constant.info {
     IxonCI::Recr(rec) => {
       poison_recursor_rule_payload(rec)?;
-      ixon_env.store_const(rec_addr.clone(), rec_constant);
+      ixon_env.store_const_demoted(rec_addr.clone(), rec_constant, false);
       Ok(rec_addr)
     },
     IxonCI::Muts(members) => {
@@ -468,7 +472,7 @@ fn poison_second_rec_rule_returns_first_minor(
           rec_name.pretty()
         ));
       }
-      ixon_env.store_const(rec_addr.clone(), rec_constant);
+      ixon_env.store_const_demoted(rec_addr.clone(), rec_constant, false);
       Ok(rec_addr)
     },
     IxonCI::RPrj(proj) => {
@@ -515,7 +519,7 @@ fn poison_second_rec_rule_returns_first_minor(
           ));
         },
       }
-      ixon_env.store_const(block_addr, block_constant);
+      ixon_env.store_const_demoted(block_addr, block_constant, false);
       Ok(rec_addr)
     },
     other => Err(format!(
@@ -3612,23 +3616,12 @@ pub extern "C" fn rs_kernel_roundtrip(
     dstt.env.len()
   );
 
-  // Build a plain Lean `Env` from decompile's DashMap for the standard
-  // compare_envs / find_diff flow.
-  let t5 = Instant::now();
-  let mut decompiled_env = ix_common::env::Env::default();
-  for entry in dstt.env.iter() {
-    decompiled_env.insert(entry.key().clone(), entry.value().clone());
-  }
-  eprintln!(
-    "[rs_kernel_roundtrip] build lean env:{:>8.1?} ({} consts)",
-    t5.elapsed(),
-    decompiled_env.len()
-  );
-
-  // Compare decompiled env against original, content-hash by content-hash.
+  // Compare decompiled env against original, content-hash by
+  // content-hash, reading decompile's DashMap directly — a plain-`Env`
+  // copy of it would double the resident decompiled env at peak.
   let t6 = Instant::now();
   let (errors, checked, not_found) =
-    compare_envs(&rust_env_arc, &decompiled_env);
+    compare_envs(&rust_env_arc, |n| dstt.env.get(n));
   eprintln!(
     "[rs_kernel_roundtrip] verify:        {:>8.1?} (checked {checked}, not_found {not_found}, errors {})",
     t6.elapsed(),
@@ -3646,13 +3639,18 @@ pub extern "C" fn rs_kernel_roundtrip(
   build_string_array(&errors)
 }
 
-/// Compare two envs for structural equality under content-hashing. Returns
+/// Compare the original env against a decompiled/egressed side for
+/// structural equality under content-hashing. Returns
 /// `(errors, checked, not_found)`. `errors` is capped at 50 to keep outputs
 /// manageable.
+///
+/// The compared side is a lookup rather than an `Env` so callers can pass
+/// whatever map already holds their constants (e.g. decompile's DashMap)
+/// instead of copying into a fresh `Env`.
 #[cfg(feature = "test-ffi")]
-fn compare_envs(
+fn compare_envs<R: std::ops::Deref<Target = ix_common::env::ConstantInfo>>(
   original: &ix_common::env::Env,
-  egressed: &ix_common::env::Env,
+  lookup: impl Fn(&Name) -> Option<R>,
 ) -> (Vec<String>, usize, usize) {
   use ix_common::env::ConstantInfo as LCI;
 
@@ -3662,7 +3660,7 @@ fn compare_envs(
   let mut not_found = 0usize;
 
   for (name, orig_ci) in original.iter() {
-    match egressed.get(name) {
+    match lookup(name) {
       None => {
         not_found += 1;
       },
@@ -3711,7 +3709,7 @@ fn compare_envs(
     }
     if checked.is_multiple_of(10000) && checked > 0 {
       eprintln!(
-        "[rs_kernel_roundtrip] verify:      {checked}/{total} ({} errors so far)",
+        "[compare_envs] verify:      {checked}/{total} ({} errors so far)",
         errors.len()
       );
     }
@@ -3935,7 +3933,8 @@ pub extern "C" fn rs_kernel_roundtrip_no_compile(
 
   // Compare.
   let t3 = Instant::now();
-  let (errors, checked, not_found) = compare_envs(&rust_env_arc, &egressed_env);
+  let (errors, checked, not_found) =
+    compare_envs(&rust_env_arc, |n| egressed_env.get(n));
   eprintln!(
     "[rs_kernel_roundtrip_no_compile] verify:      {:>8.1?} (checked {checked}, not_found {not_found}, errors {})",
     t3.elapsed(),
