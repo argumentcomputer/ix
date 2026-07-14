@@ -12,8 +12,8 @@
   is re-asserted); a stale one is deleted and recreated (the plot PATCH
   endpoint only takes index/title/window, not dimensions). Unrecognized
   titles are untouched, so hand-pinned plots survive. A registry benchmark
-  bencher hasn't seen yet (first upload still pending) is skipped with a
-  warning and picked up on the next sync.
+  — or a whole testbed — bencher hasn't seen yet (first upload still
+  pending) is skipped with a warning and picked up on the next sync.
 
   The sync also asserts every measure's canonical units (`unitsFor`) —
   bencher auto-creates measures with placeholder units on first upload,
@@ -301,8 +301,13 @@ def runPlotsCmd (p : Cli.Parsed) : IO UInt32 := do
   let mut desired : Array DesiredPlot := #[]
   for spec in specs do
     let workload := workloadOf spec.testbed
+    -- A registry testbed bencher hasn't seen yet (its bench-main cell isn't
+    -- scheduled — e.g. the aiur `recursive` mode, whose outer prove doesn't
+    -- fit the CI host, so nothing ever uploads to it) has no plots to sync:
+    -- warn and skip it, like a not-yet-uploaded benchmark, instead of
+    -- failing the whole run. Picked up on a later sync once data lands.
     let some testbedUuid := findUuid testbeds "slug" spec.testbed
-      | p.printError s!"error: no testbed slug '{spec.testbed}'"; return 1
+      | IO.eprintln s!"warn: testbed '{spec.testbed}' not on bencher yet — skipped"; continue
     -- Benchmark names → UUIDs, dropping the not-yet-uploaded ones loudly.
     let mut benchUuids : Array String := #[]
     for n in spec.benchmarks do
