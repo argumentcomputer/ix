@@ -7,9 +7,9 @@
 //! the env is parsed exactly once instead of every call.
 //!
 //! `anon_hints` (`Defn` reducibility hints) come from the `.ixe` §3
-//! hints section, which every writer emits (deriving it from Named
-//! metadata when the in-memory map is empty) — both readers used here
-//! populate the map directly, so no post-decode harvest is needed.
+//! hints section, which every writer emits straight from the
+//! `Env::anon_hints` map — both readers used here populate the map
+//! directly, so no post-decode harvest is needed.
 
 use ixon::Env;
 

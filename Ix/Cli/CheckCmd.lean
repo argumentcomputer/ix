@@ -293,7 +293,9 @@ def forEachClaim
         let w ← mkWitness addr ixonEnv
         runOne claim none (.leanW w) label
       else
-        let envBytes := Ixon.serEnv ixonEnv
+        let envBytes ← match Ixon.serEnv ixonEnv with
+          | .error e => throw (IO.userError s!"serEnv failed for {label}: {e}")
+          | .ok b => pure b
         let envHandle ← match Aiur.EnvHandle.fromBytes envBytes with
           | .error e => throw (IO.userError s!"EnvHandle.fromBytes failed for {label}: {e}")
           | .ok h => pure h

@@ -274,16 +274,23 @@ impl CompileState {
   }
 
   /// Resolve the per-name hints recorded by `compile_definition` into
-  /// `env.anon_hints`, keyed by each name's registered constant address
-  /// (`Named.addr` — the projection address for mutual-block members,
-  /// i.e. exactly the address the kernel looks hints up under). Runs
-  /// once after the scheduler drains: addresses aren't final until the
-  /// `Named` entries are registered. Alias collisions resolve through
-  /// `Env::register_hint`'s order-independent merge.
+  /// the env. Runs once after the scheduler drains: addresses aren't
+  /// final until the `Named` entries are registered. Two channels:
+  ///
+  /// - `Named.hints` (exact, per name): alpha-identical definitions
+  ///   under different names share one constant address but may carry
+  ///   different hints; decompile reconstructs `DefinitionVal.hints`
+  ///   from here, so no merge may touch it.
+  /// - `env.anon_hints` (advisory, per constant address — `Named.addr`,
+  ///   the projection address for mutual-block members, i.e. exactly
+  ///   the address the anon-mode kernel looks hints up under). Alias
+  ///   collisions resolve through `Env::register_hint`'s
+  ///   order-independent merge.
   pub fn finalize_hints(&self) {
-    for entry in self.env.named.iter() {
-      if let Some(h) = self.def_hints.get(entry.key()) {
-        self.env.register_hint(entry.value().addr.clone(), *h.value());
+    for entry in self.def_hints.iter() {
+      if let Some(mut named) = self.env.named.get_mut(entry.key()) {
+        named.set_hints(Some(*entry.value()));
+        self.env.register_hint(named.addr.clone(), *entry.value());
       }
     }
   }

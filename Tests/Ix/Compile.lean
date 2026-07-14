@@ -123,8 +123,8 @@ def compareEnvResults
   }
 
 /-- Serialize a Lean Ixon.Env to bytes -/
-def serializeEnv (env : Ixon.Env) : ByteArray :=
-  Ixon.serEnv env
+def serializeEnv (env : Ixon.Env) : IO ByteArray :=
+  IO.ofExcept (Ixon.serEnv env)
 
 /-! ## Integrated Test -/
 
@@ -338,7 +338,7 @@ def testCrossImpl : TestSeq :=
 
         let (leanBlobs, leanConsts, leanHints, leanNames, leanNamed, leanComms) := Ixon.envSectionSizes leanIxonEnv
         IO.println s!"[Step 4]   Lean sections: blobs={fmtBytes leanBlobs}, consts={fmtBytes leanConsts}, hints={fmtBytes leanHints}, names={fmtBytes leanNames}, named={fmtBytes leanNamed}, comms={fmtBytes leanComms}"
-        let leanEnvBytes := serializeEnv leanIxonEnv
+        let leanEnvBytes ← serializeEnv leanIxonEnv
         IO.println s!"[Step 4]   Lean env done: {fmtBytes leanEnvBytes.size}"
 
         IO.println s!"[Step 4]   Serializing Rust env ({phases.compileEnv.constCount} consts)..."
@@ -359,7 +359,7 @@ def testCrossImpl : TestSeq :=
 
         let (rustBlobs, rustConsts, rustHints, rustNames, rustNamed, rustComms) := Ixon.envSectionSizes phases.compileEnv
         IO.println s!"[Step 4]   Rust sections: blobs={fmtBytes rustBlobs}, consts={fmtBytes rustConsts}, hints={fmtBytes rustHints}, names={fmtBytes rustNames}, named={fmtBytes rustNamed}, comms={fmtBytes rustComms}"
-        let rustEnvBytes := serializeEnv phases.compileEnv
+        let rustEnvBytes ← serializeEnv phases.compileEnv
         IO.println s!"[Step 4]   Rust env done: {fmtBytes rustEnvBytes.size}"
         let serTime := (← IO.monoMsNow) - serStart
 

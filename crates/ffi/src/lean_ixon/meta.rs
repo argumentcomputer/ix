@@ -7,7 +7,7 @@ use crate::lean::{
   LeanIxonExprMetaData, LeanIxonNamed,
 };
 use ix_common::address::Address;
-use ix_common::env::BinderInfo;
+use ix_common::env::{BinderInfo, ReducibilityHints};
 use ixon::Comm;
 use ixon::env::Named;
 use ixon::metadata::{
@@ -625,15 +625,17 @@ impl<R: LeanRef> LeanIxonConstantMeta<R> {
 // =============================================================================
 
 impl LeanIxonNamed<LeanOwned> {
-  /// Build Ixon.Named { addr, constMeta, original }.
+  /// Build Ixon.Named { addr, constMeta, original, hints }.
   ///
   /// The third field encodes `Option (Address × ConstantMeta)` for
-  /// pre-aux_gen roundtrip fidelity (see `Ix/Ixon.lean` `structure Named`).
+  /// pre-aux_gen roundtrip fidelity and the fourth the per-name
+  /// reducibility hints (see `Ix/Ixon.lean` `structure Named`).
   /// Regression test: `Ixon.Named roundtrip` in `Tests/FFI/Ixon.lean`.
   pub fn build(
     addr: &Address,
     meta: &ConstantMeta,
     original: &Option<(Address, ConstantMeta)>,
+    hints: Option<ReducibilityHints>,
   ) -> Self {
     let original_obj: LeanOwned = match original {
       None => LeanOption::none().into(),
@@ -649,6 +651,7 @@ impl LeanIxonNamed<LeanOwned> {
     ctor.set_obj(0, LeanIxAddress::build(addr));
     ctor.set_obj(1, LeanIxonConstantMeta::build(meta));
     ctor.set_obj(2, original_obj);
+    ctor.set_obj(3, super::env::build_opt_hints(hints));
     ctor
   }
 }
@@ -680,7 +683,9 @@ impl<R: LeanRef> LeanIxonNamed<R> {
         tag => panic!("Invalid Option tag for Named.original: {tag}"),
       }
     };
+    let hints = super::env::decode_opt_hints(self.get_obj(3));
     let mut named = Named::new(addr, meta);
+    named.set_hints(hints);
     if let Some((orig_addr, orig_meta)) = original {
       named.set_original(orig_addr, orig_meta);
     }
@@ -773,5 +778,5 @@ pub extern "C" fn rs_roundtrip_ixon_named(
 ) -> LeanIxonNamed<LeanOwned> {
   let named = obj.decode();
   let original = named.original().map(|(a, m)| (a, (*m).clone()));
-  LeanIxonNamed::build(&named.addr, &named.meta(), &original)
+  LeanIxonNamed::build(&named.addr, &named.meta(), &original, named.hints())
 }

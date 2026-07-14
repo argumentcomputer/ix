@@ -400,7 +400,11 @@ def genNamed : Gen Named := do
     (3, pure none),
     (1, (fun a m => some (a, m)) <$> genAddress <*> genConstantMeta),
   ]
-  return { addr, constMeta, original }
+  let hints ← frequency [
+    (1, pure none),
+    (2, some <$> genReducibilityHints),
+  ]
+  return { addr, constMeta, original, hints }
 
 /-- Generate a Comm. -/
 def genCommNew : Gen Comm :=
@@ -452,10 +456,13 @@ def genRawConst : Gen RawConst := do
   let c ← genConstant
   pure { addr := Address.blake3 (serConstant c), const := c }
 
-/-- Generate a RawNamed with empty metadata (matching Rust test generator).
-    Metadata addresses must reference valid names in env.names for indexed serialization. -/
+/-- Generate a standalone RawNamed with empty metadata. NOTE: its
+    `addr` is a random address, so it is NOT valid inside a RawEnv —
+    §5 keys the entry's constant by §2 rank and the writers reject
+    out-of-consts references. `genRawEnv` generates env-consistent
+    named entries itself. -/
 def genRawNamed : Gen RawNamed :=
-  RawNamed.mk <$> genIxName 3 <*> genAddress <*> pure .empty
+  RawNamed.mk <$> genIxName 3 <*> genAddress <*> pure .empty <*> pure none
 
 /-- Generate a RawBlob whose `addr` is the canonical content hash of
     `bytes`. Readers verify `Address.blake3 bytes == addr` per entry
@@ -473,11 +480,24 @@ def genRawNameEntry : Gen RawNameEntry :=
   RawNameEntry.mk <$> genAddress <*> genIxName 3
 
 /-- Generate a RawEnv with small arrays to avoid memory issues. `main`
-    (when present) references a generated const — writers/readers check
-    `main ∈ consts`. Assumptions and hint keys are opaque addresses. -/
+    (when present), named entries, and hint keys all reference
+    generated consts — the writers reject `main`/`named.addr`/hint
+    keys outside `consts` (§3/§5 are index-keyed). Assumptions stay
+    opaque addresses. -/
 def genRawEnv : Gen RawEnv := do
   let consts ← genSmallArray genRawConst
-  let named ← genSmallArray genRawNamed
+  let named ←
+    if consts.size > 0 then
+      genSmallArray do
+        let name ← genIxName 3
+        let i ← Gen.choose Nat 0 (consts.size - 1)
+        let addr := (consts[i % consts.size]!).addr
+        let hints ← frequency [
+          (1, pure none),
+          (2, some <$> genReducibilityHints),
+        ]
+        pure ({ name, addr, constMeta := .empty, hints } : RawNamed)
+    else pure #[]
   let blobs ← genSmallArray genRawBlob
   let comms ← genSmallArray genRawComm
   let names ← genSmallArray genRawNameEntry
@@ -492,8 +512,14 @@ def genRawEnv : Gen RawEnv := do
     else pure none
   let assumptionList ← genList genAddress
   let assumptions := assumptionList.toArray.qsort fun a b => (compare a b).isLT
-  let hintList ← genList (Prod.mk <$> genAddress <*> genReducibilityHints)
-  let anonHints := hintList.toArray.qsort fun a b => (compare a.1 b.1).isLT
+  let anonHints ←
+    if consts.size > 0 then do
+      let hintList ← genList do
+        let i ← Gen.choose Nat 0 (consts.size - 1)
+        let h ← genReducibilityHints
+        pure ((consts[i % consts.size]!).addr, h)
+      pure (hintList.toArray.qsort fun a b => (compare a.1 b.1).isLT)
+    else pure #[]
   pure { consts, named, blobs, comms, names, main, assumptions, anonHints }
 
 instance : Shrinkable RawConst where
@@ -517,14 +543,18 @@ instance : Shrinkable RawComm where
 
 instance : Shrinkable RawEnv where
   shrink env :=
-    -- Popping a const may orphan `main` (writers reject main ∉ consts),
-    -- so clear it when its target is dropped.
+    -- Popping a const may orphan `main` (writers reject main ∉ consts)
+    -- and any named entries / hints keyed to it (§3/§5 are
+    -- index-keyed) — drop those along with it.
     (if env.consts.size > 0 then
       let popped := env.consts.pop
       let main := match env.main with
         | some m => if popped.any (·.addr == m) then env.main else none
         | none => none
-      [{ env with consts := popped, main }]
+      let named := env.named.filter fun rn => popped.any (·.addr == rn.addr)
+      let anonHints :=
+        env.anonHints.filter fun (a, _) => popped.any (·.addr == a)
+      [{ env with consts := popped, main, named, anonHints }]
      else []) ++
     (if env.named.size > 0 then [{ env with named := env.named.pop }] else []) ++
     (if env.blobs.size > 0 then [{ env with blobs := env.blobs.pop }] else []) ++

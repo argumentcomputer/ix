@@ -64,7 +64,8 @@ impl<R: LeanRef> LeanIxonRawConst<R> {
 }
 
 // =============================================================================
-// RawNamed (name: Ix.Name, addr: Address, constMeta: ConstantMeta)
+// RawNamed (name: Ix.Name, addr: Address, constMeta: ConstantMeta,
+//           hints: Option ReducibilityHints)
 // =============================================================================
 
 /// Decoded Ixon.RawNamed
@@ -72,6 +73,31 @@ pub struct DecodedRawNamed {
   pub name: Name,
   pub addr: Address,
   pub const_meta: ConstantMeta,
+  pub hints: Option<ReducibilityHints>,
+}
+
+/// Build `Option Lean.ReducibilityHints` (scalar-optimized `none` or a
+/// boxed tag-1 ctor).
+pub(crate) fn build_opt_hints(hints: Option<ReducibilityHints>) -> LeanOwned {
+  match hints {
+    None => LeanOption::none().into(),
+    Some(h) => LeanOption::some(LeanIxReducibilityHints::build(&h)).into(),
+  }
+}
+
+/// Decode `Option Lean.ReducibilityHints` from an object slot.
+pub(crate) fn decode_opt_hints(
+  obj: LeanBorrowed<'_>,
+) -> Option<ReducibilityHints> {
+  if obj.is_scalar() {
+    return None;
+  }
+  let opt = obj.as_ctor();
+  match opt.tag() {
+    0 => None,
+    1 => Some(LeanIxReducibilityHints::new(opt.get(0).to_owned_ref()).decode()),
+    tag => panic!("Invalid Option tag for hints: {tag}"),
+  }
 }
 
 impl LeanIxonRawNamed<LeanOwned> {
@@ -81,6 +107,7 @@ impl LeanIxonRawNamed<LeanOwned> {
     ctor.set_obj(0, LeanIxName::build(cache, &rn.name));
     ctor.set_obj(1, LeanIxAddress::build(&rn.addr));
     ctor.set_obj(2, LeanIxonConstantMeta::build(&rn.const_meta));
+    ctor.set_obj(3, build_opt_hints(rn.hints));
     ctor
   }
 
@@ -90,11 +117,13 @@ impl LeanIxonRawNamed<LeanOwned> {
     name: &Name,
     addr: &Address,
     meta: &ConstantMeta,
+    hints: Option<ReducibilityHints>,
   ) -> Self {
     let ctor = LeanIxonRawNamed::alloc(0);
     ctor.set_obj(0, LeanIxName::build(cache, name));
     ctor.set_obj(1, LeanIxAddress::build(addr));
     ctor.set_obj(2, LeanIxonConstantMeta::build(meta));
+    ctor.set_obj(3, build_opt_hints(hints));
     ctor
   }
 }
@@ -108,6 +137,7 @@ impl<R: LeanRef> LeanIxonRawNamed<R> {
       addr: LeanIxAddress::from_borrowed(ctor.get(1).as_byte_array()).decode(),
       const_meta: LeanIxonConstantMeta::new(ctor.get(2).to_owned_ref())
         .decode(),
+      hints: decode_opt_hints(ctor.get(3)),
     }
   }
 }
@@ -419,7 +449,8 @@ pub fn decoded_to_ixon_env(decoded: &DecodedRawEnv) -> IxonEnv {
     env.store_name(rn.addr.clone(), rn.name.clone());
   }
   for rn in &decoded.named {
-    let named = IxonNamed::new(rn.addr.clone(), rn.const_meta.clone());
+    let mut named = IxonNamed::new(rn.addr.clone(), rn.const_meta.clone());
+    named.set_hints(rn.hints);
     env.register_name(rn.name.clone(), named);
   }
   for rb in &decoded.blobs {
@@ -462,6 +493,7 @@ pub fn ixon_env_to_decoded(env: &IxonEnv) -> Result<DecodedRawEnv, String> {
       name: e.key().clone(),
       addr: e.value().addr.clone(),
       const_meta: (*e.value().meta()).clone(),
+      hints: e.value().hints(),
     })
     .collect();
   let blobs = env
@@ -620,15 +652,17 @@ impl LeanIxonRawConstSlice<LeanOwned> {
 }
 
 impl LeanIxonRawNamedLite<LeanOwned> {
-  /// Build `Ixon.RawNamedLite { name, addr }`.
+  /// Build `Ixon.RawNamedLite { name, addr, hints }`.
   pub fn build(
     cache: &mut LeanBuildCache,
     name: &Name,
     addr: &Address,
+    hints: Option<ReducibilityHints>,
   ) -> Self {
     let ctor = LeanIxonRawNamedLite::alloc(0);
     ctor.set_obj(0, LeanIxName::build(cache, name));
     ctor.set_obj(1, LeanIxAddress::build(addr));
+    ctor.set_obj(2, build_opt_hints(hints));
     ctor
   }
 }
@@ -644,7 +678,10 @@ fn build_raw_env_lazy(index: &LazyIndex) -> LeanIxonRawEnvLazy<LeanOwned> {
 
   let named_arr = LeanArray::alloc(index.named.len());
   for (i, n) in index.named.iter().enumerate() {
-    named_arr.set(i, LeanIxonRawNamedLite::build(&mut cache, &n.name, &n.addr));
+    named_arr.set(
+      i,
+      LeanIxonRawNamedLite::build(&mut cache, &n.name, &n.addr, n.hints),
+    );
   }
 
   let blobs_arr = LeanArray::alloc(index.blobs.len());
