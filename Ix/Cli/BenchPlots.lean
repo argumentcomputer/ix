@@ -116,7 +116,8 @@ def unitsFor (slug : String) : Option String :=
     ooc); unranked workloads (a future backend) sort last. -/
 def workloadOrder : List String :=
   ["ix-compile", "aiur-check-prove", "aiur-check-execute",
-   "aiur-check-recursive", "recursive", "zisk-check-execute", "ooc-check"]
+   "aiur-check-recursive", "aiur-recursive", "zisk-check-execute",
+   "ooc-check"]
 
 structure PlotSpec where
   testbed : String
@@ -139,7 +140,7 @@ def plotSpecs (rows : Array BenchCmd.VectorRow) : Array PlotSpec := Id.run do
       let names : Array String := Id.run do
         if b.name == "compile" then
           return (BenchCmd.envSpecs.map (·.name)).toArray
-        if b.name == "recursive" then
+        if b.name == "aiur-recursive" then
           return (BenchCmd.recursiveConfigs.map (·.1)).toArray
         let mut ns : Array String := #[]
         for env in benched do

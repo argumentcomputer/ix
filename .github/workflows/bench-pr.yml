@@ -1,7 +1,7 @@
 # `!benchmark` PR command: run the curated constant set (Benchmarks/Vectors.csv)
 # through chosen prover backend(s) and post a main-vs-PR comparison table.
 #
-#   !benchmark ([aiur] [zisk] [sp1] [ooc] [compile] | all) [execute]
+#   !benchmark ([aiur] [zisk] [sp1] [ooc] [compile] [aiur-recursive] | all) [execute]
 #     (sp1 is disabled in the registry (Ix/Cli/BenchCmd.lean) — the parser skips it
 #      with a note in the config summary)
 #   BENCH_ENVS=InitStd,Mathlib     # which compiled envs (default InitStd; case-insensitive;
@@ -20,10 +20,16 @@
 # Phase-1 columns `fft-cost` / `execute-time` measured en route; `zisk` /
 # `sp1` / `ooc` run `execute`; `compile` runs `ix compile <env>.lean →
 # <env>.ixe` (the same cell bench-main.yml uploads under testbed
-# `ix-compile-*`). The optional bare `execute` token flips `aiur` to
+# `ix-compile-*`); `aiur-recursive` runs the aiur-recursive toy
+# (bench-recursive-verifier's fixed configs — env-independent, so it
+# always schedules exactly one cell no matter what BENCH_ENVS says).
+# The optional bare `execute` token flips `aiur` to
 # execute-only (Phase 1, skipping the prove); bench-main runs both aiur
 # modes as separate cells on separate testbeds, so either kind of cell
-# fetches a cached main-side baseline from bencher.
+# fetches a cached main-side baseline from bencher. (aiur's third mode,
+# `recursive`, is local-only — `ix bench run --backend aiur --mode
+# recursive` — an IxVM-scale verifier execute needs >108 GB, beyond the
+# CI ceiling, so no comment token schedules it.)
 #
 # Each matrix cell is one `ix bench run` per side, driven by the PR's `ix`
 # (`--repo` points it at the checkout to measure). main's numbers come from
@@ -99,7 +105,8 @@ jobs:
             -f head-sha="${{ steps.comment-branch.outputs.head_sha }}" \
             -f comment-body="$COMMENT_BODY"
 
-  # Build the PR's `ix` + `bench-typecheck` once (they embed the IxVM kernel
+  # Build the PR's `ix` + `bench-typecheck` + `bench-recursive-verifier`
+  # once (they embed the IxVM kernel
   # and the Aiur prover), stage under ~/.local/bin, and cache by head SHA —
   # the matrix cells restore instead of re-running the full Lean build per
   # cell, and re-running !benchmark on the same commit skips the build
@@ -160,13 +167,13 @@ jobs:
         with:
           auto-config: false
           build: ${{ steps.bins.outputs.cache-hit != 'true' }}
-          build-args: "ix bench-typecheck"
+          build-args: "ix bench-typecheck bench-recursive-verifier"
           use-github-cache: false
       - if: steps.bins.outputs.cache-hit != 'true'
         run: |
           mkdir -p ~/.local/bin
-          cp .lake/build/bin/ix .lake/build/bin/bench-typecheck ~/.local/bin/
-          chmod +x ~/.local/bin/ix ~/.local/bin/bench-typecheck
+          cp .lake/build/bin/ix .lake/build/bin/bench-typecheck .lake/build/bin/bench-recursive-verifier ~/.local/bin/
+          chmod +x ~/.local/bin/ix ~/.local/bin/bench-typecheck ~/.local/bin/bench-recursive-verifier
       - if: steps.bins.outputs.cache-hit != 'true'
         uses: actions/cache/save@v5
         with:
@@ -324,7 +331,7 @@ jobs:
           fail-on-cache-miss: true
       - run: |
           mkdir -p .lake/build/bin
-          mv ~/.local/bin/ix ~/.local/bin/bench-typecheck .lake/build/bin/
+          mv ~/.local/bin/ix ~/.local/bin/bench-typecheck ~/.local/bin/bench-recursive-verifier .lake/build/bin/
           echo "$PWD/.lake/build/bin" >> "$GITHUB_PATH"
       # Toolchain provisioning only (no package build, no mathlib cache):
       # the restored binaries link against the toolchain's libleanshared.
@@ -455,7 +462,10 @@ jobs:
       # bench-main.yml's build/compile jobs already cached the base SHA's
       # binaries and `.ixe` on the push to main — restore both before paying
       # for a from-scratch base build.
-      - name: Restore base binaries (bench-main build cache)
+      # The bench-bins-<sha> key family has two producers: bench-main's build
+      # job (main commits) and this workflow's own build job (any PR head that
+      # ran !benchmark) — a stacked-PR base hits the latter.
+      - name: Restore base binaries (bench-bins cache)
         if: steps.bencher.outputs.run-base == 'true'
         id: base-bins
         uses: actions/cache/restore@v5
@@ -489,20 +499,21 @@ jobs:
              && cmp -s lean-toolchain base/lean-toolchain; then
             if [ "$BENV" != Mathlib ] || [ "${{ steps.base-ixe.outputs.cache-hit }}" = true ]; then
               mkdir -p base/.lake/build/bin
-              mv ~/.local/bin/ix ~/.local/bin/bench-typecheck base/.lake/build/bin/ 2>/dev/null || true
-              [ -x base/.lake/build/bin/ix ] && [ -x base/.lake/build/bin/bench-typecheck ] && cached=true
+              mv ~/.local/bin/ix ~/.local/bin/bench-typecheck ~/.local/bin/bench-recursive-verifier base/.lake/build/bin/ 2>/dev/null || true
+              [ -x base/.lake/build/bin/ix ] && [ -x base/.lake/build/bin/bench-typecheck ] \
+                && [ -x base/.lake/build/bin/bench-recursive-verifier ] && cached=true
             fi
           fi
           echo "cached=$cached" >> "$GITHUB_OUTPUT"
-          echo "base binaries: $([ "$cached" = true ] && echo restored from bench-main cache || echo building from source)"
-      - name: Build base (ix, bench-typecheck)
+          echo "base binaries: $([ "$cached" = true ] && echo restored from cache || echo building from source)"
+      - name: Build base (ix, bench-typecheck, bench-recursive-verifier)
         if: steps.bencher.outputs.run-base == 'true' && steps.base-src.outputs.cached != 'true'
         uses: leanprover/lean-action@v1
         with:
           lake-package-directory: base
           auto-config: false
           build: true
-          build-args: "ix bench-typecheck"
+          build-args: "ix bench-typecheck bench-recursive-verifier"
           use-github-cache: false
       # Base-side `ix compile` of a mathlib-importing env (Mathlib, FLT)
       # resolves imports from the base tree's Benchmarks/Compile subpackage —

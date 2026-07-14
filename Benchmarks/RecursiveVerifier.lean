@@ -28,7 +28,8 @@ lake exe bench-recursive-verifier --execute-only  # skip the outer prove (FFT/ex
   --json <path>    write a benchmark results row (Ix.Benchmark.Results); the
                    row lands after the verifier execute and is refined after
                    the outer prove, so a kill mid-prove keeps the execute
-                   metrics. `ix bench run --backend recursive` drives this.
+                   metrics. `ix bench run --backend aiur-recursive`
+                   drives this.
   --json-name <n>  row key (default: the inner entrypoint name)
   --texray         tracing-texray timeline + RAM; with --json, spans also land
                    at `<json>.spans` for the CI drill-down

@@ -58,9 +58,9 @@ lake exe bench-typecheck --ixe <path> --consts <n1,n2,…> [--consts-file <p>] [
                  parameters (`recursiveFriParameters`), so recursive rows are
                  NOT comparable to the standard prove cell — they land on
                  their own testbed (`ix bench run --backend aiur --mode
-                 recursive`), which stays empty while the IxVM-scale cell
-                 OOMs (>108 GB in the verifier execute today; the kill lands
-                 as a `status: oom` row that bmf drops). With --texray, both
+                 recursive`). An IxVM-scale verifier execute needs >108 GB,
+                 so a watchdog kill landing as a `status: oom` row (dropped
+                 by bmf) is the expected shape there. With --texray, both
                  proves stream the same `stark/...` span names, so the summed
                  `phase-stark-*` fields cover the pair. Conflicts with
                  --execute-only.

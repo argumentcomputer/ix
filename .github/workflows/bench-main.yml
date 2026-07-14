@@ -16,6 +16,12 @@ name: Benchmark main
 #   4. ooc-check    — restore that `.ixe` and run the out-of-circuit Rust kernel
 #                     (the same kernel, out-of-circuit and parallel — far faster)
 #                     over the whole env, tracking throughput.
+#   5. aiur-recursive — the aiur-recursive toy
+#                     (bench-recursive-verifier):
+#                     prove fixed tiny statements, run the in-circuit
+#                     multi-stark verifier over each proof, then prove THAT
+#                     execution — the end-to-end recursion cost. Env-independent
+#                     (no `.ixe`), so it needs only the staged binaries.
 # Each job reports to its own bencher testbed/workload so a threshold reset only
 # touches its own measures. `ix bench run` exits 3 when the kernel REJECTS a
 # constant — the red X lands on that step (no output scraping), while the clean
@@ -39,9 +45,10 @@ env:
   COMPILE_DIR: Benchmarks/Compile
 
 jobs:
-  # Build + stage the `ix` and `bench-typecheck` binaries once, then restore
-  # them on the matrix runners. `-Ctarget-cpu=native`: every job that RUNS
-  # these binaries must also be a warp host.
+  # Build + stage the `ix`, `bench-typecheck`, and `bench-recursive-verifier`
+  # binaries once, then restore them on the matrix runners.
+  # `-Ctarget-cpu=native`: every job that RUNS these binaries must also be a
+  # warp host.
   build:
     runs-on: warp-ubuntu-latest-x64-32x
     steps:
@@ -64,9 +71,9 @@ jobs:
       - run: |
           mkdir -p ~/.local/bin
           echo | lake run install            # copies ix -> ~/.local/bin/ix
-          lake build bench-typecheck
-          cp .lake/build/bin/bench-typecheck ~/.local/bin/bench-typecheck
-          chmod +x ~/.local/bin/bench-typecheck
+          lake build bench-typecheck bench-recursive-verifier
+          cp .lake/build/bin/bench-typecheck .lake/build/bin/bench-recursive-verifier ~/.local/bin/
+          chmod +x ~/.local/bin/bench-typecheck ~/.local/bin/bench-recursive-verifier
       - uses: actions/cache/save@v5
         with:
           path: ~/.local/bin
@@ -345,6 +352,86 @@ jobs:
             --threshold-measure throughput --threshold-test percentage
             --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary _
             --threshold-lower-boundary 0.10
+
+  # The aiur-recursive toy cell (`ix bench run --backend
+  # aiur-recursive`):
+  # bench-recursive-verifier proves each fixed config's tiny statement, runs
+  # the in-circuit multi-stark verifier over the proof, then proves that
+  # execution — uploading the recursion-cost trend to its own testbed.
+  # Env-independent: no `.ixe`, no compile job — just the staged binaries
+  # and the toolchain (libleanshared). A config whose outer prove exceeds
+  # the watchdog ceiling lands as a `status: oom` row that bmf drops,
+  # keeping that row off bencher.
+  aiur-recursive:
+    name: aiur-recursive-prove
+    needs: build
+    runs-on: warp-ubuntu-latest-x64-32x
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/cache/restore@v5
+        with:
+          path: ~/.local/bin
+          key: bench-bins-${{ github.sha }}
+      - run: echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - uses: leanprover/lean-action@v1
+        with:
+          auto-config: false
+          build: false
+          use-github-cache: false
+      - name: Run aiur-recursive benchmark
+        run: ix bench run --backend aiur-recursive --out bench.json
+      - name: Convert to Bencher Metric Format
+        id: bmf
+        if: ${{ !cancelled() }}
+        run: |
+          ix bench bmf --in bench.json --out aiur-recursive-bmf.json
+          cat aiur-recursive-bmf.json
+      # recursive-fft-cost drifts ~±15% run-to-run (the parallel prover
+      # emits byte-different valid proofs, so the verifier authenticates
+      # different Merkle paths), hence the loose 25% bound; the proof
+      # sizes are structural (fixed query count and path depth) and ride
+      # the tight 5% bound like aiur's; wall-clock/RAM ride the standard
+      # 10% percentage bounds.
+      - uses: ./.github/actions/bencher-track
+        if: ${{ !cancelled() && steps.bmf.outcome == 'success' }}
+        with:
+          testbed: aiur-recursive-x64-32x
+          workload: aiur-recursive
+          file: aiur-recursive-bmf.json
+          key: ${{ secrets.BENCHER_API_KEY }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          thresholds: |
+            --threshold-measure recursive-fft-cost --threshold-test percentage
+            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.25
+            --threshold-lower-boundary _
+            --threshold-measure recursive-execute-time --threshold-test percentage
+            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.10
+            --threshold-lower-boundary _
+            --threshold-measure recursive-prove-time --threshold-test percentage
+            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.10
+            --threshold-lower-boundary _
+            --threshold-measure recursive-verify-time --threshold-test percentage
+            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.10
+            --threshold-lower-boundary _
+            --threshold-measure recursive-peak-rss --threshold-test percentage
+            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.10
+            --threshold-lower-boundary _
+            --threshold-measure recursive-proof-size --threshold-test percentage
+            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.05
+            --threshold-lower-boundary _
+            --threshold-measure prove-time --threshold-test percentage
+            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.10
+            --threshold-lower-boundary _
+            --threshold-measure proof-size --threshold-test percentage
+            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.05
+            --threshold-lower-boundary _
+            --threshold-measure verify-time --threshold-test percentage
+            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.10
+            --threshold-lower-boundary _
+            --threshold-measure peak-rss --threshold-test percentage
+            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.10
+            --threshold-lower-boundary _
 
   # Execute the same constants through the zkVM hosts and track cycles /
   # execute-time / throughput / peak-rss (and shards / max-shard-cycles

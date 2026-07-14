@@ -141,10 +141,10 @@ def backendSpecs : List BackendSpec := [
   -- multi-stark verifier on prove: execute it over each fresh proof, then
   -- prove that execution — the recursion cell. It runs under the
   -- recursion-tuned FRI parameters, so even its shared-name metrics
-  -- (prove-time, peak-rss) are not comparable to the prove cell's. At IxVM
-  -- scale the cell is expected to OOM today (>108 GB in the verifier
-  -- execute); the kill lands as a `status: oom` row that bmf drops, so the
-  -- testbed simply stays empty until recursion fits.
+  -- (prove-time, peak-rss) are not comparable to the prove cell's. An
+  -- IxVM-scale verifier execute needs >108 GB, beyond the CI ceiling; the
+  -- kill lands as a `status: oom` row that bmf drops, which is why no CI
+  -- job schedules this testbed.
   { name := "aiur", defaultMode := "prove",
     testbeds := [("prove", "aiur-check-prove-x64-32x"),
                  ("execute", "aiur-check-execute-x64-32x"),
@@ -158,17 +158,18 @@ def backendSpecs : List BackendSpec := [
                                "recursive-proof-size", "recursive-verify-time",
                                "recursive-execute-time", "recursive-fft-cost",
                                "prove-time", "proof-size"])] },
-  -- The recursive-verifier toy (bench-recursive-verifier): fixed tiny
+  -- The aiur-recursive toy (bench-recursive-verifier): fixed tiny
   -- statements (`recursiveConfigs`), proving the in-circuit multi-stark
   -- verifier end-to-end. Env-independent: the cell ignores --env and never
-  -- needs an .ixe. Unlike the aiur recursive mode above, the floor config
-  -- completes on a 128 GB host, so this testbed gets real rows.
-  { name := "recursive", defaultMode := "prove",
-    testbeds := [("prove", "recursive-x64-32x")],
+  -- needs an .ixe. Unlike the aiur recursive mode above, the floor
+  -- config's outer prove fits a 128 GB host, so CI schedules this testbed.
+  { name := "aiur-recursive", defaultMode := "prove",
+    testbeds := [("prove", "aiur-recursive-x64-32x")],
     metrics := [("prove", ["recursive-prove-time", "recursive-peak-rss",
                            "recursive-proof-size", "recursive-verify-time",
                            "recursive-execute-time", "recursive-fft-cost",
-                           "prove-time", "proof-size"])] },
+                           "prove-time", "proof-size", "verify-time",
+                           "peak-rss"])] },
   { name := "zisk", defaultMode := "execute",
     testbeds := [("execute", "zisk-check-execute-x64-32x")],
     metrics := [("execute", ["execute-time", "throughput", "peak-rss",
@@ -472,7 +473,7 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
           { name := n, env, tier := "cheap", shardTarget := false, primary := false }
   let names := selected.map (·.name)
   match backend with
-  | "recursive" =>
+  | "aiur-recursive" =>
     IO.eprintln s!"[bench] cell {backend}-{mode}: {recursiveConfigs.length} config(s)"
   | _ =>
     IO.eprintln s!"[bench] cell {backend}-{env}-{mode}: {names.size} constant(s)"
@@ -525,7 +526,7 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
       runGuarded watchdog ceilingGb bt
         (#["--ixe", ixe, "--consts", name, "--json", out, "--texray"]
           ++ modeArgs)
-  | "recursive" =>
+  | "aiur-recursive" =>
     -- Fixed-config rows; no env, no .ixe. One process per config under the
     -- watchdog, self-reporting through the rows contract like every other
     -- per-row backend.
@@ -586,7 +587,7 @@ def runBenchRunCmd (p : Cli.Parsed) : IO UInt32 := do
   let expected := match backend with
     | "compile" => #[info.name]
     | "ooc" => #[info.name] ++ names
-    | "recursive" => (recursiveConfigs.map (·.1)).toArray
+    | "aiur-recursive" => (recursiveConfigs.map (·.1)).toArray
     | _ => names
   let code ← gate out expected
   if code == 0 || code == exitRejected then
@@ -629,7 +630,7 @@ def benchRunCmd : Cli.Cmd := `[Cli|
   "Run one benchmark cell (backend × env × mode), writing benchmark results JSON. Exits 0 on success (rows saved as the local baseline), 3 when the kernel rejected any constant, 1 when no rows were produced."
 
   FLAGS:
-    backend      : String; "aiur | zisk | sp1 | ooc | compile"
+    backend      : String; "aiur | zisk | sp1 | ooc | compile | aiur-recursive"
     env          : String; "Benchmark env from the registry (default: InitStd)"
     mode         : String; "prove | execute | recursive (default: the backend's defaultMode)"
     out          : String; "Benchmark results JSON output path (default: bench.json)"
