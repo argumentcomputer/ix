@@ -6,10 +6,12 @@
 #[cfg(feature = "test-ffi")]
 pub mod compare;
 pub mod constant;
+pub mod diff;
 pub mod enums;
 pub mod env;
 pub mod expr;
 pub mod meta;
+pub mod pack;
 #[cfg(feature = "test-ffi")]
 pub mod serialize;
 #[cfg(feature = "test-ffi")]

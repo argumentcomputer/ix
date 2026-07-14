@@ -234,6 +234,52 @@ pub extern "C" fn rs_eq_env_serialization(
     }
   }
 
+  // Bundle header fields.
+  if rust_env.main != decoded.main {
+    if debug {
+      eprintln!(
+        "[rs_eq_env_serialization] main mismatch: rust={:?}, decoded={:?}",
+        rust_env.main.as_ref().map(Address::hex),
+        decoded.main.as_ref().map(Address::hex),
+      );
+    }
+    return false;
+  }
+  let decoded_assumptions: rustc_hash::FxHashSet<Address> =
+    decoded.assumptions.iter().cloned().collect();
+  if rust_env.assumptions != decoded_assumptions {
+    if debug {
+      eprintln!(
+        "[rs_eq_env_serialization] assumptions mismatch: rust={}, decoded={}",
+        rust_env.assumptions.len(),
+        decoded_assumptions.len(),
+      );
+    }
+    return false;
+  }
+
+  // Hints: `anon_hints` is the single home for hints (the writers
+  // serialize the map directly), so the parsed env's map must equal
+  // the decoded RawEnv's hints verbatim.
+  let expected_hints: rustc_hash::FxHashMap<
+    Address,
+    ix_common::env::ReducibilityHints,
+  > = decoded.anon_hints.iter().cloned().collect();
+  let hints_match = rust_env.anon_hints.len() == expected_hints.len()
+    && expected_hints
+      .iter()
+      .all(|(a, h)| rust_env.anon_hints.get(a).map(|r| *r) == Some(*h));
+  if !hints_match {
+    if debug {
+      eprintln!(
+        "[rs_eq_env_serialization] anon_hints mismatch: rust={}, expected={}",
+        rust_env.anon_hints.len(),
+        expected_hints.len(),
+      );
+    }
+    return false;
+  }
+
   true
 }
 

@@ -222,7 +222,7 @@ def testCrossImpl : TestSeq :=
                 IO.println s!"    [{i}] {reprStr arena.nodes[i]!}"
             let dumpMeta (label : String) (cm : Ixon.ConstantMeta) : IO Unit := do
               match cm with
-              | .defn _ _ _ _ _ arena typeRoot valueRoot => do
+              | .defn _ _ _ _ arena typeRoot valueRoot => do
                 dumpArena label "arena" arena
                 IO.println s!"  {label} typeRoot={typeRoot} valueRoot={valueRoot}"
               | .axio _ _ arena typeRoot => do
@@ -261,10 +261,9 @@ def testCrossImpl : TestSeq :=
               IO.println s!"    variant: {leanTag}"
               -- Field-by-field comparison for common variants
               match leanCM, rustCM with
-              | .defn ln ll lh la lc larena ltr lvr, .defn rn rl rh ra rc rarena rtr rvr => do
+              | .defn ln ll la lc larena ltr lvr, .defn rn rl ra rc rarena rtr rvr => do
                 if ln != rn then IO.println s!"    name DIFFERS: Lean={ln} Rust={rn}"
                 if ll != rl then IO.println s!"    lvls DIFFERS: Lean={ll.size} Rust={rl.size}"
-                if lh != rh then IO.println s!"    hints DIFFERS"
                 if la != ra then IO.println s!"    all DIFFERS: Lean={la} Rust={ra}"
                 if lc != rc then IO.println s!"    ctx DIFFERS: Lean={lc} Rust={rc}"
                 if larena != rarena then IO.println s!"    arena DIFFERS: Lean={larena.nodes.size} Rust={rarena.nodes.size}"
@@ -337,8 +336,8 @@ def testCrossImpl : TestSeq :=
         IO.println s!"[Step 4]   Lean blob stats: total={fmtBytes leanTotalBlobData}, max={fmtBytes leanMaxBlob}, avg={fmtBytes leanAvgBlob}, big(>1kB)={leanBig}, huge(>100kB)={leanHuge}"
         IO.println s!"[Step 4]   Lean top 10 blob sizes: {leanTopSizes.map fmtBytes}"
 
-        let (leanBlobs, leanConsts, leanNames, leanNamed, leanComms) := Ixon.envSectionSizes leanIxonEnv
-        IO.println s!"[Step 4]   Lean sections: blobs={fmtBytes leanBlobs}, consts={fmtBytes leanConsts}, names={fmtBytes leanNames}, named={fmtBytes leanNamed}, comms={fmtBytes leanComms}"
+        let (leanBlobs, leanConsts, leanHints, leanNames, leanNamed, leanComms) := Ixon.envSectionSizes leanIxonEnv
+        IO.println s!"[Step 4]   Lean sections: blobs={fmtBytes leanBlobs}, consts={fmtBytes leanConsts}, hints={fmtBytes leanHints}, names={fmtBytes leanNames}, named={fmtBytes leanNamed}, comms={fmtBytes leanComms}"
         let leanEnvBytes := serializeEnv leanIxonEnv
         IO.println s!"[Step 4]   Lean env done: {fmtBytes leanEnvBytes.size}"
 
@@ -358,8 +357,8 @@ def testCrossImpl : TestSeq :=
         IO.println s!"[Step 4]   Rust blob stats: total={fmtBytes rustTotalBlobData}, max={fmtBytes rustMaxBlob}, avg={fmtBytes rustAvgBlob}, big(>1kB)={rustBig}, huge(>100kB)={rustHuge}"
         IO.println s!"[Step 4]   Rust top 10 blob sizes: {rustTopSizes.map fmtBytes}"
 
-        let (rustBlobs, rustConsts, rustNames, rustNamed, rustComms) := Ixon.envSectionSizes phases.compileEnv
-        IO.println s!"[Step 4]   Rust sections: blobs={fmtBytes rustBlobs}, consts={fmtBytes rustConsts}, names={fmtBytes rustNames}, named={fmtBytes rustNamed}, comms={fmtBytes rustComms}"
+        let (rustBlobs, rustConsts, rustHints, rustNames, rustNamed, rustComms) := Ixon.envSectionSizes phases.compileEnv
+        IO.println s!"[Step 4]   Rust sections: blobs={fmtBytes rustBlobs}, consts={fmtBytes rustConsts}, hints={fmtBytes rustHints}, names={fmtBytes rustNames}, named={fmtBytes rustNamed}, comms={fmtBytes rustComms}"
         let rustEnvBytes := serializeEnv phases.compileEnv
         IO.println s!"[Step 4]   Rust env done: {fmtBytes rustEnvBytes.size}"
         let serTime := (← IO.monoMsNow) - serStart

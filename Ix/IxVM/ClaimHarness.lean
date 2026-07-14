@@ -181,13 +181,10 @@ def addEntries (ixonEnv : Ixon.Env) (keep : Address → Bool)
     ioBuffer := ioBuffer.extend 5 key (rawBytes.data.map fun b => .ofNat b.toNat)
     -- Discriminator: this addr resolves to a blob.
     ioBuffer := ioBuffer.extend 4 key #[.ofNat 0]
-  for (_, named) in ixonEnv.named do
-    if !keep named.addr then continue
-    match named.constMeta with
-    | .defn _ _ hints _ _ _ _ _ =>
-      let key : Array Aiur.G := named.addr.hash.data.map .ofUInt8
-      ioBuffer := ioBuffer.extend 3 key #[hintToG hints]
-    | _ => pure ()
+  for (addr, hints) in ixonEnv.anonHints do
+    if !keep addr then continue
+    let key : Array Aiur.G := addr.hash.data.map .ofUInt8
+    ioBuffer := ioBuffer.extend 3 key #[hintToG hints]
   return ioBuffer
 
 -- ============================================================================

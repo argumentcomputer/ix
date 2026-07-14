@@ -1396,45 +1396,30 @@ fn ingress_defn<M: KernelMode>(
   // projection addresses; passing `Some(_)` skips the metadata-derived
   // `build_mut_ctx` call. Meta callers pass `None`.
   mut_ctx_override: Option<Vec<KId<M>>>,
-  // Anon callers may supply `Some(hints)` to override the default
-  // `Regular(0)` fall-through when the .ixe carries `Env::anon_hints`
-  // (harvested by `Env::get_anon` from the otherwise-discarded Named
-  // metadata). Meta callers pass `None` and pull hints from
-  // `meta.info` like usual. The override only takes effect when
-  // `meta.info` is not `Def` (i.e. anon path with empty meta).
-  hints_override: Option<ReducibilityHints>,
 ) -> Result<Vec<(KId<M>, KConst<M>)>, String> {
   let mut cache: ExprCache<M> = FxHashMap::default();
   let mut univ_cache: UnivCache<M> = FxHashMap::default();
-  let (level_params, arena, type_root, value_root, hints, safety, all_addrs) =
-    match &meta.info {
-      ConstantMetaInfo::Def {
-        lvls,
-        arena,
-        type_root,
-        value_root,
-        hints,
-        all,
-        ..
-      } => (
-        resolve_level_params(lvls, names),
-        arena,
-        *type_root,
-        *value_root,
-        *hints,
-        def.safety,
-        all.clone(),
-      ),
-      _ => (
-        vec![],
-        &DEFAULT_ARENA,
-        0,
-        0,
-        hints_override.unwrap_or(ReducibilityHints::Regular(0)),
-        def.safety,
-        vec![],
-      ),
-    };
+  // Hints live only in `Env::anon_hints`, keyed by the constant's own
+  // address, in both anon and meta modes. Without an entry the kernel
+  // falls back to `Regular(0)` — always correct, just more def-eq work.
+  let hints = ixon_env
+    .anon_hints
+    .get(&self_id.addr)
+    .map_or(ReducibilityHints::Regular(0), |r| *r);
+  let safety = def.safety;
+  let (level_params, arena, type_root, value_root, all_addrs) = match &meta.info
+  {
+    ConstantMetaInfo::Def {
+      lvls, arena, type_root, value_root, all, ..
+    } => (
+      resolve_level_params(lvls, names),
+      arena,
+      *type_root,
+      *value_root,
+      all.clone(),
+    ),
+    _ => (vec![], &DEFAULT_ARENA, 0, 0, vec![]),
+  };
 
   let mut_ctx = match mut_ctx_override {
     Some(m) => m,
@@ -1655,7 +1640,6 @@ fn ingress_standalone<M: KernelMode>(
       self_id,
       intern,
       stats,
-      None,
       None,
     ),
 
@@ -2051,7 +2035,6 @@ fn ingress_muts_block<M: KernelMode>(
           block_id.clone(),
           intern,
           stats,
-          None,
           None,
         )?);
       },
@@ -3683,12 +3666,22 @@ fn drop_ixon_env(_ixon_env: IxonEnv, _quiet: bool) {
 #[cfg(not(target_arch = "riscv64"))]
 fn drop_ixon_env(ixon_env: IxonEnv, quiet: bool) {
   let total_start = Instant::now();
-  // `anon_hints` is a small FxHashMap (one entry per Def from the .ixe's
-  // Named metadata); dropping it inline alongside the bookkeeping below
-  // is negligible compared to the DashMap dropdance.
+  // `anon_hints` is small (one entry per Def from the .ixe's hints
+  // section); `main`/`assumptions` are a single address and a small
+  // set. Dropping them inline alongside the bookkeeping below is
+  // negligible compared to the DashMap dropdance.
   // `..` covers the env's private fields.
-  let IxonEnv { consts, named, blobs, names, comms, anon_hints: _, .. } =
-    ixon_env;
+  let IxonEnv {
+    consts,
+    named,
+    blobs,
+    names,
+    comms,
+    anon_hints: _,
+    main: _,
+    assumptions: _,
+    ..
+  } = ixon_env;
   let consts_len = consts.len();
   let named_len = named.len();
   let names_len = names.len();
@@ -4236,7 +4229,6 @@ fn ingress_anon_standalone(
   let empty_n2a: FxHashMap<Name, Address> = FxHashMap::default();
   let mut convert_stats = ConvertStats::new(false);
   let self_id: KId<Anon> = KId::new(addr.clone(), ());
-  let hints_override = anon_env.anon_hints.get(addr).copied();
 
   let entries = match &constant.info {
     IxonCI::Defn(def) => ingress_defn::<Anon>(
@@ -4253,7 +4245,6 @@ fn ingress_anon_standalone(
       &mut kenv.intern,
       &mut convert_stats,
       Some(vec![self_id.clone()]),
-      hints_override,
     )?,
     IxonCI::Recr(rec) => ingress_recursor::<Anon>(
       rec,
@@ -4464,7 +4455,6 @@ pub fn ingress_anon_block(
         )?;
         let self_id = KId::<Anon>::new(proj_addr.clone(), ());
         member_kids.push(self_id.clone());
-        let hints_override = anon_env.anon_hints.get(&proj_addr).copied();
 
         let entries = ingress_defn::<Anon>(
           def,
@@ -4480,7 +4470,6 @@ pub fn ingress_anon_block(
           &mut kenv.intern,
           &mut convert_stats,
           Some(mut_ctx.clone()),
-          hints_override,
         )?;
         all_entries.extend(entries);
       },

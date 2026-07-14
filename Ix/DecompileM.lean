@@ -507,7 +507,7 @@ def getLvlAddrs : ConstantMeta → Array Address
   | .empty | .muts _ => #[]
 
 def getArenaAndTypeRoot : ConstantMeta → ExprMetaArena × UInt64
-  | .defn _ _ _ _ _ arena typeRoot _ => (arena, typeRoot)
+  | .defn _ _ _ _ arena typeRoot _ => (arena, typeRoot)
   | .axio _ _ arena typeRoot => (arena, typeRoot)
   | .quot _ _ arena typeRoot => (arena, typeRoot)
   | .indc _ _ _ _ _ arena typeRoot => (arena, typeRoot)
@@ -516,11 +516,11 @@ def getArenaAndTypeRoot : ConstantMeta → ExprMetaArena × UInt64
   | .empty | .muts _ => ({}, 0)
 
 def getAllAddrs : ConstantMeta → Array Address
-  | .defn _ _ _ all .. => all | .indc _ _ _ all .. => all
+  | .defn _ _ all .. => all | .indc _ _ _ all .. => all
   | .recr _ _ _ all .. => all | _ => #[]
 
 def getCtxAddrs : ConstantMeta → Array Address
-  | .defn _ _ _ _ ctx .. => ctx | .indc _ _ _ _ ctx .. => ctx
+  | .defn _ _ _ ctx .. => ctx | .indc _ _ _ _ ctx .. => ctx
   | .recr _ _ _ _ ctx .. => ctx | _ => #[]
 
 /-- Resolve name from ConstantMeta. -/
@@ -571,9 +571,16 @@ def decompileDefinition (d : Ixon.Definition) (cnst : Constant) (cMeta : Constan
   let univParams ← decompileMetaLevels cMeta
   let allNames ← decompileMetaAll cMeta name
   let mutCtx ← decompileMetaCtx cMeta
-  let (hints, valueRoot) := match cMeta with
-    | .defn _ _ hints _ _ _ _ valueRoot => (hints, valueRoot)
-    | _ => (.opaque, (0 : UInt64))
+  let valueRoot := match cMeta with
+    | .defn _ _ _ _ _ _ valueRoot => valueRoot
+    | _ => (0 : UInt64)
+  -- Hints live in `Env.anonHints`, keyed by the constant address the
+  -- name resolves to; absent entry → `.opaque`, matching the
+  -- compiler's treatment of theorems and opaques.
+  let ixonEnv := (← getEnv).ixonEnv
+  let hints := match ixonEnv.named.get? name with
+    | some named => (ixonEnv.anonHints.get? named.addr).getD .opaque
+    | none => .opaque
   let (arena, typeRoot) := getArenaAndTypeRoot cMeta
   withFreshBlock cnst mutCtx univParams arena do
     let typeExpr ← decompileExpr d.typ typeRoot

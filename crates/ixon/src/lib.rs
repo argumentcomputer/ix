@@ -9,6 +9,8 @@
 pub mod assumption_tree;
 pub mod comm;
 pub mod constant;
+#[cfg(not(target_arch = "riscv64"))]
+pub mod diff;
 pub mod env;
 pub mod error;
 pub mod expr;
@@ -28,6 +30,11 @@ pub use constant::{
   Axiom, Constant, ConstantInfo, Constructor, ConstructorProj, DefKind,
   Definition, DefinitionProj, Inductive, InductiveProj, MutConst, Quotient,
   Recursor, RecursorProj, RecursorRule,
+};
+#[cfg(not(target_arch = "riscv64"))]
+pub use diff::{
+  DiffPhase, EnvDiff, EnvStats, JoinProgress, LazySide, NamedChange,
+  diff_env_bytes, diff_envs, diff_envs_lazy, diff_envs_with,
 };
 pub use env::{Env, Named};
 pub use error::{CompileError, DecompileError, SerializeError};

@@ -443,6 +443,10 @@ pub extern "C" fn rs_compile_phases(
     raw_ixon_env.set_obj(2, blobs_arr);
     raw_ixon_env.set_obj(3, comms_arr);
     raw_ixon_env.set_obj(4, names_arr);
+    crate::lean_ixon::env::set_raw_env_bundle_fields(
+      &raw_ixon_env,
+      &compile_stt.env,
+    );
 
     let result = LeanIxCompilePhases::alloc(0);
     result.set_obj(0, raw_env);
@@ -539,6 +543,7 @@ pub extern "C" fn rs_compile_env_to_ixon(
     result.set_obj(2, blobs_arr);
     result.set_obj(3, comms_arr);
     result.set_obj(4, names_arr);
+    crate::lean_ixon::env::set_raw_env_bundle_fields(&result, &compile_stt.env);
     LeanIOResult::ok(result)
   }
 }

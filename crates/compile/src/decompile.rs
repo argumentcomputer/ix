@@ -1351,14 +1351,25 @@ fn decompile_definition(
     dstt,
   )?;
 
-  let (hints, all) = match &meta.info {
-    ConstantMetaInfo::Def { hints, all, .. } => {
+  let all = match &meta.info {
+    ConstantMetaInfo::Def { all, .. } => {
       let all_names: Result<Vec<Name>, _> =
         all.iter().map(|a| decompile_name(a, stt)).collect();
-      (*hints, all_names?)
+      all_names?
     },
-    _ => (ReducibilityHints::Opaque, vec![]),
+    _ => vec![],
   };
+  // Hints live in `env.anon_hints`, keyed by the constant address the
+  // name resolves to (for aux originals, the canonical address — the
+  // original was compiled from the same Lean definition, so the hints
+  // coincide). Absent entry → `Opaque`, matching the compiler's
+  // treatment of theorems and opaques.
+  let hints = stt
+    .env
+    .named
+    .get(&name)
+    .and_then(|n| stt.env.anon_hints.get(&n.value().addr).map(|r| *r))
+    .unwrap_or(ReducibilityHints::Opaque);
 
   let cnst = ConstantVal { name, level_params, typ };
 
@@ -5473,7 +5484,6 @@ mod tests {
     let mut meta = ConstantMeta::new(ConstantMetaInfo::Def {
       name: f_addr_name.clone(),
       lvls: vec![],
-      hints: ReducibilityHints::Opaque,
       all: vec![f_addr_name.clone()],
       ctx: vec![f_addr_name.clone()],
       arena,

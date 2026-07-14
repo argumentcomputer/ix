@@ -34,7 +34,7 @@ Every `Constant` in Ixon is serialized and hashed with blake3. The resulting 256
 
 The Ixon format separates:
 - **Alpha-invariant data** (`Constant`): The mathematical content, hashed for addressing
-- **Metadata** (`ConstantMeta`, `ExprMeta`): Names, binder info, reducibility hints—stored separately
+- **Metadata** (`ConstantMeta`, `ExprMeta`): Names and binder info—stored separately (reducibility hints live at the environment level, in `Env::anon_hints`)
 
 This separation means cosmetic changes (renaming variables) don't change the constant's address.
 
@@ -690,7 +690,7 @@ Per-constant metadata. Each variant stores a name, universe parameter names, an 
 ```rust
 pub enum ConstantMeta {
     Empty,                                              // tag 255
-    Def { name, lvls, hints, all, ctx,
+    Def { name, lvls, all, ctx,
           arena, type_root, value_root },               // tag 0
     Axio { name, lvls, arena, type_root },              // tag 1
     Quot { name, lvls, arena, type_root },              // tag 2
@@ -706,7 +706,7 @@ pub enum ConstantMeta {
 
 | Tag | Variant | Payload |
 |-----|---------|---------|
-| 0 | Def | name_idx, lvl_idxs, hints, all_idxs, ctx_idxs, arena, type_root, value_root |
+| 0 | Def | name_idx, lvl_idxs, all_idxs, ctx_idxs, arena, type_root, value_root |
 | 1 | Axio | name_idx, lvl_idxs, arena, type_root |
 | 2 | Quot | name_idx, lvl_idxs, arena, type_root |
 | 3 | Indc | name_idx, lvl_idxs, ctor_idxs, all_idxs, ctx_idxs, arena, type_root |
@@ -802,15 +802,22 @@ plus `.ixe`. See `src/ix/ixon/serialize.rs::Env::put` for the
 byte-level layout.
 
 The .ixe layout is a Tag4(0xE, 0) header byte followed by a 32-byte
-canonical merkle root and then 5 sections:
+canonical merkle root, the bundle header fields, and then 6 sections
+(hot data first, metadata last):
 
 ```
-Header:  Tag4 { flag: 0xE, size: 0 }    -- one byte (0xE0)
-Root:    32 bytes                       -- canonical merkle root over
-                                          consts.keys(); for empty
-                                          const sets this is the
-                                          fixed `zero_address`
-                                          sentinel.
+Header:      Tag4 { flag: 0xE, size: 0 }  -- one byte (0xE0)
+Root:        32 bytes                     -- canonical merkle root over
+                                            consts.keys(); for empty
+                                            const sets this is the
+                                            fixed `zero_address`
+                                            sentinel.
+Main:        1 byte (0x00 | 0x01) + 32 bytes if 0x01
+                                          -- optional bundle root; see
+                                            "Bundles" below.
+Assumptions: count (Tag0) + [Address (32 bytes)]*
+                                          -- strictly ascending; the
+                                            bundle trust boundary.
 ```
 
 The root is mandatory (non-optional): every env has a unique canonical
@@ -819,11 +826,22 @@ produce byte-identical roots regardless of construction order.
 Deserialization recomputes the root from `consts` and rejects any
 mismatch as tampered.
 
+`main` and `assumptions` are NOT covered by the consts merkle root —
+`main` is a convenience pointer (readers verify `main ∈ consts`;
+consumers holding an externally-expected address must compare), and
+the assumptions root, when a claim needs it, is recomputed as
+`merkle_root_canonical(leaves)` from the section (identical to the
+root `AssumptionTree::canonical` produces over the same leaves).
+
 **Section 1: Blobs** (Address → raw bytes)
 ```
 count (Tag0)
 [Address (32 bytes) + len (Tag0) + bytes]*
 ```
+
+Every reader verifies `blake3(bytes) == addr` per blob entry — a
+swapped blob would otherwise silently change a Nat/String literal's
+value under an otherwise-valid file.
 
 **Section 2: Constants** (Address → length-prefixed Constant bytes)
 ```
@@ -833,41 +851,135 @@ count (Tag0)
 
 The Tag0 length sidecar is a **section-level** framing byte: it is not
 part of the constant's content-addressed bytes. The address is
-computed as `blake3` over only the Tag4 constant body. This layout
-lets a lazy loader slice each constant directly into a
-[`LazyConstant`](../src/ix/ixon/lazy.rs) without parsing its Tag4
-envelope, deferring full deserialization until first access. The
-materialized `Constant` is cached so subsequent accesses are free.
+computed as `blake3` over only the Tag4 constant body (verified per
+entry on load). This layout lets a lazy loader slice each constant
+directly into a [`LazyConstant`](../crates/ixon/src/lazy.rs) without
+parsing its Tag4 envelope, deferring full deserialization until first
+access.
 
-### Anonymous-only loading
+**Section 3: Reducibility hints** (Address → ReducibilityHints)
+```
+count (Tag0)
+[Address (32 bytes) + ReducibilityHints]*
+```
 
-`Env::get_anon` (`src/ix/ixon/serialize.rs`) is a sibling of
-`Env::get` that loads only the anonymous sections — header, blobs,
-consts — and parses-and-drops the metadata sections (names, named,
-comms). The returned `Env` has empty `named`/`names`/`comms` and is
-suitable for anon-mode kernel workflows that never consult metadata.
-Steady-state memory for a Mathlib-scale env drops from ~3-4 GB
-(structured + metadata) to ~1 GB (lazy bytes only).
+The canonical (and only) hint channel, keyed by constant address and
+sorted ascending. Hints never appear in `ConstantMeta`: the compiler
+registers each definition's hints into `Env::anon_hints`
+(`Env::register_hint`, an order-independent merge on alias
+collisions), writers serialize that map here, and readers load it
+back. Hints are performance-only advice (the `Regular(0)` fallback is
+always correct) and are intentionally outside the consts merkle root.
 
-Exposed to Lean via `rs_de_env_anon` (`Ix.Ixon.rsDeEnvAnon`).
-
-**Section 3: Names** (Address → NameComponent, topologically sorted)
+**Section 4: Names** (Address → NameComponent, topologically sorted)
 ```
 count (Tag0)
 [Address (32 bytes) + NameComponent]*
 ```
 
-**Section 4: Named** (Name Address → Named with indexed metadata)
+**Section 5: Named** (Name Address → Named with indexed metadata)
 ```
 count (Tag0)
 [NameAddress (32 bytes) + ConstAddress (32 bytes) + ConstantMeta]*
 ```
 
-**Section 5: Commitments** (Address → Comm)
+**Section 6: Commitments** (Address → Comm)
 ```
 count (Tag0)
 [Address (32 bytes) + secret_addr (32 bytes) + payload_addr (32 bytes)]*
 ```
+
+The full reader (`Env::get` / Lean `getEnv`) rejects trailing bytes
+after Section 6.
+
+### Anonymous-only loading
+
+`Env::get_anon` (`crates/ixon/src/serialize.rs`) is a sibling of
+`Env::get` that reads the header, §1 blobs, §2 consts, and §3 hints,
+then STOPS — the metadata sections are laid out after the hints
+precisely so anon readers never touch them. The returned `Env` has
+empty `named`/`names`/`comms` and is suitable for anon-mode kernel
+workflows that never consult metadata. Steady-state memory for a
+Mathlib-scale env drops from ~3-4 GB (structured + metadata) to ~1 GB
+(lazy bytes only).
+
+Exposed to Lean via `rs_de_env_anon` (`Ix.Ixon.rsDeEnvAnon`);
+`Env::get_anon_mmap` is the zero-copy mmap sibling and
+`Env::parse_lazy_index` the zero-copy index variant (reads through §5,
+skipping only comms).
+
+### Bundles: pinning a single value
+
+A **bundle** is an `.ixe` whose `main` points at a distinguished
+constant (e.g. an anonymous `Defn` wrapping a value, produced by
+`Ix.Commit.compileDef`) and whose contents are closed up to
+`assumptions`. Because a constant's address is a merkle root over its
+entire dependency DAG (refs tables hold addresses of constants and
+literal blobs, recursively), `main`'s 32 bytes alone pin the value;
+the bundle is the data-availability artifact that ships the bytes
+behind those addresses.
+
+- `Env::prune_to_closure(main, assumed)` builds a bundle: the 3-edge
+  closure of `main` (Expr refs; projection → `Muts` block; `Muts`
+  block → member/constructor projections), cut at `assumed`, carrying
+  constants (genuine bytes), blobs, per-constant hints, and display
+  metadata (named entries, name components + string blobs, `DataValue`
+  payload blobs, `meta_refs` extension edges, aux_gen originals).
+- `Env::validate_closed()` is the receiver-side check: `main ∈ consts`
+  and every reachable address is carried (consts ∪ blobs) or assumed.
+- Whole-environment files are the degenerate case (`main` absent,
+  `assumptions` empty).
+
+The CLI producer is `ix pack`:
+
+```
+lake exe ix pack <env.ixe> <name> [--out <path>]
+                 [--assume <name|hex64,...>] [--assume-file <f>] [--verbose]
+```
+
+It resolves `<name>` (displayed form) against the env's `named` table,
+runs the prune, re-validates with `validate_closed`, and writes the
+bundle (default `<name>.ixe`). `--assume` entries — names or 64-hex
+constant addresses — declare trust-boundary cut points; the ones
+actually reached become the bundle's `assumptions` (thin bundle).
+
+The source env is memory-mapped and lazily loaded; display metadata is
+carried by **re-streaming §5 per prune fixpoint round**
+(`Env::prune_to_closure_streaming`) so resident metadata is
+O(survivors), not O(env) — byte-identical output to the in-memory
+`prune_to_closure`, which shares the same carry engine. `--anon` skips
+metadata entirely (`Env::prune_to_closure_anon`): value closure + §3
+hints, empty §4/§5 — the minimal artifact a receiver needs to
+typecheck/evaluate the pinned value, since `validate_closed` checks
+only the value pin. (`ix shard extract` is the non-bundle sibling: a
+general sub-env for the kernel-check pipeline, no `main` root.)
+
+### Diffing environments
+
+```
+lake exe ix diff <old.ixe> <new.ixe> [--anon | --meta] [--verbose]
+```
+
+`ix diff` (engine: `ixon::diff`) joins two envs on names: a name
+"changed" ⇔ its constant address changed, with per-field
+classification (`type`/`value`/`lvls`/…, `block.*` through projection
+descent, `"encoding"` for pure representation churn). Because one
+edited constant re-addresses its whole reverse-dependency cone, every
+changed row also carries a **root vs rippled** verdict: changed pairs
+are re-classified under the quotient of all changed rows' old→new
+address mapping, and rows fully explained by dependency re-addressing
+are `rippled` (hidden by default; `--verbose` lists). A 5-day mathlib
+window classifies 143k changed names into ~4.5k roots.
+
+Memory: both files are mmap'd and lazily parsed in both modes
+(constant windows stay zero-copy; `ConstantMeta` is never
+bulk-materialized). `--meta` compares metadata by streaming both §5
+named sections in a lockstep merge-join — each side's entry is parsed
+against its own §4 reverse index, compared, and dropped. Raw §5
+windows are *not* comparable across files (metadata name references
+are file-relative §4 indices), so the sweep compares parsed,
+Address-valued `ConstantMeta`. Exit codes follow GNU diff: 0 = no
+difference in the selected mode, 1 = differences, 2 = error.
 
 ---
 
@@ -881,7 +993,7 @@ fits in single-byte tags (sizes 0..=7 per flag).
 
 | Size | Byte | Type | Payload |
 |------|------|------|---------|
-| 0 | `0xE0` | Environment | bare 32-byte merkle root + 5 sections |
+| 0 | `0xE0` | Environment | 32-byte merkle root + main/assumptions + 6 sections |
 | 1 | `0xE1` | Commitment | 2 addr: secret, payload |
 | 2 | `0xE2` | AssumptionTree | recursive merkle-tree body (see below) |
 | 3 | `0xE3` | Eval claim | 2 addr (input, output) + opt assumptions |
@@ -1200,7 +1312,6 @@ Named {
   meta: ConstantMeta::Def {
     name: addr_of_name("double"),
     lvls: [],
-    hints: ReducibilityHints::Regular(1),
     all: [addr_of_name("double")],
     ctx: [],
     arena: ExprMeta { nodes: [

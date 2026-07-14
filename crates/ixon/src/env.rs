@@ -1,6 +1,6 @@
 //! Environment for storing Ixon data.
 
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashSet;
 use std::collections::VecDeque;
 use std::sync::Arc;
 
@@ -8,7 +8,10 @@ use ix_common::address::Address;
 use ix_common::env::{Name, ReducibilityHints};
 
 use super::comm::Comm;
-use super::constant::Constant;
+use super::constant::{
+  Constant, ConstantInfo, MutConst, ctor_proj_address, defn_proj_address,
+  indc_proj_address, recr_proj_address,
+};
 use super::lazy::LazyConstant;
 use super::map::IxonMap;
 use super::metadata::{ConstantMeta, ConstantMetaInfo};
@@ -162,15 +165,14 @@ pub struct LazyConstSlice {
   pub len: usize,
 }
 
-/// One named entry in a [`LazyIndex`]: just the `name → addr` mapping plus the
-/// per-`Defn` reducibility hint (the only metadata the typecheck circuit
-/// consumes). The heavy `ExprMetaArena` is parsed (to advance the cursor and
-/// handle every metadata variant, e.g. `CallSite`) but discarded.
+/// One named entry in a [`LazyIndex`]: just the `name → addr` mapping.
+/// The heavy `ExprMetaArena` is parsed (to advance the cursor and
+/// handle every metadata variant, e.g. `CallSite`) but discarded;
+/// hints live on [`LazyIndex::hints`].
 #[derive(Debug, Clone)]
 pub struct LazyNamed {
   pub name: Name,
   pub addr: Address,
-  pub hint: Option<ReducibilityHints>,
 }
 
 /// `IX_COMPILE_DEMOTE` (default **on**; set `0` to disable): store the
@@ -196,6 +198,22 @@ pub struct LazyIndex {
   pub consts: Vec<LazyConstSlice>,
   pub named: Vec<LazyNamed>,
   pub blobs: Vec<(Address, Vec<u8>)>,
+  /// Bundle root (`Env::main`) as read from the header.
+  pub main: Option<Address>,
+  /// Bundle trust boundary (`Env::assumptions`), in header (sorted) order.
+  pub assumptions: Vec<Address>,
+  /// §3 anon_hints verbatim (file order) — the same content the full
+  /// reader puts in `Env::anon_hints`.
+  pub hints: Vec<(Address, ReducibilityHints)>,
+  /// §6 comms (tiny in practice; empty for compile-produced envs).
+  pub comms: Vec<(Address, Comm)>,
+  /// Byte offset (within the parsed buffer) of §5's entry count — where
+  /// a [`crate::serialize::NamedMetaCursor`] starts its streaming walk.
+  pub named_section_offset: usize,
+  /// §4 positional index → name-component address, retained so §5
+  /// entries can be re-parsed standalone (`get_named_indexed`) without
+  /// re-walking §4. ~32 B per name.
+  pub name_reverse_index: crate::metadata::NameReverseIndex,
 }
 
 /// The Ixon environment.
@@ -208,7 +226,7 @@ pub struct LazyIndex {
 /// - `blobs`: Raw data (strings, nats, files)
 /// - `names`: Hash-consed Lean.Name components (Address -> Name)
 /// - `comms`: Cryptographic commitments (secrets)
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Env {
   /// Alpha-invariant constants: Address -> LazyConstant (raw bytes +
   /// optional materialized cache; see [`LazyConstant`]).
@@ -221,20 +239,33 @@ pub struct Env {
   pub names: IxonMap<Address, Name>,
   /// Cryptographic commitments: commitment Address -> Comm
   pub comms: IxonMap<Address, Comm>,
-  /// Reducibility hints sidecar harvested by [`Env::get_anon`] from the
-  /// otherwise-discarded Named section. Keyed by the constant's
-  /// projection/standalone address (i.e. `Named.addr` — the address the
-  /// kernel sees, **not** the name-hash address). Empty for envs loaded
-  /// via [`Env::get`] / [`Env::new`] / `store_*`; meta-mode ingress
-  /// pulls hints directly from `Named.meta` and ignores this field.
+  /// Reducibility hints, keyed by the constant's projection/standalone
+  /// address (i.e. `Named.addr` — the address the kernel sees, **not**
+  /// the name-hash address). The SINGLE home for hints: the compiler
+  /// registers them here ([`Env::register_hint`]), every writer
+  /// serializes this map as the file's hints section, and every reader
+  /// populates it from that section. Hints do not appear in `Named`
+  /// metadata.
   ///
-  /// Anon-mode ingress passes these hints through to
-  /// `ingress_defn` so the kernel's lazy-delta tiebreak
-  /// (`def_eq::def_rank_id`) sees realistic heights instead of the
-  /// constant `Regular(0)` fallback. Hints are performance advice —
-  /// supplying them in anon mode does not relax the kernel's
-  /// metadata-free correctness model.
-  pub anon_hints: FxHashMap<Address, ReducibilityHints>,
+  /// Ingress passes these hints through to `ingress_defn` so the
+  /// kernel's lazy-delta tiebreak (`def_eq::def_rank_id`) sees
+  /// realistic heights instead of the constant `Regular(0)` fallback.
+  /// Hints are performance advice — supplying them does not relax the
+  /// kernel's metadata-free correctness model — and are intentionally
+  /// NOT covered by the consts merkle root.
+  pub anon_hints: IxonMap<Address, ReducibilityHints>,
+  /// Distinguished root constant for bundle envs; `None` for whole
+  /// environments. A pointer, not a proof: nothing in the file
+  /// authenticates it, so readers check `main ∈ consts` and consumers
+  /// holding an externally-expected address (from a Claim, a request)
+  /// must compare against it.
+  pub main: Option<Address>,
+  /// Explicit trust boundary for thin bundles: addresses (constants
+  /// or blobs) the receiver is expected to already have, so the
+  /// closure of `main` need not be carried in full. Serialized as a
+  /// strictly ascending leaf list; `merkle_root_canonical` over it
+  /// reproduces the root a `Claim::assumptions` field commits to.
+  pub assumptions: FxHashSet<Address>,
 }
 
 impl Env {
@@ -245,7 +276,9 @@ impl Env {
       blobs: IxonMap::new(),
       names: IxonMap::new(),
       comms: IxonMap::new(),
-      anon_hints: FxHashMap::default(),
+      anon_hints: IxonMap::new(),
+      main: None,
+      assumptions: FxHashSet::default(),
     }
   }
 
@@ -265,6 +298,38 @@ impl Env {
   /// Get a blob by address.
   pub fn get_blob(&self, addr: &Address) -> Option<Vec<u8>> {
     self.blobs.get(addr).map(|r| r.clone())
+  }
+
+  /// Register a constant's reducibility hints (the compile-time
+  /// producer of [`Self::anon_hints`]; readers populate the map from
+  /// the file's hints section instead).
+  ///
+  /// Alpha-equivalent definitions share one constant address but may
+  /// carry different hints (e.g. one alias marked `@[reducible]`), and
+  /// parallel compile workers may race on the entry — so the winner
+  /// must not depend on arrival order. The merge keeps the minimum
+  /// under `(tag, height)` with `Opaque < Abbrev < Regular(h)`:
+  /// commutative, associative, idempotent, hence order-independent.
+  /// The Lean compiler mirror applies the same rule.
+  #[cfg(not(target_arch = "riscv64"))]
+  pub fn register_hint(&self, addr: Address, hints: ReducibilityHints) {
+    fn rank(h: &ReducibilityHints) -> (u8, u32) {
+      match h {
+        ReducibilityHints::Opaque => (0, 0),
+        ReducibilityHints::Abbrev => (1, 0),
+        ReducibilityHints::Regular(x) => (2, *x),
+      }
+    }
+    match self.anon_hints.entry(addr) {
+      dashmap::mapref::entry::Entry::Occupied(mut e) => {
+        if rank(&hints) < rank(e.get()) {
+          e.insert(hints);
+        }
+      },
+      dashmap::mapref::entry::Entry::Vacant(e) => {
+        e.insert(hints);
+      },
+    }
   }
 
   /// Store a structured constant under `addr`.
@@ -329,6 +394,86 @@ impl Env {
     len: usize,
   ) {
     self.consts.insert(addr, LazyConstant::from_mmap_slice(mmap, offset, len));
+  }
+
+  /// Build a metadata-light `Env` from a parsed [`LazyIndex`] over
+  /// `data` — the exact buffer handed to [`Env::parse_lazy_index`]
+  /// (constant windows are copied out of it, so the result owns its
+  /// bytes). `named` entries carry empty `ConstantMeta`; everything an
+  /// anon-mode consumer needs (consts, name→addr, §3 hints, blobs,
+  /// comms, `main`, `assumptions`) is populated.
+  ///
+  /// This is the memory-lean anon loading path (e.g. `ix diff`): the
+  /// full reader materializes every `ConstantMeta`, which at mathlib
+  /// scale costs tens of GB; this path costs roughly the consts
+  /// section plus the name table. Host-only — see `store_blob`.
+  #[cfg(not(target_arch = "riscv64"))]
+  pub fn from_lazy_index(
+    index: &LazyIndex,
+    data: &[u8],
+  ) -> Result<Env, String> {
+    let env = Env::new();
+    for c in &index.consts {
+      let end = Self::lazy_slice_end(c, data.len(), "from_lazy_index")?;
+      env.store_const_lazy(c.addr.clone(), Arc::from(&data[c.offset..end]));
+    }
+    Ok(Self::fill_from_lazy_index(env, index))
+  }
+
+  /// [`Env::from_lazy_index`] over a memory-mapped buffer: constant
+  /// windows stay zero-copy mmap slices (the OS page cache backs them)
+  /// instead of heap copies. `mmap` must be the exact buffer
+  /// [`Env::parse_lazy_index`] walked.
+  #[cfg(not(target_arch = "riscv64"))]
+  pub fn from_lazy_index_mmap(
+    index: &LazyIndex,
+    mmap: &Arc<memmap2::Mmap>,
+  ) -> Result<Env, String> {
+    let env = Env::new();
+    for c in &index.consts {
+      Self::lazy_slice_end(c, mmap.len(), "from_lazy_index_mmap")?;
+      env.store_const_lazy_mmap(
+        c.addr.clone(),
+        Arc::clone(mmap),
+        c.offset,
+        c.len,
+      );
+    }
+    Ok(Self::fill_from_lazy_index(env, index))
+  }
+
+  #[cfg(not(target_arch = "riscv64"))]
+  fn lazy_slice_end(
+    c: &LazyConstSlice,
+    data_len: usize,
+    who: &str,
+  ) -> Result<usize, String> {
+    c.offset.checked_add(c.len).filter(|e| *e <= data_len).ok_or_else(|| {
+      format!(
+        "{who}: constant window [{}, +{}) out of bounds ({data_len} bytes)",
+        c.offset, c.len,
+      )
+    })
+  }
+
+  /// The non-const parts shared by both `from_lazy_index` variants.
+  #[cfg(not(target_arch = "riscv64"))]
+  fn fill_from_lazy_index(mut env: Env, index: &LazyIndex) -> Env {
+    for n in &index.named {
+      env.register_name(n.name.clone(), Named::with_addr(n.addr.clone()));
+    }
+    for (addr, hint) in &index.hints {
+      env.anon_hints.insert(addr.clone(), *hint);
+    }
+    for (addr, bytes) in &index.blobs {
+      env.blobs.insert(addr.clone(), bytes.clone());
+    }
+    for (addr, comm) in &index.comms {
+      env.comms.insert(addr.clone(), comm.clone());
+    }
+    env.main = index.main.clone();
+    env.assumptions = index.assumptions.iter().cloned().collect();
+    env
   }
 
   /// Get a constant by address, materializing on demand.
@@ -477,45 +622,340 @@ impl Env {
     v.sort_unstable();
     v
   }
-}
 
-impl Clone for Env {
-  // `mut` is only needed on `riscv64` where `IxonMap` wraps `FxHashMap` and
-  // `insert` takes `&mut self`; on host `DashMap::insert` takes `&self`.
-  #[cfg_attr(not(target_arch = "riscv64"), allow(unused_mut))]
-  fn clone(&self) -> Self {
-    let mut consts = IxonMap::new();
-    for entry in self.consts.iter() {
-      consts.insert(entry.key().clone(), entry.value().clone());
+  /// Collect `c`'s outgoing closure edges: Expr-level `refs`, a
+  /// projection's structural `block` pointer, and — for a `Muts`
+  /// block at `addr` — every member/constructor projection address
+  /// (derived, not stored anywhere; `ingress_anon_block` computes
+  /// these and requires them present in the env).
+  fn closure_edges(addr: &Address, c: &Constant, edges: &mut Vec<Address>) {
+    edges.extend(c.refs.iter().cloned());
+    match &c.info {
+      ConstantInfo::IPrj(p) => edges.push(p.block.clone()),
+      ConstantInfo::CPrj(p) => edges.push(p.block.clone()),
+      ConstantInfo::RPrj(p) => edges.push(p.block.clone()),
+      ConstantInfo::DPrj(p) => edges.push(p.block.clone()),
+      ConstantInfo::Muts(members) => {
+        for (i, m) in members.iter().enumerate() {
+          let i = i as u64;
+          edges.push(match m {
+            MutConst::Defn(_) => defn_proj_address(i, addr),
+            MutConst::Indc(_) => indc_proj_address(i, addr),
+            MutConst::Recr(_) => recr_proj_address(i, addr),
+          });
+          if let MutConst::Indc(ind) = m {
+            for cidx in 0..ind.ctors.len() as u64 {
+              edges.push(ctor_proj_address(i, cidx, addr));
+            }
+          }
+        }
+      },
+      _ => {},
     }
+  }
 
-    let mut named = IxonMap::new();
-    for entry in self.named.iter() {
-      named.insert(entry.key().clone(), entry.value().clone());
+  /// BFS-collect the full dependency closure of `roots`, following
+  /// all three structural edge kinds (see [`Self::closure_edges`]):
+  ///
+  /// 1. `Constant.refs` — Expr-level references (constants and blobs);
+  /// 2. projection → its `Muts` block (`DPrj`/`IPrj`/`RPrj`/`CPrj`
+  ///    carry `block` in the info payload and have EMPTY refs tables,
+  ///    so a refs-only walk returns just the projection itself);
+  /// 3. `Muts` block → every member/constructor projection address.
+  ///
+  /// Compare [`Self::bfs_refs`], which follows only edge 1 and stays
+  /// the basis of claim assumption roots. The kernel's
+  /// `anon_work::closure_addrs` delegates here.
+  ///
+  /// Referenced addresses absent from `consts` (blobs and external
+  /// assumptions) appear in the returned set as leaves.
+  pub fn bfs_closure(&self, roots: &[Address]) -> FxHashSet<Address> {
+    let mut closure: FxHashSet<Address> = FxHashSet::default();
+    let mut queue: VecDeque<Address> = VecDeque::new();
+    for r in roots {
+      if closure.insert(r.clone()) {
+        queue.push_back(r.clone());
+      }
     }
-
-    let mut blobs = IxonMap::new();
-    for entry in self.blobs.iter() {
-      blobs.insert(entry.key().clone(), entry.value().clone());
+    while let Some(addr) = queue.pop_front() {
+      // Materialize just long enough to read edges; drop the map
+      // guard before recursing (see `bfs_refs`).
+      let constant = self.consts.get(&addr).and_then(|r| r.value().get().ok());
+      let Some(c) = constant else { continue };
+      let mut edges: Vec<Address> = Vec::new();
+      Self::closure_edges(&addr, &c, &mut edges);
+      for e in edges {
+        if closure.insert(e.clone()) {
+          queue.push_back(e);
+        }
+      }
     }
+    closure
+  }
 
-    let mut names = IxonMap::new();
-    for entry in self.names.iter() {
-      names.insert(entry.key().clone(), entry.value().clone());
+  /// Bundle completeness check (receiver side): `main` must be a
+  /// stored constant, and every address reachable from it via
+  /// [`Self::bfs_closure`] must be either carried by this env
+  /// (consts ∪ blobs) or declared in `assumptions`.
+  ///
+  /// This validates the VALUE pin. Display-metadata completeness
+  /// (names, `DataValue` blobs) is the writer's business —
+  /// [`Self::prune_to_closure`] carries it; a receiver that only
+  /// typechecks/evaluates never needs it.
+  pub fn validate_closed(&self) -> Result<(), String> {
+    let Some(main) = self.main.clone() else {
+      return Err("validate_closed: env has no main".to_string());
+    };
+    if self.consts.get(&main).is_none() {
+      return Err(format!(
+        "validate_closed: main {} not present in consts",
+        main.hex()
+      ));
     }
-
-    let mut comms = IxonMap::new();
-    for entry in self.comms.iter() {
-      comms.insert(entry.key().clone(), entry.value().clone());
+    for addr in self.bfs_closure(std::slice::from_ref(&main)) {
+      if self.consts.contains_key(&addr)
+        || self.blobs.contains_key(&addr)
+        || self.assumptions.contains(&addr)
+      {
+        continue;
+      }
+      return Err(format!(
+        "validate_closed: {} reachable from main but neither carried nor \
+         assumed",
+        addr.hex()
+      ));
     }
+    Ok(())
+  }
 
-    Env {
-      consts,
-      named,
-      blobs,
-      names,
-      comms,
-      anon_hints: self.anon_hints.clone(),
+  /// Build a self-contained bundle env: the 3-edge closure of `main`,
+  /// cut at `assumed`.
+  ///
+  /// - Reached constants are carried with their GENUINE bytes
+  ///   (`store_const_lazy`), so the receiver's per-entry hash check
+  ///   and consts merkle root hold; reached blobs are copied.
+  /// - Cut-points actually reached go to `out.assumptions` (minimal:
+  ///   a declared-but-unreached assumption is not carried).
+  /// - `anon_hints` are copied per carried constant (else a bundle
+  ///   regresses kernel-check time to the `Regular(0)` fallback).
+  /// - Display metadata is carried for every carried constant: its
+  ///   `named` entries (all of them — alpha-equivalent names may
+  ///   share one address), the name components they reference (with
+  ///   full parent chains and string-component blobs), `DataValue`
+  ///   payload blobs, `meta_refs` extension DAG edges, and aux_gen
+  ///   `original` constants. Metadata can introduce new DAG edges, so
+  ///   the walk runs to fixpoint (usually two rounds).
+  ///
+  /// Errors if a reached address is in neither `consts`, `blobs`, nor
+  /// `assumed` — the source env cannot produce a closed bundle for
+  /// `main` under that cut.
+  ///
+  /// Host-only — see `store_blob`.
+  #[cfg(not(target_arch = "riscv64"))]
+  pub fn prune_to_closure(
+    &self,
+    main: &Address,
+    assumed: &FxHashSet<Address>,
+  ) -> Result<Env, String> {
+    let (mut out, mut visited, mut pending) = Self::prune_init(main, assumed)?;
+    let mut named_done: FxHashSet<Name> = FxHashSet::default();
+    loop {
+      self.prune_value_pass(&mut out, &mut visited, &mut pending, assumed)?;
+
+      // ── Named pass: carry display metadata for every carried
+      // constant. Metadata references content the value walk cannot
+      // see; new DAG edges feed the next value pass.
+      for entry in self.named.iter() {
+        let (name, named) = (entry.key(), entry.value());
+        if !out.consts.contains_key(&named.addr) || named_done.contains(name) {
+          continue;
+        }
+        named_done.insert(name.clone());
+        Self::carry_named_entry(
+          &mut out,
+          name,
+          named,
+          &|na| self.get_name(na),
+          &|ba| self.get_blob(ba),
+          &mut visited,
+          &mut pending,
+        )?;
+      }
+
+      // The named pass ran against the final consts of this round; if
+      // it produced no new DAG work, the walk is complete.
+      if pending.is_empty() {
+        break;
+      }
+    }
+    Ok(out)
+  }
+
+  /// Value-only bundle: the 3-edge closure of `main` cut at `assumed` —
+  /// constants (genuine bytes), value blobs, per-constant hints,
+  /// `main`, and reached assumptions. No display metadata at all:
+  /// `names`/`named` stay empty (§4/§5 serialize as empty sections).
+  /// The result still passes [`Self::validate_closed`] (which checks
+  /// the value pin only) — this is the minimal artifact a receiver
+  /// needs to typecheck/evaluate the pinned value. Host-only — see
+  /// `store_blob`.
+  #[cfg(not(target_arch = "riscv64"))]
+  pub fn prune_to_closure_anon(
+    &self,
+    main: &Address,
+    assumed: &FxHashSet<Address>,
+  ) -> Result<Env, String> {
+    let (mut out, mut visited, mut pending) = Self::prune_init(main, assumed)?;
+    self.prune_value_pass(&mut out, &mut visited, &mut pending, assumed)?;
+    Ok(out)
+  }
+
+  /// Shared prune setup: assumed-main guard, `out` with `main` set,
+  /// seeded worklist.
+  #[cfg(not(target_arch = "riscv64"))]
+  pub(crate) fn prune_init(
+    main: &Address,
+    assumed: &FxHashSet<Address>,
+  ) -> Result<(Env, FxHashSet<Address>, VecDeque<Address>), String> {
+    if assumed.contains(main) {
+      return Err("prune_to_closure: main cannot be assumed".to_string());
+    }
+    let mut out = Env::new();
+    out.main = Some(main.clone());
+    let mut visited: FxHashSet<Address> = FxHashSet::default();
+    let mut pending: VecDeque<Address> = VecDeque::new();
+    visited.insert(main.clone());
+    pending.push_back(main.clone());
+    Ok((out, visited, pending))
+  }
+
+  /// One value pass: 3-edge BFS over pending roots, cut at `assumed`.
+  /// Carries constant bytes + per-constant hints + reached blobs;
+  /// records reached cut points in `out.assumptions`.
+  #[cfg(not(target_arch = "riscv64"))]
+  pub(crate) fn prune_value_pass(
+    &self,
+    out: &mut Env,
+    visited: &mut FxHashSet<Address>,
+    pending: &mut VecDeque<Address>,
+    assumed: &FxHashSet<Address>,
+  ) -> Result<(), String> {
+    while let Some(addr) = pending.pop_front() {
+      if assumed.contains(&addr) {
+        out.assumptions.insert(addr);
+        continue;
+      }
+      if let Some(bytes) = self.get_const_bytes(&addr) {
+        out.store_const_lazy(addr.clone(), bytes);
+        if let Some(h) = self.anon_hints.get(&addr) {
+          out.anon_hints.insert(addr.clone(), *h);
+        }
+        let c = self.get_const(&addr).ok_or_else(|| {
+          format!("prune_to_closure: constant {} unparseable", addr.hex())
+        })?;
+        let mut edges: Vec<Address> = Vec::new();
+        Self::closure_edges(&addr, &c, &mut edges);
+        for e in edges {
+          if visited.insert(e.clone()) {
+            pending.push_back(e);
+          }
+        }
+      } else if let Some(blob) = self.get_blob(&addr) {
+        out.blobs.insert(addr, blob);
+      } else {
+        return Err(format!(
+          "prune_to_closure: {} reachable from main but not in \
+           consts/blobs and not assumed",
+          addr.hex()
+        ));
+      }
+    }
+    Ok(())
+  }
+
+  /// Carry one named entry and its metadata dependencies into `out`:
+  /// the `Named` row, its name's component chain, every
+  /// metadata-referenced name component and blob, and (via
+  /// `visited`/`pending`) any new constant DAG edges (aux `original`s,
+  /// `meta_refs`) for the next value pass. `resolve_name`/`get_blob`
+  /// abstract the source: the in-memory env for
+  /// [`Self::prune_to_closure`]; the §4 lookup + lazy env for the
+  /// streaming variant (`Env::prune_to_closure_streaming` in
+  /// `serialize.rs`) — one body, so the two paths cannot drift.
+  #[cfg(not(target_arch = "riscv64"))]
+  pub(crate) fn carry_named_entry(
+    out: &mut Env,
+    name: &Name,
+    named: &Named,
+    resolve_name: &dyn Fn(&Address) -> Option<Name>,
+    get_blob: &dyn Fn(&Address) -> Option<Vec<u8>>,
+    visited: &mut FxHashSet<Address>,
+    pending: &mut VecDeque<Address>,
+  ) -> Result<(), String> {
+    out.named.insert(name.clone(), named.clone());
+    Self::carry_name(out, name);
+
+    let mut name_addrs: Vec<Address> = Vec::new();
+    let mut blob_addrs: Vec<Address> = Vec::new();
+    let mut dag_addrs: Vec<Address> = Vec::new();
+    named.meta().collect_deps(&mut name_addrs, &mut blob_addrs, &mut dag_addrs);
+    if let Some((orig_addr, orig_meta)) = named.original() {
+      dag_addrs.push(orig_addr);
+      orig_meta.collect_deps(&mut name_addrs, &mut blob_addrs, &mut dag_addrs);
+    }
+    for na in name_addrs {
+      let Some(name) = resolve_name(&na) else {
+        return Err(format!(
+          "prune_to_closure: metadata references name {} absent from names",
+          na.hex()
+        ));
+      };
+      Self::carry_name(out, &name);
+    }
+    for ba in blob_addrs {
+      let Some(blob) = get_blob(&ba) else {
+        return Err(format!(
+          "prune_to_closure: metadata references blob {} absent from blobs",
+          ba.hex()
+        ));
+      };
+      out.blobs.insert(ba, blob);
+    }
+    for da in dag_addrs {
+      if visited.insert(da.clone()) {
+        pending.push_back(da);
+      }
+    }
+    Ok(())
+  }
+
+  /// Copy `name` and its full parent chain into `out.names`, storing
+  /// each string component's bytes as a blob (the compiler's
+  /// convention — mirrors `addNameComponentsWithBlobs` on the Lean
+  /// side). Stops early once a component is already present: its
+  /// parents were carried with it.
+  #[cfg(not(target_arch = "riscv64"))]
+  fn carry_name(out: &mut Env, name: &Name) {
+    use ix_common::env::NameData;
+    let mut cur = name.clone();
+    loop {
+      let addr = Address::from_blake3_hash(*cur.get_hash());
+      if out.names.get(&addr).is_some() {
+        return;
+      }
+      out.names.insert(addr, cur.clone());
+      let next = match cur.as_data() {
+        NameData::Anonymous(_) => None,
+        NameData::Str(parent, s, _) => {
+          out.store_blob(s.as_bytes().to_vec());
+          Some(parent.clone())
+        },
+        NameData::Num(parent, _, _) => Some(parent.clone()),
+      };
+      match next {
+        Some(p) => cur = p,
+        None => return,
+      }
     }
   }
 }
@@ -911,5 +1351,314 @@ mod tests {
         entry.key()
       );
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // bfs_closure / prune_to_closure / validate_closed
+  // ---------------------------------------------------------------------------
+
+  fn defn_member(discriminator: u64) -> crate::constant::Definition {
+    use crate::constant::{DefKind, Definition};
+    use ix_common::env::DefinitionSafety;
+    Definition {
+      kind: DefKind::Definition,
+      safety: DefinitionSafety::Safe,
+      lvls: discriminator,
+      typ: Arc::new(Expr::Sort(0)),
+      value: Arc::new(Expr::Var(0)),
+    }
+  }
+
+  #[test]
+  fn bfs_closure_follows_projection_and_block_edges() {
+    use crate::constant::{MutConst, defn_proj_address, defn_proj_constant};
+    let env = Env::new();
+    let block_addr = store_canonical(
+      &env,
+      Constant::new(ConstantInfo::Muts(vec![
+        MutConst::Defn(defn_member(0)),
+        MutConst::Defn(defn_member(1)),
+      ])),
+    );
+    // Member projections live at derived addresses.
+    let p0_addr =
+      store_canonical(&env, defn_proj_constant(0, block_addr.clone()));
+    assert_eq!(p0_addr, defn_proj_address(0, &block_addr));
+    let p1_addr =
+      store_canonical(&env, defn_proj_constant(1, block_addr.clone()));
+
+    // From a projection root: the block and its sibling projections
+    // are reachable via the structural edges.
+    let closure = env.bfs_closure(std::slice::from_ref(&p0_addr));
+    assert!(closure.contains(&p0_addr));
+    assert!(closure.contains(&block_addr), "Prj → block edge");
+    assert!(closure.contains(&p1_addr), "block → sibling projection edge");
+
+    // A refs-only walk sees none of this (projections have empty refs).
+    let refs_only = env.bfs_refs(&p0_addr);
+    assert_eq!(refs_only.len(), 1, "refs-only walk stops at the projection");
+  }
+
+  #[test]
+  fn prune_to_closure_carries_value_closure_and_blobs() {
+    let env = Env::new();
+    let blob_addr = env.store_blob(b"forty two".to_vec());
+    let c = store_canonical(&env, const_with_refs(vec![]));
+    let a = store_canonical(
+      &env,
+      const_with_refs(vec![blob_addr.clone(), c.clone()]),
+    );
+    let d = store_canonical(&env, const_with_refs_discriminator(vec![], 7));
+
+    let bundle = env.prune_to_closure(&a, &FxHashSet::default()).unwrap();
+    assert_eq!(bundle.main, Some(a.clone()));
+    assert!(bundle.consts.contains_key(&a));
+    assert!(bundle.consts.contains_key(&c));
+    assert!(!bundle.consts.contains_key(&d), "unreachable const not carried");
+    assert_eq!(bundle.get_blob(&blob_addr), Some(b"forty two".to_vec()));
+    assert!(bundle.assumptions.is_empty());
+    bundle.validate_closed().unwrap();
+
+    // Bundle survives a serialize → deserialize roundtrip closed
+    // (genuine bytes: per-entry hashes and the merkle root hold).
+    let mut buf = Vec::new();
+    bundle.put(&mut buf).unwrap();
+    let loaded = Env::get(&mut buf.as_slice()).unwrap();
+    loaded.validate_closed().unwrap();
+    assert_eq!(loaded.main, Some(a));
+  }
+
+  #[test]
+  fn prune_to_closure_cuts_at_assumed() {
+    let env = Env::new();
+    let c = store_canonical(&env, const_with_refs(vec![]));
+    let b = store_canonical(&env, const_with_refs(vec![c.clone()]));
+    let a = store_canonical(&env, const_with_refs(vec![b.clone()]));
+    let assumed: FxHashSet<Address> = [b.clone()].into_iter().collect();
+    let bundle = env.prune_to_closure(&a, &assumed).unwrap();
+    assert!(bundle.consts.contains_key(&a));
+    assert!(!bundle.consts.contains_key(&b), "cut point not carried");
+    assert!(!bundle.consts.contains_key(&c), "beyond the cut not carried");
+    assert_eq!(
+      bundle.assumptions, assumed,
+      "minimal assumptions = reached cuts"
+    );
+    bundle.validate_closed().unwrap();
+  }
+
+  #[test]
+  fn prune_to_closure_missing_dep_errors_unless_assumed() {
+    let env = Env::new();
+    let ghost = Address::hash(b"ghost");
+    let a = store_canonical(&env, const_with_refs(vec![ghost.clone()]));
+    let err = env.prune_to_closure(&a, &FxHashSet::default()).unwrap_err();
+    assert!(err.contains("not in consts/blobs"), "got: {err}");
+    let assumed: FxHashSet<Address> = [ghost].into_iter().collect();
+    let bundle = env.prune_to_closure(&a, &assumed).unwrap();
+    bundle.validate_closed().unwrap();
+  }
+
+  #[test]
+  fn validate_closed_rejects_missing_blob_unless_assumed() {
+    let mut env = Env::new();
+    let blob_addr = Address::hash(b"blob-bytes");
+    let a = store_canonical(&env, const_with_refs(vec![blob_addr.clone()]));
+    env.main = Some(a);
+    let err = env.validate_closed().unwrap_err();
+    assert!(err.contains("reachable from main"), "got: {err}");
+    env.assumptions.insert(blob_addr);
+    env.validate_closed().unwrap();
+  }
+
+  #[test]
+  fn prune_to_closure_carries_named_metadata() {
+    use crate::metadata::{ConstantMetaInfo, ExprMeta};
+    let env = Env::new();
+    let a = store_canonical(&env, const_with_refs(vec![]));
+    // A blob referenced ONLY from metadata (meta_refs extension table)
+    // — invisible to the value walk.
+    let meta_blob = env.store_blob(b"callsite payload".to_vec());
+    let name = n("Bundled");
+    let name_addr = Address::from_blake3_hash(*name.get_hash());
+    env.store_name(name_addr.clone(), name.clone());
+    let mut meta = ConstantMeta::new(ConstantMetaInfo::Def {
+      name: name_addr.clone(),
+      lvls: vec![],
+      all: vec![],
+      ctx: vec![],
+      arena: ExprMeta::default(),
+      type_root: 0,
+      value_root: 0,
+    });
+    meta.meta_refs.push(meta_blob.clone());
+    env.register_name(name.clone(), Named::new(a.clone(), meta));
+    env.register_hint(a.clone(), ReducibilityHints::Regular(3));
+
+    let bundle = env.prune_to_closure(&a, &FxHashSet::default()).unwrap();
+    assert!(bundle.named.get(&name).is_some(), "named entry carried");
+    assert_eq!(
+      bundle.get_name(&name_addr),
+      Some(name.clone()),
+      "name component carried"
+    );
+    assert_eq!(
+      bundle.get_blob(&meta_blob),
+      Some(b"callsite payload".to_vec()),
+      "meta_refs blob carried"
+    );
+    // String-component blob carried too (compiler convention).
+    assert_eq!(
+      bundle.get_blob(&Address::hash(b"Bundled")),
+      Some(b"Bundled".to_vec())
+    );
+    // Hints are carried per constant by the prune; the anon reader
+    // sees them from the hints section without touching metadata.
+    let mut buf = Vec::new();
+    bundle.put(&mut buf).unwrap();
+    let anon = Env::get_anon(&mut buf.as_slice()).unwrap();
+    assert_eq!(
+      anon.anon_hints.get(&a).map(|r| *r),
+      Some(ReducibilityHints::Regular(3))
+    );
+  }
+
+  /// Fixture for the streaming/anon prune tests: `a` (the main) named
+  /// "Foo" with Def metadata carrying (i) a §4-resolved non-ancestor
+  /// name component (`u`, in `lvls`), (ii) a `meta_refs` blob, and
+  /// (iii) an `original` edge to `b` — a constant NOT reachable from
+  /// `a`'s value, so carrying it requires a second fixpoint round; `b`
+  /// is named "Bar". Returns (serialized env, a, b, "Bar").
+  fn streaming_prune_fixture() -> (Vec<u8>, Address, Address, Name) {
+    use crate::metadata::{ConstantMetaInfo, ExprMeta};
+    let env = Env::new();
+    let a = store_canonical(&env, const_with_refs(vec![]));
+    let b = store_canonical(&env, const_with_refs(vec![a.clone()]));
+
+    let foo = n("Foo");
+    let foo_addr = Address::from_blake3_hash(*foo.get_hash());
+    env.store_name(foo_addr.clone(), foo.clone());
+    let u = n("u");
+    let u_addr = Address::from_blake3_hash(*u.get_hash());
+    env.store_name(u_addr.clone(), u.clone());
+    let meta_blob = env.store_blob(b"payload".to_vec());
+    let mut meta = ConstantMeta::new(ConstantMetaInfo::Def {
+      name: foo_addr,
+      lvls: vec![u_addr],
+      all: vec![],
+      ctx: vec![],
+      arena: ExprMeta::default(),
+      type_root: 0,
+      value_root: 0,
+    });
+    meta.meta_refs.push(meta_blob);
+    let mut foo_named = Named::new(a.clone(), meta);
+    foo_named.set_original(b.clone(), ConstantMeta::default());
+    env.register_name(foo, foo_named);
+    env.register_hint(a.clone(), ReducibilityHints::Regular(2));
+    let bar = n("Bar");
+    let bar_addr = Address::from_blake3_hash(*bar.get_hash());
+    env.store_name(bar_addr, bar.clone());
+    env.register_name(bar.clone(), Named::with_addr(b.clone()));
+
+    let mut bytes = Vec::new();
+    env.put(&mut bytes).unwrap();
+    (bytes, a, b, bar)
+  }
+
+  /// The streaming prune (lazy env + §5 re-stream per fixpoint round)
+  /// must produce a byte-identical bundle to the in-memory prune over
+  /// the full reader — including metadata that forces a second round.
+  #[test]
+  fn prune_streaming_matches_full_byte_identical() {
+    let (bytes, a, b, bar) = streaming_prune_fixture();
+    let full = {
+      let mut cur = bytes.as_slice();
+      Env::get(&mut cur).unwrap()
+    };
+    let (index, names) = Env::parse_lazy_index_with_names(&bytes).unwrap();
+    let lazy = Env::from_lazy_index(&index, &bytes).unwrap();
+    let ser = |e: &Env| {
+      let mut v = Vec::new();
+      e.put(&mut v).unwrap();
+      v
+    };
+
+    let via_full = full.prune_to_closure(&a, &FxHashSet::default()).unwrap();
+    let via_stream = lazy
+      .prune_to_closure_streaming(
+        &index,
+        &bytes,
+        &names,
+        &a,
+        &FxHashSet::default(),
+      )
+      .unwrap();
+    // Round-2 evidence: Bar rides in through Foo's `original` edge.
+    assert!(via_stream.named.get(&bar).is_some(), "round-2 named carried");
+    assert!(via_stream.consts.contains_key(&b));
+    via_stream.validate_closed().unwrap();
+    assert_eq!(
+      ser(&via_full),
+      ser(&via_stream),
+      "streaming bundle must be byte-identical to the full-reader bundle"
+    );
+
+    // With `b` assumed: the original edge lands in assumptions, Bar is
+    // not carried — parity still holds.
+    let assumed: FxHashSet<Address> = [b.clone()].into_iter().collect();
+    let via_full_cut = full.prune_to_closure(&a, &assumed).unwrap();
+    let via_stream_cut = lazy
+      .prune_to_closure_streaming(&index, &bytes, &names, &a, &assumed)
+      .unwrap();
+    assert!(via_stream_cut.named.get(&bar).is_none());
+    assert!(via_stream_cut.assumptions.contains(&b));
+    assert_eq!(ser(&via_full_cut), ser(&via_stream_cut));
+  }
+
+  /// `prune_to_closure_anon` carries the value closure only: no names,
+  /// no named entries, no metadata-edge constants or blobs — the
+  /// minimal typecheck/eval artifact. Hints (§3) still ride; the
+  /// bundle validates closed and round-trips with empty §4/§5.
+  #[test]
+  fn prune_anon_value_only() {
+    let (bytes, a, b, _) = streaming_prune_fixture();
+    let (index, _) = Env::parse_lazy_index_with_names(&bytes).unwrap();
+    let lazy = Env::from_lazy_index(&index, &bytes).unwrap();
+
+    let bundle = lazy.prune_to_closure_anon(&a, &FxHashSet::default()).unwrap();
+    assert!(
+      bundle.named.is_empty(),
+      "no named entries: {}",
+      bundle.named.len()
+    );
+    assert!(bundle.names.is_empty(), "no name components");
+    assert!(bundle.blobs.is_empty(), "no metadata/name-string blobs");
+    assert!(bundle.consts.contains_key(&a));
+    assert!(
+      !bundle.consts.contains_key(&b),
+      "metadata-only edges must not be walked in anon mode"
+    );
+    // Hints ride the lazy env's anon_hints into the bundle.
+    assert_eq!(
+      bundle.anon_hints.get(&a).map(|r| *r),
+      Some(ReducibilityHints::Regular(2))
+    );
+    bundle.validate_closed().unwrap();
+
+    let mut buf = Vec::new();
+    bundle.put(&mut buf).unwrap();
+    let back = {
+      let mut cur = buf.as_slice();
+      Env::get(&mut cur).unwrap()
+    };
+    assert!(back.named.is_empty(), "no §5 entries after roundtrip");
+    // The writer always emits the anonymous name as §4 entry 0.
+    assert!(back.names.len() <= 1, "§4 carries at most the anon entry");
+    assert_eq!(back.main, Some(a.clone()));
+    let anon = Env::get_anon(&mut buf.as_slice()).unwrap();
+    assert_eq!(
+      anon.anon_hints.get(&a).map(|r| *r),
+      Some(ReducibilityHints::Regular(2))
+    );
   }
 }

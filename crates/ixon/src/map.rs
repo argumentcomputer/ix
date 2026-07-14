@@ -20,7 +20,7 @@ mod riscv_impl {
 
   use rustc_hash::FxHashMap;
 
-  #[derive(Debug)]
+  #[derive(Debug, Clone)]
   pub struct IxonMap<K, V>(FxHashMap<K, V>);
 
   impl<K, V> Default for IxonMap<K, V> {

@@ -52,13 +52,26 @@ lean_ffi::lean_inductive! {
   LeanIxonRawBlob         [ { num_obj: 2 } ];
   LeanIxonRawComm         [ { num_obj: 2 } ];
   LeanIxonRawNameEntry    [ { num_obj: 2 } ];
-  LeanIxonRawEnv          [ { num_obj: 5 } ];
+  // consts, named, blobs, comms, names, main, assumptions, anonHints
+  LeanIxonRawEnv          [ { num_obj: 8 } ];
 
   // Lazy/anon deserialization (`rs_de_env_lazy`): zero-copy const windows
-  // (addr + offset + len), name->addr + hint, and copied blobs.
+  // (addr + offset + len), name->addr, copied blobs, the bundle header
+  // fields (main, assumptions), and the hints-section pairs.
   LeanIxonRawConstSlice   [ { num_obj: 1, num_64: 2 } ];
-  LeanIxonRawNamedLite    [ { num_obj: 2, num_64: 2 } ];
-  LeanIxonRawEnvLazy      [ { num_obj: 3 } ];
+  LeanIxonRawNamedLite    [ { num_obj: 2 } ];
+  LeanIxonRawEnvLazy      [ { num_obj: 6 } ];
+
+  // Env diff report (`rs_diff_envs`). Slot counts MUST match the Lean
+  // structures in Ix/Ixon.lean (Ixon.EnvStats / NamedDiff / EnvDiff).
+  // consts, named, blobs, comms counts
+  LeanIxonEnvStats        [ { num_64: 4 } ];
+  // name, oldAddr, newAddr, oldKind, newKind, fields, metaFields
+  // + rippled (Bool scalar)
+  LeanIxonNamedDiff       [ { num_obj: 7, num_8: 1 } ];
+  // mainChanged, assumptions±, named±/changed/metaOnly, comms±/changed,
+  // constsOnly×2, blobsOnly×2, hintsChanged, statsA, statsB
+  LeanIxonEnvDiff         [ { num_obj: 17 } ];
 
   // --- Ixon multi-variant inductives ---
 
@@ -97,7 +110,7 @@ lean_ffi::lean_inductive! {
 
   LeanIxonConstantMeta [
     { },                                      // tag 0: empty (scalar)
-    { num_obj: 6, num_64: 2 },                // tag 1: defn
+    { num_obj: 5, num_64: 2 },                // tag 1: defn
     { num_obj: 3, num_64: 1 },                // tag 2: axio
     { num_obj: 3, num_64: 1 },                // tag 3: quot
     { num_obj: 6, num_64: 1 },                // tag 4: indc

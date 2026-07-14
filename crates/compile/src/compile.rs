@@ -20,8 +20,9 @@ use ix_common::env::{
   AxiomVal, BinderInfo, ConstantInfo as LeanConstantInfo, ConstructorVal,
   DataValue as LeanDataValue, Env as LeanEnv, Expr as LeanExpr, ExprData,
   InductiveVal, Level, LevelData, Literal, Name, NameData, QuotVal,
-  RecursorRule as LeanRecursorRule, SourceInfo as LeanSourceInfo,
-  Substring as LeanSubstring, Syntax as LeanSyntax, SyntaxPreresolved,
+  RecursorRule as LeanRecursorRule, ReducibilityHints,
+  SourceInfo as LeanSourceInfo, Substring as LeanSubstring,
+  Syntax as LeanSyntax, SyntaxPreresolved,
 };
 use ix_common::strong_ordering::SOrd;
 
@@ -168,6 +169,13 @@ pub struct CompileState {
   /// right after `aux_gen::generate_aux_patches`. Blocks without nested
   /// auxiliaries simply aren't inserted.
   pub aux_perms: DashMap<Name, surgery::AuxLayout>,
+  /// Reducibility hints per definition NAME, recorded by
+  /// `compile_definition` (the only place the Lean-side hints are in
+  /// scope — hints are not part of `ConstantMeta`). The constant
+  /// address a name resolves to isn't final until its `Named` entry is
+  /// registered, so [`Self::finalize_hints`] resolves this map through
+  /// `env.named` into `env.anon_hints` once compilation completes.
+  pub def_hints: DashMap<Name, ReducibilityHints>,
 }
 
 /// Cached compiled expression with arena root index.
@@ -228,6 +236,7 @@ impl Default for CompileState {
       brec_on_call_site_plans: Default::default(),
       below_call_site_plans: Default::default(),
       aux_perms: Default::default(),
+      def_hints: Default::default(),
     }
   }
 }
@@ -262,6 +271,21 @@ impl CompileState {
   /// Look up a compiled constant's address (with `aux_name_to_addr` fallback).
   pub fn resolve_addr(&self, name: &Name) -> Option<Address> {
     self.resolve_addr_aux(name, true)
+  }
+
+  /// Resolve the per-name hints recorded by `compile_definition` into
+  /// `env.anon_hints`, keyed by each name's registered constant address
+  /// (`Named.addr` — the projection address for mutual-block members,
+  /// i.e. exactly the address the kernel looks hints up under). Runs
+  /// once after the scheduler drains: addresses aren't final until the
+  /// `Named` entries are registered. Alias collisions resolve through
+  /// `Env::register_hint`'s order-independent merge.
+  pub fn finalize_hints(&self) {
+    for entry in self.env.named.iter() {
+      if let Some(h) = self.def_hints.get(entry.key()) {
+        self.env.register_hint(entry.value().addr.clone(), *h.value());
+      }
+    }
   }
 
   /// Promote a constant from `aux_name_to_addr` to `name_to_addr`, setting
@@ -2219,7 +2243,6 @@ pub fn compile_definition(
   let mut meta = ConstantMeta::new(ConstantMetaInfo::Def {
     name: name_addr,
     lvls: lvl_addrs,
-    hints: def.hints,
     all: all_addrs,
     ctx: ctx_addrs,
     arena,
@@ -2227,6 +2250,7 @@ pub fn compile_definition(
     value_root,
   });
   meta.meta_sharing = surgery_sharing;
+  stt.def_hints.insert(def.name.clone(), def.hints);
 
   Ok((data, meta))
 }
