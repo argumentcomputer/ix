@@ -3,6 +3,7 @@ import Ix.IxVM
 import Ix.Aiur.Protocol
 import Ix.Aiur.Compiler
 import Ix.Aiur.Statistics
+import Ix.MultiStark
 import Ix.TracingTexray
 import Ix.Benchmark.Bench
 import Ix.Benchmark.Results
@@ -47,6 +48,22 @@ lake exe bench-typecheck --ixe <path> --consts <n1,n2,…> [--consts-file <p>] [
                  <path>.spans (JSON Lines) for the CI drill-down. Off by default.
   --execute-only run only Phase 1 (constants / fft-cost / execute-time) and skip
                  proving — the fast `execute`-mode signal.
+  --recursive    after each constant's prove, run the in-circuit multi-stark
+                 verifier (`verify_multi_stark_proof`) over the fresh proof:
+                 execute it (`recursive-execute-time`, `recursive-fft-cost` — the
+                 recursion-cost proxy), then prove that execution end-to-end
+                 (`recursive-prove-time`, `recursive-peak-rss`,
+                 `recursive-proof-size`, `recursive-verify-time`). The whole
+                 system, inner prove included, switches to the recursion-tuned
+                 parameters (`recursiveFriParameters`), so recursive rows are
+                 NOT comparable to the standard prove cell — they land on
+                 their own testbed (`ix bench run --backend aiur --mode
+                 recursive`). An IxVM-scale verifier execute needs >108 GB,
+                 so a watchdog kill landing as a `status: oom` row (dropped
+                 by bmf) is the expected shape there. With --texray, both
+                 proves stream the same `stark/...` span names, so the summed
+                 `phase-stark-*` fields cover the pair. Conflicts with
+                 --execute-only.
 ```
 
 For each constant the harness STARK-checks `Ix.Claim.check addr none` (the full
@@ -62,6 +79,9 @@ transitive typecheck) in two phases:
    against proof size or verification cost, so all three are tracked. With
    texray on, each prove emits a per-span timeline (`aiur/execute`,
    `aiur/witness`, `stark/...`) with RAM Δ/peak to stderr.
+3. **Recursive** (`--recursive` only, right after each constant's prove): feed
+   the fresh proof + vk + claims to `verify_multi_stark_proof`, execute it,
+   then prove the verifier execution — the end-to-end recursion cost.
 
 When `--json` is set the file is rewritten after every prove, so an external
 `timeout` still leaves a complete file of the results collected so far (cheapest
@@ -71,7 +91,9 @@ limit; bound a run with an external `timeout` if needed.
 
 The JSON is a flat shape (`{ "<name>": { "constants": …, "fft-cost": …,
 "execute-time": …, "prove-time": …, "proof-size": …, "verify-time": …,
-"throughput": …, "peak-rss": … } }`). `peak-rss` and `throughput` are
+"throughput": …, "peak-rss": …, and with --recursive also "recursive-execute-time": …,
+"recursive-fft-cost": …, "recursive-prove-time": …, "recursive-peak-rss": …,
+"recursive-proof-size": …, "recursive-verify-time": … } }`). `peak-rss` and `throughput` are
 phase-scoped by MODE: an `--execute-only` row carries the Phase-1 RSS
 high-water and constants/sec over the execute; a prove row carries the
 prover's high-water and constants/sec over the prove (with `prove-time`,
@@ -92,6 +114,26 @@ def friParameters : Aiur.FriParameters := {
   logFinalPolyLen := 0
   maxLogArity := 1
   numQueries := 100
+  commitProofOfWorkBits := 20
+  queryProofOfWorkBits := 0
+}
+
+/-- Recursion-tuned commitment parameters for `--recursive`, matching
+    `bench-recursive-verifier`'s defaults. -/
+def recursiveCommitmentParameters : Aiur.CommitmentParameters := {
+  logBlowup := 2
+  capHeight := 0
+}
+
+/-- Recursion-tuned FRI parameters: the in-circuit verifier's cost scales with
+    the inner proof's query count, so the recursion configuration trades
+    queries (3, not 100) for blowup and commit proof-of-work. `--recursive`
+    runs the WHOLE system — the inner prove included — under these, so its
+    rows are not comparable to the standard `prove` cell's. -/
+def recursiveFriParameters : Aiur.FriParameters := {
+  logFinalPolyLen := 0
+  maxLogArity := 1
+  numQueries := 3
   commitProofOfWorkBits := 20
   queryProofOfWorkBits := 0
 }
@@ -126,6 +168,25 @@ structure Result where
       prover would dwarf an execute peak, so the modes never share a row —
       or a testbed). -/
   executePeakRss : Option Nat := none
+  /-- Wall time of executing the in-circuit multi-stark verifier over this
+      constant's fresh proof (`--recursive` only). -/
+  recursiveExecuteSec : Option Float := none
+  /-- That execution's own in-circuit FFT cost — the deterministic proxy for
+      what proving the verifier costs. Drifts ~±15% run-to-run: the parallel
+      prover emits byte-different valid proofs, so the verifier authenticates
+      different Merkle paths (pin with `RAYON_NUM_THREADS=1`). -/
+  recursiveFftCost : Option Float := none
+  /-- Wall time of PROVING the verifier execution — the end-to-end recursion
+      cost. -/
+  recursiveProveSec : Option Float := none
+  /-- The outer (recursion) prove's RSS high-water (windowed like `peakRss`;
+      the outer prove dwarfs the verifier execution, so one field serves). -/
+  recursivePeakRss : Option Nat := none
+  /-- Serialized outer proof size in bytes. -/
+  recursiveProofSize : Option Nat := none
+  /-- Wall time of `AiurSystem.verify` over the outer proof; `none` if that
+      verification failed (reported loudly). -/
+  recursiveVerifySec : Option Float := none
   deriving Inhabited
 
 /-- A `Json` number with at most `d` decimal places, rendered decimally.
@@ -181,6 +242,25 @@ def Result.toJsonEntry (executeOnly : Bool) (r : Result) : String × Json :=
     let fields := match r.verifySec with
       | some v => fields ++ [ ("verify-time", jsonRound 6 v) ]
       | none => fields
+    -- The recursion metrics (--recursive), in measurement order; the
+    -- execute-side pair lands before the outer prove runs, so an OOM'd
+    -- outer prove still leaves them on disk.
+    let fields := match r.recursiveExecuteSec, r.recursiveFftCost with
+      | some s, some c => fields ++ [ ("recursive-execute-time", jsonRound 6 s)
+                                    , ("recursive-fft-cost", jsonRound 0 c) ]
+      | _, _ => fields
+    let fields := match r.recursiveProveSec with
+      | some s => fields ++ [ ("recursive-prove-time", jsonRound 6 s) ]
+      | none => fields
+    let fields := match r.recursivePeakRss with
+      | some n => fields ++ [ ("recursive-peak-rss", Lean.toJson n) ]
+      | none => fields
+    let fields := match r.recursiveProofSize with
+      | some n => fields ++ [ ("recursive-proof-size", Lean.toJson n) ]
+      | none => fields
+    let fields := match r.recursiveVerifySec with
+      | some v => fields ++ [ ("recursive-verify-time", jsonRound 6 v) ]
+      | none => fields
     (r.name, Json.mkObj fields)
 
 /-- Time a thunk, returning its value and the elapsed seconds. The result is
@@ -210,6 +290,12 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
   -- Execute-only: run just Phase 1 (constants / fft-cost / execute-time) and
   -- skip the Phase 2 prove loop.
   let executeOnly := p.hasFlag "execute-only"
+  -- Recursive: after each constant's prove, execute AND prove the in-circuit
+  -- multi-stark verifier over the fresh proof (Phase 3).
+  let recursive := p.hasFlag "recursive"
+  if recursive && executeOnly then
+    IO.eprintln "error: --recursive measures the prove path; drop --execute-only"
+    return Ix.Benchmark.Results.exitUsage
   -- Off by default; CI passes --texray explicitly.
   let useTexray := p.hasFlag "texray"
   -- Start the process-tree RSS sampler so each Result's peak-rss reflects the
@@ -233,7 +319,26 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
   let entrypoint := if skipDeps then `verify_const else `verify_claim
   let some funIdx := compiled.getFuncIdx entrypoint
     | throw (IO.userError s!"{entrypoint} entrypoint missing")
-  let aiurSystem := Aiur.AiurSystem.build compiled.bytecode commitmentParameters
+  -- Recursive mode runs the WHOLE system — the inner prove included — under
+  -- the recursion-tuned parameters, so the verifier's query loop stays
+  -- tractable (cost scales with numQueries).
+  let (commitParams, friParams) :=
+    if recursive then (recursiveCommitmentParameters, recursiveFriParameters)
+    else (commitmentParameters, friParameters)
+  let aiurSystem := Aiur.AiurSystem.build compiled.bytecode commitParams
+  -- The recursive-verifier context, compiled and built ONCE: the verifier
+  -- toplevel is constant-independent, and its prover system (same recursion
+  -- parameters) is reused for every constant's outer prove.
+  let vCtx : Option (Aiur.CompiledToplevel × Aiur.Bytecode.FunIdx × Aiur.AiurSystem) ←
+    if !recursive then pure none else do
+      let .ok vTop := MultiStark.multiStark
+        | throw (IO.userError "Merging multi-stark verifier failed")
+      let .ok vCompiled := vTop.compile
+        | throw (IO.userError "Compilation of multi-stark verifier failed")
+      let some vIdx := vCompiled.getFuncIdx `verify_multi_stark_proof
+        | throw (IO.userError "verify_multi_stark_proof entrypoint missing")
+      pure (some (vCompiled, vIdx,
+        Aiur.AiurSystem.build vCompiled.bytecode commitParams))
 
   -- Load the serialized env lazily (the `ix check --ixe` path, #445): byte-window
   -- constants over the backing buffer, so only the checked closure is ever
@@ -347,11 +452,11 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
         if skipDeps then
           let witness := IxVM.ClaimHarness.buildVerifyConst ixonEnv addr
           let (claim, proof, ioBuf) :=
-            aiurSystem.proveIxVM friParameters funIdx witness.input witness.inputIOBuffer
+            aiurSystem.proveIxVM friParams funIdx witness.input witness.inputIOBuffer
           (.ok (claim, proof, ioBuf) :
             Except String (Array Aiur.G × Aiur.Proof × Aiur.IOBuffer))
         else
-          match aiurSystem.proveAddrWithEnv friParameters funIdx envHandle addr.hash with
+          match aiurSystem.proveAddrWithEnv friParams funIdx envHandle addr.hash with
           | .error e => .error e
           | .ok (claimBytes, proof, ioBuf) =>
             -- The envHandle path returns the SERIALIZED `Ix.Claim`; rebuild
@@ -367,20 +472,72 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
       | .ok (claim, proof, _ioBuf) =>
         spent := spent + proveSec
         let peak ← TracingTexray.peakTreeRssBytes
-        let proofSize := (Aiur.Proof.toBytes proof).size
+        let proofBytes := Aiur.Proof.toBytes proof
         let (verifyRes, verifySec) ← timed fun _ =>
-          aiurSystem.verify friParameters claim proof
+          aiurSystem.verify friParams claim proof
         let verifySec? ← match verifyRes with
           | .ok () => pure (some verifySec)
           | .error e =>
             IO.eprintln s!"  verify {r.name} FAILED: {e}"
             pure none
         IO.println s!"  {r.name}: prove={proveSec}s verify={verifySec}s \
-          proof={proofSize} bytes (cumulative {spent}s)"
+          proof={proofBytes.size} bytes (cumulative {spent}s)"
         ordered := ordered.set! i
           ({ r with proveSec := some proveSec, peakRss := some peak
-                  , proofSize := some proofSize, verifySec := verifySec? }, addr)
+                  , proofSize := some proofBytes.size, verifySec := verifySec? }, addr)
         writeJson (ordered.map (·.1))
+        -- Phase 3 (--recursive): the in-circuit verifier over the fresh
+        -- proof — execute it (recursive-execute-time / recursive-fft-cost), then prove
+        -- that execution (recursive-prove-time / recursive-peak-rss /
+        -- recursive-proof-size / recursive-verify-time). A reject on the execute
+        -- is a correctness alarm, reported loudly with the recursive fields
+        -- left absent — never a benchmark datum.
+        if let some (vCompiled, vIdx, vSystem) := vCtx then
+          IO.println s!"  [{i + 1}/{ordered.size}] recursively verifying {r.name} …"
+          (← IO.getStdout).flush
+          let claimBytes := MultiStark.serializeClaims #[claim]
+          let (pubInput, io) := MultiStark.verifierInput proofBytes
+            aiurSystem.vkBytes claimBytes commitParams friParams
+          let (rvRes, rvSec) ← timed fun _ =>
+            vCompiled.bytecode.execute vIdx pubInput io
+          match rvRes with
+          | .error e =>
+            IO.eprintln s!"  ❌ recursive verifier REJECTED {r.name}'s proof: {e}"
+          | .ok (_, _, qc) =>
+            let rvStats := Aiur.computeStats vCompiled qc
+            IO.println s!"  {r.name}: recursive={rvSec}s \
+              recursive-fft-cost={rvStats.totalFftCost}"
+            let (row, _) := ordered[i]!
+            ordered := ordered.set! i
+              ({ row with recursiveExecuteSec := some rvSec
+                        , recursiveFftCost := some rvStats.totalFftCost }, addr)
+            -- Flush the execute-side pair before the outer prove: an OOM
+            -- there keeps them, and the announce (flushed) names the
+            -- constant that died.
+            writeJson (ordered.map (·.1))
+            IO.println s!"  [{i + 1}/{ordered.size}] proving the verifier over {r.name} …"
+            (← IO.getStdout).flush
+            TracingTexray.resetPeakTreeRss
+            let ((rvClaim, rvProof, _), rvProveSec) ← timed fun _ =>
+              vSystem.prove friParams vIdx pubInput io
+            let rvPeak ← TracingTexray.peakTreeRssBytes
+            let rvProofBytes := Aiur.Proof.toBytes rvProof
+            let (rvVerifyRes, rvVerifySec) ← timed fun _ =>
+              vSystem.verify friParams rvClaim rvProof
+            let rvVerifySec? ← match rvVerifyRes with
+              | .ok () => pure (some rvVerifySec)
+              | .error e =>
+                IO.eprintln s!"  outer verify {r.name} FAILED: {e}"
+                pure none
+            IO.println s!"  {r.name}: recursive-prove={rvProveSec}s \
+              recursive-verify={rvVerifySec}s outer proof={rvProofBytes.size} bytes"
+            let (row, _) := ordered[i]!
+            ordered := ordered.set! i
+              ({ row with recursiveProveSec := some rvProveSec
+                        , recursivePeakRss := some rvPeak
+                        , recursiveProofSize := some rvProofBytes.size
+                        , recursiveVerifySec := rvVerifySec? }, addr)
+            writeJson (ordered.map (·.1))
     catch e =>
       IO.eprintln s!"  prove {r.name} threw: {e}"
 
@@ -400,6 +557,7 @@ def typecheckCmd : Cli.Cmd := `[Cli|
     "json"      : String; "Write per-constant results JSON to this path. Off by default; normal CLI usage prints only the human-readable summary."
     "skip-deps";          "Check only each target itself (verify_const, trusting its deps) instead of re-checking its whole transitive closure (verify_claim). Same flag as `zisk-host --skip-deps`."
     "execute-only";       "Execute only (Phase 1: constants / fft-cost / execute-time) and skip proving. The fast per-PR `execute`-mode signal."
+    "recursive";          "After each prove, execute and then prove the in-circuit multi-stark verifier over the fresh proof (the recursive-* metrics; see the module docstring). Uses recursion-tuned FRI parameters. Conflicts with --execute-only."
     texray;               "Enable the tracing-texray timeline + RAM breakdown (per-prove spans on stderr). Combined with --json, per-phase span timings are additionally written to `<json>.spans` as JSON Lines for the CI drill-down. Off by default."
 
 ]

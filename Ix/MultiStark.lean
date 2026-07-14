@@ -1,5 +1,7 @@
 module
 public import Ix.Aiur.Meta
+public import Ix.Aiur.Protocol
+public import Ix.Keccak
 public import Ix.IxVM.Core
 public import Ix.IxVM.ByteStream
 public import Ix.MultiStark.Goldilocks
@@ -83,6 +85,43 @@ def multiStark : Except Aiur.Global Aiur.Source.Toplevel := do
   let t ← t.merge pcs
   let t ← t.merge verifier
   t.merge entrypoints
+
+/-! ## Lean-side input assembly
+
+Callers of `verify_multi_stark_proof` (tests, benchmarks) must reproduce the
+verifier's wire formats byte-for-byte — the vk and claims are keccak-256
+digest-bound. These helpers are that recipe's single home. -/
+
+/-- The 8 little-endian bytes of `n` as a `u64`. -/
+def u64le (n : Nat) : Array UInt8 :=
+  (Array.range 8).map (fun i => UInt8.ofNat ((n >>> (8 * i)) % 256))
+
+/-- Serialize public claims to `read_claims`'s wire format (which is also what
+the prover's Fiat-Shamir transcript observes): a length-prefixed list of
+length-prefixed claims, every word a little-endian `u64`. -/
+def serializeClaims (claims : Array (Array Aiur.G)) : ByteArray := Id.run do
+  let mut out : Array UInt8 := u64le claims.size
+  for c in claims do
+    out := out ++ u64le c.size
+    for g in c do
+      out := out ++ u64le g.val.toNat
+  return ⟨out⟩
+
+/-- Assemble `verify_multi_stark_proof`'s inputs from the serialized proof, vk
+(`AiurSystem.vkBytes`), and claims (`serializeClaims`): the public input (vk
+digest ++ claims digest ++ the variable FRI parameters) and the IO buffer
+(channel 0 = proof advice, 1 = vk, 2 = claims, each under key `[0]`). -/
+def verifierInput (proofBytes vkBytes claimBytes : ByteArray)
+    (commitParams : Aiur.CommitmentParameters) (friParams : Aiur.FriParameters) :
+    Array Aiur.G × Aiur.IOBuffer :=
+  let gs := fun (b : ByteArray) => b.data.map Aiur.G.ofUInt8
+  let digestGs := fun (b : ByteArray) => gs (Keccak.hash b)
+  let pubInput := digestGs vkBytes ++ digestGs claimBytes ++
+    #[.ofNat friParams.numQueries, .ofNat friParams.commitProofOfWorkBits,
+      .ofNat commitParams.logBlowup]
+  let io := (((default : Aiur.IOBuffer).extend 0 #[.ofNat 0] (gs proofBytes)).extend
+    1 #[.ofNat 0] (gs vkBytes)).extend 2 #[.ofNat 0] (gs claimBytes)
+  (pubInput, io)
 
 /-- The verifier toplevel PLUS its self-test entrypoints
 (`Ix/MultiStark/Tests.lean`). Kept separate from `multiStark` because every

@@ -32,9 +32,13 @@ namespace Ix.Cli.BenchReport
 /-! ## Metric formatting -/
 
 /-- Per-metric formatting kind. Metric names are the results-JSON keys the
-    tools emit (see the registry in Ix.Cli.BenchCmd). Unknown metrics fall through to a
-    generic decimal rendering. -/
+    tools emit (see the registry in Ix.Cli.BenchCmd). A `recursive-` metric
+    formats like its inner counterpart (`recursive-peak-rss` like
+    `peak-rss`, …). Unknown metrics fall through to a generic decimal
+    rendering. -/
 def metricKind (metric : String) : String :=
+  let metric := if metric.startsWith "recursive-"
+    then (metric.drop "recursive-".length).toString else metric
   if ["peak-rss", "file-size", "proof-size"].contains metric
   then "bytes"
   else if metric.startsWith "phase-" then "seconds"
@@ -48,11 +52,14 @@ def metricKind (metric : String) : String :=
 /-- Display label for a metric column. Keys stay the bencher measure slugs
     (renaming one would orphan its threshold/history); only the table
     rendering differs. `file-size` is the serialized `.ixe` env — bencher
-    plots it as "Environment Size"; `peak-rss` reads better as plain RAM. -/
+    plots it as "Environment Size"; `peak-rss` reads better as plain RAM,
+    in every slug that embeds it (`recursive-peak-rss` → …-peak-ram);
+    `throughput` carries its unit here because the cells print bare
+    magnitudes (matching `unitsFor`'s "constants / second" on bencher). -/
 def metricLabel (metric : String) : String :=
   if metric == "file-size" then "env-size"
-  else if metric == "peak-rss" then "peak-ram"
-  else metric
+  else if metric == "throughput" then "throughput (const/s)"
+  else metric.replace "peak-rss" "peak-ram"
 
 /-- Group a digit string by thousands: `"105492"` → `"105,492"`. -/
 private def commafy (s : String) : String := Id.run do
@@ -340,6 +347,7 @@ def runCompareCmd (p : Cli.Parsed) : IO UInt32 := do
     rowNoun :=
       if backend == "compile" then "env"
       else if backend == "ooc" then "env/constant"
+      else if backend == "aiur-recursive" then "proof"
       else "constant"
   }
   match p.flag? "out" with
@@ -566,7 +574,10 @@ def runMatrixCmd (p : Cli.Parsed) : IO UInt32 := do
     let mut cells : Array Json := #[]
     for b in Ix.Cli.BenchCmd.backendSpecs do
       if b.disabled.isSome then continue
-      for env in benched do
+      -- The aiur-recursive backend is env-independent (fixed toy
+      -- statements, no `.ixe`): one cell, not one per env.
+      let envsFor := if b.name == "aiur-recursive" then benched.take 1 else benched
+      for env in envsFor do
         cells := cells.push <| Json.mkObj
           [("backend", Json.str b.name), ("env", Json.str env),
            ("mode", Json.str b.defaultMode)]
@@ -604,8 +615,8 @@ def parseError (msg : String) : IO UInt32 := do
     Grammar (an unknown command-line token, or an unknown/unbenched env in
     BENCH_ENVS, rejects the command — exit 2 and a `parse-error` output):
 
-      !benchmark ([aiur] [zisk] [sp1] [ooc] [compile] | all) [execute]
-                 [KEY=VALUE …]
+      !benchmark ([aiur] [zisk] [sp1] [ooc] [compile] [aiur-recursive] | all)
+                 [execute] [KEY=VALUE …]
       BENCH_ENVS=InitStd,Mathlib   (case-insensitive; default InitStd;
                                     compile-only requests may name any
                                     registry env, e.g. Lean or FLT)
@@ -739,7 +750,13 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
     else b.defaultMode
   let mut cells : Array Json := #[]
   for b in backends do
-    for e in envs do
+    -- The aiur-recursive backend is env-independent (fixed toy
+    -- statements, no `.ixe`): one cell no matter how many envs BENCH_ENVS
+    -- lists. The env kept is the first requested one, so the cell's `.ixe`
+    -- restore (an unconditional workflow step) still finds a compiled
+    -- artifact.
+    let cellEnvs := if b.name == "aiur-recursive" then envs.take 1 else envs
+    for e in cellEnvs do
       cells := cells.push <| Json.mkObj
         [("backend", Json.str b.name), ("env", Json.str e),
          ("mode", Json.str (modeFor b)),

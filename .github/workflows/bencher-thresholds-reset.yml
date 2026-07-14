@@ -22,7 +22,7 @@ name: Bencher thresholds reset
 #     cancel by removing it before merge. Naming convention: one label per token,
 #     `bencher-thresholds-reset:<token>` where <token> is a workload (a backend
 #     testbed in Ix/Cli/BenchCmd.lean (backendSpecs) minus its runner-arch suffix:
-#     `ix-compile`, `aiur-check-execute`, `aiur-check-prove`, `zisk-check-execute`, `sp1-check-execute`, `ooc-check`) or
+#     `ix-compile`, `aiur-check-execute`, `aiur-check-prove`, `aiur-check-recursive`, `aiur-recursive`, `zisk-check-execute`, `sp1-check-execute`, `ooc-check`) or
 #     `all` (the merge step expands an `all` label into every workload). Labeling
 #     requires Triage+, so PR authors from forks cannot self-queue a reset. The
 #     label shares the command/workflow name; the ref it moves is
@@ -44,7 +44,7 @@ on:
         # GitHub requires literal choice options, so this list stays static:
         # keep it (and the jobs' valid= lists below) in sync with the
         # backend testbeds in Ix/Cli/BenchCmd.lean (backendSpecs).
-        options: [ix-compile, aiur-check-execute, aiur-check-prove, zisk-check-execute, sp1-check-execute, ooc-check, all]
+        options: [ix-compile, aiur-check-execute, aiur-check-prove, aiur-check-recursive, aiur-recursive, zisk-check-execute, sp1-check-execute, ooc-check, all]
       sha:
         description: "Commit to anchor to (default: HEAD)"
         required: false
@@ -77,7 +77,7 @@ jobs:
           # (backendSpecs) minus the runner-arch suffix. Static because this
           # job runs on a cheap runner with no built `ix`; keep in sync when
           # adding a backend.
-          valid="aiur-check-execute aiur-check-prove ix-compile ooc-check sp1-check-execute zisk-check-execute"
+          valid="aiur-check-execute aiur-check-prove aiur-check-recursive aiur-recursive ix-compile ooc-check sp1-check-execute zisk-check-execute"
           if [ "$EVENT" = workflow_dispatch ]; then
             # Reset the chosen workload(s) at the given commit; no PR scan.
             sha="${INPUT_SHA:-$HEAD_SHA}"
@@ -133,7 +133,7 @@ jobs:
           # which the merge job expands into every workload). Same static
           # list as the reset job; keep both in sync with backendSpecs in
           # Ix/Cli/BenchCmd.lean.
-          valid="aiur-check-execute aiur-check-prove ix-compile ooc-check sp1-check-execute zisk-check-execute"
+          valid="aiur-check-execute aiur-check-prove aiur-check-recursive aiur-recursive ix-compile ooc-check sp1-check-execute zisk-check-execute"
           accepted="$valid all"
           # Parse the workload token(s) after the command, lowercased.
           workloads=$(printf '%s' "$BODY" \
