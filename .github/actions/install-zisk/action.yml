@@ -90,17 +90,29 @@ runs:
     # instead of ~50 GB (the tarball also omits the `*_gpu` const variants the
     # first GPU prove would materialize — unused on this CPU runner). The
     # object name carries the fork rev so a circuit change can't silently
-    # reuse a stale key. Public bucket → plain curl, no AWS creds.
-    - name: Restore Zisk proving key (fork circuit) from S3
+    # reuse a stale key. `aws s3 cp` (multipart, no creds — public bucket)
+    # holds throughput steady where a single-stream `curl` swings by an
+    # order of magnitude; `curl` is the fallback for hosts without the AWS
+    # CLI. Deliberately NOT actions/cache'd: the runner fleet is AWS-hosted,
+    # so multipart S3 outruns the Actions cache service — and the tarball
+    # would crowd the repo's cache quota besides.
+    - name: Fetch proving key from S3, extract, regenerate const-trees
       if: inputs.proving-key == 'true'
       shell: bash
       run: |
+        object=zisk-provingkey-blake3-e4057c4c-cpu.tar.gz
+        tarball="${RUNNER_TEMP:-/tmp}/$object"
+        if command -v aws >/dev/null 2>&1; then
+          aws configure set default.s3.max_concurrent_requests 20
+          aws s3 cp --no-sign-request --region us-east-1 \
+            "s3://argument-zisk-setup/$object" "$tarball"
+        else
+          curl -fSL --retry 3 \
+            "https://argument-zisk-setup.s3.amazonaws.com/$object" -o "$tarball"
+        fi
         mkdir -p "$HOME/.zisk"
-        curl -fSL --retry 3 \
-          https://argument-zisk-setup.s3.amazonaws.com/zisk-provingkey-blake3-e4057c4c-cpu.tar.gz \
-          -o /tmp/zisk-provingkey.tar.gz
-        tar -C "$HOME/.zisk" -xzf /tmp/zisk-provingkey.tar.gz
-        rm -f /tmp/zisk-provingkey.tar.gz
-        # Regenerate the const-tree files omitted from the artifact (CPU build, so
-        # no --gpu). This is the "may take a while" step ziskup prints.
+        tar -C "$HOME/.zisk" -xzf "$tarball"
+        rm -f "$tarball"
+        # Regenerate the const-trees omitted from the artifact (CPU build →
+        # no --gpu). ziskup's "may take a while" step.
         cargo-zisk-dev check-setup --proving-key "$HOME/.zisk/provingKey" -a
