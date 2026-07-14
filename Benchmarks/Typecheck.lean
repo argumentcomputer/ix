@@ -125,15 +125,17 @@ def recursiveCommitmentParameters : Aiur.CommitmentParameters := {
   capHeight := 0
 }
 
-/-- Recursion-tuned FRI parameters: the in-circuit verifier's cost scales with
-    the inner proof's query count, so the recursion configuration trades
-    queries (3, not 100) for blowup and commit proof-of-work. `--recursive`
-    runs the WHOLE system — the inner prove included — under these, so its
-    rows are not comparable to the standard `prove` cell's. -/
+/-- Recursion FRI parameters for `--recursive`. The query count IS the
+    soundness level, so a real (secure) recursive proof needs the full query
+    count, not a toy handful. The in-circuit verifier's cost scales with that
+    count, so at IxVM scale the cell is expected to exceed even a 128 GB host —
+    an OOM row here documents the gap between secure recursion and what fits
+    today. `--recursive` runs the WHOLE system, inner prove included, under
+    these, so its rows are not comparable to the standard `prove` cell's. -/
 def recursiveFriParameters : Aiur.FriParameters := {
   logFinalPolyLen := 0
   maxLogArity := 1
-  numQueries := 3
+  numQueries := 100
   commitProofOfWorkBits := 20
   queryProofOfWorkBits := 0
 }

@@ -18,11 +18,13 @@ of `Tests/MultiStark.lean::endToEndSuite`, but measures cost instead of
 asserting accept/reject.
 
 ```
-lake exe bench-recursive-verifier                 # factorial(5), q=3, blowup 2
+lake exe bench-recursive-verifier                 # factorial(5), q=100 (soundness level — heavy)
+lake exe bench-recursive-verifier --queries 3     # cheap local run (toy soundness)
 lake exe bench-recursive-verifier --execute-only  # skip the outer prove (FFT/exec only)
 
   --trivial        square(5) instead of factorial(5) — the per-statement floor
-  --queries N      FRI query count        (default 3)
+  --queries N      FRI query count (default 100 = soundness level; pass a
+                   small value for a cheap local run)
   --blowup N       log2 blowup            (default 2)
   --pow N          commit PoW bits        (default 20)
   --json <path>    write a benchmark results row (Ix.Benchmark.Results); the
@@ -82,7 +84,7 @@ def recCommitParams (args : List String) : Aiur.CommitmentParameters :=
   { logBlowup := argNat args "--blowup" 2, capHeight := 0 }
 def innerFri (args : List String) : Aiur.FriParameters :=
   { logFinalPolyLen := argNat args "--final-poly" 0, maxLogArity := 1,
-    numQueries := argNat args "--queries" 3,
+    numQueries := argNat args "--queries" 100,
     commitProofOfWorkBits := argNat args "--pow" 20, queryProofOfWorkBits := 0 }
 
 def secs (t0 t1 : Nat) : Float := (Float.ofNat (t1 - t0)) / 1e9

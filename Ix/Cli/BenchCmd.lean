@@ -199,14 +199,17 @@ def backendSpecs : List BackendSpec := [
 def findBackend (name : String) : Option BackendSpec :=
   backendSpecs.find? (·.name == name)
 
-/-- The `recursive` backend's rows: (row name, bench-recursive-verifier
-    config args). Fixed configs rather than `Vectors.csv` constants — the
-    toy proves the same tiny statements everywhere: `square-q1-b1` is the
-    floor config (completes at ~80 GB under Keccak; ~2.6 GB under Blake3)
-    and `factorial-q3-b2` the recursion-tuned default. -/
+/-- The `aiur-recursive` backend's rows: (row name, bench-recursive-verifier
+    config args). Fixed configs, not `Vectors.csv` constants. The FRI query
+    count IS the soundness level, so a benchmark of *secure* recursion uses the
+    real security requirement (~100 queries) throughout; the two rows vary the
+    inner statement and blowup (`square`, trivial + blowup 1, is the lighter
+    end; `factorial`, recursive + blowup 2, the heavier). At this query count
+    both outer proves strain a 128 GB host, so an OOM row is the honest signal
+    that secure recursion does not yet fit. -/
 def recursiveConfigs : List (String × Array String) := [
-  ("square-q1-b1", #["--trivial", "--queries", "1", "--blowup", "1"]),
-  ("factorial-q3-b2", #[])
+  ("square-q100-b1", #["--trivial", "--queries", "100", "--blowup", "1"]),
+  ("factorial-q100-b2", #["--queries", "100"])
 ]
 
 def BackendSpec.testbedFor (b : BackendSpec) (mode : String) : Option String :=
