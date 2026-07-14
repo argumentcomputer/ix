@@ -16,7 +16,10 @@ name: Benchmark main
 #   4. ooc-check    — restore that `.ixe` and run the out-of-circuit Rust kernel
 #                     (the same kernel, out-of-circuit and parallel — far faster)
 #                     over the whole env, tracking throughput.
-#   5. aiur-recursive — the aiur-recursive toy
+#   5. decompile    — restore that `.ixe` and decompile it back to Lean constants
+#                     (the inverse of step 1); tracks decompile-time /
+#                     throughput / peak-rss.
+#   6. aiur-recursive — the aiur-recursive toy
 #                     (bench-recursive-verifier):
 #                     prove fixed tiny statements, run the in-circuit
 #                     multi-stark verifier over each proof, then prove THAT
@@ -609,6 +612,83 @@ jobs:
             --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0
             --threshold-lower-boundary 0
             --threshold-measure check-time --threshold-test percentage
+            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.10
+            --threshold-lower-boundary _
+            --threshold-measure throughput --threshold-test percentage
+            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary _
+            --threshold-lower-boundary 0.10
+            --threshold-measure peak-rss --threshold-test percentage
+            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.10
+            --threshold-lower-boundary _
+
+  # Decompile — the inverse of compile. Restore the compile job's cached
+  # `.ixe` and decompile it back to Lean constants. One env-keyed row per
+  # benched env, mirroring the `compile` cell. A malformed decompile exits
+  # nonzero and reddens this step; deep roundtrip fidelity is gated by the
+  # canonical checks (`ix validate` / roundtrip tests), not measured here. No
+  # compiler or Lean toolchain build — `ix decompile` is a Rust FFI pass over
+  # the cached `.ixe`, so this reuses the staged `ix` binary like ooc-check.
+  decompile:
+    name: decompile-${{ matrix.bench }}
+    needs: [compile, plan]
+    runs-on: warp-ubuntu-latest-x64-32x
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        bench: ${{ fromJson(needs.plan.outputs.bench-envs) }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/cache/restore@v5
+        with:
+          path: ~/.local/bin
+          key: bench-bins-${{ github.sha }}
+      - run: echo "$HOME/.local/bin" >> $GITHUB_PATH
+      # Provision the toolchain so `ix` finds libleanshared (no package build).
+      - uses: leanprover/lean-action@v1
+        with:
+          auto-config: false
+          build: false
+          use-github-cache: false
+      # (The path list must match the compile job's save exactly.)
+      - uses: actions/cache/restore@v5
+        with:
+          path: |
+            ${{ matrix.bench }}.ixe
+            zkshards-${{ matrix.bench }}
+          key: bench-ixe-${{ github.sha }}-${{ matrix.bench }}
+          fail-on-cache-miss: true
+      # A malformed decompile exits nonzero → red X here; a clean run's row
+      # uploads below.
+      - name: Run decompile benchmark
+        run: |
+          ix bench run --backend decompile --env ${{ matrix.bench }} --mode execute \
+            --ixe ${{ matrix.bench }}.ixe --out bench.json
+      # Upload whatever clean rows exist even when the run step reddened the
+      # job — bmf drops every non-ok (rejected/oom) row.
+      - name: Convert to Bencher Metric Format
+        id: bmf
+        if: ${{ !cancelled() }}
+        run: |
+          ix bench bmf --in bench.json --out bench-bmf.json
+          cat bench-bmf.json
+      # constants is deterministic → pinned (0/0); decompile-time / throughput
+      # / peak-rss are noisy wall-clock → percentage bounds. file-size (the
+      # input `.ixe`) duplicates the compile cell's, so it uploads for the
+      # row's completeness but rides no threshold here.
+      - uses: ./.github/actions/bencher-track
+        if: ${{ !cancelled() && steps.bmf.outcome == 'success' }}
+        with:
+          testbed: ix-decompile-x64-32x
+          workload: ix-decompile
+          file: bench-bmf.json
+          key: ${{ secrets.BENCHER_API_KEY }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          thresholds: |
+            --threshold-measure constants --threshold-test percentage
+            --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0
+            --threshold-lower-boundary 0
+            --threshold-measure decompile-time --threshold-test percentage
             --threshold-max-sample-size __WINDOW__ --threshold-upper-boundary 0.10
             --threshold-lower-boundary _
             --threshold-measure throughput --threshold-test percentage

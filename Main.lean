@@ -6,6 +6,7 @@ import Ix.Cli.CodegenCmd
 import Ix.Cli.CheckRsCmd
 import Ix.Cli.ClaimCmd
 import Ix.Cli.CompileCmd
+import Ix.Cli.DecompileCmd
 import Ix.Cli.DiffCmd
 import Ix.Cli.IngressCmd
 import Ix.Cli.PackCmd
@@ -30,6 +31,7 @@ def ixCmd : Cli.Cmd := `[Cli|
     --storeCmd;
     benchCmd;
     compileCmd;
+    decompileCmd;
     checkCmd;
     checkRsCmd;
     claimCmd;

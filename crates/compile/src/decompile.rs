@@ -51,6 +51,15 @@ use std::sync::Arc;
 pub struct DecompileState {
   /// Decompiled environment
   pub env: DashMap<Name, LeanConstantInfo>,
+  /// Canonical expression nodes keyed by content hash. Decompilation
+  /// rebuilds every constant's expressions with sharing local to that
+  /// constant, so structurally equal subterms (common types, applied
+  /// prefixes) would otherwise each hold a private copy per referencing
+  /// constant — a multiple of the whole env's footprint. Constants
+  /// entering `env` are canonicalized through this table
+  /// ([`Self::insert_interned`]); `decompile_env` drops the table
+  /// before returning, since `env` keeps the canonical `Arc`s alive.
+  expr_intern: DashMap<[u8; 32], LeanExpr>,
 }
 
 #[derive(Debug)]
@@ -61,6 +70,184 @@ pub struct DecompileStateStats {
 impl DecompileState {
   pub fn stats(&self) -> DecompileStateStats {
     DecompileStateStats { env: self.env.len() }
+  }
+
+  /// Insert a decompiled constant, canonicalizing its expressions
+  /// through [`Self::expr_intern`].
+  fn insert_interned(&self, name: Name, ci: LeanConstantInfo) {
+    self.env.insert(name, self.intern_ci(ci));
+  }
+
+  /// Canonicalize every expression field of `ci` — see
+  /// [`Self::expr_intern`].
+  fn intern_ci(&self, mut ci: LeanConstantInfo) -> LeanConstantInfo {
+    match &mut ci {
+      LeanConstantInfo::AxiomInfo(v) => {
+        v.cnst.typ = self.intern_expr(&v.cnst.typ);
+      },
+      LeanConstantInfo::DefnInfo(v) => {
+        v.cnst.typ = self.intern_expr(&v.cnst.typ);
+        v.value = self.intern_expr(&v.value);
+      },
+      LeanConstantInfo::ThmInfo(v) => {
+        v.cnst.typ = self.intern_expr(&v.cnst.typ);
+        v.value = self.intern_expr(&v.value);
+      },
+      LeanConstantInfo::OpaqueInfo(v) => {
+        v.cnst.typ = self.intern_expr(&v.cnst.typ);
+        v.value = self.intern_expr(&v.value);
+      },
+      LeanConstantInfo::QuotInfo(v) => {
+        v.cnst.typ = self.intern_expr(&v.cnst.typ);
+      },
+      LeanConstantInfo::InductInfo(v) => {
+        v.cnst.typ = self.intern_expr(&v.cnst.typ);
+      },
+      LeanConstantInfo::CtorInfo(v) => {
+        v.cnst.typ = self.intern_expr(&v.cnst.typ);
+      },
+      LeanConstantInfo::RecInfo(v) => {
+        v.cnst.typ = self.intern_expr(&v.cnst.typ);
+        for rule in &mut v.rules {
+          rule.rhs = self.intern_expr(&rule.rhs);
+        }
+      },
+    }
+    ci
+  }
+
+  /// Canonicalize one expression DAG bottom-up through
+  /// [`Self::expr_intern`]. Iterative — proof terms nest far deeper
+  /// than the stack allows for recursion. Nodes are rebuilt only when
+  /// a child changed; hashes are content-derived from child hashes, so
+  /// a rebuild with content-equal children reuses the stored hash.
+  fn intern_expr(&self, root: &LeanExpr) -> LeanExpr {
+    use ix_common::env::ExprData as ED;
+
+    if let Some(hit) = self.expr_intern.get(root.get_hash().as_bytes()) {
+      return hit.clone();
+    }
+
+    // Per-walk memo keyed by node pointer: within-constant sharing
+    // makes the same `Arc` reachable from several parents.
+    let mut memo: FxHashMap<*const ED, LeanExpr> = FxHashMap::default();
+    // (node, children_done)
+    let mut stack: Vec<(LeanExpr, bool)> = vec![(root.clone(), false)];
+
+    while let Some((e, children_done)) = stack.pop() {
+      let key: *const ED = Arc::as_ptr(&e.0);
+      if memo.contains_key(&key) {
+        continue;
+      }
+      if !children_done {
+        if let Some(hit) = self.expr_intern.get(e.get_hash().as_bytes()) {
+          memo.insert(key, hit.clone());
+          continue;
+        }
+        stack.push((e.clone(), true));
+        match e.as_data() {
+          ED::App(f, a, _) => {
+            stack.push((f.clone(), false));
+            stack.push((a.clone(), false));
+          },
+          ED::Lam(_, t, b, _, _) | ED::ForallE(_, t, b, _, _) => {
+            stack.push((t.clone(), false));
+            stack.push((b.clone(), false));
+          },
+          ED::LetE(_, t, v, b, _, _) => {
+            stack.push((t.clone(), false));
+            stack.push((v.clone(), false));
+            stack.push((b.clone(), false));
+          },
+          ED::Mdata(_, inner, _) => stack.push((inner.clone(), false)),
+          ED::Proj(_, _, s, _) => stack.push((s.clone(), false)),
+          ED::Bvar(..)
+          | ED::Fvar(..)
+          | ED::Mvar(..)
+          | ED::Sort(..)
+          | ED::Const(..)
+          | ED::Lit(..) => {},
+        }
+        continue;
+      }
+
+      // Children are canonicalized (they were pushed after this node's
+      // revisit frame, so they popped first).
+      let child = |c: &LeanExpr| -> LeanExpr {
+        memo
+          .get(&Arc::as_ptr(&c.0))
+          .expect("intern walk: child not canonicalized before parent")
+          .clone()
+      };
+      let same =
+        |c: &LeanExpr, i: &LeanExpr| -> bool { Arc::ptr_eq(&c.0, &i.0) };
+      let rebuilt = match e.as_data() {
+        ED::App(f, a, h) => {
+          let (fi, ai) = (child(f), child(a));
+          if same(f, &fi) && same(a, &ai) {
+            e.clone()
+          } else {
+            LeanExpr(Arc::new(ED::App(fi, ai, *h)))
+          }
+        },
+        ED::Lam(n, t, b, bi, h) => {
+          let (ti, bdi) = (child(t), child(b));
+          if same(t, &ti) && same(b, &bdi) {
+            e.clone()
+          } else {
+            LeanExpr(Arc::new(ED::Lam(n.clone(), ti, bdi, bi.clone(), *h)))
+          }
+        },
+        ED::ForallE(n, t, b, bi, h) => {
+          let (ti, bdi) = (child(t), child(b));
+          if same(t, &ti) && same(b, &bdi) {
+            e.clone()
+          } else {
+            LeanExpr(Arc::new(ED::ForallE(n.clone(), ti, bdi, bi.clone(), *h)))
+          }
+        },
+        ED::LetE(n, t, v, b, nd, h) => {
+          let (ti, vi, bdi) = (child(t), child(v), child(b));
+          if same(t, &ti) && same(v, &vi) && same(b, &bdi) {
+            e.clone()
+          } else {
+            LeanExpr(Arc::new(ED::LetE(n.clone(), ti, vi, bdi, *nd, *h)))
+          }
+        },
+        ED::Mdata(kv, inner, h) => {
+          let ii = child(inner);
+          if same(inner, &ii) {
+            e.clone()
+          } else {
+            LeanExpr(Arc::new(ED::Mdata(kv.clone(), ii, *h)))
+          }
+        },
+        ED::Proj(n, i, s, h) => {
+          let si = child(s);
+          if same(s, &si) {
+            e.clone()
+          } else {
+            LeanExpr(Arc::new(ED::Proj(n.clone(), i.clone(), si, *h)))
+          }
+        },
+        ED::Bvar(..)
+        | ED::Fvar(..)
+        | ED::Mvar(..)
+        | ED::Sort(..)
+        | ED::Const(..)
+        | ED::Lit(..) => e.clone(),
+      };
+      let canonical = self
+        .expr_intern
+        .entry(*e.get_hash().as_bytes())
+        .or_insert(rebuilt)
+        .clone();
+      memo.insert(key, canonical);
+    }
+
+    memo
+      .remove(&Arc::as_ptr(&root.0))
+      .expect("intern walk: root not canonicalized")
   }
 }
 
@@ -1749,7 +1936,7 @@ fn decompile_projection(
       Some(MutConst::Defn(def)) => {
         let info =
           decompile_definition(def, &named_meta, &mut cache, stt, dstt)?;
-        dstt.env.insert(name.clone(), info);
+        dstt.insert_interned(name.clone(), info);
       },
       other => {
         return Err(projection_mismatch_error(
@@ -1767,7 +1954,8 @@ fn decompile_projection(
       Some(MutConst::Indc(ind)) => {
         let (ind_val, ctors) =
           decompile_inductive(ind, &named_meta, &mut cache, stt, dstt)?;
-        dstt.env.insert(name.clone(), LeanConstantInfo::InductInfo(ind_val));
+        dstt
+          .insert_interned(name.clone(), LeanConstantInfo::InductInfo(ind_val));
         for ctor in ctors {
           dstt
             .env
@@ -1789,7 +1977,7 @@ fn decompile_projection(
     ConstantInfo::RPrj(proj) => match mutuals.get(proj.idx as usize) {
       Some(MutConst::Recr(rec)) => {
         let info = decompile_recursor(rec, &named_meta, &mut cache, stt, dstt)?;
-        dstt.env.insert(name.clone(), info);
+        dstt.insert_interned(name.clone(), info);
       },
       other => {
         return Err(projection_mismatch_error(
@@ -1865,7 +2053,7 @@ fn decompile_const(
       };
       cache.load_meta_extensions(&named_meta);
       let info = decompile_definition(def, &named_meta, &mut cache, stt, dstt)?;
-      dstt.env.insert(name.clone(), info);
+      dstt.insert_interned(name.clone(), info);
     },
 
     Constant { info: ConstantInfo::Recr(rec), sharing, refs, univs } => {
@@ -1884,7 +2072,7 @@ fn decompile_const(
       // `meta_sharing` slot.
       cache.load_meta_extensions(&named_meta);
       let info = decompile_recursor(rec, &named_meta, &mut cache, stt, dstt)?;
-      dstt.env.insert(name.clone(), info);
+      dstt.insert_interned(name.clone(), info);
     },
 
     Constant { info: ConstantInfo::Axio(ax), sharing, refs, univs } => {
@@ -1900,7 +2088,7 @@ fn decompile_const(
       // load extensions for consistency with the other branches.
       cache.load_meta_extensions(&named_meta);
       let info = decompile_axiom(ax, &named_meta, &mut cache, stt, dstt)?;
-      dstt.env.insert(name.clone(), info);
+      dstt.insert_interned(name.clone(), info);
     },
 
     Constant { info: ConstantInfo::Quot(quot), sharing, refs, univs } => {
@@ -1916,7 +2104,7 @@ fn decompile_const(
       // axioms. Load extensions for consistency.
       cache.load_meta_extensions(&named_meta);
       let info = decompile_quotient(quot, &named_meta, &mut cache, stt, dstt)?;
-      dstt.env.insert(name.clone(), info);
+      dstt.insert_interned(name.clone(), info);
     },
 
     Constant { info: ConstantInfo::DPrj(_), .. }
@@ -3483,51 +3671,32 @@ fn decompile_named_const(
 /// in-memory perm lookups see the same permutation compile produced,
 /// even when `stt` was reconstructed from a deserialized Ixon env.
 ///
-/// Walk every Muts-tagged Named entry; if it carries a stored
+/// Walk every Muts-tagged index entry; if it carries a stored
 /// `aux_layout`, locate the block's source-order first inductive name
 /// via one of its primary members' `Indc.all[0]` and populate
 /// `stt.aux_perms[first_name] = layout`.
 ///
 /// Idempotent: if `stt.aux_perms` already has an entry for the name, we
 /// leave it alone (compile-in-progress stt wins over rehydrated copy).
-fn rehydrate_aux_perms_from_env(stt: &CompileState) {
+fn rehydrate_aux_perms_from_env(
+  stt: &CompileState,
+  muts_index: &MutsPlanIndex,
+) {
   use ixon::metadata::ConstantMetaInfo;
 
-  let mut n_muts = 0usize;
   let mut n_muts_with_layout = 0usize;
   let mut n_populated = 0usize;
 
-  // Fast path: every Muts entry is scanned; for non-nested blocks this
-  // is a single `None` check and a no-op. The cost scales with the
-  // number of mutual blocks in the env, not their sizes.
-  for muts_entry in stt.env.named.iter() {
-    let muts_named = muts_entry.value();
-    let muts_meta = muts_named.meta();
-    let (muts_all, aux_layout) = match &muts_meta.info {
-      ConstantMetaInfo::Muts { all, aux_layout: Some(layout) } => {
-        n_muts += 1;
-        n_muts_with_layout += 1;
-        (all, layout.clone())
-      },
-      ConstantMetaInfo::Muts { .. } => {
-        n_muts += 1;
-        continue;
-      },
-      _ => continue,
-    };
-    if muts_all.is_empty() || muts_all[0].is_empty() {
+  for entry in &muts_index.entries {
+    let Some(aux_layout) = entry.aux_layout.clone() else {
       continue;
-    }
-
-    // muts_all[0][0] is the name-hash address of the first canonical
-    // class representative. Look up its Named entry to find the Indc
-    // metadata, which carries `all` in source order.
-    let first_rep_addr = &muts_all[0][0];
-    let first_rep_name = match stt.env.get_name(first_rep_addr) {
-      Some(n) => n,
-      None => continue,
     };
-    let rep_named = match stt.env.named.get(&first_rep_name) {
+    n_muts_with_layout += 1;
+
+    // The first canonical class representative's Named entry carries
+    // the Indc metadata, whose `all` is in source order.
+    let first_rep_name = &entry.class_names[0][0];
+    let rep_named = match stt.env.named.get(first_rep_name) {
       Some(r) => r,
       None => continue,
     };
@@ -3562,8 +3731,9 @@ fn rehydrate_aux_perms_from_env(stt: &CompileState) {
 
   if std::env::var_os("IX_AUX_LAYOUT_DEBUG").is_some() {
     eprintln!(
-      "[rehydrate_aux_perms] scanned {n_muts} Muts entries, \
-       {n_muts_with_layout} had stored aux_layout, {n_populated} populated"
+      "[rehydrate_aux_perms] scanned {} Muts entries, \
+       {n_muts_with_layout} had stored aux_layout, {n_populated} populated",
+      muts_index.entries.len(),
     );
   }
 }
@@ -3610,6 +3780,107 @@ struct StoredPlanBlock {
   flat_names: Vec<Name>,
 }
 
+/// ` · rss X.X GiB (anon Y.Y, file Z.Z)` sampled from
+/// `/proc/self/status`, appended to phase logs. Anon can only leave RAM
+/// via swap; file RSS is reclaimable page cache — the split shows which
+/// memory-reduction lever applies. Empty when procfs is unavailable.
+fn rss_log_suffix() -> String {
+  let Ok(status) = std::fs::read_to_string("/proc/self/status") else {
+    return String::new();
+  };
+  let field_kb = |name: &str| -> Option<u64> {
+    status
+      .lines()
+      .find(|l| l.starts_with(name))
+      .and_then(|l| l.split_whitespace().nth(1))
+      .and_then(|v| v.parse().ok())
+  };
+  let gib_tenths = |kb: u64| -> (u64, u64) {
+    let tenths = kb * 10 / (1024 * 1024);
+    (tenths / 10, tenths % 10)
+  };
+  match (field_kb("VmRSS:"), field_kb("RssAnon:"), field_kb("RssFile:")) {
+    (Some(rss), Some(anon), Some(file)) => {
+      let (r, rt) = gib_tenths(rss);
+      let (a, at) = gib_tenths(anon);
+      let (f, ft) = gib_tenths(file);
+      format!(" · rss {r}.{rt} GiB (anon {a}.{at}, file {f}.{ft})")
+    },
+    _ => String::new(),
+  }
+}
+
+/// One `Muts`-tagged Named entry, pre-resolved for plan lookups.
+struct MutsIndexEntry {
+  class_names: Vec<Vec<Name>>,
+  flat_names: Vec<Name>,
+  aux_layout: Option<ixon::env::AuxLayout>,
+}
+
+/// Every `Muts`-tagged Named entry with its class-name lists resolved,
+/// built in one parallel scan over `stt.env.named` (one metadata decode
+/// per entry).
+///
+/// Under `IX_COMPILE_DEMOTE` (the default) `Named::meta()` is a full
+/// arena decode per call, so a whole-env scan that touches every
+/// entry's metadata costs one decode per entry per scan. Per-block
+/// consumers like `stored_plan_blocks_for_original_all` must therefore
+/// query an index rather than rescan the named section — O(blocks × env)
+/// decodes dominate Pass 2 otherwise. `stt.env` is immutable during
+/// decompile, so one scan up front serves every block.
+struct MutsPlanIndex {
+  entries: Vec<MutsIndexEntry>,
+  /// Flat member name → indices into `entries`, so a block's plan
+  /// lookup only inspects entries sharing at least one member.
+  by_member: FxHashMap<Name, Vec<u32>>,
+}
+
+fn build_muts_plan_index(stt: &CompileState) -> MutsPlanIndex {
+  use ixon::metadata::ConstantMetaInfo;
+  use rayon::prelude::*;
+
+  let entries: Vec<MutsIndexEntry> = stt
+    .env
+    .named
+    .par_iter()
+    .filter_map(|entry| {
+      let meta = entry.value().meta();
+      let ConstantMetaInfo::Muts { all, aux_layout } = &meta.info else {
+        return None;
+      };
+      let mut class_names = Vec::with_capacity(all.len());
+      let mut flat_names = Vec::new();
+      for class in all {
+        let names = names_from_addrs(class, stt)?;
+        if names.is_empty() {
+          return None;
+        }
+        flat_names.extend(names.iter().cloned());
+        class_names.push(names);
+      }
+      if flat_names.is_empty() {
+        return None;
+      }
+      Some(MutsIndexEntry {
+        class_names,
+        flat_names,
+        aux_layout: aux_layout.clone(),
+      })
+    })
+    .collect();
+
+  let mut by_member: FxHashMap<Name, Vec<u32>> = FxHashMap::default();
+  for (i, entry) in entries.iter().enumerate() {
+    for name in &entry.flat_names {
+      by_member
+        .entry(name.clone())
+        .or_default()
+        .push(u32::try_from(i).expect("muts index entry count exceeds u32"));
+    }
+  }
+  MutsPlanIndex { entries, by_member }
+}
+
 fn names_from_addrs(
   addrs: &[Address],
   stt: &CompileState,
@@ -3628,40 +3899,29 @@ fn indc_source_all(name: &Name, stt: &CompileState) -> Option<Vec<Name>> {
 fn stored_plan_blocks_for_original_all(
   original_all: &[Name],
   stt: &CompileState,
+  muts_index: &MutsPlanIndex,
 ) -> Vec<StoredPlanBlock> {
   let original_set: FxHashSet<Name> = original_all.iter().cloned().collect();
   let mut candidates = Vec::new();
   let mut seen: FxHashSet<Vec<Name>> = FxHashSet::default();
 
-  for muts_entry in stt.env.named.iter() {
-    let muts_meta = muts_entry.value().meta();
-    let ConstantMetaInfo::Muts { all, aux_layout } = &muts_meta.info else {
-      continue;
-    };
+  // Only entries sharing a member with `original_all` can pass the
+  // subset filter below, so the by-member index is a complete
+  // candidate set.
+  let mut candidate_ids: Vec<u32> = original_all
+    .iter()
+    .flat_map(|n| muts_index.by_member.get(n).into_iter().flatten().copied())
+    .collect();
+  candidate_ids.sort_unstable();
+  candidate_ids.dedup();
 
-    let mut class_names = Vec::with_capacity(all.len());
-    let mut flat_names = Vec::new();
-    let mut valid = true;
-    for class in all {
-      let Some(names) = names_from_addrs(class, stt) else {
-        valid = false;
-        break;
-      };
-      if names.is_empty() {
-        valid = false;
-        break;
-      }
-      flat_names.extend(names.iter().cloned());
-      class_names.push(names);
-    }
-    if !valid || flat_names.is_empty() {
-      continue;
-    }
-    if !flat_names.iter().all(|name| original_set.contains(name)) {
+  for id in candidate_ids {
+    let entry = &muts_index.entries[id as usize];
+    if !entry.flat_names.iter().all(|name| original_set.contains(name)) {
       continue;
     }
 
-    let same_source_all = flat_names.iter().any(|name| {
+    let same_source_all = entry.flat_names.iter().any(|name| {
       indc_source_all(name, stt)
         .is_some_and(|source_all| source_all.as_slice() == original_all)
     });
@@ -3669,13 +3929,13 @@ fn stored_plan_blocks_for_original_all(
       continue;
     }
 
-    if !seen.insert(flat_names.clone()) {
+    if !seen.insert(entry.flat_names.clone()) {
       continue;
     }
     candidates.push(StoredPlanBlock {
-      class_names,
-      aux_layout: aux_layout.clone(),
-      flat_names,
+      class_names: entry.class_names.clone(),
+      aux_layout: entry.aux_layout.clone(),
+      flat_names: entry.flat_names.clone(),
     });
   }
 
@@ -3732,6 +3992,7 @@ fn install_decompile_call_site_plans(
   aux_members: &[(AuxKind, Name)],
   env: &LeanEnv,
   stt: &CompileState,
+  muts_index: &MutsPlanIndex,
 ) -> Result<(), DecompileError> {
   use crate::compile::{aux_gen, surgery};
 
@@ -3740,7 +4001,8 @@ fn install_decompile_call_site_plans(
   }
 
   let original_all: Vec<Name> = all_names.to_vec();
-  let mut plan_blocks = stored_plan_blocks_for_original_all(&original_all, stt);
+  let mut plan_blocks =
+    stored_plan_blocks_for_original_all(&original_all, stt, muts_index);
   if plan_blocks.is_empty() {
     plan_blocks = fallback_plan_blocks_from_sort(all_names, env, stt)?;
   }
@@ -3869,6 +4131,7 @@ fn decompile_block_aux_gen(
   kctx: &mut crate::compile::KernelCtx,
   stt: &CompileState,
   dstt: &DecompileState,
+  muts_index: &MutsPlanIndex,
 ) -> Vec<(Name, DecompileError)> {
   use crate::compile::aux_gen::{
     below::{BelowConstant, generate_below_constants},
@@ -4015,7 +4278,7 @@ fn decompile_block_aux_gen(
         }
         for (n, ci) in roundtripped {
           if rec_members.contains(&&n) || env.contains_key(&n) {
-            dstt.env.insert(n, ci);
+            dstt.insert_interned(n, ci);
           }
         }
       },
@@ -4023,7 +4286,10 @@ fn decompile_block_aux_gen(
         eprintln!("[decompile] roundtrip_block .rec failed: {e}");
         for (n, rv) in &canonical_recs {
           if rec_members.contains(&n) {
-            dstt.env.insert(n.clone(), LeanConstantInfo::RecInfo(rv.clone()));
+            dstt.insert_interned(
+              n.clone(),
+              LeanConstantInfo::RecInfo(rv.clone()),
+            );
           }
         }
         aux_gen_errors.push((all_names[0].clone(), e));
@@ -4045,12 +4311,18 @@ fn decompile_block_aux_gen(
     if !env.contains_key(n) {
       env.insert(n.clone(), ci.clone());
     }
-    dstt.env.entry(n.clone()).or_insert_with(|| ci.clone());
+    if !dstt.env.contains_key(n) {
+      dstt.insert_interned(n.clone(), ci.clone());
+    }
   }
 
-  if let Err(e) =
-    install_decompile_call_site_plans(all_names, aux_members, env, stt)
-  {
+  if let Err(e) = install_decompile_call_site_plans(
+    all_names,
+    aux_members,
+    env,
+    stt,
+    muts_index,
+  ) {
     aux_gen_errors.push((all_names[0].clone(), e));
   }
 
@@ -4120,7 +4392,7 @@ fn decompile_block_aux_gen(
         match roundtrip_block(&[mc], &generated_consts, orig_env, stt, dstt) {
           Ok(roundtripped) if !roundtripped.is_empty() => {
             for (n, ci) in roundtripped {
-              dstt.env.insert(n, ci);
+              dstt.insert_interned(n, ci);
             }
           },
           Ok(_) => {
@@ -4129,7 +4401,7 @@ fn decompile_block_aux_gen(
             if !recover_aux_from_original(&aux_def.name, stt, dstt)
               && let Some(ci) = generated_consts.get(&aux_def.name)
             {
-              dstt.env.insert(aux_def.name.clone(), ci.clone());
+              dstt.insert_interned(aux_def.name.clone(), ci.clone());
             }
           },
           Err(e) => {
@@ -4140,7 +4412,7 @@ fn decompile_block_aux_gen(
             if !recover_aux_from_original(&aux_def.name, stt, dstt)
               && let Some(ci) = generated_consts.get(&aux_def.name)
             {
-              dstt.env.insert(aux_def.name.clone(), ci.clone());
+              dstt.insert_interned(aux_def.name.clone(), ci.clone());
             }
             aux_gen_errors.push((aux_def.name.clone(), e));
           },
@@ -4214,7 +4486,7 @@ fn decompile_block_aux_gen(
         match roundtrip_block(&[mc], &generated_consts, orig_env, stt, dstt) {
           Ok(roundtripped) if !roundtripped.is_empty() => {
             for (n, ci) in roundtripped {
-              dstt.env.insert(n, ci);
+              dstt.insert_interned(n, ci);
             }
           },
           Ok(_) => {
@@ -4223,7 +4495,7 @@ fn decompile_block_aux_gen(
             if !recover_aux_from_original(&aux_def.name, stt, dstt)
               && let Some(ci) = generated_consts.get(&aux_def.name)
             {
-              dstt.env.insert(aux_def.name.clone(), ci.clone());
+              dstt.insert_interned(aux_def.name.clone(), ci.clone());
             }
           },
           Err(e) => {
@@ -4234,7 +4506,7 @@ fn decompile_block_aux_gen(
             if !recover_aux_from_original(&aux_def.name, stt, dstt)
               && let Some(ci) = generated_consts.get(&aux_def.name)
             {
-              dstt.env.insert(aux_def.name.clone(), ci.clone());
+              dstt.insert_interned(aux_def.name.clone(), ci.clone());
             }
             aux_gen_errors.push((aux_def.name.clone(), e));
           },
@@ -4304,7 +4576,9 @@ fn decompile_block_aux_gen(
     if !env.contains_key(n) {
       env.insert(n.clone(), ci.clone());
     }
-    dstt.env.entry(n.clone()).or_insert_with(|| ci.clone());
+    if !dstt.env.contains_key(n) {
+      dstt.insert_interned(n.clone(), ci.clone());
+    }
   }
 
   // Insert .below constants via roundtrip_block.
@@ -4345,7 +4619,7 @@ fn decompile_block_aux_gen(
       ) {
         Ok(roundtripped) => {
           for (n, ci) in roundtripped {
-            dstt.env.insert(n, ci);
+            dstt.insert_interned(n, ci);
           }
         },
         Err(e) => {
@@ -4446,7 +4720,7 @@ fn decompile_block_aux_gen(
       match roundtrip_block(&[mc], &generated_consts, orig_env, stt, dstt) {
         Ok(roundtripped) => {
           for (n, ci) in roundtripped {
-            dstt.env.insert(n, ci);
+            dstt.insert_interned(n, ci);
           }
         },
         Err(e) => {
@@ -4517,7 +4791,7 @@ fn decompile_block_aux_gen(
           ) {
             Ok(roundtripped) => {
               for (n, ci) in roundtripped {
-                dstt.env.insert(n, ci);
+                dstt.insert_interned(n, ci);
               }
             },
             Err(e) => {
@@ -4555,7 +4829,9 @@ fn decompile_block_aux_gen(
     if !env.contains_key(n) {
       env.insert(n.clone(), ci.clone());
     }
-    dstt.env.entry(n.clone()).or_insert_with(|| ci.clone());
+    if !dstt.env.contains_key(n) {
+      dstt.insert_interned(n.clone(), ci.clone());
+    }
   }
 
   // Populate the ephemeral kenv with .below types so brecOn's TcScope
@@ -4622,7 +4898,7 @@ fn decompile_block_aux_gen(
           match roundtrip_block(&[mc], &generated_consts, orig_env, stt, dstt) {
             Ok(roundtripped) if !roundtripped.is_empty() => {
               for (n, ci) in roundtripped {
-                dstt.env.insert(n, ci);
+                dstt.insert_interned(n, ci);
               }
             },
             Ok(_) => {
@@ -4632,7 +4908,7 @@ fn decompile_block_aux_gen(
               // `brecon_def_to_lean` applies the same kind/safety/hints
               // matrix that the compile path used.
               if !recover_aux_from_original(&d.name, stt, dstt) {
-                dstt.env.insert(d.name.clone(), brecon_def_to_lean(d));
+                dstt.insert_interned(d.name.clone(), brecon_def_to_lean(d));
               }
             },
             Err(e) => {
@@ -4641,7 +4917,7 @@ fn decompile_block_aux_gen(
               // post-preseed, the roundtrip is byte-exact corpus-wide,
               // so any error here is a regression.
               if !recover_aux_from_original(&d.name, stt, dstt) {
-                dstt.env.insert(d.name.clone(), brecon_def_to_lean(d));
+                dstt.insert_interned(d.name.clone(), brecon_def_to_lean(d));
               }
               aux_gen_errors.push((d.name.clone(), e));
             },
@@ -4703,6 +4979,19 @@ pub fn decompile_env(
 
   let dstt = DecompileState::default();
 
+  // Pre-pass: index every Muts-tagged Named entry in one parallel scan.
+  // Rehydration below and Pass 2's per-block call-site planning both
+  // read Muts metadata, which under the demoted repr costs a full
+  // decode per access — the index bounds that to one decode per entry.
+  let t_idx = std::time::Instant::now();
+  let muts_index = build_muts_plan_index(stt);
+  eprintln!(
+    "[decompile] muts plan index built in {:.2}s ({} entries){}",
+    t_idx.elapsed().as_secs_f32(),
+    muts_index.entries.len(),
+    rss_log_suffix(),
+  );
+
   // Pre-pass: Rehydrate `stt.aux_perms` from persisted Muts metadata.
   //
   // When `stt` was freshly constructed from a deserialized Ixon env,
@@ -4712,7 +5001,7 @@ pub fn decompile_env(
   // before Pass 2 runs aux_gen against the decompiled blocks.
   //
   // See `docs/ix_canonicity.md` §10.2 / §17.3.
-  rehydrate_aux_perms_from_env(stt);
+  rehydrate_aux_perms_from_env(stt, &muts_index);
 
   // Pass 1: Decompile all non-aux_gen constants (parallel).
   // Aux_gen constants (named.original.is_some() && is_aux_gen_suffix) are
@@ -4727,9 +5016,10 @@ pub fn decompile_env(
     decompile_named_const(name, named, stt, &dstt)
   })?;
   eprintln!(
-    "[decompile] Pass 1 done in {:.2}s ({} constants in dstt.env)",
+    "[decompile] Pass 1 done in {:.2}s ({} constants in dstt.env){}",
     t_p1.elapsed().as_secs_f32(),
     dstt.env.len(),
+    rss_log_suffix(),
   );
 
   // Pass 1.5: Lean-faithful inductive flags
@@ -4842,9 +5132,11 @@ pub fn decompile_env(
     sorted
   };
   eprintln!(
-    "[decompile] Pass 2 prep done in {:.2}s: {} aux_gen blocks to regenerate",
+    "[decompile] Pass 2 prep done in {:.2}s: {} aux_gen blocks to \
+     regenerate{}",
     t_p2_prep.elapsed().as_secs_f32(),
     sorted_block_keys.len(),
+    rss_log_suffix(),
   );
 
   // Shared kernel context for aux_gen (accumulates across blocks).
@@ -4865,6 +5157,16 @@ pub fn decompile_env(
   // so the BFS below doesn't redundantly walk the same dependency subgraph
   // for every block (still O(n) across all blocks combined).
   let mut ingressed: FxHashSet<Name> = FxHashSet::default();
+
+  // Size trigger for the kenv clear at the bottom of the block loop.
+  // A full clear makes later blocks re-walk their whole ingress
+  // closures, so the threshold must sit above the kenv working set of
+  // any env that fits in RAM comfortably — those runs must never clear
+  // (a threshold inside their working set trades a large Pass 2 wall
+  // regression for little memory). It exists as a backstop against
+  // unbounded growth on envs whose closure union would otherwise
+  // dominate decompile RSS.
+  const KENV_CLEAR_ENTRIES: usize = 65536;
 
   // Progress tracking. Per-block progress logs (every `log_stride` blocks or
   // every 5 s) are opt-in via `IX_DECOMPILE_PROGRESS`; slow-block warnings
@@ -4916,6 +5218,7 @@ pub fn decompile_env(
       &mut kctx,
       stt,
       &dstt,
+      &muts_index,
     );
     aux_gen_errors.extend(errors);
 
@@ -4959,18 +5262,37 @@ pub fn decompile_env(
         let pct = 100.0 * done as f32 / total_blocks as f32;
         eprintln!(
           "[decompile] Pass 2 progress: {done}/{total_blocks} blocks \
-           ({pct:.1}%), elapsed {elapsed:.1}s, eta {remaining}s, kenv={}",
+           ({pct:.1}%), elapsed {elapsed:.1}s, eta {remaining}s, kenv={}{}",
           ingressed.len(),
+          rss_log_suffix(),
         );
         t_last_log = now;
       }
     }
+
+    // Bounded kenv growth: the kenv is a pure cache (`ensure_in_kenv_of`
+    // re-ingresses on demand and aux_gen re-ensures the prelude), so
+    // clearing at block boundaries is semantics-free. Unbounded, it
+    // grows to the union of every block's ingress closure.
+    //
+    // Unlike the compile scheduler's per-worker count cadence
+    // (`KENV_CLEAR_EVERY`), this kenv is shared across all blocks and a
+    // clear forces the next blocks to re-walk their full transitive
+    // closures. Trigger on size instead: envs whose closures stay under
+    // the threshold never clear (and pay nothing); larger envs trade a
+    // few re-ingress walks for a bounded working set.
+    if ingressed.len() > KENV_CLEAR_ENTRIES {
+      kctx.kenv.clear_releasing_memory();
+      ingressed.clear();
+      expr_utils::ensure_prelude_in_kenv_of(stt, &mut kctx);
+    }
   }
   eprintln!(
-    "[decompile] Pass 2 done in {:.2}s ({} aux_gen errors, kenv={})",
+    "[decompile] Pass 2 done in {:.2}s ({} aux_gen errors, kenv={}){}",
     t_p2.elapsed().as_secs_f32(),
     aux_gen_errors.len(),
     ingressed.len(),
+    rss_log_suffix(),
   );
 
   if !aux_gen_errors.is_empty() {
@@ -4982,6 +5304,11 @@ pub fn decompile_env(
       eprintln!("  {}: {e}", name.pretty());
     }
   }
+
+  // The intern table's job is done — `dstt.env` keeps the canonical
+  // `Arc`s alive, and consumers only read `env`.
+  let mut dstt = dstt;
+  dstt.expr_intern = DashMap::new();
 
   Ok(dstt)
 }

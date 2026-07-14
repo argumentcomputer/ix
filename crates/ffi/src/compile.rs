@@ -3,7 +3,7 @@
 //! Provides `extern "C"` functions callable from Lean via `@[extern]`:
 //! - `rs_compile_env` / `rs_compile_env_full`: compile a Lean environment to Ixon
 //! - `rs_compile_phases`: run individual pipeline phases (canon, condense, graph, compile)
-//! - `rs_decompile_env`: decompile Ixon back to Lean environment
+//! - `rs_decompile_env`: decompile a serialized `.ixe` env back to Lean constants
 //! - `rs_roundtrip_*`: roundtrip FFI tests for Lean↔Rust type conversions
 //! - `build_*` / `decode_*`: convert between Lean constructor layouts and Rust types
 
@@ -11,9 +11,9 @@ use std::sync::Arc;
 
 use crate::lean::{
   LeanIxBlock, LeanIxCompileError, LeanIxCompilePhases, LeanIxCondensedBlocks,
-  LeanIxConstantInfo, LeanIxDecompileError, LeanIxName, LeanIxRawEnvironment,
-  LeanIxSerializeError, LeanIxonRawBlob, LeanIxonRawComm, LeanIxonRawConst,
-  LeanIxonRawEnv, LeanIxonRawNameEntry, LeanIxonRawNamed,
+  LeanIxDecompileError, LeanIxName, LeanIxRawEnvironment, LeanIxSerializeError,
+  LeanIxonRawBlob, LeanIxonRawComm, LeanIxonRawConst, LeanIxonRawEnv,
+  LeanIxonRawNameEntry, LeanIxonRawNamed,
 };
 use ix_common::address::Address;
 use ix_common::env::Name;
@@ -32,13 +32,12 @@ use ixon::{Comm, ConstantMeta};
 use lean_ffi::object::LeanIOResult;
 use lean_ffi::object::LeanNat;
 use lean_ffi::object::{
-  LeanArray, LeanBorrowed, LeanByteArray, LeanExcept, LeanList, LeanOwned,
-  LeanProd, LeanRef, LeanString,
+  LeanArray, LeanBorrowed, LeanByteArray, LeanList, LeanOwned, LeanProd,
+  LeanRef, LeanString,
 };
 
 use crate::builder::LeanBuildCache;
 use crate::lean::LeanIxAddress;
-use crate::lean_ixon::env::decoded_to_ixon_env;
 
 #[cfg(feature = "test-ffi")]
 use crate::lean::{LeanIxBlockCompareDetail, LeanIxBlockCompareResult};
@@ -1482,32 +1481,92 @@ pub extern "C" fn rs_roundtrip_serialize_error(
 // Decompilation FFI
 // =============================================================================
 
-/// FFI: Decompile an Ixon.RawEnv → Except DecompileError (Array (Ix.Name × Ix.ConstantInfo)). Pure.
+/// FFI: decompile a serialized `.ixe` env from disk — the inverse of
+/// `rs_compile_env` — returning the decompiled constant count.
+///
+/// A `decompile_env` failure (malformed output) is a hard error,
+/// returned as an IO error so the caller reddens the cell. Timing and
+/// peak-RSS are measured by the Lean caller around this call, with the
+/// same texray infrastructure `ix compile --json` uses. Deeper
+/// compile→decompile roundtrip fidelity is gated by the canonical
+/// roundtrip tests (`ix validate` / `rs_decompile_roundtrip`), which
+/// need the original Lean env a `.ixe` can't supply — the bench does
+/// not reproduce them here.
+///
+/// Lean signature:
+/// ```lean
+/// @[extern "rs_decompile_env"]
+/// opaque rsDecompileEnvFFI : @& String → IO Nat
+/// ```
 #[unsafe(no_mangle)]
 pub extern "C" fn rs_decompile_env(
-  raw_env_obj: LeanIxonRawEnv<LeanOwned>,
-) -> LeanExcept<LeanOwned> {
-  let decoded = raw_env_obj.decode();
-  let env = decoded_to_ixon_env(&decoded);
+  path: LeanString<LeanBorrowed<'_>>,
+) -> LeanIOResult<LeanOwned> {
+  let path = path.as_str().to_string();
 
-  // Wrap in CompileState (decompile_env only uses .env)
-  let stt = CompileState { env, ..CompileState::default() };
-
-  match decompile_env(&stt) {
-    Ok(dstt) => {
-      let entries: Vec<_> = dstt.env.into_iter().collect();
-      let mut cache = LeanBuildCache::with_capacity(entries.len());
-
-      let arr = LeanArray::alloc(entries.len());
-      for (i, (name, info)) in entries.iter().enumerate() {
-        let name_obj = LeanIxName::build(&mut cache, name);
-        let info_obj = LeanIxConstantInfo::build(&mut cache, info);
-        let pair = LeanProd::new(name_obj, info_obj);
-        arr.set(i, pair);
-      }
-
-      LeanExcept::ok(arr)
+  let bytes = match std::fs::read(&path) {
+    Ok(b) => b,
+    Err(e) => {
+      return LeanIOResult::error_string(&format!(
+        "rs_decompile_env: failed to read {path}: {e}"
+      ));
     },
-    Err(e) => LeanExcept::error(LeanIxDecompileError::build(&e)),
+  };
+  // Demoted-at-parse load: decompile reads each entry's metadata a
+  // bounded number of times, and the whole named section's structured
+  // form costs a large multiple of its encoding — enough to dominate
+  // the decompile's peak RSS on the biggest envs. One load path at
+  // every scale also keeps the bench rows comparable across envs.
+  let mut slice: &[u8] = &bytes;
+  let env = match ixon::env::Env::get_demoted_named(&mut slice) {
+    Ok(env) => env,
+    Err(e) => {
+      return LeanIOResult::error_string(&format!(
+        "rs_decompile_env: failed to deserialize {path}: {e}"
+      ));
+    },
+  };
+
+  // The env owns its bytes after parsing; release the file buffer
+  // before the decompile allocates next to it.
+  drop(bytes);
+
+  // Decompile needs every reachable constant carried: a thin bundle
+  // deliberately omits its assumed subtrees, and a bundle with a broken
+  // closure would otherwise surface deep inside the decompile as a
+  // confusing per-constant error. Whole envs (`main = None`) carry
+  // everything by construction and skip the closure walk.
+  if !env.assumptions.is_empty() {
+    return LeanIOResult::error_string(&format!(
+      "rs_decompile_env: {path} is a thin bundle ({} assumptions); \
+       decompile needs a self-contained env",
+      env.assumptions.len()
+    ));
   }
+  if env.main.is_some()
+    && let Err(e) = env.validate_closed()
+  {
+    return LeanIOResult::error_string(&format!(
+      "rs_decompile_env: {path}: {e}"
+    ));
+  }
+
+  // decompile_env reads only `stt.env`; Pass 2 (aux_gen regeneration)
+  // reconstructs the block structure from the env itself —
+  // `name_to_addr` so aux_gen resolves addresses for the names it
+  // regenerates (mirroring `rs_compile_validate_aux`'s Phase 7 setup).
+  let stt = CompileState { env, ..CompileState::default() };
+  for entry in stt.env.named.iter() {
+    stt.name_to_addr.insert(entry.key().clone(), entry.value().addr.clone());
+  }
+
+  let dstt = match decompile_env(&stt) {
+    Ok(d) => d,
+    Err(e) => {
+      return LeanIOResult::error_string(&format!(
+        "rs_decompile_env: decompile of {path} failed: {e:?}"
+      ));
+    },
+  };
+  LeanIOResult::ok(LeanOwned::from_nat_u64(dstt.env.len() as u64))
 }

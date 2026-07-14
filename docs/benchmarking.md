@@ -102,6 +102,7 @@ a PR tree and compare them — exactly what the PR workflow does.
 | `sp1`     | SP1 VM execute (currently disabled in the registry) | `sp1-host` |
 | `ooc`     | out-of-circuit Rust kernel: whole-env row + one full-closure row per primary (`check-time` wraps only the check — the env loads once, outside every row's timed window) | `ix check-rs --json` |
 | `compile` | `ix compile <env>.lean → <env>.ixe`: compile-time, file-size, constants, throughput | `ix compile --json` |
+| `decompile` | inverse of compile — `ix decompile <env>.ixe → Lean consts`: decompile-time, throughput, peak-rss, constants, file-size (input `.ixe`). Consumes the compile cell's `.ixe` rather than producing one; a malformed decompile reddens the cell. Deep roundtrip fidelity is gated by the canonical checks (`ix validate` / roundtrip tests), which need the original Lean env the `.ixe` can't supply | `ix decompile --json` |
 
 All tools emit the same rows, and all the constant-driven ones take the same
 `--consts`/`--consts-file` grammar (`bench-recursive-verifier` instead takes
@@ -166,8 +167,8 @@ breakdowns. bench-main's compile job pre-cuts these artifacts
 ## `!benchmark` grammar
 
 ```
-!benchmark ([aiur] [zisk] [sp1] [ooc] [compile] [aiur-recursive] | all) [execute]
-           [KEY=VALUE …]
+!benchmark ([aiur] [zisk] [sp1] [ooc] [compile] [decompile] [aiur-recursive] | all)
+           [execute] [KEY=VALUE …]
 BENCH_ENVS=InitStd,Mathlib     # default InitStd (case-insensitive); a
                                # compile-only request may name any registry
                                # env (Lean, FLT compile fine, just unbenched)

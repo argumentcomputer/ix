@@ -43,7 +43,7 @@ def metricKind (metric : String) : String :=
   then "bytes"
   else if metric.startsWith "phase-" then "seconds"
   else if ["execute-time", "prove-time", "verify-time", "check-time",
-           "compile-time"].contains metric then "seconds"
+           "compile-time", "decompile-time"].contains metric then "seconds"
   else if ["fft-cost", "cycles", "steps", "max-shard-cycles",
            "throughput"].contains metric then "count"
   else if ["constants", "shards"].contains metric then "int"

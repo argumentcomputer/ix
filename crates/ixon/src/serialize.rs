@@ -1735,6 +1735,20 @@ impl Env {
   /// `parse_lazy_index` enforces the same; the early-stop readers
   /// (`get_anon`, `get_anon_mmap`) cannot make that check by design.
   pub fn get(buf: &mut &[u8]) -> Result<Self, String> {
+    Self::get_inner(buf, false)
+  }
+
+  /// [`Self::get`], storing each `Named`'s metadata in the demoted
+  /// (serialized-bytes) repr as it is parsed. The structured metadata
+  /// for a whole env costs a large multiple of its encoding, so
+  /// consumers that read metadata a bounded number of times per entry
+  /// (decompile) use this to keep the structured residency to one
+  /// entry at a time instead of the whole named section.
+  pub fn get_demoted_named(buf: &mut &[u8]) -> Result<Self, String> {
+    Self::get_inner(buf, true)
+  }
+
+  fn get_inner(buf: &mut &[u8], demote_named: bool) -> Result<Self, String> {
     // Header: tag + stored merkle root (verified at the end against
     // the recomputed root; empty const sets store `zero_address()`) +
     // bundle fields.
@@ -1818,7 +1832,10 @@ impl Env {
     let num_named = get_u64(buf)?;
     for _ in 0..num_named {
       let name_addr = get_address(buf)?;
-      let named = get_named_indexed(buf, &name_reverse_index)?;
+      let mut named = get_named_indexed(buf, &name_reverse_index)?;
+      if demote_named {
+        named.demote();
+      }
       let name = names_lookup.get(&name_addr).cloned().ok_or_else(|| {
         format!("Env::get: missing name for addr {:?}", name_addr)
       })?;

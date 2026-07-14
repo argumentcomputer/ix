@@ -811,16 +811,6 @@ def decompileAllParallelIO (ixonEnv : Ixon.Env)
   IO.println s!"  [Decompile] Done: {result.size} ok, {errors.size} errors in {elapsed}ms"
   pure (result, errors)
 
-/-! ## Rust FFI Decompilation -/
-
-@[extern "rs_decompile_env"]
-opaque rsDecompileEnvFFI : @& Ixon.RawEnv → Except DecompileError (Array (Ix.Name × Ix.ConstantInfo))
-
-/-- Decompile an Ixon.Env to Ix.ConstantInfo using Rust. -/
-def rsDecompileEnv (env : Ixon.Env) : Except DecompileError (Std.HashMap Ix.Name Ix.ConstantInfo) := do
-  let arr ← rsDecompileEnvFFI env.toRawEnv
-  return arr.foldl (init := {}) fun m (name, info) => m.insert name info
-
 end Ix.DecompileM
 
 end

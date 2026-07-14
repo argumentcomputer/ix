@@ -54,6 +54,9 @@ def plotTitle (workload measure : String) : String :=
   | "ix-compile", "peak-rss"             => "Ix Compile Peak RAM Usage"
   | "ix-compile", "file-size"            => "Ix Environment Size"
   | "ix-compile", "constants"            => "Ix Input Constants"
+  | "ix-decompile", "decompile-time"     => "Ix Decompile Time"
+  | "ix-decompile", "throughput"         => "Ix Decompile Throughput"
+  | "ix-decompile", "peak-rss"           => "Ix Decompile Peak RAM Usage"
   | "aiur-check-prove", "prove-time"     => "Aiur Prove Time"
   | "aiur-check-prove", "throughput"     => "Aiur Prove Throughput"
   | "aiur-check-prove", "peak-rss"       => "Aiur Prove Peak RAM Usage"
@@ -78,10 +81,14 @@ def plotTitle (workload measure : String) : String :=
     "Aiur FFT Cost" from the prove cell). Zisk `shards` is a PR-comment
     column only ("Zisk Cycles" / max-shard-cycles carry the sharding
     trend), and zisk `constants` charts on the cross-kernel overlay below
-    instead of alone. -/
+    instead of alone. `ix-decompile` reuses the compile cell's `.ixe`, so
+    its `file-size` / `constants` duplicate "Ix Environment Size" / "Ix
+    Input Constants" exactly — the decompile cell tracks only its own
+    decompile-time / throughput / peak-rss trends. -/
 def plotSkips : List (String × String) :=
   [("aiur-check-prove", "execute-time"), ("aiur-check-execute", "fft-cost"),
-   ("zisk-check-execute", "shards"), ("zisk-check-execute", "constants")]
+   ("zisk-check-execute", "shards"), ("zisk-check-execute", "constants"),
+   ("ix-decompile", "file-size"), ("ix-decompile", "constants")]
 
 /-- Canonical units per measure slug, asserted on every sync: bencher
     auto-creates a measure with placeholder units ("Measure (units)") on
@@ -92,6 +99,7 @@ def unitsFor (slug : String) : Option String :=
   if slug.startsWith "phase-" then some "seconds (s)" else
   [("execute-peak-rss", "bytes (B)"),
    ("compile-time", "seconds (s)"),
+   ("decompile-time", "seconds (s)"),
    ("execute-time", "seconds (s)"),
    ("prove-time", "seconds (s)"),
    ("verify-time", "seconds (s)"),
@@ -115,7 +123,7 @@ def unitsFor (slug : String) : Option String :=
 /-- Dashboard group order (compile first, then aiur prove/execute, zisk,
     ooc); unranked workloads (a future backend) sort last. -/
 def workloadOrder : List String :=
-  ["ix-compile", "aiur-check-prove", "aiur-check-execute",
+  ["ix-compile", "ix-decompile", "aiur-check-prove", "aiur-check-execute",
    "aiur-check-recursive", "aiur-recursive", "zisk-check-execute",
    "ooc-check"]
 
@@ -127,7 +135,8 @@ structure PlotSpec where
 /-- One spec per bench-main testbed: its measure slugs and the benchmark
     row names uploaded there, mirroring the row emitters — compile keys
     one row per env (benched or not: the compile matrix is deliberately
-    wider), ooc one whole-env row plus one full-closure row per primary,
+    wider), decompile one row per benched env (a `.ixe` consumer), ooc one
+    whole-env row plus one full-closure row per primary,
     the per-constant backends one row per primary. Dynamic sub-rows
     (`<name>/shard-N`) are left out: their multiplicity shifts with the
     shard manifest, and the parent row carries the headline trend. -/
@@ -142,6 +151,10 @@ def plotSpecs (rows : Array BenchCmd.VectorRow) : Array PlotSpec := Id.run do
           return (BenchCmd.envSpecs.map (·.name)).toArray
         if b.name == "aiur-recursive" then
           return (BenchCmd.recursiveConfigs.map (·.1)).toArray
+        -- decompile is env-keyed like compile but a `.ixe` consumer: one row
+        -- per benched env (it runs only where a benched `.ixe` exists).
+        if b.name == "decompile" then
+          return benched.toArray
         let mut ns : Array String := #[]
         for env in benched do
           if b.name == "ooc" then ns := ns.push env

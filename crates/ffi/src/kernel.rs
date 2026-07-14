@@ -447,10 +447,14 @@ fn poison_second_rec_rule_returns_first_minor(
   let mut rec_constant: ixon::constant::Constant = (*rec_arc).clone();
   drop(rec_arc);
 
+  // The stores below must use `store_const_demoted(.., false)`:
+  // `store_const` under `DEMOTE` treats a re-store of an existing address
+  // as a no-op (content addressing assumes identical bytes), and this
+  // helper deliberately stores *different* bytes at the original address.
   match &mut rec_constant.info {
     IxonCI::Recr(rec) => {
       poison_recursor_rule_payload(rec)?;
-      ixon_env.store_const(rec_addr.clone(), rec_constant);
+      ixon_env.store_const_demoted(rec_addr.clone(), rec_constant, false);
       Ok(rec_addr)
     },
     IxonCI::Muts(members) => {
@@ -468,7 +472,7 @@ fn poison_second_rec_rule_returns_first_minor(
           rec_name.pretty()
         ));
       }
-      ixon_env.store_const(rec_addr.clone(), rec_constant);
+      ixon_env.store_const_demoted(rec_addr.clone(), rec_constant, false);
       Ok(rec_addr)
     },
     IxonCI::RPrj(proj) => {
@@ -515,7 +519,7 @@ fn poison_second_rec_rule_returns_first_minor(
           ));
         },
       }
-      ixon_env.store_const(block_addr, block_constant);
+      ixon_env.store_const_demoted(block_addr, block_constant, false);
       Ok(rec_addr)
     },
     other => Err(format!(
@@ -3522,6 +3526,97 @@ fn build_uniform_error(count: usize, msg: &str) -> LeanIOResult<LeanOwned> {
 // `decompile_env`, which the production CLI path (`rs_kernel_check_consts`)
 // doesn't need. Cfg-gating keeps `lake build ix` (no `test-ffi`) lean.
 
+/// FFI: exercise the serialized decompile pipeline
+/// Lean → compile → serialize → deserialize → decompile → Lean, and
+/// compare each constant against the original. This is `ix decompile`'s
+/// path (an in-memory `.ixe`): the demoted-at-parse metadata load, the
+/// `Named.original` recovery for shape-divergent aux blocks, and
+/// expression interning — without the kernel ingress/egress leg
+/// [`rs_kernel_roundtrip`] adds.
+///
+/// Lean signature:
+/// ```lean
+/// @[extern "rs_decompile_roundtrip"]
+/// opaque rsDecompileRoundtripFFI :
+///     @& List (Lean.Name × Lean.ConstantInfo) → IO (Array String)
+/// ```
+/// Returns an `Array String` of per-constant diff messages. Empty = pass.
+#[cfg(feature = "test-ffi")]
+#[unsafe(no_mangle)]
+pub extern "C" fn rs_decompile_roundtrip(
+  env_consts: LeanList<LeanBorrowed<'_>>,
+) -> LeanIOResult<LeanOwned> {
+  let total_start = Instant::now();
+
+  let t0 = Instant::now();
+  let rust_env = decode_env(env_consts);
+  eprintln!("[rs_decompile_roundtrip] read env:   {:>8.1?}", t0.elapsed());
+
+  let t1 = Instant::now();
+  let rust_env_arc = Arc::new(rust_env);
+  let compile_state =
+    match compile_env_with_options(&rust_env_arc, CompileOptions::default()) {
+      Ok(s) => s,
+      Err(e) => {
+        return build_string_array(&[format!("compile error: {e:?}")]);
+      },
+    };
+  eprintln!("[rs_decompile_roundtrip] compile:    {:>8.1?}", t1.elapsed());
+
+  let t2 = Instant::now();
+  let mut bytes = Vec::new();
+  if let Err(e) = compile_state.env.put(&mut bytes) {
+    return build_string_array(&[format!("serialize error: {e}")]);
+  }
+  drop(compile_state);
+  let mut slice: &[u8] = &bytes;
+  let env = match ixon::env::Env::get_demoted_named(&mut slice) {
+    Ok(env) => env,
+    Err(e) => {
+      return build_string_array(&[format!("deserialize error: {e}")]);
+    },
+  };
+  eprintln!(
+    "[rs_decompile_roundtrip] serialize:  {:>8.1?} ({} bytes)",
+    t2.elapsed(),
+    bytes.len()
+  );
+  drop(bytes);
+
+  let stt = CompileState { env, ..CompileState::default() };
+  for entry in stt.env.named.iter() {
+    stt.name_to_addr.insert(entry.key().clone(), entry.value().addr.clone());
+  }
+
+  let t3 = Instant::now();
+  let dstt = match decompile_env(&stt) {
+    Ok(d) => d,
+    Err(e) => {
+      return build_string_array(&[format!("decompile error: {e:?}")]);
+    },
+  };
+  eprintln!(
+    "[rs_decompile_roundtrip] decompile:  {:>8.1?} ({} consts)",
+    t3.elapsed(),
+    dstt.env.len()
+  );
+
+  let t4 = Instant::now();
+  let (errors, checked, not_found) =
+    compare_envs(&rust_env_arc, |n| dstt.env.get(n));
+  eprintln!(
+    "[rs_decompile_roundtrip] verify:     {:>8.1?} (checked {checked}, not_found {not_found}, errors {})",
+    t4.elapsed(),
+    errors.len()
+  );
+  eprintln!(
+    "[rs_decompile_roundtrip] total:      {:>8.1?}",
+    total_start.elapsed()
+  );
+
+  build_string_array(&errors)
+}
+
 /// FFI: exercise the full pipeline
 /// Lean → Ixon → kernel → Ixon' → decompile → Lean, and compare each
 /// constant against the original.
@@ -3612,23 +3707,12 @@ pub extern "C" fn rs_kernel_roundtrip(
     dstt.env.len()
   );
 
-  // Build a plain Lean `Env` from decompile's DashMap for the standard
-  // compare_envs / find_diff flow.
-  let t5 = Instant::now();
-  let mut decompiled_env = ix_common::env::Env::default();
-  for entry in dstt.env.iter() {
-    decompiled_env.insert(entry.key().clone(), entry.value().clone());
-  }
-  eprintln!(
-    "[rs_kernel_roundtrip] build lean env:{:>8.1?} ({} consts)",
-    t5.elapsed(),
-    decompiled_env.len()
-  );
-
-  // Compare decompiled env against original, content-hash by content-hash.
+  // Compare decompiled env against original, content-hash by
+  // content-hash, reading decompile's DashMap directly — a plain-`Env`
+  // copy of it would double the resident decompiled env at peak.
   let t6 = Instant::now();
   let (errors, checked, not_found) =
-    compare_envs(&rust_env_arc, &decompiled_env);
+    compare_envs(&rust_env_arc, |n| dstt.env.get(n));
   eprintln!(
     "[rs_kernel_roundtrip] verify:        {:>8.1?} (checked {checked}, not_found {not_found}, errors {})",
     t6.elapsed(),
@@ -3646,13 +3730,18 @@ pub extern "C" fn rs_kernel_roundtrip(
   build_string_array(&errors)
 }
 
-/// Compare two envs for structural equality under content-hashing. Returns
+/// Compare the original env against a decompiled/egressed side for
+/// structural equality under content-hashing. Returns
 /// `(errors, checked, not_found)`. `errors` is capped at 50 to keep outputs
 /// manageable.
+///
+/// The compared side is a lookup rather than an `Env` so callers can pass
+/// whatever map already holds their constants (e.g. decompile's DashMap)
+/// instead of copying into a fresh `Env`.
 #[cfg(feature = "test-ffi")]
-fn compare_envs(
+fn compare_envs<R: std::ops::Deref<Target = ix_common::env::ConstantInfo>>(
   original: &ix_common::env::Env,
-  egressed: &ix_common::env::Env,
+  lookup: impl Fn(&Name) -> Option<R>,
 ) -> (Vec<String>, usize, usize) {
   use ix_common::env::ConstantInfo as LCI;
 
@@ -3662,7 +3751,7 @@ fn compare_envs(
   let mut not_found = 0usize;
 
   for (name, orig_ci) in original.iter() {
-    match egressed.get(name) {
+    match lookup(name) {
       None => {
         not_found += 1;
       },
@@ -3711,7 +3800,7 @@ fn compare_envs(
     }
     if checked.is_multiple_of(10000) && checked > 0 {
       eprintln!(
-        "[rs_kernel_roundtrip] verify:      {checked}/{total} ({} errors so far)",
+        "[compare_envs] verify:      {checked}/{total} ({} errors so far)",
         errors.len()
       );
     }
@@ -3935,7 +4024,8 @@ pub extern "C" fn rs_kernel_roundtrip_no_compile(
 
   // Compare.
   let t3 = Instant::now();
-  let (errors, checked, not_found) = compare_envs(&rust_env_arc, &egressed_env);
+  let (errors, checked, not_found) =
+    compare_envs(&rust_env_arc, |n| egressed_env.get(n));
   eprintln!(
     "[rs_kernel_roundtrip_no_compile] verify:      {:>8.1?} (checked {checked}, not_found {not_found}, errors {})",
     t3.elapsed(),
