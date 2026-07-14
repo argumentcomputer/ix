@@ -142,13 +142,13 @@ jobs:
         run: |
           [[ "$BASE" =~ ^[0-9a-f]{40}$ && "$HEAD" =~ ^[0-9a-f]{40}$ ]] \
             || { echo "base-sha/head-sha must be full 40-hex SHAs" >&2; exit 1; }
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.head-sha }}
           # The job builds and runs PR code; never leave the token in .git.
           persist-credentials: false
       - id: bins
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v6
         with:
           path: ~/.local/bin
           key: bench-bins-${{ inputs.head-sha }}
@@ -177,7 +177,7 @@ jobs:
           cp .lake/build/bin/ix .lake/build/bin/bench-typecheck .lake/build/bin/bench-recursive-verifier ~/.local/bin/
           chmod +x ~/.local/bin/ix ~/.local/bin/bench-typecheck ~/.local/bin/bench-recursive-verifier
       - if: steps.bins.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@v6
         with:
           path: ~/.local/bin
           key: bench-bins-${{ inputs.head-sha }}
@@ -206,7 +206,7 @@ jobs:
         env: ${{ fromJSON(needs.build.outputs.envs) }}
     steps:
       - name: Checkout PR
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ inputs.head-sha }}
           # The job runs PR code; never leave the token in .git.
@@ -223,14 +223,14 @@ jobs:
       # .ixe is already published — nothing to do.
       - name: Check for published .ixe
         id: pr-ixe
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v6
         with:
           path: ${{ matrix.env }}.ixe
           key: bench-pr-ixe-${{ inputs.head-sha }}-${{ matrix.env }}-${{ hashFiles('ptenv.txt') }}
           lookup-only: true
       - name: Restore PR binaries
         if: steps.pr-ixe.outputs.cache-hit != 'true'
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v6
         with:
           path: ~/.local/bin
           key: bench-bins-${{ inputs.head-sha }}
@@ -262,7 +262,7 @@ jobs:
         run: ix bench run --backend compile --env ${{ matrix.env }} --out compile.json
       - name: Publish .ixe
         if: steps.pr-ixe.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@v6
         with:
           path: ${{ matrix.env }}.ixe
           key: bench-pr-ixe-${{ inputs.head-sha }}-${{ matrix.env }}-${{ hashFiles('ptenv.txt') }}
@@ -270,7 +270,7 @@ jobs:
       # runner class, same binaries, same command it would run itself).
       - name: Publish compile row
         if: steps.pr-ixe.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@v6
         with:
           path: compile.json
           key: bench-pr-row-${{ inputs.head-sha }}-${{ matrix.env }}-${{ hashFiles('ptenv.txt') }}
@@ -305,7 +305,7 @@ jobs:
       # PR checked out at the workspace root so the local install actions
       # resolve; base (bencher-miss fallback only) goes under base/.
       - name: Checkout PR
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ env.HEAD_SHA }}
           # The job runs PR code; never leave the token in .git.
@@ -326,7 +326,7 @@ jobs:
       # PR's `ix bench` orchestrates BOTH sides, with `--repo` selecting
       # whose tools get measured.
       - name: Restore PR binaries
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v6
         with:
           path: ~/.local/bin
           key: bench-bins-${{ env.HEAD_SHA }}
@@ -354,7 +354,7 @@ jobs:
       # the compile job published it; cells pass it via `--ixe` instead of
       # recompiling.
       - name: Restore PR .ixe
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v6
         with:
           path: ${{ matrix.cell.env }}.ixe
           key: bench-pr-ixe-${{ env.HEAD_SHA }}-${{ matrix.cell.env }}-${{ hashFiles('ptenv.txt') }}
@@ -362,7 +362,7 @@ jobs:
       # Compile cells reuse the compile job's measured row as their PR side.
       - name: Restore compile row
         if: matrix.cell.backend == 'compile'
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v6
         with:
           path: compile.json
           key: bench-pr-row-${{ env.HEAD_SHA }}-${{ matrix.cell.env }}-${{ hashFiles('ptenv.txt') }}
@@ -456,7 +456,7 @@ jobs:
           esac
       - name: Checkout base (bencher data missing or partial)
         if: steps.bencher.outputs.run-base == 'true'
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ env.BASE_SHA }}
           path: base
@@ -470,14 +470,14 @@ jobs:
       - name: Restore base binaries (bench-bins cache)
         if: steps.bencher.outputs.run-base == 'true'
         id: base-bins
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v6
         with:
           path: ~/.local/bin
           key: bench-bins-${{ env.BASE_SHA }}
       - name: Restore base .ixe (bench-main compile cache)
         if: steps.bencher.outputs.run-base == 'true'
         id: base-ixe
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v6
         with:
           # Path list must match bench-main's compile-job save (actions/cache
           # versions entries by path list); the key suffix is the env name
@@ -602,7 +602,7 @@ jobs:
 
       - name: Upload table
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: table-${{ env.LABEL }}
           path: out/table-${{ env.LABEL }}.md
@@ -635,11 +635,11 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.head-sha }}
           persist-credentials: false
-      - uses: actions/cache/restore@v5
+      - uses: actions/cache/restore@v6
         with:
           path: ~/.local/bin
           key: bench-bins-${{ inputs.head-sha }}
@@ -652,7 +652,7 @@ jobs:
           build: false
           use-github-cache: false
       - name: Download tables
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: tables
           pattern: table-*
@@ -668,7 +668,7 @@ jobs:
             --head "$HEAD_SHA" \
             --repo-url "${{ github.server_url }}/${{ github.repository }}" \
             --run-id "${{ github.run_id }}" --out comment-body.md
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: comment-body
           path: comment-body.md
@@ -686,7 +686,7 @@ jobs:
       - name: Download comment body
         if: needs.assemble.result == 'success'
         continue-on-error: true
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: comment-body
       # Any failed stage prepends a red-X header (quoting the parse error
