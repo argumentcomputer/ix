@@ -641,13 +641,29 @@ pub fn sort_aux_by_partition_refinement(
   // `MutConst`s from one vector; source-original references inside aux
   // expressions intentionally remain external references and compare by
   // resolved content address.
+  //
+  // Each AUX member additionally carries a synthetic trailing "identity
+  // marker" ctor whose type is its `aux_to_nested` nested-app (block-param
+  // FVars abstracted to loose BVars by position). Two distinct nested
+  // occurrences of the same external inductive can instantiate to
+  // alpha-identical aux types+ctors when the distinguishing spec param is
+  // phantom in the external's constructors (e.g. `Bar2 M Nat` vs
+  // `Bar2 M Bool` where `Bar2.mk : α → Bar2 α β` never uses `β`) — the
+  // marker keeps such auxes in distinct canonical classes and orders them
+  // by spec-param content, while genuinely alias-collapsed occurrences
+  // (already deduped at creation by `aux_seen` post-`alias_to_rep`) are
+  // unaffected. The kernel's `canonical_aux_order` mirrors this marker.
+  let block_param_bvars: Vec<LeanExpr> = (0..expanded.block_param_fvars.len())
+    .map(|i| LeanExpr::bvar(Nat::from(i as u64)))
+    .collect();
   let all_mut_consts: Vec<MutConst> = expanded
     .types
     .iter()
-    .map(|mem| {
-      let ctor_names: Vec<Name> =
+    .enumerate()
+    .map(|(mi, mem)| {
+      let mut ctor_names: Vec<Name> =
         mem.ctors.iter().map(|c| c.name.clone()).collect();
-      let ctors: Vec<ConstructorVal> = mem
+      let mut ctors: Vec<ConstructorVal> = mem
         .ctors
         .iter()
         .enumerate()
@@ -664,6 +680,29 @@ pub fn sort_aux_by_partition_refinement(
           is_unsafe: false,
         })
         .collect();
+      if mi >= n_originals
+        && let Some(nested) = expanded.aux_to_nested.get(&mem.name)
+      {
+        let marker_typ = replace_params_expr(
+          nested,
+          &expanded.block_param_fvars,
+          &block_param_bvars,
+        );
+        let marker_name = Name::str(mem.name.clone(), "_nested_id".into());
+        ctors.push(ConstructorVal {
+          cnst: ConstantVal {
+            name: marker_name.clone(),
+            typ: marker_typ,
+            level_params: level_params.clone(),
+          },
+          induct: mem.name.clone(),
+          cidx: Nat::from(ctors.len() as u64),
+          num_params: Nat::from(mem.n_params as u64),
+          num_fields: Nat::from(0u64),
+          is_unsafe: false,
+        });
+        ctor_names.push(marker_name);
+      }
       MutConst::Indc(Ind {
         ind: InductiveVal {
           cnst: ConstantVal {
@@ -1166,11 +1205,22 @@ pub fn compute_aux_perm(
       if !orig_to_canon_names.contains_key(src_owner) {
         continue;
       }
+      let src_sig: Vec<String> =
+        normalized.iter().map(|e| e.pretty()).collect();
+      let canon_sigs: Vec<String> = canonical_signatures
+        .iter()
+        .map(|(head, specs)| {
+          let specs: Vec<String> = specs.iter().map(|e| e.pretty()).collect();
+          format!("{}[{}]", head.pretty(), specs.join(", "))
+        })
+        .collect();
       return Err(CompileError::InvalidMutualBlock {
         reason: format!(
-          "compute_aux_perm: no canonical match for in-SCC source aux #{j} owned by {} (head={})",
+          "compute_aux_perm: no canonical match for in-SCC source aux #{j} owned by {} (head={}); normalized source specs: [{}]; canonical signatures: {}",
           src_owner.pretty(),
           src_head.pretty(),
+          src_sig.join(", "),
+          canon_sigs.join(" · "),
         ),
       });
     };
@@ -2233,6 +2283,97 @@ mod tests {
   }
 
   // ---- expr_mentions_any_name ----
+
+  /// Two auxes whose instantiated views are alpha-identical — the
+  /// distinguishing spec param is phantom in the external's ctors, the
+  /// `IxVMInd.DedupM` shape (`Bar2 M Nat` vs `Bar2 M Bool` where
+  /// `Bar2.mk : α → Bar2 α β` never uses `β`) — must stay in DISTINCT
+  /// canonical classes: the identity-marker ctor carries
+  /// `aux_to_nested` into the compared data. Conversely, auxes with
+  /// equal nested identities still collapse (the alias-dedup net).
+  #[test]
+  fn sort_aux_distinguishes_phantom_spec_params() {
+    use crate::compile::CompileState;
+
+    let all0 = mk_name_for("M");
+    let nested_prefix = Name::str(all0.clone(), "_nested".to_string());
+    let aux_name =
+      |i: usize| Name::str(nested_prefix.clone(), format!("Bar2_{i}"));
+    let ty1 = LeanExpr::sort(LL::succ(LL::zero()));
+    let mk_orig = || ExpandedMember {
+      name: all0.clone(),
+      source_owner: all0.clone(),
+      typ: ty1.clone(),
+      ctors: vec![],
+      n_params: 0,
+      n_indices: 0,
+    };
+    // Aux views identical modulo the self-reference name: `mk : Nat → self`.
+    let mk_aux = |i: usize| ExpandedMember {
+      name: aux_name(i),
+      source_owner: all0.clone(),
+      typ: ty1.clone(),
+      ctors: vec![ExpandedCtor {
+        name: Name::str(aux_name(i), "mk".to_string()),
+        typ: LeanExpr::all(
+          mk_name_for("_"),
+          LeanExpr::cnst(mk_name_for("Nat"), vec![]),
+          LeanExpr::cnst(aux_name(i), vec![]),
+          ix_common::env::BinderInfo::Default,
+        ),
+        n_fields: 1,
+      }],
+      n_params: 0,
+      n_indices: 0,
+    };
+    let nested_id = |spec: &str| {
+      LeanExpr::app(
+        LeanExpr::cnst(mk_name_for("Bar2"), vec![]),
+        LeanExpr::cnst(mk_name_for(spec), vec![]),
+      )
+    };
+    let build = |spec2: &str| {
+      let mut aux_to_nested = FxHashMap::default();
+      aux_to_nested.insert(aux_name(1), nested_id("Nat"));
+      aux_to_nested.insert(aux_name(2), nested_id(spec2));
+      ExpandedBlock {
+        types: vec![mk_orig(), mk_aux(1), mk_aux(2)],
+        aux_to_nested,
+        aux_ctor_map: FxHashMap::default(),
+        block_param_fvars: vec![],
+        n_originals: 1,
+        level_params: vec![],
+      }
+    };
+    let stt = CompileState::new_empty();
+    // The structural comparator resolves external consts by compiled
+    // address; register the externals the fixtures reference.
+    for ext in ["Nat", "Bool", "Bar2"] {
+      stt.name_to_addr.insert(
+        mk_name_for(ext),
+        ix_common::address::Address::hash(ext.as_bytes()),
+      );
+    }
+
+    // Distinct nested identities → distinct canonical classes.
+    let mut expanded = build("Bool");
+    let perm = sort_aux_by_partition_refinement(&mut expanded, &stt).unwrap();
+    assert_eq!(perm.len(), 2);
+    assert_ne!(
+      perm[0], perm[1],
+      "phantom-spec-param auxes must not collapse (IxVMInd.DedupM shape)"
+    );
+    assert_eq!(expanded.types.len(), 3, "both auxes survive the sort");
+
+    // Equal nested identities → still one class (legitimate dedup).
+    let mut expanded = build("Nat");
+    let perm = sort_aux_by_partition_refinement(&mut expanded, &stt).unwrap();
+    assert_eq!(perm.len(), 2);
+    assert_eq!(
+      perm[0], perm[1],
+      "semantically equal nested identities still collapse"
+    );
+  }
 
   #[test]
   fn expr_mentions_any_name_none() {

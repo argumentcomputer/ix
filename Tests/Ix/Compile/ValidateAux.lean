@@ -66,6 +66,11 @@ def runCompileValidateAux (env : Lean.Environment) : IO UInt32 := do
   let prefixes := [
     `Tests.Ix.Compile.Mutual,
     `Tests.Ix.Compile.Canonicity,
+    -- IxVM ingress fixtures (Tests.Ix.IxVM) — nested/dedup shapes like
+    -- IxVMInd.DedupM (two nested occurrences of one external inductive
+    -- with distinct spec_params) that only otherwise compile under the
+    -- full-env `rust-compile` runner.
+    `IxVMInd,
     --`Init,
     --`_private.Init,
     --`State,
