@@ -673,13 +673,76 @@ jobs:
           name: comment-body
           path: comment-body.md
 
-  # Post the assembled body — or a red-X diagnostic when any stage failed
-  # (a rejected command or broken run must never end in silence on the
-  # PR). This is the ONLY job with access to the App token, and it runs
-  # no checkout and no repo-derived code — just an artifact download and
-  # two actions.
+  # Post the initial PR comment the instant the command is parsed: a red-X
+  # diagnostic if the parse/build failed (the same message the final comment
+  # would carry), otherwise a "running" placeholder so the commenter gets
+  # immediate feedback. The `comment` job edits THIS comment in place with
+  # the results at the end (its id is this job's output). Privileged (App
+  # token) like `comment`, and like it runs no checkout and no PR-derived
+  # code — only build's string outputs.
+  announce:
+    needs: build
+    if: always() && github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    outputs:
+      comment-id: ${{ steps.post.outputs.comment-id }}
+    steps:
+      # PR-derived strings (parse-error, config-summary) arrive via env, not
+      # inline `${{ }}`; a quoted `echo "$VAR"` never re-evaluates the value,
+      # so a crafted summary can't inject shell (the rule the other jobs
+      # follow).
+      - name: Compose initial body
+        env:
+          BUILD_RESULT: ${{ needs.build.result }}
+          PARSE_ERROR: ${{ needs.build.outputs.parse-error }}
+          SUMMARY: ${{ needs.build.outputs.config-summary }}
+          HEAD_SHA: ${{ inputs.head-sha }}
+        run: |
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          if [ "$BUILD_RESULT" != success ]; then
+            {
+              echo "## ❌ benchmark run failed"
+              if [ -n "$PARSE_ERROR" ]; then
+                echo
+                echo "> $PARSE_ERROR"
+              fi
+              echo
+              echo "[Workflow logs]($RUN_URL)"
+            } > comment-body.md
+          else
+            {
+              echo "## ⏳ Benchmark running…"
+              echo
+              if [ -n "$SUMMARY" ]; then
+                echo "> $SUMMARY"
+                echo
+              fi
+              echo "Benchmarking \`${HEAD_SHA:0:7}\` — this comment will be replaced with the results when the run finishes."
+              echo
+              echo "[Watch progress]($RUN_URL)"
+            } > comment-body.md
+          fi
+      - name: Generate token to write PR comment
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.TOKEN_APP_ID }}
+          private-key: ${{ secrets.TOKEN_APP_PRIVATE_KEY }}
+      - name: Post initial comment
+        id: post
+        uses: peter-evans/create-or-update-comment@v5
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          issue-number: ${{ inputs.pr }}
+          body-path: comment-body.md
+
+  # Edit the announce comment in place with the assembled body — or a red-X
+  # diagnostic when any stage failed (a rejected command or broken run must
+  # never end in silence on the PR). This job and `announce` are the only
+  # ones with the App token, and neither runs a checkout or repo-derived
+  # code — just an artifact download and two actions.
   comment:
-    needs: [build, compile, benchmark, assemble]
+    needs: [build, compile, benchmark, assemble, announce]
     if: always() && github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
@@ -727,9 +790,15 @@ jobs:
           # takes either), so the existing secret works unchanged.
           client-id: ${{ secrets.TOKEN_APP_ID }}
           private-key: ${{ secrets.TOKEN_APP_PRIVATE_KEY }}
+      # `comment-id` edits the announce comment in place; `issue-number` is
+      # the fallback that creates a fresh comment if announce never posted
+      # one (empty id). `replace` overwrites the "running" placeholder rather
+      # than appending to it.
       - name: Post / update comment
         uses: peter-evans/create-or-update-comment@v5
         with:
           token: ${{ steps.app-token.outputs.token }}
           issue-number: ${{ inputs.pr }}
+          comment-id: ${{ needs.announce.outputs.comment-id }}
+          edit-mode: replace
           body-path: comment-body.md
