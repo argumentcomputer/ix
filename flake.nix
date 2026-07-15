@@ -101,14 +101,26 @@
                 pkgs.libiconv
               ];
           };
-          cargoArtifacts = craneLib.buildDepsOnly craneArgs;
+          # Build dependencies once with every feature enabled so the `net`
+          # stack (tokio/iroh) is compiled and cached here, then shared by the
+          # package builds and the all-features clippy check instead of being
+          # rebuilt per consumer.
+          cargoArtifacts = craneLib.buildDepsOnly (
+            craneArgs
+            // {
+              cargoExtraArgs = "--locked --all-features";
+            }
+          );
 
-          # Test build: parallel + test-ffi (only used by ixTest)
-          rustPkg = craneLib.buildPackage (
+          # Test build: parallel + test-ffi (only used by ixTest).
+          # doCheck = false: the `nextest` check is the single place cargo
+          # tests run, so package builds only compile.
+          rustPkgTest = craneLib.buildPackage (
             craneArgs
             // {
               inherit cargoArtifacts;
               cargoExtraArgs = "--locked --features parallel,test-ffi";
+              doCheck = false;
             }
           );
 
@@ -118,13 +130,40 @@
             // {
               inherit cargoArtifacts;
               cargoExtraArgs = "--locked --features parallel";
+              doCheck = false;
+            }
+          );
+
+          # Net build for the `ix` CLI (`ix serve` / `ix connect` iroh stack),
+          # mirroring the lakefile's `ix_rs_net` target, which skips `net` on
+          # macOS.
+          rustPkgNet = craneLib.buildPackage (
+            craneArgs
+            // {
+              inherit cargoArtifacts;
+              cargoExtraArgs =
+                "--locked --features parallel"
+                + pkgs.lib.optionalString (!pkgs.stdenv.isDarwin) ",net";
+              doCheck = false;
             }
           );
 
           # Lake package
           lake2nix = pkgs.callPackage lean4-nix.lake { };
+          # Restrict the Lake build inputs to Lean-relevant files so edits to
+          # unrelated files (flake.nix, CI, docs) don't invalidate the whole
+          # Lean build. The Rust side gets the same via cleanCargoSource.
+          leanSrc = pkgs.lib.fileset.toSource {
+            root = ./.;
+            fileset = pkgs.lib.fileset.unions [
+              ./lakefile.lean
+              ./lake-manifest.json
+              ./lean-toolchain
+              (pkgs.lib.fileset.fileFilter (f: f.hasExt "lean") ./.)
+            ];
+          };
           lakeDeps = lake2nix.buildDeps {
-            src = ./.;
+            src = leanSrc;
             depOverrideDeriv = {
               Blake3 = blake3-lean.packages.${system}.rust;
             };
@@ -132,7 +171,7 @@
           # Shared Lake build args: patches out the Cargo build (Crane handles it)
           mkLakeBuildArgs = rustLib: {
             inherit lakeDeps;
-            src = ./.;
+            src = leanSrc;
             # Don't build the `ix_rs` static lib with Lake, since we build it with Crane
             postPatch = ''
               substituteInPlace lakefile.lean --replace-fail 'proc { cmd := "cargo"' '--proc { cmd := "cargo"'
@@ -151,8 +190,10 @@
 
           # Release build args (no test-ffi symbols)
           lakeBuildArgs = mkLakeBuildArgs rustPkgRelease;
+          # CLI build args (net symbols for `ix serve` / `ix connect`)
+          lakeNetBuildArgs = mkLakeBuildArgs rustPkgNet;
           # Test build args (includes test-ffi symbols)
-          lakeTestBuildArgs = mkLakeBuildArgs rustPkg;
+          lakeTestBuildArgs = mkLakeBuildArgs rustPkgTest;
 
           ixLib = lake2nix.mkPackage (
             lakeBuildArgs
@@ -180,7 +221,18 @@
                   --set LEAN_PATH "${drv}/.lake/build/lib/lean:${leanPath}"
               done
             '';
-          ixCLI = wrapBin (lake2nix.mkPackage (lakeBinArgs // { name = "ix"; }));
+          # The CLI links rustPkgNet (lakefile: `ix` uses `ix_rs_net`), reusing
+          # ixLib's oleans.
+          ixCLI = wrapBin (
+            lake2nix.mkPackage (
+              lakeNetBuildArgs
+              // {
+                lakeArtifacts = ixLib;
+                installArtifacts = true;
+                name = "ix";
+              }
+            )
+          );
           # Test binary links rustPkg (with test-ffi) instead of rustPkgRelease
           ixTest = wrapBin (
             lake2nix.mkPackage (
@@ -211,10 +263,40 @@
           packages = {
             default = ixLib;
             ix = ixCLI;
-            test = ixTest;
             zkv-prover = ZKVotingProver // {
               meta.mainProgram = "Apps-ZKVoting-Prover";
             };
+          };
+
+          checks = {
+            # Lint the host workspace; warnings are errors.
+            clippy = craneLib.cargoClippy (
+              craneArgs
+              // {
+                inherit cargoArtifacts;
+                cargoExtraArgs = "--locked --all-features";
+                cargoClippyExtraArgs = "--all-targets -- -D warnings";
+              }
+            );
+            # Rust unit tests across the host workspace.
+            nextest = craneLib.cargoNextest (
+              craneArgs
+              // {
+                inherit cargoArtifacts;
+                cargoExtraArgs = "--locked --workspace";
+                cargoNextestExtraArgs = "--profile ci --run-ignored all";
+              }
+            );
+            # Lean test suite. The suite reads fixtures and writes scratch
+            # files by paths relative to the working dir, so run it from a
+            # writable copy of the source tree, as if from a checkout.
+            ix-tests = pkgs.runCommand "ix-tests" { } ''
+              cp -r ${./.} src
+              chmod -R u+w src
+              cd src
+              ${ixTest}/bin/IxTests
+              touch $out
+            '';
           };
 
           # Lean + Rust shell for host development (`cargo build`, `lake build`).

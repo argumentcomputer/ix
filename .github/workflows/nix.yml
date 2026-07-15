@@ -31,8 +31,14 @@ jobs:
       # Ix CLI
       - run: nix build --print-build-logs --accept-flake-config
       - run: nix run .#ix -- --help
-      # Ix tests
-      - run: nix run .#test --accept-flake-config
+      # One step per check for separate logs; the store is shared across
+      # steps, so nothing rebuilds.
+      - run: nix build --print-build-logs --accept-flake-config .#checks.x86_64-linux.clippy
+      - run: nix build --print-build-logs --accept-flake-config .#checks.x86_64-linux.nextest
+      - run: nix build --print-build-logs --accept-flake-config .#checks.x86_64-linux.ix-tests
+      # Catch-all: near-free after the steps above; fails if a check is added
+      # to the flake without a step here.
+      - run: nix flake check --accept-flake-config
 
   # Tests Nix devShell support on Ubuntu
   nix-devshell:
@@ -50,3 +56,7 @@ jobs:
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
       # Builds and runs tests using Lake as a Nix package
       - run: nix develop --accept-flake-config --command bash -c "lake build && lake test"
+      # Realize the zkVM shells so they're verified and pushed to the cache,
+      # and smoke-test each shell's toolchain entrypoint.
+      - run: nix develop --print-build-logs --accept-flake-config .#zisk --command cargo-zisk --version
+      - run: nix develop --print-build-logs --accept-flake-config .#sp1 --command cargo prove --version
