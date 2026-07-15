@@ -44,11 +44,11 @@ lean_ffi::lean_inductive! {
   LeanIxonConstructorProj [ { num_obj: 1, num_64: 2 } ];
   LeanIxonRecursorProj    [ { num_obj: 1, num_64: 1 } ];
   LeanIxonDefinitionProj  [ { num_obj: 1, num_64: 1 } ];
-  LeanIxonNamed           [ { num_obj: 3 } ];
+  LeanIxonNamed           [ { num_obj: 4 } ];
   LeanIxonComm            [ { num_obj: 2 } ];
   LeanIxonConstant        [ { num_obj: 4 } ];
   LeanIxonRawConst        [ { num_obj: 2 } ];
-  LeanIxonRawNamed        [ { num_obj: 3 } ];
+  LeanIxonRawNamed        [ { num_obj: 4 } ];
   LeanIxonRawBlob         [ { num_obj: 2 } ];
   LeanIxonRawComm         [ { num_obj: 2 } ];
   LeanIxonRawNameEntry    [ { num_obj: 2 } ];
@@ -59,7 +59,7 @@ lean_ffi::lean_inductive! {
   // (addr + offset + len), name->addr, copied blobs, the bundle header
   // fields (main, assumptions), and the hints-section pairs.
   LeanIxonRawConstSlice   [ { num_obj: 1, num_64: 2 } ];
-  LeanIxonRawNamedLite    [ { num_obj: 2 } ];
+  LeanIxonRawNamedLite    [ { num_obj: 3 } ];
   LeanIxonRawEnvLazy      [ { num_obj: 6 } ];
 
   // Env diff report (`rs_diff_envs`). Slot counts MUST match the Lean

@@ -37,12 +37,16 @@ def commSerde (c : Comm) : Bool :=
 
 def envSerde (raw : RawEnv) : Bool :=
   let env := raw.toEnv
-  let bytes1 := serEnv env
-  match deEnv bytes1 with
-  | .ok env' =>
-    let bytes2 := serEnv env'
-    bytes1 == bytes2  -- Byte-level equality after roundtrip
+  match serEnv env with
   | .error _ => false
+  | .ok bytes1 =>
+    match deEnv bytes1 with
+    | .ok env' =>
+      -- Byte-level equality after roundtrip
+      match serEnv env' with
+      | .ok bytes2 => bytes1 == bytes2
+      | .error _ => false
+    | .error _ => false
 
 /-!
 ## Unit Tests for New Format Types
@@ -143,12 +147,15 @@ def sharingUnits : TestSeq :=
 /-! ## Env Unit Tests -/
 
 def envSerdeUnit (env : Env) : Bool :=
-  let bytes1 := serEnv env
-  match deEnv bytes1 with
-  | .ok env' =>
-    let bytes2 := serEnv env'
-    bytes1 == bytes2
+  match serEnv env with
   | .error _ => false
+  | .ok bytes1 =>
+    match deEnv bytes1 with
+    | .ok env' =>
+      match serEnv env' with
+      | .ok bytes2 => bytes1 == bytes2
+      | .error _ => false
+    | .error _ => false
 
 def envUnitTests : TestSeq :=
   -- Test 1: Empty env
@@ -162,19 +169,34 @@ def envUnitTests : TestSeq :=
   let testName := Ix.Name.mkStr Ix.Name.mkAnon "test"
   let testNameAddr := testName.getHash
   let envWithName : Env := { names := ({} : Std.HashMap _ _).insert testNameAddr testName }
-  -- Test 4: Env with named entry and empty metadata
-  let constAddr := Address.blake3 (ByteArray.mk #[7, 8, 9])
+  -- Test 4: Env with named entry and empty metadata. §5 keys the
+  -- entry's constant by §2 rank, so the target must be a stored
+  -- constant (content-addressed — readers verify per entry).
+  let namedDef : Definition := {
+    kind := .defn, safety := .safe, lvls := 0, typ := .sort 0, value := .sort 0
+  }
+  let namedConst : Constant := {
+    info := .defn namedDef, sharing := #[], refs := #[], univs := #[]
+  }
+  let constAddr := Address.blake3 (serConstant namedConst)
   let envWithNamed : Env := Id.run do
     let mut env : Env := {}
+    env := env.storeConst constAddr namedConst
     env := { env with names := RawEnv.addNameComponents env.names testName }
     env := env.registerName testName { addr := constAddr, constMeta := .empty }
     return env
-  -- Test 5: Env with nested name and named entry
+  -- Test 5: Env with nested name and named entry, plus an `original`
+  -- edge whose address is deliberately NOT a stored constant — the §5
+  -- original address stays raw on the wire (it may reference an
+  -- assumed constant), so this must roundtrip.
   let nestedName := Ix.Name.mkStr (Ix.Name.mkNat testName 42) "bar"
   let envWithNestedName : Env := Id.run do
     let mut env : Env := {}
+    env := env.storeConst constAddr namedConst
     env := { env with names := RawEnv.addNameComponents env.names nestedName }
-    env := env.registerName nestedName { addr := constAddr, constMeta := .empty }
+    env := env.registerName nestedName
+      { addr := constAddr, constMeta := .empty,
+        original := some (Address.blake3 (ByteArray.mk #[99]), .empty) }
     return env
   -- Test 6: Env with blob and comm
   let secretAddr := Address.blake3 (ByteArray.mk #[10, 11, 12])
@@ -222,14 +244,17 @@ def constantSerializationMatches (c : Constant) : Bool :=
   rsEqConstantSerialization c (serConstant c)
 
 def envSerializationMatches (raw : RawEnv) : Bool :=
-  let env := raw.toEnv
-  rsEqEnvSerialization raw (serEnv env)
+  match serEnv raw.toEnv with
+  | .ok bytes => rsEqEnvSerialization raw bytes
+  | .error _ => false
 
 /-- Strict byte equality between the pure-Lean writer and the Rust
     writer over the same RawEnv (a stronger check than
     `rsEqEnvSerialization`'s content comparison). -/
 def envBytesMatchRust (raw : RawEnv) : Bool :=
-  serEnv raw.toEnv == rsSerEnvFFI raw
+  match serEnv raw.toEnv with
+  | .ok bytes => bytes == rsSerEnvFFI raw
+  | .error _ => false
 
 /-- Unit tests for Lean==Rust serialization comparison -/
 def envSerializationUnitTests : TestSeq :=
@@ -276,14 +301,31 @@ def envSerializationUnitTests : TestSeq :=
       Address.blake3 (ByteArray.mk #[43])],
     anonHints := #[(bundleConstAddr, .regular 5)]
   }
+  -- Test 6: Named entry + hints — the directed cross-language vector
+  -- for the index-keyed §5 (name §4-index + const §2 rank) and §3
+  -- (delta-coded ranks + fused hints). Unlike `RawEnv.toEnv`, the Rust
+  -- FFI side does not auto-add name components for named entries, so
+  -- `names` carries the leaf explicitly (ancestors are emitted by both
+  -- topological sorts from the parent chain).
+  let namedName := Ix.Name.mkStr Ix.Name.mkAnon "MyDef"
+  let namedRaw : RawEnv := {
+    consts := #[{ addr := bundleConstAddr, const := bundleConst }],
+    named := #[{ name := namedName, addr := bundleConstAddr,
+                 constMeta := .empty, hints := some (.regular 7) }],
+    blobs := #[], comms := #[],
+    names := #[{ addr := namedName.getHash, name := namedName }],
+    anonHints := #[(bundleConstAddr, .abbrev)]
+  }
   test "Empty env Lean==Rust" (envSerializationMatches emptyRaw) ++
   test "Blob env Lean==Rust" (envSerializationMatches blobRaw) ++
   test "Comm env Lean==Rust" (envSerializationMatches commRaw) ++
   test "Blob+Comm env Lean==Rust" (envSerializationMatches blobCommRaw) ++
   test "Bundle env Lean==Rust" (envSerializationMatches bundleRaw) ++
+  test "Named env Lean==Rust" (envSerializationMatches namedRaw) ++
   test "Empty env bytes Lean==Rust" (envBytesMatchRust emptyRaw) ++
   test "Blob env bytes Lean==Rust" (envBytesMatchRust blobRaw) ++
-  test "Bundle env bytes Lean==Rust" (envBytesMatchRust bundleRaw)
+  test "Bundle env bytes Lean==Rust" (envBytesMatchRust bundleRaw) ++
+  test "Named env bytes Lean==Rust" (envBytesMatchRust namedRaw)
 
 /-! ## Canonical env merkle root: Lean vs. Rust agreement -/
 

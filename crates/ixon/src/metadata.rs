@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use ix_common::address::Address;
-use ix_common::env::{self, BinderInfo, Name, ReducibilityHints};
+use ix_common::env::{self, BinderInfo, Name};
 
 use super::env::AuxLayout;
 use super::expr::Expr;
@@ -704,30 +704,9 @@ impl IxonByteSerde for BinderInfo {
   }
 }
 
-impl IxonByteSerde for ReducibilityHints {
-  fn put_ser(&self, buf: &mut Vec<u8>) {
-    match self {
-      Self::Opaque => put_u8(0, buf),
-      Self::Abbrev => put_u8(1, buf),
-      Self::Regular(x) => {
-        put_u8(2, buf);
-        Tag0::new(u64::from(*x)).put(buf);
-      },
-    }
-  }
-
-  fn get_ser(buf: &mut &[u8]) -> Result<Self, String> {
-    match get_u8(buf)? {
-      0 => Ok(Self::Opaque),
-      1 => Ok(Self::Abbrev),
-      2 => {
-        let tag = Tag0::get(buf)?;
-        Ok(Self::Regular(tag.size as u32))
-      },
-      x => Err(format!("ReducibilityHints::get: invalid {x}")),
-    }
-  }
-}
+// `ReducibilityHints` has no `IxonByteSerde` impl: its only wire home
+// is the env-level §3 section, which fuses the variant and height into
+// a single Tag0 value (see `serialize.rs::fuse_hint`).
 
 // ===========================================================================
 // Indexed serialization (Address -> u64 index)
@@ -1342,19 +1321,6 @@ mod tests {
       let mut buf = Vec::new();
       bi.put_ser(&mut buf);
       assert_eq!(BinderInfo::get_ser(&mut buf.as_slice()).unwrap(), bi);
-    }
-  }
-
-  #[test]
-  fn test_reducibility_hints_roundtrip() {
-    for h in [
-      ReducibilityHints::Opaque,
-      ReducibilityHints::Abbrev,
-      ReducibilityHints::Regular(42),
-    ] {
-      let mut buf = Vec::new();
-      h.put_ser(&mut buf);
-      assert_eq!(ReducibilityHints::get_ser(&mut buf.as_slice()).unwrap(), h);
     }
   }
 

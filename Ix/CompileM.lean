@@ -1622,10 +1622,16 @@ def compileEnv (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (dbg : Bool 
   -- Merge name string blobs into the main blobs map
   let allBlobs := nameBlobs.fold (fun m k v => m.insert k v) compileEnv.blobs
 
-  -- Resolve per-name hints to each name's registered constant address
-  -- (the projection address for mutual-block members — exactly the
-  -- address the kernel looks hints up under). Alias collisions merge
-  -- order-independently, matching Rust `CompileState::finalize_hints`.
+  -- Resolve per-name hints into both channels (matching Rust
+  -- `CompileState::finalize_hints`): the EXACT value onto each Named
+  -- entry (decompile fidelity — alpha-identical definitions under
+  -- different names keep their own hints), and the per-address
+  -- `anonHints` advisory map keyed by each name's registered constant
+  -- address (the projection address for mutual-block members — exactly
+  -- the address the kernel looks hints up under), where alias
+  -- collisions merge order-independently.
+  let namedWithHints := compileEnv.nameToNamed.fold (init := {})
+    fun m name named => m.insert name { named with hints := defHints.get? name }
   let anonHints := compileEnv.nameToNamed.fold (init := {}) fun m name named =>
     match defHints.get? name with
     | some h => m.alter named.addr fun
@@ -1636,7 +1642,7 @@ def compileEnv (env : Ix.Environment) (blocks : Ix.CondensedBlocks) (dbg : Bool 
   let ixonEnv : Ixon.Env := {
     consts := compileEnv.constants.fold (init := {})
       fun m a c => m.insert a (Ixon.LazyConstant.ofConstant c)
-    named := compileEnv.nameToNamed
+    named := namedWithHints
     blobs := allBlobs
     names := namesMap
     comms := {}
@@ -1932,8 +1938,11 @@ def compileEnvParallel (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
   if dbg then
     IO.println s!"  [Lean Compile] Blobs: {blockBlobCount} from blocks, {nameBlobCount} from names, {overlapCount} overlap, {finalBlobCount} final"
 
-  -- Resolve per-name hints to registered constant addresses (see the
-  -- serial driver / Rust `CompileState::finalize_hints`).
+  -- Resolve per-name hints into both channels (see the serial driver /
+  -- Rust `CompileState::finalize_hints`): exact per-Named + merged
+  -- per-address.
+  let namedWithHints := nameToNamed.fold (init := {})
+    fun m name named => m.insert name { named with hints := defHints.get? name }
   let anonHints := nameToNamed.fold (init := {}) fun m name named =>
     match defHints.get? name with
     | some h => m.alter named.addr fun
@@ -1944,7 +1953,7 @@ def compileEnvParallel (env : Ix.Environment) (blocks : Ix.CondensedBlocks)
   let ixonEnv : Ixon.Env := {
     consts := constants.fold (init := {})
       fun m a c => m.insert a (Ixon.LazyConstant.ofConstant c)
-    named := nameToNamed
+    named := namedWithHints
     blobs := allBlobs
     names := namesMap
     comms := {}

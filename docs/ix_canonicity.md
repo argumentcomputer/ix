@@ -236,7 +236,7 @@ Everything needed to round-trip back to a source-faithful Lean
 | Call-site source/canonical metadata     | `ExprMetaData::CallSite { entries, canon_meta }`     |
 | Level-parameter names                   | `ConstantMetaInfo::*.lvls`                           |
 | `InductiveVal.all` (Lean source order)  | `ConstantMetaInfo::{Def,Indc,Rec}.all`               |
-| `ReducibilityHints`                     | `ConstantMetaInfo::Def.hints`                        |
+| `ReducibilityHints`                     | `Named.hints` (`.ixe` §5 header, exact per name) + merged `Env::anon_hints` (§3) |
 | Original pre-aux_gen form               | `Named.original = Some((addr, meta))`                |
 | Aux-name permutation (nested)           | `stt.aux_perms` in-memory → `ConstantMetaInfo::Muts.aux_layout` on disk — §10.2 |
 | Docstrings                              | planned: `ConstantMeta.doc_string: Option<Address>`  |

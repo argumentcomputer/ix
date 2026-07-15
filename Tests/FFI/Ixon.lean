@@ -15,6 +15,15 @@ open Ix (DefKind DefinitionSafety QuotKind)
 
 namespace Tests.FFI.Ixon
 
+/-- `serEnv` for known-well-formed test fixtures: the env-construction
+    helpers in this file always store the referenced consts and name
+    components, so a serializer error here is a fixture bug — surface
+    it as a panic. -/
+def serEnv! (env : Env) : ByteArray :=
+  match Ixon.serEnv env with
+  | .ok bytes => bytes
+  | .error e => panic! s!"serEnv! failed on test fixture: {e}"
+
 /-! ## Ixon type roundtrip FFI declarations -/
 
 -- Simple enums (use lean_box/lean_unbox)
@@ -308,7 +317,7 @@ def envDiffTests : TestSeq :=
     return env
   let runDiff (a b : Env) (compareMeta : Bool := false) :
       Option Ixon.EnvDiff :=
-    (Ixon.rsDiffEnvs (serEnv a) (serEnv b) compareMeta).toOption
+    (Ixon.rsDiffEnvs (serEnv! a) (serEnv! b) compareMeta).toOption
   test "EnvDiff: self-diff empty (anon)"
     ((runDiff envBase envBase).any (·.isEmpty)) ++
   test "EnvDiff: self-diff empty (meta)"
@@ -388,8 +397,8 @@ def envDiffTests : TestSeq :=
       let dir ← IO.FS.createTempDir
       let pa := dir / "a.ixe"
       let pb := dir / "b.ixe"
-      let bytesA := serEnv envBase
-      let bytesB := serEnv envValueChanged
+      let bytesA := serEnv! envBase
+      let bytesB := serEnv! envValueChanged
       IO.FS.writeBinFile pa bytesA
       IO.FS.writeBinFile pb bytesB
       let r ← try
@@ -408,9 +417,12 @@ def envDiffTests : TestSeq :=
 /-- Self-diff over the pure-Lean writer's bytes must be empty in both
     modes (also exercises report marshaling on arbitrary inputs). -/
 def selfDiffEmpty (compareMeta : Bool) (env : RawEnv) : Bool :=
-  match Ixon.rsDiffEnvs (serEnv env.toEnv) (serEnv env.toEnv) compareMeta with
-  | .ok d => d.isEmpty
+  match Ixon.serEnv env.toEnv with
   | .error _ => false
+  | .ok bytes =>
+    match Ixon.rsDiffEnvs bytes bytes compareMeta with
+    | .ok d => d.isEmpty
+    | .error _ => false
 
 /-! ## Env pack FFI (`rs_pack_env`)
 
@@ -429,7 +441,7 @@ private def packFixture (env : Env) (mainName : String)
   let out := dir / "bundle.ixe"
   -- Every failure mode is caught into `.error`, so cleanup always runs.
   let result ← try
-    IO.FS.writeBinFile src (serEnv env)
+    IO.FS.writeBinFile src (serEnv! env)
     Ixon.rsPackEnv src.toString mainName assume out.toString anon false
     let bytes ← IO.FS.readBinFile out
     pure (Ixon.rsDeEnv bytes)
@@ -501,7 +513,7 @@ def envPackTests : TestSeq :=
       match ← packFixture src "bar" #[] with
       | .error e => pure (false, 0, 0, some e)
       | .ok b =>
-        match Ixon.rsDiffEnvs (serEnv src) (serEnv b) with
+        match Ixon.rsDiffEnvs (serEnv! src) (serEnv! b) with
         | .error e => pure (false, 0, 0, some s!"diff failed: {e}")
         | .ok d =>
           let ok := d.mainChanged == some (none, some barAddr)

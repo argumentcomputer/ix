@@ -16,7 +16,7 @@ use crate::lean::{
   LeanIxonRawNameEntry, LeanIxonRawNamed,
 };
 use ix_common::address::Address;
-use ix_common::env::Name;
+use ix_common::env::{Name, ReducibilityHints};
 use ix_compile::compile::{
   CompileOptions, CompileState, compile_env_with_options,
 };
@@ -80,8 +80,9 @@ fn build_raw_named(
   name: &Name,
   addr: &Address,
   meta: &ConstantMeta,
+  hints: Option<ReducibilityHints>,
 ) -> LeanIxonRawNamed<LeanOwned> {
-  LeanIxonRawNamed::build_from_parts(cache, name, addr, meta)
+  LeanIxonRawNamed::build_from_parts(cache, name, addr, meta, hints)
 }
 
 /// Build RawBlob using type method.
@@ -399,7 +400,10 @@ pub extern "C" fn rs_compile_phases(
       .collect();
     let named_arr = LeanArray::alloc(named.len());
     for (i, (name, n)) in named.iter().enumerate() {
-      named_arr.set(i, build_raw_named(&mut cache, name, &n.addr, &n.meta()));
+      named_arr.set(
+        i,
+        build_raw_named(&mut cache, name, &n.addr, &n.meta(), n.hints()),
+      );
     }
 
     let blobs: Vec<_> = compile_stt
@@ -499,7 +503,10 @@ pub extern "C" fn rs_compile_env_to_ixon(
       .collect();
     let named_arr = LeanArray::alloc(named.len());
     for (i, (name, n)) in named.iter().enumerate() {
-      named_arr.set(i, build_raw_named(&mut cache, name, &n.addr, &n.meta()));
+      named_arr.set(
+        i,
+        build_raw_named(&mut cache, name, &n.addr, &n.meta(), n.hints()),
+      );
     }
 
     let blobs: Vec<_> = compile_stt

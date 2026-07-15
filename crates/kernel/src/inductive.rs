@@ -1277,6 +1277,45 @@ impl<M: KernelMode> TypeChecker<'_, M> {
         aux_ctor_kids.push(aux_ctor_kid);
       }
 
+      // Synthetic trailing "identity marker" ctor carrying the aux's
+      // nested-occurrence identity (`Ext spec_params`, pre-rewrite: NOT
+      // passed through `replace_aux_refs_for_sort`, or it would become
+      // the self-reference and lose the distinction). Two nested
+      // occurrences of one external inductive can instantiate to
+      // alpha-identical views when the distinguishing spec param is
+      // phantom in the external's constructors — the marker keeps them
+      // in distinct classes and orders them by spec-param content
+      // (external consts by address, block params by index), mirroring
+      // the compile-side marker in `sort_aux_by_partition_refinement`.
+      // Genuinely alpha-collapsed occurrences have address-equal spec
+      // params, so their markers compare equal and still collapse.
+      {
+        let mut marker_ty = self
+          .intern(KExpr::cnst(member.id.clone(), member.occurrence_us.clone()));
+        for sp in member.spec_params.iter() {
+          marker_ty = self.intern(KExpr::app(marker_ty, sp.clone()));
+        }
+        let mut mh = blake3::Hasher::new();
+        mh.update(b"AUX_MARKER_VIEW");
+        mh.update(aux_addr.as_bytes());
+        let marker_addr = Address::from_blake3_hash(mh.finalize());
+        let marker_kid =
+          KId::new(marker_addr.clone(), M::meta_field(Name::anon()));
+        let marker_ctor = KConst::Ctor {
+          name: M::meta_field(Name::anon()),
+          level_params: M::meta_field(vec![]),
+          is_unsafe: false,
+          lvls: block_us.len() as u64,
+          induct: aux_id.clone(),
+          cidx: aux_ctor_kids.len() as u64,
+          params: n_block_params,
+          fields: 0,
+          ty: marker_ty,
+        };
+        all_ctor_lookup.insert(marker_addr, marker_ctor);
+        aux_ctor_kids.push(marker_kid);
+      }
+
       let aux_indc = KConst::Indc {
         name: M::meta_field(seed_name),
         level_params: M::meta_field(vec![]),

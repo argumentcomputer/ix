@@ -540,6 +540,13 @@ structure Named where
   addr : Address
   constMeta : ConstantMeta := .empty
   original : Option (Address × ConstantMeta) := none
+  /-- EXACT per-name reducibility hints (`none` for constants that carry
+      none, e.g. theorems). Alpha-identical definitions under different
+      names share one constant address, so the per-address
+      `Env.anonHints` channel only holds a min-merged advisory winner —
+      this field is the faithful per-definition value, serialized in
+      each §5 entry's skippable header. Mirrors Rust `Named.hints`. -/
+  hints : Option Lean.ReducibilityHints := none
   deriving Inhabited, BEq, Repr
 
 /-- A cryptographic commitment -/
@@ -1168,18 +1175,43 @@ def getBinderInfo : GetM Lean.BinderInfo := do
   | 3 => pure .instImplicit
   | x => throw s!"invalid BinderInfo {x}"
 
-/-- Serialize ReducibilityHints. -/
-def putReducibilityHints : Lean.ReducibilityHints → PutM Unit
-  | .opaque => putU8 0
-  | .abbrev => putU8 1
-  | .regular n => do putU8 2; putTag0 ⟨n.toUInt64⟩
+/-- Serialize ReducibilityHints fused into a single Tag0 value:
+    0 = opaque, 1 = abbrev, h + 2 = regular h. The §3 wire form —
+    mirrors Rust `serialize.rs::fuse_hint`. -/
+def putFusedHint : Lean.ReducibilityHints → PutM Unit
+  | .opaque => putTag0 ⟨0⟩
+  | .abbrev => putTag0 ⟨1⟩
+  | .regular n => putTag0 ⟨n.toUInt64 + 2⟩
 
-def getReducibilityHints : GetM Lean.ReducibilityHints := do
-  match ← getU8 with
+def getFusedHint : GetM Lean.ReducibilityHints := do
+  match (← getTag0).size with
   | 0 => pure .opaque
   | 1 => pure .abbrev
-  | 2 => pure (.regular (← getTag0).size.toUInt32)
-  | x => throw s!"invalid ReducibilityHints {x}"
+  | v =>
+    let h := v - 2
+    if h > (0xFFFFFFFF : UInt64) then
+      throw s!"fused hint: Regular height {h} exceeds u32::MAX"
+    else pure (.regular h.toUInt32)
+
+/-- `putFusedHint` lifted over `Option`: 0 = none, otherwise the fused
+    value + 1 (some opaque = 1, some abbrev = 2, some (regular h) =
+    h + 3). The §5 per-name hint form; mirrors Rust `fuse_opt_hint`. -/
+def putFusedOptHint : Option Lean.ReducibilityHints → PutM Unit
+  | none => putTag0 ⟨0⟩
+  | some .opaque => putTag0 ⟨1⟩
+  | some .abbrev => putTag0 ⟨2⟩
+  | some (.regular n) => putTag0 ⟨n.toUInt64 + 3⟩
+
+def getFusedOptHint : GetM (Option Lean.ReducibilityHints) := do
+  match (← getTag0).size with
+  | 0 => pure none
+  | 1 => pure (some .opaque)
+  | 2 => pure (some .abbrev)
+  | v =>
+    let h := v - 3
+    if h > (0xFFFFFFFF : UInt64) then
+      throw s!"fused hint: Regular height {h} exceeds u32::MAX"
+    else pure (some (.regular h.toUInt32))
 
 /-- Order-independent merge for hint registration: alpha-equivalent
     definitions share one constant address but may carry different
@@ -1632,6 +1664,8 @@ structure RawNamed where
   name : Ix.Name
   addr : Address
   constMeta : ConstantMeta
+  /-- Per-name reducibility hints (mirrors `Named.hints`). -/
+  hints : Option Lean.ReducibilityHints := none
   deriving Repr, Inhabited, BEq
 
 /-- Raw FFI structure for a blob: Address → ByteArray.
@@ -1720,10 +1754,10 @@ def toEnv (raw : RawEnv) : Env := Id.run do
   -- and ensure all parent components are present for topological consistency.
   for ⟨_, name⟩ in raw.names do
     env := { env with names := addNameComponents env.names name }
-  for ⟨name, addr, constMeta⟩ in raw.named do
+  for ⟨name, addr, constMeta, hints⟩ in raw.named do
     -- Also add name components for indexed serialization
     env := { env with names := addNameComponents env.names name }
-    env := env.registerName name { addr, constMeta }
+    env := env.registerName name { addr, constMeta, hints }
   for ⟨addr, bytes⟩ in raw.blobs do
     env := { env with blobs := env.blobs.insert addr bytes }
   for ⟨addr, comm⟩ in raw.comms do
@@ -1746,7 +1780,8 @@ namespace Env
 def toRawEnv (env : Env) : RawEnv := {
   consts := env.consts.toArray.map fun (addr, lc) =>
     { addr, const := lc.get?.getD default }
-  named := env.named.toArray.map fun (name, n) => { name, addr := n.addr, constMeta := n.constMeta }
+  named := env.named.toArray.map fun (name, n) =>
+    { name, addr := n.addr, constMeta := n.constMeta, hints := n.hints }
   blobs := env.blobs.toArray.map fun (addr, bytes) => { addr, bytes }
   comms := env.comms.toArray.map fun (addr, comm) => { addr, comm }
   names := env.names.toArray.map fun (addr, name) => { addr, name }
@@ -1832,8 +1867,13 @@ partial def topologicalSortNames (names : Std.HashMap Address Ix.Name) : Array (
     visit name visited result
   result
 
-/-- Serialize an Env to bytes. -/
-def putEnv (env : Env) : PutM Unit := do
+/-- Serialize an Env to bytes.
+
+    Runs in `ExceptT String PutM`: the §3/§5 sections key their entries
+    by §2/§4 indices, so hints keyed outside `consts` or named entries
+    referencing unstored constants/names are unrepresentable and must
+    fail at write time (mirrors Rust `Env::put`). -/
+def putEnv (env : Env) : ExceptT String PutM Unit := do
   -- Header: Tag4 with flag=0xE, size=0 (Env variant)
   putTag4 ⟨FLAG, 0⟩
 
@@ -1884,16 +1924,30 @@ def putEnv (env : Env) : PutM Unit := do
     putTag0 ⟨bytes.size.toUInt64⟩
     putBytes bytes
 
+  -- Rank of each constant in §2's ascending-address order — §3 hint
+  -- entries and §5 named entries key their constants through it.
+  let constIdx : Std.HashMap Address UInt64 := consts.zipIdx.foldl
+    (fun acc ((addr, _), i) => acc.insert addr i.toUInt64) {}
+
   -- Section 3: anon_hints — the canonical hint channel for the
   -- anon/lazy readers, placed before the metadata sections so they can
   -- stop right after it. Serialized straight from `env.anonHints`, the
-  -- single home for hints. Matches Rust `Env::put`.
+  -- single home for hints, as delta-coded §2 ranks + fused hints (the
+  -- address sort is load-bearing: it makes the ranks strictly
+  -- ascending). Matches Rust `Env::put`.
   let hintPairs := env.anonHints.toList.toArray.qsort
     fun a b => (compare a.1 b.1).isLT
   putTag0 ⟨hintPairs.size.toUInt64⟩
+  let mut prevRank : UInt64 := 0 -- rank + 1 of the previous entry
   for (addr, hints) in hintPairs do
-    Serialize.put addr
-    putReducibilityHints hints
+    match constIdx.get? addr with
+    | none => throw s!"putEnv: anon_hints key {reprStr (toString addr)} not \
+                       present in consts — hints must be keyed by stored \
+                       constant addresses"
+    | some rank =>
+      putTag0 ⟨rank + 1 - prevRank⟩
+      putFusedHint hints
+      prevRank := rank + 1
 
   -- Section 4: Names (Address -> Name component)
   -- Topologically sorted so parents come before children, with ties broken by address
@@ -1906,21 +1960,38 @@ def putEnv (env : Env) : PutM Unit := do
     Serialize.put addr
     putNameComponent name
 
-  -- Section 5: Named (name Address -> Named with metadata)
+  -- Section 5: Named (name §4-index -> Named with metadata; the
+  -- entry's constant is a §2 rank). Entry order stays ascending name
+  -- hash. Each entry carries its EXACT per-name hint in the header,
+  -- then a length-prefixed metadata blob so hint scanners can skip the
+  -- bodies. `original` keeps a raw address: it can reference an
+  -- assumed constant that is NOT stored in §2 (prune cut bundles).
   let named := env.named.toList.toArray.qsort fun a b => (compare a.1 b.1).isLT
   putTag0 ⟨named.size.toUInt64⟩
   for (name, namedEntry) in named do
-    -- Use the name's stored hash, which matches how it was stored in env.names
-    Serialize.put name.getHash
-    Serialize.put namedEntry.addr
-    putConstantMetaIndexed namedEntry.constMeta nameIdx
-    -- Serialize original as Option: 0 = None, 1 = Some(addr, meta)
-    match namedEntry.original with
-    | none => putU8 0
-    | some (origAddr, origMeta) =>
-      putU8 1
-      Serialize.put origAddr
-      putConstantMetaIndexed origMeta nameIdx
+    -- The name's stored hash is bytewise its §4 component address.
+    match nameIdx.get? name.getHash with
+    | none => throw s!"putEnv: named key {reprStr (toString name.getHash)} \
+                       not present in the name table"
+    | some i => putTag0 ⟨i⟩
+    match constIdx.get? namedEntry.addr with
+    | none => throw s!"putEnv: named entry constant \
+                       {reprStr (toString namedEntry.addr)} not present in \
+                       consts — named entries must reference stored constants"
+    | some rank => putTag0 ⟨rank⟩
+    putFusedOptHint namedEntry.hints
+    -- Metadata blob: ConstantMeta + original as Option (0 = none,
+    -- 1 = some(addr, meta)), length-prefixed.
+    let blob := runPut do
+      putConstantMetaIndexed namedEntry.constMeta nameIdx
+      match namedEntry.original with
+      | none => putU8 0
+      | some (origAddr, origMeta) =>
+        putU8 1
+        Serialize.put origAddr
+        putConstantMetaIndexed origMeta nameIdx
+    putTag0 ⟨blob.size.toUInt64⟩
+    putBytes blob
 
   -- Section 6: Comms (Address -> Comm)
   let comms := env.comms.toList.toArray.qsort fun a b => (compare a.1 b.1).isLT
@@ -1983,14 +2054,21 @@ def getEnv : GetM Env := do
     env := { env with blobs := env.blobs.insert addr bytes }
 
   -- Section 2: Consts (length-prefixed; see putEnv for rationale).
-  -- Per-entry integrity: bytes must hash to the stored address.
+  -- Per-entry integrity: bytes must hash to the stored address. The
+  -- file order (strictly ascending addresses — enforced, since §3/§5
+  -- indices resolve against it) is retained as `constOrder`.
   let numConsts := (← getTag0).size
+  let mut constOrder : Array Address := #[]
   for _ in [:numConsts.toNat] do
     let addr ← Serialize.get
     let len := (← getTag0).size
     let bytes ← getBytes len.toNat
     if Address.blake3 bytes != addr then
       throw s!"Env.get: const bytes hash mismatch for {reprStr (toString addr)}"
+    if let some prev := constOrder.back? then
+      if !(compare prev addr).isLT then
+        throw "Env.get: §2 constants not in strictly ascending address order"
+    constOrder := constOrder.push addr
     match deConstant bytes with
     | .ok constant => env := env.storeConst addr constant
     | .error e =>
@@ -2001,12 +2079,27 @@ def getEnv : GetM Env := do
     if !env.consts.contains m then
       throw s!"Env.get: main {reprStr (toString m)} not present in consts"
 
-  -- Section 3: anon_hints
+  -- Section 3: anon_hints — delta-coded §2 ranks + fused hints.
   let numHints := (← getTag0).size
+  if numHints.toNat > constOrder.size then
+    throw s!"Env.get: hint count {numHints} exceeds const count \
+             {constOrder.size} — possibly a pre-compact-keys .ixe; \
+             recompile it"
+  let mut cursor : Nat := 0
   for _ in [:numHints.toNat] do
-    let addr : Address ← Serialize.get
-    let hints ← getReducibilityHints
+    let delta := (← getTag0).size
+    if delta == 0 then
+      throw "Env.get: zero hint index delta (§3 must be strictly \
+             ascending) — possibly a pre-compact-keys .ixe; recompile it"
+    let idx := cursor + delta.toNat - 1
+    let addr ← match constOrder[idx]? with
+      | some a => pure a
+      | none =>
+        throw s!"Env.get: hint index {idx} out of range ({constOrder.size} \
+                 consts) — possibly a pre-compact-keys .ixe; recompile it"
+    let hints ← getFusedHint
     env := { env with anonHints := env.anonHints.insert addr hints }
+    cursor := idx + 1
 
   -- Section 4: Names (build lookup table AND reverse index)
   let numNames := (← getTag0).size
@@ -2021,11 +2114,33 @@ def getEnv : GetM Env := do
     namesLookup := namesLookup.insert addr name
     env := { env with names := env.names.insert addr name }
 
-  -- Section 5: Named (name Address -> Named with metadata)
+  -- Section 5: Named (name §4-index -> Named with metadata; the
+  -- entry's constant is a §2 rank; the per-name hint sits in the
+  -- header before the length-prefixed metadata blob; `original` stays
+  -- a raw address)
   let numNamed := (← getTag0).size
   for _ in [:numNamed.toNat] do
-    let nameAddr ← Serialize.get
-    let constAddr : Address ← Serialize.get
+    let nameIdx := (← getTag0).size.toNat
+    let nameAddr ← match nameRev[nameIdx]? with
+      | some a => pure (a : Address)
+      | none =>
+        throw s!"Env.get: §5 name index {nameIdx} out of range \
+                 ({nameRev.size} names) — possibly a pre-compact-keys .ixe; \
+                 recompile it"
+    let constRank := (← getTag0).size.toNat
+    let constAddr ← match constOrder[constRank]? with
+      | some a => pure a
+      | none =>
+        throw s!"Env.get: §5 constant index {constRank} out of range \
+                 ({constOrder.size} consts) — possibly a pre-compact-keys \
+                 .ixe; recompile it"
+    let hints ← getFusedOptHint
+    let metaLen := (← getTag0).size.toNat
+    let stBefore ← get
+    if stBefore.bytes.size - stBefore.idx < metaLen then
+      throw s!"Env.get: §5 metadata blob needs {metaLen} bytes, have \
+               {stBefore.bytes.size - stBefore.idx} — possibly a \
+               pre-compact-keys .ixe; recompile it"
     let constMeta ← getConstantMetaIndexed nameRev
     -- Deserialize original as Option: 0 = None, 1 = Some(addr, meta)
     let origTag ← getU8
@@ -2036,9 +2151,14 @@ def getEnv : GetM Env := do
       let origMeta ← getConstantMetaIndexed nameRev
       pure (some (origAddr, origMeta))
     | x => throw s!"getEnv: Named.original: invalid tag {x}"
+    -- The header's length must frame exactly the parsed bytes.
+    let stAfter ← get
+    if stAfter.idx - stBefore.idx != metaLen then
+      throw s!"Env.get: §5 metadata blob length mismatch (header says \
+               {metaLen}, parsed {stAfter.idx - stBefore.idx})"
     match namesLookup.get? nameAddr with
     | some name =>
-      let namedEntry : Named := { addr := constAddr, constMeta, original }
+      let namedEntry : Named := { addr := constAddr, constMeta, original, hints }
       env := { env with
         named := env.named.insert name namedEntry
         addrToName := env.addrToName.insert constAddr name }
@@ -2052,12 +2172,11 @@ def getEnv : GetM Env := do
     let comm ← getComm
     env := { env with comms := env.comms.insert addr comm }
 
-  -- Verify the stored merkle root against the recomputed value. Empty
+  -- Verify the stored merkle root against the recomputed value —
+  -- `constOrder` is the §2 key set (ascending, enforced above). Empty
   -- const set → expected = zeroAddress.
-  let constAddrs : Array Address :=
-    (env.consts.toList.toArray.map (·.1))
   let computedRoot :=
-    (Ix.Merkle.merkleRootCanonical constAddrs).getD Ix.Merkle.zeroAddress
+    (Ix.Merkle.merkleRootCanonical constOrder).getD Ix.Merkle.zeroAddress
   if computedRoot != storedRoot then
     throw "Env.get: merkle root mismatch"
 
@@ -2072,8 +2191,14 @@ def getEnv : GetM Env := do
 
 end Env
 
-/-- Serialize an Env to bytes. -/
-def serEnv (env : Env) : ByteArray := runPut (Env.putEnv env)
+/-- Serialize an Env to bytes. Fails when the env is not
+    self-contained: §3 hints and §5 named entries are index-keyed on
+    the wire, so keys outside the stored consts/names are
+    unrepresentable (see `Env.putEnv`). -/
+def serEnv (env : Env) : Except String ByteArray :=
+  match (Env.putEnv env).run.run ByteArray.empty with
+  | (.ok _, bytes) => .ok bytes
+  | (.error e, _) => .error e
 
 /-- Deserialize an Env from bytes (full metadata, pure Lean). -/
 def deEnv (bytes : ByteArray) : Except String Env := runGet Env.getEnv bytes
@@ -2098,14 +2223,24 @@ def envSectionSizes (env : Env) : Nat × Nat × Nat × Nat × Nat × Nat := Id.r
       Serialize.put addr
       putBytes lc.rawBytes
 
-  -- anon_hints section (mirrors putEnv's derive-from-named rule)
+  -- anon_hints section: delta-coded §2 ranks + fused hints. The sort
+  -- is load-bearing (delta widths depend on it). Sizes assume a
+  -- well-formed env — an out-of-consts key falls back to rank 0 here
+  -- (diagnostics only; `serEnv` is where that is a hard error).
+  let sortedConstAddrs := (env.consts.toList.toArray.map (·.1)).qsort
+    fun a b => (compare a b).isLT
+  let constIdx : Std.HashMap Address UInt64 := sortedConstAddrs.zipIdx.foldl
+    (fun acc (addr, i) => acc.insert addr i.toUInt64) {}
   let hintsBytes := runPut do
     let hintPairs := env.anonHints.toList.toArray.qsort
       fun a b => (compare a.1 b.1).isLT
     putTag0 ⟨hintPairs.size.toUInt64⟩
+    let mut prevRank : UInt64 := 0
     for (addr, hints) in hintPairs do
-      Serialize.put addr
-      putReducibilityHints hints
+      let rank := constIdx.get? addr |>.getD 0
+      putTag0 ⟨rank + 1 - prevRank⟩
+      putFusedHint hints
+      prevRank := rank + 1
 
   -- Names section
   let namesBytes := runPut do
@@ -2115,7 +2250,10 @@ def envSectionSizes (env : Env) : Nat × Nat × Nat × Nat × Nat × Nat := Id.r
       Serialize.put addr
       Env.putNameComponent name
 
-  -- Named section
+  -- Named section (name §4-index + const §2 rank + fused hint +
+  -- length-prefixed metadata blob; absolute indices, so per-entry
+  -- sizes are iteration-order independent — never delta-code here).
+  -- Missing keys fall back to index 0 (diagnostics only).
   let namedBytes := runPut do
     let sortedNames := Env.topologicalSortNames env.names
     let nameIdx : NameIndex := sortedNames.zipIdx.foldl
@@ -2123,15 +2261,19 @@ def envSectionSizes (env : Env) : Nat × Nat × Nat × Nat × Nat × Nat := Id.r
     let named := env.named.toList.toArray.qsort fun a b => (compare a.1 b.1).isLT
     putTag0 ⟨named.size.toUInt64⟩
     for (name, namedEntry) in named do
-      Serialize.put name.getHash
-      Serialize.put namedEntry.addr
-      putConstantMetaIndexed namedEntry.constMeta nameIdx
-      match namedEntry.original with
-      | none => putU8 0
-      | some (origAddr, origMeta) =>
-        putU8 1
-        Serialize.put origAddr
-        putConstantMetaIndexed origMeta nameIdx
+      putTag0 ⟨nameIdx.get? name.getHash |>.getD 0⟩
+      putTag0 ⟨constIdx.get? namedEntry.addr |>.getD 0⟩
+      putFusedOptHint namedEntry.hints
+      let blob := runPut do
+        putConstantMetaIndexed namedEntry.constMeta nameIdx
+        match namedEntry.original with
+        | none => putU8 0
+        | some (origAddr, origMeta) =>
+          putU8 1
+          Serialize.put origAddr
+          putConstantMetaIndexed origMeta nameIdx
+      putTag0 ⟨blob.size.toUInt64⟩
+      putBytes blob
 
   -- Comms section
   let commsBytes := runPut do
@@ -2184,6 +2326,8 @@ structure RawConstSlice where
 structure RawNamedLite where
   name : Ix.Name
   addr : Address
+  /-- Per-name reducibility hints from the §5 entry header. -/
+  hints : Option Lean.ReducibilityHints := none
   deriving Inhabited
 
 /-- Metadata-light env returned by `rs_de_env_lazy`. Field order
@@ -2214,7 +2358,8 @@ def RawEnvLazy.toEnv (raw : RawEnvLazy) (buf : ByteArray) : Env := Id.run do
       consts := env.consts.insert addr
         (LazyConstant.ofSlice buf offset.toNat len.toNat) }
   for n in raw.named do
-    env := env.registerName n.name { addr := n.addr, constMeta := .empty }
+    env := env.registerName n.name
+      { addr := n.addr, constMeta := .empty, hints := n.hints }
   for ⟨addr, bytes⟩ in raw.blobs do
     env := { env with blobs := env.blobs.insert addr bytes }
   return env

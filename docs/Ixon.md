@@ -783,7 +783,7 @@ pub enum NameData {
 }
 ```
 
-**Name serialization** (component form, for Env section 3):
+**Name serialization** (component form, for Env section 4):
 ```
 Tag (1 byte): 0 = Anonymous, 1 = Str, 2 = Num
 + (if Str/Num) parent_address (32 bytes)
@@ -857,19 +857,34 @@ directly into a [`LazyConstant`](../crates/ixon/src/lazy.rs) without
 parsing its Tag4 envelope, deferring full deserialization until first
 access.
 
-**Section 3: Reducibility hints** (Address → ReducibilityHints)
+**Section 3: Reducibility hints** (§2 index → ReducibilityHints)
 ```
-count (Tag0)
-[Address (32 bytes) + ReducibilityHints]*
+count (Tag0)                          -- must be ≤ the §2 count
+[index_delta (Tag0) + fused_hint (Tag0)]*
 ```
 
-The canonical (and only) hint channel, keyed by constant address and
-sorted ascending. Hints never appear in `ConstantMeta`: the compiler
-registers each definition's hints into `Env::anon_hints`
-(`Env::register_hint`, an order-independent merge on alias
-collisions), writers serialize that map here, and readers load it
-back. Hints are performance-only advice (the `Regular(0)` fallback is
-always correct) and are intentionally outside the consts merkle root.
+The **anon hint channel** — merged advisory hints per constant
+address, for readers that never see names (`get_anon`/`get_anon_mmap`,
+the anon-mode kernel, `--anon` bundles). Entries are keyed by **index
+into §2's ascending-address order**, delta-coded: the k-th entry's
+constant index is `idx_k = idx_{k-1} + delta_k` with `idx_{-1} = -1`
+(so the first delta stores `index + 1`). Every delta must be ≥ 1,
+which makes the section strictly ascending and duplicate-free by
+construction; an index ≥ the §2 count is malformed. The hint fuses
+variant and height into one Tag0 value: `0` = Opaque, `1` = Abbrev,
+`h + 2` = Regular(h) with `h : u32`. A typical entry is 2-3 bytes
+(previously a 32-byte address + 1-3 bytes).
+
+Hints never appear in `ConstantMeta`. Because anonymization conflates
+alpha-identical definitions (many names, one address), this per-address
+map holds one **min-merged winner** per constant
+(`Env::register_hint`, order-independent under
+`Opaque < Abbrev < Regular(h)`) — fine for the kernel's def-eq unfold
+ordering, which is all this channel feeds. The EXACT per-definition
+hints live per name in §5 entry headers. Hints keyed by an address not
+stored in §2 are unrepresentable — writers reject such envs. Hints are
+performance-only advice (the `Regular(0)` fallback is always correct)
+and are intentionally outside the consts merkle root.
 
 **Section 4: Names** (Address → NameComponent, topologically sorted)
 ```
@@ -877,11 +892,43 @@ count (Tag0)
 [Address (32 bytes) + NameComponent]*
 ```
 
-**Section 5: Named** (Name Address → Named with indexed metadata)
+**Section 5: Named** (name §4-index → Named with indexed metadata)
 ```
 count (Tag0)
-[NameAddress (32 bytes) + ConstAddress (32 bytes) + ConstantMeta]*
+[ name_idx  (Tag0)         -- absolute index into §4's topo order
+  const_idx (Tag0)         -- absolute index into §2's ascending order
+  hint      (Tag0)         -- fused option: 0 = none, 1 = Opaque,
+                              2 = Abbrev, h+3 = Regular(h)
+  meta_len  (Tag0)         -- byte length of the metadata blob below
+  ConstantMeta             -- name references are §4 indices
+  original: 0x00 | 0x01 + Address (32 bytes) + ConstantMeta ]*
+                           -- ConstantMeta + original span meta_len bytes
 ```
+
+Entries stay sorted by ascending name hash (the diff meta sweep
+merge-joins two files' §5 sections on it), so `name_idx` values are
+not monotonic — both indices are absolute, not delta-coded.
+
+`hint` is the **exact per-name reducibility hint** (`none` for
+theorems etc.). It lives here — not in §3 — because alpha-identical
+definitions under different names share one §2 constant, so the
+per-address §3 channel can only hold a min-merged advisory winner;
+faithful decompilation needs the per-definition value. The hint sits
+in the entry header, before the length-prefixed metadata blob, so a
+reader can scan every `name → hint` pair while skipping the blobs
+outright (`meta_len` bytes each) — `parse_lazy_index` does exactly
+that instead of parsing and discarding each metadata arena. Full
+readers parse the blob and reject entries whose parsed size disagrees
+with `meta_len`.
+
+The `original` address (aux_gen provenance) stays a **raw 32 bytes**:
+a prune cut can carry a `Named` whose original references an *assumed*
+constant that is not stored in §2, which a §2 index cannot represent.
+
+Because §2 order is load-bearing for §3/§5 index resolution, every
+reader enforces strictly ascending §2 addresses during its scan (this
+also makes the collected §2 key list directly usable for the merkle
+recompute, with no re-sort).
 
 **Section 6: Commitments** (Address → Comm)
 ```
@@ -905,8 +952,10 @@ Mathlib-scale env drops from ~3-4 GB (structured + metadata) to ~1 GB
 
 Exposed to Lean via `rs_de_env_anon` (`Ix.Ixon.rsDeEnvAnon`);
 `Env::get_anon_mmap` is the zero-copy mmap sibling and
-`Env::parse_lazy_index` the zero-copy index variant (reads through §5,
-skipping only comms).
+`Env::parse_lazy_index` the zero-copy index variant (walks every
+section, but reads only the §5 entry headers — name index, const
+rank, hint — and seeks past each `meta_len`-framed metadata blob, so
+no metadata arena is ever parsed).
 
 ### Bundles: pinning a single value
 

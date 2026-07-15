@@ -193,24 +193,105 @@ fn read_blob_section(
   Ok(blobs)
 }
 
+/// Appended to §3/§5 index-decode errors: the most likely cause of a
+/// mangled index section in an otherwise well-formed file is a
+/// pre-compact-keys `.ixe` (§3/§5 keys were raw 32-byte addresses
+/// before the index-keyed encoding).
+const PRE_COMPACT_KEYS: &str =
+  " — possibly a pre-compact-keys .ixe; recompile it";
+
+/// Fuse a `ReducibilityHints` into a single Tag0-encodable value:
+/// 0 = Opaque, 1 = Abbrev, h + 2 = Regular(h). Keeps the common
+/// small-height Regular case in one wire byte.
+fn fuse_hint(hint: &ReducibilityHints) -> u64 {
+  match hint {
+    ReducibilityHints::Opaque => 0,
+    ReducibilityHints::Abbrev => 1,
+    ReducibilityHints::Regular(h) => u64::from(*h) + 2,
+  }
+}
+
+/// Decoding counterpart of [`fuse_hint`].
+fn unfuse_hint(v: u64) -> Result<ReducibilityHints, String> {
+  match v {
+    0 => Ok(ReducibilityHints::Opaque),
+    1 => Ok(ReducibilityHints::Abbrev),
+    _ => u32::try_from(v - 2).map(ReducibilityHints::Regular).map_err(|_| {
+      format!("unfuse_hint: Regular height {} exceeds u32::MAX", v - 2)
+    }),
+  }
+}
+
+/// [`fuse_hint`] lifted over `Option`: 0 = None, otherwise
+/// `fuse_hint(h) + 1`. The §5 per-name hint form (`None` for
+/// hint-less constants like theorems).
+fn fuse_opt_hint(hint: Option<ReducibilityHints>) -> u64 {
+  match hint {
+    None => 0,
+    Some(h) => fuse_hint(&h) + 1,
+  }
+}
+
+/// Decoding counterpart of [`fuse_opt_hint`].
+fn unfuse_opt_hint(v: u64) -> Result<Option<ReducibilityHints>, String> {
+  match v {
+    0 => Ok(None),
+    _ => unfuse_hint(v - 1).map(Some),
+  }
+}
+
 /// Read the §3 `anon_hints` section (unconditional — every writer
-/// emits it, deriving the entries from Named metadata when the
-/// in-memory map is empty; see `Env::put`).
+/// emits it, straight from the `Env::anon_hints` map; see `Env::put`).
+///
+/// Entries are keyed by index into §2's ascending-address order,
+/// delta-coded (`idx_k = idx_{k-1} + delta_k` with `idx_{-1} = -1`);
+/// every delta must be ≥ 1, so the section is strictly ascending and
+/// duplicate-free by construction. `addr_at(i)` resolves an index to
+/// the i-th §2 address; the caller has just scanned §2, so the order
+/// is at hand in every reader.
 fn read_hints_section(
   buf: &mut &[u8],
+  consts_len: usize,
+  addr_at: impl Fn(usize) -> Address,
+  reader: &str,
 ) -> Result<Vec<(Address, ReducibilityHints)>, String> {
   let n = get_u64(buf)? as usize;
-  // Each hint entry needs at least addr (32) + one byte of hint.
-  if n > buf.len() / 33 {
+  if n > consts_len {
     return Err(format!(
-      "read_hints_section: hint count {n} exceeds remaining buffer"
+      "{reader}: hint count {n} exceeds const count \
+       {consts_len}{PRE_COMPACT_KEYS}"
     ));
   }
+  // Each hint entry needs at least two bytes (Tag0 delta + Tag0 hint).
+  if n > buf.len() / 2 {
+    return Err(format!("{reader}: hint count {n} exceeds remaining buffer"));
+  }
   let mut hints = Vec::with_capacity(n);
-  for _ in 0..n {
-    let addr = get_address(buf)?;
-    let hint = ReducibilityHints::get_ser(buf)?;
-    hints.push((addr, hint));
+  // Index of the next entry must be ≥ cursor (= previous index + 1).
+  let mut cursor: u64 = 0;
+  for k in 0..n {
+    let delta = get_u64(buf)?;
+    if delta == 0 {
+      return Err(format!(
+        "{reader}: hint entry {k} has zero index delta (§3 must be \
+         strictly ascending){PRE_COMPACT_KEYS}"
+      ));
+    }
+    let idx = cursor.checked_add(delta - 1).ok_or_else(|| {
+      format!(
+        "{reader}: hint entry {k} index delta overflows{PRE_COMPACT_KEYS}"
+      )
+    })?;
+    if idx >= consts_len as u64 {
+      return Err(format!(
+        "{reader}: hint entry {k} resolves to constant index {idx}, \
+         out of range ({consts_len} consts){PRE_COMPACT_KEYS}"
+      ));
+    }
+    let hint = unfuse_hint(get_u64(buf)?)
+      .map_err(|e| format!("{reader}: hint entry {k}: {e}"))?;
+    hints.push((addr_at(idx as usize), hint));
+    cursor = idx + 1;
   }
   Ok(hints)
 }
@@ -1179,33 +1260,96 @@ pub fn get_aux_layout(buf: &mut &[u8]) -> Result<AuxLayout, String> {
 pub fn put_named_indexed(
   named: &Named,
   idx: &NameIndex,
+  consts: &[Address],
+  scratch: &mut Vec<u8>,
   buf: &mut Vec<u8>,
 ) -> Result<(), String> {
-  put_address(&named.addr, buf);
-  // Demoted entries decode here and re-encode through the name index —
-  // the raw and indexed encodings share the wire format, differing only
-  // in how name references are written.
-  named.meta().put_with(NamePut::Indexed(idx), buf)?;
-  // Serialize original as Option: 0 = None, 1 = Some(addr, meta)
+  // The entry's constant is written as its rank in §2's ascending
+  // address order (`consts` is the writer's sorted const-address
+  // table). An address outside §2 is unrepresentable — reject at
+  // write time rather than emit a file every reader refuses.
+  let rank = consts.binary_search(&named.addr).map_err(|_| {
+    format!(
+      "put_named_indexed: constant {} not present in consts — named \
+       entries must reference stored constants",
+      named.addr.hex()
+    )
+  })?;
+  put_u64(rank as u64, buf);
+  // Per-name reducibility hints in the skippable entry header — the
+  // EXACT per-definition value (the §3 per-address channel min-merges
+  // alias collisions; see `Named::hints`).
+  put_u64(fuse_opt_hint(named.hints()), buf);
+  // Metadata blob, length-prefixed so scanners (`parse_lazy_index`,
+  // hint readers) can skip it without parsing. Demoted entries decode
+  // here and re-encode through the name index — the raw and indexed
+  // encodings share the wire format, differing only in how name
+  // references are written.
+  scratch.clear();
+  named.meta().put_with(NamePut::Indexed(idx), scratch)?;
+  // Serialize original as Option: 0 = None, 1 = Some(addr, meta). The
+  // original's address stays a raw 32 bytes: it can reference an
+  // assumed constant that is NOT stored in §2 (prune cut bundles), so
+  // a §2 index cannot represent it.
   match named.original() {
-    None => buf.push(0),
+    None => scratch.push(0),
     Some((addr, meta)) => {
-      buf.push(1);
-      put_address(&addr, buf);
-      meta.put_with(NamePut::Indexed(idx), buf)?;
+      scratch.push(1);
+      put_address(&addr, scratch);
+      meta.put_with(NamePut::Indexed(idx), scratch)?;
     },
   }
+  put_u64(scratch.len() as u64, buf);
+  buf.extend_from_slice(scratch);
   Ok(())
+}
+
+/// How §5 resolves its Tag0 constant indices back to addresses: from a
+/// plain address vector (the full readers' §2 scan order) or from the
+/// lazy index's §2 windows (cursor/lazy readers). Mirrors [`NameGet`].
+#[derive(Clone, Copy)]
+pub enum ConstGet<'a> {
+  Addrs(&'a [Address]),
+  Slices(&'a [LazyConstSlice]),
+}
+
+impl ConstGet<'_> {
+  fn addr(&self, i: usize, ctx: &str) -> Result<Address, String> {
+    let (addr, len) = match self {
+      ConstGet::Addrs(v) => (v.get(i).cloned(), v.len()),
+      ConstGet::Slices(v) => (v.get(i).map(|s| s.addr.clone()), v.len()),
+    };
+    addr.ok_or_else(|| {
+      format!(
+        "{ctx}: constant index {i} out of range ({len} \
+         consts){PRE_COMPACT_KEYS}"
+      )
+    })
+  }
 }
 
 /// Deserialize a Named entry with indexed metadata.
 pub fn get_named_indexed(
   buf: &mut &[u8],
   rev: &NameReverseIndex,
+  consts: ConstGet<'_>,
 ) -> Result<Named, String> {
-  let addr = get_address(buf)?;
+  let const_idx = get_u64(buf)? as usize;
+  let addr = consts.addr(const_idx, "get_named_indexed")?;
+  let hints = unfuse_opt_hint(get_u64(buf)?)
+    .map_err(|e| format!("get_named_indexed: {e}"))?;
+  let meta_len = get_u64(buf)? as usize;
+  if buf.len() < meta_len {
+    return Err(format!(
+      "get_named_indexed: metadata blob needs {meta_len} bytes, have \
+       {}{PRE_COMPACT_KEYS}",
+      buf.len()
+    ));
+  }
+  let before = buf.len();
   let meta = ConstantMeta::get_with(buf, NameGet::Indexed(rev))?;
   let mut named = Named::new(addr, meta);
+  named.set_hints(hints);
   match get_u8(buf)? {
     0 => {},
     1 => {
@@ -1214,6 +1358,15 @@ pub fn get_named_indexed(
       named.set_original(orig_addr, orig_meta);
     },
     x => return Err(format!("Named.original: invalid tag {x}")),
+  }
+  // The header's length must frame exactly the bytes the parsers
+  // consumed — a mismatch means a desynced or tampered entry.
+  let consumed = before - buf.len();
+  if consumed != meta_len {
+    return Err(format!(
+      "get_named_indexed: metadata blob length mismatch (header says \
+       {meta_len}, parsed {consumed}){PRE_COMPACT_KEYS}"
+    ));
   }
   Ok(named)
 }
@@ -1233,7 +1386,7 @@ pub fn get_named_indexed(
 pub struct NamedMetaCursor<'a> {
   buf: &'a [u8],
   remaining: u64,
-  rev: &'a NameReverseIndex,
+  index: &'a LazyIndex,
 }
 
 impl<'a> NamedMetaCursor<'a> {
@@ -1258,7 +1411,7 @@ impl<'a> NamedMetaCursor<'a> {
         index.named.len()
       ));
     }
-    Ok(NamedMetaCursor { buf, remaining, rev: &index.name_reverse_index })
+    Ok(NamedMetaCursor { buf, remaining, index })
   }
 
   /// Parse the next entry: `(name-component hash, Named)`; `None` once
@@ -1268,8 +1421,22 @@ impl<'a> NamedMetaCursor<'a> {
       return Ok(None);
     }
     self.remaining -= 1;
-    let name_addr = get_address(&mut self.buf)?;
-    let named = get_named_indexed(&mut self.buf, self.rev)?;
+    let name_idx = get_u64(&mut self.buf)? as usize;
+    let name_addr =
+      self.index.name_reverse_index.get(name_idx).cloned().ok_or_else(
+        || {
+          format!(
+            "NamedMetaCursor: §5 name index {name_idx} out of range ({} \
+           names){PRE_COMPACT_KEYS}",
+            self.index.name_reverse_index.len()
+          )
+        },
+      )?;
+    let named = get_named_indexed(
+      &mut self.buf,
+      &self.index.name_reverse_index,
+      ConstGet::Slices(&self.index.consts),
+    )?;
     Ok(Some((name_addr, named)))
   }
 }
@@ -1422,7 +1589,7 @@ impl Env {
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // Section 3: anon_hints (Address -> ReducibilityHints)
+    // Section 3: anon_hints (§2 index -> ReducibilityHints)
     //
     // The canonical hint channel, placed before the metadata sections
     // so `get_anon`/`get_anon_mmap` can stop right after it (they
@@ -1431,15 +1598,30 @@ impl Env {
     // (`Env::register_hint`) and readers fill the map from this very
     // section. Hints are performance-only advice and intentionally
     // NOT covered by the consts merkle root.
+    //
+    // Entries are keyed by rank in §2's ascending-address order,
+    // delta-coded against the previous entry (the address sort below
+    // is load-bearing: it makes the ranks strictly ascending), with
+    // the hint fused into one Tag0 value — 2-3 bytes per entry
+    // instead of a redundant 32-byte address.
     // ─────────────────────────────────────────────────────────────────────
     let sec_start = std::time::Instant::now();
     let mut hint_pairs: Vec<(Address, ReducibilityHints)> =
       self.anon_hints.iter().map(|e| (e.key().clone(), *e.value())).collect();
     hint_pairs.sort_unstable_by(|a, b| a.0.cmp(&b.0));
     put_u64(hint_pairs.len() as u64, buf);
+    let mut prev: u64 = 0; // rank + 1 of the previous entry
     for (addr, hints) in &hint_pairs {
-      put_address(addr, buf);
-      hints.put_ser(buf);
+      let rank = const_addrs.binary_search(addr).map_err(|_| {
+        format!(
+          "Env::put: anon_hints key {} not present in consts — hints \
+           must be keyed by stored constant addresses",
+          addr.hex()
+        )
+      })? as u64;
+      put_u64(rank + 1 - prev, buf);
+      put_u64(fuse_hint(hints), buf);
+      prev = rank + 1;
     }
     if !quiet {
       eprintln!(
@@ -1517,10 +1699,30 @@ impl Env {
     });
     let put_start = std::time::Instant::now();
     put_u64(named_keys.len() as u64, buf);
+    // Reusable scratch for the length-prefixed metadata blobs — keeps
+    // this loop's allocations per-entry-bounded (put's streaming-RAM
+    // property).
+    let mut named_scratch: Vec<u8> = Vec::new();
     for name in &named_keys {
       if let Some(entry) = self.named.get(name) {
-        put_bytes(name.get_hash().as_bytes(), buf);
-        put_named_indexed(entry.value(), &name_index, buf)?;
+        // The name key is written as its §4 topo-order index — the
+        // name-component address for a name is bytewise its hash.
+        let name_addr = Address::from_blake3_hash(*name.get_hash());
+        let name_idx =
+          name_index.get(&name_addr).copied().ok_or_else(|| {
+            format!(
+              "Env::put: named key {} not present in the name table",
+              name_addr.hex()
+            )
+          })?;
+        put_u64(name_idx, buf);
+        put_named_indexed(
+          entry.value(),
+          &name_index,
+          &const_addrs,
+          &mut named_scratch,
+          buf,
+        )?;
       }
     }
     if !quiet {
@@ -1658,14 +1860,24 @@ impl Env {
       }
     }
     // Section 3: anon_hints — the canonical hint channel, serialized
-    // straight from the map (see `Env::put`).
+    // straight from the map as delta-coded §2 ranks + fused hints
+    // (see `Env::put`; the address sort is load-bearing).
     let mut hint_pairs: Vec<(Address, ReducibilityHints)> =
       self.anon_hints.iter().map(|e| (e.key().clone(), *e.value())).collect();
     hint_pairs.sort_unstable_by(|a, b| a.0.cmp(&b.0));
     put_u64(hint_pairs.len() as u64, &mut buf);
+    let mut prev: u64 = 0; // rank + 1 of the previous entry
     for (addr, hints) in &hint_pairs {
-      put_address(addr, &mut buf);
-      hints.put_ser(&mut buf);
+      let rank = const_addrs.binary_search(addr).map_err(|_| {
+        format!(
+          "Env::put_file: anon_hints key {} not present in consts — \
+           hints must be keyed by stored constant addresses",
+          addr.hex()
+        )
+      })? as u64;
+      put_u64(rank + 1 - prev, &mut buf);
+      put_u64(fuse_hint(hints), &mut buf);
+      prev = rank + 1;
       emit!();
     }
 
@@ -1699,8 +1911,23 @@ impl Env {
         .map(|name| {
           let mut b = Vec::new();
           if let Some(entry) = self.named.get(name) {
-            put_bytes(name.get_hash().as_bytes(), &mut b);
-            put_named_indexed(entry.value(), &name_index, &mut b)?;
+            let name_addr = Address::from_blake3_hash(*name.get_hash());
+            let name_idx =
+              name_index.get(&name_addr).copied().ok_or_else(|| {
+                format!(
+                  "Env::put_file: named key {} not present in the name table",
+                  name_addr.hex()
+                )
+              })?;
+            put_u64(name_idx, &mut b);
+            let mut scratch = Vec::new();
+            put_named_indexed(
+              entry.value(),
+              &name_index,
+              &const_addrs,
+              &mut scratch,
+              &mut b,
+            )?;
           }
           Ok::<_, String>(b)
         })
@@ -1766,6 +1993,10 @@ impl Env {
 
     // Section 2: Consts (lazy: read length prefix, slice bytes, defer parse)
     let num_consts = get_u64(buf)?;
+    // §2 file order (ascending addresses, enforced below) — §3 hints
+    // and §5 named entries key their constants by index into it.
+    let mut consts_order: Vec<Address> =
+      Vec::with_capacity(capped_capacity(num_consts, buf));
     for i in 0..num_consts {
       let addr = get_address(buf)?;
       let len = Tag0::get(buf)?.size as usize;
@@ -1792,6 +2023,18 @@ impl Env {
           addr.hex()
         ));
       }
+      // §2 order is load-bearing for §3/§5 index resolution: writers
+      // emit ascending addresses; a permuted section would silently
+      // re-key every hint, so reject it outright.
+      if let Some(prev) = consts_order.last()
+        && *prev >= addr
+      {
+        return Err(format!(
+          "Env::get: §2 constants not in strictly ascending address \
+           order at idx {i}"
+        ));
+      }
+      consts_order.push(addr.clone());
       env
         .consts
         .insert(addr, crate::lazy::LazyConstant::from_bytes(bytes.into()));
@@ -1804,8 +2047,13 @@ impl Env {
       return Err(format!("Env::get: main {} not present in consts", m.hex()));
     }
 
-    // Section 3: anon_hints
-    for (addr, hints) in read_hints_section(buf)? {
+    // Section 3: anon_hints (§2-index keyed; resolved via consts_order)
+    for (addr, hints) in read_hints_section(
+      buf,
+      consts_order.len(),
+      |i| consts_order[i].clone(),
+      "Env::get",
+    )? {
       env.anon_hints.insert(addr, hints);
     }
 
@@ -1831,8 +2079,20 @@ impl Env {
     // Section 5: Named (use indexed deserialization for metadata)
     let num_named = get_u64(buf)?;
     for _ in 0..num_named {
-      let name_addr = get_address(buf)?;
-      let mut named = get_named_indexed(buf, &name_reverse_index)?;
+      let name_idx = get_u64(buf)? as usize;
+      let name_addr =
+        name_reverse_index.get(name_idx).cloned().ok_or_else(|| {
+          format!(
+            "Env::get: §5 name index {name_idx} out of range ({} \
+             names){PRE_COMPACT_KEYS}",
+            name_reverse_index.len()
+          )
+        })?;
+      let mut named = get_named_indexed(
+        buf,
+        &name_reverse_index,
+        ConstGet::Addrs(&consts_order),
+      )?;
       if demote_named {
         named.demote();
       }
@@ -1851,13 +2111,12 @@ impl Env {
     }
 
     // Verify the stored merkle root matches what we'd compute from
-    // env.consts. Empty const set → expected = zero_address().
-    // Rejects any tampering with the header.
-    let mut const_addrs: Vec<Address> =
-      env.consts.iter().map(|e| e.key().clone()).collect();
-    const_addrs.sort_unstable();
+    // the §2 addresses (already strictly ascending — enforced above,
+    // so `consts_order` is the sorted, duplicate-free key set). Empty
+    // const set → expected = zero_address(). Rejects any tampering
+    // with the header.
     let computed_root =
-      merkle_root_canonical(&const_addrs).unwrap_or_else(zero_address);
+      merkle_root_canonical(&consts_order).unwrap_or_else(zero_address);
     if computed_root != stored_root {
       return Err(format!(
         "Env::get: merkle root mismatch (stored={}, computed={})",
@@ -1923,7 +2182,7 @@ impl Env {
 
     // Section 2: Consts — record offset windows, never parse the bodies.
     let num_consts = get_u64(&mut buf)?;
-    for _ in 0..num_consts {
+    for i in 0..num_consts {
       let addr = get_address(&mut buf)?;
       let len = Tag0::get(&mut buf)?.size as usize;
       // Position of the body within `data` = bytes consumed so far.
@@ -1936,12 +2195,28 @@ impl Env {
         ));
       }
       buf = &buf[len..];
+      // §2 order is load-bearing for §3/§5 index resolution (and for
+      // the sort-free merkle recompute below) — enforce it.
+      if let Some(prev) = index.consts.last()
+        && prev.addr >= addr
+      {
+        return Err(format!(
+          "parse_lazy_index: §2 constants not in strictly ascending \
+           address order at idx {i}"
+        ));
+      }
       index.consts.push(LazyConstSlice { addr, offset, len });
     }
 
-    // Section 3: anon_hints — kept verbatim on the index for
-    // full-reader parity.
-    index.hints = read_hints_section(&mut buf)?;
+    // Section 3: anon_hints — kept verbatim (resolved to addresses) on
+    // the index for full-reader parity. The §2 windows are the
+    // index→address table.
+    index.hints = read_hints_section(
+      &mut buf,
+      index.consts.len(),
+      |i| index.consts[i].addr.clone(),
+      "parse_lazy_index",
+    )?;
 
     // Section 4: Names — parsed to build the index for metadata
     // decoding. The reverse index is retained on the LazyIndex so §5
@@ -1968,12 +2243,38 @@ impl Env {
     index.named_section_offset = data.len() - buf.len();
     let num_named = get_u64(&mut buf)?;
     for _ in 0..num_named {
-      let name_addr = get_address(&mut buf)?;
-      let named = get_named_indexed(&mut buf, &index.name_reverse_index)?;
+      let name_idx = get_u64(&mut buf)? as usize;
+      let name_addr =
+        index.name_reverse_index.get(name_idx).cloned().ok_or_else(|| {
+          format!(
+            "parse_lazy_index: §5 name index {name_idx} out of range ({} \
+             names){PRE_COMPACT_KEYS}",
+            index.name_reverse_index.len()
+          )
+        })?;
+      // Entry header: const rank + per-name hint + metadata blob
+      // length. The blob is SKIPPED — this is the payoff of the
+      // length-prefixed layout: the lazy index never parses metadata
+      // arenas just to find entry boundaries. A `NamedMetaCursor`
+      // re-opened at `named_section_offset` parses them on demand.
+      let const_rank = get_u64(&mut buf)? as usize;
+      let addr =
+        ConstGet::Slices(&index.consts).addr(const_rank, "parse_lazy_index")?;
+      let hints = unfuse_opt_hint(get_u64(&mut buf)?)
+        .map_err(|e| format!("parse_lazy_index: {e}"))?;
+      let meta_len = get_u64(&mut buf)? as usize;
+      if buf.len() < meta_len {
+        return Err(format!(
+          "parse_lazy_index: §5 metadata blob needs {meta_len} bytes, \
+           have {}{PRE_COMPACT_KEYS}",
+          buf.len()
+        ));
+      }
+      buf = &buf[meta_len..];
       let name = names_lookup.get(&name_addr).cloned().ok_or_else(|| {
         format!("parse_lazy_index: missing name for addr {:?}", name_addr)
       })?;
-      index.named.push(LazyNamed { name, addr: named.addr });
+      index.named.push(LazyNamed { name, addr, hints });
     }
 
     // Section 6: Comms — carried verbatim (tiny; empty for
@@ -1995,10 +2296,11 @@ impl Env {
       ));
     }
 
-    // Re-verify the merkle root over const addresses (header integrity).
-    let mut const_addrs: Vec<Address> =
+    // Re-verify the merkle root over const addresses (header
+    // integrity). §2 ascending order was enforced during the scan, so
+    // the collected addresses are already the sorted key set.
+    let const_addrs: Vec<Address> =
       index.consts.iter().map(|c| c.addr.clone()).collect();
-    const_addrs.sort_unstable();
     let computed_root =
       merkle_root_canonical(&const_addrs).unwrap_or_else(zero_address);
     if computed_root != stored_root {
@@ -2089,9 +2391,8 @@ impl Env {
   /// by design — only the full [`Env::get`] enforces EOF.
   ///
   /// Hints come straight from §3: the writer always emits that
-  /// section, deriving it from Named metadata when the in-memory map
-  /// is empty, so the historical read-time harvest from §Named is
-  /// gone.
+  /// section from the `anon_hints` map (its single home), so there is
+  /// no read-time harvest from §Named.
   ///
   /// Used by the anon-mode kernel path so a verifier holding only
   /// content addresses doesn't pay for metadata it will never consult.
@@ -2111,6 +2412,10 @@ impl Env {
 
     // Section 2: Consts (kept, lazy)
     let num_consts = get_u64(buf)?;
+    // §2 file order (ascending, enforced) — resolves §3 hint indices
+    // and doubles as the sorted key set for the merkle recompute.
+    let mut consts_order: Vec<Address> =
+      Vec::with_capacity(capped_capacity(num_consts, buf));
     for i in 0..num_consts {
       let addr = get_address(buf)?;
       let len = Tag0::get(buf)?.size as usize;
@@ -2131,6 +2436,15 @@ impl Env {
           addr.hex()
         ));
       }
+      if let Some(prev) = consts_order.last()
+        && *prev >= addr
+      {
+        return Err(format!(
+          "Env::get_anon: §2 constants not in strictly ascending \
+           address order at idx {i}"
+        ));
+      }
+      consts_order.push(addr.clone());
       env
         .consts
         .insert(addr, crate::lazy::LazyConstant::from_bytes(bytes.into()));
@@ -2151,19 +2465,21 @@ impl Env {
     // either way. Without them, every Definition is forced to
     // `Regular(0)` and the kernel can chew through `MAX_WHNF_FUEL` on
     // definitions Lean would have marked `Abbrev`/`Regular(h)`.
-    for (addr, hints) in read_hints_section(buf)? {
+    for (addr, hints) in read_hints_section(
+      buf,
+      consts_order.len(),
+      |i| consts_order[i].clone(),
+      "Env::get_anon",
+    )? {
       env.anon_hints.insert(addr, hints);
     }
 
     // Sections 4-6 (names / named / comms) are laid out after the
     // hints precisely so this reader can stop here.
 
-    // Verify merkle root over loaded consts.
-    let mut const_addrs: Vec<Address> =
-      env.consts.iter().map(|e| e.key().clone()).collect();
-    const_addrs.sort_unstable();
+    // Verify merkle root over the §2 addresses (ascending — enforced).
     let computed_root =
-      merkle_root_canonical(&const_addrs).unwrap_or_else(zero_address);
+      merkle_root_canonical(&consts_order).unwrap_or_else(zero_address);
     if computed_root != stored_root {
       return Err(format!(
         "Env::get_anon: merkle root mismatch (stored={}, computed={})",
@@ -2261,6 +2577,10 @@ impl Env {
 
     // Section 2: Consts (mmap-backed lazy windows)
     let num_consts = get_u64(&mut buf)?;
+    // §2 file order (ascending, enforced) — resolves §3 hint indices
+    // and doubles as the sorted key set for the merkle recompute.
+    let mut consts_order: Vec<Address> =
+      Vec::with_capacity(capped_capacity(num_consts, buf));
     for i in 0..num_consts {
       let addr = get_address(&mut buf)?;
       let len = Tag0::get(&mut buf)?.size as usize;
@@ -2283,6 +2603,15 @@ impl Env {
           addr.hex()
         ));
       }
+      if let Some(prev) = consts_order.last()
+        && *prev >= addr
+      {
+        return Err(format!(
+          "Env::get_anon_mmap: §2 constants not in strictly ascending \
+           address order at idx {i}"
+        ));
+      }
+      consts_order.push(addr.clone());
       env.consts.insert(
         addr,
         crate::lazy::LazyConstant::from_mmap_slice(
@@ -2305,19 +2634,22 @@ impl Env {
     }
 
     // Section 3: anon_hints — see `get_anon` for the rationale.
-    for (addr, hints) in read_hints_section(&mut buf)? {
+    for (addr, hints) in read_hints_section(
+      &mut buf,
+      consts_order.len(),
+      |i| consts_order[i].clone(),
+      "Env::get_anon_mmap",
+    )? {
       env.anon_hints.insert(addr, hints);
     }
 
     // Sections 4-6 (names / named / comms) are laid out after the
     // hints precisely so this reader can stop here.
 
-    // Verify merkle root over loaded consts (same as get_anon).
-    let mut const_addrs: Vec<Address> =
-      env.consts.iter().map(|e| e.key().clone()).collect();
-    const_addrs.sort_unstable();
+    // Verify merkle root over the §2 addresses (ascending — enforced;
+    // same as get_anon).
     let computed_root =
-      merkle_root_canonical(&const_addrs).unwrap_or_else(zero_address);
+      merkle_root_canonical(&consts_order).unwrap_or_else(zero_address);
     if computed_root != stored_root {
       return Err(format!(
         "Env::get_anon_mmap: merkle root mismatch (stored={}, computed={})",
@@ -2381,15 +2713,26 @@ impl Env {
     }
     let consts_size = buf.len() - before_consts;
 
-    // Section 3: anon_hints (serialized straight from the map)
+    // Section 3: anon_hints (serialized straight from the map). The
+    // address sort is load-bearing: §3 sizes are delta-coded §2 ranks,
+    // so an unsorted iteration would change (and corrupt) the deltas.
     let before_hints = buf.len();
     let mut hint_pairs: Vec<(Address, ReducibilityHints)> =
       self.anon_hints.iter().map(|e| (e.key().clone(), *e.value())).collect();
     hint_pairs.sort_unstable_by(|a, b| a.0.cmp(&b.0));
     put_u64(hint_pairs.len() as u64, &mut buf);
+    let mut prev: u64 = 0; // rank + 1 of the previous entry
     for (addr, hints) in &hint_pairs {
-      put_address(addr, &mut buf);
-      hints.put_ser(&mut buf);
+      let rank = const_addrs.binary_search(addr).map_err(|_| {
+        format!(
+          "Env::serialized_size_breakdown: anon_hints key {} not present \
+           in consts — hints must be keyed by stored constant addresses",
+          addr.hex()
+        )
+      })? as u64;
+      put_u64(rank + 1 - prev, &mut buf);
+      put_u64(fuse_hint(hints), &mut buf);
+      prev = rank + 1;
     }
     let hints_size = buf.len() - before_hints;
 
@@ -2405,12 +2748,29 @@ impl Env {
     }
     let names_size = buf.len() - before_names;
 
-    // Section 5: Named (use indexed serialization)
+    // Section 5: Named (use indexed serialization). Iteration order is
+    // fine for *sizes* only because both §5 indices are absolute — a
+    // delta-coded §5 would make per-entry sizes order-dependent.
     let before_named = buf.len();
     put_u64(self.named.len() as u64, &mut buf);
+    let mut named_scratch: Vec<u8> = Vec::new();
     for entry in self.named.iter() {
-      put_bytes(entry.key().get_hash().as_bytes(), &mut buf);
-      put_named_indexed(entry.value(), &name_index, &mut buf)?;
+      let name_addr = Address::from_blake3_hash(*entry.key().get_hash());
+      let name_idx = name_index.get(&name_addr).copied().ok_or_else(|| {
+        format!(
+          "Env::serialized_size_breakdown: named key {} not present in \
+           the name table",
+          name_addr.hex()
+        )
+      })?;
+      put_u64(name_idx, &mut buf);
+      put_named_indexed(
+        entry.value(),
+        &name_index,
+        &const_addrs,
+        &mut named_scratch,
+        &mut buf,
+      )?;
     }
     let named_size = buf.len() - before_named;
 
@@ -2670,6 +3030,18 @@ mod tests {
         if let Some((orig_addr, orig_meta)) = original {
           named.set_original(orig_addr, orig_meta);
         }
+        // Per-name hints ride the §5 entry header — exercise every
+        // variant including absent.
+        let hint_variant: u8 = Arbitrary::arbitrary(g);
+        match hint_variant % 4 {
+          0 => {},
+          1 => named.set_hints(Some(ReducibilityHints::Opaque)),
+          2 => named.set_hints(Some(ReducibilityHints::Abbrev)),
+          _ => {
+            let h: u32 = Arbitrary::arbitrary(g);
+            named.set_hints(Some(ReducibilityHints::Regular(h % 200)));
+          },
+        }
         env.named.insert(name, named);
       }
     }
@@ -2694,17 +3066,32 @@ mod tests {
       env.assumptions.insert(Address::arbitrary(g));
     }
 
-    // anon_hints (keyed by arbitrary addresses — the map is advisory
-    // and the hints section is serialized straight from it).
-    let num_hints = gen_range(g, 0..4);
-    for _ in 0..num_hints {
-      let variant: u8 = Arbitrary::arbitrary(g);
-      let hint = match variant % 3 {
-        0 => ReducibilityHints::Opaque,
-        1 => ReducibilityHints::Abbrev,
-        _ => ReducibilityHints::Regular(Arbitrary::arbitrary(g)),
-      };
-      env.anon_hints.insert(Address::arbitrary(g), hint);
+    // anon_hints — keyed by stored constant addresses: §3 writes each
+    // key as its §2 rank, so out-of-consts keys are a writer error.
+    // Regular heights span the fused-hint Tag0 1↔2-byte boundary
+    // (fused = h + 2 crosses 127 at h = 126).
+    if !const_addrs.is_empty() {
+      let num_hints = gen_range(g, 0..4);
+      for _ in 0..num_hints {
+        let variant: u8 = Arbitrary::arbitrary(g);
+        let hint = match variant % 3 {
+          0 => ReducibilityHints::Opaque,
+          1 => ReducibilityHints::Abbrev,
+          _ => {
+            let h: u32 = Arbitrary::arbitrary(g);
+            // Bias half the heights to the Tag0 1↔2-byte wire boundary
+            // (fused = h + 2 crosses 127 at h = 126); keep the rest
+            // full-range for the multi-byte Tag0 paths.
+            ReducibilityHints::Regular(if bool::arbitrary(g) {
+              h % 200
+            } else {
+              h
+            })
+          },
+        };
+        let idx = usize::arbitrary(g) % const_addrs.len();
+        env.anon_hints.insert(const_addrs[idx].clone(), hint);
+      }
     }
 
     env
@@ -2783,10 +3170,12 @@ mod tests {
           }
         }
 
-        // Check named content
+        // Check named content (addr + exact per-name hints)
         for entry in env.named.iter() {
           match recovered.named.get(entry.key()) {
-            Some(v) if v.addr == entry.value().addr => {},
+            Some(v)
+              if v.addr == entry.value().addr
+                && v.hints() == entry.value().hints() => {},
             _ => {
               eprintln!("named content mismatch for {:?}", entry.key());
               return false;
@@ -2805,8 +3194,8 @@ mod tests {
           }
         }
 
-        // Bundle fields + hints (gen_env metas are all Empty, so §3
-        // derivation contributes nothing and plain equality holds).
+        // Bundle fields + hints (§3 serializes the map verbatim, so
+        // plain equality holds after a roundtrip).
         if env.main != recovered.main {
           eprintln!("main mismatch: {:?} vs {:?}", env.main, recovered.main);
           return false;
@@ -3076,11 +3465,11 @@ mod tests {
     let a = store_canonical(&env, defn_const(vec![]));
     let b = store_canonical(&env, defn_const(vec![a.clone()]));
     // Populate metadata sections so we can verify they get dropped.
+    // §5 keys names by §4 index, so the component must be stored too.
     let blob_addr = env.store_blob(b"hello world".to_vec());
-    env.register_name(
-      Name::str(Name::anon(), "MyConst".to_string()),
-      Named::with_addr(a.clone()),
-    );
+    let name = Name::str(Name::anon(), "MyConst".to_string());
+    env.store_name(Address::from_blake3_hash(*name.get_hash()), name.clone());
+    env.register_name(name, Named::with_addr(a.clone()));
 
     let mut buf = Vec::new();
     env.put(&mut buf).unwrap();
@@ -3327,12 +3716,10 @@ mod tests {
       .expect("get_anon early-stops before the garbage");
   }
 
-  /// §3 is the canonical hint channel: with an empty `anon_hints` map
-  /// the writer derives the section from Named `Def` metadata, and an
-  /// env carrying the same hints explicitly serializes byte-identically.
-  /// The hints section round-trips through both the anon and full
-  /// readers, and `register_hint`'s merge is order-independent on
-  /// address collisions.
+  /// §3 is the canonical (and only) hint channel, serialized straight
+  /// from the `anon_hints` map. The hints section round-trips through
+  /// both the anon and full readers, and `register_hint`'s merge is
+  /// order-independent on address collisions.
   #[test]
   fn env_hints_roundtrip_and_merge_deterministic() {
     let env = Env::new();
@@ -3369,5 +3756,416 @@ mod tests {
       a.anon_hints.get(&ca).map(|r| *r),
       Some(ReducibilityHints::Abbrev)
     );
+  }
+
+  // ---------- Compact index-keyed §3/§5 tests ----------
+
+  #[test]
+  fn fused_hint_codec_roundtrip_and_bounds() {
+    use ReducibilityHints::*;
+    for h in [
+      Opaque,
+      Abbrev,
+      Regular(0),
+      Regular(125),
+      Regular(126),
+      Regular(u32::MAX),
+    ] {
+      assert_eq!(unfuse_hint(fuse_hint(&h)).unwrap(), h);
+    }
+    // Wire widths at the Tag0 1↔2-byte boundary: fused = h + 2.
+    let width = |h: &ReducibilityHints| {
+      let mut b = Vec::new();
+      put_u64(fuse_hint(h), &mut b);
+      b.len()
+    };
+    assert_eq!(width(&Regular(125)), 1, "fused 127 fits one byte");
+    assert_eq!(width(&Regular(126)), 2, "fused 128 needs the large form");
+    // Heights beyond u32 are malformed.
+    assert!(unfuse_hint(u64::from(u32::MAX) + 3).is_err());
+    assert!(unfuse_hint(u64::MAX).is_err());
+  }
+
+  /// Byte range of §3 (start of its count, end after its last entry),
+  /// computed by walking the prefix with the real parsers.
+  fn hints_section_bounds(buf: &[u8]) -> (usize, usize) {
+    let mut cur: &[u8] = buf;
+    read_env_header(&mut cur, "test").unwrap();
+    read_blob_section(&mut cur, "test").unwrap();
+    let n = get_u64(&mut cur).unwrap();
+    for _ in 0..n {
+      let _addr = get_address(&mut cur).unwrap();
+      let len = Tag0::get(&mut cur).unwrap().size as usize;
+      cur = &cur[len..];
+    }
+    let start = buf.len() - cur.len();
+    let m = get_u64(&mut cur).unwrap();
+    for _ in 0..m {
+      let _delta = get_u64(&mut cur).unwrap();
+      let _fused = get_u64(&mut cur).unwrap();
+    }
+    (start, buf.len() - cur.len())
+  }
+
+  /// Replace §3 with `custom` bytes (count + entries as given).
+  fn splice_hints(buf: &[u8], custom: &[u8]) -> Vec<u8> {
+    let (s, e) = hints_section_bounds(buf);
+    let mut out = buf[..s].to_vec();
+    out.extend_from_slice(custom);
+    out.extend_from_slice(&buf[e..]);
+    out
+  }
+
+  /// Assert every reader (full, anon, anon_mmap, lazy index) rejects
+  /// `buf` with an error containing all of `substrings`.
+  fn assert_all_readers_reject(buf: &[u8], substrings: &[&str]) {
+    use std::io::Write;
+    let mut errs: Vec<(&str, String)> = vec![
+      ("get", Env::get(&mut &buf[..]).expect_err("get accepted")),
+      (
+        "get_anon",
+        Env::get_anon(&mut &buf[..]).expect_err("get_anon accepted"),
+      ),
+      (
+        "parse_lazy_index",
+        Env::parse_lazy_index(buf).expect_err("parse_lazy_index accepted"),
+      ),
+    ];
+    let tmp = std::env::temp_dir()
+      .join(format!("ix_reject_{}.ixe", Address::hash(buf).hex()));
+    {
+      let mut f = std::fs::File::create(&tmp).unwrap();
+      f.write_all(buf).unwrap();
+    }
+    errs.push((
+      "get_anon_mmap",
+      Env::get_anon_mmap(&tmp).expect_err("get_anon_mmap accepted"),
+    ));
+    std::fs::remove_file(&tmp).ok();
+    for (reader, err) in errs {
+      for s in substrings {
+        assert!(err.contains(s), "{reader}: expected {s:?} in: {err}");
+      }
+    }
+  }
+
+  /// Two consts + two hints — the base fixture for §3 malformation.
+  fn two_hint_env_bytes() -> Vec<u8> {
+    let env = Env::new();
+    let a = store_canonical(&env, defn_const(vec![]));
+    let b = store_canonical(&env, defn_const(vec![a.clone()]));
+    env.register_hint(a, ReducibilityHints::Regular(7));
+    env.register_hint(b, ReducibilityHints::Abbrev);
+    let mut buf = Vec::new();
+    env.put(&mut buf).unwrap();
+    buf
+  }
+
+  #[test]
+  fn hints_zero_delta_rejected_by_all_readers() {
+    let buf = two_hint_env_bytes();
+    // count=2; first entry (delta 1 → idx 0), second entry delta 0.
+    let mut custom = Vec::new();
+    put_u64(2, &mut custom);
+    put_u64(1, &mut custom);
+    put_u64(fuse_hint(&ReducibilityHints::Regular(7)), &mut custom);
+    put_u64(0, &mut custom);
+    put_u64(1, &mut custom);
+    assert_all_readers_reject(
+      &splice_hints(&buf, &custom),
+      &["zero index delta", "pre-compact-keys"],
+    );
+  }
+
+  #[test]
+  fn hints_index_out_of_range_rejected_by_all_readers() {
+    let buf = two_hint_env_bytes();
+    // count=1; delta 3 → idx 2, but only 2 consts.
+    let mut custom = Vec::new();
+    put_u64(1, &mut custom);
+    put_u64(3, &mut custom);
+    put_u64(0, &mut custom);
+    assert_all_readers_reject(
+      &splice_hints(&buf, &custom),
+      &["out of range", "pre-compact-keys"],
+    );
+  }
+
+  #[test]
+  fn hints_count_above_const_count_rejected_by_all_readers() {
+    let buf = two_hint_env_bytes();
+    // count=3 > 2 consts — rejected before any entry is parsed.
+    let mut custom = Vec::new();
+    put_u64(3, &mut custom);
+    for _ in 0..3 {
+      put_u64(1, &mut custom);
+      put_u64(0, &mut custom);
+    }
+    assert_all_readers_reject(
+      &splice_hints(&buf, &custom),
+      &["hint count 3 exceeds const count 2", "pre-compact-keys"],
+    );
+  }
+
+  #[test]
+  fn hints_fused_overflow_rejected_by_all_readers() {
+    let buf = two_hint_env_bytes();
+    // count=1; valid delta, fused value above the Regular(u32) ceiling.
+    let mut custom = Vec::new();
+    put_u64(1, &mut custom);
+    put_u64(1, &mut custom);
+    put_u64(u64::from(u32::MAX) + 3, &mut custom);
+    assert_all_readers_reject(
+      &splice_hints(&buf, &custom),
+      &["exceeds u32::MAX"],
+    );
+  }
+
+  #[test]
+  fn old_format_hints_section_detected() {
+    let buf = two_hint_env_bytes();
+    // Simulate a pre-compact-keys §3: count=1, then a raw 32-byte
+    // address + tag byte + Tag0 height. The first address byte (0x00)
+    // parses as a zero delta, so every reader fails immediately with
+    // the recompile hint.
+    let mut custom = Vec::new();
+    put_u64(1, &mut custom);
+    custom.extend_from_slice(&[0u8; 32]);
+    custom.push(2);
+    Tag0::new(5).put(&mut custom);
+    assert_all_readers_reject(
+      &splice_hints(&buf, &custom),
+      &["pre-compact-keys", "recompile"],
+    );
+  }
+
+  #[test]
+  fn consts_out_of_order_rejected_by_all_readers() {
+    // The merkle root is order-independent (canonical over the key
+    // set), so a permuted §2 used to slip through — but §3/§5 indices
+    // resolve against file order, so readers must reject it.
+    let buf = two_hint_env_bytes();
+    // Locate the two §2 entries (addr + len tag + payload) and swap them.
+    let mut cur: &[u8] = &buf;
+    read_env_header(&mut cur, "test").unwrap();
+    read_blob_section(&mut cur, "test").unwrap();
+    let n = get_u64(&mut cur).unwrap();
+    assert_eq!(n, 2);
+    let first_start = buf.len() - cur.len();
+    let _addr = get_address(&mut cur).unwrap();
+    let len = Tag0::get(&mut cur).unwrap().size as usize;
+    cur = &cur[len..];
+    let second_start = buf.len() - cur.len();
+    let _addr = get_address(&mut cur).unwrap();
+    let len = Tag0::get(&mut cur).unwrap().size as usize;
+    cur = &cur[len..];
+    let second_end = buf.len() - cur.len();
+    let mut swapped = buf[..first_start].to_vec();
+    swapped.extend_from_slice(&buf[second_start..second_end]);
+    swapped.extend_from_slice(&buf[first_start..second_start]);
+    swapped.extend_from_slice(&buf[second_end..]);
+    assert_all_readers_reject(&swapped, &["strictly ascending"]);
+  }
+
+  #[test]
+  fn named_indices_out_of_range_rejected() {
+    // One named entry whose §5 name_idx / const_idx bytes get bumped
+    // out of range (both are single-byte Tag0 values in this env).
+    let env = Env::new();
+    let a = store_canonical(&env, defn_const(vec![]));
+    let name = n_test("Target");
+    env.store_name(Address::from_blake3_hash(*name.get_hash()), name.clone());
+    env.register_name(name, Named::with_addr(a));
+    let mut buf = Vec::new();
+    env.put(&mut buf).unwrap();
+
+    let index = Env::parse_lazy_index(&buf).unwrap();
+    let mut cur: &[u8] = &buf[index.named_section_offset..];
+    let count = get_u64(&mut cur).unwrap();
+    assert_eq!(count, 1);
+    let name_idx_off = buf.len() - cur.len();
+    let _name_idx = get_u64(&mut cur).unwrap();
+    let const_idx_off = buf.len() - cur.len();
+
+    // name_idx out of range: full + lazy readers reject...
+    let mut bad = buf.clone();
+    assert_eq!(bad[name_idx_off] & 0x80, 0, "expected small Tag0");
+    bad[name_idx_off] = 0x7F;
+    let err = Env::get(&mut bad.as_slice()).expect_err("get accepted");
+    assert!(err.contains("name index"), "got: {err}");
+    assert!(err.contains("pre-compact-keys"), "got: {err}");
+    let err =
+      Env::parse_lazy_index(&bad).expect_err("parse_lazy_index accepted");
+    assert!(err.contains("name index"), "got: {err}");
+    // ...and a cursor opened with a valid index over the bad buffer
+    // hits the same wall.
+    let mut cursor = NamedMetaCursor::open(&bad, &index).unwrap();
+    let err = cursor.next_entry().expect_err("cursor accepted");
+    assert!(err.contains("name index"), "got: {err}");
+
+    // const_idx out of range.
+    let mut bad = buf.clone();
+    assert_eq!(bad[const_idx_off] & 0x80, 0, "expected small Tag0");
+    bad[const_idx_off] = 0x7F;
+    let err = Env::get(&mut bad.as_slice()).expect_err("get accepted");
+    assert!(err.contains("constant index"), "got: {err}");
+    assert!(err.contains("pre-compact-keys"), "got: {err}");
+    let mut cursor = NamedMetaCursor::open(&bad, &index).unwrap();
+    let err = cursor.next_entry().expect_err("cursor accepted");
+    assert!(err.contains("constant index"), "got: {err}");
+  }
+
+  #[test]
+  fn writers_reject_hints_for_missing_consts() {
+    let env = Env::new();
+    store_canonical(&env, defn_const(vec![]));
+    env
+      .anon_hints
+      .insert(Address::hash(b"stray hint key"), ReducibilityHints::Abbrev);
+    let mut buf = Vec::new();
+    let err = env.put(&mut buf).expect_err("put accepted stray hint");
+    assert!(err.contains("not present in consts"), "got: {err}");
+    let tmp = std::env::temp_dir().join("ix_stray_hint_put_file_test.ixe");
+    let err = env.put_file(&tmp).expect_err("put_file accepted stray hint");
+    assert!(err.contains("not present in consts"), "got: {err}");
+    std::fs::remove_file(&tmp).ok();
+    let err = env
+      .serialized_size_breakdown()
+      .expect_err("breakdown accepted stray hint");
+    assert!(err.contains("not present in consts"), "got: {err}");
+  }
+
+  #[test]
+  fn writers_reject_named_for_missing_consts() {
+    let env = Env::new();
+    let name = n_test("Dangling");
+    env.store_name(Address::from_blake3_hash(*name.get_hash()), name.clone());
+    env.register_name(
+      name,
+      Named::with_addr(Address::hash(b"not a stored const")),
+    );
+    let mut buf = Vec::new();
+    let err = env.put(&mut buf).expect_err("put accepted dangling named");
+    assert!(err.contains("not present in consts"), "got: {err}");
+  }
+
+  #[test]
+  fn get_anon_hints_match_get_multi_entry() {
+    let env = Env::new();
+    let mut addrs = Vec::new();
+    for i in 0..5 {
+      addrs.push(store_canonical(&env, defn_const_discriminator(vec![], i)));
+    }
+    env.register_hint(addrs[0].clone(), ReducibilityHints::Opaque);
+    env.register_hint(addrs[2].clone(), ReducibilityHints::Regular(200));
+    env.register_hint(addrs[4].clone(), ReducibilityHints::Abbrev);
+    let mut buf = Vec::new();
+    env.put(&mut buf).unwrap();
+    let full = Env::get(&mut buf.as_slice()).unwrap();
+    let anon = Env::get_anon(&mut buf.as_slice()).unwrap();
+    assert_eq!(full.anon_hints.len(), 3);
+    assert_eq!(anon.anon_hints.len(), 3);
+    for e in full.anon_hints.iter() {
+      assert_eq!(anon.anon_hints.get(e.key()).map(|r| *r), Some(*e.value()));
+    }
+  }
+
+  fn n_test(s: &str) -> Name {
+    Name::str(Name::anon(), s.to_string())
+  }
+
+  /// THE alias regression (validate-aux's 222 decompile mismatches):
+  /// alpha-identical definitions under different names share one
+  /// constant address, so the per-address §3 channel min-merges their
+  /// hints — but the per-name §5 channel must preserve each name's
+  /// EXACT hint through a roundtrip.
+  #[test]
+  fn aliased_names_keep_exact_hints() {
+    let env = Env::new();
+    let shared = store_canonical(&env, defn_const(vec![]));
+    for (name, hint) in [
+      ("SlowAlias", ReducibilityHints::Regular(9)),
+      ("FastAlias", ReducibilityHints::Abbrev),
+    ] {
+      let name = n_test(name);
+      env.store_name(Address::from_blake3_hash(*name.get_hash()), name.clone());
+      let mut named = Named::with_addr(shared.clone());
+      named.set_hints(Some(hint));
+      env.register_name(name, named);
+      // The per-address channel merges (order-independently).
+      env.register_hint(shared.clone(), hint);
+    }
+
+    let mut buf = Vec::new();
+    env.put(&mut buf).unwrap();
+    let back = Env::get(&mut buf.as_slice()).unwrap();
+    assert_eq!(
+      back.named.get(&n_test("SlowAlias")).unwrap().hints(),
+      Some(ReducibilityHints::Regular(9)),
+      "losing alias keeps its exact per-name hint"
+    );
+    assert_eq!(
+      back.named.get(&n_test("FastAlias")).unwrap().hints(),
+      Some(ReducibilityHints::Abbrev)
+    );
+    // §3 holds the merged advisory winner (Abbrev < Regular).
+    assert_eq!(
+      back.anon_hints.get(&shared).map(|r| *r),
+      Some(ReducibilityHints::Abbrev)
+    );
+
+    // The lazy index reads §5 headers without parsing metadata bodies —
+    // per-name hints must match the full reader.
+    let index = Env::parse_lazy_index(&buf).unwrap();
+    let lazy = Env::from_lazy_index(&index, &buf).unwrap();
+    for name in ["SlowAlias", "FastAlias"] {
+      assert_eq!(
+        lazy.named.get(&n_test(name)).unwrap().hints(),
+        back.named.get(&n_test(name)).unwrap().hints(),
+        "lazy/full hint parity for {name}"
+      );
+    }
+  }
+
+  /// §5 entries are length-prefixed; a header length that disagrees
+  /// with the parsed size (or overruns the buffer) is rejected.
+  #[test]
+  fn named_meta_len_mismatch_rejected() {
+    let env = Env::new();
+    let a = store_canonical(&env, defn_const(vec![]));
+    let name = n_test("Target");
+    env.store_name(Address::from_blake3_hash(*name.get_hash()), name.clone());
+    env.register_name(name, Named::with_addr(a));
+    let mut buf = Vec::new();
+    env.put(&mut buf).unwrap();
+
+    // Locate the first entry's meta_len byte: after the §5 count,
+    // name_idx, const_idx, and fused hint (all 1-byte Tag0s here).
+    let index = Env::parse_lazy_index(&buf).unwrap();
+    let mut cur: &[u8] = &buf[index.named_section_offset..];
+    let _count = get_u64(&mut cur).unwrap();
+    let _name_idx = get_u64(&mut cur).unwrap();
+    let _const_idx = get_u64(&mut cur).unwrap();
+    let _hint = get_u64(&mut cur).unwrap();
+    let len_off = buf.len() - cur.len();
+    assert_eq!(buf[len_off] & 0x80, 0, "expected small Tag0 meta_len");
+
+    // Shrink the length: parsers consume more than the header says.
+    let mut bad = buf.clone();
+    bad[len_off] -= 1;
+    let err = Env::get(&mut bad.as_slice()).expect_err("get accepted");
+    assert!(err.contains("length mismatch"), "got: {err}");
+
+    // Grow the length past the remaining buffer: bounds check fires.
+    let mut bad = buf.clone();
+    bad[len_off] = 0x7F;
+    let err = Env::get(&mut bad.as_slice()).expect_err("get accepted");
+    assert!(
+      err.contains("length mismatch") || err.contains("needs"),
+      "got: {err}"
+    );
+    let err =
+      Env::parse_lazy_index(&bad).expect_err("parse_lazy_index accepted");
+    assert!(err.contains("needs"), "got: {err}");
   }
 }

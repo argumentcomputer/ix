@@ -259,13 +259,18 @@ private def genSerdeRawEnv : Gen RawEnv := do
   -- Name entries for every address in the pool + every canonical const addr
   let names : Array RawNameEntry :=
     (pool.map fun (addr, name) => { addr, name }) ++ constNames
-  -- Named: pool addresses with empty metadata
+  -- Named: pool names over stored const addresses with empty metadata —
+  -- §5 keys each entry's constant by §2 rank, so the writers reject
+  -- named entries referencing anything outside `consts`.
   let numNamed ← Gen.choose Nat 0 3
   let mut named : Array RawNamed := #[]
-  for _ in [:numNamed] do
-    let idx ← Gen.choose Nat 0 (pool.size - 1)
-    let (addr, name) := pool[idx]!
-    named := named.push { name, addr, constMeta := .empty }
+  if consts.size > 0 then
+    for _ in [:numNamed] do
+      let idx ← Gen.choose Nat 0 (pool.size - 1)
+      let (_, name) := pool[idx]!
+      let cidx ← Gen.choose Nat 0 (consts.size - 1)
+      named := named.push
+        { name, addr := (consts[cidx]!).addr, constMeta := .empty }
   -- Blobs: content-addressed (the loaders verify blake3(bytes) == addr)
   let numBlobs ← Gen.choose Nat 0 3
   let mut blobs : Array RawBlob := #[]

@@ -38,7 +38,7 @@ def testRustSerdeRoundtrip : TestSeq :=
     -- Step 2: Canonical Lean serialization (deterministic, sorted by key)
     IO.println s!"[Step 2] Serializing with Lean (serEnv)..."
     let leanSerStart ← IO.monoMsNow
-    let leanBytes := Ixon.serEnv ixonEnv
+    let leanBytes ← IO.ofExcept (Ixon.serEnv ixonEnv)
     let leanSerTime := (← IO.monoMsNow) - leanSerStart
     IO.println s!"[Step 2]   {leanBytes.size} bytes in {leanSerTime}ms"
     IO.println ""
@@ -66,7 +66,7 @@ def testRustSerdeRoundtrip : TestSeq :=
     -- Step 5: Re-serialize the roundtripped env with Lean (deterministic)
     IO.println s!"[Step 5] Re-serializing roundtripped env with Lean..."
     let reserStart ← IO.monoMsNow
-    let roundtrippedBytes := Ixon.serEnv roundtrippedFromRust
+    let roundtrippedBytes ← IO.ofExcept (Ixon.serEnv roundtrippedFromRust)
     let reserTime := (← IO.monoMsNow) - reserStart
     IO.println s!"[Step 5]   {roundtrippedBytes.size} bytes in {reserTime}ms"
     IO.println ""

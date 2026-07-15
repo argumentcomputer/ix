@@ -61,6 +61,14 @@ impl MetaRepr {
 pub struct Named {
   /// Address of the constant (in consts map)
   pub addr: Address,
+  /// EXACT per-name reducibility hints (`None` for constants that carry
+  /// none, e.g. theorems). Needed because alpha-identical definitions
+  /// under different names share one constant address, so the
+  /// per-address [`Env::anon_hints`] channel only holds a min-merged
+  /// advisory winner (see [`Env::register_hint`]) — decompile
+  /// reconstructs `DefinitionVal.hints` from here. Serialized in each
+  /// §5 entry's skippable header, before the metadata blob.
+  hints: Option<ReducibilityHints>,
   /// Typed metadata for this constant (includes mutual context in `all`
   /// field). Private repr: structured, or demoted to serialized bytes —
   /// read through [`Self::meta`].
@@ -74,15 +82,31 @@ pub struct Named {
 
 impl Named {
   pub fn new(addr: Address, meta: ConstantMeta) -> Self {
-    Named { addr, meta: MetaRepr::structured(meta), original: None }
+    Named {
+      addr,
+      hints: None,
+      meta: MetaRepr::structured(meta),
+      original: None,
+    }
   }
 
   pub fn with_addr(addr: Address) -> Self {
     Named {
       addr,
+      hints: None,
       meta: MetaRepr::structured(ConstantMeta::default()),
       original: None,
     }
+  }
+
+  /// The per-name reducibility hints, if any.
+  pub fn hints(&self) -> Option<ReducibilityHints> {
+    self.hints
+  }
+
+  /// Set the per-name reducibility hints.
+  pub fn set_hints(&mut self, hints: Option<ReducibilityHints>) {
+    self.hints = hints;
   }
 
   /// The constant's metadata. Cheap (`Arc` clone) for structured
@@ -173,6 +197,10 @@ pub struct LazyConstSlice {
 pub struct LazyNamed {
   pub name: Name,
   pub addr: Address,
+  /// Per-name reducibility hints from the §5 entry header — carried so
+  /// [`Env::from_lazy_index`] envs match the full reader (the lazy
+  /// parser skips metadata bodies but reads entry headers).
+  pub hints: Option<ReducibilityHints>,
 }
 
 /// `IX_COMPILE_DEMOTE` (default **on**; set `0` to disable): store the
@@ -241,11 +269,13 @@ pub struct Env {
   pub comms: IxonMap<Address, Comm>,
   /// Reducibility hints, keyed by the constant's projection/standalone
   /// address (i.e. `Named.addr` — the address the kernel sees, **not**
-  /// the name-hash address). The SINGLE home for hints: the compiler
-  /// registers them here ([`Env::register_hint`]), every writer
-  /// serializes this map as the file's hints section, and every reader
-  /// populates it from that section. Hints do not appear in `Named`
-  /// metadata.
+  /// the name-hash address). This is the ANON channel: serialized as §3
+  /// (before the name/metadata sections) precisely so anon readers get
+  /// hints without touching metadata. Because alpha-equivalent
+  /// definitions share one constant address, alias collisions resolve
+  /// through [`Env::register_hint`]'s order-independent min-merge — the
+  /// map holds one advisory winner per address, NOT the exact
+  /// per-definition value (that lives in [`Self::name_hints`]).
   ///
   /// Ingress passes these hints through to `ingress_defn` so the
   /// kernel's lazy-delta tiebreak (`def_eq::def_rank_id`) sees
@@ -460,7 +490,9 @@ impl Env {
   #[cfg(not(target_arch = "riscv64"))]
   fn fill_from_lazy_index(mut env: Env, index: &LazyIndex) -> Env {
     for n in &index.named {
-      env.register_name(n.name.clone(), Named::with_addr(n.addr.clone()));
+      let mut named = Named::with_addr(n.addr.clone());
+      named.set_hints(n.hints);
+      env.register_name(n.name.clone(), named);
     }
     for (addr, hint) in &index.hints {
       env.anon_hints.insert(addr.clone(), *hint);
@@ -1033,13 +1065,18 @@ mod tests {
 
   #[test]
   fn demoted_named_roundtrips_and_serializes_identically() {
-    let addr = Address::hash(b"demoted-named-target");
+    // §5 keys the entry's constant by §2 rank, so the target must be a
+    // stored constant. The `original` address stays raw on the wire and
+    // may point anywhere — keep it at a junk address to pin that.
+    let target = dummy_constant();
+    let (addr, _) = target.commit();
+    let orig_addr = Address::hash(b"demoted-named-original");
     // Empty metadata: no name references, so `Env::put` needs no name
     // index entries. Name-ref-rich raw/indexed equivalence is covered
     // by `metadata::tests::test_constant_meta_indexed_roundtrip`.
     let meta = ConstantMeta::default();
     let mut structured = Named::new(addr.clone(), meta.clone());
-    structured.set_original(addr.clone(), meta.clone());
+    structured.set_original(orig_addr.clone(), meta.clone());
     let mut demoted = structured.clone();
     demoted.demote();
 
@@ -1056,7 +1093,10 @@ mod tests {
     // Envs whose named entries differ only in repr serialize identically.
     let mk_env = |named: &Named| {
       let env = Env::new();
-      env.register_name(n("target"), named.clone());
+      env.store_const(addr.clone(), target.clone());
+      let name = n("target");
+      env.store_name(Address::from_blake3_hash(*name.get_hash()), name.clone());
+      env.register_name(name, named.clone());
       let mut buf = Vec::new();
       env.put(&mut buf).unwrap();
       buf
@@ -1613,6 +1653,34 @@ mod tests {
     assert!(via_stream_cut.named.get(&bar).is_none());
     assert!(via_stream_cut.assumptions.contains(&b));
     assert_eq!(ser(&via_full_cut), ser(&via_stream_cut));
+  }
+
+  /// A cut bundle serializes a `Named.original` whose address is
+  /// assumed — NOT stored in §2 — which is exactly why the §5
+  /// `original` address stays raw on the wire (a §2 index cannot
+  /// represent it). Lock the roundtrip in.
+  #[test]
+  fn original_referencing_assumed_const_roundtrips() {
+    let (bytes, a, b, _) = streaming_prune_fixture();
+    let full = {
+      let mut cur = bytes.as_slice();
+      Env::get(&mut cur).unwrap()
+    };
+    let assumed: FxHashSet<Address> = [b.clone()].into_iter().collect();
+    let cut = full.prune_to_closure(&a, &assumed).unwrap();
+    assert!(cut.consts.get(&b).is_none(), "assumed const must not ride");
+
+    let mut buf = Vec::new();
+    cut.put(&mut buf).unwrap();
+    let back = {
+      let mut cur = buf.as_slice();
+      Env::get(&mut cur).unwrap()
+    };
+    assert!(back.consts.get(&b).is_none());
+    assert!(back.assumptions.contains(&b));
+    let foo_named = back.named.get(&n("Foo")).expect("Foo carried").clone();
+    let (orig_addr, _) = foo_named.original().expect("original carried");
+    assert_eq!(orig_addr, b, "original still points at the assumed const");
   }
 
   /// `prune_to_closure_anon` carries the value closure only: no names,

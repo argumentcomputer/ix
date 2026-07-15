@@ -744,6 +744,13 @@ fn classify_constants(
 /// Component labels for a same-addr metadata difference.
 fn meta_component_labels(a: &Named, b: &Named) -> Vec<String> {
   let mut out = Vec::new();
+  if a.hints() != b.hints() {
+    out.push(format!(
+      "hints({}→{})",
+      hint_label(a.hints().as_ref()),
+      hint_label(b.hints().as_ref())
+    ));
+  }
   let (am, bm) = (a.meta(), b.meta());
   if am.info != bm.info {
     let (ka, kb) = (am.info.kind_name(), bm.info.kind_name());

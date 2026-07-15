@@ -1546,16 +1546,17 @@ fn decompile_definition(
     },
     _ => vec![],
   };
-  // Hints live in `env.anon_hints`, keyed by the constant address the
-  // name resolves to (for aux originals, the canonical address — the
-  // original was compiled from the same Lean definition, so the hints
-  // coincide). Absent entry → `Opaque`, matching the compiler's
-  // treatment of theorems and opaques.
+  // Hints come from the per-name `Named.hints` channel — the exact
+  // value `finalize_hints` recorded for this name. The per-address
+  // `env.anon_hints` channel is unusable here: alpha-identical
+  // definitions under different names share one constant address, so
+  // it only holds a merged winner. Absent → `Opaque`, matching the
+  // compiler's treatment of theorems and opaques.
   let hints = stt
     .env
     .named
     .get(&name)
-    .and_then(|n| stt.env.anon_hints.get(&n.value().addr).map(|r| *r))
+    .and_then(|n| n.value().hints())
     .unwrap_or(ReducibilityHints::Opaque);
 
   let cnst = ConstantVal { name, level_params, typ };
