@@ -606,6 +606,6 @@ Non-Nix users: install Zisk manually per the
 
 Build and run the Ix CLI with `nix build` and `nix run`.
 
-This will prompt you to optionally enable the Garnix cache, which can also be done by passing `--accept-flake-config` to the Nix command. Then when building, you should see `copying path '/nix/store/<...>' from https://cache.garnix.io`
+This will prompt you to optionally enable the Cachix binary cache, which can also be done by passing `--accept-flake-config` to the Nix command. Then when building, you should see `copying path '/nix/store/<...>' from https://argumentcomputer.cachix.org`
 
 To build and run the test suite, run `nix build .#test` and `nix run .#test`.

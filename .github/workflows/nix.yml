@@ -24,6 +24,10 @@ jobs:
         with:
           nix_path: nixpkgs=channel:nixos-unstable
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: cachix/cachix-action@v16
+        with:
+          name: argumentcomputer
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
       # Ix CLI
       - run: nix build --print-build-logs --accept-flake-config
       - run: nix run .#ix -- --help
@@ -40,5 +44,9 @@ jobs:
         with:
           nix_path: nixpkgs=channel:nixos-unstable
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: cachix/cachix-action@v16
+        with:
+          name: argumentcomputer
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
       # Builds and runs tests using Lake as a Nix package
       - run: nix develop --accept-flake-config --command bash -c "lake build && lake test"

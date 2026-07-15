@@ -3,10 +3,10 @@
 
   nixConfig = {
     extra-substituters = [
-      "https://cache.garnix.io"
+      "https://argumentcomputer.cachix.org"
     ];
     extra-trusted-public-keys = [
-      "cache.garnix.io:CTFPyKSLcx5RMJKfLo5EEPUObbA78b0YQ2DTCJXqr9g="
+      "argumentcomputer.cachix.org-1:ovhbTx1V56BYDerOWInQvXKXl68LlhNwEA+n7EWk1m4="
     ];
   };
 
