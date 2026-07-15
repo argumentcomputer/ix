@@ -58,7 +58,7 @@ def AiurTestEnv.build (toplevelFn : Except Aiur.Global Aiur.Source.Toplevel) :
   let toplevel ← toplevelFn.mapError toString
   let compiled ← toplevel.compile
   let decls ← toplevel.mkDecls.mapError toString
-  let aiurSystem := Aiur.AiurSystem.build compiled.bytecode commitmentParameters
+  let aiurSystem := Aiur.AiurSystem.build compiled.bytecode commitmentParameters friParameters
   return ⟨compiled, decls, aiurSystem⟩
 
 def AiurTestEnv.interpTest (env : AiurTestEnv) (testCase : AiurTestCase)
@@ -105,14 +105,14 @@ def AiurTestEnv.runTestCase (env : AiurTestEnv) (testCase : AiurTestCase) : Test
     if testCase.executionOnly then execTest ++ interpTest
     else
       let (claim, proof, ioBuffer) := env.aiurSystem.prove
-        friParameters funIdx testCase.input testCase.inputIOBuffer
+        funIdx testCase.input testCase.inputIOBuffer
       let claimTest := test s!"Claim matches for {label}"
         (claim == Aiur.buildClaim funIdx testCase.input testCase.expectedOutput)
       let ioTest := test s!"IOBuffer matches for {label}"
         (ioBuffer == testCase.expectedIOBuffer)
       let proof := .ofBytes proof.toBytes
       let pvTest := withExceptOk s!"Prove/verify works for {label}"
-        (env.aiurSystem.verify friParameters claim proof) fun _ => .done
+        (env.aiurSystem.verify claim proof) fun _ => .done
       execTest ++ interpTest ++ claimTest ++ ioTest ++ pvTest
 
 def mkAiurTests (toplevelFn : Except Aiur.Global Aiur.Source.Toplevel)
@@ -120,7 +120,7 @@ def mkAiurTests (toplevelFn : Except Aiur.Global Aiur.Source.Toplevel)
   withExceptOk "Toplevel merging succeeds" toplevelFn fun toplevel =>
     withExceptOk "Compilation succeeds" toplevel.compile fun compiled =>
       withExceptOk "mkDecls succeeds" (toplevel.mkDecls.mapError toString) fun decls =>
-        let aiurSystem := Aiur.AiurSystem.build compiled.bytecode commitmentParameters
+        let aiurSystem := Aiur.AiurSystem.build compiled.bytecode commitmentParameters friParameters
         let env : AiurTestEnv := ⟨compiled, decls, aiurSystem⟩
         cases.foldl (init := .done) fun tSeq testCase =>
           tSeq ++ env.runTestCase testCase

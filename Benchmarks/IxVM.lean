@@ -26,7 +26,7 @@ def main : IO Unit := do
     | throw (IO.userError "Compilation failed")
   let some funIdx := compiled.getFuncIdx `ixon_serde_blake3_bench
     | throw (IO.userError "Aiur function not found")
-  let aiurSystem := Aiur.AiurSystem.build compiled.bytecode commitmentParameters
+  let aiurSystem := Aiur.AiurSystem.build compiled.bytecode commitmentParameters friParameters
 
   let env ← get_env!
   let ixonEnv ← IxVM.ClaimHarness.loadIxonEnv ``Nat.add_comm env
@@ -37,6 +37,6 @@ def main : IO Unit := do
     -- IxVM-native prove: routes execution through the codegen'd Rust
     -- kernel (`execute_generated`) instead of the bytecode interpreter.
     bench "serde/blake3 Nat.add_comm"
-      (aiurSystem.proveIxVM friParameters funIdx #[.ofNat n])
+      (aiurSystem.proveIxVM funIdx #[.ofNat n])
       ioBuffer
   return

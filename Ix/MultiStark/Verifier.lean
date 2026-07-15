@@ -19,7 +19,7 @@ The Rust verifier runs these steps:
    column widths.
 2. **Accumulator balance** — the last intermediate accumulator is zero (all
    lookup pushes/pulls cancel).
-3. **Fiat-Shamir replay** — reconstruct the Keccak challenger: observe
+3. **Fiat-Shamir replay** — reconstruct the challenger: observe
    commitments / trace heights / claims, sample (lookup, fingerprint, α, ζ).
 4. **PCS verification** — FRI opening proofs (see `Ix/MultiStark/Pcs.lean`).
 5. **OOD evaluation** — recompute the composition polynomial at ζ and check
@@ -32,11 +32,13 @@ The Rust verifier runs these steps:
 * Step 2: accumulator balance — the last `intermediate_accumulator` is the zero
   extension element.
 * Step 3: the Fiat-Shamir challenger replay (`fiat_shamir`). Prover-faithful:
-  observes the verifying key's preprocessed commitment, the stage_1 commitment,
-  the trace heights, and the public claims (in that order), then samples and
-  re-observes the lookup/fingerprint challenges, observes stage_2, samples α,
-  observes the quotient commitment, and samples ζ — matching
-  `verify_multiple_claims` byte-for-byte.
+  starts from the parameter-seeded challenger (`b"multi-stark/v0"` + the 7
+  protocol parameters), observes the system shape, the verifying key's
+  preprocessed commitment, the stage_1 commitment, the trace heights, and the
+  length-prefixed public claims (in that order), then samples and re-observes
+  the lookup/fingerprint challenges, observes stage_2 and the intermediate
+  accumulators, samples α, observes the quotient commitment, and samples ζ —
+  matching `verify_multiple_claims` byte-for-byte.
 * Step 5: the out-of-domain composition/quotient check (`ood_verify`). For each
   circuit it recomputes `composition(ζ)` by replaying the AIR constraint folder
   (`VerifierConstraintFolder` + `LookupAir::eval`) over the deserialized
@@ -47,13 +49,14 @@ The Rust verifier runs these steps:
   test runner, `Tests/MultiStark.lean`): the verifier accepts the honest proof
   and rejects a tampered claim.
 
-### Stubbed / TODO
+* Step 4: the PCS/FRI opening proof (`pcs_fri_verify`, `Ix/MultiStark/Pcs.lean`)
+  — Merkle `verify_batch`, the challenger continuation, the FRI fold chain, and
+  the final-polynomial check.
+
+### Notes
 * Base-field samples are rejection-sampled (`ch_sample_field`): a raw 8-byte
   limb in the band `[p, 2⁶⁴)` (probability ≈ 2⁻³²) is discarded and redrawn,
   consuming challenger bytes exactly as `SerializingChallenger64::sample` does.
-* The PCS opening proof (`pcs_verify`) is still an accept-stub. With the PCS
-  stubbed, this verifier checks every algebraic relation except FRI proximity,
-  so it is not yet fully sound.
 -/
 
 public section
@@ -83,8 +86,8 @@ def verifier := ⟦
 
   -- ==========================================================================
   -- Fiat-Shamir challenger: `SerializingChallenger64<Val, HashChallenger<u8,
-  -- Keccak256Hash, 32>>`. The inner byte challenger keeps an `input` buffer; a
-  -- `sample` with empty `output` flushes (`input := output := keccak256(input)`)
+  -- Blake3, 32>>`. The inner byte challenger keeps an `input` buffer; a
+  -- `sample` with empty `output` flushes (`input := output := blake3(input)`)
   -- and pops bytes from the END of the hash output. The outer layer serializes
   -- field elements as 8 little-endian bytes and samples field elements as
   -- 8-byte little-endian u64s.
@@ -136,8 +139,11 @@ def verifier := ⟦
     match load(output) {
       ListNode.Cons(b, rest) => (b, input, rest),
       ListNode.Nil =>
-        let h = keccak256(input);
-        let fwd = digest_onto(h, store(ListNode.Nil));
+        -- `HashChallenger<u8, Blake3, 32>` flush: hash the `input` buffer with
+        -- blake3; `b3_flatten_onto` (Pcs.lean) gives the 32 output bytes, popped
+        -- from the END (rev), with the `input := output := hash` update.
+        let h = blake3(input);
+        let fwd = b3_flatten_onto(h, store(ListNode.Nil));
         let rev = rev_onto(fwd, store(ListNode.Nil));
         let &ListNode.Cons(b, rest) = rev;
         (b, fwd, rest),
@@ -182,11 +188,18 @@ def verifier := ⟦
     (c0, c1, i1, o1)
   }
 
+  -- Prepend the 8 elements of `d` onto `tail` (generic list helper).
+  fn cons8(d: [G; 8], tail: List‹G›) -> List‹G› {
+    store(ListNode.Cons(d[0], store(ListNode.Cons(d[1], store(ListNode.Cons(d[2],
+    store(ListNode.Cons(d[3], store(ListNode.Cons(d[4], store(ListNode.Cons(d[5],
+    store(ListNode.Cons(d[6], store(ListNode.Cons(d[7], tail))))))))))))))))
+  }
+
   -- `sample_bits(n)` (FRI query index). `SerializingChallenger64::sample_bits`
   -- reads one 8-byte sample as a little-endian u64 and masks the low `n` bits.
   -- We return the low `n` bits as a list (LSB first = the leaf→root Merkle/FRI
-  -- path), built from the 8 sampled bytes' bit decompositions (reusing keccak's
-  -- `cons8`), truncated to `n`.
+  -- path), built from the 8 sampled bytes' bit decompositions (via `cons8`),
+  -- truncated to `n`.
   fn sample8_bits(bytes: [U8; 8]) -> List‹G› {
     cons8(u8_bit_decomposition(bytes[0]),
     cons8(u8_bit_decomposition(bytes[1]),
@@ -213,7 +226,7 @@ def verifier := ⟦
 
   -- Append (observe) 8 little-endian bytes of `b` at the END of the challenger
   -- input buffer. The transcript is held front-to-back (front = first observed =
-  -- first hashed, matching `keccak256`'s absorption order), so an observation
+  -- first hashed, matching `blake3`'s absorption order), so an observation
   -- appends — `b8_onto` PREPENDS, hence the `list_concat`.
   fn snoc_b8(input: ByteStream, b: [U8; 8]) -> ByteStream {
     list_concat(input, b8_onto(b, store(ListNode.Nil)))
@@ -221,6 +234,15 @@ def verifier := ⟦
   -- Append (observe) a commitment (`MerkleCap`) at the end of the buffer.
   fn snoc_cap(input: ByteStream, cap: MerkleCap) -> ByteStream {
     list_concat(input, cap_onto(cap, store(ListNode.Nil)))
+  }
+  -- Append (observe) the intermediate accumulators, in order — each an
+  -- `observe_algebra_element`: two canonical 8-LE-byte limbs. (`read_ext`
+  -- reduced the limbs mod p, matching `as_canonical_u64` serialization.)
+  fn snoc_accs(input: ByteStream, accs: List‹Ext›) -> ByteStream {
+    match load(accs) {
+      ListNode.Nil => input,
+      ListNode.Cons(e, rest) => snoc_accs(snoc_b8(snoc_b8(input, e[0]), e[1]), rest),
+    }
   }
 
   -- ==========================================================================
@@ -256,11 +278,37 @@ def verifier := ⟦
       ListNode.Cons(v, rest) => b8_onto(v, claim_vals_onto(rest, tail)),
     }
   }
-  -- Append every claim's values (`challenger.observe_slice(claim)` per claim).
-  fn claims_onto(claims: List‹List‹U64››, tail: ByteStream) -> ByteStream {
+  -- Each claim, length-prefixed: `observe(Val::from_usize(claim.len()))` then
+  -- `observe_slice(claim)`.
+  fn claims_each_onto(claims: List‹List‹U64››, tail: ByteStream) -> ByteStream {
     match load(claims) {
       ListNode.Nil => tail,
-      ListNode.Cons(c, rest) => claim_vals_onto(c, claims_onto(rest, tail)),
+      ListNode.Cons(c, rest) =>
+        b8_onto(list_length_u64(c), claim_vals_onto(c, claims_each_onto(rest, tail))),
+    }
+  }
+  -- Append every claim: the claim count, then each claim length-prefixed
+  -- (`verify_multiple_claims`' claim observation, byte-for-byte).
+  fn claims_onto(claims: List‹List‹U64››, tail: ByteStream) -> ByteStream {
+    b8_onto(list_length_u64(claims), claims_each_onto(claims, tail))
+  }
+
+  -- `b"multi-stark/v0"` — the domain-separation tag the challenger seed
+  -- starts with (`GoldilocksBlake3Config::new`).
+  fn seed_tag_onto(tail: ByteStream) -> ByteStream {
+    store(ListNode.Cons(109u8, store(ListNode.Cons(117u8, store(ListNode.Cons(108u8,
+    store(ListNode.Cons(116u8, store(ListNode.Cons(105u8, store(ListNode.Cons(45u8,
+    store(ListNode.Cons(115u8, store(ListNode.Cons(116u8, store(ListNode.Cons(97u8,
+    store(ListNode.Cons(114u8, store(ListNode.Cons(107u8, store(ListNode.Cons(47u8,
+    store(ListNode.Cons(118u8, store(ListNode.Cons(48u8,
+    tail))))))))))))))))))))))))))))
+  }
+  -- Raw u64 wire words (protocol parameters + system shape), each as its 8 LE
+  -- bytes, in order.
+  fn limbs_onto(ls: List‹U64›, tail: ByteStream) -> ByteStream {
+    match load(ls) {
+      ListNode.Nil => tail,
+      ListNode.Cons(l, rest) => b8_onto(l, limbs_onto(rest, tail)),
     }
   }
 
@@ -276,9 +324,12 @@ def verifier := ⟦
   -- Replay the verifier transcript and derive the four challenges
   -- `(lookup, fingerprint, alpha, zeta)`. Mirrors `verify_multiple_claims`'s
   -- challenger sequence exactly:
-  --   observe preprocessed_commit (if any) → stage_1 → log_degrees → claims;
+  --   seed = tag + protocol parameters; observe_shape (circuit count + 6
+  --   metadata words per circuit) → preprocessed_commit (if any) → stage_1 →
+  --   log_degrees → length-prefixed claims;
   --   sample lookup, observe it; sample fingerprint, observe it;
-  --   observe stage_2; sample α; observe quotient; sample ζ.
+  --   observe stage_2; observe the intermediate accumulators; sample α;
+  --   observe quotient; sample ζ.
   -- `observe` clears the challenger's output buffer, and every sample here is
   -- preceded by an observe, so each `ch_sample_ext` re-flushes from an empty
   -- output (hence the `store(ListNode.Nil)` output argument each time).
@@ -289,15 +340,19 @@ def verifier := ⟦
   -- (Phase 4+) continues observing into. The leftover `output` after the ζ
   -- sample is discarded — the next challenger op is an observe (of the opened
   -- values), which clears `output` anyway.
-  fn fiat_shamir(prep: MerkleCap, s1: MerkleCap, s2: MerkleCap, q: MerkleCap,
-      lds: List‹U8›, claims: List‹List‹U64››) -> (Ext, Ext, Ext, Ext, ByteStream) {
-    -- Initial transcript, front-to-back: prep, stage_1, log_degrees, claims.
+  fn fiat_shamir(tlimbs: List‹U64›, prep: MerkleCap, s1: MerkleCap, s2: MerkleCap,
+      q: MerkleCap, lds: List‹U8›, claims: List‹List‹U64››, accs: List‹Ext›)
+      -> (Ext, Ext, Ext, Ext, ByteStream) {
+    -- Initial transcript, front-to-back: seed tag, parameter + shape words
+    -- (`tlimbs`, from the verifying key), prep, stage_1, log_degrees, claims.
     -- Built inner-to-outer with the prepend helpers so the result is in
     -- forward (observation) order.
     let input = claims_onto(claims, store(ListNode.Nil));
     let input = log_degrees_onto(lds, input);
     let input = cap_onto(s1, input);
     let input = cap_onto(prep, input);
+    let input = limbs_onto(tlimbs, input);
+    let input = seed_tag_onto(input);
     -- sample lookup challenge, then observe it back (append)
     let (l0, l1, input, _ol) = ch_sample_ext(input, store(ListNode.Nil));
     let input = snoc_b8(snoc_b8(input, l0), l1);
@@ -306,6 +361,9 @@ def verifier := ⟦
     let input = snoc_b8(snoc_b8(input, f0), f1);
     -- observe stage_2 commitment
     let input = snoc_cap(input, s2);
+    -- observe the intermediate accumulators (public values entering the
+    -- constraints; α and ζ must depend on them directly)
+    let input = snoc_accs(input, accs);
     -- sample constraint challenge α (not observed)
     let (a0, a1, input, _oa) = ch_sample_ext(input, store(ListNode.Nil));
     -- observe quotient commitment
@@ -434,9 +492,8 @@ def verifier := ⟦
   --   composition(ζ) · inv_vanishing(ζ) == quotient(ζ).
   --
   -- The challenges (lookup, fingerprint, α, ζ) come from `fiat_shamir` above.
-  -- As with `fiat_shamir`, claims are not observed; this assumes the no-claims
-  -- case, so the running lookup accumulator starts at the zero extension
-  -- element (`acc` in Rust = ExtVal::ZERO).
+  -- The running lookup accumulator starts from the public claims
+  -- (`claims_acc`; ExtVal::ZERO when there are none).
   -- ==========================================================================
 
   -- One Horner fold step of the constraint folder: `acc := acc·α + x`
@@ -767,23 +824,25 @@ def verifier := ⟦
   fn ood_verify(sys: Sys, proof: Proof, claims: List‹List‹U64››,
       num_queries: G, commit_pow_bits: G, log_blowup_pub: G) -> G {
     -- The FRI parameters (`num_queries`, `commit_pow_bits`, `log_blowup`) are
-    -- public inputs. `log_blowup` also lives in the (digest-bound) verifying
-    -- key's CommitmentParameters — assert the two agree.
-    let Sys.Mk(params, circuits, commit, prep_indices) = sys;
-    let SysParams.Mk(log_blowup, _cap_height) = params;
+    -- public inputs. All parameters also live in the (digest-bound) verifying
+    -- key — assert the public ones agree with it.
+    let Sys.Mk(params, tlimbs, circuits, commit, prep_indices) = sys;
+    let SysParams.Mk(log_blowup, _cap_height, _log_final_poly_len,
+                     _max_log_arity, vk_num_queries, vk_commit_pow_bits,
+                     _query_pow_bits) = params;
     assert_eq!(eq_zero(log_blowup - log_blowup_pub), 1);
+    assert_eq!(eq_zero(vk_num_queries - num_queries), 1);
+    assert_eq!(eq_zero(vk_commit_pow_bits - commit_pow_bits), 1);
     match proof {
       Proof.Mk(commitments, accs, log_degrees, opening,
                q_opened, prep_opt, stage1, stage2) =>
         let Commitments.Mk(s1c, s2c, qc) = commitments;
         let prep_cap = opt_commit_cap(commit);
-        let (lch, fch, alpha, zeta, post_zeta_input) = fiat_shamir(prep_cap, s1c, s2c, qc, log_degrees, claims);
+        let (lch, fch, alpha, zeta, post_zeta_input) = fiat_shamir(tlimbs, prep_cap, s1c, s2c, qc, log_degrees, claims, accs);
         let acc0 = claims_acc([gl_zero(), gl_zero()], claims, lch, fch);
         -- Step 5: OOD composition/quotient identity for every circuit.
         let _ood = ood_loop(circuits, prep_indices, log_degrees, accs, stage1, stage2,
                  prep_opt, q_opened, 0, acc0, 0, lch, fch, alpha, zeta);
-        -- Step 4: FRI PCS proximity + opening consistency, continuing the same
-        -- Fiat-Shamir transcript past ζ (observe opened values → α, βs, query).
         pcs_fri_verify(post_zeta_input, stage1, stage2, q_opened, prep_opt, opening,
           s1c, s2c, qc, prep_cap, circuits, prep_indices, log_degrees, zeta,
           list_length(circuits), log_blowup, num_queries, commit_pow_bits),

@@ -1,6 +1,5 @@
 use multi_stark::{
   p3_field::PrimeField64,
-  prover::Proof,
   types::{CommitmentParameters, FriParameters},
 };
 use rustc_hash::{FxBuildHasher, FxHashMap};
@@ -20,7 +19,7 @@ use crate::{
 use aiur::{
   G,
   execute::{IOBuffer, IOKeyInfo, QueryRecord},
-  synthesis::AiurSystem,
+  synthesis::{AiurProof, AiurSystem},
 };
 
 // =============================================================================
@@ -28,7 +27,7 @@ use aiur::{
 // =============================================================================
 
 static AIUR_PROOF_CLASS: LazyLock<ExternalClass> =
-  LazyLock::new(ExternalClass::register_with_drop::<Proof>);
+  LazyLock::new(ExternalClass::register_with_drop::<AiurProof>);
 static AIUR_SYSTEM_CLASS: LazyLock<ExternalClass> =
   LazyLock::new(ExternalClass::register_with_drop::<AiurSystem>);
 static IX_ENV_HANDLE_CLASS: LazyLock<ExternalClass> = LazyLock::new(
@@ -42,7 +41,7 @@ static IX_ENV_HANDLE_CLASS: LazyLock<ExternalClass> = LazyLock::new(
 /// `Aiur.Proof.toBytes : @& Proof → ByteArray`
 #[unsafe(no_mangle)]
 extern "C" fn rs_aiur_proof_to_bytes(
-  proof_obj: LeanExternal<Proof, LeanBorrowed<'_>>,
+  proof_obj: LeanExternal<AiurProof, LeanBorrowed<'_>>,
 ) -> LeanByteArray<LeanOwned> {
   let bytes = proof_obj.get().to_bytes().expect("Serialization error");
   LeanByteArray::from_bytes(&bytes)
@@ -52,9 +51,9 @@ extern "C" fn rs_aiur_proof_to_bytes(
 #[unsafe(no_mangle)]
 extern "C" fn rs_aiur_proof_of_bytes(
   byte_array: LeanByteArray<LeanBorrowed<'_>>,
-) -> LeanExternal<Proof, LeanOwned> {
-  let proof =
-    Proof::from_bytes(byte_array.as_bytes()).expect("Deserialization error");
+) -> LeanExternal<AiurProof, LeanOwned> {
+  let proof = AiurProof::from_bytes(byte_array.as_bytes())
+    .expect("Deserialization error");
   LeanExternal::alloc(&AIUR_PROOF_CLASS, proof)
 }
 
@@ -71,30 +70,30 @@ extern "C" fn rs_aiur_system_vk_bytes(
   LeanByteArray::from_bytes(&bytes)
 }
 
-/// `AiurSystem.build : @&Bytecode.Toplevel → @&CommitmentParameters → AiurSystem`
+/// `AiurSystem.build : @&Bytecode.Toplevel → @&CommitmentParameters → @&FriParameters → AiurSystem`
 #[unsafe(no_mangle)]
 extern "C" fn rs_aiur_system_build(
   toplevel: LeanAiurToplevel<LeanBorrowed<'_>>,
   commitment_parameters: LeanAiurCommitmentParameters<LeanBorrowed<'_>>,
+  fri_parameters: LeanAiurFriParameters<LeanBorrowed<'_>>,
 ) -> LeanExternal<AiurSystem, LeanOwned> {
   let system = AiurSystem::build(
     decode_toplevel(&toplevel),
     decode_commitment_parameters(&commitment_parameters),
+    decode_fri_parameters(&fri_parameters),
   );
   LeanExternal::alloc(&AIUR_SYSTEM_CLASS, system)
 }
 
-/// `AiurSystem.verify : @& AiurSystem → @& FriParameters → @& Array G → @& Proof → Except String Unit`
+/// `AiurSystem.verify : @& AiurSystem → @& Array G → @& Proof → Except String Unit`
 #[unsafe(no_mangle)]
 extern "C" fn rs_aiur_system_verify(
   aiur_system_obj: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
-  fri_parameters: LeanAiurFriParameters<LeanBorrowed<'_>>,
   claim: LeanArray<LeanBorrowed<'_>>,
-  proof_obj: LeanExternal<Proof, LeanBorrowed<'_>>,
+  proof_obj: LeanExternal<AiurProof, LeanBorrowed<'_>>,
 ) -> LeanExcept<LeanOwned> {
-  let fri_parameters = decode_fri_parameters(&fri_parameters);
   let claim = claim.map(|x| lean_unbox_g(&x));
-  match aiur_system_obj.get().verify(fri_parameters, &claim, proof_obj.get()) {
+  match aiur_system_obj.get().verify(&claim, proof_obj.get()) {
     Ok(()) => LeanExcept::ok(LeanOwned::box_usize(0)),
     Err(err) => LeanExcept::error_string(&format!("{err:?}")),
   }
@@ -248,19 +247,17 @@ extern "C" fn rs_aiur_toplevel_execute_ixvm(
 #[unsafe(no_mangle)]
 extern "C" fn rs_aiur_system_prove(
   aiur_system_obj: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
-  fri_parameters: LeanAiurFriParameters<LeanBorrowed<'_>>,
   fun_idx: LeanNat<LeanBorrowed<'_>>,
   args: LeanArray<LeanBorrowed<'_>>,
   io_data_arr: LeanArray<LeanBorrowed<'_>>,
   io_map_arr: LeanArray<LeanBorrowed<'_>>,
 ) -> LeanOwned {
-  let fri_parameters = decode_fri_parameters(&fri_parameters);
   let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
   let args = args.map(|x| lean_unbox_g(&x));
   let mut io_buffer = decode_io_buffer(&io_data_arr, &io_map_arr);
 
   let (claim, proof) =
-    aiur_system_obj.get().prove(fri_parameters, fun_idx, &args, &mut io_buffer);
+    aiur_system_obj.get().prove(fun_idx, &args, &mut io_buffer);
 
   let lean_proof: LeanOwned =
     LeanExternal::alloc(&AIUR_PROOF_CLASS, proof).into();
@@ -531,7 +528,6 @@ extern "C" fn rs_aiur_toplevel_shard_check_with_env(
 #[unsafe(no_mangle)]
 extern "C" fn rs_aiur_system_prove_addr_with_env(
   aiur_system_obj: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
-  fri_parameters: LeanAiurFriParameters<LeanBorrowed<'_>>,
   fun_idx: LeanNat<LeanBorrowed<'_>>,
   env_handle: LeanExternal<
     ixvm_codegen::env_handle::EnvHandle,
@@ -539,7 +535,6 @@ extern "C" fn rs_aiur_system_prove_addr_with_env(
   >,
   addr_bytes: LeanByteArray<LeanBorrowed<'_>>,
 ) -> LeanExcept<LeanOwned> {
-  let fri_parameters = decode_fri_parameters(&fri_parameters);
   let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
   let addr = match decode_addr(&addr_bytes) {
     Ok(a) => a,
@@ -557,7 +552,6 @@ extern "C" fn rs_aiur_system_prove_addr_with_env(
     };
 
   let (_aiur_claim_arr, proof) = aiur_system_obj.get().prove_ixvm(
-    fri_parameters,
     fun_idx,
     &input,
     &mut io_buffer,
@@ -581,7 +575,6 @@ extern "C" fn rs_aiur_system_prove_addr_with_env(
 #[unsafe(no_mangle)]
 extern "C" fn rs_aiur_system_shard_prove_with_env(
   aiur_system_obj: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
-  fri_parameters: LeanAiurFriParameters<LeanBorrowed<'_>>,
   fun_idx: LeanNat<LeanBorrowed<'_>>,
   env_handle: LeanExternal<
     ixvm_codegen::env_handle::EnvHandle,
@@ -589,7 +582,6 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
   >,
   owned_blob: LeanByteArray<LeanBorrowed<'_>>,
 ) -> LeanExcept<LeanOwned> {
-  let fri_parameters = decode_fri_parameters(&fri_parameters);
   let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
   let owned = match decode_owned_blob(&owned_blob) {
     Ok(v) => v,
@@ -608,7 +600,6 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
     };
 
   let (_aiur_claim_arr, proof) = aiur_system_obj.get().prove_ixvm(
-    fri_parameters,
     fun_idx,
     &input,
     &mut io_buffer,
@@ -634,19 +625,16 @@ extern "C" fn rs_aiur_system_shard_prove_with_env(
 #[unsafe(no_mangle)]
 extern "C" fn rs_aiur_system_prove_ixvm(
   aiur_system_obj: LeanExternal<AiurSystem, LeanBorrowed<'_>>,
-  fri_parameters: LeanAiurFriParameters<LeanBorrowed<'_>>,
   fun_idx: LeanNat<LeanBorrowed<'_>>,
   args: LeanArray<LeanBorrowed<'_>>,
   io_data_arr: LeanArray<LeanBorrowed<'_>>,
   io_map_arr: LeanArray<LeanBorrowed<'_>>,
 ) -> LeanOwned {
-  let fri_parameters = decode_fri_parameters(&fri_parameters);
   let fun_idx = lean_unbox_nat_as_usize(fun_idx.inner());
   let args = args.map(|x| lean_unbox_g(&x));
   let mut io_buffer = decode_io_buffer(&io_data_arr, &io_map_arr);
 
   let (claim, proof) = aiur_system_obj.get().prove_ixvm(
-    fri_parameters,
     fun_idx,
     &args,
     &mut io_buffer,

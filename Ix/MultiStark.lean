@@ -1,9 +1,10 @@
 module
+public import Blake3.Rust
 public import Ix.Aiur.Meta
 public import Ix.Aiur.Protocol
-public import Ix.Keccak
 public import Ix.IxVM.Core
 public import Ix.IxVM.ByteStream
+public import Ix.IxVM.Blake3
 public import Ix.MultiStark.Goldilocks
 public import Ix.MultiStark.Deserialize
 public import Ix.MultiStark.Keccak
@@ -17,12 +18,12 @@ public import Ix.MultiStark.Tests
 
 The recursive verifier. Its public statement is purely existential: *"there
 exists a valid multi-stark proof, under the FRI parameters given as public
-input, for the constraint system with this keccak-256 digest and these public
+input, for the constraint system with this Blake3 digest and these public
 claims."* The proof itself is **non-deterministic advice** (fed on IO channel 0,
 never hashed or otherwise bound as a public input): the Fiat-Shamir transcript
 replay plus the Merkle/OOD/FRI checks are exactly what make any accepted advice
 a valid proof — a hash binding of the proof bytes would add nothing to the
-statement, while costing one keccak-f per 136 bytes in-circuit.
+statement, while costing an extra in-circuit hash over those bytes.
 
 The verifying key and claims, by contrast, ARE digest-bound (`system_digest`,
 `claims_digest`): they determine *what was proven*.
@@ -37,8 +38,8 @@ public section
 namespace MultiStark
 
 def entrypoints := ⟦
-  -- Public inputs: the keccak-256 digests of the verifying key and the claims
-  -- (4 little-endian u64 lanes each) plus the variable FRI parameters. The
+  -- Public inputs: the Blake3 digests of the verifying key and the claims
+  -- (32 bytes = 4 little-endian u64 lanes each) plus the variable FRI parameters. The
   -- proof is pure non-deterministic advice on IO channel 0 — see the module
   -- docstring. One stream per channel (0 = proof, 1 = vk, 2 = claims), each
   -- registered under key `[0]` on its channel.
@@ -49,19 +50,19 @@ def entrypoints := ⟦
     let (proof, rest) = read_proof(bytes);
     assert_eq!(load(rest), ListNode.Nil);
     -- Verifying key (`System<AiurCircuit>`) from IO channel 1: bind the bytes
-    -- to the public keccak-256 `system_digest`, then reconstruct the system.
+    -- to the public Blake3 `system_digest`, then reconstruct the system.
     let (sidx, slen) = io_get_info(1, [0]);
     let sbytes = #read_byte_stream(1, sidx, slen);
-    assert_eq!(keccak256(sbytes), system_digest);
+    assert_eq!(b3_to_digest(blake3(sbytes)), system_digest);
     let (sys, srest) = read_system(sbytes);
     assert_eq!(load(srest), ListNode.Nil);
     -- Public claims (`&[&[Val]]`) from IO channel 2: bind the bytes to the
-    -- public keccak-256 `claims_digest`, then deserialize. Binding them as a
+    -- public Blake3 `claims_digest`, then deserialize. Binding them as a
     -- public input is what makes the lookup argument sound (a prover cannot
     -- choose claims adaptively).
     let (cidx, clen) = io_get_info(2, [0]);
     let cbytes = #read_byte_stream(2, cidx, clen);
-    assert_eq!(keccak256(cbytes), claims_digest);
+    assert_eq!(b3_to_digest(blake3(cbytes)), claims_digest);
     let (claims, crest) = read_claims(cbytes);
     assert_eq!(load(crest), ListNode.Nil);
     -- Structural + accumulator + PCS checks.
@@ -75,12 +76,12 @@ def entrypoints := ⟦
 
 /-- The standalone Multi-STARK verifier toplevel: `core` (lists/options) +
 `byteStream` (`U64`, `flatten_u64`, `read_byte_stream`, …) + the deserializer,
-the keccak-256 implementation, and the entrypoint. -/
+the Blake3 hash, and the entrypoint. -/
 def multiStark : Except Aiur.Global Aiur.Source.Toplevel := do
   let t ← IxVM.core.merge IxVM.byteStream
   let t ← t.merge MultiStark.goldilocks
   let t ← t.merge deserialize
-  let t ← t.merge keccak
+  let t ← t.merge IxVM.blake3
   let t ← t.merge systemDeserialize
   let t ← t.merge pcs
   let t ← t.merge verifier
@@ -89,7 +90,7 @@ def multiStark : Except Aiur.Global Aiur.Source.Toplevel := do
 /-! ## Lean-side input assembly
 
 Callers of `verify_multi_stark_proof` (tests, benchmarks) must reproduce the
-verifier's wire formats byte-for-byte — the vk and claims are keccak-256
+verifier's wire formats byte-for-byte — the vk and claims are Blake3
 digest-bound. These helpers are that recipe's single home. -/
 
 /-- The 8 little-endian bytes of `n` as a `u64`. -/
@@ -115,7 +116,7 @@ def verifierInput (proofBytes vkBytes claimBytes : ByteArray)
     (commitParams : Aiur.CommitmentParameters) (friParams : Aiur.FriParameters) :
     Array Aiur.G × Aiur.IOBuffer :=
   let gs := fun (b : ByteArray) => b.data.map Aiur.G.ofUInt8
-  let digestGs := fun (b : ByteArray) => gs (Keccak.hash b)
+  let digestGs := fun (b : ByteArray) => gs (Blake3.Rust.hash b).val
   let pubInput := digestGs vkBytes ++ digestGs claimBytes ++
     #[.ofNat friParams.numQueries, .ofNat friParams.commitProofOfWorkBits,
       .ofNat commitParams.logBlowup]

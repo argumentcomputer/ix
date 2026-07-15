@@ -125,15 +125,17 @@ def recursiveCommitmentParameters : Aiur.CommitmentParameters := {
   capHeight := 0
 }
 
-/-- Recursion-tuned FRI parameters: the in-circuit verifier's cost scales with
-    the inner proof's query count, so the recursion configuration trades
-    queries (3, not 100) for blowup and commit proof-of-work. `--recursive`
-    runs the WHOLE system — the inner prove included — under these, so its
-    rows are not comparable to the standard `prove` cell's. -/
+/-- Recursion FRI parameters for `--recursive`. The query count IS the
+    soundness level, so a real (secure) recursive proof needs the full query
+    count, not a toy handful. The in-circuit verifier's cost scales with that
+    count, so at IxVM scale the cell is expected to exceed even a 128 GB host —
+    an OOM row here documents the gap between secure recursion and what fits
+    today. `--recursive` runs the WHOLE system, inner prove included, under
+    these, so its rows are not comparable to the standard `prove` cell's. -/
 def recursiveFriParameters : Aiur.FriParameters := {
   logFinalPolyLen := 0
   maxLogArity := 1
-  numQueries := 3
+  numQueries := 100
   commitProofOfWorkBits := 20
   queryProofOfWorkBits := 0
 }
@@ -325,7 +327,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
   let (commitParams, friParams) :=
     if recursive then (recursiveCommitmentParameters, recursiveFriParameters)
     else (commitmentParameters, friParameters)
-  let aiurSystem := Aiur.AiurSystem.build compiled.bytecode commitParams
+  let aiurSystem := Aiur.AiurSystem.build compiled.bytecode commitParams friParams
   -- The recursive-verifier context, compiled and built ONCE: the verifier
   -- toplevel is constant-independent, and its prover system (same recursion
   -- parameters) is reused for every constant's outer prove.
@@ -338,7 +340,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
       let some vIdx := vCompiled.getFuncIdx `verify_multi_stark_proof
         | throw (IO.userError "verify_multi_stark_proof entrypoint missing")
       pure (some (vCompiled, vIdx,
-        Aiur.AiurSystem.build vCompiled.bytecode commitParams))
+        Aiur.AiurSystem.build vCompiled.bytecode commitParams friParams))
 
   -- Load the serialized env lazily (the `ix check --ixe` path, #445): byte-window
   -- constants over the backing buffer, so only the checked closure is ever
@@ -452,11 +454,11 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
         if skipDeps then
           let witness := IxVM.ClaimHarness.buildVerifyConst ixonEnv addr
           let (claim, proof, ioBuf) :=
-            aiurSystem.proveIxVM friParams funIdx witness.input witness.inputIOBuffer
+            aiurSystem.proveIxVM funIdx witness.input witness.inputIOBuffer
           (.ok (claim, proof, ioBuf) :
             Except String (Array Aiur.G × Aiur.Proof × Aiur.IOBuffer))
         else
-          match aiurSystem.proveAddrWithEnv friParams funIdx envHandle addr.hash with
+          match aiurSystem.proveAddrWithEnv funIdx envHandle addr.hash with
           | .error e => .error e
           | .ok (claimBytes, proof, ioBuf) =>
             -- The envHandle path returns the SERIALIZED `Ix.Claim`; rebuild
@@ -474,7 +476,7 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
         let peak ← TracingTexray.peakTreeRssBytes
         let proofBytes := Aiur.Proof.toBytes proof
         let (verifyRes, verifySec) ← timed fun _ =>
-          aiurSystem.verify friParams claim proof
+          aiurSystem.verify claim proof
         let verifySec? ← match verifyRes with
           | .ok () => pure (some verifySec)
           | .error e =>
@@ -519,11 +521,11 @@ def runTypecheckCmd (p : Cli.Parsed) : IO UInt32 := do
             (← IO.getStdout).flush
             TracingTexray.resetPeakTreeRss
             let ((rvClaim, rvProof, _), rvProveSec) ← timed fun _ =>
-              vSystem.prove friParams vIdx pubInput io
+              vSystem.prove vIdx pubInput io
             let rvPeak ← TracingTexray.peakTreeRssBytes
             let rvProofBytes := Aiur.Proof.toBytes rvProof
             let (rvVerifyRes, rvVerifySec) ← timed fun _ =>
-              vSystem.verify friParams rvClaim rvProof
+              vSystem.verify rvClaim rvProof
             let rvVerifySec? ← match rvVerifyRes with
               | .ok () => pure (some rvVerifySec)
               | .error e =>
