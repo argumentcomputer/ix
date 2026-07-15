@@ -616,7 +616,7 @@ def parseError (msg : String) : IO UInt32 := do
     BENCH_ENVS, rejects the command — exit 2 and a `parse-error` output):
 
       !benchmark ([aiur] [zisk] [sp1] [ooc] [compile] [aiur-recursive] | all)
-                 [execute] [KEY=VALUE …]
+                 [execute | recursive] [KEY=VALUE …]
       BENCH_ENVS=InitStd,Mathlib   (case-insensitive; default InitStd;
                                     compile-only requests may name any
                                     registry env, e.g. Lean or FLT)
@@ -638,8 +638,12 @@ def parseError (msg : String) : IO UInt32 := do
     command, like a typo'd backend.
 
     The bare `execute` token flips a backend with an execute metrics entry
-    to execute-only — a real switch only for aiur, whose two modes store on
-    separate testbeds, so either kind of cell finds a cached baseline. -/
+    to execute-only — a real switch only for aiur, whose modes store on
+    separate testbeds, so either kind of cell finds a cached baseline.
+    `recursive` likewise flips aiur to its recursive mode; that testbed is
+    `unscheduled`, so the cell has no bencher baseline (its main side comes
+    from a base-SHA run) and the verifier execute OOMs on the 128 GB CI
+    host — reserved for a bigger manual dispatch. -/
 def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
   let body ← match p.flag? "comment" with
     | some f => pure (f.as! String)
@@ -659,9 +663,13 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
   let mut backends : Array Ix.Cli.BenchCmd.BackendSpec := #[]
   let mut skipped : Array Ix.Cli.BenchCmd.BackendSpec := #[]
   let mut executeFlag := false
+  let mut recursiveFlag := false
   for t in toks.map (·.toLower) do
     if t == "execute" then
       executeFlag := true
+      continue
+    if t == "recursive" then
+      recursiveFlag := true
       continue
     let requested := if t == "all"
       then Ix.Cli.BenchCmd.backendSpecs
@@ -673,7 +681,7 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
       return ← parseError s!"unknown token `{t}` in the benchmark command \
         (expected a backend — \
         {", ".intercalate (Ix.Cli.BenchCmd.backendSpecs.map (·.name))} — \
-        or `all` / `execute`)"
+        or `all` / `execute` / `recursive`)"
     for b in requested do
       if b.disabled.isSome then
         if skipped.all (·.name != b.name) then skipped := skipped.push b
@@ -746,7 +754,8 @@ def runParseCmd (p : Cli.Parsed) : IO UInt32 := do
   if envs.isEmpty then envs := #["InitStd"]
 
   let modeFor := fun (b : Ix.Cli.BenchCmd.BackendSpec) =>
-    if executeFlag && !(b.metricsFor "execute").isEmpty then "execute"
+    if recursiveFlag && !(b.metricsFor "recursive").isEmpty then "recursive"
+    else if executeFlag && !(b.metricsFor "execute").isEmpty then "execute"
     else b.defaultMode
   let mut cells : Array Json := #[]
   for b in backends do

@@ -126,8 +126,7 @@ def unitsFor (slug : String) : Option String :=
     ooc); unranked workloads (a future backend) sort last. -/
 def workloadOrder : List String :=
   ["ix-compile", "ix-decompile", "aiur-check-prove", "aiur-check-execute",
-   "aiur-check-recursive", "aiur-recursive", "zisk-check-execute",
-   "ooc-check"]
+   "aiur-recursive", "zisk-check-execute", "ooc-check"]
 
 structure PlotSpec where
   testbed : String
@@ -148,6 +147,9 @@ def plotSpecs (rows : Array BenchCmd.VectorRow) : Array PlotSpec := Id.run do
   for b in BenchCmd.backendSpecs do
     if b.disabled.isSome then continue
     for (mode, testbed) in b.testbeds do
+      -- On-demand modes (e.g. aiur `recursive`) upload nothing, so there's
+      -- nothing to plot — the registry marks them explicitly.
+      if b.unscheduled.contains mode then continue
       let names : Array String := Id.run do
         if b.name == "compile" then
           return (BenchCmd.envSpecs.map (·.name)).toArray

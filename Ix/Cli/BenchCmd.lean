@@ -126,6 +126,11 @@ structure BackendSpec where
   /-- `some reason` ⇒ `parse` skips the backend with the note in the
       config summary. -/
   disabled : Option String := none
+  /-- Modes present for local / on-demand `ix bench run --mode` only —
+      scheduled by no CI job (too heavy for the CI host), so they carry a
+      testbed for the compare surface but never upload to bencher and get
+      no dashboard plot. -/
+  unscheduled : List String := []
   /-- (mode, bencher testbed). -/
   testbeds : List (String × String)
   /-- (mode, compare-table columns), rendered in list order; the head is
@@ -143,12 +148,14 @@ def backendSpecs : List BackendSpec := [
   -- recursion-tuned FRI parameters, so even its shared-name metrics
   -- (prove-time, peak-rss) are not comparable to the prove cell's. An
   -- IxVM-scale verifier execute needs >108 GB, beyond the CI ceiling; the
-  -- kill lands as a `status: oom` row that bmf drops, which is why no CI
-  -- job schedules this testbed.
+  -- kill lands as a `status: oom` row that bmf drops, which is why it's
+  -- marked `unscheduled`: a testbed for local `--mode recursive` runs only —
+  -- never uploaded to bencher, never plotted.
   { name := "aiur", defaultMode := "prove",
     testbeds := [("prove", "aiur-check-prove-x64-32x"),
                  ("execute", "aiur-check-execute-x64-32x"),
                  ("recursive", "aiur-check-recursive-x64-32x")],
+    unscheduled := ["recursive"],
     metrics := [("prove", ["prove-time", "throughput", "peak-rss",
                            "execute-time", "verify-time", "proof-size",
                            "fft-cost"]),
