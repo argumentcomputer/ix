@@ -32,6 +32,9 @@ import Ix.Common
 import Ix.Meta
 import Ix.IxVM
 
+/-- Runs the full compile → serialize → decompile roundtrip over the given
+    constants and returns the number of failures (0 = clean): decompile
+    mismatches, or a non-zero constant count if a phase aborted. -/
 @[extern "rs_tmp_decode_const_map"]
 opaque tmpDecodeConstMap : @& List (Lean.Name × Lean.ConstantInfo) → USize
 
@@ -131,8 +134,11 @@ def main (args : List String) : IO UInt32 := do
   if args.contains "rust-compile" then
     let env ← get_env!
     IO.println s!"Loaded environment with {env.constants.toList.length} constants"
-    let result := tmpDecodeConstMap env.constants.toList
-    IO.println s!"Rust compiled: {result}"
+    let failures := tmpDecodeConstMap env.constants.toList
+    if failures != 0 then
+      IO.eprintln s!"[rust-compile] FAILED: {failures} compile/decompile roundtrip failure(s)"
+      return 1
+    IO.println "[rust-compile] OK: compile → decompile roundtrip clean"
     return 0
 
   -- Special case: cli tests have their own runner
