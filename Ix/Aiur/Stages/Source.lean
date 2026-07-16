@@ -472,6 +472,11 @@ structure Function where
   output : Typ
   body : Term
   entry : Bool
+  /-- Optional circuit-group tag set by the `#[group=...]` pragma. Functions
+  sharing a tag are meant to be proven by a single grouped circuit whose
+  branching selects the member function. Currently only recorded; the
+  grouping mechanism is not implemented yet. -/
+  group : Option String := none
   /-- Polymorphic public entry points are forbidden by construction:
   either the function is monomorphic (`params = []`) or not public
   (`entry = false`). -/
@@ -509,6 +514,10 @@ def Function.poly (name : Global) (params : List String) (inputs : List (Local Ã
     (output : Typ) (body : Term) : Function :=
   { name, params, inputs, output, body, entry := false,
     entryMonomorphic := Or.inr rfl, entryPointerFree := Or.inr rfl }
+
+/-- Attach a circuit-group tag (from the `#[group=...]` pragma). -/
+def Function.withGroup (function : Function) (group : String) : Function :=
+  { function with group := some group }
 
 structure Toplevel where
   dataTypes : Array DataType

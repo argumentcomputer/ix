@@ -670,52 +670,68 @@ def elabBind : ElabStxCat `aiur_bind
     | _ => throw $ .error i "Illegal variable name"
   | stx => throw $ .error stx "Invalid syntax for binding"
 
+declare_syntax_cat               aiur_pragma
+syntax "#[" ident "=" ident "]" : aiur_pragma
+
 declare_syntax_cat                                                                                aiur_function
-syntax ("pub ")? "fn " ident "(" ")" (" -> " aiur_typ)? "{" aiur_trm "}"                      : aiur_function
-syntax ("pub ")? "fn " ident "(" aiur_bind (", " aiur_bind)* ")"
+syntax (aiur_pragma)? ("pub ")? "fn " ident "(" ")" (" -> " aiur_typ)? "{" aiur_trm "}"       : aiur_function
+syntax (aiur_pragma)? ("pub ")? "fn " ident "(" aiur_bind (", " aiur_bind)* ")"
        (" -> " aiur_typ)? "{" aiur_trm "}"                                                    : aiur_function
-syntax "fn " ident "‹" ident (", " ident)* "›" "(" ")"
+syntax (aiur_pragma)? "fn " ident "‹" ident (", " ident)* "›" "(" ")"
        (" -> " aiur_typ)? "{" aiur_trm "}"                                                    : aiur_function
-syntax "fn " ident "‹" ident (", " ident)* "›"
+syntax (aiur_pragma)? "fn " ident "‹" ident (", " ident)* "›"
        "(" aiur_bind (", " aiur_bind)* ")"
        (" -> " aiur_typ)? "{" aiur_trm "}"                                                    : aiur_function
 
 def elabFunction : ElabStxCat `aiur_function
-  | `(aiur_function| $[pub%$e]? fn $i:ident() $[-> $ty:aiur_typ]? {$t:aiur_trm}) => do
+  | `(aiur_function| $[$pg?:aiur_pragma]? $[pub%$e]? fn $i:ident() $[-> $ty:aiur_typ]? {$t:aiur_trm}) => do
     let g ← mkAppM ``Global.mk #[toExpr i.getId]
     let bindType ← mkAppM ``Prod #[mkConst ``Local, mkConst ``Typ]
     let inputs ← mkListLit bindType []
     let output ← elabRetTyp ty
     let body ← elabTrm t
-    mkMonoFun e g inputs output body
-  | `(aiur_function| $[pub%$e]? fn $i:ident($b:aiur_bind $[, $bs:aiur_bind]*)
+    applyPragma pg? (← mkMonoFun e g inputs output body)
+  | `(aiur_function| $[$pg?:aiur_pragma]? $[pub%$e]? fn $i:ident($b:aiur_bind $[, $bs:aiur_bind]*)
         $[-> $ty:aiur_typ]? {$t:aiur_trm}) => do
     let g ← mkAppM ``Global.mk #[toExpr i.getId]
     let bindType ← mkAppM ``Prod #[mkConst ``Local, mkConst ``Typ]
     let inputs ← elabListCore b bs elabBind bindType
     let output ← elabRetTyp ty
     let body ← elabTrm t
-    mkMonoFun e g inputs output body
-  | `(aiur_function| fn $i:ident‹$p:ident $[, $ps:ident]*›()
+    applyPragma pg? (← mkMonoFun e g inputs output body)
+  | `(aiur_function| $[$pg?:aiur_pragma]? fn $i:ident‹$p:ident $[, $ps:ident]*›()
         $[-> $ty:aiur_typ]? {$t:aiur_trm}) => do
     let g ← mkAppM ``Global.mk #[toExpr i.getId]
     let (_, paramsExpr) ← elabTypeParams p ps
     let bindType ← mkAppM ``Prod #[mkConst ``Local, mkConst ``Typ]
-    mkAppM ``Source.Function.poly
+    applyPragma pg? (← mkAppM ``Source.Function.poly
       #[g, paramsExpr, ← mkListLit bindType [],
-        ← elabRetTyp ty, ← elabTrm t]
-  | `(aiur_function| fn $i:ident‹$p:ident $[, $ps:ident]*›
+        ← elabRetTyp ty, ← elabTrm t])
+  | `(aiur_function| $[$pg?:aiur_pragma]? fn $i:ident‹$p:ident $[, $ps:ident]*›
         ($b:aiur_bind $[, $bs:aiur_bind]*)
         $[-> $ty:aiur_typ]? {$t:aiur_trm}) => do
     let g ← mkAppM ``Global.mk #[toExpr i.getId]
     let (_, paramsExpr) ← elabTypeParams p ps
     let bindType ← mkAppM ``Prod #[mkConst ``Local, mkConst ``Typ]
-    mkAppM ``Source.Function.poly
+    applyPragma pg? (← mkAppM ``Source.Function.poly
       #[g, paramsExpr,
         ← elabListCore b bs elabBind bindType,
-        ← elabRetTyp ty, ← elabTrm t]
+        ← elabRetTyp ty, ← elabTrm t])
   | stx => throw $ .error stx "Invalid syntax for function"
 where
+  /-- Apply an optional `#[key=value]` pragma to an elaborated function.
+  The only recognized key is `group`: `#[group=cold]` records the tag
+  `"cold"` in `Source.Function.group`. -/
+  applyPragma (pg? : Option (TSyntax `aiur_pragma)) (fnExpr : Expr) :
+      TermElabM Expr := do
+    match pg? with
+    | none => pure fnExpr
+    | some pg => match pg with
+      | `(aiur_pragma| #[$key:ident = $val:ident]) => do
+        unless key.getId == `group do
+          throw $ .error key s!"Unknown pragma key `{key.getId}` (expected `group`)"
+        mkAppM ``Source.Function.withGroup #[fnExpr, toExpr (toString val.getId)]
+      | stx => throw $ .error stx "Invalid syntax for pragma"
   elabRetTyp : Option (TSyntax `aiur_typ) → TermElabM Expr
     | none => pure $ mkConst ``Typ.unit
     | some typ => elabTyp typ
